@@ -1062,8 +1062,17 @@ select.inp { cursor: pointer; }
              autocomplete="off" spellcheck="false"
              oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
       <div class="hint-box" style="margin-top:6px">
-        入力すると<strong>自動保存</strong>されます（端末を閉じても、次回起動時にURLは保持されます）
+        入力すると<strong>自動保存</strong>されます（端末を閉じても、次回起動時にURLは保持されます）。<br>
+        ※ ワークスケジュールで同期設定済みの場合は、その接続先が自動的に使われます（ここは空でOK）。
       </div>
+    </div>
+
+    <div class="form-row">
+      <label for="sync-token">同期トークン</label>
+      <input class="inp" type="password" id="sync-token"
+             placeholder="ワークスケジュールと同じトークン"
+             autocomplete="off" spellcheck="false"
+             oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
     </div>
 
     <div class="form-row">
@@ -1434,7 +1443,7 @@ function getEventCoverage(events, res) {
 function autoCalcUnits() {
   const res   = currentResident();
   if (!res) return;
-  const stype = $('input[name="serviceType"]:checked')?.value;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
   if (!stype) return;
   let units = 0;
   if (stype === 'visit') {
@@ -1565,8 +1574,8 @@ function saveDB() {
     showToast('保存エラーが発生しました: ' + (e && e.message ? e.message : ''));
     return false;
   }
-  // クラウド自動同期（有効時のみ、debounce）
-  if (SYNC.config.endpoint && SYNC.config.auto) SYNC.scheduleAutoPush();
+  // クラウド自動同期（同期先があれば常に・debounce）
+  if (SYNC.hasTarget()) SYNC.scheduleAutoPush();
   return true;
 }
 
@@ -1574,7 +1583,7 @@ function saveDB() {
 const SYNC_KEY = 'care_schedule_sync_v1';
 const POLL_INTERVAL_MS = 30000; // 30秒ごとにクラウドの更新をチェック
 const SYNC = {
-  config: { endpoint: '', auto: false, lastSync: 0 },
+  config: { endpoint: '', token: '', auto: false, lastSync: 0 },
   _pushTimer: null,
   _pollTimer: null,
   _busy: false,
@@ -1630,40 +1639,74 @@ const SYNC = {
     return null;
   },
 
+  // ── 統合GAS連携（ワースケ・シフトと同一エンドポイント／rev楽観ロック）──
+  // 接続先・トークンはワースケ設定(ws_settings)を優先、無ければ自前configを使用。
+  // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
+  target() {
+    try {
+      const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
+      if (s && s.endpoint) return { endpoint: s.endpoint, token: s.token || '' };
+    } catch(e) {}
+    return { endpoint: this.config.endpoint || '', token: this.config.token || '' };
+  },
+  hasTarget() { return !!this.target().endpoint; },
+  loadCareRev() {
+    try { return (JSON.parse(localStorage.getItem('ws_sync_revs') || '{}').care) || 0; }
+    catch(e) { return 0; }
+  },
+  saveCareRev(r) {
+    try {
+      const o = JSON.parse(localStorage.getItem('ws_sync_revs') || '{}');
+      o.care = r;
+      localStorage.setItem('ws_sync_revs', JSON.stringify(o));
+    } catch(e) {}
+  },
+  async gas(payload) {
+    const t = this.target();
+    payload.token = t.token;
+    // text/plain で送信し CORS preflight を回避（ワースケと同一）
+    const res = await fetch(t.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  // リモート(data:DBオブジェクト)をローカルへ採用（事業所情報は欠落時ローカル維持）
+  adopt(data, rev) {
+    const remote = data;
+    if (!remote || typeof remote !== 'object') return false;
+    const remoteOfficeValid = remote.office && typeof remote.office === 'object'
+                            && Object.keys(remote.office).length > 0;
+    const preservedOffice = remoteOfficeValid ? null : DB.office;
+    DB = { ...DB, ...remote };
+    if (preservedOffice) DB.office = preservedOffice;
+    if (!Array.isArray(DB.residents)) DB.residents = [];
+    saveLocalOnly();
+    this.saveCareRev(rev || 0);
+    this.config.lastSync = Date.now();
+    this._dirty = false;
+    this.save();
+    recalcAllEventUnits();
+    try { mergeCommonSchedule(); } catch(e) {}
+    populateResidentSelect();
+    renderAll();
+    return true;
+  },
+
   async pull() {
-    const err = this.validateEndpoint(this.config.endpoint);
-    if (err) { this.log('❌ ' + err); return false; }
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
     if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
     this._busy = true;
     this.updateStatusUI('取得中…');
     try {
-      const res = await fetch(this.config.endpoint, { method: 'GET', redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || '応答エラー');
-      if (!json.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
-      const remote = JSON.parse(json.data);
-      if (!remote || typeof remote !== 'object') throw new Error('データ形式が不正です');
-      // 事業所情報を保護：remote.office が無い・空オブジェクトの場合は local の DB.office を維持
-      const remoteOfficeValid = remote.office && typeof remote.office === 'object'
-                              && Object.keys(remote.office).length > 0;
-      const preservedOffice = remoteOfficeValid ? null : DB.office;
-      DB = { ...DB, ...remote };
-      if (preservedOffice) {
-        DB.office = preservedOffice;
-        this.log('ℹ️ クラウドに事業所情報がないため、ローカル設定を維持しました');
-      }
-      if (!Array.isArray(DB.residents)) DB.residents = [];
-      saveLocalOnly();
-      this.config.lastSync = json.timestamp || Date.now();
-      this._remoteTs = this.config.lastSync;
-      this._dirty   = false; // プル完了 → クリーン状態へ
-      this.save();
-      recalcAllEventUnits();
-      try { mergeCommonSchedule(); } catch(e) {}
-      populateResidentSelect();
-      renderAll();
-      this.log(`✅ 取得完了（${DB.residents.length}名・最終更新: ${new Date(this.config.lastSync).toLocaleString('ja-JP')}）`);
+      const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok) throw new Error(j.error || '応答エラー');
+      if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
+      this.adopt(j.data, j.rev);
+      this.log(`✅ 取得完了（${DB.residents.length}名・rev ${j.rev || 0}）`);
       this.updateStatusUI('同期OK');
       this._busy = false;
       return true;
@@ -1676,46 +1719,32 @@ const SYNC = {
   },
 
   async push(force) {
-    const err = this.validateEndpoint(this.config.endpoint);
-    if (err) { this.log('❌ ' + err); return false; }
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return false; }
     if (this._busy) { return false; }
     this._busy = true;
     this.updateStatusUI('保存中…');
     try {
-      // 競合検知：プッシュ前にリモートのタイムスタンプを確認
-      if (!force && this.config.lastSync > 0) {
-        try {
-          const checkRes = await fetch(this.config.endpoint, { method: 'GET', redirect: 'follow' });
-          if (checkRes.ok) {
-            const checkJson = await checkRes.json();
-            if (checkJson.ok && Number(checkJson.timestamp) > Number(this.config.lastSync)) {
-              this._busy = false;
-              this.updateStatusUI('競合');
-              this.log('⚠️ クラウドに別端末からの新しい更新があります。先に「⬇️ 取得」してから「⬆️ 強制保存」してください');
-              return false;
-            }
-          }
-        } catch(_) { /* チェック失敗は無視して通常プッシュ */ }
+      const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
+                                 rev: this.loadCareRev(), data: DB, force: !!force });
+      if (j.ok) {
+        this.saveCareRev(j.rev);
+        this.config.lastSync = Date.now();
+        this._dirty = false;
+        this.save();
+        this.log(`✅ 保存完了（rev ${j.rev}）`);
+        this.updateStatusUI('同期OK');
+        this._busy = false;
+        return true;
       }
-      const payload = JSON.stringify({ data: JSON.stringify(DB) });
-      // text/plain で送信し CORS preflight を回避
-      const res = await fetch(this.config.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: payload,
-        redirect: 'follow'
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || '応答エラー');
-      this.config.lastSync = json.timestamp || Date.now();
-      this._remoteTs = this.config.lastSync;
-      this._dirty   = false; // プッシュ成功 → クリーン状態へ
-      this.save();
-      this.log(`✅ 保存完了（${new Date(this.config.lastSync).toLocaleString('ja-JP')}）`);
-      this.updateStatusUI('同期OK');
-      this._busy = false;
-      return true;
+      if (j.conflict) {
+        // 別端末の新しい更新あり → サーバー版を採用（rev楽観ロック）
+        this._busy = false;
+        this.updateStatusUI('競合');
+        this.log('⚠️ クラウドに別端末の新しい更新があります → 取得して反映します');
+        await this.pull();
+        return false;
+      }
+      throw new Error(j.error || '応答エラー');
     } catch(e) {
       this.log('❌ 保存失敗: ' + e.message);
       this.updateStatusUI('エラー');
@@ -1734,74 +1763,42 @@ const SYNC = {
   // 定期ポーリング開始：他端末からの更新を自動検知
   startPolling() {
     if (this._pollTimer) clearInterval(this._pollTimer);
-    if (!this.config.endpoint || !this.config.auto) return;
+    if (!this.hasTarget()) return;
     this._pollTimer = setInterval(() => this.pollIfNeeded(), POLL_INTERVAL_MS);
   },
   stopPolling() {
     if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
   },
-  // クラウドのタイムスタンプを確認し、新しければ自動pull
+  // クラウドの rev を確認し、新しければ自動pull
   async pollIfNeeded() {
     if (this._busy) return;
     if (document.hidden) return; // 非表示タブではスキップ
-    if (!this.config.endpoint) return;
+    if (!this.hasTarget()) return;
     try {
-      const res = await fetch(this.config.endpoint, { method: 'GET', redirect: 'follow' });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.ok) return;
-      const remoteTs = Number(json.timestamp) || 0;
-      if (remoteTs > Number(this.config.lastSync)) {
+      const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok) return;
+      const remoteRev = Number(j.rev) || 0;
+      if (remoteRev > this.loadCareRev()) {
         if (this._dirty) {
           // 未送信の変更がある場合は自動pullしない（ユーザー判断に委ねる）
           this.updateStatusUI('競合');
           this.log('⚠️ クラウドに新しい更新あり。ローカルにも未送信の変更があります。手動で取得/保存を選択してください');
-        } else {
-          this.log('🔄 クラウドに新しい更新を検出 → 自動取得');
-          // 既に取得済みのデータを再利用してpullを行う
-          this.pullFromJson(json);
+        } else if (j.data) {
+          this.adopt(j.data, j.rev);
+          this.log(`🔄 自動取得完了（${DB.residents.length}名・rev ${j.rev}）`);
+          this.updateStatusUI('同期OK');
         }
       }
     } catch(e) { /* 通信エラーは無視 */ }
   },
-  // タイムスタンプチェック済みのレスポンスから DB を更新（pollIfNeeded 用）
-  pullFromJson(json) {
-    try {
-      if (!json.data) return;
-      const remote = JSON.parse(json.data);
-      if (!remote || typeof remote !== 'object') return;
-      const remoteOfficeValid = remote.office && typeof remote.office === 'object'
-                              && Object.keys(remote.office).length > 0;
-      const preservedOffice = remoteOfficeValid ? null : DB.office;
-      DB = { ...DB, ...remote };
-      if (preservedOffice) DB.office = preservedOffice;
-      if (!Array.isArray(DB.residents)) DB.residents = [];
-      saveLocalOnly();
-      this.config.lastSync = json.timestamp || Date.now();
-      this._remoteTs = this.config.lastSync;
-      this._dirty   = false;
-      this.save();
-      recalcAllEventUnits();
-      try { mergeCommonSchedule(); } catch(e) {}
-      populateResidentSelect();
-      renderAll();
-      this.log(`✅ 自動取得完了（${DB.residents.length}名・${new Date(this.config.lastSync).toLocaleString('ja-JP')}）`);
-      this.updateStatusUI('同期OK');
-    } catch(e) {
-      console.warn('pullFromJson エラー:', e);
-    }
-  },
 
   async testConnection() {
-    const err = this.validateEndpoint(this.config.endpoint);
-    if (err) { this.log('❌ ' + err); return; }
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return; }
     this.log('🔌 接続テスト中…');
     try {
-      const res = await fetch(this.config.endpoint, { method: 'GET', redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || '応答エラー');
-      this.log('✅ 接続OK：Apps Scriptが正常に応答しました');
+      const j = await this.gas({ action: 'ping' });
+      if (!j.ok) throw new Error(j.error || '応答エラー');
+      this.log('✅ 接続OK：統合GASが正常に応答しました' + (j.server ? '（' + j.server + '）' : ''));
     } catch(e) {
       this.log('❌ 接続失敗: ' + e.message + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
     }
@@ -1816,14 +1813,17 @@ function saveLocalOnly() {
 // 入力欄の内容を即座に SYNC.config へ反映＋localStorageへ保存
 function persistSyncInputs() {
   const url  = ($('#sync-endpoint').value || '').trim();
+  const tokEl = $('#sync-token');
+  const tok  = tokEl ? (tokEl.value || '').trim() : (SYNC.config.token || '');
   const auto = !!$('#sync-auto').checked;
-  const autoChanged = (SYNC.config.auto !== auto) || (SYNC.config.endpoint !== url);
+  const changed = (SYNC.config.auto !== auto) || (SYNC.config.endpoint !== url) || (SYNC.config.token !== tok);
   SYNC.config.endpoint = url;
+  SYNC.config.token    = tok;
   SYNC.config.auto     = auto;
   SYNC.save();
-  // ポーリング状態を更新
-  if (autoChanged) {
-    if (url && auto) SYNC.startPolling(); else SYNC.stopPolling();
+  // ポーリング状態を更新（ワースケ設定共有時も対象）
+  if (changed) {
+    if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
   }
   // 入力中のフィードバック表示
   const ind = $('#sync-save-indicator');
@@ -1841,6 +1841,7 @@ function onSyncInputChange() {
 
 function openSyncModal() {
   $('#sync-endpoint').value = SYNC.config.endpoint || '';
+  if ($('#sync-token')) $('#sync-token').value = SYNC.config.token || '';
   $('#sync-auto').checked   = !!SYNC.config.auto;
   $('#sync-log').textContent = SYNC.config.lastSync
     ? `最終同期: ${new Date(SYNC.config.lastSync).toLocaleString('ja-JP')}`
@@ -2030,7 +2031,7 @@ function removeResident(id) {
   if (!res) return;
   if (!confirm(`「${res.name}」を削除しますか？\n（この入居者の計画もすべて削除されます）`)) return;
   DB.residents = DB.residents.filter(r => r.id !== id);
-  if (DB.currentResidentId === id) DB.currentResidentId = DB.residents[0]?.id || null;
+  if (DB.currentResidentId === id) DB.currentResidentId = (DB.residents[0] || {}).id || null;
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   showToast('削除しました');
 }
@@ -2249,7 +2250,7 @@ function renderDayEvents(events, colEl, res, coverage) {
     const c = COLORS[colorKey] || COLORS['身体１'];
 
     // 限度額カバー量（表示合計と同じ基準：処遇改善加算＋同一建物減算 を除外）
-    const coveredUnits = coverage ? (coverage.get(ev.id) ?? null) : null;
+    const coveredUnits = coverage ? (function(){ const _v = coverage.get(ev.id); return _v === undefined ? null : _v; })() : null;
     const isOverLimit  = coveredUnits !== null && coveredUnits === 0;
     const evDispTotal  = res ? sumDisplayUnits(getUnitBreakdown(ev, res)) : 0;
     const isPartial    = coveredUnits !== null && coveredUnits > 0 && coveredUnits < evDispTotal;
@@ -2397,7 +2398,7 @@ function touchEv(e) {
 }
 
 function startMove(e, ev, blockEl) {
-  e.preventDefault?.();
+  if (e && e.preventDefault) e.preventDefault();
   const blockRect = blockEl.getBoundingClientRect();
   drag = {
     type: 'move',
@@ -2416,7 +2417,7 @@ function startMove(e, ev, blockEl) {
 }
 
 function startResize(e, ev, blockEl) {
-  e.preventDefault?.();
+  if (e && e.preventDefault) e.preventDefault();
   drag = {
     type: 'resize',
     ev,
@@ -2506,7 +2507,7 @@ function onDragEnd() {
   const res = currentResident();
 
   if (drag.type === 'move') {
-    drag.ghost?.remove();
+    if (drag.ghost) drag.ghost.remove();
     drag.blockEl.classList.remove('is-dragging');
     document.body.classList.remove('is-dragging-move');
     $$('.day-col').forEach(c => c.classList.remove('drop-target'));
@@ -2626,7 +2627,7 @@ function clearForm() {
 }
 
 function onServiceTypeChange() {
-  const val = $('input[name="serviceType"]:checked')?.value;
+  const val = ($('input[name="serviceType"]:checked')||{}).value;
   $('#category-row').style.display      = val === 'visit'   ? '' : 'none';
   $('#category-hint').style.display     = 'none';
   $('#time-row-visit').style.display    = val === 'visit'   ? '' : 'none';
@@ -2656,7 +2657,7 @@ function onCategoryChange(autoFill = true) {
 function autoFillEndTime() {
   const start = $('#f-start').value;
   if (!start) return;
-  const stype = $('input[name="serviceType"]:checked')?.value;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
   if (stype !== 'visit') return;
   const cat = $('#f-category').value;
   if (cat && CAT_INFO[cat]) {
@@ -2666,7 +2667,7 @@ function autoFillEndTime() {
 }
 
 function getFormTimes() {
-  const stype = $('input[name="serviceType"]:checked')?.value;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
   if (stype === 'daycare') {
     return { start: $('#f-dc-start').value, end: $('#f-dc-end').value };
   }
@@ -2675,7 +2676,7 @@ function getFormTimes() {
 
 function validateForm() {
   if ($('#f-dow').value === '') return '曜日を選択してください';
-  const stype = $('input[name="serviceType"]:checked')?.value;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
   if (!stype) return 'サービス種別を選択してください';
   if (stype === 'visit' && !$('#f-category').value) return 'サービス区分を選択してください';
   const { start: s, end: e } = getFormTimes();
@@ -2858,7 +2859,7 @@ function exportJSON() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `care_plan_${(res?.name || 'all').replace(/\s/g,'_')}.json`;
+  a.download = `care_plan_${((res && res.name) || 'all').replace(/\s/g,'_')}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   showToast('エクスポートしました');
@@ -3166,26 +3167,28 @@ requestAnimationFrame(() => {
   const gs = $('#grid-scroll');
   if (gs) gs.scrollTop = 6 * HOUR_PX; // 06:00 付近から表示
 });
-// 起動時: 同期設定があれば自動でクラウドから取得＋定期ポーリング開始（現場端末ガード時は取得しない）
-if (SYNC.config.endpoint && SYNC.config.auto && suGetDeviceRole() !== 'field') {
+// 起動時: 同期先（ワースケ設定 or 自前URL）があれば自動でクラウドから取得＋定期ポーリング開始
+// （現場端末ガード時は取得しない）
+if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   setTimeout(() => SYNC.pull().then(() => SYNC.startPolling()), 300);
-} else if (SYNC.config.endpoint) {
-  // URLは保存済みだが自動同期OFFの場合、ステータスバー表示のみ更新
+} else if (SYNC.hasTarget()) {
   SYNC.updateStatusUI('同期');
 }
 // タブ復帰時の自動チェック：他端末の更新を即時反映
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && SYNC.config.endpoint && SYNC.config.auto) {
+  if (!document.hidden && SYNC.hasTarget()) {
     SYNC.pollIfNeeded();
   }
 });
-// ページ離脱時：未送信変更があれば最後のpushを試みる（ベストエフォート）
+// ページ離脱時：未送信変更があれば最後のpushを試みる（ベストエフォート・統合GAS形式）
 window.addEventListener('beforeunload', () => {
-  if (SYNC._dirty && SYNC.config.endpoint && SYNC.config.auto) {
+  if (SYNC._dirty && SYNC.hasTarget()) {
     // beforeunload では sendBeacon を使用（非同期 fetch は中断されるため）
     try {
-      const payload = JSON.stringify({ data: JSON.stringify(DB) });
-      navigator.sendBeacon(SYNC.config.endpoint, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
+      const t = SYNC.target();
+      const payload = JSON.stringify({ action: 'put', key: 'care_schedule_v2',
+        rev: SYNC.loadCareRev(), data: DB, token: t.token });
+      navigator.sendBeacon(t.endpoint, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
     } catch(_) {}
   }
 });
