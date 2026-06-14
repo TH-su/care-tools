@@ -1,3 +1,9 @@
 # 排泄記録アプリとGASは TH-su/haiben-record で管理（auto-push.shが同期）
 haiben-record.html
 gas/
+
+# 個人情報保護：支援マスタ（実在入居者名を含む）は公開リポジトリに絶対に載せない
+# データはクラウド(GAS)経由で共有するため、ファイル公開は不要
+ws-master.json
+ws-master-*.json
+data/

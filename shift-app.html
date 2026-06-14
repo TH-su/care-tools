@@ -1,0 +1,4397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>シフト作成・管理</title>
+<style>
+/* シフト作成・管理アプリ */
+* { box-sizing: border-box; }
+:root {
+  --blue: #2563a8; --blue-d: #1a4a80; --red: #c0392b; --sat: #2e6fbe; --sun: #d23b3b;
+  --headbg: #d06a5e;
+  --g1: #f7f8fa; --g2: #eceef1; --g3: #d5d9de; --g4: #9aa1a9; --ink: #2b3138;
+  --warn: #e67e22; --ok: #27ae60; --hl: #fff3c4; --sel: #cfe3f7;
+}
+html, body { margin: 0; padding: 0; }
+body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+  color: var(--ink); background: var(--g1); font-size: 13px; }
+
+/* ── ツールバー ── */
+#toolbar { position: sticky; top: 0; z-index: 50; background: var(--blue); color: #fff;
+  padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#toolbar h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+#toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.12);
+  border-radius: 6px; padding: 2px; }
+#toolbar button { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;
+  background: rgba(255,255,255,.15); color: #fff; font-size: 12.5px; }
+#toolbar button:hover { background: rgba(255,255,255,.3); }
+#toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
+#toolbar #ymLabel { font-weight: 700; font-size: 15px; padding: 0 8px; min-width: 86px; text-align: center; }
+.tabs { display: flex; gap: 2px; }
+.tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
+#syncBadge { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 12px;
+  background: rgba(255,255,255,.15); cursor: pointer; white-space: nowrap; }
+#syncBadge.synced { background: #1e8a4c; }
+#syncBadge.dirty { background: #d68910; }
+#syncBadge.offline { background: #922b21; }
+#syncBadge.nosync { background: rgba(255,255,255,.15); }
+#syncBadge.syncing { background: #6c5ce7; }
+
+.layerbar { display: flex; gap: 2px; padding: 6px 10px 0; }
+.layerbar button { border: 1px solid var(--g3); border-bottom: none; background: var(--g2);
+  border-radius: 8px 8px 0 0; padding: 6px 16px; cursor: pointer; font-size: 12.5px; color: #555; }
+.layerbar button.on { background: #fff; font-weight: 700; color: var(--ink); }
+.layerbar .spacer { flex: 1; }
+.layerbar .hint { font-size: 11px; color: var(--g4); align-self: center; padding-right: 8px; }
+
+main { padding: 0 10px 60px; }
+.view { display: none; } .view.on { display: block; }
+
+/* ── グリッド ── */
+#gridWrap { overflow: auto; background: #fff; border: 1px solid var(--g3); max-height: calc(100vh - 150px); }
+table.sheet { border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+table.sheet th, table.sheet td { border-right: 1px solid #000; border-bottom: 1px solid #000;
+  padding: 2px 3px; text-align: center; white-space: nowrap; background: #fff; }
+table.sheet { border-left: 1px solid #000; border-top: 1px solid #000; }
+table.sheet thead th { position: sticky; background: var(--headbg); color: #fff; font-weight: 700; z-index: 20; }
+table.sheet thead tr:nth-child(1) th { top: 0; }
+table.sheet thead tr:nth-child(2) th { top: 25px; }
+table.sheet thead tr:nth-child(3) th { top: 50px; height: 24px; }
+thead th.sat { background: var(--sat) !important; color: #fff !important; }
+thead th.sun, thead th.hol { background: var(--sun) !important; color: #fff !important; }
+tr.staffline td { border-top: 2.5px solid #000; }
+.lastday { border-right: 3px double #000 !important; }
+/* 印刷範囲（職員行）と必要数・残数行の境目 */
+tfoot tr:first-child td { border-top: 3px double #000; }
+table.sheet .sticky1 { position: sticky; left: 0; z-index: 15; }
+table.sheet .sticky2 { position: sticky; z-index: 15; }
+table.sheet thead .sticky1, table.sheet thead .sticky2 { z-index: 25; }
+td.namecell { font-weight: 600; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; cursor: grab; background: #fbfcfe; }
+td.notecell { text-align: left; overflow: hidden; text-overflow: ellipsis;
+  font-size: 10.5px; color: #666; cursor: pointer; }
+td.divcell { font-size: 12.5px; color: #000; font-weight: 600; background: #fbfcfe; }
+td.daycell { height: 26px; cursor: cell; overflow: hidden; font-size: 13.5px; }
+td.daycell.long1, table.eqcols td.long1 { font-size: 11px; }
+td.daycell.long2, table.eqcols td.long2 { font-size: 9.5px; letter-spacing: -0.3px; }
+td.daycell.sel { background: var(--sel) !important; outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
+td.daycell.err { background: #fdd; }
+td.daycell.reqviol { box-shadow: inset 0 0 0 2px var(--red); }
+td.daycell.consviol { box-shadow: inset 0 0 0 2px var(--warn); }
+td.daycell.ot { font-weight: 700; color: #8e44ad; }
+td.sumcell { background: #f4f7fb; font-weight: 600; }
+tr.grouphead td { background: var(--blue-d); color: #fff; font-weight: 700; text-align: left;
+  padding: 3px 8px; font-size: 11.5px; }
+tr.subrow td { background: #fcfcfc; }
+tr.dragover td { border-top: 2px solid var(--blue); }
+tr.hiddenrow td { opacity: .45; }
+.hidebtn { color: var(--g4); cursor: pointer; font-weight: 700; padding: 0 2px; }
+.hidebtn:hover { color: var(--red); }
+.showbtn { color: var(--blue); cursor: pointer; font-size: 10px; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
+.offstats { margin-top: 10px; }
+tfoot td { background: var(--g2); font-weight: 600; position: sticky; z-index: 10; }
+tfoot input.need { width: 30px; text-align: center; border: 1px solid var(--g3); border-radius: 3px;
+  font-size: 11px; padding: 1px; }
+tfoot input.need.ovr { background: var(--hl); border-color: var(--warn); font-weight: 700; }
+tfoot input.monthneed { width: 44px; background: #e8f1fb; border-color: var(--blue); font-weight: 700; }
+td.remain-ok { color: var(--ok); } td.remain-zero { color: var(--g4); } td.remain-minus { color: #fff; background: var(--red) !important; }
+
+#metricsBar { display: flex; gap: 10px; flex-wrap: wrap; padding: 8px 2px; }
+.sumbox { background: #fff; border: 1px solid var(--g3); border-radius: 8px; padding: 6px 14px; }
+.sumbox .k { font-size: 10.5px; color: var(--g4); }
+.sumbox .v { font-size: 17px; font-weight: 700; }
+.sumbox.hl { border-color: var(--blue); }
+.sumbox.warn .v { color: var(--warn); }
+
+/* ── パレット ── */
+#palette { position: absolute; z-index: 100; background: #fff; border: 1px solid var(--g3);
+  border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 8px; display: none; max-width: 300px; }
+#palette .symbtn { display: inline-block; margin: 2px; padding: 5px 9px; border: 1px solid var(--g3);
+  border-radius: 6px; cursor: pointer; font-size: 12.5px; background: #fff; }
+#palette .symbtn:hover { border-color: var(--blue); background: var(--sel); }
+#palette .pal-section { font-size: 10px; color: var(--g4); margin: 4px 2px 2px; }
+#palette input { width: 100%; border: 1px solid var(--g3); border-radius: 5px; padding: 4px 6px; margin-top: 6px; font-size: 12.5px; }
+#palette .pal-actions { display: flex; gap: 4px; margin-top: 6px; }
+#palette .pal-actions button { flex: 1; border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 4px; cursor: pointer; font-size: 11.5px; }
+#palette .palcolors { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+#palette .colorsw { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--g3); cursor: pointer; display: inline-block; }
+#palette .colorsw:hover { outline: 2px solid var(--blue); }
+#palette .palcolors input[type=color] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--g3); border-radius: 4px; margin: 0; }
+#palette .palcolbtn { border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 11px; }
+
+/* ── 汎用 ── */
+.panel { background: #fff; border: 1px solid var(--g3); border-radius: 10px; padding: 14px; margin: 10px 0; }
+.panel h2 { font-size: 14px; margin: 0 0 10px; }
+.panel h3 { font-size: 12.5px; margin: 14px 0 6px; color: var(--blue-d); }
+button.act { border: 1px solid var(--blue); background: var(--blue); color: #fff; border-radius: 6px;
+  padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+button.act.ghost { background: #fff; color: var(--blue); }
+button.act.danger { background: #fff; color: var(--red); border-color: var(--red); }
+button.act:disabled { opacity: .5; cursor: default; }
+input[type=text], input[type=number], input[type=password], select, textarea {
+  border: 1px solid var(--g3); border-radius: 6px; padding: 5px 7px; font-size: 12.5px; font-family: inherit; }
+textarea.paste { width: 100%; height: 110px; }
+table.plain { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.plain th, table.plain td { border: 1px solid var(--g3); padding: 4px 6px; text-align: left; }
+table.plain th { background: var(--g2); }
+table.eqcols th, table.eqcols td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; }
+#reqGrid table.eqcols th, #reqGrid table.eqcols td { padding: 4px 1px; text-align: center; text-overflow: clip; }
+#reqGrid table.eqcols th:first-child, #reqGrid table.eqcols td:first-child { text-align: left; padding: 4px 6px; text-overflow: ellipsis; }
+table.plain input[type=text] { width: 90%; border: none; background: transparent; padding: 2px; }
+.muted { color: var(--g4); font-size: 11.5px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10.5px; background: var(--g2); margin: 0 2px; }
+.badge.new { background: #d5f5e3; color: #1e8449; }
+.badge.upd { background: #d6eaf8; color: #21618c; }
+.badge.ex { background: #fadbd8; color: #943126; }
+.flexrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.formgrid { display: grid; grid-template-columns: 130px 1fr; gap: 7px 10px; align-items: center; max-width: 640px; }
+.qualchk label, .symchk label { display: inline-block; margin-right: 10px; font-size: 12px; }
+
+/* ── ドロワー ── */
+#drawer { position: fixed; top: 0; right: -480px; width: 460px; height: 100%; background: #fff;
+  box-shadow: -4px 0 20px rgba(0,0,0,.2); z-index: 200; transition: right .2s; overflow-y: auto; padding: 16px; }
+#drawer.open { right: 0; }
+#overlay { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 150; display: none; }
+#overlay.on { display: block; }
+
+/* ── ダイアログ ── */
+dialog { border: none; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.3); padding: 18px; max-width: 480px; }
+dialog::backdrop { background: rgba(0,0,0,.3); }
+dialog h3 { margin-top: 0; }
+
+/* ── 印刷 ── */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  #toolbar, .layerbar, #metricsBar, tfoot, .noprint, #palette, .showbtn, .hidebtn, .pcol { display: none !important; }
+  tr.hiddenrow { display: none !important; }
+  body { background: #fff; }
+  main { padding: 0; }
+  #gridWrap { max-height: none; overflow: visible; border: none; }
+  /* A3横いっぱいに最大化・文字を大きく */
+  table.sheet { width: 100%; font-size: 13px; }
+  table.sheet th, table.sheet td { padding: 4px 2px; }
+  table.sheet thead tr:nth-child(3) th { height: auto; }
+  td.daycell { height: 26px; font-size: 13.5px; }
+  td.namecell { font-size: 13px; }
+  tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; overflow: visible; }
+  /* sticky解除（印刷時の見出し欠け対策） */
+  table.sheet thead th, .sticky1, .sticky2 { position: static !important; }
+  tr { page-break-inside: avoid; }
+  #printTitle { display: block !important; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+}
+#printTitle { display: none; }
+
+/* 印刷サイズ計測用: 印刷時と同じ寸法ルールを画面上で一時適用するためのクラス
+   （@media print のテーブル寸法ルールと必ず同期させること） */
+body.printsim .pcol, body.printsim .noprint, body.printsim tfoot,
+body.printsim #toolbar, body.printsim .layerbar, body.printsim #metricsBar,
+body.printsim .showbtn, body.printsim .hidebtn { display: none !important; }
+body.printsim tr.hiddenrow { display: none !important; }
+body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
+body.printsim table.sheet { font-size: 13px; }
+body.printsim table.sheet th, body.printsim table.sheet td { padding: 4px 2px; }
+body.printsim td.daycell { height: 26px; font-size: 13.5px; }
+body.printsim td.namecell { font-size: 13px; }
+body.printsim tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; }
+body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .sticky2 { position: static !important; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <h1>シフト作成・管理</h1>
+  <span class="ymnav">
+    <button id="ymPrev" title="前月">◀</button>
+    <span id="ymLabel">2026-06</span>
+    <button id="ymNext" title="翌月">▶</button>
+  </span>
+  <span class="tabs" id="viewTabs">
+    <button data-view="grid" class="on">シフト表</button>
+    <button data-view="requests">希望休</button>
+    <button data-view="official">行政提出</button>
+    <button data-view="master">マスタ</button>
+  </span>
+  <button id="btnUndo" title="元に戻す (Ctrl+Z)">↩</button>
+  <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)">↪</button>
+  <button id="btnHistory" title="変更履歴">履歴</button>
+  <button id="btnAuto" class="primary">⚡ 自動作成</button>
+  <button id="btnPrint">🖨 印刷</button>
+  <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
+  <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
+  <span id="syncBadge" class="nosync" title="クリックで今すぐ同期">同期未設定</span>
+</div>
+
+<div class="layerbar" id="layerBar">
+  <button data-layer="plan" class="on">予定</button>
+  <button data-layer="actual">実績</button>
+  <button data-layer="official">行政提出用</button>
+  <span class="spacer"></span>
+  <span class="hint" id="layerHint"></span>
+</div>
+
+<main>
+  <div id="printTitle"></div>
+
+  <div id="view-grid" class="view on">
+    <div id="gridWrap"></div>
+    <div id="metricsBar"></div>
+  </div>
+
+  <div id="view-requests" class="view">
+    <div class="panel">
+      <h2>希望休の取込（Googleフォーム回答のコピペ）</h2>
+      <p class="muted">フォーム回答シートで全体（ヘッダ行含む）を選択してコピーし、下に貼り付けてください。假屋姓は自動除外されます。</p>
+      <textarea id="reqPaste" class="paste" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
+      <div class="flexrow" style="margin-top:8px">
+        <button id="reqParse" class="act">解析する</button>
+        <span id="reqParseMsg" class="muted"></span>
+      </div>
+      <div id="reqPreview"></div>
+    </div>
+    <div class="panel">
+      <h2>登録済みの希望休（クリックで 空→希→有 を切替）</h2>
+      <div id="reqGrid"></div>
+      <div class="flexrow" style="margin-top:8px">
+        <button id="reqApply" class="act">シフト表（予定）へ反映する</button>
+        <span class="muted">反映先の空セルに「希」「有」を書き込みます（既入力セルは変更しません）</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-official" class="view">
+    <div class="panel noprint">
+      <h2>行政提出用（従業者の勤務体制及び勤務形態一覧表・様式1 転記用）</h2>
+      <div class="flexrow">
+        <label>対象レイヤ:
+          <select id="offLayer">
+            <option value="official">行政提出用</option>
+            <option value="actual">実績</option>
+            <option value="plan">予定</option>
+          </select>
+        </label>
+        <label>事業所:
+          <select id="offDivision">
+            <option value="施設">施設（ラウレアハレ）</option>
+            <option value="訪問">訪問（いずみ）</option>
+            <option value="通所">通所（せせらぎ）</option>
+          </select>
+        </label>
+        <button id="offCSV" class="act">CSVダウンロード（Excel用）</button>
+        <button id="offPrint" class="act ghost">印刷</button>
+      </div>
+    </div>
+    <div id="officialTable"></div>
+
+    <div class="panel noprint" id="freeePanel">
+      <h2>freee勤怠 スケジュールCSV出力</h2>
+      <div class="flexrow">
+        <label>対象レイヤ:
+          <select id="frLayer">
+            <option value="plan">予定</option>
+            <option value="actual">実績</option>
+          </select>
+        </label>
+        <button id="frCSV" class="act">freee用CSVダウンロード（Shift-JIS）</button>
+        <span class="muted" id="frInfo"></span>
+      </div>
+      <details style="margin-top:8px">
+        <summary>従業員コードの取込・編集（freeeの従業員一覧を貼り付け）</summary>
+        <textarea id="frPaste" rows="4" style="width:100%;margin:6px 0"
+          placeholder="freeeの従業員一覧の表（No. 所属 雇用区分 従業員コード 名前…）をコピーしてそのまま貼り付け"></textarea>
+        <button id="frPasteApply" class="act">貼り付け内容を取込</button>
+        <span class="muted" id="frPasteResult"></span>
+        <div id="frEmpList" style="margin-top:6px"></div>
+      </details>
+      <details style="margin-top:8px">
+        <summary>記号 → パターン／休暇名の対応（自動候補つき・編集可）</summary>
+        <div id="frMapList" style="margin-top:6px"></div>
+      </details>
+      <div class="muted" id="frWarn" style="margin-top:6px;white-space:pre-line"></div>
+    </div>
+  </div>
+
+  <div id="view-master" class="view">
+    <div class="layerbar" id="masterTabs">
+      <button data-mtab="staff" class="on">職員</button>
+      <button data-mtab="symbols">シフト記号</button>
+      <button data-mtab="import">職員一括取込</button>
+      <button data-mtab="settings">設定</button>
+    </div>
+    <div id="mtab-staff" class="view on">
+      <div class="panel">
+        <div class="flexrow">
+          <h2 style="margin:0">職員マスタ</h2>
+          <button id="staffAdd" class="act">＋ 職員を追加</button>
+          <span class="muted">行をドラッグで並べ替え／行クリックで編集</span>
+        </div>
+        <div id="staffTable"></div>
+      </div>
+    </div>
+    <div id="mtab-symbols" class="view">
+      <div class="panel">
+        <div class="flexrow">
+          <h2 style="margin:0">シフト記号マスタ</h2>
+          <button id="symAdd" class="act">＋ 記号を追加</button>
+          <span class="muted">範囲記号（9-12等）は登録不要・直接入力できます</span>
+        </div>
+        <div id="symTable"></div>
+      </div>
+    </div>
+    <div id="mtab-import" class="view">
+      <div class="panel">
+        <h2>職員一括取込（マスタシートのコピペ）</h2>
+        <p class="muted">スプレッドシートのマスタで「特徴・連絡・氏名・区分・資格」列を含む範囲を選択コピーし、貼り付けてください。ヘッダ行があれば列を自動判定します。再取込は氏名照合で差分更新します（アプリ側で編集した許可パターン等は保持）。</p>
+        <textarea id="staffPaste" class="paste"></textarea>
+        <div class="flexrow" style="margin-top:8px">
+          <button id="staffParse" class="act">解析する</button>
+          <span id="staffParseMsg" class="muted"></span>
+        </div>
+        <div id="staffImportPreview"></div>
+      </div>
+    </div>
+    <div id="mtab-settings" class="view">
+      <div class="panel">
+        <h2>計算・表示設定</h2>
+        <div id="settingsForm"></div>
+      </div>
+      <div class="panel">
+        <h2>同期設定（複数端末共有）</h2>
+        <p class="muted">設定方法は docs/gas-setup.md 参照。URLとトークンは他人に共有しないでください。</p>
+        <div class="formgrid">
+          <label>GAS WebアプリURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
+          <label>トークン</label><input type="password" id="syncToken" placeholder="64桁の英数字">
+        </div>
+        <div class="flexrow" style="margin-top:8px">
+          <button id="syncSave" class="act">保存</button>
+          <button id="syncTest" class="act ghost">接続テスト</button>
+          <button id="syncNow" class="act ghost">今すぐ同期</button>
+          <span id="syncMsg" class="muted"></span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>バックアップ</h2>
+        <div class="flexrow">
+          <button id="backupExport" class="act ghost">JSONエクスポート</button>
+          <label class="act ghost" style="display:inline-block">JSONインポート<input type="file" id="backupImport" accept=".json" style="display:none"></label>
+          <span id="backupMsg" class="muted"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="palette"></div>
+<div id="overlay"></div>
+<div id="drawer"></div>
+
+<dialog id="dlgConfirm">
+  <h3 id="dlgConfirmTitle"></h3>
+  <p id="dlgConfirmMsg" style="white-space:pre-wrap"></p>
+  <div class="flexrow" style="justify-content:flex-end">
+    <button id="dlgConfirmNo" class="act ghost">キャンセル</button>
+    <button id="dlgConfirmYes" class="act">OK</button>
+  </div>
+</dialog>
+
+<dialog id="dlgConflict">
+  <h3>同期の競合</h3>
+  <p id="dlgConflictMsg" style="white-space:pre-wrap"></p>
+  <div class="flexrow" style="justify-content:flex-end">
+    <button id="dlgConflictServer" class="act ghost">サーバ版を取得</button>
+    <button id="dlgConflictLocal" class="act">自分の編集で上書き</button>
+  </div>
+</dialog>
+<script>
+/* ===== src/logic/symbols.js ===== */
+/* symbols.js — シフト記号の正規化・パース（純粋関数・依存ゼロ）
+ * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
+(function () {
+  'use strict';
+
+  /* 全角→半角・揺れ正規化 */
+  function normalizeCell(raw) {
+    if (raw === null || raw === undefined) return '';
+    var s = String(raw);
+    var FW = '０１２３４５６７８９';
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      var fi = FW.indexOf(c);
+      if (fi >= 0) { out += String(fi); continue; }
+      if (c === '（') { out += '('; continue; }
+      if (c === '）') { out += ')'; continue; }
+      if (c === '：') { out += ':'; continue; }
+      if (c === '～' || c === '〜' || c === '−' || c === 'ー' || c === '－' || c === '―') { out += '-'; continue; }
+      if (c === '　' || c === ' ' || c === '\t') { continue; }
+      out += c;
+    }
+    return out;
+  }
+
+  /* 既定の記号マスタ（マスタ画面から動的に追加・編集される） */
+  var DEFAULT_SYMBOLS = [
+    { code: '早',  label: '早番(7:00-16:00)',   type: 'work', start: '7:00',  end: '16:00', cat: 'early', color: '#e8f4fd' },
+    { code: '日1', label: '日勤1(8:00-17:00)',  type: 'work', start: '8:00',  end: '17:00', cat: 'mid',   color: '#f2f8ee' },
+    { code: '日2', label: '日勤2(8:30-17:30)',  type: 'work', start: '8:30',  end: '17:30', cat: 'mid',   color: '#f2f8ee' },
+    { code: '日3', label: '日勤3(9:00-18:00)',  type: 'work', start: '9:00',  end: '18:00', cat: 'mid',   color: '#f2f8ee' },
+    { code: '遅',  label: '遅番(12:00-21:00)',  type: 'work', start: '12:00', end: '21:00', cat: 'late',  color: '#fdf3e6' },
+    { code: '(21', label: '夜勤入り21時',  type: 'nightIn',  start: '21:00', pairEnd: '7:00',  cat: 'night', color: '#ece9f7' },
+    { code: '(22', label: '夜勤入り22時',  type: 'nightIn',  start: '22:00', pairEnd: '8:00',  cat: 'night', color: '#ece9f7' },
+    { code: '7)',  label: '夜勤上がり7時', type: 'nightOut', end: '7:00',  cat: 'night', color: '#ece9f7' },
+    { code: '8)',  label: '夜勤上がり8時', type: 'nightOut', end: '8:00',  cat: 'night', color: '#ece9f7' },
+    { code: '休',  label: '公休',   type: 'off',       cat: 'off', color: '#f5f5f5' },
+    { code: '希',  label: '希望休', type: 'off',       cat: 'off', sub: '希望休', color: '#fdeaea' },
+    { code: '公',  label: '公休',   type: 'publicOff', cat: 'off', color: '#f5f5f5' },
+    { code: '有',  label: '有給',   type: 'paidOff',   cat: 'off', fixedWork: 8, color: '#fff7d6' },
+    { code: '明',  label: '夜勤明け', type: 'off',     cat: 'off', color: '#f0f0f0' }
+  ];
+
+  /* 別名（取込データの揺れ吸収） */
+  var ALIASES = { '希休': '希', '有休': '有', '公休': '公', '希望休': '希', '有給': '有' };
+
+  function timeToMin(t) {
+    if (t === null || t === undefined) return null;
+    var s = normalizeCell(String(t));
+    var m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    if (h > 30 || mm > 59) return null;
+    return h * 60 + mm;
+  }
+
+  function minToTime(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    return h + (m ? ':' + (m < 10 ? '0' + m : m) : ':00');
+  }
+
+  function findSymbol(symbols, codeNorm) {
+    for (var i = 0; i < symbols.length; i++) {
+      if (symbols[i].disabled) continue;
+      if (normalizeCell(symbols[i].code) === codeNorm) return symbols[i];
+    }
+    return null;
+  }
+
+  var RE_RANGE = /^(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)$/;
+  var RE_NIGHT_OUT = /^(\d{1,2}(?::\d{2})?)\)/;          // 先頭の「7)」
+  var RE_NIGHT_IN = /\((\d{1,2}(?::\d{2})?)$/;            // 末尾の「(21」
+
+  /* セル文字列 → パーツ配列
+   * 返値: { raw, norm, parts: [ {kind, ...} ], error }
+   *  kind: 'work'{startMin,endMin} / 'nightIn'{startMin,pairEndMin} /
+   *        'nightOut'{endMin} / 'off' / 'paidOff'{fixedWork} / 'publicOff'
+   */
+  function parseCell(raw, symbols) {
+    if (!symbols) symbols = DEFAULT_SYMBOLS;
+    var norm = normalizeCell(raw);
+    var res = { raw: raw, norm: norm, parts: [], error: null };
+    if (norm === '') return res;
+    if (ALIASES[norm]) norm = ALIASES[norm];
+
+    /* 1) 記号マスタ完全一致 */
+    var sym = findSymbol(symbols, norm);
+    if (sym) { res.parts.push(symbolToPart(sym)); return res; }
+
+    /* 2) 範囲記号 9-12 / 7-8:30 等 */
+    var m = norm.match(RE_RANGE);
+    if (m) {
+      var st = timeToMin(m[1]), en = timeToMin(m[2]);
+      if (st !== null && en !== null && en > st && en <= 24 * 60) {
+        res.parts.push({ kind: 'work', startMin: st, endMin: en, cat: rangeCat(st, en) });
+        return res;
+      }
+      res.error = '時刻範囲を解釈できません: ' + norm;
+      return res;
+    }
+
+    /* 3) 夜勤複合 8)(22 ・単独 7) ・ (21 */
+    var rest = norm;
+    var mo = rest.match(RE_NIGHT_OUT);
+    if (mo) {
+      var outSym = findSymbol(symbols, mo[1] + ')');
+      var endMin = timeToMin(mo[1]);
+      res.parts.push({ kind: 'nightOut', endMin: endMin,
+        pairKnown: !!outSym });
+      rest = rest.slice(mo[0].length);
+    }
+    if (rest !== '') {
+      var mi = rest.match(RE_NIGHT_IN);
+      if (mi && rest.charAt(0) === '(') {
+        var inSym = findSymbol(symbols, '(' + mi[1]);
+        var stMin = timeToMin(mi[1]);
+        var part = { kind: 'nightIn', startMin: stMin,
+          pairEndMin: inSym && inSym.pairEnd ? timeToMin(inSym.pairEnd) : null };
+        res.parts.push(part);
+        rest = '';
+      } else if (rest.charAt(0) === '(') {
+        /* 「(有」のような夜枠の代替記号 */
+        var alt = rest.slice(1);
+        if (ALIASES[alt]) alt = ALIASES[alt];
+        var altSym = findSymbol(symbols, alt);
+        if (altSym && altSym.type !== 'work') {
+          res.parts.push(symbolToPart(altSym));
+          rest = '';
+        }
+      }
+    }
+    if (res.parts.length === 0) {
+      res.error = '解釈できない記号: ' + norm;
+    } else if (rest !== '') {
+      res.error = '一部を解釈できません: ' + norm;
+    }
+    return res;
+  }
+
+  function symbolToPart(sym) {
+    if (sym.type === 'work') {
+      return { kind: 'work', startMin: timeToMin(sym.start), endMin: timeToMin(sym.end), cat: sym.cat || 'mid', code: sym.code };
+    }
+    if (sym.type === 'nightIn') {
+      return { kind: 'nightIn', startMin: timeToMin(sym.start), pairEndMin: timeToMin(sym.pairEnd), code: sym.code };
+    }
+    if (sym.type === 'nightOut') {
+      return { kind: 'nightOut', endMin: timeToMin(sym.end), pairKnown: true, code: sym.code };
+    }
+    if (sym.type === 'paidOff') {
+      return { kind: 'paidOff', fixedWork: (typeof sym.fixedWork === 'number' ? sym.fixedWork : 8), code: sym.code };
+    }
+    if (sym.type === 'publicOff') return { kind: 'publicOff', code: sym.code };
+    return { kind: 'off', code: sym.code, sub: sym.sub || null };
+  }
+
+  /* 範囲記号の早遅分類（残数カウント用）: 開始7:30以前=早系 / 開始12:00以降かつ終了20:00以降=遅系 */
+  function rangeCat(startMin, endMin) {
+    if (startMin <= 450) return 'early';
+    if (startMin >= 720 && endMin >= 1200) return 'late';
+    return 'mid';
+  }
+
+  var api = {
+    normalizeCell: normalizeCell,
+    timeToMin: timeToMin,
+    minToTime: minToTime,
+    parseCell: parseCell,
+    rangeCat: rangeCat,
+    DEFAULT_SYMBOLS: DEFAULT_SYMBOLS,
+    ALIASES: ALIASES
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftSymbols = api;
+})();
+/* ===== src/logic/timecalc.js ===== */
+/* timecalc.js — 月間の実働計算
+ * 休憩控除・夜勤ペア・残業判定・区分別集計・区分重複時間の控除・夜勤休日×2 */
+(function () {
+  'use strict';
+  var Sym = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./symbols.js') : window.ShiftSymbols;
+
+  var DEFAULT_SETTINGS = {
+    breakThresholdH: 6,   // 拘束がこの時間以上で休憩控除（6 or 7）
+    breakH: 1,            // 通常勤務の休憩時間
+    nightBreakH: 2,       // 夜勤の休憩時間
+    paidLeaveCountsAsWork: true, // 有給を実働時間に算入するか
+    fteBaseHours: 160     // 常勤換算の分母（4週）
+  };
+
+  function fillSettings(s) {
+    var out = {};
+    for (var k in DEFAULT_SETTINGS) {
+      out[k] = (s && typeof s[k] === 'number') ? s[k] : DEFAULT_SETTINGS[k];
+    }
+    if (s && typeof s.paidLeaveCountsAsWork === 'boolean') out.paidLeaveCountsAsWork = s.paidLeaveCountsAsWork;
+    return out;
+  }
+
+  /* 範囲勤務の実働分: 拘束 - 休憩 */
+  function workMinutes(boundMin, settings) {
+    if (boundMin <= 0) return 0;
+    var br = boundMin >= settings.breakThresholdH * 60 ? settings.breakH * 60 : 0;
+    return boundMin - br;
+  }
+
+  /* 区間 [s,e] と区間リストの重なり合計（分） */
+  function overlapMinutes(start, end, intervals) {
+    var total = 0;
+    for (var i = 0; i < intervals.length; i++) {
+      var s = Math.max(start, intervals[i][0]);
+      var e = Math.min(end, intervals[i][1]);
+      if (e > s) total += e - s;
+    }
+    return total;
+  }
+
+  /* 1職員・1ヶ月分の計算
+   * rows: [ { division, cells: {day:str}, isMain } ]（シートの区分行に相当）
+   * opts.offDayMultiplier: 夜勤専従=2（夜勤の「休」は2日分の休みとして集計）
+   * メイン行と他区分行の勤務時間が同日で重複する場合、重複分はメイン行から控除する
+   * （例: 訪問「早」7-16 と 通所 9-12 → 通所3h・訪問は 9h-休憩1h-重複3h=5h）
+   */
+  function computeStaffMonth(opts) {
+    var settings = fillSettings(opts.settings);
+    var symbols = opts.symbols || Sym.DEFAULT_SYMBOLS;
+    var days = opts.days;
+    var rows = opts.rows || [];
+    var nightSplit = opts.nightSplit || null;
+    var offMult = opts.offDayMultiplier || 1;
+    var warnings = [];
+    var perDay = {};
+    var d;
+    for (d = 1; d <= days; d++) {
+      perDay[d] = { workMin: 0, divMin: {}, cats: [], overtimeMin: 0, attended: false, off: false, paid: false, warnings: [] };
+    }
+
+    function addDiv(day, division, min, isNight) {
+      if (min <= 0) return;
+      var pd = perDay[day];
+      pd.workMin += min;
+      if (isNight && nightSplit) {
+        for (var dv in nightSplit) {
+          var portion = Math.round(min * nightSplit[dv]);
+          pd.divMin[dv] = (pd.divMin[dv] || 0) + portion;
+        }
+      } else {
+        pd.divMin[division] = (pd.divMin[division] || 0) + min;
+      }
+    }
+
+    /* 全行を先にパース */
+    var parsedRows = [];
+    for (var r = 0; r < rows.length; r++) {
+      var parsed = {};
+      for (d = 1; d <= days; d++) {
+        var raw = rows[r].cells ? rows[r].cells[String(d)] : null;
+        if (raw === undefined || raw === null || String(raw) === '') { parsed[d] = null; continue; }
+        var p = Sym.parseCell(raw, symbols);
+        parsed[d] = p;
+        if (p.error) {
+          perDay[d].warnings.push(p.error);
+          warnings.push({ day: d, msg: p.error });
+        }
+      }
+      parsedRows.push({ row: rows[r], parsed: parsed });
+    }
+
+    for (d = 1; d <= days; d++) {
+      /* 他区分行（非メイン）の勤務区間を収集（重複控除用） */
+      var subIntervals = [];
+      for (var r1 = 0; r1 < parsedRows.length; r1++) {
+        if (parsedRows[r1].row.isMain) continue;
+        var cell1 = parsedRows[r1].parsed[d];
+        if (!cell1) continue;
+        for (var i1 = 0; i1 < cell1.parts.length; i1++) {
+          var pt = cell1.parts[i1];
+          if (pt.kind === 'work') subIntervals.push([pt.startMin, pt.endMin]);
+        }
+      }
+
+      for (var r2 = 0; r2 < parsedRows.length; r2++) {
+        var row = parsedRows[r2].row;
+        var division = row.division;
+        var cell = parsedRows[r2].parsed[d];
+        if (!cell) continue;
+        for (var i = 0; i < cell.parts.length; i++) {
+          var part = cell.parts[i];
+          if (part.kind === 'work') {
+            perDay[d].attended = true;
+            if (part.cat) perDay[d].cats.push(part.cat);
+            var bound = part.endMin - part.startMin;
+            var work = workMinutes(bound, settings);
+            if (row.isMain && subIntervals.length) {
+              /* 同日の他区分勤務と重複する時間はメイン区分から控除 */
+              work -= overlapMinutes(part.startMin, part.endMin, subIntervals);
+              if (work < 0) work = 0;
+            }
+            addDiv(d, division, work, false);
+          } else if (part.kind === 'nightIn') {
+            perDay[d].attended = true;
+            perDay[d].cats.push('night');
+            var endMin = null, paired = false;
+            var next = (d < days) ? parsedRows[r2].parsed[d + 1] : null;
+            if (next) {
+              for (var j = 0; j < next.parts.length; j++) {
+                if (next.parts[j].kind === 'nightOut') { endMin = next.parts[j].endMin; paired = true; break; }
+              }
+            }
+            if (endMin === null) {
+              endMin = part.pairEndMin;
+              if (d < days) {
+                var w1 = (d + 1) + '日に夜勤上がりが未入力（標準ペアで仮計算）';
+                perDay[d].warnings.push(w1);
+                warnings.push({ day: d, msg: w1 });
+              }
+              if (endMin === null) endMin = 0;
+            }
+            var nBound = (1440 - part.startMin) + endMin;
+            var nWork = nBound - settings.nightBreakH * 60;
+            if (nWork < 0) nWork = 0;
+            if (part.pairEndMin !== null && paired && endMin > part.pairEndMin) {
+              perDay[d].overtimeMin += (endMin - part.pairEndMin);
+            }
+            addDiv(d, division, nWork, true);
+          } else if (part.kind === 'nightOut') {
+            perDay[d].attended = true;
+            if (d > 1) {
+              var prev = parsedRows[r2].parsed[d - 1];
+              var hasIn = false;
+              if (prev) {
+                for (var k2 = 0; k2 < prev.parts.length; k2++) {
+                  if (prev.parts[k2].kind === 'nightIn') { hasIn = true; break; }
+                }
+              }
+              if (!hasIn) {
+                var w2 = '前日に夜勤入りが無い上がり記号';
+                perDay[d].warnings.push(w2);
+                warnings.push({ day: d, msg: w2 });
+              }
+            }
+          } else if (part.kind === 'paidOff') {
+            perDay[d].paid = true;
+            if (settings.paidLeaveCountsAsWork) {
+              addDiv(d, division, part.fixedWork * 60, false);
+            }
+          } else if (part.kind === 'off' || part.kind === 'publicOff') {
+            perDay[d].off = true;
+          }
+        }
+      }
+    }
+
+    /* 集計 */
+    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {} };
+    for (var d3 = 1; d3 <= days; d3++) {
+      var pd = perDay[d3];
+      totals.workMin += pd.workMin;
+      totals.overtimeMin += pd.overtimeMin;
+      if (pd.overtimeMin > 0) totals.overtimeCount++;
+      if (pd.attended) totals.attendDays++;
+      else if (pd.off) totals.offDays += offMult; /* 夜勤専従の休=2日分 */
+      if (pd.paid) totals.paidDays++;
+      for (var dv2 in pd.divMin) {
+        totals.divMin[dv2] = (totals.divMin[dv2] || 0) + pd.divMin[dv2];
+        if (d3 <= 28) totals.divMin28[dv2] = (totals.divMin28[dv2] || 0) + pd.divMin[dv2];
+      }
+      if (d3 <= 28) totals.workMin28 += pd.workMin;
+    }
+    /* 夜勤専従: 出勤カウントが特殊なため「月の日数 − 休日数」を出勤として扱う
+     * （未入力の月に適用すると全日出勤になるため、何らかの入力がある場合のみ） */
+    if (offMult > 1 && (totals.attendDays > 0 || totals.offDays > 0)) {
+      totals.attendDays = days - totals.offDays;
+    }
+    return { perDay: perDay, totals: totals, warnings: warnings };
+  }
+
+  var api = {
+    DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    fillSettings: fillSettings,
+    workMinutes: workMinutes,
+    overlapMinutes: overlapMinutes,
+    computeStaffMonth: computeStaffMonth
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftTimecalc = api;
+})();
+/* ===== src/logic/aggregate.js ===== */
+/* aggregate.js — 全体集計（事業所別の資格割合・常勤換算・早遅カウント） */
+(function () {
+  'use strict';
+  var TC = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./timecalc.js') : window.ShiftTimecalc;
+
+  function hasQual(staff, q) {
+    var qs = staff.qualifications || [];
+    for (var i = 0; i < qs.length; i++) { if (qs[i] === q) return true; }
+    return false;
+  }
+
+  /* 指定区分の実働に占める資格者割合（%）
+   * quals: いずれかの資格を持てば分子に算入（例: ['介護福祉士'] / ['介護福祉士','実務者研修']） */
+  function qualPctByDivision(staffList, monthResults, division, quals) {
+    var den = 0, num = 0;
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false || st.countInHeadcount === false) continue;
+      var min = res.totals.divMin[division] || 0;
+      if (min <= 0) continue;
+      den += min;
+      for (var q = 0; q < quals.length; q++) {
+        if (hasQual(st, quals[q])) { num += min; break; }
+      }
+    }
+    return den > 0 ? Math.round(num / den * 1000) / 10 : 0;
+  }
+
+  /* 職員配列 + 各人の computeStaffMonth 結果 → 月間指標
+   * 介護福祉士割合は訪問介護（特定事業所加算の人材要件）の実働ベースで算出 */
+  function computeMetrics(staffList, monthResults, settings) {
+    var s = TC.fillSettings(settings);
+    var totalMin = 0;
+    var divMin28 = {};
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false) continue;
+      if (st.countInHeadcount === false) continue;
+      totalMin += res.totals.workMin;
+      for (var dv in res.totals.divMin28) {
+        divMin28[dv] = (divMin28[dv] || 0) + res.totals.divMin28[dv];
+      }
+    }
+    var fte = {};
+    for (var dv2 in divMin28) {
+      fte[dv2] = Math.round(divMin28[dv2] / 60 / s.fteBaseHours * 100) / 100;
+    }
+    return {
+      kaifukuPctVisit: qualPctByDivision(staffList, monthResults, '訪問', ['介護福祉士']),
+      kaifukuJitsumuPctVisit: qualPctByDivision(staffList, monthResults, '訪問', ['介護福祉士', '実務者研修']),
+      totalHours: Math.round(totalMin / 60 * 100) / 100,
+      fteByDivision: fte
+    };
+  }
+
+  /* 日別の早番・遅番割当数 { day: {early:n, late:n, night:n} } */
+  function countCats(staffList, monthResults, days) {
+    var out = {};
+    for (var d = 1; d <= days; d++) out[d] = { early: 0, late: 0, night: 0, mid: 0 };
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      if (st.active === false || st.countInHeadcount === false) continue;
+      var res = monthResults[st.id];
+      if (!res) continue;
+      for (var d2 = 1; d2 <= days; d2++) {
+        var cats = res.perDay[d2] ? res.perDay[d2].cats : [];
+        var seen = {};
+        for (var j = 0; j < cats.length; j++) {
+          var c = cats[j];
+          if (seen[c]) continue;
+          seen[c] = true;
+          if (out[d2][c] !== undefined) out[d2][c]++;
+        }
+      }
+    }
+    return out;
+  }
+
+  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftAggregate = api;
+})();
+/* ===== src/logic/importers.js ===== */
+/* importers.js — 希望休TSV取込・職員マスタTSV取込（コピペ方式） */
+(function () {
+  'use strict';
+
+  /* 氏名正規化: 全半角スペース除去 */
+  function normalizeName(name) {
+    if (!name) return '';
+    return String(name).replace(/[\s　]+/g, '');
+  }
+
+  var EXCLUDE_SURNAMES = ['假屋']; // Googleフォームのダミー回答
+
+  function isExcludedName(name) {
+    var n = normalizeName(name);
+    for (var i = 0; i < EXCLUDE_SURNAMES.length; i++) {
+      if (n.indexOf(EXCLUDE_SURNAMES[i]) === 0) return true;
+    }
+    return false;
+  }
+
+  function splitTSV(text) {
+    var lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    var rows = [];
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i] === '') continue;
+      rows.push(lines[i].split('\t'));
+    }
+    return rows;
+  }
+
+  /* 希望休フォーム回答の取込
+   * 想定列: タイムスタンプ | 氏名 | 1日 | 2日 | ... | 31日（ヘッダ行は[N日]表記を自動検出）
+   * 同一人物の複数回答は最新タイムスタンプを採用
+   * 返値: { entries: {正規化名: {day: '希'|'有'}}, matched:[], unmatched:[], excluded:[] }
+   */
+  function parseRequestTSV(text, staffList) {
+    var rows = splitTSV(text);
+    var result = { entries: {}, matched: [], unmatched: [], excluded: [], errors: [] };
+    if (rows.length === 0) { result.errors.push('データがありません'); return result; }
+
+    /* ヘッダ行の判定: [N日] または タイムスタンプ を含む行 */
+    var dayCols = null; /* {colIndex: dayNumber} */
+    var startRow = 0;
+    var header = rows[0];
+    var headerLooks = false;
+    for (var c = 0; c < header.length; c++) {
+      if (/\[\s*(\d{1,2})\s*日\s*\]/.test(header[c]) || header[c].indexOf('タイムスタンプ') >= 0) { headerLooks = true; break; }
+    }
+    if (headerLooks) {
+      dayCols = {};
+      for (var c2 = 0; c2 < header.length; c2++) {
+        var m = header[c2].match(/\[\s*(\d{1,2})\s*日\s*\]/);
+        if (m) dayCols[c2] = parseInt(m[1], 10);
+      }
+      startRow = 1;
+    }
+
+    var staffByNorm = {};
+    for (var i = 0; i < (staffList || []).length; i++) {
+      staffByNorm[normalizeName(staffList[i].name)] = staffList[i];
+    }
+
+    var latest = {}; /* 正規化名 → {ts, days} */
+    for (var r = startRow; r < rows.length; r++) {
+      var row = rows[r];
+      if (row.length < 3) continue;
+      var ts = row[0];
+      var name = row[1];
+      /* 氏名らしき列を探す（2列目が空なら3列目） */
+      if (normalizeName(name) === '' && row.length > 2) name = row[2];
+      var norm = normalizeName(name);
+      if (norm === '') continue;
+      if (isExcludedName(norm)) {
+        if (result.excluded.indexOf(name) < 0) result.excluded.push(name);
+        continue;
+      }
+      var days = {};
+      if (dayCols) {
+        for (var c3 in dayCols) {
+          var v = row[c3];
+          if (!v) continue;
+          v = String(v);
+          if (v.indexOf('有') >= 0) days[dayCols[c3]] = '有';
+          else if (v.indexOf('希') >= 0 || v.indexOf('休') >= 0 || v.indexOf('×') >= 0) days[dayCols[c3]] = '希';
+        }
+      } else {
+        /* ヘッダ無し: 3列目以降を1日,2日…とみなす */
+        for (var c4 = 2; c4 < row.length && c4 - 1 <= 31; c4++) {
+          var v2 = row[c4];
+          if (!v2) continue;
+          v2 = String(v2);
+          if (v2.indexOf('有') >= 0) days[c4 - 1] = '有';
+          else if (v2.indexOf('希') >= 0 || v2.indexOf('休') >= 0 || v2.indexOf('×') >= 0) days[c4 - 1] = '希';
+        }
+      }
+      if (!latest[norm] || String(ts) >= String(latest[norm].ts)) {
+        latest[norm] = { ts: ts, days: days, rawName: name };
+      }
+    }
+
+    for (var nm in latest) {
+      result.entries[nm] = latest[nm].days;
+      if (staffByNorm[nm]) {
+        if (result.matched.indexOf(latest[nm].rawName) < 0) result.matched.push(latest[nm].rawName);
+      } else {
+        if (result.unmatched.indexOf(latest[nm].rawName) < 0) result.unmatched.push(latest[nm].rawName);
+      }
+    }
+    return result;
+  }
+
+  /* 職員マスタの取込（マスタシート範囲のコピペ）
+   * columnMap: {name, division, note, qualifications:{資格名: col}} 省略時は自動推定
+   * 返値: {staff: [...], excluded: [...], errors: [...]} （id・order等は呼出側で付与）
+   */
+  var QUAL_NAMES = ['初任者研修', '実務者研修', '介護福祉士', '看護師', '准看護師'];
+
+  function guessStaffColumns(rows) {
+    /* ヘッダ行から推定。なければ「特徴|連絡|氏名|区分」のシート並びを既定とする */
+    var map = { name: 2, division: 3, note: 0, quals: null, headerRows: 0 };
+    if (rows.length === 0) return map;
+    var header = rows[0];
+    var found = false;
+    for (var c = 0; c < header.length; c++) {
+      var h = String(header[c]);
+      if (h.indexOf('氏名') >= 0 || h.indexOf('名前') >= 0) { map.name = c; found = true; }
+      else if (h.indexOf('区分') >= 0) { map.division = c; found = true; }
+      else if (h.indexOf('特徴') >= 0 || h.indexOf('メモ') >= 0 || h.indexOf('条件') >= 0) { map.note = c; found = true; }
+    }
+    if (found) {
+      map.headerRows = 1;
+      map.quals = {};
+      for (var c2 = 0; c2 < header.length; c2++) {
+        for (var q = 0; q < QUAL_NAMES.length; q++) {
+          if (String(header[c2]).indexOf(QUAL_NAMES[q]) >= 0) map.quals[QUAL_NAMES[q]] = c2;
+        }
+      }
+    }
+    return map;
+  }
+
+  function parseStaffTSV(text, columnMap) {
+    var rows = splitTSV(text);
+    var map = columnMap || guessStaffColumns(rows);
+    var result = { staff: [], excluded: [], errors: [] };
+    var NAME_RE = /^[一-龥々ぁ-んァ-ヶa-zA-Z]{1,10}[\s　]?[一-龥々ぁ-んァ-ヶa-zA-Z]{0,10}$/;
+    for (var r = map.headerRows || 0; r < rows.length; r++) {
+      var row = rows[r];
+      var name = row[map.name] ? String(row[map.name]).trim() : '';
+      if (name === '') continue; /* 区分サブ行（氏名なし）はスキップ */
+      if (!NAME_RE.test(name)) continue;
+      if (isExcludedName(name)) { result.excluded.push(name); continue; }
+      var division = row[map.division] ? String(row[map.division]).trim() : '';
+      if (['施設', '訪問', '通所'].indexOf(division) < 0) division = '施設';
+      var quals = [];
+      if (map.quals) {
+        for (var q in map.quals) {
+          var v = row[map.quals[q]];
+          if (v && String(v).indexOf('有') >= 0) quals.push(q);
+        }
+      }
+      result.staff.push({
+        name: name,
+        normName: normalizeName(name),
+        mainDivision: division,
+        note: row[map.note] ? String(row[map.note]).trim() : '',
+        qualifications: quals
+      });
+    }
+    if (result.staff.length === 0) result.errors.push('職員行を検出できませんでした。列の対応を確認してください。');
+    return result;
+  }
+
+  var api = {
+    normalizeName: normalizeName,
+    isExcludedName: isExcludedName,
+    splitTSV: splitTSV,
+    parseRequestTSV: parseRequestTSV,
+    parseStaffTSV: parseStaffTSV,
+    guessStaffColumns: guessStaffColumns,
+    QUAL_NAMES: QUAL_NAMES
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftImporters = api;
+})();
+/* ===== src/logic/autoassign.js ===== */
+/* autoassign.js — シフト自動作成（決定的: 乱数不使用。同じ入力→同じ提案）
+ * Phase0 夜勤専従サイクル → Phase1 希望休 → Phase2 貪欲割当 → Phase3 休埋め → Phase4 修復 → Phase5 検証 */
+(function () {
+  'use strict';
+  var Sym = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./symbols.js') : window.ShiftSymbols;
+
+  /* 夜勤専従の6日サイクル（実シート準拠: 4連続入り→上がりのみ→休） */
+  var NIGHT_CYCLE = ['(22', '8)(22', '8)(21', '7)(21', '7)', '休'];
+
+  function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
+
+  function autoAssign(opts) {
+    var days = opts.days;
+    var staff = opts.staff || [];
+    var symbols = opts.symbols || Sym.DEFAULT_SYMBOLS;
+    var settings = opts.settings || {};
+    var requests = opts.requests || {};
+    var dailyNeeds = opts.dailyNeeds || {};
+    var monthNeeds = opts.monthNeeds || {};
+    var prevCells = opts.prevCells || {};
+    var prevDays = opts.prevDays || 31;
+    var report = [];
+
+    /* 出力セル（既存入力を保持） */
+    var cells = {};
+    var i, d, st;
+    for (i = 0; i < staff.length; i++) {
+      cells[staff[i].id] = {};
+      var ex = (opts.existingCells || {})[staff[i].id] || {};
+      for (var k in ex) { if (ex[k] !== '') cells[staff[i].id][k] = ex[k]; }
+    }
+
+    var active = [];
+    for (i = 0; i < staff.length; i++) {
+      st = staff[i];
+      if (st.active === false || st.countInHeadcount === false) continue;
+      active.push(st);
+    }
+
+    function dow(day) { return new Date(opts.year, opts.month - 1, day).getDay(); }
+    function needFor(day, cat) {
+      if (dailyNeeds[day] && typeof dailyNeeds[day][cat] === 'number') return dailyNeeds[day][cat];
+      if (typeof monthNeeds[cat] === 'number') return monthNeeds[cat];
+      var wd = settings.weekdayNeeds || {};
+      var w = wd[dow(day)] || wd[String(dow(day))];
+      return w && typeof w[cat] === 'number' ? w[cat] : 0;
+    }
+    function catOf(value) {
+      var p = Sym.parseCell(value, symbols);
+      var cats = [];
+      for (var x = 0; x < p.parts.length; x++) {
+        if (p.parts[x].kind === 'work') cats.push(p.parts[x].cat || 'mid');
+        if (p.parts[x].kind === 'nightIn') cats.push('night');
+      }
+      return cats;
+    }
+    function isOff(value) {
+      if (!value) return false;
+      var p = Sym.parseCell(value, symbols);
+      for (var x = 0; x < p.parts.length; x++) {
+        var kd = p.parts[x].kind;
+        if (kd === 'off' || kd === 'publicOff' || kd === 'paidOff') return true;
+      }
+      return false;
+    }
+    function isWork(value) {
+      if (!value) return false;
+      var p = Sym.parseCell(value, symbols);
+      for (var x = 0; x < p.parts.length; x++) {
+        var kd = p.parts[x].kind;
+        if (kd === 'work' || kd === 'nightIn' || kd === 'nightOut') return true;
+      }
+      return false;
+    }
+    /* 連勤判定用: 夜勤「上がりのみ」の日は勤務にカウントしない（勤務は前日入りで終了） */
+    function isWorkForCons(value) {
+      if (!value) return false;
+      var p = Sym.parseCell(value, symbols);
+      for (var x = 0; x < p.parts.length; x++) {
+        var kd = p.parts[x].kind;
+        if (kd === 'work' || kd === 'nightIn') return true;
+      }
+      return false;
+    }
+
+    /* ── Phase 1: 希望休（先に確定・不可侵） ── */
+    for (i = 0; i < active.length; i++) {
+      st = active[i];
+      var req = requests[normName(st.name)];
+      if (!req) continue;
+      for (var rd in req) {
+        var day1 = String(parseInt(rd, 10));
+        if (!cells[st.id][day1]) cells[st.id][day1] = req[rd];
+      }
+    }
+
+    /* ── Phase 0(順序はPhase1の後): 夜勤専従サイクル ── */
+    var nightIdx = 0;
+    for (i = 0; i < active.length; i++) {
+      st = active[i];
+      var isNight = (st.group === 'night') || (st.rules && st.rules.nightDedicated);
+      if (!isNight) continue;
+      /* 前月末からサイクル位置を推定 */
+      var pos = -1;
+      var prev = prevCells[st.id] || {};
+      var lastVal = prev[String(prevDays)] || '';
+      if (lastVal) {
+        var norm = Sym.normalizeCell(lastVal);
+        for (var c = 0; c < NIGHT_CYCLE.length; c++) {
+          if (Sym.normalizeCell(NIGHT_CYCLE[c]) === norm) { pos = c; break; }
+        }
+      }
+      if (pos < 0) pos = (nightIdx * 2 + NIGHT_CYCLE.length - 1) % NIGHT_CYCLE.length; /* 推定不可→2日ずらし */
+      nightIdx++;
+      for (d = 1; d <= days; d++) {
+        pos = (pos + 1) % NIGHT_CYCLE.length;
+        var dk = String(d);
+        if (cells[st.id][dk]) continue; /* 希望休・既入力を尊重（サイクルは進める） */
+        cells[st.id][dk] = NIGHT_CYCLE[pos];
+      }
+    }
+
+    /* 補助: 連勤数（その日を含めない直前の連続出勤数。前月末も参照） */
+    function consBefore(stf, day) {
+      var n = 0;
+      for (var dd = day - 1; dd >= 1; dd--) {
+        if (isWorkForCons(cells[stf.id][String(dd)])) n++; else return n;
+      }
+      for (var pd = prevDays; pd >= 1; pd--) {
+        var pv = (prevCells[stf.id] || {})[String(pd)];
+        if (pv === undefined) return n;
+        if (isWorkForCons(pv)) n++; else return n;
+      }
+      return n;
+    }
+    function workDays(stf) {
+      var n = 0;
+      for (var dd = 1; dd <= days; dd++) { if (isWork(cells[stf.id][String(dd)])) n++; }
+      return n;
+    }
+    function lateCount(stf) {
+      var n = 0;
+      for (var dd = 1; dd <= days; dd++) {
+        if (catOf(cells[stf.id][String(dd)] || '').indexOf('late') >= 0) n++;
+      }
+      return n;
+    }
+    function symbolFor(stf, cat) {
+      var allow = stf.allowedSymbols && stf.allowedSymbols.length ? stf.allowedSymbols : null;
+      for (var x = 0; x < symbols.length; x++) {
+        var s = symbols[x];
+        if (s.disabled || s.type !== 'work' || s.cat !== cat) continue;
+        if (allow && allow.indexOf(s.code) < 0) continue;
+        return s.code;
+      }
+      return null;
+    }
+    function canAssign(stf, day, cat) {
+      var dk = String(day);
+      if (cells[stf.id][dk]) return false;
+      var r = stf.rules || {};
+      if (stf.group === 'night' || r.nightDedicated) return false;
+      if (cat === 'early' && r.lateOnly) return false;
+      if (cat === 'late' && r.earlyOnly) return false;
+      if ((r.fixedOffWeekdays || []).indexOf(dow(day)) >= 0) return false;
+      if (r.weekdaysOnly && (dow(day) === 0 || dow(day) === 6)) return false;
+      var maxCons = r.maxConsecutive || 4;
+      if (consBefore(stf, day) >= maxCons) return false;
+      if (r.orderRule === 'earlyToLate' && cat === 'early') {
+        var yest = cells[stf.id][String(day - 1)];
+        if (yest && catOf(yest).indexOf('late') >= 0) return false; /* 遅⇒早 禁止 */
+      }
+      if (cat === 'late' && r.lateMax && lateCount(stf) >= r.lateMax) return false;
+      var target = r.monthlyTarget || 24;
+      if (workDays(stf) >= target) return false;
+      return symbolFor(stf, cat) !== null;
+    }
+
+    function assignedCount(day, cat) {
+      var n = 0;
+      for (var x = 0; x < active.length; x++) {
+        if (catOf(cells[active[x].id][String(day)] || '').indexOf(cat) >= 0) n++;
+      }
+      return n;
+    }
+
+    /* ── Phase 2: 貪欲割当（早→遅の順で日毎に充足） ── */
+    var cats = ['early', 'late'];
+    for (d = 1; d <= days; d++) {
+      for (var ci = 0; ci < cats.length; ci++) {
+        var cat2 = cats[ci];
+        var guard = 0;
+        while (assignedCount(d, cat2) < needFor(d, cat2) && guard++ < 50) {
+          var best = null, bestScore = -1e9;
+          for (i = 0; i < active.length; i++) {
+            st = active[i];
+            if (!canAssign(st, d, cat2)) continue;
+            var r2 = st.rules || {};
+            var deficit = (r2.monthlyTarget || 24) - workDays(st); /* 目標まで残り多い人を優先 */
+            var score = deficit * 10 - consBefore(st, d);
+            if (score > bestScore) { bestScore = score; best = st; }
+          }
+          if (!best) break;
+          cells[best.id][String(d)] = symbolFor(best, cat2);
+        }
+      }
+    }
+
+    /* ── Phase 3: 残りの空セルを休で埋める ── */
+    for (i = 0; i < active.length; i++) {
+      st = active[i];
+      for (d = 1; d <= days; d++) {
+        if (!cells[st.id][String(d)]) cells[st.id][String(d)] = '休';
+      }
+    }
+
+    /* ── Phase 4: 修復（不足日に休→出勤の振替を試す） ── */
+    var passes = 0;
+    var improved = true;
+    while (improved && passes++ < 5) {
+      improved = false;
+      for (d = 1; d <= days; d++) {
+        for (var ci2 = 0; ci2 < cats.length; ci2++) {
+          var cat3 = cats[ci2];
+          while (assignedCount(d, cat3) < needFor(d, cat3)) {
+            var done = false;
+            for (i = 0; i < active.length && !done; i++) {
+              st = active[i];
+              var dk2 = String(d);
+              if (cells[st.id][dk2] !== '休') continue; /* 自動配置の休のみ振替対象 */
+              cells[st.id][dk2] = '';
+              if (canAssign(st, d, cat3)) {
+                cells[st.id][dk2] = symbolFor(st, cat3);
+                improved = true; done = true;
+              } else {
+                cells[st.id][dk2] = '休';
+              }
+            }
+            if (!done) break;
+          }
+        }
+      }
+    }
+
+    /* ── Phase 5: 検証レポート ── */
+    for (d = 1; d <= days; d++) {
+      for (var ci3 = 0; ci3 < cats.length; ci3++) {
+        var cat4 = cats[ci3];
+        var need = needFor(d, cat4);
+        var asg = assignedCount(d, cat4);
+        if (asg < need) {
+          report.push({ day: d, type: 'shortage', msg: d + '日: ' + (cat4 === 'early' ? '早番' : '遅番') + 'が ' + (need - asg) + '名 不足' });
+        }
+      }
+    }
+    for (i = 0; i < active.length; i++) {
+      st = active[i];
+      var run = 0;
+      var maxC = (st.rules && st.rules.maxConsecutive) || 4;
+      for (d = 1; d <= days; d++) {
+        if (isWorkForCons(cells[st.id][String(d)])) {
+          run++;
+          if (run > maxC) report.push({ day: d, staffId: st.id, type: 'consecutive', msg: st.name + ': ' + d + '日時点で' + run + '連勤（上限' + maxC + '）' });
+        } else run = 0;
+      }
+      var r3 = st.rules || {};
+      if (r3.monthlyTarget) {
+        var wd2 = workDays(st);
+        if (Math.abs(wd2 - r3.monthlyTarget) >= 2) {
+          report.push({ staffId: st.id, type: 'target', msg: st.name + ': 出勤' + wd2 + '日（目標' + r3.monthlyTarget + '日）' });
+        }
+      }
+    }
+
+    return { cells: cells, report: report };
+  }
+
+  var api = { autoAssign: autoAssign, NIGHT_CYCLE: NIGHT_CYCLE };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftAutoAssign = api;
+})();
+/* ===== src/logic/synccore.js ===== */
+/* synccore.js — 同期の判断ロジック（純粋関数・ネットワーク非依存） */
+(function () {
+  'use strict';
+
+  /* プル時の判断
+   * local: {rev, dirty}  server: {rev}
+   * → 'take-server' | 'keep-local' | 'conflict'
+   */
+  function decideOnPull(local, server) {
+    var lRev = local && typeof local.rev === 'number' ? local.rev : 0;
+    var dirty = !!(local && local.dirty);
+    var sRev = server && typeof server.rev === 'number' ? server.rev : 0;
+    if (sRev > lRev) return dirty ? 'conflict' : 'take-server';
+    return 'keep-local';
+  }
+
+  /* 送信キュー: 同一キーは最新データへ統合（baseRevは最初の値を保持） */
+  function SyncQueue() {
+    this.items = {}; /* key -> {data, baseRev, queuedAt} */
+  }
+  SyncQueue.prototype.enqueue = function (key, data, baseRev, now) {
+    if (this.items[key]) {
+      this.items[key].data = data; /* baseRevは据え置き＝サーバ側の競合検知を維持 */
+    } else {
+      this.items[key] = { data: data, baseRev: baseRev, queuedAt: now || 0 };
+    }
+  };
+  SyncQueue.prototype.keys = function () {
+    var out = [];
+    for (var k in this.items) out.push(k);
+    return out;
+  };
+  SyncQueue.prototype.take = function (key) {
+    var it = this.items[key];
+    delete this.items[key];
+    return it;
+  };
+  SyncQueue.prototype.size = function () { return this.keys().length; };
+  SyncQueue.prototype.toJSON = function () { return this.items; };
+  SyncQueue.fromJSON = function (obj) {
+    var q = new SyncQueue();
+    if (obj) { for (var k in obj) q.items[k] = obj[k]; }
+    return q;
+  };
+
+  /* push応答の判断: {ok, rev} | {conflict, serverRev} */
+  function applyPushResult(result) {
+    if (result && result.ok) return { status: 'pushed', rev: result.rev };
+    if (result && result.conflict) return { status: 'conflict', serverRev: result.serverRev };
+    return { status: 'error', message: result && result.error ? result.error : '不明な応答' };
+  }
+
+  var api = { decideOnPull: decideOnPull, SyncQueue: SyncQueue, applyPushResult: applyPushResult };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftSyncCore = api;
+})();
+/* ===== src/logic/holidays.js ===== */
+/* holidays.js — 日本の祝日計算（1980〜2099年対応・振替休日・国民の休日含む） */
+(function () {
+  'use strict';
+
+  function nthMonday(year, month, n) {
+    var first = new Date(year, month - 1, 1).getDay();
+    var offset = (8 - first) % 7; /* 最初の月曜まで */
+    return 1 + offset + (n - 1) * 7;
+  }
+  function shunbun(y) { return Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+  function shubun(y) { return Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+
+  /* 年間の祝日 {'M-D': 名称} */
+  function yearHolidays(y) {
+    var h = {};
+    h['1-1'] = '元日';
+    h['1-' + nthMonday(y, 1, 2)] = '成人の日';
+    h['2-11'] = '建国記念の日';
+    if (y >= 2020) h['2-23'] = '天皇誕生日';
+    h['3-' + shunbun(y)] = '春分の日';
+    h['4-29'] = '昭和の日';
+    h['5-3'] = '憲法記念日';
+    h['5-4'] = 'みどりの日';
+    h['5-5'] = 'こどもの日';
+    h['7-' + nthMonday(y, 7, 3)] = '海の日';
+    h['8-11'] = '山の日';
+    h['9-' + nthMonday(y, 9, 3)] = '敬老の日';
+    h['9-' + shubun(y)] = '秋分の日';
+    h['10-' + nthMonday(y, 10, 2)] = 'スポーツの日';
+    h['11-3'] = '文化の日';
+    h['11-23'] = '勤労感謝の日';
+
+    /* 国民の休日: 祝日に挟まれた平日（敬老の日と秋分の日の間など） */
+    var keiro = nthMonday(y, 9, 3), shu = shubun(y);
+    if (shu - keiro === 2) {
+      var mid = new Date(y, 8, keiro + 1);
+      if (mid.getDay() !== 0 && !h['9-' + (keiro + 1)]) h['9-' + (keiro + 1)] = '国民の休日';
+    }
+
+    /* 振替休日: 祝日が日曜 → 直後の祝日でない日 */
+    var keys = [];
+    for (var k in h) keys.push(k);
+    for (var i = 0; i < keys.length; i++) {
+      var parts = keys[i].split('-');
+      var dt = new Date(y, parseInt(parts[0], 10) - 1, parseInt(parts[1], 10));
+      if (dt.getDay() !== 0) continue;
+      var nd = new Date(dt.getTime());
+      do { nd.setDate(nd.getDate() + 1); } while (h[(nd.getMonth() + 1) + '-' + nd.getDate()]);
+      h[(nd.getMonth() + 1) + '-' + nd.getDate()] = '振替休日';
+    }
+    return h;
+  }
+
+  /* 指定月の祝日 {day: 名称} */
+  function holidaysOf(year, month) {
+    var all = yearHolidays(year);
+    var out = {};
+    for (var k in all) {
+      var parts = k.split('-');
+      if (parseInt(parts[0], 10) === month) out[parseInt(parts[1], 10)] = all[k];
+    }
+    return out;
+  }
+
+  var api = { holidaysOf: holidaysOf, yearHolidays: yearHolidays };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftHolidays = api;
+})();
+/* ===== src/logic/freee.js ===== */
+/* freee.js — freee勤怠「スケジュールインポートCSV」生成（純粋関数）
+ * 形式: #従業員コード※,勤務日※,全日休暇,パターンコード（cp932/Shift-JIS）
+ * パターン表は freee のパターンコード一覧（非個人情報）を埋め込み、
+ * 記号の出退勤時刻と自動対応させる。従業員コードは貼付取込でDBに保存する。
+ * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
+(function () {
+  'use strict';
+  var Sym = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./symbols.js') : window.ShiftSymbols;
+
+  var FREEE_PATTERNS = [{"code":"101","name":"早7-16","start":420,"end":960},{"code":"102","name":"遅12-21","start":720,"end":1260},{"code":"103","name":"夜専①21-7","start":1260,"end":1860},{"code":"104","name":"夜専②23-9","start":1380,"end":1980},{"code":"105","name":"日①8-17","start":480,"end":1020},{"code":"106","name":"德①7-18","start":420,"end":1080},{"code":"107","name":"德②7-14:30","start":420,"end":870},{"code":"108","name":"デイ9-13:30","start":540,"end":810},{"code":"109","name":"牛①7-9","start":420,"end":540},{"code":"110","name":"牛②7-11","start":420,"end":660},{"code":"111","name":"7-12","start":420,"end":720},{"code":"112","name":"9-14","start":540,"end":840},{"code":"113","name":"野田13-16","start":780,"end":960},{"code":"114","name":"福田9:30-15","start":570,"end":900},{"code":"115","name":"日③9-18","start":540,"end":1080},{"code":"116","name":"遅11-20","start":660,"end":1200},{"code":"117","name":"日②8:30-17:30","start":510,"end":1050},{"code":"118","name":"厨①6:30-15:30","start":390,"end":930},{"code":"119","name":"厨②10-19","start":600,"end":1140},{"code":"120","name":"厨④7-16","start":420,"end":960},{"code":"121","name":"健有","start":540,"end":1080},{"code":"122","name":"早7-18","start":420,"end":960},{"code":"123","name":"夜①21-7","start":1260,"end":1860},{"code":"124","name":"夜②23-9","start":1380,"end":1980},{"code":"125","name":"早7-17","start":420,"end":960},{"code":"126","name":"9-20","start":540,"end":1200},{"code":"127","name":"早臼7-16","start":420,"end":960},{"code":"128","name":"遅臼12-21","start":720,"end":1260},{"code":"129","name":"遅臼11-20","start":660,"end":1200},{"code":"130","name":"臼7-18","start":420,"end":1080},{"code":"131","name":"松8-17(-18)","start":480,"end":1020},{"code":"132","name":"夜専①21-7(-8）","start":1260,"end":1860},{"code":"133","name":"臼夜23-9","start":1380,"end":1980},{"code":"134","name":"遅11:30‐20:30","start":690,"end":1230},{"code":"135","name":"18-21","start":1080,"end":1260},{"code":"136","name":"9-13","start":540,"end":780},{"code":"137","name":"田中遅12-21（休憩２H）","start":720,"end":1260},{"code":"138","name":"9-15","start":540,"end":900},{"code":"139","name":"夜③22-8","start":1320,"end":1920},{"code":"140","name":"髙尾7-21","start":420,"end":1260},{"code":"141","name":"遅13-22","start":780,"end":1320},{"code":"142","name":"早7-16(6:30-)","start":420,"end":960},{"code":"143","name":"髙尾6:30-21","start":390,"end":1260},{"code":"144","name":"6:30-9","start":390,"end":540},{"code":"145","name":"早6:30-1530","start":390,"end":930},{"code":"146","name":"9:30-13:30","start":570,"end":810},{"code":"147","name":"髙尾7-22","start":420,"end":1320},{"code":"151","name":"遅12-21早遅手当なし","start":720,"end":1260},{"code":"152","name":"18-21早遅手当なし","start":1080,"end":1260},{"code":"153","name":"早7-16早遅手当なし","start":420,"end":960},{"code":"154","name":"16-21","start":960,"end":1260},{"code":"155","name":"夜①21-7(-8）","start":1260,"end":1860},{"code":"156","name":"夜専①21-7(-9）","start":1260,"end":1860},{"code":"157","name":"夜専③22-8","start":1320,"end":1920},{"code":"158","name":"15-17","start":900,"end":1020},{"code":"200","name":"健/有","start":540,"end":1080},{"code":"201","name":"健/有（徳地）","start":420,"end":1080},{"code":"202","name":"健診","start":540,"end":780},{"code":"203","name":"健診（胃カメラ無し）","start":540,"end":600},{"code":"A999","name":"test7-20","start":420,"end":1200}];
+  var SJIS_MAP = {"弔":[146,162],"込":[141,158],"看":[138,197],"給":[139,139],"ま":[130,220],"入":[147,252],"は":[130,205],"欠":[140,135],"い":[130,162],"ジ":[131,87],"忌":[138,245],"項":[141,128],"し":[130,181],"デ":[131,102],"公":[140,246],"登":[147,111],"全":[145,83],"更":[141,88],"ー":[129,91],"対":[145,206],"※":[129,166],"同":[147,175],"投":[147,138],"に":[130,201],"象":[143,219],"代":[145,227],"希":[138,243],"望":[150,93],"傷":[143,157],"有":[151,76],"別":[149,202],"介":[137,238],"明":[150,190],"替":[145,214],"行":[141,115],"下":[137,186],"日":[147,250],"注":[146,141],"最":[141,197],"引":[136,248],"休":[139,120],"勤":[139,206],"須":[144,123],"後":[140,227],"従":[143,93],"特":[147,193],"合":[141,135],"読":[147,199],"暇":[137,201],"）":[129,106],"ド":[131,104],"年":[148,78],"必":[149,75],"す":[130,183],"終":[143,73],"次":[142,159],"振":[144,85],"を":[130,240],"改":[137,252],"目":[150,218],"。":[129,66],"力":[151,205],"が":[130,170],"産":[142,89],"る":[130,233],"前":[145,79],"ン":[131,147],"れ":[130,234],"ル":[131,139],"さ":[130,179],"病":[149,97],"業":[139,198],"ス":[131,88],"と":[130,198],"員":[136,245],"護":[140,236],"録":[152,94],"、":[129,65],"半":[148,188],"て":[130,196],"了":[151,185],"タ":[131,94],"（":[129,105],"コ":[131,82],"務":[150,177],"既":[138,249],"じ":[130,182],"場":[143,234],"慶":[140,99],"ケ":[131,80],"パ":[131,112],"ュ":[131,133],"た":[130,189],"で":[130,197],"新":[144,86]};
+
+  /* 休み記号 → freee「全日休暇」名。空文字=その日は出力しない */
+  var DEFAULT_OFF_NAMES = { '休': '公休', '公': '公休', '希': '公休', '有': '有給休暇', '明': '' };
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function daysInMonth(ym) {
+    var p = ym.split('-');
+    return new Date(parseInt(p[0], 10), parseInt(p[1], 10), 0).getDate();
+  }
+
+  function findPatternByTime(startMin, endMin) {
+    for (var i = 0; i < FREEE_PATTERNS.length; i++) {
+      var p = FREEE_PATTERNS[i];
+      if (p.start === startMin && p.end === endMin) return p;
+    }
+    return null;
+  }
+
+  /* 記号コード → 自動候補パターン（無ければ null）。off系は {off:true} */
+  function suggestForSymbol(symbols, code) {
+    var norm = Sym.normalizeCell(code);
+    var parsed = Sym.parseCell(norm, symbols);
+    if (!parsed || parsed.error || !parsed.parts.length) return null;
+    var part = parsed.parts[0];
+    if (part.kind === 'work') {
+      return findPatternByTime(part.startMin, part.endMin);
+    }
+    if (part.kind === 'nightIn') {
+      var end = part.pairEndMin < part.startMin ? part.pairEndMin + 1440 : part.pairEndMin;
+      return findPatternByTime(part.startMin, end);
+    }
+    return null;
+  }
+
+  /* CSV生成
+   * opts: { ym, staff[{id,name,empCode,active}], cells{staffId:{day:'記号'}},
+   *         symbols, patternMap{記号:コード}, offNames{記号:休暇名} }
+   * 返値: { csv, rows, staffCount, warnings:[{name,day,raw,reason}] } */
+  function buildCsv(opts) {
+    var ym = opts.ym;
+    var nDays = daysInMonth(ym);
+    var patternMap = opts.patternMap || {};
+    var offNames = opts.offNames || DEFAULT_OFF_NAMES;
+    var lines = ['#従業員コード※,勤務日※,全日休暇,パターンコード'];
+    var warnings = [];
+    var staffCount = 0;
+    for (var i = 0; i < opts.staff.length; i++) {
+      var st = opts.staff[i];
+      if (st.active === false) continue;
+      if (!st.empCode) continue;
+      staffCount++;
+      var cells = opts.cells[st.id] || {};
+      for (var d = 1; d <= nDays; d++) {
+        var raw = cells[String(d)];
+        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+        var norm = Sym.normalizeCell(raw);
+        if (!norm) continue;
+        var dateStr = ym.split('-').join('/') + '/' + pad2(d);
+        var parsed = Sym.parseCell(norm, opts.symbols);
+        var parts = parsed && parsed.parts ? parsed.parts : [];
+        /* 勤務パートを優先（'7)/遅' のような複合は勤務側を採用） */
+        var workPart = null, offPart = null, hasNightOut = false;
+        for (var pi = 0; pi < parts.length; pi++) {
+          var pk = parts[pi].kind;
+          if (pk === 'work' || pk === 'nightIn') { if (!workPart) workPart = parts[pi]; }
+          else if (pk === 'nightOut') hasNightOut = true;
+          else if (!offPart) offPart = parts[pi];
+        }
+        if (workPart) {
+          var code = patternMap[norm];
+          if (!code) {
+            var pat = suggestForSymbol(opts.symbols, norm);
+            if (pat) code = pat.code;
+          }
+          if (code) {
+            lines.push(st.empCode + ',' + dateStr + ',,' + code);
+          } else {
+            warnings.push({ name: st.name, day: d, raw: String(raw),
+                            reason: 'パターン未対応（対応表で指定してください）' });
+          }
+          continue;
+        }
+        if (hasNightOut) continue; /* 夜勤明けの朝は前日のパターンに含まれる */
+        if (offPart) {
+          var name = Object.prototype.hasOwnProperty.call(offNames, norm)
+            ? offNames[norm]
+            : (offPart.kind === 'paidOff' ? '有給休暇' : '公休');
+          if (name) lines.push(st.empCode + ',' + dateStr + ',' + name + ',');
+          continue;
+        }
+        /* 解釈不能記号: 対応表に指定があれば使用、無ければ警告 */
+        var code2 = patternMap[norm];
+        if (code2) {
+          lines.push(st.empCode + ',' + dateStr + ',,' + code2);
+        } else {
+          warnings.push({ name: st.name, day: d, raw: String(raw),
+                          reason: 'パターン未対応（対応表で指定してください）' });
+        }
+      }
+    }
+    return { csv: lines.join('\r\n') + '\r\n', rows: lines.length - 1,
+             staffCount: staffCount, warnings: warnings };
+  }
+
+  /* cp932(Shift-JIS)エンコード。ASCII+埋め込みマップ外の文字は '?' に置換し unknown へ記録 */
+  function encodeSjis(str) {
+    var bytes = [];
+    var unknown = [];
+    for (var i = 0; i < str.length; i++) {
+      var ch = str.charAt(i);
+      var cc = str.charCodeAt(i);
+      if (cc < 0x80) { bytes.push(cc); continue; }
+      var m = SJIS_MAP[ch];
+      if (m) { for (var j = 0; j < m.length; j++) bytes.push(m[j]); }
+      else { bytes.push(63); if (unknown.indexOf(ch) < 0) unknown.push(ch); }
+    }
+    return { bytes: new Uint8Array(bytes), unknown: unknown };
+  }
+
+  /* freee従業員一覧（コピペ文字列）→ [{code, fullName}]。
+   * 行内の「英字+数字」トークンをコード、数字を含まない日本語セルを氏名とみなす */
+  function parseEmployeePaste(text) {
+    var out = [];
+    var lines = String(text || '').split(/\r\n|\r|\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var cells = lines[i].split(/[\t,]/);
+      if (cells.length < 2) cells = lines[i].trim().split(/\s{2,}|\s/);
+      var code = null, name = null;
+      for (var c = 0; c < cells.length; c++) {
+        var v = String(cells[c]).trim();
+        if (!v) continue;
+        if (!code && /^[A-Za-z]\d{2,5}$/.test(v)) { code = v; continue; }
+        if (!name && /[぀-ヿ㐀-鿿]/.test(v) && !/[0-9０-９@]/.test(v) && v.length >= 2) {
+          name = v.split('　').join(' ');
+        }
+      }
+      if (code && name) out.push({ code: code, fullName: name });
+    }
+    return out;
+  }
+
+  /* 取込結果を職員へ突合（完全一致 → 姓一致が一意な場合のみ） */
+  function matchEmployees(staffList, parsed) {
+    var assigned = {}, ambiguous = [], unmatched = [];
+    for (var i = 0; i < parsed.length; i++) {
+      var p = parsed[i];
+      var flat = p.fullName.split(' ').join('');
+      var exact = [], prefix = [];
+      for (var s = 0; s < staffList.length; s++) {
+        var nm = String(staffList[s].name).split(' ').join('').split('　').join('');
+        if (!nm) continue;
+        if (nm === flat) exact.push(staffList[s]);
+        else if (flat.indexOf(nm) === 0) prefix.push(staffList[s]);
+      }
+      var hit = exact.length === 1 ? exact[0] : (exact.length === 0 && prefix.length === 1 ? prefix[0] : null);
+      if (hit) assigned[hit.id] = p.code;
+      else if (exact.length + prefix.length > 1) ambiguous.push(p);
+      else unmatched.push(p);
+    }
+    return { assigned: assigned, ambiguous: ambiguous, unmatched: unmatched };
+  }
+
+  var api = {
+    FREEE_PATTERNS: FREEE_PATTERNS,
+    DEFAULT_OFF_NAMES: DEFAULT_OFF_NAMES,
+    findPatternByTime: findPatternByTime,
+    suggestForSymbol: suggestForSymbol,
+    buildCsv: buildCsv,
+    encodeSjis: encodeSjis,
+    parseEmployeePaste: parseEmployeePaste,
+    matchEmployees: matchEmployees
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftFreee = api;
+})();
+/* ===== src/ui/store.js ===== */
+/* store.js — localStorageキャッシュ + GAS同期エンジン
+ * 旧Safari互換: ?. / ?? / replaceAll / structuredClone は使用しない */
+(function () {
+  'use strict';
+  var SC = window.ShiftSyncCore;
+
+  var PREFIX = 'shiftapp:v1:';
+  var META_KEY = PREFIX + '_meta';   // {revs:{}, dirty:{}, queue:{}, lastSync}
+  var SYNC_KEY = PREFIX + '_sync';   // {url, token} 端末ごと
+
+  function lsGet(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function lsSet(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+    catch (e) { return false; }
+  }
+
+  var Store = {
+    meta: null,
+    queue: null,
+    status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict
+    statusDetail: '',
+    listeners: [],
+    conflictHandler: null, // function(key, serverEntry, localData, done(choice))
+    pushTimer: null,
+
+    init: function () {
+      this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
+      this.queue = SC.SyncQueue.fromJSON(this.meta.queue);
+      this.updateStatus();
+    },
+    saveMeta: function () {
+      this.meta.queue = this.queue.toJSON();
+      lsSet(META_KEY, this.meta);
+    },
+
+    /* ---- データアクセス ---- */
+    get: function (key, fallback) {
+      var v = lsGet(PREFIX + key);
+      return v === null ? (fallback === undefined ? null : fallback) : v;
+    },
+    set: function (key, data) {
+      lsSet(PREFIX + key, data);
+      this.meta.dirty[key] = true;
+      this.queue.enqueue(key, data, this.meta.revs[key] || 0, Date.now());
+      this.saveMeta();
+      this.updateStatus();
+      this.schedulePush();
+    },
+    /* 同期対象外のローカル設定（端末ごと） */
+    getLocal: function (key, fallback) {
+      var v = lsGet(PREFIX + 'local:' + key);
+      return v === null ? (fallback === undefined ? null : fallback) : v;
+    },
+    setLocal: function (key, data) { lsSet(PREFIX + 'local:' + key, data); },
+
+    getSyncConfig: function () { return lsGet(SYNC_KEY); },
+    setSyncConfig: function (cfg) { lsSet(SYNC_KEY, cfg); this.updateStatus(); },
+
+    /* ---- 状態通知 ---- */
+    onChange: function (fn) { this.listeners.push(fn); },
+    notify: function () {
+      for (var i = 0; i < this.listeners.length; i++) {
+        try { this.listeners[i](this.status, this.statusDetail); } catch (e) {}
+      }
+    },
+    updateStatus: function (s, detail) {
+      if (s) { this.status = s; this.statusDetail = detail || ''; this.notify(); return; }
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) { this.status = 'nosync'; }
+      else if (this.queue.size() > 0) { this.status = 'dirty'; }
+      else { this.status = 'synced'; }
+      this.statusDetail = '';
+      this.notify();
+    },
+
+    /* ---- 通信 ---- */
+    api: function (payload) {
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url || !cfg.token) {
+        return Promise.reject(new Error('同期未設定'));
+      }
+      payload.token = cfg.token;
+      return fetch(cfg.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(function (json) {
+        if (json && json.error) throw new Error(json.error);
+        return json;
+      });
+    },
+
+    ping: function () { return this.api({ action: 'ping' }); },
+
+    /* 起動時プル: サーバ全キーとローカルを突合 */
+    pullAll: function () {
+      var self = this;
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return Promise.resolve('nosync');
+      this.updateStatus('syncing', 'サーバから取得中…');
+      return this.api({ action: 'pull' }).then(function (res) {
+        var entries = res.entries || {};
+        var conflicts = [];
+        for (var key in entries) {
+          var server = entries[key];
+          var local = { rev: self.meta.revs[key] || 0, dirty: !!self.meta.dirty[key] };
+          var decision = SC.decideOnPull(local, server);
+          if (decision === 'take-server') {
+            lsSet(PREFIX + key, server.data);
+            self.meta.revs[key] = server.rev;
+            delete self.meta.dirty[key];
+          } else if (decision === 'conflict') {
+            conflicts.push({ key: key, server: server });
+          }
+        }
+        self.saveMeta();
+        self.meta.lastSync = Date.now();
+        self.updateStatus();
+        if (conflicts.length && self.conflictHandler) {
+          self.handleConflicts(conflicts, 0);
+        }
+        /* 未送信があれば送る */
+        if (self.queue.size() > 0) self.pushQueued();
+        return 'ok';
+      }).catch(function (err) {
+        self.updateStatus('offline', String(err && err.message ? err.message : err));
+        return 'offline';
+      });
+    },
+
+    handleConflicts: function (conflicts, idx) {
+      var self = this;
+      if (idx >= conflicts.length) return;
+      var c = conflicts[idx];
+      var localData = lsGet(PREFIX + c.key);
+      this.conflictHandler(c.key, c.server, localData, function (choice) {
+        if (choice === 'server') {
+          lsSet(PREFIX + c.key, c.server.data);
+          self.meta.revs[c.key] = c.server.rev;
+          delete self.meta.dirty[c.key];
+          self.queue.take(c.key);
+        } else { /* 自分の編集で上書き: baseRevをサーバに合わせ強制push */
+          self.queue.enqueue(c.key, localData, c.server.rev, Date.now());
+        }
+        self.saveMeta();
+        self.updateStatus();
+        self.handleConflicts(conflicts, idx + 1);
+        if (choice !== 'server') self.schedulePush();
+      });
+    },
+
+    schedulePush: function () {
+      var self = this;
+      if (this.pushTimer) clearTimeout(this.pushTimer);
+      this.pushTimer = setTimeout(function () { self.pushQueued(); }, 1500);
+    },
+
+    pushQueued: function () {
+      var self = this;
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return Promise.resolve('nosync');
+      var keys = this.queue.keys();
+      if (keys.length === 0) { this.updateStatus(); return Promise.resolve('empty'); }
+      this.updateStatus('syncing', '送信中…');
+
+      var chain = Promise.resolve();
+      keys.forEach(function (key) {
+        chain = chain.then(function () {
+          var item = self.queue.items[key];
+          if (!item) return null;
+          return self.api({ action: 'push', key: key, data: item.data, baseRev: item.baseRev })
+            .then(function (res) {
+              var r = SC.applyPushResult(res);
+              if (r.status === 'pushed') {
+                self.queue.take(key);
+                self.meta.revs[key] = r.rev;
+                delete self.meta.dirty[key];
+                self.saveMeta();
+              } else if (r.status === 'conflict') {
+                if (self.conflictHandler) {
+                  self.handleConflicts([{ key: key, server: { rev: r.serverRev, data: null, needsPull: true } }], 0);
+                }
+              }
+            });
+        });
+      });
+      return chain.then(function () {
+        self.meta.lastSync = Date.now();
+        self.saveMeta();
+        self.updateStatus();
+        return 'ok';
+      }).catch(function (err) {
+        self.updateStatus('offline', String(err && err.message ? err.message : err));
+        return 'offline';
+      });
+    },
+
+    /* ---- バックアップ ---- */
+    exportAll: function () {
+      var out = { exportedAt: new Date().toISOString(), app: 'shiftapp', version: 1, data: {} };
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(PREFIX) === 0 && k !== META_KEY && k !== SYNC_KEY && k.indexOf(PREFIX + 'local:') !== 0) {
+          out.data[k.slice(PREFIX.length)] = lsGet(k);
+        }
+      }
+      return out;
+    },
+    importAll: function (obj) {
+      if (!obj || obj.app !== 'shiftapp' || !obj.data) throw new Error('バックアップ形式が不正です');
+      var n = 0;
+      for (var key in obj.data) { this.set(key, obj.data[key]); n++; }
+      return n;
+    }
+  };
+
+  window.ShiftStore = Store;
+})();
+/* ===== src/ui/grid.js ===== */
+/* grid.js — シフト表グリッド（描画・選択・パレット・コピペ・並べ替え） */
+(function () {
+  'use strict';
+  var Sym = window.ShiftSymbols;
+
+  var GROUPS = [
+    { key: 'night', label: '夜勤専従' },
+    { key: 'visit', label: '訪問介護・施設' },
+    { key: 'day',   label: 'デイサービス' }
+  ];
+  var DIVISIONS = ['施設', '訪問', '通所'];
+  var DOW = ['日', '月', '火', '水', '木', '金', '土'];
+
+  var Grid = {
+    ctx: null,
+    sel: [],          /* [{sid, div, day}] */
+    anchor: null,
+    visibleRows: [],  /* [{sid, div, isMain}] 表示順 */
+    dragging: false,
+    recentSyms: [],
+
+    render: function (ctx) {
+      this.ctx = ctx;
+      var self = this;
+      var wrap = document.getElementById('gridWrap');
+      var days = ctx.days;
+      var weekStart = ctx.settings.weekStartDow;
+      var firstDow = new Date(ctx.year, ctx.month - 1, 1).getDay();
+      var offset = (firstDow - weekStart + 7) % 7;
+
+      this.visibleRows = [];
+      /* table-layout:fixed はテーブル幅が明示されている場合のみ有効 */
+      var totalW = 100 + 56 + days * 52 + 44 + 44 + 56 + 48 + 200 + 150;
+      var h = '<table class="sheet" style="width:' + totalW + 'px"><colgroup>';
+      h += '<col style="width:100px"><col style="width:56px">';
+      for (var c = 0; c < days; c++) h += '<col style="width:52px">';
+      h += '<col style="width:44px"><col style="width:44px"><col style="width:56px"><col style="width:48px">';
+      h += '<col style="width:200px"><col style="width:150px">';
+      h += '</colgroup><thead>';
+      /* 週行 */
+      h += '<tr><th class="sticky1" style="left:0">週</th><th class="sticky2" style="left:100px"></th>';
+      var d, w, runStart = 1;
+      for (d = 1; d <= days; d++) {
+        var wk = Math.floor((d - 1 + offset) / 7) + 1;
+        var wkNext = d < days ? Math.floor((d + offset) / 7) + 1 : -1;
+        if (wkNext !== wk || d === days) {
+          h += '<th colspan="' + (d - runStart + 1) + '"' + (d === days ? ' class="lastday"' : '') + '>第' + wk + '週目</th>';
+          runStart = d + 1;
+        }
+      }
+      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr>';
+      /* 日付行 */
+      h += '<tr><th class="sticky1" style="left:0">氏名</th><th class="sticky2" style="left:100px">区分</th>';
+      for (d = 1; d <= days; d++) {
+        var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
+        var hcls = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dow);
+        var htip = ctx.holidays && ctx.holidays[d] ? ' title="' + esc(ctx.holidays[d]) + '"' : '';
+        h += '<th class="' + hcls + (d === days ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
+      }
+      h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th></tr>';
+      /* 曜日行 */
+      h += '<tr><th class="sticky1" style="left:0"></th><th class="sticky2" style="left:100px"></th>';
+      for (d = 1; d <= days; d++) {
+        var dw = new Date(ctx.year, ctx.month - 1, d).getDay();
+        var hcls2 = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dw);
+        h += '<th class="' + hcls2 + (d === days ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
+      }
+      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr></thead><tbody>';
+
+      for (var g = 0; g < GROUPS.length; g++) {
+        var members = [];
+        for (var i = 0; i < ctx.staff.length; i++) {
+          var st = ctx.staff[i];
+          if (st.active === false) continue;
+          if ((st.group || 'visit') === GROUPS[g].key) members.push(st);
+        }
+        if (members.length === 0) continue;
+        members.sort(function (a, b) {
+          var av = typeof a.shiftOrder === 'number' ? a.shiftOrder : (a.order || 0);
+          var bv = typeof b.shiftOrder === 'number' ? b.shiftOrder : (b.order || 0);
+          return av - bv;
+        });
+        var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
+        h += '<tr class="grouphead"><td colspan="' + (days + 8) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        for (var m = 0; m < members.length; m++) {
+          h += this.staffRows(members[m], days);
+        }
+      }
+      h += '</tbody><tfoot>' + this.footRows(days) + '</tfoot></table>';
+      wrap.innerHTML = h;
+      this.bind(wrap);
+      this.applySelClass();
+      this.renderMetrics();
+    },
+
+    staffRows: function (st, days) {
+      var ctx = this.ctx;
+      var res = ctx.results[st.id];
+      var sched = ctx.sched;
+      var mainDiv = st.mainDivision || '施設';
+      var hidden = st.hiddenDivisions || [];
+      /* 表示する区分行（メイン→他区分の順）。非表示行は「非表示行を表示」時のみ淡色で出す */
+      var divs = [mainDiv];
+      for (var i = 0; i < DIVISIONS.length; i++) {
+        if (DIVISIONS[i] !== mainDiv) divs.push(DIVISIONS[i]);
+      }
+      var lines = [];
+      for (var j = 0; j < divs.length; j++) {
+        var isHidden = hidden.indexOf(divs[j]) >= 0;
+        if (isHidden && !ctx.revealHidden) continue;
+        lines.push({ div: divs[j], hidden: isHidden });
+      }
+      if (lines.length === 0) return '';
+      var rowSpan = lines.length;
+      var note = (st.rules && st.rules.note) || '';
+      var mnote = (sched.notes && sched.notes[st.id]) || '';
+      var h = '';
+      for (var L = 0; L < lines.length; L++) {
+        var ln = lines[L];
+        var isMain = ln.div === mainDiv;
+        var trCls = (L > 0 ? 'subrow' : 'staffline') + (ln.hidden ? ' hiddenrow' : '');
+        h += '<tr data-sid="' + st.id + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
+        if (L === 0) {
+          h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + st.id + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
+        }
+        h += '<td class="divcell sticky2" style="left:100px">' + esc(ln.div) +
+          (ln.hidden
+            ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
+            : ' <span class="hidebtn noprint" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
+          '</td>';
+        h += this.dayCells(st, ln.div, isMain, days);
+        if (L === 0) {
+          var t = res ? res.totals : null;
+          h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.attendDays : '') + '</td>';
+          h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.offDays : '') + '</td>';
+          h += '<td class="sumcell pcol" rowspan="' + rowSpan + '" title="' + divTitle(t) + '">' + (t ? fmtH(t.workMin) : '') + '</td>';
+          h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t && t.overtimeCount ? t.overtimeCount + '回' : '') + '</td>';
+          h += '<td class="notecell noprint" rowspan="' + rowSpan + '" title="' + esc(note) + '">' + esc(note) + '</td>';
+          h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + st.id + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
+        }
+        h += '</tr>';
+        this.visibleRows.push({ sid: st.id, div: ln.div, isMain: isMain });
+      }
+      return h;
+    },
+
+    dayCells: function (st, division, isMain, days) {
+      var ctx = this.ctx;
+      var h = '';
+      var cells = isMain
+        ? (ctx.sched.cells[st.id] || {})
+        : ((ctx.sched.subCells[st.id] || {})[division] || {});
+      var res = ctx.results[st.id];
+      var reqs = ctx.requests[normName(st.name)] || {};
+      for (var d = 1; d <= days; d++) {
+        var v = cells[String(d)] || '';
+        var cls = 'daycell';
+        var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
+        if (dow === 0) cls += ' sun'; else if (dow === 6) cls += ' sat';
+        var style = '';
+        var tip = '';
+        if (v !== '') {
+          var p = Sym.parseCell(v, ctx.symbols);
+          if (p.error) { cls += ' err'; tip = p.error; }
+          else {
+            var sym = matchSymbol(ctx.symbols, v);
+            if (sym && sym.color) style = 'background:' + sym.color + ';';
+            if (sym && sym.textColor) style += 'color:' + sym.textColor + ';';
+            if (sym && sym.bold) style += 'font-weight:700;';
+          }
+        }
+        /* 個別セル色は記号色より優先 */
+        var ckey = st.id + '|' + division + '|' + d;
+        var custom = (ctx.sched.colors || {})[ckey];
+        if (custom) style += 'background:' + custom + ';';
+        if ((ctx.sched.bold || {})[ckey]) style += 'font-weight:700;';
+        if (isMain && res && res.perDay[d]) {
+          if (res.perDay[d].overtimeMin > 0) { cls += ' ot'; tip = '残業 ' + (res.perDay[d].overtimeMin / 60) + 'h'; }
+          if (res.perDay[d].consViol) { cls += ' consviol'; tip = '連勤上限超過'; }
+        }
+        /* 希望休に出勤を入れている場合の警告 */
+        if (isMain && reqs[d] && v !== '' && !isOffValue(v, ctx.symbols)) {
+          cls += ' reqviol'; tip = '希望休（' + reqs[d] + '）と衝突';
+        }
+        if (d === days) cls += ' lastday';
+        var dl = dispLen(v);
+        if (dl >= 9) cls += ' long2'; else if (dl >= 7) cls += ' long1';
+        h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + division +
+          '" data-day="' + d + '" data-main="' + (isMain ? 1 : 0) + '"' +
+          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + esc(v) + '</td>';
+      }
+      return h;
+    },
+
+    footRows: function (days) {
+      var ctx = this.ctx;
+      var h = '';
+      var cats = [{ k: 'early', label: '早番' }, { k: 'late', label: '遅番' }];
+      for (var c = 0; c < cats.length; c++) {
+        var cat = cats[c];
+        var mn = (ctx.sched.monthNeeds || {})[cat.k];
+        h += '<tr class="needsrow"><td class="sticky1" style="left:0">' + cat.label + ' 必要数</td>' +
+          '<td class="sticky2" style="left:100px" title="前提数: ひと月一括の必要数（日別はその右で個別変更可）">' +
+          '<input class="need monthneed" type="number" min="0" max="9" data-cat="' + cat.k + '" value="' + (typeof mn === 'number' ? mn : '') + '" placeholder="前提"></td>';
+        for (var d = 1; d <= days; d++) {
+          var need = needOf(ctx, d, cat.k);
+          var dn = ctx.sched.dailyNeeds || {};
+          var isOvr = dn[d] && typeof dn[d][cat.k] === 'number';
+          h += '<td><input class="need' + (isOvr ? ' ovr' : '') + '" type="number" min="0" max="9" data-day="' + d + '" data-cat="' + cat.k + '" value="' + need + '" title="' + (isOvr ? '個別設定（前提数より優先）' : '前提数から反映') + '"></td>';
+        }
+        h += '<td colspan="6"></td></tr>';
+        h += '<tr class="remainrow"><td class="sticky1" style="left:0">' + cat.label + ' 残</td><td class="sticky2" style="left:100px"></td>';
+        for (var d2 = 1; d2 <= days; d2++) {
+          var need2 = needOf(ctx, d2, cat.k);
+          var asg = ctx.counts[d2] ? ctx.counts[d2][cat.k] : 0;
+          var rem = need2 - asg;
+          var cls = rem > 0 ? 'remain-ok' : (rem === 0 ? 'remain-zero' : 'remain-minus');
+          h += '<td class="' + cls + '" title="割当 ' + asg + '/' + need2 + '">' + rem + '</td>';
+        }
+        h += '<td colspan="6"></td></tr>';
+      }
+      return h;
+    },
+
+    renderMetrics: function () {
+      var ctx = this.ctx;
+      var m = ctx.metrics;
+      var bar = document.getElementById('metricsBar');
+      var h = '';
+      h += '<div class="sumbox hl"><div class="k">介護福祉士 割合（訪問・実働）</div><div class="v">' + m.kaifukuPctVisit + '<small>%</small></div></div>';
+      h += '<div class="sumbox hl"><div class="k">介福＋実務者 割合（訪問・実働）</div><div class="v">' + m.kaifukuJitsumuPctVisit + '<small>%</small></div></div>';
+      var divs = ['施設', '訪問', '通所'];
+      for (var i = 0; i < divs.length; i++) {
+        var v = m.fteByDivision[divs[i]];
+        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + ctx.settings.fteBaseHours + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
+      }
+      var shortage = 0;
+      for (var d = 1; d <= ctx.days; d++) {
+        if (needOf(ctx, d, 'early') - (ctx.counts[d] ? ctx.counts[d].early : 0) > 0) shortage++;
+        if (needOf(ctx, d, 'late') - (ctx.counts[d] ? ctx.counts[d].late : 0) > 0) shortage++;
+      }
+      h += '<div class="sumbox' + (shortage ? ' warn' : '') + '"><div class="k">早遅 不足コマ</div><div class="v">' + shortage + '</div></div>';
+      h += '<div class="sumbox' + (ctx.warnCount ? ' warn' : '') + '"><div class="k">警告</div><div class="v">' + ctx.warnCount + '</div></div>';
+      bar.innerHTML = h;
+    },
+
+    /* ── イベント ── */
+    bind: function (wrap) {
+      var self = this;
+      var table = wrap.querySelector('table');
+
+      table.addEventListener('mousedown', function (e) {
+        if (e.target.classList && (e.target.classList.contains('hidebtn') || e.target.classList.contains('showbtn'))) {
+          e.preventDefault();
+          var hide = e.target.classList.contains('hidebtn');
+          self.ctx.onToggleDivision(e.target.getAttribute('data-sid'), e.target.getAttribute('data-div'), hide);
+          return;
+        }
+        var td = closest(e.target, 'td');
+        if (!td || !td.classList.contains('daycell')) return;
+        e.preventDefault();
+        hidePalette();
+        var cell = cellOf(td);
+        if (e.shiftKey && self.anchor) {
+          self.sel = self.rangeFrom(self.anchor, cell);
+        } else if (e.metaKey || e.ctrlKey) {
+          self.sel.push(cell);
+        } else {
+          self.sel = [cell];
+          self.anchor = cell;
+        }
+        self.dragging = true;
+        self.applySelClass();
+      });
+      table.addEventListener('mouseover', function (e) {
+        if (!self.dragging) return;
+        var td = closest(e.target, 'td');
+        if (!td || !td.classList.contains('daycell')) return;
+        self.sel = self.rangeFrom(self.anchor, cellOf(td));
+        self.applySelClass();
+      });
+      document.addEventListener('mouseup', function () {
+        if (!self.dragging) return;
+        self.dragging = false;
+        if (self.sel.length >= 1) self.showPalette();
+      });
+
+      /* 必要数入力 */
+      table.addEventListener('change', function (e) {
+        var inp = e.target;
+        if (!inp.classList || !inp.classList.contains('need')) return;
+        if (inp.classList.contains('monthneed')) {
+          self.ctx.onMonthNeedChange(inp.getAttribute('data-cat'),
+            inp.value === '' ? null : parseInt(inp.value, 10));
+        } else {
+          self.ctx.onNeedChange(parseInt(inp.getAttribute('data-day'), 10),
+            inp.getAttribute('data-cat'), parseInt(inp.value || '0', 10));
+        }
+      });
+
+      /* 月次メモ・職員編集 */
+      table.addEventListener('click', function (e) {
+        var td = closest(e.target, 'td');
+        if (!td) return;
+        if (td.classList.contains('monthnote')) {
+          self.ctx.onMonthNote(td.getAttribute('data-sid'));
+        }
+      });
+      table.addEventListener('dblclick', function (e) {
+        var td = closest(e.target, 'td');
+        if (td && td.classList.contains('namecell')) {
+          self.ctx.onStaffEdit(td.getAttribute('data-sid'));
+        }
+      });
+
+      /* 並べ替えドラッグ */
+      table.addEventListener('dragstart', function (e) {
+        var td = closest(e.target, 'td');
+        if (td && td.classList.contains('namecell')) {
+          e.dataTransfer.setData('text/plain', td.getAttribute('data-sid'));
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      });
+      table.addEventListener('dragover', function (e) {
+        var tr = closest(e.target, 'tr');
+        if (tr && tr.getAttribute('data-sid')) { e.preventDefault(); markDragRow(tr); }
+      });
+      table.addEventListener('drop', function (e) {
+        var tr = closest(e.target, 'tr');
+        markDragRow(null);
+        if (!tr || !tr.getAttribute('data-sid')) return;
+        e.preventDefault();
+        var sid = e.dataTransfer.getData('text/plain');
+        var before = tr.getAttribute('data-sid');
+        if (sid && before && sid !== before) self.ctx.onReorder(sid, before);
+      });
+    },
+
+    rangeFrom: function (a, b) {
+      var rows = this.visibleRows;
+      var ri1 = rowIndexOf(rows, a), ri2 = rowIndexOf(rows, b);
+      if (ri1 < 0 || ri2 < 0) return [b];
+      var r1 = Math.min(ri1, ri2), r2 = Math.max(ri1, ri2);
+      var d1 = Math.min(a.day, b.day), d2 = Math.max(a.day, b.day);
+      var out = [];
+      for (var r = r1; r <= r2; r++) {
+        for (var d = d1; d <= d2; d++) {
+          out.push({ sid: rows[r].sid, div: rows[r].div, day: d, isMain: rows[r].isMain });
+        }
+      }
+      return out;
+    },
+
+    applySelClass: function () {
+      var tds = document.querySelectorAll('#gridWrap td.daycell.sel');
+      for (var i = 0; i < tds.length; i++) tds[i].classList.remove('sel');
+      for (var j = 0; j < this.sel.length; j++) {
+        var c = this.sel[j];
+        var td = document.querySelector('#gridWrap td.daycell[data-sid="' + c.sid + '"][data-div="' + c.div + '"][data-day="' + c.day + '"]');
+        if (td) td.classList.add('sel');
+      }
+    },
+
+    /* ── パレット ── */
+    showPalette: function () {
+      var ctx = this.ctx;
+      var self = this;
+      if (this.sel.length === 0) return;
+      var last = this.sel[this.sel.length - 1];
+      var td = document.querySelector('#gridWrap td.daycell[data-sid="' + last.sid + '"][data-div="' + last.div + '"][data-day="' + last.day + '"]');
+      if (!td) return;
+      var staff = findStaff(ctx.staff, last.sid);
+      var allowed = allowedSymbols(staff, ctx.symbols);
+      var pal = document.getElementById('palette');
+      var h = '';
+      if (this.sel.length > 1) h += '<div class="pal-section">' + this.sel.length + 'セルに一括入力</div>';
+      if (this.recentSyms.length) {
+        h += '<div class="pal-section">最近使用</div>';
+        for (var r = 0; r < this.recentSyms.length; r++) {
+          h += '<span class="symbtn" data-v="' + esc(this.recentSyms[r]) + '">' + esc(this.recentSyms[r]) + '</span>';
+        }
+      }
+      h += '<div class="pal-section">勤務</div>';
+      for (var i = 0; i < allowed.length; i++) {
+        var s = allowed[i];
+        if (s.type === 'off' || s.type === 'paidOff' || s.type === 'publicOff') continue;
+        h += '<span class="symbtn" data-v="' + esc(s.code) + '" title="' + esc(s.label || '') + '"' +
+          (s.color ? ' style="background:' + s.color + '"' : '') + '>' + esc(s.code) + '</span>';
+      }
+      h += '<div class="pal-section">休み</div>';
+      for (var j = 0; j < allowed.length; j++) {
+        var s2 = allowed[j];
+        if (s2.type !== 'off' && s2.type !== 'paidOff' && s2.type !== 'publicOff') continue;
+        h += '<span class="symbtn" data-v="' + esc(s2.code) + '" title="' + esc(s2.label || '') + '">' + esc(s2.code) + '</span>';
+      }
+      h += '<input type="text" id="palFree" placeholder="直接入力（例 9-12, 8)(22）— Enterで確定">';
+      h += '<div class="pal-section">セルの色（使った色は下に残ります）</div><div class="palcolors">';
+      var recents = ctx.recentColors || [];
+      for (var rc = 0; rc < recents.length; rc++) {
+        h += '<span class="colorsw" data-c="' + recents[rc] + '" style="background:' + recents[rc] + '" title="' + recents[rc] + '"></span>';
+      }
+      h += '<input type="color" id="palColor" value="' + (recents[0] || '#fff3a0') + '" title="新しい色を選ぶ">';
+      h += '<button class="palcolbtn" data-act="paint">塗る</button><button class="palcolbtn" data-act="uncolor">色なし</button></div>';
+      h += '<div class="pal-actions"><button data-act="bold"><b>太字</b> 切替</button><button data-act="clear">記号クリア</button><button data-act="close">閉じる</button></div>';
+      pal.innerHTML = h;
+      pal.style.display = 'block';
+      var rect = td.getBoundingClientRect();
+      var px = rect.left + window.pageXOffset;
+      var py = rect.bottom + window.pageYOffset + 2;
+      if (px + 300 > document.documentElement.clientWidth) px = document.documentElement.clientWidth - 310;
+      pal.style.left = px + 'px';
+      pal.style.top = py + 'px';
+
+      pal.onclick = function (e) {
+        var b = closest(e.target, '.symbtn');
+        if (b) { self.applyValue(b.getAttribute('data-v')); return; }
+        var sw = closest(e.target, '.colorsw');
+        if (sw) { self.applyColor(sw.getAttribute('data-c')); return; }
+        var act = closest(e.target, 'button');
+        if (act) {
+          var a = act.getAttribute('data-act');
+          if (a === 'clear') { self.applyValue(''); return; }
+          if (a === 'paint') { self.applyColor(pal.querySelector('#palColor').value); return; }
+          if (a === 'uncolor') { self.applyColor(null); return; }
+          if (a === 'bold') { hidePalette(); self.ctx.onCellsBold(self.sel.slice()); return; }
+          hidePalette();
+        }
+      };
+      var free = pal.querySelector('#palFree');
+      free.onkeydown = function (e) {
+        if (e.key === 'Enter') { self.applyValue(free.value); }
+        if (e.key === 'Escape') hidePalette();
+      };
+    },
+
+    applyColor: function (c) {
+      hidePalette();
+      this.ctx.onCellsColor(this.sel.slice(), c);
+    },
+
+    applyValue: function (v) {
+      hidePalette();
+      if (v !== '' && this.recentSyms.indexOf(v) < 0) {
+        this.recentSyms.unshift(v);
+        if (this.recentSyms.length > 6) this.recentSyms.pop();
+      } else if (v !== '') {
+        this.recentSyms.splice(this.recentSyms.indexOf(v), 1);
+        this.recentSyms.unshift(v);
+      }
+      this.ctx.onCellsChange(this.sel.slice(), v);
+    },
+
+    /* ── キーボード・コピペ ── */
+    initGlobal: function () {
+      var self = this;
+      document.addEventListener('keydown', function (e) {
+        if (document.getElementById('view-grid').classList.contains('on') === false) return;
+        var tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        if (!self.anchor) return;
+        var rows = self.visibleRows;
+        var ri = rowIndexOf(rows, self.anchor);
+        var moved = false;
+        if (e.key === 'ArrowLeft') { self.anchor.day = Math.max(1, self.anchor.day - 1); moved = true; }
+        else if (e.key === 'ArrowRight') { self.anchor.day = Math.min(self.ctx.days, self.anchor.day + 1); moved = true; }
+        else if (e.key === 'ArrowUp' && ri > 0) { self.anchor = { sid: rows[ri - 1].sid, div: rows[ri - 1].div, day: self.anchor.day }; moved = true; }
+        else if (e.key === 'ArrowDown' && ri >= 0 && ri < rows.length - 1) { self.anchor = { sid: rows[ri + 1].sid, div: rows[ri + 1].div, day: self.anchor.day }; moved = true; }
+        else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault(); self.ctx.onCellsChange(self.sel.slice(), ''); return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault(); self.showPalette(); return;
+        } else if (e.key === 'Escape') { hidePalette(); return; }
+        if (moved) {
+          e.preventDefault();
+          hidePalette();
+          self.sel = [self.anchor];
+          self.applySelClass();
+        }
+      });
+
+      document.addEventListener('copy', function (e) {
+        if (!gridActive() || self.sel.length === 0) return;
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', self.selectionTSV());
+      });
+      document.addEventListener('paste', function (e) {
+        if (!gridActive() || !self.anchor) return;
+        var tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        e.preventDefault();
+        var text = e.clipboardData.getData('text/plain');
+        self.pasteTSV(text);
+      });
+    },
+
+    selectionTSV: function () {
+      var rows = this.visibleRows;
+      var byRow = {};
+      var minD = 99, maxD = 0, minR = 1e9, maxR = -1;
+      for (var i = 0; i < this.sel.length; i++) {
+        var c = this.sel[i];
+        var ri = rowIndexOf(rows, c);
+        if (ri < 0) continue;
+        if (!byRow[ri]) byRow[ri] = {};
+        byRow[ri][c.day] = true;
+        if (c.day < minD) minD = c.day; if (c.day > maxD) maxD = c.day;
+        if (ri < minR) minR = ri; if (ri > maxR) maxR = ri;
+      }
+      var out = [];
+      for (var r = minR; r <= maxR; r++) {
+        var line = [];
+        for (var d = minD; d <= maxD; d++) {
+          line.push(this.cellValue(rows[r], d));
+        }
+        out.push(line.join('\t'));
+      }
+      return out.join('\n');
+    },
+
+    cellValue: function (row, day) {
+      var sched = this.ctx.sched;
+      if (row.isMain) return (sched.cells[row.sid] || {})[String(day)] || '';
+      return ((sched.subCells[row.sid] || {})[row.div] || {})[String(day)] || '';
+    },
+
+    pasteTSV: function (text) {
+      var rows = this.visibleRows;
+      var ri = rowIndexOf(rows, this.anchor);
+      if (ri < 0) return;
+      var lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+      var changes = [];
+      for (var l = 0; l < lines.length; l++) {
+        if (ri + l >= rows.length) break;
+        if (lines[l] === '' && l === lines.length - 1) break;
+        var vals = lines[l].split('\t');
+        for (var c = 0; c < vals.length; c++) {
+          var day = this.anchor.day + c;
+          if (day > this.ctx.days) break;
+          changes.push({ cell: { sid: rows[ri + l].sid, div: rows[ri + l].div, day: day, isMain: rows[ri + l].isMain }, value: vals[c] });
+        }
+      }
+      this.ctx.onPaste(changes);
+    }
+  };
+
+  /* ── ヘルパ ── */
+  function dowCls(dow) { return dow === 0 ? 'sun' : (dow === 6 ? 'sat' : ''); }
+  /* 表示幅の概算（全角=2・半角=1） */
+  function dispLen(s) {
+    var n = 0;
+    for (var i = 0; i < s.length; i++) n += s.charCodeAt(i) > 255 ? 2 : 1;
+    return n;
+  }
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function hasAny(obj) { for (var k in obj) { if (obj[k] !== '') return true; } return false; }
+  function fmtH(min) { return Math.round(min / 60 * 100) / 100; }
+  function divTitle(t) {
+    if (!t) return '';
+    var parts = [];
+    for (var dv in t.divMin) parts.push(dv + ' ' + fmtH(t.divMin[dv]) + 'h');
+    return esc(parts.join(' / '));
+  }
+  function needOf(ctx, day, cat) {
+    var dn = ctx.sched.dailyNeeds || {};
+    if (dn[day] && typeof dn[day][cat] === 'number') return dn[day][cat];
+    var mn = ctx.sched.monthNeeds || {};
+    if (typeof mn[cat] === 'number') return mn[cat];
+    var dow = new Date(ctx.year, ctx.month - 1, day).getDay();
+    var wd = ctx.settings.weekdayNeeds || {};
+    return wd[dow] && typeof wd[dow][cat] === 'number' ? wd[dow][cat] : 0;
+  }
+  function closest(el, selOrCls) {
+    while (el && el !== document) {
+      if (selOrCls.charAt(0) === '.') {
+        if (el.classList && el.classList.contains(selOrCls.slice(1))) return el;
+      } else if (el.tagName && el.tagName.toLowerCase() === selOrCls) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  function cellOf(td) {
+    return {
+      sid: td.getAttribute('data-sid'), div: td.getAttribute('data-div'),
+      day: parseInt(td.getAttribute('data-day'), 10),
+      isMain: td.getAttribute('data-main') === '1'
+    };
+  }
+  function rowIndexOf(rows, c) {
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].sid === c.sid && rows[i].div === c.div) return i;
+    }
+    return -1;
+  }
+  function findStaff(list, sid) {
+    for (var i = 0; i < list.length; i++) { if (list[i].id === sid) return list[i]; }
+    return null;
+  }
+  function allowedSymbols(staff, symbols) {
+    var out = [];
+    var allow = staff && staff.allowedSymbols && staff.allowedSymbols.length ? staff.allowedSymbols : null;
+    for (var i = 0; i < symbols.length; i++) {
+      if (symbols[i].disabled) continue;
+      if (allow && allow.indexOf(symbols[i].code) < 0) continue;
+      out.push(symbols[i]);
+    }
+    /* 休み記号は常に入力可能にする */
+    if (allow) {
+      for (var j = 0; j < symbols.length; j++) {
+        var t = symbols[j].type;
+        if ((t === 'off' || t === 'paidOff' || t === 'publicOff') && out.indexOf(symbols[j]) < 0 && !symbols[j].disabled) out.push(symbols[j]);
+      }
+    }
+    return out;
+  }
+  function matchSymbol(symbols, v) {
+    var norm = Sym.normalizeCell(v);
+    if (Sym.ALIASES[norm]) norm = Sym.ALIASES[norm];
+    for (var i = 0; i < symbols.length; i++) {
+      if (Sym.normalizeCell(symbols[i].code) === norm) return symbols[i];
+    }
+    return null;
+  }
+  function isOffValue(v, symbols) {
+    var p = Sym.parseCell(v, symbols);
+    for (var i = 0; i < p.parts.length; i++) {
+      var k = p.parts[i].kind;
+      if (k === 'off' || k === 'paidOff' || k === 'publicOff') return true;
+    }
+    return false;
+  }
+  function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
+  function hidePalette() {
+    var pal = document.getElementById('palette');
+    if (pal) pal.style.display = 'none';
+  }
+  function gridActive() {
+    return document.getElementById('view-grid').classList.contains('on');
+  }
+  function markDragRow(tr) {
+    var prev = document.querySelector('#gridWrap tr.dragover');
+    if (prev) prev.classList.remove('dragover');
+    if (tr) tr.classList.add('dragover');
+  }
+
+  window.ShiftGrid = Grid;
+})();
+/* ===== src/ui/master.js ===== */
+/* master.js — マスタ画面（職員・記号・職員一括取込・設定・同期設定・バックアップ） */
+(function () {
+  'use strict';
+  var IM = window.ShiftImporters;
+
+  var GROUPS = [
+    { key: 'night', label: '夜勤専従' },
+    { key: 'visit', label: '訪問介護・施設' },
+    { key: 'day', label: 'デイサービス' }
+  ];
+
+  var Master = {
+    app: null,
+
+    init: function (app) {
+      this.app = app;
+      var self = this;
+      /* タブ切替 */
+      var tabs = document.querySelectorAll('#masterTabs button');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener('click', function (e) {
+          var key = e.target.getAttribute('data-mtab');
+          var all = document.querySelectorAll('#masterTabs button');
+          for (var j = 0; j < all.length; j++) all[j].classList.remove('on');
+          e.target.classList.add('on');
+          var views = ['staff', 'symbols', 'import', 'settings'];
+          for (var k = 0; k < views.length; k++) {
+            document.getElementById('mtab-' + views[k]).classList.toggle('on', views[k] === key);
+          }
+        });
+      }
+      document.getElementById('staffAdd').addEventListener('click', function () { self.editStaff(null); });
+      document.getElementById('symAdd').addEventListener('click', function () { self.addSymbolRow(); });
+      document.getElementById('staffParse').addEventListener('click', function () { self.parseStaffPaste(); });
+      this.initSettings();
+      this.initSync();
+      this.initBackup();
+    },
+
+    render: function () {
+      this.renderStaff();
+      this.renderSymbols();
+      this.renderSettings();
+    },
+
+    /* ── 職員一覧 ── */
+    renderStaff: function () {
+      var app = this.app, self = this;
+      var staff = app.masterSorted();
+      var h = '<table class="plain"><tr><th></th><th>氏名</th><th>グループ</th><th>主区分</th><th>資格</th><th>許可パターン</th><th>勤務条件メモ</th><th>頭数</th><th>ステータス</th></tr>';
+      for (var i = 0; i < staff.length; i++) {
+        var st = staff[i];
+        h += '<tr data-sid="' + st.id + '" draggable="true" style="cursor:pointer' + (st.active === false ? ';opacity:.45' : '') + '">' +
+          '<td title="ドラッグで並べ替え">↕</td>' +
+          '<td><b>' + esc(st.name) + '</b></td>' +
+          '<td>' + esc(groupLabel(st.group)) + '</td>' +
+          '<td>' + esc(st.mainDivision || '施設') + '</td>' +
+          '<td>' + esc((st.qualifications || []).join('・')) + '</td>' +
+          '<td>' + esc(st.allowedSymbols && st.allowedSymbols.length ? st.allowedSymbols.join(' ') : '全て') + '</td>' +
+          '<td class="muted">' + esc((st.rules && st.rules.note) || '') + '</td>' +
+          '<td>' + (st.countInHeadcount === false ? '除外' : '○') + '</td>' +
+          '<td>' + esc(st.status || (st.active === false ? '退職' : '在籍')) + '</td></tr>';
+      }
+      h += '</table>';
+      var el = document.getElementById('staffTable');
+      el.innerHTML = h;
+      el.onclick = function (e) {
+        var tr = closestTag(e.target, 'tr');
+        if (tr && tr.getAttribute('data-sid')) self.editStaff(tr.getAttribute('data-sid'));
+      };
+      /* 並べ替え */
+      var dragSid = null;
+      el.addEventListener('dragstart', function (e) {
+        var tr = closestTag(e.target, 'tr');
+        if (tr) dragSid = tr.getAttribute('data-sid');
+      });
+      el.addEventListener('dragover', function (e) { e.preventDefault(); });
+      el.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var tr = closestTag(e.target, 'tr');
+        if (tr && dragSid && tr.getAttribute('data-sid') && tr.getAttribute('data-sid') !== dragSid) {
+          self.app.reorderMaster(dragSid, tr.getAttribute('data-sid'));
+        }
+      });
+    },
+
+    /* ── 職員編集ドロワー ── */
+    editStaff: function (sid) {
+      var app = this.app, self = this;
+      var st = sid ? app.findStaff(sid) : null;
+      var isNew = !st;
+      if (!st) {
+        st = { id: newId(), name: '', group: 'visit', mainDivision: '訪問',
+          qualifications: [], allowedSymbols: null, rules: { note: '' }, countInHeadcount: true, active: true };
+      }
+      var r = st.rules || {};
+      var h = '<h2>' + (isNew ? '職員を追加' : '職員を編集') + '</h2><div class="formgrid">';
+      h += '<label>氏名</label><input type="text" id="edName" value="' + esc(st.name) + '">';
+      h += '<label>グループ</label><select id="edGroup">';
+      for (var g = 0; g < GROUPS.length; g++) {
+        h += '<option value="' + GROUPS[g].key + '"' + ((st.group || 'visit') === GROUPS[g].key ? ' selected' : '') + '>' + GROUPS[g].label + '</option>';
+      }
+      h += '</select>';
+      h += '<label>主区分</label><select id="edDiv">';
+      var dvs = ['施設', '訪問', '通所'];
+      for (var d = 0; d < dvs.length; d++) {
+        h += '<option' + ((st.mainDivision || '施設') === dvs[d] ? ' selected' : '') + '>' + dvs[d] + '</option>';
+      }
+      h += '</select>';
+      h += '<label>資格</label><div class="qualchk" id="edQuals">';
+      for (var q = 0; q < IM.QUAL_NAMES.length; q++) {
+        var qn = IM.QUAL_NAMES[q];
+        h += '<label><input type="checkbox" value="' + qn + '"' + ((st.qualifications || []).indexOf(qn) >= 0 ? ' checked' : '') + '> ' + qn + '</label>';
+      }
+      h += '</div>';
+      h += '<label>許可パターン</label><div class="symchk" id="edSyms"><label><input type="checkbox" id="edSymAll"' + (!st.allowedSymbols || !st.allowedSymbols.length ? ' checked' : '') + '> <b>全て許可</b></label><br>';
+      for (var s = 0; s < app.symbols.length; s++) {
+        var sym = app.symbols[s];
+        if (sym.disabled) continue;
+        h += '<label><input type="checkbox" class="edSymOne" value="' + esc(sym.code) + '"' +
+          (st.allowedSymbols && st.allowedSymbols.indexOf(sym.code) >= 0 ? ' checked' : '') + '> ' + esc(sym.code) + '</label>';
+      }
+      h += '<div class="muted">※休み記号はチェックに関わらず常に入力できます</div></div>';
+      h += '<label>サービス提供責任者</label><label><input type="checkbox" id="edSvcMgr"' + (st.serviceManager ? ' checked' : '') + '> 行政提出の職務欄に「サービス提供責任者」と表示</label>';
+      h += '<label>雇用形態</label><select id="edEmploy">';
+      var emps = ['役員', '正社員', '契約社員', 'パート'];
+      for (var em = 0; em < emps.length; em++) {
+        h += '<option' + ((st.employment || '契約社員') === emps[em] ? ' selected' : '') + '>' + emps[em] + '</option>';
+      }
+      h += '</select>';
+      h += '<label>区分行の表示</label><div id="edRowVis">';
+      var allDivs = ['施設', '訪問', '通所'];
+      for (var rv = 0; rv < allDivs.length; rv++) {
+        var hiddenList = st.hiddenDivisions || [];
+        h += '<label><input type="checkbox" value="' + allDivs[rv] + '"' + (hiddenList.indexOf(allDivs[rv]) < 0 ? ' checked' : '') + '> ' + allDivs[rv] + '</label>';
+      }
+      h += '<div class="muted">チェックを外した行はシフト表に表示されません（月をまたいで維持）</div></div>';
+      h += '<label>夜勤折半</label><label><input type="checkbox" id="edNightSplit"' + (st.nightSplit ? ' checked' : '') + '> 夜勤実働を施設/訪問に50%ずつ計上</label>';
+      h += '<label>連勤上限</label><input type="number" id="edMaxCons" min="1" max="10" value="' + (r.maxConsecutive || 4) + '" style="width:70px">';
+      h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + (r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
+      h += '<label>遅番回数上限</label><input type="number" id="edLateMax" min="0" max="31" value="' + (r.lateMax || '') + '" style="width:70px" placeholder="なし">';
+      h += '<label>固定休曜日</label><div id="edFixedOff">';
+      var dows = ['日', '月', '火', '水', '木', '金', '土'];
+      for (var w = 0; w < 7; w++) {
+        h += '<label><input type="checkbox" value="' + w + '"' + ((r.fixedOffWeekdays || []).indexOf(w) >= 0 ? ' checked' : '') + '> ' + dows[w] + '</label>';
+      }
+      h += '</div>';
+      h += '<label>早遅の順序</label><select id="edOrder">' +
+        '<option value=""' + (!r.orderRule ? ' selected' : '') + '>制約なし</option>' +
+        '<option value="earlyToLate"' + (r.orderRule === 'earlyToLate' ? ' selected' : '') + '>早⇒遅のみ（遅⇒早は不可）</option>' +
+        '</select>';
+      h += '<label>勤務条件メモ</label><textarea id="edNote" style="height:64px">' + esc(r.note || '') + '</textarea>';
+      h += '<label>頭数に入れる</label><label><input type="checkbox" id="edCount"' + (st.countInHeadcount !== false ? ' checked' : '') + '> シフト計算・指標に含める（役員は外す）</label>';
+      var curStatus = st.status || (st.active === false ? '退職' : '在籍');
+      h += '<label>ステータス</label><div><select id="edStatus">';
+      var stats = ['在籍', '休職', '非表示', '退職'];
+      for (var si = 0; si < stats.length; si++) {
+        h += '<option' + (curStatus === stats[si] ? ' selected' : '') + '>' + stats[si] + '</option>';
+      }
+      h += '</select><div class="muted">在籍以外はシフト表に表示されず、常勤換算・資格割合の計算からも除外されます</div></div>';
+      h += '</div><div class="flexrow" style="margin-top:14px">';
+      h += '<button class="act" id="edSave">保存</button>';
+      h += '<button class="act ghost" id="edCancel">キャンセル</button>';
+      if (!isNew) h += '<button class="act danger" id="edDelete" style="margin-left:auto">削除</button>';
+      h += '</div>';
+      openDrawer(h);
+      document.getElementById('edCancel').onclick = closeDrawer;
+      document.getElementById('edSave').onclick = function () {
+        var name = document.getElementById('edName').value.trim();
+        if (!name) { alert('氏名を入力してください'); return; }
+        st.name = name;
+        st.group = document.getElementById('edGroup').value;
+        st.mainDivision = document.getElementById('edDiv').value;
+        st.employment = document.getElementById('edEmploy').value;
+        st.serviceManager = document.getElementById('edSvcMgr').checked;
+        st.qualifications = checkedValues('#edQuals input:checked');
+        if (document.getElementById('edSymAll').checked) {
+          st.allowedSymbols = null;
+        } else {
+          st.allowedSymbols = checkedValues('#edSyms input.edSymOne:checked');
+        }
+        st.nightSplit = document.getElementById('edNightSplit').checked ? { '施設': 0.5, '訪問': 0.5 } : null;
+        var visChecked = checkedValues('#edRowVis input:checked');
+        st.hiddenDivisions = ['施設', '訪問', '通所'].filter(function (dv) { return visChecked.indexOf(dv) < 0; });
+        st.rules = st.rules || {};
+        st.rules.maxConsecutive = parseInt(document.getElementById('edMaxCons').value, 10) || 4;
+        st.rules.monthlyTarget = parseInt(document.getElementById('edTarget').value, 10) || null;
+        st.rules.lateMax = parseInt(document.getElementById('edLateMax').value, 10) || null;
+        st.rules.fixedOffWeekdays = checkedValues('#edFixedOff input:checked').map(function (v) { return parseInt(v, 10); });
+        st.rules.orderRule = document.getElementById('edOrder').value || null;
+        st.rules.note = document.getElementById('edNote').value;
+        st.countInHeadcount = document.getElementById('edCount').checked;
+        st.status = document.getElementById('edStatus').value;
+        st.active = (st.status === '在籍');
+        if (isNew) app.addStaff(st); else app.saveStaff();
+        closeDrawer();
+        self.renderStaff();
+      };
+      var del = document.getElementById('edDelete');
+      if (del) del.onclick = function () {
+        app.confirm('職員の削除', st.name + ' を削除しますか？\n（過去のシフトデータは残りますが表示されなくなります。退職の場合は「有効」をオフにする方を推奨します）', function () {
+          app.removeStaff(st.id);
+          closeDrawer();
+          self.renderStaff();
+        });
+      };
+    },
+
+    /* ── 記号マスタ ── */
+    renderSymbols: function () {
+      var app = this.app, self = this;
+      var h = '<table class="plain"><tr><th>記号</th><th>名称</th><th>種別</th><th>開始</th><th>終了</th><th>分類</th><th>セル色</th><th>文字色</th><th>太字</th><th>実働(プレビュー)</th><th></th></tr>';
+      for (var i = 0; i < app.symbols.length; i++) {
+        var s = app.symbols[i];
+        h += '<tr data-idx="' + i + '"' + (s.disabled ? ' style="opacity:.4"' : '') + '>' +
+          '<td><input type="text" data-f="code" value="' + esc(s.code) + '" style="width:52px"></td>' +
+          '<td><input type="text" data-f="label" value="' + esc(s.label || '') + '"></td>' +
+          '<td>' + typeSelect(s.type) + '</td>' +
+          '<td><input type="text" data-f="start" value="' + esc(s.start || '') + '" style="width:52px"></td>' +
+          '<td><input type="text" data-f="end" value="' + esc(s.end || s.pairEnd || '') + '" style="width:52px"></td>' +
+          '<td>' + catSelect(s.cat) + '</td>' +
+          '<td><input type="color" data-f="color" value="' + (s.color || '#ffffff') + '"></td>' +
+          '<td><input type="color" data-f="textColor" value="' + (s.textColor || '#2b3138') + '"></td>' +
+          '<td><input type="checkbox" data-f="bold"' + (s.bold ? ' checked' : '') + '></td>' +
+          '<td class="muted">' + preview(s, app) + '</td>' +
+          '<td><button class="act ghost" data-act="toggle">' + (s.disabled ? '有効化' : '無効化') + '</button></td></tr>';
+      }
+      h += '</table><p class="muted">種別: 勤務=開始・終了から実働を計算 ／ 夜勤入り=「終了」欄に標準ペアの上がり時刻 ／ 有給=実働8h扱い</p>';
+      var el = document.getElementById('symTable');
+      el.innerHTML = h;
+      el.onchange = function (e) {
+        var tr = closestTag(e.target, 'tr');
+        if (!tr) return;
+        var idx = parseInt(tr.getAttribute('data-idx'), 10);
+        var f = e.target.getAttribute('data-f');
+        if (f === null) return;
+        var s = app.symbols[idx];
+        var v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        if (f === 'end' && s.type === 'nightIn') s.pairEnd = v;
+        else s[f] = v;
+        app.saveSymbols();
+        self.renderSymbols();
+      };
+      el.onclick = function (e) {
+        if (e.target.getAttribute && e.target.getAttribute('data-act') === 'toggle') {
+          var tr = closestTag(e.target, 'tr');
+          var idx = parseInt(tr.getAttribute('data-idx'), 10);
+          app.symbols[idx].disabled = !app.symbols[idx].disabled;
+          app.saveSymbols();
+          self.renderSymbols();
+        }
+      };
+      /* 種別・分類セレクト */
+      var sels = el.querySelectorAll('select');
+      for (var j = 0; j < sels.length; j++) {
+        sels[j].addEventListener('change', function (e) {
+          var tr = closestTag(e.target, 'tr');
+          var idx = parseInt(tr.getAttribute('data-idx'), 10);
+          app.symbols[idx][e.target.getAttribute('data-f')] = e.target.value;
+          app.saveSymbols();
+          self.renderSymbols();
+        });
+      }
+    },
+
+    addSymbolRow: function () {
+      this.app.symbols.push({ code: '', label: '', type: 'work', start: '9:00', end: '17:00', cat: 'mid', color: '#ffffff' });
+      this.app.saveSymbols();
+      this.renderSymbols();
+    },
+
+    /* ── 職員一括取込 ── */
+    parseStaffPaste: function () {
+      var app = this.app, self = this;
+      var text = document.getElementById('staffPaste').value;
+      var msg = document.getElementById('staffParseMsg');
+      if (!text.trim()) { msg.textContent = 'データを貼り付けてください'; return; }
+      var r = IM.parseStaffTSV(text);
+      if (r.errors.length) { msg.textContent = r.errors.join(' / '); return; }
+      msg.textContent = '';
+      var existing = {};
+      for (var i = 0; i < app.staff.length; i++) existing[normName(app.staff[i].name)] = app.staff[i];
+      var h = '<h3>取込プレビュー（' + r.staff.length + '名）</h3><table class="plain"><tr><th>判定</th><th>氏名</th><th>区分</th><th>資格</th><th>メモ</th></tr>';
+      for (var j = 0; j < r.staff.length; j++) {
+        var p = r.staff[j];
+        var ex = existing[p.normName];
+        h += '<tr><td>' + (ex ? '<span class="badge upd">更新</span>' : '<span class="badge new">新規</span>') + '</td>' +
+          '<td>' + esc(p.name) + '</td><td>' + esc(p.mainDivision) + '</td>' +
+          '<td>' + esc(p.qualifications.join('・')) + '</td><td class="muted">' + esc(p.note) + '</td></tr>';
+      }
+      for (var k = 0; k < r.excluded.length; k++) {
+        h += '<tr><td><span class="badge ex">除外</span></td><td>' + esc(r.excluded[k]) + '</td><td colspan="3" class="muted">ダミー回答（假屋姓）</td></tr>';
+      }
+      h += '</table><div class="flexrow" style="margin-top:8px"><button class="act" id="staffImportGo">この内容で取り込む</button></div>';
+      document.getElementById('staffImportPreview').innerHTML = h;
+      document.getElementById('staffImportGo').onclick = function () {
+        var added = 0, updated = 0;
+        for (var x = 0; x < r.staff.length; x++) {
+          var p2 = r.staff[x];
+          var ex2 = existing[p2.normName];
+          if (ex2) {
+            ex2.mainDivision = p2.mainDivision;
+            if (p2.qualifications.length) ex2.qualifications = p2.qualifications;
+            ex2.rules = ex2.rules || {};
+            if (p2.note) ex2.rules.note = p2.note;
+            updated++;
+          } else {
+            var ns = {
+              id: newId(), name: p2.name, group: guessGroup(p2),
+              mainDivision: p2.mainDivision, qualifications: p2.qualifications,
+              allowedSymbols: null, rules: { note: p2.note, maxConsecutive: 4 },
+              countInHeadcount: p2.note.indexOf('頭数に入れない') < 0,
+              active: true, order: app.staff.length + added
+            };
+            if (p2.note.indexOf('夜勤専従') >= 0) ns.nightSplit = { '施設': 0.5, '訪問': 0.5 };
+            app.staff.push(ns);
+            added++;
+          }
+        }
+        app.saveStaff();
+        document.getElementById('staffImportPreview').innerHTML =
+          '<p>✓ 取込完了: 新規 ' + added + '名 / 更新 ' + updated + '名 / 除外 ' + r.excluded.length + '名</p>';
+        self.renderStaff();
+        app.rerender();
+      };
+    },
+
+    /* ── 設定 ── */
+    initSettings: function () {},
+    renderSettings: function () {
+      var app = this.app, self = this;
+      var s = app.settings;
+      var dows = ['日', '月', '火', '水', '木', '金', '土'];
+      var h = '<div class="formgrid">';
+      h += '<label>休憩控除の閾値</label><select id="setThresh">' +
+        '<option value="6"' + (s.breakThresholdH === 6 ? ' selected' : '') + '>拘束6時間以上で1h控除</option>' +
+        '<option value="7"' + (s.breakThresholdH === 7 ? ' selected' : '') + '>拘束7時間以上で1h控除</option></select>';
+      h += '<label>夜勤の休憩</label><input type="number" id="setNightBreak" step="0.5" value="' + s.nightBreakH + '" style="width:70px"> ';
+      h += '<label>有給の扱い</label><label><input type="checkbox" id="setPaid"' + (s.paidLeaveCountsAsWork ? ' checked' : '') + '> 実働8hとして算入する</label>';
+      h += '<label>常勤換算の分母</label><input type="number" id="setFte" value="' + s.fteBaseHours + '" style="width:70px"> h（4週）';
+      h += '<label>週の起点曜日</label><select id="setWeekStart">';
+      for (var w = 0; w < 7; w++) h += '<option value="' + w + '"' + (s.weekStartDow === w ? ' selected' : '') + '>' + dows[w] + '</option>';
+      h += '</select>';
+      h += '<label>印刷用紙</label><select id="setPrint">' +
+        '<option value="A3 landscape"' + (s.printSize === 'A3 landscape' ? ' selected' : '') + '>A3 横（既定）</option>' +
+        '<option value="A4 landscape"' + (s.printSize === 'A4 landscape' ? ' selected' : '') + '>A4 横</option></select>';
+      h += '</div><h3>曜日別の早番・遅番 必要数（既定値）</h3><table class="plain" style="max-width:480px"><tr><th></th>';
+      for (var w2 = 0; w2 < 7; w2++) h += '<th>' + dows[w2] + '</th>';
+      h += '</tr>';
+      var cats = [{ k: 'early', label: '早番' }, { k: 'late', label: '遅番' }];
+      for (var c = 0; c < cats.length; c++) {
+        h += '<tr><th>' + cats[c].label + '</th>';
+        for (var w3 = 0; w3 < 7; w3++) {
+          var v = (s.weekdayNeeds[w3] && s.weekdayNeeds[w3][cats[c].k]) || 0;
+          h += '<td><input type="number" class="setNeed" data-dow="' + w3 + '" data-cat="' + cats[c].k + '" min="0" max="9" value="' + v + '" style="width:46px"></td>';
+        }
+        h += '</tr>';
+      }
+      h += '</table><h3>グループ見出し行の色（印刷にも反映）</h3><table class="plain" style="max-width:420px"><tr><th>行</th><th>セル色</th><th>文字色</th></tr>';
+      var gdefs = [['night', '夜勤専従'], ['visit', '訪問介護・施設'], ['day', 'デイサービス']];
+      var gcs = s.groupColors || {};
+      for (var gi = 0; gi < gdefs.length; gi++) {
+        var gc = gcs[gdefs[gi][0]] || { bg: '#1a4a80', text: '#ffffff' };
+        h += '<tr><td>' + gdefs[gi][1] + '</td>' +
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="bg" value="' + gc.bg + '"></td>' +
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="text" value="' + gc.text + '"></td></tr>';
+      }
+      h += '</table><div style="margin-top:10px"><button class="act" id="setSave">設定を保存</button> <span class="muted" id="setMsg"></span></div>';
+      document.getElementById('settingsForm').innerHTML = h;
+      document.getElementById('setSave').onclick = function () {
+        s.breakThresholdH = parseInt(document.getElementById('setThresh').value, 10);
+        s.nightBreakH = parseFloat(document.getElementById('setNightBreak').value) || 2;
+        s.paidLeaveCountsAsWork = document.getElementById('setPaid').checked;
+        s.fteBaseHours = parseInt(document.getElementById('setFte').value, 10) || 160;
+        s.weekStartDow = parseInt(document.getElementById('setWeekStart').value, 10);
+        s.printSize = document.getElementById('setPrint').value;
+        if (!s.groupColors) s.groupColors = {};
+        var gcs2 = document.querySelectorAll('.setGc');
+        for (var g2 = 0; g2 < gcs2.length; g2++) {
+          var gk = gcs2[g2].getAttribute('data-g');
+          if (!s.groupColors[gk]) s.groupColors[gk] = { bg: '#1a4a80', text: '#ffffff' };
+          s.groupColors[gk][gcs2[g2].getAttribute('data-k')] = gcs2[g2].value;
+        }
+        var needs = document.querySelectorAll('.setNeed');
+        for (var i = 0; i < needs.length; i++) {
+          var dow = needs[i].getAttribute('data-dow'), cat = needs[i].getAttribute('data-cat');
+          if (!s.weekdayNeeds[dow]) s.weekdayNeeds[dow] = {};
+          s.weekdayNeeds[dow][cat] = parseInt(needs[i].value, 10) || 0;
+        }
+        app.saveSettings();
+        document.getElementById('setMsg').textContent = '✓ 保存しました';
+        app.rerender();
+      };
+    },
+
+    /* ── 同期設定 ── */
+    initSync: function () {
+      var app = this.app;
+      var Store = window.ShiftStore;
+      var cfg = Store.getSyncConfig() || {};
+      document.getElementById('syncUrl').value = cfg.url || '';
+      document.getElementById('syncToken').value = cfg.token || '';
+      document.getElementById('syncSave').onclick = function () {
+        Store.setSyncConfig({
+          url: document.getElementById('syncUrl').value.trim(),
+          token: document.getElementById('syncToken').value.trim()
+        });
+        document.getElementById('syncMsg').textContent = '✓ 保存しました（接続テストを推奨）';
+      };
+      document.getElementById('syncTest').onclick = function () {
+        var msg = document.getElementById('syncMsg');
+        msg.textContent = '接続中…';
+        Store.setSyncConfig({
+          url: document.getElementById('syncUrl').value.trim(),
+          token: document.getElementById('syncToken').value.trim()
+        });
+        Store.ping().then(function () { msg.textContent = '✓ 接続OK'; })
+          .catch(function (e) { msg.textContent = '✗ 接続失敗: ' + e.message; });
+      };
+      document.getElementById('syncNow').onclick = function () {
+        var msg = document.getElementById('syncMsg');
+        msg.textContent = '同期中…';
+        Store.pullAll().then(function (r) {
+          msg.textContent = r === 'ok' ? '✓ 同期完了' : '✗ ' + Store.statusDetail;
+          app.reloadFromStore();
+        });
+      };
+    },
+
+    /* ── バックアップ ── */
+    initBackup: function () {
+      var app = this.app;
+      var Store = window.ShiftStore;
+      document.getElementById('backupExport').onclick = function () {
+        var data = JSON.stringify(Store.exportAll(), null, 1);
+        var blob = new Blob([data], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'shiftapp-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+        document.getElementById('backupMsg').textContent = '✓ ダウンロードしました';
+      };
+      document.getElementById('backupImport').addEventListener('change', function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          try {
+            var n = Store.importAll(JSON.parse(reader.result));
+            document.getElementById('backupMsg').textContent = '✓ ' + n + 'キーを取り込みました';
+            app.reloadFromStore();
+          } catch (err) {
+            document.getElementById('backupMsg').textContent = '✗ ' + err.message;
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+  };
+
+  /* helpers */
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function closestTag(el, tag) {
+    while (el && el !== document) {
+      if (el.tagName && el.tagName.toLowerCase() === tag) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  function groupIdx(g) { return g === 'night' ? 0 : (g === 'day' ? 2 : 1); }
+  function groupLabel(g) {
+    for (var i = 0; i < GROUPS.length; i++) { if (GROUPS[i].key === g) return GROUPS[i].label; }
+    return '訪問介護・施設';
+  }
+  function newId() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
+  function guessGroup(p) {
+    if (p.note && p.note.indexOf('夜勤専従') >= 0) return 'night';
+    if (p.mainDivision === '通所') return 'day';
+    return 'visit';
+  }
+  function checkedValues(sel) {
+    var els = document.querySelectorAll(sel);
+    var out = [];
+    for (var i = 0; i < els.length; i++) out.push(els[i].value);
+    return out;
+  }
+  function typeSelect(t) {
+    var opts = [['work', '勤務'], ['nightIn', '夜勤入り'], ['nightOut', '夜勤上がり'], ['off', '休み'], ['paidOff', '有給'], ['publicOff', '公休']];
+    var h = '<select data-f="type">';
+    for (var i = 0; i < opts.length; i++) {
+      h += '<option value="' + opts[i][0] + '"' + (t === opts[i][0] ? ' selected' : '') + '>' + opts[i][1] + '</option>';
+    }
+    return h + '</select>';
+  }
+  function catSelect(c) {
+    var opts = [['early', '早番'], ['mid', '日勤'], ['late', '遅番'], ['night', '夜勤'], ['off', '休み']];
+    var h = '<select data-f="cat">';
+    for (var i = 0; i < opts.length; i++) {
+      h += '<option value="' + opts[i][0] + '"' + (c === opts[i][0] ? ' selected' : '') + '>' + opts[i][1] + '</option>';
+    }
+    return h + '</select>';
+  }
+  function preview(s, app) {
+    if (s.type === 'work' && s.start && s.end) {
+      var TC = window.ShiftTimecalc, Sy = window.ShiftSymbols;
+      var bound = Sy.timeToMin(s.end) - Sy.timeToMin(s.start);
+      if (bound > 0) return (TC.workMinutes(bound, TC.fillSettings(app.settings)) / 60) + 'h';
+    }
+    if (s.type === 'nightIn' && s.start && s.pairEnd) {
+      var Sy2 = window.ShiftSymbols;
+      var b = (1440 - Sy2.timeToMin(s.start)) + Sy2.timeToMin(s.pairEnd);
+      return (b - app.settings.nightBreakH * 60) / 60 + 'h';
+    }
+    if (s.type === 'paidOff') return '8h';
+    return '0h';
+  }
+  function openDrawer(html) {
+    document.getElementById('drawer').innerHTML = html;
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('overlay').classList.add('on');
+    document.getElementById('overlay').onclick = closeDrawer;
+  }
+  function closeDrawer() {
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('overlay').classList.remove('on');
+  }
+
+  window.ShiftMaster = Master;
+})();
+/* ===== src/ui/requests.js ===== */
+/* requests.js — 希望休画面（フォーム回答取込・編集・シフトへ反映） */
+(function () {
+  'use strict';
+  var IM = window.ShiftImporters;
+
+  var Requests = {
+    app: null,
+    parsed: null,
+
+    init: function (app) {
+      this.app = app;
+      var self = this;
+      document.getElementById('reqParse').addEventListener('click', function () { self.parse(); });
+      document.getElementById('reqApply').addEventListener('click', function () { self.applyToPlan(); });
+    },
+
+    render: function () {
+      var app = this.app;
+      var reqs = app.requests;
+      var days = app.days;
+      var w = 110 + days * 28;
+      var h = '<table class="plain eqcols" style="font-size:11px;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
+      for (var c = 0; c < days; c++) h += '<col style="width:28px">';
+      h += '</colgroup><tr><th>氏名</th>';
+      for (var d = 1; d <= days; d++) h += '<th style="text-align:center">' + d + '</th>';
+      h += '</tr>';
+      var staff = app.requestsSorted();
+      for (var i = 0; i < staff.length; i++) {
+        var st = staff[i];
+        if (st.active === false) continue;
+        var nm = IM.normalizeName(st.name);
+        var row = reqs[nm] || {};
+        h += '<tr data-sid="' + st.id + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
+        for (var d2 = 1; d2 <= days; d2++) {
+          var v = row[d2] || row[String(d2)] || '';
+          h += '<td style="text-align:center;cursor:pointer" data-nm="' + esc(nm) + '" data-day="' + d2 + '">' +
+            (v === '希' ? '<span style="color:#c0392b">希</span>' : v === '有' ? '<span style="color:#b7950b">有</span>' : '') + '</td>';
+        }
+        h += '</tr>';
+      }
+      h += '</table>';
+      var el = document.getElementById('reqGrid');
+      el.innerHTML = h;
+      var self = this;
+      /* 行のドラッグ&ドロップ（希望休専用の並び順 requestOrder） */
+      var dragSid = null;
+      el.addEventListener('dragstart', function (e) {
+        var tr = e.target;
+        while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+        if (tr) dragSid = tr.getAttribute('data-sid');
+      });
+      el.addEventListener('dragover', function (e) { e.preventDefault(); });
+      el.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var tr = e.target;
+        while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+        if (tr && dragSid && tr.getAttribute('data-sid') && tr.getAttribute('data-sid') !== dragSid) {
+          self.app.reorderRequests(dragSid, tr.getAttribute('data-sid'));
+          self.render();
+        }
+        dragSid = null;
+      });
+      el.onclick = function (e) {
+        var td = e.target;
+        while (td && td !== el && !(td.getAttribute && td.getAttribute('data-nm'))) td = td.parentNode;
+        if (!td || td === el) return;
+        var nm = td.getAttribute('data-nm');
+        var day = td.getAttribute('data-day');
+        var reqs2 = self.app.requests;
+        if (!reqs2[nm]) reqs2[nm] = {};
+        var cur = reqs2[nm][day] || '';
+        var next = cur === '' ? '希' : (cur === '希' ? '有' : '');
+        if (next === '') delete reqs2[nm][day]; else reqs2[nm][day] = next;
+        self.app.saveRequests();
+        self.render();
+      };
+    },
+
+    parse: function () {
+      var app = this.app, self = this;
+      var text = document.getElementById('reqPaste').value;
+      var msg = document.getElementById('reqParseMsg');
+      if (!text.trim()) { msg.textContent = 'データを貼り付けてください'; return; }
+      var r = IM.parseRequestTSV(text, app.staff);
+      this.parsed = r;
+      msg.textContent = '';
+      var names = [];
+      for (var nm in r.entries) names.push(nm);
+      var h = '<h3>解析結果</h3><p>' +
+        '<span class="badge new">一致 ' + r.matched.length + '名</span>' +
+        (r.unmatched.length ? '<span class="badge ex">不一致 ' + r.unmatched.length + '名: ' + esc(r.unmatched.join('、')) + '</span>' : '') +
+        (r.excluded.length ? '<span class="badge ex">除外(假屋) ' + r.excluded.length + '名</span>' : '') + '</p>';
+      h += '<table class="plain"><tr><th>氏名</th><th>希望休・有休</th></tr>';
+      for (var i = 0; i < names.length; i++) {
+        var e = r.entries[names[i]];
+        var ds = [];
+        for (var d in e) ds.push(d + '日:' + e[d]);
+        h += '<tr><td>' + esc(names[i]) + '</td><td>' + esc(ds.join(' ')) + '</td></tr>';
+      }
+      h += '</table><div class="flexrow" style="margin-top:8px"><button class="act" id="reqImportGo">この内容で登録する（既存の希望休と統合）</button></div>';
+      document.getElementById('reqPreview').innerHTML = h;
+      document.getElementById('reqImportGo').onclick = function () {
+        var reqs = app.requests;
+        var n = 0;
+        for (var nm2 in r.entries) {
+          reqs[nm2] = r.entries[nm2];
+          n++;
+        }
+        app.saveRequests();
+        document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました</p>';
+        self.render();
+        app.rerender();
+      };
+    },
+
+    applyToPlan: function () {
+      var app = this.app;
+      var sched = app.getSched('plan');
+      var n = 0, skipped = 0;
+      for (var i = 0; i < app.staff.length; i++) {
+        var st = app.staff[i];
+        var row = app.requests[IM.normalizeName(st.name)];
+        if (!row) continue;
+        if (!sched.cells[st.id]) sched.cells[st.id] = {};
+        for (var d in row) {
+          var day = String(parseInt(d, 10));
+          if (sched.cells[st.id][day]) { skipped++; continue; }
+          sched.cells[st.id][day] = row[d];
+          n++;
+        }
+      }
+      app.saveSched('plan', sched);
+      app.confirmInfo('反映完了', n + 'セルに書き込みました' + (skipped ? '（入力済み ' + skipped + 'セルはスキップ）' : ''));
+      app.rerender();
+    }
+  };
+
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  window.ShiftRequests = Requests;
+})();
+/* ===== src/ui/official.js ===== */
+/* official.js — 行政提出ビュー（様式1転記用・CSV出力・行政保管用指標） */
+(function () {
+  'use strict';
+  var TC = window.ShiftTimecalc;
+  var AG = window.ShiftAggregate;
+
+  var Official = {
+    app: null,
+    init: function (app) {
+      this.app = app;
+      var self = this;
+      document.getElementById('offLayer').addEventListener('change', function () { self.render(); });
+      document.getElementById('offDivision').addEventListener('change', function () { self.render(); });
+      document.getElementById('offCSV').addEventListener('click', function () { self.downloadCSV(); });
+      document.getElementById('offPrint').addEventListener('click', function () { window.print(); });
+    },
+
+    buildData: function () {
+      var app = this.app;
+      var layer = document.getElementById('offLayer').value;
+      var division = document.getElementById('offDivision').value;
+      var sched = app.getSched(layer);
+      var days = app.days;
+      var weekStart = app.settings.weekStartDow;
+      var firstDow = new Date(app.year, app.month - 1, 1).getDay();
+      var offset = (firstDow - weekStart + 7) % 7;
+      var rows = [];
+      var resultsMap = {};
+      var staff = app.officialSorted();
+      for (var i = 0; i < staff.length; i++) {
+        var st = staff[i];
+        if (st.active === false) continue;
+        var res = app.computeFor(st, sched);
+        resultsMap[st.id] = res;
+        var divMinTotal = res.totals.divMin[division] || 0;
+        if (divMinTotal === 0 && (st.mainDivision || '施設') !== division) continue;
+        /* 週別実働(対象区分のみ) */
+        var weekMin = {};
+        for (var d = 1; d <= days; d++) {
+          var wk = Math.floor((d - 1 + offset) / 7) + 1;
+          var dm = res.perDay[d].divMin[division] || 0;
+          weekMin[wk] = (weekMin[wk] || 0) + dm;
+        }
+        var cells = [];
+        var isMainDiv = (st.mainDivision || '施設') === division;
+        for (var d2 = 1; d2 <= days; d2++) {
+          /* 様式1転記用: 選択事業所での勤務のみ表示（主区分外の職員は応援行の値） */
+          cells.push(isMainDiv ? ((sched.cells[st.id] || {})[String(d2)] || '') : subVal(sched, st.id, division, d2));
+        }
+        rows.push({
+          sid: st.id,
+          name: st.name,
+          svcMgr: !!st.serviceManager,
+          quals: (st.qualifications || []).join('・'),
+          employment: st.employment || (st.rules && st.rules.monthlyTarget ? '非常勤' : '常勤'),
+          cells: cells,
+          weekMin: weekMin,
+          min28: res.totals.divMin28[division] || 0,
+          fte: Math.round((res.totals.divMin28[division] || 0) / 60 / app.settings.fteBaseHours * 100) / 100
+        });
+      }
+      /* 行政保管用の指標（選択区分の実働ベース） */
+      var kaifukuPct = AG.qualPctByDivision(app.staff, resultsMap, division, ['介護福祉士']);
+      var kaifukuJitsumuPct = AG.qualPctByDivision(app.staff, resultsMap, division, ['介護福祉士', '実務者研修']);
+      return { rows: rows, days: days, division: division, layer: layer,
+        kaifukuPct: kaifukuPct, kaifukuJitsumuPct: kaifukuJitsumuPct };
+    },
+
+    render: function () {
+      var app = this.app;
+      var data = this.buildData();
+      var h = '<div class="panel"><h2>' + app.year + '年' + app.month + '月 勤務形態一覧（' + esc(data.division) + '）</h2>';
+      var colW = 90 + 96 + 130 + 64 + data.days * 46 + 4 * 44 + 52 + 56;
+      h += '<table class="plain eqcols" style="font-size:10.5px;table-layout:fixed;width:' + colW + 'px"><colgroup>' +
+        '<col style="width:90px"><col style="width:96px"><col style="width:130px"><col style="width:64px">';
+      for (var cg = 0; cg < data.days; cg++) h += '<col style="width:46px">';
+      h += '<col style="width:44px"><col style="width:44px"><col style="width:44px"><col style="width:44px"><col style="width:52px"><col style="width:56px">';
+      h += '</colgroup><tr><th>氏名</th><th>職務</th><th>資格</th><th>勤務形態</th>';
+      for (var d = 1; d <= data.days; d++) h += '<th>' + d + '</th>';
+      h += '<th>1週</th><th>2週</th><th>3週</th><th>4週</th><th>4週計h</th><th>常勤換算</th></tr>';
+      for (var i = 0; i < data.rows.length; i++) {
+        var r = data.rows[i];
+        h += '<tr data-sid="' + r.sid + '" draggable="true"><td style="cursor:grab" title="' + esc(r.name) + '／ドラッグで並べ替え（行政提出専用）">' + esc(r.name) + '</td>' +
+          '<td title="サービス提供責任者">' + (r.svcMgr ? 'サービス提供責任者' : '') + '</td>' +
+          '<td title="' + esc(r.quals) + '">' + esc(r.quals) + '</td>' +
+          '<td title="' + esc(r.employment) + '">' + esc(r.employment) + '</td>';
+        for (var c = 0; c < r.cells.length; c++) {
+          var dl = dispLen(r.cells[c]);
+          h += '<td style="text-align:center"' + (dl >= 9 ? ' class="long2"' : dl >= 7 ? ' class="long1"' : '') + '>' + esc(r.cells[c]) + '</td>';
+        }
+        for (var w = 1; w <= 4; w++) h += '<td>' + fmtH(r.weekMin[w] || 0) + '</td>';
+        h += '<td><b>' + fmtH(r.min28) + '</b></td><td><b>' + r.fte + '</b></td></tr>';
+      }
+      var totalFte = 0, total28 = 0;
+      for (var j = 0; j < data.rows.length; j++) { totalFte += data.rows[j].fte; total28 += data.rows[j].min28; }
+      h += '<tr><td colspan="' + (data.days + 4) + '" style="text-align:right"><b>合計</b></td>' +
+        '<td colspan="4"></td><td><b>' + fmtH(total28) + '</b></td><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
+      h += '</table>';
+      /* 行政保管用 指標（印刷に含まれる） */
+      h += '<div class="offstats"><b>行政保管用 指標（' + app.year + '年' + app.month + '月・' + esc(data.division) + '・' + ({plan:'予定',actual:'実績',official:'行政提出用'})[data.layer] + 'レイヤ）</b><table class="plain" style="max-width:520px;margin-top:6px">';
+      h += '<tr><th>介護福祉士 割合（実働）</th><td><b>' + data.kaifukuPct + '%</b></td></tr>';
+      h += '<tr><th>介護福祉士＋実務者研修 割合（実働）</th><td><b>' + data.kaifukuJitsumuPct + '%</b></td></tr>';
+      h += '<tr><th>常勤換算 合計（1〜28日÷' + app.settings.fteBaseHours + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
+      h += '</table></div>';
+      h += '<p class="muted">※「従業者の勤務体制及び勤務形態一覧表（様式1）」への転記用。割合は当該事業所区分の実働時間に占める資格保有者の実働時間。</p></div>';
+      document.getElementById('officialTable').innerHTML = h;
+      /* 行のドラッグ&ドロップ（行政提出専用の並び順 officialOrder） */
+      var self = this;
+      var tbl = document.querySelector('#officialTable table');
+      var dragSid = null;
+      tbl.addEventListener('dragstart', function (e) {
+        var tr = e.target;
+        while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+        if (tr) dragSid = tr.getAttribute('data-sid');
+      });
+      tbl.addEventListener('dragover', function (e) { e.preventDefault(); });
+      tbl.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var tr = e.target;
+        while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+        if (tr && dragSid && tr.getAttribute('data-sid') && tr.getAttribute('data-sid') !== dragSid) {
+          app.reorderOfficial(dragSid, tr.getAttribute('data-sid'));
+          self.render();
+        }
+        dragSid = null;
+      });
+    },
+
+    downloadCSV: function () {
+      var app = this.app;
+      var data = this.buildData();
+      var lines = [];
+      var head = ['氏名', '職務', '資格', '勤務形態'];
+      for (var d = 1; d <= data.days; d++) head.push(d + '日');
+      head = head.concat(['1週h', '2週h', '3週h', '4週h', '4週計h', '常勤換算']);
+      lines.push(head.join(','));
+      for (var i = 0; i < data.rows.length; i++) {
+        var r = data.rows[i];
+        var row = [csv(r.name), csv(r.svcMgr ? 'サービス提供責任者' : ''), csv(r.quals), csv(r.employment)];
+        for (var c = 0; c < r.cells.length; c++) row.push(csv(r.cells[c]));
+        for (var w = 1; w <= 4; w++) row.push(fmtH(r.weekMin[w] || 0));
+        row.push(fmtH(r.min28), r.fte);
+        lines.push(row.join(','));
+      }
+      var bom = '\uFEFF';
+      var blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '勤務形態一覧_' + data.division + '_' + app.year + '-' + pad2(app.month) + '_' + data.layer + '.csv';
+      a.click();
+    }
+  };
+
+  function subVal(sched, sid, division, day) {
+    return ((sched.subCells[sid] || {})[division] || {})[String(day)] || '';
+  }
+  function fmtH(min) { return Math.round(min / 60 * 100) / 100; }
+  function dispLen(s) {
+    var n = 0;
+    for (var i = 0; i < String(s).length; i++) n += String(s).charCodeAt(i) > 255 ? 2 : 1;
+    return n;
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function csv(s) {
+    s = String(s === undefined || s === null ? '' : s);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  window.ShiftOfficial = Official;
+})();
+/* ===== src/ui/freee_ui.js ===== */
+/* freee_ui.js — freee勤怠CSVパネル（従業員コード取込・対応表・CSV出力）
+ * データ: staff[].empCode（職員マスタと同期）/ Store 'freee' = {patternMap, offNames}
+ * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
+(function () {
+  'use strict';
+  var F = window.ShiftFreee;
+  var Sym = window.ShiftSymbols;
+  var Store = window.ShiftStore;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  var FreeeUI = {
+    app: null,
+
+    init: function (app) {
+      this.app = app;
+      var self = this;
+      document.getElementById('frPasteApply').addEventListener('click', function () { self.applyPaste(); });
+      document.getElementById('frCSV').addEventListener('click', function () { self.downloadCsv(); });
+      /* 行政提出ビューが表示されるたびに描画（appのビュー切替に乗る） */
+      var view = document.getElementById('view-official');
+      var mo = new MutationObserver(function () {
+        if (view.classList.contains('on')) self.render();
+      });
+      mo.observe(view, { attributes: true, attributeFilter: ['class'] });
+      this.render();
+    },
+
+    cfg: function () {
+      var c = Store.get('freee', null) || {};
+      if (!c.patternMap) c.patternMap = {};
+      if (!c.offNames) {
+        c.offNames = {};
+        for (var k in F.DEFAULT_OFF_NAMES) {
+          if (Object.prototype.hasOwnProperty.call(F.DEFAULT_OFF_NAMES, k)) {
+            c.offNames[k] = F.DEFAULT_OFF_NAMES[k];
+          }
+        }
+      }
+      return c;
+    },
+    saveCfg: function (c) { Store.set('freee', c); },
+
+    render: function () {
+      this.renderEmpList();
+      this.renderMapList();
+      var n = 0;
+      var staff = this.app.staff || [];
+      for (var i = 0; i < staff.length; i++) {
+        if (staff[i].active !== false && staff[i].empCode) n++;
+      }
+      document.getElementById('frInfo').textContent =
+        'コード設定済み ' + n + '名が出力対象（月: ' + this.app.ym + '）';
+    },
+
+    renderEmpList: function () {
+      var el = document.getElementById('frEmpList');
+      var staff = this.app.staff || [];
+      var h = '<table class="plain"><tr><th>職員</th><th>従業員コード</th></tr>';
+      for (var i = 0; i < staff.length; i++) {
+        var st = staff[i];
+        if (st.active === false) continue;
+        h += '<tr><td>' + esc(st.name) + '</td>' +
+          '<td><input data-sid="' + esc(st.id) + '" class="fr-emp" style="width:90px" ' +
+          'value="' + esc(st.empCode || '') + '" placeholder="A000"></td></tr>';
+      }
+      h += '</table>';
+      el.innerHTML = h;
+      var self = this;
+      var inputs = el.querySelectorAll('.fr-emp');
+      for (var j = 0; j < inputs.length; j++) {
+        inputs[j].addEventListener('change', function () {
+          var sid = this.getAttribute('data-sid');
+          for (var k = 0; k < self.app.staff.length; k++) {
+            if (self.app.staff[k].id === sid) self.app.staff[k].empCode = this.value.trim();
+          }
+          Store.set('staff', self.app.staff);
+          self.render();
+        });
+      }
+    },
+
+    applyPaste: function () {
+      var text = document.getElementById('frPaste').value;
+      var parsed = F.parseEmployeePaste(text);
+      var out = document.getElementById('frPasteResult');
+      if (!parsed.length) { out.textContent = 'コードと氏名の組を検出できませんでした'; return; }
+      var m = F.matchEmployees(this.app.staff || [], parsed);
+      var n = 0;
+      for (var sid in m.assigned) {
+        if (!Object.prototype.hasOwnProperty.call(m.assigned, sid)) continue;
+        for (var i = 0; i < this.app.staff.length; i++) {
+          if (this.app.staff[i].id === sid) { this.app.staff[i].empCode = m.assigned[sid]; n++; }
+        }
+      }
+      Store.set('staff', this.app.staff);
+      var msg = n + '名に従業員コードを設定しました';
+      if (m.ambiguous.length) msg += '／同姓のため保留 ' + m.ambiguous.length + '名（手入力してください）';
+      if (m.unmatched.length) msg += '／職員に不在 ' + m.unmatched.length + '名';
+      out.textContent = msg;
+      document.getElementById('frPaste').value = '';
+      this.render();
+    },
+
+    renderMapList: function () {
+      var el = document.getElementById('frMapList');
+      var cfg = this.cfg();
+      var symbols = this.app.symbols || [];
+      var h = '<table class="plain"><tr><th>記号</th><th>種別</th><th>自動候補</th>' +
+        '<th>パターンコード</th><th>休暇名（空=出力しない）</th></tr>';
+      for (var i = 0; i < symbols.length; i++) {
+        var sd = symbols[i];
+        if (sd.disabled) continue;
+        var norm = Sym.normalizeCell(sd.code);
+        var isWork = sd.type === 'work' || sd.type === 'nightIn';
+        var isOff = sd.type === 'off' || sd.type === 'publicOff' || sd.type === 'paidOff';
+        if (sd.type === 'nightOut') {
+          h += '<tr><td>' + esc(sd.code) + '</td><td>夜勤上がり</td>' +
+            '<td colspan="3" class="muted">出力しない（前日の夜勤パターンに含まれる）</td></tr>';
+          continue;
+        }
+        var sug = isWork ? F.suggestForSymbol(symbols, sd.code) : null;
+        h += '<tr><td>' + esc(sd.code) + '</td><td>' + esc(sd.label || '') + '</td>' +
+          '<td>' + (sug ? esc(sug.code + ' ' + sug.name) : '<span class="muted">—</span>') + '</td>' +
+          '<td>' + (isWork
+            ? '<input class="fr-pat" data-sym="' + esc(norm) + '" style="width:70px" value="' +
+              esc(cfg.patternMap[norm] || '') + '" placeholder="' + (sug ? esc(sug.code) : '') + '">'
+            : '') + '</td>' +
+          '<td>' + (isOff
+            ? '<input class="fr-off" data-sym="' + esc(norm) + '" style="width:110px" value="' +
+              esc(Object.prototype.hasOwnProperty.call(cfg.offNames, norm)
+                ? cfg.offNames[norm]
+                : (sd.type === 'paidOff' ? '有給休暇' : '公休')) + '">'
+            : '') + '</td></tr>';
+      }
+      h += '</table><div class="muted">空欄のパターンコードは自動候補（出退勤時刻の一致）を使用します。</div>';
+      el.innerHTML = h;
+      var self = this;
+      var pats = el.querySelectorAll('.fr-pat');
+      for (var p = 0; p < pats.length; p++) {
+        pats[p].addEventListener('change', function () {
+          var c = self.cfg();
+          var v = this.value.trim();
+          if (v) c.patternMap[this.getAttribute('data-sym')] = v;
+          else delete c.patternMap[this.getAttribute('data-sym')];
+          self.saveCfg(c);
+        });
+      }
+      var offs = el.querySelectorAll('.fr-off');
+      for (var o = 0; o < offs.length; o++) {
+        offs[o].addEventListener('change', function () {
+          var c = self.cfg();
+          c.offNames[this.getAttribute('data-sym')] = this.value.trim();
+          self.saveCfg(c);
+        });
+      }
+    },
+
+    downloadCsv: function () {
+      var app = this.app;
+      var cfg = this.cfg();
+      var layer = document.getElementById('frLayer').value;
+      var sched = app.getSched(layer) || { cells: {} };
+      var res = F.buildCsv({
+        ym: app.ym,
+        staff: app.staff || [],
+        cells: sched.cells || {},
+        symbols: app.symbols || [],
+        patternMap: cfg.patternMap,
+        offNames: cfg.offNames
+      });
+      var warnEl = document.getElementById('frWarn');
+      var msgs = [];
+      if (!res.staffCount) {
+        warnEl.textContent = '従業員コードが設定された職員がいません（下の「従業員コードの取込・編集」から設定）';
+        return;
+      }
+      if (res.warnings.length) {
+        var w = res.warnings.slice(0, 8).map(function (x) {
+          return x.name + ' ' + x.day + '日「' + x.raw + '」';
+        }).join('、');
+        msgs.push('⚠ パターン未対応 ' + res.warnings.length + '件（出力から除外）: ' + w +
+          (res.warnings.length > 8 ? ' …' : ''));
+      }
+      var enc = F.encodeSjis(res.csv);
+      if (enc.unknown.length) {
+        msgs.push('⚠ Shift-JIS変換できない文字を「?」にしました: ' + enc.unknown.join(' '));
+      }
+      msgs.push('出力: ' + res.staffCount + '名・' + res.rows + '行（' + app.ym + '・' +
+        (layer === 'plan' ? '予定' : '実績') + '）');
+      warnEl.textContent = msgs.join('\n');
+      var blob = new Blob([enc.bytes], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'freee勤怠_' + app.ym + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 4000);
+    }
+  };
+
+  window.ShiftFreeeUI = FreeeUI;
+})();
+/* ===== src/ui/app.js ===== */
+/* app.js — アプリ統括（状態・描画調停・イベント・同期UI） */
+(function () {
+  'use strict';
+  var Store = window.ShiftStore;
+  var Sym = window.ShiftSymbols;
+  var TC = window.ShiftTimecalc;
+  var AG = window.ShiftAggregate;
+  var AA = window.ShiftAutoAssign;
+  var Grid = window.ShiftGrid;
+  var Hol = window.ShiftHolidays;
+
+  var LAYER_NAMES = { plan: '予定', actual: '実績', official: '行政提出用' };
+
+  var App = {
+    ym: '', year: 0, month: 0, days: 0,
+    layer: 'plan',
+    view: 'grid',
+    staff: [], symbols: [], settings: null, requests: {},
+    sched: null,
+    results: {}, counts: {}, metrics: {}, warnCount: 0,
+    revealHidden: false,
+    holidays: {},
+    _undo: [], _redo: [],
+
+    /* ── 起動 ── */
+    boot: function () {
+      Store.init();
+      this.loadAll();
+      if (this.ensureOrders()) Store.set('staff', this.staff);
+      var now = new Date();
+      this.setYM(now.getFullYear(), now.getMonth() + 1);
+      this.bindToolbar();
+      this.bindDialogs();
+      Grid.initGlobal();
+      window.ShiftMaster.init(this);
+      window.ShiftRequests.init(this);
+      window.ShiftOfficial.init(this);
+      window.ShiftFreeeUI.init(this);
+      window.ShiftMaster.render();
+      this.bindSync();
+      this.rerender();
+      /* 起動時プル */
+      var self = this;
+      Store.pullAll().then(function (r) {
+        if (r === 'ok') self.reloadFromStore();
+      });
+    },
+
+    loadAll: function () {
+      this.staff = Store.get('staff', []);
+      this.symbols = Store.get('symbols', null);
+      if (!this.symbols) {
+        this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
+        Store.set('symbols', this.symbols);
+      }
+      this.settings = Store.get('settings', null);
+      if (!this.settings) {
+        this.settings = {
+          breakThresholdH: 6, nightBreakH: 2, paidLeaveCountsAsWork: true,
+          fteBaseHours: 160, weekStartDow: 6, printSize: 'A3 landscape',
+          weekdayNeeds: { 0: { early: 4, late: 4 }, 1: { early: 4, late: 4 }, 2: { early: 4, late: 4 }, 3: { early: 4, late: 4 }, 4: { early: 4, late: 4 }, 5: { early: 4, late: 4 }, 6: { early: 4, late: 4 } }
+        };
+        Store.set('settings', this.settings);
+      }
+      if (!this.settings.groupColors) {
+        this.settings.groupColors = {
+          night: { bg: '#1a4a80', text: '#ffffff' },
+          visit: { bg: '#1a4a80', text: '#ffffff' },
+          day: { bg: '#1a4a80', text: '#ffffff' }
+        };
+      }
+    },
+
+    reloadFromStore: function () {
+      this.loadAll();
+      if (this.ensureOrders()) Store.set('staff', this.staff);
+      this.sched = null;
+      this.loadMonth();
+      window.ShiftMaster.render();
+      this.rerender();
+    },
+
+    /* ── 月・レイヤ ── */
+    setYM: function (y, m) {
+      if (m < 1) { y--; m = 12; }
+      if (m > 12) { y++; m = 1; }
+      this.year = y; this.month = m;
+      this.ym = y + '-' + (m < 10 ? '0' + m : m);
+      this.days = new Date(y, m, 0).getDate();
+      this.holidays = Hol ? Hol.holidaysOf(y, m) : {};
+      document.getElementById('ymLabel').textContent = this.ym;
+      this.loadMonth();
+    },
+
+    schedKey: function (layer) { return 'sched:' + this.ym + ':' + (layer || this.layer); },
+    reqKey: function () { return 'req:' + this.ym; },
+
+    emptySched: function () { return { cells: {}, subCells: {}, dailyNeeds: {}, notes: {}, meta: {} }; },
+
+    getSched: function (layer) {
+      var s = Store.get(this.schedKey(layer), null);
+      if (!s) s = this.emptySched();
+      if (!s.cells) s.cells = {};
+      if (!s.subCells) s.subCells = {};
+      if (!s.dailyNeeds) s.dailyNeeds = {};
+      if (!s.notes) s.notes = {};
+      if (!s.colors) s.colors = {};
+      if (!s.monthNeeds) s.monthNeeds = {};
+      return s;
+    },
+    saveSched: function (layer, sched) {
+      Store.set(this.schedKey(layer), sched);
+      if ((layer || this.layer) === this.layer) this.sched = sched;
+    },
+
+    loadMonth: function () {
+      this.sched = this.getSched(this.layer);
+      this.requests = Store.get(this.reqKey(), {});
+      this.updateLayerHint();
+    },
+
+    updateLayerHint: function () {
+      var hint = document.getElementById('layerHint');
+      var n = 0;
+      for (var sid in this.sched.cells) { if (hasAny(this.sched.cells[sid])) { n++; } }
+      hint.textContent = LAYER_NAMES[this.layer] + 'レイヤ: ' + (n ? n + '名分入力あり' : '未入力') +
+        '（' + this.ym + '）';
+    },
+
+    /* ── 計算 ── */
+    recompute: function () {
+      this.results = {};
+      var warn = 0;
+      for (var i = 0; i < this.staff.length; i++) {
+        var st = this.staff[i];
+        if (st.active === false) continue;
+        var res = this.computeFor(st, this.sched);
+        /* 連勤違反マーク */
+        var maxC = (st.rules && st.rules.maxConsecutive) || 4;
+        var run = 0;
+        for (var d = 1; d <= this.days; d++) {
+          var v = (this.sched.cells[st.id] || {})[String(d)] || '';
+          if (this.isWorkForCons(v)) {
+            run++;
+            if (run > maxC) { res.perDay[d].consViol = true; warn++; }
+          } else run = 0;
+        }
+        warn += res.warnings.length;
+        this.results[st.id] = res;
+      }
+      this.counts = AG.countCats(this.staff, this.results, this.days);
+      this.metrics = AG.computeMetrics(this.staff, this.results, this.settings);
+      this.warnCount = warn;
+    },
+
+    computeFor: function (st, sched) {
+      var rows = [{ division: st.mainDivision || '施設', cells: sched.cells[st.id] || {}, isMain: true }];
+      var subs = sched.subCells[st.id] || {};
+      for (var dv in subs) {
+        rows.push({ division: dv, cells: subs[dv], isMain: false });
+      }
+      var isNight = st.group === 'night' || (st.rules && st.rules.nightDedicated);
+      return TC.computeStaffMonth({
+        days: this.days, rows: rows, symbols: this.symbols,
+        settings: this.settings, nightSplit: st.nightSplit || null,
+        offDayMultiplier: isNight ? 2 : 1
+      });
+    },
+
+    isWorkForCons: function (v) {
+      if (!v) return false;
+      var p = Sym.parseCell(v, this.symbols);
+      for (var x = 0; x < p.parts.length; x++) {
+        if (p.parts[x].kind === 'work' || p.parts[x].kind === 'nightIn') return true;
+      }
+      return false;
+    },
+
+    rerender: function () {
+      this.recompute();
+      if (this.view === 'grid') {
+        Grid.render(this.gridCtx());
+      } else if (this.view === 'requests') {
+        window.ShiftRequests.render();
+      } else if (this.view === 'official') {
+        window.ShiftOfficial.render();
+      }
+      this.updateLayerHint();
+      document.getElementById('printTitle').textContent =
+        this.year + '年' + this.month + '月 勤務表（' + LAYER_NAMES[this.layer] + '）';
+    },
+
+    gridCtx: function () {
+      var self = this;
+      return {
+        ym: this.ym, year: this.year, month: this.month, days: this.days,
+        staff: this.staff, symbols: this.symbols, settings: this.settings,
+        sched: this.sched, requests: this.requests, holidays: this.holidays,
+        results: this.results, counts: this.counts, metrics: this.metrics,
+        warnCount: this.warnCount, revealHidden: this.revealHidden,
+        recentColors: Store.getLocal('recentColors', []),
+        onToggleDivision: function (sid, div, hide) { self.toggleHiddenDivision(sid, div, hide); },
+        onCellsColor: function (cells, color) { self.colorCells(cells, color); },
+        onCellsBold: function (cells) { self.boldCells(cells); },
+        onCellsChange: function (cells, value) { self.changeCells(cells, value); },
+        onPaste: function (changes) { self.pasteCells(changes); },
+        onNeedChange: function (day, cat, val) {
+          self.capture('必要数変更 ' + day + '日');
+          if (!self.sched.dailyNeeds[day]) self.sched.dailyNeeds[day] = {};
+          self.sched.dailyNeeds[day][cat] = val;
+          self.saveSched(self.layer, self.sched);
+          self.rerender();
+        },
+        onMonthNeedChange: function (cat, val) {
+          self.capture('前提数変更（' + (cat === 'early' ? '早番' : '遅番') + '）');
+          if (!self.sched.monthNeeds) self.sched.monthNeeds = {};
+          if (val === null) delete self.sched.monthNeeds[cat];
+          else self.sched.monthNeeds[cat] = val;
+          /* 前提数の変更は日別の個別設定をリセットして全日に反映 */
+          for (var d = 1; d <= self.days; d++) {
+            if (self.sched.dailyNeeds[d]) delete self.sched.dailyNeeds[d][cat];
+          }
+          self.saveSched(self.layer, self.sched);
+          self.rerender();
+        },
+        onReorder: function (sid, beforeSid) { self.reorderShift(sid, beforeSid); },
+        onMonthNote: function (sid) {
+          var st = self.findStaff(sid);
+          var cur = self.sched.notes[sid] || '';
+          var v = prompt((st ? st.name : '') + ' の今月の連絡事項', cur);
+          if (v === null) return;
+          self.capture('連絡事項 ' + (st ? st.name : ''));
+          self.sched.notes[sid] = v;
+          self.saveSched(self.layer, self.sched);
+          self.rerender();
+        },
+        onStaffEdit: function (sid) { window.ShiftMaster.editStaff(sid); }
+      };
+    },
+
+    /* ── 履歴（Undo/Redo・シフト編集のみ対象・この画面を開いている間有効） ── */
+    capture: function (label) {
+      this._undo.push({
+        ym: this.ym, layer: this.layer, label: label, at: new Date().toLocaleTimeString(),
+        sched: JSON.parse(JSON.stringify(this.sched))
+      });
+      if (this._undo.length > 100) this._undo.shift();
+      this._redo = [];
+      this.updateHistButtons();
+    },
+    snapshotNow: function (label) {
+      return { ym: this.ym, layer: this.layer, label: label || '(現在)', at: new Date().toLocaleTimeString(),
+        sched: JSON.parse(JSON.stringify(this.sched)) };
+    },
+    applySnap: function (snap) {
+      if (snap.ym !== this.ym) {
+        var p = snap.ym.split('-');
+        this.setYM(parseInt(p[0], 10), parseInt(p[1], 10));
+      }
+      if (snap.layer !== this.layer) {
+        this.layer = snap.layer;
+        var lbs = document.querySelectorAll('#layerBar button');
+        for (var i = 0; i < lbs.length; i++) lbs[i].classList.toggle('on', lbs[i].getAttribute('data-layer') === snap.layer);
+        this.loadMonth();
+      }
+      this.sched = JSON.parse(JSON.stringify(snap.sched));
+      this.saveSched(this.layer, this.sched);
+      this.rerender();
+      this.updateHistButtons();
+    },
+    undo: function () {
+      if (!this._undo.length) return;
+      var snap = this._undo.pop();
+      this._redo.push(this.snapshotNow(snap.label));
+      this.applySnap(snap);
+    },
+    redo: function () {
+      if (!this._redo.length) return;
+      var snap = this._redo.pop();
+      this._undo.push(this.snapshotNow(snap.label));
+      this.applySnap(snap);
+    },
+    jumpTo: function (idx) {
+      while (this._undo.length > idx) this.undo();
+    },
+    updateHistButtons: function () {
+      var u = document.getElementById('btnUndo'), r = document.getElementById('btnRedo');
+      if (u) u.style.opacity = this._undo.length ? '1' : '.35';
+      if (r) r.style.opacity = this._redo.length ? '1' : '.35';
+    },
+    showHistory: function () {
+      var self = this;
+      var h = '<h2>変更履歴（この画面を開いている間のシフト編集）</h2>';
+      if (!this._undo.length) h += '<p class="muted">履歴はまだありません</p>';
+      h += '<table class="plain">';
+      for (var i = this._undo.length - 1; i >= 0; i--) {
+        var e = this._undo[i];
+        h += '<tr><td>' + e.at + '</td><td>' + e.ym + '/' + e.layer + '</td><td>' + escText(e.label) + '</td>' +
+          '<td><button class="act ghost histjump" data-i="' + i + '">この直前へ戻す</button></td></tr>';
+      }
+      h += '</table><p class="muted">※職員マスタ・記号・設定の変更は履歴の対象外です。アプリを閉じると履歴は消えます。</p>';
+      var dr = document.getElementById('drawer');
+      dr.innerHTML = h;
+      dr.classList.add('open');
+      document.getElementById('overlay').classList.add('on');
+      document.getElementById('overlay').onclick = function () {
+        dr.classList.remove('open');
+        document.getElementById('overlay').classList.remove('on');
+      };
+      dr.onclick = function (e) {
+        var b = e.target;
+        if (b.classList && b.classList.contains('histjump')) {
+          self.jumpTo(parseInt(b.getAttribute('data-i'), 10));
+          dr.classList.remove('open');
+          document.getElementById('overlay').classList.remove('on');
+        }
+      };
+    },
+
+    /* ── セル編集 ── */
+    changeCells: function (cells, value) {
+      var self = this;
+      /* 早遅必要数の超過チェック（単一カテゴリ記号のみ） */
+      if (value !== '') {
+        var cat = this.catOfValue(value);
+        if (cat === 'early' || cat === 'late') {
+          var byDay = {};
+          for (var i = 0; i < cells.length; i++) {
+            if (cells[i].isMain) byDay[cells[i].day] = (byDay[cells[i].day] || 0) + 1;
+          }
+          for (var d in byDay) {
+            var need = this.needOf(parseInt(d, 10), cat);
+            var asg = this.counts[d] ? this.counts[d][cat] : 0;
+            if (asg + byDay[d] > need) {
+              var nm = cat === 'early' ? '早番' : '遅番';
+              this.confirm('必要数の超過', d + '日の' + nm + 'は必要数 ' + need + ' を超えます（' + (asg + byDay[d]) + '人目）。入力しますか？', function () {
+                self.writeCells(cells, value);
+              });
+              return;
+            }
+          }
+        }
+      }
+      this.writeCells(cells, value);
+    },
+
+    catOfValue: function (v) {
+      var p = Sym.parseCell(v, this.symbols);
+      for (var x = 0; x < p.parts.length; x++) {
+        if (p.parts[x].kind === 'work') return p.parts[x].cat || 'mid';
+      }
+      return null;
+    },
+
+    needOf: function (day, cat) {
+      var dn = this.sched.dailyNeeds || {};
+      if (dn[day] && typeof dn[day][cat] === 'number') return dn[day][cat];
+      var mn = this.sched.monthNeeds || {};
+      if (typeof mn[cat] === 'number') return mn[cat];
+      var dow = new Date(this.year, this.month - 1, day).getDay();
+      var wd = this.settings.weekdayNeeds || {};
+      return wd[dow] && typeof wd[dow][cat] === 'number' ? wd[dow][cat] : 0;
+    },
+
+    writeCells: function (cells, value) {
+      this.capture(value === '' ? 'セルをクリア' : '入力「' + value + '」');
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        if (c.isMain) {
+          if (!this.sched.cells[c.sid]) this.sched.cells[c.sid] = {};
+          if (value === '') delete this.sched.cells[c.sid][String(c.day)];
+          else this.sched.cells[c.sid][String(c.day)] = value;
+        } else {
+          if (!this.sched.subCells[c.sid]) this.sched.subCells[c.sid] = {};
+          if (!this.sched.subCells[c.sid][c.div]) this.sched.subCells[c.sid][c.div] = {};
+          if (value === '') delete this.sched.subCells[c.sid][c.div][String(c.day)];
+          else this.sched.subCells[c.sid][c.div][String(c.day)] = value;
+        }
+      }
+      this.saveSched(this.layer, this.sched);
+      this.rerender();
+    },
+
+    pasteCells: function (changes) {
+      this.capture('貼り付け（' + changes.length + 'セル）');
+      for (var i = 0; i < changes.length; i++) {
+        var ch = changes[i];
+        this.writeCellsSilent([ch.cell], ch.value);
+      }
+      this.saveSched(this.layer, this.sched);
+      this.rerender();
+    },
+    writeCellsSilent: function (cells, value) {
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        if (c.isMain) {
+          if (!this.sched.cells[c.sid]) this.sched.cells[c.sid] = {};
+          if (value === '') delete this.sched.cells[c.sid][String(c.day)];
+          else this.sched.cells[c.sid][String(c.day)] = value;
+        } else {
+          if (!this.sched.subCells[c.sid]) this.sched.subCells[c.sid] = {};
+          if (!this.sched.subCells[c.sid][c.div]) this.sched.subCells[c.sid][c.div] = {};
+          if (value === '') delete this.sched.subCells[c.sid][c.div][String(c.day)];
+          else this.sched.subCells[c.sid][c.div][String(c.day)] = value;
+        }
+      }
+    },
+
+    /* ── 職員 ── */
+    findStaff: function (sid) {
+      for (var i = 0; i < this.staff.length; i++) { if (this.staff[i].id === sid) return this.staff[i]; }
+      return null;
+    },
+    /* 各画面の並び順が未設定の職員に、現在の表示順で番号を振る（以後マスタと完全独立） */
+    ensureOrders: function () {
+      var eff = this.sortBy(null);
+      var fields = ['shiftOrder', 'officialOrder', 'requestOrder'];
+      var changed = false;
+      for (var i = 0; i < eff.length; i++) {
+        for (var f = 0; f < fields.length; f++) {
+          if (typeof eff[i][fields[f]] !== 'number') { eff[i][fields[f]] = i; changed = true; }
+        }
+      }
+      return changed;
+    },
+    sortedStaff: function () { /* シフト表用 */
+      return this.sortBy('shiftOrder');
+    },
+    masterSorted: function () { /* マスタ用: 入職順（order）のみ・グループでまとめない */
+      var out = this.staff.slice();
+      out.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+      return out;
+    },
+    officialSorted: function () { return this.sortBy('officialOrder'); },
+    requestsSorted: function () { return this.sortBy('requestOrder'); },
+    sortBy: function (field) {
+      var out = this.staff.slice();
+      var gi = function (g) { return g === 'night' ? 0 : (g === 'day' ? 2 : 1); };
+      out.sort(function (a, b) {
+        var av = field && typeof a[field] === 'number' ? a[field] : gi(a.group) * 1000 + (a.order || 0);
+        var bv = field && typeof b[field] === 'number' ? b[field] : gi(b.group) * 1000 + (b.order || 0);
+        if (field) return av - bv;
+        var g = gi(a.group) - gi(b.group);
+        return g !== 0 ? g : (a.order || 0) - (b.order || 0);
+      });
+      return out;
+    },
+    addStaff: function (st) {
+      st.order = this.staff.length;
+      this.staff.push(st);
+      this.saveStaff();
+    },
+    saveStaff: function () {
+      this.ensureOrders(); /* 新規職員にも各画面の並び順を付与 */
+      Store.set('staff', this.staff);
+      this.rerender();
+    },
+    removeStaff: function (sid) {
+      for (var i = 0; i < this.staff.length; i++) {
+        if (this.staff[i].id === sid) { this.staff.splice(i, 1); break; }
+      }
+      this.saveStaff();
+    },
+    /* セルの個別色付け（スケジュールに保存→印刷にも反映・同期対象） */
+    colorCells: function (cells, color) {
+      this.capture(color ? '色付け ' + color : '色解除');
+      if (!this.sched.colors) this.sched.colors = {};
+      for (var i = 0; i < cells.length; i++) {
+        var key = cells[i].sid + '|' + cells[i].div + '|' + cells[i].day;
+        if (color) this.sched.colors[key] = color;
+        else delete this.sched.colors[key];
+      }
+      if (color) {
+        var rec = Store.getLocal('recentColors', []);
+        var idx = rec.indexOf(color);
+        if (idx >= 0) rec.splice(idx, 1);
+        rec.unshift(color);
+        if (rec.length > 12) rec.pop();
+        Store.setLocal('recentColors', rec);
+      }
+      this.saveSched(this.layer, this.sched);
+      this.rerender();
+    },
+
+    /* セルの太字切替 */
+    boldCells: function (cells) {
+      this.capture('太字切替');
+      if (!this.sched.bold) this.sched.bold = {};
+      /* 1つでも非太字があれば全て太字に、全て太字なら解除 */
+      var allBold = true;
+      var i, key;
+      for (i = 0; i < cells.length; i++) {
+        key = cells[i].sid + '|' + cells[i].div + '|' + cells[i].day;
+        if (!this.sched.bold[key]) { allBold = false; break; }
+      }
+      for (i = 0; i < cells.length; i++) {
+        key = cells[i].sid + '|' + cells[i].div + '|' + cells[i].day;
+        if (allBold) delete this.sched.bold[key];
+        else this.sched.bold[key] = true;
+      }
+      this.saveSched(this.layer, this.sched);
+      this.rerender();
+    },
+
+    /* 区分行の表示/非表示（職員マスタに保存→月をまたいで維持・同期対象） */
+    toggleHiddenDivision: function (sid, div, hide) {
+      var st = this.findStaff(sid);
+      if (!st) return;
+      if (!st.hiddenDivisions) st.hiddenDivisions = [];
+      var idx = st.hiddenDivisions.indexOf(div);
+      if (hide && idx < 0) st.hiddenDivisions.push(div);
+      if (!hide && idx >= 0) st.hiddenDivisions.splice(idx, 1);
+      this.saveStaff();
+    },
+
+    /* 共通の並べ替え: field=null はマスタ順(order) */
+    reorderBy: function (field, listFn, sid, beforeSid, syncGroup) {
+      var moving = this.findStaff(sid), before = this.findStaff(beforeSid);
+      if (!moving || !before) return;
+      if (syncGroup) moving.group = before.group;
+      var list = listFn.call(this);
+      var key = field || 'order';
+      var order = 0;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id === sid) continue;
+        if (list[i].id === beforeSid) { moving[key] = order++; }
+        list[i][key] = order++;
+      }
+      this.saveStaff();
+      window.ShiftMaster.renderStaff();
+    },
+    reorderShift: function (sid, beforeSid) { this.reorderBy('shiftOrder', this.sortedStaff, sid, beforeSid, true); },
+    reorderMaster: function (sid, beforeSid) { this.reorderBy(null, this.masterSorted, sid, beforeSid, false); }, /* 入職順管理: グループは変えない */
+    reorderOfficial: function (sid, beforeSid) { this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
+    reorderRequests: function (sid, beforeSid) { this.reorderBy('requestOrder', this.requestsSorted, sid, beforeSid, false); },
+
+    saveSymbols: function () { Store.set('symbols', this.symbols); this.rerender(); },
+    saveSettings: function () { Store.set('settings', this.settings); },
+    saveRequests: function () { Store.set(this.reqKey(), this.requests); },
+
+    /* ── ツールバー ── */
+    bindToolbar: function () {
+      var self = this;
+      document.getElementById('ymPrev').addEventListener('click', function () {
+        self.setYM(self.year, self.month - 1); self.rerender();
+      });
+      document.getElementById('ymNext').addEventListener('click', function () {
+        self.setYM(self.year, self.month + 1); self.rerender();
+      });
+      var tabs = document.querySelectorAll('#viewTabs button');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener('click', function (e) {
+          var v = e.target.getAttribute('data-view');
+          self.view = v;
+          var all = document.querySelectorAll('#viewTabs button');
+          for (var j = 0; j < all.length; j++) all[j].classList.remove('on');
+          e.target.classList.add('on');
+          var views = ['grid', 'requests', 'official', 'master'];
+          for (var k = 0; k < views.length; k++) {
+            document.getElementById('view-' + views[k]).classList.toggle('on', views[k] === v);
+          }
+          document.getElementById('layerBar').style.display = (v === 'grid') ? '' : 'none';
+          self.rerender();
+        });
+      }
+      var layers = document.querySelectorAll('#layerBar button');
+      for (var l = 0; l < layers.length; l++) {
+        layers[l].addEventListener('click', function (e) {
+          var ly = e.target.getAttribute('data-layer');
+          var all2 = document.querySelectorAll('#layerBar button');
+          for (var j2 = 0; j2 < all2.length; j2++) all2[j2].classList.remove('on');
+          e.target.classList.add('on');
+          self.switchLayer(ly);
+        });
+      }
+      document.getElementById('btnAuto').addEventListener('click', function () { self.runAuto(); });
+      document.getElementById('btnPrint').addEventListener('click', function () { self.print(); });
+      document.getElementById('btnUndo').addEventListener('click', function () { self.undo(); });
+      document.getElementById('btnRedo').addEventListener('click', function () { self.redo(); });
+      document.getElementById('btnHistory').addEventListener('click', function () { self.showHistory(); });
+      this.updateHistButtons();
+      document.addEventListener('keydown', function (e) {
+        var tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        var mod = e.ctrlKey || e.metaKey;
+        if (!mod) return;
+        var k = e.key.toLowerCase();
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); self.undo(); }
+        else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); self.redo(); }
+      });
+      /* 非表示行の一時表示トグル */
+      var hint = document.getElementById('layerHint');
+      var tog = document.createElement('label');
+      tog.style.cssText = 'font-size:11px;align-self:center;margin-right:10px;cursor:pointer';
+      tog.innerHTML = '<input type="checkbox" id="togHidden"> 非表示行を表示';
+      hint.parentNode.insertBefore(tog, hint);
+      document.getElementById('togHidden').addEventListener('change', function (e) {
+        self.revealHidden = e.target.checked;
+        self.rerender();
+      });
+    },
+
+    switchLayer: function (layer) {
+      var self = this;
+      this.layer = layer;
+      this.loadMonth();
+      var n = 0;
+      for (var sid in this.sched.cells) { if (hasAny(this.sched.cells[sid])) n++; }
+      if (n === 0 && layer !== 'plan') {
+        var srcLayer = layer === 'actual' ? 'plan' : 'actual';
+        var src = this.getSched(srcLayer);
+        var sn = 0;
+        for (var s2 in src.cells) { if (hasAny(src.cells[s2])) sn++; }
+        if (sn === 0 && layer === 'official') { srcLayer = 'plan'; src = this.getSched('plan'); }
+        var sn2 = 0;
+        for (var s3 in src.cells) { if (hasAny(src.cells[s3])) sn2++; }
+        if (sn2 > 0) {
+          this.confirm(LAYER_NAMES[layer] + 'レイヤは未入力です',
+            LAYER_NAMES[srcLayer] + 'レイヤ（' + sn2 + '名分）をコピーして開始しますか？', function () {
+              self.capture(LAYER_NAMES[srcLayer] + 'からコピー');
+              var copy = JSON.parse(JSON.stringify(src));
+              copy.meta = { basedOn: srcLayer, copiedAt: new Date().toISOString() };
+              self.saveSched(layer, copy);
+              self.loadMonth();
+              self.rerender();
+            });
+        }
+      }
+      this.rerender();
+    },
+
+    /* ── 自動作成 ── */
+    runAuto: function () {
+      var self = this;
+      if (this.layer !== 'plan') {
+        this.confirmInfo('自動作成', '自動作成は「予定」レイヤで実行してください。');
+        return;
+      }
+      this.confirm('シフト自動作成',
+        '空セルを自動提案で埋めます（既存の入力・希望休はそのまま保持されます）。\nよろしいですか？',
+        function () {
+          var prevYm = self.month === 1 ? (self.year - 1) + '-12' : self.year + '-' + pad2(self.month - 1);
+          var prevSched = Store.get('sched:' + prevYm + ':plan', null) || { cells: {} };
+          var prevDays = new Date(self.month === 1 ? self.year - 1 : self.year, self.month === 1 ? 12 : self.month - 1, 0).getDate();
+          var r = window.ShiftAutoAssign.autoAssign({
+            year: self.year, month: self.month, days: self.days,
+            staff: self.staff, symbols: self.symbols, settings: self.settings,
+            requests: self.requests, dailyNeeds: self.sched.dailyNeeds,
+            monthNeeds: self.sched.monthNeeds,
+            existingCells: self.sched.cells,
+            prevCells: prevSched.cells, prevDays: prevDays
+          });
+          self.capture('自動作成');
+          self.sched.cells = r.cells;
+          self.saveSched('plan', self.sched);
+          self.rerender();
+          var msg = r.report.length === 0 ? 'すべての条件を満たす提案を作成しました。'
+            : '提案を作成しました。以下を確認してください:\n・' + reportMsgs(r.report).join('\n・');
+          self.confirmInfo('自動作成 完了', msg);
+        });
+    },
+
+    /* ── 印刷（用紙1枚に自動縮小） ── */
+    print: function () {
+      var size = this.settings.printSize || 'A3 landscape';
+      var style = document.getElementById('pageStyle');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'pageStyle';
+        document.head.appendChild(style);
+      }
+      style.textContent = '@page { size: ' + size + '; margin: 8mm; }';
+      /* シフト表を用紙1枚に収める自動ズーム */
+      var fit = document.getElementById('fitStyle');
+      if (!fit) {
+        fit = document.createElement('style');
+        fit.id = 'fitStyle';
+        document.head.appendChild(fit);
+      }
+      var zoom = 1;
+      var table = document.querySelector('#gridWrap table.sheet');
+      if (table && this.view === 'grid') {
+        var isA3 = size.indexOf('A3') >= 0;
+        var pxW = ((isA3 ? 420 : 297) - 16) * 96 / 25.4;
+        var pxH = ((isA3 ? 297 : 210) - 16) * 96 / 25.4;
+        /* 印刷時と同じ寸法ルールを一時適用して実測する（画面寸法からの概算は不正確） */
+        document.body.classList.add('printsim');
+        var w = table.scrollWidth, hgt = table.scrollHeight;
+        document.body.classList.remove('printsim');
+        /* タイトル行の高さ + 3%の安全率 */
+        zoom = Math.min(1, pxW / w, (pxH - 40) / hgt) * 0.97;
+      }
+      fit.textContent = '@media print { #gridWrap { zoom: ' + zoom.toFixed(3) + '; } }';
+      window.print();
+    },
+
+    /* ── ダイアログ ── */
+    bindDialogs: function () {
+      var self = this;
+      this._confirmCb = null;
+      document.getElementById('dlgConfirmYes').addEventListener('click', function () {
+        document.getElementById('dlgConfirm').close();
+        var cb = self._confirmCb; self._confirmCb = null;
+        if (cb) cb();
+      });
+      document.getElementById('dlgConfirmNo').addEventListener('click', function () {
+        self._confirmCb = null;
+        document.getElementById('dlgConfirm').close();
+      });
+    },
+    confirm: function (title, msg, cb) {
+      document.getElementById('dlgConfirmTitle').textContent = title;
+      document.getElementById('dlgConfirmMsg').textContent = msg;
+      document.getElementById('dlgConfirmNo').style.display = '';
+      this._confirmCb = cb;
+      document.getElementById('dlgConfirm').showModal();
+    },
+    confirmInfo: function (title, msg) {
+      document.getElementById('dlgConfirmTitle').textContent = title;
+      document.getElementById('dlgConfirmMsg').textContent = msg;
+      document.getElementById('dlgConfirmNo').style.display = 'none';
+      this._confirmCb = null;
+      document.getElementById('dlgConfirm').showModal();
+    },
+
+    /* ── 同期UI ── */
+    bindSync: function () {
+      var self = this;
+      var badge = document.getElementById('syncBadge');
+      Store.onChange(function (status, detail) {
+        badge.className = status;
+        var t = { nosync: '同期未設定', synced: '✓ 同期済み', dirty: '● 未送信あり', syncing: '⟳ 同期中…', offline: '⚠ オフライン', conflict: '⚠ 競合' };
+        badge.textContent = t[status] || status;
+        badge.title = detail || 'クリックで今すぐ同期';
+      });
+      badge.addEventListener('click', function () {
+        Store.pullAll().then(function (r) {
+          if (r === 'ok') self.reloadFromStore();
+        });
+      });
+      Store.conflictHandler = function (key, server, localData, done) {
+        var dlg = document.getElementById('dlgConflict');
+        document.getElementById('dlgConflictMsg').textContent =
+          '「' + key + '」が他の端末で更新されています。\nどちらを採用しますか？\n（サーバ版を取得すると、この端末での未送信編集は破棄されます）';
+        document.getElementById('dlgConflictServer').onclick = function () {
+          dlg.close();
+          done('server');
+          if (server.needsPull) Store.pullAll().then(function () { self.reloadFromStore(); });
+          else self.reloadFromStore();
+        };
+        document.getElementById('dlgConflictLocal').onclick = function () {
+          dlg.close(); done('local');
+        };
+        dlg.showModal();
+      };
+      Store.updateStatus();
+    }
+  };
+
+  function hasAny(obj) { for (var k in obj) { if (obj[k] !== '') return true; } return false; }
+  function escText(t) {
+    return String(t === undefined || t === null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function reportMsgs(report) {
+    var out = [];
+    for (var i = 0; i < report.length && i < 12; i++) out.push(report[i].msg);
+    if (report.length > 12) out.push('…ほか ' + (report.length - 12) + '件');
+    return out;
+  }
+
+  /* 旧Safari対策: 初期化が失敗しても白画面で固まらせない */
+  try {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { App.boot(); });
+    } else {
+      App.boot();
+    }
+  } catch (e) {
+    try {
+      document.body.insertAdjacentHTML('afterbegin',
+        '<div style="background:#c0392b;color:#fff;padding:10px">初期化エラー: ' + String(e.message || e) + '</div>');
+    } catch (e2) {}
+  }
+
+  window.ShiftApp = App;
+})();
+</script>
+</body>
+</html>
