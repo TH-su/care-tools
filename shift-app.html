@@ -216,6 +216,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)">↪</button>
   <button id="btnHistory" title="変更履歴">履歴</button>
   <button id="btnAuto" class="primary">⚡ 自動作成</button>
+  <button id="btnActual" title="実績レイヤに切り替えて実際の勤務を記録（予定があれば複製して開始）">📝 実績</button>
+  <button id="btnFreee" title="freee勤怠スケジュールCSVを出力">freee出力</button>
   <button id="btnPrint">🖨 印刷</button>
   <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
   <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
@@ -262,6 +264,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <div id="view-official" class="view">
     <div class="panel noprint">
       <h2>行政提出用（従業者の勤務体制及び勤務形態一覧表・様式1 転記用）</h2>
+      <p class="muted">行政提出用レイヤは<b>実績をもとに調整</b>します。実績を確定したら［実績から取込］で複製し、必要に応じてシフト表（行政提出用レイヤ）で微調整してください。</p>
       <div class="flexrow">
         <label>対象レイヤ:
           <select id="offLayer">
@@ -277,6 +280,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
             <option value="通所">通所（せせらぎ）</option>
           </select>
         </label>
+        <button id="offFromActual" class="act ghost" title="実績レイヤを行政提出用レイヤに複製します">実績から取込</button>
         <button id="offCSV" class="act">CSVダウンロード（Excel用）</button>
         <button id="offPrint" class="act ghost">印刷</button>
       </div>
@@ -290,6 +294,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           <select id="frLayer">
             <option value="plan">予定</option>
             <option value="actual">実績</option>
+          </select>
+        </label>
+        <label>事業所:
+          <select id="frDivision">
+            <option value="全">全事業所（全職員）</option>
+            <option value="施設">施設（ラウレアハレ）</option>
+            <option value="訪問">訪問（いずみ）</option>
+            <option value="通所">通所（せせらぎ）</option>
           </select>
         </label>
         <button id="frCSV" class="act">freee用CSVダウンロード（Shift-JIS）</button>
@@ -400,6 +412,31 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <div class="flexrow" style="justify-content:flex-end">
     <button id="dlgConflictServer" class="act ghost">サーバ版を取得</button>
     <button id="dlgConflictLocal" class="act">自分の編集で上書き</button>
+  </div>
+</dialog>
+
+<dialog id="dlgFreee">
+  <h3>freee勤怠 スケジュールCSV出力</h3>
+  <div class="formgrid" style="max-width:420px">
+    <label>対象レイヤ</label>
+    <select id="frdLayer">
+      <option value="plan">予定</option>
+      <option value="actual">実績</option>
+    </select>
+    <label>事業所</label>
+    <select id="frdDivision">
+      <option value="全">全事業所（全職員を一括）</option>
+      <option value="施設">施設（ラウレアハレ）</option>
+      <option value="訪問">訪問（いずみ）</option>
+      <option value="通所">通所（せせらぎ）</option>
+    </select>
+  </div>
+  <div class="muted" id="frdInfo" style="margin-top:8px"></div>
+  <div class="muted" id="frdWarn" style="margin-top:4px;white-space:pre-line"></div>
+  <p class="muted" style="margin-top:8px">従業員コードや記号→パターンの対応は「行政提出」画面のfreeeパネルで設定します。</p>
+  <div class="flexrow" style="justify-content:flex-end;margin-top:10px">
+    <button id="frdClose" class="act ghost">閉じる</button>
+    <button id="frdCSV" class="act">CSVダウンロード（Shift-JIS）</button>
   </div>
 </dialog>
 <script>
@@ -1365,6 +1402,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return 'keep-local';
   }
 
+  /* サーバ側エントリが「ローカルに適用してよい有効なデータ」か。
+   * data が null/undefined のもの（破損ファイルや旧バグで作られたnull）は false。
+   * これを false と判定したエントリは絶対にローカルへ上書きしない（=データ消失防止）。 */
+  function isUsableServerData(entry) {
+    return !!(entry && entry.data !== null && entry.data !== undefined);
+  }
+
   /* 送信キュー: 同一キーは最新データへ統合（baseRevは最初の値を保持） */
   function SyncQueue() {
     this.items = {}; /* key -> {data, baseRev, queuedAt} */
@@ -1401,7 +1445,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return { status: 'error', message: result && result.error ? result.error : '不明な応答' };
   }
 
-  var api = { decideOnPull: decideOnPull, SyncQueue: SyncQueue, applyPushResult: applyPushResult };
+  var api = { decideOnPull: decideOnPull, isUsableServerData: isUsableServerData, SyncQueue: SyncQueue, applyPushResult: applyPushResult };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftSyncCore = api;
 })();
@@ -1522,14 +1566,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   }
 
   /* CSV生成
-   * opts: { ym, staff[{id,name,empCode,active}], cells{staffId:{day:'記号'}},
-   *         symbols, patternMap{記号:コード}, offNames{記号:休暇名} }
+   * opts: { ym, staff[{id,name,empCode,active,mainDivision}], cells{staffId:{day:'記号'}},
+   *         symbols, patternMap{記号:コード}, offNames{記号:休暇名},
+   *         division: ''|'全'|'施設'|'訪問'|'通所'（主区分で絞り込み・空/全は全職員） }
    * 返値: { csv, rows, staffCount, warnings:[{name,day,raw,reason}] } */
   function buildCsv(opts) {
     var ym = opts.ym;
     var nDays = daysInMonth(ym);
     var patternMap = opts.patternMap || {};
     var offNames = opts.offNames || DEFAULT_OFF_NAMES;
+    var division = opts.division || '';
     var lines = ['#従業員コード※,勤務日※,全日休暇,パターンコード'];
     var warnings = [];
     var staffCount = 0;
@@ -1537,6 +1583,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var st = opts.staff[i];
       if (st.active === false) continue;
       if (!st.empCode) continue;
+      if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
       staffCount++;
       var cells = opts.cells[st.id] || {};
       for (var d = 1; d <= nDays; d++) {
@@ -1687,11 +1734,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   var Store = {
     meta: null,
     queue: null,
-    status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict
+    status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict | storeerror | readonly
     statusDetail: '',
     listeners: [],
     conflictHandler: null, // function(key, serverEntry, localData, done(choice))
+    onResolved: null,      // 競合解決後に呼ばれる（UIの再読込用）
     pushTimer: null,
+    storeError: false,     // localStorage書き込みに失敗中
+    readOnly: false,       // 閲覧専用トークン（push不可）
 
     init: function () {
       this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
@@ -1700,7 +1750,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     },
     saveMeta: function () {
       this.meta.queue = this.queue.toJSON();
-      lsSet(META_KEY, this.meta);
+      return lsSet(META_KEY, this.meta);
     },
 
     /* ---- データアクセス ---- */
@@ -1708,13 +1758,23 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var v = lsGet(PREFIX + key);
       return v === null ? (fallback === undefined ? null : fallback) : v;
     },
+    /* 保存。localStorageへの書き込みに失敗したら storeError を立て、明示通知する。
+     * （データはメモリ上のqueueに残るため同期は試みるが、端末再起動で失われる旨を警告する） */
     set: function (key, data) {
-      lsSet(PREFIX + key, data);
+      var ok = lsSet(PREFIX + key, data);
       this.meta.dirty[key] = true;
       this.queue.enqueue(key, data, this.meta.revs[key] || 0, Date.now());
-      this.saveMeta();
-      this.updateStatus();
+      var metaOk = this.saveMeta();
       this.schedulePush();
+      if (ok && metaOk) {
+        if (this.storeError) { this.storeError = false; }
+        this.updateStatus();
+        return true;
+      }
+      this.storeError = true;
+      this.updateStatus('storeerror',
+        '端末への保存に失敗しました（保存容量の上限の可能性）。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+      return false;
     },
     /* 同期対象外のローカル設定（端末ごと） */
     getLocal: function (key, fallback) {
@@ -1736,10 +1796,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     updateStatus: function (s, detail) {
       if (s) { this.status = s; this.statusDetail = detail || ''; this.notify(); return; }
       var cfg = this.getSyncConfig();
-      if (!cfg || !cfg.url) { this.status = 'nosync'; }
-      else if (this.queue.size() > 0) { this.status = 'dirty'; }
-      else { this.status = 'synced'; }
-      this.statusDetail = '';
+      if (this.storeError) {
+        this.status = 'storeerror';
+        /* statusDetail は set() で設定済みのものを保持 */
+      } else if (!cfg || !cfg.url) {
+        this.status = 'nosync'; this.statusDetail = '';
+      } else if (this.readOnly) {
+        this.status = 'readonly';
+        this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
+      } else if (this.queue.size() > 0) {
+        this.status = 'dirty'; this.statusDetail = '';
+      } else {
+        this.status = 'synced'; this.statusDetail = '';
+      }
       this.notify();
     },
 
@@ -1764,7 +1833,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       });
     },
 
-    ping: function () { return this.api({ action: 'ping' }); },
+    ping: function () {
+      var self = this;
+      return this.api({ action: 'ping' }).then(function (res) {
+        if (res && res.role) self.readOnly = (res.role === 'ro');
+        return res;
+      });
+    },
 
     /* 起動時プル: サーバ全キーとローカルを突合 */
     pullAll: function () {
@@ -1773,10 +1848,22 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       if (!cfg || !cfg.url) return Promise.resolve('nosync');
       this.updateStatus('syncing', 'サーバから取得中…');
       return this.api({ action: 'pull' }).then(function (res) {
+        if (res.role) self.readOnly = (res.role === 'ro');
         var entries = res.entries || {};
         var conflicts = [];
+        var corrupt = [];
         for (var key in entries) {
           var server = entries[key];
+          /* サーバ側が破損/null のエントリは絶対にローカルへ上書きしない（職員名などの消失防止）。
+           * ローカルに有効データがあれば、サーバを修復するため再送キューに積む。 */
+          if (!SC.isUsableServerData(server)) {
+            corrupt.push(key);
+            var lv = lsGet(PREFIX + key);
+            if (lv !== null && lv !== undefined && !self.readOnly) {
+              self.queue.enqueue(key, lv, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now());
+            }
+            continue;
+          }
           var local = { rev: self.meta.revs[key] || 0, dirty: !!self.meta.dirty[key] };
           var decision = SC.decideOnPull(local, server);
           if (decision === 'take-server') {
@@ -1789,11 +1876,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         }
         self.saveMeta();
         self.meta.lastSync = Date.now();
-        self.updateStatus();
+        if (corrupt.length) {
+          self.updateStatus('offline',
+            'サーバ側に破損データがありました（' + corrupt.join(', ') + '）。ローカルを保持し、修復のため再送します。');
+        } else {
+          self.updateStatus();
+        }
         if (conflicts.length && self.conflictHandler) {
           self.handleConflicts(conflicts, 0);
         }
-        /* 未送信があれば送る */
+        /* 未送信があれば送る（破損サーバの修復再送を含む） */
         if (self.queue.size() > 0) self.pushQueued();
         return 'ok';
       }).catch(function (err) {
@@ -1804,23 +1896,56 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
     handleConflicts: function (conflicts, idx) {
       var self = this;
-      if (idx >= conflicts.length) return;
+      if (idx >= conflicts.length) {
+        if (self.onResolved) { try { self.onResolved(); } catch (e) {} }
+        return;
+      }
       var c = conflicts[idx];
       var localData = lsGet(PREFIX + c.key);
       this.conflictHandler(c.key, c.server, localData, function (choice) {
         if (choice === 'server') {
-          lsSet(PREFIX + c.key, c.server.data);
-          self.meta.revs[c.key] = c.server.rev;
-          delete self.meta.dirty[c.key];
-          self.queue.take(c.key);
-        } else { /* 自分の編集で上書き: baseRevをサーバに合わせ強制push */
-          self.queue.enqueue(c.key, localData, c.server.rev, Date.now());
+          self.adoptServer(c, function () { self.handleConflicts(conflicts, idx + 1); });
+          return;
         }
+        /* 自分の編集で上書き: baseRevをサーバに合わせ強制push */
+        self.queue.enqueue(c.key, localData, c.server.rev, Date.now());
         self.saveMeta();
         self.updateStatus();
+        self.schedulePush();
         self.handleConflicts(conflicts, idx + 1);
-        if (choice !== 'server') self.schedulePush();
       });
+    },
+
+    /* サーバ版を採用。server.dataがnull（push競合でデータ未取得）の場合は、
+     * 先に単一キーpullで実データを取得してから書き込む。取得失敗時は
+     * localStorageを書き換えず・revも進めず競合を保留（=データを失わない）。 */
+    adoptServer: function (c, done) {
+      var self = this;
+      function writeReal(data, rev) {
+        if (data === null || data === undefined) {
+          /* サーバから実データを取得できなかった: 何も壊さず保留して再同期に委ねる */
+          self.updateStatus('offline', 'サーバ版の取得に失敗したため競合を保留しました（［今すぐ同期］で再試行してください）');
+          done();
+          return;
+        }
+        lsSet(PREFIX + c.key, data);
+        self.meta.revs[c.key] = rev;
+        delete self.meta.dirty[c.key];
+        self.queue.take(c.key);
+        self.saveMeta();
+        self.updateStatus();
+        done();
+      }
+      if (c.server && c.server.data !== null && c.server.data !== undefined) {
+        writeReal(c.server.data, c.server.rev); /* pull由来: 実データを保有済み */
+        return;
+      }
+      /* push競合由来: 実データを取りに行く */
+      this.api({ action: 'pull', keys: [c.key] }).then(function (res) {
+        var entry = res.entries && res.entries[c.key];
+        if (entry) writeReal(entry.data, entry.rev);
+        else writeReal(null, 0);
+      }).catch(function () { writeReal(null, 0); });
     },
 
     schedulePush: function () {
@@ -1833,6 +1958,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var self = this;
       var cfg = this.getSyncConfig();
       if (!cfg || !cfg.url) return Promise.resolve('nosync');
+      if (this.readOnly) { this.updateStatus(); return Promise.resolve('readonly'); }
       var keys = this.queue.keys();
       if (keys.length === 0) { this.updateStatus(); return Promise.resolve('empty'); }
       this.updateStatus('syncing', '送信中…');
@@ -1844,6 +1970,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           if (!item) return null;
           return self.api({ action: 'push', key: key, data: item.data, baseRev: item.baseRev })
             .then(function (res) {
+              if (res && res.readOnly) { self.readOnly = true; throw new Error('__READONLY__'); }
               var r = SC.applyPushResult(res);
               if (r.status === 'pushed') {
                 self.queue.take(key);
@@ -1864,6 +1991,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         self.updateStatus();
         return 'ok';
       }).catch(function (err) {
+        if (err && err.message === '__READONLY__') {
+          self.updateStatus('readonly', '閲覧専用トークンのため、この端末の編集はサーバへ送信されません');
+          return 'readonly';
+        }
         self.updateStatus('offline', String(err && err.message ? err.message : err));
         return 'offline';
       });
@@ -2957,8 +3088,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           url: document.getElementById('syncUrl').value.trim(),
           token: document.getElementById('syncToken').value.trim()
         });
-        Store.ping().then(function () { msg.textContent = '✓ 接続OK'; })
-          .catch(function (e) { msg.textContent = '✗ 接続失敗: ' + e.message; });
+        Store.ping().then(function (res) {
+          var role = res && res.role === 'ro' ? '（閲覧専用トークン：この端末の編集は共有されません）'
+            : res && res.role === 'rw' ? '（編集可トークン）' : '';
+          msg.textContent = '✓ 接続OK ' + role;
+        }).catch(function (e) {
+          var m = e && e.message ? e.message : String(e);
+          if (m === 'unauthorized') m = 'トークンが一致しません';
+          if (m === 'server-not-configured') m = 'サーバ未設定（SHIFTAPP_TOKEN未設定）';
+          msg.textContent = '✗ 接続失敗: ' + m;
+        });
       };
       document.getElementById('syncNow').onclick = function () {
         var msg = document.getElementById('syncMsg');
@@ -3234,7 +3373,33 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       document.getElementById('offLayer').addEventListener('change', function () { self.render(); });
       document.getElementById('offDivision').addEventListener('change', function () { self.render(); });
       document.getElementById('offCSV').addEventListener('click', function () { self.downloadCSV(); });
-      document.getElementById('offPrint').addEventListener('click', function () { window.print(); });
+      document.getElementById('offPrint').addEventListener('click', function () { self.app.print(); });
+      document.getElementById('offFromActual').addEventListener('click', function () { self.seedFromActual(); });
+    },
+
+    /* 実績レイヤを行政提出用レイヤに複製（行政提出は実績に紐づく） */
+    seedFromActual: function () {
+      var app = this.app, self = this;
+      var actual = app.getSched('actual');
+      var n = 0;
+      for (var sid in actual.cells) {
+        var c = actual.cells[sid];
+        for (var k in c) { if (c[k] !== '') { n++; break; } }
+      }
+      if (n === 0) {
+        app.confirmInfo('実績から取込', '実績レイヤが未入力です。先にシフト表（実績）で実際の勤務を記録してください。');
+        return;
+      }
+      app.confirm('実績から取込',
+        '実績レイヤ（' + n + '名分）を行政提出用レイヤに複製します。\n行政提出用レイヤの現在の内容は上書きされます。よろしいですか？',
+        function () {
+          var copy = JSON.parse(JSON.stringify(actual));
+          copy.meta = { basedOn: 'actual', copiedAt: new Date().toISOString() };
+          app.saveSched('official', copy);
+          document.getElementById('offLayer').value = 'official';
+          self.render();
+          app.confirmInfo('実績から取込', '行政提出用レイヤに実績を複製しました。必要に応じてシフト表（行政提出用レイヤ）で微調整できます。');
+        });
     },
 
     buildData: function () {
@@ -3417,7 +3582,22 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.app = app;
       var self = this;
       document.getElementById('frPasteApply').addEventListener('click', function () { self.applyPaste(); });
-      document.getElementById('frCSV').addEventListener('click', function () { self.downloadCsv(); });
+      document.getElementById('frCSV').addEventListener('click', function () {
+        self.exportCsv(document.getElementById('frLayer').value,
+          document.getElementById('frDivision').value, document.getElementById('frWarn'));
+      });
+      document.getElementById('frDivision').addEventListener('change', function () { self.render(); });
+      document.getElementById('frLayer').addEventListener('change', function () { self.render(); });
+      /* シフト表ツールバーから開くダイアログ */
+      document.getElementById('frdClose').addEventListener('click', function () {
+        document.getElementById('dlgFreee').close();
+      });
+      document.getElementById('frdLayer').addEventListener('change', function () { self.updateDialogInfo(); });
+      document.getElementById('frdDivision').addEventListener('change', function () { self.updateDialogInfo(); });
+      document.getElementById('frdCSV').addEventListener('click', function () {
+        self.exportCsv(document.getElementById('frdLayer').value,
+          document.getElementById('frdDivision').value, document.getElementById('frdWarn'));
+      });
       /* 行政提出ビューが表示されるたびに描画（appのビュー切替に乗る） */
       var view = document.getElementById('view-official');
       var mo = new MutationObserver(function () {
@@ -3425,6 +3605,36 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       });
       mo.observe(view, { attributes: true, attributeFilter: ['class'] });
       this.render();
+    },
+
+    /* 対象職員数（指定事業所・従業員コード設定済み・在籍） */
+    countTargets: function (division) {
+      var n = 0;
+      var staff = this.app.staff || [];
+      for (var i = 0; i < staff.length; i++) {
+        var st = staff[i];
+        if (st.active === false || !st.empCode) continue;
+        if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
+        n++;
+      }
+      return n;
+    },
+
+    /* ツールバーの「freee出力」ダイアログを開く（現在のレイヤを初期選択） */
+    openDialog: function () {
+      var dl = document.getElementById('frdLayer');
+      dl.value = (this.app.layer === 'actual') ? 'actual' : 'plan';
+      document.getElementById('frdDivision').value = '全';
+      document.getElementById('frdWarn').textContent = '';
+      this.updateDialogInfo();
+      document.getElementById('dlgFreee').showModal();
+    },
+    updateDialogInfo: function () {
+      var div = document.getElementById('frdDivision').value;
+      var lay = document.getElementById('frdLayer').value;
+      document.getElementById('frdInfo').textContent =
+        '出力対象: コード設定済み ' + this.countTargets(div) + '名（' + this.app.ym + '・' +
+        (lay === 'actual' ? '実績' : '予定') + '・' + (div === '全' ? '全事業所' : div) + '）';
     },
 
     cfg: function () {
@@ -3445,13 +3655,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     render: function () {
       this.renderEmpList();
       this.renderMapList();
-      var n = 0;
-      var staff = this.app.staff || [];
-      for (var i = 0; i < staff.length; i++) {
-        if (staff[i].active !== false && staff[i].empCode) n++;
-      }
+      var div = document.getElementById('frDivision');
+      var divVal = div ? div.value : '全';
       document.getElementById('frInfo').textContent =
-        'コード設定済み ' + n + '名が出力対象（月: ' + this.app.ym + '）';
+        'コード設定済み ' + this.countTargets(divVal) + '名が出力対象（月: ' + this.app.ym +
+        '・' + (divVal === '全' ? '全事業所' : divVal) + '）';
     },
 
     renderEmpList: function () {
@@ -3557,10 +3765,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       }
     },
 
-    downloadCsv: function () {
+    /* レイヤ・事業所を指定してCSV生成・ダウンロード（パネル/ダイアログ共通） */
+    exportCsv: function (layer, division, warnEl) {
       var app = this.app;
       var cfg = this.cfg();
-      var layer = document.getElementById('frLayer').value;
       var sched = app.getSched(layer) || { cells: {} };
       var res = F.buildCsv({
         ym: app.ym,
@@ -3568,12 +3776,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         cells: sched.cells || {},
         symbols: app.symbols || [],
         patternMap: cfg.patternMap,
-        offNames: cfg.offNames
+        offNames: cfg.offNames,
+        division: division
       });
-      var warnEl = document.getElementById('frWarn');
+      var divLabel = (!division || division === '全') ? '全事業所' : division;
       var msgs = [];
       if (!res.staffCount) {
-        warnEl.textContent = '従業員コードが設定された職員がいません（下の「従業員コードの取込・編集」から設定）';
+        if (warnEl) warnEl.textContent = '対象（' + divLabel +
+          '）に従業員コード設定済みの職員がいません（行政提出画面のfreeeパネルで設定）';
         return;
       }
       if (res.warnings.length) {
@@ -3588,12 +3798,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         msgs.push('⚠ Shift-JIS変換できない文字を「?」にしました: ' + enc.unknown.join(' '));
       }
       msgs.push('出力: ' + res.staffCount + '名・' + res.rows + '行（' + app.ym + '・' +
-        (layer === 'plan' ? '予定' : '実績') + '）');
-      warnEl.textContent = msgs.join('\n');
+        (layer === 'plan' ? '予定' : '実績') + '・' + divLabel + '）');
+      if (warnEl) warnEl.textContent = msgs.join('\n');
       var blob = new Blob([enc.bytes], { type: 'text/csv' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'freee勤怠_' + app.ym + '.csv';
+      var divSuffix = (!division || division === '全') ? '全事業所' : division;
+      a.download = 'freee勤怠_' + app.ym + '_' + divSuffix + '.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -3645,8 +3856,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       window.ShiftMaster.render();
       this.bindSync();
       this.rerender();
-      /* 起動時プル */
       var self = this;
+      /* どの入口（ボタン/Cmd+P/Ctrl+P）から印刷しても一枚化が効くようにする */
+      window.addEventListener('beforeprint', function () { self.applyPrintFit(); });
+      /* 起動時プル */
       Store.pullAll().then(function (r) {
         if (r === 'ok') self.reloadFromStore();
       });
@@ -4180,6 +4393,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         });
       }
       document.getElementById('btnAuto').addEventListener('click', function () { self.runAuto(); });
+      document.getElementById('btnActual').addEventListener('click', function () { self.gotoLayer('actual'); });
+      document.getElementById('btnFreee').addEventListener('click', function () { window.ShiftFreeeUI.openDialog(); });
       document.getElementById('btnPrint').addEventListener('click', function () { self.print(); });
       document.getElementById('btnUndo').addEventListener('click', function () { self.undo(); });
       document.getElementById('btnRedo').addEventListener('click', function () { self.redo(); });
@@ -4204,6 +4419,25 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         self.revealHidden = e.target.checked;
         self.rerender();
       });
+    },
+
+    /* シフト表ビューに移動して指定レイヤへ切替（ツールバーの「実績」用） */
+    gotoLayer: function (layer) {
+      this.view = 'grid';
+      var tabs = document.querySelectorAll('#viewTabs button');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('on', tabs[i].getAttribute('data-view') === 'grid');
+      }
+      var views = ['grid', 'requests', 'official', 'master'];
+      for (var k = 0; k < views.length; k++) {
+        document.getElementById('view-' + views[k]).classList.toggle('on', views[k] === 'grid');
+      }
+      document.getElementById('layerBar').style.display = '';
+      var lbs = document.querySelectorAll('#layerBar button');
+      for (var l = 0; l < lbs.length; l++) {
+        lbs[l].classList.toggle('on', lbs[l].getAttribute('data-layer') === layer);
+      }
+      this.switchLayer(layer);
     },
 
     switchLayer: function (layer) {
@@ -4266,8 +4500,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         });
     },
 
-    /* ── 印刷（用紙1枚に自動縮小） ── */
+    /* ── 印刷（用紙1枚に自動縮小・シフト表/行政提出の両ビュー対応） ── */
     print: function () {
+      this.applyPrintFit();
+      window.print();
+    },
+    /* 印刷直前のフィット計算。print()からもbeforeprint(Cmd/Ctrl+P)からも呼ぶ */
+    applyPrintFit: function () {
       var size = this.settings.printSize || 'A3 landscape';
       var style = document.getElementById('pageStyle');
       if (!style) {
@@ -4276,28 +4515,36 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         document.head.appendChild(style);
       }
       style.textContent = '@page { size: ' + size + '; margin: 8mm; }';
-      /* シフト表を用紙1枚に収める自動ズーム */
       var fit = document.getElementById('fitStyle');
       if (!fit) {
         fit = document.createElement('style');
         fit.id = 'fitStyle';
         document.head.appendChild(fit);
       }
+      /* 印刷対象テーブルをビューに応じて選ぶ */
+      var sel, table, useSim;
+      if (this.view === 'official') {
+        sel = '#officialTable'; table = document.querySelector('#officialTable table'); useSim = false;
+      } else {
+        sel = '#gridWrap'; table = document.querySelector('#gridWrap table.sheet'); useSim = true;
+      }
       var zoom = 1;
-      var table = document.querySelector('#gridWrap table.sheet');
-      if (table && this.view === 'grid') {
+      if (table) {
         var isA3 = size.indexOf('A3') >= 0;
         var pxW = ((isA3 ? 420 : 297) - 16) * 96 / 25.4;
         var pxH = ((isA3 ? 297 : 210) - 16) * 96 / 25.4;
-        /* 印刷時と同じ寸法ルールを一時適用して実測する（画面寸法からの概算は不正確） */
-        document.body.classList.add('printsim');
+        if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法で実測 */
         var w = table.scrollWidth, hgt = table.scrollHeight;
-        document.body.classList.remove('printsim');
-        /* タイトル行の高さ + 3%の安全率 */
+        if (useSim) document.body.classList.remove('printsim');
         zoom = Math.min(1, pxW / w, (pxH - 40) / hgt) * 0.97;
       }
-      fit.textContent = '@media print { #gridWrap { zoom: ' + zoom.toFixed(3) + '; } }';
-      window.print();
+      var z = zoom.toFixed(3);
+      /* zoom（Chrome等）と transform:scale（Safariのフォールバック）を併用 */
+      fit.textContent = '@media print {' +
+        ' #gridWrap, #officialTable { zoom: 1; transform: none; }' +
+        ' ' + sel + ' { zoom: ' + z + '; }' +
+        ' @supports not (zoom: 1) { ' + sel + ' { zoom: 1; transform: scale(' + z + '); transform-origin: top left; } }' +
+        '}';
     },
 
     /* ── ダイアログ ── */
@@ -4333,26 +4580,36 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     bindSync: function () {
       var self = this;
       var badge = document.getElementById('syncBadge');
+      this._storeErrorShown = false;
       Store.onChange(function (status, detail) {
         badge.className = status;
-        var t = { nosync: '同期未設定', synced: '✓ 同期済み', dirty: '● 未送信あり', syncing: '⟳ 同期中…', offline: '⚠ オフライン', conflict: '⚠ 競合' };
+        var t = { nosync: '同期未設定', synced: '✓ 同期済み', dirty: '● 未送信あり', syncing: '⟳ 同期中…',
+          offline: '⚠ オフライン', conflict: '⚠ 競合', storeerror: '⚠ 保存失敗', readonly: '👁 閲覧専用' };
         badge.textContent = t[status] || status;
         badge.title = detail || 'クリックで今すぐ同期';
+        /* 保存失敗は黙って見過ごされると致命的なので、1回だけ明示ダイアログで警告 */
+        if (status === 'storeerror' && !self._storeErrorShown) {
+          self._storeErrorShown = true;
+          self.confirmInfo('⚠ 端末への保存に失敗しました', detail ||
+            '端末の保存容量の上限に達した可能性があります。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+        }
+        if (status !== 'storeerror') self._storeErrorShown = false;
       });
       badge.addEventListener('click', function () {
         Store.pullAll().then(function (r) {
           if (r === 'ok') self.reloadFromStore();
         });
       });
+      /* 競合が全件解決したらUIを再読込（adoptServerの非同期pull完了後に呼ばれる） */
+      Store.onResolved = function () { self.reloadFromStore(); };
       Store.conflictHandler = function (key, server, localData, done) {
         var dlg = document.getElementById('dlgConflict');
         document.getElementById('dlgConflictMsg').textContent =
-          '「' + key + '」が他の端末で更新されています。\nどちらを採用しますか？\n（サーバ版を取得すると、この端末での未送信編集は破棄されます）';
+          '「' + key + '」が他の端末で更新されています。\nどちらを採用しますか？\n' +
+          '・サーバ版を取得＝この端末の未送信編集を破棄し、サーバの最新を取り込みます\n' +
+          '・自分の編集で上書き＝この端末の内容でサーバを更新します';
         document.getElementById('dlgConflictServer').onclick = function () {
-          dlg.close();
-          done('server');
-          if (server.needsPull) Store.pullAll().then(function () { self.reloadFromStore(); });
-          else self.reloadFromStore();
+          dlg.close(); done('server'); /* 反映はStore.onResolvedで実施 */
         };
         document.getElementById('dlgConflictLocal').onclick = function () {
           dlg.close(); done('local');

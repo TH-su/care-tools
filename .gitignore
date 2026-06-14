@@ -7,3 +7,8 @@ gas/
 ws-master.json
 ws-master-*.json
 data/
+
+# シフトアプリ：実職員名を含むため公開しない
+demo-data.json
+staff-roster.json
+shiftapp-backup-*.json
