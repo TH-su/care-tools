@@ -39,12 +39,26 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #syncBadge.nosync { background: rgba(255,255,255,.15); }
 #syncBadge.syncing { background: #6c5ce7; }
 
-.layerbar { display: flex; gap: 2px; padding: 6px 10px 0; }
+.layerbar { display: flex; gap: 2px; padding: 6px 10px 0; align-items: flex-end; flex-wrap: wrap; }
 .layerbar button { border: 1px solid var(--g3); border-bottom: none; background: var(--g2);
   border-radius: 8px 8px 0 0; padding: 6px 16px; cursor: pointer; font-size: 12.5px; color: #555; }
 .layerbar button.on { background: #fff; font-weight: 700; color: var(--ink); }
 .layerbar .spacer { flex: 1; }
 .layerbar .hint { font-size: 11px; color: var(--g4); align-self: center; padding-right: 8px; }
+.layerbar .draftsep { align-self: center; font-size: 11px; color: var(--g4); margin: 0 4px 4px; }
+#draftTabs { display: inline-flex; gap: 2px; }
+#draftTabs .drafttab { border: 1px solid var(--g3); border-bottom: none; background: #fbf4e6;
+  border-radius: 8px 8px 0 0; padding: 6px 8px 6px 12px; cursor: pointer; font-size: 12px; color: #7a5b1e;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
+#draftTabs .drafttab.on { background: #fff8ec; font-weight: 700; color: #6b4d12; box-shadow: inset 0 2px 0 var(--warn); }
+#draftTabs .drafttab.autopt { background: #eef1f5; color: #667; }
+#draftTabs .drafttab .dlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#draftTabs .drafttab .dx { color: var(--g4); font-weight: 700; padding: 0 2px; border-radius: 4px; }
+#draftTabs .drafttab .dx:hover { color: #fff; background: var(--red); }
+.layerbar .adddraft { background: #fff; color: var(--warn); border-color: var(--warn); border-bottom: none; font-weight: 700; }
+.layerbar .confirmdraft { background: var(--ok); color: #fff; border: 1px solid var(--ok); border-radius: 7px;
+  align-self: center; margin: 0 4px 4px; padding: 6px 14px; font-weight: 700; }
+.layerbar .confirmStamp { align-self: center; font-size: 11px; color: var(--blue-d); padding-right: 8px; white-space: nowrap; }
 
 main { padding: 0 10px 60px; }
 .view { display: none; } .view.on { display: block; }
@@ -225,10 +239,15 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 </div>
 
 <div class="layerbar" id="layerBar">
-  <button data-layer="plan" class="on">予定</button>
+  <button data-layer="plan" class="on">予定（確定版）</button>
   <button data-layer="actual">実績</button>
   <button data-layer="official">行政提出用</button>
+  <span class="draftsep">｜ 編集用:</span>
+  <span id="draftTabs"></span>
+  <button id="btnAddDraft" class="adddraft" title="編集用シフト（試作）を新規作成。予定をコピーして開始します">＋編集用</button>
+  <button id="btnConfirmDraft" class="confirmdraft" style="display:none" title="この編集用の内容を予定（確定版）に反映します">✓ この編集用を確定</button>
   <span class="spacer"></span>
+  <span class="confirmStamp" id="confirmStamp"></span>
   <span class="hint" id="layerHint"></span>
 </div>
 
@@ -345,7 +364,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         <div class="flexrow">
           <h2 style="margin:0">シフト記号マスタ</h2>
           <button id="symAdd" class="act">＋ 記号を追加</button>
-          <span class="muted">範囲記号（9-12等）は登録不要・直接入力できます</span>
+          <button id="symRecommend" class="act ghost" title="記号のセル色・文字色を見やすいおすすめ配色に一括設定します">おすすめ配色に戻す</button>
+          <span class="muted">範囲記号（9-12等）は登録不要・直接入力できます／色は変更しない限り翌月以降も保持されます</span>
         </div>
         <div id="symTable"></div>
       </div>
@@ -466,23 +486,72 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return out;
   }
 
-  /* 既定の記号マスタ（マスタ画面から動的に追加・編集される） */
-  var DEFAULT_SYMBOLS = [
-    { code: '早',  label: '早番(7:00-16:00)',   type: 'work', start: '7:00',  end: '16:00', cat: 'early', color: '#e8f4fd' },
-    { code: '日1', label: '日勤1(8:00-17:00)',  type: 'work', start: '8:00',  end: '17:00', cat: 'mid',   color: '#f2f8ee' },
-    { code: '日2', label: '日勤2(8:30-17:30)',  type: 'work', start: '8:30',  end: '17:30', cat: 'mid',   color: '#f2f8ee' },
-    { code: '日3', label: '日勤3(9:00-18:00)',  type: 'work', start: '9:00',  end: '18:00', cat: 'mid',   color: '#f2f8ee' },
-    { code: '遅',  label: '遅番(12:00-21:00)',  type: 'work', start: '12:00', end: '21:00', cat: 'late',  color: '#fdf3e6' },
-    { code: '(21', label: '夜勤入り21時',  type: 'nightIn',  start: '21:00', pairEnd: '7:00',  cat: 'night', color: '#ece9f7' },
-    { code: '(22', label: '夜勤入り22時',  type: 'nightIn',  start: '22:00', pairEnd: '8:00',  cat: 'night', color: '#ece9f7' },
-    { code: '7)',  label: '夜勤上がり7時', type: 'nightOut', end: '7:00',  cat: 'night', color: '#ece9f7' },
-    { code: '8)',  label: '夜勤上がり8時', type: 'nightOut', end: '8:00',  cat: 'night', color: '#ece9f7' },
-    { code: '休',  label: '公休',   type: 'off',       cat: 'off', color: '#f5f5f5' },
-    { code: '希',  label: '希望休', type: 'off',       cat: 'off', sub: '希望休', color: '#fdeaea' },
-    { code: '公',  label: '公休',   type: 'publicOff', cat: 'off', color: '#f5f5f5' },
-    { code: '有',  label: '有給',   type: 'paidOff',   cat: 'off', fixedWork: 8, color: '#fff7d6' },
-    { code: '明',  label: '夜勤明け', type: 'off',     cat: 'off', color: '#f0f0f0' }
-  ];
+  /* おすすめ配色（区分別・セル背景＋文字色）。記号コード優先・無ければ区分(cat)で適用 */
+  var RECOMMENDED_BY_CODE = {
+    '早':  { color: '#dbeafe', textColor: '#1e40af' },
+    '日1': { color: '#dcfce7', textColor: '#166534' },
+    '日2': { color: '#cdeede', textColor: '#166534' },
+    '日3': { color: '#bfe9d3', textColor: '#14532d' },
+    '遅':  { color: '#ffedd5', textColor: '#9a3412' },
+    '(21': { color: '#ede9fe', textColor: '#5b21b6' },
+    '(22': { color: '#e3def7', textColor: '#5b21b6' },
+    '7)':  { color: '#ede9fe', textColor: '#5b21b6' },
+    '8)':  { color: '#e3def7', textColor: '#5b21b6' },
+    '休':  { color: '#eef2f6', textColor: '#475569' },
+    '公':  { color: '#eef2f6', textColor: '#475569' },
+    '希':  { color: '#fee2e2', textColor: '#b91c1c', bold: true },
+    '有':  { color: '#fef9c3', textColor: '#854d0e' },
+    '明':  { color: '#f1f5f9', textColor: '#94a3b8' },
+    '欠':  { color: '#fecaca', textColor: '#991b1b', bold: true }
+  };
+  var RECOMMENDED_BY_CAT = {
+    early: { color: '#dbeafe', textColor: '#1e40af' },
+    mid:   { color: '#dcfce7', textColor: '#166534' },
+    late:  { color: '#ffedd5', textColor: '#9a3412' },
+    night: { color: '#ede9fe', textColor: '#5b21b6' },
+    off:   { color: '#eef2f6', textColor: '#475569' }
+  };
+
+  function recommendedFor(sym) {
+    var byCode = RECOMMENDED_BY_CODE[normalizeCell(sym.code)] || RECOMMENDED_BY_CODE[sym.code];
+    if (byCode) return byCode;
+    return RECOMMENDED_BY_CAT[sym.cat] || null;
+  }
+
+  /* 記号配列におすすめ配色を適用（color/textColor/bold を上書き）。新しい配列を返す */
+  function applyRecommendedColors(symbols) {
+    var out = [];
+    for (var i = 0; i < symbols.length; i++) {
+      var s = {};
+      for (var k in symbols[i]) s[k] = symbols[i][k];
+      var rec = recommendedFor(s);
+      if (rec) {
+        s.color = rec.color;
+        s.textColor = rec.textColor;
+        s.bold = !!rec.bold;
+      }
+      out.push(s);
+    }
+    return out;
+  }
+
+  /* 既定の記号マスタ（マスタ画面から動的に追加・編集される）。おすすめ配色を適用済み */
+  var DEFAULT_SYMBOLS = applyRecommendedColors([
+    { code: '早',  label: '早番(7:00-16:00)',   type: 'work', start: '7:00',  end: '16:00', cat: 'early' },
+    { code: '日1', label: '日勤1(8:00-17:00)',  type: 'work', start: '8:00',  end: '17:00', cat: 'mid' },
+    { code: '日2', label: '日勤2(8:30-17:30)',  type: 'work', start: '8:30',  end: '17:30', cat: 'mid' },
+    { code: '日3', label: '日勤3(9:00-18:00)',  type: 'work', start: '9:00',  end: '18:00', cat: 'mid' },
+    { code: '遅',  label: '遅番(12:00-21:00)',  type: 'work', start: '12:00', end: '21:00', cat: 'late' },
+    { code: '(21', label: '夜勤入り21時',  type: 'nightIn',  start: '21:00', pairEnd: '7:00',  cat: 'night' },
+    { code: '(22', label: '夜勤入り22時',  type: 'nightIn',  start: '22:00', pairEnd: '8:00',  cat: 'night' },
+    { code: '7)',  label: '夜勤上がり7時', type: 'nightOut', end: '7:00',  cat: 'night' },
+    { code: '8)',  label: '夜勤上がり8時', type: 'nightOut', end: '8:00',  cat: 'night' },
+    { code: '休',  label: '公休',   type: 'off',       cat: 'off' },
+    { code: '希',  label: '希望休', type: 'off',       cat: 'off', sub: '希望休' },
+    { code: '公',  label: '公休',   type: 'publicOff', cat: 'off' },
+    { code: '有',  label: '有給',   type: 'paidOff',   cat: 'off', fixedWork: 8 },
+    { code: '明',  label: '夜勤明け', type: 'off',     cat: 'off' }
+  ]);
 
   /* 別名（取込データの揺れ吸収） */
   var ALIASES = { '希休': '希', '有休': '有', '公休': '公', '希望休': '希', '有給': '有' };
@@ -612,7 +681,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     parseCell: parseCell,
     rangeCat: rangeCat,
     DEFAULT_SYMBOLS: DEFAULT_SYMBOLS,
-    ALIASES: ALIASES
+    ALIASES: ALIASES,
+    applyRecommendedColors: applyRecommendedColors,
+    RECOMMENDED_BY_CODE: RECOMMENDED_BY_CODE
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftSymbols = api;
@@ -2705,6 +2776,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       }
       document.getElementById('staffAdd').addEventListener('click', function () { self.editStaff(null); });
       document.getElementById('symAdd').addEventListener('click', function () { self.addSymbolRow(); });
+      document.getElementById('symRecommend').addEventListener('click', function () { self.applyRecommendedColors(); });
       document.getElementById('staffParse').addEventListener('click', function () { self.parseStaffPaste(); });
       this.initSettings();
       this.initSync();
@@ -2941,6 +3013,18 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.app.symbols.push({ code: '', label: '', type: 'work', start: '9:00', end: '17:00', cat: 'mid', color: '#ffffff' });
       this.app.saveSymbols();
       this.renderSymbols();
+    },
+
+    applyRecommendedColors: function () {
+      var self = this;
+      this.app.confirm('おすすめ配色に戻す',
+        'すべての記号のセル色・文字色を見やすいおすすめ配色に一括設定します。\n（個別に設定した色は上書きされます）よろしいですか？',
+        function () {
+          self.app.symbols = window.ShiftSymbols.applyRecommendedColors(self.app.symbols);
+          self.app.saveSymbols();
+          self.renderSymbols();
+          self.app.confirmInfo('完了', 'おすすめ配色を適用しました。この色は変更しない限り翌月以降も保持されます。');
+        });
     },
 
     /* ── 職員一括取込 ── */
@@ -3868,7 +3952,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     loadAll: function () {
       this.staff = Store.get('staff', []);
       this.symbols = Store.get('symbols', null);
-      if (!this.symbols) {
+      if (!this.symbols || !this.symbols.length) {
         this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
         Store.set('symbols', this.symbols);
       }
@@ -3887,6 +3971,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           visit: { bg: '#1a4a80', text: '#ffffff' },
           day: { bg: '#1a4a80', text: '#ffffff' }
         };
+      }
+      /* 記号色がリセット/旧既定（文字色未設定）なら、おすすめ配色を一度だけ自動適用。
+       * 以後はフラグで再適用しない＝ユーザーが変更した色は完全に保持され翌月以降も反映される。 */
+      if (!this.settings.recommendedColorsApplied) {
+        var hasTextColor = false;
+        for (var si = 0; si < this.symbols.length; si++) {
+          if (this.symbols[si].textColor) { hasTextColor = true; break; }
+        }
+        if (!hasTextColor) {
+          this.symbols = Sym.applyRecommendedColors(this.symbols);
+          Store.set('symbols', this.symbols);
+        }
+        this.settings.recommendedColorsApplied = true;
+        Store.set('settings', this.settings);
       }
     },
 
@@ -3933,17 +4031,168 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     },
 
     loadMonth: function () {
+      /* 編集用ドラフトは月ごと。別月に切替えて当該ドラフトが無ければ予定へ戻す */
+      if (this.layer.indexOf('draft:') === 0 && !this.findDraft(this.layer.slice(6))) {
+        this.layer = 'plan';
+      }
       this.sched = this.getSched(this.layer);
       this.requests = Store.get(this.reqKey(), {});
+      this.renderLayerBar();
       this.updateLayerHint();
+    },
+
+    /* レイヤ表示名（draft:* は編集用ラベル） */
+    layerLabel: function (layer) {
+      layer = layer || this.layer;
+      if (layer.indexOf('draft:') === 0) {
+        var d = this.findDraft(layer.slice(6));
+        return d ? ('編集用「' + d.label + '」') : '編集用';
+      }
+      return LAYER_NAMES[layer] || layer;
     },
 
     updateLayerHint: function () {
       var hint = document.getElementById('layerHint');
       var n = 0;
       for (var sid in this.sched.cells) { if (hasAny(this.sched.cells[sid])) { n++; } }
-      hint.textContent = LAYER_NAMES[this.layer] + 'レイヤ: ' + (n ? n + '名分入力あり' : '未入力') +
+      hint.textContent = this.layerLabel(this.layer) + ': ' + (n ? n + '名分入力あり' : '未入力') +
         '（' + this.ym + '）';
+    },
+
+    /* ── 編集用ドラフト ── */
+    draftsKey: function () { return 'drafts:' + this.ym; },
+    getDrafts: function () { return Store.get(this.draftsKey(), []); },
+    saveDrafts: function (list) { Store.set(this.draftsKey(), list); },
+    findDraft: function (id) {
+      var l = this.getDrafts();
+      for (var i = 0; i < l.length; i++) { if (l[i].id === id) return l[i]; }
+      return null;
+    },
+
+    renderLayerBar: function () {
+      var self = this;
+      /* 基本タブのactive */
+      var baseBtns = document.querySelectorAll('#layerBar button[data-layer]');
+      for (var b = 0; b < baseBtns.length; b++) {
+        baseBtns[b].classList.toggle('on', baseBtns[b].getAttribute('data-layer') === this.layer);
+      }
+      /* ドラフトタブ */
+      var wrap = document.getElementById('draftTabs');
+      if (wrap) {
+        var drafts = this.getDrafts();
+        var h = '';
+        for (var i = 0; i < drafts.length; i++) {
+          var d = drafts[i];
+          var lay = 'draft:' + d.id;
+          var on = (this.layer === lay) ? ' on' : '';
+          var auto = d.auto ? ' autopt' : '';
+          h += '<span class="drafttab' + on + auto + '" data-layer="' + lay + '" title="' +
+            escText(d.label) + (d.auto ? '（自動退避・確定前の予定）' : '／クリックで開く・ダブルクリックで名称変更') + '">' +
+            '<span class="dlabel">' + escText(d.label) + '</span>' +
+            '<span class="dx" data-del="' + d.id + '" title="この編集用を削除">×</span></span>';
+        }
+        wrap.innerHTML = h;
+      }
+      /* 確定ボタン: ドラフト表示中のみ */
+      var isDraft = this.layer.indexOf('draft:') === 0;
+      var cbtn = document.getElementById('btnConfirmDraft');
+      if (cbtn) cbtn.style.display = isDraft ? '' : 'none';
+      /* 確定スタンプ表示 */
+      var stamp = document.getElementById('confirmStamp');
+      if (stamp) {
+        if (isDraft) {
+          stamp.textContent = '未確定の編集用です。完成したら［✓ この編集用を確定］で予定へ反映';
+        } else if (this.layer === 'plan') {
+          var plan = this.getSched('plan');
+          var m = plan.meta || {};
+          stamp.textContent = m.confirmedFrom
+            ? '最終確定: 「' + m.confirmedFrom + '」 ' + fmtDateTime(m.confirmedAt)
+            : '';
+        } else {
+          stamp.textContent = '';
+        }
+      }
+    },
+
+    createDraft: function () {
+      var self = this;
+      var n = this.getDrafts().filter(function (d) { return !d.auto; }).length + 1;
+      var label = prompt('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n);
+      if (label === null) return;
+      label = (label || '').trim() || ('編集用' + n);
+      var id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      /* 現在の予定をコピーして開始（崩して別案を作るための土台） */
+      var plan = this.getSched('plan');
+      var copy = JSON.parse(JSON.stringify(plan));
+      copy.meta = { seededFrom: 'plan', createdAt: new Date().toISOString() };
+      this.saveSched('draft:' + id, copy);
+      var list = this.getDrafts();
+      list.push({ id: id, label: label, createdAt: new Date().toISOString() });
+      this.saveDrafts(list);
+      this.gotoLayer('draft:' + id);
+    },
+
+    renameDraft: function (id) {
+      var d = this.findDraft(id);
+      if (!d || d.auto) return;
+      var v = prompt('編集用の内容（名称）を変更', d.label);
+      if (v === null) return;
+      d.label = (v || '').trim() || d.label;
+      var list = this.getDrafts();
+      for (var i = 0; i < list.length; i++) { if (list[i].id === id) list[i].label = d.label; }
+      this.saveDrafts(list);
+      this.renderLayerBar();
+      this.rerender();
+    },
+
+    deleteDraft: function (id) {
+      var self = this;
+      var d = this.findDraft(id);
+      if (!d) return;
+      this.confirm('編集用の削除', '編集用「' + d.label + '」を削除しますか？（予定・実績には影響しません）', function () {
+        var list = self.getDrafts().filter(function (x) { return x.id !== id; });
+        self.saveDrafts(list);
+        self.saveSched('draft:' + id, self.emptySched()); /* 中身も空に */
+        if (self.layer === 'draft:' + id) { self.gotoLayer('plan'); }
+        else { self.renderLayerBar(); }
+      });
+    },
+
+    /* 確定前の予定を1件だけ自動退避（直前の確定を取り消せるように） */
+    saveRestorePoint: function (planSched) {
+      var list = this.getDrafts();
+      var rp = null;
+      for (var i = 0; i < list.length; i++) { if (list[i].auto) { rp = list[i]; break; } }
+      var copy = JSON.parse(JSON.stringify(planSched));
+      copy.meta = { restorePoint: true, savedAt: new Date().toISOString() };
+      if (!rp) {
+        rp = { id: 'auto', label: '確定前（自動退避）', auto: true, createdAt: new Date().toISOString() };
+        list.push(rp);
+        this.saveDrafts(list);
+      }
+      this.saveSched('draft:' + rp.id, copy);
+    },
+
+    confirmDraft: function (id) {
+      var self = this;
+      var draft = this.findDraft(id);
+      if (!draft) return;
+      var draftSched = this.getSched('draft:' + id);
+      this.confirm('編集用を確定',
+        '編集用「' + draft.label + '」を予定（確定版）に反映します。\n' +
+        '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。\nよろしいですか？',
+        function () {
+          var plan = self.getSched('plan');
+          var hasPlan = false;
+          for (var s in plan.cells) { if (hasAny(plan.cells[s])) { hasPlan = true; break; } }
+          if (hasPlan) self.saveRestorePoint(plan);
+          var copy = JSON.parse(JSON.stringify(draftSched));
+          copy.meta = { confirmedFrom: draft.label, confirmedAt: new Date().toISOString(), confirmedDraftId: id };
+          self.saveSched('plan', copy);
+          self.gotoLayer('plan');
+          self.confirmInfo('確定しました',
+            '予定（確定版）を「' + draft.label + '」の内容で更新しました。\n確定日時: ' + fmtDateTime(copy.meta.confirmedAt));
+        });
     },
 
     /* ── 計算 ── */
@@ -4006,7 +4255,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       }
       this.updateLayerHint();
       document.getElementById('printTitle').textContent =
-        this.year + '年' + this.month + '月 勤務表（' + LAYER_NAMES[this.layer] + '）';
+        this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）';
     },
 
     gridCtx: function () {
@@ -4382,16 +4631,29 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           self.rerender();
         });
       }
-      var layers = document.querySelectorAll('#layerBar button');
-      for (var l = 0; l < layers.length; l++) {
-        layers[l].addEventListener('click', function (e) {
-          var ly = e.target.getAttribute('data-layer');
-          var all2 = document.querySelectorAll('#layerBar button');
-          for (var j2 = 0; j2 < all2.length; j2++) all2[j2].classList.remove('on');
-          e.target.classList.add('on');
-          self.switchLayer(ly);
-        });
-      }
+      /* レイヤ/ドラフトはイベント委譲（ドラフトタブは動的生成のため） */
+      document.getElementById('layerBar').addEventListener('click', function (e) {
+        var t = e.target;
+        var del = t.getAttribute && t.getAttribute('data-del');
+        if (del) { e.stopPropagation(); self.deleteDraft(del); return; }
+        var tab = t;
+        while (tab && tab !== this && !(tab.getAttribute && tab.getAttribute('data-layer'))) tab = tab.parentNode;
+        if (tab && tab.getAttribute && tab.getAttribute('data-layer')) {
+          self.switchLayer(tab.getAttribute('data-layer'));
+        }
+      });
+      document.getElementById('layerBar').addEventListener('dblclick', function (e) {
+        var tab = e.target;
+        while (tab && tab !== this && !(tab.classList && tab.classList.contains('drafttab'))) tab = tab.parentNode;
+        if (tab && tab.classList && tab.classList.contains('drafttab') && !tab.classList.contains('autopt')) {
+          var lay = tab.getAttribute('data-layer');
+          if (lay) self.renameDraft(lay.slice(6));
+        }
+      });
+      document.getElementById('btnAddDraft').addEventListener('click', function () { self.createDraft(); });
+      document.getElementById('btnConfirmDraft').addEventListener('click', function () {
+        if (self.layer.indexOf('draft:') === 0) self.confirmDraft(self.layer.slice(6));
+      });
       document.getElementById('btnAuto').addEventListener('click', function () { self.runAuto(); });
       document.getElementById('btnActual').addEventListener('click', function () { self.gotoLayer('actual'); });
       document.getElementById('btnFreee').addEventListener('click', function () { window.ShiftFreeeUI.openDialog(); });
@@ -4433,20 +4695,17 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         document.getElementById('view-' + views[k]).classList.toggle('on', views[k] === 'grid');
       }
       document.getElementById('layerBar').style.display = '';
-      var lbs = document.querySelectorAll('#layerBar button');
-      for (var l = 0; l < lbs.length; l++) {
-        lbs[l].classList.toggle('on', lbs[l].getAttribute('data-layer') === layer);
-      }
-      this.switchLayer(layer);
+      this.switchLayer(layer); /* active表示は renderLayerBar(loadMonth内)が更新 */
     },
 
     switchLayer: function (layer) {
       var self = this;
       this.layer = layer;
       this.loadMonth();
+      /* 編集用ドラフトは作成時に予定をコピー済みのため、ここでの自動シードは実績/行政提出のみ */
       var n = 0;
       for (var sid in this.sched.cells) { if (hasAny(this.sched.cells[sid])) n++; }
-      if (n === 0 && layer !== 'plan') {
+      if (n === 0 && (layer === 'actual' || layer === 'official')) {
         var srcLayer = layer === 'actual' ? 'plan' : 'actual';
         var src = this.getSched(srcLayer);
         var sn = 0;
@@ -4472,12 +4731,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     /* ── 自動作成 ── */
     runAuto: function () {
       var self = this;
-      if (this.layer !== 'plan') {
-        this.confirmInfo('自動作成', '自動作成は「予定」レイヤで実行してください。');
+      var isDraft = this.layer.indexOf('draft:') === 0;
+      if (this.layer !== 'plan' && !isDraft) {
+        this.confirmInfo('自動作成', '自動作成は「予定」または「編集用」で実行してください。');
         return;
       }
       this.confirm('シフト自動作成',
-        '空セルを自動提案で埋めます（既存の入力・希望休はそのまま保持されます）。\nよろしいですか？',
+        '空セルを自動提案で埋めます（既存の入力・希望休はそのまま保持されます）。\n対象: ' + this.layerLabel(this.layer) + '\nよろしいですか？',
         function () {
           var prevYm = self.month === 1 ? (self.year - 1) + '-12' : self.year + '-' + pad2(self.month - 1);
           var prevSched = Store.get('sched:' + prevYm + ':plan', null) || { cells: {} };
@@ -4492,7 +4752,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           });
           self.capture('自動作成');
           self.sched.cells = r.cells;
-          self.saveSched('plan', self.sched);
+          self.saveSched(self.layer, self.sched);
           self.rerender();
           var msg = r.report.length === 0 ? 'すべての条件を満たす提案を作成しました。'
             : '提案を作成しました。以下を確認してください:\n・' + reportMsgs(r.report).join('\n・');
@@ -4624,6 +4884,15 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   function escText(t) {
     return String(t === undefined || t === null ? '' : t)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function fmtDateTime(iso) {
+    if (!iso) return '';
+    try {
+      var d = new Date(iso);
+      var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+      return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
+        ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    } catch (e) { return String(iso); }
   }
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
   function reportMsgs(report) {
