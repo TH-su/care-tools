@@ -4468,28 +4468,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
     /* ── セル編集 ── */
     changeCells: function (cells, value) {
-      var self = this;
-      /* 早遅必要数の超過チェック（単一カテゴリ記号のみ） */
-      if (value !== '') {
-        var cat = this.catOfValue(value);
-        if (cat === 'early' || cat === 'late') {
-          var byDay = {};
-          for (var i = 0; i < cells.length; i++) {
-            if (cells[i].isMain) byDay[cells[i].day] = (byDay[cells[i].day] || 0) + 1;
-          }
-          for (var d in byDay) {
-            var need = this.needOf(parseInt(d, 10), cat);
-            var asg = this.counts[d] ? this.counts[d][cat] : 0;
-            if (asg + byDay[d] > need) {
-              var nm = cat === 'early' ? '早番' : '遅番';
-              this.confirm('必要数の超過', d + '日の' + nm + 'は必要数 ' + need + ' を超えます（' + (asg + byDay[d]) + '人目）。入力しますか？', function () {
-                self.writeCells(cells, value);
-              });
-              return;
-            }
-          }
-        }
-      }
+      /* 早遅必要数の超過は確認ダイアログを出さず、そのまま入力する。
+       * 過不足は下部の「早残/遅残」行（超過は赤字）と指標バーで視覚的に確認できる。 */
       this.writeCells(cells, value);
     },
 
