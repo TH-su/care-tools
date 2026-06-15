@@ -1638,6 +1638,12 @@ const SYNC = {
     }
     return null;
   },
+  // GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける）
+  friendlyErr(e) {
+    if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
+    if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    return e || '応答エラー';
+  },
 
   // ── 統合GAS連携（ワースケ・シフトと同一エンドポイント／rev楽観ロック）──
   // 接続先・トークンは「3アプリ共通キー(su_sync_common)」を最優先、
@@ -1645,15 +1651,16 @@ const SYNC = {
   // どれか1アプリで設定すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
   // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
   target() {
+    // 前後空白を必ず除去（コピペ時の混入で unauthorized になるのを防ぐ）
     try {
       const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
-      if (c && c.endpoint) return { endpoint: c.endpoint, token: c.token || '' };
+      if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
     } catch(e) {}
     try {
       const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
-      if (s && s.endpoint) return { endpoint: s.endpoint, token: s.token || '' };
+      if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
     } catch(e) {}
-    return { endpoint: this.config.endpoint || '', token: this.config.token || '' };
+    return { endpoint: String(this.config.endpoint || '').trim(), token: String(this.config.token || '').trim() };
   },
   hasTarget() { return !!this.target().endpoint; },
   loadCareRev() {
@@ -1709,7 +1716,7 @@ const SYNC = {
     this.updateStatusUI('取得中…');
     try {
       const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok) throw new Error(j.error || '応答エラー');
+      if (!j.ok) throw new Error(this.friendlyErr(j.error));
       if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
       this.adopt(j.data, j.rev);
       this.log(`✅ 取得完了（${DB.residents.length}名・rev ${j.rev || 0}）`);
@@ -1750,7 +1757,7 @@ const SYNC = {
         await this.pull();
         return false;
       }
-      throw new Error(j.error || '応答エラー');
+      throw new Error(this.friendlyErr(j.error));
     } catch(e) {
       this.log('❌ 保存失敗: ' + e.message);
       this.updateStatusUI('エラー');

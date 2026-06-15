@@ -2882,6 +2882,9 @@ body.printing .rs { display: none; }
         if (c && c.endpoint) { settings.endpoint = c.endpoint; settings.token = c.token || ''; }
       }
     } catch (e2) { /* 無視 */ }
+    /* 接続先・トークンの前後空白を除去（コピペ時の混入で unauthorized になるのを防ぐ） */
+    settings.endpoint = String(settings.endpoint || '').trim();
+    settings.token = String(settings.token || '').trim();
   }
   function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
@@ -3824,6 +3827,12 @@ body.printing .rs { display: none; }
     for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) r[k] = p[k];
     try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) {}
   }
+  /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
+  function friendlyErr(e) {
+    if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
+    if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    return e || '通信失敗';
+  }
   function gas(payload, cb) {
     payload.token = settings.token;
     try {
@@ -3869,7 +3878,7 @@ body.printing .rs { display: none; }
         pullDayNow(date, true);
       } else {
         setSyncState('同期エラー');
-        if (report) $('stResult').textContent = '送信エラー: ' + (j && j.error ? j.error : '通信失敗');
+        if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
     });
   }
@@ -3877,7 +3886,7 @@ body.printing .rs { display: none; }
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) {
-        if (report) $('stResult').textContent = '取得エラー: ' + (j && j.error ? j.error : '通信失敗');
+        if (report) $('stResult').textContent = '取得エラー: ' + friendlyErr(j && j.error);
         return;
       }
       var curRev = (ui.currentDate === date) ? (store.get().meta.rev || 0)
@@ -4244,7 +4253,7 @@ body.printing .rs { display: none; }
       settings.retentionDays = parseInt($('stRetention').value, 10) || 90;
       var hadEndpoint = !!settings.endpoint;
       settings.endpoint = $('stEndpoint').value.trim();
-      settings.token = $('stToken').value;
+      settings.token = $('stToken').value.trim();
       settings.urlCare = $('stUrlCare').value.trim() || 'care-schedule.html';
       settings.urlShift = $('stUrlShift').value.trim() || 'shift-app.html';
       saveSettings();

@@ -1909,9 +1909,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     getSyncConfig: function () {
       var common = lsGet(COMMON_SYNC_KEY);
       if (common && common.endpoint) {
-        return { url: common.endpoint, token: common.token || '' };
+        return { url: String(common.endpoint).trim(), token: String(common.token || '').trim() };
       }
-      return lsGet(SYNC_KEY);
+      var legacy = lsGet(SYNC_KEY);
+      if (legacy && legacy.url) {
+        return { url: String(legacy.url).trim(), token: String(legacy.token || '').trim() };
+      }
+      return legacy;
     },
     setSyncConfig: function (cfg) {
       lsSet(SYNC_KEY, cfg); /* 後方互換のため従来キーも維持 */
