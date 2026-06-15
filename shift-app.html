@@ -59,6 +59,11 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 .layerbar .confirmdraft { background: var(--ok); color: #fff; border: 1px solid var(--ok); border-radius: 7px;
   align-self: center; margin: 0 4px 4px; padding: 6px 14px; font-weight: 700; }
 .layerbar .confirmStamp { align-self: center; font-size: 11px; color: var(--blue-d); padding-right: 8px; white-space: nowrap; }
+#emptyGuide { background: #fff8e1; border: 1px solid var(--warn); border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+#emptyGuide h2 { margin: 0 0 6px; color: #9a3412; font-size: 15px; }
+#emptyGuide ol { margin: 8px 0; padding-left: 22px; }
+#emptyGuide li { margin: 6px 0; line-height: 1.5; }
+#emptyGuide code { background: #fff; border: 1px solid var(--g3); border-radius: 4px; padding: 1px 5px; }
 
 main { padding: 0 10px 60px; }
 .view { display: none; } .view.on { display: block; }
@@ -255,6 +260,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <div id="printTitle"></div>
 
   <div id="view-grid" class="view on">
+    <div id="emptyGuide" class="noprint" style="display:none">
+      <h2>⚠ この画面に職員データがありません</h2>
+      <p>データは<b>端末ごと・URLごとに別々</b>に保存されます。複数端末・別URLでは自動では現れません。下記のいずれかで開始してください。</p>
+      <ol>
+        <li><b>クラウド同期を設定（推奨・複数端末で共有＆消失防止）</b><br>
+          サーバ（ご自身のGoogle Drive）にデータを置き、すべての端末・URLで同じデータを表示・保持します。iPad/iPhoneのデータ自動削除にも強くなります。</li>
+        <li><b>名簿ファイルを取り込む（この端末だけ・暫定）</b><br>
+          以前お渡しした <code>staff-roster.json</code> を取り込みます（同期未設定だとこの端末/URLのみ・iOSでは消える可能性あり）。</li>
+      </ol>
+      <div class="flexrow">
+        <button id="egSync" class="act">① 同期設定を開く</button>
+        <button id="egImport" class="act ghost">② 名簿インポートを開く</button>
+      </div>
+    </div>
     <div id="gridWrap"></div>
     <div id="metricsBar"></div>
   </div>
@@ -3973,6 +3992,24 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       });
     },
 
+    /* マスタ→設定タブへ移動し、同期/バックアップ欄へスクロール */
+    gotoMasterSettings: function (focus) {
+      this.view = 'master';
+      var tabs = document.querySelectorAll('#viewTabs button');
+      for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-view') === 'master');
+      var views = ['grid', 'requests', 'official', 'master'];
+      for (var k = 0; k < views.length; k++) document.getElementById('view-' + views[k]).classList.toggle('on', views[k] === 'master');
+      document.getElementById('layerBar').style.display = 'none';
+      var mtabs = document.querySelectorAll('#masterTabs button');
+      for (var m = 0; m < mtabs.length; m++) mtabs[m].classList.toggle('on', mtabs[m].getAttribute('data-mtab') === 'settings');
+      var mviews = ['staff', 'symbols', 'import', 'settings'];
+      for (var v = 0; v < mviews.length; v++) document.getElementById('mtab-' + mviews[v]).classList.toggle('on', mviews[v] === 'settings');
+      this.rerender();
+      var id = focus === 'sync' ? 'syncUrl' : 'backupExport';
+      var target = document.getElementById(id);
+      if (target && target.scrollIntoView) target.scrollIntoView({ block: 'center' });
+    },
+
     notifyStaffRestore: function () {
       if (this._staffRestored) {
         var n = this._staffRestored;
@@ -4289,8 +4326,17 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         window.ShiftOfficial.render();
       }
       this.updateLayerHint();
+      this.updateEmptyGuide();
       document.getElementById('printTitle').textContent =
         this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）';
+    },
+
+    /* 職員が空のときに開始ガイドを表示（空白画面で運用が止まらないように） */
+    updateEmptyGuide: function () {
+      var el = document.getElementById('emptyGuide');
+      if (!el) return;
+      var empty = !this.staff || this.staff.length === 0;
+      el.style.display = (empty && this.view === 'grid') ? '' : 'none';
     },
 
     gridCtx: function () {
@@ -4702,6 +4748,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           if (lay) self.renameDraft(lay.slice(6));
         }
       });
+      var egSync = document.getElementById('egSync');
+      if (egSync) egSync.addEventListener('click', function () { self.gotoMasterSettings('sync'); });
+      var egImport = document.getElementById('egImport');
+      if (egImport) egImport.addEventListener('click', function () { self.gotoMasterSettings('backup'); });
       document.getElementById('btnAddDraft').addEventListener('click', function () { self.createDraft(); });
       document.getElementById('btnConfirmDraft').addEventListener('click', function () {
         if (self.layer.indexOf('draft:') === 0) self.confirmDraft(self.layer.slice(6));
