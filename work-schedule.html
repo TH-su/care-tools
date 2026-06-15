@@ -2857,6 +2857,9 @@ body.printing .rs { display: none; }
 
   /* ===== 設定 ===== */
   var SETTINGS_KEY = 'ws_settings';
+  /* 同一オリジンの3アプリ（ワースケ/週間計画/シフト）共通の接続先。
+     どれか1アプリで保存すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。 */
+  var COMMON_SYNC_KEY = 'su_sync_common';
   var settings = { breakMinHours: 7, retentionDays: 90, endpoint: '', token: '',
                    urlCare: 'care-schedule.html', urlShift: 'shift-app.html' };
   function loadSettings() {
@@ -2871,9 +2874,24 @@ body.printing .rs { display: none; }
         }
       }
     } catch (e) { /* 既定値で続行 */ }
+    /* 共通キーがあれば接続先を優先採用（他アプリで設定した接続先を引き継ぐ） */
+    try {
+      var craw = localStorage.getItem(COMMON_SYNC_KEY);
+      if (craw) {
+        var c = JSON.parse(craw);
+        if (c && c.endpoint) { settings.endpoint = c.endpoint; settings.token = c.token || ''; }
+      }
+    } catch (e2) { /* 無視 */ }
   }
   function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    /* 接続先を共通キーへ反映＝同一オリジンの週間計画/シフトも同じ接続先を使う */
+    try {
+      if (settings.endpoint) {
+        localStorage.setItem(COMMON_SYNC_KEY, JSON.stringify(
+          { endpoint: settings.endpoint, token: settings.token || '', updatedAt: Date.now() }));
+      }
+    } catch (e3) { /* 無視 */ }
   }
 
   /* ===== 日次データ永続化（localStorage・保持期間つき） ===== */

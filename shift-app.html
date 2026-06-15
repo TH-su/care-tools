@@ -1820,7 +1820,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
   var PREFIX = 'shiftapp:v1:';
   var META_KEY = PREFIX + '_meta';   // {revs:{}, dirty:{}, queue:{}, lastSync}
-  var SYNC_KEY = PREFIX + '_sync';   // {url, token} 端末ごと
+  var SYNC_KEY = PREFIX + '_sync';   // {url, token} 端末ごと（後方互換）
+  /* 同一オリジンの3アプリ（ワースケ/週間計画/シフト）共通の接続先。
+     どれか1アプリで保存すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
+     形式 {endpoint, token, updatedAt}（ワースケ/週間計画と同じフィールド名）。 */
+  var COMMON_SYNC_KEY = 'su_sync_common';
 
   /* マスタ系キー（職員・記号）は「空」で上書きされてはならない＝消失防止の保護対象 */
   var PROTECTED_KEYS = { staff: 1, symbols: 1 };
@@ -1901,8 +1905,22 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     },
     setLocal: function (key, data) { lsSet(PREFIX + 'local:' + key, data); },
 
-    getSyncConfig: function () { return lsGet(SYNC_KEY); },
-    setSyncConfig: function (cfg) { lsSet(SYNC_KEY, cfg); this.updateStatus(); },
+    /* 接続先の解決: 共通キー（他アプリと共有）を優先し、無ければ従来キー。 */
+    getSyncConfig: function () {
+      var common = lsGet(COMMON_SYNC_KEY);
+      if (common && common.endpoint) {
+        return { url: common.endpoint, token: common.token || '' };
+      }
+      return lsGet(SYNC_KEY);
+    },
+    setSyncConfig: function (cfg) {
+      lsSet(SYNC_KEY, cfg); /* 後方互換のため従来キーも維持 */
+      /* 共通キーへ反映＝同一オリジンのワースケ/週間計画も同じ接続先を使う */
+      if (cfg && cfg.url) {
+        lsSet(COMMON_SYNC_KEY, { endpoint: cfg.url, token: cfg.token || '', updatedAt: Date.now() });
+      }
+      this.updateStatus();
+    },
 
     /* ---- 状態通知 ---- */
     onChange: function (fn) { this.listeners.push(fn); },

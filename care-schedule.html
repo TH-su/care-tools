@@ -1640,9 +1640,15 @@ const SYNC = {
   },
 
   // ── 統合GAS連携（ワースケ・シフトと同一エンドポイント／rev楽観ロック）──
-  // 接続先・トークンはワースケ設定(ws_settings)を優先、無ければ自前configを使用。
+  // 接続先・トークンは「3アプリ共通キー(su_sync_common)」を最優先、
+  // 次にワースケ設定(ws_settings)、無ければ自前configを使用。
+  // どれか1アプリで設定すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
   // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
   target() {
+    try {
+      const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
+      if (c && c.endpoint) return { endpoint: c.endpoint, token: c.token || '' };
+    } catch(e) {}
     try {
       const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
       if (s && s.endpoint) return { endpoint: s.endpoint, token: s.token || '' };
@@ -1821,6 +1827,13 @@ function persistSyncInputs() {
   SYNC.config.token    = tok;
   SYNC.config.auto     = auto;
   SYNC.save();
+  // 3アプリ共通キーへ反映＝同一オリジンのワースケ/シフトも同じ接続先を使う
+  if (url) {
+    try {
+      localStorage.setItem('su_sync_common', JSON.stringify(
+        { endpoint: url, token: tok || '', updatedAt: Date.now() }));
+    } catch(e) {}
+  }
   // ポーリング状態を更新（ワースケ設定共有時も対象）
   if (changed) {
     if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
