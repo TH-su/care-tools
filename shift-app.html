@@ -1791,6 +1791,22 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   var META_KEY = PREFIX + '_meta';   // {revs:{}, dirty:{}, queue:{}, lastSync}
   var SYNC_KEY = PREFIX + '_sync';   // {url, token} 端末ごと
 
+  /* マスタ系キー（職員・記号）は「空」で上書きされてはならない＝消失防止の保護対象 */
+  var PROTECTED_KEYS = { staff: 1, symbols: 1 };
+  function isProtectedKey(key) { return PROTECTED_KEYS[key] === 1; }
+  function isEmptyish(v) {
+    if (v === null || v === undefined) return true;
+    if (Object.prototype.toString.call(v) === '[object Array]') return v.length === 0;
+    if (typeof v === 'object') { for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) return false; } return true; }
+    return false;
+  }
+  /* サーバ値をローカルへ適用してよいか。保護キーは「非空ローカルを空で上書き」を拒否 */
+  function mayApplyServer(key, serverData, localVal) {
+    if (serverData === null || serverData === undefined) return false; /* 破損/null */
+    if (isProtectedKey(key) && isEmptyish(serverData) && !isEmptyish(localVal)) return false; /* 空で上書き禁止 */
+    return true;
+  }
+
   function lsGet(key) {
     try {
       var raw = localStorage.getItem(key);
@@ -1925,12 +1941,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var corrupt = [];
         for (var key in entries) {
           var server = entries[key];
-          /* サーバ側が破損/null のエントリは絶対にローカルへ上書きしない（職員名などの消失防止）。
-           * ローカルに有効データがあれば、サーバを修復するため再送キューに積む。 */
-          if (!SC.isUsableServerData(server)) {
+          var lv = lsGet(PREFIX + key);
+          /* サーバが破損(null)、または保護キー(職員/記号)を「空」でローカルの非空に上書きする場合は
+           * 絶対に適用しない（職員名などの消失防止）。ローカルに有効データがあればサーバを修復するため再送。 */
+          if (!mayApplyServer(key, server.data, lv)) {
             corrupt.push(key);
-            var lv = lsGet(PREFIX + key);
-            if (lv !== null && lv !== undefined && !self.readOnly) {
+            if (lv !== null && lv !== undefined && !isEmptyish(lv) && !self.readOnly) {
               self.queue.enqueue(key, lv, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now());
             }
             continue;
@@ -1993,9 +2009,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     adoptServer: function (c, done) {
       var self = this;
       function writeReal(data, rev) {
-        if (data === null || data === undefined) {
-          /* サーバから実データを取得できなかった: 何も壊さず保留して再同期に委ねる */
-          self.updateStatus('offline', 'サーバ版の取得に失敗したため競合を保留しました（［今すぐ同期］で再試行してください）');
+        var localVal = lsGet(PREFIX + c.key);
+        if (!mayApplyServer(c.key, data, localVal)) {
+          /* 破損/null、または保護キーを空で上書きになる: 何も壊さず保留し、
+           * ローカルに有効データがあれば修復のため再送 */
+          if (localVal !== null && localVal !== undefined && !isEmptyish(localVal) && !self.readOnly) {
+            self.queue.enqueue(c.key, localVal, (typeof rev === 'number') ? rev : (c.server ? c.server.rev : 0), Date.now());
+            self.saveMeta();
+            self.schedulePush();
+          }
+          self.updateStatus('offline', 'サーバ版が空/破損のため競合を保留し、ローカルを保持しました（修復のため再送します）');
           done();
           return;
         }
@@ -3941,6 +3964,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.bindSync();
       this.rerender();
       var self = this;
+      this.notifyStaffRestore();
       /* どの入口（ボタン/Cmd+P/Ctrl+P）から印刷しても一枚化が効くようにする */
       window.addEventListener('beforeprint', function () { self.applyPrintFit(); });
       /* 起動時プル */
@@ -3949,8 +3973,18 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       });
     },
 
+    notifyStaffRestore: function () {
+      if (this._staffRestored) {
+        var n = this._staffRestored;
+        this._staffRestored = 0;
+        this.confirmInfo('職員名簿を自動復元しました',
+          '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため［マスタ→設定→バックアップ→JSONエクスポート］で保全することをおすすめします。');
+      }
+    },
+
     loadAll: function () {
       this.staff = Store.get('staff', []);
+      this.protectStaff();
       this.symbols = Store.get('symbols', null);
       if (!this.symbols || !this.symbols.length) {
         this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
@@ -3995,6 +4029,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.loadMonth();
       window.ShiftMaster.render();
       this.rerender();
+      this.notifyStaffRestore();
     },
 
     /* ── 月・レイヤ ── */
@@ -4521,7 +4556,24 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     saveStaff: function () {
       this.ensureOrders(); /* 新規職員にも各画面の並び順を付与 */
       Store.set('staff', this.staff);
+      this.protectStaff(); /* 端末ローカルに名簿バックアップを更新 */
       this.rerender();
+    },
+
+    /* 職員名簿の端末ローカル自動バックアップ＆自動復元（同期で消えても端末側から復旧） */
+    protectStaff: function () {
+      if (this.staff && this.staff.length) {
+        /* 正常: 端末ローカル（非同期）に最新名簿を退避 */
+        Store.setLocal('staffBackup', { at: new Date().toISOString(), staff: this.staff });
+        return;
+      }
+      /* 職員が空: 端末ローカルのバックアップから自動復元し、サーバ/ローカルへ書き戻す */
+      var bk = Store.getLocal('staffBackup', null);
+      if (bk && bk.staff && bk.staff.length) {
+        this.staff = bk.staff;
+        Store.set('staff', this.staff); /* 復元＝サーバ修復のため再送 */
+        this._staffRestored = bk.staff.length;
+      }
     },
     removeStaff: function (sid) {
       for (var i = 0; i < this.staff.length; i++) {
