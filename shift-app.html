@@ -2245,7 +2245,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var members = [];
         for (var i = 0; i < ctx.staff.length; i++) {
           var st = ctx.staff[i];
-          if (st.active === false) continue;
+          if (ctx.isVisible ? !ctx.isVisible(st) : st.active === false) continue;
           if ((st.group || 'visit') === GROUPS[g].key) members.push(st);
         }
         if (members.length === 0) continue;
@@ -2875,7 +2875,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var h = '<table class="plain"><tr><th></th><th>氏名</th><th>グループ</th><th>主区分</th><th>資格</th><th>許可パターン</th><th>勤務条件メモ</th><th>頭数</th><th>ステータス</th></tr>';
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
-        h += '<tr data-sid="' + st.id + '" draggable="true" style="cursor:pointer' + (st.active === false ? ';opacity:.45' : '') + '">' +
+        var stStatus = st.status || (st.active === false ? '退職' : '在籍');
+        var statusLabel = stStatus + (stStatus === '退職' && st.retireMonth ? '（' + esc(st.retireMonth) + '〜非表示）' : '');
+        var dim = (st.active === false || stStatus === '退職');
+        h += '<tr data-sid="' + st.id + '" draggable="true" style="cursor:pointer' + (dim ? ';opacity:.45' : '') + '">' +
           '<td title="ドラッグで並べ替え">↕</td>' +
           '<td><b>' + esc(st.name) + '</b></td>' +
           '<td>' + esc(groupLabel(st.group)) + '</td>' +
@@ -2884,7 +2887,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           '<td>' + esc(st.allowedSymbols && st.allowedSymbols.length ? st.allowedSymbols.join(' ') : '全て') + '</td>' +
           '<td class="muted">' + esc((st.rules && st.rules.note) || '') + '</td>' +
           '<td>' + (st.countInHeadcount === false ? '除外' : '○') + '</td>' +
-          '<td>' + esc(st.status || (st.active === false ? '退職' : '在籍')) + '</td></tr>';
+          '<td>' + statusLabel + '</td></tr>';
       }
       h += '</table>';
       var el = document.getElementById('staffTable');
@@ -2982,7 +2985,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       for (var si = 0; si < stats.length; si++) {
         h += '<option' + (curStatus === stats[si] ? ' selected' : '') + '>' + stats[si] + '</option>';
       }
-      h += '</select><div class="muted">在籍以外はシフト表に表示されず、常勤換算・資格割合の計算からも除外されます</div></div>';
+      h += '</select><div class="muted">休職・非表示は全ての月で即時に非表示になります（常勤換算・資格割合の計算からも除外）</div></div>';
+      h += '<label id="edRetireLbl" style="' + (curStatus === '退職' ? '' : 'display:none') + '">退職月</label>' +
+        '<div id="edRetireWrap" style="' + (curStatus === '退職' ? '' : 'display:none') + '">' +
+        '<input type="month" id="edRetireMonth" value="' + esc(st.retireMonth || '') + '" placeholder="2026-07" style="width:140px">' +
+        '<div class="muted">この月までは表示・集計に残り、<b>翌月以降だけ自動で非表示</b>になります（過去の確定シフト・様式1は維持）。空欄なら現在表示中の月（' + esc(app.ym) + '）を退職月とします。</div></div>';
       h += '</div><div class="flexrow" style="margin-top:14px">';
       h += '<button class="act" id="edSave">保存</button>';
       h += '<button class="act ghost" id="edCancel">キャンセル</button>';
@@ -2990,6 +2997,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       h += '</div>';
       openDrawer(h);
       document.getElementById('edCancel').onclick = closeDrawer;
+      document.getElementById('edStatus').onchange = function () {
+        var show = this.value === '退職' ? '' : 'none';
+        document.getElementById('edRetireLbl').style.display = show;
+        document.getElementById('edRetireWrap').style.display = show;
+      };
       document.getElementById('edSave').onclick = function () {
         var name = document.getElementById('edName').value.trim();
         if (!name) { alert('氏名を入力してください'); return; }
@@ -3016,14 +3028,21 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         st.rules.note = document.getElementById('edNote').value;
         st.countInHeadcount = document.getElementById('edCount').checked;
         st.status = document.getElementById('edStatus').value;
-        st.active = (st.status === '在籍');
+        if (st.status === '退職') {
+          var rm = document.getElementById('edRetireMonth').value;
+          st.retireMonth = rm || app.ym; /* 未入力なら表示中の月を退職月とする */
+          st.active = true;              /* 退職は月単位で判定するため active は維持（退職月以前は表示） */
+        } else {
+          st.retireMonth = '';
+          st.active = (st.status === '在籍');
+        }
         if (isNew) app.addStaff(st); else app.saveStaff();
         closeDrawer();
         self.renderStaff();
       };
       var del = document.getElementById('edDelete');
       if (del) del.onclick = function () {
-        app.confirm('職員の削除', st.name + ' を削除しますか？\n（過去のシフトデータは残りますが表示されなくなります。退職の場合は「有効」をオフにする方を推奨します）', function () {
+        app.confirm('職員の削除', st.name + ' を削除しますか？\n（過去のシフトデータは残りますが表示されなくなります。\n退職の場合は削除せず、ステータスを「退職」にして退職月を入力する方を推奨します。退職月以前のシフト・様式1はそのまま残ります）', function () {
           app.removeStaff(st.id);
           closeDrawer();
           self.renderStaff();
@@ -3562,7 +3581,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var staff = app.officialSorted();
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
-        if (st.active === false) continue;
+        if (!app.isVisibleInMonth(st, app.ym)) continue;
         var res = app.computeFor(st, sched);
         resultsMap[st.id] = res;
         var divMinTotal = res.totals.divMin[division] || 0;
@@ -4293,7 +4312,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var warn = 0;
       for (var i = 0; i < this.staff.length; i++) {
         var st = this.staff[i];
-        if (st.active === false) continue;
+        if (!this.isVisibleInMonth(st, this.ym)) continue;
         var res = this.computeFor(st, this.sched);
         /* 連勤違反マーク */
         var maxC = (st.rules && st.rules.maxConsecutive) || 4;
@@ -4368,6 +4387,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         results: this.results, counts: this.counts, metrics: this.metrics,
         warnCount: this.warnCount, revealHidden: this.revealHidden,
         recentColors: Store.getLocal('recentColors', []),
+        isVisible: function (st) { return self.isVisibleInMonth(st, self.ym); },
         onToggleDivision: function (sid, div, hide) { self.toggleHiddenDivision(sid, div, hide); },
         onCellsColor: function (cells, color) { self.colorCells(cells, color); },
         onCellsBold: function (cells) { self.boldCells(cells); },
@@ -4556,6 +4576,15 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     },
 
     /* ── 職員 ── */
+    /* 月単位の表示判定: 休職・非表示は全月で非表示／退職は退職月より後の月のみ非表示
+     * （退職処理をしても、退職月以前の確定シフト・様式1・集計は維持される） */
+    isVisibleInMonth: function (st, ym) {
+      if (!st) return false;
+      if (st.active === false) return false; /* 休職・非表示（即時・全月） */
+      if (st.retireMonth && ym && ym > st.retireMonth) return false; /* 退職月より後のみ非表示 */
+      return true;
+    },
+    isStaffVisible: function (st) { return this.isVisibleInMonth(st, this.ym); },
     findStaff: function (sid) {
       for (var i = 0; i < this.staff.length; i++) { if (this.staff[i].id === sid) return this.staff[i]; }
       return null;
