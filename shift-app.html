@@ -103,6 +103,11 @@ td.daycell.ot { font-weight: 700; color: #8e44ad; }
 td.sumcell { background: #f4f7fb; font-weight: 600; }
 tr.grouphead td { background: var(--blue-d); color: #fff; font-weight: 700; text-align: left;
   padding: 3px 8px; font-size: 11.5px; }
+/* デイサービス帯の直前に再掲する日付・曜日行（tbody内なので thead 用の配色を明示再現） */
+tr.rephead th { background: var(--headbg); color: #fff; font-weight: 700; }
+tr.rephead th.sat { background: var(--sat) !important; color: #fff !important; }
+tr.rephead th.sun, tr.rephead th.hol { background: var(--sun) !important; color: #fff !important; }
+tr.rephead.rowdate th { border-top: 3px double #000; }
 tr.subrow td { background: #fcfcfc; }
 tr.dragover td { border-top: 2px solid var(--blue); }
 tr.hiddenrow td { opacity: .45; }
@@ -2230,24 +2235,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         }
       }
       h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr>';
-      /* 日付行 */
-      h += '<tr><th class="sticky1" style="left:0">氏名</th><th class="sticky2" style="left:100px">区分</th>';
-      for (d = 1; d <= days; d++) {
-        var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
-        var hcls = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dow);
-        var htip = ctx.holidays && ctx.holidays[d] ? ' title="' + esc(ctx.holidays[d]) + '"' : '';
-        h += '<th class="' + hcls + (d === days ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
-      }
-      h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th></tr>';
-      /* 曜日行 */
-      h += '<tr><th class="sticky1" style="left:0"></th><th class="sticky2" style="left:100px"></th>';
-      for (d = 1; d <= days; d++) {
-        var dw = new Date(ctx.year, ctx.month - 1, d).getDay();
-        var hcls2 = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dw);
-        h += '<th class="' + hcls2 + (d === days ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
-      }
-      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr></thead><tbody>';
+      /* 日付行＋曜日行（共通生成。デイサービス帯の直前にも再掲する） */
+      h += this.dateHeaderRows(ctx, days, false);
+      h += '</thead><tbody>';
 
+      var renderedGroups = 0;
       for (var g = 0; g < GROUPS.length; g++) {
         var members = [];
         for (var i = 0; i < ctx.staff.length; i++) {
@@ -2261,17 +2253,45 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           var bv = typeof b.shiftOrder === 'number' ? b.shiftOrder : (b.order || 0);
           return av - bv;
         });
+        /* デイサービスは最下段で上部の日付行から遠いため、帯の直前に日付・曜日を再掲 */
+        if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
         h += '<tr class="grouphead"><td colspan="' + (days + 8) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) {
           h += this.staffRows(members[m], days);
         }
+        renderedGroups++;
       }
       h += '</tbody><tfoot>' + this.footRows(days) + '</tfoot></table>';
       wrap.innerHTML = h;
       this.bind(wrap);
       this.applySelClass();
       this.renderMetrics();
+    },
+
+    /* 日付行＋曜日行を生成（thead用と、デイサービス帯の前に再掲する用の共通処理）。
+       repeat=true のとき tr に rephead クラスを付け、tbody 内でもヘッダー色で表示する。 */
+    dateHeaderRows: function (ctx, days, repeat) {
+      var d, h = '';
+      var rc = repeat ? ' rephead' : '';
+      /* 日付行 */
+      h += '<tr class="rowdate' + rc + '"><th class="sticky1" style="left:0">氏名</th><th class="sticky2" style="left:100px">区分</th>';
+      for (d = 1; d <= days; d++) {
+        var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
+        var hcls = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dow);
+        var htip = ctx.holidays && ctx.holidays[d] ? ' title="' + esc(ctx.holidays[d]) + '"' : '';
+        h += '<th class="' + hcls + (d === days ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
+      }
+      h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th></tr>';
+      /* 曜日行 */
+      h += '<tr class="rowdow' + rc + '"><th class="sticky1" style="left:0"></th><th class="sticky2" style="left:100px"></th>';
+      for (d = 1; d <= days; d++) {
+        var dw = new Date(ctx.year, ctx.month - 1, d).getDay();
+        var hcls2 = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dw);
+        h += '<th class="' + hcls2 + (d === days ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
+      }
+      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr>';
+      return h;
     },
 
     staffRows: function (st, days) {
