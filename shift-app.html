@@ -2879,7 +2879,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     renderStaff: function () {
       var app = this.app, self = this;
       var staff = app.masterSorted();
-      var h = '<table class="plain"><tr><th></th><th>氏名</th><th>グループ</th><th>主区分</th><th>資格</th><th>許可パターン</th><th>勤務条件メモ</th><th>頭数</th><th>ステータス</th></tr>';
+      var h = '<table class="plain"><tr><th></th><th>氏名</th><th>グループ</th><th>主区分</th><th>資格</th><th>freeeコード</th><th>許可パターン</th><th>勤務条件メモ</th><th>頭数</th><th>ステータス</th></tr>';
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         var stStatus = st.status || (st.active === false ? '退職' : '在籍');
@@ -2891,6 +2891,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           '<td>' + esc(groupLabel(st.group)) + '</td>' +
           '<td>' + esc(st.mainDivision || '施設') + '</td>' +
           '<td>' + esc((st.qualifications || []).join('・')) + '</td>' +
+          '<td' + (st.empCode ? '' : ' class="muted"') + '>' + (st.empCode ? esc(st.empCode) : '—') + '</td>' +
           '<td>' + esc(st.allowedSymbols && st.allowedSymbols.length ? st.allowedSymbols.join(' ') : '全て') + '</td>' +
           '<td class="muted">' + esc((st.rules && st.rules.note) || '') + '</td>' +
           '<td>' + (st.countInHeadcount === false ? '除外' : '○') + '</td>' +
@@ -2963,6 +2964,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         h += '<option' + ((st.employment || '契約社員') === emps[em] ? ' selected' : '') + '>' + emps[em] + '</option>';
       }
       h += '</select>';
+      h += '<label>freee従業員コード</label><div><input type="text" id="edEmpCode" value="' + esc(st.empCode || '') + '" placeholder="A000" style="width:130px" autocomplete="off">' +
+        '<div class="muted">freee勤怠CSVの突合キー（freeeの従業員番号）。1人ずつ個別に設定。空欄の職員はfreee出力の対象外になります。</div></div>';
       h += '<label>区分行の表示</label><div id="edRowVis">';
       var allDivs = ['施設', '訪問', '通所'];
       for (var rv = 0; rv < allDivs.length; rv++) {
@@ -3016,6 +3019,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         st.group = document.getElementById('edGroup').value;
         st.mainDivision = document.getElementById('edDiv').value;
         st.employment = document.getElementById('edEmploy').value;
+        st.empCode = document.getElementById('edEmpCode').value.trim();
         st.serviceManager = document.getElementById('edSvcMgr').checked;
         st.qualifications = checkedValues('#edQuals input:checked');
         if (document.getElementById('edSymAll').checked) {
