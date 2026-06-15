@@ -345,7 +345,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         <button id="frCSV" class="act">freee用CSVダウンロード（Shift-JIS）</button>
         <span class="muted" id="frInfo"></span>
       </div>
-      <details style="margin-top:8px">
+      <details id="frEmpDetails" style="margin-top:8px">
         <summary>従業員コードの取込・編集（freeeの従業員一覧を貼り付け）</summary>
         <textarea id="frPaste" rows="4" style="width:100%;margin:6px 0"
           placeholder="freeeの従業員一覧の表（No. 所属 雇用区分 従業員コード 名前…）をコピーしてそのまま貼り付け"></textarea>
@@ -1669,13 +1669,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     var lines = ['#従業員コード※,勤務日※,全日休暇,パターンコード'];
     var warnings = [];
     var staffCount = 0;
+    var noCode = []; /* シフト入力済みだが従業員コード未設定で出力できなかった職員名 */
     for (var i = 0; i < opts.staff.length; i++) {
       var st = opts.staff[i];
       if (st.active === false) continue;
-      if (!st.empCode) continue;
       if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
-      staffCount++;
       var cells = opts.cells[st.id] || {};
+      if (!st.empCode) {
+        for (var nd = 1; nd <= nDays; nd++) {
+          var nv = cells[String(nd)];
+          if (nv !== undefined && nv !== null && String(nv).trim() !== '') { noCode.push(st.name); break; }
+        }
+        continue;
+      }
+      staffCount++;
       for (var d = 1; d <= nDays; d++) {
         var raw = cells[String(d)];
         if (raw === undefined || raw === null || String(raw).trim() === '') continue;
@@ -1725,7 +1732,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       }
     }
     return { csv: lines.join('\r\n') + '\r\n', rows: lines.length - 1,
-             staffCount: staffCount, warnings: warnings };
+             staffCount: staffCount, warnings: warnings, noCode: noCode };
   }
 
   /* cp932(Shift-JIS)エンコード。ASCII+埋め込みマップ外の文字は '?' に置換し unknown へ記録 */
@@ -3797,9 +3804,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     updateDialogInfo: function () {
       var div = document.getElementById('frdDivision').value;
       var lay = document.getElementById('frdLayer').value;
+      var n = this.countTargets(div);
       document.getElementById('frdInfo').textContent =
-        '出力対象: コード設定済み ' + this.countTargets(div) + '名（' + this.app.ym + '・' +
-        (lay === 'actual' ? '実績' : '予定') + '・' + (div === '全' ? '全事業所' : div) + '）';
+        '出力対象: コード設定済み ' + n + '名（' + this.app.ym + '・' +
+        (lay === 'actual' ? '実績' : '予定') + '・' + (div === '全' ? '全事業所' : div) + '）' +
+        (n === 0 ? ' ← 先に「行政提出」画面のfreeeパネルで従業員コードを設定してください' : '');
     },
 
     cfg: function () {
@@ -3822,9 +3831,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.renderMapList();
       var div = document.getElementById('frDivision');
       var divVal = div ? div.value : '全';
+      var n = this.countTargets(divVal);
       document.getElementById('frInfo').textContent =
-        'コード設定済み ' + this.countTargets(divVal) + '名が出力対象（月: ' + this.app.ym +
-        '・' + (divVal === '全' ? '全事業所' : divVal) + '）';
+        'コード設定済み ' + n + '名が出力対象（月: ' + this.app.ym +
+        '・' + (divVal === '全' ? '全事業所' : divVal) + '）' +
+        (n === 0 ? ' ← 下の「従業員コードの取込・編集」で設定してください' : '');
+      /* コード未設定なら入力欄を自動で開く（折りたたみに隠れて気づかない問題を解消） */
+      var det = document.getElementById('frEmpDetails');
+      if (det && n === 0) det.open = true;
     },
 
     renderEmpList: function () {
@@ -3848,7 +3862,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           for (var k = 0; k < self.app.staff.length; k++) {
             if (self.app.staff[k].id === sid) self.app.staff[k].empCode = this.value.trim();
           }
-          Store.set('staff', self.app.staff);
+          /* saveStaff 経由で端末バックアップにも反映＝同期でコードが消えない */
+          if (typeof self.app.saveStaff === 'function') self.app.saveStaff();
+          else Store.set('staff', self.app.staff);
           self.render();
         });
       }
@@ -3867,7 +3883,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           if (this.app.staff[i].id === sid) { this.app.staff[i].empCode = m.assigned[sid]; n++; }
         }
       }
-      Store.set('staff', this.app.staff);
+      /* saveStaff 経由で端末バックアップにも反映＝同期でコードが消えない */
+      if (typeof this.app.saveStaff === 'function') this.app.saveStaff();
+      else Store.set('staff', this.app.staff);
       var msg = n + '名に従業員コードを設定しました';
       if (m.ambiguous.length) msg += '／同姓のため保留 ' + m.ambiguous.length + '名（手入力してください）';
       if (m.unmatched.length) msg += '／職員に不在 ' + m.unmatched.length + '名';
@@ -3947,9 +3965,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var divLabel = (!division || division === '全') ? '全事業所' : division;
       var msgs = [];
       if (!res.staffCount) {
-        if (warnEl) warnEl.textContent = '対象（' + divLabel +
-          '）に従業員コード設定済みの職員がいません（行政提出画面のfreeeパネルで設定）';
+        var detail = (res.noCode && res.noCode.length)
+          ? 'シフト入力済みだがコード未設定: ' + res.noCode.slice(0, 10).join('、') +
+            (res.noCode.length > 10 ? ' …' : '')
+          : 'この月・事業所にシフト入力済みの職員がいません';
+        if (warnEl) warnEl.textContent =
+          '従業員コードが未設定のため出力できませんでした（' + divLabel + '）。\n' +
+          '「行政提出」画面のfreeeパネルで各職員に従業員コードを設定してください' +
+          '（freeeの従業員一覧を貼り付けると一括設定できます）。\n' + detail;
         return;
+      }
+      if (res.noCode && res.noCode.length) {
+        msgs.push('⚠ コード未設定で出力できなかった職員 ' + res.noCode.length + '名: ' +
+          res.noCode.slice(0, 8).join('、') + (res.noCode.length > 8 ? ' …' : ''));
       }
       if (res.warnings.length) {
         var w = res.warnings.slice(0, 8).map(function (x) {
