@@ -98,6 +98,8 @@ td.daycell.long2, table.eqcols td.long2 { font-size: 9.5px; letter-spacing: -0.3
 td.daycell.sel { background: var(--sel) !important; outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
 td.daycell.err { background: #fdd; }
 td.daycell.reqviol { box-shadow: inset 0 0 0 2px var(--red); }
+/* 空セルに薄く出す本人の希望休ヒント（予定・編集用・各ドラフト共通／未割当の目印） */
+td.daycell.reqhint { color: #c0392b; opacity: .5; font-style: italic; background: #fdf2f2; }
 td.daycell.consviol { box-shadow: inset 0 0 0 2px var(--warn); }
 td.daycell.ot { font-weight: 700; color: #8e44ad; }
 td.sumcell { background: #f4f7fb; font-weight: 600; }
@@ -2405,12 +2407,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         if (isMain && reqs[d] && v !== '' && !isOffValue(v, ctx.symbols)) {
           cls += ' reqviol'; tip = '希望休（' + reqs[d] + '）と衝突';
         }
+        /* 空セルには本人の希望休を薄く表示（全レイヤ共通＝予定・編集用・各ドラフト）。
+           セルの実データは空のまま（編集・コピーには影響しない＝ヒント表示のみ） */
+        var disp = v;
+        if (isMain && v === '' && reqs[d]) {
+          disp = reqs[d];
+          cls += ' reqhint';
+          if (!tip) tip = '希望休（未割当）';
+        }
         if (d === days) cls += ' lastday';
-        var dl = dispLen(v);
+        var dl = dispLen(disp);
         if (dl >= 9) cls += ' long2'; else if (dl >= 7) cls += ' long1';
         h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + division +
           '" data-day="' + d + '" data-main="' + (isMain ? 1 : 0) + '"' +
-          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + esc(v) + '</td>';
+          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + esc(disp) + '</td>';
       }
       return h;
     },
