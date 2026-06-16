@@ -1174,6 +1174,20 @@ body.printing .rs { display: none; }
     return 'facility';
   }
 
+  /* セル文字列を空白区切りで分割し、各トークンをパースして parts を結合する。
+   * 分割勤務（同区分で朝＋夜）を1セルに2範囲「7-9 16-19」で記載するケースに対応。
+   * 空白が無い通常セル（'早'/'8)(22' 等）は1トークンとして従来どおり処理。 */
+  function partsOf(raw, symbols) {
+    var out = [];
+    var tokens = String(raw === null || raw === undefined ? '' : raw).split(/[\s　]+/);
+    for (var i = 0; i < tokens.length; i++) {
+      if (!tokens[i]) continue;
+      var pr = parseShiftCell(tokens[i], symbols);
+      for (var j = 0; j < pr.parts.length; j++) out.push(pr.parts[j]);
+    }
+    return out;
+  }
+
   /* セル取得（非ゼロ埋め '5' 優先・'05' もフォールバック）。空は null */
   function cellAt(map, dayNo, dayStr) {
     if (!map) return null;
@@ -1227,10 +1241,10 @@ body.printing .rs { display: none; }
       for (var ri = 0; ri < rows.length; ri++) {
         var division = rows[ri].division;
         if (division === '通所') continue;
-        var parsed = parseShiftCell(rows[ri].raw, symbols);
-        if (!parsed.parts.length) continue;
-        for (var p = 0; p < parsed.parts.length; p++) {
-          var part = parsed.parts[p];
+        var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
+        if (!parts.length) continue;
+        for (var p = 0; p < parts.length; p++) {
+          var part = parts[p];
           if (part.kind === 'work') {
             if (part.startMin === null || part.endMin === null) continue;
             if (part.endMin > part.startMin) {
@@ -1842,14 +1856,27 @@ body.printing .rs { display: none; }
       return role === 'iri' ? iri : ake;
     }
 
-    var filled = 0, added = 0;
+    var filled = 0, added = 0, blockSeq = 0;
     function applyTo(st, p) {
       st.name = p.name; st.workStart = p.workStart; st.workEnd = p.workEnd;
       st.fromShift = true; st.manual = false; filled++;
     }
+    /* 分割勤務: 同一人物の2ブロック目以降を、既存列(primaryStaff)へ追加の職員エントリとして同居させる。
+     * 列ヘッダに2時間帯が並び、勤務外網掛けは両ブロックの間を自動で網掛けする。 */
+    function addBlockToColumn(primaryStaff, p) {
+      blockSeq++;
+      var bid = primaryStaff.id + '_b' + blockSeq;
+      var st = slotStaff_(bid, primaryStaff.zone, primaryStaff.slot, primaryStaff.nightRole, primaryStaff.division);
+      applyTo(st, p);
+      staff.push(st); byId[bid] = st;
+      for (var c = 0; c < columns.length; c++) {
+        if (columns[c].staffIds.indexOf(primaryStaff.id) >= 0) { columns[c].staffIds.push(bid); break; }
+      }
+      return st;
+    }
     function fillDay(zone, list) {
       var slots = availSlots(zone, null), idx = 0, j;
-      /* 固定配置（例: 緒方瞳→slot_visit_12）を先に確定。ソートや残り配置の影響を受けない */
+      /* 固定配置（例: 緒方瞳→slot_visit_12 / 臼井→slot_visit_1）。同名の複数ブロックは同列にまとめる */
       var taken = {};
       for (var ri = 0; ri < RESERVED_SLOTS.length; ri++) {
         var rule = RESERVED_SLOTS[ri];
@@ -1858,17 +1885,30 @@ body.printing .rs { display: none; }
           if (slots[ti].id === rule.slotId) { target = slots[ti]; break; }
         }
         if (!target) continue;                 /* その列が無い/手動保護中なら通常配置に回す */
-        for (j = 0; j < list.length; j++) {
+        var placedReserved = false;
+        for (j = 0; j < list.length;) {
           if (nameMatches_(list[j].name, rule.nameKey)) {
-            applyTo(target, list[j]); taken[target.id] = true; list.splice(j, 1); break;
-          }
+            if (!placedReserved) { applyTo(target, list[j]); taken[target.id] = true; placedReserved = true; }
+            else { addBlockToColumn(target, list[j]); }
+            list.splice(j, 1);
+          } else j++;
         }
       }
-      /* 残りを左→右へ（固定済みスロットは飛ばす） */
+      /* 残りを氏名でグルーピング（同名＝分割勤務は1列に複数ブロックとして集約） */
+      var order = [], byName = {};
       for (j = 0; j < list.length; j++) {
+        var nm = stripName_(list[j].name);
+        if (byName[nm] === undefined) { byName[nm] = order.length; order.push([]); }
+        order[byName[nm]].push(list[j]);
+      }
+      for (var g = 0; g < order.length; g++) {
+        var grp = order[g];
         while (idx < slots.length && taken[slots[idx].id]) idx++;
-        if (idx < slots.length) { applyTo(slots[idx], list[j]); idx++; }
-        else { applyTo(appendDayColumn(zone), list[j]); added++; }
+        var primary;
+        if (idx < slots.length) { primary = slots[idx]; idx++; }
+        else { primary = appendDayColumn(zone); added++; }
+        applyTo(primary, grp[0]);
+        for (var b = 1; b < grp.length; b++) addBlockToColumn(primary, grp[b]);
       }
     }
     function fillNight(role, division, list) {
