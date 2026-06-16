@@ -2165,6 +2165,9 @@ body.printing .rs { display: none; }
       return { meta: day.meta, staff: day.staff, columns: day.columns,
                tasks: day.tasks.concat(action.tasks) };
     }
+    if (type === 'SET_TASKS') {
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: action.tasks };
+    }
     if (type === 'UPDATE_TASK') {
       return { meta: day.meta, staff: day.staff, columns: day.columns,
                tasks: patchTask(day.tasks, action.id, action.patch) };
@@ -3516,6 +3519,7 @@ body.printing .rs { display: none; }
     /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護） */
     try {
       pullDayNow(date, false, null, function () {
+        try { migrateDay(); } catch (eM) {}
         if (settings.shiftAuto) { try { applyShiftForDate(date, { auto: true }); } catch (e2) {} }
       });
     } catch (e) {}
@@ -4012,6 +4016,8 @@ body.printing .rs { display: none; }
 
     var beforeTask = ui.editingId ? M.findTask(day.tasks, ui.editingId) : null;
     var before0 = beforeTask ? { start: beforeTask.start, end: beforeTask.end } : null;
+    /* 自動充填の施設業務/休憩を手動編集したら facManual を付与＝以後の自動再構成から保護 */
+    if (beforeTask && beforeTask.src === 'facwork') patch.facManual = true;
     if (ui.editingId) {
       /* 配置先の検証（編集中タスク自身は除外するため先にパッチ適用した仮状態で） */
       if (staffId) {
@@ -4769,6 +4775,114 @@ body.printing .rs { display: none; }
     } catch (e2) {}
   }
 
+  /* ===== 既処理日の自動マイグレーション =====
+   * shiftStamp churnガードで再処理されない「一度開いた日」へ、新ロジックを一度だけ適用する。
+   * boardVer で版管理し、版が古い日のみ処理。手動編集（manualスロット・facManualな休憩/施設業務）は保護。 */
+  var BOARD_LOGIC_VER = 2;
+
+  /* 自動充填の施設業務/休憩(facwork)を手動で動かしたら facManual を付与し、以後の自動再構成から保護する */
+  function markFacTouched_(taskId) {
+    try {
+      var t = M.findTask(store.get().tasks, taskId);
+      if (t && t.src === 'facwork' && !t.facManual) {
+        store.dispatch({ type: 'UPDATE_TASK', id: taskId, patch: { facManual: true } });
+      }
+    } catch (e) {}
+  }
+
+  /* 夜勤表示帯(0-9時 or 21-24時)に収まるか */
+  function nightBand_(s, e) { return (s >= 0 && e <= 540) || (s >= 1260 && e <= 1440); }
+
+  /* 未配置(staffId:null)の入居者支援を、時間帯と勤務窓が合う既存職員へ復帰させる（破壊的・返値=配置件数）*/
+  function placeOrphanCare_(staff, columns, tasks) {
+    var byId = {}, i, m;
+    for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
+    var occ = {};
+    for (i = 0; i < tasks.length; i++) {
+      var t0 = tasks[i];
+      if (t0.staffId === null) continue;
+      if (!occ[t0.staffId]) occ[t0.staffId] = [];
+      occ[t0.staffId].push([t0.start, t0.end]);
+    }
+    function fits(st, s, e) {
+      if (!st || !st.name) return false;
+      if (!(st.workStart <= s && e <= st.workEnd)) return false;
+      var list = occ[st.id] || [];
+      for (var k = 0; k < list.length; k++) if (s < list[k][1] && list[k][0] < e) return false;
+      return true;
+    }
+    function colsForZone(zone) {                       /* 夜勤は訪問列を優先（支援は訪問が大半のため） */
+      var list = [];
+      for (var c = 0; c < columns.length; c++) if (columns[c].zone === zone) list.push(columns[c]);
+      if (zone === 'night') list.sort(function (a, b) { return (a.division === '訪問' ? 0 : 1) - (b.division === '訪問' ? 0 : 1); });
+      return list;
+    }
+    var placed = 0;
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (t.staffId !== null || t.kind !== 'care') continue;
+      var s = t.start, e = t.end, target = null;
+      var order = nightBand_(s, e) ? ['night', 'visit', 'facility'] : ['visit', 'facility', 'night'];
+      for (var z = 0; z < order.length && !target; z++) {
+        if (order[z] === 'night' && !nightBand_(s, e)) continue;
+        var cl = colsForZone(order[z]);
+        for (var c = 0; c < cl.length && !target; c++) {
+          for (m = 0; m < cl[c].staffIds.length; m++) {
+            var st = byId[cl[c].staffIds[m]];
+            if (fits(st, s, e)) { target = st; break; }
+          }
+        }
+      }
+      if (target) {
+        t.staffId = target.id;
+        if (!occ[target.id]) occ[target.id] = [];
+        occ[target.id].push([s, e]);
+        placed++;
+      }
+    }
+    return placed;
+  }
+
+  function migrateDay() {
+    var day = store.get();
+    if (!day || !day.columns || !day.columns.length) return;
+    if ((day.meta.boardVer || 0) >= BOARD_LOGIC_VER) return;
+    var isSlot = false, i, m, k;
+    for (i = 0; i < day.staff.length; i++) if (String(day.staff[i].id).indexOf('slot_') === 0) { isSlot = true; break; }
+    if (!isSlot) { store.dispatch({ type: 'SET_META', patch: { boardVer: BOARD_LOGIC_VER } }); return; }
+
+    var staff = day.staff.map(function (s) { var o = {}; for (var key in s) if (Object.prototype.hasOwnProperty.call(s, key)) o[key] = s[key]; return o; });
+    var byId = {}; for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
+    var columns = day.columns.map(function (c) { return { col: c.col, zone: c.zone, label: c.label, staffIds: c.staffIds.slice(), division: c.division || null }; });
+
+    /* 区分無し夜勤列へ施設→訪問を割当(in-place) */
+    var hasFac = false, hasVisit = false, j;
+    for (j = 0; j < columns.length; j++) { if (columns[j].zone !== 'night') continue; if (columns[j].division === '施設') hasFac = true; else if (columns[j].division === '訪問') hasVisit = true; }
+    for (j = 0; j < columns.length; j++) {
+      if (columns[j].zone !== 'night' || columns[j].division) continue;
+      var div = !hasFac ? '施設' : (!hasVisit ? '訪問' : '施設');
+      if (div === '施設') hasFac = true; else hasVisit = true;
+      columns[j].division = div;
+      for (m = 0; m < columns[j].staffIds.length; m++) { var s2 = byId[columns[j].staffIds[m]]; if (s2) s2.division = div; }
+    }
+
+    /* 自動施設業務/休憩(facwork・手動化されていないもの)を一掃→後で正しく入れ直す */
+    var tasks = [];
+    for (i = 0; i < day.tasks.length; i++) {
+      var t = day.tasks[i];
+      if (t.src === 'facwork' && !t.facManual) continue;
+      var nt = {}; for (k in t) if (Object.prototype.hasOwnProperty.call(t, k)) nt[k] = t[k];
+      tasks.push(nt);
+    }
+    var healed = placeOrphanCare_(staff, columns, tasks);
+
+    store.dispatch({ type: 'SET_STAFF', staff: staff, columns: columns });
+    store.dispatch({ type: 'SET_TASKS', tasks: tasks });
+    finalizeBoard();                                   /* 空き列詰め＋施設業務/休憩の入れ直し */
+    store.dispatch({ type: 'SET_META', patch: { boardVer: BOARD_LOGIC_VER } });
+    if (healed) toast('盤面を更新（未配置の支援 ' + healed + '件を時間どおりに再配置）');
+  }
+
   /* --- 週間計画(care_schedule_v2) --- */
   function schedulePushCare() {
     if (!syncOn()) return;
@@ -4875,6 +4989,7 @@ body.printing .rs { display: none; }
     pullCareNow(notify);
     var d0 = ui.currentDate;
     pullDayNow(d0, notify, null, function () {
+      try { migrateDay(); } catch (eM) {}
       if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }); } catch (e) {} }
     });
   }
@@ -5242,6 +5357,7 @@ body.printing .rs { display: none; }
       getScale: function () { return scale; },
       onAssign: function (taskId, staffId, start, end) {
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
+        markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
       },
       onSwap: function (moves, withTask) {
         store.dispatch({ type: 'SWAP', moves: moves });
@@ -5253,6 +5369,7 @@ body.printing .rs { display: none; }
       },
       onResize: function (taskId, start, end) {
         store.dispatch({ type: 'UPDATE_TASK', id: taskId, patch: { start: start, end: end } });
+        markFacTouched_(taskId);
       },
       onReject: function (reason) { toast(reason, true); },
       onCheckToggle: function (taskId, ci) {
@@ -5311,6 +5428,7 @@ body.printing .rs { display: none; }
     try { pullAll(false); } catch (e) {}
     /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
      * オンライン時は pullAll→pullDayNow 完了後に反映するためここでは行わない。 */
+    try { migrateDay(); } catch (eM) {}
     if (!syncOn() && settings.shiftAuto) {
       try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (e) {}
     }
