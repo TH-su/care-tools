@@ -102,6 +102,10 @@ td.divcell { font-size: 12.5px; color: #000; font-weight: 600; background: #fbfc
 td.daycell { height: 26px; cursor: cell; overflow: hidden; font-size: 13.5px; }
 td.daycell.long1, table.eqcols td.long1 { font-size: 11px; }
 td.daycell.long2, table.eqcols td.long2 { font-size: 9.5px; letter-spacing: -0.3px; }
+/* 分割勤務(1日2勤務)のセルは2段表示。当該セルを含む行だけ自動的に高くなる（他行・列幅・固定見出しに影響しない）。
+   font-sizeはlong1/long2の縮小より優先し、2段が読める大きさを確保する。 */
+td.daycell.multiduty { white-space: normal; line-height: 1.15; overflow: visible;
+  font-size: 11px !important; letter-spacing: 0; padding-top: 1px; padding-bottom: 1px; }
 td.daycell.sel { background: var(--sel) !important; outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
 td.daycell.err { background: #fdd; }
 td.daycell.reqviol { box-shadow: inset 0 0 0 2px var(--red); }
@@ -207,6 +211,7 @@ dialog h3 { margin-top: 0; }
   table.sheet th, table.sheet td { padding: 4px 2px; }
   table.sheet thead tr:nth-child(3) th { height: auto; }
   td.daycell { height: 26px; font-size: 13.5px; }
+  td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
   td.namecell { font-size: 13px; }
   tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; overflow: visible; }
   /* sticky解除（印刷時の見出し欠け対策） */
@@ -226,6 +231,7 @@ body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
 body.printsim table.sheet { font-size: 13px; }
 body.printsim table.sheet th, body.printsim table.sheet td { padding: 4px 2px; }
 body.printsim td.daycell { height: 26px; font-size: 13.5px; }
+body.printsim td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
 body.printsim td.namecell { font-size: 13px; }
 body.printsim tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; }
 body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .sticky2 { position: static !important; }
@@ -2437,21 +2443,42 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         : ((ctx.sched.subCells[st.id] || {})[division] || {});
       var res = ctx.results[st.id];
       var reqs = ctx.requests[normName(st.name)] || {};
+      /* 夜勤者の「休」は施設行ではなく訪問行に表示する。
+       * データは主セル(cells)に一本化したまま、訪問行に表示し編集対象も主セルへ向ける（重複登録防止）。 */
+      var isNight = st.group === 'night';
+      var nmain = isNight ? (ctx.sched.cells[st.id] || {}) : null;
+      var mainDivName = st.mainDivision || '施設';
       for (var d = 1; d <= days; d++) {
         var v = cells[String(d)] || '';
+        var cMain = isMain, cDiv = division;   /* このセルの編集対象（既定はこの行自身） */
+        if (isNight) {
+          if (division === '施設' && v !== '' && isOffValue(v, ctx.symbols)) {
+            v = '';                            /* 施設行では休系を表示しない（訪問行へ寄せる） */
+          } else if (division === '訪問' && v === '') {
+            var mv = nmain[String(d)] || '';
+            if (mv !== '' && isOffValue(mv, ctx.symbols)) {
+              v = mv;                          /* 訪問行に休系を表示 */
+              cMain = true; cDiv = mainDivName; /* 編集は主セルへ＝二重登録を防ぐ */
+            }
+          }
+        }
         var cls = 'daycell';
         var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
         if (dow === 0) cls += ' sun'; else if (dow === 6) cls += ' sat';
         var style = '';
         var tip = '';
         if (v !== '') {
-          var p = Sym.parseCell(v, ctx.symbols);
-          if (p.error) { cls += ' err'; tip = p.error; }
-          else {
-            var sym = matchSymbol(ctx.symbols, v);
-            if (sym && sym.color) style = 'background:' + sym.color + ';';
-            if (sym && sym.textColor) style += 'color:' + sym.textColor + ';';
-            if (sym && sym.bold) style += 'font-weight:700;';
+          if (isMultiDuty(v)) {
+            /* 分割勤務(複数レンジ)は単一レンジ前提のparseCellではエラーになるが正当なのでエラー表示しない */
+          } else {
+            var p = Sym.parseCell(v, ctx.symbols);
+            if (p.error) { cls += ' err'; tip = p.error; }
+            else {
+              var sym = matchSymbol(ctx.symbols, v);
+              if (sym && sym.color) style = 'background:' + sym.color + ';';
+              if (sym && sym.textColor) style += 'color:' + sym.textColor + ';';
+              if (sym && sym.bold) style += 'font-weight:700;';
+            }
           }
         }
         /* 個別セル色は記号色より優先 */
@@ -2478,9 +2505,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         if (d === days) cls += ' lastday';
         var dl = dispLen(disp);
         if (dl >= 9) cls += ' long2'; else if (dl >= 7) cls += ' long1';
-        h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + division +
-          '" data-day="' + d + '" data-main="' + (isMain ? 1 : 0) + '"' +
-          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + esc(disp) + '</td>';
+        var dispHtml = esc(disp);
+        /* 複数勤務（時刻レンジを空白区切りで2つ以上）は1セル内で2段表示にする（髙尾の分割勤務等） */
+        if (isMultiDuty(disp)) { cls += ' multiduty'; dispHtml = esc(disp).replace(/[\s　]+/g, '<br>'); }
+        h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + cDiv +
+          '" data-day="' + d + '" data-main="' + (cMain ? 1 : 0) + '"' +
+          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
       }
       return h;
     },
@@ -2924,6 +2954,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     }
     return false;
   }
+  /* 分割勤務セル判定: 時刻レンジ(例 7-9)が空白区切りで2つ以上＝1日複数勤務。2段表示の対象。
+   * すべての非空トークンがレンジの場合のみ対象（「休 有」等の混在は対象外）。 */
+  function isMultiDuty(v) {
+    if (!v) return false;
+    var parts = String(v).split(/[\s　]+/);
+    var ranges = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] === '') continue;
+      if (/^\d{1,2}(:\d{2})?-\d{1,2}(:\d{2})?$/.test(parts[i])) ranges++;
+      else return false;
+    }
+    return ranges >= 2;
+  }
   function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
   function hidePalette() {
     var pal = document.getElementById('palette');
@@ -3205,7 +3248,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         if (f === 'end' && s.type === 'nightIn') s.pairEnd = v;
         else s[f] = v;
-        app.saveSymbols();
+        /* 色・太字の編集はユーザー設定として端末内バックアップへ＝同期での上書きから保護 */
+        if (f === 'color' || f === 'textColor' || f === 'bold') {
+          s.userColored = true;
+          app.saveSymbols();
+          if (typeof app.saveSymColors === 'function') app.saveSymColors();
+        } else {
+          app.saveSymbols();
+        }
         self.renderSymbols();
       };
       el.onclick = function (e) {
@@ -3242,7 +3292,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         'すべての記号のセル色・文字色を見やすいおすすめ配色に一括設定します。\n（個別に設定した色は上書きされます）よろしいですか？',
         function () {
           self.app.symbols = window.ShiftSymbols.applyRecommendedColors(self.app.symbols);
+          /* おすすめ配色に戻す＝ユーザー色ロックを解除し端末内バックアップもクリア */
+          for (var i = 0; i < self.app.symbols.length; i++) self.app.symbols[i].userColored = false;
           self.app.saveSymbols();
+          if (typeof self.app.saveSymColors === 'function') self.app.saveSymColors();
           self.renderSymbols();
           self.app.confirmInfo('完了', 'おすすめ配色を適用しました。この色は変更しない限り翌月以降も保持されます。');
         });
@@ -4241,6 +4294,34 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         this.settings.recommendedColorsApplied = true;
         Store.set('settings', this.settings);
       }
+      /* ユーザーが設定した記号色を端末内バックアップから再適用する。
+       * バックアップ(symColors)は同期対象外(local:)のため、クラウド同期で symbols が
+       * 古い色（色なし）で上書きされても、この再適用で確実に復元される。
+       * 復元で差分が出た場合は symbols を保存し直し＝サーバ側の色も修復(再送)する。 */
+      var symColors = Store.getLocal('symColors', null);
+      if (symColors) {
+        var changed = false;
+        for (var ck = 0; ck < this.symbols.length; ck++) {
+          var sm = this.symbols[ck];
+          var sc = symColors[sm.code];
+          if (!sc) continue;
+          if (sc.color !== undefined && sm.color !== sc.color) { sm.color = sc.color; changed = true; }
+          if (sc.textColor !== undefined && sm.textColor !== sc.textColor) { sm.textColor = sc.textColor; changed = true; }
+          if (sc.bold !== undefined && !!sm.bold !== !!sc.bold) { sm.bold = !!sc.bold; changed = true; }
+          if (!sm.userColored) { sm.userColored = true; changed = true; }
+        }
+        if (changed) Store.set('symbols', this.symbols);
+      }
+    },
+
+    /* ユーザー設定済み(userColored)の記号色を端末内バックアップへ保存（同期対象外＝色の消失防止） */
+    saveSymColors: function () {
+      var map = {};
+      for (var i = 0; i < this.symbols.length; i++) {
+        var s = this.symbols[i];
+        if (s.userColored) map[s.code] = { color: s.color, textColor: s.textColor, bold: !!s.bold };
+      }
+      Store.setLocal('symColors', map);
     },
 
     reloadFromStore: function () {
