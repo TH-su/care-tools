@@ -1155,11 +1155,23 @@ body.printing .rs { display: none; }
     return res;
   }
 
-  /* シフトの所属(group: 'day'|'visit'|'night') → ワースケの日中ゾーン。
-   * 夜勤(入り/明け)パートは zone 'night' を明示するため、ここは日勤パート用。 */
-  function workZone(group) {
-    if (group === 'visit') return 'visit';
-    return 'facility'; /* day および night所属の日勤は施設枠へ */
+  /* デイサービス(せせらぎ)職員か。3事業所のうち通所はワースケ対象外。
+   * 実データ: mainDivision='通所' は group が day / visit いずれもあり得るため mainDivision を主判定にする。 */
+  function isDaycareStaff(st) {
+    if (!st) return false;
+    if (st.mainDivision === '通所') return true;
+    if (st.group === 'day') return true;
+    return false;
+  }
+
+  /* 日勤パートのゾーン判定。施設(ラウレアハレ)=facility / 訪問(いずみ)=visit。
+   * 区分は mainDivision を主判定にし、未設定時のみ group でフォールバック。
+   * （夜勤入り/明けパートは別途 zone 'night' を明示するため、ここは日勤パート用） */
+  function workZone(group, mainDivision) {
+    if (mainDivision === '施設') return 'facility';
+    if (mainDivision === '訪問') return 'visit';
+    if (group === 'visit') return 'visit';   /* mainDivision未設定時のフォールバック */
+    return 'facility';
   }
 
   /* 指定日の出勤者抽出。
@@ -1181,6 +1193,7 @@ body.printing .rs { display: none; }
     for (var i = 0; i < staffList.length; i++) {
       var st = staffList[i];
       if (!st || st.active === false) continue;
+      if (isDaycareStaff(st)) continue;        /* デイ(通所)職員はワースケ対象外＝除外 */
       var name = st.name ? String(st.name).trim() : '';
       if (!name) continue;
       var cellMap = plan.cells[st.id];
@@ -1195,11 +1208,12 @@ body.printing .rs { display: none; }
       var parsed = parseShiftCell(raw, symbols);
       if (!parsed.parts.length) continue;
       var group = st.group || 'day';
+      var mainDiv = st.mainDivision || '';
       for (var p = 0; p < parsed.parts.length; p++) {
         var part = parsed.parts[p];
         if (part.kind === 'work') {
           if (part.startMin === null || part.endMin === null || !(part.endMin > part.startMin)) continue;
-          out.push({ name: name, zone: workZone(group),
+          out.push({ name: name, zone: workZone(group, mainDiv),
             workStart: part.startMin, workEnd: part.endMin, nightRole: null });
         } else if (part.kind === 'nightIn') {
           var ws = (part.startMin !== null) ? part.startMin : 1260;
@@ -1232,6 +1246,7 @@ body.printing .rs { display: none; }
     extractAttendance: extractAttendance,
     attendanceStamp: attendanceStamp,
     workZone: workZone,
+    isDaycareStaff: isDaycareStaff,
     DEFAULT_SYMBOLS: DEFAULT_SYMBOLS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -1358,6 +1373,11 @@ body.printing .rs { display: none; }
 
   /* 既定列数（職員が少ない場合は空列でこの数まで確保。多ければ増える） */
   var DEFAULT_COLS = { facility: 3, visit: 12, night: 2 };
+
+  /* 特定職員の固定配置（氏名→スロットID）。nameKey は空白を除いて照合する。
+   * 緒方瞳は施設外部の利用者対応専任のため、ソート/通常配置に関わらず訪問⑫(slot_visit_12)に固定。 */
+  var RESERVED_SLOTS = [{ nameKey: '緒方瞳', slotId: 'slot_visit_12' }];
+  function stripName_(n) { return String(n === null || n === undefined ? '' : n).replace(/[\s　]/g, ''); }
 
   /* 曜日キー（care-schedule 規約 0=月..6=日 と同順） */
   var DOW_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -1709,6 +1729,10 @@ body.printing .rs { display: none; }
       else if (p.zone === 'night') groups[p.nightRole === 'iri' ? 'iri' : 'ake'].push(p);
       else groups.visit.push(p);
     }
+    /* 訪問介護員は出勤開始時刻の早い順に左→右へ並べる（早番が左・遅番が右） */
+    groups.visit.sort(function (a, b) {
+      return (a.workStart || 0) - (b.workStart || 0) || (a.workEnd || 0) - (b.workEnd || 0);
+    });
 
     /* 列表示順での空き（非保護）スロット一覧 */
     function availSlots(zone, role) {
@@ -1770,8 +1794,25 @@ body.printing .rs { display: none; }
       st.fromShift = true; st.manual = false; filled++;
     }
     function fillDay(zone, list) {
-      var slots = availSlots(zone, null), idx = 0;
-      for (var j = 0; j < list.length; j++) {
+      var slots = availSlots(zone, null), idx = 0, j;
+      /* 固定配置（例: 緒方瞳→slot_visit_12）を先に確定。ソートや残り配置の影響を受けない */
+      var taken = {};
+      for (var ri = 0; ri < RESERVED_SLOTS.length; ri++) {
+        var rule = RESERVED_SLOTS[ri];
+        var target = null;
+        for (var ti = 0; ti < slots.length; ti++) {
+          if (slots[ti].id === rule.slotId) { target = slots[ti]; break; }
+        }
+        if (!target) continue;                 /* その列が無い/手動保護中なら通常配置に回す */
+        for (j = 0; j < list.length; j++) {
+          if (stripName_(list[j].name) === rule.nameKey) {
+            applyTo(target, list[j]); taken[target.id] = true; list.splice(j, 1); break;
+          }
+        }
+      }
+      /* 残りを左→右へ（固定済みスロットは飛ばす） */
+      for (j = 0; j < list.length; j++) {
+        while (idx < slots.length && taken[slots[idx].id]) idx++;
         if (idx < slots.length) { applyTo(slots[idx], list[j]); idx++; }
         else { applyTo(appendDayColumn(zone), list[j]); added++; }
       }
