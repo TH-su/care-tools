@@ -951,6 +951,24 @@ body.printing .rs { display: none; }
     return { ok: true, moves: [ { id: a.id, staffId: stB.id }, { id: b.id, staffId: stA.id } ] };
   }
 
+  /* 時間枠の入替（同一職員内）。taskA と taskB の [start,end] を相互交換する。
+   * 休憩↔施設業務など、実施時間が任意の枠を入れ替える用途（実施時間に関係なく可能）。
+   * 双方は元々その職員の勤務窓内・互いに重複しない別枠のため、枠を交換しても
+   * 勤務窓内・無重複が保たれる（第三のタスクとも新たな重複は生じない）。 */
+  function planTimeSwap(day, taskAId, taskBId) {
+    var a = findTask(day.tasks, taskAId);
+    var b = findTask(day.tasks, taskBId);
+    if (!a || !b) return { ok: false, reason: 'タスクが見つかりません' };
+    if (a.id === b.id) return { ok: false, reason: '同一タスクです' };
+    if (a.staffId === null || b.staffId === null || a.staffId !== b.staffId) {
+      return { ok: false, code: 'notsamestaff', reason: '同じ職員内の枠どうしのみ入替できます' };
+    }
+    return { ok: true, moves: [
+      { id: a.id, start: b.start, end: b.end },
+      { id: b.id, start: a.start, end: a.end }
+    ] };
+  }
+
   /* アラート計算（全て派生値）
    * - unassigned: 未配置タスク
    * - noBreak: 勤務 breakMinHours 時間以上なのに休憩ブロックが無い職員 */
@@ -1005,6 +1023,7 @@ body.printing .rs { display: none; }
     residentConflicts: residentConflicts,
     validatePlacement: validatePlacement,
     planSwap: planSwap,
+    planTimeSwap: planTimeSwap,
     computeAlerts: computeAlerts,
     fmtRange: fmtRange
   };
@@ -2168,6 +2187,19 @@ body.printing .rs { display: none; }
     if (type === 'SET_TASKS') {
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: action.tasks };
     }
+    if (type === 'TIME_SWAP') {
+      /* 時間枠の入替（休憩↔施設業務など）を1操作で適用＝undoは1回で完全復元。
+       * facManual は src==='facwork' の枠のみへ付与（手動配置として自動再構成から保護）。 */
+      var tasks = day.tasks;
+      for (var mi = 0; mi < action.moves.length; mi++) {
+        var mv = action.moves[mi];
+        var cur = M.findTask(tasks, mv.id);
+        var patch = { start: mv.start, end: mv.end };
+        if (cur && cur.src === 'facwork') patch.facManual = true;
+        tasks = patchTask(tasks, mv.id, patch);
+      }
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasks };
+    }
     if (type === 'UPDATE_TASK') {
       return { meta: day.meta, staff: day.staff, columns: day.columns,
                tasks: patchTask(day.tasks, action.id, action.patch) };
@@ -2594,6 +2626,8 @@ body.printing .rs { display: none; }
     var nameText = t.kind === 'care' ? t.residentName
       : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '自由枠' : '施設業務')));
     if (t.tentative) nameText = '（' + nameText + '）';
+    /* 施設業務の枠は時間を表示しない（実施時間は任意のため）。誘導/配膳など別ラベルの施設業務は時刻維持 */
+    var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
 
     if (ex.print) {
       /* ===== 印刷レイアウト（白黒・大文字・チェック欄） =====
@@ -2605,7 +2639,7 @@ body.printing .rs { display: none; }
       if (short) {
         /* 身体01等の短時間枠: 上段=時刻＋□ / 下段=入居者名（全文・必要ならセル伸長） */
         var line = el('div', 'pt-line');
-        line.appendChild(txt('span', 'pt-time', range));
+        if (!hideTime) line.appendChild(txt('span', 'pt-time', range));
         if (cb) line.appendChild(txt('span', 'pt-cb', cb));
         b.appendChild(line);
         b.appendChild(txt('div', 'pt-name pt-name-s', nameText));
@@ -2613,7 +2647,7 @@ body.printing .rs { display: none; }
           b.appendChild(txt('div', 'pt-sub', t.contents.join('・')));
         }
       } else {
-        b.appendChild(txt('div', 'pt-time', range + (svc ? ' ' + svc.short : '')));
+        if (!hideTime) b.appendChild(txt('div', 'pt-time', range + (svc ? ' ' + svc.short : '')));
         b.appendChild(txt('div', 'pt-name', nameText + (ex.hosp ? '（入院中）' : '')));
         var items = (t.contents || []).slice();
         if (t.memo) items.push(t.memo);
@@ -2633,11 +2667,13 @@ body.printing .rs { display: none; }
     }
 
     b.style.height = h + 'px';
-    var time = el('div', 't-time');
-    var bb = document.createElement('b');
-    bb.textContent = range + (svc ? svc.short : '');
-    time.appendChild(bb);
-    b.appendChild(time);
+    if (!hideTime) {
+      var time = el('div', 't-time');
+      var bb = document.createElement('b');
+      bb.textContent = range + (svc ? svc.short : '');
+      time.appendChild(bb);
+      b.appendChild(time);
+    }
     b.appendChild(txt('div', 't-name', nameText));
 
     var items = (t.contents || []).slice();
@@ -2860,6 +2896,13 @@ body.printing .rs { display: none; }
     return null;
   }
 
+  /* 時間枠を入れ替えられる「実施時間が任意」の枠か（休憩・施設業務）。
+   * 同一職員内でこれらどうしを重ねたら時間枠を交換する（誘導/配膳など時刻固定の施設業務は対象外）。 */
+  function isFlexSwap(t) {
+    if (!t) return false;
+    return t.kind === 'break' || (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
+  }
+
   function create(opts) {
     var wrap = opts.wrapEl, board = opts.boardEl, tray = opts.trayEl;
     var drag = null;          /* 進行中の操作 */
@@ -3013,6 +3056,15 @@ body.printing .rs { display: none; }
       var overBlock = closest(overEl, '.b-task');
       if (overBlock && task.staffId !== null) {
         var over = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
+        /* 同一職員内で 休憩↔施設業務 を重ねたら時間枠を交換（実施時間に関係なく可能） */
+        if (over && over.id !== task.id && over.staffId === task.staffId &&
+            isFlexSwap(task) && isFlexSwap(over)) {
+          var planT = M.planTimeSwap(day, task.id, over.id);
+          return { status: planT.ok ? 'timeswap' : 'ng', reason: planT.reason || '',
+                   lane: lane, start: task.start, end: task.end,
+                   staff: M.findStaff(day.staff, task.staffId),
+                   swapWith: over, plan: planT };
+        }
         if (over && over.id !== task.id && over.staffId !== null && over.staffId !== task.staffId) {
           var overStaff = M.findStaff(day.staff, over.staffId);
           var ownStaff = M.findStaff(day.staff, task.staffId);
@@ -3050,6 +3102,14 @@ body.printing .rs { display: none; }
       if (!st) return { status: 'ng', reason: '職員未割当の列です' };
 
       var conflicts = M.staffConflicts(day.tasks, st.id, start, end, [task.id]);
+      /* 同一職員内で 休憩↔施設業務 が重なる位置へ来たら時間枠を交換 */
+      if (conflicts.length === 1 && conflicts[0].staffId === task.staffId &&
+          isFlexSwap(task) && isFlexSwap(conflicts[0])) {
+        var planTc = M.planTimeSwap(day, task.id, conflicts[0].id);
+        return { status: planTc.ok ? 'timeswap' : 'ng', reason: planTc.reason || '',
+                 lane: lane, start: task.start, end: task.end, staff: st,
+                 swapWith: conflicts[0], plan: planTc };
+      }
       if (conflicts.length === 1 && task.staffId !== null && conflicts[0].staffId !== task.staffId) {
         /* 他職員の配置済みブロック上 → スワップ（F-05）。
          * スワップは時間維持のため、ゴーストはタスク自身の時刻で表示し、
@@ -3156,10 +3216,11 @@ body.printing .rs { display: none; }
         return;
       }
       var label = '';
-      if (ev.status === 'swap') label = '⇄入替';
+      var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap');
+      if (isSwapKind) label = '⇄入替';
       else if (ev.status === 'ng') label = '✕';
-      showGhost(ev.lane, ev.start, ev.end, ev.status === 'swap' ? 'swap' : ev.status, label);
-      if (ev.status === 'swap' && ev.swapWith) {
+      showGhost(ev.lane, ev.start, ev.end, isSwapKind ? 'swap' : ev.status, label);
+      if (isSwapKind && ev.swapWith) {
         var bel = board.querySelector('.b-task[data-id="' + ev.swapWith.id + '"]');
         if (bel) bel.classList.add('swap-target');
       }
@@ -3178,6 +3239,7 @@ body.printing .rs { display: none; }
         return;
       }
       if (ev.status === 'tray') { opts.onUnassign(taskId); return; }
+      if (ev.status === 'timeswap' && ev.plan && ev.plan.ok) { opts.onTimeSwap(ev.plan.moves, ev.swapWith); return; }
       if (ev.status === 'swap' && ev.plan && ev.plan.ok) { opts.onSwap(ev.plan.moves, ev.swapWith); return; }
       if (ev.status === 'ok') {
         if (drag.mode === 'resize') opts.onResize(taskId, ev.start, ev.end);
@@ -5362,6 +5424,12 @@ body.printing .rs { display: none; }
       onSwap: function (moves, withTask) {
         store.dispatch({ type: 'SWAP', moves: moves });
         toast('支援を入れ替えました');
+      },
+      onTimeSwap: function (moves, withTask) {
+        /* 休憩↔施設業務の時間枠交換（同一職員）。単一アクションで適用＝undoは1回で完全復元。
+         * facManual の付与は reducer 側で src==='facwork' の枠のみに限定する。 */
+        store.dispatch({ type: 'TIME_SWAP', moves: moves });
+        toast('休憩と施設業務を入れ替えました');
       },
       onUnassign: function (taskId) {
         store.dispatch({ type: 'UNASSIGN', id: taskId });
