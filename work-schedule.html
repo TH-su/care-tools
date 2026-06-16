@@ -113,6 +113,8 @@ body {
 .b-head .h-no { font-weight: 700; color: var(--g6); font-size: 12px; }
 .b-head .h-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
 .b-head .h-name.manual { color: var(--pri); }
+.b-task.facwork { border: 1.5px solid #222; background: #fafafa; }
+body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
 .b-head .h-time { color: var(--g6); font-size: 10px; }
 .b-head .h-role { display: inline-block; font-size: 9px; border-radius: 4px; padding: 0 4px; margin-right: 2px;
@@ -2032,6 +2034,7 @@ body.printing .rs { display: none; }
     masterToCareDb: masterToCareDb,
     parseShiftTSV: parseShiftTSV,
     circled: circled,
+    relabel: relabel_,
     DEFAULT_COLS: DEFAULT_COLS,
     buildColumns: buildColumns,
     moveColumn: moveColumn,
@@ -2512,6 +2515,7 @@ body.printing .rs { display: none; }
     var top = yFor(scale, t.start, isNight);
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
     var cls = 'b-task ' + kindClass(t);
+    if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
     if (M.isChanged(t)) cls += ' changed';
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
@@ -4049,6 +4053,7 @@ body.printing .rs { display: none; }
     if (fillRes) {
       store.dispatch({ type: 'SET_STAFF', staff: fillRes.staff, columns: fillRes.columns });
       try { store.dispatch({ type: 'SET_META', patch: { shiftStamp: SH.attendanceStamp(r.staff) } }); } catch (e) {}
+      try { finalizeBoard(); } catch (eF) {}
       msg = '出勤者 ' + fillRes.filled + '名を列へ反映しました（支援の配置は維持）';
       if (fillRes.added) msg += '／列を ' + fillRes.added + '追加';
     } else {
@@ -4487,6 +4492,7 @@ body.printing .rs { display: none; }
       }
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
+      try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填 */
       var msg;
       if (res.filled === 0) {
         var staffN = (data.staff && data.staff.length) ? data.staff.length : 0;
@@ -4554,6 +4560,112 @@ body.printing .rs { display: none; }
       if (a !== null && b !== null && b > a) { ws = a; we = b; name = t.slice(0, mm.index).trim(); }
     }
     return { name: name, workStart: ws, workEnd: we };
+  }
+
+  /* ===== 盤面の最終整形（空き列の詰め・施設業務/休憩の自動充填） ===== */
+  var FIN_DEF = { facility: 3, visit: 12 };
+
+  /* 既定数を超える空の施設/訪問列（氏名なし・タスク参照なし・手動なし）を除去して
+   * 夜勤列を前へ詰める。変化があれば {staff, columns}、無ければ null。 */
+  function trimEmptyCols(day) {
+    var used = {}, i, m, st;
+    for (i = 0; i < day.tasks.length; i++) if (day.tasks[i].staffId) used[day.tasks[i].staffId] = true;
+    var byId = {};
+    for (i = 0; i < day.staff.length; i++) byId[day.staff[i].id] = day.staff[i];
+    var zoneCount = { facility: 0, visit: 0, night: 0 };
+    for (i = 0; i < day.columns.length; i++) if (zoneCount[day.columns[i].zone] !== undefined) zoneCount[day.columns[i].zone]++;
+    var cols = [], dropped = {};
+    for (i = 0; i < day.columns.length; i++) {
+      var c = day.columns[i];
+      var def = FIN_DEF[c.zone];
+      if ((c.zone === 'facility' || c.zone === 'visit') && def && zoneCount[c.zone] > def) {
+        var empty = true;
+        for (m = 0; m < c.staffIds.length; m++) {
+          st = byId[c.staffIds[m]];
+          if (st && (st.name || st.manual || used[st.id])) { empty = false; break; }
+        }
+        if (empty) { zoneCount[c.zone]--; for (m = 0; m < c.staffIds.length; m++) dropped[c.staffIds[m]] = true; continue; }
+      }
+      cols.push({ col: c.col, zone: c.zone, label: c.label, staffIds: c.staffIds.slice(), division: c.division || null });
+    }
+    if (cols.length === day.columns.length) return null;
+    IM.relabel(cols);
+    var staff = [];
+    for (i = 0; i < day.staff.length; i++) if (!dropped[day.staff[i].id]) staff.push(day.staff[i]);
+    var colBy = {};
+    for (i = 0; i < cols.length; i++) for (m = 0; m < cols[i].staffIds.length; m++) colBy[cols[i].staffIds[m]] = cols[i].col;
+    for (i = 0; i < staff.length; i++) if (colBy[staff[i].id] !== undefined) staff[i].col = colBy[staff[i].id];
+    return { staff: staff, columns: cols };
+  }
+
+  /* [lo,hi] から占有区間を引いた空き区間 */
+  function freeRanges_(occ, lo, hi) {
+    var segs = [], i;
+    for (i = 0; i < occ.length; i++) {
+      var a = Math.max(occ[i][0], lo), b = Math.min(occ[i][1], hi);
+      if (b > a) segs.push([a, b]);
+    }
+    segs.sort(function (x, y) { return x[0] - y[0]; });
+    var merged = [];
+    for (i = 0; i < segs.length; i++) {
+      if (merged.length && segs[i][0] <= merged[merged.length - 1][1]) {
+        if (segs[i][1] > merged[merged.length - 1][1]) merged[merged.length - 1][1] = segs[i][1];
+      } else merged.push([segs[i][0], segs[i][1]]);
+    }
+    var out = [], cur = lo;
+    for (i = 0; i < merged.length; i++) { if (merged[i][0] > cur) out.push([cur, merged[i][0]]); cur = Math.max(cur, merged[i][1]); }
+    if (cur < hi) out.push([cur, hi]);
+    return out;
+  }
+
+  /* 勤務時間内の空き時間を「施設業務」(1時間ごと)で充填＋休憩1時間を中央に自動配置。
+   * 日勤(施設/訪問)職員のみ。既存タスク(訪問支援・手動枠)は占有として保護。返値=追加タスク配列 */
+  function fillFacilityWork(day) {
+    var add = [], byStaff = {}, i, t;
+    for (i = 0; i < day.tasks.length; i++) {
+      t = day.tasks[i];
+      if (!t.staffId) continue;
+      if (!byStaff[t.staffId]) byStaff[t.staffId] = [];
+      byStaff[t.staffId].push(t);
+    }
+    for (i = 0; i < day.staff.length; i++) {
+      var st = day.staff[i];
+      if (!st.name || st.zone === 'night') continue;
+      var ws = st.workStart, we = st.workEnd;
+      if (!(we > ws)) continue;
+      var tasks = byStaff[st.id] || [];
+      var occ = [], hasBreak = false, k;
+      for (k = 0; k < tasks.length; k++) { occ.push([tasks[k].start, tasks[k].end]); if (tasks[k].kind === 'break') hasBreak = true; }
+      if (!hasBreak && (we - ws) >= 360) {                 /* 6時間以上の勤務に休憩1時間を中央へ */
+        var mid = Math.round((ws + we) / 2 / 60) * 60;
+        if (mid + 60 > we) mid = we - 60;
+        if (mid < ws) mid = ws;
+        add.push(M.newTask({ kind: 'break', src: 'facwork', label: '休憩', start: mid, end: mid + 60, staffId: st.id }));
+        occ.push([mid, mid + 60]);
+      }
+      var free = freeRanges_(occ, ws, we);
+      for (var f = 0; f < free.length; f++) {
+        var a = free[f][0], hi = free[f][1];
+        while (a < hi) {
+          var b = Math.min(a + 60, hi);
+          add.push(M.newTask({ kind: 'facility', src: 'facwork', label: '施設業務', start: a, end: b, staffId: st.id }));
+          a = b;
+        }
+      }
+    }
+    return add;
+  }
+
+  /* 盤面整形を適用（空き列詰め→施設業務/休憩充填）。出勤者反映やロード後に呼ぶ。 */
+  function finalizeBoard() {
+    try {
+      var trimmed = trimEmptyCols(store.get());
+      if (trimmed) store.dispatch({ type: 'SET_STAFF', staff: trimmed.staff, columns: trimmed.columns });
+    } catch (e) {}
+    try {
+      var add = fillFacilityWork(store.get());
+      if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
+    } catch (e2) {}
   }
 
   /* --- 週間計画(care_schedule_v2) --- */
