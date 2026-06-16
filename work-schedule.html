@@ -112,6 +112,8 @@ body {
 }
 .b-head .h-no { font-weight: 700; color: var(--g6); font-size: 12px; }
 .b-head .h-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.b-head .h-name.manual { color: var(--pri); }
+.b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
 .b-head .h-time { color: var(--g6); font-size: 10px; }
 .b-head .h-role { display: inline-block; font-size: 9px; border-radius: 4px; padding: 0 4px; margin-right: 2px;
   background: var(--c-mix); color: #4527a0; }
@@ -483,7 +485,17 @@ body.printing .rs { display: none; }
   </div>
   <div id="imShift">
     <div class="fld">
-      <label>シフト表からコピペ（1行 = 名前 ＋ 記号 or 時間帯 ［＋ 施設/訪問/夜勤］）</label>
+      <label>シフトアプリの当日出勤者を自動反映（クラウド経由・複数端末で共有）</label>
+      <div class="btn-row" style="margin-top:4px">
+        <button class="btn pri" id="imShiftCloud">この日のシフトを反映</button>
+        <button class="btn" id="imShiftRecloud">再取込（全上書き）</button>
+      </div>
+      <div class="hint">「この日のシフトを反映」＝出勤者と勤務時間を列へ自動配置（手動で編集した枠は保護）。
+        日付を開くたびに自動でも反映されます（設定でON/OFF）。<br>
+        手動で職員名・時間を直すには、ボード上部の<b>列見出しをタップ</b>（「氏名」または「氏名 9:00-18:00」）。</div>
+    </div>
+    <div class="fld">
+      <label>または、シフト表から直接コピペ（1行 = 名前 ＋ 記号 or 時間帯 ［＋ 施設/訪問/夜勤］）</label>
       <textarea class="inp" id="imShiftText" placeholder="例:&#10;岡嶋&#9;7:40-17:00&#10;中間&#9;早&#10;泉&#9;9:00-16:00&#9;施設&#10;竹田&#9;(21&#10;龍&#9;8)"></textarea>
       <div class="hint">記号: 早(7-16) 日1(8-17) 日2(8:30-17:30) 日3(9-18) 遅(12-21) ／
         夜勤: (21 (22=入り・7) 8)=上がり ／ 休・希・有などはスキップ。<br>
@@ -492,7 +504,7 @@ body.printing .rs { display: none; }
     <div class="btn-row">
       <button class="btn" id="imShiftDemo">デモデータ</button>
       <span class="sp"></span>
-      <button class="btn pri" id="imShiftApply">出勤者に反映</button>
+      <button class="btn pri" id="imShiftApply">貼り付け内容を反映</button>
     </div>
   </div>
   <div id="imWeekly" style="display:none">
@@ -567,6 +579,9 @@ body.printing .rs { display: none; }
   <div class="fld row2">
     <div><label>週間計画アプリURL</label><input class="inp" id="stUrlCare" placeholder="care-schedule.html"></div>
     <div><label>シフトアプリURL</label><input class="inp" id="stUrlShift" placeholder="shift-app.html"></div>
+  </div>
+  <div class="fld">
+    <label><input type="checkbox" id="stShiftAuto"> 日付を開くたびにシフトの出勤者を自動反映する（手動編集枠は保護）</label>
   </div>
   <div class="btn-row">
     <button class="btn" id="stPull">サーバーから取得</button>
@@ -994,6 +1009,234 @@ body.printing .rs { display: none; }
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
 })();
+/* ===== src/logic/shiftbridge.js ===== */
+/* shiftbridge.js — シフト作成アプリのクラウド/同一オリジンデータから
+ *   「指定日の出勤者＋勤務時間帯」を抽出する純粋関数群（依存ゼロ）。
+ * シフト側 symbols.js の parseCell を必要分だけ移植している。
+ * 旧Safari互換のため ?. / ?? / replaceAll は使用しない。 */
+(function () {
+  'use strict';
+
+  /* 全角→半角・揺れ正規化（シフト symbols.js と同等） */
+  function normalizeCell(raw) {
+    if (raw === null || raw === undefined) return '';
+    var s = String(raw);
+    var FW = '０１２３４５６７８９';
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      var fi = FW.indexOf(c);
+      if (fi >= 0) { out += String(fi); continue; }
+      if (c === '（') { out += '('; continue; }
+      if (c === '）') { out += ')'; continue; }
+      if (c === '：') { out += ':'; continue; }
+      if (c === '～' || c === '〜' || c === '−' || c === 'ー' || c === '－' || c === '―') { out += '-'; continue; }
+      if (c === '　' || c === ' ' || c === '\t') { continue; }
+      out += c;
+    }
+    return out;
+  }
+
+  function timeToMin(t) {
+    if (t === null || t === undefined) return null;
+    var s = normalizeCell(String(t));
+    var m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    if (h > 30 || mm > 59) return null;
+    return h * 60 + mm;
+  }
+
+  /* 既定の記号マスタ（シフト symbols.js の DEFAULT_SYMBOLS と同内容・解決後）。
+   * クラウドに symbols が無い/空の場合のフォールバック。 */
+  var DEFAULT_SYMBOLS = [
+    { code: '早',  type: 'work',      start: '7:00',  end: '16:00', cat: 'early' },
+    { code: '日1', type: 'work',      start: '8:00',  end: '17:00', cat: 'mid' },
+    { code: '日2', type: 'work',      start: '8:30',  end: '17:30', cat: 'mid' },
+    { code: '日3', type: 'work',      start: '9:00',  end: '18:00', cat: 'mid' },
+    { code: '遅',  type: 'work',      start: '12:00', end: '21:00', cat: 'late' },
+    { code: '(21', type: 'nightIn',   start: '21:00', pairEnd: '7:00', cat: 'night' },
+    { code: '(22', type: 'nightIn',   start: '22:00', pairEnd: '8:00', cat: 'night' },
+    { code: '7)',  type: 'nightOut',  end: '7:00',  cat: 'night' },
+    { code: '8)',  type: 'nightOut',  end: '8:00',  cat: 'night' },
+    { code: '休',  type: 'off',       cat: 'off' },
+    { code: '希',  type: 'off',       cat: 'off', sub: '希望休' },
+    { code: '公',  type: 'publicOff', cat: 'off' },
+    { code: '有',  type: 'paidOff',   cat: 'off', fixedWork: 8 },
+    { code: '明',  type: 'off',       cat: 'off' }
+  ];
+
+  var ALIASES = { '希休': '希', '有休': '有', '公休': '公', '希望休': '希', '有給': '有' };
+
+  function findSymbol(symbols, codeNorm) {
+    for (var i = 0; i < symbols.length; i++) {
+      if (symbols[i].disabled) continue;
+      if (normalizeCell(symbols[i].code) === codeNorm) return symbols[i];
+    }
+    return null;
+  }
+
+  var RE_RANGE = /^(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)$/;
+  var RE_NIGHT_OUT = /^(\d{1,2}(?::\d{2})?)\)/;   /* 先頭の「7)」 */
+  var RE_NIGHT_IN = /\((\d{1,2}(?::\d{2})?)$/;     /* 末尾の「(21」 */
+
+  function rangeCat(startMin, endMin) {
+    if (startMin <= 450) return 'early';
+    if (startMin >= 720 && endMin >= 1200) return 'late';
+    return 'mid';
+  }
+
+  function symbolToPart(sym) {
+    if (sym.type === 'work') {
+      return { kind: 'work', startMin: timeToMin(sym.start), endMin: timeToMin(sym.end), cat: sym.cat || 'mid', code: sym.code };
+    }
+    if (sym.type === 'nightIn') {
+      return { kind: 'nightIn', startMin: timeToMin(sym.start), pairEndMin: timeToMin(sym.pairEnd), code: sym.code };
+    }
+    if (sym.type === 'nightOut') {
+      return { kind: 'nightOut', endMin: timeToMin(sym.end), pairKnown: true, code: sym.code };
+    }
+    if (sym.type === 'paidOff') {
+      return { kind: 'paidOff', fixedWork: (typeof sym.fixedWork === 'number' ? sym.fixedWork : 8), code: sym.code };
+    }
+    if (sym.type === 'publicOff') return { kind: 'publicOff', code: sym.code };
+    return { kind: 'off', code: sym.code, sub: sym.sub || null };
+  }
+
+  /* セル文字列 → パーツ配列（シフト symbols.js parseCell の移植）
+   * 返値: { raw, norm, parts:[{kind,...}], error } */
+  function parseShiftCell(raw, symbols) {
+    if (!symbols || !symbols.length) symbols = DEFAULT_SYMBOLS;
+    var norm = normalizeCell(raw);
+    var res = { raw: raw, norm: norm, parts: [], error: null };
+    if (norm === '') return res;
+    if (ALIASES[norm]) norm = ALIASES[norm];
+
+    var sym = findSymbol(symbols, norm);
+    if (sym) { res.parts.push(symbolToPart(sym)); return res; }
+
+    var m = norm.match(RE_RANGE);
+    if (m) {
+      var st = timeToMin(m[1]), en = timeToMin(m[2]);
+      if (st !== null && en !== null && en > st && en <= 24 * 60) {
+        res.parts.push({ kind: 'work', startMin: st, endMin: en, cat: rangeCat(st, en) });
+        return res;
+      }
+      res.error = '時刻範囲を解釈できません: ' + norm;
+      return res;
+    }
+
+    var rest = norm;
+    var mo = rest.match(RE_NIGHT_OUT);
+    if (mo) {
+      var outSym = findSymbol(symbols, mo[1] + ')');
+      var endMin = timeToMin(mo[1]);
+      res.parts.push({ kind: 'nightOut', endMin: endMin, pairKnown: !!outSym });
+      rest = rest.slice(mo[0].length);
+    }
+    if (rest !== '') {
+      var mi = rest.match(RE_NIGHT_IN);
+      if (mi && rest.charAt(0) === '(') {
+        var inSym = findSymbol(symbols, '(' + mi[1]);
+        var stMin = timeToMin(mi[1]);
+        res.parts.push({ kind: 'nightIn', startMin: stMin,
+          pairEndMin: inSym && inSym.pairEnd ? timeToMin(inSym.pairEnd) : null });
+        rest = '';
+      } else if (rest.charAt(0) === '(') {
+        var alt = rest.slice(1);
+        if (ALIASES[alt]) alt = ALIASES[alt];
+        var altSym = findSymbol(symbols, alt);
+        if (altSym && altSym.type !== 'work') { res.parts.push(symbolToPart(altSym)); rest = ''; }
+      }
+    }
+    if (res.parts.length === 0) res.error = '解釈できない記号: ' + norm;
+    else if (rest !== '') res.error = '一部を解釈できません: ' + norm;
+    return res;
+  }
+
+  /* シフトの所属(group: 'day'|'visit'|'night') → ワースケの日中ゾーン。
+   * 夜勤(入り/明け)パートは zone 'night' を明示するため、ここは日勤パート用。 */
+  function workZone(group) {
+    if (group === 'visit') return 'visit';
+    return 'facility'; /* day および night所属の日勤は施設枠へ */
+  }
+
+  /* 指定日の出勤者抽出。
+   *   dateStr: 'YYYY-MM-DD'
+   *   shiftStaff: シフト staff 配列 [{id, name, group, active, ...}]
+   *   symbols: シフト symbols 配列（null可→DEFAULT_SYMBOLS）
+   *   plan: 月次 plan {cells:{staffId:{dayStr:cellValue}}, ...}
+   * 返値: [{name, zone:'facility'|'visit'|'night', nightRole:'ake'|'iri'|null, workStart, workEnd}]
+   *   公休/希望休/有給/法定休は除外。夜勤入りは iri、夜勤上がりは ake。
+   *   各日のセル自体が「入り」「上がり」を保持するため、前後日の参照は不要。 */
+  function extractAttendance(dateStr, shiftStaff, symbols, plan) {
+    var out = [];
+    if (!plan || !plan.cells) return out;
+    if (!symbols || !symbols.length) symbols = DEFAULT_SYMBOLS;
+    var dayNo = parseInt(String(dateStr).slice(8, 10), 10);
+    if (!dayNo) return out;
+    var dayStr = String(dayNo);
+    var staffList = shiftStaff || [];
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      if (!st || st.active === false) continue;
+      var name = st.name ? String(st.name).trim() : '';
+      if (!name) continue;
+      var cellMap = plan.cells[st.id];
+      if (!cellMap) continue;
+      /* シフト側は String(day)（非ゼロ埋め '5'）でキーを持つが、念のため '05' 形式もフォールバック */
+      var raw = cellMap[dayStr];
+      if (raw === undefined || raw === null) {
+        var padded = (dayNo < 10 ? '0' : '') + dayNo;
+        if (padded !== dayStr) raw = cellMap[padded];
+      }
+      if (raw === undefined || raw === null || String(raw) === '') continue;
+      var parsed = parseShiftCell(raw, symbols);
+      if (!parsed.parts.length) continue;
+      var group = st.group || 'day';
+      for (var p = 0; p < parsed.parts.length; p++) {
+        var part = parsed.parts[p];
+        if (part.kind === 'work') {
+          if (part.startMin === null || part.endMin === null || !(part.endMin > part.startMin)) continue;
+          out.push({ name: name, zone: workZone(group),
+            workStart: part.startMin, workEnd: part.endMin, nightRole: null });
+        } else if (part.kind === 'nightIn') {
+          var ws = (part.startMin !== null) ? part.startMin : 1260;
+          out.push({ name: name, zone: 'night', workStart: ws, workEnd: 1440, nightRole: 'iri' });
+        } else if (part.kind === 'nightOut') {
+          var we = (part.endMin !== null) ? part.endMin : 420;
+          out.push({ name: name, zone: 'night', workStart: 0, workEnd: we, nightRole: 'ake' });
+        }
+        /* off / paidOff / publicOff は出勤としない */
+      }
+    }
+    return out;
+  }
+
+  /* 出勤者リストの安定シグネチャ（同一内容なら再反映をスキップする churn 防止用） */
+  function attendanceStamp(list) {
+    var arr = [];
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      arr.push(a.zone + '|' + (a.nightRole || '') + '|' + a.name + '|' + a.workStart + '|' + a.workEnd);
+    }
+    arr.sort();
+    return arr.join(';');
+  }
+
+  var api = {
+    normalizeCell: normalizeCell,
+    timeToMin: timeToMin,
+    parseShiftCell: parseShiftCell,
+    extractAttendance: extractAttendance,
+    attendanceStamp: attendanceStamp,
+    workZone: workZone,
+    DEFAULT_SYMBOLS: DEFAULT_SYMBOLS
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.WSShift = api;
+})();
 /* ===== src/logic/importers.js ===== */
 /* importers.js — シフトTSV取込・週間ケア計画取込・列割当（純粋関数）
  * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
@@ -1398,64 +1641,161 @@ body.printing .rs { display: none; }
     return { staff: staff, columns: columns, tasks: tasks };
   }
 
-  /* シフト取込（スロット流し込み）: 既存スロット職員へ名前と勤務時間を順に設定する。
+  /* スロットの既定勤務窓へ戻す */
+  function resetSlotWindow_(s) {
+    if (!s.nightRole) { s.workStart = 420; s.workEnd = 1260; }
+    else if (s.nightRole === 'ake') { s.workStart = 0; s.workEnd = 540; }
+    else { s.workStart = 1260; s.workEnd = 1440; }
+  }
+
+  /* シフト取込（スロット流し込み）: 既存スロット職員へ名前と勤務時間を反映する。
+   * - opts.force(=false): 手動編集済み(manual=true)のスロットは保護し上書きしない。
+   *     その職員名は出勤者プールからも除外（重複配置を防ぐ）。
+   * - opts.force(=true): 手動印を無視して全スロットを上書き（明示的な「再取込」用）。
+   * - 出勤者が空きスロット数を超える場合は、該当ゾーンの列を末尾に自動増設する
+   *   （既存スロットIDは保持＝配置済みタスクの参照を壊さない）。
    * 純粋関数: day の staff/columns を変更せず新配列を返す。
-   * 返値: { staff, columns, filled, overflow } / スロット日でなければ null */
-  function fillSlots(dayStaff, dayColumns, parsed) {
+   * 返値: { staff, columns, filled, added, locked } / スロット日でなければ null */
+  function fillSlots(dayStaff, dayColumns, parsed, opts) {
+    opts = opts || {};
+    var force = !!opts.force;
+    var i, k, c, m;
     var isSlotDay = false;
-    var i;
     for (i = 0; i < dayStaff.length; i++) {
       if (String(dayStaff[i].id).indexOf('slot_') === 0) { isSlotDay = true; break; }
     }
     if (!isSlotDay) return null;
-    var staff = [];
+
+    /* staff をクローン */
+    var staff = [], byId = {};
     for (i = 0; i < dayStaff.length; i++) {
       var ns = {};
-      for (var k in dayStaff[i]) {
+      for (k in dayStaff[i]) {
         if (Object.prototype.hasOwnProperty.call(dayStaff[i], k)) ns[k] = dayStaff[i][k];
       }
-      /* 取込はその日の出勤の正: 未指名スロットは空に戻す */
-      if (String(ns.id).indexOf('slot_') === 0) {
-        ns.name = '';
-        if (!ns.nightRole) { ns.workStart = 420; ns.workEnd = 1260; }
-        else if (ns.nightRole === 'ake') { ns.workStart = 0; ns.workEnd = 540; }
-        else { ns.workStart = 1260; ns.workEnd = 1440; }
-      }
-      staff.push(ns);
+      staff.push(ns); byId[ns.id] = ns;
     }
-    function bySlot(zone, role) {
-      var out = [];
-      for (var j = 0; j < staff.length; j++) {
-        var s = staff[j];
-        if (String(s.id).indexOf('slot_') !== 0 || s.zone !== zone) continue;
-        if (zone === 'night' && s.nightRole !== role) continue;
-        out.push(s);
-      }
-      out.sort(function (a, b) { return (a.slot || 0) - (b.slot || 0); });
-      return out;
+    /* columns をクローン（並び順・staffIdsを保持） */
+    var columns = [];
+    for (i = 0; i < dayColumns.length; i++) {
+      columns.push({ col: dayColumns[i].col, zone: dayColumns[i].zone,
+        label: dayColumns[i].label, staffIds: dayColumns[i].staffIds.slice() });
     }
+
+    /* 手動保護スロットの職員名（force時は無効） */
+    var lockedNames = {}, locked = 0;
+    if (!force) {
+      for (i = 0; i < staff.length; i++) {
+        if (String(staff[i].id).indexOf('slot_') === 0 && staff[i].manual && staff[i].name) {
+          lockedNames[staff[i].name] = true; locked++;
+        }
+      }
+    }
+    /* 非保護スロットを空に戻す */
+    for (i = 0; i < staff.length; i++) {
+      var s = staff[i];
+      if (String(s.id).indexOf('slot_') !== 0) continue;
+      if (s.manual && !force) continue;
+      s.name = ''; s.fromShift = false; s.manual = false;
+      resetSlotWindow_(s);
+    }
+
+    /* 出勤者をゾーン/役割で分類（保護中の氏名は除外） */
     var groups = { facility: [], visit: [], ake: [], iri: [] };
     for (i = 0; i < parsed.length; i++) {
       var p = parsed[i];
+      if (lockedNames[p.name]) continue;
       if (p.zone === 'facility') groups.facility.push(p);
       else if (p.zone === 'night') groups[p.nightRole === 'iri' ? 'iri' : 'ake'].push(p);
       else groups.visit.push(p);
     }
-    var filled = 0, overflow = 0;
-    function fill(list, slots, isNight) {
+
+    /* 列表示順での空き（非保護）スロット一覧 */
+    function availSlots(zone, role) {
+      var out = [];
+      for (var cc = 0; cc < columns.length; cc++) {
+        var ids = columns[cc].staffIds;
+        for (var mm = 0; mm < ids.length; mm++) {
+          var st = byId[ids[mm]];
+          if (!st || String(st.id).indexOf('slot_') !== 0) continue;
+          if (st.zone !== zone) continue;
+          if (zone === 'night' && st.nightRole !== role) continue;
+          if (st.manual && !force) continue;
+          out.push(st);
+        }
+      }
+      return out;
+    }
+    function maxSlotNo(zone, role) {
+      var mx = 0;
+      for (var x = 0; x < staff.length; x++) {
+        var st = staff[x];
+        if (String(st.id).indexOf('slot_') !== 0 || st.zone !== zone) continue;
+        if (zone === 'night' && st.nightRole !== role) continue;
+        if (typeof st.slot === 'number' && st.slot > mx) mx = st.slot;
+      }
+      return mx;
+    }
+    var ZONE_ORDER = { facility: 0, visit: 1, night: 2 };
+    function insertAfterZone(zone, colObj) {
+      var lastIdx = -1;
+      for (var cc = 0; cc < columns.length; cc++) if (columns[cc].zone === zone) lastIdx = cc;
+      if (lastIdx >= 0) { columns.splice(lastIdx + 1, 0, colObj); return; }
+      var ins = columns.length;
+      for (var c2 = 0; c2 < columns.length; c2++) {
+        if (ZONE_ORDER[columns[c2].zone] > ZONE_ORDER[zone]) { ins = c2; break; }
+      }
+      columns.splice(ins, 0, colObj);
+    }
+    function appendDayColumn(zone) {
+      var no = maxSlotNo(zone, null) + 1;
+      var id = (zone === 'facility' ? 'slot_fac_' : 'slot_visit_') + no;
+      var st = slotStaff_(id, zone, no, null);
+      staff.push(st); byId[id] = st;
+      insertAfterZone(zone, { col: 0, zone: zone, label: '', staffIds: [id] });
+      return st;
+    }
+    function appendNightColumn(role) {
+      var no = Math.max(maxSlotNo('night', 'ake'), maxSlotNo('night', 'iri')) + 1;
+      var ake = slotStaff_('slot_night_' + no + '_ake', 'night', no, 'ake');
+      var iri = slotStaff_('slot_night_' + no + '_iri', 'night', no, 'iri');
+      staff.push(ake); staff.push(iri); byId[ake.id] = ake; byId[iri.id] = iri;
+      insertAfterZone('night', { col: 0, zone: 'night', label: '', staffIds: [ake.id, iri.id] });
+      return role === 'iri' ? iri : ake;
+    }
+
+    var filled = 0, added = 0;
+    function applyTo(st, p) {
+      st.name = p.name; st.workStart = p.workStart; st.workEnd = p.workEnd;
+      st.fromShift = true; st.manual = false; filled++;
+    }
+    function fillDay(zone, list) {
+      var slots = availSlots(zone, null), idx = 0;
       for (var j = 0; j < list.length; j++) {
-        if (j >= slots.length) { overflow++; continue; }
-        slots[j].name = list[j].name;
-        slots[j].workStart = list[j].workStart;
-        slots[j].workEnd = list[j].workEnd;
-        filled++;
+        if (idx < slots.length) { applyTo(slots[idx], list[j]); idx++; }
+        else { applyTo(appendDayColumn(zone), list[j]); added++; }
       }
     }
-    fill(groups.facility, bySlot('facility'));
-    fill(groups.visit, bySlot('visit'));
-    fill(groups.ake, bySlot('night', 'ake'), true);
-    fill(groups.iri, bySlot('night', 'iri'), true);
-    return { staff: staff, columns: dayColumns, filled: filled, overflow: overflow };
+    function fillNight(role, list) {
+      var slots = availSlots('night', role), idx = 0;
+      for (var j = 0; j < list.length; j++) {
+        if (idx < slots.length) { applyTo(slots[idx], list[j]); idx++; }
+        else { applyTo(appendNightColumn(role), list[j]); added++; }
+      }
+    }
+    fillDay('facility', groups.facility);
+    fillDay('visit', groups.visit);
+    fillNight('ake', groups.ake);
+    fillNight('iri', groups.iri);
+
+    relabel_(columns);
+    var colById = {};
+    for (i = 0; i < columns.length; i++) {
+      for (m = 0; m < columns[i].staffIds.length; m++) colById[columns[i].staffIds[m]] = columns[i].col;
+    }
+    for (i = 0; i < staff.length; i++) if (colById[staff[i].id] !== undefined) staff[i].col = colById[staff[i].id];
+
+    return { staff: staff, columns: columns, filled: filled, overflow: 0, added: added, locked: locked };
   }
 
   /* マスタ → care_schedule_v2 マージ（週間計画アプリのDB形式）
@@ -1976,12 +2316,13 @@ body.printing .rs { display: none; }
       var st = staffById[colDef.staffIds[i]];
       if (!st || !st.name) continue; /* 未指名スロットは名前行を出さない */
       named++;
-      var nm = el('div', 'h-name');
+      var nm = el('div', 'h-name' + (st.manual ? ' manual' : ''));
       if (st.nightRole) {
         var role = el('span', 'h-role');
         role.textContent = st.nightRole === 'ake' ? '明' : '入';
         nm.appendChild(role);
       }
+      if (st.manual) nm.appendChild(txt('span', 'h-lock', '✎'));
       nm.appendChild(document.createTextNode(st.name));
       h.appendChild(nm);
       h.appendChild(txt('div', 'h-time', TS.minToTime(st.workStart) + '-' + TS.minToTime(st.workEnd)));
@@ -2762,11 +3103,18 @@ body.printing .rs { display: none; }
     function onUp(e) {
       if (!drag) return;
       var wasDragging = drag.dragging;
-      var taskId = drag.taskId, source = drag.source, mode = drag.mode;
+      var taskId = drag.taskId, source = drag.source, mode = drag.mode, colFrom = drag.colFrom;
       if (wasDragging && drag.lastEval) commit();
       var pt = getPoint(e);
       clearDrag();
-      if (wasDragging || mode === 'col') return;
+      if (wasDragging) return;
+      if (mode === 'col') {
+        /* 列ヘッダーをドラッグせずタップ＝職員名の手動編集（列入替と非干渉） */
+        if (opts.onColumnTap && colFrom !== null && colFrom !== undefined && !isNaN(colFrom)) {
+          opts.onColumnTap(colFrom);
+        }
+        return;
+      }
       /* タップ処理（シングル/ダブル） */
       var key = source + ':' + taskId;
       var now = Date.now();
@@ -2819,7 +3167,7 @@ body.printing .rs { display: none; }
   'use strict';
 
   var TS = window.WSTime, M = window.WSModel, IM = window.WSImport,
-      S = window.WSStore, B = window.WSBoard;
+      S = window.WSStore, B = window.WSBoard, SH = window.WSShift;
 
   function $(id) { return document.getElementById(id); }
 
@@ -2861,7 +3209,7 @@ body.printing .rs { display: none; }
      どれか1アプリで保存すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。 */
   var COMMON_SYNC_KEY = 'su_sync_common';
   var settings = { breakMinHours: 7, retentionDays: 90, endpoint: '', token: '',
-                   urlCare: 'care-schedule.html', urlShift: 'shift-app.html' };
+                   urlCare: 'care-schedule.html', urlShift: 'shift-app.html', shiftAuto: true };
   function loadSettings() {
     try {
       var raw = localStorage.getItem(SETTINGS_KEY);
@@ -2963,7 +3311,12 @@ body.printing .rs { display: none; }
     store.dispatch({ type: 'INIT_DAY', day: day });
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}
-    try { pullDayNow(date, false); } catch (e) {}
+    /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護） */
+    try {
+      pullDayNow(date, false, null, function () {
+        if (settings.shiftAuto) { try { applyShiftForDate(date, { auto: true }); } catch (e2) {} }
+      });
+    } catch (e) {}
   }
 
   /* ===== 週次支援マスタ／週間計画(care_schedule_v2)連携 ===== */
@@ -3553,13 +3906,14 @@ body.printing .rs { display: none; }
       return false;
     }
     var day = store.get();
-    /* スロット日: 配置済みの支援はそのまま、列へ職員名を流し込む */
-    var fillRes = IM.fillSlots(day.staff, day.columns, r.staff);
+    /* スロット日: 配置済みの支援はそのまま、列へ職員名を流し込む（手動貼付け＝明示取込なので全上書き） */
+    var fillRes = IM.fillSlots(day.staff, day.columns, r.staff, { force: true });
     var msg;
     if (fillRes) {
       store.dispatch({ type: 'SET_STAFF', staff: fillRes.staff, columns: fillRes.columns });
+      try { store.dispatch({ type: 'SET_META', patch: { shiftStamp: SH.attendanceStamp(r.staff) } }); } catch (e) {}
       msg = '出勤者 ' + fillRes.filled + '名を列へ反映しました（支援の配置は維持）';
-      if (fillRes.overflow) msg += '／列不足 ' + fillRes.overflow + '名（列を追加してください）';
+      if (fillRes.added) msg += '／列を ' + fillRes.added + '追加';
     } else {
       var bc = IM.buildColumns(r.staff);
       store.dispatch({ type: 'SET_STAFF', staff: bc.staff, columns: bc.columns });
@@ -3882,12 +4236,13 @@ body.printing .rs { display: none; }
       }
     });
   }
-  function pullDayNow(date, notify, report) {
-    if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
+  function pullDayNow(date, notify, report, done) {
+    function fin() { if (done) { try { done(); } catch (e) {} } }
+    if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; fin(); return; }
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) {
         if (report) $('stResult').textContent = '取得エラー: ' + friendlyErr(j && j.error);
-        return;
+        fin(); return;
       }
       var curRev = (ui.currentDate === date) ? (store.get().meta.rev || 0)
         : (function () { var d = loadDayData(date); return d && d.meta ? (d.meta.rev || 0) : 0; })();
@@ -3908,7 +4263,147 @@ body.printing .rs { display: none; }
       } else if (report) {
         $('stResult').textContent = 'この端末が最新です（rev ' + curRev + '）';
       }
+      fin();
     });
+  }
+
+  /* --- シフト（出勤者）→ 各日の列へ自動反映 ---
+   * シフトアプリのクラウドキー（短縮形・プレフィクス無し）: staff / symbols / sched:YYYY-MM:plan
+   * 同一オリジン端末では localStorage（shiftapp:v1:*）からも読める（オフライン/同端末フォールバック）。*/
+  var SHIFT_LS_PREFIX = 'shiftapp:v1:';
+  function shiftMonth(date) { return String(date).slice(0, 7); }            /* 'YYYY-MM' */
+  function cloudStaffKey() { return 'staff'; }
+  function cloudSymbolsKey() { return 'symbols'; }
+  function cloudPlanKey(ym) { return 'sched:' + ym + ':plan'; }
+  var shiftCache = { ym: '', staff: null, symbols: null, plan: null, at: 0 };
+
+  function readShiftLocal(ym) {
+    try {
+      var st = JSON.parse(localStorage.getItem(SHIFT_LS_PREFIX + 'staff') || 'null');
+      var sy = JSON.parse(localStorage.getItem(SHIFT_LS_PREFIX + 'symbols') || 'null');
+      var pl = JSON.parse(localStorage.getItem(SHIFT_LS_PREFIX + 'sched:' + ym + ':plan') || 'null');
+      if (st && pl) return { staff: st, symbols: sy, plan: pl };
+    } catch (e) {}
+    return null;
+  }
+  /* 月次シフトデータ取得（クラウド優先・同一オリジンLSをフォールバック）。
+   * fresh=true で60秒キャッシュを無視して取り直す。 */
+  function fetchShiftData(ym, fresh, cb) {
+    if (!fresh && shiftCache.ym === ym && shiftCache.plan &&
+        (Date.now() - shiftCache.at < 60000)) {
+      cb({ staff: shiftCache.staff, symbols: shiftCache.symbols, plan: shiftCache.plan });
+      return;
+    }
+    if (syncOn()) {
+      gas({ action: 'pull', keys: [cloudStaffKey(), cloudSymbolsKey(), cloudPlanKey(ym)] }, function (j) {
+        var data = null;
+        if (j && j.entries) {
+          var e = j.entries;
+          var st = e[cloudStaffKey()] && e[cloudStaffKey()].data;
+          var sy = e[cloudSymbolsKey()] && e[cloudSymbolsKey()].data;
+          var pl = e[cloudPlanKey(ym)] && e[cloudPlanKey(ym)].data;
+          if (st && pl) data = { staff: st, symbols: sy, plan: pl };
+        }
+        if (!data) data = readShiftLocal(ym);   /* クラウド未取得→同端末LSで代替 */
+        if (data) shiftCache = { ym: ym, staff: data.staff, symbols: data.symbols, plan: data.plan, at: Date.now() };
+        cb(data);
+      });
+    } else {
+      var loc = readShiftLocal(ym);
+      if (loc) shiftCache = { ym: ym, staff: loc.staff, symbols: loc.symbols, plan: loc.plan, at: Date.now() };
+      cb(loc);
+    }
+  }
+
+  /* 指定日の出勤者をスロットへ反映。
+   * opts.force: 手動編集を無視して全上書き（「再取込」ボタン用）
+   * opts.fresh: シフトデータをキャッシュ無視で取り直す
+   * opts.report: 結果を取込ダイアログに表示
+   * cb(result|null) は完了時に呼ぶ（任意）。 */
+  function applyShiftForDate(date, opts, cb) {
+    opts = opts || {};
+    function done(r) { if (cb) { try { cb(r); } catch (e) {} } }
+    var ym = shiftMonth(date);
+    fetchShiftData(ym, !!opts.fresh, function (data) {
+      if (ui.currentDate !== date) { done(null); return; }   /* 画面が他日へ移った */
+      if (!data || !data.plan) {
+        if (opts.report) $('imResult').textContent =
+          syncOn() ? '当月のシフト（' + ym + '）がサーバーにありません'
+                   : 'エンドポイント未設定のためシフトを取得できません（設定でURL/トークンを入力）';
+        done(null); return;
+      }
+      var att = SH.extractAttendance(date, data.staff, data.symbols, data.plan);
+      var stamp = SH.attendanceStamp(att);
+      var day = store.get();
+      if (!opts.force && day.meta.shiftStamp === stamp) { done({ skipped: true }); return; }
+      var res = IM.fillSlots(day.staff, day.columns, att, { force: !!opts.force });
+      if (!res) {
+        if (opts.report) $('imResult').textContent =
+          'この日はスロット型ではないため自動反映できません（支援マスタから生成された日で利用できます）';
+        done(null); return;
+      }
+      store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
+      store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
+      var msg = 'シフトから出勤者 ' + res.filled + '名を反映';
+      if (res.locked) msg += '（手動編集 ' + res.locked + '枠は保護）';
+      if (res.added) msg += '／列を ' + res.added + '追加';
+      if (opts.report || opts.toast) { $('imResult').textContent = msg; toast(msg); }
+      else setSyncState('シフト反映 ' + res.filled + '名');
+      done(res);
+    });
+  }
+
+  /* 列ヘッダーのタップ＝その列の職員名・勤務時間を手動編集（manual印を立てて保護） */
+  function editColumnStaff(col) {
+    var day = store.get();
+    var colDef = null, i;
+    for (i = 0; i < day.columns.length; i++) if (day.columns[i].col === col) colDef = day.columns[i];
+    if (!colDef) return;
+    var slots = [];
+    for (i = 0; i < colDef.staffIds.length; i++) {
+      var st = M.findStaff(day.staff, colDef.staffIds[i]);
+      if (st) slots.push(st);
+    }
+    if (!slots.length) return;
+    var staff = day.staff.slice();
+    var changed = false;
+    for (i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      var roleLabel = s.nightRole === 'ake' ? '（夜勤明け）' : (s.nightRole === 'iri' ? '（夜勤入り）' : '');
+      var cur = s.name || '';
+      if (cur && (s.workStart !== undefined)) {
+        /* 既定窓以外なら時刻も併記して編集できるように */
+        cur = s.name;
+      }
+      var ans = window.prompt(colDef.label + roleLabel + ' の職員名（空欄で削除）。\n' +
+        '「氏名」または「氏名 9:00-18:00」で時間も指定可。', s.name || '');
+      if (ans === null) continue;                /* キャンセル */
+      var parsed = parseNameTime_(ans, s);
+      var ns = {};
+      for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) ns[k] = s[k];
+      ns.name = parsed.name;
+      ns.workStart = parsed.workStart; ns.workEnd = parsed.workEnd;
+      ns.manual = parsed.name ? true : false;     /* 空にしたら保護解除 */
+      ns.fromShift = false;
+      for (var z = 0; z < staff.length; z++) if (staff[z].id === ns.id) staff[z] = ns;
+      changed = true;
+    }
+    if (changed) {
+      store.dispatch({ type: 'SET_STAFF', staff: staff, columns: day.columns });
+      toast('職員を手動設定しました（シフト再反映から保護されます）');
+    }
+  }
+  /* 「氏名」または「氏名 9:00-18:00」を解釈。時刻省略時は既存窓を維持 */
+  function parseNameTime_(text, slot) {
+    var t = String(text).trim();
+    var ws = slot.workStart, we = slot.workEnd;
+    var mm = t.match(/\s+(\d{1,2}(?::\d{2})?)\s*-\s*(\d{1,2}(?::\d{2})?)\s*$/);
+    var name = t;
+    if (mm) {
+      var a = TS.timeToMin(mm[1]), b = TS.timeToMin(mm[2]);
+      if (a !== null && b !== null && b > a) { ws = a; we = b; name = t.slice(0, mm.index).trim(); }
+    }
+    return { name: name, workStart: ws, workEnd: we };
   }
 
   /* --- 週間計画(care_schedule_v2) --- */
@@ -4015,7 +4510,10 @@ body.printing .rs { display: none; }
     lastPullAt = Date.now();
     pullMasterNow();
     pullCareNow(notify);
-    pullDayNow(ui.currentDate, notify);
+    var d0 = ui.currentDate;
+    pullDayNow(d0, notify, null, function () {
+      if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }); } catch (e) {} }
+    });
   }
 
   /* ===== イベント配線 ===== */
@@ -4118,6 +4616,17 @@ body.printing .rs { display: none; }
     }
     $('imShiftDemo').addEventListener('click', function () { $('imShiftText').value = DEMO_TSV; });
     $('imShiftApply').addEventListener('click', function () { applyShiftText($('imShiftText').value); });
+    /* クラウドのシフトから当日出勤者を取得して反映（手動編集は保護） */
+    $('imShiftCloud').addEventListener('click', function () {
+      $('imResult').textContent = 'シフトを取得中…';
+      applyShiftForDate(ui.currentDate, { fresh: true, report: true });
+    });
+    /* 再取込（全上書き）: 手動編集も無視してシフトで埋め直す */
+    $('imShiftRecloud').addEventListener('click', function () {
+      if (!window.confirm('手動で編集した職員枠も含めて、シフトの内容で全て上書きします。よろしいですか？')) return;
+      $('imResult').textContent = 'シフトを取得中…';
+      applyShiftForDate(ui.currentDate, { fresh: true, force: true, report: true });
+    });
     $('imWeeklyApply').addEventListener('click', function () { applyWeeklyJson($('imWeeklyText').value); });
     $('imWeeklyFile').addEventListener('change', function () {
       var f = $('imWeeklyFile').files[0];
@@ -4245,6 +4754,7 @@ body.printing .rs { display: none; }
       $('stToken').value = settings.token;
       $('stUrlCare').value = settings.urlCare;
       $('stUrlShift').value = settings.urlShift;
+      $('stShiftAuto').checked = settings.shiftAuto !== false;
       $('stResult').textContent = '';
       showModal('mSettings');
     });
@@ -4256,6 +4766,7 @@ body.printing .rs { display: none; }
       settings.token = $('stToken').value.trim();
       settings.urlCare = $('stUrlCare').value.trim() || 'care-schedule.html';
       settings.urlShift = $('stUrlShift').value.trim() || 'shift-app.html';
+      settings.shiftAuto = $('stShiftAuto').checked;
       saveSettings();
       hideModals();
       renderAll();
@@ -4405,6 +4916,7 @@ body.printing .rs { display: none; }
         store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
         toast('列を移動しました');
       },
+      onColumnTap: function (col) { try { editColumnStaff(col); } catch (e) {} },
       onTaskTap: function (taskId) {
         ui.selectedId = ui.selectedId === taskId ? null : taskId;
         renderAll();
@@ -4434,6 +4946,11 @@ body.printing .rs { display: none; }
     try { reconcileWeekly(); } catch (e) {}
     try { autoLoadMaster(); } catch (e) {}
     try { pullAll(false); } catch (e) {}
+    /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
+     * オンライン時は pullAll→pullDayNow 完了後に反映するためここでは行わない。 */
+    if (!syncOn() && settings.shiftAuto) {
+      try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (e) {}
+    }
     window.addEventListener('focus', function () {
       /* 他端末の更新を取り込む（10秒スロットル） */
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
