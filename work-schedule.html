@@ -1174,6 +1174,18 @@ body.printing .rs { display: none; }
     return 'facility';
   }
 
+  /* セル取得（非ゼロ埋め '5' 優先・'05' もフォールバック）。空は null */
+  function cellAt(map, dayNo, dayStr) {
+    if (!map) return null;
+    var raw = map[dayStr];
+    if (raw === undefined || raw === null) {
+      var padded = (dayNo < 10 ? '0' : '') + dayNo;
+      if (padded !== dayStr) raw = map[padded];
+    }
+    if (raw === undefined || raw === null || String(raw) === '') return null;
+    return raw;
+  }
+
   /* 指定日の出勤者抽出。
    *   dateStr: 'YYYY-MM-DD'
    *   shiftStaff: シフト staff 配列 [{id, name, group, active, ...}]
@@ -1196,41 +1208,50 @@ body.printing .rs { display: none; }
       if (isDaycareStaff(st)) continue;        /* デイ(通所)職員はワースケ対象外＝除外 */
       var name = st.name ? String(st.name).trim() : '';
       if (!name) continue;
-      var cellMap = plan.cells[st.id];
-      if (!cellMap) continue;
-      /* シフト側は String(day)（非ゼロ埋め '5'）でキーを持つが、念のため '05' 形式もフォールバック */
-      var raw = cellMap[dayStr];
-      if (raw === undefined || raw === null) {
-        var padded = (dayNo < 10 ? '0' : '') + dayNo;
-        if (padded !== dayStr) raw = cellMap[padded];
-      }
-      if (raw === undefined || raw === null || String(raw) === '') continue;
-      var parsed = parseShiftCell(raw, symbols);
-      if (!parsed.parts.length) continue;
       var group = st.group || 'day';
-      var mainDiv = st.mainDivision || '';
-      for (var p = 0; p < parsed.parts.length; p++) {
-        var part = parsed.parts[p];
-        if (part.kind === 'work') {
-          if (part.startMin === null || part.endMin === null) continue;
-          if (part.endMin > part.startMin) {
-            out.push({ name: name, zone: workZone(group, mainDiv),
-              workStart: part.startMin, workEnd: part.endMin, nightRole: null });
-          } else if (part.endMin < part.startMin) {
-            /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
-             * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
-            out.push({ name: name, zone: 'night', workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
-            out.push({ name: name, zone: 'night', workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
-          }
-          /* end == start は退化（0分/24時間）として無視 */
-        } else if (part.kind === 'nightIn') {
-          var ws = (part.startMin !== null) ? part.startMin : 1260;
-          out.push({ name: name, zone: 'night', workStart: ws, workEnd: 1440, nightRole: 'iri' });
-        } else if (part.kind === 'nightOut') {
-          var we = (part.endMin !== null) ? part.endMin : 420;
-          out.push({ name: name, zone: 'night', workStart: 0, workEnd: we, nightRole: 'ake' });
+      /* 主区分(cells)＋従区分(subCells[区分])の全行を読む。
+       * 夜勤を施設行＋訪問行の2行で書くケース・他区分応援行に対応する。 */
+      var rows = [];
+      var mainDiv = st.mainDivision || '施設';
+      var mraw = cellAt(plan.cells ? plan.cells[st.id] : null, dayNo, dayStr);
+      if (mraw !== null) rows.push({ division: mainDiv, raw: mraw });
+      var sc = plan.subCells ? plan.subCells[st.id] : null;
+      if (sc) {
+        for (var dv in sc) {
+          if (!Object.prototype.hasOwnProperty.call(sc, dv)) continue;
+          if (dv === '通所') continue;          /* デイ行は除外 */
+          var sraw = cellAt(sc[dv], dayNo, dayStr);
+          if (sraw !== null) rows.push({ division: dv, raw: sraw });
         }
-        /* off / paidOff / publicOff は出勤としない */
+      }
+      for (var ri = 0; ri < rows.length; ri++) {
+        var division = rows[ri].division;
+        if (division === '通所') continue;
+        var parsed = parseShiftCell(rows[ri].raw, symbols);
+        if (!parsed.parts.length) continue;
+        for (var p = 0; p < parsed.parts.length; p++) {
+          var part = parsed.parts[p];
+          if (part.kind === 'work') {
+            if (part.startMin === null || part.endMin === null) continue;
+            if (part.endMin > part.startMin) {
+              out.push({ name: name, zone: workZone(group, division), division: division,
+                workStart: part.startMin, workEnd: part.endMin, nightRole: null });
+            } else if (part.endMin < part.startMin) {
+              /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
+               * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
+              out.push({ name: name, zone: 'night', division: division, workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
+              out.push({ name: name, zone: 'night', division: division, workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
+            }
+            /* end == start は退化（0分/24時間）として無視 */
+          } else if (part.kind === 'nightIn') {
+            var ws = (part.startMin !== null) ? part.startMin : 1260;
+            out.push({ name: name, zone: 'night', division: division, workStart: ws, workEnd: 1440, nightRole: 'iri' });
+          } else if (part.kind === 'nightOut') {
+            var we = (part.endMin !== null) ? part.endMin : 420;
+            out.push({ name: name, zone: 'night', division: division, workStart: 0, workEnd: we, nightRole: 'ake' });
+          }
+          /* off / paidOff / publicOff は出勤としない */
+        }
       }
     }
     return out;
@@ -1241,7 +1262,7 @@ body.printing .rs { display: none; }
     var arr = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      arr.push(a.zone + '|' + (a.nightRole || '') + '|' + a.name + '|' + a.workStart + '|' + a.workEnd);
+      arr.push(a.zone + '|' + (a.division || '') + '|' + (a.nightRole || '') + '|' + a.name + '|' + a.workStart + '|' + a.workEnd);
     }
     arr.sort();
     return arr.join(';');
@@ -1405,6 +1426,7 @@ body.printing .rs { display: none; }
     for (var i = 0; i < columns.length; i++) {
       columns[i].col = i;
       if (columns[i].zone === 'facility') { fac++; columns[i].label = '施設' + fac; }
+      else if (columns[i].zone === 'night' && columns[i].division) { columns[i].label = '夜' + columns[i].division; }
       else { num++; columns[i].label = circled(num); }
     }
     return columns;
@@ -1468,7 +1490,8 @@ body.printing .rs { display: none; }
     var i;
     for (i = 0; i < columns.length; i++) {
       cols.push({ col: columns[i].col, zone: columns[i].zone,
-                  label: columns[i].label, staffIds: columns[i].staffIds.slice() });
+                  label: columns[i].label, staffIds: columns[i].staffIds.slice(),
+                  division: columns[i].division || null });
       if (columns[i].col === fromCol) fi = i;
     }
     if (fi < 0) return null;
@@ -1609,12 +1632,13 @@ body.printing .rs { display: none; }
    * シフト取込は列へ職員名を流し込むだけにする。
    * スロットID: slot_fac_n / slot_visit_n / slot_night_n_ake / slot_night_n_iri */
 
-  function slotStaff_(id, zone, slotNo, nightRole) {
+  function slotStaff_(id, zone, slotNo, nightRole, division) {
     var ws = 420, we = 1260;                      /* 日中スロットの既定勤務窓 */
     if (nightRole === 'ake') { ws = 0; we = 540; }
     if (nightRole === 'iri') { ws = 1260; we = 1440; }
     return { id: id, name: '', zone: zone, col: -1,
-             workStart: ws, workEnd: we, nightRole: nightRole || null, slot: slotNo };
+             workStart: ws, workEnd: we, nightRole: nightRole || null, slot: slotNo,
+             division: division || null };
   }
 
   /* マスタ → スロット職員・列・配置済みタスク一式 */
@@ -1630,8 +1654,8 @@ body.printing .rs { display: none; }
       else maxVisit = Math.max(maxVisit, sl);
     }
     var staff = [], columns = [];
-    function pushCol(zone, ids) {
-      columns.push({ col: columns.length, zone: zone, label: '', staffIds: ids });
+    function pushCol(zone, ids, division) {
+      columns.push({ col: columns.length, zone: zone, label: '', staffIds: ids, division: division || null });
     }
     for (i = 1; i <= maxFac; i++) {
       var fs = slotStaff_('slot_fac_' + i, 'facility', i, null);
@@ -1641,10 +1665,13 @@ body.printing .rs { display: none; }
       var vs = slotStaff_('slot_visit_' + i, 'visit', i, null);
       staff.push(vs); pushCol('visit', [vs.id]);
     }
-    for (i = 1; i <= maxNight; i++) {
-      var na = slotStaff_('slot_night_' + i + '_ake', 'night', i, 'ake');
-      var ni = slotStaff_('slot_night_' + i + '_iri', 'night', i, 'iri');
-      staff.push(na); staff.push(ni); pushCol('night', [na.id, ni.id]);
+    /* 夜勤は「左=施設 / 右=訪問」の2列に固定（各列に 明(ake)＋入(iri)） */
+    var NIGHT_DIVS = [{ key: 'fac', div: '施設' }, { key: 'visit', div: '訪問' }];
+    for (i = 0; i < NIGHT_DIVS.length; i++) {
+      var nd = NIGHT_DIVS[i];
+      var na = slotStaff_('slot_night_' + nd.key + '_ake', 'night', 1, 'ake', nd.div);
+      var ni = slotStaff_('slot_night_' + nd.key + '_iri', 'night', 1, 'iri', nd.div);
+      staff.push(na); staff.push(ni); pushCol('night', [na.id, ni.id], nd.div);
     }
     relabel_(columns);
     var colById = {};
@@ -1660,7 +1687,7 @@ body.printing .rs { display: none; }
       var slotNo = e.slot || 1;
       var sid;
       if (e.zone === 'facility') sid = 'slot_fac_' + slotNo;
-      else if (e.zone === 'night') sid = 'slot_night_' + slotNo + (e.start <= 540 ? '_ake' : '_iri');
+      else if (e.zone === 'night') sid = 'slot_night_fac_' + (e.start <= 540 ? 'ake' : 'iri'); /* マスタ夜勤は既定で施設列 */
       else sid = 'slot_visit_' + slotNo;
       var t = M.newTask({
         kind: 'care', src: 'weekly',
@@ -1716,7 +1743,8 @@ body.printing .rs { display: none; }
     var columns = [];
     for (i = 0; i < dayColumns.length; i++) {
       columns.push({ col: dayColumns[i].col, zone: dayColumns[i].zone,
-        label: dayColumns[i].label, staffIds: dayColumns[i].staffIds.slice() });
+        label: dayColumns[i].label, staffIds: dayColumns[i].staffIds.slice(),
+        division: dayColumns[i].division || null });
     }
 
     /* 手動保護スロットの職員名（force時は無効） */
@@ -1737,13 +1765,17 @@ body.printing .rs { display: none; }
       resetSlotWindow_(s);
     }
 
-    /* 出勤者をゾーン/役割で分類（保護中の氏名は除外） */
-    var groups = { facility: [], visit: [], ake: [], iri: [] };
+    /* 出勤者をゾーン/役割で分類（保護中の氏名は除外）。
+     * 夜勤は区分(施設/訪問)×役割(明/入)で4分類し、左=施設・右=訪問の列へ振り分ける。 */
+    var groups = { facility: [], visit: [], nfa: [], nfi: [], nva: [], nvi: [] };
     for (i = 0; i < parsed.length; i++) {
       var p = parsed[i];
       if (lockedNames[p.name]) continue;
-      if (p.zone === 'facility') groups.facility.push(p);
-      else if (p.zone === 'night') groups[p.nightRole === 'iri' ? 'iri' : 'ake'].push(p);
+      if (p.zone === 'night') {
+        var dk = (p.division === '訪問') ? 'v' : 'f';
+        var rk = (p.nightRole === 'iri') ? 'i' : 'a';
+        groups['n' + dk + rk].push(p);
+      } else if (p.zone === 'facility') groups.facility.push(p);
       else groups.visit.push(p);
     }
     /* 訪問介護員は出勤開始時刻の早い順に左→右へ並べる（早番が左・遅番が右） */
@@ -1751,8 +1783,8 @@ body.printing .rs { display: none; }
       return (a.workStart || 0) - (b.workStart || 0) || (a.workEnd || 0) - (b.workEnd || 0);
     });
 
-    /* 列表示順での空き（非保護）スロット一覧 */
-    function availSlots(zone, role) {
+    /* 列表示順での空き（非保護）スロット一覧。夜勤は division も一致させる */
+    function availSlots(zone, role, division) {
       var out = [];
       for (var cc = 0; cc < columns.length; cc++) {
         var ids = columns[cc].staffIds;
@@ -1760,7 +1792,10 @@ body.printing .rs { display: none; }
           var st = byId[ids[mm]];
           if (!st || String(st.id).indexOf('slot_') !== 0) continue;
           if (st.zone !== zone) continue;
-          if (zone === 'night' && st.nightRole !== role) continue;
+          if (zone === 'night') {
+            if (st.nightRole !== role) continue;
+            if (division && st.division !== division) continue;
+          }
           if (st.manual && !force) continue;
           out.push(st);
         }
@@ -1796,12 +1831,14 @@ body.printing .rs { display: none; }
       insertAfterZone(zone, { col: 0, zone: zone, label: '', staffIds: [id] });
       return st;
     }
-    function appendNightColumn(role) {
-      var no = Math.max(maxSlotNo('night', 'ake'), maxSlotNo('night', 'iri')) + 1;
-      var ake = slotStaff_('slot_night_' + no + '_ake', 'night', no, 'ake');
-      var iri = slotStaff_('slot_night_' + no + '_iri', 'night', no, 'iri');
+    var nightExtra = 0;
+    function appendNightColumn(role, division) {
+      nightExtra++;
+      var key = ((division === '訪問') ? 'visit' : 'fac') + 'x' + nightExtra;
+      var ake = slotStaff_('slot_night_' + key + '_ake', 'night', nightExtra + 1, 'ake', division);
+      var iri = slotStaff_('slot_night_' + key + '_iri', 'night', nightExtra + 1, 'iri', division);
       staff.push(ake); staff.push(iri); byId[ake.id] = ake; byId[iri.id] = iri;
-      insertAfterZone('night', { col: 0, zone: 'night', label: '', staffIds: [ake.id, iri.id] });
+      insertAfterZone('night', { col: 0, zone: 'night', label: '', staffIds: [ake.id, iri.id], division: division || null });
       return role === 'iri' ? iri : ake;
     }
 
@@ -1834,17 +1871,19 @@ body.printing .rs { display: none; }
         else { applyTo(appendDayColumn(zone), list[j]); added++; }
       }
     }
-    function fillNight(role, list) {
-      var slots = availSlots('night', role), idx = 0;
+    function fillNight(role, division, list) {
+      var slots = availSlots('night', role, division), idx = 0;
       for (var j = 0; j < list.length; j++) {
         if (idx < slots.length) { applyTo(slots[idx], list[j]); idx++; }
-        else { applyTo(appendNightColumn(role), list[j]); added++; }
+        else { applyTo(appendNightColumn(role, division), list[j]); added++; }
       }
     }
     fillDay('facility', groups.facility);
     fillDay('visit', groups.visit);
-    fillNight('ake', groups.ake);
-    fillNight('iri', groups.iri);
+    fillNight('ake', '施設', groups.nfa);
+    fillNight('iri', '施設', groups.nfi);
+    fillNight('ake', '訪問', groups.nva);
+    fillNight('iri', '訪問', groups.nvi);
 
     relabel_(columns);
     var colById = {};
