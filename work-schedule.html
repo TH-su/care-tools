@@ -1212,9 +1212,17 @@ body.printing .rs { display: none; }
       for (var p = 0; p < parsed.parts.length; p++) {
         var part = parsed.parts[p];
         if (part.kind === 'work') {
-          if (part.startMin === null || part.endMin === null || !(part.endMin > part.startMin)) continue;
-          out.push({ name: name, zone: workZone(group, mainDiv),
-            workStart: part.startMin, workEnd: part.endMin, nightRole: null });
+          if (part.startMin === null || part.endMin === null) continue;
+          if (part.endMin > part.startMin) {
+            out.push({ name: name, zone: workZone(group, mainDiv),
+              workStart: part.startMin, workEnd: part.endMin, nightRole: null });
+          } else if (part.endMin < part.startMin) {
+            /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
+             * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
+            out.push({ name: name, zone: 'night', workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
+            out.push({ name: name, zone: 'night', workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
+          }
+          /* end == start は退化（0分/24時間）として無視 */
         } else if (part.kind === 'nightIn') {
           var ws = (part.startMin !== null) ? part.startMin : 1260;
           out.push({ name: name, zone: 'night', workStart: ws, workEnd: 1440, nightRole: 'iri' });
