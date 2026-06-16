@@ -1270,6 +1270,23 @@ body.printing .rs { display: none; }
         }
       }
     }
+    return dedupeAttendance(out);
+  }
+
+  /* 同一人物・同一役割・同一時間帯の重複を排除する。
+   * 夜勤を2行(cells＋subCells)で書く運用や、同一時間帯を複数区分行に重ねて記録した場合、
+   * 同じ勤務が複数エントリとして出てしまう（例: 髙尾の夕方が3行に増殖）ため。
+   * 区分(division)はキーに含めない＝同時刻に2区分の勤務は物理的に不可能なので最初の出現を採用する。
+   * 勤務時間帯が異なる本来の分割勤務(7-9 と 17-21)はキーが異なり残る。 */
+  function dedupeAttendance(list) {
+    var seen = {}, out = [];
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      var key = a.name + '|' + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(a);
+    }
     return out;
   }
 
@@ -1746,21 +1763,80 @@ body.printing .rs { display: none; }
     }
     if (!isSlotDay) return null;
 
-    /* staff をクローン */
+    function isBlockId_(id) { return /_b\d+$/.test(String(id)); }
+    var nightExtra = 0;   /* appendNightColumn 用カウンタ（夜勤正準化でも使うため先頭で宣言） */
+
+    /* staff をクローン。分割勤務の自動ブロック(_bN)は毎回作り直すため非手動分は破棄する
+     * （再反映のたびに同名ブロックが累積・ID衝突して重複表示される不具合の防止）。 */
     var staff = [], byId = {};
     for (i = 0; i < dayStaff.length; i++) {
+      if (isBlockId_(dayStaff[i].id) && !dayStaff[i].manual) continue;
       var ns = {};
       for (k in dayStaff[i]) {
         if (Object.prototype.hasOwnProperty.call(dayStaff[i], k)) ns[k] = dayStaff[i][k];
       }
       staff.push(ns); byId[ns.id] = ns;
     }
-    /* columns をクローン（並び順・staffIdsを保持） */
+    /* columns をクローン（破棄したブロックIDは staffIds から除外する） */
     var columns = [];
     for (i = 0; i < dayColumns.length; i++) {
+      var srcIds = dayColumns[i].staffIds, keepIds = [];
+      for (k = 0; k < srcIds.length; k++) if (byId[srcIds[k]]) keepIds.push(srcIds[k]);
       columns.push({ col: dayColumns[i].col, zone: dayColumns[i].zone,
-        label: dayColumns[i].label, staffIds: dayColumns[i].staffIds.slice(),
+        label: dayColumns[i].label, staffIds: keepIds,
         division: dayColumns[i].division || null });
+    }
+
+    /* ===== 夜勤列の正準化 =====
+     * concept-B以前に生成された日は旧構造の夜勤列(division無し・slot_night_1/2・丸数字ラベル)を
+     * 保持している。新fillSlotsはそれを埋められず残置・誤ラベルになるため、
+     * 非手動の夜勤列を一掃し「左=夜施設 / 右=夜訪問」の2列を必ず用意する。
+     * 手動保護された夜勤職員は氏名を退避し、正準列へ戻す。 */
+    var keepNight = [];
+    var newCols = [], removedNight = {};
+    for (i = 0; i < columns.length; i++) {
+      if (columns[i].zone !== 'night') { newCols.push(columns[i]); continue; }
+      for (m = 0; m < columns[i].staffIds.length; m++) {
+        var nst = byId[columns[i].staffIds[m]];
+        if (nst && nst.manual && nst.name && !force) {
+          var dv = nst.division || columns[i].division ||
+                   (String(nst.id).indexOf('visit') >= 0 ? '訪問' : '施設');
+          keepNight.push({ name: nst.name, division: dv, nightRole: nst.nightRole || 'iri',
+                           workStart: nst.workStart, workEnd: nst.workEnd });
+        }
+        removedNight[columns[i].staffIds[m]] = true;
+      }
+      /* 夜勤列は丸ごと撤去（後で正準2列を作り直す） */
+    }
+    columns = newCols;
+    var keptStaff = [];
+    for (i = 0; i < staff.length; i++) {
+      if (removedNight[staff[i].id] || staff[i].zone === 'night') { delete byId[staff[i].id]; continue; }
+      keptStaff.push(staff[i]);
+    }
+    staff = keptStaff;
+    function addCanonNight_(key, div) {
+      var ake = slotStaff_('slot_night_' + key + '_ake', 'night', 1, 'ake', div);
+      var iri = slotStaff_('slot_night_' + key + '_iri', 'night', 1, 'iri', div);
+      staff.push(ake); staff.push(iri); byId[ake.id] = ake; byId[iri.id] = iri;
+      columns.push({ col: columns.length, zone: 'night', label: '',
+                     staffIds: [ake.id, iri.id], division: div });
+    }
+    addCanonNight_('fac', '施設');
+    addCanonNight_('visit', '訪問');
+    /* 手動保護の夜勤職員を正準列へ戻す（manual印を維持＝再反映から保護） */
+    for (i = 0; i < keepNight.length; i++) {
+      var kn = keepNight[i], reDone = false;
+      for (c = 0; c < columns.length && !reDone; c++) {
+        if (columns[c].zone !== 'night' || columns[c].division !== kn.division) continue;
+        for (m = 0; m < columns[c].staffIds.length; m++) {
+          var ks = byId[columns[c].staffIds[m]];
+          if (ks && ks.nightRole === kn.nightRole && !ks.name) {
+            ks.name = kn.name; ks.workStart = kn.workStart; ks.workEnd = kn.workEnd;
+            ks.manual = true; ks.fromShift = false; reDone = true; break;
+          }
+        }
+      }
     }
 
     /* 手動保護スロットの職員名（force時は無効） */
@@ -1847,7 +1923,6 @@ body.printing .rs { display: none; }
       insertAfterZone(zone, { col: 0, zone: zone, label: '', staffIds: [id] });
       return st;
     }
-    var nightExtra = 0;
     function appendNightColumn(role, division) {
       nightExtra++;
       var key = ((division === '訪問') ? 'visit' : 'fac') + 'x' + nightExtra;
@@ -1868,6 +1943,7 @@ body.printing .rs { display: none; }
     function addBlockToColumn(primaryStaff, p) {
       blockSeq++;
       var bid = primaryStaff.id + '_b' + blockSeq;
+      while (byId[bid]) { blockSeq++; bid = primaryStaff.id + '_b' + blockSeq; }  /* ID衝突回避 */
       var st = slotStaff_(bid, primaryStaff.zone, primaryStaff.slot, primaryStaff.nightRole, primaryStaff.division);
       applyTo(st, p);
       staff.push(st); byId[bid] = st;
