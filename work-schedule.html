@@ -1374,10 +1374,19 @@ body.printing .rs { display: none; }
   /* 既定列数（職員が少ない場合は空列でこの数まで確保。多ければ増える） */
   var DEFAULT_COLS = { facility: 3, visit: 12, night: 2 };
 
-  /* 特定職員の固定配置（氏名→スロットID）。nameKey は空白を除いて照合する。
-   * 緒方瞳は施設外部の利用者対応専任のため、ソート/通常配置に関わらず訪問⑫(slot_visit_12)に固定。 */
-  var RESERVED_SLOTS = [{ nameKey: '緒方瞳', slotId: 'slot_visit_12' }];
+  /* 特定職員の固定配置（氏名→スロットID）。nameKey は空白除去のうえ前方一致で照合
+   * （姓のみ指定でも可。例 '臼井' は '臼井◯◯' に一致）。出勤時のみ・ソート/通常配置に優先。
+   * - 臼井: 訪問介護員の左端(①=slot_visit_1)
+   * - 緒方瞳: 施設外部の利用者対応専任のため訪問⑫(slot_visit_12) */
+  var RESERVED_SLOTS = [
+    { nameKey: '臼井', slotId: 'slot_visit_1' },
+    { nameKey: '緒方瞳', slotId: 'slot_visit_12' }
+  ];
   function stripName_(n) { return String(n === null || n === undefined ? '' : n).replace(/[\s　]/g, ''); }
+  function nameMatches_(name, nameKey) {
+    var s = stripName_(name);
+    return s !== '' && s.indexOf(nameKey) === 0;   /* 前方一致（姓のみ指定でも当たる） */
+  }
 
   /* 曜日キー（care-schedule 規約 0=月..6=日 と同順） */
   var DOW_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -1805,7 +1814,7 @@ body.printing .rs { display: none; }
         }
         if (!target) continue;                 /* その列が無い/手動保護中なら通常配置に回す */
         for (j = 0; j < list.length; j++) {
-          if (stripName_(list[j].name) === rule.nameKey) {
+          if (nameMatches_(list[j].name, rule.nameKey)) {
             applyTo(target, list[j]); taken[target.id] = true; list.splice(j, 1); break;
           }
         }
