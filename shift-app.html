@@ -70,6 +70,13 @@ main { padding: 0 10px 60px; }
 
 /* ── グリッド ── */
 #gridWrap { overflow: auto; background: #fff; border: 1px solid var(--g3); max-height: calc(100vh - 150px); }
+/* 全体表示（1画面に収める）: 表をJS計算の縮小率で transform。俯瞰時は固定列/ヘッダを解除 */
+body.fitscreen #gridWrap { overflow: hidden; max-height: none; }
+body.fitscreen table.sheet { transform-origin: top left; }
+body.fitscreen table.sheet thead th { position: static; }
+body.fitscreen table.sheet .sticky1, body.fitscreen table.sheet .sticky2 { position: static; }
+body.fitscreen table.sheet .noprint { display: none; }   /* 俯瞰時は連絡事項等の補助列を隠して縮小率を確保 */
+#btnFit.on { background: rgba(255,255,255,.38); }
 table.sheet { border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
 table.sheet th, table.sheet td { border-right: 1px solid #000; border-bottom: 1px solid #000;
   padding: 2px 3px; text-align: center; white-space: nowrap; background: #fff; }
@@ -244,6 +251,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <button id="btnAuto" class="primary">⚡ 自動作成</button>
   <button id="btnActual" title="実績レイヤに切り替えて実際の勤務を記録（予定があれば複製して開始）">📝 実績</button>
   <button id="btnFreee" title="freee勤怠スケジュールCSVを出力">freee出力</button>
+  <button id="btnFit" title="シフト表全体を1画面に収めて俯瞰／通常表示に戻す">🔍 全体表示</button>
   <button id="btnPrint">🖨 印刷</button>
   <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
   <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
@@ -2374,6 +2382,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       for (var i = 0; i < DIVISIONS.length; i++) {
         if (DIVISIONS[i] !== mainDiv) divs.push(DIVISIONS[i]);
       }
+      /* 夜勤者は「上=訪問 / 下=施設」の表示順にする（データは不変・表示順のみ並べ替え） */
+      if (st.group === 'night') {
+        var nOrder = { '訪問': 0, '施設': 1, '通所': 2 };
+        divs.sort(function (a, b) {
+          return (nOrder[a] === undefined ? 9 : nOrder[a]) - (nOrder[b] === undefined ? 9 : nOrder[b]);
+        });
+      }
       var lines = [];
       for (var j = 0; j < divs.length; j++) {
         var isHidden = hidden.indexOf(divs[j]) >= 0;
@@ -3508,7 +3523,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var reqs = app.requests;
       var days = app.days;
       var w = 110 + days * 28;
-      var h = '<table class="plain eqcols" style="font-size:11px;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
+      var h = '<div class="hint" style="margin:2px 0 6px;color:#666;font-size:11px">セルをクリックすると <b>希 → 有 → 消去</b>（削除）と切り替わります。読み込んだ希望休・有給も、ここでクリック消去できます。</div>';
+      h += '<table class="plain eqcols" style="font-size:11px;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
       for (var c = 0; c < days; c++) h += '<col style="width:28px">';
       h += '</colgroup><tr><th>氏名</th>';
       for (var d = 1; d <= days; d++) h += '<th style="text-align:center">' + d + '</th>';
@@ -4497,6 +4513,34 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.updateEmptyGuide();
       document.getElementById('printTitle').textContent =
         this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）';
+      try { this.applyFitScreen(); } catch (e) {}
+    },
+
+    /* 全体表示（1画面に収める）: シフト表をビューポートに収まる縮小率で transform。
+     * 俯瞰用のためsticky列/ヘッダはCSSで解除。OFF時はtransformを外す。 */
+    applyFitScreen: function () {
+      var table = document.querySelector('#gridWrap table.sheet');
+      if (!table) return;
+      if (!document.body.classList.contains('fitscreen')) { table.style.transform = ''; return; }
+      var wrap = document.getElementById('gridWrap');
+      table.style.transform = 'scale(1)';                 /* 実寸測定のため一旦リセット */
+      var tableW = table.scrollWidth, tableH = table.scrollHeight;
+      var rect = wrap.getBoundingClientRect();
+      var availW = window.innerWidth - rect.left - 8;
+      var availH = window.innerHeight - rect.top - 8;
+      if (tableW <= 0 || tableH <= 0 || availW <= 0 || availH <= 0) return;
+      var scale = Math.min(availW / tableW, availH / tableH, 1);
+      if (!(scale > 0)) scale = 1;
+      table.style.transform = 'scale(' + scale + ')';
+      wrap.style.height = (tableH * scale + 2) + 'px';     /* 縮小後の高さに合わせて余白を詰める */
+    },
+    setFitScreen: function (on) {
+      document.body.classList.toggle('fitscreen', on);
+      var btn = document.getElementById('btnFit');
+      if (btn) { btn.classList.toggle('on', on); btn.textContent = on ? '🔍 通常表示' : '🔍 全体表示'; }
+      if (!on) { var w = document.getElementById('gridWrap'); if (w) w.style.height = ''; }
+      try { Store.setLocal('fitscreen', on); } catch (e) {}
+      this.applyFitScreen();
     },
 
     /* 職員が空のときに開始ガイドを表示（空白画面で運用が止まらないように） */
@@ -4918,6 +4962,18 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       document.getElementById('btnActual').addEventListener('click', function () { self.gotoLayer('actual'); });
       document.getElementById('btnFreee').addEventListener('click', function () { window.ShiftFreeeUI.openDialog(); });
       document.getElementById('btnPrint').addEventListener('click', function () { self.print(); });
+      document.getElementById('btnFit').addEventListener('click', function () {
+        self.setFitScreen(!document.body.classList.contains('fitscreen'));
+      });
+      /* 起動時に全体表示状態を復元 */
+      if (Store.getLocal('fitscreen', false)) {
+        document.body.classList.add('fitscreen');
+        var fb = document.getElementById('btnFit');
+        if (fb) { fb.classList.add('on'); fb.textContent = '🔍 通常表示'; }
+      }
+      window.addEventListener('resize', function () {
+        if (document.body.classList.contains('fitscreen')) self.applyFitScreen();
+      });
       document.getElementById('btnUndo').addEventListener('click', function () { self.undo(); });
       document.getElementById('btnRedo').addEventListener('click', function () { self.redo(); });
       document.getElementById('btnHistory').addEventListener('click', function () { self.showHistory(); });
