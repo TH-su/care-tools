@@ -4189,12 +4189,16 @@ body.printing .rs { display: none; }
   }
   function gas(payload, cb) {
     payload.token = settings.token;
+    /* cb は必ず1回だけ・15秒で必ず応答（無応答でも固まらないようにする） */
+    var called = false;
+    function once(v) { if (called) return; called = true; if (timer) clearTimeout(timer); try { cb(v); } catch (e) {} }
+    var timer = setTimeout(function () { once(null); }, 15000);
     try {
       fetch(settings.endpoint, { method: 'POST', body: JSON.stringify(payload) })
         .then(function (r) { return r.json(); })
-        .then(function (j) { cb(j || null); })
-        .catch(function () { cb(null); });
-    } catch (e) { cb(null); }
+        .then(function (j) { once(j || null); })
+        .catch(function () { once(null); });
+    } catch (e) { once(null); }
   }
   function daySig(day) {
     try {
@@ -4325,28 +4329,37 @@ body.printing .rs { display: none; }
     function done(r) { if (cb) { try { cb(r); } catch (e) {} } }
     var ym = shiftMonth(date);
     fetchShiftData(ym, !!opts.fresh, function (data) {
-      if (ui.currentDate !== date) { done(null); return; }   /* 画面が他日へ移った */
+      /* 画面が他日へ移った: 「取得中」表示を残さず終了（フリーズ防止） */
+      if (ui.currentDate !== date) { if (opts.report) $('imResult').textContent = ''; done(null); return; }
       if (!data || !data.plan) {
         if (opts.report) $('imResult').textContent =
-          syncOn() ? '当月のシフト（' + ym + '）がサーバーにありません'
-                   : 'エンドポイント未設定のためシフトを取得できません（設定でURL/トークンを入力）';
+          syncOn() ? 'シフトを取得できませんでした（サーバー応答なし、または当月 ' + ym + ' のシフト未登録）。通信・エンドポイントURL・トークンをご確認ください。'
+                   : 'エンドポイント未設定のためシフトを取得できません（設定でURL／トークンを入力してください）。';
         done(null); return;
       }
       var att = SH.extractAttendance(date, data.staff, data.symbols, data.plan);
       var stamp = SH.attendanceStamp(att);
       var day = store.get();
-      if (!opts.force && day.meta.shiftStamp === stamp) { done({ skipped: true }); return; }
+      /* churn防止のスキップは「自動・無報告」時のみ。手動ボタン(report)/再取込(force)は必ず反映・必ず結果表示 */
+      if (!opts.force && !opts.report && day.meta.shiftStamp === stamp) { done({ skipped: true }); return; }
       var res = IM.fillSlots(day.staff, day.columns, att, { force: !!opts.force });
       if (!res) {
         if (opts.report) $('imResult').textContent =
-          'この日はスロット型ではないため自動反映できません（支援マスタから生成された日で利用できます）';
+          'この日はスロット型ではないため自動反映できません（支援マスタから生成された日でご利用ください）。';
         done(null); return;
       }
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
-      var msg = 'シフトから出勤者 ' + res.filled + '名を反映';
-      if (res.locked) msg += '（手動編集 ' + res.locked + '枠は保護）';
-      if (res.added) msg += '／列を ' + res.added + '追加';
+      var msg;
+      if (res.filled === 0) {
+        var staffN = (data.staff && data.staff.length) ? data.staff.length : 0;
+        msg = '出勤者0名（取得した職員 ' + staffN + '名・' + dateLabel(date) +
+              'の勤務記号 0件）。シフトアプリ側で当日の勤務が入力済みかご確認ください。';
+      } else {
+        msg = 'シフトから出勤者 ' + res.filled + '名を反映';
+        if (res.locked) msg += '（手動編集 ' + res.locked + '枠は保護）';
+        if (res.added) msg += '／列を ' + res.added + '追加';
+      }
       if (opts.report || opts.toast) { $('imResult').textContent = msg; toast(msg); }
       else setSyncState('シフト反映 ' + res.filled + '名');
       done(res);
