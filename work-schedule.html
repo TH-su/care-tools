@@ -115,11 +115,6 @@ body {
 .b-head .h-name.manual { color: var(--pri); }
 .b-task.facwork { border: 1.5px solid #222; background: #fafafa; }
 body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
-/* 包括勤務(入れ子)の内包業務: 訪問の大枠の中に段差(インデント)＋左の太線で「内側」を表現 */
-.b-task.nested { left: 16px; right: 5px; z-index: 12; border-left: 4px solid #6b7280;
-  background: repeating-linear-gradient(45deg, #f3f4f6, #f3f4f6 6px, #e9ecef 6px, #e9ecef 12px); }
-.b-task.nested .t-name { color: #374151; }
-body.printing .b-task.nested { background: #fff; border: 1.5px solid #000; border-left: 5px solid #000; left: 16px; }
 .b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
 .b-head .h-time { color: var(--g6); font-size: 10px; }
 .b-head .h-role { display: inline-block; font-size: 9px; border-radius: 4px; padding: 0 4px; margin-right: 2px;
@@ -217,6 +212,7 @@ body.printing .b-task.nested { background: #fff; border: 1.5px solid #000; borde
 .ghost.ok { border-color: var(--ok); background: rgba(46,125,50,.12); color: var(--ok); }
 .ghost.ng { border-color: var(--ng); background: rgba(198,40,40,.12); color: var(--ng); }
 .ghost.swap { border-color: #6a1b9a; background: rgba(106,27,154,.14); color: #6a1b9a; }
+.ghost.confirm { border-color: #e8a200; background: rgba(232,162,0,.15); color: #9a6a00; }
 .b-task.swap-target { box-shadow: 0 0 0 3px #6a1b9a; z-index: 21; }
 .drag-chip { position: fixed; z-index: 200; pointer-events: none; opacity: .9; }
 
@@ -360,8 +356,9 @@ body.printing .rs { display: none; }
   .b-heads { border-bottom-color: #000; }
   .b-head.zone-div, .b-lane.zone-div { border-left-color: #000; }
   .hdr, .bnav, .tray, #toast, .modal, .modal-bg, .zone-toggle, .board-empty { display: none !important; }
-  .board-wrap { overflow: visible; padding-bottom: 0; }
-  .board { display: block; }
+  /* fitPrint() が wrap を縮小後サイズに設定。overflow:hidden で未縮小ボードのはみ出し(2ページ化)を抑止 */
+  .board-wrap { overflow: hidden; padding-bottom: 0; }
+  .board { display: block; break-inside: avoid; page-break-inside: avoid; }
   .b-heads { position: static; }
   .print-head { display: block !important; }
   .b-task { box-shadow: none; }
@@ -400,6 +397,7 @@ body.printing .rs { display: none; }
     <span class="hdr-sp"></span>
     <button class="tray-btn" id="btnSelDup" title="選択した枠を複製（Cmd/Ctrl+D）">⧉ 複製</button>
     <button class="tray-btn" id="btnSelDel" title="選択した枠を消去（Delete）">🗑 消去</button>
+    <button class="tray-btn" id="btnCopyNext" title="この日の支援を翌週の同曜日へコピー（上書き）">📅 翌週へコピー</button>
     <button class="tray-btn" id="trayToggle">折畳</button>
   </div>
   <div class="tray-items" id="trayItems"></div>
@@ -906,9 +904,9 @@ body.printing .rs { display: none; }
     if (!(end > start)) return { ok: false, code: 'range', reason: '終了は開始より後にしてください' };
     var st = findStaff(day.staff, staffId);
     if (!st) return { ok: false, code: 'nostaff', reason: '職員が見つかりません' };
-    if (start < st.workStart || end > st.workEnd) {
-      return { ok: false, code: 'worktime', reason: st.name + 'さんの勤務時間外です' };
-    }
+    /* 勤務時間外は即NGにせず警告(warn)。D&D配置側で確認ダイアログを出して許可する。
+     * R2 重複・R3 入居者重複は引き続きハード制約として検証する。 */
+    var warn = (start < st.workStart || end > st.workEnd) ? 'worktime' : null;
     var sc = staffConflicts(day.tasks, staffId, start, end, [taskId]);
     if (sc.length) {
       return { ok: false, code: 'staffdup', reason: '同時刻に別の支援が配置済みです', conflicts: sc };
@@ -920,6 +918,7 @@ body.printing .rs { display: none; }
                  reason: task.residentName + 'さんへの支援が同時刻に配置済みです', conflicts: rc };
       }
     }
+    if (warn === 'worktime') return { ok: true, warn: 'worktime', reason: st.name + 'さんの勤務時間外です' };
     return { ok: true };
   }
 
@@ -1266,7 +1265,7 @@ body.printing .rs { display: none; }
           if (sraw !== null) rows.push({ division: dv, raw: sraw, isMain: false });
         }
       }
-      var mainDayEntries = [];   /* 主区分の日勤エントリ（従区分の内包判定＝包括勤務用） */
+      var mainDayEntries = [];   /* 主区分の日勤エントリ（従区分の施設窓を facWork として内包判定する用） */
       for (var ri = 0; ri < rows.length; ri++) {
         var division = rows[ri].division;
         if (division === '通所') continue;
@@ -1278,8 +1277,9 @@ body.printing .rs { display: none; }
           if (part.kind === 'work') {
             if (part.startMin === null || part.endMin === null) continue;
             if (part.endMin > part.startMin) {
-              /* 包括勤務: 従区分の日勤が主区分の勤務窓に完全内包される場合、別列に出さず
-               * 主エントリの nested として保持（例: 訪問12-21 の中の 施設16-21 → 訪問列内に入れ子表示）。 */
+              /* 訪問列内セル分割: 従区分(施設)の日勤が主区分(訪問)の勤務窓に完全内包される場合、
+               * 別の施設列に分離せず、主エントリ(訪問列)の facWork（施設業務窓）として保持する。
+               * 例: 訪問12-21 の中の 施設16-21 → 訪問列の 16-21 を施設業務枠としてレンダリング。 */
               if (!isMainRow) {
                 var host = null;
                 for (var hi = 0; hi < mainDayEntries.length; hi++) {
@@ -1287,8 +1287,8 @@ body.printing .rs { display: none; }
                   if (part.startMin >= me.workStart && part.endMin <= me.workEnd) { host = me; break; }
                 }
                 if (host) {
-                  if (!host.nested) host.nested = [];
-                  host.nested.push({ division: division, start: part.startMin, end: part.endMin });
+                  if (!host.facWork) host.facWork = [];
+                  host.facWork.push({ start: part.startMin, end: part.endMin });
                   continue;
                 }
               }
@@ -1882,7 +1882,7 @@ body.printing .rs { display: none; }
       var s = staff[i];
       if (String(s.id).indexOf('slot_') !== 0) continue;
       if (s.manual && !force) continue;
-      s.name = ''; s.fromShift = false; s.manual = false; s.nested = null;
+      s.name = ''; s.fromShift = false; s.manual = false; s.facWork = null;
       resetSlotWindow_(s);
     }
 
@@ -1966,7 +1966,7 @@ body.printing .rs { display: none; }
     function applyTo(st, p) {
       st.name = p.name; st.workStart = p.workStart; st.workEnd = p.workEnd;
       st.fromShift = true; st.manual = false;
-      st.nested = (p.nested && p.nested.length) ? p.nested : null;  /* 包括勤務(内包業務) */
+      st.facWork = (p.facWork && p.facWork.length) ? p.facWork : null;  /* 訪問列内の施設業務窓 */
       filled++;
     }
     /* 分割勤務: 同一人物の2ブロック目以降を、既存列(primaryStaff)へ追加の職員エントリとして同居させる。
@@ -2639,7 +2639,6 @@ body.printing .rs { display: none; }
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
     var cls = 'b-task ' + kindClass(t);
     if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
-    if (t.src === 'nested') cls += ' facwork nested';   /* 包括勤務の内包業務=黒罫線＋インデント段差 */
     if (M.isChanged(t)) cls += ' changed';
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
@@ -2652,7 +2651,7 @@ body.printing .rs { display: none; }
     var svc = M.SVC[t.svcCode];
     var range = M.fmtRange(t.start, t.end, TS.minToTime);
     var nameText = t.kind === 'care' ? t.residentName
-      : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '自由枠' : '施設業務')));
+      : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '' : '施設業務')));
     if (t.tentative) nameText = '（' + nameText + '）';
     /* 施設業務の枠は時間を表示しない（実施時間は任意のため）。誘導/配膳など別ラベルの施設業務は時刻維持 */
     var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
@@ -3064,6 +3063,9 @@ body.printing .rs { display: none; }
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task) return { status: 'ng', reason: '' };
+      /* Alt(Option)＋休憩/施設業務＝複製モード。入替(swap/timeswap)には入らず、
+       * 空き位置への通常配置(複製)として判定する（占有位置はngで複製不可）。 */
+      var altDup = drag.alt && drag.mode === 'move' && isFlexSwap(task);
 
       /* トレイ上 → 未配置へ戻す */
       if (tray && task.staffId !== null) {
@@ -3082,7 +3084,7 @@ body.printing .rs { display: none; }
        * ゴーストが隣接ブロックに重なっていても、指している相手と入替える */
       var overEl = document.elementFromPoint(pt.x, pt.y);
       var overBlock = closest(overEl, '.b-task');
-      if (overBlock && task.staffId !== null) {
+      if (!altDup && overBlock && task.staffId !== null) {
         var over = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
         /* 同一職員内で 休憩↔施設業務 を重ねたら時間枠を交換（実施時間に関係なく可能） */
         if (over && over.id !== task.id && over.staffId === task.staffId &&
@@ -3130,15 +3132,15 @@ body.printing .rs { display: none; }
       if (!st) return { status: 'ng', reason: '職員未割当の列です' };
 
       var conflicts = M.staffConflicts(day.tasks, st.id, start, end, [task.id]);
-      /* 同一職員内で 休憩↔施設業務 が重なる位置へ来たら時間枠を交換 */
-      if (conflicts.length === 1 && conflicts[0].staffId === task.staffId &&
+      /* 同一職員内で 休憩↔施設業務 が重なる位置へ来たら時間枠を交換（複製モードでは行わない） */
+      if (!altDup && conflicts.length === 1 && conflicts[0].staffId === task.staffId &&
           isFlexSwap(task) && isFlexSwap(conflicts[0])) {
         var planTc = M.planTimeSwap(day, task.id, conflicts[0].id);
         return { status: planTc.ok ? 'timeswap' : 'ng', reason: planTc.reason || '',
                  lane: lane, start: task.start, end: task.end, staff: st,
                  swapWith: conflicts[0], plan: planTc };
       }
-      if (conflicts.length === 1 && task.staffId !== null && conflicts[0].staffId !== task.staffId) {
+      if (!altDup && conflicts.length === 1 && task.staffId !== null && conflicts[0].staffId !== task.staffId) {
         /* 他職員の配置済みブロック上 → スワップ（F-05）。
          * スワップは時間維持のため、ゴーストはタスク自身の時刻で表示し、
          * 入替後の双方が表示時間帯に収まるかも事前検証する */
@@ -3155,7 +3157,9 @@ body.printing .rs { display: none; }
                  swapWith: conflicts[0], plan: plan };
       }
       var v = M.validatePlacement(day, task.id, st.id, start, end);
-      return { status: v.ok ? 'ok' : 'ng', reason: v.reason || '',
+      /* 勤務時間外(warn)は配置可能だが確認を要する → status 'confirm' */
+      var stMv = v.ok ? (v.warn === 'worktime' ? 'confirm' : 'ok') : 'ng';
+      return { status: stMv, reason: v.reason || '',
                lane: lane, start: start, end: end, staff: st };
     }
 
@@ -3184,7 +3188,9 @@ body.printing .rs { display: none; }
       var lane = null;
       var st = M.findStaff(day.staff, task.staffId);
       if (st) lane = board.querySelector('.b-lane[data-col="' + st.col + '"]');
-      return { status: v.ok ? 'ok' : 'ng', reason: v.reason || '', lane: lane, start: start, end: end, staff: st };
+      /* リサイズは勤務時間外(warn)を許可しない（従来どおりNG）。確認フローはD&D配置に限定 */
+      var okR = v.ok && !v.warn;
+      return { status: okR ? 'ok' : 'ng', reason: v.reason || '', lane: lane, start: start, end: end, staff: st };
     }
 
     /* 列入替: 挿入先の配列位置（同一ゾーン内にクランプ） */
@@ -3245,8 +3251,15 @@ body.printing .rs { display: none; }
       }
       var label = '';
       var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap');
+      var dupMode = false;
+      if (drag.alt && drag.mode === 'move') {
+        var tkD = M.findTask(opts.getDay().tasks, drag.taskId);
+        if (isFlexSwap(tkD)) dupMode = true;            /* Alt＋休憩/施設業務＝複製配置 */
+      }
       if (isSwapKind) label = '⇄入替';
       else if (ev.status === 'ng') label = '✕';
+      else if (ev.status === 'confirm') label = dupMode ? '＋複製(時間外)' : '⚠時間外';
+      else if (dupMode) label = '＋複製';
       showGhost(ev.lane, ev.start, ev.end, isSwapKind ? 'swap' : ev.status, label);
       if (isSwapKind && ev.swapWith) {
         var bel = board.querySelector('.b-task[data-id="' + ev.swapWith.id + '"]');
@@ -3269,9 +3282,18 @@ body.printing .rs { display: none; }
       if (ev.status === 'tray') { opts.onUnassign(taskId); return; }
       if (ev.status === 'timeswap' && ev.plan && ev.plan.ok) { opts.onTimeSwap(ev.plan.moves, ev.swapWith); return; }
       if (ev.status === 'swap' && ev.plan && ev.plan.ok) { opts.onSwap(ev.plan.moves, ev.swapWith); return; }
+      /* Alt(Option)＋休憩/施設業務の移動ドロップ＝複製配置 */
+      var taskC = M.findTask(opts.getDay().tasks, taskId);
+      var dup = drag.alt && drag.mode === 'move' && isFlexSwap(taskC);
       if (ev.status === 'ok') {
         if (drag.mode === 'resize') opts.onResize(taskId, ev.start, ev.end);
+        else if (dup && opts.onDuplicateTo) opts.onDuplicateTo(taskId, ev.staff.id, ev.start, ev.end, false);
         else opts.onAssign(taskId, ev.staff.id, ev.start, ev.end);
+        return;
+      }
+      if (ev.status === 'confirm') {                  /* 勤務時間外: 確認のうえ配置/複製 */
+        if (dup && opts.onDuplicateTo) opts.onDuplicateTo(taskId, ev.staff.id, ev.start, ev.end, true);
+        else if (opts.onAssignConfirm) opts.onAssignConfirm(taskId, ev.staff.id, ev.start, ev.end, ev.reason);
         return;
       }
       if (ev.reason) opts.onReject(ev.reason);
@@ -3364,6 +3386,7 @@ body.printing .rs { display: none; }
 
       drag = { mode: mode, taskId: taskId, source: source, edge: edge,
                colFrom: colFrom, headText: headText, additive: !!(e.ctrlKey || e.metaKey),
+               alt: !!e.altKey,
                startPt: pt, dragging: false, lastEval: null, longTimer: null, isTouch: isTouch };
 
       /* リサイズも移動と同じ開始条件にする:
@@ -3392,11 +3415,13 @@ body.printing .rs { display: none; }
       }
       if (!drag || !drag.dragging) return;
       if (e.cancelable) e.preventDefault();
+      drag.alt = !!e.altKey;                       /* Alt(Option)押下で複製。ドラッグ中の押下変化も反映 */
       updatePreview(pt);
     }
 
     function onUp(e) {
       if (!drag) return;
+      drag.alt = !!e.altKey;                        /* ドロップ時点の Alt(Option) 状態で複製判定 */
       var wasDragging = drag.dragging;
       var taskId = drag.taskId, source = drag.source, mode = drag.mode, colFrom = drag.colFrom, additive = drag.additive;
       if (wasDragging && drag.lastEval) commit();
@@ -4415,7 +4440,10 @@ body.printing .rs { display: none; }
   /* ===== 印刷（A3縦・1枚フィット）=====
    * A3縦 297×420mm・余白8mm の印字可能域(@96dpi・安全マージン込み)に
    * 表全体（全列・全時間帯）＋印刷ヘッダーが収まる倍率を算出して transform する */
-  var PRINT_AVAIL = { w: 1055, h: 1515 };
+  /* A3縦 297×420mm・余白8mm の印字可能域 ≒ 1062×1527px(@96dpi)。
+   * プリンタドライバの余白差で2ページ化しないよう安全側に余裕を取る。 */
+  var PRINT_AVAIL = { w: 1045, h: 1500 };
+  var PRINT_MAX_SCALE = 1.6;   /* 列が少ない日も用紙いっぱいに拡大（過拡大での文字崩れ防止に上限） */
   var printSavedScroll = null;
   function fitPrint() {
     var board = $('board');
@@ -4433,15 +4461,18 @@ body.printing .rs { display: none; }
     var ax = cv ? cv.querySelector('.b-axis.r') : null;
     if (ax) w = ax.offsetLeft + ax.offsetWidth;
     var h = board.scrollHeight || 1;
-    /* 印刷ヘッダーは CSS で固定高26px（nowrap）。バッファ込み28pxを差し引く */
-    var headH = 28;
-    var s = Math.min(PRINT_AVAIL.w / w, (PRINT_AVAIL.h - headH) / h, 1);
+    /* 印刷ヘッダー(printHead)は boardWrap 内の兄弟。実高さ(既定26px)＋バッファをフィット高さに含める */
+    var ph = $('printHead');
+    var headH = (ph && ph.offsetHeight) ? ph.offsetHeight + 2 : 28;
+    var s = Math.min(PRINT_AVAIL.w / w, (PRINT_AVAIL.h - headH) / h, PRINT_MAX_SCALE);
     board.style.minWidth = '0';
     board.style.width = w + 'px';
     board.style.transform = 'scale(' + s + ')';
     board.style.transformOrigin = '0 0';
-    wrap.style.width = Math.floor(w * s) + 'px';
-    wrap.style.height = Math.floor(h * s) + 'px';
+    /* transform はレイアウトboxを縮めないため、wrap を縮小後サイズ＋overflow:hidden(@media print)で
+     * クリップし、未縮小の余剰高さで2ページ目が生じるのを防ぐ。高さは ヘッダー＋縮小後ボード を確保。 */
+    wrap.style.width = Math.ceil(w * s) + 'px';
+    wrap.style.height = (headH + Math.ceil(h * s)) + 'px';
   }
   function unfitPrint() {
     var board = $('board');
@@ -4666,6 +4697,79 @@ body.printing .rs { display: none; }
     });
   }
 
+  /* 任意日の盤面を localStorage 保存＋クラウド put（現在表示中でなくても可）。 */
+  function putDayData_(date, day) {
+    try { localStorage.setItem(dayKey(date), JSON.stringify(day)); } catch (e) {}
+    if (!syncOn()) return;
+    gas({ action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day }, function (j) {
+      if (j && j.ok) {
+        var d2 = loadDayData(date);
+        if (d2 && d2.meta) { d2.meta.rev = j.rev; try { localStorage.setItem(dayKey(date), JSON.stringify(d2)); } catch (e2) {} }
+      } else if (j && j.conflict) {
+        /* 競合: サーバに新しい版がありデータ損失を防ぐため上書きしない（この端末の保存は後で
+         * 翌週を開くとサーバ版に置換され得る）。最新取得後に再コピーするよう促す。 */
+        toast('翌週日は他端末が更新済みのため同期できませんでした。翌週を開いて最新取得後、再度コピーしてください', true);
+      }
+    });
+  }
+
+  /* 当日の「支援(care)」を翌週の同曜日へコピー（上書き）。
+   * - 翌週の出勤シフトでスロットを埋め、各支援を元のスロット(列)が出勤者ありなら同列へ、無ければ未配置へ。
+   * - 列(スロットID)が日付をまたいで安定しているため、前週の並び順がそのまま維持される。
+   * - 翌週の既存「支援」は破棄して差し替え。施設業務/休憩/自由枠は翌週オープン時に自動再生成。 */
+  function copyCareToNextWeek() {
+    var src = store.get();
+    var careTasks = [];
+    for (var i = 0; i < src.tasks.length; i++) if (src.tasks[i].kind === 'care') careTasks.push(src.tasks[i]);
+    if (!careTasks.length) { toast('コピーする支援がありません'); return; }
+    var nd = shiftDate(ui.currentDate, 7);
+    if (!window.confirm('翌週 ' + dateLabel(nd) + ' へ支援 ' + careTasks.length +
+        '件 をコピーします。\n翌週の既存の支援は上書きされます。よろしいですか？')) return;
+    var ym = shiftMonth(nd);
+    toast('翌週のシフトを取得中…');
+    fetchShiftData(ym, true, function (data) {
+      /* 翌週スロット構成: 当日のスロット構造を土台に、翌週の出勤者を流し込む（force上書き） */
+      var res = null;
+      if (data && data.plan) {
+        var att = SH.extractAttendance(nd, data.staff, data.symbols, data.plan);
+        res = IM.fillSlots(src.staff, src.columns, att, { force: true });
+      }
+      var staffOut, colsOut, present = {};
+      if (res) {
+        staffOut = res.staff; colsOut = res.columns;
+        for (var s = 0; s < staffOut.length; s++) if (staffOut[s].name) present[staffOut[s].id] = true;
+      } else {
+        /* シフト未取得 or 非スロット日: 当日の staff/columns をそのまま土台に（出勤者は不明＝全て未配置へ） */
+        staffOut = src.staff; colsOut = src.columns;
+      }
+      /* 支援を複製。元スロットが翌週も出勤者ありなら同列へ、無ければ未配置トレイへ */
+      var tasks = [], placed = 0, tray = 0;
+      for (var t = 0; t < careTasks.length; t++) {
+        var srcT = careTasks[t], props = {}, k;
+        for (k in srcT) if (Object.prototype.hasOwnProperty.call(srcT, k)) props[k] = srcT[k];
+        delete props.id;
+        props.done = false; props.tentative = false; props.checks = {};
+        props.contents = (srcT.contents || []).slice();
+        if (srcT.staffId && present[srcT.staffId]) { props.staffId = srcT.staffId; placed++; }
+        else { props.staffId = null; tray++; }
+        /* weeklyRefは引き継がない（M.newTaskが除去）。翌週オープン時のreconcileWeeklyで
+         * 同名・同時刻の予定があれば再リンクされ、無ければ墓標削除されず複製がそのまま残る。 */
+        var nt = M.newTask(props);
+        nt.origin = M.captureOrigin(nt);
+        tasks.push(nt);
+      }
+      /* 翌週 day を構築（既存rev維持）。shiftStamp未設定＝オープン時に自動でシフト反映/施設業務充填が走る */
+      var existing = loadDayData(nd) || S.emptyDay(nd);
+      var day = { meta: { date: nd, rev: (existing.meta && existing.meta.rev) || 0,
+                          updatedAt: new Date().toISOString(), template: '',
+                          boardVer: BOARD_LOGIC_VER },
+                  staff: staffOut, columns: colsOut, tasks: tasks };
+      putDayData_(nd, day);
+      toast('翌週 ' + dateLabel(nd) + ' へ支援 ' + careTasks.length + '件をコピー（配置 ' +
+            placed + '／未配置 ' + tray + '）');
+    });
+  }
+
   /* 列ヘッダーのタップ＝その列の職員名・勤務時間を手動編集（manual印を立てて保護） */
   function editColumnStaff(col) {
     var day = store.get();
@@ -4809,6 +4913,26 @@ body.printing .rs { display: none; }
    * 日勤(施設/訪問)職員のみ。既存タスク(訪問支援・手動枠)は占有として保護。返値=追加タスク配列。
    * 既にfacwork(施設業務/休憩)を持つ職員は再充填しない＝休憩の移動・施設業務への入替・削除を尊重(冪等)。
    * 短い空き(MIN_FACWORK未満)・末尾の細切れには施設業務を入れない。緒方瞳は対象外。 */
+  /* 占有(occ)を避け、勤務中央に最も近い hour-aligned な空き1時間を休憩位置として返す。無ければnull。
+   * 施設業務窓(16-21等)が既に占有されている職員でも、休憩が業務枠に重ならない位置へ入る。 */
+  function pickBreakSlot_(occ, ws, we) {
+    var free = freeRanges_(occ, ws, we);
+    var mid = (ws + we) / 2, best = null, bestDist = Infinity;
+    for (var f = 0; f < free.length; f++) {
+      var a = free[f][0], hi = free[f][1];
+      if (hi - a < 60) continue;                         /* 1時間入らない空きは不可 */
+      var lo = Math.ceil(a / 60) * 60;                   /* hour境界(上)へ丸め */
+      if (lo + 60 > hi) lo = a;                           /* hour境界が入らなければ空き先頭 */
+      var hiStart = hi - 60;
+      var cand = Math.round((mid - 30) / 60) * 60;        /* 休憩中心が勤務中央に来る開始 */
+      if (cand < lo) cand = lo;
+      if (cand > hiStart) cand = hiStart;
+      var dist = Math.abs((cand + 30) - mid);
+      if (dist < bestDist) { bestDist = dist; best = [cand, cand + 60]; }
+    }
+    return best;
+  }
+
   function fillFacilityWork(day) {
     var add = [], byStaff = {}, i, t;
     for (i = 0; i < day.tasks.length; i++) {
@@ -4823,6 +4947,7 @@ body.printing .rs { display: none; }
       if (facworkExcluded_(st.name)) continue;             /* 緒方瞳=施設業務充填の対象外 */
       var ws = st.workStart, we = st.workEnd;
       if (!(we > ws)) continue;
+      var isFacWorkStaff = !!(st.facWork && st.facWork.length);  /* 訪問列内に施設業務窓を持つ職員 */
       var tasks = byStaff[st.id] || [];
       var occ = [], hasBreak = false, hasFacwork = false, k;
       for (k = 0; k < tasks.length; k++) {
@@ -4830,13 +4955,15 @@ body.printing .rs { display: none; }
         if (tasks[k].kind === 'break') hasBreak = true;
         if (tasks[k].src === 'facwork') hasFacwork = true;
       }
-      if (hasFacwork) continue;                            /* 既充填＝手動編集を尊重し再充填しない */
-      if (!hasBreak && (we - ws) >= 360) {                 /* 6時間以上の勤務に休憩1時間を中央へ */
-        var mid = Math.round((ws + we) / 2 / 60) * 60;
-        if (mid + 60 > we) mid = we - 60;
-        if (mid < ws) mid = ws;
-        add.push(M.newTask({ kind: 'break', src: 'facwork', label: '休憩', start: mid, end: mid + 60, staffId: st.id }));
-        occ.push([mid, mid + 60]);
+      /* 既に自動充填済み(=手動編集を尊重)はスキップ。ただし施設業務窓を持つ職員は
+       * 16-21等が既にfacworkでも残りの訪問時間帯(12-16)を充填するため対象に含める。 */
+      if (hasFacwork && !isFacWorkStaff) continue;
+      if (!hasBreak && (we - ws) >= 360) {                 /* 6時間以上の勤務に休憩1時間を中央付近の空きへ */
+        var bslot = pickBreakSlot_(occ, ws, we);
+        if (bslot) {
+          add.push(M.newTask({ kind: 'break', src: 'facwork', label: '休憩', start: bslot[0], end: bslot[1], staffId: st.id }));
+          occ.push(bslot);
+        }
       }
       var free = freeRanges_(occ, ws, we);
       for (var f = 0; f < free.length; f++) {
@@ -4853,24 +4980,106 @@ body.printing .rs { display: none; }
     return add;
   }
 
-  /* 盤面整形を適用（空き列詰め→施設業務/休憩充填）。出勤者反映やロード後に呼ぶ。 */
-  /* 包括勤務(内包業務)タスクの再生成。スロットの st.nested から「施設業務」枠(src='nested')を
-   * 訪問列内に配置（例: 訪問12-21 の中の 施設16-21）。冪等: 既存の src='nested' を作り直す。
-   * fillFacilityWork より前に実行＝内包時間帯は占有として扱われ二重充填されない。 */
-  function rebuildNestedTasks() {
-    var day = store.get();
-    var tasks = [], i;
-    for (i = 0; i < day.tasks.length; i++) if (day.tasks[i].src !== 'nested') tasks.push(day.tasks[i]);
-    var changed = tasks.length !== day.tasks.length;
+  /* 臼井（前方一致・出勤時）の列の初期自動配置。
+   * 12:00-13:00 に休憩1枠＋それ以外の勤務時間を「自由枠(空欄)」で1時間ごとに敷き詰める。
+   * 既存の支援(care)は占有として避ける。冪等: 既に自由枠/休憩(facwork)を持つ列は再生成しない
+   * （＝手動で動かしても再敷設しない）。store を直接 dispatch する（返値なし）。 */
+  var USUI_KEY = '臼井';
+  function isUsui_(name) {
+    var s = String(name === undefined || name === null ? '' : name).replace(/[\s　]/g, '');
+    return s !== '' && s.indexOf(USUI_KEY) === 0;
+  }
+  function fillUsuiFrames(day) {
+    var byStaff = {}, i;
+    for (i = 0; i < day.tasks.length; i++) {
+      var t0 = day.tasks[i];
+      if (!t0.staffId) continue;
+      if (!byStaff[t0.staffId]) byStaff[t0.staffId] = [];
+      byStaff[t0.staffId].push(t0);
+    }
+    var add = [];
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
-      if (!st.name || !st.nested || !st.nested.length) continue;
-      for (var n = 0; n < st.nested.length; n++) {
-        var nd = st.nested[n];
-        if (!(nd.end > nd.start)) continue;
-        tasks.push(M.newTask({ kind: 'facility', src: 'nested', label: '施設業務',
-          start: nd.start, end: nd.end, staffId: st.id }));
-        changed = true;
+      if (!st.name || st.zone === 'night' || !isUsui_(st.name)) continue;
+      var ws = st.workStart, we = st.workEnd;
+      if (!(we > ws)) continue;
+      var tasks = byStaff[st.id] || [];
+      var occ = [], hasFrame = false, k;
+      for (k = 0; k < tasks.length; k++) {
+        occ.push([tasks[k].start, tasks[k].end]);
+        if (tasks[k].src === 'facwork') hasFrame = true;   /* 既に休憩/自由枠あり＝再生成しない */
+      }
+      if (hasFrame) continue;                              /* 冪等＋手動編集の尊重 */
+      /* 12:00-13:00 の休憩（勤務時間内かつ空きのときのみ） */
+      if (720 >= ws && 780 <= we && !overlapsOcc_(occ, 720, 780)) {
+        add.push(M.newTask({ kind: 'break', src: 'facwork', label: '休憩', start: 720, end: 780, staffId: st.id }));
+        occ.push([720, 780]);
+      }
+      /* 残りの勤務時間を 1時間ごとの自由枠(空欄)で敷き詰め */
+      var free = freeRanges_(occ, ws, we);
+      for (var f = 0; f < free.length; f++) {
+        var a = free[f][0], hi = free[f][1];
+        if (hi - a < 20) continue;
+        while (a < hi) {
+          var b = Math.min(a + 60, hi);
+          if (hi - b < 20) b = hi;
+          add.push(M.newTask({ kind: 'free', src: 'facwork', label: '', start: a, end: b, staffId: st.id }));
+          a = b;
+        }
+      }
+    }
+    if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
+  }
+  function overlapsOcc_(occ, s, e) {
+    for (var i = 0; i < occ.length; i++) if (s < occ[i][1] && occ[i][0] < e) return true;
+    return false;
+  }
+
+  /* 盤面整形を適用（空き列詰め→施設業務/休憩充填）。出勤者反映やロード後に呼ぶ。 */
+  /* 訪問列内の施設業務窓(st.facWork)を「施設業務」枠(src='facwork')として1時間ごとに配置する。
+   * 例: 訪問12-21 の中の 施設16-21 → 訪問列の 16-17/17-18/.../20-21 を施設業務枠に分割。
+   * 入れ子(インデント)表示はせず、他の施設職員のセルと同じ通常の施設業務枠として描画する。
+   * 冪等: facWork由来の src='facwork' を作り直す（手動移動した facManual は保護）。
+   * fillFacilityWork より前に実行＝当該時間帯は占有として扱われ二重充填されない。 */
+  function rebuildFacWindowTasks() {
+    var day = store.get();
+    var i;
+    /* facWork を持つスロットIDの集合（このスロットの自動 facwork は作り直し対象） */
+    var fwStaff = {};
+    for (i = 0; i < day.staff.length; i++) {
+      var s0 = day.staff[i];
+      if (s0.name && s0.facWork && s0.facWork.length) fwStaff[s0.id] = s0;
+    }
+    var tasks = [], changed = false;
+    for (i = 0; i < day.tasks.length; i++) {
+      var t0 = day.tasks[i];
+      /* facWork対象スロットの「自動施設業務(facManual以外)」は作り直すため一旦除外 */
+      if (fwStaff[t0.staffId] && t0.src === 'facwork' && t0.kind === 'facility' &&
+          t0.label === '施設業務' && !t0.facManual) { changed = true; continue; }
+      tasks.push(t0);
+    }
+    for (var sid in fwStaff) {
+      if (!Object.prototype.hasOwnProperty.call(fwStaff, sid)) continue;
+      var st = fwStaff[sid];
+      /* 残存タスク(支援・手動化facManualの施設業務/休憩等)を占有として避ける＝重複生成しない */
+      var occF = [];
+      for (var q = 0; q < tasks.length; q++) if (tasks[q].staffId === sid) occF.push([tasks[q].start, tasks[q].end]);
+      for (var n = 0; n < st.facWork.length; n++) {
+        var fw = st.facWork[n];
+        if (!(fw.end > fw.start)) continue;
+        var freeW = freeRanges_(occF, fw.start, fw.end);   /* 施設業務窓のうち空いている部分のみ */
+        for (var fr = 0; fr < freeW.length; fr++) {
+          var a = freeW[fr][0], hi = freeW[fr][1];
+          if (hi - a < 20) continue;
+          while (a < hi) {                            /* 1時間ごとに分割（末尾の細切れは直前へ吸収） */
+            var b = Math.min(a + 60, hi);
+            if (hi - b < 20) b = hi;
+            tasks.push(M.newTask({ kind: 'facility', src: 'facwork', label: '施設業務',
+              start: a, end: b, staffId: st.id }));
+            a = b;
+          }
+          changed = true;
+        }
       }
     }
     if (changed) store.dispatch({ type: 'SET_TASKS', tasks: tasks });
@@ -4881,7 +5090,8 @@ body.printing .rs { display: none; }
       var trimmed = trimEmptyCols(store.get());
       if (trimmed) store.dispatch({ type: 'SET_STAFF', staff: trimmed.staff, columns: trimmed.columns });
     } catch (e) {}
-    try { rebuildNestedTasks(); } catch (eN) {}   /* 包括勤務の内包業務を訪問列内へ配置 */
+    try { rebuildFacWindowTasks(); } catch (eN) {}   /* 訪問列内の施設業務窓を施設業務枠として配置 */
+    try { fillUsuiFrames(store.get()); } catch (eU) {}   /* 臼井: 12-13休憩＋自由枠を敷き詰め */
     try {
       var add = fillFacilityWork(store.get());
       if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
@@ -4891,7 +5101,7 @@ body.printing .rs { display: none; }
   /* ===== 既処理日の自動マイグレーション =====
    * shiftStamp churnガードで再処理されない「一度開いた日」へ、新ロジックを一度だけ適用する。
    * boardVer で版管理し、版が古い日のみ処理。手動編集（manualスロット・facManualな休憩/施設業務）は保護。 */
-  var BOARD_LOGIC_VER = 2;
+  var BOARD_LOGIC_VER = 3;
 
   /* 自動充填の施設業務/休憩(facwork)を手動で動かしたら facManual を付与し、以後の自動再構成から保護する */
   function markFacTouched_(taskId) {
@@ -4966,6 +5176,19 @@ body.printing .rs { display: none; }
 
     var staff = day.staff.map(function (s) { var o = {}; for (var key in s) if (Object.prototype.hasOwnProperty.call(s, key)) o[key] = s[key]; return o; });
     var byId = {}; for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
+
+    /* 旧「包括勤務(入れ子)」データの移行: st.nested(={division,start,end}) → st.facWork(={start,end}) */
+    for (i = 0; i < staff.length; i++) {
+      if (staff[i].nested && staff[i].nested.length) {
+        var fw = [];
+        for (m = 0; m < staff[i].nested.length; m++) {
+          var nd0 = staff[i].nested[m];
+          if (nd0 && nd0.end > nd0.start) fw.push({ start: nd0.start, end: nd0.end });
+        }
+        staff[i].facWork = fw.length ? fw : null;
+      }
+      staff[i].nested = null;
+    }
     var columns = day.columns.map(function (c) { return { col: c.col, zone: c.zone, label: c.label, staffIds: c.staffIds.slice(), division: c.division || null }; });
 
     /* 区分無し夜勤列へ施設→訪問を割当(in-place) */
@@ -4979,10 +5202,11 @@ body.printing .rs { display: none; }
       for (m = 0; m < columns[j].staffIds.length; m++) { var s2 = byId[columns[j].staffIds[m]]; if (s2) s2.division = div; }
     }
 
-    /* 自動施設業務/休憩(facwork・手動化されていないもの)を一掃→後で正しく入れ直す */
+    /* 自動施設業務/休憩(facwork・手動化されていないもの)＋旧包括勤務(src='nested')を一掃→後で正しく入れ直す */
     var tasks = [];
     for (i = 0; i < day.tasks.length; i++) {
       var t = day.tasks[i];
+      if (t.src === 'nested') continue;                       /* 旧入れ子タスクは廃止 */
       if (t.src === 'facwork' && !t.facManual) continue;
       var nt = {}; for (k in t) if (Object.prototype.hasOwnProperty.call(t, k)) nt[k] = t[k];
       tasks.push(nt);
@@ -5180,6 +5404,7 @@ body.printing .rs { display: none; }
     });
     $('btnSelDup').addEventListener('click', function () { duplicateSelected(); });
     $('btnSelDel').addEventListener('click', function () { deleteSelected(); });
+    $('btnCopyNext').addEventListener('click', function () { copyCareToNextWeek(); });
     $('btnAddCare').addEventListener('click', function () { openEditor(null, { kind: 'care' }); });
     $('btnAddFac').addEventListener('click', function () { openEditor(null, { kind: 'facility', label: '施設業務' }); });
     $('btnAddFree').addEventListener('click', function () { openEditor(null, { kind: 'free' }); });
@@ -5522,6 +5747,34 @@ body.printing .rs { display: none; }
       onAssign: function (taskId, staffId, start, end) {
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
+      },
+      onAssignConfirm: function (taskId, staffId, start, end, reason) {
+        /* 勤務時間外への配置: 確認のうえ許可（網掛け表示はそのまま） */
+        if (!window.confirm('勤務時間外ですが配置しますか？')) return;
+        store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
+        markFacTouched_(taskId);
+      },
+      onDuplicateTo: function (taskId, staffId, start, end, needConfirm) {
+        /* Alt(Option)＋休憩/施設業務のドロップ＝複製してその場へ配置（元枠は残す） */
+        if (needConfirm && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        var src = M.findTask(store.get().tasks, taskId);
+        if (!src) return;
+        /* 複製は新規ブロックのため、元枠を含む全タスクと重複しないこと（在席位置への複製を防ぐ） */
+        if (M.staffConflicts(store.get().tasks, staffId, start, end, []).length) {
+          toast('同時刻に別の枠があるため複製できません', true); return;
+        }
+        var props = {};
+        for (var k in src) if (Object.prototype.hasOwnProperty.call(src, k)) props[k] = src[k];
+        delete props.id;
+        props.staffId = staffId; props.start = start; props.end = end;
+        props.contents = (src.contents || []).slice();
+        props.weeklyRef = null;
+        props.done = false; props.tentative = false; props.checks = {};
+        var dup = M.newTask(props);
+        dup.facManual = true;            /* 複製配置は手動扱い（自動再構成から保護） */
+        dup.origin = M.captureOrigin(dup);
+        store.dispatch({ type: 'ADD_TASK', task: dup });
+        toast('複製して配置しました');
       },
       onSwap: function (moves, withTask) {
         store.dispatch({ type: 'SWAP', moves: moves });
