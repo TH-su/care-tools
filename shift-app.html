@@ -216,7 +216,10 @@ dialog h3 { margin-top: 0; }
   /* A3横いっぱいに最大化・文字を大きく。インライン幅(集計列分の固定幅)を解除して
    * 可視列(氏名+区分+日付1..月末)だけに収縮＝月末右の空列/余白を消す（applyPrintFitがscaleで拡大） */
   table.sheet { width: auto !important; font-size: 13px; }
-  table.sheet th, table.sheet td { padding: 4px 2px; }
+  table.sheet th, table.sheet td { padding: 2px 1px; }   /* A3横最大化: 横paddingを詰める */
+  /* 集計/注記列の<col>トラック幅を0に潰す（セルはdisplay:none。table-layout:fixedでは
+   * <col>幅が残ると月末右に空トラックが出るため、ここで列ごと消す＝月末で表が収束） */
+  table.sheet colgroup col.pcol, table.sheet colgroup col.noprint { width: 0 !important; }
   table.sheet thead tr:nth-child(3) th { height: auto; }
   td.daycell { height: 26px; font-size: 13.5px; }
   td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
@@ -238,7 +241,9 @@ body.printsim .showbtn, body.printsim .hidebtn { display: none !important; }
 body.printsim tr.hiddenrow { display: none !important; }
 body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
 body.printsim table.sheet { width: auto !important; font-size: 13px; }   /* 実測幅を可視列のみに（印刷と同期） */
-body.printsim table.sheet th, body.printsim table.sheet td { padding: 4px 2px; }
+body.printsim table.sheet th, body.printsim table.sheet td { padding: 2px 1px; }
+body.printsim table.sheet colgroup col.pcol,
+body.printsim table.sheet colgroup col.noprint { width: 0 !important; }   /* 印刷と同期: 集計/注記列を0幅化 */
 body.printsim td.daycell { height: 26px; font-size: 13.5px; }
 body.printsim td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
 body.printsim td.namecell { font-size: 13px; }
@@ -2335,8 +2340,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var h = '<table class="sheet" style="width:' + totalW + 'px"><colgroup>';
       h += '<col style="width:100px"><col style="width:56px">';
       for (var c = 0; c < days; c++) h += '<col style="width:52px">';
-      h += '<col style="width:44px"><col style="width:44px"><col style="width:56px"><col style="width:48px">';
-      h += '<col style="width:200px"><col style="width:150px">';
+      h += '<col class="pcol" style="width:44px"><col class="pcol" style="width:44px"><col class="pcol" style="width:56px"><col class="pcol" style="width:48px">';
+      h += '<col class="noprint" style="width:200px"><col class="noprint" style="width:150px">';
       h += '</colgroup><thead>';
       /* 週行 */
       h += '<tr><th class="sticky1" style="left:0">週</th><th class="sticky2" style="left:100px"></th>';

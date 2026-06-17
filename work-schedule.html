@@ -2220,6 +2220,8 @@ body.printing .rs { display: none; }
 
   var M = (typeof module !== 'undefined' && module.exports)
     ? require('./model.js') : window.WSModel;
+  var TS = (typeof module !== 'undefined' && module.exports)
+    ? require('./timescale.js') : window.WSTime;
 
   var UNDO_LIMIT = 50;
 
@@ -2242,6 +2244,88 @@ body.printing .rs { display: none; }
       } else out.push(t);
     }
     return out;
+  }
+
+  function sameRanges_(a, b) {
+    if (a.length !== b.length) return false;
+    var aa = a.slice().sort(function (x, y) { return x[0] - y[0]; });
+    var bb = b.slice().sort(function (x, y) { return x[0] - y[0]; });
+    for (var i = 0; i < aa.length; i++) if (aa[i][0] !== bb[i][0] || aa[i][1] !== bb[i][1]) return false;
+    return true;
+  }
+
+  /* care移動 reducer 共通: 移動対象のうち「旧staffIdを持つ care」の旧位置を vacates として収集。
+   * トレイ初配置(旧staffId=null)は退去ではないので含めない。 */
+  function careVacates_(tasksBefore, ids) {
+    var vac = [], i;
+    for (i = 0; i < ids.length; i++) {
+      var t = M.findTask(tasksBefore, ids[i]);
+      if (t && t.kind === 'care' && t.staffId !== null && t.staffId !== undefined) {
+        vac.push({ staffId: t.staffId, start: t.start, end: t.end });
+      }
+    }
+    return vac;
+  }
+
+  /* 支援(care)が退去して空いた時間に、残存する施設業務枠(facManual・kind=facility)を、その正時の
+   * 空き全体へ再生成して拡張/マージする。「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
+   * （完全消滅した枠は復活させない）。夜勤職員は対象外。純粋関数（tasks を返す）。 */
+  function expandSurvivingFacwork_(tasks, vacates, staffArr) {
+    if (!vacates || !vacates.length) return tasks;
+    var staffById = {}, i;
+    for (i = 0; i < staffArr.length; i++) staffById[staffArr[i].id] = staffArr[i];
+    var byStaff = {};                                  /* staffId -> {正時hourStart:true} */
+    for (i = 0; i < vacates.length; i++) {
+      var v = vacates[i];
+      if (v.staffId === null || v.staffId === undefined) continue;
+      var st0 = staffById[v.staffId];
+      if (!st0 || st0.zone === 'night') continue;       /* 夜勤に facwork は無い */
+      if (!byStaff[v.staffId]) byStaff[v.staffId] = {};
+      var hh = Math.floor(v.start / 60) * 60;
+      for (; hh < v.end; hh += 60) byStaff[v.staffId][hh] = true;
+    }
+    var result = tasks;
+    for (var sid in byStaff) {
+      if (!Object.prototype.hasOwnProperty.call(byStaff, sid)) continue;
+      var staff = staffById[sid];
+      var ws = staff.workStart, we = staff.workEnd, hours = byStaff[sid];
+      for (var hkey in hours) {
+        if (!Object.prototype.hasOwnProperty.call(hours, hkey)) continue;
+        var hourStart = parseInt(hkey, 10), hourEnd = hourStart + 60, j;
+        var candIds = {}, hasCand = false, occ = [], candRanges = [];
+        for (j = 0; j < result.length; j++) {
+          var tk = result[j];
+          if (tk.staffId !== sid) continue;
+          if (!(tk.start < hourEnd && hourStart < tk.end)) continue;   /* この正時に重なる */
+          if (tk.src === 'facwork' && tk.kind === 'facility' && tk.facManual) {
+            candIds[tk.id] = true; hasCand = true; candRanges.push([tk.start, tk.end]);
+          } else {
+            occ.push([tk.start, tk.end]);               /* hard占有: care/休憩/自由枠/自動facwork */
+          }
+        }
+        if (!hasCand) continue;                         /* 拡張のみ: 残存候補が無い正時は何もしない */
+        var lo = Math.max(hourStart, ws), hi = Math.min(hourEnd, we);
+        if (hi <= lo) continue;
+        var free = TS.facResidual(lo, hi, occ, 20);     /* 空き区間（占有の補集合・20分未満破棄） */
+        if (sameRanges_(candRanges, free)) continue;    /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
+        var proto = null, kept = [];
+        for (j = 0; j < result.length; j++) {
+          if (candIds[result[j].id]) { if (!proto) proto = result[j]; }
+          else kept.push(result[j]);
+        }
+        if (!proto) continue;
+        for (var f = 0; f < free.length; f++) {
+          var fp = {}, fk;
+          for (fk in proto) if (Object.prototype.hasOwnProperty.call(proto, fk)) fp[fk] = proto[fk];
+          delete fp.id;
+          fp.start = free[f][0]; fp.end = free[f][1];
+          var nf = M.newTask(fp); nf.facManual = true;
+          kept.push(nf);
+        }
+        result = kept;
+      }
+    }
+    return result;
   }
 
   /* リデューサ（純粋関数）。day を変更せず新オブジェクトを返す */
@@ -2300,13 +2384,17 @@ body.printing .rs { display: none; }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: rest };
     }
     if (type === 'ASSIGN') {
-      return { meta: day.meta, staff: day.staff, columns: day.columns,
-               tasks: patchTask(day.tasks, action.id,
-                 { staffId: action.staffId, start: action.start, end: action.end }) };
+      var vacA = careVacates_(day.tasks, [action.id]);   /* 退去元(旧位置)を移動前に捕捉 */
+      var tasksA = patchTask(day.tasks, action.id,
+        { staffId: action.staffId, start: action.start, end: action.end });
+      tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff);   /* 退去先の残存施設枠を拡張(undo1回) */
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksA };
     }
     if (type === 'UNASSIGN') {
-      return { meta: day.meta, staff: day.staff, columns: day.columns,
-               tasks: patchTask(day.tasks, action.id, { staffId: null, done: false }) };
+      var vacU = careVacates_(day.tasks, [action.id]);
+      var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false });
+      tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff);
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksU };
     }
     if (type === 'SWAP') {
       var tasks2 = day.tasks;
@@ -2318,6 +2406,9 @@ body.printing .rs { display: none; }
     if (type === 'MULTI_ASSIGN') {
       /* 複数選択ブロックを相対時刻を保ったまま同一職員へ一括移動＝undoは1回で完全復元。
        * facwork(施設業務/休憩/自由枠)は手動配置として facManual を付与し自動再構成から保護。 */
+      var idsM = [], mm0;
+      for (mm0 = 0; mm0 < action.moves.length; mm0++) idsM.push(action.moves[mm0].id);
+      var vacM = careVacates_(day.tasks, idsM);          /* 退去元(各moveの旧位置)を移動前に捕捉 */
       var tasksM = day.tasks;
       for (var mm = 0; mm < action.moves.length; mm++) {
         var mvm = action.moves[mm];
@@ -2326,12 +2417,14 @@ body.printing .rs { display: none; }
         if (curM && curM.src === 'facwork') patchM.facManual = true;
         tasksM = patchTask(tasksM, mvm.id, patchM);
       }
+      tasksM = expandSurvivingFacwork_(tasksM, vacM, day.staff);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksM };
     }
     if (type === 'SHRINK_PLACE') {
       /* 支援(care)を施設業務/自由枠の上に配置し、重なった枠を残り時間へ縮小（中央なら前後へ分割）。
        * 1操作＝undo1回。残りは20分グリッドへ繰上げ、MIN(20分)未満の残片は作らない。 */
       var SP_MIN = 20;
+      var vacSP = careVacates_(day.tasks, [action.careId]);   /* 退去元(支援の旧位置)を移動前に捕捉 */
       var sStart = action.start, sEnd = action.end;
       var tasksP = patchTask(day.tasks, action.careId,
         { staffId: action.staffId, start: sStart, end: sEnd });
@@ -2358,12 +2451,16 @@ body.printing .rs { display: none; }
           tasksP = rest;
         }
       }
+      tasksP = expandSurvivingFacwork_(tasksP, vacSP, day.staff);   /* 退去元の残存施設枠を拡張(同一undo) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksP };
     }
     if (type === 'MULTI_SHRINK_PLACE') {
       /* 複数支援を同時移動しつつ、重なった施設業務/自由枠を残余区間へ縮小/分割する。
        * 残余断片は app 側(onMultiAssign)が TS.facResidual で算出済み(action.splits)。1操作＝undo1回。 */
       var tasksMS = day.tasks, a;
+      var idsMS = [];
+      for (a = 0; a < action.moves.length; a++) idsMS.push(action.moves[a].id);
+      var vacMS = careVacates_(day.tasks, idsMS);        /* 退去元(各支援の旧位置)を移動前に捕捉 */
       for (a = 0; a < action.moves.length; a++) {
         var mvA = action.moves[a];
         var curA = M.findTask(tasksMS, mvA.id);
@@ -2390,7 +2487,9 @@ body.printing .rs { display: none; }
       }
       var keptMS = [];
       for (a = 0; a < tasksMS.length; a++) if (!removeIds[tasksMS[a].id]) keptMS.push(tasksMS[a]);
-      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: keptMS.concat(additions) };
+      var tasksMSout = keptMS.concat(additions);
+      tasksMSout = expandSurvivingFacwork_(tasksMSout, vacMS, day.staff);   /* 退去元の残存施設枠を拡張(同一undo) */
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksMSout };
     }
     if (type === 'TOGGLE_DONE') {
       var cur = M.findTask(day.tasks, action.id);
@@ -4701,13 +4800,15 @@ body.printing .rs { display: none; }
   }
 
   /* ===== 印刷（A3縦・1枚フィット）=====
-   * A3縦 297×420mm・余白8mm の印字可能域に表全体＋印刷ヘッダーが収まる倍率を算出し、
-   * 盤面に transform:scale を適用する。**負マージン**で未縮小レイアウトboxの余剰分を相殺し、
-   * overflow:hidden を使わずに1ページへ収める（Chrome印刷で overflow:hidden+transform が
-   * 白紙化する不具合、および zoom 印刷の不具合の双方を回避する）。 */
+   * A3縦の印字可能域に表全体＋印刷ヘッダーが収まる倍率 s を算出し、盤面に **zoom**(等方)を適用する
+   * （zoom はレイアウトboxごと縮尺＝印刷エンジンの用紙合わせによる二重縮小・白紙化を回避）。
+   * 幅律速で下方に余白が残る分は、zoom後の盤面に縦のみ scaleY を重ねて印字域いっぱいに充填する。
+   * overflow:hidden は使わない（Chrome印刷で overflow:hidden+transform が白紙化する不具合を回避）。 */
   /* A3縦 297×420mm・余白5mm の印字可能域 ≒ 1085×1550px(@96dpi)。用紙幅いっぱいに最大化（安全側に少し詰める）。 */
   var PRINT_AVAIL = { w: 1078, h: 1542 };
   var PRINT_MAX_SCALE = 1.6;   /* 列が少ない日も用紙いっぱいに拡大（過拡大での文字崩れ防止に上限） */
+  var PRINT_VFILL_MAX = 1.6;   /* 縦充填の上限（行間が間延びしすぎない過伸ばしcap） */
+  var PRINT_VFILL_SAFE = 0.985;/* 1ページ割れ回避の安全係数（印字域のわずか内側に収める） */
   var printSavedScroll = null;
   function fitPrint() {
     var board = $('board');
@@ -4734,6 +4835,17 @@ body.printing .rs { display: none; }
      * 二重縮小されて「小さすぎ／余白が大」になっていた。overflow:hidden は使わない＝白紙化も回避。 */
     board.style.width = w + 'px';
     board.style.zoom = s;
+    /* 縦余白充填: A3縦は幅律速で s が小さく下方に余白が残るため、zoom後の盤面に縦のみ
+     * scaleY を重ねて印字域の縦をいっぱいに使う（transform は zoom 後の見た目に乗るので
+     * 基準高は visH=h*s）。layout box は zoom 済のまま＝scaleYは視覚のみ→改ページ閾値を超えず
+     * 1ページ維持。overflow:hidden 不使用で白紙化も起きない。 */
+    var visH = h * s;
+    var k = (PRINT_AVAIL.h - headH) / visH;
+    if (k < 1) k = 1;                              /* 高さ律速の日(横余り)は縦を縮めない */
+    if (k > PRINT_VFILL_MAX) k = PRINT_VFILL_MAX;  /* 過伸ばしcap */
+    k = k * PRINT_VFILL_SAFE;
+    board.style.transformOrigin = '0 0';           /* 上端固定＝ヘッダー直下から下方向のみ伸長 */
+    board.style.transform = 'scaleY(' + k.toFixed(3) + ')';
   }
   function unfitPrint() {
     var board = $('board');
