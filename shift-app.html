@@ -213,13 +213,11 @@ dialog h3 { margin-top: 0; }
   body { background: #fff; }
   main { padding: 0; }
   #gridWrap { max-height: none; overflow: visible; border: none; }
-  /* A3横いっぱいに最大化・文字を大きく。インライン幅(集計列分の固定幅)を解除して
-   * 可視列(氏名+区分+日付1..月末)だけに収縮＝月末右の空列/余白を消す（applyPrintFitがscaleで拡大） */
-  table.sheet { width: auto !important; font-size: 13px; }
+  /* 印刷は printMode 再レンダで可視列(氏名+区分+日付1..月末)のみのDOMにしインライン width(列幅の
+   * 合計=applyPrintFitが算出した日付列幅)を使う。width:auto は table-layout:fixed の列幅指定を無効化し
+   * A3横を埋められなくなるため使わない（旧 col{width:0} 方式の名残）。 */
+  table.sheet { font-size: 13px; }
   table.sheet th, table.sheet td { padding: 2px 1px; }   /* A3横最大化: 横paddingを詰める */
-  /* 集計/注記列の<col>トラック幅を0に潰す（セルはdisplay:none。table-layout:fixedでは
-   * <col>幅が残ると月末右に空トラックが出るため、ここで列ごと消す＝月末で表が収束） */
-  table.sheet colgroup col.pcol, table.sheet colgroup col.noprint { width: 0 !important; }
   table.sheet thead tr:nth-child(3) th { height: auto; }
   td.daycell { height: 26px; font-size: 13.5px; }
   td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
@@ -240,10 +238,8 @@ body.printsim #toolbar, body.printsim .layerbar, body.printsim #metricsBar,
 body.printsim .showbtn, body.printsim .hidebtn { display: none !important; }
 body.printsim tr.hiddenrow { display: none !important; }
 body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
-body.printsim table.sheet { width: auto !important; font-size: 13px; }   /* 実測幅を可視列のみに（印刷と同期） */
+body.printsim table.sheet { font-size: 13px; }   /* width:auto は使わない（印刷と同期・列幅をtable-layout:fixedで効かせる） */
 body.printsim table.sheet th, body.printsim table.sheet td { padding: 2px 1px; }
-body.printsim table.sheet colgroup col.pcol,
-body.printsim table.sheet colgroup col.noprint { width: 0 !important; }   /* 印刷と同期: 集計/注記列を0幅化 */
 body.printsim td.daycell { height: 26px; font-size: 13.5px; }
 body.printsim td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
 body.printsim td.namecell { font-size: 13px; }
@@ -2325,12 +2321,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     dragging: false,
     recentSyms: [],
 
-    render: function (ctx, printMode) {
+    render: function (ctx, printMode, dayColW) {
       this.ctx = ctx;
       /* printMode=true: 印刷用に「可視列(氏名+区分+日付)のみ」のDOMを生成する。集計/注記列の
        * <col>・セル・colspan を最初から出さない＝実@media printでも grouphead 帯が月末で収束する
-       * （col{width:0}は実印刷では潰れ切らないため、構造から省く）。 */
+       * （col{width:0}は実印刷では潰れ切らないため、構造から省く）。
+       * dayColW: 印刷時の日付列幅（applyPrintFitがA3横を埋める幅を算出して渡す。歪まず最大化）。 */
       var pm = printMode || false;
+      var dcw = (pm && dayColW) ? dayColW : 52;
       var self = this;
       var wrap = document.getElementById('gridWrap');
       var days = ctx.days;
@@ -2340,11 +2338,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
       this.visibleRows = [];
       /* table-layout:fixed はテーブル幅が明示されている場合のみ有効 */
-      var totalW = pm ? (100 + 56 + days * 52)
+      var totalW = pm ? (100 + 56 + days * dcw)
                       : (100 + 56 + days * 52 + 44 + 44 + 56 + 48 + 200 + 150);
       var h = '<table class="sheet" style="width:' + totalW + 'px"><colgroup>';
       h += '<col style="width:100px"><col style="width:56px">';
-      for (var c = 0; c < days; c++) h += '<col style="width:52px">';
+      for (var c = 0; c < days; c++) h += '<col style="width:' + dcw + 'px">';
       if (!pm) {
         h += '<col class="pcol" style="width:44px"><col class="pcol" style="width:44px"><col class="pcol" style="width:56px"><col class="pcol" style="width:48px">';
         h += '<col class="noprint" style="width:200px"><col class="noprint" style="width:150px">';
@@ -5286,29 +5284,36 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       } else {
         sel = '#gridWrap'; table = document.querySelector('#gridWrap table.sheet'); useSim = true;
       }
+      var isA3 = size.indexOf('A3') >= 0;
+      var pxW = ((isA3 ? 420 : 297) - 10) * 96 / 25.4;   /* 余白5mm×2＝印字域(横) */
+      var pxH = ((isA3 ? 297 : 210) - 10) * 96 / 25.4;   /* 印字域(縦) */
       /* グリッドビューは印刷用に「可視列のみ」のDOMへ再レンダ（grouphead等を days+2 に＝実@media
-       * printでも月末で収束）。このDOMのまま印刷し、afterprint で通常表示へ戻す。 */
+       * printでも月末で収束）。さらに、表の行高から「A3横を縦横とも埋める日付列幅」を逆算して
+       * 列を広げる＝等方zoomで歪まず用紙いっぱいに最大化（文字は伸ばさない）。afterprintで復帰。 */
       if (useSim) {
-        Grid.render(this.gridCtx(), true);
+        Grid.render(this.gridCtx(), true);               /* 1パス目: 既定幅で行高を測る */
+        table = document.querySelector('#gridWrap table.sheet');
+        document.body.classList.add('printsim');
+        var hgt0 = table.scrollHeight;
+        document.body.classList.remove('printsim');
+        var wantW = pxW * hgt0 / (pxH - 24);             /* この行高でA3横を埋める表幅 */
+        var dcw = Math.round((wantW - 156) / Math.max(1, this.days));   /* 156=氏名100+区分56 */
+        if (dcw < 44) dcw = 44; if (dcw > 140) dcw = 140;
+        Grid.render(this.gridCtx(), true, dcw);          /* 2パス目: 算出した日付列幅で再レンダ */
         table = document.querySelector('#gridWrap table.sheet');
       }
       var zoom = 1, w = 1, hgt = 1;
       if (table) {
-        var isA3 = size.indexOf('A3') >= 0;
-        var pxW = ((isA3 ? 420 : 297) - 10) * 96 / 25.4;   /* 余白5mm×2＝印字域を拡大 */
-        var pxH = ((isA3 ? 297 : 210) - 10) * 96 / 25.4;
         if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法(padding等)で実測 */
         w = table.scrollWidth; hgt = table.scrollHeight;
         if (useSim) document.body.classList.remove('printsim');
-        /* 横幅いっぱいに最大化。可視列のみの表は用紙より狭いことがあるため上限1.6で拡大も許可。 */
+        /* 等方zoomで用紙へフィット（列幅を広げてあるので横も埋まる）。上限1.6で拡大も許可。 */
         zoom = Math.min(1.6, pxW / w, (pxH - 24) / hgt) * 0.99;
       }
       var z = zoom.toFixed(3);
       var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
-      /* zoom はレイアウトboxごと縮尺するため、印刷エンジンの用紙合わせによる二重縮小・白紙化を回避し、
-       * 用紙いっぱいに最大化できる。旧方式(transform:scale＋負マージン)は box が未縮小のまま残り、
-       * 「小さすぎ／余白が大」になっていた。transform:none で全体表示(fitscreen)のインライン
-       * transform を打ち消し、zoom との二重縮尺を防ぐ。 */
+      /* zoom はレイアウトboxごと縮尺＝印刷エンジンの用紙合わせによる二重縮小・白紙化を回避。
+       * transform:none で全体表示(fitscreen)のインライン transform を打ち消し二重縮尺を防ぐ。 */
       fit.textContent = '@media print {' +
         ' ' + sel + ' { overflow: visible; max-height: none; }' +
         ' ' + tableSel + ' { zoom: ' + z + ' !important; transform: none !important; }' +

@@ -1533,15 +1533,15 @@ function csRealResidentCount(residents) {
   return n;
 }
 /* 「出荷時サンプル『あ』のみ／空」か（=実データなしとみなしてよいか）。実入居者を誤判定しないよう厳格に。
-   サンプルは「単一・1文字のかな名・マスタ未連携・非退去・予定ゼロ」に限定（漢字姓 林/原/東 等は実データ扱い）。 */
+   サンプルは「単一・1文字のかな名・マスタ未連携・非退去」に限定（漢字姓 林/原/東 等は実データ扱い）。
+   テスト『あ』は予定付きで残ることがあるため events では判定しない（=予定があってもサンプル扱い）。 */
 function csLooksLikeSampleOnly(residents) {
   if (!Array.isArray(residents) || residents.length === 0) return true;   // 空
   if (residents.length === 1) {
     const r = residents[0] || {};
     const nm = (r.name == null ? '' : String(r.name)).replace(/\s+/g, '');
-    const evs = Array.isArray(r.events) ? r.events.length : 0;
-    const isKana = nm.charCodeAt(0) >= 0x3040 && nm.charCodeAt(0) <= 0x30FF;   /* ひらがな/カタカナ1文字 */
-    if (nm.length === 1 && isKana && r.masterId == null && !r.movedOut && evs === 0) return true;
+    const isKana = nm.length === 1 && nm.charCodeAt(0) >= 0x3040 && nm.charCodeAt(0) <= 0x30FF;   /* ひらがな/カタカナ1文字 */
+    if (isKana && r.masterId == null && !r.movedOut) return true;
   }
   return false;
 }
