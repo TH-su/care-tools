@@ -124,10 +124,12 @@ tr.rephead.rowdate th { border-top: 3px double #000; }
 tr.subrow td { background: #fcfcfc; }
 tr.dragover td { border-top: 2px solid var(--blue); }
 tr.hiddenrow td { opacity: .45; }
-/* 畳んだ非表示行: 行を細く・日セルは空で高さ圧縮。区分名と「表示」ボタンは読める状態を維持して復元可能に */
-tr.collapsedrow td.collapsedcell { height: 5px; padding: 0; line-height: 0; font-size: 0; background: #f4f4f4; }
-tr.collapsedrow td.divcell { opacity: .7; font-size: 11px; padding-top: 1px; padding-bottom: 1px; }
-tr.collapsedrow td.divcell .showbtn { opacity: 1; }
+/* 畳んだ非表示行: 行を確実に細く折り畳む（通常26px→約11px）。日セルは空で圧縮、
+ * 区分名は極小・「表示」ボタンは小さく残して復元可能に。全セルに低い行高を効かせる。 */
+tr.collapsedrow td { height: 7px !important; padding: 0 !important; line-height: 1 !important; }
+tr.collapsedrow td.collapsedcell { height: 7px; line-height: 0; font-size: 0; background: #f4f4f4; }
+tr.collapsedrow td.divcell { opacity: .55; font-size: 9px; line-height: 1.1 !important; padding: 0 2px !important; white-space: nowrap; overflow: hidden; }
+tr.collapsedrow td.divcell .showbtn { font-size: 9px; padding: 0 2px; opacity: 1; }
 /* 訪問介護員の休み数 集計行（画面確認用・印刷は noprint で非表示） */
 tr.summaryrow td { background: #eef3fb; border-top: 2px solid #b9cbe6; }
 tr.summaryrow td.namecell { font-size: 12px; font-weight: 700; color: #1a4a80; }
@@ -217,8 +219,9 @@ dialog h3 { margin-top: 0; }
   body { background: #fff; }
   main { padding: 0; }
   #gridWrap { max-height: none; overflow: visible; border: none; }
-  /* A3横いっぱいに最大化・文字を大きく */
-  table.sheet { width: 100%; font-size: 13px; }
+  /* A3横いっぱいに最大化・文字を大きく。インライン幅(集計列分の固定幅)を解除して
+   * 可視列(氏名+区分+日付1..月末)だけに収縮＝月末右の空列/余白を消す（applyPrintFitがscaleで拡大） */
+  table.sheet { width: auto !important; font-size: 13px; }
   table.sheet th, table.sheet td { padding: 4px 2px; }
   table.sheet thead tr:nth-child(3) th { height: auto; }
   td.daycell { height: 26px; font-size: 13.5px; }
@@ -228,7 +231,8 @@ dialog h3 { margin-top: 0; }
   /* sticky解除（印刷時の見出し欠け対策） */
   table.sheet thead th, .sticky1, .sticky2 { position: static !important; }
   tr { page-break-inside: avoid; }
-  #printTitle { display: block !important; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+  /* タイトルは文字幅(inline-block)＝表からはみ出さない（旧:block で用紙幅100%＝広すぎた） */
+  #printTitle { display: inline-block !important; width: auto; max-width: 100%; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
 }
 #printTitle { display: none; }
 
@@ -239,7 +243,7 @@ body.printsim #toolbar, body.printsim .layerbar, body.printsim #metricsBar,
 body.printsim .showbtn, body.printsim .hidebtn { display: none !important; }
 body.printsim tr.hiddenrow { display: none !important; }
 body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
-body.printsim table.sheet { font-size: 13px; }
+body.printsim table.sheet { width: auto !important; font-size: 13px; }   /* 実測幅を可視列のみに（印刷と同期） */
 body.printsim table.sheet th, body.printsim table.sheet td { padding: 4px 2px; }
 body.printsim td.daycell { height: 26px; font-size: 13.5px; }
 body.printsim td.daycell.multiduty { height: auto; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.15; }
@@ -5260,7 +5264,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         style.id = 'pageStyle';
         document.head.appendChild(style);
       }
-      style.textContent = '@page { size: ' + size + '; margin: 8mm; }';
+      style.textContent = '@page { size: ' + size + '; margin: 5mm; }';   /* 余白を詰めて用紙いっぱいに最大化 */
       var fit = document.getElementById('fitStyle');
       if (!fit) {
         fit = document.createElement('style');
@@ -5277,24 +5281,26 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var zoom = 1, w = 1, hgt = 1;
       if (table) {
         var isA3 = size.indexOf('A3') >= 0;
-        var pxW = ((isA3 ? 420 : 297) - 16) * 96 / 25.4;
-        var pxH = ((isA3 ? 297 : 210) - 16) * 96 / 25.4;
-        if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法で実測 */
+        var pxW = ((isA3 ? 420 : 297) - 10) * 96 / 25.4;   /* 余白5mm×2＝印字域を拡大 */
+        var pxH = ((isA3 ? 297 : 210) - 10) * 96 / 25.4;
+        if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法(width:auto等)で実測＝可視列のみ */
         w = table.scrollWidth; hgt = table.scrollHeight;
         if (useSim) document.body.classList.remove('printsim');
-        zoom = Math.min(1, pxW / w, (pxH - 40) / hgt) * 0.97;
+        /* 横幅いっぱいに最大化。可視列のみの表は用紙より狭いことがあるため上限1.6で拡大も許可。 */
+        zoom = Math.min(1.6, pxW / w, (pxH - 24) / hgt) * 0.99;
       }
       var z = zoom.toFixed(3);
       var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
-      var mr = Math.round(w * (1 - zoom));   /* 未縮小レイアウトboxの余剰を相殺 */
-      var mb = Math.round(hgt * (1 - zoom));
+      /* 未縮小レイアウトboxとの差を相殺。z<1は負マージン/z>1(拡大)は正マージン（符号は式に委ねる） */
+      var mr = -Math.round(w * (1 - zoom));
+      var mb = -Math.round(hgt * (1 - zoom));
       /* transform:scale＋負マージンで1ページ化（zoom印刷の白紙化・transform+overflow:hiddenの白紙化を回避）。
        * overflow:hidden は使わず、テーブル自身を縮小＋負マージンで余剰を打ち消す。Chrome/Edge/Safari対応。 */
       /* !important で全体表示(fitscreen)のインライン transform を上書き（印刷時は印刷用スケールを優先） */
       fit.textContent = '@media print {' +
         ' ' + sel + ' { overflow: visible; max-height: none; }' +
         ' ' + tableSel + ' { transform: scale(' + z + ') !important; transform-origin: top left !important;' +
-        ' margin-right: -' + mr + 'px !important; margin-bottom: -' + mb + 'px !important; }' +
+        ' margin-right: ' + mr + 'px !important; margin-bottom: ' + mb + 'px !important; }' +
         '}';
     },
 

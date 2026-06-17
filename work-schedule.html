@@ -213,6 +213,7 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .ghost.ng { border-color: var(--ng); background: rgba(198,40,40,.12); color: var(--ng); }
 .ghost.swap { border-color: #6a1b9a; background: rgba(106,27,154,.14); color: #6a1b9a; }
 .ghost.confirm { border-color: #e8a200; background: rgba(232,162,0,.15); color: #9a6a00; }
+.ghost.shrinkplace { border-color: var(--ok); background: rgba(46,125,50,.12); color: var(--ok); }
 .b-task.swap-target { box-shadow: 0 0 0 3px #6a1b9a; z-index: 21; }
 .drag-chip { position: fixed; z-index: 200; pointer-events: none; opacity: .9; }
 
@@ -346,7 +347,7 @@ body.printing .rs { display: none; }
 /* ===== 印刷（A3縦・1枚収まり・押印運用）
    倍率は app.js の fitPrint() が beforeprint で算出し .board に transform を適用する ===== */
 @media print {
-  @page { size: A3 portrait; margin: 8mm; }
+  @page { size: A3 portrait; margin: 5mm; }   /* 余白を詰めて用紙いっぱいに最大化 */
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { overflow: visible; height: auto; background: #fff; }
   /* 列間の罫線は黒で印刷（2026-06-13指示） */
@@ -2296,6 +2297,38 @@ body.printing .rs { display: none; }
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksM };
     }
+    if (type === 'SHRINK_PLACE') {
+      /* 支援(care)を施設業務/自由枠の上に配置し、重なった枠を残り時間へ縮小（中央なら前後へ分割）。
+       * 1操作＝undo1回。残りは20分グリッドへ繰上げ、MIN(20分)未満の残片は作らない。 */
+      var SP_MIN = 20;
+      var sStart = action.start, sEnd = action.end;
+      var tasksP = patchTask(day.tasks, action.careId,
+        { staffId: action.staffId, start: sStart, end: sEnd });
+      var fac = M.findTask(day.tasks, action.facId);
+      if (fac) {
+        var fStart = fac.start, fEnd = fac.end;
+        var headEnd = sStart;                              /* 前半は支援開始まで */
+        var tailStart = Math.ceil(sEnd / 20) * 20;         /* 後半は支援終了を20分繰上げした位置から */
+        var keepHead = (headEnd - fStart) >= SP_MIN;
+        var keepTail = (fEnd - tailStart) >= SP_MIN;
+        if (keepHead && keepTail) {                        /* 中央＝前後に分割 */
+          tasksP = patchTask(tasksP, action.facId, { end: headEnd, facManual: true });
+          var tp = {}; for (var fk in fac) if (Object.prototype.hasOwnProperty.call(fac, fk)) tp[fk] = fac[fk];
+          delete tp.id; tp.start = tailStart; tp.end = fEnd;
+          var tail = M.newTask(tp); tail.facManual = true;
+          tasksP = tasksP.concat([tail]);
+        } else if (keepHead) {                             /* 前半のみ残す（後方縮小） */
+          tasksP = patchTask(tasksP, action.facId, { end: headEnd, facManual: true });
+        } else if (keepTail) {                             /* 後半のみ残す（前方縮小） */
+          tasksP = patchTask(tasksP, action.facId, { start: tailStart, facManual: true });
+        } else {                                           /* 残りが極小＝枠を削除 */
+          var rest = [];
+          for (var ri = 0; ri < tasksP.length; ri++) if (tasksP[ri].id !== action.facId) rest.push(tasksP[ri]);
+          tasksP = rest;
+        }
+      }
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksP };
+    }
     if (type === 'TOGGLE_DONE') {
       var cur = M.findTask(day.tasks, action.id);
       if (!cur) return day;
@@ -2689,6 +2722,10 @@ body.printing .rs { display: none; }
     var b = el('div', cls);
     b.style.top = top + 'px';
     b.setAttribute('data-id', t.id);
+    /* 時間変更済(2重罫線)の支援は、変更前の元の時間をホバー(title)で表示 */
+    if (M.isChanged(t) && t.origin) {
+      b.setAttribute('title', '元の時間 ' + M.fmtRange(t.origin.start, t.origin.end, TS.minToTime));
+    }
 
     var svc = M.SVC[t.svcCode];
     var range = M.fmtRange(t.start, t.end, TS.minToTime);
@@ -3207,6 +3244,18 @@ body.printing .rs { display: none; }
         /* 入替不可ならフォールスルー＝ドロップ先列の職員(st)で通常配置として判定。
          * 重なり相手があるため通常は staffdup（正しい職員文脈の明確なメッセージ）になる。 */
       }
+      /* 支援(care)を同一職員の施設業務/自由枠(src='facwork'・休憩は除く)1枠のみへ重ねた場合は、
+       * 上書き/拒否でなく「縮小配置」: 施設業務を残り時間へ縮小（中央なら分割）して支援を置く。
+       * 他の支援とも重なる場合は対象外（通常の重複判定＝ng/swap）。 */
+      if (!altDup && task.kind === 'care' && conflicts.length === 1 &&
+          conflicts[0].staffId === st.id && conflicts[0].src === 'facwork' &&
+          (conflicts[0].kind === 'facility' || conflicts[0].kind === 'free')) {
+        var others = M.staffConflicts(day.tasks, st.id, start, end, [task.id, conflicts[0].id]);
+        if (others.length === 0) {
+          return { status: 'shrinkplace', reason: '', lane: lane, start: start, end: end,
+                   staff: st, overlapTask: conflicts[0] };
+        }
+      }
       var v = M.validatePlacement(day, task.id, st.id, start, end);
       /* 勤務時間外(warn)は配置可能だが確認を要する → status 'confirm' */
       var stMv = v.ok ? (v.warn === 'worktime' ? 'confirm' : 'ok') : 'ng';
@@ -3310,6 +3359,7 @@ body.printing .rs { display: none; }
       if (isSwapKind) label = '⇄入替';
       else if (ev.status === 'ng') label = '✕';
       else if (ev.status === 'confirm') label = dupMode ? '＋複製(時間外)' : '⚠時間外';
+      else if (ev.status === 'shrinkplace') label = '◧縮小配置';
       else if (dupMode) label = '＋複製';
       showGhost(ev.lane, ev.start, ev.end, isSwapKind ? 'swap' : ev.status, label);
       if (isSwapKind && ev.swapWith) {
@@ -3349,6 +3399,10 @@ body.printing .rs { display: none; }
       }
       if (ev.status === 'timeswap' && ev.plan && ev.plan.ok) { opts.onTimeSwap(ev.plan.moves, ev.swapWith); return; }
       if (ev.status === 'swap' && ev.plan && ev.plan.ok) { opts.onSwap(ev.plan.moves, ev.swapWith); return; }
+      /* 支援を施設業務枠へ重ねた縮小配置 */
+      if (ev.status === 'shrinkplace' && ev.overlapTask && opts.onShrinkPlace) {
+        opts.onShrinkPlace(taskId, ev.staff.id, ev.start, ev.end, ev.overlapTask.id); return;
+      }
       /* Alt(Option)＋休憩/施設業務の移動ドロップ＝複製配置 */
       var taskC = M.findTask(opts.getDay().tasks, taskId);
       var dup = drag.alt && drag.mode === 'move' && isFlexSwap(taskC);
@@ -4514,8 +4568,8 @@ body.printing .rs { display: none; }
    * 盤面に transform:scale を適用する。**負マージン**で未縮小レイアウトboxの余剰分を相殺し、
    * overflow:hidden を使わずに1ページへ収める（Chrome印刷で overflow:hidden+transform が
    * 白紙化する不具合、および zoom 印刷の不具合の双方を回避する）。 */
-  /* A3縦 297×420mm・余白8mm の印字可能域 ≒ 1062×1527px(@96dpi)。安全側に余裕を取る。 */
-  var PRINT_AVAIL = { w: 1045, h: 1500 };
+  /* A3縦 297×420mm・余白5mm の印字可能域 ≒ 1085×1550px(@96dpi)。用紙幅いっぱいに最大化（安全側に少し詰める）。 */
+  var PRINT_AVAIL = { w: 1078, h: 1542 };
   var PRINT_MAX_SCALE = 1.6;   /* 列が少ない日も用紙いっぱいに拡大（過拡大での文字崩れ防止に上限） */
   var printSavedScroll = null;
   function fitPrint() {
@@ -5850,6 +5904,19 @@ body.printing .rs { display: none; }
         if (!window.confirm('勤務時間外ですが配置しますか？')) return;
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);
+      },
+      onShrinkPlace: function (careId, staffId, start, end, facId) {
+        /* 支援を施設業務/自由枠へ重ねた縮小配置。施設業務枠を除いた状態で支援配置を最終検証
+         * （入居者重複→中止、勤務時間外→確認）してから SHRINK_PLACE を1操作で適用。 */
+        var day = store.get();
+        var simTasks = [];
+        for (var i = 0; i < day.tasks.length; i++) if (day.tasks[i].id !== facId) simTasks.push(day.tasks[i]);
+        var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
+        var v = M.validatePlacement(sim, careId, staffId, start, end);
+        if (!v.ok) { toast(v.reason || '配置できません', true); return; }
+        if (v.warn === 'worktime' && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        store.dispatch({ type: 'SHRINK_PLACE', careId: careId, staffId: staffId, start: start, end: end, facId: facId });
+        toast('施設業務を縮小して配置しました');
       },
       onDuplicateTo: function (taskId, staffId, start, end, needConfirm) {
         /* Alt(Option)＋休憩/施設業務のドロップ＝複製してその場へ配置（元枠は残す） */
