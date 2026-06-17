@@ -526,30 +526,32 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return out;
   }
 
-  /* おすすめ配色（区分別・セル背景＋文字色）。記号コード優先・無ければ区分(cat)で適用 */
+  /* おすすめ配色（区分別・セル背景＋文字色）。記号コード優先・無ければ区分(cat)で適用。
+   * 配色は参考シート「希望シフト回答_シルバーユニックス」(条件付き書式)から抽出した色に統一:
+   *   早=#ead1dc / 遅=#cfe2f3 / 休系=#fff2cc+赤文字 / 有=#f4cccc / 日勤・夜勤・明け=白。 */
   var RECOMMENDED_BY_CODE = {
-    '早':  { color: '#dbeafe', textColor: '#1e40af' },
-    '日1': { color: '#dcfce7', textColor: '#166534' },
-    '日2': { color: '#cdeede', textColor: '#166534' },
-    '日3': { color: '#bfe9d3', textColor: '#14532d' },
-    '遅':  { color: '#ffedd5', textColor: '#9a3412' },
-    '(21': { color: '#ede9fe', textColor: '#5b21b6' },
-    '(22': { color: '#e3def7', textColor: '#5b21b6' },
-    '7)':  { color: '#ede9fe', textColor: '#5b21b6' },
-    '8)':  { color: '#e3def7', textColor: '#5b21b6' },
-    '休':  { color: '#eef2f6', textColor: '#475569' },
-    '公':  { color: '#eef2f6', textColor: '#475569' },
-    '希':  { color: '#fee2e2', textColor: '#b91c1c', bold: true },
-    '有':  { color: '#fef9c3', textColor: '#854d0e' },
-    '明':  { color: '#f1f5f9', textColor: '#94a3b8' },
-    '欠':  { color: '#fecaca', textColor: '#991b1b', bold: true }
+    '早':  { color: '#ead1dc', textColor: '#000000' },
+    '日1': { color: '#ffffff', textColor: '#000000' },
+    '日2': { color: '#ffffff', textColor: '#000000' },
+    '日3': { color: '#ffffff', textColor: '#000000' },
+    '遅':  { color: '#cfe2f3', textColor: '#000000' },
+    '(21': { color: '#ffffff', textColor: '#000000' },
+    '(22': { color: '#ffffff', textColor: '#000000' },
+    '7)':  { color: '#ffffff', textColor: '#000000' },
+    '8)':  { color: '#ffffff', textColor: '#000000' },
+    '休':  { color: '#fff2cc', textColor: '#ff0000' },
+    '公':  { color: '#fff2cc', textColor: '#ff0000' },
+    '希':  { color: '#fff2cc', textColor: '#ff0000', bold: true },
+    '有':  { color: '#f4cccc', textColor: '#000000' },
+    '明':  { color: '#ffffff', textColor: '#666666' },
+    '欠':  { color: '#fff2cc', textColor: '#ff0000', bold: true }
   };
   var RECOMMENDED_BY_CAT = {
-    early: { color: '#dbeafe', textColor: '#1e40af' },
-    mid:   { color: '#dcfce7', textColor: '#166534' },
-    late:  { color: '#ffedd5', textColor: '#9a3412' },
-    night: { color: '#ede9fe', textColor: '#5b21b6' },
-    off:   { color: '#eef2f6', textColor: '#475569' }
+    early: { color: '#ead1dc', textColor: '#000000' },
+    mid:   { color: '#ffffff', textColor: '#000000' },
+    late:  { color: '#cfe2f3', textColor: '#000000' },
+    night: { color: '#ffffff', textColor: '#000000' },
+    off:   { color: '#fff2cc', textColor: '#ff0000' }
   };
 
   function recommendedFor(sym) {
@@ -4291,6 +4293,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           this.symbols = Sym.applyRecommendedColors(this.symbols);
           Store.set('symbols', this.symbols);
         }
+        this.settings.recommendedColorsApplied = true;
+        Store.set('settings', this.settings);
+      }
+      /* 参考シート(希望シフト回答)準拠の配色へ一度だけ全記号を移行する。
+       * 既存記号の旧色・旧バックアップ(userColored)もリセットし、全記号がシート色に揃う。
+       * 以後の個別編集は userColored＋symColorsバックアップで保護される（下のブロック）。 */
+      var COLOR_PALETTE_VER = 2;
+      if ((this.settings.colorPaletteVer || 0) < COLOR_PALETTE_VER) {
+        this.symbols = Sym.applyRecommendedColors(this.symbols);
+        for (var pvi = 0; pvi < this.symbols.length; pvi++) this.symbols[pvi].userColored = false;
+        Store.set('symbols', this.symbols);
+        Store.setLocal('symColors', {});      /* 旧バックアップを破棄＝新配色が確実に適用される */
+        this.settings.colorPaletteVer = COLOR_PALETTE_VER;
         this.settings.recommendedColorsApplied = true;
         Store.set('settings', this.settings);
       }
