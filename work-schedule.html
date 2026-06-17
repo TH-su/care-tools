@@ -356,8 +356,9 @@ body.printing .rs { display: none; }
   .b-heads { border-bottom-color: #000; }
   .b-head.zone-div, .b-lane.zone-div { border-left-color: #000; }
   .hdr, .bnav, .tray, #toast, .modal, .modal-bg, .zone-toggle, .board-empty { display: none !important; }
-  /* fitPrint() が wrap を縮小後サイズに設定。overflow:hidden で未縮小ボードのはみ出し(2ページ化)を抑止 */
-  .board-wrap { overflow: hidden; padding-bottom: 0; }
+  /* fitPrint() が #board に transform:scale＋負マージンを適用。overflow:hidden は使わない
+   * （Chrome印刷で overflow:hidden+transform が白紙化するため）。 */
+  .board-wrap { overflow: visible; padding-bottom: 0; }
   .board { display: block; break-inside: avoid; page-break-inside: avoid; }
   .b-heads { position: static; }
   .print-head { display: block !important; }
@@ -761,6 +762,32 @@ body.printing .rs { display: none; }
     return h + ':' + (m < 10 ? '0' + m : m);
   }
 
+  /* step(分) グリッドへ繰上げ（例: roundUp(439,20)=440=7:20, roundUp(479,20)=480=8:00） */
+  function roundUp(min, step) {
+    if (!step || step < 1) step = 1;
+    return Math.ceil(min / step) * step;
+  }
+
+  /* 空き区間 [a,hi] を「1時間ごとの枠」に分割した [start,end] 配列を返す。
+   * - 始端を20分グリッドへ繰上げ（直前支援が7:19終了＝配置基準7:20）。
+   * - まず次の正時までの端数枠（例 7:20-8:00）、以降は 8:00-9:00 と正時刻みで敷き詰める。
+   * - min(既定20)分未満の空き/末尾の細切れは枠を作らない/直前へ吸収。 */
+  function hourlyFrames(a, hi, min) {
+    if (!min || min < 1) min = 20;
+    var out = [];
+    a = roundUp(a, 20);
+    if (hi - a < min) return out;
+    var firstHour = Math.ceil(a / 60) * 60;        /* 次の正時 */
+    if (firstHour > a && firstHour <= hi) { out.push([a, firstHour]); a = firstHour; }  /* 端数枠 */
+    while (a < hi) {
+      var b = Math.min(a + 60, hi);
+      if (hi - b < min) b = hi;                     /* 末尾の細切れは直前ブロックへ吸収 */
+      out.push([a, b]);
+      a = b;
+    }
+    return out;
+  }
+
   var api = {
     DAY_MIN: DAY_MIN,
     ROW_PX: ROW_PX,
@@ -775,7 +802,9 @@ body.printing .rs { display: none; }
     nightDisplayable: nightDisplayable,
     snapMin: snapMin,
     timeToMin: timeToMin,
-    minToTime: minToTime
+    minToTime: minToTime,
+    roundUp: roundUp,
+    hourlyFrames: hourlyFrames
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSTime = api;
@@ -2254,6 +2283,19 @@ body.printing .rs { display: none; }
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasks2 };
     }
+    if (type === 'MULTI_ASSIGN') {
+      /* 複数選択ブロックを相対時刻を保ったまま同一職員へ一括移動＝undoは1回で完全復元。
+       * facwork(施設業務/休憩/自由枠)は手動配置として facManual を付与し自動再構成から保護。 */
+      var tasksM = day.tasks;
+      for (var mm = 0; mm < action.moves.length; mm++) {
+        var mvm = action.moves[mm];
+        var curM = M.findTask(tasksM, mvm.id);
+        var patchM = { staffId: mvm.staffId, start: mvm.start, end: mvm.end };
+        if (curM && curM.src === 'facwork') patchM.facManual = true;
+        tasksM = patchTask(tasksM, mvm.id, patchM);
+      }
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksM };
+    }
     if (type === 'TOGGLE_DONE') {
       var cur = M.findTask(day.tasks, action.id);
       if (!cur) return day;
@@ -2927,7 +2969,9 @@ body.printing .rs { display: none; }
    * 同一職員内でこれらどうしを重ねたら時間枠を交換する（誘導/配膳など時刻固定の施設業務は対象外）。 */
   function isFlexSwap(t) {
     if (!t) return false;
-    return t.kind === 'break' || (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
+    return t.kind === 'break' ||
+           (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork')) ||
+           (t.kind === 'free' && t.src === 'facwork');   /* 臼井の自由枠(空欄)も複製・枠交換の対象 */
   }
 
   function create(opts) {
@@ -3064,8 +3108,10 @@ body.printing .rs { display: none; }
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task) return { status: 'ng', reason: '' };
       /* Alt(Option)＋休憩/施設業務＝複製モード。入替(swap/timeswap)には入らず、
-       * 空き位置への通常配置(複製)として判定する（占有位置はngで複製不可）。 */
+       * 空き位置への通常配置(複製)として判定する（占有位置はngで複製不可）。
+       * 複数選択(drag.multi)の同時移動も同様に入替へ入らず、まとめて移動する。 */
       var altDup = drag.alt && drag.mode === 'move' && isFlexSwap(task);
+      if (drag.multi) altDup = true;
 
       /* トレイ上 → 未配置へ戻す */
       if (tray && task.staffId !== null) {
@@ -3090,10 +3136,11 @@ body.printing .rs { display: none; }
         if (over && over.id !== task.id && over.staffId === task.staffId &&
             isFlexSwap(task) && isFlexSwap(over)) {
           var planT = M.planTimeSwap(day, task.id, over.id);
-          return { status: planT.ok ? 'timeswap' : 'ng', reason: planT.reason || '',
+          if (planT.ok) return { status: 'timeswap', reason: '',
                    lane: lane, start: task.start, end: task.end,
                    staff: M.findStaff(day.staff, task.staffId),
                    swapWith: over, plan: planT };
+          /* 入替不可ならフォールスルー（ドロップ先職員での通常配置検証へ） */
         }
         if (over && over.id !== task.id && over.staffId !== null && over.staffId !== task.staffId) {
           var overStaff = M.findStaff(day.staff, over.staffId);
@@ -3106,10 +3153,11 @@ body.printing .rs { display: none; }
                      lane: lane, start: task.start, end: task.end };
           }
           var plan0 = M.planSwap(day, task.id, over.id);
-          return { status: plan0.ok ? 'swap' : 'ng', reason: plan0.reason || '',
+          if (plan0.ok) return { status: 'swap', reason: '',
                    lane: lane, start: task.start, end: task.end,
                    staff: overStaff,
                    swapWith: over, plan: plan0 };
+          /* 入替不可ならフォールスルー＝ドロップ先列の職員で通常配置として判定（正しい職員名で検証） */
         }
       }
 
@@ -3136,9 +3184,10 @@ body.printing .rs { display: none; }
       if (!altDup && conflicts.length === 1 && conflicts[0].staffId === task.staffId &&
           isFlexSwap(task) && isFlexSwap(conflicts[0])) {
         var planTc = M.planTimeSwap(day, task.id, conflicts[0].id);
-        return { status: planTc.ok ? 'timeswap' : 'ng', reason: planTc.reason || '',
+        if (planTc.ok) return { status: 'timeswap', reason: '',
                  lane: lane, start: task.start, end: task.end, staff: st,
                  swapWith: conflicts[0], plan: planTc };
+        /* 入替不可ならフォールスルー */
       }
       if (!altDup && conflicts.length === 1 && task.staffId !== null && conflicts[0].staffId !== task.staffId) {
         /* 他職員の配置済みブロック上 → スワップ（F-05）。
@@ -3152,9 +3201,11 @@ body.printing .rs { display: none; }
                    lane: lane, start: task.start, end: task.end };
         }
         var plan = M.planSwap(day, task.id, conflicts[0].id);
-        return { status: plan.ok ? 'swap' : 'ng', reason: plan.reason || '',
+        if (plan.ok) return { status: 'swap', reason: '',
                  lane: lane, start: task.start, end: task.end, staff: st,
                  swapWith: conflicts[0], plan: plan };
+        /* 入替不可ならフォールスルー＝ドロップ先列の職員(st)で通常配置として判定。
+         * 重なり相手があるため通常は staffdup（正しい職員文脈の明確なメッセージ）になる。 */
       }
       var v = M.validatePlacement(day, task.id, st.id, start, end);
       /* 勤務時間外(warn)は配置可能だが確認を要する → status 'confirm' */
@@ -3280,6 +3331,22 @@ body.printing .rs { display: none; }
         return;
       }
       if (ev.status === 'tray') { opts.onUnassign(taskId); return; }
+      /* 複数選択の同時移動: ドラッグ対象の new start を基準に各ブロックの相対オフセットを保って同一職員へ */
+      if (drag.multi && (ev.status === 'ok' || ev.status === 'confirm') && ev.staff && opts.onMultiAssign) {
+        var dayM = opts.getDay();
+        var base = M.findTask(dayM.tasks, taskId);
+        if (base) {
+          var delta = ev.start - base.start;
+          var moves = [];
+          for (var si = 0; si < drag.selIds.length; si++) {
+            var ts = M.findTask(dayM.tasks, drag.selIds[si]);
+            if (ts && ts.staffId !== null) {
+              moves.push({ id: ts.id, staffId: ev.staff.id, start: ts.start + delta, end: ts.end + delta });
+            }
+          }
+          if (moves.length) { opts.onMultiAssign(moves, ev.status === 'confirm'); return; }
+        }
+      }
       if (ev.status === 'timeswap' && ev.plan && ev.plan.ok) { opts.onTimeSwap(ev.plan.moves, ev.swapWith); return; }
       if (ev.status === 'swap' && ev.plan && ev.plan.ok) { opts.onSwap(ev.plan.moves, ev.swapWith); return; }
       /* Alt(Option)＋休憩/施設業務の移動ドロップ＝複製配置 */
@@ -3384,9 +3451,14 @@ body.printing .rs { display: none; }
         return; /* 余白タップはここでは扱わない（app側のclickで処理） */
       }
 
+      /* 複数選択中の支援ブロックをドラッグ＝選択全体を相対時刻を保って同時移動 */
+      var selIds = (opts.getSelectedIds ? (opts.getSelectedIds() || []) : []);
+      var isMulti = (mode === 'move' && source === 'board' && taskId !== null &&
+                     selIds.length > 1 && selIds.indexOf(taskId) >= 0);
+
       drag = { mode: mode, taskId: taskId, source: source, edge: edge,
                colFrom: colFrom, headText: headText, additive: !!(e.ctrlKey || e.metaKey),
-               alt: !!e.altKey,
+               alt: !!e.altKey, multi: isMulti, selIds: selIds.slice(),
                startPt: pt, dragging: false, lastEval: null, longTimer: null, isTouch: isTouch };
 
       /* リサイズも移動と同じ開始条件にする:
@@ -4438,10 +4510,11 @@ body.printing .rs { display: none; }
   }
 
   /* ===== 印刷（A3縦・1枚フィット）=====
-   * A3縦 297×420mm・余白8mm の印字可能域(@96dpi・安全マージン込み)に
-   * 表全体（全列・全時間帯）＋印刷ヘッダーが収まる倍率を算出して transform する */
-  /* A3縦 297×420mm・余白8mm の印字可能域 ≒ 1062×1527px(@96dpi)。
-   * プリンタドライバの余白差で2ページ化しないよう安全側に余裕を取る。 */
+   * A3縦 297×420mm・余白8mm の印字可能域に表全体＋印刷ヘッダーが収まる倍率を算出し、
+   * 盤面に transform:scale を適用する。**負マージン**で未縮小レイアウトboxの余剰分を相殺し、
+   * overflow:hidden を使わずに1ページへ収める（Chrome印刷で overflow:hidden+transform が
+   * 白紙化する不具合、および zoom 印刷の不具合の双方を回避する）。 */
+  /* A3縦 297×420mm・余白8mm の印字可能域 ≒ 1062×1527px(@96dpi)。安全側に余裕を取る。 */
   var PRINT_AVAIL = { w: 1045, h: 1500 };
   var PRINT_MAX_SCALE = 1.6;   /* 列が少ない日も用紙いっぱいに拡大（過拡大での文字崩れ防止に上限） */
   var printSavedScroll = null;
@@ -4452,10 +4525,10 @@ body.printing .rs { display: none; }
     if (printSavedScroll === null) {
       printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
     }
-    /* 2026-06-13指示: ボード画面の見た目をそのまま印刷する
-     * （色・縦積みチェック欄・二重罫線は画面表示と同一。列間罫線のみ@media printで黒） */
-    /* 盤面の実コンテンツ幅: .board は min-width:100% で画面幅まで伸びるため
-     * scrollWidth ではなく右端の時間軸位置から求める（ウィンドウ幅非依存） */
+    /* 計測前に等倍へ戻す。盤面の実コンテンツ幅は右端の時間軸位置から求める（ウィンドウ幅非依存） */
+    board.style.transform = ''; board.style.margin = '';
+    board.style.minWidth = '0';
+    board.style.width = '';
     var w = board.scrollWidth || 1;
     var cv = board.querySelector('.b-canvas');
     var ax = cv ? cv.querySelector('.b-axis.r') : null;
@@ -4465,19 +4538,19 @@ body.printing .rs { display: none; }
     var ph = $('printHead');
     var headH = (ph && ph.offsetHeight) ? ph.offsetHeight + 2 : 28;
     var s = Math.min(PRINT_AVAIL.w / w, (PRINT_AVAIL.h - headH) / h, PRINT_MAX_SCALE);
-    board.style.minWidth = '0';
     board.style.width = w + 'px';
     board.style.transform = 'scale(' + s + ')';
     board.style.transformOrigin = '0 0';
-    /* transform はレイアウトboxを縮めないため、wrap を縮小後サイズ＋overflow:hidden(@media print)で
-     * クリップし、未縮小の余剰高さで2ページ目が生じるのを防ぐ。高さは ヘッダー＋縮小後ボード を確保。 */
-    wrap.style.width = Math.ceil(w * s) + 'px';
-    wrap.style.height = (headH + Math.ceil(h * s)) + 'px';
+    /* 未縮小box(w×h)との差を相殺＝改ページ正常・クリップ不要。
+     * s<1: 余剰を負マージンで詰める / s>1(拡大): 不足を正マージンで確保（符号は式に委ねる）。 */
+    board.style.marginRight = (-Math.round(w * (1 - s))) + 'px';
+    board.style.marginBottom = (-Math.round(h * (1 - s))) + 'px';
   }
   function unfitPrint() {
     var board = $('board');
     board.style.transform = '';
     board.style.transformOrigin = '';
+    board.style.margin = '';
     board.style.minWidth = '';
     board.style.width = '';
     var wrap = $('boardWrap');
@@ -4900,6 +4973,9 @@ body.printing .rs { display: none; }
     return out;
   }
 
+  /* 時間枠生成は timescale.js の純粋関数を使用（端数枠＋正時整列・20分繰上げ）。 */
+  function hourlyFrames_(a, hi) { return TS.hourlyFrames(a, hi, MIN_FACWORK); }
+
   /* 施設業務を入れる最小空き分数。これ未満の空き(身体01直後の1分等)は充填しない */
   var MIN_FACWORK = 20;
   /* 外部支援専従＝支援以外の時間に施設業務を入れない職員（前方一致・空白無視） */
@@ -4967,13 +5043,9 @@ body.printing .rs { display: none; }
       }
       var free = freeRanges_(occ, ws, we);
       for (var f = 0; f < free.length; f++) {
-        var a = free[f][0], hi = free[f][1];
-        if (hi - a < MIN_FACWORK) continue;                /* 短い空き(19分等)は施設業務を入れない */
-        while (a < hi) {
-          var b = Math.min(a + 60, hi);
-          if (hi - b < MIN_FACWORK) b = hi;                /* 末尾の細切れは直前ブロックへ吸収 */
-          add.push(M.newTask({ kind: 'facility', src: 'facwork', label: '施設業務', start: a, end: b, staffId: st.id }));
-          a = b;
+        var fr = hourlyFrames_(free[f][0], free[f][1]);  /* 20分繰上げ＋正時整列の枠列 */
+        for (var fi = 0; fi < fr.length; fi++) {
+          add.push(M.newTask({ kind: 'facility', src: 'facwork', label: '施設業務', start: fr[fi][0], end: fr[fi][1], staffId: st.id }));
         }
       }
     }
@@ -5015,16 +5087,12 @@ body.printing .rs { display: none; }
         add.push(M.newTask({ kind: 'break', src: 'facwork', label: '休憩', start: 720, end: 780, staffId: st.id }));
         occ.push([720, 780]);
       }
-      /* 残りの勤務時間を 1時間ごとの自由枠(空欄)で敷き詰め */
+      /* 残りの勤務時間を 1時間ごとの自由枠(空欄)で敷き詰め（20分繰上げ＋正時整列） */
       var free = freeRanges_(occ, ws, we);
       for (var f = 0; f < free.length; f++) {
-        var a = free[f][0], hi = free[f][1];
-        if (hi - a < 20) continue;
-        while (a < hi) {
-          var b = Math.min(a + 60, hi);
-          if (hi - b < 20) b = hi;
-          add.push(M.newTask({ kind: 'free', src: 'facwork', label: '', start: a, end: b, staffId: st.id }));
-          a = b;
+        var fr = hourlyFrames_(free[f][0], free[f][1]);
+        for (var fi = 0; fi < fr.length; fi++) {
+          add.push(M.newTask({ kind: 'free', src: 'facwork', label: '', start: fr[fi][0], end: fr[fi][1], staffId: st.id }));
         }
       }
     }
@@ -5068,17 +5136,13 @@ body.printing .rs { display: none; }
         var fw = st.facWork[n];
         if (!(fw.end > fw.start)) continue;
         var freeW = freeRanges_(occF, fw.start, fw.end);   /* 施設業務窓のうち空いている部分のみ */
-        for (var fr = 0; fr < freeW.length; fr++) {
-          var a = freeW[fr][0], hi = freeW[fr][1];
-          if (hi - a < 20) continue;
-          while (a < hi) {                            /* 1時間ごとに分割（末尾の細切れは直前へ吸収） */
-            var b = Math.min(a + 60, hi);
-            if (hi - b < 20) b = hi;
+        for (var fri = 0; fri < freeW.length; fri++) {
+          var fr2 = hourlyFrames_(freeW[fri][0], freeW[fri][1]);   /* 20分繰上げ＋正時整列 */
+          for (var fj = 0; fj < fr2.length; fj++) {
             tasks.push(M.newTask({ kind: 'facility', src: 'facwork', label: '施設業務',
-              start: a, end: b, staffId: st.id }));
-            a = b;
+              start: fr2[fj][0], end: fr2[fj][1], staffId: st.id }));
+            changed = true;
           }
-          changed = true;
         }
       }
     }
@@ -5744,9 +5808,42 @@ body.printing .rs { display: none; }
       trayEl: $('tray'),
       getDay: function () { return store.get(); },
       getScale: function () { return scale; },
+      getSelectedIds: function () { return ui.selectedIds; },
       onAssign: function (taskId, staffId, start, end) {
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
+      },
+      onMultiAssign: function (moves, needConfirm) {
+        /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。全件検証してから一括適用。 */
+        var day = store.get();
+        var byMove = {}, i;
+        for (i = 0; i < moves.length; i++) byMove[moves[i].id] = moves[i];
+        /* 移動適用後の状態をシミュレートして各枠を検証（重複・入居者重複・時間外warnを反映） */
+        var simTasks = day.tasks.map(function (t) {
+          var mv = byMove[t.id];
+          if (!mv) return t;
+          var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
+          c.staffId = mv.staffId; c.start = mv.start; c.end = mv.end; return c;
+        });
+        var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
+        var ooh = false;
+        for (i = 0; i < moves.length; i++) {
+          var mv = moves[i];
+          /* 時間範囲・夜勤表示帯のガード（単一移動と同等の制約を複数移動でも担保） */
+          if (mv.start < 0 || mv.end > TS.DAY_MIN || !(mv.end > mv.start)) {
+            toast('移動先が時間範囲外になるため移動できません', true); return;
+          }
+          var mst = M.findStaff(day.staff, mv.staffId);
+          if (mst && mst.zone === 'night' && !nightBand_(mv.start, mv.end)) {
+            toast('夜勤の表示時間帯（0-9時／21-24時）外になるため移動できません', true); return;
+          }
+          var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
+          if (!v.ok) { toast(v.reason || '同時刻に別の枠があるため移動できません', true); return; }
+          if (v.warn === 'worktime') ooh = true;
+        }
+        if (ooh && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
+        store.dispatch({ type: 'MULTI_ASSIGN', moves: moves });
+        toast(moves.length + '件を移動しました');
       },
       onAssignConfirm: function (taskId, staffId, start, end, reason) {
         /* 勤務時間外への配置: 確認のうえ許可（網掛け表示はそのまま） */

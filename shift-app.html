@@ -128,6 +128,13 @@ tr.hiddenrow td { opacity: .45; }
 tr.collapsedrow td.collapsedcell { height: 5px; padding: 0; line-height: 0; font-size: 0; background: #f4f4f4; }
 tr.collapsedrow td.divcell { opacity: .7; font-size: 11px; padding-top: 1px; padding-bottom: 1px; }
 tr.collapsedrow td.divcell .showbtn { opacity: 1; }
+/* 訪問介護員の休み数 集計行（画面確認用・印刷は noprint で非表示） */
+tr.summaryrow td { background: #eef3fb; border-top: 2px solid #b9cbe6; }
+tr.summaryrow td.namecell { font-size: 12px; font-weight: 700; color: #1a4a80; }
+tr.summaryrow td.divcell { font-size: 11px; color: #1a4a80; }
+tr.summaryrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 12px; color: #1a4a80; }
+tr.summaryrow td.sumdaycell.sun { color: #c0392b; }
+tr.summaryrow td.sumdaycell.sat { color: #1f6feb; }
 .hidebtn { color: var(--g4); cursor: pointer; font-weight: 700; padding: 0 2px; }
 .hidebtn:hover { color: var(--red); }
 .showbtn { color: var(--blue); cursor: pointer; font-size: 10px; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
@@ -1029,7 +1036,28 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return out;
   }
 
-  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision };
+  /* 日別「訪問介護員(group='visit')の休み数」を数える純粋関数。
+   * 夜勤(group='night')・デイ(group='day'=通所)は対象外。集計は各職員の主セル(cells)のみ。
+   * isOff(v): セル文字列が休系(休/公/希/有/欠)なら true を返す判定関数。
+   * isVisible(st): 当月に表示・集計対象なら true（退職・休職を除外）。省略時は active!==false。
+   * 返値: 配列 counts（counts[d] が日d の人数、d=1..days）。 */
+  function countVisitOffDays(staff, cells, days, isOff, isVisible) {
+    var counts = [], d;
+    for (d = 1; d <= days; d++) counts[d] = 0;
+    for (var i = 0; i < staff.length; i++) {
+      var st = staff[i];
+      if (isVisible ? !isVisible(st) : st.active === false) continue;
+      if ((st.group || 'visit') !== 'visit') continue;
+      var c = (cells && cells[st.id]) || {};
+      for (d = 1; d <= days; d++) {
+        var v = c[String(d)] || '';
+        if (v !== '' && isOff(v)) counts[d]++;
+      }
+    }
+    return counts;
+  }
+
+  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, countVisitOffDays: countVisitOffDays };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftAggregate = api;
 })();
@@ -2348,6 +2376,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         h += '<tr class="grouphead"><td colspan="' + (days + 8) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) {
           h += this.staffRows(members[m], days);
+          /* 緒方瞳の直下に「訪問介護員の休み数」集計行を挿入（画面確認用・印刷では非表示） */
+          if (GROUPS[g].key === 'visit' && normName(members[m].name).indexOf('緒方瞳') === 0) {
+            h += this.summaryRow(days);
+          }
         }
         renderedGroups++;
       }
@@ -2526,6 +2558,30 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           '" data-day="' + d + '" data-main="' + (cMain ? 1 : 0) + '"' +
           (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
       }
+      return h;
+    },
+
+    /* 緒方瞳の直下に出す「訪問介護員の休み数」集計行（画面確認用・@media print で非表示）。
+     * group='visit'（夜勤・デイ除外）の主セルが休系(休/公/希/有/欠)の人数を日別に表示。 */
+    summaryRow: function (days) {
+      var ctx = this.ctx;
+      var Agg = (typeof window !== 'undefined' && window.ShiftAggregate) ? window.ShiftAggregate : null;
+      var isOff = function (v) { return isOffValue(v, ctx.symbols) || isKetsu_(v); };
+      var isVis = ctx.isVisible || function (st) { return st.active !== false; };
+      var counts = Agg
+        ? Agg.countVisitOffDays(ctx.staff, ctx.sched.cells, days, isOff, isVis)
+        : (function () { var c = []; for (var d = 1; d <= days; d++) c[d] = 0; return c; })();
+      var h = '<tr class="summaryrow noprint">';
+      h += '<td class="namecell sticky1" style="left:0">訪問 休み数</td>';
+      h += '<td class="divcell sticky2" style="left:100px">休系</td>';
+      for (var d = 1; d <= days; d++) {
+        var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
+        var cc = 'sumdaycell' + (dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')) + (d === days ? ' lastday' : '');
+        h += '<td class="' + cc + '">' + counts[d] + '</td>';
+      }
+      h += '<td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td>';
+      h += '<td class="notecell noprint"></td><td class="notecell noprint"></td>';
+      h += '</tr>';
       return h;
     },
 
@@ -2967,6 +3023,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       if (k === 'off' || k === 'paidOff' || k === 'publicOff') return true;
     }
     return false;
+  }
+  /* 「欠」(欠勤)は既定記号に無くparseCellで休系判定されないため明示的に休系へ含める */
+  function isKetsu_(v) {
+    var n = Sym.normalizeCell(v);
+    if (Sym.ALIASES[n]) n = Sym.ALIASES[n];
+    return n === '欠';
   }
   /* 分割勤務セル判定: 時刻レンジ(例 7-9)が空白区切りで2つ以上＝1日複数勤務。2段表示の対象。
    * すべての非空トークンがレンジの場合のみ対象（「休 有」等の混在は対象外）。 */
@@ -5212,22 +5274,27 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       } else {
         sel = '#gridWrap'; table = document.querySelector('#gridWrap table.sheet'); useSim = true;
       }
-      var zoom = 1;
+      var zoom = 1, w = 1, hgt = 1;
       if (table) {
         var isA3 = size.indexOf('A3') >= 0;
         var pxW = ((isA3 ? 420 : 297) - 16) * 96 / 25.4;
         var pxH = ((isA3 ? 297 : 210) - 16) * 96 / 25.4;
         if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法で実測 */
-        var w = table.scrollWidth, hgt = table.scrollHeight;
+        w = table.scrollWidth; hgt = table.scrollHeight;
         if (useSim) document.body.classList.remove('printsim');
         zoom = Math.min(1, pxW / w, (pxH - 40) / hgt) * 0.97;
       }
       var z = zoom.toFixed(3);
-      /* zoom（Chrome等）と transform:scale（Safariのフォールバック）を併用 */
+      var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
+      var mr = Math.round(w * (1 - zoom));   /* 未縮小レイアウトboxの余剰を相殺 */
+      var mb = Math.round(hgt * (1 - zoom));
+      /* transform:scale＋負マージンで1ページ化（zoom印刷の白紙化・transform+overflow:hiddenの白紙化を回避）。
+       * overflow:hidden は使わず、テーブル自身を縮小＋負マージンで余剰を打ち消す。Chrome/Edge/Safari対応。 */
+      /* !important で全体表示(fitscreen)のインライン transform を上書き（印刷時は印刷用スケールを優先） */
       fit.textContent = '@media print {' +
-        ' #gridWrap, #officialTable { zoom: 1; transform: none; }' +
-        ' ' + sel + ' { zoom: ' + z + '; }' +
-        ' @supports not (zoom: 1) { ' + sel + ' { zoom: 1; transform: scale(' + z + '); transform-origin: top left; } }' +
+        ' ' + sel + ' { overflow: visible; max-height: none; }' +
+        ' ' + tableSel + ' { transform: scale(' + z + ') !important; transform-origin: top left !important;' +
+        ' margin-right: -' + mr + 'px !important; margin-bottom: -' + mb + 'px !important; }' +
         '}';
     },
 
