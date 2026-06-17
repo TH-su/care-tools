@@ -113,7 +113,7 @@ body {
 .b-head .h-no { font-weight: 700; color: var(--g6); font-size: 12px; }
 .b-head .h-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
 .b-head .h-name.manual { color: var(--pri); }
-.b-task.facwork { border: 1.5px solid #222; background: #fafafa; }
+.b-task.facwork { border: 1.5px solid #222; background: #fafafa; z-index: 5; }   /* 支援(z-index 10)の背面に敷く＝連続背景化 */
 body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
 .b-head .h-time { color: var(--g6); font-size: 10px; }
@@ -789,6 +789,36 @@ body.printing .rs { display: none; }
     return out;
   }
 
+  /* 施設業務/自由枠 [fStart,fEnd] から、重なる支援群 cares([[s,e],...]) を差し引いた残余区間配列。
+   * 各支援は [max(s,fStart), min(roundUp(e,20),fEnd)] を占有（終端は20分グリッドへ繰上げ＝枠は正時側へ整列）。
+   * 占有をマージ→[fStart,fEnd]の補集合→min(既定20)分未満の残片は捨てる→0..N断片を返す。
+   * 例: facResidual(540,600,[[540,559],[580,599]]) => [[560,580]]（中央9:20-9:40が残る）。 */
+  function facResidual(fStart, fEnd, cares, min) {
+    if (!min || min < 1) min = 20;
+    var blocks = [], i;
+    for (i = 0; i < cares.length; i++) {
+      var s = Math.max(cares[i][0], fStart);
+      var e = Math.min(roundUp(cares[i][1], 20), fEnd);
+      if (e > s) blocks.push([s, e]);
+    }
+    blocks.sort(function (a, b) { return a[0] - b[0]; });
+    var merged = [];
+    for (i = 0; i < blocks.length; i++) {
+      if (merged.length && blocks[i][0] <= merged[merged.length - 1][1]) {
+        if (blocks[i][1] > merged[merged.length - 1][1]) merged[merged.length - 1][1] = blocks[i][1];
+      } else merged.push([blocks[i][0], blocks[i][1]]);
+    }
+    var out = [], cur = fStart;
+    for (i = 0; i < merged.length; i++) {
+      if (merged[i][0] > cur) out.push([cur, merged[i][0]]);
+      cur = Math.max(cur, merged[i][1]);
+    }
+    if (cur < fEnd) out.push([cur, fEnd]);
+    var res = [];
+    for (i = 0; i < out.length; i++) if (out[i][1] - out[i][0] >= min) res.push(out[i]);
+    return res;
+  }
+
   var api = {
     DAY_MIN: DAY_MIN,
     ROW_PX: ROW_PX,
@@ -805,7 +835,8 @@ body.printing .rs { display: none; }
     timeToMin: timeToMin,
     minToTime: minToTime,
     roundUp: roundUp,
-    hourlyFrames: hourlyFrames
+    hourlyFrames: hourlyFrames,
+    facResidual: facResidual
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSTime = api;
@@ -2329,6 +2360,38 @@ body.printing .rs { display: none; }
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksP };
     }
+    if (type === 'MULTI_SHRINK_PLACE') {
+      /* 複数支援を同時移動しつつ、重なった施設業務/自由枠を残余区間へ縮小/分割する。
+       * 残余断片は app 側(onMultiAssign)が TS.facResidual で算出済み(action.splits)。1操作＝undo1回。 */
+      var tasksMS = day.tasks, a;
+      for (a = 0; a < action.moves.length; a++) {
+        var mvA = action.moves[a];
+        var curA = M.findTask(tasksMS, mvA.id);
+        var pA = { staffId: mvA.staffId, start: mvA.start, end: mvA.end };
+        if (curA && curA.src === 'facwork') pA.facManual = true;
+        tasksMS = patchTask(tasksMS, mvA.id, pA);
+      }
+      var removeIds = {}, additions = [];
+      for (a = 0; a < action.splits.length; a++) {
+        var sp = action.splits[a];
+        var fac = M.findTask(day.tasks, sp.facId);    /* 元プロパティは元の day.tasks から読む */
+        if (!fac) continue;
+        removeIds[sp.facId] = true;
+        for (var fg = 0; fg < sp.fragments.length; fg++) {
+          var fp = {};
+          for (var fk in fac) if (Object.prototype.hasOwnProperty.call(fac, fk)) fp[fk] = fac[fk];
+          delete fp.id;
+          fp.start = sp.fragments[fg][0];
+          fp.end = sp.fragments[fg][1];
+          var nf = M.newTask(fp);
+          nf.facManual = true;
+          additions.push(nf);
+        }
+      }
+      var keptMS = [];
+      for (a = 0; a < tasksMS.length; a++) if (!removeIds[tasksMS[a].id]) keptMS.push(tasksMS[a]);
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: keptMS.concat(additions) };
+    }
     if (type === 'TOGGLE_DONE') {
       var cur = M.findTask(day.tasks, action.id);
       if (!cur) return day;
@@ -2712,6 +2775,23 @@ body.printing .rs { display: none; }
     ex = ex || {};
     var top = yFor(scale, t.start, isNight);
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
+    /* 施設業務/自由枠の連続表示: 画面表示時のみ、内包する正時(00-59)いっぱいへ見た目を拡張し、
+     * 支援(care)を上に重ねて「1時間の連続した1業務」に見せる。データ(start/end)は不変。
+     * その正時に拡張可能な施設枠が1つだけ(ex.facSpanAlone)のときのみ。隣接の非支援枠(ex.snapLo/snapHi)
+     * と勤務時間(ex.wsMin/weMin)でクランプし、休憩や別の施設枠へはみ出さない。 */
+    if (ex.facSpanAlone && !ex.print && !isNight) {
+      var hf = Math.floor(t.start / 60) * 60;
+      var vTop = hf;
+      if (ex.wsMin !== undefined && ex.wsMin > vTop) vTop = ex.wsMin;
+      if (ex.snapLo !== undefined && ex.snapLo > vTop) vTop = ex.snapLo;
+      var vEnd = hf + 60;
+      if (ex.weMin !== undefined && ex.weMin < vEnd) vEnd = ex.weMin;
+      if (ex.snapHi !== undefined && ex.snapHi < vEnd) vEnd = ex.snapHi;
+      if (vEnd > vTop) {
+        top = yFor(scale, vTop, isNight);
+        h = Math.max(yFor(scale, vEnd, isNight) - top, 12);
+      }
+    }
     var cls = 'b-task ' + kindClass(t);
     if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
     if (M.isChanged(t)) cls += ' changed';
@@ -2937,6 +3017,29 @@ body.printing .rs { display: none; }
     canvas.appendChild(buildGridOverlay(scale));
     boardEl.appendChild(canvas);
 
+    /* 施設業務/自由枠の連続表示用の事前集計（画面表示時のみ）:
+     * facHourCount = 列×正時ごとの「単一正時に収まる施設/自由枠」数（=1 のとき拡張可）。
+     * nonCareByCol = 列ごとの非支援(care以外)枠の範囲（拡張のクランプ境界に使う）。 */
+    var facHourCount = {}, nonCareByCol = {};
+    if (!opts.printMode) {
+      for (var fa = 0; fa < day.tasks.length; fa++) {
+        var ftk = day.tasks[fa];
+        if (ftk.staffId === null) continue;
+        var fstk = staffById[ftk.staffId];
+        if (!fstk || nightByCol[fstk.col]) continue;
+        if (ftk.kind !== 'care') {
+          if (!nonCareByCol[fstk.col]) nonCareByCol[fstk.col] = [];
+          nonCareByCol[fstk.col].push({ id: ftk.id, start: ftk.start, end: ftk.end });
+        }
+        if (ftk.src === 'facwork' && (ftk.kind === 'facility' || ftk.kind === 'free') &&
+            Math.floor(ftk.start / 60) === Math.floor((ftk.end - 1) / 60)) {
+          var hk = Math.floor(ftk.start / 60);
+          if (!facHourCount[fstk.col]) facHourCount[fstk.col] = {};
+          facHourCount[fstk.col][hk] = (facHourCount[fstk.col][hk] || 0) + 1;
+        }
+      }
+    }
+
     /* タスク配置（夜勤列は右軸マッピング） */
     var hospSet = opts.hospSet || {};
     for (var t = 0; t < day.tasks.length; t++) {
@@ -2946,9 +3049,29 @@ body.printing .rs { display: none; }
       if (!st) continue;
       var laneEl = laneByCol[st.col];
       if (!laneEl) continue;
-      laneEl.appendChild(buildTask(task, scale, opts.selectedIds, nightByCol[st.col],
-        { print: !!opts.printMode,
-          hosp: !!(task.kind === 'care' && hospSet[task.residentName]) }));
+      var ex = { print: !!opts.printMode,
+                 hosp: !!(task.kind === 'care' && hospSet[task.residentName]) };
+      /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する */
+      if (!opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
+          (task.kind === 'facility' || task.kind === 'free') &&
+          Math.floor(task.start / 60) === Math.floor((task.end - 1) / 60)) {
+        var hcc = facHourCount[st.col];
+        if (hcc && hcc[Math.floor(task.start / 60)] === 1) {
+          ex.facSpanAlone = true;
+          ex.wsMin = st.workStart; ex.weMin = st.workEnd;
+          var nb = nonCareByCol[st.col] || [];
+          var lo, hi;   /* 隣接の非支援枠でクランプ（休憩や別施設枠へはみ出さない） */
+          for (var nbi = 0; nbi < nb.length; nbi++) {
+            var o = nb[nbi];
+            if (o.id === task.id) continue;
+            if (o.end <= task.start) { if (lo === undefined || o.end > lo) lo = o.end; }
+            else if (o.start >= task.end) { if (hi === undefined || o.start < hi) hi = o.start; }
+          }
+          if (lo !== undefined) ex.snapLo = lo;
+          if (hi !== undefined) ex.snapHi = hi;
+        }
+      }
+      laneEl.appendChild(buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex));
     }
   }
 
@@ -3254,6 +3377,20 @@ body.printing .rs { display: none; }
         if (others.length === 0) {
           return { status: 'shrinkplace', reason: '', lane: lane, start: start, end: end,
                    staff: st, overlapTask: conflicts[0] };
+        }
+      }
+      /* 複数選択(drag.multi)の支援移動: 移動先の重なりが「縮小可能な施設業務/自由枠」のみなら配置可とし、
+       * 本検証と施設枠の縮小/分割は commit→onMultiAssign に委ねる（care/休憩が残ればNGへフォールスルー）。 */
+      if (drag.multi && task.kind === 'care' && conflicts.length > 0) {
+        var hardConf = 0;
+        for (var ci = 0; ci < conflicts.length; ci++) {
+          var cf = conflicts[ci];
+          if (!(cf.staffId === st.id && cf.src === 'facwork' &&
+                (cf.kind === 'facility' || cf.kind === 'free'))) hardConf++;
+        }
+        if (hardConf === 0) {
+          var stm = (start < st.workStart || end > st.workEnd) ? 'confirm' : 'ok';
+          return { status: stm, reason: '', lane: lane, start: start, end: end, staff: st };
         }
       }
       var v = M.validatePlacement(day, task.id, st.id, start, end);
@@ -4580,7 +4717,7 @@ body.printing .rs { display: none; }
       printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
     }
     /* 計測前に等倍へ戻す。盤面の実コンテンツ幅は右端の時間軸位置から求める（ウィンドウ幅非依存） */
-    board.style.transform = ''; board.style.margin = '';
+    board.style.zoom = ''; board.style.transform = ''; board.style.margin = '';
     board.style.minWidth = '0';
     board.style.width = '';
     var w = board.scrollWidth || 1;
@@ -4592,16 +4729,15 @@ body.printing .rs { display: none; }
     var ph = $('printHead');
     var headH = (ph && ph.offsetHeight) ? ph.offsetHeight + 2 : 28;
     var s = Math.min(PRINT_AVAIL.w / w, (PRINT_AVAIL.h - headH) / h, PRINT_MAX_SCALE);
+    /* zoom はレイアウトboxごと縮尺するため、用紙いっぱいに最大化できる。
+     * 旧方式(transform:scale＋負マージン)は box が未縮小のまま残り、印刷エンジンの用紙合わせで
+     * 二重縮小されて「小さすぎ／余白が大」になっていた。overflow:hidden は使わない＝白紙化も回避。 */
     board.style.width = w + 'px';
-    board.style.transform = 'scale(' + s + ')';
-    board.style.transformOrigin = '0 0';
-    /* 未縮小box(w×h)との差を相殺＝改ページ正常・クリップ不要。
-     * s<1: 余剰を負マージンで詰める / s>1(拡大): 不足を正マージンで確保（符号は式に委ねる）。 */
-    board.style.marginRight = (-Math.round(w * (1 - s))) + 'px';
-    board.style.marginBottom = (-Math.round(h * (1 - s))) + 'px';
+    board.style.zoom = s;
   }
   function unfitPrint() {
     var board = $('board');
+    board.style.zoom = '';
     board.style.transform = '';
     board.style.transformOrigin = '';
     board.style.margin = '';
@@ -5868,17 +6004,44 @@ body.printing .rs { display: none; }
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
       },
       onMultiAssign: function (moves, needConfirm) {
-        /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。全件検証してから一括適用。 */
+        /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。
+         * 移動先に「縮小可能な施設業務/自由枠」があれば、それを残余区間へ縮小/分割しつつ同時配置する
+         * （休憩は縮小対象外）。全件検証してから一括適用（1操作＝undo1回）。 */
         var day = store.get();
         var byMove = {}, i;
         for (i = 0; i < moves.length; i++) byMove[moves[i].id] = moves[i];
-        /* 移動適用後の状態をシミュレートして各枠を検証（重複・入居者重複・時間外warnを反映） */
-        var simTasks = day.tasks.map(function (t) {
-          var mv = byMove[t.id];
-          if (!mv) return t;
+
+        /* 支援(care)moveごとに、移動先で重なる縮小可能facworkを収集（移動中の枠自身は除外）。 */
+        var facMap = {};   /* facId -> { fac:Task, ranges:[[s,e],...] } */
+        for (i = 0; i < moves.length; i++) {
+          var cm = moves[i];
+          var ct = M.findTask(day.tasks, cm.id);
+          if (!ct || ct.kind !== 'care') continue;
+          for (var q = 0; q < day.tasks.length; q++) {
+            var ft = day.tasks[q];
+            if (byMove[ft.id]) continue;                          /* 移動対象の枠は縮小対象にしない */
+            if (ft.staffId !== cm.staffId || ft.src !== 'facwork') continue;
+            if (!(ft.kind === 'facility' || ft.kind === 'free')) continue;   /* 休憩breakは縮小しない */
+            if (cm.start < ft.end && ft.start < cm.end) {          /* 重なり */
+              if (!facMap[ft.id]) facMap[ft.id] = { fac: ft, ranges: [] };
+              facMap[ft.id].ranges.push([cm.start, cm.end]);
+            }
+          }
+        }
+        var affected = {}, fid;
+        for (fid in facMap) if (Object.prototype.hasOwnProperty.call(facMap, fid)) affected[fid] = true;
+
+        /* 移動適用後の状態をシミュレート（縮小される施設枠はsimから除外＝支援を重ねられる）。
+         * care同士の重複・入居者重複・夜勤帯・時間外warnは従来通り検証する。 */
+        var simTasks = [];
+        for (i = 0; i < day.tasks.length; i++) {
+          var t = day.tasks[i];
+          if (affected[t.id]) continue;
+          var mv0 = byMove[t.id];
+          if (!mv0) { simTasks.push(t); continue; }
           var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
-          c.staffId = mv.staffId; c.start = mv.start; c.end = mv.end; return c;
-        });
+          c.staffId = mv0.staffId; c.start = mv0.start; c.end = mv0.end; simTasks.push(c);
+        }
         var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
         var ooh = false;
         for (i = 0; i < moves.length; i++) {
@@ -5896,8 +6059,22 @@ body.printing .rs { display: none; }
           if (v.warn === 'worktime') ooh = true;
         }
         if (ooh && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
-        store.dispatch({ type: 'MULTI_ASSIGN', moves: moves });
-        toast(moves.length + '件を移動しました');
+
+        /* 影響facworkごとに残余区間を算出して splits を作る。 */
+        var splits = [];
+        for (fid in facMap) {
+          if (!Object.prototype.hasOwnProperty.call(facMap, fid)) continue;
+          var entry = facMap[fid];
+          splits.push({ facId: entry.fac.id,
+            fragments: TS.facResidual(entry.fac.start, entry.fac.end, entry.ranges, 20) });
+        }
+        if (splits.length) {
+          store.dispatch({ type: 'MULTI_SHRINK_PLACE', moves: moves, splits: splits });
+          toast(moves.length + '件を移動し施設業務を縮小しました');
+        } else {
+          store.dispatch({ type: 'MULTI_ASSIGN', moves: moves });
+          toast(moves.length + '件を移動しました');
+        }
       },
       onAssignConfirm: function (taskId, staffId, start, end, reason) {
         /* 勤務時間外への配置: 確認のうえ許可（網掛け表示はそのまま） */

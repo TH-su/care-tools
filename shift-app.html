@@ -124,12 +124,6 @@ tr.rephead.rowdate th { border-top: 3px double #000; }
 tr.subrow td { background: #fcfcfc; }
 tr.dragover td { border-top: 2px solid var(--blue); }
 tr.hiddenrow td { opacity: .45; }
-/* 畳んだ非表示行: 行を確実に細く折り畳む（通常26px→約11px）。日セルは空で圧縮、
- * 区分名は極小・「表示」ボタンは小さく残して復元可能に。全セルに低い行高を効かせる。 */
-tr.collapsedrow td { height: 7px !important; padding: 0 !important; line-height: 1 !important; }
-tr.collapsedrow td.collapsedcell { height: 7px; line-height: 0; font-size: 0; background: #f4f4f4; }
-tr.collapsedrow td.divcell { opacity: .55; font-size: 9px; line-height: 1.1 !important; padding: 0 2px !important; white-space: nowrap; overflow: hidden; }
-tr.collapsedrow td.divcell .showbtn { font-size: 9px; padding: 0 2px; opacity: 1; }
 /* 訪問介護員の休み数 集計行（画面確認用・印刷は noprint で非表示） */
 tr.summaryrow td { background: #eef3fb; border-top: 2px solid #b9cbe6; }
 tr.summaryrow td.namecell { font-size: 12px; font-weight: 700; color: #1a4a80; }
@@ -2440,9 +2434,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var lines = [];
       for (var j = 0; j < divs.length; j++) {
         var isHidden = hidden.indexOf(divs[j]) >= 0;
-        /* 非表示行も「畳んで」常に残す（行は細く・日セルは空表示にしCSSで圧縮、区分名＋「表示」ボタンは常時クリック可）。
-         * revealHidden ON のときは通常表示（一時的に内容確認・編集可）。これで非表示→復元が必ず行える。 */
-        lines.push({ div: divs[j], hidden: isHidden, collapsed: isHidden && !ctx.revealHidden });
+        /* 非表示行は revealHidden OFF のとき行ごと描画しない（rowspanは可視行数で算出＝完全に消える）。
+         * 復元は「非表示行を表示」ON→各行の「表示」ボタン、という既存導線で行える。 */
+        if (isHidden && !ctx.revealHidden) continue;
+        lines.push({ div: divs[j], hidden: isHidden });
       }
       if (lines.length === 0) return '';
       var rowSpan = lines.length;
@@ -2453,8 +2448,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var ln = lines[L];
         var isMain = ln.div === mainDiv;
         var trCls = (L > 0 ? 'subrow' : 'staffline')
-          + (ln.hidden ? ' hiddenrow' : '')
-          + (ln.collapsed ? ' collapsedrow' : '');
+          + (ln.hidden ? ' hiddenrow' : '');
         h += '<tr data-sid="' + st.id + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
         if (L === 0) {
           h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + st.id + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
@@ -2464,12 +2458,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
             ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
             : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
-        if (ln.collapsed) {
-          /* 畳んだ行は空の細セルで占有（列整合は維持・高さ圧縮）。daycellクラスは付けない＝選択対象外(青枠の誤表示防止) */
-          for (var cd = 1; cd <= days; cd++) h += '<td class="collapsedcell"></td>';
-        } else {
-          h += this.dayCells(st, ln.div, isMain, days);
-        }
+        h += this.dayCells(st, ln.div, isMain, days);
         if (L === 0) {
           var t = res ? res.totals : null;
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.attendDays : '') + '</td>';
@@ -5291,16 +5280,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       }
       var z = zoom.toFixed(3);
       var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
-      /* 未縮小レイアウトboxとの差を相殺。z<1は負マージン/z>1(拡大)は正マージン（符号は式に委ねる） */
-      var mr = -Math.round(w * (1 - zoom));
-      var mb = -Math.round(hgt * (1 - zoom));
-      /* transform:scale＋負マージンで1ページ化（zoom印刷の白紙化・transform+overflow:hiddenの白紙化を回避）。
-       * overflow:hidden は使わず、テーブル自身を縮小＋負マージンで余剰を打ち消す。Chrome/Edge/Safari対応。 */
-      /* !important で全体表示(fitscreen)のインライン transform を上書き（印刷時は印刷用スケールを優先） */
+      /* zoom はレイアウトboxごと縮尺するため、印刷エンジンの用紙合わせによる二重縮小・白紙化を回避し、
+       * 用紙いっぱいに最大化できる。旧方式(transform:scale＋負マージン)は box が未縮小のまま残り、
+       * 「小さすぎ／余白が大」になっていた。transform:none で全体表示(fitscreen)のインライン
+       * transform を打ち消し、zoom との二重縮尺を防ぐ。 */
       fit.textContent = '@media print {' +
         ' ' + sel + ' { overflow: visible; max-height: none; }' +
-        ' ' + tableSel + ' { transform: scale(' + z + ') !important; transform-origin: top left !important;' +
-        ' margin-right: ' + mr + 'px !important; margin-bottom: ' + mb + 'px !important; }' +
+        ' ' + tableSel + ' { zoom: ' + z + ' !important; transform: none !important; }' +
         '}';
     },
 
