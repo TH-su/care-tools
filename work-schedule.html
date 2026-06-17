@@ -115,6 +115,11 @@ body {
 .b-head .h-name.manual { color: var(--pri); }
 .b-task.facwork { border: 1.5px solid #222; background: #fafafa; }
 body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
+/* 包括勤務(入れ子)の内包業務: 訪問の大枠の中に段差(インデント)＋左の太線で「内側」を表現 */
+.b-task.nested { left: 16px; right: 5px; z-index: 12; border-left: 4px solid #6b7280;
+  background: repeating-linear-gradient(45deg, #f3f4f6, #f3f4f6 6px, #e9ecef 6px, #e9ecef 12px); }
+.b-task.nested .t-name { color: #374151; }
+body.printing .b-task.nested { background: #fff; border: 1.5px solid #000; border-left: 5px solid #000; left: 16px; }
 .b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
 .b-head .h-time { color: var(--g6); font-size: 10px; }
 .b-head .h-role { display: inline-block; font-size: 9px; border-radius: 4px; padding: 0 4px; margin-right: 2px;
@@ -393,6 +398,8 @@ body.printing .rs { display: none; }
     <button class="tray-btn" id="btnAddFac">＋施設業務</button>
     <button class="tray-btn" id="btnAddFree">＋自由枠</button>
     <span class="hdr-sp"></span>
+    <button class="tray-btn" id="btnSelDup" title="選択した枠を複製（Cmd/Ctrl+D）">⧉ 複製</button>
+    <button class="tray-btn" id="btnSelDel" title="選択した枠を消去（Delete）">🗑 消去</button>
     <button class="tray-btn" id="trayToggle">折畳</button>
   </div>
   <div class="tray-items" id="trayItems"></div>
@@ -1249,19 +1256,21 @@ body.printing .rs { display: none; }
       var rows = [];
       var mainDiv = st.mainDivision || '施設';
       var mraw = cellAt(plan.cells ? plan.cells[st.id] : null, dayNo, dayStr);
-      if (mraw !== null) rows.push({ division: mainDiv, raw: mraw });
+      if (mraw !== null) rows.push({ division: mainDiv, raw: mraw, isMain: true });
       var sc = plan.subCells ? plan.subCells[st.id] : null;
       if (sc) {
         for (var dv in sc) {
           if (!Object.prototype.hasOwnProperty.call(sc, dv)) continue;
           if (dv === '通所') continue;          /* デイ行は除外 */
           var sraw = cellAt(sc[dv], dayNo, dayStr);
-          if (sraw !== null) rows.push({ division: dv, raw: sraw });
+          if (sraw !== null) rows.push({ division: dv, raw: sraw, isMain: false });
         }
       }
+      var mainDayEntries = [];   /* 主区分の日勤エントリ（従区分の内包判定＝包括勤務用） */
       for (var ri = 0; ri < rows.length; ri++) {
         var division = rows[ri].division;
         if (division === '通所') continue;
+        var isMainRow = !!rows[ri].isMain;
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
         for (var p = 0; p < parts.length; p++) {
@@ -1269,8 +1278,24 @@ body.printing .rs { display: none; }
           if (part.kind === 'work') {
             if (part.startMin === null || part.endMin === null) continue;
             if (part.endMin > part.startMin) {
-              out.push({ name: name, zone: workZone(group, division), division: division,
-                workStart: part.startMin, workEnd: part.endMin, nightRole: null });
+              /* 包括勤務: 従区分の日勤が主区分の勤務窓に完全内包される場合、別列に出さず
+               * 主エントリの nested として保持（例: 訪問12-21 の中の 施設16-21 → 訪問列内に入れ子表示）。 */
+              if (!isMainRow) {
+                var host = null;
+                for (var hi = 0; hi < mainDayEntries.length; hi++) {
+                  var me = mainDayEntries[hi];
+                  if (part.startMin >= me.workStart && part.endMin <= me.workEnd) { host = me; break; }
+                }
+                if (host) {
+                  if (!host.nested) host.nested = [];
+                  host.nested.push({ division: division, start: part.startMin, end: part.endMin });
+                  continue;
+                }
+              }
+              var dayEntry = { name: name, zone: workZone(group, division), division: division,
+                workStart: part.startMin, workEnd: part.endMin, nightRole: null };
+              out.push(dayEntry);
+              if (isMainRow) mainDayEntries.push(dayEntry);
             } else if (part.endMin < part.startMin) {
               /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
                * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
@@ -1857,7 +1882,7 @@ body.printing .rs { display: none; }
       var s = staff[i];
       if (String(s.id).indexOf('slot_') !== 0) continue;
       if (s.manual && !force) continue;
-      s.name = ''; s.fromShift = false; s.manual = false;
+      s.name = ''; s.fromShift = false; s.manual = false; s.nested = null;
       resetSlotWindow_(s);
     }
 
@@ -1940,7 +1965,9 @@ body.printing .rs { display: none; }
     var filled = 0, added = 0, blockSeq = 0;
     function applyTo(st, p) {
       st.name = p.name; st.workStart = p.workStart; st.workEnd = p.workEnd;
-      st.fromShift = true; st.manual = false; filled++;
+      st.fromShift = true; st.manual = false;
+      st.nested = (p.nested && p.nested.length) ? p.nested : null;  /* 包括勤務(内包業務) */
+      filled++;
     }
     /* 分割勤務: 同一人物の2ブロック目以降を、既存列(primaryStaff)へ追加の職員エントリとして同居させる。
      * 列ヘッダに2時間帯が並び、勤務外網掛けは両ブロックの間を自動で網掛けする。 */
@@ -2606,17 +2633,18 @@ body.printing .rs { display: none; }
 
   /* タスクブロック。isNight: 夜勤列（右軸マッピング）
    * ex: { print: 印刷モード, hosp: 入院中（極薄表示） } */
-  function buildTask(t, scale, selectedId, isNight, ex) {
+  function buildTask(t, scale, selectedIds, isNight, ex) {
     ex = ex || {};
     var top = yFor(scale, t.start, isNight);
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
     var cls = 'b-task ' + kindClass(t);
     if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
+    if (t.src === 'nested') cls += ' facwork nested';   /* 包括勤務の内包業務=黒罫線＋インデント段差 */
     if (M.isChanged(t)) cls += ' changed';
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
     if (ex.hosp) cls += ' hosp';
-    if (selectedId === t.id) cls += ' selected';
+    if (selectedIds && selectedIds.indexOf && selectedIds.indexOf(t.id) >= 0) cls += ' selected';
     var b = el('div', cls);
     b.style.top = top + 'px';
     b.setAttribute('data-id', t.id);
@@ -2764,7 +2792,7 @@ body.printing .rs { display: none; }
   }
 
   /* ボード全体を再描画
-   * opts: { selectedId, printMode, hospSet:{入居者名:true} } */
+   * opts: { selectedIds, printMode, hospSet:{入居者名:true} } */
   function render(boardEl, day, zones, scale, opts) {
     opts = opts || {};
     boardEl.innerHTML = '';
@@ -2840,7 +2868,7 @@ body.printing .rs { display: none; }
       if (!st) continue;
       var laneEl = laneByCol[st.col];
       if (!laneEl) continue;
-      laneEl.appendChild(buildTask(task, scale, opts.selectedId, nightByCol[st.col],
+      laneEl.appendChild(buildTask(task, scale, opts.selectedIds, nightByCol[st.col],
         { print: !!opts.printMode,
           hosp: !!(task.kind === 'care' && hospSet[task.residentName]) }));
     }
@@ -3335,7 +3363,7 @@ body.printing .rs { display: none; }
       }
 
       drag = { mode: mode, taskId: taskId, source: source, edge: edge,
-               colFrom: colFrom, headText: headText,
+               colFrom: colFrom, headText: headText, additive: !!(e.ctrlKey || e.metaKey),
                startPt: pt, dragging: false, lastEval: null, longTimer: null, isTouch: isTouch };
 
       /* リサイズも移動と同じ開始条件にする:
@@ -3370,7 +3398,7 @@ body.printing .rs { display: none; }
     function onUp(e) {
       if (!drag) return;
       var wasDragging = drag.dragging;
-      var taskId = drag.taskId, source = drag.source, mode = drag.mode, colFrom = drag.colFrom;
+      var taskId = drag.taskId, source = drag.source, mode = drag.mode, colFrom = drag.colFrom, additive = drag.additive;
       if (wasDragging && drag.lastEval) commit();
       var pt = getPoint(e);
       clearDrag();
@@ -3392,7 +3420,7 @@ body.printing .rs { display: none; }
       } else {
         lastTap = { key: key, time: now };
         if (source === 'tray') { if (opts.onChipTap) opts.onChipTap(taskId); }
-        else if (opts.onTaskTap) opts.onTaskTap(taskId);
+        else if (opts.onTaskTap) opts.onTaskTap(taskId, additive);
       }
     }
 
@@ -3567,12 +3595,12 @@ body.printing .rs { display: none; }
   var store = null;
   var zones = TS.cloneZones(TS.DEFAULT_ZONES);
   var scale = TS.buildScale(zones);
-  var ui = { selectedId: null, currentDate: todayKey(), editingId: null, editKind: 'care', editContents: [] };
+  var ui = { selectedIds: [], currentDate: todayKey(), editingId: null, editKind: 'care', editContents: [] };
 
   function switchDate(date) {
     if (saveTimer) { clearTimeout(saveTimer); doSave(); }
     ui.currentDate = date;
-    ui.selectedId = null;
+    ui.selectedIds = [];
     var day = loadDayData(date) || S.emptyDay(date);
     day.meta.date = date;
     store.dispatch({ type: 'INIT_DAY', day: day });
@@ -3865,7 +3893,7 @@ body.printing .rs { display: none; }
       '　実施済項目欄へ、押印又は直筆サインを行う。';
 
     B.render($('board'), day, zones, scale,
-      { selectedId: ui.selectedId, hospSet: hospitalizedNames() });
+      { selectedIds: ui.selectedIds, hospSet: hospitalizedNames() });
 
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
@@ -4826,11 +4854,34 @@ body.printing .rs { display: none; }
   }
 
   /* 盤面整形を適用（空き列詰め→施設業務/休憩充填）。出勤者反映やロード後に呼ぶ。 */
+  /* 包括勤務(内包業務)タスクの再生成。スロットの st.nested から「施設業務」枠(src='nested')を
+   * 訪問列内に配置（例: 訪問12-21 の中の 施設16-21）。冪等: 既存の src='nested' を作り直す。
+   * fillFacilityWork より前に実行＝内包時間帯は占有として扱われ二重充填されない。 */
+  function rebuildNestedTasks() {
+    var day = store.get();
+    var tasks = [], i;
+    for (i = 0; i < day.tasks.length; i++) if (day.tasks[i].src !== 'nested') tasks.push(day.tasks[i]);
+    var changed = tasks.length !== day.tasks.length;
+    for (i = 0; i < day.staff.length; i++) {
+      var st = day.staff[i];
+      if (!st.name || !st.nested || !st.nested.length) continue;
+      for (var n = 0; n < st.nested.length; n++) {
+        var nd = st.nested[n];
+        if (!(nd.end > nd.start)) continue;
+        tasks.push(M.newTask({ kind: 'facility', src: 'nested', label: '施設業務',
+          start: nd.start, end: nd.end, staffId: st.id }));
+        changed = true;
+      }
+    }
+    if (changed) store.dispatch({ type: 'SET_TASKS', tasks: tasks });
+  }
+
   function finalizeBoard() {
     try {
       var trimmed = trimEmptyCols(store.get());
       if (trimmed) store.dispatch({ type: 'SET_STAFF', staff: trimmed.staff, columns: trimmed.columns });
     } catch (e) {}
+    try { rebuildNestedTasks(); } catch (eN) {}   /* 包括勤務の内包業務を訪問列内へ配置 */
     try {
       var add = fillFacilityWork(store.get());
       if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
@@ -5056,6 +5107,44 @@ body.printing .rs { display: none; }
     });
   }
 
+  /* ===== 選択ブロックの一括操作（消去・複製） ===== */
+  /* 選択中タスク(ui.selectedIds)を一括削除。施設業務/休憩/支援すべて対象。確認ダイアログ付き */
+  function deleteSelected() {
+    if (!ui.selectedIds.length) { toast('ブロックを選択してください'); return; }
+    var ids = ui.selectedIds.slice();
+    var n = ids.length;
+    if (!window.confirm(n === 1 ? 'この枠を消去しますか？' : n + '件の枠を消去しますか？')) return;
+    for (var i = 0; i < ids.length; i++) store.dispatch({ type: 'DELETE_TASK', id: ids[i] });
+    ui.selectedIds = [];
+    toast(n + '件を消去しました');
+  }
+  /* 選択中タスクを複製して未配置トレイへ（時間・内容を引き継ぎ、配置はD&Dで） */
+  function duplicateSelected() {
+    if (!ui.selectedIds.length) { toast('ブロックを選択してください'); return; }
+    var day = store.get();
+    var ids = ui.selectedIds.slice(), made = [];
+    for (var i = 0; i < ids.length; i++) {
+      var src = M.findTask(day.tasks, ids[i]);
+      if (!src) continue;
+      var props = {};
+      for (var k in src) if (Object.prototype.hasOwnProperty.call(src, k)) props[k] = src[k];
+      delete props.id;                       /* newTask が新IDを採番 */
+      props.staffId = null;                  /* 未配置トレイへ（重複検証を回避） */
+      props.contents = (src.contents || []).slice();
+      props.weeklyRef = null;                /* 週間計画との二重リンク防止 */
+      props.facManual = false;
+      props.done = false;                    /* 複製は新規状態（実施済み・仮を引き継がない） */
+      props.tentative = false;
+      props.checks = {};
+      var dup = M.newTask(props);
+      dup.origin = M.captureOrigin(dup);
+      store.dispatch({ type: 'ADD_TASK', task: dup });
+      made.push(dup.id);
+    }
+    ui.selectedIds = made;
+    toast(made.length + '件を複製しました（未配置トレイ→ドラッグで配置）');
+  }
+
   /* ===== イベント配線 ===== */
   function wire() {
     $('btnPrev').addEventListener('click', function () { switchDate(shiftDate(ui.currentDate, -1)); });
@@ -5069,6 +5158,17 @@ body.printing .rs { display: none; }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) store.redo(); else store.undo();
+        return;
+      }
+      /* モーダル/入力欄にフォーカス中はショートカット無効（誤操作防止） */
+      var tag = (e.target && e.target.tagName) ? e.target.tagName : '';
+      var inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ui.editingId;
+      var modalOpen = document.querySelector('.modal.show, .modal-bg.show');
+      if (inField || modalOpen) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault(); duplicateSelected();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && ui.selectedIds.length) {
+        e.preventDefault(); deleteSelected();
       }
     });
     $('badgeUn').addEventListener('click', openAlerts);
@@ -5078,6 +5178,8 @@ body.printing .rs { display: none; }
       var tr = $('tray');
       tr.className = tr.className.indexOf('closed') >= 0 ? 'tray' : 'tray closed';
     });
+    $('btnSelDup').addEventListener('click', function () { duplicateSelected(); });
+    $('btnSelDel').addEventListener('click', function () { deleteSelected(); });
     $('btnAddCare').addEventListener('click', function () { openEditor(null, { kind: 'care' }); });
     $('btnAddFac').addEventListener('click', function () { openEditor(null, { kind: 'facility', label: '施設業務' }); });
     $('btnAddFree').addEventListener('click', function () { openEditor(null, { kind: 'free' }); });
@@ -5375,7 +5477,7 @@ body.printing .rs { display: none; }
         lane = lane.parentNode;
       }
       if (!lane || lane === document.body) {
-        if (ui.selectedId) { ui.selectedId = null; renderAll(); }
+        if (ui.selectedIds.length) { ui.selectedIds = []; renderAll(); }
         return;
       }
       var col = parseInt(lane.getAttribute('data-col'), 10);
@@ -5404,7 +5506,7 @@ body.printing .rs { display: none; }
         openEditor(null, { kind: 'care', start: m, staffId: staffId });
       } else {
         lastLane = { key: key, time: now };
-        if (ui.selectedId) { ui.selectedId = null; renderAll(); }
+        if (ui.selectedIds.length) { ui.selectedIds = []; renderAll(); }
       }
     });
   }
@@ -5465,8 +5567,15 @@ body.printing .rs { display: none; }
         toast('列を移動しました');
       },
       onColumnTap: function (col) { try { editColumnStaff(col); } catch (e) {} },
-      onTaskTap: function (taskId) {
-        ui.selectedId = ui.selectedId === taskId ? null : taskId;
+      onTaskTap: function (taskId, additive) {
+        if (additive) {
+          /* Ctrl/Cmd+クリック: 複数選択トグル（一括消去・複製の対象） */
+          var idx = ui.selectedIds.indexOf(taskId);
+          if (idx >= 0) ui.selectedIds.splice(idx, 1); else ui.selectedIds.push(taskId);
+        } else {
+          /* 通常クリック: 単独選択トグル */
+          ui.selectedIds = (ui.selectedIds.length === 1 && ui.selectedIds[0] === taskId) ? [] : [taskId];
+        }
         renderAll();
       },
       onTaskOpen: function (taskId) { openEditor(taskId); },

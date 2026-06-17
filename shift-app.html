@@ -124,6 +124,10 @@ tr.rephead.rowdate th { border-top: 3px double #000; }
 tr.subrow td { background: #fcfcfc; }
 tr.dragover td { border-top: 2px solid var(--blue); }
 tr.hiddenrow td { opacity: .45; }
+/* 畳んだ非表示行: 行を細く・日セルは空で高さ圧縮。区分名と「表示」ボタンは読める状態を維持して復元可能に */
+tr.collapsedrow td.collapsedcell { height: 5px; padding: 0; line-height: 0; font-size: 0; background: #f4f4f4; }
+tr.collapsedrow td.divcell { opacity: .7; font-size: 11px; padding-top: 1px; padding-bottom: 1px; }
+tr.collapsedrow td.divcell .showbtn { opacity: 1; }
 .hidebtn { color: var(--g4); cursor: pointer; font-weight: 700; padding: 0 2px; }
 .hidebtn:hover { color: var(--red); }
 .showbtn { color: var(--blue); cursor: pointer; font-size: 10px; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
@@ -2400,8 +2404,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var lines = [];
       for (var j = 0; j < divs.length; j++) {
         var isHidden = hidden.indexOf(divs[j]) >= 0;
-        if (isHidden && !ctx.revealHidden) continue;
-        lines.push({ div: divs[j], hidden: isHidden });
+        /* 非表示行も「畳んで」常に残す（行は細く・日セルは空表示にしCSSで圧縮、区分名＋「表示」ボタンは常時クリック可）。
+         * revealHidden ON のときは通常表示（一時的に内容確認・編集可）。これで非表示→復元が必ず行える。 */
+        lines.push({ div: divs[j], hidden: isHidden, collapsed: isHidden && !ctx.revealHidden });
       }
       if (lines.length === 0) return '';
       var rowSpan = lines.length;
@@ -2411,7 +2416,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       for (var L = 0; L < lines.length; L++) {
         var ln = lines[L];
         var isMain = ln.div === mainDiv;
-        var trCls = (L > 0 ? 'subrow' : 'staffline') + (ln.hidden ? ' hiddenrow' : '');
+        var trCls = (L > 0 ? 'subrow' : 'staffline')
+          + (ln.hidden ? ' hiddenrow' : '')
+          + (ln.collapsed ? ' collapsedrow' : '');
         h += '<tr data-sid="' + st.id + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
         if (L === 0) {
           h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + st.id + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
@@ -2419,9 +2426,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         h += '<td class="divcell sticky2" style="left:100px">' + esc(ln.div) +
           (ln.hidden
             ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
-            : ' <span class="hidebtn noprint" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
+            : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
-        h += this.dayCells(st, ln.div, isMain, days);
+        if (ln.collapsed) {
+          /* 畳んだ行は空の細セルで占有（列整合は維持・高さ圧縮）。daycellクラスは付けない＝選択対象外(青枠の誤表示防止) */
+          for (var cd = 1; cd <= days; cd++) h += '<td class="collapsedcell"></td>';
+        } else {
+          h += this.dayCells(st, ln.div, isMain, days);
+        }
         if (L === 0) {
           var t = res ? res.totals : null;
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.attendDays : '') + '</td>';
