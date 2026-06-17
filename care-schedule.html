@@ -1517,6 +1517,61 @@ const DEFAULT_OFFICE = {
 };
 let DB = { residents: [], currentResidentId: null, office: null };
 
+/* ── 入居者データ保護: クラウド同期が空/サンプル「あ」でローカルの実入居者を上書きする事故を防ぐ ──
+   （シフトアプリの mayApplyServer/protectStaff と同思想。events は実データ判定に使わない＝
+     予定ゼロの実入居者・マスタ連携入居者を誤って「サンプル」扱いしないため。） */
+const CS_RESIDENT_BACKUP_KEY = 'cs_residents_backup_v1';   // 同期対象外・端末ローカルのみ
+function csRealResidentCount(residents) {
+  if (!Array.isArray(residents)) return 0;
+  let n = 0;
+  for (let i = 0; i < residents.length; i++) {
+    const r = residents[i];
+    if (!r || typeof r !== 'object') continue;
+    const nm = (r.name == null ? '' : String(r.name)).replace(/\s+/g, '');
+    if (nm) n++;
+  }
+  return n;
+}
+/* 「出荷時サンプル『あ』のみ／空」か（=実データなしとみなしてよいか）。実入居者を誤判定しないよう厳格に。
+   サンプルは「単一・1文字のかな名・マスタ未連携・非退去・予定ゼロ」に限定（漢字姓 林/原/東 等は実データ扱い）。 */
+function csLooksLikeSampleOnly(residents) {
+  if (!Array.isArray(residents) || residents.length === 0) return true;   // 空
+  if (residents.length === 1) {
+    const r = residents[0] || {};
+    const nm = (r.name == null ? '' : String(r.name)).replace(/\s+/g, '');
+    const evs = Array.isArray(r.events) ? r.events.length : 0;
+    const isKana = nm.charCodeAt(0) >= 0x3040 && nm.charCodeAt(0) <= 0x30FF;   /* ひらがな/カタカナ1文字 */
+    if (nm.length === 1 && isKana && r.masterId == null && !r.movedOut && evs === 0) return true;
+  }
+  return false;
+}
+/* 正データを端末ローカルへ退避（同期されないキー）。サンプル/空は退避しない（=「あ」を昇格させない）。 */
+function csBackupResidents() {
+  try {
+    if (!csLooksLikeSampleOnly(DB.residents) && csRealResidentCount(DB.residents) > 0) {
+      localStorage.setItem(CS_RESIDENT_BACKUP_KEY, JSON.stringify({ at: Date.now(), residents: DB.residents }));
+    }
+  } catch(e) {}
+}
+/* 現在がサンプル/空で端末バックアップに正データがあれば自動復元（field端末はクラウドへ書き戻さない）。 */
+function csRestoreResidentsIfLost() {
+  try {
+    if (!csLooksLikeSampleOnly(DB.residents)) return false;   // 正データがあるなら何もしない
+    const bk = JSON.parse(localStorage.getItem(CS_RESIDENT_BACKUP_KEY) || 'null');
+    if (bk && !csLooksLikeSampleOnly(bk.residents) && csRealResidentCount(bk.residents) > 0) {
+      DB.residents = bk.residents;
+      saveLocalOnly();
+      if (suGetDeviceRole() !== 'field' && SYNC.hasTarget()) {
+        SYNC._dirty = true;
+        setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);   // 通常push(楽観ロック)で修復
+      }
+      try { showToast('入居者データを端末バックアップから復元しました'); } catch(e) {}
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
 function loadDB() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -1574,6 +1629,7 @@ function saveDB() {
     showToast('保存エラーが発生しました: ' + (e && e.message ? e.message : ''));
     return false;
   }
+  csBackupResidents();   // 正データを端末ローカルへ退避（同期事故時の復元元）
   // クラウド自動同期（同期先があれば常に・debounce）
   if (SYNC.hasTarget()) SYNC.scheduleAutoPush();
   return true;
@@ -1589,6 +1645,7 @@ const SYNC = {
   _busy: false,
   _dirty:  false,   // ローカルに未プッシュの変更があるか
   _remoteTs: 0,    // 最後にチェックしたリモートのタイムスタンプ
+  _rejectedRev: -1, // 上書き保護で採用拒否したサンプルrev（同revの再ログ/再pushを抑止）
 
   load() {
     try {
@@ -1691,6 +1748,17 @@ const SYNC = {
   adopt(data, rev) {
     const remote = data;
     if (!remote || typeof remote !== 'object') return false;
+    /* ★上書き保護: ローカルが実データで、リモートが空/サンプル「あ」なら採用しない（実入居者を守る）。
+       force push は使わない（別端末の正当な削除を巻き戻さない）。rev は進めない（後続の正当更新を
+       取りこぼさない）。_rejectedRev で同サンプルrevの再ログ/再pushだけ抑止する。 */
+    if (!csLooksLikeSampleOnly(DB.residents) && csLooksLikeSampleOnly(remote.residents)) {
+      if (this._rejectedRev !== rev) {
+        this._rejectedRev = rev;
+        this.log('⚠️ クラウドが空/サンプルのため上書きを中止しました（ローカルを保持）');
+        if (suGetDeviceRole() !== 'field') setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);
+      }
+      return false;   // DB不変・saveCareRev は呼ばない
+    }
     const remoteOfficeValid = remote.office && typeof remote.office === 'object'
                             && Object.keys(remote.office).length > 0;
     const preservedOffice = remoteOfficeValid ? null : DB.office;
@@ -1704,6 +1772,8 @@ const SYNC = {
     this.save();
     recalcAllEventUnits();
     try { mergeCommonSchedule(); } catch(e) {}
+    csRestoreResidentsIfLost();   /* 採用結果がサンプル/空なら端末バックアップから復元 */
+    csBackupResidents();          /* 実データを退避（次回ロスト時の復元元） */
     populateResidentSelect();
     renderAll();
     return true;
@@ -1791,6 +1861,7 @@ const SYNC = {
       const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       if (!j.ok) return;
       const remoteRev = Number(j.rev) || 0;
+      if (remoteRev === this._rejectedRev) return;   // サンプルとして拒否済みのrevは再採用しない
       if (remoteRev > this.loadCareRev()) {
         if (this._dirty) {
           // 未送信の変更がある場合は自動pullしない（ユーザー判断に委ねる）
@@ -1821,6 +1892,7 @@ const SYNC = {
 // localStorage のみへ保存（クラウド同期トリガなし、pull時の循環防止用）
 function saveLocalOnly() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {}
+  csBackupResidents();
 }
 
 // 入力欄の内容を即座に SYNC.config へ反映＋localStorageへ保存
@@ -3173,6 +3245,8 @@ loadDB();
 SYNC.load();
 // 入居者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
 try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止めない */ }
+// 起動時にローカルが既にサンプル/空化していれば端末バックアップから復元、正データなら退避を更新
+try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e) {}
 applyScheduleDeviceGuard();
 (function(){ var b = document.getElementById('suDeviceUnlock'); if (b) b.addEventListener('click', function(){
   try { localStorage.setItem(SU_DEVICE_KEY, 'office'); } catch(e) {}

@@ -2325,8 +2325,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     dragging: false,
     recentSyms: [],
 
-    render: function (ctx) {
+    render: function (ctx, printMode) {
       this.ctx = ctx;
+      /* printMode=true: 印刷用に「可視列(氏名+区分+日付)のみ」のDOMを生成する。集計/注記列の
+       * <col>・セル・colspan を最初から出さない＝実@media printでも grouphead 帯が月末で収束する
+       * （col{width:0}は実印刷では潰れ切らないため、構造から省く）。 */
+      var pm = printMode || false;
       var self = this;
       var wrap = document.getElementById('gridWrap');
       var days = ctx.days;
@@ -2336,12 +2340,15 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
       this.visibleRows = [];
       /* table-layout:fixed はテーブル幅が明示されている場合のみ有効 */
-      var totalW = 100 + 56 + days * 52 + 44 + 44 + 56 + 48 + 200 + 150;
+      var totalW = pm ? (100 + 56 + days * 52)
+                      : (100 + 56 + days * 52 + 44 + 44 + 56 + 48 + 200 + 150);
       var h = '<table class="sheet" style="width:' + totalW + 'px"><colgroup>';
       h += '<col style="width:100px"><col style="width:56px">';
       for (var c = 0; c < days; c++) h += '<col style="width:52px">';
-      h += '<col class="pcol" style="width:44px"><col class="pcol" style="width:44px"><col class="pcol" style="width:56px"><col class="pcol" style="width:48px">';
-      h += '<col class="noprint" style="width:200px"><col class="noprint" style="width:150px">';
+      if (!pm) {
+        h += '<col class="pcol" style="width:44px"><col class="pcol" style="width:44px"><col class="pcol" style="width:56px"><col class="pcol" style="width:48px">';
+        h += '<col class="noprint" style="width:200px"><col class="noprint" style="width:150px">';
+      }
       h += '</colgroup><thead>';
       /* 週行 */
       h += '<tr><th class="sticky1" style="left:0">週</th><th class="sticky2" style="left:100px"></th>';
@@ -2354,9 +2361,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           runStart = d + 1;
         }
       }
-      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr>';
+      if (!pm) h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th>';
+      h += '</tr>';
       /* 日付行＋曜日行（共通生成。デイサービス帯の直前にも再掲する） */
-      h += this.dateHeaderRows(ctx, days, false);
+      h += this.dateHeaderRows(ctx, days, false, pm);
       h += '</thead><tbody>';
 
       var renderedGroups = 0;
@@ -2374,19 +2382,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           return av - bv;
         });
         /* デイサービスは最下段で上部の日付行から遠いため、帯の直前に日付・曜日を再掲 */
-        if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true);
+        if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
-        h += '<tr class="grouphead"><td colspan="' + (days + 8) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) {
-          h += this.staffRows(members[m], days);
-          /* 緒方瞳の直下に「訪問介護員の休み数」集計行を挿入（画面確認用・印刷では非表示） */
-          if (GROUPS[g].key === 'visit' && normName(members[m].name).indexOf('緒方瞳') === 0) {
+          h += this.staffRows(members[m], days, pm);
+          /* 緒方瞳の直下に「訪問介護員の休み数」集計行を挿入（画面確認用・印刷は出さない） */
+          if (!pm && GROUPS[g].key === 'visit' && normName(members[m].name).indexOf('緒方瞳') === 0) {
             h += this.summaryRow(days);
           }
         }
         renderedGroups++;
       }
-      h += '</tbody><tfoot>' + this.footRows(days) + '</tfoot></table>';
+      h += '</tbody><tfoot>' + (pm ? '' : this.footRows(days)) + '</tfoot></table>';
       wrap.innerHTML = h;
       this.bind(wrap);
       this.applySelClass();
@@ -2395,7 +2403,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
     /* 日付行＋曜日行を生成（thead用と、デイサービス帯の前に再掲する用の共通処理）。
        repeat=true のとき tr に rephead クラスを付け、tbody 内でもヘッダー色で表示する。 */
-    dateHeaderRows: function (ctx, days, repeat) {
+    dateHeaderRows: function (ctx, days, repeat, printMode) {
+      var pm = printMode || false;
       var d, h = '';
       var rc = repeat ? ' rephead' : '';
       /* 日付行 */
@@ -2406,7 +2415,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var htip = ctx.holidays && ctx.holidays[d] ? ' title="' + esc(ctx.holidays[d]) + '"' : '';
         h += '<th class="' + hcls + (d === days ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
       }
-      h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th></tr>';
+      if (!pm) h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th>';
+      h += '</tr>';
       /* 曜日行 */
       h += '<tr class="rowdow' + rc + '"><th class="sticky1" style="left:0"></th><th class="sticky2" style="left:100px"></th>';
       for (d = 1; d <= days; d++) {
@@ -2414,11 +2424,13 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var hcls2 = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dw);
         h += '<th class="' + hcls2 + (d === days ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
       }
-      h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th></tr>';
+      if (!pm) h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th>';
+      h += '</tr>';
       return h;
     },
 
-    staffRows: function (st, days) {
+    staffRows: function (st, days, printMode) {
+      var pm = printMode || false;
       var ctx = this.ctx;
       var res = ctx.results[st.id];
       var sched = ctx.sched;
@@ -2464,7 +2476,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
             : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
         h += this.dayCells(st, ln.div, isMain, days);
-        if (L === 0) {
+        if (L === 0 && !pm) {
           var t = res ? res.totals : null;
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.attendDays : '') + '</td>';
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.offDays : '') + '</td>';
@@ -4297,6 +4309,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.notifyStaffRestore();
       /* どの入口（ボタン/Cmd+P/Ctrl+P）から印刷しても一枚化が効くようにする */
       window.addEventListener('beforeprint', function () { self.applyPrintFit(); });
+      /* 印刷(またはキャンセル)後に、印刷用の切り詰めDOMから通常表示へ復帰する */
+      window.addEventListener('afterprint', function () { self.rerender(); });
       /* 起動時プル */
       Store.pullAll().then(function (r) {
         if (r === 'ok') self.reloadFromStore();
@@ -5272,12 +5286,18 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       } else {
         sel = '#gridWrap'; table = document.querySelector('#gridWrap table.sheet'); useSim = true;
       }
+      /* グリッドビューは印刷用に「可視列のみ」のDOMへ再レンダ（grouphead等を days+2 に＝実@media
+       * printでも月末で収束）。このDOMのまま印刷し、afterprint で通常表示へ戻す。 */
+      if (useSim) {
+        Grid.render(this.gridCtx(), true);
+        table = document.querySelector('#gridWrap table.sheet');
+      }
       var zoom = 1, w = 1, hgt = 1;
       if (table) {
         var isA3 = size.indexOf('A3') >= 0;
         var pxW = ((isA3 ? 420 : 297) - 10) * 96 / 25.4;   /* 余白5mm×2＝印字域を拡大 */
         var pxH = ((isA3 ? 297 : 210) - 10) * 96 / 25.4;
-        if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法(width:auto等)で実測＝可視列のみ */
+        if (useSim) document.body.classList.add('printsim'); /* 印刷時と同じ寸法(padding等)で実測 */
         w = table.scrollWidth; hgt = table.scrollHeight;
         if (useSim) document.body.classList.remove('printsim');
         /* 横幅いっぱいに最大化。可視列のみの表は用紙より狭いことがあるため上限1.6で拡大も許可。 */
