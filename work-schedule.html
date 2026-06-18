@@ -195,12 +195,22 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 }
 .b-task.done .t-done { display: block; }
 .b-task.selected { box-shadow: 0 0 0 2px var(--pri), 0 2px 8px rgba(0,0,0,.25); z-index: 20; }
-/* コメント(付箋メモ): 固定ON=枠内に常時表示(画面)・未固定=📝バッジのみ */
-.b-task .t-comment {
-  margin-top: 2px; padding: 1px 4px; border-radius: 3px;
-  background: #fffde7; border: 1px solid #f6c945; color: #5f4b00;
-  line-height: 1.2; word-break: break-word; overflow: hidden;
+/* コメント: 固定ON=枠外フローティング吹き出し(b-cmt-layer)・未固定=📝バッジのみ */
+/* canvas直下のオーバーレイ層（枠のoverflow:hiddenに切られない）。線はpointer-events無し・吹き出しのみ操作可 */
+.b-cmt-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 25; pointer-events: none; }
+.b-cmt-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.b-cmt-line { stroke: #d39e00; stroke-width: 1px; stroke-dasharray: 3 2; }
+.b-cmt {
+  position: absolute; max-width: 200px; padding: 3px 6px; border-radius: 5px;
+  background: #fffbe6; border: 1px solid #e0a800; color: #5f4b00;
+  line-height: 1.25; word-break: break-word; white-space: pre-wrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18); cursor: move; pointer-events: auto;
+  -webkit-user-select: none; user-select: none; touch-action: none; z-index: 26;
 }
+.b-cmt.cmt-dragging { opacity: .9; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+/* 印刷: 吹き出しは白地・黒罫線・線は黒実線 */
+body.printing .b-cmt { background: #fff; border: 1px solid #000; color: #000; box-shadow: none; max-width: 160px; }
+body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray: none; }
 .b-task .t-cmt-badge {
   position: absolute; top: 0; right: 1px; font-size: 9px; line-height: 1;
   opacity: .9; pointer-events: none; z-index: 12;
@@ -973,7 +983,8 @@ body.printing .rs { display: none; }
 
   /* タスク生成。kind: 'care'(入居者支援) / 'facility'(施設業務) / 'break'(休憩) /
    * 'free'(自由記載枠: 名称・時間・内容を自由に設定できる) */
-  /* コメント(エクセル風メモ)を正規化。空文字は持たない(=null)。size:'小'|'中'|'大' */
+  /* コメント(エクセル風フローティング吹き出し)を正規化。空文字は持たない(=null)。size:'小'|'中'|'大'。
+   * dx,dy=固定表示時の吹き出しの枠からのオフセット(px・nullなら既定位置)。pinned=固定表示(画面常時＋印刷) */
   function normComment_(c) {
     if (!c || typeof c !== 'object') return null;
     var text = (typeof c.text === 'string') ? c.text : '';
@@ -981,7 +992,9 @@ body.printing .rs { display: none; }
     return { text: text,
              size: (c.size === '小' || c.size === '大') ? c.size : '中',
              bold: !!c.bold,
-             pinned: !!c.pinned };
+             pinned: !!c.pinned,
+             dx: (typeof c.dx === 'number' && isFinite(c.dx)) ? c.dx : null,
+             dy: (typeof c.dy === 'number' && isFinite(c.dy)) ? c.dy : null };
   }
 
   function newTask(props) {
@@ -3283,16 +3296,65 @@ body.printing .rs { display: none; }
     return ov;
   }
 
-  /* コメント(付箋メモ)の表示フォント px。size:小/中/大・画面/印刷で基準を分ける */
+  /* コメント吹き出しの表示フォント px。size:小/中/大。印刷は canvas が縮小zoomされるため基準を大きめに */
   function commentFontPx_(size, isPrint) {
-    if (isPrint) return size === '小' ? 11 : (size === '大' ? 17 : 13);
-    return size === '小' ? 10 : (size === '大' ? 15 : 12);
+    if (isPrint) return size === '小' ? 14 : (size === '大' ? 20 : 17);
+    return size === '小' ? 11 : (size === '大' ? 15 : 13);
   }
-  function appendComment_(parent, c, isPrint) {
-    var e = txt('div', isPrint ? 'pt-comment' : 't-comment', c.text);
-    e.style.fontSize = commentFontPx_(c.size, isPrint) + 'px';
-    if (c.bold) e.style.fontWeight = '700';
-    parent.appendChild(e);
+  function svgEl_(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+  /* 要素の canvas 内オフセット（layout座標＝zoom前。offsetParent鎖をcanvasまで合算） */
+  function offsetWithin_(elm, ancestor) {
+    var x = 0, y = 0, n = elm;
+    while (n && n !== ancestor) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+    return { x: x, y: y };
+  }
+  /* 固定コメントを「枠外フローティング吹き出し＋引き出し線」で canvas に重ねる。
+   * 枠の overflow:hidden に切られないよう canvas 直下の独立レイヤーへ。画面・印刷の両方で本関数が描画。
+   * 位置は comment.dx/dy（枠右上からのオフセット px・layout座標）。D&Dで更新（app.js）。 */
+  function buildCommentLayer(boardEl, day, scale, isPrint) {
+    var canvas = boardEl.querySelector('.b-canvas');
+    if (!canvas) return;
+    var targets = [], i;
+    for (i = 0; i < day.tasks.length; i++) {
+      var t = day.tasks[i];
+      if (t.staffId === null || !t.comment || !t.comment.pinned || !t.comment.text) continue;
+      var fe = boardEl.querySelector('.b-task[data-id="' + t.id + '"]');
+      if (fe) targets.push({ t: t, fe: fe });
+    }
+    if (!targets.length) return;
+    var cw = canvas.offsetWidth, ch = canvas.offsetHeight;
+    var layer = el('div', 'b-cmt-layer');
+    var svg = svgEl_('svg'); svg.setAttribute('class', 'b-cmt-svg');
+    svg.setAttribute('width', cw); svg.setAttribute('height', ch);
+    layer.appendChild(svg);
+    for (var k = 0; k < targets.length; k++) {
+      var c = targets[k].t.comment, fo = offsetWithin_(targets[k].fe, canvas);
+      var fw = targets[k].fe.offsetWidth;
+      var ax = fo.x + fw, ay = fo.y;                       /* 枠の右上＝引き出し元 */
+      var dx = (typeof c.dx === 'number') ? c.dx : 16;
+      var dy = (typeof c.dy === 'number') ? c.dy : -4;
+      var box = el('div', 'b-cmt');
+      box.setAttribute('data-id', targets[k].t.id);
+      box.style.fontSize = commentFontPx_(c.size, isPrint) + 'px';
+      if (c.bold) box.style.fontWeight = '700';
+      box.textContent = c.text;
+      layer.appendChild(box);                              /* 計測のため先に追加 */
+      var bw = box.offsetWidth, bh = box.offsetHeight;
+      var cx = ax + dx, cy = ay + dy;
+      if (cx + bw > cw) cx = cw - bw;
+      if (cy + bh > ch) cy = ch - bh;
+      if (cx < 0) cx = 0; if (cy < 0) cy = 0;
+      box.style.left = cx + 'px'; box.style.top = cy + 'px';
+      var tx = (ax < cx) ? cx : (ax > cx + bw ? cx + bw : ax);   /* 吹き出し矩形上の最近点 */
+      var ty = (ay < cy) ? cy : (ay > cy + bh ? cy + bh : ay);
+      var ln = svgEl_('line');
+      ln.setAttribute('x1', ax); ln.setAttribute('y1', ay);
+      ln.setAttribute('x2', tx); ln.setAttribute('y2', ty);
+      ln.setAttribute('class', 'b-cmt-line');
+      ln.setAttribute('data-id', targets[k].t.id);
+      svg.appendChild(ln);
+    }
+    canvas.appendChild(layer);
   }
 
   /* タスクブロック。isNight: 夜勤列（右軸マッピング）
@@ -3377,7 +3439,7 @@ body.printing .rs { display: none; }
           b.appendChild(row);
         }
       }
-      if (t.comment && t.comment.pinned && t.comment.text) appendComment_(b, t.comment, true);
+      /* 固定コメントは枠外フローティング吹き出し(buildCommentLayer)で描画＝枠のoverflow:hiddenに切られない */
       return b;
     }
 
@@ -3413,10 +3475,9 @@ body.printing .rs { display: none; }
       if (bodyParts.length && h >= 34) b.appendChild(txt('div', 't-body', bodyParts.join(' ')));
     }
 
-    /* コメント(付箋): 固定ONは枠内に常時表示・未固定はエクセル風に📝バッジのみ */
-    if (t.comment && t.comment.text) {
-      if (t.comment.pinned) appendComment_(b, t.comment, false);
-      else b.appendChild(txt('div', 't-cmt-badge', '📝'));
+    /* コメント: 固定ONは枠外フローティング吹き出し(buildCommentLayer)・未固定は📝バッジのみ(エクセル風) */
+    if (t.comment && t.comment.text && !t.comment.pinned) {
+      b.appendChild(txt('div', 't-cmt-badge', '📝'));
     }
 
     b.appendChild(txt('div', 't-done', '✔'));
@@ -3609,6 +3670,9 @@ body.printing .rs { display: none; }
       var bEl = buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex);
       if (bEl) laneEl.appendChild(bEl);
     }
+
+    /* 固定コメントの枠外フローティング吹き出し＋引き出し線（枠は描画済み＝offset計測可）。画面・印刷とも */
+    buildCommentLayer(boardEl, day, scale, !!opts.printMode);
   }
 
   /* 列ヘッダーへアラートバッジを反映（休憩なし職員） */
@@ -5035,6 +5099,10 @@ body.printing .rs { display: none; }
     var free = $('edContentFree').value.trim();
     if (free && ui.editContents.indexOf(free) < 0) ui.editContents.push(free);
 
+    /* 既存の吹き出し位置(dx/dy)は編集で失わないよう引き継ぐ（モーダルに位置欄は無い） */
+    var prevC = null;
+    if (ui.editingId) { var bt0 = M.findTask(day.tasks, ui.editingId); prevC = bt0 && bt0.comment ? bt0.comment : null; }
+
     var patch = {
       kind: kind,
       residentName: kind === 'care' ? residentName : '',
@@ -5051,7 +5119,8 @@ body.printing .rs { display: none; }
       comment: M.normComment({ text: $('edComment').value.trim(),
                                size: $('edCommentSize').value,
                                bold: $('edCommentBold').checked,
-                               pinned: $('edCommentPin').checked })
+                               pinned: $('edCommentPin').checked,
+                               dx: prevC ? prevC.dx : null, dy: prevC ? prevC.dy : null })
     };
 
     var beforeTask = ui.editingId ? M.findTask(day.tasks, ui.editingId) : null;
@@ -6668,6 +6737,102 @@ body.printing .rs { display: none; }
   }
 
   /* ===== D&D配線 ===== */
+  /* 固定コメントの吹き出しD&D（capture段で支援枠ドラッグより先に処理）。
+   * クリック=編集モーダル / ドラッグ=移動＋引き出し線を即時再描画→drop で comment.dx/dy を保存。 */
+  function wireCommentDrag() {
+    var drag = null;
+    function closestCmt_(node) {
+      while (node && node !== document) {
+        if (node.classList && node.classList.contains('b-cmt')) return node;
+        node = node.parentNode;
+      }
+      return null;
+    }
+    function offWithin_(elm, anc) {
+      var x = 0, y = 0, n = elm;
+      while (n && n !== anc) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+      return { x: x, y: y };
+    }
+    function ptOf_(e) {
+      if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    }
+    function frameAnchor_(d) {
+      var fo = offWithin_(d.fe, d.canvas);
+      return { x: fo.x + d.fe.offsetWidth, y: fo.y };
+    }
+    function redrawLine_(d) {
+      if (!d.line) return;
+      var a = frameAnchor_(d);
+      var cx = parseFloat(d.box.style.left) || 0, cy = parseFloat(d.box.style.top) || 0;
+      var bw = d.box.offsetWidth, bh = d.box.offsetHeight;
+      var tx = (a.x < cx) ? cx : (a.x > cx + bw ? cx + bw : a.x);
+      var ty = (a.y < cy) ? cy : (a.y > cy + bh ? cy + bh : a.y);
+      d.line.setAttribute('x2', tx); d.line.setAttribute('y2', ty);
+    }
+    function onDown(e) {
+      var box = closestCmt_(e.target);
+      if (!box) return;
+      var id = box.getAttribute('data-id');
+      var board = $('board'), canvas = board ? board.querySelector('.b-canvas') : null;
+      var fe = board ? board.querySelector('.b-task[data-id="' + id + '"]') : null;
+      if (!canvas || !fe) return;
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      var p = ptOf_(e);
+      drag = { id: id, box: box, canvas: canvas, fe: fe,
+               line: canvas.querySelector('.b-cmt-line[data-id="' + id + '"]'),
+               startX: p.x, startY: p.y,
+               baseLeft: parseFloat(box.style.left) || 0, baseTop: parseFloat(box.style.top) || 0,
+               moved: false };
+      box.classList.add('cmt-dragging');
+    }
+    function onMove(e) {
+      if (!drag) return;
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      var p = ptOf_(e);
+      var z = parseFloat($('board').style.zoom) || 1;
+      var nx = drag.baseLeft + (p.x - drag.startX) / z;
+      var ny = drag.baseTop + (p.y - drag.startY) / z;
+      var cw = drag.canvas.offsetWidth, ch = drag.canvas.offsetHeight;
+      var bw = drag.box.offsetWidth, bh = drag.box.offsetHeight;
+      if (nx + bw > cw) nx = cw - bw;
+      if (ny + bh > ch) ny = ch - bh;
+      if (nx < 0) nx = 0; if (ny < 0) ny = 0;
+      drag.box.style.left = nx + 'px'; drag.box.style.top = ny + 'px';
+      if (Math.abs(p.x - drag.startX) > 2 || Math.abs(p.y - drag.startY) > 2) drag.moved = true;
+      redrawLine_(drag);
+    }
+    function onUp(e) {
+      if (!drag) return;
+      e.stopPropagation();
+      var d = drag; drag = null;
+      d.box.classList.remove('cmt-dragging');
+      if (!d.moved) { openEditor(d.id); return; }   /* 動かさなければクリック＝編集 */
+      var a = frameAnchor_(d);
+      var cx = parseFloat(d.box.style.left) || 0, cy = parseFloat(d.box.style.top) || 0;
+      var task = M.findTask(store.get().tasks, d.id);
+      if (!task || !task.comment) return;
+      var nc = {}; for (var key in task.comment) if (Object.prototype.hasOwnProperty.call(task.comment, key)) nc[key] = task.comment[key];
+      nc.dx = Math.round(cx - a.x); nc.dy = Math.round(cy - a.y);
+      store.dispatch({ type: 'UPDATE_TASK', id: d.id, patch: { comment: nc } });
+    }
+    if (window.PointerEvent) {
+      document.addEventListener('pointerdown', onDown, true);
+      document.addEventListener('pointermove', onMove, true);
+      document.addEventListener('pointerup', onUp, true);
+      document.addEventListener('pointercancel', function () { if (drag) { drag.box.classList.remove('cmt-dragging'); drag = null; } }, true);
+    } else {
+      document.addEventListener('mousedown', onDown, true);
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+      document.addEventListener('touchstart', onDown, true);
+      document.addEventListener('touchmove', onMove, { capture: true, passive: false });
+      document.addEventListener('touchend', onUp, true);
+    }
+  }
+
   function wireDrag() {
     window.WSDrag.create({
       wrapEl: $('boardWrap'),
@@ -6904,6 +7069,7 @@ body.printing .rs { display: none; }
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
+    try { wireCommentDrag(); } catch (e) { if (window.console) console.error('コメントD&D初期化失敗', e); }
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}
     try { autoLoadMaster(); } catch (e) {}
