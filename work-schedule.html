@@ -4626,6 +4626,24 @@ body.printing .rs { display: none; }
       return true;
     } catch (e) { return false; }
   }
+  /* ワースケ→週間計画：ケア内容(支援内容・詳細=detail)のみ書き戻す。時刻等は書き戻さない。
+   * weeklyRef.evId で care_schedule_v2 の該当eventを引き、detail=contents.join('・') を反映→保存＋クラウドpush。 */
+  function writeBackCareDetail_(evId, contents) {
+    if (!evId) return;
+    var db = loadCareDb();
+    if (!db || !db.residents) return;
+    var detail = (contents && contents.length) ? contents.join('・') : '';
+    var changed = false, i, j;
+    for (i = 0; i < db.residents.length && !changed; i++) {
+      var evs = db.residents[i].events || [];
+      for (j = 0; j < evs.length; j++) {
+        if (evs[j].id !== evId) continue;
+        if ((evs[j].detail || '') === detail) return;   /* 変化なし＝何もしない */
+        evs[j].detail = detail; changed = true; break;
+      }
+    }
+    if (changed) { saveCareDb(db); toast('ケア内容を週間計画へ反映しました'); }
+  }
   function hhmm(min) {
     var h = Math.floor(min / 60), m = min % 60;
     return (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
@@ -4689,20 +4707,30 @@ body.printing .rs { display: none; }
       return skips.indexOf(e.id) >= 0 ||
              skips.indexOf(e.resName + '|' + e.start) >= 0;
     }
+    function sameContents_(a, b) {
+      a = a || []; b = b || [];
+      if (a.length !== b.length) return false;
+      for (var s = 0; s < a.length; s++) if (a[s] !== b[s]) return false;
+      return true;
+    }
     function claim(t, hit) {
       matchedEv[hit] = true;
       var ev2 = events[hit];
       var refPatch = { residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id };
+      var patch = {}, refDirty = (!t.weeklyRef.evId || t.weeklyRef.evId !== ev2.id);
+      /* 時刻/svcは「ワースケで未変更(=1重罫線)」の時だけ週間計画へ追従。時刻等の書き戻しはしない(従来どおり) */
       if ((t.origin && (t.origin.start !== ev2.start || t.origin.end !== ev2.end)) && !M.isChanged(t)) {
-        /* 週間計画側の時間変更を、ユーザー未変更のタスクへ追従 */
-        store.dispatch({ type: 'UPDATE_TASK', id: t.id,
-          patch: { start: ev2.start, end: ev2.end, svcCode: ev2.svcCode || t.svcCode,
-                   weeklyRef: refPatch,
-                   origin: { start: ev2.start, end: ev2.end, staffId: t.staffId, svcCode: ev2.svcCode || t.svcCode } } });
-        updated++;
-      } else if (!t.weeklyRef.evId || t.weeklyRef.evId !== ev2.id) {
-        store.dispatch({ type: 'UPDATE_TASK', id: t.id, patch: { weeklyRef: refPatch } });
+        patch.start = ev2.start; patch.end = ev2.end; patch.svcCode = ev2.svcCode || t.svcCode;
+        patch.origin = { start: ev2.start, end: ev2.end, staffId: t.staffId, svcCode: ev2.svcCode || t.svcCode };
+        refDirty = true;
       }
+      /* ケア内容(支援内容・詳細)は常に detail を正本に同期＝週間計画→ワースケの片方向を完全化 */
+      var newContents = ev2.detail ? [ev2.detail] : [];
+      if (!sameContents_(t.contents, newContents)) patch.contents = newContents;
+      if (refDirty) patch.weeklyRef = refPatch;
+      var has = false, pk;
+      for (pk in patch) if (Object.prototype.hasOwnProperty.call(patch, pk)) { has = true; break; }
+      if (has) { store.dispatch({ type: 'UPDATE_TASK', id: t.id, patch: patch }); updated++; }
     }
     /* 突合は2パス: ①evId完全一致 → ②時刻一致（origin→ref→現在時刻の優先順）。
      * 同一入居者が同曜日に複数予定を持つ場合の誤バインドを防ぐ */
@@ -4752,7 +4780,7 @@ body.printing .rs { display: none; }
       added++;
     }
     if (added || updated || removed) {
-      toast('週間計画と同期: 追加' + added + '・時間追従' + updated + '・削除' + removed);
+      toast('週間計画と同期: 追加' + added + '・更新' + updated + '・削除' + removed);
     }
   }
 
@@ -5158,6 +5186,10 @@ body.printing .rs { display: none; }
         if (!v.ok) { toast(v.reason, true); return; }
       }
       store.dispatch({ type: 'UPDATE_TASK', id: ui.editingId, patch: patch });
+      /* ケア内容(支援内容・詳細)のみ 週間計画(care_schedule_v2)へ書き戻す。週間計画リンク済みの支援に限る */
+      if (kind === 'care' && beforeTask && beforeTask.weeklyRef && beforeTask.weeklyRef.evId) {
+        try { writeBackCareDetail_(beforeTask.weeklyRef.evId, patch.contents); } catch (eW) {}
+      }
     } else {
       var nt = M.newTask(patch);
       nt.origin = M.captureOrigin(nt);
