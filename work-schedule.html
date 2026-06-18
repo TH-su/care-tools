@@ -2390,14 +2390,21 @@ body.printing .rs { display: none; }
     return true;
   }
 
+  /* 覆った施設業務/自由枠の「正体」を支援に覚えさせる背景枠メモリ。facworkのみ対象（それ以外はnull）。 */
+  function facBgOf_(fac) {
+    if (!fac || fac.src !== 'facwork') return null;
+    return { kind: fac.kind, label: fac.label || '', src: 'facwork' };
+  }
+
   /* care移動 reducer 共通: 移動対象のうち「旧staffIdを持つ care」の旧位置を vacates として収集。
-   * トレイ初配置(旧staffId=null)は退去ではないので含めない。 */
+   * トレイ初配置(旧staffId=null)は退去ではないので含めない。背景枠メモリ(facBg)も捕捉（patch前から読む）。 */
   function careVacates_(tasksBefore, ids) {
     var vac = [], i;
     for (i = 0; i < ids.length; i++) {
       var t = M.findTask(tasksBefore, ids[i]);
       if (t && t.kind === 'care' && t.staffId !== null && t.staffId !== undefined) {
-        vac.push({ staffId: t.staffId, start: t.start, end: t.end });
+        vac.push({ staffId: t.staffId, start: t.start, end: t.end,
+                   facBg: (t.facBg !== undefined && t.facBg !== null) ? t.facBg : null });
       }
     }
     return vac;
@@ -2420,7 +2427,13 @@ body.printing .rs { display: none; }
       if (!st0 || st0.zone === 'night') continue;       /* 夜勤に facwork は無い */
       if (!byStaff[v.staffId]) byStaff[v.staffId] = {};
       var hh = Math.floor(v.start / 60) * 60;
-      for (; hh < v.end; hh += 60) byStaff[v.staffId][hh] = true;
+      for (; hh < v.end; hh += 60) {
+        if (!byStaff[v.staffId][hh]) byStaff[v.staffId][hh] = { bg: {} };
+        /* 退去支援が覆っていた施設業務の正体を kind 別に記録（同 kind は先勝ち） */
+        if (v.facBg && v.facBg.kind && !byStaff[v.staffId][hh].bg[v.facBg.kind]) {
+          byStaff[v.staffId][hh].bg[v.facBg.kind] = v.facBg;
+        }
+      }
     }
     var result = tasks;
     for (var sid in byStaff) {
@@ -2432,6 +2445,7 @@ body.printing .rs { display: none; }
         var hourStart = parseInt(hkey, 10), hourEnd = hourStart + 60, j;
         var lo = Math.max(hourStart, ws), hi = Math.min(hourEnd, we);
         if (hi <= lo) continue;
+        var hourRec = hours[hkey];                        /* { bg: { facility:{...}, free:{...} } } */
         var FACKINDS = ['facility', 'free'];              /* 施設業務・自由枠(空枠)を各々独立に復元/結合 */
         for (var ki = 0; ki < FACKINDS.length; ki++) {
           var KIND = FACKINDS[ki];
@@ -2446,7 +2460,22 @@ body.printing .rs { display: none; }
               occ.push([tk.start, tk.end]);   /* hard占有: care/休憩＋もう一方のfacwork種(相互に侵食しない) */
             }
           }
-          if (!hasCand) continue;                         /* 拡張のみ: 残存候補が無い種は何もしない */
+          if (!hasCand) {
+            /* 残存枠が無い＝完全消費。背景枠メモリ(facBg)があれば残った占有の隙間へ復元（無ければ従来どおり空のまま）。 */
+            var bg = (hourRec && hourRec.bg) ? hourRec.bg[KIND] : null;
+            if (!bg) continue;
+            var freeBg = TS.facResidual(lo, hi, occ, 20);
+            if (!freeBg.length) continue;
+            var keptBg = result, fb;
+            for (fb = 0; fb < freeBg.length; fb++) {
+              var nfb = M.newTask({ kind: KIND, label: (bg.label || ''), src: 'facwork',
+                                    start: freeBg[fb][0], end: freeBg[fb][1], staffId: sid });
+              nfb.facManual = true;
+              keptBg = keptBg.concat([nfb]);
+            }
+            result = keptBg;
+            continue;
+          }
           var free = TS.facResidual(lo, hi, occ, 20);     /* 空き区間（占有の補集合・20分未満破棄） */
           if (sameRanges_(candRanges, free)) continue;    /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
           var proto = null, kept = [];
@@ -2531,20 +2560,20 @@ body.printing .rs { display: none; }
     if (type === 'ASSIGN') {
       var vacA = careVacates_(day.tasks, [action.id]);   /* 退去元(旧位置)を移動前に捕捉 */
       var tasksA = patchTask(day.tasks, action.id,
-        { staffId: action.staffId, start: action.start, end: action.end });
+        { staffId: action.staffId, start: action.start, end: action.end, facBg: null });
       tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff);   /* 退去先の残存施設枠を拡張(undo1回) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksA };
     }
     if (type === 'UNASSIGN') {
       var vacU = careVacates_(day.tasks, [action.id]);
-      var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false });
+      var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false, facBg: null });
       tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksU };
     }
     if (type === 'SWAP') {
       var tasks2 = day.tasks;
       for (var m = 0; m < action.moves.length; m++) {
-        tasks2 = patchTask(tasks2, action.moves[m].id, { staffId: action.moves[m].staffId });
+        tasks2 = patchTask(tasks2, action.moves[m].id, { staffId: action.moves[m].staffId, facBg: null });
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasks2 };
     }
@@ -2556,7 +2585,7 @@ body.printing .rs { display: none; }
       for (ms = 0; ms < action.moves.length; ms++) {
         var mvSW = action.moves[ms];
         var curSW = M.findTask(tasksSW, mvSW.id);
-        var pSW = { staffId: mvSW.staffId, start: mvSW.start, end: mvSW.end };
+        var pSW = { staffId: mvSW.staffId, start: mvSW.start, end: mvSW.end, facBg: null };
         if (curSW && curSW.src === 'facwork') pSW.facManual = true;
         tasksSW = patchTask(tasksSW, mvSW.id, pSW);
       }
@@ -2572,7 +2601,7 @@ body.printing .rs { display: none; }
       for (var mm = 0; mm < action.moves.length; mm++) {
         var mvm = action.moves[mm];
         var curM = M.findTask(tasksM, mvm.id);
-        var patchM = { staffId: mvm.staffId, start: mvm.start, end: mvm.end };
+        var patchM = { staffId: mvm.staffId, start: mvm.start, end: mvm.end, facBg: null };
         if (curM && curM.src === 'facwork') patchM.facManual = true;
         tasksM = patchTask(tasksM, mvm.id, patchM);
       }
@@ -2585,9 +2614,9 @@ body.printing .rs { display: none; }
       var SP_MIN = 20;
       var vacSP = careVacates_(day.tasks, [action.careId]);   /* 退去元(支援の旧位置)を移動前に捕捉 */
       var sStart = action.start, sEnd = action.end;
-      var tasksP = patchTask(day.tasks, action.careId,
-        { staffId: action.staffId, start: sStart, end: sEnd });
       var fac = M.findTask(day.tasks, action.facId);
+      var tasksP = patchTask(day.tasks, action.careId,
+        { staffId: action.staffId, start: sStart, end: sEnd, facBg: facBgOf_(fac) });
       if (fac) {
         var fStart = fac.start, fEnd = fac.end;
         var headEnd = sStart;                              /* 前半は支援開始まで */
@@ -2620,10 +2649,24 @@ body.printing .rs { display: none; }
       var idsMS = [];
       for (a = 0; a < action.moves.length; a++) idsMS.push(action.moves[a].id);
       var vacMS = careVacates_(day.tasks, idsMS);        /* 退去元(各支援の旧位置)を移動前に捕捉 */
+      /* 消費される施設業務/自由枠（背景枠メモリの判定用） */
+      var splitFacs = [], spi;
+      for (spi = 0; spi < action.splits.length; spi++) {
+        var spf = M.findTask(day.tasks, action.splits[spi].facId);
+        if (spf && spf.src === 'facwork') splitFacs.push(spf);
+      }
       for (a = 0; a < action.moves.length; a++) {
         var mvA = action.moves[a];
         var curA = M.findTask(tasksMS, mvA.id);
-        var pA = { staffId: mvA.staffId, start: mvA.start, end: mvA.end };
+        /* care が消費facworkに重なるなら背景枠メモリを付与、重ならなければクリア（空きへ着地） */
+        var bgMS = null, sfk;
+        if (curA && curA.kind === 'care') {
+          for (sfk = 0; sfk < splitFacs.length; sfk++) {
+            var SF = splitFacs[sfk];
+            if (mvA.start < SF.end && SF.start < mvA.end) { bgMS = facBgOf_(SF); break; }
+          }
+        }
+        var pA = { staffId: mvA.staffId, start: mvA.start, end: mvA.end, facBg: bgMS };
         if (curA && curA.src === 'facwork') pA.facManual = true;
         tasksMS = patchTask(tasksMS, mvA.id, pA);
       }
