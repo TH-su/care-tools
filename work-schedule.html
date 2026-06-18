@@ -331,23 +331,27 @@ body.printing .b-task.p-task {
   color: #000; padding: 1px 3px; overflow: visible;
   box-shadow: none;
 }
-body.printing .p-task .pt-time { font-size: 11.5px; font-weight: 700; color: #000; }
-body.printing .p-task .pt-name { font-size: 15px; font-weight: 700; color: #000; line-height: 1.15; }
+/* 原寸印刷(縮小なし)につき文字を最大化＝読みやすさ優先 */
+body.printing .p-task .pt-time { font-size: 14px; font-weight: 700; color: #000; }
+body.printing .p-task .pt-name { font-size: 19px; font-weight: 700; color: #000; line-height: 1.2; }
 body.printing .p-task .pt-line {
   display: flex; gap: 3px; align-items: baseline; justify-content: space-between;
   white-space: nowrap;
 }
-body.printing .p-task .pt-line .pt-time { font-size: 10px; flex-shrink: 0; }
-body.printing .p-task .pt-line .pt-cb { font-size: 12px; }
-/* 短枠は 時刻行+名前行 が19分枠(約26px)に収まるサイズ */
-body.printing .p-task .pt-name-s { font-size: 12.5px; line-height: 1.05; }
+body.printing .p-task .pt-line .pt-time { font-size: 13px; flex-shrink: 0; }
+body.printing .p-task .pt-line .pt-cb { font-size: 15px; }
+/* 短枠(身体01等)は 時刻行+名前行 を拡大ゾーンの枠内に収める */
+body.printing .p-task .pt-name-s { font-size: 16px; line-height: 1.1; }
 body.printing .p-task .pt-item {
   display: flex; justify-content: space-between; align-items: baseline; gap: 4px;
-  font-size: 13px; color: #000; line-height: 1.3;
+  font-size: 16px; color: #000; line-height: 1.35;
 }
 body.printing .p-task .pt-item-tx { overflow: hidden; }
-body.printing .p-task .pt-cb { font-size: 14px; line-height: 1.1; flex-shrink: 0; }
-body.printing .p-task .pt-sub { font-size: 10px; color: #000; }
+body.printing .p-task .pt-cb { font-size: 17px; line-height: 1.15; flex-shrink: 0; }
+body.printing .p-task .pt-sub { font-size: 13px; color: #000; }
+body.printing .b-head .h-no { font-size: 14px; }
+body.printing .b-head .h-name { font-size: 17px; }
+body.printing .b-head .h-time { font-size: 13px; }
 body.printing .b-task.changed { border: 2.5px double #000 !important; }
 body.printing .b-task.tentative { border-style: dashed !important; }
 /* 入院中: 極薄（チェック欄は出さない） */
@@ -383,7 +387,7 @@ body.printing .rs { display: none; }
   /* fitPrint() が #board に transform:scale＋負マージンを適用。overflow:hidden は使わない
    * （Chrome印刷で overflow:hidden+transform が白紙化するため）。 */
   .board-wrap { overflow: visible; padding-bottom: 0; }
-  .board { display: block; break-inside: avoid; page-break-inside: avoid; }
+  .board { display: block; break-inside: auto; page-break-inside: auto; }   /* 原寸で複数A3ページに渡る */
   .b-heads { position: static; }
   .print-head { display: block !important; }
   .b-task { box-shadow: none; }
@@ -678,6 +682,17 @@ body.printing .rs { display: none; }
     { from: 1050, to: 1260, pxPerHour: ROW_PX * 6,   label: '夕 17:30-21時' }
   ];
 
+  /* 印刷専用ゾーン: 多忙帯(7-9時・17-21時)を拡大し原寸で複数A3ページに渡す。画面は DEFAULT_ZONES のまま。
+   * 印刷時のみ buildScale に渡す。totalH≈2747px(A3縦印字域1542px→約2ページ・縮小なし)。 */
+  var PRINT_ZONES = [
+    { from: 420,  to: 540,  pxPerHour: ROW_PX * 18, label: '朝 7-9時' },
+    { from: 540,  to: 720,  pxPerHour: ROW_PX * 12, label: '午前 9-12時' },
+    { from: 720,  to: 780,  pxPerHour: ROW_PX * 10, label: '昼 12-13時' },
+    { from: 780,  to: 1020, pxPerHour: ROW_PX * 12, label: '午後 13-17時' },
+    { from: 1020, to: 1260, pxPerHour: ROW_PX * 18, label: '夕 17-21時' }
+  ];
+  var PRINT_NIGHT_PX_MIN = ROW_PX / 5;   /* 印刷夜勤軸: 1行=5分相当(2.72px/分)で 0-8時を拡大 */
+
   /* 夜勤軸セグメント: 夜時間帯 → 日中軸上のアンカー分 */
   var NIGHT_SEGS = [
     { from: 0,    to: 540,  anchorDayMin: 420  },  /* 0:00-9:00 → 7:00行から */
@@ -739,25 +754,27 @@ body.printing .rs { display: none; }
     return scale.domainTo;
   }
 
-  /* 夜勤軸: 分 → Y。表示帯外（9:00-21:00）は null */
+  /* 夜勤軸: 分 → Y。表示帯外（9:00-21:00）は null。scale.nightPxMin があればそれを使う（印刷拡大用・後方互換） */
   function nightYFromMin(scale, min) {
+    var npm = (scale && typeof scale.nightPxMin === 'number') ? scale.nightPxMin : NIGHT_PX_MIN;
     for (var i = 0; i < NIGHT_SEGS.length; i++) {
       var s = NIGHT_SEGS[i];
       if (min >= s.from && min <= s.to) {
-        return yFromMin(scale, s.anchorDayMin) + (min - s.from) * NIGHT_PX_MIN;
+        return yFromMin(scale, s.anchorDayMin) + (min - s.from) * npm;
       }
     }
     return null;
   }
 
-  /* 夜勤軸: Y → 分。どの夜帯にも当たらない場合 null */
+  /* 夜勤軸: Y → 分。どの夜帯にも当たらない場合 null。scale.nightPxMin 対応（後方互換） */
   function nightMinFromY(scale, y) {
+    var npm = (scale && typeof scale.nightPxMin === 'number') ? scale.nightPxMin : NIGHT_PX_MIN;
     for (var i = 0; i < NIGHT_SEGS.length; i++) {
       var s = NIGHT_SEGS[i];
       var y0 = yFromMin(scale, s.anchorDayMin);
-      var y1 = y0 + (s.to - s.from) * NIGHT_PX_MIN;
+      var y1 = y0 + (s.to - s.from) * npm;
       if (y >= y0 - 0.5 && y <= y1 + 0.5) {
-        var m = Math.round(s.from + (y - y0) / NIGHT_PX_MIN);
+        var m = Math.round(s.from + (y - y0) / npm);
         if (m < s.from) m = s.from;
         if (m > s.to) m = s.to;
         return m;
@@ -861,6 +878,8 @@ body.printing .rs { display: none; }
     DAY_MIN: DAY_MIN,
     ROW_PX: ROW_PX,
     DEFAULT_ZONES: DEFAULT_ZONES,
+    PRINT_ZONES: PRINT_ZONES,
+    PRINT_NIGHT_PX_MIN: PRINT_NIGHT_PX_MIN,
     NIGHT_SEGS: NIGHT_SEGS,
     cloneZones: cloneZones,
     buildScale: buildScale,
@@ -1740,6 +1759,12 @@ body.printing .rs { display: none; }
       else if (st.zone === 'night') (st.nightRole === 'iri' ? nightIri : nightAke).push(st);
       else visit.push(st);
     }
+    /* 施設列は出勤開始の早い順に左→右へ（早番=左/遅番=右）。workStart未定義は末尾。空列はpaddingで右に付く。 */
+    facility.sort(function (a, b) {
+      var aw = (typeof a.workStart === 'number') ? a.workStart : Infinity;
+      var bw = (typeof b.workStart === 'number') ? b.workStart : Infinity;
+      return (aw - bw) || ((a.workEnd || 0) - (b.workEnd || 0));
+    });
     var columns = [];
     function push(zone, members) {
       var ids = [];
@@ -2117,6 +2142,10 @@ body.printing .rs { display: none; }
     }
     /* 訪問介護員は出勤開始時刻の早い順に左→右へ並べる（早番が左・遅番が右） */
     groups.visit.sort(function (a, b) {
+      return (a.workStart || 0) - (b.workStart || 0) || (a.workEnd || 0) - (b.workEnd || 0);
+    });
+    /* 施設職員も出勤開始の早い順に（早番が左・遅番が右）＝訪問と同方針 */
+    groups.facility.sort(function (a, b) {
       return (a.workStart || 0) - (b.workStart || 0) || (a.workEnd || 0) - (b.workEnd || 0);
     });
 
@@ -5160,56 +5189,42 @@ body.printing .rs { display: none; }
     toast('空き枠が見つかりません。手動で調整してください', true);
   }
 
-  /* ===== 印刷（A3縦・1枚フィット）=====
-   * A3縦の印字可能域に表全体＋印刷ヘッダーが収まる倍率 s を算出し、盤面に **zoom**(等方)を適用する
-   * （zoom はレイアウトboxごと縮尺＝印刷エンジンの用紙合わせによる二重縮小・白紙化を回避）。
-   * 幅律速で下方に余白が残る分は、zoom後の盤面に縦のみ scaleY を重ねて印字域いっぱいに充填する。
-   * overflow:hidden は使わない（Chrome印刷で overflow:hidden+transform が白紙化する不具合を回避）。 */
-  /* A3縦 297×420mm・余白5mm の印字可能域 ≒ 1085×1550px(@96dpi)。用紙幅いっぱいに最大化（安全側に少し詰める）。 */
-  var PRINT_AVAIL = { w: 1078, h: 1542 };
-  var PRINT_MAX_SCALE = 1.6;   /* 列が少ない日も用紙いっぱいに拡大（過拡大での文字崩れ防止に上限） */
-  var PRINT_VFILL_MAX = 1.6;   /* 縦充填の上限（行間が間延びしすぎない過伸ばしcap） */
-  var PRINT_VFILL_SAFE = 0.985;/* 1ページ割れ回避の安全係数（印字域のわずか内側に収める） */
+  /* ===== 印刷（A3縦・原寸クリスプ・複数ページ可）=====
+   * 旧方式(zoom+scaleY)は scaleY の縦伸ばしが文字を歪ませ（ぼやけ）ていた。新方式:
+   * printMode + 印刷専用ゾーン(多忙帯7-9/17-21・夜勤0-8拡大)で盤面を1回再描画し、
+   * **横幅フィットの等方zoomのみ**(拡大も縦縮小もしない＝原寸)。表は原寸で複数A3ページに渡る。 */
+  var PRINT_AVAIL = { w: 1078, h: 1542 };   /* A3縦 余白5mm の印字可能域(@96dpi) */
   var printSavedScroll = null;
+  var printActive = false;   /* navPrint→print→beforeprint の再入を1回に集約 */
   function fitPrint() {
     var board = $('board');
-    if (!board.firstChild) return;
+    var day = (store && store.get) ? store.get() : null;
+    if (!day || !day.columns.length) return;
+    if (printActive) return;
+    printActive = true;
     var wrap = $('boardWrap');
-    if (printSavedScroll === null) {
-      printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
-    }
-    /* 計測前に等倍へ戻す。盤面の実コンテンツ幅は右端の時間軸位置から求める（ウィンドウ幅非依存） */
-    board.style.zoom = ''; board.style.transform = ''; board.style.margin = '';
-    board.style.minWidth = '0';
-    board.style.width = '';
+    if (printSavedScroll === null) printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
+    document.body.classList.add('printing');   /* .p-task / body.printing CSS を有効化 */
+    /* 印刷専用scale(多忙帯拡大・夜勤拡大)で printMode 再描画。選択は印刷しない */
+    var printScale = TS.buildScale(TS.PRINT_ZONES);
+    printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
+    B.render(board, day, TS.PRINT_ZONES, printScale,
+      { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
+    /* 横幅フィットのみ: 用紙幅を超える日だけ等方zoomで縮小、決して拡大も縦縮小もしない＝原寸クリスプ */
+    board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
+    board.style.minWidth = '0'; board.style.width = '';
     var w = board.scrollWidth || 1;
     var cv = board.querySelector('.b-canvas');
     var ax = cv ? cv.querySelector('.b-axis.r') : null;
     if (ax) w = ax.offsetLeft + ax.offsetWidth;
-    var h = board.scrollHeight || 1;
-    /* 印刷ヘッダー(printHead)は boardWrap 内の兄弟。実高さ(既定26px)＋バッファをフィット高さに含める */
-    var ph = $('printHead');
-    var headH = (ph && ph.offsetHeight) ? ph.offsetHeight + 2 : 28;
-    var s = Math.min(PRINT_AVAIL.w / w, (PRINT_AVAIL.h - headH) / h, PRINT_MAX_SCALE);
-    /* zoom はレイアウトboxごと縮尺するため、用紙いっぱいに最大化できる。
-     * 旧方式(transform:scale＋負マージン)は box が未縮小のまま残り、印刷エンジンの用紙合わせで
-     * 二重縮小されて「小さすぎ／余白が大」になっていた。overflow:hidden は使わない＝白紙化も回避。 */
+    var z = PRINT_AVAIL.w / w;
+    if (z > 1) z = 1;
     board.style.width = w + 'px';
-    board.style.zoom = s;
-    /* 縦余白充填: A3縦は幅律速で s が小さく下方に余白が残るため、zoom後の盤面に縦のみ
-     * scaleY を重ねて印字域の縦をいっぱいに使う（transform は zoom 後の見た目に乗るので
-     * 基準高は visH=h*s）。layout box は zoom 済のまま＝scaleYは視覚のみ→改ページ閾値を超えず
-     * 1ページ維持。overflow:hidden 不使用で白紙化も起きない。 */
-    var visH = h * s;
-    var k = (PRINT_AVAIL.h - headH) / visH;
-    if (k < 1) k = 1;                              /* 高さ律速の日(横余り)は縦を縮めない */
-    if (k > PRINT_VFILL_MAX) k = PRINT_VFILL_MAX;  /* 過伸ばしcap */
-    k = k * PRINT_VFILL_SAFE;
-    board.style.transformOrigin = '0 0';           /* 上端固定＝ヘッダー直下から下方向のみ伸長 */
-    board.style.transform = 'scaleY(' + k.toFixed(3) + ')';
+    board.style.zoom = z;
   }
   function unfitPrint() {
     var board = $('board');
+    document.body.classList.remove('printing');
     board.style.zoom = '';
     board.style.transform = '';
     board.style.transformOrigin = '';
@@ -5224,6 +5239,8 @@ body.printing .rs { display: none; }
       wrap.scrollTop = printSavedScroll.t;
       printSavedScroll = null;
     }
+    printActive = false;
+    try { renderAll(); } catch (e) {}   /* 画面scale+レイアウト(printMode無)へ復元 */
   }
 
   /* ===== クラウド同期 v2（複数端末・自動・rev楽観ロック）=====
