@@ -347,27 +347,24 @@ body.printing .b-task.p-task {
   color: #000; padding: 1px 3px; overflow: hidden; box-shadow: none;
   display: flex; flex-direction: column;
 }
-/* 時刻＋□行（常時・最優先で残す） */
-body.printing .p-task .pt-line {
-  display: flex; gap: 4px; align-items: baseline; justify-content: space-between;
+/* 時刻・名前＝ケア内容より小さく（サイズは JS が枠高から inline 指定）。名前は必ず1行で全表示 */
+body.printing .p-task .pt-time {
+  font-weight: 700; color: #000; line-height: 1.05;
   white-space: nowrap; overflow: hidden; flex: 0 0 auto;
 }
-body.printing .p-task .pt-line .pt-time { font-size: 16px; font-weight: 700; color: #000; flex-shrink: 0; }
-body.printing .p-task .pt-line .pt-cb { font-size: 16px; color: #000; flex-shrink: 0; }
-/* 利用者名: 既定は1行フル。狭い枠では JS が pt-name-sm/xs を付与して縮小＝ケア内容を優先(要件3-3) */
 body.printing .p-task .pt-name {
-  font-size: 22px; font-weight: 700; color: #000; line-height: 1.12;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
+  font-weight: 700; color: #000; line-height: 1.05;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
 }
-body.printing .p-task .pt-name.pt-name-sm { font-size: 16px; }
-body.printing .p-task .pt-name.pt-name-xs { font-size: 13px; }
-/* 施設業務名は控えめ＝小さく細字・淡色(要件3-2) */
+/* 施設業務名は控えめ＝小さく細字・淡色 */
 body.printing .p-task .pt-name.pt-name-fac { font-size: 13px; font-weight: 400; color: #555; }
-/* ケア内容(要件3-1)＝優先表示(flex-shrink:0)・折返し可で目立たせる */
-body.printing .p-task .pt-content {
-  font-size: 15px; font-weight: 600; color: #000; line-height: 1.18;
-  flex: 0 0 auto; overflow: hidden; word-break: break-word;
+/* ケア内容＝最大・各行の右端にチェック□（画面に合わせる）。内容を目立たせる（太字） */
+body.printing .p-task .pt-item {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
+  line-height: 1.12; flex: 0 0 auto; overflow: hidden;
 }
+body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; overflow: hidden; word-break: break-word; }
+body.printing .p-task .pt-cb { font-size: 13px; color: #000; flex-shrink: 0; }
 /* 固定コメント(印刷) */
 body.printing .p-task .pt-comment {
   color: #000; line-height: 1.15; flex: 0 0 auto; overflow: hidden;
@@ -3346,30 +3343,40 @@ body.printing .rs { display: none; }
     var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
 
     if (ex.print) {
-      /* ===== 印刷レイアウト（白黒・固定高・時刻＋利用者名＋ケア内容） =====
-       * サービスコード(svc.short)は非表示。枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。
-       * 名前は1行(nowrap)。ケア内容が入らない枠では名前を段階縮小して内容を優先表示。施設業務名は控えめ。
-       * 押印用の□は支援枠あたり1個だけ時刻行に出す。固定コメントは末尾に出力。 */
+      /* ===== 印刷レイアウト（白黒・固定高）=====
+       * 画面に合わせ「時刻 / 利用者名 / ケア内容(各行に右端チェック□)」。サービスコード(svc.short)は非表示。
+       * ケア内容を最大・時刻と名前はそれより小さく。氏名は必ず全表示(消さない)。
+       * 枠高 h と行数から内容>名前≧時刻 を保ちつつ全行が収まるよう動的にフォントを縮小(DOM計測不要)。
+       * 枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。固定コメントは末尾に出力。 */
       b.style.height = h + 'px';
       b.className = cls + ' p-task';
-      var cb = ex.hosp ? '' : (t.done ? '☑' : '□');
-      var line = el('div', 'pt-line');
-      if (!hideTime) line.appendChild(txt('span', 'pt-time', range));
-      if (cb) line.appendChild(txt('span', 'pt-cb', cb));
-      if (line.childNodes.length) b.appendChild(line);
-      /* ケア内容（svcコードは出さない・要件）。memoは内容に含めない（コメントで代替） */
-      var pcontents = (t.kind === 'care') ? (t.contents || []).slice() : [];
-      var nameCls = 'pt-name';
-      if (hideTime) nameCls += ' pt-name-fac';                       /* 施設業務名＝小さく細字 */
-      else if (pcontents.length) {
-        /* 動的: 枠高 h と内容行数から名前を段階縮小（DOM計測不要・内容優先） */
-        var timeH = (!hideTime) ? 20 : 0;
-        var needH = timeH + 26 + pcontents.length * 17;             /* 時刻+名前(大)+内容行 概算px */
-        if (h < needH - 20) nameCls += ' pt-name-xs';
-        else if (h < needH) nameCls += ' pt-name-sm';
+      /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印できるよう1行('実施') */
+      var pitems = (t.kind === 'care') ? (t.contents || []).slice() : [];
+      if (t.kind === 'care' && t.memo) pitems.push(t.memo);
+      if (t.kind === 'care' && !pitems.length) pitems.push('実施');
+      var rows = pitems.length;
+      var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行 */
+      var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
+      var fContent = Math.max(8, Math.min(16, Math.floor(perLine * 0.82)));   /* ケア内容＝最大 */
+      var fSmall = Math.max(7, Math.min(13, Math.floor(fContent * 0.74)));    /* 時刻・名前＝内容より小さく */
+      if (!hideTime) {
+        var tEl = txt('div', 'pt-time', range);
+        tEl.style.fontSize = fSmall + 'px';
+        b.appendChild(tEl);
       }
-      b.appendChild(txt('div', nameCls, nameText + (ex.hosp ? '（入院中）' : '')));
-      if (pcontents.length) b.appendChild(txt('div', 'pt-content', pcontents.join('・')));
+      var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
+      if (!hideTime) nmEl.style.fontSize = fSmall + 'px';
+      b.appendChild(nmEl);
+      if (!hideTime) {
+        for (var pi = 0; pi < pitems.length; pi++) {
+          var row = el('div', 'pt-item');
+          var itx = txt('span', 'pt-item-tx', pitems[pi]);
+          itx.style.fontSize = fContent + 'px';
+          row.appendChild(itx);
+          if (!ex.hosp) row.appendChild(txt('span', 'pt-cb', (t.checks && t.checks[pi]) || t.done ? '☑' : '□'));
+          b.appendChild(row);
+        }
+      }
       if (t.comment && t.comment.pinned && t.comment.text) appendComment_(b, t.comment, true);
       return b;
     }
