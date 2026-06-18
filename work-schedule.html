@@ -201,7 +201,9 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-cmt-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .b-cmt-line { stroke: #d39e00; stroke-width: 1px; stroke-dasharray: 3 2; }
 .b-cmt {
-  position: absolute; max-width: 200px; padding: 3px 6px; border-radius: 5px;
+  /* 自動サイズ: 内容に合わせた幅(max-content)・長文は max-width で折返し（絶対配置+max-widthのみだと1文字幅に潰れるため width 指定が必須） */
+  position: absolute; width: -webkit-max-content; width: max-content; max-width: 200px;
+  padding: 3px 6px; border-radius: 5px;
   background: #fffbe6; border: 1px solid #e0a800; color: #5f4b00;
   line-height: 1.25; word-break: break-word; white-space: pre-wrap;
   box-shadow: 0 2px 6px rgba(0,0,0,.18); cursor: move; pointer-events: auto;
@@ -209,7 +211,16 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 }
 .b-cmt.cmt-dragging { opacity: .9; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
 /* 印刷: 吹き出しは白地・黒罫線・線は黒実線 */
+.b-cmt-tx { display: block; }
+/* 右下リサイズハンドル（三角コーナー） */
+.b-cmt-rs {
+  position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
+  cursor: nwse-resize; pointer-events: auto; z-index: 2;
+  background: linear-gradient(135deg, transparent 45%, #d39e00 45%, #d39e00 80%, transparent 80%);
+  border-bottom-right-radius: 5px;
+}
 body.printing .b-cmt { background: #fff; border: 1px solid #000; color: #000; box-shadow: none; max-width: 160px; }
+body.printing .b-cmt-rs { display: none; }
 body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray: none; }
 .b-task .t-cmt-badge {
   position: absolute; top: 0; right: 1px; font-size: 9px; line-height: 1;
@@ -994,7 +1005,9 @@ body.printing .rs { display: none; }
              bold: !!c.bold,
              pinned: !!c.pinned,
              dx: (typeof c.dx === 'number' && isFinite(c.dx)) ? c.dx : null,
-             dy: (typeof c.dy === 'number' && isFinite(c.dy)) ? c.dy : null };
+             dy: (typeof c.dy === 'number' && isFinite(c.dy)) ? c.dy : null,
+             w: (typeof c.w === 'number' && isFinite(c.w) && c.w > 0) ? c.w : null,
+             h: (typeof c.h === 'number' && isFinite(c.h) && c.h > 0) ? c.h : null };
   }
 
   function newTask(props) {
@@ -3337,7 +3350,11 @@ body.printing .rs { display: none; }
       box.setAttribute('data-id', targets[k].t.id);
       box.style.fontSize = commentFontPx_(c.size, isPrint) + 'px';
       if (c.bold) box.style.fontWeight = '700';
-      box.textContent = c.text;
+      if (typeof c.w === 'number') { box.style.width = c.w + 'px'; box.style.maxWidth = 'none'; }   /* 手動リサイズ寸法(null=内容自動) */
+      if (typeof c.h === 'number') box.style.height = c.h + 'px';
+      if (typeof c.w === 'number' || typeof c.h === 'number') box.style.overflow = 'auto';
+      box.appendChild(txt('div', 'b-cmt-tx', c.text));
+      if (!isPrint) box.appendChild(el('div', 'b-cmt-rs'));        /* 右下リサイズハンドル(印刷では出さない) */
       layer.appendChild(box);                              /* 計測のため先に追加 */
       var bw = box.offsetWidth, bh = box.offsetHeight;
       var cx = ax + dx, cy = ay + dy;
@@ -5436,6 +5453,45 @@ body.printing .rs { display: none; }
    * printMode + 印刷専用ゾーン(多忙帯7-9/17-21・夜勤0-8拡大)で盤面を1回再描画し、
    * **横幅フィットの等方zoomのみ**(拡大も縦縮小もしない＝原寸)。表は原寸で複数A3ページに渡る。 */
   var PRINT_AVAIL = { w: 1078, h: 1508 };   /* A3縦 余白5mm の印字可能域(@96dpi)。h は押印ヘッダ(約26px)＋安全を控除＝盤面の使用可能高 */
+  /* 印刷直前(zoom前)に、枠に「余裕がある」支援だけ氏名を拡大する。
+   * 余裕の判定: ①枠に縦の空き(内容が枠高の72%未満)＝長時間で内容が少ない枠 ②氏名が横幅に収まる範囲。
+   * 1pxずつ増やし、横幅超過/縦溢れ/上限(20px)で停止＝短い氏名ほど大きく・混雑枠や長い氏名は据置。
+   * テキスト幅は Range で実測(pt-nameは全幅divのためscrollWidthでは測れない)。 */
+  function usedH_(frame) {   /* 子要素の高さ合計＝実コンテンツ高(scrollHeightはclientHeight以上で潰れるため使えない) */
+    var u = 0, ch = frame.children;
+    for (var j = 0; j < ch.length; j++) u += ch[j].offsetHeight;
+    return u;
+  }
+  function fitPrintNames(board) {
+    var names = board.querySelectorAll('.p-task .pt-name');
+    for (var i = 0; i < names.length; i++) {
+      var nm = names[i];
+      if (nm.className.indexOf('pt-name-fac') >= 0) continue;   /* 施設業務名は対象外 */
+      var frame = nm.parentNode;
+      if (!frame) continue;
+      var clientH = frame.clientHeight;
+      if (usedH_(frame) > clientH * 0.78) continue;             /* 縦の余裕が無い枠(混雑枠)は据置 */
+      var availW = nm.clientWidth;
+      if (availW <= 0) continue;
+      var rng = document.createRange();
+      rng.selectNodeContents(nm);
+      var textW = rng.getBoundingClientRect().width;
+      if (textW <= 0) continue;
+      var cur = parseFloat(nm.style.fontSize) || 13, f = cur, guard = 0;
+      /* 上限はその枠のケア内容フォント＝氏名が内容を超えない範囲で内容と同等まで(内容優先を維持しつつ拡大) */
+      var itx = frame.querySelector('.pt-item-tx');
+      var CAP = itx ? Math.round(parseFloat(getComputedStyle(itx).fontSize)) : 16;
+      if (CAP < cur) CAP = cur;
+      while (f < CAP && guard < 24) {
+        guard++;
+        var nf = f + 1;
+        if (textW * (nf / cur) > availW * 0.96) break;          /* 横幅を超える＝停止(長い氏名ほど早く止まる) */
+        nm.style.fontSize = nf + 'px';
+        if (usedH_(frame) > clientH - 1) { nm.style.fontSize = f + 'px'; break; }   /* 縦が埋まる＝1つ戻して停止 */
+        f = nf;
+      }
+    }
+  }
   var printSavedScroll = null;
   var printActive = false;   /* navPrint→print→beforeprint の再入を1回に集約 */
   function fitPrint() {
@@ -5452,6 +5508,7 @@ body.printing .rs { display: none; }
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     B.render(board, day, TS.PRINT_ZONES, printScale,
       { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
+    try { fitPrintNames(board); } catch (e) {}   /* 横に余裕のある枠のみ氏名を拡大(zoom前に実測) */
     /* 両軸フィット: 横幅・縦高とも用紙内に収める等方zoom＝A3縦1枚に必ず収める。拡大はしない＝原寸クリスプ(scaleY不使用) */
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
@@ -6748,6 +6805,18 @@ body.printing .rs { display: none; }
       }
       return null;
     }
+    /* リサイズハンドルを掴んだか（吹き出し本体に達したらハンドルではない） */
+    function isRsTarget_(node) {
+      while (node && node !== document) {
+        if (node.classList && node.classList.contains('b-cmt-rs')) return true;
+        if (node.classList && node.classList.contains('b-cmt')) return false;
+        node = node.parentNode;
+      }
+      return false;
+    }
+    function cloneComment_(c) {
+      var o = {}; for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k]; return o;
+    }
     function offWithin_(elm, anc) {
       var x = 0, y = 0, n = elm;
       while (n && n !== anc) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
@@ -6773,6 +6842,7 @@ body.printing .rs { display: none; }
     function onDown(e) {
       var box = closestCmt_(e.target);
       if (!box) return;
+      var isResize = isRsTarget_(e.target);
       var id = box.getAttribute('data-id');
       var board = $('board'), canvas = board ? board.querySelector('.b-canvas') : null;
       var fe = board ? board.querySelector('.b-task[data-id="' + id + '"]') : null;
@@ -6780,10 +6850,11 @@ body.printing .rs { display: none; }
       e.stopPropagation();
       if (e.cancelable) e.preventDefault();
       var p = ptOf_(e);
-      drag = { id: id, box: box, canvas: canvas, fe: fe,
+      drag = { id: id, box: box, canvas: canvas, fe: fe, mode: isResize ? 'resize' : 'move',
                line: canvas.querySelector('.b-cmt-line[data-id="' + id + '"]'),
                startX: p.x, startY: p.y,
                baseLeft: parseFloat(box.style.left) || 0, baseTop: parseFloat(box.style.top) || 0,
+               baseW: box.offsetWidth, baseH: box.offsetHeight,
                moved: false };
       box.classList.add('cmt-dragging');
     }
@@ -6793,15 +6864,24 @@ body.printing .rs { display: none; }
       if (e.cancelable) e.preventDefault();
       var p = ptOf_(e);
       var z = parseFloat($('board').style.zoom) || 1;
-      var nx = drag.baseLeft + (p.x - drag.startX) / z;
-      var ny = drag.baseTop + (p.y - drag.startY) / z;
-      var cw = drag.canvas.offsetWidth, ch = drag.canvas.offsetHeight;
-      var bw = drag.box.offsetWidth, bh = drag.box.offsetHeight;
-      if (nx + bw > cw) nx = cw - bw;
-      if (ny + bh > ch) ny = ch - bh;
-      if (nx < 0) nx = 0; if (ny < 0) ny = 0;
-      drag.box.style.left = nx + 'px'; drag.box.style.top = ny + 'px';
       if (Math.abs(p.x - drag.startX) > 2 || Math.abs(p.y - drag.startY) > 2) drag.moved = true;
+      if (drag.mode === 'resize') {
+        var nw = drag.baseW + (p.x - drag.startX) / z;
+        var nh = drag.baseH + (p.y - drag.startY) / z;
+        if (nw < 60) nw = 60; if (nh < 24) nh = 24;
+        drag.box.style.maxWidth = 'none';   /* CSSのmax-width:200を解除して任意幅に */
+        drag.box.style.width = nw + 'px'; drag.box.style.height = nh + 'px';
+        drag.box.style.overflow = 'auto';
+      } else {
+        var nx = drag.baseLeft + (p.x - drag.startX) / z;
+        var ny = drag.baseTop + (p.y - drag.startY) / z;
+        var cw = drag.canvas.offsetWidth, ch = drag.canvas.offsetHeight;
+        var bw = drag.box.offsetWidth, bh = drag.box.offsetHeight;
+        if (nx + bw > cw) nx = cw - bw;
+        if (ny + bh > ch) ny = ch - bh;
+        if (nx < 0) nx = 0; if (ny < 0) ny = 0;
+        drag.box.style.left = nx + 'px'; drag.box.style.top = ny + 'px';
+      }
       redrawLine_(drag);
     }
     function onUp(e) {
@@ -6809,12 +6889,19 @@ body.printing .rs { display: none; }
       e.stopPropagation();
       var d = drag; drag = null;
       d.box.classList.remove('cmt-dragging');
-      if (!d.moved) { openEditor(d.id); return; }   /* 動かさなければクリック＝編集 */
-      var a = frameAnchor_(d);
-      var cx = parseFloat(d.box.style.left) || 0, cy = parseFloat(d.box.style.top) || 0;
       var task = M.findTask(store.get().tasks, d.id);
       if (!task || !task.comment) return;
-      var nc = {}; for (var key in task.comment) if (Object.prototype.hasOwnProperty.call(task.comment, key)) nc[key] = task.comment[key];
+      if (d.mode === 'resize') {
+        if (!d.moved) return;                        /* ハンドルを掴んだだけ＝何もしない */
+        var ncR = cloneComment_(task.comment);
+        ncR.w = Math.round(d.box.offsetWidth); ncR.h = Math.round(d.box.offsetHeight);
+        store.dispatch({ type: 'UPDATE_TASK', id: d.id, patch: { comment: ncR } });
+        return;
+      }
+      if (!d.moved) { openEditor(d.id); return; }     /* 動かさなければクリック＝編集 */
+      var a = frameAnchor_(d);
+      var cx = parseFloat(d.box.style.left) || 0, cy = parseFloat(d.box.style.top) || 0;
+      var nc = cloneComment_(task.comment);
       nc.dx = Math.round(cx - a.x); nc.dy = Math.round(cy - a.y);
       store.dispatch({ type: 'UPDATE_TASK', id: d.id, patch: { comment: nc } });
     }
