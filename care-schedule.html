@@ -1845,11 +1845,23 @@ const SYNC = {
         return true;
       }
       if (j.conflict) {
-        // 別端末の新しい更新あり → サーバー版を採用（rev楽観ロック）
+        // 別端末の新しい更新あり → サーバー版を取得後、自分の編集を再適用して保存（編集を捨てない＝リバウンド防止）
         this._busy = false;
         this.updateStatusUI('競合');
-        this.log('⚠️ クラウドに別端末の新しい更新があります → 取得して反映します');
-        await this.pull();
+        this.log('⚠️ クラウドに別端末の更新あり → 取得後に自分の編集を再適用して保存します');
+        var mine = JSON.parse(JSON.stringify(DB));   // 編集済みローカルを退避（pullが上書きする前）
+        await this.pull();                            // サーバー版採用＝rev前進・DB=server
+        DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
+        saveLocalOnly();
+        try { recalcAllEventUnits(); } catch(e) {}
+        renderAll();
+        if (!this._rebasing) {                        // 1回だけ再push（再競合の無限ループ防止）
+          this._rebasing = true;
+          try { await this.push(); } finally { this._rebasing = false; }
+        } else {
+          this._dirty = true;                         // 2重競合時は再pushせず未送信として保持（次回編集/手動で送信）
+          this.updateStatusUI('未同期…');
+        }
         return false;
       }
       throw new Error(this.friendlyErr(j.error));
@@ -1916,6 +1928,37 @@ const SYNC = {
     }
   }
 };
+
+/* 競合時のリベース: サーバー版(server)を土台に、ローカルの編集(mine)をイベントID単位で再適用する。
+   - 入居者をidで照合。mineのみの入居者は追加。
+   - イベントはidで union＝mine優先(ユーザーが触ったイベントはローカルが勝つ)＋server限定イベントは保持。
+   これにより「自分の時間変更」を残しつつ「他端末/他入居者の正当な更新」も取りこぼさない。
+   ※ローカル削除と他端末追加の3-way差は完全には区別不能(削除イベントが復活し得る)＝編集全消失より遥かに良い妥協。 */
+function csRebaseEdits(server, mine) {
+  if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
+  var out = JSON.parse(JSON.stringify(server));
+  var byId = {}, i;
+  for (i = 0; i < out.residents.length; i++) byId[out.residents[i].id] = out.residents[i];
+  for (var m = 0; m < mine.residents.length; m++) {
+    var mr = mine.residents[m];
+    if (!mr || mr.id === undefined) continue;
+    var sr = byId[mr.id];
+    if (!sr) { var add = JSON.parse(JSON.stringify(mr)); out.residents.push(add); byId[mr.id] = add; continue; }
+    var sEvents = Array.isArray(sr.events) ? sr.events : [];
+    var mEvents = Array.isArray(mr.events) ? mr.events : [];
+    var merged = [], seen = {}, k, id;
+    for (k = 0; k < mEvents.length; k++) {            /* mine優先（順序もmine基準） */
+      if (!mEvents[k] || mEvents[k].id === undefined) continue;
+      id = mEvents[k].id; merged.push(JSON.parse(JSON.stringify(mEvents[k]))); seen[id] = true;
+    }
+    for (k = 0; k < sEvents.length; k++) {            /* server限定イベントは保持 */
+      if (!sEvents[k] || sEvents[k].id === undefined) continue;
+      if (!seen[sEvents[k].id]) merged.push(sEvents[k]);
+    }
+    sr.events = merged;
+  }
+  return out;
+}
 
 // localStorage のみへ保存（クラウド同期トリガなし、pull時の循環防止用）
 function saveLocalOnly() {
