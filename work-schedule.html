@@ -2267,9 +2267,10 @@ body.printing .rs { display: none; }
     return vac;
   }
 
-  /* 支援(care)が退去して空いた時間に、残存する施設業務枠(facManual・kind=facility)を、その正時の
+  /* 支援(care)が退去して空いた時間に、残存する施設業務枠(kind=facility・自動/手動とも)を、その正時の
    * 空き全体へ再生成して拡張/マージする。「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
-   * （完全消滅した枠は復活させない）。夜勤職員は対象外。純粋関数（tasks を返す）。 */
+   * （完全消滅した枠は復活させない）。マージ枠は facManual:true で出力し rebuildFacWindowTasks の
+   * 自動再生成(非facManualを消去)から保護する。夜勤職員は対象外。純粋関数（tasks を返す）。 */
   function expandSurvivingFacwork_(tasks, vacates, staffArr) {
     if (!vacates || !vacates.length) return tasks;
     var staffById = {}, i;
@@ -2297,10 +2298,10 @@ body.printing .rs { display: none; }
           var tk = result[j];
           if (tk.staffId !== sid) continue;
           if (!(tk.start < hourEnd && hourStart < tk.end)) continue;   /* この正時に重なる */
-          if (tk.src === 'facwork' && tk.kind === 'facility' && tk.facManual) {
+          if (tk.src === 'facwork' && tk.kind === 'facility') {   /* 自動枠も含めて結合対象に */
             candIds[tk.id] = true; hasCand = true; candRanges.push([tk.start, tk.end]);
           } else {
-            occ.push([tk.start, tk.end]);               /* hard占有: care/休憩/自由枠/自動facwork */
+            occ.push([tk.start, tk.end]);               /* hard占有: care/休憩/自由枠(free) */
           }
         }
         if (!hasCand) continue;                         /* 拡張のみ: 残存候補が無い正時は何もしない */

@@ -1779,13 +1779,38 @@ const SYNC = {
     return true;
   },
 
+  /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
+     ws_settings の endpoint が現在と異なり、そこへの test get が j.ok===true のときだけ su_sync_common を
+     上書き。通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着を防止）。 */
+  async healStaleTarget() {
+    const cur = this.target();
+    let ws = {};
+    try { ws = JSON.parse(localStorage.getItem('ws_settings') || '{}'); } catch(e) { return false; }
+    const wsEp = String(ws.endpoint || '').trim();
+    if (!wsEp || wsEp === cur.endpoint) return false;   // 代替先が無い／既に同一
+    try {
+      const res = await fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'get', key: 'care_schedule_v2', token: String(ws.token || '').trim() }), redirect: 'follow' });
+      const j = await res.json();
+      if (j && j.ok === true) {   // 稼働＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
+        localStorage.setItem('su_sync_common', JSON.stringify({ endpoint: wsEp, token: String(ws.token || '').trim(), updatedAt: Date.now() }));
+        this.log('🔧 接続先が古かったため、稼働中のURL(ws_settings)へ自動切替しました');
+        return true;
+      }
+    } catch(e) { return false; }   // 通信失敗では上書きしない
+    return false;
+  },
+
   async pull() {
     if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
     if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
     this._busy = true;
     this.updateStatusUI('取得中…');
     try {
-      const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+        j = await this.gas({ action: 'get', key: 'care_schedule_v2' });   // 切替後に1回だけ再取得（pull再入はしない）
+      }
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
       if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
       this.adopt(j.data, j.rev);
@@ -1858,7 +1883,10 @@ const SYNC = {
     if (document.hidden) return; // 非表示タブではスキップ
     if (!this.hasTarget()) return;
     try {
-      const j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+        j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      }
       if (!j.ok) return;
       const remoteRev = Number(j.rev) || 0;
       if (remoteRev === this._rejectedRev) return;   // サンプルとして拒否済みのrevは再採用しない
