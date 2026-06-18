@@ -5667,14 +5667,14 @@ body.printing .rs { display: none; }
   }
   function addNote() {
     var wrap = $('boardWrap'), ns = getNotes_();
-    /* 「全体コメント」ボタンの下あたりに少し離して出す（ボタンはヘッダー＝盤面外なので内容座標へ換算） */
-    var x = wrap.scrollLeft + 24, y = wrap.scrollTop + 80;
+    /* x はボタン左に揃える。y は職員名ヘッダ(.b-heads=7:00の行)より下に出す
+     * ＝ヘッダは sticky(z-index40) で吹き出し(z31)の上に被るため、ヘッダに重なるとD&Dできないので必ず下へ。 */
+    var x = wrap.scrollLeft + 24;
     var btn = $('btnAddNote');
-    if (btn) {
-      var bw = wrap.getBoundingClientRect(), br = btn.getBoundingClientRect();
-      x = wrap.scrollLeft + Math.max(8, br.left - bw.left);   /* ボタンの左に揃える */
-      y = wrap.scrollTop + Math.max(76, (br.bottom - bw.top) + 12);   /* ボタンの下＋少し離す（盤面上端のヘッダを避ける） */
-    }
+    if (btn) { var bw = wrap.getBoundingClientRect(), br = btn.getBoundingClientRect(); x = wrap.scrollLeft + Math.max(8, br.left - bw.left); }
+    var heads = $('board') ? $('board').querySelector('.b-heads') : null;
+    var hh = heads ? heads.offsetHeight : 72;
+    var y = wrap.scrollTop + hh + 26;   /* 職員名ヘッダの下＝7:00の少し下＝確実に掴める */
     var casc = (ns.length % 6) * 16;   /* 複数追加時は少しずつずらす */
     x += casc; y += casc;
     var n = { id: M.genId('note'), text: '', x: x, y: y,
