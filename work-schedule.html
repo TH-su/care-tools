@@ -240,15 +240,23 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
   box-shadow: 0 3px 10px rgba(0,0,0,.22); pointer-events: auto; z-index: 31;
 }
 .b-note-bar {
-  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
-  padding: 2px 3px; background: #fff3c4; border-bottom: 1px solid #e6cf6a; border-radius: 6px 6px 0 0;
+  cursor: move; padding: 2px 6px; background: #fff3c4; border-bottom: 1px solid #e6cf6a; border-radius: 6px 6px 0 0;
+  font-size: 9px; color: #8a6d00; white-space: nowrap; overflow: hidden; touch-action: none;
+  -webkit-user-select: none; user-select: none;
 }
-.b-note-grip { cursor: move; padding: 0 3px; color: #8a6d00; font-size: 12px; touch-action: none; -webkit-user-select: none; user-select: none; }
-.b-note-bar button { border: 1px solid #d9c463; background: #fff; border-radius: 3px; font-size: 11px; line-height: 1.5; padding: 0 4px; cursor: pointer; color: #333; }
-.b-note-sz { min-width: 18px; }
-.b-note-bold { font-weight: 700; }
-.b-note-color { width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid #999; }
-.b-note-del { color: #c62828; font-weight: 700; margin-left: auto; }
+/* 全体コメントの書式メニュー（ウィンドウ右クリックで表示） */
+.note-ctx {
+  position: fixed; display: none; z-index: 320; background: #fff; border: 1px solid #c9c9c9;
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 6px; min-width: 154px;
+}
+.note-ctx .nctx-row { display: flex; align-items: center; gap: 4px; margin: 3px 0; flex-wrap: wrap; }
+.note-ctx .nctx-lbl { font-size: 11px; color: #666; width: 30px; }
+.note-ctx button { border: 1px solid #ccc; background: #fff; border-radius: 4px; font-size: 12px; line-height: 1.6; padding: 1px 8px; cursor: pointer; color: #222; }
+.note-ctx button.on { border-color: var(--pri); box-shadow: 0 0 0 1px var(--pri) inset; }
+.note-ctx .nctx-color { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid #999; }
+.note-ctx .nctx-color.on { box-shadow: 0 0 0 2px var(--pri); }
+.note-ctx .nctx-del { color: #c62828; font-weight: 700; margin-left: auto; }
+body.printing .note-ctx { display: none !important; }
 .b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; outline: none; white-space: pre-wrap; word-break: break-word; }
 .b-note-rs {
   position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
@@ -5633,13 +5641,8 @@ body.printing .rs { display: none; }
   function buildNoteEl_(n) {
     var box = ne_('div', 'b-note'); box.setAttribute('data-id', n.id);
     box.style.left = (n.x || 0) + 'px'; box.style.top = (n.y || 0) + 'px';
-    var bar = ne_('div', 'b-note-bar');
-    bar.appendChild(ne_('span', 'b-note-grip', '✥'));
-    var SZ = ['小', '中', '大'], si;
-    for (si = 0; si < SZ.length; si++) { var sb = ne_('button', 'b-note-sz', SZ[si]); sb.setAttribute('data-sz', SZ[si]); bar.appendChild(sb); }
-    bar.appendChild(ne_('button', 'b-note-bold', 'B'));
-    for (si = 0; si < NOTE_COLORS.length; si++) { var cb = ne_('button', 'b-note-color'); cb.setAttribute('data-color', NOTE_COLORS[si]); cb.style.background = NOTE_COLORS[si]; bar.appendChild(cb); }
-    bar.appendChild(ne_('button', 'b-note-del', '×'));
+    /* バーはドラッグ専用ストリップ。サイズ/色/太字/削除は右クリックの書式メニューで操作 */
+    var bar = ne_('div', 'b-note-bar', '⠿ 移動・右クリックで書式');
     box.appendChild(bar);
     var body = ne_('div', 'b-note-body'); body.setAttribute('contenteditable', 'true'); body.textContent = n.text || '';
     box.appendChild(body);
@@ -5664,7 +5667,17 @@ body.printing .rs { display: none; }
   }
   function addNote() {
     var wrap = $('boardWrap'), ns = getNotes_();
-    var n = { id: M.genId('note'), text: '', x: (wrap.scrollLeft + 40), y: (wrap.scrollTop + 92),
+    /* 「全体コメント」ボタンの下あたりに少し離して出す（ボタンはヘッダー＝盤面外なので内容座標へ換算） */
+    var x = wrap.scrollLeft + 24, y = wrap.scrollTop + 80;
+    var btn = $('btnAddNote');
+    if (btn) {
+      var bw = wrap.getBoundingClientRect(), br = btn.getBoundingClientRect();
+      x = wrap.scrollLeft + Math.max(8, br.left - bw.left);   /* ボタンの左に揃える */
+      y = wrap.scrollTop + Math.max(76, (br.bottom - bw.top) + 12);   /* ボタンの下＋少し離す（盤面上端のヘッダを避ける） */
+    }
+    var casc = (ns.length % 6) * 16;   /* 複数追加時は少しずつずらす */
+    x += casc; y += casc;
+    var n = { id: M.genId('note'), text: '', x: x, y: y,
               w: null, h: null, size: '中', bold: false, color: '#202124' };
     ns.push(n); renderNotes(); persistNotes_();
     var box = $('noteLayer').querySelector('.b-note[data-id="' + n.id + '"]');
@@ -5702,16 +5715,56 @@ body.printing .rs { display: none; }
     if ($('btnAddNote')) $('btnAddNote').addEventListener('click', function () { addNote(); });
     function noteOf(node) { while (node && node !== document) { if (node.classList && node.classList.contains('b-note')) return node; node = node.parentNode; } return null; }
     function hasCls(node, cls) { while (node && node !== document) { if (node.classList && node.classList.contains(cls)) return true; if (node.classList && node.classList.contains('b-note')) return false; node = node.parentNode; } return false; }
-    /* バー操作(委譲): サイズ/太字/色/削除 */
-    layer.addEventListener('click', function (e) {
+    function boxOf_(id) { return layer.querySelector('.b-note[data-id="' + id + '"]'); }
+    /* ===== 書式は「ウィンドウ右クリック」の書式メニューで操作（サイズ/色/太字/削除） ===== */
+    var ctx = null, ctxId = null;
+    function buildCtx_() {
+      var m = ne_('div', 'note-ctx'); m.id = 'noteCtxMenu';
+      var r1 = ne_('div', 'nctx-row'); r1.appendChild(ne_('span', 'nctx-lbl', 'サイズ'));
+      var SZ = ['小', '中', '大'], i;
+      for (i = 0; i < SZ.length; i++) { var sb = ne_('button', 'nctx-sz', SZ[i]); sb.setAttribute('data-sz', SZ[i]); r1.appendChild(sb); }
+      m.appendChild(r1);
+      var r2 = ne_('div', 'nctx-row'); r2.appendChild(ne_('span', 'nctx-lbl', '色'));
+      for (i = 0; i < NOTE_COLORS.length; i++) { var cb = ne_('button', 'nctx-color'); cb.setAttribute('data-color', NOTE_COLORS[i]); cb.style.background = NOTE_COLORS[i]; r2.appendChild(cb); }
+      m.appendChild(r2);
+      var r3 = ne_('div', 'nctx-row'); r3.appendChild(ne_('button', 'nctx-bold', '太字 B')); r3.appendChild(ne_('button', 'nctx-del', '削除')); m.appendChild(r3);
+      document.body.appendChild(m);
+      return m;
+    }
+    function syncCtx_() {
+      if (!ctx || !ctxId) return;
+      var n = findNote_(ctxId); if (!n) return;
+      var szs = ctx.querySelectorAll('.nctx-sz'), i;
+      for (i = 0; i < szs.length; i++) szs[i].className = 'nctx-sz' + (szs[i].getAttribute('data-sz') === n.size ? ' on' : '');
+      var cos = ctx.querySelectorAll('.nctx-color');
+      for (i = 0; i < cos.length; i++) cos[i].className = 'nctx-color' + (cos[i].getAttribute('data-color') === n.color ? ' on' : '');
+      ctx.querySelector('.nctx-bold').className = 'nctx-bold' + (n.bold ? ' on' : '');
+    }
+    function showCtx_(x, y, id) {
+      if (!ctx) ctx = buildCtx_();
+      ctxId = id; ctx.style.display = 'block'; syncCtx_();
+      var mw = ctx.offsetWidth, mh = ctx.offsetHeight;
+      if (x + mw > window.innerWidth) x = window.innerWidth - mw - 4;
+      if (y + mh > window.innerHeight) y = window.innerHeight - mh - 4;
+      ctx.style.left = Math.max(2, x) + 'px'; ctx.style.top = Math.max(2, y) + 'px';
+    }
+    function hideCtx_() { if (ctx) ctx.style.display = 'none'; ctxId = null; }
+    layer.addEventListener('contextmenu', function (e) {
       var box = noteOf(e.target); if (!box) return;
-      var n = findNote_(box.getAttribute('data-id')); if (!n) return;
-      var t = e.target;
-      if (t.classList.contains('b-note-sz')) { n.size = t.getAttribute('data-sz'); applyNoteStyle_(box, n); persistNotes_(); }
-      else if (t.classList.contains('b-note-bold')) { n.bold = !n.bold; applyNoteStyle_(box, n); persistNotes_(); }
-      else if (t.classList.contains('b-note-color')) { n.color = t.getAttribute('data-color'); applyNoteStyle_(box, n); persistNotes_(); }
-      else if (t.classList.contains('b-note-del')) { deleteNote_(box.getAttribute('data-id')); }
+      e.preventDefault(); showCtx_(e.clientX, e.clientY, box.getAttribute('data-id'));
     });
+    document.addEventListener('click', function (e) {
+      if (!ctx || ctx.style.display !== 'block') return;
+      if (!ctx.contains(e.target)) { hideCtx_(); return; }   /* 外側クリックで閉じる */
+      var n = findNote_(ctxId), box = ctxId ? boxOf_(ctxId) : null, t = e.target;
+      if (!n) return;
+      if (t.classList.contains('nctx-sz')) { n.size = t.getAttribute('data-sz'); if (box) applyNoteStyle_(box, n); persistNotes_(); syncCtx_(); }
+      else if (t.classList.contains('nctx-color')) { n.color = t.getAttribute('data-color'); if (box) applyNoteStyle_(box, n); persistNotes_(); syncCtx_(); }
+      else if (t.classList.contains('nctx-bold')) { n.bold = !n.bold; if (box) applyNoteStyle_(box, n); persistNotes_(); syncCtx_(); }
+      else if (t.classList.contains('nctx-del')) { var did = ctxId; hideCtx_(); deleteNote_(did); }
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.keyCode === 27) hideCtx_(); });
+    if ($('boardWrap')) $('boardWrap').addEventListener('scroll', hideCtx_);
     /* 本文編集: focus中は note-editing で renderNotes の上書きを防ぐ。input/blur で text 保存 */
     layer.addEventListener('focus', function (e) { var b = e.target; if (b.classList && b.classList.contains('b-note-body')) b.parentNode.classList.add('note-editing'); }, true);
     layer.addEventListener('input', function (e) { var b = e.target; if (!b.classList || !b.classList.contains('b-note-body')) return; var n = findNote_(b.parentNode.getAttribute('data-id')); if (n) { n.text = b.innerText; persistNotes_(); } });
@@ -5720,8 +5773,9 @@ body.printing .rs { display: none; }
     var drag = null;
     function ptOf(e) { if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY }; return { x: e.clientX, y: e.clientY }; }
     function onDown(e) {
+      if (typeof e.button === 'number' && e.button !== 0) return;   /* 右クリック等はドラッグ開始しない */
       var box = noteOf(e.target); if (!box) return;
-      var isRs = hasCls(e.target, 'b-note-rs'), isGrip = hasCls(e.target, 'b-note-grip');
+      var isRs = hasCls(e.target, 'b-note-rs'), isGrip = hasCls(e.target, 'b-note-bar');   /* バー全体がドラッグ取手 */
       if (!isRs && !isGrip) return;
       var n = findNote_(box.getAttribute('data-id')); if (!n) return;
       e.stopPropagation(); if (e.cancelable) e.preventDefault();
