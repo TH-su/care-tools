@@ -247,8 +247,11 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .modal.on { display: block; }
 .modal h3 { font-size: 16px; margin-bottom: 12px; color: var(--g9); }
 
-/* ===== カレンダー（日付ジャンプ） ===== */
-#mCal { max-width: 360px; }
+/* ===== カレンダー（日付ジャンプ・日付直下にポップオーバー配置） ===== */
+#mCal {
+  width: 300px; max-width: 92vw; max-height: 80vh;
+  left: 8px; top: 56px; transform: none;   /* 中央寄せを解除しJSで日付直下へ再配置 */
+}
 .cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .cal-nav .cal-mbtn { background: var(--g2); border: 1px solid var(--g3); color: var(--g8); }
 .cal-title { flex: 1; text-align: center; margin: 0 !important; font-size: 16px; }
@@ -4457,6 +4460,17 @@ body.printing .rs { display: none; }
     calView = { y: d.getFullYear(), m: d.getMonth() };
     renderCal();
     showModal('mCal');
+    positionCal();
+  }
+  /* カレンダーを日付(#hdrDate)の直下へ配置（横は画面内へクランプ） */
+  function positionCal() {
+    var r = $('hdrDate').getBoundingClientRect(), cal = $('mCal');
+    cal.style.transform = 'none';
+    cal.style.top = (r.bottom + 6) + 'px';
+    var left = r.left, maxLeft = window.innerWidth - cal.offsetWidth - 8;
+    if (left > maxLeft) left = maxLeft;
+    if (left < 8) left = 8;
+    cal.style.left = left + 'px';
   }
   function renderCal() {
     if (!calView) return;
