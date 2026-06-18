@@ -326,32 +326,30 @@ textarea.inp { min-height: 110px; font-size: 12px; }
    方針: 白黒・全文字黒・できるだけ大きく・支援内容は縦積み＋右端に□チェック欄。
    内容がセルに収まらない場合は下へ引き伸ばす（height:auto / min-height） */
 body.printing .b-task.p-task {
-  height: auto !important;
+  /* 高さは JS(buildTask) が時間比例の固定値を inline 指定＝下へ伸ばさない。溢れはクリップ */
   background: #fff !important; border: 1.2px solid #000 !important; border-radius: 2px;
-  color: #000; padding: 1px 3px; overflow: visible;
+  color: #000; padding: 1px 3px; overflow: hidden;
   box-shadow: none;
 }
-/* 原寸印刷(縮小なし)につき文字を最大化＝読みやすさ優先 */
-body.printing .p-task .pt-time { font-size: 14px; font-weight: 700; color: #000; }
-body.printing .p-task .pt-name { font-size: 19px; font-weight: 700; color: #000; line-height: 1.2; }
+/* 支援枠は「時刻＋利用者名」のみ＝各1行強制(nowrap+省略)で文字を最大化 */
 body.printing .p-task .pt-line {
-  display: flex; gap: 3px; align-items: baseline; justify-content: space-between;
-  white-space: nowrap;
+  display: flex; gap: 4px; align-items: baseline; justify-content: space-between;
+  white-space: nowrap; overflow: hidden;
 }
-body.printing .p-task .pt-line .pt-time { font-size: 13px; flex-shrink: 0; }
-body.printing .p-task .pt-line .pt-cb { font-size: 15px; }
-/* 短枠(身体01等)は 時刻行+名前行 を拡大ゾーンの枠内に収める */
-body.printing .p-task .pt-name-s { font-size: 16px; line-height: 1.1; }
-body.printing .p-task .pt-item {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 4px;
-  font-size: 16px; color: #000; line-height: 1.35;
+body.printing .p-task .pt-line .pt-time { font-size: 17px; font-weight: 700; color: #000; flex-shrink: 0; }
+body.printing .p-task .pt-line .pt-cb { font-size: 17px; color: #000; flex-shrink: 0; }
+body.printing .p-task .pt-name {
+  font-size: 24px; font-weight: 700; color: #000; line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-body.printing .p-task .pt-item-tx { overflow: hidden; }
-body.printing .p-task .pt-cb { font-size: 17px; line-height: 1.15; flex-shrink: 0; }
-body.printing .p-task .pt-sub { font-size: 13px; color: #000; }
-body.printing .b-head .h-no { font-size: 14px; }
-body.printing .b-head .h-name { font-size: 17px; }
-body.printing .b-head .h-time { font-size: 13px; }
+body.printing .b-head .h-no { font-size: 16px; }
+body.printing .b-head .h-name { font-size: 22px; }
+body.printing .b-head .h-time { font-size: 15px; }
+/* 印刷時は列幅を拡張して横余白を使い切る（A3縦の横いっぱい＋セルに余裕）。空列は細いまま */
+body.printing { --laneW: 134px; --laneWFac: 112px; --laneWEmpty: 30px; --axW: 62px; }
+/* 両サイドの時間軸は印刷時に大きく（縮小されても読める） */
+body.printing .tick { font-size: 18px; font-weight: 600; }
+body.printing .tick.hour { font-size: 21px; font-weight: 700; }
 body.printing .b-task.changed { border: 2.5px double #000 !important; }
 body.printing .b-task.tentative { border-style: dashed !important; }
 /* 入院中: 極薄（チェック欄は出さない） */
@@ -387,7 +385,7 @@ body.printing .rs { display: none; }
   /* fitPrint() が #board に transform:scale＋負マージンを適用。overflow:hidden は使わない
    * （Chrome印刷で overflow:hidden+transform が白紙化するため）。 */
   .board-wrap { overflow: visible; padding-bottom: 0; }
-  .board { display: block; break-inside: auto; page-break-inside: auto; }   /* 原寸で複数A3ページに渡る */
+  .board { display: block; break-inside: avoid; page-break-inside: avoid; }   /* A3縦1枚に収める（両軸フィットで縮小済） */
   .b-heads { position: static; }
   .print-head { display: block !important; }
   .b-task { box-shadow: none; }
@@ -1743,6 +1741,85 @@ body.printing .rs { display: none; }
     return true;
   }
 
+  /* 施設(facility)列を「在席する“名前付き”職員の出勤開始(workStart)の最小値」昇順に並べ替える。
+   * 早番=左 / 遅番=右。空列・名前無し・workStart未定義は末尾(Infinity)。同値は元順維持(安定)。
+   * 列オブジェクトごと移動し relabel_ → staff.col を再同期。staffIds/タスク参照は不破壊（夜勤正規化と同じ安全性）。
+   * 変化が無ければ false（冪等・churn無）。columns/staff を破壊的に更新する。 */
+  function facColKey_(col, byId) {
+    var key = Infinity, m;
+    for (m = 0; m < col.staffIds.length; m++) {
+      var s = byId[col.staffIds[m]];
+      if (!s || !s.name) continue;                 /* 名前付き職員のみ評価（空スロット既定ws=420を除外） */
+      var ws = (typeof s.workStart === 'number') ? s.workStart : Infinity;
+      if (ws < key) key = ws;
+    }
+    return key;
+  }
+  function normalizeFacilityOrder(columns, staff) {
+    if (!columns || !columns.length) return false;
+    var byId = {}, i, m;
+    if (staff) for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
+    var facPos = [], facCols = [];
+    for (i = 0; i < columns.length; i++) {
+      if (columns[i].zone === 'facility') { facPos.push(i); facCols.push(columns[i]); }
+    }
+    if (facCols.length < 2) return false;
+    var keyed = [];
+    for (i = 0; i < facCols.length; i++) keyed.push({ col: facCols[i], key: facColKey_(facCols[i], byId), idx: i });
+    keyed.sort(function (a, b) {
+      if (a.key === b.key) return a.idx - b.idx;   /* 同値(両Infinity含む)は元順維持＝安定・NaN回避 */
+      return a.key - b.key;
+    });
+    var changed = false;
+    for (i = 0; i < keyed.length; i++) if (keyed[i].col !== facCols[i]) { changed = true; break; }
+    if (!changed) return false;
+    for (i = 0; i < facPos.length; i++) columns[facPos[i]] = keyed[i].col;
+    relabel_(columns);
+    if (staff && staff.length) {
+      var colBy = {};
+      for (i = 0; i < columns.length; i++) {
+        for (m = 0; m < columns[i].staffIds.length; m++) colBy[columns[i].staffIds[m]] = columns[i].col;
+      }
+      for (i = 0; i < staff.length; i++) if (colBy[staff[i].id] !== undefined) staff[i].col = colBy[staff[i].id];
+    }
+    return true;
+  }
+
+  /* 夜勤支援の区分正規化: 深夜2:00以降(start>=120)の夜勤支援(care)は全て「夜訪問」列(訪問介護員)へ寄せる。
+   * 役割(明ake/入iri)は保持。tasks の staffId を該当夜訪問スロットへ付け替える(破壊的)。
+   * 対象外: start<120(夜施設のまま)・既に夜訪問・夜訪問スロット不在(実データには常に存在)。変更が有れば true。冪等。 */
+  function normalizeNightCareDivision(columns, staff, tasks) {
+    if (!columns || !staff || !tasks || !tasks.length) return false;
+    var byId = {}, i;
+    for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
+    function findVisitNightSlot(role) {
+      for (var c = 0; c < columns.length; c++) {
+        if (columns[c].zone !== 'night' || columns[c].division !== '訪問') continue;
+        for (var k = 0; k < columns[c].staffIds.length; k++) {
+          var s = byId[columns[c].staffIds[k]];
+          if (s && s.nightRole === role && String(s.id).indexOf('slot_') === 0) return s.id;
+        }
+      }
+      return null;
+    }
+    var visitAke = findVisitNightSlot('ake');
+    var visitIri = findVisitNightSlot('iri');
+    var changed = false;
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (t.kind !== 'care' || t.staffId === null) continue;
+      var host = byId[t.staffId];
+      if (!host || host.zone !== 'night' || host.division === '訪問') continue;
+      if (t.start < 120) continue;                  /* 深夜2:00以降のみ右へ（それ以前は夜施設のまま） */
+      var role = host.nightRole || (t.start <= 540 ? 'ake' : 'iri');
+      var target = (role === 'iri') ? visitIri : visitAke;
+      if (!target) continue;
+      t.staffId = target;
+      changed = true;
+    }
+    return changed;
+  }
+
   /* 列割当: 施設→訪問→夜勤の順。夜勤は ake/iri をペアで同一列に同居させる。
    * 各ゾーンは既定列数（3/7/2）まで空列でパディングする。
    * 注意: staffList の各要素に col を直接書き込む（破壊的）。
@@ -2005,7 +2082,12 @@ body.printing .rs { display: none; }
       var slotNo = e.slot || 1;
       var sid;
       if (e.zone === 'facility') sid = 'slot_fac_' + slotNo;
-      else if (e.zone === 'night') sid = 'slot_night_fac_' + (e.start <= 540 ? 'ake' : 'iri'); /* マスタ夜勤は既定で施設列 */
+      else if (e.zone === 'night') {
+        /* 夜勤支援: 深夜2:00以降(start>=120)は夜訪問(右・訪問介護員)、それ以前は夜施設。役割は時刻で明/入判定 */
+        var nrole = (e.start <= 540) ? 'ake' : 'iri';
+        var ndiv = (e.start >= 120) ? 'visit' : 'fac';
+        sid = 'slot_night_' + ndiv + '_' + nrole;
+      }
       else sid = 'slot_visit_' + slotNo;
       var t = M.newTask({
         kind: 'care', src: 'weekly',
@@ -2388,6 +2470,8 @@ body.printing .rs { display: none; }
     circled: circled,
     relabel: relabel_,
     normalizeNightOrder: normalizeNightOrder,
+    normalizeFacilityOrder: normalizeFacilityOrder,
+    normalizeNightCareDivision: normalizeNightCareDivision,
     DEFAULT_COLS: DEFAULT_COLS,
     buildColumns: buildColumns,
     moveColumn: moveColumn,
@@ -3191,39 +3275,17 @@ body.printing .rs { display: none; }
     var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
 
     if (ex.print) {
-      /* ===== 印刷レイアウト（白黒・大文字・チェック欄） =====
-       * 内容が収まらない場合はセルを下へ引き伸ばす（min-height方式） */
-      b.style.minHeight = h + 'px';
+      /* ===== 印刷レイアウト（白黒・大文字・「時刻＋利用者名」のみ） =====
+       * サービス内容(svc.short/contents/tags)は非表示。枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。
+       * 押印用の□は支援枠あたり1個だけ時刻行に出す。 */
+      b.style.height = h + 'px';
       b.className = cls + ' p-task';
-      var short = (t.end - t.start) <= 20;
       var cb = ex.hosp ? '' : (t.done ? '☑' : '□');
-      if (short) {
-        /* 身体01等の短時間枠: 上段=時刻＋□ / 下段=入居者名（全文・必要ならセル伸長） */
-        var line = el('div', 'pt-line');
-        if (!hideTime) line.appendChild(txt('span', 'pt-time', range));
-        if (cb) line.appendChild(txt('span', 'pt-cb', cb));
-        b.appendChild(line);
-        b.appendChild(txt('div', 'pt-name pt-name-s', nameText));
-        if (t.contents && t.contents.length) {
-          b.appendChild(txt('div', 'pt-sub', t.contents.join('・')));
-        }
-      } else {
-        if (!hideTime) b.appendChild(txt('div', 'pt-time', range + (svc ? ' ' + svc.short : '')));
-        b.appendChild(txt('div', 'pt-name', nameText + (ex.hosp ? '（入院中）' : '')));
-        var items = (t.contents || []).slice();
-        if (t.memo) items.push(t.memo);
-        if (!items.length && t.kind === 'care') items.push('実施');
-        for (var ci = 0; ci < items.length; ci++) {
-          var it = el('div', 'pt-item');
-          it.appendChild(txt('span', 'pt-item-tx', items[ci]));
-          if (!ex.hosp) {
-            it.appendChild(txt('span', 'pt-cb',
-              (t.checks && t.checks[ci]) || t.done ? '☑' : '□'));
-          }
-          b.appendChild(it);
-        }
-        if (t.tags && t.tags.length) b.appendChild(txt('div', 'pt-sub', '/' + t.tags.join('/')));
-      }
+      var line = el('div', 'pt-line');
+      if (!hideTime) line.appendChild(txt('span', 'pt-time', range));
+      if (cb) line.appendChild(txt('span', 'pt-cb', cb));
+      if (line.childNodes.length) b.appendChild(line);
+      b.appendChild(txt('div', 'pt-name', nameText + (ex.hosp ? '（入院中）' : '')));
       return b;
     }
 
@@ -4277,7 +4339,11 @@ body.printing .rs { display: none; }
       var p = JSON.parse(raw);
       if (p && p.meta && p.staff && p.tasks) {
         p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
-        if (p.columns) IM.normalizeNightOrder(p.columns, p.staff);   /* 夜勤列を施設→訪問順へ正規化（既存保存日も即反映） */
+        if (p.columns) {
+          IM.normalizeNightOrder(p.columns, p.staff);           /* 夜勤列を施設→訪問順へ（既存保存日も即反映） */
+          IM.normalizeFacilityOrder(p.columns, p.staff);        /* 施設列を出勤時間順へ（早番=左・既存保存日も即反映） */
+          IM.normalizeNightCareDivision(p.columns, p.staff, p.tasks);  /* 深夜2:00以降の夜勤支援を夜訪問列へ */
+        }
         return p;
       }
     } catch (e) { /* 破損時は新規扱い */ }
@@ -5193,7 +5259,7 @@ body.printing .rs { display: none; }
    * 旧方式(zoom+scaleY)は scaleY の縦伸ばしが文字を歪ませ（ぼやけ）ていた。新方式:
    * printMode + 印刷専用ゾーン(多忙帯7-9/17-21・夜勤0-8拡大)で盤面を1回再描画し、
    * **横幅フィットの等方zoomのみ**(拡大も縦縮小もしない＝原寸)。表は原寸で複数A3ページに渡る。 */
-  var PRINT_AVAIL = { w: 1078, h: 1542 };   /* A3縦 余白5mm の印字可能域(@96dpi) */
+  var PRINT_AVAIL = { w: 1078, h: 1508 };   /* A3縦 余白5mm の印字可能域(@96dpi)。h は押印ヘッダ(約26px)＋安全を控除＝盤面の使用可能高 */
   var printSavedScroll = null;
   var printActive = false;   /* navPrint→print→beforeprint の再入を1回に集約 */
   function fitPrint() {
@@ -5210,14 +5276,15 @@ body.printing .rs { display: none; }
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     B.render(board, day, TS.PRINT_ZONES, printScale,
       { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
-    /* 横幅フィットのみ: 用紙幅を超える日だけ等方zoomで縮小、決して拡大も縦縮小もしない＝原寸クリスプ */
+    /* 両軸フィット: 横幅・縦高とも用紙内に収める等方zoom＝A3縦1枚に必ず収める。拡大はしない＝原寸クリスプ(scaleY不使用) */
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
     var w = board.scrollWidth || 1;
     var cv = board.querySelector('.b-canvas');
     var ax = cv ? cv.querySelector('.b-axis.r') : null;
     if (ax) w = ax.offsetLeft + ax.offsetWidth;
-    var z = PRINT_AVAIL.w / w;
+    var hgt = board.scrollHeight || 1;          /* ヘッダ+canvas の全高 */
+    var z = Math.min(PRINT_AVAIL.w / w, PRINT_AVAIL.h / hgt);
     if (z > 1) z = 1;
     board.style.width = w + 'px';
     board.style.zoom = z;
