@@ -1141,6 +1141,34 @@ body.printing .rs { display: none; }
     return out;
   }
 
+  /* 複数枠スワップの対象群決定（純粋関数）。pool=対象列のcare枠(start昇順)、anchorId=ドロップ直下枠のid、
+   * total=ドラッグ群の合計分。アンカーを含む連続run(隣接が prev.end===next.start)の合計が total なら run全体、
+   * 違えばアンカーから下方累積で合計一致を探す。一致した部分配列を返す。一致しなければ null。 */
+  function matchSwapRun(pool, anchorId, total) {
+    if (!pool || !pool.length || !(total > 0)) return null;
+    var ai = -1, i;
+    for (i = 0; i < pool.length; i++) if (pool[i].id === anchorId) { ai = i; break; }
+    if (ai < 0) return null;
+    var lo = ai, hi = ai, r;
+    while (lo - 1 >= 0 && pool[lo - 1].end === pool[lo].start) lo--;
+    while (hi + 1 < pool.length && pool[hi].end === pool[hi + 1].start) hi++;
+    var runTotal = 0;
+    for (r = lo; r <= hi; r++) runTotal += (pool[r].end - pool[r].start);
+    if (runTotal === total) {
+      var run = [];
+      for (r = lo; r <= hi; r++) run.push(pool[r]);
+      return run;
+    }
+    var acc = 0, grp = [], idx;
+    for (idx = ai; idx < pool.length; idx++) {
+      acc += (pool[idx].end - pool[idx].start);
+      grp.push(pool[idx]);
+      if (acc === total) return grp;
+      if (acc > total) return null;
+    }
+    return null;
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -1161,7 +1189,8 @@ body.printing .rs { display: none; }
     computeAlerts: computeAlerts,
     fmtRange: fmtRange,
     clampResize: clampResize,
-    sanitizeTasks: sanitizeTasks
+    sanitizeTasks: sanitizeTasks,
+    matchSwapRun: matchSwapRun
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -2519,6 +2548,20 @@ body.printing .rs { display: none; }
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasks2 };
     }
+    if (type === 'MULTI_SWAP') {
+      /* 合計時間一致による2群の位置スワップ。staffId＋start/end を一括patch（1操作＝undo1回）。
+       * 両帯とも相手群で再充填されるため careVacates_/expandSurvivingFacwork_ は不要（freed space無）。
+       * facwork(src='facwork')枠のみ facManual を付与（自動再構成から保護）。 */
+      var tasksSW = day.tasks, ms;
+      for (ms = 0; ms < action.moves.length; ms++) {
+        var mvSW = action.moves[ms];
+        var curSW = M.findTask(tasksSW, mvSW.id);
+        var pSW = { staffId: mvSW.staffId, start: mvSW.start, end: mvSW.end };
+        if (curSW && curSW.src === 'facwork') pSW.facManual = true;
+        tasksSW = patchTask(tasksSW, mvSW.id, pSW);
+      }
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksSW };
+    }
     if (type === 'MULTI_ASSIGN') {
       /* 複数選択ブロックを相対時刻を保ったまま同一職員へ一括移動＝undoは1回で完全復元。
        * facwork(施設業務/休憩/自由枠)は手動配置として facManual を付与し自動再構成から保護。 */
@@ -3480,6 +3523,61 @@ body.printing .rs { display: none; }
     }
 
     /* 移動中の受入判定 */
+    /* 複数選択(care群)を他職員のcare枠へドロップ＝合計時間が一致する相手group全体と位置スワップ。
+     * 同帯(delta0)=staffId/列のみ交換、別帯(delta≠0)=時刻も移動。一致しなければ null。 */
+    function evalMultiSwap(overBlock) {
+      var day = opts.getDay();
+      /* ドラッグ群: 全て配置済みcare・全て同一staffId(srcStaff) */
+      var dragged = [], srcStaff = null, di;
+      for (di = 0; di < drag.selIds.length; di++) {
+        var dt = M.findTask(day.tasks, drag.selIds[di]);
+        if (!dt || dt.kind !== 'care' || dt.staffId === null || dt.staffId === undefined) return null;
+        if (srcStaff === null) srcStaff = dt.staffId;
+        else if (dt.staffId !== srcStaff) return null;   /* 群が複数列にまたがる＝対象外 */
+        dragged.push(dt);
+      }
+      if (!dragged.length || srcStaff === null) return null;
+      /* アンカー: ポインタ直下のcare枠（他職員・選択群外） */
+      var anchor = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
+      if (!anchor || anchor.kind !== 'care' || anchor.staffId === null) return null;
+      if (anchor.staffId === srcStaff) return null;
+      if (drag.selIds.indexOf(anchor.id) >= 0) return null;
+      var tgtStaff = anchor.staffId;
+      var dragTotal = 0, k;
+      for (k = 0; k < dragged.length; k++) dragTotal += (dragged[k].end - dragged[k].start);
+      if (dragTotal <= 0) return null;
+      /* 対象列のcare枠(選択群idは除外)を start 昇順で */
+      var pool = [], pi;
+      for (pi = 0; pi < day.tasks.length; pi++) {
+        var ptk = day.tasks[pi];
+        if (ptk.staffId !== tgtStaff || ptk.kind !== 'care') continue;
+        if (drag.selIds.indexOf(ptk.id) >= 0) continue;
+        pool.push(ptk);
+      }
+      pool.sort(function (a, b) { return a.start - b.start; });
+      var target = M.matchSwapRun(pool, anchor.id, dragTotal);
+      if (!target || !target.length) return null;
+      /* シフト量 = 対象群の最小start − ドラッグ群の最小start */
+      var aLo = dragged[0].start, bLo = target[0].start, j;
+      for (j = 1; j < dragged.length; j++) if (dragged[j].start < aLo) aLo = dragged[j].start;
+      for (j = 1; j < target.length; j++) if (target[j].start < bLo) bLo = target[j].start;
+      var deltaA = bLo - aLo, deltaB = aLo - bLo;
+      var moves = [];
+      for (j = 0; j < dragged.length; j++) {
+        moves.push({ id: dragged[j].id, staffId: tgtStaff,
+                     start: dragged[j].start + deltaA, end: dragged[j].end + deltaA });
+      }
+      for (j = 0; j < target.length; j++) {
+        moves.push({ id: target[j].id, staffId: srcStaff,
+                     start: target[j].start + deltaB, end: target[j].end + deltaB });
+      }
+      var grabbed = M.findTask(day.tasks, drag.taskId);
+      var gStart = (grabbed ? grabbed.start : dragged[0].start) + deltaA;
+      var gEnd = (grabbed ? grabbed.end : dragged[0].end) + deltaA;
+      return { moves: moves, ghostStart: gStart, ghostEnd: gEnd,
+               staff: M.findStaff(day.staff, tgtStaff), anchor: anchor };
+    }
+
     function evalMove(pt) {
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
@@ -3507,6 +3605,13 @@ body.printing .rs { display: none; }
        * ゴーストが隣接ブロックに重なっていても、指している相手と入替える */
       var overEl = document.elementFromPoint(pt.x, pt.y);
       var overBlock = closest(overEl, '.b-task');
+      /* 複数選択(care群)を他職員のcare枠へ＝合計時間一致なら2群を位置スワップ（単一swap分岐より前に判定）。
+       * 不一致(null)なら素通り＝既存の縮小配置/通常配置へフォールスルー。 */
+      if (drag.multi && overBlock && task.staffId !== null) {
+        var msw = evalMultiSwap(overBlock);
+        if (msw) return { status: 'multiswap', reason: '', lane: lane, staff: msw.staff,
+                 start: msw.ghostStart, end: msw.ghostEnd, moves: msw.moves, swapWith: msw.anchor };
+      }
       if (!altDup && overBlock && task.staffId !== null) {
         var over = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
         /* 同一職員内で 休憩↔施設業務 を重ねたら時間枠を交換（実施時間に関係なく可能） */
@@ -3704,7 +3809,7 @@ body.printing .rs { display: none; }
         return;
       }
       var label = '';
-      var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap');
+      var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap' || ev.status === 'multiswap');
       var dupMode = false;
       if (drag.alt && drag.mode === 'move') {
         var tkD = M.findTask(opts.getDay().tasks, drag.taskId);
@@ -3735,6 +3840,8 @@ body.printing .rs { display: none; }
         return;
       }
       if (ev.status === 'tray') { opts.onUnassign(taskId); return; }
+      /* 複数枠スワップ（合計時間一致）: moves は evalMultiSwap が算出済み */
+      if (ev.status === 'multiswap' && ev.moves && opts.onMultiSwap) { opts.onMultiSwap(ev.moves); return; }
       /* 複数選択の同時移動: ドラッグ対象の new start を基準に各ブロックの相対オフセットを保って同一職員へ */
       if (drag.multi && (ev.status === 'ok' || ev.status === 'confirm') && ev.staff && opts.onMultiAssign) {
         var dayM = opts.getDay();
@@ -6412,6 +6519,40 @@ body.printing .rs { display: none; }
       onSwap: function (moves, withTask) {
         store.dispatch({ type: 'SWAP', moves: moves });
         toast('支援を入れ替えました');
+      },
+      onMultiSwap: function (moves) {
+        /* 合計時間一致による2群の位置スワップ。全moveidを除外したsimで検証
+         * （移動枠どうしの偽staffdupを避けつつ、非移動枠との重複/入居者重複/範囲を捕捉）。 */
+        var day = store.get();
+        var byId = {}, i;
+        for (i = 0; i < moves.length; i++) byId[moves[i].id] = moves[i];
+        var simTasks = [];
+        for (i = 0; i < day.tasks.length; i++) {
+          var t = day.tasks[i];
+          var mv0 = byId[t.id];
+          if (!mv0) { simTasks.push(t); continue; }
+          var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
+          c.staffId = mv0.staffId; c.start = mv0.start; c.end = mv0.end;
+          simTasks.push(c);
+        }
+        var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
+        var ooh = false;
+        for (i = 0; i < moves.length; i++) {
+          var mv = moves[i];
+          if (mv.start < 0 || mv.end > TS.DAY_MIN || !(mv.end > mv.start)) {
+            toast('移動先が時間範囲外になるため入替できません', true); return;
+          }
+          var mst = M.findStaff(day.staff, mv.staffId);
+          if (mst && mst.zone === 'night' && !nightBand_(mv.start, mv.end)) {
+            toast('夜勤の表示時間帯（0-9時／21-24時）外になるため入替できません', true); return;
+          }
+          var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
+          if (!v.ok) { toast(v.reason || '同時刻に別の枠があるため入替できません', true); return; }
+          if (v.warn === 'worktime') ooh = true;
+        }
+        if (ooh && !window.confirm('勤務時間外を含みますが入れ替えますか？')) return;
+        store.dispatch({ type: 'MULTI_SWAP', moves: moves });
+        toast(moves.length + '件を入れ替えました');
       },
       onTimeSwap: function (moves, withTask) {
         /* 休憩↔施設業務の時間枠交換（同一職員）。単一アクションで適用＝undoは1回で完全復元。
