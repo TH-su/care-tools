@@ -2396,6 +2396,14 @@ body.printing .rs { display: none; }
     return { kind: fac.kind, label: fac.label || '', src: 'facwork' };
   }
 
+  /* この種別の結合候補か。facility: 自動(src=facwork)＋手動の generic 施設業務(label==='施設業務')。
+   * free: 自動(src=facwork)のみ。誘導/配膳など別ラベルは候補外＝占有として保護する。 */
+  function mergeableFacwork_(tk, KIND) {
+    if (tk.kind !== KIND) return false;
+    if (tk.src === 'facwork') return true;
+    return KIND === 'facility' && tk.label === '施設業務';
+  }
+
   /* care移動 reducer 共通: 移動対象のうち「旧staffIdを持つ care」の旧位置を vacates として収集。
    * トレイ初配置(旧staffId=null)は退去ではないので含めない。背景枠メモリ(facBg)も捕捉（patch前から読む）。 */
   function careVacates_(tasksBefore, ids) {
@@ -2454,7 +2462,7 @@ body.printing .rs { display: none; }
             var tk = result[j];
             if (tk.staffId !== sid) continue;
             if (!(tk.start < hourEnd && hourStart < tk.end)) continue;   /* この正時に重なる */
-            if (tk.src === 'facwork' && tk.kind === KIND) {   /* 当該種の自動/手動枠＝結合対象 */
+            if (mergeableFacwork_(tk, KIND)) {   /* 自動(facwork)＋手動generic施設業務＝結合対象 */
               candIds[tk.id] = true; hasCand = true; candRanges.push([tk.start, tk.end]);
             } else {
               occ.push([tk.start, tk.end]);   /* hard占有: care/休憩＋もう一方のfacwork種(相互に侵食しない) */
@@ -2489,6 +2497,7 @@ body.printing .rs { display: none; }
             for (fk in proto) if (Object.prototype.hasOwnProperty.call(proto, fk)) fp[fk] = proto[fk];
             delete fp.id;
             fp.start = free[f][0]; fp.end = free[f][1];
+            fp.src = 'facwork';   /* 結合枠は自動枠として統一＝罫線/連続表示/再充填スキップを正常化(手動src枠を吸収) */
             var nf = M.newTask(fp); nf.facManual = true;   /* 結合枠はfacManualで保護(再生成から守る) */
             kept.push(nf);
           }
