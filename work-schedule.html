@@ -1169,6 +1169,25 @@ body.printing .rs { display: none; }
     return null;
   }
 
+  /* 出勤中の既定業務種別。app.js の fillFacilityWork/fillUsuiFrames/facworkExcluded_/isUsui_ の対象判定と一致:
+   *  - 夜勤(zone==='night') / 緒方瞳(外部支援専従) → null（施設業務を入れない）
+   *  - 臼井 → 'free'（自由枠・空欄）／ それ以外(訪問・施設・facWork窓持ち含む) → 'facility'（施設業務）。
+   * 氏名は半角/全角空白を除去し前方一致。順序: 夜勤→緒方→臼井→facility。旧Safari互換。 */
+  var FACWORK_EXCLUDE_NAMES = ['緒方瞳'];
+  var FREEWORK_NAME = '臼井';
+  function facworkNormName_(name) {
+    return String(name === undefined || name === null ? '' : name).replace(/[\s　]/g, '');
+  }
+  function staffFacworkKind(st) {
+    if (!st) return null;
+    if (st.zone === 'night') return null;
+    var s = facworkNormName_(st.name), i;
+    if (s === '') return 'facility';
+    for (i = 0; i < FACWORK_EXCLUDE_NAMES.length; i++) if (s.indexOf(FACWORK_EXCLUDE_NAMES[i]) === 0) return null;
+    if (s.indexOf(FREEWORK_NAME) === 0) return 'free';
+    return 'facility';
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -1190,7 +1209,8 @@ body.printing .rs { display: none; }
     fmtRange: fmtRange,
     clampResize: clampResize,
     sanitizeTasks: sanitizeTasks,
-    matchSwapRun: matchSwapRun
+    matchSwapRun: matchSwapRun,
+    staffFacworkKind: staffFacworkKind
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -2448,12 +2468,23 @@ body.printing .rs { display: none; }
       if (!Object.prototype.hasOwnProperty.call(byStaff, sid)) continue;
       var staff = staffById[sid];
       var ws = staff.workStart, we = staff.workEnd, hours = byStaff[sid];
+      var defKind = M.staffFacworkKind(staff);   /* この職員の既定業務種別(facility/free/null)＝出勤中の自動充填種別 */
       for (var hkey in hours) {
         if (!Object.prototype.hasOwnProperty.call(hours, hkey)) continue;
         var hourStart = parseInt(hkey, 10), hourEnd = hourStart + 60, j;
         var lo = Math.max(hourStart, ws), hi = Math.min(hourEnd, we);
         if (hi <= lo) continue;
         var hourRec = hours[hkey];                        /* { bg: { facility:{...}, free:{...} } } */
+        /* この正時が「結合可能facwork(facility/free)も背景メモリも無い＝真に空」か。
+         * 既定種別の自動充填は最後の手段＝真に空のときのみ。既存facworkや facBg があればそちらが正時を占める。 */
+        var hourHasFw = false, hb;
+        for (hb = 0; hb < result.length; hb++) {
+          var htk = result[hb];
+          if (htk.staffId !== sid) continue;
+          if (!(htk.start < hourEnd && hourStart < htk.end)) continue;
+          if (mergeableFacwork_(htk, 'facility') || mergeableFacwork_(htk, 'free')) { hourHasFw = true; break; }
+        }
+        var hourEmpty = !hourHasFw && !(hourRec && hourRec.bg && (hourRec.bg.facility || hourRec.bg.free));
         var FACKINDS = ['facility', 'free'];              /* 施設業務・自由枠(空枠)を各々独立に復元/結合 */
         for (var ki = 0; ki < FACKINDS.length; ki++) {
           var KIND = FACKINDS[ki];
@@ -2469,14 +2500,18 @@ body.printing .rs { display: none; }
             }
           }
           if (!hasCand) {
-            /* 残存枠が無い＝完全消費。背景枠メモリ(facBg)があれば残った占有の隙間へ復元（無ければ従来どおり空のまま）。 */
+            /* 残存枠なし。背景枠メモリ(facBg)があるか、またはこの種別が職員の既定業務種別なら、残占有の隙間
+             * (勤務時間内 lo/hi・20分グリッド)へ自動充填する＝「出勤中は何らかの業務(既定=施設業務)に就く」。
+             * facBg はもう一方の種別(既定と異なる種別)の復元用。どちらも無ければ従来どおり空のまま。 */
             var bg = (hourRec && hourRec.bg) ? hourRec.bg[KIND] : null;
-            if (!bg) continue;
+            var fillThis = bg || (KIND === defKind && hourEmpty);   /* 既定種別の自動充填は真に空の正時のみ */
+            if (!fillThis) continue;
             var freeBg = TS.facResidual(lo, hi, occ, 20);
             if (!freeBg.length) continue;
+            var fillLabel = bg ? (bg.label || '') : (KIND === 'facility' ? '施設業務' : '');
             var keptBg = result, fb;
             for (fb = 0; fb < freeBg.length; fb++) {
-              var nfb = M.newTask({ kind: KIND, label: (bg.label || ''), src: 'facwork',
+              var nfb = M.newTask({ kind: KIND, label: fillLabel, src: 'facwork',
                                     start: freeBg[fb][0], end: freeBg[fb][1], staffId: sid });
               nfb.facManual = true;
               keptBg = keptBg.concat([nfb]);
