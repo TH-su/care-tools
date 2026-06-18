@@ -39,20 +39,22 @@ body {
   flex-shrink: 0; height: 50px; background: var(--pri); color: #fff;
   display: flex; align-items: center; gap: 6px; padding: 0 10px;
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+  overflow-x: auto;   /* 狭幅でボタンが溢れても横スクロールで全操作に到達可能 */
 }
+.hdr > *:not(.hdr-sp) { flex-shrink: 0; }   /* スペーサー以外は縮めず自然幅を維持 */
 .hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
 .hdr-date {
   font-size: 15px; font-weight: 700; background: rgba(255,255,255,.15);
   border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 4px 10px;
   cursor: pointer; white-space: nowrap;
 }
-.hdr-date input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .hdr-btn {
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
   color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 14px; cursor: pointer;
 }
 .hdr-btn:disabled { opacity: .35; }
 .hdr-btn.app-link { font-size: 12px; padding: 6px 8px; white-space: nowrap; }
+.hdr-btn.wk { font-size: 12px; padding: 5px 7px; white-space: nowrap; }
 @media (max-width: 700px) { .hdr-btn.app-link { font-size: 11px; padding: 5px 6px; } }
 .hdr-sp { flex: 1; }
 .badge {
@@ -244,6 +246,24 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 }
 .modal.on { display: block; }
 .modal h3 { font-size: 16px; margin-bottom: 12px; color: var(--g9); }
+
+/* ===== カレンダー（日付ジャンプ） ===== */
+#mCal { max-width: 360px; }
+.cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cal-nav .cal-mbtn { background: var(--g2); border: 1px solid var(--g3); color: var(--g8); }
+.cal-title { flex: 1; text-align: center; margin: 0 !important; font-size: 16px; }
+.cal-dow { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-dow span { text-align: center; font-size: 11px; color: var(--g6); padding: 4px 0; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-cell {
+  text-align: center; padding: 10px 0; font-size: 14px; cursor: pointer;
+  border-radius: 8px; color: var(--g9); user-select: none;
+}
+.cal-cell.cal-blank { cursor: default; }
+.cal-cell:not(.cal-blank):active { background: var(--g2); }
+.cal-today { outline: 1px solid var(--pri); outline-offset: -1px; }
+.cal-sel { background: var(--pri); color: #fff; font-weight: 700; }
+.cal-foot { margin-top: 12px; text-align: right; }
 .fld { margin-bottom: 10px; }
 .fld label { display: block; font-size: 12px; color: var(--g7); margin-bottom: 3px; font-weight: 700; }
 .inp, select.inp, textarea.inp {
@@ -377,8 +397,11 @@ body.printing .rs { display: none; }
 <body>
 <div class="hdr">
   <button class="hdr-btn" id="btnPrev">◀</button>
-  <label class="hdr-date" id="hdrDate">----/--/--<input type="date" id="datePick"></label>
+  <div class="hdr-date" id="hdrDate" role="button" title="クリックでカレンダー">----/--/--</div>
   <button class="hdr-btn" id="btnNext">▶</button>
+  <button class="hdr-btn wk" id="btnPrevWeek" title="先週(-7日)">先週</button>
+  <button class="hdr-btn wk" id="btnToday" title="今日へ">今日</button>
+  <button class="hdr-btn wk" id="btnNextWeek" title="来週(+7日)">来週</button>
   <span class="hdr-title">ワークスケジュール</span>
   <button class="hdr-btn app-link" id="btnOpenCare" title="入居者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
@@ -424,6 +447,18 @@ body.printing .rs { display: none; }
 </nav>
 
 <div class="modal-bg" id="modalBg"></div>
+
+<!-- カレンダー（日付ジャンプ） -->
+<div class="modal" id="mCal">
+  <div class="cal-nav">
+    <button class="hdr-btn cal-mbtn" id="calPrev" type="button">◀</button>
+    <h3 id="calTitle" class="cal-title">----年--月</h3>
+    <button class="hdr-btn cal-mbtn" id="calNext" type="button">▶</button>
+  </div>
+  <div class="cal-dow"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
+  <div class="cal-grid" id="calGrid"></div>
+  <div class="cal-foot"><button class="btn" id="calClose" type="button">閉じる</button></div>
+</div>
 
 <!-- タスク編集 -->
 <div class="modal" id="mEdit">
@@ -1601,12 +1636,12 @@ body.printing .rs { display: none; }
     return columns;
   }
 
-  /* 夜勤(zone==='night')の列だけを「訪問→施設」順に並べ替える（メイン列は不変）。
+  /* 夜勤(zone==='night')の列だけを「施設→訪問」順に並べ替える（メイン列は不変）。
    * 現位置に再配置→relabel_→staff.col 再同期。変化が無ければ false（冪等・churn無）。
    * columns/staff を破壊的に更新する。 */
   function nightDivKey_(div) {
-    if (div === '訪問') return 0;
-    if (div === '施設') return 1;
+    if (div === '施設') return 0;
+    if (div === '訪問') return 1;
     return 2;
   }
   function normalizeNightOrder(columns, staff) {
@@ -1682,7 +1717,7 @@ body.printing .rs { display: none; }
         }
       }
     }
-    normalizeNightOrder(columns, staffList);   /* 夜勤列は訪問→施設順（出勤反映経路もここを通る） */
+    normalizeNightOrder(columns, staffList);   /* 夜勤列は施設→訪問順（出勤反映経路もここを通る） */
     return { staff: staffList, columns: columns };
   }
 
@@ -1871,8 +1906,8 @@ body.printing .rs { display: none; }
       var vs = slotStaff_('slot_visit_' + i, 'visit', i, null);
       staff.push(vs); pushCol('visit', [vs.id]);
     }
-    /* 夜勤は「左=訪問 / 右=施設」の2列に固定（各列に 明(ake)＋入(iri)） */
-    var NIGHT_DIVS = [{ key: 'visit', div: '訪問' }, { key: 'fac', div: '施設' }];
+    /* 夜勤は「左=施設 / 右=訪問」の2列に固定（各列に 明(ake)＋入(iri)） */
+    var NIGHT_DIVS = [{ key: 'fac', div: '施設' }, { key: 'visit', div: '訪問' }];
     for (i = 0; i < NIGHT_DIVS.length; i++) {
       var nd = NIGHT_DIVS[i];
       var na = slotStaff_('slot_night_' + nd.key + '_ake', 'night', 1, 'ake', nd.div);
@@ -4016,7 +4051,7 @@ body.printing .rs { display: none; }
       var p = JSON.parse(raw);
       if (p && p.meta && p.staff && p.tasks) {
         p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
-        if (p.columns) IM.normalizeNightOrder(p.columns, p.staff);   /* 夜勤列を訪問→施設順へ正規化（既存保存日も即反映） */
+        if (p.columns) IM.normalizeNightOrder(p.columns, p.staff);   /* 夜勤列を施設→訪問順へ正規化（既存保存日も即反映） */
         return p;
       }
     } catch (e) { /* 破損時は新規扱い */ }
@@ -4358,7 +4393,6 @@ body.printing .rs { display: none; }
   function renderAll() {
     var day = store.get();
     $('hdrDate').firstChild.nodeValue = dateLabel(ui.currentDate);
-    $('datePick').value = ui.currentDate;
     $('printHead').textContent = '訪問介護いずみ 業務行動計画表　' +
       ui.currentDate.split('-').join('/') + '（' + WD_JA[dateObj(ui.currentDate).getDay()] + '）' +
       '　実施済項目欄へ、押印又は直筆サインを行う。';
@@ -4414,6 +4448,41 @@ body.printing .rs { display: none; }
     $('modalBg').className = 'modal-bg';
     var ms = document.querySelectorAll('.modal');
     for (var i = 0; i < ms.length; i++) ms[i].className = 'modal';
+  }
+
+  /* ===== カレンダー（日付ジャンプ用 DatePicker） ===== */
+  var calView = null;   /* 表示中の月 {y, m(0始まり)}。currentDate とは独立 */
+  function openCal() {
+    var d = dateObj(ui.currentDate);
+    calView = { y: d.getFullYear(), m: d.getMonth() };
+    renderCal();
+    showModal('mCal');
+  }
+  function renderCal() {
+    if (!calView) return;
+    var y = calView.y, m = calView.m;
+    $('calTitle').textContent = y + '年' + (m + 1) + '月';
+    var firstDow = new Date(y, m, 1).getDay();          /* 0=日 */
+    var days = new Date(y, m + 1, 0).getDate();         /* 当月日数（翌月0日） */
+    var today = todayKey(), cur = ui.currentDate;
+    var h = '', i, key;
+    for (i = 0; i < firstDow; i++) h += '<span class="cal-cell cal-blank"></span>';
+    for (i = 1; i <= days; i++) {
+      key = y + '-' + pad2(m + 1) + '-' + pad2(i);
+      var cls = 'cal-cell';
+      if (key === today) cls += ' cal-today';
+      if (key === cur) cls += ' cal-sel';
+      h += '<span class="' + cls + '" data-date="' + key + '">' + i + '</span>';
+    }
+    $('calGrid').innerHTML = h;
+  }
+  function calStep(delta) {
+    if (!calView) return;
+    var m = calView.m + delta, y = calView.y;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    calView.m = m; calView.y = y;
+    renderCal();
   }
 
   /* ===== タスク編集モーダル ===== */
@@ -5646,7 +5715,7 @@ body.printing .rs { display: none; }
     for (j = 0; j < columns.length; j++) { if (columns[j].zone !== 'night') continue; if (columns[j].division === '施設') hasFac = true; else if (columns[j].division === '訪問') hasVisit = true; }
     for (j = 0; j < columns.length; j++) {
       if (columns[j].zone !== 'night' || columns[j].division) continue;
-      var div = !hasVisit ? '訪問' : (!hasFac ? '施設' : '訪問');   /* 区分無し夜勤は訪問優先で割当 */
+      var div = !hasFac ? '施設' : (!hasVisit ? '訪問' : '施設');   /* 区分無し夜勤は施設優先で割当 */
       if (div === '施設') hasFac = true; else hasVisit = true;
       columns[j].division = div;
       for (m = 0; m < columns[j].staffIds.length; m++) { var s2 = byId[columns[j].staffIds[m]]; if (s2) s2.division = div; }
@@ -5823,8 +5892,21 @@ body.printing .rs { display: none; }
   function wire() {
     $('btnPrev').addEventListener('click', function () { switchDate(shiftDate(ui.currentDate, -1)); });
     $('btnNext').addEventListener('click', function () { switchDate(shiftDate(ui.currentDate, 1)); });
-    $('datePick').addEventListener('change', function () {
-      if ($('datePick').value) switchDate($('datePick').value);
+    /* 週移動（曜日保持）＋今日 */
+    $('btnPrevWeek').addEventListener('click', function () { switchDate(shiftDate(ui.currentDate, -7)); });
+    $('btnToday').addEventListener('click', function () { switchDate(todayKey()); });
+    $('btnNextWeek').addEventListener('click', function () { switchDate(shiftDate(ui.currentDate, 7)); });
+    /* カレンダー: 日付クリックで開く・月送り・日選択でジャンプ（委譲clickは1回だけ配線） */
+    $('hdrDate').addEventListener('click', function () { openCal(); });
+    $('calPrev').addEventListener('click', function () { calStep(-1); });
+    $('calNext').addEventListener('click', function () { calStep(1); });
+    $('calClose').addEventListener('click', hideModals);
+    $('calGrid').addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== this && !(el.getAttribute && el.getAttribute('data-date'))) el = el.parentNode;
+      if (!el || el === this) return;
+      var date = el.getAttribute('data-date');
+      if (date) { switchDate(date); hideModals(); }
     });
     $('btnUndo').addEventListener('click', function () { store.undo(); });
     $('btnRedo').addEventListener('click', function () { store.redo(); });
@@ -5837,7 +5919,7 @@ body.printing .rs { display: none; }
       /* モーダル/入力欄にフォーカス中はショートカット無効（誤操作防止） */
       var tag = (e.target && e.target.tagName) ? e.target.tagName : '';
       var inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ui.editingId;
-      var modalOpen = document.querySelector('.modal.show, .modal-bg.show');
+      var modalOpen = document.querySelector('.modal.on, .modal-bg.on');
       if (inField || modalOpen) return;
       if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); duplicateSelected();
