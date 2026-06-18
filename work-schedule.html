@@ -1601,6 +1601,42 @@ body.printing .rs { display: none; }
     return columns;
   }
 
+  /* 夜勤(zone==='night')の列だけを「訪問→施設」順に並べ替える（メイン列は不変）。
+   * 現位置に再配置→relabel_→staff.col 再同期。変化が無ければ false（冪等・churn無）。
+   * columns/staff を破壊的に更新する。 */
+  function nightDivKey_(div) {
+    if (div === '訪問') return 0;
+    if (div === '施設') return 1;
+    return 2;
+  }
+  function normalizeNightOrder(columns, staff) {
+    if (!columns || !columns.length) return false;
+    var nightPos = [], nightCols = [], i;
+    for (i = 0; i < columns.length; i++) {
+      if (columns[i].zone === 'night') { nightPos.push(i); nightCols.push(columns[i]); }
+    }
+    if (nightCols.length < 2) return false;
+    var order = nightCols.slice();
+    order.sort(function (a, b) {
+      var ka = nightDivKey_(a.division), kb = nightDivKey_(b.division);
+      if (ka !== kb) return ka - kb;
+      return nightCols.indexOf(a) - nightCols.indexOf(b);   /* 同区分は元順維持＝安定 */
+    });
+    var changed = false;
+    for (i = 0; i < order.length; i++) if (order[i] !== nightCols[i]) { changed = true; break; }
+    if (!changed) return false;
+    for (i = 0; i < nightPos.length; i++) columns[nightPos[i]] = order[i];
+    relabel_(columns);
+    if (staff && staff.length) {
+      var colBy = {}, m;
+      for (i = 0; i < columns.length; i++) {
+        for (m = 0; m < columns[i].staffIds.length; m++) colBy[columns[i].staffIds[m]] = columns[i].col;
+      }
+      for (i = 0; i < staff.length; i++) if (colBy[staff[i].id] !== undefined) staff[i].col = colBy[staff[i].id];
+    }
+    return true;
+  }
+
   /* 列割当: 施設→訪問→夜勤の順。夜勤は ake/iri をペアで同一列に同居させる。
    * 各ゾーンは既定列数（3/7/2）まで空列でパディングする。
    * 注意: staffList の各要素に col を直接書き込む（破壊的）。
@@ -1646,6 +1682,7 @@ body.printing .rs { display: none; }
         }
       }
     }
+    normalizeNightOrder(columns, staffList);   /* 夜勤列は訪問→施設順（出勤反映経路もここを通る） */
     return { staff: staffList, columns: columns };
   }
 
@@ -1834,8 +1871,8 @@ body.printing .rs { display: none; }
       var vs = slotStaff_('slot_visit_' + i, 'visit', i, null);
       staff.push(vs); pushCol('visit', [vs.id]);
     }
-    /* 夜勤は「左=施設 / 右=訪問」の2列に固定（各列に 明(ake)＋入(iri)） */
-    var NIGHT_DIVS = [{ key: 'fac', div: '施設' }, { key: 'visit', div: '訪問' }];
+    /* 夜勤は「左=訪問 / 右=施設」の2列に固定（各列に 明(ake)＋入(iri)） */
+    var NIGHT_DIVS = [{ key: 'visit', div: '訪問' }, { key: 'fac', div: '施設' }];
     for (i = 0; i < NIGHT_DIVS.length; i++) {
       var nd = NIGHT_DIVS[i];
       var na = slotStaff_('slot_night_' + nd.key + '_ake', 'night', 1, 'ake', nd.div);
@@ -2234,6 +2271,7 @@ body.printing .rs { display: none; }
     parseShiftTSV: parseShiftTSV,
     circled: circled,
     relabel: relabel_,
+    normalizeNightOrder: normalizeNightOrder,
     DEFAULT_COLS: DEFAULT_COLS,
     buildColumns: buildColumns,
     moveColumn: moveColumn,
@@ -2298,8 +2336,9 @@ body.printing .rs { display: none; }
     return vac;
   }
 
-  /* 支援(care)が退去して空いた時間に、残存する施設業務枠(kind=facility・自動/手動とも)を、その正時の
-   * 空き全体へ再生成して拡張/マージする。「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
+  /* 支援(care)が退去して空いた時間に、残存する施設業務枠(kind=facility)・自由枠(kind=free・空枠)を、
+   * 種別ごと独立に(相互は占有として保護)その正時の空き全体へ再生成して拡張/マージする。自動/手動とも対象。
+   * 「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
    * （完全消滅した枠は復活させない）。マージ枠は facManual:true で出力し rebuildFacWindowTasks の
    * 自動再生成(非facManualを消去)から保護する。夜勤職員は対象外。純粋関数（tasks を返す）。 */
   function expandSurvivingFacwork_(tasks, vacates, staffArr) {
@@ -2324,37 +2363,41 @@ body.printing .rs { display: none; }
       for (var hkey in hours) {
         if (!Object.prototype.hasOwnProperty.call(hours, hkey)) continue;
         var hourStart = parseInt(hkey, 10), hourEnd = hourStart + 60, j;
-        var candIds = {}, hasCand = false, occ = [], candRanges = [];
-        for (j = 0; j < result.length; j++) {
-          var tk = result[j];
-          if (tk.staffId !== sid) continue;
-          if (!(tk.start < hourEnd && hourStart < tk.end)) continue;   /* この正時に重なる */
-          if (tk.src === 'facwork' && tk.kind === 'facility') {   /* 自動枠も含めて結合対象に */
-            candIds[tk.id] = true; hasCand = true; candRanges.push([tk.start, tk.end]);
-          } else {
-            occ.push([tk.start, tk.end]);               /* hard占有: care/休憩/自由枠(free) */
-          }
-        }
-        if (!hasCand) continue;                         /* 拡張のみ: 残存候補が無い正時は何もしない */
         var lo = Math.max(hourStart, ws), hi = Math.min(hourEnd, we);
         if (hi <= lo) continue;
-        var free = TS.facResidual(lo, hi, occ, 20);     /* 空き区間（占有の補集合・20分未満破棄） */
-        if (sameRanges_(candRanges, free)) continue;    /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
-        var proto = null, kept = [];
-        for (j = 0; j < result.length; j++) {
-          if (candIds[result[j].id]) { if (!proto) proto = result[j]; }
-          else kept.push(result[j]);
+        var FACKINDS = ['facility', 'free'];              /* 施設業務・自由枠(空枠)を各々独立に復元/結合 */
+        for (var ki = 0; ki < FACKINDS.length; ki++) {
+          var KIND = FACKINDS[ki];
+          var candIds = {}, hasCand = false, occ = [], candRanges = [];
+          for (j = 0; j < result.length; j++) {
+            var tk = result[j];
+            if (tk.staffId !== sid) continue;
+            if (!(tk.start < hourEnd && hourStart < tk.end)) continue;   /* この正時に重なる */
+            if (tk.src === 'facwork' && tk.kind === KIND) {   /* 当該種の自動/手動枠＝結合対象 */
+              candIds[tk.id] = true; hasCand = true; candRanges.push([tk.start, tk.end]);
+            } else {
+              occ.push([tk.start, tk.end]);   /* hard占有: care/休憩＋もう一方のfacwork種(相互に侵食しない) */
+            }
+          }
+          if (!hasCand) continue;                         /* 拡張のみ: 残存候補が無い種は何もしない */
+          var free = TS.facResidual(lo, hi, occ, 20);     /* 空き区間（占有の補集合・20分未満破棄） */
+          if (sameRanges_(candRanges, free)) continue;    /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
+          var proto = null, kept = [];
+          for (j = 0; j < result.length; j++) {
+            if (candIds[result[j].id]) { if (!proto) proto = result[j]; }
+            else kept.push(result[j]);
+          }
+          if (!proto) continue;
+          for (var f = 0; f < free.length; f++) {
+            var fp = {}, fk;
+            for (fk in proto) if (Object.prototype.hasOwnProperty.call(proto, fk)) fp[fk] = proto[fk];
+            delete fp.id;
+            fp.start = free[f][0]; fp.end = free[f][1];
+            var nf = M.newTask(fp); nf.facManual = true;   /* 結合枠はfacManualで保護(再生成から守る) */
+            kept.push(nf);
+          }
+          result = kept;
         }
-        if (!proto) continue;
-        for (var f = 0; f < free.length; f++) {
-          var fp = {}, fk;
-          for (fk in proto) if (Object.prototype.hasOwnProperty.call(proto, fk)) fp[fk] = proto[fk];
-          delete fp.id;
-          fp.start = free[f][0]; fp.end = free[f][1];
-          var nf = M.newTask(fp); nf.facManual = true;
-          kept.push(nf);
-        }
-        result = kept;
       }
     }
     return result;
@@ -2929,7 +2972,7 @@ body.printing .rs { display: none; }
     }
     var cls = 'b-task ' + kindClass(t);
     if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
-    if (M.isChanged(t)) cls += ' changed';
+    if (t.kind === 'care' && M.isChanged(t)) cls += ' changed';   /* 2重罫線=支援枠のみ（空枠/施設業務は付けない） */
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
     if (ex.hosp) cls += ' hosp';
@@ -2938,7 +2981,7 @@ body.printing .rs { display: none; }
     b.style.top = top + 'px';
     b.setAttribute('data-id', t.id);
     /* 時間変更済(2重罫線)の支援は、変更前の元の時間をホバー(title)で表示 */
-    if (M.isChanged(t) && t.origin) {
+    if (t.kind === 'care' && M.isChanged(t) && t.origin) {
       b.setAttribute('title', '元の時間 ' + M.fmtRange(t.origin.start, t.origin.end, TS.minToTime));
     }
 
@@ -3973,6 +4016,7 @@ body.printing .rs { display: none; }
       var p = JSON.parse(raw);
       if (p && p.meta && p.staff && p.tasks) {
         p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
+        if (p.columns) IM.normalizeNightOrder(p.columns, p.staff);   /* 夜勤列を訪問→施設順へ正規化（既存保存日も即反映） */
         return p;
       }
     } catch (e) { /* 破損時は新規扱い */ }
@@ -4492,7 +4536,7 @@ body.printing .rs { display: none; }
     $('edDone').checked = t ? !!t.done : false;
     $('edMemo').value = t ? (t.memo || '') : '';
     $('edDelete').style.display = t ? '' : 'none';
-    $('edConfirmOrigin').style.display = t && M.isChanged(t) ? '' : 'none';
+    $('edConfirmOrigin').style.display = t && t.kind === 'care' && M.isChanged(t) ? '' : 'none';
     $('edHint').textContent = t && t.origin
       ? '原案: ' + TS.minToTime(t.origin.start) + '-' + TS.minToTime(t.origin.end) : '';
     showModal('mEdit');
@@ -5602,7 +5646,7 @@ body.printing .rs { display: none; }
     for (j = 0; j < columns.length; j++) { if (columns[j].zone !== 'night') continue; if (columns[j].division === '施設') hasFac = true; else if (columns[j].division === '訪問') hasVisit = true; }
     for (j = 0; j < columns.length; j++) {
       if (columns[j].zone !== 'night' || columns[j].division) continue;
-      var div = !hasFac ? '施設' : (!hasVisit ? '訪問' : '施設');
+      var div = !hasVisit ? '訪問' : (!hasFac ? '施設' : '訪問');   /* 区分無し夜勤は訪問優先で割当 */
       if (div === '施設') hasFac = true; else hasVisit = true;
       columns[j].division = div;
       for (m = 0; m < columns[j].staffIds.length; m++) { var s2 = byId[columns[j].staffIds[m]]; if (s2) s2.division = div; }

@@ -2439,9 +2439,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       for (var i = 0; i < DIVISIONS.length; i++) {
         if (DIVISIONS[i] !== mainDiv) divs.push(DIVISIONS[i]);
       }
-      /* 夜勤者は「上=施設 / 下=訪問」の表示順にする（データは不変・表示順のみ並べ替え） */
+      /* 夜勤者は「上=訪問 / 下=施設」の表示順にする（データは不変・表示順のみ並べ替え） */
       if (st.group === 'night') {
-        var nOrder = { '施設': 0, '訪問': 1, '通所': 2 };
+        var nOrder = { '訪問': 0, '施設': 1, '通所': 2 };
         divs.sort(function (a, b) {
           return (nOrder[a] === undefined ? 9 : nOrder[a]) - (nOrder[b] === undefined ? 9 : nOrder[b]);
         });
