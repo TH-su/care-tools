@@ -231,6 +231,35 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
 .cmt-style { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
 .cmt-style label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .cmt-style select.inp { width: auto; display: inline-block; padding: 4px 6px; }
+
+/* ===== 全体コメント（独立フロート・線なし・印刷反映） ===== */
+.note-layer { position: absolute; left: 0; top: 0; overflow: visible; z-index: 30; pointer-events: none; }
+.b-note {
+  position: absolute; width: -webkit-max-content; width: max-content; max-width: 280px; min-width: 96px;
+  background: #fffef2; border: 1px solid #d9b400; border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(0,0,0,.22); pointer-events: auto; z-index: 31;
+}
+.b-note-bar {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 2px 3px; background: #fff3c4; border-bottom: 1px solid #e6cf6a; border-radius: 6px 6px 0 0;
+}
+.b-note-grip { cursor: move; padding: 0 3px; color: #8a6d00; font-size: 12px; touch-action: none; -webkit-user-select: none; user-select: none; }
+.b-note-bar button { border: 1px solid #d9c463; background: #fff; border-radius: 3px; font-size: 11px; line-height: 1.5; padding: 0 4px; cursor: pointer; color: #333; }
+.b-note-sz { min-width: 18px; }
+.b-note-bold { font-weight: 700; }
+.b-note-color { width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid #999; }
+.b-note-del { color: #c62828; font-weight: 700; margin-left: auto; }
+.b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; outline: none; white-space: pre-wrap; word-break: break-word; }
+.b-note-rs {
+  position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
+  cursor: nwse-resize; pointer-events: auto;
+  background: linear-gradient(135deg, transparent 45%, #d9b400 45%, #d9b400 80%, transparent 80%);
+  border-bottom-right-radius: 6px;
+}
+/* 印刷: 画面の編集ノートは隠し、#boardへの静的複製(.b-note-print)を白地黒罫線で出す */
+body.printing .note-layer { display: none; }
+.b-note-print { position: absolute; background: #fff; border: 1px solid #000; border-radius: 4px; box-shadow: none; max-width: 280px; z-index: 31; }
+.b-note-print .b-note-body { padding: 3px 6px; }
 /* 下端リサイズハンドル: 常時有効（仕様: 下端ドラッグで時間を短縮・延長）。
    touch-action は指定しない＝スワイプはスクロール、長押し→ドラッグでリサイズ */
 .b-task .rs { position: absolute; left: 0; right: 0; height: 10px; cursor: ns-resize; }
@@ -474,6 +503,7 @@ body.printing .rs { display: none; }
     <button class="tray-btn" id="btnAddFac">＋施設業務</button>
     <button class="tray-btn" id="btnAddFree">＋自由枠</button>
     <span class="hdr-sp"></span>
+    <button class="tray-btn" id="btnAddNote" title="全体コメント（独立フロート・線なし・印刷反映）">📝 全体コメント</button>
     <button class="tray-btn" id="btnSelDup" title="選択した枠を複製（Cmd/Ctrl+D）">⧉ 複製</button>
     <button class="tray-btn" id="btnSelDel" title="選択した枠を消去（Delete）">🗑 消去</button>
     <button class="tray-btn" id="btnCopyNext" title="この日の支援を翌週の同曜日へコピー（上書き）">📅 翌週へコピー</button>
@@ -485,6 +515,7 @@ body.printing .rs { display: none; }
 <div class="board-wrap" id="boardWrap">
   <div class="print-head" id="printHead"></div>
   <div class="board" id="board"></div>
+  <div class="note-layer" id="noteLayer"></div>   <!-- 全体コメント(独立フロート)。renderAllで作り直さない＝編集中も維持 -->
   <div class="board-empty" id="boardEmpty">
     <div>出勤者がまだ登録されていません。</div>
     <button class="btn pri" id="btnEmptyImport">シフトを取り込む</button>
@@ -2578,7 +2609,7 @@ body.printing .rs { display: none; }
 
   function emptyDay(date) {
     return {
-      meta: { date: date || '', rev: 0, updatedAt: '', template: '' },
+      meta: { date: date || '', rev: 0, updatedAt: '', template: '', notes: [] },
       staff: [], columns: [], tasks: []
     };
   }
@@ -5553,10 +5584,13 @@ body.printing .rs { display: none; }
     if (z > 1) z = 1;
     board.style.width = w + 'px';
     board.style.zoom = z;
+    try { addPrintNotes(board); } catch (e) {}   /* 全体コメントを盤面へ静的複製(zoom後＝1ページ測定に影響させない・#board子でzoom追従) */
   }
   function unfitPrint() {
     var board = $('board');
+    try { removePrintNotes(board); } catch (e) {}
     document.body.classList.remove('printing');
+    board.style.position = '';
     board.style.zoom = '';
     board.style.transform = '';
     board.style.transformOrigin = '';
@@ -5573,6 +5607,162 @@ body.printing .rs { display: none; }
     }
     printActive = false;
     try { renderAll(); } catch (e) {}   /* 画面scale+レイアウト(printMode無)へ復元 */
+  }
+
+  /* ===== 全体コメント（独立フロート・リーダー線なし・印刷反映） =====
+   * day.meta.notes=[{id,text,x,y,w,h,size('小'|'中'|'大'),bold,color}]。x/y=board-wrap内容座標。
+   * #noteLayer(board-wrap直下・renderAllで作り直さない)で表示/編集。印刷は fitPrint が #board へ静的複製。
+   * 永続化はストア外サイドチャネル(meta.notesを直接更新→doSave＋schedulePushDay。undo対象外)。 */
+  var NOTE_COLORS = ['#202124', '#c62828', '#1565c0', '#2e7d32', '#e65100'];
+  function noteFontPx_(size) { return size === '小' ? 12 : (size === '大' ? 20 : 15); }
+  function ne_(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; }
+  function getNotes_() { var d = store.get(); if (!d.meta.notes) d.meta.notes = []; return d.meta.notes; }
+  function findNote_(id) { var ns = getNotes_(); for (var i = 0; i < ns.length; i++) if (ns[i].id === id) return ns[i]; return null; }
+  function persistNotes_() {
+    /* 既存の日次保存(saveTimer)へ相乗り＝switchDate が saveTimer をflushするのでノートも取りこぼさない */
+    try { scheduleSave(); } catch (e) {}
+    try { schedulePushDay(); } catch (e) {}
+  }
+  function applyNoteStyle_(box, n) {
+    var body = box.querySelector('.b-note-body');
+    if (body) { body.style.fontSize = noteFontPx_(n.size) + 'px'; body.style.fontWeight = n.bold ? '700' : '400'; body.style.color = n.color || '#202124'; }
+    if (typeof n.w === 'number') { box.style.width = n.w + 'px'; box.style.maxWidth = 'none'; } else { box.style.width = ''; box.style.maxWidth = ''; }
+    if (typeof n.h === 'number') { box.style.height = n.h + 'px'; if (body) body.style.overflow = 'auto'; }
+    else { box.style.height = ''; if (body) body.style.overflow = ''; }
+  }
+  function buildNoteEl_(n) {
+    var box = ne_('div', 'b-note'); box.setAttribute('data-id', n.id);
+    box.style.left = (n.x || 0) + 'px'; box.style.top = (n.y || 0) + 'px';
+    var bar = ne_('div', 'b-note-bar');
+    bar.appendChild(ne_('span', 'b-note-grip', '✥'));
+    var SZ = ['小', '中', '大'], si;
+    for (si = 0; si < SZ.length; si++) { var sb = ne_('button', 'b-note-sz', SZ[si]); sb.setAttribute('data-sz', SZ[si]); bar.appendChild(sb); }
+    bar.appendChild(ne_('button', 'b-note-bold', 'B'));
+    for (si = 0; si < NOTE_COLORS.length; si++) { var cb = ne_('button', 'b-note-color'); cb.setAttribute('data-color', NOTE_COLORS[si]); cb.style.background = NOTE_COLORS[si]; bar.appendChild(cb); }
+    bar.appendChild(ne_('button', 'b-note-del', '×'));
+    box.appendChild(bar);
+    var body = ne_('div', 'b-note-body'); body.setAttribute('contenteditable', 'true'); body.textContent = n.text || '';
+    box.appendChild(body);
+    box.appendChild(ne_('div', 'b-note-rs'));
+    return box;
+  }
+  function renderNotes() {
+    var layer = $('noteLayer'); if (!layer) return;
+    var ns = getNotes_(), byId = {}, i;
+    for (i = 0; i < ns.length; i++) byId[ns[i].id] = ns[i];
+    var existing = layer.querySelectorAll('.b-note');
+    for (i = existing.length - 1; i >= 0; i--) { var id = existing[i].getAttribute('data-id'); if (!byId[id]) layer.removeChild(existing[i]); }
+    for (i = 0; i < ns.length; i++) {
+      var box = layer.querySelector('.b-note[data-id="' + ns[i].id + '"]');
+      if (!box) { box = buildNoteEl_(ns[i]); layer.appendChild(box); applyNoteStyle_(box, ns[i]); }
+      else if (!box.classList.contains('note-editing')) {   /* 編集中ノートは上書きしない(caret維持) */
+        box.style.left = (ns[i].x || 0) + 'px'; box.style.top = (ns[i].y || 0) + 'px';
+        applyNoteStyle_(box, ns[i]);
+        var bd = box.querySelector('.b-note-body'); if (bd && bd.innerText !== ns[i].text) bd.textContent = ns[i].text || '';
+      }
+    }
+  }
+  function addNote() {
+    var wrap = $('boardWrap'), ns = getNotes_();
+    var n = { id: M.genId('note'), text: '', x: (wrap.scrollLeft + 40), y: (wrap.scrollTop + 92),
+              w: null, h: null, size: '中', bold: false, color: '#202124' };
+    ns.push(n); renderNotes(); persistNotes_();
+    var box = $('noteLayer').querySelector('.b-note[data-id="' + n.id + '"]');
+    if (box) { var body = box.querySelector('.b-note-body'); if (body) body.focus(); }
+  }
+  function deleteNote_(id) {
+    var ns = getNotes_(), i;
+    for (i = 0; i < ns.length; i++) if (ns[i].id === id) { ns.splice(i, 1); break; }
+    var box = $('noteLayer').querySelector('.b-note[data-id="' + id + '"]'); if (box && box.parentNode) box.parentNode.removeChild(box);
+    persistNotes_();
+  }
+  /* 印刷: 全体コメントを #board へ静的複製(コントロール無し)。#board子＝zoom追従。盤面内へクランプ */
+  function addPrintNotes(board) {
+    var ns = (store.get().meta.notes) || []; if (!ns.length) return;
+    board.style.position = 'relative';
+    var bw = board.scrollWidth, bh = board.scrollHeight, i;
+    for (i = 0; i < ns.length; i++) {
+      var n = ns[i]; if (!n.text) continue;
+      var box = ne_('div', 'b-note b-note-print');
+      if (typeof n.w === 'number') { box.style.width = n.w + 'px'; box.style.maxWidth = 'none'; }
+      var body = ne_('div', 'b-note-body', n.text);
+      body.style.fontSize = noteFontPx_(n.size) + 'px'; body.style.fontWeight = n.bold ? '700' : '400'; body.style.color = n.color || '#000';
+      box.appendChild(body); board.appendChild(box);
+      var x = n.x || 0, y = n.y || 0, ww = box.offsetWidth, hh = box.offsetHeight;
+      if (x + ww > bw) x = bw - ww; if (y + hh > bh) y = bh - hh; if (x < 0) x = 0; if (y < 0) y = 0;
+      box.style.left = x + 'px'; box.style.top = y + 'px';
+    }
+  }
+  function removePrintNotes(board) {
+    var ps = board.querySelectorAll('.b-note-print'), i;
+    for (i = ps.length - 1; i >= 0; i--) ps[i].parentNode.removeChild(ps[i]);
+  }
+  function wireNotes() {
+    var layer = $('noteLayer'); if (!layer) return;
+    if ($('btnAddNote')) $('btnAddNote').addEventListener('click', function () { addNote(); });
+    function noteOf(node) { while (node && node !== document) { if (node.classList && node.classList.contains('b-note')) return node; node = node.parentNode; } return null; }
+    function hasCls(node, cls) { while (node && node !== document) { if (node.classList && node.classList.contains(cls)) return true; if (node.classList && node.classList.contains('b-note')) return false; node = node.parentNode; } return false; }
+    /* バー操作(委譲): サイズ/太字/色/削除 */
+    layer.addEventListener('click', function (e) {
+      var box = noteOf(e.target); if (!box) return;
+      var n = findNote_(box.getAttribute('data-id')); if (!n) return;
+      var t = e.target;
+      if (t.classList.contains('b-note-sz')) { n.size = t.getAttribute('data-sz'); applyNoteStyle_(box, n); persistNotes_(); }
+      else if (t.classList.contains('b-note-bold')) { n.bold = !n.bold; applyNoteStyle_(box, n); persistNotes_(); }
+      else if (t.classList.contains('b-note-color')) { n.color = t.getAttribute('data-color'); applyNoteStyle_(box, n); persistNotes_(); }
+      else if (t.classList.contains('b-note-del')) { deleteNote_(box.getAttribute('data-id')); }
+    });
+    /* 本文編集: focus中は note-editing で renderNotes の上書きを防ぐ。input/blur で text 保存 */
+    layer.addEventListener('focus', function (e) { var b = e.target; if (b.classList && b.classList.contains('b-note-body')) b.parentNode.classList.add('note-editing'); }, true);
+    layer.addEventListener('input', function (e) { var b = e.target; if (!b.classList || !b.classList.contains('b-note-body')) return; var n = findNote_(b.parentNode.getAttribute('data-id')); if (n) { n.text = b.innerText; persistNotes_(); } });
+    layer.addEventListener('blur', function (e) { var b = e.target; if (!b.classList || !b.classList.contains('b-note-body')) return; b.parentNode.classList.remove('note-editing'); var n = findNote_(b.parentNode.getAttribute('data-id')); if (n) { n.text = b.innerText; persistNotes_(); } }, true);
+    /* D&D(グリップ)＋リサイズ(ハンドル): capture段で支援枠/吹き出しD&Dと非干渉。本文/コントロールは通常操作 */
+    var drag = null;
+    function ptOf(e) { if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY }; return { x: e.clientX, y: e.clientY }; }
+    function onDown(e) {
+      var box = noteOf(e.target); if (!box) return;
+      var isRs = hasCls(e.target, 'b-note-rs'), isGrip = hasCls(e.target, 'b-note-grip');
+      if (!isRs && !isGrip) return;
+      var n = findNote_(box.getAttribute('data-id')); if (!n) return;
+      e.stopPropagation(); if (e.cancelable) e.preventDefault();
+      var p = ptOf(e);
+      drag = { box: box, n: n, mode: isRs ? 'resize' : 'move', startX: p.x, startY: p.y,
+               baseX: n.x || 0, baseY: n.y || 0, baseW: box.offsetWidth, baseH: box.offsetHeight };
+    }
+    function onMove(e) {
+      if (!drag) return; e.stopPropagation(); if (e.cancelable) e.preventDefault();
+      var p = ptOf(e);
+      if (drag.mode === 'resize') {
+        var nw = drag.baseW + (p.x - drag.startX), nh = drag.baseH + (p.y - drag.startY);
+        if (nw < 80) nw = 80; if (nh < 32) nh = 32;
+        drag.box.style.maxWidth = 'none';   /* CSS max-width(280)を解除して任意幅に */
+        drag.box.style.width = nw + 'px'; drag.box.style.height = nh + 'px';
+        var bd = drag.box.querySelector('.b-note-body'); if (bd) bd.style.overflow = 'auto';
+      } else {
+        var nx = drag.baseX + (p.x - drag.startX), ny = drag.baseY + (p.y - drag.startY);
+        if (nx < 0) nx = 0; if (ny < 0) ny = 0;
+        drag.box.style.left = nx + 'px'; drag.box.style.top = ny + 'px';
+      }
+    }
+    function onUp(e) {
+      if (!drag) return; e.stopPropagation();
+      var d = drag; drag = null;
+      if (d.mode === 'resize') { d.n.w = Math.round(d.box.offsetWidth); d.n.h = Math.round(d.box.offsetHeight); }
+      else { d.n.x = Math.round(parseFloat(d.box.style.left) || 0); d.n.y = Math.round(parseFloat(d.box.style.top) || 0); }
+      persistNotes_();
+    }
+    if (window.PointerEvent) {
+      document.addEventListener('pointerdown', onDown, true);
+      document.addEventListener('pointermove', onMove, true);
+      document.addEventListener('pointerup', onUp, true);
+    } else {
+      document.addEventListener('mousedown', onDown, true);
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+      document.addEventListener('touchstart', onDown, true);
+      document.addEventListener('touchmove', onMove, { capture: true, passive: false });
+      document.addEventListener('touchend', onUp, true);
+    }
   }
 
   /* ===== クラウド同期 v2（複数端末・自動・rev楽観ロック）=====
@@ -5618,7 +5808,7 @@ body.printing .rs { display: none; }
   function daySig(day) {
     try {
       return JSON.stringify({ s: day.staff, c: day.columns, t: day.tasks,
-                              k: day.meta.skipRefs || null });
+                              k: day.meta.skipRefs || null, n: day.meta.notes || null });
     } catch (e) { return ''; }
   }
   function setSyncState(txt) { $('saveState').textContent = txt; }
@@ -7184,11 +7374,12 @@ body.printing .rs { display: none; }
     day.meta.date = ui.currentDate;
 
     store = S.createStore(day);
-    store.subscribe(function () { scheduleSave(); schedulePushDay(); renderAll(); });
+    store.subscribe(function () { scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
     try { wireCommentDrag(); } catch (e) { if (window.console) console.error('コメントD&D初期化失敗', e); }
+    try { wireNotes(); renderNotes(); } catch (e) { if (window.console) console.error('全体コメント初期化失敗', e); }
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}
     try { autoLoadMaster(); } catch (e) {}
