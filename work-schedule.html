@@ -1074,6 +1074,35 @@ body.printing .rs { display: none; }
     return s + '-' + e;
   }
 
+  /* リサイズ時の最小幅クランプ（純粋関数）。スナップ済み位置 m に対し、反対端が潰れないよう下限を課す。
+   * 支援(care)=svc.step（短時間訪問を許容）/ 施設業務・自由枠・休憩=20分（極小ゴースト枠を防止）。 */
+  var FLEX_MIN_MIN = 20;
+  function clampResize(task, edge, m) {
+    var svc = SVC[task.svcCode];
+    var isCare = task.kind === 'care' && svc;
+    var minSpan = isCare ? svc.step : FLEX_MIN_MIN;
+    var start = task.start, end = task.end;
+    if (edge === 't') { start = Math.min(m, end - minSpan); }
+    else { end = Math.max(m, start + minSpan); }
+    return { start: start, end: end };
+  }
+
+  /* 不正・退化フレームの除去（純粋・冪等）。入力配列は変更せず新配列を返す（要素は同一参照）。
+   * - end<=start の破損枠は kind を問わず除去
+   * - kind!=='care' で (end-start)<20 の極小枠（施設業務/自由枠/休憩）は除去
+   * 支援(care)は短時間訪問(身体０１=19分等)があるため長さ下限を課さない。 */
+  function sanitizeTasks(tasks) {
+    if (!tasks) return [];
+    var out = [];
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (!(t.end > t.start)) continue;
+      if (t.kind !== 'care' && (t.end - t.start) < FLEX_MIN_MIN) continue;
+      out.push(t);
+    }
+    return out;
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -1092,7 +1121,9 @@ body.printing .rs { display: none; }
     planSwap: planSwap,
     planTimeSwap: planTimeSwap,
     computeAlerts: computeAlerts,
-    fmtRange: fmtRange
+    fmtRange: fmtRange,
+    clampResize: clampResize,
+    sanitizeTasks: sanitizeTasks
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -2334,7 +2365,10 @@ body.printing .rs { display: none; }
     var type = action.type;
 
     if (type === 'INIT_DAY') {
-      return action.day;
+      /* 読込時に退化枠（end<=start・非支援の極小枠）を一掃。INIT_DAYはundo履歴をクリアするため副作用なし */
+      var d0 = action.day;
+      return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
+               tasks: M.sanitizeTasks(d0.tasks) };
     }
     if (type === 'SET_STAFF') {
       /* 職員入替時、消えた職員のタスクはトレイへ戻す */
@@ -2873,6 +2907,7 @@ body.printing .rs { display: none; }
    * ex: { print: 印刷モード, hosp: 入院中（極薄表示） } */
   function buildTask(t, scale, selectedIds, isNight, ex) {
     ex = ex || {};
+    if (!(t.end > t.start)) return null;   /* 破損枠（end<=start）は描画しない（最終防御） */
     var top = yFor(scale, t.start, isNight);
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
     /* 施設業務/自由枠の連続表示: 画面表示時のみ、内包する正時(00-59)いっぱいへ見た目を拡張し、
@@ -3171,7 +3206,8 @@ body.printing .rs { display: none; }
           if (hi !== undefined) ex.snapHi = hi;
         }
       }
-      laneEl.appendChild(buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex));
+      var bEl = buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex);
+      if (bEl) laneEl.appendChild(bEl);
     }
   }
 
@@ -3510,14 +3546,14 @@ body.printing .rs { display: none; }
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task || task.staffId === null) return { status: 'ng', reason: '' };
       var svc = M.SVC[task.svcCode];
-      var step = task.kind === 'care' && svc ? svc.step : 5;
+      var step = task.kind === 'care' && svc ? svc.step : 5;   /* スナップ刻み（吸着のみ） */
       var isNight = taskLaneIsNight(task);
       var rawMin = minAt(pt.y, isNight);
       if (rawMin === null) return { status: 'ng', reason: '夜勤の表示時間帯外です' };
       var m = TS.snapMin(rawMin, step);
-      var start = task.start, end = task.end;
-      if (drag.edge === 't') { start = Math.min(m, end - step); }
-      else { end = Math.max(m, start + step); }
+      /* 最小幅は M.clampResize に委譲（非支援枠は20分下限＝5分ゴースト枠を防止） */
+      var r = M.clampResize(task, drag.edge, m);
+      var start = r.start, end = r.end;
       if (isNight && !nightRangeOk(start, end)) {
         return { status: 'ng', reason: '夜勤の表示時間帯外です' };
       }
@@ -3935,7 +3971,10 @@ body.printing .rs { display: none; }
       var raw = localStorage.getItem(dayKey(date));
       if (!raw) return null;
       var p = JSON.parse(raw);
-      if (p && p.meta && p.staff && p.tasks) return p;
+      if (p && p.meta && p.staff && p.tasks) {
+        p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
+        return p;
+      }
     } catch (e) { /* 破損時は新規扱い */ }
     return null;
   }
