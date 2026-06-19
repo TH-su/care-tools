@@ -53,6 +53,9 @@ body {
   color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 14px; cursor: pointer;
 }
 .hdr-btn:disabled { opacity: .35; }
+.hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; white-space: nowrap; }
+.hdr-btn.savebtn:hover { background: #1b5e20; }
+.hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
 .hdr-btn.app-link { font-size: 12px; padding: 6px 8px; white-space: nowrap; }
 .hdr-btn.wk { font-size: 12px; padding: 5px 7px; white-space: nowrap; }
 @media (max-width: 700px) { .hdr-btn.app-link { font-size: 11px; padding: 5px 6px; } }
@@ -533,6 +536,7 @@ body.printing .rs { display: none; }
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
   <button class="hdr-btn" id="btnUndo" disabled>↩</button>
   <button class="hdr-btn" id="btnRedo" disabled>↪</button>
+  <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   <span class="save-state" id="saveState"></span>
 </div>
 
@@ -4779,6 +4783,24 @@ body.printing .rs { display: none; }
       toast('ローカル保存に失敗しました（容量不足の可能性）', true);
     }
   }
+  /* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存(400msデバウンス迂回)→クラウドへ即時push。
+   * 同期先未設定でも端末には保存される。 */
+  function manualSave() {
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
+    doSave();
+    var synced = false;
+    try { if (typeof syncOn === 'function' && syncOn()) { pushDayNow(); synced = true; } } catch (e1) {}
+    var btn = $('btnSave');
+    if (btn) {
+      if (manualSave._t) clearTimeout(manualSave._t);
+      btn.textContent = synced ? '✓ 保存しました' : '✓ 端末に保存';
+      btn.classList.add('saving');
+      manualSave._t = setTimeout(function () {
+        btn.textContent = btn.getAttribute('data-label') || '💾 保存';
+        btn.classList.remove('saving');
+      }, 1800);
+    }
+  }
 
   /* ===== 状態 ===== */
   var store = null;
@@ -7081,6 +7103,10 @@ body.printing .rs { display: none; }
     $('btnUndo').addEventListener('click', function () { store.undo(); });
     $('btnRedo').addEventListener('click', function () { store.redo(); });
     document.addEventListener('keydown', function (e) {
+      /* Ctrl/Cmd+S は入力欄・モーダル中でも「今すぐ保存」にする（ブラウザの保存ダイアログを抑止） */
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault(); manualSave(); return;
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) store.redo(); else store.undo();
@@ -7097,6 +7123,7 @@ body.printing .rs { display: none; }
         e.preventDefault(); deleteSelected();
       }
     });
+    if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
 
