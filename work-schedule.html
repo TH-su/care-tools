@@ -422,7 +422,10 @@ body.printing .p-task .pt-name {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
 }
 /* 施設業務名は控えめ＝小さく細字・淡色 */
-body.printing .p-task .pt-name.pt-name-fac { font-size: 13px; font-weight: 400; color: #555; }
+/* 施設業務名: フォントサイズはJSがinline指定(13〜18px・要件5)。色は印刷で読めるよう少し濃く */
+body.printing .p-task .pt-name.pt-name-fac { font-weight: 400; color: #444; }
+/* 夜勤帯はケア内容を出さない(要件3)。JSで生成しないが保険でCSSでも非表示 */
+body.printing .p-task.p-night .pt-item { display: none !important; }
 /* ケア内容＝最大・各行の右端にチェック□（画面に合わせる）。内容を目立たせる（太字）。
    1行に詰めず各ケアごとに行を使い、長文は折返し可(要件3)。□は大きめ。 */
 body.printing .p-task .pt-item {
@@ -1586,6 +1589,8 @@ body.printing .rs { display: none; }
       var mraw = cellAt(plan.cells ? plan.cells[st.id] : null, dayNo, dayStr);
       if (mraw !== null) rows.push({ division: mainDiv, raw: mraw, isMain: true });
       var sc = plan.subCells ? plan.subCells[st.id] : null;
+      /* 訪問の従区分行を持つ＝訪問業務をする職員＝夜勤は夜訪問とみなす材料(要件6) */
+      var hasVisitSub = !!(sc && Object.prototype.hasOwnProperty.call(sc, '訪問'));
       if (sc) {
         for (var dv in sc) {
           if (!Object.prototype.hasOwnProperty.call(sc, dv)) continue;
@@ -1599,13 +1604,15 @@ body.printing .rs { display: none; }
         var division = rows[ri].division;
         if (division === '通所') continue;
         var isMainRow = !!rows[ri].isMain;
-        /* 夜勤の区分(施設/訪問)は group も考慮して解決する。日勤は workZone が group を見るが、
-         * 夜勤は raw division を使っていたため、mainDivision 未設定の訪問職員(group:'visit')が
-         * 施設既定(line217 '施設')で施設へ誤判定され夜勤列が3列に分裂していた。
-         * 明示の区分があればそれ、無ければ group で訪問/施設を決める。 */
+        /* 夜勤の区分(施設/訪問)を堅牢に解決(要件6: 夜訪問の取りこぼし防止)。
+         * 従区分(subCells)行はその区分そのもの。主区分(cells)行は、主区分が訪問・訪問グループ・
+         * 訪問の従区分行を持つ のいずれかなら夜訪問へ。これで「夜訪問職員が主区分=施設/未設定で
+         * 夜勤を主セルに書いた」場合でも夜施設へ誤吸収されず夜訪問列へ正しく載る。
+         * 純粋な夜施設職員(訪問の従区分なし)は従来どおり夜施設。 */
         var nightDiv;
         if (!isMainRow) nightDiv = (division === '訪問') ? '訪問' : '施設';
-        else nightDiv = st.mainDivision ? (st.mainDivision === '訪問' ? '訪問' : '施設') : (group === 'visit' ? '訪問' : '施設');
+        else if (st.mainDivision === '訪問' || group === 'visit' || hasVisitSub) nightDiv = '訪問';
+        else nightDiv = '施設';
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
         for (var p = 0; p < parts.length; p++) {
@@ -1967,22 +1974,27 @@ body.printing .rs { display: none; }
    * columns/staff を破壊的に更新。変更が有れば true(冪等)。 */
   function mergeStrayNightCols(columns, staff, tasks) {
     if (!columns || !columns.length) return false;
-    var careSlots = {}, i, m;
+    var careSlots = {}, byId = {}, i, m;
     if (tasks) for (i = 0; i < tasks.length; i++) {
       if (tasks[i].kind === 'care' && tasks[i].staffId) careSlots[tasks[i].staffId] = true;
     }
+    if (staff) for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
     var nightIdx = [];
     for (i = 0; i < columns.length; i++) if (columns[i].zone === 'night') nightIdx.push(i);
     if (nightIdx.length <= 2) return false;
     var keptFac = false, keptVisit = false, removeIds = {}, removeIdx = [], k;
     for (k = 0; k < nightIdx.length; k++) {
-      var col = columns[nightIdx[k]], hasCare = false;
-      for (m = 0; m < col.staffIds.length; m++) if (careSlots[col.staffIds[m]]) { hasCare = true; break; }
+      var col = columns[nightIdx[k]], hasCare = false, hasName = false;
+      for (m = 0; m < col.staffIds.length; m++) {
+        if (careSlots[col.staffIds[m]]) hasCare = true;
+        var sN = byId[col.staffIds[m]];
+        if (sN && sN.name) hasName = true;   /* 氏名のある列(=シフト反映済)は絶対に消さない(要件6) */
+      }
       var isFirstFac = (col.division === '施設' && !keptFac);
       var isFirstVisit = (col.division === '訪問' && !keptVisit);
       if (isFirstFac) keptFac = true;
       if (isFirstVisit) keptVisit = true;
-      if (!isFirstFac && !isFirstVisit && !hasCare) {   /* 余分列かつcare無し＝除去 */
+      if (!isFirstFac && !isFirstVisit && !hasCare && !hasName) {   /* 余分列かつcare無し・氏名無し＝除去 */
         removeIdx.push(nightIdx[k]);
         for (m = 0; m < col.staffIds.length; m++) removeIds[col.staffIds[m]] = true;
       }
@@ -2120,7 +2132,13 @@ body.printing .rs { display: none; }
           continue;
         }
         var contents = [];
-        if (ev.detail) contents.push(String(ev.detail));
+        if (ev.detail) {   /* detailは中点結合文字列＝配列へ分解(要件4: 1要素包みだと別内容と混ざる) */
+          var dparts = String(ev.detail).split('・');
+          for (var dp = 0; dp < dparts.length; dp++) {
+            var dpv = dparts[dp].replace(/^\s+|\s+$/g, '');
+            if (dpv) contents.push(dpv);
+          }
+        }
         var tags = [];
         if (ev.notes) tags.push(String(ev.notes));
         var t = M.newTask({
@@ -3543,14 +3561,16 @@ body.printing .rs { display: none; }
        * ケア内容を最大・時刻と名前はそれより小さく。氏名は必ず全表示(消さない)。
        * 枠高 h と行数から内容>名前≧時刻 を保ちつつ全行が収まるよう動的にフォントを縮小(DOM計測不要)。
        * 枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。固定コメントは末尾に出力。 */
+      /* 夜勤帯(isNight)はケア内容を出さず、空いた縦を氏名拡大に充てる(要件3) */
+      var nightHideContent = (isNight && t.kind === 'care');
       b.style.height = h + 'px';
-      b.className = cls + ' p-task';
-      /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印できるよう1行('実施') */
-      var pitems = (t.kind === 'care') ? (t.contents || []).slice() : [];
-      if (t.kind === 'care' && t.memo) pitems.push(t.memo);
-      if (t.kind === 'care' && !pitems.length) pitems.push('');   /* 内容無しでも押印用に□行を1つ。「実施」文字は出さない(要件3) */
+      b.className = cls + ' p-task' + (nightHideContent ? ' p-night' : '');
+      /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印用に1行(空文字＝□のみ) */
+      var pitems = (t.kind === 'care' && !nightHideContent) ? (t.contents || []).slice() : [];
+      if (t.kind === 'care' && !nightHideContent && t.memo) pitems.push(t.memo);
+      if (t.kind === 'care' && !nightHideContent && !pitems.length) pitems.push('');
       var rows = pitems.length;
-      var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行 */
+      var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行(夜勤は内容0) */
       var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
       /* 印刷は後段でズーム縮小されるため論理フォント上限を高く取り「枠内最大」(要件4)。画面は従来上限。
        * 内容cap=32(過剰拡大・過剰折返しを防ぐ)、時刻/名前は内容の0.80(時刻を少し大きく=要件2・ただし内容未満)。 */
@@ -3564,9 +3584,16 @@ body.printing .rs { display: none; }
         b.appendChild(tEl);
       }
       var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
-      if (!hideTime) nmEl.style.fontSize = fSmall + 'px';
+      if (hideTime) {
+        /* 施設業務名(要件5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜18px) */
+        nmEl.style.fontSize = Math.max(13, Math.min(18, fSmall)) + 'px';
+      } else if (nightHideContent) {
+        nmEl.style.fontSize = fContent + 'px';   /* 夜勤=内容無し→氏名を最大(時刻以上)に(要件3) */
+      } else {
+        nmEl.style.fontSize = fSmall + 'px';
+      }
       b.appendChild(nmEl);
-      if (!hideTime) {
+      if (!hideTime && !nightHideContent) {
         for (var pi = 0; pi < pitems.length; pi++) {
           var row = el('div', 'pt-item');
           var itx = txt('span', 'pt-item-tx', pitems[pi]);
@@ -4748,6 +4775,17 @@ body.printing .rs { display: none; }
       return true;
     } catch (e) { return false; }
   }
+  /* detail(中点結合文字列) → contents配列 へ復元（join('・')の逆。空要素は捨てる）。
+   * これを使わず [detail] と1要素で包むと「掃除・洗濯」が1チップ化し、表示で別内容と混ざって見える(要件4)。 */
+  function detailToContents_(d) {
+    if (!d) return [];
+    var parts = String(d).split('・'), out = [], i;
+    for (i = 0; i < parts.length; i++) {
+      var s = parts[i] != null ? String(parts[i]).replace(/^\s+|\s+$/g, '') : '';
+      if (s) out.push(s);
+    }
+    return out;
+  }
   /* ワースケ→週間計画：ケア内容(支援内容・詳細=detail)のみ書き戻す。時刻等は書き戻さない。
    * weeklyRef.evId で care_schedule_v2 の該当eventを引き、detail=contents.join('・') を反映→保存＋クラウドpush。 */
   function writeBackCareDetail_(evId, contents) {
@@ -4846,8 +4884,9 @@ body.printing .rs { display: none; }
         patch.origin = { start: ev2.start, end: ev2.end, staffId: t.staffId, svcCode: ev2.svcCode || t.svcCode };
         refDirty = true;
       }
-      /* ケア内容(支援内容・詳細)は常に detail を正本に同期＝週間計画→ワースケの片方向を完全化 */
-      var newContents = ev2.detail ? [ev2.detail] : [];
+      /* ケア内容(支援内容・詳細)は常に detail を正本に同期＝週間計画→ワースケの片方向を完全化。
+       * detail は中点結合文字列なので配列へ分解(要件4: 1要素包みだと別内容と混ざって見える)。 */
+      var newContents = detailToContents_(ev2.detail);
       if (!sameContents_(t.contents, newContents)) patch.contents = newContents;
       if (refDirty) patch.weeklyRef = refPatch;
       var has = false, pk;
@@ -4895,7 +4934,7 @@ body.printing .rs { display: none; }
         residentId: 'rn_' + e3.resName, residentName: e3.resName,
         svcCode: M.SVC[e3.svcCode] ? e3.svcCode : '',
         start: e3.start, end: e3.end,
-        contents: e3.detail ? [e3.detail] : [], staffId: null });
+        contents: detailToContents_(e3.detail), staffId: null });
       nt.weeklyRef = { residentName: e3.resName, dow: dow, start: e3.start, evId: e3.id };
       nt.origin = M.captureOrigin(nt);
       store.dispatch({ type: 'ADD_TASK', task: nt });
@@ -5627,23 +5666,26 @@ body.printing .rs { display: none; }
     if (nf < 6) nf = 6;
     if (nf < cur) el.style.fontSize = nf + 'px';
   }
-  /* 氏名: 縦に余裕がある枠で、横幅と内容フォント上限まで拡大（要件: 名前を大きく・内容は超えない） */
-  function enlargeName_(frame, nm, availW) {
+  /* 氏名: 横幅と内容フォント上限まで拡大。短い枠でも氏名を最大化(要件2)。
+   * 事前ゲート(78%)は外し、1pxずつ拡大→溢れる直前で停止する縦ガードのみで制御＝
+   * 内容が枠を満たす枠では1歩目で止まり据置(内容優先)、内容が少ない短枠では氏名が伸びる。 */
+  function enlargeName_(frame, nm, availW, capOverride) {
     var clientH = frame.clientHeight;
-    if (usedH_(frame) > clientH * 0.78) return;
     var rng = document.createRange(); rng.selectNodeContents(nm);
     var textW = rng.getBoundingClientRect().width;
     if (textW <= 0 || availW <= 0) return;
     var cur = parseFloat(getComputedStyle(nm).fontSize) || 13, f = cur, guard = 0;
     var itx = frame.querySelector('.pt-item-tx');
-    var CAP = itx ? Math.round(parseFloat(getComputedStyle(itx).fontSize)) : 16;
+    var CAP = capOverride || (itx ? Math.round(parseFloat(getComputedStyle(itx).fontSize)) : 16);
+    /* 短枠で内容フォントが小さくても氏名は最低22pxまで伸ばせる(縦に余裕がある時のみ実際に伸びる=要件2) */
+    if (!capOverride && CAP < 22) CAP = 22;
     if (CAP < cur) CAP = cur;
-    while (f < CAP && guard < 24) {
+    while (f < CAP && guard < 40) {
       guard++;
       var nf = f + 1;
       if (textW * (nf / cur) > availW * 0.96) break;
       nm.style.fontSize = nf + 'px';
-      if (usedH_(frame) > clientH - 1) { nm.style.fontSize = f + 'px'; break; }
+      if (usedH_(frame) > clientH - 3) { nm.style.fontSize = f + 'px'; break; }
       f = nf;
     }
   }
@@ -5661,7 +5703,7 @@ body.printing .rs { display: none; }
       var nf = f + 1;
       if (textW * (nf / cur) > availW * 0.96) break;
       el.style.fontSize = nf + 'px';
-      if (usedH_(frame) > clientH - 1) { el.style.fontSize = f + 'px'; break; }
+      if (usedH_(frame) > clientH - 3) { el.style.fontSize = f + 'px'; break; }
       f = nf;
     }
   }
@@ -5676,9 +5718,17 @@ body.printing .rs { display: none; }
       var tEl = fr.querySelector('.pt-time');
       /* 時刻=右余白と行スロットの縦余裕まで拡大(要件2)。上限26pxは固定＝短枠で内容より少し大きくなり得るが
        * 縦に詰まった枠(内容が枠を満たす)では growToW_ の縦ガードで自然に止まる＝内容を圧迫しない。 */
-      if (tEl) { shrinkToW_(tEl, availW); growToW_(fr, tEl, availW, 26); }
+      var isNightFr = fr.className.indexOf('p-night') >= 0;
+      /* 夜勤枠は氏名を主役にするため時刻は拡大しない(時刻が縦を食って氏名を潰すのを防ぐ=要件3) */
+      if (tEl) { shrinkToW_(tEl, availW); if (!isNightFr) growToW_(fr, tEl, availW, 26); }
       var nm = fr.querySelector('.pt-name');
-      if (nm && nm.className.indexOf('pt-name-fac') < 0) { shrinkToW_(nm, availW); enlargeName_(fr, nm, availW); }
+      if (nm) {
+        shrinkToW_(nm, availW);   /* 施設業務名(要件5)含め1行に収める */
+        if (nm.className.indexOf('pt-name-fac') < 0) {
+          /* 夜勤=内容無しなので氏名を時刻と同等以上に大きく(要件3)。日中は内容フォント上限で内容優先(要件2) */
+          enlargeName_(fr, nm, availW, isNightFr ? 34 : null);
+        }
+      }
     }
   }
   /* 盤面の実効横幅＝右(夜勤)軸の右端まで */
@@ -5700,15 +5750,23 @@ body.printing .rs { display: none; }
   }
   var printSavedScroll = null;
   var printActive = false;   /* navPrint→print→beforeprint の再入を1回に集約 */
+  /* 盤面の印刷用inline styleを全消去＝毎回同条件で測定し再現性を担保(要件1) */
+  function clearBoardStyle_(board) {
+    var s = board.style;
+    s.position = ''; s.zoom = ''; s.transform = ''; s.transformOrigin = '';
+    s.margin = ''; s.minWidth = ''; s.width = ''; s.height = '';
+  }
   function fitPrint() {
     var board = $('board');
     var day = (store && store.get) ? store.get() : null;
     if (!day || !day.columns.length) return;
     if (printActive) return;
     printActive = true;
+    try {
     var wrap = $('boardWrap');
     if (printSavedScroll === null) printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
     var scrBoardW = board.scrollWidth, scrBoardH = board.scrollHeight;   /* 画面盤面サイズ(全体コメント座標の写像基準。再描画前に取得) */
+    clearBoardStyle_(board);   /* 前回印刷の残留styleを一掃＝A3フィットを毎回再現(要件1) */
     document.body.classList.add('printing');   /* .p-task / body.printing CSS を有効化 */
     /* 1パス目: 印刷scale(日中拡大・夜勤拡大)で printMode 描画→盤面幅を実測。選択は印刷しない */
     var pz = TS.PRINT_ZONES;
@@ -5745,18 +5803,20 @@ body.printing .rs { display: none; }
     board.style.width = w + 'px';
     board.style.zoom = z;
     try { addPrintNotes(board, scrBoardW, scrBoardH); } catch (e) {}   /* 全体コメントを盤面へ静的複製(zoom後＝1ページ測定に影響させない・画面座標を写像) */
+    } catch (eFit) {
+      /* 途中失敗時は印刷状態を残さず画面へ復帰＝崩れ・印刷ロックを防ぐ(要件1) */
+      try { unfitPrint(); } catch (e2) {
+        printActive = false; document.body.classList.remove('printing'); clearBoardStyle_(board);
+      }
+    }
   }
   function unfitPrint() {
+    /* 冪等化(要件1): 既に復元済みなら何もしない＝afterprint/タイマー/matchMediaの多重呼びでrenderAll連発を防ぐ */
+    if (!printActive && !document.body.classList.contains('printing')) return;
     var board = $('board');
     try { removePrintNotes(board); } catch (e) {}
     document.body.classList.remove('printing');
-    board.style.position = '';
-    board.style.zoom = '';
-    board.style.transform = '';
-    board.style.transformOrigin = '';
-    board.style.margin = '';
-    board.style.minWidth = '';
-    board.style.width = '';
+    clearBoardStyle_(board);
     var wrap = $('boardWrap');
     wrap.style.width = '';
     wrap.style.height = '';
