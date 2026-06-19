@@ -144,13 +144,18 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .tick.night.hour { color: #311b92; font-weight: 700; }
 .b-lane { position: relative; border-right: 1px solid var(--g3); background: #fff; }
 .b-lane.z-facility { background: #fbfdfb; }
-.b-lane.z-night { background: #fbfaff; }
+/* 夜勤レーン/右軸は日中の横断罫線(.b-grid z:1)より前面に＝不透明背景で日中罫線を夜勤列に出さない(要件5) */
+.b-lane.z-night { background: #fbfaff; z-index: 2; }
+.b-axis.r { z-index: 2; }
 .lane-off { position: absolute; left: 0; right: 0; background: var(--g1);
   background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.03) 6px 12px);
   pointer-events: none; }
 .b-grid { position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; z-index: 1; }
 .gline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--g2); }
 .gline.hour { border-top-color: var(--g3); }
+/* 夜勤レーン内の独自横罫線（夜勤時刻に整合）。淡紫＝夜勤軸の色味に合わせる */
+.gline-n { position: absolute; left: 0; right: 0; border-top: 1px solid #ded7f2; pointer-events: none; }
+.gline-n.hour { border-top-color: #b3a3e0; }
 
 /* ===== タスクブロック ===== */
 .b-task {
@@ -418,13 +423,14 @@ body.printing .p-task .pt-name {
 }
 /* 施設業務名は控えめ＝小さく細字・淡色 */
 body.printing .p-task .pt-name.pt-name-fac { font-size: 13px; font-weight: 400; color: #555; }
-/* ケア内容＝最大・各行の右端にチェック□（画面に合わせる）。内容を目立たせる（太字） */
+/* ケア内容＝最大・各行の右端にチェック□（画面に合わせる）。内容を目立たせる（太字）。
+   1行に詰めず各ケアごとに行を使い、長文は折返し可(要件3)。□は大きめ。 */
 body.printing .p-task .pt-item {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
-  line-height: 1.12; flex: 0 0 auto; overflow: hidden;
+  line-height: 1.12; flex: 0 0 auto;
 }
-body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-body.printing .p-task .pt-cb { font-size: 13px; color: #000; flex-shrink: 0; }
+body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; white-space: normal; word-break: break-word; }
+body.printing .p-task .pt-cb { font-size: 18px; line-height: 1; color: #000; flex-shrink: 0; }
 /* 固定コメント(印刷) */
 body.printing .p-task .pt-comment {
   color: #000; line-height: 1.15; flex: 0 0 auto; overflow: hidden;
@@ -453,6 +459,8 @@ body.printing .h-alert { display: none; }
 body.printing .tick, body.printing .tick.hour, body.printing .tick.night { color: #000; }
 body.printing .gline { border-top-color: #bbb; }
 body.printing .gline.hour { border-top-color: #555; }
+body.printing .gline-n { border-top-color: #bbb; }
+body.printing .gline-n.hour { border-top-color: #555; }
 body.printing .b-heads { border-bottom-color: #000; }
 body.printing .b-head.zone-div, body.printing .b-lane.zone-div { border-left-color: #000; }
 body.printing .rs { display: none; }
@@ -786,13 +794,14 @@ body.printing .rs { display: none; }
     { from: 1020, to: 1260, pxPerHour: ROW_PX * 15,  label: '夕 17-21時' }
   ];
 
-  /* 印刷専用ゾーン: 多忙帯(7-9時・17-21時)を拡大し原寸で複数A3ページに渡す。画面は DEFAULT_ZONES のまま。
-   * 印刷時のみ buildScale に渡す。totalH≈2747px(A3縦印字域1542px→約2ページ・縮小なし)。 */
+  /* 印刷専用ゾーン: 多忙帯(7-9・17-21)に加え日中(9-18)も拡大＝A3縦の縦余白を縮小し文字を大きく(要件1)。
+   * 画面は DEFAULT_ZONES のまま。印刷時のみ buildScale に渡す。totalH=227R≈3087px。
+   * 実際の充填は fitPrint が盤面幅に応じて縦倍率kを掛けて1枚にフルフィットさせる(列数依存の余白吸収)。 */
   var PRINT_ZONES = [
     { from: 420,  to: 540,  pxPerHour: ROW_PX * 18, label: '朝 7-9時' },
-    { from: 540,  to: 720,  pxPerHour: ROW_PX * 12, label: '午前 9-12時' },
-    { from: 720,  to: 780,  pxPerHour: ROW_PX * 10, label: '昼 12-13時' },
-    { from: 780,  to: 1020, pxPerHour: ROW_PX * 12, label: '午後 13-17時' },
+    { from: 540,  to: 720,  pxPerHour: ROW_PX * 15, label: '午前 9-12時' },
+    { from: 720,  to: 780,  pxPerHour: ROW_PX * 14, label: '昼 12-13時' },
+    { from: 780,  to: 1020, pxPerHour: ROW_PX * 15, label: '午後 13-17時' },
     { from: 1020, to: 1260, pxPerHour: ROW_PX * 18, label: '夕 17-21時' }
   ];
   var PRINT_NIGHT_PX_MIN = ROW_PX / 5;   /* 印刷夜勤軸: 1行=5分相当(2.72px/分)で 0-8時を拡大 */
@@ -3399,6 +3408,23 @@ body.printing .rs { display: none; }
     return ov;
   }
 
+  /* 夜勤レーン専用の横罫線（夜勤軸基準: 30分線・時間線）。夜勤セルと整合し、夜勤列のみに描く＝
+   * 日中表へ波及しない(要件5)。日中の横断罫線はレーン背景(z:2)で夜勤列では隠れる。 */
+  function buildNightGrid(scale) {
+    var frag = document.createDocumentFragment();
+    for (var s = 0; s < TS.NIGHT_SEGS.length; s++) {
+      var seg = TS.NIGHT_SEGS[s];
+      for (var m = seg.from; m < seg.to; m += 30) {
+        var y = TS.nightYFromMin(scale, m);
+        if (y === null) continue;
+        var ln = el('div', 'gline-n' + (m % 60 === 0 ? ' hour' : ''));
+        ln.style.top = y + 'px';
+        frag.appendChild(ln);
+      }
+    }
+    return frag;
+  }
+
   /* コメント吹き出しの表示フォント px。size:小/中/大。印刷は canvas が縮小zoomされるため基準を大きめに */
   function commentFontPx_(size, isPrint) {
     if (isPrint) return size === '小' ? 14 : (size === '大' ? 20 : 17);
@@ -3526,8 +3552,12 @@ body.printing .rs { display: none; }
       var rows = pitems.length;
       var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行 */
       var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
-      var fContent = Math.max(8, Math.min(20, Math.floor(perLine * 0.82)));   /* ケア内容＝最大(縦長枠でより大きく) */
-      var fSmall = Math.max(7, Math.min(16, Math.floor(fContent * 0.74)));    /* 時刻・名前＝内容より小さく */
+      /* 印刷は後段でズーム縮小されるため論理フォント上限を高く取り「枠内最大」(要件4)。画面は従来上限。
+       * 内容cap=32(過剰拡大・過剰折返しを防ぐ)、時刻/名前は内容の0.80(時刻を少し大きく=要件2・ただし内容未満)。 */
+      var capC = ex.print ? 32 : 20;
+      var capS = ex.print ? 26 : 16;
+      var fContent = Math.max(8, Math.min(capC, Math.floor(perLine * 0.82)));   /* ケア内容＝最大(縦長枠でより大きく) */
+      var fSmall = Math.max(7, Math.min(capS, Math.floor(fContent * 0.80)));    /* 時刻・名前＝内容より少し小さく */
       if (!hideTime) {
         var tEl = txt('div', 'pt-time', range);
         tEl.style.fontSize = fSmall + 'px';
@@ -3710,6 +3740,7 @@ body.printing .rs { display: none; }
       if (isNight) lane.setAttribute('data-night', '1');
       var shades = buildOffShades(colDef, staffById, scale, isNight);
       for (var sh = 0; sh < shades.length; sh++) lane.appendChild(shades[sh]);
+      if (isNight) lane.appendChild(buildNightGrid(scale));   /* 夜勤独自罫線(要件5) */
       canvas.appendChild(lane);
       laneByCol[colDef.col] = lane;
       nightByCol[colDef.col] = isNight;
@@ -5616,23 +5647,56 @@ body.printing .rs { display: none; }
       f = nf;
     }
   }
-  /* 印刷直前(zoom前): 各枠の 時刻/名前/ケア内容 を各1行へ収め(縮小)、氏名は余裕時に拡大(要件3) */
+  /* 要素を availW まで拡大（1pxずつ・横幅96%/縦溢れ/上限capPxで停止）。時刻の右余白を使い切る(要件2) */
+  function growToW_(frame, el, availW, capPx) {
+    if (!el || availW <= 0 || !capPx) return;
+    var clientH = frame.clientHeight;
+    var rng = document.createRange(); rng.selectNodeContents(el);
+    var textW = rng.getBoundingClientRect().width;
+    if (textW <= 0) return;
+    var cur = parseFloat(getComputedStyle(el).fontSize) || 12, f = cur, guard = 0;
+    if (capPx <= cur) return;
+    while (f < capPx && guard < 30) {
+      guard++;
+      var nf = f + 1;
+      if (textW * (nf / cur) > availW * 0.96) break;
+      el.style.fontSize = nf + 'px';
+      if (usedH_(frame) > clientH - 1) { el.style.fontSize = f + 'px'; break; }
+      f = nf;
+    }
+  }
+  /* 印刷直前(zoom前): 時刻/名前は1行に収め(時刻は右余白まで拡大=要件2)、ケア内容は1行強制せず折返し可(要件3)、氏名は余裕時に拡大 */
   function fitPrintText(board) {
-    var frames = board.querySelectorAll('.p-task'), i, j;
+    var frames = board.querySelectorAll('.p-task'), i;
     for (i = 0; i < frames.length; i++) {
       var fr = frames[i];
       var availW = fr.clientWidth - 4;
       if (availW <= 0) continue;
-      var items = fr.querySelectorAll('.pt-item');
-      for (j = 0; j < items.length; j++) {
-        var tx = items[j].querySelector('.pt-item-tx'); if (!tx) continue;
-        var cb = items[j].querySelector('.pt-cb');
-        shrinkToW_(tx, availW - (cb ? cb.offsetWidth + 4 : 0));   /* 内容＝テキスト+□が1行に収まるよう縮小 */
-      }
-      shrinkToW_(fr.querySelector('.pt-time'), availW);
+      /* ケア内容は1行に詰めない(要件3)＝CSSで折返し。横幅縮小はしない＝枠内最大のまま各行表示 */
+      var tEl = fr.querySelector('.pt-time');
+      /* 時刻=右余白と行スロットの縦余裕まで拡大(要件2)。上限26pxは固定＝短枠で内容より少し大きくなり得るが
+       * 縦に詰まった枠(内容が枠を満たす)では growToW_ の縦ガードで自然に止まる＝内容を圧迫しない。 */
+      if (tEl) { shrinkToW_(tEl, availW); growToW_(fr, tEl, availW, 26); }
       var nm = fr.querySelector('.pt-name');
       if (nm && nm.className.indexOf('pt-name-fac') < 0) { shrinkToW_(nm, availW); enlargeName_(fr, nm, availW); }
     }
+  }
+  /* 盤面の実効横幅＝右(夜勤)軸の右端まで */
+  function measurePrintW_(board) {
+    var w = board.scrollWidth || 1;
+    var cv = board.querySelector('.b-canvas');
+    var ax = cv ? cv.querySelector('.b-axis.r') : null;
+    if (ax) w = ax.offsetLeft + ax.offsetWidth;
+    return w;
+  }
+  /* PRINT_ZONES を縦k倍した複製(旧Safari: map/spread不使用) */
+  function scaleZones_(zones, k) {
+    var out = [];
+    for (var i = 0; i < zones.length; i++) {
+      var z = zones[i];
+      out.push({ from: z.from, to: z.to, pxPerHour: z.pxPerHour * k, label: z.label });
+    }
+    return out;
   }
   var printSavedScroll = null;
   var printActive = false;   /* navPrint→print→beforeprint の再入を1回に集約 */
@@ -5646,19 +5710,35 @@ body.printing .rs { display: none; }
     if (printSavedScroll === null) printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
     var scrBoardW = board.scrollWidth, scrBoardH = board.scrollHeight;   /* 画面盤面サイズ(全体コメント座標の写像基準。再描画前に取得) */
     document.body.classList.add('printing');   /* .p-task / body.printing CSS を有効化 */
-    /* 印刷専用scale(多忙帯拡大・夜勤拡大)で printMode 再描画。選択は印刷しない */
-    var printScale = TS.buildScale(TS.PRINT_ZONES);
+    /* 1パス目: 印刷scale(日中拡大・夜勤拡大)で printMode 描画→盤面幅を実測。選択は印刷しない */
+    var pz = TS.PRINT_ZONES;
+    var printScale = TS.buildScale(pz);
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
-    B.render(board, day, TS.PRINT_ZONES, printScale,
+    B.render(board, day, pz, printScale,
       { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
-    try { fitPrintText(board); } catch (e) {}   /* 時刻/名前/内容を各1行へ収め・氏名は余裕時に拡大(zoom前に実測) */
-    /* 両軸フィット: 横幅・縦高とも用紙内に収める等方zoom＝A3縦1枚に必ず収める。拡大はしない＝原寸クリスプ(scaleY不使用) */
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
-    var w = board.scrollWidth || 1;
-    var cv = board.querySelector('.b-canvas');
-    var ax = cv ? cv.querySelector('.b-axis.r') : null;
-    if (ax) w = ax.offsetLeft + ax.offsetWidth;
+    var w = measurePrintW_(board);
+    /* A3縦フルフィット(要件1): 盤面の縦横比を用紙(1508/1078)に合わせ、PRINT_ZONES を縦k倍して再描画。
+       k=(1508*w/1078 - ヘッダ高)/totalH。列数が多い(横長)→k>1で縦伸長し下余白を消す。列数が少ない(縦長)→k<1で
+       縦圧縮し右余白を消す。上限2.5/下限0.6。これで列数に依らず縦横とも用紙を使い切る(文字面積は保存)。 */
+    var heads = board.querySelector('.b-heads');
+    var headerH = heads ? heads.offsetHeight : 0;
+    var k = (PRINT_AVAIL.h * w / PRINT_AVAIL.w - headerH) / (printScale.totalH || 1);
+    if (k > 2.5) k = 2.5;
+    if (k < 0.6) k = 0.6;
+    if (Math.abs(k - 1) > 0.01) {
+      var pz2 = scaleZones_(pz, k);
+      var ps2 = TS.buildScale(pz2);
+      ps2.nightPxMin = TS.PRINT_NIGHT_PX_MIN * k;
+      B.render(board, day, pz2, ps2,
+        { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
+      board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
+      board.style.minWidth = '0'; board.style.width = '';
+      w = measurePrintW_(board);
+    }
+    try { fitPrintText(board); } catch (e) {}   /* 時刻拡大/名前1行/内容折返し(zoom前に実測) */
+    /* 両軸フィット: 横幅・縦高とも用紙内に収める等方zoom＝A3縦1枚に必ず収める。拡大はしない */
     var hgt = board.scrollHeight || 1;          /* ヘッダ+canvas の全高 */
     var z = Math.min(PRINT_AVAIL.w / w, PRINT_AVAIL.h / hgt);
     if (z > 1) z = 1;
