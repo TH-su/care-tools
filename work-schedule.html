@@ -100,6 +100,7 @@ body {
 .chip.k-fac  { background: var(--c-fac);  border-color: var(--c-fac-b); }
 .chip.k-brk  { background: var(--c-brk);  border-color: var(--c-brk-b); }
 .chip.k-free { background: var(--c-free); border-color: var(--c-free-b); }
+.chip.k-admin { background: #e8eef5; border-color: #90a4c8; }   /* 事務(トレイchip・要件3) */
 
 /* ===== ボード ===== */
 .board-wrap {
@@ -180,6 +181,8 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-task.k-gui  { background: var(--c-gui);  border-color: var(--c-gui-b); }
 .b-task.k-free { background: var(--c-free); border-color: var(--c-free-b); }
 .b-task.k-free .t-name { color: #33691e; }
+.b-task.k-admin { background: #e8eef5; border-color: #90a4c8; }   /* 事務=薄青(画面・要件3) */
+.b-task.k-admin .t-name { color: #2c4a7c; }
 .b-task .t-time { font-size: 9.5px; color: var(--g7); white-space: nowrap; }
 .b-task .t-time b { color: var(--g8); }
 .b-task .t-name { font-weight: 700; font-size: 11.5px; white-space: nowrap; }
@@ -472,7 +475,11 @@ body.printing .b-task.hosp * { color: #c9c9c9 !important; }
 /* 盤面の白黒化 */
 body.printing .b-lane, body.printing .b-lane.z-facility, body.printing .b-lane.z-night { background: #fff; }
 /* 勤務時間外オーバーレイ(要件B6の濃いグレーは画面のみ)。印刷は従来どおり淡色・斜線なしへ戻す */
-body.printing .lane-off { background: #f1f3f4; background-image: none; }
+/* 勤務時間外は印刷で暗めグレーへ(要件3a)。斜線は出さない。 */
+body.printing .lane-off { background: #b9bdc2; background-image: none; }
+/* 自由枠・事務は印刷で薄めグレーに統一(要件3)。.p-task の白背景(!important)を上書きするため同等以上の詳細度＋!important */
+body.printing .b-task.p-task.k-free { background: #e8eaed !important; }
+body.printing .b-task.p-task.k-admin { background: #e8eaed !important; }
 body.printing .b-head, body.printing .b-head.z-facility, body.printing .b-head.z-night { background: #fff; }
 body.printing .b-head .h-no, body.printing .b-head .h-name, body.printing .b-head .h-time { color: #000; }
 body.printing .b-head .h-role { background: #fff; color: #000; border: 1px solid #000; }
@@ -597,6 +604,7 @@ body.printing .rs { display: none; }
       <button data-k="care" class="on">入居者支援</button>
       <button data-k="facility">施設業務</button>
       <button data-k="break">休憩</button>
+      <button data-k="admin">事務</button>
       <button data-k="free">自由</button>
     </div>
   </div>
@@ -1858,7 +1866,7 @@ body.printing .rs { display: none; }
    * - 臼井: 訪問介護員の左端(①=slot_visit_1)
    * - 緒方瞳: 施設外部の利用者対応専任のため訪問⑫(slot_visit_12) */
   var RESERVED_SLOTS = [
-    { nameKey: '臼井', slotId: 'slot_visit_1' },
+    { nameKey: '臼井', slotId: 'slot_visit_1', exclusive: true },
     { nameKey: '緒方瞳', slotId: 'slot_visit_12' }
   ];
   function stripName_(n) { return String(n === null || n === undefined ? '' : n).replace(/[\s　]/g, ''); }
@@ -2004,9 +2012,11 @@ body.printing .rs { display: none; }
    * columns/staff を破壊的に更新。変更が有れば true(冪等)。 */
   function mergeStrayNightCols(columns, staff, tasks) {
     if (!columns || !columns.length) return false;
-    var careSlots = {}, byId = {}, i, m;
+    /* 参照スロット = いずれかの task(種別問わず)が staffId で指しているスロット。
+     * care だけでなく全タスクを対象にし、参照のある夜勤列は絶対に消さない(支援枠の消失=利用者不利益・収入損失を物理的に防ぐ)。 */
+    var refSlots = {}, byId = {}, i, m;
     if (tasks) for (i = 0; i < tasks.length; i++) {
-      if (tasks[i].kind === 'care' && tasks[i].staffId) careSlots[tasks[i].staffId] = true;
+      if (tasks[i].staffId) refSlots[tasks[i].staffId] = true;
     }
     if (staff) for (i = 0; i < staff.length; i++) byId[staff[i].id] = staff[i];
     var nightIdx = [];
@@ -2014,17 +2024,17 @@ body.printing .rs { display: none; }
     if (nightIdx.length <= 2) return false;
     var keptFac = false, keptVisit = false, removeIds = {}, removeIdx = [], k;
     for (k = 0; k < nightIdx.length; k++) {
-      var col = columns[nightIdx[k]], hasCare = false, hasName = false;
+      var col = columns[nightIdx[k]], hasRef = false, hasName = false;
       for (m = 0; m < col.staffIds.length; m++) {
-        if (careSlots[col.staffIds[m]]) hasCare = true;
+        if (refSlots[col.staffIds[m]]) hasRef = true;   /* どれか1スロットでも参照あれば列ごと保持 */
         var sN = byId[col.staffIds[m]];
-        if (sN && sN.name) hasName = true;   /* 氏名のある列(=シフト反映済)は絶対に消さない(要件6) */
+        if (sN && sN.name) hasName = true;   /* 氏名のある列(=シフト反映済)は絶対に消さない(要件6/夜勤連携) */
       }
       var isFirstFac = (col.division === '施設' && !keptFac);
       var isFirstVisit = (col.division === '訪問' && !keptVisit);
       if (isFirstFac) keptFac = true;
       if (isFirstVisit) keptVisit = true;
-      if (!isFirstFac && !isFirstVisit && !hasCare && !hasName) {   /* 余分列かつcare無し・氏名無し＝除去 */
+      if (!isFirstFac && !isFirstVisit && !hasRef && !hasName) {   /* 余分列かつ参照無し・氏名無し＝除去 */
         removeIdx.push(nightIdx[k]);
         for (m = 0; m < col.staffIds.length; m++) removeIds[col.staffIds[m]] = true;
       }
@@ -2040,6 +2050,43 @@ body.printing .rs { display: none; }
       for (i = 0; i < staff.length; i++) if (colBy[staff[i].id] !== undefined) staff[i].col = colBy[staff[i].id];
     }
     return true;
+  }
+
+  /* 【安全網・要件1】参照先(staffId)が staff に存在しないタスクを未配置トレイ(staffId=null)へ退避する。
+   * board.render は staffId が解決できない枠を無言スキップする＝支援枠が"消える"。これを物理的に防ぐ最終防御:
+   * 列再編(merge/trim/付替)で孤児化した枠は必ずトレイに出して可視化する。tasks を破壊的に更新し退避件数を返す。 */
+  function rescueOrphanTasks(staff, tasks) {
+    if (!tasks || !tasks.length) return 0;
+    var valid = {}, i, n = 0;
+    if (staff) for (i = 0; i < staff.length; i++) valid[staff[i].id] = true;
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (t.staffId !== null && t.staffId !== undefined && !valid[t.staffId]) {
+        t.staffId = null;   /* 未配置トレイへ＝画面に必ず見える(消失しない) */
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /* detail(中点'・'結合文字列) → contents配列。「食事・薬確認」のように '・' を含むプリセットは
+   * 先に保護してから分割＝1チップ=1要素を保つ(要件4・週間計画とワースケで意味単位を一致させる)。空要素は捨てる。 */
+  function splitDetail(d) {
+    if (!d) return [];
+    var s = String(d);
+    var presets = (M && M.CONTENT_PRESETS) ? M.CONTENT_PRESETS : [];
+    var SEP = '';
+    var comps = [], i;
+    for (i = 0; i < presets.length; i++) { if (String(presets[i]).indexOf('・') >= 0) comps.push(presets[i]); }
+    for (i = 0; i < comps.length; i++) { s = s.split(comps[i]).join(SEP + i + SEP); }   /* 複合プリセットを一時退避 */
+    var parts = s.split('・'), out = [], p, c;
+    for (p = 0; p < parts.length; p++) {
+      var tok = parts[p].replace(/^\s+|\s+$/g, '');
+      if (!tok) continue;
+      for (c = 0; c < comps.length; c++) { tok = tok.split(SEP + c + SEP).join(comps[c]); }   /* 復元 */
+      if (tok) out.push(tok);
+    }
+    return out;
   }
 
   /* 列割当: 施設→訪問→夜勤の順。夜勤は ake/iri をペアで同一列に同居させる。
@@ -2161,14 +2208,8 @@ body.printing .rs { display: none; }
           errors.push({ reason: res.name + ': 時刻が不正です (' + ev.startTime + '-' + ev.endTime + ')' });
           continue;
         }
-        var contents = [];
-        if (ev.detail) {   /* detailは中点結合文字列＝配列へ分解(要件4: 1要素包みだと別内容と混ざる) */
-          var dparts = String(ev.detail).split('・');
-          for (var dp = 0; dp < dparts.length; dp++) {
-            var dpv = dparts[dp].replace(/^\s+|\s+$/g, '');
-            if (dpv) contents.push(dpv);
-          }
-        }
+        /* detailは中点結合文字列＝配列へ分解(要件4)。複合プリセット(食事・薬確認)はsplitDetailが保護＝1要素を保つ */
+        var contents = ev.detail ? splitDetail(ev.detail) : [];
         var tags = [];
         if (ev.notes) tags.push(String(ev.notes));
         var t = M.newTask({
@@ -2557,6 +2598,8 @@ body.printing .rs { display: none; }
             list.splice(j, 1);
           } else j++;
         }
+        /* 排他予約(臼井①): 本人が不在の日も列を予約し他職員を入れない＝①は常に臼井専用 */
+        if (rule.exclusive) taken[target.id] = true;
       }
       /* 残りを氏名でグルーピング（同名＝分割勤務は1列に複数ブロックとして集約） */
       var order = [], byName = {};
@@ -2701,6 +2744,8 @@ body.printing .rs { display: none; }
     normalizeFacilityOrder: normalizeFacilityOrder,
     normalizeNightCareDivision: normalizeNightCareDivision,
     mergeStrayNightCols: mergeStrayNightCols,
+    rescueOrphanTasks: rescueOrphanTasks,
+    splitDetail: splitDetail,
     DEFAULT_COLS: DEFAULT_COLS,
     buildColumns: buildColumns,
     moveColumn: moveColumn,
@@ -3388,6 +3433,7 @@ body.printing .rs { display: none; }
   function kindClass(t) {
     if (t.kind === 'break') return 'k-brk';
     if (t.kind === 'free') return 'k-free';
+    if (t.kind === 'admin') return 'k-admin';   /* 事務(要件3) */
     if (t.kind === 'facility') {
       var lb = t.label || '';
       if (lb.indexOf('誘導') >= 0 || lb.indexOf('配膳') >= 0) return 'k-gui';
@@ -3609,10 +3655,10 @@ body.printing .rs { display: none; }
     var svc = M.SVC[t.svcCode];
     var range = M.fmtRange(t.start, t.end, TS.minToTime);
     var nameText = t.kind === 'care' ? t.residentName
-      : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '' : '施設業務')));
+      : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '' : (t.kind === 'admin' ? '事務' : '施設業務'))));
     if (t.tentative) nameText = '（' + nameText + '）';
-    /* 施設業務の枠は時間を表示しない（実施時間は任意のため）。誘導/配膳など別ラベルの施設業務は時刻維持 */
-    var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
+    /* 施設業務・事務の枠は時間を表示しない（実施時間は任意のため）。誘導/配膳など別ラベルの施設業務は時刻維持 */
+    var hideTime = (t.kind === 'admin') || (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
 
     if (ex.print) {
       /* 【印刷確定設定・保護対象】この ex.print 分岐(フォント算出/夜勤分配/data-dur/内容生成)は
@@ -3652,8 +3698,10 @@ body.printing .rs { display: none; }
       }
       var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
       if (hideTime) {
-        /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px・以前より大きめ) */
-        nmEl.style.fontSize = Math.max(13, Math.min(21, fSmall)) + 'px';
+        /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px)。
+         * 事務(admin)は施設業務より少し大きめ(×1.15・上限24px・要件3)。 */
+        if (t.kind === 'admin') nmEl.style.fontSize = Math.max(13, Math.min(24, Math.round(fSmall * 1.15))) + 'px';
+        else nmEl.style.fontSize = Math.max(13, Math.min(21, fSmall)) + 'px';
       } else if (nightHideContent) {
         nmEl.style.fontSize = nightNameF + 'px';   /* 夜勤=時刻より小さめ(要件2C) */
       } else {
@@ -4738,6 +4786,7 @@ body.printing .rs { display: none; }
           IM.normalizeFacilityOrder(p.columns, p.staff);        /* 施設列を出勤時間順へ（早番=左・既存保存日も即反映） */
           IM.normalizeNightCareDivision(p.columns, p.staff, p.tasks);  /* 深夜2:00以降の夜勤支援を夜訪問列へ */
           IM.mergeStrayNightCols(p.columns, p.staff, p.tasks);         /* 誤判定で増えた夜勤3列目(care無し)を除去＝2列に */
+          IM.rescueOrphanTasks(p.staff, p.tasks);   /* 安全網: 参照先を失った支援枠を未配置トレイへ(消失防止・要件1) */
         }
         return p;
       }
@@ -4863,13 +4912,8 @@ body.printing .rs { display: none; }
   /* detail(中点結合文字列) → contents配列 へ復元（join('・')の逆。空要素は捨てる）。
    * これを使わず [detail] と1要素で包むと「掃除・洗濯」が1チップ化し、表示で別内容と混ざって見える(要件4)。 */
   function detailToContents_(d) {
-    if (!d) return [];
-    var parts = String(d).split('・'), out = [], i;
-    for (i = 0; i < parts.length; i++) {
-      var s = parts[i] != null ? String(parts[i]).replace(/^\s+|\s+$/g, '') : '';
-      if (s) out.push(s);
-    }
-    return out;
+    /* 複合プリセット(食事・薬確認)を保護して分割＝1チップ=1要素を保つ(要件4・週間計画と一致) */
+    return IM.splitDetail(d);
   }
   /* ワースケ→週間計画：ケア内容(支援内容・詳細=detail)のみ書き戻す。時刻等は書き戻さない。
    * weeklyRef.evId で care_schedule_v2 の該当eventを引き、detail=contents.join('・') を反映→保存＋クラウドpush。 */
@@ -5173,7 +5217,7 @@ body.printing .rs { display: none; }
       c.setAttribute('data-id', t.id);
       var svc = M.SVC[t.svcCode];
       var name = t.kind === 'care' ? t.residentName
-        : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '自由枠' : '施設業務')));
+        : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '自由枠' : (t.kind === 'admin' ? '事務' : '施設業務'))));
       c.innerHTML = '<span class="c-name"></span><br><span class="c-sub"></span>';
       c.querySelector('.c-name').textContent = name + (svc ? ' ' + svc.short : '');
       c.querySelector('.c-sub').textContent =
@@ -5303,7 +5347,7 @@ body.printing .rs { display: none; }
     }
     $('fResident').style.display = kind === 'care' ? '' : 'none';
     $('fSvc').style.display = kind === 'care' ? '' : 'none';
-    $('fLabel').style.display = (kind === 'facility' || kind === 'free') ? '' : 'none';
+    $('fLabel').style.display = (kind === 'facility' || kind === 'free' || kind === 'admin') ? '' : 'none';
     $('fContents').style.display = kind === 'care' ? '' : 'none';
   }
   function renderContentChips() {
@@ -5400,8 +5444,9 @@ body.printing .rs { display: none; }
       residentId: kind === 'care' ? 'rn_' + residentName : null,
       svcCode: kind === 'care' ? $('edSvc').value : '',
       label: kind === 'facility' ? ($('edLabel').value.trim() || '施設業務')
+           : (kind === 'admin' ? ($('edLabel').value.trim() || '事務')
            : (kind === 'free' ? ($('edLabel').value.trim() || '自由枠')
-           : (kind === 'break' ? '休憩時間' : '')),
+           : (kind === 'break' ? '休憩時間' : ''))),
       memo: $('edMemo').value.trim(),
       start: start, end: end, staffId: staffId,
       contents: kind === 'care' ? ui.editContents.slice() : [],
@@ -5678,7 +5723,7 @@ body.printing .rs { display: none; }
         var d = document.createElement('div');
         d.className = 'ai';
         var name = t.kind === 'care' ? t.residentName
-          : (t.label || (t.kind === 'break' ? '休憩' : (t.kind === 'free' ? '自由枠' : '施設業務')));
+          : (t.label || (t.kind === 'break' ? '休憩' : (t.kind === 'free' ? '自由枠' : (t.kind === 'admin' ? '事務' : '施設業務'))));
         d.innerHTML = '<span class="am"></span><span class="as"></span>';
         d.querySelector('.am').textContent = name;
         d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime);
@@ -6355,6 +6400,7 @@ body.printing .rs { display: none; }
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
       try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填 */
+      try { rescueOrphansInStore_(); } catch (eR) {}   /* 安全網: 孤児化した支援枠を未配置トレイへ(消失防止・要件1) */
       var msg;
       if (res.filled === 0) {
         var staffN = (data.staff && data.staff.length) ? data.staff.length : 0;
@@ -6793,6 +6839,22 @@ body.printing .rs { display: none; }
       }
     }
     if (changed) store.dispatch({ type: 'SET_TASKS', tasks: tasks });
+  }
+
+  /* 【安全網・要件1】現在の盤面で参照先(staffId)を失った支援枠を未配置トレイへ退避＝枠の無言消失を防ぐ。
+   * 列再編(trim/merge/付替)後に呼ぶ。退避が起きたら通知する。store のタスクは複製してSET_TASKS。 */
+  function rescueOrphansInStore_() {
+    var day = store.get();
+    if (!day || !day.tasks || !day.tasks.length) return;
+    var clone = [], i, k;
+    for (i = 0; i < day.tasks.length; i++) {
+      var c = {}; for (k in day.tasks[i]) c[k] = day.tasks[i][k]; clone.push(c);
+    }
+    var n = IM.rescueOrphanTasks(day.staff, clone);
+    if (n > 0) {
+      store.dispatch({ type: 'SET_TASKS', tasks: clone });
+      toast(n + '件の支援枠を未配置トレイへ退避しました（担当列が見つからないため・消失防止）', true);
+    }
   }
 
   function finalizeBoard() {
