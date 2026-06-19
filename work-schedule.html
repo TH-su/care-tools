@@ -142,13 +142,15 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .tick.hour { font-weight: 700; color: var(--g8); font-size: 11px; }
 .tick.night { color: #4527a0; }
 .tick.night.hour { color: #311b92; font-weight: 700; }
-.b-lane { position: relative; border-right: 1px solid var(--g3); background: #fff; }
-.b-lane.z-facility { background: #fbfdfb; }
+/* 空枠(タスクの無いレーン背景)は従来の白から薄グレーへ＝旧「勤務時間外」グレー相当(要件B6) */
+.b-lane { position: relative; border-right: 1px solid var(--g3); background: var(--g1); }
+.b-lane.z-facility { background: #edf1ed; }
 /* 夜勤レーン/右軸は日中の横断罫線(.b-grid z:1)より前面に＝不透明背景で日中罫線を夜勤列に出さない(要件5) */
-.b-lane.z-night { background: #fbfaff; z-index: 2; }
+.b-lane.z-night { background: #edecf4; z-index: 2; }
 .b-axis.r { z-index: 2; }
-.lane-off { position: absolute; left: 0; right: 0; background: var(--g1);
-  background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.03) 6px 12px);
+/* 勤務時間外は空枠グレーより明確に濃いグレーへ(要件B6)。斜線オーバーレイは維持 */
+.lane-off { position: absolute; left: 0; right: 0; background: #c8cdd3;
+  background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.05) 6px 12px);
   pointer-events: none; }
 .b-grid { position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; z-index: 1; }
 .gline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--g2); }
@@ -192,7 +194,10 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-task .t-cb.on { color: var(--ok); }
 .b-task.tentative { border-style: dashed; opacity: .85; }
 .b-task.done { opacity: .62; }
-.b-task.hosp { opacity: .35; filter: grayscale(1); -webkit-filter: grayscale(1); } /* 入院中 */
+/* 入院中(要件B7): グレースケール＋斜線(ストライプ)で枠全体を視覚的に区別。
+ * 背景色(種別色)の上に斜線を重ね、ややフェードさせる。 */
+.b-task.hosp { opacity: .5; filter: grayscale(1); -webkit-filter: grayscale(1);
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.16) 0 5px, transparent 5px 12px); }
 .b-task .t-done {
   position: absolute; top: 1px; right: 2px; width: 16px; height: 16px;
   border-radius: 50%; background: var(--ok); color: #fff; font-size: 11px;
@@ -437,8 +442,10 @@ body.printing .p-task .pt-item {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
   line-height: 1.12; flex: 0 0 auto;
 }
-/* ケア内容は各1行(要件4)＝はみ出しはfitPrintTextが幅実測で縮小し、同一枠内は統一サイズに */
-body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; white-space: nowrap; overflow: hidden; }
+/* ケア内容は各1行(要件4)＝はみ出しはfitPrintTextが幅実測で縮小し、同一枠内は統一サイズに。
+ * 基準は通常太さ。「デイ準備」「返却」のみ<b>で太字化＝その語だけ目立たせる(要件B5)。 */
+body.printing .p-task .pt-item-tx { font-weight: 400; color: #000; white-space: nowrap; overflow: hidden; }
+body.printing .p-task .pt-item-tx b { font-weight: 700; }
 body.printing .p-task .pt-cb { font-size: 18px; line-height: 1; color: #000; flex-shrink: 0; }
 /* 固定コメント(印刷) */
 body.printing .p-task .pt-comment {
@@ -455,11 +462,14 @@ body.printing .tick { font-size: 18px; font-weight: 600; }
 body.printing .tick.hour { font-size: 21px; font-weight: 700; }
 body.printing .b-task.changed { border: 2.5px double #000 !important; }
 body.printing .b-task.tentative { border-style: dashed !important; }
-/* 入院中: 極薄（チェック欄は出さない） */
-body.printing .b-task.hosp { opacity: 1; filter: none; -webkit-filter: none; border-color: #c9c9c9 !important; }
+/* 入院中: 極薄＋斜線で区別（チェック欄は出さない・要件B7）。斜線は淡灰で文字(#c9c9c9)を妨げない */
+body.printing .b-task.hosp { opacity: 1; filter: none; -webkit-filter: none; border-color: #c9c9c9 !important;
+  background-image: repeating-linear-gradient(45deg, #d6d6d6 0 4px, transparent 4px 10px) !important; }
 body.printing .b-task.hosp * { color: #c9c9c9 !important; }
 /* 盤面の白黒化 */
 body.printing .b-lane, body.printing .b-lane.z-facility, body.printing .b-lane.z-night { background: #fff; }
+/* 勤務時間外オーバーレイ(要件B6の濃いグレーは画面のみ)。印刷は従来どおり淡色・斜線なしへ戻す */
+body.printing .lane-off { background: #f1f3f4; background-image: none; }
 body.printing .b-head, body.printing .b-head.z-facility, body.printing .b-head.z-night { background: #fff; }
 body.printing .b-head .h-no, body.printing .b-head .h-name, body.printing .b-head .h-time { color: #000; }
 body.printing .b-head .h-role { background: #fff; color: #000; border: 1px solid #000; }
@@ -3342,6 +3352,35 @@ body.printing .rs { display: none; }
     return e;
   }
 
+  /* 支援枠テキスト(要件B5): 「デイ準備」「返却」を含む部分のみ <b> で太字化。
+   * textNode/createElementで安全に組み立て(innerHTML不使用＝旧Safari/XSS安全)。
+   * 印刷の均一フォント計測(uniformContentFont_)は最終DOMを測るため1行収まりは維持される。 */
+  var BOLD_CARE_WORDS = ['デイ準備', '返却'];
+  function fillCareText(host, text) {
+    var s = String(text === undefined || text === null ? '' : text);
+    var guard = 0;
+    while (s.length && guard++ < 200) {
+      var hitIdx = -1, hitWord = '';
+      for (var i = 0; i < BOLD_CARE_WORDS.length; i++) {
+        var idx = s.indexOf(BOLD_CARE_WORDS[i]);
+        if (idx >= 0 && (hitIdx < 0 || idx < hitIdx)) { hitIdx = idx; hitWord = BOLD_CARE_WORDS[i]; }
+      }
+      if (hitIdx < 0) { host.appendChild(document.createTextNode(s)); break; }
+      if (hitIdx > 0) host.appendChild(document.createTextNode(s.slice(0, hitIdx)));
+      var bEl = document.createElement('b');
+      bEl.textContent = hitWord;
+      host.appendChild(bEl);
+      s = s.slice(hitIdx + hitWord.length);
+    }
+    return host;
+  }
+  function careSpan(cls, text) {
+    var e = document.createElement('span');
+    if (cls) e.className = cls;
+    fillCareText(e, text);
+    return e;
+  }
+
   function kindClass(t) {
     if (t.kind === 'break') return 'k-brk';
     if (t.kind === 'free') return 'k-free';
@@ -3609,8 +3648,8 @@ body.printing .rs { display: none; }
       }
       var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
       if (hideTime) {
-        /* 施設業務名(要件5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜18px) */
-        nmEl.style.fontSize = Math.max(13, Math.min(18, fSmall)) + 'px';
+        /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px・以前より大きめ) */
+        nmEl.style.fontSize = Math.max(13, Math.min(21, fSmall)) + 'px';
       } else if (nightHideContent) {
         nmEl.style.fontSize = nightNameF + 'px';   /* 夜勤=時刻より小さめ(要件2C) */
       } else {
@@ -3620,7 +3659,7 @@ body.printing .rs { display: none; }
       if (!hideTime && !nightHideContent) {
         for (var pi = 0; pi < pitems.length; pi++) {
           var row = el('div', 'pt-item');
-          var itx = txt('span', 'pt-item-tx', pitems[pi]);
+          var itx = careSpan('pt-item-tx', pitems[pi]);
           itx.style.fontSize = fContent + 'px';
           row.appendChild(itx);
           if (!ex.hosp) row.appendChild(txt('span', 'pt-cb', (t.checks && t.checks[pi]) || t.done ? '☑' : '□'));
@@ -3648,7 +3687,7 @@ body.printing .rs { display: none; }
       /* 支援内容を1つずつ縦に並べ、右に実施チェック欄（タップで☑） */
       for (var ci2 = 0; ci2 < items.length; ci2++) {
         var row = el('div', 't-item');
-        row.appendChild(txt('span', 't-item-tx', items[ci2]));
+        row.appendChild(careSpan('t-item-tx', items[ci2]));
         var cbEl = txt('span', 't-cb' + ((t.checks && t.checks[ci2]) ? ' on' : ''),
           (t.checks && t.checks[ci2]) ? '☑' : '□');
         cbEl.setAttribute('data-ci', String(ci2));
@@ -3660,7 +3699,7 @@ body.printing .rs { display: none; }
       var bodyParts = [];
       if (items.length) bodyParts.push(items.join('・'));
       if (tagLine) bodyParts.push(tagLine);
-      if (bodyParts.length && h >= 34) b.appendChild(txt('div', 't-body', bodyParts.join(' ')));
+      if (bodyParts.length && h >= 34) { var bd = el('div', 't-body'); fillCareText(bd, bodyParts.join(' ')); b.appendChild(bd); }
     }
 
     /* コメント: 固定ONは枠外フローティング吹き出し(buildCommentLayer)・未固定は📝バッジのみ(エクセル風) */
@@ -6569,7 +6608,10 @@ body.printing .rs { display: none; }
       for (k = 0; k < tasks.length; k++) {
         occ.push([tasks[k].start, tasks[k].end]);
         if (tasks[k].kind === 'break') hasBreak = true;
-        if (tasks[k].src === 'facwork') hasFacwork = true;
+        /* 「自動充填済み」判定は施設業務/自由枠など実体のある充填のみ。休憩だけ(例: 田中久子の
+         * 固定休憩)は充填済みとみなさない＝残りの勤務時間に施設業務を充填する。二重休憩は
+         * hasBreak ガードで防ぐ。 */
+        if (tasks[k].src === 'facwork' && tasks[k].kind !== 'break') hasFacwork = true;
       }
       /* 既に自動充填済み(=手動編集を尊重)はスキップ。ただし施設業務窓を持つ職員は
        * 16-21等が既にfacworkでも残りの訪問時間帯(12-16)を充填するため対象に含める。 */
@@ -6643,6 +6685,48 @@ body.printing .rs { display: none; }
     return false;
   }
 
+  /* 特例: 固定の休憩枠を自動配置する職員（氏名の完全一致・空白無視）。ハードコード散在を避け定数で集約。
+   * 田中久子＝出勤日ごと14:00-16:00に2時間の休憩（シフト側の特例休憩2hと整合）。
+   * 既に休憩を持つ列は再生成しない＝冪等＋手動移動を尊重。勤務時間内かつ空きの時のみ配置。
+   * fillFacilityWork より前に実行＝この休憩が占有として扱われ、自動休憩は二重に入らない。 */
+  var FIXED_BREAK_STAFF = [{ key: '田中久子', start: 840, end: 960, label: '休憩' }];
+  function fixedBreakFor_(name) {
+    var s = String(name === undefined || name === null ? '' : name).replace(/[\s　]/g, '');
+    for (var i = 0; i < FIXED_BREAK_STAFF.length; i++) {
+      if (s !== '' && s === FIXED_BREAK_STAFF[i].key) return FIXED_BREAK_STAFF[i];
+    }
+    return null;
+  }
+  function fillFixedBreaks(day) {
+    var byStaff = {}, i;
+    for (i = 0; i < day.tasks.length; i++) {
+      var t0 = day.tasks[i];
+      if (!t0.staffId) continue;
+      if (!byStaff[t0.staffId]) byStaff[t0.staffId] = [];
+      byStaff[t0.staffId].push(t0);
+    }
+    var add = [];
+    for (i = 0; i < day.staff.length; i++) {
+      var st = day.staff[i];
+      if (!st.name || st.zone === 'night') continue;
+      var cfg = fixedBreakFor_(st.name);
+      if (!cfg) continue;
+      var ws = st.workStart, we = st.workEnd;
+      if (!(we > ws)) continue;
+      var tasks = byStaff[st.id] || [];
+      var occ = [], hasBreak = false, k;
+      for (k = 0; k < tasks.length; k++) {
+        occ.push([tasks[k].start, tasks[k].end]);
+        if (tasks[k].kind === 'break') hasBreak = true;
+      }
+      if (hasBreak) continue;   /* 冪等＋手動尊重: 既に休憩がある列は触らない */
+      if (cfg.start >= ws && cfg.end <= we && !overlapsOcc_(occ, cfg.start, cfg.end)) {
+        add.push(M.newTask({ kind: 'break', src: 'facwork', label: cfg.label, start: cfg.start, end: cfg.end, staffId: st.id }));
+      }
+    }
+    if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
+  }
+
   /* 盤面整形を適用（空き列詰め→施設業務/休憩充填）。出勤者反映やロード後に呼ぶ。 */
   /* 訪問列内の施設業務窓(st.facWork)を「施設業務」枠(src='facwork')として1時間ごとに配置する。
    * 例: 訪問12-21 の中の 施設16-21 → 訪問列の 16-17/17-18/.../20-21 を施設業務枠に分割。
@@ -6696,6 +6780,7 @@ body.printing .rs { display: none; }
     } catch (e) {}
     try { rebuildFacWindowTasks(); } catch (eN) {}   /* 訪問列内の施設業務窓を施設業務枠として配置 */
     try { fillUsuiFrames(store.get()); } catch (eU) {}   /* 臼井: 12-13休憩＋自由枠を敷き詰め */
+    try { fillFixedBreaks(store.get()); } catch (eFB) {}  /* 田中久子: 14-16固定休憩(施設業務充填の前に占有化) */
     try {
       var add = fillFacilityWork(store.get());
       if (add.length) store.dispatch({ type: 'ADD_TASKS', tasks: add });
