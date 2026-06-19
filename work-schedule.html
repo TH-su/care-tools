@@ -1589,6 +1589,7 @@ body.printing .rs { display: none; }
     for (var i = 0; i < staffList.length; i++) {
       var st = staffList[i];
       if (!st || st.active === false) continue;
+      if (st.status === '退職' || st.status === '休職' || st.status === '非表示') continue;   /* 在籍状況で表示対象外を除外(要件2) */
       if (isDaycareStaff(st)) continue;        /* デイ(通所)職員はワースケ対象外＝除外 */
       var name = st.name ? String(st.name).trim() : '';
       if (!name) continue;
@@ -1600,8 +1601,6 @@ body.printing .rs { display: none; }
       var mraw = cellAt(plan.cells ? plan.cells[st.id] : null, dayNo, dayStr);
       if (mraw !== null) rows.push({ division: mainDiv, raw: mraw, isMain: true });
       var sc = plan.subCells ? plan.subCells[st.id] : null;
-      /* 訪問の従区分行を持つ＝訪問業務をする職員＝夜勤は夜訪問とみなす材料(要件6) */
-      var hasVisitSub = !!(sc && Object.prototype.hasOwnProperty.call(sc, '訪問'));
       if (sc) {
         for (var dv in sc) {
           if (!Object.prototype.hasOwnProperty.call(sc, dv)) continue;
@@ -1615,25 +1614,14 @@ body.printing .rs { display: none; }
         var division = rows[ri].division;
         if (division === '通所') continue;
         var isMainRow = !!rows[ri].isMain;
-        /* 夜勤の区分(施設/訪問)を堅牢に解決(要件6: 夜訪問の取りこぼし防止)。
-         * 従区分(subCells)行はその区分そのもの。主区分(cells)行は、主区分が訪問・訪問グループ・
-         * 訪問の従区分行を持つ のいずれかなら夜訪問へ。これで「夜訪問職員が主区分=施設/未設定で
-         * 夜勤を主セルに書いた」場合でも夜施設へ誤吸収されず夜訪問列へ正しく載る。
-         * 純粋な夜施設職員(訪問の従区分なし)は従来どおり夜施設。 */
-        var nightDiv;
-        if (!isMainRow) nightDiv = (division === '訪問') ? '訪問' : '施設';
-        else if (st.mainDivision === '訪問' || group === 'visit' || hasVisitSub) nightDiv = '訪問';
-        else nightDiv = '施設';
-        /* 夜勤折半(nightSplit)=施設/訪問の両区分を兼務する夜勤専従＝両列に載せる(要件5・最重要)。
-         * nightSplitは職員データに必ず含まれ subCells に依存しない＝cloudがsubCellsを返さなくても確実。 */
-        var nightDivs;
-        if (st.nightSplit && (st.nightSplit['施設'] || st.nightSplit['訪問'])) {
-          nightDivs = [];
-          if (st.nightSplit['施設']) nightDivs.push('施設');
-          if (st.nightSplit['訪問']) nightDivs.push('訪問');
-        } else {
-          nightDivs = [nightDiv];
-        }
+        /* 夜勤の区分は【主区分(mainDivision)に従う】＝施設/訪問を兼務する夜勤専従(夜勤折半)でも
+         * 1列に集約する(ユーザー指示)。主区分=訪問→夜訪問、主区分=施設→夜施設、未設定のみ group で補完。
+         * 従区分行の夜勤も主区分の列へ寄せる(同一人を両列に出さない＝4列増殖を防止)。
+         * 夜訪問に出したい職員はシフト側で主区分=訪問に設定する(予測可能・職員ごとに制御)。 */
+        var nightDiv = (st.mainDivision === '訪問') ? '訪問'
+                     : (st.mainDivision === '施設') ? '施設'
+                     : (group === 'visit' ? '訪問' : '施設');
+        var nightDivs = [nightDiv];
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
         for (var p = 0; p < parts.length; p++) {
@@ -1696,10 +1684,9 @@ body.printing .rs { display: none; }
     var seen = {}, out = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      /* 夜勤は区分も鍵に含める＝同名・同時刻でも施設/訪問の両方を残す(nightSplit兼務・要件5)。
-       * 日勤は従来どおり区分を含めない(同時刻の二重区分=応援行の重複を1件に圧縮)。 */
-      var dk = (a.zone === 'night') ? ((a.division || '') + '|') : '';
-      var key = a.name + '|' + dk + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
+      /* 同名・同役割・同時刻は1件に圧縮(区分は含めない)＝夜勤区分は主区分準拠で1人1列のため、
+       * 主区分+従区分の重複や両区分出力を残さず4列増殖を防ぐ。 */
+      var key = a.name + '|' + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
       if (seen[key]) continue;
       seen[key] = true;
       out.push(a);
@@ -6303,6 +6290,8 @@ body.printing .rs { display: none; }
           'この日はスロット型ではないため自動反映できません（支援マスタから生成された日でご利用ください）。';
         done(null); return;
       }
+      /* 反映後に余分な夜勤列(氏名もケアも無い＝前日等の残留)を除去＝当日実績の出勤者のみに保つ(要件2/3) */
+      try { IM.mergeStrayNightCols(res.columns, res.staff, day.tasks); } catch (eMs) {}
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
       try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填 */
