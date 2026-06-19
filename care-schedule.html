@@ -54,6 +54,9 @@ html, body { height: 100%; overflow: hidden;
   cursor: pointer; white-space: nowrap; transition: background .15s;
 }
 .hdr-btn:hover { background: rgba(255,255,255,.28); }
+.hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
+.hdr-btn.savebtn:hover { background: #1b5e20; }
+.hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
 
 /* ── Summary bar (2段構成) ── */
 .summary-bar {
@@ -567,6 +570,7 @@ select.inp { cursor: pointer; }
     <button class="hdr-btn" onclick="openResidentModal()">👤 入居者</button>
     <button class="hdr-btn" onclick="printWeek()">🖨</button>
     <button class="hdr-btn" onclick="exportJSON()">⬇</button>
+    <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" onclick="manualSave()" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   </div>
 </header>
 
@@ -1633,6 +1637,30 @@ function saveDB() {
   // クラウド自動同期（同期先があれば常に・debounce）
   if (SYNC.hasTarget()) SYNC.scheduleAutoPush();
   return true;
+}
+
+/* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存→クラウドへ即時push（2sデバウンス迂回）。
+ * 同期先未設定でも端末には保存される。 */
+function manualSave() {
+  try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
+  const ok = saveDB();
+  const synced = SYNC.hasTarget();
+  if (synced) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try { SYNC.push(); } catch (e1) {}
+  }
+  flashSave(ok ? (synced ? '✓ 保存しました' : '✓ 端末に保存') : '✗ 保存失敗');
+}
+function flashSave(msg) {
+  const btn = $('#btnSave');
+  if (!btn) return;
+  if (flashSave._t) clearTimeout(flashSave._t);
+  btn.textContent = msg;
+  btn.classList.add('saving');
+  flashSave._t = setTimeout(() => {
+    btn.textContent = btn.dataset.label || '💾 保存';
+    btn.classList.remove('saving');
+  }, 1800);
 }
 
 // ── クラウド同期（Google スプレッドシート + Apps Script） ──
@@ -3297,6 +3325,11 @@ document.addEventListener('keydown', e => {
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
     if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
     if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
+  }
+  if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    manualSave();
+    return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
