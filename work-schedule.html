@@ -400,8 +400,10 @@ textarea.inp { min-height: 110px; font-size: 12px; }
    内容がセルに収まらない場合は下へ引き伸ばす（height:auto / min-height） */
 body.printing .b-task.p-task {
   /* 高さは JS(buildTask) が時間比例の固定値を inline 指定＝下へ伸ばさない。溢れはクリップ。
-     罫線は通常セルと同等の細さ(要件2)＝2重線(.changed)以外は目立たせない。縦flexで内容を優先 */
-  background: #fff !important; border: 0.6px solid #999 !important; border-radius: 2px;
+     罫線は細線(0.5px)でセル端いっぱい(left/right:0)＝表のグリッド線にぴったり重ね1本に見せる(要件5)。
+     2重線(.changed)以外は目立たせない。縦flexで内容を優先 */
+  left: 0; right: 0;
+  background: #fff !important; border: 0.5px solid #8a8a8a !important; border-radius: 0;
   color: #000; padding: 1px 3px; overflow: hidden; box-shadow: none;
   display: flex; flex-direction: column;
 }
@@ -421,7 +423,7 @@ body.printing .p-task .pt-item {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
   line-height: 1.12; flex: 0 0 auto; overflow: hidden;
 }
-body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; overflow: hidden; word-break: break-word; }
+body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 body.printing .p-task .pt-cb { font-size: 13px; color: #000; flex-shrink: 0; }
 /* 固定コメント(印刷) */
 body.printing .p-task .pt-comment {
@@ -432,7 +434,7 @@ body.printing .b-head .h-no { font-size: 16px; }
 body.printing .b-head .h-name { font-size: 22px; }
 body.printing .b-head .h-time { font-size: 15px; }
 /* 印刷時は列幅を拡張して横余白を使い切る（A3縦の横いっぱい＋セルに余裕）。空列は細いまま */
-body.printing { --laneW: 134px; --laneWFac: 112px; --laneWEmpty: 30px; --axW: 62px; }
+body.printing { --laneW: 150px; --laneWFac: 124px; --laneWEmpty: 30px; --axW: 68px; }
 /* 両サイドの時間軸は印刷時に大きく（縮小されても読める） */
 body.printing .tick { font-size: 18px; font-weight: 600; }
 body.printing .tick.hour { font-size: 21px; font-weight: 700; }
@@ -772,15 +774,16 @@ body.printing .rs { display: none; }
 
   var DAY_MIN = 1440;
   var ROW_PX = 13.6;             /* エクセル行高 10.2pt ≒ 13.6px */
-  var NIGHT_PX_MIN = ROW_PX / 10; /* 夜勤軸は常に 1行=10分 */
+  var NIGHT_PX_MIN = ROW_PX / 5;  /* 夜勤軸 1行=5分相当(2.72px/分)＝0-8時の20分枠が3枚潰れず収まる。描画とD&D判定で共有 */
 
-  /* 日中ゾーン（from/to: 分, pxPerHour） */
+  /* 日中ゾーン（from/to: 分, pxPerHour）。多忙帯(7-9時・17-21時)を上下に拡大し盤面を縦長(A3比率寄り)に。
+   * 描画(yFromMin)とD&D判定(minFromY)は同一scaleを共有＝ゾーン変更でもドロップ時刻は自動で正しく追従。 */
   var DEFAULT_ZONES = [
-    { from: 420,  to: 480,  pxPerHour: ROW_PX * 6,   label: '朝 7-8時' },
-    { from: 480,  to: 720,  pxPerHour: ROW_PX * 12,  label: '午前 8-12時' },
+    { from: 420,  to: 540,  pxPerHour: ROW_PX * 15,  label: '朝 7-9時' },
+    { from: 540,  to: 720,  pxPerHour: ROW_PX * 11,  label: '午前 9-12時' },
     { from: 720,  to: 780,  pxPerHour: ROW_PX * 9,   label: '昼 12-13時' },
-    { from: 780,  to: 1050, pxPerHour: ROW_PX * 12,  label: '午後 13-17:30' },
-    { from: 1050, to: 1260, pxPerHour: ROW_PX * 6,   label: '夕 17:30-21時' }
+    { from: 780,  to: 1020, pxPerHour: ROW_PX * 11,  label: '午後 13-17時' },
+    { from: 1020, to: 1260, pxPerHour: ROW_PX * 15,  label: '夕 17-21時' }
   ];
 
   /* 印刷専用ゾーン: 多忙帯(7-9時・17-21時)を拡大し原寸で複数A3ページに渡す。画面は DEFAULT_ZONES のまま。
@@ -1587,6 +1590,13 @@ body.printing .rs { display: none; }
         var division = rows[ri].division;
         if (division === '通所') continue;
         var isMainRow = !!rows[ri].isMain;
+        /* 夜勤の区分(施設/訪問)は group も考慮して解決する。日勤は workZone が group を見るが、
+         * 夜勤は raw division を使っていたため、mainDivision 未設定の訪問職員(group:'visit')が
+         * 施設既定(line217 '施設')で施設へ誤判定され夜勤列が3列に分裂していた。
+         * 明示の区分があればそれ、無ければ group で訪問/施設を決める。 */
+        var nightDiv;
+        if (!isMainRow) nightDiv = (division === '訪問') ? '訪問' : '施設';
+        else nightDiv = st.mainDivision ? (st.mainDivision === '訪問' ? '訪問' : '施設') : (group === 'visit' ? '訪問' : '施設');
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
         for (var p = 0; p < parts.length; p++) {
@@ -1616,16 +1626,16 @@ body.printing .rs { display: none; }
             } else if (part.endMin < part.startMin) {
               /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
                * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
-              out.push({ name: name, zone: 'night', division: division, workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
-              out.push({ name: name, zone: 'night', division: division, workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
+              out.push({ name: name, zone: 'night', division: nightDiv, workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
+              out.push({ name: name, zone: 'night', division: nightDiv, workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
             }
             /* end == start は退化（0分/24時間）として無視 */
           } else if (part.kind === 'nightIn') {
             var ws = (part.startMin !== null) ? part.startMin : 1260;
-            out.push({ name: name, zone: 'night', division: division, workStart: ws, workEnd: 1440, nightRole: 'iri' });
+            out.push({ name: name, zone: 'night', division: nightDiv, workStart: ws, workEnd: 1440, nightRole: 'iri' });
           } else if (part.kind === 'nightOut') {
             var we = (part.endMin !== null) ? part.endMin : 420;
-            out.push({ name: name, zone: 'night', division: division, workStart: 0, workEnd: we, nightRole: 'ake' });
+            out.push({ name: name, zone: 'night', division: nightDiv, workStart: 0, workEnd: we, nightRole: 'ake' });
           }
           /* off / paidOff / publicOff は出勤としない */
         }
@@ -1939,6 +1949,46 @@ body.printing .rs { display: none; }
       changed = true;
     }
     return changed;
+  }
+
+  /* 夜勤列の余分列を除去して「夜施設」「夜訪問」の2列に正準化する。
+   * 誤判定(訪問→施設)で生まれた3列目を掃除: 先頭の施設夜列・先頭の訪問夜列は残し、
+   * それ以外の夜勤列で「care(支援)が1件も無い」ものを列ごと除去(=空のスロット職員を含め削除)。
+   * 支援は事前に normalizeNightCareDivision で正しい列へ寄せてあるため、care無し夜列は安全に削除可。
+   * columns/staff を破壊的に更新。変更が有れば true(冪等)。 */
+  function mergeStrayNightCols(columns, staff, tasks) {
+    if (!columns || !columns.length) return false;
+    var careSlots = {}, i, m;
+    if (tasks) for (i = 0; i < tasks.length; i++) {
+      if (tasks[i].kind === 'care' && tasks[i].staffId) careSlots[tasks[i].staffId] = true;
+    }
+    var nightIdx = [];
+    for (i = 0; i < columns.length; i++) if (columns[i].zone === 'night') nightIdx.push(i);
+    if (nightIdx.length <= 2) return false;
+    var keptFac = false, keptVisit = false, removeIds = {}, removeIdx = [], k;
+    for (k = 0; k < nightIdx.length; k++) {
+      var col = columns[nightIdx[k]], hasCare = false;
+      for (m = 0; m < col.staffIds.length; m++) if (careSlots[col.staffIds[m]]) { hasCare = true; break; }
+      var isFirstFac = (col.division === '施設' && !keptFac);
+      var isFirstVisit = (col.division === '訪問' && !keptVisit);
+      if (isFirstFac) keptFac = true;
+      if (isFirstVisit) keptVisit = true;
+      if (!isFirstFac && !isFirstVisit && !hasCare) {   /* 余分列かつcare無し＝除去 */
+        removeIdx.push(nightIdx[k]);
+        for (m = 0; m < col.staffIds.length; m++) removeIds[col.staffIds[m]] = true;
+      }
+    }
+    if (!removeIdx.length) return false;
+    removeIdx.sort(function (a, b) { return b - a; });
+    for (i = 0; i < removeIdx.length; i++) columns.splice(removeIdx[i], 1);
+    if (staff) for (m = staff.length - 1; m >= 0; m--) if (removeIds[staff[m].id]) staff.splice(m, 1);
+    relabel_(columns);
+    if (staff) {
+      var colBy = {};
+      for (i = 0; i < columns.length; i++) for (m = 0; m < columns[i].staffIds.length; m++) colBy[columns[i].staffIds[m]] = columns[i].col;
+      for (i = 0; i < staff.length; i++) if (colBy[staff[i].id] !== undefined) staff[i].col = colBy[staff[i].id];
+    }
+    return true;
   }
 
   /* 列割当: 施設→訪問→夜勤の順。夜勤は ake/iri をペアで同一列に同居させる。
@@ -2593,6 +2643,7 @@ body.printing .rs { display: none; }
     normalizeNightOrder: normalizeNightOrder,
     normalizeFacilityOrder: normalizeFacilityOrder,
     normalizeNightCareDivision: normalizeNightCareDivision,
+    mergeStrayNightCols: mergeStrayNightCols,
     DEFAULT_COLS: DEFAULT_COLS,
     buildColumns: buildColumns,
     moveColumn: moveColumn,
@@ -3471,12 +3522,12 @@ body.printing .rs { display: none; }
       /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印できるよう1行('実施') */
       var pitems = (t.kind === 'care') ? (t.contents || []).slice() : [];
       if (t.kind === 'care' && t.memo) pitems.push(t.memo);
-      if (t.kind === 'care' && !pitems.length) pitems.push('実施');
+      if (t.kind === 'care' && !pitems.length) pitems.push('');   /* 内容無しでも押印用に□行を1つ。「実施」文字は出さない(要件3) */
       var rows = pitems.length;
       var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行 */
       var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
-      var fContent = Math.max(8, Math.min(16, Math.floor(perLine * 0.82)));   /* ケア内容＝最大 */
-      var fSmall = Math.max(7, Math.min(13, Math.floor(fContent * 0.74)));    /* 時刻・名前＝内容より小さく */
+      var fContent = Math.max(8, Math.min(20, Math.floor(perLine * 0.82)));   /* ケア内容＝最大(縦長枠でより大きく) */
+      var fSmall = Math.max(7, Math.min(16, Math.floor(fContent * 0.74)));    /* 時刻・名前＝内容より小さく */
       if (!hideTime) {
         var tEl = txt('div', 'pt-time', range);
         tEl.style.fontSize = fSmall + 'px';
@@ -4561,6 +4612,7 @@ body.printing .rs { display: none; }
           IM.normalizeNightOrder(p.columns, p.staff);           /* 夜勤列を施設→訪問順へ（既存保存日も即反映） */
           IM.normalizeFacilityOrder(p.columns, p.staff);        /* 施設列を出勤時間順へ（早番=左・既存保存日も即反映） */
           IM.normalizeNightCareDivision(p.columns, p.staff, p.tasks);  /* 深夜2:00以降の夜勤支援を夜訪問列へ */
+          IM.mergeStrayNightCols(p.columns, p.staff, p.tasks);         /* 誤判定で増えた夜勤3列目(care無し)を除去＝2列に */
         }
         return p;
       }
@@ -5533,34 +5585,53 @@ body.printing .rs { display: none; }
     for (var j = 0; j < ch.length; j++) u += ch[j].offsetHeight;
     return u;
   }
-  function fitPrintNames(board) {
-    var names = board.querySelectorAll('.p-task .pt-name');
-    for (var i = 0; i < names.length; i++) {
-      var nm = names[i];
-      if (nm.className.indexOf('pt-name-fac') >= 0) continue;   /* 施設業務名は対象外 */
-      var frame = nm.parentNode;
-      if (!frame) continue;
-      var clientH = frame.clientHeight;
-      if (usedH_(frame) > clientH * 0.78) continue;             /* 縦の余裕が無い枠(混雑枠)は据置 */
-      var availW = nm.clientWidth;
+  /* テキスト要素を availW(px) に収まるよう1行へ縮小（Rangeで実幅計測・改行させない） */
+  function shrinkToW_(el, availW) {
+    if (!el || availW <= 0) return;
+    var rng = document.createRange(); rng.selectNodeContents(el);
+    var textW = rng.getBoundingClientRect().width;
+    if (textW <= availW * 0.99 || textW <= 0) return;
+    var cur = parseFloat(getComputedStyle(el).fontSize) || 12;
+    var nf = Math.floor(cur * (availW * 0.97) / textW);
+    if (nf < 6) nf = 6;
+    if (nf < cur) el.style.fontSize = nf + 'px';
+  }
+  /* 氏名: 縦に余裕がある枠で、横幅と内容フォント上限まで拡大（要件: 名前を大きく・内容は超えない） */
+  function enlargeName_(frame, nm, availW) {
+    var clientH = frame.clientHeight;
+    if (usedH_(frame) > clientH * 0.78) return;
+    var rng = document.createRange(); rng.selectNodeContents(nm);
+    var textW = rng.getBoundingClientRect().width;
+    if (textW <= 0 || availW <= 0) return;
+    var cur = parseFloat(getComputedStyle(nm).fontSize) || 13, f = cur, guard = 0;
+    var itx = frame.querySelector('.pt-item-tx');
+    var CAP = itx ? Math.round(parseFloat(getComputedStyle(itx).fontSize)) : 16;
+    if (CAP < cur) CAP = cur;
+    while (f < CAP && guard < 24) {
+      guard++;
+      var nf = f + 1;
+      if (textW * (nf / cur) > availW * 0.96) break;
+      nm.style.fontSize = nf + 'px';
+      if (usedH_(frame) > clientH - 1) { nm.style.fontSize = f + 'px'; break; }
+      f = nf;
+    }
+  }
+  /* 印刷直前(zoom前): 各枠の 時刻/名前/ケア内容 を各1行へ収め(縮小)、氏名は余裕時に拡大(要件3) */
+  function fitPrintText(board) {
+    var frames = board.querySelectorAll('.p-task'), i, j;
+    for (i = 0; i < frames.length; i++) {
+      var fr = frames[i];
+      var availW = fr.clientWidth - 4;
       if (availW <= 0) continue;
-      var rng = document.createRange();
-      rng.selectNodeContents(nm);
-      var textW = rng.getBoundingClientRect().width;
-      if (textW <= 0) continue;
-      var cur = parseFloat(nm.style.fontSize) || 13, f = cur, guard = 0;
-      /* 上限はその枠のケア内容フォント＝氏名が内容を超えない範囲で内容と同等まで(内容優先を維持しつつ拡大) */
-      var itx = frame.querySelector('.pt-item-tx');
-      var CAP = itx ? Math.round(parseFloat(getComputedStyle(itx).fontSize)) : 16;
-      if (CAP < cur) CAP = cur;
-      while (f < CAP && guard < 24) {
-        guard++;
-        var nf = f + 1;
-        if (textW * (nf / cur) > availW * 0.96) break;          /* 横幅を超える＝停止(長い氏名ほど早く止まる) */
-        nm.style.fontSize = nf + 'px';
-        if (usedH_(frame) > clientH - 1) { nm.style.fontSize = f + 'px'; break; }   /* 縦が埋まる＝1つ戻して停止 */
-        f = nf;
+      var items = fr.querySelectorAll('.pt-item');
+      for (j = 0; j < items.length; j++) {
+        var tx = items[j].querySelector('.pt-item-tx'); if (!tx) continue;
+        var cb = items[j].querySelector('.pt-cb');
+        shrinkToW_(tx, availW - (cb ? cb.offsetWidth + 4 : 0));   /* 内容＝テキスト+□が1行に収まるよう縮小 */
       }
+      shrinkToW_(fr.querySelector('.pt-time'), availW);
+      var nm = fr.querySelector('.pt-name');
+      if (nm && nm.className.indexOf('pt-name-fac') < 0) { shrinkToW_(nm, availW); enlargeName_(fr, nm, availW); }
     }
   }
   var printSavedScroll = null;
@@ -5573,13 +5644,14 @@ body.printing .rs { display: none; }
     printActive = true;
     var wrap = $('boardWrap');
     if (printSavedScroll === null) printSavedScroll = { l: wrap.scrollLeft, t: wrap.scrollTop };
+    var scrBoardW = board.scrollWidth, scrBoardH = board.scrollHeight;   /* 画面盤面サイズ(全体コメント座標の写像基準。再描画前に取得) */
     document.body.classList.add('printing');   /* .p-task / body.printing CSS を有効化 */
     /* 印刷専用scale(多忙帯拡大・夜勤拡大)で printMode 再描画。選択は印刷しない */
     var printScale = TS.buildScale(TS.PRINT_ZONES);
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     B.render(board, day, TS.PRINT_ZONES, printScale,
       { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
-    try { fitPrintNames(board); } catch (e) {}   /* 横に余裕のある枠のみ氏名を拡大(zoom前に実測) */
+    try { fitPrintText(board); } catch (e) {}   /* 時刻/名前/内容を各1行へ収め・氏名は余裕時に拡大(zoom前に実測) */
     /* 両軸フィット: 横幅・縦高とも用紙内に収める等方zoom＝A3縦1枚に必ず収める。拡大はしない＝原寸クリスプ(scaleY不使用) */
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
@@ -5592,7 +5664,7 @@ body.printing .rs { display: none; }
     if (z > 1) z = 1;
     board.style.width = w + 'px';
     board.style.zoom = z;
-    try { addPrintNotes(board); } catch (e) {}   /* 全体コメントを盤面へ静的複製(zoom後＝1ページ測定に影響させない・#board子でzoom追従) */
+    try { addPrintNotes(board, scrBoardW, scrBoardH); } catch (e) {}   /* 全体コメントを盤面へ静的複製(zoom後＝1ページ測定に影響させない・画面座標を写像) */
   }
   function unfitPrint() {
     var board = $('board');
@@ -5689,11 +5761,14 @@ body.printing .rs { display: none; }
     var box = $('noteLayer').querySelector('.b-note[data-id="' + id + '"]'); if (box && box.parentNode) box.parentNode.removeChild(box);
     persistNotes_();
   }
-  /* 印刷: 全体コメントを #board へ静的複製(コントロール無し)。#board子＝zoom追従。盤面内へクランプ */
-  function addPrintNotes(board) {
+  /* 印刷: 全体コメントを #board へ静的複製(コントロール無し)。#board子＝zoom追従。
+   * 画面盤面と印刷盤面はサイズが違うため、画面座標(sbw×sbh)に対する割合で印刷盤面へ写像し
+   * 「画面の配置を保ったまま」出力。盤面内へクランプ。 */
+  function addPrintNotes(board, sbw, sbh) {
     var ns = (store.get().meta.notes) || []; if (!ns.length) return;
     board.style.position = 'relative';
     var bw = board.scrollWidth, bh = board.scrollHeight, i;
+    var fx = (sbw && sbw > 0) ? (bw / sbw) : 1, fy = (sbh && sbh > 0) ? (bh / sbh) : 1;
     for (i = 0; i < ns.length; i++) {
       var n = ns[i]; if (!n.text) continue;
       var box = ne_('div', 'b-note b-note-print');
@@ -5701,7 +5776,7 @@ body.printing .rs { display: none; }
       var body = ne_('div', 'b-note-body', n.text);
       body.style.fontSize = noteFontPx_(n.size) + 'px'; body.style.fontWeight = n.bold ? '700' : '400'; body.style.color = n.color || '#000';
       box.appendChild(body); board.appendChild(box);
-      var x = n.x || 0, y = n.y || 0, ww = box.offsetWidth, hh = box.offsetHeight;
+      var x = Math.round((n.x || 0) * fx), y = Math.round((n.y || 0) * fy), ww = box.offsetWidth, hh = box.offsetHeight;
       if (x + ww > bw) x = bw - ww; if (y + hh > bh) y = bh - hh; if (x < 0) x = 0; if (y < 0) y = 0;
       box.style.left = x + 'px'; box.style.top = y + 'px';
     }
