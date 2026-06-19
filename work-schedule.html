@@ -1614,13 +1614,11 @@ body.printing .rs { display: none; }
         var division = rows[ri].division;
         if (division === '通所') continue;
         var isMainRow = !!rows[ri].isMain;
-        /* 夜勤の区分は【主区分(mainDivision)に従う】＝施設/訪問を兼務する夜勤専従(夜勤折半)でも
-         * 1列に集約する(ユーザー指示)。主区分=訪問→夜訪問、主区分=施設→夜施設、未設定のみ group で補完。
-         * 従区分行の夜勤も主区分の列へ寄せる(同一人を両列に出さない＝4列増殖を防止)。
-         * 夜訪問に出したい職員はシフト側で主区分=訪問に設定する(予測可能・職員ごとに制御)。 */
-        var nightDiv = (st.mainDivision === '訪問') ? '訪問'
-                     : (st.mainDivision === '施設') ? '施設'
-                     : (group === 'visit' ? '訪問' : '施設');
+        /* 夜勤の区分は【勤務記号が入っている行の区分】で決まる(スクショ実証)。
+         * シフトでは夜勤記号を施設行/訪問行に分けて入力＝各勤務の区分はその行(主区分行 or 従区分行)の区分。
+         * 例: 龍さんは訪問行"8)"→夜訪問(明)・施設行"(21"→夜施設(入)の2件(異なる勤務＝重複ではない)。
+         * 主区分でまとめると施設行の勤務まで訪問扱い等の誤認識になるため、行の区分(division)をそのまま使う。 */
+        var nightDiv = (division === '訪問') ? '訪問' : '施設';
         var nightDivs = [nightDiv];
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
@@ -1684,9 +1682,10 @@ body.printing .rs { display: none; }
     var seen = {}, out = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      /* 同名・同役割・同時刻は1件に圧縮(区分は含めない)＝夜勤区分は主区分準拠で1人1列のため、
-       * 主区分+従区分の重複や両区分出力を残さず4列増殖を防ぐ。 */
-      var key = a.name + '|' + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
+      /* 夜勤は区分も鍵に含める＝行ごとに区分が決まるため、同名でも施設行/訪問行の別勤務(例: 龍の訪問明け
+       * と施設入り)を正しく両方残す。両列出力(double-emit)は廃止済のため同区分の重複は発生しない。 */
+      var dk = (a.zone === 'night') ? ((a.division || '') + '|') : '';
+      var key = a.name + '|' + dk + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
       if (seen[key]) continue;
       seen[key] = true;
       out.push(a);
