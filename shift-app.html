@@ -53,6 +53,8 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #draftTabs .drafttab.on { background: #fff8ec; font-weight: 700; color: #6b4d12; box-shadow: inset 0 2px 0 var(--warn); }
 #draftTabs .drafttab.autopt { background: #eef1f5; color: #667; }
 #draftTabs .drafttab .dlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#draftTabs .drafttab .dlabel-edit { font: inherit; color: #333; border: 1px solid var(--warn); border-radius: 4px;
+  padding: 1px 4px; width: 10em; max-width: 13em; background: #fff; }
 #draftTabs .drafttab .dx { color: var(--g4); font-weight: 700; padding: 0 2px; border-radius: 4px; }
 #draftTabs .drafttab .dx:hover { color: #fff; background: var(--red); }
 .layerbar .adddraft { background: #fff; color: var(--warn); border-color: var(--warn); border-bottom: none; font-weight: 700; }
@@ -893,6 +895,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
             addDiv(d, division, nWork, true);
           } else if (part.kind === 'nightOut') {
             perDay[d].attended = true;
+            /* 早遅カウント用: 夜勤明け「8)」(上がり8:00)は早番帯を担うため早番に計上する。
+             * 集計(cats)のみに反映し、実働時間・区分には不加算（明け勤務は前日夜勤に含む）。 */
+            if (part.endMin === 480) perDay[d].cats.push('early');
             if (d > 1) {
               var prev = parsedRows[r2].parsed[d - 1];
               var hasIn = false;
@@ -2382,17 +2387,24 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         /* デイサービスは最下段で上部の日付行から遠いため、帯の直前に日付・曜日を再掲 */
         if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
-        h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
-        for (var m = 0; m < members.length; m++) {
-          h += this.staffRows(members[m], days, pm);
-          /* 緒方瞳の直下に「訪問介護員の休み数」集計行を挿入（画面確認用・印刷は出さない） */
-          if (!pm && GROUPS[g].key === 'visit' && normName(members[m].name).indexOf('緒方瞳') === 0) {
-            h += this.summaryRow(days);
+        if (GROUPS[g].key === 'visit') {
+          /* 訪問グループは主区分(mainDivision)で「施設・介護職員」→「施設訪問職員」に分割表示。
+           * 施設訪問職員は在籍時のみ帯を出す。集計行(休み数)は最下段tfootへ移設した。 */
+          var facM = [], visM = [];
+          for (var vi = 0; vi < members.length; vi++) {
+            if ((members[vi].mainDivision || '施設') === '訪問') visM.push(members[vi]);
+            else facM.push(members[vi]);
           }
+          if (facM.length) h += this.subGroup_('施設・介護職員', facM, gc, days, pm);
+          if (visM.length) h += this.subGroup_('施設訪問職員', visM, gc, days, pm);
+        } else {
+          h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+          for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
         }
         renderedGroups++;
       }
-      h += '</tbody><tfoot>' + (pm ? '' : this.footRows(days)) + '</tfoot></table>';
+      /* 最下段(tfoot): 休みカウント① → 早遅 必要数/残②(4行)。印刷は出さない。 */
+      h += '</tbody><tfoot>' + (pm ? '' : (this.summaryRow(days) + this.footRows(days))) + '</tfoot></table>';
       wrap.innerHTML = h;
       this.bind(wrap);
       this.applySelClass();
@@ -2569,8 +2581,17 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       return h;
     },
 
-    /* 緒方瞳の直下に出す「訪問介護員の休み数」集計行（画面確認用・@media print で非表示）。
-     * group='visit'（夜勤・デイ除外）の主セルが休系(休/公/希/有/欠)の人数を日別に表示。 */
+    /* 帯（grouphead）＋所属職員行をまとめて生成する小グループ描画ヘルパ。
+     * 訪問グループを「施設・介護職員」「施設訪問職員」へ分割する用途。 */
+    subGroup_: function (label, members, gc, days, pm) {
+      var h = '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) +
+        '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(label) + '</td></tr>';
+      for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
+      return h;
+    },
+
+    /* 最下段tfootに出す「訪問介護員の休み数」集計行（画面確認用・@media print で非表示）。
+     * group='visit'（夜勤・デイ除外）の主セルが休系(休/公/希/有/欠＝有休・希望休も算入)の人数を日別に表示。 */
     summaryRow: function (days) {
       var ctx = this.ctx;
       var Agg = (typeof window !== 'undefined' && window.ShiftAggregate) ? window.ShiftAggregate : null;
@@ -4275,6 +4296,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
   var LAYER_NAMES = { plan: '予定', actual: '実績', official: '行政提出用' };
 
+  /* 特例: 出勤日ごとに休憩2時間とする職員（実働＝拘束−2h）。氏名の完全一致で判定し
+   * ハードコードの散在を避けるためここに集約する。ワースケ側の固定休憩枠(14:00-16:00)と整合。 */
+  var BREAK2H_NAMES = ['田中久子'];
+  function normNameKey_(name) { return String(name == null ? '' : name).replace(/[\s　]/g, ''); }
+  function isBreak2hStaff_(name) {
+    var n = normNameKey_(name);
+    for (var i = 0; i < BREAK2H_NAMES.length; i++) { if (n === BREAK2H_NAMES[i]) return true; }
+    return false;
+  }
+
   var App = {
     ym: '', year: 0, month: 0, days: 0,
     layer: 'plan',
@@ -4568,17 +4599,49 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.gotoLayer('draft:' + id);
     },
 
+    /* タブのダブルクリックでインライン名称変更（Enter=保存 / Esc=取消 / blur=保存）。
+     * prompt()ダイアログを廃止。renderLayerBarが#draftTabsを作り直すため、最新DOMから対象を再取得する。 */
     renameDraft: function (id) {
+      var self = this;
       var d = this.findDraft(id);
       if (!d || d.auto) return;
-      var v = prompt('編集用の内容（名称）を変更', d.label);
-      if (v === null) return;
-      d.label = (v || '').trim() || d.label;
-      var list = this.getDrafts();
-      for (var i = 0; i < list.length; i++) { if (list[i].id === id) list[i].label = d.label; }
-      this.saveDrafts(list);
-      this.renderLayerBar();
-      this.rerender();
+      var tab = document.querySelector('#draftTabs .drafttab[data-layer="draft:' + id + '"]');
+      if (!tab) return;
+      var label = tab.querySelector('.dlabel');
+      if (!label || label.getAttribute('data-editing') === '1') return;
+      label.setAttribute('data-editing', '1');
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'dlabel-edit';
+      input.value = d.label;
+      label.textContent = '';
+      label.appendChild(input);
+      input.focus();
+      input.select();
+      var done = false;
+      function commit(save) {
+        if (done) return;
+        done = true;
+        var v = (input.value || '').trim();
+        if (save && v && v !== d.label) {
+          var list = self.getDrafts();
+          for (var i = 0; i < list.length; i++) { if (list[i].id === id) list[i].label = v; }
+          self.saveDrafts(list);
+          self.renderLayerBar();
+          self.rerender();
+        } else {
+          self.renderLayerBar();
+        }
+      }
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); commit(true); }
+        else if (e.key === 'Escape' || e.keyCode === 27) { e.preventDefault(); commit(false); }
+      });
+      input.addEventListener('blur', function () { commit(true); });
+      /* タブのクリック委譲(switchLayer)・削除へ伝播させない（編集中の再描画破壊を防止） */
+      input.addEventListener('click', function (e) { e.stopPropagation(); });
+      input.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      input.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     },
 
     deleteDraft: function (id) {
@@ -4664,9 +4727,17 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         rows.push({ division: dv, cells: subs[dv], isMain: false });
       }
       var isNight = st.group === 'night' || (st.rules && st.rules.nightDedicated);
+      /* 特例職員(田中久子)は出勤日ごと2時間休憩 → 通常休憩を2hに上書きした設定で計算。
+       * 夜勤休憩(nightBreakH)は不変。settingsは複製して他職員に波及させない。 */
+      var settings = this.settings;
+      if (isBreak2hStaff_(st.name)) {
+        settings = {};
+        for (var sk in this.settings) settings[sk] = this.settings[sk];
+        settings.breakH = 2;
+      }
       return TC.computeStaffMonth({
         days: this.days, rows: rows, symbols: this.symbols,
-        settings: this.settings, nightSplit: st.nightSplit || null,
+        settings: settings, nightSplit: st.nightSplit || null,
         offDayMultiplier: isNight ? 2 : 1
       });
     },
