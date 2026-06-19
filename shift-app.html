@@ -28,6 +28,9 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
   background: rgba(255,255,255,.15); color: #fff; font-size: 12.5px; }
 #toolbar button:hover { background: rgba(255,255,255,.3); }
 #toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
+#toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
+#toolbar button.savebtn:hover { background: #1b5e20; }
+#toolbar button.savebtn.saving { background: #66bb6a; color: #fff; }
 #toolbar #ymLabel { font-weight: 700; font-size: 15px; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
@@ -266,6 +269,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <button id="btnUndo" title="元に戻す (Ctrl+Z)">↩</button>
   <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)">↪</button>
   <button id="btnHistory" title="変更履歴">履歴</button>
+  <button id="btnSave" class="savebtn" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl+S / Cmd+S)">💾 保存</button>
   <button id="btnAuto" class="primary">⚡ 自動作成</button>
   <button id="btnActual" title="実績レイヤに切り替えて実際の勤務を記録（予定があれば複製して開始）">📝 実績</button>
   <button id="btnFreee" title="freee勤怠スケジュールCSVを出力">freee出力</button>
@@ -2312,7 +2316,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
   var GROUPS = [
     { key: 'night', label: '夜勤専従' },
-    { key: 'visit', label: '訪問介護・施設' },
+    { key: 'visit', label: '施設訪問職員' },
     { key: 'day',   label: 'デイサービス' }
   ];
   var DIVISIONS = ['施設', '訪問', '通所'];
@@ -2371,6 +2375,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       h += '</thead><tbody>';
 
       var renderedGroups = 0;
+      var summaryEmitted = false;
       for (var g = 0; g < GROUPS.length; g++) {
         var members = [];
         for (var i = 0; i < ctx.staff.length; i++) {
@@ -2384,27 +2389,23 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           var bv = typeof b.shiftOrder === 'number' ? b.shiftOrder : (b.order || 0);
           return av - bv;
         });
+        /* 集計5行(休み数①＋早遅 必要数/残②=4行)は、デイサービス帯の再ヘッダー(氏名 区分 6/1…)の
+         * 直上＝施設訪問職員の直下に出す(要件4)。印刷は出さない。デイ群が無い場合は末尾にフォールバック。 */
+        if (GROUPS[g].key === 'day' && !pm && !summaryEmitted) {
+          h += this.summaryRow(days) + this.footRows(days);
+          summaryEmitted = true;
+        }
         /* デイサービスは最下段で上部の日付行から遠いため、帯の直前に日付・曜日を再掲 */
         if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
-        if (GROUPS[g].key === 'visit') {
-          /* 訪問グループは主区分(mainDivision)で「施設・介護職員」→「施設訪問職員」に分割表示。
-           * 施設訪問職員は在籍時のみ帯を出す。集計行(休み数)は最下段tfootへ移設した。 */
-          var facM = [], visM = [];
-          for (var vi = 0; vi < members.length; vi++) {
-            if ((members[vi].mainDivision || '施設') === '訪問') visM.push(members[vi]);
-            else facM.push(members[vi]);
-          }
-          if (facM.length) h += this.subGroup_('施設・介護職員', facM, gc, days, pm);
-          if (visM.length) h += this.subGroup_('施設訪問職員', visM, gc, days, pm);
-        } else {
-          h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
-          for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
-        }
+        /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
+        h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
         renderedGroups++;
       }
-      /* 最下段(tfoot): 休みカウント① → 早遅 必要数/残②(4行)。印刷は出さない。 */
-      h += '</tbody><tfoot>' + (pm ? '' : (this.summaryRow(days) + this.footRows(days))) + '</tfoot></table>';
+      /* デイ群が無い等で未出力なら集計を末尾に出す(要件4のフォールバック) */
+      if (!pm && !summaryEmitted) h += this.summaryRow(days) + this.footRows(days);
+      h += '</tbody><tfoot></tfoot></table>';
       wrap.innerHTML = h;
       this.bind(wrap);
       this.applySelClass();
@@ -2518,12 +2519,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var v = cells[String(d)] || '';
         var cMain = isMain, cDiv = division;   /* このセルの編集対象（既定はこの行自身） */
         if (isNight) {
-          if (division === '施設' && v !== '' && isOffValue(v, ctx.symbols)) {
-            v = '';                            /* 施設行では休系を表示しない（訪問行へ寄せる） */
+          /* 「純粋な休系(休/有/希/公/欠のみ)」だけを訪問行へ寄せる。夜勤＋休の複合(例 7)(有・8)(有)は
+           * 夜勤(訪問)勤務なので寄せない＝入力した行(訪問)にそのまま保存し、施設へ誤反映しない(要件2)。 */
+          if (division === '施設' && v !== '' && isPureOffValue(v, ctx.symbols)) {
+            v = '';                            /* 施設行では純粋休系を表示しない（訪問行へ寄せる） */
           } else if (division === '訪問' && v === '') {
             var mv = nmain[String(d)] || '';
-            if (mv !== '' && isOffValue(mv, ctx.symbols)) {
-              v = mv;                          /* 訪問行に休系を表示 */
+            if (mv !== '' && isPureOffValue(mv, ctx.symbols)) {
+              v = mv;                          /* 訪問行に純粋休系を表示 */
               cMain = true; cDiv = mainDivName; /* 編集は主セルへ＝二重登録を防ぐ */
             }
           }
@@ -2581,16 +2584,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       return h;
     },
 
-    /* 帯（grouphead）＋所属職員行をまとめて生成する小グループ描画ヘルパ。
-     * 訪問グループを「施設・介護職員」「施設訪問職員」へ分割する用途。 */
-    subGroup_: function (label, members, gc, days, pm) {
-      var h = '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) +
-        '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(label) + '</td></tr>';
-      for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
-      return h;
-    },
-
-    /* 最下段tfootに出す「訪問介護員の休み数」集計行（画面確認用・@media print で非表示）。
+    /* デイサービス帯の直上に出す「訪問介護員の休み数」集計行（画面確認用・@media print で非表示）。
      * group='visit'（夜勤・デイ除外）の主セルが休系(休/公/希/有/欠＝有休・希望休も算入)の人数を日別に表示。 */
     summaryRow: function (days) {
       var ctx = this.ctx;
@@ -3052,6 +3046,19 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       if (k === 'off' || k === 'paidOff' || k === 'publicOff') return true;
     }
     return false;
+  }
+  /* 「純粋な休系」判定: 全パートが休系(off/paidOff/publicOff)＝勤務系(work/nightIn/nightOut)を1つも含まない。
+   * 夜勤者の休系を訪問行へ寄せる判定に使う(要件2)。「7)(有」(夜勤明け＋有)は勤務系を含むため false＝寄せない。
+   * 「欠」は既定記号に無くパース不能のため isKetsu_ で別途休系扱い。 */
+  function isPureOffValue(v, symbols) {
+    if (isKetsu_(v)) return true;
+    var p = Sym.parseCell(v, symbols);
+    if (p.parts.length === 0) return false;
+    for (var i = 0; i < p.parts.length; i++) {
+      var k = p.parts[i].kind;
+      if (k !== 'off' && k !== 'paidOff' && k !== 'publicOff') return false;
+    }
+    return true;
   }
   /* 「欠」(欠勤)は既定記号に無くparseCellで休系判定されないため明示的に休系へ含める */
   function isKetsu_(v) {
@@ -5228,13 +5235,17 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       document.getElementById('btnUndo').addEventListener('click', function () { self.undo(); });
       document.getElementById('btnRedo').addEventListener('click', function () { self.redo(); });
       document.getElementById('btnHistory').addEventListener('click', function () { self.showHistory(); });
+      var bSave = document.getElementById('btnSave');
+      if (bSave) bSave.addEventListener('click', function () { self.manualSave(); });
       this.updateHistButtons();
       document.addEventListener('keydown', function (e) {
+        var mod = e.ctrlKey || e.metaKey;
+        var k = (e.key || '').toLowerCase();
+        /* Ctrl/Cmd+S は入力欄でも「今すぐ保存」にする（ブラウザの保存ダイアログを抑止） */
+        if (mod && k === 's') { e.preventDefault(); self.manualSave(); return; }
         var tag = (e.target.tagName || '').toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-        var mod = e.ctrlKey || e.metaKey;
         if (!mod) return;
-        var k = e.key.toLowerCase();
         if (k === 'z' && !e.shiftKey) { e.preventDefault(); self.undo(); }
         else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); self.redo(); }
       });
@@ -5418,6 +5429,32 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       document.getElementById('dlgConfirmNo').style.display = 'none';
       this._confirmCb = null;
       document.getElementById('dlgConfirm').showModal();
+    },
+
+    /* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中セルを確定→localStorageは即保存済み→クラウドへ即時flush。
+     * 同期先未設定でも端末には保存される（その旨を表示）。 */
+    manualSave: function () {
+      var self = this;
+      /* 編集中の入力を確定（blurで各ハンドラがStore.setを呼ぶ＝確実に保存対象へ） */
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
+      var btn = document.getElementById('btnSave');
+      function flash(msg) {
+        if (!btn) return;
+        if (self._saveFlashT) clearTimeout(self._saveFlashT);
+        btn.textContent = msg;
+        btn.classList.add('saving');
+        self._saveFlashT = setTimeout(function () {
+          btn.textContent = btn.getAttribute('data-label') || '💾 保存';
+          btn.classList.remove('saving');
+        }, 1800);
+      }
+      var p = Store.pushQueued();
+      if (p && p.then) {
+        p.then(function (r) { flash(r === 'nosync' ? '✓ 端末に保存' : '✓ 保存しました'); },
+               function () { flash('✓ 端末に保存'); });
+      } else {
+        flash('✓ 保存しました');
+      }
     },
 
     /* ── 同期UI ── */
