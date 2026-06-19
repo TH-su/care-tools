@@ -57,6 +57,12 @@ html, body { height: 100%; overflow: hidden;
 .hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
 .hdr-btn.savebtn:hover { background: #1b5e20; }
 .hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
+/* ケア内容チップ（訪問介護の予定編集・要件4） */
+.care-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.care-chip { border: 1px solid #cfd8dc; background: #fff; color: #37474f; border-radius: 14px;
+  padding: 4px 12px; font-size: 13px; cursor: pointer; transition: background .12s; }
+.care-chip:hover { background: #eceff1; }
+.care-chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 
 /* ── Summary bar (2段構成) ── */
 .summary-bar {
@@ -741,6 +747,11 @@ select.inp { cursor: pointer; }
       </label>
     </div>
 
+    <!-- ケア内容チップ（訪問介護のみ・ワースケと同じ選択肢）。クリックで詳細欄へ追加/削除 -->
+    <div class="form-row" id="care-chips-row" style="display:none">
+      <label>ケア内容（クリックで「支援内容・詳細」へ追加／再クリックで削除）</label>
+      <div class="care-chips" id="f-care-chips"></div>
+    </div>
     <div class="form-row">
       <label for="f-detail">支援内容・詳細</label>
       <textarea class="inp" id="f-detail" rows="3" placeholder="例：服薬介助（朝食後）、体位変換、口腔ケア"></textarea>
@@ -2788,6 +2799,7 @@ function openEditModal(id) {
   $('#f-notes').value  = ev.notes  || '';
   $('#f-units').value  = ev.units  || '';
   $('#dup-row').style.display = '';
+  if (ev.serviceType === 'visit') renderCareChips();   /* detail設定後にチップを現状態へ同期(要件4) */
   $('#mk-event').classList.add('open');
 }
 
@@ -2824,7 +2836,44 @@ function onServiceTypeChange() {
   $('#time-row-visit').style.display    = val === 'visit'   ? '' : 'none';
   $('#time-row-daycare').style.display  = val === 'daycare' ? '' : 'none';
   $('#bathing-row').style.display       = val === 'daycare' ? '' : 'none';
+  /* ケア内容チップは訪問介護のみ（通所は対象外・要件4） */
+  $('#care-chips-row').style.display    = val === 'visit'   ? '' : 'none';
+  if (val === 'visit') renderCareChips();
   autoCalcUnits();
+}
+
+/* ── ケア内容チップ（ワースケと同一の選択肢）。detail を正本に '・' 区切りで連携（双方向同期はdetail経由） ──
+ * '食事・薬確認' のように '・' を含むプリセットも、区切り境界つきの照合で正しく1チップ扱いする。 */
+const CARE_CHIP_PRESETS = ['掃除','洗濯','排泄ケア','シーツ交換','デイ準備','返却','軟膏','整容','食事・薬確認','買物'];
+function chipActive_(detail, label) {
+  return ('・' + String(detail || '') + '・').indexOf('・' + label + '・') >= 0;
+}
+function renderCareChips() {
+  const box = $('#f-care-chips');
+  if (!box) return;
+  const cur = $('#f-detail').value;
+  box.innerHTML = '';
+  CARE_CHIP_PRESETS.forEach(label => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'care-chip' + (chipActive_(cur, label) ? ' on' : '');
+    b.textContent = label;
+    b.onclick = () => toggleCareChip(label);
+    box.appendChild(b);
+  });
+}
+function toggleCareChip(label) {
+  const cur = $('#f-detail').value;
+  let tokens;
+  if (chipActive_(cur, label)) {
+    const wrapped = ('・' + cur + '・').split('・' + label + '・').join('・');
+    tokens = wrapped.split('・').map(s => s.trim()).filter(s => s.length);
+  } else {
+    tokens = ('・' + cur + '・').split('・').map(s => s.trim()).filter(s => s.length);
+    tokens.push(label);
+  }
+  $('#f-detail').value = tokens.join('・');
+  renderCareChips();
 }
 
 function onCategoryChange(autoFill = true) {
@@ -3343,6 +3392,7 @@ $('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-of
 $('#mk-sync').addEventListener('click', e => { if (e.target === $('#mk-sync')) closeSyncModal(); });
 $('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-event-list')) closeEventListModal(); });
 $('#f-new-res').addEventListener('keydown', e => { if (e.key === 'Enter') addResident(); });
+$('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.display !== 'none') renderCareChips(); });
 
 // ── Init ──
 loadDB();
