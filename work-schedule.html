@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>ワークスケジュール</title>
 <style>
@@ -2783,6 +2783,8 @@ body.printing .rs { display: none; }
         var nt = {};
         for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) nt[k] = t[k];
         for (var p in patch) if (Object.prototype.hasOwnProperty.call(patch, p)) nt[p] = patch[p];
+        /* 列へ割当(staffId非null)されたら手動トレイ印(parked)を解除＝以後は自動配置の対象に戻す(要件2) */
+        if (nt.staffId !== null && nt.staffId !== undefined && nt.parked) nt.parked = false;
         out.push(nt);
       } else out.push(t);
     }
@@ -2997,7 +2999,8 @@ body.printing .rs { display: none; }
     }
     if (type === 'UNASSIGN') {
       var vacU = careVacates_(day.tasks, [action.id]);
-      var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false, facBg: null });
+      /* parked=手動でトレイへ戻した印。自動配置(placeOrphanCare_)はparkedを再配置しない＝意図を尊重(要件2) */
+      var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false, facBg: null, parked: true });
       tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksU };
     }
@@ -4512,6 +4515,7 @@ body.printing .rs { display: none; }
     }
 
     function preventScroll(e) {
+      if (e.touches && e.touches.length > 1) return;   /* 2本指ピンチは妨げない(要件1) */
       if (drag && drag.dragging) e.preventDefault();
     }
 
@@ -4551,6 +4555,8 @@ body.printing .rs { display: none; }
 
     function onDown(e) {
       if (drag) clearDrag();
+      /* 2本指以上(ピンチズーム)はD&Dを開始しない＝ネイティブのピンチを邪魔しない(要件1) */
+      if (e.touches && e.touches.length > 1) return;
       var pt = getPoint(e);
       var isTouch = (e.pointerType ? e.pointerType !== 'mouse' : e.type === 'touchstart');
 
@@ -4609,6 +4615,8 @@ body.printing .rs { display: none; }
 
     function onMove(e) {
       if (!drag) return;
+      /* ドラッグ中に2本目の指=ピンチズーム開始 → ドラッグを中止しネイティブのピンチに譲る(要件1) */
+      if (e.touches && e.touches.length > 1) { clearDrag(); return; }
       var pt = getPoint(e);
       var dx = pt.x - drag.startPt.x, dy = pt.y - drag.startPt.y;
       var dist = Math.sqrt(dx * dx + dy * dy);
@@ -4865,7 +4873,7 @@ body.printing .rs { display: none; }
     day.meta.date = date;
     store.dispatch({ type: 'INIT_DAY', day: day });
     try { seedFromMaster(); } catch (e) {}
-    try { reconcileWeekly(); } catch (e) {}
+    try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護） */
     try {
       pullDayNow(date, false, null, function () {
@@ -4967,7 +4975,13 @@ body.printing .rs { display: none; }
   }
 
   /* 週間計画(care_schedule_v2) → ワースケ当日タスクの突合・追従 */
+  /* 週間計画↔当日盤面の同期。実体は Core_。全呼出後に必ず autoPlaceCareInStore_ を走らせるラッパで包み、
+   * Core_ の早期return(イベント無し等)に依らず未配置ケアの自動配置を保証する(要件2)。 */
   function reconcileWeekly() {
+    try { reconcileWeeklyCore_(); } catch (e) {}
+    try { autoPlaceCareInStore_(); } catch (eAP) {}
+  }
+  function reconcileWeeklyCore_() {
     var careDb = loadCareDb();
     if (!careDb) return;
     var day = store.get();
@@ -6399,8 +6413,9 @@ body.printing .rs { display: none; }
       try { IM.mergeStrayNightCols(res.columns, res.staff, day.tasks); } catch (eMs) {}
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
-      try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填 */
+      try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填(ケア自動配置含む) */
       try { rescueOrphansInStore_(); } catch (eR) {}   /* 安全網: 孤児化した支援枠を未配置トレイへ(消失防止・要件1) */
+      try { autoPlaceCareInStore_(); } catch (eAP2) {}  /* 退避した夜勤訪問ケア等を新出勤者の列へ即再配置(要件2) */
       var msg;
       if (res.filled === 0) {
         var staffN = (data.staff && data.staff.length) ? data.staff.length : 0;
@@ -6857,12 +6872,28 @@ body.printing .rs { display: none; }
     }
   }
 
+  /* 【要件2の中核修正】未配置(staffId=null)の支援(care)を、その時点の出勤職員の適切な列へ自動配置する。
+   * placeOrphanCare_ は従来マイグレーション(migrateDay)1回限りだったため、初期化済み盤面では夜勤訪問ケアが
+   * トレイに残り夜訪問列に出なかった(=消失バグの真因)。reconcileWeekly後・finalizeBoard・孤児退避後に毎回呼び、
+   * 夜勤は夜訪問を優先に再配置＝「夜勤訪問ケアが必ず夜訪問列に出る」を保証。冪等(フィットするnullケアのみ・既配置は不変)。 */
+  function autoPlaceCareInStore_() {
+    var day = store.get();
+    if (!day || !day.tasks || !day.tasks.length || !day.columns || !day.columns.length) return;
+    var clone = [], i, k;
+    for (i = 0; i < day.tasks.length; i++) {
+      var c = {}; for (k in day.tasks[i]) c[k] = day.tasks[i][k]; clone.push(c);
+    }
+    var placed = placeOrphanCare_(day.staff, day.columns, clone);
+    if (placed > 0) store.dispatch({ type: 'SET_TASKS', tasks: clone });
+  }
+
   function finalizeBoard() {
     try {
       var trimmed = trimEmptyCols(store.get());
       if (trimmed) store.dispatch({ type: 'SET_STAFF', staff: trimmed.staff, columns: trimmed.columns });
     } catch (e) {}
     try { rebuildFacWindowTasks(); } catch (eN) {}   /* 訪問列内の施設業務窓を施設業務枠として配置 */
+    try { autoPlaceCareInStore_(); } catch (eP) {}   /* 未配置ケアを出勤職員の列へ(夜勤訪問ケアの消失防止・要件2)。施設業務充填の前に占有化 */
     try { fillUsuiFrames(store.get()); } catch (eU) {}   /* 臼井: 12-13休憩＋自由枠を敷き詰め */
     try { fillFixedBreaks(store.get()); } catch (eFB) {}  /* 田中久子: 14-16固定休憩(施設業務充填の前に占有化) */
     try {
@@ -6917,6 +6948,7 @@ body.printing .rs { display: none; }
     for (i = 0; i < tasks.length; i++) {
       var t = tasks[i];
       if (t.staffId !== null || t.kind !== 'care') continue;
+      if (t.parked) continue;   /* 手動でトレイへ戻したケアは自動配置しない＝利用者の意図を尊重(要件2) */
       var s = t.start, e = t.end, target = null;
       var order = nightBand_(s, e) ? ['night', 'visit', 'facility'] : ['visit', 'facility', 'night'];
       for (var z = 0; z < order.length && !target; z++) {
@@ -7893,7 +7925,7 @@ body.printing .rs { display: none; }
     try { wireCommentDrag(); } catch (e) { if (window.console) console.error('コメントD&D初期化失敗', e); }
     try { wireNotes(); renderNotes(); } catch (e) { if (window.console) console.error('全体コメント初期化失敗', e); }
     try { seedFromMaster(); } catch (e) {}
-    try { reconcileWeekly(); } catch (e) {}
+    try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     try { autoLoadMaster(); } catch (e) {}
     try { pullAll(false); } catch (e) {}
     /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
