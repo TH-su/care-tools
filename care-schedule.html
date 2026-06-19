@@ -2536,6 +2536,7 @@ function renderDayEvents(events, colEl, res, coverage) {
 
     // Touch drag
     block.addEventListener('touchstart', e => {
+      if (e.touches && e.touches.length > 1) return;   /* 2本指=ピンチズーム：ドラッグを開始しない(要件1) */
       if (e.target.dataset.action === 'resize') {
         e.stopPropagation();
         startResize(touchEv(e), ev, block);
@@ -2750,6 +2751,14 @@ document.addEventListener('mousemove', e => { if (drag) onDragMove(e.clientX, e.
 document.addEventListener('mouseup',   () => { if (drag) onDragEnd(); });
 document.addEventListener('touchmove', e => {
   if (!drag) return;
+  /* ドラッグ中に2本目の指=ピンチズーム → コミットせずドラッグを取消しネイティブのピンチに譲る(要件1)。
+   * moved=false / targetEnd=元値 にして onDragEnd の確定条件を無効化＝後片付けのみ実行。 */
+  if (e.touches && e.touches.length > 1) {
+    drag.moved = false;
+    if (drag.ev) drag.targetEnd = drag.ev.endTime;
+    onDragEnd();
+    return;
+  }
   e.preventDefault();
   const t = e.touches[0];
   onDragMove(t.clientX, t.clientY);
