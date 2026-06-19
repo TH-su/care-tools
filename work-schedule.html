@@ -399,6 +399,11 @@ textarea.inp { min-height: 110px; font-size: 12px; }
 }
 .board-empty.on { display: flex; }
 
+/* ============================================================================
+   【印刷確定設定・保護対象】変更前に必ず CLAUDE.md §10 のアラート手順を実行すること。
+   印刷レイアウトは完成・確定済み。body.printing 以下と @media print の各値は緻密に調整済みで、
+   無断変更・他要素の都合での上書きを禁止する（A3フィット/文字サイズ/罫線/ページ収まりに影響）。
+   ============================================================================ */
 /* ===== 印刷モードレイアウト =====
    fitPrint() が body.printing を付与し、盤面を印刷専用に再描画する。
    方針: 白黒・全文字黒・できるだけ大きく・支援内容は縦積み＋右端に□チェック欄。
@@ -465,6 +470,9 @@ body.printing .gline { border-top-color: #bbb; }
 body.printing .gline.hour { border-top-color: #555; }
 body.printing .gline-n { border-top-color: #bbb; }
 body.printing .gline-n.hour { border-top-color: #555; }
+/* 表の最下部(21:00=domainTo)の罫線。横断グリッド線は m<domainTo で生成され最下端が未描画＝
+ * canvas下端(全レーンの底)に1本だけ引く＝スッキリした表の下枠(要件3)。列線(#000)と整合。 */
+body.printing .b-canvas { border-bottom: 1px solid #000; }
 body.printing .b-heads { border-bottom-color: #000; }
 body.printing .b-head.zone-div, body.printing .b-lane.zone-div { border-left-color: #000; }
 body.printing .rs { display: none; }
@@ -798,6 +806,8 @@ body.printing .rs { display: none; }
     { from: 1020, to: 1260, pxPerHour: ROW_PX * 15,  label: '夕 17-21時' }
   ];
 
+  /* 【印刷確定設定・保護対象】PRINT_ZONES / PRINT_NIGHT_PX_MIN は印刷レイアウトの根幹。
+   * 変更前に必ず CLAUDE.md §10 のアラート手順(影響範囲報告→承認)を実行すること。無断変更禁止。 */
   /* 印刷専用ゾーン: 多忙帯(7-9・17-21)に加え日中(9-18)も拡大＝A3縦の縦余白を縮小し文字を大きく(要件1)。
    * 画面は DEFAULT_ZONES のまま。印刷時のみ buildScale に渡す。totalH=227R≈3087px。
    * 実際の充填は fitPrint が盤面幅に応じて縦倍率kを掛けて1枚にフルフィットさせる(列数依存の余白吸収)。 */
@@ -3576,6 +3586,8 @@ body.printing .rs { display: none; }
     var hideTime = (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
 
     if (ex.print) {
+      /* 【印刷確定設定・保護対象】この ex.print 分岐(フォント算出/夜勤分配/data-dur/内容生成)は
+       * 印刷レイアウトの根幹。変更前に必ず CLAUDE.md §10 のアラート手順(影響範囲報告→承認)を実行。 */
       /* ===== 印刷レイアウト（白黒・固定高）=====
        * 画面に合わせ「時刻 / 利用者名 / ケア内容(各行に右端チェック□)」。サービスコード(svc.short)は非表示。
        * ケア内容を最大・時刻と名前はそれより小さく。氏名は必ず全表示(消さない)。
@@ -5671,6 +5683,19 @@ body.printing .rs { display: none; }
    * 旧方式(zoom+scaleY)は scaleY の縦伸ばしが文字を歪ませ（ぼやけ）ていた。新方式:
    * printMode + 印刷専用ゾーン(多忙帯7-9/17-21・夜勤0-8拡大)で盤面を1回再描画し、
    * **横幅フィットの等方zoomのみ**(拡大も縦縮小もしない＝原寸)。表は原寸で複数A3ページに渡る。 */
+  /* ============================================================================
+   * 【印刷確定設定・保護対象】=== 印刷レイアウト確定値マニフェスト（散逸防止・変更前に CLAUDE.md §10）===
+   * 印刷は完成・確定済み。下記の関数・定数は緻密に調整済みで無断変更・回帰を禁止する。
+   *  - PRINT_AVAIL = {w:1078, h:1508}            … A3縦 余白5mm の印字可能域(@96dpi)
+   *  - 両軸フィット zoom = min(1078/w, 1508/h)・縦倍率 k ∈ [0.6, 2.5]（fitPrint）
+   *  - PRINT_ZONES（timescale.js）日中9-18拡大・PRINT_NIGHT_PX_MIN（夜勤密度）
+   *  - フォント上限 capC=32 / capS=26、日中60分以上は ×0.85、夜勤は時刻0.84/氏名0.74（board.js ex.print）
+   *  - 内容は uniformContentFont_ で各1行・同一枠統一サイズ、氏名 enlargeName_ cap22フロア
+   *  - lane幅 --laneW150/--laneWFac124/--laneWEmpty30/--axW68（styles.css body.printing）
+   *  - 関数群: fitPrint / unfitPrint(冪等) / clearBoardStyle_ / fitPrintText / uniformContentFont_ /
+   *            growToW_ / enlargeName_ / shrinkToW_ / measurePrintW_ / scaleZones_ / addPrintNotes
+   *  ※これらに影響する変更は事前にアラート報告→承認。変更後は連続印刷一致/overflow0/A3フィットを検証。
+   * ============================================================================ */
   var PRINT_AVAIL = { w: 1078, h: 1508 };   /* A3縦 余白5mm の印字可能域(@96dpi)。h は押印ヘッダ(約26px)＋安全を控除＝盤面の使用可能高 */
   /* 印刷直前(zoom前)に、枠に「余裕がある」支援だけ氏名を拡大する。
    * 余裕の判定: ①枠に縦の空き(内容が枠高の72%未満)＝長時間で内容が少ない枠 ②氏名が横幅に収まる範囲。
