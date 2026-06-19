@@ -418,7 +418,7 @@ body.printing .p-task .pt-time {
   white-space: nowrap; overflow: hidden; flex: 0 0 auto;
 }
 body.printing .p-task .pt-name {
-  font-weight: 700; color: #000; line-height: 1.05;
+  font-weight: 400; color: #000; line-height: 1.05;   /* 氏名の太字を解除(要件2B) */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
 }
 /* 施設業務名は控えめ＝小さく細字・淡色 */
@@ -432,7 +432,8 @@ body.printing .p-task .pt-item {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
   line-height: 1.12; flex: 0 0 auto;
 }
-body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; white-space: normal; word-break: break-word; }
+/* ケア内容は各1行(要件4)＝はみ出しはfitPrintTextが幅実測で縮小し、同一枠内は統一サイズに */
+body.printing .p-task .pt-item-tx { font-weight: 700; color: #000; white-space: nowrap; overflow: hidden; }
 body.printing .p-task .pt-cb { font-size: 18px; line-height: 1; color: #000; flex-shrink: 0; }
 /* 固定コメント(印刷) */
 body.printing .p-task .pt-comment {
@@ -1613,6 +1614,16 @@ body.printing .rs { display: none; }
         if (!isMainRow) nightDiv = (division === '訪問') ? '訪問' : '施設';
         else if (st.mainDivision === '訪問' || group === 'visit' || hasVisitSub) nightDiv = '訪問';
         else nightDiv = '施設';
+        /* 夜勤折半(nightSplit)=施設/訪問の両区分を兼務する夜勤専従＝両列に載せる(要件5・最重要)。
+         * nightSplitは職員データに必ず含まれ subCells に依存しない＝cloudがsubCellsを返さなくても確実。 */
+        var nightDivs;
+        if (st.nightSplit && (st.nightSplit['施設'] || st.nightSplit['訪問'])) {
+          nightDivs = [];
+          if (st.nightSplit['施設']) nightDivs.push('施設');
+          if (st.nightSplit['訪問']) nightDivs.push('訪問');
+        } else {
+          nightDivs = [nightDiv];
+        }
         var parts = partsOf(rows[ri].raw, symbols);   /* 複数範囲(空白区切り)に対応 */
         if (!parts.length) continue;
         for (var p = 0; p < parts.length; p++) {
@@ -1642,16 +1653,16 @@ body.printing .rs { display: none; }
             } else if (part.endMin < part.startMin) {
               /* 日跨ぎの work（例: 記号 '8)(22' を type:work 22:00→翌8:00 で登録）＝夜勤とみなす。
                * 記号マスタの型定義に依存せず、入り(start→24:00)＋明け(0:00→end) に分解して夜勤列へ */
-              out.push({ name: name, zone: 'night', division: nightDiv, workStart: part.startMin, workEnd: 1440, nightRole: 'iri' });
-              out.push({ name: name, zone: 'night', division: nightDiv, workStart: 0, workEnd: part.endMin, nightRole: 'ake' });
+              pushNight_(out, name, nightDivs, part.startMin, 1440, 'iri');
+              pushNight_(out, name, nightDivs, 0, part.endMin, 'ake');
             }
             /* end == start は退化（0分/24時間）として無視 */
           } else if (part.kind === 'nightIn') {
             var ws = (part.startMin !== null) ? part.startMin : 1260;
-            out.push({ name: name, zone: 'night', division: nightDiv, workStart: ws, workEnd: 1440, nightRole: 'iri' });
+            pushNight_(out, name, nightDivs, ws, 1440, 'iri');
           } else if (part.kind === 'nightOut') {
             var we = (part.endMin !== null) ? part.endMin : 420;
-            out.push({ name: name, zone: 'night', division: nightDiv, workStart: 0, workEnd: we, nightRole: 'ake' });
+            pushNight_(out, name, nightDivs, 0, we, 'ake');
           }
           /* off / paidOff / publicOff は出勤としない */
         }
@@ -1665,11 +1676,20 @@ body.printing .rs { display: none; }
    * 同じ勤務が複数エントリとして出てしまう（例: 髙尾の夕方が3行に増殖）ため。
    * 区分(division)はキーに含めない＝同時刻に2区分の勤務は物理的に不可能なので最初の出現を採用する。
    * 勤務時間帯が異なる本来の分割勤務(7-9 と 17-21)はキーが異なり残る。 */
+  /* 夜勤エントリを対象区分ぶん out へ追加(nightSplitなら施設+訪問の2件・要件5) */
+  function pushNight_(out, name, divs, ws, we, role) {
+    for (var i = 0; i < divs.length; i++) {
+      out.push({ name: name, zone: 'night', division: divs[i], workStart: ws, workEnd: we, nightRole: role });
+    }
+  }
   function dedupeAttendance(list) {
     var seen = {}, out = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      var key = a.name + '|' + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
+      /* 夜勤は区分も鍵に含める＝同名・同時刻でも施設/訪問の両方を残す(nightSplit兼務・要件5)。
+       * 日勤は従来どおり区分を含めない(同時刻の二重区分=応援行の重複を1件に圧縮)。 */
+      var dk = (a.zone === 'night') ? ((a.division || '') + '|') : '';
+      var key = a.name + '|' + dk + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
       if (seen[key]) continue;
       seen[key] = true;
       out.push(a);
@@ -3563,8 +3583,10 @@ body.printing .rs { display: none; }
        * 枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。固定コメントは末尾に出力。 */
       /* 夜勤帯(isNight)はケア内容を出さず、空いた縦を氏名拡大に充てる(要件3) */
       var nightHideContent = (isNight && t.kind === 'care');
+      var durMin = (typeof t.end === 'number' && typeof t.start === 'number') ? (t.end - t.start) : 0;
       b.style.height = h + 'px';
       b.className = cls + ' p-task' + (nightHideContent ? ' p-night' : '');
+      b.setAttribute('data-dur', String(durMin));   /* fitPrintText の 19/20分判定用(要件3) */
       /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印用に1行(空文字＝□のみ) */
       var pitems = (t.kind === 'care' && !nightHideContent) ? (t.contents || []).slice() : [];
       if (t.kind === 'care' && !nightHideContent && t.memo) pitems.push(t.memo);
@@ -3572,15 +3594,19 @@ body.printing .rs { display: none; }
       var rows = pitems.length;
       var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行(夜勤は内容0) */
       var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
-      /* 印刷は後段でズーム縮小されるため論理フォント上限を高く取り「枠内最大」(要件4)。画面は従来上限。
-       * 内容cap=32(過剰拡大・過剰折返しを防ぐ)、時刻/名前は内容の0.80(時刻を少し大きく=要件2・ただし内容未満)。 */
+      /* 印刷は後段でズーム縮小されるため論理フォント上限を高く取り「枠内最大」。画面は従来上限。 */
       var capC = ex.print ? 32 : 20;
       var capS = ex.print ? 26 : 16;
+      /* 日中60分以上の支援は内容・氏名ともに少し小さく(要件2A)＝詰まり過ぎ防止 */
+      if (ex.print && !isNight && t.kind === 'care' && durMin >= 60) { capC = Math.floor(capC * 0.85); capS = Math.floor(capS * 0.85); }
       var fContent = Math.max(8, Math.min(capC, Math.floor(perLine * 0.82)));   /* ケア内容＝最大(縦長枠でより大きく) */
       var fSmall = Math.max(7, Math.min(capS, Math.floor(fContent * 0.80)));    /* 時刻・名前＝内容より少し小さく */
+      /* 夜勤枠は内容無しの2行(時刻+氏名)＝時刻を少し大きく・氏名を少し小さく分配(要件2C)。時刻>氏名 */
+      var nightTimeF = Math.max(8, Math.min(capS, Math.floor(perLine * 0.84)));
+      var nightNameF = Math.max(7, Math.min(capS, Math.floor(perLine * 0.74)));
       if (!hideTime) {
         var tEl = txt('div', 'pt-time', range);
-        tEl.style.fontSize = fSmall + 'px';
+        tEl.style.fontSize = (nightHideContent ? nightTimeF : fSmall) + 'px';
         b.appendChild(tEl);
       }
       var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
@@ -3588,7 +3614,7 @@ body.printing .rs { display: none; }
         /* 施設業務名(要件5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜18px) */
         nmEl.style.fontSize = Math.max(13, Math.min(18, fSmall)) + 'px';
       } else if (nightHideContent) {
-        nmEl.style.fontSize = fContent + 'px';   /* 夜勤=内容無し→氏名を最大(時刻以上)に(要件3) */
+        nmEl.style.fontSize = nightNameF + 'px';   /* 夜勤=時刻より小さめ(要件2C) */
       } else {
         nmEl.style.fontSize = fSmall + 'px';
       }
@@ -5707,27 +5733,57 @@ body.printing .rs { display: none; }
       f = nf;
     }
   }
-  /* 印刷直前(zoom前): 時刻/名前は1行に収め(時刻は右余白まで拡大=要件2)、ケア内容は1行強制せず折返し可(要件3)、氏名は余裕時に拡大 */
+  /* ケア内容を「各1行」かつ「枠内に収まる統一フォント」にする(要件4)。
+   * 各項目の1行幅を Range で実測し、最も長い項目が枠幅(チェック□分を控除)に収まる最大フォントを算出して
+   * 全項目へ一律適用＝長い内容(デイ準備/シーツ交換/入浴介助/買物代行等)も1行に収まり、並列内容のサイズも揃う。 */
+  function uniformContentFont_(fr, availW) {
+    var rows = fr.querySelectorAll('.pt-item');
+    if (!rows.length) return;
+    var uni = 1e9, j;
+    for (j = 0; j < rows.length; j++) {
+      var el = rows[j].querySelector('.pt-item-tx'); if (!el) continue;
+      var cb = rows[j].querySelector('.pt-cb');
+      var aw = availW - (cb ? cb.offsetWidth + 4 : 0);
+      if (aw < 10) aw = 10;
+      var cur = parseFloat(getComputedStyle(el).fontSize) || 12;
+      var rng = document.createRange(); rng.selectNodeContents(el);
+      var w = rng.getBoundingClientRect().width;
+      var maxF = (w <= aw * 0.99 || w <= 0) ? cur : Math.floor(cur * (aw * 0.99) / w);
+      if (maxF < uni) uni = maxF;
+    }
+    if (uni > 1e8) return;
+    if (uni < 8) uni = 8;
+    for (j = 0; j < rows.length; j++) { var e2 = rows[j].querySelector('.pt-item-tx'); if (e2) e2.style.fontSize = uni + 'px'; }
+    return uni;
+  }
+  /* 印刷直前(zoom前): 内容=統一1行(要件4)、時刻/名前を枠・行数・夜勤に応じて動的調整(要件2C/3) */
   function fitPrintText(board) {
     var frames = board.querySelectorAll('.p-task'), i;
     for (i = 0; i < frames.length; i++) {
       var fr = frames[i];
       var availW = fr.clientWidth - 4;
       if (availW <= 0) continue;
-      /* ケア内容は1行に詰めない(要件3)＝CSSで折返し。横幅縮小はしない＝枠内最大のまま各行表示 */
-      var tEl = fr.querySelector('.pt-time');
-      /* 時刻=右余白と行スロットの縦余裕まで拡大(要件2)。上限26pxは固定＝短枠で内容より少し大きくなり得るが
-       * 縦に詰まった枠(内容が枠を満たす)では growToW_ の縦ガードで自然に止まる＝内容を圧迫しない。 */
       var isNightFr = fr.className.indexOf('p-night') >= 0;
-      /* 夜勤枠は氏名を主役にするため時刻は拡大しない(時刻が縦を食って氏名を潰すのを防ぐ=要件3) */
-      if (tEl) { shrinkToW_(tEl, availW); if (!isNightFr) growToW_(fr, tEl, availW, 26); }
+      var dur = parseInt(fr.getAttribute('data-dur') || '0', 10);
+      var nItems = fr.querySelectorAll('.pt-item').length;
+      var heavy1920 = (dur === 19 || dur === 20) && nItems >= 2;   /* 4行以上(時刻+名前+内容2件以上)=要件3 */
+      /* 内容は先に統一1行サイズへ(後段の氏名拡大の縦判定に反映) */
+      uniformContentFont_(fr, availW);
+      var tEl = fr.querySelector('.pt-time');
+      if (tEl) {
+        shrinkToW_(tEl, availW);
+        if (isNightFr) { /* 夜勤=board.jsで時刻>氏名に分配済＝幅縮小のみ(拡大して氏名を潰さない・要件2C) */ }
+        else if (heavy1920) {                                    /* 4行以上=時刻を小さくして氏名・内容に余白を譲る(要件3) */
+          var tc = parseFloat(getComputedStyle(tEl).fontSize) || 12;
+          var tn = Math.max(9, Math.round(tc * 0.78));
+          if (tn < tc) tEl.style.fontSize = tn + 'px';
+        } else growToW_(fr, tEl, availW, 26);                    /* 日中=右余白まで拡大(要件2) */
+      }
       var nm = fr.querySelector('.pt-name');
       if (nm) {
-        shrinkToW_(nm, availW);   /* 施設業務名(要件5)含め1行に収める */
-        if (nm.className.indexOf('pt-name-fac') < 0) {
-          /* 夜勤=内容無しなので氏名を時刻と同等以上に大きく(要件3)。日中は内容フォント上限で内容優先(要件2) */
-          enlargeName_(fr, nm, availW, isNightFr ? 34 : null);
-        }
+        shrinkToW_(nm, availW);   /* 施設業務名(要件5)・夜勤氏名含め1行に収める */
+        /* 夜勤と施設業務は固定サイズ(分配/算出済)＝拡大しない。日中の利用者氏名のみ余裕時に拡大(要件2) */
+        if (nm.className.indexOf('pt-name-fac') < 0 && !isNightFr) enlargeName_(fr, nm, availW, null);
       }
     }
   }
