@@ -3524,6 +3524,11 @@ document.addEventListener('visibilitychange', () => {
     SYNC.pollIfNeeded();
   }
 });
+// ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
+window.addEventListener('online', () => {
+  if (!SYNC.hasTarget()) return;
+  if (SYNC._dirty) { SYNC.push(); } else { SYNC.pollIfNeeded(); }
+});
 // ページ離脱時：未送信変更があれば最後のpushを試みる（ベストエフォート・統合GAS形式）
 window.addEventListener('beforeunload', () => {
   if (SYNC._dirty && SYNC.hasTarget()) {

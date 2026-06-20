@@ -377,6 +377,8 @@ textarea.inp { min-height: 110px; font-size: 12px; }
 .seg { display: flex; border: 1px solid var(--g3); border-radius: 8px; overflow: hidden; }
 .seg button { flex: 1; border: none; background: #fff; padding: 8px 4px; font-size: 13px; cursor: pointer; color: var(--g7); }
 .seg button.on { background: var(--pri); color: #fff; font-weight: 700; }
+.seg button:disabled, .seg button.locked { color: var(--g4); background: var(--g1); cursor: not-allowed; opacity: .6; }
+.seg button.on:disabled, .seg button.on.locked { background: var(--pri); color: #fff; opacity: 1; cursor: default; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips .pc {
   border: 1px solid var(--g3); background: var(--g0); border-radius: 14px;
@@ -616,6 +618,9 @@ body.printing .rs { display: none; }
   <div class="fld" id="fSvc">
     <label>サービスコード</label>
     <select class="inp" id="edSvc"></select>
+  </div>
+  <div class="fld" id="fHosp">
+    <label><input type="checkbox" id="edHospitalized"> 入院中（週間計画と連携・盤面では極薄表示）</label>
   </div>
   <div class="fld" id="fLabel" style="display:none">
     <label>枠の名称</label>
@@ -4941,6 +4946,34 @@ body.printing .rs { display: none; }
     }
     if (changed) { saveCareDb(db); toast('ケア内容を週間計画へ反映しました'); }
   }
+  /* ===== 入院フラグ（resident単位・週間計画と共有の care_schedule_v2）要件4 ===== */
+  function findCareResidentByName_(care, name) {
+    if (!care || !care.residents || !name) return null;
+    var norm = function (s) { return String(s || '').replace(/[\s　]/g, ''); };
+    var i;
+    for (i = 0; i < care.residents.length; i++) if (care.residents[i].name === name) return care.residents[i];
+    for (i = 0; i < care.residents.length; i++) if (norm(care.residents[i].name) === norm(name)) return care.residents[i];
+    return null;
+  }
+  function isResidentHospitalized_(name) {
+    var r = findCareResidentByName_(loadCareDb(), name);
+    return !!(r && r.hospitalized);
+  }
+  /* 入院フラグを書込み→care_schedule_v2 保存＋クラウドpush で週間計画へ即時連携（要件4-1/4-2）。
+   * 週間計画に該当入居者が無い場合は何もしない（誤って新規作成しない）。 */
+  function setResidentHospitalized_(name, val) {
+    if (!name) return;
+    var care = loadCareDb();
+    if (!care) return;
+    var r = findCareResidentByName_(care, name);
+    if (!r) { toast('「' + name + '」は週間計画に未登録のため入院状態を反映できません', true); return; }
+    if (!!r.hospitalized === !!val) return;   /* 変更なし */
+    r.hospitalized = !!val;
+    if (saveCareDb(care)) {
+      toast(val ? ('「' + name + '」を入院中にしました（週間計画へ反映）')
+                : ('「' + name + '」を退院にしました（週間計画へ反映）'));
+    }
+  }
   function hhmm(min) {
     var h = Math.floor(min / 60), m = min % 60;
     return (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
@@ -5353,16 +5386,24 @@ body.printing .rs { display: none; }
       dl.appendChild(o);
     }
   }
-  function setEditKind(kind) {
+  function setEditKind(kind, lock) {
     ui.editKind = kind;
+    ui.editKindLocked = !!lock;
     var btns = $('edKind').querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
-      btns[i].className = btns[i].getAttribute('data-k') === kind ? 'on' : '';
+      var k = btns[i].getAttribute('data-k');
+      var cls = k === kind ? 'on' : '';
+      /* 支援枠から開いた時は「入居者支援」に固定し、他タブ(施設業務等)を無効化（要件4-3） */
+      var dis = !!lock && k !== 'care';
+      btns[i].disabled = dis;
+      if (dis) cls += (cls ? ' ' : '') + 'locked';
+      btns[i].className = cls;
     }
     $('fResident').style.display = kind === 'care' ? '' : 'none';
     $('fSvc').style.display = kind === 'care' ? '' : 'none';
     $('fLabel').style.display = (kind === 'facility' || kind === 'free' || kind === 'admin') ? '' : 'none';
     $('fContents').style.display = kind === 'care' ? '' : 'none';
+    if ($('fHosp')) $('fHosp').style.display = kind === 'care' ? '' : 'none';
   }
   function renderContentChips() {
     var wrap = $('edContents');
@@ -5402,8 +5443,16 @@ body.printing .rs { display: none; }
     facilityDatalist();
     $('mEditTitle').textContent = t ? '支援の編集' : '新規タスク';
     var kind = t ? t.kind : (prefill && prefill.kind ? prefill.kind : 'care');
-    setEditKind(kind);
+    /* 既存の支援枠を開いた時はタブを入居者支援に固定（新規や他種別は自由・要件4-3） */
+    setEditKind(kind, !!(t && t.kind === 'care'));
     $('edResident').value = t ? t.residentName : '';
+    if ($('edHospitalized')) {
+      $('edHospitalized').checked = (kind === 'care' && t && t.residentName)
+        ? isResidentHospitalized_(t.residentName) : false;
+    }
+    /* 入院チェックの基準値（=この入居者の現在の状態）。saveでこの値から変わった時だけ書込む。
+     * 新規枠で未操作のまま保存しても、入院中の入居者を誤って退院にしないための保護。 */
+    ui.editHospInitial = $('edHospitalized') ? $('edHospitalized').checked : false;
     $('edSvc').value = t && t.svcCode ? t.svcCode : '生活３';
     $('edLabel').value = t ? (t.label || '') : (prefill && prefill.label ? prefill.label : '');
     var start = t ? t.start : (prefill && typeof prefill.start === 'number' ? prefill.start : 600);
@@ -5505,6 +5554,11 @@ body.printing .rs { display: none; }
         if (!v2.ok) { toast(v2.reason, true); return; }
       }
       store.dispatch({ type: 'ADD_TASK', task: nt });
+    }
+    /* 入院フラグ（resident単位）を週間計画(care_schedule_v2)へ即時連携（要件4-1/4-2）。
+     * 基準値(editHospInitial)から変わった時だけ書込む＝未操作の新規枠で誤って退院にしない。 */
+    if (kind === 'care' && $('edHospitalized') && $('edHospitalized').checked !== ui.editHospInitial) {
+      try { setResidentHospitalized_(residentName, $('edHospitalized').checked); } catch (eH) {}
     }
     hideModals();
   }
@@ -6248,11 +6302,51 @@ body.printing .rs { display: none; }
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
     return e || '通信失敗';
   }
-  function gas(payload, cb) {
+  /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
+     ws_settings の endpoint が現在と異なり、そこへの ping が成功(j.ok===true もしくは role/server)のときだけ
+     su_sync_common と現行 settings を上書き。通信失敗/unknown action継続/unauthorized では上書きしない
+     （誤切替・unauthorized固着の防止）。週間計画(care-schedule)の healStaleTarget と同方針。 */
+  function healStaleTarget(cb) {
+    var ws = {};
+    try { ws = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) { ws = {}; }
+    var wsEp = String((ws && ws.endpoint) || '').trim();
+    if (!wsEp || wsEp === String(settings.endpoint || '').trim()) { cb(false); return; }
+    var wsTok = String((ws && ws.token) || '').trim();
+    var done = false;
+    function once(v) { if (done) return; done = true; if (timer) clearTimeout(timer); cb(v); }
+    var timer = setTimeout(function () { once(false); }, 8000);
+    try {
+      fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                    body: JSON.stringify({ action: 'ping', token: wsTok }), redirect: 'follow' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && !j.error && (j.ok === true || j.role || j.server)) {
+            settings.endpoint = wsEp; settings.token = wsTok;
+            try { localStorage.setItem(COMMON_SYNC_KEY, JSON.stringify(
+              { endpoint: wsEp, token: wsTok, updatedAt: Date.now() })); } catch (e2) {}
+            once(true);
+          } else { once(false); }
+        })
+        .catch(function () { once(false); });
+    } catch (e) { once(false); }
+  }
+  function gas(payload, cb) { gasCall(payload, cb, false); }
+  function gasCall(payload, cb, retried) {
     payload.token = settings.token;
     /* cb は必ず1回だけ・15秒で必ず応答（無応答でも固まらないようにする） */
     var called = false;
-    function once(v) { if (called) return; called = true; if (timer) clearTimeout(timer); try { cb(v); } catch (e) {} }
+    function deliver(v) {
+      /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
+      if (!retried && v && v.error === 'unknown action') {
+        healStaleTarget(function (healed) {
+          if (healed) { gasCall(payload, cb, true); }
+          else { try { cb(v); } catch (e) {} }
+        });
+        return;
+      }
+      try { cb(v); } catch (e) {}
+    }
+    function once(v) { if (called) return; called = true; if (timer) clearTimeout(timer); deliver(v); }
     var timer = setTimeout(function () { once(null); }, 15000);
     try {
       fetch(settings.endpoint, { method: 'POST', body: JSON.stringify(payload) })
@@ -6296,7 +6390,8 @@ body.printing .rs { display: none; }
         if (report) $('stResult').textContent = '他端末の更新を取得します…';
         pullDayNow(date, true);
       } else {
-        setSyncState('同期エラー');
+        /* 持続表示＝オフライン。再接続(online)・タブ復帰(focus/visibility)・次の編集で自動再送する */
+        setSyncState('⚠ オフライン（自動再試行）');
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
     });
@@ -7147,6 +7242,32 @@ body.printing .rs { display: none; }
     ui.selectedIds = [];
     toast(n + '件を消去しました');
   }
+  /* deleteキー用: 支援枠(kind==='care')は保護し、それ以外（施設業務/休憩/事務/自由枠）のみ削除（要件3）。
+   * 確認ダイアログ無しの即時削除＝支援枠を巻き込まないようバリデーションする。 */
+  function deleteSelectedNonCare() {
+    if (!ui.selectedIds.length) return;
+    var tasks = store.get().tasks;
+    var ids = ui.selectedIds.slice();
+    var delIds = [], careCount = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var t = M.findTask(tasks, ids[i]);
+      if (!t) continue;
+      if (t.kind === 'care') { careCount++; continue; }   /* 支援枠は delete では消さない */
+      delIds.push(ids[i]);
+    }
+    if (!delIds.length) {
+      toast(careCount ? '支援枠はdeleteキーでは削除できません（施設業務枠などが対象です）' : '削除対象がありません');
+      return;
+    }
+    for (var j = 0; j < delIds.length; j++) store.dispatch({ type: 'DELETE_TASK', id: delIds[j] });
+    /* 削除した非支援枠だけ選択解除し、保護された支援枠の選択は維持する */
+    var keep = [];
+    for (var k = 0; k < ui.selectedIds.length; k++) {
+      if (delIds.indexOf(ui.selectedIds[k]) < 0) keep.push(ui.selectedIds[k]);
+    }
+    ui.selectedIds = keep;
+    toast(delIds.length + '件を消去しました' + (careCount ? '（支援枠' + careCount + '件は保護）' : ''));
+  }
   /* 選択中タスクを複製して未配置トレイへ（時間・内容を引き継ぎ、配置はD&Dで） */
   function duplicateSelected() {
     if (!ui.selectedIds.length) { toast('ブロックを選択してください'); return; }
@@ -7214,7 +7335,7 @@ body.printing .rs { display: none; }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); duplicateSelected();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && ui.selectedIds.length) {
-        e.preventDefault(); deleteSelected();
+        e.preventDefault(); deleteSelectedNonCare();   /* 支援枠以外のみ削除（要件3） */
       }
     });
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
@@ -7236,13 +7357,23 @@ body.printing .rs { display: none; }
     var kindBtns = $('edKind').querySelectorAll('button');
     for (var i = 0; i < kindBtns.length; i++) {
       (function (b) {
-        b.addEventListener('click', function () { setEditKind(b.getAttribute('data-k')); });
+        /* ロック中(支援枠編集)は care 以外 disabled でクリック不発。care をクリックしてもロックを維持する。 */
+        b.addEventListener('click', function () { setEditKind(b.getAttribute('data-k'), ui.editKindLocked); });
       })(kindBtns[i]);
     }
     $('edSvc').addEventListener('change', function () {
       var svc = M.SVC[$('edSvc').value];
       var s = inputToMin($('edStart').value);
       if (svc && s !== null) $('edEnd').value = minToInput(Math.min(s + svc.mins, 1439));
+    });
+    /* 入居者名を入力したら、その入居者の現在の入院状態をチェックに反映し基準値も更新する
+     * （新規枠でも正しい現状を表示し、未操作なら誤って状態を変えない・要件4） */
+    if ($('edResident')) $('edResident').addEventListener('input', function () {
+      if (ui.editKind !== 'care' || !$('edHospitalized')) return;
+      var nm = $('edResident').value.trim();
+      var h = nm ? isResidentHospitalized_(nm) : false;
+      $('edHospitalized').checked = h;
+      ui.editHospInitial = h;
     });
     $('edContentFree').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
@@ -7937,6 +8068,18 @@ body.printing .rs { display: none; }
     window.addEventListener('focus', function () {
       /* 他端末の更新を取り込む（10秒スロットル） */
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+    });
+    /* ネットワーク復帰で即再同期（オフライン固着の自動復帰）。スロットルを解除して確実に取得＋未送信を送る。 */
+    window.addEventListener('online', function () {
+      if (!syncOn()) return;
+      lastPullAt = 0;
+      try { pullAll(false); } catch (e) {}
+      try { schedulePushDay(); } catch (e2) {}
+      try { schedulePushCare(); } catch (e3) {}
+    });
+    /* タブ復帰でも他端末の更新を取り込む（10秒スロットル） */
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
     });
     /* 同一端末の別タブ（週間計画アプリ等）が localStorage を更新したら即クラウドへ */
     window.addEventListener('storage', function (ev) {
