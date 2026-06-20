@@ -34,6 +34,12 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar #ymLabel { font-weight: 700; font-size: 15px; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
+/* DO NOT DELETE: 非表示列(行)表示トグル（重要機能・トップ右固定）。CLAUDE.md §0 参照 */
+#toolbar .reveal-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #fff; cursor: pointer; white-space: nowrap;
+  background: rgba(255,255,255,.12); padding: 4px 9px; border-radius: 5px; }
+#toolbar .reveal-toggle input { cursor: pointer; margin: 0; }
+#toolbar .reveal-toggle + #syncBadge { margin-left: 6px; }
 #syncBadge { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 12px;
   background: rgba(255,255,255,.15); cursor: pointer; white-space: nowrap; }
 #syncBadge.synced { background: #1e8a4c; }
@@ -280,6 +286,15 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <button id="btnPrint">🖨 印刷</button>
   <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
   <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
+  <!-- ════════════════════════════════════════════════════════════════
+       DO NOT DELETE / DO NOT MOVE: 非表示列(行)表示機能（重要機能・橋爪氏指定で永久保護）
+       「非表示行を表示」チェックボックス。app.js の revealHidden / grid.js の hidebtn・showbtn と連動。
+       リファクタ・整理時も絶対に削除・移動・改名・無効化しないこと（過去に複数回消失）。CLAUDE.md §0 参照。
+       ════════════════════════════════════════════════════════════════ -->
+  <label id="revealToggle" class="reveal-toggle" title="非表示にした区分行を一時的に表示／各行の「表示」ボタンで復元できます">
+    <input type="checkbox" id="togHidden"> 非表示行を表示
+  </label>
+  <!-- /DO NOT DELETE: 非表示列(行)表示機能 -->
   <span id="syncBadge" class="nosync" title="クリックで今すぐ同期">同期未設定</span>
 </div>
 
@@ -745,10 +760,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return { kind: 'off', code: sym.code, sub: sym.sub || null };
   }
 
-  /* 範囲記号の早遅分類（残数カウント用）: 開始7:30以前=早系 / 開始12:00以降かつ終了20:00以降=遅系 */
+  /* 範囲記号の早遅分類（残数カウント用）:
+   *  開始7:30以前=早系 / 終了20:00(1200分)以降=遅系（開始時刻を問わず・要件2「20時までの勤務は遅番」）。
+   *  早番（早朝開始）を優先し、それ以外で20時以降まで勤務する枠は全て遅番に計上する。 */
   function rangeCat(startMin, endMin) {
     if (startMin <= 450) return 'early';
-    if (startMin >= 720 && endMin >= 1200) return 'late';
+    if (endMin >= 1200) return 'late';   /* 20時以降まで勤務＝遅番（例 9-20/11-20/13-20/12-21/17-21 等） */
     return 'mid';
   }
 
@@ -5413,16 +5430,21 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         if (k === 'z' && !e.shiftKey) { e.preventDefault(); self.undo(); }
         else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); self.redo(); }
       });
-      /* 非表示行の一時表示トグル */
-      var hint = document.getElementById('layerHint');
-      var tog = document.createElement('label');
-      tog.style.cssText = 'font-size:11px;align-self:center;margin-right:10px;cursor:pointer';
-      tog.innerHTML = '<input type="checkbox" id="togHidden"> 非表示行を表示';
-      hint.parentNode.insertBefore(tog, hint);
-      document.getElementById('togHidden').addEventListener('change', function (e) {
-        self.revealHidden = e.target.checked;
-        self.rerender();
-      });
+      /* ════════════════════════════════════════════════════════════════
+         DO NOT DELETE: 非表示列(行)表示機能（重要機能・橋爪氏指定で永久保護）
+         チェックボックスはツールバー(body.html #togHidden)に静的設置済。ここでは結線のみ。
+         revealHidden は grid.js の行描画 (if(isHidden && !ctx.revealHidden) continue) と連動。
+         リファクタ・整理時も絶対に削除・無効化しないこと（過去に複数回消失）。CLAUDE.md §0 参照。
+         ════════════════════════════════════════════════════════════════ */
+      var togHidden = document.getElementById('togHidden');
+      if (togHidden) {
+        togHidden.checked = !!this.revealHidden;
+        togHidden.addEventListener('change', function (e) {
+          self.revealHidden = e.target.checked;
+          self.rerender();
+        });
+      }
+      /* /DO NOT DELETE: 非表示列(行)表示機能 */
     },
 
     /* シフト表ビューに移動して指定レイヤへ切替（ツールバーの「実績」用） */
