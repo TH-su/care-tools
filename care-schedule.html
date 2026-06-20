@@ -2283,7 +2283,11 @@ function applyBulkImport() {
   let added = 0, dup = 0, createdRes = 0; const errs = [];
   pushUndo();
   lines.forEach((line, idx) => {
-    const cols = line.split('\t').map(c => c.trim());
+    /* 区切りはタブ優先→カンマ→2つ以上の空白。貼り付け元(Excel/メモ)を問わず取り込めるように */
+    let cols = line.split('\t');
+    if (cols.length < 5) cols = line.split(/[,，、]/);
+    if (cols.length < 5) cols = line.split(/[\s　]{2,}/);
+    cols = cols.map(c => c.trim());
     if (cols.length < 5) { errs.push(`行${idx + 1}: 列が不足（最低: 入居者/曜日/区分/開始/終了）`); return; }
     const [name, dowS, kubun, startS, endS, catS, detailS] = cols;
     const dKey = (dowS || '').replace('曜日', '').charAt(0);
