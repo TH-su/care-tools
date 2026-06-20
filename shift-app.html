@@ -936,7 +936,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       totals.overtimeMin += pd.overtimeMin;
       if (pd.overtimeMin > 0) totals.overtimeCount++;
       if (pd.attended) totals.attendDays++;
-      else if (pd.off) totals.offDays += offMult; /* 夜勤専従の休=2日分 */
+      /* 休日数(offDays)＝公休/希望休/公休(off/publicOff) ＋ 有給(paid)。
+       * 有給休暇は「支払われる休日」のため休日数に算入する（希望休は元から off で算入済）。
+       * ただし勤務系を伴う日(例 7)(有＝夜勤明け+有)は attended 優先で出勤扱い＝休日に重複計上しない。
+       * 夜勤専従は1件=2日分(offMult)。paidDays は内訳として別途も保持。 */
+      else if (pd.off || pd.paid) totals.offDays += offMult;
       if (pd.paid) totals.paidDays++;
       for (var dv2 in pd.divMin) {
         totals.divMin[dv2] = (totals.divMin[dv2] || 0) + pd.divMin[dv2];
