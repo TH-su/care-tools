@@ -1971,6 +1971,21 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
       this.queue = SC.SyncQueue.fromJSON(this.meta.queue);
       this.updateStatus();
+      this.bindRecovery();
+    },
+    /* ネットワーク復帰・タブ復帰で自動的に同期を再試行する（オフライン固着の自動復帰）。
+     * 旧Safari互換: addEventListener のみ使用。多重登録を _recoveryBound で防止。 */
+    bindRecovery: function () {
+      if (this._recoveryBound) return;
+      if (typeof window === 'undefined' || !window.addEventListener) return;
+      this._recoveryBound = true;
+      var self = this;
+      window.addEventListener('online', function () { self.recoverNow(); });
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) self.recoverNow();
+        });
+      }
     },
     saveMeta: function () {
       this.meta.queue = this.queue.toJSON();
@@ -2025,7 +2040,62 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       if (cfg && cfg.url) {
         lsSet(COMMON_SYNC_KEY, { endpoint: cfg.url, token: cfg.token || '', updatedAt: Date.now() });
       }
+      this.clearRetry();   /* 接続先を変えたら再試行バックオフをリセット */
       this.updateStatus();
+    },
+
+    /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ワースケ設定(ws_settings)の
+     * 稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、そこへの ping が
+     * 成功(j.ok===true もしくは role/server を返す)のときだけ su_sync_common を上書きする。
+     * 通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着の防止）。
+     * 週間計画(care-schedule)の healStaleTarget と同じ方針を Promise 方式で移植（旧Safari互換）。 */
+    healStaleTarget: function () {
+      var self = this;
+      var ws = lsGet('ws_settings') || {};
+      var wsEp = String(ws.endpoint || '').trim();
+      var cur = this.getSyncConfig();
+      var curUrl = (cur && cur.url) ? String(cur.url).trim() : '';
+      if (!wsEp || wsEp === curUrl) return Promise.resolve(false); /* 代替先が無い／既に同一 */
+      var wsTok = String(ws.token || '').trim();
+      return fetch(wsEp, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ action: 'ping', token: wsTok }),
+        redirect: 'follow'
+      }).then(function (r) {
+        if (!r.ok) return false;
+        return r.json();
+      }).then(function (j) {
+        if (j && !j.error && (j.ok === true || j.role || j.server)) {
+          lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
+          return true;
+        }
+        return false;
+      }).catch(function () { return false; }); /* 通信失敗では上書きしない */
+    },
+
+    /* オフライン時のバックオフ自動再試行。15s→30s→60s(上限)。
+     * 成功時に clearRetry() でリセット。online/visibilitychange でも recoverNow() が走る。 */
+    scheduleRetry: function () {
+      var self = this;
+      if (this._retryTimer) return; /* 既に予約済み */
+      var delay = this._retryDelay || 15000;
+      this._retryTimer = setTimeout(function () {
+        self._retryTimer = null;
+        self._retryDelay = Math.min((self._retryDelay || 15000) * 2, 60000);
+        self.recoverNow();
+      }, delay);
+    },
+    clearRetry: function () {
+      if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
+      this._retryDelay = 15000;
+    },
+    /* 復帰トリガ。オフライン or 未送信がある時のみ再同期（健全時の無駄打ちを避ける）。 */
+    recoverNow: function () {
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return;
+      if (this.status !== 'offline' && this.queue.size() === 0) return;
+      if (this.queue.size() > 0) this.pushQueued(); else this.pullAll();
     },
 
     /* ---- 状態通知 ---- */
@@ -2123,6 +2193,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           self.updateStatus('offline',
             'サーバ側に破損データがありました（' + corrupt.join(', ') + '）。ローカルを保持し、修復のため再送します。');
         } else {
+          self.clearRetry();   /* 取得成功＝復帰：バックオフをリセット */
           self.updateStatus();
         }
         for (var ci = 0; ci < conflicts.length; ci++) {
@@ -2132,7 +2203,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         if (self.queue.size() > 0) self.pushQueued();
         return 'ok';
       }).catch(function (err) {
-        self.updateStatus('offline', String(err && err.message ? err.message : err));
+        var msg = String(err && err.message ? err.message : err);
+        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
+        if (msg === 'unknown action' && !self._healing) {
+          self._healing = true;
+          return self.healStaleTarget().then(function (healed) {
+            self._healing = false;
+            if (healed) return self.pullAll();
+            self.updateStatus('offline', msg);
+            self.scheduleRetry();
+            return 'offline';
+          });
+        }
+        self.updateStatus('offline', msg);
+        self.scheduleRetry();   /* 一過性失敗(コールドスタートタイムアウト等)から自動復帰 */
         return 'offline';
       });
     },
@@ -2274,6 +2358,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       return chain.then(function () {
         self.meta.lastSync = Date.now();
         self.saveMeta();
+        self.clearRetry();   /* 送信成功＝復帰：バックオフをリセット */
         self.updateStatus();
         return 'ok';
       }).catch(function (err) {
@@ -2281,7 +2366,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           self.updateStatus('readonly', '閲覧専用トークンのため、この端末の編集はサーバへ送信されません');
           return 'readonly';
         }
-        self.updateStatus('offline', String(err && err.message ? err.message : err));
+        var msg = String(err && err.message ? err.message : err);
+        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
+        if (msg === 'unknown action' && !self._healing) {
+          self._healing = true;
+          return self.healStaleTarget().then(function (healed) {
+            self._healing = false;
+            if (healed) return self.pushQueued();
+            self.updateStatus('offline', msg);
+            self.scheduleRetry();
+            return 'offline';
+          });
+        }
+        self.updateStatus('offline', msg);
+        self.scheduleRetry();
         return 'offline';
       });
     },
