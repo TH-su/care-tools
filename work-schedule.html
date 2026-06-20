@@ -115,6 +115,17 @@ body {
 .b-head {
   padding: 4px 2px; text-align: center; border-right: 1px solid var(--g3);
   font-size: 11px; line-height: 1.3; overflow: hidden; background: #fff;
+  position: relative;   /* .h-other(別事業所時間)の絶対配置の基準。既存の静的子レイアウトは不変 */
+}
+/* 別事業所時間（訪問/施設メインが勤務途中に別事業所へ入る時間）を名前欄下部に赤字で。
+   絶対配置＝ヘッダー高さ・DOM構造・D&D座標に一切影響しない。グリッドの高さ揃えで下部に余白が出る列に浮く。 */
+.b-head .h-other {
+  position: absolute; left: 0; right: 0; bottom: 1px;
+  font-size: 8px; line-height: 1.05; color: #c0392b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 0 2px; pointer-events: none;
+  /* 満杯列(余白なし)で下端に重なっても可読なよう白ハロー。ボックス無し＝高さ・レイアウト不変 */
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff;
 }
 .b-head .h-no { font-weight: 700; color: var(--g6); font-size: 12px; }
 .b-head .h-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
@@ -486,6 +497,8 @@ body.printing .b-head, body.printing .b-head.z-facility, body.printing .b-head.z
 body.printing .b-head .h-no, body.printing .b-head .h-name, body.printing .b-head .h-time { color: #000; }
 body.printing .b-head .h-role { background: #fff; color: #000; border: 1px solid #000; }
 body.printing .b-head .h-empty { color: #999; }
+/* 別事業所時間は印刷でも赤を維持。絶対配置のままで高さ・A3フィットに非影響。印刷は文字が拡大されるため少し大きめ */
+body.printing .b-head .h-other { color: #c0392b !important; font-size: 11px; }
 body.printing .h-alert { display: none; }
 body.printing .tick, body.printing .tick.hour, body.printing .tick.night { color: #000; }
 body.printing .gline { border-top-color: #bbb; }
@@ -1720,6 +1733,55 @@ body.printing .rs { display: none; }
     return out;
   }
 
+  function hhmm_(m) {
+    if (m === null || m === undefined || isNaN(m)) return '';
+    var h = Math.floor(m / 60), mm = m % 60;
+    return (h < 10 ? '0' + h : '' + h) + ':' + (mm < 10 ? '0' + mm : '' + mm);
+  }
+  /* 別事業所時間ラベル: 各職員の主区分(mainDivision)以外の副区分(subCells)の当日「日勤」レンジを抽出し、
+   * 「区分 HH:MM-HH:MM」形式で 氏名→ラベル文字列 の map を返す。訪問メイン・施設メイン両対応。
+   * 例: 中間(訪問メイン,施設15-18)→{'中間 智恵子':'施設 15:00-18:00'} / 岡嶋(訪問,通所9-12)→'通所 9:00-12:00'。
+   * 夜勤(入り/明け)は「勤務途中の別事業所」ではないので除外。plan/subCells/時刻欠損でも安全に空を返す（要件1/2）。 */
+  function otherOfficeByName(plan, shiftStaff, symbols, dateStr) {
+    var map = {};
+    if (!plan || !plan.subCells || typeof plan.subCells !== 'object') return map;
+    if (!symbols || !symbols.length) symbols = DEFAULT_SYMBOLS;
+    var dayNo = parseInt(String(dateStr).slice(8, 10), 10);
+    if (!dayNo) return map;
+    var dayStr = String(dayNo);
+    var staffList = shiftStaff || [];
+    var ORDER = ['施設', '訪問', '通所'];
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      if (!st || st.active === false) continue;
+      if (st.status === '退職' || st.status === '休職' || st.status === '非表示') continue;
+      var name = st.name ? String(st.name).trim() : '';
+      if (!name) continue;
+      var sc = plan.subCells[st.id];
+      if (!sc || typeof sc !== 'object') continue;
+      var mainDiv = st.mainDivision || '施設';
+      var labels = [];
+      for (var oi = 0; oi < ORDER.length; oi++) {
+        var dv = ORDER[oi];
+        if (dv === mainDiv) continue;                 /* 主区分は別事業所ではない */
+        if (!Object.prototype.hasOwnProperty.call(sc, dv)) continue;
+        var raw = cellAt(sc[dv], dayNo, dayStr);
+        if (raw === null) continue;
+        var parts = partsOf(raw, symbols);
+        var ranges = [];
+        for (var p = 0; p < parts.length; p++) {
+          var pt = parts[p];
+          if (pt && pt.kind === 'work' && pt.startMin != null && pt.endMin != null && pt.endMin > pt.startMin) {
+            ranges.push(hhmm_(pt.startMin) + '-' + hhmm_(pt.endMin));
+          }
+        }
+        if (ranges.length) labels.push(dv + ' ' + ranges.join(' '));
+      }
+      if (labels.length) map[name] = labels.join(' / ');
+    }
+    return map;
+  }
+
   /* 出勤者リストの安定シグネチャ（同一内容なら再反映をスキップする churn 防止用） */
   function attendanceStamp(list) {
     var arr = [];
@@ -1736,6 +1798,7 @@ body.printing .rs { display: none; }
     timeToMin: timeToMin,
     parseShiftCell: parseShiftCell,
     extractAttendance: extractAttendance,
+    otherOfficeByName: otherOfficeByName,
     attendanceStamp: attendanceStamp,
     workZone: workZone,
     isDaycareStaff: isDaycareStaff,
@@ -3499,6 +3562,14 @@ body.printing .rs { display: none; }
       h.appendChild(txt('div', 'h-time', TS.minToTime(st.workStart) + '-' + TS.minToTime(st.workEnd)));
     }
     if (!named) h.appendChild(txt('div', 'h-name h-empty', '—'));
+    /* 別事業所時間(slot.otherOffice)を名前欄下部に赤字で表示。絶対配置でヘッダー高さ・D&D座標は不変(要件2/3)。
+     * グリッドで全列ヘッダーが最も高い列に揃うため、単一の訪問/施設列ヘッダー下部の余白へ浮かせる。 */
+    var others = [];
+    for (var oi = 0; oi < colDef.staffIds.length; oi++) {
+      var so = staffById[colDef.staffIds[oi]];
+      if (so && so.name && so.otherOffice) others.push(so.otherOffice);
+    }
+    if (others.length) h.appendChild(txt('div', 'h-other', others.join(' / ')));
     return h;
   }
 
@@ -6506,6 +6577,15 @@ body.printing .rs { display: none; }
       }
       /* 反映後に余分な夜勤列(氏名もケアも無い＝前日等の残留)を除去＝当日実績の出勤者のみに保つ(要件2/3) */
       try { IM.mergeStrayNightCols(res.columns, res.staff, day.tasks); } catch (eMs) {}
+      /* 別事業所時間(訪問/施設メインが勤務途中に別事業所へ入る時間)を氏名一致でスロットへ付与＝名前欄に赤字表示 */
+      try {
+        var otherMap = SH.otherOfficeByName(data.plan, data.staff, data.symbols, date);
+        for (var si = 0; si < res.staff.length; si++) {
+          var slot = res.staff[si];
+          if (!slot) continue;
+          slot.otherOffice = (slot.name && otherMap[slot.name]) ? otherMap[slot.name] : null;
+        }
+      } catch (eOO) {}
       store.dispatch({ type: 'SET_STAFF', staff: res.staff, columns: res.columns });
       store.dispatch({ type: 'SET_META', patch: { shiftStamp: stamp } });
       try { finalizeBoard(); } catch (eF) {}   /* 空き列詰め＋施設業務/休憩の自動充填(ケア自動配置含む) */
