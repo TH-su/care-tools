@@ -574,6 +574,7 @@ select.inp { cursor: pointer; }
     <button class="hdr-btn" onclick="window.open('work-schedule.html','_blank')" title="ワークスケジュールを開く">📋 ワースケ</button>
     <button class="hdr-btn" onclick="window.open('shift-app.html','_blank')" title="シフト作成アプリを開く">👥 シフト</button>
     <button class="hdr-btn" onclick="openResidentModal()">👤 入居者</button>
+    <button class="hdr-btn" onclick="openBulkImport()" title="予定を貼り付けで一括登録">📋 一括取込</button>
     <button class="hdr-btn" onclick="printWeek()">🖨</button>
     <button class="hdr-btn" onclick="exportJSON()">⬇</button>
     <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" onclick="manualSave()" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
@@ -808,6 +809,26 @@ select.inp { cursor: pointer; }
     <ul class="res-list" id="res-list"></ul>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeResidentModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk import modal (予定の貼り付け一括登録) -->
+<div class="mk" id="mk-bulk">
+  <div class="md">
+    <div class="md-hd">
+      <h2>予定の貼り付け一括登録</h2>
+      <button class="md-close" onclick="closeBulkImport()">✕</button>
+    </div>
+    <div class="form-row">
+      <label>1行＝1予定。<b>タブ区切り</b>で貼り付けてください（Excel/スプレッドシートからコピー可）：</label>
+      <div style="font-size:12px;color:var(--g6);margin:2px 0 6px">入居者　曜日(月〜日)　区分(訪問/通所)　開始(H:MM)　終了(H:MM)　サービスコード(任意)　ケア内容(任意)</div>
+      <textarea class="inp" id="f-bulk" rows="9" placeholder="生田由紀子	土	訪問	0:00	0:19	身体０１	&#10;原田佳子	土	訪問	2:00	2:19	身体０１	"></textarea>
+    </div>
+    <div class="form-row" id="f-bulk-result" style="font-size:13px;white-space:pre-wrap;color:var(--g7)"></div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeBulkImport()">閉じる</button>
+      <button class="btn btn-pri" onclick="applyBulkImport()">登録する</button>
     </div>
   </div>
 </div>
@@ -2228,6 +2249,66 @@ function addResident() {
   $('#f-new-res').value = '';
   showToast(`「${name}」を追加しました`);
 }
+
+/* ── 予定の貼り付け一括登録（夜勤訪問など多数の予定をまとめて登録） ── */
+const BULK_DOW = { '月':0, '火':1, '水':2, '木':3, '金':4, '土':5, '日':6 };
+function openBulkImport()  { $('#f-bulk-result').textContent = ''; $('#mk-bulk').classList.add('open'); setTimeout(() => $('#f-bulk').focus(), 50); }
+function closeBulkImport() { $('#mk-bulk').classList.remove('open'); }
+function normTime_(s) {
+  const m = String(s || '').trim().replace('：', ':').match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+  if (h > 23 || mi > 59) return null;
+  return (h < 10 ? '0' + h : '' + h) + ':' + (mi < 10 ? '0' + mi : '' + mi);
+}
+function normCat_(s) {   /* 半角数字→全角でカテゴリ照合（身体01→身体０１） */
+  s = String(s || '').trim();
+  if (!s) return '';
+  const z = '０１２３４５６７８９';
+  let out = '';
+  for (const ch of s) { const i = '0123456789'.indexOf(ch); out += (i >= 0 ? z[i] : ch); }
+  return out;
+}
+function findOrCreateResident_(name) {
+  const norm = n => String(n || '').replace(/[\s　]/g, '');
+  let r = DB.residents.find(x => x.name === name) || DB.residents.find(x => norm(x.name) === norm(name));
+  if (r) return { res: r, created: false };
+  r = { id: ruid(), name, events: [], careLevel: '', copayRate: 1, welfareEquipUnits: 0 };
+  DB.residents.push(r);
+  return { res: r, created: true };
+}
+function applyBulkImport() {
+  const lines = $('#f-bulk').value.split('\n').map(l => l.trim()).filter(l => l.length);
+  if (!lines.length) { $('#f-bulk-result').textContent = '貼り付け内容がありません'; return; }
+  let added = 0, dup = 0, createdRes = 0; const errs = [];
+  pushUndo();
+  lines.forEach((line, idx) => {
+    const cols = line.split('\t').map(c => c.trim());
+    if (cols.length < 5) { errs.push(`行${idx + 1}: 列が不足（最低: 入居者/曜日/区分/開始/終了）`); return; }
+    const [name, dowS, kubun, startS, endS, catS, detailS] = cols;
+    const dKey = (dowS || '').replace('曜日', '').charAt(0);
+    if (BULK_DOW[dKey] === undefined) { errs.push(`行${idx + 1}: 曜日不明「${dowS}」`); return; }
+    const dow = BULK_DOW[dKey];
+    const stype = (kubun.indexOf('通所') >= 0 || kubun.indexOf('デイ') >= 0) ? 'daycare' : 'visit';
+    const st = normTime_(startS), en = normTime_(endS);
+    if (!st || !en) { errs.push(`行${idx + 1}: 時刻が不正「${startS}-${endS}」`); return; }
+    if (!name) { errs.push(`行${idx + 1}: 入居者名が空`); return; }
+    const { res, created } = findOrCreateResident_(name);
+    if (created) createdRes++;
+    if ((res.events || []).some(e => e.dayOfWeek === dow && e.serviceType === stype && e.startTime === st)) { dup++; return; }
+    res.events.push({
+      id: uid(), dayOfWeek: dow, serviceType: stype,
+      category: stype === 'visit' ? normCat_(catS || '') : '',
+      startTime: st, endTime: en, detail: (detailS || '').trim(), notes: '', units: 0, bathing: false
+    });
+    added++;
+  });
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  $('#f-bulk-result').textContent =
+    `✓ 登録 ${added}件 / 重複スキップ ${dup}件 / 入居者を新規作成 ${createdRes}名` +
+    (errs.length ? '\n⚠ ' + errs.join('\n') : '');
+  showToast(`一括登録: ${added}件を追加しました`);
+}
 function removeResident(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
@@ -3383,6 +3464,7 @@ document.addEventListener('keydown', e => {
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
     if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
     if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
+    if ($('#mk-bulk').classList.contains('open'))      { closeBulkImport(); return; }
   }
   if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
     e.preventDefault();
@@ -3400,6 +3482,7 @@ $('#mk-care-info').addEventListener('click', e => { if (e.target === $('#mk-care
 $('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-office-info')) closeOfficeInfoModal(); });
 $('#mk-sync').addEventListener('click', e => { if (e.target === $('#mk-sync')) closeSyncModal(); });
 $('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-event-list')) closeEventListModal(); });
+$('#mk-bulk').addEventListener('click', e => { if (e.target === $('#mk-bulk')) closeBulkImport(); });
 $('#f-new-res').addEventListener('keydown', e => { if (e.key === 'Enter') addResident(); });
 $('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.display !== 'none') renderCareChips(); });
 
