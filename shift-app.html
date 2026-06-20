@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.25, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>シフト作成・管理</title>
 <style>
@@ -3793,13 +3793,20 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var h = '<div class="hint" style="margin:2px 0 6px;color:#666;font-size:11px">セルをクリックすると <b>希 → 有 → 消去</b>（削除）と切り替わります。読み込んだ希望休・有給も、ここでクリック消去できます。</div>';
       h += '<table class="plain eqcols" style="font-size:11px;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
       for (var c = 0; c < days; c++) h += '<col style="width:28px">';
-      h += '</colgroup><tr><th>氏名</th>';
-      for (var d = 1; d <= days; d++) h += '<th style="text-align:center">' + d + '</th>';
-      h += '</tr>';
-      var staff = app.requestsSorted();
+      h += '</colgroup>';
+      /* 日付ヘッダー行を変数化し、最上部・中盤・最下部の3か所へ複製（縦長でも日付が分かるように） */
+      var hdr = '<tr class="reqhdr"><th>氏名</th>';
+      for (var d = 1; d <= days; d++) hdr += '<th style="text-align:center">' + d + '</th>';
+      hdr += '</tr>';
+      /* 当月の表示対象（active）職員のみ先に抽出して中間位置を確定する */
+      var staffAll = app.requestsSorted();
+      var staff = [];
+      for (var si = 0; si < staffAll.length; si++) { if (staffAll[si].active !== false) staff.push(staffAll[si]); }
+      var mid = staff.length >= 6 ? Math.floor(staff.length / 2) : -1;  /* 行数が少なければ中盤行は出さない */
+      h += hdr;  /* 最上部 */
       for (var i = 0; i < staff.length; i++) {
+        if (i === mid) h += hdr;  /* 中盤 */
         var st = staff[i];
-        if (st.active === false) continue;
         var nm = IM.normalizeName(st.name);
         var row = reqs[nm] || {};
         h += '<tr data-sid="' + st.id + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
@@ -3810,6 +3817,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         }
         h += '</tr>';
       }
+      if (staff.length) h += hdr;  /* 最下部 */
       h += '</table>';
       var el = document.getElementById('reqGrid');
       el.innerHTML = h;
@@ -4431,8 +4439,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       Store.init();
       this.loadAll();
       if (this.ensureOrders()) Store.set('staff', this.staff);
+      /* 直前に表示していた月を復元（無ければ現在月）。リロードで現在月に戻る不具合の修正。 */
       var now = new Date();
-      this.setYM(now.getFullYear(), now.getMonth() + 1);
+      var savedYM = Store.getLocal('viewYM', null);
+      var pm = (typeof savedYM === 'string') ? savedYM.match(/^(\d{4})-(\d{2})$/) : null;
+      if (pm) { this.setYM(parseInt(pm[1], 10), parseInt(pm[2], 10)); }
+      else { this.setYM(now.getFullYear(), now.getMonth() + 1); }
       this.bindToolbar();
       this.bindDialogs();
       Grid.initGlobal();
@@ -4579,6 +4591,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       if (m > 12) { y++; m = 1; }
       this.year = y; this.month = m;
       this.ym = y + '-' + (m < 10 ? '0' + m : m);
+      /* 表示中の月を端末ローカルに保存（リロードで現在月へ戻らないように・非同期＝端末別） */
+      try { Store.setLocal('viewYM', this.ym); } catch (e) {}
       this.days = new Date(y, m, 0).getDate();
       this.holidays = Hol ? Hol.holidaysOf(y, m) : {};
       document.getElementById('ymLabel').textContent = this.ym;
