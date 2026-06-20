@@ -111,6 +111,9 @@ td.daycell.long2, table.eqcols td.long2 { font-size: 9.5px; letter-spacing: -0.3
    font-sizeはlong1/long2の縮小より優先し、2段が読める大きさを確保する。 */
 td.daycell.multiduty { white-space: normal; line-height: 1.15; overflow: visible;
   font-size: 11px !important; letter-spacing: 0; padding-top: 1px; padding-bottom: 1px; }
+/* 夜勤の残業（定時から延長された上がり時刻）を赤字・太字でハイライト。
+   インラインspanのみ＝余白/行高/セル寸法に影響せず、印刷でも print-color-adjust:exact で赤が出る。 */
+.ot-hl { color: #c0392b !important; font-weight: 700 !important; }
 td.daycell.sel { background: var(--sel) !important; outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
 td.daycell.err { background: #fdd; }
 td.daycell.reqviol { box-shadow: inset 0 0 0 2px var(--red); }
@@ -649,6 +652,23 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
    */
   function parseCell(raw, symbols) {
     if (!symbols) symbols = DEFAULT_SYMBOLS;
+    /* 分割勤務（複合セル）: 「7-9 17-21」のように空白で区切られた複数トークンは
+     * normalizeCell が空白を除去して1語に潰し解釈不能になる。先に生文字列を空白で分割し、
+     * 2語以上なら各トークンを個別に解釈して parts を結合する。これにより早番(7-9)＋遅番(17-21)が
+     * 両方カウントされ、実働時間も正しく合算される（汎用・氏名ハードコード非依存）。 */
+    var rawStr = (raw === null || raw === undefined) ? '' : String(raw);
+    var toks = rawStr.split(/[\s　\t]+/);
+    var nonEmpty = [];
+    for (var ti = 0; ti < toks.length; ti++) { if (toks[ti] !== '') nonEmpty.push(toks[ti]); }
+    if (nonEmpty.length >= 2) {
+      var multi = { raw: raw, norm: normalizeCell(rawStr), parts: [], error: null };
+      for (var tk = 0; tk < nonEmpty.length; tk++) {
+        var sub = parseCell(nonEmpty[tk], symbols);   /* 各トークンは空白を含まない＝単一解釈へ */
+        for (var sp = 0; sp < sub.parts.length; sp++) multi.parts.push(sub.parts[sp]);
+        if (sub.error && !multi.error) multi.error = sub.error;
+      }
+      return multi;
+    }
     var norm = normalizeCell(raw);
     var res = { raw: raw, norm: norm, parts: [], error: null };
     if (norm === '') return res;
@@ -732,12 +752,34 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return 'mid';
   }
 
+  /* 夜勤上がりの残業判定（表示ハイライト用）。
+   * セル先頭の夜勤上がり（例「8)」）の実際の上がり時刻が、前日の夜勤入りの定時上がり(pairEnd)
+   * より遅ければ残業。(21=定時7:00→「8)」は残業／(22=定時8:00→「8)」は通常／「7)」は定時。
+   * timecalc の残業計算(endMin > nightIn.pairEndMin)と同じ基準。前日入りが特定できなければ非残業扱い。
+   * 戻り値: 装飾すべき先頭夜勤上がり文字列の長さ（0=ハイライト無し）。 */
+  function leadingNightOutOvertime(prevRaw, cellRaw, symbols) {
+    if (!symbols) symbols = DEFAULT_SYMBOLS;
+    var s = (cellRaw === null || cellRaw === undefined) ? '' : String(cellRaw);
+    var m = s.match(/^(\d{1,2}(?::\d{2})?|[０-９]{1,2}(?:：[０-９]{2})?)[)）]/);  /* 先頭の「8)」「8）」(全角含む) */
+    if (!m) return 0;
+    var endMin = timeToMin(normalizeCell(m[1]));
+    if (endMin === null) return 0;
+    var prev = parseCell(prevRaw, symbols);
+    var pairEnd = null, i;
+    for (i = 0; i < prev.parts.length; i++) {
+      if (prev.parts[i].kind === 'nightIn' && prev.parts[i].pairEndMin != null) { pairEnd = prev.parts[i].pairEndMin; break; }
+    }
+    if (pairEnd === null) return 0;            /* 前日入り不明＝判定不能＝ハイライトしない（安全側） */
+    return endMin > pairEnd ? m[0].length : 0; /* 定時より遅い＝残業＝先頭夜勤上がりを装飾 */
+  }
+
   var api = {
     normalizeCell: normalizeCell,
     timeToMin: timeToMin,
     minToTime: minToTime,
     parseCell: parseCell,
     rangeCat: rangeCat,
+    leadingNightOutOvertime: leadingNightOutOvertime,
     DEFAULT_SYMBOLS: DEFAULT_SYMBOLS,
     ALIASES: ALIASES,
     applyRecommendedColors: applyRecommendedColors,
@@ -2679,6 +2721,12 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         var dispHtml = esc(disp);
         /* 複数勤務（時刻レンジを空白区切りで2つ以上）は1セル内で2段表示にする（髙尾の分割勤務等） */
         if (isMultiDuty(disp)) { cls += ' multiduty'; dispHtml = esc(disp).replace(/[\s　]+/g, '<br>'); }
+        else {
+          /* 夜勤上がりが定時から延長＝残業なら、先頭の上がり(例「8)」)のみ赤太字でハイライト（要件2）。
+           * インラインspanのみ＝セル寸法・印刷レイアウトは不変。前日入りで定時上がりを判定。 */
+          var otLen = Sym.leadingNightOutOvertime(cells[String(d - 1)] || '', disp, ctx.symbols);
+          if (otLen > 0) dispHtml = '<span class="ot-hl">' + esc(disp.slice(0, otLen)) + '</span>' + esc(disp.slice(otLen));
+        }
         h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + cDiv +
           '" data-day="' + d + '" data-main="' + (cMain ? 1 : 0) + '"' +
           (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
