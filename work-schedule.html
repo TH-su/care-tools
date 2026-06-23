@@ -222,6 +222,14 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 }
 .b-task.done .t-done { display: block; }
 .b-task.selected { box-shadow: 0 0 0 2px var(--pri), 0 2px 8px rgba(0,0,0,.25); z-index: 20; }
+/* 名前のみ表示: 氏名を枠内で縦中央に。枠寸法(h)は不変＝レイアウト/印刷A3に非干渉。氏名は折返し可 */
+.b-task.name-only { display: flex; flex-direction: column; justify-content: center; }
+.b-task.name-only .t-name { white-space: normal; line-height: 1.15; }
+/* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
+ * outline は枠寸法に影響しない＝D&D座標計算/レイアウトに非干渉。🔗 バッジは枠左下に絶対配置。 */
+.b-task .t-group { position: absolute; bottom: 0; left: 2px; font-size: 10px; line-height: 1; opacity: .9; pointer-events: none; }
+body.printing .b-task.grouped { outline: none !important; }
+body.printing .b-task .t-group { display: none !important; }
 /* コメント: 固定ON=枠外フローティング吹き出し(b-cmt-layer)・未固定=📝バッジのみ */
 /* canvas直下のオーバーレイ層（枠のoverflow:hiddenに切られない）。線はpointer-events無し・吹き出しのみ操作可 */
 .b-cmt-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 25; pointer-events: none; }
@@ -572,6 +580,8 @@ body.printing .rs { display: none; }
     <button class="tray-btn" id="btnAddNote" title="全体コメント（独立フロート・線なし・印刷反映）">📝 全体コメント</button>
     <button class="tray-btn" id="btnSelDup" title="選択した枠を複製（Cmd/Ctrl+D）">⧉ 複製</button>
     <button class="tray-btn" id="btnSelDel" title="選択した枠を消去（Delete）">🗑 消去</button>
+    <button class="tray-btn" id="btnSelGroup" title="選択した枠（2件以上）をグループ化して固定。以後グループ内の1枠をドラッグすると全体が同時移動します">🔗 グループ化固定</button>
+    <button class="tray-btn" id="btnSelUngroup" title="選択した枠のグループ化を解除（個別移動に戻す）">✂ グループ化解除</button>
     <button class="tray-btn" id="btnCopyNext" title="この日の支援を翌週の同曜日へコピー（上書き）">📅 翌週へコピー</button>
     <button class="tray-btn" id="trayToggle">折畳</button>
   </div>
@@ -632,8 +642,8 @@ body.printing .rs { display: none; }
     <label>サービスコード</label>
     <select class="inp" id="edSvc"></select>
   </div>
-  <div class="fld" id="fHosp">
-    <label><input type="checkbox" id="edHospitalized"> 入院中（週間計画と連携・盤面では極薄表示）</label>
+  <div class="fld" id="fNameOnly">
+    <label><input type="checkbox" id="edNameOnly"> 名前のみ表示（時間・サービス・内容を隠して氏名だけ表示）</label>
   </div>
   <div class="fld" id="fLabel" style="display:none">
     <label>枠の名称</label>
@@ -675,6 +685,9 @@ body.printing .rs { display: none; }
   <div class="fld row2">
     <label><input type="checkbox" id="edTentative"> 調整中（仮置き・破線）</label>
     <label><input type="checkbox" id="edDone"> 実施済み ✔</label>
+  </div>
+  <div class="fld" id="fHosp">
+    <label><input type="checkbox" id="edHospitalized"> 入院中（週間計画と連携・盤面では極薄表示）</label>
   </div>
   <div class="btn-row">
     <button class="btn ng" id="edDelete">削除</button>
@@ -1134,6 +1147,8 @@ body.printing .rs { display: none; }
       src: props.src || 'manual',
       tentative: !!props.tentative,
       done: !!props.done,
+      nameOnly: !!props.nameOnly,   /* 名前のみ表示（時間/サービス/内容を隠し氏名だけ・盤面/印刷とも） */
+      groupId: (props.groupId !== undefined && props.groupId !== null) ? props.groupId : null,  /* グループ化固定の所属ID（null=無所属） */
       comment: normComment_(props.comment)   /* エクセル風コメント {text,size,bold,pinned} or null */
     };
     if (t.kind !== 'care') { t.residentId = null; t.residentName = ''; t.svcCode = ''; }
@@ -3218,6 +3233,15 @@ body.printing .rs { display: none; }
       for (var p2 in action.patch) if (Object.prototype.hasOwnProperty.call(action.patch, p2)) nm[p2] = action.patch[p2];
       return { meta: nm, staff: day.staff, columns: day.columns, tasks: day.tasks };
     }
+    if (type === 'SET_GROUP') {
+      /* 選択枠群へ groupId を一括設定（null=解除）。グループ化固定: 以後グループ内の1枠をドラッグすると
+       * getGroupIds 経由で全体が同時移動する。1操作＝undo1回。 */
+      var tg = day.tasks, gi;
+      for (gi = 0; gi < action.ids.length; gi++) {
+        tg = patchTask(tg, action.ids[gi], { groupId: action.groupId });
+      }
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tg };
+    }
     return day;
   }
 
@@ -3504,6 +3528,13 @@ body.printing .rs { display: none; }
     return e;
   }
 
+  /* グループ化固定の色: groupId文字列のハッシュから色相を決め、同一グループを同色で示す(画面のみ)。 */
+  function groupColor_(id) {
+    var hsh = 0, s = String(id === undefined || id === null ? '' : id);
+    for (var i = 0; i < s.length; i++) hsh = (hsh * 31 + s.charCodeAt(i)) % 360;
+    return 'hsl(' + hsh + ', 72%, 40%)';
+  }
+
   function kindClass(t) {
     if (t.kind === 'break') return 'k-brk';
     if (t.kind === 'free') return 'k-free';
@@ -3725,6 +3756,8 @@ body.printing .rs { display: none; }
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
     if (ex.hosp) cls += ' hosp';
+    if (t.nameOnly) cls += ' name-only';        /* 名前のみ表示（時間/サービス/内容を隠す） */
+    if (t.groupId) cls += ' grouped';           /* グループ化固定（画面で点線色アウトライン＋🔗） */
     if (selectedIds && selectedIds.indexOf && selectedIds.indexOf(t.id) >= 0) cls += ' selected';
     var b = el('div', cls);
     b.style.top = top + 'px';
@@ -3752,16 +3785,19 @@ body.printing .rs { display: none; }
        * 枠は時間比例の固定高(下へ伸ばさない＝overflow:hidden)。固定コメントは末尾に出力。 */
       /* 夜勤帯(isNight)はケア内容を出さず、空いた縦を氏名拡大に充てる(要件3) */
       var nightHideContent = (isNight && t.kind === 'care');
+      var nameOnly = !!t.nameOnly;                       /* 名前のみ表示: 時刻/内容を出さず氏名だけ */
+      var hideContent = nightHideContent || nameOnly;    /* 内容行を出さない(夜勤 or 名前のみ) */
+      var hideTimeP = hideTime || nameOnly;              /* 時刻行を出さない(施設業務 or 名前のみ) */
       var durMin = (typeof t.end === 'number' && typeof t.start === 'number') ? (t.end - t.start) : 0;
       b.style.height = h + 'px';
       b.className = cls + ' p-task' + (nightHideContent ? ' p-night' : '');
       b.setAttribute('data-dur', String(durMin));   /* fitPrintText の 19/20分判定用(要件3) */
       /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印用に1行(空文字＝□のみ) */
-      var pitems = (t.kind === 'care' && !nightHideContent) ? (t.contents || []).slice() : [];
-      if (t.kind === 'care' && !nightHideContent && t.memo) pitems.push(t.memo);
-      if (t.kind === 'care' && !nightHideContent && !pitems.length) pitems.push('');
+      var pitems = (t.kind === 'care' && !hideContent) ? (t.contents || []).slice() : [];
+      if (t.kind === 'care' && !hideContent && t.memo) pitems.push(t.memo);
+      if (t.kind === 'care' && !hideContent && !pitems.length) pitems.push('');
       var rows = pitems.length;
-      var nLines = (hideTime ? 0 : 1) + 1 + (hideTime ? 0 : rows);   /* 時刻 + 名前 + 内容行(夜勤は内容0) */
+      var nLines = (hideTimeP ? 0 : 1) + 1 + (hideTimeP ? 0 : rows);   /* 時刻 + 名前 + 内容行(夜勤/名前のみは内容0) */
       var perLine = (h - 3) / (nLines < 1 ? 1 : nLines);
       /* 印刷は後段でズーム縮小されるため論理フォント上限を高く取り「枠内最大」。画面は従来上限。 */
       var capC = ex.print ? 32 : 20;
@@ -3773,13 +3809,17 @@ body.printing .rs { display: none; }
       /* 夜勤枠は内容無しの2行(時刻+氏名)＝時刻を少し大きく・氏名を少し小さく分配(要件2C)。時刻>氏名 */
       var nightTimeF = Math.max(8, Math.min(capS, Math.floor(perLine * 0.84)));
       var nightNameF = Math.max(7, Math.min(capS, Math.floor(perLine * 0.74)));
-      if (!hideTime) {
+      /* 名前のみ表示: 1行(氏名)だけのため枠高いっぱいに氏名を拡大(上限capS・幅超過はfitPrintTextが省略) */
+      var nameOnlyF = Math.max(9, Math.min(capS, Math.floor(perLine * 0.42)));
+      if (!hideTimeP) {
         var tEl = txt('div', 'pt-time', range);
         tEl.style.fontSize = (nightHideContent ? nightTimeF : fSmall) + 'px';
         b.appendChild(tEl);
       }
       var nmEl = txt('div', 'pt-name' + (hideTime ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
-      if (hideTime) {
+      if (nameOnly) {
+        nmEl.style.fontSize = nameOnlyF + 'px';    /* 名前のみ=枠高いっぱい(時刻/内容なし) */
+      } else if (hideTime) {
         /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px)。
          * 事務(admin)は施設業務より少し大きめ(×1.15・上限24px・要件3)。 */
         if (t.kind === 'admin') nmEl.style.fontSize = Math.max(13, Math.min(24, Math.round(fSmall * 1.15))) + 'px';
@@ -3790,7 +3830,7 @@ body.printing .rs { display: none; }
         nmEl.style.fontSize = fSmall + 'px';
       }
       b.appendChild(nmEl);
-      if (!hideTime && !nightHideContent) {
+      if (!hideTimeP && !hideContent) {
         for (var pi = 0; pi < pitems.length; pi++) {
           var row = el('div', 'pt-item');
           var itx = careSpan('pt-item-tx', pitems[pi]);
@@ -3805,7 +3845,7 @@ body.printing .rs { display: none; }
     }
 
     b.style.height = h + 'px';
-    if (!hideTime) {
+    if (!hideTime && !t.nameOnly) {
       var time = el('div', 't-time');
       var bb = document.createElement('b');
       bb.textContent = range + (svc ? svc.short : '');
@@ -3814,26 +3854,28 @@ body.printing .rs { display: none; }
     }
     b.appendChild(txt('div', 't-name', nameText));
 
-    var items = (t.contents || []).slice();
-    if (t.memo) items.push(t.memo);
-    var tagLine = (t.tags && t.tags.length) ? '/' + t.tags.join('/') : '';
-    if (items.length && h >= 32 + items.length * 14) {
-      /* 支援内容を1つずつ縦に並べ、右に実施チェック欄（タップで☑） */
-      for (var ci2 = 0; ci2 < items.length; ci2++) {
-        var row = el('div', 't-item');
-        row.appendChild(careSpan('t-item-tx', items[ci2]));
-        var cbEl = txt('span', 't-cb' + ((t.checks && t.checks[ci2]) ? ' on' : ''),
-          (t.checks && t.checks[ci2]) ? '☑' : '□');
-        cbEl.setAttribute('data-ci', String(ci2));
-        row.appendChild(cbEl);
-        b.appendChild(row);
+    if (!t.nameOnly) {   /* 名前のみ表示は内容・タグを出さず氏名だけ */
+      var items = (t.contents || []).slice();
+      if (t.memo) items.push(t.memo);
+      var tagLine = (t.tags && t.tags.length) ? '/' + t.tags.join('/') : '';
+      if (items.length && h >= 32 + items.length * 14) {
+        /* 支援内容を1つずつ縦に並べ、右に実施チェック欄（タップで☑） */
+        for (var ci2 = 0; ci2 < items.length; ci2++) {
+          var row = el('div', 't-item');
+          row.appendChild(careSpan('t-item-tx', items[ci2]));
+          var cbEl = txt('span', 't-cb' + ((t.checks && t.checks[ci2]) ? ' on' : ''),
+            (t.checks && t.checks[ci2]) ? '☑' : '□');
+          cbEl.setAttribute('data-ci', String(ci2));
+          row.appendChild(cbEl);
+          b.appendChild(row);
+        }
+        if (tagLine) b.appendChild(txt('div', 't-body', tagLine));
+      } else {
+        var bodyParts = [];
+        if (items.length) bodyParts.push(items.join('・'));
+        if (tagLine) bodyParts.push(tagLine);
+        if (bodyParts.length && h >= 34) { var bd = el('div', 't-body'); fillCareText(bd, bodyParts.join(' ')); b.appendChild(bd); }
       }
-      if (tagLine) b.appendChild(txt('div', 't-body', tagLine));
-    } else {
-      var bodyParts = [];
-      if (items.length) bodyParts.push(items.join('・'));
-      if (tagLine) bodyParts.push(tagLine);
-      if (bodyParts.length && h >= 34) { var bd = el('div', 't-body'); fillCareText(bd, bodyParts.join(' ')); b.appendChild(bd); }
     }
 
     /* コメント: 固定ONは枠外フローティング吹き出し(buildCommentLayer)・未固定は📝バッジのみ(エクセル風) */
@@ -3842,6 +3884,16 @@ body.printing .rs { display: none; }
     }
 
     b.appendChild(txt('div', 't-done', '✔'));
+    if (t.groupId) {
+      /* グループ化固定の視覚マーカー(画面のみ): groupIdのハッシュ色で点線アウトライン＋🔗バッジ。
+       * outline は枠寸法に影響しない＝レイアウト/印刷A3に非干渉。印刷は inline 未設定＝CSS でも抑止。 */
+      var gc = groupColor_(t.groupId);
+      b.style.outline = '2px dashed ' + gc;
+      b.style.outlineOffset = '-2px';
+      var gb = txt('div', 't-group', '🔗');
+      gb.style.color = gc;
+      b.appendChild(gb);
+    }
     /* 下端ハンドル: 常時ドラッグ可（仕様: 下端ドラッグで時間を短縮・延長）。
      * 極小ブロックは移動操作を優先しハンドルを出さない */
     if (h >= 22) b.appendChild(el('div', 'rs rs-b'));
@@ -4671,14 +4723,19 @@ body.printing .rs { display: none; }
         return; /* 余白タップはここでは扱わない（app側のclickで処理） */
       }
 
-      /* 複数選択中の支援ブロックをドラッグ＝選択全体を相対時刻を保って同時移動 */
+      /* 複数選択中の支援ブロックをドラッグ＝選択全体を相対時刻を保って同時移動。
+       * グループ化固定: ドラッグ枠がグループ(groupId)に属するなら、毎回の複数選択なしで
+       * グループ全体を多選択集合として扱う＝1枠を動かすと固定グループ全体が同時移動する。 */
       var selIds = (opts.getSelectedIds ? (opts.getSelectedIds() || []) : []);
+      var groupIds = (opts.getGroupIds && taskId !== null) ? (opts.getGroupIds(taskId) || []) : [];
+      var multiIds = (groupIds.length > 1) ? groupIds : selIds;
       var isMulti = (mode === 'move' && source === 'board' && taskId !== null &&
-                     selIds.length > 1 && selIds.indexOf(taskId) >= 0);
+                     multiIds.length > 1 && multiIds.indexOf(taskId) >= 0);
 
       drag = { mode: mode, taskId: taskId, source: source, edge: edge,
-               colFrom: colFrom, headText: headText, additive: !!(e.ctrlKey || e.metaKey),
-               alt: !!e.altKey, multi: isMulti, selIds: selIds.slice(),
+               colFrom: colFrom, headText: headText,
+               additive: !!(e.ctrlKey || e.metaKey || e.shiftKey),
+               alt: !!e.altKey, multi: isMulti, selIds: multiIds.slice(),
                startPt: pt, dragging: false, lastEval: null, longTimer: null, isTouch: isTouch };
 
       /* リサイズも移動と同じ開始条件にする:
@@ -5478,6 +5535,7 @@ body.printing .rs { display: none; }
     $('fLabel').style.display = (kind === 'facility' || kind === 'free' || kind === 'admin') ? '' : 'none';
     $('fContents').style.display = kind === 'care' ? '' : 'none';
     if ($('fHosp')) $('fHosp').style.display = kind === 'care' ? '' : 'none';
+    if ($('fNameOnly')) $('fNameOnly').style.display = kind === 'care' ? '' : 'none';  /* 名前のみ＝支援(care)専用 */
   }
   function renderContentChips() {
     var wrap = $('edContents');
@@ -5540,6 +5598,7 @@ body.printing .rs { display: none; }
     $('edContentFree').value = '';
     $('edTentative').checked = t ? !!t.tentative : false;
     $('edDone').checked = t ? !!t.done : false;
+    if ($('edNameOnly')) $('edNameOnly').checked = t ? !!t.nameOnly : false;
     $('edMemo').value = t ? (t.memo || '') : '';
     var cm = t && t.comment ? t.comment : null;
     $('edComment').value = cm ? (cm.text || '') : '';
@@ -5589,6 +5648,7 @@ body.printing .rs { display: none; }
       contents: kind === 'care' ? ui.editContents.slice() : [],
       tentative: $('edTentative').checked,
       done: $('edDone').checked,
+      nameOnly: (kind === 'care' && $('edNameOnly')) ? $('edNameOnly').checked : false,  /* 名前のみ＝支援(care)専用 */
       comment: M.normComment({ text: $('edComment').value.trim(),
                                size: $('edCommentSize').value,
                                bold: $('edCommentBold').checked,
@@ -7369,6 +7429,7 @@ body.printing .rs { display: none; }
       props.done = false;                    /* 複製は新規状態（実施済み・仮を引き継がない） */
       props.tentative = false;
       props.checks = {};
+      props.groupId = null;                  /* 複製は独立枠＝原本のグループ化固定に巻き込まない */
       var dup = M.newTask(props);
       dup.origin = M.captureOrigin(dup);
       store.dispatch({ type: 'ADD_TASK', task: dup });
@@ -7376,6 +7437,45 @@ body.printing .rs { display: none; }
     }
     ui.selectedIds = made;
     toast(made.length + '件を複製しました（未配置トレイ→ドラッグで配置）');
+  }
+
+  /* 選択中の枠(2件以上)を1グループに固定する。以後、グループ内の1枠をドラッグすると
+   * (getGroupIds 経由で)グループ全体が相対時刻を保って同時移動する＝毎回の複数選択が不要になる。
+   * 既にグループ付きの枠を含む選択も、新しい単一 groupId へ束ね直す。 */
+  function groupSelected() {
+    if (ui.selectedIds.length < 2) { toast('2件以上を選択してください（Ctrl/⌘ または Shift+クリック）', true); return; }
+    /* グループは「同じ職員（同じ列）の配置済み枠」に限定する。別列の枠を束ねると、1枠のドラッグで
+     * グループ全体が落とし先の1列へ集約され元の列が空く＝意図せぬ移動になるため作成時に弾く。 */
+    var tasks = store.get().tasks, staffId, mixed = false, unplaced = false, i;
+    for (i = 0; i < ui.selectedIds.length; i++) {
+      var t = M.findTask(tasks, ui.selectedIds[i]);
+      if (!t) continue;
+      if (t.staffId === null || t.staffId === undefined) { unplaced = true; break; }
+      if (staffId === undefined) staffId = t.staffId;
+      else if (t.staffId !== staffId) { mixed = true; break; }
+    }
+    if (unplaced) { toast('配置済みの枠どうしを選択してください（トレイの枠はグループ化できません）', true); return; }
+    if (mixed) { toast('同じ職員（同じ列）の枠どうしでグループ化してください', true); return; }
+    var gid = M.genId('g');
+    store.dispatch({ type: 'SET_GROUP', ids: ui.selectedIds.slice(), groupId: gid });
+    toast(ui.selectedIds.length + '件をグループ化しました（1枠のドラッグで同時移動）');
+  }
+  /* 選択中の枠が属するグループを解除（同一 groupId を持つ枠すべてを解除＝個別移動に戻す）。 */
+  function ungroupSelected() {
+    if (!ui.selectedIds.length) { toast('解除するグループの枠を選択してください', true); return; }
+    var tasks = store.get().tasks;
+    var gids = {}, i;
+    for (i = 0; i < ui.selectedIds.length; i++) {
+      var t = M.findTask(tasks, ui.selectedIds[i]);
+      if (t && t.groupId) gids[t.groupId] = true;
+    }
+    var ids = [];
+    for (i = 0; i < tasks.length; i++) {
+      if (tasks[i].groupId && gids[tasks[i].groupId]) ids.push(tasks[i].id);
+    }
+    if (!ids.length) { toast('選択した枠はグループ化されていません'); return; }
+    store.dispatch({ type: 'SET_GROUP', ids: ids, groupId: null });
+    toast('グループ化を解除しました（個別移動に戻りました）');
   }
 
   /* ===== イベント配線 ===== */
@@ -7431,6 +7531,8 @@ body.printing .rs { display: none; }
     });
     $('btnSelDup').addEventListener('click', function () { duplicateSelected(); });
     $('btnSelDel').addEventListener('click', function () { deleteSelected(); });
+    if ($('btnSelGroup')) $('btnSelGroup').addEventListener('click', function () { groupSelected(); });
+    if ($('btnSelUngroup')) $('btnSelUngroup').addEventListener('click', function () { ungroupSelected(); });
     $('btnCopyNext').addEventListener('click', function () { copyCareToNextWeek(); });
     $('btnAddCare').addEventListener('click', function () { openEditor(null, { kind: 'care' }); });
     $('btnAddFac').addEventListener('click', function () { openEditor(null, { kind: 'facility', label: '施設業務' }); });
@@ -7908,6 +8010,20 @@ body.printing .rs { display: none; }
       getDay: function () { return store.get(); },
       getScale: function () { return scale; },
       getSelectedIds: function () { return ui.selectedIds; },
+      /* グループ化固定: 指定枠と同一 groupId の配置済み枠id配列を返す(2件以上で同時移動が発動)。
+       * 未配置(トレイ)の枠は同時移動の対象外＝列にある枠だけを束ねる。 */
+      getGroupIds: function (taskId) {
+        var tasks = store.get().tasks;
+        var t = M.findTask(tasks, taskId);
+        if (!t || !t.groupId || t.staffId === null || t.staffId === undefined) return [];
+        var ids = [];
+        for (var i = 0; i < tasks.length; i++) {
+          /* 同一グループかつドラッグ枠と同一職員列の配置済み枠のみ＝別列への集約暴発を防ぐ
+           * （同時移動は同列内に限定。万一データ上グループが別列へ分かれても安全側に倒す） */
+          if (tasks[i].groupId === t.groupId && tasks[i].staffId === t.staffId) ids.push(tasks[i].id);
+        }
+        return ids;
+      },
       onAssign: function (taskId, staffId, start, end) {
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
