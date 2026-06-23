@@ -1841,9 +1841,14 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         }
         if (hasNightOut) continue; /* 夜勤明けの朝は前日のパターンに含まれる */
         if (offPart) {
-          var name = Object.prototype.hasOwnProperty.call(offNames, norm)
-            ? offNames[norm]
+          /* 「希休」「希望休」等のエイリアスを「希」へ正規化してから休暇名を引く（要件2） */
+          var offKey = (Sym.ALIASES && Sym.ALIASES[norm]) ? Sym.ALIASES[norm] : norm;
+          var name = Object.prototype.hasOwnProperty.call(offNames, offKey)
+            ? offNames[offKey]
             : (offPart.kind === 'paidOff' ? '有給休暇' : '公休');
+          /* 希望休(希)は必ず公休として出力する。保存設定で空になっていても公休を強制
+           * （「明」等の意図的な空出力には影響させないため offKey==='希' に限定・要件2） */
+          if ((!name || name === '') && offKey === '希') name = '公休';
           if (name) lines.push(st.empCode + ',' + dateStr + ',' + name + ',');
           continue;
         }
@@ -4279,6 +4284,9 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           }
         }
       }
+      /* 希望休(希)は公休として出力する。保存設定で空/未設定なら公休で補完（要件2）。
+       * ユーザーが別値を明示設定している場合は尊重する。 */
+      if (!c.offNames['希']) c.offNames['希'] = '公休';
       return c;
     },
     saveCfg: function (c) { Store.set('freee', c); },
