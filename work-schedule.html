@@ -1630,7 +1630,10 @@ body.printing .rs { display: none; }
       var st = staffList[i];
       if (!st || st.active === false) continue;
       if (st.status === '退職' || st.status === '休職' || st.status === '非表示') continue;   /* 在籍状況で表示対象外を除外(要件2) */
-      if (isDaycareStaff(st)) continue;        /* デイ(通所)職員はワースケ対象外＝除外 */
+      /* デイ(通所)メイン職員も「丸ごと除外」はしない。通所の勤務は下の 通所行スキップ
+       * (dv==='通所'/division==='通所') で除外されるが、施設・訪問行(subCells)に勤務時間があれば
+       * その勤務はワースケへ反映する（デイ職員のイレギュラーな施設/訪問対応・要件1）。
+       * 純粋に通所のみの職員は全行が通所＝エントリ0で従来通り出ない。 */
       var name = st.name ? String(st.name).trim() : '';
       if (!name) continue;
       var group = st.group || 'day';
