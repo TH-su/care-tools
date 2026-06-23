@@ -145,6 +145,16 @@ tr.summaryrow td.divcell { font-size: 11px; color: #1a4a80; }
 tr.summaryrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 12px; color: #1a4a80; }
 tr.summaryrow td.sumdaycell.sun { color: #c0392b; }
 tr.summaryrow td.sumdaycell.sat { color: #1f6feb; }
+/* デイサービス職種別 出勤者数（介護士/看護師/合計）集計行。デイ帯と区別する緑系・画面のみ */
+tr.daysumrow td { background: #eaf5ee; border-top: 1px solid #bfe0cb; }
+tr.daysumrow.ds-care td { border-top: 2px solid #8fcea8; }
+tr.daysumrow td.namecell { font-size: 12px; font-weight: 700; color: #1b6b3a; }
+tr.daysumrow td.divcell { font-size: 11px; color: #1b6b3a; }
+tr.daysumrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 12px; color: #1b6b3a; }
+tr.daysumrow td.sumdaycell.sun { color: #c0392b; }
+tr.daysumrow td.sumdaycell.sat { color: #1f6feb; }
+tr.daysumrow.ds-total td { background: #d8eede; }
+tr.daysumrow.ds-total td.namecell, tr.daysumrow.ds-total td.sumdaycell { font-weight: 800; }
 .hidebtn { color: var(--g4); cursor: pointer; font-weight: 700; padding: 0 2px; }
 .hidebtn:hover { color: var(--red); }
 .showbtn { color: var(--blue); cursor: pointer; font-size: 10px; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
@@ -1128,7 +1138,35 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     return counts;
   }
 
-  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, countVisitOffDays: countVisitOffDays };
+  /* 日別「デイサービス(通所)の職種別出勤者数」を数える純粋関数。
+   * 返値: 配列 out（out[d] = {care:介護士数, nurse:看護師数, total:合計}）。
+   * - mainDivision==='通所' の職員: 主セル(cells)が勤務日(isWork)なら計上。
+   * - それ以外(施設/訪問メイン)の職員: 従区分 subCells['通所'] に勤務があれば「通所応援」として計上。
+   * - isNurse(st): 看護師/准看護師資格なら true（→看護師、else 介護士）。
+   * - isWork(v): セル文字列が勤務(出勤)なら true（休/公/希/有/欠・空欄は false）。
+   * - isVisible(st): 当月に表示対象なら true（省略時 active!==false）。 */
+  function countDaycareByProfession(staff, cells, subCells, days, isNurse, isWork, isVisible) {
+    var out = [], d;
+    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0 };
+    for (var i = 0; i < staff.length; i++) {
+      var st = staff[i];
+      if (isVisible ? !isVisible(st) : st.active === false) continue;
+      var nurse = !!(isNurse && isNurse(st));
+      var isDaycare = (st.mainDivision === '通所');
+      var mainCells = (cells && cells[st.id]) || {};
+      var tsuusho = ((subCells && subCells[st.id]) || {})['通所'] || {};
+      for (d = 1; d <= days; d++) {
+        var v = isDaycare ? (mainCells[String(d)] || '') : (tsuusho[String(d)] || '');
+        if (v !== '' && isWork && isWork(v)) {
+          if (nurse) out[d].nurse++; else out[d].care++;
+        }
+      }
+    }
+    for (d = 1; d <= days; d++) out[d].total = out[d].care + out[d].nurse;
+    return out;
+  }
+
+  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftAggregate = api;
 })();
@@ -2567,6 +2605,8 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
         h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
+        /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)を表示（画面のみ・印刷非出力） */
+        if (GROUPS[g].key === 'day' && !pm) h += this.daySummaryRows(days);
         renderedGroups++;
       }
       /* デイ群が無い等で未出力なら集計を末尾に出す(要件4のフォールバック) */
@@ -2806,6 +2846,49 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           h += '<td class="' + cls + '" title="割当 ' + asg + '/' + need2 + '">' + rem + '</td>';
         }
         h += '<td colspan="6"></td></tr>';
+      }
+      return h;
+    },
+
+    /* デイサービス欄の最下部に出す「職種別 出勤者数」集計3行（介護士数/看護師数/合計数）。
+     * 画面確認用＝@media print で非表示（noprint＋render側 !pm ガードで印刷に出さない＝A3フィット非影響）。
+     * デイ所属の主セル＋他部署(施設/訪問)の通所応援(subCells['通所'])を職種別に合算する。 */
+    daySummaryRows: function (days) {
+      var ctx = this.ctx;
+      var Agg = (typeof window !== 'undefined' && window.ShiftAggregate) ? window.ShiftAggregate : null;
+      if (!Agg || !Agg.countDaycareByProfession) return '';
+      var isNurse = function (st) {
+        var q = (st && st.qualifications) || [];
+        return q.indexOf('看護師') >= 0 || q.indexOf('准看護師') >= 0;
+      };
+      var isWork = function (v) {
+        if (v === '' || v === null || v === undefined) return false;
+        if (isMultiDuty(v)) return true;   /* 分割勤務(複数レンジ)は出勤 */
+        var p = Sym.parseCell(v, ctx.symbols);
+        for (var i = 0; i < p.parts.length; i++) { if (p.parts[i].kind === 'work') return true; }
+        return false;
+      };
+      var isVis = ctx.isVisible || function (st) { return st.active !== false; };
+      var counts = Agg.countDaycareByProfession(ctx.staff, ctx.sched.cells, ctx.sched.subCells, days, isNurse, isWork, isVis);
+      var rows = [
+        { key: 'care', label: '介護士数', cls: 'care' },
+        { key: 'nurse', label: '看護師数', cls: 'nurse' },
+        { key: 'total', label: '合計数', cls: 'total' }
+      ];
+      var h = '';
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        h += '<tr class="daysumrow noprint ds-' + row.cls + '">';
+        h += '<td class="namecell sticky1" style="left:0">' + row.label + '</td>';
+        h += '<td class="divcell sticky2" style="left:100px">デイ</td>';
+        for (var d = 1; d <= days; d++) {
+          var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
+          var cc = 'sumdaycell' + (dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')) + (d === days ? ' lastday' : '');
+          h += '<td class="' + cc + '">' + (counts[d] ? counts[d][row.key] : 0) + '</td>';
+        }
+        h += '<td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td>';
+        h += '<td class="notecell noprint"></td><td class="notecell noprint"></td>';
+        h += '</tr>';
       }
       return h;
     },
