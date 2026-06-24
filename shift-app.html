@@ -100,6 +100,10 @@ thead th.sat { background: var(--sat) !important; color: #fff !important; }
 thead th.sun, thead th.hol { background: var(--sun) !important; color: #fff !important; }
 tr.staffline td { border-top: 2.5px solid #000; }
 .lastday { border-right: 3px double #000 !important; }
+/* 分割印刷(A3縦2分割)の各ページ見出し（前半/後半・日付範囲）。split描画(印刷/計測)時のみ生成され
+   画面には出ない。印刷と計測(printsim)で同一寸法になるよう media非依存の通常ルールにする。 */
+table.sheet tr.splittitle th { text-align: left; font-size: 14px; font-weight: 700;
+  background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; padding: 3px 6px; }
 /* 印刷範囲（職員行）と必要数・残数行の境目 */
 tfoot tr:first-child td { border-top: 3px double #000; }
 table.sheet .sticky1 { position: sticky; left: 0; z-index: 15; }
@@ -249,9 +253,15 @@ dialog h3 { margin-top: 0; }
   tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; overflow: visible; }
   /* sticky解除（印刷時の見出し欠け対策） */
   table.sheet thead th, .sticky1, .sticky2 { position: static !important; }
+  /* 氏名(最左列)の左罫線をセル自身に持たせる＝テーブル外周border-leftがzoom縮尺・用紙端で脱落しても
+     氏名左に黒縦線が確実に残る。border-spacing:0 で外周線と重畳＝太らない。区分(sticky2)左は氏名の
+     border-right(既存セル線)で担保済みのため不要。分割印刷の各テーブルにも自動適用される。 */
+  table.sheet .sticky1 { border-left: 1px solid #000; }
   tr { page-break-inside: avoid; }
   /* タイトルは文字幅(inline-block)＝表からはみ出さない（旧:block で用紙幅100%＝広すぎた） */
   #printTitle { display: inline-block !important; width: auto; max-width: 100%; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+  /* A3縦2分割は各ページ表内の splittitle で識別するため、外側の #printTitle は出さない（1ページ目の重複回避） */
+  body.printsplit #printTitle { display: none !important; }
 }
 #printTitle { display: none; }
 
@@ -269,6 +279,7 @@ body.printsim td.daycell.multiduty { height: auto; white-space: normal; overflow
 body.printsim td.namecell { font-size: 13px; }
 body.printsim tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; }
 body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .sticky2 { position: static !important; }
+body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media print と同期(zoom/dcw計測の表幅整合) */
 </style>
 </head>
 <body>
@@ -294,6 +305,10 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
   <button id="btnFreee" title="freee勤怠スケジュールCSVを出力">freee出力</button>
   <button id="btnFit" title="シフト表全体を1画面に収めて俯瞰／通常表示に戻す">🔍 全体表示</button>
   <button id="btnPrint">🖨 印刷</button>
+  <span class="tabs" id="printLayout" title="印刷レイアウト（A3横＝従来1枚／A3縦2分割＝氏名+1〜15日・16〜末日の2枚）">
+    <button data-pl="landscape" class="on" title="A3横1枚（全日数）">A3横</button>
+    <button data-pl="split" title="A3縦2分割（前半1〜15日／後半16〜末日）">A3縦2分割</button>
+  </span>
   <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
   <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
   <!-- ════════════════════════════════════════════════════════════════
@@ -2536,46 +2551,83 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
 
     render: function (ctx, printMode, dayColW) {
       this.ctx = ctx;
-      /* printMode=true: 印刷用に「可視列(氏名+区分+日付)のみ」のDOMを生成する。集計/注記列の
-       * <col>・セル・colspan を最初から出さない＝実@media printでも grouphead 帯が月末で収束する
-       * （col{width:0}は実印刷では潰れ切らないため、構造から省く）。
-       * dayColW: 印刷時の日付列幅（applyPrintFitがA3横を埋める幅を算出して渡す。歪まず最大化）。 */
+      this.visibleRows = [];
       var pm = printMode || false;
       var dcw = (pm && dayColW) ? dayColW : 52;
-      var self = this;
       var wrap = document.getElementById('gridWrap');
+      wrap.innerHTML = this.buildSheet(ctx, pm, dcw, null, '');
+      this.bind(wrap);
+      this.applySelClass();
+      this.renderMetrics();
+    },
+
+    /* 印刷専用: A3縦・前半後半分割。1枚目=氏名+1〜15日 / 2枚目=氏名+16〜末日 の2テーブルを各ページに。
+     * bind/metrics は呼ばない＝画面操作は afterprint の rerender() で通常DOMへ復帰。visibleRows は
+     * buildSheet 側で範囲指定時は構築しない（汚染防止）。 */
+    renderSplit: function (ctx, dcw) {
+      this.ctx = ctx;
+      this.visibleRows = [];
+      var wrap = document.getElementById('gridWrap');
+      var last = ctx.days;
+      wrap.innerHTML =
+        '<div class="psplit-page psplit-a">' + this.buildSheet(ctx, true, dcw, [1, 15], 'sheet-a') + '</div>' +
+        '<div class="psplit-page psplit-b">' + this.buildSheet(ctx, true, dcw, [16, last], 'sheet-b') + '</div>';
+    },
+
+    /* テーブルHTML文字列を組む共通生成器。dayRange=[from,to](1始まり両端含む)で日付列を範囲限定。
+     * dayRange=null は従来どおり全日（画面/A3横）＝出力は現行 render と完全一致。sheetCls=識別クラス。
+     * printMode=true: 印刷用に「可視列(氏名+区分+日付)のみ」を生成（集計/注記列の col・セル・colspan を省く）。 */
+    buildSheet: function (ctx, printMode, dcw, dayRange, sheetCls) {
+      var pm = printMode || false;
+      dcw = (pm && dcw) ? dcw : 52;
       var days = ctx.days;
+      var from = dayRange ? dayRange[0] : 1;
+      var to = dayRange ? dayRange[1] : days;
+      var ndays = to - from + 1;
+      var collectRows = !dayRange;   /* 範囲なし(画面/A3横)のみ visibleRows を構築＝分割描画で汚染しない */
       var weekStart = ctx.settings.weekStartDow;
       var firstDow = new Date(ctx.year, ctx.month - 1, 1).getDay();
       var offset = (firstDow - weekStart + 7) % 7;
 
-      this.visibleRows = [];
       /* table-layout:fixed はテーブル幅が明示されている場合のみ有効 */
-      var totalW = pm ? (100 + 56 + days * dcw)
+      var totalW = pm ? (100 + 56 + ndays * dcw)
                       : (100 + 56 + days * 52 + 44 + 44 + 56 + 48 + 200 + 150);
-      var h = '<table class="sheet" style="width:' + totalW + 'px"><colgroup>';
+      var clsAttr = 'sheet' + (sheetCls ? ' ' + sheetCls : '');
+      var h = '<table class="' + clsAttr + '" style="width:' + totalW + 'px"><colgroup>';
       h += '<col style="width:100px"><col style="width:56px">';
-      for (var c = 0; c < days; c++) h += '<col style="width:' + dcw + 'px">';
+      for (var c = 0; c < days; c++) {
+        var cd = c + 1;
+        if (dayRange && (cd < from || cd > to)) continue;
+        h += '<col style="width:' + dcw + 'px">';
+      }
       if (!pm) {
         h += '<col class="pcol" style="width:44px"><col class="pcol" style="width:44px"><col class="pcol" style="width:56px"><col class="pcol" style="width:48px">';
         h += '<col class="noprint" style="width:200px"><col class="noprint" style="width:150px">';
       }
       h += '</colgroup><thead>';
+      /* 分割印刷の各ページ自己識別見出し（前半/後半・日付範囲）。範囲なし(画面/A3横)では出さない＝現行不変 */
+      if (dayRange) {
+        var base = ctx.printTitle ? ctx.printTitle : (ctx.year + '年' + ctx.month + '月 勤務表');
+        var half = (to <= 15) ? '前半' : '後半';
+        var ttl = base + '　' + half + '（' + ctx.month + '/' + from + '〜' + ctx.month + '/' + to + '）';
+        h += '<tr class="splittitle"><th colspan="' + (ndays + 2) + '">' + esc(ttl) + '</th></tr>';
+      }
       /* 週行 */
       h += '<tr><th class="sticky1" style="left:0">週</th><th class="sticky2" style="left:100px"></th>';
-      var d, w, runStart = 1;
+      var d, runStart = from;
       for (d = 1; d <= days; d++) {
+        if (dayRange && (d < from || d > to)) continue;
         var wk = Math.floor((d - 1 + offset) / 7) + 1;
-        var wkNext = d < days ? Math.floor((d + offset) / 7) + 1 : -1;
-        if (wkNext !== wk || d === days) {
-          h += '<th colspan="' + (d - runStart + 1) + '"' + (d === days ? ' class="lastday"' : '') + '>第' + wk + '週目</th>';
+        var wkNext = d < to ? Math.floor((d + offset) / 7) + 1 : -1;
+        if (wkNext !== wk || d === to) {
+          h += '<th colspan="' + (d - runStart + 1) + '"' + (d === to ? ' class="lastday"' : '') + '>第' + wk + '週目</th>';
           runStart = d + 1;
         }
       }
       if (!pm) h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th>';
       h += '</tr>';
       /* 日付行＋曜日行（共通生成。デイサービス帯の直前にも再掲する） */
-      h += this.dateHeaderRows(ctx, days, false, pm);
+      h += this.dateHeaderRows(ctx, days, false, pm, dayRange);
       h += '</thead><tbody>';
 
       var renderedGroups = 0;
@@ -2600,11 +2652,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           summaryEmitted = true;
         }
         /* デイサービスは最下段で上部の日付行から遠いため、帯の直前に日付・曜日を再掲 */
-        if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm);
+        if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm, dayRange);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
         /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
-        h += '<tr class="grouphead"><td colspan="' + (pm ? (days + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
-        for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm);
+        h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 8)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm, dayRange, collectRows);
         /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)を表示（画面のみ・印刷非出力） */
         if (GROUPS[g].key === 'day' && !pm) h += this.daySummaryRows(days);
         renderedGroups++;
@@ -2612,41 +2664,42 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       /* デイ群が無い等で未出力なら集計を末尾に出す(要件4のフォールバック) */
       if (!pm && !summaryEmitted) h += this.summaryRow(days) + this.footRows(days);
       h += '</tbody><tfoot></tfoot></table>';
-      wrap.innerHTML = h;
-      this.bind(wrap);
-      this.applySelClass();
-      this.renderMetrics();
+      return h;
     },
 
     /* 日付行＋曜日行を生成（thead用と、デイサービス帯の前に再掲する用の共通処理）。
        repeat=true のとき tr に rephead クラスを付け、tbody 内でもヘッダー色で表示する。 */
-    dateHeaderRows: function (ctx, days, repeat, printMode) {
+    dateHeaderRows: function (ctx, days, repeat, printMode, dayRange) {
       var pm = printMode || false;
+      var from = dayRange ? dayRange[0] : 1;
+      var to = dayRange ? dayRange[1] : days;
       var d, h = '';
       var rc = repeat ? ' rephead' : '';
       /* 日付行 */
       h += '<tr class="rowdate' + rc + '"><th class="sticky1" style="left:0">氏名</th><th class="sticky2" style="left:100px">区分</th>';
       for (d = 1; d <= days; d++) {
+        if (dayRange && (d < from || d > to)) continue;
         var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
         var hcls = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dow);
         var htip = ctx.holidays && ctx.holidays[d] ? ' title="' + esc(ctx.holidays[d]) + '"' : '';
-        h += '<th class="' + hcls + (d === days ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
+        h += '<th class="' + hcls + (d === to ? ' lastday' : '') + '"' + htip + '>' + ctx.month + '/' + d + '</th>';
       }
       if (!pm) h += '<th class="pcol">出勤</th><th class="pcol">休日</th><th class="pcol">実働h</th><th class="pcol">残業</th><th class="noprint">勤務形態の特徴</th><th class="noprint">連絡</th>';
       h += '</tr>';
       /* 曜日行 */
       h += '<tr class="rowdow' + rc + '"><th class="sticky1" style="left:0"></th><th class="sticky2" style="left:100px"></th>';
       for (d = 1; d <= days; d++) {
+        if (dayRange && (d < from || d > to)) continue;
         var dw = new Date(ctx.year, ctx.month - 1, d).getDay();
         var hcls2 = ctx.holidays && ctx.holidays[d] ? 'hol' : dowCls(dw);
-        h += '<th class="' + hcls2 + (d === days ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
+        h += '<th class="' + hcls2 + (d === to ? ' lastday' : '') + '">' + DOW[dw] + '</th>';
       }
       if (!pm) h += '<th colspan="4" class="pcol"></th><th colspan="2" class="noprint"></th>';
       h += '</tr>';
       return h;
     },
 
-    staffRows: function (st, days, printMode) {
+    staffRows: function (st, days, printMode, dayRange, collectRows) {
       var pm = printMode || false;
       var ctx = this.ctx;
       var res = ctx.results[st.id];
@@ -2692,7 +2745,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
             ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
             : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
-        h += this.dayCells(st, ln.div, isMain, days);
+        h += this.dayCells(st, ln.div, isMain, days, dayRange);
         if (L === 0 && !pm) {
           var t = res ? res.totals : null;
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t ? t.attendDays : '') + '</td>';
@@ -2703,13 +2756,16 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + st.id + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
         }
         h += '</tr>';
-        this.visibleRows.push({ sid: st.id, div: ln.div, isMain: isMain });
+        /* 範囲指定(分割印刷)では visibleRows を構築しない＝画面の選択/コピペ/矢印移動の行集合を汚さない */
+        if (collectRows) this.visibleRows.push({ sid: st.id, div: ln.div, isMain: isMain });
       }
       return h;
     },
 
-    dayCells: function (st, division, isMain, days) {
+    dayCells: function (st, division, isMain, days, dayRange) {
       var ctx = this.ctx;
+      var rFrom = dayRange ? dayRange[0] : 1;
+      var rTo = dayRange ? dayRange[1] : days;
       var h = '';
       var cells = isMain
         ? (ctx.sched.cells[st.id] || {})
@@ -2722,6 +2778,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       var nmain = isNight ? (ctx.sched.cells[st.id] || {}) : null;
       var mainDivName = st.mainDivision || '施設';
       for (var d = 1; d <= days; d++) {
+        if (dayRange && (d < rFrom || d > rTo)) continue;   /* 分割印刷の範囲外日はセルを出さない */
         var v = cells[String(d)] || '';
         var cMain = isMain, cDiv = division;   /* このセルの編集対象（既定はこの行自身） */
         if (isNight) {
@@ -2777,7 +2834,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
           cls += ' reqhint';
           if (!tip) tip = '希望休（未割当）';
         }
-        if (d === days) cls += ' lastday';
+        if (d === rTo) cls += ' lastday';
         var dl = dispLen(disp);
         if (dl >= 9) cls += ' long2'; else if (dl >= 7) cls += ' long1';
         var dispHtml = esc(disp);
@@ -5089,6 +5146,7 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         sched: this.sched, requests: this.requests, holidays: this.holidays,
         results: this.results, counts: this.counts, metrics: this.metrics,
         warnCount: this.warnCount, revealHidden: this.revealHidden,
+        printTitle: this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）',  /* 分割印刷の各ページ見出しに流用 */
         recentColors: Store.getLocal('recentColors', []),
         isVisible: function (st) { return self.isVisibleInMonth(st, self.ym); },
         onToggleDivision: function (sid, div, hide) { self.toggleHiddenDivision(sid, div, hide); },
@@ -5492,6 +5550,24 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
       document.getElementById('btnActual').addEventListener('click', function () { self.gotoLayer('actual'); });
       document.getElementById('btnFreee').addEventListener('click', function () { window.ShiftFreeeUI.openDialog(); });
       document.getElementById('btnPrint').addEventListener('click', function () { self.print(); });
+      /* 印刷レイアウト切替（A3横＝従来1枚／A3縦2分割＝1〜15日・16〜末日の2枚）。端末ごとに保存。
+       * 既定 'landscape'。値は applyPrintFit が読み split 印刷へ分岐する（settings.printSize は不変）。 */
+      var printLayoutEl = document.getElementById('printLayout');
+      if (printLayoutEl) {
+        var savedPL = Store.getLocal('printLayout', 'landscape');
+        var plBtns = printLayoutEl.querySelectorAll('button');
+        for (var pli = 0; pli < plBtns.length; pli++) {
+          (function (btn) {
+            var v = btn.getAttribute('data-pl');
+            if (v === savedPL) btn.classList.add('on'); else btn.classList.remove('on');
+            btn.addEventListener('click', function () {
+              Store.setLocal('printLayout', v);
+              for (var k = 0; k < plBtns.length; k++) plBtns[k].classList.remove('on');
+              btn.classList.add('on');
+            });
+          })(plBtns[pli]);
+        }
+      }
       document.getElementById('btnFit').addEventListener('click', function () {
         self.setFitScreen(!document.body.classList.contains('fitscreen'));
       });
@@ -5622,6 +5698,11 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
     },
     /* 印刷直前のフィット計算。print()からもbeforeprint(Cmd/Ctrl+P)からも呼ぶ */
     applyPrintFit: function () {
+      /* A3縦2分割モード(グリッドビューのみ)。専用経路へ分岐し、A3横の既存ロジックには一切触れない。
+       * printsplit クラスで split 時のみ #printTitle を隠す（各ページは表内 splittitle で識別）。 */
+      var split = (Store.getLocal('printLayout', 'landscape') === 'split' && this.view === 'grid');
+      document.body.classList.toggle('printsplit', split);
+      if (split) { this.applyPrintFitSplit(); return; }
       var size = this.settings.printSize || 'A3 landscape';
       var style = document.getElementById('pageStyle');
       if (!style) {
@@ -5677,6 +5758,52 @@ body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .stick
         ' ' + sel + ' { overflow: visible; max-height: none; }' +
         ' ' + tableSel + ' { zoom: ' + z + ' !important; transform: none !important; }' +
         '}';
+    },
+
+    /* A3縦・前半後半分割の印刷フィット（グリッドビュー専用・既存A3横ロジックに非干渉）。
+     * 1枚目=氏名+1〜15日 / 2枚目=氏名+16〜末日 を各A3縦ページへ個別zoomで最大化し、2枚目に改ページ。
+     * afterprint の rerender() で通常DOM（単一テーブル・全列）へ自動復帰する。 */
+    applyPrintFitSplit: function () {
+      var style = document.getElementById('pageStyle');
+      if (!style) { style = document.createElement('style'); style.id = 'pageStyle'; document.head.appendChild(style); }
+      style.textContent = '@page { size: A3 portrait; margin: 5mm; }';
+      var fit = document.getElementById('fitStyle');
+      if (!fit) { fit = document.createElement('style'); fit.id = 'fitStyle'; document.head.appendChild(fit); }
+      /* A3縦の印字域(px)。横297mm・縦420mm − 余白5mm×2。 */
+      var pxW = (297 - 10) * 96 / 25.4;
+      var pxH = (420 - 10) * 96 / 25.4;
+      var margin = 24;   /* 安全マージン（landscapeと同係数） */
+      /* 1パス目: 既定幅で2表を出し行高を測る（両表は同一行集合＝高さほぼ同じ）。後半=最大列(days-15)
+       * を基準に、A3縦の幅を埋める日付列幅 dcw を行高から逆算（landscapeと同方式・歪まず最大化）。 */
+      Grid.renderSplit(this.gridCtx(), 52);
+      document.body.classList.add('printsim');
+      var t0 = document.querySelector('#gridWrap table.sheet');
+      var hgt0 = t0 ? t0.scrollHeight : 1;
+      document.body.classList.remove('printsim');
+      var colsMax = Math.max(15, this.days - 15);
+      var wantW = pxW * hgt0 / (pxH - margin);
+      var dcw = Math.round((wantW - 156) / Math.max(1, colsMax));   /* 156=氏名100+区分56 */
+      if (dcw < 44) dcw = 44; if (dcw > 220) dcw = 220;
+      /* 2パス目: 算出幅で再描画し、各表を個別に実測→各ページに個別zoom（前半/後半で列数が違うため）。 */
+      Grid.renderSplit(this.gridCtx(), dcw);
+      document.body.classList.add('printsim');
+      var za = this.fitZoom_(document.querySelector('#gridWrap .psplit-a table.sheet'), pxW, pxH, margin);
+      var zb = this.fitZoom_(document.querySelector('#gridWrap .psplit-b table.sheet'), pxW, pxH, margin);
+      document.body.classList.remove('printsim');
+      fit.textContent = '@media print {' +
+        ' #gridWrap { overflow: visible; max-height: none; }' +
+        ' #gridWrap .psplit-a table.sheet { zoom: ' + za + ' !important; transform: none !important; }' +
+        ' #gridWrap .psplit-b table.sheet { zoom: ' + zb + ' !important; transform: none !important; }' +
+        ' #gridWrap .psplit-b { break-before: page; page-break-before: always; }' +
+        '}';
+    },
+    /* 表を印字域(pxW×pxH−margin)へ収める等方zoom倍率(文字列・上限1.6/0.99係数)。表が無ければ '1.000'。 */
+    fitZoom_: function (table, pxW, pxH, margin) {
+      if (!table) return '1.000';
+      var w = table.scrollWidth, hgt = table.scrollHeight;
+      if (!(w > 0) || !(hgt > 0)) return '1.000';
+      var z = Math.min(1.6, pxW / w, (pxH - margin) / hgt) * 0.99;
+      return z.toFixed(3);
     },
 
     /* ── ダイアログ ── */
