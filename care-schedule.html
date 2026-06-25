@@ -404,6 +404,20 @@ select.inp { cursor: pointer; }
 .btn-ng { background: var(--ng); color: #fff; margin-left: auto; }
 .btn:hover { filter: brightness(0.96); }
 
+/* 入居者一覧モーダル（スコープ限定・既存レイアウト/印刷に非干渉） */
+#mk-resident-list .md { max-width: 760px; }
+#rl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#rl-table th, #rl-table td { border: 1px solid var(--g3); padding: 7px 9px; text-align: right; white-space: nowrap; }
+#rl-table th { background: var(--g1); color: var(--g7); font-weight: 700; text-align: center; position: sticky; top: 0; line-height: 1.3; }
+#rl-table td.rl-name { text-align: left; font-weight: 600; color: var(--g9); }
+#rl-table td.rl-mid { text-align: center; }
+#rl-table tbody tr:nth-child(even) { background: var(--g1); }
+#rl-table .rl-pct { font-weight: 700; }
+#rl-table .rl-pct.over { color: #c62828; }
+#rl-table .rl-pct.warn { color: #f57c00; }
+#rl-table .rl-pct.ok   { color: #2e7d32; }
+#rl-empty { padding: 24px; text-align: center; color: var(--g6); font-size: 13px; }
+
 /* 予定一覧モーダル */
 .evlist-tabs {
   display: flex; gap: 4px; background: var(--g1); border-radius: 8px;
@@ -530,7 +544,7 @@ select.inp { cursor: pointer; }
 
 /* ── Print ── */
 @media print {
-  .hdr-btns, .fab, #mk-event, #mk-resident, #mk-care-info, #mk-office-info, .toast, .summary-bar { display: none !important; }
+  .hdr-btns, .fab, #mk-event, #mk-resident, #mk-care-info, #mk-office-info, #mk-resident-list, .toast, .summary-bar { display: none !important; }
   .hdr { position: static; box-shadow: none; }
   .cal-wrap { position: static; top: 0; height: auto; overflow: visible; }
   .days-panel { overflow: visible; }
@@ -630,6 +644,7 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" id="sync-btn" onclick="openSyncModal()" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" onclick="openOfficeInfoModal()">🏢 事業所情報</button>
     <button class="sum-edit-btn" onclick="openCareInfoModal()">⚙ 介護情報</button>
+    <button class="sum-edit-btn" onclick="openResidentListModal()" title="全入居者の介護度・負担・利用状況を一覧表示">👥 入居者一覧</button>
   </div>
 </div>
 
@@ -1073,6 +1088,34 @@ select.inp { cursor: pointer; }
     </div>
     <div id="event-list-body" style="border:1px solid var(--g3);border-radius:8px;max-height:60vh;overflow:auto"></div>
     <textarea id="event-list-textarea" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px"></textarea>
+  </div>
+</div>
+
+<!-- ── 入居者一覧モーダル ── -->
+<div class="mk" id="mk-resident-list">
+  <div class="md">
+    <div class="md-hd">
+      <h2>👥 入居者一覧</h2>
+      <button class="md-close" onclick="closeResidentListModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各入居者の介護度・負担・利用状況の横断一覧。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。</p>
+    <div style="overflow-x:auto">
+      <table id="rl-table">
+        <thead>
+          <tr>
+            <th style="text-align:left">入居者</th>
+            <th>介護度</th>
+            <th>負担割合</th>
+            <th>負担限度額<br>(単位/月)</th>
+            <th>使用単位数<br>(月)</th>
+            <th>福祉用具<br>単位数</th>
+            <th>使用単位%</th>
+          </tr>
+        </thead>
+        <tbody id="rl-tbody"></tbody>
+      </table>
+    </div>
+    <div class="btn-row"><button class="btn btn-sec" onclick="closeResidentListModal()">閉じる</button></div>
   </div>
 </div>
 
@@ -3318,6 +3361,62 @@ function openEventListModal() {
 }
 function closeEventListModal() {
   $('#mk-event-list').classList.remove('open');
+}
+
+// ── 入居者一覧（横断集計） ──
+// 1入居者の集計。renderSummaryBar と同一算式を再利用（既存表示を壊さないため renderSummaryBar 自体は無改変）。
+function computeResidentSummary(res) {
+  const careLevel    = (res && res.careLevel) || '';
+  const limit        = CARE_LIMITS[careLevel] || null;          // 負担限度額＝区分支給限度基準額（単位/月）
+  const copayRate    = Number(res && res.copayRate) || 1;
+  const welfareUnits = Math.max(0, Number(res && res.welfareEquipUnits) || 0);
+  const weekUnits = ((res && res.events) || []).reduce((s, ev) => {
+    try { return s + sumDisplayUnits(getUnitBreakdown(ev, res)); }
+    catch (e) { return s; }                                     // 単位計算エラーはスキップ（既存と同様）
+  }, 0);
+  const monthUnits = Math.round(weekUnits * 4.3);               // 使用単位数（月）
+  const totalUnits = monthUnits + welfareUnits;
+  // 使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（既存ヘッダ「使用率」と一致）
+  const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
+  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct };
+}
+
+function renderResidentListTable() {
+  const tbody = $('#rl-tbody');
+  if (!tbody) return;
+  const list = csVisibleResidents().slice().sort((a, b) =>      // 表示対象入居者（退去者除外）・氏名昇順
+    suNormName(a && a.name).localeCompare(suNormName(b && b.name), 'ja'));
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td id="rl-empty" colspan="7">表示対象の入居者がいません</td></tr>';
+    return;
+  }
+  let h = '';
+  list.forEach(res => {
+    const s = computeResidentSummary(res);
+    let pctCell = '<td class="rl-mid">—</td>';
+    if (s.pct !== null) {
+      const cls = s.pct >= 100 ? 'over' : s.pct >= 80 ? 'warn' : 'ok';
+      pctCell = `<td class="rl-pct ${cls}">${s.pct.toFixed(1)}%</td>`;
+    }
+    h += '<tr>'
+      + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
+      + `<td class="rl-mid">${s.careLevel ? escHtml(s.careLevel) : '—'}</td>`
+      + `<td class="rl-mid">${s.copayRate}割</td>`
+      + `<td>${s.limit ? s.limit.toLocaleString() : '—'}</td>`
+      + `<td>${s.monthUnits.toLocaleString()}</td>`
+      + `<td>${s.welfareUnits.toLocaleString()}</td>`
+      + pctCell
+      + '</tr>';
+  });
+  tbody.innerHTML = h;
+}
+
+function openResidentListModal() {
+  renderResidentListTable();
+  $('#mk-resident-list').classList.add('open');
+}
+function closeResidentListModal() {
+  $('#mk-resident-list').classList.remove('open');
 }
 
 // テキスト/TSV出力（ビュー別に列順を切替）
