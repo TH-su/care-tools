@@ -54,7 +54,8 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 .layerbar button.on { background: #fff; font-weight: 700; color: var(--ink); }
 .layerbar .spacer { flex: 1; }
 .layerbar .hint { font-size: 11px; color: var(--g4); align-self: center; padding-right: 8px; }
-.layerbar .draftsep { align-self: center; font-size: 11px; color: var(--g4); margin: 0 4px 4px; }
+/* 「行政提出用」タブと「編集用」タブ群の境目を分かりやすく＝左に余白（印刷では .layerbar ごと非表示で無干渉） */
+.layerbar .draftsep { align-self: center; font-size: 11px; color: var(--g4); margin: 0 4px 4px 14px; }
 #draftTabs { display: inline-flex; gap: 2px; }
 #draftTabs .drafttab { border: 1px solid var(--g3); border-bottom: none; background: #fbf4e6;
   border-radius: 8px 8px 0 0; padding: 6px 8px 6px 12px; cursor: pointer; font-size: 12px; color: #7a5b1e;
@@ -463,7 +464,6 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
         <div class="flexrow">
           <h2 style="margin:0">シフト記号マスタ</h2>
           <button id="symAdd" class="act">＋ 記号を追加</button>
-          <button id="symRecommend" class="act ghost" title="記号のセル色・文字色を見やすいおすすめ配色に一括設定します">おすすめ配色に戻す</button>
           <span class="muted">範囲記号（9-12等）は登録不要・直接入力できます／色は変更しない限り翌月以降も保持されます</span>
         </div>
         <div id="symTable"></div>
@@ -3347,6 +3347,7 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     var norm = Sym.normalizeCell(v);
     if (Sym.ALIASES[norm]) norm = Sym.ALIASES[norm];
     for (var i = 0; i < symbols.length; i++) {
+      if (symbols[i].disabled) continue;   /* 無効化した記号はセル色/太字/文字色を適用しない（無効化を反映） */
       if (Sym.normalizeCell(symbols[i].code) === norm) return symbols[i];
     }
     return null;
@@ -3441,7 +3442,6 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
       }
       document.getElementById('staffAdd').addEventListener('click', function () { self.editStaff(null); });
       document.getElementById('symAdd').addEventListener('click', function () { self.addSymbolRow(); });
-      document.getElementById('symRecommend').addEventListener('click', function () { self.applyRecommendedColors(); });
       document.getElementById('staffParse').addEventListener('click', function () { self.parseStaffPaste(); });
       this.initSettings();
       this.initSync();
@@ -3657,7 +3657,8 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
           '<td><input type="color" data-f="textColor" value="' + (s.textColor || '#2b3138') + '"></td>' +
           '<td><input type="checkbox" data-f="bold"' + (s.bold ? ' checked' : '') + '></td>' +
           '<td class="muted">' + preview(s, app) + '</td>' +
-          '<td><button class="act ghost" data-act="toggle">' + (s.disabled ? '有効化' : '無効化') + '</button></td></tr>';
+          '<td><button class="act ghost" data-act="toggle">' + (s.disabled ? '有効化' : '無効化') + '</button>' +
+          '<button class="act danger" data-act="delete" style="margin-left:4px" title="この記号を削除">削除</button></td></tr>';
       }
       h += '</table><p class="muted">種別: 勤務=開始・終了から実働を計算 ／ 夜勤入り=「終了」欄に標準ペアの上がり時刻 ／ 有給=実働8h扱い</p>';
       var el = document.getElementById('symTable');
@@ -3683,12 +3684,29 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
         self.renderSymbols();
       };
       el.onclick = function (e) {
-        if (e.target.getAttribute && e.target.getAttribute('data-act') === 'toggle') {
-          var tr = closestTag(e.target, 'tr');
-          var idx = parseInt(tr.getAttribute('data-idx'), 10);
+        if (!e.target.getAttribute) return;
+        var act = e.target.getAttribute('data-act');
+        if (act !== 'toggle' && act !== 'delete') return;
+        var tr = closestTag(e.target, 'tr');
+        if (!tr) return;
+        var idx = parseInt(tr.getAttribute('data-idx'), 10);
+        if (act === 'toggle') {
           app.symbols[idx].disabled = !app.symbols[idx].disabled;
           app.saveSymbols();
           self.renderSymbols();
+        } else {   /* delete: 配列から削除（入力済みセルの文字は残る＝データ非破壊・色のみ外れる） */
+          var sym = app.symbols[idx];
+          var used = self.countSymbolUsage(sym.code);
+          var warn = used > 0
+            ? '\n\n⚠ この記号は当月シフトの ' + used + ' セルで使用中です。削除しても入力文字は残りますが、色・太字は外れます。'
+            : '';
+          app.confirm('記号の削除',
+            '記号「' + (sym.code || '(空)') + '」を削除しますか？' + warn,
+            function () {
+              app.symbols.splice(idx, 1);
+              app.saveSymbols();
+              self.renderSymbols();
+            });
         }
       };
       /* 種別・分類セレクト */
@@ -3710,19 +3728,25 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
       this.renderSymbols();
     },
 
-    applyRecommendedColors: function () {
-      var self = this;
-      this.app.confirm('おすすめ配色に戻す',
-        'すべての記号のセル色・文字色を見やすいおすすめ配色に一括設定します。\n（個別に設定した色は上書きされます）よろしいですか？',
-        function () {
-          self.app.symbols = window.ShiftSymbols.applyRecommendedColors(self.app.symbols);
-          /* おすすめ配色に戻す＝ユーザー色ロックを解除し端末内バックアップもクリア */
-          for (var i = 0; i < self.app.symbols.length; i++) self.app.symbols[i].userColored = false;
-          self.app.saveSymbols();
-          if (typeof self.app.saveSymColors === 'function') self.app.saveSymColors();
-          self.renderSymbols();
-          self.app.confirmInfo('完了', 'おすすめ配色を適用しました。この色は変更しない限り翌月以降も保持されます。');
-        });
+    /* 当月の現レイヤで、この記号コードを含むセル数を数える（削除前の使用中警告用・複合セルも部分一致で拾う）。 */
+    countSymbolUsage: function (code) {
+      var c = String(code === undefined || code === null ? '' : code);
+      if (!c) return 0;
+      var app = this.app, n = 0, sid, day, div;
+      var cells = (app.sched && app.sched.cells) || {};
+      for (sid in cells) {
+        var row = cells[sid] || {};
+        for (day in row) { if (String(row[day]).indexOf(c) >= 0) n++; }
+      }
+      var sub = (app.sched && app.sched.subCells) || {};
+      for (sid in sub) {
+        var divs = sub[sid] || {};
+        for (div in divs) {
+          var drow = divs[div] || {};
+          for (day in drow) { if (String(drow[day]).indexOf(c) >= 0) n++; }
+        }
+      }
+      return n;
     },
 
     /* ── 職員一括取込 ── */
@@ -5519,24 +5543,34 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
           self.rerender();
         });
       }
-      /* レイヤ/ドラフトはイベント委譲（ドラフトタブは動的生成のため） */
+      /* レイヤ/ドラフトはイベント委譲（ドラフトタブは動的生成のため）。
+       * ドラフトタブの名称編集は、switchLayer→renderLayerBar が #draftTabs を innerHTML 再生成して
+       * ノードが差し替わり、2クリック目が別ノードに当たってネイティブ dblclick が発火しないため、
+       * ここで手動ダブルクリック検出する（data-layer 文字列でキー＝ノード差し替えに非依存）。 */
       document.getElementById('layerBar').addEventListener('click', function (e) {
         var t = e.target;
         var del = t.getAttribute && t.getAttribute('data-del');
         if (del) { e.stopPropagation(); self.deleteDraft(del); return; }
         var tab = t;
         while (tab && tab !== this && !(tab.getAttribute && tab.getAttribute('data-layer'))) tab = tab.parentNode;
-        if (tab && tab.getAttribute && tab.getAttribute('data-layer')) {
-          self.switchLayer(tab.getAttribute('data-layer'));
+        if (!(tab && tab.getAttribute && tab.getAttribute('data-layer'))) return;
+        var lay = tab.getAttribute('data-layer');
+        var isDraftTab = lay.indexOf('draft:') === 0 &&
+          tab.classList && tab.classList.contains('drafttab') && !tab.classList.contains('autopt');
+        if (isDraftTab) {
+          var now = Date.now();
+          var prev = self._lastDraftClick;
+          if (prev && prev.lay === lay && (now - prev.t) < 350) {
+            self._lastDraftClick = null;        /* 2クリック目＝名称編集（switchLayer はスキップ） */
+            self.renameDraft(lay.slice(6));
+            return;
+          }
+          self._lastDraftClick = { lay: lay, t: now };   /* 1クリック目＝従来どおりレイヤ切替 */
+          self.switchLayer(lay);
+          return;
         }
-      });
-      document.getElementById('layerBar').addEventListener('dblclick', function (e) {
-        var tab = e.target;
-        while (tab && tab !== this && !(tab.classList && tab.classList.contains('drafttab'))) tab = tab.parentNode;
-        if (tab && tab.classList && tab.classList.contains('drafttab') && !tab.classList.contains('autopt')) {
-          var lay = tab.getAttribute('data-layer');
-          if (lay) self.renameDraft(lay.slice(6));
-        }
+        self._lastDraftClick = null;            /* 非ドラフトタブ（予定/実績/行政提出用）は即切替 */
+        self.switchLayer(lay);
       });
       var egSync = document.getElementById('egSync');
       if (egSync) egSync.addEventListener('click', function () { self.gotoMasterSettings('sync'); });
