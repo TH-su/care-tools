@@ -405,7 +405,7 @@ select.inp { cursor: pointer; }
 .btn:hover { filter: brightness(0.96); }
 
 /* 入居者一覧モーダル（スコープ限定・既存レイアウト/印刷に非干渉） */
-#mk-resident-list .md { max-width: 760px; }
+#mk-resident-list .md { max-width: min(1180px, 96vw); }
 #rl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #rl-table th, #rl-table td { border: 1px solid var(--g3); padding: 7px 9px; text-align: right; white-space: nowrap; }
 #rl-table th { background: var(--g1); color: var(--g7); font-weight: 700; text-align: center; position: sticky; top: 0; line-height: 1.3; }
@@ -417,6 +417,19 @@ select.inp { cursor: pointer; }
 #rl-table .rl-pct.warn { color: #f57c00; }
 #rl-table .rl-pct.ok   { color: #2e7d32; }
 #rl-empty { padding: 24px; text-align: center; color: var(--g6); font-size: 13px; }
+/* 報酬額(10割) 総合計バナー（上部・視認性高） */
+#rl-total { margin: 0 0 10px; padding: 10px 14px; border: 1px solid #90caf9; border-radius: 8px;
+  background: #e8f2fd; color: #0d3c61; font-size: 15px; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#rl-total .rl-total-amt { font-size: 21px; color: #1565c0; }
+#rl-total .rl-total-sub { font-size: 12px; font-weight: 600; color: var(--g6); }
+/* 通所利用曜日（月〜土・6列をグループ視認） */
+#rl-table th.rl-day, #rl-table td.rl-day { width: 26px; min-width: 26px; padding: 7px 3px; text-align: center; background: #f3f8ff; }
+#rl-table th.rl-day { background: #e3eefb; }
+#rl-table td.rl-day .on { color: #2e7d32; font-weight: 700; }
+/* 報酬額(10割) 列・合計行 */
+#rl-table .rl-fee { text-align: right; font-weight: 700; color: #1565c0; }
+#rl-table tfoot td { border-top: 2px solid var(--g4); background: var(--g1); font-weight: 700; }
+#rl-table tfoot td.rl-foot-label { text-align: right; color: var(--g7); }
 
 /* 予定一覧モーダル */
 .evlist-tabs {
@@ -553,6 +566,16 @@ select.inp { cursor: pointer; }
   .event-block::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body { overflow: auto; }
   @page { size: A4 landscape; margin: 10mm; }
+
+  /* 入居者一覧のA3印刷（body.rl-print が付くのは一覧印刷時のみ＝週ボードA4印刷経路には一切影響しない） */
+  body.rl-print .hdr, body.rl-print .cal-wrap, body.rl-print .fab, body.rl-print .toast { display: none !important; }
+  body.rl-print #mk-resident-list { display: block !important; position: static; background: none; overflow: visible; }
+  body.rl-print #mk-resident-list .md { max-width: none; box-shadow: none; border-radius: 0; margin: 0; padding: 0; }
+  body.rl-print #rl-scroll { overflow: visible !important; }
+  body.rl-print #mk-resident-list .md-close,
+  body.rl-print #mk-resident-list .btn-row { display: none !important; }
+  body.rl-print #rl-table { font-size: 9px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.rl-print #rl-table th, body.rl-print #rl-table td { padding: 3px 4px; }
 }
 
 /* ── Responsive ── */
@@ -1098,24 +1121,36 @@ select.inp { cursor: pointer; }
       <h2>👥 入居者一覧</h2>
       <button class="md-close" onclick="closeResidentListModal()">✕</button>
     </div>
-    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各入居者の介護度・負担・利用状況の横断一覧。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。</p>
-    <div style="overflow-x:auto">
+    <div id="rl-total"></div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各入居者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない）。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。</p>
+    <div id="rl-scroll" style="overflow-x:auto">
       <table id="rl-table">
         <thead>
           <tr>
             <th style="text-align:left">入居者</th>
             <th>介護度</th>
             <th>負担割合</th>
+            <th class="rl-day">月</th>
+            <th class="rl-day">火</th>
+            <th class="rl-day">水</th>
+            <th class="rl-day">木</th>
+            <th class="rl-day">金</th>
+            <th class="rl-day">土</th>
             <th>負担限度額<br>(単位/月)</th>
             <th>使用単位数<br>(月)</th>
             <th>福祉用具<br>単位数</th>
             <th>使用単位%</th>
+            <th class="rl-fee-h">報酬額(10割)<br>(円)</th>
           </tr>
         </thead>
         <tbody id="rl-tbody"></tbody>
+        <tfoot id="rl-tfoot"></tfoot>
       </table>
     </div>
-    <div class="btn-row"><button class="btn btn-sec" onclick="closeResidentListModal()">閉じる</button></div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="printResidentList()">🖨 A3で印刷</button>
+      <button class="btn btn-sec" onclick="closeResidentListModal()">閉じる</button>
+    </div>
   </div>
 </div>
 
@@ -3249,7 +3284,7 @@ function exportJSON() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   showToast('エクスポートしました');
 }
-function printWeek() { window.print(); }
+function printWeek() { clearRlPrintState_(); window.print(); }
 
 // ── 予定一覧モーダル ──
 let _evlistView = 'day'; // 'day' = 曜日別 / 'svc' = サービス種別別
@@ -3364,6 +3399,24 @@ function closeEventListModal() {
 }
 
 // ── 入居者一覧（横断集計） ──
+// 報酬額(10割)の単価＝固定10円/単位（ユーザー確定・地域加算は反映しない）
+const FEE_PER_UNIT = 10;
+// 介護度の短縮表示：要介護→数字のみ / 要支援→「支N」 / 未設定→「—」
+function careLevelShort_(careLevel) {
+  if (!careLevel) return '—';
+  const m = String(careLevel).match(/([0-9]+)/);
+  const num = m ? m[1] : '';
+  if (!num) return '—';
+  return (String(careLevel).indexOf('支援') >= 0) ? ('支' + num) : num;
+}
+// 通所利用曜日 [月,火,水,木,金,土] の真偽配列（日曜は対象外＝要件どおり月〜土）
+function residentDaycareDays_(res) {
+  const d = [false, false, false, false, false, false];
+  ((res && res.events) || []).forEach(ev => {
+    if (ev && ev.serviceType === 'daycare' && ev.dayOfWeek >= 0 && ev.dayOfWeek <= 5) d[ev.dayOfWeek] = true;
+  });
+  return d;
+}
 // 1入居者の集計。renderSummaryBar と同一算式を再利用（既存表示を壊さないため renderSummaryBar 自体は無改変）。
 function computeResidentSummary(res) {
   const careLevel    = (res && res.careLevel) || '';
@@ -3378,37 +3431,61 @@ function computeResidentSummary(res) {
   const totalUnits = monthUnits + welfareUnits;
   // 使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（既存ヘッダ「使用率」と一致）
   const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
-  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct };
+  // 報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない＝訪問＋通所のみ・ユーザー確定）
+  const fee = monthUnits * FEE_PER_UNIT;
+  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct, fee };
 }
 
 function renderResidentListTable() {
   const tbody = $('#rl-tbody');
   if (!tbody) return;
+  const tfoot = $('#rl-tfoot');
+  const totalEl = $('#rl-total');
   const list = csVisibleResidents().slice().sort((a, b) =>      // 表示対象入居者（退去者除外）・氏名昇順
     suNormName(a && a.name).localeCompare(suNormName(b && b.name), 'ja'));
   if (!list.length) {
-    tbody.innerHTML = '<tr><td id="rl-empty" colspan="7">表示対象の入居者がいません</td></tr>';
+    tbody.innerHTML = '<tr><td id="rl-empty" colspan="14">表示対象の入居者がいません</td></tr>';
+    if (tfoot) tfoot.innerHTML = '';
+    if (totalEl) totalEl.innerHTML = '';
     return;
   }
   let h = '';
+  let totalFee = 0;
   list.forEach(res => {
     const s = computeResidentSummary(res);
+    totalFee += s.fee;
     let pctCell = '<td class="rl-mid">—</td>';
     if (s.pct !== null) {
       const cls = s.pct >= 100 ? 'over' : s.pct >= 80 ? 'warn' : 'ok';
       pctCell = `<td class="rl-pct ${cls}">${s.pct.toFixed(1)}%</td>`;
     }
+    const days = residentDaycareDays_(res);
+    const dayCells = days.map(on => `<td class="rl-day">${on ? '<span class="on">○</span>' : ''}</td>`).join('');
     h += '<tr>'
       + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
-      + `<td class="rl-mid">${s.careLevel ? escHtml(s.careLevel) : '—'}</td>`
+      + `<td class="rl-mid">${careLevelShort_(s.careLevel)}</td>`
       + `<td class="rl-mid">${s.copayRate}割</td>`
+      + dayCells
       + `<td>${s.limit ? s.limit.toLocaleString() : '—'}</td>`
       + `<td>${s.monthUnits.toLocaleString()}</td>`
       + `<td>${s.welfareUnits.toLocaleString()}</td>`
       + pctCell
+      + `<td class="rl-fee">${s.fee.toLocaleString()}</td>`
       + '</tr>';
   });
   tbody.innerHTML = h;
+  // 上部バナー（総合計）と tfoot 合計行
+  if (totalEl) {
+    totalEl.innerHTML = '報酬額(10割) 総合計'
+      + `<span class="rl-total-amt">¥${totalFee.toLocaleString()}</span>`
+      + `<span class="rl-total-sub">対象 ${list.length}名・使用単位数(月)×10円（福祉用具除く）</span>`;
+  }
+  if (tfoot) {
+    tfoot.innerHTML = '<tr>'
+      + '<td class="rl-foot-label" colspan="13">報酬額(10割) 合計</td>'
+      + `<td class="rl-fee">${totalFee.toLocaleString()}</td>`
+      + '</tr>';
+  }
 }
 
 function openResidentListModal() {
@@ -3417,6 +3494,31 @@ function openResidentListModal() {
 }
 function closeResidentListModal() {
   $('#mk-resident-list').classList.remove('open');
+}
+// A3印刷状態のクリア（idempotent）。afterprint 未発火（モバイルSafari/WebView/PDF出力等）で
+// 残った rl-print クラス・注入@pageが、後続の週ボード印刷(printWeek)へ漏れてA4を壊すのを防ぐ。
+function clearRlPrintState_() {
+  document.body.classList.remove('rl-print');
+  const nodes = document.querySelectorAll('#rl-a3-page');
+  for (let i = 0; i < nodes.length; i++) nodes[i].remove();
+}
+// 入居者一覧のみをA3横で印刷（週ボードのA4印刷経路は無改変・一覧印刷時だけ @page を動的注入）
+function printResidentList() {
+  clearRlPrintState_();                       // 直前の未発火afterprintによる残骸/多重クリックを確実に除去
+  document.body.classList.add('rl-print');
+  const st = document.createElement('style');
+  st.id = 'rl-a3-page';
+  st.textContent = '@media print{@page{size:A3 landscape;margin:8mm}}';
+  document.head.appendChild(st);
+  let cleaned = false;
+  const done = function () {                   // 一度だけ実行（多重afterprint対策）
+    if (cleaned) return;
+    cleaned = true;
+    clearRlPrintState_();
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  window.print();
 }
 
 // テキスト/TSV出力（ビュー別に列順を切替）
