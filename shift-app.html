@@ -559,6 +559,15 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
   </div>
 </dialog>
 <script>
+/* ===== src/logic/lzstring.js ===== */
+/* lzstring.js — LZ-String v1.4.4 (minified) localStorage圧縮用
+ * compressToUTF16 / decompressFromUTF16 のみ store.js から使用。
+ * 旧Safari互換: ES3級・依存ゼロ。JSON文字列をUTF-16安全な文字列へ圧縮し
+ * localStorage実効容量を約4〜5倍に拡張する（排泄記録アプリ haiben-record と同一版）。 */
+var LZString=function(){var o=String.fromCharCode,n="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=",e="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-$",t={},i={compressToBase64:function(o){if(null==o)return"";var r=i._compress(o,6,function(o){return n.charAt(o)});switch(r.length%4){default:case 0:return r;case 1:return r+"===";case 2:return r+"==";case 3:return r+"="}},decompressFromBase64:function(r){return null==r?"":""==r?null:i._decompress(r.length,32,function(e){return s(n,r.charAt(e))})},compressToUTF16:function(n){return null==n?"":i._compress(n,15,function(n){return o(n+32)})+" "},decompressFromUTF16:function(r){return null==r?"":""==r?null:i._decompress(r.length,16384,function(o){return r.charCodeAt(o)-32})},compress:function(r){return i._compress(r,16,function(r){return o(r)})},_compress:function(o,r,n){if(null==o)return"";var e,t,i,s={},u={},a="",p="",c="",l=2,f=3,h=2,d=[],m=0,v=0;for(i=0;i<o.length;i+=1)if(a=o.charAt(i),Object.prototype.hasOwnProperty.call(s,a)||(s[a]=f++,u[a]=!0),p=c+a,Object.prototype.hasOwnProperty.call(s,p))c=p;else{if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;h>e;e++)m<<=1,v==r-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;8>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;h>e;e++)m=m<<1|t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;16>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}l--,0==l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;l--,0==l&&(l=Math.pow(2,h),h++),s[p]=f++,c=String(a)}if(""!==c){if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;h>e;e++)m<<=1,v==r-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;8>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;h>e;e++)m=m<<1|t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;16>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}l--,0==l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;l--,0==l&&(l=Math.pow(2,h),h++)}for(t=2,e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;for(;;){if(m<<=1,v==r-1){d.push(n(m));break}v++}return d.join("")},decompress:function(o){return null==o?"":""==o?null:i._decompress(o.length,32768,function(r){return o.charCodeAt(r)})},_decompress:function(n,e,t){var s,u,a,p,c,l,f,h=[],d=4,m=4,v=3,w="",b=[],g={val:t(0),position:e,index:1};for(s=0;3>s;s+=1)h[s]=s;for(a=0,c=Math.pow(2,2),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;switch(a){case 0:for(a=0,c=Math.pow(2,8),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;f=o(a);break;case 1:for(a=0,c=Math.pow(2,16),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;f=o(a);break;case 2:return""}for(h[3]=f,u=f,b.push(f);;){if(g.index>n)return"";for(a=0,c=Math.pow(2,v),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;switch(f=a){case 0:for(a=0,c=Math.pow(2,8),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;h[m++]=o(a),f=m-1,d--;break;case 1:for(a=0,c=Math.pow(2,16),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;h[m++]=o(a),f=m-1,d--;break;case 2:return b.join("")}if(0==d&&(d=Math.pow(2,v),v++),h[f])w=h[f];else{if(f!==m)return null;w=u+u.charAt(0)}b.push(w),h[m++]=u+w.charAt(0),d--,u=w,0==d&&(d=Math.pow(2,v),v++)}}};function s(o,r){if(!t[o]){t[o]={};for(var n=0;n<o.length;n++)t[o][o.charAt(n)]=n}return t[o][r]}return i}();
+if(typeof window!=='undefined')window.LZString=LZString;
+/* テスト用にCommonJSでも公開（ブラウザ動作には影響しない） */
+if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 /* ===== src/logic/symbols.js ===== */
 /* symbols.js — シフト記号の正規化・パース（純粋関数・依存ゼロ）
  * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
@@ -1678,15 +1687,16 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     return !!(entry && entry.data !== null && entry.data !== undefined);
   }
 
-  /* 送信キュー: 同一キーは最新データへ統合（baseRevは最初の値を保持） */
+  /* 送信キュー: キーと baseRev のみ保持（データ本体は持たず、push時に localStorage から live 取得する）。
+   * ＝ _meta にデータを二重保存しない＝localStorage肥大化と保存の重さを根治。baseRevは最初の値を保持。 */
   function SyncQueue() {
-    this.items = {}; /* key -> {data, baseRev, queuedAt} */
+    this.items = {}; /* key -> {baseRev, queuedAt} */
   }
-  SyncQueue.prototype.enqueue = function (key, data, baseRev, now) {
+  SyncQueue.prototype.enqueue = function (key, baseRev, now) {
     if (this.items[key]) {
-      this.items[key].data = data; /* baseRevは据え置き＝サーバ側の競合検知を維持 */
+      /* 既存は baseRev 据え置き＝サーバ側の競合検知を維持（最新データはpush時にlive取得） */
     } else {
-      this.items[key] = { data: data, baseRev: baseRev, queuedAt: now || 0 };
+      this.items[key] = { baseRev: (typeof baseRev === 'number') ? baseRev : 0, queuedAt: now || 0 };
     }
   };
   SyncQueue.prototype.keys = function () {
@@ -1703,7 +1713,13 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
   SyncQueue.prototype.toJSON = function () { return this.items; };
   SyncQueue.fromJSON = function (obj) {
     var q = new SyncQueue();
-    if (obj) { for (var k in obj) q.items[k] = obj[k]; }
+    if (obj) {
+      for (var k in obj) {
+        var it = obj[k] || {};
+        /* 旧形式 {data, baseRev, queuedAt} の data は読み捨て＝肥大化した既存_metaを起動時に自動スリム化 */
+        q.items[k] = { baseRev: (typeof it.baseRev === 'number') ? it.baseRev : 0, queuedAt: it.queuedAt || 0 };
+      }
+    }
     return q;
   };
 
@@ -1998,6 +2014,10 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
   var SC = (typeof window !== 'undefined') ? window.ShiftSyncCore : null;
 
   var PREFIX = 'shiftapp:v1:';
+  /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
+   * compressToUTF16の出力（文字コード32以上）にも現れないため平文/圧縮の判別が曖昧にならない。
+   * ソースへ生の制御文字を埋め込まないよう fromCharCode で生成（編集/ビルド/gitで壊れない）。 */
+  var LZ_MAGIC = String.fromCharCode(1);
   var META_KEY = PREFIX + '_meta';   // {revs:{}, dirty:{}, queue:{}, lastSync}
   var SYNC_KEY = PREFIX + '_sync';   // {url, token} 端末ごと（後方互換）
   /* 同一オリジンの3アプリ（ワースケ/週間計画/シフト）共通の接続先。
@@ -2061,15 +2081,62 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     return true;
   }
 
+  /* このアプリ自身のキー(shiftapp:v1:*)のみ圧縮。共有キー(su_sync_common/ws_settings)は
+   * 他アプリが平文JSONで読むため圧縮しない＝クロスアプリ互換を維持。 */
+  function isOwnKey(key) { return String(key).indexOf(PREFIX) === 0; }
+  function encodeVal(key, val) {
+    var s = JSON.stringify(val);
+    if (isOwnKey(key) && typeof LZString !== 'undefined' && LZString && LZString.compressToUTF16) {
+      try {
+        var c = LZString.compressToUTF16(s);
+        if (c) return LZ_MAGIC + c;   /* 圧縮成功＝マジック付きで保存 */
+      } catch (e) {}
+    }
+    return s;   /* 共有キー or 圧縮不可＝平文 */
+  }
+  /* 容量逼迫時に「安全に再生成できるゴミ」だけを解放（実データ＝勤務表/希望休/職員/記号は削除しない）。
+   * 解放対象: 職員バックアップ(スナップショット) ＋ 中身が空のドラフト(削除済みの残骸)。 */
+  function reclaimSpace(skipKey) {
+    var toRemove = [], i, k;
+    var backupKey = PREFIX + 'local:staffBackup';
+    if (backupKey !== skipKey && localStorage.getItem(backupKey) !== null) toRemove.push(backupKey);
+    for (i = 0; i < localStorage.length; i++) {
+      k = localStorage.key(i);
+      if (!k || k === skipKey) continue;
+      if (k.indexOf(PREFIX + 'sched:') === 0 && k.indexOf(':draft:') > 0) {
+        if (!schedHasData(lsGet(k))) toRemove.push(k);   /* 空ドラフトのみ＝純粋なゴミ */
+      }
+    }
+    var freed = false;
+    for (i = 0; i < toRemove.length; i++) {
+      try { localStorage.removeItem(toRemove[i]); freed = true; } catch (e) {}
+    }
+    return freed;
+  }
   function lsGet(key) {
     try {
       var raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
+      if (raw === null || raw === undefined || raw === '') return null;
+      if (raw.charAt(0) === LZ_MAGIC) {                  /* 圧縮データ＝復号 */
+        var dec = LZString.decompressFromUTF16(raw.slice(1));
+        return dec ? JSON.parse(dec) : null;
+      }
+      return JSON.parse(raw);                            /* 平文（既存データ/共有キー）＝後方互換 */
     } catch (e) { return null; }
   }
   function lsSet(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+    var payload;
+    try { payload = encodeVal(key, val); }
     catch (e) { return false; }
+    try { localStorage.setItem(key, payload); return true; }
+    catch (e1) {
+      /* QuotaExceeded等: ゴミを解放して1回だけ再試行（実データは消さない） */
+      if (reclaimSpace(key)) {
+        try { localStorage.setItem(key, payload); return true; }
+        catch (e2) { return false; }
+      }
+      return false;
+    }
   }
 
   var Store = {
@@ -2087,6 +2154,9 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     init: function () {
       this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
       this.queue = SC.SyncQueue.fromJSON(this.meta.queue);
+      /* fromJSONが旧形式のデータ複製を落とすため、ここで一度書き戻すと肥大化した既存_metaが
+       * 即座にスリム化され、容量を即時回復できる（圧縮も同時に適用される）。 */
+      this.saveMeta();
       this.updateStatus();
       this.bindRecovery();
     },
@@ -2119,7 +2189,8 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     set: function (key, data) {
       var ok = lsSet(PREFIX + key, data);
       this.meta.dirty[key] = true;
-      this.queue.enqueue(key, data, this.meta.revs[key] || 0, Date.now());
+      /* キューはキー+baseRevのみ登録（データ本体はlsSetで保存済み・push時にlive取得） */
+      this.queue.enqueue(key, this.meta.revs[key] || 0, Date.now());
       var metaOk = this.saveMeta();
       this.schedulePush();
       if (ok && metaOk) {
@@ -2138,6 +2209,16 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
       return v === null ? (fallback === undefined ? null : fallback) : v;
     },
     setLocal: function (key, data) { lsSet(PREFIX + 'local:' + key, data); },
+    /* キーを実削除（localStorageから除去＋メタ/キューからも除去）。削除済みドラフトのゴミ蓄積を防ぐ。 */
+    remove: function (key) {
+      try { localStorage.removeItem(PREFIX + key); } catch (e) {}
+      if (this.meta) {
+        if (this.meta.revs) delete this.meta.revs[key];
+        if (this.meta.dirty) delete this.meta.dirty[key];
+      }
+      if (this.queue) this.queue.take(key);
+      this.saveMeta();
+    },
 
     /* 接続先の解決: 共通キー（他アプリと共有）を優先し、無ければ従来キー。 */
     getSyncConfig: function () {
@@ -2289,7 +2370,8 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
           if (!mayApplyServer(key, server.data, lv)) {
             corrupt.push(key);
             if (lv !== null && lv !== undefined && !isEmptyish(lv) && !self.readOnly) {
-              self.queue.enqueue(key, lv, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now());
+              /* 修復のため再送（実データはpush時にlsGetでlive取得） */
+              self.queue.enqueue(key, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now());
             }
             continue;
           }
@@ -2351,8 +2433,9 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
           self.adoptServer(c, function () { self.handleConflicts(conflicts, idx + 1); });
           return;
         }
-        /* 自分の編集で上書き: baseRevをサーバに合わせ強制push */
-        self.queue.enqueue(c.key, localData, c.server.rev, Date.now());
+        /* 自分の編集で上書き: baseRevをサーバに合わせ強制push（実データはpush時にlive取得） */
+        self.queue.enqueue(c.key, c.server.rev, Date.now());
+        if (self.queue.items[c.key]) self.queue.items[c.key].baseRev = c.server.rev;
         self.saveMeta();
         self.updateStatus();
         self.schedulePush();
@@ -2371,7 +2454,8 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
           /* 破損/null、または保護キーを空で上書きになる: 何も壊さず保留し、
            * ローカルに有効データがあれば修復のため再送 */
           if (localVal !== null && localVal !== undefined && !isEmptyish(localVal) && !self.readOnly) {
-            self.queue.enqueue(c.key, localVal, (typeof rev === 'number') ? rev : (c.server ? c.server.rev : 0), Date.now());
+            /* 修復のため再送（実データはpush時にlsGetでlive取得） */
+            self.queue.enqueue(c.key, (typeof rev === 'number') ? rev : (c.server ? c.server.rev : 0), Date.now());
             self.saveMeta();
             self.schedulePush();
           }
@@ -2418,10 +2502,9 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
          * SyncQueue.enqueueは既存キーのbaseRevを据え置くため、baseRevを直接更新する（重要）。 */
         this.meta.revs[key] = serverRev;
         if (this.queue.items[key]) {
-          this.queue.items[key].data = localVal;
-          this.queue.items[key].baseRev = serverRev;
+          this.queue.items[key].baseRev = serverRev;   /* 実データはpush時にlive取得 */
         } else {
-          this.queue.enqueue(key, localVal, serverRev, Date.now());
+          this.queue.enqueue(key, serverRev, Date.now());
         }
         this.saveMeta();
         this.schedulePush();
@@ -2454,7 +2537,10 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
         chain = chain.then(function () {
           var item = self.queue.items[key];
           if (!item) return null;
-          return self.api({ action: 'push', key: key, data: item.data, baseRev: item.baseRev })
+          /* データ本体はキューに持たず、送信直前に localStorage から最新を取得（_meta二重保存の解消） */
+          var liveData = lsGet(PREFIX + key);
+          if (liveData === null || liveData === undefined) { self.queue.take(key); return null; } /* 本体喪失＝送るものなし */
+          return self.api({ action: 'push', key: key, data: liveData, baseRev: item.baseRev })
             .then(function (res) {
               if (res && res.readOnly) { self.readOnly = true; throw new Error('__READONLY__'); }
               var r = SC.applyPushResult(res);
@@ -5011,7 +5097,7 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
       this.confirm('編集用の削除', '編集用「' + d.label + '」を削除しますか？（予定・実績には影響しません）', function () {
         var list = self.getDrafts().filter(function (x) { return x.id !== id; });
         self.saveDrafts(list);
-        self.saveSched('draft:' + id, self.emptySched()); /* 中身も空に */
+        Store.remove(self.schedKey('draft:' + id)); /* キーごと実削除＝ゴミを残さない（空書き換えではなく除去） */
         if (self.layer === 'draft:' + id) { self.gotoLayer('plan'); }
         else { self.renderLayerBar(); }
       });
