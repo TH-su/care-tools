@@ -1107,8 +1107,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     }
     var fte = {};
+    var fteBase = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 0; /* 0/不正値でのInfinity/NaNを防ぐ */
     for (var dv2 in divMin28) {
-      fte[dv2] = Math.round(divMin28[dv2] / 60 / s.fteBaseHours * 100) / 100;
+      fte[dv2] = fteBase ? Math.round(divMin28[dv2] / 60 / fteBase * 100) / 100 : 0;
     }
     return {
       kaifukuPctVisit: qualPctByDivision(staffList, monthResults, '訪問', ['介護福祉士']),
@@ -1247,7 +1248,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       dayCols = {};
       for (var c2 = 0; c2 < header.length; c2++) {
         var m = header[c2].match(/\[\s*(\d{1,2})\s*日\s*\]/);
-        if (m) dayCols[c2] = parseInt(m[1], 10);
+        if (m) {
+          var dnum = parseInt(m[1], 10);
+          if (dnum >= 1 && dnum <= 31) dayCols[c2] = dnum; /* 月外(0/32以上)の日番号は無視 */
+        }
       }
       startRow = 1;
     }
@@ -2025,12 +2029,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      形式 {endpoint, token, updatedAt}（ワースケ/週間計画と同じフィールド名）。 */
   var COMMON_SYNC_KEY = 'su_sync_common';
 
-  /* 消失防止の保護対象キー: 職員・記号(マスタ) ＋ 勤務表(sched:*) ＋ 希望休(req:*)。
+  /* 消失防止の保護対象キー: 職員・記号(マスタ) ＋ 勤務表(sched:*) ＋ 希望休(req:*) ＋ 編集用一覧(drafts:*)。
    * これらは「空」で非空ローカルを上書きしてはならない（クラウド/他端末経由の消失を防ぐ）。 */
   var PROTECTED_KEYS = { staff: 1, symbols: 1 };
   function isProtectedKey(key) {
     var k = String(key);
-    return PROTECTED_KEYS[k] === 1 || k.indexOf('sched:') === 0 || k.indexOf('req:') === 0;
+    return PROTECTED_KEYS[k] === 1 || k.indexOf('sched:') === 0 || k.indexOf('req:') === 0 ||
+           k.indexOf('drafts:') === 0;
   }
   /* 勤務表(plan/actual/draft)は {cells, subCells, ...} 形。勤務セルが1つでも入っていれば「データあり」 */
   function schedHasData(sched) {
@@ -2189,6 +2194,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     set: function (key, data) {
       var ok = lsSet(PREFIX + key, data);
       this.meta.dirty[key] = true;
+      /* 正常な値で上書きできたら破損フラグを解除＝再送対象に復帰 */
+      if (ok && this._corruptKeys) delete this._corruptKeys[key];
       /* キューはキー+baseRevのみ登録（データ本体はlsSetで保存済み・push時にlive取得） */
       this.queue.enqueue(key, this.meta.revs[key] || 0, Date.now());
       var metaOk = this.saveMeta();
@@ -2217,6 +2224,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (this.meta.dirty) delete this.meta.dirty[key];
       }
       if (this.queue) this.queue.take(key);
+      if (this._corruptKeys) delete this._corruptKeys[key];
       this.saveMeta();
     },
 
@@ -2292,6 +2300,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     recoverNow: function () {
       var cfg = this.getSyncConfig();
       if (!cfg || !cfg.url) return;
+      if (this.status === 'syncing' || this._pushInFlight) return; /* 同期中は再同期を起動しない（並行push回避） */
       if (this.status !== 'offline' && this.queue.size() === 0) return;
       if (this.queue.size() > 0) this.pushQueued(); else this.pullAll();
     },
@@ -2528,8 +2537,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var cfg = this.getSyncConfig();
       if (!cfg || !cfg.url) return Promise.resolve('nosync');
       if (this.readOnly) { this.updateStatus(); return Promise.resolve('readonly'); }
+      if (this._pushInFlight) return Promise.resolve('busy'); /* 再入ガード: 並行pushによる冗長通信/競合ノイズを防ぐ */
       var keys = this.queue.keys();
       if (keys.length === 0) { this.updateStatus(); return Promise.resolve('empty'); }
+      this._pushInFlight = true;
       this.updateStatus('syncing', '送信中…');
 
       var chain = Promise.resolve();
@@ -2539,7 +2550,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!item) return null;
           /* データ本体はキューに持たず、送信直前に localStorage から最新を取得（_meta二重保存の解消） */
           var liveData = lsGet(PREFIX + key);
-          if (liveData === null || liveData === undefined) { self.queue.take(key); return null; } /* 本体喪失＝送るものなし */
+          if (liveData === null || liveData === undefined) {
+            /* 「キー不在」と「存在するが復号不能(破損)」を区別する。
+             * 不在＝送るものが無いのでtake。破損＝黙って捨てず保持し警告（後でエクスポート/修復可能に）。
+             * 破損キーは送れないため _corruptKeys に記録し、後の再武装(schedulePush)対象から除外＝
+             * 破損キー単独での無限再送ループ(1.5s毎)を防ぐ。 */
+            if (!self._corruptKeys) self._corruptKeys = {};
+            if (localStorage.getItem(PREFIX + key) === null) { self.queue.take(key); delete self._corruptKeys[key]; }
+            else { self._corruptKeys[key] = true; try { console.warn('同期スキップ: ローカルデータを読めません（破損の可能性）:', key); } catch (e) {} }
+            return null;
+          }
           return self.api({ action: 'push', key: key, data: liveData, baseRev: item.baseRev })
             .then(function (res) {
               if (res && res.readOnly) { self.readOnly = true; throw new Error('__READONLY__'); }
@@ -2559,12 +2579,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       });
       return chain.then(function () {
+        self._pushInFlight = false;
         self.meta.lastSync = Date.now();
         self.saveMeta();
         self.clearRetry();   /* 送信成功＝復帰：バックオフをリセット */
         self.updateStatus();
+        /* 送信中に届いた新規編集を取りこぼさず後追い送信。ただし「送信可能(=破損でない)」キーが
+         * 残っている時だけ再武装＝破損キー単独での無限ループ(1.5s毎の再送/バッジ点滅)を防ぐ。 */
+        var qk = self.queue.keys(), hasSendable = false;
+        for (var qi = 0; qi < qk.length; qi++) {
+          if (!(self._corruptKeys && self._corruptKeys[qk[qi]])) { hasSendable = true; break; }
+        }
+        if (hasSendable) self.schedulePush();
         return 'ok';
       }).catch(function (err) {
+        self._pushInFlight = false;   /* 先にフラグ解除＝heal後の再送(self.pushQueued)が再入できるように */
         if (err && err.message === '__READONLY__') {
           self.updateStatus('readonly', '閲覧専用トークンのため、この端末の編集はサーバへ送信されません');
           return 'readonly';
@@ -3093,11 +3122,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.sel = self.rangeFrom(self.anchor, cellOf(td));
         self.applySelClass();
       });
-      document.addEventListener('mouseup', function () {
-        if (!self.dragging) return;
-        self.dragging = false;
-        if (self.sel.length >= 1) self.showPalette();
-      });
+      /* document への mouseup は描画ごとに増殖しないよう一度だけ束縛（Gridは単一オブジェクト＝
+       * self は常に同一・ハンドラは Grid 状態のみ参照するため再束縛不要）。リーク防止。 */
+      if (!this._mouseupBound) {
+        this._mouseupBound = true;
+        document.addEventListener('mouseup', function () {
+          if (!self.dragging) return;
+          self.dragging = false;
+          if (self.sel.length >= 1) self.showPalette();
+        });
+      }
 
       /* 必要数入力 */
       table.addEventListener('change', function (e) {
@@ -3267,6 +3301,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── キーボード・コピペ ── */
     initGlobal: function () {
       var self = this;
+      if (this._globalBound) return; /* 二重束縛防止（document/keydown/copy/paste の重複登録を予防） */
+      this._globalBound = true;
       document.addEventListener('keydown', function (e) {
         if (document.getElementById('view-grid').classList.contains('on') === false) return;
         var tag = (e.target.tagName || '').toLowerCase();
@@ -5607,6 +5643,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── ツールバー ── */
     bindToolbar: function () {
       var self = this;
+      if (this._toolbarBound) return; /* 二重束縛防止（document/keydown・window/resize 等の重複登録を予防） */
+      this._toolbarBound = true;
       document.getElementById('ymPrev').addEventListener('click', function () {
         self.setYM(self.year, self.month - 1); self.rerender();
       });
