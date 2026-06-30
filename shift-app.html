@@ -3143,22 +3143,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (self.sel.length >= 1) self.showPalette();
         });
       }
-      /* 入力パレットのウィンドウ外クリックで閉じる（下部セルで「閉じる」ボタンが画面外でも操作可能に）。
-       * mouseup と同様に document へ一度だけ束縛（描画毎の増殖＝リークを防止）。
-       * 競合防止: セルクリックは table の mousedown(上記)が先に hidePalette()→display!=='block' になるため
-       * ここは no-op、続く mouseup で再表示＝閉じ処理と再表示が衝突しない（stopPropagation不要）。 */
+      /* 入力パレットのウィンドウ外クリック/タップで閉じる。document へ一度だけ束縛（描画毎の増殖＝リーク防止）。
+       * 厳密制御(要件): パレットが開いている間に「パレット外」を押下したら、その押下を消費して閉じるだけにする。
+       *  - capture フェーズで table の mousedown より先に走り、stopPropagation で **セル選択(sel/dragging)を起こさない**
+       *    ＝続く mouseup の再表示も発火しない＝「閉じた直後に意図せず別ウィンドウが開く」を根絶。
+       *  - preventDefault でタッチの合成 mouse/click を抑止（iPad で下セルが反応しない）。
+       *  - 次に明示的にセルをクリックした時に初めて開く（パレット閉時はこのハンドラは即 return＝通常動作）。
+       * mousedown(iOSは非clickable領域で非合成)に加え touchstart も束縛＝iPad対応。
+       * パレット内(pal.contains)は消費しない＝記号/色/入力/閉じる/Esc は不変。CLAUDE.md §0 の hidebtn/showbtn は
+       * パレット閉時は通常動作（パレット開時の最初の押下は閉じるだけ＝意図どおり）。 */
       if (!this._outsideCloseBound) {
         this._outsideCloseBound = true;
-        /* mousedown と touchstart の共通判定。iOS Safari は非clickable領域のタップで mousedown を
-         * 合成しないため、touchstart も束縛して iPad でも外側タップで確実に閉じる（デスクトップは従来どおり）。 */
         var outsideClose = function (e) {
           var pal = document.getElementById('palette');
-          if (!pal || pal.style.display !== 'block') return;   /* 開いている時だけ */
+          if (!pal || pal.style.display !== 'block') return;   /* 閉じている時は通常動作（介入しない） */
           if (pal.contains(e.target)) return;                  /* パレット内(記号/色/入力/ボタン)は閉じない */
-          hidePalette();                                        /* ウィンドウ外クリック/タップで閉じる */
+          /* §0永久保護: 非表示/再表示トグル(hidebtn/showbtn)は常時動作。伝播・既定動作を止めず
+           * （stopPropagation/preventDefault しない）、パレットだけ閉じて table の mousedown に
+           * トグルを実行させる＝同一押下で「閉じる＋トグル」が成立（デスクトップ/合成タッチ両対応）。 */
+          if (e.target && e.target.classList &&
+              (e.target.classList.contains('hidebtn') || e.target.classList.contains('showbtn'))) {
+            hidePalette();
+            return;
+          }
+          if (e.stopPropagation) e.stopPropagation();          /* table mousedown へ伝播させない＝セル選択/再表示を阻止 */
+          if (e.preventDefault) e.preventDefault();            /* タッチの合成 mouse/click 抑止 */
+          hidePalette();                                       /* 外側押下を消費して閉じるだけ */
         };
-        document.addEventListener('mousedown', outsideClose);
-        document.addEventListener('touchstart', outsideClose);
+        document.addEventListener('mousedown', outsideClose, true);
+        document.addEventListener('touchstart', outsideClose, { capture: true, passive: false });
       }
 
       /* 必要数入力 */
