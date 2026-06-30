@@ -5020,11 +5020,17 @@ body.printing .rs { display: none; }
     store.dispatch({ type: 'INIT_DAY', day: day });
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
-    /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護） */
+    /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護）。
+     * care 取得完了 → 当日盤面 pull の順序を担保（pullAll と同方針）。
+     * pullDayNow は INIT_DAY 直後に reconcile(剪定強化版)を掛けるため、先にローカル care を
+     * 最新化しておかないと、古い care でクラウドの配置済みケアを誤削除しうる(多端末競合の保護)。
+     * 同期OFF時は pullCareNow が即 done を呼び、pullDayNow も即 return＝従来挙動のまま。 */
     try {
-      pullDayNow(date, false, null, function () {
-        try { migrateDay(); } catch (eM) {}
-        if (settings.shiftAuto) { try { applyShiftForDate(date, { auto: true }); } catch (e2) {} }
+      pullCareNow(false, function () {
+        pullDayNow(date, false, null, function () {
+          try { migrateDay(); } catch (eM) {}
+          if (settings.shiftAuto) { try { applyShiftForDate(date, { auto: true }); } catch (e2) {} }
+        });
       });
     } catch (e) {}
   }
@@ -5168,7 +5174,9 @@ body.printing .rs { display: none; }
   }
   function reconcileWeeklyCore_() {
     var careDb = loadCareDb();
-    if (!careDb) return;
+    /* 入居者ゼロ(=データ未取得/破損)の時は盤面へ一切触れない安全弁。
+     * 配置済みケアの孤立剪定(下記)を強化したため、空DBでの誤大量削除を防ぐ。 */
+    if (!careDb || !careDb.residents || !careDb.residents.length) return;
     var day = store.get();
     var dow = careDow(ui.currentDate);
     var events = [];
@@ -5186,7 +5194,8 @@ body.printing .rs { display: none; }
                       svcCode: ev.category || '', detail: ev.detail || '' });
       }
     }
-    if (!events.length) return;
+    /* events 空でも return しない: 当日の visit を週間計画で全削除した場合に
+     * 配置済み孤立ケアを剪定する必要があるため(削除未反映の根治)。安全弁は冒頭ガードが担保。 */
     var added = 0, updated = 0, removed = 0;
     var matchedEv = {};
     /* 本日のみ削除（墓標）された予定は再追加しない */
@@ -5247,6 +5256,17 @@ body.printing .rs { display: none; }
     }
     for (i = 0; i < pending.length; i++) {
       var t2 = pending[i];
+      /* evId を持つのに pass1(evId一致)で当日 event に一致しなかった = 元eventが
+       * 週間計画から削除済み、もしくは同一eventを指す重複タスク(pass1は未claim eventのみ照合)。
+       * 配置済み(staffId!=null)でも剪定し、「削除未反映」と「重複表示」を同時に根治する
+       * （週間計画=正本の一方向同期）。墓標(skipRefs)で本日のみ削除した予定は
+       * そもそも盤面から消えて add ループ側で再追加抑止されるため、ここの対象には現れない。 */
+      if (t2.weeklyRef.evId) {
+        store.dispatch({ type: 'DELETE_TASK', id: t2.id }); removed++;
+        continue;
+      }
+      /* evId 無し(支援マスタ seed 由来)は従来どおり時刻一致で照合。
+       * 未一致は未配置のみ剪定し、配置済みは保護(回帰防止)。 */
       var hit = findByStart(t2, t2.origin ? t2.origin.start : null);
       if (hit < 0) hit = findByStart(t2, t2.weeklyRef.start);
       if (hit < 0) hit = findByStart(t2, t2.start);
@@ -5852,6 +5872,9 @@ body.printing .rs { display: none; }
       r.tasks[n].origin = M.captureOrigin(r.tasks[n]);
     }
     store.dispatch({ type: 'ADD_TASKS', tasks: r.tasks });
+    /* 取込直後に reconcile を一回走らせ、既に盤面にある同一eventタスクとの二重を即収束させる
+     * （置換チェック未時に同一evIdが並ぶのを根治。reconcileはevId冪等で既存挙動を壊さない）。 */
+    try { reconcileWeekly(); } catch (eRW) {}
     var msg = 'タスク ' + r.tasks.length + '件を生成' +
       (preset ? '（前回実績から ' + preset + '件を自動配置）' : '') +
       (r.errors.length ? '／スキップ ' + r.errors.length + '件' : '');
@@ -6567,6 +6590,12 @@ body.printing .rs { display: none; }
         lastPushed.day = daySig(j.data);
         if (ui.currentDate === date) {
           store.dispatch({ type: 'INIT_DAY', day: j.data });
+          /* INIT_DAY はクラウド盤面で tasks を全置換するため、週間計画(care_schedule_v2)由来の
+           * 追加/更新/削除がここで巻き戻る(重複・更新未反映・削除未反映の共通根因)。
+           * 置換直後に reconcile を一回掛け直して週間計画＝正本に再追従させる。
+           * careInitDone ゲート: 初回 care 取得前(=ローカル care が未確定)は剪定強化で誤削除しうるため掛けない。
+           * 多端末では pullAll が care 取得完了後に day を pull する順序にしてあり、ここでの care は最新。 */
+          if (careInitDone) { try { reconcileWeekly(); } catch (eRD) {} }
           if (notify) toast('他端末の更新を取得しました');
         } else {
           try { localStorage.setItem(dayKey(date), JSON.stringify(j.data)); } catch (e) {}
@@ -7329,17 +7358,21 @@ body.printing .rs { display: none; }
     try { reconcileWeekly(); } catch (e) {}
     renderAll();
   }
-  function pullCareNow(notify) {
-    if (!syncOn()) return;
+  /* done(任意): care 取得が一段落した後に呼ぶ best-effort コールバック。
+   * pullAll はこれを使って「care 取得完了 → 当日盤面 pull」の順序を担保する
+   * （pull後 reconcile の剪定強化が、古いローカル care で配置済みケアを誤削除するのを防ぐ）。 */
+  function pullCareNow(notify, done) {
+    function fin() { if (done) { try { done(); } catch (e) {} } }
+    if (!syncOn()) { fin(); return; }
     gas({ action: 'get', key: CARE_KEY }, function (j) {
-      if (!j || !j.ok) { markCareInit(); return; }
-      if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify); markCareInit(); return; }
-      if (!j.data) { markCareInit(); schedulePushCare(); return; }
+      if (!j || !j.ok) { markCareInit(); fin(); return; }
+      if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify); markCareInit(); fin(); return; }
+      if (!j.data) { markCareInit(); schedulePushCare(); fin(); return; }
       /* サーバーと同版: 週間計画アプリ単独で行われた未送信編集を検出して push する
        * （一方向同期化後、care_schedule_v2 をクラウドへ運ぶのはワースケの役目のため） */
       var raw = '';
       try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
-      if (!raw) { adoptCare(j.data, j.rev || 0, false); markCareInit(); return; }
+      if (!raw) { adoptCare(j.data, j.rev || 0, false); markCareInit(); fin(); return; }
       var serverRaw = '';
       try { serverRaw = JSON.stringify(j.data); } catch (e2) {}
       if (raw === serverRaw) {
@@ -7349,6 +7382,7 @@ body.printing .rs { display: none; }
         schedulePushCare();
       }
       markCareInit();
+      fin();
     });
   }
 
@@ -7387,11 +7421,15 @@ body.printing .rs { display: none; }
     if (!syncOn()) return;
     lastPullAt = Date.now();
     pullMasterNow();
-    pullCareNow(notify);
     var d0 = ui.currentDate;
-    pullDayNow(d0, notify, null, function () {
-      try { migrateDay(); } catch (eM) {}
-      if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }); } catch (e) {} }
+    /* care 取得完了 → 当日盤面 pull の順序を担保。
+     * pullDayNow は INIT_DAY 直後に reconcile(剪定強化版)を掛けるため、
+     * 先にローカル care を最新化しておかないと配置済みケアを誤削除しうる。 */
+    pullCareNow(notify, function () {
+      pullDayNow(d0, notify, null, function () {
+        try { migrateDay(); } catch (eM) {}
+        if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }); } catch (e) {} }
+      });
     });
   }
 
