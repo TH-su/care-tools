@@ -3143,6 +3143,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (self.sel.length >= 1) self.showPalette();
         });
       }
+      /* 入力パレットのウィンドウ外クリックで閉じる（下部セルで「閉じる」ボタンが画面外でも操作可能に）。
+       * mouseup と同様に document へ一度だけ束縛（描画毎の増殖＝リークを防止）。
+       * 競合防止: セルクリックは table の mousedown(上記)が先に hidePalette()→display!=='block' になるため
+       * ここは no-op、続く mouseup で再表示＝閉じ処理と再表示が衝突しない（stopPropagation不要）。 */
+      if (!this._outsideCloseBound) {
+        this._outsideCloseBound = true;
+        document.addEventListener('mousedown', function (e) {
+          var pal = document.getElementById('palette');
+          if (!pal || pal.style.display !== 'block') return;   /* 開いている時だけ */
+          if (pal.contains(e.target)) return;                  /* パレット内(記号/色/入力/ボタン)は閉じない */
+          hidePalette();                                        /* ウィンドウ外クリックで閉じる */
+        });
+      }
 
       /* 必要数入力 */
       table.addEventListener('change', function (e) {
