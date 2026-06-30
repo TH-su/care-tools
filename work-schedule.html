@@ -5261,17 +5261,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                       svcCode: ev.category || '', detail: ev.detail || '' });
       }
     }
-    /* 内容同一・別evId の重複 event を盤面生成対象から除外（content-key=入居者+開始+終了+コード で先頭1件のみ採用）。
-     * care_schedule_v2 に別IDの重複予定があっても盤面は1件に収束する（care本体は不変＝既存データ無損失）。
-     * 除外された重複evIdに紐づく既存タスクは pass1 で未一致→pending→剪定され、最終的に1件へ収束する。
-     * 注: 同一入居者の同時刻複数配置は R3 で禁止のため、同 content-key は重複とみなして安全に統合できる。 */
-    var seenKey_ = {};
+    /* 重複 event を盤面生成対象から除外。キーは (入居者, 開始時刻)＝同一入居者・同一開始は
+     * R3(同時刻複数配置禁止)により必ず重複/誤入力とみなせるため、所要時間(end-start)が最長の1件のみ採用。
+     * これで end/start 差異の別evId重複(例『身体01 7:00-19:00』と『7:00-7:19』)も盤面に1件しか生成されない
+     * （care_schedule_v2 本体は不変＝既存データ無損失）。除外evIdに紐づく既存タスクは pass1未一致→pending→剪定。 */
+    var bestEv_ = {};
+    for (i = 0; i < events.length; i++) {
+      var ekey_ = events[i].resName + '|' + events[i].start;
+      var prevEv_ = bestEv_[ekey_];
+      if (!prevEv_ || (events[i].end - events[i].start) > (prevEv_.end - prevEv_.start)) bestEv_[ekey_] = events[i];
+    }
     var dedupEvents_ = [];
     for (i = 0; i < events.length; i++) {
-      var ekey_ = events[i].resName + '|' + events[i].start + '|' + events[i].end + '|' + events[i].svcCode;
-      if (seenKey_[ekey_]) continue;
-      seenKey_[ekey_] = true;
-      dedupEvents_.push(events[i]);
+      if (bestEv_[events[i].resName + '|' + events[i].start] === events[i]) dedupEvents_.push(events[i]);
     }
     events = dedupEvents_;
     /* events 空でも return しない: 当日の visit を週間計画で全削除した場合に
@@ -5367,6 +5369,34 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       nt.origin = M.captureOrigin(nt);
       store.dispatch({ type: 'ADD_TASK', task: nt });
       added++;
+    }
+    /* 盤面の最終 de-dup（保険）: 同一入居者・同一開始時刻のケアタスクが複数残っていれば1件へ収束。
+     * master-seed(weeklyRef.evId 無・配置済み)と care派生(evId 有)の併存など、events層 dedup や
+     * pass1/pass2 をすり抜けた重複盤面タスクを確実に解消する（care_schedule_v2 本体は不変＝支援データは消さない）。
+     * 残す優先度: 配置済み(+2) > evId保持(+1) > 先頭。配置を保ったまま重複だけ削除する。
+     * R3(同一入居者の同時刻複数配置禁止)より、同一(residentName,start)の複数ケアは重複とみなして安全。 */
+    var slotGroups_ = {};
+    var dayNow_ = store.get();
+    for (i = 0; i < dayNow_.tasks.length; i++) {
+      var ct_ = dayNow_.tasks[i];
+      if (ct_.kind !== 'care' || !ct_.weeklyRef) continue;
+      var gkey_ = ct_.residentName + '|' + ct_.start;
+      if (!slotGroups_[gkey_]) slotGroups_[gkey_] = [];
+      slotGroups_[gkey_].push(ct_);
+    }
+    for (var gk_ in slotGroups_) {
+      if (!Object.prototype.hasOwnProperty.call(slotGroups_, gk_)) continue;
+      var grp_ = slotGroups_[gk_];
+      if (grp_.length < 2) continue;
+      var keepI_ = 0, best_ = -1, gi_;
+      for (gi_ = 0; gi_ < grp_.length; gi_++) {
+        var score_ = (grp_[gi_].staffId !== null ? 2 : 0) + (grp_[gi_].weeklyRef && grp_[gi_].weeklyRef.evId ? 1 : 0);
+        if (score_ > best_) { best_ = score_; keepI_ = gi_; }
+      }
+      for (gi_ = 0; gi_ < grp_.length; gi_++) {
+        if (gi_ === keepI_) continue;
+        store.dispatch({ type: 'DELETE_TASK', id: grp_[gi_].id }); removed++;
+      }
     }
     if (added || updated || removed) {
       toast('週間計画と同期: 追加' + added + '・更新' + updated + '・削除' + removed);
