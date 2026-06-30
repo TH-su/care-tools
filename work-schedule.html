@@ -4052,8 +4052,10 @@ body.printing .rs { display: none; }
 
     /* タスク配置（夜勤列は右軸マッピング） */
     var hospSet = opts.hospSet || {};
+    var moSet = opts.movedOutSet || {};
     for (var t = 0; t < day.tasks.length; t++) {
       var task = day.tasks[t];
+      if (task.kind === 'care' && moSet[task.residentName]) continue;  /* 退去者のケアは盤面・印刷とも非表示（入院=極薄に対し退去=完全非表示） */
       if (task.staffId === null) continue;
       var st = staffById[task.staffId];
       if (!st) continue;
@@ -4976,6 +4978,14 @@ body.printing .rs { display: none; }
       toast('ローカル保存に失敗しました（容量不足の可能性）', true);
     }
   }
+  /* 画面離脱(タブ閉じ/バックグラウンド/リロード)時に保留中の保存・送信を確実にフラッシュする。
+   * localStorage保存(doSave)は同期＝確実に永続化（自由枠等のデバウンス中データ消失を根治）。
+   * クラウドpushはbest-effort（visibilitychangeでは概ね完了・pagehideでは未完でもlocalStorageで保全）。 */
+  function flushAll_() {
+    try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); } } catch (e) {}
+    try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; pushDayNow(); } } catch (e2) {}
+    try { if (pushCareTimer) { clearTimeout(pushCareTimer); pushCareTimer = null; pushCareNow(); } } catch (e3) {}
+  }
   /* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存(400msデバウンス迂回)→クラウドへ即時push。
    * 同期先未設定でも端末には保存される。 */
   function manualSave() {
@@ -5144,6 +5154,17 @@ body.printing .rs { display: none; }
   function reconcileWeekly() {
     try { reconcileWeeklyCore_(); } catch (e) {}
     try { autoPlaceCareInStore_(); } catch (eAP) {}
+  }
+  /* 週間計画(care_schedule_v2)変更時に盤面を確実に再同期する（storage/可視復帰トリガから呼ぶ）。
+   * デバウンスで連続更新をまとめ、reconcileWeekly→renderAll を実行（不規則な反映漏れの根治）。 */
+  var careReconcileTimer = null;
+  function scheduleCareReconcile() {
+    if (careReconcileTimer) clearTimeout(careReconcileTimer);
+    careReconcileTimer = setTimeout(function () {
+      careReconcileTimer = null;
+      try { reconcileWeekly(); } catch (e) {}
+      try { renderAll(); } catch (e2) {}
+    }, 400);
   }
   function reconcileWeeklyCore_() {
     var careDb = loadCareDb();
@@ -5365,7 +5386,7 @@ body.printing .rs { display: none; }
       '　実施済項目欄へ、押印又は直筆サインを行う。';
 
     B.render($('board'), day, zones, scale,
-      { selectedIds: ui.selectedIds, hospSet: hospitalizedNames() });
+      { selectedIds: ui.selectedIds, hospSet: hospitalizedNames(), movedOutSet: movedOutNames() });
 
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
@@ -6148,7 +6169,7 @@ body.printing .rs { display: none; }
     var printScale = TS.buildScale(pz);
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     B.render(board, day, pz, printScale,
-      { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
+      { selectedIds: [], hospSet: hospitalizedNames(), movedOutSet: movedOutNames(), printMode: true });
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
     var w = measurePrintW_(board);
@@ -6165,7 +6186,7 @@ body.printing .rs { display: none; }
       var ps2 = TS.buildScale(pz2);
       ps2.nightPxMin = TS.PRINT_NIGHT_PX_MIN * k;
       B.render(board, day, pz2, ps2,
-        { selectedIds: [], hospSet: hospitalizedNames(), printMode: true });
+        { selectedIds: [], hospSet: hospitalizedNames(), movedOutSet: movedOutNames(), printMode: true });
       board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
       board.style.minWidth = '0'; board.style.width = '';
       w = measurePrintW_(board);
@@ -8267,6 +8288,7 @@ body.printing .rs { display: none; }
     window.addEventListener('focus', function () {
       /* 他端末の更新を取り込む（10秒スロットル） */
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { scheduleCareReconcile(); } catch (e) {}  /* 週間計画の更新を盤面へ確実反映（cloud-off/storage取りこぼし保険・冪等） */
     });
     /* ネットワーク復帰で即再同期（オフライン固着の自動復帰）。スロットルを解除して確実に取得＋未送信を送る。 */
     window.addEventListener('online', function () {
@@ -8276,13 +8298,18 @@ body.printing .rs { display: none; }
       try { schedulePushDay(); } catch (e2) {}
       try { schedulePushCare(); } catch (e3) {}
     });
-    /* タブ復帰でも他端末の更新を取り込む（10秒スロットル） */
+    /* タブ復帰でも他端末の更新を取り込む（10秒スロットル）＋週間計画の更新を盤面へ再同期。
+     * 離脱(hidden)時は保留中の保存・送信をフラッシュ（自由枠等の消失防止）。 */
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      if (document.hidden) { try { flushAll_(); } catch (e0) {} return; }
+      if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { scheduleCareReconcile(); } catch (e) {}
     });
-    /* 同一端末の別タブ（週間計画アプリ等）が localStorage を更新したら即クラウドへ */
+    /* タブを閉じる/リロード/iOSの離脱(beforeunload不発)で確実にフラッシュ */
+    window.addEventListener('pagehide', function () { try { flushAll_(); } catch (e) {} });
+    /* 同一端末の別タブ（週間計画アプリ等）が care_schedule_v2 を更新したら、クラウドへ送りつつ盤面を再同期 */
     window.addEventListener('storage', function (ev) {
-      if (ev && ev.key === CARE_KEY) schedulePushCare();
+      if (ev && ev.key === CARE_KEY) { schedulePushCare(); scheduleCareReconcile(); }
     });
     renderAll();
   }
