@@ -4347,7 +4347,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var offset = (firstDow - weekStart + 7) % 7;
       var rows = [];
       var resultsMap = {};
-      var staff = app.sortBy('officialOrder', app.monthStaff());  /* 当月名簿（凍結ありはスナップショット）を officialOrder 順で */
+      var staff = app.sortBy('officialOrder', app.monthRoster());  /* 月(plan)基準の名簿を officialOrder 順で（行政提出は予定/実績/行政のみ＝編集用タブ非考慮） */
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         if (!app.isVisibleInMonth(st, app.ym)) continue;
@@ -4381,8 +4381,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
       /* 行政保管用の指標（選択区分の実働ベース） */
-      var kaifukuPct = AG.qualPctByDivision(app.monthStaff(), resultsMap, division, ['介護福祉士']);
-      var kaifukuJitsumuPct = AG.qualPctByDivision(app.monthStaff(), resultsMap, division, ['介護福祉士', '実務者研修']);
+      var kaifukuPct = AG.qualPctByDivision(app.monthRoster(), resultsMap, division, ['介護福祉士']);
+      var kaifukuJitsumuPct = AG.qualPctByDivision(app.monthRoster(), resultsMap, division, ['介護福祉士', '実務者研修']);
       return { rows: rows, days: days, division: division, layer: layer,
         kaifukuPct: kaifukuPct, kaifukuJitsumuPct: kaifukuJitsumuPct };
     },
@@ -5016,10 +5016,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this._monthMeta = (p && p.meta) ? p.meta : {};
     },
     monthMeta: function () { return this._monthMeta || {}; },
-    usingSnapshot: function () { var s = this.monthMeta().staffSnap; return !!(s && s.length); },
+    /* アクティブが編集用タブで、かつそのタブ自身の職員スナップショットを持つか
+     * （新規作成時に最新マスタを取り込んで凍結したもの＝既存タブの自動反映防止と両立）。 */
+    draftSnap: function () {
+      if (this.layer.indexOf('draft:') === 0 && this.sched && this.sched.meta) {
+        var s = this.sched.meta.staffSnap;
+        if (s && s.length) return s;
+      }
+      return null;
+    },
+    /* 月(plan)基準の名簿（編集用タブ非考慮）＝official等の月単位消費者用。スナップショット有→凍結名簿/無→マスタ。 */
+    monthRoster: function () { var s = this.monthMeta().staffSnap; return (s && s.length) ? s : this.staff; },
+    usingSnapshot: function () { return !!this.draftSnap() || !!(this.monthMeta().staffSnap && this.monthMeta().staffSnap.length); },
     isLockedNow: function () { return !!this.monthMeta().locked; },
-    /* 当月の名簿: スナップショットがあれば凍結名簿、無ければマスタ（＝未ロック月は従来どおり） */
-    monthStaff: function () { var s = this.monthMeta().staffSnap; return (s && s.length) ? s : this.staff; },
+    /* アクティブ表示用の名簿: 編集用タブは自身のスナップショット（新規=最新マスタ取込）を優先、それ以外は月(plan)基準 */
+    monthStaff: function () { return this.draftSnap() || this.monthRoster(); },
+    /* スナップショット保持元（手動上書きの書き込み先）: 編集用タブは自身、それ以外は月(plan) */
+    snapHost: function () {
+      if (this.draftSnap()) return { sched: this.sched, layer: this.layer };
+      return { sched: this.planSched(), layer: 'plan' };
+    },
     lockGuard: function () {
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return true; }
       return false;
@@ -5065,32 +5081,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.syncLockUI();
       this.rerender();
     },
-    /* マスタの職員を当月スナップショットへ取り込む（id基準で不足分を追加のみ＝月別上書きを保全） */
+    /* マスタの職員をアクティブのスナップショット（編集用タブ自身 or 月plan）へ取り込む
+     * （id基準で不足分を追加のみ＝既存の月別上書きを保全）。編集用タブ上ならそのタブだけに作用。 */
     mergeMasterIntoMonth: function () {
       if (!this.usingSnapshot()) return;
       if (this.lockGuard()) return;
-      var p = this.planSched();
-      var snap = p.meta.staffSnap, have = {}, added = 0, i, j;
+      var h = this.snapHost();
+      var snap = h.sched.meta.staffSnap, have = {}, added = 0, i, j;
       for (i = 0; i < snap.length; i++) have[snap[i].id] = true;
       for (j = 0; j < this.staff.length; j++) {
         if (!have[this.staff[j].id]) { snap.push(JSON.parse(JSON.stringify(this.staff[j]))); added++; }
       }
-      if (added) { this.saveSched('plan', p); this.refreshMonthMeta(); this.rerender(); }
-      this.toast(added ? (added + '名をこの月に取り込みました') : '取り込む新規職員はいません');
+      if (added) { this.saveSched(h.layer, h.sched); this.refreshMonthMeta(); this.rerender(); }
+      this.toast(added ? (added + '名を取り込みました') : '取り込む新規職員はいません');
     },
-    /* スナップショット月の氏名をその月だけ上書き（マスタ・他月に非波及） */
+    /* スナップショットの氏名をその場（編集用タブ自身 or 月plan）だけ上書き（マスタ・他月/他タブに非波及） */
     editSnapName: function (sid) {
-      var snap = this.monthMeta().staffSnap || [], cur = '', i;
+      var h = this.snapHost();
+      var snap = h.sched.meta && h.sched.meta.staffSnap;
+      if (!snap) return;
+      var cur = '', i;
       for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { cur = snap[i].name; break; } }
-      var v = prompt('この月だけの氏名（マスタ・他の月には影響しません）', cur);
+      var v = prompt('この月（このタブ）だけの氏名（マスタ・他には影響しません）', cur);
       if (v === null) return;
       v = (v || '').trim();
       if (!v) return;
-      var p = this.planSched();
-      var ps = p.meta && p.meta.staffSnap;
-      if (!ps) return;
-      for (i = 0; i < ps.length; i++) { if (ps[i].id === sid) { ps[i].name = v; break; } }
-      this.saveSched('plan', p);
+      for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { snap[i].name = v; break; } }
+      this.saveSched(h.layer, h.sched);
       this.refreshMonthMeta();
       this.rerender();
     },
@@ -5188,7 +5205,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 現在の予定をコピーして開始（崩して別案を作るための土台） */
       var plan = this.getSched('plan');
       var copy = JSON.parse(JSON.stringify(plan));
-      copy.meta = { seededFrom: 'plan', createdAt: new Date().toISOString() };
+      /* 新規作成時のみ「最新のマスタ」を職員スナップショットとして取り込み凍結する（Create）。
+       * これにより、ロック/確定済み月で新タブを作っても古いplanスナップショットでなく現在の名簿
+       * （新入職員を含む）で開始できる。以後この編集用タブは自動反映されない（既存タブと同じ凍結特性）。 */
+      copy.meta = { seededFrom: 'plan', createdAt: new Date().toISOString(),
+        staffSnap: JSON.parse(JSON.stringify(this.staff)) };
       this.saveSched('draft:' + id, copy);
       var list = this.getDrafts();
       list.push({ id: id, label: label, createdAt: new Date().toISOString() });
@@ -5286,7 +5307,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (hasPlan) self.saveRestorePoint(plan);
           var copy = JSON.parse(JSON.stringify(draftSched));
           copy.meta = { confirmedFrom: draft.label, confirmedAt: new Date().toISOString(), confirmedDraftId: id };
-          if (prevMeta.staffSnap) copy.meta.staffSnap = prevMeta.staffSnap;
+          if (prevMeta.staffSnap) {
+            /* 予定が既にスナップショットを持つ(ロック経験済み)＝確定後も維持。ただし編集用タブで
+             * 入力した新規職員(draft自身のstaffSnapにのみ居るid)を取り込み、確定後に行/時間/集計が
+             * 消えてオーファン化するのを防ぐ（id和集合・予定の既存entry/上書きは優先保持）。 */
+            var merged = prevMeta.staffSnap.slice();
+            var ds = draftSched.meta && draftSched.meta.staffSnap;
+            if (ds && ds.length) {
+              var have = {}, mi, di;
+              for (mi = 0; mi < merged.length; mi++) have[merged[mi].id] = true;
+              for (di = 0; di < ds.length; di++) { if (!have[ds[di].id]) merged.push(JSON.parse(JSON.stringify(ds[di]))); }
+            }
+            copy.meta.staffSnap = merged;
+          }
+          /* 予定がスナップショットを持たない(未ロック)場合は付与しない＝予定はマスタ追従のまま
+           * （draftで入れた新規職員もマスタに居るため予定で可視＝消失しない）。 */
           if (prevMeta.locked) copy.meta.locked = prevMeta.locked;
           if (prevMeta.lockedAt) copy.meta.lockedAt = prevMeta.lockedAt;
           self.saveSched('plan', copy);
@@ -5747,8 +5782,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 凍結月（スナップショット使用）はグリッドが snapshot を読むため、hiddenDivisions も snapshot 側を更新
        * （マスタを書いても表示に反映されない＝§0保護の表示/非表示が効かない不具合の解消・マスタ非波及）。 */
       if (this.usingSnapshot()) {
-        var p = this.planSched();
-        var snap = p.meta && p.meta.staffSnap;
+        var h = this.snapHost();
+        var snap = h.sched.meta && h.sched.meta.staffSnap;
         if (!snap) return;
         for (var i = 0; i < snap.length; i++) {
           if (snap[i].id === sid) {
@@ -5759,7 +5794,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             break;
           }
         }
-        this.saveSched('plan', p);
+        this.saveSched(h.layer, h.sched);
         this.refreshMonthMeta();
         this.rerender();
         return;
