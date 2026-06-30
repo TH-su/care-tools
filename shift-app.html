@@ -291,6 +291,10 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
     <span id="ymLabel">2026-06</span>
     <button id="ymNext" title="翌月">▶</button>
   </span>
+  <label id="lockToggle" class="reveal-toggle" title="この月を確定してロック（画面編集を不可に）。実績・行政提出用もこの月の名簿に従います。編集するときはチェックを外してください。">
+    <input type="checkbox" id="chkLock"> 🔒 ロック
+  </label>
+  <button id="btnMergeStaff" class="noprint" style="display:none" title="マスタの職員のうち、この月にいない人を取り込みます（行が追加されシフトを入力できます）">＋職員取込</button>
   <span class="tabs" id="viewTabs">
     <button data-view="grid" class="on">シフト表</button>
     <button data-view="requests">希望休</button>
@@ -323,6 +327,8 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
   <!-- /DO NOT DELETE: 非表示列(行)表示機能 -->
   <span id="syncBadge" class="nosync" title="クリックで今すぐ同期">同期未設定</span>
 </div>
+
+<div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:13px">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
 
 <div class="layerbar" id="layerBar">
   <button data-layer="plan" class="on">予定（確定版）</button>
@@ -2065,6 +2071,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       }
     }
+    /* 勤務セルが空でも、ロック確定/職員スナップショットを持つ予定は「データあり」とみなす。
+     * （実績のみ運用でplanが勤務セル空の月をロックした場合に、同期の空判定でmeta.locked/staffSnapが
+     *  空サーバ上書きで消えるのを防ぐ＝過去ロック月の保護を維持） */
+    var meta = sched.meta;
+    if (meta && (meta.locked || (meta.staffSnap && meta.staffSnap.length))) return true;
     return false;
   }
   function isEmptyish(v) {
@@ -3213,6 +3224,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     showPalette: function () {
       var ctx = this.ctx;
       var self = this;
+      if (ctx.isLocked) { if (ctx.onLockedEdit) ctx.onLockedEdit(); return; }  /* ロック中は入力パレットを開かない */
       if (this.sel.length === 0) return;
       var last = this.sel[this.sel.length - 1];
       var td = document.querySelector('#gridWrap td.daycell[data-sid="' + last.sid + '"][data-div="' + last.div + '"][data-day="' + last.day + '"]');
@@ -4251,6 +4263,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     applyToPlan: function () {
       var app = this.app;
+      if (app.lockGuard()) return;   /* ロック中の月は予定（確定版）へ反映しない */
       var sched = app.getSched('plan');
       var n = 0, skipped = 0;
       for (var i = 0; i < app.staff.length; i++) {
@@ -4300,6 +4313,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 実績レイヤを行政提出用レイヤに複製（行政提出は実績に紐づく） */
     seedFromActual: function () {
       var app = this.app, self = this;
+      if (app.lockGuard()) return;   /* ロック中の月は行政提出用を書き換えない */
       var actual = app.getSched('actual');
       var n = 0;
       for (var sid in actual.cells) {
@@ -4333,7 +4347,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var offset = (firstDow - weekStart + 7) % 7;
       var rows = [];
       var resultsMap = {};
-      var staff = app.officialSorted();
+      var staff = app.sortBy('officialOrder', app.monthStaff());  /* 当月名簿（凍結ありはスナップショット）を officialOrder 順で */
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         if (!app.isVisibleInMonth(st, app.ym)) continue;
@@ -4367,8 +4381,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
       /* 行政保管用の指標（選択区分の実働ベース） */
-      var kaifukuPct = AG.qualPctByDivision(app.staff, resultsMap, division, ['介護福祉士']);
-      var kaifukuJitsumuPct = AG.qualPctByDivision(app.staff, resultsMap, division, ['介護福祉士', '実務者研修']);
+      var kaifukuPct = AG.qualPctByDivision(app.monthStaff(), resultsMap, division, ['介護福祉士']);
+      var kaifukuJitsumuPct = AG.qualPctByDivision(app.monthStaff(), resultsMap, division, ['介護福祉士', '実務者研修']);
       return { rows: rows, days: days, division: division, layer: layer,
         kaifukuPct: kaifukuPct, kaifukuJitsumuPct: kaifukuJitsumuPct };
     },
@@ -4986,8 +5000,109 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       this.sched = this.getSched(this.layer);
       this.requests = Store.get(this.reqKey(), {});
+      this.refreshMonthMeta();   /* 当月のロック/職員スナップショット状態を取得 */
       this.renderLayerBar();
       this.updateLayerHint();
+      this.syncLockUI();
+    },
+
+    /* ── 月別ロック＆職員スナップショット（過去データ保護） ──
+     * plan レイヤの meta に {locked, staffSnap} を持ち、実績/行政提出も含め当月の名簿を共有する。
+     * staffSnap がある月は描画/集計の名簿をマスタでなくスナップショットから引く＝マスタ変更が波及しない。
+     * locked は画面編集の可否のみを制御（名簿ソースは snapshot の有無で決まる＝一度ロックすれば解除後も凍結）。 */
+    planSched: function () { return (this.layer === 'plan') ? this.sched : this.getSched('plan'); },
+    refreshMonthMeta: function () {
+      var p = this.planSched();
+      this._monthMeta = (p && p.meta) ? p.meta : {};
+    },
+    monthMeta: function () { return this._monthMeta || {}; },
+    usingSnapshot: function () { var s = this.monthMeta().staffSnap; return !!(s && s.length); },
+    isLockedNow: function () { return !!this.monthMeta().locked; },
+    /* 当月の名簿: スナップショットがあれば凍結名簿、無ければマスタ（＝未ロック月は従来どおり） */
+    monthStaff: function () { var s = this.monthMeta().staffSnap; return (s && s.length) ? s : this.staff; },
+    lockGuard: function () {
+      if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return true; }
+      return false;
+    },
+    reorderGuard: function () {
+      if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return true; }
+      if (this.usingSnapshot()) { this.toast('この月は確定済みのため並べ替えは固定です'); return true; }
+      return false;
+    },
+    toast: function (msg) {
+      var el = document.getElementById('appToast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'appToast'; el.className = 'noprint';
+        el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9999;' +
+          'background:rgba(33,33,33,.92);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;' +
+          'box-shadow:0 4px 16px rgba(0,0,0,.25);pointer-events:none;opacity:0;transition:opacity .15s;max-width:90vw';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg; el.style.opacity = '1';
+      if (this._toastT) clearTimeout(this._toastT);
+      this._toastT = setTimeout(function () { el.style.opacity = '0'; }, 2200);
+    },
+    /* ロック切替: チェック=確定（現在のマスタを当月スナップショットに凍結）/解除=編集可（snapshotは保持） */
+    toggleLock: function (on) {
+      var p = this.planSched();
+      if (!p.meta) p.meta = {};
+      if (on) {
+        /* スナップショットは「初回ロック時のみ」凍結。再ロックでは再取得しない
+         * ＝解除→編集→再ロックで凍結名簿・月別上書き・削除済み職員を失わない（マスタへ巻き戻さない）。 */
+        if (!(p.meta.staffSnap && p.meta.staffSnap.length)) {
+          p.meta.staffSnap = JSON.parse(JSON.stringify(this.staff)); /* 全件ディープコピー＝当時の名簿を凍結 */
+          p.meta.lockedAt = new Date().toISOString();
+        }
+        p.meta.locked = true;
+        /* ロック確定前のUndo/Redo履歴を破棄＝ロック後にundoで確定前状態がロック予定へ復元されるのを防ぐ */
+        this._undo = []; this._redo = []; this.updateHistButtons();
+      } else {
+        p.meta.locked = false; /* staffSnap は残す＝凍結名簿を維持（マスタ非波及のまま編集可） */
+      }
+      this.saveSched('plan', p);   /* plan を保存（this.sched は plan 表示時のみ同期） */
+      this.refreshMonthMeta();
+      this.syncLockUI();
+      this.rerender();
+    },
+    /* マスタの職員を当月スナップショットへ取り込む（id基準で不足分を追加のみ＝月別上書きを保全） */
+    mergeMasterIntoMonth: function () {
+      if (!this.usingSnapshot()) return;
+      if (this.lockGuard()) return;
+      var p = this.planSched();
+      var snap = p.meta.staffSnap, have = {}, added = 0, i, j;
+      for (i = 0; i < snap.length; i++) have[snap[i].id] = true;
+      for (j = 0; j < this.staff.length; j++) {
+        if (!have[this.staff[j].id]) { snap.push(JSON.parse(JSON.stringify(this.staff[j]))); added++; }
+      }
+      if (added) { this.saveSched('plan', p); this.refreshMonthMeta(); this.rerender(); }
+      this.toast(added ? (added + '名をこの月に取り込みました') : '取り込む新規職員はいません');
+    },
+    /* スナップショット月の氏名をその月だけ上書き（マスタ・他月に非波及） */
+    editSnapName: function (sid) {
+      var snap = this.monthMeta().staffSnap || [], cur = '', i;
+      for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { cur = snap[i].name; break; } }
+      var v = prompt('この月だけの氏名（マスタ・他の月には影響しません）', cur);
+      if (v === null) return;
+      v = (v || '').trim();
+      if (!v) return;
+      var p = this.planSched();
+      var ps = p.meta && p.meta.staffSnap;
+      if (!ps) return;
+      for (i = 0; i < ps.length; i++) { if (ps[i].id === sid) { ps[i].name = v; break; } }
+      this.saveSched('plan', p);
+      this.refreshMonthMeta();
+      this.rerender();
+    },
+    syncLockUI: function () {
+      var locked = this.isLockedNow();
+      var cb = document.getElementById('chkLock');
+      if (cb) cb.checked = locked;
+      var mb = document.getElementById('btnMergeStaff');
+      if (mb) mb.style.display = (this.usingSnapshot() && !locked) ? '' : 'none';
+      var banner = document.getElementById('lockBanner');
+      if (banner) banner.style.display = locked ? '' : 'none';
+      document.body.classList.toggle('month-locked', locked);
     },
 
     /* レイヤ表示名（draft:* は編集用ラベル） */
@@ -5156,6 +5271,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     confirmDraft: function (id) {
       var self = this;
+      if (this.lockGuard()) return;   /* ロック中の確定は予定（確定版）を書き換えるため不可 */
       var draft = this.findDraft(id);
       if (!draft) return;
       var draftSched = this.getSched('draft:' + id);
@@ -5164,11 +5280,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。\nよろしいですか？',
         function () {
           var plan = self.getSched('plan');
+          var prevMeta = plan.meta || {};   /* 既存のロック/職員スナップショットを保全（確定で凍結名簿を消さない） */
           var hasPlan = false;
           for (var s in plan.cells) { if (hasAny(plan.cells[s])) { hasPlan = true; break; } }
           if (hasPlan) self.saveRestorePoint(plan);
           var copy = JSON.parse(JSON.stringify(draftSched));
           copy.meta = { confirmedFrom: draft.label, confirmedAt: new Date().toISOString(), confirmedDraftId: id };
+          if (prevMeta.staffSnap) copy.meta.staffSnap = prevMeta.staffSnap;
+          if (prevMeta.locked) copy.meta.locked = prevMeta.locked;
+          if (prevMeta.lockedAt) copy.meta.lockedAt = prevMeta.lockedAt;
           self.saveSched('plan', copy);
           self.gotoLayer('plan');
           self.confirmInfo('確定しました',
@@ -5180,8 +5300,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     recompute: function () {
       this.results = {};
       var warn = 0;
-      for (var i = 0; i < this.staff.length; i++) {
-        var st = this.staff[i];
+      var roster = this.monthStaff();   /* 当月名簿（凍結ありならスナップショット）で集計＝過去はマスタ変更に非追従 */
+      for (var i = 0; i < roster.length; i++) {
+        var st = roster[i];
         if (!this.isVisibleInMonth(st, this.ym)) continue;
         var res = this.computeFor(st, this.sched);
         /* 連勤違反マーク */
@@ -5197,8 +5318,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         warn += res.warnings.length;
         this.results[st.id] = res;
       }
-      this.counts = AG.countCats(this.staff, this.results, this.days);
-      this.metrics = AG.computeMetrics(this.staff, this.results, this.settings);
+      this.counts = AG.countCats(roster, this.results, this.days);
+      this.metrics = AG.computeMetrics(roster, this.results, this.settings);
       this.warnCount = warn;
     },
 
@@ -5288,10 +5409,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       return {
         ym: this.ym, year: this.year, month: this.month, days: this.days,
-        staff: this.staff, symbols: this.symbols, settings: this.settings,
+        staff: this.monthStaff(), symbols: this.symbols, settings: this.settings,
         sched: this.sched, requests: this.requests, holidays: this.holidays,
         results: this.results, counts: this.counts, metrics: this.metrics,
         warnCount: this.warnCount, revealHidden: this.revealHidden,
+        isLocked: this.isLockedNow(),   /* ロック中はグリッドの編集UI（パレット）を開かない */
+        onLockedEdit: function () { self.toast('🔒 ロック中です。編集するにはロックを外してください'); },
         printTitle: this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）',  /* 分割印刷の各ページ見出しに流用 */
         recentColors: Store.getLocal('recentColors', []),
         isVisible: function (st) { return self.isVisibleInMonth(st, self.ym); },
@@ -5301,6 +5424,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         onCellsChange: function (cells, value) { self.changeCells(cells, value); },
         onPaste: function (changes) { self.pasteCells(changes); },
         onNeedChange: function (day, cat, val) {
+          if (self.lockGuard()) return;
           self.capture('必要数変更 ' + day + '日');
           if (!self.sched.dailyNeeds[day]) self.sched.dailyNeeds[day] = {};
           self.sched.dailyNeeds[day][cat] = val;
@@ -5308,6 +5432,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.rerender();
         },
         onMonthNeedChange: function (cat, val) {
+          if (self.lockGuard()) return;
           self.capture('前提数変更（' + (cat === 'early' ? '早番' : '遅番') + '）');
           if (!self.sched.monthNeeds) self.sched.monthNeeds = {};
           if (val === null) delete self.sched.monthNeeds[cat];
@@ -5321,6 +5446,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         },
         onReorder: function (sid, beforeSid) { self.reorderShift(sid, beforeSid); },
         onMonthNote: function (sid) {
+          if (self.lockGuard()) return;
           var st = self.findStaff(sid);
           var cur = self.sched.notes[sid] || '';
           var v = prompt((st ? st.name : '') + ' の今月の連絡事項', cur);
@@ -5330,7 +5456,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.saveSched(self.layer, self.sched);
           self.rerender();
         },
-        onStaffEdit: function (sid) { window.ShiftMaster.editStaff(sid); }
+        onStaffEdit: function (sid) {
+          if (self.isLockedNow()) { self.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
+          if (self.usingSnapshot()) { self.editSnapName(sid); return; }  /* 凍結月＝その月だけ氏名上書き（マスタ非波及） */
+          window.ShiftMaster.editStaff(sid);
+        }
       };
     },
 
@@ -5360,17 +5490,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.loadMonth();
       }
       this.sched = JSON.parse(JSON.stringify(snap.sched));
+      this.refreshMonthMeta();   /* 復元した this.sched.meta にロック/スナップショットのキャッシュを必ず追従（同一レイヤundoでも） */
       this.saveSched(this.layer, this.sched);
       this.rerender();
       this.updateHistButtons();
     },
     undo: function () {
+      if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._undo.length) return;
       var snap = this._undo.pop();
       this._redo.push(this.snapshotNow(snap.label));
       this.applySnap(snap);
     },
     redo: function () {
+      if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._redo.length) return;
       var snap = this._redo.pop();
       this._undo.push(this.snapshotNow(snap.label));
@@ -5415,6 +5548,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* ── セル編集 ── */
     changeCells: function (cells, value) {
+      if (this.lockGuard()) return;
       /* 早遅必要数の超過は確認ダイアログを出さず、そのまま入力する。
        * 過不足は下部の「早残/遅残」行（超過は赤字）と指標バーで視覚的に確認できる。 */
       this.writeCells(cells, value);
@@ -5458,6 +5592,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
 
     pasteCells: function (changes) {
+      if (this.lockGuard()) return;
       this.capture('貼り付け（' + changes.length + 'セル）');
       for (var i = 0; i < changes.length; i++) {
         var ch = changes[i];
@@ -5518,8 +5653,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     officialSorted: function () { return this.sortBy('officialOrder'); },
     requestsSorted: function () { return this.sortBy('requestOrder'); },
-    sortBy: function (field) {
-      var out = this.staff.slice();
+    sortBy: function (field, src) {
+      var out = (src || this.staff).slice();
       var gi = function (g) { return g === 'night' ? 0 : (g === 'day' ? 2 : 1); };
       out.sort(function (a, b) {
         var av = field && typeof a[field] === 'number' ? a[field] : gi(a.group) * 1000 + (a.order || 0);
@@ -5565,6 +5700,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     /* セルの個別色付け（スケジュールに保存→印刷にも反映・同期対象） */
     colorCells: function (cells, color) {
+      if (this.lockGuard()) return;
       this.capture(color ? '色付け ' + color : '色解除');
       if (!this.sched.colors) this.sched.colors = {};
       for (var i = 0; i < cells.length; i++) {
@@ -5586,6 +5722,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* セルの太字切替 */
     boldCells: function (cells) {
+      if (this.lockGuard()) return;
       this.capture('太字切替');
       if (!this.sched.bold) this.sched.bold = {};
       /* 1つでも非太字があれば全て太字に、全て太字なら解除 */
@@ -5606,6 +5743,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 区分行の表示/非表示（職員マスタに保存→月をまたいで維持・同期対象） */
     toggleHiddenDivision: function (sid, div, hide) {
+      if (this.lockGuard()) return;
+      /* 凍結月（スナップショット使用）はグリッドが snapshot を読むため、hiddenDivisions も snapshot 側を更新
+       * （マスタを書いても表示に反映されない＝§0保護の表示/非表示が効かない不具合の解消・マスタ非波及）。 */
+      if (this.usingSnapshot()) {
+        var p = this.planSched();
+        var snap = p.meta && p.meta.staffSnap;
+        if (!snap) return;
+        for (var i = 0; i < snap.length; i++) {
+          if (snap[i].id === sid) {
+            if (!snap[i].hiddenDivisions) snap[i].hiddenDivisions = [];
+            var ix = snap[i].hiddenDivisions.indexOf(div);
+            if (hide && ix < 0) snap[i].hiddenDivisions.push(div);
+            if (!hide && ix >= 0) snap[i].hiddenDivisions.splice(ix, 1);
+            break;
+          }
+        }
+        this.saveSched('plan', p);
+        this.refreshMonthMeta();
+        this.rerender();
+        return;
+      }
       var st = this.findStaff(sid);
       if (!st) return;
       if (!st.hiddenDivisions) st.hiddenDivisions = [];
@@ -5631,9 +5789,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.saveStaff();
       window.ShiftMaster.renderStaff();
     },
-    reorderShift: function (sid, beforeSid) { this.reorderBy('shiftOrder', this.sortedStaff, sid, beforeSid, true); },
-    reorderMaster: function (sid, beforeSid) { this.reorderBy(null, this.masterSorted, sid, beforeSid, false); }, /* 入職順管理: グループは変えない */
-    reorderOfficial: function (sid, beforeSid) { this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
+    reorderShift: function (sid, beforeSid) { if (this.reorderGuard()) return; this.reorderBy('shiftOrder', this.sortedStaff, sid, beforeSid, true); },
+    reorderMaster: function (sid, beforeSid) { this.reorderBy(null, this.masterSorted, sid, beforeSid, false); }, /* 入職順管理: グループは変えない（マスタ画面＝月ロック非対象） */
+    reorderOfficial: function (sid, beforeSid) { if (this.reorderGuard()) return; this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
     reorderRequests: function (sid, beforeSid) { this.reorderBy('requestOrder', this.requestsSorted, sid, beforeSid, false); },
 
     saveSymbols: function () { Store.set('symbols', this.symbols); this.rerender(); },
@@ -5705,6 +5863,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (self.layer.indexOf('draft:') === 0) self.confirmDraft(self.layer.slice(6));
       });
       document.getElementById('btnAuto').addEventListener('click', function () { self.runAuto(); });
+      /* 月別ロック（確定）: チェック=この月を確定し名簿を凍結（編集不可）／外す=編集可。実績・行政提出もこの月の名簿に従う。 */
+      var chkLock = document.getElementById('chkLock');
+      if (chkLock) chkLock.addEventListener('change', function (e) { self.toggleLock(e.target.checked); });
+      var btnMerge = document.getElementById('btnMergeStaff');
+      if (btnMerge) btnMerge.addEventListener('click', function () { self.mergeMasterIntoMonth(); });
       document.getElementById('btnActual').addEventListener('click', function () { self.gotoLayer('actual'); });
       document.getElementById('btnFreee').addEventListener('click', function () { window.ShiftFreeeUI.openDialog(); });
       document.getElementById('btnPrint').addEventListener('click', function () { self.print(); });
@@ -5805,6 +5968,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (sn2 > 0) {
           this.confirm(LAYER_NAMES[layer] + 'レイヤは未入力です',
             LAYER_NAMES[srcLayer] + 'レイヤ（' + sn2 + '名分）をコピーして開始しますか？', function () {
+              if (self.lockGuard()) return;   /* ロック中の月は実績/行政提出へ自動コピーしない */
               self.capture(LAYER_NAMES[srcLayer] + 'からコピー');
               var copy = JSON.parse(JSON.stringify(src));
               copy.meta = { basedOn: srcLayer, copiedAt: new Date().toISOString() };
@@ -5820,6 +5984,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── 自動作成 ── */
     runAuto: function () {
       var self = this;
+      if (this.lockGuard()) return;   /* ロック中の月は自動作成しない */
       var isDraft = this.layer.indexOf('draft:') === 0;
       if (this.layer !== 'plan' && !isDraft) {
         this.confirmInfo('自動作成', '自動作成は「予定」または「編集用」で実行してください。');
