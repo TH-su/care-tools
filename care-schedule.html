@@ -818,6 +818,7 @@ select.inp { cursor: pointer; }
           <option value="6">日曜日</option>
         </select>
         <button class="btn btn-sec" onclick="duplicateEvent()" style="white-space:nowrap;flex-shrink:0">複製</button>
+        <button class="btn btn-sec" onclick="duplicateEventEveryday()" style="white-space:nowrap;flex-shrink:0" title="この予定を月〜日の全曜日に複製（毎日設定）">毎日</button>
       </div>
     </div>
 
@@ -1694,7 +1695,31 @@ function csRestoreResidentsIfLost() {
   return false;
 }
 
+/* タイムスタンプ付き復旧バックアップ(LS_KEY + '_backup_' + Date.now()) の累積を剪定。
+ * 最新1件は常に残し、7日より古いものを削除（容量逼迫の解消・実データ LS_KEY 本体は不可侵）。
+ * ws が書く 'care_schedule_v2_backup_ws'(末尾 'ws'=非数値) は parseInt が NaN になるため対象外。 */
+function pruneCareBackups_() {
+  try {
+    const prefix = LS_KEY + '_backup_';
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(prefix) === 0) keys.push(k);
+    }
+    if (keys.length <= 1) return;
+    keys.sort();                                  // タイムスタンプ昇順（同桁数の Date.now() は辞書順=数値順）
+    const newest = keys[keys.length - 1];
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    keys.forEach(k => {
+      if (k === newest) return;                   // 最新1件は常に保持
+      const ts = parseInt(k.slice(prefix.length), 10);
+      if (!isNaN(ts) && ts < cutoff) { try { localStorage.removeItem(k); } catch (_) {} }
+    });
+  } catch (e) {}
+}
+
 function loadDB() {
+  pruneCareBackups_();                            // 起動時に古い復旧バックアップを掃除（容量回復）
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
@@ -3150,6 +3175,30 @@ function duplicateEvent() {
   renderAll();
   $('#f-dup-dow').value = '';
   showToast(`${DAYS_JA[parseInt(dowStr)]}曜日に複製しました`);
+}
+
+/* この予定を月〜日の全曜日へ複製（「毎日」設定）。
+ * 同曜日・同種別・同開始時刻が既にある曜日は作らない（重複event防止＝bulk取込と同方針）。
+ * これにより全7曜日に確実に支援が揃い、ワースケで各日付に毎日反映される。 */
+function duplicateEventEveryday() {
+  if (!editingEventId) return;
+  const res = currentResident();
+  if (!res) return;
+  const ev = res.events.find(e => e.id === editingEventId);
+  if (!ev) return;
+  const targets = [];
+  for (let dow = 0; dow < 7; dow++) {
+    if (dow === ev.dayOfWeek) continue;   // 元の曜日はそのまま
+    const exists = res.events.some(e =>
+      e.dayOfWeek === dow && e.serviceType === ev.serviceType && e.startTime === ev.startTime);
+    if (!exists) targets.push(dow);
+  }
+  if (targets.length === 0) { showToast('すでに全曜日に登録済みです'); return; }
+  pushUndo();
+  targets.forEach(dow => res.events.push({ ...ev, id: uid(), dayOfWeek: dow }));
+  saveDB();
+  renderAll();
+  showToast(`毎日に設定しました（${targets.length}曜日へ複製）`);
 }
 
 function deleteCurrentEvent() {
