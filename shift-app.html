@@ -3149,12 +3149,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ここは no-op、続く mouseup で再表示＝閉じ処理と再表示が衝突しない（stopPropagation不要）。 */
       if (!this._outsideCloseBound) {
         this._outsideCloseBound = true;
-        document.addEventListener('mousedown', function (e) {
+        /* mousedown と touchstart の共通判定。iOS Safari は非clickable領域のタップで mousedown を
+         * 合成しないため、touchstart も束縛して iPad でも外側タップで確実に閉じる（デスクトップは従来どおり）。 */
+        var outsideClose = function (e) {
           var pal = document.getElementById('palette');
           if (!pal || pal.style.display !== 'block') return;   /* 開いている時だけ */
           if (pal.contains(e.target)) return;                  /* パレット内(記号/色/入力/ボタン)は閉じない */
-          hidePalette();                                        /* ウィンドウ外クリックで閉じる */
-        });
+          hidePalette();                                        /* ウィンドウ外クリック/タップで閉じる */
+        };
+        document.addEventListener('mousedown', outsideClose);
+        document.addEventListener('touchstart', outsideClose);
       }
 
       /* 必要数入力 */
