@@ -1372,6 +1372,59 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return out;
   }
 
+  /* 氏名正規化（半/全角空白除去）。表記ゆれ（末尾空白等）による重複の取りこぼし防止。 */
+  function normName_(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
+
+  /* 盤面ケアタスクのスロット de-dup（純粋関数・care本体不変）。
+   * 同一入居者(正規化氏名)・同一開始時刻のケアタスクを1件へ収束する。R3(同一入居者の同時刻複数配置禁止)
+   * より同一(氏名,開始)の複数ケアは重複/ゴーストとみなして安全。weeklyRef の有無に関わらず収束するため、
+   * 手動追加・複製由来の weeklyRef 無しゴースト(reconcile が触れない)も確実に解消する。
+   * 残す優先: weeklyRef.evId保持 > weeklyRef保持 > 配置済み > 先頭。
+   * 配置保護: 残す側が未配置で捨てる側に配置済みがあれば staffId のみ移譲（plan-linked を残しつつ配置維持・churn防止）。
+   * 非ケア・ユニークスロットのタスクは素通り（順序保持）。 */
+  function dedupCareSlots(tasks) {
+    if (!tasks || !tasks.length) return tasks || [];
+    var groups = {}, i, t, key;
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (t.kind !== 'care') continue;
+      key = normName_(t.residentName) + '|' + t.start;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    }
+    var keepId = {}, transfer = {}, gk, g, k, sc, bi, bs;
+    for (gk in groups) {
+      if (!Object.prototype.hasOwnProperty.call(groups, gk)) continue;
+      g = groups[gk];
+      if (g.length < 2) { keepId[g[0].id] = true; continue; }
+      bi = 0; bs = -1;
+      for (k = 0; k < g.length; k++) {
+        sc = (g[k].weeklyRef && g[k].weeklyRef.evId ? 4 : 0) + (g[k].weeklyRef ? 2 : 0) + (g[k].staffId !== null ? 1 : 0);
+        if (sc > bs) { bs = sc; bi = k; }
+      }
+      keepId[g[bi].id] = true;
+      if (g[bi].staffId === null) {                      /* 残す側が未配置なら配置済みの捨て札から staffId 移譲 */
+        for (k = 0; k < g.length; k++) {
+          if (k !== bi && g[k].staffId !== null) { transfer[g[bi].id] = g[k].staffId; break; }
+        }
+      }
+    }
+    var out = [];
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (t.kind !== 'care') { out.push(t); continue; }
+      key = normName_(t.residentName) + '|' + t.start;
+      if (!keepId[t.id]) continue;                       /* 重複（捨て札）はドロップ */
+      if (Object.prototype.hasOwnProperty.call(transfer, t.id)) {
+        var c = {}, kk;
+        for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
+        c.staffId = transfer[t.id];                      /* 配置移譲（start/end は残す側のものを維持） */
+        out.push(c);
+      } else out.push(t);
+    }
+    return out;
+  }
+
   /* 複数枠スワップの対象群決定（純粋関数）。pool=対象列のcare枠(start昇順)、anchorId=ドロップ直下枠のid、
    * total=ドラッグ群の合計分。アンカーを含む連続run(隣接が prev.end===next.start)の合計が total なら run全体、
    * 違えばアンカーから下方累積で合計一致を探す。一致した部分配列を返す。一致しなければ null。 */
@@ -1441,6 +1494,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     fmtRange: fmtRange,
     clampResize: clampResize,
     sanitizeTasks: sanitizeTasks,
+    dedupCareSlots: dedupCareSlots,
     matchSwapRun: matchSwapRun,
     staffFacworkKind: staffFacworkKind
   };
@@ -3036,10 +3090,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var type = action.type;
 
     if (type === 'INIT_DAY') {
-      /* 読込時に退化枠（end<=start・非支援の極小枠）を一掃。INIT_DAYはundo履歴をクリアするため副作用なし */
+      /* 読込時に退化枠（end<=start・非支援の極小枠）を一掃 + 同一入居者・同一開始のケア重複(weeklyRef無し
+       * ゴースト含む)を1件へ収束。ローカル読込/クラウドpull/日付切替の全初期化が通る単一チョークポイント＝
+       * 保存済み/クラウドの二重表示もここで解消。INIT_DAYはundo履歴をクリアするため副作用なし。 */
       var d0 = action.day;
       return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
-               tasks: M.sanitizeTasks(d0.tasks) };
+               tasks: M.dedupCareSlots(M.sanitizeTasks(d0.tasks)) };
     }
     if (type === 'SET_STAFF') {
       /* 職員入替時、消えた職員のタスクはトレイへ戻す */
@@ -5371,31 +5427,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       added++;
     }
     /* 盤面の最終 de-dup（保険）: 同一入居者・同一開始時刻のケアタスクが複数残っていれば1件へ収束。
-     * master-seed(weeklyRef.evId 無・配置済み)と care派生(evId 有)の併存など、events層 dedup や
-     * pass1/pass2 をすり抜けた重複盤面タスクを確実に解消する（care_schedule_v2 本体は不変＝支援データは消さない）。
-     * 残す優先度: 配置済み(+2) > evId保持(+1) > 先頭。配置を保ったまま重複だけ削除する。
-     * R3(同一入居者の同時刻複数配置禁止)より、同一(residentName,start)の複数ケアは重複とみなして安全。 */
-    var slotGroups_ = {};
-    var dayNow_ = store.get();
-    for (i = 0; i < dayNow_.tasks.length; i++) {
-      var ct_ = dayNow_.tasks[i];
-      if (ct_.kind !== 'care' || !ct_.weeklyRef) continue;
-      var gkey_ = ct_.residentName + '|' + ct_.start;
-      if (!slotGroups_[gkey_]) slotGroups_[gkey_] = [];
-      slotGroups_[gkey_].push(ct_);
-    }
-    for (var gk_ in slotGroups_) {
-      if (!Object.prototype.hasOwnProperty.call(slotGroups_, gk_)) continue;
-      var grp_ = slotGroups_[gk_];
-      if (grp_.length < 2) continue;
-      var keepI_ = 0, best_ = -1, gi_;
-      for (gi_ = 0; gi_ < grp_.length; gi_++) {
-        var score_ = (grp_[gi_].staffId !== null ? 2 : 0) + (grp_[gi_].weeklyRef && grp_[gi_].weeklyRef.evId ? 1 : 0);
-        if (score_ > best_) { best_ = score_; keepI_ = gi_; }
-      }
-      for (gi_ = 0; gi_ < grp_.length; gi_++) {
-        if (gi_ === keepI_) continue;
-        store.dispatch({ type: 'DELETE_TASK', id: grp_[gi_].id }); removed++;
+     * master-seed(weeklyRef.evId 無)と care派生(evId 有)の併存、手動/複製由来の weeklyRef 無しゴーストなど、
+     * events層 dedup や pass1/pass2 をすり抜けた重複盤面タスクを weeklyRef の有無に関わらず解消する。
+     * 共有純関数 M.dedupCareSlots（配置移譲付き）を使い、消える分だけ DELETE_TASK する。
+     * care_schedule_v2 本体は不変（DELETE_TASK は day.tasks のみ操作＝支援データは消さない）。 */
+    var curTasks_ = store.get().tasks;
+    var keepTasks_ = M.dedupCareSlots(curTasks_);
+    if (keepTasks_.length < curTasks_.length) {
+      var keepById_ = {}, ki_;
+      for (ki_ = 0; ki_ < keepTasks_.length; ki_++) keepById_[keepTasks_[ki_].id] = keepTasks_[ki_];
+      for (ki_ = 0; ki_ < curTasks_.length; ki_++) {
+        var orig_ = curTasks_[ki_], kept_ = keepById_[orig_.id];
+        if (!kept_) { store.dispatch({ type: 'DELETE_TASK', id: orig_.id }); removed++; }
+        else if (kept_.staffId !== orig_.staffId) {           /* 配置移譲を残す側へ反映（配置維持） */
+          store.dispatch({ type: 'UPDATE_TASK', id: orig_.id, patch: { staffId: kept_.staffId } });
+        }
       }
     }
     if (added || updated || removed) {
