@@ -1829,6 +1829,35 @@ function loadDB() {
   DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
   // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
   recalcAllEventUnits();
+  // 備考クリアは loadDB では実行しない。同期端末では起動pull完了後に呼ぶ（下部 Init）＝pullの上書きで巻き戻らないため。
+}
+/* 一回限りの備考(notes)クリア・マイグレーション（要件2）。全 residents[].events[].notes を空にする。
+ * detail/startTime/endTime/category/units/id/dayOfWeek 等 notes以外は一切変更しない。実行前に care_schedule_v2 全体をバックアップ。
+ * フラグ care_notes_cleared_v1 で冪等（1回のみ）。将来の備考入力は可能。
+ * 戻り値: クリアを実施し永続化に成功した場合 true（呼出側で即pushして同期端末へ恒久反映）。 */
+function migrateClearNotes_() {
+  const FLAG = 'care_notes_cleared_v1';
+  try {
+    if (localStorage.getItem(FLAG)) return false;                // 実行済み＝何もしない
+    const residents = Array.isArray(DB.residents) ? DB.residents : [];
+    // 実行前バックアップ（復元可能に）
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) localStorage.setItem(LS_KEY + '_backup_before_notes_clear', raw);
+    } catch (e) {}
+    let cleared = 0;
+    for (let i = 0; i < residents.length; i++) {
+      const evs = residents[i].events || [];
+      for (let j = 0; j < evs.length; j++) {
+        if (evs[j] && evs[j].notes !== undefined && evs[j].notes !== '') { evs[j].notes = ''; cleared++; }
+      }
+    }
+    let ok = true;
+    if (cleared > 0) ok = saveDB();                              // 変更があれば永続化（saveDBの成否）
+    if (ok) localStorage.setItem(FLAG, new Date().toISOString()); // 保存成功時のみフラグ確定（失敗時は次回起動で再走）
+    console.log('[migrate] 備考クリア: ' + cleared + '件 ok=' + ok + '（notes以外は不変・backup=' + LS_KEY + '_backup_before_notes_clear）');
+    return ok && cleared > 0;
+  } catch (e) { console.error('[migrate] 備考クリア失敗:', e); return false; }
 }
 function saveDB() {
   try {
@@ -3115,8 +3144,12 @@ function onServiceTypeChange() {
 }
 
 /* ── ケア内容チップ（ワースケと同一の選択肢）。detail を正本に '・' 区切りで連携（双方向同期はdetail経由） ──
- * '食事・薬確認' のように '・' を含むプリセットも、区切り境界つきの照合で正しく1チップ扱いする。 */
-const CARE_CHIP_PRESETS = ['掃除','洗濯','排泄ケア','シーツ交換','デイ準備','返却','軟膏','整容','食事・薬確認','買物'];
+ * '食事・薬確認' のように '・' を含むプリセットも、区切り境界つきの照合で正しく1チップ扱いする。
+ * 【選択肢統一】ワークスケジュール src/logic/model.js の CONTENT_PRESETS と同一（16項目）。
+ * 変更時は両ファイルを同時更新。スラッシュ短縮項目(デイ/返却 等)は canonical=スラッシュで detail に格納し、
+ * ワースケ側で設定「デイ・返却」/盤面「デイ □ 返却」に出し分ける。スラッシュは '・' 非含有＝連携・分割を壊さない。 */
+const CARE_CHIP_PRESETS = ['掃除','洗濯','排泄ケア','シーツ交換','デイ準備','返却','軟膏','整容','食事・薬確認','買物',
+  'デイ/返却','デイ/シーツ','デイ/軟膏','返却/軟膏','吸入/軟膏','シーツ/軟膏'];
 function chipActive_(detail, label) {
   return ('・' + String(detail || '') + '・').indexOf('・' + label + '・') >= 0;
 }
@@ -3838,9 +3871,23 @@ requestAnimationFrame(() => {
 // 起動時: 同期先（ワースケ設定 or 自前URL）があれば自動でクラウドから取得＋定期ポーリング開始
 // （現場端末ガード時は取得しない）
 if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
-  setTimeout(() => SYNC.pull().then(() => SYNC.startPolling()), 300);
-} else if (SYNC.hasTarget()) {
-  SYNC.updateStatusUI('同期');
+  setTimeout(() => {
+    // 起動pullで最新リモートを採用した「後」に備考クリアを実施し即push。
+    // loadDB時にクリアするとこの300ms pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
+    const afterPull = () => {
+      try {
+        if (migrateClearNotes_()) {
+          if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+          try { SYNC.push(); } catch (e) {}   // クリア済みを即クラウドへ確定（rev前進）＝全端末へ恒久反映
+        }
+      } catch (e2) {}
+      try { SYNC.startPolling(); } catch (e3) {}
+    };
+    SYNC.pull().then(afterPull, afterPull);   // pull成否に関わらず採用後にクリア
+  }, 300);
+} else {
+  if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
+  try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
 }
 // タブ復帰時の自動チェック：他端末の更新を即時反映
 document.addEventListener('visibilitychange', () => {
