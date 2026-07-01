@@ -5648,28 +5648,34 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
   /* 入院中（週間計画アプリで「入院」にした入居者）の名前集合 → 盤面で極薄表示 */
-  function hospitalizedNames() {
-    var out = {};
-    var care = loadCareDb();
-    if (care) {
-      for (var i = 0; i < care.residents.length; i++) {
-        if (care.residents[i].hospitalized) out[care.residents[i].name] = true;
-      }
+  /* renderAll 毎の care_schedule_v2(約100KB) JSON.parse×2 を回避するメモ化。
+   * raw文字列が前回と同一なら導出済みマップを返す（localStorageが変われば文字列が変わり必ず再パース＝鮮度完全）。
+   * 返すのは専用の導出マップ＝呼出側は読み取りのみで共有オブジェクトのミューテーション事故なし。 */
+  var careNamesCache_ = { raw: null, hosp: {}, moved: {} };
+  function careNameSets_() {
+    var raw = null;
+    try { raw = localStorage.getItem(CARE_KEY); } catch (e) {}
+    if (raw === careNamesCache_.raw) return careNamesCache_;
+    var hosp = {}, moved = {};
+    if (raw) {
+      try {
+        var p = JSON.parse(raw);
+        if (p && p.residents) {
+          for (var i = 0; i < p.residents.length; i++) {
+            var r = p.residents[i];
+            if (r.hospitalized) hosp[r.name] = true;
+            if (r.movedOut) moved[r.name] = true;
+          }
+        }
+      } catch (e2) {}
     }
-    return out;
+    careNamesCache_ = { raw: raw, hosp: hosp, moved: moved };
+    return careNamesCache_;
   }
+  function hospitalizedNames() { return careNameSets_().hosp; }
 
   /* 退去者（週間計画アプリで「退去」にした入居者）の名前集合 */
-  function movedOutNames() {
-    var out = {};
-    var care = loadCareDb();
-    if (care) {
-      for (var i = 0; i < care.residents.length; i++) {
-        if (care.residents[i].movedOut) out[care.residents[i].name] = true;
-      }
-    }
-    return out;
-  }
+  function movedOutNames() { return careNameSets_().moved; }
   function autoLoadMaster() {
     /* 同フォルダの ws-master.json を毎回確認し、内容が変わっていれば自動更新する
      * （無い端末・取得失敗時はクラウド/手動取込にフォールバック） */
@@ -5714,6 +5720,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* ===== レンダリング ===== */
+  /* 選択表示のみを差分適用（全再描画しない）。.selected は純CSS(box-shadow+z-index)＝盤面の他要素・
+   * トレイ/バッジ/アラートに非影響。従来はタップ選択のたびに renderAll(盤面全再構築)が同期実行され、
+   * 低速端末でダブルクリックの2タップ目が DBL_MS(320ms) 窓を超えてシングル扱いになる遅延の真因だった（要件1）。
+   * ui.selectedIds は従来どおり更新済み＝以後の全再描画でも同一クラスが再導出され整合。 */
+  function applySelectionClasses_() {
+    var board = $('board');
+    if (!board) return;
+    var els = board.querySelectorAll('.b-task.selected'), i;
+    for (i = 0; i < els.length; i++) els[i].classList.remove('selected');
+    for (i = 0; i < ui.selectedIds.length; i++) {
+      var el = board.querySelector('.b-task[data-id="' + ui.selectedIds[i] + '"]');
+      if (el) el.classList.add('selected');
+    }
+  }
+
   function renderAll() {
     var day = store.get();
     $('hdrDate').firstChild.nodeValue = dateLabel(ui.currentDate);
@@ -8265,7 +8286,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         lane = lane.parentNode;
       }
       if (!lane || lane === document.body) {
-        if (ui.selectedIds.length) { ui.selectedIds = []; renderAll(); }
+        if (ui.selectedIds.length) { ui.selectedIds = []; applySelectionClasses_(); }   /* 選択解除もクラス切替のみ */
         return;
       }
       var col = parseInt(lane.getAttribute('data-col'), 10);
@@ -8294,7 +8315,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         openEditor(null, { kind: 'care', start: m, staffId: staffId });
       } else {
         lastLane = { key: key, time: now };
-        if (ui.selectedIds.length) { ui.selectedIds = []; renderAll(); }
+        /* 空白レーン1回目クリック=選択解除。全再描画すると2回目(新規支援・350ms判定)を阻害するためクラス切替のみ */
+        if (ui.selectedIds.length) { ui.selectedIds = []; applySelectionClasses_(); }
       }
     });
   }
@@ -8653,7 +8675,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 通常クリック: 単独選択トグル */
           ui.selectedIds = (ui.selectedIds.length === 1 && ui.selectedIds[0] === taskId) ? [] : [taskId];
         }
-        renderAll();
+        applySelectionClasses_();   /* 全再描画せずクラス切替のみ＝ダブルクリック2タップ目を阻害しない（要件1） */
       },
       onTaskOpen: function (taskId) { openEditor(taskId); },
       onChipTap: function (taskId) { openEditor(taskId); },
