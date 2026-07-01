@@ -1562,6 +1562,28 @@ function filterLimitRows(breakdown) {
   return breakdown.filter(r => !r.outsideLimit);
 }
 
+// ── 総合事業（月額包括）集計ヘルパ ──
+// 総合事業は「月額包括単位」。同一コードは何コマ置いても月1回、異なるコードは各1回だけ計上する。
+function sogoMonthlyUnits_(events) {
+  const seen = new Set();
+  let sum = 0;
+  for (const ev of (events || [])) {
+    if (ev && ev.serviceType === 'visit' && SOGO_VISIT_CODES[ev.category] && !seen.has(ev.category)) {
+      seen.add(ev.category);
+      sum += SOGO_VISIT_CODES[ev.category].units;
+    }
+  }
+  return sum;
+}
+// 週合計単位（要介護／通所のみ。総合事業＝月額包括は週次から除外）
+function kaigoWeekUnits_(events, res) {
+  return (events || []).reduce((s, ev) => {
+    if (ev && SOGO_VISIT_CODES[ev.category]) return s;   // 総合事業は週次に含めない
+    try { return s + sumDisplayUnits(getUnitBreakdown(ev, res)); }
+    catch (e) { return s; }
+  }, 0);
+}
+
 // 各イベントの「限度額内カバー単位数」を返す Map<id, coveredUnits>
 // coveredUnits = 限度額内で使える単位数（超過分は0または端数）
 // ※処遇改善加算は枠外なのでカバー計算から完全に除外
@@ -1582,6 +1604,11 @@ function getEventCoverage(events, res) {
   let accumulated = 0;
 
   for (const ev of sorted) {
+    // 総合事業（月額包括）は週次の限度額按分の対象外＝満額カバー扱い・週枠を消費しない
+    if (SOGO_VISIT_CODES[ev.category]) {
+      coverage.set(ev.id, sumDisplayUnits(getUnitBreakdown(ev, res)));
+      continue;
+    }
     const breakdown = getUnitBreakdown(ev, res);
     // 表示合計と整合させるため sumDisplayUnits を使用（処遇改善加算＋同一建物減算 を除外）
     const total = sumDisplayUnits(breakdown);
@@ -2534,16 +2561,10 @@ function renderSummaryBar(res) {
   // 福祉用具は単位ベースで取り扱う（月額単位数）
   const welfareUnits  = Math.max(0, Number(res.welfareEquipUnits) || 0);
 
-  // 週合計は内訳から動的算出（曜日下部と同じロジック：減算・処遇改善加算は除外）
-  const weekUnits = (res.events || []).reduce((s, ev) => {
-    try {
-      return s + sumDisplayUnits(getUnitBreakdown(ev, res));
-    } catch(e) {
-      console.warn('単位計算エラー:', ev, e);
-      return s;
-    }
-  }, 0);
-  const monthUnits = Math.round(weekUnits * 4.3);
+  // 週合計は要介護／通所のみ（総合事業＝月額包括は週次から除外・曜日下部の日計と同基準）
+  const weekUnits = kaigoWeekUnits_(res.events, res);
+  // 月合計＝週×4.3（要介護／通所）＋ 総合事業の月額（コード単位で月1回）
+  const monthUnits = Math.round(weekUnits * 4.3) + sogoMonthlyUnits_(res.events);
   // 福祉用具を含めた月総合計（限度額・自己負担の算定基礎）
   const totalUnits = monthUnits + welfareUnits;
   const copayAmt   = (limit || totalUnits > 0)
@@ -2586,9 +2607,9 @@ function renderColumnHeaders(res, coverage) {
     if (res && res.events) {
       const dayEvents = res.events.filter(ev => ev.dayOfWeek === i);
       if (dayEvents.length > 0) {
-        // 日合計は減算（同一建物減算）と処遇改善加算を含まない単位数
+        // 日合計は減算（同一建物減算）と処遇改善加算を含まない単位数（総合事業＝月額は週次日計から除外）
         const dayTotal = dayEvents.reduce((s, ev) =>
-          s + sumDisplayUnits(getUnitBreakdown(ev, res)), 0);
+          SOGO_VISIT_CODES[ev.category] ? s : s + sumDisplayUnits(getUnitBreakdown(ev, res)), 0);
         // 限度額超過判定は coverage を利用
         const isOver = !!(coverage && dayEvents.some(ev => coverage.get(ev.id) === 0));
         if (dayTotal > 0 || isOver) {
@@ -3518,11 +3539,10 @@ function computeResidentSummary(res) {
   const limit        = CARE_LIMITS[careLevel] || null;          // 負担限度額＝区分支給限度基準額（単位/月）
   const copayRate    = Number(res && res.copayRate) || 1;
   const welfareUnits = Math.max(0, Number(res && res.welfareEquipUnits) || 0);
-  const weekUnits = ((res && res.events) || []).reduce((s, ev) => {
-    try { return s + sumDisplayUnits(getUnitBreakdown(ev, res)); }
-    catch (e) { return s; }                                     // 単位計算エラーはスキップ（既存と同様）
-  }, 0);
-  const monthUnits = Math.round(weekUnits * 4.3);               // 使用単位数（月）
+  const evs = (res && res.events) || [];
+  const weekUnits = kaigoWeekUnits_(evs, res);                  // 週合計＝要介護／通所のみ（総合事業＝月額は除外）
+  const monthUnits = Math.round(weekUnits * 4.3)               // 使用単位数（月）＝週×4.3
+                   + sogoMonthlyUnits_(evs);                    //   ＋ 総合事業の月額（コード単位で月1回）
   const totalUnits = monthUnits + welfareUnits;
   // 使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（既存ヘッダ「使用率」と一致）
   const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
