@@ -1137,6 +1137,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     '食事支援', '1階食事支援', '2階食事支援', 'デイ準備', 'コール対応', '汚物破棄', '薬ボックス確認', 'せせらぎ'];
 
   /* ケア内容プリセット（ブロック内の作業チップ）
+   * 【選択肢統一】週間計画 care-schedule.html の CARE_CHIP_PRESETS と同一（16項目）。変更時は両ファイルを同時更新。
    * 短縮名称(canonical=スラッシュ区切り)は、設定画面で「デイ・返却」(中黒)、スケジュールで「デイ □ 返却」(□)に出し分ける。
    * スラッシュは detail の中点結合/分割に非干渉＝保存/取込/週間計画連携を壊さない。 */
   var CONTENT_PRESETS = ['掃除', '洗濯', '排泄ケア', 'シーツ交換', 'デイ準備',
@@ -1449,6 +1450,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { contents: out, checks: nc };
   }
 
+  /* 既存の混入tags(週間計画notes由来)を解消する純関数・冪等。care タスクの tags を空配列にする(変化タスクのみ複製)。
+   * tags は editor 等の正当な生成源が無く importers 由来の混入専用のため、読込時(INIT_DAY)に一掃して自己修復する(要件2)。 */
+  function clearCareTags(tasks) {
+    if (!tasks || !tasks.length) return tasks || [];
+    var out = [], i, t, c, kk;
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (t.kind !== 'care' || !t.tags || !t.tags.length) { out.push(t); continue; }
+      c = {};
+      for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
+      c.tags = [];
+      out.push(c);
+    }
+    return out;
+  }
+
   /* 全タスクの contents 重複を解消（checks 再マップ込み・純粋関数・冪等）。変化したタスクのみ複製。
    * 読込チョークポイント(INIT_DAY)で適用＝保存済みの重複表示を、チェック整合を保ったまま恒久収束。 */
   function normalizeTaskContents(tasks) {
@@ -1588,6 +1605,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     sanitizeTasks: sanitizeTasks,
     uniqStrs: uniqStrs_,
     dedupContents: dedupContents_,
+    clearCareTags: clearCareTags,
     normalizeTaskContents: normalizeTaskContents,
     dedupCareSlots: dedupCareSlots,
     matchSwapRun: matchSwapRun,
@@ -2459,7 +2477,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* detailは中点結合文字列＝配列へ分解(要件4)。複合プリセット(食事・薬確認)はsplitDetailが保護＝1要素を保つ */
         var contents = ev.detail ? splitDetail(ev.detail) : [];
         var tags = [];
-        if (ev.notes) tags.push(String(ev.notes));
+        /* 備考(ev.notes)は取り込まない＝週間計画の備考がワースケの tags→盤面へ混入する不具合を停止(要件2) */
         var t = M.newTask({
           kind: 'care',
           src: 'weekly',
@@ -2527,7 +2545,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         svcCode: M.SVC[e.svcCode] ? e.svcCode : '',
         start: e.start, end: e.end,
         contents: e.contents || [],
-        tags: e.tags || [],
+        tags: [],   /* マスタ e.tags は週間計画notes由来の混入＝取り込まない(要件2) */
         tentative: !!e.tentative,
         staffId: null
       });
@@ -2611,7 +2629,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         residentId: 'rn_' + e.residentName, residentName: e.residentName,
         svcCode: M.SVC[e.svcCode] ? e.svcCode : '',
         start: e.start, end: e.end,
-        contents: e.contents || [], tags: e.tags || [],
+        contents: e.contents || [], tags: [],   /* マスタ e.tags は週間計画notes由来の混入＝取り込まない(要件2) */
         tentative: !!e.tentative, staffId: sid
       });
       t.weeklyRef = { residentName: e.residentName, dow: dow, start: e.start };
@@ -2936,7 +2954,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           startTime: minToHHMM(e.start),
           endTime: minToHHMM(e.end),
           detail: (e.contents || []).join('・'),
-          notes: (e.tags || []).join('／') + (e.svcGuessed ? '（コード推定）' : ''),
+          notes: (e.svcGuessed ? '（コード推定）' : ''),   /* マスタ e.tags(週間計画notes由来の混入)は notes へ再注入しない(要件2)。コード推定ヒントのみ維持 */
           units: 0, bathing: false
         });
       }
@@ -3190,7 +3208,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 保存済み/クラウドの二重表示もここで解消。INIT_DAYはundo履歴をクリアするため副作用なし。 */
       var d0 = action.day;
       return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
-               tasks: M.normalizeTaskContents(M.dedupCareSlots(M.sanitizeTasks(d0.tasks))) };
+               tasks: M.clearCareTags(M.normalizeTaskContents(M.dedupCareSlots(M.sanitizeTasks(d0.tasks)))) };
     }
     if (type === 'SET_STAFF') {
       /* 職員入替時、消えた職員のタスクはトレイへ戻す */
@@ -5326,22 +5344,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return IM.splitDetail(d);
   }
   /* ワースケ→週間計画：ケア内容(支援内容・詳細=detail)のみ書き戻す。時刻等は書き戻さない。
-   * weeklyRef.evId で care_schedule_v2 の該当eventを引き、detail=contents.join('・') を反映→保存＋クラウドpush。 */
-  function writeBackCareDetail_(evId, contents) {
-    if (!evId) return;
+   * ref=weeklyRef {residentName,dow,start,evId?}。①evId完全一致→②(正規化氏名,dow,visit,開始時刻)フォールバック照合で
+   * care_schedule_v2 の該当eventを引き detail=contents.join('・') を反映→保存＋クラウドpush。
+   * seed/master由来(evId無し)や evIdドリフトでも確実に書き戻る＝保存が元に戻る不具合を根治(双方向同期)。 */
+  function writeBackCareDetail_(ref, contents) {
+    if (!ref) return;
     var db = loadCareDb();
     if (!db || !db.residents) return;
     var detail = (contents && contents.length) ? contents.join('・') : '';
-    var changed = false, i, j;
-    for (i = 0; i < db.residents.length && !changed; i++) {
-      var evs = db.residents[i].events || [];
-      for (j = 0; j < evs.length; j++) {
-        if (evs[j].id !== evId) continue;
-        if ((evs[j].detail || '') === detail) return;   /* 変化なし＝何もしない */
-        evs[j].detail = detail; changed = true; break;
+    var norm = function (s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); };
+    var target = null, i, j, res, evs, ev;
+    if (ref.evId) {                                    /* ① evId 完全一致 */
+      for (i = 0; i < db.residents.length && !target; i++) {
+        evs = db.residents[i].events || [];
+        for (j = 0; j < evs.length; j++) { if (evs[j].id === ref.evId) { target = evs[j]; break; } }
       }
     }
-    if (changed) { saveCareDb(db); toast('ケア内容を週間計画へ反映しました'); }
+    if (!target && ref.residentName !== undefined) {   /* ② (正規化氏名, dow, visit, 開始時刻) 照合＝R3で一意 */
+      for (i = 0; i < db.residents.length && !target; i++) {
+        res = db.residents[i];
+        if (norm(res.name) !== norm(ref.residentName)) continue;
+        evs = res.events || [];
+        for (j = 0; j < evs.length; j++) {
+          ev = evs[j];
+          if (ev.serviceType !== 'visit' || ev.dayOfWeek !== ref.dow) continue;
+          if (TS.timeToMin(ev.startTime) === ref.start) { target = ev; break; }
+        }
+      }
+    }
+    if (!target) return;
+    if ((target.detail || '') === detail) return;      /* 変化なし＝何もしない */
+    target.detail = detail; saveCareDb(db); toast('ケア内容を週間計画へ反映しました');
   }
   /* ===== 入院フラグ（resident単位・週間計画と共有の care_schedule_v2）要件4 ===== */
   function findCareResidentByName_(care, name) {
@@ -6033,9 +6066,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!v.ok) { toast(v.reason, true); return; }
       }
       store.dispatch({ type: 'UPDATE_TASK', id: ui.editingId, patch: patch });
-      /* ケア内容(支援内容・詳細)のみ 週間計画(care_schedule_v2)へ書き戻す。週間計画リンク済みの支援に限る */
-      if (kind === 'care' && beforeTask && beforeTask.weeklyRef && beforeTask.weeklyRef.evId) {
-        try { writeBackCareDetail_(beforeTask.weeklyRef.evId, patch.contents); } catch (eW) {}
+      /* ケア内容(支援内容・詳細)のみ 週間計画(care_schedule_v2)へ書き戻す。weeklyRef があれば evId 有無に関わらず
+       * (evId→氏名/曜日/開始時刻フォールバック照合で)確実に書き戻す＝evId無しseedタスクの保存が元に戻る不具合を根治。 */
+      if (kind === 'care' && beforeTask && beforeTask.weeklyRef) {
+        try { writeBackCareDetail_(beforeTask.weeklyRef, patch.contents); } catch (eW) {}
       }
     } else {
       var nt = M.newTask(patch);
@@ -8637,8 +8671,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!day) day = S.emptyDay(ui.currentDate);
     day.meta.date = ui.currentDate;
 
-    store = S.createStore(day);
+    store = S.createStore(S.emptyDay(ui.currentDate));
     store.subscribe(function () { scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
+    /* 初回読込も INIT_DAY reducer を通し、正規化(混入tags除去/ケア重複収束/contents重複+checks再マップ/退化枠一掃)を確実化。
+     * 従来は createStore(day) で初期dayをreducer非経由で設定していたため、初回のみ正規化が走らなかった(要件1/2)。 */
+    store.dispatch({ type: 'INIT_DAY', day: day });
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
