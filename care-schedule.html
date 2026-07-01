@@ -744,6 +744,12 @@ select.inp { cursor: pointer; }
           <option value="生活２">生活２　20分以上45分未満</option>
           <option value="生活３">生活３　45分以上70分未満</option>
         </optgroup>
+        <optgroup label="■ 総合事業（要支援・事業対象者）">
+          <option value="A21121">訪問型独自サービス/211　【A11】1,000単位</option>
+          <option value="A21221">訪問型独自サービス/212　【A12】1,997単位</option>
+          <option value="A2111">訪問型独自サービス11　【A21】1,176単位</option>
+          <option value="A21211">訪問型独自サービス12　【A22】2,349単位</option>
+        </optgroup>
       </select>
       <div class="hint-box" id="category-hint" style="display:none"></div>
     </div>
@@ -1284,6 +1290,11 @@ const CAT_INFO = {
   '身体１生活１':{ mins: 89, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助／合計45〜75分程度' },
   '生活２':      { mins: 45, step: 5, hint: '20分以上45分未満（デフォルト40分）' },
   '生活３':      { mins: 60, step: 5, hint: '45分以上70分未満（デフォルト60分）' },
+  // 総合事業 訪問型独自サービス（要支援・事業対象者）
+  'A21121':      { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス/211（要支援・事業対象者）\n盤面表示【A11】／1,000単位' },
+  'A21221':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス/212（要支援・事業対象者）\n盤面表示【A12】／1,997単位' },
+  'A2111':       { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス11（要支援・事業対象者）\n盤面表示【A21】／1,176単位' },
+  'A21211':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス12（要支援・事業対象者）\n盤面表示【A22】／2,349単位' },
 };
 
 // 時間帯加算（訪問介護）開始時刻が該当帯に入る場合に適用
@@ -1312,6 +1323,21 @@ const VISIT_BASE_UNITS = {
   '生活２':       179,  // 20分以上45分未満
   '生活３':       220,  // 45分以上70分未満
 };
+
+// 総合事業（介護予防・日常生活支援総合事業）訪問型独自サービス（要支援・事業対象者向け）
+// 単位は固定。特定事業所加算・時間帯加算は適用せず、指定単位をそのまま計上する独立トラック。
+// ev.category にはコード文字列（A21121 等）を格納し、盤面/印刷/一覧には label（略称）で表示する。
+const SOGO_VISIT_CODES = {
+  'A21121': { name: '訪問型独自サービス/211', label: '【A11】', units: 1000 },
+  'A21221': { name: '訪問型独自サービス/212', label: '【A12】', units: 1997 },
+  'A2111':  { name: '訪問型独自サービス11',   label: '【A21】', units: 1176 },
+  'A21211': { name: '訪問型独自サービス12',   label: '【A22】', units: 2349 },
+};
+function isSogoCat_(cat) { return !!(cat && SOGO_VISIT_CODES[cat]); }
+// カテゴリの表示名: 総合事業は略称（【A11】等）、要介護コードはそのまま返す
+function catDisplayLabel_(cat) {
+  return (cat && SOGO_VISIT_CODES[cat]) ? SOGO_VISIT_CODES[cat].label : (cat || '');
+}
 
 // 通所介護 基本単位数（令和6年4月改定）介護度×滞在時間区分
 // 時間区分: 3h(3〜4h未満) 4h(4〜5h) 5h(5〜6h) 6h(6〜7h) 7h(7〜8h) 8h(8〜9h)
@@ -1358,6 +1384,11 @@ const VISIT_CODE_TABLE = {
 
 // コード単位（基本＋特定事業所加算＋時間帯加算）を返す
 function getVisitCodeUnits(category, tokuteijigyoPct, startTime) {
+  // 総合事業 独自サービス: 固定単位・略称ラベル（特定/時間帯加算は非適用）
+  if (SOGO_VISIT_CODES[category]) {
+    const s = SOGO_VISIT_CODES[category];
+    return { label: s.label, units: s.units, base: s.units };
+  }
   const base = VISIT_BASE_UNITS[category] || 0;
   const tier = TOKUTEI_TIER_MAP[tokuteijigyoPct] || '';
   const zone = startTime ? getTimeSurchargeZone(startTime) : null;
@@ -1383,6 +1414,8 @@ function getVisitCodeUnits(category, tokuteijigyoPct, startTime) {
 }
 
 function calcVisitUnits(category, res, startTime) {
+  // 総合事業 独自サービス: 指定単位そのまま（office加算・減算は非適用）
+  if (SOGO_VISIT_CODES[category]) return SOGO_VISIT_CODES[category].units;
   const base = VISIT_BASE_UNITS[category];
   if (!base) return 0;
   const a = (DB.office && DB.office.visitAddons) || {};
@@ -1444,6 +1477,11 @@ function getUnitBreakdown(ev, res) {
   const rows = [];
   if (ev.serviceType === 'visit') {
     const cat = ev.category || '訪問介護';
+    // 総合事業 独自サービス: 内訳は略称ラベル＋固定単位の1行のみ
+    if (SOGO_VISIT_CODES[cat]) {
+      const s = SOGO_VISIT_CODES[cat];
+      return [{ label: s.label, units: s.units }];
+    }
     const base = VISIT_BASE_UNITS[cat] || 0;
     const a = (DB.office && DB.office.visitAddons) || {};
 
@@ -1601,6 +1639,11 @@ const COLORS = {
   '生活２':      { bg: '#f9fbe7', border: '#c5e1a5', text: '#558b2f' },
   '生活３':      { bg: '#f4f8e1', border: '#aed581', text: '#558b2f' },
   'daycare':     { bg: '#fffde7', border: '#ffe082', text: '#e65100' },
+  // 総合事業 訪問型独自サービス（要介護緑・通所黄と区別する紫系トーン）
+  'A21121':      { bg: '#ede7f6', border: '#b39ddb', text: '#4527a0' },
+  'A21221':      { bg: '#e8eaf6', border: '#9fa8da', text: '#283593' },
+  'A2111':       { bg: '#f3e5f5', border: '#ce93d8', text: '#6a1b9a' },
+  'A21211':      { bg: '#ede7f6', border: '#b39ddb', text: '#4527a0' },
 };
 
 // ── Helpers ──
@@ -2375,6 +2418,9 @@ function normTime_(s) {
 function normCat_(s) {   /* 半角数字→全角でカテゴリ照合（身体01→身体０１） */
   s = String(s || '').trim();
   if (!s) return '';
+  // 総合事業コードは数字全角化で破損するためそのまま返す（コード直指定・サービス名指定の両対応）
+  if (SOGO_VISIT_CODES[s]) return s;
+  for (const k in SOGO_VISIT_CODES) { if (SOGO_VISIT_CODES[k].name === s) return k; }
   const z = '０１２３４５６７８９';
   let out = '';
   for (const ch of s) { const i = '0123456789'.indexOf(ch); out += (i >= 0 ? z[i] : ch); }
@@ -2666,7 +2712,7 @@ function renderDayEvents(events, colEl, res, coverage) {
 
     // 内訳表示（処遇改善加算は限度額の枠外なので各支援の枠内表示から除外）
     const breakdown = res ? filterLimitRows(getUnitBreakdown(ev, res)) : [];
-    const catLabel  = ev.serviceType === 'daycare' ? '通所介護' : (ev.category || '訪問介護');
+    const catLabel  = ev.serviceType === 'daycare' ? '通所介護' : (catDisplayLabel_(ev.category) || '訪問介護');
 
     let innerHtml = `<div class="ev-text">`;
 
@@ -3347,7 +3393,7 @@ function getSortedEvents(res) {
 function formatEventFields(ev) {
   const dow      = DAYS_JA[ev.dayOfWeek] || '?';
   const stype    = ev.serviceType === 'daycare' ? '通所介護' : '訪問介護';
-  const category = ev.serviceType === 'daycare' ? '通所介護' : (ev.category || '');
+  const category = ev.serviceType === 'daycare' ? '通所介護' : catDisplayLabel_(ev.category || '');
   const time     = `${ev.startTime || ''}〜${ev.endTime || ''}`;
   const detail   = (ev.detail || ev.notes || '').replace(/\r?\n/g, ' ');
   return { dow, stype, category, time, detail, dayOfWeek: ev.dayOfWeek, serviceType: ev.serviceType };
