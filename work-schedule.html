@@ -104,7 +104,7 @@ body {
 
 /* ===== ボード ===== */
 .board-wrap {
-  flex: 1; overflow: auto; position: relative;
+  flex: 1; overflow-x: scroll; overflow-y: auto; position: relative;   /* 横スクロールバー常時表示（矢印キーに加えマウス操作可・印刷時は非表示） */
   -webkit-overflow-scrolling: touch; padding-bottom: 64px;
 }
 .board { display: inline-block; min-width: 100%; background: #fff; }
@@ -149,7 +149,7 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-head.zone-div, .b-lane.zone-div, .gl-cell.zone-div { border-left: 3px solid var(--g9); }
 
 .b-canvas { display: grid; position: relative; }
-.b-axis { position: relative; background: var(--g0); border-right: 1px solid var(--g3); }
+.b-axis { position: relative; background: var(--g0); border-right: 1px solid var(--g3); z-index: 2; }   /* 右軸/夜勤(z:2)と対称に左軸も横断罫線(.b-grid z:1)より前面＝不透明背景で罫線が時間軸を横切らない */
 .b-axis.r { border-right: none; border-left: 1px solid var(--g3); }
 .tick { position: absolute; right: 3px; left: 0; font-size: 10px; color: var(--g6);
   text-align: right; transform: translateY(-50%); }
@@ -404,6 +404,16 @@ textarea.inp { min-height: 110px; font-size: 12px; }
   padding: 5px 11px; font-size: 12px; cursor: pointer;
 }
 .chips .pc.on { background: var(--pri-l); border-color: var(--pri); color: var(--pri-d); font-weight: 700; }
+/* 業務枠の配色パレット（要件2） */
+.color-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.color-swatches .sw {
+  width: 28px; height: 28px; border-radius: 6px; border: 2px solid var(--g3);
+  cursor: pointer; padding: 0;
+}
+.color-swatches .sw.on { border-color: var(--pri); box-shadow: 0 0 0 2px var(--pri-l); }
+.color-picker-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.color-picker-row input[type=color] { width: 44px; height: 30px; padding: 0; border: 1px solid var(--g3); border-radius: 6px; cursor: pointer; }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
 .hint { font-size: 11px; color: var(--g6); margin-top: 4px; line-height: 1.5; }
 .alist { border: 1px solid var(--g2); border-radius: 8px; margin-bottom: 8px; }
 .alist .ai {
@@ -519,6 +529,8 @@ body.printing .b-canvas { border-bottom: 1px solid #000; }
 body.printing .b-heads { border-bottom-color: #000; }
 body.printing .b-head.zone-div, body.printing .b-lane.zone-div { border-left-color: #000; }
 body.printing .rs { display: none; }
+/* 印刷プレビューでは横スクロールバーを出さない（fitPrintで全体縮小のためスクロール不要） */
+body.printing .board-wrap { overflow: visible; }
 
 /* ===== 印刷（A3縦・1枚収まり・押印運用）
    倍率は app.js の fitPrint() が beforeprint で算出し .board に transform を適用する ===== */
@@ -649,6 +661,22 @@ body.printing .rs { display: none; }
     <label>枠の名称</label>
     <input class="inp" id="edLabel" list="dlFacility" placeholder="例: 施設業務／委員会／研修">
     <datalist id="dlFacility"></datalist>
+    <select class="inp" id="edMeal" style="margin-top:6px;display:none">
+      <option value="">食事支援を選ぶ…（プルダウン）</option>
+      <option value="1階食事支援">1階食事支援</option>
+      <option value="2階食事支援">2階食事支援</option>
+    </select>
+  </div>
+  <div class="fld" id="fColor" style="display:none">
+    <label>枠の配色（業務枠のみ・印刷にも反映）</label>
+    <div class="color-swatches" id="edColorSwatches"></div>
+    <div class="color-picker-row">
+      <input type="color" id="edColorPicker" value="#e8eaed" title="自由に色を選ぶ">
+      <button type="button" class="btn sm" id="edColorReset">既定に戻す</button>
+    </div>
+  </div>
+  <div class="fld" id="fHideTime" style="display:none">
+    <label><input type="checkbox" id="edHideTime"> 時間表示なし（自由枠・画面/印刷とも時刻を隠す）</label>
   </div>
   <div class="fld row2">
     <div><label>開始</label><input class="inp" id="edStart" type="time" step="60"></div>
@@ -1106,11 +1134,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* 施設業務プリセット（1時間単位で割り振る特殊タスク） */
   var FACILITY_PRESETS = ['施設業務', '厨房', '誘導支援', '1F配膳支援', '2F配膳支援',
-    '食事支援', 'デイ準備', 'コール対応', '汚物破棄', '薬ボックス確認', 'せせらぎ'];
+    '食事支援', '1階食事支援', '2階食事支援', 'デイ準備', 'コール対応', '汚物破棄', '薬ボックス確認', 'せせらぎ'];
 
-  /* ケア内容プリセット（ブロック内の作業チップ） */
+  /* ケア内容プリセット（ブロック内の作業チップ）
+   * 短縮名称(canonical=スラッシュ区切り)は、設定画面で「デイ・返却」(中黒)、スケジュールで「デイ □ 返却」(□)に出し分ける。
+   * スラッシュは detail の中点結合/分割に非干渉＝保存/取込/週間計画連携を壊さない。 */
   var CONTENT_PRESETS = ['掃除', '洗濯', '排泄ケア', 'シーツ交換', 'デイ準備',
-    '返却', '軟膏', '整容', '食事・薬確認', '買物'];
+    '返却', '軟膏', '整容', '食事・薬確認', '買物',
+    'デイ/返却', 'デイ/シーツ', 'デイ/軟膏', '返却/軟膏', '吸入/軟膏', 'シーツ/軟膏'];
 
   var _seq = 0;
   function genId(prefix) {
@@ -1138,6 +1169,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function newTask(props) {
+    var _dd = dedupContents_(props.contents, props.checks);   /* contents重複除去＋checks(index基準)再マップ */
     var t = {
       id: props.id || genId('t'),
       kind: props.kind || 'care',
@@ -1148,9 +1180,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       memo: props.memo || '',
       start: typeof props.start === 'number' ? props.start : 0,
       end: typeof props.end === 'number' ? props.end : 0,
-      contents: props.contents ? props.contents.slice() : [],
+      contents: _dd.contents,
       tags: props.tags ? props.tags.slice() : [],
-      checks: props.checks ? props.checks : {},  /* 内容ごとの実施チェック {index:true} */
+      checks: _dd.checks,  /* 内容ごとの実施チェック {index:true}（contents重複除去に追従して再マップ済） */
       staffId: props.staffId !== undefined ? props.staffId : null,
       origin: props.origin !== undefined ? props.origin : null,
       src: props.src || 'manual',
@@ -1158,6 +1190,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       done: !!props.done,
       nameOnly: !!props.nameOnly,   /* 名前のみ表示（時間/サービス/内容を隠し氏名だけ・盤面/印刷とも） */
       groupId: (props.groupId !== undefined && props.groupId !== null) ? props.groupId : null,  /* グループ化固定の所属ID（null=無所属） */
+      bgColor: props.bgColor ? props.bgColor : null,       /* 業務枠(非care)のカスタム背景色（null=既定色・要件2） */
+      textColor: props.textColor ? props.textColor : null, /* 同 文字色（null=背景輝度で自動判定） */
+      hideTime: !!props.hideTime,                          /* 自由枠の時刻非表示（画面・印刷とも・要件4） */
       comment: normComment_(props.comment)   /* エクセル風コメント {text,size,bold,pinned} or null */
     };
     if (t.kind !== 'care') { t.residentId = null; t.residentName = ''; t.svcCode = ''; }
@@ -1375,6 +1410,63 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 氏名正規化（半/全角空白除去）。表記ゆれ（末尾空白等）による重複の取りこぼし防止。 */
   function normName_(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
 
+  /* 文字列配列の順序保持・重複除去（純粋関数）。支援内容(contents)の「同一項目が2つ」表示バグの根治用。
+   * 内容の欠落は起こさず、完全一致の重複要素のみを1つへ畳む。 */
+  function uniqStrs_(arr) {
+    var out = [], seen = {}, i, v, k;
+    if (!arr) return out;
+    for (i = 0; i < arr.length; i++) {
+      v = arr[i];
+      k = '.' + v;   /* プレフィックスで '__proto__' 等の特殊キー衝突を回避（プロトタイプ汚染で除去漏れしない） */
+      if (seen[k]) continue;
+      seen[k] = true;
+      out.push(v);
+    }
+    return out;
+  }
+
+  /* contents(支援内容)の重複除去＋checks(実施チェック・index基準)の再マップ（純粋関数）。
+   * 落とした重複要素のチェックは残す要素へOR統合。contents末尾以降(memo等)のチェックは落とした数だけ前方シフトして保持。
+   * 表示側でなくデータ側(newTask/読込時)で正規化することで「表示index=保存index」を保ちチェックボックスの整合を守る。
+   * 戻り: { contents:[], checks:{} }。重複が無ければ入力checksをそのまま返す。 */
+  function dedupContents_(contents, checks) {
+    var cs = checks || {};
+    if (!contents || contents.length < 2) return { contents: contents ? contents.slice() : [], checks: cs };
+    var out = [], seen = {}, nc = {}, changed = false, i, v, k, ni;
+    for (i = 0; i < contents.length; i++) {
+      v = contents[i]; k = '.' + v;
+      if (Object.prototype.hasOwnProperty.call(seen, k)) { ni = seen[k]; changed = true; }
+      else { ni = out.length; seen[k] = ni; out.push(v); }
+      if (cs[i]) nc[ni] = true;
+    }
+    if (!changed) return { contents: out, checks: cs };
+    var dropped = contents.length - out.length;
+    for (k in cs) {
+      if (!Object.prototype.hasOwnProperty.call(cs, k)) continue;
+      var idx = parseInt(k, 10);
+      if (!isNaN(idx) && idx >= contents.length && cs[k]) nc[idx - dropped] = true;   /* memo等のチェックをシフト保持 */
+    }
+    return { contents: out, checks: nc };
+  }
+
+  /* 全タスクの contents 重複を解消（checks 再マップ込み・純粋関数・冪等）。変化したタスクのみ複製。
+   * 読込チョークポイント(INIT_DAY)で適用＝保存済みの重複表示を、チェック整合を保ったまま恒久収束。 */
+  function normalizeTaskContents(tasks) {
+    if (!tasks || !tasks.length) return tasks || [];
+    var out = [], i, t, dd, c, kk;
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (!t.contents || t.contents.length < 2) { out.push(t); continue; }
+      dd = dedupContents_(t.contents, t.checks);
+      if (dd.contents.length === t.contents.length) { out.push(t); continue; }   /* 変化なし＝同一参照を保持 */
+      c = {};
+      for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
+      c.contents = dd.contents; c.checks = dd.checks;
+      out.push(c);
+    }
+    return out;
+  }
+
   /* 盤面ケアタスクのスロット de-dup（純粋関数・care本体不変）。
    * 同一入居者(正規化氏名)・同一開始時刻のケアタスクを1件へ収束する。R3(同一入居者の同時刻複数配置禁止)
    * より同一(氏名,開始)の複数ケアは重複/ゴーストとみなして安全。weeklyRef の有無に関わらず収束するため、
@@ -1494,6 +1586,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     fmtRange: fmtRange,
     clampResize: clampResize,
     sanitizeTasks: sanitizeTasks,
+    uniqStrs: uniqStrs_,
+    dedupContents: dedupContents_,
+    normalizeTaskContents: normalizeTaskContents,
     dedupCareSlots: dedupCareSlots,
     matchSwapRun: matchSwapRun,
     staffFacworkKind: staffFacworkKind
@@ -2228,7 +2323,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!d) return [];
     var s = String(d);
     var presets = (M && M.CONTENT_PRESETS) ? M.CONTENT_PRESETS : [];
-    var SEP = '';
+    var SEP = '';   /* 退避キーのセンチネル(私用領域文字)。裸の数字だと detail 中の数字(血圧120等)と衝突し破損するため */
     var comps = [], i;
     for (i = 0; i < presets.length; i++) { if (String(presets[i]).indexOf('・') >= 0) comps.push(presets[i]); }
     for (i = 0; i < comps.length; i++) { s = s.split(comps[i]).join(SEP + i + SEP); }   /* 複合プリセットを一時退避 */
@@ -2239,7 +2334,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (c = 0; c < comps.length; c++) { tok = tok.split(SEP + c + SEP).join(comps[c]); }   /* 復元 */
       if (tok) out.push(tok);
     }
-    return out;
+    return (M && M.uniqStrs) ? M.uniqStrs(out) : out;   /* 同一項目の重複を畳む（重複表示バグの発生源を断つ） */
   }
 
   /* 列割当: 施設→訪問→夜勤の順。夜勤は ake/iri をペアで同一列に同居させる。
@@ -3095,7 +3190,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 保存済み/クラウドの二重表示もここで解消。INIT_DAYはundo履歴をクリアするため副作用なし。 */
       var d0 = action.day;
       return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
-               tasks: M.dedupCareSlots(M.sanitizeTasks(d0.tasks)) };
+               tasks: M.normalizeTaskContents(M.dedupCareSlots(M.sanitizeTasks(d0.tasks))) };
     }
     if (type === 'SET_STAFF') {
       /* 職員入替時、消えた職員のタスクはトレイへ戻す */
@@ -3571,6 +3666,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 支援枠テキスト(要件B5): 「デイ準備」「返却」を含む部分のみ <b> で太字化。
    * textNode/createElementで安全に組み立て(innerHTML不使用＝旧Safari/XSS安全)。
    * 印刷の均一フォント計測(uniformContentFont_)は最終DOMを測るため1行収まりは維持される。 */
+  /* 短縮名称(canonical=スラッシュ 'デイ/返却')をスケジュール表示用に 'デイ □ 返却' へ変換(前後スペース+□)。
+   * 設定画面は '・'(app.js)で別出し分け。スラッシュ非含有はそのまま。純粋関数。 */
+  function contentDisp_(s) {
+    var v = String(s === undefined || s === null ? '' : s);
+    if (v.indexOf('/') < 0) return v;
+    var pres = M.CONTENT_PRESETS || [];   /* 既定の短縮プリセット(スラッシュ項目)のみ □ 変換。任意入力の '/' は装飾しない */
+    for (var i = 0; i < pres.length; i++) { if (pres[i] === v) return v.split('/').join(' □ '); }
+    return v;
+  }
+
   var BOLD_CARE_WORDS = ['デイ準備', '返却'];
   function fillCareText(host, text) {
     var s = String(text === undefined || text === null ? '' : text);
@@ -3595,6 +3700,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (cls) e.className = cls;
     fillCareText(e, text);
     return e;
+  }
+
+  /* 背景色の輝度から可読な文字色(#000/#fff)を返す(純粋関数)。'#rrggbb'/'#rgb' 対応。要件2の可読性担保。 */
+  function autoText_(hex) {
+    var h = String(hex === undefined || hex === null ? '' : hex).replace('#', '');
+    if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
+    if (h.length < 6) return '#000';
+    var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return '#000';
+    var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    return lum >= 150 ? '#000' : '#fff';
   }
 
   /* グループ化固定の色: groupId文字列のハッシュから色相を決め、同一グループを同色で示す(画面のみ)。 */
@@ -3831,6 +3947,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var b = el('div', cls);
     b.style.top = top + 'px';
     b.setAttribute('data-id', t.id);
+    /* 業務枠(非care)のカスタム配色: 画面・印刷とも適用。印刷の k-free/k-admin 既定色(!important)より優先させる
+     * ため setProperty(...,'important')。文字色は指定 or 背景輝度で自動判定＝可読性を担保(要件2)。 */
+    if (t.kind !== 'care' && t.bgColor) {
+      b.style.setProperty('background-color', t.bgColor, 'important');
+      b.style.setProperty('color', t.textColor || autoText_(t.bgColor), 'important');
+    }
     /* 時間変更済(2重罫線)の支援は、変更前の元の時間をホバー(title)で表示 */
     if (t.kind === 'care' && M.isChanged(t) && t.origin) {
       b.setAttribute('title', '元の時間 ' + M.fmtRange(t.origin.start, t.origin.end, TS.minToTime));
@@ -3842,7 +3964,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       : (t.label || (t.kind === 'break' ? '休憩時間' : (t.kind === 'free' ? '' : (t.kind === 'admin' ? '事務' : '施設業務'))));
     if (t.tentative) nameText = '（' + nameText + '）';
     /* 施設業務・事務の枠は時間を表示しない（実施時間は任意のため）。誘導/配膳など別ラベルの施設業務は時刻維持 */
-    var hideTime = (t.kind === 'admin') || (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'));
+    var hideTime = (t.kind === 'admin') || (t.kind === 'facility' && (t.label === '施設業務' || t.src === 'facwork'))
+                || (t.kind === 'free' && t.hideTime);   /* 自由枠「時間表示なし」（画面・印刷とも・要件4） */
 
     if (ex.print) {
       /* 【印刷確定設定・保護対象】この ex.print 分岐(フォント算出/夜勤分配/data-dur/内容生成)は
@@ -3862,7 +3985,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       b.className = cls + ' p-task' + (nightHideContent ? ' p-night' : '');
       b.setAttribute('data-dur', String(durMin));   /* fitPrintText の 19/20分判定用(要件3) */
       /* ケア内容(=画面の items: contents + memo)。内容無しの支援も押印用に1行(空文字＝□のみ) */
-      var pitems = (t.kind === 'care' && !hideContent) ? (t.contents || []).slice() : [];
+      var pitems = (t.kind === 'care' && !hideContent) ? (t.contents || []).slice() : [];   /* 重複除去はデータ層で実施（checks整合維持） */
       if (t.kind === 'care' && !hideContent && t.memo) pitems.push(t.memo);
       if (t.kind === 'care' && !hideContent && !pitems.length) pitems.push('');
       var rows = pitems.length;
@@ -3902,7 +4025,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!hideTimeP && !hideContent) {
         for (var pi = 0; pi < pitems.length; pi++) {
           var row = el('div', 'pt-item');
-          var itx = careSpan('pt-item-tx', pitems[pi]);
+          var itx = careSpan('pt-item-tx', contentDisp_(pitems[pi]));
           itx.style.fontSize = fContent + 'px';
           row.appendChild(itx);
           if (!ex.hosp) row.appendChild(txt('span', 'pt-cb', (t.checks && t.checks[pi]) || t.done ? '☑' : '□'));
@@ -3924,14 +4047,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     b.appendChild(txt('div', 't-name', nameText));
 
     if (!t.nameOnly) {   /* 名前のみ表示は内容・タグを出さず氏名だけ */
-      var items = (t.contents || []).slice();
+      var items = (t.contents || []).slice();   /* 重複除去はデータ層(INIT_DAY normalizeTaskContents)で実施＝表示index=保存indexを維持しチェック整合を守る */
       if (t.memo) items.push(t.memo);
       var tagLine = (t.tags && t.tags.length) ? '/' + t.tags.join('/') : '';
       if (items.length && h >= 32 + items.length * 14) {
         /* 支援内容を1つずつ縦に並べ、右に実施チェック欄（タップで☑） */
         for (var ci2 = 0; ci2 < items.length; ci2++) {
           var row = el('div', 't-item');
-          row.appendChild(careSpan('t-item-tx', items[ci2]));
+          row.appendChild(careSpan('t-item-tx', contentDisp_(items[ci2])));
           var cbEl = txt('span', 't-cb' + ((t.checks && t.checks[ci2]) ? ' on' : ''),
             (t.checks && t.checks[ci2]) ? '☑' : '□');
           cbEl.setAttribute('data-ci', String(ci2));
@@ -3941,7 +4064,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (tagLine) b.appendChild(txt('div', 't-body', tagLine));
       } else {
         var bodyParts = [];
-        if (items.length) bodyParts.push(items.join('・'));
+        if (items.length) {
+          var disp1 = [];
+          for (var di = 0; di < items.length; di++) disp1.push(contentDisp_(items[di]));
+          bodyParts.push(disp1.join('・'));
+        }
         if (tagLine) bodyParts.push(tagLine);
         if (bodyParts.length && h >= 34) { var bd = el('div', 't-body'); fillCareText(bd, bodyParts.join(' ')); b.appendChild(bd); }
       }
@@ -5731,6 +5858,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('fSvc').style.display = kind === 'care' ? '' : 'none';
     $('fLabel').style.display = (kind === 'facility' || kind === 'free' || kind === 'admin') ? '' : 'none';
     $('fContents').style.display = kind === 'care' ? '' : 'none';
+    if ($('edMeal')) $('edMeal').style.display = (kind === 'facility') ? '' : 'none';   /* 食事支援プルダウンは施設業務時のみ */
+    if ($('fColor')) $('fColor').style.display = (kind !== 'care') ? '' : 'none';       /* 配色は業務枠(非care)のみ */
+    if ($('fHideTime')) $('fHideTime').style.display = (kind === 'free') ? '' : 'none'; /* 時間表示なしは自由枠のみ */
     if ($('fHosp')) $('fHosp').style.display = kind === 'care' ? '' : 'none';
     if ($('fNameOnly')) $('fNameOnly').style.display = kind === 'care' ? '' : 'none';  /* 名前のみ＝支援(care)専用 */
   }
@@ -5748,7 +5878,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'pc' + (ui.editContents.indexOf(v) >= 0 ? ' on' : '');
-      b.textContent = v;
+      b.textContent = v.replace(/\//g, '・');   /* 設定画面は中黒表示（値/状態は canonical スラッシュのまま） */
       (function (val) {
         b.addEventListener('click', function () {
           var idx = ui.editContents.indexOf(val);
@@ -5757,6 +5887,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           renderContentChips();
         });
       })(v);
+      wrap.appendChild(b);
+    }
+  }
+  /* 業務枠のカスタム配色プリセット（見やすい淡色・要件2）。既定=灰。自由ピッカーと併用。 */
+  var COLOR_PRESETS = ['#e8eaed', '#ffcdd2', '#f8bbd0', '#e1bee7', '#c5cae9',
+    '#bbdefb', '#b2ebf2', '#c8e6c9', '#fff9c4', '#ffe0b2', '#d7ccc8', '#ffffff'];
+  function renderColorSwatches() {
+    var wrap = $('edColorSwatches');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    for (var i = 0; i < COLOR_PRESETS.length; i++) {
+      var col = COLOR_PRESETS[i];
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sw' + (ui.editColor === col ? ' on' : '');
+      b.style.backgroundColor = col;
+      b.setAttribute('data-col', col);
+      (function (c) {
+        b.addEventListener('click', function () {
+          ui.editColor = c;
+          if ($('edColorPicker')) $('edColorPicker').value = c;
+          renderColorSwatches();
+        });
+      })(col);
       wrap.appendChild(b);
     }
   }
@@ -5784,13 +5938,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     ui.editHospInitial = $('edHospitalized') ? $('edHospitalized').checked : false;
     $('edSvc').value = t && t.svcCode ? t.svcCode : '生活３';
     $('edLabel').value = t ? (t.label || '') : (prefill && prefill.label ? prefill.label : '');
+    if ($('edMeal')) $('edMeal').value = ($('edLabel').value === '1階食事支援' || $('edLabel').value === '2階食事支援') ? $('edLabel').value : '';
+    ui.editColor = (t && t.bgColor) ? t.bgColor : null;   /* 業務枠の配色を編集状態へ */
+    if ($('edColorPicker')) $('edColorPicker').value = ui.editColor || '#e8eaed';
+    renderColorSwatches();
+    if ($('edHideTime')) $('edHideTime').checked = t ? !!t.hideTime : false;
     var start = t ? t.start : (prefill && typeof prefill.start === 'number' ? prefill.start : 600);
     var end = t ? t.end : (prefill && typeof prefill.end === 'number' ? prefill.end :
       start + (kind === 'care' ? M.SVC['生活３'].mins : 60));
     $('edStart').value = minToInput(start);
     $('edEnd').value = minToInput(end);
     staffOptions(t ? t.staffId : (prefill && prefill.staffId ? prefill.staffId : ''));
-    ui.editContents = t ? t.contents.slice() : [];
+    ui.editContents = t ? t.contents.slice() : [];   /* 重複はデータ層(INIT_DAY)で解消済＝ここでは触らない(checks整合を壊さない) */
     renderContentChips();
     $('edContentFree').value = '';
     $('edTentative').checked = t ? !!t.tentative : false;
@@ -5838,14 +5997,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       svcCode: kind === 'care' ? $('edSvc').value : '',
       label: kind === 'facility' ? ($('edLabel').value.trim() || '施設業務')
            : (kind === 'admin' ? ($('edLabel').value.trim() || '事務')
-           : (kind === 'free' ? ($('edLabel').value.trim() || '自由枠')
+           : (kind === 'free' ? $('edLabel').value.trim()   /* 自由枠: ブランクは強制「自由枠」にせず空白のまま（要件4） */
            : (kind === 'break' ? '休憩時間' : ''))),
       memo: $('edMemo').value.trim(),
       start: start, end: end, staffId: staffId,
-      contents: kind === 'care' ? ui.editContents.slice() : [],
+      contents: kind === 'care' ? ui.editContents.slice() : [],   /* UIは重複を作らない・重複はデータ層で解消(checks整合維持) */
       tentative: $('edTentative').checked,
       done: $('edDone').checked,
       nameOnly: (kind === 'care' && $('edNameOnly')) ? $('edNameOnly').checked : false,  /* 名前のみ＝支援(care)専用 */
+      bgColor: (kind !== 'care') ? (ui.editColor || null) : null,   /* 業務枠のカスタム配色（文字色は描画側で背景輝度から自動） */
+      textColor: null,
+      hideTime: (kind === 'free' && $('edHideTime')) ? $('edHideTime').checked : false,   /* 自由枠の時刻非表示 */
       comment: M.normComment({ text: $('edComment').value.trim(),
                                size: $('edCommentSize').value,
                                bold: $('edCommentBold').checked,
@@ -7765,6 +7927,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var svc = M.SVC[$('edSvc').value];
       var s = inputToMin($('edStart').value);
       if (svc && s !== null) $('edEnd').value = minToInput(Math.min(s + svc.mins, 1439));
+    });
+    if ($('edMeal')) $('edMeal').addEventListener('change', function () {
+      var v = $('edMeal').value;
+      if (v) $('edLabel').value = v;   /* 食事支援プルダウン選択→枠の名称へ反映（保存は label 経由・既存フロー不変） */
+    });
+    if ($('edColorPicker')) $('edColorPicker').addEventListener('input', function () {
+      ui.editColor = $('edColorPicker').value;   /* 自由な色選択 */
+      renderColorSwatches();
+    });
+    if ($('edColorReset')) $('edColorReset').addEventListener('click', function () {
+      ui.editColor = null;   /* 既定色（kindClassのCSS）に戻す */
+      if ($('edColorPicker')) $('edColorPicker').value = '#e8eaed';
+      renderColorSwatches();
     });
     /* 入居者名を入力したら、その入居者の現在の入院状態をチェックに反映し基準値も更新する
      * （新規枠でも正しい現状を表示し、未操作なら誤って状態を変えない・要件4） */
