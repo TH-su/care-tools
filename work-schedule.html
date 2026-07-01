@@ -5044,6 +5044,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (e.key === 'Escape') clearDrag();
     });
 
+    /* PC(マウス/トラックパッド)向け: ネイティブ dblclick でも編集を開く。
+     * 自前2タップ検知(DBL_MS=320ms)は OS のダブルクリック設定(既定~500ms・移動許容量)より厳しく、
+     * MacBook等では自然なダブルクリックが窓を外れて「選択→解除」に化けて開かない。
+     * ブラウザ/OS 標準の判定に委ねることで PC の体感と完全一致させる（タッチの従来経路は不変・
+     * 高速ダブルで両方発火しても app.js 側の再オープンガードで二重処理しない）。
+     * 空白レーン/モーダル上は closest 不一致で no-op＝既存挙動不変。 */
+    document.addEventListener('dblclick', function (e) {
+      if (closest(e.target, '.t-cb')) return;   /* 実施チェック欄は自前経路と同様タップ対象外（連打=トグルのみ・エディタを開かない） */
+      var taskEl = closest(e.target, '.b-task');
+      if (taskEl && taskEl.getAttribute('data-id')) {
+        if (opts.onTaskOpen) opts.onTaskOpen(taskEl.getAttribute('data-id'));
+        return;
+      }
+      var chipEl = closest(e.target, '.chip');
+      if (chipEl && !chipEl.classList.contains('drag-chip') && chipEl.getAttribute('data-id')) {
+        if (opts.onChipOpen) opts.onChipOpen(chipEl.getAttribute('data-id'));
+      }
+    });
+
     return {
       cancel: clearDrag,
       laneAt: laneAt,
@@ -5971,7 +5990,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function minToInput(min) { return pad2(Math.floor(min / 60)) + ':' + pad2(min % 60); }
   function inputToMin(v) { return TS.timeToMin(v); }
 
+  /* 二重オープン抑止: 高速ダブルクリックでは自前2タップ検知とネイティブ dblclick の両方が発火するため、
+   * 同一タスクでモーダル表示中かつ600ms以内の再呼出は skip（再populateの無駄と入力途中の巻き戻りを防止）。 */
+  var lastEditorOpen_ = { id: null, time: 0 };
   function openEditor(taskId, prefill) {
+    var nowOpen = Date.now();
+    if (taskId && lastEditorOpen_.id === taskId && nowOpen - lastEditorOpen_.time < 600 &&
+        $('mEdit').className.indexOf('on') >= 0) return;
+    lastEditorOpen_.id = taskId || null;
+    lastEditorOpen_.time = nowOpen;
     var day = store.get();
     var t = taskId ? M.findTask(day.tasks, taskId) : null;
     ui.editingId = taskId || null;
