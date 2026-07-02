@@ -4346,6 +4346,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var MOVE_SNAP = 10;        /* 移動スナップ(分) */
   var TAP_SLOP = 8;          /* これ以上動いたらタップ扱いしない(px) */
   var DBL_MS = 320;
+  var DBL_FAST_MS = 400;     /* マウス/ペン: 2回目の「押下」で即オープンする窓。OS既定のダブルクリック間隔(~500ms)は
+                              * クリック間(up→down)換算でこの程度＝自然な2クリック目を押した瞬間に開く */
 
   function closest(elm, sel) {
     while (elm && elm.nodeType === 1) {
@@ -4945,6 +4947,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         headText = headEl.textContent.replace(/休憩⚠/g, '').slice(0, 14);
       } else {
         return; /* 余白タップはここでは扱わない（app側のclickで処理） */
+      }
+
+      /* PC(マウス/ペン)の2回目クリックは「押した瞬間」に編集を開く（前倒し）。
+       * 1回目のタップ(onUpで lastTap 記録)から DBL_FAST_MS 以内に同じ枠/チップを再押下したら、
+       * リリースやネイティブ dblclick を待たずに即オープン＝ワンテンポ速い。
+       * タッチは従来経路(onUp の DBL_MS 判定)のまま。Ctrl/Cmd/Shift は複数選択操作なので除外。
+       * リサイズ(rs)・列ヘッダーは対象外。直後の onUp は drag 未生成(!drag)で素通り、
+       * 後続のネイティブ dblclick は app.js 側の再オープンガード(600ms)が吸収する。 */
+      if (!isTouch && mode === 'move' && taskId !== null &&
+          !(e.ctrlKey || e.metaKey || e.shiftKey)) {
+        var fastKey = source + ':' + taskId;
+        if (lastTap.key === fastKey && Date.now() - lastTap.time < DBL_FAST_MS) {
+          lastTap = { key: '', time: 0 };
+          if (source === 'tray') { if (opts.onChipOpen) opts.onChipOpen(taskId); }
+          else if (opts.onTaskOpen) opts.onTaskOpen(taskId);
+          return;
+        }
       }
 
       /* 複数選択中の支援ブロックをドラッグ＝選択全体を相対時刻を保って同時移動。
