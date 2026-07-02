@@ -1581,6 +1581,198 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'facility';
   }
 
+  /* ===== クラウド競合の3-wayマージ（先祖返り根絶・純関数）=====
+   * ancestor=最後に同期成功した盤面 / local=この端末の現在 / server=クラウド版。
+   * 方針: タスクはid単位で「ローカルが祖先から変化(または新規)ならローカル採用、
+   * それ以外はサーバー採用(他端末の追加・変更・削除に追従)」。従来の
+   * 「サーバー丸ごと採用=ローカル編集全消失」を、同一タスク同時編集時の後勝ちに限定する。 */
+
+  /* キー順に依存しない安定シリアライズ（オブジェクトはキー昇順・undefinedプロパティは省略）。
+   * 端末ごとにプロパティ挿入順が異なるタスク(patchTask後付けキー等)の比較誤検知を防ぐ。 */
+  function stableStringify(v) {
+    if (v === null || v === undefined) return 'null';
+    var t = typeof v;
+    if (t === 'number' || t === 'boolean') return String(v);
+    if (t === 'string') return JSON.stringify(v);
+    if (t !== 'object') return 'null';
+    var i, parts;
+    if (Object.prototype.toString.call(v) === '[object Array]') {
+      parts = [];
+      for (i = 0; i < v.length; i++) parts.push(stableStringify(v[i]));
+      return '[' + parts.join(',') + ']';
+    }
+    var keys = [];
+    for (var k in v) {
+      if (Object.prototype.hasOwnProperty.call(v, k) && v[k] !== undefined) keys.push(k);
+    }
+    keys.sort();
+    parts = [];
+    for (i = 0; i < keys.length; i++) {
+      parts.push(JSON.stringify(keys[i]) + ':' + stableStringify(v[keys[i]]));
+    }
+    return '{' + parts.join(',') + '}';
+  }
+  function taskSig(t) { return stableStringify(t); }
+
+  function indexById_(tasks) {
+    var m = {}, i, t;
+    for (i = 0; i < (tasks || []).length; i++) {
+      t = tasks[i];
+      if (t && t.id !== undefined && t.id !== null && !Object.prototype.hasOwnProperty.call(m, '.' + t.id)) {
+        m['.' + t.id] = t;   /* '.'プレフィクス=プロトタイプ汚染ガード（uniqStrsと同方針） */
+      }
+    }
+    return m;
+  }
+  function cloneTask_(t) {
+    var o = {};
+    for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) o[k] = t[k];
+    return o;
+  }
+  function cmpId_(a, b) {
+    var x = String(a.id), y = String(b.id);
+    return x < y ? -1 : (x > y ? 1 : 0);
+  }
+  /* [s,e) から占有区間 occ([[s,e],...]) を差し引いた残余（minLen分未満の残片は破棄） */
+  function subtractIntervals_(s, e, occ, minLen) {
+    if (!minLen || minLen < 1) minLen = 20;
+    var blocks = [], i;
+    for (i = 0; i < occ.length; i++) {
+      var bs = Math.max(occ[i][0], s), be = Math.min(occ[i][1], e);
+      if (be > bs) blocks.push([bs, be]);
+    }
+    blocks.sort(function (a, b) { return a[0] - b[0]; });
+    var mg = [];
+    for (i = 0; i < blocks.length; i++) {
+      if (mg.length && blocks[i][0] <= mg[mg.length - 1][1]) {
+        if (blocks[i][1] > mg[mg.length - 1][1]) mg[mg.length - 1][1] = blocks[i][1];
+      } else mg.push([blocks[i][0], blocks[i][1]]);
+    }
+    var res = [], cur = s;
+    for (i = 0; i < mg.length; i++) {
+      if (mg[i][0] - cur >= minLen) res.push([cur, mg[i][0]]);
+      if (mg[i][1] > cur) cur = mg[i][1];
+    }
+    if (e - cur >= minLen) res.push([cur, e]);
+    return res;
+  }
+  /* マージ後の盤面修復: ①列(staff)不在のstaffId→care=トレイへ/非care=破棄
+   * ②同一列のcare重畳→後発(start,id順)をトレイへ ③非care(break→facility→その他)の重畳→残余へクリップ(20分未満破棄)。
+   * 両端末の編集が同じ時間帯に重なった場合でも、盤面・A3印刷に重畳枠を残さない。 */
+  function repairBoard_(tasks, staff) {
+    var staffIds = {}, i, j, t;
+    for (i = 0; i < (staff || []).length; i++) {
+      if (staff[i] && staff[i].id !== undefined && staff[i].id !== null) staffIds['.' + staff[i].id] = 1;
+    }
+    var cares = [], others = [];
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (!t) continue;
+      if (t.staffId !== null && t.staffId !== undefined && !staffIds['.' + t.staffId]) {
+        if (t.kind === 'care') { t = cloneTask_(t); t.staffId = null; }
+        else continue;
+      }
+      if (t.kind === 'care') cares.push(t); else others.push(t);
+    }
+    var out = [];
+    var placed = {};  /* '.staffId' -> [[s,e],...]（care確定分） */
+    cares.sort(function (a, b) { return (a.start - b.start) || cmpId_(a, b); });
+    for (i = 0; i < cares.length; i++) {
+      t = cares[i];
+      if (t.staffId === null || t.staffId === undefined) { out.push(t); continue; }
+      var key = '.' + t.staffId;
+      var arr = placed[key] || (placed[key] = []);
+      var hit = false;
+      for (j = 0; j < arr.length; j++) {
+        if (t.start < arr[j][1] && arr[j][0] < t.end) { hit = true; break; }
+      }
+      if (hit) { t = cloneTask_(t); t.staffId = null; out.push(t); }
+      else { arr.push([t.start, t.end]); out.push(t); }
+    }
+    var prio = { 'break': 0, 'facility': 1 };
+    others.sort(function (a, b) {
+      var pa = Object.prototype.hasOwnProperty.call(prio, a.kind) ? prio[a.kind] : 2;
+      var pb = Object.prototype.hasOwnProperty.call(prio, b.kind) ? prio[b.kind] : 2;
+      return (pa - pb) || (a.start - b.start) || cmpId_(a, b);
+    });
+    var occupied = {};
+    for (var pk in placed) {
+      if (!Object.prototype.hasOwnProperty.call(placed, pk)) continue;
+      occupied[pk] = placed[pk].slice();
+    }
+    for (i = 0; i < others.length; i++) {
+      t = others[i];
+      if (t.staffId === null || t.staffId === undefined) { out.push(t); continue; }
+      var key2 = '.' + t.staffId;
+      var occ = occupied[key2] || (occupied[key2] = []);
+      var segs = subtractIntervals_(t.start, t.end, occ, 20);
+      for (j = 0; j < segs.length; j++) {
+        var nt = cloneTask_(t);
+        if (j > 0) nt.id = genId('t');
+        nt.start = segs[j][0];
+        nt.end = segs[j][1];
+        occ.push([nt.start, nt.end]);
+        out.push(nt);
+      }
+    }
+    return out;
+  }
+  /* 文字列/オブジェクト配列の重複なし和集合（skipRefs=add-onlyの墓標用） */
+  function unionRefs_(x, y) {
+    var out = [], seen = {}, src = [x || [], y || []], i, j, v, k;
+    for (i = 0; i < 2; i++) {
+      for (j = 0; j < src[i].length; j++) {
+        v = src[i][j];
+        k = '.' + (typeof v === 'string' ? v : stableStringify(v));
+        if (!Object.prototype.hasOwnProperty.call(seen, k)) { seen[k] = 1; out.push(v); }
+      }
+    }
+    return out;
+  }
+  function rebaseDay(ancestor, local, server) {
+    var a = ancestor || {}, l = local || {}, s = server || {};
+    var aT = indexById_(a.tasks), lT = indexById_(l.tasks), sT = indexById_(s.tasks);
+    var merged = [], seen = {}, i, id, lt, st, at;
+    for (i = 0; i < (l.tasks || []).length; i++) {
+      lt = l.tasks[i];
+      if (!lt) continue;
+      id = '.' + lt.id;
+      seen[id] = 1;
+      at = aT[id];
+      st = sT[id];
+      if (!at || taskSig(at) !== taskSig(lt)) merged.push(lt);          /* ローカル変更/新規 → ローカル採用 */
+      else if (st) merged.push(st);                                     /* ローカル不変 → サーバー版採用 */
+      /* ローカル不変×サーバー無し ＝ 他端末の削除に追従（採用しない） */
+    }
+    for (i = 0; i < (s.tasks || []).length; i++) {
+      st = s.tasks[i];
+      if (!st) continue;
+      id = '.' + st.id;
+      if (Object.prototype.hasOwnProperty.call(seen, id)) continue;
+      at = aT[id];
+      if (at && !Object.prototype.hasOwnProperty.call(lT, id) && taskSig(at) === taskSig(st)) continue; /* ローカル削除×サーバー不変＝削除維持 */
+      merged.push(st);   /* サーバー新規（またはローカル削除×サーバー変更＝消失回避で保持） */
+    }
+    /* staff+columns は原子ペア（列とタスクの参照整合を守る） */
+    var pairChanged = stableStringify([l.staff || null, l.columns || null]) !==
+                      stableStringify([a.staff || null, a.columns || null]);
+    var useLocalPair = pairChanged || !s.staff;
+    var staff = useLocalPair ? (l.staff || []) : (s.staff || []);
+    var columns = useLocalPair ? (l.columns !== undefined ? l.columns : s.columns)
+                               : (s.columns !== undefined ? s.columns : l.columns);
+    /* meta: フィールド単位LWW（date/revは呼び出し側・skipRefsは和集合） */
+    var am = a.meta || {}, lm = l.meta || {}, sm = s.meta || {}, meta = {}, k;
+    for (k in sm) if (Object.prototype.hasOwnProperty.call(sm, k)) meta[k] = sm[k];
+    for (k in lm) {
+      if (!Object.prototype.hasOwnProperty.call(lm, k)) continue;
+      if (k === 'rev' || k === 'date') continue;
+      if (stableStringify(lm[k]) !== stableStringify(am[k])) meta[k] = lm[k];
+    }
+    var un = unionRefs_(lm.skipRefs, sm.skipRefs);
+    if (un.length) meta.skipRefs = un;
+    return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(merged, staff) };
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -1609,7 +1801,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     normalizeTaskContents: normalizeTaskContents,
     dedupCareSlots: dedupCareSlots,
     matchSwapRun: matchSwapRun,
-    staffFacworkKind: staffFacworkKind
+    staffFacworkKind: staffFacworkKind,
+    stableStringify: stableStringify,
+    taskSig: taskSig,
+    rebaseDay: rebaseDay
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -5213,6 +5408,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           try { localStorage.removeItem(dayKey(dates[i])); freed = true; } catch (e2) {}
         }
       }
+      /* quota逼迫時は3-way祖先も解放（keepDate分は残す・祖先欠損はunionフォールバックで安全） */
+      for (i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf('wsbase_') !== 0) continue;
+        if (k === 'wsbase_' + keepDate) continue;
+        try { localStorage.removeItem(k); freed = true; } catch (e4) {}
+      }
     } catch (e3) {}
     return freed;
   }
@@ -5263,6 +5465,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var dates = listSavedDates();
       for (var i = 0; i < dates.length; i++) {
         if (dates[i] < limit) localStorage.removeItem(dayKey(dates[i]));
+      }
+      /* 3-way祖先(wsbase_)・競合退避(wsbase_conflict_)も保持期限を過ぎたら掃除（リーク防止） */
+      for (i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf('wsbase_') !== 0) continue;
+        var dt = k.replace('wsbase_conflict_', '').replace('wsbase_', '');
+        if (dt < limit) { try { localStorage.removeItem(k); } catch (e2) {} }
       }
     } catch (e) {}
   }
@@ -5319,13 +5528,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function switchDate(date) {
     if (saveTimer) { clearTimeout(saveTimer); doSave(); }
+    /* 切替前の未送信pushを確実に送る。残タイマーを放置すると
+     * ①直前2.5秒以内の編集が未送信のまま滞留 ②切替後に発火して新日付を旧revで送る自己競合、の両方が起きる */
+    if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; try { pushDayNow(); } catch (ePd) {} }
     ui.currentDate = date;
     ui.selectedIds = [];
     var day = loadDayData(date) || S.emptyDay(date);
     day.meta.date = date;
+    var wasDirtySw = false;
+    try { wasDirtySw = isDayDirty_(date); } catch (eDs) {}
     store.dispatch({ type: 'INIT_DAY', day: day });
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
+    /* 偽dirty補正（seed/reconcile の後で行う）：INIT_DAY→subscribe→schedulePushDay は
+     * lastPushed.day(全日付共有の単一スロット)比較で判定するため、切替のたびに新日付を偽dirtyにする。
+     * さらに空日のマスタ自動生成(seedFromMaster)も subscribe 経由で dirty を立てる。実際に未送信でない日は
+     * seed後の盤面を基準に lastPushed を合わせ dirty/タイマーを解除する（サーバーにその日があれば pull で
+     * 丸ごと採用／無ければ pull 後に schedulePushDay で seed 盤面を送信、の両立）。
+     * これを怠ると、閲覧しただけの日が pull で 3-wayマージ経路に入り、祖先欠損時に他端末の編集を巻き戻す。 */
+    try {
+      if (syncOn() && !wasDirtySw) {
+        lastPushed.day = daySig(store.get());
+        clearDayDirty_(date);
+        if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
+      }
+    } catch (eSw) {}
     /* クラウドの当日盤面を取得後、シフト出勤者を自動反映（手動編集は保護）。
      * care 取得完了 → 当日盤面 pull の順序を担保（pullAll と同方針）。
      * pullDayNow は INIT_DAY 直後に reconcile(剪定強化版)を掛けるため、先にローカル care を
@@ -5385,11 +5612,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ref=weeklyRef {residentName,dow,start,evId?}。①evId完全一致→②(正規化氏名,dow,visit,開始時刻)フォールバック照合で
    * care_schedule_v2 の該当eventを引き detail=contents.join('・') を反映→保存＋クラウドpush。
    * seed/master由来(evId無し)や evIdドリフトでも確実に書き戻る＝保存が元に戻る不具合を根治(双方向同期)。 */
-  function writeBackCareDetail_(ref, contents) {
-    if (!ref) return;
-    var db = loadCareDb();
-    if (!db || !db.residents) return;
-    var detail = (contents && contents.length) ? contents.join('・') : '';
+  /* ref から care_schedule_v2 の該当 event を引く（①evId完全一致→②(正規化氏名,dow,visit,開始時刻)照合）。
+   * writeBackCareDetail_ とジャーナル再適用(replayCareOps_)で共用。 */
+  function findCareEventByRef_(db, ref) {
+    if (!db || !db.residents || !ref) return null;
     var norm = function (s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); };
     var target = null, i, j, res, evs, ev;
     if (ref.evId) {                                    /* ① evId 完全一致 */
@@ -5410,8 +5636,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       }
     }
+    return target;
+  }
+  function writeBackCareDetail_(ref, contents) {
+    if (!ref) return;
+    var db = loadCareDb();
+    if (!db || !db.residents) return;
+    var detail = (contents && contents.length) ? contents.join('・') : '';
+    var target = findCareEventByRef_(db, ref);
     if (!target) return;
     if ((target.detail || '') === detail) return;      /* 変化なし＝何もしない */
+    recordCareOp_({ t: 'detail',
+                    ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
+                    contents: (contents || []).slice() });
     target.detail = detail; saveCareDb(db); toast('ケア内容を週間計画へ反映しました');
   }
   /* ===== 入院フラグ（resident単位・週間計画と共有の care_schedule_v2）要件4 ===== */
@@ -5437,6 +5674,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!r) { toast('「' + name + '」は週間計画に未登録のため入院状態を反映できません', true); return; }
     if (!!r.hospitalized === !!val) return;   /* 変更なし */
     r.hospitalized = !!val;
+    recordCareOp_({ t: 'hosp', name: name, val: !!val });
     if (saveCareDb(care)) {
       toast(val ? ('「' + name + '」を入院中にしました（週間計画へ反映）')
                 : ('「' + name + '」を退院にしました（週間計画へ反映）'));
@@ -6339,11 +6577,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         b.addEventListener('click', function () {
           var care2 = loadCareDb();
           if (!care2) return;
+          var nv = null;
           for (var j = 0; j < care2.residents.length; j++) {
             if (care2.residents[j].name === u.name) {
               care2.residents[j].lunchMed = !care2.residents[j].lunchMed;
+              nv = !!care2.residents[j].lunchMed;
             }
           }
+          if (nv !== null) recordCareOp_({ t: 'lunch', name: u.name, val: nv });
           saveCareDb(care2);
           renderExportPane();
         });
@@ -6882,6 +7123,180 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var careInitDone = false;   /* syncOn時、初回の care 取得が完了したか（マスタ適用ガード用） */
 
   function syncOn() { return !!settings.endpoint; }
+
+  /* ===== 同期堅牢化v3: 未送信(dirty)の永続化・3-way祖先・自動リトライ・careジャーナル =====
+   * 目的: ①push失敗後もタイマーで必ず自動復帰（イベント頼みのオフライン固着を根絶）
+   *       ②未送信編集をpull/競合でサーバー版に丸ごと上書きしない（3-wayマージ＝先祖返り根絶） */
+
+  /* --- 未送信フラグ（localStorage永続＝リロードしても消えない） --- */
+  var DIRTY_KEY = 'ws_dirty_v1';
+  function loadDirty_() {
+    try {
+      var d = JSON.parse(localStorage.getItem(DIRTY_KEY) || '{}');
+      return (d && typeof d === 'object') ? d : {};
+    } catch (e) { return {}; }
+  }
+  function saveDirty_(d) { try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) {} }
+  function markDayDirty_(date) {
+    if (!date) return;
+    var d = loadDirty_();
+    if (!d.days) d.days = {};
+    if (!d.days[date]) { d.days[date] = 1; saveDirty_(d); }
+  }
+  function clearDayDirty_(date) {
+    var d = loadDirty_();
+    if (d.days && d.days[date]) { delete d.days[date]; saveDirty_(d); }
+  }
+  function isDayDirty_(date) {
+    var d = loadDirty_();
+    return !!(d.days && d.days[date]);
+  }
+  function dirtyDayList_() {
+    var d = loadDirty_(), out = [], k;
+    if (d.days) for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) out.push(k);
+    return out;
+  }
+
+  /* --- 3-way祖先（最後に同期成功した盤面）。wsday_と同じLZ圧縮で保存 --- */
+  function baseKey_(date) { return 'wsbase_' + date; }
+  function saveBase_(date, dayObj) {
+    try { localStorage.setItem(baseKey_(date), encodeDay_(dayObj)); } catch (e) {}
+  }
+  function loadBase_(date) {
+    try { return decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { return null; }
+  }
+
+  /* --- 自動リトライ（15s→30s→60s上限のバックオフ・タイマー1本） --- */
+  var retry_ = { timer: null, delay: 0 };
+  function clearRetry_() {
+    if (retry_.timer) { clearTimeout(retry_.timer); retry_.timer = null; }
+    retry_.delay = 0;
+  }
+  function scheduleRetry_() {
+    if (!syncOn()) return;
+    if (retry_.timer) return;
+    retry_.delay = retry_.delay ? Math.min(retry_.delay * 2, 60000) : 15000;
+    retry_.timer = setTimeout(function () { retry_.timer = null; recoverNow_(); }, retry_.delay);
+  }
+  function recoverNow_() {
+    if (!syncOn()) return;
+    if (navigator.onLine === false) { scheduleRetry_(); return; }  /* 明確な切断中は無駄打ちせず次tickへ */
+    var dates = dirtyDayList_(), i, acted = false;
+    for (i = 0; i < dates.length; i++) {
+      acted = true;
+      if (dates[i] === ui.currentDate) { try { pushDayNow(); } catch (e1) {} }
+      else { try { pushDayFor_(dates[i]); } catch (e2) {} }
+    }
+    try { schedulePushCare(); } catch (e3) {}      /* 未送信careがあれば送る（raw比較で自動no-op） */
+    if (!acted) { try { pullAll(false); } catch (e4) {} }
+  }
+  /* 表示していない日付の未送信を送る（focus/visibility/online 復帰時の回収。
+   * 当日は schedulePushDay が担当・非当日は成功経路でリトライtickが張られないため復帰契機で送る）。 */
+  function flushDirtyDays_() {
+    if (!syncOn()) return;
+    var dates = dirtyDayList_(), i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] !== ui.currentDate) { try { pushDayFor_(dates[i]); } catch (e) {} }
+    }
+  }
+  /* 同期成功の共通処理: リトライ解除＋オフラインバッジからの復帰表示 */
+  function noteSyncSuccess_() {
+    clearRetry_();
+    /* 成功しても未送信(非当日dirty/careジャーナル)が残るなら回収タイマーを張り直す。
+     * これをしないと、別リソースの成功が唯一の回収タイマーを消し、非当日dirtyが無期限滞留する。 */
+    try {
+      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length)) scheduleRetry_();
+    } catch (eR) {}
+    try {
+      var el = $('saveState');
+      if (el && el.textContent && el.textContent.indexOf('⚠') === 0) {
+        var d = new Date();
+        el.textContent = '✓同期 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+    } catch (e) {}
+  }
+
+  /* --- careオペレーションジャーナル（ws側のcare編集をサーバー版採用後に再適用＝巻き戻り防止） --- */
+  var CARE_OPS_KEY = 'ws_care_ops_v1';
+  var careReplay_ = false;
+  function loadCareOps_() {
+    try {
+      var p = JSON.parse(localStorage.getItem(CARE_OPS_KEY) || 'null');
+      if (p && typeof p === 'object' && p.ops && typeof p.ops.length === 'number') return p;
+    } catch (e) {}
+    return { seq: 0, ops: [] };
+  }
+  function saveCareOps_(p) { try { localStorage.setItem(CARE_OPS_KEY, JSON.stringify(p)); } catch (e) {} }
+  function careOpKey_(op) {
+    if (op.t === 'detail') {
+      var r = op.ref || {};
+      return 'd:' + (r.evId || '') + ':' + String(r.residentName || '') + ':' +
+             (r.dow === undefined || r.dow === null ? '' : r.dow) + ':' +
+             (r.start === undefined || r.start === null ? '' : r.start);
+    }
+    return op.t + ':' + String(op.name || '');
+  }
+  function recordCareOp_(op) {
+    if (careReplay_) return;   /* 再適用中は再記録不要（元opがジャーナルに残っている） */
+    if (!syncOn()) return;     /* 同期未設定時は記録しない（後日の有効化で古い編集が一括再適用され巻き戻すのを防ぐ） */
+    var p = loadCareOps_(), key = careOpKey_(op), i;
+    for (i = p.ops.length - 1; i >= 0; i--) {
+      if (careOpKey_(p.ops[i]) === key) p.ops.splice(i, 1);   /* 同一対象は最新のみ保持（冪等write） */
+    }
+    p.seq = (p.seq || 0) + 1;
+    op.q = p.seq;
+    op.ts = Date.now();        /* 記録時刻（再適用時の鮮度フィルタ用） */
+    p.ops.push(op);
+    if (p.ops.length > 200) p.ops.splice(0, p.ops.length - 200);
+    saveCareOps_(p);
+  }
+  function careOpsMaxSeq_() { return loadCareOps_().seq || 0; }
+  function dropCareOpsThrough_(maxSeq) {
+    var p = loadCareOps_();
+    if (!p.ops.length) return;
+    var kept = [], i;
+    for (i = 0; i < p.ops.length; i++) if ((p.ops[i].q || 0) > maxSeq) kept.push(p.ops[i]);
+    if (kept.length !== p.ops.length) { p.ops = kept; saveCareOps_(p); }
+  }
+  /* サーバー版care採用後に未送信のローカルcare編集を再適用（全op名前キーwriteで冪等）。
+   * ①採用したサーバー版に既に同じ値がある op（=自端末が送って戻ってきた分）は drop＝後日他端末が
+   *   その対象を変更したときに古い値で巻き戻さない。②対象がサーバーから消えた op も drop。
+   * ③記録から一定時間を超えた op は再適用しない（長期オフラインの古い編集が新しい状態を上書きしない）。 */
+  var CARE_OP_FRESH_MS = 12 * 3600 * 1000;   /* 12時間 */
+  function replayCareOps_() {
+    var p = loadCareOps_();
+    if (!p.ops.length) return;
+    careReplay_ = true;
+    try {
+      var db = loadCareDb();
+      if (!db || !db.residents) return;
+      var now = Date.now();
+      var changed = false, i, op, r, ev, detail, keep, kept = [];
+      for (i = 0; i < p.ops.length; i++) {
+        op = p.ops[i];
+        keep = false;
+        if (op.ts && (now - op.ts) > CARE_OP_FRESH_MS) {
+          /* 鮮度切れ＝drop（keepしない） */
+        } else if (op.t === 'detail') {
+          ev = findCareEventByRef_(db, op.ref);
+          if (ev) {
+            detail = (op.contents && op.contents.length) ? op.contents.join('・') : '';
+            if ((ev.detail || '') !== detail) { ev.detail = detail; changed = true; keep = true; }
+            /* else: サーバー版に既に反映済み＝drop */
+          } /* else: 対象イベント消失＝drop */
+        } else if (op.t === 'hosp') {
+          r = findCareResidentByName_(db, op.name);
+          if (r && !!r.hospitalized !== !!op.val) { r.hospitalized = !!op.val; changed = true; keep = true; }
+        } else if (op.t === 'lunch') {
+          r = findCareResidentByName_(db, op.name);
+          if (r && !!r.lunchMed !== !!op.val) { r.lunchMed = !!op.val; changed = true; keep = true; }
+        }
+        if (keep) kept.push(op);
+      }
+      if (kept.length !== p.ops.length) { p.ops = kept; saveCareOps_(p); }   /* 不要opを掃く */
+      if (changed) saveCareDb(db);   /* saveCareDb→schedulePushCare＝マージ結果を自動再送 */
+    } finally { careReplay_ = false; }
+  }
   function loadRevs() {
     try {
       var r = JSON.parse(localStorage.getItem(REVS_KEY) || '{}');
@@ -6961,70 +7376,189 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function setSyncState(txt) { $('saveState').textContent = txt; }
 
   /* --- 日次盤面 --- */
+  var dayPushBusy_ = false, dayPushAgain_ = false;
+  var conflictN_ = {};   /* date -> 連続競合回数（成功でリセット・上限超は次のリトライへ委譲） */
   function schedulePushDay() {
     if (!syncOn()) return;
     var day = store.get();
     if (!day.meta.date || daySig(day) === lastPushed.day) return;
+    markDayDirty_(day.meta.date);   /* 実変化のみ（sig差）＝pull採用直後には立たない */
     if (pushDayTimer) clearTimeout(pushDayTimer);
     pushDayTimer = setTimeout(function () { pushDayNow(); }, 2500);
   }
   function pushDayNow(report) {
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
+    if (dayPushBusy_) { dayPushAgain_ = true; return; }   /* 重複putの自己競合を根絶（完了後に再送） */
     var day = store.get();
     var sig = daySig(day);
     if (!report && sig === lastPushed.day) return; /* 採用直後の同内容再pushを抑止 */
     var date = day.meta.date;
+    if (!date) return;
+    dayPushBusy_ = true;
+    markDayDirty_(date);
     gas({ action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day }, function (j) {
+      dayPushBusy_ = false;
       if (j && j.ok) {
         lastPushed.day = sig;
+        conflictN_[date] = 0;
+        saveBase_(date, day);   /* 3-way祖先＝いま送信して確定した盤面 */
+        /* 送信中に入った編集を守る: 現在も同一内容のときだけ未送信フラグを解除 */
+        var cur = store.get();
+        if (cur.meta.date === date && daySig(cur) === sig) clearDayDirty_(date);
         if (store.get().meta.date === date) {
           store.dispatch({ type: 'SET_META', patch: { rev: j.rev } });
         }
         var d = new Date();
         setSyncState('✓同期 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+        noteSyncSuccess_();
         if (report) $('stResult').textContent = '送信完了（rev ' + j.rev + '）';
       } else if (j && j.conflict) {
-        if (report) $('stResult').textContent = '他端末の更新を取得します…';
-        pullDayNow(date, true);
+        if (report) $('stResult').textContent = '他端末の更新と統合します…';
+        handleDayConflict_(date);
       } else {
-        /* 持続表示＝オフライン。再接続(online)・タブ復帰(focus/visibility)・次の編集で自動再送する */
+        /* 通信失敗＝オフライン表示。以後はバックオフタイマーが自動再試行する（イベント不要で必ず復帰） */
         setSyncState('⚠ オフライン（自動再試行）');
+        scheduleRetry_();
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
+      }
+      if (dayPushAgain_) { dayPushAgain_ = false; schedulePushDay(); }
+    });
+  }
+  /* 競合: サーバー版を取得して3-wayマージ→採用→マージ結果を再送。
+   * 従来の「サーバー丸ごと採用＋再push抑止」＝ローカル編集の完全消失を廃止する。 */
+  function handleDayConflict_(date) {
+    conflictN_[date] = (conflictN_[date] || 0) + 1;
+    if (conflictN_[date] > 4) {
+      conflictN_[date] = 0;
+      toast('同期の競合が続いています。時間をおいて自動再試行します', true);
+      scheduleRetry_();
+      return;
+    }
+    gas({ action: 'get', key: dayKey(date) }, function (j) {
+      if (!j || !j.ok) { scheduleRetry_(); return; }
+      if (!j.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合。ローカルを正として送り直す */
+      adoptServerDay_(date, j.data, j.rev || 0, true);
+    });
+  }
+  /* put競合なのにサーバーにその日のデータが無い（新規サーバー/データ消失で rev だけ進んでいる状態）＝
+   * ローカルの rev は幻。rev を 0 に戻してローカル盤面を送り直す（force不使用＝本当に他端末が居れば
+   * 再び conflict→get で data が返り adopt へ回る）。無限競合は conflictN_ 上限で止まる。 */
+  function resetDayRevAndPush_(date) {
+    if (ui.currentDate === date) {
+      store.dispatch({ type: 'SET_META', patch: { rev: 0 } });
+      lastPushed.day = '';
+      schedulePushDay();
+    } else {
+      var d = loadDayData(date);
+      if (d && d.meta) { d.meta.rev = 0; lsSetDay_(date, d); try { pushDayFor_(date); } catch (e) {} }
+      else clearDayDirty_(date);
+    }
+  }
+  /* サーバー版盤面の採用（pull/競合 共通）。未送信編集(dirty)があれば3-wayマージで統合し再送する */
+  function adoptServerDay_(date, serverDay, serverRev, notify) {
+    serverDay.meta = serverDay.meta || {};
+    serverDay.meta.rev = serverRev;
+    serverDay.meta.date = date;
+    var isCur = (ui.currentDate === date);
+    var localDay = isCur ? store.get() : loadDayData(date);
+    var dirty = isDayDirty_(date) && localDay && daySig(localDay) !== daySig(serverDay);
+    if (!dirty) {
+      /* 未送信編集なし（または内容同一）＝従来どおりサーバー版を採用 */
+      lastPushed.day = daySig(serverDay);
+      saveBase_(date, serverDay);
+      clearDayDirty_(date);
+      if (isCur) {
+        store.dispatch({ type: 'INIT_DAY', day: serverDay });
+        /* INIT_DAY はクラウド盤面で tasks を全置換するため、置換直後に reconcile を掛け直して
+         * 週間計画＝正本へ再追従（careInitDone前はローカルcare未確定のため掛けない）。 */
+        if (careInitDone) { try { reconcileWeekly(); } catch (eRD) {} }
+        if (notify) toast('他端末の更新を取得しました');
+      } else {
+        lsSetDay_(date, serverDay);
+      }
+      return;
+    }
+    /* 未送信編集あり → 3-wayマージ（祖先欠損時はローカルを退避してunion＝消失させない） */
+    var anc = loadBase_(date);
+    if (!anc) {
+      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) {}
+    }
+    var merged = M.rebaseDay(anc, localDay, serverDay);
+    merged.meta = merged.meta || {};
+    merged.meta.date = date;
+    merged.meta.rev = serverRev;
+    saveBase_(date, serverDay);   /* 祖先＝いま取り込んだサーバー版（マージ結果のpush成功で更新） */
+    lastPushed.day = '';          /* マージ結果の再送を抑止しない */
+    if (isCur) {
+      store.dispatch({ type: 'INIT_DAY', day: merged });
+      if (careInitDone) { try { reconcileWeekly(); } catch (eRD2) {} }
+      schedulePushDay();
+      if (notify) toast('他端末の更新をこの端末の編集と統合しました');
+    } else {
+      lsSetDay_(date, merged);   /* dirty維持＝リトライ/再表示時に pushDayFor_ が送信 */
+      scheduleRetry_();
+    }
+  }
+  /* 表示していない日付の未送信データを送信（日付切替・リロードで滞留した編集の回収） */
+  function pushDayFor_(date) {
+    if (!syncOn() || !date) return;
+    if (date === ui.currentDate) { pushDayNow(); return; }
+    var day = loadDayData(date);
+    if (!day) { clearDayDirty_(date); return; }   /* データ無し＝送るものが無い（容量回収等） */
+    day.meta.date = date;
+    gas({ action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day }, function (j) {
+      if (j && j.ok) {
+        /* 飛行中(最長15秒)にこの日付が表示中へ切替わっていたら、送信前スナップショットで
+         * localStorage/盤面を巻き戻さない（現在の編集を消さない）。表示中の内容は store 側が管理し、
+         * rev据置のまま次の pushDayNow が送る（古rev→競合→3-wayマージで安全に収束）。 */
+        if (date === ui.currentDate) { noteSyncSuccess_(); return; }
+        day.meta.rev = j.rev;
+        lsSetDay_(date, day);
+        saveBase_(date, day);
+        clearDayDirty_(date);
+        noteSyncSuccess_();
+      } else if (j && j.conflict) {
+        gas({ action: 'get', key: dayKey(date) }, function (g) {
+          if (!g || !g.ok) { scheduleRetry_(); return; }
+          if (!g.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合を修復 */
+          adoptServerDay_(date, g.data, g.rev || 0, false);
+        });
+      } else {
+        scheduleRetry_();
       }
     });
   }
-  function pullDayNow(date, notify, report, done) {
+  function pullDayNow(date, notify, report, done, deferred) {
     function fin() { if (done) { try { done(); } catch (e) {} } }
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; fin(); return; }
+    if (dayPushBusy_) {
+      /* push優先（未送信を先に確定させ編集消失を防ぐ）。1回だけ待って再試行 */
+      if (!deferred) { setTimeout(function () { pullDayNow(date, notify, report, done, true); }, 1500); }
+      else fin();
+      return;
+    }
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) {
+        scheduleRetry_();
         if (report) $('stResult').textContent = '取得エラー: ' + friendlyErr(j && j.error);
         fin(); return;
       }
+      noteSyncSuccess_();
       var curRev = (ui.currentDate === date) ? (store.get().meta.rev || 0)
         : (function () { var d = loadDayData(date); return d && d.meta ? (d.meta.rev || 0) : 0; })();
       if (j.data && (j.rev || 0) > curRev) {
-        j.data.meta.rev = j.rev;
-        j.data.meta.date = date;
-        lastPushed.day = daySig(j.data);
-        if (ui.currentDate === date) {
-          store.dispatch({ type: 'INIT_DAY', day: j.data });
-          /* INIT_DAY はクラウド盤面で tasks を全置換するため、週間計画(care_schedule_v2)由来の
-           * 追加/更新/削除がここで巻き戻る(重複・更新未反映・削除未反映の共通根因)。
-           * 置換直後に reconcile を一回掛け直して週間計画＝正本に再追従させる。
-           * careInitDone ゲート: 初回 care 取得前(=ローカル care が未確定)は剪定強化で誤削除しうるため掛けない。
-           * 多端末では pullAll が care 取得完了後に day を pull する順序にしてあり、ここでの care は最新。 */
-          if (careInitDone) { try { reconcileWeekly(); } catch (eRD) {} }
-          if (notify) toast('他端末の更新を取得しました');
-        } else {
-          lsSetDay_(date, j.data);
-        }
+        adoptServerDay_(date, j.data, j.rev || 0, notify);
         if (report) $('stResult').textContent = '取得完了（rev ' + j.rev + '）';
       } else if (!j.data) {
-        if (ui.currentDate === date && store.get().tasks.length) schedulePushDay();
+        if (ui.currentDate === date && store.get().tasks.length) { lastPushed.day = ''; schedulePushDay(); }
         if (report) $('stResult').textContent = 'サーバーにこの日のデータはありません（この端末の内容を送信します）';
-      } else if (report) {
-        $('stResult').textContent = 'この端末が最新です（rev ' + curRev + '）';
+      } else {
+        /* 同版: 未送信編集が滞留していれば送信（push失敗後にイベントだけpullされた場合の回収） */
+        if (ui.currentDate === date && isDayDirty_(date)) {
+          if (daySig(store.get()) === lastPushed.day) clearDayDirty_(date);
+          else schedulePushDay();
+        }
+        if (report) $('stResult').textContent = 'この端末が最新です（rev ' + curRev + '）';
       }
       fin();
     });
@@ -7741,16 +8275,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (pushCareTimer) clearTimeout(pushCareTimer);
     pushCareTimer = setTimeout(pushCareNow, 2000);
   }
+  var carePushBusy_ = false, carePushAgain_ = false;
   function pushCareNow() {
     if (!syncOn()) return;
+    if (carePushBusy_) { carePushAgain_ = true; return; }
     var raw = '';
     try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
     if (!raw) return;
     var data = null;
     try { data = JSON.parse(raw); } catch (e) { return; }
+    var opsMax = careOpsMaxSeq_();   /* 送信時点までのcare編集op＝成功でジャーナルから除去 */
+    carePushBusy_ = true;
     gas({ action: 'put', key: CARE_KEY, rev: loadRevs().care || 0, data: data }, function (j) {
-      if (j && j.ok) { saveRevsPatch({ care: j.rev }); lastPushed.care = raw; }
-      else if (j && j.conflict) pullCareNow(true);
+      carePushBusy_ = false;
+      if (j && j.ok) {
+        saveRevsPatch({ care: j.rev });
+        lastPushed.care = raw;
+        dropCareOpsThrough_(opsMax);
+        noteSyncSuccess_();
+      } else if (j && j.conflict) {
+        pullCareNow(true);   /* adoptCare がジャーナル再適用→マージ結果を自動再送 */
+      } else {
+        setSyncState('⚠ オフライン（自動再試行）');
+        scheduleRetry_();
+      }
+      if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
     });
   }
   function adoptCare(data, rev, notify) {
@@ -7763,6 +8312,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) { return; }
     saveRevsPatch({ care: rev });
     lastPushed.care = raw;
+    /* サーバー版採用でローカル未送信のcare編集（詳細/入院/昼薬）が巻き戻らないよう再適用（冪等）。
+     * マスタ一括適用分は stamp 判定付きの syncCareFromMaster が自然に再適用する。
+     * 再適用で raw が変われば saveCareDb→schedulePushCare が自動でマージ結果を再送する。 */
+    try { syncCareFromMaster(); } catch (eM2) {}
+    try { replayCareOps_(); } catch (eJ2) {}
     if (notify) toast('週間計画の他端末更新を取得しました');
     try { reconcileWeekly(); } catch (e2) {}
     renderAll();
@@ -7784,9 +8338,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function fin() { if (done) { try { done(); } catch (e) {} } }
     if (!syncOn()) { fin(); return; }
     gas({ action: 'get', key: CARE_KEY }, function (j) {
-      if (!j || !j.ok) { markCareInit(); fin(); return; }
+      if (!j || !j.ok) { scheduleRetry_(); markCareInit(); fin(); return; }
+      noteSyncSuccess_();
       if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify); markCareInit(); fin(); return; }
-      if (!j.data) { markCareInit(); schedulePushCare(); fin(); return; }
+      if (!j.data) {
+        /* サーバーに care が無いのにローカル rev>0 ＝rev不整合（新規サーバー/データ消失）。
+         * rev を 0 に戻して送り直す（conflict→pull→data無し の無限ループを断ち、ローカルを復元送信）。 */
+        if ((loadRevs().care || 0) > 0) saveRevsPatch({ care: 0 });
+        markCareInit(); schedulePushCare(); fin(); return;
+      }
       /* サーバーと同版: 週間計画アプリ単独で行われた未送信編集を検出して push する
        * （一方向同期化後、care_schedule_v2 をクラウドへ運ぶのはワースケの役目のため） */
       var raw = '';
@@ -7831,6 +8391,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { seedFromMaster(); } catch (e3) {}
         renderAll();
       } else if (!j.data) {
+        /* サーバーに無いのにローカル rev>0 ＝rev不整合。rev を 0 に戻して送り直す（無限競合の防止） */
+        if ((loadRevs().master || 0) > 0) saveRevsPatch({ master: 0 });
         pushMasterNow();
       }
     });
@@ -8743,6 +9305,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     store.subscribe(function () { scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
     /* 初回読込も INIT_DAY reducer を通し、正規化(混入tags除去/ケア重複収束/contents重複+checks再マップ/退化枠一掃)を確実化。
      * 従来は createStore(day) で初期dayをreducer非経由で設定していたため、初回のみ正規化が走らなかった(要件1/2)。 */
+    /* 未送信(dirty)でない日はブート時に lastPushed を現内容へ初期化＝無変更ブートの空push(rev空回り)を抑止。
+     * INIT_DAY の subscribe(schedulePushDay) が lastPushed='' 比較で空スケジュール＋dirty誤設定するため、
+     * dispatch前のdirty状態を捕まえ、dispatch後にタイマー解除・dirty解除まで行う。
+     * 本当にdirtyな日は何もしない＝デバウンス後に自動再送。他日付/careの未送信はリトライtickが回収する。 */
+    var wasDirtyBoot = false;
+    try { wasDirtyBoot = isDayDirty_(ui.currentDate); } catch (eD0) {}
     store.dispatch({ type: 'INIT_DAY', day: day });
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
@@ -8752,6 +9320,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { seedFromMaster(); } catch (e) {}
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     try { autoLoadMaster(); } catch (e) {}
+    /* 偽dirty補正（seed/reconcile の後）：INIT_DAY と空日のマスタ自動生成が subscribe→schedulePushDay 経由で
+     * 立てる偽dirtyを打ち消す。実際に未送信でない日は seed後の盤面で lastPushed を合わせ dirty/タイマーを解除。
+     * 本当にdirtyな日は何もしない＝デバウンス後に自動再送。他日付/careの未送信はリトライtickが回収する。 */
+    try {
+      if (syncOn() && !wasDirtyBoot) {
+        lastPushed.day = daySig(store.get());
+        clearDayDirty_(ui.currentDate);
+        if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
+      }
+      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length)) scheduleRetry_();
+    } catch (eDirty) {}
     try { pullAll(false); } catch (e) {}
     /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
      * オンライン時は pullAll→pullDayNow 完了後に反映するためここでは行わない。 */
@@ -8760,8 +9339,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (e) {}
     }
     window.addEventListener('focus', function () {
-      /* 他端末の更新を取り込む（10秒スロットル） */
+      /* 他端末の更新を取り込む（10秒スロットル）＋未送信があれば送る（pullだけだと滞留する） */
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { schedulePushDay(); schedulePushCare(); } catch (eP) {}
+      try { flushDirtyDays_(); } catch (eFd) {}   /* 非当日の未送信も回収（成功経路でタイマーが張られないため） */
       try { scheduleCareReconcile(); } catch (e) {}  /* 週間計画の更新を盤面へ確実反映（cloud-off/storage取りこぼし保険・冪等） */
     });
     /* ネットワーク復帰で即再同期（オフライン固着の自動復帰）。スロットルを解除して確実に取得＋未送信を送る。 */
@@ -8771,12 +9352,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { pullAll(false); } catch (e) {}
       try { schedulePushDay(); } catch (e2) {}
       try { schedulePushCare(); } catch (e3) {}
+      try { flushDirtyDays_(); } catch (e4) {}   /* 非当日の未送信も回収 */
     });
     /* タブ復帰でも他端末の更新を取り込む（10秒スロットル）＋週間計画の更新を盤面へ再同期。
      * 離脱(hidden)時は保留中の保存・送信をフラッシュ（自由枠等の消失防止）。 */
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) { try { flushAll_(); } catch (e0) {} return; }
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { schedulePushDay(); schedulePushCare(); } catch (eP2) {}  /* 復帰時に未送信も送る */
+      try { flushDirtyDays_(); } catch (eFd2) {}   /* 非当日の未送信も回収 */
       try { scheduleCareReconcile(); } catch (e) {}
     });
     /* タブを閉じる/リロード/iOSの離脱(beforeunload不発)で確実にフラッシュ */
