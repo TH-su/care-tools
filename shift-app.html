@@ -1824,7 +1824,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var Sym = (typeof require !== 'undefined' && typeof window === 'undefined')
     ? require('./symbols.js') : window.ShiftSymbols;
 
-  var FREEE_PATTERNS = [{"code":"101","name":"早7-16","start":420,"end":960},{"code":"102","name":"遅12-21","start":720,"end":1260},{"code":"103","name":"夜専①21-7","start":1260,"end":1860},{"code":"104","name":"夜専②23-9","start":1380,"end":1980},{"code":"105","name":"日①8-17","start":480,"end":1020},{"code":"106","name":"德①7-18","start":420,"end":1080},{"code":"107","name":"德②7-14:30","start":420,"end":870},{"code":"108","name":"デイ9-13:30","start":540,"end":810},{"code":"109","name":"牛①7-9","start":420,"end":540},{"code":"110","name":"牛②7-11","start":420,"end":660},{"code":"111","name":"7-12","start":420,"end":720},{"code":"112","name":"9-14","start":540,"end":840},{"code":"113","name":"野田13-16","start":780,"end":960},{"code":"114","name":"福田9:30-15","start":570,"end":900},{"code":"115","name":"日③9-18","start":540,"end":1080},{"code":"116","name":"遅11-20","start":660,"end":1200},{"code":"117","name":"日②8:30-17:30","start":510,"end":1050},{"code":"118","name":"厨①6:30-15:30","start":390,"end":930},{"code":"119","name":"厨②10-19","start":600,"end":1140},{"code":"120","name":"厨④7-16","start":420,"end":960},{"code":"121","name":"健有","start":540,"end":1080},{"code":"122","name":"早7-18","start":420,"end":960},{"code":"123","name":"夜①21-7","start":1260,"end":1860},{"code":"124","name":"夜②23-9","start":1380,"end":1980},{"code":"125","name":"早7-17","start":420,"end":960},{"code":"126","name":"9-20","start":540,"end":1200},{"code":"127","name":"早臼7-16","start":420,"end":960},{"code":"128","name":"遅臼12-21","start":720,"end":1260},{"code":"129","name":"遅臼11-20","start":660,"end":1200},{"code":"130","name":"臼7-18","start":420,"end":1080},{"code":"131","name":"松8-17(-18)","start":480,"end":1020},{"code":"132","name":"夜専①21-7(-8）","start":1260,"end":1860},{"code":"133","name":"臼夜23-9","start":1380,"end":1980},{"code":"134","name":"遅11:30‐20:30","start":690,"end":1230},{"code":"135","name":"18-21","start":1080,"end":1260},{"code":"136","name":"9-13","start":540,"end":780},{"code":"137","name":"田中遅12-21（休憩２H）","start":720,"end":1260},{"code":"138","name":"9-15","start":540,"end":900},{"code":"139","name":"夜③22-8","start":1320,"end":1920},{"code":"140","name":"髙尾7-21","start":420,"end":1260},{"code":"141","name":"遅13-22","start":780,"end":1320},{"code":"142","name":"早7-16(6:30-)","start":420,"end":960},{"code":"143","name":"髙尾6:30-21","start":390,"end":1260},{"code":"144","name":"6:30-9","start":390,"end":540},{"code":"145","name":"早6:30-1530","start":390,"end":930},{"code":"146","name":"9:30-13:30","start":570,"end":810},{"code":"147","name":"髙尾7-22","start":420,"end":1320},{"code":"151","name":"遅12-21早遅手当なし","start":720,"end":1260},{"code":"152","name":"18-21早遅手当なし","start":1080,"end":1260},{"code":"153","name":"早7-16早遅手当なし","start":420,"end":960},{"code":"154","name":"16-21","start":960,"end":1260},{"code":"155","name":"夜①21-7(-8）","start":1260,"end":1860},{"code":"156","name":"夜専①21-7(-9）","start":1260,"end":1860},{"code":"157","name":"夜専③22-8","start":1320,"end":1920},{"code":"158","name":"15-17","start":900,"end":1020},{"code":"200","name":"健/有","start":540,"end":1080},{"code":"201","name":"健/有（徳地）","start":420,"end":1080},{"code":"202","name":"健診","start":540,"end":780},{"code":"203","name":"健診（胃カメラ無し）","start":540,"end":600},{"code":"A999","name":"test7-20","start":420,"end":1200}];
+  var FREEE_PATTERNS = [{"code":"101","name":"早7-16","start":420,"end":960},{"code":"102","name":"遅12-21","start":720,"end":1260},{"code":"103","name":"夜専①21-7","start":1260,"end":1860},{"code":"104","name":"夜専②23-9","start":1380,"end":1980},{"code":"105","name":"日①8-17","start":480,"end":1020},{"code":"106","name":"德①7-18","start":420,"end":1080},{"code":"107","name":"德②7-14:30","start":420,"end":870},{"code":"108","name":"デイ9-13:30","start":540,"end":810},{"code":"109","name":"牛①7-9","start":420,"end":540},{"code":"110","name":"牛②7-11","start":420,"end":660},{"code":"111","name":"7-12","start":420,"end":720},{"code":"112","name":"9-14","start":540,"end":840},{"code":"113","name":"野田13-16","start":780,"end":960},{"code":"114","name":"福田9:30-15","start":570,"end":900},{"code":"115","name":"日③9-18","start":540,"end":1080},{"code":"116","name":"遅11-20","start":660,"end":1200},{"code":"117","name":"日②8:30-17:30","start":510,"end":1050},{"code":"118","name":"厨①6:30-15:30","start":390,"end":930},{"code":"119","name":"厨②10-19","start":600,"end":1140},{"code":"120","name":"厨④7-16","start":420,"end":960},{"code":"121","name":"健有","start":540,"end":1080},{"code":"122","name":"早7-18","start":420,"end":960},{"code":"123","name":"夜①21-7","start":1260,"end":1860},{"code":"124","name":"夜②23-9","start":1380,"end":1980},{"code":"125","name":"早7-17","start":420,"end":960},{"code":"126","name":"9-20","start":540,"end":1200},{"code":"127","name":"早臼7-16","start":420,"end":960},{"code":"128","name":"遅臼12-21","start":720,"end":1260},{"code":"129","name":"遅臼11-20","start":660,"end":1200},{"code":"130","name":"臼7-18","start":420,"end":1080},{"code":"131","name":"松8-17(-18)","start":480,"end":1020},{"code":"132","name":"夜専①21-7(-8）","start":1260,"end":1860},{"code":"133","name":"臼夜23-9","start":1380,"end":1980},{"code":"134","name":"遅11:30‐20:30","start":690,"end":1230},{"code":"135","name":"18-21","start":1080,"end":1260},{"code":"136","name":"9-13","start":540,"end":780},{"code":"137","name":"田中遅12-21（休憩２H）","start":720,"end":1260},{"code":"138","name":"9-15","start":540,"end":900},{"code":"139","name":"夜③22-8","start":1320,"end":1920},{"code":"140","name":"髙尾7-21","start":420,"end":1260},{"code":"141","name":"遅13-22","start":780,"end":1320},{"code":"142","name":"早7-16(6:30-)","start":420,"end":960},{"code":"143","name":"髙尾6:30-21","start":390,"end":1260},{"code":"144","name":"6:30-9","start":390,"end":540},{"code":"145","name":"早6:30-1530","start":390,"end":930},{"code":"146","name":"9:30-13:30","start":570,"end":810},{"code":"147","name":"髙尾7-22","start":420,"end":1320},{"code":"151","name":"遅12-21早遅手当なし","start":720,"end":1260},{"code":"152","name":"18-21早遅手当なし","start":1080,"end":1260},{"code":"153","name":"早7-16早遅手当なし","start":420,"end":960},{"code":"154","name":"16-21","start":960,"end":1260},{"code":"155","name":"夜①21-7(-8）","start":1260,"end":1860},{"code":"156","name":"夜専①21-7(-9）","start":1260,"end":1860},{"code":"157","name":"夜専③22-8","start":1320,"end":1920},{"code":"158","name":"15-17","start":900,"end":1020},{"code":"159","name":"9-12","start":540,"end":720},{"code":"160","name":"14:30-16:30","start":870,"end":990},{"code":"161","name":"臼夜22-8","start":1320,"end":1920},{"code":"200","name":"健/有","start":540,"end":1080},{"code":"201","name":"健/有（徳地）","start":420,"end":1080},{"code":"202","name":"健診","start":540,"end":780},{"code":"203","name":"健診（胃カメラ無し）","start":540,"end":600},{"code":"A999","name":"test7-20","start":420,"end":1200}];
   var SJIS_MAP = {"弔":[146,162],"込":[141,158],"看":[138,197],"給":[139,139],"ま":[130,220],"入":[147,252],"は":[130,205],"欠":[140,135],"い":[130,162],"ジ":[131,87],"忌":[138,245],"項":[141,128],"し":[130,181],"デ":[131,102],"公":[140,246],"登":[147,111],"全":[145,83],"更":[141,88],"ー":[129,91],"対":[145,206],"※":[129,166],"同":[147,175],"投":[147,138],"に":[130,201],"象":[143,219],"代":[145,227],"希":[138,243],"望":[150,93],"傷":[143,157],"有":[151,76],"別":[149,202],"介":[137,238],"明":[150,190],"替":[145,214],"行":[141,115],"下":[137,186],"日":[147,250],"注":[146,141],"最":[141,197],"引":[136,248],"休":[139,120],"勤":[139,206],"須":[144,123],"後":[140,227],"従":[143,93],"特":[147,193],"合":[141,135],"読":[147,199],"暇":[137,201],"）":[129,106],"ド":[131,104],"年":[148,78],"必":[149,75],"す":[130,183],"終":[143,73],"次":[142,159],"振":[144,85],"を":[130,240],"改":[137,252],"目":[150,218],"。":[129,66],"力":[151,205],"が":[130,170],"産":[142,89],"る":[130,233],"前":[145,79],"ン":[131,147],"れ":[130,234],"ル":[131,139],"さ":[130,179],"病":[149,97],"業":[139,198],"ス":[131,88],"と":[130,198],"員":[136,245],"護":[140,236],"録":[152,94],"、":[129,65],"半":[148,188],"て":[130,196],"了":[151,185],"タ":[131,94],"（":[129,105],"コ":[131,82],"務":[150,177],"既":[138,249],"じ":[130,182],"場":[143,234],"慶":[140,99],"ケ":[131,80],"パ":[131,112],"ュ":[131,133],"た":[130,189],"で":[130,197],"新":[144,86]};
 
   /* 休み記号 → freee「全日休暇」名。空文字=その日は出力しない */
@@ -1860,10 +1860,67 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return null;
   }
 
+  /* 夜勤ペア表: 「入り時刻-明け時刻」→ パターンコード（freeeパターン一覧表の注記どおり3系統）
+   *  SENJU=夜勤専従職員用 / RINJI=臨時夜勤用(夜勤手当あり) / USUI=臼井さん用(夜勤手当なし) */
+  var NIGHT_PAIR_SENJU = { '21-7': '103', '21-8': '132', '21-9': '156', '22-8': '157', '23-9': '104' };
+  var NIGHT_PAIR_RINJI = { '21-7': '123', '21-8': '155', '22-8': '139', '23-9': '124' };
+  var NIGHT_PAIR_USUI  = { '22-8': '161', '23-9': '133' };
+
+  function normNameKey(name) { return String(name == null ? '' : name).replace(/[\s　]/g, ''); }
+
+  function nightPairTableFor(st) {
+    if (normNameKey(st.name).indexOf('臼井') === 0) return NIGHT_PAIR_USUI;
+    if (st.group === 'night') return NIGHT_PAIR_SENJU;
+    return NIGHT_PAIR_RINJI;
+  }
+
+  /* 分→ペア表キー用の時刻文字列（21:00→'21'・14:30→'14:30'） */
+  function minToHKey(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    return h + (m ? ':' + (m < 10 ? '0' + m : m) : '');
+  }
+
+  /* 勤務パーツを開始順に並べ、連続(9-18と7-9等)・重複(遅と16-21等)の区間を合算する */
+  function mergeWorkSpans(parts) {
+    var arr = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].startMin == null || parts[i].endMin == null) continue;
+      arr.push({ startMin: parts[i].startMin, endMin: parts[i].endMin });
+    }
+    arr.sort(function (a, b) { return (a.startMin - b.startMin) || (a.endMin - b.endMin); });
+    var out = [];
+    for (var j = 0; j < arr.length; j++) {
+      var last = out.length ? out[out.length - 1] : null;
+      if (last && arr[j].startMin <= last.endMin) {
+        if (arr[j].endMin > last.endMin) last.endMin = arr[j].endMin;
+      } else {
+        out.push({ startMin: arr[j].startMin, endMin: arr[j].endMin });
+      }
+    }
+    return out;
+  }
+
+  /* 1日分の入力値を収集: 主区分セル＋全副区分セル（シフト表の下段行） */
+  function collectDayRaw(cells, subDivs, dayKey) {
+    var vals = [];
+    var v = cells[dayKey];
+    if (v !== undefined && v !== null && String(v).trim() !== '') vals.push(String(v));
+    for (var dv in subDivs) {
+      if (!Object.prototype.hasOwnProperty.call(subDivs, dv)) continue;
+      var sv = (subDivs[dv] || {})[dayKey];
+      if (sv !== undefined && sv !== null && String(sv).trim() !== '') vals.push(String(sv));
+    }
+    return vals;
+  }
+
   /* CSV生成
-   * opts: { ym, staff[{id,name,empCode,active,mainDivision}], cells{staffId:{day:'記号'}},
+   * opts: { ym, staff[{id,name,empCode,active,mainDivision,group}], cells{staffId:{day:'記号'}},
+   *         subCells{staffId:{区分:{day:'記号'}}}（副区分行=シフト表の下段。省略可）,
    *         symbols, patternMap{記号:コード}, offNames{記号:休暇名},
    *         division: ''|'全'|'施設'|'訪問'|'通所'（主区分で絞り込み・空/全は全職員） }
+   * 主区分＋副区分の勤務は連続/重複区間を合算して1パターンに解決する（例: 9-18＋7-9→7-18）。
+   * 夜勤は前日の入りと当日の明けを2日間走査でペアリングし専用コードを出す（例: (22→8)は22-8）。
+   * 明けのみの日（連勤最後の朝）は「公休」を出力する。
    * 返値: { csv, rows, staffCount, warnings:[{name,day,raw,reason}] } */
   function buildCsv(opts) {
     var ym = opts.ym;
@@ -1871,6 +1928,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var patternMap = opts.patternMap || {};
     var offNames = opts.offNames || DEFAULT_OFF_NAMES;
     var division = opts.division || '';
+    var subCellsAll = opts.subCells || {};
     var lines = ['#従業員コード※,勤務日※,全日休暇,パターンコード'];
     var warnings = [];
     var staffCount = 0;
@@ -1880,63 +1938,120 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (st.active === false) continue;
       if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
       var cells = opts.cells[st.id] || {};
+      var subDivs = subCellsAll[st.id] || {};
       if (!st.empCode) {
         for (var nd = 1; nd <= nDays; nd++) {
-          var nv = cells[String(nd)];
-          if (nv !== undefined && nv !== null && String(nv).trim() !== '') { noCode.push(st.name); break; }
+          if (collectDayRaw(cells, subDivs, String(nd)).length) { noCode.push(st.name); break; }
         }
         continue;
       }
       staffCount++;
-      for (var d = 1; d <= nDays; d++) {
-        var raw = cells[String(d)];
-        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
-        var norm = Sym.normalizeCell(raw);
-        if (!norm) continue;
-        var dateStr = ym.split('-').join('/') + '/' + pad2(d);
-        var parsed = Sym.parseCell(norm, opts.symbols);
+      /* 前計算: 全日をパースして分類（翌日の夜勤明けを参照するため2パス構成） */
+      var dayInfo = {};
+      for (var pd = 1; pd <= nDays; pd++) {
+        var vals = collectDayRaw(cells, subDivs, String(pd));
+        if (!vals.length) continue;
+        var joined = vals.join(' ');
+        /* 生文字列のまま parseCell へ（normalizeCell が空白を潰す前に分割させる＝複合セル対応） */
+        var parsed = Sym.parseCell(joined, opts.symbols);
         var parts = parsed && parsed.parts ? parsed.parts : [];
-        /* 勤務パートを優先（'7)/遅' のような複合は勤務側を採用） */
-        var workPart = null, offPart = null, hasNightOut = false;
+        if (!Sym.normalizeCell(joined)) continue;
+        var info = { raw: joined, norm: Sym.normalizeCell(joined), single: vals.length === 1,
+                     workParts: [], nightIn: null, nightOut: null, offPart: null };
         for (var pi = 0; pi < parts.length; pi++) {
           var pk = parts[pi].kind;
-          if (pk === 'work' || pk === 'nightIn') { if (!workPart) workPart = parts[pi]; }
-          else if (pk === 'nightOut') hasNightOut = true;
-          else if (!offPart) offPart = parts[pi];
+          if (pk === 'work') info.workParts.push(parts[pi]);
+          else if (pk === 'nightIn') { if (!info.nightIn) info.nightIn = parts[pi]; }
+          else if (pk === 'nightOut') { if (!info.nightOut) info.nightOut = parts[pi]; }
+          else if (!info.offPart) info.offPart = parts[pi];
         }
-        if (workPart) {
-          var code = patternMap[norm];
-          if (!code) {
-            var pat = suggestForSymbol(opts.symbols, norm);
-            if (pat) code = pat.code;
+        dayInfo[pd] = info;
+      }
+      for (var d = 1; d <= nDays; d++) {
+        var info2 = dayInfo[d];
+        if (!info2) continue;
+        var norm = info2.norm;
+        var dateStr = ym.split('-').join('/') + '/' + pad2(d);
+        /* 1) 夜勤入り: 当日の入り×翌日の明けをペアリングして専用コード（2日間走査） */
+        if (info2.nightIn && info2.nightIn.startMin != null) {
+          var code = null;
+          var next = dayInfo[d + 1];
+          var pairTable = nightPairTableFor(st);
+          if (next && next.nightOut && next.nightOut.endMin != null) {
+            code = pairTable[minToHKey(info2.nightIn.startMin) + '-' + minToHKey(next.nightOut.endMin)] || null;
+          }
+          if (!code) code = patternMap[norm] || null;
+          if (!code && info2.nightIn.pairEndMin != null) {
+            /* 翌日の明け不明（月末等）は記号の定時明けでペア表→時刻検索へフォールバック */
+            code = pairTable[minToHKey(info2.nightIn.startMin) + '-' + minToHKey(info2.nightIn.pairEndMin)] || null;
+            if (!code) {
+              var endF = info2.nightIn.pairEndMin < info2.nightIn.startMin
+                ? info2.nightIn.pairEndMin + 1440 : info2.nightIn.pairEndMin;
+              var patN = findPatternByTime(info2.nightIn.startMin, endF);
+              if (patN) code = patN.code;
+            }
           }
           if (code) {
             lines.push(st.empCode + ',' + dateStr + ',,' + code);
           } else {
-            warnings.push({ name: st.name, day: d, raw: String(raw),
+            warnings.push({ name: st.name, day: d, raw: String(info2.raw),
                             reason: 'パターン未対応（対応表で指定してください）' });
           }
           continue;
         }
-        if (hasNightOut) continue; /* 夜勤明けの朝は前日のパターンに含まれる */
-        if (offPart) {
-          /* 「希休」「希望休」等のエイリアスを「希」へ正規化してから休暇名を引く（要件2） */
+        /* 2) 勤務: 主＋副区分の時間帯を合算（連続/重複を結合）して1パターンへ */
+        if (info2.workParts.length) {
+          var spans = mergeWorkSpans(info2.workParts);
+          var codeW = null;
+          /* 田中さん特例: 12-21勤務は137「田中遅12-21（休憩２H）」を最優先 */
+          if (spans.length === 1 && normNameKey(st.name) === '田中久子' &&
+              spans[0].startMin === 720 && spans[0].endMin === 1260) codeW = '137';
+          if (!codeW) codeW = patternMap[norm] || null;
+          if (!codeW && spans.length === 1) {
+            var patW = findPatternByTime(spans[0].startMin, spans[0].endMin);
+            if (patW) codeW = patW.code;
+          }
+          if (codeW) {
+            lines.push(st.empCode + ',' + dateStr + ',,' + codeW);
+          } else {
+            warnings.push({ name: st.name, day: d, raw: String(info2.raw),
+                            reason: 'パターン未対応（対応表で指定してください）' });
+          }
+          continue;
+        }
+        /* 3) 明けのみ（勤務・入り無し）: 連勤最後の明けの日は「公休」を出力。
+         *    「7)(有」のように休暇が併記されていればその休暇名を出力する */
+        if (info2.nightOut) {
+          var nameN = '公休';
+          if (info2.offPart) {
+            var okey = info2.offPart.code ? Sym.normalizeCell(info2.offPart.code) : '';
+            if (Sym.ALIASES && Sym.ALIASES[okey]) okey = Sym.ALIASES[okey];
+            nameN = Object.prototype.hasOwnProperty.call(offNames, okey)
+              ? offNames[okey]
+              : (info2.offPart.kind === 'paidOff' ? '有給休暇' : '公休');
+            if (!nameN) nameN = '公休'; /* 明けの日は必ず休み扱い（空設定でも公休へ） */
+          }
+          lines.push(st.empCode + ',' + dateStr + ',' + nameN + ',');
+          continue;
+        }
+        /* 4) 休みのみ: 「希休」「希望休」等のエイリアスを「希」へ正規化してから休暇名を引く */
+        if (info2.offPart) {
           var offKey = (Sym.ALIASES && Sym.ALIASES[norm]) ? Sym.ALIASES[norm] : norm;
           var name = Object.prototype.hasOwnProperty.call(offNames, offKey)
             ? offNames[offKey]
-            : (offPart.kind === 'paidOff' ? '有給休暇' : '公休');
+            : (info2.offPart.kind === 'paidOff' ? '有給休暇' : '公休');
           /* 希望休(希)は必ず公休として出力する。保存設定で空になっていても公休を強制
            * （「明」等の意図的な空出力には影響させないため offKey==='希' に限定・要件2） */
           if ((!name || name === '') && offKey === '希') name = '公休';
           if (name) lines.push(st.empCode + ',' + dateStr + ',' + name + ',');
           continue;
         }
-        /* 解釈不能記号: 対応表に指定があれば使用、無ければ警告 */
+        /* 5) 解釈不能記号: 対応表に指定があれば使用、無ければ警告 */
         var code2 = patternMap[norm];
         if (code2) {
           lines.push(st.empCode + ',' + dateStr + ',,' + code2);
         } else {
-          warnings.push({ name: st.name, day: d, raw: String(raw),
+          warnings.push({ name: st.name, day: d, raw: String(info2.raw),
                           reason: 'パターン未対応（対応表で指定してください）' });
         }
       }
@@ -4703,7 +4818,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var isOff = sd.type === 'off' || sd.type === 'publicOff' || sd.type === 'paidOff';
         if (sd.type === 'nightOut') {
           h += '<tr><td>' + esc(sd.code) + '</td><td>夜勤上がり</td>' +
-            '<td colspan="3" class="muted">出力しない（前日の夜勤パターンに含まれる）</td></tr>';
+            '<td colspan="3" class="muted">前日の夜勤入りとペアで判定（明けのみの日は公休を出力）</td></tr>';
           continue;
         }
         var sug = isWork ? F.suggestForSymbol(symbols, sd.code) : null;
@@ -4752,6 +4867,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         ym: app.ym,
         staff: app.staff || [],
         cells: sched.cells || {},
+        subCells: sched.subCells || {},
         symbols: app.symbols || [],
         patternMap: cfg.patternMap,
         offNames: cfg.offNames,
