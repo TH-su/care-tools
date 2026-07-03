@@ -712,11 +712,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 2語以上なら各トークンを個別に解釈して parts を結合する。これにより早番(7-9)＋遅番(17-21)が
      * 両方カウントされ、実働時間も正しく合算される（汎用・氏名ハードコード非依存）。 */
     var rawStr = (raw === null || raw === undefined) ? '' : String(raw);
+    /* 同行(早遅手当なし)の接尾「/同」「／同」を剥がして goudou フラグ化し、本体(早/遅/18-21等)を通常解釈する。
+     * freee 出力側がこのフラグで手当なしコード(151/152/153)へ振り分ける。記号「同」の定義は不要。 */
+    var goudou = false;
+    var gm = rawStr.match(/[\/／][\s　]*同[\s　]*$/);
+    if (gm) { goudou = true; rawStr = rawStr.slice(0, gm.index); }
     var toks = rawStr.split(/[\s　\t]+/);
     var nonEmpty = [];
     for (var ti = 0; ti < toks.length; ti++) { if (toks[ti] !== '') nonEmpty.push(toks[ti]); }
     if (nonEmpty.length >= 2) {
-      var multi = { raw: raw, norm: normalizeCell(rawStr), parts: [], error: null };
+      var multi = { raw: raw, norm: normalizeCell(rawStr), parts: [], error: null, goudou: goudou };
       for (var tk = 0; tk < nonEmpty.length; tk++) {
         var sub = parseCell(nonEmpty[tk], symbols);   /* 各トークンは空白を含まない＝単一解釈へ */
         for (var sp = 0; sp < sub.parts.length; sp++) multi.parts.push(sub.parts[sp]);
@@ -724,8 +729,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       return multi;
     }
-    var norm = normalizeCell(raw);
-    var res = { raw: raw, norm: norm, parts: [], error: null };
+    var norm = normalizeCell(rawStr);
+    var res = { raw: raw, norm: norm, parts: [], error: null, goudou: goudou };
     if (norm === '') return res;
     if (ALIASES[norm]) norm = ALIASES[norm];
 
@@ -1957,6 +1962,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var parts = parsed && parsed.parts ? parsed.parts : [];
         if (!Sym.normalizeCell(joined)) continue;
         var info = { raw: joined, norm: Sym.normalizeCell(joined), single: vals.length === 1,
+                     goudou: !!(parsed && parsed.goudou),   /* 同行(早遅手当なし)接尾「/同」 */
                      workParts: [], nightIn: null, nightOut: null, offPart: null };
         for (var pi = 0; pi < parts.length; pi++) {
           var pk = parts[pi].kind;
@@ -1999,16 +2005,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           }
           continue;
         }
-        /* 2) 勤務: 主＋副区分の時間帯を合算（連続/重複を結合）して1パターンへ */
+        /* 2) 勤務: 主＋副区分の時間帯を合算して1パターンへ */
         if (info2.workParts.length) {
           var spans = mergeWorkSpans(info2.workParts);
           var codeW = null;
-          /* 田中さん特例: 12-21勤務は137「田中遅12-21（休憩２H）」を最優先 */
-          if (spans.length === 1 && normNameKey(st.name) === '田中久子' &&
-              spans[0].startMin === 720 && spans[0].endMin === 1260) codeW = '137';
+          /* 分割時間セル(「7-9 17-21」等)は非連続で spans が複数残る。間の時間を無視し
+           * 最小start〜最大end の単一区間に潰す＝通し時間のパターン(例 7-21→140 髙尾7-21)へ解決。 */
+          var finalSpan = null;
+          if (spans.length) {
+            var sMin = spans[0].startMin, eMax = spans[0].endMin, si;
+            for (si = 1; si < spans.length; si++) {
+              if (spans[si].startMin < sMin) sMin = spans[si].startMin;
+              if (spans[si].endMin > eMax) eMax = spans[si].endMin;
+            }
+            finalSpan = { startMin: sMin, endMin: eMax };
+          }
+          /* 同行(早遅手当なし): 通し区間で手当なしコードへ振り分け（対応表・時刻検索より優先） */
+          if (info2.goudou && finalSpan) {
+            if (finalSpan.startMin === 720 && finalSpan.endMin === 1260) codeW = '151';       /* 遅12-21早遅手当なし */
+            else if (finalSpan.startMin === 420 && finalSpan.endMin === 960) codeW = '153';   /* 早7-16早遅手当なし */
+            else if (finalSpan.startMin === 1080 && finalSpan.endMin === 1260) codeW = '152'; /* 18-21早遅手当なし */
+          }
+          /* 田中さん特例: 12-21勤務は137「田中遅12-21（休憩２H）」 */
+          if (!codeW && normNameKey(st.name) === '田中久子' &&
+              finalSpan && finalSpan.startMin === 720 && finalSpan.endMin === 1260) codeW = '137';
           if (!codeW) codeW = patternMap[norm] || null;
-          if (!codeW && spans.length === 1) {
-            var patW = findPatternByTime(spans[0].startMin, spans[0].endMin);
+          if (!codeW && finalSpan) {
+            var patW = findPatternByTime(finalSpan.startMin, finalSpan.endMin);
             if (patW) codeW = patW.code;
           }
           if (codeW) {
