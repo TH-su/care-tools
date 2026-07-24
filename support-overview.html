@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<!-- 実在入居者の氏名を表示する読み取り専用ビュー: キャッシュ残留を防ぐ -->
+<meta http-equiv="Cache-Control" content="no-store">
+<title>全支援 週間俯瞰</title>
+<style>
+/* 全支援 週間俯瞰ビュー — ワースケ(work-schedule)の実配置 wsday_<date> を読み取り専用で参照。
+   直近N週の kind='care' 支援枠(施設列/訪問列/夜勤列すべて)を曜日×時間帯で重ね、標準パターンを可視化する。
+   見た目・盤面・印刷は visit-overview.html を継承。★このツールは既存データに一切書き込まない
+   （GASは get/pull のみ・共有 localStorage キーへ書込なし・独自プレフィクスは swo_ のみ）。 */
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32; --ok-l: #e8f5e9;
+  --ng: #c62828; --ng-l: #ffebee;
+  --warn-bg: #fff8e1; --warn-tx: #e65100;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g8: #3c4043; --g9: #202124;
+  --r: 12px; --sh: 0 1px 6px rgba(0,0,0,.12);
+  /* ブロック色（ワースケ／visit-overview の色意味論を継承） */
+  --c-phys: #e3f2fd; --c-phys-b: #90caf9;   /* 身体=水色 */
+  --c-life: #fce4ec; --c-life-b: #f48fb1;   /* 生活=ピンク */
+  --c-mix:  #ede7f6; --c-mix-b:  #b39ddb;   /* 複合=藤 */
+  --c-sogo: #e0f2f1; --c-sogo-b: #4db6ac;   /* 総合事業=ティール */
+  --c-oth:  #eceff1; --c-oth-b:  #b0bec5;   /* 区分不明=灰 */
+  --axW: 50px;
+  --hourPx: 54px;     /* JS が実データ範囲に応じて据え置き（1時間=54px） */
+  --canvasH: 810px;   /* JS が (時間数×hourPx) で上書き */
+  --line: #e8eaed;
+  /* 定着度（出現頻度）の Depth 表現用 — 色に頼らず形状/影で階層化 */
+  --sh-micro: 0 1px 2px rgba(0,0,0,.06);   /* 常設カードの微細影 */
+  --sh-flat:  0 1px 1px rgba(0,0,0,.05);   /* 散発カードはさらに薄く */
+  --accent-w: 4px;                          /* 左プレゼンスバー幅 */
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  font-size: 14px; color: var(--g9); background: var(--g1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ===== ヘッダー ===== */
+.hdr {
+  flex-shrink: 0; min-height: 50px; background: var(--pri); color: #fff;
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+}
+.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.hdr-sub { font-size: 11px; opacity: .9; white-space: nowrap; }
+.hdr-sp { flex: 1; }
+.hdr-ctl { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.hdr-ctl label { font-size: 11px; opacity: .9; }
+.hdr-sel {
+  min-height: 44px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;
+}
+.hdr-sel option { color: #202124; }
+.hdr-btn {
+  min-height: 44px; min-width: 44px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+  white-space: nowrap;
+}
+.hdr-btn:hover { background: rgba(255,255,255,.28); }
+.hdr-btn:disabled { opacity: .4; cursor: default; }
+.hdr-btn:focus-visible, .hdr-sel:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.hdr-btn.solid { background: var(--pri); border-color: var(--pri); }   /* 白背景の空状態に置くボタン */
+/* 施設/外部セグメントトグル（表示対象の切替・.hdr-btn が既に最小44px） */
+.seg { display: inline-flex; }
+.seg-btn { min-width: 52px; border-radius: 0; }
+.seg-btn:first-child { border-radius: 6px 0 0 6px; }
+.seg-btn:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.seg-btn[aria-pressed="true"] { background: #fff; color: var(--pri-d); font-weight: 700; }
+.sync-state { font-size: 11px; opacity: .9; white-space: nowrap; }
+
+/* ===== 凡例 ===== */
+.legend {
+  flex-shrink: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 5px 12px; background: #fff; border-bottom: 1px solid var(--g3);
+  font-size: 11px; color: var(--g7);
+}
+.lg { display: inline-flex; align-items: center; gap: 4px; }
+.lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--g3); flex-shrink: 0; }
+.lg-sw.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); }
+.lg-sw.k-life { background: var(--c-life); border-color: var(--c-life-b); }
+.lg-sw.k-mix  { background: var(--c-mix);  border-color: var(--c-mix-b); }
+.lg-sw.k-sogo { background: var(--c-sogo); border-color: var(--c-sogo-b); }
+.lg-line { width: 15px; height: 0; border-top: 1.5px solid var(--g7); flex-shrink: 0; }
+.lg-line.dash { border-top-style: dashed; }
+.lg-note { color: var(--g6); }
+.lg-sep { width: 1px; height: 14px; background: var(--g3); }
+
+/* ===== 盤面 ===== */
+.board-wrap {
+  flex: 1; overflow: auto; position: relative; background: var(--g1);
+  -webkit-overflow-scrolling: touch;
+}
+.board { display: inline-block; min-width: 100%; background: #fff; }
+.b-heads {
+  display: grid; grid-template-columns: var(--axW) repeat(7, minmax(96px, 1fr));
+  position: sticky; top: 0; z-index: 40; background: #fff; border-bottom: 2px solid var(--g9);
+}
+.b-head {
+  padding: 5px 2px; text-align: center; border-right: 1px solid var(--g3);
+  font-size: 12px; line-height: 1.3; background: #fff;
+}
+.b-head:first-child { position: sticky; left: 0; z-index: 2; background: var(--g0); font-size: 11px; color: var(--g6); }
+.b-head .h-day { font-weight: 700; font-size: 14px; }
+.b-head .h-sat { color: #1565c0; }   /* 土=青 */
+.b-head .h-sun { color: #c0392b; }   /* 日=赤 */
+.b-head .h-cnt { display: block; font-size: 11px; color: var(--g6); font-weight: 400; margin-top: 1px; }
+.b-head .h-cnt.zero { color: var(--ok); font-weight: 700; }   /* 0枠=空き日として強調 */
+.b-head .h-cnt.nodata { color: var(--g5); }                    /* データなし=中立 */
+
+.b-canvas {
+  display: grid; grid-template-columns: var(--axW) repeat(7, minmax(96px, 1fr));
+  position: relative;
+}
+.b-axis {
+  position: sticky; left: 0; z-index: 22; height: var(--canvasH);
+  background: var(--g0); border-right: 1px solid var(--g3);
+}
+.tick {
+  position: absolute; right: 4px; left: 0; font-size: 10px; color: var(--g6);
+  text-align: right; transform: translateY(-50%);
+}
+.tick.hour { font-weight: 700; color: var(--g8); font-size: 11px; }
+.b-lane {
+  position: relative; height: var(--canvasH); border-right: 1px solid var(--g3);
+  background-color: #fff;
+  /* 1時間ごとの横罫線（軽量＝DOMではなく背景グラデーション） */
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px, transparent var(--hourPx));
+}
+.b-lane.sat { background-color: #f5f9ff; }
+.b-lane.sun { background-color: #fff6f5; }
+
+/* ===== 空き帯ゴースト（Deference: 塗らずに破線＋記号＋文言で軽く示す・色以外の手掛かり併設） ===== */
+.b-empty-slot {
+  position: absolute; z-index: 5; left: 2px; right: 2px;
+  border: 1px dashed var(--ok); border-radius: 6px; background: rgba(46,125,50,.05);
+  color: var(--ok); font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  overflow: hidden; pointer-events: none;
+}
+.b-empty-slot::before { content: "\25CB"; font-size: 9px; }   /* ○ = 色以外の手掛かり */
+
+/* ===== 支援枠カード ===== */
+.b-task {
+  position: absolute; z-index: 10; border-radius: 6px; border: 1px solid var(--g3);
+  font-size: 10.5px; line-height: 1.2; padding: 2px 4px 2px 7px; overflow: hidden;
+  box-shadow: var(--sh-flat);
+}
+.b-task.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); --bar-color: var(--c-phys-b); }
+.b-task.k-life { background: var(--c-life); border-color: var(--c-life-b); --bar-color: var(--c-life-b); }
+.b-task.k-mix  { background: var(--c-mix);  border-color: var(--c-mix-b);  --bar-color: var(--c-mix-b); }
+.b-task.k-sogo { background: var(--c-sogo); border-color: var(--c-sogo-b); --bar-color: var(--c-sogo-b); }
+.b-task.k-oth  { background: var(--c-oth);  border-color: var(--c-oth-b);  --bar-color: var(--c-oth-b); }
+/* 定着度＝枠線スタイル(主) + 影。色チャネルは区分の識別に温存する */
+.b-task.est-full { border-width: 1.5px; box-shadow: var(--sh-micro); }         /* 常設 */
+.b-task.est-mid  { border-width: 1px; }                                        /* 準常設 */
+.b-task.est-rare { border-style: dashed; box-shadow: var(--sh-flat); }         /* 散発 */
+/* 左プレゼンスバー＝定着度の塗り率(副・冗長)。--fill は JS が 0〜100% で付与 */
+.b-task::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--accent-w);
+  background: linear-gradient(to top,
+     var(--bar-color) 0, var(--bar-color) var(--fill, 100%),
+     transparent var(--fill, 100%), transparent 100%);
+  opacity: .9;
+}
+.b-task .t-name { font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-task .t-code { font-size: 10px; color: var(--g8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-task .t-badge {
+  position: absolute; top: 1px; right: 2px;
+  font-size: 9px; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--g7); background: rgba(255,255,255,.82);
+  border-radius: 4px; padding: 0 3px; pointer-events: none;
+}
+/* 現在入院中の常設枠＝「今この時間は空いている」機会。塗りは変えず淡い斜線で軽く示す（opacityは使わない＝印刷退色回避） */
+.b-task.is-hosp { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.10) 0 5px, transparent 5px 12px); }
+
+/* ===== 空・トースト ===== */
+.board-empty {
+  position: absolute; inset: 0; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; color: var(--g6);
+  font-size: 14px; text-align: center; padding: 24px;
+}
+.board-empty.on { display: flex; }
+#toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
+  font-size: 13px; z-index: 300; display: none; max-width: 90%;
+  box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
+#toast.ng { background: var(--ng); }
+#toast.on { display: block; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* 視覚的には隠すが支援技術には残す（低い枠でも支援コード・定着度をスクリーンリーダーのテーブル走査で読み取れる） */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ===== 印刷（A3縦・1枚収まり・純CSS） =====
+   visit-overview と同じ方式: grid の 1fr 列が @page の用紙幅へリフローし、時間軸は固定px高。
+   JS変形(transform:scale)は行わない。定着度は形状(枠線)＋テキスト(バッジ)＋左バーで表すため
+   白黒プリンタでも完全再現。本ファイル内で自己完結＝既存ツールの印刷経路には非干渉。 */
+@media print {
+  @page { size: A3 portrait; margin: 8mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  html, body { overflow: visible; height: auto; background: #fff; }
+  .hdr, #toast { display: none !important; }
+  .legend { border-bottom: 1px solid #000; }
+  .board-wrap { overflow: visible; }
+  .board { display: block; width: 100%; }      /* 用紙幅いっぱいへリフロー */
+  .b-heads { position: static; }               /* 印刷では sticky を解除 */
+  .b-axis, .b-head:first-child { position: relative; left: auto; }
+  .b-task { box-shadow: none; }
+  .b-task.est-rare { border-color: #555 !important; }        /* 破線が細り過ぎないよう補強 */
+  .b-task .t-badge { background: transparent; color: #000; } /* 半透明地を除去し黒字 */
+  .b-empty-slot { background: transparent !important; border-color: #2e7d32 !important; }
+  #board { zoom: 1 !important; }               /* ズーム中でも印刷は必ず等倍（A3縦1枚収まりを保護） */
+}
+.print-title { display: none; font-size: 13px; font-weight: 700; padding: 2px 4px; }
+@media print { .print-title { display: block; } }
+
+/* ===== 全支援ビューの識別色：ヘッダー帯を薄オレンジに（訪問=青 と対）=====
+   すべて .hdr 子孫に限定＝ヘッダー外の .hdr-btn.solid（空状態の #btnRefresh2）は青のまま保護。 */
+.hdr { background: #ffe0b2; color: #5f3300; }
+.hdr .hdr-btn { background: rgba(93,51,0,.10); border-color: rgba(93,51,0,.42); color: #5f3300; }
+.hdr .hdr-btn:hover { background: rgba(93,51,0,.18); }
+.hdr .hdr-btn:focus-visible, .hdr .hdr-sel:focus-visible { outline-color: #5f3300; }
+.hdr .hdr-sel { background: rgba(93,51,0,.08); border-color: rgba(93,51,0,.42); color: #5f3300; }
+.hdr .seg-btn[aria-pressed="true"] { background: #5f3300; color: #fff; }   /* 施設/外部の選択中＝濃茶で明示 */
+
+/* ===== 週間俯瞰リンクキット（切替スイッチ・ズーム・即時ツールチップ）=====
+   既存の盤面・印刷・render には非干渉。追加UIはヘッダー内（印刷時 .hdr は非表示）。 */
+.ovsw { display: inline-flex; border: 1px solid rgba(93,51,0,.42); border-radius: 8px; overflow: hidden; }
+.ovsw-btn {
+  min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 14px; font-size: 13px; font-weight: 700; text-decoration: none; color: #5f3300;
+  background: transparent; white-space: nowrap; cursor: pointer;
+}
+.ovsw-btn + .ovsw-btn { border-left: 1px solid rgba(93,51,0,.42); }
+.ovsw-btn[aria-current="page"] { background: #fff; }
+.ovsw-btn.is-visit[aria-current="page"]   { color: var(--pri-d); }   /* 訪問=青 */
+.ovsw-btn.is-support[aria-current="page"] { color: #b45309; }        /* 全支援=オレンジ */
+.ovsw-btn:focus-visible { outline: 2px solid #5f3300; outline-offset: -2px; }
+.ovcmp { text-decoration: none; }
+.ovzoom { display: inline-flex; align-items: center; gap: 2px; }
+.ovzoom .hdr-btn { min-width: 44px; padding: 6px 10px; }
+.ovz-lv { min-width: 46px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+/* 即時ツールチップ（ネイティブ title の約1秒待ち・小ささを解消） */
+#ovTip {
+  position: fixed; z-index: 400; max-width: 300px; display: none;
+  background: var(--g9); color: #fff; font-size: 13px; line-height: 1.35;
+  padding: 7px 10px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.32);
+  pointer-events: none; white-space: normal; word-break: break-word;
+}
+#ovTip.on { display: block; }
+@media print { #ovTip { display: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <span class="hdr-title">全支援 週間俯瞰</span>
+  <span class="ovsw" role="group" aria-label="ビュー切替（訪問／全支援）">
+    <a class="ovsw-btn is-visit" href="visit-overview.html">訪問</a>
+    <a class="ovsw-btn is-support" href="support-overview.html" aria-current="page">全支援</a>
+  </span>
+  <a class="hdr-btn ovcmp" href="overview-compare.html" aria-label="訪問と全支援を左右で並べて比較">⇄ 比較</a>
+  <span class="hdr-sub" id="hdrSub">月〜日／ワースケ実配置の支援枠を重ね合わせ</span>
+  <span class="hdr-sp"></span>
+  <span class="seg" role="group" aria-label="表示対象（施設利用者／外部利用者）">
+    <button class="hdr-btn seg-btn" id="segFac" aria-pressed="true" aria-label="施設利用者を表示">施設</button>
+    <button class="hdr-btn seg-btn" id="segExt" aria-pressed="false" aria-label="外部利用者を表示">外部</button>
+  </span>
+  <span class="ovzoom" id="ovZoom" role="group" aria-label="表示倍率">
+    <button class="hdr-btn" id="ovZoomOut" aria-label="表示を縮小">−</button>
+    <button class="hdr-btn ovz-lv" id="ovZoomLv" aria-label="表示倍率（押すと等倍に戻す）">100%</button>
+    <button class="hdr-btn" id="ovZoomIn" aria-label="表示を拡大">＋</button>
+  </span>
+  <span class="hdr-ctl">
+    <label for="nWeeks">重ね週数</label>
+    <select class="hdr-sel" id="nWeeks" aria-label="重ね合わせる週数">
+      <option value="4">4週</option>
+      <option value="8" selected>8週</option>
+      <option value="12">12週</option>
+    </select>
+  </span>
+  <span class="sync-state" id="syncState">読込中…</span>
+  <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の実配置を集計">更新</button>
+  <button class="hdr-btn" id="btnPrint" aria-label="A3縦で印刷">印刷</button>
+</header>
+
+<div class="legend" aria-hidden="false">
+  <span class="lg"><span class="lg-sw k-phys"></span>身体</span>
+  <span class="lg"><span class="lg-sw k-life"></span>生活</span>
+  <span class="lg"><span class="lg-sw k-mix"></span>複合</span>
+  <span class="lg"><span class="lg-sw k-sogo"></span>総合事業</span>
+  <span class="lg-sep"></span>
+  <span class="lg"><span class="lg-line"></span>常設</span>
+  <span class="lg"><span class="lg-line dash"></span>散発</span>
+  <span class="lg-note">右上 n/N＝◯週中◯週で出現</span>
+  <span class="lg-sep"></span>
+  <span class="lg-note">○ 空き＝支援が薄い時間帯／斜線＝現在入院中（空き）／「外部」＝週間計画で外部指定の利用者</span>
+</div>
+
+<div class="print-title" id="printTitle">全支援 週間俯瞰（月〜日・複数週の標準パターン）</div>
+
+<main class="board-wrap" id="boardWrap">
+  <div class="board" id="board" role="table" aria-label="全支援の週間俯瞰表">
+    <div class="b-heads" id="bHeads" role="row"></div>
+    <div class="b-canvas" id="bCanvas" role="row"></div>
+  </div>
+  <div class="board-empty" id="boardEmpty">
+    <div id="emptyMsg">集計するには「更新」を押してください。</div>
+    <button class="hdr-btn solid" id="btnRefresh2">クラウドから集計</button>
+  </div>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ============================================================================
+   全支援 週間俯瞰 — 読み取り専用
+   データ源: work-schedule.html と同じ wsday_<date>（GAS get/pull が返す生JSON）。
+   ★このツールは一切書き込まない（put/rev前進/serviceDict書換なし・共有LSキーへ書込なし）。
+   読むLSキー: su_sync_common / ws_settings（接続先の解決）・care_schedule_v2（入院/退去マスク）。
+   書くLSキー: swo_nweeks（本ツール専用の週数プリファレンスのみ・PIIなし）。
+   ============================================================================ */
+
+// ── 定数 ──
+const CARE_KEY = 'care_schedule_v2';
+const PREF_KEY = 'swo_nweeks';                                 // 本ツール専用（独自プレフィクス）
+const VIEW_KEY = 'swo_view';                                  // 施設/外部ビューの保持（UI状態のみ・PIIなし）
+const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];   // careDow 0..6
+const HOUR_PX = 54;
+const SLOT = 30;                                              // 開始時刻の量子化(分)
+const GAP_RATIO = 0.25;                                       // これ未満の被覆率＝空き帯とみなす
+const GAP_MIN = 60;                                           // 連続 GAP_MIN 分(60分)以上を空き帯として表示
+
+// 支援コード → 色分類（ワースケ M.SVC と visit-overview を移植）
+// 辞書は care-schedule / work-schedule と同版で同期する前提。版ずれ時は該当コードが灰(oth)＋生コード表示に無音縮退する。
+const SVC_CLS = {
+  '身体０１': 'phys', '身体１': 'phys', '身体２': 'phys',
+  '身体１生活１': 'mix', '身体１生活２': 'mix',
+  '生活２': 'life', '生活３': 'life',
+};
+// 総合事業コード → 盤面ラベル（略称）
+const SOGO_LABEL = { 'A21121': '【A11】', 'A21221': '【A12】', 'A2111': '【A21】', 'A21211': '【A22】' };
+
+function codeClass(code) {
+  if (SVC_CLS[code]) return SVC_CLS[code];
+  if (SOGO_LABEL[code]) return 'sogo';
+  return 'oth';
+}
+function codeLabel(code) {
+  if (SOGO_LABEL[code]) return SOGO_LABEL[code];
+  return code || '—';
+}
+// care タスクの支援コードを取り出す（7コードは svcCode・総合事業は label に入る）
+function pickCode(t) {
+  if (t.svcCode && SVC_CLS[t.svcCode]) return t.svcCode;
+  if (t.label) return String(t.label).trim();
+  if (t.svcCode) return String(t.svcCode).trim();
+  return '';
+}
+
+const $ = id => document.getElementById(id);
+
+// ── 日付ユーティリティ（ワースケと同一規則） ──
+function pad2(n) { return n < 10 ? '0' + n : String(n); }
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function dateObj(key) {
+  const p = key.split('-');
+  return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+}
+function shiftDate(key, days) {
+  const d = dateObj(key);
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function careDow(key) { return (dateObj(key).getDay() + 6) % 7; }   // 0=月..6=日
+function dayKey(date) { return 'wsday_' + date; }
+
+function minToLabel(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h + ':' + (m < 10 ? '0' + m : m);
+}
+function median(arr) {
+  if (!arr.length) return 0;
+  const a = arr.slice().sort((x, y) => x - y);
+  const mid = a.length >> 1;
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
+}
+
+// ── 接続先（ワースケ/週間計画/シフトと同じ解決順: su_sync_common → ws_settings） ──
+function syncTarget() {
+  try {
+    const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
+    if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
+  } catch (e) {}
+  try {
+    const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
+    if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
+  } catch (e) {}
+  return { endpoint: '', token: '' };
+}
+
+// ── GAS 呼び出し（POST・text/plain で preflight 回避・get系のみ） ──
+let TARGET = { endpoint: '', token: '' };
+let getOnlyMode = false;   // pull 未対応環境を検知したら単一 get に切替
+let RAW = null, MASKS = null, RAW_N = 0, RAW_MISS = '';   // 直近の集計を保持し、施設/外部の切替を再フェッチ無しで行う（RAW_MISS=欠測注記・ビュー非依存）
+let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施設（既定）／'ext'=外部
+
+async function gasCall(payload) {
+  const res = await fetch(TARGET.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),                          // ホワイトリスト: action / keys|key / token のみ
+    redirect: 'follow'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || '応答エラー');
+  return j;
+}
+
+// 1週(月〜日の7キー)を取得。pull(一括)優先・未対応なら単一 get にフォールバック。
+// 返り値: { data, gotResponse, hadError }。gotResponse=1件でも応答が得られたか／hadError=通信/HTTP例外あり。
+// これで「正当な空(data:null)」と「通信失敗」を上流で区別し、失敗を 0枠成功と誤表示しない。
+async function fetchWeek(weekDates) {
+  const keys = weekDates.map(dayKey);
+  const out = {};
+  let gotResponse = false, hadError = false;
+  if (!getOnlyMode) {
+    try {
+      const j = await gasCall({ action: 'pull', keys: keys, token: TARGET.token });
+      if (j && j.entries) {                                 // entries があれば pull 対応
+        gotResponse = true;
+        for (const d of weekDates) {
+          const ent = j.entries[dayKey(d)];
+          out[d] = (ent && ent.data) ? ent.data : null;
+        }
+        return { data: out, gotResponse: gotResponse, hadError: hadError };
+      }
+      getOnlyMode = true;                                   // entries 無し＝pull 非対応 → 以後 get（例外ではない）
+    } catch (e) {
+      getOnlyMode = true;                                   // pull 例外＝非対応か通信断。get フォールバックの成否で判定する
+    }
+  }
+  for (const d of weekDates) {
+    try {
+      const j = await gasCall({ action: 'get', key: dayKey(d), token: TARGET.token });
+      out[d] = (j && j.data) ? j.data : null;
+      gotResponse = true;
+    } catch (e) { out[d] = null; hadError = true; }
+  }
+  return { data: out, gotResponse: gotResponse, hadError: hadError };
+}
+
+// 入院/退去マスク（ワースケ careNameSets_ と同じ名寄せ）
+function maskFrom(residents) {
+  const hosp = {}, moved = {}, ext = {};
+  const arr = Array.isArray(residents) ? residents : [];
+  for (const r of arr) {
+    if (!r || !r.name) continue;
+    if (r.hospitalized) hosp[r.name] = true;
+    if (r.movedOut) moved[r.name] = true;
+    if (r.external) ext[r.name] = true;                     // 週間計画で「外部」指定の利用者（名寄せ元）
+  }
+  return { hosp, moved, ext };
+}
+function loadMasksLocal() {
+  try {
+    const p = JSON.parse(localStorage.getItem(CARE_KEY) || 'null');
+    if (p && Array.isArray(p.residents)) return maskFrom(p.residents);
+  } catch (e) {}
+  return { hosp: {}, moved: {}, ext: {} };
+}
+// マスクは GAS 最新を優先（退去/入院状態）→ 失敗時ローカル→ どちらも無ければ空（＝除外なし・安全側）。
+// wsday を GAS 最新で取る一方でマスクだけ古い端末ローカルだと、他端末で退去登録された元利用者の
+// 過去枠が除外されず氏名露出しうるため、マスクも GAS 最新を優先する（読み取り専用 get）。
+async function loadMasks() {
+  try {
+    const j = await gasCall({ action: 'get', key: CARE_KEY, token: TARGET.token });
+    if (j && j.data && Array.isArray(j.data.residents)) return maskFrom(j.data.residents);
+  } catch (e) {}
+  return loadMasksLocal();
+}
+
+// ── 抽出・集約 ──
+// staffId → 列zone の索引（zone は task ではなく columns 側に載る）
+function buildStaffZoneIndex(day) {
+  const z = Object.create(null);
+  const cols = Array.isArray(day.columns) ? day.columns : [];
+  for (const c of cols) {
+    const ids = Array.isArray(c.staffIds) ? c.staffIds : [];
+    for (const sid of ids) z[sid] = c.zone;                 // 'facility'|'visit'|'night'
+  }
+  return z;
+}
+
+// 対象週の列挙（今週の月曜を起点に N週さかのぼる・各週 月→日）
+function enumerateWeeks(N) {
+  const today = todayKey();
+  const monThis = shiftDate(today, -careDow(today));        // 今週の月曜
+  const weeks = [];
+  for (let w = 0; w < N; w++) {
+    const mon = shiftDate(monThis, -7 * w);
+    const days = [];
+    for (let d = 0; d < 7; d++) days.push(shiftDate(mon, d));
+    weeks.push(days);                                       // 0=今週 … N-1=最古
+  }
+  return weeks;
+}
+
+// 1日分を集約器へ取り込む
+function ingestDay(day, dow, wi, agg, coverage, masks) {
+  const zoneIdx = buildStaffZoneIndex(day);
+  const tasks = Array.isArray(day.tasks) ? day.tasks : [];
+  for (const t of tasks) {
+    if (!t || t.kind !== 'care') continue;                 // 支援枠のみ（施設業務/休憩/自由/事務を除外）
+    if (t.staffId == null) continue;                        // 未配置トレイは実配置でない
+    const s = t.start, e = t.end;
+    if (typeof s !== 'number' || typeof e !== 'number' || !(e > s)) continue;
+    const name = String(t.residentName || '').trim();
+    if (!name) continue;
+    if (masks.moved[name]) continue;                        // 退去者は完全除外
+    const isExt = !!masks.ext[name];                        // 週間計画で「外部」指定の利用者は外部ビューへ
+
+    const code = pickCode(t);
+    const cls = codeClass(code);
+    const zone = zoneIdx[t.staffId] || 'visit';
+    // 開始時刻を30分ビンへ量子化して跨週マージ（30分境界を跨ぐ時刻揺れは別バケット＝定着度がやや低めに出る既知の限界）
+    const bin = Math.round(s / SLOT) * SLOT;
+    const key = dow + '|' + bin + '|' + name + '|' + code;
+
+    let b = agg.get(key);
+    if (!b) {
+      b = { dow: dow, name: name, code: code, cls: cls, zone: zone, binStart: bin, ext: isExt,
+            weeks: new Set(), hospWeeks: new Set(), sList: [], eList: [] };
+      agg.set(key, b);
+    }
+    b.weeks.add(wi);
+    b.sList.push(s); b.eList.push(e);
+    if (masks.hosp[name]) b.hospWeeks.add(wi);
+
+    // 被覆（空き帯検出用）: この枠が跨る30分ビンに週インデックスを記録。施設/外部で別々に集計し、
+    // 施設ビューの空き帯が外部支援で埋まらない（＝受け入れ枠の誤判定を防ぐ）ようにする。
+    const b0 = Math.floor(s / SLOT), b1 = Math.ceil(e / SLOT);
+    const cov = coverage[isExt ? 'ext' : 'fac'][dow];
+    for (let bb = b0; bb < b1; bb++) {
+      const kb = bb * SLOT;
+      (cov[kb] || (cov[kb] = new Set())).add(wi);
+    }
+  }
+}
+
+// N週ぶんを取得して集約（get/pull のみ・共有LSへ書込なし）
+async function loadAll(N, masks, onProgress) {
+  const weeks = enumerateWeeks(N);
+  const agg = new Map();
+  const observed = [new Set(), new Set(), new Set(), new Set(), new Set(), new Set(), new Set()];
+  // 被覆は施設/外部で別々（曜日×開始ビン→出現週Set）。ビュー切替時に該当系統だけで空き帯を出す。
+  const coverage = { fac: [ {}, {}, {}, {}, {}, {}, {} ], ext: [ {}, {}, {}, {}, {}, {}, {} ] };
+
+  let weeksFetched = 0, weeksError = 0;
+
+  for (let wi = 0; wi < weeks.length; wi++) {
+    const res = await fetchWeek(weeks[wi]);
+    if (res.gotResponse) weeksFetched++;
+    if (res.hadError) weeksError++;
+    for (const dateKey of weeks[wi]) {
+      const dow = careDow(dateKey);
+      const day = res.data[dateKey];
+      if (!day || !Array.isArray(day.tasks)) continue;      // 未作成/欠測/取得失敗の日は分母に入れない
+      observed[dow].add(wi);
+      ingestDay(day, dow, wi, agg, coverage, masks);
+    }
+    if (onProgress) onProgress(wi + 1, weeks.length);
+  }
+  return { agg, observed, coverage, weeksFetched: weeksFetched, weeksError: weeksError, weeksTotal: weeks.length };
+}
+
+// 集約結果 → 描画モデル
+function buildModel(raw, masks, view) {
+  const { agg, observed, coverage } = raw;
+  const wantExt = (view === 'ext');
+  const byDow = [[], [], [], [], [], [], []];
+  for (const b of agg.values()) {
+    if (!!b.ext !== wantExt) continue;                      // 現ビュー（施設/外部）の枠のみ描画対象にする
+    const denom = observed[b.dow].size || 1;
+    b.s = median(b.sList);
+    b.e = median(b.eList);
+    if (b.e <= b.s) b.e = b.s + Math.max(SLOT, 20);         // 代表値の安全弁
+    b.n = b.weeks.size;
+    b.N = observed[b.dow].size;
+    b.persist = b.n / denom;
+    b.est = b.persist >= 0.75 ? 'full' : b.persist >= 0.4 ? 'mid' : 'rare';
+    b.currentlyHosp = !!masks.hosp[b.name];
+    byDow[b.dow].push(b);
+  }
+  return { byDow: byDow, observed: observed, coverage: coverage[wantExt ? 'ext' : 'fac'] };
+}
+
+// 時間軸の範囲（バケットの最小〜最大を時間境界へ丸める）
+function computeDomain(byDow) {
+  let lo = Infinity, hi = -Infinity;
+  for (const arr of byDow) for (const b of arr) { if (b.s < lo) lo = b.s; if (b.e > hi) hi = b.e; }
+  if (!isFinite(lo)) return { lo: 6 * 60, hi: 21 * 60 };
+  lo = Math.floor(lo / 60) * 60;
+  hi = Math.ceil(hi / 60) * 60;
+  if (hi - lo < 60) hi = lo + 60;
+  return { lo, hi };
+}
+
+// 空き帯（曜日ごと・被覆率<GAP_RATIO が GAP_MIN分以上続く区間）
+function computeGaps(coverage, observed, dom) {
+  const gaps = [[], [], [], [], [], [], []];
+  for (let dow = 0; dow < 7; dow++) {
+    const obs = observed[dow].size;
+    if (obs === 0) continue;                                // データなし＝「空き」ではない
+    const cov = coverage[dow];
+    let runStart = null;
+    for (let m = dom.lo; m < dom.hi; m += SLOT) {
+      const set = cov[m];
+      const ratio = set ? set.size / obs : 0;
+      if (ratio < GAP_RATIO) {
+        if (runStart === null) runStart = m;
+      } else {
+        if (runStart !== null && m - runStart >= GAP_MIN) gaps[dow].push({ s: runStart, e: m });
+        runStart = null;
+      }
+    }
+    if (runStart !== null && dom.hi - runStart >= GAP_MIN) gaps[dow].push({ s: runStart, e: dom.hi });
+  }
+  return gaps;
+}
+
+// 1曜日分の重なりをサブレーンに割り当て（連結成分ごとに列数を最小化＝visit-overview 継承）
+function assignLayout(evs) {
+  evs.sort((a, b) => a.s - b.s || a.e - b.e);
+  let i = 0;
+  while (i < evs.length) {
+    let j = i, clusterEnd = evs[i].e;
+    while (j + 1 < evs.length && evs[j + 1].s < clusterEnd) {
+      j++; if (evs[j].e > clusterEnd) clusterEnd = evs[j].e;
+    }
+    const cluster = evs.slice(i, j + 1);
+    const colEnds = [];
+    for (const ev of cluster) {
+      let ci = colEnds.findIndex(end => end <= ev.s);
+      if (ci === -1) { ci = colEnds.length; colEnds.push(ev.e); } else { colEnds[ci] = ev.e; }
+      ev._col = ci;
+    }
+    const nc = colEnds.length;
+    for (const ev of cluster) ev._ncols = nc;
+    i = j + 1;
+  }
+  return evs;
+}
+
+// ── 描画 ──
+function render(model, N, view) {
+  const { byDow, observed } = model;
+  const viewLabel = view === 'ext' ? '外部' : '施設';
+  $('printTitle').textContent = '全支援 週間俯瞰（' + viewLabel + '・月〜日・複数週の標準パターン）';
+  const empty = $('boardEmpty');
+
+  let total = 0;
+  for (const arr of byDow) total += arr.length;
+  if (total === 0) {
+    $('bHeads').textContent = '';
+    $('bCanvas').textContent = '';
+    empty.classList.add('on');
+    $('emptyMsg').textContent = '対象期間（直近' + N + '週）に' + viewLabel + 'の支援枠が見つかりませんでした。';
+    $('hdrSub').textContent = '月〜日／直近' + N + '週を重ね・' + viewLabel + '支援 0枠';
+    return;
+  }
+  empty.classList.remove('on');
+
+  const dom = computeDomain(byDow);
+  const gaps = computeGaps(model.coverage, observed, dom);
+  const hours = (dom.hi - dom.lo) / 60;
+  const board = $('board');
+  board.style.setProperty('--hourPx', HOUR_PX + 'px');
+  board.style.setProperty('--canvasH', (hours * HOUR_PX) + 'px');
+
+  // ── ヘッダー行 ──
+  const heads = document.createDocumentFragment();
+  const corner = document.createElement('div');
+  corner.className = 'b-head';
+  corner.textContent = '時刻';
+  heads.appendChild(corner);
+  for (let d = 0; d < 7; d++) {
+    const h = document.createElement('div');
+    h.className = 'b-head';
+    h.setAttribute('role', 'columnheader');
+    const day = document.createElement('span');
+    day.className = 'h-day' + (d === 5 ? ' h-sat' : d === 6 ? ' h-sun' : '');
+    day.textContent = DAYS_JA[d];
+    const cnt = document.createElement('span');
+    const n = byDow[d].length, obs = observed[d].size;
+    if (obs === 0) { cnt.className = 'h-cnt nodata'; cnt.textContent = 'データなし'; }
+    else if (n === 0) { cnt.className = 'h-cnt zero'; cnt.textContent = '空き'; }
+    else { cnt.className = 'h-cnt'; cnt.textContent = n + '枠'; }
+    h.title = DAYS_JA[d] + '曜／' + obs + '週観測・' + n + '枠';
+    h.appendChild(day); h.appendChild(cnt);
+    heads.appendChild(h);
+  }
+  const bHeads = $('bHeads');
+  bHeads.textContent = '';
+  bHeads.appendChild(heads);
+
+  // ── 本体（時間軸＋7曜日レーン） ──
+  const canvas = document.createDocumentFragment();
+  const axis = document.createElement('div');
+  axis.className = 'b-axis';
+  for (let m = dom.lo; m <= dom.hi; m += 60) {
+    const tk = document.createElement('div');
+    tk.className = 'tick hour';
+    tk.style.top = ((m - dom.lo) / 60 * HOUR_PX) + 'px';
+    tk.textContent = minToLabel(m);
+    axis.appendChild(tk);
+  }
+  canvas.appendChild(axis);
+
+  for (let d = 0; d < 7; d++) {
+    const lane = document.createElement('div');
+    lane.className = 'b-lane' + (d === 5 ? ' sat' : d === 6 ? ' sun' : '');
+    lane.setAttribute('role', 'cell');
+
+    // 空き帯ゴースト（カードの下・z-index:5）
+    for (const g of gaps[d]) {
+      const gh = document.createElement('div');
+      gh.className = 'b-empty-slot';
+      gh.style.top = ((g.s - dom.lo) / 60 * HOUR_PX) + 'px';
+      gh.style.height = Math.max((g.e - g.s) / 60 * HOUR_PX - 2, 14) + 'px';
+      gh.setAttribute('role', 'note');
+      const lbl = DAYS_JA[d] + '曜 ' + minToLabel(g.s) + '〜' + minToLabel(g.e) + ' 空き';
+      gh.setAttribute('aria-label', lbl);
+      gh.title = lbl;
+      if ((g.e - g.s) / 60 * HOUR_PX >= 22) gh.appendChild(document.createTextNode('空き'));
+      lane.appendChild(gh);
+    }
+
+    // 支援枠カード
+    const evs = assignLayout(byDow[d]);
+    for (const b of evs) {
+      const card = document.createElement('div');
+      card.className = 'b-task k-' + b.cls + ' est-' + b.est + (b.currentlyHosp ? ' is-hosp' : '');
+      const top = (b.s - dom.lo) / 60 * HOUR_PX;
+      const hgt = Math.max((b.e - b.s) / 60 * HOUR_PX, 18);
+      const gap = 2, wPct = 100 / b._ncols;
+      card.style.top = top + 'px';
+      card.style.height = (hgt - 1) + 'px';
+      card.style.left = 'calc(' + (b._col * wPct) + '% + ' + gap + 'px)';
+      card.style.width = 'calc(' + wPct + '% - ' + (gap * 2) + 'px)';
+      card.style.setProperty('--fill', Math.round(b.persist * 100) + '%');
+      card.setAttribute('role', 'cell');
+
+      // 氏名（常時可視・要配慮個人情報のため textContent）
+      const nm = document.createElement('div');
+      nm.className = 't-name';
+      nm.textContent = b.name;
+      card.appendChild(nm);
+      // 支援コード（高さ十分なら可視・低ければ sr-only）
+      const cd = document.createElement('div');
+      cd.className = 't-code' + (hgt >= 34 ? '' : ' sr-only');
+      cd.textContent = codeLabel(b.code);
+      card.appendChild(cd);
+      // 定着度バッジ n/N（中程度以上で可視・低ければ左プレゼンスバーで代替＋sr-only）
+      const badge = document.createElement('div');
+      badge.className = 't-badge' + (hgt >= 26 ? '' : ' sr-only');
+      badge.textContent = b.n + '/' + b.N;
+      card.appendChild(badge);
+
+      const zoneJa = b.zone === 'facility' ? '施設' : b.zone === 'night' ? '夜勤' : '訪問';
+      const lbl = b.name + '　' + codeLabel(b.code) + '　' + DAYS_JA[b.dow] + ' '
+                + minToLabel(b.s) + '〜' + minToLabel(b.e) + '　' + b.n + '/' + b.N + '週'
+                + '　[' + zoneJa + ']' + (b.currentlyHosp ? '（現在入院中・空き）' : '');
+      card.title = lbl;
+      card.setAttribute('aria-label', lbl);
+      lane.appendChild(card);
+    }
+    canvas.appendChild(lane);
+  }
+  const bCanvas = $('bCanvas');
+  bCanvas.textContent = '';
+  bCanvas.appendChild(canvas);
+
+  $('hdrSub').textContent = '月〜日／直近' + N + '週を重ね・' + viewLabel + '支援 ' + total + '枠・'
+                          + minToLabel(dom.lo) + '〜' + minToLabel(dom.hi);
+}
+
+// ── 印刷（A3縦1枚・純CSS） ──
+function printNow() { window.print(); }
+
+// ── UI ──
+let toastTimer = null;
+function toast(msg, isNg) {
+  const el = $('toast');
+  el.textContent = msg;                                    // API応答・個人情報をそのまま出さない
+  el.className = 'on' + (isNg ? ' ng' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 2600);
+}
+function setSyncState(txt) { $('syncState').textContent = txt; }
+function currentN() { const v = parseInt($('nWeeks').value, 10); return (v === 4 || v === 8 || v === 12) ? v : 8; }
+function savedView() {
+  try { const v = localStorage.getItem(VIEW_KEY); if (v === 'fac' || v === 'ext') return v; } catch (e) {}
+  return 'fac';
+}
+function applySegUI() {
+  $('segFac').setAttribute('aria-pressed', VIEW === 'fac' ? 'true' : 'false');
+  $('segExt').setAttribute('aria-pressed', VIEW === 'ext' ? 'true' : 'false');
+}
+function setView(view) {
+  const v = (view === 'ext') ? 'ext' : 'fac';
+  if (v === VIEW) return;
+  VIEW = v;
+  try { localStorage.setItem(VIEW_KEY, VIEW); } catch (e) {}
+  applySegUI();
+  if (RAW && MASKS) {                                     // 取得済みデータを再描画（再フェッチしない）
+    const model = buildModel(RAW, MASKS, VIEW);
+    render(model, RAW_N, VIEW);
+    let total = 0; for (const arr of model.byDow) total += arr.length;
+    setSyncState('集計OK（' + RAW_N + '週' + RAW_MISS + '・' + total + '枠）');   // 枠数を現ビューに合わせる
+  }
+}
+function setButtons(enabled) {
+  $('btnRefresh').disabled = !enabled;
+  $('btnRefresh2').disabled = !enabled;
+  $('nWeeks').disabled = !enabled;
+}
+
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  setButtons(false);
+  const t = syncTarget();
+  if (!t.endpoint) {
+    $('boardEmpty').classList.add('on');
+    $('bHeads').textContent = ''; $('bCanvas').textContent = '';
+    $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
+    setSyncState('未設定');
+    busy = false; setButtons(true);
+    return;
+  }
+  TARGET = t;
+  getOnlyMode = false;
+  const N = currentN();
+  setSyncState('取得中 0/' + N + '週');
+  try {
+    const masks = await loadMasks();
+    const raw = await loadAll(N, masks, (done, tot) => setSyncState('取得中 ' + done + '/' + tot + '週'));
+    // 全週フェッチ失敗＝通信/接続先の問題。0枠成功と誤表示せず失敗として扱う（silent fail 防止）。
+    if (raw.weeksFetched === 0) {
+      $('boardEmpty').classList.add('on');
+      $('bHeads').textContent = ''; $('bCanvas').textContent = '';
+      $('emptyMsg').textContent = 'データを取得できませんでした。通信環境・接続先URL／トークンをご確認ください。';
+      setSyncState('取得失敗');
+      toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
+      return;
+    }
+    RAW = raw; MASKS = masks; RAW_N = N;                   // 施設/外部の切替を再フェッチ無しで行うため保持
+    const model = buildModel(raw, masks, VIEW);
+    render(model, N, VIEW);
+    let total = 0; for (const arr of model.byDow) total += arr.length;
+    RAW_MISS = raw.weeksError > 0 ? '・' + raw.weeksError + '/' + raw.weeksTotal + '週欠測' : '';
+    setSyncState('集計OK（' + N + '週' + RAW_MISS + '・' + total + '枠）');
+    if (raw.weeksError > 0) toast('一部の週を取得できませんでした（' + raw.weeksError + '/' + raw.weeksTotal + '週）。表示は取得できた週のみです', true);
+    else if (total === 0) toast('対象期間に支援枠が見つかりませんでした');
+  } catch (e) {
+    setSyncState('取得失敗');
+    toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
+  } finally {
+    busy = false;
+    setButtons(true);
+  }
+}
+
+// ── 起動 ──
+function init() {
+  // 週数プリファレンス（本ツール専用キー・PIIなし）
+  try {
+    const pref = parseInt(localStorage.getItem(PREF_KEY) || '', 10);
+    if (pref === 4 || pref === 8 || pref === 12) $('nWeeks').value = String(pref);
+  } catch (e) {}
+
+  // 表示ビュー（施設/外部）を復元。リロード時は前回の表示ビューを維持（既定=施設）
+  VIEW = savedView();
+  applySegUI();
+  $('segFac').addEventListener('click', () => setView('fac'));
+  $('segExt').addEventListener('click', () => setView('ext'));
+
+  $('btnRefresh').addEventListener('click', refresh);
+  $('btnRefresh2').addEventListener('click', refresh);
+  $('btnPrint').addEventListener('click', printNow);
+  $('nWeeks').addEventListener('change', () => {
+    try { localStorage.setItem(PREF_KEY, $('nWeeks').value); } catch (e) {}
+    refresh();
+  });
+
+  const t = syncTarget();
+  if (t.endpoint) {
+    refresh();                                             // 接続先があれば自動集計
+  } else {
+    $('boardEmpty').classList.add('on');
+    $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
+    setSyncState('未設定');
+  }
+}
+init();
+</script>
+
+<script>
+/* ============================================================================
+   週間俯瞰リンクキット（訪問/全支援 共通）— 追加機能を自己完結で提供する。
+   ・ビュー切替スイッチ（現在の中央時刻を #t= で引き継ぐ＝行き来しても同じ箇所）
+   ・即時カスタムツールチップ（ネイティブ title の約1秒待ち・小ささを解消）
+   ・CSS zoom によるボード拡大（±ボタン／ctrl+wheel／2本指ピンチ・印刷は等倍）
+   ・比較シェル(overview-compare.html)が呼ぶ window.OVLINK を公開
+   ★ render()/computeDomain/assignLayout/印刷CSS には触れない。localStorage へ書き込まない
+     （ズーム倍率も非保存＝セッション限り）。 */
+(function () {
+  'use strict';
+  var ROLE = 'support';                     // ★ 訪問側は 'visit'
+  var HOUR_PX = 54;                         // 両ボード共通（render と同値・座標復元に使用）
+  var wrap  = document.getElementById('boardWrap');
+  var board = document.getElementById('board');
+  var heads = document.getElementById('bHeads');
+  var canvas = document.getElementById('bCanvas');
+  if (!wrap || !board) return;
+
+  // ── 座標系ヘルパ（既存 DOM を読むだけ・書き換えない） ──
+  function parseHM(s) {
+    var p = String(s == null ? '' : s).split(':');
+    if (p.length < 2) return null;
+    var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+    return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+  }
+  // dom.lo（表示開始時刻・分）＝時間軸先頭の .tick.hour ラベル（top:0）。render 無改変で復元。
+  function domLo() {
+    var t = board.querySelector('.b-axis .tick.hour');
+    var v = t ? parseHM(t.textContent) : null;
+    return (v == null) ? 6 * 60 : v;        // 取れなければ 6:00（computeDomain の既定と同値）
+  }
+  function zoomVal() { var z = parseFloat(board.style.zoom); return (z > 0) ? z : 1; }
+  function headsH() { return heads ? heads.getBoundingClientRect().height : 0; }   // ズーム込み実測
+  // ビューポート中央の時刻（分）
+  function centerTime() {
+    return domLo() + (wrap.scrollTop + wrap.clientHeight / 2 - headsH()) * 60 / (HOUR_PX * zoomVal());
+  }
+  // 指定時刻をビューポート中央に置く（範囲外はクランプ＝最も近い表示可能位置に追従）
+  function scrollToTime(t) {
+    var max = wrap.scrollHeight - wrap.clientHeight;
+    var st = (t - domLo()) / 60 * HOUR_PX * zoomVal() + headsH() - wrap.clientHeight / 2;
+    wrap.scrollTop = Math.max(0, Math.min(st, max));
+  }
+
+  // ── 横方向（曜日）の座標系 ──
+  // 列構成は [時間軸][月][火]…[日] の8列で両ボード共通。生のpxではなく「曜日位置」でやり取りすることで、
+  // 倍率や盤面幅が違っても同じ曜日が並ぶ（縦を"時刻"で合わせているのと同じ考え方）。
+  function axisW() {
+    var ax = board.querySelector('.b-axis');
+    return ax ? ax.getBoundingClientRect().width : 50 * zoomVal();
+  }
+  function laneW() {
+    var ln = board.querySelector('.b-lane');
+    if (ln) { var w0 = ln.getBoundingClientRect().width; if (w0 > 0) return w0; }
+    var total = board.getBoundingClientRect().width;
+    return Math.max(1, (total - axisW()) / 7);
+  }
+  // ビューポート中央の曜日位置（0=月の左端 … 7=日の右端）
+  function centerDay() {
+    return (wrap.scrollLeft + wrap.clientWidth / 2 - axisW()) / laneW();
+  }
+  // 指定の曜日位置をビューポート中央に置く。範囲外は代入時にブラウザが自動クランプするため
+  // 手計算はしない（scrollWidth は zoom 下で値の扱いにブラウザ差があるため当てにしない）。
+  function scrollToDay(d) {
+    wrap.scrollLeft = d * laneW() + axisW() - wrap.clientWidth / 2;
+  }
+
+  // ── ビュー切替（現在時刻を #t= で引き継ぐ） ──
+  function wireSwitch() {
+    var links = document.querySelectorAll('.ovsw-btn:not([aria-current="page"])');
+    for (var i = 0; i < links.length; i++) {
+      links[i].addEventListener('click', function (e) {
+        var base = this.getAttribute('href');
+        var t = Math.round(centerTime());
+        e.preventDefault();
+        location.href = base + '#t=' + t;
+      });
+    }
+  }
+  // 到着時：#t=分 があれば初回描画後に一度だけその時刻へ寄せる
+  function applyIncomingTime() {
+    var m = /[#&]t=(\d+)/.exec(location.hash);
+    if (!m || !canvas) return;
+    var t = parseInt(m[1], 10);
+    if (isNaN(t)) return;
+    var done = false, mo = null;
+    function tryJump() {
+      if (done) return;
+      if (canvas.children.length > 0) { done = true; scrollToTime(t); if (mo) mo.disconnect(); }
+    }
+    mo = new MutationObserver(tryJump);
+    mo.observe(canvas, { childList: true });
+    tryJump();                                          // 既に描画済みなら即時
+    setTimeout(function () { if (mo) mo.disconnect(); }, 12000);   // 保険（集計待ちの上限）
+  }
+
+  // ── 即時ツールチップ ──
+  var tip = document.createElement('div');
+  tip.id = 'ovTip'; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  var tipTimer = null, tipEl = null;
+  var TIP_SEL = '.b-task, .b-empty-slot, .b-head[title]';
+  // title を data-tip へ退避（初回のみ）。aria-label が無ければ複写してから外す（読み上げの退行防止）。
+  function tipText(el) {
+    if (el.dataset.tip != null) return el.dataset.tip;
+    var t = el.getAttribute('title');
+    if (t != null) {
+      try {
+        if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', t);
+        el.dataset.tip = t;
+        el.removeAttribute('title');
+      } catch (e) { return t; }                         // 退避失敗時はネイティブ title を残す（安全側）
+      return t;
+    }
+    return el.getAttribute('aria-label') || '';
+  }
+  function placeTip(x, y) {
+    var vw = window.innerWidth, vh = window.innerHeight, r = tip.getBoundingClientRect();
+    var px = x + 14, py = y + 16;
+    if (px + r.width > vw - 8) px = x - r.width - 14;
+    if (py + r.height > vh - 8) py = y - r.height - 16;
+    tip.style.left = Math.max(6, px) + 'px';
+    tip.style.top  = Math.max(6, py) + 'px';
+  }
+  function showTip(el, x, y) {
+    var txt = tipText(el);
+    if (!txt) { hideTip(); return; }
+    tip.textContent = txt;                              // textContent のみ（innerHTML 不使用）
+    tip.classList.add('on');
+    placeTip(x, y);
+  }
+  function hideTip() { tip.classList.remove('on'); tipEl = null; clearTimeout(tipTimer); tipTimer = null; }
+  wrap.addEventListener('pointerover', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest(TIP_SEL) : null;
+    if (!el || el === tipEl) return;
+    tipEl = el;
+    var x = e.clientX, y = e.clientY;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(function () { if (tipEl === el) showTip(el, x, y); }, 90);   // 約90ms＝ほぼ即時
+  });
+  wrap.addEventListener('pointermove', function (e) {
+    if (!tip.classList.contains('on') || !tipEl) return;
+    var el = e.target && e.target.closest ? e.target.closest(TIP_SEL) : null;
+    if (el === tipEl) placeTip(e.clientX, e.clientY); else hideTip();
+  });
+  wrap.addEventListener('pointerout', function (e) {
+    var to = e.relatedTarget;
+    if (to && tipEl && tipEl.contains(to)) return;
+    hideTip();
+  });
+  wrap.addEventListener('scroll', hideTip, { passive: true });
+  wrap.addEventListener('pointerdown', hideTip);
+
+  // ── ズーム（CSS zoom・0.5〜2.0・非保存） ──
+  var Z_MIN = 0.5, Z_MAX = 2.0;
+  var zSupported = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
+  function clampZ(z) { return Math.max(Z_MIN, Math.min(Z_MAX, z)); }
+  function setZoom(z) {
+    z = clampZ(z);
+    var t = centerTime();                               // 変更前の中央時刻を保持
+    board.style.zoom = (z === 1) ? '' : String(z);
+    scrollToTime(t);                                    // 同じ時刻を中央に維持（焦点保持）
+    var lv = document.getElementById('ovZoomLv');
+    if (lv) lv.textContent = Math.round(z * 100) + '%';
+    // 比較シェルが左右の倍率を揃えるための通知（単独表示では未設定＝何も起きない）
+    try { if (window.OVLINK && typeof window.OVLINK.onZoom === 'function') window.OVLINK.onZoom(z); } catch (e) {}
+  }
+  function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
+  function wireZoom() {
+    var zc = document.getElementById('ovZoom');
+    if (!zSupported) { if (zc) zc.style.display = 'none'; return; }   // 非対応ブラウザは UI ごと隠す
+    wrap.style.touchAction = 'pan-x pan-y';             // 1本指スクロールは維持・2本指はこちらで処理
+    var zi = document.getElementById('ovZoomIn'), zo = document.getElementById('ovZoomOut'), zl = document.getElementById('ovZoomLv');
+    if (zi) zi.addEventListener('click', function () { setZoom(zoomVal() + 0.1); });
+    if (zo) zo.addEventListener('click', function () { setZoom(zoomVal() - 0.1); });
+    if (zl) zl.addEventListener('click', function () { setZoom(1); });
+    wrap.addEventListener('wheel', function (e) {       // ctrl+wheel（トラックパッド/マウス）
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(zoomVal() * (e.deltaY < 0 ? 1.08 : 0.926));
+    }, { passive: false });
+    var pts = {}, baseDist = 0, baseZ = 1;              // 2本指ピンチ（Pointer Events）
+    wrap.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length === 2) { baseDist = dist(pts[ids[0]], pts[ids[1]]); baseZ = zoomVal(); }
+    });
+    wrap.addEventListener('pointermove', function (e) {
+      if (!pts[e.pointerId]) return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length === 2 && baseDist > 0) { e.preventDefault(); setZoom(baseZ * dist(pts[ids[0]], pts[ids[1]]) / baseDist); }
+    }, { passive: false });
+    function up(e) { delete pts[e.pointerId]; baseDist = 0; }
+    wrap.addEventListener('pointerup', up);
+    wrap.addEventListener('pointercancel', up);
+    wrap.addEventListener('gesturestart', function (e) { e.preventDefault(); });   // iOS ページズーム競合抑止
+    wrap.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  }
+  // 印刷は @media print の zoom:1!important で等倍化。画面のズームは印刷後に復元する。
+  var zSave = null;
+  window.addEventListener('beforeprint', function () { zSave = board.style.zoom; board.style.zoom = ''; });
+  window.addEventListener('afterprint', function () { if (zSave) { board.style.zoom = zSave; zSave = null; } });
+
+  // ── 比較シェル用 API（同一オリジンの overview-compare.html から呼ぶ） ──
+  window.OVLINK = {
+    role: ROLE,
+    centerTime: centerTime,
+    scrollToTime: scrollToTime,
+    centerDay: centerDay,
+    scrollToDay: scrollToDay,
+    domLo: domLo,
+    setZoom: setZoom,
+    getZoom: zoomVal
+  };
+
+  // ── 起動 ──
+  function boot() { wireSwitch(); wireZoom(); applyIncomingTime(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

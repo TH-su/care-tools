@@ -1,0 +1,2144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>過去シフト・アナライザ</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--ink:#1f2933;--mut:#8a97a6;--accent:#2b6cb0;--warn:#b7791f;--warnbg:#fffaf0;--err:#c53030}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif}
+.topbar{background:#1a365d;color:#fff;padding:14px 20px}
+.topbar h1{margin:0;font-size:18px;display:inline-block}
+.topbar .sub{margin-left:12px;color:#cbd6e6;font-size:12px}
+.wrap{max-width:1040px;margin:0 auto;padding:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:0 0 16px}
+.card h2{margin:0 0 10px;font-size:15px}
+.card h3{margin:0 0 10px;font-size:14px}
+.card.warn{background:var(--warnbg);border-color:#f0d9a8}
+.card.accent{background:#f0f6ff;border-color:#bcd6f2}
+textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+button.link{border:none;background:none;color:var(--accent);padding:2px 4px;cursor:pointer;text-decoration:underline}
+.opt{font-size:12px;color:#4a5568;display:inline-flex;align-items:center;gap:6px}
+.opt input[type=number]{width:64px;padding:4px 6px;border:1px solid var(--line);border-radius:6px}
+.opt input[type=text]{padding:4px 6px;border:1px solid var(--line);border-radius:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.kv{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fafbfc}
+.kv .k{display:block;font-size:11px;color:var(--mut)}
+.kv .v{display:block;font-size:15px;margin-top:2px}
+.big{font-size:22px;color:var(--accent)}
+.note{color:var(--mut);font-size:11.5px;margin:8px 0 0}
+.muted{color:var(--mut)}
+.err{color:var(--err);font-weight:700}
+.tblwrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:left}
+th{background:#f0f3f7;font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.excl{color:var(--mut);background:#fafafa}
+.badge{background:#2f855a;color:#fff;border-radius:4px;font-size:10px;padding:1px 5px}
+.tag{background:#718096;color:#fff;border-radius:4px;font-size:10px;padding:1px 5px}
+.src{color:var(--mut);font-size:10px;border:1px solid var(--line);border-radius:8px;padding:0 5px;white-space:nowrap}
+.src.none{color:var(--err);border-color:#f0c0c0;font-weight:700}
+th.qh,td.qh{text-align:center;padding:4px 6px}
+.gridsec summary{cursor:pointer;font-size:15px;margin:-2px 0 10px;padding:2px 0}
+details.qcard>summary{cursor:pointer;font-size:15px;font-weight:600;padding:2px 0;color:var(--ink)}
+details.qcard[open]>summary{margin-bottom:10px}
+details.qcard>summary:hover{color:var(--accent)}
+table.sheet{font-size:11px;border-collapse:collapse}
+table.sheet th,table.sheet td{border:1px solid #ccc;padding:2px 4px;text-align:center;white-space:nowrap}
+table.sheet th.nm,table.sheet td.nm{text-align:left;position:sticky;left:0;background:#fff;z-index:1;min-width:78px}
+table.sheet tr.excl td.nm{background:#fafafa}
+table.sheet th.dv,table.sheet td.dv{color:#555}
+table.sheet th.dcol{font-weight:600;color:#555}
+table.sheet td.cell{min-width:22px}
+@media print{
+  @page{ size: landscape; margin: 8mm; }
+  /* 横スクロール枠は印刷では展開しないと右側(=月後半の日付)が切れる */
+  .tblwrap{ overflow: visible !important; }
+  /* シフト表だけを最後の独立1ページに（改ページ＋ページ内で割らない） */
+  details.gridsec.card{ break-before: page; break-inside: avoid; }
+  /* 用紙幅にフィット＋高さ超過時はJSが --sheet-print-font を縮小して1枚に収める */
+  table.sheet{ width: 100% !important; table-layout: fixed; font-size: var(--sheet-print-font, 7px); }
+  table.sheet th, table.sheet td{ padding: 0 1px; word-break: break-all; line-height: 1.2; overflow: hidden; }
+  table.sheet th.nm, table.sheet td.nm{ position: static; width: 46px; }
+  table.sheet th.dv, table.sheet td.dv{ width: 26px; }
+  table.sheet tr{ break-inside: avoid; }          /* 行はページ跨ぎで割らない */
+  table.sheet thead{ display: table-header-group; } /* 改ページ後も見出し繰り返し */
+  .gridsec summary{ list-style: none; }
+  .gridsec[open] summary{ margin-bottom: 6px; }
+}
+.nowrap{white-space:nowrap}
+.spacer{flex:1 1 auto}
+.opt2{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin-left:8px;font-weight:400}
+code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
+.cloudstat{font-size:12px;color:var(--mut)}
+.cloudstat.ok{color:#2f855a}
+.cloudstat.err{color:var(--err)}
+.rostersec{margin:8px 0 4px}
+.rostersec summary{cursor:pointer;font-size:13px;color:var(--accent);padding:2px 0}
+#rosterPaste{min-height:90px;margin-top:8px}
+[hidden]{display:none!important}
+@media print{
+  body{background:#fff}
+  .topbar{background:#fff;color:#000;border-bottom:2px solid #000}
+  .topbar .sub{color:#333}
+  .wrap{max-width:none;margin:0;padding:0}
+  .noprint{display:none!important}
+  button{display:none!important}
+  .card{border:1px solid #999;box-shadow:none;break-inside:avoid;margin-bottom:8px}
+  .card.accent,.card.warn{background:#fff}
+  .kv{background:#fff}
+  .big{color:#000}
+  th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>過去シフト・アナライザ</h1>
+  <span class="sub">訪問介護員の勤務時間・介護福祉士割合・常勤換算（ライブのシフトとは独立）</span>
+</header>
+
+<main class="wrap">
+  <section class="card noprint">
+    <h2>1. 勤務表を貼り付け</h2>
+    <p class="note">スプシ／Excelで <b>氏名列〜介護福祉士列</b> を、<b>日付ヘッダ行（7/1 7/2 …）を含めて</b>範囲選択 → コピー → 下に貼り付け。区分（訪問／施設／通所）・資格列・「頭数に入れない」備考は自動判定します。</p>
+    <textarea id="pasteArea" placeholder="ここにコピーした勤務表を貼り付け（タブ区切り）"></textarea>
+    <div class="controls">
+      <button id="runBtn" class="primary">集計</button>
+      <button id="clearBtn">クリア</button>
+      <button id="printBtn">🖨 印刷／PDF</button>
+      <label class="opt">常勤換算の分母 <input id="fteBase" type="number" value="160" min="1" step="1"> h/月</label>
+      <label class="opt"><input id="paidWork" type="checkbox" checked> 有給を実働に算入</label>
+    </div>
+  </section>
+
+  <div id="results"></div>
+
+  <section class="card noprint">
+    <h2>2. 保存して見返す・期間平均（前3月・前年度）</h2>
+    <div class="controls">
+      <label class="opt">月ラベル <input id="monthLabel" type="text" placeholder="2026-04" size="10"></label>
+      <button id="saveMonthBtn" class="primary">この月を保存</button>
+      <span class="spacer"></span>
+      <button id="exportBtn">⬇ 書き出し(.json)</button>
+      <button id="importBtn">⬆ 読み込み</button>
+      <input id="importInput" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="note">「保存」＝この月を貼付原本ごとローカルに保存し、下の一覧の「表示」でいつでも見返せます。「書き出し」＝全保存月を1ファイルにしてバックアップ・別PCへ移行・共有（ローカルファイルのみ・外部へ送信しません）。個人情報を含むため保存先の端末・ファイルの取り扱いにご注意ください。</p>
+    <div id="savedMonths"></div>
+  </section>
+
+  <section class="card noprint">
+    <h2>3. クラウド同期（トークン制限・共有）<span class="opt2">任意</span></h2>
+    <p class="note">自分の Google ドライブ＋GAS に保存月を同期し、<b>トークンを知る人だけ</b>が閲覧できます（公開リンクは作りません・URLにトークンは載せません）。セットアップは <code>docs/analyzer-gas-setup.md</code>。閲覧者には <b>アプリのURL＋閲覧専用トークン</b>を安全な経路で渡し、相手は下に入力して「取得」します。</p>
+    <div class="controls">
+      <label class="opt">GAS URL <input id="cloudUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" size="34"></label>
+      <label class="opt">トークン <input id="cloudToken" type="password" placeholder="編集可 or 閲覧専用トークン" size="20"></label>
+    </div>
+    <div class="controls">
+      <button id="cloudPingBtn">接続確認</button>
+      <button id="cloudPushBtn">☁ クラウドへ保存</button>
+      <button id="cloudPullBtn">⬇ クラウドから取得</button>
+      <span id="cloudStatus" class="cloudstat"></span>
+    </div>
+    <div class="controls">
+      <label class="opt"><input id="cloudAuto" type="checkbox"> <b>自動同期</b>（「この月を保存」時に自動でクラウドへ保存＋約60秒ごとに取得/保存＝複数端末で常に最新を共有）</label>
+      <span id="cloudAutoStatus" class="cloudstat"></span>
+    </div>
+  </section>
+
+  <details class="card noprint qcard" open>
+    <summary>資格マスタ（職員名→所持資格・一度だけ登録）</summary>
+    <p class="note">ここに登録すると、以降は勤務表に資格列が無くても<b>氏名の照合で自動判定</b>します（優先順位: マスタ → シートの資格列 → 不明）。資格列のある勤務表なら「この勤務表から取り込む」で一括自動登録＝手入力ほぼ不要。書き出し・クラウド同期にも含まれます。（見出しをクリックで開閉できます）</p>
+    <div class="controls">
+      <button id="masterSeedBtn" class="primary">この勤務表から取り込む</button>
+      <span class="spacer"></span>
+      <label class="opt">氏名を追加 <input id="masterName" type="text" placeholder="氏名" size="12"></label>
+      <button id="masterAddBtn">追加</button>
+    </div>
+    <details class="rostersec">
+      <summary>職員名簿（スプシ）から資格を一括取り込み</summary>
+      <p class="note">職員一覧スプシで <b>「氏名」列と「資格」列を含む範囲を、見出し行ごと</b>選択 → コピー → 下に貼り付け → 「取り込む」。うまくいかない時は<b>氏名と資格の2列だけ</b>コピーでも読めます。資格欄（例「准看護師・介護福祉士」）から 介護福祉士／実務者研修／初任者研修／看護師／准看護師 を自動判定します（薬剤師・ヘルパー等の対象外資格は取り込みません）。退職者も含めて取り込めます。</p>
+      <textarea id="rosterPaste" placeholder="ここに職員名簿（氏名・資格を含む範囲）を貼り付け"></textarea>
+      <div class="controls">
+        <button id="rosterImportBtn" class="primary">職員名簿から取り込む</button>
+        <span id="rosterStatus" class="cloudstat"></span>
+      </div>
+    </details>
+    <div id="masterBox"></div>
+  </details>
+</main>
+<script>
+/* ===== src/logic/symbols.js ===== */
+/* symbols.js — シフト記号の正規化・パース（純粋関数・依存ゼロ）
+ * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
+(function () {
+  'use strict';
+
+  /* 全角→半角・揺れ正規化 */
+  function normalizeCell(raw) {
+    if (raw === null || raw === undefined) return '';
+    var s = String(raw);
+    var FW = '０１２３４５６７８９';
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      var fi = FW.indexOf(c);
+      if (fi >= 0) { out += String(fi); continue; }
+      if (c === '（') { out += '('; continue; }
+      if (c === '）') { out += ')'; continue; }
+      if (c === '：') { out += ':'; continue; }
+      if (c === '～' || c === '〜' || c === '−' || c === 'ー' || c === '－' || c === '―') { out += '-'; continue; }
+      if (c === '　' || c === ' ' || c === '\t') { continue; }
+      out += c;
+    }
+    return out;
+  }
+
+  /* おすすめ配色（区分別・セル背景＋文字色）。記号コード優先・無ければ区分(cat)で適用。
+   * 配色は参考シート「希望シフト回答」(条件付き書式)から抽出した色に統一:
+   *   早=#ead1dc / 遅=#cfe2f3 / 休系=#fff2cc+赤文字 / 有=#f4cccc / 日勤・夜勤・明け=白。 */
+  var RECOMMENDED_BY_CODE = {
+    '早':  { color: '#ead1dc', textColor: '#000000' },
+    '日1': { color: '#ffffff', textColor: '#000000' },
+    '日2': { color: '#ffffff', textColor: '#000000' },
+    '日3': { color: '#ffffff', textColor: '#000000' },
+    '遅':  { color: '#cfe2f3', textColor: '#000000' },
+    '(21': { color: '#ffffff', textColor: '#000000' },
+    '(22': { color: '#ffffff', textColor: '#000000' },
+    '7)':  { color: '#ffffff', textColor: '#000000' },
+    '8)':  { color: '#ffffff', textColor: '#000000' },
+    '休':  { color: '#fff2cc', textColor: '#ff0000' },
+    '公':  { color: '#fff2cc', textColor: '#ff0000' },
+    '希':  { color: '#fff2cc', textColor: '#ff0000', bold: true },
+    '有':  { color: '#f4cccc', textColor: '#000000' },
+    '明':  { color: '#ffffff', textColor: '#666666' },
+    '欠':  { color: '#fff2cc', textColor: '#ff0000', bold: true }
+  };
+  var RECOMMENDED_BY_CAT = {
+    early: { color: '#ead1dc', textColor: '#000000' },
+    mid:   { color: '#ffffff', textColor: '#000000' },
+    late:  { color: '#cfe2f3', textColor: '#000000' },
+    night: { color: '#ffffff', textColor: '#000000' },
+    off:   { color: '#fff2cc', textColor: '#ff0000' }
+  };
+
+  function recommendedFor(sym) {
+    var byCode = RECOMMENDED_BY_CODE[normalizeCell(sym.code)] || RECOMMENDED_BY_CODE[sym.code];
+    if (byCode) return byCode;
+    return RECOMMENDED_BY_CAT[sym.cat] || null;
+  }
+
+  /* 記号配列におすすめ配色を適用（color/textColor/bold を上書き）。新しい配列を返す */
+  function applyRecommendedColors(symbols) {
+    var out = [];
+    for (var i = 0; i < symbols.length; i++) {
+      var s = {};
+      for (var k in symbols[i]) s[k] = symbols[i][k];
+      var rec = recommendedFor(s);
+      if (rec) {
+        s.color = rec.color;
+        s.textColor = rec.textColor;
+        s.bold = !!rec.bold;
+      }
+      out.push(s);
+    }
+    return out;
+  }
+
+  /* 既定の記号マスタ（マスタ画面から動的に追加・編集される）。おすすめ配色を適用済み */
+  var DEFAULT_SYMBOLS = applyRecommendedColors([
+    { code: '早',  label: '早番(7:00-16:00)',   type: 'work', start: '7:00',  end: '16:00', cat: 'early' },
+    { code: '日1', label: '日勤1(8:00-17:00)',  type: 'work', start: '8:00',  end: '17:00', cat: 'mid' },
+    { code: '日2', label: '日勤2(8:30-17:30)',  type: 'work', start: '8:30',  end: '17:30', cat: 'mid' },
+    { code: '日3', label: '日勤3(9:00-18:00)',  type: 'work', start: '9:00',  end: '18:00', cat: 'mid' },
+    { code: '遅',  label: '遅番(12:00-21:00)',  type: 'work', start: '12:00', end: '21:00', cat: 'late' },
+    { code: '(21', label: '夜勤入り21時',  type: 'nightIn',  start: '21:00', pairEnd: '7:00',  cat: 'night' },
+    { code: '(22', label: '夜勤入り22時',  type: 'nightIn',  start: '22:00', pairEnd: '8:00',  cat: 'night' },
+    { code: '7)',  label: '夜勤上がり7時', type: 'nightOut', end: '7:00',  cat: 'night' },
+    { code: '8)',  label: '夜勤上がり8時', type: 'nightOut', end: '8:00',  cat: 'night' },
+    { code: '休',  label: '公休',   type: 'off',       cat: 'off' },
+    { code: '希',  label: '希望休', type: 'off',       cat: 'off', sub: '希望休' },
+    { code: '公',  label: '公休',   type: 'publicOff', cat: 'off' },
+    { code: '有',  label: '有給',   type: 'paidOff',   cat: 'off', fixedWork: 8 },
+    { code: '明',  label: '夜勤明け', type: 'off',     cat: 'off' }
+  ]);
+
+  /* 別名（取込データの揺れ吸収） */
+  var ALIASES = { '希休': '希', '有休': '有', '公休': '公', '希望休': '希', '有給': '有' };
+
+  function timeToMin(t) {
+    if (t === null || t === undefined) return null;
+    var s = normalizeCell(String(t));
+    var m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    if (h > 30 || mm > 59) return null;
+    return h * 60 + mm;
+  }
+
+  function minToTime(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    return h + (m ? ':' + (m < 10 ? '0' + m : m) : ':00');
+  }
+
+  function findSymbol(symbols, codeNorm) {
+    for (var i = 0; i < symbols.length; i++) {
+      if (symbols[i].disabled) continue;
+      if (normalizeCell(symbols[i].code) === codeNorm) return symbols[i];
+    }
+    return null;
+  }
+
+  var RE_RANGE = /^(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)$/;
+  var RE_NIGHT_OUT = /^(\d{1,2}(?::\d{2})?)\)/;          // 先頭の「7)」
+  var RE_NIGHT_IN = /\((\d{1,2}(?::\d{2})?)$/;            // 末尾の「(21」
+
+  /* セル文字列 → パーツ配列
+   * 返値: { raw, norm, parts: [ {kind, ...} ], error }
+   *  kind: 'work'{startMin,endMin} / 'nightIn'{startMin,pairEndMin} /
+   *        'nightOut'{endMin} / 'off' / 'paidOff'{fixedWork} / 'publicOff'
+   */
+  function parseCell(raw, symbols) {
+    if (!symbols) symbols = DEFAULT_SYMBOLS;
+    /* 分割勤務（複合セル）: 「7-9 17-21」のように空白で区切られた複数トークンは
+     * normalizeCell が空白を除去して1語に潰し解釈不能になる。先に生文字列を空白で分割し、
+     * 2語以上なら各トークンを個別に解釈して parts を結合する。これにより早番(7-9)＋遅番(17-21)が
+     * 両方カウントされ、実働時間も正しく合算される（汎用・氏名ハードコード非依存）。 */
+    var rawStr = (raw === null || raw === undefined) ? '' : String(raw);
+    /* 同行(早遅手当なし)の接尾「/同」「／同」を剥がして goudou フラグ化し、本体(早/遅/18-21等)を通常解釈する。
+     * freee 出力側がこのフラグで手当なしコード(151/152/153)へ振り分ける。記号「同」の定義は不要。 */
+    var goudou = false;
+    var gm = rawStr.match(/[\/／][\s　]*同[\s　]*$/);
+    if (gm) { goudou = true; rawStr = rawStr.slice(0, gm.index); }
+    var toks = rawStr.split(/[\s　\t]+/);
+    var nonEmpty = [];
+    for (var ti = 0; ti < toks.length; ti++) { if (toks[ti] !== '') nonEmpty.push(toks[ti]); }
+    if (nonEmpty.length >= 2) {
+      var multi = { raw: raw, norm: normalizeCell(rawStr), parts: [], error: null, goudou: goudou };
+      for (var tk = 0; tk < nonEmpty.length; tk++) {
+        var sub = parseCell(nonEmpty[tk], symbols);   /* 各トークンは空白を含まない＝単一解釈へ */
+        for (var sp = 0; sp < sub.parts.length; sp++) multi.parts.push(sub.parts[sp]);
+        if (sub.error && !multi.error) multi.error = sub.error;
+      }
+      return multi;
+    }
+    var norm = normalizeCell(rawStr);
+    var res = { raw: raw, norm: norm, parts: [], error: null, goudou: goudou };
+    if (norm === '') return res;
+    if (ALIASES[norm]) norm = ALIASES[norm];
+
+    /* 1) 記号マスタ完全一致 */
+    var sym = findSymbol(symbols, norm);
+    if (sym) { res.parts.push(symbolToPart(sym)); return res; }
+
+    /* 2) 範囲記号 9-12 / 7-8:30 等 */
+    var m = norm.match(RE_RANGE);
+    if (m) {
+      var st = timeToMin(m[1]), en = timeToMin(m[2]);
+      if (st !== null && en !== null && en > st && en <= 24 * 60) {
+        res.parts.push({ kind: 'work', startMin: st, endMin: en, cat: rangeCat(st, en) });
+        return res;
+      }
+      res.error = '時刻範囲を解釈できません: ' + norm;
+      return res;
+    }
+
+    /* 3) 夜勤複合 8)(22 ・単独 7) ・ (21 */
+    var rest = norm;
+    var mo = rest.match(RE_NIGHT_OUT);
+    if (mo) {
+      var outSym = findSymbol(symbols, mo[1] + ')');
+      var endMin = timeToMin(mo[1]);
+      res.parts.push({ kind: 'nightOut', endMin: endMin,
+        pairKnown: !!outSym });
+      rest = rest.slice(mo[0].length);
+    }
+    if (rest !== '') {
+      var mi = rest.match(RE_NIGHT_IN);
+      if (mi && rest.charAt(0) === '(') {
+        var inSym = findSymbol(symbols, '(' + mi[1]);
+        var stMin = timeToMin(mi[1]);
+        var part = { kind: 'nightIn', startMin: stMin,
+          pairEndMin: inSym && inSym.pairEnd ? timeToMin(inSym.pairEnd) : null };
+        res.parts.push(part);
+        rest = '';
+      } else if (rest.charAt(0) === '(') {
+        /* 「(有」のような夜枠の代替記号 */
+        var alt = rest.slice(1);
+        if (ALIASES[alt]) alt = ALIASES[alt];
+        var altSym = findSymbol(symbols, alt);
+        if (altSym && altSym.type !== 'work') {
+          res.parts.push(symbolToPart(altSym));
+          rest = '';
+        }
+      }
+    }
+    if (res.parts.length === 0) {
+      res.error = '解釈できない記号: ' + norm;
+    } else if (rest !== '') {
+      res.error = '一部を解釈できません: ' + norm;
+    }
+    return res;
+  }
+
+  function symbolToPart(sym) {
+    if (sym.type === 'work') {
+      return { kind: 'work', startMin: timeToMin(sym.start), endMin: timeToMin(sym.end), cat: sym.cat || 'mid', code: sym.code };
+    }
+    if (sym.type === 'nightIn') {
+      return { kind: 'nightIn', startMin: timeToMin(sym.start), pairEndMin: timeToMin(sym.pairEnd), code: sym.code };
+    }
+    if (sym.type === 'nightOut') {
+      return { kind: 'nightOut', endMin: timeToMin(sym.end), pairKnown: true, code: sym.code };
+    }
+    if (sym.type === 'paidOff') {
+      return { kind: 'paidOff', fixedWork: (typeof sym.fixedWork === 'number' ? sym.fixedWork : 8), code: sym.code };
+    }
+    if (sym.type === 'publicOff') return { kind: 'publicOff', code: sym.code };
+    return { kind: 'off', code: sym.code, sub: sym.sub || null };
+  }
+
+  /* 範囲記号の早遅分類（残数カウント用）:
+   *  開始7:30以前=早系 / 終了20:00(1200分)以降=遅系（開始時刻を問わず・要件2「20時までの勤務は遅番」）。
+   *  早番（早朝開始）を優先し、それ以外で20時以降まで勤務する枠は全て遅番に計上する。 */
+  function rangeCat(startMin, endMin) {
+    if (startMin <= 450) return 'early';
+    if (endMin >= 1200) return 'late';   /* 20時以降まで勤務＝遅番（例 9-20/11-20/13-20/12-21/17-21 等） */
+    return 'mid';
+  }
+
+  /* 夜勤上がりの残業判定（表示ハイライト用）。
+   * セル先頭の夜勤上がり（例「8)」）の実際の上がり時刻が、前日の夜勤入りの定時上がり(pairEnd)
+   * より遅ければ残業。(21=定時7:00→「8)」は残業／(22=定時8:00→「8)」は通常／「7)」は定時。
+   * timecalc の残業計算(endMin > nightIn.pairEndMin)と同じ基準。前日入りが特定できなければ非残業扱い。
+   * 戻り値: 装飾すべき先頭夜勤上がり文字列の長さ（0=ハイライト無し）。 */
+  function leadingNightOutOvertime(prevRaw, cellRaw, symbols) {
+    if (!symbols) symbols = DEFAULT_SYMBOLS;
+    var s = (cellRaw === null || cellRaw === undefined) ? '' : String(cellRaw);
+    var m = s.match(/^(\d{1,2}(?::\d{2})?|[０-９]{1,2}(?:：[０-９]{2})?)[)）]/);  /* 先頭の「8)」「8）」(全角含む) */
+    if (!m) return 0;
+    var endMin = timeToMin(normalizeCell(m[1]));
+    if (endMin === null) return 0;
+    var prev = parseCell(prevRaw, symbols);
+    var pairEnd = null, i;
+    for (i = 0; i < prev.parts.length; i++) {
+      if (prev.parts[i].kind === 'nightIn' && prev.parts[i].pairEndMin != null) { pairEnd = prev.parts[i].pairEndMin; break; }
+    }
+    if (pairEnd === null) return 0;            /* 前日入り不明＝判定不能＝ハイライトしない（安全側） */
+    return endMin > pairEnd ? m[0].length : 0; /* 定時より遅い＝残業＝先頭夜勤上がりを装飾 */
+  }
+
+  /* ===== 許可パターン反映用（実シフトから使用中の勤務パターンを検出・安全に記号登録） ===== */
+
+  /* 単一トークンが「範囲勤務(9-12 等)」なら正規化情報を返す。②RE_RANGE と完全同条件（en>st・en≤1440）。
+   * 返値の start/end は元の左右辺(コロン有無そのまま)＝timeToMin が②と同値になる。cat も rangeCat で②一致。 */
+  function parseRangeToken(norm) {
+    var m = String(norm == null ? '' : norm).match(RE_RANGE);
+    if (!m) return null;
+    var st = timeToMin(m[1]), en = timeToMin(m[2]);
+    if (st === null || en === null || !(en > st) || en > 24 * 60) return null;
+    return { norm: normalizeCell(norm), start: m[1], end: m[2], startMin: st, endMin: en, cat: rangeCat(st, en) };
+  }
+
+  /* 範囲値→記号オブジェクト（回帰ゼロのレシピ: type work・start/end=左右辺・cat=rangeCat・色空・太字なし）。 */
+  function buildRangeSymbol(r) {
+    return { code: r.norm, type: 'work', start: r.start, end: r.end,
+             cat: r.cat, color: '', textColor: '', bold: false };
+  }
+
+  /* 1職員のセル生値配列から、勤務系の「使用中記号code」と「未登録の範囲パターン」を集める。
+   * 休み系(off/paidOff/publicOff)は常時許可のため除外。夜勤複合(8)(22)は 8) と (22 に分解して既存codeを拾う。 */
+  function collectUsedWorkTokens(symbols, values) {
+    if (!symbols) symbols = DEFAULT_SYMBOLS;
+    var codes = [], ranges = [], seenCode = {}, seenRange = {}, i, v;
+    function addCode(c) { if (c && !seenCode[c]) { seenCode[c] = 1; codes.push(c); } }
+    for (i = 0; i < (values || []).length; i++) {
+      v = values[i];
+      var raw = (v === null || v === undefined) ? '' : String(v);
+      var toks = raw.split(/[\s　\t]+/);
+      for (var ti = 0; ti < toks.length; ti++) {
+        if (toks[ti] === '') continue;
+        var nt = normalizeCell(toks[ti]);
+        if (nt === '') continue;
+        if (ALIASES[nt]) nt = ALIASES[nt];
+        /* ① 既登録記号: 勤務系(work/nightIn/nightOut)のみ採用。休み系は常時許可＝除外 */
+        var sym = findSymbol(symbols, nt);
+        if (sym) {
+          if (sym.type === 'work' || sym.type === 'nightIn' || sym.type === 'nightOut') addCode(sym.code);
+          continue;
+        }
+        /* ② 未登録の範囲勤務 */
+        var r = parseRangeToken(nt);
+        if (r) { if (!seenRange[r.norm]) { seenRange[r.norm] = 1; ranges.push(r); } continue; }
+        /* ③ 夜勤複合 8)(22 → 8) と (22 の既存記号codeを拾う（単独は①で処理済み） */
+        var got = false;
+        var mo = nt.match(RE_NIGHT_OUT);
+        var rest = nt;
+        if (mo) { var oSym = findSymbol(symbols, normalizeCell(mo[1] + ')')); if (oSym) { addCode(oSym.code); got = true; } rest = nt.slice(mo[0].length); }
+        var mi = rest.match(RE_NIGHT_IN);
+        if (mi && rest.charAt(0) === '(') { var iSym = findSymbol(symbols, normalizeCell('(' + mi[1])); if (iSym) { addCode(iSym.code); got = true; } }
+        /* got=false（22-8 等の解釈不能・off外）は無視 */
+      }
+    }
+    return { codes: codes, ranges: ranges };
+  }
+
+  /* 範囲パターン群を、既存記号(disabled含む)に同codeが無い時だけ「新規記号オブジェクト配列」として返す（末尾追加用・非破壊）。 */
+  function registerRangeSymbols(symbols, rangeObjs) {
+    var existing = {}, i;
+    for (i = 0; i < (symbols || []).length; i++) existing[normalizeCell(symbols[i].code)] = 1;   /* disabled も含めて重複判定 */
+    var news = [], seen = {};
+    for (i = 0; i < (rangeObjs || []).length; i++) {
+      var code = normalizeCell(rangeObjs[i].norm);
+      if (!code || existing[code] || seen[code]) continue;
+      seen[code] = 1;
+      news.push(buildRangeSymbol({ norm: code, start: rangeObjs[i].start, end: rangeObjs[i].end, cat: rangeObjs[i].cat }));
+    }
+    return news;
+  }
+
+  var api = {
+    normalizeCell: normalizeCell,
+    timeToMin: timeToMin,
+    minToTime: minToTime,
+    parseCell: parseCell,
+    rangeCat: rangeCat,
+    parseRangeToken: parseRangeToken,
+    collectUsedWorkTokens: collectUsedWorkTokens,
+    registerRangeSymbols: registerRangeSymbols,
+    leadingNightOutOvertime: leadingNightOutOvertime,
+    DEFAULT_SYMBOLS: DEFAULT_SYMBOLS,
+    ALIASES: ALIASES,
+    applyRecommendedColors: applyRecommendedColors,
+    RECOMMENDED_BY_CODE: RECOMMENDED_BY_CODE
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftSymbols = api;
+})();
+/* ===== src/logic/timecalc.js ===== */
+/* timecalc.js — 月間の実働計算
+ * 休憩控除・夜勤ペア・残業判定・区分別集計・区分重複時間の控除・夜勤休日×2 */
+(function () {
+  'use strict';
+  var Sym = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./symbols.js') : window.ShiftSymbols;
+
+  var DEFAULT_SETTINGS = {
+    breakThresholdH: 6,   // 拘束がこの時間以上で休憩控除（6 or 7）
+    breakH: 1,            // 通常勤務の休憩時間
+    nightBreakH: 2,       // 夜勤の休憩時間
+    paidLeaveCountsAsWork: true, // 有給を実働時間に算入するか
+    fteBaseHours: 160     // 常勤換算の分母（4週）
+  };
+
+  function fillSettings(s) {
+    var out = {};
+    for (var k in DEFAULT_SETTINGS) {
+      out[k] = (s && typeof s[k] === 'number') ? s[k] : DEFAULT_SETTINGS[k];
+    }
+    if (s && typeof s.paidLeaveCountsAsWork === 'boolean') out.paidLeaveCountsAsWork = s.paidLeaveCountsAsWork;
+    return out;
+  }
+
+  /* 範囲勤務の実働分: 拘束 - 休憩 */
+  function workMinutes(boundMin, settings) {
+    if (boundMin <= 0) return 0;
+    var br = boundMin >= settings.breakThresholdH * 60 ? settings.breakH * 60 : 0;
+    return boundMin - br;
+  }
+
+  /* 区間 [s,e] と区間リストの重なり合計（分） */
+  function overlapMinutes(start, end, intervals) {
+    var total = 0;
+    for (var i = 0; i < intervals.length; i++) {
+      var s = Math.max(start, intervals[i][0]);
+      var e = Math.min(end, intervals[i][1]);
+      if (e > s) total += e - s;
+    }
+    return total;
+  }
+
+  /* 1職員・1ヶ月分の計算
+   * rows: [ { division, cells: {day:str}, isMain } ]（シートの区分行に相当）
+   * opts.offDayMultiplier: 夜勤専従=2（夜勤の「休」は2日分の休みとして集計）
+   * メイン行と他区分行の勤務時間が同日で重複する場合、重複分はメイン行から控除する
+   * （例: 訪問「早」7-16 と 通所 9-12 → 通所3h・訪問は 9h-休憩1h-重複3h=5h）
+   */
+  function computeStaffMonth(opts) {
+    var settings = fillSettings(opts.settings);
+    var symbols = opts.symbols || Sym.DEFAULT_SYMBOLS;
+    var days = opts.days;
+    var rows = opts.rows || [];
+    var nightSplit = opts.nightSplit || null;
+    var offMult = opts.offDayMultiplier || 1;
+    var warnings = [];
+    var perDay = {};
+    var d;
+    for (d = 1; d <= days; d++) {
+      perDay[d] = { workMin: 0, divMin: {}, cats: [], overtimeMin: 0, attended: false, off: false, paid: false, warnings: [] };
+    }
+
+    function addDiv(day, division, min, isNight) {
+      if (min <= 0) return;
+      var pd = perDay[day];
+      pd.workMin += min;
+      if (isNight && nightSplit) {
+        for (var dv in nightSplit) {
+          var portion = Math.round(min * nightSplit[dv]);
+          pd.divMin[dv] = (pd.divMin[dv] || 0) + portion;
+        }
+      } else {
+        pd.divMin[division] = (pd.divMin[division] || 0) + min;
+      }
+    }
+
+    /* 全行を先にパース */
+    var parsedRows = [];
+    for (var r = 0; r < rows.length; r++) {
+      var parsed = {};
+      for (d = 1; d <= days; d++) {
+        var raw = rows[r].cells ? rows[r].cells[String(d)] : null;
+        if (raw === undefined || raw === null || String(raw) === '') { parsed[d] = null; continue; }
+        var p = Sym.parseCell(raw, symbols);
+        parsed[d] = p;
+        if (p.error) {
+          perDay[d].warnings.push(p.error);
+          warnings.push({ day: d, msg: p.error });
+        }
+      }
+      parsedRows.push({ row: rows[r], parsed: parsed });
+    }
+
+    for (d = 1; d <= days; d++) {
+      /* 他区分行（非メイン）の勤務区間を収集（重複控除用） */
+      var subIntervals = [];
+      for (var r1 = 0; r1 < parsedRows.length; r1++) {
+        if (parsedRows[r1].row.isMain) continue;
+        var cell1 = parsedRows[r1].parsed[d];
+        if (!cell1) continue;
+        for (var i1 = 0; i1 < cell1.parts.length; i1++) {
+          var pt = cell1.parts[i1];
+          if (pt.kind === 'work') subIntervals.push([pt.startMin, pt.endMin]);
+        }
+      }
+
+      for (var r2 = 0; r2 < parsedRows.length; r2++) {
+        var row = parsedRows[r2].row;
+        var division = row.division;
+        var cell = parsedRows[r2].parsed[d];
+        if (!cell) continue;
+        for (var i = 0; i < cell.parts.length; i++) {
+          var part = cell.parts[i];
+          if (part.kind === 'work') {
+            perDay[d].attended = true;
+            if (part.cat) perDay[d].cats.push(part.cat);
+            var bound = part.endMin - part.startMin;
+            var work = workMinutes(bound, settings);
+            if (row.isMain && subIntervals.length) {
+              /* 同日の他区分勤務と重複する時間はメイン区分から控除 */
+              work -= overlapMinutes(part.startMin, part.endMin, subIntervals);
+              if (work < 0) work = 0;
+            }
+            addDiv(d, division, work, false);
+          } else if (part.kind === 'nightIn') {
+            perDay[d].attended = true;
+            perDay[d].cats.push('night');
+            var endMin = null, paired = false;
+            var next = (d < days) ? parsedRows[r2].parsed[d + 1] : null;
+            if (next) {
+              for (var j = 0; j < next.parts.length; j++) {
+                if (next.parts[j].kind === 'nightOut') { endMin = next.parts[j].endMin; paired = true; break; }
+              }
+            }
+            if (endMin === null) {
+              endMin = part.pairEndMin;
+              if (d < days) {
+                var w1 = (d + 1) + '日に夜勤上がりが未入力（標準ペアで仮計算）';
+                perDay[d].warnings.push(w1);
+                warnings.push({ day: d, msg: w1 });
+              }
+              if (endMin === null) endMin = 0;
+            }
+            var nBound = (1440 - part.startMin) + endMin;
+            var nWork = nBound - settings.nightBreakH * 60;
+            if (nWork < 0) nWork = 0;
+            if (part.pairEndMin !== null && paired && endMin > part.pairEndMin) {
+              perDay[d].overtimeMin += (endMin - part.pairEndMin);
+            }
+            addDiv(d, division, nWork, true);
+          } else if (part.kind === 'nightOut') {
+            perDay[d].attended = true;
+            /* 早遅カウント用: 夜勤明け「8)」(上がり8:00)は早番帯を担うため早番に計上する。
+             * 集計(cats)のみに反映し、実働時間・区分には不加算（明け勤務は前日夜勤に含む）。 */
+            if (part.endMin === 480) perDay[d].cats.push('early');
+            if (d > 1) {
+              var prev = parsedRows[r2].parsed[d - 1];
+              var hasIn = false;
+              if (prev) {
+                for (var k2 = 0; k2 < prev.parts.length; k2++) {
+                  if (prev.parts[k2].kind === 'nightIn') { hasIn = true; break; }
+                }
+              }
+              if (!hasIn) {
+                var w2 = '前日に夜勤入りが無い上がり記号';
+                perDay[d].warnings.push(w2);
+                warnings.push({ day: d, msg: w2 });
+              }
+            }
+          } else if (part.kind === 'paidOff') {
+            perDay[d].paid = true;
+            if (settings.paidLeaveCountsAsWork) {
+              addDiv(d, division, part.fixedWork * 60, false);
+            }
+          } else if (part.kind === 'off' || part.kind === 'publicOff') {
+            perDay[d].off = true;
+          }
+        }
+      }
+    }
+
+    /* 集計 */
+    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {} };
+    for (var d3 = 1; d3 <= days; d3++) {
+      var pd = perDay[d3];
+      totals.workMin += pd.workMin;
+      totals.overtimeMin += pd.overtimeMin;
+      if (pd.overtimeMin > 0) totals.overtimeCount++;
+      if (pd.attended) totals.attendDays++;
+      /* 休日数(offDays)＝公休/希望休/公休(off/publicOff) ＋ 有給(paid)。
+       * 有給休暇は「支払われる休日」のため休日数に算入する（希望休は元から off で算入済）。
+       * ただし勤務系を伴う日(例 7)(有＝夜勤明け+有)は attended 優先で出勤扱い＝休日に重複計上しない。
+       * 夜勤専従は1件=2日分(offMult)。paidDays は内訳として別途も保持。 */
+      else if (pd.off || pd.paid) totals.offDays += offMult;
+      if (pd.paid) totals.paidDays++;
+      for (var dv2 in pd.divMin) {
+        totals.divMin[dv2] = (totals.divMin[dv2] || 0) + pd.divMin[dv2];
+        if (d3 <= 28) totals.divMin28[dv2] = (totals.divMin28[dv2] || 0) + pd.divMin[dv2];
+      }
+      if (d3 <= 28) totals.workMin28 += pd.workMin;
+    }
+    /* 夜勤専従: 出勤カウントが特殊なため「月の日数 − 休日数」を出勤として扱う
+     * （未入力の月に適用すると全日出勤になるため、何らかの入力がある場合のみ） */
+    if (offMult > 1 && (totals.attendDays > 0 || totals.offDays > 0)) {
+      totals.attendDays = days - totals.offDays;
+    }
+    return { perDay: perDay, totals: totals, warnings: warnings };
+  }
+
+  var api = {
+    DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    fillSettings: fillSettings,
+    workMinutes: workMinutes,
+    overlapMinutes: overlapMinutes,
+    computeStaffMonth: computeStaffMonth
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftTimecalc = api;
+})();
+/* ===== src/logic/aggregate.js ===== */
+/* aggregate.js — 全体集計（事業所別の資格割合・常勤換算・早遅カウント） */
+(function () {
+  'use strict';
+  var TC = (typeof require !== 'undefined' && typeof window === 'undefined')
+    ? require('./timecalc.js') : window.ShiftTimecalc;
+
+  function hasQual(staff, q) {
+    var qs = staff.qualifications || [];
+    for (var i = 0; i < qs.length; i++) { if (qs[i] === q) return true; }
+    return false;
+  }
+
+  /* 指定区分の実働分(分)を、母集団の総分(den)と資格者分(num)に分けて返す。
+   * 母集団=各人 divMin[division]>0 かつ active!==false かつ countInHeadcount!==false（休職/退職/役員除外）。
+   * quals: いずれかの資格を持てば num に算入（例: ['介護福祉士'] / ['介護福祉士','実務者研修']）。 */
+  function qualMinByDivision(staffList, monthResults, division, quals) {
+    var den = 0, num = 0;
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false || st.countInHeadcount === false) continue;
+      var min = res.totals.divMin[division] || 0;
+      if (min <= 0) continue;
+      den += min;
+      for (var q = 0; q < quals.length; q++) {
+        if (hasQual(st, quals[q])) { num += min; break; }
+      }
+    }
+    return { den: den, num: num };
+  }
+
+  /* 指定区分の実働に占める資格者割合（%）。qualMinByDivision の den/num から算出（数値は従来同一） */
+  function qualPctByDivision(staffList, monthResults, division, quals) {
+    var r = qualMinByDivision(staffList, monthResults, division, quals);
+    return r.den > 0 ? Math.round(r.num / r.den * 1000) / 10 : 0;
+  }
+
+  /* 職員配列 + 各人の computeStaffMonth 結果 → 月間指標
+   * 介護福祉士割合は訪問介護（特定事業所加算の人材要件）の実働ベースで算出 */
+  function computeMetrics(staffList, monthResults, settings) {
+    var s = TC.fillSettings(settings);
+    var totalMin = 0;
+    var divMin28 = {};
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false) continue;
+      if (st.countInHeadcount === false) continue;
+      totalMin += res.totals.workMin;
+      for (var dv in res.totals.divMin28) {
+        divMin28[dv] = (divMin28[dv] || 0) + res.totals.divMin28[dv];
+      }
+    }
+    var fte = {};
+    var fteBase = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 0; /* 0/不正値でのInfinity/NaNを防ぐ */
+    for (var dv2 in divMin28) {
+      fte[dv2] = fteBase ? Math.round(divMin28[dv2] / 60 / fteBase * 100) / 100 : 0;
+    }
+    /* 行政報告用 訪問資格別 実働分(①訪問総/②うち介福/③うち介福+実務者)。分母denは①、②③はnum */
+    var visitKaifuku = qualMinByDivision(staffList, monthResults, '訪問', ['介護福祉士']);
+    var visitKaifukuJitsumu = qualMinByDivision(staffList, monthResults, '訪問', ['介護福祉士', '実務者研修']);
+    return {
+      kaifukuPctVisit: qualPctByDivision(staffList, monthResults, '訪問', ['介護福祉士']),
+      kaifukuJitsumuPctVisit: qualPctByDivision(staffList, monthResults, '訪問', ['介護福祉士', '実務者研修']),
+      visitTotalMin: visitKaifuku.den,               /* ① 訪問勤務時間合計(分) */
+      visitKaifukuMin: visitKaifuku.num,             /* ② うち介護福祉士(分) */
+      visitKaifukuJitsumuMin: visitKaifukuJitsumu.num, /* ③ うち介護福祉士＋実務者研修(分) */
+      totalHours: Math.round(totalMin / 60 * 100) / 100,
+      fteByDivision: fte
+    };
+  }
+
+  /* 日別の早番・遅番割当数 { day: {early:n, late:n, night:n} } */
+  function countCats(staffList, monthResults, days) {
+    var out = {};
+    for (var d = 1; d <= days; d++) out[d] = { early: 0, late: 0, night: 0, mid: 0 };
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      if (st.active === false || st.countInHeadcount === false) continue;
+      var res = monthResults[st.id];
+      if (!res) continue;
+      for (var d2 = 1; d2 <= days; d2++) {
+        var cats = res.perDay[d2] ? res.perDay[d2].cats : [];
+        var seen = {};
+        for (var j = 0; j < cats.length; j++) {
+          var c = cats[j];
+          if (seen[c]) continue;
+          seen[c] = true;
+          if (out[d2][c] !== undefined) out[d2][c]++;
+        }
+      }
+    }
+    return out;
+  }
+
+  /* 日別「訪問介護員(group='visit')の休み数」を数える純粋関数。
+   * 夜勤(group='night')・デイ(group='day'=通所)は対象外。集計は各職員の主セル(cells)のみ。
+   * isOff(v): セル文字列が休系(休/公/希/有/欠)なら true を返す判定関数。
+   * isVisible(st): 当月に表示・集計対象なら true（退職・休職を除外）。省略時は active!==false。
+   * 返値: 配列 counts（counts[d] が日d の人数、d=1..days）。 */
+  function countVisitOffDays(staff, cells, days, isOff, isVisible) {
+    var counts = [], d;
+    for (d = 1; d <= days; d++) counts[d] = 0;
+    for (var i = 0; i < staff.length; i++) {
+      var st = staff[i];
+      if (isVisible ? !isVisible(st) : st.active === false) continue;
+      if ((st.group || 'visit') !== 'visit') continue;
+      var c = (cells && cells[st.id]) || {};
+      for (d = 1; d <= days; d++) {
+        var v = c[String(d)] || '';
+        if (v !== '' && isOff(v)) counts[d]++;
+      }
+    }
+    return counts;
+  }
+
+  /* 日別「デイサービス(通所)の職種別出勤者数」を数える純粋関数。
+   * 返値: 配列 out（out[d] = {care:介護士数, nurse:看護師数, total:合計}）。
+   * - mainDivision==='通所' の職員: 主セル(cells)が勤務日(isWork)なら計上。
+   * - それ以外(施設/訪問メイン)の職員: 従区分 subCells['通所'] に勤務があれば「通所応援」として計上。
+   * - isNurse(st): 看護師/准看護師資格なら true（→看護師、else 介護士）。
+   * - isWork(v): セル文字列が勤務(出勤)なら true（休/公/希/有/欠・空欄は false）。
+   * - isVisible(st): 当月に表示対象なら true（省略時 active!==false）。 */
+  function countDaycareByProfession(staff, cells, subCells, days, isNurse, isWork, isVisible) {
+    var out = [], d;
+    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0 };
+    for (var i = 0; i < staff.length; i++) {
+      var st = staff[i];
+      if (isVisible ? !isVisible(st) : st.active === false) continue;
+      var nurse = !!(isNurse && isNurse(st));
+      var isDaycare = (st.mainDivision === '通所');
+      var mainCells = (cells && cells[st.id]) || {};
+      var tsuusho = ((subCells && subCells[st.id]) || {})['通所'] || {};
+      for (d = 1; d <= days; d++) {
+        var v = isDaycare ? (mainCells[String(d)] || '') : (tsuusho[String(d)] || '');
+        if (v !== '' && isWork && isWork(v)) {
+          if (nurse) out[d].nurse++; else out[d].care++;
+        }
+      }
+    }
+    for (d = 1; d <= days; d++) out[d].total = out[d].care + out[d].nurse;
+    return out;
+  }
+
+  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftAggregate = api;
+})();
+/* ===== src/logic/analyzer-import.js ===== */
+/* analyzer-import.js — 過去シフト・アナライザ用：貼り付けグリッド(TSV)の読み取り＋集計
+ * 目的: スプシ/Excelの勤務表(行=職員×区分・列=日・セル=記号/時刻)をコピペで受け取り、
+ *       現行アプリと同一の parseCell / computeStaffMonth / computeMetrics で
+ *       訪問介護員の実働・常勤換算・介護福祉士割合を算出する。
+ * 方針: 本ファイルは「貼り付けテキスト → 構造化データ」の純粋変換(parseGrid)と、
+ *       それを既存の実証済みロジックへ橋渡しする集計(analyze)のみを持つ。UI/保存は持たない。
+ * 旧Safari互換のため ?. / ?? / replaceAll は使わない。
+ */
+(function () {
+  'use strict';
+  var isNode = (typeof require !== 'undefined' && typeof window === 'undefined');
+  var Sym = isNode ? require('./symbols.js') : window.ShiftSymbols;
+  var TC  = isNode ? require('./timecalc.js') : window.ShiftTimecalc;
+  var AG  = isNode ? require('./aggregate.js') : window.ShiftAggregate;
+
+  /* 区分の正規化（表記ゆれ吸収）。既知区分=訪問/施設/通所のみ集計対象 */
+  var DIV_ALIASES = {
+    '訪問': '訪問', '訪問介護': '訪問', 'いずみ': '訪問',
+    '施設': '施設', 'ラウレアハレ': '施設', '住宅': '施設',
+    '通所': '通所', 'デイ': '通所', 'デイサービス': '通所', 'せせらぎ': '通所'
+  };
+  var KNOWN_DIVISIONS = ['訪問', '施設', '通所'];
+
+  /* 資格ヘッダ → 資格名。aggregate.hasQual が参照する文字列に合わせる */
+  var QUAL_HEADERS = {
+    '初任者研修': '初任者研修',
+    '実務者研修': '実務者研修',
+    '介護福祉士': '介護福祉士',
+    '看護師': '看護師',
+    '准看護師': '准看護師'
+  };
+
+  function trim(s) { return (s === null || s === undefined) ? '' : String(s).replace(/^[\s　]+|[\s　]+$/g, ''); }
+  function normDiv(s) { var t = trim(s); return DIV_ALIASES[t] || null; }
+
+  /* 「7/1」「12/31」形式(月内日付)判定。カレンダーマスタの完全日付「2026/4/1」は3要素で不一致=除外 */
+  var RE_MD = /^(\d{1,2})\/(\d{1,2})$/;
+
+  /* テキストを2次元配列へ（行=\n / セル=\t）。末尾CR除去。セルは trim しない(内側空白を parseCell が扱うため)が、
+   * 検出用の判定では trim して比較する。 */
+  function splitGrid(text) {
+    var raw = (text === null || text === undefined) ? '' : String(text);
+    raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    var lines = raw.split('\n');
+    var grid = [];
+    for (var i = 0; i < lines.length; i++) {
+      grid.push(lines[i].split('\t'));
+    }
+    return grid;
+  }
+
+  /* 日付ヘッダ行を検出: M/D セルが最多の行。 */
+  function findHeaderRow(grid) {
+    var best = -1, bestCount = 0;
+    for (var r = 0; r < grid.length; r++) {
+      var count = 0;
+      for (var c = 0; c < grid[r].length; c++) {
+        if (RE_MD.test(trim(grid[r][c]))) count++;
+      }
+      if (count > bestCount) { bestCount = count; best = r; }
+    }
+    return bestCount >= 3 ? best : -1;   /* 最低3日分の日付が無ければヘッダ無しと判断 */
+  }
+
+  /* ヘッダ行から列レイアウトを決定 */
+  function detectColumns(grid, headerRow) {
+    var hdr = grid[headerRow];
+    var dayCols = [], dayLabels = [];
+    for (var c = 0; c < hdr.length; c++) {
+      var m = trim(hdr[c]).match(RE_MD);
+      if (m) { dayCols.push(c); dayLabels.push(trim(hdr[c])); }
+    }
+    var firstDay = dayCols.length ? dayCols[0] : hdr.length;
+    var lastDay = dayCols.length ? dayCols[dayCols.length - 1] : -1;
+
+    /* 資格列・合計列: 日付列より右で、ヘッダ名が一致する列 */
+    var qualCols = {}, totalCol = -1;
+    for (var c2 = 0; c2 < hdr.length; c2++) {
+      var h = trim(hdr[c2]);
+      if (QUAL_HEADERS[h] && c2 > lastDay) qualCols[QUAL_HEADERS[h]] = c2;
+      if (h === '合計稼働時間' && c2 > lastDay && totalCol < 0) totalCol = c2;
+    }
+
+    /* 区分列: 日付列より左で、データ行に既知区分が最も多く現れる列 */
+    var divCol = -1, divBest = 0;
+    for (var c3 = 0; c3 < firstDay; c3++) {
+      var cnt = 0;
+      for (var r = headerRow + 1; r < grid.length; r++) {
+        if (normDiv(grid[r][c3])) cnt++;
+      }
+      if (cnt > divBest) { divBest = cnt; divCol = c3; }
+    }
+    /* 氏名列=区分列の左隣。備考(勤務形態の特徴)列=氏名列のさらに左(存在すれば) */
+    var nameCol = divCol > 0 ? divCol - 1 : -1;
+    var noteCol = nameCol > 0 ? nameCol - 1 : -1;
+
+    return {
+      headerRow: headerRow, dayCols: dayCols, dayLabels: dayLabels,
+      firstDay: firstDay, lastDay: lastDay,
+      divCol: divCol, nameCol: nameCol, noteCol: noteCol,
+      qualCols: qualCols, totalCol: totalCol
+    };
+  }
+
+  /* 備考が「頭数に入れない」系なら true（自動除外の判定） */
+  function noteExcludes(note) {
+    var t = trim(note);
+    if (!t) return false;
+    return t.indexOf('頭数に入れない') >= 0 || t.indexOf('記載しない') >= 0 || t.indexOf('カウントしない') >= 0;
+  }
+
+  /* 貼り付けテキスト → 構造化データ
+   * 返値: { ok, error, days, dayLabels, columns, staff:[{name,note,excluded,qualifications,rows:[{division,cells,isMain,sheetTotalHours}]}], warnings } */
+  function parseGrid(text) {
+    var grid = splitGrid(text);
+    var warnings = [];
+    var headerRow = findHeaderRow(grid);
+    if (headerRow < 0) {
+      return { ok: false, error: '日付ヘッダ行が見つかりません。7/1 7/2 … の日付行を含めて選択してコピーしてください。', staff: [], warnings: warnings };
+    }
+    var col = detectColumns(grid, headerRow);
+    if (col.divCol < 0 || col.nameCol < 0) {
+      return { ok: false, error: '区分列(訪問/施設/通所)または氏名列を特定できません。氏名列を含めて選択してコピーしてください。', staff: [], warnings: warnings, columns: col };
+    }
+    var days = col.dayCols.length;
+
+    /* 資格列が未検出＝誰も介護福祉士と判定されず割合が黙って0%になる。必ず警告する */
+    var qKeys = []; for (var qk in col.qualCols) qKeys.push(qk);
+    if (qKeys.length === 0) {
+      warnings.push('⚠ 資格列（介護福祉士・実務者研修 等）を検出できませんでした。日付ヘッダ行と同じ行に資格見出しが含まれるよう範囲を選択してください（このままでは介護福祉士割合が0%になります）。');
+    }
+    if (col.totalCol < 0) {
+      warnings.push('「合計稼働時間」列は未検出です（シート値との検算はスキップします）。');
+    }
+
+    var staff = [];
+    var byName = {};       /* 同名の連続ブロックを1職員に束ねる(merged fill-down 用) */
+    var current = null;
+
+    for (var r = headerRow + 1; r < grid.length; r++) {
+      var row = grid[r];
+      var division = normDiv(row[col.divCol]);
+      if (!division) { current = null; continue; }   /* 区分でない行(曜日行・区切り行)は無視し連結を切る */
+
+      var nameCell = trim(row[col.nameCol]);
+      if (nameCell !== '') {
+        /* 新しい職員ブロックの先頭行(結合セルの左上に氏名)。
+         * 備考/除外判定は氏名列より左の全列(勤務形態の特徴・今月の連絡事項 等)を走査する。 */
+        var noteParts = [];
+        for (var lc = 0; lc < col.divCol; lc++) {
+          if (lc === col.nameCol) continue;
+          var lv = trim(row[lc]);
+          if (lv) noteParts.push(lv);
+        }
+        var noteText = noteParts.join(' / ');
+        current = {
+          name: nameCell,
+          note: noteText,
+          excluded: noteExcludes(noteText),
+          qualifications: [],
+          _qualSet: {},
+          rows: []
+        };
+        staff.push(current);
+        byName[nameCell] = current;
+      } else if (!current) {
+        warnings.push((r + 1) + '行目: 氏名が特定できない勤務行をスキップしました。');
+        continue;
+      }
+
+      /* 資格の収集(ブロック内どの行でも非空なら該当・union) */
+      for (var q in col.qualCols) {
+        if (trim(row[col.qualCols[q]]) !== '') {
+          if (!current._qualSet[q]) { current._qualSet[q] = 1; current.qualifications.push(q); }
+        }
+      }
+
+      /* 区分行のセル(日→生値) */
+      var cells = {};
+      for (var k = 0; k < col.dayCols.length; k++) {
+        var v = trim(row[col.dayCols[k]]);
+        if (v !== '') cells[String(k + 1)] = v;
+      }
+      var sheetTotal = null;
+      if (col.totalCol >= 0) {
+        var tv = trim(row[col.totalCol]).replace(/[,，]/g, '');
+        var num = parseFloat(tv);
+        if (!isNaN(num)) sheetTotal = num;
+      }
+      current.rows.push({ division: division, cells: cells, isMain: false, sheetTotalHours: sheetTotal });
+    }
+
+    /* 各職員: 主区分(isMain)を決定＝勤務日数が最多の区分行(同日兼務の重複控除の基準)。
+     * 兼務が無い(=単一区分)なら結果は不変。 */
+    for (var s = 0; s < staff.length; s++) {
+      var st = staff[s];
+      var mainIdx = -1, mainWork = -1;
+      for (var ri = 0; ri < st.rows.length; ri++) {
+        var wc = countWorkDays(st.rows[ri].cells);
+        if (wc > mainWork) { mainWork = wc; mainIdx = ri; }
+      }
+      for (var ri2 = 0; ri2 < st.rows.length; ri2++) st.rows[ri2].isMain = (ri2 === mainIdx);
+      delete st._qualSet;
+    }
+
+    if (staff.length === 0) {
+      warnings.push('⚠ 職員を1人も検出できませんでした（区分行が見つかりません）。氏名・区分・日付ヘッダ行を含めて選択してください。');
+    }
+
+    return {
+      ok: true, error: null, days: days, dayLabels: col.dayLabels,
+      columns: col, staff: staff, warnings: warnings
+    };
+  }
+
+  /* セル群のうち勤務(work/nightIn)を含む日数を数える(主区分判定用の軽量プリパス) */
+  function countWorkDays(cells) {
+    var n = 0;
+    for (var d in cells) {
+      var p = Sym.parseCell(cells[d], Sym.DEFAULT_SYMBOLS);
+      var hit = false;
+      for (var i = 0; i < p.parts.length; i++) {
+        if (p.parts[i].kind === 'work' || p.parts[i].kind === 'nightIn') { hit = true; break; }
+      }
+      if (hit) n++;
+    }
+    return n;
+  }
+
+  /* ===== 資格マスタ（職員名→所持資格を一度だけ登録し、以降は名前照合で自動判定） ===== */
+  /* 氏名の照合キー。NFKC正規化(全角/半角の空白・数字を吸収)＋空白除去。
+   * 「山田 太郎」＝「山田　太郎」＝「山田太郎」を同一視。※表示名(rec.name)は変えず照合キーのみ正規化。
+   * 注: 異体字(﨑/髙等)は字体依存で畳まれない場合あり＝名簿とシフトで表記が違うと非一致(資格不明⚠で表面化)。 */
+  function normName(s) {
+    var t = String(s === null || s === undefined ? '' : s);
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    return t.replace(/[\s　]/g, '');
+  }
+
+  /* 資格の解決: マスタ最優先 → シート資格列 → 不明。qualMaster={normName:{name,quals[]}} */
+  function resolveQuals(sheetQuals, name, qualMaster) {
+    var key = normName(name);
+    if (qualMaster && key && qualMaster[key] && qualMaster[key].quals) {
+      return { quals: qualMaster[key].quals, source: 'master' };
+    }
+    if (sheetQuals && sheetQuals.length) return { quals: sheetQuals, source: 'sheet' };
+    return { quals: [], source: 'none' };
+  }
+
+  /* 勤務表から資格マスタを自動生成（シート資格列に印がある職員のみ・既存は温存＝手入力を上書きしない）。
+   * 返値 {master, added}。 */
+  function seedMaster(parsed, existing) {
+    var master = {}, k;
+    for (k in (existing || {})) master[k] = existing[k];
+    var added = 0;
+    for (var i = 0; i < parsed.staff.length; i++) {
+      var st = parsed.staff[i];
+      var key = normName(st.name);
+      if (!key) continue;
+      if (!st.qualifications || !st.qualifications.length) continue; /* 資格列に印がある職員のみ自動取込 */
+      if (master[key]) continue; /* 既存(手入力含む)は温存 */
+      master[key] = { name: st.name, quals: st.qualifications.slice() };
+      added++;
+    }
+    return { master: master, added: added };
+  }
+
+  /* マスタ統合（書き出し/クラウド取込用）。データ喪失防止:
+   * 取込側の quals が空のとき、既存(非空含む)を温存する＝別端末で資格未入力のまま作成した職員が
+   * 同期で既存の介福等を消してしまう事故を防ぐ。取込側が非空なら取込を採用（訂正の反映）。 */
+  function mergeMaster(existing, imported) {
+    var out = {}, k;
+    for (k in (existing || {})) out[k] = existing[k];
+    for (k in (imported || {})) {
+      var imp = imported[k];
+      var impQuals = (imp && imp.quals) || [];
+      if (out[k] && impQuals.length === 0) continue; /* 取込が空＝既存を温存(資格を消さない) */
+      out[k] = imp;
+    }
+    return out;
+  }
+
+  /* 職員名簿の「資格」欄（例「准看護師・介護福祉士」「介護支援専門員・初任者研修・薬剤師」）を
+   * アナライザが扱う資格(初任者研修/実務者研修/介護福祉士/看護師/准看護師)へマップ。
+   * 返値 {quals, unmapped}。unmapped=対象5資格に当たらない語(薬剤師/ヘルパー2級/基礎研修 等・参考表示用)。
+   * 方針: 介護福祉士/実務者/初任者/看護師/准看護師 のみ判定。ヘルパー1級2級・基礎研修は実務者/初任者へ
+   *       自動等価付けしない(現行の運用判断＝③は介福＋実務者のみ)。必要なら資格マスタ画面で手調整。 */
+  function mapQualString(s) {
+    var quals = [], unmapped = [];
+    var str = String(s === null || s === undefined ? '' : s);
+    if (!trim(str)) return { quals: quals, unmapped: unmapped };
+    function add(q) { if (quals.indexOf(q) < 0) quals.push(q); }
+    var noJun = str.split('准看護師').join(''); /* 「看護師」判定から准看護師を除く */
+    if (str.indexOf('介護福祉士') >= 0) add('介護福祉士');
+    if (str.indexOf('実務者') >= 0) add('実務者研修');
+    if (str.indexOf('初任者') >= 0) add('初任者研修');
+    if (str.indexOf('准看護師') >= 0) add('准看護師');
+    if (noJun.indexOf('看護師') >= 0) add('看護師');
+    var toks = str.split(/[・／\/,、\s　]+/);
+    for (var i = 0; i < toks.length; i++) {
+      var t = trim(toks[i]);
+      if (!t || t === '無資格') continue;
+      if (t.indexOf('介護福祉士') >= 0 || t.indexOf('実務者') >= 0 || t.indexOf('初任者') >= 0 || t.indexOf('看護師') >= 0) continue;
+      if (unmapped.indexOf(t) < 0) unmapped.push(t);
+    }
+    return { quals: quals, unmapped: unmapped };
+  }
+
+  var NAME_HEADERS = { '氏名': 1, '名前': 1, '職員名': 1, '氏 名': 1, '職員氏名': 1 };
+  /* セルが資格語を含むか（資格列の内容検出・列推定用） */
+  function qualHit_(s) {
+    var t = trim(s); if (!t) return 0;
+    return /介護福祉士|実務者|初任者|准看護師|看護師|ヘルパー|基礎研修|無資格|療法士|介護支援専門員|社会福祉|栄養士|薬剤師|研修/.test(t) ? 1 : 0;
+  }
+  /* セルが「氏名らしい」か（漢字名=2/かな名=1/非該当=0）。番号・日付・資格語・勤務形態・長い住所を除外。 */
+  function nameScore_(s) {
+    var t = trim(s); if (!t) return 0;
+    if (/^[0-9０-９]/.test(t)) return 0;
+    if (/資格|研修|介護福祉士|看護師|准看護師|ヘルパー|療法士|専門員|主事|栄養士|薬剤師/.test(t)) return 0;
+    if (/^(常勤|非常勤|専従|兼務|男|女|在籍|不在籍|正社員|契約社員|パート|役員|加入)/.test(t)) return 0;
+    if (!/[一-鿿぀-ヿ]/.test(t)) return 0;
+    var len = t.replace(/[\s　]/g, '').length;
+    if (len < 2 || len > 12) return 0;          /* 住所等の長文を除外 */
+    return /[一-鿿]/.test(t) ? 2 : 1;   /* 漢字名を優先(氏名列 > ふりがな列) */
+  }
+
+  /* 職員名簿(スプシ)の貼り付け → 資格マスタ。
+   * 方式A: 「氏名(名前/職員名)」＋「資格」の見出し行を検出して列を特定（推奨・確実）。
+   * 方式B: 見出しが無くても、内容から資格列(資格語ヒット最多)と氏名列(氏名らしさ最多)を推定
+   *        （氏名列と資格列の2列だけコピーした場合や見出し無しコピーでも読める）。
+   * 返値 {ok, master, count, unmapped, mode, nameCol, shikakuCol, error}。列番号は1始まりで報告。 */
+  function parseStaffRoster(text) {
+    var grid = splitGrid(text);
+    var nameIdx = -1, shikakuIdx = -1, headerRow = -1, mode = '';
+
+    /* 方式A: 見出し行 */
+    for (var r = 0; r < grid.length; r++) {
+      var ni = -1, si = -1;
+      for (var c = 0; c < grid[r].length; c++) {
+        var v = trim(grid[r][c]);
+        if (ni < 0 && NAME_HEADERS[v]) ni = c;
+        if (si < 0 && v === '資格') si = c;
+        else if (si < 0 && v.indexOf('資格') >= 0 && v.indexOf('取得') < 0 && v.indexOf('日') < 0 && v.indexOf('番号') < 0) si = c;
+      }
+      if (ni >= 0 && si >= 0) { headerRow = r; nameIdx = ni; shikakuIdx = si; mode = 'header'; break; }
+    }
+
+    /* 方式B: 内容推定（見出しが取れなかった場合） */
+    if (mode !== 'header') {
+      var maxCols = 0, rr;
+      for (rr = 0; rr < grid.length; rr++) if (grid[rr].length > maxCols) maxCols = grid[rr].length;
+      var qHits = [], nHits = [], c2;
+      for (c2 = 0; c2 < maxCols; c2++) { qHits[c2] = 0; nHits[c2] = 0; }
+      for (rr = 0; rr < grid.length; rr++) {
+        for (c2 = 0; c2 < grid[rr].length; c2++) { qHits[c2] += qualHit_(grid[rr][c2]); nHits[c2] += nameScore_(grid[rr][c2]); }
+      }
+      var qBest = -1, qMax = 0, c4;
+      for (c4 = 0; c4 < maxCols; c4++) if (qHits[c4] > qMax) { qMax = qHits[c4]; qBest = c4; }
+      var nBest = -1, nMax = 0, c5;
+      for (c5 = 0; c5 < maxCols; c5++) { if (c5 === qBest) continue; if (nHits[c5] > nMax) { nMax = nHits[c5]; nBest = c5; } }
+      if (qBest >= 0 && qMax >= 2 && nBest >= 0 && nMax >= 2) { shikakuIdx = qBest; nameIdx = nBest; headerRow = -1; mode = 'content'; }
+    }
+
+    if (nameIdx < 0 || shikakuIdx < 0) {
+      return {
+        ok: false, master: {}, count: 0, unmapped: [], mode: '', nameCol: -1, shikakuCol: -1,
+        error: '氏名列と資格列を特定できませんでした。次のどちらかでお試しください：①「氏名」と「資格」の見出し行を含めて範囲選択してコピー、または ②氏名の列と資格の列の2列だけを選択してコピー。'
+      };
+    }
+
+    var startRow = (headerRow >= 0) ? headerRow + 1 : 0;
+    var master = {}, count = 0, unmappedSet = {}, r6;
+    for (r6 = startRow; r6 < grid.length; r6++) {
+      var name = trim(grid[r6][nameIdx] || '');
+      if (!name) continue;
+      if (NAME_HEADERS[name] || name === '資格') continue;                 /* 見出し語は職員扱いしない */
+      if (mode === 'content' && !nameScore_(name)) continue;               /* 内容推定時は氏名らしくない行を除外 */
+      var key = normName(name);
+      if (!key) continue;
+      var mp = mapQualString(grid[r6][shikakuIdx] || '');
+      master[key] = { name: name, quals: mp.quals };
+      count++;
+      for (var u = 0; u < mp.unmapped.length; u++) unmappedSet[mp.unmapped[u]] = 1;
+    }
+    var unmapped = []; for (var k in unmappedSet) unmapped.push(k);
+    return { ok: true, master: master, count: count, unmapped: unmapped, mode: mode, nameCol: nameIdx + 1, shikakuCol: shikakuIdx + 1, error: null };
+  }
+
+  /* 構造化データ → 集計。既存の computeStaffMonth / computeMetrics を再利用。
+   * settings.fteBaseHours(常勤換算の分母h)・paidLeaveCountsAsWork 等は timecalc の既定に従う。
+   * nightSplit は使わない(夜勤は各区分行に実入力されているため、行の区分へそのまま計上する)。
+   * qualMaster(任意): 職員名→所持資格。渡すとシート資格列より優先して介護福祉士割合を判定する。 */
+  function analyze(parsed, settings, qualMaster) {
+    var s = TC.fillSettings(settings);
+    var days = parsed.days;
+    var staffList = [];
+    var monthResults = {};
+    var perStaff = [];
+    var crossCheck = [];
+    var unknownQualStaff = [];
+
+    for (var i = 0; i < parsed.staff.length; i++) {
+      var st = parsed.staff[i];
+      var id = 'a' + i;
+      var res = TC.computeStaffMonth({
+        days: days, rows: st.rows, settings: s,
+        symbols: Sym.DEFAULT_SYMBOLS, nightSplit: null, offDayMultiplier: 1
+      });
+      monthResults[id] = res;
+
+      /* 資格を解決(マスタ優先→シート列→不明) */
+      var rq = resolveQuals(st.qualifications, st.name, qualMaster);
+
+      /* aggregate 用の職員オブジェクト(役員/除外は countInHeadcount:false) */
+      staffList.push({
+        id: id,
+        qualifications: rq.quals,
+        active: true,
+        countInHeadcount: st.excluded ? false : true
+      });
+
+      /* 区分別実働(時間) */
+      var divH = {};
+      for (var dv in res.totals.divMin) divH[dv] = Math.round(res.totals.divMin[dv] / 60 * 100) / 100;
+
+      /* 合計稼働時間列との検算(区分行ごと) */
+      var sheetH = {};
+      for (var ri = 0; ri < st.rows.length; ri++) {
+        var d0 = st.rows[ri].division;
+        if (st.rows[ri].sheetTotalHours !== null) {
+          sheetH[d0] = (sheetH[d0] || 0) + st.rows[ri].sheetTotalHours;
+        }
+      }
+      for (var d1 in sheetH) {
+        var rec = divH[d1] || 0;
+        var diff = Math.round((rec - sheetH[d1]) * 100) / 100;
+        if (Math.abs(diff) >= 0.5) {
+          crossCheck.push({ name: st.name, division: d1, recomputed: rec, sheet: sheetH[d1], diff: diff });
+        }
+      }
+
+      /* 資格不明(マスタ・シート列どちらにも無い)＝訪問実働のある非除外者は割合を誤らせるので収集 */
+      if (rq.source === 'none' && !st.excluded && (res.totals.divMin['訪問'] || 0) > 0) unknownQualStaff.push(st.name);
+
+      perStaff.push({
+        name: st.name, note: st.note, excluded: st.excluded,
+        qualifications: rq.quals, qualSource: rq.source,
+        divHours: divH, sheetHours: sheetH,
+        totalHours: Math.round(res.totals.workMin / 60 * 100) / 100,
+        attendDays: res.totals.attendDays, offDays: res.totals.offDays,
+        warnings: res.warnings
+      });
+    }
+
+    var metrics = AG.computeMetrics(staffList, monthResults, s);
+
+    /* 訪問の常勤換算「人数」: 訪問介護員等 / 介福 / 介福+実務者 (28日ベース・分母=fteBaseHours) */
+    var base = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 160;
+    var fteVisitAll = 0, fteVisitKaifuku = 0, fteVisitKaifukuJitsumu = 0;
+    for (var j = 0; j < staffList.length; j++) {
+      var stj = staffList[j];
+      if (stj.countInHeadcount === false) continue;
+      var r2 = monthResults[stj.id];
+      var vmin = (r2.totals.divMin28 && r2.totals.divMin28['訪問']) || 0;
+      if (vmin <= 0) continue;
+      var fte = vmin / 60 / base;
+      fteVisitAll += fte;
+      if (AG.hasQual(stj, '介護福祉士')) { fteVisitKaifuku += fte; fteVisitKaifukuJitsumu += fte; }
+      else if (AG.hasQual(stj, '実務者研修')) { fteVisitKaifukuJitsumu += fte; }
+    }
+    var round2 = function (x) { return Math.round(x * 100) / 100; };
+
+    var warnings = (parsed.warnings || []).slice();
+    if (unknownQualStaff.length) {
+      warnings.push('⚠ 資格が不明な訪問職員が ' + unknownQualStaff.length + ' 名います（' + unknownQualStaff.join('、') + '）。資格マスタに登録するか勤務表に資格列を含めてください（未登録は介護福祉士に数えません）。');
+    }
+
+    return {
+      days: days,
+      perStaff: perStaff,
+      metrics: metrics,
+      fteVisit: {
+        all: round2(fteVisitAll),
+        kaifuku: round2(fteVisitKaifuku),
+        kaifukuJitsumu: round2(fteVisitKaifukuJitsumu),
+        base: base
+      },
+      crossCheck: crossCheck,
+      unknownQualStaff: unknownQualStaff,
+      warnings: warnings
+    };
+  }
+
+  /* ===== 保存データの書き出し／読み込み（バックアップ・共有・別PC移行） ===== */
+  var EXPORT_APP = 'shift-analyzer', EXPORT_VERSION = 1;
+
+  /* 保存月配列＋資格マスタ → 書き出しオブジェクト（JSON.stringify して .json ファイルにする） */
+  function buildExport(months, qualMaster, exportedAt) {
+    return { app: EXPORT_APP, version: EXPORT_VERSION, exportedAt: exportedAt || null, months: months || [], qualMaster: qualMaster || {} };
+  }
+
+  /* 書き出しJSONテキスト → { ok, months, qualMaster, error }。他アプリ/壊れたファイルは弾く（安全側） */
+  function parseImport(text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return { ok: false, months: [], qualMaster: {}, error: 'JSONとして読み込めません（ファイルが壊れている可能性）。' }; }
+    if (!data || data.app !== EXPORT_APP || Object.prototype.toString.call(data.months) !== '[object Array]') {
+      return { ok: false, months: [], qualMaster: {}, error: 'このツールの書き出しファイルではありません。' };
+    }
+    var out = [];
+    for (var i = 0; i < data.months.length; i++) {
+      var r = data.months[i];
+      if (r && typeof r.label === 'string' && r.label !== '') out.push(r);
+    }
+    var qm = (data.qualMaster && typeof data.qualMaster === 'object') ? data.qualMaster : {};
+    return { ok: true, months: out, qualMaster: qm, error: null };
+  }
+
+  /* 既存＋取込を label で統合（取込が同ラベルを上書き）。label 昇順で返す（非破壊）。
+   * ファイル読み込み用＝ユーザーが明示的に選んだファイルの内容を優先。 */
+  function mergeSaved(existing, imported) {
+    var byLabel = {}, order = [], k;
+    function put(r) { if (r && typeof r.label === 'string' && r.label !== '') { if (byLabel[r.label] === undefined) order.push(r.label); byLabel[r.label] = r; } }
+    for (var i = 0; i < (existing || []).length; i++) put(existing[i]);
+    for (var j = 0; j < (imported || []).length; j++) put(imported[j]);
+    var out = [];
+    for (k = 0; k < order.length; k++) out.push(byLabel[order[k]]);
+    out.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
+    return out;
+  }
+
+  /* 保存時刻(savedAt)で新しい方を採用する統合（クラウド同期用＝双方向で「最後の編集」を残す）。
+   * savedAt 欠落は最古扱い。同時刻/両方欠落は取込を優先。ローカルの未同期編集を古い版で潰さない。 */
+  function mergeSavedByTime(existing, imported) {
+    var byLabel = {}, order = [], k;
+    function ts(r) { return (r && typeof r.savedAt === 'string') ? r.savedAt : ''; }
+    function put(r) {
+      if (!r || typeof r.label !== 'string' || r.label === '') return;
+      if (byLabel[r.label] === undefined) { order.push(r.label); byLabel[r.label] = r; return; }
+      if (ts(r) >= ts(byLabel[r.label])) byLabel[r.label] = r; /* 新しい方（同値は後着＝取込）を採用 */
+    }
+    for (var i = 0; i < (existing || []).length; i++) put(existing[i]);
+    for (var j = 0; j < (imported || []).length; j++) put(imported[j]);
+    var out = [];
+    for (k = 0; k < order.length; k++) out.push(byLabel[order[k]]);
+    out.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
+    return out;
+  }
+
+  var api = {
+    parseGrid: parseGrid,
+    analyze: analyze,
+    splitGrid: splitGrid,
+    findHeaderRow: findHeaderRow,
+    detectColumns: detectColumns,
+    normDiv: normDiv,
+    noteExcludes: noteExcludes,
+    normName: normName,
+    resolveQuals: resolveQuals,
+    seedMaster: seedMaster,
+    mergeMaster: mergeMaster,
+    mapQualString: mapQualString,
+    parseStaffRoster: parseStaffRoster,
+    buildExport: buildExport,
+    parseImport: parseImport,
+    mergeSaved: mergeSaved,
+    mergeSavedByTime: mergeSavedByTime,
+    KNOWN_DIVISIONS: KNOWN_DIVISIONS
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftAnalyzerImport = api;
+})();
+/* ===== src/analyzer-ui.js ===== */
+/* analyzer-ui.js — 過去シフト・アナライザのUI制御（貼付→集計→表示・保存/見返し・書き出し/読み込み・印刷）
+ * 依存: window.ShiftAnalyzerImport / ShiftSymbols / ShiftTimecalc / ShiftAggregate
+ * 個人情報方針: 保存先はこのツール専用の localStorage（shiftanalyzer:v1:）＝[[project-shift-app]]の
+ *   ライブマスタ(shiftapp:v1:)とは別名前空間で、今後のシフト管理を汚さない。ユーザーの要望により
+ *   「見返し」のため貼付原本(氏名含む)＋集計を保存する。書き出しはローカルファイル(.json)。
+ *   クラウド同期(任意・既定OFF)を有効化した場合のみ、貼付原本(氏名含む)＋資格マスタ(氏名)を
+ *   利用者自身のGoogle Drive(GAS・トークン制限・https・POST body/URLには載せない)へ送信・共有する。
+ *   ＝閲覧専用(RO)トークンを渡す相手は全氏名と生シフトを閲覧できる点に留意（トークン管理が肝）。
+ *   console への個人情報出力はしない・画面表示は全て esc()・トークンは password 欄。
+ */
+(function () {
+  'use strict';
+  var AI = window.ShiftAnalyzerImport;
+  var LS_KEY = 'shiftanalyzer:v1:months';
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  }); }
+  function h1(min) { return (min / 60).toFixed(1); }
+  function pct(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+
+  /* localStorage への書き込みは失敗を握り潰さない（容量超過・プライベートモード等）。
+   * 書込→読戻し検証まで行い、失敗時は必ず警告して false を返す（呼出側は保存成功を偽装しない）。 */
+  function lsWrite(key, valueObj) {
+    try {
+      var str = JSON.stringify(valueObj);
+      localStorage.setItem(key, str);
+      var back = localStorage.getItem(key);           /* 読み戻し検証 */
+      if (back !== str) throw new Error('保存後に読み戻せませんでした（保存されていません）');
+      return true;
+    } catch (e) {
+      alert('⚠ 保存に失敗しました。データは保存されていません。\n' +
+        '原因の可能性: ブラウザの保存容量不足、プライベートブラウズ、ストレージ無効。\n' +
+        '大切なデータは「書き出し(.json)」でファイル保存してください。\n（詳細: ' + (e && e.message ? e.message : String(e)) + '）');
+      return false;
+    }
+  }
+
+  var lastAnalysis = null;   /* 直近の解析結果(保存用) */
+  var lastParsed = null;     /* 直近の parseGrid 結果(資格マスタ取り込み用) */
+
+  /* ===== 資格マスタ（職員名→所持資格を一度だけ登録。以降は名前照合で自動判定） ===== */
+  var MASTER_KEY = 'shiftanalyzer:v1:qualmaster';
+  var QUAL_LIST = ['初任者研修', '実務者研修', '介護福祉士', '看護師', '准看護師'];
+  function loadMaster() { try { var v = JSON.parse(localStorage.getItem(MASTER_KEY) || '{}'); return (v && typeof v === 'object' && Object.prototype.toString.call(v) !== '[object Array]') ? v : {}; } catch (e) { return {}; } }
+  function saveMaster(m) { return lsWrite(MASTER_KEY, m || {}); }
+
+  function settings() {
+    var base = parseFloat($('fteBase').value);
+    if (!(base > 0)) base = 160;
+    return {
+      fteBaseHours: base,
+      paidLeaveCountsAsWork: $('paidWork').checked
+    };
+  }
+
+  function run() {
+    var text = $('pasteArea').value || '';
+    var out = $('results');
+    if (!text.trim()) { out.innerHTML = '<p class="muted">勤務表を貼り付けて「集計」を押してください。</p>'; return; }
+    var parsed;
+    try { parsed = AI.parseGrid(text); } catch (e) { out.innerHTML = '<p class="err">読み取りに失敗しました: ' + esc(e.message) + '</p>'; return; }
+    if (!parsed.ok) { out.innerHTML = '<p class="err">' + esc(parsed.error) + '</p>'; lastAnalysis = null; lastParsed = null; return; }
+    lastParsed = parsed;
+    try {
+      var r = AI.analyze(parsed, settings(), loadMaster());
+      lastAnalysis = r;
+      render(r, parsed);
+    } catch (e2) {
+      lastAnalysis = null;
+      out.innerHTML = '<p class="err">集計中にエラーが発生しました: ' + esc(e2.message) + '</p>';
+    }
+  }
+
+  function render(r, parsed) {
+    var m = r.metrics;
+    var html = '';
+
+    /* 月次サマリ(訪問介護・特定事業所加算の人材要件) */
+    html += '<section class="card"><h2>月次サマリ（訪問介護）</h2>';
+    html += '<div class="grid">';
+    html += cell('① 訪問 総実働', h1(m.visitTotalMin) + ' h');
+    html += cell('② うち 介護福祉士', h1(m.visitKaifukuMin) + ' h');
+    html += cell('③ うち 介福＋実務者', h1(m.visitKaifukuJitsumuMin) + ' h');
+    html += cell('介護福祉士 割合 (②÷①)', '<b class="big">' + pct(m.kaifukuPctVisit) + ' %</b>');
+    html += cell('介福＋実務者 割合 (③÷①)', pct(m.kaifukuJitsumuPctVisit) + ' %');
+    html += cell('訪問介護員等 常勤換算', r.fteVisit.all.toFixed(2) + ' 人');
+    html += cell('うち介福 常勤換算', r.fteVisit.kaifuku.toFixed(2) + ' 人');
+    html += cell('常勤換算の分母', r.fteVisit.base + ' h/月');
+    html += '</div>';
+    html += '<p class="note">対象=' + parsed.days + '日分 / 割合(①〜③)は<b>全日の実働時間比</b>＝常勤換算比に相当。「常勤換算 人数」は<b>28日(4週)基準</b>のため、30/31日月では割合と厳密一致しません。役員・除外・休職者は分母に含みません。月をまたぐ夜勤は「入り」の月に全計上します。加算の割合基準（全日／28日）は様式・自治体でご確認ください。</p>';
+    html += '</section>';
+
+    /* 職員別 */
+    html += '<section class="card"><h2>職員別</h2><div class="tblwrap"><table><thead><tr>' +
+      '<th>氏名</th><th>資格</th><th class="num">訪問</th><th class="num">施設</th><th class="num">通所</th><th class="num">合計</th><th>備考</th></tr></thead><tbody>';
+    for (var i = 0; i < r.perStaff.length; i++) {
+      var s = r.perStaff[i];
+      var kaifuku = s.qualifications.indexOf('介護福祉士') >= 0;
+      var src = s.qualSource === 'master' ? '<span class="src">マスタ</span>'
+        : s.qualSource === 'sheet' ? '<span class="src">シート</span>'
+        : '<span class="src none">不明</span>';
+      html += '<tr' + (s.excluded ? ' class="excl"' : '') + '>';
+      html += '<td>' + esc(s.name) + '</td>';
+      html += '<td>' + esc(s.qualifications.join('・') || '—') + (kaifuku ? ' <span class="badge">介福</span>' : '') + ' ' + src + '</td>';
+      html += '<td class="num">' + numH(s.divHours['訪問']) + '</td>';
+      html += '<td class="num">' + numH(s.divHours['施設']) + '</td>';
+      html += '<td class="num">' + numH(s.divHours['通所']) + '</td>';
+      html += '<td class="num">' + s.totalHours.toFixed(1) + '</td>';
+      html += '<td>' + (s.excluded ? '<span class="tag">頭数外</span> ' : '') + esc(s.note || '') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div></section>';
+
+    /* 検算(合計稼働時間列との差) */
+    if (r.crossCheck && r.crossCheck.length) {
+      html += '<section class="card warn"><h2>⚠ 検算の不一致（シート「合計稼働時間」列との差 ≥0.5h）</h2><ul>';
+      for (var c = 0; c < r.crossCheck.length; c++) {
+        var x = r.crossCheck[c];
+        html += '<li>' + esc(x.name) + '（' + esc(x.division) + '）: 再計算 ' + x.recomputed.toFixed(1) + 'h / シート ' + x.sheet.toFixed(1) + 'h（差 ' + (x.diff > 0 ? '+' : '') + x.diff.toFixed(1) + 'h）</li>';
+      }
+      html += '</ul><p class="note">差の原因は主にセルの記法（休憩・夜勤ペア・月跨ぎの夜勤明け）です。数値の採否はご確認ください。</p></section>';
+    }
+
+    /* 警告（⚠を含む＝資格列未検出など重要なものは警告スタイル） */
+    if (r.warnings && r.warnings.length) {
+      var hasAlert = false;
+      for (var wa = 0; wa < r.warnings.length; wa++) { if (String(r.warnings[wa]).indexOf('⚠') >= 0) { hasAlert = true; break; } }
+      html += '<section class="card' + (hasAlert ? ' warn' : '') + '"><h2>読み取りメモ</h2><ul>';
+      for (var w = 0; w < r.warnings.length; w++) html += '<li>' + esc(r.warnings[w]) + '</li>';
+      html += '</ul></section>';
+    }
+
+    /* シフト表形式（貼付データの再現＋勤務時間）＝印刷で最後の独立1ページに出すため結果の末尾に配置 */
+    html += renderGridHTML(parsed, r);
+
+    $('results').innerHTML = html;
+  }
+
+  function cell(label, val) { return '<div class="kv"><span class="k">' + esc(label) + '</span><span class="v">' + val + '</span></div>'; }
+  function numH(v) { return (typeof v === 'number' && v > 0) ? v.toFixed(1) : '<span class="muted">–</span>'; }
+
+  /* シフト表形式の描画: 貼付データを 職員×区分×日 のマスで再現し、各区分行に実働時間を添える。
+   * 色は現行シフトの配色に準拠（早=桃/遅=青/休=黄+赤字/有=薄桃）。 */
+  function cellStyle(raw) {
+    if (!raw) return '';
+    try {
+      var p = window.ShiftSymbols.parseCell(raw, window.ShiftSymbols.DEFAULT_SYMBOLS);
+      for (var i = 0; i < p.parts.length; i++) {
+        var pt = p.parts[i];
+        if (pt.kind === 'paidOff') return 'background:#f4cccc';
+        if (pt.kind === 'off' || pt.kind === 'publicOff') return 'background:#fff2cc;color:#c00';
+        if (pt.cat === 'early') return 'background:#ead1dc';
+        if (pt.cat === 'late') return 'background:#cfe2f3';
+      }
+    } catch (e) {}
+    return '';
+  }
+  function renderGridHTML(parsed, r) {
+    var days = parsed.days, labels = parsed.dayLabels || [];
+    var html = '<details open class="card gridsec"><summary><b>シフト表形式で表示（勤務時間つき）</b></summary>';
+    html += '<div class="tblwrap"><table class="sheet"><thead><tr><th class="nm">氏名</th><th class="dv">区分</th>';
+    for (var d = 1; d <= days; d++) html += '<th class="dcol">' + esc(labels[d - 1] || d) + '</th>';
+    html += '<th class="num">出勤</th><th class="num">休</th><th class="num">実働h</th></tr></thead><tbody>';
+    for (var i = 0; i < parsed.staff.length; i++) {
+      var st = parsed.staff[i], ps = r.perStaff[i] || { divHours: {} };
+      var shown = [];
+      for (var j = 0; j < st.rows.length; j++) { for (var kk in st.rows[j].cells) { shown.push(st.rows[j]); break; } }
+      if (!shown.length && st.rows.length) shown.push(st.rows[0]);
+      for (var k = 0; k < shown.length; k++) {
+        var row = shown[k];
+        html += '<tr' + (st.excluded ? ' class="excl"' : '') + '>';
+        if (k === 0) html += '<td rowspan="' + shown.length + '" class="nm">' + esc(st.name) + (st.excluded ? ' <span class="tag">頭数外</span>' : '') + '</td>';
+        html += '<td class="dv">' + esc(row.division) + '</td>';
+        for (var d2 = 1; d2 <= days; d2++) {
+          var v = row.cells[String(d2)] || '';
+          html += '<td class="cell" style="' + cellStyle(v) + '">' + esc(v) + '</td>';
+        }
+        if (k === 0) {
+          html += '<td rowspan="' + shown.length + '" class="num">' + (ps.attendDays != null ? ps.attendDays : '') + '</td>';
+          html += '<td rowspan="' + shown.length + '" class="num">' + (ps.offDays != null ? ps.offDays : '') + '</td>';
+        }
+        var h = ps.divHours ? (ps.divHours[row.division] || 0) : 0;
+        html += '<td class="num">' + (h > 0 ? h.toFixed(1) : '<span class="muted">–</span>') + '</td>';
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table></div>';
+    html += '<p class="note">貼り付けた勤務表を再現し、各区分行の右端に実働時間(h)を表示。色: 早=桃／遅=青／休=黄＋赤字／有=薄桃。この表は「保存」した月を「表示」で再現でき、印刷/PDFにも含まれます。</p>';
+    html += '</details>';
+    return html;
+  }
+
+  /* ===== 保存月（氏名なしの集計値のみ）と合算 ===== */
+  function loadMonths() { try { var v = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); return (Object.prototype.toString.call(v) === '[object Array]') ? v : []; } catch (e) { return []; } }
+  function saveMonths(a) { return lsWrite(LS_KEY, a || []); }
+
+  function saveCurrent() {
+    if (!lastAnalysis) { alert('先に「集計」を実行してください。'); return; }
+    var label = ($('monthLabel').value || '').trim();
+    if (!label) { alert('月ラベル（例: 2026-04）を入力してください。'); return; }
+    var exists = loadMonths().some(function (x) { return x.label === label; });
+    if (exists && !confirm(label + ' は既に保存済みです。上書きしますか？')) return;
+    var m = lastAnalysis.metrics;
+    var months = loadMonths().filter(function (x) { return x.label !== label; });
+    months.push({
+      label: label,
+      savedAt: new Date().toISOString(),   /* クラウド同期の新旧判定用（最後の編集を残す） */
+      days: lastAnalysis.days,
+      rawText: $('pasteArea').value || '',   /* 見返し用に貼付原本を保存（このツール専用ストレージ内） */
+      settings: settings(),
+      visitTotalMin: m.visitTotalMin,
+      visitKaifukuMin: m.visitKaifukuMin,
+      visitKaifukuJitsumuMin: m.visitKaifukuJitsumuMin,
+      fteAll: lastAnalysis.fteVisit.all,
+      fteKaifuku: lastAnalysis.fteVisit.kaifuku,
+      base: lastAnalysis.fteVisit.base
+    });
+    months.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
+    if (!saveMonths(months)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
+    renderMonths();
+    scheduleAutoSync(300);             /* 「この月を保存」時に自動でクラウドへ */
+    var box = $('savedMonths'); if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* 保存月を呼び出して再表示（貼付原本＋設定を復元して再集計） */
+  function loadSaved(label) {
+    var rec = null, months = loadMonths();
+    for (var i = 0; i < months.length; i++) if (months[i].label === label) { rec = months[i]; break; }
+    if (!rec) return;
+    if (!rec.rawText) { alert(label + ' には明細データが保存されていません（集計値のみ）。'); return; }
+    $('pasteArea').value = rec.rawText;
+    if (rec.settings) {
+      if (typeof rec.settings.fteBaseHours === 'number') $('fteBase').value = rec.settings.fteBaseHours;
+      if (typeof rec.settings.paidLeaveCountsAsWork === 'boolean') $('paidWork').checked = rec.settings.paidLeaveCountsAsWork;
+    }
+    $('monthLabel').value = label;
+    run();
+    var out = $('results'); if (out && out.scrollIntoView) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* 全保存月を .json ファイルへ書き出し（ローカルのみ・外部送信なし） */
+  function exportAll() {
+    var months = loadMonths();
+    if (!months.length) { alert('保存済みの月がありません。'); return; }
+    var d = new Date();
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
+    var data = AI.buildExport(months, loadMaster(), d.toISOString());
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'shift-analyzer-backup-' + stamp + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /* .json ファイルを読み込んで既存へ統合（同ラベルは取込が上書き） */
+  function importFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var res = AI.parseImport(String(ev.target.result || ''));
+      if (!res.ok) { alert('読み込めませんでした: ' + res.error); return; }
+      var merged = AI.mergeSaved(loadMonths(), res.months);
+      var okM = saveMonths(merged);
+      var okQ = saveMaster(AI.mergeMaster(loadMaster(), res.qualMaster));
+      renderMonths(); renderMaster();
+      if (okM && okQ) { scheduleAutoSync(1200); alert(res.months.length + ' 件を読み込みました（現在の保存: ' + merged.length + ' 月・資格マスタも統合）。'); }
+      /* 失敗時は lsWrite が警告済み＝成功を偽装しない */
+    };
+    reader.onerror = function () { alert('ファイルの読み込みに失敗しました。'); };
+    reader.readAsText(file);
+  }
+
+  /* 印刷時、シフト表がA4横1枚の高さに収まるよう、超過時のみフォントを自動縮小して --sheet-print-font に設定 */
+  function fitSheetForPrint(g) {
+    try {
+      var sheet = g.querySelector('table.sheet'); if (!sheet) return;
+      var mm = 96 / 25.4;
+      var pageW = (297 - 16) * mm, pageH = (210 - 16) * mm;   /* A4横 印刷可能域(余白8mm) */
+      var wrap = sheet.closest('.tblwrap');
+      var sv = { ww: wrap.style.width, wo: wrap.style.overflow, sw: sheet.style.width, st: sheet.style.tableLayout, sf: sheet.style.fontSize };
+      wrap.style.width = pageW + 'px'; wrap.style.overflow = 'visible';
+      sheet.style.width = '100%'; sheet.style.tableLayout = 'fixed'; sheet.style.fontSize = '7px';
+      void sheet.offsetWidth;
+      var h = sheet.getBoundingClientRect().height;
+      wrap.style.width = sv.ww; wrap.style.overflow = sv.wo; sheet.style.width = sv.sw; sheet.style.tableLayout = sv.st; sheet.style.fontSize = sv.sf;
+      var font = 7;
+      if (h > pageH) font = Math.max(4, 7 * (pageH / h) * 0.94);  /* 高さ超過時のみ縮小(安全率0.94・下限4px) */
+      document.documentElement.style.setProperty('--sheet-print-font', font.toFixed(2) + 'px');
+    } catch (e) {
+      document.documentElement.style.setProperty('--sheet-print-font', '7px');
+    }
+  }
+
+  function printResults() {
+    if (!lastAnalysis) { alert('先に「集計」を実行してください。'); return; }
+    /* シフト表(details.gridsec)が畳まれていても印刷時は必ず開き、印刷後に元へ戻す */
+    var g = document.querySelector('#results details.gridsec');
+    if (g) {
+      if (!g.open) {
+        g.open = true;
+        var restore = function () { g.open = false; window.removeEventListener('afterprint', restore); };
+        window.addEventListener('afterprint', restore);
+      }
+      fitSheetForPrint(g);   /* A4横1枚に縦も収める（超過時のみ縮小） */
+    }
+    window.print();
+  }
+
+  function renderMonths() {
+    var months = loadMonths();
+    var box = $('savedMonths');
+    if (!months.length) { box.innerHTML = '<p class="muted">保存済みの月はありません。各月を集計→「この月を保存」で蓄積すると、いつでも「表示」で見返せます（このツール専用の保存先。ライブのシフトは汚しません）。</p>'; return; }
+    var html = '<div class="tblwrap"><table><thead><tr><th><input type="checkbox" id="chkAll" checked></th><th>月</th><th class="num">訪問総</th><th class="num">介福</th><th class="num">介福＋実務者</th><th class="num">割合</th><th></th></tr></thead><tbody>';
+    for (var i = 0; i < months.length; i++) {
+      var x = months[i];
+      var p = x.visitTotalMin > 0 ? (x.visitKaifukuMin / x.visitTotalMin * 100) : 0;
+      var hasDetail = !!x.rawText;
+      html += '<tr><td><input type="checkbox" class="mchk" data-i="' + i + '" checked></td>' +
+        '<td>' + esc(x.label) + '</td>' +
+        '<td class="num">' + h1(x.visitTotalMin) + 'h</td>' +
+        '<td class="num">' + h1(x.visitKaifukuMin) + 'h</td>' +
+        '<td class="num">' + h1(x.visitKaifukuJitsumuMin) + 'h</td>' +
+        '<td class="num">' + pct(p) + '%</td>' +
+        '<td class="nowrap">' + (hasDetail ? '<button class="link" data-view="' + esc(x.label) + '">表示</button> ' : '<span class="muted">明細なし</span> ') +
+        '<button class="link" data-del="' + esc(x.label) + '">削除</button></td></tr>';
+    }
+    html += '</tbody></table></div><div id="combined"></div>';
+    box.innerHTML = html;
+
+    var chkAll = $('chkAll');
+    if (chkAll) chkAll.addEventListener('change', function () {
+      var cs = box.querySelectorAll('.mchk'); for (var j = 0; j < cs.length; j++) cs[j].checked = chkAll.checked; renderCombined();
+    });
+    var chks = box.querySelectorAll('.mchk');
+    for (var k = 0; k < chks.length; k++) chks[k].addEventListener('change', renderCombined);
+    var views = box.querySelectorAll('[data-view]');
+    for (var v = 0; v < views.length; v++) views[v].addEventListener('click', function () { loadSaved(this.getAttribute('data-view')); });
+    var dels = box.querySelectorAll('[data-del]');
+    for (var d = 0; d < dels.length; d++) dels[d].addEventListener('click', function () {
+      var lbl = this.getAttribute('data-del');
+      if (!confirm(lbl + ' を削除しますか？')) return;
+      saveMonths(loadMonths().filter(function (y) { return y.label !== lbl; }));
+      renderMonths(); scheduleAutoSync(1200);
+    });
+    renderCombined();
+  }
+
+  function renderCombined() {
+    var months = loadMonths();
+    var box = document.getElementById('combined');
+    if (!box) return;
+    var chks = document.querySelectorAll('.mchk');
+    var sel = [];
+    for (var i = 0; i < chks.length; i++) if (chks[i].checked) sel.push(months[parseInt(chks[i].getAttribute('data-i'), 10)]);
+    if (sel.length < 1) { box.innerHTML = ''; return; }
+    var den = 0, num = 0, numJ = 0, simpleSum = 0;
+    for (var j = 0; j < sel.length; j++) {
+      den += sel[j].visitTotalMin; num += sel[j].visitKaifukuMin; numJ += sel[j].visitKaifukuJitsumuMin;
+      simpleSum += sel[j].visitTotalMin > 0 ? (sel[j].visitKaifukuMin / sel[j].visitTotalMin * 100) : 0;
+    }
+    var combined = den > 0 ? num / den * 100 : 0;
+    var combinedJ = den > 0 ? numJ / den * 100 : 0;
+    var simpleAvg = simpleSum / sel.length;
+    box.innerHTML = '<section class="card accent"><h3>選択 ' + sel.length + ' 月の期間平均（前3月・前年度判定用）</h3>' +
+      '<div class="grid">' +
+      cell('合算（時間ベース）介福割合', '<b class="big">' + pct(combined) + ' %</b>') +
+      cell('合算 介福＋実務者割合', pct(combinedJ) + ' %') +
+      cell('各月割合の単純平均', pct(simpleAvg) + ' %') +
+      '</div><p class="note">合算＝Σ介福実働÷Σ訪問実働（常勤換算の期間平均に相当）。自治体・様式により採用する平均の取り方が異なる場合はご確認ください。</p></section>';
+  }
+
+  /* ===== クラウド同期（トークン制限・独立GAS）: データは自分のDriveのみ・URLにトークンを載せない ===== */
+  var CLOUD_CFG = 'shiftanalyzer:v1:cloud';
+  var CLOUD_REV = 'shiftanalyzer:v1:cloudrev';
+  var CLOUD_KEY = 'months';
+
+  function cloudCfg() {
+    var url = ($('cloudUrl').value || '').trim();
+    var token = ($('cloudToken').value || '').trim();
+    var auto = autoEnabled();
+    try { localStorage.setItem(CLOUD_CFG, JSON.stringify({ url: url, token: token, auto: auto })); } catch (e) {}
+    return { url: url, token: token, auto: auto };
+  }
+  function cloudStatus(msg, kind) {
+    var el = $('cloudStatus'); if (!el) return;
+    el.className = 'cloudstat ' + (kind || '');
+    el.textContent = msg;   /* textContent＝トークンや個人情報をHTMLに展開しない */
+  }
+  function cloudApi(payload) {
+    var c = cloudCfg();
+    if (!c.url || !c.token) return Promise.reject(new Error('URLとトークンを入力してください'));
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
+      return Promise.reject(new Error('URLは https://script.google.com/macros/s/.../exec の形式です'));
+    }
+    payload.token = c.token;
+    return fetch(c.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* CORSプリフライト回避 */
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) { if (j && j.error) throw new Error(cloudErrMsg(j.error)); return j; });
+  }
+  function cloudErrMsg(code) {
+    if (code === 'unauthorized') return 'トークンが違います（unauthorized）';
+    if (code === 'server-not-configured') return 'サーバ側のトークン未設定（SHIFTANALYZER_TOKEN）';
+    return code;
+  }
+  function getRev() { var n = parseInt(localStorage.getItem(CLOUD_REV) || '0', 10); return isNaN(n) ? 0 : n; }
+  function setRev(n) { try { localStorage.setItem(CLOUD_REV, String(n)); } catch (e) {} }
+
+  function cloudPing() {
+    cloudStatus('接続確認中…');
+    cloudApi({ action: 'ping' }).then(function (res) {
+      cloudStatus('接続OK（権限: ' + (res.role === 'ro' ? '閲覧のみ' : '編集可') + '）', 'ok');
+    }).catch(function (e) { cloudStatus('接続失敗: ' + e.message, 'err'); });
+  }
+  function cloudPull() {
+    cloudStatus('取得中…');
+    cloudApi({ action: 'pull', keys: [CLOUD_KEY] }).then(function (res) {
+      var ent = res.entries && res.entries[CLOUD_KEY];
+      if (!ent) { cloudStatus('クラウドにまだデータがありません', 'ok'); return; }
+      var pulled = (ent.data && ent.data.months) ? ent.data.months : (Object.prototype.toString.call(ent.data) === '[object Array]' ? ent.data : []);
+      var merged = AI.mergeSavedByTime(loadMonths(), pulled);   /* 新しい編集を残す(ローカル未同期を古い版で潰さない) */
+      if (!saveMonths(merged)) return;                          /* 保存失敗時は rev を進めない(desync防止) */
+      if (ent.data && ent.data.qualMaster) { if (!saveMaster(AI.mergeMaster(loadMaster(), ent.data.qualMaster))) return; }
+      setRev(ent.rev || 0);                                     /* 保存成功後にのみ rev 前進 */
+      renderMonths(); renderMaster();
+      cloudStatus('取得・統合しました（クラウド ' + pulled.length + '月 → 保存 ' + merged.length + '月・資格マスタも統合・権限 ' + (res.role === 'ro' ? '閲覧のみ' : '編集可') + '）', 'ok');
+    }).catch(function (e) { cloudStatus('取得失敗: ' + e.message, 'err'); });
+  }
+  function cloudPush(force) {
+    var months = loadMonths();
+    if (!months.length) { cloudStatus('保存済みの月がありません（先にローカルに「保存」してください）', 'err'); return; }
+    cloudStatus('クラウドへ保存中…');
+    cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: loadMaster() }, baseRev: getRev(), force: !!force })
+      .then(function (res) {
+        if (res.readOnly) { cloudStatus('このトークンは閲覧専用です（保存は編集可トークンで）', 'err'); return; }
+        if (res.conflict) {
+          if (confirm('クラウド側に新しいデータがあります。取得して統合してから保存し直しますか？（キャンセルで中止）')) {
+            cloudApi({ action: 'pull', keys: [CLOUD_KEY] }).then(function (p) {
+              var ent = p.entries && p.entries[CLOUD_KEY];
+              var pulled = ent && ent.data && ent.data.months ? ent.data.months : [];
+              if (!saveMonths(AI.mergeSavedByTime(loadMonths(), pulled))) return;   /* 保存失敗時は中断(desync/喪失防止) */
+              if (ent && ent.data && ent.data.qualMaster) { if (!saveMaster(AI.mergeMaster(loadMaster(), ent.data.qualMaster))) return; }
+              setRev(ent ? (ent.rev || 0) : 0);
+              renderMonths(); renderMaster();
+              cloudPush(false);   /* 統合後に再保存 */
+            }).catch(function (e) { cloudStatus('取得失敗: ' + e.message, 'err'); });
+          } else { cloudStatus('保存を中止しました（競合）', 'err'); }
+          return;
+        }
+        setRev(res.rev || 0);
+        lastPushedSig = localSig();   /* 手動保存後も署名を更新（自動同期の重複pushを防ぐ） */
+        cloudStatus('クラウドに保存しました（' + months.length + '月・rev ' + res.rev + '）', 'ok');
+      }).catch(function (e) { cloudStatus('保存失敗: ' + e.message, 'err'); });
+  }
+
+  /* ===== 自動同期（複数端末で常に最新を保存・共有） ===== */
+  var AUTO_INTERVAL = 60000;    /* 定期同期の間隔(60秒) */
+  var syncInFlight = false, autoTimer = null, lastPushedSig = null, autoStarted = false;
+
+  function cloudConfigured() {
+    var url = ($('cloudUrl').value || '').trim(), token = ($('cloudToken').value || '').trim();
+    return !!url && !!token && /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url);
+  }
+  function autoEnabled() { var el = $('cloudAuto'); return !!(el && el.checked); }
+  /* 資格マスタの正準署名（キー・quals をソート）＝端末間でキー学習順が違っても同一データなら同じ署名
+   * ＝順序差による無駄pushを防ぐ。月配列はラベルソート済みで安定なので生JSONを使う。 */
+  function canonMaster() {
+    try {
+      var m = JSON.parse(localStorage.getItem(MASTER_KEY) || '{}');
+      var keys = Object.keys(m).sort(), parts = [];
+      for (var i = 0; i < keys.length; i++) {
+        var e = m[keys[i]] || {}; var q = (e.quals || []).slice().sort();
+        parts.push(keys[i] + ':' + (e.name || '') + ':' + q.join(','));
+      }
+      return parts.join('|');
+    } catch (e) { return localStorage.getItem(MASTER_KEY) || '{}'; }
+  }
+  /* ローカルデータの署名（保存月＋資格マスタ）。変化検出でpush要否を判定＝無駄な送信を防ぐ。
+   * 未設定キー(null)を空データに正規化＋マスタは正準化＝見かけ上の差で誤pushしない */
+  function localSig() { try { return (localStorage.getItem(LS_KEY) || '[]') + '|' + canonMaster(); } catch (e) { return null; } }
+  function hhmm() { var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; }; return p(d.getHours()) + ':' + p(d.getMinutes()); }
+  function autoStat(msg, kind) { var el = $('cloudAutoStatus'); if (el) { el.className = 'cloudstat ' + (kind || ''); el.textContent = msg; } }
+  function extractMonths(ent) { return (ent && ent.data && ent.data.months) ? ent.data.months : (Object.prototype.toString.call(ent && ent.data) === '[object Array]' ? ent.data : []); }
+
+  /* 全量取得→統合（新しい編集を残す）。統合したら確実に再描画。返値=権限role */
+  function fullPull() {
+    return cloudApi({ action: 'pull', keys: [CLOUD_KEY] }).then(function (res) {
+      var ent = res.entries && res.entries[CLOUD_KEY];
+      if (ent) {
+        var merged = AI.mergeSavedByTime(loadMonths(), extractMonths(ent));
+        if (saveMonths(merged)) {                          /* 保存失敗時は rev を進めない */
+          /* 資格マスタ保存の失敗を無視して rev を進めると、次の push で古い/空マスタがサーバを上書きしうる。
+           * 手動 cloudPull と対称化: saveMaster 失敗時は rev を進めず return（＝以後の push は競合で保護される） */
+          if (ent.data && ent.data.qualMaster) { if (!saveMaster(AI.mergeMaster(loadMaster(), ent.data.qualMaster))) return res.role; }
+          setRev(ent.rev || 0);
+          renderMonths(); renderMaster();   /* 統合結果を確実に画面へ反映 */
+        }
+      }
+      return res.role;
+    });
+  }
+  /* 取得。まず head で server rev を確認し、ローカルが同rev(＝最新)なら全量取得を省略（省帯域）。
+   * head 未対応の古いGASでも動くよう、unknown action ならフォールバックで全量取得する。 */
+  function autoPull() {
+    return cloudApi({ action: 'head', keys: [CLOUD_KEY] }).then(function (h) {
+      var serverRev = (h && h.revs && typeof h.revs[CLOUD_KEY] === 'number') ? h.revs[CLOUD_KEY] : 0;
+      if (serverRev > 0 && serverRev === getRev()) return h.role;   /* 変化なし＝全量取得を省略 */
+      return fullPull();
+    }, function (headErr) {
+      if (headErr && /unknown action/i.test(headErr.message || '')) return fullPull();   /* 古いGAS互換 */
+      throw headErr;   /* 通信断など本当のエラーは伝播（次周期で再試行） */
+    });
+  }
+  /* ローカルに未共有の変更がある時だけ保存。競合(他端末が先行)なら取得→統合→再送(最大2回) */
+  function autoMaybePush(role, attempt) {
+    if (role === 'ro') return Promise.resolve('取得のみ ' + hhmm() + '（閲覧トークン）');
+    var sig = localSig();
+    if (sig === lastPushedSig) return Promise.resolve('最新に同期済 ' + hhmm());   /* 変更なし＝push不要 */
+    var months = loadMonths();
+    return cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: loadMaster() }, baseRev: getRev() })
+      .then(function (res) {
+        if (res.readOnly) return '閲覧専用トークン（保存不可）';
+        if (res.conflict) {
+          if (attempt >= 2) return '競合が続くため次回に再試行';
+          return autoPull().then(function (role2) { return autoMaybePush(role2, attempt + 1); });
+        }
+        setRev(res.rev || 0); lastPushedSig = sig;   /* pushした時点の署名を記録＝以後は変化時のみ再push */
+        return 'クラウド保存 ' + hhmm() + '（' + months.length + '月）';
+      });
+  }
+  function autoSync() {
+    if (syncInFlight || !autoEnabled() || !cloudConfigured()) return;
+    syncInFlight = true; autoStat('同期中…');
+    /* Promise.resolve().then で包み、autoPull が同期例外を投げても必ず旗を戻す（固着防止） */
+    Promise.resolve().then(autoPull).then(function (role) { return autoMaybePush(role, 0); })
+      .then(function (msg) { autoStat(msg, 'ok'); })
+      .catch(function (e) { autoStat('接続待ち（' + (e && e.message ? e.message : e) + '）', ''); })   /* オフライン等は警告にしない */
+      .then(function () { syncInFlight = false; }, function () { syncInFlight = false; });
+  }
+  function scheduleAutoSync(delay) {
+    if (!autoEnabled() || !cloudConfigured()) return;
+    if (autoTimer) clearTimeout(autoTimer);
+    autoTimer = setTimeout(autoSync, delay || 1000);
+  }
+  function startAutoSync() {
+    if (autoStarted) return; autoStarted = true;
+    setInterval(autoSync, AUTO_INTERVAL);                                   /* 定期同期 */
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) scheduleAutoSync(500); }); /* 復帰時 */
+    window.addEventListener('online', function () { scheduleAutoSync(500); });                                   /* 再接続時 */
+    scheduleAutoSync(1500);                                                 /* 起動直後に一度 */
+  }
+
+  /* ===== 資格マスタ編集UI ===== */
+  function renderMaster() {
+    var m = loadMaster();
+    var keys = Object.keys(m).sort(function (a, b) { var na = (m[a].name || a), nb = (m[b].name || b); return na < nb ? -1 : (na > nb ? 1 : 0); });
+    var box = $('masterBox');
+    var html = '<div class="tblwrap"><table><thead><tr><th>氏名</th>';
+    for (var q = 0; q < QUAL_LIST.length; q++) html += '<th class="qh">' + esc(QUAL_LIST[q]) + '</th>';
+    html += '<th></th></tr></thead><tbody>';
+    if (!keys.length) {
+      html += '<tr><td colspan="' + (QUAL_LIST.length + 2) + '" class="muted">まだ登録がありません。勤務表を集計してから「この勤務表から取り込む」で自動登録、または下の欄で氏名を追加してください。</td></tr>';
+    }
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], rec = m[k] || { quals: [] };
+      html += '<tr><td>' + esc(rec.name || k) + '</td>';
+      for (var q2 = 0; q2 < QUAL_LIST.length; q2++) {
+        var on = (rec.quals || []).indexOf(QUAL_LIST[q2]) >= 0 ? ' checked' : '';
+        html += '<td class="qh"><input type="checkbox" class="qchk" data-k="' + esc(k) + '" data-q="' + esc(QUAL_LIST[q2]) + '"' + on + '></td>';
+      }
+      html += '<td><button class="link" data-mdel="' + esc(k) + '">削除</button></td></tr>';
+    }
+    html += '</tbody></table></div>';
+    box.innerHTML = html;
+    var chks = box.querySelectorAll('.qchk');
+    for (var c = 0; c < chks.length; c++) chks[c].addEventListener('change', function () {
+      var mm = loadMaster(), kk = this.getAttribute('data-k'), qq = this.getAttribute('data-q');
+      if (!mm[kk]) mm[kk] = { name: kk, quals: [] };
+      var arr = mm[kk].quals || [], idx = arr.indexOf(qq);
+      if (this.checked) { if (idx < 0) arr.push(qq); } else if (idx >= 0) arr.splice(idx, 1);
+      mm[kk].quals = arr;
+      if (!saveMaster(mm)) { renderMaster(); return; }  /* 失敗時はUIを永続値へ戻す（乖離防止） */
+      if (lastAnalysis) run(); /* 変更を割合へ即反映 */
+    });
+    var dels = box.querySelectorAll('[data-mdel]');
+    for (var d = 0; d < dels.length; d++) dels[d].addEventListener('click', function () {
+      var mm = loadMaster(), kk = this.getAttribute('data-mdel');
+      if (!confirm(((mm[kk] && mm[kk].name) || kk) + ' を資格マスタから削除しますか？')) return;
+      delete mm[kk]; if (!saveMaster(mm)) { renderMaster(); return; } renderMaster(); if (lastAnalysis) run();
+    });
+  }
+  function addMasterName() {
+    var name = ($('masterName').value || '').trim();
+    if (!name) return;
+    var key = AI.normName(name);
+    if (!key) return;
+    var m = loadMaster();
+    if (!m[key]) m[key] = { name: name, quals: [] };
+    if (!saveMaster(m)) { renderMaster(); return; }
+    $('masterName').value = ''; renderMaster();
+  }
+  function seedFromSheet() {
+    if (!lastParsed) { alert('先に勤務表を貼り付けて「集計」を実行してください。'); return; }
+    var res = AI.seedMaster(lastParsed, loadMaster());
+    if (!saveMaster(res.master)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
+    renderMaster();
+    if (lastAnalysis) run();
+    scheduleAutoSync(1200);
+    alert(res.added + ' 名を資格マスタへ取り込みました（既存の登録は保持しました）。');
+  }
+
+  /* 職員名簿(スプシ)の貼り付けから資格マスタへ一括取り込み */
+  function importRoster() {
+    var text = $('rosterPaste').value || '';
+    var st = $('rosterStatus');
+    function fail(msg) { st.className = 'cloudstat err'; st.textContent = msg; alert('取り込みできませんでした。\n\n' + msg); }
+    if (!text.trim()) { fail('職員名簿を貼り付けてください。'); return; }
+    var res;
+    try { res = AI.parseStaffRoster(text); } catch (e) { fail('取り込み中にエラー: ' + (e && e.message ? e.message : String(e))); return; }
+    if (!res.ok) { fail(res.error); return; }
+    if (!res.count) { fail('氏名のある行が見つかりませんでした。氏名列を含めて選択してください。'); return; }
+    var merged = AI.mergeMaster(loadMaster(), res.master);
+    if (!saveMaster(merged)) return;   /* 保存失敗時は lsWrite が警告済み */
+    renderMaster();
+    if (lastAnalysis) run();           /* 表示中のシフトへ即反映 */
+    var how = res.mode === 'header' ? '見出しから検出' : '内容から推定';
+    var msg = res.count + ' 名の資格を取り込み・保存しました（氏名=' + res.nameCol + '列目／資格=' + res.shikakuCol + '列目・' + how + '）。';
+    if (res.unmapped.length) msg += ' 取り込まなかった対象外資格: ' + res.unmapped.slice(0, 12).join('・') + (res.unmapped.length > 12 ? ' 他' : '');
+    st.className = 'cloudstat ok'; st.textContent = msg;   /* textContent＝氏名/資格をHTMLに展開しない */
+    scheduleAutoSync(1200);
+    alert(msg + '\n\nこの登録は保存され、今後シフトを貼って「集計」するたびに自動で反映されます。（検出した列が違う場合は、氏名列と資格列の2列だけをコピーして貼り直してください）');
+  }
+
+  function init() {
+    $('runBtn').addEventListener('click', run);
+    $('clearBtn').addEventListener('click', function () { $('pasteArea').value = ''; $('results').innerHTML = ''; lastAnalysis = null; });
+    $('printBtn').addEventListener('click', printResults);
+    $('saveMonthBtn').addEventListener('click', saveCurrent);
+    $('exportBtn').addEventListener('click', exportAll);
+    $('importBtn').addEventListener('click', function () { $('importInput').click(); });
+    $('importInput').addEventListener('change', function () { if (this.files && this.files[0]) importFile(this.files[0]); this.value = ''; });
+    try {
+      var cc = JSON.parse(localStorage.getItem(CLOUD_CFG) || '{}');
+      if (cc.url) $('cloudUrl').value = cc.url;
+      if (cc.token) $('cloudToken').value = cc.token;
+      $('cloudAuto').checked = (cc.auto !== false);   /* 既定ON */
+    } catch (e) { $('cloudAuto').checked = true; }
+    $('cloudPingBtn').addEventListener('click', cloudPing);
+    $('cloudPullBtn').addEventListener('click', cloudPull);
+    $('cloudPushBtn').addEventListener('click', function () { cloudPush(false); });
+    $('cloudAuto').addEventListener('change', function () {
+      cloudCfg();
+      if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(300); autoStat('自動同期 ON'); }
+      else autoStat(autoEnabled() ? 'URLとトークンを入力すると自動同期します' : '自動同期 OFF');
+    });
+    $('cloudUrl').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
+    $('cloudToken').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
+    if (cloudConfigured() && autoEnabled()) startAutoSync();
+    $('masterSeedBtn').addEventListener('click', seedFromSheet);
+    $('rosterImportBtn').addEventListener('click', importRoster);
+    $('masterAddBtn').addEventListener('click', addMasterName);
+    $('masterName').addEventListener('keydown', function (e) { if (e.key === 'Enter') addMasterName(); });
+    renderMaster();
+    renderMonths();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+</body>
+</html>

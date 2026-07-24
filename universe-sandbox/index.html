@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Universe">
+<meta name="theme-color" content="#05060d">
+<title>Universe Sandbox — 太陽系シミュレーター</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icons/icon-192.png">
+<style>
+  :root { --bg:#05060d; --panel:rgba(16,20,34,.82); --line:rgba(255,255,255,.12);
+          --txt:#e8ecf6; --muted:#8b93a8; --accent:#5b9dff; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg);
+              color:var(--txt); font-family:-apple-system,"Hiragino Sans",system-ui,sans-serif; }
+  #scene { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  /* HTML labels over the 3D scene */
+  #labels { position:fixed; inset:0; pointer-events:none; z-index:5; }
+  .label { position:absolute; transform:translate(-50%,-150%); font-size:11px; color:#cfe0ff;
+           text-shadow:0 0 4px #000,0 0 8px #000; white-space:nowrap; opacity:.85; }
+  .label.sel { color:#fff; font-weight:700; opacity:1; }
+
+  /* top clock */
+  #clock { position:fixed; top:env(safe-area-inset-top,8px); left:50%; transform:translateX(-50%);
+           background:var(--panel); border:1px solid var(--line); border-radius:999px;
+           padding:6px 16px; font-size:13px; z-index:10; backdrop-filter:blur(8px);
+           font-variant-numeric:tabular-nums; }
+
+  /* bottom time controls */
+  #timebar { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,12px) + 8px);
+             transform:translateX(-50%); display:flex; align-items:center; gap:12px;
+             background:var(--panel); border:1px solid var(--line); border-radius:16px;
+             padding:10px 16px; z-index:10; backdrop-filter:blur(8px);
+             box-shadow:0 8px 30px rgba(0,0,0,.4); max-width:94vw; }
+  .btn { background:#1d2640; color:var(--txt); border:1px solid var(--line); border-radius:10px;
+         padding:8px 12px; font-size:15px; cursor:pointer; }
+  .btn:active { transform:scale(.96); }
+  .btn.small { width:100%; margin-top:8px; padding:10px; }
+  .btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* placement-mode banner */
+  #addBanner { display:none; position:fixed; left:50%; top:calc(env(safe-area-inset-top,8px) + 44px);
+               transform:translateX(-50%); align-items:center; gap:10px; z-index:10;
+               background:var(--panel); border:1px solid var(--line); border-radius:14px;
+               padding:8px 12px; backdrop-filter:blur(8px); box-shadow:0 8px 30px rgba(0,0,0,.4);
+               max-width:94vw; flex-wrap:wrap; justify-content:center; }
+  .ban-txt { font-size:12px; color:var(--muted); }
+  #presetBtns { display:flex; gap:6px; }
+  #presetBtns button { background:#1d2640; color:var(--txt); border:1px solid var(--line);
+                       border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  #presetBtns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #playBtn { width:46px; height:46px; font-size:20px; border-radius:50%;
+             background:var(--accent); border:none; color:#fff; }
+  #playBtn.paused { background:#2a3553; }
+  .ctrl { display:flex; flex-direction:column; gap:2px; }
+  .ctrl label { font-size:10px; color:var(--muted); }
+  .ctrl .val { font-size:12px; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:130px; accent-color:var(--accent); }
+
+  /* right side panel */
+  #panel { position:fixed; top:0; right:0; height:100%; width:260px; z-index:9;
+           background:var(--panel); border-left:1px solid var(--line); backdrop-filter:blur(10px);
+           display:flex; flex-direction:column; transition:transform .25s ease; }
+  #panel.collapsed { transform:translateX(260px); }
+  #panelToggle { position:absolute; left:-40px; top:14px; width:40px; height:44px;
+                 border:1px solid var(--line); border-right:none; border-radius:10px 0 0 10px;
+                 background:var(--panel); color:var(--txt); font-size:18px; cursor:pointer; }
+  .panel-pad { padding:16px; overflow-y:auto; }
+  h1 { font-size:15px; margin:env(safe-area-inset-top,8px) 0 2px; }
+  .sub { font-size:11px; color:var(--muted); margin:0 0 14px; }
+  h2 { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;
+       margin:16px 0 8px; border-top:1px solid var(--line); padding-top:14px; }
+  #bodyList { list-style:none; margin:0; padding:0; }
+  #bodyList li { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px;
+                 font-size:13px; cursor:pointer; }
+  #bodyList li:active { background:#1d2640; }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .opt { display:flex; align-items:center; justify-content:space-between; font-size:13px;
+         padding:6px 0; }
+  .opt input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+  .seg { display:flex; gap:4px; }
+  .seg button { background:#1d2640; color:var(--txt); border:1px solid var(--line); border-radius:7px;
+                padding:4px 12px; font-size:12px; cursor:pointer; }
+  .seg button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #bodyInfo { background:#141a2c; border:1px solid var(--line); border-radius:12px; padding:12px;
+              font-size:13px; }
+  .info-name { font-size:15px; font-weight:700; margin-bottom:8px; }
+  .info-row { display:flex; justify-content:space-between; padding:3px 0; color:var(--muted); }
+  .info-row b { color:var(--txt); font-variant-numeric:tabular-nums; }
+  .info-edit { display:block; font-size:11px; color:var(--muted); margin-top:10px; }
+  .info-edit input { width:100%; margin-top:4px; padding:7px; border-radius:8px;
+                     border:1px solid var(--line); background:#0d1322; color:var(--txt); font-size:14px; }
+  .muted { color:var(--muted); }
+  @media (max-width:520px){ #panel{ width:78vw; } #panel.collapsed{ transform:translateX(78vw); } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="labels"></div>
+
+  <div id="clock">経過 0.00 年</div>
+
+  <div id="addBanner">
+    <span class="ban-txt">追加モード：タップで配置 → ドラッグで初速</span>
+    <div id="presetBtns">
+      <button data-preset="asteroid">小惑星</button>
+      <button data-preset="planet" class="active">惑星</button>
+      <button data-preset="star">恒星</button>
+    </div>
+    <button id="addDone" class="btn">完了</button>
+  </div>
+
+  <div id="timebar">
+    <button id="playBtn" title="再生 / 一時停止">⏸</button>
+    <div class="ctrl">
+      <label>速度 <span id="speedLabel" class="val"></span></label>
+      <input id="speed" type="range" min="0" max="100" value="48">
+    </div>
+    <button id="addBtn" class="btn">＋追加</button>
+    <button id="resetBtn" class="btn">リセット</button>
+  </div>
+
+  <aside id="panel">
+    <button id="panelToggle">☰</button>
+    <div class="panel-pad">
+      <h1>Universe Sandbox</h1>
+      <p class="sub">太陽系 N体重力シミュレーター</p>
+
+      <div id="bodyInfo"><p class="muted">天体をタップで選択</p></div>
+
+      <h2>天体</h2>
+      <ul id="bodyList"></ul>
+
+      <h2>表示設定</h2>
+      <div class="opt"><span>惑星軌道線</span><input id="orbitsChk" type="checkbox" checked></div>
+      <div class="opt"><span>軌跡を表示</span><input id="trailsChk" type="checkbox" checked></div>
+      <div class="opt"><span>名前を表示</span><input id="labelsChk" type="checkbox" checked></div>
+      <div class="opt"><span>軌道予測線（選択中）</span><input id="predChk" type="checkbox"></div>
+      <div class="opt"><span>衝突モード</span>
+        <div id="collideBtns" class="seg">
+          <button data-mode="merge" class="active">合体</button>
+          <button data-mode="fragment">分裂</button>
+        </div>
+      </div>
+      <div class="opt"><span>天体サイズ <span id="sizeLabel" class="val"></span></span></div>
+      <input id="size" type="range" min="2" max="100" value="33" style="width:100%">
+    </div>
+  </aside>
+
+  <script type="module" src="./js/app.js"></script>
+  <script>
+    // Register the service worker for offline / home-screen use.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>

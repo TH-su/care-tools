@@ -1,0 +1,17 @@
+{
+  "name": "Universe Sandbox — 太陽系シミュレーター",
+  "short_name": "Universe",
+  "description": "太陽系 N体重力シミュレーター。天体を配置し、重力で軌道を描き、衝突・合体させて遊べます。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<!-- iframe 内で実在氏名を表示するためキャッシュを残さない -->
+<meta http-equiv="Cache-Control" content="no-store">
+<title>訪問／全支援 左右比較</title>
+<style>
+/* 訪問 週間俯瞰 と 全支援 週間俯瞰 を同一オリジンの iframe で左右に並べ、時刻・曜日・表示倍率を連動させる比較シェル。
+   ★このシェル自身は氏名を一切描画せず、共有 localStorage / GAS へ書き込まない（iframe のスクロール/倍率の読み書きのみ）。
+   既存2ツールのコードには非干渉（連動は各 iframe が公開する window.OVLINK を呼ぶだけ）。 */
+:root {
+  --pri: #1a73e8; --pri-d: #1557b0; --orange: #b45309; --orange-l: #ffe0b2;
+  --g1: #f1f3f4; --g3: #dadce0; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  color: var(--g9); background: var(--g3); display: flex; flex-direction: column; overflow: hidden;
+}
+.hdr {
+  flex-shrink: 0; min-height: 50px; display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; flex-wrap: wrap; color: #fff;
+  background: linear-gradient(90deg, var(--pri) 0 50%, var(--orange-l) 50% 100%);   /* 左=青(訪問)・右=薄橙(全支援) */
+  box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+}
+.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.hdr-sp { flex: 1; }
+/* 連動トグルは左半分（青地）＝白文字。 */
+.sync-toggle {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px;
+  background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.6); border-radius: 6px;
+  font-size: 13px; font-weight: 700; color: #fff; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.sync-toggle:focus-within { outline: 2px solid #fff; outline-offset: 1px; }
+.sync-toggle input { width: 20px; height: 20px; cursor: pointer; }
+/* 単独ビューへのリンクは右半分（薄オレンジ地）＝どちらの半分でも読める白チップ＋濃色文字。 */
+.link-single {
+  min-height: 44px; display: inline-flex; align-items: center; background: #fff;
+  border: 1px solid rgba(0,0,0,.18); color: #3c4043; border-radius: 6px; padding: 6px 14px;
+  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.link-single:hover { background: #f1f3f4; }
+.link-single:focus-visible { outline: 2px solid #5f3300; outline-offset: 1px; }
+.hdr-note { font-size: 11px; color: #5f3300; font-weight: 600; white-space: nowrap; text-shadow: 0 1px 1px rgba(255,255,255,.55); }
+
+.panes { flex: 1; display: flex; min-height: 0; }
+.pane { flex: 1 1 50%; min-width: 0; position: relative; }
+.pane.left { border-right: 2px solid var(--g7); }
+.pane iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.pane-tag {
+  position: absolute; top: 8px; left: 8px; z-index: 5; font-size: 11px; font-weight: 700; color: #fff;
+  padding: 2px 9px; border-radius: 10px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.pane.left  .pane-tag { background: var(--pri-d); }
+.pane.right .pane-tag { background: var(--orange); }
+
+/* 狭い画面（タブレット縦・スマホ）は上下2段に */
+@media (max-width: 860px) {
+  .panes { flex-direction: column; }
+  .pane.left { border-right: none; border-bottom: 2px solid var(--g7); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <span class="hdr-title">訪問／全支援 左右比較</span>
+  <label class="sync-toggle" title="スクロール位置（時刻・曜日）と表示倍率を左右で連動させる">
+    <input type="checkbox" id="syncOn" checked aria-label="左右の時刻・曜日・表示倍率を連動させる">時刻・曜日・倍率を連動
+  </label>
+  <span class="hdr-sp"></span>
+  <span class="hdr-note">印刷は各単独画面から →</span>
+  <a class="link-single" href="visit-overview.html" aria-label="訪問 週間俯瞰を単独で開く">訪問だけ</a>
+  <a class="link-single" href="support-overview.html" aria-label="全支援 週間俯瞰を単独で開く">全支援だけ</a>
+</header>
+
+<div class="panes">
+  <div class="pane left"><span class="pane-tag">訪問</span><iframe id="fVisit" title="訪問 週間俯瞰" src="visit-overview.html"></iframe></div>
+  <div class="pane right"><span class="pane-tag">全支援</span><iframe id="fSupport" title="全支援 週間俯瞰" src="support-overview.html"></iframe></div>
+</div>
+
+<script>
+'use strict';
+/* 左右iframeの表示連動。各iframeが公開する
+   window.OVLINK（centerTime/scrollToTime/centerDay/scrollToDay/setZoom/getZoom/onZoom）を使い
+   ①縦スクロール＝中央時刻を合わせる ②横スクロール＝中央の曜日位置を合わせる
+   ③ズーム＝倍率を揃える（同じ倍率＝1時間の高さが同じ＝同じ時間帯が同じ高さで並ぶ）。
+   縦横とも生pxではなく「時刻」「曜日位置」という意味単位でやり取りするため、倍率や盤面幅が違っても一致する。
+   同一オリジン前提（GitHub Pages 同ディレクトリ）。
+   ★このシェルは iframe の scrollTop/zoom 設定と DOM 読取のみ。共有データ・localStorage へ書き込まない。
+   ★エコー抑止に setTimeout/requestAnimationFrame を使わない：背景タブでは rAF が止まりフラグが解除されず
+     連動が永久に効かなくなるため。代わりに「自分が設定した値と一致する通知は無視」する値ベース判定を使う。 */
+(function () {
+  var A = document.getElementById('fVisit');    // 訪問
+  var B = document.getElementById('fSupport');  // 全支援
+  var syncOn = document.getElementById('syncOn');
+
+  function kit(ifr)   { try { return ifr.contentWindow && ifr.contentWindow.OVLINK; } catch (e) { return null; } }
+  function wrapOf(ifr){ try { return ifr.contentDocument && ifr.contentDocument.getElementById('boardWrap'); } catch (e) { return null; } }
+  function boardOf(ifr){ try { return ifr.contentDocument && ifr.contentDocument.getElementById('board'); } catch (e) { return null; } }
+
+  // 比較ビューでは各ペインの印刷ボタン・入れ子の切替スイッチ/比較リンクを隠す
+  // （iframe内印刷はA3縦1枚を保証できないため入口を閉じる。単独画面の印刷機能は不変）。
+  function tidyPane(ifr) {
+    try {
+      var d = ifr.contentDocument; if (!d) return;
+      var pb = d.getElementById('btnPrint'); if (pb) pb.style.display = 'none';
+      var hide = d.querySelectorAll('.ovsw, .ovcmp');
+      for (var i = 0; i < hide.length; i++) hide[i].style.display = 'none';
+    } catch (e) {}
+  }
+
+  // ── スクロール連動（縦=時刻・横=曜日の両方。エコー判定は「直前に自分が設定した位置と一致するか」） ──
+  var expect = { v: null, s: null };            // プログラム的に設定した直近の {top,left}
+  // 相手ペインを「同じ時刻・同じ曜日」に合わせる
+  function applyView(ifr, key, t, d) {
+    var k = kit(ifr), w = wrapOf(ifr);
+    if (!k || !w) return;
+    var bt = w.scrollTop, bl = w.scrollLeft;
+    k.scrollToTime(t);
+    if (d !== null && typeof k.scrollToDay === 'function') k.scrollToDay(d);
+    if (w.scrollTop !== bt || w.scrollLeft !== bl) {
+      expect[key] = { top: w.scrollTop, left: w.scrollLeft };   // clamp 後の実値を記録
+    } else if (!isEcho(key, w)) {
+      // 位置が動かなければ scroll イベントは出ないので記録は残さない。ただし「未配送のエコー記録」と
+      // 一致する場合は消さない（消すと後から届いた本物のエコーを実操作と誤認して1回押し戻してしまう）。
+      expect[key] = null;
+    }
+  }
+  function isEcho(key, w) {
+    var e = expect[key];
+    return !!e && Math.abs(w.scrollTop - e.top) <= 1 && Math.abs(w.scrollLeft - e.left) <= 1;
+  }
+  function onScroll(srcIfr, srcKey, dstIfr, dstKey) {
+    var w = wrapOf(srcIfr); if (!w) return;
+    if (isEcho(srcKey, w)) {
+      expect[srcKey] = null; return;            // 自分が設定した分の反響＝無視（連続スクロールは妨げない）
+    }
+    expect[srcKey] = null;
+    if (!syncOn.checked) return;
+    var ks = kit(srcIfr); if (!ks) return;
+    applyView(dstIfr, dstKey, ks.centerTime(), (typeof ks.centerDay === 'function') ? ks.centerDay() : null);
+  }
+
+  // ── ズーム連動（±ボタン・2本指ピンチ・ctrl+wheel はすべて setZoom を通るのでこの1経路で捕捉） ──
+  // setZoom → onZoom は同期呼び出しのため、再入フラグだけで反響を止められる（タイマー不要）。
+  var inZoom = false;
+  function onZoomFrom(srcIfr, dstIfr, dstKey, z) {
+    if (!syncOn.checked || inZoom) return;
+    inZoom = true;
+    try {
+      var ks = kit(srcIfr), kd = kit(dstIfr);
+      if (ks && kd) {
+        if (Math.abs(kd.getZoom() - z) > 0.001) kd.setZoom(z);   // 倍率を揃える
+        // 倍率変更後に時刻と曜日を合わせ直す（拡大すると横にもはみ出すため横も必要）
+        applyView(dstIfr, dstKey, ks.centerTime(), (typeof ks.centerDay === 'function') ? ks.centerDay() : null);
+      }
+    } finally { inZoom = false; }
+  }
+
+  // ── 起動時：両ペインの倍率を「狭い方に合わせて」揃える（最初から同じ時間スケールで並ぶ） ──
+  // ★全支援は N週集計の取得後に描画されるため iframe の load 時点では盤面が空。
+  //   空のまま測ると最小幅(50+96×7=722px)で確定してしまい、描画後にはみ出したまま直らない。
+  //   そこで #bCanvas に子要素が入る＝描画完了を待ってから測る。
+  function rendered(ifr) {
+    try {
+      var c = ifr.contentDocument && ifr.contentDocument.getElementById('bCanvas');
+      return !!(c && c.children.length);
+    } catch (e) { return false; }
+  }
+  function fitZoom(ifr) {
+    var bd = boardOf(ifr), w = wrapOf(ifr), k = kit(ifr);
+    if (!bd || !w || !k || !w.clientWidth) return null;           // レイアウト未確定
+    var z = k.getZoom() || 1;
+    // getBoundingClientRect は zoom が必ず反映される。scrollWidth は zoom の扱いにブラウザ差があるため使わない。
+    var rect = bd.getBoundingClientRect();
+    var natural = (rect.width || bd.scrollWidth) / z;             // 等倍換算した盤面幅
+    if (!natural) return null;
+    return (natural > w.clientWidth + 4) ? Math.max(0.5, w.clientWidth / natural) : 1;
+  }
+  var equalized = false;
+  function equalize() {
+    if (equalized || !syncOn.checked) return;
+    var ka = kit(A), kb = kit(B);
+    if (!ka || !kb) return;
+    if (!rendered(A) || !rendered(B)) return;                     // 両盤面の描画完了まで待つ
+    var fa = fitZoom(A), fb = fitZoom(B);
+    if (fa === null || fb === null) return;                       // 両ペインのレイアウト確定まで待つ
+    var z = Math.min(fa, fb);                                     // 狭い方に合わせる＝両方が収まる
+    inZoom = true;                                                // 揃える間の相互通知を止める
+    try { ka.setZoom(z); kb.setZoom(z); } finally { inZoom = false; }
+    applyView(B, 's', ka.centerTime(), (typeof ka.centerDay === 'function') ? ka.centerDay() : null);
+    equalized = true;                                             // 成功後に確定（例外時は次回 tick で再試行）
+  }
+
+  // ── 配線（多重登録を防ぐためペインごとに1回だけ） ──
+  var bound = { v: false, s: false };
+  function bindOnce(ifr, key, other, otherKey) {
+    if (bound[key]) return true;
+    var w = wrapOf(ifr), k = kit(ifr);
+    if (!w || !k) return false;
+    w.addEventListener('scroll', function () { onScroll(ifr, key, other, otherKey); }, { passive: true });
+    k.onZoom = function (z) { onZoomFrom(ifr, other, otherKey, z); };
+    bound[key] = true;
+    return true;
+  }
+
+  // OVLINK・レイアウト・盤面描画が整うまでポーリング（全支援は N週集計の取得→描画を待つ）。
+  // 例外で鎖が死なないよう try で包み、タイマーは常に1本に正規化する（複数鎖が tries を食い合うのを防ぐ）。
+  var tries = 0, timer = 0;
+  function schedule() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(tick, 200);
+  }
+  function tick() {
+    timer = 0;
+    try {
+      bindOnce(A, 'v', B, 's');
+      bindOnce(B, 's', A, 'v');
+      equalize();
+    } catch (e) {}                               // 一度の失敗でポーリングを止めない
+    if (bound.v && bound.s && equalized) return;
+    if (tries++ > 150) return;                   // 約30秒（12週取得＋描画の待ちを含む上限）
+    schedule();
+  }
+
+  function onLoad(ifr, key) {
+    bound[key] = false;                          // iframe 再読込時は配線をやり直す
+    expect[key] = null;
+    equalized = false;                           // 再読込側は倍率1に戻るため揃え直す（片側だけズレたまま固定になるのを防ぐ）
+    tidyPane(ifr);
+    tries = 0;
+    tick();
+  }
+  A.addEventListener('load', function () { onLoad(A, 'v'); });
+  B.addEventListener('load', function () { onLoad(B, 's'); });
+  tick();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!-- 機微情報を含むためキャッシュ無効 -->
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<title>入居者マスタ</title>
+<style>
+:root{
+  --pri:#1a73e8; --pri-l:#e8f0fe; --pri-d:#1557b0;
+  --ok:#2e7d32; --ok-l:#e8f5e9; --ng:#c62828; --ng-l:#ffebee;
+  --warn-bg:#fff8e1; --warn-tx:#e65100;
+  --g0:#f8f9fa; --g1:#f1f3f4; --g2:#e8eaed; --g3:#dadce0;
+  --g5:#9aa0a6; --g6:#80868b; --g7:#5f6368; --g9:#202124;
+  --r:12px; --sh:0 1px 6px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+  background:var(--g0); color:var(--g9); font-size:15px; line-height:1.5; padding-bottom:72px;}
+button{font-family:inherit; cursor:pointer}
+input,select,textarea{font-family:inherit; font-size:15px}
+
+/* ── ヘッダー ── */
+.hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
+  padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
+.hdr h1{font-size:17px; margin:0; font-weight:700; flex:1}
+.hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
+
+/* ── 画面切替 ── */
+.scr{display:none; padding:14px; max-width:980px; margin:0 auto}
+.scr.on{display:block}
+
+/* ── カード ── */
+.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px}
+
+/* ── 一覧 ── */
+.search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
+.search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
+.filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
+.chip{padding:5px 12px; border:1px solid var(--g3); border-radius:16px; background:#fff; font-size:13px; color:var(--g7)}
+.chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+/* ── 表示パターンのタブ（並べ方だけを変える。検索・在籍フィルタは全タブで有効） ── */
+.view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
+.vtab{min-height:44px; padding:8px 14px; border:none; border-bottom:3px solid transparent; margin-bottom:-2px;
+      background:none; font-size:14px; font-weight:700; color:var(--g6); cursor:pointer}
+.vtab.on{color:var(--pri); border-bottom-color:var(--pri)}
+.vtab:hover{color:var(--pri)}
+.vtab:focus-visible{outline:2px solid var(--pri); outline-offset:-2px; border-radius:6px}
+/* 区画（1階/2階/五十音の各行）の見出しと中身 */
+.rsec{margin-bottom:18px}
+.rsec>h3{font-size:14px; font-weight:700; color:var(--g7); margin:0 0 8px;
+         padding:6px 10px; background:var(--g1); border-left:4px solid var(--pri); border-radius:0 6px 6px 0}
+.rsec>h3 .cnt{font-weight:400; color:var(--g7); font-size:12px; margin-left:6px}
+.roster-count{font-size:12px; color:var(--g7); margin-bottom:8px}
+/* 階が判定できない人を黙って落とさないための区画（居室未登録など）。色で他と区別する */
+.rsec.nofloor>h3{border-left-color:var(--warn-tx); background:var(--warn-bg)}
+/* 階別（左右）: 1階と2階を横並びに1列ずつ */
+.fl-2col{display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start}
+.fl-2col .rsec{margin-bottom:0}
+.fl-2col .rlist{grid-template-columns:1fr}
+/* 階別（4列）: 1階を4列 → その下に2階を4列 */
+.fl-4col .rlist{grid-template-columns:repeat(4,1fr)}
+/* 画面が狭い時は列数を落とす（スマホで4列・2分割は実用にならない） */
+@media(max-width:900px){ .fl-4col .rlist{grid-template-columns:repeat(2,1fr)} }
+@media(max-width:640px){
+  .fl-2col{grid-template-columns:1fr}
+  .fl-2col .rsec{margin-bottom:18px}
+  .fl-4col .rlist{grid-template-columns:1fr}
+}
+.rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px}
+.rcard{background:#fff; border:1px solid var(--g2); border-radius:10px; padding:12px; cursor:pointer; transition:.12s}
+.rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
+.rcard .nm{font-size:16px; font-weight:700}
+.rcard .kn{font-size:11px; color:var(--g6)}
+.rcard .meta{margin-top:6px; display:flex; gap:6px; flex-wrap:wrap}
+.tag{font-size:11px; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
+/* 追加情報のタグ。既存の居室(room)・介護度(care)・退去(out)の色は変えない */
+.tag.bd,.tag.ht,.tag.wt{background:var(--g0); color:var(--g7); border:1px solid var(--g2)}
+.tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
+.tag.out{background:var(--ng-l); color:var(--ng)}
+.empty{text-align:center; color:var(--g5); padding:40px 10px}
+
+/* ── 詳細（印刷レイアウト） ── */
+.sheet{background:#fff; border:2px solid var(--g9); border-radius:6px; overflow:hidden}
+.sheet .sec{display:flex; border-top:1px solid var(--g9)}
+.sheet .sec:first-child{border-top:none}
+.sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
+  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size:13px; min-width:34px;
+  display:flex; align-items:center; justify-content:center; letter-spacing:2px}
+.sheet .sec-body{flex:1; min-width:0}
+.grid{display:grid; gap:0}
+.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
+.cell:last-child{border-right:none}
+.cell .lab{font-size:11px; color:var(--g6); display:block; margin-bottom:2px}
+.cell .val{font-size:15px; word-break:break-word; white-space:pre-wrap}
+.cell .val.big{font-size:18px; font-weight:700}
+.row-cells{display:flex; flex-wrap:wrap}
+.row-cells .cell{flex:1}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.6}
+.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px}
+.rhythm span b{color:var(--pri-d)}
+
+.detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
+.btn{padding:10px 16px; border:none; border-radius:10px; font-size:14px; font-weight:700; min-height:44px}
+.btn-pri{background:var(--pri); color:#fff} .btn-ok{background:var(--ok); color:#fff}
+.btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
+.btn-gray{background:var(--g2); color:var(--g7)} .btn-ng{background:#fff;color:var(--ng);border:1px solid var(--ng)}
+.btn:disabled{opacity:.5}
+
+/* ── 編集フォーム ── */
+.fgroup{margin-bottom:18px}
+.fgroup h3{font-size:14px; color:var(--pri-d); border-left:4px solid var(--pri); padding-left:8px; margin:0 0 10px}
+.fgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
+.fld{display:flex; flex-direction:column}
+.fld.wide{grid-column:1/-1}
+.fld label{font-size:12px; color:var(--g7); margin-bottom:3px}
+.fld input,.fld select,.fld textarea{padding:9px 10px; border:1px solid var(--g3); border-radius:8px; width:100%}
+.fld textarea{min-height:72px; resize:vertical}
+.fam-row{display:grid; grid-template-columns:1fr 1fr; gap:6px; border:1px solid var(--g2); border-radius:8px; padding:8px; margin-bottom:8px}
+.fam-row .full{grid-column:1/-1}
+.fam-del{justify-self:end; background:none; border:none; color:var(--ng); font-size:13px}
+
+/* ── ボトムナビ ── */
+.bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
+  display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
+.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size:11px; color:var(--g6);
+  display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
+.bnav button.on{color:var(--pri)} .bnav button .ic{font-size:20px}
+
+/* ── トースト ── */
+#toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:200;
+  opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
+#toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
+
+/* ── モーダル ── */
+.modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
+.modal.on{display:flex}
+.modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
+.modal h2{font-size:16px; margin:0 0 12px}
+.applead{font-size:12px; color:var(--g7); margin:0 0 12px; line-height:1.6}
+.applist{display:grid; gap:8px}
+.applist a{display:flex; align-items:center; gap:10px; min-height:52px; padding:10px 14px;
+  border:1px solid var(--g2); border-radius:10px; background:#fff; color:var(--g9);
+  text-decoration:none; font-size:14px; font-weight:700}
+.applist a:hover{border-color:var(--pri); background:var(--pri-l)}
+.applist a:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.applist .ai{font-size:20px; line-height:1; flex:0 0 auto}
+.applist .at{display:flex; flex-direction:column; gap:2px; min-width:0}
+.applist .ad{font-size:11px; font-weight:400; color:var(--g7); line-height:1.4}
+.muted{color:var(--g6); font-size:12px}
+
+/* ── 印刷 ── */
+@media print{
+  body{padding:0; background:#fff}
+  .hdr,.bnav,.detail-actions,#toast,.modal{display:none !important}
+  .scr{padding:0; max-width:none}
+  .scr:not(.on){display:none}
+  .sheet{border:2px solid #000; page-break-inside:avoid}
+  .sheet .sec{border-top:1px solid #000}
+  .cell{border-color:#999}
+  .geno-box{border:none !important; cursor:default !important}
+  .geno-hint{display:none !important}
+  @page{size:A4; margin:10mm}
+}
+.loading{text-align:center; color:var(--g5); padding:30px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>🗂️ 入居者マスタ</h1>
+  <span class="sync" id="syncStatus">未接続</span>
+</div>
+
+<!-- ════════ 一覧 ════════ -->
+<section class="scr on" id="sc-list">
+  <div class="search-bar">
+    <input type="search" id="q" placeholder="氏名・ふりがな・居室で検索" autocomplete="off">
+  </div>
+  <div class="view-tabs" id="viewTabs" role="tablist" aria-label="表示パターン">
+    <button class="vtab on" data-v="std"   role="tab" aria-selected="true">標準</button>
+    <button class="vtab"    data-v="fl2"   role="tab" aria-selected="false">階別（左右）</button>
+    <button class="vtab"    data-v="fl4"   role="tab" aria-selected="false">階別（4列）</button>
+    <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
+  </div>
+  <div class="filter-row" id="filterRow">
+    <button class="chip on" data-f="active">在籍</button>
+    <button class="chip" data-f="out">退去</button>
+    <button class="chip" data-f="all">すべて</button>
+  </div>
+  <!-- 件数だけを読み上げる。rosterBox 自体を aria-live にすると検索1打鍵ごとに
+       137名分の氏名・居室が読み上げられ、スクリーンリーダーで検索が使えなくなる -->
+  <div id="rosterCount" class="roster-count" role="status" aria-live="polite"></div>
+  <div id="rosterBox" role="tabpanel"><div class="loading">読み込み中…</div></div>
+</section>
+
+<!-- ════════ 詳細（印刷ページ） ════════ -->
+<section class="scr" id="sc-view">
+  <div class="detail-actions">
+    <button class="btn btn-gray" id="backBtn">← 一覧</button>
+    <button class="btn btn-pri" id="editBtn">✏️ 編集</button>
+    <button class="btn btn-sec" id="printBtn">🖨️ 印刷</button>
+  </div>
+  <div id="viewBox"><div class="loading">読み込み中…</div></div>
+</section>
+
+<!-- ════════ 編集 ════════ -->
+<section class="scr" id="sc-edit">
+  <div class="detail-actions">
+    <button class="btn btn-gray" id="editCancel">← 取消</button>
+    <button class="btn btn-ok" id="saveBtn">💾 保存</button>
+  </div>
+  <div id="editBox"></div>
+</section>
+
+<!-- ボトムナビ -->
+<nav class="bnav">
+  <button class="on" data-sc="list"><span class="ic">📋</span>一覧</button>
+  <button data-sc="new"><span class="ic">➕</span>新規</button>
+  <button data-sc="sync"><span class="ic">☁️</span>同期設定</button>
+  <button data-sc="apps"><span class="ic">🔗</span>アプリ</button>
+</nav>
+
+<!-- 同期設定モーダル -->
+<!-- アプリ横断リンク。入居者マスタをハブに各アプリへ飛ぶ（別タブ＝作業中の画面を失わない）。
+     訪問診療は別オリジン・端末依存のため、URLが設定されている時だけ表示する。 -->
+<div class="modal" id="mApps">
+  <div class="box">
+    <h2>🔗 アプリを開く</h2>
+    <p class="applead">入居者情報の源泉はこの入居者マスタです。各アプリはここの名簿を読み込みます。</p>
+    <div id="appList" class="applist"></div>
+    <div class="mact"><button class="btn btn-gray" id="appsClose">閉じる</button></div>
+  </div>
+</div>
+
+<div class="modal" id="mSync">
+  <div class="box">
+    <h2>☁️ クラウド同期設定</h2>
+    <div class="fld" style="margin-bottom:10px">
+      <label>この端末の用途</label>
+      <select id="cfgDeviceRole">
+        <option value="office">事務所PC（全機能を使用）</option>
+        <option value="field">現場タブレット（入居者マスタは使用不可）</option>
+      </select>
+    </div>
+    <div class="fld" style="margin-bottom:10px">
+      <label>GAS Web App URL</label>
+      <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec">
+    </div>
+    <div class="fld" style="margin-bottom:10px">
+      <label>アクセストークン</label>
+      <input id="cfgToken" placeholder="GASのスクリプトプロパティと一致させる">
+    </div>
+    <div class="fld" style="margin-bottom:10px">
+      <label>訪問診療アプリURL（任意）</label>
+      <input id="cfgVmaUrl" placeholder="http://（別サイトのため端末ごとに異なります）">
+    </div>
+    <p class="muted">URL・トークンはこの端末にのみ保存され、入居者の機微情報は端末に残しません。<br>
+      訪問診療アプリは別サイトのため、URLを登録した端末でだけ「🔗アプリ」に表示されます。</p>
+    <div class="detail-actions" style="margin-top:14px">
+      <button class="btn btn-gray" id="syncClose">閉じる</button>
+      <button class="btn btn-sec" id="syncTest">接続テスト</button>
+      <button class="btn btn-ok" id="syncSave">保存して再読込</button>
+    </div>
+  </div>
+</div>
+
+<!-- 端末用途ガード（現場タブレットでは入居者マスタを表示しない＝事務所PC専用） -->
+<div class="modal" id="deviceBlock">
+  <div class="box" style="text-align:center;max-width:440px">
+    <div style="font-size:44px;margin-bottom:8px">🔒</div>
+    <h2 style="justify-content:center">この端末は現場用に設定されています</h2>
+    <p class="muted" style="font-size:14px;line-height:1.7">入居者マスタは要配慮個人情報（医療・家族連絡先など）を含むため、<b>事務所PC</b>でご利用ください。</p>
+    <div class="detail-actions" style="justify-content:center;margin-top:16px">
+      <button class="btn btn-gray" id="deviceUnlock">管理者の方（端末設定を変更）</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   入居者マスタ / 管理アプリ
+   - 保存先: Google スプレッドシート + GAS Web App（トークン認証）
+   - 機微情報（医療・家族連絡先等）は localStorage に保存しない
+   - 一覧/検索用の roster（id/氏名/ふりがな/居室/介護度）のみ端末キャッシュ
+   - 描画は全て esc() でエスケープ（XSS防止）。保存はホワイトリスト方式
+   ─ 他アプリ連携用 API（GAS）─
+     GET  ?action=getRoster&token=..[&since=ISO]   → 軽量リスト
+     GET  ?action=getResident&id=..&token=..        → 個人フル
+     GET  ?action=getSection&id=..&section=medical&token=..
+     POST {action:'saveResident', token, record}    → upsert
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 設定（端末ローカル。機微情報ではない） ── */
+var CFG_KEY='rmaster_cfg';
+var ROSTER_KEY='rmaster_roster'; // 一覧・検索用のキャッシュ（氏名・居室・介護度・生年月日・身長）。
+                                 // 病名・処方・家族連絡先などは保存しない。事務所端末専用。
+var CFG={url:'', token:'', vmaUrl:''};
+(function loadCfg(){try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);CFG.url=o.url||'';CFG.token=o.token||'';CFG.vmaUrl=o.vmaUrl||''}}catch(e){}})();
+
+/* ── 端末の用途（事務所PC専用ガード。全管理系アプリ共通の同一オリジンキー） ──
+   'field'（現場タブレット）の端末では入居者マスタを表示しない（誤操作防止・機微情報の非表示）。
+   未設定/'office' は従来どおり全機能。あくまで運用上の誤操作防止であり厳密な認証ではない。 */
+var DEVICE_KEY='su_device_role';
+function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+function setDeviceRole(v){
+  try{
+    localStorage.setItem(DEVICE_KEY,v);
+    /* ★現場端末に切り替えたら一覧キャッシュを消す。
+       画面は applyDeviceGuard でブロックされるが、キャッシュを残すと
+       端末内に氏名・生年月日が残り続けるため。 */
+    if(v==='field'){ localStorage.removeItem(ROSTER_KEY); roster=[]; }
+  }catch(e){}
+}
+
+/* ── ジェノグラム（家系図）連携 ──
+   家系図アプリが保存した画像を同一オリジンの共有キー su_genograms（{[masterId]:{image,updatedAt}}）
+   から読み、マスタの表示欄に出す。欄クリックで家系図アプリ（resident=masterId 付き）へ遷移し作成/編集。 */
+var SU_GENO_KEY='su_genograms';
+var GENOGRAM_APP='genogram.html'; // 家系図アプリのパス（用意でき次第ここを合わせる）
+function getGenogram(id){
+  try{var raw=localStorage.getItem(SU_GENO_KEY);if(!raw)return null;var m=JSON.parse(raw);var g=m&&m[String(id)];return(g&&g.image)?g.image:null}catch(e){return null}
+}
+function openGenogram(id,name){
+  if(id==null)return;
+  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+}
+
+/* ── ユーティリティ ── */
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('on')},2600)}
+function setSync(txt,cls){var e=$('syncStatus');e.textContent=txt;e.className='sync'+(cls?(' '+cls):'')}
+
+function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
+function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
+function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
+function calcStayDays(adm,dis){if(!adm)return'';var a=new Date(adm);if(isNaN(a))return'';var end=dis?new Date(dis):new Date();var d=Math.floor((end-a)/86400000);return d>=0?d:''}
+function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
+
+/* ── マスタ項目スキーマ（編集フォーム生成・連携の単一定義） ──
+   フェイスシート拡張（2026）：施設運用スコープの項目を追加。新項目は全て GAS dataJson に
+   自動収容されるためスプレッドシートの列変更は不要。su_residents_common には一切載せない。 */
+var SECTIONS={
+  basic:['gender','birthDate','phone','careLevel','careCertStart','careCertEnd','certDate','copayRate','welfare',
+         'insuredNo','insurer','medicalInsurance','disabilityCert','guardianship',
+         'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia'],
+  careHistory:['careLevelHistory'],
+  note:['preAdmission','postDischarge','dischargeTo'],
+  family:['family'],
+  consents:['consents'],
+  office:['careOffice','careManager','careOfficeTel','careOfficeFax','welfareEquip','welfareEquipStaff','welfareEquipTel',
+          'serviceManager','prevCareOffice','prevCareManager','dayUse','rhythm'],
+  medical:['hospital','doctor','hospitalTel','hospitalFax','emergencyHospital','emergencyHospitalTel','visitDay',
+           'pharmacy','pharmacyTel','pharmacyFax',
+           'allergy','infections','bloodType','medicalCare','vaccinations','disclosure',
+           'currentDiseases','sideEffects','pastHistory','medsRegular','medsNotes','problemBehavior'],
+  meds:['medMgmt','medAssist','highRiskMeds','formAdjust','medRefusal','medsPrn','medsPastLog'],
+  adl_detail:['swallow','water','excretion','bath','dress','mobility','transfer','bedriddenRank','pressureUlcer','vision','hearing'],
+  cognitive:['dementiaType','cogScore','careHints','psychHistory'],
+  comm:['preferredName','commMethod','commNotes'],
+  meal:['mealStaple','mealSide','mealForm','thickener','denture','mealNote'],
+  person:['personality','hobby','foodPref','lifePrefs','smoking','drinking'],
+  history:['lifeHistory','values'],
+  wishes:['complaint','wishSelf','wishFamily','goal','acp','dnar','strengths'],
+  support:['supportLog'],
+  medSupport:['medicalSupportLog']
+};
+// 現場タブレット（field）で閲覧してよい「安全情報のみ」の正準リスト。
+// GAS getSection 'facesheet_safe' と facesheet.html の field 限定ビューが共有する契約。
+// 家族連絡先・経済・詳細病歴・服薬詳細は含めない。
+// 服薬管理3項目（管理方法・介助度・拒否）は現場ケアに直結するため安全情報に含める（2026-07 決定）。
+// この19項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
+  'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
+  'medMgmt','medAssist','medRefusal'];
+// 対象アプリ（各ケアアプリに表示・記録する対象者かのフラグ）
+// 既定は全てON（介護現場では対象者の取りこぼしを避けるため。対象外を明示的に外す運用）
+var APP_TARGETS=[['excretion','排泄記録'],['weight','体重記録'],['schedule','週間計画']];
+function defaultTargetApps(){return APP_TARGETS.map(function(p){return p[0]})}
+// 保存時に許可するキー（ホワイトリスト）
+var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updatedAt','targetApps',
+  'birthDate','phone','careCertStart','careCertEnd','certDate','copayRate','welfare',
+  'insuredNo','insurer','medicalInsurance','disabilityCert','guardianship','careLevelHistory',
+  'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia',
+  'preAdmission','postDischarge','dischargeTo','family','consents',
+  'careOffice','careManager','careOfficeTel','careOfficeFax',
+  'welfareEquip','welfareEquipStaff','welfareEquipTel','serviceManager','prevCareOffice','prevCareManager','dayUse','rhythm',
+  'hospital','doctor','hospitalTel','hospitalFax','emergencyHospital','emergencyHospitalTel','visitDay',
+  'pharmacy','pharmacyTel','pharmacyFax',
+  'allergy','infections','bloodType','medicalCare','vaccinations','disclosure',
+  'currentDiseases','sideEffects','pastHistory','medsRegular','medsNotes','problemBehavior',
+  'medMgmt','medAssist','highRiskMeds','formAdjust','medRefusal','medsPrn','medsPastLog',
+  'swallow','water','excretion','bath','dress','mobility','transfer','bedriddenRank','pressureUlcer','vision','hearing',
+  'dementiaType','cogScore','careHints','psychHistory',
+  'preferredName','commMethod','commNotes',
+  'mealStaple','mealSide','mealForm','thickener','denture','mealNote',
+  'personality','hobby','foodPref','lifePrefs','smoking','drinking',
+  'lifeHistory','values',
+  'complaint','wishSelf','wishFamily','goal','acp','dnar','strengths',
+  'supportLog','medicalSupportLog','xref',
+  // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避
+  // （介護保険証の有効期限・寝具リース・享年など）。画面には出さないが失わない。
+  'unmappedRaw'];
+var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
+// デイ利用日（曜日ごとの利用時間帯）。rhythm{} と同型のオブジェクトで保持する。
+var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
+// 同意・確認書。郵便物開封／主治医・薬管理は「有無」でなく取扱方法の文言が入るため全て文字列で受ける。
+var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
+  ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
+
+/* ═══════════ API（トークン付き・タイムアウト・エラー処理） ═══════════ */
+function apiGet(params,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
+  qs+='&token='+encodeURIComponent(CFG.token);
+  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET'},timeoutMs||12000).then(parseJson);
+}
+function apiPost(body,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  body.token=CFG.token;
+  // text/plain で送信（GAS の CORS プリフライト回避）
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||15000).then(parseJson);
+}
+function fetchWithTimeout(url,opt,ms){
+  return new Promise(function(res,rej){
+    var ctl=('AbortController'in window)?new AbortController():null;
+    if(ctl)opt.signal=ctl.signal;
+    var t=setTimeout(function(){if(ctl)ctl.abort();rej(new Error('タイムアウト'))},ms);
+    fetch(url,opt).then(function(r){clearTimeout(t);res(r)}).catch(function(e){clearTimeout(t);rej(e)});
+  });
+}
+function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
+
+/* ═══════════ roster（軽量一覧） ═══════════ */
+var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt}]
+function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roster=JSON.parse(s)||[]}catch(e){roster=[]}}
+function saveRosterCache(){try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
+function refreshRoster(){
+  if(!CFG.url){setSync('未接続');renderRoster();return Promise.resolve(false)}
+  setSync('同期中…');
+  return apiGet({action:'getRoster'}).then(function(d){
+    var list=(d&&d.roster)||d||[];
+    var emptyGuarded=false;
+    if(Array.isArray(list)){
+      if(!list.length&&roster.length){
+        // サーバ空応答×ローカル非空＝シート初期化ミス等の疑い。唯一の書き手が共有名簿(su_residents_common)を
+        // 空配信すると全消費アプリの名簿供給が止まるため、ローカルを温存して警告のみ（空上書き保護）
+        emptyGuarded=true;
+        toast('⚠️ サーバーから空の一覧が返されたため、ローカルの一覧を保持しました');
+      }else{
+        roster=list.map(normRosterRow);saveRosterCache();writeCommonRoster();
+      }
+    }
+    if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}
+    renderRoster();return true;
+  }).catch(function(e){
+    setSync('オフライン','err');renderRoster();
+    if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗: '+e.message);
+    return false;
+  });
+}
+function _toTargetArr(v){
+  if(Array.isArray(v))return v.slice();
+  if(typeof v==='string'&&v)return v.split(',').map(function(s){return s.trim()}).filter(Boolean);
+  return null; // 未設定（フラグ無し）は null のまま＝消費側で「従来どおり表示」の no-op 扱い
+}
+function normRosterRow(r){
+  var t=_toTargetArr(r.targetApps);
+  /* ★getRoster(master.gs) に項目を足したら、ここにも足さないと黙って捨てられる。
+     birthDate / height は一覧カード表示用（GAS 側 ROSTER_EXTRA と対応）。 */
+  var o={id:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,updatedAt:r.updatedAt||'',
+         birthDate:r.birthDate||'',height:r.height||''};
+  if(t)o.targetApps=t;
+  return o;
+}
+
+/* ═══════════ アプリ横断リンク（ハブ＆スポーク） ═══════════
+   入居者マスタをハブに各アプリへ飛ぶ。遷移は別タブ＝作業中の画面を失わない。
+   ★care-tools 配下は相対パス。排便ケアだけは別パス配信のため ../haiben-record/ を使う。
+   ★訪問診療は別オリジン（別WordPress・要ログイン・URLが端末依存）。
+     設定されている時だけ出す＝壊れたリンクを踏ませない。 */
+var APP_LINKS=[
+  {href:'care-schedule.html',                     ic:'📅', name:'週間計画',       desc:'週間ケア計画・単位の管理'},
+  {href:'daycare-roster.html',                    ic:'🍵', name:'せせらぎ利用表', desc:'通所の利用予定と帳票'},
+  {href:'facesheet.html',                         ic:'📄', name:'フェイスシート', desc:'入居者の基本情報を1枚に'},
+  {href:'weight-record.html',                     ic:'⚖️', name:'体重管理',       desc:'体重の記録と推移'},
+  {href:'../haiben-record/haiben-record.html',    ic:'🚽', name:'排便ケア記録',   desc:'排泄の記録'},
+  {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'}
+];
+/* 外部URLは http/https 以外を弾く（javascript: 等を踏ませない）。 */
+function safeHttpUrl(u){
+  var t=String(u==null?'':u).trim();
+  if(!t) return '';
+  return /^https?:\/\//i.test(t) ? t : '';
+}
+function renderAppList(){
+  var box=$('appList'); if(!box) return;
+  var items=APP_LINKS.slice();
+  var vma=safeHttpUrl(CFG.vmaUrl);
+  if(vma) items.push({href:vma, ic:'🩺', name:'訪問診療', desc:'訪問診療の予定・記録（別サイト）'});
+  box.innerHTML=items.map(function(a){
+    return '<a href="'+esc(a.href)+'" target="_blank" rel="noopener">'+
+      '<span class="ai" aria-hidden="true">'+esc(a.ic)+'</span>'+
+      '<span class="at"><span>'+esc(a.name)+'</span><span class="ad">'+esc(a.desc)+'</span></span></a>';
+  }).join('');
+  /* 訪問診療URLが未設定のときだけ、設定場所を案内する（毎回は出さない） */
+  if(!vma) box.innerHTML+='<p class="applead" style="margin:4px 0 0">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>';
+}
+function openApps(){ renderAppList(); $('mApps').classList.add('on'); }
+function closeApps(){ $('mApps').classList.remove('on'); }
+
+/* ═══════════ 最新体重（体重管理アプリのデータを読むだけ・向こうは一切変更しない） ═══════════
+   同一オリジン（th-su.github.io）なので localStorage を直接読める。
+   ★体重の正本は体重管理アプリ。マスタ側の weight は移行時の静的値で古いため使わない。
+   ★rec.weight は車椅子控除済みの正味体重（weight-record.html で保存時に計算済み）。補正しない。 */
+var WTMGR_KEY='wtmgr_v1';
+/* 氏名の正規化は weight-record.html:2248 の suNormName と同一仕様にする。
+   ここがズレると名寄せが外れて別人の体重が付く。 */
+function wtNormName(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+/* 最新判定のソートキーも weight-record.html:2072-2075 の recDateKey と同一仕様。 */
+function wtRecKey(r){ return (r.measuredOn||(r.yearMonth?r.yearMonth+'-01':''))+'#'+(r.createdAt||''); }
+
+/* 体重アプリの localStorage から「uidごとの最新1件」と名寄せ索引を作る。
+   体重アプリ未使用の端末・壊れたJSONでは空を返す（一覧は従来どおり表示される）。 */
+var _wtRaw=null,_wtCache=null;
+function loadWeightSource(){
+  var empty={latest:{},midByUid:{},uidByName:{}};
+  var db,raw;
+  try{
+    raw=localStorage.getItem(WTMGR_KEY);
+    if(!raw){ _wtRaw=null;_wtCache=null; return empty; }
+    /* ★検索は1打鍵ごとに renderRoster を呼ぶ。体重DBはMB級になりうるため
+       生文字列が同じ間は再parseしない（打鍵ごとの遅延を出さない）。 */
+    if(raw===_wtRaw && _wtCache) return _wtCache;
+    db=JSON.parse(raw);
+  }catch(e){ return empty; }
+  if(!db||!Array.isArray(db.residents)||!Array.isArray(db.records)) return empty;
+
+  var midByUid={}, nameCount={}, uidOfName={};
+  db.residents.forEach(function(p){
+    if(!p||p.id==null) return;
+    if(p.masterId!=null&&p.masterId!=='') midByUid[String(p.id)]=String(p.masterId);
+    var n=wtNormName(p.name);
+    if(n){ nameCount[n]=(nameCount[n]||0)+1; uidOfName[n]=String(p.id); }
+  });
+  var latest={};
+  db.records.forEach(function(rec){
+    if(!rec||rec.residentId==null) return;
+    /* ★体重アプリは数値化に失敗した体重を 0 に丸めて保存する（normalizeRecord）。
+       0 を最新値として拾うと「0kg」がカードに出るため、入力バリデーションと同じ
+       20〜150kg の範囲外は最新判定から除外する。 */
+    var wv=Number(rec.weight);
+    if(!isFinite(wv)||wv<20||wv>150) return;
+    var uid=String(rec.residentId), k=wtRecKey(rec);
+    if(!latest[uid]||k>latest[uid].k) latest[uid]={k:k,weight:wv,on:rec.measuredOn||rec.yearMonth||''};
+  });
+  /* ★同姓同名が複数いる氏名は名寄せに使わない（別人の体重が付くのを防ぐ）。 */
+  var uidByName={};
+  Object.keys(nameCount).forEach(function(n){ if(nameCount[n]===1) uidByName[n]=uidOfName[n]; });
+  _wtRaw=raw; _wtCache={latest:latest, midByUid:midByUid, uidByName:uidByName};
+  return _wtCache;
+}
+
+/* 表示中の一覧に対して {masterId: {weight,on}} を作る。 */
+function buildWeightIndex(list){
+  var idx={}, src=loadWeightSource(), used={};
+  // ① masterId 一致（確実な紐付けを優先）
+  Object.keys(src.midByUid).forEach(function(uid){
+    var w=src.latest[uid], mid=src.midByUid[uid];
+    if(!w) return;
+    /* 同じ masterId の体重アプリ側レコードが2件ある場合は新しい方を採る
+       （列挙順に依存して古い方が勝つのを防ぐ） */
+    if(!idx[mid]||w.k>idx[mid].k) idx[mid]=w;
+    used[uid]=true;
+  });
+  /* ★マスタ側の同姓同名も除外する。ここを list（検索・在籍で絞った後）で数えると
+     検索文字列によって紐づく相手が変わるため、必ず roster 全体で数える。 */
+  var dup={};
+  roster.forEach(function(r){ var n=wtNormName(r.name); if(n) dup[n]=(dup[n]||0)+1; });
+  // ② 氏名の正規化一致（体重アプリ側に masterId が無い人向け）
+  list.forEach(function(r){
+    if(idx[String(r.id)]) return;
+    var n=wtNormName(r.name);
+    if(!n||dup[n]!==1) return;          // マスタ側に同名が複数 → 紐づけない
+    var uid=src.uidByName[n];
+    if(!uid||used[uid]) return;
+    var w=src.latest[uid];
+    if(w){ idx[String(r.id)]=w; used[uid]=true; }
+  });
+  return idx;
+}
+var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで記録したら再読込で反映）
+
+/* ═══════════ 共通情報の自動コピー（全アプリ連携） ═══════════
+   同一オリジンの全ツールが共有する localStorage キーに、識別/表示用の共通項目だけを
+   書き出す。各アプリはこれを読み込んで自分の入居者リストへ自動反映する（ネットワーク不要・
+   即時・オフライン可）。機微情報（医療・家族連絡先等）は一切含めない。
+   ─ 連携契約 ─
+     key: 'su_residents_common'
+     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active}] } */
+var COMMON_KEY='su_residents_common';
+var COMMON_FIELDS=['name','kana','room','gender','careLevel'];
+function writeCommonRoster(){
+  try{
+    var residents=roster.map(function(r){
+      var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false};
+      if(Array.isArray(r.targetApps))e.targetApps=r.targetApps.slice(); // 対象アプリのフラグも配信
+      return e;
+    });
+    localStorage.setItem(COMMON_KEY,JSON.stringify({v:1,updatedAt:new Date().toISOString(),residents:residents}));
+  }catch(e){/* 共有キャッシュは失敗しても本体運用に影響させない */}
+}
+
+var curFilter='active';
+/* ═══════════ 表示パターン（タブ） ═══════════
+   タブは「並べ方」だけを変える。検索窓・在籍/退去フィルタは全タブで同じに効く。 */
+var VIEW_KEY='rmaster_view';
+/* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
+   不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
+var VIEWS=['std','fl2','fl4','kana'];
+var curView=(function(){try{var v=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(v)>=0?v:'std'}catch(e){return'std'}})();
+function paintTabs(){
+  Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
+    var on=b.getAttribute('data-v')===curView;
+    b.classList.toggle('on',on); b.setAttribute('aria-selected',on?'true':'false');
+  });
+}
+function setView(v){
+  curView=VIEWS.indexOf(v)>=0?v:'std';
+  try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
+  paintTabs(); renderRoster();
+}
+/* 居室 → 階。daycare-roster.html の roomToFloor と同一仕様（判定を2箇所でずらさない）。
+   全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる）。
+   0 = 階を判定できない（居室未登録・1/2以外で始まる） */
+function roomToFloor(room){
+  var s=String(room==null?'':room).trim()
+    .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=s.match(/^([12])/);
+  return m?parseInt(m[1],10):0;
+}
+/* 居室番号の数値順（"99" より "101" が後ろ。文字列比較だと逆になる） */
+function roomNo(room){
+  var s=String(room==null?'':room).replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=s.match(/\d+/); return m?parseInt(m[0],10):9e15;   // 居室番号なし＝末尾へ（ES5 のため MAX_SAFE_INTEGER は使わない）
+}
+function byRoom(a,b){ return roomNo(a.room)-roomNo(b.room)
+  || String(a.kana||'').localeCompare(String(b.kana||''),'ja'); }
+function byKana(a,b){ return String(a.kana||a.name||'').localeCompare(String(b.kana||b.name||''),'ja'); }
+
+/* 五十音の行分け。ヨミの先頭文字を清音・大書き・ひらがなに正規化してから分類する。
+   （ヤマダ/やまだ→や行、が→か行、ぱ→は行、ぁ→あ行） */
+var KANA_BASE={'が':'か','ぎ':'き','ぐ':'く','げ':'け','ご':'こ','ざ':'さ','じ':'し','ず':'す','ぜ':'せ','ぞ':'そ',
+  'だ':'た','ぢ':'ち','づ':'つ','で':'て','ど':'と','ば':'は','び':'ひ','ぶ':'ふ','べ':'へ','ぼ':'ほ',
+  'ぱ':'は','ぴ':'ひ','ぷ':'ふ','ぺ':'へ','ぽ':'ほ','ゔ':'う',
+  /* 旧かな・小書き。ヰ/ヱ/ヵ/ヶ もカタカナ→ひらがな変換後にここへ落ちる。
+     現代仮名遣いの読みに合わせる（ゐ→い・ゑ→え）。高齢入居者の名簿では実際に起こりうる */
+  'ゐ':'い','ゑ':'え','ゕ':'か','ゖ':'け',
+  'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ'};
+var KANA_ROWS=[['あ行','あいうえお'],['か行','かきくけこ'],['さ行','さしすせそ'],['た行','たちつてと'],
+  ['な行','なにぬねの'],['は行','はひふへほ'],['ま行','まみむめも'],['や行','やゆよ'],
+  ['ら行','らりるれろ'],['わ行','わをん']];
+/* 半角カタカナ → ひらがな（0xFF66「ｦ」起点の並び順そのまま）。
+   長年運用のスプレッドシートは半角カナが混ざりうる。寄せないと「その他」に落ちる。 */
+var KANA_HALF='をぁぃぅぇぉゃゅょっーあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん';
+function kanaRowOf(r){
+  var s=String(r.kana||'').trim();
+  if(!s) return '';                                  // ヨミが無い人は「その他」へ（落とさない）
+  var c=s.charAt(0);
+  var cd=c.charCodeAt(0);
+  if(cd>=0x30A1&&cd<=0x30F6) c=String.fromCharCode(cd-0x60);      // 全角カタカナ→ひらがな
+  else if(cd>=0xFF66&&cd<=0xFF9D) c=KANA_HALF.charAt(cd-0xFF66);  // 半角カタカナ→ひらがな
+  c=KANA_BASE[c]||c;
+  for(var i=0;i<KANA_ROWS.length;i++){ if(KANA_ROWS[i][1].indexOf(c)>=0) return KANA_ROWS[i][0]; }
+  return '';                                         // ひらがな以外（英字等）も「その他」へ
+}
+/* 1人分のカード。全タブで同じ見た目にする（一貫性） */
+function rcardHtml(r){
+  /* ★既存の居室・介護度・退去タグの並びは動かさない（現場の見慣れた順序を壊さない）。
+     生年月日・身長・体重はその後ろに足し、値が無い項目はタグごと出さない。 */
+  var w=weightIdx[String(r.id)];
+  return '<div class="rcard" data-id="'+esc(r.id)+'">'+
+    '<div class="nm">'+esc(r.name)+'</div>'+
+    (r.kana?'<div class="kn">'+esc(r.kana)+'</div>':'')+
+    '<div class="meta">'+
+      (r.room?'<span class="tag room">'+esc(r.room)+'号室</span>':'')+
+      (r.careLevel?'<span class="tag care">'+esc(r.careLevel)+'</span>':'')+
+      (r.active===false?'<span class="tag out">退去</span>':'')+
+      (r.birthDate?'<span class="tag bd">'+esc(fmtJDate(r.birthDate))+'生</span>':'')+
+      (r.height?'<span class="tag ht">'+esc(r.height)+'cm</span>':'')+
+      (w?'<span class="tag wt" title="この端末の体重管理アプリにある最新値（同期状況により古い場合があります）">'+esc(w.weight)+'kg'+(w.on?'（'+esc(String(w.on).slice(0,10))+'）':'')+'</span>':'')+
+    '</div></div>';
+}
+function secHtml(title,people,extraClass){
+  if(!people.length) return '';                      // 該当者ゼロの区画は見出しごと出さない
+  return '<div class="rsec'+(extraClass?' '+extraClass:'')+'"><h3>'+esc(title)+
+    '<span class="cnt">'+people.length+'名</span></h3><div class="rlist">'+
+    people.map(rcardHtml).join('')+'</div></div>';
+}
+
+function renderRoster(){
+  var q=($('q').value||'').trim().toLowerCase();
+  var box=$('rosterBox');
+  var list=roster.filter(function(r){
+    if(curFilter==='active'&&r.active===false)return false;
+    if(curFilter==='out'&&r.active!==false)return false;
+    if(q){var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();if(hay.indexOf(q)<0)return false}
+    return true;
+  }).sort(function(a,b){return String(a.room||'').localeCompare(String(b.room||''),'ja')||String(a.kana||'').localeCompare(String(b.kana||''),'ja')});
+  /* 体重の索引は描画のたびに作り直す。体重アプリで記録した後、再読込すれば反映される。
+     体重アプリ未使用の端末では空になり、体重タグが出ないだけで一覧は従来どおり出る。 */
+  try{ weightIdx=buildWeightIndex(list); }catch(e){ weightIdx={}; }   // 体重が出ないだけで一覧は必ず描画する
+  var cntEl=$('rosterCount');
+  if(cntEl) cntEl.textContent=list.length?(list.length+'名'):'';
+  if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';return}
+  var html;
+  if(curView==='fl2'||curView==='fl4'){
+    /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。
+       落とすと画面から消え、誰も気づけない（daycare-roster と同じ方針）。 */
+    var f1=[],f2=[],f0=[];
+    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
+    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
+    var s1=secHtml('１階入居者',f1), s2=secHtml('２階入居者',f2),
+        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    html=(curView==='fl2')
+      // 左右に1列ずつ。階未設定はその下に全幅で。
+      // ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる
+      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
+      : '<div class="fl-4col">'+s1+s2+s0+'</div>';    // 上に1階4列・下に2階4列
+  }else if(curView==='kana'){
+    var bucket={},other=[];
+    list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});
+    html=KANA_ROWS.map(function(p){
+      var a=bucket[p[0]]; if(!a) return '';
+      return secHtml(p[0],a.sort(byKana));
+    }).join('')+secHtml('その他',other.sort(byKana),'nofloor');   // ヨミ未登録・五十音で分類できないヨミ
+  }else{
+    html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
+  }
+  box.innerHTML=html;
+  Array.prototype.forEach.call(box.querySelectorAll('.rcard'),function(el){
+    el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
+  });
+}
+
+/* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
+var curResident=null;
+function openResident(id){
+  showScreen('view');
+  $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
+  if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
+  apiGet({action:'getResident',id:id}).then(function(d){
+    var rec=(d&&d.record)||d;
+    if(!rec||rec.id==null){throw new Error('該当データなし')}
+    curResident=rec; renderView(rec);
+  }).catch(function(e){$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
+}
+
+function cell(lab,val,big){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
+function renderView(r){
+  var fam=Array.isArray(r.family)?r.family:[];
+  var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
+  var famAddr=fam.map(function(f,i){return f.address?('①②③④⑤'.charAt(i)+f.address):''}).filter(Boolean).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
+  var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')}).join('\n');
+  var rhythm=r.rhythm||{};
+  var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  var dayUse=r.dayUse||{};
+  var du=DAYUSE_KEYS.map(function(p){return dayUse[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(dayUse[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  var consents=r.consents||{};
+  var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+
+  var h='<div class="sheet">';
+  // 安全ハイライト帯（現場で即確認すべき項目）
+  var hl=[];
+  if(r.preferredName)hl.push('<span style="background:var(--pri-l);color:var(--pri-d);border-radius:999px;padding:3px 10px;font-weight:700">🙂 '+esc(r.preferredName)+'</span>');
+  if(r.allergy)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ アレルギー: '+esc(r.allergy)+'</span>');
+  if(r.infections)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ 感染症: '+esc(r.infections)+'</span>');
+  if(r.medicalCare)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
+  if(r.mealForm||r.thickener)hl.push('<span style="background:var(--u-bg);color:var(--u);border-radius:999px;padding:3px 10px;font-weight:700">🍚 '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
+  if(r.careHints)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">💡 対応のコツあり</span>');
+  if(hl.length)h+='<div class="sec"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+hl.join('')+'</div></div>';
+  // 利用者基本情報
+  h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
+    '<div class="row-cells">'+
+      cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+
+      cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
+      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+
+      cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
+    '</div>'+
+    '<div class="row-cells">'+
+      cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+
+      cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
+      cell('BMI',calcBMI(r.height,r.weight))+cell('身長',r.height?r.height+' cm':'')+cell('体重',r.weight?r.weight+' kg':'')+
+      cell('生活自立度',r.adl)+cell('認知症自立度',r.dementia)+
+    '</div></div></div>';
+  // 保険・制度／連絡先
+  h+='<div class="sec"><div class="sec-lbl">保険・制度／連絡先</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('電話（本人/居室）',r.phone)+cell('被保険者番号',r.insuredNo)+cell('保険者',r.insurer)+cell('認定日',fmtJDate(r.certDate))+'</div>'+
+    '<div class="row-cells">'+cell('医療保険',r.medicalInsurance)+cell('障害者手帳',r.disabilityCert)+cell('成年後見',r.guardianship)+cell('呼ばれたい呼称',r.preferredName)+'</div>'+
+  '</div></div>';
+  // 介護度の変更履歴（新しい順）
+  var chist=Array.isArray(r.careLevelHistory)?r.careLevelHistory.slice():[];
+  chist.sort(function(a,b){return String((b&&b.changedAt)||'').localeCompare(String((a&&a.changedAt)||''))});
+  if(chist.length){
+    var chHtml=chist.map(function(s){
+      var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1;color:var(--g7)">'+esc([period,s.note].filter(Boolean).join(' / '))+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">介護度の変更履歴</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+chHtml+'</div></div></div>';
+  }
+  // 基本事項
+  h+='<div class="sec"><div class="sec-lbl">基本事項</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('退去先',r.dischargeTo)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">入居前状況</span><div class="fulltext">'+esc(r.preAdmission||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
+  // 家族情報
+  // 家族情報＋事業所（左 2/3）と ジェノグラム欄（右 1/3）を横並び
+  var genoImg=getGenogram(r.id);
+  var genoInner=genoImg
+    ? '<img src="'+esc(genoImg)+'" alt="ジェノグラム" style="max-width:100%;max-height:100%;object-fit:contain">'
+    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size:13px;padding:10px"><div style="font-size:40px;line-height:1.1">🧬</div>クリックして<br>ジェノグラムを作成<br><span style="font-size:11px">（家系図アプリへ）</span></div>';
+  h+='<div style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
+    // 左 2/3：家族情報＋事業所
+    '<div style="flex:2;min-width:0;display:flex;flex-direction:column">'+
+      // 家族情報（行内境界は row 側で付与するため border-top なし）
+      '<div style="display:flex;flex:0 0 auto"><div class="sec-lbl">家族情報</div><div class="sec-body"><div class="row-cells">'+
+        '<div class="cell" style="flex:1.2"><span class="lab">ご家族氏名</span><div class="fulltext">'+esc(famName||'　')+'</div></div>'+
+        '<div class="cell" style="flex:1.5"><span class="lab">住所</span><div class="fulltext">'+esc(famAddr||'　')+'</div></div>'+
+        '<div class="cell"><span class="lab">電話番号</span><div class="fulltext">'+esc(famTel||'　')+'</div></div>'+
+        '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
+      '</div></div></div>'+
+      // 事業所
+      '<div style="display:flex;flex:1;border-top:1px solid var(--g9)"><div class="sec-lbl">事業所</div><div class="sec-body">'+
+        '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
+        '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
+        '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager)+'<div class="cell" style="flex:2;border-right:none"><span class="lab">デイ利用日</span><div class="rhythm">'+(du||'　')+'</div></div></div>'+
+        '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
+      '</div></div>'+
+    '</div>'+
+    // 右 1/3：ジェノグラム（クリックで作成／家系図アプリへ）
+    '<div style="flex:1;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家系図</div><div class="sec-body" style="display:flex;padding:6px">'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックでジェノグラム作成／編集" style="flex:1;min-height:300px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+    '</div></div>'+
+  '</div>';
+  // 医療情報
+  h+='<div class="sec"><div class="sec-lbl">医療情報</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX番号',r.hospitalFax)+'</div>'+
+    '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
+    '<div class="row-cells">'+cell('かかりつけ薬局',r.pharmacy)+cell('電話番号',r.pharmacyTel)+cell('FAX番号',r.pharmacyFax)+'</div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">アレルギー</span><div class="fulltext">'+esc(r.allergy||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">治療中の病気</span><div class="fulltext">'+esc(r.currentDiseases||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">副作用・禁忌 等</span><div class="fulltext">'+esc(r.sideEffects||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">既往歴</span><div class="fulltext">'+esc(r.pastHistory||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">■薬剤情報（定期）■</span><div class="fulltext">'+esc(r.medsRegular||'　')+'</div></div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">■薬備考■</span><div class="fulltext">'+esc(r.medsNotes||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">■問題行動 等■</span><div class="fulltext">'+esc(r.problemBehavior||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">感染症</span><div class="fulltext">'+esc(r.infections||'　')+'</div></div>'+
+      cell('血液型',r.bloodType)+
+      '<div class="cell" style="border-right:none"><span class="lab">医療処置</span><div class="fulltext">'+esc(r.medicalCare||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">予防接種歴</span><div class="fulltext">'+esc(r.vaccinations||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div>'+
+    '</div>'+
+  '</div></div>';
+  // 服薬管理
+  h+='<div class="sec"><div class="sec-lbl">服薬管理</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">注意を要する薬剤</span><div class="fulltext">'+esc(r.highRiskMeds||'　')+'</div></div>'+
+  '</div></div>';
+  // 過去の臨時薬（新しい順）
+  var plog=Array.isArray(r.medsPastLog)?r.medsPastLog.slice():[];
+  plog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  if(plog.length){
+    var plogHtml=plog.map(function(s){
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">過去の臨時薬</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+plogHtml+'</div></div></div>';
+  }
+  // ADL（生活動作）
+  h+='<div class="sec"><div class="sec-lbl">ADL</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('移動',r.mobility)+cell('移乗',r.transfer)+cell('排泄',r.excretion)+cell('入浴',r.bath)+'</div>'+
+    '<div class="row-cells">'+cell('更衣・整容',r.dress)+cell('嚥下',r.swallow)+cell('障害高齢者自立度',r.bedriddenRank)+cell('水分',r.water)+'</div>'+
+    '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing)+'<div class="cell" style="flex:2;border-right:none"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
+  '</div></div>';
+  // 認知・精神
+  h+='<div class="sec"><div class="sec-lbl">認知・精神</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
+  '</div></div>';
+  // コミュニケーション
+  h+='<div class="sec"><div class="sec-lbl">コミュニケーション</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">留意点</span><div class="fulltext">'+esc(r.commNotes||'　')+'</div></div>'+
+  '</div></div>';
+  // 食事
+  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body"><div class="row-cells">'+
+    cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+
+    '<div class="cell" style="flex:2;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div>'+
+  '</div></div></div>';
+  // 支援経過（新しい順）
+  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
+  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  var slogHtml=slog.length?slog.map(function(s){
+    return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
+  }).join(''):'<span style="color:var(--g5)">　</span>';
+  h+='<div class="sec"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
+  // 医療支援経過（訪問診療。新しい順）
+  var mlog=Array.isArray(r.medicalSupportLog)?r.medicalSupportLog.slice():[];
+  mlog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  if(mlog.length){
+    var mlogHtml=mlog.map(function(s){
+      var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size:12px">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size:11px">[訪問診療]</span>':'')+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
+  }
+  // 嗜好・本人らしさ
+  h+='<div class="sec"><div class="sec-lbl">嗜好・本人らしさ</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('性格・気質',r.personality)+cell('趣味・特技',r.hobby)+cell('喫煙',r.smoking)+cell('飲酒',r.drinking)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">好きな／嫌いな食べ物</span><div class="fulltext">'+esc(r.foodPref||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">こだわり・大切な習慣</span><div class="fulltext">'+esc(r.lifePrefs||'　')+'</div></div>'+
+  '</div></div>';
+  // 生活歴
+  h+='<div class="sec"><div class="sec-lbl">生活歴</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none"><span class="lab">生育歴・職歴・暮らしぶり</span><div class="fulltext">'+esc(r.lifeHistory||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">価値観・大切にしてきたこと・誇り</span><div class="fulltext">'+esc(r.values||'　')+'</div></div>'+
+  '</div></div>';
+  // 意向・ACP
+  h+='<div class="sec"><div class="sec-lbl">意向・ACP</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">本人の意向</span><div class="fulltext">'+esc(r.wishSelf||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">家族の意向</span><div class="fulltext">'+esc(r.wishFamily||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="cell"><span class="lab">生活目標・ニーズ</span><div class="fulltext">'+esc(r.goal||'　')+'</div></div>'+
+    '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
+  '</div></div>';
+  // 対象アプリ
+  var tApps=Array.isArray(r.targetApps)?r.targetApps:null;
+  var tBadges=APP_TARGETS.map(function(p){
+    var on=tApps?tApps.indexOf(p[0])>=0:true;
+    return'<span class="tag" style="background:'+(on?'var(--ok-l);color:var(--ok)':'var(--g1);color:var(--g5)')+'">'+(on?'✓ ':'– ')+esc(p[1])+'</span>';
+  }).join(' ');
+  h+='<div class="sec"><div class="sec-lbl">対象</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対象アプリ</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">'+tBadges+'</div></div></div></div>';
+  h+='</div>';
+  $('viewBox').innerHTML=h;
+  // ジェノグラム欄クリック → 家系図アプリで作成/編集
+  var gb=$('viewBox').querySelector('.geno-box');
+  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+}
+
+/* ═══════════ 編集フォーム ═══════════ */
+var editing=null;
+/* 未知値の救済（データ消失防止）:
+   select の選択肢に無い既存値は、どの option にも selected が付かず先頭の空 option が選ばれ、
+   編集画面を開いて保存しただけで値が空になって消える。同様に type=date は ISO 形式でない値を
+   受け付けず空表示になり保存で消える。いずれも警告が出ない無言の消失なので、
+   未知値は「（既存値）」付きの option として足す／date は text にフォールバックして必ず保持する。 */
+function isISODate(s){return /^\d{4}-\d{2}-\d{2}$/.test(String(s||''))}
+function dtype(v){return (v&&!isISODate(v))?'text':'date'}
+function fld(k,label,val,type,opts){
+  var v=esc(val==null?'':val);
+  var wide=(type==='textarea');
+  if(type==='select'){
+    var sv=(val==null?'':String(val));
+    var known=opts.map(String).indexOf(sv)>=0;
+    var extra=(sv&&!known)?'<option value="'+esc(sv)+'" selected>'+esc(sv)+'（既存値）</option>':'';
+    var o='<option value=""></option>'+extra+opts.map(function(x){return'<option value="'+esc(x)+'"'+(String(val)===String(x)?' selected':'')+'>'+esc(x)+'</option>'}).join('');
+    return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'">'+o+'</select></div>';
+  }
+  if(type==='textarea')return'<div class="fld wide"><label>'+esc(label)+'</label><textarea data-k="'+k+'">'+v+'</textarea></div>';
+  if(type==='checkbox')return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'"><option value=""'+(!val?' selected':'')+'>無</option><option value="1"'+(val?' selected':'')+'>有</option></select></div>';
+  // ISO でない日付は text で表示（空にして消さない）
+  var t=(type||'text');
+  if(t==='date'&&val&&!isISODate(val))t='text';
+  return'<div class="fld"><label>'+esc(label)+'</label><input data-k="'+k+'" type="'+t+'" value="'+v+'"></div>';
+}
+function openEdit(rec){
+  editing=rec?JSON.parse(JSON.stringify(rec)):{id:null,active:true,family:[],rhythm:{}};
+  if(!Array.isArray(editing.family))editing.family=[];
+  if(!editing.rhythm)editing.rhythm={};
+  if(!Array.isArray(editing.supportLog))editing.supportLog=[];
+  if(!Array.isArray(editing.careLevelHistory))editing.careLevelHistory=[];
+  if(!Array.isArray(editing.medicalSupportLog))editing.medicalSupportLog=[];
+  if(!Array.isArray(editing.medsPastLog))editing.medsPastLog=[];
+  if(!editing.dayUse||typeof editing.dayUse!=='object')editing.dayUse={};
+  if(!editing.consents||typeof editing.consents!=='object')editing.consents={};
+  if(!editing.xref||typeof editing.xref!=='object')editing.xref={};
+  if(!editing.xref.vma||typeof editing.xref.vma!=='object')editing.xref.vma={};
+  var r=editing;
+  var levels=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+  var h='';
+  h+='<div class="cd"><div class="fgroup"><h3>基本情報</h3><div class="fgrid">'+
+    fld('name','氏名',r.name)+fld('kana','ふりがな',r.kana)+fld('room','居室',r.room)+
+    fld('gender','性別',r.gender,'select',['女','男'])+
+    fld('birthDate','生年月日',r.birthDate,'date')+
+    fld('careLevel','介護度',r.careLevel,'select',levels)+
+    fld('careCertStart','認定期間(開始)',r.careCertStart,'date')+fld('careCertEnd','認定期間(終了)',r.careCertEnd,'date')+
+    fld('copayRate','負担割合',r.copayRate,'select',['1','2','3'])+fld('welfare','生保',r.welfare,'checkbox')+
+    fld('admissionDate','入居日',r.admissionDate,'date')+fld('dischargeDate','退去日',r.dischargeDate,'date')+
+    fld('deathDate','ご逝去日',r.deathDate,'date')+
+    fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
+    fld('adl','生活自立度',r.adl)+fld('dementia','認知症自立度',r.dementia)+
+    fld('active','在籍状態',r.active===false?'退去':'在籍','select',['在籍','退去'])+
+  '</div></div></div>';
+
+  // 保険・制度／連絡先
+  h+='<div class="cd"><div class="fgroup"><h3>保険・制度／連絡先</h3><div class="fgrid">'+
+    fld('phone','電話番号（本人/居室）',r.phone)+
+    fld('insuredNo','被保険者番号',r.insuredNo)+fld('insurer','保険者（市区町村）',r.insurer)+
+    fld('certDate','認定日',r.certDate,'date')+
+    fld('medicalInsurance','医療保険種別',r.medicalInsurance,'select',['','後期高齢者','国保','社保','その他'])+
+    fld('disabilityCert','障害者手帳（種別・等級）',r.disabilityCert)+
+    fld('guardianship','成年後見（類型・後見人）',r.guardianship)+
+  '</div></div></div>';
+
+  // 介護度の変更履歴（時系列・後編集可）
+  h+='<div class="cd"><div class="fgroup"><h3>介護度の変更履歴</h3><div id="careHistList"></div>'+
+    '<button class="btn btn-sec" id="careHistAdd" type="button">＋ 履歴を追加</button>'+
+    '<p class="muted" style="margin-top:6px">介護度を変更して保存すると、変更前の値が自動で履歴に残ります（後から日付・内容の編集可）。</p></div></div>';
+
+  // 対象アプリ（各ケアアプリに表示・記録するか）
+  var curTargets=Array.isArray(r.targetApps)?r.targetApps:defaultTargetApps();
+  h+='<div class="cd"><div class="fgroup"><h3>対象アプリ（チェックした人だけ各アプリに表示・記録されます）</h3><div class="fgrid">'+
+    APP_TARGETS.map(function(p){
+      var on=curTargets.indexOf(p[0])>=0;
+      return'<label class="fld" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--g2);border-radius:8px;padding:10px"><input type="checkbox" data-target="'+p[0]+'"'+(on?' checked':'')+' style="width:auto">'+esc(p[1])+'</label>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">既定は全てON。対象外の人だけチェックを外してください（既存記録は削除されません）。</p></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>基本事項</h3><div class="fgrid">'+
+    fld('dischargeTo','退去先（自宅/病院/他施設 等）',r.dischargeTo)+
+  '</div>'+
+    fld('preAdmission','入居前状況',r.preAdmission,'textarea')+
+    fld('postDischarge','退去後状況（行き先等）',r.postDischarge,'textarea')+'</div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>家族情報</h3><div id="famList"></div>'+
+    '<button class="btn btn-sec" id="famAdd" type="button">＋ 家族を追加</button></div></div>';
+
+  // 同意・確認書（有無だけでなく取扱方法の文言も入るため全て文字列）
+  h+='<div class="cd"><div class="fgroup"><h3>同意・確認書</h3><div class="fgrid">'+
+    CONSENT_KEYS.map(function(p){
+      return'<div class="fld"><label>'+esc(p[1])+'</label><input data-consent="'+p[0]+'" value="'+esc((r.consents&&r.consents[p[0]])||'')+'"></div>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">「有」等の記号のほか、郵便物開封・主治医薬管理は取扱方法をそのまま記入できます。</p></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>事業所</h3><div class="fgrid">'+
+    fld('careOffice','居宅介護支援事業所',r.careOffice)+fld('careManager','介護支援専門員',r.careManager)+
+    fld('careOfficeTel','電話番号',r.careOfficeTel)+fld('careOfficeFax','FAX番号',r.careOfficeFax)+
+    fld('welfareEquip','福祉用具',r.welfareEquip)+fld('welfareEquipStaff','担当者',r.welfareEquipStaff)+fld('welfareEquipTel','電話番号',r.welfareEquipTel)+
+    fld('serviceManager','サービス提供責任者',r.serviceManager)+
+    fld('prevCareOffice','前の居宅介護支援事業所',r.prevCareOffice)+fld('prevCareManager','前の担当ケアマネ',r.prevCareManager)+
+  '</div><h3 style="margin-top:14px">デイ利用日（曜日ごとの利用時間帯）</h3><div class="fgrid">'+
+    DAYUSE_KEYS.map(function(p){return'<div class="fld"><label>'+esc(p[1])+'</label><input data-dayuse="'+p[0]+'" placeholder="例 9-16" value="'+esc((r.dayUse&&r.dayUse[p[0]])||'')+'"></div>'}).join('')+
+  '</div><h3 style="margin-top:14px">生活リズム</h3><div class="fgrid">'+
+    RHYTHM_KEYS.map(function(p){return'<div class="fld"><label>'+esc(p[1])+'</label><input data-rhythm="'+p[0]+'" type="time" value="'+esc(r.rhythm[p[0]]||'')+'"></div>'}).join('')+
+  '</div></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>医療情報</h3><div class="fgrid">'+
+    fld('hospital','かかりつけ病院',r.hospital)+fld('doctor','主治医',r.doctor)+
+    fld('hospitalTel','電話番号',r.hospitalTel)+fld('hospitalFax','FAX番号',r.hospitalFax)+
+    fld('emergencyHospital','救急搬送先（希望）',r.emergencyHospital)+fld('emergencyHospitalTel','急変時 連絡先TEL',r.emergencyHospitalTel,'tel')+
+    fld('visitDay','往診曜日',r.visitDay)+
+    fld('pharmacy','かかりつけ薬局',r.pharmacy)+fld('pharmacyTel','電話番号',r.pharmacyTel)+fld('pharmacyFax','FAX番号',r.pharmacyFax)+
+    fld('bloodType','血液型',r.bloodType,'select',['','A','B','O','AB','不明'])+
+  '</div>'+
+    fld('allergy','アレルギー',r.allergy,'textarea')+
+    fld('infections','感染症（B/C肝炎・結核・MRSA・疥癬 等）',r.infections,'textarea')+
+    fld('medicalCare','医療処置（経管栄養/吸引/在宅酸素/ストーマ/カテーテル/インスリン/褥瘡処置 等）',r.medicalCare,'textarea')+
+    fld('currentDiseases','治療中の病気',r.currentDiseases,'textarea')+
+    fld('sideEffects','副作用・禁忌 等',r.sideEffects,'textarea')+
+    fld('pastHistory','既往歴',r.pastHistory,'textarea')+
+    fld('vaccinations','予防接種歴',r.vaccinations,'textarea')+
+    fld('disclosure','告知の状況／病識',r.disclosure,'textarea')+
+    fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
+    fld('medsNotes','薬備考',r.medsNotes,'textarea')+
+    fld('problemBehavior','問題行動 等（BPSD）',r.problemBehavior,'textarea')+
+  '</div></div>';
+
+  // 服薬管理
+  h+='<div class="cd"><div class="fgroup"><h3>服薬管理</h3><div class="fgrid">'+
+    fld('medMgmt','管理方法',r.medMgmt,'select',['','自己管理','一包化','服薬カレンダー','一部介助','全介助'])+
+    fld('medAssist','服薬介助度',r.medAssist,'select',['','声かけ','手渡し','一部介助','全介助'])+
+    fld('formAdjust','剤形配慮',r.formAdjust,'select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル'])+
+    fld('medRefusal','服薬拒否',r.medRefusal,'select',['','なし','時々あり','あり'])+
+  '</div>'+
+    fld('medsPrn','頓服・外用等（使用条件を含めて記入）',r.medsPrn,'textarea')+
+    fld('highRiskMeds','注意を要する薬剤（向精神薬/抗凝固薬/麻薬 等）',r.highRiskMeds,'textarea')+'</div></div>';
+
+  // 過去の臨時薬（日付付きの時系列記録）
+  h+='<div class="cd"><div class="fgroup"><h3>過去の臨時薬</h3><div id="medsPastList"></div>'+
+    '<button class="btn btn-sec" id="medsPastAdd" type="button">＋ 臨時薬を追加</button></div></div>';
+
+  // ADL（生活動作）
+  h+='<div class="cd"><div class="fgroup"><h3>ADL（生活動作）</h3><div class="fgrid">'+
+    fld('mobility','移動',r.mobility,'select',['','独歩','杖','歩行器','車椅子','全介助','寝たきり'])+
+    fld('transfer','移乗',r.transfer,'select',['','自立','見守り','一部介助','全介助'])+
+    fld('excretion','排泄',r.excretion,'select',['','自立','一部介助','全介助','おむつ','ポータブル','尿器/カテーテル'])+
+    fld('bath','入浴',r.bath,'select',['','一般浴','機械浴','シャワー浴','清拭'])+
+    fld('dress','更衣・整容',r.dress,'select',['','自立','一部介助','全介助'])+
+    fld('swallow','嚥下',r.swallow,'select',['','問題なし','むせあり','要注意','嚥下障害'])+
+    fld('bedriddenRank','障害高齢者自立度',r.bedriddenRank,'select',['','J1','J2','A1','A2','B1','B2','C1','C2'])+
+    fld('water','水分摂取／制限',r.water)+
+    fld('vision','視力（眼鏡）',r.vision)+fld('hearing','聴力（補聴器）',r.hearing)+
+  '</div>'+fld('pressureUlcer','褥瘡（有無・部位）',r.pressureUlcer,'textarea')+'</div></div>';
+
+  // 認知・精神
+  h+='<div class="cd"><div class="fgroup"><h3>認知・精神</h3><div class="fgrid">'+
+    fld('dementiaType','認知症の種類',r.dementiaType,'select',['','アルツハイマー型','レビー小体型','脳血管性','前頭側頭型','混合型','その他'])+
+    fld('cogScore','HDS-R／MMSE 等',r.cogScore)+
+  '</div>'+
+    fld('careHints','対応のコツ・なだめ方（最重要）',r.careHints,'textarea')+
+    fld('psychHistory','精神疾患の既往／通院',r.psychHistory,'textarea')+
+  '</div></div>';
+
+  // コミュニケーション
+  h+='<div class="cd"><div class="fgroup"><h3>コミュニケーション</h3><div class="fgrid">'+
+    fld('preferredName','呼ばれたい呼称・愛称',r.preferredName)+
+    fld('commMethod','主な意思疎通手段',r.commMethod,'select',['','言語','筆談','ジェスチャー','視線','その他'])+
+  '</div>'+fld('commNotes','コミュニケーションの留意点',r.commNotes,'textarea')+'</div></div>';
+
+  // 食事（食事形態・義歯）
+  h+='<div class="cd"><div class="fgroup"><h3>食事</h3><div class="fgrid">'+
+    fld('mealStaple','主食',r.mealStaple)+fld('mealSide','副食',r.mealSide)+
+    fld('mealForm','食形態',r.mealForm,'select',['','常食','軟菜','きざみ','極きざみ','ミキサー','ペースト','ゼリー'])+
+    fld('thickener','とろみ',r.thickener,'select',['','なし','薄め','中間','濃いめ'])+
+    fld('denture','義歯',r.denture,'select',['無','有','部分義歯','総義歯'])+
+  '</div>'+fld('mealNote','備考',r.mealNote,'textarea')+'</div></div>';
+
+  // 嗜好・本人らしさ
+  h+='<div class="cd"><div class="fgroup"><h3>嗜好・本人らしさ</h3><div class="fgrid">'+
+    fld('personality','性格・気質',r.personality)+fld('hobby','趣味・特技',r.hobby)+
+    fld('smoking','喫煙',r.smoking,'select',['','なし','あり','過去喫煙'])+
+    fld('drinking','飲酒',r.drinking,'select',['','なし','あり','時々'])+
+  '</div>'+
+    fld('foodPref','好きな／嫌いな食べ物',r.foodPref,'textarea')+
+    fld('lifePrefs','こだわり・大切な習慣',r.lifePrefs,'textarea')+
+  '</div></div>';
+
+  // 生活歴
+  h+='<div class="cd"><div class="fgroup"><h3>生活歴</h3>'+
+    fld('lifeHistory','生育歴・職歴・暮らしぶり',r.lifeHistory,'textarea')+
+    fld('values','価値観・人生で大切にしてきたこと・誇り',r.values,'textarea')+'</div></div>';
+
+  // 意向・ACP
+  h+='<div class="cd"><div class="fgroup"><h3>意向・ACP</h3>'+
+    fld('complaint','主訴（困りごと）',r.complaint,'textarea')+
+    fld('wishSelf','本人の意向・希望',r.wishSelf,'textarea')+
+    fld('wishFamily','家族の意向・希望',r.wishFamily,'textarea')+
+    fld('goal','生活目標・ニーズ',r.goal,'textarea')+
+    '<div class="fgrid">'+fld('dnar','DNAR',r.dnar,'select',['','未確認','DNAR（蘇生不要）','フルコード（蘇生希望）'])+'</div>'+
+    fld('acp','看取り・終末期の意向（ACP／事前指示）',r.acp,'textarea')+
+    fld('strengths','本人の強み（ストレングス）',r.strengths,'textarea')+'</div></div>';
+
+  // 支援経過（日付付きの時系列記録）
+  h+='<div class="cd"><div class="fgroup"><h3>支援経過</h3><div id="supportList"></div>'+
+    '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div>';
+
+  // 医療支援経過（訪問診療の受け皿。将来は訪問診療アプリから自動取込）
+  h+='<div class="cd"><div class="fgroup"><h3>医療支援経過（訪問診療）</h3><div id="medLogList"></div>'+
+    '<button class="btn btn-sec" id="medLogAdd" type="button">＋ 診察記録を追加</button>'+
+    '<p class="muted" style="margin-top:6px">当面は手動入力。将来、訪問診療アプリの診察結果がここに自動反映されます。</p></div></div>';
+
+  // 訪問診療連携キー（名寄せ確定後に患者IDを固定）
+  h+='<div class="cd"><div class="fgroup"><h3>訪問診療連携キー</h3><div class="fgrid">'+
+    '<div class="fld"><label>訪問診療 患者ID（xref.vma）</label><input data-xref-vma-pid type="text" value="'+esc((r.xref&&r.xref.vma&&r.xref.vma.patientId)||'')+'"></div>'+
+  '</div><p class="muted" style="margin-top:6px">訪問診療アプリの患者と名寄せ確定後、患者IDをここに入れると以後の自動連携の鍵になります。</p></div></div>';
+
+  $('editBox').innerHTML=h;
+  renderFamRows();
+  renderSupportRows();
+  renderCareHistRows();
+  renderMedLogRows();
+  renderMedsPastRows();
+  $('medsPastAdd').addEventListener('click',function(){collectMedsPast();editing.medsPastLog.unshift({date:todayISO(),text:''});renderMedsPastRows()});
+  $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false});collectFam();renderFamRows()});
+  $('supportAdd').addEventListener('click',function(){collectSupport();editing.supportLog.unshift({date:todayISO(),text:''});renderSupportRows()});
+  $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),note:''});renderCareHistRows()});
+  $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
+  showScreen('edit');
+}
+function renderSupportRows(){
+  var box=$('supportList');var h='';
+  editing.supportLog.forEach(function(s,i){
+    h+='<div class="fam-row" data-si="'+i+'" style="grid-template-columns:160px 1fr">'+
+      '<div class="fld"><label>日付</label><input data-sk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
+      '<div class="fld"><label>内容</label><textarea data-sk="text" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<button class="fam-del" type="button" data-sdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-sdel]'),function(b){b.addEventListener('click',function(){collectSupport();editing.supportLog.splice(parseInt(this.getAttribute('data-sdel')),1);renderSupportRows()})});
+}
+function collectSupport(){
+  var box=$('supportList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-si'));if(isNaN(i)||!editing.supportLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-sk]'),function(inp){
+      editing.supportLog[i][inp.getAttribute('data-sk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+  });
+}
+/* ── 過去の臨時薬（日付付きの時系列記録・supportLog と同型） ── */
+function renderMedsPastRows(){
+  var box=$('medsPastList');if(!box)return;var h='';
+  editing.medsPastLog.forEach(function(s,i){
+    h+='<div class="fam-row" data-pi="'+i+'" style="grid-template-columns:160px 1fr">'+
+      '<div class="fld"><label>日付</label><input data-pk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
+      '<div class="fld"><label>薬剤・内容</label><textarea data-pk="text" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<button class="fam-del" type="button" data-pdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-pdel]'),function(b){b.addEventListener('click',function(){collectMedsPast();editing.medsPastLog.splice(parseInt(this.getAttribute('data-pdel')),1);renderMedsPastRows()})});
+}
+function collectMedsPast(){
+  var box=$('medsPastList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-pi'));if(isNaN(i)||!editing.medsPastLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-pk]'),function(inp){
+      editing.medsPastLog[i][inp.getAttribute('data-pk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+  });
+}
+/* ── 介護度の変更履歴（時系列・後編集可） ── */
+function renderCareHistRows(){
+  var box=$('careHistList');if(!box)return;var h='';
+  var levels=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+  editing.careLevelHistory.forEach(function(s,i){
+    h+='<div class="fam-row" data-ci="'+i+'" style="grid-template-columns:repeat(2,1fr)">'+
+      '<div class="fld"><label>介護度</label><select data-ck="value">'+
+        ((s.value&&levels.indexOf(String(s.value))<0)?'<option value="'+esc(s.value)+'" selected>'+esc(s.value)+'（既存値）</option>':'')+
+        levels.map(function(x){return'<option value="'+esc(x)+'"'+(String(s.value||'')===String(x)?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>'+
+      '<div class="fld"><label>変更日</label><input data-ck="changedAt" type="'+dtype(s.changedAt)+'" value="'+esc(s.changedAt||'')+'"></div>'+
+      '<div class="fld"><label>認定日</label><input data-ck="certDate" type="'+dtype(s.certDate)+'" value="'+esc(s.certDate||'')+'"></div>'+
+      '<div class="fld"><label>認定期間(開始)</label><input data-ck="certStart" type="'+dtype(s.certStart)+'" value="'+esc(s.certStart||'')+'"></div>'+
+      '<div class="fld"><label>認定期間(終了)</label><input data-ck="certEnd" type="'+dtype(s.certEnd)+'" value="'+esc(s.certEnd||'')+'"></div>'+
+      '<div class="fld full"><label>備考</label><input data-ck="note" value="'+esc(s.note||'')+'"></div>'+
+      '<button class="fam-del" type="button" data-chdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-chdel]'),function(b){b.addEventListener('click',function(){collectCareHist();editing.careLevelHistory.splice(parseInt(this.getAttribute('data-chdel')),1);renderCareHistRows()})});
+}
+function collectCareHist(){
+  var box=$('careHistList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-ci'));if(isNaN(i)||!editing.careLevelHistory[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-ck]'),function(inp){
+      editing.careLevelHistory[i][inp.getAttribute('data-ck')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+  });
+}
+/* ── 医療支援経過（訪問診療の受け皿。source='vma' は読み取り専用表示） ── */
+function renderMedLogRows(){
+  var box=$('medLogList');if(!box)return;var h='';
+  editing.medicalSupportLog.forEach(function(s,i){
+    var isVma=(s.source==='vma');
+    h+='<div class="fam-row" data-mi="'+i+'" style="grid-template-columns:160px 1fr 1fr">'+
+      '<div class="fld"><label>診察日</label><input data-mk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld"><label>担当医</label><input data-mk="doctor" value="'+esc(s.doctor||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld"><label>医療機関</label><input data-mk="clinic" value="'+esc(s.clinic||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld full"><label>内容'+(isVma?' <span style="color:var(--pri-d);font-size:11px">（訪問診療より取込）</span>':'')+'</label><textarea data-mk="text" style="min-height:56px"'+(isVma?' readonly':'')+'>'+esc(s.text||'')+'</textarea></div>'+
+      (isVma?'':'<button class="fam-del" type="button" data-mdel="'+i+'" style="grid-column:1/-1">削除</button>')+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-mdel]'),function(b){b.addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.splice(parseInt(this.getAttribute('data-mdel')),1);renderMedLogRows()})});
+}
+function collectMedLog(){
+  var box=$('medLogList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-mi'));if(isNaN(i)||!editing.medicalSupportLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-mk]'),function(inp){
+      editing.medicalSupportLog[i][inp.getAttribute('data-mk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+    if(!editing.medicalSupportLog[i].source)editing.medicalSupportLog[i].source='manual';
+  });
+}
+/* 将来の自動取込用: 診察結果を srcId で冪等マージ（同一srcId=更新・無ければ追加・date降順）。
+   手動入力分(source='manual'・srcId空)は対象外で温存。今回は呼び出し口のみ用意。 */
+function importMedicalLog(list,entries){
+  list=Array.isArray(list)?list.slice():[];
+  (entries||[]).forEach(function(e){
+    if(!e)return;
+    var sid=e.srcId!=null?String(e.srcId):'';
+    var idx=-1;
+    if(sid){for(var i=0;i<list.length;i++){if(list[i]&&String(list[i].srcId)===sid){idx=i;break}}}
+    var item={date:e.date||'',text:e.text||'',source:e.source||'vma',srcId:sid,doctor:e.doctor||'',clinic:e.clinic||'',importedAt:new Date().toISOString()};
+    if(idx>=0)list[idx]=item;else list.push(item);
+  });
+  list.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  return list;
+}
+function renderFamRows(){
+  var box=$('famList');var h='';
+  editing.family.forEach(function(f,i){
+    h+='<div class="fam-row" data-i="'+i+'">'+
+      '<div class="fld"><label>氏名</label><input data-fk="name" value="'+esc(f.name)+'"></div>'+
+      '<div class="fld"><label>続柄</label><input data-fk="relation" value="'+esc(f.relation)+'"></div>'+
+      '<div class="fld"><label>役割（KP/金銭管理等）</label><input data-fk="role" value="'+esc(f.role)+'"></div>'+
+      '<div class="fld"><label>電話番号</label><input data-fk="phone" value="'+esc(f.phone)+'"></div>'+
+      // 住所は郵便番号・番地・建物名で複数行になることがある。input だと改行が除去され、
+      // 開いて保存しただけで行構成が失われるため textarea にする。
+      '<div class="fld full"><label>住所</label><textarea data-fk="address" rows="2">'+esc(f.address)+'</textarea></div>'+
+      '<div class="fld"><label>緊急連絡先</label><select data-fk="emergency"><option value=""'+(!f.emergency?' selected':'')+'>—</option><option value="1"'+(f.emergency?' selected':'')+'>緊急連絡先</option></select></div>'+
+      '<button class="fam-del" type="button" data-del="'+i+'">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),function(b){b.addEventListener('click',function(){collectFam();editing.family.splice(parseInt(this.getAttribute('data-del')),1);renderFamRows()})});
+}
+function collectFam(){
+  Array.prototype.forEach.call($('famList').querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-i'));if(isNaN(i)||!editing.family[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-fk]'),function(inp){
+      var k=inp.getAttribute('data-fk');
+      editing.family[i][k]=(k==='emergency')?!!inp.value:inp.value.trim();
+    });
+  });
+}
+function collectForm(){
+  var rec={};
+  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-k]'),function(inp){
+    var k=inp.getAttribute('data-k');var v=inp.value;
+    if(k==='active'){rec.active=(v!=='退去');return}
+    if(k==='welfare'){rec.welfare=!!v;return}
+    rec[k]=(typeof v==='string')?v.trim():v;
+  });
+  rec.rhythm={};
+  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-rhythm]'),function(inp){if(inp.value)rec.rhythm[inp.getAttribute('data-rhythm')]=inp.value});
+  // 入力欄が描画されていない場合は既存値を温存する（部分フォームでの全消しを防ぐ安全側フォールバック）
+  var duEls=$('editBox').querySelectorAll('[data-dayuse]');
+  if(duEls.length){rec.dayUse={};Array.prototype.forEach.call(duEls,function(inp){var v=(inp.value||'').trim();if(v)rec.dayUse[inp.getAttribute('data-dayuse')]=v})}
+  else if(editing.dayUse)rec.dayUse=editing.dayUse;
+  var csEls=$('editBox').querySelectorAll('[data-consent]');
+  if(csEls.length){rec.consents={};Array.prototype.forEach.call(csEls,function(inp){var v=(inp.value||'').trim();if(v)rec.consents[inp.getAttribute('data-consent')]=v})}
+  else if(editing.consents)rec.consents=editing.consents;
+  rec.targetApps=[];
+  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  collectMedsPast();
+  rec.medsPastLog=editing.medsPastLog.filter(function(s){return s&&(s.date||s.text)});
+  collectFam();
+  rec.family=editing.family.filter(function(f){return f.name||f.phone||f.address});
+  collectSupport();
+  rec.supportLog=editing.supportLog.filter(function(s){return s&&(s.date||s.text)});
+  // 介護度の変更履歴：手動編集を回収し、介護度が変わっていれば変更前の値を自動スナップショット
+  collectCareHist();
+  var oldLevel=String(editing.careLevel||'').trim();
+  if(oldLevel&&rec.careLevel&&rec.careLevel!==oldLevel){
+    editing.careLevelHistory.unshift({value:oldLevel,certStart:editing.careCertStart||'',certEnd:editing.careCertEnd||'',certDate:editing.certDate||'',changedAt:todayISO(),note:'自動記録（変更前）'});
+  }
+  rec.careLevelHistory=editing.careLevelHistory.filter(function(s){return s&&(s.value||s.changedAt||s.note||s.certStart||s.certEnd)});
+  // 医療支援経過（訪問診療の受け皿）
+  collectMedLog();
+  rec.medicalSupportLog=editing.medicalSupportLog.filter(function(s){return s&&(s.date||s.text)});
+  rec.id=editing.id;
+  // 訪問診療連携キー（xref.vma.patientId）
+  var vmaInp=$('editBox').querySelector('[data-xref-vma-pid]');
+  if(vmaInp){var pid=(vmaInp.value||'').trim();editing.xref=editing.xref||{};editing.xref.vma=editing.xref.vma||{};if(pid)editing.xref.vma.patientId=pid;else delete editing.xref.vma.patientId;if(editing.xref.vma&&!Object.keys(editing.xref.vma).length)delete editing.xref.vma;}
+  if(editing.xref&&Object.keys(editing.xref).length)rec.xref=editing.xref;
+  // 移行時の退避データは画面に入力欄が無いため、rec に引き継がないと保存のたびに消える
+  if(editing.unmappedRaw&&editing.unmappedRaw.length)rec.unmappedRaw=editing.unmappedRaw;
+  // ホワイトリスト適用
+  var clean={};ALLOWED_KEYS.forEach(function(k){if(rec[k]!==undefined)clean[k]=rec[k]});
+  return clean;
+}
+function saveResident(){
+  var rec=collectForm();
+  if(!rec.name){toast('⚠️ 氏名は必須です');return}
+  if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
+  rec.updatedAt=new Date().toISOString();
+  $('saveBtn').disabled=true;setSync('保存中…');
+  apiPost({action:'saveResident',record:rec}).then(function(d){
+    var saved=(d&&d.record)||d;
+    setSync('保存OK','ok');toast('✅ 保存しました');
+    // roster を更新（軽量行のみ）
+    var row=normRosterRow(saved.id!=null?saved:rec);
+    var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
+    if(idx>=0)roster[idx]=row;else roster.push(row);
+    saveRosterCache();writeCommonRoster();
+    openResident(row.id);
+  }).catch(function(e){setSync('保存失敗','err');toast('⚠️ 保存に失敗: '+e.message)}).then(function(){$('saveBtn').disabled=false});
+}
+
+/* ═══════════ 画面遷移 ═══════════ */
+function showScreen(name){
+  ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
+  if(name==='list')window.scrollTo(0,0);
+}
+
+/* ═══════════ 端末用途ガード ═══════════ */
+function applyDeviceGuard(){
+  var blocked=(getDeviceRole()==='field');
+  $('deviceBlock').classList.toggle('on',blocked);
+  return blocked;
+}
+/* キャッシュ即時表示＋（URLがあれば）ネット同期。init と端末解除後で共用 */
+function loadData(){
+  loadRosterCache();renderRoster();
+  if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
+  if(CFG.url)refreshRoster();else setSync('未接続');
+}
+
+/* ═══════════ 同期設定 ═══════════ */
+function openSync(){$('cfgUrl').value=CFG.url;$('cfgToken').value=CFG.token;if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on')}
+function closeSync(){$('mSync').classList.remove('on')}
+function saveSyncCfg(){
+  CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
+  if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
+  try{localStorage.setItem(CFG_KEY,JSON.stringify(CFG))}catch(e){}
+  if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
+  closeSync();
+  // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。
+  if(applyDeviceGuard())return;
+  loadData();
+}
+function testSync(){
+  if(!$('cfgUrl').value.trim()){toast('URLを入力してください');return}
+  var saved={url:CFG.url,token:CFG.token};CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
+  apiGet({action:'ping'},8000).then(function(){toast('✅ 接続OK')}).catch(function(e){toast('⚠️ 接続失敗: '+e.message)}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
+}
+
+/* ═══════════ 初期化 ═══════════ */
+function init(){
+  // ── 先に全イベントを登録（ブロック中でも「端末設定変更」が機能するように） ──
+  $('deviceUnlock').addEventListener('click',function(){$('deviceBlock').classList.remove('on');openSync()});
+  $('q').addEventListener('input',renderRoster);
+  // 表示パターンのタブ（リロードしても選んだタブが維持される）
+  var vtabs=Array.prototype.slice.call($('viewTabs').querySelectorAll('.vtab'));
+  vtabs.forEach(function(b,i){
+    b.addEventListener('click',function(){setView(this.getAttribute('data-v'))});
+    /* role="tab" を名乗る以上、←→で移動できないと支援技術の期待と食い違う */
+    b.addEventListener('keydown',function(e){
+      var d=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:(e.key==='ArrowLeft'||e.key==='ArrowUp')?-1:0;
+      if(!d)return;
+      e.preventDefault();
+      var n=vtabs[(i+d+vtabs.length)%vtabs.length];
+      n.focus(); setView(n.getAttribute('data-v'));
+    });
+  });
+  // 保存された表示パターンのタブ状態だけ先に反映する。
+  // ここで描画すると (a) 名簿読込前なので「入居者がいません」が一瞬出る
+  // (b) 現場端末ガードで return する経路でも描画してしまう。描画は loadData に任せる。
+  paintTabs();
+  Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
+    c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');
+      Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){x.classList.toggle('on',x===c)});renderRoster()});
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
+    b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');
+      if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
+  });
+  $('backBtn').addEventListener('click',function(){showScreen('list')});
+  $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
+  $('printBtn').addEventListener('click',function(){window.print()});
+  $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
+  $('saveBtn').addEventListener('click',saveResident);
+  $('syncClose').addEventListener('click',closeSync);
+  $('appsClose').addEventListener('click',closeApps);
+  $('mApps').addEventListener('click',function(e){if(e.target===this)closeApps()});
+  $('syncTest').addEventListener('click',testSync);
+  $('syncSave').addEventListener('click',saveSyncCfg);
+  $('mSync').addEventListener('click',function(e){if(e.target===this)closeSync()});
+  // ── 端末用途ガード：現場タブレットはデータを一切読み込まずブロック表示 ──
+  if(applyDeviceGuard()){setSync('現場端末','err');return}
+  loadData();
+}
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>

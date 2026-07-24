@@ -1,0 +1,4477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
+<title>週間計画</title>
+<style>
+:root {
+  --pri:  #1565c0;
+  --pri2: #1a73e8;
+  --ng:   #c62828;
+  --g0: #fff;
+  --g1: #f8f9fa;
+  --g2: #e8eaed;
+  --g3: #dadce0;
+  --g4: #bdc1c6;
+  --g6: #80868b;
+  --g7: #5f6368;
+  --g8: #3c4043;
+  --g9: #202124;
+  --hdr-h: 56px;
+  --sum-h: 80px;
+  --col-hdr-h: 44px;
+  --time-w: 48px;
+  --surcharge-w: 22px;
+  --hour-px: 60px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden;
+  font-family: -apple-system, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+  background: var(--g1); color: var(--g9); }
+
+/* ── Header ── */
+.hdr {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--hdr-h);
+  background: linear-gradient(135deg, var(--pri) 0%, var(--pri2) 100%);
+  color: #fff; display: flex; align-items: center; gap: 10px;
+  padding: 0 12px 0 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+}
+.hdr h1 { font-size: 16px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.resident-selector { flex: 1; min-width: 0; }
+.resident-select {
+  width: 100%; max-width: 220px;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; border-radius: 6px; padding: 6px 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer; outline: none; appearance: none;
+}
+.resident-select option { color: var(--g9); background: #fff; }
+.hdr-btns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.hdr-btn {
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 13px;
+  cursor: pointer; white-space: nowrap; transition: background .15s;
+}
+.hdr-btn:hover { background: rgba(255,255,255,.28); }
+.hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
+.hdr-btn.savebtn:hover { background: #1b5e20; }
+.hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
+/* ケア内容チップ（訪問介護の予定編集・要件4） */
+.care-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.care-chip { border: 1px solid #cfd8dc; background: #fff; color: #37474f; border-radius: 14px;
+  padding: 4px 12px; font-size: 13px; cursor: pointer; transition: background .12s; }
+.care-chip:hover { background: #eceff1; }
+.care-chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+
+/* ── Summary bar (2段構成) ── */
+.summary-bar {
+  position: fixed; top: var(--hdr-h); left: 0; right: 0; height: var(--sum-h);
+  background: var(--g0); border-bottom: 1px solid var(--g3);
+  box-shadow: 0 1px 4px rgba(0,0,0,.08); z-index: 90;
+  display: flex; flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.sum-row {
+  display: flex; align-items: center; gap: 0; padding: 0 8px 0 12px;
+  flex: 1 1 0; min-height: 0;
+  overflow-x: auto; overflow-y: hidden;
+}
+.sum-row + .sum-row { border-top: 1px dashed var(--g3); }
+.sum-row::-webkit-scrollbar { height: 2px; }
+.sum-row::-webkit-scrollbar-thumb { background: var(--g4); }
+.sum-group {
+  display: flex; align-items: baseline; gap: 3px;
+  padding: 0 10px; border-right: 1px solid var(--g3); white-space: nowrap;
+  flex-shrink: 0;
+}
+.sum-group:last-child { border-right: none; }
+.sum-row .sum-group:last-of-type { border-right: 1px solid var(--g3); }
+.sum-label { font-size: 10px; color: var(--g6); font-weight: 600; }
+.sum-val   { font-size: 14px; font-weight: 700; color: var(--g9); }
+.sum-unit  { font-size: 10px; color: var(--g7); }
+.sum-pct-wrap { display: flex; align-items: center; gap: 6px; padding: 0 10px; flex-shrink: 0; }
+.sum-pct-bar {
+  width: 80px; height: 8px; background: var(--g2); border-radius: 4px; overflow: hidden;
+  position: relative;
+}
+.sum-pct-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+/* 100%超過時：縞模様で視覚的に「超過」を示す */
+.sum-pct-fill.over {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,0.35) 0,
+    rgba(255,255,255,0.35) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  animation: pct-over-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pct-over-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.18); }
+}
+.sum-pct-val  { font-size: 13px; font-weight: 700; min-width: 64px; white-space: nowrap; }
+.sum-pct-val.over { font-size: 14px; }
+.sum-edit-btn {
+  position: sticky; right: 0; margin-left: auto; flex-shrink: 0;
+  background: var(--g0); border: 1px solid var(--g3); border-left-width: 2px; border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer; color: var(--g8);
+  transition: background .15s; white-space: nowrap;
+  box-shadow: -4px 0 8px rgba(255,255,255,.9);
+}
+.sum-edit-btn:hover { background: var(--g2); }
+
+/* ── No resident ── */
+.no-resident {
+  position: fixed; top: calc(var(--hdr-h) + var(--sum-h)); bottom: 0; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; color: var(--g6);
+}
+.no-resident p { font-size: 15px; }
+.no-resident .add-first-btn {
+  background: var(--pri2); color: #fff; border: none; border-radius: 8px;
+  padding: 11px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+/* ── Calendar wrapper ── */
+.cal-wrap {
+  position: fixed; top: calc(var(--hdr-h) + var(--sum-h)); bottom: 0; left: 0; right: 0;
+  display: flex; overflow: hidden;
+}
+
+/* ── Time column ── */
+.time-col {
+  width: var(--time-w); flex-shrink: 0;
+  background: var(--g0); border-right: 1px solid var(--g3);
+  position: relative; overflow: hidden; z-index: 10;
+}
+.time-col-spacer { height: var(--col-hdr-h); border-bottom: 1px solid var(--g3); }
+.time-labels-inner { position: absolute; top: var(--col-hdr-h); left: 0; right: 0; }
+.time-label {
+  position: absolute; right: 6px;
+  font-size: 10px; color: var(--g6);
+  transform: translateY(-50%); white-space: nowrap; line-height: 1;
+}
+
+/* ── Surcharge column ── */
+.surcharge-col {
+  width: var(--surcharge-w); flex-shrink: 0;
+  background: var(--g0); border-right: 1px solid var(--g3);
+  position: relative; overflow: hidden; z-index: 10;
+}
+.surcharge-col-spacer { height: var(--col-hdr-h); border-bottom: 1px solid var(--g3); }
+.surcharge-inner { position: absolute; top: var(--col-hdr-h); left: 0; right: 0; }
+.surcharge-band {
+  position: absolute; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.surcharge-band-label {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 8px; font-weight: 800; letter-spacing: 0.5px; line-height: 1;
+  white-space: nowrap;
+}
+/* グリッド背景バンド */
+.surcharge-bg-band {
+  position: absolute; left: 0; right: 0; z-index: 0; pointer-events: none;
+}
+
+/* ── Days panel ── */
+.days-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* ── Column header ── */
+.col-header {
+  height: var(--col-hdr-h);
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border-bottom: 2px solid var(--g3);
+  background: var(--g0); flex-shrink: 0; min-width: 490px; z-index: 5;
+}
+.day-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-right: 1px solid var(--g3); gap: 1px;
+  font-size: 14px; font-weight: 700; color: var(--g8);
+}
+.day-cell:last-child { border-right: none; }
+.day-cell.sat { color: #1565c0; }
+.day-cell.sun { color: #c62828; }
+.day-units {
+  font-size: 10px; font-weight: 600; opacity: .75; letter-spacing: 0;
+  line-height: 1;
+}
+.day-units.over { color: var(--ng); opacity: 1; }
+
+/* ── Grid scroll ── */
+.grid-scroll {
+  flex: 1; overflow-y: auto; overflow-x: auto; position: relative;
+}
+.grid-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.grid-scroll::-webkit-scrollbar-thumb { background: var(--g4); border-radius: 3px; }
+
+/* ── Grid body ── */
+.grid-body { position: relative; min-width: 490px; height: calc(24 * var(--hour-px)); }
+.hour-line {
+  position: absolute; left: 0; right: 0; height: 1px;
+  background: var(--g3); pointer-events: none;
+}
+.half-line {
+  position: absolute; left: 0; right: 0; height: 1px;
+  background: var(--g2); pointer-events: none;
+}
+
+/* ── Day columns ── */
+.day-columns {
+  position: absolute; inset: 0;
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  z-index: 1;
+}
+.day-col { position: relative; border-right: 1px solid var(--g3); cursor: cell; }
+.day-col:last-child { border-right: none; }
+.day-col.drop-target { background: rgba(26,115,232,.06); }
+
+/* ── Event blocks ──
+   Background is rendered via ::before so text can overflow freely */
+.event-block {
+  position: absolute;
+  overflow: visible;       /* allow text to flow beyond block height */
+  background: none;
+  border-radius: 4px;
+  font-size: 11px; font-weight: 600; line-height: 1.35;
+  cursor: grab;
+  z-index: 2;
+  user-select: none;
+  transition: opacity .1s;
+  min-height: 8px;
+}
+.event-block:active { cursor: grabbing; }
+.event-block::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--ev-bg, #e8f5e9);
+  border: 1px solid rgba(80,80,80,.35);
+  border-left: 3px solid var(--ev-border, #81c784);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  z-index: 0;
+}
+.event-block:hover::before { box-shadow: 0 2px 8px rgba(0,0,0,.18); border-color: rgba(60,60,60,.5); }
+.ev-text {
+  position: relative;
+  z-index: 1;
+  padding: 3px 5px 2px;
+  pointer-events: none;
+}
+.ev-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 2px; line-height: 1.3;
+}
+.ev-cat-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.ev-unit-num { flex-shrink: 0; font-size: 10px; font-weight: 700; }
+.ev-row.ev-main { font-size: 11px; font-weight: 700; }
+.ev-row.ev-sub  { font-size: 10px; font-weight: 400; opacity: .85; }
+.ev-row.ev-total {
+  font-size: 11px; font-weight: 800;
+  border-top: 1px solid currentColor; margin-top: 1px; padding-top: 1px;
+  opacity: .95;
+}
+.ev-row.ev-limit-badge {
+  display: block; font-size: 9px; font-weight: 700;
+  padding: 1px 4px; margin-top: 2px; border-radius: 3px;
+  text-align: center; white-space: nowrap;
+}
+.ev-row.ev-limit-badge.over    { background: rgba(198,40,40,.18); color: #c62828; }
+.ev-row.ev-limit-badge.partial { background: rgba(245,124,0,.18);  color: #e65100; }
+.ev-time {
+  display: block; font-size: 10px; opacity: .75; white-space: nowrap; margin-top: 1px;
+}
+.ev-detail {
+  display: block; font-size: 10px; font-weight: 400;
+  margin-top: 2px; opacity: .9;
+  white-space: pre-wrap; word-break: break-all;
+}
+
+/* ── 限度額超過イベント ── */
+.event-block.over-limit { opacity: .55; }
+.event-block.over-limit::before { border-style: dashed !important; }
+
+/* ── Resize handle ── */
+.resize-handle {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 8px; cursor: s-resize; z-index: 3;
+  border-radius: 0 0 4px 4px;
+}
+.event-block:hover .resize-handle { background: rgba(0,0,0,.12); }
+
+/* ── Drag states ── */
+.event-block.is-dragging { opacity: .25 !important; pointer-events: none; }
+.drag-ghost {
+  position: fixed; pointer-events: none; z-index: 1000;
+  opacity: .85; border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  overflow: hidden;
+  transition: none;
+}
+.drag-ghost::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--ev-bg, #e8f5e9);
+  border-left: 3px solid var(--ev-border, #81c784);
+  border-radius: 4px;
+}
+.drag-ghost .ev-text { position: relative; z-index: 1; }
+body.is-dragging-move   * { cursor: grabbing !important; }
+body.is-dragging-resize * { cursor: s-resize  !important; }
+
+/* ── FAB ── */
+.fab {
+  position: fixed; right: 20px; bottom: 24px;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--pri) 0%, var(--pri2) 100%);
+  color: #fff; border: none; font-size: 26px; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(21,101,192,.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; transition: transform .15s;
+}
+.fab:hover { transform: scale(1.07); }
+.fab:active { transform: scale(.96); }
+
+/* ── Modal ── */
+.mk {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  z-index: 200; display: none;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.mk.open { display: flex; }
+.md {
+  background: var(--g0); border-radius: 12px; padding: 20px;
+  width: 100%; max-width: 460px;
+  max-height: calc(100vh - 40px); overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,.25);
+}
+.md-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.md-hd h2 { font-size: 17px; font-weight: 700; }
+.md-close {
+  background: none; border: none; font-size: 20px; color: var(--g6);
+  cursor: pointer; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; transition: background .15s;
+}
+.md-close:hover { background: var(--g2); }
+
+/* ── Form ── */
+.form-row { margin-bottom: 14px; }
+.form-row label { display: block; font-size: 12px; font-weight: 600; color: var(--g7); margin-bottom: 5px; }
+.inp {
+  width: 100%; padding: 9px 11px;
+  border: 1.5px solid var(--g3); border-radius: 8px;
+  font-size: 14px; color: var(--g9); background: var(--g0);
+  transition: border-color .15s; outline: none; appearance: none;
+}
+.inp:focus { border-color: var(--pri2); box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+textarea.inp { resize: vertical; font-family: inherit; }
+select.inp { cursor: pointer; }
+.form-row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.radio-group { display: flex; gap: 10px; }
+.radio-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px; color: var(--g8); cursor: pointer;
+  padding: 6px 12px; border: 1.5px solid var(--g3); border-radius: 8px;
+  transition: all .15s; flex: 1; justify-content: center;
+}
+.radio-label:has(input:checked) { border-color: var(--pri2); background: rgba(26,115,232,.07); color: var(--pri); }
+.radio-label input[type="radio"] { accent-color: var(--pri2); width: 15px; height: 15px; }
+.hint-box {
+  margin-top: 6px; padding: 7px 10px;
+  background: var(--g1); border-left: 3px solid var(--pri2);
+  border-radius: 0 6px 6px 0; font-size: 12px; color: var(--g7); line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* ── Buttons ── */
+.btn-row { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.btn { padding: 9px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.btn-pri { background: var(--pri2); color: #fff; }
+.btn-pri:hover { background: #1557b0; }
+.btn-sec { background: var(--g2); color: var(--g8); }
+.btn-sec:hover { background: var(--g3); }
+.btn-ng { background: var(--ng); color: #fff; margin-left: auto; }
+.btn:hover { filter: brightness(0.96); }
+
+/* 利用者一覧モーダル（スコープ限定・既存レイアウト/印刷に非干渉） */
+#mk-resident-list .md { max-width: min(1180px, 96vw); }
+#rl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#rl-table th, #rl-table td { border: 1px solid var(--g3); padding: 7px 9px; text-align: right; white-space: nowrap; }
+#rl-table th { background: var(--g1); color: var(--g7); font-weight: 700; text-align: center; position: sticky; top: 0; line-height: 1.3; }
+#rl-table td.rl-name { text-align: left; font-weight: 600; color: var(--g9); }
+#rl-table td.rl-mid { text-align: center; }
+#rl-table tbody tr:nth-child(even) { background: var(--g1); }
+#rl-table .rl-pct { font-weight: 700; }
+#rl-table .rl-pct.over { color: #c62828; }
+#rl-table .rl-pct.warn { color: #f57c00; }
+#rl-table .rl-pct.ok   { color: #2e7d32; }
+#rl-empty { padding: 24px; text-align: center; color: var(--g6); font-size: 13px; }
+/* 報酬額(10割) 総合計バナー（上部・視認性高） */
+#rl-total { margin: 0 0 10px; padding: 10px 14px; border: 1px solid #90caf9; border-radius: 8px;
+  background: #e8f2fd; color: #0d3c61; font-size: 15px; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#rl-total .rl-total-amt { font-size: 21px; color: #1565c0; }
+#rl-total .rl-total-sub { font-size: 12px; font-weight: 600; color: var(--g6); }
+/* 通所利用曜日（月〜土・6列をグループ視認） */
+#rl-table th.rl-day, #rl-table td.rl-day { width: 26px; min-width: 26px; padding: 7px 3px; text-align: center; background: #f3f8ff; }
+#rl-table th.rl-day { background: #e3eefb; }
+#rl-table td.rl-day .on { color: #2e7d32; font-weight: 700; }
+/* 報酬額(10割) 列・合計行 */
+#rl-table .rl-fee { text-align: right; font-weight: 700; color: #1565c0; }
+#rl-table tfoot td { border-top: 2px solid var(--g4); background: var(--g1); font-weight: 700; }
+#rl-table tfoot td.rl-foot-label { text-align: right; color: var(--g7); }
+/* 一括編集モーダル（#rl-table と同じ見た目を流用・入力欄は行内でコンパクト） */
+#mk-resident-bulk .md { max-width: min(880px, 96vw); }
+#rb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#rb-table th, #rb-table td { border: 1px solid var(--g3); padding: 6px 8px; text-align: center; white-space: nowrap; }
+#rb-table th { background: var(--g1); color: var(--g7); font-weight: 700; position: sticky; top: 0; line-height: 1.3; }
+#rb-table td.rl-name { text-align: left; font-weight: 600; color: var(--g9); }
+#rb-table tbody tr:nth-child(even) { background: var(--g1); }
+#rb-table select.inp, #rb-table input.inp { width: auto; min-width: 84px; padding: 4px 6px; font-size: 13px; margin: 0; }
+#rb-table input.rb-welfare { min-width: 72px; text-align: right; }
+#rb-table .rb-pct { font-weight: 700; color: var(--g7); }
+#rb-scroll { max-height: 64vh; overflow: auto; }
+
+/* 予定一覧モーダル */
+.evlist-tabs {
+  display: flex; gap: 4px; background: var(--g1); border-radius: 8px;
+  padding: 4px; margin-bottom: 10px;
+}
+.evlist-tab {
+  flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 600;
+  background: transparent; border: none; border-radius: 6px;
+  cursor: pointer; color: var(--g7); transition: all .15s;
+}
+.evlist-tab:hover { background: var(--g2); }
+.evlist-tab.active { background: var(--g0); color: var(--pri); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+
+.evlist-day-hd {
+  background: var(--g1); padding: 8px 12px; font-size: 13px; font-weight: 700;
+  border-bottom: 1px solid var(--g3); position: sticky; top: 0; z-index: 1;
+  color: var(--g8);
+}
+.evlist-day-hd.sat   { color: #1565c0; }
+.evlist-day-hd.sun   { color: #c62828; }
+.evlist-day-hd.visit { color: #2e7d32; background: #e8f5e9; }
+.evlist-day-hd.daycare { color: #e65100; background: #fffde7; }
+
+/* 共通: 1行に収めるためのレイアウト */
+.evlist-row {
+  display: grid; gap: 10px;
+  padding: 7px 12px; border-bottom: 1px solid var(--g2);
+  font-size: 13px; align-items: center; min-height: 32px;
+}
+.evlist-row.by-day  { grid-template-columns: 105px 170px 1fr; }
+.evlist-row.by-svc  { grid-template-columns: 32px 170px 105px 1fr; }
+.evlist-row:last-child { border-bottom: none; }
+.evlist-row:hover { background: var(--g1); }
+.evlist-time  { font-family: monospace; font-weight: 600; color: var(--g8); white-space: nowrap; }
+.evlist-cat   { font-weight: 600; color: var(--g9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evlist-dow   { font-weight: 700; color: var(--g8); text-align: center; }
+.evlist-dow.sat { color: #1565c0; }
+.evlist-dow.sun { color: #c62828; }
+.evlist-detail {
+  color: var(--g7); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0;
+}
+.evlist-detail.empty { color: var(--g4); font-style: italic; }
+.evlist-empty {
+  padding: 30px; text-align: center; color: var(--g6);
+}
+.btn-ng:hover { background: #b71c1c; }
+
+/* ── Resident list ── */
+.res-list { list-style: none; margin: 12px 0; }
+.res-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 10px; border-radius: 6px; border: 1px solid var(--g3);
+  margin-bottom: 6px; font-size: 14px;
+}
+.res-item.active { border-color: var(--pri2); background: rgba(26,115,232,.06); font-weight: 600; }
+.res-item .del-res {
+  background: none; border: none; color: var(--ng); cursor: pointer;
+  font-size: 16px; padding: 2px 6px; border-radius: 4px;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 90px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--g8); color: #fff; padding: 10px 20px;
+  border-radius: 20px; font-size: 13px; font-weight: 500;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .2s, transform .2s; z-index: 500;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Addon section (care info modal) ── */
+.ci-section {
+  border: 1px solid var(--g3); border-radius: 8px;
+  margin-bottom: 12px; overflow: hidden;
+}
+.ci-section-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; background: var(--g1);
+  font-size: 13px; font-weight: 600; cursor: pointer; color: var(--g8);
+  user-select: none;
+}
+.ci-section-hd:hover { background: var(--g2); }
+.ci-section-body { padding: 12px; display: none; }
+.ci-section-body.open { display: block; }
+.ci-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ci-field label { display: block; font-size: 11px; font-weight: 600; color: var(--g6); margin-bottom: 4px; }
+.ci-field select, .ci-field input { width: 100%; padding: 7px 9px; border: 1.5px solid var(--g3); border-radius: 6px; font-size: 13px; background: var(--g0); outline: none; appearance: none; }
+.ci-field select:focus, .ci-field input:focus { border-color: var(--pri2); }
+/* ── Checkbox in form ── */
+.check-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--g8); cursor: pointer;
+  padding: 8px 10px; border: 1.5px solid var(--g3); border-radius: 8px;
+  transition: all .15s;
+}
+.check-label:has(input:checked) { border-color: #1976d2; background: rgba(25,118,210,.07); color: #1565c0; }
+.check-label input[type="checkbox"] { width: 15px; height: 15px; accent-color: #1976d2; }
+
+/* ── Context menu ── */
+#ctx-menu {
+  position: fixed; z-index: 400;
+  background: var(--g0); border: 1px solid var(--g3);
+  border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  padding: 6px 0; min-width: 160px; font-size: 13px;
+}
+.ctx-label { padding: 4px 14px 2px; font-size: 11px; color: var(--g6); font-weight: 600; }
+.ctx-days { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; }
+.ctx-day {
+  flex: 0 0 auto; background: var(--g1); border: 1px solid var(--g3);
+  border-radius: 4px; padding: 3px 7px; font-size: 12px; cursor: pointer;
+  transition: background .12s;
+}
+.ctx-day:hover { background: var(--g2); }
+.ctx-sep { border-top: 1px solid var(--g3); margin: 4px 0; }
+.ctx-item {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 14px; font-size: 13px; background: none; border: none;
+  cursor: pointer; transition: background .12s;
+}
+.ctx-item:hover { background: var(--g1); }
+.ctx-del { color: var(--ng); }
+
+/* ── Print ── */
+@media print {
+  .hdr-btns, .fab, #mk-event, #mk-resident, #mk-care-info, #mk-office-info, #mk-resident-list, #mk-resident-bulk, .toast, .summary-bar { display: none !important; }
+  .hdr { position: static; box-shadow: none; }
+  .cal-wrap { position: static; top: 0; height: auto; overflow: visible; }
+  .days-panel { overflow: visible; }
+  .grid-scroll { overflow: visible; height: auto; }
+  .event-block::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body { overflow: auto; }
+  /* 週ボードはA4縦。grid-body の高さは印刷圧縮時に JS(yOf) がインラインで設定する（非圧縮時は24h=1440px相当） */
+  @page { size: A4 portrait; margin: 8mm; }
+  body.week-print .event-block { font-size: 10px; }
+  body.week-print .time-label, body.week-print .surcharge-band-label { font-size: 9px; }
+  /* 省略マーク（早朝/深夜/16-20の空き圧縮）: 波線バンド＋ラベル */
+  .print-omit { position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    border-top: 1px dashed var(--g5); border-bottom: 1px dashed var(--g5);
+    background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(0,0,0,.04) 5px 7px); }
+  .print-omit-label { font-size: 8px; color: var(--g6); background: #fff; padding: 0 4px; border-radius: 3px; }
+  /* デイ短縮の箱: 下辺に波線を出して省略を明示 */
+  .event-block.dc-short { overflow: hidden; }
+  .event-block.dc-short::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px;
+    background: repeating-linear-gradient(-45deg, #e65100 0 3px, transparent 3px 6px);
+    opacity: .7; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+  /* 利用者一覧のA3印刷（body.rl-print が付くのは一覧印刷時のみ＝週ボードA4印刷経路には一切影響しない） */
+  body.rl-print .hdr, body.rl-print .cal-wrap, body.rl-print .fab, body.rl-print .toast { display: none !important; }
+  body.rl-print #mk-resident-list { display: block !important; position: static; background: none; overflow: visible; }
+  body.rl-print #mk-resident-list .md { max-width: none; box-shadow: none; border-radius: 0; margin: 0; padding: 0; }
+  body.rl-print #rl-scroll { overflow: visible !important; }
+  body.rl-print #mk-resident-list .md-close,
+  body.rl-print #mk-resident-list .btn-row { display: none !important; }
+  body.rl-print #rl-table { font-size: 9px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.rl-print #rl-table th, body.rl-print #rl-table td { padding: 3px 4px; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  :root { --hdr-h: 52px; }
+  .hdr h1 { font-size: 14px; }
+  .hdr-btn { padding: 5px 7px; font-size: 12px; }
+  .col-header, .grid-body { min-width: 420px; }
+  .event-block { font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- 端末用途ガード（事務所PC専用。現場タブレットでは週間計画を開かせない＝誤操作防止） -->
+<div id="suDeviceBlock" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(255,255,255,.97);align-items:center;justify-content:center;padding:20px">
+  <div style="max-width:440px;text-align:center;background:#fff;border:1px solid #e0e0e0;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18);padding:26px">
+    <div style="font-size:44px">🔒</div>
+    <h2 style="margin:8px 0;font-size:18px">この端末は現場用に設定されています</h2>
+    <p style="color:#666;font-size:14px;line-height:1.7">週間計画は<b>事務所PC</b>でご利用ください。</p>
+    <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #2563eb;background:#fff;color:#2563eb;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
+  </div>
+</div>
+
+<header class="hdr">
+  <h1>週間計画</h1>
+  <div class="resident-selector">
+    <select class="resident-select" id="resident-select" onchange="onResidentChange()">
+      <option value="">-- 利用者を選択 --</option>
+    </select>
+  </div>
+  <div class="hdr-btns">
+    <!-- アプリ間ジャンプ（daycare-roster.html と同形式・相対パス＝同一オリジン）。
+         .hdr-btns は右寄せグループなので【先頭に足す】と既存ボタンの位置が動かない
+         ＝現場の操作記憶を壊さない。.hdr-btns は @media print で display:none。 -->
+    <button class="hdr-btn" onclick="window.open('resident-master.html','_blank')" title="入居者マスタを開く（入居者情報の源泉）">👤 入居者マスタ</button>
+    <button class="hdr-btn" onclick="window.open('work-schedule.html','_blank')" title="ワークスケジュールを開く">📋 ワースケ</button>
+    <button class="hdr-btn" onclick="window.open('shift-app.html','_blank')" title="シフト作成アプリを開く">👥 シフト</button>
+    <button class="hdr-btn" onclick="openResidentModal()">👤 利用者</button>
+    <button class="hdr-btn" onclick="openBulkImport()" title="予定を貼り付けで一括登録">📋 一括取込</button>
+    <button class="hdr-btn" onclick="printWeek()">🖨</button>
+    <button class="hdr-btn" onclick="exportJSON()">⬇</button>
+    <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" onclick="manualSave()" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
+  </div>
+</header>
+
+<!-- Summary bar (2段構成) -->
+<div class="summary-bar" id="summary-bar">
+  <!-- 1段目: 単位数の内訳 -->
+  <div class="sum-row">
+    <div class="sum-group">
+      <span class="sum-label">介護度</span>
+      <span class="sum-val" id="sum-level">—</span>
+    </div>
+    <div class="sum-group">
+      <span class="sum-label">支給限度</span>
+      <span class="sum-val" id="sum-limit">—</span>
+      <span class="sum-unit">単位</span>
+    </div>
+    <div class="sum-group">
+      <span class="sum-label">週合計</span>
+      <span class="sum-val" id="sum-week">0</span>
+      <span class="sum-unit">単位</span>
+    </div>
+    <div class="sum-group">
+      <span class="sum-label">月合計</span>
+      <span class="sum-val" id="sum-month">0</span>
+      <span class="sum-unit">単位</span>
+    </div>
+    <div class="sum-group">
+      <span class="sum-label">福祉用具</span>
+      <span class="sum-val" id="sum-welfare">0</span>
+      <span class="sum-unit">単位</span>
+    </div>
+    <div class="sum-group">
+      <span class="sum-label">月総合計</span>
+      <span class="sum-val" id="sum-total">0</span>
+      <span class="sum-unit">単位</span>
+    </div>
+  </div>
+  <!-- 2段目: 集計・操作 -->
+  <div class="sum-row">
+    <div class="sum-group">
+      <span class="sum-label">自己負担(概算)</span>
+      <span class="sum-val" id="sum-copay">¥—</span>
+    </div>
+    <div class="sum-pct-wrap">
+      <span class="sum-unit">使用率</span>
+      <div class="sum-pct-bar"><div class="sum-pct-fill" id="sum-pct-fill" style="width:0%"></div></div>
+      <span class="sum-pct-val" id="sum-pct" style="color:var(--g7)">—%</span>
+    </div>
+    <button class="sum-edit-btn" onclick="openEventListModal()" title="予定一覧">📋 一覧</button>
+    <button class="sum-edit-btn" id="sync-btn" onclick="openSyncModal()" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
+    <button class="sum-edit-btn" onclick="openOfficeInfoModal()">🏢 事業所情報</button>
+    <button class="sum-edit-btn" onclick="openCareInfoModal()">⚙ 介護情報</button>
+    <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
+  </div>
+</div>
+
+<div class="no-resident" id="no-resident" style="display:none">
+  <p>利用者が登録されていません</p>
+  <button class="add-first-btn" onclick="openResidentModal()">利用者を追加する</button>
+</div>
+
+<div class="cal-wrap" id="cal-wrap">
+  <div class="time-col" id="time-col">
+    <div class="time-col-spacer"></div>
+    <div class="time-labels-inner" id="time-labels-inner"></div>
+  </div>
+  <div class="surcharge-col" id="surcharge-col">
+    <div class="surcharge-col-spacer"></div>
+    <div class="surcharge-inner" id="surcharge-inner"></div>
+  </div>
+  <div class="days-panel">
+    <div class="col-header" id="col-header"></div>
+    <div class="grid-scroll" id="grid-scroll">
+      <div class="grid-body" id="grid-body">
+        <div class="day-columns" id="day-columns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button class="fab" id="fab" onclick="openAddModal()" title="予定を追加">＋</button>
+
+<!-- Event form modal -->
+<div class="mk" id="mk-event">
+  <div class="md">
+    <div class="md-hd">
+      <h2 id="modal-title">予定を追加</h2>
+      <button class="md-close" onclick="closeEventModal()">✕</button>
+    </div>
+
+    <div class="form-row">
+      <label for="f-dow">曜日 <span style="color:var(--ng)">*</span></label>
+      <select class="inp" id="f-dow">
+        <option value="">選択してください</option>
+        <option value="0">月曜日</option><option value="1">火曜日</option>
+        <option value="2">水曜日</option><option value="3">木曜日</option>
+        <option value="4">金曜日</option><option value="5">土曜日</option>
+        <option value="6">日曜日</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>サービス種別 <span style="color:var(--ng)">*</span></label>
+      <div class="radio-group">
+        <label class="radio-label">
+          <input type="radio" name="serviceType" value="visit" onchange="onServiceTypeChange()"> 訪問介護
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="serviceType" value="daycare" onchange="onServiceTypeChange()"> 通所介護
+        </label>
+      </div>
+    </div>
+
+    <div class="form-row" id="category-row" style="display:none">
+      <label for="f-category">サービス区分 <span style="color:var(--ng)">*</span></label>
+      <select class="inp" id="f-category" onchange="onCategoryChange()">
+        <option value="">選択してください</option>
+        <optgroup label="■ 身体介護系">
+          <option value="身体０１">身体０１　20分未満</option>
+          <option value="身体１">身体１　20分以上30分未満</option>
+          <option value="身体２">身体２　30分以上1時間未満</option>
+        </optgroup>
+        <optgroup label="■ 身体＋生活（複合型）">
+          <option value="身体１生活１">身体１生活１　1時間以上1時間30分未満</option>
+          <option value="身体１生活２">身体１生活２　1時間30分以上2時間未満</option>
+        </optgroup>
+        <optgroup label="■ 生活援助系">
+          <option value="生活２">生活２　20分以上45分未満</option>
+          <option value="生活３">生活３　45分以上70分未満</option>
+        </optgroup>
+        <optgroup label="■ 総合事業（要支援・事業対象者）">
+          <option value="A21121">訪問型独自サービス/211　【A11】1,000単位</option>
+          <option value="A21221">訪問型独自サービス/212　【A12】1,997単位</option>
+          <option value="A2111">訪問型独自サービス11　【A21】1,176単位</option>
+          <option value="A21211">訪問型独自サービス12　【A22】2,349単位</option>
+        </optgroup>
+      </select>
+      <div class="hint-box" id="category-hint" style="display:none"></div>
+    </div>
+
+    <!-- 訪問介護: 自由入力 -->
+    <div class="form-row form-row-2col" id="time-row-visit">
+      <div>
+        <label for="f-start">開始時刻 <span style="color:var(--ng)">*</span></label>
+        <input class="inp" type="time" id="f-start" step="60" onchange="autoFillEndTime()">
+      </div>
+      <div>
+        <label for="f-end">終了時刻 <span style="color:var(--ng)">*</span></label>
+        <input class="inp" type="time" id="f-end" step="60">
+      </div>
+    </div>
+    <!-- 通所介護: 選択肢のみ -->
+    <div class="form-row form-row-2col" id="time-row-daycare" style="display:none">
+      <div>
+        <label for="f-dc-start">開始時刻 <span style="color:var(--ng)">*</span></label>
+        <select class="inp" id="f-dc-start" onchange="autoCalcUnits()">
+          <option value="09:00">09:00</option>
+          <option value="09:30">09:30</option>
+          <option value="10:00">10:00</option>
+        </select>
+      </div>
+      <div>
+        <label for="f-dc-end">終了時刻 <span style="color:var(--ng)">*</span></label>
+        <select class="inp" id="f-dc-end" onchange="autoCalcUnits()">
+          <option value="12:00">12:00</option>
+          <option value="12:30">12:30</option>
+          <option value="13:00">13:00</option>
+          <option value="13:30" selected>13:30</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="bathing-row" style="display:none">
+      <label class="check-label">
+        <input type="checkbox" id="f-bathing" onchange="autoCalcUnits()">
+        入浴実施（入浴介助加算を適用）
+      </label>
+    </div>
+
+    <!-- ケア内容チップ（訪問介護のみ・ワースケと同じ選択肢）。クリックで詳細欄へ追加/削除 -->
+    <div class="form-row" id="care-chips-row" style="display:none">
+      <label>ケア内容（クリックで「支援内容・詳細」へ追加／再クリックで削除）</label>
+      <div class="care-chips" id="f-care-chips"></div>
+    </div>
+    <div class="form-row">
+      <label for="f-detail">支援内容・詳細</label>
+      <textarea class="inp" id="f-detail" rows="3" placeholder="例：服薬介助（朝食後）、体位変換、口腔ケア"></textarea>
+    </div>
+
+    <div class="form-row">
+      <label for="f-notes">備考</label>
+      <textarea class="inp" id="f-notes" rows="2" placeholder="特記事項（任意）"></textarea>
+    </div>
+
+    <div class="form-row">
+      <label for="f-units">単位数</label>
+      <input class="inp" type="number" id="f-units" min="0" max="9999" step="1" placeholder="例：387（省略可）" style="max-width:180px">
+    </div>
+
+    <!-- 複製（編集時のみ表示） -->
+    <div class="form-row" id="dup-row" style="display:none">
+      <label>他の曜日に複製</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="inp" id="f-dup-dow" style="flex:1">
+          <option value="">曜日を選択</option>
+          <option value="0">月曜日</option><option value="1">火曜日</option>
+          <option value="2">水曜日</option><option value="3">木曜日</option>
+          <option value="4">金曜日</option><option value="5">土曜日</option>
+          <option value="6">日曜日</option>
+        </select>
+        <button class="btn btn-sec" onclick="duplicateEvent()" style="white-space:nowrap;flex-shrink:0">複製</button>
+        <button class="btn btn-sec" onclick="duplicateEventEveryday()" style="white-space:nowrap;flex-shrink:0" title="この予定を月〜日の全曜日に複製（毎日設定）">毎日</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-pri" onclick="saveEvent()">保存</button>
+      <button class="btn btn-sec" onclick="closeEventModal()">キャンセル</button>
+      <button class="btn btn-ng" id="delete-btn" onclick="deleteCurrentEvent()" style="display:none">削除</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resident modal -->
+<div class="mk" id="mk-resident">
+  <div class="md">
+    <div class="md-hd">
+      <h2>利用者管理</h2>
+      <button class="md-close" onclick="closeResidentModal()">✕</button>
+    </div>
+    <div class="form-row">
+      <label for="f-new-res">利用者を追加</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="inp" id="f-new-res" placeholder="氏名（例：田中一郎）" style="flex:1;min-width:120px">
+        <input class="inp" id="f-new-kana" placeholder="ふりがな（任意）" style="flex:1;min-width:120px">
+        <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="f-new-external">外部</label>
+        <button class="btn btn-pri" onclick="addResident()" style="white-space:nowrap">追加</button>
+      </div>
+    </div>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--g6);margin:4px 0;cursor:pointer"><input type="checkbox" id="cs-show-nontarget" onchange="onCsShowNonTargetChange()">退去者・対象外も表示</label>
+    <ul class="res-list" id="res-list"></ul>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeResidentModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk import modal (予定の貼り付け一括登録) -->
+<div class="mk" id="mk-bulk">
+  <div class="md">
+    <div class="md-hd">
+      <h2>予定の貼り付け一括登録</h2>
+      <button class="md-close" onclick="closeBulkImport()">✕</button>
+    </div>
+    <div class="form-row">
+      <label>1行＝1予定。<b>タブ区切り</b>で貼り付けてください（Excel/スプレッドシートからコピー可）：</label>
+      <div style="font-size:12px;color:var(--g6);margin:2px 0 6px">利用者　曜日(月〜日)　区分(訪問/通所)　開始(H:MM)　終了(H:MM)　サービスコード(任意)　ケア内容(任意)</div>
+      <textarea class="inp" id="f-bulk" rows="9" placeholder="山田花子	土	訪問	0:00	0:19	身体０１	&#10;佐藤太郎	土	訪問	2:00	2:19	身体０１	"></textarea>
+    </div>
+    <div class="form-row" id="f-bulk-result" style="font-size:13px;white-space:pre-wrap;color:var(--g7)"></div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeBulkImport()">閉じる</button>
+      <button class="btn btn-pri" onclick="applyBulkImport()">登録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- Care info modal -->
+<div class="mk" id="mk-care-info">
+  <div class="md" style="max-width:400px">
+    <div class="md-hd">
+      <h2>介護情報</h2>
+      <button class="md-close" onclick="closeCareInfoModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:14px" id="care-info-name"></p>
+
+    <div class="form-row">
+      <label for="ci-level">介護度</label>
+      <select class="inp" id="ci-level" onchange="onCareLevelChange()">
+        <option value="">選択してください</option>
+        <option value="要支援1">要支援1</option>
+        <option value="要支援2">要支援2</option>
+        <option value="要介護1">要介護1</option>
+        <option value="要介護2">要介護2</option>
+        <option value="要介護3">要介護3</option>
+        <option value="要介護4">要介護4</option>
+        <option value="要介護5">要介護5</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label id="ci-limit-label" style="display:none"></label>
+    </div>
+
+    <div class="form-row">
+      <label for="ci-copay">自己負担割合</label>
+      <select class="inp" id="ci-copay">
+        <option value="1">1割</option>
+        <option value="2">2割</option>
+        <option value="3">3割</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="ci-welfare">福祉用具使用単位（月額・単位）</label>
+      <input class="inp" type="number" id="ci-welfare" min="0" step="1" placeholder="例：500" style="max-width:140px">
+      <div class="hint-box" style="margin-top:6px">福祉用具貸与の月額単位数。支給限度額の使用率・自己負担額（概算）に算入されます</div>
+    </div>
+
+    <div class="hint-box" style="margin-top:8px">
+      ※単位単価・事業所加算・減算は<strong>「事業所情報」</strong>で全利用者共通の設定として管理されます
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-pri" onclick="saveCareInfo()">保存</button>
+      <button class="btn btn-sec" onclick="closeCareInfoModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- Office info modal -->
+<div class="mk" id="mk-office-info">
+  <div class="md" style="max-width:480px">
+    <div class="md-hd">
+      <h2>事業所情報</h2>
+      <button class="md-close" onclick="closeOfficeInfoModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:14px">
+      全利用者に共通する事業所単位の設定です（単位単価・加算・減算）
+    </p>
+
+    <div class="form-row">
+      <label for="oi-unit-price">単位単価（円/単位）</label>
+      <input class="inp" type="number" id="oi-unit-price" min="9" max="13" step="0.01" value="10.27" style="max-width:120px">
+      <div class="hint-box" style="margin-top:6px">地域加算により変わります。1級地(東京都特別区等)=11.40、2級地=11.12、3級地=10.84…標準=10.00</div>
+    </div>
+
+    <!-- 訪問介護 加算設定 -->
+    <div class="ci-section">
+      <div class="ci-section-hd" onclick="toggleCiSection('oi-visit-body')">
+        <span>▸ 訪問介護 加算設定</span>
+        <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
+      </div>
+      <div class="ci-section-body" id="oi-visit-body">
+        <div class="ci-grid">
+          <div class="ci-field">
+            <label>特定事業所加算</label>
+            <select id="oi-v-tokuteijigyo">
+              <option value="0">なし</option>
+              <option value="3">IV（+3%）</option>
+              <option value="5">III（+5%）</option>
+              <option value="10">II（+10%）</option>
+              <option value="20">I（+20%）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>サービス提供体制強化加算</label>
+            <select id="oi-v-svc-strength">
+              <option value="0">なし</option>
+              <option value="1">III（+1単位/回）</option>
+              <option value="3">II（+3単位/回）</option>
+              <option value="6">I（+6単位/回）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>特別地域・中山間地域加算</label>
+            <select id="oi-v-chiiki">
+              <option value="0">なし</option>
+              <option value="10">中山間小規模（+10%）</option>
+              <option value="15">特別地域（+15%）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>介護職員等処遇改善加算</label>
+            <select id="oi-v-nursing">
+              <option value="0">なし</option>
+              <option value="6.2">V（+6.2%）</option>
+              <option value="8.3">III（+8.3%）</option>
+              <option value="13.3">II（+13.3%）</option>
+              <option value="14.5">I（+14.5%）</option>
+            </select>
+          </div>
+          <div class="ci-field" style="grid-column:1/-1">
+            <label>同一建物減算（訪問介護）</label>
+            <select id="oi-v-douitsu">
+              <option value="0">なし（対象外）</option>
+              <option value="10">同一建物居住者・月49人以下（−10%）</option>
+              <option value="15">同一建物居住者・月50人以上（−15%）</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--g6);line-height:1.6">
+          ※減算は①特定事業所加算・特別地域加算の後、②サービス提供体制強化加算の前に適用
+        </div>
+      </div>
+    </div>
+
+    <!-- 通所介護 加算設定 -->
+    <div class="ci-section">
+      <div class="ci-section-hd" onclick="toggleCiSection('oi-dc-body')">
+        <span>▸ 通所介護 加算設定</span>
+        <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
+      </div>
+      <div class="ci-section-body" id="oi-dc-body">
+        <div class="ci-grid">
+          <div class="ci-field">
+            <label>入浴介助加算（種別）</label>
+            <select id="oi-dc-bathing">
+              <option value="0">なし</option>
+              <option value="40">I型（+40単位/回）</option>
+              <option value="55">II型（+55単位/回）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>中重度者ケア体制加算</label>
+            <select id="oi-dc-heavy">
+              <option value="0">なし</option>
+              <option value="45">あり（+45単位/日）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>認知症加算</label>
+            <select id="oi-dc-dementia">
+              <option value="0">なし</option>
+              <option value="60">あり（+60単位/日）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>個別機能訓練加算</label>
+            <select id="oi-dc-training">
+              <option value="0">なし</option>
+              <option value="20">II（+20単位/日）</option>
+              <option value="56">Iイ（+56単位/日）</option>
+              <option value="76">Iロ（+76単位/日）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>サービス提供体制強化加算</label>
+            <select id="oi-dc-svc-strength">
+              <option value="0">なし</option>
+              <option value="6">III（+6単位/回）</option>
+              <option value="18">II（+18単位/回）</option>
+              <option value="22">I（+22単位/回）</option>
+            </select>
+          </div>
+          <div class="ci-field">
+            <label>介護職員等処遇改善加算</label>
+            <select id="oi-dc-nursing">
+              <option value="0">なし</option>
+              <option value="5.8">IV（+5.8%）</option>
+              <option value="7.7">III（+7.7%）</option>
+              <option value="12.5">II（+12.5%）</option>
+              <option value="13.6">I（+13.6%）</option>
+            </select>
+          </div>
+          <div class="ci-field" style="grid-column:1/-1">
+            <label>同一建物減算（送迎なし減算）</label>
+            <select id="oi-dc-douitsu">
+              <option value="0">なし（送迎あり）</option>
+              <option value="47">片道送迎なし（−47単位）</option>
+              <option value="94">往復送迎なし（−94単位）</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--g6);line-height:1.6">
+          ※送迎なし減算は処遇改善加算適用後に固定単位で減算
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-pri" onclick="saveOfficeInfo()">保存</button>
+      <button class="btn btn-sec" onclick="closeOfficeInfoModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="ctx-menu" style="display:none">
+  <div id="ctx-dup-section">
+    <div class="ctx-label">複製先の曜日</div>
+    <div class="ctx-days" id="ctx-day-btns"></div>
+  </div>
+  <div class="ctx-sep"></div>
+  <button class="ctx-item ctx-del" id="ctx-del-btn">削除</button>
+</div>
+
+<!-- ── 予定一覧モーダル ── -->
+<div class="mk" id="mk-event-list">
+  <div class="md" style="max-width:720px">
+    <div class="md-hd">
+      <h2>📋 予定一覧</h2>
+      <button class="md-close" onclick="closeEventListModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">
+      <span id="event-list-resident">—</span> の予定。テキスト形式で全件コピー可能です。
+    </p>
+    <div class="evlist-tabs">
+      <button class="evlist-tab active" id="evlist-tab-day" onclick="setEventListView('day')">📅 曜日別</button>
+      <button class="evlist-tab"        id="evlist-tab-svc" onclick="setEventListView('svc')">🏥 サービス種別別（訪問・通所）</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-pri" onclick="copyEventListText()">📋 全件コピー（テキスト）</button>
+      <button class="btn" onclick="copyEventListTSV()">📊 タブ区切り（Excel貼付用）</button>
+    </div>
+    <div id="event-list-body" style="border:1px solid var(--g3);border-radius:8px;max-height:60vh;overflow:auto"></div>
+    <textarea id="event-list-textarea" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px"></textarea>
+  </div>
+</div>
+
+<!-- ── 利用者一覧モーダル ── -->
+<div class="mk" id="mk-resident-list">
+  <div class="md">
+    <div class="md-hd">
+      <h2>👥 利用者一覧</h2>
+      <button class="md-close" onclick="closeResidentListModal()">✕</button>
+    </div>
+    <div id="rl-total"></div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない）。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。</p>
+    <div id="rl-scroll" style="overflow-x:auto">
+      <table id="rl-table">
+        <thead>
+          <tr>
+            <th style="text-align:left">利用者</th>
+            <th>介護度</th>
+            <th>負担割合</th>
+            <th class="rl-day">月</th>
+            <th class="rl-day">火</th>
+            <th class="rl-day">水</th>
+            <th class="rl-day">木</th>
+            <th class="rl-day">金</th>
+            <th class="rl-day">土</th>
+            <th>負担限度額<br>(単位/月)</th>
+            <th>使用単位数<br>(月)</th>
+            <th>福祉用具<br>単位数</th>
+            <th>使用単位%</th>
+            <th class="rl-fee-h">報酬額(10割)<br>(円)</th>
+          </tr>
+        </thead>
+        <tbody id="rl-tbody"></tbody>
+        <tfoot id="rl-tfoot"></tfoot>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-pri" onclick="openResidentBulkModal()">✎ 一括編集</button>
+      <button class="btn btn-sec" onclick="printResidentList()">🖨 A3で印刷</button>
+      <button class="btn btn-sec" onclick="closeResidentListModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 利用者 一括編集モーダル（介護度/負担割合/福祉用具単位/週間計画対象・care_schedule_v2へatomic保存＋即時push） ── -->
+<div class="mk" id="mk-resident-bulk">
+  <div class="md">
+    <div class="md-hd">
+      <h2>✎ 利用者 一括編集</h2>
+      <button class="md-close" onclick="closeResidentBulkModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:8px">介護度・負担割合・福祉用具単位数・週間計画対象を一括編集し、「一括保存」で全件まとめて保存＋即時クラウド反映します（編集中は自動同期を停止します）。</p>
+    <div id="rb-scroll" style="overflow-x:auto">
+      <table id="rb-table" class="rl-table-like">
+        <thead>
+          <tr>
+            <th style="text-align:left">利用者</th>
+            <th style="text-align:left">ふりがな</th>
+            <th>介護度</th>
+            <th>負担割合</th>
+            <th>福祉用具<br>単位数</th>
+            <th>週間計画<br>対象</th>
+            <th>外部</th>
+            <th>使用単位%<br>(プレビュー)</th>
+          </tr>
+        </thead>
+        <tbody id="rb-tbody"></tbody>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-pri" onclick="saveResidentBulk_()">💾 一括保存</button>
+      <button class="btn btn-sec" onclick="closeResidentBulkModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 同期モーダル ── -->
+<div class="mk" id="mk-sync">
+  <div class="md" style="max-width:560px">
+    <div class="md-hd">
+      <h2>☁️ クラウド同期（Google スプレッドシート）</h2>
+      <button class="md-close" onclick="closeSyncModal()">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:12px">
+      Google スプレッドシートにデータを保存し、複数端末で共有できます。
+      初回はセットアップが必要です（下の「セットアップ手順」を参照）。
+    </p>
+
+    <div class="form-row">
+      <label for="sync-endpoint" style="display:flex;justify-content:space-between;align-items:baseline">
+        <span>Apps Script Web App URL</span>
+        <span id="sync-save-indicator" style="font-size:11px;color:var(--g6);font-weight:600">（未入力）</span>
+      </label>
+      <input class="inp" type="url" id="sync-endpoint"
+             placeholder="https://script.google.com/macros/s/.../exec"
+             autocomplete="off" spellcheck="false"
+             oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
+      <div class="hint-box" style="margin-top:6px">
+        入力すると<strong>自動保存</strong>されます（端末を閉じても、次回起動時にURLは保持されます）。<br>
+        ※ ワークスケジュールで同期設定済みの場合は、その接続先が自動的に使われます（ここは空でOK）。
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label for="sync-token">同期トークン</label>
+      <input class="inp" type="password" id="sync-token"
+             placeholder="ワークスケジュールと同じトークン"
+             autocomplete="off" spellcheck="false"
+             oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
+    </div>
+
+    <div class="form-row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sync-auto" onchange="persistSyncInputs()">
+        自動同期を有効化（保存のたびに自動アップロード）
+      </label>
+    </div>
+
+    <div id="sync-usage" style="font-size:12px;color:var(--g6);margin-bottom:8px"></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
+      <button class="btn btn-pri" onclick="saveSyncConfig()">設定を保存</button>
+      <button class="btn" onclick="syncTestConnection()">接続テスト</button>
+      <button class="btn" onclick="syncPullNow()">⬇️ クラウドから取得</button>
+      <button class="btn" onclick="syncPushNow()">⬆️ クラウドへ保存</button>
+      <button class="btn" onclick="syncForcePush()" style="background:#fff3e0;color:#e65100" title="クラウド側のデータを上書きします">⚠ 強制保存</button>
+    </div>
+
+    <div id="sync-log" style="font-size:12px;color:var(--g7);background:var(--g1);padding:8px;border-radius:6px;min-height:36px;margin-bottom:14px;white-space:pre-wrap;font-family:monospace"></div>
+
+    <details style="border:1px solid var(--g3);border-radius:8px;padding:10px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer">📋 セットアップ手順（初心者向け）</summary>
+      <div style="margin-top:10px;font-size:13px;line-height:1.7">
+        <p><strong>所要時間：約10分</strong></p>
+        <ol style="padding-left:22px;margin:8px 0">
+          <li>Google スプレッドシートで <a href="https://sheets.new" target="_blank" rel="noopener">新規シート</a> を作成</li>
+          <li>メニュー「拡張機能 → Apps Script」を開く</li>
+          <li>表示されたエディタの中身を全部消し、下の「📜 Apps Script コード」をコピペ</li>
+          <li>💾 保存（Ctrl+S）→「デプロイ」→「新しいデプロイ」</li>
+          <li>歯車⚙ →「ウェブアプリ」を選択</li>
+          <li>「次のユーザーとして実行: 自分」「アクセスできるユーザー: 全員」を選択 →「デプロイ」</li>
+          <li>初回はアクセス権限を求められます。「許可」して進む（警告画面が出たら「詳細」→「安全でないページに移動」）</li>
+          <li>表示された <strong>ウェブアプリ URL</strong> をコピー → 上の「Apps Script Web App URL」欄に貼り付け</li>
+          <li>「設定を保存」→「接続テスト」で OK と出れば完了</li>
+          <li>「⬆️ クラウドへ保存」で初回アップロード</li>
+        </ol>
+      </div>
+    </details>
+
+    <details style="border:1px solid var(--g3);border-radius:8px;padding:10px">
+      <summary style="font-weight:700;cursor:pointer">📜 Apps Script コード（コピーして貼り付け）</summary>
+      <button class="btn" style="margin:10px 0" onclick="copyGasCode()">📋 コードをコピー</button>
+      <pre id="gas-code" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:11px;overflow:auto;max-height:300px;line-height:1.4">function doGet(e) {
+  return _handle(e, 'GET');
+}
+function doPost(e) {
+  return _handle(e, 'POST');
+}
+function _handle(e, method) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Data');
+    if (!sheet) {
+      sheet = ss.insertSheet('Data');
+      sheet.getRange('A1').setValue('');
+      sheet.getRange('B1').setValue(0);
+    }
+    if (method === 'POST') {
+      var body = JSON.parse(e.postData.contents);
+      if (body && body.data !== undefined) {
+        sheet.getRange('A1').setValue(body.data);
+        sheet.getRange('B1').setValue(new Date().getTime());
+      }
+    }
+    var data = sheet.getRange('A1').getValue();
+    var ts   = sheet.getRange('B1').getValue();
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:true, data:String(data||''), timestamp:Number(ts||0)}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:false, error:String(err)}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+    </details>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Constants ──
+const LS_KEY     = 'care_schedule_v2';
+const HOUR_PX    = 60;
+const TOTAL_HRS  = 24;
+const DAYS_JA    = ['月','火','水','木','金','土','日'];
+
+// 身体介護: step=1(1分単位) / 生活: step=5(5分単位)
+// mins: デフォルト終了までの分数
+const CAT_INFO = {
+  '身体０１':    { mins: 19, step: 1, hint: '20分未満（2時間ルール適用）\n服薬介助・体位変換・排泄介助など短時間ケア' },
+  '身体１':      { mins: 29, step: 1, hint: '20分以上30分未満' },
+  '身体２':      { mins: 59, step: 1, hint: '30分以上1時間未満' },
+  '身体１生活１':{ mins: 89, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助／合計45〜75分程度' },
+  '身体１生活２':{ mins: 119, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助2／合計1時間30分以上2時間未満' },
+  '生活２':      { mins: 45, step: 5, hint: '20分以上45分未満（デフォルト40分）' },
+  '生活３':      { mins: 60, step: 5, hint: '45分以上70分未満（デフォルト60分）' },
+  // 総合事業 訪問型独自サービス（要支援・事業対象者）
+  'A21121':      { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス/211（要支援・事業対象者）\n盤面表示【A11】／1,000単位' },
+  'A21221':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス/212（要支援・事業対象者）\n盤面表示【A12】／1,997単位' },
+  'A2111':       { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス11（要支援・事業対象者）\n盤面表示【A21】／1,176単位' },
+  'A21211':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス12（要支援・事業対象者）\n盤面表示【A22】／2,349単位' },
+};
+
+// ── serviceDict（WS へ渡す要介護コード辞書・care-schedule が唯一の書き手）──
+// 辞書はコード定数（CAT_INFO / WS_SVC_META）の射影。care_schedule_v2 ルートに相乗りし、既存同期経路で WS へ届く。
+// 総合事業（SOGO_VISIT_CODES）は固定単位の独立トラックのため辞書に載せない（WS 側の総合事業保護を裏返さない）。
+// ★版数規律: WS_SVC_META / CAT_INFO のコードを増減・変更したら必ず SERVICE_DICT_V を +1 する
+//（同一 v のまま codes が食い違うと署名 no-op が効かず端末間で上書き合戦になるため）。
+const SERVICE_DICT_V = 1;
+// 要介護 7 コードのメタ（キーは CAT_INFO / VISIT_BASE_UNITS と同一の全角表記）。mins/step は CAT_INFO から合成（二重定義しない）。
+const WS_SVC_META = {
+  '身体０１':    { short: '身01',   cls: 'phys' },
+  '身体１':      { short: '身1',    cls: 'phys' },
+  '身体２':      { short: '身2',    cls: 'phys' },
+  '身体１生活１':{ short: '身1生1', cls: 'mix'  },
+  '身体１生活２':{ short: '身1生2', cls: 'mix'  },
+  '生活２':      { short: '生2',    cls: 'life' },
+  '生活３':      { short: '生3',    cls: 'life' },
+};
+// WS_SVC_META × CAT_INFO から辞書 codes を合成。総合事業コードは二重防御でスキップ（要介護コードのみ辞書化）。
+function buildServiceDictCodes_() {
+  const codes = {};
+  for (const k in WS_SVC_META) {
+    if (!CAT_INFO[k] || SOGO_VISIT_CODES[k]) continue;   // 総合事業ガード二重防御
+    codes[k] = { short: WS_SVC_META[k].short, mins: CAT_INFO[k].mins, step: CAT_INFO[k].step, cls: WS_SVC_META[k].cls };
+  }
+  return codes;
+}
+/* serviceDict をメモリ上の DB に同期（更新したら true・失敗時は false で DB 不変）。
+   vガードで新しい辞書を巻き戻さず、署名一致なら no-op にして pull 毎の push 増幅を避ける。 */
+function ensureServiceDict_() {
+  try {
+    const codes = buildServiceDictCodes_();
+    const cur = DB.serviceDict;
+    if (cur && typeof cur.v === 'number' && cur.v > SERVICE_DICT_V) return false;   // 新しい辞書を巻き戻さない
+    if (cur && cur.v === SERVICE_DICT_V && JSON.stringify(cur.codes || {}) === JSON.stringify(codes)) return false;   // 署名一致 no-op
+    DB.serviceDict = { v: SERVICE_DICT_V, updatedAt: Date.now(), codes };
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 時間帯加算（訪問介護）開始時刻が該当帯に入る場合に適用
+const TIME_SURCHARGE_ZONES = [
+  { startH:  0, endH:  6, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
+  { startH:  6, endH:  8, label: '早朝加算', pct: 25, color: '#e65100', bg: 'rgba(230,81,0,0.07)'   },
+  { startH: 18, endH: 22, label: '夜間加算', pct: 25, color: '#1565c0', bg: 'rgba(21,101,192,0.07)' },
+  { startH: 22, endH: 24, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
+];
+
+function getTimeSurchargeZone(startTime) {
+  const h = parseInt((startTime || '').split(':')[0], 10);
+  if (isNaN(h)) return null;
+  for (const z of TIME_SURCHARGE_ZONES) {
+    if (h >= z.startH && h < z.endH) return z;
+  }
+  return null;
+}
+
+// 訪問介護 基本単位数（令和6年4月改定）
+const VISIT_BASE_UNITS = {
+  '身体０１':     163,
+  '身体１':       244,
+  '身体２':       387,
+  '身体１生活１':  309,  // 身体1(244)＋生活援助1(65)
+  '身体１生活２':  449,  // 身体1＋生活援助2（運用指定値・2026-07-07）
+  '生活２':       179,  // 20分以上45分未満
+  '生活３':       220,  // 45分以上70分未満
+};
+
+// 総合事業（介護予防・日常生活支援総合事業）訪問型独自サービス（要支援・事業対象者向け）
+// 単位は固定。特定事業所加算・時間帯加算は適用せず、指定単位をそのまま計上する独立トラック。
+// ev.category にはコード文字列（A21121 等）を格納し、盤面/印刷/一覧には label（略称）で表示する。
+const SOGO_VISIT_CODES = {
+  'A21121': { name: '訪問型独自サービス/211', label: '【A11】', units: 1000 },
+  'A21221': { name: '訪問型独自サービス/212', label: '【A12】', units: 1997 },
+  'A2111':  { name: '訪問型独自サービス11',   label: '【A21】', units: 1176 },
+  'A21211': { name: '訪問型独自サービス12',   label: '【A22】', units: 2349 },
+};
+function isSogoCat_(cat) { return !!(cat && SOGO_VISIT_CODES[cat]); }
+// カテゴリの表示名: 総合事業は略称（【A11】等）、要介護コードはそのまま返す
+function catDisplayLabel_(cat) {
+  return (cat && SOGO_VISIT_CODES[cat]) ? SOGO_VISIT_CODES[cat].label : (cat || '');
+}
+
+// 通所介護 基本単位数（令和6年4月改定）介護度×所要時間区分。
+// 標準の時間区分: 3h(3時間以上4時間未満) 4h(4〜5h) 5h(5〜6h) 6h(6〜7h) 7h(7〜8h) 8h(8〜9h)。
+// 当施設の算定は表示スロット準拠: 4時間ちょうど(9:00-13:00)は '3h' 区分・4.5時間(9:00-13:30)は '4h' 区分（判定は getDaycareTimeKey）。
+const DAYCARE_BASE_UNITS = {
+  '要介護1': { '3h': 370, '4h': 388, '5h': 430, '6h': 551, '7h': 649, '8h': 672 },
+  '要介護2': { '3h': 423, '4h': 444, '5h': 494, '6h': 634, '7h': 766, '8h': 794 },
+  '要介護3': { '3h': 479, '4h': 502, '5h': 560, '6h': 717, '7h': 887, '8h': 919 },
+  '要介護4': { '3h': 533, '4h': 560, '5h': 622, '6h': 800, '7h':1009, '8h':1044 },
+  '要介護5': { '3h': 588, '4h': 617, '5h': 687, '6h': 882, '7h':1130, '8h':1170 },
+};
+
+function getDaycareTimeKey(startTime, endTime) {
+  const mins = timeDiffMins(startTime, endTime);
+  // 所要時間(分)で区分判定。4時間ちょうど(240分＝9:00-13:00)は当施設算定で「3時間以上4時間未満」区分に含める。
+  // 終了時刻の文字列ではなく所要時間で判定＝開始/終了が変わっても一貫（9:00-13:30=270分→'4h'）。
+  if (mins <= 4*60) return '3h';
+  if (mins < 5*60) return '4h';
+  if (mins < 6*60) return '5h';
+  if (mins < 7*60) return '6h';
+  if (mins < 8*60) return '7h';
+  return '8h';
+}
+
+// 特定事業所加算 % → 等級
+const TOKUTEI_TIER_MAP = { 3: 'Ⅳ', 5: 'Ⅲ', 10: 'Ⅱ', 20: 'Ⅰ' };
+// 時間帯ラベル → コード短縮形
+// 25%加算帯（早朝・夜間）はコード上「夜」、50%加算帯（深夜）は「深」
+const TIME_ZONE_SHORT  = { '早朝加算': '夜', '夜間加算': '夜', '深夜加算': '深' };
+
+// 訪問介護サービスコード表（特定事業所加算・時間帯加算込みの単位数）
+// キー: [区分][時間帯短縮][等級] 形式
+const VISIT_CODE_TABLE = {
+  // 特定事業所加算Ⅰ(+20%) 公式合成単位（基本単位×1.2・全訪問に適用）
+  '身体０１Ⅰ':   196,   // 163×1.2=195.6→196
+  '身体１Ⅰ':     293,   // 244×1.2=292.8→293
+  '身体２Ⅰ':     464,   // 387×1.2=464.4→464
+  '身体１生活１Ⅰ': 371,  // 309×1.2=370.8→371
+  '身体１生活２Ⅰ': 539,  // 449×1.2=538.8→539（基本単位は運用指定値449）
+  '生活２Ⅰ':     215,   // 179×1.2=214.8→215
+  '生活３Ⅰ':     264,   // 220×1.2=264
+  // 特定事業所加算Ⅱ(+10%)
+  '身体０１Ⅱ':   179,
+  '身体０１夜Ⅱ': 224,
+  '生活２Ⅱ':     197,
+  '生活３Ⅱ':     242,
+};
+
+// コード単位（基本＋特定事業所加算＋時間帯加算）を返す
+function getVisitCodeUnits(category, tokuteijigyoPct, startTime) {
+  // 総合事業 独自サービス: 固定単位・略称ラベル（特定/時間帯加算は非適用）
+  if (SOGO_VISIT_CODES[category]) {
+    const s = SOGO_VISIT_CODES[category];
+    return { label: s.label, units: s.units, base: s.units };
+  }
+  const base = VISIT_BASE_UNITS[category] || 0;
+  const tier = TOKUTEI_TIER_MAP[tokuteijigyoPct] || '';
+  const zone = startTime ? getTimeSurchargeZone(startTime) : null;
+  const tShort = zone ? (TIME_ZONE_SHORT[zone.label] || '') : '';
+  const codeKey = category + tShort + tier;
+
+  // ①コード表に直接ヒット
+  if (VISIT_CODE_TABLE[codeKey] !== undefined) {
+    return { label: codeKey, units: VISIT_CODE_TABLE[codeKey], base };
+  }
+  // ②[区分][等級]がコード表にあれば、それに時間帯加算を上乗せ
+  const baseTierKey = category + tier;
+  if (tier && VISIT_CODE_TABLE[baseTierKey] !== undefined && zone) {
+    const tierBase = VISIT_CODE_TABLE[baseTierKey];
+    const units = tierBase + Math.floor(tierBase * zone.pct / 100);
+    return { label: codeKey, units, base };
+  }
+  // ③個別切り捨てによる計算 fallback
+  let units = base;
+  if (zone)               units += Math.floor(base * zone.pct / 100);
+  if (tokuteijigyoPct > 0) units += Math.floor(base * tokuteijigyoPct / 100);
+  return { label: codeKey || category, units, base };
+}
+
+function calcVisitUnits(category, res, startTime) {
+  // 総合事業 独自サービス: 指定単位そのまま（office加算・減算は非適用）
+  if (SOGO_VISIT_CODES[category]) return SOGO_VISIT_CODES[category].units;
+  const base = VISIT_BASE_UNITS[category];
+  if (!base) return 0;
+  const a = (DB.office && DB.office.visitAddons) || {};
+
+  const tokuteijigyo = Number(a.tokuteijigyo) || 0;
+  const chiikiKasan  = Number(a.chiikiKasan)  || 0;
+
+  // ①コード単位（基本＋特定事業所加算＋時間帯加算）
+  let units = getVisitCodeUnits(category, tokuteijigyo, startTime).units;
+
+  // ②特別地域加算（基本単位×%、切り捨て）
+  if (chiikiKasan > 0) units += Math.floor(base * chiikiKasan / 100);
+
+  // ③同一建物減算（減算率を乗じて切り捨て）
+  const gensan = Number(a.douitsuGensan) || 0;
+  if (gensan > 0) units = Math.floor(units * (1 - gensan / 100));
+
+  // ④サービス提供体制強化加算（1単位単位で加算）
+  units += Number(a.svcStrength) || 0;
+
+  // ④処遇改善加算（上記合計に%加算、端数切り捨て）
+  const nursingKasan = Number(a.nursingKasan) || 0;
+  if (nursingKasan > 0) units = Math.floor(units * (1 + nursingKasan / 100));
+
+  return Math.max(0, units);
+}
+
+// 通所介護の基本単位テーブル参照（careLevel未設定や要支援1/2でも要介護1へフォールバック）
+function getDaycareLevelMap(careLevel) {
+  return DAYCARE_BASE_UNITS[careLevel] || DAYCARE_BASE_UNITS['要介護1'];
+}
+
+function calcDaycareUnits(startTime, endTime, bathing, res) {
+  const careLevel = (res && res.careLevel) || '';
+  const levelMap  = getDaycareLevelMap(careLevel);
+  const base      = levelMap[getDaycareTimeKey(startTime, endTime)] || 0;
+  const a = (DB.office && DB.office.daycareAddons) || {};
+
+  // ①各種加算（固定単位）
+  const flat = (Number(a.heavyCare)   || 0)
+             + (Number(a.dementia)    || 0)
+             + (Number(a.indvTraining)|| 0)
+             + (Number(a.svcStrength) || 0)
+             + (bathing ? (Number(a.bathingType) || 0) : 0);
+
+  // ②処遇改善加算（%加算、端数切り捨て）
+  const nursingKasan = Number(a.nursingKasan) || 0;
+  let units = Math.floor((base + flat) * (1 + nursingKasan / 100));
+
+  // ③同一建物減算（送迎なし減算、固定単位で減算）
+  const okuriGensan = Number(a.douitsuGensan) || 0;
+  units = Math.max(0, units - okuriGensan);
+
+  return units;
+}
+
+// 内訳表示用: [{label, units}] の配列を返す
+function getUnitBreakdown(ev, res) {
+  const rows = [];
+  if (ev.serviceType === 'visit') {
+    const cat = ev.category || '訪問介護';
+    // 総合事業 独自サービス: 内訳は略称ラベル＋固定単位の1行のみ
+    if (SOGO_VISIT_CODES[cat]) {
+      const s = SOGO_VISIT_CODES[cat];
+      return [{ label: s.label, units: s.units }];
+    }
+    const base = VISIT_BASE_UNITS[cat] || 0;
+    const a = (DB.office && DB.office.visitAddons) || {};
+
+    const tokuteijigyo = Number(a.tokuteijigyo) || 0;
+    const chiikiKasan  = Number(a.chiikiKasan)  || 0;
+
+    // ①コード単位（基本＋特定事業所加算＋時間帯加算を込みで表示）
+    const code = getVisitCodeUnits(cat, tokuteijigyo, ev.startTime);
+    rows.push({ label: code.label, units: code.units });
+
+    // ②特別地域加算 — 基本単位×%、切り捨て
+    if (chiikiKasan > 0) {
+      const cUnits = Math.floor(base * chiikiKasan / 100);
+      if (cUnits > 0) rows.push({ label: `特別地域加算（+${chiikiKasan}%）`, units: cUnits });
+    }
+
+    // ③同一建物減算（上記合計に対して切り捨て、画面表示は非表示）
+    let subtotal = rows.reduce((s, r) => s + r.units, 0);
+    const gensan = Number(a.douitsuGensan) || 0;
+    if (gensan > 0) {
+      const afterGensan = Math.floor(subtotal * (1 - gensan / 100));
+      rows.push({ label: `同一建物減算（-${gensan}%）`, units: afterGensan - subtotal, hideInDisplay: true });
+      subtotal = afterGensan;
+    }
+
+    // ⑥サービス提供体制強化加算
+    const svc = Number(a.svcStrength) || 0;
+    if (svc > 0) {
+      rows.push({ label: 'サービス提供体制強化加算', units: svc });
+      subtotal += svc;
+    }
+
+    // ⑦処遇改善加算（限度額の枠外）
+    const nursing = Number(a.nursingKasan) || 0;
+    if (nursing > 0) {
+      const nursingUnits = Math.floor(subtotal * (1 + nursing / 100)) - subtotal;
+      if (nursingUnits > 0) rows.push({ label: '処遇改善加算', units: nursingUnits, outsideLimit: true });
+    }
+  } else {
+    // daycare（careLevel未設定・要支援は要介護1へフォールバック）
+    const levelMap = getDaycareLevelMap((res && res.careLevel) || '');
+    const base = levelMap[getDaycareTimeKey(ev.startTime, ev.endTime)] || 0;
+    rows.push({ label: '通所介護', units: base });
+
+    const a = (DB.office && DB.office.daycareAddons) || {};
+    const bat = ev.bathing;
+    if (Number(a.heavyCare)    > 0) rows.push({ label: '中重度者ケア体制加算',      units: Number(a.heavyCare) });
+    if (Number(a.dementia)     > 0) rows.push({ label: '認知症加算',                units: Number(a.dementia) });
+    if (Number(a.indvTraining) > 0) rows.push({ label: '個別機能訓練加算',           units: Number(a.indvTraining) });
+    if (Number(a.svcStrength)  > 0) rows.push({ label: 'サービス提供体制強化加算',   units: Number(a.svcStrength) });
+    if (bat && Number(a.bathingType) > 0) rows.push({ label: '入浴介助加算', units: Number(a.bathingType) });
+
+    const flatTotal = rows.reduce((s, r) => s + r.units, 0);
+    const nursing = Number(a.nursingKasan) || 0;
+    if (nursing > 0) {
+      const nursingUnits = Math.floor(flatTotal * (1 + nursing / 100)) - flatTotal;
+      // 処遇改善加算は区分支給限度基準額の枠外に付与されるため、限度額計算から除外するフラグを付与
+      if (nursingUnits > 0) rows.push({ label: '処遇改善加算', units: nursingUnits, outsideLimit: true });
+    }
+
+    const gensan = Number(a.douitsuGensan) || 0;
+    if (gensan > 0) rows.push({ label: '同一建物減算', units: -gensan, hideInDisplay: true });
+  }
+  return rows;
+}
+
+// 限度額計算/枠内表示用: 処遇改善加算など outsideLimit フラグの付いた行を除外して合計
+function sumLimitUnits(breakdown) {
+  return Math.max(0, breakdown.reduce((s, r) => s + (r.outsideLimit ? 0 : r.units), 0));
+}
+// 表示用合計: 処遇改善加算・同一建物減算（hideInDisplay）を除外した合計
+function sumDisplayUnits(breakdown) {
+  return Math.max(0, breakdown.reduce((s, r) =>
+    (r.outsideLimit || r.hideInDisplay) ? s : s + r.units, 0));
+}
+// 限度額計算/枠内表示用: outsideLimit を除外した行のみ返す
+function filterLimitRows(breakdown) {
+  return breakdown.filter(r => !r.outsideLimit);
+}
+
+// ── 総合事業（月額包括）集計ヘルパ ──
+// 総合事業は「月額包括単位」。同一コードは何コマ置いても月1回、異なるコードは各1回だけ計上する。
+function sogoMonthlyUnits_(events) {
+  const seen = new Set();
+  let sum = 0;
+  for (const ev of (events || [])) {
+    if (ev && ev.serviceType === 'visit' && SOGO_VISIT_CODES[ev.category] && !seen.has(ev.category)) {
+      seen.add(ev.category);
+      sum += SOGO_VISIT_CODES[ev.category].units;
+    }
+  }
+  return sum;
+}
+// 週合計単位（要介護／通所のみ。総合事業＝月額包括は週次から除外）
+function kaigoWeekUnits_(events, res) {
+  return (events || []).reduce((s, ev) => {
+    if (ev && SOGO_VISIT_CODES[ev.category]) return s;   // 総合事業は週次に含めない
+    try { return s + sumDisplayUnits(getUnitBreakdown(ev, res)); }
+    catch (e) { return s; }
+  }, 0);
+}
+
+// 各イベントの「限度額内カバー単位数」を返す Map<id, coveredUnits>
+// coveredUnits = 限度額内で使える単位数（超過分は0または端数）
+// ※処遇改善加算は枠外なのでカバー計算から完全に除外
+function getEventCoverage(events, res) {
+  const limit = CARE_LIMITS[res.careLevel] || 0;
+  if (!limit) return null; // 介護度未設定 → 制限なし
+
+  const weeklyLimit = limit / 4.3; // 週あたりの限度目安
+
+  // 曜日→時刻順にソート
+  const sorted = [...events].sort((a, b) =>
+    a.dayOfWeek !== b.dayOfWeek
+      ? a.dayOfWeek - b.dayOfWeek
+      : a.startTime.localeCompare(b.startTime)
+  );
+
+  const coverage = new Map();
+  let accumulated = 0;
+
+  for (const ev of sorted) {
+    // 総合事業（月額包括）は週次の限度額按分の対象外＝満額カバー扱い・週枠を消費しない
+    if (SOGO_VISIT_CODES[ev.category]) {
+      coverage.set(ev.id, sumDisplayUnits(getUnitBreakdown(ev, res)));
+      continue;
+    }
+    const breakdown = getUnitBreakdown(ev, res);
+    // 表示合計と整合させるため sumDisplayUnits を使用（処遇改善加算＋同一建物減算 を除外）
+    const total = sumDisplayUnits(breakdown);
+    const remaining = weeklyLimit - accumulated;
+
+    if (remaining <= 0) {
+      coverage.set(ev.id, 0); // 限度額超過
+    } else if (total <= remaining) {
+      coverage.set(ev.id, total); // 全量カバー
+    } else {
+      coverage.set(ev.id, Math.round(remaining)); // 一部カバー
+    }
+
+    accumulated += total;
+  }
+
+  return coverage;
+}
+
+function autoCalcUnits() {
+  const res   = currentResident();
+  if (!res) return;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
+  if (!stype) return;
+  let units = 0;
+  if (stype === 'visit') {
+    const cat   = $('#f-category').value;
+    const start = $('#f-start').value;
+    if (cat) units = calcVisitUnits(cat, res, start);
+  } else {
+    const start   = $('#f-dc-start').value;
+    const end     = $('#f-dc-end').value;
+    const bathing = $('#f-bathing').checked;
+    if (start && end) units = calcDaycareUnits(start, end, bathing, res);
+  }
+  if (units > 0) $('#f-units').value = units;
+}
+
+// 支給限度基準額（単位/月）令和6年4月改定
+const CARE_LIMITS = {
+  '要支援1':  5032,
+  '要支援2':  10531,
+  '要介護1':  16765,
+  '要介護2':  19705,
+  '要介護3':  27048,
+  '要介護4':  30938,
+  '要介護5':  36217,
+};
+
+const COLORS = {
+  '身体０１':    { bg: '#f1f8e9', border: '#aed581', text: '#33691e' },
+  '身体１':      { bg: '#e8f5e9', border: '#81c784', text: '#2e7d32' },
+  '身体２':      { bg: '#e0f2e0', border: '#66bb6a', text: '#2e7d32' },
+  '身体１生活１':{ bg: '#e8f5e9', border: '#4db6ac', text: '#00695c' },
+  '身体１生活２':{ bg: '#e0f2f1', border: '#26a69a', text: '#00695c' },
+  '生活２':      { bg: '#f9fbe7', border: '#c5e1a5', text: '#558b2f' },
+  '生活３':      { bg: '#f4f8e1', border: '#aed581', text: '#558b2f' },
+  'daycare':     { bg: '#fffde7', border: '#ffe082', text: '#e65100' },
+  // 総合事業 訪問型独自サービス（要介護緑・通所黄と区別する紫系トーン）
+  'A21121':      { bg: '#ede7f6', border: '#b39ddb', text: '#4527a0' },
+  'A21221':      { bg: '#e8eaf6', border: '#9fa8da', text: '#283593' },
+  'A2111':       { bg: '#f3e5f5', border: '#ce93d8', text: '#6a1b9a' },
+  'A21211':      { bg: '#ede7f6', border: '#b39ddb', text: '#4527a0' },
+};
+
+// ── Helpers ──
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function uid()  { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function ruid() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function pad2(n) { return String(n).padStart(2,'0'); }
+// 時刻(分)→縦px の単一写像。通常は等倍(min*HOUR_PX/60)＝現行と数値一致。
+// 印刷時のみ PRINT_MAP(区分線形の圧縮写像)へ差し替える＝画面・保存・A3一覧は無変化。
+var PRINT_MAP = null;         // function(min)->px or null
+var PRINT_SEGS = null;        // [{a,b,h,kind}] 圧縮区間（印刷時のみ）
+function yOf(min) { return PRINT_MAP ? PRINT_MAP(min) : min * (HOUR_PX / 60); }
+// 圧縮区間の内部(境界除く)に入る分か。時刻線/ラベルの潰れ防止に使う（印刷時のみ true になり得る）。
+function inCompressedMin_(min) {
+  if (!PRINT_SEGS) return false;
+  for (var i = 0; i < PRINT_SEGS.length; i++) {
+    if (min > PRINT_SEGS[i].a && min < PRINT_SEGS[i].b) return true;
+  }
+  return false;
+}
+function timeToY(hhmm) {
+  return yOf(timeToMins(hhmm));
+}
+function timeToMins(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+function minsToTime(mins) {
+  const h = Math.min(24, Math.max(0, Math.floor(mins / 60)));
+  const m = Math.max(0, mins % 60);
+  return `${pad2(h)}:${pad2(m)}`;
+}
+function timeDiffMins(s, e) { return timeToMins(e) - timeToMins(s); }
+function durationToPx(s, e) { return timeToY(e) - timeToY(s); }
+function overlaps(a, b) { return a.startTime < b.endTime && b.startTime < a.endTime; }
+function addMins(hhmm, mins) {
+  return minsToTime(timeToMins(hhmm) + mins);
+}
+
+// ── DB ──
+const DEFAULT_OFFICE = {
+  unitPrice: 10.27,
+  visitAddons:   { tokuteijigyo: 0, svcStrength: 0, chiikiKasan: 0, nursingKasan: 0, douitsuGensan: 0 },
+  daycareAddons: { bathingType: 0, heavyCare: 0, dementia: 0, indvTraining: 0, svcStrength: 0, nursingKasan: 0, douitsuGensan: 0 },
+};
+let DB = { residents: [], currentResidentId: null, office: null };
+
+/* ── 利用者データ保護: クラウド同期が空/サンプル「あ」でローカルの実利用者を上書きする事故を防ぐ ──
+   （シフトアプリの mayApplyServer/protectStaff と同思想。events は実データ判定に使わない＝
+     予定ゼロの実利用者・マスタ連携利用者を誤って「サンプル」扱いしないため。） */
+const CS_RESIDENT_BACKUP_KEY = 'cs_residents_backup_v1';   // 同期対象外・端末ローカルのみ
+function csRealResidentCount(residents) {
+  if (!Array.isArray(residents)) return 0;
+  let n = 0;
+  for (let i = 0; i < residents.length; i++) {
+    const r = residents[i];
+    if (!r || typeof r !== 'object') continue;
+    const nm = (r.name == null ? '' : String(r.name)).replace(/\s+/g, '');
+    if (nm) n++;
+  }
+  return n;
+}
+/* 「出荷時サンプル『あ』のみ／空」か（=実データなしとみなしてよいか）。実利用者を誤判定しないよう厳格に。
+   サンプルは「単一・1文字のかな名・マスタ未連携・非退去」に限定（漢字姓 林/原/東 等は実データ扱い）。
+   テスト『あ』は予定付きで残ることがあるため events では判定しない（=予定があってもサンプル扱い）。 */
+function csLooksLikeSampleOnly(residents) {
+  if (!Array.isArray(residents) || residents.length === 0) return true;   // 空
+  if (residents.length === 1) {
+    const r = residents[0] || {};
+    const nm = (r.name == null ? '' : String(r.name)).replace(/\s+/g, '');
+    const isKana = nm.length === 1 && nm.charCodeAt(0) >= 0x3040 && nm.charCodeAt(0) <= 0x30FF;   /* ひらがな/カタカナ1文字 */
+    if (isKana && r.masterId == null && !r.movedOut) return true;
+  }
+  return false;
+}
+/* 正データを端末ローカルへ退避（同期されないキー）。サンプル/空は退避しない（=「あ」を昇格させない）。 */
+function csBackupResidents() {
+  try {
+    if (!csLooksLikeSampleOnly(DB.residents) && csRealResidentCount(DB.residents) > 0) {
+      localStorage.setItem(CS_RESIDENT_BACKUP_KEY, JSON.stringify({ at: Date.now(), residents: DB.residents }));
+    }
+  } catch(e) {}
+}
+/* 現在がサンプル/空で端末バックアップに正データがあれば自動復元（field端末はクラウドへ書き戻さない）。 */
+function csRestoreResidentsIfLost() {
+  try {
+    if (!csLooksLikeSampleOnly(DB.residents)) return false;   // 正データがあるなら何もしない
+    const bk = JSON.parse(localStorage.getItem(CS_RESIDENT_BACKUP_KEY) || 'null');
+    if (bk && !csLooksLikeSampleOnly(bk.residents) && csRealResidentCount(bk.residents) > 0) {
+      DB.residents = bk.residents;
+      saveLocalOnly();
+      if (suGetDeviceRole() !== 'field' && SYNC.hasTarget()) {
+        SYNC.markDirty();
+        setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);   // 通常push(楽観ロック)で修復
+      }
+      try { showToast('利用者データを端末バックアップから復元しました'); } catch(e) {}
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+/* タイムスタンプ付き復旧バックアップ(LS_KEY + '_backup_' + Date.now()) 等の累積を剪定。
+ * 各グループとも最新1件は常に残し、末尾が数値タイムスタンプで7日より古いものだけ削除
+ * （容量逼迫の解消・実データ LS_KEY 本体は不可侵）。
+ * ws が書く 'care_schedule_v2_backup_ws'(末尾 'ws'=非数値) や末尾が parseInt 不能なキーは NaN で対象外＝安全側。
+ * 剪定対象: _backup_<ts>（自動生成の復旧退避）／_PRE_RESTORE_<ts>（過去の手動復旧退避・自動生成されない）。
+ * _backup_before_notes_clear は移行フラグ care_notes_cleared_v1 が立っている時のみ削除（冪等）。 */
+function pruneCareBackups_() {
+  try {
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    // プレフィックス配下のタイムスタンプ退避を剪定（最新1件は保持・末尾が純数値のキーのみ対象）。
+    // 数値限定にする理由: '_backup_ws' 等の非数値キーは辞書順で数値より後ろ＝newest を奪い、
+    // 実際に最新の数値退避が「最新1件保持」から外れて期限切れ削除される（数値退避0件化の穴）。
+    const pruneTsGroup = (prefix) => {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf(prefix) === 0 && /^\d+$/.test(k.slice(prefix.length))) keys.push(k);
+      }
+      if (keys.length <= 1) return;
+      keys.sort();                                // タイムスタンプ昇順（同桁数の Date.now() は辞書順=数値順）
+      const newest = keys[keys.length - 1];
+      keys.forEach(k => {
+        if (k === newest) return;                 // 最新1件は常に保持
+        const ts = parseInt(k.slice(prefix.length), 10);
+        if (!isNaN(ts) && ts < cutoff) { try { localStorage.removeItem(k); } catch (_) {} }
+      });
+    };
+    pruneTsGroup(LS_KEY + '_backup_');            // 自動生成の復旧退避（既存ポリシー不変・before_notes_clear/ws は末尾非数値で対象外）
+    pruneTsGroup(LS_KEY + '_PRE_RESTORE_');       // 過去の手動復旧退避を同ポリシーで剪定
+    // 2026-07-01 の一回限り移行の事前バックアップ: 移行完了フラグが立っている時のみ削除（冪等・毎起動で無害）
+    if (localStorage.getItem('care_notes_cleared_v1')) {
+      try { localStorage.removeItem(LS_KEY + '_backup_before_notes_clear'); } catch (_) {}
+    }
+  } catch (e) {}
+}
+
+function loadDB() {
+  pruneCareBackups_();                            // 起動時に古い復旧バックアップを掃除（容量回復）
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && typeof p === 'object') {
+        DB = { ...DB, ...p };
+      } else {
+        console.warn('loadDB: 不正なデータ形式（オブジェクト以外）。デフォルトを使用します');
+      }
+    }
+  } catch(e) {
+    // パースエラー時もユーザーデータを失わないよう、生データのバックアップを保存
+    console.error('loadDB: localStorage の JSON パースに失敗:', e);
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) localStorage.setItem(LS_KEY + '_backup_' + Date.now(), raw);
+    } catch(_) {}
+  }
+  if (!Array.isArray(DB.residents)) DB.residents = [];
+  // 事業所情報マイグレーション: 山田太郎の設定をデフォルトとして取り込む
+  if (!DB.office) {
+    const taro = DB.residents.find(r => r.name === '山田太郎')
+              || DB.residents.find(r => r.unitPrice || r.visitAddons || r.daycareAddons);
+    if (taro) {
+      DB.office = {
+        unitPrice:     taro.unitPrice     || DEFAULT_OFFICE.unitPrice,
+        visitAddons:   { ...DEFAULT_OFFICE.visitAddons,   ...(taro.visitAddons   || {}) },
+        daycareAddons: { ...DEFAULT_OFFICE.daycareAddons, ...(taro.daycareAddons || {}) },
+      };
+    } else {
+      DB.office = JSON.parse(JSON.stringify(DEFAULT_OFFICE));
+    }
+  }
+  // 既存項目欠落補完
+  DB.office.unitPrice     = DB.office.unitPrice     || DEFAULT_OFFICE.unitPrice;
+  DB.office.visitAddons   = { ...DEFAULT_OFFICE.visitAddons,   ...(DB.office.visitAddons   || {}) };
+  DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
+  // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
+  recalcAllEventUnits();
+  ensureServiceDict_();   // 辞書をメモリに同期（ここでは saveDB/saveLocalOnly を呼ばない＝startupPull の生文字列一致判定に非干渉）
+  // 備考クリアは loadDB では実行しない。同期端末では起動pull完了後に呼ぶ（下部 Init）＝pullの上書きで巻き戻らないため。
+}
+/* 一回限りの備考(notes)クリア・マイグレーション（要件2）。全 residents[].events[].notes を空にする。
+ * detail/startTime/endTime/category/units/id/dayOfWeek 等 notes以外は一切変更しない。実行前に care_schedule_v2 全体をバックアップ。
+ * フラグ care_notes_cleared_v1 で冪等（1回のみ）。将来の備考入力は可能。
+ * 戻り値: クリアを実施し永続化に成功した場合 true（呼出側で即pushして同期端末へ恒久反映）。 */
+function migrateClearNotes_() {
+  const FLAG = 'care_notes_cleared_v1';
+  try {
+    if (localStorage.getItem(FLAG)) return false;                // 実行済み＝何もしない
+    const residents = Array.isArray(DB.residents) ? DB.residents : [];
+    // 実行前バックアップ（復元可能に）
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) localStorage.setItem(LS_KEY + '_backup_before_notes_clear', raw);
+    } catch (e) {}
+    let cleared = 0;
+    for (let i = 0; i < residents.length; i++) {
+      const evs = residents[i].events || [];
+      for (let j = 0; j < evs.length; j++) {
+        if (evs[j] && evs[j].notes !== undefined && evs[j].notes !== '') { evs[j].notes = ''; cleared++; }
+      }
+    }
+    let ok = true;
+    if (cleared > 0) ok = saveDB();                              // 変更があれば永続化（saveDBの成否）
+    if (ok) localStorage.setItem(FLAG, new Date().toISOString()); // 保存成功時のみフラグ確定（失敗時は次回起動で再走）
+    console.log('[migrate] 備考クリア: ' + cleared + '件 ok=' + ok + '（notes以外は不変・backup=' + LS_KEY + '_backup_before_notes_clear）');
+    return ok && cleared > 0;
+  } catch (e) { console.error('[migrate] 備考クリア失敗:', e); return false; }
+}
+function saveDB() {
+  ensureServiceDict_();   // 保存前に辞書をメモリへ同期（JSON.stringify より前）
+  try {
+    const json = JSON.stringify(DB);
+    localStorage.setItem(LS_KEY, json);
+    // 書込検証：実際に保存されたか確認（クォータ超過などを即検知）
+    const verify = localStorage.getItem(LS_KEY);
+    if (verify !== json) {
+      console.error('saveDB: 書込検証に失敗（localStorage に正しく保存されていません）');
+      showToast('保存に失敗しました。ブラウザのストレージ容量を確認してください');
+      return false;
+    }
+  } catch(e) {
+    console.error('saveDB: 保存エラー:', e);
+    showToast('保存エラーが発生しました: ' + (e && e.message ? e.message : ''));
+    return false;
+  }
+  csBackupResidents();   // 正データを端末ローカルへ退避（同期事故時の復元元）
+  // クラウド自動同期（同期先があれば常に・debounce）
+  if (SYNC.hasTarget()) SYNC.scheduleAutoPush();
+  return true;
+}
+
+/* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存→クラウドへ即時push（2sデバウンス迂回）。
+ * 同期先未設定でも端末には保存される。 */
+function manualSave() {
+  try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
+  const ok = saveDB();
+  const synced = SYNC.hasTarget();
+  if (synced) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try { SYNC.push(); } catch (e1) {}
+  }
+  flashSave(ok ? (synced ? '✓ 保存しました' : '✓ 端末に保存') : '✗ 保存失敗');
+}
+function flashSave(msg) {
+  const btn = $('#btnSave');
+  if (!btn) return;
+  if (flashSave._t) clearTimeout(flashSave._t);
+  btn.textContent = msg;
+  btn.classList.add('saving');
+  flashSave._t = setTimeout(() => {
+    btn.textContent = btn.dataset.label || '💾 保存';
+    btn.classList.remove('saving');
+  }, 1800);
+}
+
+// ── クラウド同期（Google スプレッドシート + Apps Script） ──
+const SYNC_KEY = 'care_schedule_sync_v1';
+const CS_DIRTY_KEY = 'care_schedule_dirty_v1'; // 未送信編集の永続フラグ（タブ閉鎖・クラッシュ後も起動時に検知する）
+const POLL_INTERVAL_MS = 30000; // 30秒ごとにクラウドの更新をチェック
+const SYNC = {
+  config: { endpoint: '', token: '', auto: false, lastSync: 0 },
+  _pushTimer: null,
+  _pollTimer: null,
+  _busy: false,
+  _dirty:  false,   // ローカルに未プッシュの変更があるか
+  _remoteTs: 0,    // 最後にチェックしたリモートのタイムスタンプ
+  _rejectedRev: -1, // 上書き保護で採用拒否したサンプルrev（同revの再ログ/再pushを抑止）
+
+  load() {
+    try {
+      const raw = localStorage.getItem(SYNC_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          this.config = { ...this.config, ...parsed };
+        }
+      }
+    } catch(e) {
+      console.warn('同期設定読込エラー:', e);
+      // 破損データを除去して安全側に倒す
+      try { localStorage.removeItem(SYNC_KEY); } catch(_) {}
+    }
+  },
+  save() {
+    try {
+      const json = JSON.stringify(this.config);
+      localStorage.setItem(SYNC_KEY, json);
+      // 書き込み検証（実際に保存されたか確認）
+      const verify = localStorage.getItem(SYNC_KEY);
+      if (verify !== json) {
+        console.warn('同期設定の書き込み検証に失敗しました');
+        return false;
+      }
+      return true;
+    } catch(e) {
+      console.warn('同期設定保存エラー:', e);
+      showToast('同期設定の保存に失敗しました（ブラウザのストレージ制限の可能性）');
+      return false;
+    }
+  },
+  /* 永続dirty: メモリの _dirty に加えて localStorage にも記録し、タブ閉鎖・クラッシュ後の
+     次回起動で「未送信編集あり」を検知する（startupPull が参照）。
+     解除は「push成功時」と「起動時にクラウドと内容一致した時」のみ。adopt では解除しない
+     （競合リベース直後に push が失敗するとフラグが消え、次回起動の無条件採用で編集が消えるため）。 */
+  markDirty() {
+    this._dirty = true;
+    try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e) {}
+  },
+  clearDirty() {
+    this._dirty = false;
+    try { localStorage.removeItem(CS_DIRTY_KEY); } catch(e) {}
+  },
+  hasPersistedDirty() {
+    try { return localStorage.getItem(CS_DIRTY_KEY) === '1'; } catch(e) { return false; }
+  },
+  updateStatusUI(text) {
+    const el = $('#sync-status'); if (el) el.textContent = text || '同期';
+  },
+  log(msg) {
+    const el = $('#sync-log'); if (!el) return;
+    const t = new Date().toLocaleTimeString('ja-JP');
+    el.textContent = `[${t}] ${msg}\n` + (el.textContent || '');
+  },
+
+  validateEndpoint(url) {
+    if (!url) return 'URLが空です';
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)) {
+      return 'URL は https://script.google.com/macros/s/.../exec の形式である必要があります';
+    }
+    return null;
+  },
+  // GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける）
+  friendlyErr(e) {
+    if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
+    if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    return e || '応答エラー';
+  },
+
+  // ── 統合GAS連携（ワースケ・シフトと同一エンドポイント／rev楽観ロック）──
+  // 接続先・トークンは「3アプリ共通キー(su_sync_common)」を最優先、
+  // 次にワースケ設定(ws_settings)、無ければ自前configを使用。
+  // どれか1アプリで設定すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
+  // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
+  target() {
+    // 前後空白を必ず除去（コピペ時の混入で unauthorized になるのを防ぐ）
+    try {
+      const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
+      if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
+    } catch(e) {}
+    try {
+      const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
+      if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
+    } catch(e) {}
+    return { endpoint: String(this.config.endpoint || '').trim(), token: String(this.config.token || '').trim() };
+  },
+  hasTarget() { return !!this.target().endpoint; },
+  loadCareRev() {
+    try { return (JSON.parse(localStorage.getItem('ws_sync_revs') || '{}').care) || 0; }
+    catch(e) { return 0; }
+  },
+  saveCareRev(r) {
+    try {
+      const o = JSON.parse(localStorage.getItem('ws_sync_revs') || '{}');
+      o.care = r;
+      localStorage.setItem('ws_sync_revs', JSON.stringify(o));
+    } catch(e) {}
+  },
+  async gas(payload) {
+    const t = this.target();
+    payload.token = t.token;
+    // text/plain で送信し CORS preflight を回避（ワースケと同一）
+    const res = await fetch(t.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  // リモート(data:DBオブジェクト)をローカルへ採用（事業所情報は欠落時ローカル維持）
+  adopt(data, rev) {
+    const remote = data;
+    if (!remote || typeof remote !== 'object') return false;
+    /* ★上書き保護: ローカルが実データで、リモートが空/サンプル「あ」なら採用しない（実利用者を守る）。
+       force push は使わない（別端末の正当な削除を巻き戻さない）。rev は進めない（後続の正当更新を
+       取りこぼさない）。_rejectedRev で同サンプルrevの再ログ/再pushだけ抑止する。 */
+    if (!csLooksLikeSampleOnly(DB.residents) && csLooksLikeSampleOnly(remote.residents)) {
+      if (this._rejectedRev !== rev) {
+        this._rejectedRev = rev;
+        this.log('⚠️ クラウドが空/サンプルのため上書きを中止しました（ローカルを保持）');
+        if (suGetDeviceRole() !== 'field') setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);
+      }
+      return false;   // DB不変・saveCareRev は呼ばない
+    }
+    const remoteOfficeValid = remote.office && typeof remote.office === 'object'
+                            && Object.keys(remote.office).length > 0;
+    const preservedOffice = remoteOfficeValid ? null : DB.office;
+    DB = { ...DB, ...remote };
+    if (preservedOffice) DB.office = preservedOffice;
+    ensureServiceDict_();   // 採用直後に辞書を正規化（★markDirty は立てない＝pull毎push増幅の禁止・戻り値は捨てる）
+    if (!Array.isArray(DB.residents)) DB.residents = [];
+    saveLocalOnly();
+    this.saveCareRev(rev || 0);
+    this.config.lastSync = Date.now();
+    this._dirty = false;   // メモリのみ解除。永続フラグ(CS_DIRTY_KEY)は push成功/起動時一致でのみ解除
+    this.save();
+    recalcAllEventUnits();
+    try { mergeCommonSchedule(); } catch(e) {}
+    csRestoreResidentsIfLost();   /* 採用結果がサンプル/空なら端末バックアップから復元 */
+    csBackupResidents();          /* 実データを退避（次回ロスト時の復元元） */
+    populateResidentSelect();
+    renderAll();
+    return true;
+  },
+
+  /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
+     ws_settings の endpoint が現在と異なり、そこへの test get が j.ok===true のときだけ su_sync_common を
+     上書き。通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着を防止）。 */
+  async healStaleTarget() {
+    const cur = this.target();
+    let ws = {};
+    try { ws = JSON.parse(localStorage.getItem('ws_settings') || '{}'); } catch(e) { return false; }
+    const wsEp = String(ws.endpoint || '').trim();
+    if (!wsEp || wsEp === cur.endpoint) return false;   // 代替先が無い／既に同一
+    try {
+      const res = await fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'get', key: 'care_schedule_v2', token: String(ws.token || '').trim() }), redirect: 'follow' });
+      const j = await res.json();
+      if (j && j.ok === true) {   // 稼働＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
+        localStorage.setItem('su_sync_common', JSON.stringify({ endpoint: wsEp, token: String(ws.token || '').trim(), updatedAt: Date.now() }));
+        this.log('🔧 接続先が古かったため、稼働中のURL(ws_settings)へ自動切替しました');
+        return true;
+      }
+    } catch(e) { return false; }   // 通信失敗では上書きしない
+    return false;
+  },
+
+  async pull() {
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
+    if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
+    this._busy = true;
+    this.updateStatusUI('取得中…');
+    try {
+      let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+        j = await this.gas({ action: 'get', key: 'care_schedule_v2' });   // 切替後に1回だけ再取得（pull再入はしない）
+      }
+      if (!j.ok) throw new Error(this.friendlyErr(j.error));
+      if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
+      this.adopt(j.data, j.rev);
+      this.log(`✅ 取得完了（${DB.residents.length}名・rev ${j.rev || 0}）`);
+      this.updateStatusUI('同期OK');
+      this._busy = false;
+      return true;
+    } catch(e) {
+      this.log('❌ 取得失敗: ' + e.message);
+      this.updateStatusUI('エラー');
+      this._busy = false;
+      return false;
+    }
+  },
+
+  /* 起動時同期（BE-01根治）: 前セッションの未送信編集（永続dirty）があるときは、クラウド版を
+     無条件に採用しない。csRebaseEdits もここでは使わない（起動時のローカルは古い可能性があり、
+     mine全優先のリベースは閉鎖中に行われた他端末の編集を巻き戻して全端末へ伝播させるため）。
+     - dirty無し: 従来どおり pull()（挙動完全不変）
+     - dirty有り: ①内容一致→rev同期＋解除 ②serverRev≦localRev→送信 ③serverRev>localRev→競合表示（ユーザー判断） */
+  async startupPull() {
+    if (!this.hasPersistedDirty()) return this.pull();
+    this._dirty = true;   // 前セッションの未送信状態を引き継ぐ（storage/poll の上書き保護も有効化）
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
+    if (this._busy) return false;
+    this._busy = true;
+    this.updateStatusUI('確認中…');
+    try {
+      let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+        j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      }
+      if (!j.ok) throw new Error(this.friendlyErr(j.error));
+      this._busy = false;
+      if (!j.data) {
+        this.log('📤 クラウドが空のため、前回未送信の編集を送信します');
+        return this.push();
+      }
+      let localRaw = '', serverRaw = '';
+      try { localRaw = localStorage.getItem(LS_KEY) || ''; } catch(e) {}
+      try { serverRaw = JSON.stringify(j.data); } catch(e) {}
+      if (localRaw && localRaw === serverRaw) {
+        // 内容一致（離脱時beaconが届いていた場合もここに来る）＝revだけ同期して解除。adopt不要（再描画も不要）
+        this.saveCareRev(Number(j.rev) || 0);
+        this.clearDirty();
+        this.config.lastSync = Date.now();
+        this.save();
+        this.log(`✅ 前回の未送信はクラウドへ反映済みでした（rev ${Number(j.rev) || 0}）`);
+        this.updateStatusUI('同期OK');
+        return true;
+      }
+      if ((Number(j.rev) || 0) <= this.loadCareRev()) {
+        this.log('📤 前回終了時の未送信の編集を送信します');
+        return this.push();   // 成功で解除。万一の競合は既存のリベース経路（mine=現在版＝未送信編集）が処理
+      }
+      // クラウドに他端末の新しい更新があり、この端末にも未送信編集＝自動では決めない（pollIfNeeded の未送信時と同一方針）
+      this.updateStatusUI('競合');
+      this.log('⚠️ クラウドに新しい更新があり、この端末にも前回未送信の変更があります。設定→クラウド同期の「⬇️ クラウドから取得」（クラウド版を採用）か「⬆️ クラウドへ保存」（この端末の内容を送信）を選択してください');
+      return false;
+    } catch(e) {
+      this._busy = false;
+      this.log('❌ 起動時同期の確認に失敗: ' + e.message + '（未送信の編集は端末に保持しています）');
+      this.updateStatusUI('未同期…');
+      return false;
+    }
+  },
+
+  async push(force) {
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return false; }
+    if (this._busy) { return false; }
+    this._busy = true;
+    this.updateStatusUI('保存中…');
+    try {
+      ensureServiceDict_();   // payload 構築前に辞書を自己修復（競合リベースで server 丸取りした後の再push でも辞書を復元）
+      const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
+                                 rev: this.loadCareRev(), data: DB, force: !!force });
+      if (j.ok) {
+        this.saveCareRev(j.rev);
+        this.config.lastSync = Date.now();
+        this.clearDirty();
+        this.save();
+        this.log(`✅ 保存完了（rev ${j.rev}）`);
+        this.updateStatusUI('同期OK');
+        this._busy = false;
+        return true;
+      }
+      if (j.conflict) {
+        // 別端末の新しい更新あり → サーバー版を取得後、自分の編集を再適用して保存（編集を捨てない＝リバウンド防止）
+        this._busy = false;
+        this.updateStatusUI('競合');
+        this.log('⚠️ クラウドに別端末の更新あり → 取得後に自分の編集を再適用して保存します');
+        var mine = JSON.parse(JSON.stringify(DB));   // 編集済みローカルを退避（pullが上書きする前）
+        await this.pull();                            // サーバー版採用＝rev前進・DB=server
+        DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
+        saveLocalOnly();
+        try { recalcAllEventUnits(); } catch(e) {}
+        renderAll();
+        if (!this._rebasing) {                        // 1回だけ再push（再競合の無限ループ防止）
+          this._rebasing = true;
+          try { await this.push(); } finally { this._rebasing = false; }
+        } else {
+          this.markDirty();                           // 2重競合時は再pushせず未送信として保持（次回編集/手動で送信）
+          this.updateStatusUI('未同期…');
+        }
+        return false;
+      }
+      throw new Error(this.friendlyErr(j.error));
+    } catch(e) {
+      this.log('❌ 保存失敗: ' + e.message);
+      this.updateStatusUI('エラー');
+      this._busy = false;
+      return false;
+    }
+  },
+
+  scheduleAutoPush() {
+    this.markDirty(); // 未送信フラグ（永続化＝タブ閉鎖後も次回起動で検知）
+    this.updateStatusUI('未同期…');
+    clearTimeout(this._pushTimer);
+    this._pushTimer = setTimeout(() => { this.push(); }, 2000); // 2秒debounce
+  },
+
+  // 定期ポーリング開始：他端末からの更新を自動検知
+  startPolling() {
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    if (!this.hasTarget()) return;
+    this._pollTimer = setInterval(() => this.pollIfNeeded(), POLL_INTERVAL_MS);
+  },
+  stopPolling() {
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+  },
+  // クラウドの rev を確認し、新しければ自動pull
+  async pollIfNeeded() {
+    if (this._busy) return;
+    if (document.hidden) return; // 非表示タブではスキップ
+    if (!this.hasTarget()) return;
+    try {
+      // まず rev だけを軽量照会（action:'head'）し、変わっていなければ全量 get を送らない
+      //（30秒ごとの全量転送の解消）。head 未対応の旧GASは 'unknown action' を返すが、
+      // それは「接続先が死んだGAS」の証拠ではないため healStaleTarget は発火させず、
+      // 従来どおりの get へフォールバックする（heal 誤発火＝正常な接続先の書換えを防ぐ）。
+      try {
+        const h = await this.gas({ action: 'head', key: 'care_schedule_v2' });
+        if (h && h.ok) {
+          const headRev = Number(h.rev) || 0;
+          if (headRev === this._rejectedRev) return;   // 拒否済みrevは全量取得もしない
+          if (headRev <= this.loadCareRev()) return;   // 変更なし＝ここで終了
+        }
+      } catch (e) { /* head 失敗時は従来の get に委ねる */ }
+      let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+        j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
+      }
+      if (!j.ok) return;
+      const remoteRev = Number(j.rev) || 0;
+      if (remoteRev === this._rejectedRev) return;   // サンプルとして拒否済みのrevは再採用しない
+      if (remoteRev > this.loadCareRev()) {
+        if (this._dirty) {
+          // 未送信の変更がある場合は自動pullしない（ユーザー判断に委ねる）
+          this.updateStatusUI('競合');
+          this.log('⚠️ クラウドに新しい更新あり。ローカルにも未送信の変更があります。手動で取得/保存を選択してください');
+        } else if (j.data) {
+          this.adopt(j.data, j.rev);
+          this.log(`🔄 自動取得完了（${DB.residents.length}名・rev ${j.rev}）`);
+          this.updateStatusUI('同期OK');
+        }
+      }
+    } catch(e) { /* 通信エラーは無視 */ }
+  },
+
+  async testConnection() {
+    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return; }
+    this.log('🔌 接続テスト中…');
+    try {
+      const j = await this.gas({ action: 'ping' });
+      if (!j.ok) throw new Error(j.error || '応答エラー');
+      this.log('✅ 接続OK：統合GASが正常に応答しました' + (j.server ? '（' + j.server + '）' : ''));
+    } catch(e) {
+      this.log('❌ 接続失敗: ' + e.message + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
+    }
+  }
+};
+
+/* 競合時のリベース: サーバー版(server)を土台に、ローカルの編集(mine)をイベントID単位で再適用する。
+   - 利用者をidで照合。mineのみの利用者は追加。
+   - イベントはidで union＝mine優先(ユーザーが触ったイベントはローカルが勝つ)＋server限定イベントは保持。
+   これにより「自分の時間変更」を残しつつ「他端末/他利用者の正当な更新」も取りこぼさない。
+   ※ローカル削除と他端末追加の3-way差は完全には区別不能(削除イベントが復活し得る)＝編集全消失より遥かに良い妥協。 */
+function csRebaseEdits(server, mine) {
+  if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
+  var out = JSON.parse(JSON.stringify(server));
+  var byId = {}, i;
+  for (i = 0; i < out.residents.length; i++) byId[out.residents[i].id] = out.residents[i];
+  for (var m = 0; m < mine.residents.length; m++) {
+    var mr = mine.residents[m];
+    if (!mr || mr.id === undefined) continue;
+    var sr = byId[mr.id];
+    if (!sr) { var add = JSON.parse(JSON.stringify(mr)); out.residents.push(add); byId[mr.id] = add; continue; }
+    var sEvents = Array.isArray(sr.events) ? sr.events : [];
+    var mEvents = Array.isArray(mr.events) ? mr.events : [];
+    var merged = [], seen = {}, k, id;
+    for (k = 0; k < mEvents.length; k++) {            /* mine優先（順序もmine基準） */
+      if (!mEvents[k] || mEvents[k].id === undefined) continue;
+      id = mEvents[k].id; merged.push(JSON.parse(JSON.stringify(mEvents[k]))); seen[id] = true;
+    }
+    for (k = 0; k < sEvents.length; k++) {            /* server限定イベントは保持 */
+      if (!sEvents[k] || sEvents[k].id === undefined) continue;
+      if (!seen[sEvents[k].id]) merged.push(sEvents[k]);
+    }
+    /* 利用者直下スカラー(careLevel/copayRate/welfareEquipUnits/room/targetSchedule/kana/external)は csRebaseEdits では
+       触らない＝server(土台)を温存。フィールド単位の dirty 追跡が無いため、ここで mine を勝たせると
+       「未編集の既存値が他端末の正当更新をサイレントに巻き戻す」last-writer-wins のクロス端末データ破壊に
+       なる。自端末の介護情報編集の保護は saveCareInfo / saveResidentBulk_ が push解決後に自分の patch を
+       id で焼き直す方式(=真の provenance)で担保する。events は id単位マージで従来どおり。 */
+    sr.events = merged;
+  }
+  return out;
+}
+
+// localStorage のみへ保存（クラウド同期トリガなし、pull時の循環防止用）
+function saveLocalOnly() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {}
+  csBackupResidents();
+}
+
+// 入力欄の内容を即座に SYNC.config へ反映＋localStorageへ保存
+function persistSyncInputs() {
+  const url  = ($('#sync-endpoint').value || '').trim();
+  const tokEl = $('#sync-token');
+  const tok  = tokEl ? (tokEl.value || '').trim() : (SYNC.config.token || '');
+  const auto = !!$('#sync-auto').checked;
+  const changed = (SYNC.config.auto !== auto) || (SYNC.config.endpoint !== url) || (SYNC.config.token !== tok);
+  SYNC.config.endpoint = url;
+  SYNC.config.token    = tok;
+  SYNC.config.auto     = auto;
+  SYNC.save();
+  // 3アプリ共通キーへ反映＝同一オリジンのワースケ/シフトも同じ接続先を使う
+  if (url) {
+    try {
+      localStorage.setItem('su_sync_common', JSON.stringify(
+        { endpoint: url, token: tok || '', updatedAt: Date.now() }));
+    } catch(e) {}
+  }
+  // ポーリング状態を更新（ワースケ設定共有時も対象）
+  if (changed) {
+    if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
+  }
+  // 入力中のフィードバック表示
+  const ind = $('#sync-save-indicator');
+  if (ind) {
+    ind.textContent = url ? '💾 自動保存済み' : '（未入力）';
+    ind.style.color = url ? '#2e7d32' : 'var(--g6)';
+  }
+}
+// debounce 用のタイマー
+let _syncInputTimer = null;
+function onSyncInputChange() {
+  clearTimeout(_syncInputTimer);
+  _syncInputTimer = setTimeout(persistSyncInputs, 200);
+}
+
+function openSyncModal() {
+  $('#sync-endpoint').value = SYNC.config.endpoint || '';
+  if ($('#sync-token')) $('#sync-token').value = SYNC.config.token || '';
+  $('#sync-auto').checked   = !!SYNC.config.auto;
+  $('#sync-log').textContent = SYNC.config.lastSync
+    ? `最終同期: ${new Date(SYNC.config.lastSync).toLocaleString('ja-JP')}`
+    : '未同期';
+  const ind = $('#sync-save-indicator');
+  if (ind) {
+    ind.textContent = SYNC.config.endpoint ? '💾 保存済み' : '（未入力）';
+    ind.style.color = SYNC.config.endpoint ? '#2e7d32' : 'var(--g6)';
+  }
+  // この端末の localStorage 使用量（全キーの (key.length+value.length)*2 = UTF-16 概算）
+  const usageEl = $('#sync-usage');
+  if (usageEl) {
+    try {
+      let bytes = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k === null) continue;
+        const v = localStorage.getItem(k) || '';
+        bytes += (k.length + v.length) * 2;
+      }
+      usageEl.textContent = 'この端末の使用量: 約' + Math.round(bytes / 1024) + ' KB';
+    } catch (e) { usageEl.textContent = ''; }
+  }
+  $('#mk-sync').classList.add('open');
+}
+function closeSyncModal() {
+  // 閉じる前に必ず保存
+  persistSyncInputs();
+  $('#mk-sync').classList.remove('open');
+}
+function saveSyncConfig() {
+  const url = ($('#sync-endpoint').value || '').trim();
+  const err = url ? SYNC.validateEndpoint(url) : null;
+  if (err) {
+    SYNC.log('❌ ' + err);
+    showToast('URL形式が正しくありません');
+    return;
+  }
+  persistSyncInputs();
+  SYNC.log('✅ 設定を保存しました（URL: ' + (url ? url.substring(0, 60) + '…' : 'なし') + '）');
+  showToast('同期設定を保存しました');
+}
+function syncTestConnection() {
+  persistSyncInputs();
+  SYNC.testConnection();
+}
+function syncPullNow() {
+  persistSyncInputs();
+  SYNC.pull();
+}
+function syncPushNow() {
+  persistSyncInputs();
+  SYNC.push();
+}
+function syncForcePush() {
+  if (!confirm('クラウドの最新更新を無視して、このローカルのデータで上書きします。よろしいですか？')) return;
+  persistSyncInputs();
+  SYNC.push(true); // force=true で競合検知をスキップ
+}
+function copyGasCode() {
+  const code = $('#gas-code').textContent;
+  navigator.clipboard.writeText(code).then(
+    () => showToast('Apps Script コードをコピーしました'),
+    () => showToast('コピーに失敗しました。手動で選択してください')
+  );
+}
+function currentResident() {
+  return DB.residents.find(r => r.id === DB.currentResidentId) || null;
+}
+
+/* ============================================================
+   利用者マスタ連携（共通情報の自動コピー / 週間計画の対象選択 / 端末ガード）
+   - すべて no-op 安全：連携キー（su_residents_common / su_device_role）が
+     無ければ従来挙動を一切変えない。既存の計画(events)は決して削除しない。
+   ============================================================ */
+var SU_COMMON_KEY = 'su_residents_common';
+var SU_DEVICE_KEY = 'su_device_role';
+var csShowNonTargets = false;
+function suNormName(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+/* 利用者の表示順: ①施設内(external!==true)を先・外部を後 → ②各群をふりがな(kana)五十音 → ③かな未設定は氏名で五十音。
+ * プルダウン/一覧/一括編集で共通利用。localeCompare('ja')で日本語読み順。 */
+function csResidentSort(a, b){
+  const ea = (a && a.external) ? 1 : 0, eb = (b && b.external) ? 1 : 0;
+  if (ea !== eb) return ea - eb;
+  const ka = String((a && a.kana) || '').trim(), kb = String((b && b.kana) || '').trim();
+  if (ka || kb) return ka.localeCompare(kb, 'ja') || suNormName(a && a.name).localeCompare(suNormName(b && b.name), 'ja');
+  return suNormName(a && a.name).localeCompare(suNormName(b && b.name), 'ja');
+}
+/* 週間計画の対象者か（targetSchedule===false のみ対象外。未設定/true は対象＝no-op安全） */
+function isScheduleTarget(r){ return !r || r.targetSchedule !== false; }
+/* 表示対象の利用者（対象者＋現在選択中。トグルONで全員） */
+function csVisibleResidents(){
+  if (csShowNonTargets) return DB.residents.slice();
+  return DB.residents.filter(function(r){
+    if (r && r.movedOut && r.id !== DB.currentResidentId) return false; /* 退去者は非表示 */
+    return isScheduleTarget(r) || (r && r.id === DB.currentResidentId);
+  });
+}
+/* 利用者マスタの共通情報を取り込み（週間計画アプリ用。master を正とする） */
+function mergeCommonSchedule(){
+  var raw; try{ raw = localStorage.getItem(SU_COMMON_KEY); }catch(e){ return false; }
+  if (!raw) return false;
+  var data; try{ data = JSON.parse(raw); }catch(e){ return false; }
+  var list = (data && Array.isArray(data.residents)) ? data.residents : null;
+  if (!list || !list.length) return false;
+  if (!Array.isArray(DB.residents)) DB.residents = [];
+  var byMid = {}, byName = {};
+  DB.residents.forEach(function(r){
+    if (!r || typeof r !== 'object') return;
+    if (r.masterId != null) byMid[String(r.masterId)] = r;
+    var nm = suNormName(r.name); if (nm && !byName[nm]) byName[nm] = r;
+  });
+  var changed = 0;
+  list.forEach(function(c){
+    if (!c || c.masterId == null || c.active === false) return;
+    var tS = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('schedule') >= 0) : undefined;
+    var tgt = byMid[String(c.masterId)];
+    if (!tgt){ var nm = suNormName(c.name); if (nm) tgt = byName[nm]; }
+    if (tgt){
+      if (tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+      if (c.careLevel && !tgt.careLevel){ tgt.careLevel = c.careLevel; changed++; }   /* 空欄補完のみ＝アプリ側の介護度編集をマスタ由来su_residents_commonで巻き戻さない(保存バグ副因) */
+      if (c.room && tgt.room !== c.room){ tgt.room = c.room; changed++; }
+      if (c.kana && !tgt.kana){ tgt.kana = c.kana; changed++; }   /* ふりがなは空欄補完のみ＝アプリ側の一括編集を巻き戻さない(careLevel同型・空欄のみ補完/master常勝のroomとは別) */
+      if (tS !== undefined && tgt.targetSchedule === undefined){ tgt.targetSchedule = tS; changed++; }   /* 空(未設定)のみ補完＝一括編集の週間計画対象をマスタ由来su_residents_commonで巻き戻さない */
+    } else {
+      if (tS === false) return; // 週間計画 対象外の master 利用者は取り込まない
+      DB.residents.push({
+        id: ruid(), name: String(c.name || ''), events: [],
+        careLevel: c.careLevel || '', copayRate: 1, welfareEquipUnits: 0,
+        room: c.room || '', masterId: c.masterId, kana: c.kana || '', external: false,   /* externalはマスタ非配信＝既定false(施設内)。週間計画の一括編集で管理 */
+        targetSchedule: (tS === undefined ? true : tS), _fromMaster: true
+      });
+      changed++;
+    }
+  });
+  // saveDB() は自動pushを誘発するため、取り込みは saveLocalOnly()（ローカルのみ）で永続化
+  if (changed){ try{ saveLocalOnly(); }catch(e){} }
+  return changed > 0;
+}
+/* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動ブロック） */
+function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
+function applyScheduleDeviceGuard(){
+  var blocked = (suGetDeviceRole() === 'field');
+  var ov = document.getElementById('suDeviceBlock');
+  if (ov) ov.style.display = blocked ? 'flex' : 'none';
+  return blocked;
+}
+function onCsShowNonTargetChange(){
+  var t = document.getElementById('cs-show-nontarget');
+  csShowNonTargets = !!(t && t.checked);
+  try{ populateResidentSelect(); renderResidentList(); }catch(e){}
+}
+
+// ── Resident management ──
+function populateResidentSelect() {
+  const sel = $('#resident-select');
+  const cur = DB.currentResidentId;
+  // 施設内→外部・各群ふりがな五十音でソート。外部の区別は並び順(外部は後方に集約)＋利用者一覧の（外）表示で行う。
+  // プルダウン選択値は週ボードA4印刷のヘッダに印字されるため、印刷体裁を変えないよう option へ（外部）サフィックスは付けない。
+  sel.innerHTML = '<option value="">-- 利用者を選択 --</option>' +
+    csVisibleResidents().slice().sort(csResidentSort).map(r =>
+      `<option value="${escHtml(r.id)}" ${r.id === cur ? 'selected' : ''}>${escHtml(r.name)}</option>`
+    ).join('');
+}
+function onResidentChange() {
+  DB.currentResidentId = $('#resident-select').value || null;
+  saveDB(); renderAll();
+}
+function openResidentModal() {
+  renderResidentList();
+  $('#mk-resident').classList.add('open');
+  setTimeout(() => $('#f-new-res').focus(), 50);
+}
+function closeResidentModal() {
+  $('#mk-resident').classList.remove('open');
+  $('#f-new-res').value = '';
+  if ($('#f-new-kana')) $('#f-new-kana').value = '';
+  if ($('#f-new-external')) $('#f-new-external').checked = false;
+}
+function renderResidentList() {
+  const ul = $('#res-list');
+  const vis = csVisibleResidents();
+  if (!vis.length) {
+    ul.innerHTML = '<li style="font-size:13px;color:var(--g6);padding:8px 0">'
+      + (DB.residents.length ? '対象の利用者がいません（「対象外も表示」で全員表示）' : '利用者が登録されていません') + '</li>';
+    return;
+  }
+  ul.innerHTML = vis.slice().sort(csResidentSort).map(r =>
+    `<li class="res-item ${r.id === DB.currentResidentId ? 'active' : ''}">
+      <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
+      ${r.movedOut
+        ? `<button class="del-res" style="color:var(--pri)" onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
+        : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
+           <button class="del-res" style="color:var(--g7)" onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>`}
+      <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">✕</button>
+    </li>`
+  ).join('');
+}
+function addResident() {
+  const name = $('#f-new-res').value.trim();
+  if (!name) return;
+  if (DB.residents.some(r => r.name === name)) { showToast('同名の利用者が既に存在します'); return; }
+  const res = {
+    id: ruid(), name, events: [],
+    careLevel: '', copayRate: 1, welfareEquipUnits: 0,
+    kana: ($('#f-new-kana') ? $('#f-new-kana').value.trim() : ''),   /* ふりがな(五十音ソート用・任意) */
+    external: !!($('#f-new-external') && $('#f-new-external').checked),   /* 外部利用者フラグ(既定=施設内false) */
+  };
+  DB.residents.push(res);
+  if (!DB.currentResidentId) DB.currentResidentId = res.id;
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  $('#f-new-res').value = '';
+  showToast(`「${name}」を追加しました`);
+}
+
+/* ── 予定の貼り付け一括登録（夜勤訪問など多数の予定をまとめて登録） ── */
+const BULK_DOW = { '月':0, '火':1, '水':2, '木':3, '金':4, '土':5, '日':6 };
+function openBulkImport()  { $('#f-bulk-result').textContent = ''; $('#mk-bulk').classList.add('open'); setTimeout(() => $('#f-bulk').focus(), 50); }
+function closeBulkImport() { $('#mk-bulk').classList.remove('open'); }
+function normTime_(s) {
+  const m = String(s || '').trim().replace('：', ':').match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+  if (h > 23 || mi > 59) return null;
+  return (h < 10 ? '0' + h : '' + h) + ':' + (mi < 10 ? '0' + mi : '' + mi);
+}
+function normCat_(s) {   /* 半角数字→全角でカテゴリ照合（身体01→身体０１） */
+  s = String(s || '').trim();
+  if (!s) return '';
+  // 総合事業コードは数字全角化で破損するためそのまま返す（コード直指定・サービス名指定の両対応）
+  if (SOGO_VISIT_CODES[s]) return s;
+  for (const k in SOGO_VISIT_CODES) { if (SOGO_VISIT_CODES[k].name === s) return k; }
+  const z = '０１２３４５６７８９';
+  let out = '';
+  for (const ch of s) { const i = '0123456789'.indexOf(ch); out += (i >= 0 ? z[i] : ch); }
+  return out;
+}
+function findOrCreateResident_(name) {
+  const norm = n => String(n || '').replace(/[\s　]/g, '');
+  let r = DB.residents.find(x => x.name === name) || DB.residents.find(x => norm(x.name) === norm(name));
+  if (r) return { res: r, created: false };
+  r = { id: ruid(), name, events: [], careLevel: '', copayRate: 1, welfareEquipUnits: 0, kana: '', external: false };
+  DB.residents.push(r);
+  return { res: r, created: true };
+}
+function applyBulkImport() {
+  const lines = $('#f-bulk').value.split('\n').map(l => l.trim()).filter(l => l.length);
+  if (!lines.length) { $('#f-bulk-result').textContent = '貼り付け内容がありません'; return; }
+  let added = 0, dup = 0, createdRes = 0; const errs = [];
+  pushUndo();
+  lines.forEach((line, idx) => {
+    /* 区切りはタブ優先→カンマ→2つ以上の空白。貼り付け元(Excel/メモ)を問わず取り込めるように */
+    let cols = line.split('\t');
+    if (cols.length < 5) cols = line.split(/[,，、]/);
+    if (cols.length < 5) cols = line.split(/[\s　]{2,}/);
+    cols = cols.map(c => c.trim());
+    if (cols.length < 5) { errs.push(`行${idx + 1}: 列が不足（最低: 利用者/曜日/区分/開始/終了）`); return; }
+    const [name, dowS, kubun, startS, endS, catS, detailS] = cols;
+    const dKey = (dowS || '').replace('曜日', '').charAt(0);
+    if (BULK_DOW[dKey] === undefined) { errs.push(`行${idx + 1}: 曜日不明「${dowS}」`); return; }
+    const dow = BULK_DOW[dKey];
+    const stype = (kubun.indexOf('通所') >= 0 || kubun.indexOf('デイ') >= 0) ? 'daycare' : 'visit';
+    const st = normTime_(startS), en = normTime_(endS);
+    if (!st || !en) { errs.push(`行${idx + 1}: 時刻が不正「${startS}-${endS}」`); return; }
+    if (!name) { errs.push(`行${idx + 1}: 利用者名が空`); return; }
+    const { res, created } = findOrCreateResident_(name);
+    if (created) createdRes++;
+    if ((res.events || []).some(e => e.dayOfWeek === dow && e.serviceType === stype && e.startTime === st)) { dup++; return; }
+    res.events.push({
+      id: uid(), dayOfWeek: dow, serviceType: stype,
+      category: stype === 'visit' ? normCat_(catS || '') : '',
+      startTime: st, endTime: en, detail: (detailS || '').trim(), notes: '', units: 0, bathing: false
+    });
+    added++;
+  });
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  $('#f-bulk-result').textContent =
+    `✓ 登録 ${added}件 / 重複スキップ ${dup}件 / 利用者を新規作成 ${createdRes}名` +
+    (errs.length ? '\n⚠ ' + errs.join('\n') : '');
+  showToast(`一括登録: ${added}件を追加しました`);
+}
+function removeResident(id) {
+  const res = DB.residents.find(r => r.id === id);
+  if (!res) return;
+  if (!confirm(`「${res.name}」を削除しますか？\n（この利用者の計画もすべて削除されます）`)) return;
+  DB.residents = DB.residents.filter(r => r.id !== id);
+  if (DB.currentResidentId === id) DB.currentResidentId = (DB.residents[0] || {}).id || null;
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  showToast('削除しました');
+}
+function moveOutResident(id) {
+  const res = DB.residents.find(r => r.id === id);
+  if (!res) return;
+  if (!confirm(`「${res.name}」を退去にしますか？\n（一覧から非表示になります。計画データは保持され、「退去者・対象外も表示」から復帰できます）`)) return;
+  res.movedOut = true;
+  if (DB.currentResidentId === id) {
+    const next = DB.residents.find(r => !r.movedOut && isScheduleTarget(r));
+    DB.currentResidentId = next ? next.id : null;
+  }
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  showToast(`「${res.name}」を退去にしました`);
+}
+function toggleHospitalized(id) {
+  const res = DB.residents.find(r => r.id === id);
+  if (!res) return;
+  res.hospitalized = !res.hospitalized;
+  saveDB(); renderResidentList(); renderAll();
+  showToast(res.hospitalized
+    ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）`
+    : `「${res.name}」を退院にしました`);
+}
+function restoreResident(id) {
+  const res = DB.residents.find(r => r.id === id);
+  if (!res) return;
+  res.movedOut = false;
+  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  showToast(`「${res.name}」を復帰しました`);
+}
+
+// ── Calendar render ──
+function renderAll() {
+  const res = currentResident();
+  const noRes = $('#no-resident'), calWrap = $('#cal-wrap'), fab = $('#fab');
+  if (!DB.residents.length) {
+    noRes.style.display = 'flex'; calWrap.style.display = 'none'; fab.style.display = 'none'; return;
+  }
+  noRes.style.display = 'none'; calWrap.style.display = 'flex';
+  fab.style.display = res ? 'flex' : 'none';
+  const coverage = res ? getEventCoverage(res.events || [], res) : null;
+  renderColumnHeaders(res, coverage);
+  renderHourGrid();
+  renderSurchargeBands();
+  renderDayColumns(res, coverage);
+  renderSummaryBar(res);
+}
+
+function renderSummaryBar(res) {
+  if (!res) return;
+  const careLevel     = res.careLevel || '';
+  const limit         = CARE_LIMITS[careLevel] || null;
+  const unitPrice     = Number((DB.office && DB.office.unitPrice)) || 10.27;
+  const copayRate     = Number(res.copayRate)      || 1;
+  // 福祉用具は単位ベースで取り扱う（月額単位数）
+  const welfareUnits  = Math.max(0, Number(res.welfareEquipUnits) || 0);
+
+  // 週合計は要介護／通所のみ（総合事業＝月額包括は週次から除外・曜日下部の日計と同基準）
+  const weekUnits = kaigoWeekUnits_(res.events, res);
+  // 月合計＝週×4.3（要介護／通所）＋ 総合事業の月額（コード単位で月1回）
+  const monthUnits = Math.round(weekUnits * 4.3) + sogoMonthlyUnits_(res.events);
+  // 福祉用具を含めた月総合計（限度額・自己負担の算定基礎）
+  const totalUnits = monthUnits + welfareUnits;
+  const copayAmt   = (limit || totalUnits > 0)
+    ? Math.round(totalUnits * unitPrice * copayRate / 10)
+    : null;
+  // 使用率：福祉用具を含めた合計に対する % を表示（小数点第一位まで）
+  const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
+
+  $('#sum-level').textContent   = careLevel || '—';
+  $('#sum-limit').textContent   = limit ? limit.toLocaleString() : '—';
+  $('#sum-week').textContent    = weekUnits.toLocaleString();
+  $('#sum-month').textContent   = monthUnits.toLocaleString();
+  $('#sum-welfare').textContent = welfareUnits.toLocaleString();
+  $('#sum-total').textContent   = totalUnits.toLocaleString();
+  $('#sum-copay').textContent   = copayAmt !== null ? copayAmt.toLocaleString() + '円' : '—円';
+
+  if (pct !== null) {
+    const isOver = pct > 100;
+    const color  = pct >= 100 ? '#c62828' : pct >= 80 ? '#f57c00' : '#2e7d32';
+    const pctEl  = $('#sum-pct');
+    const fillEl = $('#sum-pct-fill');
+    pctEl.textContent = pct.toFixed(1) + '%';
+    pctEl.style.color = color;
+    pctEl.classList.toggle('over', isOver);
+    fillEl.style.width      = Math.min(100, pct) + '%';
+    fillEl.style.background = color;
+    fillEl.classList.toggle('over', isOver);
+  } else {
+    $('#sum-pct').textContent = '—%';
+    $('#sum-pct').style.color = 'var(--g7)';
+    $('#sum-pct').classList.remove('over');
+    $('#sum-pct-fill').style.width = '0%';
+    $('#sum-pct-fill').classList.remove('over');
+  }
+}
+
+function renderColumnHeaders(res, coverage) {
+  $('#col-header').innerHTML = DAYS_JA.map((d, i) => {
+    let unitsHtml = '';
+    if (res && res.events) {
+      const dayEvents = res.events.filter(ev => ev.dayOfWeek === i);
+      if (dayEvents.length > 0) {
+        // 日合計は減算（同一建物減算）と処遇改善加算を含まない単位数（総合事業＝月額は週次日計から除外）
+        const dayTotal = dayEvents.reduce((s, ev) =>
+          SOGO_VISIT_CODES[ev.category] ? s : s + sumDisplayUnits(getUnitBreakdown(ev, res)), 0);
+        // 限度額超過判定は coverage を利用
+        const isOver = !!(coverage && dayEvents.some(ev => coverage.get(ev.id) === 0));
+        if (dayTotal > 0 || isOver) {
+          const overClass = isOver ? ' over' : '';
+          unitsHtml = `<span class="day-units${overClass}">${dayTotal}単位</span>`;
+        }
+      }
+    }
+    return `<div class="day-cell ${i===5?'sat':i===6?'sun':''}">${d}${unitsHtml}</div>`;
+  }).join('');
+}
+
+function renderHourGrid() {
+  const body = $('#grid-body');
+  $$('.hour-line, .half-line, .surcharge-bg-band', body).forEach(el => el.remove());
+
+  // 印刷圧縮時のみ grid-body の高さを写像後の総高へ上書き（画面は CSS のまま＝回帰なし）
+  body.style.height = PRINT_MAP ? (yOf(TOTAL_HRS * 60) + 'px') : '';
+
+  // 時間帯加算のグリッド背景バンド
+  const dayCol = $('#day-columns');
+  for (const zone of TIME_SURCHARGE_ZONES) {
+    const band = document.createElement('div');
+    band.className = 'surcharge-bg-band';
+    band.style.top    = yOf(zone.startH * 60) + 'px';
+    band.style.height = (yOf(zone.endH * 60) - yOf(zone.startH * 60)) + 'px';
+    band.style.background = zone.bg;
+    body.insertBefore(band, dayCol);
+  }
+
+  for (let i = 0; i <= TOTAL_HRS; i++) {
+    if (inCompressedMin_(i * 60)) continue;   // 圧縮区間内部の時刻線は潰れるので省く
+    const line = document.createElement('div');
+    line.className = 'hour-line';
+    line.style.top = yOf(i * 60) + 'px';
+    body.insertBefore(line, dayCol);
+    if (i < TOTAL_HRS && !inCompressedMin_(i * 60 + 30)) {
+      const half = document.createElement('div');
+      half.className = 'half-line';
+      half.style.top = yOf(i * 60 + 30) + 'px';
+      body.insertBefore(half, dayCol);
+    }
+  }
+  const inner = $('#time-labels-inner');
+  inner.innerHTML = '';
+  inner.style.height = PRINT_MAP ? (yOf(TOTAL_HRS * 60) + 'px') : '';
+  for (let i = 0; i <= TOTAL_HRS; i++) {
+    if (inCompressedMin_(i * 60)) continue;   // 圧縮区間内部のラベルは省く
+    const lbl = document.createElement('div');
+    lbl.className = 'time-label';
+    lbl.style.top = yOf(i * 60) + 'px';
+    lbl.textContent = `${pad2(i)}:00`;
+    inner.appendChild(lbl);
+  }
+}
+
+function renderSurchargeBands() {
+  const inner = $('#surcharge-inner');
+  inner.innerHTML = '';
+  inner.style.height = yOf(TOTAL_HRS * 60) + 'px';
+  for (const zone of TIME_SURCHARGE_ZONES) {
+    const band = document.createElement('div');
+    band.className = 'surcharge-band';
+    band.style.top        = yOf(zone.startH * 60) + 'px';
+    band.style.height     = (yOf(zone.endH * 60) - yOf(zone.startH * 60)) + 'px';
+    band.style.background = zone.bg;
+    band.style.borderTop  = `1px solid ${zone.color}40`;
+    band.style.borderBottom = `1px solid ${zone.color}40`;
+    const lbl = document.createElement('span');
+    lbl.className = 'surcharge-band-label';
+    lbl.style.color = zone.color;
+    lbl.textContent = `+${zone.pct}%`;
+    band.appendChild(lbl);
+    inner.appendChild(band);
+  }
+}
+
+function renderDayColumns(res, coverage) {
+  const container = $('#day-columns');
+  container.innerHTML = '';
+  for (let dow = 0; dow < 7; dow++) {
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    col.dataset.dow = dow;
+    if (res) {
+      renderDayEvents(res.events.filter(ev => ev.dayOfWeek === dow), col, res, coverage);
+      const d = dow;
+      col.addEventListener('click', function(e) {
+        if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮が残留していたら復元のみ（誤時刻での新規作成を防ぐ）
+        if (e.target.closest('.event-block')) return;
+        if (wasDragging) return;
+        const rect = col.getBoundingClientRect();
+        const relY = e.clientY - rect.top;
+        const totalMins = Math.round((relY / HOUR_PX) * 60 / 30) * 30;
+        openAddModal(d, minsToTime(totalMins));
+      });
+    }
+    container.appendChild(col);
+  }
+}
+
+function renderDayEvents(events, colEl, res, coverage) {
+  if (!events.length) return;
+  const layout = computeOverlapLayout(events);
+  for (const ev of events) {
+    const top = timeToY(ev.startTime);
+    const heightPx = Math.max(8, durationToPx(ev.startTime, ev.endTime));
+    const { col, total } = layout.get(ev.id) || { col: 0, total: 1 };
+    const colorKey = ev.serviceType === 'daycare' ? 'daycare' : (ev.category || '身体１');
+    const c = COLORS[colorKey] || COLORS['身体１'];
+
+    // 限度額カバー量（表示合計と同じ基準：処遇改善加算＋同一建物減算 を除外）
+    const coveredUnits = coverage ? (function(){ const _v = coverage.get(ev.id); return _v === undefined ? null : _v; })() : null;
+    const isOverLimit  = coveredUnits !== null && coveredUnits === 0;
+    const evDispTotal  = res ? sumDisplayUnits(getUnitBreakdown(ev, res)) : 0;
+    const isPartial    = coveredUnits !== null && coveredUnits > 0 && coveredUnits < evDispTotal;
+
+    const block = document.createElement('div');
+    // 限度額超過でも支援は常に通常表示(グレーアウト解除)。超過の把握は上部の使用率%バーで行う(精査用に維持)。
+    block.className = 'event-block';
+    // 印刷圧縮時のデイは箱が短縮されるため、下辺に波線(省略)を付す
+    if (PRINT_MAP && ev.serviceType === 'daycare' && PRINT_SEGS && PRINT_SEGS.some(function (s) { return s.kind === 'daycare'; })) {
+      block.classList.add('dc-short');
+    }
+    block.dataset.id = ev.id;
+    block.style.cssText = `
+      top:${top}px; height:${heightPx}px;
+      left:calc(${col * 100 / total}% + 2px);
+      right:calc(${(total - col - 1) * 100 / total}% + 2px);
+      color:${c.text};
+      --ev-bg:${c.bg}; --ev-border:${c.border};
+    `;
+
+    // 内訳表示（処遇改善加算は限度額の枠外なので各支援の枠内表示から除外）
+    const breakdown = res ? filterLimitRows(getUnitBreakdown(ev, res)) : [];
+    const catLabel  = ev.serviceType === 'daycare' ? '通所介護' : (catDisplayLabel_(ev.category) || '訪問介護');
+
+    let innerHtml = `<div class="ev-text">`;
+
+    if (breakdown.length > 0) {
+      // 限度額超過・一部超過に関わらず、基本単位＋加算は必ず表示する
+      const visibleRows = breakdown.filter(r => !r.hideInDisplay);
+      const main = visibleRows[0] || breakdown[0];
+      innerHtml += `<div class="ev-row ev-main"><span class="ev-cat-label">${escHtml(main.label)}</span><span class="ev-unit-num">${main.units}</span></div>`;
+      // 加算行を常に表示（枠外にはみ出ても表示する仕様）
+      for (let i = 1; i < visibleRows.length; i++) {
+        const r = visibleRows[i];
+        innerHtml += `<div class="ev-row ev-sub"><span class="ev-cat-label">${escHtml(r.label)}</span><span class="ev-unit-num">${r.units > 0 ? '+' : ''}${r.units}</span></div>`;
+      }
+      if (visibleRows.length >= 2) {
+        const total = visibleRows.reduce((s, r) => s + r.units, 0);
+        innerHtml += `<div class="ev-row ev-total"><span class="ev-cat-label">計</span><span class="ev-unit-num">${total}</span></div>`;
+      }
+      // 限度額の個別バッジは表示しない(グレーアウト解除に合わせ通常表示)。超過把握は上部の使用率%バーで行う。
+    } else {
+      // breakdown が空の異常系（res未設定など）
+      const units = Number(ev.units) || 0;
+      innerHtml += `<div class="ev-row ev-main"><span class="ev-cat-label">${escHtml(catLabel)}</span>${units ? `<span class="ev-unit-num">${units}</span>` : ''}</div>`;
+    }
+
+    // 時刻・詳細を常に表示（枠外にはみ出ても表示する仕様）
+    innerHtml += `<div class="ev-time">${escHtml(ev.startTime)}〜${escHtml(ev.endTime)}</div>`;
+    if (ev.detail) innerHtml += `<div class="ev-detail">${escHtml(ev.detail)}</div>`;
+    innerHtml += `</div><div class="resize-handle" data-action="resize"></div>`;
+
+    block.innerHTML = innerHtml;
+
+    if (ev.notes) block.title = ev.notes;
+
+    // Click → open edit (guarded against drag)
+    block.addEventListener('click', e => {
+      if (wasDragging) return;
+      e.stopPropagation();
+      openEditModal(ev.id);
+    });
+
+    // Mouse drag
+    block.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (e.target.dataset.action === 'resize') {
+        e.stopPropagation();
+        startResize(e, ev, block);
+      } else {
+        startMove(e, ev, block);
+      }
+    });
+
+    // Right-click → context menu
+    block.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      showCtxMenu(ev, e.clientX, e.clientY);
+    });
+
+    // Touch drag
+    block.addEventListener('touchstart', e => {
+      if (e.touches && e.touches.length > 1) return;   /* 2本指=ピンチズーム：ドラッグを開始しない(要件1) */
+      if (e.target.dataset.action === 'resize') {
+        e.stopPropagation();
+        startResize(touchEv(e), ev, block);
+      } else {
+        startMove(touchEv(e), ev, block);
+      }
+    }, { passive: false });
+
+    colEl.appendChild(block);
+  }
+}
+
+// ── Overlap layout ──
+function computeOverlapLayout(events) {
+  const sorted = [...events].sort((a,b) => a.startTime.localeCompare(b.startTime));
+  const clusters = [];
+  for (const ev of sorted) {
+    let placed = false;
+    for (const cluster of clusters) {
+      if (cluster.some(c => overlaps(c, ev))) { cluster.push(ev); placed = true; break; }
+    }
+    if (!placed) clusters.push([ev]);
+  }
+  const layout = new Map();
+  for (const cluster of clusters) {
+    const colEnds = [];
+    for (const ev of cluster) {
+      let col = -1;
+      for (let i = 0; i < colEnds.length; i++) {
+        if (colEnds[i] <= ev.startTime) { col = i; break; }
+      }
+      if (col === -1) { col = colEnds.length; colEnds.push(''); }
+      colEnds[col] = ev.endTime;
+      layout.set(ev.id, { col, total: 0 });
+    }
+    const total = colEnds.length;
+    for (const ev of cluster) layout.get(ev.id).total = total;
+  }
+  return layout;
+}
+
+// ── Scroll sync ──
+function initScrollSync() {
+  const gs = $('#grid-scroll');
+  const inner = $('#time-labels-inner');
+  const sInner = $('#surcharge-inner');
+  gs.addEventListener('scroll', () => {
+    const t = gs.scrollTop;
+    inner.style.transform  = `translateY(-${t}px)`;
+    sInner.style.transform = `translateY(-${t}px)`;
+  });
+}
+
+// ── Drag & Drop ──
+let drag = null;
+let wasDragging = false;
+
+function touchEv(e) {
+  const t = e.touches[0] || e.changedTouches[0];
+  return { clientX: t.clientX, clientY: t.clientY,
+    preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() };
+}
+
+function startMove(e, ev, blockEl) {
+  if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮の残留時は移動させない（誤時刻保存の防止）
+  if (e && e.preventDefault) e.preventDefault();
+  const blockRect = blockEl.getBoundingClientRect();
+  drag = {
+    type: 'move',
+    ev,
+    blockEl,
+    ghost: null,
+    startX: e.clientX, startY: e.clientY,
+    offsetX: e.clientX - blockRect.left,
+    offsetY: e.clientY - blockRect.top,
+    moved: false,
+    duration: timeDiffMins(ev.startTime, ev.endTime),
+    targetDow: ev.dayOfWeek,
+    targetStart: ev.startTime,
+    targetEnd: ev.endTime,
+  };
+}
+
+function startResize(e, ev, blockEl) {
+  if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮の残留時はリサイズさせない（誤時刻保存の防止）
+  if (e && e.preventDefault) e.preventDefault();
+  drag = {
+    type: 'resize',
+    ev,
+    blockEl,
+    startY: e.clientY,
+    origStartMins: timeToMins(ev.startTime),
+    origEndMins:   timeToMins(ev.endTime),
+    origHeight: blockEl.offsetHeight,
+    targetEnd: ev.endTime,
+  };
+  document.body.classList.add('is-dragging-resize');
+}
+
+function onDragMove(cx, cy) {
+  if (!drag) return;
+
+  if (drag.type === 'move') {
+    const dx = Math.abs(cx - drag.startX), dy = Math.abs(cy - drag.startY);
+
+    // Activate drag after 5px threshold
+    if (!drag.moved && (dx > 5 || dy > 5)) {
+      drag.moved = true;
+      drag.blockEl.classList.add('is-dragging');
+      document.body.classList.add('is-dragging-move');
+
+      // Create ghost
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.style.cssText = `
+        width:${drag.blockEl.offsetWidth}px;
+        height:${drag.blockEl.offsetHeight}px;
+        color:${drag.blockEl.style.color};
+        --ev-bg:${drag.blockEl.style.getPropertyValue('--ev-bg')};
+        --ev-border:${drag.blockEl.style.getPropertyValue('--ev-border')};
+      `;
+      ghost.innerHTML = drag.blockEl.querySelector('.ev-text').outerHTML;
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+    }
+
+    if (!drag.moved) return;
+
+    // Position ghost
+    drag.ghost.style.left = (cx - drag.offsetX) + 'px';
+    drag.ghost.style.top  = (cy - drag.offsetY) + 'px';
+
+    // Calculate target column
+    const dayColsEl = $('#day-columns');
+    const dcRect = dayColsEl.getBoundingClientRect();
+    const colW = dcRect.width / 7;
+    drag.targetDow = Math.max(0, Math.min(6, Math.floor((cx - dcRect.left) / colW)));
+
+    // Calculate target time
+    const gs = $('#grid-scroll');
+    const gsRect = gs.getBoundingClientRect();
+    const relY = (cy - gsRect.top) + gs.scrollTop - drag.offsetY;
+    const snapped = Math.max(0, Math.round((relY / HOUR_PX) * 60 / 5) * 5);
+    const maxStart = 24 * 60 - drag.duration;
+    drag.targetStart = minsToTime(Math.min(snapped, maxStart));
+    drag.targetEnd   = addMins(drag.targetStart, drag.duration);
+
+    // Update ghost time label
+    const timeEl = drag.ghost.querySelector('.ev-time');
+    if (timeEl) timeEl.textContent = `${drag.targetStart}〜${drag.targetEnd}`;
+
+    // Highlight target column
+    $$('.day-col').forEach((c, i) => c.classList.toggle('drop-target', i === drag.targetDow));
+  }
+
+  if (drag.type === 'resize') {
+    const dy = cy - drag.startY;
+    const deltaMins = Math.round((dy / HOUR_PX) * 60);
+    const newEndMins = Math.max(drag.origStartMins + 1, Math.min(24 * 60, drag.origEndMins + deltaMins));
+    drag.targetEnd = minsToTime(newEndMins);
+
+    const newH = Math.max(8, (newEndMins - drag.origStartMins) * (HOUR_PX / 60));
+    drag.blockEl.style.height = newH + 'px';
+
+    const timeEl = drag.blockEl.querySelector('.ev-time');
+    if (timeEl) timeEl.textContent = `${drag.ev.startTime}〜${drag.targetEnd}`;
+  }
+}
+
+function onDragEnd() {
+  if (!drag) return;
+
+  const res = currentResident();
+
+  if (drag.type === 'move') {
+    if (drag.ghost) drag.ghost.remove();
+    drag.blockEl.classList.remove('is-dragging');
+    document.body.classList.remove('is-dragging-move');
+    $$('.day-col').forEach(c => c.classList.remove('drop-target'));
+
+    if (drag.moved && res) {
+      const ev = res.events.find(e => e.id === drag.ev.id);
+      if (ev) {
+        pushUndo();
+        ev.dayOfWeek = drag.targetDow;
+        ev.startTime = drag.targetStart;
+        ev.endTime   = drag.targetEnd;
+        saveDB(); renderAll();
+      }
+      wasDragging = true;
+      setTimeout(() => { wasDragging = false; }, 50);
+    }
+  }
+
+  if (drag.type === 'resize') {
+    document.body.classList.remove('is-dragging-resize');
+    if (res) {
+      const ev = res.events.find(e => e.id === drag.ev.id);
+      if (ev && drag.targetEnd !== drag.ev.endTime) {
+        pushUndo();
+        ev.endTime = drag.targetEnd;
+        saveDB(); renderAll();
+      }
+    }
+    wasDragging = true;
+    setTimeout(() => { wasDragging = false; }, 50);
+  }
+
+  drag = null;
+}
+
+// Global drag listeners
+document.addEventListener('mousemove', e => { if (drag) onDragMove(e.clientX, e.clientY); });
+document.addEventListener('mouseup',   () => { if (drag) onDragEnd(); });
+document.addEventListener('touchmove', e => {
+  if (!drag) return;
+  /* ドラッグ中に2本目の指=ピンチズーム → コミットせずドラッグを取消しネイティブのピンチに譲る(要件1)。
+   * moved=false / targetEnd=元値 にして onDragEnd の確定条件を無効化＝後片付けのみ実行。 */
+  if (e.touches && e.touches.length > 1) {
+    drag.moved = false;
+    if (drag.ev) drag.targetEnd = drag.ev.endTime;
+    onDragEnd();
+    return;
+  }
+  e.preventDefault();
+  const t = e.touches[0];
+  onDragMove(t.clientX, t.clientY);
+}, { passive: false });
+document.addEventListener('touchend', () => { if (drag) onDragEnd(); });
+
+// ── Modal ──
+let editingEventId = null;
+
+function openAddModal(dow, startTime) {
+  if (!currentResident()) { showToast('先に利用者を選択してください'); return; }
+  editingEventId = null;
+  $('#modal-title').textContent = '予定を追加';
+  $('#delete-btn').style.display = 'none';
+  clearForm();
+  if (dow !== undefined) $('#f-dow').value = String(dow);
+  if (startTime) $('#f-start').value = startTime;
+  $('#mk-event').classList.add('open');
+  setTimeout(() => $('#f-dow').focus(), 50);
+}
+
+function openEditModal(id) {
+  const res = currentResident();
+  if (!res) return;
+  const ev = res.events.find(e => e.id === id);
+  if (!ev) return;
+  editingEventId = id;
+  $('#modal-title').textContent = '予定を編集';
+  $('#delete-btn').style.display = '';
+  clearForm();
+  $('#f-dow').value = String(ev.dayOfWeek);
+  const stype = ev.serviceType === 'daycare' ? 'daycare' : 'visit';
+  $(`input[name="serviceType"][value="${stype}"]`).checked = true;
+  onServiceTypeChange();
+  if (ev.serviceType === 'visit') {
+    $('#f-category').value = ev.category || '';
+    onCategoryChange(false);
+    $('#f-start').value = ev.startTime || '';
+    $('#f-end').value   = ev.endTime   || '';
+  } else {
+    $('#f-dc-start').value  = ev.startTime || '09:00';
+    $('#f-dc-end').value    = ev.endTime   || '13:30';
+    $('#f-bathing').checked = !!ev.bathing;
+    $('#bathing-row').style.display = '';
+  }
+  $('#f-detail').value = ev.detail || '';
+  $('#f-notes').value  = ev.notes  || '';
+  $('#f-units').value  = ev.units  || '';
+  $('#dup-row').style.display = '';
+  if (ev.serviceType === 'visit') renderCareChips();   /* detail設定後にチップを現状態へ同期(要件4) */
+  $('#mk-event').classList.add('open');
+}
+
+function closeEventModal() {
+  $('#mk-event').classList.remove('open');
+  editingEventId = null;
+}
+
+function clearForm() {
+  $('#f-dow').value = '';
+  $$('input[name="serviceType"]').forEach(r => r.checked = false);
+  $('#category-row').style.display = 'none';
+  $('#category-hint').style.display = 'none';
+  $('#time-row-visit').style.display   = '';
+  $('#time-row-daycare').style.display = 'none';
+  $('#f-category').value = '';
+  $('#f-start').setAttribute('step','60'); $('#f-start').value = '';
+  $('#f-end').setAttribute('step','60');   $('#f-end').value   = '';
+  $('#f-dc-start').value = '09:00';
+  $('#f-dc-end').value   = '13:30';
+  $('#f-bathing').checked = false;
+  $('#bathing-row').style.display = 'none';
+  $('#f-detail').value = '';
+  $('#f-notes').value  = '';
+  $('#f-units').value  = '';
+  $('#dup-row').style.display = 'none';
+  $('#f-dup-dow').value = '';
+}
+
+function onServiceTypeChange() {
+  const val = ($('input[name="serviceType"]:checked')||{}).value;
+  $('#category-row').style.display      = val === 'visit'   ? '' : 'none';
+  $('#category-hint').style.display     = 'none';
+  $('#time-row-visit').style.display    = val === 'visit'   ? '' : 'none';
+  $('#time-row-daycare').style.display  = val === 'daycare' ? '' : 'none';
+  $('#bathing-row').style.display       = val === 'daycare' ? '' : 'none';
+  /* ケア内容チップは訪問介護のみ（通所は対象外・要件4） */
+  $('#care-chips-row').style.display    = val === 'visit'   ? '' : 'none';
+  if (val === 'visit') renderCareChips();
+  autoCalcUnits();
+}
+
+/* ── ケア内容チップ（ワースケと同一の選択肢）。detail を正本に '・' 区切りで連携（双方向同期はdetail経由） ──
+ * '食事・薬確認' のように '・' を含むプリセットも、区切り境界つきの照合で正しく1チップ扱いする。
+ * 【選択肢統一】ワークスケジュール src/logic/model.js の CONTENT_PRESETS と同一（16項目）。
+ * 変更時は両ファイルを同時更新。スラッシュ短縮項目(デイ/返却 等)は canonical=スラッシュで detail に格納し、
+ * ワースケ側で設定「デイ・返却」/盤面「デイ □ 返却」に出し分ける。スラッシュは '・' 非含有＝連携・分割を壊さない。 */
+const CARE_CHIP_PRESETS = ['掃除','洗濯','排泄ケア','シーツ交換','デイ準備','返却','軟膏','整容','食事・薬確認','買物',
+  'デイ/返却','デイ/シーツ','デイ/軟膏','返却/軟膏','吸入/軟膏','シーツ/軟膏'];
+function chipActive_(detail, label) {
+  return ('・' + String(detail || '') + '・').indexOf('・' + label + '・') >= 0;
+}
+function renderCareChips() {
+  const box = $('#f-care-chips');
+  if (!box) return;
+  const cur = $('#f-detail').value;
+  box.innerHTML = '';
+  CARE_CHIP_PRESETS.forEach(label => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'care-chip' + (chipActive_(cur, label) ? ' on' : '');
+    b.textContent = label;
+    b.onclick = () => toggleCareChip(label);
+    box.appendChild(b);
+  });
+}
+function toggleCareChip(label) {
+  const cur = $('#f-detail').value;
+  let tokens;
+  if (chipActive_(cur, label)) {
+    const wrapped = ('・' + cur + '・').split('・' + label + '・').join('・');
+    tokens = wrapped.split('・').map(s => s.trim()).filter(s => s.length);
+  } else {
+    tokens = ('・' + cur + '・').split('・').map(s => s.trim()).filter(s => s.length);
+    tokens.push(label);
+  }
+  $('#f-detail').value = tokens.join('・');
+  renderCareChips();
+}
+
+function onCategoryChange(autoFill = true) {
+  const cat = $('#f-category').value;
+  const hintEl = $('#category-hint');
+  if (cat && CAT_INFO[cat]) {
+    hintEl.textContent = CAT_INFO[cat].hint;
+    hintEl.style.display = '';
+    const step = String(CAT_INFO[cat].step * 60); // mins → seconds
+    $('#f-start').setAttribute('step', step);
+    $('#f-end').setAttribute('step', step);
+  } else {
+    hintEl.style.display = 'none';
+    $('#f-start').setAttribute('step', '300');
+    $('#f-end').setAttribute('step', '300');
+  }
+  if (autoFill) autoFillEndTime();
+  autoCalcUnits();
+}
+
+function autoFillEndTime() {
+  const start = $('#f-start').value;
+  if (!start) return;
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
+  if (stype !== 'visit') return;
+  const cat = $('#f-category').value;
+  if (cat && CAT_INFO[cat]) {
+    $('#f-end').value = addMins(start, CAT_INFO[cat].mins);
+  }
+  autoCalcUnits();
+}
+
+function getFormTimes() {
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
+  if (stype === 'daycare') {
+    return { start: $('#f-dc-start').value, end: $('#f-dc-end').value };
+  }
+  return { start: $('#f-start').value, end: $('#f-end').value };
+}
+
+function validateForm() {
+  if ($('#f-dow').value === '') return '曜日を選択してください';
+  const stype = ($('input[name="serviceType"]:checked')||{}).value;
+  if (!stype) return 'サービス種別を選択してください';
+  if (stype === 'visit' && !$('#f-category').value) return 'サービス区分を選択してください';
+  const { start: s, end: e } = getFormTimes();
+  if (!s || !e) return '開始・終了時刻を入力してください';
+  if (s >= e) return '終了時刻は開始時刻より後にしてください';
+  return null;
+}
+
+function saveEvent() {
+  const err = validateForm();
+  if (err) { showToast(err); return; }
+  const res = currentResident();
+  if (!res) return;
+  pushUndo();
+  const stype = $('input[name="serviceType"]:checked').value;
+  const { start, end } = getFormTimes();
+  const ev = {
+    dayOfWeek:   parseInt($('#f-dow').value),
+    serviceType: stype,
+    category:    stype === 'visit' ? $('#f-category').value : '',
+    startTime:   start,
+    endTime:     end,
+    detail:      $('#f-detail').value.trim(),
+    notes:       $('#f-notes').value.trim(),
+    units:       Number($('#f-units').value) || 0,
+    bathing:     stype === 'daycare' ? $('#f-bathing').checked : false,
+  };
+  if (editingEventId) {
+    const idx = res.events.findIndex(e => e.id === editingEventId);
+    if (idx >= 0) res.events[idx] = { ...res.events[idx], ...ev };
+    showToast('予定を更新しました');
+  } else {
+    res.events.push({ id: uid(), ...ev });
+    showToast('予定を追加しました');
+  }
+  saveDB(); closeEventModal(); renderAll();
+}
+
+function duplicateEvent() {
+  if (!editingEventId) return;
+  const dowStr = $('#f-dup-dow').value;
+  if (!dowStr) { showToast('複製先の曜日を選択してください'); return; }
+  const res = currentResident();
+  if (!res) return;
+  pushUndo();
+  const ev = res.events.find(e => e.id === editingEventId);
+  if (!ev) return;
+  const newEv = { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) };
+  res.events.push(newEv);
+  saveDB();
+  renderAll();
+  $('#f-dup-dow').value = '';
+  showToast(`${DAYS_JA[parseInt(dowStr)]}曜日に複製しました`);
+}
+
+/* この予定を月〜日の全曜日へ複製（「毎日」設定）。
+ * 同曜日・同種別・同開始時刻が既にある曜日は作らない（重複event防止＝bulk取込と同方針）。
+ * これにより全7曜日に確実に支援が揃い、ワースケで各日付に毎日反映される。 */
+function duplicateEventEveryday() {
+  if (!editingEventId) return;
+  const res = currentResident();
+  if (!res) return;
+  const ev = res.events.find(e => e.id === editingEventId);
+  if (!ev) return;
+  const targets = [];
+  for (let dow = 0; dow < 7; dow++) {
+    if (dow === ev.dayOfWeek) continue;   // 元の曜日はそのまま
+    const exists = res.events.some(e =>
+      e.dayOfWeek === dow && e.serviceType === ev.serviceType && e.startTime === ev.startTime);
+    if (!exists) targets.push(dow);
+  }
+  if (targets.length === 0) { showToast('すでに全曜日に登録済みです'); return; }
+  pushUndo();
+  targets.forEach(dow => res.events.push({ ...ev, id: uid(), dayOfWeek: dow }));
+  saveDB();
+  renderAll();
+  showToast(`毎日に設定しました（${targets.length}曜日へ複製）`);
+}
+
+function deleteCurrentEvent() {
+  if (!editingEventId) return;
+  if (!confirm('この予定を削除しますか？')) return;
+  const res = currentResident();
+  if (!res) return;
+  pushUndo();
+  res.events = res.events.filter(e => e.id !== editingEventId);
+  saveDB(); closeEventModal(); renderAll();
+  showToast('予定を削除しました');
+}
+
+// ── Care info modal (利用者個別) ──
+function openCareInfoModal() {
+  const res = currentResident();
+  if (!res) { showToast('利用者を選択してください'); return; }
+  $('#care-info-name').textContent = '対象: ' + res.name;
+  $('#ci-level').value      = res.careLevel      || '';
+  $('#ci-copay').value      = res.copayRate       || 1;
+  // 旧フィールド welfareEquipCost(円) → 新 welfareEquipUnits(単位) へ移行
+  $('#ci-welfare').value    = (res.welfareEquipUnits != null) ? res.welfareEquipUnits : '';
+  onCareLevelChange();
+  $('#mk-care-info').classList.add('open');
+}
+function closeCareInfoModal() {
+  $('#mk-care-info').classList.remove('open');
+}
+function toggleCiSection(id) {
+  const body = $('#' + id);
+  const isOpen = body.classList.toggle('open');
+  const arrow = body.previousElementSibling.querySelector('span');
+  if (arrow) arrow.textContent = arrow.textContent.replace(/[▸▾]/, isOpen ? '▾' : '▸');
+}
+function onCareLevelChange() {
+  const level = $('#ci-level').value;
+  const lbl   = $('#ci-limit-label');
+  if (level && CARE_LIMITS[level]) {
+    lbl.textContent = `支給限度基準額: ${CARE_LIMITS[level].toLocaleString()} 単位/月`;
+    lbl.style.display = '';
+  } else {
+    lbl.style.display = 'none';
+  }
+}
+async function saveCareInfo() {
+  const res = currentResident();
+  if (!res) return;
+  const rid = res.id;
+  const patch = {
+    careLevel: $('#ci-level').value,
+    copayRate: Number($('#ci-copay').value) || 1,
+    welfareEquipUnits: Math.max(0, Number($('#ci-welfare').value) || 0)
+  };
+  /* id ベース冪等反映（競合リベースで DB.residents が新オブジェクトへ差し替わっても id で再適用＝
+     自分が編集したこの利用者の値だけを確実に保存する＝介護度が競合で消える保存バグの根治）。 */
+  const applyPatch = () => {
+    const r = DB.residents.find(x => String(x.id) === String(rid));
+    if (!r) return false;
+    let changed = false;
+    if (r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
+    if (Number(r.copayRate) !== patch.copayRate) { r.copayRate = patch.copayRate; changed = true; }
+    if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== patch.welfareEquipUnits) { r.welfareEquipUnits = patch.welfareEquipUnits; changed = true; }
+    if (r.welfareEquipCost !== undefined) { delete r.welfareEquipCost; changed = true; }  // 旧フィールド除去
+    return changed;
+  };
+  applyPatch();
+  const ok = saveDB();
+  closeCareInfoModal(); renderAll();
+  showToast('介護情報を保存しました');
+  /* 即時push→競合リベースで自分の編集が server 側へ戻された場合に patch を焼き直して確定
+     （saveResidentBulk_ と同方式＝他端末の他フィールド更新は潰さず、自分の編集のみ再主張）。 */
+  if (ok && SYNC.hasTarget()) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try {
+      await SYNC.push();
+      if (applyPatch()) { saveDB(); renderAll(); }   /* 焼き直し後にサマリバー等を再描画＝競合時の表示不整合を防ぐ */
+    } catch (e) {}
+  }
+}
+
+// ── Office info modal (事業所共通) ──
+function openOfficeInfoModal() {
+  const o = DB.office || DEFAULT_OFFICE;
+  $('#oi-unit-price').value = o.unitPrice || 10.27;
+  const va = o.visitAddons || {};
+  $('#oi-v-tokuteijigyo').value  = va.tokuteijigyo  || 0;
+  $('#oi-v-svc-strength').value  = va.svcStrength   || 0;
+  $('#oi-v-chiiki').value        = va.chiikiKasan    || 0;
+  $('#oi-v-nursing').value       = va.nursingKasan   || 0;
+  $('#oi-v-douitsu').value       = va.douitsuGensan  || 0;
+  const da = o.daycareAddons || {};
+  $('#oi-dc-bathing').value      = da.bathingType   || 0;
+  $('#oi-dc-heavy').value        = da.heavyCare     || 0;
+  $('#oi-dc-dementia').value     = da.dementia      || 0;
+  $('#oi-dc-training').value     = da.indvTraining  || 0;
+  $('#oi-dc-svc-strength').value = da.svcStrength   || 0;
+  $('#oi-dc-nursing').value      = da.nursingKasan  || 0;
+  $('#oi-dc-douitsu').value      = da.douitsuGensan || 0;
+  $('#mk-office-info').classList.add('open');
+}
+function closeOfficeInfoModal() {
+  $('#mk-office-info').classList.remove('open');
+}
+function saveOfficeInfo() {
+  DB.office = {
+    unitPrice: Number($('#oi-unit-price').value) || 10.27,
+    visitAddons: {
+      tokuteijigyo: Number($('#oi-v-tokuteijigyo').value) || 0,
+      svcStrength:  Number($('#oi-v-svc-strength').value) || 0,
+      chiikiKasan:  Number($('#oi-v-chiiki').value)        || 0,
+      nursingKasan: Number($('#oi-v-nursing').value)       || 0,
+      douitsuGensan:Number($('#oi-v-douitsu').value)       || 0,
+    },
+    daycareAddons: {
+      bathingType:  Number($('#oi-dc-bathing').value)      || 0,
+      heavyCare:    Number($('#oi-dc-heavy').value)         || 0,
+      dementia:     Number($('#oi-dc-dementia').value)      || 0,
+      indvTraining: Number($('#oi-dc-training').value)      || 0,
+      svcStrength:  Number($('#oi-dc-svc-strength').value) || 0,
+      nursingKasan: Number($('#oi-dc-nursing').value)       || 0,
+      douitsuGensan:Number($('#oi-dc-douitsu').value)       || 0,
+    },
+  };
+  // 全イベントの単位数を再計算
+  recalcAllEventUnits();
+  saveDB(); closeOfficeInfoModal(); renderAll();
+  showToast('事業所情報を保存しました');
+}
+
+// 設定変更時に全予定の単位数を再計算
+function recalcAllEventUnits() {
+  for (const res of DB.residents) {
+    for (const ev of res.events || []) {
+      try {
+        if (ev.serviceType === 'visit') {
+          ev.units = calcVisitUnits(ev.category, res, ev.startTime) || 0;
+        } else {
+          ev.units = calcDaycareUnits(ev.startTime, ev.endTime, ev.bathing, res) || 0;
+        }
+      } catch(e) {
+        // ev を丸ごと出すと detail/notes のケア内容が console に残るため識別子のみ出力（personal-info 規約）
+        console.warn('単位再計算エラー（スキップ）: evId=' + (ev && ev.id) + ' cat=' + (ev && ev.category), e);
+        ev.units = ev.units || 0;
+      }
+    }
+  }
+}
+
+// ── Export / Print ──
+function exportJSON() {
+  const res = currentResident();
+  const data = res ? { resident: res.name, events: res.events } : DB;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `care_plan_${((res && res.name) || 'all').replace(/\s/g,'_')}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  showToast('エクスポートしました');
+}
+function printWeek() { clearRlPrintState_(); window.print(); }
+
+/* ===== 週ボード印刷: A4縦最適化（デイ短縮・空き時間の動的圧縮）=====
+ * 印刷時のみ時刻→Y を区分線形マップ(PRINT_MAP)へ差し替え、renderAll で全要素を圧縮再配置し、
+ * afterprint で PRINT_MAP=null にして renderAll＝画面完全復元。区分線形は単調増加＝後続枠は詰まるだけでズレない。 */
+var PRINT_CFG = { daycareH: 90, gapH: 120, stubH: 24 };   // 圧縮後px（デイ≈1.5h/16-20≈2h/早朝深夜クロップ）
+var _printPrevScroll = 0;
+
+function buildPrintMap_(res) {
+  PRINT_MAP = null; PRINT_SEGS = null;
+  var evs = (res && res.events) ? res.events : [];
+  var ranges = [];
+  for (var i = 0; i < evs.length; i++) {
+    var a = timeToMins(evs[i].startTime), b = timeToMins(evs[i].endTime);
+    if (b > a) ranges.push([a, b, evs[i].serviceType]);
+  }
+  if (!ranges.length) return;   // 予定なし＝等倍
+  var firstStart = Math.min.apply(null, ranges.map(function (r) { return r[0]; }));
+  var lastEnd    = Math.max.apply(null, ranges.map(function (r) { return r[1]; }));
+  function overlapsRange(a, b) { return ranges.some(function (r) { return r[0] < b && a < r[1]; }); }
+
+  var segs = [];
+  if (firstStart > 0) segs.push({ a: 0, b: firstStart, h: PRINT_CFG.stubH, kind: 'head' });   // 早朝クロップ
+  // デイ短縮: daycare 和区間（その区間に非デイが重ならない時のみ＝在宅支援を潰さない）
+  var dc = ranges.filter(function (r) { return r[2] === 'daycare'; });
+  if (dc.length) {
+    var dcA = Math.min.apply(null, dc.map(function (r) { return r[0]; }));
+    var dcB = Math.max.apply(null, dc.map(function (r) { return r[1]; }));
+    var nonDcOverlap = ranges.some(function (r) { return r[2] !== 'daycare' && r[0] < dcB && dcA < r[1]; });
+    if (!nonDcOverlap && (dcB - dcA) > PRINT_CFG.daycareH) segs.push({ a: dcA, b: dcB, h: PRINT_CFG.daycareH, kind: 'daycare' });
+  }
+  // 16-20カット: 週内全予定が [16:00,20:00) と重ならず、かつ真の中間空き(夜に予定がある)時のみ
+  if (!overlapsRange(960, 1200) && lastEnd > 1200 && firstStart < 960) {
+    segs.push({ a: 960, b: 1200, h: PRINT_CFG.gapH, kind: 'gap' });
+  }
+  if (lastEnd < 1440) segs.push({ a: lastEnd, b: 1440, h: PRINT_CFG.stubH, kind: 'tail' });   // 深夜クロップ
+
+  segs.sort(function (x, y) { return x.a - y.a; });
+  // 安全クリップ: 前区間と重ならないように（構成上ほぼ不要だが不変条件を強制）
+  var clean = [];
+  for (var s = 0; s < segs.length; s++) {
+    var seg = segs[s], prev = clean[clean.length - 1];
+    if (prev && seg.a < prev.b) seg = { a: prev.b, b: Math.max(prev.b, seg.b), h: seg.h, kind: seg.kind };
+    if (seg.b > seg.a) clean.push(seg);
+  }
+  if (!clean.length) return;   // 圧縮対象なし＝等倍
+  PRINT_SEGS = clean;
+  var ppm = HOUR_PX / 60;
+  PRINT_MAP = function (min) {
+    var y = 0, cur = 0;
+    for (var k = 0; k < clean.length; k++) {
+      var seg = clean[k];
+      if (min <= seg.a) return y + (min - cur) * ppm;
+      y += (seg.a - cur) * ppm;
+      if (min < seg.b) return y + (min - seg.a) / (seg.b - seg.a) * seg.h;   // 区間内は圧縮線形
+      y += seg.h; cur = seg.b;
+    }
+    return y + (min - cur) * ppm;
+  };
+}
+
+// 省略マーク（早朝/深夜/16-20の空き圧縮区間に波線バンド＋ラベル）。デイ箱は .dc-short の波線で表現。
+function insertPrintOmitMarks_() {
+  removePrintOmitMarks_();
+  if (!PRINT_SEGS) return;
+  var body = $('#grid-body'), dayCol = $('#day-columns');
+  for (var i = 0; i < PRINT_SEGS.length; i++) {
+    var seg = PRINT_SEGS[i];
+    if (seg.kind === 'daycare') continue;   // デイは箱側の波線で表現
+    var band = document.createElement('div');
+    band.className = 'print-omit';
+    band.style.top = yOf(seg.a) + 'px';
+    band.style.height = seg.h + 'px';
+    var lbl = document.createElement('span');
+    lbl.className = 'print-omit-label';
+    lbl.textContent = seg.kind === 'gap' ? '16:00–20:00 略' : '略';
+    band.appendChild(lbl);
+    body.insertBefore(band, dayCol);
+  }
+}
+function removePrintOmitMarks_() {
+  var body = $('#grid-body'); if (!body) return;
+  $$('.print-omit', body).forEach(function (el) { el.remove(); });
+}
+
+function resetScrollSync_() {
+  var gs = $('#grid-scroll'), inner = $('#time-labels-inner'), s = $('#surcharge-inner');
+  _printPrevScroll = gs ? gs.scrollTop : 0;
+  if (inner) inner.style.transform = 'translateY(0)';
+  if (s) s.style.transform = 'translateY(0)';
+}
+function restoreScrollSync_() {
+  var gs = $('#grid-scroll'), inner = $('#time-labels-inner'), s = $('#surcharge-inner');
+  if (!gs) return;
+  gs.scrollTop = _printPrevScroll;
+  var t = gs.scrollTop;
+  if (inner) inner.style.transform = 'translateY(-' + t + 'px)';
+  if (s) s.style.transform = 'translateY(-' + t + 'px)';
+}
+
+window.addEventListener('beforeprint', function () {
+  if (document.body.classList.contains('rl-print')) return;   // 利用者一覧A3印刷は別経路＝触らない
+  document.body.classList.add('week-print');
+  buildPrintMap_(currentResident());
+  resetScrollSync_();
+  renderAll();
+  insertPrintOmitMarks_();
+});
+// 印刷後の画面復元（冪等）。afterprint 単独に依存せず、matchMedia('print') 終了・操作起点でも呼ぶ
+// ＝afterprint が発火しない環境(一部WebView/PDF)で圧縮座標が残り、クリック/ドラッグが誤時刻で保存する事故を防ぐ。
+function restoreWeekPrint_() {
+  if (!PRINT_MAP && !document.body.classList.contains('week-print')) return;   // 既に通常＝no-op
+  PRINT_MAP = null; PRINT_SEGS = null;
+  removePrintOmitMarks_();
+  document.body.classList.remove('week-print');
+  renderAll();
+  restoreScrollSync_();
+}
+window.addEventListener('afterprint', restoreWeekPrint_);
+try {
+  var _mqPrint = window.matchMedia('print');
+  var _mqRestore = function (e) { if (!e.matches) restoreWeekPrint_(); };   // 印刷メディア終了で復元
+  if (_mqPrint.addEventListener) _mqPrint.addEventListener('change', _mqRestore);
+  else if (_mqPrint.addListener) _mqPrint.addListener(_mqRestore);
+} catch (e) {}
+
+// ── 予定一覧モーダル ──
+let _evlistView = 'day'; // 'day' = 曜日別 / 'svc' = サービス種別別
+
+function getSortedEvents(res) {
+  if (!res || !Array.isArray(res.events)) return [];
+  return [...res.events].sort((a, b) =>
+    (a.dayOfWeek - b.dayOfWeek) || (a.startTime || '').localeCompare(b.startTime || '')
+  );
+}
+function formatEventFields(ev) {
+  const dow      = DAYS_JA[ev.dayOfWeek] || '?';
+  const stype    = ev.serviceType === 'daycare' ? '通所介護' : '訪問介護';
+  const category = ev.serviceType === 'daycare' ? '通所介護' : catDisplayLabel_(ev.category || '');
+  const time     = `${ev.startTime || ''}〜${ev.endTime || ''}`;
+  const detail   = (ev.detail || ev.notes || '').replace(/\r?\n/g, ' ');
+  return { dow, stype, category, time, detail, dayOfWeek: ev.dayOfWeek, serviceType: ev.serviceType };
+}
+
+function setEventListView(mode) {
+  _evlistView = (mode === 'svc') ? 'svc' : 'day';
+  $('#evlist-tab-day').classList.toggle('active', _evlistView === 'day');
+  $('#evlist-tab-svc').classList.toggle('active', _evlistView === 'svc');
+  renderEventListBody();
+}
+
+function renderEventListBody() {
+  const res = currentResident();
+  const body = $('#event-list-body');
+  if (!res) { body.innerHTML = '<div class="evlist-empty">利用者が選択されていません</div>'; return; }
+  const sorted = getSortedEvents(res);
+  if (sorted.length === 0) {
+    body.innerHTML = '<div class="evlist-empty">予定が登録されていません</div>';
+    return;
+  }
+  body.innerHTML = (_evlistView === 'svc')
+    ? renderEventListBySvc(sorted)
+    : renderEventListByDay(sorted);
+}
+
+// 曜日別ビュー: ヘッダ「月曜日」+ 各行「開始〜終了 / サービス種別／区分 / 支援内容」
+function renderEventListByDay(sorted) {
+  const groups = {};
+  for (const ev of sorted) (groups[ev.dayOfWeek] = groups[ev.dayOfWeek] || []).push(ev);
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const list = groups[i];
+    if (!list) continue;
+    const cls = i === 5 ? ' sat' : i === 6 ? ' sun' : '';
+    html += `<div class="evlist-day-hd${cls}">${DAYS_JA[i]}曜日（${list.length}件）</div>`;
+    for (const ev of list) {
+      const f = formatEventFields(ev);
+      const label = f.stype === '通所介護' ? f.stype : `${f.stype}／${f.category}`;
+      const detailHtml = f.detail
+        ? `<div class="evlist-detail" title="${escHtml(f.detail)}">${escHtml(f.detail)}</div>`
+        : `<div class="evlist-detail empty">（支援内容なし）</div>`;
+      html +=
+        `<div class="evlist-row by-day">` +
+          `<div class="evlist-time">${escHtml(f.time)}</div>` +
+          `<div class="evlist-cat" title="${escHtml(label)}">${escHtml(label)}</div>` +
+          detailHtml +
+        `</div>`;
+    }
+  }
+  return html;
+}
+
+// サービス種別別ビュー: ヘッダ「訪問介護」「通所介護」+ 各行「曜日 / 区分 / 開始〜終了 / 支援内容」
+function renderEventListBySvc(sorted) {
+  const groups = { visit: [], daycare: [] };
+  for (const ev of sorted) {
+    if (ev.serviceType === 'daycare') groups.daycare.push(ev);
+    else groups.visit.push(ev);
+  }
+  const sections = [
+    { key: 'visit',   label: '訪問介護', cls: 'visit'   },
+    { key: 'daycare', label: '通所介護', cls: 'daycare' },
+  ];
+  let html = '';
+  for (const sec of sections) {
+    const list = groups[sec.key];
+    if (!list.length) continue;
+    html += `<div class="evlist-day-hd ${sec.cls}">${sec.label}（${list.length}件）</div>`;
+    for (const ev of list) {
+      const f = formatEventFields(ev);
+      const category = (sec.key === 'daycare') ? '通所介護' : f.category;
+      const dowCls = f.dayOfWeek === 5 ? ' sat' : f.dayOfWeek === 6 ? ' sun' : '';
+      const detailHtml = f.detail
+        ? `<div class="evlist-detail" title="${escHtml(f.detail)}">${escHtml(f.detail)}</div>`
+        : `<div class="evlist-detail empty">（支援内容なし）</div>`;
+      html +=
+        `<div class="evlist-row by-svc">` +
+          `<div class="evlist-dow${dowCls}">${escHtml(f.dow)}</div>` +
+          `<div class="evlist-cat" title="${escHtml(category)}">${escHtml(category)}</div>` +
+          `<div class="evlist-time">${escHtml(f.time)}</div>` +
+          detailHtml +
+        `</div>`;
+    }
+  }
+  return html;
+}
+
+function openEventListModal() {
+  const res = currentResident();
+  if (!res) { showToast('利用者が選択されていません'); return; }
+  $('#event-list-resident').textContent = res.name || '（無名）';
+  renderEventListBody();
+  $('#mk-event-list').classList.add('open');
+}
+function closeEventListModal() {
+  $('#mk-event-list').classList.remove('open');
+}
+
+// ── 利用者一覧（横断集計） ──
+// 報酬額(10割)の単価＝固定10円/単位（ユーザー確定・地域加算は反映しない）
+const FEE_PER_UNIT = 10;
+// 介護度の短縮表示：要介護→数字のみ / 要支援→「支N」 / 未設定→「—」
+function careLevelShort_(careLevel) {
+  if (!careLevel) return '—';
+  const m = String(careLevel).match(/([0-9]+)/);
+  const num = m ? m[1] : '';
+  if (!num) return '—';
+  return (String(careLevel).indexOf('支援') >= 0) ? ('支' + num) : num;
+}
+// 通所利用曜日 [月,火,水,木,金,土] の真偽配列（日曜は対象外＝要件どおり月〜土）
+function residentDaycareDays_(res) {
+  const d = [false, false, false, false, false, false];
+  ((res && res.events) || []).forEach(ev => {
+    if (ev && ev.serviceType === 'daycare' && ev.dayOfWeek >= 0 && ev.dayOfWeek <= 5) d[ev.dayOfWeek] = true;
+  });
+  return d;
+}
+// 1利用者の集計。renderSummaryBar と同一算式を再利用（既存表示を壊さないため renderSummaryBar 自体は無改変）。
+function computeResidentSummary(res) {
+  const careLevel    = (res && res.careLevel) || '';
+  const limit        = CARE_LIMITS[careLevel] || null;          // 負担限度額＝区分支給限度基準額（単位/月）
+  const copayRate    = Number(res && res.copayRate) || 1;
+  const welfareUnits = Math.max(0, Number(res && res.welfareEquipUnits) || 0);
+  const evs = (res && res.events) || [];
+  const weekUnits = kaigoWeekUnits_(evs, res);                  // 週合計＝要介護／通所のみ（総合事業＝月額は除外）
+  const monthUnits = Math.round(weekUnits * 4.3)               // 使用単位数（月）＝週×4.3
+                   + sogoMonthlyUnits_(evs);                    //   ＋ 総合事業の月額（コード単位で月1回）
+  const totalUnits = monthUnits + welfareUnits;
+  // 使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（既存ヘッダ「使用率」と一致）
+  const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
+  // 報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない＝訪問＋通所のみ・ユーザー確定）
+  const fee = monthUnits * FEE_PER_UNIT;
+  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct, fee };
+}
+
+function renderResidentListTable() {
+  const tbody = $('#rl-tbody');
+  if (!tbody) return;
+  const tfoot = $('#rl-tfoot');
+  const totalEl = $('#rl-total');
+  const list = csVisibleResidents().slice().sort(csResidentSort);   // 施設内→外部・各群ふりがな五十音(プルダウンと同順)
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td id="rl-empty" colspan="14">表示対象の利用者がいません</td></tr>';
+    if (tfoot) tfoot.innerHTML = '';
+    if (totalEl) totalEl.innerHTML = '';
+    return;
+  }
+  let h = '';
+  let totalFee = 0;
+  list.forEach(res => {
+    const s = computeResidentSummary(res);
+    totalFee += s.fee;
+    let pctCell = '<td class="rl-mid">—</td>';
+    if (s.pct !== null) {
+      const cls = s.pct >= 100 ? 'over' : s.pct >= 80 ? 'warn' : 'ok';
+      pctCell = `<td class="rl-pct ${cls}">${s.pct.toFixed(1)}%</td>`;
+    }
+    const days = residentDaycareDays_(res);
+    const dayCells = days.map(on => `<td class="rl-day">${on ? '<span class="on">○</span>' : ''}</td>`).join('');
+    h += '<tr>'
+      + `<td class="rl-name">${escHtml(res.name || '（無名）')}${res.external ? '<span style="font-size:inherit;color:#1565c0">（外）</span>' : ''}</td>`
+      + `<td class="rl-mid">${careLevelShort_(s.careLevel)}</td>`
+      + `<td class="rl-mid">${s.copayRate}割</td>`
+      + dayCells
+      + `<td>${s.limit ? s.limit.toLocaleString() : '—'}</td>`
+      + `<td>${s.monthUnits.toLocaleString()}</td>`
+      + `<td>${s.welfareUnits.toLocaleString()}</td>`
+      + pctCell
+      + `<td class="rl-fee">${s.fee.toLocaleString()}</td>`
+      + '</tr>';
+  });
+  tbody.innerHTML = h;
+  // 上部バナー（総合計）と tfoot 合計行
+  if (totalEl) {
+    totalEl.innerHTML = '報酬額(10割) 総合計'
+      + `<span class="rl-total-amt">¥${totalFee.toLocaleString()}</span>`
+      + `<span class="rl-total-sub">対象 ${list.length}名・使用単位数(月)×10円（福祉用具除く）</span>`;
+  }
+  if (tfoot) {
+    tfoot.innerHTML = '<tr>'
+      + '<td class="rl-foot-label" colspan="13">報酬額(10割) 合計</td>'
+      + `<td class="rl-fee">${totalFee.toLocaleString()}</td>`
+      + '</tr>';
+  }
+}
+
+function openResidentListModal() {
+  renderResidentListTable();
+  $('#mk-resident-list').classList.add('open');
+}
+function closeResidentListModal() {
+  $('#mk-resident-list').classList.remove('open');
+}
+
+/* ── 利用者 一括編集（介護度/負担割合/福祉用具単位/週間計画対象）──
+ * 保存先は care_schedule_v2（稼働中GAS）。編集中は自動pull割込みを止め、保存はDBを直接変異させず
+ * 全行を検証→id一致行のみ一括反映→saveDB 1回→即時push の atomic 手順（部分保存漏れ・空上書きを防ぐ）。 */
+const RB_CARE_LEVELS = ['', '要支援1', '要支援2', '要介護1', '要介護2', '要介護3', '要介護4', '要介護5'];
+function openResidentBulkModal() {
+  try { SYNC.stopPolling(); } catch (e) {}   // 編集中は自動pullを止める（未保存編集の巻き戻り防止）
+  renderResidentBulkRows_();
+  $('#mk-resident-bulk').classList.add('open');
+}
+function closeResidentBulkModal() {
+  $('#mk-resident-bulk').classList.remove('open');
+  try { SYNC.startPolling(); } catch (e) {}  // 自動同期を再開（idempotent）
+}
+function renderResidentBulkRows_() {
+  const tbody = $('#rb-tbody');
+  if (!tbody) return;
+  const list = csVisibleResidents().slice().sort(csResidentSort);
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:16px;text-align:center;color:var(--g6)">対象の利用者がいません</td></tr>';
+    return;
+  }
+  const levelOpt = (sel) => RB_CARE_LEVELS
+    .map(v => `<option value="${v}"${v === (sel || '') ? ' selected' : ''}>${v || '未設定'}</option>`).join('');
+  const copayOpt = (sel) => [1, 2, 3]
+    .map(v => `<option value="${v}"${v === (Number(sel) || 1) ? ' selected' : ''}>${v}割</option>`).join('');
+  let h = '';
+  list.forEach(res => {
+    const s = computeResidentSummary(res);
+    const pctTxt = s.pct !== null ? s.pct.toFixed(1) + '%' : '—';
+    const welfare = Math.max(0, Number(res.welfareEquipUnits) || 0);
+    h += `<tr data-rid="${escHtml(String(res.id))}">`
+      + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
+      + `<td><input class="inp rb-kana" type="text" value="${escHtml(res.kana || '')}" placeholder="ふりがな" style="min-width:96px;text-align:left"></td>`
+      + `<td><select class="inp rb-level" onchange="rbPreview_(this)">${levelOpt(res.careLevel)}</select></td>`
+      + `<td><select class="inp rb-copay">${copayOpt(res.copayRate)}</select></td>`
+      + `<td><input class="inp rb-welfare" type="number" min="0" step="1" value="${welfare}" onchange="rbPreview_(this)"></td>`
+      + `<td><input type="checkbox" class="rb-target"${res.targetSchedule === false ? '' : ' checked'}></td>`
+      + `<td><input type="checkbox" class="rb-external"${res.external ? ' checked' : ''}></td>`
+      + `<td class="rb-pct">${pctTxt}</td>`
+      + '</tr>';
+  });
+  tbody.innerHTML = h;
+}
+/* 行の編集値で使用単位%プレビューを再計算（res は変異させない） */
+function rbPreview_(el) {
+  const tr = el.closest('tr'); if (!tr) return;
+  const rid = tr.getAttribute('data-rid');
+  const res = DB.residents.find(r => String(r.id) === String(rid)); if (!res) return;
+  const level = tr.querySelector('.rb-level').value;
+  const welfare = Math.max(0, Number(tr.querySelector('.rb-welfare').value) || 0);
+  const s = computeResidentSummary({ ...res, careLevel: level, welfareEquipUnits: welfare });
+  const cell = tr.querySelector('.rb-pct');
+  if (cell) cell.textContent = s.pct !== null ? s.pct.toFixed(1) + '%' : '—';
+}
+async function saveResidentBulk_() {
+  const rows = document.querySelectorAll('#rb-tbody tr[data-rid]');
+  if (!rows.length) { closeResidentBulkModal(); return; }
+  // (1) 全行を先に検証し patch を組む（1つでも不正なら中止＝部分反映しない）。patch は id で保持
+  //     （競合リベースで DB.residents が新オブジェクトへ差し替わるため res 参照は使わず id 再探索する）。
+  const patches = [];
+  for (let i = 0; i < rows.length; i++) {
+    const tr = rows[i];
+    const rid = tr.getAttribute('data-rid');
+    const res = DB.residents.find(r => String(r.id) === String(rid));
+    if (!res) continue;                                   // 存在しないidはスキップ（空上書き防止）
+    const level = tr.querySelector('.rb-level').value;
+    const copay = Number(tr.querySelector('.rb-copay').value);
+    const welfareRaw = tr.querySelector('.rb-welfare').value;
+    const target = tr.querySelector('.rb-target').checked;
+    const kana = (tr.querySelector('.rb-kana') ? tr.querySelector('.rb-kana').value.trim() : '');
+    const external = !!(tr.querySelector('.rb-external') && tr.querySelector('.rb-external').checked);
+    if (RB_CARE_LEVELS.indexOf(level) < 0) { showToast(`介護度の値が不正です（${res.name || ''}）`); return; }
+    if ([1, 2, 3].indexOf(copay) < 0) { showToast(`負担割合は1〜3割です（${res.name || ''}）`); return; }
+    if (welfareRaw !== '' && (isNaN(Number(welfareRaw)) || Number(welfareRaw) < 0)) {
+      showToast(`福祉用具単位は0以上の数値です（${res.name || ''}）`); return;
+    }
+    patches.push({ id: rid, careLevel: level, copayRate: copay, welfareEquipUnits: Math.max(0, Number(welfareRaw) || 0), targetSchedule: target, kana, external });
+  }
+  if (!patches.length) { closeResidentBulkModal(); return; }
+  // 冪等な id ベース反映（初回＋push解決後の焼き直し両方で使用）。戻り値=1件でも変更したか。
+  const applyPatches = () => {
+    let changed = false;
+    patches.forEach(p => {
+      const r = DB.residents.find(x => String(x.id) === String(p.id));
+      if (!r) return;                                     // 削除済みidはスキップ（空上書き防止）
+      if (r.careLevel !== p.careLevel) { r.careLevel = p.careLevel; changed = true; }
+      if (Number(r.copayRate) !== p.copayRate) { r.copayRate = p.copayRate; changed = true; }
+      if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== p.welfareEquipUnits) { r.welfareEquipUnits = p.welfareEquipUnits; changed = true; }
+      if ((r.targetSchedule !== false) !== p.targetSchedule) { r.targetSchedule = p.targetSchedule; changed = true; }
+      if ((r.kana || '') !== p.kana) { r.kana = p.kana; changed = true; }
+      if (!!r.external !== p.external) { r.external = p.external; changed = true; }
+      if (r.welfareEquipCost !== undefined) { delete r.welfareEquipCost; changed = true; }  // 旧フィールド除去
+    });
+    return changed;
+  };
+  // (2) 検証通過後にのみ一括反映（events/その他フィールドは非変更）
+  applyPatches();
+  // (3) 介護度変更を ev.units へ反映してから保存＝送信スナップショットの単位を整合（saveOfficeInfo と同順）
+  try { recalcAllEventUnits(); } catch (e) {}
+  // (4) saveDB は1回だけ→即時push（保存ボタン流儀）。push が競合リベースで直下スカラーを server へ
+  //     戻した場合に備え、push 解決後に patch を焼き直して確定させる（copayRate/welfareEquipUnits/
+  //     targetSchedule/kana/external は csRebaseEdits の保護対象外＝ここで確実に保存する）。
+  const ok = saveDB();
+  if (ok && SYNC.hasTarget()) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try {
+      await SYNC.push();                                  // 競合時は内部で pull→rebase→再push
+      if (applyPatches()) {                               // リベースで戻された分を焼き直し
+        try { recalcAllEventUnits(); } catch (e) {}
+        saveDB();                                         // debounce push で送信（確定）
+      }
+    } catch (e) {}
+  }
+  closeResidentBulkModal();                                // ポーリング再開
+  renderAll();
+  if ($('#mk-resident-list').classList.contains('open')) renderResidentListTable();
+  showToast(ok ? `${patches.length}名の情報を一括保存しました` : '保存に失敗しました');
+}
+// A3印刷状態のクリア（idempotent）。afterprint 未発火（モバイルSafari/WebView/PDF出力等）で
+// 残った rl-print クラス・注入@pageが、後続の週ボード印刷(printWeek)へ漏れてA4を壊すのを防ぐ。
+function clearRlPrintState_() {
+  document.body.classList.remove('rl-print');
+  const nodes = document.querySelectorAll('#rl-a3-page');
+  for (let i = 0; i < nodes.length; i++) nodes[i].remove();
+}
+// 利用者一覧のみをA3横で印刷（週ボードのA4印刷経路は無改変・一覧印刷時だけ @page を動的注入）
+function printResidentList() {
+  clearRlPrintState_();                       // 直前の未発火afterprintによる残骸/多重クリックを確実に除去
+  document.body.classList.add('rl-print');
+  const st = document.createElement('style');
+  st.id = 'rl-a3-page';
+  st.textContent = '@media print{@page{size:A3 landscape;margin:8mm}}';
+  document.head.appendChild(st);
+  let cleaned = false;
+  const done = function () {                   // 一度だけ実行（多重afterprint対策）
+    if (cleaned) return;
+    cleaned = true;
+    clearRlPrintState_();
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+
+// テキスト/TSV出力（ビュー別に列順を切替）
+// 曜日別:    実施曜日　サービス種別　サービス区分　開始時刻〜終了時刻　支援内容
+// サービス別: 実施曜日　サービス区分　開始時刻〜終了時刻　支援内容
+function buildEventListLines(separator) {
+  const res = currentResident();
+  if (!res) return { lines: [], header: '' };
+  const sorted = getSortedEvents(res);
+  const lines = [];
+  if (_evlistView === 'svc') {
+    // 訪問→通所の順に並べ替え
+    const visits   = sorted.filter(ev => ev.serviceType !== 'daycare');
+    const daycares = sorted.filter(ev => ev.serviceType === 'daycare');
+    for (const ev of [...visits, ...daycares]) {
+      const f = formatEventFields(ev);
+      const cat = (ev.serviceType === 'daycare') ? '通所介護' : f.category;
+      lines.push([f.dow, cat, f.time, f.detail].join(separator));
+    }
+    return { lines, header: ['実施曜日','サービス区分','開始〜終了','支援内容'].join(separator) };
+  } else {
+    for (const ev of sorted) {
+      const f = formatEventFields(ev);
+      lines.push([f.dow, f.stype, f.category, f.time, f.detail].join(separator));
+    }
+    return { lines, header: ['実施曜日','サービス種別','サービス区分','開始〜終了','支援内容'].join(separator) };
+  }
+}
+
+// クリップボードへの安全コピー（execCommand フォールバック付き）
+async function copyToClipboardSafe(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch(e) { /* fallback below */ }
+  try {
+    const ta = $('#event-list-textarea');
+    ta.value = text;
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    return ok;
+  } catch(e) { return false; }
+}
+
+async function copyEventListText() {
+  const res = currentResident();
+  if (!res) { showToast('利用者が選択されていません'); return; }
+  const { lines } = buildEventListLines('　'); // 全角スペース区切り
+  if (!lines.length) { showToast('予定がありません'); return; }
+  const viewLabel = (_evlistView === 'svc') ? 'サービス種別別' : '曜日別';
+  const text = `${res.name || ''} 週間ケア計画（${viewLabel}）\n` + lines.join('\n');
+  const ok = await copyToClipboardSafe(text);
+  showToast(ok ? `${lines.length}件をコピーしました` : 'コピーに失敗しました');
+}
+
+async function copyEventListTSV() {
+  const res = currentResident();
+  if (!res) { showToast('利用者が選択されていません'); return; }
+  const { lines, header } = buildEventListLines('\t');
+  if (!lines.length) { showToast('予定がありません'); return; }
+  const text = header + '\n' + lines.join('\n');
+  const ok = await copyToClipboardSafe(text);
+  showToast(ok ? `${lines.length}件を Excel 貼付用形式でコピーしました` : 'コピーに失敗しました');
+}
+
+// ── Undo ──
+let undoStack = [];
+function pushUndo() {
+  const res = currentResident();
+  if (!res) return;
+  undoStack.push(JSON.stringify(res.events));
+  if (undoStack.length > 30) undoStack.shift();
+}
+function undo() {
+  const res = currentResident();
+  if (!res || !undoStack.length) { showToast('これ以上元に戻せません'); return; }
+  res.events = JSON.parse(undoStack.pop());
+  saveDB(); renderAll();
+  showToast('元に戻しました');
+}
+
+// ── Context menu ──
+let ctxEvId = null;
+const ctxMenu = $('#ctx-menu');
+
+function showCtxMenu(ev, x, y) {
+  ctxEvId = ev.id;
+  // Build day buttons
+  const btnsEl = $('#ctx-day-btns');
+  btnsEl.innerHTML = '';
+  DAYS_JA.forEach((label, dow) => {
+    if (dow === ev.dayOfWeek) return; // skip same day
+    const btn = document.createElement('button');
+    btn.className = 'ctx-day';
+    btn.textContent = label;
+    btn.onclick = () => { ctxDuplicate(dow); hideCtxMenu(); };
+    btnsEl.appendChild(btn);
+  });
+  // Position
+  ctxMenu.style.display = '';
+  const menuW = 170, menuH = 130;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  ctxMenu.style.left = (x + menuW > vw ? vw - menuW - 8 : x) + 'px';
+  ctxMenu.style.top  = (y + menuH > vh ? y - menuH : y) + 'px';
+}
+
+function hideCtxMenu() {
+  ctxMenu.style.display = 'none';
+  ctxEvId = null;
+}
+
+function ctxDuplicate(dow) {
+  const res = currentResident();
+  if (!res || ctxEvId === null) return;
+  const ev = res.events.find(e => e.id === ctxEvId);
+  if (!ev) return;
+  pushUndo();
+  const newEv = { ...ev, id: uid(), dayOfWeek: dow };
+  res.events.push(newEv);
+  saveDB(); renderAll();
+  showToast(`${DAYS_JA[dow]}曜日に複製しました`);
+}
+
+function ctxDelete() {
+  const res = currentResident();
+  if (!res || ctxEvId === null) return;
+  pushUndo();
+  res.events = res.events.filter(e => e.id !== ctxEvId);
+  saveDB(); renderAll();
+  hideCtxMenu();
+  showToast('予定を削除しました');
+}
+
+$('#ctx-del-btn').onclick = ctxDelete;
+document.addEventListener('click', e => {
+  if (!ctxMenu.contains(e.target)) hideCtxMenu();
+});
+
+// ── Toast ──
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Keyboard / mask close ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (ctxMenu.style.display !== 'none') { hideCtxMenu(); return; }
+    if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
+    if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
+    if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
+    if ($('#mk-bulk').classList.contains('open'))      { closeBulkImport(); return; }
+  }
+  if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    manualSave();
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  }
+});
+$('#mk-event').addEventListener('click',     e => { if (e.target === $('#mk-event'))     closeEventModal(); });
+$('#mk-resident').addEventListener('click',  e => { if (e.target === $('#mk-resident'))  closeResidentModal(); });
+$('#mk-care-info').addEventListener('click', e => { if (e.target === $('#mk-care-info')) closeCareInfoModal(); });
+$('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-office-info')) closeOfficeInfoModal(); });
+$('#mk-sync').addEventListener('click', e => { if (e.target === $('#mk-sync')) closeSyncModal(); });
+$('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-event-list')) closeEventListModal(); });
+$('#mk-bulk').addEventListener('click', e => { if (e.target === $('#mk-bulk')) closeBulkImport(); });
+$('#f-new-res').addEventListener('keydown', e => { if (e.key === 'Enter') addResident(); });
+$('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.display !== 'none') renderCareChips(); });
+
+// ── Init ──
+loadDB();
+SYNC.load();
+// 利用者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
+try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止めない */ }
+// 起動時にローカルが既にサンプル/空化していれば端末バックアップから復元、正データなら退避を更新
+try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e) {}
+applyScheduleDeviceGuard();
+(function(){ var b = document.getElementById('suDeviceUnlock'); if (b) b.addEventListener('click', function(){
+  try { localStorage.setItem(SU_DEVICE_KEY, 'office'); } catch(e) {}
+  applyScheduleDeviceGuard();
+  try { populateResidentSelect(); renderResidentList(); renderAll(); } catch(e) {}
+  showToast('この端末を事務所PCに設定しました');
+}); })();
+populateResidentSelect();
+renderAll();
+initScrollSync();
+requestAnimationFrame(() => {
+  const gs = $('#grid-scroll');
+  if (gs) gs.scrollTop = 6 * HOUR_PX; // 06:00 付近から表示
+});
+// 起動時: 同期先（ワースケ設定 or 自前URL）があれば自動でクラウドから取得＋定期ポーリング開始
+// （現場端末ガード時は取得しない）
+if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
+  setTimeout(() => {
+    // 起動pullで最新リモートを採用した「後」に備考クリアを実施し即push。
+    // loadDB時にクリアするとこの300ms pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
+    const afterPull = () => {
+      try {
+        if (migrateClearNotes_()) {
+          if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+          try { SYNC.push(); } catch (e) {}   // クリア済みを即クラウドへ確定（rev前進）＝全端末へ恒久反映
+        }
+      } catch (e2) {}
+      try { SYNC.startPolling(); } catch (e3) {}
+    };
+    SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
+  }, 300);
+} else {
+  if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
+  try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
+}
+// タブ復帰時の自動チェック：他端末の更新を即時反映
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && SYNC.hasTarget()) {
+    SYNC.pollIfNeeded();
+  }
+});
+// 同一端末・別タブ（ワークスケジュール等）の care_schedule_v2 書き込みを即時反映。
+// 未送信の自編集(_dirty)がある間は上書きしない（既存のpoll/競合処理に委ねる）。デバウンスで連続書込を集約。
+let _csStorageTimer = null;
+function _csBusyEditing() {
+  // 編集モーダル表示中／ドラッグ中は取り込みを保留（編集中イベントの下でDB差し替え・ドラッグ中断を防ぐ）
+  return editingEventId != null ||
+         document.body.classList.contains('is-dragging-move') ||
+         document.body.classList.contains('is-dragging-resize');
+}
+window.addEventListener('storage', (e) => {
+  if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
+  if (SYNC._dirty || _csBusyEditing()) return;   // 自端末の未送信編集／編集中は守る（クリーン時のみ取り込む）
+  if (_csStorageTimer) clearTimeout(_csStorageTimer);
+  _csStorageTimer = setTimeout(() => {
+    _csStorageTimer = null;
+    if (SYNC._dirty || _csBusyEditing()) return; // デバウンス中に編集が入ったら中止（自編集優先）
+    try { loadDB(); renderAll(); } catch (err) {}
+  }, 300);
+});
+// ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
+window.addEventListener('online', () => {
+  if (!SYNC.hasTarget()) return;
+  if (SYNC._dirty) { SYNC.push(); } else { SYNC.pollIfNeeded(); }
+});
+// ページ離脱時：未送信変更があれば最後のpushを試みる（ベストエフォート・統合GAS形式）
+// iOS Safari は beforeunload が発火しないことが多いため pagehide にも同一処理を結線（BE-01対策）。
+// 両方発火して二重送信になっても、2通目は rev が古く GAS の楽観ロックで弾かれるだけ＝無害。
+// 永続dirtyフラグはここで解除しない（beacon の成否は確認できない＝次回起動の startupPull が検証する）。
+function csFlushOnExit_() {
+  if (SYNC._dirty && SYNC.hasTarget()) {
+    // 離脱時は sendBeacon を使用（非同期 fetch は中断されるため）
+    try {
+      const t = SYNC.target();
+      const payload = JSON.stringify({ action: 'put', key: 'care_schedule_v2',
+        rev: SYNC.loadCareRev(), data: DB, token: t.token });
+      navigator.sendBeacon(t.endpoint, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
+    } catch(_) {}
+  }
+}
+window.addEventListener('beforeunload', csFlushOnExit_);
+window.addEventListener('pagehide', csFlushOnExit_);
+</script>
+</body>
+</html>

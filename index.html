@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<!-- 検索エンジンにこのページと配下ツールを辿らせない。
+     一覧ページは「ツール名を知らない第三者が全ツールへ1クリックで到達できる」入口になるため、
+     noindex に加えて nofollow を必ず付ける（各ツールは埋め込みトークンでGASを叩く構成）。 -->
+<meta name="robots" content="noindex,nofollow">
+<title>介護ツール メニュー</title>
+<style>
+/* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
+   このページは氏名・記録を一切持たないため localStorage も同期も使わない。 */
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+  --tile-min: 96px;          /* HIG: タップ領域は最小44px。実測96pxで誤タップを避ける */
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g0); color: var(--g9);
+  line-height: 1.5;
+  padding-bottom: 32px;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── ヘッダー（他ツールと同じスティッキー方式） ── */
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff;
+  padding: 14px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh);
+}
+.hdr h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+/* opacity を掛けると白が --pri と合成され 4.06:1 まで落ちて AA を割るため、白のまま使う（4.50:1） */
+.hdr .sub { margin: 2px 0 0; font-size: 12px; }
+
+main {
+  /* 2列を保つため幅を抑える（広げて3列にすると指定のペアが分断される。M-2 参照） */
+  max-width: 620px; margin: 0 auto;
+  padding: 16px max(14px, env(safe-area-inset-left)) 0 max(14px, env(safe-area-inset-right));
+}
+
+/* ── 区分（職員／入居者／厨房） ── */
+.sec { margin: 0 0 26px; }
+.sec > h2 {
+  margin: 0 0 10px; padding: 0 2px 6px;
+  font-size: 15px; font-weight: 700; color: var(--g7);
+  border-bottom: 2px solid var(--g2);
+  display: flex; align-items: center; gap: 7px;
+}
+.sec > h2 .mk { font-size: 17px; }
+
+/* ── タイル配置 ──
+   指定の並び順どおりに左上から流し込む。★列数は常に2で固定する。
+   3列にすると「シフトの下が過去シフト分析」「週間計画とデイ利用表が横並び」等の
+   指定されたペアが分断されるため、広い画面では列を増やさず main の幅で抑える。 */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+/* 指定の行割りを保つための改行指定。付けたタイルは必ず左列から始まる＝
+   直前のタイル（週間計画俯瞰）がその行に単独で残る。 */
+.tile.newrow { grid-column-start: 1; }
+
+.tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; min-height: var(--tile-min); padding: 12px 10px;
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); text-decoration: none; color: var(--g9);
+  text-align: center; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.tile:hover { border-color: var(--pri); box-shadow: 0 2px 10px rgba(26,115,232,.18); }
+.tile:active { transform: scale(.97); }
+/* HIG: フォーカスリングを消さない（キーボード操作の到達性） */
+.tile:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.tile .ic { font-size: 28px; line-height: 1; }
+.tile .nm { font-size: 13.5px; font-weight: 700; }
+/* --g6(#80868b) は白地で 3.68:1 と AA(4.5:1) を下回るため --g7(#5f6368)=5.96:1 を使う */
+.tile .note { font-size: 11px; color: var(--g7); font-weight: 400; }
+
+/* 別サイトへ移動するタイルの目印。色だけに意味を持たせず「↗」と注記を併用する（HIG） */
+.tile.ext .nm::after { content: " ↗"; color: var(--g7); font-weight: 400; }
+
+.foot {
+  max-width: 620px; margin: 6px auto 0;   /* main と同じ幅に揃える */
+  padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  font-size: 11.5px; color: var(--g7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 動きは止めるが、押した手応えは残す。既定のタップハイライトを切っているため、
+     ここで色の変化を与えないと「押せたか分からない」状態になる（HIG: 即座の視覚フィードバック）。 */
+  .tile { transition: none; }
+  .tile:active { transform: none; background: var(--pri-l); border-color: var(--pri); }
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <h1>介護ツール メニュー</h1>
+  <p class="sub">使うアプリを選んでください</p>
+</header>
+
+<main>
+  <!-- ══ 職員 ══ -->
+  <section class="sec" aria-labelledby="sec-staff">
+    <h2 id="sec-staff"><span class="mk" aria-hidden="true">👥</span>職員</h2>
+    <div class="grid">
+      <a class="tile" href="shift-app.html">
+        <span class="ic" aria-hidden="true">🗓️</span>
+        <span class="nm">シフト</span>
+        <span class="note">勤務表の作成・管理</span>
+      </a>
+      <a class="tile" href="work-schedule.html">
+        <span class="ic" aria-hidden="true">📋</span>
+        <span class="nm">ワークスケジュール</span>
+        <span class="note">1日の支援割り振り</span>
+      </a>
+      <a class="tile" href="shift-analyzer.html">
+        <span class="ic" aria-hidden="true">📊</span>
+        <span class="nm">過去シフト分析</span>
+        <span class="note">実働・常勤換算の集計</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ══ 入居者 ══ -->
+  <section class="sec" aria-labelledby="sec-resident">
+    <h2 id="sec-resident"><span class="mk" aria-hidden="true">🏠</span>入居者</h2>
+    <div class="grid">
+      <a class="tile ext" href="https://th-su.github.io/haiben-record/haiben-record.html">
+        <span class="ic" aria-hidden="true">🚻</span>
+        <span class="nm">排泄ケア記録</span>
+        <span class="note">別サイトで開きます</span>
+      </a>
+      <a class="tile" href="weight-record.html">
+        <span class="ic" aria-hidden="true">⚖️</span>
+        <span class="nm">体重管理</span>
+        <span class="note">体重の記録・推移</span>
+      </a>
+      <a class="tile" href="care-schedule.html">
+        <span class="ic" aria-hidden="true">📅</span>
+        <span class="nm">週間計画</span>
+        <span class="note">週間ケア計画の作成</span>
+      </a>
+      <a class="tile" href="daycare-roster.html">
+        <span class="ic" aria-hidden="true">☀️</span>
+        <span class="nm">デイ利用表</span>
+        <span class="note">通所の利用予定</span>
+      </a>
+      <a class="tile" href="visit-overview.html">
+        <span class="ic" aria-hidden="true">🗺️</span>
+        <span class="nm">週間計画俯瞰</span>
+        <span class="note">訪問の週間まとめ</span>
+      </a>
+      <a class="tile newrow" href="facesheet.html">
+        <span class="ic" aria-hidden="true">📄</span>
+        <span class="nm">フェイスシート</span>
+        <span class="note">基本情報シート</span>
+      </a>
+      <a class="tile" href="genogram.html">
+        <span class="ic" aria-hidden="true">🌳</span>
+        <span class="nm">ジェノグラム</span>
+        <span class="note">家族関係図の作成</span>
+      </a>
+      <a class="tile" href="resident-master.html">
+        <span class="ic" aria-hidden="true">🗂️</span>
+        <span class="nm">入居者マスタ</span>
+        <span class="note">入居者情報の管理</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ══ 厨房 ══ -->
+  <section class="sec" aria-labelledby="sec-kitchen">
+    <h2 id="sec-kitchen"><span class="mk" aria-hidden="true">🍳</span>厨房</h2>
+    <div class="grid">
+      <a class="tile ext" href="https://th-su.github.io/kitchen-app/">
+        <span class="ic" aria-hidden="true">🍽️</span>
+        <span class="nm">厨房メニュー管理</span>
+        <span class="note">別サイトで開きます</span>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。</footer>
+
+</body>
+</html>

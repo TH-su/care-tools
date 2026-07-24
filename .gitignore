@@ -1,0 +1,41 @@
+# ════════════════════════════════════════════════════════════════
+# care-tools 公開ホワイトリスト（2026-07-07・セキュリティ監査 M-3/M-2 対策）
+#
+# このディレクトリは WordPress テーマ本体でもあるが、git リモートは
+# 公開リポジトリ TH-su/care-tools。載せてよいのは「公開する介護ツール HTML」だけ。
+#
+# 既定で全て除外し、公開対象ファイルのみをホワイトリストで許可する。
+# これにより `git add -A` / `git add .` を実行しても、WordPress テーマ本体(PHP)・
+# harness(.claude/)・CLAUDE.md・design/・実在氏名を含む PII 等が
+# 公開リポジトリへ誤って混入しない（＝丸ごと流出を機械的に防止）。
+#
+# 新しい公開アプリを追加する時だけ、下に `!/新ファイル.html` を1行足す（明示 opt-in）。
+# ════════════════════════════════════════════════════════════════
+
+# まず全て除外
+/*
+
+# 公開対象のみ許可（現に origin/main で公開されているファイル）
+!/.gitignore
+!/.nojekyll
+!/care-schedule.html
+!/facesheet.html
+!/genogram.html
+!/resident-master.html
+!/shift-app.html
+!/weight-record.html
+!/work-schedule.html
+!/visit-overview.html
+!/daycare-roster.html
+!/overview-compare.html
+!/support-overview.html
+!/universe-sandbox
+!/index.html
+!/shift-analyzer.html
+
+# ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
+#  haiben-record.html / gas/         → 別リポ TH-su/haiben-record で管理
+#  ws-master*.json / data/           → 実在入居者名を含む（公開厳禁）
+#  demo-data.json / staff-roster.json / shiftapp-backup-*.json → 実職員名を含む
+#  visiting-medical-app/             → 訪問診療（要配慮個人情報）・本番は clinic-app
+#  *.php / .claude/ / CLAUDE.md / design/ / assets/  → テーマ本体・harness・docs

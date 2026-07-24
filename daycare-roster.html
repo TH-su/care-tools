@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<!-- 実在入居者の氏名を表示する読み取り専用ビュー: キャッシュ残留を防ぐ -->
+<meta http-equiv="Cache-Control" content="no-store">
+<title>通所せせらぎ 利用表</title>
+<style>
+/* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
+   5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
+   ★書き込みは「薬用タブの昼食薬(lunchMed)チェック」1点のみに限定する（2026-07-23 追加）。
+     それ以外（予定・時刻・辞書・rev運用）には一切書き込まない。lunchMed の書込みも
+     read-fresh＋rev競合ガード方式で、他端末が編集中の週間計画を壊さない（下記 writeLunchMed 参照）。 */
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32; --ng: #c62828;
+  --bath-bg: #ffff00; --bath-b: #d4b800;   /* 入浴あり=ビビッドな黄（元のせせらぎ表と同じ） */
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g8: #3c4043; --g9: #202124;
+  --r: 12px; --sh: 0 1px 6px rgba(0,0,0,.12);
+  --line: #b7bcc2;   /* 表罫線（スプレッドシート風に濃いめ） */
+  --sese: #99cc00;   /* 「せせらぎ」ラベルの識別色（元表を継承） */
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  font-size: 14px; color: var(--g9); background: var(--g1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ===== ヘッダー ===== */
+.hdr {
+  flex-shrink: 0; min-height: 50px; background: var(--pri); color: #fff;
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+}
+.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.hdr-sub { font-size: 11px; opacity: .9; white-space: nowrap; }
+.hdr-sp { flex: 1; }
+.hdr-btn {
+  min-height: 40px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.hdr-btn:hover { background: rgba(255,255,255,.28); }
+.hdr-btn:disabled { opacity: .4; cursor: default; }
+.hdr-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.hdr-btn.solid { background: var(--pri); border-color: var(--pri); }   /* 白背景の空状態に置くボタン */
+.sync-state { font-size: 11px; opacity: .9; white-space: nowrap; }
+
+/* ===== タブ（weight-record 準拠の上タブ）=====
+   規約既定は .bnav(下タブ)だが、本ツールは body が overflow:hidden の flex column で
+   スクロール箱が .wrap 単独のため、fixed な .bnav は padding-bottom と印刷CSSの両方に干渉する。
+   .hdr の直後に flex-shrink:0 の兄弟を1つ足す上タブなら既存の flex/scroll 配管に触れずに済む。 */
+.tnav {
+  flex-shrink: 0; display: flex; background: #fff; border-bottom: 1px solid var(--g3);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.tnav button {
+  flex: 1 0 auto; min-height: 44px; padding: 8px 14px;   /* HIG: タップ領域44px以上 */
+  border: none; background: none; color: var(--g7); font-size: 13px; cursor: pointer;
+  white-space: nowrap; border-bottom: 3px solid transparent;
+}
+.tnav button:hover { background: var(--g0); }
+.tnav button:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
+/* アクティブは 色＋下線＋背景 の3重表現（HIG: 色だけに意味を持たせない） */
+.tnav button[aria-selected="true"] { color: var(--pri-d); font-weight: 700; border-bottom-color: var(--pri); background: var(--pri-l); }
+
+.legend {
+  flex-shrink: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 5px 12px; background: #fff; border-bottom: 1px solid var(--g3);
+  font-size: 11px; color: var(--g7); min-height: 26px;
+}
+.lg { display: inline-flex; align-items: center; gap: 4px; }
+.lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--bath-b); background: var(--bath-bg); flex-shrink: 0; }
+.warn-badge { color: var(--ng); font-weight: 700; }
+
+/* ===== 表（既存の利用表タブ・無改変）===== */
+.wrap {
+  flex: 1; overflow: auto; padding: 12px; -webkit-overflow-scrolling: touch;
+  position: relative;   /* .board-empty(position:absolute; inset:0) の位置指定祖先。無いとビューポート基準になりタブバーを覆う */
+}
+.scr { display: none; }
+.scr.on { display: block; }
+.sheet-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+table.roster {
+  border-collapse: collapse; background: #fff; margin: 0 auto; box-shadow: var(--sh);
+  table-layout: fixed;
+}
+table.roster th, table.roster td {
+  border: 1px solid var(--line); padding: 2px 4px; font-size: 12px; line-height: 1.3;
+  text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+table.roster thead th { background: var(--g1); font-weight: 700; height: 30px; }
+.col-time { width: 78px; background: var(--g0); }
+.col-rn   { width: 30px; color: var(--g6); font-weight: 400; background: var(--g0); }
+.col-day  { width: 118px; }
+.th-day.sat { color: #1565c0; }
+.th-day.sun { color: #c0392b; }
+.plan-label { background: var(--g0); font-weight: 700; font-size: 12px; writing-mode: horizontal-tb; }
+td.user { text-align: left; }
+td.user.bath { background: var(--bath-bg); }        /* デイ参加日に入浴あり=黄 */
+td.empty { background: #fff; }
+/* 利用時間帯ブロック間の分断（見やすさ向上・上段9:00-13:00と下段9:00-13:30 等を分ける薄グレー帯） */
+table.roster tr.spacer td { height: 10px; background: var(--g2); border-left: 1px solid var(--line); border-right: 1px solid var(--line); padding: 0; }
+/* 入院中（ワークスケジュールの入院入力＝care_schedule_v2 の hospitalized を反映）。
+   色だけに頼らず「（入院）」の文言でも示す（HIG: 色覚特性配慮） */
+.hosp-tag { color: var(--ng); font-weight: 700; font-size: 11px; margin-left: 3px; white-space: nowrap; }
+tr.tot th { background: var(--g1); font-weight: 700; }
+tr.tot td { font-weight: 700; }
+tr.tot.use td { color: var(--pri-d); }
+.hosp-box {
+  max-width: 900px; margin: 12px auto 0; background: #fff; border: 1px solid var(--g3);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--g7);
+}
+.hosp-box b { color: var(--g9); }
+.hosp-names { color: var(--g8); }
+
+/* ===== 共通: 帳票テーブル（View1/2/3）===== */
+table.sheet { border-collapse: collapse; background: #fff; margin: 0 auto; table-layout: fixed; box-shadow: var(--sh); }
+table.sheet th, table.sheet td {
+  border: 1px solid var(--line); padding: 1px 3px; font-size: 11px; line-height: 1.25;
+  text-align: center; overflow: hidden; white-space: nowrap;
+}
+/* ★列幅は必ず <colgroup> で宣言する。table-layout:fixed は列幅を「最初の行」からしか読まないため、
+   曜日見出しを colspan=3 で1行目に置く本表では、2行目に書いた幅指定は無視されて自動配分される。
+   ★ここの値は JS の W（setupSheet が table 幅を明示するのに使う）と必ず一致させること。
+   食い違うと fixed が差分を各列へ再配分し、colgroup 側の指定が黙って無効化される。
+   med(w-nm=80): 24+20+6×(80+34+34)=932px。右の備考パネル112+gap8 を足して 1052px ≦ 1062px。
+   daylist(w-nm-dl=100): 24+20+6×(100+34+34)=1052px。備考は表の下＝表は全幅（≦A3縦 1062px）。
+   allweek(備考なし・ふりがな列なし): 44+6×(96+36+36)=1052px ≦ A4横 1062px。
+     ★旧ふりがな列(110px)の廃止で空いた幅は全列へ均等に配り（No.+24／氏名+10×6／時刻+2×12）、
+       用紙いっぱいの表幅は維持した。No.列だけ広めなのは合計行の「入居者」ラベルを収めるため。 */
+table.sheet col.w-sec   { width: 24px; }
+table.sheet col.w-rn    { width: 20px; }
+table.sheet col.w-rn-aw { width: 44px; }    /* 全員リスト用 No.列（合計行の「入居者」を収める・★JS W.rnAw と一致必須） */
+table.sheet col.w-nm    { width: 80px; }    /* med用 氏名列（右に備考・拡幅で折返し減＝行高も下がる） */
+table.sheet col.w-nm-aw { width: 96px; }    /* 全員リスト用 氏名列（備考が無いぶん広い・★JS W.nmAw と一致必須） */
+table.sheet col.w-nm-dl { width: 100px; }   /* デイ利用者一覧表用 氏名列（備考が表の下＝全幅で最大化・★JS W.nmDl と一致必須） */
+table.sheet col.w-tm    { width: 34px; }
+table.sheet col.w-tm-aw { width: 36px; }    /* 全員リスト用 時刻列（★JS W.tmAw と一致必須） */
+/* 氏名は欠けさせない: 最小の氏名列(med=80px)でも nowrap だと8文字以上で末尾が切れる。
+   氏名の欠落は帳票として許容できないため折返す（既存の利用表タブと同じ方針）。
+   ★padding を詰めるのは必須。折返しの判定は「内容ボックス」で行われる一方 overflow:hidden は
+   「パディングボックス」で切るため、既定の padding(左右3px)のままだと内容ボックスが狭まり、
+   本来1行で収まる氏名まで折返して全行の高さが倍増する（＝1枚に収まらなくなる）。 */
+table.sheet .c-nm {
+  text-align: left; white-space: normal; word-break: break-all;
+  padding-left: 1px; padding-right: 1px;
+}
+/* 時刻セル: 34px 列でも 11px フォントの「13:00」(31.6px)は描画可能幅に入らない。
+   34 − 左右border/padding を引くと実質 30px 前後で末尾の「0」が欠ける（開始9:00は4文字で収まり見落としやすい）。
+   列は幅予算(1062px)の都合で広げられないので、padding を詰めて 10px フォントで収める。 */
+table.sheet .c-tm { color: var(--g7); font-size: 10px; padding-left: 1px; padding-right: 1px; }
+/* （入院）は氏名の右に置くと氏名列に入らず、タグごと・氏名の一部ごと欠ける。
+   氏名の下段へ回して両方を残す（入院者の行だけ2行になる）。table.sheet 限定＝既存の利用表は無改変。 */
+table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: 9px; line-height: 1.1; }
+table.sheet .c-rn { color: var(--g6); background: var(--g0); }
+/* 20px 列に 11px の見出し「No.」は入らない（末尾が欠ける）。連番の数字は2桁までなので見出しだけ縮める。 */
+table.sheet th.c-rn { font-size: 9px; padding-left: 1px; padding-right: 1px; }
+/* 区画ラベル（２階入居者 等）は縦書き（元Excelと同じ）。幅24pxに横書きで入れると
+   nowrap+overflow:hidden で切れて読めなくなる（table-layout:fixed なので列は伸びない）。 */
+table.sheet .c-sec {
+  background: var(--g0); font-weight: 700;
+  writing-mode: vertical-rl; text-orientation: upright;
+  white-space: nowrap; overflow: visible; letter-spacing: 1px;
+}
+/* 全員リスト合計行の左端ラベル「入居者」。旧ふりがな列に置いていたものを No.列(44px)へ移した。
+   11px のままだと3文字=33px が内容幅(44−罫線2−padding6=36px)に対して余裕を欠くため 10px に落とす。 */
+table.sheet .c-sum-lb {
+  color: var(--g7); font-size: 10px;
+  padding-left: 1px; padding-right: 1px;
+}
+/* 備考はテーブルの外に置く（元表はグリッド内に埋め込み、火・水の枠を15→11に潰していた）。
+   横に並べることで全曜日の枠数が揃い、rowSpan のハックも不要になる。 */
+/* safe center: 収まる時は中央、はみ出す時は左詰め。素の center だと内容が容器より広い場合に
+   左側がはみ出してスクロールで到達できなくなる（区画ラベル列が永久に見えなくなる）。 */
+.sheet-row { display: flex; gap: 8px; align-items: flex-start; justify-content: safe center; width: max-content; min-width: 100%; }
+.note-panel {
+  flex: 0 0 112px; align-self: stretch;   /* 細く＋表と同じ高さに伸ばす（表を広げるため幅を詰める） */
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
+  padding: 6px 8px; font-size: 10px; line-height: 1.5; color: var(--g8);
+}
+/* デイ利用者一覧表の備考は「表の下」に置く＝横幅を表に使い切る。幅は JS で表と同じにし中央寄せ・横並びでコンパクト。 */
+.note-below {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px;
+  margin: 8px auto 0;   /* 表(margin:0 auto)と同じく中央寄せ。width は renderDaylist で表幅に合わせる */
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
+  padding: 5px 10px; font-size: 11px; line-height: 1.5; color: var(--g8);
+}
+.note-below .nb-h { font-weight: 700; background: var(--g1); padding: 1px 8px; border-radius: 3px; }
+.note-below .nb-item { white-space: nowrap; }
+table.sheet thead th { background: var(--g1); font-weight: 700; }
+table.sheet .sec-h { background: var(--g0); font-weight: 700; text-align: center; }
+table.sheet .sese { background: var(--sese); font-weight: 700; }        /* ２階入居者ラベル＝緑（元表を継承） */
+table.sheet .flr1 { background: #b3e5fc; font-weight: 700; }           /* １階入居者ラベル＝薄い水色（2階と別色にして区切りを明確化） */
+/* 階ごとの塊を濃い・太い罫線で囲む（border-collapse なので太い方が勝つ）。外周セルにだけ付与。 */
+table.sheet .blk-top  { border-top: 2px solid var(--g9); }
+table.sheet .blk-bot  { border-bottom: 2px solid var(--g9); }
+table.sheet .blk-left { border-left: 2px solid var(--g9); }
+table.sheet .blk-right{ border-right: 2px solid var(--g9); }
+/* 薬用: 右のチェックリストでチェックした利用者の氏名セル＝薄オレンジ（入浴黄#ffff00・階未設定#fff3e0 と区別）。
+   印刷にもこの色のまま出す（@media print に打ち消しを置かない＝画面と紙面を一致させる） */
+table.sheet td.med-hl { background: #ffe0b2; }
+table.sheet td.nm.bath { background: var(--bath-bg); }
+table.sheet tr.sum th, table.sheet tr.sum td { background: var(--g1); font-weight: 700; }
+/* ☆は .c-tm セル内に置くため、放置すると時刻用の 10px を継承して視認性が落ちる。記号は 11px を保つ。 */
+.star { color: var(--ng); font-weight: 700; font-size: 11px; }   /* ☆＝訪問診療（元表の赤字☆） */
+.nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
+.note-box { white-space: pre-wrap; }
+.med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 12px; }
+
+/* ===== 薬用: 画面専用の入居者チェックリスト（印刷されない）===== */
+.chk-panel {
+  flex: 0 0 176px; align-self: stretch; background: #fff; border: 1px solid var(--line);
+  box-shadow: var(--sh); padding: 6px 8px; font-size: 12px; color: var(--g8);
+}
+.chk-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 12px; padding: 3px; margin: 0 -8px 6px; }
+.chk-sub { color: var(--g6); font-size: 10px; }
+.chk-flr { font-weight: 700; color: var(--g7); margin: 6px 0 2px; }
+.chk-item {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 2px 2px;   /* HIG: タップ領域44px以上 */
+  cursor: pointer; border-radius: 4px;
+}
+.chk-item:hover { background: var(--g0); }
+.chk-item input { width: 18px; height: 18px; flex-shrink: 0; }
+.chk-clear {
+  margin-top: 8px; width: 100%; min-height: 44px; border: 1px solid var(--g3);
+  background: var(--g0); color: var(--g7); border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.chk-clear:hover { background: var(--g1); }
+.chk-clear:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+
+/* ===== 週間名簿（View4）===== */
+.wk-page { background: #fff; box-shadow: var(--sh); margin: 0 auto 14px; padding: 10px; max-width: 780px; }
+table.wk { border-collapse: collapse; width: 100%; table-layout: fixed; }
+table.wk td, table.wk th {
+  font-family: "HG丸ｺﾞｼｯｸM-PRO", "Hiragino Maru Gothic ProN", -apple-system, sans-serif;
+  font-size: 22px; font-weight: 700; text-align: center; vertical-align: middle;
+  height: 30px; padding: 1px; border: none; white-space: nowrap;
+}
+table.wk .wk-day { width: 16%; color: #ff0000; border: 2px solid var(--g9); }
+table.wk .wk-h { color: #ff0000; width: 42%; }
+table.wk .wk-sum { color: #111; }
+table.wk .wk-blank { color: transparent; }
+
+.board-empty {
+  position: absolute; inset: 0; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; color: var(--g6);
+  font-size: 14px; text-align: center; padding: 24px; background: var(--g1);
+}
+.board-empty.on { display: flex; }
+#toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
+  font-size: 13px; z-index: 300; display: none; max-width: 90%; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
+#toast.ng { background: var(--ng); }
+#toast.on { display: block; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* 一括印刷用の隠しコンテナ（印刷時のみ構築し、印刷後に必ず破棄＝氏名をDOMに残さない） */
+.print-batch { display: none; }
+
+/* ===== 印刷 =====
+   既定タブ(利用表)の A4縦 は静的 @page のまま＝現行完全無改変。
+   他タブは印刷時に @page を動的注入して用紙を切り替える（care-schedule.html:3989 で実証済みの手法）。 */
+@media print {
+  @page { size: A4 portrait; margin: 8mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  html, body { overflow: visible; height: auto; background: #fff; }
+  .hdr, #toast, .tnav { display: none !important; }
+  .legend { border-bottom: 1px solid #000; }
+  .wrap { overflow: visible; padding: 0; }
+  /* 印刷時は列幅を詰めてA4縦の印刷可能幅(≈733px@96dpi)に確実に収める（固定列幅の合計＜用紙幅）。
+     width:auto＋margin auto で実寸サイズのまま中央寄せ。6列=620px／7列=708px でどちらも収まる。 */
+  table.roster { box-shadow: none; width: auto; }
+  .col-time { width: 68px; }
+  .col-rn { width: 24px; }
+  .col-day { width: 88px; }
+  table.roster th, table.roster td { border-color: #000; padding: 2px 3px; }
+  /* 氏名＋（入院）で列が広がり用紙幅を超えるのを防ぐ: 印刷では折返して列幅を固定に保つ
+     （nowrap のままだと列が伸び、入院者が複数曜日に出た時に A4縦の印刷可能幅を超える）。
+     折返しはコストが縦に移るため line-height を詰めて1ページ収容行数を稼ぐ
+     （実測: 1.3 では全行折返し時に23行が限界＝実運用21行に対し余裕2行しかない）。 */
+  table.roster td.user { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; }
+  /* 分断帯は印刷でも残す（見やすさ）が、行高予算（実運用21行/限界23行）を圧迫しないよう最小高にする */
+  table.roster tr.spacer td { height: 5px; }
+
+  table.sheet { box-shadow: none; }
+  table.sheet th, table.sheet td { border-color: #000; }
+  /* デイ利用者一覧表(A3縦・全幅)は行を少し高くして用紙を縦に広く使う（#sc-daylist 限定＝他タブ印刷に非干渉）。
+     28名で表実高≈1329px＋備考/表題 ≈1409px ＜ A3縦印刷可能高≈1527px（余裕あり）。 */
+  #sc-daylist table.sheet td, #sc-daylist table.sheet th { padding-top: 4px; padding-bottom: 4px; }
+  /* 薬用の画面専用チェックリストは印刷しない。太枠(blk-*)は詳細度で border-color(#000)指定に勝ち var(--g9)=濃色のまま帳票に出る（体感は黒）。 */
+  .noprint { display: none !important; }
+  /* 薬用のチェック色(.med-hl=薄オレンジ)は印刷にも出す（2026-07-21 運用指示・昼食のある方を紙面で判別するため）。
+     旧: ここで background:transparent に上書きして消していた。上書きを持たない＝画面と印刷が同一になる
+     （階未設定 .nofloor との重なりも、詳細度で .med-hl が勝つ画面と同じ結果になる）。
+     塗り自体は冒頭の print-color-adjust:exact で「背景のグラフィック」設定に関係なく出る（入浴の黄と同じ経路）。 */
+  /* 氏名は画面・印刷とも折返す（切れたら情報が失われるため。折返し自体は .c-nm の基底で指定済み）。
+     ここでは印刷時に overflow/line-height を詰めて行増を最小化する。
+     折返しのコストは縦に移るが高さに余裕がある（実測: A3縦 704/1527・A4横 594/733）。 */
+  table.sheet td.c-nm { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; overflow-wrap: anywhere; }
+  .wk-page { box-shadow: none; padding: 0; max-width: none; }
+
+  /* 一括6枚印刷（View4）: 画面の .scr を隠し、6ページを並べる。
+     ★body は flex column のままだと .pg の break-after がフレックスアイテム内フラグメンテーション
+       頼みになり不安定。一括印刷時だけ block 化する（.pr-batch にスコープし、既定タブの
+       A4縦印刷経路には一切触れない）。 */
+  body.pr-batch { display: block; }
+  body.pr-batch .scr, body.pr-batch .legend { display: none !important; }
+  body.pr-batch .print-batch { display: block; }
+  .pg { break-after: page; page-break-after: always; }          /* 旧仕様併記＝Safari保険 */
+  .pg:last-child { break-after: auto; page-break-after: auto; } /* 末尾の空白ページ防止 */
+  .pg table { break-inside: avoid; page-break-inside: avoid; }
+  body.pr-batch table.wk td, body.pr-batch table.wk th { font-size: 26pt; height: 10.1mm; }
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <span class="hdr-title">通所せせらぎ</span>
+  <span class="hdr-sub" id="hdrSub">読込中…</span>
+  <span class="hdr-sp"></span>
+  <span class="sync-state" id="syncState">読込中…</span>
+  <!-- アプリ間ジャンプ（shift-app.html と同形式・相対パス＝同一オリジン）。
+       「更新」「印刷」の位置は動かさない＝現場の操作記憶を壊さないため左側へ足す。
+       .hdr は @media print で display:none のため帳票には出ない。 -->
+  <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタアプリを新しいタブで開く">👤 入居者マスタ</button>
+  <button class="hdr-btn" id="btnCare" aria-label="週間計画アプリを新しいタブで開く">📅 週間計画</button>
+  <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
+  <button class="hdr-btn" id="btnPrint" aria-label="表示中のタブを印刷">印刷</button>
+</header>
+
+<nav class="tnav" id="tnav" role="tablist" aria-label="帳票の切り替え">
+  <button role="tab" data-sc="sc-roster"  aria-selected="true"  aria-controls="sc-roster">利用表</button>
+  <button role="tab" data-sc="sc-daylist" aria-selected="false" aria-controls="sc-daylist">デイ利用者一覧表</button>
+  <button role="tab" data-sc="sc-allweek" aria-selected="false" aria-controls="sc-allweek">全員リスト</button>
+  <button role="tab" data-sc="sc-med"     aria-selected="false" aria-controls="sc-med">薬用</button>
+  <button role="tab" data-sc="sc-weekly"  aria-selected="false" aria-controls="sc-weekly">週間名簿</button>
+</nav>
+
+<div class="legend" id="legend"></div>
+
+<main class="wrap" id="wrap">
+  <!-- 既存タブ（無改変） -->
+  <section id="sc-roster" class="scr on" role="tabpanel">
+    <div class="sheet-title">デイサービスせせらぎ 利用登録表（利用時間別）</div>
+    <table class="roster" id="roster" aria-label="通所せせらぎ 利用登録表"></table>
+    <div class="hosp-box" id="hospBox" style="display:none">
+      <b>〈入院中利用者〉</b> <span class="hosp-names" id="hospNames"></span>
+    </div>
+  </section>
+
+  <section id="sc-daylist" class="scr" role="tabpanel">
+    <div class="sheet-title" id="dlTitle">デイ利用者一覧表</div>
+    <table class="sheet" id="tblDaylist" aria-label="デイ利用者一覧表"></table>
+    <aside class="note-below" id="noteDaylist" aria-label="備考"></aside>
+  </section>
+
+  <section id="sc-allweek" class="scr" role="tabpanel">
+    <div class="sheet-title">デイサービス利用一覧表（全員リスト）</div>
+    <table class="sheet" id="tblAllweek" aria-label="全員リスト"></table>
+  </section>
+
+  <section id="sc-med" class="scr" role="tabpanel">
+    <div class="sheet-title" id="medTitle">デイ利用者一覧表（薬用）</div>
+    <div class="sheet-row">
+      <table class="sheet" id="tblMed" aria-label="薬用一覧表"></table>
+      <aside class="note-panel" id="noteMed" aria-label="備考"></aside>
+      <aside class="chk-panel noprint" id="chkMed" aria-label="昼食薬チェック（全端末に保存・この欄は印刷されません）"></aside>
+    </div>
+  </section>
+
+  <section id="sc-weekly" class="scr" role="tabpanel">
+    <div id="weeklyPages"></div>
+  </section>
+
+  <div class="board-empty" id="boardEmpty">
+    <div id="emptyMsg">週間計画のデータが見つかりません。</div>
+    <button class="hdr-btn solid" id="btnRefresh2">クラウドから取得</button>
+  </div>
+</main>
+
+<div class="print-batch" id="printBatch"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ============================================================================
+   通所せせらぎ（5タブ）— 参照中心（書込みは薬用タブの昼食薬チェックのみ）
+   データ源: care_schedule_v2（daycare イベント＋ residents の room / floor / lunchMed /
+             visitingMed / hospitalized / kana）。
+   ★階(1階/2階)の決定は room（入居者マスタ由来の居室）を第一とする。2026-07-21 追加。
+     room は care-schedule.html が su_residents_common から「master常勝」で取り込むため、
+     入居者マスタで居室を直せば部屋移動が自動で追従する（旧経路＝ワークスケジュールの
+     デイサービスマスタ手書き floor は、room が取れない時のフォールバックとして残す）。
+   ★書込みは薬用タブの昼食薬(lunchMed)チェックのみ。予定/時刻/辞書/rev運用には書き込まない。
+   5タブは「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」の単一モデルの別表現。
+   「２階」は居室の階(floor)ではなく『その日デイに行かない人が2階食堂で昼食を摂る』場所の意味。
+   既知の制約: 自費区分（赤/緑）は週間計画に無いため非対応。
+   ============================================================================ */
+
+const LS_KEY  = 'care_schedule_v2';
+const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];
+const NDAY    = 6;                       // 月〜土（せせらぎ日曜休）
+
+const $ = id => document.getElementById(id);
+
+function toMin(t) {
+  if (typeof t !== 'string') return null;
+  const p = t.split(':');
+  if (p.length < 2) return null;
+  const h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+function minToLabel(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h + ':' + (m < 10 ? '0' + m : m);
+}
+function el(tag, cls, txt) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;   // 氏名等は textContent で（要配慮個人情報・XSS防止）
+  return n;
+}
+
+// ── データ取得（読み取り専用） ──
+let DB = null;
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return (obj && Array.isArray(obj.residents)) ? obj : null;
+  } catch (e) {
+    return null;
+  }
+}
+function syncTarget() {
+  try {
+    const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
+    if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
+  } catch (e) {}
+  try {
+    const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
+    if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
+  } catch (e) {}
+  return { endpoint: '', token: '' };
+}
+// GAS 共通トランスポート（get/put 共用）。care-schedule.html / work-schedule.html と同一契約：
+// text/plain で CORS preflight を回避し、{ok, data, rev, conflict, error} を返す。
+async function gasCall(payload) {
+  const t = syncTarget();
+  if (!t.endpoint) throw new Error('同期先が未設定です');
+  const res = await fetch(t.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // CORS preflight 回避
+    body: JSON.stringify(Object.assign({ token: t.token }, payload)),
+    redirect: 'follow'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fetchRemote() {
+  const t = syncTarget();
+  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
+  const j = await gasCall({ action: 'get', key: LS_KEY });   // ★読み取り（rev は使わない）
+  if (!j.ok) throw new Error(j.error || '応答エラー');
+  return (j.data && Array.isArray(j.data.residents)) ? j.data : null;
+}
+// 書戻し用: 最新をrev付きで取得（get のたびに rev を受けて put の版ガードに使う）
+async function getRemoteWithRev() {
+  const j = await gasCall({ action: 'get', key: LS_KEY });
+  if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
+  return { data: (j.data && Array.isArray(j.data.residents)) ? j.data : null, rev: Number(j.rev) || 0 };
+}
+
+/* ── 昼食薬(lunchMed)の共通保存（本ツール唯一の書込み経路）───────────────────────
+   read-fresh＋rev競合ガード方式:
+     ①最新をGET（data,rev） → ②その新鮮なコピーの当該入居者だけ lunchMed を書換
+     → ③GETしたrevでPUT → 競合(別端末が先に更新)なら①へ再試行（最大3回）
+   常に最新サーバ状態を土台にするため、他端末で編集中の週間計画（events等）を壊さない。
+   work-schedule の操作ジャーナルには触れない（本経路は即時に権威的PUTするため不要）。
+   失敗時は権威データから再描画して楽観的UIを巻き戻す＝偽の「保存済み」を残さない。 */
+function suNormName_(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
+function findServerResident_(residents, item) {
+  let r = null;
+  if (item.masterId != null) r = residents.find(x => x && x.masterId != null && x.masterId === item.masterId);
+  if (!r && item.rid != null) r = residents.find(x => x && x.id === item.rid);
+  if (!r) {
+    // 氏名フォールバックは「一意に絞れた時だけ」採用する。同姓同名が複数居る場合に先頭を選ぶと
+    // 別人の昼食薬を書き換える（＝与薬帳票の誤り）ため、絞れなければ null で安全側に倒す。
+    const m = residents.filter(x => suNormName_(x.name) === suNormName_(item.name));
+    r = (m.length === 1) ? m[0] : null;
+  }
+  return r || null;
+}
+// 巻き戻し（権威データからの再描画）。catch 内で更に投げて disabled が残るのを防ぐ。
+function revertMedUI_(db) { try { renderAll(db); } catch (e) {} }
+let medWriting = false;
+async function writeLunchMed(items, value) {
+  // 保存中の多重実行／取得(refresh)との併走を防ぐ。黙って捨てず必ず表示を巻き戻す
+  // （楽観的に塗った色を残すと「保存されたのに保存されていない」誤認になる）。
+  if (medWriting) { toast('前の保存を処理中です。完了後にお試しください', true); revertMedUI_(DB); return; }
+  if (busy) { toast('データ取得中です。少し待ってからお試しください', true); revertMedUI_(DB); return; }
+  const t = syncTarget();
+  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); revertMedUI_(DB); return; }
+  if (!items || !items.length) { revertMedUI_(DB); return; }
+  medWriting = true;
+  const inputs = [...document.querySelectorAll('#chkMed input, #chkMed button')];
+  inputs.forEach(x => { x.disabled = true; });
+  setSyncState('保存中…');
+  try {
+    let done = false, exhausted = false, missing = 0, lastFresh = null;
+    for (let attempt = 0; attempt < 3 && !done; attempt++) {
+      const fresh = await getRemoteWithRev();
+      const sdb = fresh.data;
+      if (!sdb || !Array.isArray(sdb.residents) || !sdb.residents.length) {
+        throw new Error('クラウドのデータが空のため中止しました');   // 空上書き保護（データを消さない）
+      }
+      lastFresh = sdb;
+      let found = 0, changed = 0;
+      for (const it of items) {
+        const r = findServerResident_(sdb.residents, it);
+        if (r) { found++; if ((!!r.lunchMed) !== (!!value)) { r.lunchMed = !!value; changed++; } }
+      }
+      if (!found) throw new Error('対象の利用者がクラウドに見つかりません');
+      missing = items.length - found;   // 一部だけ照合できた場合は成功時に併記する（黙って減らさない）
+      if (!changed) { DB = sdb; renderAll(DB); done = true; break; }   // 既に目的の状態＝冪等成功
+      const res = await gasCall({ action: 'put', key: LS_KEY, rev: fresh.rev, data: sdb });
+      if (res && res.ok) { DB = sdb; renderAll(DB); done = true; break; }
+      if (res && res.conflict) { exhausted = (attempt === 2); continue; }   // 版ずれ＝再取得して再試行
+      throw new Error((res && res.error) || '保存に失敗しました');
+    }
+    if (done) {
+      setSyncState('保存OK（全端末に同期）');
+      toast(missing ? ('昼食薬を保存しました。ただし' + missing + '名はクラウドで見つからず変更できていません')
+                    : '昼食薬を保存しました（全端末に同期）', !!missing);
+    } else if (exhausted) {
+      setSyncState('保存できず');
+      toast('他端末が更新中です。もう一度お試しください', true);
+      if (lastFresh) DB = lastFresh;   // 手元より新しい取得済みデータへ表示を揃える
+      revertMedUI_(DB);
+    }
+  } catch (e) {
+    setSyncState('保存失敗');
+    toast('保存に失敗しました（' + (e && e.message ? e.message : '') + '）。表示を元に戻しました', true);
+    revertMedUI_(DB);   // 権威データ(DB)から再描画＝楽観的に変えた表示を巻き戻す
+  } finally {
+    medWriting = false;
+  }
+}
+
+/* ============================================================================
+   統一データモデル — 5タブ全てがここから生成される
+   ============================================================================ */
+// 粒度に注意: bathing はイベント単位（曜日別）／floor・lunchMed・visitingMed・hospitalized は
+// 利用者単位／end はセル単位（同一人物で曜日により 13:30 と 13:00 が混在しうる）。
+let dupCount = 0;      // 同一曜日に複数の通所予定があり、本モデルで落ちた件数（警告表示用）
+let floorSrcCount = { room: 0, plan: 0, none: 0 };   // 階の出典の内訳（凡例に出す＝居室連携が効いているかの計器）
+
+/* 居室番号 → 階。入居者マスタの room（例 "201" / "105"）の先頭1文字が階を表す。
+   取れない・想定外は 0 を返し、呼び出し側で従来の floor へフォールバックさせる。
+   ★判定方針: 誤った階に置くことは、階未設定で見せることより危険（帳票の配膳・与薬の区画が狂う）。
+     迷ったら 0 を返して安全側に倒す。
+   ★正規表現は必ず先頭アンカー(^)にすること。/\d/ のような非アンカーだと入居者マスタの
+     居室欄（自由テキスト入力）に "B201" や "201→105移動" のような値が入った時、
+     文字列の途中の数字を拾って【誤った階へ配置】してしまう（2026-07-21 レビュー指摘）。
+     アンカーがあれば規約外の表記は 0 に落ち、旧floor→階未設定⚠ の順で安全に退避する。
+   ★ラウレアハレは1階/2階のみ。3階以上("301"等)は一致させない＝データ異常として「階未設定」に落とす。 */
+function roomToFloor(room) {
+  // 全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる。
+  // 寄せないと登録済みなのに「居室未登録」と誤って集計される）
+  const s = String(room == null ? '' : room).trim()
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  const m = s.match(/^([12])/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function buildModel(db) {
+  const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  const people = [];
+  dupCount = 0;
+  floorSrcCount = { room: 0, plan: 0, none: 0 };
+  for (const r of residents) {
+    if (!r || r.movedOut) continue;
+    const days = [null, null, null, null, null, null];
+    let hasDc = false;
+    for (const ev of (Array.isArray(r.events) ? r.events : [])) {
+      if (!ev || ev.serviceType !== 'daycare') continue;
+      const dow = Number(ev.dayOfWeek);
+      if (!(dow >= 0 && dow < NDAY)) continue;
+      const s = toMin(ev.startTime), e = toMin(ev.endTime);
+      if (s == null || e == null || e <= s) continue;
+      // 同一曜日に複数の通所予定がある場合、本モデルは1枠しか持てないため後勝ちで落ちる。
+      // 黙って捨てると利用表タブ（両方描画・両方計上）と食い違うので件数を数えて警告する。
+      if (days[dow]) dupCount++;
+      days[dow] = { s: s, e: e, bath: !!ev.bathing };
+      hasDc = true;
+    }
+    if (!hasDc) continue;                                  // デイ母集団のみ
+    // 階の決定: ①居室(room)由来＝入居者マスタが正 → ②週間計画の floor（旧経路・手書きマスタ由来）
+    //           → ③0=階未設定（既存どおり⚠で可視化）。①が取れる人だけ②を上書きするので、
+    //           居室未登録者の現行表示は一切変わらない（デグレ無しのフォールバック）。
+    const fRoom = roomToFloor(r.room);
+    const fPlan = (r.floor === 1 || r.floor === 2) ? r.floor : 0;
+    const floor = fRoom || fPlan;
+    floorSrcCount[fRoom ? 'room' : (fPlan ? 'plan' : 'none')]++;
+    people.push({
+      name: String(r.name || '（無名）'),
+      kana: String(r.kana || ''),
+      rid: (r.id != null ? r.id : null),                   // 昼食薬の書戻し時にサーバDBの当該入居者を引く安定キー
+      masterId: (r.masterId != null ? r.masterId : null),  // 同上（マスタ由来の一意ID・氏名照合より優先）
+      floor: floor,                                        // 0=階未設定（居室・週間計画とも不明）
+      lunchMed: !!r.lunchMed,
+      visitingMed: !!r.visitingMed,      // 訪問診療（☆）— 新フラグ。未入力なら false
+      hosp: !!r.hospitalized,
+      days: days
+    });
+  }
+  people.sort((a, b) => (a.kana || a.name).localeCompare(b.kana || b.name, 'ja'));
+  people.forEach((p, i) => { p.pid = i; });   // 安定ID（薬用チェックリスト↔表セルの紐付け用）
+  return people;
+}
+/* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
+const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
+const offDay = (ppl, d) => ppl.filter(p => !p.days[d]);
+/* 計上用: 入院者は実稼働ではないので数えない（＝利用表タブと同じ契約。凡例にも明示している）。
+   ★表示と計上を必ず使い分けること。onDay().length を合計に使うと入院者を数えてしまい、
+     厨房の食数が過大になる。
+   なお hosp は利用者単位（曜日非依存）で onDay/offDay は排他・網羅なので、
+   「昼食合計」= countOn+countOff は除外の有無にかかわらず全曜日で定数になる。これはモデル上正しく
+   （デイ母集団の非入院者は必ずどこかで昼食を摂る）、除外はその定数を実食数に合わせるためのもの。
+   合計が動かないことをバグと見て「修正」しないこと。 */
+const countOn  = (ppl, d) => onDay(ppl, d).filter(p => !p.hosp).length;
+const countOff = (ppl, d) => offDay(ppl, d).filter(p => !p.hosp).length;
+
+/* ============================================================================
+   View 0 — 利用表（既存・無改変）
+   ============================================================================ */
+function collectDaycare(db) {
+  const plansMap = {};                       // key "s-e" -> { label, s, e, days:[7][] }
+  const hosp = new Set();
+  const bath = [0, 0, 0, 0, 0, 0, 0];
+  const use  = [0, 0, 0, 0, 0, 0, 0];
+  let maxDay = 5;                            // 既定 月〜土（土=5）。日にデータがあれば7列へ拡張
+  const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  for (const r of residents) {
+    if (!r || r.movedOut) continue;
+    const evs = Array.isArray(r.events) ? r.events : [];
+    for (const ev of evs) {
+      if (!ev || ev.serviceType !== 'daycare') continue;
+      const dow = Number(ev.dayOfWeek);
+      if (!(dow >= 0 && dow <= 6)) continue;
+      const s = toMin(ev.startTime), e = toMin(ev.endTime);
+      if (s == null || e == null || e <= s) continue;
+      const name = String(r.name || '（無名）');
+      const isHosp = !!r.hospitalized;               // ワークスケジュール／週間計画の入院入力
+      if (isHosp) hosp.add(name);
+      const key = s + '-' + e;
+      if (!plansMap[key]) plansMap[key] = { label: minToLabel(s) + '〜' + minToLabel(e), s: s, e: e, days: [[], [], [], [], [], [], []] };
+      plansMap[key].days[dow].push({ name: name, bath: !!ev.bathing, hosp: isHosp });
+      if (!isHosp) {                                 // 入院中は実稼働ではないため合計に数えない
+        use[dow]++;
+        if (ev.bathing) bath[dow]++;
+      }
+      if (dow > maxDay) maxDay = dow;
+    }
+  }
+  const plans = Object.values(plansMap).sort((a, b) => a.s - b.s || a.e - b.e);
+  return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: maxDay + 1 };
+}
+
+function renderRoster(db) {
+  const data = collectDaycare(db);
+  const table = $('roster');
+  if (!data.plans.length) { table.textContent = ''; $('hospBox').style.display = 'none'; ROSTER_SUB = ''; return; }
+  const nCols = data.nCols;
+  table.textContent = '';
+
+  const thead = el('thead');
+  const htr = el('tr');
+  htr.appendChild(el('th', 'col-time', '利用時間'));
+  htr.appendChild(el('th', 'col-rn', ''));
+  for (let d = 0; d < nCols; d++) {
+    htr.appendChild(el('th', 'th-day col-day' + (d === 5 ? ' sat' : d === 6 ? ' sun' : ''), DAYS_JA[d]));
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = el('tbody');
+  data.plans.forEach((plan, pi) => {
+    let nRows = 1;
+    for (let d = 0; d < nCols; d++) nRows = Math.max(nRows, plan.days[d].length);
+    for (let i = 0; i < nRows; i++) {
+      const tr = el('tr');
+      if (i === 0) {
+        const lbl = el('th', 'plan-label', plan.label);
+        lbl.rowSpan = nRows;
+        tr.appendChild(lbl);
+      }
+      tr.appendChild(el('td', 'col-rn', String(i + 1)));
+      for (let d = 0; d < nCols; d++) {
+        const u = plan.days[d][i];
+        if (u) {
+          const td = el('td', 'user' + (u.bath ? ' bath' : ''));
+          td.appendChild(document.createTextNode(u.name));
+          if (u.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+          td.title = u.name + (u.hosp ? '（入院）' : '') + (u.bath ? '（入浴あり）' : '');
+          tr.appendChild(td);
+        } else {
+          tr.appendChild(el('td', 'empty', ''));
+        }
+      }
+      tbody.appendChild(tr);
+    }
+    // 利用時間帯ブロックの間に空白行を1本入れて上下を分断（最後のブロックの後には入れない）
+    if (pi < data.plans.length - 1) {
+      const sp = el('tr', 'spacer');
+      const spTd = el('td');
+      spTd.colSpan = 2 + nCols;   // plan-label列 + col-rn列 + 曜日列
+      sp.appendChild(spTd);
+      tbody.appendChild(sp);
+    }
+  });
+  table.appendChild(tbody);
+
+  const tfoot = el('tfoot');
+  const bathTr = el('tr', 'tot bath-row');
+  const bth = el('th', null, '入浴合計'); bth.colSpan = 2; bathTr.appendChild(bth);
+  for (let d = 0; d < nCols; d++) bathTr.appendChild(el('td', null, String(data.bath[d])));
+  tfoot.appendChild(bathTr);
+  const useTr = el('tr', 'tot use');
+  const uth = el('th', null, '利用合計'); uth.colSpan = 2; useTr.appendChild(uth);
+  for (let d = 0; d < nCols; d++) useTr.appendChild(el('td', null, String(data.use[d])));
+  tfoot.appendChild(useTr);
+  table.appendChild(tfoot);
+
+  const hospBox = $('hospBox');
+  if (data.hosp.length) { $('hospNames').textContent = data.hosp.join('　'); hospBox.style.display = ''; }
+  else { hospBox.style.display = 'none'; }
+
+  // 利用表タブの指標（改修前からの表示。タブ切替で出し分けるため保持する）
+  const totalUse = data.use.reduce((a, b) => a + b, 0);
+  ROSTER_SUB = '利用時間別／延べ利用 ' + totalUse + '件・' + data.plans.length + '区分';
+}
+
+/* ============================================================================
+   共通パーツ — 曜日ヘッダ（氏名/開始/終了 の3列×6曜日）
+   ============================================================================ */
+// 列幅の宣言。table-layout:fixed は最初の行しか見ないため、colspan を含む表では colgroup が必須。
+// さらに table 自身に明示幅が無いと fixed が効かず自動レイアウトへ寄るため、幅も併せて設定する。
+// ★この値は CSS の col.w-* と必ず一致させること（食い違うと fixed が差分を再配分し CSS 側が無効化される）。
+// rnAw/nmAw/tmAw=全員リスト用（ふりがな列を廃止した110pxを全列へ均等配分した値）／
+// nmDl=デイ利用者一覧表用（備考を表の下へ出すぶん氏名列を最大化）
+const W = { sec: 24, rn: 20, nm: 80, tm: 34, rnAw: 44, nmAw: 96, tmAw: 36, nmDl: 100 };
+const TBL_W = {
+  day:     W.sec + W.rn + NDAY * (W.nm   + W.tm * 2),   // 932  med：右に備考112+gap8=1052 ≦ 1062
+  daylist: W.sec + W.rn + NDAY * (W.nmDl + W.tm * 2),   // 1052 デイ利用者一覧表：備考は表の下＝全幅（≦A3縦 1062）
+  allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)        // 1052 全員リスト：A4横ほぼ最大（余裕10px）
+};
+function colgroupFor(kind) {
+  const cg = el('colgroup');
+  let nmCol, tmCol = 'w-tm';
+  // 全員リストは区画ラベル列(w-sec)を持たず、No.列も専用幅（合計行の「入居者」ラベルを収める）
+  if (kind === 'allweek') { cg.appendChild(el('col', 'w-rn-aw')); nmCol = 'w-nm-aw'; tmCol = 'w-tm-aw'; }
+  else {
+    cg.appendChild(el('col', 'w-sec')); cg.appendChild(el('col', 'w-rn'));
+    nmCol = (kind === 'daylist') ? 'w-nm-dl' : 'w-nm';
+  }
+  for (let d = 0; d < NDAY; d++) {
+    cg.appendChild(el('col', nmCol));
+    cg.appendChild(el('col', tmCol));
+    cg.appendChild(el('col', tmCol));
+  }
+  return cg;
+}
+function setupSheet(table, kind) {
+  table.textContent = '';
+  table.style.width = (TBL_W[kind] || TBL_W.day) + 'px';   // ★明示幅（fixed成立の条件）
+  table.appendChild(colgroupFor(kind));
+}
+
+function dayHeader() {
+  const thead = el('thead');
+  const tr = el('tr');
+  tr.appendChild(el('th', 'c-sec', ''));
+  tr.appendChild(el('th', 'c-rn', ''));
+  for (let d = 0; d < NDAY; d++) {
+    const th = el('th', 'th-day' + (d === 5 ? ' sat' : ''), DAYS_JA[d]);
+    th.colSpan = 3;
+    tr.appendChild(th);
+  }
+  thead.appendChild(tr);
+  const tr2 = el('tr');
+  tr2.appendChild(el('th', 'c-sec', ''));
+  tr2.appendChild(el('th', 'c-rn', ''));
+  for (let d = 0; d < NDAY; d++) {
+    tr2.appendChild(el('th', 'c-nm', ''));
+    tr2.appendChild(el('th', 'c-tm', '開始'));
+    tr2.appendChild(el('th', 'c-tm', '終了'));
+  }
+  thead.appendChild(tr2);
+  return thead;
+}
+// デイ区画の1セル（氏名＋開始＋終了）。入浴は黄、入院は（入院）。
+function deiCells(tr, p, d, showBath) {
+  if (!p) { tr.appendChild(el('td', 'c-nm')); tr.appendChild(el('td', 'c-tm')); tr.appendChild(el('td', 'c-tm')); return; }
+  const s = p.days[d];
+  const td = el('td', 'c-nm nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 ? ' nofloor' : ''));
+  if (p.pid != null) td.dataset.pid = p.pid;   // 薬用チェックリストで該当利用者の枠を薄オレンジにするための紐付け
+  td.appendChild(document.createTextNode(p.name));
+  if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+  td.title = p.name + (p.hosp ? '（入院）' : '') + (s && s.bath ? '（入浴あり）' : '');
+  tr.appendChild(td);
+  tr.appendChild(el('td', 'c-tm', s ? minToLabel(s.s) : ''));
+  tr.appendChild(el('td', 'c-tm', s ? minToLabel(s.e) : ''));
+}
+
+/* ============================================================================
+   View 1 — デイ利用者一覧表（A3縦・備考は表の下・表は全幅）
+   上段=デイ利用者(せせらぎ・2階/1階) → せせらぎ合計
+   下段=昼食(2階食堂)=その日デイに行かない人(2階/1階・☆訪問診療) → ２階合計・昼食合計
+   ============================================================================ */
+// 元表の備考。「☆往診対象者は13:05までの…」は削除（13:05はシート内に実体が無い口頭ルールのため）。
+// 「往診」は誤りのため「訪問診療」に統一。
+const DAYLIST_NOTES = [
+  '☆昼食後の薬',
+  '・せせらぎ利用者分は1階へ',
+  'それ以外は2階へ',
+  '分けてセットしておきます',
+  '☆祝日',
+  '営業します',
+  '☆黄色で色付けしている方は入浴ありの方です',
+  '裏側に訪問診療一覧表をつけています',
+  '施設職員は1階の方の誘導もお願いします'
+];
+
+function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
+  // 曜日ごとに人が違うため、区画の行数＝各曜日の最大人数（元表は固定枠だが実データに追従させる）
+  let n = 0;
+  for (let d = 0; d < NDAY; d++) n = Math.max(n, (isDei ? onDay(ppl, d) : offDay(ppl, d)).length);
+  if (!n) n = 1;
+  // ラベル色: 1階＝薄い水色(flr1)／2階・階未設定＝緑(sese)。階ごとに別色で区切りを明確化。
+  const labelColor = (floorKey === 1) ? 'flr1' : 'sese';
+  for (let i = 0; i < n; i++) {
+    const tr = el('tr');
+    // ラベルは rowSpan で区画の左列全体を占有＝左/上/下の外周罫線をここに集約
+    if (i === 0) { const th = el('th', 'c-sec ' + labelColor + ' blk-left blk-top blk-bot', label); th.rowSpan = n; tr.appendChild(th); }
+    tr.appendChild(el('td', 'c-rn', String(i + 1)));
+    for (let d = 0; d < NDAY; d++) {
+      const list = isDei ? onDay(ppl, d) : offDay(ppl, d);
+      const p = list[i];
+      if (isDei) { deiCells(tr, p, d, showBath); }
+      else {
+        // 昼食区画: 時刻は出さず、氏名の右隣（開始列）を☆欄に転用（元表と同じ）
+        const td = el('td', 'c-nm' + (p && p.floor === 0 ? ' nofloor' : ''));
+        if (p) {
+          td.appendChild(document.createTextNode(p.name));
+          if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+        }
+        tr.appendChild(td);
+        const st = el('td', 'c-tm');
+        if (p && showStar && p.visitingMed) { st.appendChild(el('span', 'star', '☆')); st.title = '訪問診療'; }
+        tr.appendChild(st);
+        tr.appendChild(el('td', 'c-tm'));
+      }
+    }
+    // 塊を太罫線で囲む: 1行目=上辺／最終行=下辺／各行の最終セル=右辺（ラベルが左辺を担当）
+    const cells = tr.children;
+    for (let c = 0; c < cells.length; c++) {
+      if (i === 0) cells[c].classList.add('blk-top');
+      if (i === n - 1) cells[c].classList.add('blk-bot');
+    }
+    if (cells.length) cells[cells.length - 1].classList.add('blk-right');
+    tbody.appendChild(tr);
+  }
+}
+function sumRow(tbody, label, counts) {
+  const tr = el('tr', 'sum');
+  tr.appendChild(el('th', 'c-sec', ''));
+  tr.appendChild(el('td', 'c-rn', ''));
+  for (let d = 0; d < NDAY; d++) {
+    tr.appendChild(el('td', 'c-nm', label));       // ラベル/値の列配置は氏名列基準に統一（元表は区画で不統一）
+    const v = el('td', 'c-tm', String(counts[d])); v.colSpan = 2;
+    tr.appendChild(v);
+  }
+  tbody.appendChild(tr);
+  return tr;
+}
+
+function renderDaylist(ppl) {
+  const table = $('tblDaylist');
+  $('dlTitle').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
+  setupSheet(table, 'daylist');
+  table.appendChild(dayHeader());
+  const tbody = el('tbody');
+
+  const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
+  // ── デイ利用者（せせらぎ） ──
+  sectionRows(tbody, f2, '２階入居者', true, true, false, 2);
+  sectionRows(tbody, f1, '１階入居者', true, true, false, 1);
+  if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
+  // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
+  const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
+  sumRow(tbody, 'せせらぎ合計', sese);
+  // ── 昼食（2階食堂）＝その日デイに行かない人 ──
+  sectionRows(tbody, f2, '２階入居者', false, false, true, 2);
+  sectionRows(tbody, f1, '１階入居者', false, false, true, 1);
+  if (f0.length) sectionRows(tbody, f0, '階未設定', false, false, true, 0);
+  const lunch = []; for (let d = 0; d < NDAY; d++) lunch.push(countOff(ppl, d));
+  sumRow(tbody, '２階合計', lunch);
+  sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
+  table.appendChild(tbody);
+
+  // 備考（表の下・横並びでコンパクトに＝横幅を表に使い切る）。幅は表と同じにして中央で揃える。
+  const note = $('noteDaylist');
+  note.textContent = '';
+  note.style.width = TBL_W.daylist + 'px';
+  note.appendChild(el('span', 'nb-h', '備考'));
+  DAYLIST_NOTES.forEach(t => note.appendChild(el('span', 'nb-item', t)));
+}
+
+/* ============================================================================
+   View 2 — 全員リスト（A4横）: No. ＋ 曜日ごとの氏名/開始/終了
+   氏名は6ブロック全てに反復（元表どおり）。利用の有無は時刻の有無で表す。
+   ふりがな列は廃止（2026-07-21 運用指示）。並びは buildModel の kana 昇順ソートで担保しており、
+   列を出さなくても五十音順は変わらない（＝p.kana は表示用でなく整列用として残す）。
+   ============================================================================ */
+function renderAllweek(ppl) {
+  const table = $('tblAllweek');
+  setupSheet(table, 'allweek');
+  const thead = el('thead');
+  const tr = el('tr');
+  tr.appendChild(el('th', 'c-rn', 'No.'));
+  for (let d = 0; d < NDAY; d++) {
+    tr.appendChild(el('th', 'c-nm', '氏名'));
+    const th = el('th', 'th-day' + (d === 5 ? ' sat' : ''), DAYS_JA[d]); th.colSpan = 2;
+    tr.appendChild(th);
+  }
+  thead.appendChild(tr);
+  table.appendChild(thead);
+
+  const tbody = el('tbody');
+  const blocks = [{ label: '２階入居者', list: ppl.filter(p => p.floor === 2) },
+                  { label: '１階入居者', list: ppl.filter(p => p.floor === 1) }];
+  const f0 = ppl.filter(p => p.floor === 0);
+  if (f0.length) blocks.push({ label: '階未設定', list: f0 });
+  for (const b of blocks) {
+    // 各階ブロックを太枠で囲む: 見出し(全幅)=上辺＋左右上隅／各データ行=左右辺／最終行=下辺
+    const hr = el('tr');
+    const h = el('th', 'sec-h blk-top blk-left blk-right', b.label); h.colSpan = 1 + NDAY * 3;   // No.列(1) ＋ 曜日×3
+    if (!b.list.length) h.classList.add('blk-bot');   // 空ブロックは見出しだけで箱を閉じる
+    hr.appendChild(h);
+    tbody.appendChild(hr);
+    const n = b.list.length;
+    b.list.forEach((p, i) => {
+      const r = el('tr');
+      r.appendChild(el('td', 'c-rn', String(i + 1)));
+      for (let d = 0; d < NDAY; d++) deiCells(r, p, d, true);
+      const cells = r.children;
+      cells[0].classList.add('blk-left');                 // 左辺（c-rn）
+      cells[cells.length - 1].classList.add('blk-right');  // 右辺（最終セル）
+      if (i === n - 1) { for (let c = 0; c < cells.length; c++) cells[c].classList.add('blk-bot'); }  // 下辺
+      tbody.appendChild(r);
+    });
+  }
+  table.appendChild(tbody);
+
+  const tfoot = el('tfoot');
+  const sr = el('tr', 'sum');
+  sr.appendChild(el('td', 'c-rn c-sum-lb', '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設
+  for (let d = 0; d < NDAY; d++) {
+    sr.appendChild(el('td', 'c-nm', String(ppl.length) + '名'));
+    const v = el('td', 'c-tm', String(countOn(ppl, d))); v.colSpan = 2;   // 入院者を除いた実稼働
+    sr.appendChild(v);
+  }
+  tfoot.appendChild(sr);
+  table.appendChild(tfoot);
+}
+
+/* ============================================================================
+   View 3 — 薬用（A4横）: デイ利用者の上表のみ ＋ 右に備考（旧「昼食薬あり名簿」「薬」大ラベルは削除済み）。
+   元表のグリッドには塗りゼロ（＝入浴の黄は出さない）。右のチェック欄は画面専用(印刷しない)だが、
+   チェックで付く薄オレンジは印刷にも出す（2026-07-21 運用指示）。
+   ============================================================================ */
+const MED_NOTES = ['☆昼食後の薬', '・せせらぎ利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
+
+function renderMed(ppl) {
+  const table = $('tblMed');
+  $('medTitle').textContent = 'デイ利用者一覧表（薬用・全利用者 ' + ppl.length + ' 名）';
+  setupSheet(table, 'day');
+  table.appendChild(dayHeader());
+  const tbody = el('tbody');
+
+  const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
+  sectionRows(tbody, f2, '２階入居者', true, false, false, 2);   // showBath=false（元表は塗りゼロ）
+  sectionRows(tbody, f1, '１階入居者', true, false, false, 1);
+  if (f0.length) sectionRows(tbody, f0, '階未設定', true, false, false, 0);
+  table.appendChild(tbody);
+
+  // 昼食薬(lunchMed=true)の人の氏名セルを薄オレンジに（同期済みの正データ由来＝全端末で一致・印刷にも出る）。
+  ppl.forEach(p => { if (p.lunchMed) table.querySelectorAll('[data-pid="' + p.pid + '"]').forEach(td => td.classList.add('med-hl')); });
+
+  // 右側パネル: 備考のみ（幅を詰めて表を広げるため。旧「昼食薬あり名簿」「薬」大ラベルは運用方針で削除）
+  const note = $('noteMed');
+  note.textContent = '';
+  note.appendChild(el('div', 'med-list-h', '備考'));
+  MED_NOTES.forEach(t => note.appendChild(el('div', 'note-box', t)));
+
+  // 右側: 昼食薬チェックリスト（このチェック欄自体は印刷されない）。
+  // チェック＝その人の lunchMed を全端末へ保存・同期し、表の氏名セルが薄オレンジになる（色は印刷にも出る）。
+  const chk = $('chkMed');
+  chk.textContent = '';
+  chk.appendChild(el('div', 'chk-h', '昼食薬チェック'));
+  chk.appendChild(el('div', 'chk-sub', 'チェック＝昼食後に薬がある方。全端末に保存・同期されます（枠の色は印刷にも出ます／このチェック欄自体は印刷されません）'));
+  const addGroup = (list, label) => {
+    if (!list.length) return;
+    chk.appendChild(el('div', 'chk-flr', label));
+    list.forEach(p => {
+      const lb = el('label', 'chk-item');
+      const cb = el('input'); cb.type = 'checkbox'; cb.dataset.pid = p.pid;
+      cb.checked = !!p.lunchMed;   // ★同期済みの正データから復元（リロード・他端末でも一致）
+      cb.setAttribute('aria-label', p.name + ' の昼食薬（チェックで全端末に保存）');
+      lb.appendChild(cb);
+      lb.appendChild(document.createTextNode(p.name));   // 氏名は textContent（個人情報・XSS防止）
+      chk.appendChild(lb);
+    });
+  };
+  addGroup(f2, '２階入居者');
+  addGroup(f1, '１階入居者');
+  if (f0.length) addGroup(f0, '階未設定');
+  // 変更は委譲（onchange の property 代入＝再描画で重複登録しない）。楽観的に色を反映してから保存し、
+  // 保存の成否は writeLunchMed 内の renderAll（権威データからの再描画）で確定させる。
+  chk.onchange = (e) => {
+    const cb = e.target;
+    if (!cb || cb.type !== 'checkbox' || cb.dataset.pid == null) return;
+    const p = (MODEL || []).find(x => String(x.pid) === String(cb.dataset.pid));
+    if (!p) return;
+    $('tblMed').querySelectorAll('[data-pid="' + cb.dataset.pid + '"]').forEach(td => td.classList.toggle('med-hl', cb.checked));
+    writeLunchMed([{ rid: p.rid, masterId: p.masterId, name: p.name }], cb.checked);
+  };
+  // 全解除＝チェック済み全員の lunchMed を false に（全端末へ反映＝破壊的操作のため確認を挟む・HIG）
+  const clr = el('button', 'chk-clear', '全解除');
+  clr.type = 'button';
+  clr.onclick = () => {
+    const checked = [...chk.querySelectorAll('input[type=checkbox]:checked')];
+    if (!checked.length) { toast('チェックされている方はいません'); return; }
+    if (!confirm(checked.length + '名の昼食薬チェックを解除します（全端末に反映されます）。よろしいですか？')) return;
+    const items = checked.map(c => (MODEL || []).find(x => String(x.pid) === String(c.dataset.pid)))
+      .filter(Boolean).map(p => ({ rid: p.rid, masterId: p.masterId, name: p.name }));
+    writeLunchMed(items, false);
+  };
+  chk.appendChild(clr);
+}
+
+/* ============================================================================
+   View 4 — 週間名簿（A4縦×6・一括6枚印刷）
+   B列=その日デイ利用 / C列=その日デイ非利用（＝2階食堂で昼食）。排他分割。
+   ============================================================================ */
+function weeklyTable(ppl, d) {
+  const t = el('table', 'wk');
+  const tb = el('tbody');
+  const hr = el('tr');
+  hr.appendChild(el('td', 'wk-day', DAYS_JA[d] + '曜日'));
+  hr.appendChild(el('td', 'wk-h', 'デイ'));
+  hr.appendChild(el('td', 'wk-h', '２階'));
+  tb.appendChild(hr);
+  const a = onDay(ppl, d), b = offDay(ppl, d);
+  const n = Math.max(a.length, b.length, 1);
+  // 氏名セル: 入院者は他タブと同じく（入院）を付けて表示に残す（名簿から消さない）
+  const cell = p => {
+    const td = el('td');
+    if (p) {
+      td.appendChild(document.createTextNode(p.name));
+      if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+    }
+    return td;
+  };
+  for (let i = 0; i < n; i++) {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'wk-blank', ''));
+    tr.appendChild(cell(a[i]));
+    tr.appendChild(cell(b[i]));
+    tb.appendChild(tr);
+  }
+  const sr = el('tr');
+  sr.appendChild(el('td', 'wk-blank', ''));
+  sr.appendChild(el('td', 'wk-sum', countOn(ppl, d) + '名'));    // 入院者を除いた実稼働
+  sr.appendChild(el('td', 'wk-sum', countOff(ppl, d) + '名'));
+  tb.appendChild(sr);
+  t.appendChild(tb);
+  return t;
+}
+function renderWeekly(ppl) {
+  const host = $('weeklyPages');
+  host.textContent = '';
+  for (let d = 0; d < NDAY; d++) {
+    const pg = el('div', 'wk-page');
+    pg.appendChild(weeklyTable(ppl, d));
+    host.appendChild(pg);
+  }
+}
+
+/* ============================================================================
+   印刷 — タブごとに用紙を切り替える（動的 @page 注入）
+   ============================================================================ */
+const PRINT_SPEC = {
+  'sc-roster':  null,                                              // 静的@page(A4縦8mm)をそのまま使う＝注入しない
+  'sc-daylist': { size: 'A3 portrait',  margin: '8mm' },   /* 上段+下段で行数が多くA4横1枚に入らないためA3縦。備考は表の下＝横幅は全幅使用 */
+  'sc-allweek': { size: 'A4 landscape', margin: '8mm' },
+  'sc-med':     { size: 'A4 landscape', margin: '8mm' },
+  'sc-weekly':  { size: 'A4 portrait',  margin: '15mm 5mm 0 5mm' }
+};
+// 冪等クリア: afterprint が発火しない環境（モバイルSafari/WebView/PDF出力）で注入した@pageが
+// 次の印刷ジョブへ漏れるのを防ぐ。全ての印刷エントリポイントの先頭でも呼ぶ。
+// あわせて一括印刷用DOM（氏名を含む）を破棄する。
+let printTimer = null;
+function clearPrintState_() {
+  clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
+  document.body.classList.remove('pr-batch');
+  const nodes = document.querySelectorAll('#dyn-page');
+  for (let i = 0; i < nodes.length; i++) nodes[i].remove();
+  $('printBatch').textContent = '';     // ★氏名をDOMに残さない
+}
+function printNow() {
+  clearPrintState_();
+  const sc = activeTab();
+  const spec = PRINT_SPEC[sc];
+  if (spec) {
+    const st = document.createElement('style');
+    st.id = 'dyn-page';
+    st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
+    document.head.appendChild(st);      // 静的<style>より後にappend＝後勝ち
+  }
+  if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
+    const host = $('printBatch');
+    host.textContent = '';
+    const ppl = MODEL || [];
+    for (let d = 0; d < NDAY; d++) {
+      const pg = el('div', 'pg');
+      pg.appendChild(weeklyTable(ppl, d));
+      host.appendChild(pg);             // ★ちょうど6要素（末尾の空白ページ防止）
+    }
+    document.body.classList.add('pr-batch');
+  }
+  let cleaned = false;
+  const done = function () { if (cleaned) return; cleaned = true; clearPrintState_(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  // afterprint 未発火の保険。★モジュールスコープに保持し、次ジョブ開始時の clearPrintState_() で
+  //   必ず止める（放置すると前ジョブのタイマーが次ジョブ中に発火し、@page と印刷用DOMを消してしまう）。
+  printTimer = setTimeout(done, 3000);
+  window.print();
+}
+// OSの印刷ショートカット（Cmd/Ctrl+P）は printNow を通らないため、用紙指定が効かない。
+// beforeprint で同じ準備を通し、どの経路でもタブの用紙で出るようにする。
+window.addEventListener('beforeprint', function () {
+  if (document.querySelector('#dyn-page') || document.body.classList.contains('pr-batch')) return;   // printNow 経由なら準備済み
+  const sc = activeTab();
+  const spec = PRINT_SPEC[sc];
+  if (spec) {
+    const st = document.createElement('style');
+    st.id = 'dyn-page';
+    st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
+    document.head.appendChild(st);
+  }
+  if (sc === 'sc-weekly') {
+    const host = $('printBatch');
+    host.textContent = '';
+    for (let d = 0; d < NDAY; d++) { const pg = el('div', 'pg'); pg.appendChild(weeklyTable(MODEL || [], d)); host.appendChild(pg); }
+    document.body.classList.add('pr-batch');
+  }
+  // afterprint 未発火の保険（printNow と同じ理由）。放置すると @page と氏名DOMが残り、
+  // 次に別タブで Ctrl+P すると冒頭のガードが古い #dyn-page を見て早期returnし、前タブの用紙で刷られる。
+  // ★下の条件が printTimer 競合を防ぐ唯一の防御＝外さないこと。
+  //   sc-roster は spec=null かつ非weekly のため printNow 経由でも冒頭のガードを通過してここへ到達する
+  //   （#dyn-page も pr-batch も作らないため）。条件を外して無条件に張ると、printNow が直前に仕掛けた
+  //   done のタイマーを上書きし、afterprint 未発火時に done が走らず afterprint リスナが残留する。
+  if (spec || sc === 'sc-weekly') printTimer = setTimeout(clearPrintState_, 3000);
+});
+window.addEventListener('afterprint', clearPrintState_);   // どの経路でも必ず後片付け
+
+/* ============================================================================
+   タブ / 凡例 / UI
+   ============================================================================ */
+let MODEL = null;
+let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
+let MODEL_SUB  = '';   // 新4タブの指標
+const LEGENDS = {
+  'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '各セル＝利用者氏名／下段に日別の入浴合計・利用合計']],
+  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイに行かない方（2階食堂で昼食）']],
+  'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
+  'sc-med':     [['t', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
+  'sc-weekly':  [['t', 'デイ＝その日の利用者／２階＝デイに行かない方（2階食堂で昼食）。印刷は6曜日を一括で6枚出します']]
+};
+function activeTab() {
+  const b = document.querySelector('.tnav button[aria-selected="true"]');
+  return b ? b.dataset.sc : 'sc-roster';
+}
+function renderLegend(sc) {
+  const box = $('legend');
+  box.textContent = '';
+  (LEGENDS[sc] || []).forEach(([k, t]) => {
+    if (k === 'sw') { const s = el('span', 'lg'); s.appendChild(el('span', 'lg-sw')); s.appendChild(document.createTextNode(t)); box.appendChild(s); }
+    else if (k === 'hosp') { const s = el('span', 'lg'); s.appendChild(el('span', 'hosp-tag', '（入院）')); s.appendChild(document.createTextNode(t.replace('（入院）', ''))); box.appendChild(s); }
+    else if (k === 'star') { const s = el('span', 'lg'); s.appendChild(el('span', 'star', '☆')); s.appendChild(document.createTextNode(t.replace('☆', ''))); box.appendChild(s); }
+    else box.appendChild(el('span', null, t));
+  });
+  // 階の出典を明示する。居室(入居者マスタ)由来が何名で、旧設定（ワークスケジュールのデイサービス
+  // マスタ手書き floor）が何名残っているかが分かる＝居室連携が効いているかを現場端末で判定できる。
+  // 「旧設定」に残る人は入居者マスタの居室が未登録＝部屋移動が自動追従しない対象。
+  // ★noprint: これは運用診断用の計器であって帳票の内容ではない。元表に無い文言を紙面へ足さない
+  //   （既存の⚠バッジは従来から印刷されている＝現行挙動として触らない）。
+  if (sc !== 'sc-roster' && (floorSrcCount.room || floorSrcCount.plan)) {
+    let t = '階の出典: 居室 ' + floorSrcCount.room + '名';
+    if (floorSrcCount.plan) t += '／週間計画の旧設定 ' + floorSrcCount.plan + '名（マスタに居室未登録）';
+    box.appendChild(el('span', 'noprint', t));
+  }
+  // 階未設定は黙って落とさず警告として可視化（マスタ未登録＝ビューから脱落する事故の防止）
+  const nf = (MODEL || []).filter(p => p.floor === 0).length;
+  if (nf && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 階未設定 ' + nf + '名（マスタ未登録）'));
+  // 同一曜日の重複予定は本モデルで1枠に潰れる＝利用表タブと件数が食い違うため明示する
+  if (dupCount && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 同一曜日の重複予定 ' + dupCount + '件（1枠のみ表示）'));
+}
+const TAB_KEY = 'dcr_activeTab';   // リロード後も同じタブを開くための端末保存（タブidは個人情報でない）
+function goto(sc) {
+  document.querySelectorAll('.tnav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.sc === sc)));
+  document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === sc));
+  renderLegend(sc);
+  $('hdrSub').textContent = (sc === 'sc-roster') ? ROSTER_SUB : MODEL_SUB;   // タブごとの指標を出し分け
+  $('btnPrint').setAttribute('aria-label', (PRINT_SPEC[sc] ? PRINT_SPEC[sc].size : 'A4 portrait') + ' で印刷');
+  try { if (PRINT_SPEC.hasOwnProperty(sc)) localStorage.setItem(TAB_KEY, sc); } catch (e) {}
+}
+// 保存済みタブ（既知のタブのみ）。無効/未保存は利用表。
+function savedTab() {
+  try { const s = localStorage.getItem(TAB_KEY); if (s && PRINT_SPEC.hasOwnProperty(s)) return s; } catch (e) {}
+  return 'sc-roster';
+}
+
+let toastTimer = null;
+function toast(msg, isNg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'on' + (isNg ? ' ng' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 2600);
+}
+function setSyncState(txt) { $('syncState').textContent = txt; }
+
+function renderAll(db) {
+  MODEL = buildModel(db);
+  const empty = $('boardEmpty');
+  // 空判定は利用表タブ基準（collectDaycare＝日〜土の全曜日）で行う。MODEL は月〜土のため、
+  // これを空判定に使うと「日曜のみ通所」のデータで利用表まで空表示になり既存挙動が変わる。
+  const rosterHas = collectDaycare(db).plans.length > 0;
+  if (!rosterHas && !MODEL.length) {
+    ['roster', 'tblDaylist', 'tblAllweek', 'tblMed'].forEach(id => { $(id).textContent = ''; });
+    $('weeklyPages').textContent = '';
+    $('hospBox').style.display = 'none';
+    empty.classList.add('on');
+    $('emptyMsg').textContent = db ? '通所（デイサービス）の予定がありません。' : '週間計画のデータが見つかりません。';
+    // タブ(.tnav)は空状態でも押せるため、退避値を消さないと goto() が前回の件数を復活させてしまう。
+    ROSTER_SUB = ''; MODEL_SUB = '';
+    $('hdrSub').textContent = '';
+    return;
+  }
+  empty.classList.remove('on');
+  // 各ビューは独立して描画（1つが落ちても他を巻き込まない）
+  const safe = (fn, id) => { try { fn(); } catch (e) { toast(id + ' の描画に失敗しました', true); } };
+  safe(() => renderRoster(db), '利用表');
+  safe(() => renderDaylist(MODEL), 'デイ利用者一覧表');
+  safe(() => renderAllweek(MODEL), '全員リスト');
+  safe(() => renderMed(MODEL), '薬用');
+  safe(() => renderWeekly(MODEL), '週間名簿');
+  const dei = []; for (let d = 0; d < NDAY; d++) dei.push(countOn(MODEL, d));
+  MODEL_SUB = 'デイ母集団 ' + MODEL.length + '名／デイ ' + dei.join('・');
+  goto(activeTab());   // 凡例・指標を現在のタブに合わせて反映
+}
+
+let busy = false;
+// silent=true: 起動時の自動取得（成功・失敗ともトーストを出さず、状態表示のみ更新する）
+async function refresh(silent) {
+  if (busy) return;
+  // 昼食薬の保存中に再描画すると、保存待ちのチェック操作が黙って捨てられる（表示と保存の食い違い）
+  if (medWriting) { if (!silent) toast('昼食薬を保存中です。完了後にお試しください', true); return; }
+  busy = true;
+  $('btnRefresh').disabled = true;
+  setSyncState('取得中…');
+  try {
+    const remote = await fetchRemote();
+    if (remote) {
+      DB = remote;
+      renderAll(DB);
+      setSyncState('取得OK（' + DB.residents.length + '名）');
+      if (!silent) toast('最新の週間計画を取得しました');
+    } else {
+      setSyncState('クラウドにデータなし');
+    }
+  } catch (e) {
+    setSyncState(silent ? '端末キャッシュ表示（取得失敗）' : '取得失敗');
+    if (!silent) toast('取得に失敗しました。通信環境を確認してください', true);
+  } finally {
+    busy = false;
+    $('btnRefresh').disabled = false;
+  }
+}
+
+function init() {
+  $('btnRefresh').addEventListener('click', refresh);
+  $('btnRefresh2').addEventListener('click', refresh);
+  $('btnPrint').addEventListener('click', printNow);
+  // アプリ間ジャンプ（既存 shift-app.html と同じく相対パス・別タブ）。
+  // 本ツールは読み取り専用のため、遷移前に保存すべき状態は無い。
+  $('btnMaster').addEventListener('click', () => window.open('resident-master.html', '_blank'));
+  $('btnCare').addEventListener('click', () => window.open('care-schedule.html', '_blank'));
+  $('tnav').addEventListener('click', e => { const b = e.target.closest('button[data-sc]'); if (b) goto(b.dataset.sc); });
+
+  DB = loadLocal();
+  const restore = savedTab();   // ★renderAll 内の goto(activeTab()) が DOM既定(利用表)を保存で上書きする前に確保
+  renderAll(DB);
+  goto(restore);   // リロード後も直前に開いていたタブに留まる（既定は利用表）
+  setSyncState(DB ? '端末キャッシュ表示（' + DB.residents.length + '名）' : 'データなし');
+  /* 起動時の自動取得（2026-07-23 追加）。本ツールは端末キャッシュ(care_schedule_v2)へ書かないため、
+     これが無いと「薬用タブで保存した昼食薬がリロードで古く見える」「他端末の居室変更が見えない」。
+     薬用の色は印刷に出る＝古い状態のまま与薬帳票を刷る事故を防ぐ意味でも、開いた時点で最新に揃える。
+     失敗しても従来どおり端末キャッシュ表示のまま（オフラインでも起動を妨げない・トーストも出さない）。 */
+  if (syncTarget().endpoint) refresh(true);
+}
+init();
+</script>
+</body>
+</html>

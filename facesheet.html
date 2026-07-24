@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 機微情報を含むためキャッシュ無効 -->
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<title>フェイスシート</title>
+<style>
+/* 配色は「無彩色を基調に、意味のある色だけ使う」方針（HIG:明瞭性/服従性）。
+   コンテンツが主役なので、色は①アクセント1色 ②危険(赤) ③注意(琥珀) の3つに限定する。
+   文字色は白背景に対しコントラスト比4.5:1以上を満たす値のみ使用（--g5/--g6 を darken 済み）。 */
+:root{
+  --pri:#1a73e8; --pri-l:#eaf1fd; --pri-d:#14509b;
+  --ok:#1e6b23; --ok-l:#e8f5e9; --ng:#b3261e; --ng-l:#fdecea;
+  --warn-bg:#fdf3e3; --warn-tx:#8a5200;
+  --g0:#f7f8f9; --g1:#f1f3f4; --g2:#e5e7ea; --g3:#d2d5d9;
+  --g5:#6b7075; --g6:#5f6368; --g7:#4b4f52; --g9:#1f2124;
+  --r:12px; --sh:0 1px 4px rgba(0,0,0,.10);
+  --focus:#1a73e8;
+}
+/* キーボード操作の現在地を必ず見せる（フォーカスリングを消さない） */
+:focus-visible{outline:3px solid var(--focus); outline-offset:2px; border-radius:6px}
+/* 動きの少ない表示を選んでいる人の設定を尊重する */
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important; animation:none !important}
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+  background:var(--g0); color:var(--g9); font-size:15px; line-height:1.5; padding-bottom:72px;}
+button{font-family:inherit; cursor:pointer}
+input,select{font-family:inherit; font-size:15px}
+
+/* ── ヘッダー ── */
+.hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
+  padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
+.hdr h1{font-size:17px; margin:0; font-weight:700; flex:1}
+/* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
+.hdr-btn{min-height:40px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35);
+  color:#fff; border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.28)}
+.hdr-btn:focus-visible{outline:2px solid #fff; outline-offset:1px}
+.hdr .role{font-size:11px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr .role.field{background:rgba(230,81,0,.92)}
+.hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
+
+/* ── 画面切替 ── */
+.scr{display:none; padding:14px; max-width:980px; margin:0 auto}
+.scr.on{display:block}
+
+/* ── カード ── */
+.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px}
+
+/* ── 一覧 ── */
+.search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
+.search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
+.filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
+/* タップ領域は最小44px（誤タップ防止・HIG） */
+.chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size:14px; color:var(--g7)}
+.chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+.rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px}
+.rcard{background:#fff; border:1px solid var(--g2); border-radius:10px; padding:12px; cursor:pointer; transition:.12s}
+.rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
+.rcard .nm{font-size:16px; font-weight:700}
+.rcard .kn{font-size:11px; color:var(--g6)}
+.rcard .meta{margin-top:6px; display:flex; gap:6px; flex-wrap:wrap}
+.tag{font-size:11px; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
+.tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
+.tag.out{background:var(--ng-l); color:var(--ng)}
+.visually-hidden{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+.empty{text-align:center; color:var(--g5); padding:40px 10px}
+.loading{text-align:center; color:var(--g5); padding:30px}
+
+/* ── 安全ハイライト帯 ── */
+/* 安全ハイライト: 色は「危険・注意・情報」の3段階のみ。
+   色だけに意味を持たせず、必ずアイコン＋文言を併記する（色覚特性配慮・HIG） */
+.hlband{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
+.hlchip{border-radius:8px; padding:6px 12px 6px 10px; font-weight:700; font-size:14px;
+  background:#fff; color:var(--g9); border:1px solid var(--g2); border-left:4px solid var(--g3)}
+.hl-danger{background:var(--ng-l); border-color:#f2c9c5; border-left-color:var(--ng); color:var(--ng)}
+.hl-warn{background:var(--warn-bg); border-color:#ecdcbe; border-left-color:var(--warn-tx); color:var(--warn-tx)}
+.hl-info{background:#fff; border-left-color:var(--pri); color:var(--g9)}
+
+/* ── タブ ── */
+.ftabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
+.ftab{padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size:14px; color:var(--g7); min-height:44px}
+.ftab.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+.fpanel{display:none}
+.fpanel.on{display:block}
+
+/* ── フェイスシート（印刷レイアウト） ── */
+.sheet{background:#fff; border:2px solid var(--g9); border-radius:6px; overflow:hidden; margin-bottom:12px}
+.sheet .sec{display:flex; border-top:1px solid var(--g9)}
+.sheet .sec:first-child{border-top:none}
+.sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
+  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size:13px; min-width:34px;
+  display:flex; align-items:center; justify-content:center; letter-spacing:2px}
+.sheet .sec-body{flex:1; min-width:0}
+.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
+.cell:last-child{border-right:none}
+.cell .lab{font-size:11px; color:var(--g6); display:block; margin-bottom:2px}
+.cell .val{font-size:15px; word-break:break-word; white-space:pre-wrap}
+.cell .val.big{font-size:18px; font-weight:700}
+.row-cells{display:flex; flex-wrap:wrap}
+.row-cells .cell{flex:1}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.6}
+.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px}
+.rhythm span b{color:var(--pri-d)}
+.logline{display:flex; gap:10px; padding:5px 0; border-bottom:1px dotted var(--g3)}
+.logline .d{flex-shrink:0; font-weight:700; color:var(--pri-d); min-width:92px}
+.logline .t{flex:1; white-space:pre-wrap; word-break:break-word}
+.geno-box{min-height:300px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  background:var(--g0); border:1px dashed var(--g3); border-radius:8px; overflow:hidden}
+.geno-box img{max-width:100%; max-height:100%; object-fit:contain}
+
+.detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
+.btn{padding:10px 16px; border:none; border-radius:10px; font-size:14px; font-weight:700; min-height:44px}
+.btn-pri{background:var(--pri); color:#fff}
+.btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
+.btn-gray{background:var(--g2); color:var(--g7)}
+.btn:disabled{opacity:.5}
+.vname{font-size:18px; font-weight:700; margin-left:auto}
+
+/* ── ボトムナビ ── */
+.bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
+  display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
+.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size:11px; color:var(--g6);
+  display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
+.bnav button.on{color:var(--pri)} .bnav button .ic{font-size:20px}
+
+/* ── トースト・モーダル ── */
+#toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:200;
+  opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
+#toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
+.modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
+.modal.on{display:flex}
+.modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
+.modal h2{font-size:16px; margin:0 0 12px}
+.muted{color:var(--g6); font-size:12px}
+.fld{display:flex; flex-direction:column; margin-bottom:10px}
+.fld label{font-size:12px; color:var(--g7); margin-bottom:3px}
+.fld input,.fld select{padding:9px 10px; border:1px solid var(--g3); border-radius:8px; width:100%}
+
+/* ── 印刷（自己完結・A4・1人1シート） ── */
+@media print{
+  body{padding:0; background:#fff}
+  .hdr,.bnav,.detail-actions,.ftabs,#toast,.modal{display:none !important}
+  .scr{padding:0; max-width:none}
+  .scr:not(.on){display:none}
+  .fpanel{display:block !important}      /* 全カテゴリを印刷 */
+  .sheet{border:2px solid #000; page-break-inside:avoid; margin-bottom:6mm}
+  .sheet .sec{border-top:1px solid #000}
+  .cell{border-color:#999}
+  .geno-box{border:none !important; cursor:default !important}
+  .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .hlchip{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  @page{size:A4; margin:10mm}
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>📄 フェイスシート</h1>
+  <!-- アプリ間ジャンプ（daycare-roster.html と同形式）。h1 が flex:1 で伸びるため
+       右側のバッジ群の【手前に足す】と既存の表示位置が動かない。.hdr は @media print で非表示。 -->
+  <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタを新しいタブで開く" title="入居者マスタを開く（入居者情報の源泉）">👤 入居者マスタ</button>
+  <span class="role" id="roleBadge">事務所</span>
+  <span class="sync" id="syncStatus" role="status" aria-live="polite">未接続</span>
+</div>
+
+<!-- ════════ 一覧 ════════ -->
+<section class="scr on" id="sc-list">
+  <div class="search-bar">
+    <label for="q" class="visually-hidden">入居者を検索</label>
+    <input type="search" id="q" placeholder="氏名・ふりがな・居室で検索" autocomplete="off" aria-label="氏名・ふりがな・居室で検索">
+  </div>
+  <div class="filter-row" id="filterRow">
+    <button class="chip on" data-f="active">在籍</button>
+    <button class="chip" data-f="out">退去</button>
+    <button class="chip" data-f="all">すべて</button>
+  </div>
+  <div id="rosterBox"><div class="loading">読み込み中…</div></div>
+</section>
+
+<!-- ════════ 詳細（フェイスシート） ════════ -->
+<section class="scr" id="sc-view">
+  <div class="detail-actions">
+    <button class="btn btn-gray" id="backBtn">← 一覧</button>
+    <button class="btn btn-sec" id="printBtn">🖨️ 印刷</button>
+    <span class="vname" id="vName"></span>
+  </div>
+  <div id="hlBand"></div>
+  <div id="ftabs" class="ftabs"></div>
+  <div id="viewBox"><div class="loading">読み込み中…</div></div>
+</section>
+
+<!-- ボトムナビ -->
+<nav class="bnav">
+  <button class="on" data-sc="list"><span class="ic">📋</span>一覧</button>
+  <button data-sc="sync"><span class="ic">☁️</span>設定</button>
+</nav>
+
+<!-- 設定モーダル -->
+<div class="modal" id="mSync">
+  <div class="box">
+    <h2>☁️ 接続・端末設定</h2>
+    <div class="fld">
+      <label>この端末の用途</label>
+      <select id="cfgDeviceRole">
+        <option value="office">事務所PC（全項目を閲覧）</option>
+        <option value="field">現場タブレット（安全情報のみ閲覧）</option>
+      </select>
+    </div>
+    <div class="fld">
+      <label>GAS Web App URL（入居者マスタと共通）</label>
+      <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec">
+    </div>
+    <div class="fld">
+      <label>アクセストークン</label>
+      <input id="cfgToken" placeholder="入居者マスタと同じトークン">
+    </div>
+    <p class="muted">URL・トークンはこの端末にのみ保存します。現場タブレットでは医療の詳細・家族連絡先・経済情報は取得しません（サーバ側で安全項目のみ返します）。</p>
+    <div class="detail-actions" style="margin-top:14px">
+      <button class="btn btn-gray" id="syncClose">閉じる</button>
+      <button class="btn btn-sec" id="syncTest">接続テスト</button>
+      <button class="btn btn-pri" id="syncSave">保存して再読込</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   フェイスシート（閲覧・印刷専用ビューア）
+   - 正本は resident-master.html（編集はそちら）。本アプリは読み取り専用。
+   - 名簿は共有キー su_residents_common を購読（書き込まない）。
+   - 詳細は入居者マスタGAS（rmaster_cfg）から都度取得・端末キャッシュしない。
+   - 事務所PC=全項目+A4印刷 / 現場タブレット=安全情報のみ（getSection facesheet_safe）。
+   - 機微情報は localStorage に保存しない。console.log にPIIを出さない。描画は全て esc()。
+   ═══════════════════════════════════════════════════════════════ */
+var CFG_KEY='rmaster_cfg';        // 入居者マスタと共通の接続設定（URL/token）
+var COMMON_KEY='su_residents_common';
+var DEVICE_KEY='su_device_role';
+var SU_GENO_KEY='su_genograms';
+var GENOGRAM_APP='genogram.html';
+var CFG={url:'',token:''};
+(function loadCfg(){try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);CFG.url=o.url||'';CFG.token=o.token||''}}catch(e){}})();
+
+// 現場タブレットで閲覧してよい安全項目（resident-master.html / master.gs の facesheet_safe と一致）
+// 服薬管理3項目は現場ケアに直結するため安全情報に含める（2026-07 決定）。
+// この19項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
+  'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
+  'medMgmt','medAssist','medRefusal'];
+var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
+var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
+  ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
+
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('on')},2600)}
+function setSync(txt,cls){var e=$('syncStatus');e.textContent=txt;e.className='sync'+(cls?(' '+cls):'')}
+function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+function setDeviceRole(v){try{localStorage.setItem(DEVICE_KEY,v)}catch(e){}}
+function isField(){return getDeviceRole()==='field'}
+function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
+function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
+function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
+function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
+function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
+
+/* ═══════════ GAS API（読み取り専用・トークン付き） ═══════════ */
+function apiGet(params,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
+  qs+='&token='+encodeURIComponent(CFG.token);
+  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET',redirect:'follow'},timeoutMs||12000).then(parseJson);
+}
+function fetchWithTimeout(url,opt,ms){
+  return new Promise(function(res,rej){
+    var ctl=('AbortController'in window)?new AbortController():null;
+    if(ctl)opt.signal=ctl.signal;
+    var t=setTimeout(function(){if(ctl)ctl.abort();rej(new Error('タイムアウト'))},ms);
+    fetch(url,opt).then(function(r){clearTimeout(t);res(r)}).catch(function(e){clearTimeout(t);rej(e)});
+  });
+}
+function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
+
+/* ═══════════ 名簿（su_residents_common 購読・read-only） ═══════════ */
+var roster=[]; // [{masterId,name,kana,room,gender,careLevel,active,targetApps?}]
+function loadCommonRoster(){
+  try{
+    var raw=localStorage.getItem(COMMON_KEY);if(!raw){roster=[];return false}
+    var o=JSON.parse(raw);var list=(o&&o.residents)||[];
+    roster=list.map(function(c){
+      return{masterId:c.masterId,name:c.name||'',kana:c.kana||'',room:c.room||'',
+        gender:c.gender||'',careLevel:c.careLevel||'',active:c.active!==false,
+        targetApps:Array.isArray(c.targetApps)?c.targetApps.slice():null};
+    });
+    return roster.length>0;
+  }catch(e){roster=[];return false}
+}
+// 共有名簿が空のとき、GASの軽量roster（非機微）をフォールバック取得
+function refreshRosterFromGas(){
+  if(!CFG.url){renderRoster();return Promise.resolve(false)}
+  setSync('同期中…');
+  return apiGet({action:'getRoster'}).then(function(d){
+    var list=(d&&d.roster)||d||[];
+    if(Array.isArray(list)){
+      roster=list.map(function(r){
+        var t=r.targetApps;
+        return{masterId:r.id!=null?r.id:r.masterId,name:r.name||'',kana:r.kana||'',room:r.room||'',
+          gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,
+          targetApps:(typeof t==='string'&&t)?t.split(',').map(function(x){return x.trim()}).filter(Boolean):(Array.isArray(t)?t:null)};
+      });
+    }
+    setSync('同期OK','ok');renderRoster();return true;
+  }).catch(function(e){setSync('オフライン','err');renderRoster();if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗: '+e.message);return false});
+}
+
+var curFilter='active';
+function renderRoster(){
+  var q=($('q').value||'').trim().toLowerCase();
+  var box=$('rosterBox');
+  var list=roster.filter(function(r){
+    if(curFilter==='active'&&r.active===false)return false;
+    if(curFilter==='out'&&r.active!==false)return false;
+    if(r.room==='STAFF')return false;
+    if(q){var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();if(hay.indexOf(q)<0)return false}
+    return true;
+  }).sort(function(a,b){return String(a.room||'').localeCompare(String(b.room||''),'ja')||String(a.kana||'').localeCompare(String(b.kana||''),'ja')});
+  if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。入居者マスタで登録するか「設定」で接続してください')+'</div>';return}
+  var html='<div class="rlist">';
+  list.forEach(function(r){
+    html+='<div class="rcard" role="button" tabindex="0" aria-label="'+esc(r.name)+(r.room?('　'+r.room+'号室'):'')+' のフェイスシートを開く" data-id="'+esc(r.masterId)+'">'+
+      '<div class="nm">'+esc(r.name)+'</div>'+
+      (r.kana?'<div class="kn">'+esc(r.kana)+'</div>':'')+
+      '<div class="meta">'+
+        (r.room?'<span class="tag room">'+esc(r.room)+'号室</span>':'')+
+        (r.careLevel?'<span class="tag care">'+esc(r.careLevel)+'</span>':'')+
+        (r.active===false?'<span class="tag out">退去</span>':'')+
+      '</div></div>';
+  });
+  html+='</div>';
+  box.innerHTML=html;
+  Array.prototype.forEach.call(box.querySelectorAll('.rcard'),function(el){
+    el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
+    // キーボードでも開けるようにする（Enter / Space）
+    el.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();openResident(this.getAttribute('data-id'))}
+    });
+  });
+}
+
+/* ═══════════ 詳細取得（都度取得・キャッシュしない） ═══════════ */
+var curRec=null;
+function openResident(id){
+  showScreen('view');
+  $('vName').textContent='';$('hlBand').innerHTML='';$('ftabs').innerHTML='';
+  $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
+  if(!CFG.url){$('viewBox').innerHTML='<div class="empty">「設定」で接続URLを入力してください</div>';return}
+  // 現場タブレットは安全項目のみをサーバから取得（機微情報は端末に届かない）
+  var req=isField()?apiGet({action:'getSection',id:id,section:'facesheet_safe'}):apiGet({action:'getResident',id:id});
+  req.then(function(d){
+    var rec=isField()?((d&&d.section)||d):((d&&d.record)||d);
+    if(!rec||(rec.id==null&&!rec.name))throw new Error('該当データなし');
+    curRec=rec; setSync('取得OK','ok'); renderFaceSheet(rec);
+  }).catch(function(e){setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
+}
+
+/* ═══════════ 表示ヘルパ ═══════════ */
+function cell(lab,val,big){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span></div>'}
+function full(lab,val){return'<div class="cell" style="border-right:none"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
+function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'</div><div class="sec-body">'+body+'</div></div>'}
+function sheet(inner){return'<div class="sheet">'+inner+'</div>'}
+function logList(arr,withMeta){
+  var a=Array.isArray(arr)?arr.slice():[];
+  a.sort(function(x,y){return String((y&&y.date)||(y&&y.changedAt)||'').localeCompare(String((x&&x.date)||(x&&x.changedAt)||''))});
+  if(!a.length)return'<div class="cell" style="border-right:none;border-bottom:none"><span style="color:var(--g5)">　</span></div>';
+  return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
+    var d=fmtJDate(s.date||s.changedAt)||s.date||s.changedAt||'';
+    var meta=withMeta?[s.doctor,s.clinic].filter(Boolean).join(' / '):'';
+    var tag=(s.source==='vma')?' <span style="color:var(--pri-d);font-size:11px">[訪問診療]</span>':'';
+    return'<div class="logline"><span class="d">'+esc(d)+'</span><span class="t">'+esc(s.text||s.value||'')+(meta?'<br><span style="color:var(--g6);font-size:12px">'+esc(meta)+'</span>':'')+tag+'</span></div>';
+  }).join('')+'</div>';
+}
+function careHistHtml(arr){
+  var a=Array.isArray(arr)?arr.slice():[];
+  a.sort(function(x,y){return String((y&&y.changedAt)||'').localeCompare(String((x&&x.changedAt)||''))});
+  if(!a.length)return'<div class="cell" style="border-right:none;border-bottom:none"><span style="color:var(--g5)">　</span></div>';
+  return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
+    var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
+    var sub=[period,s.note].filter(Boolean).join(' / ');
+    return'<div class="logline"><span class="d">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size:12px"> 　'+esc(sub)+'</span>':'')+'</span></div>';
+  }).join('')+'</div>';
+}
+
+/* ═══════════ 安全ハイライト帯（共通） ═══════════ */
+function renderHlBand(r){
+  var hl=[];
+  if(r.preferredName)hl.push('<span class="hlchip hl-info">🙂 呼称: '+esc(r.preferredName)+'</span>');
+  if(r.allergy)hl.push('<span class="hlchip hl-danger">⚠ アレルギー: '+esc(r.allergy)+'</span>');
+  if(r.infections)hl.push('<span class="hlchip hl-danger">⚠ 感染症: '+esc(r.infections)+'</span>');
+  if(r.medicalCare)hl.push('<span class="hlchip hl-warn">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
+  if(r.mealForm||r.thickener)hl.push('<span class="hlchip hl-info">🍚 食事: '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
+  if(r.careHints)hl.push('<span class="hlchip hl-warn">💡 対応のコツあり</span>');
+  $('hlBand').innerHTML=hl.length?'<div class="hlband" role="group" aria-label="安全上の注意">'+hl.join('')+'</div>':'';
+}
+
+/* ═══════════ フェイスシート描画 ═══════════ */
+function renderFaceSheet(r){
+  // 二重防御: 現場端末では SAFE_FIELDS 以外を描画対象から落とす。
+  // サーバ(getSection facesheet_safe)が唯一の関門だが、GASが旧バージョンのまま等で
+  // 想定外の項目が返っても現場画面には出さない。3箇所契約を「動作」で担保する。
+  if(isField()){
+    var s={id:r.id};
+    SAFE_FIELDS.forEach(function(k){if(r[k]!==undefined)s[k]=r[k]});
+    r=s;
+  }
+  $('vName').textContent=(r.name||'')+(r.room?('（'+r.room+'）'):'');
+  renderHlBand(r);
+  if(isField()){renderFieldView(r);return}
+  renderOfficeView(r);
+}
+
+/* 現場タブレット：安全情報のみ（サーバから安全項目しか来ない） */
+function renderFieldView(r){
+  $('ftabs').innerHTML='';
+  var body=
+    sec('ケア要点',
+      '<div class="row-cells">'+cell('呼ばれたい呼称',r.preferredName)+cell('移動',r.mobility)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+'</div>'+
+      '<div class="row-cells">'+cell('嚥下',r.swallow)+cell('義歯',r.denture)+cell('剤形配慮',r.formAdjust)+'</div>'+
+      '<div class="row-cells">'+cell('服薬 管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('服薬拒否',r.medRefusal)+'</div>'+
+      full('アレルギー',r.allergy)+
+      full('感染症',r.infections)+
+      full('医療処置',r.medicalCare)+
+      full('対応のコツ・なだめ方',r.careHints)+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">気になる行動（BPSD）</span><div class="fulltext">'+esc(r.problemBehavior||'　')+'</div></div>'
+    );
+  $('viewBox').innerHTML='<div class="fpanel on" data-panel="safe">'+sheet(body)+'</div>';
+}
+
+/* 事務所PC：全項目をタブで切替（印刷時は全タブ展開） */
+function renderOfficeView(r){
+  var rhythm=r.rhythm||{};
+  var RH=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
+  var rh=RH.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  var dayUse=r.dayUse||{};
+  var du=DAYUSE_KEYS.map(function(p){return dayUse[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(dayUse[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  var consents=r.consents||{};
+  var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  var fam=Array.isArray(r.family)?r.family:[];
+  var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
+  var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.phone?(' '+f.phone):'')}).join('\n');
+
+  var P={};
+  // サマリ
+  P.summary=sheet(sec('サマリ',
+    '<div class="row-cells">'+cell('氏名',r.name,true)+cell('呼称',r.preferredName)+cell('介護度',r.careLevel)+cell('居室',r.room)+'</div>'+
+    '<div class="row-cells">'+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('性別',r.gender)+cell('移動',r.mobility)+cell('食形態',[r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join('/'))+'</div>'+
+    full('アレルギー / 感染症',[r.allergy,r.infections].filter(Boolean).join(' ／ '))+
+    full('医療処置',r.medicalCare)+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
+  ));
+  // 基本・制度
+  var chist=careHistHtml(r.careLevelHistory);
+  P.basic=sheet(
+    sec('基本情報',
+      '<div class="row-cells">'+cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+'</div>'+
+      '<div class="row-cells">'+cell('介護度',r.careLevel)+cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+'</div>'+
+      '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+cell('身長',r.height?r.height+' cm':'')+cell('体重',r.weight?r.weight+' kg':'')+cell('BMI',calcBMI(r.height,r.weight))+'</div>'
+    )+
+    sec('保険・制度／連絡先',
+      '<div class="row-cells">'+cell('電話（本人/居室）',r.phone)+cell('被保険者番号',r.insuredNo)+cell('保険者',r.insurer)+cell('認定日',fmtJDate(r.certDate))+'</div>'+
+      '<div class="row-cells">'+cell('医療保険',r.medicalInsurance)+cell('障害者手帳',r.disabilityCert)+cell('成年後見',r.guardianship)+cell('呼称',r.preferredName)+'</div>'
+    )+
+    sec('介護度の変更履歴',chist)+
+    sec('基本事項',
+      '<div class="row-cells">'+cell('退去先',r.dischargeTo)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
+      full('入居前状況',r.preAdmission)+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div>')
+  );
+  // 医療・服薬
+  P.medical=sheet(
+    sec('医療情報',
+      '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX',r.hospitalFax)+'</div>'+
+      '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+cell('血液型',r.bloodType)+'</div>'+
+      '<div class="row-cells">'+cell('かかりつけ薬局',r.pharmacy)+cell('電話番号',r.pharmacyTel)+'</div>'+
+      '<div class="row-cells">'+full('アレルギー',r.allergy)+full('感染症',r.infections)+'</div>'+
+      full('医療処置',r.medicalCare)+
+      '<div class="row-cells">'+full('治療中の病気',r.currentDiseases)+full('既往歴',r.pastHistory)+'</div>'+
+      '<div class="row-cells">'+full('副作用・禁忌',r.sideEffects)+full('予防接種歴',r.vaccinations)+'</div>'+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div>'
+    )+
+    sec('服薬',
+      '<div class="row-cells">'+cell('管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
+      full('薬剤情報（定期）',r.medsRegular)+
+      full('頓服・外用等',r.medsPrn)+
+      '<div class="row-cells">'+full('薬備考',r.medsNotes)+full('注意を要する薬剤',r.highRiskMeds)+'</div>'
+    )
+  );
+  // ADL・食事
+  P.adl=sheet(
+    sec('ADL',
+      '<div class="row-cells">'+cell('移動',r.mobility)+cell('移乗',r.transfer)+cell('排泄',r.excretion)+cell('入浴',r.bath)+'</div>'+
+      '<div class="row-cells">'+cell('更衣・整容',r.dress)+cell('嚥下',r.swallow)+cell('障害高齢者自立度',r.bedriddenRank)+cell('生活自立度',r.adl)+'</div>'+
+      '<div class="row-cells">'+cell('水分',r.water)+cell('視力',r.vision)+cell('聴力',r.hearing)+'</div>'+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div>'
+    )+
+    sec('食事',
+      '<div class="row-cells">'+cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+'</div>'+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div>'
+    )
+  );
+  // 認知・コミュ
+  P.mind=sheet(
+    sec('認知・精神',
+      '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('認知症自立度',r.dementia)+cell('HDS-R/MMSE',r.cogScore)+'</div>'+
+      full('対応のコツ・なだめ方',r.careHints)+
+      '<div class="row-cells">'+full('気になる行動（BPSD）',r.problemBehavior)+full('精神疾患の既往／通院',r.psychHistory)+'</div>'
+    )+
+    sec('コミュニケーション',
+      '<div class="row-cells">'+cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">留意点</span><div class="fulltext">'+esc(r.commNotes||'　')+'</div></div>'
+    )
+  );
+  // 家族・事業所
+  var genoImg=getGenogram(r.id);
+  var genoInner=genoImg?('<img src="'+esc(genoImg)+'" alt="ジェノグラム">'):'<div style="text-align:center;color:var(--g6);font-size:13px;padding:10px"><div style="font-size:40px">🧬</div>家系図アプリで作成</div>';
+  P.family=sheet(
+    sec('家族情報',
+      full('ご家族氏名・続柄・役割',famName)+
+      '<div class="row-cells">'+full('電話番号',famTel)+full('緊急連絡先',emg)+'</div>'+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">家系図</span><div class="geno-box" id="genoBox" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
+    )+
+    sec('事業所',
+      '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX',r.careOfficeFax)+'</div>'+
+      '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
+      '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager)+'</div>'+
+      '<div class="row-cells"><div class="cell"><span class="lab">デイ利用日</span><div class="rhythm">'+(du||'　')+'</div></div>'+
+        '<div class="cell" style="border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'
+    )
+  );
+  // 嗜好・生活歴
+  P.person=sheet(
+    sec('嗜好・本人らしさ',
+      '<div class="row-cells">'+cell('性格・気質',r.personality)+cell('趣味・特技',r.hobby)+cell('喫煙',r.smoking)+cell('飲酒',r.drinking)+'</div>'+
+      '<div class="row-cells">'+full('好きな／嫌いな食べ物',r.foodPref)+full('こだわり・大切な習慣',r.lifePrefs)+'</div>'
+    )+
+    sec('生活歴',
+      full('生育歴・職歴・暮らしぶり',r.lifeHistory)+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">価値観・誇り</span><div class="fulltext">'+esc(r.values||'　')+'</div></div>'
+    )
+  );
+  // 意向・ACP
+  P.wishes=sheet(
+    sec('意向・ACP',
+      '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
+      '<div class="row-cells">'+full('本人の意向',r.wishSelf)+full('家族の意向',r.wishFamily)+'</div>'+
+      full('生活目標・ニーズ',r.goal)+
+      full('看取り・終末期の意向（ACP）',r.acp)+
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'
+    )
+  );
+  // 経過
+  P.log=sheet(
+    sec('支援経過',logList(r.supportLog,false))+
+    sec('医療支援経過',logList(r.medicalSupportLog,true))+
+    sec('過去の臨時薬',logList(r.medsPastLog,false))
+  );
+
+  var TABS=[['summary','サマリ'],['basic','基本・制度'],['medical','医療・服薬'],['adl','ADL・食事'],
+    ['mind','認知・コミュ'],['family','家族・事業所'],['person','嗜好・生活歴'],['wishes','意向・ACP'],['log','経過']];
+  $('ftabs').setAttribute('role','tablist');
+  $('ftabs').innerHTML=TABS.map(function(t,i){return'<button class="ftab'+(i===0?' on':'')+'" role="tab" aria-selected="'+(i===0?'true':'false')+'" aria-controls="panel-'+t[0]+'" data-tab="'+t[0]+'">'+esc(t[1])+'</button>'}).join('');
+  $('viewBox').innerHTML=TABS.map(function(t,i){return'<div class="fpanel'+(i===0?' on':'')+'" role="tabpanel" id="panel-'+t[0]+'" aria-label="'+esc(t[1])+'" data-panel="'+t[0]+'">'+(P[t[0]]||'')+'</div>'}).join('');
+
+  Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(b){
+    b.addEventListener('click',function(){
+      var k=this.getAttribute('data-tab');
+      Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(x){x.classList.toggle('on',x===b);x.setAttribute('aria-selected',x===b?'true':'false')});
+      Array.prototype.forEach.call($('viewBox').querySelectorAll('.fpanel'),function(p){p.classList.toggle('on',p.getAttribute('data-panel')===k)});
+      window.scrollTo(0,0);
+    });
+  });
+  var gb=$('genoBox');
+  if(gb)gb.addEventListener('click',function(){var id=this.getAttribute('data-geno');var nm=this.getAttribute('data-name');if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(nm?'&name='+encodeURIComponent(nm):'')});
+}
+
+/* ジェノグラム（同一オリジン共有・読み取り専用） */
+function getGenogram(id){
+  try{var raw=localStorage.getItem(SU_GENO_KEY);if(!raw)return null;var m=JSON.parse(raw);var g=m&&m[String(id)];return(g&&g.image)?g.image:null}catch(e){return null}
+}
+
+/* ═══════════ 画面遷移・ナビ ═══════════ */
+function showScreen(name){
+  ['list','view'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
+  if(name==='list')window.scrollTo(0,0);
+}
+function applyRoleBadge(){
+  var f=isField();var e=$('roleBadge');e.textContent=f?'現場':'事務所';e.className='role'+(f?' field':'');
+  $('printBtn').style.display=f?'none':'';
+}
+
+/* ═══════════ 設定モーダル ═══════════ */
+function openSync(){
+  $('cfgUrl').value=CFG.url;$('cfgToken').value=CFG.token;$('cfgDeviceRole').value=getDeviceRole();
+  $('mSync').classList.add('on');
+}
+function closeSync(){$('mSync').classList.remove('on')}
+function saveSync(){
+  CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
+  try{localStorage.setItem(CFG_KEY,JSON.stringify({url:CFG.url,token:CFG.token}))}catch(e){}
+  setDeviceRole($('cfgDeviceRole').value==='field'?'field':'office');
+  applyRoleBadge();closeSync();boot();toast('✅ 保存しました');
+}
+function testSync(){
+  CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
+  if(!CFG.url){toast('URLを入力してください');return}
+  setSync('テスト中…');
+  apiGet({action:'ping'}).then(function(){setSync('接続OK','ok');toast('✅ 接続できました')})
+    .catch(function(e){setSync('接続失敗','err');toast('⚠️ '+e.message)});
+}
+
+/* ═══════════ 起動 ═══════════ */
+function boot(){
+  applyRoleBadge();
+  var has=loadCommonRoster();
+  renderRoster();
+  if(!has&&CFG.url)refreshRosterFromGas();
+  else if(roster.length)setSync('名簿OK','ok');
+  else setSync('未接続');
+}
+window.addEventListener('storage',function(e){if(e.key===COMMON_KEY){loadCommonRoster();renderRoster()}});
+document.addEventListener('DOMContentLoaded',function(){
+  $('q').addEventListener('input',renderRoster);
+  Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
+    c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){x.classList.toggle('on',x===c)});renderRoster()});
+  });
+  $('btnMaster').addEventListener('click',function(){window.open('resident-master.html','_blank')});
+  $('backBtn').addEventListener('click',function(){curRec=null;showScreen('list')});
+  $('printBtn').addEventListener('click',function(){window.print()});
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
+    b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');if(sc==='sync')openSync();else showScreen(sc)});
+  });
+  $('syncClose').addEventListener('click',closeSync);
+  $('syncSave').addEventListener('click',saveSync);
+  $('syncTest').addEventListener('click',testSync);
+  boot();
+});
+</script>
+</body>
+</html>

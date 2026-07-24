@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<!-- 実在入居者の氏名を表示する読み取り専用ビュー: キャッシュ残留を防ぐ -->
+<meta http-equiv="Cache-Control" content="no-store">
+<title>訪問 週間俯瞰</title>
+<style>
+/* 訪問支援 週間俯瞰ビュー — 週間計画(care_schedule_v2)を読み取り専用で参照。
+   見た目は work-schedule.html（ワースケ）盤面に寄せる。既存ツールには一切書き込まない。 */
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32; --ok-l: #e8f5e9;
+  --ng: #c62828; --ng-l: #ffebee;
+  --warn-bg: #fff8e1; --warn-tx: #e65100;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g8: #3c4043; --g9: #202124;
+  --r: 12px; --sh: 0 1px 6px rgba(0,0,0,.12);
+  /* ブロック色（ワースケの色意味論を継承） */
+  --c-phys: #e3f2fd; --c-phys-b: #90caf9;   /* 身体=水色 */
+  --c-life: #fce4ec; --c-life-b: #f48fb1;   /* 生活=ピンク */
+  --c-mix:  #ede7f6; --c-mix-b:  #b39ddb;   /* 複合=藤 */
+  --c-sogo: #e0f2f1; --c-sogo-b: #4db6ac;   /* 総合事業=ティール（ワースケに無いので新設） */
+  --c-oth:  #eceff1; --c-oth-b:  #b0bec5;   /* 区分不明=灰 */
+  --axW: 50px;
+  --hourPx: 54px;     /* JS が実データ範囲に応じて据え置き（1時間=54px） */
+  --canvasH: 810px;   /* JS が (時間数×hourPx) で上書き */
+  --line: #e8eaed;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  font-size: 14px; color: var(--g9); background: var(--g1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ===== ヘッダー ===== */
+.hdr {
+  flex-shrink: 0; min-height: 50px; background: var(--pri); color: #fff;
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
+}
+.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.hdr-sub { font-size: 11px; opacity: .9; white-space: nowrap; }
+.hdr-sp { flex: 1; }
+.hdr-btn {
+  min-height: 40px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+  white-space: nowrap;
+}
+.hdr-btn:hover { background: rgba(255,255,255,.28); }
+.hdr-btn:disabled { opacity: .4; cursor: default; }
+.hdr-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.hdr-btn.solid { background: var(--pri); border-color: var(--pri); }   /* 白背景の空状態に置くボタン */
+/* 施設/外部セグメントトグル（表示対象の切替・最小44pxタップ領域） */
+.seg { display: inline-flex; }
+.seg-btn { min-height: 44px; min-width: 52px; border-radius: 0; }
+.seg-btn:first-child { border-radius: 6px 0 0 6px; }
+.seg-btn:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.seg-btn[aria-pressed="true"] { background: #fff; color: var(--pri-d); font-weight: 700; }
+.sync-state { font-size: 11px; opacity: .9; white-space: nowrap; }
+
+/* ===== 凡例 ===== */
+.legend {
+  flex-shrink: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 5px 12px; background: #fff; border-bottom: 1px solid var(--g3);
+  font-size: 11px; color: var(--g7);
+}
+.lg { display: inline-flex; align-items: center; gap: 4px; }
+.lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--g3); flex-shrink: 0; }
+.lg-sw.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); }
+.lg-sw.k-life { background: var(--c-life); border-color: var(--c-life-b); }
+.lg-sw.k-mix  { background: var(--c-mix);  border-color: var(--c-mix-b); }
+.lg-sw.k-sogo { background: var(--c-sogo); border-color: var(--c-sogo-b); }
+.lg-note { color: var(--g6); }
+
+/* ===== 盤面 ===== */
+.board-wrap {
+  flex: 1; overflow: auto; position: relative; background: var(--g1);
+  -webkit-overflow-scrolling: touch;
+}
+.board { display: inline-block; min-width: 100%; background: #fff; }
+.b-heads {
+  display: grid; grid-template-columns: var(--axW) repeat(7, minmax(96px, 1fr));
+  position: sticky; top: 0; z-index: 40; background: #fff; border-bottom: 2px solid var(--g9);
+}
+.b-head {
+  padding: 5px 2px; text-align: center; border-right: 1px solid var(--g3);
+  font-size: 12px; line-height: 1.3; background: #fff;
+}
+.b-head:first-child { position: sticky; left: 0; z-index: 2; background: var(--g0); font-size: 11px; color: var(--g6); }
+.b-head .h-day { font-weight: 700; font-size: 14px; }
+.b-head .h-sat { color: #1565c0; }   /* 土=青 */
+.b-head .h-sun { color: #c0392b; }   /* 日=赤 */
+.b-head .h-cnt { display: block; font-size: 11px; color: var(--g6); font-weight: 400; margin-top: 1px; }
+.b-head .h-cnt.zero { color: var(--ok); font-weight: 700; }   /* 0件=空き日として強調 */
+
+.b-canvas {
+  display: grid; grid-template-columns: var(--axW) repeat(7, minmax(96px, 1fr));
+  position: relative;
+}
+.b-axis {
+  position: sticky; left: 0; z-index: 22; height: var(--canvasH);
+  background: var(--g0); border-right: 1px solid var(--g3);
+}
+.tick {
+  position: absolute; right: 4px; left: 0; font-size: 10px; color: var(--g6);
+  text-align: right; transform: translateY(-50%);
+}
+.tick.hour { font-weight: 700; color: var(--g8); font-size: 11px; }
+.b-lane {
+  position: relative; height: var(--canvasH); border-right: 1px solid var(--g3);
+  background-color: #fff;
+  /* 1時間ごとの横罫線（軽量＝DOMではなく背景グラデーション） */
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px, transparent var(--hourPx));
+}
+.b-lane.sat { background-color: #f5f9ff; }
+.b-lane.sun { background-color: #fff6f5; }
+
+/* ===== 支援枠カード ===== */
+.b-task {
+  position: absolute; z-index: 10; border-radius: 6px; border: 1px solid var(--g3);
+  font-size: 10.5px; line-height: 1.2; padding: 2px 4px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+.b-task.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); }
+.b-task.k-life { background: var(--c-life); border-color: var(--c-life-b); }
+.b-task.k-mix  { background: var(--c-mix);  border-color: var(--c-mix-b); }
+.b-task.k-sogo { background: var(--c-sogo); border-color: var(--c-sogo-b); }
+.b-task.k-oth  { background: var(--c-oth);  border-color: var(--c-oth-b); }
+.b-task .t-name { font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-task .t-code { font-size: 10px; color: var(--g8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 入院中: グレースケール＋斜線でその枠が現在空いていることを示す（ワースケの hosp 表現を踏襲） */
+.b-task.hosp {
+  opacity: .5; filter: grayscale(1); -webkit-filter: grayscale(1);
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.28) 0 5px, transparent 5px 12px);
+}
+
+/* ===== 空・トースト ===== */
+.board-empty {
+  position: absolute; inset: 0; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; color: var(--g6);
+  font-size: 14px; text-align: center; padding: 24px;
+}
+.board-empty.on { display: flex; }
+#toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
+  font-size: 13px; z-index: 300; display: none; max-width: 90%;
+  box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
+#toast.ng { background: var(--ng); }
+#toast.on { display: block; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* 視覚的には隠すが支援技術には残す（低い枠でも支援コードを読み上げ・キーボード到達可能に） */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ===== 印刷（A3縦・1枚収まり・純CSS） =====
+   grid の 1fr 列が @page の用紙幅へリフローし、時間軸は固定px高（時間数×54px・最大24hでもA3縦に収まる）。
+   JS変形（transform:scale）は行わない＝画面幅計測とリフローの二重縮小を回避。
+   本ファイル内で自己完結＝既存ツールの印刷経路には非干渉。 */
+@media print {
+  @page { size: A3 portrait; margin: 8mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  html, body { overflow: visible; height: auto; background: #fff; }
+  .hdr, #toast { display: none !important; }
+  .legend { border-bottom: 1px solid #000; }
+  .board-wrap { overflow: visible; }
+  .board { display: block; width: 100%; }      /* 用紙幅いっぱいへリフロー（inline-block の内容幅依存を解除） */
+  .b-heads { position: static; }               /* 印刷では sticky を解除 */
+  .b-axis, .b-head:first-child { position: relative; left: auto; }
+  .b-task { box-shadow: none; }
+  #board { zoom: 1 !important; }               /* ズーム中でも印刷は必ず等倍（A3縦1枚収まりを保護） */
+}
+.print-title { display: none; font-size: 13px; font-weight: 700; padding: 2px 4px; }
+@media print { .print-title { display: block; } }
+
+/* ===== 週間俯瞰リンクキット（切替スイッチ・ズーム・即時ツールチップ）=====
+   既存の盤面・印刷・render には非干渉。追加UIはヘッダー内（印刷時 .hdr は非表示）。 */
+.ovsw { display: inline-flex; border: 1px solid rgba(255,255,255,.55); border-radius: 8px; overflow: hidden; }
+.ovsw-btn {
+  min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 14px; font-size: 13px; font-weight: 700; text-decoration: none; color: #fff;
+  background: transparent; white-space: nowrap; cursor: pointer;
+}
+.ovsw-btn + .ovsw-btn { border-left: 1px solid rgba(255,255,255,.55); }
+.ovsw-btn[aria-current="page"] { background: #fff; }
+.ovsw-btn.is-visit[aria-current="page"]   { color: var(--pri-d); }   /* 訪問=青 */
+.ovsw-btn.is-support[aria-current="page"] { color: #b45309; }        /* 全支援=オレンジ */
+.ovsw-btn:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.ovcmp { text-decoration: none; }
+.ovzoom { display: inline-flex; align-items: center; gap: 2px; }
+.ovzoom .hdr-btn { min-width: 44px; padding: 6px 10px; }
+.ovz-lv { min-width: 46px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+/* 即時ツールチップ（ネイティブ title の約1秒待ち・小ささを解消） */
+#ovTip {
+  position: fixed; z-index: 400; max-width: 300px; display: none;
+  background: var(--g9); color: #fff; font-size: 13px; line-height: 1.35;
+  padding: 7px 10px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.32);
+  pointer-events: none; white-space: normal; word-break: break-word;
+}
+#ovTip.on { display: block; }
+@media print { #ovTip { display: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <span class="hdr-title">訪問 週間俯瞰</span>
+  <span class="ovsw" role="group" aria-label="ビュー切替（訪問／全支援）">
+    <a class="ovsw-btn is-visit" href="visit-overview.html" aria-current="page">訪問</a>
+    <a class="ovsw-btn is-support" href="support-overview.html">全支援</a>
+  </span>
+  <a class="hdr-btn ovcmp" href="overview-compare.html" aria-label="訪問と全支援を左右で並べて比較">⇄ 比較</a>
+  <span class="hdr-sub" id="hdrSub">月〜日／施設利用者の訪問支援枠</span>
+  <span class="hdr-sp"></span>
+  <span class="seg" role="group" aria-label="表示対象（施設利用者／外部利用者）">
+    <button class="hdr-btn seg-btn" id="segFac" aria-pressed="true" aria-label="施設利用者を表示">施設</button>
+    <button class="hdr-btn seg-btn" id="segExt" aria-pressed="false" aria-label="外部利用者を表示">外部</button>
+  </span>
+  <span class="ovzoom" id="ovZoom" role="group" aria-label="表示倍率">
+    <button class="hdr-btn" id="ovZoomOut" aria-label="表示を縮小">−</button>
+    <button class="hdr-btn ovz-lv" id="ovZoomLv" aria-label="表示倍率（押すと等倍に戻す）">100%</button>
+    <button class="hdr-btn" id="ovZoomIn" aria-label="表示を拡大">＋</button>
+  </span>
+  <span class="sync-state" id="syncState">読込中…</span>
+  <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
+  <button class="hdr-btn" id="btnPrint" aria-label="A3縦で印刷">印刷</button>
+</header>
+
+<div class="legend" aria-hidden="false">
+  <span class="lg"><span class="lg-sw k-phys"></span>身体</span>
+  <span class="lg"><span class="lg-sw k-life"></span>生活</span>
+  <span class="lg"><span class="lg-sw k-mix"></span>複合</span>
+  <span class="lg"><span class="lg-sw k-sogo"></span>総合事業</span>
+  <span class="lg-note">各枠＝氏名＋支援コード／斜線＝入院中（現在空き）／「外部」＝週間計画で外部指定の利用者</span>
+</div>
+
+<div class="print-title" id="printTitle">訪問支援 週間俯瞰（月〜日）</div>
+
+<main class="board-wrap" id="boardWrap">
+  <div class="board" id="board" role="table" aria-label="訪問支援の週間俯瞰表">
+    <div class="b-heads" id="bHeads" role="row"></div>
+    <div class="b-canvas" id="bCanvas" role="row"></div>
+  </div>
+  <div class="board-empty" id="boardEmpty">
+    <div id="emptyMsg">週間計画のデータが見つかりません。</div>
+    <button class="hdr-btn solid" id="btnRefresh2">クラウドから取得</button>
+  </div>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ============================================================================
+   訪問 週間俯瞰ビュー — 読み取り専用
+   データ源: care-schedule.html と同じ care_schedule_v2（localStorage＋GAS get）。
+   ★このツールは care_schedule_v2 に一切書き込まない（put/rev前進/serviceDict書換を行わない）。
+   ============================================================================ */
+
+// ── 定数 ──
+const LS_KEY  = 'care_schedule_v2';
+const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];   // dayOfWeek 0..6
+
+// 支援コード → 色分類（care-schedule の WS_SVC_META.cls を移植。コードは版数規律で安定）
+const SVC_CLS = {
+  '身体０１': 'phys', '身体１': 'phys', '身体２': 'phys',
+  '身体１生活１': 'mix', '身体１生活２': 'mix',
+  '生活２': 'life', '生活３': 'life',
+};
+// 総合事業コード → 盤面ラベル（略称）。要介護コードは category をそのまま表示。
+const SOGO_LABEL = { 'A21121': '【A11】', 'A21221': '【A12】', 'A2111': '【A21】', 'A21211': '【A22】' };
+
+function codeClass(cat) {
+  if (SVC_CLS[cat]) return SVC_CLS[cat];
+  if (SOGO_LABEL[cat]) return 'sogo';
+  return 'oth';
+}
+function codeLabel(cat) {
+  if (SOGO_LABEL[cat]) return SOGO_LABEL[cat];
+  return cat || '—';
+}
+
+const $ = id => document.getElementById(id);
+
+// "H:MM" → 0時からの分。不正は null（境界で1回だけ検証し、以降は信頼）
+function toMin(t) {
+  if (typeof t !== 'string') return null;
+  const p = t.split(':');
+  if (p.length < 2) return null;
+  const h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+function minToLabel(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h + ':' + (m < 10 ? '0' + m : m);
+}
+
+// ── データ取得（読み取り専用） ──
+let DB = null;
+
+// ── 表示対象ビュー（施設/外部）。リロードで現ビューを維持（UI状態のみ・PIIなし・本ツール専用キー） ──
+const VIEW_KEY = 'vov_view';
+let VIEW = 'fac';                                          // 'fac'=施設利用者（既定）／'ext'=外部利用者
+function savedView() {
+  try { const v = localStorage.getItem(VIEW_KEY); if (v === 'fac' || v === 'ext') return v; } catch (e) {}
+  return 'fac';
+}
+function applySegUI() {
+  $('segFac').setAttribute('aria-pressed', VIEW === 'fac' ? 'true' : 'false');
+  $('segExt').setAttribute('aria-pressed', VIEW === 'ext' ? 'true' : 'false');
+}
+function setView(view) {
+  const v = (view === 'ext') ? 'ext' : 'fac';
+  if (v === VIEW) return;
+  VIEW = v;
+  try { localStorage.setItem(VIEW_KEY, VIEW); } catch (e) {}
+  applySegUI();
+  render(DB);                                             // 取得済みデータを再描画（再フェッチしない）
+}
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return (obj && Array.isArray(obj.residents)) ? obj : null;
+  } catch (e) {
+    return null;   // 破損時は握りつぶさず null を返し、既存表示を保持
+  }
+}
+
+// GAS 接続先（care-schedule と同じ解決順: su_sync_common → ws_settings）
+function syncTarget() {
+  try {
+    const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
+    if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
+  } catch (e) {}
+  try {
+    const s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
+    if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
+  } catch (e) {}
+  return { endpoint: '', token: '' };
+}
+
+// GAS から get のみ（読み取り専用）。put/rev は絶対に触らない。
+async function fetchRemote() {
+  const t = syncTarget();
+  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
+  const res = await fetch(t.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // CORS preflight 回避（care-schedule と同一）
+    body: JSON.stringify({ action: 'get', key: LS_KEY, token: t.token }),
+    redirect: 'follow'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || '応答エラー');
+  return (j.data && Array.isArray(j.data.residents)) ? j.data : null;
+}
+
+// ── 支援枠の抽出 ──
+// care_schedule_v2 の全 visit イベントを収集（daycare・施設業務・休憩は元々存在しない）。
+function collectVisits(db, view) {
+  const out = [];
+  const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  const wantExt = (view === 'ext');                        // 'ext'＝外部ビュー／それ以外＝施設ビュー
+  for (const r of residents) {
+    if (!r || r.movedOut) continue;                       // 退居者は俯瞰から除外
+    if (!!r.external !== wantExt) continue;               // 週間計画の「外部」指定で施設/外部ビューに振り分け
+    const evs = Array.isArray(r.events) ? r.events : [];
+    for (const ev of evs) {
+      if (!ev || ev.serviceType !== 'visit') continue;    // 訪問支援枠のみ
+      const dow = Number(ev.dayOfWeek);
+      if (!(dow >= 0 && dow <= 6)) continue;
+      const s = toMin(ev.startTime), e = toMin(ev.endTime);
+      if (s == null || e == null || e <= s) continue;      // 不正時刻は除外
+      out.push({
+        dow: dow, s: s, e: e,
+        name: String(r.name || '（無名）'),
+        cat: String(ev.category || ''),
+        hosp: !!r.hospitalized
+      });
+    }
+  }
+  return out;
+}
+
+// 時間軸の範囲（実データの最小〜最大を時間境界に丸める。無データは 6:00–21:00）
+function computeDomain(visits) {
+  if (!visits.length) return { lo: 6 * 60, hi: 21 * 60 };
+  let lo = Infinity, hi = -Infinity;
+  for (const v of visits) { if (v.s < lo) lo = v.s; if (v.e > hi) hi = v.e; }
+  lo = Math.floor(lo / 60) * 60;
+  hi = Math.ceil(hi / 60) * 60;
+  if (hi - lo < 60) hi = lo + 60;
+  return { lo, hi };
+}
+
+// 1曜日分の重なりをサブレーンに割り当て（連結成分ごとに列数を最小化＝Googleカレンダー方式）
+function assignLayout(evs) {
+  evs.sort((a, b) => a.s - b.s || a.e - b.e);
+  let i = 0;
+  while (i < evs.length) {
+    // 連結成分（重なりで繋がるクラスタ）を切り出す
+    let j = i, clusterEnd = evs[i].e;
+    while (j + 1 < evs.length && evs[j + 1].s < clusterEnd) {
+      j++; if (evs[j].e > clusterEnd) clusterEnd = evs[j].e;
+    }
+    const cluster = evs.slice(i, j + 1);
+    const colEnds = [];
+    for (const ev of cluster) {
+      let ci = colEnds.findIndex(end => end <= ev.s);
+      if (ci === -1) { ci = colEnds.length; colEnds.push(ev.e); } else { colEnds[ci] = ev.e; }
+      ev._col = ci;
+    }
+    const nc = colEnds.length;
+    for (const ev of cluster) ev._ncols = nc;
+    i = j + 1;
+  }
+  return evs;
+}
+
+// ── 描画 ──
+const HOUR_PX = 54;
+
+function render(db) {
+  const visits = collectVisits(db, VIEW);
+  const viewLabel = VIEW === 'ext' ? '外部利用者' : '施設利用者';
+  $('printTitle').textContent = '訪問支援 週間俯瞰（' + viewLabel + '・月〜日）';
+  const empty = $('boardEmpty');
+  if (!visits.length) {
+    $('bHeads').textContent = '';
+    $('bCanvas').textContent = '';
+    empty.classList.add('on');
+    $('emptyMsg').textContent = db ? (viewLabel + 'の訪問支援がありません。') : '週間計画のデータが見つかりません。';
+    $('hdrSub').textContent = '月〜日／' + viewLabel + 'の訪問支援枠';
+    return;
+  }
+  empty.classList.remove('on');
+
+  const dom = computeDomain(visits);
+  const hours = (dom.hi - dom.lo) / 60;
+  const canvasH = hours * HOUR_PX;
+  const board = $('board');
+  board.style.setProperty('--hourPx', HOUR_PX + 'px');
+  board.style.setProperty('--canvasH', canvasH + 'px');
+
+  // 曜日別に仕分け
+  const byDay = [[], [], [], [], [], [], []];
+  for (const v of visits) byDay[v.dow].push(v);
+
+  // ── ヘッダー行 ──
+  const heads = document.createDocumentFragment();
+  const corner = document.createElement('div');
+  corner.className = 'b-head';
+  corner.textContent = '時刻';
+  heads.appendChild(corner);
+  for (let d = 0; d < 7; d++) {
+    const h = document.createElement('div');
+    h.className = 'b-head';
+    h.setAttribute('role', 'columnheader');
+    const day = document.createElement('span');
+    day.className = 'h-day' + (d === 5 ? ' h-sat' : d === 6 ? ' h-sun' : '');
+    day.textContent = DAYS_JA[d];
+    const cnt = document.createElement('span');
+    const n = byDay[d].length;
+    cnt.className = 'h-cnt' + (n === 0 ? ' zero' : '');
+    cnt.textContent = n === 0 ? '空き' : n + '件';
+    h.appendChild(day); h.appendChild(cnt);
+    heads.appendChild(h);
+  }
+  const bHeads = $('bHeads');
+  bHeads.textContent = '';
+  bHeads.appendChild(heads);
+
+  // ── 本体（時間軸＋7曜日レーン） ──
+  const canvas = document.createDocumentFragment();
+  // 時間軸
+  const axis = document.createElement('div');
+  axis.className = 'b-axis';
+  for (let m = dom.lo; m <= dom.hi; m += 60) {
+    const tk = document.createElement('div');
+    tk.className = 'tick hour';
+    tk.style.top = ((m - dom.lo) / 60 * HOUR_PX) + 'px';
+    tk.textContent = minToLabel(m);
+    axis.appendChild(tk);
+  }
+  canvas.appendChild(axis);
+
+  // 各曜日レーン
+  for (let d = 0; d < 7; d++) {
+    const lane = document.createElement('div');
+    lane.className = 'b-lane' + (d === 5 ? ' sat' : d === 6 ? ' sun' : '');
+    lane.setAttribute('role', 'cell');
+    const evs = assignLayout(byDay[d]);
+    for (const ev of evs) {
+      const card = document.createElement('div');
+      const cls = codeClass(ev.cat);
+      card.className = 'b-task k-' + cls + (ev.hosp ? ' hosp' : '');
+      const top = (ev.s - dom.lo) / 60 * HOUR_PX;
+      const hgt = Math.max((ev.e - ev.s) / 60 * HOUR_PX, 18);
+      const gap = 2;
+      const wPct = 100 / ev._ncols;
+      card.style.top = top + 'px';
+      card.style.height = (hgt - 1) + 'px';
+      card.style.left = 'calc(' + (ev._col * wPct) + '% + ' + gap + 'px)';
+      card.style.width = 'calc(' + wPct + '% - ' + (gap * 2) + 'px)';
+      // 氏名＋支援コード（要配慮個人情報のため textContent で描画）
+      const nm = document.createElement('div');
+      nm.className = 't-name';
+      nm.textContent = ev.name;
+      const cd = document.createElement('div');
+      cd.className = 't-code';
+      cd.textContent = codeLabel(ev.cat);
+      card.appendChild(nm);
+      if (hgt >= 26) {
+        card.appendChild(cd);                  // 十分な高さ: コードを可視表示
+      } else {
+        cd.className = 't-code sr-only';        // 低い枠: 視覚は氏名優先、コードは支援技術に残す
+        card.appendChild(cd);
+      }
+      card.title = ev.name + '　' + codeLabel(ev.cat) + '　' + minToLabel(ev.s) + '〜' + minToLabel(ev.e)
+                 + (ev.hosp ? '（入院中）' : '');
+      lane.appendChild(card);
+    }
+    canvas.appendChild(lane);
+  }
+  const bCanvas = $('bCanvas');
+  bCanvas.textContent = '';
+  bCanvas.appendChild(canvas);
+
+  const total = visits.length;
+  $('hdrSub').textContent = '月〜日／' + viewLabel + 'の訪問支援 ' + total + '件・' + minToLabel(dom.lo) + '〜' + minToLabel(dom.hi);
+}
+
+// ── 印刷（A3縦1枚・純CSS） ──
+// 盤面は grid の 1fr 列が @page の用紙幅へ自動リフローし、時間軸は固定px高（時間数×54px）で
+// A3縦の高さ(≈1527px@96dpi)に収まる。JS変形は使わない（画面幅を測って scale すると印刷リフローと
+// 二重になり誤縮小するため）。列数=7固定なので純CSSで1ページ収まりが保証される。
+function printNow() { window.print(); }
+
+// ── UI ──
+let toastTimer = null;
+function toast(msg, isNg) {
+  const el = $('toast');
+  el.textContent = msg;                              // API 応答・個人情報をそのまま出さない
+  el.className = 'on' + (isNg ? ' ng' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 2600);
+}
+function setSyncState(txt) { $('syncState').textContent = txt; }
+
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  $('btnRefresh').disabled = true;
+  setSyncState('取得中…');
+  try {
+    const remote = await fetchRemote();
+    if (remote) {
+      DB = remote;
+      render(DB);
+      setSyncState('取得OK（' + DB.residents.length + '名）');
+      toast('最新の週間計画を取得しました');
+    } else {
+      setSyncState('クラウドにデータなし');
+    }
+  } catch (e) {
+    setSyncState('取得失敗');
+    toast('取得に失敗しました。通信環境を確認してください', true);
+  } finally {
+    busy = false;
+    $('btnRefresh').disabled = false;
+  }
+}
+
+// ── 起動 ──
+function init() {
+  VIEW = savedView();                                     // リロード時は前回の表示ビューを復元（既定=施設）
+  applySegUI();
+  $('segFac').addEventListener('click', () => setView('fac'));
+  $('segExt').addEventListener('click', () => setView('ext'));
+  $('btnRefresh').addEventListener('click', refresh);
+  $('btnRefresh2').addEventListener('click', refresh);
+  $('btnPrint').addEventListener('click', printNow);
+
+  DB = loadLocal();
+  render(DB);
+  if (DB) {
+    setSyncState('端末キャッシュ表示（' + DB.residents.length + '名）');
+  } else {
+    setSyncState('データなし');
+  }
+}
+init();
+</script>
+
+<script>
+/* ============================================================================
+   週間俯瞰リンクキット（訪問/全支援 共通）— 追加機能を自己完結で提供する。
+   ・ビュー切替スイッチ（現在の中央時刻を #t= で引き継ぐ＝行き来しても同じ箇所）
+   ・即時カスタムツールチップ（ネイティブ title の約1秒待ち・小ささを解消）
+   ・CSS zoom によるボード拡大（±ボタン／ctrl+wheel／2本指ピンチ・印刷は等倍）
+   ・比較シェル(overview-compare.html)が呼ぶ window.OVLINK を公開
+   ★ render()/computeDomain/assignLayout/印刷CSS には触れない。localStorage へ書き込まない
+     （ズーム倍率も非保存＝セッション限り）。 */
+(function () {
+  'use strict';
+  var ROLE = 'visit';                       // ★ support 側は 'support'
+  var HOUR_PX = 54;                         // 両ボード共通（render と同値・座標復元に使用）
+  var wrap  = document.getElementById('boardWrap');
+  var board = document.getElementById('board');
+  var heads = document.getElementById('bHeads');
+  var canvas = document.getElementById('bCanvas');
+  if (!wrap || !board) return;
+
+  // ── 座標系ヘルパ（既存 DOM を読むだけ・書き換えない） ──
+  function parseHM(s) {
+    var p = String(s == null ? '' : s).split(':');
+    if (p.length < 2) return null;
+    var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+    return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+  }
+  // dom.lo（表示開始時刻・分）＝時間軸先頭の .tick.hour ラベル（top:0）。render 無改変で復元。
+  function domLo() {
+    var t = board.querySelector('.b-axis .tick.hour');
+    var v = t ? parseHM(t.textContent) : null;
+    return (v == null) ? 6 * 60 : v;        // 取れなければ 6:00（computeDomain の既定と同値）
+  }
+  function zoomVal() { var z = parseFloat(board.style.zoom); return (z > 0) ? z : 1; }
+  function headsH() { return heads ? heads.getBoundingClientRect().height : 0; }   // ズーム込み実測
+  // ビューポート中央の時刻（分）
+  function centerTime() {
+    return domLo() + (wrap.scrollTop + wrap.clientHeight / 2 - headsH()) * 60 / (HOUR_PX * zoomVal());
+  }
+  // 指定時刻をビューポート中央に置く（範囲外はクランプ＝最も近い表示可能位置に追従）
+  function scrollToTime(t) {
+    var max = wrap.scrollHeight - wrap.clientHeight;
+    var st = (t - domLo()) / 60 * HOUR_PX * zoomVal() + headsH() - wrap.clientHeight / 2;
+    wrap.scrollTop = Math.max(0, Math.min(st, max));
+  }
+
+  // ── 横方向（曜日）の座標系 ──
+  // 列構成は [時間軸][月][火]…[日] の8列で両ボード共通。生のpxではなく「曜日位置」でやり取りすることで、
+  // 倍率や盤面幅が違っても同じ曜日が並ぶ（縦を"時刻"で合わせているのと同じ考え方）。
+  function axisW() {
+    var ax = board.querySelector('.b-axis');
+    return ax ? ax.getBoundingClientRect().width : 50 * zoomVal();
+  }
+  function laneW() {
+    var ln = board.querySelector('.b-lane');
+    if (ln) { var w0 = ln.getBoundingClientRect().width; if (w0 > 0) return w0; }
+    var total = board.getBoundingClientRect().width;
+    return Math.max(1, (total - axisW()) / 7);
+  }
+  // ビューポート中央の曜日位置（0=月の左端 … 7=日の右端）
+  function centerDay() {
+    return (wrap.scrollLeft + wrap.clientWidth / 2 - axisW()) / laneW();
+  }
+  // 指定の曜日位置をビューポート中央に置く。範囲外は代入時にブラウザが自動クランプするため
+  // 手計算はしない（scrollWidth は zoom 下で値の扱いにブラウザ差があるため当てにしない）。
+  function scrollToDay(d) {
+    wrap.scrollLeft = d * laneW() + axisW() - wrap.clientWidth / 2;
+  }
+
+  // ── ビュー切替（現在時刻を #t= で引き継ぐ） ──
+  function wireSwitch() {
+    var links = document.querySelectorAll('.ovsw-btn:not([aria-current="page"])');
+    for (var i = 0; i < links.length; i++) {
+      links[i].addEventListener('click', function (e) {
+        var base = this.getAttribute('href');
+        var t = Math.round(centerTime());
+        e.preventDefault();
+        location.href = base + '#t=' + t;
+      });
+    }
+  }
+  // 到着時：#t=分 があれば初回描画後に一度だけその時刻へ寄せる
+  function applyIncomingTime() {
+    var m = /[#&]t=(\d+)/.exec(location.hash);
+    if (!m || !canvas) return;
+    var t = parseInt(m[1], 10);
+    if (isNaN(t)) return;
+    var done = false, mo = null;
+    function tryJump() {
+      if (done) return;
+      if (canvas.children.length > 0) { done = true; scrollToTime(t); if (mo) mo.disconnect(); }
+    }
+    mo = new MutationObserver(tryJump);
+    mo.observe(canvas, { childList: true });
+    tryJump();                                          // 既に描画済みなら即時
+    setTimeout(function () { if (mo) mo.disconnect(); }, 12000);   // 保険（集計待ちの上限）
+  }
+
+  // ── 即時ツールチップ ──
+  var tip = document.createElement('div');
+  tip.id = 'ovTip'; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  var tipTimer = null, tipEl = null;
+  var TIP_SEL = '.b-task, .b-empty-slot, .b-head[title]';
+  // title を data-tip へ退避（初回のみ）。aria-label が無ければ複写してから外す（読み上げの退行防止）。
+  function tipText(el) {
+    if (el.dataset.tip != null) return el.dataset.tip;
+    var t = el.getAttribute('title');
+    if (t != null) {
+      try {
+        if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', t);
+        el.dataset.tip = t;
+        el.removeAttribute('title');
+      } catch (e) { return t; }                         // 退避失敗時はネイティブ title を残す（安全側）
+      return t;
+    }
+    return el.getAttribute('aria-label') || '';
+  }
+  function placeTip(x, y) {
+    var vw = window.innerWidth, vh = window.innerHeight, r = tip.getBoundingClientRect();
+    var px = x + 14, py = y + 16;
+    if (px + r.width > vw - 8) px = x - r.width - 14;
+    if (py + r.height > vh - 8) py = y - r.height - 16;
+    tip.style.left = Math.max(6, px) + 'px';
+    tip.style.top  = Math.max(6, py) + 'px';
+  }
+  function showTip(el, x, y) {
+    var txt = tipText(el);
+    if (!txt) { hideTip(); return; }
+    tip.textContent = txt;                              // textContent のみ（innerHTML 不使用）
+    tip.classList.add('on');
+    placeTip(x, y);
+  }
+  function hideTip() { tip.classList.remove('on'); tipEl = null; clearTimeout(tipTimer); tipTimer = null; }
+  wrap.addEventListener('pointerover', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest(TIP_SEL) : null;
+    if (!el || el === tipEl) return;
+    tipEl = el;
+    var x = e.clientX, y = e.clientY;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(function () { if (tipEl === el) showTip(el, x, y); }, 90);   // 約90ms＝ほぼ即時
+  });
+  wrap.addEventListener('pointermove', function (e) {
+    if (!tip.classList.contains('on') || !tipEl) return;
+    var el = e.target && e.target.closest ? e.target.closest(TIP_SEL) : null;
+    if (el === tipEl) placeTip(e.clientX, e.clientY); else hideTip();
+  });
+  wrap.addEventListener('pointerout', function (e) {
+    var to = e.relatedTarget;
+    if (to && tipEl && tipEl.contains(to)) return;
+    hideTip();
+  });
+  wrap.addEventListener('scroll', hideTip, { passive: true });
+  wrap.addEventListener('pointerdown', hideTip);
+
+  // ── ズーム（CSS zoom・0.5〜2.0・非保存） ──
+  var Z_MIN = 0.5, Z_MAX = 2.0;
+  var zSupported = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
+  function clampZ(z) { return Math.max(Z_MIN, Math.min(Z_MAX, z)); }
+  function setZoom(z) {
+    z = clampZ(z);
+    var t = centerTime();                               // 変更前の中央時刻を保持
+    board.style.zoom = (z === 1) ? '' : String(z);
+    scrollToTime(t);                                    // 同じ時刻を中央に維持（焦点保持）
+    var lv = document.getElementById('ovZoomLv');
+    if (lv) lv.textContent = Math.round(z * 100) + '%';
+    // 比較シェルが左右の倍率を揃えるための通知（単独表示では未設定＝何も起きない）
+    try { if (window.OVLINK && typeof window.OVLINK.onZoom === 'function') window.OVLINK.onZoom(z); } catch (e) {}
+  }
+  function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
+  function wireZoom() {
+    var zc = document.getElementById('ovZoom');
+    if (!zSupported) { if (zc) zc.style.display = 'none'; return; }   // 非対応ブラウザは UI ごと隠す
+    wrap.style.touchAction = 'pan-x pan-y';             // 1本指スクロールは維持・2本指はこちらで処理
+    var zi = document.getElementById('ovZoomIn'), zo = document.getElementById('ovZoomOut'), zl = document.getElementById('ovZoomLv');
+    if (zi) zi.addEventListener('click', function () { setZoom(zoomVal() + 0.1); });
+    if (zo) zo.addEventListener('click', function () { setZoom(zoomVal() - 0.1); });
+    if (zl) zl.addEventListener('click', function () { setZoom(1); });
+    wrap.addEventListener('wheel', function (e) {       // ctrl+wheel（トラックパッド/マウス）
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(zoomVal() * (e.deltaY < 0 ? 1.08 : 0.926));
+    }, { passive: false });
+    var pts = {}, baseDist = 0, baseZ = 1;              // 2本指ピンチ（Pointer Events）
+    wrap.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length === 2) { baseDist = dist(pts[ids[0]], pts[ids[1]]); baseZ = zoomVal(); }
+    });
+    wrap.addEventListener('pointermove', function (e) {
+      if (!pts[e.pointerId]) return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length === 2 && baseDist > 0) { e.preventDefault(); setZoom(baseZ * dist(pts[ids[0]], pts[ids[1]]) / baseDist); }
+    }, { passive: false });
+    function up(e) { delete pts[e.pointerId]; baseDist = 0; }
+    wrap.addEventListener('pointerup', up);
+    wrap.addEventListener('pointercancel', up);
+    wrap.addEventListener('gesturestart', function (e) { e.preventDefault(); });   // iOS ページズーム競合抑止
+    wrap.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  }
+  // 印刷は @media print の zoom:1!important で等倍化。画面のズームは印刷後に復元する。
+  var zSave = null;
+  window.addEventListener('beforeprint', function () { zSave = board.style.zoom; board.style.zoom = ''; });
+  window.addEventListener('afterprint', function () { if (zSave) { board.style.zoom = zSave; zSave = null; } });
+
+  // ── 比較シェル用 API（同一オリジンの overview-compare.html から呼ぶ） ──
+  window.OVLINK = {
+    role: ROLE,
+    centerTime: centerTime,
+    scrollToTime: scrollToTime,
+    centerDay: centerDay,
+    scrollToDay: scrollToDay,
+    domLo: domLo,
+    setZoom: setZoom,
+    getZoom: zoomVal
+  };
+
+  // ── 起動 ──
+  function boot() { wireSwitch(); wireZoom(); applyIncomingTime(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
