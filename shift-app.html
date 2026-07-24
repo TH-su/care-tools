@@ -35,6 +35,10 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar #ymLabel { font-weight: 700; font-size: 15px; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
+/* 印刷レイアウト(A3横／A3縦2分割)は誤選択が印刷事故に直結するため、選択中を黄色の太字で強調する
+   （2026-07-24 指示・他のタブ群には影響しない #printLayout 限定のルール）。
+   色だけに意味を持たせないよう font-weight も上げる（HIG: アクセシビリティ）。 */
+#printLayout button.on { background: var(--blue-d); color: #ffd400; font-weight: 800; }
 /* DO NOT DELETE: 非表示列(行)表示トグル（重要機能・トップ右固定）。CLAUDE.md §0 参照 */
 #toolbar .reveal-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; color: #fff; cursor: pointer; white-space: nowrap;
@@ -286,6 +290,11 @@ body.printsim td.namecell { font-size: 13px; }
 body.printsim tr.grouphead td { padding: 5px 10px; line-height: 1.5; font-size: 13px; }
 body.printsim table.sheet thead th, body.printsim .sticky1, body.printsim .sticky2 { position: static !important; }
 body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media print と同期(zoom/dcw計測の表幅整合) */
+/* @media print と同期（2026-07-24）: #printTitle は印刷時だけ現れるため、画面既定(display:none・13px)の
+   ままでは高さを測れず、従来はハードコード24pxで代用していた。実際は内容24px+margin6px=30pxで
+   6px過小＝その分だけ表が用紙をはみ出す方向に効いていた。計測時だけ印刷と同じ書式で可視化する。 */
+body.printsim #printTitle { display: inline-block !important; width: auto; max-width: 100%; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+body.printsim.printsplit #printTitle { display: none !important; }   /* 分割印刷はタイトルを出さない(@media print と同期) */
 body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media print と同期(連勤オレンジ枠は紙に出さない) */
 </style>
 </head>
@@ -2496,6 +2505,49 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftFreee = api;
+})();
+/* ===== src/logic/printfit.js ===== */
+/* printfit.js — 印刷倍率の実寸検算（純粋関数・DOM非依存）
+ *
+ * 背景（2026-07-24）: applyPrintFit は「表の高さ × 倍率」という【計算値】で用紙に収まるか判断していた。
+ * ところが CSS zoom は行高や文字metricsを行ごとに丸めるため、実際の描画高は計算値と一致しない。
+ * 実測（31名＝93区分行）では実描画が計算値より 46px 大きくなり、A3横の印字域を 35px 超過して
+ * 最終行が2枚目へ送られた（10〜25名では ±26px 以内に収まり顕在化しない）。
+ * 対策として「計算で決め打たず、実際に測って収まるまで縮める」閉ループをここへ純粋関数として置く。
+ * DOM を触る部分（zoom を当てて測る）は呼び出し側が measureAt として渡す。
+ */
+(function () {
+  'use strict';
+
+  /* 収まるまで倍率を下げる。
+   *   zoom      : 計算で求めた初期倍率
+   *   measureAt : function(z) → その倍率での【実描画高】を返す（呼び出し側がDOMで実測する）
+   *   availH    : 用紙の印字可能高（px）
+   *   maxIter   : 反復上限（既定8）。到達しても必ず停止する＝印刷が固まらない
+   * 返り値 { zoom, iterations, fits }
+   *
+   * 収束の考え方: 超過している時は「余地÷実測高」を掛けて一度で必要な倍率まで落とす（比例補正）。
+   * 丸めで再超過しうるので 0.995 を掛けて安全側に置く。比例補正が効かない（縮まない/不正値）場合は
+   * 必ず縮む固定刻み(0.99倍)へ退避する＝どんな measureAt でも有限回で必ず終わる。 */
+  function shrinkZoomToFit(zoom, measureAt, availH, maxIter) {
+    var lim = (typeof maxIter === 'number' && maxIter > 0) ? maxIter : 8;
+    var z = (typeof zoom === 'number' && isFinite(zoom) && zoom > 0) ? zoom : 1;
+    var n = 0;
+    var h = measureAt(z);
+    while (typeof h === 'number' && isFinite(h) && h > availH && n < lim) {
+      var next = z * (availH / h) * 0.995;
+      /* 比例補正が縮まない・不正値になる場合は固定刻みへ（無限ループと発散の両方を封じる） */
+      if (!(next > 0) || !(next < z)) next = z * 0.99;
+      z = next;
+      n++;
+      h = measureAt(z);
+    }
+    return { zoom: z, iterations: n, fits: !(typeof h === 'number' && isFinite(h) && h > availH) };
+  }
+
+  var api = { shrinkZoomToFit: shrinkZoomToFit };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftPrintFit = api;
 })();
 /* ===== src/ui/store.js ===== */
 /* store.js — localStorageキャッシュ + GAS同期エンジン
@@ -5918,6 +5970,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var AA = window.ShiftAutoAssign;
   var Grid = window.ShiftGrid;
   var Hol = window.ShiftHolidays;
+  var PF = window.ShiftPrintFit;
 
   var LAYER_NAMES = { plan: '予定', actual: '実績', official: '行政提出用' };
 
@@ -7366,6 +7419,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       window.print();
     },
     /* 印刷直前のフィット計算。print()からもbeforeprint(Cmd/Ctrl+P)からも呼ぶ */
+    /* 印刷タイトル(#printTitle)の実占有高(px)を印刷時の書式で実測する。
+     * 画面既定は display:none（かつ 13px）で測れないため、計測の間だけ printsim を当てる。
+     * 取得できない場合は実測相当の 30 を返す＝安全側（従来の 24 より用紙を超えにくい）。 */
+    printTitleH_: function () {
+      var pt = document.getElementById('printTitle');
+      if (!pt) return 30;
+      var hadSim = document.body.classList.contains('printsim');
+      if (!hadSim) document.body.classList.add('printsim');
+      var h = pt.offsetHeight + (parseFloat(getComputedStyle(pt).marginBottom) || 0);
+      if (!hadSim) document.body.classList.remove('printsim');
+      return (isFinite(h) && h > 0) ? h : 30;
+    },
+
     applyPrintFit: function () {
       /* A3縦2分割モード(グリッドビューのみ)。専用経路へ分岐し、A3横の既存ロジックには一切触れない。
        * printsplit クラスで split 時のみ #printTitle を隠す（各ページは表内 splittitle で識別）。 */
@@ -7399,13 +7465,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* グリッドビューは印刷用に「可視列のみ」のDOMへ再レンダ（grouphead等を days+2 に＝実@media
        * printでも月末で収束）。さらに、表の行高から「A3横を縦横とも埋める日付列幅」を逆算して
        * 列を広げる＝等方zoomで歪まず用紙いっぱいに最大化（文字は伸ばさない）。afterprintで復帰。 */
+      /* 印刷タイトル(#printTitle)の実占有高。従来は 24 のハードコードだったが、実測は
+       * 内容24px + margin-bottom 6px = 30px で【6px 過小】＝その分だけ表が用紙をはみ出す方向に
+       * 効いていた（2026-07-24 の原因調査で判明）。印刷時の書式は @media print にしか無いため、
+       * 計測の間だけ printsim を当てて実測する（printsim 側へ同じ書式を同期済み）。 */
+      var titleH = this.printTitleH_();
       if (useSim) {
         Grid.render(this.gridCtx(), true);               /* 1パス目: 既定幅で行高を測る */
         table = document.querySelector('#gridWrap table.sheet');
         document.body.classList.add('printsim');
         var hgt0 = table.scrollHeight;
         document.body.classList.remove('printsim');
-        var wantW = pxW * hgt0 / (pxH - 24);             /* この行高でA3横を埋める表幅 */
+        var wantW = pxW * hgt0 / (pxH - titleH);         /* この行高でA3横を埋める表幅 */
         var dcw = Math.round((wantW - 156) / Math.max(1, this.days));   /* 156=氏名100+区分56 */
         if (dcw < 44) dcw = 44; if (dcw > 220) dcw = 220;   /* 上限220: 31名×3区分行など背の高い表でも横を埋める */
         Grid.render(this.gridCtx(), true, dcw);          /* 2パス目: 算出した日付列幅で再レンダ */
@@ -7417,9 +7488,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         w = table.scrollWidth; hgt = table.scrollHeight;
         if (useSim) document.body.classList.remove('printsim');
         /* 等方zoomで用紙へフィット（列幅を広げてあるので横も埋まる）。上限1.6で拡大も許可。 */
-        zoom = Math.min(1.6, pxW / w, (pxH - 24) / hgt) * 0.99;
+        zoom = Math.min(1.6, pxW / w, (pxH - titleH) / hgt) * 0.99;
       }
       var z = zoom.toFixed(3);
+      /* ★実寸検算（2026-07-24 追加）: 上の zoom は「高さ×倍率」という【計算値】でしかない。
+       * 実測では zoom 適用後の実描画高が計算値より最大 +46px 大きくなり、31名(93区分行)で
+       * A3横の印字域を 35px 超過して最終行が2枚目へ送られた（10〜25名は ±26px 以内で顕在化しない）。
+       * 原因は行高・文字metricsが zoom 後に行ごとへ丸められ、行数ぶん誤差が積み上がること。
+       * ここで【実際に zoom を当てて測り、収まるまで縮める】＝計算値を信じない。
+       * 収まっている場合は初回測定で確定＝従来の倍率のまま（既存の印刷結果は変わらない）。
+       * 収束ロジックは PF.shrinkZoomToFit（純粋関数・単体テスト済）が正。
+       * ※ official ビューは printsim を使わず実寸経路が別のため対象外（従来どおり）。 */
+      if (useSim && table) {
+        document.body.classList.add('printsim');
+        var fitRes = PF.shrinkZoomToFit(zoom, function (zz) {
+          table.style.zoom = zz.toFixed(3);
+          return table.getBoundingClientRect().height;
+        }, pxH - titleH);
+        table.style.zoom = '';            /* 画面表示へ影響を残さない（印刷指定は下の fitStyle が担う） */
+        document.body.classList.remove('printsim');
+        zoom = fitRes.zoom;
+        z = zoom.toFixed(3);
+      }
       var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
       /* zoom はレイアウトboxごと縮尺＝印刷エンジンの用紙合わせによる二重縮小・白紙化を回避。
        * transform:none で全体表示(fitscreen)のインライン transform を打ち消し二重縮尺を防ぐ。 */
