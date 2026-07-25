@@ -6038,9 +6038,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       });
     },
 
+    /* 再読み込みで現在地を失わない（dev-principles 原則11）。
+     * 保存するのはタブidだけ（UI状態・個人情報を含まない）。
+     * 未知の値・保存なしのときは既定の「シフト表」のまま何もしない。 */
+    VIEWS: ['grid', 'requests', 'official', 'master'],
+    restoreView: function () {
+      var v = Store.getLocal('view', 'grid');
+      if (this.VIEWS.indexOf(v) < 0 || v === this.view) return;
+      this.view = v;
+      var tabs = document.querySelectorAll('#viewTabs button');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('on', tabs[i].getAttribute('data-view') === v);
+      }
+      for (var k = 0; k < this.VIEWS.length; k++) {
+        var el = document.getElementById('view-' + this.VIEWS[k]);
+        if (el) el.classList.toggle('on', this.VIEWS[k] === v);
+      }
+      var bar = document.getElementById('layerBar');
+      if (bar) bar.style.display = (v === 'grid') ? '' : 'none';
+    },
+
     /* マスタ→設定タブへ移動し、同期/バックアップ欄へスクロール */
     gotoMasterSettings: function (focus) {
       this.view = 'master';
+      Store.setLocal('view', 'master');
       var tabs = document.querySelectorAll('#viewTabs button');
       for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-view') === 'master');
       var views = ['grid', 'requests', 'official', 'master'];
@@ -7213,6 +7234,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         tabs[i].addEventListener('click', function (e) {
           var v = e.target.getAttribute('data-view');
           self.view = v;
+          Store.setLocal('view', v);   /* 再読み込み後も同じタブを開く（dev-principles 原則11） */
           var all = document.querySelectorAll('#viewTabs button');
           for (var j = 0; j < all.length; j++) all[j].classList.remove('on');
           e.target.classList.add('on');
@@ -7224,6 +7246,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.rerender();
         });
       }
+      this.restoreView();   /* 前回開いていたタブへ戻す（トップへ戻さない） */
       /* レイヤ/ドラフトはイベント委譲（ドラフトタブは動的生成のため）。
        * ドラフトタブの名称編集は、switchLayer→renderLayerBar が #draftTabs を innerHTML 再生成して
        * ノードが差し替わり、2クリック目が別ノードに当たってネイティブ dblclick が発火しないため、
@@ -7337,6 +7360,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* シフト表ビューに移動して指定レイヤへ切替（ツールバーの「実績」用） */
     gotoLayer: function (layer) {
       this.view = 'grid';
+      Store.setLocal('view', 'grid');
       var tabs = document.querySelectorAll('#viewTabs button');
       for (var i = 0; i < tabs.length; i++) {
         tabs[i].classList.toggle('on', tabs[i].getAttribute('data-view') === 'grid');
