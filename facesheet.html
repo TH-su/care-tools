@@ -249,6 +249,7 @@ var CFG_KEY='rmaster_cfg';        // 入居者マスタと共通の接続設定�
 var COMMON_KEY='su_residents_common';
 var DEVICE_KEY='su_device_role';
 var SU_GENO_KEY='su_genograms';
+var TAB_KEY='fsheet_tab';        // 詳細のカテゴリタブを端末に保持（タブidは個人情報でない）
 var GENOGRAM_APP='genogram.html';
 var CFG={url:'',token:''};
 (function loadCfg(){try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);CFG.url=o.url||'';CFG.token=o.token||''}}catch(e){}})();
@@ -579,13 +580,16 @@ function renderOfficeView(r){
 
   var TABS=[['summary','サマリ'],['basic','基本・制度'],['medical','医療・服薬'],['adl','ADL・食事'],
     ['mind','認知・コミュ'],['family','家族・事業所'],['person','嗜好・生活歴'],['wishes','意向・ACP'],['log','経過']];
+  // 保存済みタブ（既知のタブidのみ採用。未保存・不正値・localStorage不可はサマリ）
+  var actTab=(function(){try{var v=localStorage.getItem(TAB_KEY);return TABS.map(function(t){return t[0]}).indexOf(v)>=0?v:'summary'}catch(e){return'summary'}})();
   $('ftabs').setAttribute('role','tablist');
-  $('ftabs').innerHTML=TABS.map(function(t,i){return'<button class="ftab'+(i===0?' on':'')+'" role="tab" aria-selected="'+(i===0?'true':'false')+'" aria-controls="panel-'+t[0]+'" data-tab="'+t[0]+'">'+esc(t[1])+'</button>'}).join('');
-  $('viewBox').innerHTML=TABS.map(function(t,i){return'<div class="fpanel'+(i===0?' on':'')+'" role="tabpanel" id="panel-'+t[0]+'" aria-label="'+esc(t[1])+'" data-panel="'+t[0]+'">'+(P[t[0]]||'')+'</div>'}).join('');
+  $('ftabs').innerHTML=TABS.map(function(t){return'<button class="ftab'+(t[0]===actTab?' on':'')+'" role="tab" aria-selected="'+(t[0]===actTab?'true':'false')+'" aria-controls="panel-'+t[0]+'" data-tab="'+t[0]+'">'+esc(t[1])+'</button>'}).join('');
+  $('viewBox').innerHTML=TABS.map(function(t){return'<div class="fpanel'+(t[0]===actTab?' on':'')+'" role="tabpanel" id="panel-'+t[0]+'" aria-label="'+esc(t[1])+'" data-panel="'+t[0]+'">'+(P[t[0]]||'')+'</div>'}).join('');
 
   Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(b){
     b.addEventListener('click',function(){
       var k=this.getAttribute('data-tab');
+      try{localStorage.setItem(TAB_KEY,k)}catch(e){}   // 次に開いたとき同じカテゴリで開く
       Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(x){x.classList.toggle('on',x===b);x.setAttribute('aria-selected',x===b?'true':'false')});
       Array.prototype.forEach.call($('viewBox').querySelectorAll('.fpanel'),function(p){p.classList.toggle('on',p.getAttribute('data-panel')===k)});
       window.scrollTo(0,0);

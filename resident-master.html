@@ -620,7 +620,11 @@ function writeCommonRoster(){
   }catch(e){/* 共有キャッシュは失敗しても本体運用に影響させない */}
 }
 
-var curFilter='active';
+/* 絞り込みも再読み込みで失わない（dev-principles 原則11）。保存するのは種別idのみ。
+   VIEW_KEY と同じく配列＋indexOf で照合する（オブジェクトだと 'toString' 等が truthy になる） */
+var FILTER_KEY='rmaster_filter';
+var FILTERS=['active','out','all'];
+var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILTERS.indexOf(v)>=0?v:'active'}catch(e){return'active'}})();
 /* ═══════════ 表示パターン（タブ） ═══════════
    タブは「並べ方」だけを変える。検索窓・在籍/退去フィルタは全タブで同じに効く。 */
 var VIEW_KEY='rmaster_view';
@@ -1467,8 +1471,12 @@ function init(){
   paintTabs();
   Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
     c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');
+      try{localStorage.setItem(FILTER_KEY,curFilter)}catch(e){}
       Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){x.classList.toggle('on',x===c)});renderRoster()});
   });
+  /* 保存済みの絞り込みをチップの点灯へ反映（HTMLは「在籍」固定のため） */
+  Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){
+    x.classList.toggle('on',x.getAttribute('data-f')===curFilter)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
     b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');
       if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
