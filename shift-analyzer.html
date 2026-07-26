@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
 <title>過去シフト・アナライザ</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--ink:#1f2933;--mut:#8a97a6;--accent:#2b6cb0;--warn:#b7791f;--warnbg:#fffaf0;--err:#c53030}
@@ -228,6 +229,15 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     night: { color: '#ffffff', textColor: '#000000' },
     off:   { color: '#fff2cc', textColor: '#ff0000' }
   };
+
+  /* 記号の色をこの区分の行に出してよいか（2026-07-24 追加）。
+   * sym.colorDiv が未設定（既存記号すべて）なら true ＝全区分に出す＝従来と完全に同じ挙動。
+   * 「9-12」のように通所でだけ意味を持つ記号に colorDiv:'通所' を設定すると、
+   * 施設行・訪問行に同じ値を書いても背景色が付かなくなる（値と実働計算には一切影響しない）。 */
+  function colorAppliesTo(sym, division) {
+    if (!sym || !sym.colorDiv) return true;
+    return sym.colorDiv === division;
+  }
 
   function recommendedFor(sym) {
     var byCode = RECOMMENDED_BY_CODE[normalizeCell(sym.code)] || RECOMMENDED_BY_CODE[sym.code];
@@ -518,6 +528,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     DEFAULT_SYMBOLS: DEFAULT_SYMBOLS,
     ALIASES: ALIASES,
     applyRecommendedColors: applyRecommendedColors,
+    colorAppliesTo: colorAppliesTo,
     RECOMMENDED_BY_CODE: RECOMMENDED_BY_CODE
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -888,7 +899,32 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     return out;
   }
 
-  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession };
+  /* 連勤上限の既定値（この値＝「未設定」とみなす。空欄保存時も同じ扱い） */
+  var CONS_DEFAULT = 4;
+
+  /* 連勤オレンジ枠の判定ルールを解決する（2026-07-24 追加・純粋関数）。
+   *
+   * masterSt = マスタ現在値の職員（見つからなければ null）／ snapSt = 当月の凍結名簿の職員。
+   *  ① 閾値は【マスタ現在値】を優先する。連勤上限は運用ルールでありスケジュールデータではないため、
+   *     確定月の凍結名簿に引きずられると「マスタで直しても過去月に反映されない」状態になる
+   *     （許可パターンで先に同じ整理をした 076b817 と同じ考え方）。マスタに居ない職員（退職等）は凍結名簿へフォールバック。
+   *  ② 個人設定に【既定値と異なる】連勤上限が入っている職員は、オレンジを出さない（suppress）。
+   *     本人の事情を承知のうえで組んでいるため警告が不要、という運用判断。
+   *     空欄(null/undefined)と既定値(4)はどちらも「未設定」＝従来どおり4連勤超でオレンジを出す。
+   *  ※ 自動作成(autoassign)は従来どおり maxConsecutive を上限として使う＝組み方の制御は変えない。
+   *
+   * 返り値: { maxC: 閾値, suppress: オレンジを出さないか } */
+  function resolveConsRule(masterSt, snapSt) {
+    var src = masterSt || snapSt || null;
+    var mc = (src && src.rules) ? src.rules.maxConsecutive : null;
+    var valid = (typeof mc === 'number' && isFinite(mc) && mc > 0);
+    return {
+      maxC: valid ? mc : CONS_DEFAULT,
+      suppress: valid && mc !== CONS_DEFAULT
+    };
+  }
+
+  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession, resolveConsRule: resolveConsRule, CONS_DEFAULT: CONS_DEFAULT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftAggregate = api;
 })();
