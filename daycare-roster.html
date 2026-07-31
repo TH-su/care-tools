@@ -77,6 +77,7 @@ body {
 .lg { display: inline-flex; align-items: center; gap: 4px; }
 .lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--bath-b); background: var(--bath-bg); flex-shrink: 0; }
 .warn-badge { color: var(--ng); font-weight: 700; }
+.hide-print-note { display: none; }   /* 非表示適用中に印刷帳票だけへ出す注記（画面では非表示・@media print で表示）＝人が無言で欠落する事故を防ぐ */
 
 /* ===== 表（既存の利用表タブ・無改変）===== */
 .wrap {
@@ -256,10 +257,49 @@ table.wk .wk-blank { color: transparent; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
-  font-size: 13px; z-index: 300; display: none; max-width: 90%; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  font-size: 13px; z-index: 500; display: none; max-width: 90%; box-shadow: 0 4px 16px rgba(0,0,0,.3);   /* モーダル(400)より前面＝モーダル中のトーストも見える */
 }
 #toast.ng { background: var(--ng); }
 #toast.on { display: block; }
+
+/* ===== 非表示設定モーダル（この端末の表示のみを絞る・印刷にも出さない）===== */
+.hdr-btn.active { background: #fff; color: var(--pri-d); border-color: #fff; font-weight: 700; }   /* 非表示が有効な時に目立たせる（黙って隠さない） */
+.modal-ov {
+  position: fixed; inset: 0; z-index: 400;   /* ヘッダ(100)より前面／トースト(500)は更に前面に出す */
+  background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.modal-ov[hidden] { display: none; }
+.modal-box {
+  background: #fff; border-radius: var(--r); box-shadow: 0 8px 32px rgba(0,0,0,.35);
+  width: 420px; max-width: 100%; max-height: 84vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--g3); }
+.modal-title { font-size: 15px; font-weight: 700; flex: 1; }
+.modal-x {
+  min-width: 44px; min-height: 44px; border: none; background: none; color: var(--g7);
+  font-size: 18px; cursor: pointer; border-radius: 6px;
+}
+.modal-x:hover { background: var(--g1); }
+.modal-x:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
+.modal-sub { padding: 8px 14px; font-size: 12px; color: var(--g7); line-height: 1.5; border-bottom: 1px solid var(--g2); }
+.modal-list { overflow: auto; -webkit-overflow-scrolling: touch; padding: 4px 8px; flex: 1; }
+.modal-item {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 2px 6px;   /* HIG: タップ領域44px以上 */
+  cursor: pointer; border-radius: 6px;
+}
+.modal-item:hover { background: var(--g0); }
+.modal-item input { width: 18px; height: 18px; flex-shrink: 0; }
+.modal-item .mi-kana { color: var(--g6); font-size: 11px; margin-left: auto; }
+.modal-empty { padding: 18px 14px; color: var(--g6); font-size: 13px; text-align: center; }
+.modal-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--g3); }
+.modal-btn {
+  flex: 1; min-height: 44px; border: 1px solid var(--g3); background: var(--g0); color: var(--g8);
+  border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.modal-btn:hover { background: var(--g1); }
+.modal-btn:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+.modal-btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
@@ -275,6 +315,7 @@ table.wk .wk-blank { color: transparent; }
   html, body { overflow: visible; height: auto; background: #fff; }
   .hdr, #toast, .tnav { display: none !important; }
   .legend { border-bottom: 1px solid #000; }
+  .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
   /* 印刷時は列幅を詰めてA4縦の印刷可能幅(≈733px@96dpi)に確実に収める（固定列幅の合計＜用紙幅）。
      width:auto＋margin auto で実寸サイズのまま中央寄せ。6列=620px／7列=708px でどちらも収まる。 */
@@ -332,6 +373,7 @@ table.wk .wk-blank { color: transparent; }
   <!-- アプリ間ジャンプ（shift-app.html と同形式・相対パス＝同一オリジン）。
        「更新」「印刷」の位置は動かさない＝現場の操作記憶を壊さないため左側へ足す。
        .hdr は @media print で display:none のため帳票には出ない。 -->
+  <button class="hdr-btn" id="btnHide" aria-label="利用者の非表示設定を開く（この端末の表示のみ）" aria-haspopup="dialog">🙈 非表示設定</button>
   <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタアプリを新しいタブで開く">👤 入居者マスタ</button>
   <button class="hdr-btn" id="btnCare" aria-label="週間計画アプリを新しいタブで開く">📅 週間計画</button>
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
@@ -389,6 +431,24 @@ table.wk .wk-blank { color: transparent; }
 </main>
 
 <div class="print-batch" id="printBatch"></div>
+
+<!-- 非表示設定モーダル（この端末の表示だけを絞る・クラウド/他端末/元データは不変・印刷にも出ない）。
+     既定は hidden 属性で非表示。openHideModal/closeHideModal で開閉する。 -->
+<div class="modal-ov noprint" id="hideModal" role="dialog" aria-modal="true" aria-labelledby="hideModalTitle" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title" id="hideModalTitle">非表示設定</span>
+      <button class="modal-x" id="hideClose" type="button" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-sub">チェックした利用者を、この端末の全ての表・印刷から一時的に隠します。クラウド・他端末・元データには影響しません。</div>
+    <div class="modal-list" id="hideList"></div>
+    <div class="modal-foot">
+      <button class="modal-btn" id="hideShowAll" type="button">すべて表示に戻す</button>
+      <button class="modal-btn pri" id="hideDone" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -631,6 +691,72 @@ function buildModel(db) {
   people.sort((a, b) => (a.kana || a.name).localeCompare(b.kana || b.name, 'ja'));
   people.forEach((p, i) => { p.pid = i; });   // 安定ID（薬用チェックリスト↔表セルの紐付け用）
   return people;
+}
+
+/* ── 非表示設定（この端末の表示だけを絞る）───────────────────────────────────
+   用途: 入居前などで居室未入力の利用者が表に正しく分配されない時、一時的に表から外す。
+   設計:
+     - 端末ローカルのみ（localStorage 'dcr_hidden'）。クラウド・他端末・元データ(care_schedule_v2)は不変。
+       ＝表示の絞り込みであって業務データの編集ではない（本ツールの書込みは昼食薬のみを維持）。
+     - 保存するのは安定ID（masterId→id）だけ＝氏名等の個人情報は端末にも残さない（dev原則11準拠）。
+       id を持たない稀な利用者のみ、最終手段として氏名のハッシュ値（平文でない）をキーにする。
+     - フィルタは renderAll で db.residents を1回絞るだけ。各描画関数（roster/daylist/allweek/med/weekly）は
+       無改変で、5タブ全てと全集計から自動的に外れる。非表示ゼロなら db をそのまま渡す＝挙動完全不変。 */
+const HIDDEN_KEY = 'dcr_hidden';
+let HIDDEN = new Set();          // この端末の非表示キー
+let HIDE_CANDIDATES = [];        // 非表示設定ウィンドウ用: 全デイ母集団 {key,name,kana}（五十音順・非表示者も含む）
+let hiddenNowCount = 0;          // 現候補のうち実際に非表示になっている人数（バッジ・ボタン表示用）
+// 氏名を平文で残さないための一方向ハッシュ（djb2）。id を持たない稀な利用者の非表示キー専用。
+function hashStr_(s) {
+  let h = 5381;
+  const t = String(s || '');
+  for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+function hideKey(r) {
+  if (!r) return '';
+  if (r.masterId != null && r.masterId !== '') return 'm:' + r.masterId;   // マスタ由来の一意ID（最優先）
+  if (r.id != null && r.id !== '') return 'i:' + r.id;                     // care_schedule の内部ID
+  return 'h:' + hashStr_(suNormName_(r.name));   // id 無しの稀な利用者のみ。氏名はハッシュ化して端末にも平文を残さない
+}
+function loadHidden() {
+  try {
+    const a = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]');
+    return new Set(Array.isArray(a) ? a.filter(x => typeof x === 'string') : []);   // 壊れた値は無視（起動不能を防ぐ）
+  } catch (e) { return new Set(); }
+}
+function saveHidden(set) {
+  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set])); }
+  catch (e) { toast('非表示設定を保存できませんでした（ブラウザのプライベートモード等）', true); }   // 黙って失敗しない
+}
+// デイ母集団の判定（roster は日曜も表示するため dow 0..6。buildModel の月〜土より広く取り、全タブの表示対象を漏れなく候補にする）
+function isDaycareResident(r) {
+  const evs = Array.isArray(r.events) ? r.events : [];
+  for (const ev of evs) {
+    if (!ev || ev.serviceType !== 'daycare') continue;
+    const dow = Number(ev.dayOfWeek);
+    if (!(dow >= 0 && dow <= 6)) continue;
+    const s = toMin(ev.startTime), e = toMin(ev.endTime);
+    if (s == null || e == null || e <= s) continue;
+    return true;
+  }
+  return false;
+}
+function collectHideCandidates(db) {
+  const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  const out = [];
+  for (const r of residents) {
+    if (!r || r.movedOut) continue;
+    if (!isDaycareResident(r)) continue;
+    out.push({ key: hideKey(r), name: String(r.name || '（無名）'), kana: String(r.kana || '') });
+  }
+  out.sort((a, b) => (a.kana || a.name).localeCompare(b.kana || b.name, 'ja'));   // 五十音順
+  return out;
+}
+// 非表示を除いた db ビュー。非表示ゼロなら原本をそのまま返す＝機能未使用時の挙動を完全不変に保つ。
+function viewExcludingHidden(db) {
+  if (!db || !Array.isArray(db.residents) || !HIDDEN.size) return db;
+  return Object.assign({}, db, { residents: db.residents.filter(r => !HIDDEN.has(hideKey(r))) });
 }
 /* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
 const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
@@ -1231,6 +1357,13 @@ function renderLegend(sc) {
   if (nf && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 階未設定 ' + nf + '名（マスタ未登録）'));
   // 同一曜日の重複予定は本モデルで1枠に潰れる＝利用表タブと件数が食い違うため明示する
   if (dupCount && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 同一曜日の重複予定 ' + dupCount + '件（1枠のみ表示）'));
+  // 非表示設定が有効な時は全タブで明示（黙って人を落とさない）。
+  //   画面用: 絵文字バッジ（noprint）。印刷用: 絵文字なしの注記（.hide-print-note＝印刷時のみ表示）。
+  //   与薬・食数帳票から人が無言で欠落する事故を防ぐため、解除忘れが紙面でも分かるようにする（2026-07-27 運用裁定）。
+  if (hiddenNowCount) {
+    box.appendChild(el('span', 'warn-badge noprint', '🙈 非表示 ' + hiddenNowCount + '名（この端末のみ・右上で解除）'));
+    box.appendChild(el('span', 'hide-print-note', '※この端末の非表示設定により ' + hiddenNowCount + '名を除外中'));
+  }
 }
 const TAB_KEY = 'dcr_activeTab';   // リロード後も同じタブを開くための端末保存（タブidは個人情報でない）
 function goto(sc) {
@@ -1258,26 +1391,38 @@ function toast(msg, isNg) {
 function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
-  MODEL = buildModel(db);
+  // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
+  HIDDEN = loadHidden();
+  HIDE_CANDIDATES = collectHideCandidates(db);
+  hiddenNowCount = HIDE_CANDIDATES.filter(c => HIDDEN.has(c.key)).length;   // 現候補のうち実際に隠れている人数
+  updateHideButton();
+  const view = viewExcludingHidden(db);   // 非表示ゼロなら db 原本（挙動完全不変）
+  MODEL = buildModel(view);
   const empty = $('boardEmpty');
   // 空判定は利用表タブ基準（collectDaycare＝日〜土の全曜日）で行う。MODEL は月〜土のため、
   // これを空判定に使うと「日曜のみ通所」のデータで利用表まで空表示になり既存挙動が変わる。
-  const rosterHas = collectDaycare(db).plans.length > 0;
+  const rosterHas = collectDaycare(view).plans.length > 0;
   if (!rosterHas && !MODEL.length) {
     ['roster', 'tblDaylist', 'tblAllweek', 'tblMed'].forEach(id => { $(id).textContent = ''; });
     $('weeklyPages').textContent = '';
     $('hospBox').style.display = 'none';
     empty.classList.add('on');
-    $('emptyMsg').textContent = db ? '通所（デイサービス）の予定がありません。' : '週間計画のデータが見つかりません。';
+    // 元データはあるが全員を非表示にしている場合は、その旨を出して解除へ導く（黙って空にしない）。
+    if (HIDE_CANDIDATES.length && hiddenNowCount >= HIDE_CANDIDATES.length) {
+      $('emptyMsg').textContent = '表示できる利用者がいません（' + hiddenNowCount + '名を非表示設定中）。右上「非表示設定」で解除できます。';
+    } else {
+      $('emptyMsg').textContent = db ? '通所（デイサービス）の予定がありません。' : '週間計画のデータが見つかりません。';
+    }
     // タブ(.tnav)は空状態でも押せるため、退避値を消さないと goto() が前回の件数を復活させてしまう。
     ROSTER_SUB = ''; MODEL_SUB = '';
     $('hdrSub').textContent = '';
+    $('legend').textContent = '';   // 前回描画の凡例バッジ（非表示 N名 等）が古い件数で残らないようにする
     return;
   }
   empty.classList.remove('on');
-  // 各ビューは独立して描画（1つが落ちても他を巻き込まない）
+  // 各ビューは独立して描画（1つが落ちても他を巻き込まない）。★view（非表示除外後）を渡す。
   const safe = (fn, id) => { try { fn(); } catch (e) { toast(id + ' の描画に失敗しました', true); } };
-  safe(() => renderRoster(db), '利用表');
+  safe(() => renderRoster(view), '利用表');
   safe(() => renderDaylist(MODEL), 'デイ利用者一覧表');
   safe(() => renderAllweek(MODEL), '全員リスト');
   safe(() => renderMed(MODEL), '薬用');
@@ -1315,6 +1460,44 @@ async function refresh(silent) {
   }
 }
 
+/* ── 非表示設定モーダルの描画・開閉 ── */
+function updateHideButton() {
+  const b = $('btnHide');
+  if (!b) return;
+  b.textContent = hiddenNowCount ? ('🙈 非表示設定 (' + hiddenNowCount + ')') : '🙈 非表示設定';
+  b.classList.toggle('active', hiddenNowCount > 0);   // 有効時は目立たせる（黙って隠さない）
+}
+let hideModalPrevFocus = null;
+function renderHideList() {
+  const box = $('hideList');
+  box.textContent = '';
+  if (!HIDE_CANDIDATES.length) {
+    box.appendChild(el('div', 'modal-empty', 'デイサービスの利用者がいません。'));
+    return;
+  }
+  HIDE_CANDIDATES.forEach(c => {
+    const lb = el('label', 'modal-item');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = HIDDEN.has(c.key);
+    cb.dataset.key = c.key;
+    cb.setAttribute('aria-label', c.name + ' を非表示にする');
+    lb.appendChild(cb);
+    lb.appendChild(document.createTextNode(c.name));   // 氏名は textContent（個人情報・XSS防止）
+    if (c.kana) lb.appendChild(el('span', 'mi-kana', c.kana));
+    box.appendChild(lb);
+  });
+}
+function openHideModal() {
+  renderHideList();
+  const m = $('hideModal');
+  hideModalPrevFocus = document.activeElement;   // 閉じたらトリガーへ戻す
+  m.hidden = false;
+  const f = $('hideClose'); if (f) f.focus();
+}
+function closeHideModal() {
+  $('hideModal').hidden = true;
+  if (hideModalPrevFocus && hideModalPrevFocus.focus) { try { hideModalPrevFocus.focus(); } catch (e) {} }
+}
+
 function init() {
   $('btnRefresh').addEventListener('click', refresh);
   $('btnRefresh2').addEventListener('click', refresh);
@@ -1323,6 +1506,36 @@ function init() {
   // 本ツールは読み取り専用のため、遷移前に保存すべき状態は無い。
   $('btnMaster').addEventListener('click', () => window.open('resident-master.html', '_blank'));
   $('btnCare').addEventListener('click', () => window.open('care-schedule.html', '_blank'));
+  // 非表示設定モーダル
+  $('btnHide').addEventListener('click', openHideModal);
+  $('hideClose').addEventListener('click', closeHideModal);
+  $('hideDone').addEventListener('click', closeHideModal);
+  $('hideModal').addEventListener('click', e => { if (e.target === $('hideModal')) closeHideModal(); });   // 背景クリックで閉じる
+  document.addEventListener('keydown', e => {
+    if ($('hideModal').hidden) return;
+    if (e.key === 'Escape') { closeHideModal(); return; }
+    if (e.key === 'Tab') {   // フォーカスをモーダル内に閉じ込める（HIG: キーボード到達性）
+      const f = [...$('hideModal').querySelectorAll('button, input')].filter(x => !x.disabled && x.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+  $('hideList').addEventListener('change', e => {
+    const cb = e.target;
+    if (!cb || cb.type !== 'checkbox' || !cb.dataset.key) return;
+    if (cb.checked) HIDDEN.add(cb.dataset.key); else HIDDEN.delete(cb.dataset.key);
+    saveHidden(HIDDEN);
+    renderAll(DB);   // 背後の表を即時反映（renderAll はモーダルDOMを触らないので開いたまま）
+  });
+  $('hideShowAll').addEventListener('click', () => {
+    if (!HIDDEN.size) { toast('非表示の利用者はいません'); return; }
+    HIDDEN = new Set();
+    saveHidden(HIDDEN);
+    renderAll(DB);      // 表を全復元
+    renderHideList();   // モーダルのチェックも外す
+  });
   $('tnav').addEventListener('click', e => { const b = e.target.closest('button[data-sc]'); if (b) goto(b.dataset.sc); });
 
   DB = loadLocal();
