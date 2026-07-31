@@ -11,9 +11,9 @@
 <style>
 /* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
-   ★書き込みは「薬用タブの昼食薬(lunchMed)チェック」1点のみに限定する（2026-07-23 追加）。
-     それ以外（予定・時刻・辞書・rev運用）には一切書き込まない。lunchMed の書込みも
-     read-fresh＋rev競合ガード方式で、他端末が編集中の週間計画を壊さない（下記 writeLunchMed 参照）。 */
+   ★書き込みは利用者フィールドの昼食薬(lunchMed)と非表示(dcrHidden)の2点のみ（2026-07-23/27）。
+     いずれも writeResidentFlag（read-fresh＋rev競合ガードで当該1フィールドのみPUT）で全端末共通に同期し、
+     予定・時刻・辞書・rev運用や他フィールドには一切書き込まない＝他端末が編集中の週間計画を壊さない。 */
 :root {
   --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
   --ok: #2e7d32; --ng: #c62828;
@@ -262,7 +262,7 @@ table.wk .wk-blank { color: transparent; }
 #toast.ng { background: var(--ng); }
 #toast.on { display: block; }
 
-/* ===== 非表示設定モーダル（この端末の表示のみを絞る・印刷にも出さない）===== */
+/* ===== 非表示設定モーダル（全端末共通で表示を絞る・印刷にも出さない）===== */
 .hdr-btn.active { background: #fff; color: var(--pri-d); border-color: #fff; font-weight: 700; }   /* 非表示が有効な時に目立たせる（黙って隠さない） */
 .modal-ov {
   position: fixed; inset: 0; z-index: 400;   /* ヘッダ(100)より前面／トースト(500)は更に前面に出す */
@@ -373,7 +373,7 @@ table.wk .wk-blank { color: transparent; }
   <!-- アプリ間ジャンプ（shift-app.html と同形式・相対パス＝同一オリジン）。
        「更新」「印刷」の位置は動かさない＝現場の操作記憶を壊さないため左側へ足す。
        .hdr は @media print で display:none のため帳票には出ない。 -->
-  <button class="hdr-btn" id="btnHide" aria-label="利用者の非表示設定を開く（この端末の表示のみ）" aria-haspopup="dialog">🙈 非表示設定</button>
+  <button class="hdr-btn" id="btnHide" aria-label="利用者の非表示設定を開く（全端末共通）" aria-haspopup="dialog">🙈 非表示設定</button>
   <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタアプリを新しいタブで開く">👤 入居者マスタ</button>
   <button class="hdr-btn" id="btnCare" aria-label="週間計画アプリを新しいタブで開く">📅 週間計画</button>
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
@@ -432,7 +432,7 @@ table.wk .wk-blank { color: transparent; }
 
 <div class="print-batch" id="printBatch"></div>
 
-<!-- 非表示設定モーダル（この端末の表示だけを絞る・クラウド/他端末/元データは不変・印刷にも出ない）。
+<!-- 非表示設定モーダル（全端末共通で表示を絞る＝care_schedule_v2 の dcrHidden へ保存・週間計画の予定など元データは不変・印刷にも出ない）。
      既定は hidden 属性で非表示。openHideModal/closeHideModal で開閉する。 -->
 <div class="modal-ov noprint" id="hideModal" role="dialog" aria-modal="true" aria-labelledby="hideModalTitle" hidden>
   <div class="modal-box">
@@ -440,7 +440,7 @@ table.wk .wk-blank { color: transparent; }
       <span class="modal-title" id="hideModalTitle">非表示設定</span>
       <button class="modal-x" id="hideClose" type="button" aria-label="閉じる">✕</button>
     </div>
-    <div class="modal-sub">チェックした利用者を、この端末の全ての表・印刷から一時的に隠します。クラウド・他端末・元データには影響しません。</div>
+    <div class="modal-sub">チェックした利用者を、全端末の表・印刷から一時的に隠します（全端末で共通）。週間計画の予定など元データは変更しません。</div>
     <div class="modal-list" id="hideList"></div>
     <div class="modal-foot">
       <button class="modal-btn" id="hideShowAll" type="button">すべて表示に戻す</button>
@@ -455,14 +455,14 @@ table.wk .wk-blank { color: transparent; }
 'use strict';
 
 /* ============================================================================
-   通所せせらぎ（5タブ）— 参照中心（書込みは薬用タブの昼食薬チェックのみ）
+   通所せせらぎ（5タブ）— 参照中心（書込みは昼食薬lunchMedと非表示dcrHiddenの2フィールドのみ・全端末共通）
    データ源: care_schedule_v2（daycare イベント＋ residents の room / floor / lunchMed /
              visitingMed / hospitalized / kana）。
    ★階(1階/2階)の決定は room（入居者マスタ由来の居室）を第一とする。2026-07-21 追加。
      room は care-schedule.html が su_residents_common から「master常勝」で取り込むため、
      入居者マスタで居室を直せば部屋移動が自動で追従する（旧経路＝ワークスケジュールの
      デイサービスマスタ手書き floor は、room が取れない時のフォールバックとして残す）。
-   ★書込みは薬用タブの昼食薬(lunchMed)チェックのみ。予定/時刻/辞書/rev運用には書き込まない。
+   ★書込みは昼食薬(lunchMed)と非表示(dcrHidden)の2利用者フィールドのみ。予定/時刻/辞書/rev運用には書き込まない。
    5タブは「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」の単一モデルの別表現。
    「２階」は居室の階(floor)ではなく『その日デイに行かない人が2階食堂で昼食を摂る』場所の意味。
    既知の制約: 自費区分（赤/緑）は週間計画に無いため非対応。
@@ -545,13 +545,8 @@ async function getRemoteWithRev() {
   return { data: (j.data && Array.isArray(j.data.residents)) ? j.data : null, rev: Number(j.rev) || 0 };
 }
 
-/* ── 昼食薬(lunchMed)の共通保存（本ツール唯一の書込み経路）───────────────────────
-   read-fresh＋rev競合ガード方式:
-     ①最新をGET（data,rev） → ②その新鮮なコピーの当該入居者だけ lunchMed を書換
-     → ③GETしたrevでPUT → 競合(別端末が先に更新)なら①へ再試行（最大3回）
-   常に最新サーバ状態を土台にするため、他端末で編集中の週間計画（events等）を壊さない。
-   work-schedule の操作ジャーナルには触れない（本経路は即時に権威的PUTするため不要）。
-   失敗時は権威データから再描画して楽観的UIを巻き戻す＝偽の「保存済み」を残さない。 */
+/* ── サーバDBから当該利用者を引く（昼食薬・非表示の書込みで共用）───────────────────
+   照合順: ①masterId ②内部id ③正規化氏名（一意に絞れた時のみ）。同姓同名で別人を書き換えない。 */
 function suNormName_(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
 function findServerResident_(residents, item) {
   let r = null;
@@ -559,26 +554,30 @@ function findServerResident_(residents, item) {
   if (!r && item.rid != null) r = residents.find(x => x && x.id === item.rid);
   if (!r) {
     // 氏名フォールバックは「一意に絞れた時だけ」採用する。同姓同名が複数居る場合に先頭を選ぶと
-    // 別人の昼食薬を書き換える（＝与薬帳票の誤り）ため、絞れなければ null で安全側に倒す。
+    // 別人を書き換える（＝与薬・非表示の誤り）ため、絞れなければ null で安全側に倒す。
     const m = residents.filter(x => suNormName_(x.name) === suNormName_(item.name));
     r = (m.length === 1) ? m[0] : null;
   }
   return r || null;
 }
-// 巻き戻し（権威データからの再描画）。catch 内で更に投げて disabled が残るのを防ぐ。
-function revertMedUI_(db) { try { renderAll(db); } catch (e) {} }
-let medWriting = false;
-async function writeLunchMed(items, value) {
-  // 保存中の多重実行／取得(refresh)との併走を防ぐ。黙って捨てず必ず表示を巻き戻す
-  // （楽観的に塗った色を残すと「保存されたのに保存されていない」誤認になる）。
-  if (medWriting) { toast('前の保存を処理中です。完了後にお試しください', true); revertMedUI_(DB); return; }
-  if (busy) { toast('データ取得中です。少し待ってからお試しください', true); revertMedUI_(DB); return; }
+// 巻き戻し（権威データからの再描画）。renderAll が非表示モーダルの一覧も同期する（下記 renderAll 参照）。
+function revertUI_(db) { try { renderAll(db); } catch (e) {} }
+let flagWriting = false;
+/* 利用者フラグ（lunchMed＝昼食薬 / dcrHidden＝非表示）の共通保存＝本ツール唯一の書込み経路。
+   read-fresh＋rev競合ガードで care_schedule_v2 の「当該利用者の1フィールドだけ」を書き、全端末へ同期する。
+   常に最新サーバ状態を土台にPUTするため、他端末が編集中の週間計画（events等）や他フィールドを壊さない。
+   空データ時・通信失敗時・照合不能時は中止し、権威データから再描画して楽観的UIを巻き戻す（偽の「保存済み」を残さない）。 */
+async function writeResidentFlag(items, field, value, label) {
+  label = label || '設定';
+  if (flagWriting) { toast('前の保存を処理中です。完了後にお試しください', true); revertUI_(DB); return; }
+  if (busy) { toast('データ取得中です。少し待ってからお試しください', true); revertUI_(DB); return; }
   const t = syncTarget();
-  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); revertMedUI_(DB); return; }
-  if (!items || !items.length) { revertMedUI_(DB); return; }
-  medWriting = true;
-  const inputs = [...document.querySelectorAll('#chkMed input, #chkMed button')];
-  inputs.forEach(x => { x.disabled = true; });
+  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); revertUI_(DB); return; }
+  if (!items || !items.length) { revertUI_(DB); return; }
+  flagWriting = true;
+  // 保存中は両機能の操作要素を無効化（薬用チェック／非表示モーダル）。動的要素は再描画で作り直され再有効化される。
+  const staticBtns = [...document.querySelectorAll('#hideModal .modal-btn, #hideModal .modal-x')];
+  [...document.querySelectorAll('#chkMed input, #chkMed button, #hideList input'), ...staticBtns].forEach(x => { x.disabled = true; });
   setSyncState('保存中…');
   try {
     let done = false, exhausted = false, missing = 0, lastFresh = null;
@@ -592,34 +591,38 @@ async function writeLunchMed(items, value) {
       let found = 0, changed = 0;
       for (const it of items) {
         const r = findServerResident_(sdb.residents, it);
-        if (r) { found++; if ((!!r.lunchMed) !== (!!value)) { r.lunchMed = !!value; changed++; } }
+        if (r) { found++; if ((!!r[field]) !== (!!value)) { r[field] = !!value; changed++; } }   // 対象フィールドのみ変更
       }
       if (!found) throw new Error('対象の利用者がクラウドに見つかりません');
       missing = items.length - found;   // 一部だけ照合できた場合は成功時に併記する（黙って減らさない）
-      if (!changed) { DB = sdb; renderAll(DB); done = true; break; }   // 既に目的の状態＝冪等成功
+      if (!changed) { DB = sdb; done = true; break; }   // 既に目的の状態＝冪等成功
       const res = await gasCall({ action: 'put', key: LS_KEY, rev: fresh.rev, data: sdb });
-      if (res && res.ok) { DB = sdb; renderAll(DB); done = true; break; }
+      if (res && res.ok) { DB = sdb; done = true; break; }
       if (res && res.conflict) { exhausted = (attempt === 2); continue; }   // 版ずれ＝再取得して再試行
       throw new Error((res && res.error) || '保存に失敗しました');
     }
     if (done) {
+      renderAll(DB);   // 非表示モーダルが開いていれば renderAll が一覧も権威データへ再同期する
       setSyncState('保存OK（全端末に同期）');
-      toast(missing ? ('昼食薬を保存しました。ただし' + missing + '名はクラウドで見つからず変更できていません')
-                    : '昼食薬を保存しました（全端末に同期）', !!missing);
+      toast(missing ? (label + 'を保存しました。ただし' + missing + '名はクラウドで見つからず変更できていません')
+                    : (label + 'を保存しました（全端末に同期）'), !!missing);
     } else if (exhausted) {
       setSyncState('保存できず');
       toast('他端末が更新中です。もう一度お試しください', true);
       if (lastFresh) DB = lastFresh;   // 手元より新しい取得済みデータへ表示を揃える
-      revertMedUI_(DB);
+      revertUI_(DB);
     }
   } catch (e) {
     setSyncState('保存失敗');
     toast('保存に失敗しました（' + (e && e.message ? e.message : '') + '）。表示を元に戻しました', true);
-    revertMedUI_(DB);   // 権威データ(DB)から再描画＝楽観的に変えた表示を巻き戻す
+    revertUI_(DB);   // 権威データ(DB)から再描画＝楽観的に変えた表示を巻き戻す
   } finally {
-    medWriting = false;
+    flagWriting = false;
+    staticBtns.forEach(x => { x.disabled = false; });   // 静的なモーダルボタンは再描画で作り直されないため明示的に再有効化
   }
 }
+// 昼食薬（従来の呼び出し元はこの薄いラッパを使う＝挙動不変）
+function writeLunchMed(items, value) { return writeResidentFlag(items, 'lunchMed', value, '昼食薬'); }
 
 /* ============================================================================
    統一データモデル — 5タブ全てがここから生成される
@@ -693,42 +696,18 @@ function buildModel(db) {
   return people;
 }
 
-/* ── 非表示設定（この端末の表示だけを絞る）───────────────────────────────────
+/* ── 非表示設定（全端末共通で表示を絞る）─────────────────────────────────────
    用途: 入居前などで居室未入力の利用者が表に正しく分配されない時、一時的に表から外す。
-   設計:
-     - 端末ローカルのみ（localStorage 'dcr_hidden'）。クラウド・他端末・元データ(care_schedule_v2)は不変。
-       ＝表示の絞り込みであって業務データの編集ではない（本ツールの書込みは昼食薬のみを維持）。
-     - 保存するのは安定ID（masterId→id）だけ＝氏名等の個人情報は端末にも残さない（dev原則11準拠）。
-       id を持たない稀な利用者のみ、最終手段として氏名のハッシュ値（平文でない）をキーにする。
+   設計（2026-07-27 全端末共通化）:
+     - 状態は care_schedule_v2 の利用者フィールド `dcrHidden`(boolean) に持つ＝サーバ正本・全端末共通。
+       書込みは昼食薬(lunchMed)と同じ writeResidentFlag（read-fresh＋rev競合ガード）で当該1フィールドのみ更新。
+       週間計画の予定(events)・他フィールドは変更しない。care_schedule_v2 以外のキーは触らない。
+     - dcrHidden は work-schedule/care-schedule の同期でも保持される利用者スカラー（lunchMed 同型）。
+       万一どこかで落ちても「再表示」に倒れる＝消失より復活（multi-device-sync 原則5）で安全側。
      - フィルタは renderAll で db.residents を1回絞るだけ。各描画関数（roster/daylist/allweek/med/weekly）は
        無改変で、5タブ全てと全集計から自動的に外れる。非表示ゼロなら db をそのまま渡す＝挙動完全不変。 */
-const HIDDEN_KEY = 'dcr_hidden';
-let HIDDEN = new Set();          // この端末の非表示キー
-let HIDE_CANDIDATES = [];        // 非表示設定ウィンドウ用: 全デイ母集団 {key,name,kana}（五十音順・非表示者も含む）
+let HIDE_CANDIDATES = [];        // 非表示設定ウィンドウ用: 全デイ母集団 {name,kana,hidden,rid,masterId}（五十音順・非表示者も含む）
 let hiddenNowCount = 0;          // 現候補のうち実際に非表示になっている人数（バッジ・ボタン表示用）
-// 氏名を平文で残さないための一方向ハッシュ（djb2）。id を持たない稀な利用者の非表示キー専用。
-function hashStr_(s) {
-  let h = 5381;
-  const t = String(s || '');
-  for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
-}
-function hideKey(r) {
-  if (!r) return '';
-  if (r.masterId != null && r.masterId !== '') return 'm:' + r.masterId;   // マスタ由来の一意ID（最優先）
-  if (r.id != null && r.id !== '') return 'i:' + r.id;                     // care_schedule の内部ID
-  return 'h:' + hashStr_(suNormName_(r.name));   // id 無しの稀な利用者のみ。氏名はハッシュ化して端末にも平文を残さない
-}
-function loadHidden() {
-  try {
-    const a = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]');
-    return new Set(Array.isArray(a) ? a.filter(x => typeof x === 'string') : []);   // 壊れた値は無視（起動不能を防ぐ）
-  } catch (e) { return new Set(); }
-}
-function saveHidden(set) {
-  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set])); }
-  catch (e) { toast('非表示設定を保存できませんでした（ブラウザのプライベートモード等）', true); }   // 黙って失敗しない
-}
 // デイ母集団の判定（roster は日曜も表示するため dow 0..6。buildModel の月〜土より広く取り、全タブの表示対象を漏れなく候補にする）
 function isDaycareResident(r) {
   const evs = Array.isArray(r.events) ? r.events : [];
@@ -748,15 +727,17 @@ function collectHideCandidates(db) {
   for (const r of residents) {
     if (!r || r.movedOut) continue;
     if (!isDaycareResident(r)) continue;
-    out.push({ key: hideKey(r), name: String(r.name || '（無名）'), kana: String(r.kana || '') });
+    out.push({ name: String(r.name || '（無名）'), kana: String(r.kana || ''),
+               hidden: !!r.dcrHidden, rid: (r.id != null ? r.id : null), masterId: (r.masterId != null ? r.masterId : null) });
   }
   out.sort((a, b) => (a.kana || a.name).localeCompare(b.kana || b.name, 'ja'));   // 五十音順
   return out;
 }
-// 非表示を除いた db ビュー。非表示ゼロなら原本をそのまま返す＝機能未使用時の挙動を完全不変に保つ。
+// 非表示(dcrHidden)を除いた db ビュー。非表示ゼロなら原本を同一参照で返す＝機能未使用時の挙動を完全不変に保つ。
 function viewExcludingHidden(db) {
-  if (!db || !Array.isArray(db.residents) || !HIDDEN.size) return db;
-  return Object.assign({}, db, { residents: db.residents.filter(r => !HIDDEN.has(hideKey(r))) });
+  if (!db || !Array.isArray(db.residents)) return db;
+  if (!db.residents.some(r => r && r.dcrHidden)) return db;
+  return Object.assign({}, db, { residents: db.residents.filter(r => !r.dcrHidden) });
 }
 /* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
 const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
@@ -1361,8 +1342,8 @@ function renderLegend(sc) {
   //   画面用: 絵文字バッジ（noprint）。印刷用: 絵文字なしの注記（.hide-print-note＝印刷時のみ表示）。
   //   与薬・食数帳票から人が無言で欠落する事故を防ぐため、解除忘れが紙面でも分かるようにする（2026-07-27 運用裁定）。
   if (hiddenNowCount) {
-    box.appendChild(el('span', 'warn-badge noprint', '🙈 非表示 ' + hiddenNowCount + '名（この端末のみ・右上で解除）'));
-    box.appendChild(el('span', 'hide-print-note', '※この端末の非表示設定により ' + hiddenNowCount + '名を除外中'));
+    box.appendChild(el('span', 'warn-badge noprint', '🙈 非表示 ' + hiddenNowCount + '名（全端末共通・右上で解除）'));
+    box.appendChild(el('span', 'hide-print-note', '※非表示設定により ' + hiddenNowCount + '名を除外中'));
   }
 }
 const TAB_KEY = 'dcr_activeTab';   // リロード後も同じタブを開くための端末保存（タブidは個人情報でない）
@@ -1392,10 +1373,12 @@ function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
-  HIDDEN = loadHidden();
   HIDE_CANDIDATES = collectHideCandidates(db);
-  hiddenNowCount = HIDE_CANDIDATES.filter(c => HIDDEN.has(c.key)).length;   // 現候補のうち実際に隠れている人数
+  hiddenNowCount = HIDE_CANDIDATES.filter(c => c.hidden).length;   // 現候補のうち実際に隠れている人数
   updateHideButton();
+  // 非表示モーダルを開いたまま裏で候補が変わっても（更新/保存/起動時取得）、一覧を権威データへ再同期する。
+  // ★これが無いと、開いたままのチェックボックスが古い並びを指し、別人を非表示にしうる（識別子照合と二重の防御）。
+  try { if (!$('hideModal').hidden) renderHideList(); } catch (e) {}
   const view = viewExcludingHidden(db);   // 非表示ゼロなら db 原本（挙動完全不変）
   MODEL = buildModel(view);
   const empty = $('boardEmpty');
@@ -1437,7 +1420,7 @@ let busy = false;
 async function refresh(silent) {
   if (busy) return;
   // 昼食薬の保存中に再描画すると、保存待ちのチェック操作が黙って捨てられる（表示と保存の食い違い）
-  if (medWriting) { if (!silent) toast('昼食薬を保存中です。完了後にお試しください', true); return; }
+  if (flagWriting) { if (!silent) toast('保存中です。完了後にお試しください', true); return; }
   busy = true;
   $('btnRefresh').disabled = true;
   setSyncState('取得中…');
@@ -1477,14 +1460,23 @@ function renderHideList() {
   }
   HIDE_CANDIDATES.forEach(c => {
     const lb = el('label', 'modal-item');
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = HIDDEN.has(c.key);
-    cb.dataset.key = c.key;
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = c.hidden;   // サーバ正本(dcrHidden)から復元
+    // ★配列位置でなく安定ID(masterId/内部id)で紐付ける。裏で候補順がずれても別人を書き換えない（非PII）。
+    cb.dataset.mid = (c.masterId != null ? String(c.masterId) : '');
+    cb.dataset.rid = (c.rid != null ? String(c.rid) : '');
     cb.setAttribute('aria-label', c.name + ' を非表示にする');
     lb.appendChild(cb);
     lb.appendChild(document.createTextNode(c.name));   // 氏名は textContent（個人情報・XSS防止）
     if (c.kana) lb.appendChild(el('span', 'mi-kana', c.kana));
     box.appendChild(lb);
   });
+}
+// チェックボックス → 現 HIDE_CANDIDATES の該当者を安定IDで引く（idx依存を避ける）。見つからなければ null。
+function hideCandidateFromCb_(cb) {
+  const mid = cb.dataset.mid || '', rid = cb.dataset.rid || '';
+  return HIDE_CANDIDATES.find(x =>
+    (mid && x.masterId != null && String(x.masterId) === mid) ||
+    (rid && x.rid != null && String(x.rid) === rid)) || null;
 }
 function openHideModal() {
   renderHideList();
@@ -1524,20 +1516,21 @@ function init() {
   });
   $('hideList').addEventListener('change', e => {
     const cb = e.target;
-    if (!cb || cb.type !== 'checkbox' || !cb.dataset.key) return;
-    if (cb.checked) HIDDEN.add(cb.dataset.key); else HIDDEN.delete(cb.dataset.key);
-    saveHidden(HIDDEN);
-    renderAll(DB);   // 背後の表を即時反映（renderAll はモーダルDOMを触らないので開いたまま）
+    if (!cb || cb.type !== 'checkbox') return;
+    const c = hideCandidateFromCb_(cb);   // 安定IDで引く（並び替え耐性）
+    if (!c) { toast('一覧が更新されました。もう一度開き直してください', true); renderHideList(); return; }
+    // dcrHidden を全端末共通で保存（writeResidentFlag が成否に応じて表とモーダルを権威データから再描画）
+    writeResidentFlag([{ rid: c.rid, masterId: c.masterId, name: c.name }], 'dcrHidden', cb.checked, '非表示設定');
   });
   $('hideShowAll').addEventListener('click', () => {
-    if (!HIDDEN.size) { toast('非表示の利用者はいません'); return; }
-    HIDDEN = new Set();
-    saveHidden(HIDDEN);
-    renderAll(DB);      // 表を全復元
-    renderHideList();   // モーダルのチェックも外す
+    const items = HIDE_CANDIDATES.filter(c => c.hidden).map(c => ({ rid: c.rid, masterId: c.masterId, name: c.name }));
+    if (!items.length) { toast('非表示の利用者はいません'); return; }
+    writeResidentFlag(items, 'dcrHidden', false, '非表示設定');   // 全端末へ反映
   });
   $('tnav').addEventListener('click', e => { const b = e.target.closest('button[data-sc]'); if (b) goto(b.dataset.sc); });
 
+  // 旧・端末ローカル方式の非表示キーは全端末共通(dcrHidden)へ移行済み＝不要なので掃除する（残っても読まれない）。
+  try { localStorage.removeItem('dcr_hidden'); } catch (e) {}
   DB = loadLocal();
   const restore = savedTab();   // ★renderAll 内の goto(activeTab()) が DOM既定(利用表)を保存で上書きする前に確保
   renderAll(DB);
