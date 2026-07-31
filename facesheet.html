@@ -259,10 +259,11 @@ var CFG={url:'',token:''};
 
 // 現場タブレットで閲覧してよい安全項目（resident-master.html / master.gs の facesheet_safe と一致）
 // 服薬管理3項目は現場ケアに直結するため安全情報に含める（2026-07 決定）。
-// この19項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+// hospitalized（入院中の真偽のみ・病名等は含めない）は現場の見落とし防止のため追加（2026-08）。
+// この20項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
 var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
   'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
-  'medMgmt','medAssist','medRefusal'];
+  'medMgmt','medAssist','medRefusal','hospitalized'];
 var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
 var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
   ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
@@ -518,6 +519,10 @@ function careHistHtml(arr){
 /* ═══════════ 安全ハイライト帯（共通） ═══════════ */
 function renderHlBand(r){
   var hl=[];
+  /* 入院中は在不在そのものが変わる（配薬・食事・記録の手配に直結）ため先頭に出す。
+     現場ロール（安全項目のみ）でも見えるよう SAFE_FIELDS に hospitalized を含めている。
+     受信値は !!v で正規化する（文字列 'true' 等が来ても真偽で扱う）。 */
+  if(!!r.hospitalized)hl.push('<span class="hlchip hl-warn">🏥 入院中</span>');
   if(r.preferredName)hl.push('<span class="hlchip hl-info">🙂 呼称: '+esc(r.preferredName)+'</span>');
   if(r.allergy)hl.push('<span class="hlchip hl-danger">⚠ アレルギー: '+esc(r.allergy)+'</span>');
   if(r.infections)hl.push('<span class="hlchip hl-danger">⚠ 感染症: '+esc(r.infections)+'</span>');

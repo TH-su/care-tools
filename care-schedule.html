@@ -2602,6 +2602,18 @@ function csVisibleResidents(){
     return isScheduleTarget(r) || (r && r.id === DB.currentResidentId);
   });
 }
+/* 共有名簿の入院フラグを利用者へ反映（master常勝）。戻り値は変更件数(0/1)。
+   ★キー自体が無い名簿（入院フラグ配信前の旧マスタが書いた su_residents_common）では何もしない。
+     未配信＝「不明」であり false ではないため、端末で付けた入院表示を消さない（null と空の区別）。
+   受信値は !!v で正規化する（受信を信じない）。 */
+function csApplyMasterHospitalized(tgt, c){
+  if (!tgt || !c) return 0;
+  if (!Object.prototype.hasOwnProperty.call(c, 'hospitalized')) return 0;
+  var v = !!c.hospitalized;
+  if (!!tgt.hospitalized === v) return 0;
+  tgt.hospitalized = v;
+  return 1;
+}
 /* 利用者マスタの共通情報を取り込み（週間計画アプリ用。master を正とする） */
 function mergeCommonSchedule(){
   var raw; try{ raw = localStorage.getItem(SU_COMMON_KEY); }catch(e){ return false; }
@@ -2618,8 +2630,19 @@ function mergeCommonSchedule(){
   });
   var changed = 0;
   list.forEach(function(c){
-    if (!c || c.masterId == null || c.active === false) return;
+    if (!c || c.masterId == null) return;
     var tS = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('schedule') >= 0) : undefined;
+    /* 退去（active=false）: masterId で紐づく利用者だけ movedOut=true にする（マスタの在籍を正とする）。
+       計画(events)は決して消さない＝「退去者・対象外も表示」から従来どおり参照・復帰できる。
+       masterId の無いローカル限定利用者と、名前一致だけの利用者は触らない（取り違え防止）。 */
+    if (c.active === false){
+      var outR = byMid[String(c.masterId)];
+      if (outR){
+        if (!outR.movedOut){ outR.movedOut = true; changed++; }
+        changed += csApplyMasterHospitalized(outR, c);
+      }
+      return;   // 退去者は新規取り込みしない（従来どおり）
+    }
     var tgt = byMid[String(c.masterId)];
     if (!tgt){ var nm = suNormName(c.name); if (nm) tgt = byName[nm]; }
     if (tgt){
@@ -2628,12 +2651,16 @@ function mergeCommonSchedule(){
       if (c.room && tgt.room !== c.room){ tgt.room = c.room; changed++; }
       if (c.kana && !tgt.kana){ tgt.kana = c.kana; changed++; }   /* ふりがなは空欄補完のみ＝アプリ側の一括編集を巻き戻さない(careLevel同型・空欄のみ補完/master常勝のroomとは別) */
       if (tS !== undefined && tgt.targetSchedule === undefined){ tgt.targetSchedule = tS; changed++; }   /* 空(未設定)のみ補完＝一括編集の週間計画対象をマスタ由来su_residents_commonで巻き戻さない */
+      /* 復帰（active=true）: マスタで在籍に戻ったら退去フラグを解除する（この時点で masterId 紐づき確定・計画は保持） */
+      if (tgt.movedOut){ tgt.movedOut = false; changed++; }
+      changed += csApplyMasterHospitalized(tgt, c);
     } else {
       if (tS === false) return; // 週間計画 対象外の master 利用者は取り込まない
       DB.residents.push({
         id: ruid(), name: String(c.name || ''), events: [],
         careLevel: c.careLevel || '', copayRate: 1, welfareEquipUnits: 0,
         room: c.room || '', masterId: c.masterId, kana: c.kana || '', external: false,   /* externalはマスタ非配信＝既定false(施設内)。週間計画の一括編集で管理 */
+        hospitalized: !!c.hospitalized,   /* マスタの入院状態を初期値として持つ（未配信＝false） */
         targetSchedule: (tS === undefined ? true : tS), _fromMaster: true
       });
       changed++;
@@ -2642,6 +2669,36 @@ function mergeCommonSchedule(){
   // saveDB() は自動pushを誘発するため、取り込みは saveLocalOnly()（ローカルのみ）で永続化
   if (changed){ try{ saveLocalOnly(); }catch(e){} }
   return changed > 0;
+}
+/* ── 入院状態を入居者マスタへ反映（setState 併送） ──
+   接続設定 rmaster_cfg（入居者マスタ／フェイスシートと共通の同一オリジンキー）がある端末だけ送る。
+   無い端末はローカル更新のみ＝次のマスタ同期で上書きされる旨をトーストで明示する。
+   片道通知（応答は表示だけに使う）。失敗しても運用は止めない。ログに個人情報は出さない。 */
+var CS_RMASTER_CFG_KEY = 'rmaster_cfg';
+function csGetMasterCfg(){
+  try{
+    var s = localStorage.getItem(CS_RMASTER_CFG_KEY); if (!s) return null;
+    var o = JSON.parse(s);
+    var url = String((o && o.url) || '').trim();
+    if (!url) return null;
+    return { url: url, token: String((o && o.token) || '').trim() };
+  }catch(e){ return null; }
+}
+/* 戻り値: 送信を開始したら true（cfg 無し・masterId 無しは false＝ローカルのみ） */
+function csPushMasterState(masterId, hospitalized){
+  var cfg = csGetMasterCfg();
+  if (!cfg || masterId == null) return false;
+  try{
+    fetch(cfg.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // text/plain で CORS preflight を回避（他アプリと同一作法）
+      body: JSON.stringify({ action: 'setState', token: cfg.token, id: masterId, hospitalized: !!hospitalized, src: 'care' }),
+      redirect: 'follow'
+    }).then(function(r){ return r.json(); }).then(function(j){
+      if (!j || j.ok !== true) showToast('入院状態をマスタへ反映できませんでした（次のマスタ同期で戻ります）');
+    }).catch(function(){ showToast('入院状態をマスタへ反映できませんでした（次のマスタ同期で戻ります）'); });
+  }catch(e){ return false; }
+  return true;
 }
 /* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動ブロック） */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
@@ -2811,9 +2868,13 @@ function toggleHospitalized(id) {
   if (!res) return;
   res.hospitalized = !res.hospitalized;
   saveDB(); renderResidentList(); renderAll();
+  /* マスタ紐づきの利用者は入居者マスタへも反映（rmaster_cfg のある端末のみ）。
+     送れない端末はローカルのみ＝次のマスタ同期で上書きされることを明示する。 */
+  const pushed = (res.masterId != null) ? csPushMasterState(res.masterId, res.hospitalized) : false;
+  const csWarn = (res.masterId != null && !pushed) ? '（次のマスタ同期で上書きされます）' : '';
   showToast(res.hospitalized
-    ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）`
-    : `「${res.name}」を退院にしました`);
+    ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）${csWarn}`
+    : `「${res.name}」を退院にしました${csWarn}`);
 }
 function restoreResident(id) {
   const res = DB.residents.find(r => r.id === id);

@@ -1845,18 +1845,33 @@ async function syncFromAPI(showLoader){
     // 'YYYY-MM' / 'YYYY-MM-DD' に揃えることで一覧・集計の月セルが正しく埋まる。
     apiRec.forEach(r => normalizeRecord(r));
 
+    /* クライアント側だけが持つ入居者フィールド（2026-08-01 追加）。
+       masterId / hospitalized / dischargedAt は入居者マスタ連携の鏡映（共通契約 C5/C6）が
+       ローカルへ書く値で、対応列を持たない GAS では応答に含まれない。サーバー行で丸ごと
+       上書きすると同期のたびに紐づけ・入院・退去が消え、次の鏡映で書き直し → 毎回同じ
+       トースト、という往復（巻き戻り）になる。サーバーが値を持つ（null/undefined でない）
+       ときは従来どおりサーバーが勝つ＝「値を持たない」と「空の明示」を区別する。 */
+    const RES_CLIENT_ONLY = ['masterId','hospitalized','dischargedAt'];
     // merge: server wins on ID collision, local-only IDs are preserved
-    const mergeById = (serverList, localList)=>{
+    const mergeById = (serverList, localList, clientOnly)=>{
       const seen = new Set();
       const out = [];
-      for(const s of serverList){ if(s && s.id!=null && !seen.has(s.id)){ out.push(s); seen.add(s.id); } }
+      const localById = new Map();
+      if(clientOnly){ for(const l of localList){ if(l && l.id!=null && !localById.has(l.id)) localById.set(l.id, l); } }
+      for(const s of serverList){ if(s && s.id!=null && !seen.has(s.id)){
+        const l = clientOnly ? localById.get(s.id) : null;
+        if(l) clientOnly.forEach(f=>{ if(s[f]==null && l[f]!=null) s[f] = l[f]; });
+        out.push(s); seen.add(s.id);
+      } }
       for(const l of localList){  if(l && l.id!=null && !seen.has(l.id)){ out.push(l); seen.add(l.id); } }
       return out;
     };
-    DB.residents = mergeById(apiRes, DB.residents);
+    DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY);
     DB.records   = mergeById(apiRec, DB.records);
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
     try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
+    // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
+    try{ if(typeof wrSyncProxyRoster === 'function') wrSyncProxyRoster(); }catch(e){}
     save();
 
     if(apiThr){
@@ -2288,6 +2303,62 @@ function suParseHeight(v){
    mergeCommonWeight が実行のたびに作り直す“表示用の一時情報”で、DB には保存しない。
    編集モーダルで「マスタから自動取得」の注記を出す判定だけに使う。 */
 var wrMasterHeight = {};
+/* 名簿から受け取った退去日を 'YYYY-MM-DD' に正規化。
+   形式が違う値（Date オブジェクト・空・不正文字列）は '' を返す＝受信データを信じない。 */
+function suNormDischargeDate(v){
+  if(typeof v !== 'string') return '';
+  var s = v.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+/* 在籍（active）・入院（hospitalized）状態を名簿から鏡映する。マスタが正（master 常勝）。
+   - active===false → 退去化（退去日は名簿の dischargeDate 優先・無ければ本日）
+   - active===true  → 復帰（dischargedAt をクリア）
+   - active が無い行は「マスタが値を持たない」とみなし在籍状態に触れない（安全側）
+   - hospitalized はキーがある時だけ !!v で反映（無い＝旧サーバー → ローカル温存）
+   体重記録は一切削除しない。戻り値は変更件数、st は退去/復帰の件数カウンタ。 */
+function suMirrorState(r, c, st){
+  if(!r || !c) return 0;
+  var ch = 0;
+  if(c.active === false){
+    if(!isDischarged(r)){
+      r.dischargedAt = suNormDischargeDate(c.dischargeDate) || dNow();
+      ch++; if(st) st.out++;
+    }
+    /* 既に退去済みならこのアプリで入れた退去日を尊重して上書きしない */
+  }else if(c.active === true){
+    if(isDischarged(r)){ delete r.dischargedAt; ch++; if(st) st.back++; }
+  }
+  if(Object.prototype.hasOwnProperty.call(c, 'hospitalized')){
+    var hp = !!c.hospitalized;
+    if(!!r.hospitalized !== hp){ r.hospitalized = hp; ch++; }
+  }
+  return ch;
+}
+/* 鏡映で状態（退去/復帰/入院）が変わった入居者をサーバー正本へも反映する（2026-08-01 追加）。
+   ローカルだけを変えると、次の同期でサーバーの古い行が勝って鏡映が巻き戻り、
+   毎回同じ退去・復帰トーストが出続ける（多端末同期規約：サーバー1正本）。
+   送信経路・ペイロードは画面の「退去/復帰」ボタンと同一（saveResident）で、
+   失敗しても既存の未送信キューに退避されて後で再送される。 */
+function wrPushMirrored(list){
+  if(!Array.isArray(list) || !list.length) return;
+  if(typeof apiPush !== 'function') return;   // 連携未設定の端末では何もしない
+  list.forEach(function(r){
+    if(!r || r.id == null) return;
+    try{ apiPush('saveResident', { resident: r }); }
+    catch(e){ /* 送信の失敗は名簿取り込み自体を止めない（安全側） */ }
+  });
+}
+/* 退去/復帰を鏡映したときだけ、氏名を出さない件数トーストで気づけるようにする */
+function wrMirrorToast(st){
+  if(!st || (!st.out && !st.back)) return;
+  try{
+    if(typeof toast !== 'function') return;
+    var m = [];
+    if(st.out)  m.push('退去 ' + st.out + '名');
+    if(st.back) m.push('復帰 ' + st.back + '名');
+    toast('入居者マスタに合わせて' + m.join('・') + 'を反映しました');
+  }catch(e){ /* 通知失敗は運用を止めない */ }
+}
 /* 入居者マスタの共通情報を取り込み（体重記録アプリ用） */
 function mergeCommonWeight(){
   /* 先に空へ倒す。共有名簿が読めない/壊れている回では「マスタ由来」の注記を出さない
@@ -2307,8 +2378,21 @@ function mergeCommonWeight(){
   });
   var changed = 0;
   var masterH = {};   // このマージで判明した「マスタ由来の身長」（注記表示用・保存しない）
+  var st = { out:0, back:0 };   // 退去/復帰の鏡映件数（トースト用）
+  var pushList = [];  // 鏡映で状態が変わった入居者（サーバーへ併送する）
   list.forEach(function(c){
-    if(!c || c.masterId == null || c.active === false) return;
+    if(!c || c.masterId == null) return;
+    /* 退去者は取り込み対象外だが、既に masterId で紐づく入居者には退去を鏡映する
+       （マスタで退去にした人がこのアプリの一覧に残り続けるのを防ぐ・記録は保持） */
+    if(c.active === false){
+      var dtgt = byMid[String(c.masterId)];
+      if(dtgt){
+        var dch = suMirrorState(dtgt, c, st);
+        changed += dch;
+        if(dch) pushList.push(dtgt);
+      }
+      return;
+    }
     var tW = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('weight') >= 0) : undefined;
     var mh = suParseHeight(c.height);   // null = マスタ未登録/不正値 → 手入力を温存
     var tgt = byMid[String(c.masterId)];
@@ -2323,6 +2407,10 @@ function mergeCommonWeight(){
         if(tgt.heightCm !== mh){ tgt.heightCm = mh; changed++; }
         masterH[tgt.id] = mh;
       }
+      /* 在籍（復帰）・入院はマスタが正 */
+      var mch = suMirrorState(tgt, c, st);
+      changed += mch;
+      if(mch) pushList.push(tgt);
     }else{
       if(tW === false) return;   // 体重対象外の master 入居者は取り込まない
       if(!c.room) return;        // 居室なしは取り込まない
@@ -2330,6 +2418,7 @@ function mergeCommonWeight(){
                  masterId: c.masterId, targetWeight: (tW===undefined?true:tW), _fromMaster: true,
                  createdAt: new Date().toISOString() };
       if(mh != null){ nr.heightCm = mh; masterH[nr.id] = mh; }   // 初回取り込みでも BMI が出せるように
+      suMirrorState(nr, c, null);   // 入院フラグを初回取り込みでも引き継ぐ（在籍は active===true のみ到達）
       normalizeResident(nr);
       DB.residents.push(nr);
       changed++;
@@ -2337,7 +2426,114 @@ function mergeCommonWeight(){
   });
   wrMasterHeight = masterH;   // マスタで身長が消された人は注記も消える（作り直しにする理由）
   if(changed){ save(); }
+  wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrMirrorToast(st);
   return changed > 0;
+}
+/* ── 排泄記録GAS 経由の代理名簿取得（2026-08-01 追加・連携改善 第2弾） ──
+   入居者マスタ（su_residents_common の書き手）を開かない端末でも最新の氏名・居室・
+   退去・入院が届くよう、同一オリジンに保存された排泄記録アプリの接続情報を借りて
+   排泄記録GASの ?action=masterRoster を読む（読み取り専用・GET のみ）。
+   - 接続情報（hbcr_api_url / hbcr_api_token）が無ければ一切通信せず従来動作のまま
+   - 既存入居者の更新だけ行い新規追加はしない（この経路は targetApps を持たず、
+     体重記録の対象者かを判定できないため）
+   - 共有キー su_residents_common には書かない（入居者マスタが唯一の書き手という連携契約） */
+var HBCR_URL_KEY   = 'hbcr_api_url';     // 排泄記録アプリの GAS URL（読み取りのみ）
+var HBCR_TOKEN_KEY = 'hbcr_api_token';   // 同トークン（読み取りのみ）
+var WR_PROXY_TS_KEY = 'wtmgr_proxy_roster_at';  // 前回成功時刻（スロットル用・体重アプリ固有）
+var WR_PROXY_MIN_MS = 600000;            // 10分以内の再取得はスキップ
+var _wrProxyBusy = false;                // 二重取得の防止
+/* 排泄記録アプリの接続情報を読む。欠けていれば null＝この機能は完全に無動作。 */
+function wrProxyCreds(){
+  var u = '', t = '';
+  try{
+    u = localStorage.getItem(HBCR_URL_KEY) || '';
+    t = localStorage.getItem(HBCR_TOKEN_KEY) || '';
+  }catch(e){ return null; }
+  u = String(u).trim(); t = String(t).trim();
+  if(!u || !t) return null;
+  if(u.indexOf('https://') !== 0) return null;   // 壊れた保存値では通信しない（安全側）
+  return { url: u, token: t };
+}
+/* 前回成功から10分以内なら true（＝取得をスキップ）。時計巻き戻し・壊れ値は取得を許す。 */
+function wrProxyThrottled(){
+  try{
+    var raw = localStorage.getItem(WR_PROXY_TS_KEY);
+    if(!raw) return false;
+    var t = parseInt(raw, 10);
+    if(!isFinite(t) || t <= 0) return false;
+    var diff = Date.now() - t;
+    if(diff < 0) return false;
+    return diff < WR_PROXY_MIN_MS;
+  }catch(e){ return false; }
+}
+/* 代理名簿の取り込み（noAdd）。氏名・居室・退去・入院だけを既存入居者へ反映する。
+   退去行（active===false）は masterId 一致のときだけ扱う＝共有名簿経路と同じ規則。 */
+function mergeProxyRoster(list){
+  if(!Array.isArray(list) || !list.length) return 0;
+  if(!Array.isArray(DB.residents)) DB.residents = [];
+  var byMid = {}, byName = {};
+  DB.residents.forEach(function(r){
+    if(!r || typeof r !== 'object') return;
+    if(r.masterId != null) byMid[String(r.masterId)] = r;
+    var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
+  });
+  var changed = 0;
+  var st = { out:0, back:0 };
+  var pushList = [];   // 鏡映で状態が変わった入居者（サーバーへ併送する）
+  list.forEach(function(c){
+    if(!c || c.masterId == null) return;
+    var tgt = byMid[String(c.masterId)];
+    /* 退去行は masterId 一致（byMid）のときだけ扱う＝共有名簿経路（mergeCommonWeight）と同じ規則。
+       氏名一致のフォールバックは同姓同名・改名で他人に当たりうるため、退去化・氏名/居室の
+       上書き・masterId の付与のいずれも行わない（誤って別人を一覧から消さないための安全側）。 */
+    if(c.active === false){
+      if(tgt){
+        var dch = suMirrorState(tgt, c, st);
+        changed += dch;
+        if(dch) pushList.push(tgt);
+      }
+      return;
+    }
+    if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
+    if(!tgt) return;   // noAdd: 名簿にしか居ない人は追加しない
+    if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+    var cn = _toSafeStr(c.name);
+    if(cn && tgt.name !== cn){ tgt.name = cn; changed++; }
+    var cr = _toSafeStr(c.room);
+    if(cr && tgt.room !== cr){ tgt.room = cr; changed++; }
+    var mch = suMirrorState(tgt, c, st);
+    changed += mch;
+    if(mch) pushList.push(tgt);
+  });
+  if(changed){ save(); }
+  wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrMirrorToast(st);
+  return changed;
+}
+/* 代理名簿を取得して取り込む。失敗しても体重記録の同期は止めない（安全側フォールバック）。 */
+async function wrSyncProxyRoster(){
+  if(_wrProxyBusy) return false;
+  var cred = wrProxyCreds();
+  if(!cred) return false;              // 接続情報なし＝通信もスロットル記録もしない
+  if(wrProxyThrottled()) return false; // 前回成功から10分以内
+  _wrProxyBusy = true;
+  try{
+    var url = cred.url + (cred.url.indexOf('?') >= 0 ? '&' : '?')
+            + 'action=masterRoster&token=' + encodeURIComponent(cred.token);
+    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    if(!r.ok) return false;
+    var j = await r.json();
+    // available:false ＝ 排泄記録GAS側でマスタ連携が未設定。静かに見送る
+    if(!j || j.available !== true || !Array.isArray(j.roster)) return false;
+    try{ localStorage.setItem(WR_PROXY_TS_KEY, String(Date.now())); }catch(e){}
+    var changed = mergeProxyRoster(j.roster);
+    if(changed) wrRefreshViews();
+    return changed > 0;
+  }catch(e){
+    console.warn('[wtmgr] 代理名簿の取得に失敗（体重記録の同期は継続）:', e && e.message);
+    return false;
+  }finally{ _wrProxyBusy = false; }
 }
 /* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動時ブロック） */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
@@ -5641,6 +5837,8 @@ function refreshUrlPersistBadge(){
    ============================================================ */
 // 入居者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
 try{ mergeCommonWeight(); }catch(e){ /* 取り込み失敗は運用を止めない */ }
+// 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）
+try{ wrSyncProxyRoster(); }catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
 (function(){ var b=document.getElementById('suDeviceUnlock'); if(b) b.addEventListener('click', function(){
   try{ localStorage.setItem(SU_DEVICE_KEY,'office'); }catch(e){}

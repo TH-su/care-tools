@@ -82,6 +82,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .tag.bd,.tag.ht,.tag.wt{background:var(--g0); color:var(--g7); border:1px solid var(--g2)}
 .tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
 .tag.out{background:var(--ng-l); color:var(--ng)}
+.tag.hosp{background:var(--warn-bg); color:var(--warn-tx); font-weight:700}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
 
 /* ── 詳細（印刷レイアウト） ── */
@@ -205,6 +206,8 @@ input,select,textarea{font-family:inherit; font-size:15px}
     <button class="btn btn-gray" id="backBtn">← 一覧</button>
     <button class="btn btn-pri" id="editBtn">✏️ 編集</button>
     <button class="btn btn-sec" id="printBtn">🖨️ 印刷</button>
+    <!-- 入院/復帰は編集フォームを通さず setState で状態だけを更新する（多端末で同時に触るため） -->
+    <button class="btn btn-sec" id="hospBtn" hidden>🏥 入院にする</button>
   </div>
   <div id="viewBox"><div class="loading">読み込み中…</div></div>
 </section>
@@ -296,6 +299,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
      GET  ?action=getResident&id=..&token=..        → 個人フル
      GET  ?action=getSection&id=..&section=medical&token=..
      POST {action:'saveResident', token, record}    → upsert
+     POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── 設定（端末ローカル。機微情報ではない） ── */
@@ -350,9 +354,12 @@ function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
    フェイスシート拡張（2026）：施設運用スコープの項目を追加。新項目は全て GAS dataJson に
    自動収容されるためスプレッドシートの列変更は不要。su_residents_common には一切載せない。 */
 var SECTIONS={
+  /* hospitalized / hospitalizedAt は編集フォームには出さない。詳細画面の「入院/復帰」トグルと
+     GAS の setState だけが書き手（多端末で同時に触るため部分更新の専用経路に固定する）。 */
   basic:['gender','birthDate','phone','careLevel','careCertStart','careCertEnd','certDate','copayRate','welfare',
          'insuredNo','insurer','medicalInsurance','disabilityCert','guardianship',
-         'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia'],
+         'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia',
+         'hospitalized','hospitalizedAt'],
   careHistory:['careLevelHistory'],
   note:['preAdmission','postDischarge','dischargeTo'],
   family:['family'],
@@ -378,10 +385,11 @@ var SECTIONS={
 // GAS getSection 'facesheet_safe' と facesheet.html の field 限定ビューが共有する契約。
 // 家族連絡先・経済・詳細病歴・服薬詳細は含めない。
 // 服薬管理3項目（管理方法・介助度・拒否）は現場ケアに直結するため安全情報に含める（2026-07 決定）。
-// この19項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+// hospitalized（入院中の真偽のみ・病名等は含めない）は現場の見落とし防止のため追加（2026-08）。
+// この20項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
 var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
   'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
-  'medMgmt','medAssist','medRefusal'];
+  'medMgmt','medAssist','medRefusal','hospitalized'];
 // 対象アプリ（各ケアアプリに表示・記録する対象者かのフラグ）
 // 既定は全てON（介護現場では対象者の取りこぼしを避けるため。対象外を明示的に外す運用）
 var APP_TARGETS=[['excretion','排泄記録'],['weight','体重記録'],['schedule','週間計画']];
@@ -407,6 +415,8 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   'lifeHistory','values',
   'complaint','wishSelf','wishFamily','goal','acp','dnar','strengths',
   'supportLog','medicalSupportLog','xref',
+  // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する
+  'hospitalized','hospitalizedAt',
   // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避
   // （介護保険証の有効期限・寝具リース・享年など）。画面には出さないが失わない。
   'unmappedRaw'];
@@ -441,7 +451,7 @@ function fetchWithTimeout(url,opt,ms){
 function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
 
 /* ═══════════ roster（軽量一覧） ═══════════ */
-var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height}]（後2つは normRosterRow 参照）
+var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height,hospitalized,dischargeDate}]（後4つは normRosterRow 参照）
 function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roster=JSON.parse(s)||[]}catch(e){roster=[]}}
 function saveRosterCache(){try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
 function refreshRoster(){
@@ -473,14 +483,22 @@ function _toTargetArr(v){
   if(typeof v==='string'&&v)return v.split(',').map(function(s){return s.trim()}).filter(Boolean);
   return null; // 未設定（フラグ無し）は null のまま＝消費側で「従来どおり表示」の no-op 扱い
 }
+/* 受け取った日付は YYYY-MM-DD 以外を '' として扱う（受信を信じない。書式違いを消費側へ流さない） */
+function _ymd(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v==null?'':v)) ? String(v) : ''; }
 function normRosterRow(r){
   var t=_toTargetArr(r.targetApps);
   /* ★getRoster(master.gs) に項目を足したら、ここにも足さないと黙って捨てられる。
      birthDate / height は一覧カード表示用（GAS 側 ROSTER_EXTRA と対応）。
      ★height はさらに共有名簿 su_residents_common へも配信する（writeCommonRoster）。
-       ここで拾い損ねると体重アプリの身長が空になり手入力へ戻るため落とさないこと。 */
+       ここで拾い損ねると体重アプリの身長が空になり手入力へ戻るため落とさないこと。
+     ★hospitalized（入院中）・dischargeDate（退去者のみ）も共有名簿へ配信する。
+       退去日は退去者の行にしか入らない（在籍者は ''）。 */
   var o={id:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,updatedAt:r.updatedAt||'',
-         birthDate:r.birthDate||'',height:r.height||''};
+         birthDate:r.birthDate||'',height:r.height||'',dischargeDate:_ymd(r.dischargeDate)};
+  /* hospitalized は GAS が配信してきた時だけ具現化する（能力宣言・multi-device-sync 原則7）。
+     旧GAS・旧キャッシュには項目自体が無く、ここで !!r.hospitalized と書くと「全員 false の明示配信」に
+     化けて、消費側の master常勝が現場の入院フラグを一括で倒す（デプロイ順の事故）。無い時は無い、を保つ。 */
+  if('hospitalized' in r)o.hospitalized=!!r.hospitalized;
   if(t)o.targetApps=t;
   return o;
 }
@@ -608,19 +626,27 @@ var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで�
    即時・オフライン可）。機微情報（医療・家族連絡先等）は一切含めない。
    ─ 連携契約 ─
      key: 'su_residents_common'
-     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active,height}] }
+     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active,height,hospitalized[,dischargeDate]}] }
      ★height（cm・未入力は ''）は 2026-07-31 追加。体重管理アプリの BMI 計算から
        二重入力をなくすために配信する。消費側の作法は「非空ならマスタ常勝で上書き／
        空なら消費側の手入力を温存」。身長は月単位でしか変わらないためマスタを正にできる。
+     ★hospitalized（true/false）は 2026-08 追加。入院中の真偽だけで病名等は含めない。
+       消費側の作法は「マスタ常勝で自アプリの入院フラグへ反映」。記録は一切消さない。
+     ★dischargeDate（YYYY-MM-DD）は active===false の行にだけ載せる（在籍者には載せない）。
+       消費側は active=false を退去の「正」として扱い、退去日はこの値を使う（無ければ当日）。
      ★ここに機微情報（病名・処方・家族連絡先・体重の実測値など）は足さない。
        この値は全アプリの端末 localStorage に残るため、増やすほど回収できなくなる。 */
 var COMMON_KEY='su_residents_common';
-var COMMON_FIELDS=['name','kana','room','gender','careLevel','height'];
+var COMMON_FIELDS=['name','kana','room','gender','careLevel','height','hospitalized'];
 function writeCommonRoster(){
   try{
     var residents=roster.map(function(r){
       var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,
-             height:r.height||''};   // 空文字＝マスタ未登録（消費側は手入力を温存する合図）
+             height:r.height||''};       // 空文字＝マスタ未登録（消費側は手入力を温存する合図）
+      // hospitalized はキーが実在する時だけ配信（無い＝旧GAS/旧キャッシュ。false 捏造で現場フラグを倒さない）
+      if('hospitalized' in r)e.hospitalized=!!r.hospitalized;
+      // 退去日は退去者の行にだけ載せる（在籍者に退去日を配らない）
+      if(e.active===false)e.dischargeDate=_ymd(r.dischargeDate);
       if(Array.isArray(r.targetApps))e.targetApps=r.targetApps.slice(); // 対象アプリのフラグも配信
       return e;
     });
@@ -707,6 +733,7 @@ function rcardHtml(r){
       (r.room?'<span class="tag room">'+esc(r.room)+'号室</span>':'')+
       (r.careLevel?'<span class="tag care">'+esc(r.careLevel)+'</span>':'')+
       (r.active===false?'<span class="tag out">退去</span>':'')+
+      (r.hospitalized?'<span class="tag hosp">🏥 入院中</span>':'')+
       (r.birthDate?'<span class="tag bd">'+esc(fmtJDate(r.birthDate))+'生</span>':'')+
       (r.height?'<span class="tag ht">'+esc(r.height)+'cm</span>':'')+
       (w?'<span class="tag wt" title="この端末の体重管理アプリにある最新値（同期状況により古い場合があります）">'+esc(w.weight)+'kg'+(w.on?'（'+esc(String(w.on).slice(0,10))+'）':'')+'</span>':'')+
@@ -769,6 +796,7 @@ var curResident=null;
 function openResident(id){
   showScreen('view');
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
+  paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
   apiGet({action:'getResident',id:id}).then(function(d){
     var rec=(d&&d.record)||d;
@@ -794,6 +822,8 @@ function renderView(r){
   var h='<div class="sheet">';
   // 安全ハイライト帯（現場で即確認すべき項目）
   var hl=[];
+  // 入院中は在不在そのものが変わるため先頭に出す（配薬・記録・食事の手配に直結）
+  if(r.hospitalized)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">🏥 入院中</span>');
   if(r.preferredName)hl.push('<span style="background:var(--pri-l);color:var(--pri-d);border-radius:999px;padding:3px 10px;font-weight:700">🙂 '+esc(r.preferredName)+'</span>');
   if(r.allergy)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ アレルギー: '+esc(r.allergy)+'</span>');
   if(r.infections)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ 感染症: '+esc(r.infections)+'</span>');
@@ -977,9 +1007,46 @@ function renderView(r){
   h+='<div class="sec"><div class="sec-lbl">対象</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対象アプリ</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">'+tBadges+'</div></div></div></div>';
   h+='</div>';
   $('viewBox').innerHTML=h;
+  paintHospBtn(r);
   // ジェノグラム欄クリック → 家系図アプリで作成/編集
   var gb=$('viewBox').querySelector('.geno-box');
   if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+}
+
+/* ═══════════ 入院/復帰トグル（状態だけの部分更新） ═══════════
+   氏名や医療情報は触らず、GAS の setState で hospitalized だけを書き換える。
+   排泄記録・週間計画も同じ状態を見る（共有名簿 su_residents_common 経由）ので、
+   ここでの変更は保存成功後に共有名簿へも即反映する。記録・履歴は一切消さない。 */
+function paintHospBtn(r){
+  var b=$('hospBtn'); if(!b)return;
+  if(!r||r.id==null){b.hidden=true;return}
+  var on=!!r.hospitalized;
+  b.hidden=false; b.disabled=false;
+  b.textContent=on?'🏠 退院（在籍へ戻す）':'🏥 入院にする';
+  b.setAttribute('aria-pressed',on?'true':'false');
+}
+function toggleHosp(){
+  if(!curResident||curResident.id==null)return;
+  if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
+  var next=!curResident.hospitalized, b=$('hospBtn');
+  if(b)b.disabled=true;
+  setSync('保存中…');
+  apiPost({action:'setState',id:curResident.id,hospitalized:next,src:'master'}).then(function(d){
+    if(!d||d.ok!==true)throw new Error('更新できませんでした');
+    curResident.hospitalized=!!d.hospitalized;
+    curResident.hospitalizedAt=d.hospitalizedAt||'';
+    // 一覧キャッシュと共有名簿へも即反映（他アプリはネット無しでも共有名簿を読む）
+    for(var i=0;i<roster.length;i++){
+      if(String(roster[i].id)===String(curResident.id)){roster[i].hospitalized=curResident.hospitalized;break}
+    }
+    saveRosterCache();writeCommonRoster();
+    setSync('保存OK','ok');
+    toast(curResident.hospitalized?'🏥 入院中にしました':'🏠 入院を解除しました');
+    renderView(curResident);renderRoster();
+  }).catch(function(e){
+    setSync('保存失敗','err');toast('⚠️ 変更に失敗: '+e.message);
+    if(b)b.disabled=false;
+  });
 }
 
 /* ═══════════ 編集フォーム ═══════════ */
@@ -1492,6 +1559,7 @@ function init(){
   $('backBtn').addEventListener('click',function(){showScreen('list')});
   $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
   $('printBtn').addEventListener('click',function(){window.print()});
+  $('hospBtn').addEventListener('click',toggleHosp);
   $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);
   $('syncClose').addEventListener('click',closeSync);
