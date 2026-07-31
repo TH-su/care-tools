@@ -5258,9 +5258,19 @@ function openResident(id){
       dischBtn.style.display = '';
       dischBtn.textContent = discharged ? '復帰' : '退去';
       dischBtn.classList.toggle('is-restore', discharged);
-      dischBtn.title = discharged
-        ? '退去状態を解除して通常の入居者に戻す'
-        : 'データを残したまま「退去」にし、各画面から非表示にする';
+      /* 入居者マスタに紐づく人（masterId あり）の在籍/退去はマスタが正本。
+         ここで切り替えても次の名簿同期でマスタ値へ戻される＝操作が消えたように見えるため、
+         押せなくして操作先を明示する。masterId の無いローカル入居者は従来どおり操作可。 */
+      const masterOwned = (r.masterId != null && r.masterId !== '');
+      dischBtn.disabled = masterOwned;
+      dischBtn.setAttribute('aria-disabled', masterOwned ? 'true' : 'false');
+      dischBtn.style.opacity = masterOwned ? '.5' : '';
+      dischBtn.style.cursor  = masterOwned ? 'not-allowed' : '';
+      dischBtn.title = masterOwned
+        ? '入居者マスタで操作してください'
+        : (discharged
+          ? '退去状態を解除して通常の入居者に戻す'
+          : 'データを残したまま「退去」にし、各画面から非表示にする');
     }
   } else {
     if(banner)   banner.style.display = 'none';
@@ -5472,6 +5482,9 @@ $('#mdDischarge').addEventListener('click', ()=>{
   if(!editingId) return;
   const r = residentById(editingId);
   if(!r){ toast('入居者が見つかりません','err'); return; }
+  /* マスタ紐づきの在籍状態はマスタが正本（ボタンも無効化してある）。
+     万一ここへ届いても書き換えずに操作先だけ案内する＝二重管理にしない。 */
+  if(r.masterId != null && r.masterId !== ''){ toast('入居者マスタで操作してください'); return; }
   const wasDischarged = isDischarged(r);
   if(wasDischarged){
     if(!confirm(`${r.name} の退去を取り消し、通常の入居者として復帰させます。よろしいですか？`)) return;

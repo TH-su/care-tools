@@ -2748,13 +2748,21 @@ function renderResidentList() {
       + (DB.residents.length ? '対象の利用者がいません（「対象外も表示」で全員表示）' : '利用者が登録されていません') + '</li>';
     return;
   }
+  /* 入居者マスタに紐づく利用者（masterId あり）の在籍/退去はマスタが正本。
+     ここで切り替えても次の名簿同期でマスタ値へ戻される＝操作が消えたように見えるため、
+     退去/復帰だけ押せなくして操作先を明示する（入院トグルは現場入口として従来どおり有効）。
+     masterId の無いローカル限定の利用者は従来どおり操作できる。 */
+  const csMasterOwned = r => (r.masterId != null && r.masterId !== '');
+  /* style 属性は1つしか効かない（重複指定は先勝ちで無視される）ので、色と一緒に組み立てる */
+  const csOutStyle = (r, color) => `style="color:${color}${csMasterOwned(r) ? ';opacity:.5;cursor:not-allowed' : ''}"`;
+  const csOutAttr = r => csMasterOwned(r) ? ' disabled aria-disabled="true" title="入居者マスタで操作してください"' : '';
   ul.innerHTML = vis.slice().sort(csResidentSort).map(r =>
     `<li class="res-item ${r.id === DB.currentResidentId ? 'active' : ''}">
       <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
       ${r.movedOut
-        ? `<button class="del-res" style="color:var(--pri)" onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
+        ? `<button class="del-res" ${csOutStyle(r, 'var(--pri)')}${csOutAttr(r)} onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
         : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
-           <button class="del-res" style="color:var(--g7)" onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>`}
+           <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>`}
       <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">✕</button>
     </li>`
   ).join('');
@@ -2854,6 +2862,9 @@ function removeResident(id) {
 function moveOutResident(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
+  /* マスタ紐づきの在籍状態はマスタが正本（ボタンも無効化してある）。
+     万一ここへ届いても書き換えずに操作先だけ案内する＝二重管理にしない。 */
+  if (res.masterId != null && res.masterId !== '') { showToast('入居者マスタで操作してください'); return; }
   if (!confirm(`「${res.name}」を退去にしますか？\n（一覧から非表示になります。計画データは保持され、「退去者・対象外も表示」から復帰できます）`)) return;
   res.movedOut = true;
   if (DB.currentResidentId === id) {
@@ -2879,6 +2890,8 @@ function toggleHospitalized(id) {
 function restoreResident(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
+  /* 復帰もマスタが正本（同上）。ローカルで戻しても次の同期で退去に戻される。 */
+  if (res.masterId != null && res.masterId !== '') { showToast('入居者マスタで操作してください'); return; }
   res.movedOut = false;
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   showToast(`「${res.name}」を復帰しました`);
