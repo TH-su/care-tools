@@ -105,6 +105,7 @@ input,select{font-family:inherit; font-size:15px}
 .cell .lab{font-size:11px; color:var(--g6); display:block; margin-bottom:2px}
 .cell .val{font-size:15px; word-break:break-word; white-space:pre-wrap}
 .cell .val.big{font-size:18px; font-weight:700}
+.cell .sub{display:block; font-size:10px; color:var(--g6); margin-top:1px}  /* 値の出所・測定日 */
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.6}
@@ -241,6 +242,8 @@ input,select{font-family:inherit; font-size:15px}
    フェイスシート（閲覧・印刷専用ビューア）
    - 正本は resident-master.html（編集はそちら）。本アプリは読み取り専用。
    - 名簿は共有キー su_residents_common を購読（書き込まない）。
+   - 体重・BMI は同一オリジンの体重管理アプリ（localStorage wtmgr_v1）の最新値を優先し、
+     無いときだけマスタの静的値（移行時点）を出す。wtmgr_v1 も読むだけで書き込まない。
    - 詳細は入居者マスタGAS（rmaster_cfg）から都度取得・端末キャッシュしない。
    - 事務所PC=全項目+A4印刷 / 現場タブレット=安全情報のみ（getSection facesheet_safe）。
    - 機微情報は localStorage に保存しない。console.log にPIIを出さない。描画は全て esc()。
@@ -296,6 +299,8 @@ function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)
 
 /* ═══════════ 名簿（su_residents_common 購読・read-only） ═══════════ */
 var roster=[]; // [{masterId,name,kana,room,gender,careLevel,active,targetApps?}]
+// ※共有キーには height も載る（2026-07-31 追加・体重アプリ向け）が、本アプリは身長も
+//   マスタGASの詳細レコードから取るため取り込まない（名簿は識別・検索用に限る）
 function loadCommonRoster(){
   try{
     var raw=localStorage.getItem(COMMON_KEY);if(!raw){roster=[];return false}
@@ -376,8 +381,115 @@ function openResident(id){
   }).catch(function(e){setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
 }
 
+/* ═══════════ 最新体重（体重管理アプリのデータを読むだけ・向こうは一切変更しない） ═══════════
+   同一オリジン（th-su.github.io）なので localStorage を直接読める。書き込みは一切しない。
+   ★体重の正本は体重管理アプリ。マスタ dataJson の weight は移行時の静的値で古い。
+   ★rec.weight は車椅子控除済みの正味体重（weight-record.html が保存時に計算済み）。補正しない。
+   ★実装は resident-master.html:521-601 の写し。名寄せ（masterId優先→氏名一致）と
+     同姓同名除外の仕様をズラすと別人の体重が付くため、あちらを直したらここも直す。 */
+var WTMGR_KEY='wtmgr_v1';
+/* 氏名の正規化は weight-record.html の suNormName と同一仕様（空白を除去するだけ） */
+function wtNormName(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+/* 最新判定のソートキーも weight-record.html の recDateKey と同一仕様 */
+function wtRecKey(r){ return (r.measuredOn||(r.yearMonth?r.yearMonth+'-01':''))+'#'+(r.createdAt||''); }
+
+var _wtRaw=null,_wtCache=null;
+function loadWeightSource(){
+  var empty={latest:{},midByUid:{},uidByName:{}};
+  var db,raw;
+  try{
+    raw=localStorage.getItem(WTMGR_KEY);
+    if(!raw){ _wtRaw=null;_wtCache=null; return empty; }
+    if(raw===_wtRaw && _wtCache) return _wtCache;   // 同じ生文字列なら再parseしない
+    db=JSON.parse(raw);
+  }catch(e){ return empty; }
+  if(!db||!Array.isArray(db.residents)||!Array.isArray(db.records)) return empty;
+
+  var midByUid={}, nameCount={}, uidOfName={};
+  db.residents.forEach(function(p){
+    if(!p||p.id==null) return;
+    if(p.masterId!=null&&p.masterId!=='') midByUid[String(p.id)]=String(p.masterId);
+    var n=wtNormName(p.name);
+    if(n){ nameCount[n]=(nameCount[n]||0)+1; uidOfName[n]=String(p.id); }
+  });
+  var latest={};
+  db.records.forEach(function(rec){
+    if(!rec||rec.residentId==null) return;
+    /* 体重アプリは数値化に失敗した体重を 0 に丸めて保存する。0kg を最新値として
+       拾わないよう、入力バリデーションと同じ 20〜150kg 以外は最新判定から除外する。 */
+    var wv=Number(rec.weight);
+    if(!isFinite(wv)||wv<20||wv>150) return;
+    var uid=String(rec.residentId), k=wtRecKey(rec);
+    if(!latest[uid]||k>latest[uid].k) latest[uid]={k:k,weight:wv,on:rec.measuredOn||rec.yearMonth||''};
+  });
+  /* ★同姓同名が複数いる氏名は名寄せに使わない（別人の体重が付くのを防ぐ） */
+  var uidByName={};
+  Object.keys(nameCount).forEach(function(n){ if(nameCount[n]===1) uidByName[n]=uidOfName[n]; });
+  _wtRaw=raw; _wtCache={latest:latest, midByUid:midByUid, uidByName:uidByName};
+  return _wtCache;
+}
+/* 名簿（su_residents_common の写し）に対して {masterId:{weight,on}} を作る */
+function buildWeightIndex(list){
+  var idx={}, src=loadWeightSource(), used={};
+  // ① masterId 一致（確実な紐付けを優先）
+  Object.keys(src.midByUid).forEach(function(uid){
+    var w=src.latest[uid], mid=src.midByUid[uid];
+    if(!w) return;
+    if(!idx[mid]||w.k>idx[mid].k) idx[mid]=w;   // 同じ masterId が2件あれば新しい方
+    used[uid]=true;
+  });
+  /* ★マスタ側の同姓同名も除外する。数えるのは必ず名簿全体（絞り込み後の list ではない） */
+  var dup={};
+  roster.forEach(function(r){ var n=wtNormName(r.name); if(n) dup[n]=(dup[n]||0)+1; });
+  // ② 氏名の正規化一致（体重アプリ側に masterId が無い人向け）
+  list.forEach(function(r){
+    var mid=String(r.masterId);
+    if(idx[mid]) return;
+    var n=wtNormName(r.name);
+    if(!n||dup[n]!==1) return;          // 名簿側に同名が複数 → 紐づけない
+    var uid=src.uidByName[n];
+    if(!uid||used[uid]) return;
+    var w=src.latest[uid];
+    if(w){ idx[mid]=w; used[uid]=true; }
+  });
+  return idx;
+}
+/* 表示中の1名分だけ取り出す。該当が無ければ null（＝マスタの静的値にフォールバック）。
+   体重アプリ未使用の端末・壊れたJSON・名寄せ不能でも例外を出さず null を返す。 */
+function latestWeightOf(masterId){
+  if(masterId==null||masterId==='') return null;
+  try{
+    var idx=buildWeightIndex(roster), k=String(masterId);
+    if(!Object.prototype.hasOwnProperty.call(idx,k)) return null;   // 'constructor' 等を拾わない
+    var w=idx[k];
+    return (w&&typeof w.weight==='number')?w:null;
+  }catch(e){ return null; }
+}
+/* 基本情報の「体重」「BMI」セルを作る。
+   体重管理アプリに記録があればそれを正として測定日を添え、BMI も最新体重で計算し直す。
+   記録が無い端末・未登録の入居者は従来どおりマスタの静的値（移行時点の値）を出す。 */
+function weightCells(r){
+  var lw=latestWeightOf(r&&r.id);
+  var wVal, wSub, bmi, bSub;
+  if(lw){
+    var on=lw.on?String(lw.on).slice(0,10):'';
+    wVal=lw.weight+' kg';
+    wSub=on?('最新 '+on+' 測定'):'体重管理アプリの最新値';
+    bmi=calcBMI(r.height,lw.weight);
+    bSub=bmi?'最新体重で計算':'';
+  }else{
+    wVal=r.weight?r.weight+' kg':'';
+    wSub=r.weight?'（移行時点）':'';
+    bmi=calcBMI(r.height,r.weight);
+    bSub=bmi?'（移行時点）':'';
+  }
+  return {weightCell:cell('体重',wVal,false,wSub), bmiCell:cell('BMI',bmi,false,bSub)};
+}
+
 /* ═══════════ 表示ヘルパ ═══════════ */
-function cell(lab,val,big){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span></div>'}
+/* sub は値の出所・測定日など小さな補足（省略時は従来と完全に同じ出力） */
+function cell(lab,val,big,sub){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span>'+
+  (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'</div>'}
 function full(lab,val){return'<div class="cell" style="border-right:none"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
 function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'</div><div class="sec-body">'+body+'</div></div>'}
 function sheet(inner){return'<div class="sheet">'+inner+'</div>'}
@@ -473,11 +585,12 @@ function renderOfficeView(r){
   ));
   // 基本・制度
   var chist=careHistHtml(r.careLevelHistory);
+  var wt=weightCells(r);   // 体重・BMI は体重管理アプリの最新値を優先（無ければマスタの静的値）
   P.basic=sheet(
     sec('基本情報',
       '<div class="row-cells">'+cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+'</div>'+
       '<div class="row-cells">'+cell('介護度',r.careLevel)+cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+'</div>'+
-      '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+cell('身長',r.height?r.height+' cm':'')+cell('体重',r.weight?r.weight+' kg':'')+cell('BMI',calcBMI(r.height,r.weight))+'</div>'
+      '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+cell('身長',r.height?r.height+' cm':'')+wt.weightCell+wt.bmiCell+'</div>'
     )+
     sec('保険・制度／連絡先',
       '<div class="row-cells">'+cell('電話（本人/居室）',r.phone)+cell('被保険者番号',r.insuredNo)+cell('保険者',r.insurer)+cell('認定日',fmtJDate(r.certDate))+'</div>'+

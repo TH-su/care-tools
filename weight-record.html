@@ -542,6 +542,9 @@ textarea{resize:vertical;min-height:60px}
 .bd-era-y:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
 .bd-era-hint{font-size:10px;color:var(--g6);margin-left:4px}
 
+/* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
+.md-src-note{margin-top:6px;font-size:11px;line-height:1.5;color:var(--g6)}
+
 /* 退去者表示 */
 .md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
   border-radius:8px;color:#e65100;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
@@ -1125,6 +1128,8 @@ select option.is-discharged{color:var(--g6)}
       <div class="fg">
         <label class="fl">身長 (cm) <span style="color:var(--g5);font-weight:400">— BMI計算に使用</span></label>
         <input type="number" id="mdHeight" step="0.1" min="80" max="220" inputmode="decimal" placeholder="例：150.5">
+        <!-- 入居者マスタに身長が登録されている人にだけ出す注記（openResident が textContent で設定） -->
+        <div class="md-src-note" id="mdHeightSrc" style="display:none"></div>
       </div>
       <div class="fg">
         <label class="fl">車椅子重量 (kg) <span style="color:var(--g5);font-weight:400">— 車椅子計測時に自動適用</span></label>
@@ -2255,6 +2260,9 @@ function normalizeAllRecords(){
    入居者マスタ連携（共通情報の自動コピー / 体重対象選択 / 端末ガード）
    - すべて no-op 安全：連携キー（su_residents_common / su_device_role）が
      無ければ従来挙動を一切変えない。既存の体重記録は決して削除しない。
+   - 取り込む項目: masterId / room / targetApps(weight) / height（2026-07-31 追加）。
+     身長はマスタが正（非空なら上書き＝マスタ常勝）。マスタが空の人だけ
+     このアプリでの手入力を残す（マスタ未整備の入居者を救うため）。
    ============================================================ */
 var SU_COMMON_KEY = 'su_residents_common';
 var SU_DEVICE_KEY = 'su_device_role';
@@ -2262,8 +2270,29 @@ var wrShowNonTargets = false;
 function suNormName(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
 /* 体重記録の対象者か（targetWeight===false のみ対象外。未設定/true は対象＝no-op安全） */
 function isWeightTarget(r){ return !r || r.targetWeight !== false; }
+/* 共有名簿の身長（cm・文字列）を数値へ。
+   マスタ側は自由入力のため "150.5" / "150.5cm" の両方がありうる → 最初の数値を採る。
+   入力欄と同じ 80〜220cm の範囲外・数値なし（"不明" 等）は採用しない＝
+   おかしな値でこのアプリの手入力身長を壊さない（安全側フォールバック）。 */
+function suParseHeight(v){
+  if(v == null) return null;
+  var s = String(v).trim();
+  if(!s) return null;
+  var m = s.match(/\d+(?:\.\d+)?/);
+  if(!m) return null;
+  var n = Math.round(Number(m[0]) * 10) / 10;
+  if(!isFinite(n) || n < 80 || n > 220) return null;
+  return n;
+}
+/* マスタ由来の身長を持つ入居者 {residentId: heightCm}。
+   mergeCommonWeight が実行のたびに作り直す“表示用の一時情報”で、DB には保存しない。
+   編集モーダルで「マスタから自動取得」の注記を出す判定だけに使う。 */
+var wrMasterHeight = {};
 /* 入居者マスタの共通情報を取り込み（体重記録アプリ用） */
 function mergeCommonWeight(){
+  /* 先に空へ倒す。共有名簿が読めない/壊れている回では「マスタ由来」の注記を出さない
+     （取り込まれていないのに『マスタから自動取得』と表示するのを防ぐ・安全側） */
+  wrMasterHeight = {};
   var raw; try{ raw = localStorage.getItem(SU_COMMON_KEY); }catch(e){ return false; }
   if(!raw) return false;
   var data; try{ data = JSON.parse(raw); }catch(e){ return false; }
@@ -2277,26 +2306,36 @@ function mergeCommonWeight(){
     var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
   });
   var changed = 0;
+  var masterH = {};   // このマージで判明した「マスタ由来の身長」（注記表示用・保存しない）
   list.forEach(function(c){
     if(!c || c.masterId == null || c.active === false) return;
     var tW = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('weight') >= 0) : undefined;
+    var mh = suParseHeight(c.height);   // null = マスタ未登録/不正値 → 手入力を温存
     var tgt = byMid[String(c.masterId)];
     if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
     if(tgt){
       if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
       if(c.room && _toSafeStr(tgt.room) !== _toSafeStr(c.room)){ tgt.room = _toSafeStr(c.room); changed++; }
       if(tW !== undefined && tgt.targetWeight !== tW){ tgt.targetWeight = tW; changed++; }
+      /* 身長はマスタ常勝。マスタが空（mh===null）のときは何もしない＝
+         このアプリで手入力した身長をマスタの空欄で消さない。 */
+      if(mh != null){
+        if(tgt.heightCm !== mh){ tgt.heightCm = mh; changed++; }
+        masterH[tgt.id] = mh;
+      }
     }else{
       if(tW === false) return;   // 体重対象外の master 入居者は取り込まない
       if(!c.room) return;        // 居室なしは取り込まない
       var nr = { id: uid(), name: _toSafeStr(c.name), room: _toSafeStr(c.room),
                  masterId: c.masterId, targetWeight: (tW===undefined?true:tW), _fromMaster: true,
                  createdAt: new Date().toISOString() };
+      if(mh != null){ nr.heightCm = mh; masterH[nr.id] = mh; }   // 初回取り込みでも BMI が出せるように
       normalizeResident(nr);
       DB.residents.push(nr);
       changed++;
     }
   });
+  wrMasterHeight = masterH;   // マスタで身長が消された人は注記も消える（作り直しにする理由）
   if(changed){ save(); }
   return changed > 0;
 }
@@ -4977,6 +5016,20 @@ $('#thrReset')?.addEventListener('click', ()=>{
 $('#cfgAdd').addEventListener('click', ()=> openResident(null));
 $$('#mdResident [data-close]').forEach(b=> b.addEventListener('click', ()=> $('#mdResident').classList.remove('on')));
 
+/* 身長欄の出所注記。
+   入居者マスタに身長がある人は mergeCommonWeight が毎回そこから上書きするため、
+   ここで直しても次の取り込みで戻る。編集自体は禁止しない（マスタ未整備の人がいるため）が、
+   戻る挙動を知らずに直すと「直したのに元へ戻る」不具合に見えるので必ず添える。 */
+function renderHeightSrcNote(id){
+  const el = $('#mdHeightSrc');
+  if(!el) return;
+  // 'constructor' 等の id でも Object.prototype の値を拾わないよう hasOwnProperty で照合する
+  const mh = (id != null && Object.prototype.hasOwnProperty.call(wrMasterHeight, id)) ? wrMasterHeight[id] : null;
+  if(typeof mh !== 'number'){ el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.textContent = `入居者マスタの登録値（${mh}cm）を自動取得しています。ここで変更しても、マスタに身長がある間は次回の取り込みでマスタの値に戻ります（変更は入居者マスタ側で）。`;
+}
+
 function openResident(id){
   editingId = id;
   const r = id ? residentById(id) : null;
@@ -4988,6 +5041,7 @@ function openResident(id){
   birthSetFromIso(r?.birthDate || '');
   $('#mdAdmit').value = r?.admitDate || '';
   $('#mdHeight').value = r?.heightCm ?? '';
+  renderHeightSrcNote(id);
   $('#mdChair').value = r?.wheelchairKg ?? '';
   $('#mdNote').value = r?.note || '';
   // load meal-form widgets from resident's saved settings

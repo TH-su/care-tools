@@ -441,7 +441,7 @@ function fetchWithTimeout(url,opt,ms){
 function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
 
 /* ═══════════ roster（軽量一覧） ═══════════ */
-var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt}]
+var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height}]（後2つは normRosterRow 参照）
 function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roster=JSON.parse(s)||[]}catch(e){roster=[]}}
 function saveRosterCache(){try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
 function refreshRoster(){
@@ -476,7 +476,9 @@ function _toTargetArr(v){
 function normRosterRow(r){
   var t=_toTargetArr(r.targetApps);
   /* ★getRoster(master.gs) に項目を足したら、ここにも足さないと黙って捨てられる。
-     birthDate / height は一覧カード表示用（GAS 側 ROSTER_EXTRA と対応）。 */
+     birthDate / height は一覧カード表示用（GAS 側 ROSTER_EXTRA と対応）。
+     ★height はさらに共有名簿 su_residents_common へも配信する（writeCommonRoster）。
+       ここで拾い損ねると体重アプリの身長が空になり手入力へ戻るため落とさないこと。 */
   var o={id:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,updatedAt:r.updatedAt||'',
          birthDate:r.birthDate||'',height:r.height||''};
   if(t)o.targetApps=t;
@@ -606,13 +608,19 @@ var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで�
    即時・オフライン可）。機微情報（医療・家族連絡先等）は一切含めない。
    ─ 連携契約 ─
      key: 'su_residents_common'
-     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active}] } */
+     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active,height}] }
+     ★height（cm・未入力は ''）は 2026-07-31 追加。体重管理アプリの BMI 計算から
+       二重入力をなくすために配信する。消費側の作法は「非空ならマスタ常勝で上書き／
+       空なら消費側の手入力を温存」。身長は月単位でしか変わらないためマスタを正にできる。
+     ★ここに機微情報（病名・処方・家族連絡先・体重の実測値など）は足さない。
+       この値は全アプリの端末 localStorage に残るため、増やすほど回収できなくなる。 */
 var COMMON_KEY='su_residents_common';
-var COMMON_FIELDS=['name','kana','room','gender','careLevel'];
+var COMMON_FIELDS=['name','kana','room','gender','careLevel','height'];
 function writeCommonRoster(){
   try{
     var residents=roster.map(function(r){
-      var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false};
+      var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,
+             height:r.height||''};   // 空文字＝マスタ未登録（消費側は手入力を温存する合図）
       if(Array.isArray(r.targetApps))e.targetApps=r.targetApps.slice(); // 対象アプリのフラグも配信
       return e;
     });
