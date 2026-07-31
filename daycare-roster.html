@@ -11,9 +11,10 @@
 <style>
 /* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
-   ★書き込みは利用者フィールドの昼食薬(lunchMed)と非表示(dcrHidden)の2点のみ（2026-07-23/27）。
-     いずれも writeResidentFlag（read-fresh＋rev競合ガードで当該1フィールドのみPUT）で全端末共通に同期し、
-     予定・時刻・辞書・rev運用や他フィールドには一切書き込まない＝他端末が編集中の週間計画を壊さない。 */
+   ★書き込みは利用者フィールドの昼食薬(lunchMed)と非表示(dcrHidden)の2点のみ（2026-07-23/27/28）。
+     楽観的UI＋背景保存（queueFlags/runSaver）で全端末共通に同期する。通常はrevキャッシュで1往復PUT、
+     版ずれ時のみ最新GET＋自分の未確定フラグを載せ直して再PUT（rev競合ガード維持）。
+     予定・時刻・辞書・rev運用や他フィールドには書き込まない＝他端末が編集中の週間計画を壊さない。 */
 :root {
   --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
   --ok: #2e7d32; --ng: #c62828;
@@ -534,14 +535,16 @@ async function gasCall(payload) {
 async function fetchRemote() {
   const t = syncTarget();
   if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
-  const j = await gasCall({ action: 'get', key: LS_KEY });   // ★読み取り（rev は使わない）
+  const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j.ok) throw new Error(j.error || '応答エラー');
+  careRev = Number(j.rev) || 0;   // 観測した版を保持＝以降の書込みを直接PUT(1往復)にできる
   return (j.data && Array.isArray(j.data.residents)) ? j.data : null;
 }
-// 書戻し用: 最新をrev付きで取得（get のたびに rev を受けて put の版ガードに使う）
+// 書戻し用: 最新をrev付きで取得（put の版ガードに使う）。careRev も更新する。
 async function getRemoteWithRev() {
   const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
+  careRev = Number(j.rev) || 0;
   return { data: (j.data && Array.isArray(j.data.residents)) ? j.data : null, rev: Number(j.rev) || 0 };
 }
 
@@ -560,68 +563,122 @@ function findServerResident_(residents, item) {
   }
   return r || null;
 }
-// 巻き戻し（権威データからの再描画）。renderAll が非表示モーダルの一覧も同期する（下記 renderAll 参照）。
-function revertUI_(db) { try { renderAll(db); } catch (e) {} }
-let flagWriting = false;
-/* 利用者フラグ（lunchMed＝昼食薬 / dcrHidden＝非表示）の共通保存＝本ツール唯一の書込み経路。
-   read-fresh＋rev競合ガードで care_schedule_v2 の「当該利用者の1フィールドだけ」を書き、全端末へ同期する。
-   常に最新サーバ状態を土台にPUTするため、他端末が編集中の週間計画（events等）や他フィールドを壊さない。
-   空データ時・通信失敗時・照合不能時は中止し、権威データから再描画して楽観的UIを巻き戻す（偽の「保存済み」を残さない）。 */
-async function writeResidentFlag(items, field, value, label) {
-  label = label || '設定';
-  if (flagWriting) { toast('前の保存を処理中です。完了後にお試しください', true); revertUI_(DB); return; }
-  if (busy) { toast('データ取得中です。少し待ってからお試しください', true); revertUI_(DB); return; }
-  const t = syncTarget();
-  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); revertUI_(DB); return; }
-  if (!items || !items.length) { revertUI_(DB); return; }
-  flagWriting = true;
-  // 保存中は両機能の操作要素を無効化（薬用チェック／非表示モーダル）。動的要素は再描画で作り直され再有効化される。
-  const staticBtns = [...document.querySelectorAll('#hideModal .modal-btn, #hideModal .modal-x')];
-  [...document.querySelectorAll('#chkMed input, #chkMed button, #hideList input'), ...staticBtns].forEach(x => { x.disabled = true; });
-  setSyncState('保存中…');
+/* ── 利用者フラグ（lunchMed＝昼食薬 / dcrHidden＝非表示）の楽観的保存＝本ツール唯一の書込み経路 ──
+   体感を軽くするため「楽観的UI＋背景保存」方式（2026-07-28）。従来は1トグルごとに GET＋PUT の2往復を
+   待ち、その間モーダルを固めていた（GAS遅延がそのまま体感になり非常に重い）。改善:
+     - トグル時は即座に手元(DB)へ反映し再描画して待たせない（体感≒描画数msのみ）。
+     - 保存は背景の単発ワーカー runSaver が行う。通常は careRev（保存済みサーバ版）で直接PUT＝1往復。
+       他端末が先に更新して版がずれた時だけ最新をGETし、自分の未確定フラグだけ載せ直して再PUT
+       （read-freshフォールバック）＝他端末が編集中の週間計画(events)や他フィールドを壊さない。
+     - 保存に失敗したら最新をGETして権威状態へ戻し、未確定の楽観的変更は破棄する（偽の保存済みを残さない）。
+   全端末共通・GAS無改造・rev競合ガードは不変。careRev は GET/PUT成功のたびに更新する。 */
+let careRev = 0;                 // 直近に観測したサーバ版（案A: 次回の直接PUTに使う）
+let saveDirty = false;          // 未送信の変更があるか
+let saverRunning = false;       // 背景ワーカーの単発ガード
+let flagSeq = 0;                // 各トグルに付ける単調増加の版（飛行中の再トグルを取りこぼさない）
+let saverRetry_ = null;        // 未送信が残った時の再送タイマー
+const pendingFlags = new Map(); // 未確定の変更 key="識別子|field" -> {rid,masterId,name,field,value,prev,seq,label}
+// 未送信が残った時、時間をおいて自動再送（通信断続・多重競合からの自己回復＝原則6）。
+function scheduleSaverRetry_() {
+  if (saverRetry_) return;
+  saverRetry_ = setTimeout(function () { saverRetry_ = null; if (pendingFlags.size) { saveDirty = true; runSaver(); } }, 5000);
+}
+// タブ/アプリを閉じる直前、未送信があればベストエフォートで最終送信（rev不一致はサーバ側で拒否＝安全）。
+function flushPendingBeacon_() {
   try {
-    let done = false, exhausted = false, missing = 0, lastFresh = null;
-    for (let attempt = 0; attempt < 3 && !done; attempt++) {
-      const fresh = await getRemoteWithRev();
-      const sdb = fresh.data;
-      if (!sdb || !Array.isArray(sdb.residents) || !sdb.residents.length) {
-        throw new Error('クラウドのデータが空のため中止しました');   // 空上書き保護（データを消さない）
+    if (!pendingFlags.size || !DB || !Array.isArray(DB.residents) || !DB.residents.length) return;
+    const t = syncTarget(); if (!t.endpoint || !navigator.sendBeacon) return;
+    const body = JSON.stringify({ action: 'put', key: LS_KEY, token: t.token, rev: careRev, data: DB });
+    navigator.sendBeacon(t.endpoint, new Blob([body], { type: 'text/plain;charset=utf-8' }));
+  } catch (e) {}
+}
+function pendingKey_(item, field) {
+  const idp = (item.masterId != null) ? ('m' + item.masterId)
+            : (item.rid != null) ? ('i' + item.rid)
+            : ('n' + suNormName_(item.name));
+  return idp + '|' + field;
+}
+// items の field を DB へ即時反映し、背景保存キューへ積む（楽観的UI）。
+function queueFlags(items, field, value, label) {
+  const t = syncTarget();
+  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); renderAll(DB); return; }
+  if (!DB || !Array.isArray(DB.residents)) { toast('データがありません', true); return; }
+  if (!items || !items.length) return;
+  let applied = 0;
+  for (const it of items) {
+    const r = findServerResident_(DB.residents, it);
+    if (!r) continue;                    // 手元に無い＝一覧が古い（下でまとめて通知）
+    const key = pendingKey_(it, field);
+    const existing = pendingFlags.get(key);
+    const prev = existing ? existing.prev : !!r[field];   // 未確定変更を始める前の値（＝直近確定値）を保持＝失敗時の巻き戻し用
+    r[field] = !!value;                  // ★即時反映
+    pendingFlags.set(key, { rid: it.rid, masterId: it.masterId, name: it.name, field: field, value: !!value, prev: prev, seq: ++flagSeq, label: label });
+    applied++;
+  }
+  if (applied < items.length) toast('一覧が更新されました。もう一度開き直してください', true);
+  if (!applied) { renderAll(DB); return; }   // 見た目だけ変わったチェックを権威状態へ戻す
+  renderAll(DB);                         // 即描画（行が即座に消える/戻る・モーダルも同期）
+  saveDirty = true;
+  runSaver();                            // 背景保存（待たない）
+}
+async function runSaver() {
+  if (saverRunning) return;
+  saverRunning = true;
+  if (saverRetry_) { clearTimeout(saverRetry_); saverRetry_ = null; }
+  setSyncState('保存中…');
+  let notFound = 0, lastLabel = '設定';
+  try {
+    // 取得(refresh)進行中はDB差し替えと競合するので終わるまで待つ（最大3秒）。
+    let w = 0; while (busy && w++ < 300) await new Promise(r => setTimeout(r, 10));
+    let guard = 0;
+    while (saveDirty && guard++ < 30) {
+      saveDirty = false;
+      notFound = 0;
+      // 未確定フラグを現DBへ確実に反映（refresh等でDBが差し替わっていてもPUTに必ず含める）
+      for (const p of pendingFlags.values()) { const r = findServerResident_(DB.residents, p); if (r) r[p.field] = !!p.value; else notFound++; lastLabel = p.label || lastLabel; }
+      const snapshot = JSON.parse(JSON.stringify(DB));
+      if (!snapshot || !Array.isArray(snapshot.residents) || !snapshot.residents.length) throw new Error('手元データが空のため中止');
+      const sentSeq = new Map(); for (const [k, v] of pendingFlags) sentSeq.set(k, v.seq);   // 送信時の版を控える
+      const res = await gasCall({ action: 'put', key: LS_KEY, rev: careRev, data: snapshot });
+      if (res && res.ok) {
+        careRev = Number(res.rev) || careRev;           // 案A: 次回も直接PUTできる
+        // 飛行中に再トグルされていない項目だけ確定として削除（seq一致）。再トグル分は残し次周で再送＝無言消失を防ぐ。
+        sentSeq.forEach((sq, k) => { const cur = pendingFlags.get(k); if (cur && cur.seq === sq) pendingFlags.delete(k); });
+      } else if (res && res.conflict) {
+        const f = await getRemoteWithRev();             // read-freshフォールバック（他端末の更新を取り込む）
+        if (!f.data || !Array.isArray(f.data.residents) || !f.data.residents.length) throw new Error('クラウドが空');
+        for (const p of pendingFlags.values()) { const r = findServerResident_(f.data.residents, p); if (r) r[p.field] = !!p.value; }
+        DB = f.data; careRev = f.rev; renderAll(DB);    // 併合結果を反映して再PUT
+        saveDirty = true;
+      } else {
+        throw new Error((res && res.error) || '保存に失敗しました');
       }
-      lastFresh = sdb;
-      let found = 0, changed = 0;
-      for (const it of items) {
-        const r = findServerResident_(sdb.residents, it);
-        if (r) { found++; if ((!!r[field]) !== (!!value)) { r[field] = !!value; changed++; } }   // 対象フィールドのみ変更
-      }
-      if (!found) throw new Error('対象の利用者がクラウドに見つかりません');
-      missing = items.length - found;   // 一部だけ照合できた場合は成功時に併記する（黙って減らさない）
-      if (!changed) { DB = sdb; done = true; break; }   // 既に目的の状態＝冪等成功
-      const res = await gasCall({ action: 'put', key: LS_KEY, rev: fresh.rev, data: sdb });
-      if (res && res.ok) { DB = sdb; done = true; break; }
-      if (res && res.conflict) { exhausted = (attempt === 2); continue; }   // 版ずれ＝再取得して再試行
-      throw new Error((res && res.error) || '保存に失敗しました');
     }
-    if (done) {
-      renderAll(DB);   // 非表示モーダルが開いていれば renderAll が一覧も権威データへ再同期する
+    renderAll(DB);   // 交錯した先行refresh等で表示がずれても、最終的にDB（＝送信済みの状態）へ揃える
+    if (!pendingFlags.size) {
       setSyncState('保存OK（全端末に同期）');
-      toast(missing ? (label + 'を保存しました。ただし' + missing + '名はクラウドで見つからず変更できていません')
-                    : (label + 'を保存しました（全端末に同期）'), !!missing);
-    } else if (exhausted) {
-      setSyncState('保存できず');
-      toast('他端末が更新中です。もう一度お試しください', true);
-      if (lastFresh) DB = lastFresh;   // 手元より新しい取得済みデータへ表示を揃える
-      revertUI_(DB);
+      toast((lastLabel || '設定') + 'を保存しました（全端末に同期）' + (notFound ? ('・' + notFound + '名は反映できませんでした') : ''), !!notFound);
+    } else {
+      setSyncState('未保存（再送待ち）');
+      scheduleSaverRetry_();   // 残った未送信は時間をおいて自動再送（原則6）
     }
   } catch (e) {
+    // 失敗: catch突入時点の未送信だけを対象に処理（回復中に積まれた新規は巻き添えにしない）。
+    const keys = [...pendingFlags.keys()];
+    let restored = false;
+    try { const f = await getRemoteWithRev(); if (f && f.data && Array.isArray(f.data.residents) && f.data.residents.length) { DB = f.data; careRev = f.rev; restored = true; } } catch (e2) {}
+    if (!restored) { for (const k of keys) { const p = pendingFlags.get(k); if (!p) continue; const r = findServerResident_(DB.residents, p); if (r) r[p.field] = !!p.prev; } }   // GET不可＝prevで巻き戻し
+    keys.forEach(k => pendingFlags.delete(k));
+    renderAll(DB);
     setSyncState('保存失敗');
-    toast('保存に失敗しました（' + (e && e.message ? e.message : '') + '）。表示を元に戻しました', true);
-    revertUI_(DB);   // 権威データ(DB)から再描画＝楽観的に変えた表示を巻き戻す
+    toast((lastLabel || '設定') + 'を保存できませんでした（' + (e && e.message ? e.message : '') + '）。変更を取り消しました', true);
+    if (pendingFlags.size) scheduleSaverRetry_();   // 回復GET中に積まれた新規があれば再送
   } finally {
-    flagWriting = false;
-    staticBtns.forEach(x => { x.disabled = false; });   // 静的なモーダルボタンは再描画で作り直されないため明示的に再有効化
+    saverRunning = false;
   }
 }
-// 昼食薬（従来の呼び出し元はこの薄いラッパを使う＝挙動不変）
+function writeResidentFlag(items, field, value, label) { queueFlags(items, field, value, label || '設定'); }
+// 昼食薬（従来の呼び出し元はこのラッパを使う）
 function writeLunchMed(items, value) { return writeResidentFlag(items, 'lunchMed', value, '昼食薬'); }
 
 /* ============================================================================
@@ -1147,8 +1204,8 @@ function renderMed(ppl) {
   addGroup(f2, '２階入居者');
   addGroup(f1, '１階入居者');
   if (f0.length) addGroup(f0, '階未設定');
-  // 変更は委譲（onchange の property 代入＝再描画で重複登録しない）。楽観的に色を反映してから保存し、
-  // 保存の成否は writeLunchMed 内の renderAll（権威データからの再描画）で確定させる。
+  // 変更は委譲（onchange の property 代入＝再描画で重複登録しない）。楽観的に色を反映し、
+  // 保存は writeLunchMed→queueFlags が背景で実行（成否は runSaver の再描画で権威状態へ収束）。
   chk.onchange = (e) => {
     const cb = e.target;
     if (!cb || cb.type !== 'checkbox' || cb.dataset.pid == null) return;
@@ -1419,13 +1476,16 @@ let busy = false;
 // silent=true: 起動時の自動取得（成功・失敗ともトーストを出さず、状態表示のみ更新する）
 async function refresh(silent) {
   if (busy) return;
-  // 昼食薬の保存中に再描画すると、保存待ちのチェック操作が黙って捨てられる（表示と保存の食い違い）
-  if (flagWriting) { if (!silent) toast('保存中です。完了後にお試しください', true); return; }
+  // 未送信の楽観的変更がある間は取得しない（サーバ版でDBを差し替えると未保存分を取りこぼす）。
+  // 背景ワーカーが送信中／キューに残っている間はスキップし、送信完了後の取得に委ねる。
+  if (saverRunning || pendingFlags.size) { if (!silent) toast('保存中です。完了後にお試しください', true); return; }
   busy = true;
   $('btnRefresh').disabled = true;
   setSyncState('取得中…');
   try {
     const remote = await fetchRemote();
+    // 取得の往復中にトグルが始まっていたら、この結果は破棄（未送信の楽観的変更をサーバ版で潰さない）。
+    if (saverRunning || pendingFlags.size) { setSyncState(DB && DB.residents ? ('端末表示（' + DB.residents.length + '名）') : ''); return; }
     if (remote) {
       DB = remote;
       renderAll(DB);
@@ -1453,6 +1513,7 @@ function updateHideButton() {
 let hideModalPrevFocus = null;
 function renderHideList() {
   const box = $('hideList');
+  const keepScroll = box.scrollTop;   // 背景保存/更新のたびに作り直しても閲覧位置を保つ（トグル時のガタつき防止）
   box.textContent = '';
   if (!HIDE_CANDIDATES.length) {
     box.appendChild(el('div', 'modal-empty', 'デイサービスの利用者がいません。'));
@@ -1470,6 +1531,7 @@ function renderHideList() {
     if (c.kana) lb.appendChild(el('span', 'mi-kana', c.kana));
     box.appendChild(lb);
   });
+  box.scrollTop = keepScroll;   // 閲覧位置を復元
 }
 // チェックボックス → 現 HIDE_CANDIDATES の該当者を安定IDで引く（idx依存を避ける）。見つからなければ null。
 function hideCandidateFromCb_(cb) {
@@ -1494,6 +1556,8 @@ function init() {
   $('btnRefresh').addEventListener('click', refresh);
   $('btnRefresh2').addEventListener('click', refresh);
   $('btnPrint').addEventListener('click', printNow);
+  // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
+  window.addEventListener('pagehide', flushPendingBeacon_);
   // アプリ間ジャンプ（既存 shift-app.html と同じく相対パス・別タブ）。
   // 本ツールは読み取り専用のため、遷移前に保存すべき状態は無い。
   $('btnMaster').addEventListener('click', () => window.open('resident-master.html', '_blank'));
@@ -1519,7 +1583,7 @@ function init() {
     if (!cb || cb.type !== 'checkbox') return;
     const c = hideCandidateFromCb_(cb);   // 安定IDで引く（並び替え耐性）
     if (!c) { toast('一覧が更新されました。もう一度開き直してください', true); renderHideList(); return; }
-    // dcrHidden を全端末共通で保存（writeResidentFlag が成否に応じて表とモーダルを権威データから再描画）
+    // dcrHidden を全端末共通で保存（queueFlags が即時反映＋背景保存。runSaver がモーダルも再同期）
     writeResidentFlag([{ rid: c.rid, masterId: c.masterId, name: c.name }], 'dcrHidden', cb.checked, '非表示設定');
   });
   $('hideShowAll').addEventListener('click', () => {
