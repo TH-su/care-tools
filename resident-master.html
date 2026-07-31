@@ -300,7 +300,8 @@ input,select,textarea{font-family:inherit; font-size:15px}
      GET  ?action=getSection&id=..&section=medical&token=..
      POST {action:'saveResident', token, record}    → upsert
      POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
-     GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N} 状態版数のみ（追い読み用・個人情報ゼロ）
+     GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N,srev:M} 版数のみ（追い読み用・個人情報ゼロ）
+                                                       rev=自GASの状態版数／srev=排泄記録GASが書いた時刻(meta!A1)
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── 設定（端末ローカル。機微情報ではない） ── */
@@ -459,7 +460,7 @@ function refreshRoster(){
   if(!CFG.url){setSync('未接続');renderRoster();return Promise.resolve(false)}
   setSync('同期中…');
   return apiGet({action:'getRoster'}).then(function(d){
-    if(d&&typeof d.stateRev==='number')srevSeen(d.stateRev); // 同梱の版数で追い読みの基準を更新（1往復で最新化）
+    if(d)srevSeen(d.stateRev,srevPickMeta(d));               // 同梱の版数2つで追い読みの基準を更新（1往復で最新化）
     var list=(d&&d.roster)||d||[];
     var emptyGuarded=false;
     if(Array.isArray(list)){
@@ -506,25 +507,33 @@ function normRosterRow(r){
 }
 
 /* ═══════════ stateRev 追い読み（状態伝播の高速化・自GASの版数照会） ═══════════
-   自分のGASの ?action=stateRev（トークン不要・応答は {ok:true,rev:整数} のみ＝個人情報ゼロ）を
+   自分のGASの ?action=stateRev（トークン不要・応答は {ok:true,rev:整数,srev:整数} のみ＝個人情報ゼロ）を
    表示中だけ60秒間隔で照会し、版数が前回と変わった時（＝他端末の入院/復帰・入退去）だけ
-   refreshRoster() を実行する。成功すれば writeCommonRoster が既存フローで発火し、
+   refreshRoster() を実行する。rev＝自GASの状態版数／srev＝排泄記録GASがマスタへ直接書いた時刻
+   （排泄記録発の入院・退院は rev を動かせないため、どちらか一方でも動いたら再取得する。
+   srev を返さない旧GASでは rev のみで判定＝従来動作のまま）。成功すれば writeCommonRoster が既存フローで発火し、
    同一オリジンの各アプリ（排泄・体重・週間計画・薬学）の共有名簿へ伝播する。
    URL未設定の端末は tick が無動作＝現状動作のまま。照会失敗・未対応GASは無音で
    現状動作へフォールバックし5分ごとに再プローブする（work-schedule のヘッドポーリングと同型）。 */
 var SREV_POLL_MS=60000;      // 表示中の照会間隔（60秒）
 var SREV_MIN_GAP_MS=10000;   // 直近照会から10秒未満はskip（interval と visible 復帰の重複防止）
 var SREV_REPROBE_MS=300000;  // 失敗・未対応時の再プローブ間隔（5分）
-var srevLast=null;           // 前回観測した版数（null=未観測。初回は基準の記録のみで再取得しない）
+var srevLast=null;           // 前回観測した rev（null=未観測。初回は基準の記録のみで再取得しない）
+var srevMetaLast=null;       // 前回観測した srev（null=未観測 or 旧GAS＝srev を返さない）
 var srevFailAt=0;            // 直近失敗時刻（0=正常。失敗中は5分休止→自動再プローブ）
 var srevBusy=false;          // 照会〜名簿再取得の直列化（多重発火防止）
 var srevAt=0;                // 直近照会の開始時刻（スロットル用）
 var srevBound=false;         // タイマー・リスナーの二重登録防止
 /* マスタGAS URL（https 以外・未設定は ''＝無効。壊れた保存値では通信しない） */
 function srevMasterUrl(){var u=String(CFG.url||'');return /^https:\/\//.test(u)?u:''}
-function srevRefresh(){return refreshRoster()}   // rev変化時: 既存関数（成功時 writeCommonRoster が既存フローで発火）
-/* getRoster 応答に同梱される stateRev で基準版数を更新（1往復で最新化・取得済みの変化を再照会で拾い直さない） */
-function srevSeen(rev){if(typeof rev==='number'&&isFinite(rev))srevLast=rev}
+function srevRefresh(){return refreshRoster()}   // 版数変化時: 既存関数（成功時 writeCommonRoster が既存フローで発火）
+/* 応答から srev（排泄記録GAS発の更新時刻）を取り出す。数値でなければ null＝旧GAS互換で rev のみ判定 */
+function srevPickMeta(d){return (d&&typeof d.srev==='number'&&isFinite(d.srev)&&d.srev>=0)?d.srev:null}
+/* getRoster / stateRev 応答に同梱される版数で基準を更新（1往復で最新化・取得済みの変化を再照会で拾い直さない） */
+function srevSeen(rev,sv){
+  if(typeof rev==='number'&&isFinite(rev))srevLast=rev;
+  if(typeof sv==='number'&&isFinite(sv)&&sv>=0)srevMetaLast=sv;
+}
 function srevTick(){
   if(document.hidden)return;                       // hidden 中はスキップ（visible 復帰時に即時1回）
   if(getDeviceRole()==='field')return;             // 現場端末では動かさない（init 前段ガードの防御的二重化）
@@ -544,13 +553,18 @@ function srevTick(){
       var d=null;try{d=JSON.parse(t)}catch(e){}
       if(!d||d.ok!==true||typeof d.rev!=='number'||!isFinite(d.rev)){srevFailAt=Date.now();return}   // 未対応GAS（{error:..}/HTML）
       srevFailAt=0;
+      var sv=srevPickMeta(d);
+      if(sv!==null&&srevMetaLast===null)srevMetaLast=sv;   // srev の初回基準（旧GAS応答では触らない）
       if(srevLast===null){srevLast=d.rev;return}   // 初回は基準の記録のみ（名簿は起動時に取得済み）
-      if(d.rev===srevLast)return;                  // 変化なし＝本体取得ゼロ
-      var prev=srevLast,seen=d.rev;
+      var revCh=(d.rev!==srevLast),metaCh=(sv!==null&&sv!==srevMetaLast);
+      if(!revCh&&!metaCh)return;                   // rev も srev も動いていない＝本体取得ゼロ
+      var prev=srevLast,seen=d.rev,prevM=srevMetaLast,seenM=sv;
       return Promise.resolve(srevRefresh()).then(function(ok){
-        /* 成功時のみ前進（失敗時は据え置き＝次tickで自動再試行）。getRoster 応答の stateRev
+        /* 成功時のみ前進（失敗時は据え置き＝次tickで自動再試行）。getRoster 応答の版数
            （srevSeen）が先に前進させていたら上書きしない（新しい観測を古い値へ戻さない） */
-        if(ok!==false&&srevLast===prev)srevLast=seen;
+        if(ok===false)return;
+        if(srevLast===prev)srevLast=seen;
+        if(seenM!==null&&srevMetaLast===prevM)srevMetaLast=seenM;
       });
     })
     .catch(function(e){srevFailAt=Date.now()})     // 通信失敗も無音フォールバック（現状動作のまま）

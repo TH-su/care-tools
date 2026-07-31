@@ -2541,8 +2541,11 @@ async function wrSyncProxyRoster(opts){
   }finally{ _wrProxyBusy = false; }
 }
 /* ── stateRev 連動の即応名簿更新（2026-08-01 追加・状態伝播の高速化 S4） ──
-   入居者マスタGAS の ?action=stateRev（トークン不要・応答は {ok:true,rev:整数} のみ＝個人情報ゼロ）を
+   入居者マスタGAS の ?action=stateRev（トークン不要・応答は {ok:true,rev:整数,srev:整数} のみ＝個人情報ゼロ）を
    表示中だけ60秒間隔で照会し、版数が前回から動いた時だけ名簿を取り直す。
+   - rev＝マスタGAS自身の状態版数／srev＝排泄記録GASがマスタへ直接書いた時刻（meta!A1）。
+     排泄記録発の入院・退院は rev を動かせないため **どちらか一方でも動いたら** 取り直す。
+     srev を返さない旧マスタGASでは rev のみで判定＝従来動作のまま
    - rmaster_cfg（同一オリジン localStorage・書き手は入居者マスタ）に url がある端末のみ動作。
      無い端末は通信ゼロ＝従来動作のまま（完全フォールバック）
    - 版数変化時: rmaster_cfg にトークンがあれば入居者マスタ getRoster を直接取得し、
@@ -2557,11 +2560,16 @@ var WR_SREV_INTERVAL_MS = 60000;         // 表示中の照会間隔
 var WR_SREV_TIMEOUT_MS  = 5000;          // stateRev 照会のタイムアウト
 var WR_SREV_MIN_GAP_MS  = 10000;         // 照会の最短間隔（visible 復帰の連打・タイマー重複を抑止）
 var WR_SREV_REPROBE_MS  = 300000;        // 失敗/未対応 latch 後の再プローブ間隔（5分）
-var _wrSrevLast = null;                  // 取り込み済みの版数（null=未観測。初回は基準を覚えるだけ）
+var _wrSrevLast = null;                  // 取り込み済みの rev（null=未観測。初回は基準を覚えるだけ）
+var _wrSrevMetaLast = null;              // 取り込み済みの srev（null=未観測 or 旧マスタGAS＝srev を返さない）
 var _wrSrevBusy = false;                 // 照会・取得の多重防止
 var _wrSrevOk = null;                    // false=未対応/失敗の latch（5分ごとに再プローブ）
 var _wrSrevFailAt = 0;                   // latch した時刻（再プローブ判定）
 var _wrSrevCheckAt = 0;                  // 最後に照会を開始した時刻（最短間隔用）
+/* 応答から srev（排泄記録GAS発の更新時刻）を取り出す。数値でなければ null＝旧マスタGAS互換で rev のみ判定 */
+function wrPickSrev(j){
+  return (j && typeof j.srev === 'number' && isFinite(j.srev) && j.srev >= 0) ? j.srev : null;
+}
 /* 入居者マスタの接続設定を読む。url が無ければ null＝この機能は完全に無動作。 */
 function wrMasterCfg(){
   var s; try{ s = localStorage.getItem(WR_RMASTER_CFG_KEY); }catch(e){ return null; }
@@ -2618,12 +2626,15 @@ async function wrStateRevTick(){
     /* 旧GAS は {error:'認証エラー'} 等を返す＝ok/rev を持たない → 未対応として latch */
     if(!j || j.ok !== true || typeof j.rev !== 'number' || !isFinite(j.rev)) throw new Error('unsupported');
     _wrSrevOk = true;
+    var sv = wrPickSrev(j);
+    if(sv !== null && _wrSrevMetaLast === null) _wrSrevMetaLast = sv;   // srev の初回基準（旧マスタGAS応答では触らない）
     if(_wrSrevLast === null){ _wrSrevLast = j.rev; return; }   // 初回は基準を覚えるだけ
-    if(_wrSrevLast === j.rev) return;                          // 変化なし＝名簿は取らない
+    var revCh = (_wrSrevLast !== j.rev), metaCh = (sv !== null && sv !== _wrSrevMetaLast);
+    if(!revCh && !metaCh) return;                              // rev も srev も動いていない＝名簿は取らない
     var applied = false;
     if(cfg.token) applied = await wrFetchMasterRoster(cfg);    // トークンがあれば master 直接を優先
     if(!applied) applied = (await wrSyncProxyRoster({ force:true })) === true;   // 既存の代理経路（スロットル・バイパス）
-    if(applied) _wrSrevLast = j.rev;
+    if(applied){ _wrSrevLast = j.rev; if(sv !== null) _wrSrevMetaLast = sv; }
   }catch(e){
     _wrSrevOk = false; _wrSrevFailAt = Date.now();   // 無音フォールバック（console にも出さない）
   }finally{

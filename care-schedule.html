@@ -2722,8 +2722,11 @@ function csPushMasterState(masterId, hospitalized){
   return true;
 }
 /* ── stateRev 連携（凍結仕様S4・状態伝播の高速化） ──
-   入居者マスタGASの版数 ?action=stateRev（トークン不要・応答は {ok:true,rev:N} のみ・個人情報ゼロ）を
+   入居者マスタGASの版数 ?action=stateRev（トークン不要・応答は {ok:true,rev:N,srev:M} のみ・個人情報ゼロ）を
    表示中のみ60秒間隔で照会し、前回値と変わった時だけ名簿を取り直して鏡映する（最大10分→60〜90秒）。
+   - rev＝マスタGAS自身の状態版数／srev＝排泄記録GASがマスタへ直接書いた時刻（meta!A1）。
+     排泄記録発の入院・退院は rev を動かせないため **どちらか一方でも動いたら** 取り直す。
+     srev を返さない旧マスタGASでは rev のみで判定＝従来動作のまま
    - rmaster_cfg（url）の無い端末は何もしない＝現状動作のまま（フォールバック不変）
    - 照会失敗（未対応GAS含む）は無音で現状動作へ＋5分ごとに再プローブ（ワースケ head ポーリングの型）
    - 共有名簿 su_residents_common へは一切書かない（唯一の書き手=resident-master 契約の厳守） */
@@ -2733,11 +2736,16 @@ var CS_STATEREV_REPROBE_MS        = 300000;   // 失敗フォールバック中�
 var CS_STATEREV_PROBE_TIMEOUT_MS  = 5000;     // stateRev 照会のタイムアウト（fetch 1本）
 var CS_STATEREV_ROSTER_TIMEOUT_MS = 15000;    // getRoster 直取得のタイムアウト（resident-master apiPost と同水準）
 var csStateRevLast_    = null;   // 取り込み済み基準の rev（取り込み成功時のみ前進＝失敗は次tickで自動リトライ）
+var csStateSrevLast_   = null;   // 取り込み済み基準の srev（null=未観測 or 旧マスタGAS＝srev を返さない）
 var csStateRevOk_      = null;   // null=未判定 / true=対応 / false=失敗フォールバック中（5分後に再プローブ）
 var csStateRevProbeAt_ = 0;      // フォールバックへ落ちた時刻（再プローブ判定）
 var csStateRevAt_      = 0;      // 直近照会時刻（10秒スロットル）
 var csStateRevBusy_    = false;  // 照会〜取り込みの多重起動防止
 var csStateRevCommon_  = null;   // 直近取得成功の su_residents_common 相当 {at,data}（メモリのみ・LSへ書かない）
+/* 応答から srev（排泄記録GAS発の更新時刻）を取り出す。数値でなければ null＝旧マスタGAS互換で rev のみ判定 */
+function csPickSrev_(j){
+  return (j && typeof j.srev === 'number' && isFinite(j.srev) && j.srev >= 0) ? j.srev : null;
+}
 /* タイムアウト付き fetch（resident-master fetchWithTimeout と同型） */
 function csFetchTimeout_(url, opt, ms){
   return new Promise(function(resolve, reject){
@@ -2794,31 +2802,36 @@ function csStateRevTick_(){
           csStateRevOk_ = false; csStateRevProbeAt_ = Date.now(); csStateRevBusy_ = false; return;
         }
         csStateRevOk_ = true;
+        var sv = csPickSrev_(j);
+        if (sv !== null && csStateSrevLast_ === null) csStateSrevLast_ = sv;   // srev の初回基準（旧マスタGAS応答では触らない）
         if (csStateRevLast_ === null){ csStateRevLast_ = rev; csStateRevBusy_ = false; return; }  // 初回は基準確定のみ（ワースケ baseRev 型）
-        if (rev === csStateRevLast_){ csStateRevBusy_ = false; return; }                          // 変化なし＝ここで終了（転送ゼロ）
-        csStateRevRefresh_(cfg, rev);                  // 変化あり: 名簿を取り直して取り込み
+        var revCh = (rev !== csStateRevLast_), metaCh = (sv !== null && sv !== csStateSrevLast_);
+        if (!revCh && !metaCh){ csStateRevBusy_ = false; return; }                                // rev も srev も動いていない＝ここで終了（転送ゼロ）
+        csStateRevRefresh_(cfg, rev, sv);              // どちらかが変化: 名簿を取り直して取り込み
       })
       .catch(function(){                               // 通信失敗/タイムアウト/非JSON: 無音フォールバック
         csStateRevOk_ = false; csStateRevProbeAt_ = Date.now(); csStateRevBusy_ = false;
       });
   }catch(e){ csStateRevBusy_ = false; }
 }
-/* rev 変化時の名簿再取り込み。
+/* 版数（rev / srev）変化時の名簿再取り込み。
    - トークンあり: getRoster を直接取得し su_residents_common 相当をメモリ内で組み立ててマージ
-     （共有名簿への書き込みはしない）。応答同梱の stateRev（S1）があれば1往復で基準を前進。
+     （共有名簿への書き込みはしない）。応答同梱の stateRev / srev があれば1往復で基準を前進。
    - トークン無し/取得失敗: 共有名簿(LS)からの再マージのみ＝現状動作の範囲。
-     取得失敗時は rev を採用しない＝次tickで自動リトライ（ワースケ「取り込み済みrev基準」の型） */
-function csStateRevRefresh_(cfg, rev){
+     取得失敗時は版数を採用しない＝次tickで自動リトライ（ワースケ「取り込み済みrev基準」の型） */
+function csStateRevRefresh_(cfg, rev, srev){
   function applyChanged(changed){
     if (changed){ try{ populateResidentSelect(); renderAll(); }catch(e){} }   // adopt() と同じ反映経路
   }
   if (!cfg.token){
-    /* トークン無し端末は直取得できない。LS再マージだけ行い rev を採用（変化時のみ動く）。
+    /* トークン無し端末は直取得できない。LS再マージだけ行い版数を採用（変化時のみ動く）。
        LSの鮮度は同一端末の resident-master 次第＝現状動作と同じ */
     var ch0 = false;
     try{ ch0 = mergeCommonSchedule(); }catch(e0){}
     applyChanged(ch0);
-    csStateRevLast_ = rev; csStateRevBusy_ = false; return;
+    csStateRevLast_ = rev;
+    if (srev != null) csStateSrevLast_ = srev;
+    csStateRevBusy_ = false; return;
   }
   var sep = cfg.url.indexOf('?') >= 0 ? '&' : '?';
   csFetchTimeout_(cfg.url + sep + 'action=getRoster&token=' + encodeURIComponent(cfg.token),
@@ -2841,9 +2854,12 @@ function csStateRevRefresh_(cfg, rev){
       var ch2b = false;
       try{ ch2b = mergeCommonSchedule(); }catch(e2b){}
       applyChanged(ch2 || ch2b);
-      /* getRoster 応答同梱の stateRev があれば1往復で基準を前進（照会〜取得の間の更新も拾う）。
-         未同梱（旧GAS）は照会時の rev を基準にする */
+      /* getRoster 応答同梱の stateRev / srev があれば1往復で基準を前進（照会〜取得の間の更新も拾う）。
+         未同梱（旧GAS）は照会時の値を基準にする（srev は未観測のまま null を保つ） */
       csStateRevLast_ = (d && typeof d.stateRev === 'number' && isFinite(d.stateRev)) ? d.stateRev : rev;
+      var dsv = csPickSrev_(d);
+      if (dsv !== null) csStateSrevLast_ = dsv;
+      else if (srev != null) csStateSrevLast_ = srev;
       csStateRevBusy_ = false;
     })
     .catch(function(){                                 // 取得失敗: LS再マージのみ・rev未採用＝次tickで自動リトライ
