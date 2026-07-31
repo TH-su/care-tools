@@ -300,6 +300,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
      GET  ?action=getSection&id=..&section=medical&token=..
      POST {action:'saveResident', token, record}    → upsert
      POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
+     GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N} 状態版数のみ（追い読み用・個人情報ゼロ）
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── 設定（端末ローカル。機微情報ではない） ── */
@@ -458,6 +459,7 @@ function refreshRoster(){
   if(!CFG.url){setSync('未接続');renderRoster();return Promise.resolve(false)}
   setSync('同期中…');
   return apiGet({action:'getRoster'}).then(function(d){
+    if(d&&typeof d.stateRev==='number')srevSeen(d.stateRev); // 同梱の版数で追い読みの基準を更新（1往復で最新化）
     var list=(d&&d.roster)||d||[];
     var emptyGuarded=false;
     if(Array.isArray(list)){
@@ -501,6 +503,66 @@ function normRosterRow(r){
   if('hospitalized' in r)o.hospitalized=!!r.hospitalized;
   if(t)o.targetApps=t;
   return o;
+}
+
+/* ═══════════ stateRev 追い読み（状態伝播の高速化・自GASの版数照会） ═══════════
+   自分のGASの ?action=stateRev（トークン不要・応答は {ok:true,rev:整数} のみ＝個人情報ゼロ）を
+   表示中だけ60秒間隔で照会し、版数が前回と変わった時（＝他端末の入院/復帰・入退去）だけ
+   refreshRoster() を実行する。成功すれば writeCommonRoster が既存フローで発火し、
+   同一オリジンの各アプリ（排泄・体重・週間計画・薬学）の共有名簿へ伝播する。
+   URL未設定の端末は tick が無動作＝現状動作のまま。照会失敗・未対応GASは無音で
+   現状動作へフォールバックし5分ごとに再プローブする（work-schedule のヘッドポーリングと同型）。 */
+var SREV_POLL_MS=60000;      // 表示中の照会間隔（60秒）
+var SREV_MIN_GAP_MS=10000;   // 直近照会から10秒未満はskip（interval と visible 復帰の重複防止）
+var SREV_REPROBE_MS=300000;  // 失敗・未対応時の再プローブ間隔（5分）
+var srevLast=null;           // 前回観測した版数（null=未観測。初回は基準の記録のみで再取得しない）
+var srevFailAt=0;            // 直近失敗時刻（0=正常。失敗中は5分休止→自動再プローブ）
+var srevBusy=false;          // 照会〜名簿再取得の直列化（多重発火防止）
+var srevAt=0;                // 直近照会の開始時刻（スロットル用）
+var srevBound=false;         // タイマー・リスナーの二重登録防止
+/* マスタGAS URL（https 以外・未設定は ''＝無効。壊れた保存値では通信しない） */
+function srevMasterUrl(){var u=String(CFG.url||'');return /^https:\/\//.test(u)?u:''}
+function srevRefresh(){return refreshRoster()}   // rev変化時: 既存関数（成功時 writeCommonRoster が既存フローで発火）
+/* getRoster 応答に同梱される stateRev で基準版数を更新（1往復で最新化・取得済みの変化を再照会で拾い直さない） */
+function srevSeen(rev){if(typeof rev==='number'&&isFinite(rev))srevLast=rev}
+function srevTick(){
+  if(document.hidden)return;                       // hidden 中はスキップ（visible 復帰時に即時1回）
+  if(getDeviceRole()==='field')return;             // 現場端末では動かさない（init 前段ガードの防御的二重化）
+  if(srevBusy)return;
+  var mu=srevMasterUrl();if(!mu)return;            // URL未設定の端末は現状動作のまま
+  var gap=Date.now()-srevAt;
+  if(gap>=0&&gap<SREV_MIN_GAP_MS)return;           // 負値（端末時計の巻き戻し）では締め出さない
+  if(srevFailAt){
+    var fg=Date.now()-srevFailAt;
+    if(fg>=0&&fg<SREV_REPROBE_MS)return;           // 失敗後は5分休止してから再プローブ
+  }
+  srevBusy=true;srevAt=Date.now();
+  var url=mu+(mu.indexOf('?')>=0?'&':'?')+'action=stateRev';   // トークンを付けない（版数のみ・シートも開かない）
+  return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},5000)
+    .then(function(r){return r.text()})
+    .then(function(t){
+      var d=null;try{d=JSON.parse(t)}catch(e){}
+      if(!d||d.ok!==true||typeof d.rev!=='number'||!isFinite(d.rev)){srevFailAt=Date.now();return}   // 未対応GAS（{error:..}/HTML）
+      srevFailAt=0;
+      if(srevLast===null){srevLast=d.rev;return}   // 初回は基準の記録のみ（名簿は起動時に取得済み）
+      if(d.rev===srevLast)return;                  // 変化なし＝本体取得ゼロ
+      var prev=srevLast,seen=d.rev;
+      return Promise.resolve(srevRefresh()).then(function(ok){
+        /* 成功時のみ前進（失敗時は据え置き＝次tickで自動再試行）。getRoster 応答の stateRev
+           （srevSeen）が先に前進させていたら上書きしない（新しい観測を古い値へ戻さない） */
+        if(ok!==false&&srevLast===prev)srevLast=seen;
+      });
+    })
+    .catch(function(e){srevFailAt=Date.now()})     // 通信失敗も無音フォールバック（現状動作のまま）
+    .then(function(){srevBusy=false});
+}
+function srevStart(){
+  if(srevBound)return;
+  srevBound=true;
+  setInterval(function(){try{srevTick()}catch(e){}},SREV_POLL_MS);
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden){try{srevTick()}catch(e){}}   // 復帰時に即時1回（10秒スロットルは tick 内蔵）
+  });
 }
 
 /* ═══════════ アプリ横断リンク（ハブ＆スポーク） ═══════════
@@ -1501,6 +1563,7 @@ function loadData(){
   loadRosterCache();renderRoster();
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
   if(CFG.url)refreshRoster();else setSync('未接続');
+  srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
 }
 
 /* ═══════════ 同期設定 ═══════════ */

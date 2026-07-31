@@ -2511,12 +2511,17 @@ function mergeProxyRoster(list){
   wrMirrorToast(st);
   return changed;
 }
-/* 代理名簿を取得して取り込む。失敗しても体重記録の同期は止めない（安全側フォールバック）。 */
-async function wrSyncProxyRoster(){
+/* 代理名簿を取得して取り込む。失敗しても体重記録の同期は止めない（安全側フォールバック）。
+   opts.force=true は stateRev 連動の即時実行（wrStateRevTick 専用）:
+   10分スロットルだけをバイパスし、戻り値は「取得成功か」（変化0件でも true）を返す
+   ＝版数基準を前進させてよいかの判定に使う。通常呼び出し（引数なし）の挙動・
+   戻り値（変化があったか）は従来のまま変えない。 */
+async function wrSyncProxyRoster(opts){
+  var force = !!(opts && opts.force);
   if(_wrProxyBusy) return false;
   var cred = wrProxyCreds();
   if(!cred) return false;              // 接続情報なし＝通信もスロットル記録もしない
-  if(wrProxyThrottled()) return false; // 前回成功から10分以内
+  if(!force && wrProxyThrottled()) return false; // 前回成功から10分以内（force は即時）
   _wrProxyBusy = true;
   try{
     var url = cred.url + (cred.url.indexOf('?') >= 0 ? '&' : '?')
@@ -2529,12 +2534,110 @@ async function wrSyncProxyRoster(){
     try{ localStorage.setItem(WR_PROXY_TS_KEY, String(Date.now())); }catch(e){}
     var changed = mergeProxyRoster(j.roster);
     if(changed) wrRefreshViews();
-    return changed > 0;
+    return force ? true : (changed > 0);   // force は「取得成功」を返す（版数基準の前進判定用）
   }catch(e){
     console.warn('[wtmgr] 代理名簿の取得に失敗（体重記録の同期は継続）:', e && e.message);
     return false;
   }finally{ _wrProxyBusy = false; }
 }
+/* ── stateRev 連動の即応名簿更新（2026-08-01 追加・状態伝播の高速化 S4） ──
+   入居者マスタGAS の ?action=stateRev（トークン不要・応答は {ok:true,rev:整数} のみ＝個人情報ゼロ）を
+   表示中だけ60秒間隔で照会し、版数が前回から動いた時だけ名簿を取り直す。
+   - rmaster_cfg（同一オリジン localStorage・書き手は入居者マスタ）に url がある端末のみ動作。
+     無い端末は通信ゼロ＝従来動作のまま（完全フォールバック）
+   - 版数変化時: rmaster_cfg にトークンがあれば入居者マスタ getRoster を直接取得し、
+     既存の mergeProxyRoster（noAdd・氏名/居室/退去/入院のみ反映）でメモリ内マージ。
+     トークン無し・直接取得失敗は既存の代理名簿取得（wrSyncProxyRoster）を
+     スロットル・バイパスで実行＝マージ規則は両経路とも既存のまま変えない
+   - su_residents_common には書かない（唯一の書き手＝入居者マスタの連携契約）
+   - 照会失敗（stateRev 未対応の旧GAS含む）: 無音で従来動作へ＋5分ごとに再プローブ
+     （work-schedule のヘッドポーリング latch と同型） */
+var WR_RMASTER_CFG_KEY = 'rmaster_cfg';  // 入居者マスタの接続設定（購読のみ・書き込まない）
+var WR_SREV_INTERVAL_MS = 60000;         // 表示中の照会間隔
+var WR_SREV_TIMEOUT_MS  = 5000;          // stateRev 照会のタイムアウト
+var WR_SREV_MIN_GAP_MS  = 10000;         // 照会の最短間隔（visible 復帰の連打・タイマー重複を抑止）
+var WR_SREV_REPROBE_MS  = 300000;        // 失敗/未対応 latch 後の再プローブ間隔（5分）
+var _wrSrevLast = null;                  // 取り込み済みの版数（null=未観測。初回は基準を覚えるだけ）
+var _wrSrevBusy = false;                 // 照会・取得の多重防止
+var _wrSrevOk = null;                    // false=未対応/失敗の latch（5分ごとに再プローブ）
+var _wrSrevFailAt = 0;                   // latch した時刻（再プローブ判定）
+var _wrSrevCheckAt = 0;                  // 最後に照会を開始した時刻（最短間隔用）
+/* 入居者マスタの接続設定を読む。url が無ければ null＝この機能は完全に無動作。 */
+function wrMasterCfg(){
+  var s; try{ s = localStorage.getItem(WR_RMASTER_CFG_KEY); }catch(e){ return null; }
+  if(!s) return null;
+  var o; try{ o = JSON.parse(s); }catch(e){ return null; }
+  var u = (o && typeof o.url === 'string') ? o.url.trim() : '';
+  if(!u || u.indexOf('https://') !== 0) return null;   // 壊れた保存値では通信しない（安全側）
+  var t = (o && o.token != null) ? String(o.token).trim() : '';
+  return { url: u, token: t };
+}
+/* 入居者マスタ getRoster を直接取得し、代理名簿と同じ規則（mergeProxyRoster）で取り込む。
+   応答行はホワイトリスト写像で masterId 基準へ寄せる（受信を信じない）。キーの有無で意味が
+   変わる項目（active / hospitalized）は、応答が値を持つ時だけ渡す＝旧サーバーでローカル温存。
+   戻り値: 取得と取り込みが完了したら true（変化0件でも true）／失敗は false（呼び出し元が代理経路へ）。 */
+async function wrFetchMasterRoster(cfg){
+  try{
+    var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?')
+            + 'action=getRoster&token=' + encodeURIComponent(cfg.token);
+    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    if(!r.ok) return false;
+    var j = await r.json();
+    if(!j || j.error || !Array.isArray(j.roster)) return false;
+    var rows = [];
+    j.roster.forEach(function(c){
+      if(!c || c.id == null || c.id === '') return;
+      var row = { masterId: c.id, name: c.name || '', room: c.room || '' };
+      if(c.active === true || c.active === false) row.active = c.active;
+      if(Object.prototype.hasOwnProperty.call(c, 'hospitalized')) row.hospitalized = c.hospitalized === true;
+      if(typeof c.dischargeDate === 'string') row.dischargeDate = c.dischargeDate;
+      rows.push(row);
+    });
+    var changed = mergeProxyRoster(rows);
+    if(changed) wrRefreshViews();
+    return true;
+  }catch(e){ return false; }   // 無音（呼び出し元が代理経路へフォールバック）
+}
+/* 版数を照会し、動いていたら名簿を取り直す。取得が成功した時だけ基準を前進させる
+   （失敗時は基準を進めない＝次tickで自動リトライ。work-schedule の「取り込み済みrev基準」と同型）。 */
+async function wrStateRevTick(){
+  if(document.hidden) return;                        // 非表示中は照会しない
+  if(_wrSrevBusy) return;                            // 多重照会の防止
+  var cfg = wrMasterCfg();
+  if(!cfg) return;                                   // 設定なし＝通信ゼロ（従来動作のまま）
+  var now = Date.now();
+  if(now - _wrSrevCheckAt < WR_SREV_MIN_GAP_MS) return;                          // 10秒スロットル
+  if(_wrSrevOk === false && now - _wrSrevFailAt < WR_SREV_REPROBE_MS) return;    // latch 中は5分待つ
+  _wrSrevBusy = true;
+  _wrSrevCheckAt = now;
+  try{
+    var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev';
+    var r = await fetchTO(url, { cache:'no-store' }, WR_SREV_TIMEOUT_MS);
+    if(!r.ok) throw new Error('http ' + r.status);
+    var j = await r.json();
+    /* 旧GAS は {error:'認証エラー'} 等を返す＝ok/rev を持たない → 未対応として latch */
+    if(!j || j.ok !== true || typeof j.rev !== 'number' || !isFinite(j.rev)) throw new Error('unsupported');
+    _wrSrevOk = true;
+    if(_wrSrevLast === null){ _wrSrevLast = j.rev; return; }   // 初回は基準を覚えるだけ
+    if(_wrSrevLast === j.rev) return;                          // 変化なし＝名簿は取らない
+    var applied = false;
+    if(cfg.token) applied = await wrFetchMasterRoster(cfg);    // トークンがあれば master 直接を優先
+    if(!applied) applied = (await wrSyncProxyRoster({ force:true })) === true;   // 既存の代理経路（スロットル・バイパス）
+    if(applied) _wrSrevLast = j.rev;
+  }catch(e){
+    _wrSrevOk = false; _wrSrevFailAt = Date.now();   // 無音フォールバック（console にも出さない）
+  }finally{
+    _wrSrevBusy = false;
+  }
+}
+/* 表示中のみ60秒間隔＋visible 復帰で即時1回（10秒最短間隔は wrStateRevTick 内で共通に効く）。 */
+(function installStateRevWatch(){
+  setInterval(function(){ try{ wrStateRevTick(); }catch(e){} }, WR_SREV_INTERVAL_MS);   // 失敗は次tickに任せる
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden) return;
+    try{ wrStateRevTick(); }catch(e){}
+  });
+})();
 /* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動時ブロック） */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
 function applyWeightDeviceGuard(){

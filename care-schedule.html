@@ -2614,11 +2614,32 @@ function csApplyMasterHospitalized(tgt, c){
   tgt.hospitalized = v;
   return 1;
 }
-/* 利用者マスタの共通情報を取り込み（週間計画アプリ用。master を正とする） */
-function mergeCommonSchedule(){
-  var raw; try{ raw = localStorage.getItem(SU_COMMON_KEY); }catch(e){ return false; }
-  if (!raw) return false;
-  var data; try{ data = JSON.parse(raw); }catch(e){ return false; }
+/* 利用者マスタの共通情報を取り込み（週間計画アプリ用。master を正とする）
+   extData: stateRev連携（凍結仕様S4）が getRoster 直取得から組み立てた su_residents_common 相当
+   （{residents:[...]}・メモリ内でのマージ専用）。共有名簿(LS)へは書かない＝唯一の書き手は resident-master。
+   引数なしの既存呼び出し（起動時・adopt）は従来どおり共有名簿(LS)を読む。 */
+function mergeCommonSchedule(extData){
+  var data = null;
+  if (extData && typeof extData === 'object' && Array.isArray(extData.residents)){
+    data = extData;
+  } else {
+    var raw; try{ raw = localStorage.getItem(SU_COMMON_KEY); }catch(e){ return false; }
+    if (!raw) return false;
+    try{ data = JSON.parse(raw); }catch(e){ return false; }
+    /* 直近の master 直取得スナップショット（csStateRevCommon_・メモリのみ）が LS より新しければ
+       そちらを土台にする。adopt(クラウド採用)直後の再マージが古いLSで master常勝項目
+       （入院/部屋/在籍）を取得済みの最新値から巻き戻す経路を塞ぐ（消失より復活・multi-device-sync）。
+       LS の方が新しい（同一端末の resident-master が更新済み）なら従来どおり LS を使う。
+       cfg(url+token) を外した端末ではスナップショットを使わない＝現状動作へ復帰。 */
+    try{
+      var snap = csStateRevCommon_, cfg0 = csGetMasterCfg();
+      if (snap && snap.data && cfg0 && cfg0.token){
+        var lsAt = 0;
+        try{ lsAt = (data && data.updatedAt) ? new Date(data.updatedAt).getTime() : 0; }catch(e2){ lsAt = 0; }
+        if (!(lsAt > snap.at)) data = snap.data;
+      }
+    }catch(e3){}
+  }
   var list = (data && Array.isArray(data.residents)) ? data.residents : null;
   if (!list || !list.length) return false;
   if (!Array.isArray(DB.residents)) DB.residents = [];
@@ -2699,6 +2720,137 @@ function csPushMasterState(masterId, hospitalized){
     }).catch(function(){ showToast('入院状態をマスタへ反映できませんでした（次のマスタ同期で戻ります）'); });
   }catch(e){ return false; }
   return true;
+}
+/* ── stateRev 連携（凍結仕様S4・状態伝播の高速化） ──
+   入居者マスタGASの版数 ?action=stateRev（トークン不要・応答は {ok:true,rev:N} のみ・個人情報ゼロ）を
+   表示中のみ60秒間隔で照会し、前回値と変わった時だけ名簿を取り直して鏡映する（最大10分→60〜90秒）。
+   - rmaster_cfg（url）の無い端末は何もしない＝現状動作のまま（フォールバック不変）
+   - 照会失敗（未対応GAS含む）は無音で現状動作へ＋5分ごとに再プローブ（ワースケ head ポーリングの型）
+   - 共有名簿 su_residents_common へは一切書かない（唯一の書き手=resident-master 契約の厳守） */
+var CS_STATEREV_TICK_MS           = 60000;    // 表示中のみ60秒間隔
+var CS_STATEREV_MIN_GAP_MS        = 10000;    // 直近照会から10秒未満は照会しない（visible復帰の即時1回と定期tickの衝突防止）
+var CS_STATEREV_REPROBE_MS        = 300000;   // 失敗フォールバック中の再プローブ間隔（5分）
+var CS_STATEREV_PROBE_TIMEOUT_MS  = 5000;     // stateRev 照会のタイムアウト（fetch 1本）
+var CS_STATEREV_ROSTER_TIMEOUT_MS = 15000;    // getRoster 直取得のタイムアウト（resident-master apiPost と同水準）
+var csStateRevLast_    = null;   // 取り込み済み基準の rev（取り込み成功時のみ前進＝失敗は次tickで自動リトライ）
+var csStateRevOk_      = null;   // null=未判定 / true=対応 / false=失敗フォールバック中（5分後に再プローブ）
+var csStateRevProbeAt_ = 0;      // フォールバックへ落ちた時刻（再プローブ判定）
+var csStateRevAt_      = 0;      // 直近照会時刻（10秒スロットル）
+var csStateRevBusy_    = false;  // 照会〜取り込みの多重起動防止
+var csStateRevCommon_  = null;   // 直近取得成功の su_residents_common 相当 {at,data}（メモリのみ・LSへ書かない）
+/* タイムアウト付き fetch（resident-master fetchWithTimeout と同型） */
+function csFetchTimeout_(url, opt, ms){
+  return new Promise(function(resolve, reject){
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    if (ctl) opt.signal = ctl.signal;
+    var t = setTimeout(function(){ if (ctl) ctl.abort(); reject(new Error('timeout')); }, ms);
+    fetch(url, opt).then(function(r){ clearTimeout(t); resolve(r); }, function(e){ clearTimeout(t); reject(e); });
+  });
+}
+/* getRoster 応答(master.gs)を共有名簿 su_residents_common 相当へ変換
+   （resident-master normRosterRow / writeCommonRoster と同じ作法。マージが読む項目だけ組む）。
+   - hospitalized はキーが実在する時だけ具現化（旧GASの false 捏造で現場の入院フラグを倒さない）
+   - targetApps は GAS がCSV文字列で返すため配列化（未設定は付けない＝消費側で no-op 扱い） */
+function csRosterToCommon_(list){
+  var out = [];
+  for (var i = 0; i < list.length; i++){
+    var r = list[i];
+    if (!r || r.id == null || r.id === '') continue;
+    var e = { masterId: r.id, name: r.name || '', kana: r.kana || '', room: r.room || '',
+              careLevel: r.careLevel || '', active: r.active !== false };
+    if (Object.prototype.hasOwnProperty.call(r, 'hospitalized')) e.hospitalized = !!r.hospitalized;
+    var t = r.targetApps;
+    if (Array.isArray(t)) e.targetApps = t.slice();
+    else if (typeof t === 'string' && t) e.targetApps = t.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+    out.push(e);
+  }
+  return out;
+}
+/* 60秒tick本体。hidden/現場ガード/未設定/フォールバック中/編集中は何もしない
+   （rev は未採用のまま＝変化があれば次tickで必ず拾い直す＝取りこぼさない） */
+function csStateRevTick_(){
+  try{
+    if (document.hidden) return;                       // hidden 中はスキップ（表示中のみ照会）
+    if (suGetDeviceRole() === 'field') return;         // 現場ガード端末は照会しない（起動時pullと同じ基準）
+    var cfg = csGetMasterCfg();
+    if (!cfg) return;                                  // rmaster_cfg の無い端末は現状動作のまま
+    if (csStateRevOk_ === false){                      // 失敗フォールバック中: 5分ごとに再プローブ
+      if (Date.now() - csStateRevProbeAt_ < CS_STATEREV_REPROBE_MS) return;
+      csStateRevOk_ = null;
+    }
+    if (csStateRevBusy_) return;
+    if (Date.now() - csStateRevAt_ < CS_STATEREV_MIN_GAP_MS) return;   // 10秒スロットル
+    /* 編集モーダル/ドラッグ/利用者一覧の操作中は取り込みを延期（storage取り込みと同じ配慮） */
+    var mkr = $('#mk-resident');
+    if (_csBusyEditing() || (mkr && mkr.classList.contains('open'))) return;
+    csStateRevBusy_ = true;
+    csStateRevAt_ = Date.now();
+    var sep = cfg.url.indexOf('?') >= 0 ? '&' : '?';
+    csFetchTimeout_(cfg.url + sep + 'action=stateRev', { method: 'GET', redirect: 'follow' }, CS_STATEREV_PROBE_TIMEOUT_MS)
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var rev = (j && j.ok === true && typeof j.rev === 'number' && isFinite(j.rev)) ? j.rev : NaN;
+        if (!isFinite(rev)){                           // 未対応GAS（認証エラー等）/不正応答: 無音フォールバック
+          csStateRevOk_ = false; csStateRevProbeAt_ = Date.now(); csStateRevBusy_ = false; return;
+        }
+        csStateRevOk_ = true;
+        if (csStateRevLast_ === null){ csStateRevLast_ = rev; csStateRevBusy_ = false; return; }  // 初回は基準確定のみ（ワースケ baseRev 型）
+        if (rev === csStateRevLast_){ csStateRevBusy_ = false; return; }                          // 変化なし＝ここで終了（転送ゼロ）
+        csStateRevRefresh_(cfg, rev);                  // 変化あり: 名簿を取り直して取り込み
+      })
+      .catch(function(){                               // 通信失敗/タイムアウト/非JSON: 無音フォールバック
+        csStateRevOk_ = false; csStateRevProbeAt_ = Date.now(); csStateRevBusy_ = false;
+      });
+  }catch(e){ csStateRevBusy_ = false; }
+}
+/* rev 変化時の名簿再取り込み。
+   - トークンあり: getRoster を直接取得し su_residents_common 相当をメモリ内で組み立ててマージ
+     （共有名簿への書き込みはしない）。応答同梱の stateRev（S1）があれば1往復で基準を前進。
+   - トークン無し/取得失敗: 共有名簿(LS)からの再マージのみ＝現状動作の範囲。
+     取得失敗時は rev を採用しない＝次tickで自動リトライ（ワースケ「取り込み済みrev基準」の型） */
+function csStateRevRefresh_(cfg, rev){
+  function applyChanged(changed){
+    if (changed){ try{ populateResidentSelect(); renderAll(); }catch(e){} }   // adopt() と同じ反映経路
+  }
+  if (!cfg.token){
+    /* トークン無し端末は直取得できない。LS再マージだけ行い rev を採用（変化時のみ動く）。
+       LSの鮮度は同一端末の resident-master 次第＝現状動作と同じ */
+    var ch0 = false;
+    try{ ch0 = mergeCommonSchedule(); }catch(e0){}
+    applyChanged(ch0);
+    csStateRevLast_ = rev; csStateRevBusy_ = false; return;
+  }
+  var sep = cfg.url.indexOf('?') >= 0 ? '&' : '?';
+  csFetchTimeout_(cfg.url + sep + 'action=getRoster&token=' + encodeURIComponent(cfg.token),
+                  { method: 'GET', redirect: 'follow' }, CS_STATEREV_ROSTER_TIMEOUT_MS)
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var list = (d && Array.isArray(d.roster)) ? d.roster : null;
+      if (!list || !list.length){                      // 空/認証エラー/不正応答: 取り込まない（空上書き保護と同思想）
+        var ch1 = false; try{ ch1 = mergeCommonSchedule(); }catch(e1){}
+        applyChanged(ch1);
+        csStateRevBusy_ = false; return;               // rev 未採用＝次tickで再取得を試す
+      }
+      var common = { residents: csRosterToCommon_(list) };
+      csStateRevCommon_ = { at: Date.now(), data: common };   // メモリのみ保持（adopt後の再マージの巻き戻し防止に使用）
+      var ch2 = false;
+      try{ ch2 = mergeCommonSchedule(common); }catch(e2){}
+      /* 仕様の順序どおり mergeCommonSchedule() も再実行する。スナップショット上書き（LSが古い時は
+         直取得値を土台にする）により古いLSでの巻き戻しは起きない＝通常は冪等な no-op。
+         直取得後に同一端末の resident-master がLSをさらに更新していた場合だけ、その最新が効く */
+      var ch2b = false;
+      try{ ch2b = mergeCommonSchedule(); }catch(e2b){}
+      applyChanged(ch2 || ch2b);
+      /* getRoster 応答同梱の stateRev があれば1往復で基準を前進（照会〜取得の間の更新も拾う）。
+         未同梱（旧GAS）は照会時の rev を基準にする */
+      csStateRevLast_ = (d && typeof d.stateRev === 'number' && isFinite(d.stateRev)) ? d.stateRev : rev;
+      csStateRevBusy_ = false;
+    })
+    .catch(function(){                                 // 取得失敗: LS再マージのみ・rev未採用＝次tickで自動リトライ
+      var ch3 = false; try{ ch3 = mergeCommonSchedule(); }catch(e3){}
+      applyChanged(ch3);
+      csStateRevBusy_ = false;
+    });
 }
 /* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動ブロック） */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
@@ -4504,6 +4656,14 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && SYNC.hasTarget()) {
     SYNC.pollIfNeeded();
   }
+});
+// stateRev 連携（凍結仕様S4）: マスタの状態変化（入院/在籍）を60〜90秒で鏡映する。
+// rmaster_cfg（url）のある端末だけ実質動作。無い端末・未対応GASは現状動作のまま（無音フォールバック）。
+// 起動直後に1回だけ基準revを確定（名簿は取らない）＝直後の変化を次tickで拾えるようにする。
+setInterval(csStateRevTick_, CS_STATEREV_TICK_MS);
+setTimeout(csStateRevTick_, 1500);   // 起動時の基準確定（startupPull の300msと重ねない）
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) csStateRevTick_();   // visible 復帰で即時1回（10秒スロットル・hidden中スキップは tick 内）
 });
 // 同一端末・別タブ（ワークスケジュール等）の care_schedule_v2 書き込みを即時反映。
 // 未送信の自編集(_dirty)がある間は上書きしない（既存のpoll/競合処理に委ねる）。デバウンスで連続書込を集約。
