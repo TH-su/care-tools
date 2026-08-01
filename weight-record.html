@@ -3219,7 +3219,7 @@ function renderGrid(){
       const chairChip = (r.wheelchairKg != null && r.wheelchairKg > 0)
         ? `<span class="gr-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>`
         : '';
-      const roomHtml = r.room ? `<span class="gr-rm">室 ${r.room}</span>` : '';
+      const roomHtml = r.room ? `<span class="gr-rm">室 ${escapeHtml(r.room)}</span>` : '';
       const nameCell = `
         <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="この入居者の入力画面を開く">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
@@ -4864,7 +4864,7 @@ function renderAlerts(){
       div.innerHTML = `
         <div class="al-ic">${dir==='dn'?'↓':'↑'}</div>
         <div class="al-body">
-          <div class="al-nm">${resident.name}<span class="rm">${resident.room?'室 '+resident.room:''}</span><span class="eb ${a.level==='ng'?'eb-ng':'eb-w'}">${a.level==='ng'?'警告':'注意'}</span></div>
+          <div class="al-nm">${escapeHtml(resident.name)}<span class="rm">${resident.room?'室 '+escapeHtml(resident.room):''}</span><span class="eb ${a.level==='ng'?'eb-ng':'eb-w'}">${a.level==='ng'?'警告':'注意'}</span></div>
           <div class="al-ms">
             ${a.reasons.map(x=>`<div>${x}</div>`).join('')}
             <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${a.cur.stapleAmount}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
