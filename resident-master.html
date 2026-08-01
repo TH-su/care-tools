@@ -1593,7 +1593,10 @@ function saveSyncCfg(){
     var _c={};
     try{var _s=localStorage.getItem(CFG_KEY);if(_s)_c=JSON.parse(_s)}catch(e){_c={}}
     if(!_c||typeof _c!=='object'||Object.prototype.toString.call(_c)!=='[object Object]')_c={};
-    _c.url=CFG.url;_c.token=CFG.token;_c.vmaUrl=CFG.vmaUrl||'';
+    _c.url=CFG.url;_c.token=CFG.token;
+    /* vmaUrl は入力欄がある時だけ書く。CFG.vmaUrl は起動時のスナップショットなので、
+       欄が無い状態で書くと、別タブが後から設定した値を古い値で潰してしまう。 */
+    if($('cfgVmaUrl'))_c.vmaUrl=CFG.vmaUrl||'';
     localStorage.setItem(CFG_KEY,JSON.stringify(_c));
   }catch(e){}
   if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
