@@ -1052,13 +1052,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return base;
   }
+  /* 本体が壊れている/消えている時に退避(_bak)から拾い直す。
+     既定値で開き直すと、設定済みの事業所表示名・定休日が失われたまま上書き保存されるため。 */
+  function restoreFromBackup() {
+    try {
+      var bak = localStorage.getItem(PROFILE_KEY + '_bak');
+      if (!bak) return null;
+      var p = normalize(JSON.parse(bak));
+      if ((p.setupDone === true) || (p.facilityName !== '')) return p;   /* 設定済みの退避のみ採用 */
+    } catch (e) {}
+    return null;
+  }
   function loadFacilityProfile() {
     try {
       var raw = localStorage.getItem(PROFILE_KEY);
       if (raw) return normalize(JSON.parse(raw));
-    } catch (e) { /* 破損時は既定値で継続 */ }
-    return defaultProfile();
+    } catch (e) { /* 破損時は退避からの復旧を試す */ }
+    return restoreFromBackup() || defaultProfile();
   }
+  /* ★戻り値は「保存に成功した」を意味しない。空上書きを拒否した場合は既存値を返す。
+     呼び出し元を増やす時は、成功トーストを無条件に出さないこと。 */
   function saveFacilityProfile(p) {
     var norm = normalize(p);
     /* ★shift-app と共有するキー（2書き手）。設定が飛ぶと両アプリの事業所表示名・定休日が
@@ -1068,11 +1081,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var prevRaw = localStorage.getItem(PROFILE_KEY);
       if (prevRaw) {
+        /* ★退避は JSON.parse より前に行う。壊れた値ほど手で救える情報が残っているのに、
+           parse の例外で退避を飛ばすと、その唯一の材料を既定値で消してしまう。 */
+        localStorage.setItem(PROFILE_KEY + '_bak', prevRaw);
         var prev = normalize(JSON.parse(prevRaw));
         var prevConfigured = (prev.setupDone === true) || (prev.facilityName !== '');
         var nextBlank = (norm.setupDone !== true) && (norm.facilityName === '');
         if (prevConfigured && nextBlank) return prev;   /* 空上書きを拒否し既存を温存 */
-        localStorage.setItem(PROFILE_KEY + '_bak', prevRaw);
       }
     } catch (e) { /* 退避・判定に失敗しても保存自体は続行する */ }
     try { localStorage.setItem(PROFILE_KEY, JSON.stringify(norm)); } catch (e) {}
