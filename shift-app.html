@@ -5762,15 +5762,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return out;
   }
 
+  /* 本体が壊れている/消えている時に退避(_bak)から拾い直す。
+     既定値で開き直すと、設定済みの事業所表示名・定休日が失われたまま上書き保存されるため。 */
+  function restoreFromBackup() {
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      var bak = localStorage.getItem(PROFILE_KEY + '_bak');
+      if (!bak) return null;
+      var p = normalizeProfile(JSON.parse(bak));
+      if ((p.setupDone === true) || (p.facilityName !== '')) return p;   /* 設定済みの退避のみ採用 */
+    } catch (e) {}
+    return null;
+  }
+
   function loadFacilityProfile() {
     try {
       if (typeof localStorage === 'undefined') return defaultProfile();
       var raw = localStorage.getItem(PROFILE_KEY);
-      if (!raw) return defaultProfile();
+      if (!raw) return restoreFromBackup() || defaultProfile();
       return normalizeProfile(JSON.parse(raw));
-    } catch (e) { return defaultProfile(); }
+    } catch (e) { return restoreFromBackup() || defaultProfile(); }
   }
 
+  /* ★戻り値は「保存に成功した」を意味しない。空上書きを拒否した場合は既存値を返す。
+     呼び出し元を増やす時は、成功トーストを無条件に出さないこと。 */
   function saveFacilityProfile(p) {
     var np = normalizeProfile(p);
     /* ★work-schedule と共有するキー（2書き手）。設定が飛ぶと両アプリの事業所表示名・定休日が
@@ -5780,11 +5795,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (typeof localStorage !== 'undefined') {
         var prevRaw = localStorage.getItem(PROFILE_KEY);
         if (prevRaw) {
+          /* ★退避は JSON.parse より前に行う。壊れた値ほど手で救える情報が残っているのに、
+             parse の例外で退避を飛ばすと、その唯一の材料を既定値で消してしまう。 */
+          localStorage.setItem(PROFILE_KEY + '_bak', prevRaw);
           var prev = normalizeProfile(JSON.parse(prevRaw));
           var prevConfigured = (prev.setupDone === true) || (prev.facilityName !== '');
           var nextBlank = (np.setupDone !== true) && (np.facilityName === '');
           if (prevConfigured && nextBlank) return prev;   /* 空上書きを拒否し既存を温存 */
-          localStorage.setItem(PROFILE_KEY + '_bak', prevRaw);
         }
       }
     } catch (e) { /* 退避・判定に失敗しても保存自体は続行する */ }
