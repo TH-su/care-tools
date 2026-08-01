@@ -1586,7 +1586,16 @@ function closeSync(){$('mSync').classList.remove('on')}
 function saveSyncCfg(){
   CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
   if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
-  try{localStorage.setItem(CFG_KEY,JSON.stringify(CFG))}catch(e){}
+  /* ★このキーはフェイスシートと共用。起動時に読んだ CFG をそのまま書くと、
+     起動後に相手側が入れた項目を古い値で潰しうる。保存の直前に読み直し、
+     自分が扱う項目だけを差し替えて書き戻す（.claude/rules/data-contracts.md §1-2）。 */
+  try{
+    var _c={};
+    try{var _s=localStorage.getItem(CFG_KEY);if(_s)_c=JSON.parse(_s)}catch(e){_c={}}
+    if(!_c||typeof _c!=='object'||Object.prototype.toString.call(_c)!=='[object Object]')_c={};
+    _c.url=CFG.url;_c.token=CFG.token;_c.vmaUrl=CFG.vmaUrl||'';
+    localStorage.setItem(CFG_KEY,JSON.stringify(_c));
+  }catch(e){}
   if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
   closeSync();
   // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。

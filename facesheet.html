@@ -741,7 +741,16 @@ function openSync(){
 function closeSync(){$('mSync').classList.remove('on')}
 function saveSync(){
   CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
-  try{localStorage.setItem(CFG_KEY,JSON.stringify({url:CFG.url,token:CFG.token}))}catch(e){}
+  /* ★このキーは入居者マスタと共用。丸ごと書き換えると、マスタ側が入れた項目
+     （訪問診療URL vmaUrl 等）を黙って消してしまう。既存値を読み、自分が扱う
+     url/token だけを差し替えて書き戻す（.claude/rules/data-contracts.md §1-2）。 */
+  try{
+    var _c={};
+    try{var _s=localStorage.getItem(CFG_KEY);if(_s)_c=JSON.parse(_s)}catch(e){_c={}}
+    if(!_c||typeof _c!=='object'||Object.prototype.toString.call(_c)!=='[object Object]')_c={};
+    _c.url=CFG.url;_c.token=CFG.token;
+    localStorage.setItem(CFG_KEY,JSON.stringify(_c));
+  }catch(e){}
   setDeviceRole($('cfgDeviceRole').value==='field'?'field':'office');
   applyRoleBadge();closeSync();boot();toast('✅ 保存しました');
 }
