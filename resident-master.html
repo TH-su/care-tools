@@ -83,6 +83,14 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
 .tag.out{background:var(--ng-l); color:var(--ng)}
 .tag.hosp{background:var(--warn-bg); color:var(--warn-tx); font-weight:700}
+/* 詳細画面「この方を各アプリで開く」のリンク。タップ領域は44px以上（HIG） */
+.rlink{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 14px;
+  border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--pri-d);
+  font-size:13px; text-decoration:none; white-space:nowrap}
+.rlink:hover{background:var(--pri-l)}
+.rlink:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+/* 印刷はセクションごと消す。sec-body は inline の display:flex を持つため !important が必要 */
+@media print{.sec-applinks{display:none !important}}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
 
 /* ── 詳細（印刷レイアウト） ── */
@@ -592,6 +600,26 @@ var APP_LINKS=[
   {href:'../haiben-record/haiben-record.html',    ic:'🚽', name:'排便ケア記録',   desc:'排泄の記録'},
   {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'}
 ];
+/* ── 入居者単位リンク（この方を各アプリで開く） ──
+   ★載せてよいのは「?masterId= を実際に解釈する受け側が実装済みのアプリ」だけ。
+     未実装のアプリを載せると、パラメータが無視されて【前回開いていた別人が選択済みの画面】が開く。
+     職員はその方の画面だと信じて入力するため、別人への誤記録に直結する（2026-08-01 レビュー指摘）。
+     受け側を実装したら、ここに1行足す（data-contracts.md §9 の手順に従う）。
+   ★氏名はURLに載せない。共用端末のアドレスバー補完・履歴に氏名が並ぶうえ、
+     受け側が未検証の氏名を「本人確認」として表示すると、かえって取り違えの根拠になる。
+     受け側はサーバから引いた正本の氏名を表示する。
+   ★訪問診療は別オリジン（別サイト）なので対象外＝素のURLのまま開く。 */
+var PER_RESIDENT_APPS={'facesheet.html':1,'genogram.html':1};
+function residentLink(href,id,name){
+  if(id==null||id==='')return href;
+  if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))return href;
+  /* ジェノグラムだけは既存の受け口（?resident=&name=）に合わせる。
+     あちらは氏名が文書の保存キーそのものなので name が必須。勝手に変えると既存導線が壊れる。 */
+  if(href==='genogram.html'){
+    return href+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+  }
+  return href+'?masterId='+encodeURIComponent(id);
+}
 /* 外部URLは http/https 以外を弾く（javascript: 等を踏ませない）。 */
 function safeHttpUrl(u){
   var t=String(u==null?'':u).trim();
@@ -881,6 +909,23 @@ function openResident(id){
   }).catch(function(e){$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
 }
 
+/* 詳細画面の「この方を各アプリで開く」行。
+   同一オリジンで入居者単位に対応するアプリだけを出す（せせらぎ利用表は一覧専用なので出さない）。
+   別タブで開くので、マスタで見ていた内容を失わない。 */
+function perResidentLinksHtml(r){
+  if(!r||r.id==null||r.id==='')return '';
+  var items=[];
+  for(var i=0;i<APP_LINKS.length;i++){ if(PER_RESIDENT_APPS[APP_LINKS[i].href]) items.push(APP_LINKS[i]); }
+  if(!items.length)return '';
+  var nm=r.name||'';
+  var body=items.map(function(a){
+    return '<a class="rlink" target="_blank" rel="noopener" href="'+esc(residentLink(a.href,r.id,nm))+'">'+
+           esc(a.ic)+' '+esc(a.name)+'</a>';
+  }).join('');
+  /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
+  return '<div class="sec sec-applinks"><div class="sec-lbl">この方を各アプリで開く</div>'+
+         '<div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+body+'</div></div>';
+}
 function cell(lab,val,big){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
 function renderView(r){
   var fam=Array.isArray(r.family)?r.family:[];
@@ -907,6 +952,8 @@ function renderView(r){
   if(r.mealForm||r.thickener)hl.push('<span style="background:var(--u-bg);color:var(--u);border-radius:999px;padding:3px 10px;font-weight:700">🍚 '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
   if(r.careHints)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">💡 対応のコツあり</span>');
   if(hl.length)h+='<div class="sec"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+hl.join('')+'</div></div>';
+  // この方を各アプリで開く（入居者単位リンク・別タブなので今の画面を失わない）
+  h+=perResidentLinksHtml(r);
   // 利用者基本情報
   h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
     '<div class="row-cells">'+

@@ -43,6 +43,17 @@ input,select{font-family:inherit; font-size:15px}
   color:#fff; border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff; outline-offset:1px}
+/* 入居者マスタから開いた時の本人確認バー（誰を開いているかを常に見せる＝取り違え防止）。
+   ヘッダ直下に貼り付いてスクロールしても消えない。色は既定の警告トークンを使う
+   （白背景でコントラスト比4.5:1以上・本ファイル冒頭の配色方針に従う）。 */
+.frombar{position:sticky; top:48px; z-index:49;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 14px;
+  background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size:13px; color:var(--warn-tx)}
+.frombar b{font-size:15px}
+.frombar button{min-height:44px; padding:6px 14px; border:1px solid var(--warn-tx); border-radius:6px;
+  background:#fff; color:var(--warn-tx); font-size:13px; cursor:pointer}
+.frombar button:focus-visible{outline:2px solid var(--warn-tx); outline-offset:1px}
+@media print{.frombar{display:none !important}}
 .hdr .role{font-size:11px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .role.field{background:rgba(230,81,0,.92)}
 .hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
@@ -174,6 +185,10 @@ input,select{font-family:inherit; font-size:15px}
   <span class="role" id="roleBadge">事務所</span>
   <span class="sync" id="syncStatus" role="status" aria-live="polite">未接続</span>
 </div>
+
+<!-- 入居者マスタから特定の方を開いた時の本人確認バー（取り違え防止）。
+     既定は非表示。?masterId= で来た時だけ boot() が表示する。印刷には出さない。 -->
+<div class="frombar" id="fromMaster" role="status" aria-live="polite" style="display:none"></div>
 
 <!-- ════════ 一覧 ════════ -->
 <section class="scr on" id="sc-list">
@@ -370,6 +385,9 @@ function renderRoster(){
 var curRec=null;
 function openResident(id){
   showScreen('view');
+  /* 一覧から別の方を選んだ時は、前の方のバーを必ず消す（バーが取り違えの元にならないように）。
+     マスタから来た直後は boot() が改めて出すので、ここで消して差し支えない。 */
+  if(fromMasterActive&&!openingFromMaster)setFromMasterBar('off');
   $('vName').textContent='';$('hlBand').innerHTML='';$('ftabs').innerHTML='';
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">「設定」で接続URLを入力してください</div>';return}
@@ -379,7 +397,10 @@ function openResident(id){
     var rec=isField()?((d&&d.section)||d):((d&&d.record)||d);
     if(!rec||(rec.id==null&&!rec.name))throw new Error('該当データなし');
     curRec=rec; setSync('取得OK','ok'); renderFaceSheet(rec);
-  }).catch(function(e){setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
+    /* 本人確認バーは正本の氏名で更新する（前の方の氏名を残さない） */
+    if(fromMasterActive)setFromMasterBar('ok',rec.name);
+  }).catch(function(e){setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+    if(fromMasterActive)setFromMasterBar('fail')});
 }
 
 /* ═══════════ 最新体重（体重管理アプリのデータを読むだけ・向こうは一切変更しない） ═══════════
@@ -763,6 +784,43 @@ function testSync(){
 }
 
 /* ═══════════ 起動 ═══════════ */
+/* ── 入居者単位リンクの受け口（入居者マスタから ?masterId=&name= で来た時） ──
+   ★取り違え防止（dev-principles 原則11）: 誰を開いたのかを画面上部に必ず出し、
+     一覧へ戻る導線を添える。URLの氏名は「本人確認の表示」にだけ使い、
+     データの取得・保存には使わない（正本はサーバから引く masterId のレコード）。
+   ★不正・未知の値は無視して通常どおり一覧を出す（壊れたURLで起動不能にしない）。 */
+function readMasterIdParam(){
+  var p=null; try{p=new URLSearchParams(location.search)}catch(e){return null}   // 旧ブラウザは機能無効
+  if(!p)return null;
+  if(!p.get('masterId'))return null;                        // 指定なし＝通常起動
+  var id=String(p.get('masterId')).trim();
+  if(!/^[0-9A-Za-z_-]{1,32}$/.test(id)){                    // 想定外の形式は開かない
+    try{toast('⚠️ 指定された入居者を開けませんでした（一覧から選んでください）')}catch(e){}
+    return null;
+  }
+  return {id:id};
+}
+/* 本人確認バー。★氏名はURLから取らず、サーバから取得した正本の氏名だけを出す。
+   未検証の氏名を「本人確認」として見せると、取り違えの根拠にされてしまうため。 */
+var fromMasterActive=false;
+var openingFromMaster=false;   /* boot() がマスタ由来で開いている最中だけ true */
+function setFromMasterBar(state,name){
+  var bar=$('fromMaster'); if(!bar)return;
+  if(state==='off'){ bar.style.display='none'; bar.innerHTML=''; fromMasterActive=false; return; }
+  fromMasterActive=true;
+  var msg = state==='ok'   ? '入居者マスタから開いています：<b>'+esc(name||'')+'</b>'
+          : state==='fail' ? '入居者マスタから開こうとしましたが、<b>取得できませんでした</b>'
+          :                  '入居者マスタから開いています：読み込み中…';
+  bar.innerHTML='<span>'+msg+'</span><button type="button" id="fromMasterClose">一覧に戻る</button>';
+  bar.style.display='flex';
+  $('fromMasterClose').addEventListener('click',function(){
+    clearMasterIdParam(); setFromMasterBar('off'); curRec=null; showScreen('list');
+  });
+}
+/* 一覧へ戻ったら URL の指定も消す。残すと設定保存など boot() の再実行で勝手に開き直す。 */
+function clearMasterIdParam(){
+  try{ if(location.search) history.replaceState(null,'',location.pathname); }catch(e){}
+}
 function boot(){
   applyRoleBadge();
   var has=loadCommonRoster();
@@ -770,6 +828,13 @@ function boot(){
   if(!has&&CFG.url)refreshRosterFromGas();
   else if(roster.length)setSync('名簿OK','ok');
   else setSync('未接続');
+  var from=readMasterIdParam();
+  if(from){
+    openingFromMaster=true;
+    setFromMasterBar('loading');
+    openResident(from.id);
+    openingFromMaster=false;
+  }
 }
 window.addEventListener('storage',function(e){if(e.key===COMMON_KEY){loadCommonRoster();renderRoster()}});
 document.addEventListener('DOMContentLoaded',function(){
