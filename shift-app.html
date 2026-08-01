@@ -7709,9 +7709,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   };
 
   function hasAny(obj) { for (var k in obj) { if (obj[k] !== '') return true; } return false; }
+  /* ★引用符もエスケープする。この関数の戻り値は title="…" 属性にも入れており、
+     " を素通しすると、編集用シフトの名称（prompt の自由入力）に " を含めるだけで
+     属性が閉じて任意のイベントハンドラを注入できてしまう。
+     テキストノードで使う場合も &quot; / &#39; は表示時に復号されるため見た目は変わらない。 */
   function escText(t) {
     return String(t === undefined || t === null ? '' : t)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function fmtDateTime(iso) {
     if (!iso) return '';
