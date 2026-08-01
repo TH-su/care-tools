@@ -39,6 +39,14 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}
 .hdr-r{font-size:12px;opacity:.9}
+/* 入居者マスタから本人単位で開いた時の確認バー（誰を開いているかを常に見せる＝取り違え防止） */
+.frombar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;
+  background:var(--warn-bg);border-top:1px solid var(--warn-br);font-size:13px;color:var(--warn-tx)}
+.frombar b{font-size:15px}
+.frombar button{min-height:44px;padding:6px 14px;border:1px solid var(--warn-br);border-radius:6px;
+  background:#fff;color:var(--warn-tx);font-size:13px;cursor:pointer}
+.frombar button:focus-visible{outline:2px solid var(--warn-tx);outline-offset:1px}
+@media print{.frombar{display:none !important}}
 
 /* top tab bar (always-visible navigation) */
 .tnav{background:#fff;border-bottom:2px solid var(--g2);
@@ -651,6 +659,9 @@ select option.is-discharged{color:var(--g6)}
     設定
   </button>
 </nav>
+<!-- 入居者マスタから本人単位で開いた時の確認バー（誰を開いているかを示す＝取り違え防止）。
+     .topbar の中に置くので applyStickyTopOffset() の高さ計算に自動で乗る。既定は非表示。 -->
+<div class="frombar" id="fromMaster" role="status" aria-live="polite" style="display:none"></div>
 </div><!-- /.topbar -->
 
 <div id="toast" class="ts"></div>
@@ -3845,6 +3856,7 @@ function recalcChair(){
 
 $$('#inResident, #inMonth, #inDate').forEach(el=>{}); // ensure exists
 $('#inResident').addEventListener('change', ()=>{
+  wrDropMasterPending();   // 職員が選び直したら、名簿同期後の再適用で上書きしない
   saveUI({inRes: $('#inResident').value});
   syncInputFromExisting();
   if(typeof renderInputMealDisplay === 'function') renderInputMealDisplay();
@@ -4270,6 +4282,7 @@ $$('.rg-b').forEach(b=>{
 });
 
 $('#ivResident').addEventListener('change', ()=>{
+  wrDropMasterPending();   // 職員が選び直したら、名簿同期後の再適用で上書きしない
   saveUI({ivRes: $('#ivResident').value});
   renderIndiv();
 });
@@ -5964,8 +5977,16 @@ function refreshUrlPersistBadge(){
    ============================================================ */
 // 入居者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
 try{ mergeCommonWeight(); }catch(e){ /* 取り込み失敗は運用を止めない */ }
-// 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）
-try{ wrSyncProxyRoster(); }catch(e){ /* 代理取得の失敗は運用を止めない */ }
+/* 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）。
+   ★この経路は氏名一致で masterId を後付けするため、起動時点では紐づいていない。
+     マスタから本人指定で来ていて見つからなかった場合に限り、取得完了後に1回だけ再試行する
+     （職員が既に選び直していれば wrMasterPending は破棄済みなので上書きしない）。 */
+try{
+  const _pr=wrSyncProxyRoster();
+  if(_pr&&typeof _pr.then==='function'){
+    _pr.then(()=>{ try{ if(wrMasterPending) wrApplyMasterIdParam(true); }catch(e){} },()=>{});
+  }
+}catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
 (function(){ var b=document.getElementById('suDeviceUnlock'); if(b) b.addEventListener('click', function(){
   try{ localStorage.setItem(SU_DEVICE_KEY,'office'); }catch(e){}
@@ -5981,7 +6002,69 @@ applyWeightDeviceGuard();
 populateResidentSelect($('#inResident'), {preferId: UI.inRes});
 populateResidentSelect($("#ivResident"), {preferId: UI.ivRes, fallbackFirst:true, includeDischarged:true});
 goto(['list','input','indiv','grid','alert','cfg'].includes(UI.tab) ? UI.tab : 'list');
+/* ★前回状態を復元した「後」に呼ぶ＝入居者マスタからの指定を優先させる。
+   逆順にすると前回開いていた別人が選択されたままになる（誤記録の元）。 */
+try{ wrApplyMasterIdParam(); }catch(e){ /* 失敗しても以降の初期化を止めない */ }
 updateAlertBadge();
+
+/* ═══════════ 入居者マスタからの本人単位リンク（?masterId=） ═══════════
+   ★URLの masterId は入居者マスタ側のID。このアプリの主キー（r.id）とは別物なので、
+     必ず residents を走査して r.id に変換してから既存の入口関数へ渡す。
+   ★該当者が居ない時に「前回開いていた別人の入力画面」を出したままにしない。
+     一覧へ逃がし、理由をバーに出す（別人への誤記録を防ぐ・2026-08-01 レビュー指摘）。
+   ★氏名はURLから受け取らない。表示するのはこのアプリが持つ正本の氏名だけ。 */
+function wrReadMasterIdParam(){
+  let p=null; try{ p=new URLSearchParams(location.search); }catch(e){ return null; }
+  if(!p||!p.get('masterId')) return null;
+  const id=String(p.get('masterId')).trim();
+  if(!/^[0-9A-Za-z_-]{1,32}$/.test(id)){ toast('⚠️ 指定された入居者を開けませんでした','err'); return null; }
+  return id;
+}
+function wrClearMasterIdParam(){
+  try{ if(location.search) history.replaceState(null,'',location.pathname); }catch(e){}
+}
+/* 名簿がサーバ同期で後から揃う端末のための保留。職員が入居者を選び直したら破棄する
+   （＝職員の操作を後から上書きしない）。 */
+/* ★var を使う。この定義ブロックは初期化コード（wrApplyMasterIdParam の呼び出し）より
+   後ろにあるため、let/const だと一時的デッドゾーンで ReferenceError になる。 */
+var wrMasterPending=null;
+function wrDropMasterPending(){ wrMasterPending=null; }
+function wrSetFromMasterBar(state,name){
+  const bar=$('#fromMaster'); if(!bar) return;
+  if(state==='off'){ bar.style.display='none'; bar.innerHTML=''; applyStickyTopOffset(); return; }
+  const msg = state==='ok'       ? `入居者マスタから開いています：<b>${escapeHtml(name||'')}</b>`
+            : state==='nontarget'? `<b>${escapeHtml(name||'')}</b>さんは体重管理の対象外です（一覧を表示しています）`
+            :                      `入居者マスタから開こうとしましたが、<b>この方は体重管理に登録されていません</b>（一覧を表示しています）`;
+  bar.innerHTML=`<span>${msg}</span><button type="button" id="fromMasterClose">${state==='ok'?'解除':'閉じる'}</button>`;
+  bar.style.display='flex';
+  $('#fromMasterClose').addEventListener('click',()=>{ wrDropMasterPending(); wrSetFromMasterBar('off'); });
+  applyStickyTopOffset();
+}
+function wrApplyMasterIdParam(isRetry){
+  const mid = isRetry ? wrMasterPending : wrReadMasterIdParam();
+  if(!mid) return;
+  wrClearMasterIdParam();   // URLからは即座に落とす（リロードや設定保存で勝手に開き直さない）
+  const r=(DB.residents||[]).find(x=>x.masterId!=null&&String(x.masterId)===String(mid));
+  if(!r){ wrMasterPending=mid; goto('list'); wrSetFromMasterBar('fail'); return; }   // 名簿待ちの可能性を残す
+  wrMasterPending=null;
+  if(!isWeightTarget(r)){ goto('list'); wrSetFromMasterBar('nontarget', r.name); return; }
+  openIndivFor(r.id);
+  /* ★選択が本当にその方になったかを確認する。対象外・退去などで選択肢に無いと
+     前回の別人や一覧先頭へフォールバックし、バーだけが正しく見えてしまう。 */
+  const iv=$('#ivResident');
+  if(!iv || String(iv.value)!==String(r.id)){ goto('list'); wrSetFromMasterBar('fail'); return; }
+  /* ★入力タブに切り替えた時に前回の別人が出ないよう、入力側も同じ方へ揃える。
+     揃えないと「バーはAさん・入力欄はBさん」になり、Bさんへ誤記録する。
+     populateResidentSelect の preferId は「現在値が無効なときだけ」効くため、
+     ここでは明示的に value を入れてから選択肢を作り直す。 */
+  try{
+    const inp=$('#inResident');
+    if(inp){ inp.value=String(r.id); populateResidentSelect(inp,{preferId:r.id}); }
+    saveUI({inRes:r.id});
+    if(typeof syncInputFromExisting==='function')syncInputFromExisting();
+  }catch(e){}
+  wrSetFromMasterBar('ok', r.name);
+}
 
 /* sticky thead が topbar の真下にぴったり貼り付くよう、CSS変数 --topbar-h を
    実測値で更新する。リサイズ・タブ切替で高さが変わる可能性に追従。 */

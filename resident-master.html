@@ -609,7 +609,13 @@ var APP_LINKS=[
      受け側が未検証の氏名を「本人確認」として表示すると、かえって取り違えの根拠になる。
      受け側はサーバから引いた正本の氏名を表示する。
    ★訪問診療は別オリジン（別サイト）なので対象外＝素のURLのまま開く。 */
-var PER_RESIDENT_APPS={'facesheet.html':1,'genogram.html':1};
+var PER_RESIDENT_APPS={
+  'facesheet.html':1,
+  'genogram.html':1,
+  'weight-record.html':1,                    /* 2026-08-01 受信実装（該当なしは一覧へ逃がす） */
+  'care-schedule.html':1,                    /* 2026-08-01 受信実装（該当なしは選択を変えない） */
+  '../haiben-record/haiben-record.html':1    /* 2026-08-01 受信実装（該当なしは選択を空にする） */
+};
 function residentLink(href,id,name){
   if(id==null||id==='')return href;
   if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))return href;
@@ -912,10 +918,21 @@ function openResident(id){
 /* 詳細画面の「この方を各アプリで開く」行。
    同一オリジンで入居者単位に対応するアプリだけを出す（せせらぎ利用表は一覧専用なので出さない）。
    別タブで開くので、マスタで見ていた内容を失わない。 */
+/* リンクを出すアプリ → その入居者が「対象アプリ」に含まれている必要があるものの対応。
+   同じ画面に「– 体重記録（対象外）」と出しながら体重管理へのリンクを出すのは矛盾で、
+   受け側でも対象外は開けない。フェイスシート・ジェノグラムは全員が対象なので条件なし。 */
+var PER_RESIDENT_TARGET={'weight-record.html':'weight','care-schedule.html':'schedule','../haiben-record/haiben-record.html':'excretion'};
 function perResidentLinksHtml(r){
   if(!r||r.id==null||r.id==='')return '';
+  var tg=Array.isArray(r.targetApps)?r.targetApps:defaultTargetApps();
   var items=[];
-  for(var i=0;i<APP_LINKS.length;i++){ if(PER_RESIDENT_APPS[APP_LINKS[i].href]) items.push(APP_LINKS[i]); }
+  for(var i=0;i<APP_LINKS.length;i++){
+    var href=APP_LINKS[i].href;
+    if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))continue;
+    var need=PER_RESIDENT_TARGET[href];
+    if(need&&tg.indexOf(need)<0)continue;   // 対象外のアプリへは導線を出さない
+    items.push(APP_LINKS[i]);
+  }
   if(!items.length)return '';
   var nm=r.name||'';
   var body=items.map(function(a){

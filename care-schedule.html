@@ -2203,6 +2203,10 @@ const SYNC = {
     try { mergeCommonSchedule(); } catch(e) {}
     csRestoreResidentsIfLost();   /* 採用結果がサンプル/空なら端末バックアップから復元 */
     csBackupResidents();          /* 実データを退避（次回ロスト時の復元元） */
+    /* ★クラウド採用は currentResidentId ごと差し替わる。入居者マスタから本人指定で
+       開いている間は、他端末の選択で無言に別人へ切り替わらないよう選び直す
+       （職員が自分でセレクトを変えた後は csMasterRid が破棄済みなので何もしない）。 */
+    try { csApplyMasterIdParam(true); } catch (e) {}
     populateResidentSelect();
     renderAll();
     return true;
@@ -2894,8 +2898,56 @@ function populateResidentSelect() {
     ).join('');
 }
 function onResidentChange() {
+  csMasterRid = null;   // 職員が自分で選び直した＝同期後の再適用で上書きしない
   DB.currentResidentId = $('#resident-select').value || null;
   saveDB(); renderAll();
+}
+/* ═══════════ 入居者マスタからの本人単位リンク（?masterId=） ═══════════
+   ★URLの masterId は入居者マスタ側のID。このアプリの主キー（r.id）とは別物なので、
+     必ず residents を走査して r.id に変換する。
+   ★このアプリはヘッダのセレクトに利用者名が常時出るため、専用の確認バーは置かない
+     （固定ヘッダの高さを3箇所の calc が参照しており、増やすと表示・印刷が崩れるため）。
+   ★該当者が居なければ選択を変えない＋理由を出す。黙って別人の画面を見せない。
+   ★saveDB() は呼ばない。currentResidentId は同期対象のDBに入っており、
+     URL由来の一時的な選択を他端末へ伝播させないため（多端末同期規約）。 */
+function csReadMasterIdParam() {
+  var p = null; try { p = new URLSearchParams(location.search); } catch (e) { return null; }
+  if (!p || !p.get('masterId')) return null;
+  var id = String(p.get('masterId')).trim();
+  if (!/^[0-9A-Za-z_-]{1,32}$/.test(id)) { showToast('⚠️ 指定された利用者を開けませんでした'); return null; }
+  return id;
+}
+/* 起動pull・30秒ポーリングの adopt() は DB ごと差し替えるため currentResidentId も戻る。
+   マスタから来た指定をメモリに保持し、差し替え後に選び直す。
+   ★職員が自分でセレクトを変えたら破棄する（後から上書きしない）＝ onResidentChange で解除。 */
+var csMasterRid = null;
+function csApplyMasterIdParam(isRetry) {
+  var mid = isRetry ? null : csReadMasterIdParam();
+  if (!isRetry && !mid) return;
+  if (!isRetry) csClearMasterIdParam();   // URLから即座に落とす（リロード・設定保存で開き直さない）
+  var list = (DB && DB.residents) || [], hit = null;
+  if (isRetry) {
+    if (csMasterRid == null) return;
+    for (var k = 0; k < list.length; k++) { if (list[k].id === csMasterRid) { hit = list[k]; break; } }
+    if (!hit) { csMasterRid = null; return; }
+  } else {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].masterId != null && String(list[i].masterId) === String(mid)) { hit = list[i]; break; }
+    }
+    if (!hit) { showToast('⚠️ 指定された利用者は週間計画に登録されていません'); return; }
+    csMasterRid = hit.id;
+  }
+  if (DB.currentResidentId === hit.id) {
+    if (!isRetry) showToast('「' + (hit.name || '') + '」を表示しています');   // 効いたことを分かるように
+    return;
+  }
+  DB.currentResidentId = hit.id;
+  populateResidentSelect();
+  renderAll();
+  showToast('入居者マスタから「' + (hit.name || '') + '」を開きました');
+}
+function csClearMasterIdParam() {
+  try { if (location.search) history.replaceState(null, '', location.pathname); } catch (e) {}
 }
 function openResidentModal() {
   renderResidentList();
@@ -4641,6 +4693,9 @@ applyScheduleDeviceGuard();
 }); })();
 populateResidentSelect();
 renderAll();
+/* ★復元の「後」に呼ぶ＝入居者マスタからの指定を優先させる。
+   万一ここで失敗しても initScrollSync 以降の初期化を止めない（周囲と同じ防御）。 */
+try { csApplyMasterIdParam(); } catch (e) {}
 initScrollSync();
 requestAnimationFrame(() => {
   const gs = $('#grid-scroll');
@@ -4659,6 +4714,9 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
           try { SYNC.push(); } catch (e) {}   // クリア済みを即クラウドへ確定（rev前進）＝全端末へ恒久反映
         }
       } catch (e2) {}
+      /* 起動pullはDB全体を差し替えるため currentResidentId も戻りうる。
+         マスタから本人指定で来ている場合は、pull後に選び直して指定を勝たせる。 */
+      try { csApplyMasterIdParam(true); } catch (e4) {}
       try { SYNC.startPolling(); } catch (e3) {}
     };
     SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
