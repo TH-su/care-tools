@@ -4971,6 +4971,75 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* care_schedule_v2 から デイ利用情報を集める
    * 返値: [{name, floor, lunchMed, hospitalized, days:{dow:[start,end]}}] */
+  /* ═══════════ 入居者マスタの入院を重ねる ═══════════ 2026-08-02 追加
+   * 排泄ケア記録・入居者マスタで入院にしても、ワースケには届いていなかった。
+   * 週間計画アプリが受け取った入院状態を care_schedule_v2 のサーバー版へ push しないため
+   * （care-schedule.html:2695 が saveLocalOnly）。デイ利用表・俯瞰2種と同じ迂回で解消する。
+   *
+   * ★ワースケは他の3つと違い care_schedule_v2 の**書き手**（setResidentHospitalized_ が
+   *   保存して push する）。そのため **r.hospitalized を書き換えてはいけない**。
+   *   書き換えると次の保存でマスタ由来の値がサーバーへ流れ、現場の入力を巻き戻しうる。
+   *   そこで「表示を組む瞬間に値を差し替える」だけにし、保存される構造には一切触らない。
+   *   ＝下の wsHospEffective_ を、派生モデルを作る2箇所（collectDaycare / careNameSets_）
+   *     でのみ使う。入院トグルの現在値（isResidentHospitalized_）や保存経路は従来のまま。 */
+  var WS_RM_CFG_KEY = 'rmaster_cfg';
+  var wsHospMap = null, wsHospRev = null, wsHospBusy = false;
+
+  function wsMasterCfg_() {
+    try {
+      var s = localStorage.getItem(WS_RM_CFG_KEY); if (!s) return null;
+      var o = JSON.parse(s), u = String((o && o.url) || '').trim();
+      if (!/^https:\/\//i.test(u)) return null;
+      return { url: u, token: String((o && o.token) || '').trim() };
+    } catch (e) { return null; }
+  }
+  /* 表示用の実効値。マスタが配信していればそちら、無ければ従来どおり care_schedule_v2 の値。
+     ★引数の r は読むだけ。書き換えない。 */
+  function wsHospEffective_(r) {
+    if (!r) return false;
+    if (wsHospMap && r.masterId != null && r.masterId !== '') {
+      var v = wsHospMap[String(r.masterId)];
+      if (v !== undefined) return !!v;
+    }
+    return !!r.hospitalized;
+  }
+  function wsFetchHosp_() {
+    if (wsHospBusy) return Promise.resolve(false);
+    var c = wsMasterCfg_(); if (!c || !c.token) return Promise.resolve(false);
+    wsHospBusy = true;
+    var u = c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=getRoster&token=' + encodeURIComponent(c.token);
+    return fetch(u, { method: 'GET', cache: 'no-store', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !Array.isArray(j.roster)) return false;
+        var m = {};
+        j.roster.forEach(function (x) {
+          var mid = x && (x.masterId != null ? x.masterId : x.id);
+          if (mid == null || mid === '') return;
+          if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
+        });
+        wsHospMap = m;
+        careNamesCache_ = { raw: null, hosp: {}, moved: {} };   // 名前セットのキャッシュを捨てて組み直させる
+        if (typeof j.stateRev === 'number' || typeof j.srev === 'number') wsHospRev = { rev: j.stateRev, srev: j.srev };
+        return true;
+      })
+      .catch(function () { return false; })
+      .then(function (ok) { wsHospBusy = false; return ok; });
+  }
+  /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
+  function wsWatchMasterState_() {
+    var c = wsMasterCfg_(); if (!c || document.hidden) return;
+    fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev',
+          { method: 'GET', cache: 'no-store', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || j.ok !== true) return;
+        var ch = !wsHospRev || j.rev !== wsHospRev.rev || j.srev !== wsHospRev.srev;
+        wsHospRev = { rev: j.rev, srev: j.srev };
+        if (ch) wsFetchHosp_();   // 次の描画から新しい値が使われる
+      }).catch(function () {});
+  }
+
   function collectDaycare(careDb) {
     var out = [];
     if (!careDb || !careDb.residents) return out;
@@ -4990,7 +5059,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (has) {
         out.push({ name: r.name, floor: r.floor || 0,
-                   lunchMed: !!r.lunchMed, hospitalized: !!r.hospitalized, days: days });
+                   lunchMed: !!r.lunchMed, hospitalized: wsHospEffective_(r), days: days });   /* マスタ由来を優先（表示のみ・r は書き換えない） */
       }
     }
     out.sort(function (a, b) {
@@ -7553,7 +7622,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (p && p.residents) {
           for (var i = 0; i < p.residents.length; i++) {
             var r = p.residents[i];
-            if (r.hospitalized) hosp[r.name] = true;
+            if (wsHospEffective_(r)) hosp[r.name] = true;   /* マスタ由来を優先（表示のみ） */
             if (r.movedOut) moved[r.name] = true;
           }
         }
@@ -12131,6 +12200,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     renderAll();
     /* 施設プロファイル未設定なら初回セットアップ・ウィザードを表示（shift-app 完了済みなら非表示） */
     try { maybeShowFacilityWizard(); } catch (eWz) {}
+
+    /* 入居者マスタの入院を重ねる（2026-08-02 追加・表示のみ／保存経路には触れない）。
+       接続設定が無い端末では何も起きない＝従来どおりの表示。 */
+    try {
+      wsFetchHosp_().then(function (ok) { if (ok) { try { renderAll(); } catch (e) {} } });
+      setInterval(function () { try { wsWatchMasterState_(); } catch (e) {} }, 60000);
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { try { wsWatchMasterState_(); } catch (e) {} }
+      });
+    } catch (eHz) {}
   }
 
   if (document.readyState === 'loading') {
