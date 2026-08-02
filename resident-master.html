@@ -1401,10 +1401,17 @@ function openEdit(rec){
     '<button class="btn btn-sec" id="medLogAdd" type="button">＋ 診察記録を追加</button>'+
     '<p class="muted" style="margin-top:6px">当面は手動入力。将来、訪問診療アプリの診察結果がここに自動反映されます。</p></div></div>';
 
-  // 訪問診療連携キー（名寄せ確定後に患者IDを固定）
+  // 訪問診療連携キー（2026-08-02 改訂）
+  //   実際の突合キーは「入居者ID（このレコードの id）」に一本化されている。訪問診療アプリは
+  //   getRoster の masterId（＝この id）を patients.master_id に入れて突合しており（index.php の
+  //   vmMapMasterRecord / api.php の import_patients・import_daycare は master_id しか見ない）、
+  //   下段の xref.vma.patientId を読むコードは care-tools・訪問診療アプリの双方に1つも無い。
+  //   旧文言は「ここに入れると自動連携の鍵になります」と書いており、事実と食い違っていた。
+  //   ★入力欄と保存済みの値はそのまま残す（原則1・原則4）。消さずに、効かない旨だけを明示する。
   h+='<div class="cd"><div class="fgroup"><h3>訪問診療連携キー</h3><div class="fgrid">'+
-    '<div class="fld"><label>訪問診療 患者ID（xref.vma）</label><input data-xref-vma-pid type="text" value="'+esc((r.xref&&r.xref.vma&&r.xref.vma.patientId)||'')+'"></div>'+
-  '</div><p class="muted" style="margin-top:6px">訪問診療アプリの患者と名寄せ確定後、患者IDをここに入れると以後の自動連携の鍵になります。</p></div></div>';
+    '<div class="fld"><label>入居者ID（実際に使われる鍵・自動）</label><input type="text" value="'+esc(r.id)+'" readonly aria-readonly="true" style="background:var(--g0)"></div>'+
+    '<div class="fld"><label>訪問診療 患者ID（xref.vma・現在は未使用）</label><input data-xref-vma-pid type="text" value="'+esc((r.xref&&r.xref.vma&&r.xref.vma.patientId)||'')+'"></div>'+
+  '</div><p class="muted" style="margin-top:6px">訪問診療アプリは上段の<b>入居者ID</b>で自動的に突合します（手入力は不要です）。下段の「訪問診療 患者ID」は<b>現在どのアプリからも参照されていません</b>。入力済みの値はそのまま保存し続けますが、入れても連携先は変わりません。</p></div></div>';
 
   $('editBox').innerHTML=h;
   renderFamRows();
