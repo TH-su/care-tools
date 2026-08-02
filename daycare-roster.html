@@ -707,6 +707,107 @@ function roomToFloor(room) {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+/* ═══════════ 入居者マスタの入院状態を重ねる ═══════════ 2026-08-02 追加
+ * 経緯: 排泄ケア記録／入居者マスタで入院にしても、この表には反映されていなかった。
+ *   排泄・マスタ → マスタGAS までは届いているが、週間計画アプリは受け取った入院状態を
+ *   端末内(saveLocalOnly)にしか保存せず care_schedule_v2 のサーバー版へ push しないため、
+ *   サーバー版だけを読むこのツールには永久に届かない、というのが原因だった。
+ *
+ * 方針: **書き込みを一切増やさずに直す。**
+ *   care_schedule_v2 へ書くと、複数端末での上書き合戦や入院フラグの巻き戻りを招く
+ *   （このツールは「端末キャッシュへ書かない」という設計で事故を避けてきた・461行の注記）。
+ *   そこで、描画の直前にマスタの名簿を読んで **メモリ上の db にだけ**入院を重ねる。
+ *   保存は一切しない＝失敗しても壊れるものが無い。
+ *
+ * 規則:
+ *   ・マスタ常勝。ただし **マスタが hospitalized を配信してきた人だけ**。
+ *     未配信（旧GAS・項目なし）は触らない＝現場の入力を false で潰さない。
+ *   ・突合は masterId。氏名照合はしない（同姓同名で別人に付けない）。
+ *   ・接続設定(rmaster_cfg)が無い端末では何もしない＝従来どおりの表示。
+ */
+var DCR_RMASTER_CFG_KEY = 'rmaster_cfg';
+var DCR_HOSP_TTL_MS     = 60000;      // 名簿の取り直し間隔（stateRev が動いた時は即時）
+var dcrHospMap = null;                // masterId(string) -> bool ／ null = 未取得
+var dcrHospAt  = 0;
+var dcrHospRev = null;                // 前回見た {rev, srev}
+var dcrHospBusy = false;
+
+function dcrGetMasterCfg(){
+  try{
+    var s = localStorage.getItem(DCR_RMASTER_CFG_KEY); if (!s) return null;
+    var o = JSON.parse(s);
+    var url = String((o && o.url) || '').trim();
+    if (!/^https:\/\//i.test(url)) return null;
+    return { url: url, token: String((o && o.token) || '').trim() };
+  }catch(e){ return null; }
+}
+
+/* メモリ上の db に入院を重ねる。戻り値は変更件数（0なら再描画不要）。 */
+function dcrApplyMasterHosp(db){
+  if (!dcrHospMap || !db || !Array.isArray(db.residents)) return 0;
+  var n = 0;
+  db.residents.forEach(function(r){
+    if (!r || r.masterId == null || r.masterId === '') return;
+    var v = dcrHospMap[String(r.masterId)];
+    if (v === undefined) return;              // マスタ未配信＝触らない
+    if (!!r.hospitalized === !!v) return;
+    r.hospitalized = !!v; n++;
+  });
+  return n;
+}
+
+/* マスタGASから名簿を取り、入院だけを取り出して保持する。
+   ★取得した氏名・生年月日などは一切保持しない（入院の真偽と masterId のみ）。 */
+function dcrFetchMasterHosp(force){
+  if (dcrHospBusy) return Promise.resolve(false);
+  var cfg = dcrGetMasterCfg(); if (!cfg || !cfg.token) return Promise.resolve(false);
+  if (!force && dcrHospMap && (Date.now() - dcrHospAt) < DCR_HOSP_TTL_MS) return Promise.resolve(false);
+  dcrHospBusy = true;
+  var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') +
+            'action=getRoster&token=' + encodeURIComponent(cfg.token);
+  return fetch(url, { method:'GET', cache:'no-store', redirect:'follow' })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (!j || !Array.isArray(j.roster)) return false;
+      var m = {};
+      j.roster.forEach(function(x){
+        if (!x || x.masterId == null) { if (x && x.id != null) x.masterId = x.id; }
+        var mid = (x && (x.masterId != null ? x.masterId : x.id));
+        if (mid == null || mid === '') return;
+        /* hospitalized はキーが実在する時だけ採用（旧GASは項目ごと無い）。
+           無い人を false 扱いにすると現場の入院表示を一括で消してしまう。 */
+        if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
+      });
+      dcrHospMap = m; dcrHospAt = Date.now();
+      if (typeof j.stateRev === 'number' || typeof j.srev === 'number') {
+        dcrHospRev = { rev: j.stateRev, srev: j.srev };
+      }
+      return true;
+    })
+    .catch(function(){ return false; })
+    .then(function(ok){ dcrHospBusy = false; return ok; });
+}
+
+/* 版数(stateRev)だけを見張り、動いた時に名簿を取り直す。
+   合言葉不要・応答は数値2つだけ＝個人情報ゼロ。表示中のみ回す。 */
+function dcrWatchMasterState(){
+  var cfg = dcrGetMasterCfg(); if (!cfg) return;
+  if (document.hidden) return;
+  var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev';
+  fetch(url, { method:'GET', cache:'no-store', redirect:'follow' })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (!j || j.ok !== true) return;                       // 未対応GAS＝静かに見送る
+      var changed = !dcrHospRev || j.rev !== dcrHospRev.rev || j.srev !== dcrHospRev.srev;
+      dcrHospRev = { rev: j.rev, srev: j.srev };
+      if (!changed) return;
+      return dcrFetchMasterHosp(true).then(function(ok){
+        if (ok && DB) renderAll(DB);                         // 入院が変わったら描き直す
+      });
+    })
+    .catch(function(){});
+}
+
 function buildModel(db) {
   const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
   const people = [];
@@ -1429,6 +1530,7 @@ function toast(msg, isNg) {
 function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
+  dcrApplyMasterHosp(db);   // 入居者マスタ由来の入院を重ねる（読み取り専用・下の説明を参照）
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
   HIDE_CANDIDATES = collectHideCandidates(db);
   hiddenNowCount = HIDE_CANDIDATES.filter(c => c.hidden).length;   // 現候補のうち実際に隠れている人数
@@ -1605,6 +1707,14 @@ function init() {
      薬用の色は印刷に出る＝古い状態のまま与薬帳票を刷る事故を防ぐ意味でも、開いた時点で最新に揃える。
      失敗しても従来どおり端末キャッシュ表示のまま（オフラインでも起動を妨げない・トーストも出さない）。 */
   if (syncTarget().endpoint) refresh(true);
+
+  /* 入居者マスタの入院状態を重ねる（2026-08-02 追加）。
+     接続設定が無い端末では何も起きない＝従来どおりの表示のまま。 */
+  dcrFetchMasterHosp(true).then(function(ok){ if (ok && DB) renderAll(DB); });
+  setInterval(function(){ try{ dcrWatchMasterState(); }catch(e){} }, 60000);
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) { try{ dcrWatchMasterState(); }catch(e){} }   // 復帰時に即時1回
+  });
 }
 init();
 </script>
