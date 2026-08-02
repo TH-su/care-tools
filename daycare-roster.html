@@ -728,6 +728,12 @@ function roomToFloor(room) {
 var DCR_RMASTER_CFG_KEY = 'rmaster_cfg';
 var DCR_HOSP_TTL_MS     = 60000;      // 名簿の取り直し間隔（stateRev が動いた時は即時）
 var dcrHospMap = null;                // masterId(string) -> bool ／ null = 未取得
+/* ☆訪問診療（2026-08-02 追加）。
+   このフラグは読み手（下の描画）だけがあって**書き手がどこにも無く、☆が永久に出ない**状態だった。
+   入居者マスタの「往診曜日(visitDay)」が入っている＝訪問診療を受けている、なので、
+   入院を取りに行くのと同じ応答からそのまま導出する（追加のリクエストは発生しない）。
+   ★週間計画側に visitingMed を入力するUIは無い＝現場の入力を潰す心配がない。 */
+var dcrVmedMap = null;                // masterId(string) -> bool ／ null = 未取得
 var dcrHospAt  = 0;
 var dcrHospRev = null;                // 前回見た {rev, srev}
 var dcrHospBusy = false;
@@ -744,14 +750,22 @@ function dcrGetMasterCfg(){
 
 /* メモリ上の db に入院を重ねる。戻り値は変更件数（0なら再描画不要）。 */
 function dcrApplyMasterHosp(db){
-  if (!dcrHospMap || !db || !Array.isArray(db.residents)) return 0;
+  if ((!dcrHospMap && !dcrVmedMap) || !db || !Array.isArray(db.residents)) return 0;
   var n = 0;
   db.residents.forEach(function(r){
     if (!r || r.masterId == null || r.masterId === '') return;
-    var v = dcrHospMap[String(r.masterId)];
-    if (v === undefined) return;              // マスタ未配信＝触らない
-    if (!!r.hospitalized === !!v) return;
-    r.hospitalized = !!v; n++;
+    var mid = String(r.masterId);
+    if (dcrHospMap){
+      var v = dcrHospMap[mid];
+      if (v !== undefined && !!r.hospitalized !== !!v){ r.hospitalized = !!v; n++; }   // 未配信＝触らない
+    }
+    if (dcrVmedMap){
+      /* ☆訪問診療。往診曜日が入っていれば true。
+         こちらは「キーが無い＝false」で構わない（週間計画側に入力UIが無く、
+         潰す対象の現場入力が存在しないため）。 */
+      var w = !!dcrVmedMap[mid];
+      if (!!r.visitingMed !== w){ r.visitingMed = w; n++; }
+    }
   });
   return n;
 }
@@ -769,7 +783,7 @@ function dcrFetchMasterHosp(force){
     .then(function(r){ return r.json(); })
     .then(function(j){
       if (!j || !Array.isArray(j.roster)) return false;
-      var m = {};
+      var m = {}, vm = {}, sawVisitDay = false;
       j.roster.forEach(function(x){
         if (!x || x.masterId == null) { if (x && x.id != null) x.masterId = x.id; }
         var mid = (x && (x.masterId != null ? x.masterId : x.id));
@@ -777,8 +791,14 @@ function dcrFetchMasterHosp(force){
         /* hospitalized はキーが実在する時だけ採用（旧GASは項目ごと無い）。
            無い人を false 扱いにすると現場の入院表示を一括で消してしまう。 */
         if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
+        /* ☆訪問診療＝往診曜日が入っているか。旧GAS（visitDay を返さない）では
+           1件も見つからないので、その場合は導出そのものを行わない（全員 ☆無しにしない）。 */
+        if (Object.prototype.hasOwnProperty.call(x, 'visitDay')){
+          sawVisitDay = true;
+          if (String(x.visitDay || '').trim() !== '') vm[String(mid)] = true;
+        }
       });
-      dcrHospMap = m; dcrHospAt = Date.now();
+      dcrHospMap = m; dcrVmedMap = sawVisitDay ? vm : null; dcrHospAt = Date.now();
       if (typeof j.stateRev === 'number' || typeof j.srev === 'number') {
         dcrHospRev = { rev: j.stateRev, srev: j.srev };
       }
