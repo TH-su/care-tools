@@ -196,6 +196,12 @@ table.sheet .c-sum-lb {
 .note-below .nb-h { font-weight: 700; background: var(--g1); padding: 1px 8px; border-radius: 3px; }
 .note-below .nb-item { white-space: nowrap; }
 table.sheet thead th { background: var(--g1); font-weight: 700; }
+/* 表の中盤に再掲する曜日見出し行（tbody 内に置くため thead の指定が効かない＝同じ見た目を明示する）。
+   長い表で「今どの曜日の列か」を追いやすくするための再掲（2026-08-03 運用指示）。
+   ★区画ラベル列(c-sec)と No.列(c-rn) は thead でも詳細度で自前の背景(--g0)が勝つため、
+     再掲行でも同じになるよう明示的に戻す（＝上部ヘッダーと寸分違わぬ見た目にする）。 */
+table.sheet tr.rehead th { background: var(--g1); font-weight: 700; }
+table.sheet tr.rehead th.c-sec, table.sheet tr.rehead th.c-rn { background: var(--g0); }
 table.sheet .sec-h { background: var(--g0); font-weight: 700; text-align: center; }
 table.sheet .sese { background: var(--sese); font-weight: 700; }        /* ２階入居者ラベル＝緑（元表を継承） */
 table.sheet .flr1 { background: #b3e5fc; font-weight: 700; }           /* １階入居者ラベル＝薄い水色（2階と別色にして区切りを明確化） */
@@ -340,8 +346,12 @@ table.wk .wk-blank { color: transparent; }
   table.sheet { box-shadow: none; }
   table.sheet th, table.sheet td { border-color: #000; }
   /* デイ利用者一覧表(A3縦・全幅)は行を少し高くして用紙を縦に広く使う（#sc-daylist 限定＝他タブ印刷に非干渉）。
-     28名で表実高≈1329px＋備考/表題 ≈1409px ＜ A3縦印刷可能高≈1527px（余裕あり）。 */
-  #sc-daylist table.sheet td, #sc-daylist table.sheet th { padding-top: 4px; padding-bottom: 4px; }
+     ★2026-08-03 実測（凡例・印刷時の氏名折返しを含む総高／A3縦の印刷可能高≈1527px）:
+       padding 4px: 28名=1491(余裕36)・30名=1560(溢れる)
+       padding 3px: 28名=1383(余裕144)・30名=1446(余裕81)・31名=1487(余裕40)
+     曜日見出しの中盤再掲(+2行)で 4px では余裕が尽きるため 3px へ。旧コメントの「28名≈1409px」は
+     凡例(89px)を数え落としていた値＝実測とずれていたので上の実測値に置き換えた。 */
+  #sc-daylist table.sheet td, #sc-daylist table.sheet th { padding-top: 3px; padding-bottom: 3px; }
   /* 薬用の画面専用チェックリストは印刷しない。太枠(blk-*)は詳細度で border-color(#000)指定に勝ち var(--g9)=濃色のまま帳票に出る（体感は黒）。 */
   .noprint { display: none !important; }
   /* 薬用のチェック色(.med-hl=薄オレンジ)は印刷にも出す（2026-07-21 運用指示・昼食のある方を紙面で判別するため）。
@@ -1080,9 +1090,11 @@ function setupSheet(table, kind) {
   table.appendChild(colgroupFor(kind));
 }
 
-function dayHeader() {
-  const thead = el('thead');
-  const tr = el('tr');
+/* 曜日見出しの2行（曜日名／開始・終了）を生成する。thead と、表の中盤に再掲する行の両方で共用。
+   rehead=true のときは tbody 内に置くため .rehead を付ける（thead 限定の背景指定を補う）。 */
+function dayHeaderRows(rehead) {
+  const cls = rehead ? 'rehead' : null;
+  const tr = el('tr', cls);
   tr.appendChild(el('th', 'c-sec', ''));
   tr.appendChild(el('th', 'c-rn', ''));
   for (let d = 0; d < NDAY; d++) {
@@ -1090,8 +1102,7 @@ function dayHeader() {
     th.colSpan = 3;
     tr.appendChild(th);
   }
-  thead.appendChild(tr);
-  const tr2 = el('tr');
+  const tr2 = el('tr', cls);
   tr2.appendChild(el('th', 'c-sec', ''));
   tr2.appendChild(el('th', 'c-rn', ''));
   for (let d = 0; d < NDAY; d++) {
@@ -1099,7 +1110,11 @@ function dayHeader() {
     tr2.appendChild(el('th', 'c-tm', '開始'));
     tr2.appendChild(el('th', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), '終了'));
   }
-  thead.appendChild(tr2);
+  return [tr, tr2];
+}
+function dayHeader() {
+  const thead = el('thead');
+  dayHeaderRows(false).forEach(r => thead.appendChild(r));
   return thead;
 }
 // デイ区画の1セル（氏名＋開始＋終了）。入浴は黄、入院は（入院）。
@@ -1205,6 +1220,8 @@ function renderDaylist(ppl) {
   // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
   const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
   sumRow(tbody, 'せせらぎ合計', sese);
+  // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
+  dayHeaderRows(true).forEach(r => tbody.appendChild(r));
   // ── 昼食（2階食堂）＝その日デイに行かない人 ──
   sectionRows(tbody, f2, '２階入居者', false, false, true, 2);
   sectionRows(tbody, f1, '１階入居者', false, false, true, 1);
@@ -1228,18 +1245,22 @@ function renderDaylist(ppl) {
    ふりがな列は廃止（2026-07-21 運用指示）。並びは buildModel の kana 昇順ソートで担保しており、
    列を出さなくても五十音順は変わらない（＝p.kana は表示用でなく整列用として残す）。
    ============================================================================ */
-function renderAllweek(ppl) {
-  const table = $('tblAllweek');
-  setupSheet(table, 'allweek');
-  const thead = el('thead');
-  const tr = el('tr');
+// 全員リストの曜日見出し行（No. ＋ 曜日ごとに 氏名/曜日名(colspan2)）。thead と中盤の再掲で共用。
+function allweekHeaderRow(rehead) {
+  const tr = el('tr', rehead ? 'rehead' : null);
   tr.appendChild(el('th', 'c-rn', 'No.'));
   for (let d = 0; d < NDAY; d++) {
     tr.appendChild(el('th', 'c-nm dsep', '氏名'));
     const th = el('th', 'th-day' + (d === 5 ? ' sat' : '') + (d === NDAY - 1 ? ' dend' : ''), DAYS_JA[d]); th.colSpan = 2;
     tr.appendChild(th);
   }
-  thead.appendChild(tr);
+  return tr;
+}
+function renderAllweek(ppl) {
+  const table = $('tblAllweek');
+  setupSheet(table, 'allweek');
+  const thead = el('thead');
+  thead.appendChild(allweekHeaderRow(false));
   table.appendChild(thead);
 
   const tbody = el('tbody');
@@ -1247,7 +1268,12 @@ function renderAllweek(ppl) {
                   { label: '１階入居者', list: ppl.filter(p => p.floor === 1) }];
   const f0 = ppl.filter(p => p.floor === 0);
   if (f0.length) blocks.push({ label: '階未設定', list: f0 });
+  let dataRowsBefore = 0;   // ここまでに描いたデータ行数（空ブロックの見出し行は数えない）
   for (const b of blocks) {
+    // 「１階入居者」ブロックの上に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）。
+    // ★上にデータ行が1行も無い時（２階が0名等）は出さない。空ブロックでも見出し行は描かれるため、
+    //   行数ではなくデータ行数で判定しないと、上端で曜日行が近接して二重に見える。
+    if (b.label === '１階入居者' && dataRowsBefore > 0) tbody.appendChild(allweekHeaderRow(true));
     // 各階ブロックを太枠で囲む: 見出し(全幅)=上辺＋左右上隅／各データ行=左右辺／最終行=下辺
     const hr = el('tr');
     const h = el('th', 'sec-h blk-top blk-left blk-right', b.label); h.colSpan = 1 + NDAY * 3;   // No.列(1) ＋ 曜日×3
@@ -1265,6 +1291,7 @@ function renderAllweek(ppl) {
       if (i === n - 1) { for (let c = 0; c < cells.length; c++) cells[c].classList.add('blk-bot'); }  // 下辺
       tbody.appendChild(r);
     });
+    dataRowsBefore += n;
   }
   table.appendChild(tbody);
 
