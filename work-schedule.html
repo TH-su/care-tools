@@ -4264,6 +4264,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var list = master.weekdays[DOW_KEYS[d]] || [];
       for (i = 0; i < list.length; i++) {
         var e = list[i];
+        /* 空氏名は masterVisitNames_ が集合から除外している。作り直し側でも同じく無視しないと
+         * 「剥がされないのに積み増される」非対称ができる（消す集合＝作り直す集合を保つ）。 */
+        if (e.residentName == null || e.residentName === '') continue;
         var res = byName[e.residentName];
         if (!res) {
           res = { id: M.genId('r'), name: e.residentName, events: [] };
@@ -7715,18 +7718,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * （実測で10名25件の部分欠損に相当）。3か月以上前の版は【適用済みスタンプを進めずに】見送り、
      * 手動で意図的に反映させる。警告は1版につき1回だけ（毎起動のうるささを避ける）。 */
     var mm_ = /^(?:WS|CARE)(\d{4})(\d{2})$/.exec(String(master.source || ''));
+    var age_ = -1;
     if (mm_) {
       var n_ = nowDate_();
-      var age_ = (n_.getFullYear() * 12 + n_.getMonth()) - (Number(mm_[1]) * 12 + (Number(mm_[2]) - 1));
-      if (age_ >= 3 && masterApplyImpact_(master, care0).replacedEv > 0) {
-        var wk_ = 'ws_master_stale_warned', warned_ = '';
-        try { warned_ = localStorage.getItem(wk_) || ''; } catch (e0) {}
-        if (warned_ !== stamp) {
-          try { localStorage.setItem(wk_, stamp); } catch (e1) {}
-          toast('支援マスタが' + age_ + 'か月前の版のため自動反映を見送りました（反映するには「週間計画へ反映」）', true);
-        }
-        return;
+      age_ = (n_.getFullYear() * 12 + n_.getMonth()) - (Number(mm_[1]) * 12 + (Number(mm_[2]) - 1));
+    }
+    var imp_ = masterApplyImpact_(master, care0);
+    /* 置き換わるものが1つでもあるなら、版が【古い】または【読めない】マスタは自動適用しない。
+     * 版が読めない場合に素通りさせると、外部生成・旧形式・手貼りのマスタが何年前でも黙って適用される
+     * （fail-closed に倒す）。デイ予定と階も無条件に置換されるので visit だけでは判定しない。 */
+    if ((age_ >= 3 || age_ < 0) && (imp_.replacedEv > 0 || imp_.dcReplaced > 0)) {
+      var wk_ = 'ws_master_stale_warned', warned_ = '';
+      try { warned_ = localStorage.getItem(wk_) || ''; } catch (e0) {}
+      if (warned_ !== stamp && staleWarned_ !== stamp) {
+        staleWarned_ = stamp;
+        try { localStorage.setItem(wk_, stamp); } catch (e1) {}
+        toast('支援マスタが' + (age_ >= 0 ? age_ + 'か月前の版' : '版の分からない内容') +
+              'のため自動反映を見送りました（反映するには「週間計画へ反映」）', true);
       }
+      return;
     }
     var db = IM.masterToCareDb(master, care0);
     db.wsMasterStamp = stamp;
@@ -8676,6 +8686,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     elState.style.color = stale ? '#c0392b' : '';
     elState.title = stale ? 'このマスタは3か月以上前の内容です。「週間計画へ反映」は、その後の変更を失う恐れがあります' : '';
   }
+  var staleWarned_ = '';   /* 鮮度警告を出した版（localStorage が書けない端末でも1回で止める） */
   /* 現在日時。版の古さ判定で複数箇所から使うため1か所に集約（IIFE内・外部からの差し替えは不可） */
   function nowDate_() { return new Date(); }
 
