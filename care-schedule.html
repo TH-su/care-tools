@@ -498,11 +498,13 @@ select.inp { cursor: pointer; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 10px; border-radius: 6px; border: 1px solid var(--g3);
   margin-bottom: 6px; font-size: 14px;
+  /* 2026-08-03「入居前」追加でボタンが4つになった。狭幅端末で押し間違えないよう折返しを許す（HIG・原則10） */
+  flex-wrap: wrap; gap: 4px;
 }
 .res-item.active { border-color: var(--pri2); background: rgba(26,115,232,.06); font-weight: 600; }
 .res-item .del-res {
   background: none; border: none; color: var(--ng); cursor: pointer;
-  font-size: 16px; padding: 2px 6px; border-radius: 4px;
+  font-size: 16px; padding: 6px 9px; border-radius: 4px; min-height: 32px;   /* タップ領域を拡大（HIG・原則10） */
 }
 
 /* ── Toast ── */
@@ -2978,10 +2980,11 @@ function renderResidentList() {
   const csOutAttr = r => csMasterOwned(r) ? ' disabled aria-disabled="true" title="入居者マスタで操作してください"' : '';
   ul.innerHTML = vis.slice().sort(csResidentSort).map(r =>
     `<li class="res-item ${r.id === DB.currentResidentId ? 'active' : ''}">
-      <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
+      <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.preAdmitted ? ' <span style="font-size:11px;color:#6a1b9a">（入居前）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
       ${r.movedOut
         ? `<button class="del-res" ${csOutStyle(r, 'var(--pri)')}${csOutAttr(r)} onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
-        : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
+        : `<button class="del-res" style="color:#6a1b9a" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>
+           <button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
            <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>`}
       <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">✕</button>
     </li>`
@@ -3106,6 +3109,47 @@ function toggleHospitalized(id) {
   showToast(res.hospitalized
     ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）${csWarn}`
     : `「${res.name}」を退院にしました${csWarn}`);
+}
+/* 「入居前」トグル（2026-08-03 追加）。
+   入居前の方は、入居後にそのまま使えるよう週間計画を先に作っておく運用のため、
+   計画は普通に組めるが【まだ支援は実施しない】。ワークスケジュールでは入院中と同じ極薄表示にし、
+   誤って実施・押印されないようにする（マスクの実装は work-schedule 側）。
+
+   正本はこのアプリ（週間計画）に置く。入居者マスタの在籍状態は「在籍／退去」の2値しかなく、
+   入居予定者はそもそもマスタ未登録のことが多いため、マスタから導出できない。
+   したがって movedOut のようなマスタ連動はせず、csPushMasterState も呼ばない。
+
+   ★退去(movedOut)と違い、一覧からもワースケの盤面からも【消さない】。
+   退去はワースケ側で予定ごと DELETE_TASK される破壊的な状態で、入居前に使うと
+   入居後に計画が戻らなくなる（2026-08-03 の調査で確認）。 */
+async function togglePreAdmission(id) {
+  const res = DB.residents.find(r => r.id === id);
+  if (!res) return;
+  const name = res.name, val = !res.preAdmitted;
+  /* ★競合リベース対策（必須）。csRebaseEdits は利用者直下のスカラーを server 側のまま温存する設計で、
+     events のような id 単位マージも、hospitalized のようなマスタからの復元経路も preAdmitted には無い。
+     焼き直し（applyPatch）を入れないと、ワースケとの競合1回で入居前が黙って外れ、
+     「押印欄も出ません」と伝えた安全表示が通常枠へ戻る＝誤実施・誤押印を招く。
+     saveCareInfo / saveResidentBulk_ と同じ方式で、自分の変更だけを再主張する。 */
+  const applyPatch = () => {
+    const r = DB.residents.find(x => String(x.id) === String(id));
+    if (!r || !!r.preAdmitted === val) return false;
+    r.preAdmitted = val;
+    return true;
+  };
+  applyPatch();
+  const ok = saveDB();
+  renderResidentList(); renderAll();
+  showToast(val
+    ? `「${name}」を入居前にしました（計画は作れます。ワークスケジュールでは極薄表示になり、押印欄も出ません）`
+    : `「${name}」を入居済みにしました（ワークスケジュールで通常表示に戻ります）`);
+  if (ok && SYNC.hasTarget()) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try {
+      await SYNC.push();
+      if (applyPatch()) { saveDB(); renderResidentList(); renderAll(); }
+    } catch (e) {}
+  }
 }
 function restoreResident(id) {
   const res = DB.residents.find(r => r.id === id);
