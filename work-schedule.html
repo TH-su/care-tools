@@ -237,6 +237,12 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
  * 背景色(種別色)の上に斜線を重ね、ややフェードさせる。 */
 .b-task.hosp { opacity: .5; filter: grayscale(1); -webkit-filter: grayscale(1);
   background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.32) 0 5px, transparent 5px 12px); }   /* 入院中の斜線=濃く(出勤時間外より目立たせる・要件斜線入替) */
+/* 入居前(2026-08-03): まだ支援を実施しない方。見え方は入院と同じ極薄だが、斜線の向きを逆(-45deg)にして
+ * 「入院」と「入居前」を並べたときに見分けられるようにする。枠は消さない（退去との決定的な違い）。 */
+.b-task.pre-admit { opacity: .5; filter: grayscale(1); -webkit-filter: grayscale(1);
+  background-image: repeating-linear-gradient(-45deg, rgba(0,0,0,.32) 0 5px, transparent 5px 12px); }
+/* 入院と入居前が同時に立つ場合は入院を優先（印刷ラベルが「（入院中）」なので斜線の向きも合わせる） */
+.b-task.hosp.pre-admit { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.32) 0 5px, transparent 5px 12px); }
 .b-task .t-done {
   position: absolute; top: 1px; right: 2px; width: 16px; height: 16px;
   border-radius: 50%; background: var(--ok); color: #fff; font-size: 11px;
@@ -555,6 +561,11 @@ body.printing .b-task.tentative { border-style: dashed !important; }
 body.printing .b-task.hosp { opacity: 1; filter: none; -webkit-filter: none; border-color: #c9c9c9 !important;
   background-image: repeating-linear-gradient(45deg, #b8b8b8 0 4px, transparent 4px 10px) !important; }   /* 入院中の斜線=濃く(印刷・文字#c9c9c9よりわずかに濃い程度) */
 body.printing .b-task.hosp * { color: #c9c9c9 !important; }
+/* 入居前: 入院と同じ極薄扱い（押印□は board.js 側で出さない）。斜線は逆向きで区別できるようにする */
+body.printing .b-task.pre-admit { opacity: 1; filter: none; -webkit-filter: none; border-color: #c9c9c9 !important;
+  background-image: repeating-linear-gradient(-45deg, #b8b8b8 0 4px, transparent 4px 10px) !important; }
+body.printing .b-task.pre-admit * { color: #c9c9c9 !important; }
+body.printing .b-task.hosp.pre-admit { background-image: repeating-linear-gradient(45deg, #b8b8b8 0 4px, transparent 4px 10px) !important; }
 /* 盤面の白黒化 */
 body.printing .b-lane, body.printing .b-lane.z-facility, body.printing .b-lane.z-night { background: #fff; }
 /* 勤務時間外は印刷では「白地＋現色の斜線」（要件F・2026-07-08改）。下地グレーをやめ #fff にし、
@@ -564,11 +575,11 @@ body.printing .lane-off { background: #fff;
   background-image: repeating-linear-gradient(45deg, #c2c6cc 0 2px, transparent 2px 8px); }   /* 出勤時間外=白地＋現色斜線(印刷) */
 /* カラー印刷: 各枠を画面と同じ色で印刷する（.p-task の白塗り!importantを枠種別ごとに上書き＝同等以上の詳細度＋!important）。
  * 背景色のみ＝A3寸法/フィット/罫線/斜線に非干渉。print-color-adjust:exact(下記 * )で背景が印刷出力される。
- * 入居者支援(k-phys/life/mix)は :not(.hosp) で除外＝入院中の極薄+斜線表示(下 body.printing .b-task.hosp)を保持。
+ * 入居者支援(k-phys/life/mix)は :not(.hosp):not(.pre-admit) で除外＝入院中/入居前の極薄+斜線表示を保持。
  * 施設業務(k-fac)は白のまま(画面も白＝据置)。手動配色枠は board.js の inline!important が引き続き優先。要 プリンタ「背景のグラフィック」オン。 */
-body.printing .b-task.p-task.k-phys:not(.hosp) { background: var(--c-phys) !important; }   /* 身体=水色 */
-body.printing .b-task.p-task.k-life:not(.hosp) { background: var(--c-life) !important; }   /* 生活=ピンク */
-body.printing .b-task.p-task.k-mix:not(.hosp)  { background: var(--c-mix)  !important; }   /* 複合=藤 */
+body.printing .b-task.p-task.k-phys:not(.hosp):not(.pre-admit) { background: var(--c-phys) !important; }   /* 身体=水色 */
+body.printing .b-task.p-task.k-life:not(.hosp):not(.pre-admit) { background: var(--c-life) !important; }   /* 生活=ピンク */
+body.printing .b-task.p-task.k-mix:not(.hosp):not(.pre-admit)  { background: var(--c-mix)  !important; }   /* 複合=藤 */
 body.printing .b-task.p-task.k-gui  { background: var(--c-gui)  !important; }   /* 誘導・配膳=薄紫 */
 body.printing .b-task.p-task.k-free { background: var(--c-free) !important; }   /* 自由=薄緑 */
 body.printing .b-task.p-task.k-admin { background: #e8eef5 !important; }        /* 事務=薄青(画面と同色) */
@@ -4187,9 +4198,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { staff: staff, columns: columns, filled: filled, overflow: 0, added: added, locked: locked };
   }
 
+  /* 支援マスタに訪問予定が載っている利用者名の集合。
+   * この集合に居ない方は「マスタが古い／対象外」であって「予定が無い」わけではないため、
+   * 既存の訪問予定を消してはいけない（2026-08-03 のデータ消失の直接原因）。
+   *
+   * ★照合は【生の氏名】で行う。下の作り直しが byName[e.residentName]（生の氏名）で引くため、
+   * ここだけ正規化すると「消す集合 ⊋ 作り直す集合」になり、表記ゆれのある方の予定が
+   * 消えたまま復元されない（別名の重複行に入る）。消す集合と作り直す集合は必ず一致させること。 */
+  function masterVisitNames_(master) {
+    var set = {};
+    if (!master || !master.weekdays) return set;
+    for (var d = 0; d < DOW_KEYS.length; d++) {
+      var list = master.weekdays[DOW_KEYS[d]] || [];
+      for (var i = 0; i < list.length; i++) {
+        var nm = list[i].residentName;
+        if (nm != null && nm !== '') set[nm] = true;
+      }
+    }
+    return set;
+  }
+
   /* マスタ → care_schedule_v2 マージ（週間計画アプリのDB形式）
    * 既存DBの visit イベントをマスタ内容で置き換える。daycare等は温存。
-   * 純粋関数: existingDb は変更せず新DBを返す */
+   * 純粋関数: existingDb は変更せず新DBを返す
+   *
+   * ★2026-08-03 の修正: 置き換えの対象を【支援マスタに載っている利用者だけ】に限定した。
+   * 従来は全利用者の visit を無条件に捨ててからマスタ分だけ作り直していたため、
+   * マスタ生成後に登録された方（入居予定者を含む）の訪問予定が消えた。
+   * 実害: 2026-06-14 生成のマスタで反映を実行し、5名の訪問予定が全消し・10名が部分欠損。
+   * 「マスタの内容で置き換える」の本来の意味＝マスタが言及している人の予定を置き換える、に合わせる。 */
   function masterToCareDb(master, existingDb) {
     var db = { residents: [], currentResidentId: null, office: null };
     if (existingDb && typeof existingDb === 'object') {
@@ -4197,19 +4234,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (Object.prototype.hasOwnProperty.call(existingDb, k)) db[k] = existingDb[k];
       }
     }
+    var inMaster = masterVisitNames_(master);
     var byName = {};
     var residents = [];
     var i, r;
     var exo = (existingDb && existingDb.residents) ? existingDb.residents : [];
+    /* 同名の行が複数あるとき、作り直しを受けるのは byName の後勝ちで1行だけ。
+     * 「消す集合＝作り直す集合」を厳密に保つため、受け皿になる行を先に確定させ、
+     * それ以外の同名行は visit を温存する（消えたまま復元されない行を作らない）。 */
+    var recipient = {};
+    for (i = 0; i < exo.length; i++) recipient[exo[i].name] = exo[i];
     for (i = 0; i < exo.length; i++) {
       r = exo[i];
       var nr = { };
       for (var k2 in r) if (Object.prototype.hasOwnProperty.call(r, k2)) nr[k2] = r[k2];
-      /* visit イベントは作り直すため除外コピー */
+      /* visit イベントは作り直すため除外コピー。ただしマスタに載っていない利用者は
+       * 作り直す材料が無い＝そのまま温存する（消さない）。 */
       var keep = [];
       var evs = r.events || [];
       for (var j = 0; j < evs.length; j++) {
-        if (evs[j].serviceType !== 'visit') keep.push(evs[j]);
+        var strip = (evs[j].serviceType === 'visit') && inMaster[nr.name] && (recipient[nr.name] === r);
+        if (!strip) keep.push(evs[j]);
       }
       nr.events = keep;
       byName[nr.name] = nr;
@@ -5410,7 +5455,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* タスクブロック。isNight: 夜勤列（右軸マッピング）
-   * ex: { print: 印刷モード, hosp: 入院中（極薄表示） } */
+   * ex: { print: 印刷モード, hosp: 入院中（極薄表示）, pre: 入居前（同じ極薄表示・押印□なし） } */
   function buildTask(t, scale, selectedIds, isNight, ex) {
     ex = ex || {};
     if (!(t.end > t.start)) return null;   /* 破損枠（end<=start）は描画しない（最終防御） */
@@ -5442,6 +5487,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (t.tentative) cls += ' tentative';
     if (t.done) cls += ' done';
     if (ex.hosp) cls += ' hosp';
+    if (ex.pre) cls += ' pre-admit';   /* 入居前＝まだ実施しない枠。見た目は入院と同じ極薄 */
     if (t.groupId) cls += ' grouped';           /* グループ化固定（画面で点線色アウトライン＋🔗） */
     if (selectedIds && selectedIds.indexOf && selectedIds.indexOf(t.id) >= 0) cls += ' selected';
     var b = el('div', cls);
@@ -5449,8 +5495,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     b.setAttribute('data-id', t.id);
     /* カスタム配色: 全枠(業務枠＋利用者支援枠)に適用。画面・印刷とも反映。印刷の p-task 白背景や
      * k-free/k-admin 既定色(!important)より優先させるため inline important。文字色は指定 or 背景輝度で
-     * 自動判定＝可読性を担保。入院枠(hosp)は既存の極薄/斜線表示を優先するため配色をスキップ。 */
-    if (t.bgColor && !ex.hosp) {
+     * 自動判定＝可読性を担保。入院枠(hosp)・入居前枠(pre)は極薄/斜線表示を優先するため配色をスキップ。 */
+    if (t.bgColor && !ex.hosp && !ex.pre) {
       b.style.setProperty('background-color', t.bgColor, 'important');
       b.style.setProperty('color', t.textColor || autoText_(t.bgColor), 'important');
     }
@@ -5510,7 +5556,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* pt-name-fac(細字淡色の施設業務名スタイル)は業務枠(admin/facility)専用。利用者支援は時間非表示でも通常の氏名スタイル。 */
       var facName = hideTime && t.kind !== 'care';
-      var nmEl = txt('div', 'pt-name' + (facName ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : ''));
+      var nmEl = txt('div', 'pt-name' + (facName ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : (ex.pre ? '（入居前）' : '')));
       if (facName) {
         /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px)。
          * 事務(admin)は施設業務より少し大きめ(×1.15・上限24px・要件3)。 */
@@ -5532,7 +5578,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 内容メモ行は実施チェック対象でない(画面もmemo行に□無し)。非care枠のmemo行は□を出さない。
            * care枠のmemo行・内容(contents)行は従来どおり□を出す(既存挙動を無断変更しない)。 */
           var noCb = (pi === memoIdx && t.kind !== 'care');
-          if (!ex.hosp && !noCb) row.appendChild(txt('span', 'pt-cb' + (chk ? ' cb-done' : ' cb-empty'), chk ? '☑' : '□'));
+          if (!ex.hosp && !ex.pre && !noCb) row.appendChild(txt('span', 'pt-cb' + (chk ? ' cb-done' : ' cb-empty'), chk ? '☑' : '□'));
           b.appendChild(row);
         }
       }
@@ -5754,6 +5800,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* タスク配置（夜勤列は右軸マッピング） */
     var hospSet = opts.hospSet || {};
     var moSet = opts.movedOutSet || {};
+    var preSet = opts.preSet || {};   /* 入居前。退去(moSet)と違い枠は消さない＝極薄で残す */
     for (var t = 0; t < day.tasks.length; t++) {
       var task = day.tasks[t];
       if (task.kind === 'care' && moSet[task.residentName]) continue;  /* 退去者のケアは盤面・印刷とも非表示（入院=極薄に対し退去=完全非表示） */
@@ -5763,7 +5810,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var laneEl = laneByCol[st.col];
       if (!laneEl) continue;
       var ex = { print: !!opts.printMode,
-                 hosp: !!(task.kind === 'care' && hospSet[task.residentName]) };
+                 hosp: !!(task.kind === 'care' && hospSet[task.residentName]),
+                 pre: !!(task.kind === 'care' && preSet[task.residentName]) };
       /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する */
       if (!opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
           (task.kind === 'facility' || task.kind === 'free') &&
@@ -7209,7 +7257,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
         });
         wsHospMap = m;
-        careNamesCache_ = { raw: null, hosp: {}, moved: {} };   /* 名前セットのキャッシュを捨てて組み直させる */
+        careNamesCache_ = { raw: null, hosp: {}, moved: {}, pre: {} };   /* 名前セットのキャッシュを捨てて組み直させる */
         if (typeof j.stateRev === 'number' || typeof j.srev === 'number') wsHospRev = { rev: j.stateRev, srev: j.srev };
         return true;
       })
@@ -7661,6 +7709,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 空の状態からマスタで作り直すとサーバー上の最新careを上書きし、
      * クラウド固有の利用者（他端末で追加された方）が消える事故を防ぐ。 */
     if (syncOn() && !careInitDone && !care0) return;
+    /* ★古いマスタの自動再適用を止める（2026-08-03）。
+     * 手動の「週間計画へ反映」には件数と版のダイアログを付けたが、この自動経路は確認が無い。
+     * 2026-06 の版で自動適用されると、マスタ収載者の訪問予定がその時点の内容へ巻き戻る
+     * （実測で10名25件の部分欠損に相当）。3か月以上前の版は【適用済みスタンプを進めずに】見送り、
+     * 手動で意図的に反映させる。警告は1版につき1回だけ（毎起動のうるささを避ける）。 */
+    var mm_ = /^(?:WS|CARE)(\d{4})(\d{2})$/.exec(String(master.source || ''));
+    if (mm_) {
+      var n_ = nowDate_();
+      var age_ = (n_.getFullYear() * 12 + n_.getMonth()) - (Number(mm_[1]) * 12 + (Number(mm_[2]) - 1));
+      if (age_ >= 3 && masterApplyImpact_(master, care0).replacedEv > 0) {
+        var wk_ = 'ws_master_stale_warned', warned_ = '';
+        try { warned_ = localStorage.getItem(wk_) || ''; } catch (e0) {}
+        if (warned_ !== stamp) {
+          try { localStorage.setItem(wk_, stamp); } catch (e1) {}
+          toast('支援マスタが' + age_ + 'か月前の版のため自動反映を見送りました（反映するには「週間計画へ反映」）', true);
+        }
+        return;
+      }
+    }
     var db = IM.masterToCareDb(master, care0);
     db.wsMasterStamp = stamp;
     if (saveCareDb(db)) {
@@ -7671,12 +7738,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* renderAll 毎の care_schedule_v2(約100KB) JSON.parse×2 を回避するメモ化。
    * raw文字列が前回と同一なら導出済みマップを返す（localStorageが変われば文字列が変わり必ず再パース＝鮮度完全）。
    * 返すのは専用の導出マップ＝呼出側は読み取りのみで共有オブジェクトのミューテーション事故なし。 */
-  var careNamesCache_ = { raw: null, hosp: {}, moved: {} };
+  var careNamesCache_ = { raw: null, hosp: {}, moved: {}, pre: {} };
   function careNameSets_() {
     var raw = null;
     try { raw = localStorage.getItem(CARE_KEY); } catch (e) {}
     if (raw === careNamesCache_.raw) return careNamesCache_;
-    var hosp = {}, moved = {};
+    var hosp = {}, moved = {}, pre = {};
     if (raw) {
       try {
         var p = JSON.parse(raw);
@@ -7685,14 +7752,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             var r = p.residents[i];
             if (wsHospEffective_(r)) hosp[r.name] = true;   /* マスタ由来を優先（表示のみ・r は書き換えない） */
             if (r.movedOut) moved[r.name] = true;
+            /* 入居前＝まだ支援を実施しない方。入院と同じ極薄表示にするが、退去と違い枠は消さない
+             * （退去は reconcileWeeklyCore_ が予定ごと DELETE_TASK する破壊的な状態のため）。 */
+            if (r.preAdmitted) pre[r.name] = true;
           }
         }
       } catch (e2) {}
     }
-    careNamesCache_ = { raw: raw, hosp: hosp, moved: moved };
+    careNamesCache_ = { raw: raw, hosp: hosp, moved: moved, pre: pre };
     return careNamesCache_;
   }
   function hospitalizedNames() { return careNameSets_().hosp; }
+  /* 入居前（週間計画アプリで「入居前」にした利用者）の名前集合 */
+  function preAdmittedNames() { return careNameSets_().pre; }
 
   /* 退去者（週間計画アプリで「退去」にした利用者）の名前集合 */
   function movedOutNames() { return careNameSets_().moved; }
@@ -7703,8 +7775,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   誤実施/誤押印を誘発するため(敵対的検証で検出)。未ロック日は従来どおり。board.js は無改変。 */
   function careMaskSets_(day) {
     var dt = day && day.meta && day.meta.date;
-    if (day && day.meta && day.meta.locked && dt && dt < todayKey()) return { hosp: {}, moved: {} };
-    return { hosp: hospitalizedNames(), moved: movedOutNames() };
+    if (day && day.meta && day.meta.locked && dt && dt < todayKey()) return { hosp: {}, moved: {}, pre: {} };
+    return { hosp: hospitalizedNames(), moved: movedOutNames(), pre: preAdmittedNames() };
   }
   function autoLoadMaster() {
     /* 同フォルダの ws-master.json を毎回確認し、内容が変わっていれば自動更新する
@@ -7732,11 +7804,63 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 支援マスタ → 週間計画DBを一括生成（既存visit予定を置換・バックアップ保存） */
+  /* 「週間計画へ反映」で何が起きるかを数える（2026-08-03 追加）。
+   * 従来のダイアログは「訪問介護予定をマスタ内容で置き換えます」という一般文言だけで、
+   * 誰の予定が何件変わるのかが操作者に伝わらなかった。実際に 2026-06 の古いマスタで実行され、
+   * 5名の訪問予定が全消し・10名が部分欠損する事故が起きている。数えてから見せる。 */
+  function masterApplyImpact_(master, care) {
+    var inM = {}, r, i, j;
+    var DOWK = IM.DOW_KEYS;   /* 二重定義を避ける（片方だけ直す事故の防止） */
+    for (i = 0; i < DOWK.length; i++) {
+      var lst = (master.weekdays && master.weekdays[DOWK[i]]) || [];
+      for (j = 0; j < lst.length; j++) if (lst[j].residentName) inM[lst[j].residentName] = true;
+    }
+    /* デイは master.daycare 側で無条件に置換され floor も上書きされる。
+     * 訪問だけを見て「触りません」と言うとダイアログが嘘になるため、デイも数える。 */
+    var inD = {};
+    var dl = (master.daycare) || [];
+    for (i = 0; i < dl.length; i++) if (dl[i].residentName) inD[dl[i].residentName] = true;
+    var replaced = 0, replacedEv = 0, keptRes = 0, keptEv = 0, newRes = 0, dcReplaced = 0;
+    var known = {};
+    var list = (care && care.residents) || [];
+    for (i = 0; i < list.length; i++) {
+      r = list[i];
+      known[r.name] = true;
+      var v = 0, evs = r.events || [];
+      for (j = 0; j < evs.length; j++) if (evs[j].serviceType === 'visit') v++;
+      if (inM[r.name]) { replaced++; replacedEv += v; }
+      else if (v > 0) { keptRes++; keptEv += v; }
+      if (inD[r.name]) dcReplaced++;
+    }
+    var newNames = [];
+    for (var nm in inM) if (!known[nm]) { newRes++; newNames.push(nm); }
+    for (var nd in inD) if (!known[nd] && !inM[nd]) { newRes++; newNames.push(nd); }
+    return { replaced: replaced, replacedEv: replacedEv, keptRes: keptRes, keptEv: keptEv,
+             newRes: newRes, newNames: newNames, dcReplaced: dcReplaced };
+  }
+  /* 支援マスタの版（source）を人が読める形で。生成元が分からない旧データは素の値を返す */
+  function masterLabel_(master) {
+    var src = (master && master.source) ? String(master.source) : '';
+    var m = /^(?:WS|CARE)(\d{4})(\d{2})$/.exec(src);
+    if (m) return m[1] + '年' + Number(m[2]) + '月版' + (src.indexOf('CARE') === 0 ? '（週間計画から作成）' : '（エクセルWSから作成）');
+    return src || '版の情報なし';
+  }
   function pushMasterToCare() {
     var master = loadMaster();
     if (!master) { toast('先に支援マスタを取り込んでください', true); return; }
-    if (!window.confirm('週間計画（care_schedule_v2）の「訪問介護」予定をマスタ内容で置き換えます。\n' +
-        '通所等の予定と他の利用者情報は保持され、元データはバックアップされます。よろしいですか？')) return;
+    var imp = masterApplyImpact_(master, loadCareDb());
+    var msg = '週間計画の「訪問介護」予定をマスタ内容で置き換えます。\n\n' +
+      '使用するマスタ: ' + masterLabel_(master) + '\n\n' +
+      '・置き換わる利用者: ' + imp.replaced + '名（現在の訪問予定 ' + imp.replacedEv + '件はマスタの内容に入れ替わります）\n' +
+      '・そのまま残る利用者: ' + imp.keptRes + '名（訪問予定 ' + imp.keptEv + '件。マスタに載っていないため【訪問予定は】触りません）\n' +
+      (imp.dcReplaced ? '・通所（デイ）予定が置き換わる利用者: ' + imp.dcReplaced + '名\n' : '') +
+      (imp.newRes ? '・マスタにだけ居る利用者: ' + imp.newRes + '名が新規に追加されます\n' +
+        '　　' + imp.newNames.slice(0, 5).join('、') +
+        (imp.newNames.length > 5 ? ' ほか' + (imp.newNames.length - 5) + '名' : '') + '\n' +
+        '　　※見覚えのある方が「新規」に出る場合、氏名の表記ゆれで二重登録になります。中止してください\n' : '') +
+      '\n通所等の予定と他の利用者情報は保持され、元データはバックアップされます。\n' +
+      'マスタが古いと、その後に週間計画で加えた変更が失われます。よろしいですか？';
+    if (!window.confirm(msg)) return;
     var db = IM.masterToCareDb(master, loadCareDb());
     db.wsMasterStamp = masterStamp();
     if (saveCareDb(db)) {
@@ -7792,7 +7916,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     var msk_ = careMaskSets_(day);   /* ロック日は退去/入院で実績を間引かない */
     B.render($('board'), day, zones, scale,
-      { selectedIds: ui.selectedIds, hospSet: msk_.hosp, movedOutSet: msk_.moved });
+      { selectedIds: ui.selectedIds, hospSet: msk_.hosp, movedOutSet: msk_.moved, preSet: msk_.pre });
 
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
@@ -8535,11 +8659,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var m = loadMaster();
     var elState = $('imMasterState');
     if (!elState) return;
-    if (!m) { elState.textContent = '未取込'; return; }
+    if (!m) { elState.textContent = '未取込'; elState.removeAttribute('style'); return; }
     var n = 0;
     for (var k in m.weekdays) n += (m.weekdays[k] || []).length;
-    elState.textContent = (m.source || 'マスタ') + '・' + n + '件';
+    /* ★版(いつの内容か)を必ず見せる。古いマスタで一括反映すると、その後に週間計画で加えた変更が
+     * 失われる（2026-08-03 の事故）。従来は source を内部比較にしか使っておらず、
+     * 画面には「WS202606・464件」としか出ないため“2か月前の内容”だと気づけなかった。 */
+    elState.textContent = masterLabel_(m) + '・' + n + '件';
+    /* 3か月以上前の版は赤字で警告する（月次で作り直す運用のため、それ以上の古さは要注意） */
+    var mm = /^(?:WS|CARE)(\d{4})(\d{2})$/.exec(String(m.source || ''));
+    var stale = false;
+    if (mm) {
+      var age = (nowDate_().getFullYear() * 12 + nowDate_().getMonth()) - (Number(mm[1]) * 12 + (Number(mm[2]) - 1));
+      stale = age >= 3;
+    }
+    elState.style.color = stale ? '#c0392b' : '';
+    elState.title = stale ? 'このマスタは3か月以上前の内容です。「週間計画へ反映」は、その後の変更を失う恐れがあります' : '';
   }
+  /* 現在日時。版の古さ判定で複数箇所から使うため1か所に集約（IIFE内・外部からの差し替えは不可） */
+  function nowDate_() { return new Date(); }
 
   function findPrevSameWeekday() {
     var dates = listSavedDates();
@@ -8808,7 +8946,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     var pmsk_ = careMaskSets_(day);   /* ロック日は退去/入院で実績を間引かない(印刷も忠実)。枠数はA3寸法(レーン×時間軸)に非依存＝フィット不変 */
     B.render(board, day, pz, printScale,
-      { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, printMode: true });
+      { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, printMode: true });
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
     var w = measurePrintW_(board);
@@ -8825,7 +8963,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var ps2 = TS.buildScale(pz2);
       ps2.nightPxMin = TS.PRINT_NIGHT_PX_MIN * k;
       B.render(board, day, pz2, ps2,
-        { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, printMode: true });
+        { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, printMode: true });
       board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
       board.style.minWidth = '0'; board.style.width = '';
       w = measurePrintW_(board);
