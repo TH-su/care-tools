@@ -32,6 +32,7 @@
 !/universe-sandbox
 !/index.html
 !/shift-analyzer.html
+!/patch-calendar.html
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/         → 別リポ TH-su/haiben-record で管理

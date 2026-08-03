@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
+     この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<title>貼り薬カレンダー</title>
+<style>
+/* アリドネパッチ 貼付部位カレンダー — care-tools 共通のCSS変数体系を踏襲。
+   A4縦1枚に「8日サイクルの部位図解（上部）」と「当月カレンダー（下部）」を印刷する。
+   保存するのは開始日と表示月だけで、氏名などの個人情報は端末に残さない。 */
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32; --ok-l: #e8f5e9;
+  --ng: #c62828; --ng-l: #ffebee;
+  --warn-bg: #fff8e1; --warn-tx: #e65100;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+  --skin: #f6e3d2;      /* 人体図の肌 */
+  --hair: #8a8a8a;      /* 背面図の頭（前後を見分ける手掛かり） */
+  --line: #3c4043;      /* 人体図の輪郭 */
+  --zone: #1557b0;      /* 貼付部位のハイライト */
+  --zone-bg: #cfe2ff;   /* 大きい図解用（上に斜線を重ねる） */
+  --zone-bg-s: #8fb3e6; /* カレンダーの小さい図用。モノクロ印刷でも肌色と輝度差が出る濃さ */
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g1); color: var(--g9);
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+  /* 人体図のハイライトを印刷でも必ず出す（既定では背景色が落ちるブラウザがある） */
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+/* ══════════ 画面のみ（印刷では消える） ══════════ */
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff;
+  padding: 12px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh);
+}
+.hdr h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+.hdr .sub { margin: 2px 0 0; font-size: 12px; }
+/* 見た目は変えずにタップ領域だけ44px級へ広げる（HIG） */
+.hdr .back { color: #fff; font-size: 12px; text-decoration: none; display: inline-block; padding: 10px 12px 10px 0; margin: -10px 0 -4px 0; }
+.hdr .back:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.ctl { max-width: 760px; margin: 12px auto 0; padding: 0 12px; }
+.cd {
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); padding: 12px; margin-bottom: 12px;
+}
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.fld { display: flex; flex-direction: column; gap: 4px; flex: 1 1 190px; min-width: 0; }
+.fld label { font-size: 12px; font-weight: 700; color: var(--g7); }
+.fld input {
+  font: inherit; font-size: 16px;           /* iOS で拡大されないよう16px以上 */
+  padding: 9px 10px; min-height: 44px;      /* HIG: タップ領域44px以上 */
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+  width: 100%;
+}
+.fld input:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
+.hint { font-size: 11.5px; color: var(--g7); margin: 6px 0 0; }
+/* 共通パレットの --warn-tx(#e65100) は --warn-bg 上で 3.6:1 と AA(4.5:1) を割るため、
+   注意文だけ濃い色を使う（5.3:1）。背景は共通のまま */
+.hint.warn { background: var(--warn-bg); color: #bf360c; padding: 7px 9px; border-radius: 8px; font-weight: 700; }
+
+.nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn {
+  font: inherit; font-size: 14px; font-weight: 700;
+  min-height: 44px; padding: 10px 14px;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+  cursor: pointer; transition: background .12s ease, border-color .12s ease;
+}
+.btn:hover { border-color: var(--pri); background: var(--pri-l); }
+.btn:active { background: var(--pri-l); }
+.btn:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn.pri:hover { background: var(--pri-d); border-color: var(--pri-d); }
+.nav .now { font-size: 16px; font-weight: 700; min-width: 8.5em; text-align: center; }
+.nav .sp { flex: 1 1 auto; }
+
+/* ══════════ 用紙（画面でも印刷と同じ寸法で見せる） ══════════ */
+.wrap { padding: 0 12px 28px; display: flex; justify-content: center; }
+.sheet {
+  width: 194mm;                 /* A4縦 210mm − 余白8mm×2 */
+  height: 279mm;                /* 297mm − 8mm×2 から1mm余らせて2枚目送りを防ぐ */
+  background: #fff; color: #000;
+  padding: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 2px 14px rgba(0,0,0,.22);
+}
+
+/* ── 用紙上部：見出し・図解・注意書き（およそ全体の35%） ── */
+.sh-top { flex: 0 0 auto; }
+.sh-ttl { display: flex; align-items: flex-end; gap: 3mm; border-bottom: .7mm solid #000; padding-bottom: 1.5mm; }
+.sh-ttl h2 { margin: 0; font-size: 5.6mm; font-weight: 800; letter-spacing: .02em; }
+.sh-ttl .drug { font-size: 3.2mm; color: #333; padding-bottom: .4mm; }
+.sh-ttl .sp { flex: 1 1 auto; }
+.sh-ttl .ym { font-size: 6.4mm; font-weight: 800; white-space: nowrap; }
+
+.sh-meta { display: flex; gap: 6mm; align-items: baseline; margin-top: 2mm; font-size: 3.4mm; }
+.sh-meta .nm { font-weight: 700; }
+.sh-meta .nm u { text-decoration: none; border-bottom: .3mm solid #000; padding: 0 4mm; display: inline-block; min-width: 42mm; }
+.sh-meta .st { margin-left: auto; font-weight: 700; }
+.sh-meta .st b { font-size: 4mm; }
+
+/* 8日サイクルの図解 */
+.gmap { display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 2.5mm; }
+.gmap .grp {
+  grid-row: 1; font-size: 3.4mm; font-weight: 700; text-align: center;
+  background: #efefef; border: .3mm solid #999; padding: .8mm 0;
+}
+.gmap .grp.a { grid-column: 1 / span 4; }
+.gmap .grp.b { grid-column: 5 / span 4; }
+.pan {
+  grid-row: 2; display: flex; flex-direction: column; align-items: center;
+  border: .3mm solid #bbb; border-top: 0; padding: 1.2mm .5mm 1.5mm;
+}
+.pan .d { font-size: 3.1mm; font-weight: 800; border: .3mm solid #666; border-radius: 3mm; padding: 0 2mm; }
+.pan svg { width: 100%; max-width: 20mm; height: 30mm; display: block; margin: .8mm 0 .6mm; }
+.pan .lb { font-size: 2.9mm; font-weight: 700; text-align: center; line-height: 1.2; }
+
+.sh-note { margin-top: 2mm; font-size: 3mm; line-height: 1.5; }
+.sh-note b { font-size: 3.2mm; }
+.sh-note .ln { display: block; }
+.sh-note .ast { color: #b00; font-weight: 700; }
+
+/* ── 用紙下部：カレンダー（およそ全体の65%） ── */
+.cal { flex: 1 1 auto; display: flex; flex-direction: column; margin-top: 2.5mm; border: .4mm solid #000; border-bottom: 0; }
+.cal .hd { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal .hd div {
+  font-size: 3.2mm; font-weight: 800; text-align: center; padding: .8mm 0;
+  background: #eee; border-right: .3mm solid #666; border-bottom: .4mm solid #000;
+}
+.cal .hd div:last-child { border-right: 0; }
+.cal .hd .sun { color: #b00; } .cal .hd .sat { color: #05a; }
+.wk { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1 1 0; min-height: 0; }
+.cell {
+  border-right: .3mm solid #999; border-bottom: .3mm solid #000;
+  padding: .7mm .8mm; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+}
+.cell:last-child { border-right: 0; }
+.cell.pad { background: #f4f4f4; }
+.cell .top { display: flex; align-items: center; gap: 1mm; }
+.cell .dn { font-size: 3.8mm; font-weight: 800; line-height: 1; }
+.cell.sun .dn { color: #b00; } .cell.sat .dn { color: #05a; }
+.cell .cyc {
+  font-size: 2.7mm; font-weight: 800; color: #fff; background: #444;
+  border-radius: 2.4mm; padding: .2mm 1.4mm; line-height: 1.35; white-space: nowrap;
+}
+.cell .sp { flex: 1 1 auto; }
+.cell .cb { width: 4.2mm; height: 4.2mm; border: .4mm solid #000; border-radius: .6mm; flex: 0 0 auto; }
+.cell svg { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; display: block; margin: .3mm 0; }
+.cell .lb { font-size: 2.7mm; font-weight: 700; text-align: center; line-height: 1.1; white-space: nowrap; }
+.cell.empty .cb { visibility: hidden; }
+/* 「本日」は画面での目印だけ。印刷物はひと月使うので紙には出さない */
+.cell.today { box-shadow: inset 0 0 0 .7mm var(--pri); }
+
+@media print {
+  .noprint { display: none !important; }
+  body { background: #fff; }
+  .wrap { padding: 0; display: block; }
+  .sheet { box-shadow: none; width: 100%; height: 279mm; }
+  .cell.today { box-shadow: none; }
+  @page { size: A4 portrait; margin: 8mm; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+}
+/* 用紙は固定寸法なので、狭い画面では横スクロールで全体を確認できるようにする */
+@media (max-width: 800px) {
+  .wrap { justify-content: flex-start; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- 人体図で使う斜線パターン。1箇所で定義して全ての図から参照する -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="4" height="4" fill="var(--zone-bg)"/>
+      <line x1="0" y1="0" x2="0" y2="4" stroke="var(--zone)" stroke-width="1.7"/>
+    </pattern>
+  </defs>
+</svg>
+
+<header class="hdr noprint">
+  <a class="back" href="index.html">← メニュー</a>
+  <h1>貼り薬カレンダー</h1>
+  <p class="sub">アリドネパッチの貼付部位（8日サイクル）</p>
+</header>
+
+<div class="ctl noprint">
+  <div class="cd">
+    <div class="row">
+      <div class="fld">
+        <label for="nm">入居者名（印刷用・端末には保存しません）</label>
+        <input id="nm" type="text" maxlength="20" autocomplete="off" placeholder="例）山田 花子">
+      </div>
+      <div class="fld">
+        <label for="st">1日目の日付（貼付開始日）</label>
+        <input id="st" type="date" min="2000-01-01" max="2100-12-31">
+      </div>
+    </div>
+    <p class="hint" id="sthint"></p>
+    <p class="hint warn">□は<b>印刷して手書きでチェック</b>する欄です。画面上のチェックは記録として保存しません（端末ごとに食い違う投薬記録を作らないため）。</p>
+  </div>
+
+  <div class="cd">
+    <div class="nav">
+      <button class="btn" id="prev" type="button">◀ 前月</button>
+      <span class="now" id="now" aria-live="polite"></span>
+      <button class="btn" id="next" type="button">翌月 ▶</button>
+      <button class="btn" id="today" type="button">今月</button>
+      <span class="sp"></span>
+      <button class="btn pri" id="print" type="button">🖨 印刷</button>
+    </div>
+    <p class="hint">新しく開いたときは当月、再読み込みしたときは直前に見ていた月が出ます。<b>印刷する前に、上の年月を必ず確認してください。</b>翌月分を先に印刷しておく場合は「翌月 ▶」を押してから印刷します。</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="sheet" id="sheet">
+    <div class="sh-top">
+      <div class="sh-ttl">
+        <h2>貼り薬カレンダー</h2>
+        <span class="drug">アリドネ<sup>®</sup>パッチ</span>
+        <span class="sp"></span>
+        <span class="ym" id="p-ym"></span>
+      </div>
+      <div class="sh-meta">
+        <span class="nm">入居者名：<u id="p-nm"></u></span>
+        <span class="st">1日目＝<b id="p-st"></b></span>
+      </div>
+
+      <div class="gmap" id="gmap">
+        <div class="grp a">背　中</div>
+        <div class="grp b">上腕・胸</div>
+      </div>
+
+      <div class="sh-note">
+        <span class="ln"><b>アリドネ<sup>®</sup>パッチは 1日1回1枚。8日目まで終わったら、再び1日目に戻ります。</b></span>
+        <span class="ln"><span class="ast">※</span><b>新しいパッチを貼る前に、前日の分を必ずはがしてください。</b>　<span class="ast">※</span>一度に2枚貼らないでください。</span>
+        <span class="ln"><span class="ast">※</span>貼る場所は毎日変えてください。　<span class="ast">※</span>背中8ヵ所のみでローテーションを組んでも問題ありません。</span>
+        <span class="ln"><span class="ast">※</span>図は<b>介助者から見た向き</b>です（「左・右」はご本人から見た左右）。貼り替えたら□にチェックしてください。</span>
+      </div>
+    </div>
+
+    <div class="cal">
+      <div class="hd">
+        <div class="sun">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="sat">土</div>
+      </div>
+      <div id="weeks" style="display:flex;flex-direction:column;flex:1 1 auto;min-height:0"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(function () {
+
+/* ────────────────────────────────────────────────────────────
+   貼付部位の定義（資料「お薬の日記の使い方」の記入例の番号図が正）
+
+   1〜4 = 背中（背面図）。背面図では見る側の左右＝ご本人の左右。
+   5〜8 = 上腕・胸（前面図）。前面図では見る側の左右＝ご本人の右左（反転）。
+          資料の記入例は前面図に左から 6・7・8・5 と並ぶ。
+   zone は viewBox 0 0 100 112 上の [x, y, w, h]。
+   ──────────────────────────────────────────────────────────── */
+var SITES = [
+  { n: 1, view: 'back',  full: '背中 上・左', short: '背中 上左', zone: [31.5, 40, 18,   22] },
+  { n: 2, view: 'back',  full: '背中 上・右', short: '背中 上右', zone: [50.5, 40, 18,   22] },
+  { n: 3, view: 'back',  full: '背中 下・左', short: '背中 下左', zone: [31.5, 71, 18,   22] },
+  { n: 4, view: 'back',  full: '背中 下・右', short: '背中 下右', zone: [50.5, 71, 18,   22] },
+  /* 腕のハイライトは、胴体に隠れていない部分（左腕 x16〜27／右腕 x73〜84）に収める */
+  { n: 5, view: 'front', full: '左上腕',      short: '左上腕',   zone: [74.5, 44,  8,   26] },
+  { n: 6, view: 'front', full: '右上腕',      short: '右上腕',   zone: [17.5, 44,  8,   26] },
+  { n: 7, view: 'front', full: '右胸',        short: '右胸',     zone: [32,   44, 17,   22] },
+  { n: 8, view: 'front', full: '左胸',        short: '左胸',     zone: [51,   44, 17,   22] }
+];
+var CYCLE = SITES.length;                 /* 8日周期 */
+
+var LS_START = 'apc_start';               /* localStorage: 開始日のみ（個人情報は保存しない） */
+var SS_MONTH = 'apc_month';               /* sessionStorage: 表示中の月。リロードで現在地を失わない */
+var DEFAULT_START = '2026-08-03';         /* 初回起動時の1日目 */
+
+/* ── 人体図（自作の簡易線画）──
+   製薬会社の資料そのものは転載せず、同じ内容を伝える図を描く。
+   腕を先に描いて胴体を重ね、付け根の線を隠している。
+   頭の色を背面＝グレー／前面＝肌色にして、小さく印刷しても前後を取り違えないようにする。
+   ただし色だけに意味を持たせないよう、部位名テキストを必ず併記すること（HIG）。 */
+function bodySVG(site, big) {
+  var z = site.zone;
+  var back = site.view === 'back';
+  var head = back ? 'var(--hair)' : 'var(--skin)';
+  /* 背面は背骨、前面は鎖骨と胸のラインを薄く入れて向きを示す */
+  var hint = back
+    ? '<path d="M50,37 V95" fill="none" stroke="#c8b3a1" stroke-width="1.1" stroke-dasharray="3 2.5"/>'
+    : '<path d="M37,41 Q43,45.5 49,42.5" fill="none" stroke="#c8b3a1" stroke-width="1.1"/>'
+    + '<path d="M63,41 Q57,45.5 51,42.5" fill="none" stroke="#c8b3a1" stroke-width="1.1"/>'
+    + '<path d="M34,70 Q40.5,76 47,70.5" fill="none" stroke="#c8b3a1" stroke-width="1.1"/>'
+    + '<path d="M66,70 Q59.5,76 53,70.5" fill="none" stroke="#c8b3a1" stroke-width="1.1"/>';
+
+  /* 大きい図解には「この側がご本人の右／左」を図の上に示す。
+     注意書きを読まなくても左右を取り違えないための手掛かり（前面図は鏡像になるため特に重要）。 */
+  var side = big
+    ? '<text x="20" y="31" font-size="11" font-weight="700" text-anchor="middle" fill="#333">' + (back ? '左' : '右') + '</text>'
+    + '<text x="80" y="31" font-size="11" font-weight="700" text-anchor="middle" fill="#333">' + (back ? '右' : '左') + '</text>'
+    : '';
+
+  /* 小さいセルでは斜線パターンが潰れるため、大きい図解のときだけ斜線を重ねる */
+  var zoneFill = '<rect x="' + z[0] + '" y="' + z[1] + '" width="' + z[2] + '" height="' + z[3] + '"'
+    + ' rx="1.5" fill="' + (big ? 'var(--zone-bg)' : 'var(--zone-bg-s)') + '"'
+    + ' stroke="var(--zone)" stroke-width="' + (big ? '1.4' : '2') + '"/>';
+  if (big) {
+    zoneFill += '<rect x="' + z[0] + '" y="' + z[1] + '" width="' + z[2] + '" height="' + z[3] + '"'
+      + ' rx="1.5" fill="url(#hatch)" stroke="var(--zone)" stroke-width="1.4"/>';
+  }
+
+  return '<svg viewBox="0 0 100 112" role="img" aria-label="' + site.full + '" preserveAspectRatio="xMidYMid meet">'
+    + '<g fill="var(--skin)" stroke="var(--line)" stroke-width="1.6" stroke-linejoin="round">'
+    /* 腕（先に描く） */
+    + '<rect x="16" y="38" width="14" height="58" rx="7"/>'
+    + '<rect x="70" y="38" width="14" height="58" rx="7"/>'
+    /* 首 */
+    + '<rect x="43" y="20" width="14" height="15" rx="2"/>'
+    /* 胴体（腕・首の付け根を覆う） */
+    + '<path d="M35,32 h30 a8,8 0 0 1 8,8 v54 a6,6 0 0 1 -6,6 h-34 a6,6 0 0 1 -6,-6 v-54 a8,8 0 0 1 8,-8 z"/>'
+    /* 頭 */
+    + '<circle cx="50" cy="15" r="9" fill="' + head + '"/>'
+    + '</g>'
+    + hint
+    + side
+    + zoneFill
+    + '</svg>';
+}
+
+/* ── 日付ユーティリティ ──
+   時差・夏時間で1日ずれないよう、日付はすべて「UTCの正午」で表す */
+function utcNoon(y, m, d) { return Date.UTC(y, m - 1, d, 12, 0, 0); }
+function todayMs() { var t = new Date(); return utcNoon(t.getFullYear(), t.getMonth() + 1, t.getDate()); }
+function dayDiff(a, b) { return Math.round((a - b) / 86400000); }
+
+/* 開始日からの経過日数で 1〜8 を返す。開始日より前は null（治療開始前は部位を出さない） */
+function cycleDay(dateMs, startMs) {
+  var d = dayDiff(dateMs, startMs);
+  if (d < 0) return null;
+  return (d % CYCLE) + 1;
+}
+
+/* ── 入力の検証（境界で1回だけ。通過後は信頼する） ── */
+function parseISODate(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  var y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  var ms = utcNoon(y, m, d);
+  var chk = new Date(ms);
+  /* 2月30日のような存在しない日を弾く */
+  if (chk.getUTCFullYear() !== y || chk.getUTCMonth() + 1 !== m || chk.getUTCDate() !== d) return null;
+  return { y: y, m: m, d: d, ms: ms, iso: s };
+}
+function parseISOMonth(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}$/.test(s)) return null;
+  var y = +s.slice(0, 4), m = +s.slice(5, 7);
+  if (y < 2000 || y > 2100 || m < 1 || m > 12) return null;
+  return { y: y, m: m };
+}
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function isoMonth(y, m) { return y + '-' + pad2(m); }
+function jpDate(o) { return o.y + '年' + o.m + '月' + o.d + '日'; }
+
+/* ── 状態（正本は1つ。表示はここから導出する） ── */
+var state = { start: null, y: 0, m: 0 };
+
+function loadState() {
+  var saved = null;
+  try { saved = localStorage.getItem(LS_START); } catch (e) { saved = null; }
+  var ok = parseISODate(saved);
+  /* この端末で開始日を確定していない（初期値のまま／保存が消えた／別端末）状態を覚えておき、
+     そのまま印刷されないよう警告を出す。開始日が1日でもずれると月替わりの紙の継ぎ目で
+     同じ部位が2日続く。 */
+  state.confirmed = !!ok;
+  state.start = ok || parseISODate(DEFAULT_START);
+
+  var t = new Date(), cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
+  var ss = null;
+  try { ss = sessionStorage.getItem(SS_MONTH); } catch (e) { ss = null; }
+  var mo = parseISOMonth(ss) || cur;      /* 不正値・未設定は当月へフォールバック */
+  state.y = mo.y; state.m = mo.m;
+}
+function saveStart() {
+  state.confirmed = true;                 /* 人が入力し直した時点で確定扱いにする */
+  state.canSave = true;
+  try { localStorage.setItem(LS_START, state.start.iso); }
+  catch (e) { state.canSave = false; }    /* 表示は続けるが「記憶できない」ことは黙って隠さない */
+}
+function saveMonth() {
+  try { sessionStorage.setItem(SS_MONTH, isoMonth(state.y, state.m)); } catch (e) { /* 同上 */ }
+}
+
+/* ── 描画 ── */
+var el = {
+  nm: document.getElementById('nm'),
+  st: document.getElementById('st'),
+  sthint: document.getElementById('sthint'),
+  now: document.getElementById('now'),
+  pym: document.getElementById('p-ym'),
+  pnm: document.getElementById('p-nm'),
+  pst: document.getElementById('p-st'),
+  gmap: document.getElementById('gmap'),
+  weeks: document.getElementById('weeks')
+};
+
+/* 上部の8コマ図解。開始日や月に依存しないので一度だけ描く */
+function renderGuide() {
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < SITES.length; i++) {
+    var s = SITES[i];
+    var p = document.createElement('div');
+    p.className = 'pan';
+    var d = document.createElement('span');
+    d.className = 'd';
+    d.textContent = s.n + '日目';
+    var fig = document.createElement('div');
+    fig.style.cssText = 'width:100%;display:flex;justify-content:center';
+    fig.innerHTML = bodySVG(s, true);     /* 定数のみから組み立て。外部入力は入らない */
+    var lb = document.createElement('span');
+    lb.className = 'lb';
+    lb.textContent = s.full;
+    p.appendChild(d); p.appendChild(fig); p.appendChild(lb);
+    frag.appendChild(p);
+  }
+  el.gmap.appendChild(frag);
+}
+
+function renderCalendar() {
+  var y = state.y, m = state.m, startMs = state.start.ms;
+  var first = new Date(utcNoon(y, m, 1));
+  var lead = first.getUTCDay();                                   /* 1日の曜日（0=日） */
+  var days = new Date(utcNoon(y, m + 1, 0)).getUTCDate();         /* 当月の日数（うるう年も自動） */
+  var rows = Math.ceil((lead + days) / 7);
+  var tMs = todayMs();
+
+  el.weeks.textContent = '';
+  var cellIdx = 0;
+  for (var r = 0; r < rows; r++) {
+    var wk = document.createElement('div');
+    wk.className = 'wk';
+    for (var c = 0; c < 7; c++, cellIdx++) {
+      var dnum = cellIdx - lead + 1;
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+
+      if (dnum < 1 || dnum > days) {                              /* 前後の月にはみ出す枠 */
+        cell.className += ' pad empty';
+        wk.appendChild(cell);
+        continue;
+      }
+      if (c === 0) cell.className += ' sun';
+      if (c === 6) cell.className += ' sat';
+
+      var ms = utcNoon(y, m, dnum);
+      var cyc = cycleDay(ms, startMs);
+      if (ms === tMs) cell.className += ' today';
+      if (cyc === null) cell.className += ' empty';               /* 開始日より前 */
+
+      var top = document.createElement('div');
+      top.className = 'top';
+      var dn = document.createElement('span');
+      dn.className = 'dn';
+      dn.textContent = String(dnum);
+      top.appendChild(dn);
+
+      if (cyc !== null) {
+        var cy = document.createElement('span');
+        cy.className = 'cyc';
+        /* 丸数字（①等）は白抜き＋小サイズだと潰れて読めないため、上の図解と同じ「◯日目」で書く */
+        cy.textContent = cyc + '日目';
+        top.appendChild(cy);
+      }
+      var sp = document.createElement('span');
+      sp.className = 'sp';
+      top.appendChild(sp);
+      var cb = document.createElement('span');
+      cb.className = 'cb';
+      cb.setAttribute('aria-hidden', 'true');                     /* 紙に手書きする欄。画面では操作しない */
+      top.appendChild(cb);
+      cell.appendChild(top);
+
+      if (cyc !== null) {
+        var site = SITES[cyc - 1];
+        var fig = document.createElement('div');
+        fig.style.cssText = 'flex:1 1 auto;min-height:0;display:flex;justify-content:center';
+        fig.innerHTML = bodySVG(site, false);
+        cell.appendChild(fig);
+        var lb = document.createElement('span');
+        lb.className = 'lb';
+        lb.textContent = site.short;
+        cell.appendChild(lb);
+      }
+      wk.appendChild(cell);
+    }
+    el.weeks.appendChild(wk);
+  }
+}
+
+function renderHeaderInfo() {
+  var ym = state.y + '年 ' + state.m + '月';
+  el.pym.textContent = ym;
+  el.now.textContent = ym;
+  el.pst.textContent = jpDate(state.start);
+  el.pnm.textContent = el.nm.value.trim();       /* textContent なので氏名がタグとして解釈されない */
+  el.st.value = state.start.iso;
+
+  var d = new Date(state.start.ms);
+  var wd = '日月火水木金土'.charAt(d.getUTCDay());
+  var base = '1日目＝' + jpDate(state.start) + '（' + wd + '）から8日ごとに部位が一巡します。'
+    + '別の入居者の表を作るときは、この日付を必ず入れ替えてください。';
+  var msg = '';
+  if (!state.confirmed) {
+    msg = '⚠ この「1日目の日付」は初期値です。印刷する前に、前月の紙と同じ日付か（別の入居者なら正しい開始日か）必ず確認してください。 ';
+  } else if (state.canSave === false) {
+    msg = '⚠ この端末では開始日を記憶できません。開き直すたびに入力し直してください。 ';
+  }
+  el.sthint.className = msg ? 'hint warn' : 'hint';
+  el.sthint.textContent = msg + base;
+}
+
+function render() {
+  renderHeaderInfo();
+  renderCalendar();
+}
+
+function shiftMonth(delta) {
+  var d = new Date(utcNoon(state.y, state.m + delta, 1));
+  state.y = d.getUTCFullYear();
+  state.m = d.getUTCMonth() + 1;
+  saveMonth();
+  render();
+}
+
+/* ── 起動 ── */
+loadState();
+renderGuide();
+render();
+
+document.getElementById('prev').addEventListener('click', function () { shiftMonth(-1); });
+document.getElementById('next').addEventListener('click', function () { shiftMonth(1); });
+document.getElementById('today').addEventListener('click', function () {
+  var t = new Date();
+  state.y = t.getFullYear(); state.m = t.getMonth() + 1;
+  saveMonth();
+  render();
+});
+document.getElementById('print').addEventListener('click', function () { window.print(); });
+
+el.nm.addEventListener('input', function () { el.pnm.textContent = el.nm.value.trim(); });
+
+el.st.addEventListener('change', function () {
+  var p = parseISODate(el.st.value);
+  if (!p) {                                       /* 不正な日付は反映せず、直前の値へ戻す */
+    el.st.value = state.start.iso;
+    return;
+  }
+  state.start = p;
+  saveStart();
+  render();
+});
+
+})();
+</script>
+
+</body>
+</html>
