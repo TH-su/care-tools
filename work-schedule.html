@@ -651,11 +651,13 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="hdr-btn app-link" id="btnOpenCare" title="利用者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
   <span class="hdr-sp"></span>
+  <!-- シフト側に未反映の変更がある間【ずっと】点灯する（2026-08-03）。
+       盤面は書き換えない（ロック＝勝手に反映しない／自動反映OFF＝端末の設定を尊重）が、
+       気づけないまま支援が漏れるのを防ぐ。トーストは数秒で消えるため常時表示のこちらを主役にする。
+       位置は「👥シフト」と「未配置」の間＝原因(シフト)と結果(盤面)の並びに合わせる（運用要件）。 -->
+  <button class="badge ng off" id="badgeShiftChg" title="シフトの未反映はありません">シフト未反映 0</button>
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
-  <!-- ロック中にシフト側だけが変わった時に点灯する（2026-08-03 追加）。
-       ロックは「勝手に反映しない」約束なので盤面は書き換えず、気づける形にだけ出す。 -->
-  <button class="badge ng off" id="badgeShiftChg" title="ロック中にシフトが変わっています。反映するには🔒を解除してください">シフト更新 0</button>
   <button class="hdr-btn" id="btnUndo" disabled>↩</button>
   <button class="hdr-btn" id="btnRedo" disabled>↪</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
@@ -7323,13 +7325,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 件数は【日付とセット】で持つ。日付を跨いでも前日の件数が出続けないようにするため
    * （renderAll は毎回塗り直すので、日付が違えば必ず消える）。 */
   var lockedShiftChg_ = { date: '', n: 0 };
-  function lockedShiftDiff_(date, data) {
+  /* ignoreHold=true: 「盤面が自動追従しない状態か」の判定を飛ばして差分だけ数える。
+   * 保留中（解除後に「いいえ」を選んだ等）の件数が0になったことを検出するために使う。 */
+  function lockedShiftDiff_(date, data, ignoreHold) {
     try {
       if (!data || !data.plan) return 0;
       var day = store.get();
-      /* 対象は【手動ロック】だけ。過去日の自動保護(autoLockPast_)はシフトの事後修正が入る前提の
-       * 仕組みなので、ここで警告すると過去日すべてが赤バッジになり無視されるようになる。 */
-      if (!(day && day.meta && day.meta.locked)) return 0;
+      if (!ignoreHold && !shiftHeldBack_(date, day)) return 0;
       var saved = day.meta.shiftStamp || '';
       if (!saved) return 0;                       /* 比較材料が無い日は警告しない（安全側） */
       var att = SH.extractAttendance(date, data.staff, data.symbols, data.plan, shiftPickOpts_());
@@ -7358,12 +7360,74 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return add + del;
     } catch (e) { return 0; }
   }
+  /* 盤面がシフトへ自動追従しない状態か（＝未反映が溜まりうる状態か・2026-08-03）。
+   *  ① 手動ロック中（meta.locked）… 「勝手に反映しない」約束。**過去日でも点灯する**
+   *     （手動ロックは明示操作なので、本人が意図してその日を保護している＝知らせてよい）
+   *  ② シフト自動反映OFF … 端末の設定を尊重して書き換えないが、気づけないのは別問題。
+   *     ただし【当日以降に限る】。
+   *
+   * ★過去日の自動保護(autoLockPast_)は対象にしない。シフトの事後修正が入る前提の仕組みで、
+   *   ここで警告すると過去日すべてが赤バッジになり、やがて誰も見なくなる（従来からの判断を維持）。
+   *   ②で当日以降に限るのも同じ理由＝過去日を赤くしない。 */
+  function shiftHeldBack_(date, day) {
+    try {
+      var d = day || store.get();
+      if (d && d.meta && d.meta.locked) return true;              /* ① 手動ロック */
+      if (!settings.shiftAuto) {                                   /* ② 自動反映OFF（当日以降のみ・他の判定と真偽を揃える） */
+        var dt = date || ui.currentDate;
+        return !(dt < todayKey());
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  /* 未反映の理由（バッジの説明とクリック時の導線を分けるため） */
+  function shiftHeldReason_() {
+    try {
+      var d = store.get();
+      if (d && d.meta && d.meta.locked) return 'locked';
+    } catch (e) {}
+    return (!settings.shiftAuto) ? 'autooff' : '';
+  }
+  /* ★定期検知（2026-08-03）。従来は日付切替・起動・手動取込・同期受信のときしか調べておらず、
+   * 画面を開いたままシフトが変わっても気づけなかった（「表示が不規則」の正体）。
+   * fetchShiftData は rev の head 先行で差分が無ければ本体を取らないため、60秒間隔でも軽い。
+   * 盤面が自動追従する状態では未反映は生じないので、その時は調べずバッジを消すだけ。 */
+  var pendWatchAt_ = 0;
+  function watchPendingShift_() {
+    try {
+      if (document.hidden) return;
+      if (typeof printing_ === 'function' && printing_()) return;   /* 印刷中は通信も再描画もしない */
+      var pend = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
+      /* ★保留中（ロック解除の確認で「いいえ」を選んだ等）はバッジを消さない。
+       * 消してしまうと「未反映のまま警告も無い」＝今回いちばん直したかった無言状態へ逆戻りする。
+       * 盤面が自動追従する状態かつ保留も無ければ、何もしない（消しもしない）。 */
+      if (!shiftHeldBack_() && !pend) return;
+      /* ★最短間隔。head 非対応の環境ではキャッシュTTLが60秒のため、60秒間隔だと毎回フル取得になる。
+       * visibilitychange からも呼ばれるので、タブ切替の連打でも要求が飛ばないようにする。 */
+      var nowMs = (new Date()).getTime();
+      if (nowMs - pendWatchAt_ < 45000) return;
+      pendWatchAt_ = nowMs;
+      var date = ui.currentDate;
+      fetchShiftData(shiftMonth(date), false, function (data) {
+        if (ui.currentDate !== date) return;   /* 待っている間に別日へ移った */
+        var n = lockedShiftDiff_(date, data, true);   /* 保留の解消も検出するため hold 判定を迂回 */
+        if (lockedShiftChg_.date === date && lockedShiftChg_.n === n) return;   /* 変化なし＝塗り直さない */
+        lockedShiftChg_ = { date: date, n: n };
+        paintShiftChgBadge_();
+      });
+    } catch (e) {}
+  }
   function paintShiftChgBadge_() {
     var b = $('badgeShiftChg');
     if (!b) return;
     var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
-    b.textContent = 'シフト更新 ' + n;
+    b.textContent = 'シフト未反映 ' + n;
     b.className = 'badge ng' + (n ? '' : ' off');
+    var why = shiftHeldReason_();
+    b.title = !n ? 'シフトの未反映はありません'
+      : (why === 'locked'
+          ? '🔒 この日はロック中のため反映していません（' + n + '件）。クリックで対処を選べます'
+          : 'シフト自動反映がOFFのため反映していません（' + n + '件）。クリックで今すぐ反映できます');
   }
   /* seedFromMaster は「自動生成(switchDate/boot/マスタ自動取込)」と「手動生成(imMasterSeedボタン)」の両方から
    * 呼ばれる。手動生成は Undo 可能にすべきなので、本体は履歴ラップせず、自動呼出側で store.auto(seedFromMaster)
@@ -9913,7 +9977,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ★土曜①固定の非同期タイミング根治: ロスターは cloud pull で非同期に届くため、盤面 load 時(163-164)に
      * ロスター未着(rosterLen:0)だと予約オーナー(自由枠職員)を①へ戻せない。ロスターが「無→有」に変わった
      * 瞬間、表示中の盤面へ予約列固定を再適用する（到着後に①へ戻す）。store.auto で履歴非汚染。 */
-    if (wasEmpty && store && store.get && !(store.get().meta && store.get().meta.locked)) {
+    /* ★盤面を書き換えない約束の端末（手動ロック中／シフト自動反映OFF）では再主張しない。
+     * 2026-08-03: 未反映バッジの定期検知が本体取得を始めたことで、自動反映OFFの端末でも
+     * ここへ到達しうるようになった。OFFの端末が勝手に盤面を書き換えて全端末へ push するのは
+     * 設定の趣旨に反する（従来はOFF端末が本体を取りに行かないため構造的に起きなかった）。 */
+    if (wasEmpty && store && store.get && !(store.get().meta && store.get().meta.locked) && !shiftHeldBack_()) {
       /* ロック日は表示中でも予約列の再主張をかけない（保存配置を凍結） */
       try { store.auto(function () { reassertOnStore_('roster-arrived'); }); renderAll(); } catch (e) {}
     }
@@ -11529,11 +11597,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
-    /* 押せる見た目なのに無反応にしない（HIG）。何をすれば反映されるかをその場で示す。 */
+    /* 押せる見た目なのに無反応にしない（HIG）。理由に応じて、その場で反映まで完結させる。 */
     if ($('badgeShiftChg')) $('badgeShiftChg').addEventListener('click', function () {
       var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
       if (!n) { toast('未反映のシフト変更はありません'); return; }
-      toast('🔒 ロック中のため未反映です（' + n + '件）。上部の🔒を外すと反映できます', true);
+      var why = shiftHeldReason_();
+      if (why === 'locked') {
+        /* ロックは「勝手に反映しない」約束。解除はユーザーの明示操作に委ね、導線だけ示す
+         * （解除時に既存の確認ダイアログが出て反映可否を選べる）。 */
+        toast('🔒 この日はロック中です（未反映 ' + n + '件）。上部の🔒を外すと反映するか尋ねます', true);
+        try { var lb = $('lockLabel'); if (lb && lb.scrollIntoView) lb.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        return;
+      }
+      /* 自動反映OFF: 反映すると職員の列が作り直され、手で動かした支援の位置が変わりうるため必ず尋ねる */
+      if (window.confirm('シフトに未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+          '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
+          '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
+        lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
+        /* ★force は付けない。force は「空の出勤でも氏名入り盤面を上書き」と
+         * 「手動編集済みスロットの保護解除」の2つの安全弁を同時に外す。
+         * シフトが未登録・当日分が消えた等では att が空になり、この経路が到達しうる
+         * （lockedShiftDiff_ は del 側で n>0 になるためバッジは点灯する）。
+         * ロック解除時の同じ確認ダイアログも {auto:true} で反映している＝挙動を揃える。 */
+        try { applyShiftForDate(ui.currentDate, { fresh: true }); } catch (eB) {}
+      }
     });
 
     $('trayToggle').addEventListener('click', function () {
@@ -12500,8 +12587,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       wsFetchHosp_().then(function (ok) { if (ok) { try { renderAll(); } catch (e) {} } });
       setInterval(function () { try { wsWatchMasterState_(); } catch (e) {} }, 60000);
+      /* シフトの未反映を定期的に見張る（可視タブのみ）。差分が無ければ head だけで転送ゼロ。
+       * 間隔は90秒。fetchShiftData のキャッシュTTLが60秒なので、60秒間隔にすると
+       * head 非対応の環境（旧GAS・同期OFF）で毎回フル取得になってしまう。 */
+      setInterval(function () { try { watchPendingShift_(); } catch (e) {} }, 90000);
+      setTimeout(function () { try { watchPendingShift_(); } catch (e) {} }, 2500);   /* 起動直後にも1回 */
       document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) { try { wsWatchMasterState_(); } catch (e) {} }
+        if (!document.hidden) {
+          try { wsWatchMasterState_(); } catch (e) {}
+          try { watchPendingShift_(); } catch (e2) {}   /* 復帰時にも見張る（最短間隔で連打は抑止済み） */
+        }
       });
     } catch (eHz) {}
   }
