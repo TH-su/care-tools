@@ -4198,6 +4198,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { staff: staff, columns: columns, filled: filled, overflow: 0, added: added, locked: locked };
   }
 
+  /* 支援マスタから【デイ（通所）情報】を落とす。純粋な正規化・冪等。
+   *
+   * ★2026-08-03: デイ予定の正本は週間計画(care_schedule_v2)。支援マスタは通所の入浴（加算）を
+   * 表現できないため、マスタ由来でデイ予定を作り直すと入浴が消える（実測 94件→0件を本日2度）。
+   * masterToCareDb 側で入浴を引き継ぐようにしたが、【更新前の端末は旧コードのまま】であり、
+   * 1台でも古い端末が反映すると全員分の入浴が消える（新旧混在・multi-device-sync 原則7）。
+   * マスタ自体から daycare を落とせば、新旧どちらのコードもデイ予定に触れないため、
+   * 端末の更新状況に依存せず壊れなくなる。
+   *
+   * ★落とすものが無い時は【1バイトも書き換えない】こと。masterStamp() は raw.length を含むため、
+   * 空配列を足すだけでも端末間でスタンプが割れ、care の再適用と push が15秒ごとに往復する
+   * （訪問イベントIDが毎回振り直され、週間計画側の編集が巻き戻る）。
+   *
+   * 副作用（意図的な見送り・2026-08-03）: masterToCareDb の daycare ループは resident.floor も
+   * 書いていたため、階のマスタ反映と「デイ専用者の自動作成」も止まる。
+   * 階の正本は入居者マスタの居室（せせらぎ利用表は居室→floor の順で解決する）。 */
+  function stripMasterDaycare_(p) {
+    if (!p || typeof p !== 'object') return p;
+    if (p.daycare && p.daycare.length) delete p.daycare;   /* 空配列を残さない＝clean版とバイト一致 */
+    return p;
+  }
+
   /* 支援マスタに訪問予定が載っている利用者名の集合。
    * この集合に居ない方は「マスタが古い／対象外」であって「予定が無い」わけではないため、
    * 既存の訪問予定を消してはいけない（2026-08-03 のデータ消失の直接原因）。
@@ -4477,6 +4499,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     normalizeCell: normalizeCell,
     SYMBOLS: SYMBOLS,
     DOW_KEYS: DOW_KEYS,
+    stripMasterDaycare_: stripMasterDaycare_,
     masterDayTasks: masterDayTasks,
     slotDay: slotDay,
     fillSlots: fillSlots,
@@ -7040,7 +7063,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var raw = localStorage.getItem(MASTER_KEY);
       if (raw) {
         var p = JSON.parse(raw);
-        if (p && p.weekdays) return p;
+        if (p && p.weekdays) return IM.stripMasterDaycare_(p);
       }
     } catch (e) {}
     return null;
@@ -7813,6 +7836,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (p) {
           if (!p || !p.weekdays) { syncCareFromMaster(); return; }
+          IM.stripMasterDaycare_(p);   /* ★唯一の自動経路かつ無条件 push。ここを漏らすと防御が成立しない */
           var raw = '';
           try { raw = localStorage.getItem(MASTER_KEY) || ''; } catch (e0) {}
           var next = JSON.stringify(p);
@@ -11283,10 +11307,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     gas({ action: 'get', key: MASTER_KEY }, function (j) {
       if (!j || !j.ok) return;
       if (j.data && (j.rev || 0) > (loadRevs().master || 0)) {
-        try { localStorage.setItem(MASTER_KEY, JSON.stringify(j.data)); } catch (e) { return; }
+        /* 受信も信じない（原則10）。古い端末が上げたデイ入りマスタを適用しない。
+         * 落とした場合はサーバー上の汚染版も1回で治す（lastPushed を空にして push を促す）。
+         * strip は冪等なので、汚染版が来ない限り push は再発せず収束する。 */
+        var before_ = JSON.stringify(j.data);
+        IM.stripMasterDaycare_(j.data);
+        var after_ = JSON.stringify(j.data);
+        try { localStorage.setItem(MASTER_KEY, after_); } catch (e) { return; }
         saveRevsPatch({ master: j.rev });
-        try { lastPushed.master = localStorage.getItem(MASTER_KEY) || ''; } catch (e2) {}
+        lastPushed.master = (before_ === after_) ? after_ : '';
         toast('支援マスタを同期しました');
+        if (before_ !== after_) { try { pushMasterNow(); } catch (e5) {} }   /* サーバーの汚染版を治す */
         syncCareFromMaster();
         try { store.auto(seedFromMaster); } catch (e3) {}   /* マスタ同期＝履歴非汚染 */
         renderAll();
@@ -11688,6 +11719,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         $('imResult').textContent = 'マスタJSONを解釈できません';
         return;
       }
+      IM.stripMasterDaycare_(p);   /* デイは週間計画が正本。落としてから保存＝他端末へも落ちた版が伝播する */
       try { localStorage.setItem(MASTER_KEY, JSON.stringify(p)); } catch (e2) {
         $('imResult').textContent = '保存に失敗しました（容量不足の可能性）';
         return;
