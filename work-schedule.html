@@ -4286,7 +4286,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
     }
-    /* デイサービスマスタ: 階・デイ曜日/時間を反映（対象者のdaycare予定を置換） */
+    /* デイサービスマスタ: 階・デイ曜日/時間を反映（対象者のdaycare予定を置換）
+     *
+     * ★入浴（bathing）の扱い（2026-08-03 修正）:
+     * 従来は作り直しのたびに bathing:false を固定で入れており、マスタ反映のたびに
+     * 通所の入浴加算の記録が【全員分消えていた】（実測: 94件→12件→0件）。
+     * days の3要素目に入浴フラグを持てるようにし、無い場合（＝マスタが入浴を知らない旧形式）は
+     * 【既存の値を曜日・開始時刻で引き継ぐ】。「未知」と「入浴しない」を区別する
+     * （multi-device-sync 原則4: null と空の区別／原則5: 消失より復活）。
+     *   days[dow] = [start, end]          → 入浴は既存を温存
+     *   days[dow] = [start, end, 1 or 0]  → その値を採用（明示） */
     var dc = master.daycare || [];
     for (i = 0; i < dc.length; i++) {
       var du = dc[i];
@@ -4297,19 +4306,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         residents.push(dres);
       }
       dres.floor = du.floor || 0;
-      var keep2 = [];
+      var keep2 = [], prevBath = {};
       for (var q = 0; q < dres.events.length; q++) {
-        if (dres.events[q].serviceType !== 'daycare') keep2.push(dres.events[q]);
+        var pe = dres.events[q];
+        if (pe.serviceType !== 'daycare') { keep2.push(pe); continue; }
+        /* 捨てる前に入浴フラグを (曜日|開始時刻) で控える＝作り直しで消さないため */
+        prevBath[pe.dayOfWeek + '|' + pe.startTime] = !!pe.bathing;
       }
       dres.events = keep2;
       for (var dk in du.days) {
         if (!Object.prototype.hasOwnProperty.call(du.days, dk)) continue;
         var tt = du.days[dk];
+        var dow2 = parseInt(dk, 10);
+        var st2 = minToHHMM(tt[0]);
+        /* 3要素目があればマスタの明示値、無ければ既存を引き継ぐ（未知≠入浴しない） */
+        var bath2 = (tt.length >= 3) ? !!tt[2] : !!prevBath[dow2 + '|' + st2];
         dres.events.push({
-          id: M.genId('ev'), dayOfWeek: parseInt(dk, 10),
+          id: M.genId('ev'), dayOfWeek: dow2,
           serviceType: 'daycare', category: '',
-          startTime: minToHHMM(tt[0]), endTime: minToHHMM(tt[1]),
-          detail: '', notes: '', units: 0, bathing: false
+          startTime: st2, endTime: minToHHMM(tt[1]),
+          detail: '', notes: '', units: 0, bathing: bath2
         });
       }
     }
