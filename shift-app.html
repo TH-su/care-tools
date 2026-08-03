@@ -3433,8 +3433,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
         h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 11)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm, dayRange, collectRows);
-        /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)を表示（画面のみ・印刷非出力） */
-        if (GROUPS[g].key === 'day' && !pm) h += this.daySummaryRows(days);
+        /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)＝人数確認欄を表示。
+         * 画面(!pm)は従来どおり常時。印刷は【A3縦2分割のときだけ】出す＝dayRange 非null が分割の目印
+         * (renderSplit だけが範囲を渡す)。A3横・行政提出は pm かつ dayRange=null なので従来どおり出ない。 */
+        if (GROUPS[g].key === 'day' && (!pm || dayRange)) h += this.daySummaryRows(days, pm, dayRange);
         renderedGroups++;
       }
       /* デイ群が無い等で未出力なら集計を末尾に出す(要件4のフォールバック) */
@@ -3688,11 +3690,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return h;
     },
 
-    /* デイサービス欄の最下部に出す「職種別 出勤者数」集計3行（介護士数/看護師数/合計数）。
-     * 画面確認用＝@media print で非表示（noprint＋render側 !pm ガードで印刷に出さない＝A3フィット非影響）。
-     * デイ所属の主セル＋他部署(施設/訪問)の通所応援(subCells['通所'])を職種別に合算する。 */
-    daySummaryRows: function (days) {
+    /* デイサービス欄の最下部に出す「職種別 出勤者数」集計3行（介護士数/看護師数/合計数）＝現場が言う「人数確認欄」。
+     * デイ所属の主セル＋他部署(施設/訪問)の通所応援(subCells['通所'])を職種別に合算する。
+     *
+     * 出力先（2026-08-03 に分割印刷へ追加）:
+     *   画面        … 従来どおり常時。noprint を付けて @media print / printsim では隠す
+     *   A3縦2分割   … dayRange 非null で呼ばれる。noprint を付けず、そのページの日付範囲だけを出す
+     *   A3横・行政  … 呼び出し側(buildSheet)がそもそも呼ばない＝生成結果は従来と1文字も変わらない
+     * printMode=true では集計列(pcol)・連絡列(notecell)を出さない。出すと列数が他行とずれて
+     * table-layout:fixed の列幅が破綻する（印刷用DOMは氏名+区分+日付のみで構成されているため）。 */
+    daySummaryRows: function (days, printMode, dayRange) {
       var ctx = this.ctx;
+      var pm = printMode || false;
+      var from = dayRange ? dayRange[0] : 1;
+      var to = dayRange ? dayRange[1] : days;
       var Agg = (typeof window !== 'undefined' && window.ShiftAggregate) ? window.ShiftAggregate : null;
       if (!Agg || !Agg.countDaycareByProfession) return '';
       var isNurse = function (st) {
@@ -3716,16 +3727,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var h = '';
       for (var r = 0; r < rows.length; r++) {
         var row = rows[r];
-        h += '<tr class="daysumrow noprint ds-' + row.cls + '">';
+        h += '<tr class="daysumrow' + (pm ? '' : ' noprint') + ' ds-' + row.cls + '">';
         h += '<td class="namecell sticky1" style="left:0">' + row.label + '</td>';
         h += '<td class="divcell sticky2" style="left:100px">デイ</td>';
         for (var d = 1; d <= days; d++) {
+          if (dayRange && (d < from || d > to)) continue;   /* 分割印刷の範囲外日はセルを出さない */
           var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
-          var cc = 'sumdaycell' + (dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')) + (d === days ? ' lastday' : '');
+          var cc = 'sumdaycell' + (dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')) + (d === to ? ' lastday' : '');
           h += '<td class="' + cc + '">' + (counts[d] ? counts[d][row.key] : 0) + '</td>';
         }
-        h += '<td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td>';
-        h += '<td class="notecell noprint"></td><td class="notecell noprint"></td>';
+        if (!pm) {
+          h += '<td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td>';
+          h += '<td class="notecell noprint"></td><td class="notecell noprint"></td>';
+        }
         h += '</tr>';
       }
       return h;
@@ -7601,10 +7615,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (dcw < 44) dcw = 44; if (dcw > 220) dcw = 220;
       /* 2パス目: 算出幅で再描画し、各表を個別に実測→各ページに個別zoom（前半/後半で列数が違うため）。 */
       Grid.renderSplit(this.gridCtx(), dcw);
+      /* printsim は #toolbar・.layerbar・.pcol 等を display:none にする計測専用クラス。
+       * 途中で例外が出たまま抜けると【ツールバーが消えた分割用DOMのまま画面が固まる】ため
+       * 必ず解除する（finally）。分割用DOMは bind() を通しておらず編集もできない状態になる。 */
+      var ra, rb;
       document.body.classList.add('printsim');
-      var za = this.fitZoom_(document.querySelector('#gridWrap .psplit-a table.sheet'), pxW, pxH, margin);
-      var zb = this.fitZoom_(document.querySelector('#gridWrap .psplit-b table.sheet'), pxW, pxH, margin);
-      document.body.classList.remove('printsim');
+      try {
+        ra = this.fitZoom_(document.querySelector('#gridWrap .psplit-a table.sheet'), pxW, pxH, margin);
+        rb = this.fitZoom_(document.querySelector('#gridWrap .psplit-b table.sheet'), pxW, pxH, margin);
+      } finally {
+        document.body.classList.remove('printsim');
+      }
+      var za = ra.z, zb = rb.z;
+      /* 縮小の反復上限に達しても収まらなかった場合。「必ず2枚」が要件なので黙って刷らせない。 */
+      if (!ra.fits || !rb.fits) {
+        this.toast('⚠ 用紙に収まりきりませんでした。3枚目が出る可能性があります（職員数が多すぎるか、行が高すぎます）');
+      }
       fit.textContent = '@media print {' +
         ' #gridWrap { overflow: visible; max-height: none; }' +
         ' #gridWrap .psplit-a table.sheet { zoom: ' + za + ' !important; transform: none !important; }' +
@@ -7612,13 +7638,49 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         ' #gridWrap .psplit-b { break-before: page; page-break-before: always; }' +
         '}';
     },
-    /* 表を印字域(pxW×pxH−margin)へ収める等方zoom倍率(文字列・上限1.6/0.99係数)。表が無ければ '1.000'。 */
+    /* 表を印字域(pxW×pxH−margin)へ収める等方zoom倍率(文字列・上限1.6/0.99係数)。表が無ければ '1.000'。
+     *
+     * ★実寸検算（2026-08-03 追加・A3横 applyPrintFit と同じ考え方）:
+     * 計算値 min(pxW/w, avail/h) は「高さ×倍率」でしかなく、CSS zoom は行高・文字metricsを行ごとに
+     * 丸めるため実描画高と一致しない。A3横では31名(93区分行)で実測が計算値より46px大きくなり、
+     * 最終行が次ページへ送られた実績がある(2026-07-24)。分割印刷は【必ず2枚】が要件で、しかも
+     * 人数確認欄3行を足して余裕が減ったため、ここでも「実際に当てて測り、収まるまで縮める」。
+     * 収まっている場合は初回測定で確定＝倍率は計算値のまま（既存の印刷結果は変わらない）。
+     *
+     * 高さと幅の【両方】を検算する。印刷時は #gridWrap を overflow:visible にしているため、
+     * 横にはみ出すとブラウザは横方向にもページを作る＝「必ず2枚」が崩れる。等方zoomなので
+     * 幅で縮めれば高さも収まったままになる（順序は高さ→幅で、幅の回で更に縮むことはあっても戻らない）。
+     * 収束は PF.shrinkZoomToFit（純粋関数・単体テスト済）に委ね、測る対象だけを差し替える。
+     *
+     * 返り値 { z: 倍率(文字列), fits: 収まったか }。fits=false は用紙超過＝呼び出し側が現場へ知らせる。
+     * ※呼び出し側が printsim を当てた状態で呼ぶこと（印刷と同一寸法で測るため）。 */
     fitZoom_: function (table, pxW, pxH, margin) {
-      if (!table) return '1.000';
+      if (!table) return { z: '1.000', fits: true };
       var w = table.scrollWidth, hgt = table.scrollHeight;
-      if (!(w > 0) || !(hgt > 0)) return '1.000';
-      var z = Math.min(1.6, pxW / w, (pxH - margin) / hgt) * 0.99;
-      return z.toFixed(3);
+      if (!(w > 0) || !(hgt > 0)) return { z: '1.000', fits: true };
+      var availH = pxH - margin;
+      var z = Math.min(1.6, pxW / w, availH / hgt) * 0.99;
+      /* PF が読めない環境では検算を諦めて計算値を返す（従来挙動）。ここで投げると
+       * 呼び出し側の printsim 解除に到達せず、画面がツールバーごと消えたまま固まる。 */
+      if (!PF || typeof PF.shrinkZoomToFit !== 'function') return { z: z.toFixed(3), fits: true };
+      var fits = true;
+      try {
+        var rh = PF.shrinkZoomToFit(z, function (zz) {
+          table.style.zoom = zz.toFixed(3);
+          return table.getBoundingClientRect().height;
+        }, availH);
+        /* 幅は高さで確定した倍率から検算する。既に収まっていれば0回＝倍率は変わらない */
+        var rw = PF.shrinkZoomToFit(rh.zoom, function (zz) {
+          table.style.zoom = zz.toFixed(3);
+          return table.getBoundingClientRect().width;
+        }, pxW);
+        z = rw.zoom;
+        fits = rh.fits && rw.fits;
+      } catch (e) {
+        fits = true;   /* 測れない＝計算値のまま（従来挙動）。警告は出さない */
+      }
+      table.style.zoom = '';   /* 画面表示へ影響を残さない（印刷指定は fitStyle が担う） */
+      return { z: z.toFixed(3), fits: fits };
     },
 
     /* ── ダイアログ ── */
