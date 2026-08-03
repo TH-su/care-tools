@@ -204,6 +204,10 @@ table.sheet .blk-top  { border-top: 2px solid var(--g9); }
 table.sheet .blk-bot  { border-bottom: 2px solid var(--g9); }
 table.sheet .blk-left { border-left: 2px solid var(--g9); }
 table.sheet .blk-right{ border-right: 2px solid var(--g9); }
+/* 曜日ごとの縦太罫線（各曜日の先頭列に左・最終曜日の末尾列に右）。階の横太罫線と交差して曜日をマス状に囲む。
+   blk-* と同色・同太さ(2px var--g9)なので交点はきれいに連結する。table-layout:fixed＋表幅固定のため列幅は不変。 */
+table.sheet .dsep { border-left: 2px solid var(--g9); }
+table.sheet .dend { border-right: 2px solid var(--g9); }
 /* 薬用: 右のチェックリストでチェックした利用者の氏名セル＝薄オレンジ（入浴黄#ffff00・階未設定#fff3e0 と区別）。
    印刷にもこの色のまま出す（@media print に打ち消しを置かない＝画面と紙面を一致させる） */
 table.sheet td.med-hl { background: #ffe0b2; }
@@ -1082,7 +1086,7 @@ function dayHeader() {
   tr.appendChild(el('th', 'c-sec', ''));
   tr.appendChild(el('th', 'c-rn', ''));
   for (let d = 0; d < NDAY; d++) {
-    const th = el('th', 'th-day' + (d === 5 ? ' sat' : ''), DAYS_JA[d]);
+    const th = el('th', 'th-day dsep' + (d === 5 ? ' sat' : '') + (d === NDAY - 1 ? ' dend' : ''), DAYS_JA[d]);
     th.colSpan = 3;
     tr.appendChild(th);
   }
@@ -1091,25 +1095,27 @@ function dayHeader() {
   tr2.appendChild(el('th', 'c-sec', ''));
   tr2.appendChild(el('th', 'c-rn', ''));
   for (let d = 0; d < NDAY; d++) {
-    tr2.appendChild(el('th', 'c-nm', ''));
+    tr2.appendChild(el('th', 'c-nm dsep', ''));
     tr2.appendChild(el('th', 'c-tm', '開始'));
-    tr2.appendChild(el('th', 'c-tm', '終了'));
+    tr2.appendChild(el('th', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), '終了'));
   }
   thead.appendChild(tr2);
   return thead;
 }
 // デイ区画の1セル（氏名＋開始＋終了）。入浴は黄、入院は（入院）。
+// dsep=曜日の先頭列に左太線／dend=最終曜日の末尾列に右太線＝曜日ごとに縦の太罫線で囲む。
 function deiCells(tr, p, d, showBath) {
-  if (!p) { tr.appendChild(el('td', 'c-nm')); tr.appendChild(el('td', 'c-tm')); tr.appendChild(el('td', 'c-tm')); return; }
+  const endCls = (d === NDAY - 1) ? ' dend' : '';
+  if (!p) { tr.appendChild(el('td', 'c-nm dsep')); tr.appendChild(el('td', 'c-tm')); tr.appendChild(el('td', 'c-tm' + endCls)); return; }
   const s = p.days[d];
-  const td = el('td', 'c-nm nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 ? ' nofloor' : ''));
+  const td = el('td', 'c-nm dsep nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 ? ' nofloor' : ''));
   if (p.pid != null) td.dataset.pid = p.pid;   // 薬用チェックリストで該当利用者の枠を薄オレンジにするための紐付け
   td.appendChild(document.createTextNode(p.name));
   if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
   td.title = p.name + (p.hosp ? '（入院）' : '') + (s && s.bath ? '（入浴あり）' : '');
   tr.appendChild(td);
   tr.appendChild(el('td', 'c-tm', s ? minToLabel(s.s) : ''));
-  tr.appendChild(el('td', 'c-tm', s ? minToLabel(s.e) : ''));
+  tr.appendChild(el('td', 'c-tm' + endCls, s ? minToLabel(s.e) : ''));
 }
 
 /* ============================================================================
@@ -1149,7 +1155,7 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
       if (isDei) { deiCells(tr, p, d, showBath); }
       else {
         // 昼食区画: 時刻は出さず、氏名の右隣（開始列）を☆欄に転用（元表と同じ）
-        const td = el('td', 'c-nm' + (p && p.floor === 0 ? ' nofloor' : ''));
+        const td = el('td', 'c-nm dsep' + (p && p.floor === 0 ? ' nofloor' : ''));
         if (p) {
           td.appendChild(document.createTextNode(p.name));
           if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
@@ -1158,7 +1164,7 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
         const st = el('td', 'c-tm');
         if (p && showStar && p.visitingMed) { st.appendChild(el('span', 'star', '☆')); st.title = '訪問診療'; }
         tr.appendChild(st);
-        tr.appendChild(el('td', 'c-tm'));
+        tr.appendChild(el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : '')));
       }
     }
     // 塊を太罫線で囲む: 1行目=上辺／最終行=下辺／各行の最終セル=右辺（ラベルが左辺を担当）
@@ -1176,8 +1182,8 @@ function sumRow(tbody, label, counts) {
   tr.appendChild(el('th', 'c-sec', ''));
   tr.appendChild(el('td', 'c-rn', ''));
   for (let d = 0; d < NDAY; d++) {
-    tr.appendChild(el('td', 'c-nm', label));       // ラベル/値の列配置は氏名列基準に統一（元表は区画で不統一）
-    const v = el('td', 'c-tm', String(counts[d])); v.colSpan = 2;
+    tr.appendChild(el('td', 'c-nm dsep', label));  // ラベル/値の列配置は氏名列基準に統一（元表は区画で不統一）
+    const v = el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), String(counts[d])); v.colSpan = 2;
     tr.appendChild(v);
   }
   tbody.appendChild(tr);
@@ -1229,8 +1235,8 @@ function renderAllweek(ppl) {
   const tr = el('tr');
   tr.appendChild(el('th', 'c-rn', 'No.'));
   for (let d = 0; d < NDAY; d++) {
-    tr.appendChild(el('th', 'c-nm', '氏名'));
-    const th = el('th', 'th-day' + (d === 5 ? ' sat' : ''), DAYS_JA[d]); th.colSpan = 2;
+    tr.appendChild(el('th', 'c-nm dsep', '氏名'));
+    const th = el('th', 'th-day' + (d === 5 ? ' sat' : '') + (d === NDAY - 1 ? ' dend' : ''), DAYS_JA[d]); th.colSpan = 2;
     tr.appendChild(th);
   }
   thead.appendChild(tr);
@@ -1266,8 +1272,8 @@ function renderAllweek(ppl) {
   const sr = el('tr', 'sum');
   sr.appendChild(el('td', 'c-rn c-sum-lb', '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設
   for (let d = 0; d < NDAY; d++) {
-    sr.appendChild(el('td', 'c-nm', String(ppl.length) + '名'));
-    const v = el('td', 'c-tm', String(countOn(ppl, d))); v.colSpan = 2;   // 入院者を除いた実稼働
+    sr.appendChild(el('td', 'c-nm dsep', String(ppl.length) + '名'));
+    const v = el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), String(countOn(ppl, d))); v.colSpan = 2;   // 入院者を除いた実稼働
     sr.appendChild(v);
   }
   tfoot.appendChild(sr);
