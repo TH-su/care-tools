@@ -642,6 +642,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <span class="hdr-sp"></span>
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
+  <!-- ロック中にシフト側だけが変わった時に点灯する（2026-08-03 追加）。
+       ロックは「勝手に反映しない」約束なので盤面は書き換えず、気づける形にだけ出す。 -->
+  <button class="badge ng off" id="badgeShiftChg" title="ロック中にシフトが変わっています。反映するには🔒を解除してください">シフト更新 0</button>
   <button class="hdr-btn" id="btnUndo" disabled>↩</button>
   <button class="hdr-btn" id="btnRedo" disabled>↪</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
@@ -4970,77 +4973,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* care_schedule_v2 から デイ利用情報を集める
-   * 返値: [{name, floor, lunchMed, hospitalized, days:{dow:[start,end]}}] */
-  /* ═══════════ 入居者マスタの入院を重ねる ═══════════ 2026-08-02 追加
-   * 排泄ケア記録・入居者マスタで入院にしても、ワースケには届いていなかった。
-   * 週間計画アプリが受け取った入院状態を care_schedule_v2 のサーバー版へ push しないため
-   * （care-schedule.html:2695 が saveLocalOnly）。デイ利用表・俯瞰2種と同じ迂回で解消する。
-   *
-   * ★ワースケは他の3つと違い care_schedule_v2 の**書き手**（setResidentHospitalized_ が
-   *   保存して push する）。そのため **r.hospitalized を書き換えてはいけない**。
-   *   書き換えると次の保存でマスタ由来の値がサーバーへ流れ、現場の入力を巻き戻しうる。
-   *   そこで「表示を組む瞬間に値を差し替える」だけにし、保存される構造には一切触らない。
-   *   ＝下の wsHospEffective_ を、派生モデルを作る2箇所（collectDaycare / careNameSets_）
-   *     でのみ使う。入院トグルの現在値（isResidentHospitalized_）や保存経路は従来のまま。 */
-  var WS_RM_CFG_KEY = 'rmaster_cfg';
-  var wsHospMap = null, wsHospRev = null, wsHospBusy = false;
-
-  function wsMasterCfg_() {
-    try {
-      var s = localStorage.getItem(WS_RM_CFG_KEY); if (!s) return null;
-      var o = JSON.parse(s), u = String((o && o.url) || '').trim();
-      if (!/^https:\/\//i.test(u)) return null;
-      return { url: u, token: String((o && o.token) || '').trim() };
-    } catch (e) { return null; }
-  }
-  /* 表示用の実効値。マスタが配信していればそちら、無ければ従来どおり care_schedule_v2 の値。
-     ★引数の r は読むだけ。書き換えない。 */
-  function wsHospEffective_(r) {
-    if (!r) return false;
-    if (wsHospMap && r.masterId != null && r.masterId !== '') {
-      var v = wsHospMap[String(r.masterId)];
-      if (v !== undefined) return !!v;
-    }
-    return !!r.hospitalized;
-  }
-  function wsFetchHosp_() {
-    if (wsHospBusy) return Promise.resolve(false);
-    var c = wsMasterCfg_(); if (!c || !c.token) return Promise.resolve(false);
-    wsHospBusy = true;
-    var u = c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=getRoster&token=' + encodeURIComponent(c.token);
-    return fetch(u, { method: 'GET', cache: 'no-store', redirect: 'follow' })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (!j || !Array.isArray(j.roster)) return false;
-        var m = {};
-        j.roster.forEach(function (x) {
-          var mid = x && (x.masterId != null ? x.masterId : x.id);
-          if (mid == null || mid === '') return;
-          if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
-        });
-        wsHospMap = m;
-        careNamesCache_ = { raw: null, hosp: {}, moved: {} };   // 名前セットのキャッシュを捨てて組み直させる
-        if (typeof j.stateRev === 'number' || typeof j.srev === 'number') wsHospRev = { rev: j.stateRev, srev: j.srev };
-        return true;
-      })
-      .catch(function () { return false; })
-      .then(function (ok) { wsHospBusy = false; return ok; });
-  }
-  /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
-  function wsWatchMasterState_() {
-    var c = wsMasterCfg_(); if (!c || document.hidden) return;
-    fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev',
-          { method: 'GET', cache: 'no-store', redirect: 'follow' })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (!j || j.ok !== true) return;
-        var ch = !wsHospRev || j.rev !== wsHospRev.rev || j.srev !== wsHospRev.srev;
-        wsHospRev = { rev: j.rev, srev: j.srev };
-        if (ch) wsFetchHosp_();   // 次の描画から新しい値が使われる
-      }).catch(function () {});
-  }
-
-  function collectDaycare(careDb) {
+   * 返値: [{name, floor, lunchMed, hospitalized, days:{dow:[start,end]}}]
+   * hospFn … 入院状態の実効値を返す関数（省略時は r.hospitalized）。
+   *   入居者マスタ由来の入院を重ねるために app.js から渡す。ここに実装を置かないのは、
+   *   このファイルが独立IIFEで app.js から見えず、跨いで呼ぶと ReferenceError になるため
+   *   （2026-08-02 の配信版が実際にそれで入院マスクを壊していた・2026-08-03 是正）。 */
+  function collectDaycare(careDb, hospFn) {
     var out = [];
     if (!careDb || !careDb.residents) return out;
     for (var i = 0; i < careDb.residents.length; i++) {
@@ -5059,7 +4997,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (has) {
         out.push({ name: r.name, floor: r.floor || 0,
-                   lunchMed: !!r.lunchMed, hospitalized: wsHospEffective_(r), days: days });   /* マスタ由来を優先（表示のみ・r は書き換えない） */
+                   lunchMed: !!r.lunchMed,
+                   hospitalized: (typeof hospFn === 'function') ? !!hospFn(r) : !!r.hospitalized,
+                   days: days });
       }
     }
     out.sort(function (a, b) {
@@ -5089,8 +5029,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 出力1: デイ週間予定表（曜日×階・名前＋時間・昼食後薬=黄色） */
-  function buildDaycareWeekXls(careDb, title) {
-    var users = collectDaycare(careDb);
+  function buildDaycareWeekXls(careDb, title, hospFn) {
+    var users = collectDaycare(careDb, hospFn);   /* 入院の実効値は呼び出し側から受け取る（上の注記参照） */
     var dows = daycareDows_(); /* 通所の定休日を除いた曜日（既定＝日曜休の月〜土） */
     var html = XLS_HEAD + '<h3>' + esc(title || 'デイサービス週間予定表') + '</h3>' +
       '<p>黄色＝昼食後に薬がある方</p><table>';
@@ -5138,8 +5078,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 出力2: デイ利用者一覧（曜日◯と時間）＋ デイ以外の利用者一覧 */
-  function buildDaycareUsersXls(careDb, title) {
-    var users = collectDaycare(careDb);
+  function buildDaycareUsersXls(careDb, title, hospFn) {
+    var users = collectDaycare(careDb, hospFn);   /* 同上 */
     var userNames = {};
     var i, d;
     var dows = daycareDows_(); /* 通所の定休日を除いた曜日（既定＝日曜休の月〜土） */
@@ -7214,6 +7154,127 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (d && d.meta && d.meta.locked) return true;
     return autoLockPast_(d);
   }
+  /* ── ロック中のシフト変化の検知（2026-08-03 追加・盤面は一切書き換えない）──
+   * meta.shiftStamp は「最後に反映した時点のシフト内容」の署名。現在のシフトから作った署名と
+   * 比べれば、ロック中に増えた/変わった勤務が何件あるか分かる。
+   * 戻り値は変化した件数。比較材料が無い（未記録）日は 0＝余計な警告を出さない（安全側）。 */
+  /* ═══════════ 入居者マスタの入院を重ねる ═══════════
+   * 2026-08-02 に配信リポで直接追加された機能をソースへ移植（2026-08-03）。
+   * 排泄ケア記録・入居者マスタで入院にしても、週間計画アプリが care_schedule_v2 の
+   * サーバー版へ入院状態を push しない（saveLocalOnly）ため、ワースケには届かなかった。
+   * デイ利用表・俯瞰2種と同じ迂回（マスタGASの getRoster を直接読む）で解消する。
+   *
+   * ★ワースケは care_schedule_v2 の【書き手】なので r.hospitalized を書き換えてはいけない。
+   *   書き換えると次の保存でマスタ由来の値がサーバーへ流れ、現場の入力を巻き戻しうる。
+   *   表示を組む瞬間に値を差し替えるだけにし、保存される構造には一切触らない。
+   *
+   * ★移植時の是正（重要）: 配信版は4関数を exports.js の IIFE 内に置きながら、
+   *   app.js の careNameSets_ から呼んでいた。スコープが違うため実行時 ReferenceError となり、
+   *   その try/catch に飲まれて hosp/moved が空のまま＝【入院・退去のマスクが全員分効かない】
+   *   状態が本番で発生していた（実測: 入院者の枠6件が通常表示）。
+   *   そこで定義を app.js 側（利用者と同じスコープ）へ移し、exports.js へは引数で渡す。 */
+  var WS_RM_CFG_KEY = 'rmaster_cfg';
+  var wsHospMap = null, wsHospRev = null, wsHospBusy = false;
+  function wsMasterCfg_() {
+    try {
+      var s = localStorage.getItem(WS_RM_CFG_KEY); if (!s) return null;
+      var o = JSON.parse(s), u = String((o && o.url) || '').trim();
+      if (!/^https:\/\//i.test(u)) return null;
+      return { url: u, token: String((o && o.token) || '').trim() };
+    } catch (e) { return null; }
+  }
+  /* 表示用の実効値。マスタが配信していればそちら、無ければ従来どおり care_schedule_v2 の値。
+     ★引数の r は読むだけ。書き換えない。 */
+  function wsHospEffective_(r) {
+    if (!r) return false;
+    if (wsHospMap && r.masterId != null && r.masterId !== '') {
+      var v = wsHospMap[String(r.masterId)];
+      if (v !== undefined) return !!v;
+    }
+    return !!r.hospitalized;
+  }
+  function wsFetchHosp_() {
+    if (wsHospBusy) return Promise.resolve(false);
+    var c = wsMasterCfg_(); if (!c || !c.token) return Promise.resolve(false);
+    wsHospBusy = true;
+    var u = c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=getRoster&token=' + encodeURIComponent(c.token);
+    return fetch(u, { method: 'GET', cache: 'no-store', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !Array.isArray(j.roster)) return false;
+        var m = {};
+        j.roster.forEach(function (x) {
+          var mid = x && (x.masterId != null ? x.masterId : x.id);
+          if (mid == null || mid === '') return;
+          if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
+        });
+        wsHospMap = m;
+        careNamesCache_ = { raw: null, hosp: {}, moved: {} };   /* 名前セットのキャッシュを捨てて組み直させる */
+        if (typeof j.stateRev === 'number' || typeof j.srev === 'number') wsHospRev = { rev: j.stateRev, srev: j.srev };
+        return true;
+      })
+      .catch(function () { return false; })
+      .then(function (ok) { wsHospBusy = false; return ok; });
+  }
+  /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
+  function wsWatchMasterState_() {
+    var c = wsMasterCfg_(); if (!c || document.hidden) return;
+    fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev',
+          { method: 'GET', cache: 'no-store', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || j.ok !== true) return;
+        var ch = !wsHospRev || j.rev !== wsHospRev.rev || j.srev !== wsHospRev.srev;
+        wsHospRev = { rev: j.rev, srev: j.srev };
+        if (ch) wsFetchHosp_();   /* 次の描画から新しい値が使われる */
+      }).catch(function () {});
+  }
+
+  /* 件数は【日付とセット】で持つ。日付を跨いでも前日の件数が出続けないようにするため
+   * （renderAll は毎回塗り直すので、日付が違えば必ず消える）。 */
+  var lockedShiftChg_ = { date: '', n: 0 };
+  function lockedShiftDiff_(date, data) {
+    try {
+      if (!data || !data.plan) return 0;
+      var day = store.get();
+      /* 対象は【手動ロック】だけ。過去日の自動保護(autoLockPast_)はシフトの事後修正が入る前提の
+       * 仕組みなので、ここで警告すると過去日すべてが赤バッジになり無視されるようになる。 */
+      if (!(day && day.meta && day.meta.locked)) return 0;
+      var saved = day.meta.shiftStamp || '';
+      if (!saved) return 0;                       /* 比較材料が無い日は警告しない（安全側） */
+      var att = SH.extractAttendance(date, data.staff, data.symbols, data.plan, shiftPickOpts_());
+      var now = SH.attendanceStamp(att);
+      if (now === saved) return 0;
+      /* 頭数外(役員)は端末ごとの設定で署名に出たり消えたりする。両側から除いて比べる＝
+       * 「設定差」が「シフトの変更」に化けるのを防ぐ。署名の要素は zone|division|nightRole|name|start|end。 */
+      var ex = {}, rs = data.staff || [], q;
+      for (q = 0; q < rs.length; q++) {
+        if (SH.wsExcluded && SH.wsExcluded(rs[q], true)) ex[String(rs[q].name || '').replace(/[\s　]/g, '')] = true;
+      }
+      function keep(sig) {
+        if (!sig) return false;
+        return !ex[String(String(sig).split('|')[3] || '').replace(/[\s　]/g, '')];
+      }
+      var cur = String(now).split(';').filter(keep);
+      var sav = String(saved).split(';').filter(keep);
+      var sset = {}, cset = {}, i, add = 0, del = 0;
+      for (i = 0; i < sav.length; i++) sset[sav[i]] = true;
+      for (i = 0; i < cur.length; i++) cset[cur[i]] = true;
+      for (i = 0; i < cur.length; i++) if (!sset[cur[i]]) add++;   /* 増えた/変わった */
+      for (i = 0; i < sav.length; i++) if (!cset[sav[i]]) del++;   /* 消えた（出勤しなくなった） */
+      /* 全件が食い違う＝署名の作られ方が違う（手動TSV由来は division を持たない等）。
+       * 「全員が変わった」ではなく【比較不能】とみなして黙る＝誤警告で信用を失わない。 */
+      if (cur.length > 1 && add >= cur.length && del >= sav.length) return 0;
+      return add + del;
+    } catch (e) { return 0; }
+  }
+  function paintShiftChgBadge_() {
+    var b = $('badgeShiftChg');
+    if (!b) return;
+    var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
+    b.textContent = 'シフト更新 ' + n;
+    b.className = 'badge ng' + (n ? '' : ' off');
+  }
   /* seedFromMaster は「自動生成(switchDate/boot/マスタ自動取込)」と「手動生成(imMasterSeedボタン)」の両方から
    * 呼ばれる。手動生成は Undo 可能にすべきなので、本体は履歴ラップせず、自動呼出側で store.auto(seedFromMaster)
    * とラップする（手動クリックだけ履歴に積む）。 */
@@ -7622,7 +7683,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (p && p.residents) {
           for (var i = 0; i < p.residents.length; i++) {
             var r = p.residents[i];
-            if (wsHospEffective_(r)) hosp[r.name] = true;   /* マスタ由来を優先（表示のみ） */
+            if (wsHospEffective_(r)) hosp[r.name] = true;   /* マスタ由来を優先（表示のみ・r は書き換えない） */
             if (r.movedOut) moved[r.name] = true;
           }
         }
@@ -7736,6 +7797,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
 
+    paintShiftChgBadge_();   /* ロック中のシフト変化バッジ（日付切替・再描画でも消えないよう毎回塗り直す） */
     var bu = $('badgeUn'), bb = $('badgeBr');
     bu.textContent = '未配置 ' + alerts.unassigned.length;
     bu.className = 'badge warn' + (alerts.unassigned.length ? '' : ' off');
@@ -8436,7 +8498,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     wrap.innerHTML = '';
     var care = loadCareDb();
     if (!care) { $('exMedHint').textContent = '週間計画データがありません'; return; }
-    var users = window.WSExport.collectDaycare(care);
+    var users = window.WSExport.collectDaycare(care, wsHospEffective_);   /* マスタ由来の入院を重ねる（表示のみ） */
     if (!users.length) {
       $('exMedHint').textContent = 'デイ利用者がいません（支援マスタの再取込で曜日・時間が入ります）';
       return;
@@ -9971,12 +10033,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     fetchShiftData(ym, !!opts.fresh, function (data) {
       /* 画面が他日へ移った: 「取得中」表示を残さず終了（フリーズ防止） */
       if (ui.currentDate !== date) { if (opts.report) $('imResult').textContent = ''; done(null); return; }
-      /* 日単位ロック: ロック中はシフト反映しない（自動=サイレントskip・手動ボタン/再取込=案内表示）。 */
+      /* 日単位ロック: ロック中はシフト反映しない（自動=サイレントskip・手動ボタン/再取込=案内表示）。
+       * ★ただし「シフト側だけが変わった」ことは検知して知らせる（2026-08-03 追加）。
+       *   ロックの約束は【勝手に書き換えない】であって【気づかせない】ではない。従来は自動経路で
+       *   完全に無言だったため、シフトへ入れた勤務がワースケに出ないことに現場が気づけなかった
+       *   （8/3にロック後へ追加された1名分が反映されず発覚）。盤面は一切書き換えない。 */
       if (dayLocked_()) {
-        if (opts.report) $('imResult').textContent = '🔒 この日はロック中のためシフトを反映しません（ロックを外してから再取込してください）。';
+        var chgN_ = lockedShiftDiff_(date, data);
+        lockedShiftChg_ = { date: date, n: chgN_ };
+        paintShiftChgBadge_();
+        if (opts.report) $('imResult').textContent = chgN_
+          ? '🔒 ロック中のためシフトを反映しませんでした。ただし【シフト側に未反映の変更が ' + chgN_ + '件】あります。反映するには🔒を解除してください。'
+          : '🔒 この日はロック中のためシフトを反映しません（ロックを外してから再取込してください）。';
         else if (opts.force) toast('🔒 ロック中のためシフト反映をスキップしました（ロックを外してください）', true);
-        done({ skipped: true, reason: 'locked' }); return;
+        else if (chgN_) toast('🔒 ロック中：シフトに未反映の変更が ' + chgN_ + '件あります（🔒解除で反映）', true);
+        done({ skipped: true, reason: 'locked', shiftChanged: chgN_ }); return;
       }
+      lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();   /* 非ロック＝これから反映するのでバッジは消す */
       if (!data || !data.plan) {
         if (opts.report) $('imResult').textContent =
           syncOn() ? 'シフトを取得できませんでした（サーバー応答なし、または当月 ' + ym + ' のシフト未登録）。通信・エンドポイントURL・トークンをご確認ください。'
@@ -11216,7 +11289,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 同期localStorage確定＋即push。ロック直後にリロードしても wsday_ に必ず残る（消失根治）。 */
       try { flushAll_(); } catch (eFl) {}
       if (on) toast('🔒 ロック中：シフト反映・週間計画同期・自動配置を停止します（手動編集は可能）');
-      else toast('🔓 ロックを解除しました');
+      else {
+        toast('🔓 ロックを解除しました');
+        /* 溜まっていたシフトの変更を、その場で反映するか【必ず尋ねてから】反映する（2026-08-03）。
+         * 黙って反映しないのは「解除しても手で再取込しないと入らない」を無くすため。
+         * 黙って反映もしないのは、シフト反映が職員列を作り直し、列の並びが変わると
+         * 配置済みの支援が隣の列（別の職員）へ付け替わりうるため（既存仕様の罠）。
+         * ★バッジを消すのは「実際に反映した時」だけ。反映しない限り気づける状態を残す
+         *   （消してから自動反映OFFで何も起きない＝今回直したかった無言状態に逆戻りするため）。 */
+        var pend_ = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
+        if (pend_ <= 0) { lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_(); }
+        else if (!settings.shiftAuto) {
+          toast('シフトの自動反映がOFFです。［取込］→［シフト］から反映してください（未反映 ' + pend_ + '件）', true);
+        } else if (window.confirm('シフトに未反映の変更が ' + pend_ + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+            '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
+            '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
+          lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
+          try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (eUL) {}
+        }
+      }
     });
     document.addEventListener('keydown', function (e) {
       /* Ctrl/Cmd+S は入力欄・モーダル中でも「今すぐ保存」にする（ブラウザの保存ダイアログを抑止） */
@@ -11242,6 +11333,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
+    /* 押せる見た目なのに無反応にしない（HIG）。何をすれば反映されるかをその場で示す。 */
+    if ($('badgeShiftChg')) $('badgeShiftChg').addEventListener('click', function () {
+      var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
+      if (!n) { toast('未反映のシフト変更はありません'); return; }
+      toast('🔒 ロック中のため未反映です（' + n + '件）。上部の🔒を外すと反映できます', true);
+    });
 
     $('trayToggle').addEventListener('click', function () {
       var tr = $('tray');
@@ -11486,13 +11583,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!care) { $('imResult').textContent = '週間計画データがありません'; return; }
       var ttl = 'デイサービス週間予定表（' + ui.currentDate.split('-').join('/') + ' 出力）';
       downloadFile('デイ週間予定_' + ui.currentDate + '.xls',
-        window.WSExport.buildDaycareWeekXls(care, ttl), 'application/vnd.ms-excel');
+        window.WSExport.buildDaycareWeekXls(care, ttl, wsHospEffective_), 'application/vnd.ms-excel');
     });
     $('exUsersXls').addEventListener('click', function () {
       var care = loadCareDb();
       if (!care) { $('imResult').textContent = '週間計画データがありません'; return; }
       downloadFile('デイ利用者一覧_' + ui.currentDate + '.xls',
-        window.WSExport.buildDaycareUsersXls(care), 'application/vnd.ms-excel');
+        window.WSExport.buildDaycareUsersXls(care, null, wsHospEffective_), 'application/vnd.ms-excel');
     });
 
     /* 相互起動 */
@@ -12201,8 +12298,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 施設プロファイル未設定なら初回セットアップ・ウィザードを表示（shift-app 完了済みなら非表示） */
     try { maybeShowFacilityWizard(); } catch (eWz) {}
 
-    /* 入居者マスタの入院を重ねる（2026-08-02 追加・表示のみ／保存経路には触れない）。
-       接続設定が無い端末では何も起きない＝従来どおりの表示。 */
+    /* 入居者マスタの入院を重ねる（表示のみ／保存経路には触れない）。
+       接続設定（rmaster_cfg）が無い端末では何も起きない＝従来どおりの表示。 */
     try {
       wsFetchHosp_().then(function (ok) { if (ok) { try { renderAll(); } catch (e) {} } });
       setInterval(function () { try { wsWatchMasterState_(); } catch (e) {} }, 60000);
