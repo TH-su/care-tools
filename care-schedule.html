@@ -5,12 +5,15 @@
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
+<!-- 氏名・計画を扱う画面のため端末キャッシュに残さない（personal-info.md の要求。他の記録系HTMLと同じ扱い） -->
+<meta http-equiv="Cache-Control" content="no-store">
 <title>週間計画</title>
 <style>
 :root {
   --pri:  #1565c0;
   --pri2: #1a73e8;
   --ng:   #c62828;
+  --pre:  #6a1b9a;   /* 入居前（2026-08-03 追加・白地とのコントラスト比 約8.6:1） */
   --g0: #fff;
   --g1: #f8f9fa;
   --g2: #e8eaed;
@@ -2980,12 +2983,12 @@ function renderResidentList() {
   const csOutAttr = r => csMasterOwned(r) ? ' disabled aria-disabled="true" title="入居者マスタで操作してください"' : '';
   ul.innerHTML = vis.slice().sort(csResidentSort).map(r =>
     `<li class="res-item ${r.id === DB.currentResidentId ? 'active' : ''}">
-      <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.preAdmitted ? ' <span style="font-size:11px;color:#6a1b9a">（入居前）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
+      <span>${escHtml(r.name)}${r.external ? ' <span style="font-size:11px;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size:11px;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size:11px;color:var(--ng)">（退去）</span>' : ''}${r.preAdmitted ? ' <span style="font-size:11px;color:var(--pre)">（入居前）</span>' : ''}${r.hospitalized ? ' <span style="font-size:11px;color:#e65100">（入院中）</span>' : ''}</span>
       ${r.movedOut
         ? `<button class="del-res" ${csOutStyle(r, 'var(--pri)')}${csOutAttr(r)} onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
-        : `<button class="del-res" style="color:#6a1b9a" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>
-           <button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
-           <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>`}
+        : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
+           <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>
+           <button class="del-res" style="color:var(--pre)" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>`}
       <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">✕</button>
     </li>`
   ).join('');
@@ -3110,6 +3113,7 @@ function toggleHospitalized(id) {
     ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）${csWarn}`
     : `「${res.name}」を退院にしました${csWarn}`);
 }
+let csPreGen_ = 0;   /* 入居前トグルの世代番号（連続タップで、先に飛んだpushの完了処理が後の操作を巻き戻さないため） */
 /* 「入居前」トグル（2026-08-03 追加）。
    入居前の方は、入居後にそのまま使えるよう週間計画を先に作っておく運用のため、
    計画は普通に組めるが【まだ支援は実施しない】。ワークスケジュールでは入院中と同じ極薄表示にし、
@@ -3137,6 +3141,10 @@ async function togglePreAdmission(id) {
     r.preAdmitted = val;
     return true;
   };
+  /* ★世代番号。連続タップ（押し間違いの訂正・複数名をまとめて設定）で、
+     先に飛んだ push の完了処理が【後の操作を上書きして巻き戻す】のを防ぐ。
+     自分より新しい操作があれば、この呼び出しは焼き直しをしない。 */
+  const myGen = ++csPreGen_;
   applyPatch();
   const ok = saveDB();
   renderResidentList(); renderAll();
@@ -3146,9 +3154,13 @@ async function togglePreAdmission(id) {
   if (ok && SYNC.hasTarget()) {
     if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
     try {
-      await SYNC.push();
-      if (applyPatch()) { saveDB(); renderResidentList(); renderAll(); }
-    } catch (e) {}
+      /* ★push は送信中(_busy)だと【リジェクトせず false を即返す】。debounce タイマーを潰したうえに
+         false を捨てると、未送信のまま「同期OK」表示になり他端末へ届かない（＝安全表示が効かない）。
+         送れなかったら必ず再送の口を張り直す。 */
+      const pushed = await SYNC.push();
+      if (!pushed) { SYNC.scheduleAutoPush(); return; }
+      if (myGen === csPreGen_ && applyPatch()) { saveDB(); renderResidentList(); renderAll(); }
+    } catch (e) { try { SYNC.scheduleAutoPush(); } catch (e2) {} }
   }
 }
 function restoreResident(id) {
