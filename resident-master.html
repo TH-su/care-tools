@@ -179,9 +179,13 @@ input,select,textarea{font-family:inherit; font-size:15px}
 /* ★表は「内容ぴったりの幅」にする（table-layout:auto ＋ width:auto）。
    横幅を100%にすると氏名欄だけが間延びし、その分だけ文字を小さくせざるを得ない。
    幅を content に寄せた分、文字サイズを大きくして用紙を縦に使い切る（fitBdaySheet）。 */
+/* ★align-items:stretch で左右の列を同じ高さにし、低い方の表を伸ばして下端を揃える。
+   誕生日順の表は月の区切り(2px)が入るぶん、同じ行数でも年齢順の表より数px高くなるため
+   （27名・10か月グループで9px）、揃えないと紙の上で下端がずれる。 */
 .bday-2col{display:grid; grid-template-columns:auto auto; gap:10px;
-  justify-content:center; align-items:start}
+  justify-content:center; align-items:stretch}
 .bcol{display:flex; flex-direction:column; align-items:center}
+.bcol .btbl{flex:1 1 auto}   /* 余った高さは各行へ均等に配分される */
 /* ★画面では中央寄せにしない。表は内容幅なので狭い端末では確実に溢れ、
    中央寄せだと左へはみ出した分（No.・誕生月の列）がスクロールで到達できなくなる。
    紙は下の @media print が中央寄せに戻す。 */
