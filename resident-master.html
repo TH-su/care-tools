@@ -163,6 +163,41 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .applist .ad{font-size:11px; font-weight:400; color:var(--g7); line-height:1.4}
 .muted{color:var(--g6); font-size:12px}
 
+/* ── 誕生日一覧 ── */
+.bday-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
+.bday-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
+  border-radius:8px; background:#fff; color:var(--g9); font-size:14px; cursor:pointer}
+.bday-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+/* 年度の端。無効だと分かる見た目にする（押しても無反応、の理由が見えないのを防ぐ） */
+.bday-bar button:disabled{opacity:.45; cursor:default; background:var(--g1)}
+.bday-bar #bdayFY{font-size:15px; font-weight:700; min-width:6em; text-align:center}
+.bday-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
+.bday-sheet{background:#fff; padding:6px 4px}
+.bday-hd{text-align:center; margin-bottom:6px}
+.bday-hd .bt1{font-size:16px; font-weight:700; letter-spacing:.08em}
+.bday-hd .bt2{font-size:14px; font-weight:700; margin-top:2px}
+.bday-2col{display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start}
+.btbl{width:100%; border-collapse:collapse; table-layout:fixed}
+.btbl th,.btbl td{border:1px solid #000; padding:var(--bpad,1px) 3px; text-align:center; line-height:1.25;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.btbl th{background:var(--g2); font-weight:700}
+.btbl .bn{text-align:left}
+.btbl .bd{font-variant-numeric:tabular-nums}
+.btbl .ba{font-variant-numeric:tabular-nums}
+/* 列幅は表ごとに指定する。左は4列（誕生月あり）・右は3列。
+   共通で :first-child を狭くすると、右の表の氏名が誕生月の幅になって省略される。 */
+.bt-date th:nth-child(1){width:3.6em}   /* 誕生月 */
+.bt-date th:nth-child(3){width:6.6em}   /* 生年月日 */
+.bt-date th:nth-child(4){width:3.2em}   /* 年齢 */
+.bt-age  th:nth-child(2){width:6.6em}
+.bt-age  th:nth-child(3){width:3.2em}
+.bday-ft{margin-top:6px; text-align:right; font-size:10px; color:var(--g7)}
+.bday-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
+  background:var(--warn-bg); color:var(--warn-tx); font-size:12px; font-weight:700}
+.bday-bad{margin-top:4px; font-size:10px; color:var(--ng)}
+@media print{ .bday-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
+@media (max-width:640px){ .bday-2col{grid-template-columns:1fr} }   /* スマホは縦積み（印刷は常に2列） */
+
 /* ── 印刷 ── */
 @media print{
   body{padding:0; background:#fff}
@@ -175,6 +210,22 @@ input,select,textarea{font-family:inherit; font-size:15px}
   .geno-box{border:none !important; cursor:default !important}
   .geno-hint{display:none !important}
   @page{size:A4; margin:10mm}
+
+  /* ── 誕生日一覧（A4縦1枚）──
+     ★body.bday-on を付けて【誕生日ビューの時だけ】効かせる。
+       付けないと標準・階別・五十音タブの印刷からも検索窓や件数が消え、
+       指示していない画面の印刷結果を変えてしまう（原則1・原則2）。
+     ★既存の詳細画面(.sheet)の印刷指定には触れていない。 */
+  body.bday-on .search-bar,
+  body.bday-on .view-tabs,
+  body.bday-on .filter-row,
+  body.bday-on .roster-count,
+  body.bday-on .bday-bar{display:none !important}
+  .bday-sheet{padding:0}
+  .bday-2col{grid-template-columns:1fr 1fr !important; gap:6px}
+  .btbl{page-break-inside:avoid}
+  .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .bday-ft{font-size:8px; color:#000}
 }
 .loading{text-align:center; color:var(--g5); padding:30px}
 </style>
@@ -196,6 +247,14 @@ input,select,textarea{font-family:inherit; font-size:15px}
     <button class="vtab"    data-v="fl2"   role="tab" aria-selected="false">階別（左右）</button>
     <button class="vtab"    data-v="fl4"   role="tab" aria-selected="false">階別（4列）</button>
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
+    <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
+  </div>
+  <!-- 誕生日ビュー専用の年度切替。印刷には出さない（年度は表の見出しに入る） -->
+  <div class="bday-bar" id="bdayBar" style="display:none">
+    <button type="button" id="bdayPrev" aria-label="前の年度">◀</button>
+    <span id="bdayFY" aria-live="polite"></span>
+    <button type="button" id="bdayNext" aria-label="次の年度">▶</button>
+    <button type="button" class="btn-print" id="bdayPrint">🖨️ 印刷</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -774,7 +833,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana'];
+var VIEWS=['std','fl2','fl4','kana','bday'];
 var curView=(function(){try{var v=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(v)>=0?v:'std'}catch(e){return'std'}})();
 function paintTabs(){
   Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
@@ -785,7 +844,144 @@ function paintTabs(){
 function setView(v){
   curView=VIEWS.indexOf(v)>=0?v:'std';
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
-  paintTabs(); renderRoster();
+  paintTabs(); paintBdayBar(); renderRoster();
+}
+
+/* ═══════════ 誕生日一覧（年度単位） ═══════════
+   ★年齢は「年度末＝翌年3月31日時点」。その年度に誕生日を迎えた後の年齢になる。
+     例）2026年度: 4/24生まれ→2027-03-31時点で82歳／3/21生まれ→同79歳。
+     この定義は橋爪氏の現行の手作り表と一致することを実物で照合済み（2026-08-04）。 */
+/* 年度: 4月始まり。1〜3月は前年度に属する。 */
+function fyOfDate(d){ return d.getMonth()+1>=4 ? d.getFullYear() : d.getFullYear()-1; }
+var bdayFY=fyOfDate(new Date());
+/* 年度末（翌年3/31）時点の満年齢。誕生月が1〜3月なら年度末は誕生日の後なので +1 年で数える。 */
+function ageAtFyEnd(iso,fy){
+  var p=parseIsoDate(iso); if(!p) return '';
+  var endYear = (p.m<=3) ? fy+1 : fy;          // その誕生日が属する暦年
+  var a=endYear-p.y;
+  return (a>=0&&a<140)?a:'';
+}
+/* ISO(YYYY-MM-DD)を分解。不正・非ISOは null（表示側で素通しさせる） */
+function parseIsoDate(iso){
+  var s=String(iso==null?'':iso).slice(0,10);
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return null;
+  var y=+m[1],mo=+m[2],d=+m[3];
+  /* 存在しない日付（2/31 等）を弾く。うるう年もこれで正しく判定される */
+  var t=new Date(y,mo-1,d);
+  if(t.getFullYear()!==y||t.getMonth()!==mo-1||t.getDate()!==d) return null;
+  return {y:y,m:mo,d:d};
+}
+/* 和暦（写真の表記に合わせる: S19.04.24）。改元日は境界を含めて厳密に判定する。 */
+var ERAS=[
+  {c:'R', name:'令和', y:2019, m:5,  d:1},
+  {c:'H', name:'平成', y:1989, m:1,  d:8},
+  {c:'S', name:'昭和', y:1926, m:12, d:25},
+  {c:'T', name:'大正', y:1912, m:7,  d:30},
+  {c:'M', name:'明治', y:1868, m:1,  d:25}
+];
+function fmtWareki(iso){
+  var p=parseIsoDate(iso);
+  if(!p) return String(iso==null?'':iso);          // 非ISOは原文のまま（勝手に消さない）
+  var key=p.y*10000+p.m*100+p.d;
+  for(var i=0;i<ERAS.length;i++){
+    var e=ERAS[i];
+    if(key>=e.y*10000+e.m*100+e.d){
+      var n=p.y-e.y+1;
+      return e.c+(n<10?'0':'')+n+'.'+(p.m<10?'0':'')+p.m+'.'+(p.d<10?'0':'')+p.d;
+    }
+  }
+  return p.y+'.'+(p.m<10?'0':'')+p.m+'.'+(p.d<10?'0':'')+p.d;   // 明治より前は西暦で出す
+}
+function paintBdayBar(){
+  var bar=$('bdayBar'); if(!bar) return;
+  var on=(curView==='bday');
+  bar.style.display=on?'flex':'none';
+  document.body.classList.toggle('bday-on',on);   // 印刷CSSをこのビュー限定にするため
+  var lab=$('bdayFY'); if(lab) lab.textContent=bdayFY+'年度';
+  /* 年度は現在年度の前後5年まで。無制限に押すと全員の年齢が空欄になり、
+     「年齢が高い順」の表も意味のない並びのまま印刷されてしまう */
+  var base=fyOfDate(new Date());
+  if($('bdayPrev'))$('bdayPrev').disabled=(bdayFY<=base-5);
+  if($('bdayNext'))$('bdayNext').disabled=(bdayFY>=base+5);
+}
+/* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる。
+   ★このビューは帳票専用。他の4タブと違い、行をタップしても詳細へは遷移させない
+     （紙に起こすための一覧であり、行が押せると印刷前に画面が切り替わって邪魔になる）。 */
+function bdayHtml(list){
+  /* 除外は「未登録」と「書式が不正」を必ず分ける。
+     一覧カードには生年月日が出ているのに、この表からだけ消えて「未登録」と説明されると
+     現場が欠落に気づけない（編集フォームは非ISOの既存値を温存する設計のため実在しうる）。 */
+  var rows=[],noBd=0,badBd=[];
+  list.forEach(function(r){
+    if(parseIsoDate(r.birthDate)) rows.push(r);
+    else if(!String(r.birthDate||'').trim()) noBd++;
+    else badBd.push(r);
+  });
+  /* 表1: 4月始まりの誕生日順（月→日→ふりがな） */
+  var byDate=rows.slice().sort(function(a,b){
+    var A=parseIsoDate(a.birthDate),B=parseIsoDate(b.birthDate);
+    var am=(A.m+8)%12, bm=(B.m+8)%12;              // 4月=0 …… 3月=11
+    return am-bm || A.d-B.d || String(a.kana||'').localeCompare(String(b.kana||''),'ja');
+  });
+  /* 表2: 年齢が高い順（同年齢は誕生日が早い順） */
+  var byAge=rows.slice().sort(function(a,b){
+    var aa=ageAtFyEnd(a.birthDate,bdayFY), ba=ageAtFyEnd(b.birthDate,bdayFY);
+    if(ba!==aa) return (ba||0)-(aa||0);
+    var A=parseIsoDate(a.birthDate),B=parseIsoDate(b.birthDate);
+    return A.y-B.y || A.m-B.m || A.d-B.d;
+  });
+  /* 誕生月は同じ月をまとめて縦結合する（写真どおり） */
+  var mrow=[],prev=null;
+  byDate.forEach(function(r,i){
+    var m=parseIsoDate(r.birthDate).m;
+    if(m!==prev){ mrow.push({i:i,m:m,n:1}); prev=m; } else { mrow[mrow.length-1].n++; }
+  });
+  var spanAt={},monAt={};
+  mrow.forEach(function(g){ spanAt[g.i]=g.n; monAt[g.i]=g.m; });
+  var t1=byDate.map(function(r,i){
+    return '<tr>'+
+      (spanAt[i]?('<td class="bm" rowspan="'+spanAt[i]+'">'+monAt[i]+'</td>'):'')+
+      '<td class="bn">'+esc(r.name)+'</td>'+
+      '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
+      '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
+  }).join('');
+  var t2=byAge.map(function(r){
+    return '<tr>'+
+      '<td class="bn">'+esc(r.name)+'</td>'+
+      '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
+      '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
+  }).join('');
+  var today=new Date();
+  var stamp=today.getFullYear()+'.'+(today.getMonth()+1)+'.'+today.getDate();
+  /* 書式が不正な方は紙から消さず、氏名だけ末尾に出して確認を促す */
+  var badLine = badBd.length
+    ? '<div class="bday-bad">生年月日の書式が不正で表に載せられませんでした（要確認）：'+
+        badBd.map(function(r){return esc(r.name)}).join('・')+'</div>'
+    : '';
+  var notes=[];
+  if(noBd) notes.push('生年月日が未登録の'+noBd+'名は除く');
+  if(badBd.length) notes.push('書式が不正な'+badBd.length+'名は下記');
+  var base=fyOfDate(today);
+  var fyNote = (bdayFY!==base) ? '　※'+bdayFY+'年度の表示（年齢は'+(bdayFY+1)+'年3月31日時点）' : '';
+  /* ★どの絞り込みで出した紙かを必ず残す。
+     この画面は検索欄と在籍/退去チップが効くが、印刷ではどちらも紙に写らない。
+     残さないと「一部だけの表」が完全な一覧に見え、誕生会の対象者が漏れる。
+     在籍フィルタは端末に保存されるため、前回「退去」のままの端末もありうる。 */
+  var scope=(curFilter==='active'?'在籍のみ':curFilter==='out'?'退去のみ':'在籍＋退去');
+  var qNow=(($('q')&&$('q').value)||'').trim();
+  var scopeNote='　／　対象 '+scope+(qNow?'　／　検索「'+esc(qNow)+'」で絞り込み中':'');
+  return '<div class="bday-sheet" id="bdaySheet">'+
+    '<div class="bday-hd"><div class="bt1">☆誕生日一覧☆</div>'+
+      '<div class="bt2">'+bdayFY+'年度　誕生日後の年齢</div></div>'+
+    '<div class="bday-2col">'+
+      '<table class="btbl bt-date"><thead><tr><th>誕生月</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t1+'</tbody></table>'+
+      '<table class="btbl bt-age"><thead><tr><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t2+'</tbody></table>'+
+    '</div>'+
+    badLine+
+    '<div class="bday-ft">'+rows.length+'名'+
+      (notes.length?'（'+notes.join('／')+'）':'')+fyNote+scopeNote+
+      '　／　印刷日 '+stamp+'</div>'+
+  '</div>';
 }
 /* 居室 → 階。daycare-roster.html の roomToFloor と同一仕様（判定を2箇所でずらさない）。
    全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる）。
@@ -892,6 +1088,8 @@ function renderRoster(){
       var a=bucket[p[0]]; if(!a) return '';
       return secHtml(p[0],a.sort(byKana));
     }).join('')+secHtml('その他',other.sort(byKana),'nofloor');   // ヨミ未登録・五十音で分類できないヨミ
+  }else if(curView==='bday'){
+    html=bdayHtml(list);
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -899,6 +1097,52 @@ function renderRoster(){
   Array.prototype.forEach.call(box.querySelectorAll('.rcard'),function(el){
     el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
   });
+  if(curView==='bday') fitBdaySheet();
+}
+/* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める。
+   ★高さは「見出し＋（左右の表のうち高い方）＋脚注」で計算する。
+     .bday-2col はスマホ幅だと1列になるが、印刷は必ず2列なので
+     シート全体の高さを測ると縦積み分を二重に数えてしまう。
+   ★行は nowrap なので、行の高さは列幅ではなく文字サイズだけで決まる。
+     つまり画面幅が印刷幅と違っても、この見積りは印刷とずれない。 */
+var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
+function fitBdaySheet(){
+  var sheet=$('bdaySheet'); if(!sheet) return;
+  /* ★一覧が非表示のときは測らない。非表示要素の offsetHeight は 0 になり、
+     「収まった」と誤判定して12pxのまま固定され、警告も出なくなる。
+     （詳細画面を開いている間に60秒ポーリングで再描画される経路が実在する） */
+  if(!sheet.offsetParent) return;
+  var tbls=sheet.querySelectorAll('.btbl');
+  var hd=sheet.querySelector('.bday-hd'), ft=sheet.querySelector('.bday-ft');
+  if(!tbls.length) return;
+  function measure(){
+    var tall=0;
+    for(var i=0;i<tbls.length;i++) tall=Math.max(tall,tbls[i].offsetHeight);
+    /* ★書式不正の氏名行(.bday-bad)も印刷に出るので必ず数える。
+       数え落とすと、縮小が上限ぎりぎりで止まったときにこの行だけ2枚目へ落ちる
+       （しかも over=false なので警告も出ない）。.bday-warn は印刷に出ないので数えない。 */
+    var bad=sheet.querySelector('.bday-bad');
+    return (hd?hd.offsetHeight:0)+tall+(ft?ft.offsetHeight:0)+(bad?bad.offsetHeight+4:0)+16;
+  }
+  /* 下限は7px。これ以下は紙に出しても読めないので、無理に縮めず警告に倒す
+     （読めない1枚より、警告つきで絞り込みを促す方が現場で使える） */
+  var size=12, pad=1, MIN=7;
+  for(var guard=0; guard<40; guard++){
+    for(var i=0;i<tbls.length;i++){ tbls[i].style.fontSize=size+'px'; }
+    sheet.style.setProperty('--bpad', pad+'px');
+    if(measure()<=BDAY_PRINT_H_PX) break;
+    if(size<=MIN) break;
+    size=Math.round((size-0.5)*10)/10;
+    if(size<8) pad=0;
+  }
+  /* それでも収まらない時は黙って溢れさせない。画面にだけ理由を出す（印刷物には出さない）。 */
+  var over=measure()>BDAY_PRINT_H_PX;
+  var warn=sheet.querySelector('.bday-warn');
+  if(over&&!warn){
+    warn=document.createElement('div'); warn.className='bday-warn';
+    warn.textContent='⚠️ 人数が多く、この文字サイズではA4縦1枚に収まりません。上の「在籍／退去」で絞り込むか、2枚に分けて印刷してください。';
+    sheet.insertBefore(warn,sheet.firstChild);
+  }else if(!over&&warn){ warn.parentNode.removeChild(warn); }
 }
 
 /* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
@@ -1634,7 +1878,11 @@ function saveResident(){
 function showScreen(name){
   ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
-  if(name==='list')window.scrollTo(0,0);
+  if(name==='list'){
+    window.scrollTo(0,0);
+    /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
+    if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
+  }
 }
 
 /* ═══════════ 端末用途ガード ═══════════ */
@@ -1703,7 +1951,12 @@ function init(){
   // 保存された表示パターンのタブ状態だけ先に反映する。
   // ここで描画すると (a) 名簿読込前なので「入居者がいません」が一瞬出る
   // (b) 現場端末ガードで return する経路でも描画してしまう。描画は loadData に任せる。
-  paintTabs();
+  paintTabs(); paintBdayBar();
+  /* 誕生日ビューの年度切替・印刷。年度は端末に保存しない（毎回その日の年度で開く＝
+     去年の年度のまま印刷してしまう事故を防ぐ） */
+  if($('bdayPrev'))$('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
+  if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
+  if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){window.print()});
   Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
     c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');
       try{localStorage.setItem(FILTER_KEY,curFilter)}catch(e){}
