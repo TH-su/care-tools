@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>接続設定</title>
+<!--
+  接続設定（端末セットアップ用・事務所専用）
+  ════════════════════════════════════════════════════════════════
+  目的: 新しい端末を使い始める時、7系統ぶんの「GASのURL」と「合言葉」を
+        アプリを1本ずつ開いて設定して回る手間（最大7往復）を1画面にまとめる。
+
+  ★この画面は「設定を書く場所」を1つにするだけで、キーの一本化はしない。
+    既存の localStorage キーはそのまま残し、各アプリは今までどおり自分のキーを読む。
+    新キーへ移す設計にすると全端末を同時に再設定する必要が生じ、
+    1台でも取り残すとその端末が全断するため（data-contracts §6-⑤）。
+
+  ★同一オリジンの localStorage しか触れない。
+    ここ（th-su.github.io）と別オリジンのアプリ（薬学管理＝未公開）は対象外。
+    リンクを足しても効かないので、対象を増やす時は必ずオリジンを確認すること。
+
+  ★多層保存のアプリ（排泄ケア記録・体重管理）は主キーだけを書く。
+    両アプリとも起動時に「主キーの値を全層へ書き戻す」実装のため、
+    主キーを書けば bak/cookie/IndexedDB まで自動で追随する（実装確認済み）。
+    ここで多層を真似して書くと、実装が変わった時に二重管理でずれる。
+
+  ★個人情報は扱わない。氏名・記録・入居者データを絶対に持ち込まないこと。
+    扱うのは接続先URLと合言葉のみ。それでも合言葉は漏れれば全データに届くため、
+    現場端末ではこの画面自体をブロックする（メニュー側も data-office-only で隠す）。
+
+  ★画面切替を持たないため、リロードで現在地を失う問題は発生しない（dev-principles 原則11）。
+-->
+<style>
+:root {
+  --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32; --ok-l: #e8f5e9;
+  --ng: #c62828; --ng-l: #ffebee;
+  --warn-bg: #fff8e1; --warn-tx: #e65100;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g0); color: var(--g9); line-height: 1.5;
+  padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+}
+
+/* ── ヘッダー（他ツールと同じスティッキー方式） ── */
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff; padding: 12px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh);
+  display: flex; align-items: center; gap: 12px;
+}
+.hdr h1 { margin: 0; font-size: 18px; font-weight: 700; flex: 1; }
+/* 戻り先を常に明示（HIG: ナビゲーション）。44px を確保して誤タップを避ける */
+.hdr .back {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; margin: -10px 0 -10px -6px;
+  color: #fff; text-decoration: none; font-size: 15px; font-weight: 700;
+}
+.hdr .back:focus-visible { outline: 3px solid #fff; outline-offset: -3px; border-radius: 8px; }
+
+main {
+  max-width: 720px; margin: 0 auto;
+  padding: 14px max(14px, env(safe-area-inset-left)) 0 max(14px, env(safe-area-inset-right));
+}
+
+/* ── カード ── */
+.cd {
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); padding: 14px; margin: 0 0 12px;
+}
+.cd > h2 {
+  margin: 0 0 2px; font-size: 15.5px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.cd .apps { margin: 0 0 10px; font-size: 12px; color: var(--g7); }
+
+/* 状態バッジ。色だけに意味を持たせず必ず文言を併記する（HIG: 色覚特性配慮） */
+.badge { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.badge.set   { background: var(--ok-l); color: var(--ok); }
+.badge.unset { background: var(--g1);   color: var(--g7); }
+
+.fld { margin: 0 0 10px; }
+.fld label { display: block; font-size: 12.5px; font-weight: 700; color: var(--g7); margin: 0 0 4px; }
+.fld .hint { font-weight: 400; color: var(--g7); }
+.fld input {
+  width: 100%; padding: 10px 12px; min-height: 44px;
+  font-size: 15px; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+}
+.fld input:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
+.fld .row { display: flex; gap: 8px; align-items: stretch; }
+.fld .row input { flex: 1 1 auto; min-width: 0; }
+
+.btn {
+  min-height: 44px; padding: 10px 16px; font-size: 14.5px; font-weight: 700; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+  cursor: pointer;
+}
+.btn:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.btn:active { transform: scale(.98); }
+.btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn.sm { min-height: 44px; padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+.acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* 結果表示。アイコン＋文言で示す（色だけに頼らない） */
+.res { margin: 8px 0 0; font-size: 13px; line-height: 1.6; display: none; }
+.res.on { display: block; }
+.res.ok  { color: var(--ok); }
+.res.ng  { color: var(--ng); }
+.res.inf { color: var(--g7); }
+
+.note-card { background: var(--warn-bg); border-color: #ffe0a3; }
+.note-card p { margin: 0 0 6px; font-size: 13px; color: var(--warn-tx); }
+.note-card p:last-child { margin-bottom: 0; }
+.note-card b { font-weight: 700; }
+
+/* 巻き戻し警告。既定は非表示で、他タブの書き戻しを検知した時だけ出す */
+.revert { display: none; background: var(--ng-l); border-color: #f5c2c2; }
+.revert.on { display: block; }
+.revert p { margin: 0; font-size: 13.5px; color: var(--ng); }
+
+/* 開いているタブが書き戻す系統には、カード内にも同じ注意を出す（気づく場所を増やす） */
+.wb { margin: 0 0 10px; font-size: 12px; color: var(--warn-tx); background: var(--warn-bg);
+      border-radius: 8px; padding: 6px 9px; }
+
+.lead { margin: 0 0 12px; font-size: 13px; color: var(--g7); }
+
+/* ── 端末用途ガード（合言葉を扱う画面なので現場端末では開かせない） ── */
+.block { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); }
+.block.on { display: flex; align-items: center; justify-content: center; padding: 20px; }
+.block .box {
+  background: #fff; border-radius: var(--r); padding: 22px; max-width: 440px; text-align: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,.3);
+}
+.block h2 { margin: 6px 0 8px; font-size: 17px; }
+.block p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--g7); }
+.block .ic { font-size: 44px; line-height: 1; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--g9); color: #fff; padding: 11px 18px; border-radius: 999px;
+  font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 60;
+  max-width: 90vw; text-align: center;
+}
+#toast.on { opacity: .95; }
+
+.foot { max-width: 720px; margin: 14px auto 0; padding: 0 16px; font-size: 11.5px; color: var(--g7); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active { transform: none; background: var(--pri-l); }
+  #toast { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ 戻る</a>
+  <h1>接続設定</h1>
+</header>
+
+<main>
+  <p class="lead">新しい端末を使い始める時に、各アプリの接続先をここでまとめて設定できます。</p>
+
+  <div class="cd note-card">
+    <p><b>他の介護ツールのタブは、すべて閉じてから保存してください。</b>
+       開いたままだと、そのタブが数分後に元の設定へ戻してしまいます。</p>
+    <p><b>合言葉（トークン）を扱う画面です。</b>事務所の端末でだけ開いてください。</p>
+    <p>空欄のままにした項目は<b>変更しません</b>（今の設定が消えることはありません）。</p>
+    <p>ここでの設定は<b>この端末だけ</b>に保存されます。他の端末には反映されません。</p>
+    <p>すでに使っている端末で<b>接続先を変更</b>する場合は、ワークスケジュールの設定画面でも
+       同じURLを保存してください（古い設定が残っていると、通信が一時的に失敗した時に
+       そちらへ戻ることがあります）。</p>
+  </div>
+
+  <!-- 他アプリのタブが書き戻した時だけ出す。保存直後の「✓保存しました」を信じたまま
+       離席されるのを防ぐのが目的なので、消えない帯として残す -->
+  <div class="cd revert" id="revertWarn" role="alert">
+    <p><b>⚠ 設定が別のアプリによって書き戻されました。</b>
+       他の介護ツールのタブが開いています。そのタブを閉じてから、もう一度保存してください。</p>
+  </div>
+
+  <div id="cards"></div>
+
+  <div class="cd">
+    <div class="acts">
+      <button class="btn pri" id="saveAll" type="button">入力したものをすべて保存</button>
+      <button class="btn" id="toggleTokens" type="button">合言葉を表示</button>
+    </div>
+    <p class="res inf on" style="margin-top:10px">
+      保存したあとは、各アプリを開いて同期状態をご確認ください。
+    </p>
+  </div>
+</main>
+
+<footer class="foot">
+  薬学管理は別の場所で動いているため、この画面からは設定できません（そのアプリ内で設定してください）。
+</footer>
+
+<!-- 現場端末では開かせない。解除は入居者マスタの「管理者の方（端末設定を変更）」から行う
+     （端末用途の切替UIを増やすと、どこで切り替えたか分からなくなるため増やさない） -->
+<div class="block" id="deviceBlock" role="dialog" aria-modal="true" aria-labelledby="blockTitle">
+  <div class="box">
+    <div class="ic" aria-hidden="true">🔒</div>
+    <h2 id="blockTitle">この端末は現場用に設定されています</h2>
+    <p>接続設定には合言葉が含まれるため、<b>事務所の端末</b>で行ってください。<br>
+       端末の用途を変えるには、入居者マスタを開いて「管理者の方（端末設定を変更）」を押してください。</p>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+function $(id){ return document.getElementById(id); }
+
+/* ═══════════ 端末用途ガード ═══════════ */
+function getDeviceRole(){ try{ return localStorage.getItem('su_device_role')||'office'; }catch(e){ return 'office'; } }
+
+/* ═══════════ 対象の定義 ═══════════
+   ★ここに載せてよいのは「このページと同じオリジンで動くアプリ」だけ。
+     別オリジンのアプリを足しても localStorage は共有されないため無反応になる。
+   ★shape:
+       'obj'  … 1つのキーにJSONオブジェクト。urlF/tokenF で対象フィールドを指定。
+                書き込みは必ず read-modify-write（他アプリが入れた項目を消さないため）。
+       'str2' … URLと合言葉が別々の文字列キー。
+       'str1' … URLだけの文字列キー。
+*/
+/* URLの検査規則。★su_sync_common だけは所有アプリと【同一の正規表現】を使う。
+   ワースケ(GAS_ENDPOINT_RE)・シフト・週間計画が 2026-07-10 に
+   「手入力の誤URLが su_sync_common 経由で他アプリへ伝播するのを防ぐ」ために入れた門番で、
+   ここだけ緩めると6アプリが一斉に誤った接続先を向く。文字どおり同じ式を置くこと。 */
+var RE_GAS_EXEC = /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
+/* その他の系統はGASであることと /exec で終わることだけを見る（所有アプリより厳しくしない）。
+   Workspace ドメイン形式 /a/macros/<domain>/s/.../exec も通す。 */
+var RE_GAS_ANY = /^https:\/\/script\.google\.com\/.*\/exec(\?|#|$)/;
+
+var SYSTEMS = [
+  { id:'ws', title:'週間計画・ワースケ・シフト',
+    apps:'週間計画／ワークスケジュール／シフト／デイ利用表／週間計画俯瞰／全支援俯瞰（6アプリが同じ接続先を共有します）',
+    shape:'obj', key:'su_sync_common', urlF:'endpoint', tokenF:'token', stamp:true,
+    urlRe:RE_GAS_EXEC },
+
+  { id:'master', title:'入居者マスタ・フェイスシート',
+    apps:'入居者マスタ／フェイスシート（週間計画・体重・デイ利用表もここを参照します）',
+    shape:'obj', key:'rmaster_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY,
+    /* vmaUrl は GAS ではなく訪問診療アプリ（WordPress）のURL。
+       所有アプリ側（入居者マスタ safeHttpUrl）が http も許すので、ここでも同じ緩さにする */
+    extra:{ field:'vmaUrl', label:'訪問診療アプリのURL', hint:'（使う場合のみ）', lenient:true } },
+
+  { id:'haiben', title:'排泄ケア記録',
+    apps:'排泄ケア記録（体重管理も名簿の取得に使います）',
+    shape:'str2', key:'hbcr_api_url', tokenKey:'hbcr_api_token', urlRe:RE_GAS_ANY,
+    liveWriteback:'開いている排泄ケア記録のタブが、5分ごとに元のURLへ戻します' },
+
+  { id:'weight', title:'体重管理',
+    apps:'体重管理', shape:'str1', key:'wtmgr_api_url', urlRe:RE_GAS_ANY,
+    liveWriteback:'開いている体重管理のタブが、画面を離れた時に元のURLへ戻します' },
+
+  { id:'msk', title:'申送ビューア',
+    apps:'申送ビューア', shape:'obj', key:'msk_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY },
+
+  { id:'geno', title:'ジェノグラム',
+    apps:'ジェノグラム（合言葉は使いません）',
+    shape:'obj', key:'genogram:cloudCfg', urlF:'gasUrl', tokenF:null, urlRe:RE_GAS_ANY },
+
+  { id:'analyzer', title:'過去シフト分析',
+    apps:'過去シフト分析', shape:'obj', key:'shiftanalyzer:v1:cloud', urlF:'url', tokenF:'token',
+    urlRe:RE_GAS_EXEC }
+];
+
+/* この画面が書くキーの一覧（他タブによる巻き戻しの見張りに使う） */
+function watchedKeys(){
+  var ks=[];
+  for(var i=0;i<SYSTEMS.length;i++){
+    ks.push(SYSTEMS[i].key);
+    if(SYSTEMS[i].tokenKey) ks.push(SYSTEMS[i].tokenKey);
+  }
+  return ks;
+}
+
+/* ═══════════ localStorage 入出力 ═══════════ */
+function lsGetStr(k){ try{ return localStorage.getItem(k)||''; }catch(e){ return ''; } }
+/* オブジェクト形のキーは「壊れていたら空扱い」。配列は typeof で 'object' になるので必ず弾く
+   （配列のまま代入すると JSON.stringify で値が落ちる。facesheet.html で実際に踏んだ罠） */
+function lsGetObj(k){
+  try{
+    var s=localStorage.getItem(k); if(!s) return {};
+    var o=JSON.parse(s);
+    if(!o||typeof o!=='object'||Object.prototype.toString.call(o)!=='[object Object]') return {};
+    return o;
+  }catch(e){ return {}; }
+}
+
+function readCur(sys){
+  var out={ url:'', token:'', extra:'' };
+  if(sys.shape==='obj'){
+    var o=lsGetObj(sys.key);
+    out.url=String(o[sys.urlF]||'');
+    if(sys.tokenF) out.token=String(o[sys.tokenF]||'');
+    if(sys.extra) out.extra=String(o[sys.extra.field]||'');
+  }else if(sys.shape==='str2'){
+    out.url=lsGetStr(sys.key); out.token=lsGetStr(sys.tokenKey);
+  }else{
+    out.url=lsGetStr(sys.key);
+  }
+  return out;
+}
+
+/* 1系統ぶんの保存。空欄は「変更しない」＝既存値を消さない（dev-principles 原則4）。
+   返り値 {changed:件数, failed:[項目名]} — 書いた直後に読み戻して一致を確認する。 */
+function writeSys(sys, v){
+  var changed=0, failed=[];
+  function put(k, val, label){
+    try{
+      localStorage.setItem(k, val);
+      if(localStorage.getItem(k)===val) changed++;
+      else failed.push(label);
+    }catch(e){ failed.push(label); }
+  }
+  if(sys.shape==='obj'){
+    var o=lsGetObj(sys.key), touched=false;
+    var prev=String(o[sys.urlF]||'');
+    if(v.url){ o[sys.urlF]=v.url; touched=true; }
+    if(sys.tokenF && v.token){ o[sys.tokenF]=v.token; touched=true; }
+    if(sys.extra && v.extra){ o[sys.extra.field]=v.extra; touched=true; }
+    if(!touched) return { changed:0, failed:[] };
+    /* 3アプリ共通キーは他アプリと同じ形で書く（updatedAt が無いと後から入れた側と形が割れる）。
+       ★接続先が実際に変わった時だけ進める。ワースケも lastCommonSig_ で同じ絞り方をしており、
+         同値で毎回スタンプを動かすと「いつ変えたか」の手がかりが失われる。 */
+    if(sys.stamp && v.url && v.url!==prev) o.updatedAt=Date.now();
+    try{
+      var body=JSON.stringify(o);       /* 失敗を saveAll のループごと巻き上げないよう try の内側で作る */
+      localStorage.setItem(sys.key, body);
+      var back=lsGetObj(sys.key);
+      var ok = (!v.url || String(back[sys.urlF]||'')===v.url) &&
+               (!sys.tokenF || !v.token || String(back[sys.tokenF]||'')===v.token) &&
+               (!sys.extra || !v.extra || String(back[sys.extra.field]||'')===v.extra);
+      if(ok) changed++; else failed.push(sys.title);
+    }catch(e){ failed.push(sys.title); }
+  }else if(sys.shape==='str2'){
+    if(v.url) put(sys.key, v.url, sys.title+'のURL');
+    if(v.token) put(sys.tokenKey, v.token, sys.title+'の合言葉');
+  }else{
+    if(v.url) put(sys.key, v.url, sys.title);
+  }
+  return { changed:changed, failed:failed };
+}
+
+/* ═══════════ 入力の検査 ═══════════
+   打ち間違いの大半（前後の空白・http・/dev を貼った・URLでない文字列）をここで止める。
+   GAS 以外のURLは通す（将来ほかの保存先に変わっても締め出さないため）。 */
+function checkUrl(u, re){
+  if(!u) return null;
+  if(!re){                                   /* 訪問診療URL等・GASでない項目 */
+    if(!/^https?:\/\//i.test(u)) return 'URLは http:// または https:// で始まる必要があります。';
+    return null;
+  }
+  if(!/^https:\/\//i.test(u)) return 'URLは https:// で始まる必要があります。';
+  if(/\/dev(\?|#|$)/.test(u)) return '末尾が /dev のURLは本人しか使えません。デプロイの /exec で終わるURLを貼ってください。';
+  if(!re.test(u)) return 'Google Apps Script の /exec で終わるURLを貼ってください（例: https://script.google.com/macros/s/…/exec）。';
+  return null;
+}
+
+/* ═══════════ 接続確認 ═══════════
+   ★合言葉は送らない。打ち間違えたURLへ合言葉を送ってしまわないため。
+     合言葉が無くてもGASは「JSONのエラー応答」を返すので、URLの到達確認としては十分。
+   ★HTMLが返る＝Googleのログイン画面＝デプロイの公開範囲が「全員」でない、という
+     セットアップで最も多い失敗をここで名指しできる。 */
+function probe(url){
+  /* 応答が返らないURLでボタンが永久に無効化されないよう、必ず打ち切る
+     （fetch は放っておいても止まらない。体重管理 fetchTO と同じ考え方） */
+  var ac = (typeof AbortController==='function') ? new AbortController() : null;
+  var timer = setTimeout(function(){ if(ac) ac.abort(); }, 15000);
+  return fetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action:'ping' }),
+    signal: ac ? ac.signal : undefined
+  }).then(function(r){
+    clearTimeout(timer);
+    return r.text().then(function(t){
+      var head=String(t||'').replace(/^﻿/,'').trim().charAt(0);
+      if(!r.ok) return { ok:false, msg:'応答がエラーでした（状態コード '+r.status+'）。URLをご確認ください。' };
+      if(head==='<'){
+        /* HTMLが返る理由は「ログイン画面」だけではない（GAS内部エラーのページも同じ形）。
+           断定すると、必要のないデプロイ公開範囲の緩和を招くため必ず並べて示す。 */
+        if(!/script\.google\.com/i.test(url))
+          return { ok:false, msg:'ページ（HTML）が返りました。同期用のURLではない可能性があります。' };
+        return { ok:false, msg:'ログイン画面かエラーページ（HTML）が返りました。①URLが正しいか ②デプロイの「アクセスできるユーザー」が「全員」か、の順にご確認ください。' };
+      }
+      try{ JSON.parse(t); }catch(e){ return { ok:false, msg:'想定外の応答が返りました。URLをご確認ください。' }; }
+      return { ok:true, msg:'つながりました（合言葉が正しいかは各アプリで確認してください）。' };
+    });
+  }).catch(function(){
+    clearTimeout(timer);
+    /* ★デプロイの公開範囲が「全員」でない時、GASはGoogleのログイン画面へ転送する。
+       転送先は別サイト扱いになるためブラウザが応答を読めず、上のHTML判定ではなく
+       ここへ落ちる（実測）。原因を1つに決めつけず、多い順に挙げる。 */
+    return { ok:false, msg:'つながりませんでした。①URLの打ち間違い ②デプロイの「アクセスできるユーザー」が「全員」になっていない ③ネットワーク、の順にご確認ください。' };
+  });
+}
+
+/* ═══════════ 画面の組み立て ═══════════
+   文字列連結による innerHTML は使わない（個人情報規約）。要素は必ず createElement で作る。 */
+function el(tag, cls, text){
+  var e=document.createElement(tag);
+  if(cls) e.className=cls;
+  if(text!=null) e.textContent=text;
+  return e;
+}
+function field(labelText, hintText, inputEl, sideBtn){
+  var wrap=el('div','fld');
+  var lb=el('label', null, labelText);
+  if(hintText){ var h=el('span','hint',' '+hintText); lb.appendChild(h); }
+  lb.setAttribute('for', inputEl.id);
+  wrap.appendChild(lb);
+  if(sideBtn){
+    var row=el('div','row'); row.appendChild(inputEl); row.appendChild(sideBtn); wrap.appendChild(row);
+  }else{
+    wrap.appendChild(inputEl);
+  }
+  return wrap;
+}
+function input(id, type, placeholder){
+  var i=document.createElement('input');
+  i.id=id; i.type=type; i.autocomplete='off'; i.spellcheck=false;
+  i.setAttribute('autocapitalize','off'); i.setAttribute('autocorrect','off');
+  if(placeholder) i.placeholder=placeholder;
+  return i;
+}
+
+var toastTimer=null;
+function toast(msg){
+  var t=$('toast'); t.textContent=msg; t.classList.add('on');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ t.classList.remove('on'); }, 2600);
+}
+
+function setRes(node, kind, msg){
+  node.className='res on '+kind;
+  node.textContent=(kind==='ok'?'✓ ':kind==='ng'?'⚠ ':'')+msg;
+}
+
+function buildCard(sys, onSaved){
+  var cur=readCur(sys);
+  var cd=el('div','cd');
+
+  var h=el('h2'); h.appendChild(document.createTextNode(sys.title));
+  var badge=el('span','badge'); h.appendChild(badge);
+  cd.appendChild(h);
+  cd.appendChild(el('p','apps',sys.apps));
+  if(sys.liveWriteback) cd.appendChild(el('p','wb','⚠ '+sys.liveWriteback+'。先にそのタブを閉じてください。'));
+
+  var urlIn=input('u_'+sys.id,'url','https://script.google.com/macros/…/exec');
+  urlIn.value=cur.url;
+  cd.appendChild(field('接続先のURL', null, urlIn));
+
+  var tokIn=null;
+  if(sys.shape==='str2' || (sys.shape==='obj' && sys.tokenF)){
+    /* ★合言葉は読み込まない（プリフィルしない）。
+       この画面は7系統ぶんを1枚に集めるため、既存値を全部載せると
+       「事務所端末を1回開けば全部の合言葉が読める」画面になってしまう。
+       設定済みかどうかはバッジで分かるので、機能上もプリフィルは要らない。 */
+    tokIn=input('t_'+sys.id,'password','変更する時だけ入力');
+    tokIn.autocomplete='new-password';   /* password 欄の autocomplete=off は無視される場合がある */
+    cd.appendChild(field('合言葉（トークン）', '（空欄なら今の設定のまま）', tokIn));
+  }
+
+  var extIn=null;
+  if(sys.extra){
+    extIn=input('x_'+sys.id,'url','https://…');
+    extIn.value=cur.extra;
+    cd.appendChild(field(sys.extra.label, sys.extra.hint, extIn));
+  }
+
+  var res=el('p','res');
+  res.setAttribute('role','status');       /* 接続確認の結果を読み上げ対象にする（HIG: フィードバック） */
+  var acts=el('div','acts');
+  var bSave=el('button','btn pri sm','保存'); bSave.type='button';
+  var bTest=el('button','btn sm','接続を確認'); bTest.type='button';
+  acts.appendChild(bSave); acts.appendChild(bTest);
+  cd.appendChild(acts);
+  cd.appendChild(res);
+
+  var needsToken = !!tokIn;      /* 合言葉の欄を出した系統だけ「合言葉が未設定」を判定する */
+  function refreshBadge(){
+    var c=readCur(sys);
+    var done = !!c.url && (!needsToken || !!c.token);
+    badge.textContent = done ? '設定済み' : (c.url ? '合言葉が未設定' : '未設定');
+    badge.className = 'badge '+(done?'set':'unset');
+  }
+  refreshBadge();
+
+  function collect(){
+    return {
+      url:  String(urlIn.value||'').trim(),
+      token: tokIn ? String(tokIn.value||'').trim() : '',
+      extra: extIn ? String(extIn.value||'').trim() : ''
+    };
+  }
+
+  /* 保存。1系統ぶんの検査 → 書き込み → 読み戻し確認 → 状態更新。
+     ★検査するのは「この画面で書き換えた欄」だけ。既存の保存値をそのまま検査すると、
+       所有アプリでは許されていた形（http の訪問診療URL 等）が残っている端末で、
+       合言葉だけ入れ直したい時にもカード全体が保存できなくなる。 */
+  function save(silent){
+    var v=collect();
+    var e1 = (v.url!==cur.url ? checkUrl(v.url, sys.urlRe) : null)
+          || (extIn && v.extra!==cur.extra ? checkUrl(v.extra, null) : null);
+    if(e1){ setRes(res,'ng',e1); return { saved:0, error:true }; }
+    if(!v.url && !v.token && !v.extra){
+      if(!silent) setRes(res,'inf','入力がないため、何も変更していません。');
+      return { saved:0, error:false };
+    }
+    var r=writeSys(sys, v);
+    cur=readCur(sys);                /* 次回の「未編集」判定は保存後の値を基準にする */
+    urlIn.value=cur.url;
+    if(tokIn) tokIn.value='';        /* 合言葉は画面に残さない */
+    if(extIn) extIn.value=cur.extra;
+    refreshBadge();
+    if(r.failed.length){
+      setRes(res,'ng','保存できませんでした（'+r.failed.join('・')+'）。端末の保存容量やプライベートモードをご確認ください。');
+      return { saved:0, error:true };
+    }
+    setRes(res,'ok','保存しました。');
+    return { saved:(r.changed>0?1:0), error:false };   /* 件数の単位は「系統」に揃える */
+  }
+
+  bSave.addEventListener('click', function(){
+    var r=save(false);
+    if(onSaved) onSaved();
+    if(r.saved) toast(sys.title+'を保存しました');
+  });
+
+  bTest.addEventListener('click', function(){
+    var v=collect();
+    var e1=(v.url!==cur.url ? checkUrl(v.url, sys.urlRe) : null);
+    if(e1){ setRes(res,'ng',e1); return; }
+    if(!v.url){ setRes(res,'ng','先にURLを入力してください。'); return; }
+    bTest.disabled=true; bSave.disabled=true;
+    setRes(res,'inf','確認しています…');
+    probe(v.url).then(function(out){
+      setRes(res, out.ok?'ok':'ng', out.msg);
+    }).then(null, function(){
+      setRes(res,'ng','確認できませんでした。');
+    }).then(function(){
+      bTest.disabled=false; bSave.disabled=false;
+    });
+  });
+
+  /* 他タブに書き戻された時など、localStorage の現状から画面を作り直す */
+  function refresh(){
+    cur=readCur(sys);
+    urlIn.value=cur.url;
+    if(extIn) extIn.value=cur.extra;
+    refreshBadge();
+  }
+
+  return { node:cd, save:save, refresh:refresh, tokenInput:tokIn, title:sys.title };
+}
+
+/* ═══════════ 初期化 ═══════════ */
+function init(){
+  if(getDeviceRole()==='field'){
+    $('deviceBlock').classList.add('on');
+    return;                      /* 入力欄そのものを作らない＝合言葉を画面に出さない */
+  }
+
+  var cards=[], box=$('cards');
+  for(var i=0;i<SYSTEMS.length;i++){
+    var c=buildCard(SYSTEMS[i], function(){ remember(); });
+    cards.push(c); box.appendChild(c.node);
+  }
+
+  $('saveAll').addEventListener('click', function(){
+    var n=0, ng=0;
+    for(var i=0;i<cards.length;i++){
+      var r=cards[i].save(true);
+      n+=r.saved; if(r.error) ng++;
+    }
+    /* 一部成功・一部失敗を「失敗」だけで伝えると、どこまで進んだか分からなくなる */
+    if(ng) toast(n ? (n+'件を保存、'+ng+'件は保存できませんでした（各欄をご確認ください）')
+                   : ng+'件が保存できませんでした（各欄をご確認ください）');
+    else if(n) toast(n+'件を保存しました');
+    else toast('入力がないため、何も変更していません');
+  });
+
+  /* ═══ 他アプリのタブによる巻き戻しの見張り ═══
+     排泄ケア記録は5分ごと、体重管理は画面を離れた時に、
+     そのタブがメモリに持っている【古い】URLを localStorage へ書き戻す（実装確認済み）。
+     保存直後は「✓保存しました」と出るため、黙って戻ると管理者は設定完了と信じてしまう。
+     storage イベントは【他のタブが書いた時だけ】この画面に届くので、
+     自分が書いた値と違う値に変わったらその場で知らせる（multi-device-sync 原則6）。 */
+  var mine={};
+  function remember(){
+    var ks=watchedKeys();
+    for(var i=0;i<ks.length;i++) mine[ks[i]]=lsGetStr(ks[i]);
+  }
+  remember();
+  var origSaveAll=$('saveAll');
+  origSaveAll.addEventListener('click', remember);
+  window.addEventListener('storage', function(e){
+    if(!e.key || mine[e.key]===undefined) return;
+    if(String(e.newValue||'')===String(mine[e.key]||'')) return;
+    var w=$('revertWarn');
+    w.classList.add('on');
+    for(var i=0;i<cards.length;i++) cards[i].refresh();
+  });
+
+  var shown=false;
+  $('toggleTokens').addEventListener('click', function(){
+    shown=!shown;
+    for(var i=0;i<cards.length;i++){
+      if(cards[i].tokenInput) cards[i].tokenInput.type = shown ? 'text' : 'password';
+    }
+    this.textContent = shown ? '合言葉を隠す' : '合言葉を表示';
+  });
+}
+
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+})();
+</script>
+
+</body>
+</html>

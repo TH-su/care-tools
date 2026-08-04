@@ -34,7 +34,7 @@
    このページは氏名・記録を持たない。localStorage は端末用途（su_device_role）の読み取りのみ。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
-   ★現在この属性が付いているのは誕生日一覧のみ。同じくブロックされる
+   ★現在この属性が付いているのは誕生日一覧と接続設定の2つ。同じくブロックされる
      入居者マスタ・申送ビューア・週間計画・体重管理は**意図的に残す**
      （2026-08-05 橋爪氏裁定：最終的に体重管理以外は現場端末でも閲覧のみ可にする方針のため、
       これらは行き止まりでなくなる。誕生日一覧だけは生年月日の一覧表＝現場に出す用途がないので隠す）。
@@ -235,6 +235,21 @@ main {
         <span class="ic" aria-hidden="true">🍽️</span>
         <span class="nm">厨房メニュー管理</span>
         <span class="note">別サイトで開きます</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ══ 設定 ══
+       日常業務では使わないため、区分を分けて最後に置く（上の業務タイルの行割りに影響させない）。
+       data-office-only: 合言葉（トークン）を扱う画面なので現場端末では出さない
+       （接続設定ページ自身も現場端末ではブロックする＝二重）。 -->
+  <section class="sec" aria-labelledby="sec-setup" data-office-only>
+    <h2 id="sec-setup"><span class="mk" aria-hidden="true">⚙️</span>設定</h2>
+    <div class="grid">
+      <a class="tile" href="connection-settings.html">
+        <span class="ic" aria-hidden="true">🔌</span>
+        <span class="nm">接続設定</span>
+        <span class="note">新しい端末のセットアップ</span>
       </a>
     </div>
   </section>
