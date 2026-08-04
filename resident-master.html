@@ -187,12 +187,13 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bcol{display:flex; flex-direction:column; align-items:center}
 /* 伸ばすだけ・絶対に縮めない（shrink=0）。縮む方向に倒れると紙の上で表が潰れて読めなくなる */
 .bcol .btbl{flex:1 0 auto}
-/* ★画面では中央寄せにしない。表は内容幅なので狭い端末では確実に溢れ、
-   中央寄せだと左へはみ出した分（No.・誕生月の列）がスクロールで到達できなくなる。
-   紙は下の @media print が中央寄せに戻す。 */
+/* ★画面では中央に置く。ただし素の center は不可。
+   表は内容幅なので狭い端末では確実に溢れ、素の center だと左へはみ出した分
+   （No.・誕生月の列）がスクロールで到達できなくなるため。
+   safe center は「収まる時は中央／溢れる時は自動で左寄せ」になる。
+   safe を解さない古いブラウザは直前の start が残り、従来どおり左端に到達できる。 */
 @media screen{
-  .bday-2col{justify-content:start; overflow-x:auto}
-  .bcol{align-items:flex-start}
+  .bday-2col{justify-content:start; justify-content:safe center; overflow-x:auto}
 }
 .bcol-t{font-weight:700; margin-bottom:3px; line-height:1.2; font-size:var(--btitle,20px)}
 .btbl{width:auto; border-collapse:collapse; table-layout:auto}
