@@ -9,9 +9,20 @@
      noindex に加えて nofollow を必ず付ける（各ツールは埋め込みトークンでGASを叩く構成）。 -->
 <meta name="robots" content="noindex,nofollow">
 <title>介護ツール メニュー</title>
+<!-- 端末の用途（事務所/現場）だけを見て、現場端末では事務所専用タイルを出さない。
+     ★このページが読むのは su_device_role の値だけ。氏名・記録は一切読まない・書かない・送らない。
+     ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
+       （描画後に JS で消すと現場端末で一度は見えてしまう）。
+     ★localStorage が使えない環境（Safari プライベート等）は判定不能なので【出す】側に倒す。
+       各アプリ側のブロック画面が最後の砦であり、ここは誤タップを減らすための入口整理にすぎない。 -->
+<script>
+(function(){try{if(localStorage.getItem('su_device_role')==='field')document.documentElement.className+=' is-field'}catch(e){}})();
+</script>
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
-   このページは氏名・記録を一切持たないため localStorage も同期も使わない。 */
+   このページは氏名・記録を持たない。localStorage は端末用途（su_device_role）の読み取りのみ。 */
+/* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない） */
+.is-field [data-office-only]{display:none !important}
 :root {
   --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
   --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
@@ -187,8 +198,9 @@ main {
         <span class="note">申し送り・バイタル・食事量</span>
       </a>
       <!-- 入居者マスタの誕生日タブを直接ひらく（アプリを増やさず画面だけ指定する）。
-           申送ビューアの直後＝2列グリッドのその右隣に出る。 -->
-      <a class="tile" href="resident-master.html?view=bday">
+           申送ビューアの直後＝2列グリッドのその右隣に出る。
+           data-office-only: 生年月日を含むため現場端末では出さない（入居者マスタ側でブロックされる） -->
+      <a class="tile" data-office-only href="resident-master.html?view=bday">
         <span class="ic" aria-hidden="true">🎂</span>
         <span class="nm">誕生日一覧</span>
         <span class="note">誕生日順・年齢順の表</span>
