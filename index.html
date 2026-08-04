@@ -10,18 +10,35 @@
 <meta name="robots" content="noindex,nofollow">
 <title>介護ツール メニュー</title>
 <!-- 端末の用途（事務所/現場）だけを見て、現場端末では事務所専用タイルを出さない。
-     ★このページが読むのは su_device_role の値だけ。氏名・記録は一切読まない・書かない・送らない。
+     ★このページに fetch・トークン・氏名・記録を持ち込まない（読む・書く・送るのいずれも禁止）。
+       必要になったら、このページに足さず別ページを作ること。読んでよいのは su_device_role だけ。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
        （描画後に JS で消すと現場端末で一度は見えてしまう）。
      ★localStorage が使えない環境（Safari プライベート等）は判定不能なので【出す】側に倒す。
-       各アプリ側のブロック画面が最後の砦であり、ここは誤タップを減らすための入口整理にすぎない。 -->
+       ここは誤タップを減らすための入口整理であって保護ではない（display:none でも href はソースに残る）。
+       実質の防御は「現場端末に接続URL・合言葉を配らない」という運用側にある。
+       同じ環境では各アプリのブロック画面も localStorage 前提のため同様に外れる＝ここが砦ではない。
+       iOS の storage 消去（ITP 等）で su_device_role 自体が消えると、タイル復活とガード解除が同時に起きる。 -->
 <script>
-(function(){try{if(localStorage.getItem('su_device_role')==='field')document.documentElement.className+=' is-field'}catch(e){}})();
+(function(){
+  function apply(){try{
+    document.documentElement.classList.toggle('is-field',localStorage.getItem('su_device_role')==='field');
+  }catch(e){}}
+  apply();
+  /* 「戻る」での bfcache 復元は再パースされずここが走らないため、その時だけ測り直す */
+  window.addEventListener('pageshow',function(e){if(e.persisted)apply()});
+})();
 </script>
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は端末用途（su_device_role）の読み取りのみ。 */
-/* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない） */
+/* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
+   ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
+   ★現在この属性が付いているのは誕生日一覧のみ。同じくブロックされる
+     入居者マスタ・申送ビューア・週間計画・体重管理は、指示の範囲外のため意図的に残している
+     （揃えるかは橋爪氏の判断待ち。揃える時はこの属性を足すだけでよい）。
+   ★!important は「将来 .tile 側に !important が入っても隠す側を勝たせる」ための保険。
+     詳細度だけなら無くても勝つ。 */
 .is-field [data-office-only]{display:none !important}
 :root {
   --pri: #1a73e8; --pri-l: #e8f0fe; --pri-d: #1557b0;
