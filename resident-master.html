@@ -852,7 +852,22 @@ var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
 var VIEWS=['std','fl2','fl4','kana','bday'];
-var curView=(function(){try{var v=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(v)>=0?v:'std'}catch(e){return'std'}})();
+/* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
+   アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
+   ・値は VIEWS のホワイトリスト照合。未知の値は無視して従来どおり保存値／既定へ
+   ・採用したら view だけURLから消す（masterId 等の他のパラメータは残す）。
+     残すと、あとで別タブを選んで再読込した時に毎回この指定へ引き戻される */
+var curView=(function(){
+  try{
+    var p=new URLSearchParams(location.search), v=p.get('view');
+    if(v&&VIEWS.indexOf(v)>=0){
+      try{localStorage.setItem(VIEW_KEY,v)}catch(e){}
+      try{p.delete('view');var q=p.toString();history.replaceState(null,'',location.pathname+(q?'?'+q:''))}catch(e){}
+      return v;
+    }
+  }catch(e){/* URLSearchParams 非対応の旧ブラウザ等は保存値で続行 */}
+  try{var s=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(s)>=0?s:'std'}catch(e){return'std'}
+})();
 function paintTabs(){
   Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
     var on=b.getAttribute('data-v')===curView;
