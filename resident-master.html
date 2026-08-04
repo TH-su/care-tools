@@ -185,7 +185,8 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bday-2col{display:grid; grid-template-columns:auto auto; gap:10px;
   justify-content:center; align-items:stretch}
 .bcol{display:flex; flex-direction:column; align-items:center}
-.bcol .btbl{flex:1 1 auto}   /* 余った高さは各行へ均等に配分される */
+/* 伸ばすだけ・絶対に縮めない（shrink=0）。縮む方向に倒れると紙の上で表が潰れて読めなくなる */
+.bcol .btbl{flex:1 0 auto}
 /* ★画面では中央寄せにしない。表は内容幅なので狭い端末では確実に溢れ、
    中央寄せだと左へはみ出した分（No.・誕生月の列）がスクロールで到達できなくなる。
    紙は下の @media print が中央寄せに戻す。 */
