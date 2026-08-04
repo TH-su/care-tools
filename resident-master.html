@@ -174,23 +174,39 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bday-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
 .bday-sheet{background:#fff; padding:6px 4px}
 .bday-hd{text-align:center; margin-bottom:6px}
-.bday-hd .bt1{font-size:16px; font-weight:700; letter-spacing:.08em}
-.bday-hd .bt2{font-size:14px; font-weight:700; margin-top:2px}
-.bday-2col{display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start}
-.btbl{width:100%; border-collapse:collapse; table-layout:fixed}
-.btbl th,.btbl td{border:1px solid #000; padding:var(--bpad,1px) 3px; text-align:center; line-height:1.25;
-  overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.bday-hd .bt1{font-size:var(--bhd1,26px); font-weight:700; letter-spacing:.08em; line-height:1.2}
+.bday-hd .bt2{font-size:var(--bhd2,17px); font-weight:700; margin-top:2px; line-height:1.2}
+/* ★表は「内容ぴったりの幅」にする（table-layout:auto ＋ width:auto）。
+   横幅を100%にすると氏名欄だけが間延びし、その分だけ文字を小さくせざるを得ない。
+   幅を content に寄せた分、文字サイズを大きくして用紙を縦に使い切る（fitBdaySheet）。 */
+/* ★align-items:stretch で左右の列を同じ高さにし、低い方の表を伸ばして下端を揃える。
+   誕生日順の表は月の区切り(2px)が入るぶん、同じ行数でも年齢順の表より数px高くなるため
+   （27名・10か月グループで9px）、揃えないと紙の上で下端がずれる。 */
+.bday-2col{display:grid; grid-template-columns:auto auto; gap:10px;
+  justify-content:center; align-items:stretch}
+.bcol{display:flex; flex-direction:column; align-items:center}
+/* 伸ばすだけ・絶対に縮めない（shrink=0）。縮む方向に倒れると紙の上で表が潰れて読めなくなる */
+.bcol .btbl{flex:1 0 auto}
+/* ★画面では中央に置く。ただし素の center は不可。
+   表は内容幅なので狭い端末では確実に溢れ、素の center だと左へはみ出した分
+   （No.・誕生月の列）がスクロールで到達できなくなるため。
+   safe center は「収まる時は中央／溢れる時は自動で左寄せ」になる。
+   safe を解さない古いブラウザは直前の start が残り、従来どおり左端に到達できる。 */
+@media screen{
+  .bday-2col{justify-content:start; justify-content:safe center; overflow-x:auto}
+}
+.bcol-t{font-weight:700; margin-bottom:3px; line-height:1.2; font-size:var(--btitle,20px)}
+.btbl{width:auto; border-collapse:collapse; table-layout:auto}
+.btbl th,.btbl td{border:1px solid #000; padding:var(--bpad,2px) 6px; text-align:center;
+  line-height:1.25; white-space:nowrap}
 .btbl th{background:var(--g2); font-weight:700}
 .btbl .bn{text-align:left}
+.btbl .bno{font-variant-numeric:tabular-nums; color:var(--g7)}
 .btbl .bd{font-variant-numeric:tabular-nums}
 .btbl .ba{font-variant-numeric:tabular-nums}
-/* 列幅は表ごとに指定する。左は4列（誕生月あり）・右は3列。
-   共通で :first-child を狭くすると、右の表の氏名が誕生月の幅になって省略される。 */
-.bt-date th:nth-child(1){width:3.6em}   /* 誕生月 */
-.bt-date th:nth-child(3){width:6.6em}   /* 生年月日 */
-.bt-date th:nth-child(4){width:3.2em}   /* 年齢 */
-.bt-age  th:nth-child(2){width:6.6em}
-.bt-age  th:nth-child(3){width:3.2em}
+/* 誕生日順の表は月の変わり目を太線で区切る。
+   先頭行はヘッダの罫線と重なるだけなので対象外にする（左右の表でヘッダ罫の太さを揃える） */
+.bt-date tbody tr.mstart:not(:first-child)>td{border-top:2px solid #000}
 .bday-ft{margin-top:6px; text-align:right; font-size:10px; color:var(--g7)}
 .bday-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
   background:var(--warn-bg); color:var(--warn-tx); font-size:12px; font-weight:700}
@@ -222,9 +238,11 @@ input,select,textarea{font-family:inherit; font-size:15px}
   body.bday-on .roster-count,
   body.bday-on .bday-bar{display:none !important}
   .bday-sheet{padding:0}
-  .bday-2col{grid-template-columns:1fr 1fr !important; gap:6px}
+  /* 印刷は必ず2列。画面が狭くて1列になっていても、紙では横に並べる */
+  .bday-2col{grid-template-columns:auto auto !important; gap:10px; justify-content:center}
   .btbl{page-break-inside:avoid}
   .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .btbl .bno{color:#000}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .bday-ft{font-size:8px; color:#000}
 }
 .loading{text-align:center; color:var(--g5); padding:30px}
@@ -834,7 +852,22 @@ var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
 var VIEWS=['std','fl2','fl4','kana','bday'];
-var curView=(function(){try{var v=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(v)>=0?v:'std'}catch(e){return'std'}})();
+/* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
+   アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
+   ・値は VIEWS のホワイトリスト照合。未知の値は無視して従来どおり保存値／既定へ
+   ・採用したら view だけURLから消す（masterId 等の他のパラメータは残す）。
+     残すと、あとで別タブを選んで再読込した時に毎回この指定へ引き戻される */
+var curView=(function(){
+  try{
+    var p=new URLSearchParams(location.search), v=p.get('view');
+    if(v&&VIEWS.indexOf(v)>=0){
+      try{localStorage.setItem(VIEW_KEY,v)}catch(e){}
+      try{p.delete('view');var q=p.toString();history.replaceState(null,'',location.pathname+(q?'?'+q:''))}catch(e){}
+      return v;
+    }
+  }catch(e){/* URLSearchParams 非対応の旧ブラウザ等は保存値で続行 */}
+  try{var s=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(s)>=0?s:'std'}catch(e){return'std'}
+})();
 function paintTabs(){
   Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
     var on=b.getAttribute('data-v')===curView;
@@ -939,14 +972,17 @@ function bdayHtml(list){
   var spanAt={},monAt={};
   mrow.forEach(function(g){ spanAt[g.i]=g.n; monAt[g.i]=g.m; });
   var t1=byDate.map(function(r,i){
-    return '<tr>'+
+    /* 月の変わり目の行に mstart を付け、その行の上辺を太線にする（月の区切りを見やすく） */
+    return '<tr'+(spanAt[i]?' class="mstart"':'')+'>'+
+      '<td class="bno">'+(i+1)+'</td>'+
       (spanAt[i]?('<td class="bm" rowspan="'+spanAt[i]+'">'+monAt[i]+'</td>'):'')+
       '<td class="bn">'+esc(r.name)+'</td>'+
       '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
       '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
   }).join('');
-  var t2=byAge.map(function(r){
+  var t2=byAge.map(function(r,i){
     return '<tr>'+
+      '<td class="bno">'+(i+1)+'</td>'+
       '<td class="bn">'+esc(r.name)+'</td>'+
       '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
       '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
@@ -974,8 +1010,10 @@ function bdayHtml(list){
     '<div class="bday-hd"><div class="bt1">☆誕生日一覧☆</div>'+
       '<div class="bt2">'+bdayFY+'年度　誕生日後の年齢</div></div>'+
     '<div class="bday-2col">'+
-      '<table class="btbl bt-date"><thead><tr><th>誕生月</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t1+'</tbody></table>'+
-      '<table class="btbl bt-age"><thead><tr><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t2+'</tbody></table>'+
+      '<div class="bcol"><div class="bcol-t">誕生日順</div>'+
+        '<table class="btbl bt-date"><thead><tr><th>No.</th><th>誕生月</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t1+'</tbody></table></div>'+
+      '<div class="bcol"><div class="bcol-t">年齢順</div>'+
+        '<table class="btbl bt-age"><thead><tr><th>No.</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t2+'</tbody></table></div>'+
     '</div>'+
     badLine+
     '<div class="bday-ft">'+rows.length+'名'+
@@ -1106,6 +1144,7 @@ function renderRoster(){
    ★行は nowrap なので、行の高さは列幅ではなく文字サイズだけで決まる。
      つまり画面幅が印刷幅と違っても、この見積りは印刷とずれない。 */
 var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
+var BDAY_PRINT_W_PX = 190 * 96 / 25.4;   // A4縦210mm − 左右マージン10mm
 function fitBdaySheet(){
   var sheet=$('bdaySheet'); if(!sheet) return;
   /* ★一覧が非表示のときは測らない。非表示要素の offsetHeight は 0 になり、
@@ -1113,34 +1152,72 @@ function fitBdaySheet(){
      （詳細画面を開いている間に60秒ポーリングで再描画される経路が実在する） */
   if(!sheet.offsetParent) return;
   var tbls=sheet.querySelectorAll('.btbl');
+  var cols=sheet.querySelectorAll('.bcol');       // 表タイトル＋表。高さはこちらで測る
   var hd=sheet.querySelector('.bday-hd'), ft=sheet.querySelector('.bday-ft');
-  if(!tbls.length) return;
+  /* 計測対象（.bcol）が無いのに走ると tall=0 で「収まった」と誤判定するため、両方を要求する */
+  if(!tbls.length||!cols.length) return;
   function measure(){
     var tall=0;
-    for(var i=0;i<tbls.length;i++) tall=Math.max(tall,tbls[i].offsetHeight);
+    for(var i=0;i<cols.length;i++) tall=Math.max(tall,cols[i].offsetHeight);
     /* ★書式不正の氏名行(.bday-bad)も印刷に出るので必ず数える。
        数え落とすと、縮小が上限ぎりぎりで止まったときにこの行だけ2枚目へ落ちる
        （しかも over=false なので警告も出ない）。.bday-warn は印刷に出ないので数えない。 */
     var bad=sheet.querySelector('.bday-bad');
     return (hd?hd.offsetHeight:0)+tall+(ft?ft.offsetHeight:0)+(bad?bad.offsetHeight+4:0)+16;
   }
-  /* 下限は7px。これ以下は紙に出しても読めないので、無理に縮めず警告に倒す
-     （読めない1枚より、警告つきで絞り込みを促す方が現場で使える） */
-  var size=12, pad=1, MIN=7;
-  for(var guard=0; guard<40; guard++){
-    for(var i=0;i<tbls.length;i++){ tbls[i].style.fontSize=size+'px'; }
-    sheet.style.setProperty('--bpad', pad+'px');
-    if(measure()<=BDAY_PRINT_H_PX) break;
-    if(size<=MIN) break;
-    size=Math.round((size-0.5)*10)/10;
-    if(size<8) pad=0;
+  /* 表は内容ぴったりの幅なので、文字を大きくすると縦にも横にも育つ。
+     幅（190mm）と高さ（277mm）の両方に収まる範囲で【いちばん大きい文字】を選び、
+     用紙を使い切る。上限22pxは、少人数のときに文字が巨大になりすぎないための歯止め。
+     下限7pxはこれ以下だと紙で読めないため、無理に縮めず警告に倒す。 */
+  function width(){
+    var w=0;
+    for(var i=0;i<tbls.length;i++) w+=tbls[i].offsetWidth;
+    /* gap は CSS 側と二重管理にしない（片方だけ変えると幅判定が無言でズレる） */
+    var gapPx=0;
+    try{ gapPx=parseFloat(getComputedStyle(sheet.querySelector('.bday-2col')).columnGap)||0; }catch(e){ gapPx=10; }
+    return w+gapPx;
   }
+  function apply(s){
+    var p = s>=11 ? 3 : s>=9 ? 2 : s>=8 ? 1 : 0;   // 文字が大きいほど余白も広げて紙を埋める
+    for(var i=0;i<tbls.length;i++){ tbls[i].style.fontSize=s+'px'; }
+    sheet.style.setProperty('--bpad', p+'px');
+    /* 見出しの大小は必ず「☆誕生日一覧☆ ＞ 誕生日順/年齢順 ＞ 本文」の順にする。
+       表タイトルだけを本文比で拡大すると、人数が少ない時に表題より大きくなり、
+       紙を見た人が主題を取り違える。全部を本文比で連動させて順序を保証する。 */
+    sheet.style.setProperty('--btitle', Math.round(s*1.7)+'px');
+    sheet.style.setProperty('--bhd1',   Math.round(s*2.1)+'px');
+    sheet.style.setProperty('--bhd2',   Math.round(s*1.4)+'px');
+  }
+  /* ★幅は 6px の安全余裕を引く。offsetWidth は整数丸めで、罫線の外周分も
+     完全には含まれない。1pxでも超えると紙では左右が切れ、しかも縦の溢れと違って
+     2枚目に出ないため情報が失われる（気づけない）。 */
+  function tooTall(){ return measure()>BDAY_PRINT_H_PX; }
+  function tooWide(){ return width()>BDAY_PRINT_W_PX-6; }
+  function fits(){ return !tooTall() && !tooWide(); }
+  /* --bpad は s に対し単調非増加、--btitle は単調非減少なので fits() は s について単調。
+     よって二分探索でよい（0.25刻みの線形走査だと1打鍵あたり最大61回の強制レイアウトになる）。 */
+  var MAX=22, MIN=7, STEP=0.25;
+  var lo=0, hi=Math.round((MAX-MIN)/STEP);      // 0=MIN … hi=MAX
+  var sizeOf=function(k){ return Math.round((MIN+k*STEP)*100)/100; };
+  apply(sizeOf(lo));
+  if(fits()){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  var size=sizeOf(lo);
+  apply(size);
   /* それでも収まらない時は黙って溢れさせない。画面にだけ理由を出す（印刷物には出さない）。 */
-  var over=measure()>BDAY_PRINT_H_PX;
+  var over=!fits(), wide=tooWide();
   var warn=sheet.querySelector('.bday-warn');
   if(over&&!warn){
     warn=document.createElement('div'); warn.className='bday-warn';
-    warn.textContent='⚠️ 人数が多く、この文字サイズではA4縦1枚に収まりません。上の「在籍／退去」で絞り込むか、2枚に分けて印刷してください。';
+    /* 原因（縦＝人数が多い／横＝氏名が長い）で対処が違うので文言を分ける */
+    warn.textContent = wide
+      ? '⚠️ お名前の長い方がいるため、A4縦1枚の幅に収まりません。この方の氏名表記をご確認ください（紙では左右が切れます）。'
+      : '⚠️ 人数が多く、この文字サイズではA4縦1枚に収まりません。上の「在籍／退去」で絞り込むか、2枚に分けて印刷してください。';
     sheet.insertBefore(warn,sheet.firstChild);
   }else if(!over&&warn){ warn.parentNode.removeChild(warn); }
 }
