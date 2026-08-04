@@ -831,7 +831,8 @@ function vmLoad(){
     VM = { from:res.from, to:res.to,
            vitals:(res.vitals || []), meals:(res.meals || []),
            vitalDates:(res.vitalDates || []), mealDates:(res.mealDates || []),
-           notes:String(res.thresholdNotes || '') };
+           notes:String(res.thresholdNotes || ''),
+           fails:String(res.lastFails || '') };
     $('vmStatus').textContent = VM.from + ' 〜 ' + VM.to
       + '（バイタル' + VM.vitals.length + '件・食事' + VM.meals.length + '件）';
     vmRenderBanner(); vmRenderList(); vmRenderBody();
@@ -855,16 +856,31 @@ function vmRenderBanner(){
   if(all.length){
     var gotV = Object.create(null); (VM.vitalDates || []).forEach(function(d){ gotV[d] = true; });
     var gotM = Object.create(null); (VM.mealDates  || []).forEach(function(d){ gotM[d] = true; });
-    var miss = all.filter(function(d){ return !gotV[d] && !gotM[d]; });
-    if(miss.length){
+    /* ★「バイタルも食事も無い日」だけを警告にすると、片方だけ取り込めなかった日が
+       無警告のまま全項目「−」で並ぶ。取込はバイタル→食事の順なので、
+       途中で失敗すると実際にこの片欠けが起きる（2026-08-04 の欠測調査で判明）。
+       項目ごとに分けて出す。 */
+    var missV = all.filter(function(d){ return !gotV[d]; });
+    var missM = all.filter(function(d){ return !gotM[d]; });
+    function missMsg(label, miss){
+      if(!miss.length) return;
       var head = miss.slice(-5).map(fmtDate).join('・');
       var rest = miss.length - Math.min(5, miss.length);
       var e = document.createElement('div'); e.className = 'err';
-      e.textContent = '⚠️ まだ取り込まれていない日: ' + head + (rest > 0 ? ' ほか' + rest + '日' : '')
-        + '　この日の表の「−」は「測っていない」ではなく「取り込めていない」です。'
-        + '続くようなら管理者へ連絡してください。';
+      e.textContent = '⚠️ ' + label + 'がまだ取り込まれていない日: ' + head
+        + (rest > 0 ? ' ほか' + rest + '日' : '')
+        + '（計' + miss.length + '日）　この日の「−」は「測っていない」ではなく「取り込めていない」です。'
+        + '自動取込が30分ごとに埋めます。半日たっても減らない場合は管理者へ連絡してください。';
       b.appendChild(e);
     }
+    missMsg('バイタル', missV);
+    missMsg('食事量', missM);
+  }
+  /* 取込側で起きた失敗をそのまま見せる（設定タブを開かないと分からない状態にしない） */
+  if(VM.fails){
+    var f = document.createElement('div'); f.className = 'err';
+    f.textContent = '⚠️ 直近の自動取込で失敗がありました: ' + VM.fails;
+    b.appendChild(f);
   }
 
   /* 施設が自分で決めたアラート基準（シートから取り込んだ原文）をそのまま見せる。
