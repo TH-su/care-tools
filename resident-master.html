@@ -168,6 +168,8 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bday-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
   border-radius:8px; background:#fff; color:var(--g9); font-size:14px; cursor:pointer}
 .bday-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+/* 年度の端。無効だと分かる見た目にする（押しても無反応、の理由が見えないのを防ぐ） */
+.bday-bar button:disabled{opacity:.45; cursor:default; background:var(--g1)}
 .bday-bar #bdayFY{font-size:15px; font-weight:700; min-width:6em; text-align:center}
 .bday-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
 .bday-sheet{background:#fff; padding:6px 4px}
@@ -902,7 +904,9 @@ function paintBdayBar(){
   if($('bdayPrev'))$('bdayPrev').disabled=(bdayFY<=base-5);
   if($('bdayNext'))$('bdayNext').disabled=(bdayFY>=base+5);
 }
-/* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる */
+/* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる。
+   ★このビューは帳票専用。他の4タブと違い、行をタップしても詳細へは遷移させない
+     （紙に起こすための一覧であり、行が押せると印刷前に画面が切り替わって邪魔になる）。 */
 function bdayHtml(list){
   /* 除外は「未登録」と「書式が不正」を必ず分ける。
      一覧カードには生年月日が出ているのに、この表からだけ消えて「未登録」と説明されると
@@ -959,6 +963,13 @@ function bdayHtml(list){
   if(badBd.length) notes.push('書式が不正な'+badBd.length+'名は下記');
   var base=fyOfDate(today);
   var fyNote = (bdayFY!==base) ? '　※'+bdayFY+'年度の表示（年齢は'+(bdayFY+1)+'年3月31日時点）' : '';
+  /* ★どの絞り込みで出した紙かを必ず残す。
+     この画面は検索欄と在籍/退去チップが効くが、印刷ではどちらも紙に写らない。
+     残さないと「一部だけの表」が完全な一覧に見え、誕生会の対象者が漏れる。
+     在籍フィルタは端末に保存されるため、前回「退去」のままの端末もありうる。 */
+  var scope=(curFilter==='active'?'在籍のみ':curFilter==='out'?'退去のみ':'在籍＋退去');
+  var qNow=(($('q')&&$('q').value)||'').trim();
+  var scopeNote='　／　対象 '+scope+(qNow?'　／　検索「'+esc(qNow)+'」で絞り込み中':'');
   return '<div class="bday-sheet" id="bdaySheet">'+
     '<div class="bday-hd"><div class="bt1">☆誕生日一覧☆</div>'+
       '<div class="bt2">'+bdayFY+'年度　誕生日後の年齢</div></div>'+
@@ -968,7 +979,7 @@ function bdayHtml(list){
     '</div>'+
     badLine+
     '<div class="bday-ft">'+rows.length+'名'+
-      (notes.length?'（'+notes.join('／')+'）':'')+fyNote+
+      (notes.length?'（'+notes.join('／')+'）':'')+fyNote+scopeNote+
       '　／　印刷日 '+stamp+'</div>'+
   '</div>';
 }
@@ -1107,7 +1118,11 @@ function fitBdaySheet(){
   function measure(){
     var tall=0;
     for(var i=0;i<tbls.length;i++) tall=Math.max(tall,tbls[i].offsetHeight);
-    return (hd?hd.offsetHeight:0)+tall+(ft?ft.offsetHeight:0)+16;   // 16=見出し/脚注の余白
+    /* ★書式不正の氏名行(.bday-bad)も印刷に出るので必ず数える。
+       数え落とすと、縮小が上限ぎりぎりで止まったときにこの行だけ2枚目へ落ちる
+       （しかも over=false なので警告も出ない）。.bday-warn は印刷に出ないので数えない。 */
+    var bad=sheet.querySelector('.bday-bad');
+    return (hd?hd.offsetHeight:0)+tall+(ft?ft.offsetHeight:0)+(bad?bad.offsetHeight+4:0)+16;
   }
   /* 下限は7px。これ以下は紙に出しても読めないので、無理に縮めず警告に倒す
      （読めない1枚より、警告つきで絞り込みを促す方が現場で使える） */
