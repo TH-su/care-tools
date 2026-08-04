@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<title>申送ビューア（入居者別）</title>
+<style>
+:root {
+  --pri: #1a73e8;   --pri-l: #e8f0fe; --pri-d: #1557b0;
+  --ok: #2e7d32;    --ok-l: #e8f5e9;
+  --ng: #c62828;    --ng-l: #ffebee;
+  --warn-bg: #fff8e1; --warn-tx: #e65100;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+  --hdr-h: 80px;   /* .hdr の実測高。日付見出しがヘッダーの下に潜らないよう共有する */
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+       background:var(--g0); color:var(--g9); font-size:15px; padding-bottom:76px; }
+
+/* ── ヘッダー ── */
+.hdr { position:sticky; top:0; z-index:100; /* 高さは --hdr-h と一致させる（.dayhd の top に使う） */ background:var(--pri); color:#fff;
+       padding:12px 16px; padding-left:max(16px,env(safe-area-inset-left));
+       padding-right:max(16px,env(safe-area-inset-right)); box-shadow:var(--sh); }
+.hdr h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:.02em; }
+.hdr .sub { margin:2px 0 0; font-size:12px; }
+.hdr .back { color:#fff; font-size:12px; text-decoration:none; display:inline-block;
+             padding:10px 12px 10px 0; margin:-10px 0 -4px 0; }
+.hdr .back:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+
+/* ── 画面切替 ── */
+.scr { display:none; padding:12px; max-width:960px; margin:0 auto; }
+.scr.on { display:block; }
+.cd { background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px; }
+
+/* ── ボトムナビ ── */
+.bnav { position:fixed; bottom:0; left:0; right:0; z-index:100; background:#fff;
+        border-top:1px solid var(--g3); display:flex;
+        padding-bottom:env(safe-area-inset-bottom); }
+.bnav button { flex:1; padding:12px 4px 14px; border:none; background:none; color:var(--g6);
+               font-size:12px; cursor:pointer; min-height:48px; }
+.bnav button[aria-selected="true"] { color:var(--pri); font-weight:700; box-shadow:inset 0 3px 0 var(--pri); }
+.bnav button:focus-visible { outline:2px solid var(--pri); outline-offset:-2px; }
+
+/* ── 操作バー ── */
+.bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+.bar label { font-size:12px; color:var(--g7); }
+select, input[type=text], input[type=password], input[type=date] {
+  font:inherit; font-size:14px; padding:11px 10px; border:1px solid var(--g3);
+  border-radius:8px; background:#fff; color:var(--g9); min-height:44px; }
+button.btn { font:inherit; font-size:14px; padding:11px 14px; border:1px solid var(--g3);
+             border-radius:8px; background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
+button.btn.pri { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
+button.btn:disabled { opacity:.5; cursor:default; }
+button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--pri); outline-offset:1px; }
+
+/* ── 入居者リスト ── */
+.rlist { display:flex; flex-wrap:wrap; gap:6px; }
+.rchip { font:inherit; font-size:14px; padding:11px 12px; border:1px solid var(--g3); border-radius:20px;
+         background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
+.rchip[aria-pressed="true"] { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
+.rchip .n { color:var(--g6); font-size:12px; margin-left:5px; }
+.rchip[aria-pressed="true"] .n { color:#dbe8fb; }
+
+/* ── タイムライン ── */
+.daygrp { margin-bottom:14px; }
+.dayhd { position:sticky; top:var(--hdr-h); z-index:5; background:var(--g0); padding:6px 2px;
+         font-size:13px; font-weight:700; color:var(--g7); border-bottom:2px solid var(--g2); }
+.ev { background:#fff; border:1px solid var(--g2); border-left:4px solid var(--g3);
+      border-radius:8px; padding:10px 12px; margin-top:8px; }
+.ev.s-day    { border-left-color:#f9a825; }
+.ev.s-night  { border-left-color:#5c6bc0; }
+.ev.s-daycare{ border-left-color:#26a69a; }
+.ev.k-notice { background:var(--g1); border-left-color:var(--g5); }
+.ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size:12px; color:var(--g6); margin-bottom:4px; }
+.ev .tm { font-weight:700; color:var(--g9); font-variant-numeric:tabular-nums; }
+.ev .body { font-size:14px; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
+.ev .acts { margin-top:6px; }
+.ev .acts button { font:inherit; font-size:12px; padding:8px 12px; border:1px solid var(--g3);
+                   border-radius:6px; background:#fff; color:var(--g7); cursor:pointer; min-height:44px; }
+.tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px;
+       background:var(--g1); color:var(--g7); }
+.tag.f-day { background:#e0f2f1; color:#00695c; }
+.sum { background:var(--pri-l); border:1px solid #cfe0fb; border-radius:8px; padding:10px 12px; margin-top:8px; }
+.sum .lbl { font-size:11px; font-weight:700; color:var(--pri-d); margin-bottom:3px; }
+.sum .cat { margin:4px 0 0; }
+.sum .cat .tag { background:#fff; color:var(--pri-d); border:1px solid #cfe0fb; margin-right:4px; }
+.sum .body { font-size:14px; line-height:1.6; }
+
+.muted { color:var(--g6); font-size:13px; }
+.note { background:var(--warn-bg); color:var(--warn-tx); border-radius:8px; padding:10px 12px;
+        font-size:13px; line-height:1.6; margin-bottom:12px; }
+.err  { background:var(--ng-l); color:var(--ng); border-radius:8px; padding:10px 12px;
+        font-size:13px; line-height:1.6; margin-bottom:12px; }
+.who { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:8px 12px;
+       margin-bottom:10px; font-size:15px; font-weight:700; }
+.who .rm { font-weight:400; font-size:12px; color:var(--g6); margin-left:8px; }
+
+.field { margin-bottom:12px; }
+.field label { display:block; font-size:12px; color:var(--g7); margin-bottom:4px; }
+.field input { width:100%; }
+.hint { font-size:12px; color:var(--g6); line-height:1.6; margin-top:4px; }
+
+#block { position:fixed; inset:0; z-index:500; background:var(--g0); padding:24px;
+         display:none; align-items:center; justify-content:center; text-align:center; }
+#block.on { display:flex; }
+#toast { position:fixed; bottom:88px; left:50%; transform:translateX(-50%); background:var(--g9);
+         color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; opacity:0;
+         transition:opacity .3s; pointer-events:none; z-index:600; max-width:90%; }
+#toast.show { opacity:.95; }
+#toast.ng { background:var(--ng); }
+
+
+/* ── バイタル・食事（2026-08-04 追加） ── */
+.vmsec { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:12px; margin-bottom:12px; }
+.vmsec > h3 { font-size:13px; font-weight:700; color:var(--g7); margin-bottom:8px;
+              display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.vmsec > h3 .unit { font-weight:400; font-size:11px; color:var(--g6); }
+.chart { width:100%; height:auto; display:block; }
+.chart .grid  { stroke:var(--g2); stroke-width:1; }
+.chart .axis  { fill:var(--g6); font-size:9px; }
+.chart .line  { fill:none; stroke-width:2; }
+.chart .dot   { stroke:#fff; stroke-width:1; }
+.chart .gap   { stroke-dasharray:3 3; opacity:.45; }
+.lgd { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--g7); margin-top:4px; }
+.lgd i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+.vmtbl { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
+.vmtbl th, .vmtbl td { border:1px solid var(--g3); padding:3px 5px; text-align:center;
+                       font-variant-numeric:tabular-nums; white-space:nowrap; }
+.vmtbl th { background:var(--g1); color:var(--g7); font-weight:700; }
+.vmtbl td.na { color:var(--g5); }
+.vmtbl td.bad { background:var(--ng-l); color:var(--ng); font-weight:700; }
+.vmwrap { overflow-x:auto; }
+
+@media print {
+  @page { size:A4 portrait; margin:10mm; }
+  * { -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
+  body { background:#fff; padding-bottom:0; font-size:11px; }
+  .noprint, .bnav, .hdr, .bar, .rlist, .ev .acts { display:none !important; }
+  .vmsec { break-inside:avoid; page-break-inside:avoid; border:1px solid #999; }
+  .vmwrap { overflow:visible; }
+  .scr { padding:0; max-width:none; }
+  .cd { box-shadow:none; border:none; padding:0; margin:0; }
+  .dayhd { position:static; background:#fff; }
+  .ev, .sum { break-inside:avoid; page-break-inside:avoid; }
+  .ev { border:1px solid #999; border-left-width:3px; }
+}
+</style>
+</head>
+<body>
+
+<header class="hdr noprint">
+  <a class="back" href="index.html">← メニュー</a>
+  <h1>申送ビューア</h1>
+  <p class="sub">申し送りを入居者ごとの時系列で見る</p>
+</header>
+
+<main>
+  <!-- ── 入居者別 ── -->
+  <section id="scr-resident" class="scr on" role="tabpanel" aria-labelledby="tab-resident">
+    <div id="banner"></div>
+    <div class="cd noprint">
+      <div class="bar">
+        <label for="days">期間</label>
+        <select id="days">
+          <option value="7">直近7日</option>
+          <option value="14" selected>直近14日</option>
+          <option value="30">直近30日</option>
+          <option value="60">直近60日</option>
+          <option value="90">直近90日</option>
+        </select>
+        <button class="btn" id="reload" type="button">読み込み</button>
+        <span class="muted" id="status"></span>
+      </div>
+      <div class="rlist" id="rlist"></div>
+    </div>
+    <div id="who"></div>
+    <div class="bar noprint" id="ractions" hidden>
+      <button class="btn" id="copyAll" type="button">表示中をまとめてコピー</button>
+      <button class="btn" id="printBtn" type="button">印刷</button>
+      <label><input type="checkbox" id="copyDate" checked> コピーに日付を付ける</label>
+    </div>
+    <div id="timeline"></div>
+  </section>
+
+  <!-- ── 日付別 ── -->
+  <section id="scr-date" class="scr" role="tabpanel" aria-labelledby="tab-date">
+    <div class="cd noprint">
+      <div class="bar">
+        <label for="theDate">日付</label>
+        <input type="date" id="theDate">
+        <button class="btn" id="dateGo" type="button">表示</button>
+        <span class="muted" id="dstatus"></span>
+      </div>
+    </div>
+    <div id="dtimeline"></div>
+  </section>
+
+  <!-- ── バイタル・食事（2026-08-04 追加） ── -->
+  <section id="scr-vm" class="scr" role="tabpanel" aria-labelledby="tab-vm">
+    <div id="vmBanner"></div>
+    <div class="cd noprint">
+      <div class="bar">
+        <label for="vmDays">期間</label>
+        <select id="vmDays">
+          <option value="14">直近14日</option>
+          <option value="30" selected>直近30日</option>
+          <option value="60">直近60日</option>
+          <option value="90">直近90日</option>
+        </select>
+        <button class="btn" id="vmReload" type="button">読み込み</button>
+        <span class="muted" id="vmStatus"></span>
+      </div>
+      <div class="rlist" id="vmList"></div>
+    </div>
+    <div id="vmWho"></div>
+    <div class="bar noprint" id="vmActions" hidden>
+      <button class="btn" id="vmPrint" type="button">印刷</button>
+      <button class="btn" id="vmCopy" type="button">数値をコピー</button>
+    </div>
+    <div id="vmBody"></div>
+  </section>
+
+  <!-- ── 設定 ── -->
+  <section id="scr-cfg" class="scr" role="tabpanel" aria-labelledby="tab-cfg">
+    <div class="cd">
+      <h2 style="font-size:15px;margin-bottom:10px;">接続設定</h2>
+      <div class="field">
+        <label for="cfgUrl">GAS ウェブアプリ URL</label>
+        <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="cfgToken">合言葉（事務所用）</label>
+        <input type="password" id="cfgToken" autocomplete="off">
+        <p class="hint">この画面は入居者の医療情報を表示します。事務所端末にだけ合言葉を設定してください。現場タブレットには配らないでください。</p>
+      </div>
+      <div class="bar">
+        <button class="btn pri" id="cfgSave" type="button">保存</button>
+        <button class="btn" id="cfgTest" type="button">接続テスト</button>
+      </div>
+      <p class="hint" id="cfgInfo"></p>
+    </div>
+    <div class="cd">
+      <h2 style="font-size:15px;margin-bottom:8px;">この画面について</h2>
+      <p class="hint">
+        申し送りスプレッドシートの記録を、入居者ごとにまとめて表示します。<br>
+        「申し送り原文」は当日分まで自動で取り込まれます。「AI要約」は翌朝の抽出が終わった日にだけ付きます。<br>
+        表示した内容は端末に保存されません（画面を閉じると消えます）。
+      </p>
+    </div>
+  </section>
+</main>
+
+<nav class="bnav noprint" role="tablist">
+  <button type="button" role="tab" id="tab-resident" aria-controls="scr-resident" data-scr="scr-resident" aria-selected="true">入居者別</button>
+  <button type="button" role="tab" id="tab-date" aria-controls="scr-date" data-scr="scr-date" aria-selected="false">日付別</button>
+  <button type="button" role="tab" id="tab-vm" aria-controls="scr-vm" data-scr="scr-vm" aria-selected="false">バイタル・食事</button>
+  <button type="button" role="tab" id="tab-cfg" aria-controls="scr-cfg" data-scr="scr-cfg" aria-selected="false">設定</button>
+</nav>
+
+<div id="block">
+  <div>
+    <p style="font-size:16px;font-weight:700;margin-bottom:8px;">この端末では表示できません</p>
+    <p class="muted">申送ビューアは事務所端末専用です。<br>端末の用途が「現場」に設定されています。</p>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════════
+   申送ビューア（入居者別）
+   - データは GAS ウェブアプリ（moushiokuri-api.gs）から都度取得する。
+   - ★申し送り本文・要約は localStorage へ一切保存しない（要配慮情報を端末に残さない）。
+     保存するのは接続設定と、タブ/期間などの UI 状態だけ。
+   - su_residents_common（入居者マスタが唯一の書き手）は **読むだけ**。書き込まない。
+   ══════════════════════════════════════════════════════════════════ */
+
+var LS_CFG   = 'msk_cfg';      // {url, token}
+var LS_VIEW  = 'msk_view';     // 直前に開いていた画面（リロードで現在地を失わない）
+var LS_DAYS  = 'msk_days';     // 期間（日数）
+var LS_CPDT  = 'msk_copyDate'; // コピーに日付を付けるか
+var LS_VMDAYS= 'msk_vmDays';   // バイタル・食事の表示期間（UI状態のみ・個人情報は保存しない）
+var ROSTER_KEY = 'su_residents_common';   // 読取専用（書き手は入居者マスタのみ）
+var ROLE_KEY   = 'su_device_role';
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* 表示中のデータ。メモリ上のみで保持する（保存しない） */
+var DATA = { from:'', to:'', events:[], ledger:[], loadedAt:0 };
+var SEL = '';        // 選択中の入居者（正規化キー）
+var ROSTER = [];     // su_residents_common の写し（読取専用）
+
+/* ── 小物 ───────────────────────────────────────────── */
+function toast(msg, isNg){
+  var t = $('toast');
+  t.textContent = msg;                       // 個人情報・生のAPI応答を出さない
+  t.className = isNg ? 'ng show' : 'show';
+  setTimeout(function(){ t.className = ''; }, 2600);
+}
+/* HTML文字列の組み立ては行わない（DOMは全て textContent / createTextNode で構築する）。
+   エスケープ関数を置かないのは意図的 —— 用意すると innerHTML 連結への誘惑が生まれるため。 */
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+/* 氏名の正規化キー。GAS 側 _norm と同じ規則にそろえる
+   （空白除去＋敬称除去。NFKC はかけない＝care-tools の多数派実装に合わせる）。 */
+function normName(s){
+  var t = String(s == null ? '' : s).replace(/[\s　]/g,'');
+  return t.replace(/(様|さん|殿)$/,'');
+}
+function ymd(d){
+  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+}
+function addDays(d,n){ var x = new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
+var WD = ['日','月','火','水','木','金','土'];
+function fmtDate(s){
+  var p = String(s).split('-');
+  if(p.length !== 3) return String(s);
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  return Number(p[1]) + '/' + Number(p[2]) + '(' + WD[d.getDay()] + ')';
+}
+var SHIFT_LABEL = { day:'日勤', night:'夜勤', daycare:'デイ' };
+
+/* ── 端末ガード ────────────────────────────────────────
+   ★これは誤操作防止であって認証ではない（localStorage は書き換えられる）。
+     実質の防御は「現場端末に合言葉を配らない」というサーバ側の運用。 */
+function applyDeviceGuard(){
+  var blocked = (lsGet(ROLE_KEY) === 'field');
+  $('block').classList.toggle('on', blocked);
+  return blocked;
+}
+
+/* ── 設定 ─────────────────────────────────────────── */
+function loadCfg(){
+  try{
+    var o = JSON.parse(lsGet(LS_CFG) || '{}');
+    return { url: String(o.url || ''), token: String(o.token || '') };
+  }catch(e){ return { url:'', token:'' }; }
+}
+function saveCfg(url, token){
+  /* このキーは本ツール専用（共有キーではない）ので丸ごと書いてよい。 */
+  lsSet(LS_CFG, JSON.stringify({ url:url, token:token }));
+}
+
+/* ── API ──────────────────────────────────────────── */
+function fetchTO(url, ms){
+  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  var t = setTimeout(function(){ if(ctl) ctl.abort(); }, ms || 20000);
+  var opt = { cache:'no-store' };
+  if(ctl) opt.signal = ctl.signal;
+  return fetch(url, opt).then(function(r){ clearTimeout(t); return r; },
+                             function(e){ clearTimeout(t); throw e; });
+}
+/* GAS はログイン用HTMLを 200 で返すことがあるため r.json() を使わず自前で判定する。 */
+function parseJson(r){
+  return r.text().then(function(txt){
+    var s = String(txt || '').trim();
+    if(s.charAt(0) !== '{' && s.charAt(0) !== '[') {
+      if(s.indexOf('accounts.google.com') >= 0 || s.toLowerCase().indexOf('<!doctype') === 0){
+        throw new Error('GAS_LOGIN');
+      }
+      throw new Error('GAS_BAD_RESPONSE');
+    }
+    var o = JSON.parse(s);
+    if(o && o.error) throw new Error('API:' + o.error);
+    return o;
+  });
+}
+function apiGet(action, params){
+  var cfg = loadCfg();
+  if(!cfg.url || !cfg.token) return Promise.reject(new Error('NO_CFG'));
+  var qs = 'action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(cfg.token);
+  for(var k in params){
+    if(params.hasOwnProperty(k) && params[k] != null && params[k] !== ''){
+      qs += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }
+  }
+  return fetchTO(cfg.url + '?' + qs, 25000).then(parseJson);
+}
+function apiErrMsg(e){
+  var m = String(e && e.message || e);
+  if(m === 'NO_CFG') return '接続先が未設定です。「設定」タブで登録してください';
+  if(m === 'GAS_LOGIN') return 'GAS のアクセス権が「全員」になっていない可能性があります';
+  if(m === 'GAS_BAD_RESPONSE') return 'GAS から想定外の応答が返りました。デプロイURLを確認してください';
+  if(m.indexOf('API:認証エラー') === 0) return '合言葉が違います。「設定」タブで確認してください';
+  if(m.indexOf('API:') === 0) return 'サーバー側でエラーが発生しました';
+  if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '通信がタイムアウトしました';
+  return '読み込みに失敗しました。通信環境を確認してください';
+}
+
+/* ── 入居者マスタの名簿（読取専用・masterId 解決用）───────────── */
+function loadRoster(){
+  try{
+    var o = JSON.parse(lsGet(ROSTER_KEY) || 'null');
+    var list = (o && o.residents) || [];
+    ROSTER = list.map(function(r){
+      return { masterId:String(r.masterId == null ? '' : r.masterId), name:String(r.name || ''),
+               room:String(r.room || ''), norm:normName(r.name) };
+    });
+  }catch(e){ ROSTER = []; }
+}
+function rosterByNorm(n){
+  for(var i=0;i<ROSTER.length;i++){ if(ROSTER[i].norm && ROSTER[i].norm === n) return ROSTER[i]; }
+  return null;
+}
+
+/* ── データ取得 ───────────────────────────────────── */
+function currentRange(){
+  var n = parseInt($('days').value, 10);
+  if(isNaN(n) || n < 1 || n > 120) n = 14;
+  var to = new Date();
+  return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
+}
+function load(){
+  var r = currentRange();
+  $('status').textContent = '読み込み中…';
+  $('reload').disabled = true;
+  return apiGet('events', { from:r.from, to:r.to }).then(function(res){
+    DATA = { from:res.from, to:res.to,
+             events:(res.events || []), ledger:(res.ledger || []),
+             /* undefined（旧デプロイのGAS＝能力を持たない）と [] （1日も取り込めていない）を
+                潰さない。潰すと、ビューアだけ先に配った時に全期間が誤って赤くなる。 */
+             ingested:(res.ingestedDates || null),
+             loadedAt: Date.now(), lastTick: String(res.lastTick || '') };
+    var tick = DATA.lastTick ? '／最終取込 ' + DATA.lastTick.replace('T',' ').substring(5,16) : '';
+    $('status').textContent = DATA.from + ' 〜 ' + DATA.to + '（' + DATA.events.length + '件）' + tick;
+    renderBanner();
+    renderResidentList();
+    renderTimeline();
+  })['catch'](function(e){
+    $('status').textContent = '';
+    showError(apiErrMsg(e));
+    if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
+  }).then(function(){ $('reload').disabled = false; });
+}
+function showError(msg){
+  var b = $('banner');
+  b.textContent = '';
+  var d = document.createElement('div');
+  d.className = 'err';
+  d.textContent = msg;
+  b.appendChild(d);
+}
+/* 期間内の全日付を古い順で返す */
+function allDatesInRange(){
+  var out = [], p = String(DATA.from).split('-');
+  if(p.length !== 3) return out;
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  while(ymd(d) <= DATA.to){ out.push(ymd(d)); d = addDays(d, 1); }
+  return out;
+}
+function bannerLine(cls, text){
+  var d = document.createElement('div');
+  d.className = cls;
+  d.textContent = text;
+  $('banner').appendChild(d);
+}
+/* 期間を長く取ると日付が並びすぎるため、新しい方から5日だけ挙げて残りは件数で示す */
+function briefDates(list){
+  var head = list.slice(-5).map(fmtDate).join('・');
+  var rest = list.length - Math.min(5, list.length);
+  return head + (rest > 0 ? ' ほか' + rest + '日' : '');
+}
+/* ★取込の状態を2段階で出す。
+   ①「まだ取り込めていない日」は赤で出す —— これを出さないと、取込が止まった期間を
+     職員が「その日は申し送りが無かった」と読む。介護記録として最も危険な誤読なので、
+     『原文はすべて表示されています』とは取込済みの日についてしか言わない。
+   ②「AI要約が未作成の日」は黄色（翌朝には付く。正常な待ち状態）。 */
+function renderBanner(){
+  $('banner').textContent = '';
+  var all = allDatesInRange();
+  if(!all.length) return;
+
+  if(!DATA.ingested){
+    bannerLine('note', 'サーバーが取込状況を返しません。GAS を新しい版で再デプロイしてください'
+      + '（それまで「取り込まれていない日」の警告は出せません）。');
+    return;
+  }
+  var got = Object.create(null);
+  DATA.ingested.forEach(function(d){ got[d] = true; });
+  var notIngested = all.filter(function(d){ return !got[d]; });
+  if(notIngested.length){
+    bannerLine('err', '⚠️ まだ取り込まれていない日: ' + briefDates(notIngested)
+      + '　この日の申し送りは表示されていません（「記録が無かった」ではありません）。'
+      + '続くようなら管理者へ連絡してください。');
+  }
+
+  var hasLedger = Object.create(null);
+  DATA.ledger.forEach(function(l){ hasLedger[l.date] = true; });
+  var noSum = all.filter(function(d){ return got[d] && !hasLedger[d]; });
+  if(noSum.length){
+    bannerLine('note', 'AI要約が未作成の日: ' + briefDates(noSum)
+      + '　（取り込み済みの日なので、申し送りの原文は表示されています）');
+  }
+}
+
+/* ── 入居者リスト ─────────────────────────────────── */
+function residentIndex(){
+  var map = {};
+  DATA.events.forEach(function(e){
+    if(e.kind !== 'resident' || !e.name) return;
+    var k = normName(e.name);
+    if(!map[k]) map[k] = { key:k, name:e.name, count:0 };
+    map[k].count++;
+  });
+  var out = [];
+  for(var k in map){ if(map.hasOwnProperty(k)) out.push(map[k]); }
+  out.sort(function(a,b){ return b.count - a.count || a.name.localeCompare(b.name,'ja'); });
+  return out;
+}
+function renderResidentList(){
+  var box = $('rlist');
+  box.textContent = '';
+  var list = residentIndex();
+  if(!list.length){
+    var p = document.createElement('span');
+    p.className = 'muted';
+    p.textContent = 'この期間に記録がありません';
+    box.appendChild(p);
+    return;
+  }
+  list.forEach(function(r){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rchip';
+    b.setAttribute('aria-pressed', String(r.key === SEL));
+    b.appendChild(document.createTextNode(r.name));
+    var n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = r.count;
+    b.appendChild(n);
+    b.addEventListener('click', function(){
+      SEL = (SEL === r.key) ? '' : r.key;
+      /* ★選択中の入居者は保存しない。復元すると、別の職員が開いた時に
+         前の人の画面が「その人の記録」として出るため（取り違えの温床）。 */
+      renderResidentList();
+      renderTimeline();
+    });
+    box.appendChild(b);
+  });
+}
+
+/* ── タイムライン ─────────────────────────────────── */
+function eventsFor(key){
+  return DATA.events.filter(function(e){ return e.kind === 'resident' && normName(e.name) === key; });
+}
+function ledgerFor(key){
+  return DATA.ledger.filter(function(l){ return normName(l.name) === key; });
+}
+function groupByDate(rows){
+  var g = {};
+  rows.forEach(function(r){ (g[r.date] = g[r.date] || []).push(r); });
+  return g;
+}
+var SHIFT_ORDER = { day:0, daycare:1, night:2 };
+/* 夜勤は日付をまたぐ。0〜5時台は「翌朝」なので、素の文字列比較だと 02:00 が 23:30 より前に来て
+   一晩の出来事が逆順に並ぶ。夜勤帯だけ 6時未満を +24時間として扱う。 */
+function sortKeyTime(e){
+  if(!e.time) return -1;
+  var h = parseInt(e.time.substring(0,2), 10), m = parseInt(e.time.substring(3,5), 10);
+  if(isNaN(h) || isNaN(m)) return -1;
+  /* 夜勤は17時ごろ始まり翌朝まで続く。しきい値6時では起床介助・朝食（6〜9時台）が
+     前夜17時より前に並び、コピーした経過記録の時系列が逆転する（2巡目レビュー指摘）。 */
+  if(e.shift === 'night' && h < 12) h += 24;
+  return h * 60 + m;
+}
+function sortWithin(a,b){
+  var s = (SHIFT_ORDER[a.shift] || 0) - (SHIFT_ORDER[b.shift] || 0);
+  if(s) return s;
+  var ta = sortKeyTime(a), tb = sortKeyTime(b);
+  if(ta >= 0 && tb >= 0 && ta !== tb) return ta - tb;
+  return (a.row || 0) - (b.row || 0);
+}
+
+function renderTimeline(){
+  var box = $('timeline');
+  box.textContent = '';
+  $('who').textContent = '';
+  $('ractions').hidden = true;
+  if(!SEL){
+    var p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = DATA.events.length ? '上の一覧から入居者を選んでください。' : '';
+    box.appendChild(p);
+    return;
+  }
+  var rows = eventsFor(SEL);
+  var lg = ledgerFor(SEL);
+  var name = rows.length ? rows[0].name : (lg.length ? lg[0].name : '');
+
+  /* ★氏名が引けない時は本人確認バーを出さない。「 様」だけのバーとコピー／印刷ボタンを
+     出すと、職員は「この方は0件」と読むが、実際は名簿と申し送りの表記が一致していないだけ。
+     突合失敗を0件として見せない（data-contracts §9 鉄則3・4）。 */
+  if(!name){
+    var w = document.createElement('div');
+    w.className = 'err';
+    w.textContent = '名簿の氏名と申し送りの表記が一致しないため、この方の記録を特定できませんでした。上の一覧から選び直してください。';
+    box.appendChild(w);
+    return;
+  }
+
+  /* 本人確認バーは1箇所だけで更新する（前の方の氏名が残らないように） */
+  var who = document.createElement('div');
+  who.className = 'who';
+  who.appendChild(document.createTextNode(name + ' 様'));
+  var m = rosterByNorm(SEL);
+  if(m && m.room){
+    var rm = document.createElement('span');
+    rm.className = 'rm';
+    rm.textContent = m.room + '号室';
+    who.appendChild(rm);
+  }
+  var cnt = document.createElement('span');
+  cnt.className = 'rm';
+  cnt.textContent = DATA.from + '〜' + DATA.to + '／' + rows.length + '件';
+  who.appendChild(cnt);
+  $('who').appendChild(who);
+  $('ractions').hidden = false;
+
+  var byDate = groupByDate(rows);
+  var lgByDate = groupByDate(lg);
+  var dates = Object.keys(byDate).concat(Object.keys(lgByDate));
+  dates = dates.filter(function(v,i){ return dates.indexOf(v) === i; }).sort().reverse();
+
+  dates.forEach(function(d){
+    var grp = document.createElement('div');
+    grp.className = 'daygrp';
+    var hd = document.createElement('div');
+    hd.className = 'dayhd';
+    hd.textContent = fmtDate(d);
+    grp.appendChild(hd);
+
+    (lgByDate[d] || []).forEach(function(l){ grp.appendChild(sumNode(l)); });
+    (byDate[d] || []).sort(sortWithin).forEach(function(e){ grp.appendChild(evNode(e, d)); });
+    box.appendChild(grp);
+  });
+}
+
+function sumNode(l){
+  var w = document.createElement('div');
+  w.className = 'sum';
+  var lb = document.createElement('div');
+  lb.className = 'lbl';
+  lb.textContent = 'AI要約';
+  w.appendChild(lb);
+  var bd = document.createElement('div');
+  bd.className = 'body';
+  bd.textContent = (l.time ? l.time + '　' : '') + l.summary;
+  w.appendChild(bd);
+  if(l.categories && l.categories.length){
+    var c = document.createElement('div');
+    c.className = 'cat';
+    l.categories.forEach(function(x){
+      var t = document.createElement('span');
+      t.className = 'tag';
+      t.textContent = x;
+      c.appendChild(t);
+    });
+    w.appendChild(c);
+  }
+  return w;
+}
+
+function evNode(e, dateStr){
+  var w = document.createElement('div');
+  w.className = 'ev s-' + (e.shift || 'day') + (e.kind === 'notice' ? ' k-notice' : '');
+  var meta = document.createElement('div');
+  meta.className = 'meta';
+  if(e.time){
+    var tm = document.createElement('span');
+    tm.className = 'tm';
+    tm.textContent = e.time;
+    meta.appendChild(tm);
+  }
+  var sh = document.createElement('span');
+  sh.className = 'tag' + (e.shift === 'daycare' ? ' f-day' : '');
+  sh.textContent = SHIFT_LABEL[e.shift] || e.shift;
+  meta.appendChild(sh);
+  if(e.facility){
+    var fc = document.createElement('span');
+    fc.textContent = e.facility;
+    meta.appendChild(fc);
+  }
+  if(e.reporter){
+    var rp = document.createElement('span');
+    rp.textContent = '記入 ' + e.reporter;
+    meta.appendChild(rp);
+  }
+  w.appendChild(meta);
+  var bd = document.createElement('div');
+  bd.className = 'body';
+  bd.textContent = e.body;
+  w.appendChild(bd);
+
+  var acts = document.createElement('div');
+  acts.className = 'acts noprint';
+  var cb = document.createElement('button');
+  cb.type = 'button';
+  cb.textContent = 'この1件をコピー';
+  cb.addEventListener('click', function(){ copyText(lineFor(e, dateStr)); });
+  acts.appendChild(cb);
+  w.appendChild(acts);
+  return w;
+}
+
+/* ── 経過記録用のコピー ──────────────────────────────
+   ワイズマンの経過記録へ貼る前提。記入者は経過記録側に別欄があるため含めない。 */
+function lineFor(e, dateStr){
+  var head = '';
+  if($('copyDate').checked) head += fmtDate(dateStr || e.date) + ' ';
+  if(e.time) head += e.time + ' ';
+  return head + e.body;
+}
+function copyText(s){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(s).then(function(){ toast('コピーしました'); },
+                                          function(){ fallbackCopy(s); });
+  }else{ fallbackCopy(s); }
+}
+function fallbackCopy(s){
+  var ta = document.createElement('textarea');
+  ta.value = s;
+  ta.setAttribute('readonly','readonly');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  var ok = false;
+  try{ ok = document.execCommand('copy'); }catch(err){ ok = false; }
+  document.body.removeChild(ta);
+  toast(ok ? 'コピーしました' : 'コピーできませんでした。長押しで選択してください', !ok);
+}
+
+/* ── 日付別 ──────────────────────────────────────── */
+function renderDateView(){
+  var box = $('dtimeline');
+  box.textContent = '';
+  var d = $('theDate').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ toast('日付を選んでください', true); return; }
+  $('dstatus').textContent = '読み込み中…';
+  apiGet('events', { from:d, to:d }).then(function(res){
+    var evs = res.events || [], lgs = res.ledger || [];
+    $('dstatus').textContent = fmtDate(d) + '　' + evs.length + '件';
+    if(!evs.length && !lgs.length){
+      var p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'この日の記録は取り込まれていません。';
+      box.appendChild(p);
+      return;
+    }
+    if(!evs.length){
+      /* 原文が未取込でも要約だけある日がある。要約を捨てて「記録なし」と見せない */
+      var w2 = document.createElement('div');
+      w2.className = 'err';
+      w2.textContent = 'この日の申し送り原文はまだ取り込まれていません（AI要約のみ表示します）。';
+      box.appendChild(w2);
+      lgs.forEach(function(l){ box.appendChild(sumNode(l)); });
+      return;
+    }
+    /* 入居者ごとにまとめる（同じ方の記録が離れて並ばないように） */
+    var order = [], map = {};
+    evs.slice().sort(sortWithin).forEach(function(e){
+      var k = (e.kind === 'resident' && e.name) ? normName(e.name) : ('#' + e.kind);
+      if(!map[k]){ map[k] = { label:(e.kind === 'resident' && e.name) ? e.name + ' 様'
+                                    : (e.kind === 'notice' ? '業務連絡' : '施設全体'), rows:[] };
+                   order.push(k); }
+      map[k].rows.push(e);
+    });
+    var lgMap = {};
+    lgs.forEach(function(l){ (lgMap[normName(l.name)] = lgMap[normName(l.name)] || []).push(l); });
+
+    order.forEach(function(k){
+      var grp = document.createElement('div');
+      grp.className = 'daygrp';
+      var hd = document.createElement('div');
+      hd.className = 'dayhd';
+      hd.textContent = map[k].label;
+      grp.appendChild(hd);
+      (lgMap[k] || []).forEach(function(l){ grp.appendChild(sumNode(l)); });
+      map[k].rows.forEach(function(e){ grp.appendChild(evNode(e, d)); });
+      box.appendChild(grp);
+    });
+  })['catch'](function(e){
+    $('dstatus').textContent = '';
+    var er = document.createElement('div');
+    er.className = 'err';
+    er.textContent = apiErrMsg(e);
+    box.appendChild(er);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   バイタル・食事（2026-08-04 追加）
+   ★既存の「入居者別」「日付別」の処理には一切手を入れていない。
+   ★グラフは外部ライブラリを使わずインラインSVGで描く
+     （care-tools は外部ライブラリ原則なし。医療情報の画面でCDN依存を増やさない。印刷でも崩れない）。
+   ══════════════════════════════════════════════════════════ */
+var VM = { from:'', to:'', vitals:[], meals:[], vitalDates:[], mealDates:[], notes:'' };
+var VMSEL = '';
+
+/* 項目の定義。色は意味づけを固定する（画面と凡例で必ず一致させる）。 */
+var VM_SERIES = [
+  { key:'temp',  label:'体温',      unit:'℃',  color:'#e53935', min:34,  max:40  },
+  { key:'sysBP', label:'血圧(上)',  unit:'',    color:'#1e88e5', min:70,  max:200 },
+  { key:'diaBP', label:'血圧(下)',  unit:'',    color:'#7cb342', min:30,  max:130 },
+  { key:'pulse', label:'脈',        unit:'回/分', color:'#fb8c00', min:30, max:140 },
+  { key:'spo2',  label:'SpO2',      unit:'%',   color:'#8e24aa', min:80,  max:100 }
+];
+var VM_MEALS = [
+  { key:'bMain', label:'朝・主食', color:'#ef6c00' }, { key:'bSide', label:'朝・副食', color:'#ffb74d' },
+  { key:'lMain', label:'昼・主食', color:'#2e7d32' }, { key:'lSide', label:'昼・副食', color:'#81c784' },
+  { key:'dMain', label:'夕・主食', color:'#4527a0' }, { key:'dSide', label:'夕・副食', color:'#9575cd' }
+];
+
+function vmRange(){
+  var n = parseInt($('vmDays').value, 10);
+  if(isNaN(n) || n < 1 || n > 120) n = 30;
+  var to = new Date();
+  return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
+}
+function vmLoad(){
+  var r = vmRange();
+  $('vmStatus').textContent = '読み込み中…';
+  $('vmReload').disabled = true;
+  return apiGet('measures', { from:r.from, to:r.to }).then(function(res){
+    VM = { from:res.from, to:res.to,
+           vitals:(res.vitals || []), meals:(res.meals || []),
+           vitalDates:(res.vitalDates || []), mealDates:(res.mealDates || []),
+           notes:String(res.thresholdNotes || '') };
+    $('vmStatus').textContent = VM.from + ' 〜 ' + VM.to
+      + '（バイタル' + VM.vitals.length + '件・食事' + VM.meals.length + '件）';
+    vmRenderBanner(); vmRenderList(); vmRenderBody();
+  })['catch'](function(e){
+    $('vmStatus').textContent = '';
+    $('vmBanner').textContent = '';
+    var d = document.createElement('div'); d.className = 'err'; d.textContent = apiErrMsg(e);
+    $('vmBanner').appendChild(d);
+    if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
+  }).then(function(){ $('vmReload').disabled = false; });
+}
+
+function vmRenderBanner(){
+  var b = $('vmBanner'); b.textContent = '';
+
+  /* ★「まだ取り込めていない日」を必ず先に出す。
+     これが無いと、取込が止まった日も表では全項目「−」になり、
+     「その日は測定しなかった」と完全に同じ見え方になる。
+     発熱の経過を追う場面で、空白を平熱と読まれる（2026-08-04 レビュー指摘）。 */
+  var all = vmAllDates();
+  if(all.length){
+    var gotV = Object.create(null); (VM.vitalDates || []).forEach(function(d){ gotV[d] = true; });
+    var gotM = Object.create(null); (VM.mealDates  || []).forEach(function(d){ gotM[d] = true; });
+    var miss = all.filter(function(d){ return !gotV[d] && !gotM[d]; });
+    if(miss.length){
+      var head = miss.slice(-5).map(fmtDate).join('・');
+      var rest = miss.length - Math.min(5, miss.length);
+      var e = document.createElement('div'); e.className = 'err';
+      e.textContent = '⚠️ まだ取り込まれていない日: ' + head + (rest > 0 ? ' ほか' + rest + '日' : '')
+        + '　この日の表の「−」は「測っていない」ではなく「取り込めていない」です。'
+        + '続くようなら管理者へ連絡してください。';
+      b.appendChild(e);
+    }
+  }
+
+  /* 施設が自分で決めたアラート基準（シートから取り込んだ原文）をそのまま見せる。
+     一般的な臨床基準をこちらで決めて色分けしない。 */
+  if(VM.notes){
+    var d2 = document.createElement('div'); d2.className = 'note';
+    d2.textContent = '施設の基準（申し送りシートに記載）: ' + VM.notes;
+    b.appendChild(d2);
+  }
+}
+
+function vmIndex(){
+  var map = Object.create(null);
+  VM.vitals.forEach(function(v){
+    var k = normName(v.name); if(!k) return;
+    if(!map[k]) map[k] = { key:k, name:v.name, room:v.room, v:0, m:0 };
+    map[k].v++;
+  });
+  VM.meals.forEach(function(m){
+    var k = normName(m.name); if(!k) return;
+    if(!map[k]) map[k] = { key:k, name:m.name, room:m.room, v:0, m:0 };
+    map[k].m++;
+  });
+  var out = [];
+  for(var k in map){ if(map[k] !== undefined) out.push(map[k]); }
+  out.sort(function(a,b){ return (b.v + b.m) - (a.v + a.m) || a.name.localeCompare(b.name,'ja'); });
+  return out;
+}
+function vmRenderList(){
+  var box = $('vmList'); box.textContent = '';
+  var list = vmIndex();
+  if(!list.length){
+    var p = document.createElement('span'); p.className = 'muted';
+    p.textContent = 'この期間に記録がありません';
+    box.appendChild(p); return;
+  }
+  list.forEach(function(r){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'rchip';
+    b.setAttribute('aria-pressed', String(r.key === VMSEL));
+    b.appendChild(document.createTextNode(r.name));
+    var n = document.createElement('span'); n.className = 'n';
+    n.textContent = (r.v + r.m);
+    b.appendChild(n);
+    b.addEventListener('click', function(){
+      VMSEL = (VMSEL === r.key) ? '' : r.key;   // 選択は保存しない（別の方の画面が残らないように）
+      vmRenderList(); vmRenderBody();
+    });
+    box.appendChild(b);
+  });
+}
+
+/* 期間内の全日付（古い順） */
+function vmAllDates(){
+  var out = [], p = String(VM.from).split('-');
+  if(p.length !== 3) return out;
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  while(ymd(d) <= VM.to){ out.push(ymd(d)); d = addDays(d, 1); }
+  return out;
+}
+
+/* ── インラインSVGの折れ線グラフ ──
+   ★測っていない日は線でつながない。つなぐと、測っていない期間が
+     なめらかに推移したように見えて誤読になる。欠測は点線＋点なしで表す。 */
+function vmChart(dates, seriesDefs, dataByDate, opt){
+  opt = opt || {};
+  var W = 720, H = opt.height || 150, L = 34, R = 8, T = 10, B = 20;
+  var iw = W - L - R, ih = H - T - B;
+
+  var vals = [];
+  seriesDefs.forEach(function(sd){
+    dates.forEach(function(d){
+      var row = dataByDate[d]; if(!row) return;
+      var v = row[sd.key]; if(v !== null && v !== undefined) vals.push(v);
+    });
+  });
+  if(!vals.length) return null;
+
+  var lo = opt.min, hi = opt.max;
+  if(lo === undefined){ lo = Math.min.apply(null, vals); hi = Math.max.apply(null, vals); }
+  else { lo = Math.min(lo, Math.min.apply(null, vals)); hi = Math.max(hi, Math.max.apply(null, vals)); }
+  if(hi === lo){ hi = lo + 1; }
+  var pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+
+  var xs = function(i){ return L + (dates.length <= 1 ? iw/2 : iw * i / (dates.length - 1)); };
+  var ys = function(v){ return T + ih - ih * (v - lo) / (hi - lo); };
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('class', 'chart');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', (opt.aria || 'グラフ'));
+
+  // 目盛り
+  for(var g = 0; g <= 2; g++){
+    var y = T + ih * g / 2;
+    var ln = document.createElementNS(NS, 'line');
+    ln.setAttribute('x1', L); ln.setAttribute('x2', W - R);
+    ln.setAttribute('y1', y); ln.setAttribute('y2', y);
+    ln.setAttribute('class', 'grid'); svg.appendChild(ln);
+    var tx = document.createElementNS(NS, 'text');
+    tx.setAttribute('x', 2); tx.setAttribute('y', y + 3); tx.setAttribute('class', 'axis');
+    tx.textContent = String(Math.round((hi - (hi - lo) * g / 2) * 10) / 10);
+    svg.appendChild(tx);
+  }
+  // 日付ラベル（両端と中央だけ。詰まると読めないため）
+  [0, Math.floor((dates.length-1)/2), dates.length-1].forEach(function(i, k, arr){
+    if(i < 0 || arr.indexOf(i) !== k) return;
+    var tx = document.createElementNS(NS, 'text');
+    tx.setAttribute('x', xs(i)); tx.setAttribute('y', H - 6);
+    tx.setAttribute('class', 'axis'); tx.setAttribute('text-anchor', i === 0 ? 'start' : (i === dates.length-1 ? 'end' : 'middle'));
+    tx.textContent = fmtDate(dates[i]);
+    svg.appendChild(tx);
+  });
+
+  seriesDefs.forEach(function(sd){
+    var seg = [];
+    dates.forEach(function(d, i){
+      var row = dataByDate[d];
+      var v = (row && row[sd.key] !== undefined) ? row[sd.key] : null;
+      if(v === null || v === undefined){ if(seg.length){ drawSeg(seg); seg = []; } return; }
+      seg.push({ x: xs(i), y: ys(v) });
+    });
+    if(seg.length) drawSeg(seg);
+
+    function drawSeg(pts){
+      if(pts.length > 1){
+        var path = document.createElementNS(NS, 'path');
+        var dstr = 'M' + pts.map(function(q){ return q.x.toFixed(1) + ' ' + q.y.toFixed(1); }).join(' L');
+        path.setAttribute('d', dstr);
+        path.setAttribute('class', 'line');
+        path.setAttribute('stroke', sd.color);
+        svg.appendChild(path);
+      }
+      pts.forEach(function(q){
+        var c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', q.x.toFixed(1)); c.setAttribute('cy', q.y.toFixed(1));
+        c.setAttribute('r', pts.length === 1 ? 3 : 2.2);
+        c.setAttribute('class', 'dot'); c.setAttribute('fill', sd.color);
+        svg.appendChild(c);
+      });
+    }
+  });
+  return svg;
+}
+
+function vmLegend(defs){
+  var w = document.createElement('div'); w.className = 'lgd';
+  defs.forEach(function(sd){
+    var sp = document.createElement('span');
+    var i = document.createElement('i'); i.style.background = sd.color;
+    sp.appendChild(i);
+    sp.appendChild(document.createTextNode(sd.label + (sd.unit ? '（' + sd.unit + '）' : '')));
+    w.appendChild(sp);
+  });
+  return w;
+}
+
+/* 数値表。★測っていない日は空欄ではなく「−」と書いて、
+   「0だった」と読み違えられないようにする。 */
+function vmTable(dates, defs, byDate){
+  var wrap = document.createElement('div'); wrap.className = 'vmwrap';
+  var t = document.createElement('table'); t.className = 'vmtbl';
+  var thead = document.createElement('thead'); var htr = document.createElement('tr');
+  var th0 = document.createElement('th'); th0.textContent = '項目'; htr.appendChild(th0);
+  dates.forEach(function(d){
+    var th = document.createElement('th'); th.textContent = fmtDate(d); htr.appendChild(th);
+  });
+  thead.appendChild(htr); t.appendChild(thead);
+  var tb = document.createElement('tbody');
+  defs.forEach(function(sd){
+    var tr = document.createElement('tr');
+    var th = document.createElement('th'); th.textContent = sd.label; tr.appendChild(th);
+    dates.forEach(function(d){
+      var td = document.createElement('td');
+      var row = byDate[d];
+      var v = (row && row[sd.key] !== undefined) ? row[sd.key] : null;
+      if(v === null || v === undefined){
+        td.textContent = '−'; td.className = 'na';
+        /* 原本に何か書いてあるのに数値化できなかった項目は「?」で示し、
+           原本を確認できるようにする（黙って0にしない）。
+           ★値が読めている場合は「?」を出さない。同じ日に複数の記録があり、
+             片方で読めていれば値が正。印を優先すると読めた値を隠してしまう
+             （2026-08-04 レビュー指摘の突合で発覚）。 */
+        if(row && row.flags && row.flags.indexOf(sd.key) >= 0){ td.textContent = '?'; td.className = 'bad'; }
+      }else{
+        td.textContent = String(v);
+      }
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); wrap.appendChild(t);
+  return wrap;
+}
+
+function vmRenderBody(){
+  var box = $('vmBody'); box.textContent = '';
+  $('vmWho').textContent = ''; $('vmActions').hidden = true;
+  if(!VMSEL){
+    var p = document.createElement('p'); p.className = 'muted';
+    p.textContent = VM.vitals.length || VM.meals.length ? '上の一覧から入居者を選んでください。' : '';
+    box.appendChild(p); return;
+  }
+  var vs = VM.vitals.filter(function(v){ return normName(v.name) === VMSEL; });
+  var ms = VM.meals.filter(function(m){ return normName(m.name) === VMSEL; });
+  var name = vs.length ? vs[0].name : (ms.length ? ms[0].name : '');
+  if(!name){
+    var e = document.createElement('div'); e.className = 'err';
+    e.textContent = '名簿の氏名と記録の表記が一致しないため、この方の記録を特定できませんでした。上の一覧から選び直してください。';
+    box.appendChild(e); return;
+  }
+
+  var who = document.createElement('div'); who.className = 'who';
+  who.appendChild(document.createTextNode(name + ' 様'));
+  var room = (vs[0] && vs[0].room) || (ms[0] && ms[0].room) || '';
+  if(room){ var rm = document.createElement('span'); rm.className = 'rm'; rm.textContent = room + '号室'; who.appendChild(rm); }
+  var cnt = document.createElement('span'); cnt.className = 'rm';
+  cnt.textContent = VM.from + '〜' + VM.to;
+  who.appendChild(cnt);
+  $('vmWho').appendChild(who);
+  $('vmActions').hidden = false;
+
+  var dates = vmAllDates();
+  /* ★同じ日に複数の記録がありうる（居室移動で1階と2階の両方に書かれる等）。
+     後勝ちで上書きすると、片方にしか無い測定値が画面から消える（2026-08-04 レビュー指摘）。
+     項目ごとに「値のある方」を残してマージする（消えるより残す）。 */
+  function mergeBy(list, keys){
+    var by = Object.create(null);
+    list.forEach(function(r){
+      var cur = by[r.date];
+      if(!cur){ by[r.date] = JSON.parse(JSON.stringify(r)); return; }
+      keys.forEach(function(k){
+        if((cur[k] === null || cur[k] === undefined) && r[k] !== null && r[k] !== undefined) cur[k] = r[k];
+      });
+      /* 数値化できなかった項目の印は足し合わせる（片方で読めていれば値が入る） */
+      var f = (cur.flags ? cur.flags.split(',') : []).concat(r.flags ? r.flags.split(',') : []);
+      cur.flags = f.filter(function(x, i){ return x && f.indexOf(x) === i; }).join(',');
+      if(!cur.room && r.room) cur.room = r.room;
+    });
+    return by;
+  }
+  var vBy = mergeBy(vs, ['temp','sysBP','diaBP','pulse','spo2']);
+  var mBy = mergeBy(ms, ['bMain','bSide','lMain','lSide','dMain','dSide']);
+
+  /* ── バイタル ── */
+  var sec1 = document.createElement('div'); sec1.className = 'vmsec';
+  var h1 = document.createElement('h3'); h1.appendChild(document.createTextNode('バイタル'));
+  var u1 = document.createElement('span'); u1.className = 'unit';
+  u1.textContent = '測っていない日は線をつながず「−」で示します';
+  h1.appendChild(u1); sec1.appendChild(h1);
+  if(vs.length){
+    /* 体温は単位が違うので単独。血圧・脈・SpO2はまとめて1枚に描く（見比べやすさ優先） */
+    var c1 = vmChart(dates, [VM_SERIES[0]], vBy, { min:35, max:38, height:120, aria:'体温の推移' });
+    if(c1){ sec1.appendChild(c1); sec1.appendChild(vmLegend([VM_SERIES[0]])); }
+    /* ★SpO2 を血圧と同じ軸に重ねない。縦軸が 20〜170 になり、
+       98→92 という臨床的に意味のある低下がほぼ平坦に見える（2026-08-04 レビュー指摘）。 */
+    var bpp = [VM_SERIES[1], VM_SERIES[2], VM_SERIES[3]];
+    var c2 = vmChart(dates, bpp, vBy, { height:150, aria:'血圧・脈の推移' });
+    if(c2){ sec1.appendChild(c2); sec1.appendChild(vmLegend(bpp)); }
+    var c2b = vmChart(dates, [VM_SERIES[4]], vBy, { min:88, max:100, height:110, aria:'SpO2の推移' });
+    if(c2b){ sec1.appendChild(c2b); sec1.appendChild(vmLegend([VM_SERIES[4]])); }
+    sec1.appendChild(vmTable(dates, VM_SERIES, vBy));
+  }else{
+    var n1 = document.createElement('p'); n1.className = 'muted';
+    n1.textContent = 'この期間のバイタル記録はありません。';
+    sec1.appendChild(n1);
+  }
+  box.appendChild(sec1);
+
+  /* ── 食事摂取量 ── */
+  var sec2 = document.createElement('div'); sec2.className = 'vmsec';
+  var h2 = document.createElement('h3'); h2.appendChild(document.createTextNode('食事摂取量'));
+  var u2 = document.createElement('span'); u2.className = 'unit'; u2.textContent = '0〜10';
+  h2.appendChild(u2); sec2.appendChild(h2);
+  if(ms.length){
+    var c3 = vmChart(dates, VM_MEALS, mBy, { min:0, max:10, height:150, aria:'食事摂取量の推移' });
+    if(c3){ sec2.appendChild(c3); sec2.appendChild(vmLegend(VM_MEALS)); }
+    sec2.appendChild(vmTable(dates, VM_MEALS, mBy));
+  }else{
+    var n2 = document.createElement('p'); n2.className = 'muted';
+    n2.textContent = 'この期間の食事摂取量の記録はありません。';
+    sec2.appendChild(n2);
+  }
+  box.appendChild(sec2);
+}
+
+/* 経過記録へ貼れる形で数値を書き出す */
+function vmCopyText(){
+  if(!VMSEL) return '';
+  var vs = VM.vitals.filter(function(v){ return normName(v.name) === VMSEL; })
+                    .sort(function(a,b){ return a.date < b.date ? -1 : 1; });
+  var ms = VM.meals.filter(function(m){ return normName(m.name) === VMSEL; });
+  var mBy = Object.create(null); ms.forEach(function(m){ mBy[m.date] = m; });
+  var lines = [];
+  vs.forEach(function(v){
+    var parts = [];
+    if(v.temp  !== null) parts.push('KT' + v.temp);
+    if(v.sysBP !== null && v.diaBP !== null) parts.push('BP' + v.sysBP + '/' + v.diaBP);
+    else if(v.sysBP !== null) parts.push('BP' + v.sysBP);
+    if(v.pulse !== null) parts.push('P' + v.pulse);
+    if(v.spo2  !== null) parts.push('SpO2 ' + v.spo2 + '%');
+    var m = mBy[v.date];
+    if(m){
+      var mm = [];
+      if(m.bMain !== null || m.bSide !== null) mm.push('朝' + (m.bMain === null ? '−' : m.bMain) + '/' + (m.bSide === null ? '−' : m.bSide));
+      if(m.lMain !== null || m.lSide !== null) mm.push('昼' + (m.lMain === null ? '−' : m.lMain) + '/' + (m.lSide === null ? '−' : m.lSide));
+      if(m.dMain !== null || m.dSide !== null) mm.push('夕' + (m.dMain === null ? '−' : m.dMain) + '/' + (m.dSide === null ? '−' : m.dSide));
+      if(mm.length) parts.push('食事(主/副) ' + mm.join(' '));
+    }
+    if(parts.length) lines.push(fmtDate(v.date) + ' ' + parts.join('　'));
+  });
+  return lines.join('\n');
+}
+
+/* ── 画面切替（リロードで現在地を失わない）───────────────
+   配列＋indexOf にする。オブジェクトのホワイトリストだと 'toString' 等が truthy になり、
+   不正値がそのまま採用されてしまう。 */
+var SCREENS = ['scr-resident','scr-date','scr-vm','scr-cfg'];
+function goto(id, remember){
+  if(SCREENS.indexOf(id) < 0) id = SCREENS[0];
+  SCREENS.forEach(function(s){ $(s).classList.toggle('on', s === id); });
+  document.querySelectorAll('.bnav button').forEach(function(b){
+    b.setAttribute('aria-selected', String(b.dataset.scr === id));
+  });
+  /* 未設定時などの「強制的に飛ばした」遷移は保存しない。保存すると設定を終えた後の
+     リロードでも設定画面が「直前の画面」として復元される（原則11の意図から外れる）。 */
+  if(remember !== false) lsSet(LS_VIEW, id);
+}
+function savedView(){
+  var v = lsGet(LS_VIEW);
+  return (SCREENS.indexOf(v) >= 0) ? v : SCREENS[0];
+}
+
+/* ── ?masterId= 受信 ─────────────────────────────────
+   氏名は URL に載せない規約のため、masterId から名簿を引いて本人を特定する。
+   不正値・該当なしは開かず、理由を出して一覧のまま残す。 */
+function applyMasterIdParam(){
+  var p = new URLSearchParams(location.search);
+  var raw = p.get('masterId');
+  if(!raw) return false;
+  var id = String(raw).trim();
+  /* 指定は必ず消す（設定保存などで再起動した時に勝手に開き直さないため） */
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  if(!/^[0-9A-Za-z_-]{1,32}$/.test(id)){
+    toast('指定された入居者を開けませんでした（一覧から選んでください）', true);
+    return false;
+  }
+  var hit = null;
+  for(var i=0;i<ROSTER.length;i++){ if(ROSTER[i].masterId === id){ hit = ROSTER[i]; break; } }
+  if(!hit || !hit.norm){
+    toast('この端末の名簿に該当の方が見つかりませんでした（一覧から選んでください）', true);
+    return false;
+  }
+  SEL = hit.norm;
+  return true;
+}
+
+/* ── 起動 ─────────────────────────────────────────── */
+(function init(){
+  if(applyDeviceGuard()) return;      // 現場端末では以降を動かさない
+  loadRoster();
+
+  /* UI 状態の復元（既知値のみ。不正値は既定へ） */
+  var d = lsGet(LS_DAYS);
+  if(['7','14','30','60','90'].indexOf(d) >= 0) $('days').value = d;
+  $('copyDate').checked = (lsGet(LS_CPDT) !== '0');
+  $('theDate').value = ymd(addDays(new Date(), -1));
+
+  var cfg = loadCfg();
+  $('cfgUrl').value = cfg.url;
+  $('cfgToken').value = cfg.token;
+
+  document.querySelectorAll('.bnav button').forEach(function(b){
+    b.addEventListener('click', function(){ goto(b.dataset.scr); });
+  });
+  $('days').addEventListener('change', function(){ lsSet(LS_DAYS, $('days').value); load(); });
+  $('reload').addEventListener('click', load);
+  $('printBtn').addEventListener('click', function(){ window.print(); });
+  $('copyDate').addEventListener('change', function(){ lsSet(LS_CPDT, $('copyDate').checked ? '1' : '0'); });
+  $('copyAll').addEventListener('click', function(){
+    if(!SEL){ toast('入居者を選んでください', true); return; }
+    var rows = eventsFor(SEL).slice().sort(function(a,b){
+      if(a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return sortWithin(a,b);
+    });
+    if(!rows.length){ toast('コピーする記録がありません', true); return; }
+    copyText(rows.map(function(e){ return lineFor(e, e.date); }).join('\n'));
+  });
+  $('dateGo').addEventListener('click', renderDateView);
+
+  /* ── バイタル・食事（2026-08-04 追加）──
+     ★保存するのは表示期間だけ。選択中の入居者は保存しない
+       （復元すると、別の職員が開いた時に前の方の画面が「その人の記録」として出るため）。 */
+  var vd = lsGet(LS_VMDAYS);
+  if(['14','30','60','90'].indexOf(vd) >= 0) $('vmDays').value = vd;
+  $('vmDays').addEventListener('change', function(){ lsSet(LS_VMDAYS, $('vmDays').value); vmLoad(); });
+  $('vmReload').addEventListener('click', vmLoad);
+  $('vmPrint').addEventListener('click', function(){ window.print(); });
+  $('vmCopy').addEventListener('click', function(){
+    if(!VMSEL){ toast('入居者を選んでください', true); return; }
+    var t = vmCopyText();
+    if(!t){ toast('コピーする数値がありません', true); return; }
+    copyText(t);
+  });
+  /* この画面を開いた時に初めて読み込む（開かない人に余計な通信を起こさない） */
+  document.querySelectorAll('.bnav button').forEach(function(b){
+    if(b.dataset.scr !== 'scr-vm') return;
+    b.addEventListener('click', function(){
+      if(!VM.vitals.length && !VM.meals.length && loadCfg().url) vmLoad();
+    });
+  });
+  $('cfgSave').addEventListener('click', function(){
+    var u = $('cfgUrl').value.trim(), t = $('cfgToken').value.trim();
+    if(u && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(u)){
+      toast('URL の形式が違います（/exec で終わる必要があります）', true); return;
+    }
+    saveCfg(u, t);
+    toast('保存しました');
+  });
+  $('cfgTest').addEventListener('click', function(){
+    apiGet('ping', {}).then(function(r){
+      /* ★「つながった」だけを成功と表示しない。1件も取り込めていなくても接続は成功するため、
+         直近の取込件数と失敗内容まで出して、沈黙故障が正常に見えないようにする。 */
+      var info = '接続できました。';
+      if(r && r.lastTick) info += '最終取込 ' + String(r.lastTick).replace('T',' ').substring(0,16);
+      var raw = (r && r.rawOk !== '' && r.rawOk != null) ? Number(r.rawOk) : NaN;
+      if(!isNaN(raw)){
+        info += '／直近の取込 ' + (isNaN(raw) ? '?' : raw) + '日分';
+        if(raw === 0) info += '　⚠️ 0日分です。申し送りファイルを読めていない可能性があります';
+      }
+      if(r && r.fails) info += '／失敗: ' + String(r.fails);
+      $('cfgInfo').textContent = info;
+      toast(raw === 0 ? '接続はできましたが取込0件です' : '接続できました', raw === 0);
+    })['catch'](function(e){
+      $('cfgInfo').textContent = apiErrMsg(e);
+      toast(apiErrMsg(e), true);
+    });
+  });
+
+  /* ★復元は renderTimeline より前に済ませ、画面の復元は最後に行う
+     （描画側が既定画面を保存で上書きしないようにする） */
+  /* スティッキーな日付見出しがヘッダーに潜らないよう、実際の高さを測って共有する
+     （CSSの固定値だと、狭い画面で説明文が折り返した時にずれる） */
+  function syncHdrH(){
+    try{
+      /* ★レイアウトが成立していない時（非表示タブ・復元直後は幅0になり、全文字が折り返して
+         数百pxになる）は測らない。妥当な範囲に入る値だけ採用し、外れたらCSSの既定に任せる。
+         おかしな値を入れると、日付見出しが画面のはるか下へ押し出される。 */
+      if(!window.innerWidth || window.innerWidth < 200) return;
+      var h = document.querySelector('.hdr').offsetHeight;
+      if(h >= 40 && h <= 200) document.documentElement.style.setProperty('--hdr-h', h + 'px');
+    }catch(e){}
+  }
+  syncHdrH();
+  window.addEventListener('resize', syncHdrH);
+
+  var restore = savedView();
+  /* masterId で開かれた時だけは、保存された画面より「入居者別」を優先する
+     （マスタから飛んだのに設定画面が開く、という迷子を防ぐ） */
+  goto(applyMasterIdParam() ? 'scr-resident' : restore);
+
+  if(!cfg.url || !cfg.token){
+    goto('scr-cfg', false);
+    $('cfgInfo').textContent = '最初に接続先と合言葉を登録してください。';
+  }else{
+    load();
+    /* リロードでバイタル・食事の画面に戻った時も、その画面のデータを読む */
+    if(savedView() === 'scr-vm') vmLoad();
+  }
+})();
+</script>
+</body>
+</html>
