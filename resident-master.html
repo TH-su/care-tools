@@ -854,18 +854,30 @@ var VIEW_KEY='rmaster_view';
 var VIEWS=['std','fl2','fl4','kana','bday'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
-   ・値は VIEWS のホワイトリスト照合。未知の値は無視して従来どおり保存値／既定へ
-   ・採用したら view だけURLから消す（masterId 等の他のパラメータは残す）。
-     残すと、あとで別タブを選んで再読込した時に毎回この指定へ引き戻される */
-var curView=(function(){
+   ・値は VIEWS のホワイトリスト照合
+   ・★URL指定は保存しない（在メモリのみ）。保存すると「入居者マスタ」タイルから開いた時まで
+     誕生日ビューになり、名簿を見たい職員が毎回タブを押し直すことになる（2つの導線を独立させる）
+   ・URLに view を残すのは、この指定のまま再読込しても留まるため（原則11）。
+     職員が自分でタブを選んだ時点で setView が URL から view を外し、以後は保存値が普通に効く
+   ・未知の値はURLから外して無視する（この値を作る導線は存在しない。IIFEはDOM構築前に走るので
+     ここでトーストは出せない＝出そうとすると例外になる） */
+function csvStripViewParam(){
   try{
-    var p=new URLSearchParams(location.search), v=p.get('view');
-    if(v&&VIEWS.indexOf(v)>=0){
-      try{localStorage.setItem(VIEW_KEY,v)}catch(e){}
-      try{p.delete('view');var q=p.toString();history.replaceState(null,'',location.pathname+(q?'?'+q:''))}catch(e){}
-      return v;
-    }
+    var p=new URLSearchParams(location.search);
+    if(p.get('view')===null) return;
+    p.delete('view');
+    var q=p.toString();
+    history.replaceState(null,'',location.pathname+(q?'?'+q:'')+location.hash);
+  }catch(e){}
+}
+var curView=(function(){
+  var fromUrl=null;
+  try{
+    var v=new URLSearchParams(location.search).get('view');
+    if(v&&VIEWS.indexOf(v)>=0) fromUrl=v;
+    else if(v!==null) csvStripViewParam();   // 未知の値は残さない
   }catch(e){/* URLSearchParams 非対応の旧ブラウザ等は保存値で続行 */}
+  if(fromUrl) return fromUrl;
   try{var s=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(s)>=0?s:'std'}catch(e){return'std'}
 })();
 function paintTabs(){
@@ -877,6 +889,9 @@ function paintTabs(){
 function setView(v){
   curView=VIEWS.indexOf(v)>=0?v:'std';
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
+  /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
+     残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
+  csvStripViewParam();
   paintTabs(); paintBdayBar(); renderRoster();
 }
 
