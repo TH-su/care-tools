@@ -4310,49 +4310,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
     }
-    /* デイサービスマスタ: 階・デイ曜日/時間を反映（対象者のdaycare予定を置換）
+    /* ★デイ（通所）予定と入浴の正本は週間計画(care_schedule_v2)。支援マスタからは供給しない。
      *
-     * ★入浴（bathing）の扱い（2026-08-03 修正）:
-     * 従来は作り直しのたびに bathing:false を固定で入れており、マスタ反映のたびに
-     * 通所の入浴加算の記録が【全員分消えていた】（実測: 94件→12件→0件）。
-     * days の3要素目に入浴フラグを持てるようにし、無い場合（＝マスタが入浴を知らない旧形式）は
-     * 【既存の値を曜日・開始時刻で引き継ぐ】。「未知」と「入浴しない」を区別する
-     * （multi-device-sync 原則4: null と空の区別／原則5: 消失より復活）。
-     *   days[dow] = [start, end]          → 入浴は既存を温存
-     *   days[dow] = [start, end, 1 or 0]  → その値を採用（明示） */
-    var dc = master.daycare || [];
-    for (i = 0; i < dc.length; i++) {
-      var du = dc[i];
-      var dres = byName[du.residentName];
-      if (!dres) {
-        dres = { id: M.genId('r'), name: du.residentName, events: [] };
-        byName[du.residentName] = dres;
-        residents.push(dres);
-      }
-      dres.floor = du.floor || 0;
-      var keep2 = [], prevBath = {};
-      for (var q = 0; q < dres.events.length; q++) {
-        var pe = dres.events[q];
-        if (pe.serviceType !== 'daycare') { keep2.push(pe); continue; }
-        /* 捨てる前に入浴フラグを (曜日|開始時刻) で控える＝作り直しで消さないため */
-        prevBath[pe.dayOfWeek + '|' + pe.startTime] = !!pe.bathing;
-      }
-      dres.events = keep2;
-      for (var dk in du.days) {
-        if (!Object.prototype.hasOwnProperty.call(du.days, dk)) continue;
-        var tt = du.days[dk];
-        var dow2 = parseInt(dk, 10);
-        var st2 = minToHHMM(tt[0]);
-        /* 3要素目があればマスタの明示値、無ければ既存を引き継ぐ（未知≠入浴しない） */
-        var bath2 = (tt.length >= 3) ? !!tt[2] : !!prevBath[dow2 + '|' + st2];
-        dres.events.push({
-          id: M.genId('ev'), dayOfWeek: dow2,
-          serviceType: 'daycare', category: '',
-          startTime: st2, endTime: minToHHMM(tt[1]),
-          detail: '', notes: '', units: 0, bathing: bath2
-        });
-      }
-    }
+     * 2026-08-05: ここで master.daycare を元に対象者の daycare 予定を作り直す処理を【撤去】した。
+     * 支援マスタは通所の入浴（加算）を表現できないため、反映のたびに入浴が消えていた
+     * （実測 94件→0件を3度）。2026-08-03 に ①入浴の引き継ぎ ②マスタから daycare を落とす
+     * (stripMasterDaycare_) の2段で塞いだが、【①だけを持つ途中の版を読み込んだまま再読込していない端末】
+     * が1台残っており、そこから再発した（新旧混在・multi-device-sync 原則7）。
+     * 端末の更新状況に依存しない唯一の対策は、この関数自体がデイに触れないこと。
+     * 以後 master.daycare は【読まない】＝汚染されたマスタが来ても週間計画のデイ・入浴は不変。
+     *
+     * 副作用（意図的・2026-08-03 から継続）: 階(resident.floor)のマスタ反映と
+     * 「デイ専用者の自動作成」も行わない。階の正本は入居者マスタの居室
+     * （せせらぎ利用表は 居室→r.floor の順で解決する）。
+     * マスタからデイを供給する設計へ戻す場合は data-contracts.md §6-⑧ の手順に従うこと。
+     * 回帰テスト: tests/master_bathing.test.js */
     db.residents = residents;
     return db;
   }
@@ -11266,7 +11238,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (pushCareTimer) clearTimeout(pushCareTimer);
     pushCareTimer = setTimeout(pushCareNow, 2000);
   }
-  var carePushBusy_ = false, carePushAgain_ = false;
+  var carePushBusy_ = false, carePushAgain_ = false, careWipeNotified_ = false;
   function pushCareNow() {
     if (!syncOn()) return;
     if (carePushBusy_) { carePushAgain_ = true; return; }
@@ -11284,7 +11256,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         lastPushed.care = raw;
         dropCareOpsThrough_(opsMax);
         noteSyncSuccess_();
-      } else if (j && j.conflict) {
+      } else if (j && (j.conflict || j.error === 'bathwipe' || j.error === 'visitwipe')) {
+        /* bathwipe/visitwipe（2026-08-05 追加のサーバー側ガード）＝通所の入浴や訪問が一度に大量に
+           消える書き込みをサーバーが拒否した。拒否された以上サーバー側が正しいので、競合と同じ経路で
+           サーバー版を採用し、未送信のcare編集だけをジャーナルから再適用する＝自己修復。
+           ここを下の else（通信失敗扱い）へ落とすと「オフライン」と誤表示したまま、
+           同じ内容を永久に再送し続ける。 */
+        if (j.error && !careWipeNotified_) {
+          careWipeNotified_ = true;
+          toast('この端末の週間計画が古いためクラウドが保存を拒否しました。最新を取得します');
+        }
         pullCareNow(true);   /* adoptCare がジャーナル再適用→マージ結果を自動再送 */
       } else {
         setSyncState('⚠ オフライン（自動再試行）');
