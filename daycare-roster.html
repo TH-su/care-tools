@@ -1479,6 +1479,7 @@ let printTimer = null;
    （2026-08-05 運用指示「36名までは調整なしで1枚に入るように」を満たすための実装） */
 const SHEET_FS_BASE = 11, SHEET_TM_BASE = 10;   // 画面既定（CSS の table.sheet と一致させること）
 const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限（これ以下には縮めない）
+let fittedFs = 0;                               // 直近の印刷で縮小した文字サイズ（0=縮小なし）。利用者への通知に使う
 const PAGE_MM_H = { 'A4 portrait': 297, 'A4 landscape': 210, 'A3 portrait': 420, 'A3 landscape': 297 };
 const PAGE_MM_W = { 'A4 portrait': 210, 'A4 landscape': 297, 'A3 portrait': 297, 'A3 landscape': 420 };
 function pageMarginMm_(spec) { return spec ? (parseFloat(spec.margin) || 0) : 8; }   // 上下左右同値の指定のみ対象
@@ -1504,6 +1505,9 @@ function withPrintMetrics_(fn, spec) {
   const st = document.createElement('style');
   st.textContent =
     '.hdr,#toast,.tnav{display:none!important}.noprint{display:none!important}' +
+    /* 非表示設定が有効な時だけ凡例に出る注記。印刷時のみ表示＝再現しないと凡例を低く見積もり、
+       縮小が要る局面（37名〜）で「収まる」と誤判定して2枚に溢れる。@media print の規則と同内容にする。 */
+    '.hide-print-note{display:inline!important;font-weight:700}' +
     'html,body{width:' + w + 'px!important;min-width:0!important;overflow:visible!important}' +
     '.wrap{overflow:visible;padding:0;width:' + w + 'px!important}' +
     '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
@@ -1535,20 +1539,27 @@ function fitSheetPrint_(sc) {
   const sec = document.getElementById(sc);
   if (!sec || !sec.querySelector('table.sheet')) return;   // 対象は table.sheet の3タブのみ（利用表・週間名簿は従来どおり）
   const spec = PRINT_SPEC[sc];
+  if (spec && /\s/.test(String(spec.margin).trim())) return;   // 上下左右が同値でない margin は高さ算出が合わない＝フィットしない
   const avail = pageAvailPx_(spec);
-  withPrintMetrics_(() => {
-    setSheetFont_(SHEET_FS_BASE);                 // まず既定サイズで測る
-    let fs = SHEET_FS_BASE, h = measureSheetH_(sc), n = 0;
-    while (h > avail && fs > SHEET_FS_MIN && n < 8) {
-      let next = fs * (avail / h) * 0.995;        // 比例補正
-      if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
-      fs = Math.max(SHEET_FS_MIN, next);
-      setSheetFont_(fs);
-      h = measureSheetH_(sc);
-      n++;
-    }
-    if (fs >= SHEET_FS_BASE) setSheetFont_(null); // 既定で収まるなら変数を戻す＝画面・印刷とも従来どおり
-  }, spec);
+  try {
+    withPrintMetrics_(() => {
+      setSheetFont_(SHEET_FS_BASE);                 // まず既定サイズで測る
+      let fs = SHEET_FS_BASE, h = measureSheetH_(sc), n = 0;
+      while (h > avail && fs > SHEET_FS_MIN && n < 8) {
+        let next = fs * (avail / h) * 0.995;        // 比例補正
+        if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
+        fs = Math.max(SHEET_FS_MIN, next);
+        setSheetFont_(fs);
+        h = measureSheetH_(sc);
+        n++;
+      }
+      if (fs >= SHEET_FS_BASE) { setSheetFont_(null); fittedFs = 0; }   // 既定で収まる＝画面・印刷とも従来どおり
+      else fittedFs = fs;                            // 縮小した旨を呼び出し側へ知らせる（黙って小さくしない）
+    }, spec);
+  } catch (e) {
+    // 測定に失敗したら縮小を持ち越さない（画面が縮んだままになる方が害が大きい）
+    setSheetFont_(null); fittedFs = 0;
+  }
 }
 function clearPrintState_() {
   clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
@@ -1569,6 +1580,8 @@ function printNow() {
     document.head.appendChild(st);      // 静的<style>より後にappend＝後勝ち
   }
   fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
+  // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）
+  if (fittedFs) toast('1枚に収めるため文字を ' + fittedFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
   if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
     const host = $('printBatch');
     host.textContent = '';
