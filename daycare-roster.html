@@ -1528,9 +1528,10 @@ function renderWeekly(ppl) {
 const PRINT_SPEC = {
   'sc-roster':  null,                                              // 静的@page(A4縦8mm)をそのまま使う＝注入しない
   'sc-daylist': { size: 'A3 portrait',  margin: '8mm' },   /* 上段+下段で行数が多くA4横1枚に入らないためA3縦。備考は表の下＝横幅は全幅使用 */
-  /* ★2026-08-05: A4横→A3縦。印字可能幅は 1062px で同じだが、高さが 733→1527px と倍になる。
-     行を高く・文字を大きくしても1枚に収まる（運用指示「上下に伸ばして大きく」）。 */
-  'sc-allweek': { size: 'A3 portrait', margin: '8mm' },
+  /* ★2026-08-05: 一度 A3縦へ広げたが、運用指示により A4横へ戻した。
+     文字の拡大は「氏名が2行に折り返さない上限」で頭打ちになるため、A3の縦の余りは活かせない。
+     印字可能幅は A3縦・A4横とも 1062px で同じ＝列幅の設計（時刻列の拡幅）はそのまま活きる。 */
+  'sc-allweek': { size: 'A4 landscape', margin: '8mm' },
   'sc-med':     { size: 'A4 landscape', margin: '8mm' },
   'sc-weekly':  { size: 'A4 portrait',  margin: '15mm 5mm 0 5mm' }
 };
@@ -1550,15 +1551,55 @@ let printTimer = null;
    （2026-08-05 運用指示「36名までは調整なしで1枚に入るように」を満たすための実装） */
 const SHEET_FS_BASE = 11, SHEET_TM_BASE = 10;   // 画面既定（CSS の table.sheet と一致させること）
 const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限（これ以下には縮めない）
-/* ★拡大の上限（2026-08-05 運用指示「表は上下に伸ばして大きく」）。
-   A3縦は印字可能高が 1527px あり、47名でも既定11pxでは 990px しか使わない（余り 537px）。
-   余った縦を文字の大きさへ回す。★列幅は変えないため、上限は【時刻列(46px)に太字の「13:00」が
-   欠けずに収まる最大】で決まる。実測で確認したうえでこの値にしている（fs=15 → 時刻 13.6px）。
-   氏名列は折返すため欠けない（高さに転嫁され、収まらなければ下のループが縮める）。
+/* ★拡大の上限（2026-08-05 運用指示）。実際に適用されるのは次の3つの最小値:
+     ① このタブ別上限 … 時刻列(46px)に太字の「13:00」が欠けずに収まる最大（実測 15px）
+     ② nameFitMaxFs_ … 氏名が2行に折り返さない最大（実データの最長氏名から算出・通常はこれが効く）
+     ③ 用紙1枚に収まること … 下の実測ループ
    ★拡大の対象は【時刻列を広げた2帳票だけ】。薬用(sc-med)は時刻列が 34px のままで、実測すると
      15px では「9:00」の末尾が欠ける（192セル）。運用指示の対象外でもあるため従来どおり据え置く。 */
 const SHEET_FS_MAX_BY_TAB = { 'sc-daylist': 15, 'sc-allweek': 15 };
 function sheetFsMax_(sc) { return SHEET_FS_MAX_BY_TAB[sc] || SHEET_FS_BASE; }
+
+/* 氏名が2行に折り返さない最大の文字サイズ（2026-08-05 運用指示）。
+ * 氏名列の幅は固定なので、上限は【いちばん長い氏名】だけで決まる。表示中の実データから測る＝
+ * 入居者が入れ替われば自動で追従する（定数で決め打ちしない）。
+ * 文字の幅は font-size に比例するので、基準サイズでの実測幅から比例計算で求める。
+ * ★既定サイズ(11px)より小さくはしない。既定で折り返す長い氏名が1人でも居ると全体が
+ *   際限なく小さくなるため。その場合は現状維持＝画面と同じ見え方に留める。 */
+function nameFitMaxFs_(sc, capMax) {
+  const cells = document.querySelectorAll('#' + sc + ' table.sheet td.c-nm');
+  if (!cells.length) return capMax;
+  const cs = getComputedStyle(cells[0]);
+  /* ★安全代を取る。clientWidth は整数へ丸められ、文字幅も小数で出るため、ぴったりに合わせると
+     0.1px 足りずに折り返す（実測: 幅72.96 に対し内寸73 で折り返した）。2%＋1px 引いておく。 */
+  const avail = (cells[0].clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - 1) * 0.98;
+  if (!(avail > 0)) return capMax;
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;'
+    + 'font-family:' + cs.fontFamily + ';font-weight:' + cs.fontWeight
+    + ';letter-spacing:' + cs.letterSpacing + ';font-size:' + SHEET_FS_BASE + 'px';
+  document.body.appendChild(probe);
+  let maxW = 0;
+  const seen = Object.create(null);
+  for (let i = 0; i < cells.length; i++) {
+    // 合計行のラベル（「せせらぎ合計」等）は氏名列に置いているだけで氏名ではない。
+    // 従来から2行で運用しており、これを1行に収めようとすると氏名の上限が不当に下がる。
+    const row = cells[i].parentElement;
+    if (row && row.classList.contains('sum')) continue;
+    // 氏名の直後に（入院）が別行で入る場合があるので、先頭のテキストノード（＝氏名）だけを測る
+    const fc = cells[i].firstChild;
+    const t = String(((fc && fc.nodeType === 3) ? fc.nodeValue : cells[i].textContent) || '').trim();
+    if (!t || seen[t]) continue;
+    seen[t] = true;
+    probe.textContent = t;
+    const w = probe.getBoundingClientRect().width;
+    if (w > maxW) maxW = w;
+  }
+  probe.remove();
+  if (!(maxW > 0)) return capMax;
+  const fs = SHEET_FS_BASE * (avail / maxW);
+  return Math.max(SHEET_FS_BASE, Math.min(capMax, Math.floor(fs * 100) / 100));
+}
 let fittedFs = 0;                               // 直近の印刷で適用した文字サイズ（0=既定のまま）。通知に使う
 const PAGE_MM_H = { 'A4 portrait': 297, 'A4 landscape': 210, 'A3 portrait': 420, 'A3 landscape': 297 };
 const PAGE_MM_W = { 'A4 portrait': 210, 'A4 landscape': 297, 'A3 portrait': 297, 'A3 landscape': 420 };
@@ -1643,7 +1684,9 @@ function fitSheetPrint_(sc) {
         /* 余白がある → 1枚に収まる範囲で大きくする（2026-08-05 運用指示「上下に伸ばして大きく」）。
            ★必ず「収まることを実測してから採用」する。溢れた候補は採らずに直前の値で確定する
            （＝拡大が原因で2枚に流れることが構造的に起きない）。 */
-        let best = SHEET_FS_BASE, fsMax = sheetFsMax_(sc);
+        /* 拡大の上限は「タブ別の上限」と「氏名が1行に収まる上限」の小さい方
+           （2026-08-05 運用指示: 氏名を2行にしない） */
+        let best = SHEET_FS_BASE, fsMax = nameFitMaxFs_(sc, sheetFsMax_(sc));
         while (fs < fsMax && n < 8) {
           let next = Math.min(fsMax, fs * (avail / h) * 0.99);
           if (!(next > fs + 0.05)) break;           // これ以上伸びない（収束）
