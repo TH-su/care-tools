@@ -7801,8 +7801,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var imp_ = masterApplyImpact_(master, care0);
     /* 置き換わるものが1つでもあるなら、版が【古い】または【読めない】マスタは自動適用しない。
      * 版が読めない場合に素通りさせると、外部生成・旧形式・手貼りのマスタが何年前でも黙って適用される
-     * （fail-closed に倒す）。デイ予定と階も無条件に置換されるので visit だけでは判定しない。 */
-    if ((age_ >= 3 || age_ < 0) && (imp_.replacedEv > 0 || imp_.dcReplaced > 0)) {
+     * （fail-closed に倒す）。※デイ予定と階は 2026-08-05 以降マスタ反映の対象外＝visit だけで判定する。 */
+    if ((age_ >= 3 || age_ < 0) && imp_.replacedEv > 0) {
       var wk_ = 'ws_master_stale_warned', warned_ = '';
       try { warned_ = localStorage.getItem(wk_) || ''; } catch (e0) {}
       if (warned_ !== stamp && staleWarned_ !== stamp) {
@@ -7901,12 +7901,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var lst = (master.weekdays && master.weekdays[DOWK[i]]) || [];
       for (j = 0; j < lst.length; j++) if (lst[j].residentName) inM[lst[j].residentName] = true;
     }
-    /* デイは master.daycare 側で無条件に置換され floor も上書きされる。
-     * 訪問だけを見て「触りません」と言うとダイアログが嘘になるため、デイも数える。 */
-    var inD = {};
-    var dl = (master.daycare) || [];
-    for (i = 0; i < dl.length; i++) if (dl[i].residentName) inD[dl[i].residentName] = true;
-    var replaced = 0, replacedEv = 0, keptRes = 0, keptEv = 0, newRes = 0, dcReplaced = 0;
+    /* ★2026-08-05: masterToCareDb はデイ(daycare)にも floor にも【一切触れない】ようになった。
+     * よってデイの影響件数は常に0。master.daycare を数えて「置き換わる」と表示すると、
+     * 汚染マスタを掴んだ時に事実に反する警告を出し、現場はそれを見て承認してしまう。
+     * 数えるのをやめ、0固定にする（呼び出し側の互換のためフィールドは残す）。 */
+    var replaced = 0, replacedEv = 0, keptRes = 0, keptEv = 0, newRes = 0;
+    var dcReplaced = 0;   /* 常に0。デイはマスタ反映の対象外（data-contracts §6-⑧ 最終形）。
+                             戻り値のフィールドは互換のため残すが、増えることはない */
     var known = {};
     var list = (care && care.residents) || [];
     for (i = 0; i < list.length; i++) {
@@ -7916,11 +7917,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (j = 0; j < evs.length; j++) if (evs[j].serviceType === 'visit') v++;
       if (inM[r.name]) { replaced++; replacedEv += v; }
       else if (v > 0) { keptRes++; keptEv += v; }
-      if (inD[r.name]) dcReplaced++;
     }
     var newNames = [];
     for (var nm in inM) if (!known[nm]) { newRes++; newNames.push(nm); }
-    for (var nd in inD) if (!known[nd] && !inM[nd]) { newRes++; newNames.push(nd); }
     return { replaced: replaced, replacedEv: replacedEv, keptRes: keptRes, keptEv: keptEv,
              newRes: newRes, newNames: newNames, dcReplaced: dcReplaced };
   }
@@ -7939,7 +7938,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       '使用するマスタ: ' + masterLabel_(master) + '\n\n' +
       '・置き換わる利用者: ' + imp.replaced + '名（現在の訪問予定 ' + imp.replacedEv + '件はマスタの内容に入れ替わります）\n' +
       '・そのまま残る利用者: ' + imp.keptRes + '名（訪問予定 ' + imp.keptEv + '件。マスタに載っていないため【訪問予定は】触りません）\n' +
-      (imp.dcReplaced ? '・通所（デイ）予定が置き換わる利用者: ' + imp.dcReplaced + '名\n' : '') +
+      '・通所（デイ）の予定・入浴・階：【変更しません】（マスタからは反映しない仕様です）\n' +
       (imp.newRes ? '・マスタにだけ居る利用者: ' + imp.newRes + '名が新規に追加されます\n' +
         '　　' + imp.newNames.slice(0, 5).join('、') +
         (imp.newNames.length > 5 ? ' ほか' + (imp.newNames.length - 5) + '名' : '') + '\n' +
@@ -11256,6 +11255,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         lastPushed.care = raw;
         dropCareOpsThrough_(opsMax);
         noteSyncSuccess_();
+        careWipeNotified_ = false;   /* 一度成功したら次の拒否も必ず知らせる（繰り返し失敗を無言にしない） */
       } else if (j && (j.conflict || j.error === 'bathwipe' || j.error === 'visitwipe')) {
         /* bathwipe/visitwipe（2026-08-05 追加のサーバー側ガード）＝通所の入浴や訪問が一度に大量に
            消える書き込みをサーバーが拒否した。拒否された以上サーバー側が正しいので、競合と同じ経路で
