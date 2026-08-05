@@ -2331,6 +2331,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(remapped, staff) };
   }
 
+  /* 退去/入院/入居前マスクの適用方針（純関数・2026-08-05 追加）。
+   *
+   * マスクは「現在の週間計画」から毎描画導出し、**利用者の氏名の文字列一致**で効く。
+   * そのため後日その利用者を退去にすると、過去に確定した盤面の枠まで消える。
+   * さらに氏名の表記ゆれ（旧表記が盤面に残っている）があると、
+   * 「同一人物の旧表記の重複行」を退去にしただけで**確定済みの枠が丸ごと消える**
+   * （2026-08-05 実測: ロック済みの8/5〜8/31 で 100枠が非表示になった）。
+   *
+   * 方針:
+   *   ① ロック済みの過去日 … 一切マスクしない（保存時点の実績を忠実に表示・印刷する）
+   *   ② ロック済みの当日・未来日 … 入院/入居前は極薄＋押印□抑止。**退去も枠は消さず**同じ極薄にする
+   *      （ロック＝確定した予定。誤実施は極薄と押印□抑止で防ぎ、「何が入っていたか」は失わない）
+   *   ③ 未ロック日 … 従来どおり退去者の枠は完全非表示（reconcileWeeklyCore_ が予定ごと削除する運用と揃える）
+   *
+   * 返り値: { maskAll: 何らかのマスクを掛けるか, hideMoved: 退去者の枠を消すか }
+   * ★hideMoved が true になるのは「未ロック日」だけ。ロック日で true にしてはいけない。 */
+  function careMaskPolicy(meta, todayKey) {
+    var locked = !!(meta && meta.locked);
+    var date = (meta && meta.date) ? String(meta.date) : '';
+    if (locked && date && todayKey && date < String(todayKey)) return { maskAll: false, hideMoved: false };
+    return { maskAll: true, hideMoved: !locked };
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -2370,7 +2393,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     skipRefMatches: skipRefMatches_,
     coalesceSkipRefs: coalesceSkipRefs,
     cloneNotesForWeekCopy_: cloneNotesForWeekCopy_,
-    mergeNotes3_: mergeNotes3_
+    mergeNotes3_: mergeNotes3_,
+    careMaskPolicy: careMaskPolicy
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -5504,6 +5528,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (t.done) cls += ' done';
     if (ex.hosp) cls += ' hosp';
     if (ex.pre) cls += ' pre-admit';   /* 入居前＝まだ実施しない枠。見た目は入院と同じ極薄 */
+    if (ex.moved) cls += ' hosp';      /* ロック日の退去者＝枠は残し極薄（消さない・2026-08-05） */
     if (t.groupId) cls += ' grouped';           /* グループ化固定（画面で点線色アウトライン＋🔗） */
     if (selectedIds && selectedIds.indexOf && selectedIds.indexOf(t.id) >= 0) cls += ' selected';
     var b = el('div', cls);
@@ -5512,7 +5537,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* カスタム配色: 全枠(業務枠＋利用者支援枠)に適用。画面・印刷とも反映。印刷の p-task 白背景や
      * k-free/k-admin 既定色(!important)より優先させるため inline important。文字色は指定 or 背景輝度で
      * 自動判定＝可読性を担保。入院枠(hosp)・入居前枠(pre)は極薄/斜線表示を優先するため配色をスキップ。 */
-    if (t.bgColor && !ex.hosp && !ex.pre) {
+    if (t.bgColor && !ex.hosp && !ex.pre && !ex.moved) {
       b.style.setProperty('background-color', t.bgColor, 'important');
       b.style.setProperty('color', t.textColor || autoText_(t.bgColor), 'important');
     }
@@ -5572,7 +5597,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* pt-name-fac(細字淡色の施設業務名スタイル)は業務枠(admin/facility)専用。利用者支援は時間非表示でも通常の氏名スタイル。 */
       var facName = hideTime && t.kind !== 'care';
-      var nmEl = txt('div', 'pt-name' + (facName ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : (ex.pre ? '（入居前）' : '')));
+      var nmEl = txt('div', 'pt-name' + (facName ? ' pt-name-fac' : ''), nameText + (ex.hosp ? '（入院中）' : (ex.pre ? '（入居前）' : (ex.moved ? '（退去）' : ''))));
       if (facName) {
         /* 施設業務名(要件B5): 13px固定をやめ、1行ぶんの高さから適度に拡大(13〜21px)。
          * 事務(admin)は施設業務より少し大きめ(×1.15・上限24px・要件3)。 */
@@ -5594,7 +5619,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 内容メモ行は実施チェック対象でない(画面もmemo行に□無し)。非care枠のmemo行は□を出さない。
            * care枠のmemo行・内容(contents)行は従来どおり□を出す(既存挙動を無断変更しない)。 */
           var noCb = (pi === memoIdx && t.kind !== 'care');
-          if (!ex.hosp && !ex.pre && !noCb) row.appendChild(txt('span', 'pt-cb' + (chk ? ' cb-done' : ' cb-empty'), chk ? '☑' : '□'));
+          if (!ex.hosp && !ex.pre && !ex.moved && !noCb) row.appendChild(txt('span', 'pt-cb' + (chk ? ' cb-done' : ' cb-empty'), chk ? '☑' : '□'));
           b.appendChild(row);
         }
       }
@@ -5817,6 +5842,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var hospSet = opts.hospSet || {};
     var moSet = opts.movedOutSet || {};
     var preSet = opts.preSet || {};   /* 入居前。退去(moSet)と違い枠は消さない＝極薄で残す */
+    /* ★ロック日の退去者（2026-08-05 追加）: 枠を消さず極薄＋押印□抑止で残す。
+     * 退去マスクは【氏名の文字列一致】で効くため、盤面に旧表記が残っている利用者の
+     * 旧表記行を退去にしただけで、確定済み（ロック済み）の枠が丸ごと消えた（実測100枠）。
+     * ロック＝確定した予定なので「消す」ではなく「実施しないと分かる形で残す」が正しい。 */
+    var moSoftSet = opts.movedOutSoftSet || {};
     for (var t = 0; t < day.tasks.length; t++) {
       var task = day.tasks[t];
       if (task.kind === 'care' && moSet[task.residentName]) continue;  /* 退去者のケアは盤面・印刷とも非表示（入院=極薄に対し退去=完全非表示） */
@@ -5827,7 +5857,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!laneEl) continue;
       var ex = { print: !!opts.printMode,
                  hosp: !!(task.kind === 'care' && hospSet[task.residentName]),
-                 pre: !!(task.kind === 'care' && preSet[task.residentName]) };
+                 pre: !!(task.kind === 'care' && preSet[task.residentName]),
+                 moved: !!(task.kind === 'care' && moSoftSet[task.residentName]) };
       /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する */
       if (!opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
           (task.kind === 'facility' || task.kind === 'free') &&
@@ -7858,10 +7889,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 保存時点の盤面を忠実に表示/印刷する。
    * ★当日・未来日はロック中でもマスクを維持する: 現に入院中の利用者が通常枠＋押印□付きで印刷されると
    *   誤実施/誤押印を誘発するため(敵対的検証で検出)。未ロック日は従来どおり。board.js は無改変。 */
+  /* 判定は M.careMaskPolicy（純関数・tests/care_mask_policy.test.js で不変条件を固定）に委ねる。
+   * ここは名前集合を当てはめるだけ＝ロジックを2箇所に持たない。 */
   function careMaskSets_(day) {
-    var dt = day && day.meta && day.meta.date;
-    if (day && day.meta && day.meta.locked && dt && dt < todayKey()) return { hosp: {}, moved: {}, pre: {} };
-    return { hosp: hospitalizedNames(), moved: movedOutNames(), pre: preAdmittedNames() };
+    var pol = M.careMaskPolicy(day && day.meta, todayKey());
+    if (!pol.maskAll) return { hosp: {}, moved: {}, pre: {}, movedSoft: {} };
+    var mv = movedOutNames();
+    return { hosp: hospitalizedNames(), pre: preAdmittedNames(),
+             moved: pol.hideMoved ? mv : {},          /* 枠を消す（未ロック日のみ） */
+             movedSoft: pol.hideMoved ? {} : mv };    /* 枠は残し極薄＋押印□抑止（ロック日） */
   }
   function autoLoadMaster() {
     /* 同フォルダの ws-master.json を毎回確認し、内容が変わっていれば自動更新する
@@ -8001,7 +8037,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     var msk_ = careMaskSets_(day);   /* ロック日は退去/入院で実績を間引かない */
     B.render($('board'), day, zones, scale,
-      { selectedIds: ui.selectedIds, hospSet: msk_.hosp, movedOutSet: msk_.moved, preSet: msk_.pre });
+      { selectedIds: ui.selectedIds, hospSet: msk_.hosp, movedOutSet: msk_.moved, preSet: msk_.pre, movedOutSoftSet: msk_.movedSoft });
 
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
@@ -9032,7 +9068,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     printScale.nightPxMin = TS.PRINT_NIGHT_PX_MIN;
     var pmsk_ = careMaskSets_(day);   /* ロック日は退去/入院で実績を間引かない(印刷も忠実)。枠数はA3寸法(レーン×時間軸)に非依存＝フィット不変 */
     B.render(board, day, pz, printScale,
-      { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, printMode: true });
+      { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, movedOutSoftSet: pmsk_.movedSoft, printMode: true });
     board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
     board.style.minWidth = '0'; board.style.width = '';
     var w = measurePrintW_(board);
@@ -9049,7 +9085,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var ps2 = TS.buildScale(pz2);
       ps2.nightPxMin = TS.PRINT_NIGHT_PX_MIN * k;
       B.render(board, day, pz2, ps2,
-        { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, printMode: true });
+        { selectedIds: [], hospSet: pmsk_.hosp, movedOutSet: pmsk_.moved, preSet: pmsk_.pre, movedOutSoftSet: pmsk_.movedSoft, printMode: true });
       board.style.transform = ''; board.style.transformOrigin = ''; board.style.zoom = '';
       board.style.minWidth = '0'; board.style.width = '';
       w = measurePrintW_(board);
