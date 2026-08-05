@@ -2456,6 +2456,22 @@ const SYNC = {
       const j = await this.gas({ action: 'ping' });
       if (!j.ok) throw new Error(j.error || '応答エラー');
       this.log('✅ 接続OK：統合GASが正常に応答しました' + (j.server ? '（' + j.server + '）' : ''));
+      /* サーバー側の版と防御機能を表示する（2026-08-05）。Apps Script は「保存」だけでは /exec に
+         反映されず、デプロイを管理→新バージョン まで進めて初めて切り替わる。その取り違えを
+         データを壊さずに見分けられるようにする（multi-device-sync 原則7 能力宣言）。 */
+      const guards = Array.isArray(j.guards) ? j.guards : null;
+      if (j.codeVersion || guards) {
+        this.log('　サーバー版：' + (j.codeVersion || '(不明)')
+          + (guards ? '／防御：' + guards.join('・') : ''));
+      }
+      if (guards && guards.indexOf('bathwipe') >= 0) {
+        this.log('　✅ 通所の入浴（加算）の一括消失ガードは有効です'
+          + (j.bathDropMax ? '（1回で ' + j.bathDropMax + ' 件以上減る保存を拒否）' : ''));
+      } else {
+        this.log('　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。'
+          + 'Apps Script で コードを保存しただけになっていないか確認してください'
+          + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）');
+      }
     } catch(e) {
       this.log('❌ 接続失敗: ' + e.message + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
     }
