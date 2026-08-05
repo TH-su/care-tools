@@ -123,8 +123,11 @@ tr.tot.use td { color: var(--pri-d); }
 
 /* ===== 共通: 帳票テーブル（View1/2/3）===== */
 table.sheet { border-collapse: collapse; background: #fff; margin: 0 auto; table-layout: fixed; box-shadow: var(--sh); }
+/* ★文字サイズは変数化してある（2026-08-05）。印刷時は fitSheetPrint_ が用紙に収まる最大値へ
+   自動調整する。画面は既定値のまま＝画面表示は従来と同じ見え方。 */
+table.sheet { --sh-fs: 11px; --sh-tm: 10px; }
 table.sheet th, table.sheet td {
-  border: 1px solid var(--line); padding: 1px 3px; font-size: 11px; line-height: 1.25;
+  border: 1px solid var(--line); padding: 1px 3px; font-size: var(--sh-fs); line-height: 1.25;
   text-align: center; overflow: hidden; white-space: nowrap;
 }
 /* ★列幅は必ず <colgroup> で宣言する。table-layout:fixed は列幅を「最初の行」からしか読まないため、
@@ -140,10 +143,14 @@ table.sheet col.w-sec   { width: 24px; }
 table.sheet col.w-rn    { width: 20px; }
 table.sheet col.w-rn-aw { width: 44px; }    /* 全員リスト用 No.列（合計行の「入居者」を収める・★JS W.rnAw と一致必須） */
 table.sheet col.w-nm    { width: 80px; }    /* med用 氏名列（右に備考・拡幅で折返し減＝行高も下がる） */
-table.sheet col.w-nm-aw { width: 96px; }    /* 全員リスト用 氏名列（備考が無いぶん広い・★JS W.nmAw と一致必須） */
-table.sheet col.w-nm-dl { width: 100px; }   /* デイ利用者一覧表用 氏名列（備考が表の下＝全幅で最大化・★JS W.nmDl と一致必須） */
+/* ★2026-08-05 運用指示: 氏名欄が広く時刻が小さくて読みづらいため、氏名を縮めて時刻へ回した。
+   表の総幅(1052px)は据え置き＝用紙の幅予算(1062px)は変えていない。
+   氏名76px でも .c-nm は折返す（欠けない）。時刻46px なら 13px 太字の「13:00」が余裕で入る。 */
+table.sheet col.w-nm-aw { width: 76px; }    /* 全員リスト用 氏名列（★JS W.nmAw と一致必須） */
+table.sheet col.w-nm-dl { width: 76px; }    /* デイ利用者一覧表用 氏名列（★JS W.nmDl と一致必須） */
 table.sheet col.w-tm    { width: 34px; }
-table.sheet col.w-tm-aw { width: 36px; }    /* 全員リスト用 時刻列（★JS W.tmAw と一致必須） */
+table.sheet col.w-tm-aw { width: 46px; }    /* 全員リスト用 時刻列（★JS W.tmAw と一致必須） */
+table.sheet col.w-tm-dl { width: 46px; }    /* デイ利用者一覧表用 時刻列（★JS W.tmDl と一致必須） */
 /* 氏名は欠けさせない: 最小の氏名列(med=80px)でも nowrap だと8文字以上で末尾が切れる。
    氏名の欠落は帳票として許容できないため折返す（既存の利用表タブと同じ方針）。
    ★padding を詰めるのは必須。折返しの判定は「内容ボックス」で行われる一方 overflow:hidden は
@@ -156,7 +163,10 @@ table.sheet .c-nm {
 /* 時刻セル: 34px 列でも 11px フォントの「13:00」(31.6px)は描画可能幅に入らない。
    34 − 左右border/padding を引くと実質 30px 前後で末尾の「0」が欠ける（開始9:00は4文字で収まり見落としやすい）。
    列は幅予算(1062px)の都合で広げられないので、padding を詰めて 10px フォントで収める。 */
-table.sheet .c-tm { color: var(--g7); font-size: 10px; padding-left: 1px; padding-right: 1px; }
+/* 時刻は帳票で最も読まれる値。太字にして視認性を上げる（2026-08-05 運用指示）。
+   色も本文と同じ濃さへ（従来の --g7 は薄く、縮小印刷で沈んでいた）。 */
+table.sheet .c-tm { color: var(--g9); font-size: var(--sh-tm); font-weight: 700;
+  padding-left: 1px; padding-right: 1px; }
 /* （入院）は氏名の右に置くと氏名列に入らず、タグごと・氏名の一部ごと欠ける。
    氏名の下段へ回して両方を残す（入院者の行だけ2行になる）。table.sheet 限定＝既存の利用表は無改変。 */
 table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: 9px; line-height: 1.1; }
@@ -1062,11 +1072,11 @@ function renderRoster(db) {
 // ★この値は CSS の col.w-* と必ず一致させること（食い違うと fixed が差分を再配分し CSS 側が無効化される）。
 // rnAw/nmAw/tmAw=全員リスト用（ふりがな列を廃止した110pxを全列へ均等配分した値）／
 // nmDl=デイ利用者一覧表用（備考を表の下へ出すぶん氏名列を最大化）
-const W = { sec: 24, rn: 20, nm: 80, tm: 34, rnAw: 44, nmAw: 96, tmAw: 36, nmDl: 100 };
+const W = { sec: 24, rn: 20, nm: 80, tm: 34, rnAw: 44, nmAw: 76, tmAw: 46, nmDl: 76, tmDl: 46 };
 const TBL_W = {
   day:     W.sec + W.rn + NDAY * (W.nm   + W.tm * 2),   // 932  med：右に備考112+gap8=1052 ≦ 1062
-  daylist: W.sec + W.rn + NDAY * (W.nmDl + W.tm * 2),   // 1052 デイ利用者一覧表：備考は表の下＝全幅（≦A3縦 1062）
-  allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)        // 1052 全員リスト：A4横ほぼ最大（余裕10px）
+  daylist: W.sec + W.rn + NDAY * (W.nmDl + W.tmDl * 2), // 1052 デイ利用者一覧表：24+20+6×(76+46+46)（≦A3縦 1062）
+  allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)        // 1052 全員リスト：44+6×(76+46+46)（≦A3縦 1062）
 };
 function colgroupFor(kind) {
   const cg = el('colgroup');
@@ -1075,7 +1085,8 @@ function colgroupFor(kind) {
   if (kind === 'allweek') { cg.appendChild(el('col', 'w-rn-aw')); nmCol = 'w-nm-aw'; tmCol = 'w-tm-aw'; }
   else {
     cg.appendChild(el('col', 'w-sec')); cg.appendChild(el('col', 'w-rn'));
-    nmCol = (kind === 'daylist') ? 'w-nm-dl' : 'w-nm';
+    if (kind === 'daylist') { nmCol = 'w-nm-dl'; tmCol = 'w-tm-dl'; }
+    else { nmCol = 'w-nm'; }
   }
   for (let d = 0; d < NDAY; d++) {
     cg.appendChild(el('col', nmCol));
@@ -1219,7 +1230,17 @@ function renderDaylist(ppl) {
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
   // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
   const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
-  sumRow(tbody, 'せせらぎ合計', sese);
+  const seseSum = sumRow(tbody, 'せせらぎ合計', sese);
+  seseSum.classList.add('cut-above');   // ここで表を切る＝上側の締め（太線）
+  /* ★2026-08-05 運用指示: せせらぎ合計より下を切り離し、2行ぶんの空間と大見出しを置く。
+     1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
+     表を2つに割ると列がずれる。 */
+  const gap = el('tr', 'cut-gap');
+  const gapTd = el('td', null, ''); gapTd.colSpan = 2 + NDAY * 3; gap.appendChild(gapTd);
+  tbody.appendChild(gap);
+  const ttl = el('tr', 'cut-title');
+  const ttlTh = el('th', null, 'デイ休み（２階で昼食）'); ttlTh.colSpan = 2 + NDAY * 3; ttl.appendChild(ttlTh);
+  tbody.appendChild(ttl);
   // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
   dayHeaderRows(true).forEach(r => tbody.appendChild(r));
   // ── 昼食（2階食堂）＝その日デイに行かない人 ──
@@ -1436,7 +1457,9 @@ function renderWeekly(ppl) {
 const PRINT_SPEC = {
   'sc-roster':  null,                                              // 静的@page(A4縦8mm)をそのまま使う＝注入しない
   'sc-daylist': { size: 'A3 portrait',  margin: '8mm' },   /* 上段+下段で行数が多くA4横1枚に入らないためA3縦。備考は表の下＝横幅は全幅使用 */
-  'sc-allweek': { size: 'A4 landscape', margin: '8mm' },
+  /* ★2026-08-05: A4横→A3縦。印字可能幅は 1062px で同じだが、高さが 733→1527px と倍になる。
+     行を高く・文字を大きくしても1枚に収まる（運用指示「上下に伸ばして大きく」）。 */
+  'sc-allweek': { size: 'A3 portrait', margin: '8mm' },
   'sc-med':     { size: 'A4 landscape', margin: '8mm' },
   'sc-weekly':  { size: 'A4 portrait',  margin: '15mm 5mm 0 5mm' }
 };
