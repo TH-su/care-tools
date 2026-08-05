@@ -1467,12 +1467,96 @@ const PRINT_SPEC = {
 // 次の印刷ジョブへ漏れるのを防ぐ。全ての印刷エントリポイントの先頭でも呼ぶ。
 // あわせて一括印刷用DOM（氏名を含む）を破棄する。
 let printTimer = null;
+
+/* ============================================================================
+   印刷フィット（fitSheetPrint_）— 用紙1枚に収まる最大の文字サイズへ自動調整する。
+   ★CSS の `table.sheet { --sh-fs / --sh-tm }` を書き換える方式。zoom や transform:scale と違い
+     文字が実解像度で描かれ罫線も潰れない（帳票＝与薬・食数の読み取りに直結するため画質優先）。
+   ★列幅（colgroup の px 指定）と表の総幅は変えない＝幅予算(1062px)と印刷レイアウトは不変。
+     縮むのは行の高さだけ。
+   収束は shift-app.html の shrinkZoomToFit と同じ考え方（比例補正→固定刻みフォールバック→反復上限）。
+   ★下限 SHEET_FS_MIN を下回ってまでは縮めない。読めない紙面を出すくらいなら2枚に流す。
+   （2026-08-05 運用指示「36名までは調整なしで1枚に入るように」を満たすための実装） */
+const SHEET_FS_BASE = 11, SHEET_TM_BASE = 10;   // 画面既定（CSS の table.sheet と一致させること）
+const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限（これ以下には縮めない）
+const PAGE_MM_H = { 'A4 portrait': 297, 'A4 landscape': 210, 'A3 portrait': 420, 'A3 landscape': 297 };
+const PAGE_MM_W = { 'A4 portrait': 210, 'A4 landscape': 297, 'A3 portrait': 297, 'A3 landscape': 420 };
+function pageMarginMm_(spec) { return spec ? (parseFloat(spec.margin) || 0) : 8; }   // 上下左右同値の指定のみ対象
+// 用紙の印刷可能高さ(px@96dpi)。spec 無し（利用表）は静的@page の A4縦8mm。
+function pageAvailPx_(spec) {
+  const mmH = (spec && PAGE_MM_H[spec.size]) ? PAGE_MM_H[spec.size] : 297;
+  return (mmH - pageMarginMm_(spec) * 2) / 25.4 * 96;
+}
+// 用紙の印刷可能幅(px@96dpi)。A3縦・A4横はどちらも 297mm 幅＝1062px（列幅予算の根拠）。
+function pageWidthPx_(spec) {
+  const mmW = (spec && PAGE_MM_W[spec.size]) ? PAGE_MM_W[spec.size] : 210;
+  return (mmW - pageMarginMm_(spec) * 2) / 25.4 * 96;
+}
+/* 画面のままでは実際の紙面高を測れない（@media print のルールが効かない）ため、高さに効く印刷ルール
+   だけを一時的に画面へ適用して測る。★ここは @media print の該当規則と必ず同じ内容に保つこと。
+   ★用紙の「幅」も再現する。凡例や表題は幅で折返し行数が変わるため、画面幅のまま測ると
+     窓が狭い端末で高さを過大に見積もり、不必要に小さい文字で印刷してしまう。 */
+function withPrintMetrics_(fn, spec) {
+  const w = Math.round(pageWidthPx_(spec));
+  const wrap = $('wrap');
+  const sx = window.pageXOffset, sy = window.pageYOffset;                 // 測定用に幅を変えるので
+  const wl = wrap ? wrap.scrollLeft : 0, wt = wrap ? wrap.scrollTop : 0;  // 閲覧位置を保全して戻す
+  const st = document.createElement('style');
+  st.textContent =
+    '.hdr,#toast,.tnav{display:none!important}.noprint{display:none!important}' +
+    'html,body{width:' + w + 'px!important;min-width:0!important;overflow:visible!important}' +
+    '.wrap{overflow:visible;padding:0;width:' + w + 'px!important}' +
+    '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
+    '#sc-daylist table.sheet td,#sc-daylist table.sheet th{padding-top:3px;padding-bottom:3px}' +
+    'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}';
+  document.head.appendChild(st);
+  try { return fn(); }
+  finally {
+    st.remove();
+    if (wrap) { wrap.scrollLeft = wl; wrap.scrollTop = wt; }
+    window.scrollTo(sx, sy);
+  }
+}
+/* ★--sh-fs/--sh-tm は CSS で table.sheet に定義されている。:root へ入れても table.sheet 自身の宣言が
+   勝つため、必ず各 table.sheet のインラインstyleへ設定する（インラインが最優先）。 */
+function setSheetFont_(fs) {
+  document.querySelectorAll('table.sheet').forEach(t => {
+    if (fs == null) { t.style.removeProperty('--sh-fs'); t.style.removeProperty('--sh-tm'); return; }
+    t.style.setProperty('--sh-fs', fs.toFixed(2) + 'px');
+    t.style.setProperty('--sh-tm', (fs * (SHEET_TM_BASE / SHEET_FS_BASE)).toFixed(2) + 'px');   // 時刻は本文との比率を維持
+  });
+}
+// 現在のタブの「紙に載る総高」= 凡例＋セクション（表題・表・備考を含む）
+function measureSheetH_(sc) {
+  const lg = $('legend'), sec = document.getElementById(sc);
+  return (lg ? lg.getBoundingClientRect().height : 0) + (sec ? sec.getBoundingClientRect().height : 0);
+}
+function fitSheetPrint_(sc) {
+  const sec = document.getElementById(sc);
+  if (!sec || !sec.querySelector('table.sheet')) return;   // 対象は table.sheet の3タブのみ（利用表・週間名簿は従来どおり）
+  const spec = PRINT_SPEC[sc];
+  const avail = pageAvailPx_(spec);
+  withPrintMetrics_(() => {
+    setSheetFont_(SHEET_FS_BASE);                 // まず既定サイズで測る
+    let fs = SHEET_FS_BASE, h = measureSheetH_(sc), n = 0;
+    while (h > avail && fs > SHEET_FS_MIN && n < 8) {
+      let next = fs * (avail / h) * 0.995;        // 比例補正
+      if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
+      fs = Math.max(SHEET_FS_MIN, next);
+      setSheetFont_(fs);
+      h = measureSheetH_(sc);
+      n++;
+    }
+    if (fs >= SHEET_FS_BASE) setSheetFont_(null); // 既定で収まるなら変数を戻す＝画面・印刷とも従来どおり
+  }, spec);
+}
 function clearPrintState_() {
   clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
   document.body.classList.remove('pr-batch');
   const nodes = document.querySelectorAll('#dyn-page');
   for (let i = 0; i < nodes.length; i++) nodes[i].remove();
   $('printBatch').textContent = '';     // ★氏名をDOMに残さない
+  setSheetFont_(null);                  // 印刷用に縮めた文字サイズを画面へ持ち越さない
 }
 function printNow() {
   clearPrintState_();
@@ -1484,6 +1568,7 @@ function printNow() {
     st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
     document.head.appendChild(st);      // 静的<style>より後にappend＝後勝ち
   }
+  fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
   if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
     const host = $('printBatch');
     host.textContent = '';
@@ -1515,6 +1600,7 @@ window.addEventListener('beforeprint', function () {
     st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
     document.head.appendChild(st);
   }
+  fitSheetPrint_(sc);   // Cmd/Ctrl+P 経路でも同じ自動フィットを通す
   if (sc === 'sc-weekly') {
     const host = $('printBatch');
     host.textContent = '';
