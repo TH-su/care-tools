@@ -144,9 +144,11 @@ table.sheet th, table.sheet td {
        allweek の No.列(44px)が広いのは合計行の「入居者」ラベルを収めるため。 */
 table.sheet col.w-sec   { width: 24px; }
 table.sheet col.w-rn    { width: 20px; }
-/* デイ利用者一覧表の No.列。印刷で文字を 15px まで拡大するため、20px だと2桁（10〜）が欠ける
-   （実測: sw=26 / cw=19）。表の総幅は 1052→1058px で用紙の幅予算 1062px 内に収まる。
-   ★JS W.rnDl と一致必須。 */
+/* デイ利用者一覧表の No.列。20px は 11px フォントの2桁（10〜）に対して元から余裕が無い
+   （内容幅は罫線・paddingを引くと約12px＝実測でも 60名規模で欠ける）。階ごとの連番が2桁に届くのは
+   人数が増えた時だけなので今まで表面化していなかった。6px 広げて確実に収める。
+   表の総幅は 1052→1058px で用紙の幅予算 1062px 内。★JS W.rnDl と一致必須。
+   ※印刷の文字拡大（最大15px）は .c-rn には効かない（下の min() で 11px 上限）。 */
 table.sheet col.w-rn-dl { width: 26px; }
 table.sheet col.w-rn-aw { width: 44px; }    /* 全員リスト用 No.列（合計行の「入居者」を収める・★JS W.rnAw と一致必須） */
 table.sheet col.w-nm    { width: 80px; }    /* med用 氏名列（右に備考・拡幅で折返し減＝行高も下がる） */
@@ -176,7 +178,9 @@ table.sheet .c-tm { color: var(--g9); font-size: var(--sh-tm); font-weight: 700;
   padding-left: 1px; padding-right: 1px; }
 /* （入院）は氏名の右に置くと氏名列に入らず、タグごと・氏名の一部ごと欠ける。
    氏名の下段へ回して両方を残す（入院者の行だけ2行になる）。table.sheet 限定＝既存の利用表は無改変。 */
-table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: 9px; line-height: 1.1; }
+/* 固定pxにすると印刷の文字拡大(最大15px)で本文の6割まで小さくなる。（入院）は帳票の判断材料なので
+   本文と連動させる（既定11px時は 9.02px＝従来と同値・画面と既存印刷は不変）。 */
+table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: calc(var(--sh-fs) * 0.82); line-height: 1.1; }
 /* No.列は「何番目か」を数えるだけの目盛りで、現場が読み取る値ではない。列幅(20〜26px)が固定なので
    印刷の文字拡大(最大15px)に付き合わせると2桁(10〜)が欠ける。ここだけ従来サイズを上限にする。 */
 table.sheet .c-rn { color: var(--g6); background: var(--g0); font-size: min(var(--sh-fs), 11px); }
@@ -254,7 +258,10 @@ table.sheet tr.cut-title th {
   font-size: calc(var(--sh-fs) * 1.6); line-height: 1.45; padding: 3px 4px; white-space: nowrap;
 }
 /* ☆は .c-tm セル内に置くため、放置すると時刻用の 10px を継承して視認性が落ちる。記号は 11px を保つ。 */
-.star { color: var(--ng); font-weight: 700; font-size: 11px; }   /* ☆＝訪問診療（元表の赤字☆） */
+.star { color: var(--ng); font-weight: 700; font-size: 11px; }   /* ☆＝訪問診療（元表の赤字☆）。凡例用の既定 */
+/* 帳票内の☆は本文と連動させる（既定11px時は従来と同値）。時刻セル(--sh-tm)を継承したままだと、
+   印刷の文字拡大時に☆だけ取り残されて見落とされる。 */
+table.sheet .star { font-size: var(--sh-fs); }
 .nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
 .note-box { white-space: pre-wrap; }
 .med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 12px; }
@@ -352,10 +359,11 @@ table.wk .wk-blank { color: transparent; }
 .print-batch { display: none; }
 
 /* 印刷日（用紙の右上・全帳票共通／2026-08-05 運用指示）。画面には出さない。
-   ★position:fixed は印刷で全ページに繰り返し描かれる＝一括6枚印刷でも各ページに入る。
-   ★本文の流れに入れない（＝行数・改ページ位置を1mmも動かさない）。重なりを避けるための
-     余白だけを既存要素へ足す。個人情報は含まないため印刷後にDOMから消す必要はない。 */
-.print-date { display: none; }
+   ★当初 position:fixed で用紙の右上へ重ねたが、①全ページに繰り返すかがブラウザ依存
+   ②2ページ目以降は右上が表の中身のため帳票を白く塗り潰す、の2点で採用できない。
+   凡例（帳票の見出し行）の右端へ【流れの中に】置く。凡例が長い帳票では折り返すだけで、
+   表の内容には決して重ならない。一括6枚印刷は凡例を出さないため各ページ先頭に .pg-date を置く。 */
+.print-date, .pg-date { display: none; }
 
 /* ===== 印刷 =====
    既定タブ(利用表)の A4縦 は静的 @page のまま＝現行完全無改変。
@@ -365,12 +373,13 @@ table.wk .wk-blank { color: transparent; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { overflow: visible; height: auto; background: #fff; }
   .hdr, #toast, .tnav { display: none !important; }
-  .legend { border-bottom: 1px solid #000; padding-right: 96px; }   /* 右上の印刷日と重ならない幅を空ける（box-sizing:border-box＝総幅は不変） */
-  .print-date {
-    display: block; position: fixed; top: 0; right: 0; z-index: 99;
-    font-size: 9px; line-height: 1.2; color: #000; background: #fff; padding: 1px 2px;
-  }
-  body.pr-batch .pg { padding-top: 5mm; }   /* 一括6枚: 各ページ上端に印刷日ぶんの逃げを作る */
+  .legend { border-bottom: 1px solid #000; }
+  /* 印刷日は凡例の右端。flex の margin-left:auto なので、凡例が短い帳票では右端へ、
+     長い帳票では折り返した行の右端へ回る＝表の内容には重ならない。 */
+  .print-date { display: inline-block; margin-left: auto;
+    font-size: 9px; line-height: 1.2; color: #000; white-space: nowrap; }
+  body.pr-batch .pg-date { display: block; text-align: right; font-size: 9px; line-height: 1.2;
+    color: #000; padding: 0 2mm 1mm 0; }
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
   /* 印刷時は列幅を詰めてA4縦の印刷可能幅(≈733px@96dpi)に確実に収める（固定列幅の合計＜用紙幅）。
@@ -424,9 +433,6 @@ table.wk .wk-blank { color: transparent; }
 </style>
 </head>
 <body>
-
-<!-- 印刷日（用紙右上・印刷時のみ表示）。中身は印刷の直前に stampPrintDate_() が入れる。 -->
-<div class="print-date" id="printDate" aria-hidden="true"></div>
 
 <header class="hdr">
   <span class="hdr-title">通所せせらぎ</span>
@@ -1584,9 +1590,11 @@ function withPrintMetrics_(fn, spec) {
     '.hide-print-note{display:inline!important;font-weight:700}' +
     'html,body{width:' + w + 'px!important;min-width:0!important;overflow:visible!important}' +
     '.wrap{overflow:visible;padding:0;width:' + w + 'px!important}' +
-    /* 印刷日ぶんの右余白も再現する（@media print の .legend と同内容）。box-sizing:border-box なので
-       総幅は変わらないが、凡例の折返し位置＝高さが変わるため入れないと高さを過小評価する。 */
-    '.legend{width:' + w + 'px!important;padding-right:96px!important}table.sheet{box-shadow:none}' +
+    /* 印刷日も再現する（@media print の .print-date と同内容）。凡例の flex に入る要素なので、
+       出さずに測ると折返し＝高さを過小評価する。 */
+    '.print-date{display:inline-block!important;margin-left:auto;' +
+      'font-size:9px;line-height:1.2;white-space:nowrap}' +
+    '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
     '#sc-daylist table.sheet td,#sc-daylist table.sheet th{padding-top:3px;padding-bottom:3px}' +
     'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}';
   document.head.appendChild(st);
@@ -1655,13 +1663,19 @@ function fitSheetPrint_(sc) {
     setSheetFont_(null); fittedFs = 0;
   }
 }
-/* 用紙右上の印刷日を採り直す。タブを開きっぱなしの端末でも、印刷のたびに当日の日付になる。
+/* 印刷日の文字列（YYYY/MM/DD）。印刷のたびに採り直すのでタブを開きっぱなしでも古くならない。 */
+function printDateText_() {
+  const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
+  return '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
+}
+/* 凡例の右端に印刷日を置く（無ければ作る）。renderLegend の最後と、印刷の直前の両方から呼ぶ。
    ★印刷経路は printNow（印刷ボタン）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。両方から呼ぶ。 */
 function stampPrintDate_() {
-  const n = $('printDate');
-  if (!n) return;
-  const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
-  n.textContent = '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
+  const box = $('legend');
+  if (!box) return;
+  let n = box.querySelector('.print-date');
+  if (!n) { n = el('span', 'print-date'); box.appendChild(n); }
+  n.textContent = printDateText_();
 }
 function clearPrintState_() {
   clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
@@ -1692,6 +1706,7 @@ function printNow() {
     const ppl = MODEL || [];
     for (let d = 0; d < NDAY; d++) {
       const pg = el('div', 'pg');
+      pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
       pg.appendChild(weeklyTable(ppl, d));
       host.appendChild(pg);             // ★ちょうど6要素（末尾の空白ページ防止）
     }
@@ -1722,7 +1737,12 @@ window.addEventListener('beforeprint', function () {
   if (sc === 'sc-weekly') {
     const host = $('printBatch');
     host.textContent = '';
-    for (let d = 0; d < NDAY; d++) { const pg = el('div', 'pg'); pg.appendChild(weeklyTable(MODEL || [], d)); host.appendChild(pg); }
+    for (let d = 0; d < NDAY; d++) {
+      const pg = el('div', 'pg');
+      pg.appendChild(el('div', 'pg-date', printDateText_()));
+      pg.appendChild(weeklyTable(MODEL || [], d));
+      host.appendChild(pg);
+    }
     document.body.classList.add('pr-batch');
   }
   // afterprint 未発火の保険（printNow と同じ理由）。放置すると @page と氏名DOMが残り、
@@ -1783,6 +1803,7 @@ function renderLegend(sc) {
     box.appendChild(el('span', 'warn-badge noprint', '🙈 非表示 ' + hiddenNowCount + '名（全端末共通・右上で解除）'));
     box.appendChild(el('span', 'hide-print-note', '※非表示設定により ' + hiddenNowCount + '名を除外中'));
   }
+  stampPrintDate_();   // 印刷日は常に凡例の最後（＝右端）。印刷時のみ表示されるが、測定にも載せる
 }
 const TAB_KEY = 'dcr_activeTab';   // リロード後も同じタブを開くための端末保存（タブidは個人情報でない）
 function goto(sc) {

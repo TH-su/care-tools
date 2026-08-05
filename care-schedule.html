@@ -2349,6 +2349,12 @@ const SYNC = {
         var mine = JSON.parse(JSON.stringify(DB));   // 編集済みローカルを退避（pullが上書きする前）
         await this.pull();                            // サーバー版採用＝rev前進・DB=server
         DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
+        if (csBathRestored_) {                        // 入浴を戻したら必ず知らせる（黙って加算側へ倒さない）
+          this.updateStatusUI('要確認');
+          this.log('⚠ 競合の解消で通所の入浴 ' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました');
+          alert('競合の解消のため、通所の入浴（加算）' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました。\n\n'
+              + '入浴を外す操作をしていた場合は反映されていません。\n利用者の入浴設定をご確認のうえ、必要なら操作し直してください。');
+        }
         saveLocalOnly();
         try { recalcAllEventUnits(); } catch(e) {}
         renderAll();
@@ -2461,7 +2467,11 @@ const SYNC = {
    - イベントはidで union＝mine優先(ユーザーが触ったイベントはローカルが勝つ)＋server限定イベントは保持。
    これにより「自分の時間変更」を残しつつ「他端末/他利用者の正当な更新」も取りこぼさない。
    ※ローカル削除と他端末追加の3-way差は完全には区別不能(削除イベントが復活し得る)＝編集全消失より遥かに良い妥協。 */
+/* 直近のリベースで「クラウド側の入浴あり」に戻した件数。0以外なら呼び出し元が必ず人に知らせる。
+   黙って戻すと、自分がさっき外した入浴が入浴ありに復活したまま再送され、加算の過大計上になる。 */
+var csBathRestored_ = 0;
 function csRebaseEdits(server, mine) {
+  csBathRestored_ = 0;
   if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
   var out = JSON.parse(JSON.stringify(server));
   var byId = {}, i;
@@ -2487,10 +2497,12 @@ function csRebaseEdits(server, mine) {
          サーバー側で復旧済みの入浴を無言で巻き戻す（2026-08-03〜08-05 に3度発生した
          入浴消失の二次経路）。入浴は加算の根拠であり、消えると請求に直結する。
          multi-device-sync 原則5「消失より復活」に従い、どちらかが true なら true。
-         副作用: 競合中に他端末が入浴を外した操作は戻ることがある（もう一度外せば済む）。
-         入浴を外す操作自体は競合していなければ従来どおりそのまま通る。 */
+         ★副作用（重要）: 「入浴を外す → 保存前に他端末が別の編集をした」場合、
+         【自端末で外したばかりの入浴も】クラウド側の値に戻る。誤りの向きが入浴あり側＝
+         加算の過大計上側なので、戻した件数を csBathRestored_ に立てて呼び出し元が必ず知らせる。
+         入浴を外す操作自体は、競合していなければ従来どおりそのまま通る。 */
       var se = sById[id];
-      if (se && se.bathing === true && cp.bathing !== true) cp.bathing = true;
+      if (se && se.bathing === true && cp.bathing !== true) { cp.bathing = true; csBathRestored_++; }
       merged.push(cp); seen[id] = true;
     }
     for (k = 0; k < sEvents.length; k++) {            /* server限定イベントは保持 */
@@ -2626,6 +2638,7 @@ async function syncForcePush() {
   persistSyncInputs();
   try {
     if (SYNC.hasTarget()) {
+      SYNC.updateStatusUI('確認中…');   // GAS への往復は数秒かかる。無反応に見せない
       const j = await SYNC.gas({ action: 'get', key: 'care_schedule_v2' });
       if (j && j.ok && j.data) {
         const sv = csCountBathing(j.data), lc = csCountBathing(DB);
