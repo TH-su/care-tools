@@ -134,13 +134,20 @@ table.sheet th, table.sheet td {
    曜日見出しを colspan=3 で1行目に置く本表では、2行目に書いた幅指定は無視されて自動配分される。
    ★ここの値は JS の W（setupSheet が table 幅を明示するのに使う）と必ず一致させること。
    食い違うと fixed が差分を各列へ再配分し、colgroup 側の指定が黙って無効化される。
-   med(w-nm=80): 24+20+6×(80+34+34)=932px。右の備考パネル112+gap8 を足して 1052px ≦ 1062px。
-   daylist(w-nm-dl=100): 24+20+6×(100+34+34)=1052px。備考は表の下＝表は全幅（≦A3縦 1062px）。
-   allweek(備考なし・ふりがな列なし): 44+6×(96+36+36)=1052px ≦ A4横 1062px。
-     ★旧ふりがな列(110px)の廃止で空いた幅は全列へ均等に配り（No.+24／氏名+10×6／時刻+2×12）、
-       用紙いっぱいの表幅は維持した。No.列だけ広めなのは合計行の「入居者」ラベルを収めるため。 */
+   用紙の幅予算はどれも 1062px（A4横・A3縦とも 297mm − 余白8mm×2）。現在の内訳（2026-08-05 更新）:
+   med    : 24 + 20 + 6×(80+34+34) = 932px。右の備考パネル112+gap8 を足して 1052px ≦ 1062px
+   daylist: 24 + 26 + 6×(76+46+46) = 1058px ≦ 1062px。備考は表の下＝表は全幅
+   allweek: 44 +      6×(76+46+46) = 1052px ≦ 1062px
+     ★2026-08-05: 氏名(96/100→76)を縮めて時刻(36/34→46)へ回した。時刻は帳票で最も読まれる値だが
+       列が狭く小さい文字でしか収まらなかったため。氏名は折返すので欠けない（高さに転嫁される）。
+     ★daylist の No.列だけ 26px なのは、印刷の文字拡大(最大15px)で2桁が欠けたため（実測 sw=26/cw=19）。
+       allweek の No.列(44px)が広いのは合計行の「入居者」ラベルを収めるため。 */
 table.sheet col.w-sec   { width: 24px; }
 table.sheet col.w-rn    { width: 20px; }
+/* デイ利用者一覧表の No.列。印刷で文字を 15px まで拡大するため、20px だと2桁（10〜）が欠ける
+   （実測: sw=26 / cw=19）。表の総幅は 1052→1058px で用紙の幅予算 1062px 内に収まる。
+   ★JS W.rnDl と一致必須。 */
+table.sheet col.w-rn-dl { width: 26px; }
 table.sheet col.w-rn-aw { width: 44px; }    /* 全員リスト用 No.列（合計行の「入居者」を収める・★JS W.rnAw と一致必須） */
 table.sheet col.w-nm    { width: 80px; }    /* med用 氏名列（右に備考・拡幅で折返し減＝行高も下がる） */
 /* ★2026-08-05 運用指示: 氏名欄が広く時刻が小さくて読みづらいため、氏名を縮めて時刻へ回した。
@@ -170,7 +177,9 @@ table.sheet .c-tm { color: var(--g9); font-size: var(--sh-tm); font-weight: 700;
 /* （入院）は氏名の右に置くと氏名列に入らず、タグごと・氏名の一部ごと欠ける。
    氏名の下段へ回して両方を残す（入院者の行だけ2行になる）。table.sheet 限定＝既存の利用表は無改変。 */
 table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: 9px; line-height: 1.1; }
-table.sheet .c-rn { color: var(--g6); background: var(--g0); }
+/* No.列は「何番目か」を数えるだけの目盛りで、現場が読み取る値ではない。列幅(20〜26px)が固定なので
+   印刷の文字拡大(最大15px)に付き合わせると2桁(10〜)が欠ける。ここだけ従来サイズを上限にする。 */
+table.sheet .c-rn { color: var(--g6); background: var(--g0); font-size: min(var(--sh-fs), 11px); }
 /* 20px 列に 11px の見出し「No.」は入らない（末尾が欠ける）。連番の数字は2桁までなので見出しだけ縮める。 */
 table.sheet th.c-rn { font-size: 9px; padding-left: 1px; padding-right: 1px; }
 /* 区画ラベル（２階入居者 等）は縦書き（元Excelと同じ）。幅24pxに横書きで入れると
@@ -229,6 +238,21 @@ table.sheet .dend { border-right: 2px solid var(--g9); }
 table.sheet td.med-hl { background: #ffe0b2; }
 table.sheet td.nm.bath { background: var(--bath-bg); }
 table.sheet tr.sum th, table.sheet tr.sum td { background: var(--g1); font-weight: 700; }
+/* ── デイ利用者一覧表の「切断」（2026-08-05 運用指示）─────────────────────────
+   「せせらぎ合計」の下で表を切り、2行ぶんの空白を挟んでから下段（デイ休み）を始める。
+   ★1つの table のまま実現する。表を2つに割ると table-layout:fixed の列幅が上下でずれるため。
+   ★切り口の罫線は階の区画（blk-*）と同じ太線（2px var(--g9)）で締める。
+   ★空白の高さは文字サイズ連動。印刷フィットで文字が縮めば空白も一緒に縮む＝1枚に収まる。 */
+table.sheet tr.cut-above th, table.sheet tr.cut-above td { border-bottom: 2px solid var(--g9); }
+table.sheet tr.cut-gap td {
+  border: 0; background: #fff; padding: 0; height: calc(var(--sh-fs) * 2.6);
+}
+table.sheet tr.cut-title th {
+  border: 0;
+  border-top: 2px solid var(--g9); border-left: 2px solid var(--g9); border-right: 2px solid var(--g9);
+  background: var(--g1); color: var(--g9); font-weight: 700; letter-spacing: 2px;
+  font-size: calc(var(--sh-fs) * 1.6); line-height: 1.45; padding: 3px 4px; white-space: nowrap;
+}
 /* ☆は .c-tm セル内に置くため、放置すると時刻用の 10px を継承して視認性が落ちる。記号は 11px を保つ。 */
 .star { color: var(--ng); font-weight: 700; font-size: 11px; }   /* ☆＝訪問診療（元表の赤字☆） */
 .nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
@@ -327,6 +351,12 @@ table.wk .wk-blank { color: transparent; }
 /* 一括印刷用の隠しコンテナ（印刷時のみ構築し、印刷後に必ず破棄＝氏名をDOMに残さない） */
 .print-batch { display: none; }
 
+/* 印刷日（用紙の右上・全帳票共通／2026-08-05 運用指示）。画面には出さない。
+   ★position:fixed は印刷で全ページに繰り返し描かれる＝一括6枚印刷でも各ページに入る。
+   ★本文の流れに入れない（＝行数・改ページ位置を1mmも動かさない）。重なりを避けるための
+     余白だけを既存要素へ足す。個人情報は含まないため印刷後にDOMから消す必要はない。 */
+.print-date { display: none; }
+
 /* ===== 印刷 =====
    既定タブ(利用表)の A4縦 は静的 @page のまま＝現行完全無改変。
    他タブは印刷時に @page を動的注入して用紙を切り替える（care-schedule.html:3989 で実証済みの手法）。 */
@@ -335,7 +365,12 @@ table.wk .wk-blank { color: transparent; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   html, body { overflow: visible; height: auto; background: #fff; }
   .hdr, #toast, .tnav { display: none !important; }
-  .legend { border-bottom: 1px solid #000; }
+  .legend { border-bottom: 1px solid #000; padding-right: 96px; }   /* 右上の印刷日と重ならない幅を空ける（box-sizing:border-box＝総幅は不変） */
+  .print-date {
+    display: block; position: fixed; top: 0; right: 0; z-index: 99;
+    font-size: 9px; line-height: 1.2; color: #000; background: #fff; padding: 1px 2px;
+  }
+  body.pr-batch .pg { padding-top: 5mm; }   /* 一括6枚: 各ページ上端に印刷日ぶんの逃げを作る */
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
   /* 印刷時は列幅を詰めてA4縦の印刷可能幅(≈733px@96dpi)に確実に収める（固定列幅の合計＜用紙幅）。
@@ -389,6 +424,9 @@ table.wk .wk-blank { color: transparent; }
 </style>
 </head>
 <body>
+
+<!-- 印刷日（用紙右上・印刷時のみ表示）。中身は印刷の直前に stampPrintDate_() が入れる。 -->
+<div class="print-date" id="printDate" aria-hidden="true"></div>
 
 <header class="hdr">
   <span class="hdr-title">通所せせらぎ</span>
@@ -556,13 +594,16 @@ async function gasCall(payload) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
+/* ★2026-08-05 修正: ここで careRev を書き換えない。取得の直後には「未送信があれば結果を破棄する」
+   分岐があり、従来は破棄した場合でも版だけが進んでいた。すると【古い DB × 新しい rev】の組合せが残り、
+   その後の背景保存(runSaver)の PUT が版ガードをすり抜けて通ってしまう＝他端末の更新を無言で巻き戻す。
+   データと版は必ず同時に更新する必要があるため、版は呼び出し側へ返して DB 差し替えと同時に代入する。 */
 async function fetchRemote() {
   const t = syncTarget();
   if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
   const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j.ok) throw new Error(j.error || '応答エラー');
-  careRev = Number(j.rev) || 0;   // 観測した版を保持＝以降の書込みを直接PUT(1往復)にできる
-  return (j.data && Array.isArray(j.data.residents)) ? j.data : null;
+  return (j.data && Array.isArray(j.data.residents)) ? { data: j.data, rev: Number(j.rev) || 0 } : null;
 }
 // 書戻し用: 最新をrev付きで取得（put の版ガードに使う）。careRev も更新する。
 async function getRemoteWithRev() {
@@ -675,7 +716,11 @@ async function runSaver() {
         DB = f.data; careRev = f.rev; renderAll(DB);    // 併合結果を反映して再PUT
         saveDirty = true;
       } else {
-        throw new Error((res && res.error) || '保存に失敗しました');
+        /* bathwipe/visitwipe＝サーバー側の一括消失ガード（2026-08-05）。この端末の手元データが古い。
+           下の catch が最新をGETして権威状態へ戻す（＝正しい復旧）ので、文言だけ分かるようにする。 */
+        var em = (res && res.error) || '保存に失敗しました';
+        if (em === 'bathwipe' || em === 'visitwipe') em = 'この端末の週間計画が古いため拒否されました';
+        throw new Error(em);
       }
     }
     renderAll(DB);   // 交錯した先行refresh等で表示がずれても、最終的にDB（＝送信済みの状態）へ揃える
@@ -772,26 +817,45 @@ function dcrGetMasterCfg(){
   }catch(e){ return null; }
 }
 
-/* メモリ上の db に入院を重ねる。戻り値は変更件数（0なら再描画不要）。 */
-function dcrApplyMasterHosp(db){
-  if ((!dcrHospMap && !dcrVmedMap) || !db || !Array.isArray(db.residents)) return 0;
-  var n = 0;
-  db.residents.forEach(function(r){
-    if (!r || r.masterId == null || r.masterId === '') return;
-    var mid = String(r.masterId);
+/* 入院・訪問診療を重ねた【描画用のコピー】を返す。db 自身は決して書き換えない。
+ *
+ * ★2026-08-05 修正: 従来は引数の db を破壊的に書き換えていた。この db は多くの場合グローバル DB
+ * そのもので、フラグ保存の背景ワーカー runSaver は DB のスナップショットを care_schedule_v2 へ
+ * PUT する。つまり「保存は一切しない」という上の宣言に反し、マスタ由来の hospitalized と
+ * visitingMed が週間計画のサーバー版へ実際に書き込まれていた（data-contracts §10-5 にも反する）。
+ * 変更がある利用者だけを複製する copy-on-write にして、DB を汚さずに描画だけ変える。
+ * 変更が無ければ db をそのまま返す＝従来どおり追加コストなし。 */
+function dcrOverlayMaster(db){
+  if ((!dcrHospMap && !dcrVmedMap) || !db || !Array.isArray(db.residents)) return db;
+  var rs = db.residents.slice(), changed = false;
+  for (var i = 0; i < rs.length; i++){
+    var r = rs[i];
+    if (!r || r.masterId == null || r.masterId === '') continue;
+    var mid = String(r.masterId), nr = null, k;
     if (dcrHospMap){
       var v = dcrHospMap[mid];
-      if (v !== undefined && !!r.hospitalized !== !!v){ r.hospitalized = !!v; n++; }   // 未配信＝触らない
+      if (v !== undefined && !!r.hospitalized !== !!v){   // 未配信＝触らない
+        nr = {}; for (k in r) if (Object.prototype.hasOwnProperty.call(r, k)) nr[k] = r[k];
+        nr.hospitalized = !!v;
+      }
     }
     if (dcrVmedMap){
       /* ☆訪問診療。往診曜日が入っていれば true。
          こちらは「キーが無い＝false」で構わない（週間計画側に入力UIが無く、
          潰す対象の現場入力が存在しないため）。 */
       var w = !!dcrVmedMap[mid];
-      if (!!r.visitingMed !== w){ r.visitingMed = w; n++; }
+      if (!!r.visitingMed !== w){
+        if (!nr){ nr = {}; for (k in r) if (Object.prototype.hasOwnProperty.call(r, k)) nr[k] = r[k]; }
+        nr.visitingMed = w;
+      }
     }
-  });
-  return n;
+    if (nr){ rs[i] = nr; changed = true; }
+  }
+  if (!changed) return db;
+  var out = {};
+  for (var k2 in db) if (Object.prototype.hasOwnProperty.call(db, k2)) out[k2] = db[k2];
+  out.residents = rs;
+  return out;
 }
 
 /* マスタGASから名簿を取り、入院だけを取り出して保持する。
@@ -1072,11 +1136,11 @@ function renderRoster(db) {
 // ★この値は CSS の col.w-* と必ず一致させること（食い違うと fixed が差分を再配分し CSS 側が無効化される）。
 // rnAw/nmAw/tmAw=全員リスト用（ふりがな列を廃止した110pxを全列へ均等配分した値）／
 // nmDl=デイ利用者一覧表用（備考を表の下へ出すぶん氏名列を最大化）
-const W = { sec: 24, rn: 20, nm: 80, tm: 34, rnAw: 44, nmAw: 76, tmAw: 46, nmDl: 76, tmDl: 46 };
+const W = { sec: 24, rn: 20, rnDl: 26, nm: 80, tm: 34, rnAw: 44, nmAw: 76, tmAw: 46, nmDl: 76, tmDl: 46 };
 const TBL_W = {
-  day:     W.sec + W.rn + NDAY * (W.nm   + W.tm * 2),   // 932  med：右に備考112+gap8=1052 ≦ 1062
-  daylist: W.sec + W.rn + NDAY * (W.nmDl + W.tmDl * 2), // 1052 デイ利用者一覧表：24+20+6×(76+46+46)（≦A3縦 1062）
-  allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)        // 1052 全員リスト：44+6×(76+46+46)（≦A3縦 1062）
+  day:     W.sec + W.rn   + NDAY * (W.nm   + W.tm * 2),   // 932  med：右に備考112+gap8=1052 ≦ 1062
+  daylist: W.sec + W.rnDl + NDAY * (W.nmDl + W.tmDl * 2), // 1058 デイ利用者一覧表：24+26+6×(76+46+46)（≦A3縦 1062）
+  allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)          // 1052 全員リスト：44+6×(76+46+46)（≦A3縦 1062）
 };
 function colgroupFor(kind) {
   const cg = el('colgroup');
@@ -1084,7 +1148,8 @@ function colgroupFor(kind) {
   // 全員リストは区画ラベル列(w-sec)を持たず、No.列も専用幅（合計行の「入居者」ラベルを収める）
   if (kind === 'allweek') { cg.appendChild(el('col', 'w-rn-aw')); nmCol = 'w-nm-aw'; tmCol = 'w-tm-aw'; }
   else {
-    cg.appendChild(el('col', 'w-sec')); cg.appendChild(el('col', 'w-rn'));
+    cg.appendChild(el('col', 'w-sec'));
+    cg.appendChild(el('col', kind === 'daylist' ? 'w-rn-dl' : 'w-rn'));
     if (kind === 'daylist') { nmCol = 'w-nm-dl'; tmCol = 'w-tm-dl'; }
     else { nmCol = 'w-nm'; }
   }
@@ -1479,7 +1544,16 @@ let printTimer = null;
    （2026-08-05 運用指示「36名までは調整なしで1枚に入るように」を満たすための実装） */
 const SHEET_FS_BASE = 11, SHEET_TM_BASE = 10;   // 画面既定（CSS の table.sheet と一致させること）
 const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限（これ以下には縮めない）
-let fittedFs = 0;                               // 直近の印刷で縮小した文字サイズ（0=縮小なし）。利用者への通知に使う
+/* ★拡大の上限（2026-08-05 運用指示「表は上下に伸ばして大きく」）。
+   A3縦は印字可能高が 1527px あり、47名でも既定11pxでは 990px しか使わない（余り 537px）。
+   余った縦を文字の大きさへ回す。★列幅は変えないため、上限は【時刻列(46px)に太字の「13:00」が
+   欠けずに収まる最大】で決まる。実測で確認したうえでこの値にしている（fs=15 → 時刻 13.6px）。
+   氏名列は折返すため欠けない（高さに転嫁され、収まらなければ下のループが縮める）。
+   ★拡大の対象は【時刻列を広げた2帳票だけ】。薬用(sc-med)は時刻列が 34px のままで、実測すると
+     15px では「9:00」の末尾が欠ける（192セル）。運用指示の対象外でもあるため従来どおり据え置く。 */
+const SHEET_FS_MAX_BY_TAB = { 'sc-daylist': 15, 'sc-allweek': 15 };
+function sheetFsMax_(sc) { return SHEET_FS_MAX_BY_TAB[sc] || SHEET_FS_BASE; }
+let fittedFs = 0;                               // 直近の印刷で適用した文字サイズ（0=既定のまま）。通知に使う
 const PAGE_MM_H = { 'A4 portrait': 297, 'A4 landscape': 210, 'A3 portrait': 420, 'A3 landscape': 297 };
 const PAGE_MM_W = { 'A4 portrait': 210, 'A4 landscape': 297, 'A3 portrait': 297, 'A3 landscape': 420 };
 function pageMarginMm_(spec) { return spec ? (parseFloat(spec.margin) || 0) : 8; }   // 上下左右同値の指定のみ対象
@@ -1510,7 +1584,9 @@ function withPrintMetrics_(fn, spec) {
     '.hide-print-note{display:inline!important;font-weight:700}' +
     'html,body{width:' + w + 'px!important;min-width:0!important;overflow:visible!important}' +
     '.wrap{overflow:visible;padding:0;width:' + w + 'px!important}' +
-    '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
+    /* 印刷日ぶんの右余白も再現する（@media print の .legend と同内容）。box-sizing:border-box なので
+       総幅は変わらないが、凡例の折返し位置＝高さが変わるため入れないと高さを過小評価する。 */
+    '.legend{width:' + w + 'px!important;padding-right:96px!important}table.sheet{box-shadow:none}' +
     '#sc-daylist table.sheet td,#sc-daylist table.sheet th{padding-top:3px;padding-bottom:3px}' +
     'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}';
   document.head.appendChild(st);
@@ -1545,21 +1621,47 @@ function fitSheetPrint_(sc) {
     withPrintMetrics_(() => {
       setSheetFont_(SHEET_FS_BASE);                 // まず既定サイズで測る
       let fs = SHEET_FS_BASE, h = measureSheetH_(sc), n = 0;
-      while (h > avail && fs > SHEET_FS_MIN && n < 8) {
-        let next = fs * (avail / h) * 0.995;        // 比例補正
-        if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
-        fs = Math.max(SHEET_FS_MIN, next);
-        setSheetFont_(fs);
-        h = measureSheetH_(sc);
-        n++;
+      if (h > avail) {
+        /* 収まらない → 縮める（従来どおり）。下限を割ってまでは縮めない＝読めない紙面を出さない。 */
+        while (h > avail && fs > SHEET_FS_MIN && n < 8) {
+          let next = fs * (avail / h) * 0.995;      // 比例補正
+          if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
+          fs = Math.max(SHEET_FS_MIN, next);
+          setSheetFont_(fs);
+          h = measureSheetH_(sc);
+          n++;
+        }
+      } else {
+        /* 余白がある → 1枚に収まる範囲で大きくする（2026-08-05 運用指示「上下に伸ばして大きく」）。
+           ★必ず「収まることを実測してから採用」する。溢れた候補は採らずに直前の値で確定する
+           （＝拡大が原因で2枚に流れることが構造的に起きない）。 */
+        let best = SHEET_FS_BASE, fsMax = sheetFsMax_(sc);
+        while (fs < fsMax && n < 8) {
+          let next = Math.min(fsMax, fs * (avail / h) * 0.99);
+          if (!(next > fs + 0.05)) break;           // これ以上伸びない（収束）
+          setSheetFont_(next);
+          const h2 = measureSheetH_(sc);
+          if (h2 > avail) { break; }                 // 溢れたら採らない（best は直前のまま）
+          best = next; fs = next; h = h2; n++;
+        }
+        setSheetFont_(best);
+        fs = best;
       }
-      if (fs >= SHEET_FS_BASE) { setSheetFont_(null); fittedFs = 0; }   // 既定で収まる＝画面・印刷とも従来どおり
-      else fittedFs = fs;                            // 縮小した旨を呼び出し側へ知らせる（黙って小さくしない）
+      if (fs === SHEET_FS_BASE) { setSheetFont_(null); fittedFs = 0; }   // 既定のまま＝画面・印刷とも従来どおり
+      else fittedFs = fs;                            // 拡大・縮小とも呼び出し側へ知らせる（黙って変えない）
     }, spec);
   } catch (e) {
     // 測定に失敗したら縮小を持ち越さない（画面が縮んだままになる方が害が大きい）
     setSheetFont_(null); fittedFs = 0;
   }
+}
+/* 用紙右上の印刷日を採り直す。タブを開きっぱなしの端末でも、印刷のたびに当日の日付になる。
+   ★印刷経路は printNow（印刷ボタン）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。両方から呼ぶ。 */
+function stampPrintDate_() {
+  const n = $('printDate');
+  if (!n) return;
+  const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
+  n.textContent = '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
 }
 function clearPrintState_() {
   clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
@@ -1571,6 +1673,7 @@ function clearPrintState_() {
 }
 function printNow() {
   clearPrintState_();
+  stampPrintDate_();
   const sc = activeTab();
   const spec = PRINT_SPEC[sc];
   if (spec) {
@@ -1580,8 +1683,9 @@ function printNow() {
     document.head.appendChild(st);      // 静的<style>より後にappend＝後勝ち
   }
   fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
-  // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）
-  if (fittedFs) toast('1枚に収めるため文字を ' + fittedFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
+  // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）。
+  // 拡大は「読みやすくなる」方向なので通知しない（毎回の印刷でトーストが出るのは邪魔）。
+  if (fittedFs && fittedFs < SHEET_FS_BASE) toast('1枚に収めるため文字を ' + fittedFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
   if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
     const host = $('printBatch');
     host.textContent = '';
@@ -1604,6 +1708,7 @@ function printNow() {
 // OSの印刷ショートカット（Cmd/Ctrl+P）は printNow を通らないため、用紙指定が効かない。
 // beforeprint で同じ準備を通し、どの経路でもタブの用紙で出るようにする。
 window.addEventListener('beforeprint', function () {
+  stampPrintDate_();   // ★早期returnの前に置く（利用表タブは printNow でも下のガードを通過するため）
   if (document.querySelector('#dyn-page') || document.body.classList.contains('pr-batch')) return;   // printNow 経由なら準備済み
   const sc = activeTab();
   const spec = PRINT_SPEC[sc];
@@ -1638,7 +1743,7 @@ let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
 let MODEL_SUB  = '';   // 新4タブの指標
 const LEGENDS = {
   'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '各セル＝利用者氏名／下段に日別の入浴合計・利用合計']],
-  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイに行かない方（2階食堂で昼食）']],
+  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
   'sc-med':     [['t', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
   'sc-weekly':  [['t', 'デイ＝その日の利用者／２階＝デイに行かない方（2階食堂で昼食）。印刷は6曜日を一括で6枚出します']]
@@ -1705,7 +1810,7 @@ function toast(msg, isNg) {
 function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
-  dcrApplyMasterHosp(db);   // 入居者マスタ由来の入院を重ねる（読み取り専用・下の説明を参照）
+  db = dcrOverlayMaster(db);   // 入居者マスタ由来の入院/訪問診療を【重ねたコピー】で描画（DBは書き換えない）
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
   HIDE_CANDIDATES = collectHideCandidates(db);
   hiddenNowCount = HIDE_CANDIDATES.filter(c => c.hidden).length;   // 現候補のうち実際に隠れている人数
@@ -1764,7 +1869,7 @@ async function refresh(silent) {
     // 取得の往復中にトグルが始まっていたら、この結果は破棄（未送信の楽観的変更をサーバ版で潰さない）。
     if (saverRunning || pendingFlags.size) { setSyncState(DB && DB.residents ? ('端末表示（' + DB.residents.length + '名）') : ''); return; }
     if (remote) {
-      DB = remote;
+      DB = remote.data; careRev = remote.rev;   // ★データと版は必ず同時に更新する（片方だけ進めない）
       renderAll(DB);
       setSyncState('取得OK（' + DB.residents.length + '名）');
       if (!silent) toast('最新の週間計画を取得しました');

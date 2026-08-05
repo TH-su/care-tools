@@ -2132,6 +2132,12 @@ const SYNC = {
   friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    /* サーバー側の一括消失ガード（2026-08-05）。保存は行われていない＝クラウドのデータは無傷。 */
+    if (e === 'bathwipe') return '通所の入浴（加算）が一度に大量に減るため、クラウド側が保存を拒否しました。'
+      + 'この端末の内容が古い可能性があります。「⬇️ クラウドから取得」で最新を取り直してください'
+      + '（意図した一括変更なら「⚠ 強制保存」で通せます）';
+    if (e === 'visitwipe') return '訪問の予定が全件消えるため、クラウド側が保存を拒否しました。'
+      + '「⬇️ クラウドから取得」で最新を取り直してください';
     return e || '応答エラー';
   },
 
@@ -2355,6 +2361,24 @@ const SYNC = {
         }
         return false;
       }
+      if (j.error === 'bathwipe' || j.error === 'visitwipe') {
+        /* サーバー側の一括消失ガードが拒否した（＝クラウドのデータは無傷）。
+           事故（支援マスタの一括反映・古い端末の再送）は【人が見ていない時】に起きるため、
+           ここで必ず人に問う。自動では絶対に通さない。件数はサーバーの実測値を出す。
+           週間計画はこのデータの持ち主なので、画面が正しい場合に上書きできる道は残す。 */
+        this._busy = false;
+        this.updateStatusUI('未同期…');
+        this.markDirty();
+        const lbl = (j.error === 'bathwipe') ? '通所の入浴（加算）' : '訪問の予定';
+        const ok = confirm('⚠ ' + lbl + 'が大きく減るため、クラウドが保存を拒否しました。\n\n'
+          + 'クラウド：' + j.was + ' 件\nこの端末：' + j.now + ' 件\n\n'
+          + '【この端末の画面が正しい場合】「OK」で上書きします。\n'
+          + '【身に覚えがない場合】「キャンセル」を押し、設定 → クラウド同期の\n'
+          + '「⬇️ クラウドから取得」で最新を取り直してください。');
+        if (ok) return await this.push(true);
+        this.log('⚠ 保存を中止しました（クラウドのデータは無傷です）。「⬇️ クラウドから取得」で最新を取り直してください');
+        return false;
+      }
       throw new Error(this.friendlyErr(j.error));
     } catch(e) {
       this.log('❌ 保存失敗: ' + e.message);
@@ -2450,9 +2474,24 @@ function csRebaseEdits(server, mine) {
     var sEvents = Array.isArray(sr.events) ? sr.events : [];
     var mEvents = Array.isArray(mr.events) ? mr.events : [];
     var merged = [], seen = {}, k, id;
+    var sById = {};
+    for (k = 0; k < sEvents.length; k++) {
+      if (sEvents[k] && sEvents[k].id !== undefined) sById[sEvents[k].id] = sEvents[k];
+    }
     for (k = 0; k < mEvents.length; k++) {            /* mine優先（順序もmine基準） */
       if (!mEvents[k] || mEvents[k].id === undefined) continue;
-      id = mEvents[k].id; merged.push(JSON.parse(JSON.stringify(mEvents[k]))); seen[id] = true;
+      id = mEvents[k].id;
+      var cp = JSON.parse(JSON.stringify(mEvents[k]));
+      /* ★通所の入浴（bathing）だけはフィールド単位で「和」を取る（2026-08-05 追加）。
+         イベント丸ごと mine 優先だと、入浴が欠けた古いローカルを持つ端末が競合した時に、
+         サーバー側で復旧済みの入浴を無言で巻き戻す（2026-08-03〜08-05 に3度発生した
+         入浴消失の二次経路）。入浴は加算の根拠であり、消えると請求に直結する。
+         multi-device-sync 原則5「消失より復活」に従い、どちらかが true なら true。
+         副作用: 競合中に他端末が入浴を外した操作は戻ることがある（もう一度外せば済む）。
+         入浴を外す操作自体は競合していなければ従来どおりそのまま通る。 */
+      var se = sById[id];
+      if (se && se.bathing === true && cp.bathing !== true) cp.bathing = true;
+      merged.push(cp); seen[id] = true;
     }
     for (k = 0; k < sEvents.length; k++) {            /* server限定イベントは保持 */
       if (!sEvents[k] || sEvents[k].id === undefined) continue;
@@ -2567,9 +2606,38 @@ function syncPushNow() {
   persistSyncInputs();
   SYNC.push();
 }
-function syncForcePush() {
+/* 通所の入浴（加算）の件数を数える。強制保存の前後比較・自己診断用（純関数）。 */
+function csCountBathing(db) {
+  var n = 0;
+  var rs = (db && db.residents) || [];
+  for (var i = 0; i < rs.length; i++) {
+    var evs = (rs[i] && rs[i].events) || [];
+    for (var j = 0; j < evs.length; j++) {
+      if (evs[j] && evs[j].serviceType === 'daycare' && evs[j].bathing === true) n++;
+    }
+  }
+  return n;
+}
+/* 強制保存は rev の楽観ロックを迂回する唯一の経路＝失うものが最も大きい。
+   2026-08-05: 押す前にサーバーの入浴（加算）件数と突き合わせ、減る時だけ件数を出して二重確認する。
+   通信できない時は従来どおりの確認だけで通す（現場の復旧手段を塞がない）。 */
+async function syncForcePush() {
   if (!confirm('クラウドの最新更新を無視して、このローカルのデータで上書きします。よろしいですか？')) return;
   persistSyncInputs();
+  try {
+    if (SYNC.hasTarget()) {
+      const j = await SYNC.gas({ action: 'get', key: 'care_schedule_v2' });
+      if (j && j.ok && j.data) {
+        const sv = csCountBathing(j.data), lc = csCountBathing(DB);
+        if (sv > lc) {
+          if (!confirm('⚠ 通所の入浴（加算）が減ります\n\nクラウド: ' + sv + ' 件\nこの端末: ' + lc + ' 件\n\n' +
+                       'この端末の内容で上書きすると、差の ' + (sv - lc) + ' 件が消えます。\n' +
+                       '入浴の設定が正しいのがクラウド側なら「キャンセル」を押し、\n' +
+                       '「⬇️ クラウドから取得」を実行してください。\n\nそれでも上書きしますか？')) return;
+        }
+      }
+    }
+  } catch (e) { /* 確認できない時は止めない（復旧手段を塞がない） */ }
   SYNC.push(true); // force=true で競合検知をスキップ
 }
 function copyGasCode() {
