@@ -149,8 +149,12 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .vmwrap { overflow-x:auto; }
 /* 左端の項目名（体温・朝・主食…）は横スクロールしても動かさない。
    ★border-collapse では枠線が消えるため、固定列だけ影で罫線を描く。 */
+/* ★border-collapse では罫線をセルではなく表が描くため、固定した列の背景の上に
+     元の位置の罫線が残り、行によって1pxの筋が出る。固定列だけ枠線を消し、
+     左右とも影で引き直して見た目をそろえる。 */
 .vmtbl th.hd { position:sticky; left:0; z-index:2; background:var(--g1);
-               text-align:left; box-shadow:1px 0 0 var(--g3), inset 0 0 0 0.5px var(--g3); }
+               text-align:left; border-left:0; border-right:0;
+               box-shadow:-1px 0 0 var(--g3), 1px 0 0 var(--g3); }
 .vmtbl thead th.hd { z-index:3; }
 
 @media print {
@@ -162,7 +166,8 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
   .vmwrap { overflow:visible; }
   /* 紙では横スクロールが無いので固定は不要。overflow:visible と併用すると
      固定列が紙面の左端に貼り付いて表からずれる */
-  .vmtbl th.hd { position:static; box-shadow:none; }
+  .vmtbl th.hd { position:static; box-shadow:none;
+                 border-left:1px solid var(--g3); border-right:1px solid var(--g3); }
   .scr { padding:0; max-width:none; }
   .cd { box-shadow:none; border:none; padding:0; margin:0; }
   .dayhd { position:static; background:#fff; }
@@ -192,6 +197,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
           <option value="30">直近30日</option>
           <option value="60">直近60日</option>
           <option value="90">直近90日</option>
+          <option value="150">直近150日</option>
         </select>
         <button class="btn" id="reload" type="button">読み込み</button>
         <span class="muted" id="status"></span>
@@ -231,7 +237,14 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
           <option value="30" selected>直近30日</option>
           <option value="60">直近60日</option>
           <option value="90">直近90日</option>
+          <option value="150">直近150日</option>
+          <option value="custom">日付を指定</option>
         </select>
+        <span id="vmSpan" hidden>
+          <input type="date" id="vmFrom" aria-label="開始日">
+          <span class="muted">〜</span>
+          <input type="date" id="vmTo" aria-label="終了日">
+        </span>
         <button class="btn" id="vmReload" type="button">読み込み</button>
         <span class="muted" id="vmStatus"></span>
       </div>
@@ -420,6 +433,7 @@ function loadRoster(){
     var list = (o && o.residents) || [];
     ROSTER = list.map(function(r){
       return { masterId:String(r.masterId == null ? '' : r.masterId), name:String(r.name || ''),
+               kana:String(r.kana || ''),          // 五十音順に並べるためのヨミ
                room:String(r.room || ''), norm:normName(r.name) };
     });
   }catch(e){ ROSTER = []; }
@@ -429,10 +443,30 @@ function rosterByNorm(n){
   return null;
 }
 
+/* 五十音順の並べ替えキー。
+   ★漢字の氏名はそのまま並べても五十音にならない（文字コード順になる）。
+     入居者マスタが持つヨミ（kana）を使う。ヨミが取れない人は氏名で並べ、
+     ヨミのある人より後ろにまとめる（順番が入れ替わって見えないように）。
+   ★入居者マスタをこの端末で一度も開いていないとヨミが無い。その場合は
+     全員が氏名順になる（並びは一定に保たれる）。 */
+function kanaKey(name){
+  var r = rosterByNorm(normName(name));
+  var k = (r && r.kana) ? r.kana.replace(/[\s　]/g, '') : '';
+  if(!k) return { has:0, key:String(name || '') };
+  /* カタカナはひらがなへ寄せて、表記ゆれで並びが割れないようにする */
+  k = k.replace(/[ァ-ヶ]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  return { has:1, key:k };
+}
+function byKana(a, b){
+  var ka = kanaKey(a), kb = kanaKey(b);
+  if(ka.has !== kb.has) return kb.has - ka.has;       // ヨミのある人を先に
+  return ka.key.localeCompare(kb.key, 'ja');
+}
+
 /* ── データ取得 ───────────────────────────────────── */
 function currentRange(){
   var n = parseInt($('days').value, 10);
-  if(isNaN(n) || n < 1 || n > 120) n = 14;
+  if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = 14;
   var to = new Date();
   return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
 }
@@ -530,7 +564,9 @@ function residentIndex(){
   });
   var out = [];
   for(var k in map){ if(map.hasOwnProperty(k)) out.push(map[k]); }
-  out.sort(function(a,b){ return b.count - a.count || a.name.localeCompare(b.name,'ja'); });
+  /* ★件数順だと入居者が日によって入れ替わり、目的の人を探しにくい（順不同に見える）。
+     並びを固定するため五十音順にする（2026-08-06 指示）。 */
+  out.sort(function(a,b){ return byKana(a.name, b.name); });
   return out;
 }
 function renderResidentList(){
@@ -837,14 +873,32 @@ var VM_MEALS = [
   { key:'dMain', label:'夕・主食', color:'#4527a0' }, { key:'dSide', label:'夕・副食', color:'#9575cd' }
 ];
 
+var VM_MAX_DAYS = 150;      // GAS 側 _range() の上限と合わせる
+
+/* 期間。「日付を指定」なら2つの日付の間、それ以外は直近N日。
+   ★入力が不正な時は既定（直近30日）へ落とす。壊れた値で読み込みに行かない。 */
 function vmRange(){
-  var n = parseInt($('vmDays').value, 10);
-  if(isNaN(n) || n < 1 || n > 120) n = 30;
+  var sel = $('vmDays').value;
+  if(sel === 'custom'){
+    var f = $('vmFrom').value, t = $('vmTo').value;
+    var ok = /^\d{4}-\d{2}-\d{2}$/;
+    if(ok.test(f) && ok.test(t)){
+      if(f > t){ var s = f; f = t; t = s; }            // 逆に入れても受け付ける
+      /* 長すぎる指定は開始日を切り上げる（GAS 側も同じ上限で丸める） */
+      var d0 = new Date(t + 'T00:00:00'), lim = ymd(addDays(d0, -(VM_MAX_DAYS - 1)));
+      if(f < lim) f = lim;
+      return { from:f, to:t, custom:true };
+    }
+    return { from:'', to:'', custom:true, invalid:true };
+  }
+  var n = parseInt(sel, 10);
+  if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = 30;
   var to = new Date();
   return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
 }
 function vmLoad(){
   var r = vmRange();
+  if(r.invalid){ $('vmStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
   $('vmStatus').textContent = '読み込み中…';
   $('vmReload').disabled = true;
   return apiGet('measures', { from:r.from, to:r.to }).then(function(res){
@@ -926,7 +980,8 @@ function vmIndex(){
   });
   var out = [];
   for(var k in map){ if(map[k] !== undefined) out.push(map[k]); }
-  out.sort(function(a,b){ return (b.v + b.m) - (a.v + a.m) || a.name.localeCompare(b.name,'ja'); });
+  /* ★同上。件数順ではなく五十音順で固定する。 */
+  out.sort(function(a,b){ return byKana(a.name, b.name); });
   return out;
 }
 function vmRenderList(){
@@ -1202,6 +1257,21 @@ function vmMarkLine(){
   }
 }
 
+/* 赤い縦線が画面上のどこ（X座標）に描かれているかを返す。
+   ★SVG は viewBox の座標で描いているので、実際の表示幅に合わせて換算する。
+     グラフが分からない時・その日が無い時は null（呼び出し側は従来どおり中央に寄せる）。 */
+function vmPickScreenX(chartEl, d){
+  if(!chartEl || !chartEl.__pick) return null;
+  var g = chartEl.__pick;
+  var idx = g.dates.indexOf(d);
+  if(idx < 0) return null;
+  var r = chartEl.getBoundingClientRect();
+  var vb = chartEl.viewBox && chartEl.viewBox.baseVal;
+  var vw = (vb && vb.width) ? vb.width : 720;
+  if(!r.width) return null;
+  return r.left + g.x(idx) * (r.width / vw);
+}
+
 function vmFocusDate(d, sectionEl, chartEl){
   vmMarkDate(d);
   var body = $('vmBody');
@@ -1211,14 +1281,17 @@ function vmFocusDate(d, sectionEl, chartEl){
   if(!target) return;
   var steps = [], cr = target.getBoundingClientRect();
 
-  /* ① 表の中で、その列を横方向の中央へ。
+  /* ① 表の中で、その列を**赤い縦線の真下**へ。
      ★scrollIntoView({inline:'center'}) は入れ子のスクロール枠を動かしてくれないことがあり、
        実測でも横スクロールが 0 のままだった（2026-08-06 実機確認）。自分で計算して動かす。
-     端の日は中央まで寄せられないが、可動域に丸めるので
-       少なくとも「表の中に見えている」状態にはなる。
+     ★以前は表の中央に置いていたが、赤線と列が横にずれて目で追い直す必要があった。
+       赤線と同じ横位置に列を置く（2026-08-06 指示）。
      ★バイタルと食事の**両方の表**を寄せる。押した側だけ動かすと、
        もう一方は強調が付いているのに横スクロールの外に居て、
-       あとから読み進めた時に見つけられない。 */
+       あとから読み進めた時に見つけられない。
+     端の日は赤線の真下まで寄せられないが、可動域に丸めるので
+       少なくとも「表の中に見えている」状態にはなる。 */
+  var lineX = vmPickScreenX(chartEl, d);
   var wraps = body.querySelectorAll('.vmwrap');
   for(var w = 0; w < wraps.length; w++){
     (function(wp){
@@ -1226,7 +1299,13 @@ function vmFocusDate(d, sectionEl, chartEl){
       var cell = wp.querySelector('.vmtbl th[data-d="' + d + '"], .vmtbl td[data-d="' + d + '"]');
       if(!cell) return;
       var pr = cell.getBoundingClientRect(), wr = wp.getBoundingClientRect();
-      var left = wp.scrollLeft + (pr.left + pr.width / 2) - (wr.left + wr.width / 2);
+      /* 合わせ先の画面X。赤線が取れない時は表の中央（従来どおり）。
+         ★固定した項目列の下に列が隠れないよう、左端は項目列の幅ぶん空ける。 */
+      var hd = wp.querySelector('.vmtbl thead th.hd');
+      var lead = hd ? hd.getBoundingClientRect().width : 0;
+      var aim = (lineX === null) ? (wr.left + wr.width / 2) : lineX;
+      aim = Math.max(wr.left + lead + pr.width / 2, Math.min(aim, wr.right - pr.width / 2));
+      var left = wp.scrollLeft + (pr.left + pr.width / 2) - aim;
       steps.push({ get: function(){ return wp.scrollLeft; },
                    set: function(v){ wp.scrollLeft = v; },
                    to: Math.max(0, Math.min(left, wp.scrollWidth - wp.clientWidth)) });
@@ -1510,7 +1589,7 @@ function applyMasterIdParam(){
 
   /* UI 状態の復元（既知値のみ。不正値は既定へ） */
   var d = lsGet(LS_DAYS);
-  if(['7','14','30','60','90'].indexOf(d) >= 0) $('days').value = d;
+  if(['7','14','30','60','90','150'].indexOf(d) >= 0) $('days').value = d;
   $('copyDate').checked = (lsGet(LS_CPDT) !== '0');
   $('theDate').value = ymd(addDays(new Date(), -1));
 
@@ -1540,8 +1619,26 @@ function applyMasterIdParam(){
      ★保存するのは表示期間だけ。選択中の入居者は保存しない
        （復元すると、別の職員が開いた時に前の方の画面が「その人の記録」として出るため）。 */
   var vd = lsGet(LS_VMDAYS);
-  if(['14','30','60','90'].indexOf(vd) >= 0) $('vmDays').value = vd;
-  $('vmDays').addEventListener('change', function(){ lsSet(LS_VMDAYS, $('vmDays').value); vmLoad(); });
+  if(['14','30','60','90','150','custom'].indexOf(vd) >= 0) $('vmDays').value = vd;
+  /* 「日付を指定」の時だけ日付欄を出す。既定は今日を終了日、30日前を開始日にしておく
+     （空欄のまま押させて「入れてください」を出さないため）。★日付は業務データではなく
+     画面の状態なので保存はするが、氏名・記録は保存しない（原則11・個人情報規約）。 */
+  function vmSyncSpan(){
+    var on = $('vmDays').value === 'custom';
+    $('vmSpan').hidden = !on;
+    if(on && !$('vmTo').value){
+      $('vmTo').value = ymd(new Date());
+      $('vmFrom').value = ymd(addDays(new Date(), -29));
+    }
+  }
+  vmSyncSpan();
+  $('vmDays').addEventListener('change', function(){
+    lsSet(LS_VMDAYS, $('vmDays').value);
+    vmSyncSpan();
+    if($('vmDays').value !== 'custom' || ($('vmFrom').value && $('vmTo').value)) vmLoad();
+  });
+  $('vmFrom').addEventListener('change', vmLoad);
+  $('vmTo').addEventListener('change', vmLoad);
   $('vmReload').addEventListener('click', vmLoad);
   $('vmPrint').addEventListener('click', function(){ window.print(); });
   $('vmCopy').addEventListener('click', function(){
