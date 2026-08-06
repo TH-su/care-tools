@@ -129,6 +129,12 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 /* 臨床上の区切り線（体温37.0/37.5 など）。自動目盛りと見分けがつくよう破線＋色つき */
 .chart .ref   { stroke:#c62828; stroke-width:1; stroke-dasharray:4 3; opacity:.55; }
 .chart .refv  { fill:#c62828; }
+/* 日付ごとのクリック領域。点は小さいので、縦の帯で受ける */
+.chart .hit   { fill:transparent; cursor:pointer; }
+.chart .hit:hover { fill:var(--pri); fill-opacity:.07; }
+/* 押した日の列。表のどこを見ればよいかが一目で分かるように */
+.vmtbl th.fx, .vmtbl td.fx { background:#fff3cd; box-shadow:inset 0 0 0 2px #f0ad4e; }
+.vmtbl thead th.fx { background:#ffe08a; }
 .vmcap { font-size:12px; font-weight:600; color:var(--g7); margin:10px 0 2px; }
 .lgd { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--g7); margin-top:4px; }
 .lgd i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
@@ -1066,7 +1072,137 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
       });
     }
   });
+
+  /* ── 日付ごとの当たり判定 ──
+     ★点そのもの（半径2px）はクリックしづらいので、日付ごとに縦の透明な帯を重ねる。
+       帯は隣の日との中点までを受け持つので、日数が増えても押せる幅を最大限とれる。
+     ★帯には <title> を付ける。マウスを載せるだけでその日の日付と値が出るので、
+       「どの点が何日か分からない」を、クリックしなくても解消できる。 */
+  var hit = document.createElementNS(NS, 'g');
+  hit.setAttribute('class', 'hitband');
+  dates.forEach(function(d, i){
+    var cx = xs(i);
+    var x1 = (i === 0) ? L : (cx + xs(i - 1)) / 2;
+    var x2 = (i === dates.length - 1) ? (W - R) : (cx + xs(i + 1)) / 2;
+    var rc = document.createElementNS(NS, 'rect');
+    rc.setAttribute('x', x1.toFixed(1)); rc.setAttribute('y', T);
+    rc.setAttribute('width', Math.max(1, x2 - x1).toFixed(1)); rc.setAttribute('height', ih);
+    rc.setAttribute('class', 'hit');
+    rc.setAttribute('data-d', d);
+    var tt = document.createElementNS(NS, 'title');
+    var parts = [fmtDate(d)];
+    seriesDefs.forEach(function(sd){
+      var row = dataByDate[d];
+      var v = (row && row[sd.key] !== undefined && row[sd.key] !== null) ? row[sd.key] : null;
+      parts.push(sd.label + ' ' + (v === null ? '−' : v));
+    });
+    tt.textContent = parts.join(' / ');
+    rc.appendChild(tt);
+    if(opt.onPick){
+      rc.addEventListener('click', function(){ opt.onPick(d); });
+    }
+    hit.appendChild(rc);
+  });
+  svg.appendChild(hit);
   return svg;
+}
+
+/* グラフのプロットを押した日を、下の表で目立たせて画面の中央へ寄せる。
+   ★数値の確認は表で行うので、表の該当列を横スクロールの中央に置き、
+     さらに画面の縦中央へ寄せる。どちらか片方だけだと、
+     90日表示のときに列が画面の外に居たままになる。 */
+/* ── スライド（自前実装）──
+   ★`scrollTo({behavior:'smooth'})` は環境によって**何も起こさない**ことがある
+     （2026-08-06 実機で確認: auto 指定は動くのに smooth 指定だと位置が変わらなかった）。
+     「動いたつもりで動いていない」＝押した日が画面外のまま、が一番困るので、
+     見た目の演出も含めて自前で動かし、最後に必ず目標値へ入れる。
+   ★動きを減らす設定の端末では、演出せず一度で移動する。 */
+var VMANIM = 0;
+function vmSlide(steps, ms){
+  var token = ++VMANIM;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* ★着地したら以降の描画は捨てる。
+     非表示のタブでは requestAnimationFrame が溜まったまま発火せず、
+     表示に戻った瞬間に**着地後の位置から先頭へ巻き戻して描き直す**（実機で再現）。
+     押した日まで動いたはずの表が、元の位置に戻って見える。 */
+  var done = false;
+  function land(){ if(done) return; done = true; steps.forEach(function(s){ s.set(s.to); }); }
+  if(reduce || !window.requestAnimationFrame){ land(); return; }
+  var from = steps.map(function(s){ return s.get(); });
+  var t0 = null;
+  function frame(t){
+    if(done || token !== VMANIM) return;          // 次の操作が始まったら、この動きは捨てる
+    if(t0 === null) t0 = t;
+    var p = Math.min(1, (t - t0) / ms);
+    var e = 1 - Math.pow(1 - p, 3);              // 終わりに向かって減速
+    steps.forEach(function(s, i){ s.set(from[i] + (s.to - from[i]) * e); });
+    if(p < 1) window.requestAnimationFrame(frame);
+    else land();                                  // 誤差を残さず目標値で終える
+  }
+  window.requestAnimationFrame(frame);
+  /* ★requestAnimationFrame は**発火しないことがある**（別タブ・非表示・省電力時に停止する。
+       2026-08-06 実機で1回も発火しない環境を確認）。演出が動かないのは構わないが、
+       押した日が画面外のまま残るのは困る。時間切れで必ず目的地に着かせる。 */
+  window.setTimeout(function(){ if(token === VMANIM) land(); }, ms + 80);
+}
+
+var VMFOCUS = '';
+/* 強調だけを付け替える（画面は動かさない）。再描画のあとで選択を戻す時にも使う。 */
+function vmMarkDate(d){
+  var body = $('vmBody');
+  if(!body) return;
+  var prev = body.querySelectorAll('.fx');
+  for(var i = 0; i < prev.length; i++) prev[i].classList.remove('fx');
+  VMFOCUS = d || '';
+  if(!VMFOCUS) return;
+  /* 表は「バイタル」と「食事摂取量」の2つある。同じ日を両方で目立たせる
+     （そのまま下へ読み進めた時に、どの列を見ればよいか分かるように）。
+     ★対象は表のセルだけに絞る。グラフ側の当たり判定にも同じ data-d を持たせているので、
+       絞らないと SVG の透明な帯にまで強調が付く。 */
+  var cells = body.querySelectorAll('.vmtbl th[data-d="' + VMFOCUS + '"], .vmtbl td[data-d="' + VMFOCUS + '"]');
+  for(var j = 0; j < cells.length; j++) cells[j].classList.add('fx');
+}
+
+function vmFocusDate(d, sectionEl){
+  vmMarkDate(d);
+  var body = $('vmBody');
+  /* 押したグラフと同じ区画にある表へ寄せる */
+  var scope = sectionEl || body;
+  var target = scope.querySelector('.vmtbl td[data-d="' + d + '"], .vmtbl th[data-d="' + d + '"]');
+  if(!target) return;
+  var steps = [], cr = target.getBoundingClientRect();
+
+  /* ① 表の中で、その列を横方向の中央へ。
+     ★scrollIntoView({inline:'center'}) は入れ子のスクロール枠を動かしてくれないことがあり、
+       実測でも横スクロールが 0 のままだった（2026-08-06 実機確認）。自分で計算して動かす。
+     端の日は中央まで寄せられないが、可動域に丸めるので
+       少なくとも「表の中に見えている」状態にはなる。
+     ★バイタルと食事の**両方の表**を寄せる。押した側だけ動かすと、
+       もう一方は強調が付いているのに横スクロールの外に居て、
+       あとから読み進めた時に見つけられない。 */
+  var wraps = body.querySelectorAll('.vmwrap');
+  for(var w = 0; w < wraps.length; w++){
+    (function(wp){
+      if(wp.scrollWidth <= wp.clientWidth) return;
+      var cell = wp.querySelector('.vmtbl th[data-d="' + d + '"], .vmtbl td[data-d="' + d + '"]');
+      if(!cell) return;
+      var pr = cell.getBoundingClientRect(), wr = wp.getBoundingClientRect();
+      var left = wp.scrollLeft + (pr.left + pr.width / 2) - (wr.left + wr.width / 2);
+      steps.push({ get: function(){ return wp.scrollLeft; },
+                   set: function(v){ wp.scrollLeft = v; },
+                   to: Math.max(0, Math.min(left, wp.scrollWidth - wp.clientWidth)) });
+    })(wraps[w]);
+  }
+
+  /* ② その列を画面の縦中央へ。表は縦にはスクロールしないのでページ側を動かす。 */
+  var docH = document.documentElement.scrollHeight;
+  var top = window.pageYOffset + cr.top + cr.height / 2 - window.innerHeight / 2;
+  top = Math.max(0, Math.min(top, Math.max(0, docH - window.innerHeight)));
+  steps.push({ get: function(){ return window.pageYOffset; },
+               set: function(v){ window.scrollTo(0, v); },
+               to: top });
+
+  vmSlide(steps, 320);
 }
 
 function vmLegend(defs){
@@ -1089,7 +1225,9 @@ function vmTable(dates, defs, byDate){
   var thead = document.createElement('thead'); var htr = document.createElement('tr');
   var th0 = document.createElement('th'); th0.textContent = '項目'; htr.appendChild(th0);
   dates.forEach(function(d){
-    var th = document.createElement('th'); th.textContent = fmtDate(d); htr.appendChild(th);
+    var th = document.createElement('th'); th.textContent = fmtDate(d);
+    th.setAttribute('data-d', d);          // グラフのプロットから該当列を探すための目印
+    htr.appendChild(th);
   });
   thead.appendChild(htr); t.appendChild(thead);
   var tb = document.createElement('tbody');
@@ -1098,6 +1236,7 @@ function vmTable(dates, defs, byDate){
     var th = document.createElement('th'); th.textContent = sd.label; tr.appendChild(th);
     dates.forEach(function(d){
       var td = document.createElement('td');
+      td.setAttribute('data-d', d);
       var row = byDate[d];
       var v = (row && row[sd.key] !== undefined) ? row[sd.key] : null;
       if(v === null || v === undefined){
@@ -1178,17 +1317,20 @@ function vmRenderBody(){
     /* 体温は単位が違うので単独。血圧・脈・SpO2はまとめて1枚に描く（見比べやすさ優先） */
     /* 体温は 37.0 / 37.5 に基準線を引く（自動で入るまん中の目盛り＝36.5 は引かない）。
        ★min を 37.5 まで含む範囲にしておかないと、平熱続きの期間で基準線が枠外になる。 */
+    var pick1 = function(d){ vmFocusDate(d, sec1); };
     var c1 = vmChart(dates, [VM_SERIES[0]], vBy,
-                     { min:35, max:38, refs:[37.0, 37.5], height:120, aria:'体温の推移' });
+                     { min:35, max:38, refs:[37.0, 37.5], height:120, aria:'体温の推移',
+                       onPick:pick1 });
     if(c1){ sec1.appendChild(c1); sec1.appendChild(vmLegend([VM_SERIES[0]])); }
     /* ★SpO2 を血圧と同じ軸に重ねない。縦軸が 20〜170 になり、
        98→92 という臨床的に意味のある低下がほぼ平坦に見える（2026-08-04 レビュー指摘）。 */
     var bpp = [VM_SERIES[1], VM_SERIES[2], VM_SERIES[3]];
-    var c2 = vmChart(dates, bpp, vBy, { height:150, aria:'血圧・脈の推移' });
+    var c2 = vmChart(dates, bpp, vBy, { height:150, aria:'血圧・脈の推移', onPick:pick1 });
     if(c2){ sec1.appendChild(c2); sec1.appendChild(vmLegend(bpp)); }
     /* SpO2 は 100 が上限の指標なので、天井を 100 に固定する（余白で 100 より上を作らない） */
     var c2b = vmChart(dates, [VM_SERIES[4]], vBy,
-                      { min:88, max:100, fixedMax:100, height:110, aria:'SpO2の推移' });
+                      { min:88, max:100, fixedMax:100, height:110, aria:'SpO2の推移',
+                        onPick:pick1 });
     if(c2b){ sec1.appendChild(c2b); sec1.appendChild(vmLegend([VM_SERIES[4]])); }
     sec1.appendChild(vmTable(dates, VM_SERIES, vBy));
   }else{
@@ -1212,7 +1354,8 @@ function vmRenderBody(){
       var cap = document.createElement('div'); cap.className = 'vmcap'; cap.textContent = p[0];
       sec2.appendChild(cap);
       var ch = vmChart(dates, p[1], mBy,
-                       { fixedMin:0, fixedMax:10, height:150, aria:p[2] });
+                       { fixedMin:0, fixedMax:10, height:150, aria:p[2],
+                         onPick:function(d){ vmFocusDate(d, sec2); } });
       if(ch){ sec2.appendChild(ch); sec2.appendChild(vmLegend(p[1])); }
       else{
         var nm = document.createElement('p'); nm.className = 'muted';
@@ -1227,6 +1370,10 @@ function vmRenderBody(){
     sec2.appendChild(n2);
   }
   box.appendChild(sec2);
+
+  /* 選んでいた日が新しい表にもあれば強調を戻す（入居者を切り替えても見る日を見失わない）。
+     期間を変えて範囲から外れた場合は、そのまま選択を解除する。 */
+  if(VMFOCUS){ vmMarkDate(dates.indexOf(VMFOCUS) >= 0 ? VMFOCUS : ''); }
 }
 
 /* 経過記録へ貼れる形で数値を書き出す */
