@@ -126,6 +126,10 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .chart .line  { fill:none; stroke-width:2; }
 .chart .dot   { stroke:#fff; stroke-width:1; }
 .chart .gap   { stroke-dasharray:3 3; opacity:.45; }
+/* 臨床上の区切り線（体温37.0/37.5 など）。自動目盛りと見分けがつくよう破線＋色つき */
+.chart .ref   { stroke:#c62828; stroke-width:1; stroke-dasharray:4 3; opacity:.55; }
+.chart .refv  { fill:#c62828; }
+.vmcap { font-size:12px; font-weight:600; color:var(--g7); margin:10px 0 2px; }
 .lgd { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--g7); margin-top:4px; }
 .lgd i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
 .vmtbl { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
@@ -959,14 +963,27 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
   });
   if(!vals.length) return null;
 
-  var lo = opt.min, hi = opt.max;
-  if(lo === undefined){ lo = Math.min.apply(null, vals); hi = Math.max.apply(null, vals); }
-  else { lo = Math.min(lo, Math.min.apply(null, vals)); hi = Math.max(hi, Math.max.apply(null, vals)); }
+  /* 縦軸の範囲。
+     min/max は「最低でもこの範囲は映す」という下限指定で、実測値がそれを超えれば自動で広がる
+     （値がグラフから外れて見えなくなることは無い）。最後に8%の余白を足す。
+     fixedMin/fixedMax を渡した時だけ、その端は実測にも余白にも動かさず固定する。 */
+  var dMin = Math.min.apply(null, vals), dMax = Math.max.apply(null, vals);
+  var lo = (opt.min === undefined) ? dMin : Math.min(opt.min, dMin);
+  var hi = (opt.max === undefined) ? dMax : Math.max(opt.max, dMax);
   if(hi === lo){ hi = lo + 1; }
   var pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  if(opt.fixedMin !== undefined) lo = opt.fixedMin;
+  if(opt.fixedMax !== undefined) hi = opt.fixedMax;
+  if(hi <= lo){ hi = lo + 1; }
 
   var xs = function(i){ return L + (dates.length <= 1 ? iw/2 : iw * i / (dates.length - 1)); };
-  var ys = function(v){ return T + ih - ih * (v - lo) / (hi - lo); };
+  /* ★軸を固定した側にはみ出す値は、枠の外へ描かず端に留める。
+     取込時に SpO2 は 50〜100、食事量は 0〜10 に制限しているので通常は起こらないが、
+     万一外れた時に「点が消えた」状態にしないための保険。 */
+  var ys = function(v){
+    var y = T + ih - ih * (v - lo) / (hi - lo);
+    return Math.max(T, Math.min(T + ih, y));
+  };
 
   var NS = 'http://www.w3.org/2000/svg';
   var svg = document.createElementNS(NS, 'svg');
@@ -975,8 +992,11 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', (opt.aria || 'グラフ'));
 
-  // 目盛り
-  for(var g = 0; g <= 2; g++){
+  /* 目盛り。基準線（refs）を指定した時は、まん中の自動目盛りを引かない
+     —— 体温の 36.5 のような「意味のないだけの値」の線を消し、
+     臨床上の区切り（37.0 / 37.5 など）だけを見せるため。 */
+  var gridAt = opt.refs ? [0, 2] : [0, 1, 2];
+  gridAt.forEach(function(g){
     var y = T + ih * g / 2;
     var ln = document.createElementNS(NS, 'line');
     ln.setAttribute('x1', L); ln.setAttribute('x2', W - R);
@@ -986,6 +1006,27 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
     tx.setAttribute('x', 2); tx.setAttribute('y', y + 3); tx.setAttribute('class', 'axis');
     tx.textContent = String(Math.round((hi - (hi - lo) * g / 2) * 10) / 10);
     svg.appendChild(tx);
+  });
+  /* 基準線。範囲の外に出る値は引かない（枠外に線と数字が出ないように） */
+  if(opt.refs){
+    /* 表示の小数桁は指定値どうしで揃える（37 と 37.5 が混ざらないよう 37.0 と出す） */
+    var refDec = 0;
+    opt.refs.forEach(function(rv){
+      var s = String(rv), dot = s.indexOf('.');
+      if(dot >= 0) refDec = Math.max(refDec, s.length - dot - 1);
+    });
+    opt.refs.forEach(function(rv){
+      if(!(rv > lo && rv < hi)) return;
+      var y2 = T + ih - ih * (rv - lo) / (hi - lo);
+      var rl = document.createElementNS(NS, 'line');
+      rl.setAttribute('x1', L); rl.setAttribute('x2', W - R);
+      rl.setAttribute('y1', y2); rl.setAttribute('y2', y2);
+      rl.setAttribute('class', 'ref'); svg.appendChild(rl);
+      var rt = document.createElementNS(NS, 'text');
+      rt.setAttribute('x', 2); rt.setAttribute('y', y2 + 3); rt.setAttribute('class', 'axis refv');
+      rt.textContent = rv.toFixed(refDec);
+      svg.appendChild(rt);
+    });
   }
   // 日付ラベル（両端と中央だけ。詰まると読めないため）
   [0, Math.floor((dates.length-1)/2), dates.length-1].forEach(function(i, k, arr){
@@ -1135,14 +1176,19 @@ function vmRenderBody(){
   h1.appendChild(u1); sec1.appendChild(h1);
   if(vs.length){
     /* 体温は単位が違うので単独。血圧・脈・SpO2はまとめて1枚に描く（見比べやすさ優先） */
-    var c1 = vmChart(dates, [VM_SERIES[0]], vBy, { min:35, max:38, height:120, aria:'体温の推移' });
+    /* 体温は 37.0 / 37.5 に基準線を引く（自動で入るまん中の目盛り＝36.5 は引かない）。
+       ★min を 37.5 まで含む範囲にしておかないと、平熱続きの期間で基準線が枠外になる。 */
+    var c1 = vmChart(dates, [VM_SERIES[0]], vBy,
+                     { min:35, max:38, refs:[37.0, 37.5], height:120, aria:'体温の推移' });
     if(c1){ sec1.appendChild(c1); sec1.appendChild(vmLegend([VM_SERIES[0]])); }
     /* ★SpO2 を血圧と同じ軸に重ねない。縦軸が 20〜170 になり、
        98→92 という臨床的に意味のある低下がほぼ平坦に見える（2026-08-04 レビュー指摘）。 */
     var bpp = [VM_SERIES[1], VM_SERIES[2], VM_SERIES[3]];
     var c2 = vmChart(dates, bpp, vBy, { height:150, aria:'血圧・脈の推移' });
     if(c2){ sec1.appendChild(c2); sec1.appendChild(vmLegend(bpp)); }
-    var c2b = vmChart(dates, [VM_SERIES[4]], vBy, { min:88, max:100, height:110, aria:'SpO2の推移' });
+    /* SpO2 は 100 が上限の指標なので、天井を 100 に固定する（余白で 100 より上を作らない） */
+    var c2b = vmChart(dates, [VM_SERIES[4]], vBy,
+                      { min:88, max:100, fixedMax:100, height:110, aria:'SpO2の推移' });
     if(c2b){ sec1.appendChild(c2b); sec1.appendChild(vmLegend([VM_SERIES[4]])); }
     sec1.appendChild(vmTable(dates, VM_SERIES, vBy));
   }else{
@@ -1158,8 +1204,22 @@ function vmRenderBody(){
   var u2 = document.createElement('span'); u2.className = 'unit'; u2.textContent = '0〜10';
   h2.appendChild(u2); sec2.appendChild(h2);
   if(ms.length){
-    var c3 = vmChart(dates, VM_MEALS, mBy, { min:0, max:10, height:150, aria:'食事摂取量の推移' });
-    if(c3){ sec2.appendChild(c3); sec2.appendChild(vmLegend(VM_MEALS)); }
+    /* ★主食と副食を1枚に重ねると6本になり、朝昼夕の主副が見分けにくい。
+       主食・副食で分け、どちらも 0〜10 に固定して同じ高さで見比べられるようにする。 */
+    var mainDefs = [VM_MEALS[0], VM_MEALS[2], VM_MEALS[4]];   // 朝・昼・夕の主食
+    var sideDefs = [VM_MEALS[1], VM_MEALS[3], VM_MEALS[5]];   // 朝・昼・夕の副食
+    [['主食', mainDefs, '主食の推移'], ['副食', sideDefs, '副食の推移']].forEach(function(p){
+      var cap = document.createElement('div'); cap.className = 'vmcap'; cap.textContent = p[0];
+      sec2.appendChild(cap);
+      var ch = vmChart(dates, p[1], mBy,
+                       { fixedMin:0, fixedMax:10, height:150, aria:p[2] });
+      if(ch){ sec2.appendChild(ch); sec2.appendChild(vmLegend(p[1])); }
+      else{
+        var nm = document.createElement('p'); nm.className = 'muted';
+        nm.textContent = 'この期間の' + p[0] + 'の記録はありません。';
+        sec2.appendChild(nm);
+      }
+    });
     sec2.appendChild(vmTable(dates, VM_MEALS, mBy));
   }else{
     var n2 = document.createElement('p'); n2.className = 'muted';
