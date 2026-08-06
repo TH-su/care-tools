@@ -129,6 +129,8 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 /* 臨床上の区切り線（体温37.0/37.5 など）。自動目盛りと見分けがつくよう破線＋色つき */
 .chart .ref   { stroke:#c62828; stroke-width:1; stroke-dasharray:4 3; opacity:.55; }
 .chart .refv  { fill:#c62828; }
+/* 選んだ日の縦線。基準線（横・破線）と区別できるよう縦・実線にする */
+.chart .pick  { stroke:#c62828; stroke-width:1.5; }
 /* 日付ごとのクリック領域。点は小さいので、縦の帯で受ける */
 .chart .hit   { fill:transparent; cursor:pointer; }
 .chart .hit:hover { fill:var(--pri); fill-opacity:.07; }
@@ -145,6 +147,11 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .vmtbl td.na { color:var(--g5); }
 .vmtbl td.bad { background:var(--ng-l); color:var(--ng); font-weight:700; }
 .vmwrap { overflow-x:auto; }
+/* 左端の項目名（体温・朝・主食…）は横スクロールしても動かさない。
+   ★border-collapse では枠線が消えるため、固定列だけ影で罫線を描く。 */
+.vmtbl th.hd { position:sticky; left:0; z-index:2; background:var(--g1);
+               text-align:left; box-shadow:1px 0 0 var(--g3), inset 0 0 0 0.5px var(--g3); }
+.vmtbl thead th.hd { z-index:3; }
 
 @media print {
   @page { size:A4 portrait; margin:10mm; }
@@ -153,6 +160,9 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
   .noprint, .bnav, .hdr, .bar, .rlist, .ev .acts { display:none !important; }
   .vmsec { break-inside:avoid; page-break-inside:avoid; border:1px solid #999; }
   .vmwrap { overflow:visible; }
+  /* 紙では横スクロールが無いので固定は不要。overflow:visible と併用すると
+     固定列が紙面の左端に貼り付いて表からずれる */
+  .vmtbl th.hd { position:static; box-shadow:none; }
   .scr { padding:0; max-width:none; }
   .cd { box-shadow:none; border:none; padding:0; margin:0; }
   .dayhd { position:static; background:#fff; }
@@ -1073,6 +1083,15 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
     }
   });
 
+  /* 選んだ日を示す縦線。位置は選ばれた時に決めるので、最初は出さない。
+     ★基準線（横・破線）と区別できるよう、縦・実線にする。 */
+  var pickLine = document.createElementNS(NS, 'line');
+  pickLine.setAttribute('class', 'pick');
+  pickLine.setAttribute('y1', T); pickLine.setAttribute('y2', T + ih);
+  pickLine.style.display = 'none';
+  svg.appendChild(pickLine);
+  svg.__pick = { line: pickLine, dates: dates, x: xs };
+
   /* ── 日付ごとの当たり判定 ──
      ★点そのもの（半径2px）はクリックしづらいので、日付ごとに縦の透明な帯を重ねる。
        帯は隣の日との中点までを受け持つので、日数が増えても押せる幅を最大限とれる。
@@ -1099,7 +1118,7 @@ function vmChart(dates, seriesDefs, dataByDate, opt){
     tt.textContent = parts.join(' / ');
     rc.appendChild(tt);
     if(opt.onPick){
-      rc.addEventListener('click', function(){ opt.onPick(d); });
+      rc.addEventListener('click', function(){ opt.onPick(d, svg); });
     }
     hit.appendChild(rc);
   });
@@ -1161,9 +1180,29 @@ function vmMarkDate(d){
        絞らないと SVG の透明な帯にまで強調が付く。 */
   var cells = body.querySelectorAll('.vmtbl th[data-d="' + VMFOCUS + '"], .vmtbl td[data-d="' + VMFOCUS + '"]');
   for(var j = 0; j < cells.length; j++) cells[j].classList.add('fx');
+  vmMarkLine();
 }
 
-function vmFocusDate(d, sectionEl){
+/* 選んだ日の縦線を、すべてのグラフの同じ日の位置へ動かす。
+   ★押したグラフだけに引くのではなく全グラフに引く。体温・血圧・SpO2・食事を
+     同じ日で縦にそろえて見比べられるようにするため。
+   選択が無い日・そのグラフに無い日は消す（前の選択が残らないように）。 */
+function vmMarkLine(){
+  var body = $('vmBody');
+  if(!body) return;
+  var svgs = body.querySelectorAll('svg.chart');
+  for(var i = 0; i < svgs.length; i++){
+    var g = svgs[i].__pick;
+    if(!g) continue;
+    var idx = VMFOCUS ? g.dates.indexOf(VMFOCUS) : -1;
+    if(idx < 0){ g.line.style.display = 'none'; continue; }
+    var x = g.x(idx).toFixed(1);
+    g.line.setAttribute('x1', x); g.line.setAttribute('x2', x);
+    g.line.style.display = '';
+  }
+}
+
+function vmFocusDate(d, sectionEl, chartEl){
   vmMarkDate(d);
   var body = $('vmBody');
   /* 押したグラフと同じ区画にある表へ寄せる */
@@ -1194,10 +1233,23 @@ function vmFocusDate(d, sectionEl){
     })(wraps[w]);
   }
 
-  /* ② その列を画面の縦中央へ。表は縦にはスクロールしないのでページ側を動かす。 */
+  /* ② 縦位置。押したグラフ（赤い縦線が出ている方）を画面の上のほうに置き、
+     その下に表の該当列が見える位置まで動かす。
+     ★以前は該当列を画面のちょうど中央に置いていたが、それだと
+       押したグラフが画面の外へ出てしまい、「どの点を押したのか」が確認できなかった。
+     グラフと表が1画面に収まらない場合だけ、表が見えるところまで追加で下げる。 */
   var docH = document.documentElement.scrollHeight;
-  var top = window.pageYOffset + cr.top + cr.height / 2 - window.innerHeight / 2;
-  top = Math.max(0, Math.min(top, Math.max(0, docH - window.innerHeight)));
+  var vh = window.innerHeight;
+  var top;
+  if(chartEl){
+    var gr = chartEl.getBoundingClientRect();
+    top = window.pageYOffset + gr.top - Math.round(vh * 0.06);   // グラフを上から6%の位置へ
+    var need = window.pageYOffset + cr.bottom - vh + 12;         // 表の該当行が見える最小位置
+    if(need > top) top = need;
+  }else{
+    top = window.pageYOffset + cr.top + cr.height / 2 - vh / 2;  // グラフが分からない時は中央
+  }
+  top = Math.max(0, Math.min(top, Math.max(0, docH - vh)));
   steps.push({ get: function(){ return window.pageYOffset; },
                set: function(v){ window.scrollTo(0, v); },
                to: top });
@@ -1223,7 +1275,9 @@ function vmTable(dates, defs, byDate){
   var wrap = document.createElement('div'); wrap.className = 'vmwrap';
   var t = document.createElement('table'); t.className = 'vmtbl';
   var thead = document.createElement('thead'); var htr = document.createElement('tr');
-  var th0 = document.createElement('th'); th0.textContent = '項目'; htr.appendChild(th0);
+  var th0 = document.createElement('th'); th0.textContent = '項目';
+  th0.className = 'hd';                    // 横スクロールで動かさない列
+  htr.appendChild(th0);
   dates.forEach(function(d){
     var th = document.createElement('th'); th.textContent = fmtDate(d);
     th.setAttribute('data-d', d);          // グラフのプロットから該当列を探すための目印
@@ -1233,7 +1287,9 @@ function vmTable(dates, defs, byDate){
   var tb = document.createElement('tbody');
   defs.forEach(function(sd){
     var tr = document.createElement('tr');
-    var th = document.createElement('th'); th.textContent = sd.label; tr.appendChild(th);
+    var th = document.createElement('th'); th.textContent = sd.label;
+    th.className = 'hd';                   // 横スクロールで動かさない列
+    tr.appendChild(th);
     dates.forEach(function(d){
       var td = document.createElement('td');
       td.setAttribute('data-d', d);
@@ -1317,7 +1373,7 @@ function vmRenderBody(){
     /* 体温は単位が違うので単独。血圧・脈・SpO2はまとめて1枚に描く（見比べやすさ優先） */
     /* 体温は 37.0 / 37.5 に基準線を引く（自動で入るまん中の目盛り＝36.5 は引かない）。
        ★min を 37.5 まで含む範囲にしておかないと、平熱続きの期間で基準線が枠外になる。 */
-    var pick1 = function(d){ vmFocusDate(d, sec1); };
+    var pick1 = function(d, svg){ vmFocusDate(d, sec1, svg); };
     var c1 = vmChart(dates, [VM_SERIES[0]], vBy,
                      { min:35, max:38, refs:[37.0, 37.5], height:120, aria:'体温の推移',
                        onPick:pick1 });
@@ -1355,7 +1411,7 @@ function vmRenderBody(){
       sec2.appendChild(cap);
       var ch = vmChart(dates, p[1], mBy,
                        { fixedMin:0, fixedMax:10, height:150, aria:p[2],
-                         onPick:function(d){ vmFocusDate(d, sec2); } });
+                         onPick:function(d, svg){ vmFocusDate(d, sec2, svg); } });
       if(ch){ sec2.appendChild(ch); sec2.appendChild(vmLegend(p[1])); }
       else{
         var nm = document.createElement('p'); nm.className = 'muted';
