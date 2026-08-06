@@ -37,7 +37,8 @@
 !/connection-settings.html
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
-#  haiben-record.html / gas/         → 別リポ TH-su/haiben-record で管理
+#  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
+#  gas/ その他（master/med-api/moushiokuri-api/migrate）→ 正本はテーマ gas/（ローカルgit管理・非公開）
 #  ws-master*.json / data/           → 実在入居者名を含む（公開厳禁）
 #  demo-data.json / staff-roster.json / shiftapp-backup-*.json → 実職員名を含む
 #  visiting-medical-app/             → 訪問診療（要配慮個人情報）・本番は clinic-app

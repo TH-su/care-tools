@@ -675,7 +675,8 @@ var APP_LINKS=[
   {href:'facesheet.html',                         ic:'📄', name:'フェイスシート', desc:'入居者の基本情報を1枚に'},
   {href:'weight-record.html',                     ic:'⚖️', name:'体重管理',       desc:'体重の記録と推移'},
   {href:'../haiben-record/haiben-record.html',    ic:'🚽', name:'排便ケア記録',   desc:'排泄の記録'},
-  {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'}
+  {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'},
+  {href:'moushiokuri-viewer.html',                ic:'📝', name:'申送ビューア',   desc:'申し送り・バイタル・食事量'}
 ];
 /* ── 入居者単位リンク（この方を各アプリで開く） ──
    ★載せてよいのは「?masterId= を実際に解釈する受け側が実装済みのアプリ」だけ。
@@ -691,7 +692,8 @@ var PER_RESIDENT_APPS={
   'genogram.html':1,
   'weight-record.html':1,                    /* 2026-08-01 受信実装（該当なしは一覧へ逃がす） */
   'care-schedule.html':1,                    /* 2026-08-01 受信実装（該当なしは選択を変えない） */
-  '../haiben-record/haiben-record.html':1    /* 2026-08-01 受信実装（該当なしは選択を空にする） */
+  '../haiben-record/haiben-record.html':1,   /* 2026-08-01 受信実装（該当なしは選択を空にする） */
+  'moushiokuri-viewer.html':1                /* 2026-08-07 受信実装検証済み（該当なしは通知のみ・?masterId= を解釈） */
 };
 function residentLink(href,id,name){
   if(id==null||id==='')return href;

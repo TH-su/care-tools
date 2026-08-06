@@ -1667,6 +1667,9 @@ function applyMasterIdParam(){
       /* ★「つながった」だけを成功と表示しない。1件も取り込めていなくても接続は成功するため、
          直近の取込件数と失敗内容まで出して、沈黙故障が正常に見えないようにする。 */
       var info = '接続できました。';
+      /* 版数エコー（2026-08-07〜のGASが返す）。貼り直し後は「版 2026-08-07」以降が出る。
+         旧GASは ver を返さないため表示しない（無い＝貼り直し前の版）。 */
+      if(r && r.ver) info += '版 ' + String(r.ver) + '／';
       if(r && r.lastTick) info += '最終取込 ' + String(r.lastTick).replace('T',' ').substring(0,16);
       var raw = (r && r.rawOk !== '' && r.rawOk != null) ? Number(r.rawOk) : NaN;
       if(!isNaN(raw)){
