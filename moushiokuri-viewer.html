@@ -1393,6 +1393,26 @@ function vmTable(dates, defs, byDate){
   return wrap;
 }
 
+/* ★同じ日に複数の記録がありうる（居室移動で1階と2階の両方に書かれる等）。
+   後勝ちで上書きすると、片方にしか無い測定値が画面から消える（2026-08-04 レビュー指摘）。
+   項目ごとに「値のある方」を残してマージする（消えるより残す）。
+   ★表示と「数値をコピー」の両方がこれを使う。別々に組むと画面とコピーが食い違う。 */
+function mergeBy(list, keys){
+  var by = Object.create(null);
+  list.forEach(function(r){
+    var cur = by[r.date];
+    if(!cur){ by[r.date] = JSON.parse(JSON.stringify(r)); return; }
+    keys.forEach(function(k){
+      if((cur[k] === null || cur[k] === undefined) && r[k] !== null && r[k] !== undefined) cur[k] = r[k];
+    });
+    /* 数値化できなかった項目の印は足し合わせる（片方で読めていれば値が入る） */
+    var f = (cur.flags ? cur.flags.split(',') : []).concat(r.flags ? r.flags.split(',') : []);
+    cur.flags = f.filter(function(x, i){ return x && f.indexOf(x) === i; }).join(',');
+    if(!cur.room && r.room) cur.room = r.room;
+  });
+  return by;
+}
+
 function vmRenderBody(){
   var box = $('vmBody'); box.textContent = '';
   $('vmWho').textContent = ''; $('vmActions').hidden = true;
@@ -1421,24 +1441,6 @@ function vmRenderBody(){
   $('vmActions').hidden = false;
 
   var dates = vmAllDates();
-  /* ★同じ日に複数の記録がありうる（居室移動で1階と2階の両方に書かれる等）。
-     後勝ちで上書きすると、片方にしか無い測定値が画面から消える（2026-08-04 レビュー指摘）。
-     項目ごとに「値のある方」を残してマージする（消えるより残す）。 */
-  function mergeBy(list, keys){
-    var by = Object.create(null);
-    list.forEach(function(r){
-      var cur = by[r.date];
-      if(!cur){ by[r.date] = JSON.parse(JSON.stringify(r)); return; }
-      keys.forEach(function(k){
-        if((cur[k] === null || cur[k] === undefined) && r[k] !== null && r[k] !== undefined) cur[k] = r[k];
-      });
-      /* 数値化できなかった項目の印は足し合わせる（片方で読めていれば値が入る） */
-      var f = (cur.flags ? cur.flags.split(',') : []).concat(r.flags ? r.flags.split(',') : []);
-      cur.flags = f.filter(function(x, i){ return x && f.indexOf(x) === i; }).join(',');
-      if(!cur.room && r.room) cur.room = r.room;
-    });
-    return by;
-  }
   var vBy = mergeBy(vs, ['temp','sysBP','diaBP','pulse','spo2']);
   var mBy = mergeBy(ms, ['bMain','bSide','lMain','lSide','dMain','dSide']);
 
@@ -1511,30 +1513,41 @@ function vmRenderBody(){
   if(VMFOCUS){ vmMarkDate(dates.indexOf(VMFOCUS) >= 0 ? VMFOCUS : ''); }
 }
 
-/* 経過記録へ貼れる形で数値を書き出す */
+/* 経過記録へ貼れる形で数値を書き出す。
+   ★表示と同じ mergeBy 統合結果から作る。生の記録のままだと、同じ日の2件目が
+     欠落し、さらにバイタルの無い日は行自体が作られず食事量が丸ごと抜ける
+     （画面には出ているのにコピーには無い＝転記漏れになる）。 */
 function vmCopyText(){
   if(!VMSEL) return '';
-  var vs = VM.vitals.filter(function(v){ return normName(v.name) === VMSEL; })
-                    .sort(function(a,b){ return a.date < b.date ? -1 : 1; });
+  var vs = VM.vitals.filter(function(v){ return normName(v.name) === VMSEL; });
   var ms = VM.meals.filter(function(m){ return normName(m.name) === VMSEL; });
-  var mBy = Object.create(null); ms.forEach(function(m){ mBy[m.date] = m; });
+  var vBy = mergeBy(vs, ['temp','sysBP','diaBP','pulse','spo2']);
+  var mBy = mergeBy(ms, ['bMain','bSide','lMain','lSide','dMain','dSide']);
+  /* 統合の JSON 往復で値の無い項目はキーごと落ちる。表示側と同じく null/undefined を欠測扱いにする */
+  function has(x){ return x !== null && x !== undefined; }
+  /* バイタルと食事の日付の和集合（バイタルの無い日も食事だけの行を出す） */
+  var ds = Object.keys(vBy).concat(Object.keys(mBy));
+  ds = ds.filter(function(d, i){ return ds.indexOf(d) === i; }).sort();
   var lines = [];
-  vs.forEach(function(v){
+  ds.forEach(function(d){
     var parts = [];
-    if(v.temp  !== null) parts.push('KT' + v.temp);
-    if(v.sysBP !== null && v.diaBP !== null) parts.push('BP' + v.sysBP + '/' + v.diaBP);
-    else if(v.sysBP !== null) parts.push('BP' + v.sysBP);
-    if(v.pulse !== null) parts.push('P' + v.pulse);
-    if(v.spo2  !== null) parts.push('SpO2 ' + v.spo2 + '%');
-    var m = mBy[v.date];
+    var v = vBy[d];
+    if(v){
+      if(has(v.temp))  parts.push('KT' + v.temp);
+      if(has(v.sysBP) && has(v.diaBP)) parts.push('BP' + v.sysBP + '/' + v.diaBP);
+      else if(has(v.sysBP)) parts.push('BP' + v.sysBP);
+      if(has(v.pulse)) parts.push('P' + v.pulse);
+      if(has(v.spo2))  parts.push('SpO2 ' + v.spo2 + '%');
+    }
+    var m = mBy[d];
     if(m){
       var mm = [];
-      if(m.bMain !== null || m.bSide !== null) mm.push('朝' + (m.bMain === null ? '−' : m.bMain) + '/' + (m.bSide === null ? '−' : m.bSide));
-      if(m.lMain !== null || m.lSide !== null) mm.push('昼' + (m.lMain === null ? '−' : m.lMain) + '/' + (m.lSide === null ? '−' : m.lSide));
-      if(m.dMain !== null || m.dSide !== null) mm.push('夕' + (m.dMain === null ? '−' : m.dMain) + '/' + (m.dSide === null ? '−' : m.dSide));
+      if(has(m.bMain) || has(m.bSide)) mm.push('朝' + (has(m.bMain) ? m.bMain : '−') + '/' + (has(m.bSide) ? m.bSide : '−'));
+      if(has(m.lMain) || has(m.lSide)) mm.push('昼' + (has(m.lMain) ? m.lMain : '−') + '/' + (has(m.lSide) ? m.lSide : '−'));
+      if(has(m.dMain) || has(m.dSide)) mm.push('夕' + (has(m.dMain) ? m.dMain : '−') + '/' + (has(m.dSide) ? m.dSide : '−'));
       if(mm.length) parts.push('食事(主/副) ' + mm.join(' '));
     }
-    if(parts.length) lines.push(fmtDate(v.date) + ' ' + parts.join('　'));
+    if(parts.length) lines.push(fmtDate(d) + ' ' + parts.join('　'));
   });
   return lines.join('\n');
 }

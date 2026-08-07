@@ -1008,6 +1008,13 @@ function nowISO() {
     sign + pad(Math.floor(Math.abs(tz) / 60)) + ':' + pad(Math.abs(tz) % 60);
 }
 
+/* タイムスタンプは必ず数値で比較する。nowISO() の +09:00 形式と GAS の UTC Z 形式が
+   混在しており、文字列の辞書順では同時刻でもリモート側が古いと誤判定されるため。 */
+function parseTs(s) {
+  const t = Date.parse(s || '');
+  return isNaN(t) ? 0 : t;   // 解釈不能・欠落は 0＝最古扱い（リモートを勝たせない安全側）
+}
+
 function beforeChange() {
   state.history.push(JSON.stringify(state.doc));
   if (state.history.length > HISTORY_MAX) state.history.shift();
@@ -1962,20 +1969,50 @@ const CloudSync = (function() {
     }
     return r.deleted;
   }
+  // ---- 競合判定の基準時刻（設定画面 L725 が宣言する「保存時の上書き確認」の実装） ----
+  /* 「この端末が最後に取り込んだ版」の時刻を利用者名キーで保持する。doc.updatedAt は保存直前に
+     now へ書き換わるため基準に使えず、doc へ埋め込むと保存データの形が変わるのでモジュール内に持つ。 */
+  const baseTs = {};
+  function setBaseline(name, iso) {
+    if (name) baseTs[name] = parseTs(iso);
+  }
+  function isRemoteNewer(name, remote) {
+    return !!(remote && parseTs(remote.updatedAt) > (baseTs[name] || 0));
+  }
+  async function fetchRemoteQuiet(name) {
+    try { return await get(name); }
+    catch (e) { return null; }  // 取得できない時は競合なしとして従来どおり保存を試みる
+  }
+  async function saveAndMarkBaseline(doc) {
+    const saved = await save(doc);
+    // GAS 側が updatedAt をサーバー時刻で採番するため、応答の値を基準にする
+    setBaseline(doc.clientName, (saved && saved.updatedAt) || doc.updatedAt);
+    return saved;
+  }
   async function saveCheckConflict(doc) {
-    // Compare with remote updatedAt before overwriting
-    try {
-      const remote = await get(doc.clientName);
-      if (remote && remote.updatedAt && doc.updatedAt &&
-          remote.updatedAt > doc.updatedAt &&
-          // local was last loaded earlier than remote (in our session)
-          remote.updatedAt !== doc.updatedAt) {
-        // Local doc.updatedAt was set to "now" before save → remote always older.
-        // So this branch only triggers if remote was updated *after* we set now.
-        // It's a soft guard: just warn the user.
+    // 取り込み時点より新しい版がクラウドにあれば、上書きの前に本人へ確認する
+    const remote = await fetchRemoteQuiet(doc.clientName);
+    if (isRemoteNewer(doc.clientName, remote)) {
+      if (!confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
+        const err = new Error('別端末の新しい版があるため、クラウドへの保存を中止しました');
+        err.conflict = true;
+        throw err;
       }
-    } catch (e) { /* if get fails, just try save */ }
-    return await save(doc);
+    }
+    return await saveAndMarkBaseline(doc);
+  }
+  async function saveQueued(doc) {
+    // 再送は無人で走り得るため confirm は出さず、競合していれば送らずキューに残す
+    // 再読込後は基準時刻が消えている（メモリ内のみ）。その場合はキュー文書自身の時刻を基準にする
+    // ＝「積んだ後にリモートが動いたか」の判定になり、基準0による恒久保留を防ぐ
+    if (!baseTs[doc.clientName]) setBaseline(doc.clientName, doc.updatedAt);
+    const remote = await fetchRemoteQuiet(doc.clientName);
+    if (isRemoteNewer(doc.clientName, remote)) {
+      const err = new Error('別端末の新しい版があるため再送を保留しました');
+      err.conflict = true;
+      throw err;
+    }
+    return await saveAndMarkBaseline(doc);
   }
 
   // ---- Retry queue ----
@@ -2012,7 +2049,7 @@ const CloudSync = (function() {
     const remaining = [];
     for (const item of arr) {
       try {
-        if (item.kind === 'save') await save(item.doc);
+        if (item.kind === 'save') await saveQueued(item.doc);
         else if (item.kind === 'delete') await del(item.name);
         processed++;
       } catch (e) {
@@ -2026,7 +2063,7 @@ const CloudSync = (function() {
 
   return {
     getCfg, setCfg, isConfigured, hasGithub,
-    ping, list, get, save, del, saveCheckConflict,
+    ping, list, get, save, del, saveCheckConflict, setBaseline,
     queuePending, getPending, flushPending, updatePendingBadge
   };
 })();
@@ -2110,8 +2147,14 @@ async function saveDoc() {
       flashStatus(`「${name}」を保存・同期しました`);
       setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
-      CloudSync.queuePending({ kind: 'save', doc });
-      setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
+      if (err && err.conflict) {
+        // 上書き中止：キューに積むと後で再送してクラウド側の新しい版を消すため積まない
+        setSyncStatus('err', 'クラウドへの保存を中止しました（別端末の版を保持）');
+        flashStatus('クラウドへの保存を中止しました（端末にのみ保存）');
+      } else {
+        CloudSync.queuePending({ kind: 'save', doc });
+        setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
+      }
     }
   }
 }
@@ -2124,12 +2167,14 @@ async function loadDoc(name) {
   if (localRaw) {
     try { localDoc = JSON.parse(localRaw); } catch (e) { /* ignore */ }
   }
+  let cloudSeenAt = null;   // 読込時に観測したクラウド版の時刻（ローカル版を採用した場合も基準にする）
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', `クラウドから「${name}」を読込中…`);
     try {
       const remote = await CloudSync.get(name);
       if (remote) {
-        if (!localDoc || (remote.updatedAt && (!localDoc.updatedAt || remote.updatedAt > localDoc.updatedAt))) {
+        cloudSeenAt = remote.updatedAt;
+        if (!localDoc || parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
           doc = remote;
           // refresh local cache
           localStorage.setItem(LS_DOC_PREFIX + name, JSON.stringify(remote));
@@ -2149,6 +2194,10 @@ async function loadDoc(name) {
   }
   if (!doc) { alert('データが見つかりません: ' + name); return; }
   state.clientName = doc.clientName || name;
+  /* 基準は「読込時に観測したクラウド版の時刻」。ローカル版を採用した時に doc.updatedAt（ローカル時刻）を
+     基準にすると、読込後に別端末が保存した版まで「古い」と誤判定し確認なしで上書きするため（レビュー指摘）。
+     クラウド未観測（未設定・文書なし・取得失敗）はローカル時刻へフォールバック。 */
+  CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt);
   state.doc = {
     nodes: doc.nodes || [],
     lines: doc.lines || [],
@@ -2222,7 +2271,7 @@ async function refreshDocList() {
       const remoteList = await CloudSync.list();
       remoteList.forEach(e => {
         const existing = merged.get(e.name);
-        if (!existing || (e.updatedAt > existing.updatedAt)) {
+        if (!existing || parseTs(e.updatedAt) > parseTs(existing.updatedAt)) {
           merged.set(e.name, { name: e.name, updatedAt: e.updatedAt, src: existing ? 'both' : 'cloud' });
         } else {
           merged.set(e.name, { ...existing, src: 'both' });
@@ -2232,7 +2281,7 @@ async function refreshDocList() {
       // silent — local list still shown
     }
   }
-  const all = Array.from(merged.values()).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const all = Array.from(merged.values()).sort((a, b) => parseTs(b.updatedAt) - parseTs(a.updatedAt));
   sel.innerHTML = '<option value="">— 保存済みから読込 —</option>';
   all.forEach(e => {
     const opt = document.createElement('option');

@@ -4871,8 +4871,14 @@ function renderAlerts(){
           </div>
         </div>
       `;
+      // Alert click → individual screen for THIS resident.
+      // saveUI only writes localStorage (the in-memory UI snapshot stays stale),
+      // so we MUST set the select value explicitly here — otherwise
+      // populateResidentSelect keeps the previous resident and the wrong person
+      // is shown.
       div.addEventListener('click', ()=>{
         saveUI({ivRes: resident.id});
+        $('#ivResident').value = resident.id;
         goto('indiv');
       });
       list.appendChild(div);

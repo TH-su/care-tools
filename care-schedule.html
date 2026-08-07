@@ -2331,7 +2331,7 @@ const SYNC = {
       ensureServiceDict_();   // payload 構築前に辞書を自己修復（競合リベースで server 丸取りした後の再push でも辞書を復元）
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: this.loadCareRev(), data: DB, force: !!force });
-      if (j.ok) {
+      if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
         this.saveCareRev(j.rev);
         this.config.lastSync = Date.now();
         this.clearDirty();
@@ -2340,6 +2340,15 @@ const SYNC = {
         this.updateStatusUI('同期OK');
         this._busy = false;
         return true;
+      }
+      if (j.ok) {
+        /* ok なのに rev が無い＝旧形式GAS（A1保存プロトコル）。成功扱いにすると未送信のまま
+           「同期OK」を装い dirty が消えるため、ここで止めて設定の見直しを促す（clearDirty しない） */
+        this._busy = false;
+        this.markDirty();
+        this.updateStatusUI('未同期…');
+        this.log('❌ 接続先GASが旧形式のため同期できません。同期モーダルの最新GASコードで再デプロイするか、接続設定を確認してください');
+        return false;
       }
       if (j.conflict) {
         // 別端末の新しい更新あり → サーバー版を取得後、自分の編集を再適用して保存（編集を捨てない＝リバウンド防止）
@@ -4723,13 +4732,19 @@ let undoStack = [];
 function pushUndo() {
   const res = currentResident();
   if (!res) return;
-  undoStack.push(JSON.stringify(res.events));
+  // 利用者IDを併記する: 利用者切替後の Undo が別利用者の計画を丸ごと差し替える事故を防ぐ
+  undoStack.push({ rid: res.id, snap: JSON.stringify(res.events) });
   if (undoStack.length > 30) undoStack.shift();
 }
 function undo() {
   const res = currentResident();
   if (!res || !undoStack.length) { showToast('これ以上元に戻せません'); return; }
-  res.events = JSON.parse(undoStack.pop());
+  // 現在の利用者のスナップだけを適用対象にする（他利用者の分はスタックに残す）
+  let i = undoStack.length - 1;
+  while (i >= 0 && undoStack[i].rid !== res.id) i--;
+  if (i < 0) { showToast('この利用者の取り消し履歴はありません'); return; }
+  res.events = JSON.parse(undoStack[i].snap);
+  undoStack.splice(i, 1);
   saveDB(); renderAll();
   showToast('元に戻しました');
 }

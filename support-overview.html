@@ -983,9 +983,7 @@ function init() {
   });
 
   const t = syncTarget();
-  if (t.endpoint) {
-    refresh();                                             // 接続先があれば自動集計
-  } else {
+  if (!t.endpoint) {
     $('boardEmpty').classList.add('on');
     $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
     setSyncState('未設定');
@@ -993,9 +991,11 @@ function init() {
 
   /* 入居者マスタの入院を重ねる（2026-08-02 追加）。
      ★先に名簿を取ってから集計する。順序が逆だと初回だけ入院が抜けた表になる。
+     （2026-08-08 監査O1: 即時 refresh との並走をやめ、名簿取得の完了後に1回だけ自動集計する。
+       soFetchHosp は失敗時も false で解決するため、ここは必ず1回呼ばれる＝自動集計は従来どおり走る）
      接続設定が無い端末では何も起きない＝従来どおり。 */
-  soFetchHosp().then(function(ok){
-    if (ok && syncTarget().endpoint && typeof refresh === 'function') refresh();
+  soFetchHosp().then(function(){
+    if (syncTarget().endpoint) refresh();                  // 接続先があれば自動集計（名簿反映後）
   });
   setInterval(function(){ try{ soWatchState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
