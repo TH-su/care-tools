@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<!-- 機微情報を含むためキャッシュ無効 -->
+<meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -1863,22 +1865,29 @@ async function syncFromAPI(showLoader){
        トースト、という往復（巻き戻り）になる。サーバーが値を持つ（null/undefined でない）
        ときは従来どおりサーバーが勝つ＝「値を持たない」と「空の明示」を区別する。 */
     const RES_CLIENT_ONLY = ['masterId','hospitalized','dischargedAt'];
+    /* 未送信の書き込みが残っている行だけは、サーバー行で上書きしない。
+       未送信＝サーバーはまだこの修正を知らない、なので同期で上書きすると
+       【オフラインで直した値がサーバーの旧値へ巻き戻り、その旧値をそのまま再送する】
+       ＝現場の修正が無言で消えたうえ「同期しました」と出る。送信が終わるまでは
+       この端末のローカルを正とし、送信後の同期でサーバー側と一致させる。 */
+    const pendIds = pendingWriteIds();
     // merge: server wins on ID collision, local-only IDs are preserved
-    const mergeById = (serverList, localList, clientOnly)=>{
+    const mergeById = (serverList, localList, clientOnly, keepLocalIds)=>{
       const seen = new Set();
       const out = [];
       const localById = new Map();
-      if(clientOnly){ for(const l of localList){ if(l && l.id!=null && !localById.has(l.id)) localById.set(l.id, l); } }
+      if(clientOnly || keepLocalIds){ for(const l of localList){ if(l && l.id!=null && !localById.has(l.id)) localById.set(l.id, l); } }
       for(const s of serverList){ if(s && s.id!=null && !seen.has(s.id)){
-        const l = clientOnly ? localById.get(s.id) : null;
-        if(l) clientOnly.forEach(f=>{ if(s[f]==null && l[f]!=null) s[f] = l[f]; });
+        const l = (clientOnly || keepLocalIds) ? localById.get(s.id) : null;
+        if(l && keepLocalIds && keepLocalIds.has(s.id)){ out.push(l); seen.add(s.id); continue; }  // 未送信あり＝ローカル優先
+        if(l && clientOnly) clientOnly.forEach(f=>{ if(s[f]==null && l[f]!=null) s[f] = l[f]; });
         out.push(s); seen.add(s.id);
       } }
       for(const l of localList){  if(l && l.id!=null && !seen.has(l.id)){ out.push(l); seen.add(l.id); } }
       return out;
     };
-    DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY);
-    DB.records   = mergeById(apiRec, DB.records);
+    DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY, pendIds.res);
+    DB.records   = mergeById(apiRec, DB.records, null, pendIds.rec);
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
     try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
     // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
@@ -1936,6 +1945,67 @@ function enqueuePending(action, data){
   q.push({ action, data, at: Date.now() });
   savePendingQueue(q.length > 500 ? q.slice(-500) : q);
 }
+/* 未送信項目が指す行の id（save 系のみ。del 系はサーバー側で消えるので対象外）。 */
+function _pqItemId(it){
+  const d = (it && it.data) || {};
+  if(it && it.action === 'saveRecord')   return d.record   ? d.record.id   : null;
+  if(it && it.action === 'saveResident') return d.resident ? d.resident.id : null;
+  return null;
+}
+/* 永続キューに残っている未送信 save の対象 id を種類別に集める（同期のマージで使う）。 */
+function pendingWriteIds(){
+  const rec = new Set(), res = new Set();
+  const add = (it)=>{
+    if(!it) return;
+    const id = _pqItemId(it);
+    if(id == null) return;
+    if(it.action === 'saveRecord')   rec.add(id);
+    if(it.action === 'saveResident') res.add(id);
+  };
+  for(const it of loadPendingQueue()) add(it);
+  /* 送信中・送信待ちのメモリキュー(_writeInFlight/_writeQ)も「未送信」に数える。
+     ここを落とすと、飛行中の書き込みが同期のマージでサーバー旧値へ巻き戻され、
+     その書き込みが失敗して永続キューへ回った時に、再送直前の引き直し(_pqFreshenData)が
+     巻き戻された旧値を拾って送る＝現場の修正が成功表示のまま消える。 */
+  add(_writeInFlight);
+  for(const it of _writeQ) add(it);
+  return { rec, res };
+}
+/* 送信に成功した行と同じ id の「その送信より前に積まれた」未送信 save を捨てる。
+   滞留分の再送で、いま送った最新値がサーバー上で古い値に戻るのを断つため。
+   ・比較は item._at（この書き込みを積んだ時刻）で行う。離脱時排水（_drainWriteQueueSync）で
+     後から積まれた新しい版を巻き込んで消さないため（消すと最新版が二度と送られない）。
+   ・フラッシュ中は触らない。flushPendingQueue の合流保存が「末尾追記のみ」を前提に
+     slice しているので、途中で要素を抜くと未送信分がずれて消える。 */
+function dropStalePending(item){
+  if(_pqFlushing) return;
+  const id = _pqItemId(item);
+  if(id == null) return;
+  const before = (item && item._at) || Date.now();
+  const q = loadPendingQueue();
+  const kept = q.filter(it=> !(it && it.action === item.action && _pqItemId(it) === id && (it.at || 0) <= before));
+  if(kept.length !== q.length) savePendingQueue(kept);
+}
+/* 送信直前に、キュー登録時のスナップショットではなくローカル正本の最新行へ差し替える。
+   キューが滞留している間に同じレコードが編集・削除されていると、古いスナップショットの
+   再送がサーバー上の新しい値を巻き戻す（削除済みレコードの復活も起きる）ため。
+   戻り値 {skip:true} は「もう存在しない＝再送しない」。 */
+function _pqFreshenData(item){
+  const d = (item && item.data) || {};
+  if(item.action === 'saveRecord'){
+    const id = d.record && d.record.id;
+    if(!id) return { data: d };                       // id 不明は照合できないので原文のまま送る
+    const cur = (DB.records || []).find(r=> r && r.id === id);
+    return cur ? { data: Object.assign({}, d, { record: cur }) } : { skip: true };
+  }
+  if(item.action === 'saveResident'){
+    const id = d.resident && d.resident.id;
+    if(!id) return { data: d };
+    const cur = (DB.residents || []).find(r=> r && r.id === id);
+    return cur ? { data: Object.assign({}, d, { resident: cur }) } : { skip: true };
+  }
+  return { data: d };
+}
 let _pqFlushing = false;
 function flushPendingQueue(){
   if(!apiUrl || _pqFlushing) return;
@@ -1954,7 +2024,9 @@ function flushPendingQueue(){
   const next = ()=>{
     if(i >= q.length){ finish(); return; }
     const item = q[i++];
-    apiPost(item.action, item.data || {})
+    const fr = _pqFreshenData(item);
+    if(fr.skip){ next(); return; }   // ローカルに無い＝削除済み。再送すると幽霊レコードになる
+    apiPost(item.action, fr.data || {})
       .then(r => { if(!(r && r.ok !== false)) remain.push(item); next(); })
       .catch(()=> { remain.push(item); next(); });
   };
@@ -1977,6 +2049,7 @@ function _writeDrain(){
     .then(r=>{
       if(r && r.ok !== false){
         apiSetStatus('ok', '最終同期: '+ new Date().toLocaleTimeString('ja-JP'));
+        dropStalePending(item);   // 同じ行の古い未送信を掃除（stale replay の根絶）
       }else{
         apiSetStatus('er', '書き込みエラー');
         if(!item._drained) enqueuePending(item.action, item.data);
@@ -1998,7 +2071,7 @@ function _writeDrain(){
 }
 function apiPush(action, data){
   if(!apiUrl) return;
-  _writeQ.push({ action, data: data || {} });
+  _writeQ.push({ action, data: data || {}, _at: Date.now() });   // _at＝積んだ時刻。成功時の古い未送信掃除の境界に使う
   _writeDrain();
 }
 /* ページ離脱時、メモリ上の送信待ち（送信中の1件を含む）を永続キューへ同期退避する。

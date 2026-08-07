@@ -12,6 +12,9 @@
   --pri:#1a73e8; --pri-l:#e8f0fe; --pri-d:#1557b0;
   --ok:#2e7d32; --ok-l:#e8f5e9; --ng:#c62828; --ng-l:#ffebee;
   --warn-bg:#fff8e1; --warn-tx:#e65100;
+  /* 食形態チップ用。未定義のままだと color/background が無効値になり、
+     白背景に黒文字＝他の注意チップと見分けが付かなくなるため定義する */
+  --u:#6a1b9a; --u-bg:#f3e5f5;
   --g0:#f8f9fa; --g1:#f1f3f4; --g2:#e8eaed; --g3:#dadce0;
   --g5:#9aa0a6; --g6:#80868b; --g7:#5f6368; --g9:#202124;
   --r:12px; --sh:0 1px 6px rgba(0,0,0,.12);
@@ -900,7 +903,7 @@ function setView(v){
 /* ═══════════ 誕生日一覧（年度単位） ═══════════
    ★年齢は「年度末＝翌年3月31日時点」。その年度に誕生日を迎えた後の年齢になる。
      例）2026年度: 4/24生まれ→2027-03-31時点で82歳／3/21生まれ→同79歳。
-     この定義は橋爪氏の現行の手作り表と一致することを実物で照合済み（2026-08-04）。 */
+     この定義は管理者の現行の手作り表と一致することを実物で照合済み（2026-08-04）。 */
 /* 年度: 4月始まり。1〜3月は前年度に属する。 */
 function fyOfDate(d){ return d.getMonth()+1>=4 ? d.getFullYear() : d.getFullYear()-1; }
 var bdayFY=fyOfDate(new Date());
@@ -1241,15 +1244,25 @@ function fitBdaySheet(){
 
 /* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
 var curResident=null;
+/* 詳細画面の編集・印刷ボタンの可否。取得できた本人がいる時だけ押せる。
+   curResident に前の方が残ったままだと、読み込み中や取得失敗の画面から
+   ✏️編集を押して【別人の編集フォーム】が開く（＝別人への上書き事故）。 */
+function setViewActions(on){
+  var e=$('editBtn'), p=$('printBtn');
+  if(e)e.disabled=!on;
+  if(p)p.disabled=!on;   // 印刷も同様。読み込み中・失敗の画面を帳票として出さない
+}
 function openResident(id){
   showScreen('view');
+  /* 前の方の情報を先に捨てる。取得成功時にだけ入れ直す */
+  curResident=null; setViewActions(false);
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
   apiGet({action:'getResident',id:id}).then(function(d){
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){throw new Error('該当データなし')}
-    curResident=rec; renderView(rec);
+    curResident=rec; setViewActions(true); renderView(rec);
   }).catch(function(e){$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
 }
 
@@ -1982,6 +1995,10 @@ function showScreen(name){
 /* ═══════════ 端末用途ガード ═══════════ */
 function applyDeviceGuard(){
   var blocked=(getDeviceRole()==='field');
+  /* 現場端末と判明した時点で一覧キャッシュを消す。setDeviceRole でも消しているが、
+     他アプリの設定画面から 'field' へ切り替えられた端末はこの経路を通らないため、
+     次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); }catch(e){} roster=[]; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }

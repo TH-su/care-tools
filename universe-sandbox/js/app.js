@@ -446,6 +446,12 @@ function removeBodyAt(idx) {
   labels[idx].el.remove();
   meshes.splice(idx, 1); trails.splice(idx, 1); labels.splice(idx, 1); meta.splice(idx, 1);
   for (let k = 0; k < meshes.length; k++) { meshes[k].userData.index = k; labels[k].index = k; }
+  // Parent references are plain indices, so a removal would otherwise leave moons
+  // pointing at a different body (or at a body that no longer exists).
+  for (const b of meta) {
+    if (b.parentIndex === idx) b.parentIndex = -1;        // the parent itself is gone
+    else if (b.parentIndex > idx) b.parentIndex--;        // everything after idx shifted down
+  }
   rebuildBodyList();
   if (state.selected === idx) state.selected = -1;
   else if (state.selected > idx) state.selected--;
@@ -466,6 +472,9 @@ function igniteStar(i) {
 // Merge body b into body a (the more massive survives), conserving mass,
 // momentum and volume. Returns the survivor's (possibly shifted) index.
 function mergeBodies(a, b) {
+  // Guard: a non-positive mass would divide by zero below and spread NaN through
+  // every position and velocity, so leave the pair untouched instead.
+  if (!(sim.mass[a] > 0) || !(sim.mass[b] > 0)) return a;
   if (sim.mass[b] > sim.mass[a]) { const t = a; a = b; b = t; }
   const ma = sim.mass[a], mb = sim.mass[b], M = ma + mb;
   const ax = 3 * a, bx = 3 * b;
@@ -483,7 +492,6 @@ function mergeBodies(a, b) {
   sim.mass[a] = M;
   const ra = meta[a].displayR, rb = meta[b].displayR;
   meta[a].displayR = Math.cbrt(ra * ra * ra + rb * rb * rb);              // volume conserving
-  meta[a].physR = Math.cbrt(meta[a].physR ** 3 + meta[b].physR ** 3);
   spawnBurst(_tmp, relSpeed, meta[b].color);
   if (M >= STAR_THRESHOLD && !meta[a].isStar) igniteStar(a);
   applySizes();
@@ -494,6 +502,9 @@ function mergeBodies(a, b) {
 // Fragment mode: replace both bodies with a compact core + debris shards,
 // conserving total mass and momentum.
 function fragmentBodies(a, b) {
+  // Same NaN guard as mergeBodies: the centre-of-mass and momentum divisions
+  // below require both masses to be positive.
+  if (!(sim.mass[a] > 0) || !(sim.mass[b] > 0)) return;
   const ma = sim.mass[a], mb = sim.mass[b], M = ma + mb;
   const ax = 3 * a, bx = 3 * b;
   const cp = new THREE.Vector3(
@@ -546,7 +557,7 @@ function fragmentBodies(a, b) {
 // Create a body at a world position/velocity with explicit metadata.
 function spawnDynamicBody(x, y, z, vx, vy, vz, opts) {
   const i = sim.addBody({ massSun: opts.massSun, pos: [x, y, z], vel: [vx, vy, vz] });
-  meta[i] = { name: `${opts.label}${++addCounter}`, massSun: opts.massSun, displayR: opts.displayR, physR: 1e-5, color: opts.color, isStar: !!opts.isStar, ring: false };
+  meta[i] = { name: `${opts.label}${++addCounter}`, massSun: opts.massSun, displayR: opts.displayR, color: opts.color, isStar: !!opts.isStar, ring: false };
   createBodyVisual(meta[i], i);
   applySizes();
   syncMeshes();
@@ -688,7 +699,7 @@ function refreshSelectedInfo() {
   const sunDist = Math.hypot(p[3 * i] - p[0], p[3 * i + 1] - p[1], p[3 * i + 2] - p[2]);
   const pa = b.parentIndex;
   let spd, spdLabel, parentRow = '';
-  if (pa >= 0) {
+  if (pa >= 0 && meta[pa]) {                 // a lost parent falls back to absolute speed
     spd = Math.hypot(varr[3 * i] - varr[3 * pa], varr[3 * i + 1] - varr[3 * pa + 1], varr[3 * i + 2] - varr[3 * pa + 2]);
     spdLabel = `公転速度（対${meta[pa].name}）`;
     const pd = Math.hypot(p[3 * i] - p[3 * pa], p[3 * i + 1] - p[3 * pa + 1], p[3 * i + 2] - p[3 * pa + 2]) * KM_PER_AU;
@@ -704,13 +715,15 @@ function refreshSelectedInfo() {
     ${parentRow}
     <div class="info-row"><span>${spdLabel}</span><b>${kms.toFixed(1)} km/s</b></div>
     <label class="info-edit">質量 (地球比)
-      <input id="massEdit" type="number" step="0.1" min="0" value="${(sim.mass[i] / EARTH_MASS).toFixed(3)}">
+      <input id="massEdit" type="number" step="0.1" min="0.001" value="${(sim.mass[i] / EARTH_MASS).toFixed(3)}">
     </label>
     <button id="focusBtn" class="btn small">この天体を中心に表示</button>
   `;
   box.querySelector('#massEdit').addEventListener('change', (e) => {
     const em = parseFloat(e.target.value);
-    if (!isNaN(em) && em >= 0) sim.mass[i] = em * EARTH_MASS;
+    // Zero (or negative) mass makes every centre-of-mass division blow up to NaN
+    // on the next collision, which would corrupt the whole system.
+    if (!isNaN(em) && em > 0) sim.mass[i] = em * EARTH_MASS;
   });
   box.querySelector('#focusBtn').addEventListener('click', () => focusBody(i));
 }
@@ -726,7 +739,7 @@ function focusBody(i) {
   let offset;
   if (b.moonMaxA > 0) offset = b.moonMaxA * 2.6;            // frame the whole moon system
   else if (b.isStar && i === 0) offset = 2.6;               // the Sun: see inner planets
-  else if (b.parentIndex >= 0) offset = Math.max(b.displayR * 60, 4e-4); // a moon: close-up
+  else if (b.parentIndex >= 0 && meta[b.parentIndex]) offset = Math.max(b.displayR * 60, 4e-4); // a moon: close-up
   else offset = Math.max(b.displayR * 60, 0.01);            // moonless planet
   controls.target.copy(m.position);
   const dir = camera.position.clone().sub(controls.target);
@@ -762,7 +775,7 @@ function planePoint(cx, cy) {
 function addBodyAt(p) {
   const pr = PRESETS[state.preset];
   const i = sim.addBody({ massSun: pr.massSun, pos: [p.x, p.y, p.z], vel: [0, 0, 0] });
-  meta[i] = { name: `${pr.label}${++addCounter}`, massSun: pr.massSun, displayR: pr.displayR, physR: 1e-5, color: pr.color, isStar: pr.isStar, ring: false };
+  meta[i] = { name: `${pr.label}${++addCounter}`, massSun: pr.massSun, displayR: pr.displayR, color: pr.color, isStar: pr.isStar, ring: false };
   createBodyVisual(meta[i], i);
   applySizes();
   syncMeshes();

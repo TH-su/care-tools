@@ -844,8 +844,11 @@ select.inp { cursor: pointer; }
     </div>
 
     <div class="form-row">
-      <label for="f-units">単位数</label>
-      <input class="inp" type="number" id="f-units" min="0" max="9999" step="1" placeholder="例：387（省略可）" style="max-width:180px">
+      <label for="f-units">単位数（自動計算）</label>
+      <!-- 単位数は事業所設定＋サービス区分/時間から自動計算する（手入力は不可）。
+           手入力を許すと、同期・事業所設定の保存のたびに走る再計算で黙って上書きされ、
+           画面の値と算定根拠が食い違うため。 -->
+      <input class="inp" type="number" id="f-units" min="0" max="9999" step="1" readonly placeholder="自動計算" style="max-width:180px;background:var(--g1);color:var(--g7)">
     </div>
 
     <!-- 複製（編集時のみ表示） -->
@@ -1763,7 +1766,9 @@ function autoCalcUnits() {
     const bathing = $('#f-bathing').checked;
     if (start && end) units = calcDaycareUnits(start, end, bathing, res);
   }
-  if (units > 0) $('#f-units').value = units;
+  /* 読み取り専用の自動計算表示（B9）。0/未算定のときは前の値を残さず空にする
+     （手入力できない欄に、いまの条件と無関係な数字を出したままにしない）。 */
+  $('#f-units').value = units > 0 ? units : '';
 }
 
 // 支給限度基準額（単位/月）令和6年4月改定
@@ -2206,7 +2211,7 @@ const SYNC = {
     ensureServiceDict_();   // 採用直後に辞書を正規化（★markDirty は立てない＝pull毎push増幅の禁止・戻り値は捨てる）
     if (!Array.isArray(DB.residents)) DB.residents = [];
     saveLocalOnly();
-    this.saveCareRev(rev || 0);
+    this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
     this.config.lastSync = Date.now();
     this._dirty = false;   // メモリのみ解除。永続フラグ(CS_DIRTY_KEY)は push成功/起動時一致でのみ解除
     this.save();
@@ -2332,7 +2337,7 @@ const SYNC = {
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: this.loadCareRev(), data: DB, force: !!force });
       if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
-        this.saveCareRev(j.rev);
+        this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
         this.clearDirty();
         this.save();
@@ -2450,6 +2455,13 @@ const SYNC = {
           this.updateStatusUI('競合');
           this.log('⚠️ クラウドに新しい更新あり。ローカルにも未送信の変更があります。手動で取得/保存を選択してください');
         } else if (j.data) {
+          /* 編集モーダル/ドラッグ/利用者一覧の操作中は取り込みを次tickへ延期する
+             （storage 取り込み・stateRev tick と同一基準）。ここで adopt すると DB ごと差し替わり、
+             入力中のフォームが宙に浮く／ドラッグ中の枠が飛ぶ。rev は進めないので次回必ず拾い直す。 */
+          const mkE = $('#mk-event'), mkR = $('#mk-resident');
+          if (_csBusyEditing()
+              || (mkE && mkE.classList.contains('open'))     // 予定の追加中（編集と違い editingEventId は null）
+              || (mkR && mkR.classList.contains('open'))) return;
           this.adopt(j.data, j.rev);
           this.log(`🔄 自動取得完了（${DB.residents.length}名・rev ${j.rev}）`);
           this.updateStatusUI('同期OK');
@@ -3191,6 +3203,39 @@ function removeResident(id) {
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   showToast('削除しました');
 }
+/* 利用者直下フラグ（movedOut / hospitalized）の再主張。世代番号は「利用者×項目」ごとに持つ
+   （連続操作で、先に飛んだ push の完了処理が後の操作を巻き戻さないため。項目別なので
+   別の方・別の項目を続けて操作しても互いの再主張を打ち消さない）。 */
+const csResFlagGen_ = Object.create(null);
+/* ★競合リベース対策。csRebaseEdits は利用者直下のスカラーを server 側のまま温存する設計のため、
+   退去/入院/復帰の直後に他端末との競合が1回起きると、いま押した状態が黙ってサーバー値へ戻る
+   （画面は退去のまま・データは在籍、のような食い違いになる）。togglePreAdmission と同じ方式で、
+   push の完了後に id で引き直し、自分の変更だけを再適用する。巻き戻りは人に見える形で知らせる。 */
+async function csReassertResidentFlag_(id, field, val, label) {
+  if (!SYNC.hasTarget()) return;
+  const key = field + ':' + String(id);
+  const myGen = (csResFlagGen_[key] = (csResFlagGen_[key] || 0) + 1);
+  if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+  try {
+    /* push は競合を解消（pull→リベース→再push）しても false を返す。戻り値では判定せず、
+       解消後の DB を実際に見て、自分の変更が残っているかで判断する。 */
+    const pushed = await SYNC.push();
+    if (myGen !== csResFlagGen_[key]) return;   // 自分より新しい操作がある＝焼き直さない
+    const r = DB.residents.find(x => String(x.id) === String(id));
+    if (r && !!r[field] !== !!val) {
+      r[field] = val;
+      /* 保存できた時だけ「再反映しました」と出す。saveDB は失敗時に自分で失敗トーストを出すので、
+         成功文言で上書きすると、保存できていない事実が人に見えないまま未同期で残る。 */
+      const ok2 = saveDB();   // 成功時は再送も予約される
+      populateResidentSelect(); renderResidentList(); renderAll();
+      if (ok2) showToast(`「${r.name}」の${label}を再反映しました（他端末の更新と競合したため）`);
+      return;
+    }
+    /* 送れていない（通信失敗等）のに変更は残っている＝再送の口を張り直す
+       （push が _busy で false を返した場合も未送信のまま残さない） */
+    if (!pushed) SYNC.scheduleAutoPush();
+  } catch (e) { try { SYNC.scheduleAutoPush(); } catch (e2) {} }
+}
 function moveOutResident(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
@@ -3203,14 +3248,18 @@ function moveOutResident(id) {
     const next = DB.residents.find(r => !r.movedOut && isScheduleTarget(r));
     DB.currentResidentId = next ? next.id : null;
   }
-  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  const ok = saveDB();
+  populateResidentSelect(); renderResidentList(); renderAll();
   showToast(`「${res.name}」を退去にしました`);
+  if (ok) csReassertResidentFlag_(id, 'movedOut', true, '退去');
 }
 function toggleHospitalized(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
   res.hospitalized = !res.hospitalized;
-  saveDB(); renderResidentList(); renderAll();
+  const val = res.hospitalized;
+  const ok = saveDB();
+  renderResidentList(); renderAll();
   /* マスタ紐づきの利用者は入居者マスタへも反映（rmaster_cfg のある端末のみ）。
      送れない端末はローカルのみ＝次のマスタ同期で上書きされることを明示する。 */
   const pushed = (res.masterId != null) ? csPushMasterState(res.masterId, res.hospitalized) : false;
@@ -3218,6 +3267,7 @@ function toggleHospitalized(id) {
   showToast(res.hospitalized
     ? `「${res.name}」を入院中にしました（ワークスケジュールでは極薄表示になります）${csWarn}`
     : `「${res.name}」を退院にしました${csWarn}`);
+  if (ok) csReassertResidentFlag_(id, 'hospitalized', val, val ? '入院' : '退院');
 }
 let csPreGen_ = 0;   /* 入居前トグルの世代番号（連続タップで、先に飛んだpushの完了処理が後の操作を巻き戻さないため） */
 /* 「入居前」トグル（2026-08-03 追加）。
@@ -3275,8 +3325,10 @@ function restoreResident(id) {
   /* 復帰もマスタが正本（同上）。ローカルで戻しても次の同期で退去に戻される。 */
   if (res.masterId != null && res.masterId !== '') { showToast('入居者マスタで操作してください'); return; }
   res.movedOut = false;
-  saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
+  const ok = saveDB();
+  populateResidentSelect(); renderResidentList(); renderAll();
   showToast(`「${res.name}」を復帰しました`);
+  if (ok) csReassertResidentFlag_(id, 'movedOut', false, '復帰');
 }
 
 // ── Calendar render ──
@@ -3822,7 +3874,7 @@ function openEditModal(id) {
   }
   $('#f-detail').value = ev.detail || '';
   $('#f-notes').value  = ev.notes  || '';
-  $('#f-units').value  = ev.units  || '';
+  autoCalcUnits();   // 単位数は保存値ではなく、いまの事業所設定での計算値を表示する（読み取り専用・B9）
   $('#dup-row').style.display = '';
   if (ev.serviceType === 'visit') renderCareChips();   /* detail設定後にチップを現状態へ同期(要件4) */
   $('#mk-event').classList.add('open');
@@ -3959,6 +4011,14 @@ function saveEvent() {
   if (err) { showToast(err); return; }
   const res = currentResident();
   if (!res) return;
+  /* 編集中に他端末の削除を取り込んでいた場合、対象が現DBに無い。従来はここを素通りして
+     何も保存しないまま「予定を更新しました」と出していた（消えたことが人に伝わらない）。 */
+  const idx = editingEventId ? (res.events || []).findIndex(e => e.id === editingEventId) : -1;
+  if (editingEventId && idx < 0) {
+    showToast('この予定は他端末で削除されています');
+    closeEventModal(); renderAll();
+    return;
+  }
   pushUndo();
   const stype = $('input[name="serviceType"]:checked').value;
   const { start, end } = getFormTimes();
@@ -3970,17 +4030,18 @@ function saveEvent() {
     endTime:     end,
     detail:      $('#f-detail').value.trim(),
     notes:       $('#f-notes').value.trim(),
-    units:       Number($('#f-units').value) || 0,
+    /* units はフォームから採らない（単位数は事業所設定と時間区分からの自動計算が正本＝
+       手入力値が算定と食い違うのを防ぐ）。保存後に recalcAllEventUnits() が一括で書く。 */
     bathing:     stype === 'daycare' ? $('#f-bathing').checked : false,
   };
   if (editingEventId) {
-    const idx = res.events.findIndex(e => e.id === editingEventId);
-    if (idx >= 0) res.events[idx] = { ...res.events[idx], ...ev };
+    res.events[idx] = { ...res.events[idx], ...ev };
     showToast('予定を更新しました');
   } else {
     res.events.push({ id: uid(), ...ev });
     showToast('予定を追加しました');
   }
+  recalcAllEventUnits();   // units を書く唯一の経路（新規・変更後の予定にも必ず計算値が入る）
   saveDB(); closeEventModal(); renderAll();
 }
 

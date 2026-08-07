@@ -464,6 +464,10 @@ function byKana(a, b){
 }
 
 /* ── データ取得 ───────────────────────────────────── */
+/* ★サーバーが返す from/to をそのまま画面の期間として使わない。
+     壊れた値（空文字・別形式）が来ると、日付を1日ずつ進める while が止まらず
+     画面が固まる。形式が違えば「こちらが要求した期間」を使う。 */
+function okYmd(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s)); }
 function currentRange(){
   var n = parseInt($('days').value, 10);
   if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = 14;
@@ -475,7 +479,7 @@ function load(){
   $('status').textContent = '読み込み中…';
   $('reload').disabled = true;
   return apiGet('events', { from:r.from, to:r.to }).then(function(res){
-    DATA = { from:res.from, to:res.to,
+    DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
              events:(res.events || []), ledger:(res.ledger || []),
              /* undefined（旧デプロイのGAS＝能力を持たない）と [] （1日も取り込めていない）を
                 潰さない。潰すと、ビューアだけ先に配った時に全期間が誤って赤くなる。 */
@@ -500,12 +504,14 @@ function showError(msg){
   d.textContent = msg;
   b.appendChild(d);
 }
-/* 期間内の全日付を古い順で返す */
+/* 期間内の全日付を古い順で返す。
+   ★上限を付けるのは保険。終端が日付でない値になっても必ずループを抜ける。 */
 function allDatesInRange(){
   var out = [], p = String(DATA.from).split('-');
-  if(p.length !== 3) return out;
+  if(!okYmd(DATA.from) || !okYmd(DATA.to) || p.length !== 3) return out;
   var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
-  while(ymd(d) <= DATA.to){ out.push(ymd(d)); d = addDays(d, 1); }
+  var cap = VM_MAX_DAYS + 31;
+  while(ymd(d) <= DATA.to && out.length < cap){ out.push(ymd(d)); d = addDays(d, 1); }
   return out;
 }
 function bannerLine(cls, text){
@@ -793,13 +799,21 @@ function fallbackCopy(s){
 }
 
 /* ── 日付別 ──────────────────────────────────────── */
+/* ★連打や日付の続けざまの変更で応答の順番が入れ替わると、
+     古い日の記録が新しい日の下に混ざって並ぶ。日付別は「その日の記録」として
+     読まれる画面なので、別の日の申し送りが混ざるのは誤読に直結する。
+     要求ごとに連番を持ち、最後の要求以外の応答は捨てる。 */
+var DV_SEQ = 0;
 function renderDateView(){
   var box = $('dtimeline');
-  box.textContent = '';
   var d = $('theDate').value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ toast('日付を選んでください', true); return; }
+  var seq = ++DV_SEQ;
   $('dstatus').textContent = '読み込み中…';
+  $('dateGo').disabled = true;
   apiGet('events', { from:d, to:d }).then(function(res){
+    if(seq !== DV_SEQ) return;              // 後から出した要求がある＝この応答は使わない
+    box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
     var evs = res.events || [], lgs = res.ledger || [];
     $('dstatus').textContent = fmtDate(d) + '　' + evs.length + '件';
     if(!evs.length && !lgs.length){
@@ -842,11 +856,16 @@ function renderDateView(){
       box.appendChild(grp);
     });
   })['catch'](function(e){
+    if(seq !== DV_SEQ) return;
     $('dstatus').textContent = '';
+    box.textContent = '';
     var er = document.createElement('div');
     er.className = 'err';
     er.textContent = apiErrMsg(e);
     box.appendChild(er);
+  }).then(function(){
+    /* 最後の要求が終わった時だけ操作を戻す（古い応答でボタンが早く戻らないように） */
+    if(seq === DV_SEQ) $('dateGo').disabled = false;
   });
 }
 
@@ -902,7 +921,7 @@ function vmLoad(){
   $('vmStatus').textContent = '読み込み中…';
   $('vmReload').disabled = true;
   return apiGet('measures', { from:r.from, to:r.to }).then(function(res){
-    VM = { from:res.from, to:res.to,
+    VM = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
            vitals:(res.vitals || []), meals:(res.meals || []),
            vitalDates:(res.vitalDates || []), mealDates:(res.mealDates || []),
            notes:String(res.thresholdNotes || ''),
@@ -1008,12 +1027,13 @@ function vmRenderList(){
   });
 }
 
-/* 期間内の全日付（古い順） */
+/* 期間内の全日付（古い順）。上限は allDatesInRange と同じ保険 */
 function vmAllDates(){
   var out = [], p = String(VM.from).split('-');
-  if(p.length !== 3) return out;
+  if(!okYmd(VM.from) || !okYmd(VM.to) || p.length !== 3) return out;
   var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
-  while(ymd(d) <= VM.to){ out.push(ymd(d)); d = addDays(d, 1); }
+  var cap = VM_MAX_DAYS + 31;
+  while(ymd(d) <= VM.to && out.length < cap){ out.push(ymd(d)); d = addDays(d, 1); }
   return out;
 }
 

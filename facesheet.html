@@ -270,7 +270,12 @@ var SU_GENO_KEY='su_genograms';
 var TAB_KEY='fsheet_tab';        // 詳細のカテゴリタブを端末に保持（タブidは個人情報でない）
 var GENOGRAM_APP='genogram.html';
 var CFG={url:'',token:''};
-(function loadCfg(){try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);CFG.url=o.url||'';CFG.token=o.token||''}}catch(e){}})();
+/* 保存済みの接続設定を読む（接続テストの戻り先＝確定値の取得にも使う）。読めない時は空を返す。 */
+function readSavedCfg_(){
+  try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);return{url:o.url||'',token:o.token||''}}}catch(e){}
+  return {url:'',token:''};
+}
+(function loadCfg(){var o=readSavedCfg_();CFG.url=o.url;CFG.token=o.token})();
 
 // 現場タブレットで閲覧してよい安全項目（resident-master.html / master.gs の facesheet_safe と一致）
 // 服薬管理3項目は現場ケアに直結するため安全情報に含める（2026-07 決定）。
@@ -383,7 +388,12 @@ function renderRoster(){
 
 /* ═══════════ 詳細取得（都度取得・キャッシュしない） ═══════════ */
 var curRec=null;
+/* 要求世代カウンタ。★通信の返る順番は要求順とは限らない。遅れて返った前の方の応答で
+   画面を書き換えると、いま開いている方の画面に別人の内容が出る（取り違え）。
+   自分の世代が最新でなければ、応答は黙って捨てる。 */
+var openSeq=0;
 function openResident(id){
+  var seq=++openSeq;
   showScreen('view');
   /* 一覧から別の方を選んだ時は、前の方のバーを必ず消す（バーが取り違えの元にならないように）。
      マスタから来た直後は boot() が改めて出すので、ここで消して差し支えない。 */
@@ -394,12 +404,15 @@ function openResident(id){
   // 現場タブレットは安全項目のみをサーバから取得（機微情報は端末に届かない）
   var req=isField()?apiGet({action:'getSection',id:id,section:'facesheet_safe'}):apiGet({action:'getResident',id:id});
   req.then(function(d){
+    if(seq!==openSeq)return;                    // 旧要求の応答＝別人の内容なので捨てる
     var rec=isField()?((d&&d.section)||d):((d&&d.record)||d);
     if(!rec||(rec.id==null&&!rec.name))throw new Error('該当データなし');
     curRec=rec; setSync('取得OK','ok'); renderFaceSheet(rec);
     /* 本人確認バーは正本の氏名で更新する（前の方の氏名を残さない） */
     if(fromMasterActive)setFromMasterBar('ok',rec.name);
-  }).catch(function(e){setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+  }).catch(function(e){
+    if(seq!==openSeq)return;                    // 旧要求の失敗で、いま開いている方の画面を潰さない
+    setSync('取得失敗','err');$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
     if(fromMasterActive)setFromMasterBar('fail')});
 }
 
@@ -760,27 +773,53 @@ function openSync(){
   $('mSync').classList.add('on');
 }
 function closeSync(){$('mSync').classList.remove('on')}
+/* ★接続テストの「世代」。テストと保存が同じ入力欄の同じ値を使うため、
+   CFG の値比較では「テスト中に保存されたか」を判別できない。保存・テストのたびに
+   進めるカウンタで判定する（care-schedule csPreGen_ と同型）。 */
+var cfgTestGen_=0;
 function saveSync(){
+  cfgTestGen_++;   /* 飛行中のテストの巻き戻しを無効化する（保存値が正） */
   CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
   /* ★このキーは入居者マスタと共用。丸ごと書き換えると、マスタ側が入れた項目
      （訪問診療URL vmaUrl 等）を黙って消してしまう。既存値を読み、自分が扱う
      url/token だけを差し替えて書き戻す（.claude/rules/data-contracts.md §1-2）。 */
+  /* ★保存できたかは書き戻して読み直すまで分からない（プライベートモード・容量超過では
+     setItem が例外にならず黙って残らない環境がある）。成功トーストだけ出して実際は
+     保存されていない、という silent fail を作らないため一致を検証する
+     （connection-settings.html writeSys と同方式）。 */
+  var saved=false;
   try{
     var _c={};
     try{var _s=localStorage.getItem(CFG_KEY);if(_s)_c=JSON.parse(_s)}catch(e){_c={}}
     if(!_c||typeof _c!=='object'||Object.prototype.toString.call(_c)!=='[object Object]')_c={};
     _c.url=CFG.url;_c.token=CFG.token;
     localStorage.setItem(CFG_KEY,JSON.stringify(_c));
-  }catch(e){}
+    var _b={};
+    try{var _r=localStorage.getItem(CFG_KEY);if(_r)_b=JSON.parse(_r)}catch(e){_b={}}
+    if(!_b||typeof _b!=='object')_b={};
+    saved=(String(_b.url==null?'':_b.url)===CFG.url && String(_b.token==null?'':_b.token)===CFG.token);
+  }catch(e){saved=false}
   setDeviceRole($('cfgDeviceRole').value==='field'?'field':'office');
-  applyRoleBadge();closeSync();boot();toast('✅ 保存しました');
+  applyRoleBadge();closeSync();boot();
+  toast(saved?'✅ 保存しました':'⚠️ 保存できませんでした（プライベートモード等）');
 }
 function testSync(){
-  CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
-  if(!CFG.url){toast('URLを入力してください');return}
+  /* ★テストのために CFG を書き換えるが、保存せず閉じた場合に未保存のURLを
+     そのセッション中ずっと使い続けてしまう。テスト前の値を退避し、成否によらず戻す
+     （resident-master.html testSync と同パターン）。 */
+  var myGen=++cfgTestGen_;
+  /* 戻り先は「いまの CFG」ではなく保存済みの永続値から取る。CFG を写すと、テスト飛行中に
+     もう一度テストを押した時に前回の"未保存の試行値"が戻り先になり、この関数が消そうとした
+     「未保存URLをセッション中使い続ける」状態がそのまま再発する。 */
+  var saved=readSavedCfg_();
+  var tried={url:($('cfgUrl').value||'').trim(),token:($('cfgToken').value||'').trim()};
+  CFG.url=tried.url;CFG.token=tried.token;
+  if(!CFG.url){CFG.url=saved.url;CFG.token=saved.token;toast('URLを入力してください');return}
   setSync('テスト中…');
   apiGet({action:'ping'}).then(function(){setSync('接続OK','ok');toast('✅ 接続できました')})
-    .catch(function(e){setSync('接続失敗','err');toast('⚠️ '+e.message)});
+    .catch(function(e){setSync('接続失敗','err');toast('⚠️ '+e.message)})
+    /* テスト中に保存・再テストされた場合（世代が進む）は巻き戻さない */
+    .then(function(){if(myGen===cfgTestGen_){CFG.url=saved.url;CFG.token=saved.token}});
 }
 
 /* ═══════════ 起動 ═══════════ */

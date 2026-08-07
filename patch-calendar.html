@@ -361,7 +361,8 @@ function loadState() {
   var ok = parseISODate(saved);
   /* この端末で開始日を確定していない（初期値のまま／保存が消えた／別端末）状態を覚えておき、
      そのまま印刷されないよう警告を出す。開始日が1日でもずれると月替わりの紙の継ぎ目で
-     同じ部位が2日続く。 */
+     同じ部位が2日続く。
+     開始日の localStorage 保存は承認済み例外（2026-08-08 代表承認）。氏名は保存しない。 */
   state.confirmed = !!ok;
   state.start = ok || parseISODate(DEFAULT_START);
 
@@ -529,9 +530,24 @@ document.getElementById('today').addEventListener('click', function () {
   saveMonth();
   render();
 });
-document.getElementById('print').addEventListener('click', function () { window.print(); });
+/* 前の入居者の設定のまま刷ってしまう事故を、紙が出る前に人へ返して止める。
+   確認済みかどうかはメモリだけで持つ（氏名は localStorage に残さない） */
+var printAckName = null;                          /* 確認して印刷した氏名。null は未確認 */
+document.getElementById('print').addEventListener('click', function () {
+  var nm = el.nm.value.trim();
+  if (printAckName !== nm) {
+    var who = nm ? '（' + nm + '）' : '（お名前は未入力）';
+    if (!window.confirm('1日目＝' + jpDate(state.start) + who + 'で印刷します。よろしいですか')) return;
+    printAckName = nm;
+  }
+  window.print();
+});
 
-el.nm.addEventListener('input', function () { el.pnm.textContent = el.nm.value.trim(); });
+el.nm.addEventListener('input', function () {
+  el.pnm.textContent = el.nm.value.trim();
+  /* 氏名を書き換えたら前の人での確認は無効。次の印刷でもう一度確認を出す */
+  if (printAckName !== null && printAckName !== el.nm.value.trim()) printAckName = null;
+});
 
 el.st.addEventListener('change', function () {
   var p = parseISODate(el.st.value);

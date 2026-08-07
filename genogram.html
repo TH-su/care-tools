@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
+<meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1673,9 +1675,13 @@ function placeTextAt(x, y) {
 }
 
 function placeTextAtPointer() {
-  const pos = stage.getPointerPosition();
-  if (!pos) return;
-  placeTextAt(pos.x, pos.y);
+  /* 配置先は論理座標で持つため、クリック位置もズームを外した値に揃える。
+     getPointerPosition は stage の scale が掛かった値を返し、拡大中は
+     ノードのドラッグ（dragBoundFunc の pos/zoom）とずれるため。 */
+  const p = stage.getPointerPosition();
+  if (!p) return;
+  const z = state.zoom || 1;
+  placeTextAt(p.x / z, p.y / z);
 }
 
 // stage click on empty area (Konva-level)
@@ -1973,8 +1979,13 @@ const CloudSync = (function() {
   /* 「この端末が最後に取り込んだ版」の時刻を利用者名キーで保持する。doc.updatedAt は保存直前に
      now へ書き換わるため基準に使えず、doc へ埋め込むと保存データの形が変わるのでモジュール内に持つ。 */
   const baseTs = {};
-  function setBaseline(name, iso) {
-    if (name) baseTs[name] = parseTs(iso);
+  /* クラウドの現物を観測して基準を入れたかどうか。ローカル版だけを読み直した時（オフライン等）も
+     baseTs は埋まるため、「観測できた」の代用に baseTs の有無を使うと未確認保留が解除されてしまう */
+  const cloudObserved = {};
+  function setBaseline(name, iso, fromCloud) {
+    if (!name) return;
+    baseTs[name] = parseTs(iso);
+    if (fromCloud) cloudObserved[name] = true;
   }
   function isRemoteNewer(name, remote) {
     return !!(remote && parseTs(remote.updatedAt) > (baseTs[name] || 0));
@@ -1986,12 +1997,16 @@ const CloudSync = (function() {
   async function saveAndMarkBaseline(doc) {
     const saved = await save(doc);
     // GAS 側が updatedAt をサーバー時刻で採番するため、応答の値を基準にする
-    setBaseline(doc.clientName, (saved && saved.updatedAt) || doc.updatedAt);
+    setBaseline(doc.clientName, (saved && saved.updatedAt) || doc.updatedAt, true);   // 保存が通った＝クラウドと交信できた
     return saved;
   }
-  async function saveCheckConflict(doc) {
+  async function saveCheckConflict(doc, needsConfirm) {
     // 取り込み時点より新しい版がクラウドにあれば、上書きの前に本人へ確認する
-    const remote = await fetchRemoteQuiet(doc.clientName);
+    /* needsConfirm＝クラウドの既存版を一度も確認できていない文書。ここで取得失敗を
+       「競合なし」と読み替えると、確認GETだけ失敗して保存POSTが通った場合に既存版を
+       無確認で上書きする。そのため get を直に呼び、失敗は保存せずそのまま投げる
+       （呼び出し側でキューへ回る）。既存版が見つかった場合は従来どおり confirm へ落ちる */
+    const remote = needsConfirm ? await get(doc.clientName) : await fetchRemoteQuiet(doc.clientName);
     if (isRemoteNewer(doc.clientName, remote)) {
       if (!confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
         const err = new Error('別端末の新しい版があるため、クラウドへの保存を中止しました');
@@ -2001,12 +2016,23 @@ const CloudSync = (function() {
     }
     return await saveAndMarkBaseline(doc);
   }
-  async function saveQueued(doc) {
+  async function saveQueued(doc, needsConfirm) {
     // 再送は無人で走り得るため confirm は出さず、競合していれば送らずキューに残す
     // 再読込後は基準時刻が消えている（メモリ内のみ）。その場合はキュー文書自身の時刻を基準にする
     // ＝「積んだ後にリモートが動いたか」の判定になり、基準0による恒久保留を防ぐ
-    if (!baseTs[doc.clientName]) setBaseline(doc.clientName, doc.updatedAt);
-    const remote = await fetchRemoteQuiet(doc.clientName);
+    /* ただし needsConfirm＝クラウドの既存版を一度も確認できないまま新規として書き始めた文書は、
+       キュー文書の時刻を基準にすると既存版を「古い」と誤判定して確認なしに上書きする。
+       この場合は基準を持たせず、リモートに版があれば送らず保留する */
+    const unverified = !!needsConfirm && !cloudObserved[doc.clientName];
+    if (!unverified && !baseTs[doc.clientName]) setBaseline(doc.clientName, doc.updatedAt);
+    /* 未確認文書では取得失敗を「競合なし」と読み替えられない（黙って上書きになる）ため、
+       fetchRemoteQuiet ではなく get を使い、失敗はそのまま再送失敗＝キュー据え置きにする */
+    const remote = unverified ? await get(doc.clientName) : await fetchRemoteQuiet(doc.clientName);
+    if (unverified && remote) {
+      const err = new Error('クラウドの既存版を確認できていないため再送を保留しました');
+      err.conflict = true;
+      throw err;
+    }
     if (isRemoteNewer(doc.clientName, remote)) {
       const err = new Error('別端末の新しい版があるため再送を保留しました');
       err.conflict = true;
@@ -2028,11 +2054,14 @@ const CloudSync = (function() {
     const arr = getPending();
     // dedupe by kind+name
     const key = item.kind + ':' + (item.name || (item.doc && item.doc.clientName));
+    const prev = arr.find(x => (x.kind + ':' + (x.name || (x.doc && x.doc.clientName))) === key);
     const filtered = arr.filter(x => {
       const k = x.kind + ':' + (x.name || (x.doc && x.doc.clientName));
       return k !== key;
     });
-    filtered.push({ ...item, queuedAt: nowISO() });
+    /* 未確認の印は後続の保存で消さない（false で置換すると既存版の無確認上書きに戻る） */
+    const needsConfirm = !!(item.needsConfirm || (prev && prev.needsConfirm));
+    filtered.push({ ...item, needsConfirm, queuedAt: nowISO() });
     setPending(filtered);
   }
   function updatePendingBadge() {
@@ -2049,7 +2078,7 @@ const CloudSync = (function() {
     const remaining = [];
     for (const item of arr) {
       try {
-        if (item.kind === 'save') await saveQueued(item.doc);
+        if (item.kind === 'save') await saveQueued(item.doc, item.needsConfirm);
         else if (item.kind === 'delete') await del(item.name);
         processed++;
       } catch (e) {
@@ -2105,6 +2134,10 @@ function writeSuGenogram(name) {
   } catch (e) { /* no-op */ }
 }
 
+/* クラウドの既存版を確認できないまま（取得失敗）新規として書き始めた利用者名。
+   この状態で積んだ保留分は、後の再送でクラウドの既存版を無確認に上書きしないよう印を付ける */
+const cloudUnverified = new Set();
+
 async function saveDoc() {
   const name = $('clientName').value.trim();
   if (!name) {
@@ -2143,23 +2176,29 @@ async function saveDoc() {
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドへ同期中…');
     try {
-      await CloudSync.saveCheckConflict(doc);
+      await CloudSync.saveCheckConflict(doc, cloudUnverified.has(name));
+      cloudUnverified.delete(name);   // クラウドと突き合わせて保存できた＝未確認状態は解消
       flashStatus(`「${name}」を保存・同期しました`);
       setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
       if (err && err.conflict) {
         // 上書き中止：キューに積むと後で再送してクラウド側の新しい版を消すため積まない
-        setSyncStatus('err', 'クラウドへの保存を中止しました（別端末の版を保持）');
-        flashStatus('クラウドへの保存を中止しました（端末にのみ保存）');
+        setSyncStatus('err', 'この端末に保存（クラウド未反映）');
+        /* 直前に出した「端末に保存しました」だけでは同期済みと誤解するため、
+           未反映であることと次の操作をここで言い切る */
+        flashStatus(`「${name}」はこの端末に保存（クラウド未反映）`);
+        alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\n最新の内容を確認するには、ページを再読み込みしてください。\nもう一度保存すると、クラウドの新しい版を上書きします。');
       } else {
-        CloudSync.queuePending({ kind: 'save', doc });
+        CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) });
         setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
       }
     }
   }
 }
 
-async function loadDoc(name) {
+async function loadDoc(name, opts) {
+  // silentIfMissing: 文書が無くても警告せず新規扱いに戻す（?resident 起動の初回用）
+  const silentIfMissing = !!(opts && opts.silentIfMissing);
   // Prefer cloud version if newer than local
   let doc = null;
   const localRaw = localStorage.getItem(LS_DOC_PREFIX + name);
@@ -2168,6 +2207,7 @@ async function loadDoc(name) {
     try { localDoc = JSON.parse(localRaw); } catch (e) { /* ignore */ }
   }
   let cloudSeenAt = null;   // 読込時に観測したクラウド版の時刻（ローカル版を採用した場合も基準にする）
+  let cloudFetchFailed = false;   // 「文書が無い」と「通信失敗で確認できない」は保存時の危険度が違うため区別する
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', `クラウドから「${name}」を読込中…`);
     try {
@@ -2186,18 +2226,33 @@ async function loadDoc(name) {
       }
       setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
-      setSyncStatus('err', '取得失敗（端末データを使用）: ' + err.message);
+      cloudFetchFailed = true;
+      // 端末データが無い時に「端末データを使用」は実態と違うため、状況で言い分ける
+      setSyncStatus('err', (localDoc ? '取得失敗（端末データを使用）: ' : '取得失敗（新規として開始）: ') + err.message);
       doc = localDoc;
     }
   } else {
     doc = localDoc;
   }
-  if (!doc) { alert('データが見つかりません: ' + name); return; }
+  if (!doc) {
+    if (silentIfMissing) {
+      /* クラウドを確認できていない＝既存版の有無が不明。このまま保存するとキュー再送で
+         既存版を上書きしかねないため、印を付けたうえで本人に知らせて新規として続行する */
+      if (cloudFetchFailed) {
+        cloudUnverified.add(name);
+        alert('クラウドの既存データを確認できませんでした。\nこのまま新規として開始しますが、保存するとクラウドの既存版を上書きする恐れがあります。\n\n通信が回復したらページを再読み込みしてください。');
+      }
+      render(); return;   // 端末にもクラウドにも無い＝新規作成として続行
+    }
+    alert('データが見つかりません: ' + name);
+    return;
+  }
   state.clientName = doc.clientName || name;
   /* 基準は「読込時に観測したクラウド版の時刻」。ローカル版を採用した時に doc.updatedAt（ローカル時刻）を
      基準にすると、読込後に別端末が保存した版まで「古い」と誤判定し確認なしで上書きするため（レビュー指摘）。
      クラウド未観測（未設定・文書なし・取得失敗）はローカル時刻へフォールバック。 */
-  CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt);
+  CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
+  if (!cloudFetchFailed) cloudUnverified.delete(state.clientName);   // クラウドを確認できた時点で印を外す
   state.doc = {
     nodes: doc.nodes || [],
     lines: doc.lines || [],
@@ -2634,7 +2689,13 @@ function saveCloudConfig() {
 }
 
 function clearCloudConfig() {
-  if (!confirm('クラウド設定をすべて削除しますか？\n（端末内のジェノグラムデータは残ります）')) return;
+  /* 未送信キュー（LS_PENDING）も一緒に消える。消した分は二度と同期されないため、
+     残件がある時は件数を出して既定は中止（キャンセル）に倒す */
+  const pendingN = CloudSync.getPending().length;
+  const msg = pendingN > 0
+    ? `未送信${pendingN}件があります。クリアすると同期されません。\n先に「↻ 同期」で送信してください。\n\nそれでもクラウド設定をすべて削除しますか？\n（キャンセルで中止します）`
+    : 'クラウド設定をすべて削除しますか？\n（端末内のジェノグラムデータは残ります）';
+  if (!confirm(msg)) return;
   localStorage.removeItem(LS_CLOUD_CFG);
   localStorage.removeItem(LS_PENDING);
   $('cfgGasUrl').value = '';
@@ -2699,6 +2760,10 @@ function init() {
     state.clientName = suName;
     if (localStorage.getItem(LS_DOC_PREFIX + suName)) {
       loadDoc(suName);   // 既存の家系図を読込
+    } else if (CloudSync.isConfigured()) {
+      /* 端末に無くてもクラウドに既存版がある場合がある。確認せず空キャンバスで始めると
+         その後の保存でクラウドの既存版を空データで置き換えてしまうため、先に取得を試みる */
+      loadDoc(suName, { silentIfMissing: true });
     } else {
       render();          // 新規（氏名のみプリフィル済み）
     }

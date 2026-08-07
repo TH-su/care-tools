@@ -1,6 +1,6 @@
 // Service worker: cache the app shell for offline / home-screen launch.
 // Bump CACHE when any cached asset changes so clients pick up the new version.
-const CACHE = 'universe-sandbox-v2';
+const CACHE = 'universe-sandbox-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -31,9 +31,18 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
     caches.match(e.request).then((hit) => hit || fetch(e.request).then((resp) => {
-      const copy = resp.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+      // Store only successful same-origin responses: caching a 404/500 or an opaque
+      // cross-origin reply would pin the failure until the next CACHE bump.
+      if (resp.ok && resp.type === 'basic') {
+        const copy = resp.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+      }
       return resp;
-    }).catch(() => caches.match('./index.html'))),
+    }).catch((err) => {
+      // The app shell is a meaningful fallback only for page navigations;
+      // for scripts/images it would hand back HTML and hide the real failure.
+      if (e.request.mode === 'navigate') return caches.match('./index.html');
+      throw err;
+    })),
   );
 });

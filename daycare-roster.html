@@ -611,11 +611,13 @@ async function fetchRemote() {
   if (!j.ok) throw new Error(j.error || '応答エラー');
   return (j.data && Array.isArray(j.data.residents)) ? { data: j.data, rev: Number(j.rev) || 0 } : null;
 }
-// 書戻し用: 最新をrev付きで取得（put の版ガードに使う）。careRev も更新する。
+/* 書戻し用: 最新をrev付きで取得（put の版ガードに使う）。
+   ここでも careRev を書き換えない（上の fetchRemote と同型）。呼び出し側は data の有効性を確かめてから
+   DB と careRev を同時に代入する。ここで版だけ先に進めると、data が空で採用しなかった場合に
+   【古い DB × 新しい rev】が残り、次の PUT が版ガードをすり抜けて他端末の更新を無言で巻き戻す。 */
 async function getRemoteWithRev() {
   const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
-  careRev = Number(j.rev) || 0;
   return { data: (j.data && Array.isArray(j.data.residents)) ? j.data : null, rev: Number(j.rev) || 0 };
 }
 
@@ -1737,7 +1739,7 @@ function printNow() {
     const st = document.createElement('style');
     st.id = 'dyn-page';
     st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
-    document.head.appendChild(st);      // 静的<style>より後にappend＝後勝ち
+    document.head.appendChild(st);      // ページ先頭の静的スタイルより後にappend＝後勝ち（コメント内にタグ表記を書かない＝構文チェッカの誤検知回避）
   }
   fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
   // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）。
@@ -1999,8 +2001,10 @@ function closeHideModal() {
 }
 
 function init() {
-  $('btnRefresh').addEventListener('click', refresh);
-  $('btnRefresh2').addEventListener('click', refresh);
+  // クリックイベントを silent 引数として渡さない（イベントオブジェクトは真値のため、
+  // 手動更新なのにトーストが出ない＝成功・失敗が現場に見えなくなる）。
+  $('btnRefresh').addEventListener('click', () => refresh(false));
+  $('btnRefresh2').addEventListener('click', () => refresh(false));
   $('btnPrint').addEventListener('click', printNow);
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
   window.addEventListener('pagehide', flushPendingBeacon_);

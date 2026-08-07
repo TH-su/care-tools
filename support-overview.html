@@ -904,7 +904,9 @@ function setView(view) {
     const model = buildModel(RAW, MASKS, VIEW);
     render(model, RAW_N, VIEW);
     let total = 0; for (const arr of model.byDow) total += arr.length;
-    setSyncState('集計OK（' + RAW_N + '週' + RAW_MISS + '・' + total + '枠）');   // 枠数を現ビューに合わせる
+    const stat = '（' + RAW_N + '週' + RAW_MISS + '・' + total + '枠）';         // 枠数を現ビューに合わせる
+    // 直近の取得が失敗している時に出るのは前回取得分。ここで「集計OK」と出すと最新に見えてしまう
+    setSyncState(lastFetchFailed ? ('前回取得分を表示中（最新の取得は失敗）' + stat) : ('集計OK' + stat));
   }
 }
 function setButtons(enabled) {
@@ -914,9 +916,12 @@ function setButtons(enabled) {
 }
 
 let busy = false;
+let refreshPending = false;     // 取得中に来た再取得要求（週数変更等）。無言破棄するとセレクタと盤面の週数が食い違う
+let lastFetchFailed = false;    // 直近の取得が失敗したか。旧データを再表示する場面でラベルを偽らないために持つ
 async function refresh() {
-  if (busy) return;
+  if (busy) { refreshPending = true; return; }   // 破棄せず、完了後に1回だけ最新の条件で取り直す
   busy = true;
+  refreshPending = false;
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {
@@ -936,6 +941,7 @@ async function refresh() {
     const raw = await loadAll(N, masks, (done, tot) => setSyncState('取得中 ' + done + '/' + tot + '週'));
     // 全週フェッチ失敗＝通信/接続先の問題。0枠成功と誤表示せず失敗として扱う（silent fail 防止）。
     if (raw.weeksFetched === 0) {
+      lastFetchFailed = true;                              // 保持中のRAWは古い＝以後の再描画で「集計OK」と偽らない
       $('boardEmpty').classList.add('on');
       $('bHeads').textContent = ''; $('bCanvas').textContent = '';
       $('emptyMsg').textContent = 'データを取得できませんでした。通信環境・接続先URL／トークンをご確認ください。';
@@ -943,6 +949,7 @@ async function refresh() {
       toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
       return;
     }
+    lastFetchFailed = false;
     RAW = raw; MASKS = masks; RAW_N = N;                   // 施設/外部の切替を再フェッチ無しで行うため保持
     const model = buildModel(raw, masks, VIEW);
     render(model, N, VIEW);
@@ -952,11 +959,13 @@ async function refresh() {
     if (raw.weeksError > 0) toast('一部の週を取得できませんでした（' + raw.weeksError + '/' + raw.weeksTotal + '週）。表示は取得できた週のみです', true);
     else if (total === 0) toast('対象期間に支援枠が見つかりませんでした');
   } catch (e) {
+    lastFetchFailed = true;                                // 例外時も保持中のRAWは古いまま
     setSyncState('取得失敗');
     toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
   } finally {
     busy = false;
     setButtons(true);
+    if (refreshPending) { refreshPending = false; refresh(); }   // 取得中に積まれた要求を1回だけ消化
   }
 }
 
