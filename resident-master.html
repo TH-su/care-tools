@@ -96,7 +96,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
 @media print{.sec-applinks{display:none !important}}
 /* 移行時の退避データは画面だけに出す（既存の印刷レイアウトの高さを変えないため。2026-08-08） */
 @media print{.sec-unmapped{display:none !important}}
-/* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 橋爪氏指示）。
+/* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
@@ -1419,7 +1419,7 @@ function renderView(r){
     '<div class="row-cells">'+
       cell('入居日',r.admissionDate)+
       /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
-         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（橋爪氏指示） */
+         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示） */
       '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
         (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
       cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
@@ -1698,7 +1698,7 @@ function openEdit(rec){
     fld('careCertStart','認定期間(開始)',r.careCertStart,'date')+fld('careCertEnd','認定期間(終了)',r.careCertEnd,'date')+
     fld('copayRate','負担割合',r.copayRate,'select',['1','2','3'])+fld('welfare','生保',r.welfare,'checkbox')+
     fld('admissionDate','入居日',r.admissionDate,'date')+
-    /* ★在籍状態は入居日のすぐ隣に置く（2026-08-09 橋爪氏指示）。
+    /* ★在籍状態は入居日のすぐ隣に置く（2026-08-09 管理者指示）。
        以前は「認知症自立度」の右＝18項目の最後尾にあり、探しても見つからなかった */
     fld('active','在籍状態',r.active===false?'退去':'在籍','select',['在籍','退去'])+
     fld('dischargeDate','退去日',r.dischargeDate,'date')+
