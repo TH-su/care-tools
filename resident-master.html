@@ -509,8 +509,10 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   'supportLog','medicalSupportLog','xref',
   // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する
   'hospitalized','hospitalizedAt',
-  // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避
-  // （介護保険証の有効期限・寝具リース・享年など）。画面には出さないが失わない。
+  // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避。
+  // 2026-08-08 から詳細画面の「移行時の退避」欄に読み取り専用で表示する（印刷には出さない）。
+  // 入力欄は作らないため、保存時はここを通して引き継ぐ（下の collectForm）。
+  // （介護保険証の有効期限・寝具リース・享年など）
   'unmappedRaw'];
 var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
 // デイ利用日（曜日ごとの利用時間帯）。rhythm{} と同型のオブジェクトで保持する。
