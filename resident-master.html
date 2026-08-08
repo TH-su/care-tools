@@ -96,6 +96,9 @@ input,select,textarea{font-family:inherit; font-size:15px}
 @media print{.sec-applinks{display:none !important}}
 /* 移行時の退避データは画面だけに出す（既存の印刷レイアウトの高さを変えないため。2026-08-08） */
 @media print{.sec-unmapped{display:none !important}}
+/* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 橋爪氏指示）。
+   画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
+@media print{.noprint-cell{display:none !important}}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
 
 /* ── 詳細（印刷レイアウト） ── */
@@ -591,6 +594,20 @@ function apiGet(params,timeoutMs){
   var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
   qs+='&token='+encodeURIComponent(CFG.token);
   return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET'},timeoutMs||12000).then(parseJson);
+}
+/* ★投げない版。`{ok:false, error, detail}` を throw せずそのまま返す。
+   既存の apiPost は error があれば必ず throw するため、savePartial の
+   「誰が・なぜ弾かれたか」（detail）と「1文字も書いていない」という確定情報が届かない。
+   既存の呼び出し（saveResident / setState）の挙動は変えないため、別関数にする。 */
+function apiPostRaw(body,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  body.token=CFG.token;
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||15000)
+    .then(function(r){ return r.text().then(function(t){
+      var d; try{ d=JSON.parse(t); }catch(e){ throw new Error('応答が不正です'); }
+      if(d && d.ok===undefined && d.error) throw new Error(d.error);   // ok を持たない応答は従来どおり
+      return d;
+    })});
 }
 function apiPost(body,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
@@ -1362,7 +1379,8 @@ function perResidentLinksHtml(r){
   return '<div class="sec sec-applinks"><div class="sec-lbl">この方を各アプリで開く</div>'+
          '<div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+body+'</div></div>';
 }
-function cell(lab,val,big){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
+/* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
+function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
 function renderView(r){
   var fam=Array.isArray(r.family)?r.family:[];
   var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
@@ -1399,7 +1417,12 @@ function renderView(r){
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
     '</div>'+
     '<div class="row-cells">'+
-      cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+
+      cell('入居日',r.admissionDate)+
+      /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
+         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（橋爪氏指示） */
+      '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
+        (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
+      cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
       cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
       cell('BMI',calcBMI(r.height,r.weight))+cell('身長',r.height?r.height+' cm':'')+cell('体重',r.weight?r.weight+' kg':'')+
       cell('生活自立度',r.adl)+cell('認知症自立度',r.dementia)+
@@ -1421,9 +1444,9 @@ function renderView(r){
   }
   // 基本事項
   h+='<div class="sec"><div class="sec-lbl">基本事項</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('退去先',r.dischargeTo)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
+    '<div class="row-cells">'+cell('退去先',r.dischargeTo,false,'noprint-cell')+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
     '<div class="cell" style="border-right:none"><span class="lab">入居前状況</span><div class="fulltext">'+esc(r.preAdmission||'　')+'</div></div>'+
-    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
+    '<div class="cell noprint-cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
   // 家族情報
   // 家族情報＋事業所（左 2/3）と ジェノグラム欄（右 1/3）を横並び
   var genoImg=getGenogram(r.id);
@@ -1674,11 +1697,14 @@ function openEdit(rec){
     fld('careLevel','介護度',r.careLevel,'select',levels)+
     fld('careCertStart','認定期間(開始)',r.careCertStart,'date')+fld('careCertEnd','認定期間(終了)',r.careCertEnd,'date')+
     fld('copayRate','負担割合',r.copayRate,'select',['1','2','3'])+fld('welfare','生保',r.welfare,'checkbox')+
-    fld('admissionDate','入居日',r.admissionDate,'date')+fld('dischargeDate','退去日',r.dischargeDate,'date')+
+    fld('admissionDate','入居日',r.admissionDate,'date')+
+    /* ★在籍状態は入居日のすぐ隣に置く（2026-08-09 橋爪氏指示）。
+       以前は「認知症自立度」の右＝18項目の最後尾にあり、探しても見つからなかった */
+    fld('active','在籍状態',r.active===false?'退去':'在籍','select',['在籍','退去'])+
+    fld('dischargeDate','退去日',r.dischargeDate,'date')+
     fld('deathDate','ご逝去日',r.deathDate,'date')+
     fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
     fld('adl','生活自立度',r.adl)+fld('dementia','認知症自立度',r.dementia)+
-    fld('active','在籍状態',r.active===false?'退去':'在籍','select',['在籍','退去'])+
   '</div></div></div>';
 
   // 保険・制度／連絡先
@@ -2191,6 +2217,12 @@ var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'�
   dischargeDate:'退去日',doctor:'主治医',visitDay:'往診曜日',hospital:'かかりつけ病院'};
 var bulkRows=null, bulkDirty={}, bulkGroup='basic', bulkLoading=false;
 
+/* ★真偽の解釈は必ずここ1箇所。表示側と差分判定側で解釈が違うと、
+   旧形式（'有'・'1'）の行でチェックを外しても「変更なし」と判定され、
+   生活保護の終了が無言で反映されない（請求・公費に直結する） */
+function bulkTruthy(v){
+  return (v===true||v==='true'||v==='1'||v===1||v==='有'||v==='○'||v==='●'||v==='あり');
+}
 function bulkGroupDef(id){ for(var i=0;i<BULK_GROUPS.length;i++) if(BULK_GROUPS[i][0]===id) return BULK_GROUPS[i][2]; return BULK_GROUPS[0][2]; }
 function bulkDirtyCount(){ var n=0,k; for(k in bulkDirty) if(Object.keys(bulkDirty[k]).length) n++; return n; }
 function bulkCellCount(){ var n=0,k; for(k in bulkDirty) n+=Object.keys(bulkDirty[k]).length; return n; }
@@ -2278,16 +2310,16 @@ function bulkCell(r,c){
   if(type==='check'){
     /* ★真偽の表現ゆれに広く対応する。移行データに '1'・'有' が入っていると
        生保の方が OFF に見える（要配慮情報かつ請求に直結するので誤認の代償が大きい） */
-    var on=(v===true||v==='true'||v==='1'||v===1||v==='有'||v==='○'||v==='●');
-    return '<input type="checkbox" '+base+' data-type="check"'+(on?' checked':'')+' style="min-width:0;width:auto">';
+    return '<input type="checkbox" '+base+' data-type="check"'+(bulkTruthy(v)?' checked':'')+' style="min-width:0;width:auto">';
   }
   /* ★type=date は ISO 形式でない値を表示できない。number も同様。
      既存の fld() と同じく text へ落として値を必ず見せる（空欄に見えると
      「入っていない」と誤解し、上書きの判断を誤る） */
   var tp=type;
-  if(type==='date'&&v&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) tp='text';
+  var ph='';
+  if(type==='date'&&v&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v))){ tp='text'; ph=' placeholder="YYYY-MM-DD"'; }
   if(type==='number'&&v&&!/^-?\d+(\.\d+)?$/.test(String(v))) tp='text';
-  return '<input type="'+esc(tp)+'" '+base+' value="'+esc(v)+'">';
+  return '<input type="'+esc(tp)+'" '+base+ph+' value="'+esc(v)+'">';
 }
 
 /* 変更の記録。取得時の値に戻したら「変更なし」に戻す */
@@ -2299,7 +2331,7 @@ function onBulkInput(e){
   if(!r) return;
   var nv=(el.getAttribute('data-type')==='check')?el.checked:el.value;
   var ov=(r[k]==null)?'':r[k];
-  var same=(el.getAttribute('data-type')==='check')?(nv===(ov===true||ov==='true')):(String(nv)===String(ov));
+  var same=(el.getAttribute('data-type')==='check')?(nv===bulkTruthy(ov)):(String(nv)===String(ov));
   bulkDirty[id]=bulkDirty[id]||{};
   if(same) delete bulkDirty[id][k]; else bulkDirty[id][k]=nv;
   if(!Object.keys(bulkDirty[id]).length) delete bulkDirty[id];
@@ -2331,6 +2363,17 @@ function applyBulkFilter(){
   $('bulkCount').textContent=n+'名を表示';
 }
 
+/* 利用者Noを氏名へ。表に No 列が無いため、No だけ出しても誰のことか辿れない */
+function bulkWho(id){
+  if(bulkRows) for(var i=0;i<bulkRows.length;i++)
+    if(String(bulkRows[i].id)===String(id))
+      return bulkRows[i].name + (bulkRows[i].room ? ('（'+bulkRows[i].room+'）') : '');
+  return 'No'+id;
+}
+/* サーバーからの「No12: …」を氏名（居室）へ置き換える。表に利用者No列が無いため */
+function bulkNamed(msg){
+  return String(msg).replace(/No(\d+)/g, function(m,n){ return bulkWho(n); });
+}
 function saveBulk(){
   var changes=[], ids=Object.keys(bulkDirty), hitDown={};
   for(var i=0;i<ids.length;i++){
@@ -2350,7 +2393,7 @@ function saveBulk(){
     if(!Object.prototype.hasOwnProperty.call(cc.fields,'dischargeDate')) continue;
     if(!String(cc.fields.dischargeDate||'').trim()) continue;
     for(var q3=0;q3<bulkRows.length;q3++)
-      if(String(bulkRows[q3].id)===String(cc.id)&&bulkRows[q3].active!==false){ leftOpen.push('No'+cc.id); break; }
+      if(String(bulkRows[q3].id)===String(cc.id)&&bulkRows[q3].active!==false){ leftOpen.push(bulkWho(cc.id)); break; }
   }
   var down=Object.keys(hitDown).map(function(k){return BULK_DOWNSTREAM[k]}).join('・');
   var msg=changes.length+'名 / '+bulkCellCount()+'項目を保存します。\n\n'+
@@ -2360,16 +2403,21 @@ function saveBulk(){
     (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
     '\nよろしいですか？';
   if(!confirm(msg)) return;
-  var btn=$('bulkSave'); btn.disabled=true; setSync('保存中…');
-  apiPost({action:'savePartial',changes:changes},60000).then(function(d){
+  var btn=$('bulkSave'); btn.disabled=true;
+  if($('bulkClose')) $('bulkClose').disabled=true;
+  setSync('保存中…');
+  apiPostRaw({action:'savePartial',changes:changes},60000).then(function(d){
+    /* ★保存中に「閉じる」が押されると bulkRows が null になる。
+       サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
+    if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster(); return; }
     if(!d||d.ok!==true){
-      setSync('保存失敗','ng');
-      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.join('\n')):'';
+      setSync('保存失敗','err');
+      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(bulkNamed).join('\n')):'';
       alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det);
       btn.disabled=false; return;
     }
-    setSync('保存OK','ok');
-    toast('✅ '+d.saved+'名を保存しました');
+    if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
+    else setSync('保存できず','err');
     /* ★書けなかった方の変更は【残す】。ローカルへ焼き付けて未保存マークを消すと、
        画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので
        二度と送れなくなる（無言の消失）。サーバーは失敗した id を warnIds で返す。 */
@@ -2385,14 +2433,14 @@ function saveBulk(){
       delete bulkDirty[String(c.id)];
     }
     if(d.warn&&d.warn.length)
-      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.join('\n'));
+      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.map(bulkNamed).join('\n'));
     renderBulk();
     refreshRoster();   // 一覧と共有名簿を最新化（他アプリへも伝わる）
   }).catch(function(e){
-    setSync('保存失敗','ng');
+    setSync('保存失敗','err');
     alert('保存に失敗しました: '+e.message+'\n\n通信が途中で切れた場合、一部だけ保存されていることがあります。'+
           '\n閉じて開き直し、内容を確認してください。');
-    btn.disabled=false;
+    if($('bulkSave')) $('bulkSave').disabled=false;
   });
 }
 

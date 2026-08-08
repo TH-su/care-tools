@@ -54,6 +54,9 @@ input,select{font-family:inherit; font-size:15px}
   background:#fff; color:var(--warn-tx); font-size:13px; cursor:pointer}
 .frombar button:focus-visible{outline:2px solid var(--warn-tx); outline-offset:1px}
 @media print{.frombar{display:none !important}}
+/* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 橋爪氏指示）。
+   画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
+@media print{.noprint-cell{display:none !important}}
 .hdr .role{font-size:11px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .role.field{background:rgba(230,81,0,.92)}
 .hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
@@ -523,7 +526,8 @@ function weightCells(r){
 
 /* ═══════════ 表示ヘルパ ═══════════ */
 /* sub は値の出所・測定日など小さな補足（省略時は従来と完全に同じ出力） */
-function cell(lab,val,big,sub){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span>'+
+/* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第5引数なし＝従来どおり） */
+function cell(lab,val,big,sub,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span>'+
   (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'</div>'}
 function full(lab,val){return'<div class="cell" style="border-right:none"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
 function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'</div><div class="sec-body">'+body+'</div></div>'}
@@ -629,7 +633,7 @@ function renderOfficeView(r){
     sec('基本情報',
       '<div class="row-cells">'+cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+'</div>'+
       '<div class="row-cells">'+cell('介護度',r.careLevel)+cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+'</div>'+
-      '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate)+cell('ご逝去日',r.deathDate)+cell('身長',r.height?r.height+' cm':'')+wt.weightCell+wt.bmiCell+'</div>'
+      '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate,false,'','noprint-cell')+cell('ご逝去日',r.deathDate,false,'','noprint-cell')+cell('身長',r.height?r.height+' cm':'')+wt.weightCell+wt.bmiCell+'</div>'
     )+
     sec('保険・制度／連絡先',
       '<div class="row-cells">'+cell('電話（本人/居室）',r.phone)+cell('被保険者番号',r.insuredNo)+cell('保険者',r.insurer)+cell('認定日',fmtJDate(r.certDate))+'</div>'+
@@ -637,9 +641,9 @@ function renderOfficeView(r){
     )+
     sec('介護度の変更履歴',chist)+
     sec('基本事項',
-      '<div class="row-cells">'+cell('退去先',r.dischargeTo)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
+      '<div class="row-cells">'+cell('退去先',r.dischargeTo,false,'','noprint-cell')+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
       full('入居前状況',r.preAdmission)+
-      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div>')
+      '<div class="cell noprint-cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div>')
   );
   // 医療・服薬
   P.medical=sheet(
