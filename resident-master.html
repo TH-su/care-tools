@@ -507,8 +507,10 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   'lifeHistory','values',
   'complaint','wishSelf','wishFamily','goal','acp','dnar','strengths',
   'supportLog','medicalSupportLog','xref',
-  // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する
-  'hospitalized','hospitalizedAt',
+  // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する。
+  // ★stateLog（状態の変更履歴・最大50件）も許可する。許可していないと、編集フォームから保存した
+  //   だけで履歴が消える（入力欄が無いので collectForm が拾わず、GAS が dataJson を全置換するため）
+  'hospitalized','hospitalizedAt','stateLog',
   // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避。
   // 2026-08-08 から詳細画面の「移行時の退避」欄に読み取り専用で表示する（印刷には出さない）。
   // 入力欄は作らないため、保存時はここを通して引き継ぐ（下の collectForm）。
@@ -1981,6 +1983,18 @@ function collectForm(){
   if(editing.xref&&Object.keys(editing.xref).length)rec.xref=editing.xref;
   // 移行時の退避データは画面に入力欄が無いため、rec に引き継がないと保存のたびに消える
   if(editing.unmappedRaw&&editing.unmappedRaw.length)rec.unmappedRaw=editing.unmappedRaw;
+  /* ★入院の状態（hospitalized / hospitalizedAt / stateLog）も入力欄が無いので引き継ぐ。
+     引き継がないと、入院中の方を編集して保存しただけで入院フラグが消える。
+     消費側（週間計画・体重・排泄）は「キーが無い＝何もしない」と解釈するため、
+     マスタだけ入院表示が消え、他アプリは入院のまま残るという食い違いになる（2026-08-08 修正）。
+     ★false も引き継ぐこと。GAS の getRoster は hasOwnProperty でキーの有無を見るため、
+       キーごと落とすと「復帰済み」の情報まで配信されなくなる。
+     ★残る限界: 編集画面を開いている間に他端末が入院/復帰を切り替えると、
+       開いた時点の値で保存される（この画面の他の項目と同じ last-writer-wins）。
+       恒久対策は入居者マスタGAS側で3キーを保全すること（一括編集の実装時に同梱予定）。 */
+  ['hospitalized','hospitalizedAt','stateLog'].forEach(function(k){
+    if(Object.prototype.hasOwnProperty.call(editing,k)) rec[k]=editing[k];
+  });
   // ホワイトリスト適用
   var clean={};ALLOWED_KEYS.forEach(function(k){if(rec[k]!==undefined)clean[k]=rec[k]});
   return clean;
