@@ -156,6 +156,39 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .modal.on{display:flex}
 .modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
 .modal h2{font-size:16px; margin:0 0 12px}
+/* ── 一括編集（2026-08-08 追加。既存の .modal / .fld には一切触れない） ── */
+#mBulk .box{max-width:1500px; width:98vw; max-height:92vh; padding:12px; display:flex; flex-direction:column}
+.bulk-open{padding:9px 14px; border:1px solid var(--pri); border-radius:10px; background:var(--pri-l);
+  color:var(--pri-d); font-size:13px; font-weight:700; white-space:nowrap; min-height:40px}
+.bulk-open:hover{background:#fff}
+.bulk-open:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+@media print{.bulk-open{display:none !important}}
+.bulk-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
+.bulk-tools{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px}
+.bulk-tools input[type=search]{flex:1; min-width:180px; padding:8px 10px; border:1px solid var(--g3); border-radius:8px}
+.bulk-tools label{display:flex; align-items:center; gap:5px; font-size:13px; color:var(--g7); white-space:nowrap}
+.bulk-scroll{flex:1 1 auto; overflow:auto; border:1px solid var(--g2); border-radius:8px; min-height:200px}
+.bulk-tbl{border-collapse:separate; border-spacing:0; font-size:13px; white-space:nowrap}
+.bulk-tbl th,.bulk-tbl td{border-bottom:1px solid var(--g2); border-right:1px solid var(--g2); padding:0}
+.bulk-tbl thead th{position:sticky; top:0; z-index:3; background:var(--g1); padding:7px 8px;
+  font-size:12px; text-align:left; font-weight:700; color:var(--g9)}
+/* 氏名列は横スクロールしても残す。★背景色は必須（無いと下の行が透ける） */
+.bulk-tbl .bk-name{position:sticky; left:0; z-index:2; background:#fff; padding:5px 8px;
+  font-weight:700; min-width:132px; max-width:132px; overflow:hidden; text-overflow:ellipsis}
+.bulk-tbl thead .bk-name{z-index:4; background:var(--g1)}
+.bulk-tbl .bk-room{position:sticky; left:132px; z-index:2; background:#fff; min-width:74px}
+.bulk-tbl thead .bk-room{z-index:4; background:var(--g1)}
+.bulk-tbl input,.bulk-tbl select{width:100%; min-width:92px; border:none; background:transparent;
+  padding:8px; font-size:13px; font-family:inherit; color:var(--g9)}
+.bulk-tbl input:focus,.bulk-tbl select:focus{outline:2px solid var(--pri); outline-offset:-2px; background:#fff}
+.bulk-tbl td.dirty{background:var(--warn-bg)}
+.bulk-tbl tr.bulk-out .bk-name{color:var(--g6)}
+.bulk-tbl tr.bulk-broken .bk-name::after{content:' ⚠'; color:var(--ng)}
+.bulk-tbl tr.bulk-hide{display:none}
+.bulk-foot{flex:0 0 auto; display:flex; gap:8px; align-items:center; justify-content:flex-end;
+  padding-top:10px; flex-wrap:wrap}
+.bulk-foot .grow{flex:1; font-size:13px; color:var(--g7)}
+.bulk-note{font-size:12px; color:var(--g7); margin:0 0 8px; line-height:1.6}
 .applead{font-size:12px; color:var(--g7); margin:0 0 12px; line-height:1.6}
 .applist{display:grid; gap:8px}
 .applist a{display:flex; align-items:center; gap:10px; min-height:52px; padding:10px 14px;
@@ -264,6 +297,10 @@ input,select,textarea{font-family:inherit; font-size:15px}
 <section class="scr on" id="sc-list">
   <div class="search-bar">
     <input type="search" id="q" placeholder="氏名・ふりがな・居室で検索" autocomplete="off">
+    <!-- 一括編集（2026-08-08 追加）。★.filter-row の中に置かないこと。既存の init が
+         `#filterRow .chip` を総なめして在籍/退去フィルタのハンドラを付けるため、
+         ここに chip を1つ足すと在籍フィルタが壊れる（curFilter が null になる） -->
+    <button class="bulk-open" id="bulkOpen" type="button">📊 一括編集</button>
   </div>
   <div class="view-tabs" id="viewTabs" role="tablist" aria-label="表示パターン">
     <button class="vtab on" data-v="std"   role="tab" aria-selected="true">標準</button>
@@ -359,6 +396,31 @@ input,select,textarea{font-family:inherit; font-size:15px}
       <button class="btn btn-gray" id="syncClose">閉じる</button>
       <button class="btn btn-sec" id="syncTest">接続テスト</button>
       <button class="btn btn-ok" id="syncSave">保存して再読込</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 一括編集（2026-08-08 追加） ════════
+     一覧の上に重ねて開く。既存の一覧・詳細・編集の描画には一切触れない。
+     印刷は既存の @media print で .modal ごと消えるため、この表は紙に出ない。 -->
+<div class="modal" id="mBulk">
+  <div class="box">
+    <h2>📊 一括編集</h2>
+    <p class="bulk-note">
+      表の上で複数の方をまとめて直せます。<b>直した項目だけ</b>が保存され、他の項目には一切触れません。<br>
+      氏名・在籍状態・支援経過・家族情報・入院の状態は、取り違えを防ぐためこの画面では扱いません（1人ずつの編集画面で変更してください）。
+    </p>
+    <div class="bulk-tabs" id="bulkTabs"></div>
+    <div class="bulk-tools">
+      <input type="search" id="bulkQ" placeholder="氏名・ふりがな・居室で絞り込み" autocomplete="off">
+      <label><input type="checkbox" id="bulkOut"> 退去者も表示</label>
+      <span id="bulkCount" class="muted"></span>
+    </div>
+    <div class="bulk-scroll" id="bulkScroll"><div class="loading">読み込み中…</div></div>
+    <div class="bulk-foot">
+      <span class="grow" id="bulkDirtyMsg">変更はありません</span>
+      <button class="btn btn-gray" id="bulkClose" type="button">閉じる</button>
+      <button class="btn btn-ok" id="bulkSave" type="button" disabled>💾 変更を保存</button>
     </div>
   </div>
 </div>
@@ -2077,6 +2139,263 @@ function testSync(){
   apiGet({action:'ping'},8000).then(function(){toast('✅ 接続OK')}).catch(function(e){toast('⚠️ 接続失敗: '+e.message)}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
 }
 
+/* ═══════════ 一括編集 ═══════════ 2026-08-08 追加
+ * 一覧の上にモーダルで表を重ね、複数の方をまとめて直す。
+ *
+ * ── 守っていること ──
+ *   1. **既存の関数を1つも変更しない**（追加だけ）。`renderRoster` を呼ばないので、
+ *      一覧の検索・タブ・印刷・誕生日一覧のフィット処理に一切影響しない
+ *   2. 保存は GAS の `savePartial`。**直した項目だけ**を書き、他の約100項目には触れない
+ *      （`saveResident` は dataJson を丸ごと置換するので使わない）
+ *   3. 氏名・在籍・支援経過・家族・入院フラグ・退避データは**列に出さない**。
+ *      サーバー側 `BULK_FIELDS` でも拒否する（二重の歯止め）
+ *   4. 絞り込みは**行の表示/非表示だけ**。再描画しないので、入力中の値とフォーカスが消えない
+ *      （一覧の `renderRoster` は 1打鍵ごとに innerHTML を作り直すため、その経路は使わない）
+ *   5. セルごとにイベントを付けず、`tbody` に1つだけ付ける（138行×12列でも重くならない）
+ *   6. 変更は `bulkDirty` に持ち、DOM を正本にしない。列グループを切り替えても消えない
+ *   7. 保存前に「対象人数・項目・他アプリへ波及する項目」を出して確認を取る
+ */
+var BULK_LEVELS=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+/* 列の定義。★GAS の BULK_FIELDS に無いキーを足してもサーバーが拒否する（先に GAS を直すこと） */
+var BULK_GROUPS=[
+  ['basic','基本',[
+    ['kana','ふりがな','text'],['gender','性別','select',['','女','男']],
+    ['careLevel','介護度','select',BULK_LEVELS],
+    ['birthDate','生年月日','date'],['admissionDate','入居日','date'],
+    ['dischargeDate','退去日','date'],['dischargeTo','退去先','text'],
+    ['height','身長cm','number'],['weight','体重kg','number'],
+    ['adl','生活自立度','text'],['dementia','認知症自立度','text']]],
+  ['system','保険・制度',[
+    ['careCertStart','認定開始','date'],['careCertEnd','認定満了','date'],['certDate','認定日','date'],
+    ['copayRate','負担割合','select',['','1','2','3']],['welfare','生保','check'],
+    ['insuredNo','被保険者番号','text'],['insurer','保険者','text'],
+    ['medicalInsurance','医療保険','select',['','後期高齢者','国保','社保','その他']],
+    ['disabilityCert','障害者手帳','text'],['guardianship','成年後見','text'],
+    ['phone','電話（本人/居室）','text']]],
+  ['office','事業所',[
+    ['careOffice','居宅介護支援事業所','text'],['careManager','介護支援専門員','text'],
+    ['careOfficeTel','居宅TEL','text'],['careOfficeFax','居宅FAX','text'],
+    ['welfareEquip','福祉用具','text'],['welfareEquipStaff','福祉用具 担当','text'],['welfareEquipTel','福祉用具TEL','text'],
+    ['serviceManager','サービス提供責任者','text'],
+    ['prevCareOffice','前の居宅','text'],['prevCareManager','前の担当ケアマネ','text']]],
+  ['medical','医療機関',[
+    ['hospital','かかりつけ病院','text'],['doctor','主治医','text'],
+    ['hospitalTel','病院TEL','text'],['hospitalFax','病院FAX','text'],
+    ['emergencyHospital','救急搬送先','text'],['emergencyHospitalTel','急変時TEL','text'],
+    ['visitDay','往診曜日','text'],
+    ['pharmacy','かかりつけ薬局','text'],['pharmacyTel','薬局TEL','text'],['pharmacyFax','薬局FAX','text'],
+    ['bloodType','血液型','select',['','A','B','O','AB','不明']]]]
+];
+/* 直すと現場アプリ側の値まで置き換わる項目（data-contracts §5「マスタ非空常勝」）。保存前に必ず知らせる */
+var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
+  dischargeDate:'退去日',doctor:'主治医',visitDay:'往診曜日',hospital:'かかりつけ病院'};
+var bulkRows=null, bulkDirty={}, bulkGroup='basic', bulkLoading=false;
+
+function bulkGroupDef(id){ for(var i=0;i<BULK_GROUPS.length;i++) if(BULK_GROUPS[i][0]===id) return BULK_GROUPS[i][2]; return BULK_GROUPS[0][2]; }
+function bulkDirtyCount(){ var n=0,k; for(k in bulkDirty) if(Object.keys(bulkDirty[k]).length) n++; return n; }
+function bulkCellCount(){ var n=0,k; for(k in bulkDirty) n+=Object.keys(bulkDirty[k]).length; return n; }
+/* 表示中の値。未保存の変更があればそれを、無ければ取得時の値を返す */
+function bulkVal(r,k){
+  var d=bulkDirty[r.id];
+  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  return (r[k]==null)?'':r[k];
+}
+
+function openBulk(){
+  if(!CFG.url){ toast('⚠️ 同期設定のURLが未設定です'); return; }
+  $('mBulk').classList.add('on');
+  if(bulkRows){ renderBulk(); return; }
+  if(bulkLoading) return;
+  bulkLoading=true;
+  $('bulkScroll').innerHTML='<div class="loading">読み込み中…</div>';
+  /* 138名×40項目を1往復で取る。1人ずつ取ると2分以上かかるため専用アクションを使う */
+  apiGet({action:'getBulk'},30000).then(function(d){
+    bulkLoading=false;
+    var rows=(d&&d.rows)||[];
+    if(!rows.length){ $('bulkScroll').innerHTML='<div class="empty">対象の方がいません</div>'; return; }
+    /* 一覧と同じ並び（居室→ふりがな） */
+    rows.sort(function(a,b){
+      var ra=String(a.room||''),rb=String(b.room||'');
+      if(ra!==rb) return ra<rb?-1:1;
+      return String(a.kana||a.name||'').localeCompare(String(b.kana||b.name||''),'ja');
+    });
+    bulkRows=rows; renderBulk();
+  }).catch(function(e){
+    bulkLoading=false;
+    $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+  });
+}
+function closeBulk(){
+  if(bulkCellCount() && !confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')) return;
+  bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
+  paintBulkDirty(); $('mBulk').classList.remove('on');
+}
+
+function renderBulk(){
+  /* タブ（列グループ） */
+  $('bulkTabs').innerHTML=BULK_GROUPS.map(function(g){
+    return '<button class="chip'+(g[0]===bulkGroup?' on':'')+'" type="button" data-bg="'+esc(g[0])+'">'+esc(g[1])+'</button>';
+  }).join('');
+  var cols=bulkGroupDef(bulkGroup);
+  var h='<table class="bulk-tbl"><thead><tr>'+
+    '<th class="bk-name">氏名</th><th class="bk-room">居室</th>'+
+    cols.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
+    '</tr></thead><tbody id="bulkBody">';
+  for(var i=0;i<bulkRows.length;i++){
+    var r=bulkRows[i], cls=[];
+    if(r.active===false) cls.push('bulk-out');
+    if(r.broken) cls.push('bulk-broken');
+    /* ★列グループを切り替えると作り直すので、未保存の印もここで復元する。
+       復元しないと「値は残っているのに色が消える」＝直したことを見失う */
+    var dj=bulkDirty[r.id]||{};
+    var mark=function(k){ return Object.prototype.hasOwnProperty.call(dj,k)?' dirty':''; };
+    h+='<tr data-id="'+esc(r.id)+'" class="'+cls.join(' ')+'">'+
+       '<td class="bk-name" title="'+esc(r.name)+(r.broken?' ／ 保存データの形式が不正です':'')+'">'+esc(r.name)+'</td>'+
+       '<td class="bk-room'+mark('room')+'">'+bulkCell(r,['room','居室','text'])+'</td>';
+    for(var c=0;c<cols.length;c++) h+='<td class="'+mark(cols[c][0]).replace(/^ /,'')+'">'+bulkCell(r,cols[c])+'</td>';
+    h+='</tr>';
+  }
+  h+='</tbody></table>';
+  $('bulkScroll').innerHTML=h;
+  paintBulkDirty(); applyBulkFilter();
+}
+/* 1セル分のHTML。★属性値に入れるものは必ず esc() を通す（5文字版） */
+function bulkCell(r,c){
+  var k=c[0], type=c[2], v=bulkVal(r,k);
+  var base='data-id="'+esc(r.id)+'" data-k="'+esc(k)+'"';
+  if(type==='select'){
+    var opts=c[3]||[''], sv=String(v==null?'':v);
+    var has=false, s='';
+    for(var i=0;i<opts.length;i++){
+      var o=String(opts[i]);
+      if(o===sv) has=true;
+      s+='<option value="'+esc(o)+'"'+(o===sv?' selected':'')+'>'+esc(o||'—')+'</option>';
+    }
+    /* 想定外の値は選択肢に足して残す（勝手に空へ倒さない） */
+    if(!has&&sv) s='<option value="'+esc(sv)+'" selected>'+esc(sv)+'</option>'+s;
+    return '<select '+base+'>'+s+'</select>';
+  }
+  if(type==='check'){
+    /* ★真偽の表現ゆれに広く対応する。移行データに '1'・'有' が入っていると
+       生保の方が OFF に見える（要配慮情報かつ請求に直結するので誤認の代償が大きい） */
+    var on=(v===true||v==='true'||v==='1'||v===1||v==='有'||v==='○'||v==='●');
+    return '<input type="checkbox" '+base+' data-type="check"'+(on?' checked':'')+' style="min-width:0;width:auto">';
+  }
+  /* ★type=date は ISO 形式でない値を表示できない。number も同様。
+     既存の fld() と同じく text へ落として値を必ず見せる（空欄に見えると
+     「入っていない」と誤解し、上書きの判断を誤る） */
+  var tp=type;
+  if(type==='date'&&v&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) tp='text';
+  if(type==='number'&&v&&!/^-?\d+(\.\d+)?$/.test(String(v))) tp='text';
+  return '<input type="'+esc(tp)+'" '+base+' value="'+esc(v)+'">';
+}
+
+/* 変更の記録。取得時の値に戻したら「変更なし」に戻す */
+function onBulkInput(e){
+  var el=e.target; if(!el||!el.getAttribute) return;
+  var id=el.getAttribute('data-id'), k=el.getAttribute('data-k');
+  if(!id||!k) return;
+  var r=null; for(var i=0;i<bulkRows.length;i++) if(String(bulkRows[i].id)===String(id)){ r=bulkRows[i]; break; }
+  if(!r) return;
+  var nv=(el.getAttribute('data-type')==='check')?el.checked:el.value;
+  var ov=(r[k]==null)?'':r[k];
+  var same=(el.getAttribute('data-type')==='check')?(nv===(ov===true||ov==='true')):(String(nv)===String(ov));
+  bulkDirty[id]=bulkDirty[id]||{};
+  if(same) delete bulkDirty[id][k]; else bulkDirty[id][k]=nv;
+  if(!Object.keys(bulkDirty[id]).length) delete bulkDirty[id];
+  var td=el.parentElement; if(td&&td.classList) td.classList.toggle('dirty',!same);
+  paintBulkDirty();
+}
+function paintBulkDirty(){
+  var people=bulkDirtyCount(), cells=bulkCellCount();
+  var msg=$('bulkDirtyMsg'); if(msg) msg.textContent=cells?('未保存の変更: '+people+'名 / '+cells+'項目'):'変更はありません';
+  var b=$('bulkSave'); if(b) b.disabled=!cells;
+}
+/* 絞り込みは行の表示/非表示だけ。★再描画しないこと（入力中の値とフォーカスが消える） */
+function applyBulkFilter(){
+  if(!bulkRows) return;
+  var q=($('bulkQ').value||'').trim().toLowerCase();
+  var showOut=$('bulkOut').checked;
+  var body=$('bulkBody'); if(!body) return;
+  var n=0;
+  for(var i=0;i<body.rows.length;i++){
+    var tr=body.rows[i], r=bulkRows[i];
+    var hide=(!showOut&&r.active===false);
+    if(!hide&&q){
+      var hay=(String(r.name||'')+' '+String(r.kana||'')+' '+String(r.room||'')).toLowerCase();
+      hide=hay.indexOf(q)<0;
+    }
+    tr.classList.toggle('bulk-hide',hide);
+    if(!hide) n++;
+  }
+  $('bulkCount').textContent=n+'名を表示';
+}
+
+function saveBulk(){
+  var changes=[], ids=Object.keys(bulkDirty), hitDown={};
+  for(var i=0;i<ids.length;i++){
+    var id=ids[i], f=bulkDirty[id], r=null;
+    for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===String(id)){ r=bulkRows[j]; break; }
+    if(!r) continue;
+    var k; for(k in f) if(BULK_DOWNSTREAM[k]) hitDown[k]=1;
+    /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
+    changes.push({id:r.id,name:r.name,fields:f});
+  }
+  if(!changes.length){ toast('変更がありません'); return; }
+  /* 退去日を入れても在籍は自動で変わらない。共有名簿には active===false の方の退去日しか
+     載らないため、「入れたのに他アプリに出ない」になる。保存前に必ず知らせる */
+  var leftOpen=[];
+  for(var q2=0;q2<changes.length;q2++){
+    var cc=changes[q2];
+    if(!Object.prototype.hasOwnProperty.call(cc.fields,'dischargeDate')) continue;
+    if(!String(cc.fields.dischargeDate||'').trim()) continue;
+    for(var q3=0;q3<bulkRows.length;q3++)
+      if(String(bulkRows[q3].id)===String(cc.id)&&bulkRows[q3].active!==false){ leftOpen.push('No'+cc.id); break; }
+  }
+  var down=Object.keys(hitDown).map(function(k){return BULK_DOWNSTREAM[k]}).join('・');
+  var msg=changes.length+'名 / '+bulkCellCount()+'項目を保存します。\n\n'+
+    (leftOpen.length?('⚠ 在籍のまま退去日を入れた方が '+leftOpen.length+'名います（'+leftOpen.slice(0,10).join(',')+'）。\n'+
+      '　在籍状態は自動で変わりません。1人ずつの編集画面で「退去」に変えるまで、他アプリには退去日が伝わりません。\n\n'):'')+
+    '直した項目だけが書き換わり、他の項目には触れません。\n'+
+    (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
+    '\nよろしいですか？';
+  if(!confirm(msg)) return;
+  var btn=$('bulkSave'); btn.disabled=true; setSync('保存中…');
+  apiPost({action:'savePartial',changes:changes},60000).then(function(d){
+    if(!d||d.ok!==true){
+      setSync('保存失敗','ng');
+      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.join('\n')):'';
+      alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det);
+      btn.disabled=false; return;
+    }
+    setSync('保存OK','ok');
+    toast('✅ '+d.saved+'名を保存しました');
+    /* ★書けなかった方の変更は【残す】。ローカルへ焼き付けて未保存マークを消すと、
+       画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので
+       二度と送れなくなる（無言の消失）。サーバーは失敗した id を warnIds で返す。 */
+    var failed = {};
+    if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    var kept=0;
+    for(var i2=0;i2<changes.length;i2++){
+      var c=changes[i2];
+      if(failed[String(c.id)]){ kept++; continue; }        // 失敗した方は dirty のまま残す
+      var r2=null;
+      for(var j2=0;j2<bulkRows.length;j2++) if(String(bulkRows[j2].id)===String(c.id)){ r2=bulkRows[j2]; break; }
+      if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+      delete bulkDirty[String(c.id)];
+    }
+    if(d.warn&&d.warn.length)
+      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.join('\n'));
+    renderBulk();
+    refreshRoster();   // 一覧と共有名簿を最新化（他アプリへも伝わる）
+  }).catch(function(e){
+    setSync('保存失敗','ng');
+    alert('保存に失敗しました: '+e.message+'\n\n通信が途中で切れた場合、一部だけ保存されていることがあります。'+
+          '\n閉じて開き直し、内容を確認してください。');
+    btn.disabled=false;
+  });
+}
+
 /* ═══════════ 初期化 ═══════════ */
 function init(){
   // ── 先に全イベントを登録（ブロック中でも「端末設定変更」が機能するように） ──
@@ -2122,6 +2441,23 @@ function init(){
   $('hospBtn').addEventListener('click',toggleHosp);
   $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);
+  /* ── 一括編集（2026-08-08 追加）。既存のリスナーには一切触れない ── */
+  $('bulkOpen').addEventListener('click',openBulk);
+  $('bulkClose').addEventListener('click',closeBulk);
+  $('bulkSave').addEventListener('click',saveBulk);
+  $('bulkQ').addEventListener('input',applyBulkFilter);
+  $('bulkOut').addEventListener('change',applyBulkFilter);
+  /* セルごとではなく表全体に1つだけ付ける（138行×12列でも重くならない） */
+  $('bulkScroll').addEventListener('input',onBulkInput);
+  $('bulkScroll').addEventListener('change',onBulkInput);
+  $('bulkTabs').addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('[data-bg]'):null;
+    if(!b) return;
+    bulkGroup=b.getAttribute('data-bg');
+    renderBulk();          // 未保存の変更は bulkDirty に残っているので消えない
+  });
+  /* 背景のうす暗い部分を押したら閉じる（中身のクリックでは閉じない） */
+  $('mBulk').addEventListener('click',function(e){ if(e.target===$('mBulk')) closeBulk(); });
   $('syncClose').addEventListener('click',closeSync);
   $('appsClose').addEventListener('click',closeApps);
   $('mApps').addEventListener('click',function(e){if(e.target===this)closeApps()});
