@@ -94,6 +94,8 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .rlink:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 /* 印刷はセクションごと消す。sec-body は inline の display:flex を持つため !important が必要 */
 @media print{.sec-applinks{display:none !important}}
+/* 移行時の退避データは画面だけに出す（既存の印刷レイアウトの高さを変えないため。2026-08-08） */
+@media print{.sec-unmapped{display:none !important}}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
 
 /* ── 詳細（印刷レイアウト） ── */
@@ -1496,6 +1498,24 @@ function renderView(r){
     return'<span class="tag" style="background:'+(on?'var(--ok-l);color:var(--ok)':'var(--g1);color:var(--g5)')+'">'+(on?'✓ ':'– ')+esc(p[1])+'</span>';
   }).join(' ');
   h+='<div class="sec"><div class="sec-lbl">対象</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対象アプリ</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">'+tBadges+'</div></div></div></div>';
+  /* 移行時の退避データ（読み取り専用・画面のみ）。
+     元スプレッドシートにあってマスタに対応欄が無い値（保険証の有効期限・寝具リース・享年など）は
+     unmappedRaw に保存されているが、これまでどの画面にも表示されず死蔵していた（2026-08-08 監査）。
+     ★入力欄は作らない。編集できるようにすると collectForm の引き継ぎと二重管理になる。 */
+  var uraw=Array.isArray(r.unmappedRaw)?r.unmappedRaw.filter(function(o){return o&&String(o.value==null?'':o.value).replace(/[\s　]/g,'')}):[];
+  if(uraw.length){
+    h+='<div class="sec sec-unmapped"><div class="sec-lbl">移行時の退避</div><div class="sec-body">'+
+      '<div class="cell" style="border-right:none;background:var(--g0)"><span class="lab">この欄について</span>'+
+      '<div class="fulltext">元の入居者情報スプレッドシートにあった項目のうち、マスタに対応欄が無いものです。表示のみで編集できません（印刷には出ません）。</div></div>'+
+      uraw.map(function(o,i){
+        var last=(i===uraw.length-1);
+        var lab=String(o.label||'（項目名なし）')+(o.col?('（元シート 列'+o.col+'）'):'');
+        return '<div class="cell" style="border-right:none'+(last?';border-bottom:none':'')+'">'+
+               '<span class="lab">'+esc(lab)+'</span>'+
+               '<div class="fulltext">'+esc(o.value)+'</div></div>';
+      }).join('')+
+    '</div></div>';
+  }
   h+='</div>';
   $('viewBox').innerHTML=h;
   paintHospBtn(r);
