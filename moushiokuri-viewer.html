@@ -20,15 +20,15 @@
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
-       background:var(--g0); color:var(--g9); font-size:15px; padding-bottom:76px; }
+       background:var(--g0); color:var(--g9); font-size: 0.9375rem; padding-bottom:76px; }
 
 /* ── ヘッダー ── */
 .hdr { position:sticky; top:0; z-index:100; /* 高さは --hdr-h と一致させる（.dayhd の top に使う） */ background:var(--pri); color:#fff;
        padding:12px 16px; padding-left:max(16px,env(safe-area-inset-left));
        padding-right:max(16px,env(safe-area-inset-right)); box-shadow:var(--sh); }
-.hdr h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:.02em; }
-.hdr .sub { margin:2px 0 0; font-size:12px; }
-.hdr .back { color:#fff; font-size:12px; text-decoration:none; display:inline-block;
+.hdr h1 { margin:0; font-size: 1.125rem; font-weight:700; letter-spacing:.02em; }
+.hdr .sub { margin:2px 0 0; font-size: 0.75rem; }
+.hdr .back { color:#fff; font-size: 0.75rem; text-decoration:none; display:inline-block;
              padding:10px 12px 10px 0; margin:-10px 0 -4px 0; }
 .hdr .back:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 
@@ -42,17 +42,17 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",
         border-top:1px solid var(--g3); display:flex;
         padding-bottom:env(safe-area-inset-bottom); }
 .bnav button { flex:1; padding:12px 4px 14px; border:none; background:none; color:var(--g6);
-               font-size:12px; cursor:pointer; min-height:48px; }
+               font-size: 0.75rem; cursor:pointer; min-height:48px; }
 .bnav button[aria-selected="true"] { color:var(--pri); font-weight:700; box-shadow:inset 0 3px 0 var(--pri); }
 .bnav button:focus-visible { outline:2px solid var(--pri); outline-offset:-2px; }
 
 /* ── 操作バー ── */
 .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
-.bar label { font-size:12px; color:var(--g7); }
+.bar label { font-size: 0.75rem; color:var(--g7); }
 select, input[type=text], input[type=password], input[type=date] {
-  font:inherit; font-size:14px; padding:11px 10px; border:1px solid var(--g3);
+  font:inherit; font-size: 0.875rem; padding:11px 10px; border:1px solid var(--g3);
   border-radius:8px; background:#fff; color:var(--g9); min-height:44px; }
-button.btn { font:inherit; font-size:14px; padding:11px 14px; border:1px solid var(--g3);
+button.btn { font:inherit; font-size: 0.875rem; padding:11px 14px; border:1px solid var(--g3);
              border-radius:8px; background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
 button.btn.pri { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
 button.btn:disabled { opacity:.5; cursor:default; }
@@ -60,56 +60,56 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 
 /* ── 入居者リスト ── */
 .rlist { display:flex; flex-wrap:wrap; gap:6px; }
-.rchip { font:inherit; font-size:14px; padding:11px 12px; border:1px solid var(--g3); border-radius:20px;
+.rchip { font:inherit; font-size: 0.875rem; padding:11px 12px; border:1px solid var(--g3); border-radius:20px;
          background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
 .rchip[aria-pressed="true"] { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
-.rchip .n { color:var(--g6); font-size:12px; margin-left:5px; }
+.rchip .n { color:var(--g6); font-size: 0.75rem; margin-left:5px; }
 .rchip[aria-pressed="true"] .n { color:#dbe8fb; }
 
 /* ── タイムライン ── */
 .daygrp { margin-bottom:14px; }
 .dayhd { position:sticky; top:var(--hdr-h); z-index:5; background:var(--g0); padding:6px 2px;
-         font-size:13px; font-weight:700; color:var(--g7); border-bottom:2px solid var(--g2); }
+         font-size: 0.8125rem; font-weight:700; color:var(--g7); border-bottom:2px solid var(--g2); }
 .ev { background:#fff; border:1px solid var(--g2); border-left:4px solid var(--g3);
       border-radius:8px; padding:10px 12px; margin-top:8px; }
 .ev.s-day    { border-left-color:#f9a825; }
 .ev.s-night  { border-left-color:#5c6bc0; }
 .ev.s-daycare{ border-left-color:#26a69a; }
 .ev.k-notice { background:var(--g1); border-left-color:var(--g5); }
-.ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size:12px; color:var(--g6); margin-bottom:4px; }
+.ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size: 0.75rem; color:var(--g6); margin-bottom:4px; }
 .ev .tm { font-weight:700; color:var(--g9); font-variant-numeric:tabular-nums; }
-.ev .body { font-size:14px; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
+.ev .body { font-size: 0.875rem; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
 .ev .acts { margin-top:6px; }
-.ev .acts button { font:inherit; font-size:12px; padding:8px 12px; border:1px solid var(--g3);
+.ev .acts button { font:inherit; font-size: 0.75rem; padding:8px 12px; border:1px solid var(--g3);
                    border-radius:6px; background:#fff; color:var(--g7); cursor:pointer; min-height:44px; }
-.tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px;
+.tag { display:inline-block; font-size: 0.6875rem; padding:1px 7px; border-radius:10px;
        background:var(--g1); color:var(--g7); }
 .tag.f-day { background:#e0f2f1; color:#00695c; }
 .sum { background:var(--pri-l); border:1px solid #cfe0fb; border-radius:8px; padding:10px 12px; margin-top:8px; }
-.sum .lbl { font-size:11px; font-weight:700; color:var(--pri-d); margin-bottom:3px; }
+.sum .lbl { font-size: 0.6875rem; font-weight:700; color:var(--pri-d); margin-bottom:3px; }
 .sum .cat { margin:4px 0 0; }
 .sum .cat .tag { background:#fff; color:var(--pri-d); border:1px solid #cfe0fb; margin-right:4px; }
-.sum .body { font-size:14px; line-height:1.6; }
+.sum .body { font-size: 0.875rem; line-height:1.6; }
 
-.muted { color:var(--g6); font-size:13px; }
+.muted { color:var(--g6); font-size: 0.8125rem; }
 .note { background:var(--warn-bg); color:var(--warn-tx); border-radius:8px; padding:10px 12px;
-        font-size:13px; line-height:1.6; margin-bottom:12px; }
+        font-size: 0.8125rem; line-height:1.6; margin-bottom:12px; }
 .err  { background:var(--ng-l); color:var(--ng); border-radius:8px; padding:10px 12px;
-        font-size:13px; line-height:1.6; margin-bottom:12px; }
+        font-size: 0.8125rem; line-height:1.6; margin-bottom:12px; }
 .who { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:8px 12px;
-       margin-bottom:10px; font-size:15px; font-weight:700; }
-.who .rm { font-weight:400; font-size:12px; color:var(--g6); margin-left:8px; }
+       margin-bottom:10px; font-size: 0.9375rem; font-weight:700; }
+.who .rm { font-weight:400; font-size: 0.75rem; color:var(--g6); margin-left:8px; }
 
 .field { margin-bottom:12px; }
-.field label { display:block; font-size:12px; color:var(--g7); margin-bottom:4px; }
+.field label { display:block; font-size: 0.75rem; color:var(--g7); margin-bottom:4px; }
 .field input { width:100%; }
-.hint { font-size:12px; color:var(--g6); line-height:1.6; margin-top:4px; }
+.hint { font-size: 0.75rem; color:var(--g6); line-height:1.6; margin-top:4px; }
 
 #block { position:fixed; inset:0; z-index:500; background:var(--g0); padding:24px;
          display:none; align-items:center; justify-content:center; text-align:center; }
 #block.on { display:flex; }
 #toast { position:fixed; bottom:88px; left:50%; transform:translateX(-50%); background:var(--g9);
-         color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; opacity:0;
+         color:#fff; padding:10px 18px; border-radius:20px; font-size: 0.8125rem; opacity:0;
          transition:opacity .3s; pointer-events:none; z-index:600; max-width:90%; }
 #toast.show { opacity:.95; }
 #toast.ng { background:var(--ng); }
@@ -117,12 +117,12 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 
 /* ── バイタル・食事（2026-08-04 追加） ── */
 .vmsec { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:12px; margin-bottom:12px; }
-.vmsec > h3 { font-size:13px; font-weight:700; color:var(--g7); margin-bottom:8px;
+.vmsec > h3 { font-size: 0.8125rem; font-weight:700; color:var(--g7); margin-bottom:8px;
               display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
-.vmsec > h3 .unit { font-weight:400; font-size:11px; color:var(--g6); }
+.vmsec > h3 .unit { font-weight:400; font-size: 0.6875rem; color:var(--g6); }
 .chart { width:100%; height:auto; display:block; }
 .chart .grid  { stroke:var(--g2); stroke-width:1; }
-.chart .axis  { fill:var(--g6); font-size:9px; }
+.chart .axis  { fill:var(--g6); font-size: 0.5625rem; }
 .chart .line  { fill:none; stroke-width:2; }
 .chart .dot   { stroke:#fff; stroke-width:1; }
 .chart .gap   { stroke-dasharray:3 3; opacity:.45; }
@@ -137,10 +137,10 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 /* 押した日の列。表のどこを見ればよいかが一目で分かるように */
 .vmtbl th.fx, .vmtbl td.fx { background:#fff3cd; box-shadow:inset 0 0 0 2px #f0ad4e; }
 .vmtbl thead th.fx { background:#ffe08a; }
-.vmcap { font-size:12px; font-weight:600; color:var(--g7); margin:10px 0 2px; }
-.lgd { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--g7); margin-top:4px; }
+.vmcap { font-size: 0.75rem; font-weight:600; color:var(--g7); margin:10px 0 2px; }
+.lgd { display:flex; flex-wrap:wrap; gap:10px; font-size: 0.6875rem; color:var(--g7); margin-top:4px; }
 .lgd i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
-.vmtbl { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
+.vmtbl { width:100%; border-collapse:collapse; font-size: 0.6875rem; margin-top:8px; }
 .vmtbl th, .vmtbl td { border:1px solid var(--g3); padding:3px 5px; text-align:center;
                        font-variant-numeric:tabular-nums; white-space:nowrap; }
 .vmtbl th { background:var(--g1); color:var(--g7); font-weight:700; }
@@ -153,7 +153,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
      元の位置の罫線が残り、行によって1pxの筋が出る。固定列だけ枠線を消し、
      左右とも影で引き直して見た目をそろえる。 */
 .vmtbl th.hd { position:sticky; left:0; z-index:2; background:var(--g1);
-               text-align:left; border-left:0; border-right:0;
+               text-align:start; border-left:0; border-right:0;
                box-shadow:-1px 0 0 var(--g3), 1px 0 0 var(--g3); }
 .vmtbl thead th.hd { z-index:3; }
 
@@ -261,7 +261,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
   <!-- ── 設定 ── -->
   <section id="scr-cfg" class="scr" role="tabpanel" aria-labelledby="tab-cfg">
     <div class="cd">
-      <h2 style="font-size:15px;margin-bottom:10px;">接続設定</h2>
+      <h2 style="font-size: 0.9375rem;margin-bottom:10px;">接続設定</h2>
       <div class="field">
         <label for="cfgUrl">GAS ウェブアプリ URL</label>
         <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec" autocomplete="off">
@@ -278,7 +278,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
       <p class="hint" id="cfgInfo"></p>
     </div>
     <div class="cd">
-      <h2 style="font-size:15px;margin-bottom:8px;">この画面について</h2>
+      <h2 style="font-size: 0.9375rem;margin-bottom:8px;">この画面について</h2>
       <p class="hint">
         申し送りスプレッドシートの記録を、入居者ごとにまとめて表示します。<br>
         「申し送り原文」は当日分まで自動で取り込まれます。「AI要約」は翌朝の抽出が終わった日にだけ付きます。<br>
@@ -297,7 +297,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 
 <div id="block">
   <div>
-    <p style="font-size:16px;font-weight:700;margin-bottom:8px;">この端末では表示できません</p>
+    <p style="font-size: 1rem;font-weight:700;margin-bottom:8px;">この端末では表示できません</p>
     <p class="muted">申送ビューアは事務所端末専用です。<br>端末の用途が「現場」に設定されています。</p>
   </div>
 </div>

@@ -30,17 +30,17 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
-  background:var(--g0); color:var(--g9); font-size:15px; line-height:1.5; padding-bottom:72px;}
+  background:var(--g0); color:var(--g9); font-size: 0.9375rem; line-height:1.5; padding-bottom:72px;}
 button{font-family:inherit; cursor:pointer}
-input,select{font-family:inherit; font-size:15px}
+input,select{font-family:inherit; font-size: 0.9375rem}
 
 /* ── ヘッダー ── */
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
-.hdr h1{font-size:17px; margin:0; font-weight:700; flex:1}
+.hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35);
-  color:#fff; border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; white-space:nowrap}
+  color:#fff; border-radius:6px; padding:6px 12px; font-size: 0.8125rem; cursor:pointer; white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff; outline-offset:1px}
 /* 入居者マスタから開いた時の本人確認バー（誰を開いているかを常に見せる＝取り違え防止）。
@@ -48,18 +48,18 @@ input,select{font-family:inherit; font-size:15px}
    （白背景でコントラスト比4.5:1以上・本ファイル冒頭の配色方針に従う）。 */
 .frombar{position:sticky; top:48px; z-index:49;
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 14px;
-  background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size:13px; color:var(--warn-tx)}
-.frombar b{font-size:15px}
+  background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size: 0.8125rem; color:var(--warn-tx)}
+.frombar b{font-size: 0.9375rem}
 .frombar button{min-height:44px; padding:6px 14px; border:1px solid var(--warn-tx); border-radius:6px;
-  background:#fff; color:var(--warn-tx); font-size:13px; cursor:pointer}
+  background:#fff; color:var(--warn-tx); font-size: 0.8125rem; cursor:pointer}
 .frombar button:focus-visible{outline:2px solid var(--warn-tx); outline-offset:1px}
 @media print{.frombar{display:none !important}}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
-.hdr .role{font-size:11px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr .role{font-size: 0.6875rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .role.field{background:rgba(230,81,0,.92)}
-.hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr .sync{font-size: 0.75rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
 
 /* ── 画面切替 ── */
@@ -74,15 +74,15 @@ input,select{font-family:inherit; font-size:15px}
 .search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
 .filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
 /* タップ領域は最小44px（誤タップ防止・HIG） */
-.chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size:14px; color:var(--g7)}
+.chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7)}
 .chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px}
 .rcard{background:#fff; border:1px solid var(--g2); border-radius:10px; padding:12px; cursor:pointer; transition:.12s}
 .rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
-.rcard .nm{font-size:16px; font-weight:700}
-.rcard .kn{font-size:11px; color:var(--g6)}
+.rcard .nm{font-size: 1rem; font-weight:700}
+.rcard .kn{font-size: 0.6875rem; color:var(--g6)}
 .rcard .meta{margin-top:6px; display:flex; gap:6px; flex-wrap:wrap}
-.tag{font-size:11px; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
+.tag{font-size: 0.6875rem; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
 .tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
 .tag.out{background:var(--ng-l); color:var(--ng)}
 .visually-hidden{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
@@ -93,7 +93,7 @@ input,select{font-family:inherit; font-size:15px}
 /* 安全ハイライト: 色は「危険・注意・情報」の3段階のみ。
    色だけに意味を持たせず、必ずアイコン＋文言を併記する（色覚特性配慮・HIG） */
 .hlband{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
-.hlchip{border-radius:8px; padding:6px 12px 6px 10px; font-weight:700; font-size:14px;
+.hlchip{border-radius:8px; padding:6px 12px 6px 10px; font-weight:700; font-size: 0.875rem;
   background:#fff; color:var(--g9); border:1px solid var(--g2); border-left:4px solid var(--g3)}
 .hl-danger{background:var(--ng-l); border-color:#f2c9c5; border-left-color:var(--ng); color:var(--ng)}
 .hl-warn{background:var(--warn-bg); border-color:#ecdcbe; border-left-color:var(--warn-tx); color:var(--warn-tx)}
@@ -101,7 +101,7 @@ input,select{font-family:inherit; font-size:15px}
 
 /* ── タブ ── */
 .ftabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
-.ftab{padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size:14px; color:var(--g7); min-height:44px}
+.ftab{padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7); min-height:44px}
 .ftab.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 .fpanel{display:none}
 .fpanel.on{display:block}
@@ -111,19 +111,19 @@ input,select{font-family:inherit; font-size:15px}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
 .sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
-  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size:13px; min-width:34px;
+  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size: 0.8125rem; min-width:34px;
   display:flex; align-items:center; justify-content:center; letter-spacing:2px}
 .sheet .sec-body{flex:1; min-width:0}
 .cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
 .cell:last-child{border-right:none}
-.cell .lab{font-size:11px; color:var(--g6); display:block; margin-bottom:2px}
-.cell .val{font-size:15px; word-break:break-word; white-space:pre-wrap}
-.cell .val.big{font-size:18px; font-weight:700}
-.cell .sub{display:block; font-size:10px; color:var(--g6); margin-top:1px}  /* 値の出所・測定日 */
+.cell .lab{font-size: 0.6875rem; color:var(--g6); display:block; margin-bottom:2px}
+.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap}
+.cell .val.big{font-size: 1.125rem; font-weight:700}
+.cell .sub{display:block; font-size: 0.625rem; color:var(--g6); margin-top:1px}  /* 値の出所・測定日 */
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-.fulltext{white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.6}
-.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
+.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
 .logline{display:flex; gap:10px; padding:5px 0; border-bottom:1px dotted var(--g3)}
 .logline .d{flex-shrink:0; font-weight:700; color:var(--pri-d); min-width:92px}
@@ -133,32 +133,32 @@ input,select{font-family:inherit; font-size:15px}
 .geno-box img{max-width:100%; max-height:100%; object-fit:contain}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
-.btn{padding:10px 16px; border:none; border-radius:10px; font-size:14px; font-weight:700; min-height:44px}
+.btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
 .btn-pri{background:var(--pri); color:#fff}
 .btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
 .btn-gray{background:var(--g2); color:var(--g7)}
 .btn:disabled{opacity:.5}
-.vname{font-size:18px; font-weight:700; margin-left:auto}
+.vname{font-size: 1.125rem; font-weight:700; margin-left:auto}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
   display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
-.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size:11px; color:var(--g6);
+.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size: 0.6875rem; color:var(--g6);
   display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
-.bnav button.on{color:var(--pri)} .bnav button .ic{font-size:20px}
+.bnav button.on{color:var(--pri)} .bnav button .ic{font-size: 1.25rem}
 
 /* ── トースト・モーダル ── */
 #toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
-  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:200;
+  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size: 0.875rem; z-index:200;
   opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
 #toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
 .modal.on{display:flex}
 .modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
-.modal h2{font-size:16px; margin:0 0 12px}
-.muted{color:var(--g6); font-size:12px}
+.modal h2{font-size: 1rem; margin:0 0 12px}
+.muted{color:var(--g6); font-size: 0.75rem}
 .fld{display:flex; flex-direction:column; margin-bottom:10px}
-.fld label{font-size:12px; color:var(--g7); margin-bottom:3px}
+.fld label{font-size: 0.75rem; color:var(--g7); margin-bottom:3px}
 .fld input,.fld select{padding:9px 10px; border:1px solid var(--g3); border-radius:8px; width:100%}
 
 /* ── 印刷（自己完結・A4・1人1シート） ── */
@@ -539,8 +539,8 @@ function logList(arr,withMeta){
   return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
     var d=fmtJDate(s.date||s.changedAt)||s.date||s.changedAt||'';
     var meta=withMeta?[s.doctor,s.clinic].filter(Boolean).join(' / '):'';
-    var tag=(s.source==='vma')?' <span style="color:var(--pri-d);font-size:11px">[訪問診療]</span>':'';
-    return'<div class="logline"><span class="d">'+esc(d)+'</span><span class="t">'+esc(s.text||s.value||'')+(meta?'<br><span style="color:var(--g6);font-size:12px">'+esc(meta)+'</span>':'')+tag+'</span></div>';
+    var tag=(s.source==='vma')?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'';
+    return'<div class="logline"><span class="d">'+esc(d)+'</span><span class="t">'+esc(s.text||s.value||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+tag+'</span></div>';
   }).join('')+'</div>';
 }
 function careHistHtml(arr){
@@ -550,7 +550,7 @@ function careHistHtml(arr){
   return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
     var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
     var sub=[period,s.note].filter(Boolean).join(' / ');
-    return'<div class="logline"><span class="d">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size:12px"> 　'+esc(sub)+'</span>':'')+'</span></div>';
+    return'<div class="logline"><span class="d">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
   }).join('')+'</div>';
 }
 
@@ -691,7 +691,7 @@ function renderOfficeView(r){
   );
   // 家族・事業所
   var genoImg=getGenogram(r.id);
-  var genoInner=genoImg?('<img src="'+esc(genoImg)+'" alt="ジェノグラム">'):'<div style="text-align:center;color:var(--g6);font-size:13px;padding:10px"><div style="font-size:40px">🧬</div>家系図アプリで作成</div>';
+  var genoInner=genoImg?('<img src="'+esc(genoImg)+'" alt="ジェノグラム">'):'<div style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem">🧬</div>家系図アプリで作成</div>';
   P.family=sheet(
     sec('家族情報',
       full('ご家族氏名・続柄・役割',famName)+

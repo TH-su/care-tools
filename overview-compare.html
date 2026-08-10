@@ -28,13 +28,13 @@ body {
   background: linear-gradient(90deg, var(--pri) 0 50%, var(--orange-l) 50% 100%);   /* 左=青(訪問)・右=薄橙(全支援) */
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
 }
-.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.hdr-title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
 .hdr-sp { flex: 1; }
 /* 連動トグルは左半分（青地）＝白文字。 */
 .sync-toggle {
   display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px;
   background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.6); border-radius: 6px;
-  font-size: 13px; font-weight: 700; color: #fff; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  font-size: 0.8125rem; font-weight: 700; color: #fff; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.4);
 }
 .sync-toggle:focus-within { outline: 2px solid #fff; outline-offset: 1px; }
 .sync-toggle input { width: 20px; height: 20px; cursor: pointer; }
@@ -42,18 +42,18 @@ body {
 .link-single {
   min-height: 44px; display: inline-flex; align-items: center; background: #fff;
   border: 1px solid rgba(0,0,0,.18); color: #3c4043; border-radius: 6px; padding: 6px 14px;
-  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; text-decoration: none;
+  font-size: 0.8125rem; font-weight: 700; cursor: pointer; white-space: nowrap; text-decoration: none;
 }
 .link-single:hover { background: #f1f3f4; }
 .link-single:focus-visible { outline: 2px solid #5f3300; outline-offset: 1px; }
-.hdr-note { font-size: 11px; color: #5f3300; font-weight: 600; white-space: nowrap; text-shadow: 0 1px 1px rgba(255,255,255,.55); }
+.hdr-note { font-size: 0.6875rem; color: #5f3300; font-weight: 600; white-space: nowrap; text-shadow: 0 1px 1px rgba(255,255,255,.55); }
 
 .panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; position: relative; }
 .pane.left { border-right: 2px solid var(--g7); }
 .pane iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
 .pane-tag {
-  position: absolute; top: 8px; left: 8px; z-index: 5; font-size: 11px; font-weight: 700; color: #fff;
+  position: absolute; top: 8px; left: 8px; z-index: 5; font-size: 0.6875rem; font-weight: 700; color: #fff;
   padding: 2px 9px; border-radius: 10px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,.3);
 }
 .pane.left  .pane-tag { background: var(--pri-d); }

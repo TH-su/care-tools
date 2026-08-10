@@ -29,7 +29,7 @@
 html, body { height: 100%; }
 body {
   font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
-  font-size: 14px; color: var(--g9); background: var(--g1);
+  font-size: 0.875rem; color: var(--g9); background: var(--g1);
   display: flex; flex-direction: column; overflow: hidden;
 }
 
@@ -39,18 +39,18 @@ body {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: wrap;
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
 }
-.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
-.hdr-sub { font-size: 11px; opacity: .9; white-space: nowrap; }
+.hdr-title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; }
+.hdr-sub { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
 .hdr-sp { flex: 1; }
 .hdr-btn {
   min-height: 40px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
-  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 0.8125rem; cursor: pointer; white-space: nowrap;
 }
 .hdr-btn:hover { background: rgba(255,255,255,.28); }
 .hdr-btn:disabled { opacity: .4; cursor: default; }
 .hdr-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .hdr-btn.solid { background: var(--pri); border-color: var(--pri); }   /* 白背景の空状態に置くボタン */
-.sync-state { font-size: 11px; opacity: .9; white-space: nowrap; }
+.sync-state { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
 
 /* ===== タブ（weight-record 準拠の上タブ）=====
    規約既定は .bnav(下タブ)だが、本ツールは body が overflow:hidden の flex column で
@@ -62,7 +62,7 @@ body {
 }
 .tnav button {
   flex: 1 0 auto; min-height: 44px; padding: 8px 14px;   /* HIG: タップ領域44px以上 */
-  border: none; background: none; color: var(--g7); font-size: 13px; cursor: pointer;
+  border: none; background: none; color: var(--g7); font-size: 0.8125rem; cursor: pointer;
   white-space: nowrap; border-bottom: 3px solid transparent;
 }
 .tnav button:hover { background: var(--g0); }
@@ -73,7 +73,7 @@ body {
 .legend {
   flex-shrink: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   padding: 5px 12px; background: #fff; border-bottom: 1px solid var(--g3);
-  font-size: 11px; color: var(--g7); min-height: 26px;
+  font-size: 0.6875rem; color: var(--g7); min-height: 26px;
 }
 .lg { display: inline-flex; align-items: center; gap: 4px; }
 .lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--bath-b); background: var(--bath-bg); flex-shrink: 0; }
@@ -87,13 +87,13 @@ body {
 }
 .scr { display: none; }
 .scr.on { display: block; }
-.sheet-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+.sheet-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; text-align: center; }
 table.roster {
   border-collapse: collapse; background: #fff; margin: 0 auto; box-shadow: var(--sh);
   table-layout: fixed;
 }
 table.roster th, table.roster td {
-  border: 1px solid var(--line); padding: 2px 4px; font-size: 12px; line-height: 1.3;
+  border: 1px solid var(--line); padding: 2px 4px; font-size: 0.75rem; line-height: 1.3;
   text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 table.roster thead th { background: var(--g1); font-weight: 700; height: 30px; }
@@ -102,21 +102,21 @@ table.roster thead th { background: var(--g1); font-weight: 700; height: 30px; }
 .col-day  { width: 118px; }
 .th-day.sat { color: #1565c0; }
 .th-day.sun { color: #c0392b; }
-.plan-label { background: var(--g0); font-weight: 700; font-size: 12px; writing-mode: horizontal-tb; }
-td.user { text-align: left; }
+.plan-label { background: var(--g0); font-weight: 700; font-size: 0.75rem; writing-mode: horizontal-tb; }
+td.user { text-align: start; }
 td.user.bath { background: var(--bath-bg); }        /* デイ参加日に入浴あり=黄 */
 td.empty { background: #fff; }
 /* 利用時間帯ブロック間の分断（見やすさ向上・上段9:00-13:00と下段9:00-13:30 等を分ける薄グレー帯） */
 table.roster tr.spacer td { height: 10px; background: var(--g2); border-left: 1px solid var(--line); border-right: 1px solid var(--line); padding: 0; }
 /* 入院中（ワークスケジュールの入院入力＝care_schedule_v2 の hospitalized を反映）。
    色だけに頼らず「（入院）」の文言でも示す（HIG: 色覚特性配慮） */
-.hosp-tag { color: var(--ng); font-weight: 700; font-size: 11px; margin-left: 3px; white-space: nowrap; }
+.hosp-tag { color: var(--ng); font-weight: 700; font-size: 0.6875rem; margin-left: 3px; white-space: nowrap; }
 tr.tot th { background: var(--g1); font-weight: 700; }
 tr.tot td { font-weight: 700; }
 tr.tot.use td { color: var(--pri-d); }
 .hosp-box {
   max-width: 900px; margin: 12px auto 0; background: #fff; border: 1px solid var(--g3);
-  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--g7);
+  border-radius: 8px; padding: 8px 12px; font-size: 0.75rem; color: var(--g7);
 }
 .hosp-box b { color: var(--g9); }
 .hosp-names { color: var(--g8); }
@@ -166,7 +166,7 @@ table.sheet col.w-tm-dl { width: 46px; }    /* デイ利用者一覧表用 時�
    「パディングボックス」で切るため、既定の padding(左右3px)のままだと内容ボックスが狭まり、
    本来1行で収まる氏名まで折返して全行の高さが倍増する（＝1枚に収まらなくなる）。 */
 table.sheet .c-nm {
-  text-align: left; white-space: normal; word-break: break-all;
+  text-align: start; white-space: normal; word-break: break-all;
   padding-left: 1px; padding-right: 1px;
 }
 /* 時刻セル: 34px 列でも 11px フォントの「13:00」(31.6px)は描画可能幅に入らない。
@@ -185,7 +185,7 @@ table.sheet .c-nm .hosp-tag { display: block; margin-left: 0; font-size: calc(va
    印刷の文字拡大(最大15px)に付き合わせると2桁(10〜)が欠ける。ここだけ従来サイズを上限にする。 */
 table.sheet .c-rn { color: var(--g6); background: var(--g0); font-size: min(var(--sh-fs), 11px); }
 /* 20px 列に 11px の見出し「No.」は入らない（末尾が欠ける）。連番の数字は2桁までなので見出しだけ縮める。 */
-table.sheet th.c-rn { font-size: 9px; padding-left: 1px; padding-right: 1px; }
+table.sheet th.c-rn { font-size: 0.5625rem; padding-left: 1px; padding-right: 1px; }
 /* 区画ラベル（２階入居者 等）は縦書き（元Excelと同じ）。幅24pxに横書きで入れると
    nowrap+overflow:hidden で切れて読めなくなる（table-layout:fixed なので列は伸びない）。 */
 table.sheet .c-sec {
@@ -196,7 +196,7 @@ table.sheet .c-sec {
 /* 全員リスト合計行の左端ラベル「入居者」。旧ふりがな列に置いていたものを No.列(44px)へ移した。
    11px のままだと3文字=33px が内容幅(44−罫線2−padding6=36px)に対して余裕を欠くため 10px に落とす。 */
 table.sheet .c-sum-lb {
-  color: var(--g7); font-size: 10px;
+  color: var(--g7); font-size: 0.625rem;
   padding-left: 1px; padding-right: 1px;
 }
 /* 備考はテーブルの外に置く（元表はグリッド内に埋め込み、火・水の枠を15→11に潰していた）。
@@ -207,14 +207,14 @@ table.sheet .c-sum-lb {
 .note-panel {
   flex: 0 0 112px; align-self: stretch;   /* 細く＋表と同じ高さに伸ばす（表を広げるため幅を詰める） */
   background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
-  padding: 6px 8px; font-size: 10px; line-height: 1.5; color: var(--g8);
+  padding: 6px 8px; font-size: 0.625rem; line-height: 1.5; color: var(--g8);
 }
 /* デイ利用者一覧表の備考は「表の下」に置く＝横幅を表に使い切る。幅は JS で表と同じにし中央寄せ・横並びでコンパクト。 */
 .note-below {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px;
   margin: 8px auto 0;   /* 表(margin:0 auto)と同じく中央寄せ。width は renderDaylist で表幅に合わせる */
   background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
-  padding: 5px 10px; font-size: 11px; line-height: 1.5; color: var(--g8);
+  padding: 5px 10px; font-size: 0.6875rem; line-height: 1.5; color: var(--g8);
 }
 .note-below .nb-h { font-weight: 700; background: var(--g1); padding: 1px 8px; border-radius: 3px; }
 .note-below .nb-item { white-space: nowrap; }
@@ -258,21 +258,21 @@ table.sheet tr.cut-title th {
   font-size: calc(var(--sh-fs) * 1.6); line-height: 1.45; padding: 3px 4px; white-space: nowrap;
 }
 /* ☆は .c-tm セル内に置くため、放置すると時刻用の 10px を継承して視認性が落ちる。記号は 11px を保つ。 */
-.star { color: var(--ng); font-weight: 700; font-size: 11px; }   /* ☆＝訪問診療（元表の赤字☆）。凡例用の既定 */
+.star { color: var(--ng); font-weight: 700; font-size: 0.6875rem; }   /* ☆＝訪問診療（元表の赤字☆）。凡例用の既定 */
 /* 帳票内の☆は本文と連動させる（既定11px時は従来と同値）。時刻セル(--sh-tm)を継承したままだと、
    印刷の文字拡大時に☆だけ取り残されて見落とされる。 */
 table.sheet .star { font-size: var(--sh-fs); }
 .nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
 .note-box { white-space: pre-wrap; }
-.med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 12px; }
+.med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 0.75rem; }
 
 /* ===== 薬用: 画面専用の入居者チェックリスト（印刷されない）===== */
 .chk-panel {
   flex: 0 0 176px; align-self: stretch; background: #fff; border: 1px solid var(--line);
-  box-shadow: var(--sh); padding: 6px 8px; font-size: 12px; color: var(--g8);
+  box-shadow: var(--sh); padding: 6px 8px; font-size: 0.75rem; color: var(--g8);
 }
-.chk-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 12px; padding: 3px; margin: 0 -8px 6px; }
-.chk-sub { color: var(--g6); font-size: 10px; }
+.chk-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 0.75rem; padding: 3px; margin: 0 -8px 6px; }
+.chk-sub { color: var(--g6); font-size: 0.625rem; }
 .chk-flr { font-weight: 700; color: var(--g7); margin: 6px 0 2px; }
 .chk-item {
   display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 2px 2px;   /* HIG: タップ領域44px以上 */
@@ -282,7 +282,7 @@ table.sheet .star { font-size: var(--sh-fs); }
 .chk-item input { width: 18px; height: 18px; flex-shrink: 0; }
 .chk-clear {
   margin-top: 8px; width: 100%; min-height: 44px; border: 1px solid var(--g3);
-  background: var(--g0); color: var(--g7); border-radius: 6px; font-size: 12px; cursor: pointer;
+  background: var(--g0); color: var(--g7); border-radius: 6px; font-size: 0.75rem; cursor: pointer;
 }
 .chk-clear:hover { background: var(--g1); }
 .chk-clear:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
@@ -292,7 +292,7 @@ table.sheet .star { font-size: var(--sh-fs); }
 table.wk { border-collapse: collapse; width: 100%; table-layout: fixed; }
 table.wk td, table.wk th {
   font-family: "HG丸ｺﾞｼｯｸM-PRO", "Hiragino Maru Gothic ProN", -apple-system, sans-serif;
-  font-size: 22px; font-weight: 700; text-align: center; vertical-align: middle;
+  font-size: 1.375rem; font-weight: 700; text-align: center; vertical-align: middle;
   height: 30px; padding: 1px; border: none; white-space: nowrap;
 }
 table.wk .wk-day { width: 16%; color: #ff0000; border: 2px solid var(--g9); }
@@ -303,13 +303,13 @@ table.wk .wk-blank { color: transparent; }
 .board-empty {
   position: absolute; inset: 0; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 12px; color: var(--g6);
-  font-size: 14px; text-align: center; padding: 24px; background: var(--g1);
+  font-size: 0.875rem; text-align: center; padding: 24px; background: var(--g1);
 }
 .board-empty.on { display: flex; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
-  font-size: 13px; z-index: 500; display: none; max-width: 90%; box-shadow: 0 4px 16px rgba(0,0,0,.3);   /* モーダル(400)より前面＝モーダル中のトーストも見える */
+  font-size: 0.8125rem; z-index: 500; display: none; max-width: 90%; box-shadow: 0 4px 16px rgba(0,0,0,.3);   /* モーダル(400)より前面＝モーダル中のトーストも見える */
 }
 #toast.ng { background: var(--ng); }
 #toast.on { display: block; }
@@ -327,14 +327,14 @@ table.wk .wk-blank { color: transparent; }
   width: 420px; max-width: 100%; max-height: 84vh; display: flex; flex-direction: column; overflow: hidden;
 }
 .modal-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--g3); }
-.modal-title { font-size: 15px; font-weight: 700; flex: 1; }
+.modal-title { font-size: 0.9375rem; font-weight: 700; flex: 1; }
 .modal-x {
   min-width: 44px; min-height: 44px; border: none; background: none; color: var(--g7);
-  font-size: 18px; cursor: pointer; border-radius: 6px;
+  font-size: 1.125rem; cursor: pointer; border-radius: 6px;
 }
 .modal-x:hover { background: var(--g1); }
 .modal-x:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
-.modal-sub { padding: 8px 14px; font-size: 12px; color: var(--g7); line-height: 1.5; border-bottom: 1px solid var(--g2); }
+.modal-sub { padding: 8px 14px; font-size: 0.75rem; color: var(--g7); line-height: 1.5; border-bottom: 1px solid var(--g2); }
 .modal-list { overflow: auto; -webkit-overflow-scrolling: touch; padding: 4px 8px; flex: 1; }
 .modal-item {
   display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 2px 6px;   /* HIG: タップ領域44px以上 */
@@ -342,12 +342,12 @@ table.wk .wk-blank { color: transparent; }
 }
 .modal-item:hover { background: var(--g0); }
 .modal-item input { width: 18px; height: 18px; flex-shrink: 0; }
-.modal-item .mi-kana { color: var(--g6); font-size: 11px; margin-left: auto; }
-.modal-empty { padding: 18px 14px; color: var(--g6); font-size: 13px; text-align: center; }
+.modal-item .mi-kana { color: var(--g6); font-size: 0.6875rem; margin-left: auto; }
+.modal-empty { padding: 18px 14px; color: var(--g6); font-size: 0.8125rem; text-align: center; }
 .modal-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--g3); }
 .modal-btn {
   flex: 1; min-height: 44px; border: 1px solid var(--g3); background: var(--g0); color: var(--g8);
-  border-radius: 8px; font-size: 13px; cursor: pointer;
+  border-radius: 8px; font-size: 0.8125rem; cursor: pointer;
 }
 .modal-btn:hover { background: var(--g1); }
 .modal-btn:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
@@ -378,7 +378,7 @@ table.wk .wk-blank { color: transparent; }
      長い帳票では折り返した行の右端へ回る＝表の内容には重ならない。 */
   .print-date { display: inline-block; margin-left: auto;
     font-size: 9px; line-height: 1.2; color: #000; white-space: nowrap; }
-  body.pr-batch .pg-date { display: block; text-align: right; font-size: 9px; line-height: 1.2;
+  body.pr-batch .pg-date { display: block; text-align: end; font-size: 9px; line-height: 1.2;
     color: #000; padding: 0 2mm 1mm 0; }
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }

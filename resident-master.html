@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -22,15 +22,15 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
-  background:var(--g0); color:var(--g9); font-size:15px; line-height:1.5; padding-bottom:72px;}
+  background:var(--g0); color:var(--g9); font-size: 0.9375rem; line-height:1.5; padding-bottom:72px;}
 button{font-family:inherit; cursor:pointer}
-input,select,textarea{font-family:inherit; font-size:15px}
+input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 /* ── ヘッダー ── */
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
-.hdr h1{font-size:17px; margin:0; font-weight:700; flex:1}
-.hdr .sync{font-size:12px; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+.hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
+.hdr .sync{font-size: 0.75rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
 
 /* ── 画面切替 ── */
@@ -44,21 +44,21 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
 .search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
 .filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
-.chip{padding:5px 12px; border:1px solid var(--g3); border-radius:16px; background:#fff; font-size:13px; color:var(--g7)}
+.chip{padding:5px 12px; border:1px solid var(--g3); border-radius:16px; background:#fff; font-size: 0.8125rem; color:var(--g7)}
 .chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 /* ── 表示パターンのタブ（並べ方だけを変える。検索・在籍フィルタは全タブで有効） ── */
 .view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
 .vtab{min-height:44px; padding:8px 14px; border:none; border-bottom:3px solid transparent; margin-bottom:-2px;
-      background:none; font-size:14px; font-weight:700; color:var(--g6); cursor:pointer}
+      background:none; font-size: 0.875rem; font-weight:700; color:var(--g6); cursor:pointer}
 .vtab.on{color:var(--pri); border-bottom-color:var(--pri)}
 .vtab:hover{color:var(--pri)}
 .vtab:focus-visible{outline:2px solid var(--pri); outline-offset:-2px; border-radius:6px}
 /* 区画（1階/2階/五十音の各行）の見出しと中身 */
 .rsec{margin-bottom:18px}
-.rsec>h3{font-size:14px; font-weight:700; color:var(--g7); margin:0 0 8px;
+.rsec>h3{font-size: 0.875rem; font-weight:700; color:var(--g7); margin:0 0 8px;
          padding:6px 10px; background:var(--g1); border-left:4px solid var(--pri); border-radius:0 6px 6px 0}
-.rsec>h3 .cnt{font-weight:400; color:var(--g7); font-size:12px; margin-left:6px}
-.roster-count{font-size:12px; color:var(--g7); margin-bottom:8px}
+.rsec>h3 .cnt{font-weight:400; color:var(--g7); font-size: 0.75rem; margin-left:6px}
+.roster-count{font-size: 0.75rem; color:var(--g7); margin-bottom:8px}
 /* 階が判定できない人を黙って落とさないための区画（居室未登録など）。色で他と区別する */
 .rsec.nofloor>h3{border-left-color:var(--warn-tx); background:var(--warn-bg)}
 /* 階別（左右）: 1階と2階を横並びに1列ずつ */
@@ -77,10 +77,10 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px}
 .rcard{background:#fff; border:1px solid var(--g2); border-radius:10px; padding:12px; cursor:pointer; transition:.12s}
 .rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
-.rcard .nm{font-size:16px; font-weight:700}
-.rcard .kn{font-size:11px; color:var(--g6)}
+.rcard .nm{font-size: 1rem; font-weight:700}
+.rcard .kn{font-size: 0.6875rem; color:var(--g6)}
 .rcard .meta{margin-top:6px; display:flex; gap:6px; flex-wrap:wrap}
-.tag{font-size:11px; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
+.tag{font-size: 0.6875rem; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
 /* 追加情報のタグ。既存の居室(room)・介護度(care)・退去(out)の色は変えない */
 .tag.bd,.tag.ht,.tag.wt{background:var(--g0); color:var(--g7); border:1px solid var(--g2)}
 .tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
@@ -89,7 +89,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
 /* 詳細画面「この方を各アプリで開く」のリンク。タップ領域は44px以上（HIG） */
 .rlink{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 14px;
   border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--pri-d);
-  font-size:13px; text-decoration:none; white-space:nowrap}
+  font-size: 0.8125rem; text-decoration:none; white-space:nowrap}
 .rlink:hover{background:var(--pri-l)}
 .rlink:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 /* 印刷はセクションごと消す。sec-body は inline の display:flex を持つため !important が必要 */
@@ -106,23 +106,23 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
 .sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
-  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size:13px; min-width:34px;
+  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size: 0.8125rem; min-width:34px;
   display:flex; align-items:center; justify-content:center; letter-spacing:2px}
 .sheet .sec-body{flex:1; min-width:0}
 .grid{display:grid; gap:0}
 .cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
 .cell:last-child{border-right:none}
-.cell .lab{font-size:11px; color:var(--g6); display:block; margin-bottom:2px}
-.cell .val{font-size:15px; word-break:break-word; white-space:pre-wrap}
-.cell .val.big{font-size:18px; font-weight:700}
+.cell .lab{font-size: 0.6875rem; color:var(--g6); display:block; margin-bottom:2px}
+.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap}
+.cell .val.big{font-size: 1.125rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-.fulltext{white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.6}
-.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
+.rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
-.btn{padding:10px 16px; border:none; border-radius:10px; font-size:14px; font-weight:700; min-height:44px}
+.btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
 .btn-pri{background:var(--pri); color:#fff} .btn-ok{background:var(--ok); color:#fff}
 .btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
 .btn-gray{background:var(--g2); color:var(--g7)} .btn-ng{background:#fff;color:var(--ng);border:1px solid var(--ng)}
@@ -130,27 +130,27 @@ input,select,textarea{font-family:inherit; font-size:15px}
 
 /* ── 編集フォーム ── */
 .fgroup{margin-bottom:18px}
-.fgroup h3{font-size:14px; color:var(--pri-d); border-left:4px solid var(--pri); padding-left:8px; margin:0 0 10px}
+.fgroup h3{font-size: 0.875rem; color:var(--pri-d); border-left:4px solid var(--pri); padding-left:8px; margin:0 0 10px}
 .fgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
 .fld{display:flex; flex-direction:column}
 .fld.wide{grid-column:1/-1}
-.fld label{font-size:12px; color:var(--g7); margin-bottom:3px}
+.fld label{font-size: 0.75rem; color:var(--g7); margin-bottom:3px}
 .fld input,.fld select,.fld textarea{padding:9px 10px; border:1px solid var(--g3); border-radius:8px; width:100%}
 .fld textarea{min-height:72px; resize:vertical}
 .fam-row{display:grid; grid-template-columns:1fr 1fr; gap:6px; border:1px solid var(--g2); border-radius:8px; padding:8px; margin-bottom:8px}
 .fam-row .full{grid-column:1/-1}
-.fam-del{justify-self:end; background:none; border:none; color:var(--ng); font-size:13px}
+.fam-del{justify-self:end; background:none; border:none; color:var(--ng); font-size: 0.8125rem}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
   display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
-.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size:11px; color:var(--g6);
+.bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size: 0.6875rem; color:var(--g6);
   display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
-.bnav button.on{color:var(--pri)} .bnav button .ic{font-size:20px}
+.bnav button.on{color:var(--pri)} .bnav button .ic{font-size: 1.25rem}
 
 /* ── トースト ── */
 #toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
-  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:200;
+  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size: 0.875rem; z-index:200;
   opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
 #toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
 
@@ -158,23 +158,23 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
 .modal.on{display:flex}
 .modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
-.modal h2{font-size:16px; margin:0 0 12px}
+.modal h2{font-size: 1rem; margin:0 0 12px}
 /* ── 一括編集（2026-08-08 追加。既存の .modal / .fld には一切触れない） ── */
 #mBulk .box{max-width:1500px; width:98vw; max-height:92vh; padding:12px; display:flex; flex-direction:column}
 .bulk-open{padding:9px 14px; border:1px solid var(--pri); border-radius:10px; background:var(--pri-l);
-  color:var(--pri-d); font-size:13px; font-weight:700; white-space:nowrap; min-height:40px}
+  color:var(--pri-d); font-size: 0.8125rem; font-weight:700; white-space:nowrap; min-height:40px}
 .bulk-open:hover{background:#fff}
 .bulk-open:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
 @media print{.bulk-open{display:none !important}}
 .bulk-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
 .bulk-tools{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px}
 .bulk-tools input[type=search]{flex:1; min-width:180px; padding:8px 10px; border:1px solid var(--g3); border-radius:8px}
-.bulk-tools label{display:flex; align-items:center; gap:5px; font-size:13px; color:var(--g7); white-space:nowrap}
+.bulk-tools label{display:flex; align-items:center; gap:5px; font-size: 0.8125rem; color:var(--g7); white-space:nowrap}
 .bulk-scroll{flex:1 1 auto; overflow:auto; border:1px solid var(--g2); border-radius:8px; min-height:200px}
-.bulk-tbl{border-collapse:separate; border-spacing:0; font-size:13px; white-space:nowrap}
+.bulk-tbl{border-collapse:separate; border-spacing:0; font-size: 0.8125rem; white-space:nowrap}
 .bulk-tbl th,.bulk-tbl td{border-bottom:1px solid var(--g2); border-right:1px solid var(--g2); padding:0}
 .bulk-tbl thead th{position:sticky; top:0; z-index:3; background:var(--g1); padding:7px 8px;
-  font-size:12px; text-align:left; font-weight:700; color:var(--g9)}
+  font-size: 0.75rem; text-align:start; font-weight:700; color:var(--g9)}
 /* 氏名列は横スクロールしても残す。★背景色は必須（無いと下の行が透ける） */
 .bulk-tbl .bk-name{position:sticky; left:0; z-index:2; background:#fff; padding:5px 8px;
   font-weight:700; min-width:132px; max-width:132px; overflow:hidden; text-overflow:ellipsis}
@@ -182,7 +182,7 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bulk-tbl .bk-room{position:sticky; left:132px; z-index:2; background:#fff; min-width:74px}
 .bulk-tbl thead .bk-room{z-index:4; background:var(--g1)}
 .bulk-tbl input,.bulk-tbl select{width:100%; min-width:92px; border:none; background:transparent;
-  padding:8px; font-size:13px; font-family:inherit; color:var(--g9)}
+  padding:8px; font-size: 0.8125rem; font-family:inherit; color:var(--g9)}
 .bulk-tbl input:focus,.bulk-tbl select:focus{outline:2px solid var(--pri); outline-offset:-2px; background:#fff}
 .bulk-tbl td.dirty{background:var(--warn-bg)}
 .bulk-tbl tr.bulk-out .bk-name{color:var(--g6)}
@@ -190,28 +190,28 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .bulk-tbl tr.bulk-hide{display:none}
 .bulk-foot{flex:0 0 auto; display:flex; gap:8px; align-items:center; justify-content:flex-end;
   padding-top:10px; flex-wrap:wrap}
-.bulk-foot .grow{flex:1; font-size:13px; color:var(--g7)}
-.bulk-note{font-size:12px; color:var(--g7); margin:0 0 8px; line-height:1.6}
-.applead{font-size:12px; color:var(--g7); margin:0 0 12px; line-height:1.6}
+.bulk-foot .grow{flex:1; font-size: 0.8125rem; color:var(--g7)}
+.bulk-note{font-size: 0.75rem; color:var(--g7); margin:0 0 8px; line-height:1.6}
+.applead{font-size: 0.75rem; color:var(--g7); margin:0 0 12px; line-height:1.6}
 .applist{display:grid; gap:8px}
 .applist a{display:flex; align-items:center; gap:10px; min-height:52px; padding:10px 14px;
   border:1px solid var(--g2); border-radius:10px; background:#fff; color:var(--g9);
-  text-decoration:none; font-size:14px; font-weight:700}
+  text-decoration:none; font-size: 0.875rem; font-weight:700}
 .applist a:hover{border-color:var(--pri); background:var(--pri-l)}
 .applist a:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
-.applist .ai{font-size:20px; line-height:1; flex:0 0 auto}
+.applist .ai{font-size: 1.25rem; line-height:1; flex:0 0 auto}
 .applist .at{display:flex; flex-direction:column; gap:2px; min-width:0}
-.applist .ad{font-size:11px; font-weight:400; color:var(--g7); line-height:1.4}
-.muted{color:var(--g6); font-size:12px}
+.applist .ad{font-size: 0.6875rem; font-weight:400; color:var(--g7); line-height:1.4}
+.muted{color:var(--g6); font-size: 0.75rem}
 
 /* ── 誕生日一覧 ── */
 .bday-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
 .bday-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
-  border-radius:8px; background:#fff; color:var(--g9); font-size:14px; cursor:pointer}
+  border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
 .bday-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 /* 年度の端。無効だと分かる見た目にする（押しても無反応、の理由が見えないのを防ぐ） */
 .bday-bar button:disabled{opacity:.45; cursor:default; background:var(--g1)}
-.bday-bar #bdayFY{font-size:15px; font-weight:700; min-width:6em; text-align:center}
+.bday-bar #bdayFY{font-size: 0.9375rem; font-weight:700; min-width:6em; text-align:center}
 .bday-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
 .bday-sheet{background:#fff; padding:6px 4px}
 .bday-hd{text-align:center; margin-bottom:6px}
@@ -241,17 +241,17 @@ input,select,textarea{font-family:inherit; font-size:15px}
 .btbl th,.btbl td{border:1px solid #000; padding:var(--bpad,2px) 6px; text-align:center;
   line-height:1.25; white-space:nowrap}
 .btbl th{background:var(--g2); font-weight:700}
-.btbl .bn{text-align:left}
+.btbl .bn{text-align:start}
 .btbl .bno{font-variant-numeric:tabular-nums; color:var(--g7)}
 .btbl .bd{font-variant-numeric:tabular-nums}
 .btbl .ba{font-variant-numeric:tabular-nums}
 /* 誕生日順の表は月の変わり目を太線で区切る。
    先頭行はヘッダの罫線と重なるだけなので対象外にする（左右の表でヘッダ罫の太さを揃える） */
 .bt-date tbody tr.mstart:not(:first-child)>td{border-top:2px solid #000}
-.bday-ft{margin-top:6px; text-align:right; font-size:10px; color:var(--g7)}
+.bday-ft{margin-top:6px; text-align:end; font-size: 0.625rem; color:var(--g7)}
 .bday-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
-  background:var(--warn-bg); color:var(--warn-tx); font-size:12px; font-weight:700}
-.bday-bad{margin-top:4px; font-size:10px; color:var(--ng)}
+  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
+.bday-bad{margin-top:4px; font-size: 0.625rem; color:var(--ng)}
 @media print{ .bday-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
 @media (max-width:640px){ .bday-2col{grid-template-columns:1fr} }   /* スマホは縦積み（印刷は常に2列） */
 
@@ -287,6 +287,16 @@ input,select,textarea{font-family:inherit; font-size:15px}
   .bday-ft{font-size:8px; color:#000}
 }
 .loading{text-align:center; color:var(--g5); padding:30px}
+
+/* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -1452,7 +1462,7 @@ function renderView(r){
   var genoImg=getGenogram(r.id);
   var genoInner=genoImg
     ? '<img src="'+esc(genoImg)+'" alt="ジェノグラム" style="max-width:100%;max-height:100%;object-fit:contain">'
-    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size:13px;padding:10px"><div style="font-size:40px;line-height:1.1">🧬</div>クリックして<br>ジェノグラムを作成<br><span style="font-size:11px">（家系図アプリへ）</span></div>';
+    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem;line-height:1.1">🧬</div>クリックして<br>ジェノグラムを作成<br><span style="font-size: 0.6875rem">（家系図アプリへ）</span></div>';
   h+='<div style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
     // 左 2/3：家族情報＋事業所
     '<div style="flex:2;min-width:0;display:flex;flex-direction:column">'+
@@ -1554,7 +1564,7 @@ function renderView(r){
   if(mlog.length){
     var mlogHtml=mlog.map(function(s){
       var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
-      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size:12px">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size:11px">[訪問診療]</span>':'')+'</span></div>';
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'')+'</span></div>';
     }).join('');
     h+='<div class="sec"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
   }
@@ -1970,7 +1980,7 @@ function renderMedLogRows(){
       '<div class="fld"><label>診察日</label><input data-mk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"'+(isVma?' readonly':'')+'></div>'+
       '<div class="fld"><label>担当医</label><input data-mk="doctor" value="'+esc(s.doctor||'')+'"'+(isVma?' readonly':'')+'></div>'+
       '<div class="fld"><label>医療機関</label><input data-mk="clinic" value="'+esc(s.clinic||'')+'"'+(isVma?' readonly':'')+'></div>'+
-      '<div class="fld full"><label>内容'+(isVma?' <span style="color:var(--pri-d);font-size:11px">（訪問診療より取込）</span>':'')+'</label><textarea data-mk="text" style="min-height:56px"'+(isVma?' readonly':'')+'>'+esc(s.text||'')+'</textarea></div>'+
+      '<div class="fld full"><label>内容'+(isVma?' <span style="color:var(--pri-d);font-size: 0.6875rem">（訪問診療より取込）</span>':'')+'</label><textarea data-mk="text" style="min-height:56px"'+(isVma?' readonly':'')+'>'+esc(s.text||'')+'</textarea></div>'+
       (isVma?'':'<button class="fam-del" type="button" data-mdel="'+i+'" style="grid-column:1/-1">削除</button>')+
     '</div>';
   });

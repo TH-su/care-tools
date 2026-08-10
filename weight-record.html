@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>体重管理システム</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -33,20 +33,20 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* header */
 .hdr{background:linear-gradient(135deg,#1565c0,#1a73e8);color:#fff;padding:14px 18px;
   display:flex;align-items:center;justify-content:space-between}
-.hdr h1{font-size:17px;font-weight:700}
-.hdr-sub{font-size:12px;opacity:.85;margin-top:2px}
+.hdr h1{font-size: 1.0625rem;font-weight:700}
+.hdr-sub{font-size: 0.75rem;opacity:.85;margin-top:2px}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
-  color:#fff;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+  color:#fff;border-radius:6px;padding:6px 12px;font-size: 0.8125rem;cursor:pointer;white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}
-.hdr-r{font-size:12px;opacity:.9}
+.hdr-r{font-size: 0.75rem;opacity:.9}
 /* 入居者マスタから本人単位で開いた時の確認バー（誰を開いているかを常に見せる＝取り違え防止） */
 .frombar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;
-  background:var(--warn-bg);border-top:1px solid var(--warn-br);font-size:13px;color:var(--warn-tx)}
-.frombar b{font-size:15px}
+  background:var(--warn-bg);border-top:1px solid var(--warn-br);font-size: 0.8125rem;color:var(--warn-tx)}
+.frombar b{font-size: 0.9375rem}
 .frombar button{min-height:44px;padding:6px 14px;border:1px solid var(--warn-br);border-radius:6px;
-  background:#fff;color:var(--warn-tx);font-size:13px;cursor:pointer}
+  background:#fff;color:var(--warn-tx);font-size: 0.8125rem;cursor:pointer}
 .frombar button:focus-visible{outline:2px solid var(--warn-tx);outline-offset:1px}
 @media print{.frombar{display:none !important}}
 
@@ -55,20 +55,20 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
   display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tnav::-webkit-scrollbar{display:none}
 .tnav button{flex:1;min-width:84px;display:flex;align-items:center;justify-content:center;gap:6px;
-  padding:12px 10px;border:none;background:none;color:var(--g7);font-size:13px;font-weight:700;
+  padding:12px 10px;border:none;background:none;color:var(--g7);font-size: 0.8125rem;font-weight:700;
   cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;
   transition:color .15s,background .15s,border-color .15s;white-space:nowrap;position:relative}
 .tnav button:hover{background:var(--g1)}
 .tnav button.on{color:var(--pri);border-bottom-color:var(--pri);background:var(--pri-l)}
-.tnav button.sub{flex:0 0 auto;min-width:60px;color:var(--g5);font-size:12px;font-weight:400;opacity:.8}
+.tnav button.sub{flex:0 0 auto;min-width:60px;color:var(--g5);font-size: 0.75rem;font-weight:400;opacity:.8}
 .tnav button.sub.on{color:var(--pri-d);opacity:1;font-weight:700}
 .tnav svg{width:18px;height:18px;flex-shrink:0}
 .tnav button.sub svg{width:15px;height:15px}
-.tnav .badge{background:var(--ng);color:#fff;font-size:10px;font-weight:700;
+.tnav .badge{background:var(--ng);color:#fff;font-size: 0.625rem;font-weight:700;
   border-radius:10px;min-width:18px;padding:1px 5px;line-height:1.4;margin-left:2px}
 @media(max-width:480px){
-  .tnav button{font-size:12px;padding:10px 6px;min-width:68px}
-  .tnav button.sub{min-width:52px;font-size:11px}
+  .tnav button{font-size: 0.75rem;padding:10px 6px;min-width:68px}
+  .tnav button.sub{min-width:52px;font-size: 0.6875rem}
   .tnav svg{width:16px;height:16px}
   .tnav button.sub svg{width:13px;height:13px}
 }
@@ -84,19 +84,19 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 
 /* card */
 .cd{background:#fff;border-radius:var(--r);padding:15px;margin-bottom:14px;box-shadow:var(--sh)}
-.cd-t{font-size:13px;font-weight:700;color:var(--g7);margin-bottom:12px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
-.cd-t .cd-t-r{font-size:11px;font-weight:400;color:var(--g6)}
+.cd-t{font-size: 0.8125rem;font-weight:700;color:var(--g7);margin-bottom:12px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
+.cd-t .cd-t-r{font-size: 0.6875rem;font-weight:400;color:var(--g6)}
 
 /* form */
 .fg{margin-bottom:14px}
-.fl{display:block;font-size:12px;font-weight:700;color:var(--g7);margin-bottom:7px}
+.fl{display:block;font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:7px}
 .fl .req{color:var(--ng);margin-left:3px}
 input[type="text"],input[type="number"],input[type="month"],input[type="date"],textarea{
   width:100%;padding:11px 12px;border:2px solid var(--g2);border-radius:8px;
-  font-size:15px;font-family:inherit;color:var(--g9);background:#fff;
+  font-size: 0.9375rem;font-family:inherit;color:var(--g9);background:#fff;
   transition:border-color .2s;-webkit-appearance:none}
 select{width:100%;padding:11px 12px;border:2px solid var(--g2);border-radius:8px;
-  font-size:15px;font-family:inherit;color:var(--g9);background:#fff;
+  font-size: 0.9375rem;font-family:inherit;color:var(--g9);background:#fff;
   cursor:pointer;appearance:auto;-webkit-appearance:menulist}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--pri)}
 textarea{resize:vertical;min-height:60px}
@@ -105,27 +105,27 @@ textarea{resize:vertical;min-height:60px}
 
 /* weight input big */
 .wt-input{position:relative}
-.wt-input input{font-size:26px;font-weight:700;text-align:center;padding:14px 50px 14px 12px;letter-spacing:1px}
+.wt-input input{font-size: 1.625rem;font-weight:700;text-align:center;padding:14px 50px 14px 12px;letter-spacing:1px}
 .wt-input .unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);
-  font-size:16px;font-weight:700;color:var(--g6)}
+  font-size: 1rem;font-weight:700;color:var(--g6)}
 .wt-step{display:flex;gap:8px;margin-top:8px;justify-content:center;flex-wrap:wrap}
 .wt-step button{padding:7px 14px;border:2px solid var(--g2);border-radius:18px;cursor:pointer;
-  background:#fff;font-size:13px;font-weight:700;font-family:inherit;min-width:62px}
+  background:#fff;font-size: 0.8125rem;font-weight:700;font-family:inherit;min-width:62px}
 .wt-step button:active{background:var(--pri-l);border-color:var(--pri)}
 
 /* form picker (meal forms) */
 .mf-g{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 @media(max-width:480px){.mf-g{grid-template-columns:repeat(2,1fr)}}
 .mf-b{padding:11px 6px;border:2px solid var(--g2);border-radius:9px;cursor:pointer;
-  background:#fff;font-size:13px;font-weight:700;text-align:center;font-family:inherit;
+  background:#fff;font-size: 0.8125rem;font-weight:700;text-align:center;font-family:inherit;
   transition:all .15s;line-height:1.3}
-.mf-b small{display:block;font-size:10px;font-weight:400;color:var(--g6);margin-top:2px}
+.mf-b small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
 .mf-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .mf-b[data-g="s"].on{background:#fff3e0;border-color:#ef6c00;color:#bf360c}
 
 /* submit */
 .btn-go{width:100%;padding:15px;background:var(--pri);color:#fff;border:none;
-  border-radius:var(--r);font-size:16px;font-weight:700;cursor:pointer;
+  border-radius:var(--r);font-size: 1rem;font-weight:700;cursor:pointer;
   transition:background .2s;font-family:inherit}
 .btn-go:hover{background:var(--pri-d)}.btn-go:active{transform:scale(.98)}
 .btn-go:disabled{background:var(--g3);cursor:not-allowed}
@@ -133,26 +133,26 @@ textarea{resize:vertical;min-height:60px}
 /* list table */
 .lt-w{overflow-x:auto;border-radius:var(--r);box-shadow:var(--sh)}
 .lt{width:100%;border-collapse:collapse;background:#fff;min-width:640px}
-.lt th{background:#1565c0;color:#fff;padding:10px 8px;text-align:center;font-size:11px;font-weight:700;white-space:nowrap;position:sticky;top:0}
-.lt td{padding:10px 8px;border-bottom:1px solid var(--g1);font-size:13px;text-align:center;vertical-align:middle}
+.lt th{background:#1565c0;color:#fff;padding:10px 8px;text-align:center;font-size: 0.6875rem;font-weight:700;white-space:nowrap;position:sticky;top:0}
+.lt td{padding:10px 8px;border-bottom:1px solid var(--g1);font-size: 0.8125rem;text-align:center;vertical-align:middle}
 .lt tr:last-child td{border-bottom:none}
 .lt tr.ev td{background:#fafafa}
 .lt tr.clk{cursor:pointer;transition:background .15s}
 .lt tr.clk:hover td{background:var(--pri-l)}
 .lt tr.alert-ng td:first-child{border-left:4px solid var(--ng)}
 .lt tr.alert-w td:first-child{border-left:4px solid var(--warn-br)}
-.lt .nm{font-weight:700;text-align:left;padding-left:12px;min-width:110px}
-.lt .rm{color:var(--g6);font-size:11px;font-weight:400}
+.lt .nm{font-weight:700;text-align:start;padding-left:12px;min-width:110px}
+.lt .rm{color:var(--g6);font-size: 0.6875rem;font-weight:400}
 .lt .nm-link{cursor:pointer;color:var(--pri-d);text-decoration:underline;text-decoration-color:rgba(21,101,192,.35);text-underline-offset:2px;padding:2px 1px;border-radius:3px;transition:background .12s,color .12s}
 .lt .nm-link:hover{background:var(--pri-l);color:var(--pri-d);text-decoration-color:var(--pri-d)}
-.lt .wt-cell{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
-.lt .df{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lt .wt-cell{font-size: 0.9375rem;font-weight:700;font-variant-numeric:tabular-nums}
+.lt .df{font-size: 0.75rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .df.pos{color:var(--up)}.df.neg{color:var(--dn)}.df.zero{color:var(--g6)}
-.lt .mf{font-size:11px;color:var(--g7);white-space:nowrap}
+.lt .mf{font-size: 0.6875rem;color:var(--g7);white-space:nowrap}
 .lt .mf b{color:var(--g9)}
 
 /* badge */
-.eb{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap}
+.eb{display:inline-block;padding:2px 8px;border-radius:12px;font-size: 0.6875rem;font-weight:700;white-space:nowrap}
 .eb-ok{background:var(--ok-l);color:var(--ok)}
 .eb-w{background:var(--warn-bg);color:var(--warn-tx)}
 .eb-ng{background:var(--ng-l);color:var(--ng)}
@@ -167,69 +167,69 @@ textarea{resize:vertical;min-height:60px}
 .al-i.dir-dn.sev-ng{border-left-width:5px;box-shadow:inset 0 0 0 1px rgba(21,101,192,.18)}
 .al-i.dir-up.sev-ng{border-left-width:5px;box-shadow:inset 0 0 0 1px rgba(198,40,40,.18)}
 .al-ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-size:18px;font-weight:700;flex-shrink:0}
+  font-size: 1.125rem;font-weight:700;flex-shrink:0}
 .al-i.dir-dn .al-ic{background:var(--pri);color:#fff}
 .al-i.dir-up .al-ic{background:var(--ng);color:#fff}
 .al-body{flex:1;min-width:0}
-.al-nm{font-size:14px;font-weight:700;color:var(--g9);margin-bottom:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.al-nm .rm{font-size:11px;font-weight:400;color:var(--g6)}
-.al-ms{font-size:12px;color:var(--g7);line-height:1.45}
+.al-nm{font-size: 0.875rem;font-weight:700;color:var(--g9);margin-bottom:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.al-nm .rm{font-size: 0.6875rem;font-weight:400;color:var(--g6)}
+.al-ms{font-size: 0.75rem;color:var(--g7);line-height:1.45}
 .al-ms b{color:var(--g9)}
 
 /* empty */
-.empty{text-align:center;padding:32px 14px;color:var(--g6);font-size:13px}
+.empty{text-align:center;padding:32px 14px;color:var(--g6);font-size: 0.8125rem}
 .empty svg{width:48px;height:48px;opacity:.35;margin-bottom:8px}
 
 /* chart area */
 .ch-w{position:relative;height:280px;margin-top:4px}
 .rg-tabs{display:inline-flex;gap:6px}
 .rg-b{padding:5px 11px;border:1.5px solid var(--g2);background:#fff;border-radius:14px;
-  font-family:inherit;font-size:11px;font-weight:700;color:var(--g7);cursor:pointer;
+  font-family:inherit;font-size: 0.6875rem;font-weight:700;color:var(--g7);cursor:pointer;
   transition:all .15s}
 .rg-b:hover{border-color:var(--g3)}
 .rg-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
-.thr-tb{width:100%;border-collapse:collapse;font-size:12px}
-.thr-tb th{background:var(--g1);color:var(--g7);padding:8px 6px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--g2);font-size:11px}
+.thr-tb{width:100%;border-collapse:collapse;font-size: 0.75rem}
+.thr-tb th{background:var(--g1);color:var(--g7);padding:8px 6px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--g2);font-size: 0.6875rem}
 .thr-tb td{padding:6px 4px;border-bottom:1px solid var(--g1);vertical-align:middle}
 .thr-tb td:first-child{font-weight:700;color:var(--g7);white-space:nowrap;padding-left:8px}
-.thr-tb input[type="number"]{width:100%;min-width:60px;padding:6px 7px;font-size:13px;border:1.5px solid var(--g2);border-radius:6px;text-align:center;font-family:inherit}
+.thr-tb input[type="number"]{width:100%;min-width:60px;padding:6px 7px;font-size: 0.8125rem;border:1.5px solid var(--g2);border-radius:6px;text-align:center;font-family:inherit}
 .thr-tb input[type="number"]:focus{outline:none;border-color:var(--pri)}
 .thr-tb .th-w th:nth-child(-n+3),.thr-tb td.th-w{background:#fff8e1}
 .thr-tb .th-ng th:nth-child(n+4),.thr-tb td.th-ng{background:#ffebee}
 /* Y軸範囲オーバーライド：未入力なら自動、数値で固定範囲 */
 .iv-yrange{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:6px 0 12px;padding:8px 10px;
-  background:var(--g0);border:1px solid var(--g2);border-radius:8px;font-size:11px}
+  background:var(--g0);border:1px solid var(--g2);border-radius:8px;font-size: 0.6875rem}
 .iv-yrange-l{color:var(--g7);font-weight:700;margin-right:4px}
-.iv-yrange-i{width:64px;padding:4px 6px;border:1px solid var(--g3);border-radius:6px;font-size:12px;
-  font-variant-numeric:tabular-nums;text-align:right;font-family:inherit;background:#fff}
+.iv-yrange-i{width:64px;padding:4px 6px;border:1px solid var(--g3);border-radius:6px;font-size: 0.75rem;
+  font-variant-numeric:tabular-nums;text-align:end;font-family:inherit;background:#fff}
 .iv-yrange-i:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-l)}
 .iv-yrange-sep{color:var(--g6)}
 .iv-yrange-u{color:var(--g6);margin-right:4px}
 .iv-yrange-rst{margin-left:auto;padding:4px 10px;border:1px solid var(--g3);background:#fff;color:var(--g7);
-  border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+  border-radius:6px;font-size: 0.625rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
 .iv-yrange-rst:hover{background:var(--g1);color:var(--g9)}
 .iv-yrange.is-overridden{background:#fff8e1;border-color:#ffe082}
 .iv-yrange.is-overridden .iv-yrange-l::before{content:'⚠ ';color:#ef6c00}
 .iv-chart-wrap{margin-top:14px;padding-top:12px;border-top:1px dashed var(--g2)}
 .iv-chart-wrap:first-of-type{border-top:none;padding-top:0;margin-top:0}
 .iv-chart-wrap.off{display:none}
-.iv-chart-ttl{font-size:12px;font-weight:700;color:var(--g7);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.iv-chart-ttl{font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .iv-chart-ttl::before{content:'';width:10px;height:10px;border-radius:2px;background:var(--pri)}
 .st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:720px){.st-g{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.st-g{grid-template-columns:repeat(2,1fr)}}
 .st-i{background:#fff;border-radius:10px;padding:10px 8px;box-shadow:var(--sh);text-align:center}
-.st-l{font-size:10px;color:var(--g6);font-weight:700;margin-bottom:3px}
-.st-v{font-size:18px;font-weight:700;color:var(--g9);font-variant-numeric:tabular-nums}
+.st-l{font-size: 0.625rem;color:var(--g6);font-weight:700;margin-bottom:3px}
+.st-v{font-size: 1.125rem;font-weight:700;color:var(--g9);font-variant-numeric:tabular-nums}
 .st-v.pos{color:var(--up)}.st-v.neg{color:var(--dn)}
-.st-s{font-size:10px;color:var(--g6);margin-top:1px}
+.st-s{font-size: 0.625rem;color:var(--g6);margin-top:1px}
 
 /* history table for individual */
-.ht{width:100%;border-collapse:separate;border-spacing:0;background:#fff;font-size:12px}
-.ht th{background:var(--g1);color:var(--g7);padding:8px 6px;text-align:center;font-weight:700;font-size:11px;white-space:nowrap;
+.ht{width:100%;border-collapse:separate;border-spacing:0;background:#fff;font-size: 0.75rem}
+.ht th{background:var(--g1);color:var(--g7);padding:8px 6px;text-align:center;font-weight:700;font-size: 0.6875rem;white-space:nowrap;
   border-bottom:1px solid var(--g2)}
 .ht td{padding:8px 6px;border-bottom:1px solid var(--g1);text-align:center;vertical-align:middle}
-.ht td:first-child{text-align:left;padding-left:10px;white-space:nowrap;font-weight:700}
+.ht td:first-child{text-align:start;padding-left:10px;white-space:nowrap;font-weight:700}
 .ht tr.ed td{background:#fff8e1}
 /* 個別画面の記録履歴ラッパー：表自体に縦スクロールを持たせる。
    外側ページではなく、この .lt-w-scroll コンテナ内でスクロールするため、
@@ -246,21 +246,21 @@ textarea{resize:vertical;min-height:60px}
 
 /* 個別画面の記録履歴：測定日から判定した対象月のグループ見出し行 */
 #ivHist .hist-grp td{background:var(--pri-l);color:var(--pri-d);font-weight:700;
-  text-align:left;padding:6px 10px;font-size:13px;border-top:2px solid var(--pri)}
+  text-align:start;padding:6px 10px;font-size: 0.8125rem;border-top:2px solid var(--pri)}
 
 /* settings */
 .rli{display:flex;align-items:center;justify-content:space-between;
   padding:11px 12px;border:1px solid var(--g2);border-radius:8px;margin-bottom:7px;background:#fff;gap:8px}
 .rli-l{flex:1;min-width:0}
-.rli-n{font-size:14px;font-weight:700;color:var(--g9)}
-.rli-s{font-size:11px;color:var(--g6);margin-top:2px}
+.rli-n{font-size: 0.875rem;font-weight:700;color:var(--g9)}
+.rli-s{font-size: 0.6875rem;color:var(--g6);margin-top:2px}
 .rli-btns{display:flex;gap:6px}
 
 .ex-r{display:flex;gap:9px;flex-wrap:wrap}
 
 /* buttons */
 .bn{padding:9px 16px;border-radius:8px;border:none;cursor:pointer;
-  font-size:13px;font-weight:700;font-family:inherit;
+  font-size: 0.8125rem;font-weight:700;font-family:inherit;
   touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,0,0,0.08);
   user-select:none;-webkit-user-select:none}
 .bp{background:var(--pri);color:#fff}.bp:active{opacity:.85}
@@ -268,7 +268,7 @@ textarea{resize:vertical;min-height:60px}
 .bs{background:var(--g1);color:var(--g7)}.bs:active{background:var(--g2)}
 .br{background:var(--ng);color:#fff}.br:active{opacity:.8}
 .bo{background:#fff;color:var(--pri);border:2px solid var(--pri)}
-.bsm{padding:6px 11px;font-size:12px}
+.bsm{padding:6px 11px;font-size: 0.75rem}
 
 /* modal */
 .mk{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
@@ -277,14 +277,14 @@ textarea{resize:vertical;min-height:60px}
 .mk-b{background:#fff;border-radius:var(--r);max-width:440px;width:100%;
   max-height:90vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.2)}
 .mk-h{padding:14px 16px;border-bottom:1px solid var(--g2);display:flex;justify-content:space-between;align-items:center}
-.mk-h h3{font-size:15px}
-.mk-c{background:none;border:none;font-size:22px;cursor:pointer;color:var(--g6);padding:0;width:30px;height:30px}
+.mk-h h3{font-size: 0.9375rem}
+.mk-c{background:none;border:none;font-size: 1.375rem;cursor:pointer;color:var(--g6);padding:0;width:30px;height:30px}
 .mk-body{padding:16px}
 .mk-f{padding:12px 16px;border-top:1px solid var(--g2);display:flex;gap:8px;justify-content:flex-end}
 
 /* toast */
 .ts{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-20px);
-  background:var(--g9);color:#fff;padding:11px 22px;border-radius:22px;font-size:13px;font-weight:700;
+  background:var(--g9);color:#fff;padding:11px 22px;border-radius:22px;font-size: 0.8125rem;font-weight:700;
   z-index:300;opacity:0;transition:all .3s;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25)}
 .ts.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .ts.err{background:var(--ng)}
@@ -292,13 +292,13 @@ textarea{resize:vertical;min-height:60px}
 
 /* month picker chip */
 .mp-w{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.mp-w button{padding:7px 11px;border:1px solid var(--g2);background:#fff;border-radius:6px;font-family:inherit;cursor:pointer;font-size:13px}
+.mp-w button{padding:7px 11px;border:1px solid var(--g2);background:#fff;border-radius:6px;font-family:inherit;cursor:pointer;font-size: 0.8125rem}
 .mp-w button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
-.mp-w input[type="month"]{width:auto;padding:7px 10px;font-size:13px;border:2px solid var(--g2);border-radius:6px}
+.mp-w input[type="month"]{width:auto;padding:7px 10px;font-size: 0.8125rem;border:2px solid var(--g2);border-radius:6px}
 
 /* filter chips */
 .fc{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-.fc button{padding:6px 12px;border:1px solid var(--g2);background:#fff;border-radius:16px;font-family:inherit;cursor:pointer;font-size:12px;font-weight:700;color:var(--g7)}
+.fc button{padding:6px 12px;border:1px solid var(--g2);background:#fff;border-radius:16px;font-family:inherit;cursor:pointer;font-size: 0.75rem;font-weight:700;color:var(--g7)}
 .fc button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
 
 /* search */
@@ -307,63 +307,63 @@ textarea{resize:vertical;min-height:60px}
 .srch svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--g5)}
 
 /* meal summary chips in cards */
-.ms-c{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;background:var(--g1);border-radius:10px;font-size:11px}
+.ms-c{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;background:var(--g1);border-radius:10px;font-size: 0.6875rem}
 .ms-c b{color:var(--g9)}
 
 /* meal option toggle chips */
-.tg-chip{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:10px;font-size:10px;font-weight:700;line-height:1.6;white-space:nowrap}
+.tg-chip{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:10px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap}
 .tg-row{margin-top:3px}
 .tg-toggles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media(max-width:480px){.tg-toggles{grid-template-columns:repeat(3,1fr)}}
 .tg-btn{padding:12px 6px;border:2px solid var(--g2);border-radius:9px;cursor:pointer;background:#fff;
-  font-size:13px;font-weight:700;font-family:inherit;text-align:center;transition:all .15s;color:var(--g7);line-height:1.35}
-.tg-btn small{display:block;font-size:10px;font-weight:400;color:var(--g6);margin-top:2px}
+  font-size: 0.8125rem;font-weight:700;font-family:inherit;text-align:center;transition:all .15s;color:var(--g7);line-height:1.35}
+.tg-btn small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
 .tg-btn.on{background:#ede7f6;border-color:#7e57c2;color:#4527a0}
 .tg-btn.on small{color:#6a4a9f}
 
 /* BMI inline badge */
-.bmi-b{display:inline-block;padding:2px 10px;border-radius:14px;font-size:12px;font-weight:700;background:var(--g1);color:var(--g7);margin-left:6px}
+.bmi-b{display:inline-block;padding:2px 10px;border-radius:14px;font-size: 0.75rem;font-weight:700;background:var(--g1);color:var(--g7);margin-left:6px}
 
 /* measurement mode selector */
 .wm-sel{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .wm-b{padding:12px 8px;border:2px solid var(--g2);border-radius:10px;cursor:pointer;background:#fff;
-  font-size:14px;font-weight:700;font-family:inherit;text-align:center;color:var(--g7);transition:all .15s;line-height:1.35}
-.wm-b small{display:block;font-size:10px;font-weight:400;color:var(--g6);margin-top:2px}
+  font-size: 0.875rem;font-weight:700;font-family:inherit;text-align:center;color:var(--g7);transition:all .15s;line-height:1.35}
+.wm-b small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
 .wm-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .wm-b.on small{color:var(--pri-d)}
 
 /* wheelchair calc display */
 .wc-calc{margin-top:10px;padding:12px;background:#e3f2fd;border:1px solid #64b5f6;border-radius:10px;text-align:center}
-.wc-calc .wc-eq{font-size:12px;color:var(--g7);margin-bottom:4px;font-variant-numeric:tabular-nums}
-.wc-calc .wc-net{font-size:24px;font-weight:700;color:var(--dn);font-variant-numeric:tabular-nums;letter-spacing:1px}
-.wc-calc .wc-net small{font-size:12px;font-weight:400;color:var(--g7);margin-left:4px}
+.wc-calc .wc-eq{font-size: 0.75rem;color:var(--g7);margin-bottom:4px;font-variant-numeric:tabular-nums}
+.wc-calc .wc-net{font-size: 1.5rem;font-weight:700;color:var(--dn);font-variant-numeric:tabular-nums;letter-spacing:1px}
+.wc-calc .wc-net small{font-size: 0.75rem;font-weight:400;color:var(--g7);margin-left:4px}
 .wc-calc.err{background:var(--ng-l);border-color:var(--ng-br)}
 .wc-calc.err .wc-net{color:var(--ng)}
 
 /* wheelchair badge */
-.wc-badge{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#e0f7fa;color:#006064;border:1px solid #80deea;border-radius:10px;font-size:10px;font-weight:700;line-height:1.6;white-space:nowrap}
+.wc-badge{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#e0f7fa;color:#006064;border:1px solid #80deea;border-radius:10px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap}
 
 /* edit-mode banner (input screen) */
 .edit-banner{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:14px;
-  background:#fff8e1;border:1px solid #ffd54f;border-radius:10px;font-size:12px;color:#6d4c00}
-.edit-banner .eb-ic{font-size:16px;line-height:1}
+  background:#fff8e1;border:1px solid #ffd54f;border-radius:10px;font-size: 0.75rem;color:#6d4c00}
+.edit-banner .eb-ic{font-size: 1rem;line-height:1}
 .edit-banner .eb-msg{flex:1;font-weight:700;line-height:1.4}
 
 /* existing-records panel (input screen) */
 .iex-wrap{margin-top:18px;border-top:1px dashed var(--g2);padding-top:14px}
-.iex-hd{font-size:12px;font-weight:700;color:var(--g7);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.iex-hd{font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .iex-hd small{font-weight:400;color:var(--g6)}
-.iex-empty{padding:16px 12px;text-align:center;font-size:12px;color:var(--g6);background:var(--g0);border-radius:8px}
+.iex-empty{padding:16px 12px;text-align:center;font-size: 0.75rem;color:var(--g6);background:var(--g0);border-radius:8px}
 .iex-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
-  padding:8px 10px;margin-bottom:6px;background:#fff;border:1px solid var(--g1);border-radius:8px;font-size:12px}
+  padding:8px 10px;margin-bottom:6px;background:#fff;border:1px solid var(--g1);border-radius:8px;font-size: 0.75rem}
 .iex-row.editing{background:#fff8e1;border-color:#ffd54f}
 .iex-row .iex-d b{font-variant-numeric:tabular-nums}
-.iex-row .iex-ym{font-size:10px;color:var(--g6);margin-left:6px}
-.iex-row .iex-w{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.iex-row .iex-w b{font-size:15px;color:var(--g9)}
-.iex-row .iex-w small{font-size:10px;color:var(--g6);margin-left:2px;margin-right:6px}
+.iex-row .iex-ym{font-size: 0.625rem;color:var(--g6);margin-left:6px}
+.iex-row .iex-w{font-variant-numeric:tabular-nums;text-align:end;white-space:nowrap}
+.iex-row .iex-w b{font-size: 0.9375rem;color:var(--g9)}
+.iex-row .iex-w small{font-size: 0.625rem;color:var(--g6);margin-left:2px;margin-right:6px}
 .iex-row .iex-act{display:flex;gap:4px}
-.iex-more{padding:6px;text-align:center;font-size:11px;color:var(--g6)}
+.iex-more{padding:6px;text-align:center;font-size: 0.6875rem;color:var(--g6)}
 
 /* individual screen history actions */
 .ht .hist-act{white-space:nowrap;min-width:92px}
@@ -371,63 +371,63 @@ textarea{resize:vertical;min-height:60px}
 
 /* meal section (resident modal) */
 .md-meal-sec{margin:14px 0 4px;padding:12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0)}
-.md-meal-sec .md-meal-hd{font-size:12px;font-weight:700;color:var(--g8);margin:-4px 0 10px;display:flex;align-items:baseline;gap:8px}
-.md-meal-sec .md-meal-hd small{font-size:10px;font-weight:400;color:var(--g6)}
+.md-meal-sec .md-meal-hd{font-size: 0.75rem;font-weight:700;color:var(--g8);margin:-4px 0 10px;display:flex;align-items:baseline;gap:8px}
+.md-meal-sec .md-meal-hd small{font-size: 0.625rem;font-weight:400;color:var(--g6)}
 /* read-only meal display on input screen */
-.in-meal{margin:6px 0 14px;padding:10px 12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0);font-size:12px}
-.in-meal-hd{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:var(--g7);margin-bottom:6px}
-.in-meal-hd small{font-size:10px;font-weight:400;color:var(--g6)}
-.in-meal-hd .in-meal-edit{font-size:10px;color:var(--pri-d);text-decoration:none;border:1px solid var(--pri);padding:2px 8px;border-radius:10px;background:#fff;cursor:pointer;font-weight:700;font-family:inherit}
+.in-meal{margin:6px 0 14px;padding:10px 12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0);font-size: 0.75rem}
+.in-meal-hd{display:flex;align-items:center;justify-content:space-between;font-size: 0.6875rem;font-weight:700;color:var(--g7);margin-bottom:6px}
+.in-meal-hd small{font-size: 0.625rem;font-weight:400;color:var(--g6)}
+.in-meal-hd .in-meal-edit{font-size: 0.625rem;color:var(--pri-d);text-decoration:none;border:1px solid var(--pri);padding:2px 8px;border-radius:10px;background:#fff;cursor:pointer;font-weight:700;font-family:inherit}
 .in-meal-hd .in-meal-edit:hover{background:var(--pri-l)}
 .in-meal-tbl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:baseline}
-.in-meal-tbl dt{color:var(--g6);font-size:11px;margin:0;padding:0}
+.in-meal-tbl dt{color:var(--g6);font-size: 0.6875rem;margin:0;padding:0}
 .in-meal-tbl dd{margin:0;padding:0;color:var(--g9);font-weight:700}
-.in-meal-tbl dd .sa-chip{margin-left:6px;font-size:10px;background:var(--pri-l);color:var(--pri-d);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle}
-.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size:10px;background:#e8f5e9;color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
+.in-meal-tbl dd .sa-chip{margin-left:6px;font-size: 0.625rem;background:var(--pri-l);color:var(--pri-d);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle}
+.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size: 0.625rem;background:#e8f5e9;color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
 .in-meal-tbl dd.empty{color:var(--g5);font-weight:400}
 /* staple amount (主食g) input */
 .sa-wrap{margin-top:10px;padding:12px 12px 10px;background:var(--g0);border:1px solid var(--g2);border-radius:10px}
-.sa-hd{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--g7);font-weight:700;margin-bottom:8px}
-.sa-hd .sa-rg{color:var(--g6);font-weight:400;font-size:10px}
+.sa-hd{display:flex;justify-content:space-between;align-items:center;font-size: 0.6875rem;color:var(--g7);font-weight:700;margin-bottom:8px}
+.sa-hd .sa-rg{color:var(--g6);font-weight:400;font-size: 0.625rem}
 .sa-ctrl{display:flex;gap:8px;align-items:center;justify-content:center}
 .sa-step{padding:10px 14px;border:1px solid var(--g2);background:#fff;border-radius:8px;font-weight:700;
-  font-size:13px;cursor:pointer;font-family:inherit;color:var(--g7);min-width:56px}
+  font-size: 0.8125rem;cursor:pointer;font-family:inherit;color:var(--g7);min-width:56px}
 .sa-step:active{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .sa-inp{position:relative;flex:1;max-width:140px}
-.sa-inp input{width:100%;text-align:center;padding:11px 28px 11px 10px;font-size:18px;font-weight:700;
+.sa-inp input{width:100%;text-align:center;padding:11px 28px 11px 10px;font-size: 1.125rem;font-weight:700;
   font-variant-numeric:tabular-nums;border:2px solid var(--g2);border-radius:8px;color:var(--g9)}
-.sa-inp .unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--g6);font-weight:400}
+.sa-inp .unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size: 0.75rem;color:var(--g6);font-weight:400}
 .sa-slider{width:100%;margin-top:10px;accent-color:var(--pri)}
 
 /* staple-amount chip shown in lists/history */
 .sa-chip{display:inline-block;padding:0 6px;margin-left:4px;background:var(--pri-l);color:var(--pri-d);
-  border-radius:8px;font-size:10px;font-weight:700;line-height:1.6;white-space:nowrap;vertical-align:middle}
+  border-radius:8px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap;vertical-align:middle}
 
 /* 集計 grid table: full-width scroll wrapper, sticky first column & header */
 .gr-wrap{overflow:auto;max-height:calc(100vh - 260px);border:1px solid var(--g2);border-radius:8px;background:#fff}
-.gr-t{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px;
+.gr-t{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size: 0.75rem;
   font-variant-numeric:tabular-nums}
 .gr-t th,.gr-t td{padding:8px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);
   text-align:center;white-space:nowrap;background:#fff}
-.gr-t thead th{background:#1565c0;color:#fff;font-weight:700;font-size:11px;position:sticky;top:0;z-index:3}
-.gr-t th.gr-nm,.gr-t td.gr-nm{position:sticky;left:0;z-index:2;text-align:left;background:#fff;
+.gr-t thead th{background:#1565c0;color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:3}
+.gr-t th.gr-nm,.gr-t td.gr-nm{position:sticky;left:0;z-index:2;text-align:start;background:#fff;
   min-width:160px;max-width:220px;border-right:2px solid var(--g2);font-weight:700;padding:8px 10px}
 .gr-t thead th.gr-nm{z-index:4;background:#1565c0;color:#fff}
 .gr-t tr.ev td{background:#fafafa}
 .gr-t tr.ev td.gr-nm{background:#fafafa}
-.gr-t .gr-wt{font-weight:700;color:var(--g9);font-size:13px;line-height:1.25}
-.gr-t .gr-bmi{font-size:10px;color:var(--g6);line-height:1.2;margin-top:1px}
+.gr-t .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
+.gr-t .gr-bmi{font-size: 0.625rem;color:var(--g6);line-height:1.2;margin-top:1px}
 .gr-t .gr-em{color:var(--g5)}
-.gr-t .gr-rm{color:var(--g6);font-size:10px;font-weight:400;margin-left:2px}
+.gr-t .gr-rm{color:var(--g6);font-size: 0.625rem;font-weight:400;margin-left:2px}
 .gr-t .gr-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);
-  border-radius:8px;font-size:9px;font-weight:700;margin-left:4px;line-height:1.7;vertical-align:middle}
+  border-radius:8px;font-size: 0.5625rem;font-weight:700;margin-left:4px;line-height:1.7;vertical-align:middle}
 .gr-t .gr-3y{display:inline-block;padding:2px 8px;border:1px solid var(--pri);color:var(--pri-d);
-  background:#fff;border-radius:12px;font-size:10px;font-weight:700;cursor:pointer;
+  background:#fff;border-radius:12px;font-size: 0.625rem;font-weight:700;cursor:pointer;
   font-family:inherit;transition:all .15s}
 .gr-t .gr-3y:hover{background:var(--pri-l)}
 /* 個別 button: shown above the 3年 button. Distinct green tint to separate the action. */
 .gr-t .gr-ind{display:inline-block;padding:2px 8px;border:1px solid #2e7d32;color:#1b5e20;
-  background:#fff;border-radius:12px;font-size:10px;font-weight:700;cursor:pointer;
+  background:#fff;border-radius:12px;font-size: 0.625rem;font-weight:700;cursor:pointer;
   font-family:inherit;transition:all .15s}
 .gr-t .gr-ind:hover{background:#e8f5e9}
 /* vertical stack for the two action buttons in name cell */
@@ -448,21 +448,21 @@ textarea{resize:vertical;min-height:60px}
 .bk-row:last-child{border-bottom:none}
 .bk-row.filled{background:#e8f5e9}
 .bk-row.existing{background:#fff3e0}
-.bk-row .bk-nm{font-size:13px;font-weight:700;color:var(--g9);min-width:0;overflow-wrap:anywhere}
-.bk-row .bk-nm .bk-rm{font-size:10px;color:var(--g6);font-weight:400;margin-left:4px}
-.bk-row .bk-nm .bk-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle}
-.bk-row .bk-prev{font-size:10px;color:var(--g6);line-height:1.3}
-.bk-row .bk-prev b{font-size:12px;color:var(--g9);font-variant-numeric:tabular-nums}
+.bk-row .bk-nm{font-size: 0.8125rem;font-weight:700;color:var(--g9);min-width:0;overflow-wrap:anywhere}
+.bk-row .bk-nm .bk-rm{font-size: 0.625rem;color:var(--g6);font-weight:400;margin-left:4px}
+.bk-row .bk-nm .bk-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size: 0.5625rem;font-weight:700;margin-left:4px;vertical-align:middle}
+.bk-row .bk-prev{font-size: 0.625rem;color:var(--g6);line-height:1.3}
+.bk-row .bk-prev b{font-size: 0.75rem;color:var(--g9);font-variant-numeric:tabular-nums}
 .bk-row .bk-in{display:flex;align-items:center;gap:4px}
-.bk-row .bk-in input{width:80px;padding:6px 8px;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;border:1px solid var(--g3);border-radius:6px}
+.bk-row .bk-in input{width:80px;padding:6px 8px;font-size: 0.8125rem;font-variant-numeric:tabular-nums;text-align:end;border:1px solid var(--g3);border-radius:6px}
 .bk-row .bk-in input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-l)}
-.bk-row .bk-in .bk-unit{font-size:11px;color:var(--g6)}
-.bk-row .bk-badge{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:flex-end;font-size:10px}
-.bk-row .bk-badge .bk-ex{padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-weight:700;font-size:9px}
-.bk-row .bk-badge .bk-ch{padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700;font-size:9px}
+.bk-row .bk-in .bk-unit{font-size: 0.6875rem;color:var(--g6)}
+.bk-row .bk-badge{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:flex-end;font-size: 0.625rem}
+.bk-row .bk-badge .bk-ex{padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-weight:700;font-size: 0.5625rem}
+.bk-row .bk-badge .bk-ch{padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700;font-size: 0.5625rem}
 /* 個別保存ボタン（各行右端の作業用 UI・印刷時は非表示） */
 .bk-row .bk-act{display:flex;justify-content:flex-end}
-.bk-row .bk-save{padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap;
+.bk-row .bk-save{padding:6px 10px;font-size: 0.75rem;font-weight:700;white-space:nowrap;
   border:1px solid var(--pri);background:var(--pri);color:#fff;border-radius:6px;cursor:pointer;transition:all .12s}
 .bk-row .bk-save:hover{background:var(--pri-d);border-color:var(--pri-d)}
 .bk-row .bk-save:active{transform:scale(.96)}
@@ -479,21 +479,21 @@ textarea{resize:vertical;min-height:60px}
 /* 3-year modal: 3 stacked 12-month blocks */
 .gr-3y-blocks{display:flex;flex-direction:column;gap:12px}
 .gr-3y-block{border:1px solid var(--g2);border-radius:8px;background:#fff;overflow:auto}
-.gr-3y-block .gr-3y-ttl{padding:6px 12px;background:var(--g0);border-bottom:1px solid var(--g1);font-size:11px;font-weight:700;color:var(--g7);position:sticky;left:0;display:flex;align-items:center;gap:8px}
-.gr-3y-block .gr-3y-ttl small{font-size:10px;color:var(--g6);font-weight:400}
-.gr-3y-block table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+.gr-3y-block .gr-3y-ttl{padding:6px 12px;background:var(--g0);border-bottom:1px solid var(--g1);font-size: 0.6875rem;font-weight:700;color:var(--g7);position:sticky;left:0;display:flex;align-items:center;gap:8px}
+.gr-3y-block .gr-3y-ttl small{font-size: 0.625rem;color:var(--g6);font-weight:400}
+.gr-3y-block table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size: 0.75rem;font-variant-numeric:tabular-nums}
 .gr-3y-block th,.gr-3y-block td{padding:7px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);text-align:center;white-space:nowrap;background:#fff}
-.gr-3y-block thead th{background:#1565c0;color:#fff;font-weight:700;font-size:11px;position:sticky;top:0;z-index:2}
-.gr-3y-block th.gr-nm,.gr-3y-block td.gr-nm{position:sticky;left:0;z-index:1;text-align:left;background:#fff;min-width:120px;max-width:180px;border-right:2px solid var(--g2);font-weight:700;padding:7px 10px}
+.gr-3y-block thead th{background:#1565c0;color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:2}
+.gr-3y-block th.gr-nm,.gr-3y-block td.gr-nm{position:sticky;left:0;z-index:1;text-align:start;background:#fff;min-width:120px;max-width:180px;border-right:2px solid var(--g2);font-weight:700;padding:7px 10px}
 .gr-3y-block thead th.gr-nm{z-index:3;background:#1565c0;color:#fff}
-.gr-3y-block .gr-wt{font-weight:700;color:var(--g9);font-size:13px;line-height:1.25}
-.gr-3y-block .gr-bmi{font-size:10px;color:var(--g6);line-height:1.2;margin-top:1px}
+.gr-3y-block .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
+.gr-3y-block .gr-bmi{font-size: 0.625rem;color:var(--g6);line-height:1.2;margin-top:1px}
 .gr-3y-block .gr-em{color:var(--g5)}
-.gr-3y-block .gr-rm{color:var(--g6);font-size:10px;font-weight:400}
+.gr-3y-block .gr-rm{color:var(--g6);font-size: 0.625rem;font-weight:400}
 .gr-3y-block .gr-hl{background:#fff59d !important}
 
 /* API sync status badge (in header) */
-.api-bd{display:flex;align-items:center;gap:4px;font-size:10px;padding:3px 8px;border-radius:10px;
+.api-bd{display:flex;align-items:center;gap:4px;font-size: 0.625rem;padding:3px 8px;border-radius:10px;
   font-weight:700;transition:all .3s;white-space:nowrap}
 .api-ok{background:rgba(46,125,50,.28);color:#c8e6c9}
 .api-er{background:rgba(198,40,40,.30);color:#ffcdd2}
@@ -503,62 +503,62 @@ textarea{resize:vertical;min-height:60px}
 .spin{display:inline-block;animation:spin .8s linear infinite;line-height:1}
 /* 接続診断パネル：🩺 ボタンの結果 / 接続失敗時の詳細情報 */
 .api-diag{margin-top:10px;padding:10px 12px;background:#0d2031;color:#e1f1ff;border:1px solid #1e3a52;
-  border-radius:8px;font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  border-radius:8px;font-size: 0.6875rem;font-family:ui-monospace,Menlo,Consolas,monospace;
   white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;line-height:1.55}
 .api-diag.is-ok{border-color:#2e7d32;background:#0d2820}
 .api-diag.is-err{border-color:#c62828;background:#2a0d0d}
 .api-help{margin-top:12px;padding:10px 12px;background:var(--g0);border:1px solid var(--g2);
-  border-radius:8px;font-size:11px;color:var(--g7);line-height:1.7}
+  border-radius:8px;font-size: 0.6875rem;color:var(--g7);line-height:1.7}
 .api-help summary{cursor:pointer;font-weight:700;color:var(--g8);padding:2px 0}
 .api-help summary:hover{color:var(--pri-d)}
 .api-help ol{margin:8px 0 4px 18px;padding:0}
 .api-help li{margin-bottom:8px}
-.api-help code{background:var(--g1);padding:1px 5px;border-radius:4px;font-size:10px;
+.api-help code{background:var(--g1);padding:1px 5px;border-radius:4px;font-size: 0.625rem;
   font-family:ui-monospace,Menlo,Consolas,monospace}
 /* URL 保存済み ステータス表示（永続化されている事を視覚的に明示） */
-.api-persist-badge{display:inline-block;margin-left:8px;padding:2px 9px;font-size:10px;font-weight:700;
+.api-persist-badge{display:inline-block;margin-left:8px;padding:2px 9px;font-size: 0.625rem;font-weight:700;
   background:#e8f5e9;color:#1b5e20;border:1px solid #66bb6a;border-radius:10px;vertical-align:middle;
   letter-spacing:.5px}
 .api-persist-badge.is-partial{background:#fff8e1;color:#e65100;border-color:#ffb74d}
-.api-persist-detail{margin-top:6px;padding:6px 10px;font-size:11px;line-height:1.55;
+.api-persist-detail{margin-top:6px;padding:6px 10px;font-size: 0.6875rem;line-height:1.55;
   background:#f1f8e9;border:1px solid #c5e1a5;border-radius:6px;color:#33691e;
   font-family:ui-monospace,Menlo,Consolas,monospace}
 .api-persist-detail.is-partial{background:#fff3e0;border-color:#ffb74d;color:#e65100}
 
 /* 生年月日 三分割入力 + 和暦ヘルパー */
 .bd-trio{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.bd-trio input{font-family:inherit;font-size:14px;font-weight:700;text-align:center;
+.bd-trio input{font-family:inherit;font-size: 0.875rem;font-weight:700;text-align:center;
   padding:6px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:border-color .12s,box-shadow .12s;min-width:0}
 .bd-trio input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
 .bd-trio input.bd-err{border-color:var(--ng);box-shadow:0 0 0 3px rgba(198,40,40,.15)}
 .bd-trio #mdBirthY{width:64px}
 .bd-trio #mdBirthM,.bd-trio #mdBirthD{width:42px}
-.bd-trio .bd-sep{font-size:12px;color:var(--g6);font-weight:400}
-.bd-age{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--pri-d);
+.bd-trio .bd-sep{font-size: 0.75rem;color:var(--g6);font-weight:400}
+.bd-age{display:inline-block;margin-left:6px;font-size: 0.6875rem;font-weight:700;color:var(--pri-d);
   background:var(--pri-l);padding:1px 8px;border-radius:8px;vertical-align:baseline}
 .bd-age:empty{display:none}
-.bd-eras{margin-top:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:11px}
-.bd-era-lbl{color:var(--g6);font-size:10px;font-weight:700;margin-right:2px}
-.bd-era-b{font-family:inherit;font-size:11px;font-weight:700;padding:3px 9px;
+.bd-eras{margin-top:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size: 0.6875rem}
+.bd-era-lbl{color:var(--g6);font-size: 0.625rem;font-weight:700;margin-right:2px}
+.bd-era-b{font-family:inherit;font-size: 0.6875rem;font-weight:700;padding:3px 9px;
   border:1px solid var(--g3);border-radius:11px;background:#fff;color:var(--g8);
   cursor:pointer;transition:all .12s}
 .bd-era-b:hover{border-color:var(--pri);color:var(--pri-d);background:var(--pri-l)}
 .bd-era-b.on{background:var(--pri);color:#fff;border-color:var(--pri)}
-.bd-era-y{font-family:inherit;font-size:13px;font-weight:700;text-align:center;width:54px;
+.bd-era-y{font-family:inherit;font-size: 0.8125rem;font-weight:700;text-align:center;width:54px;
   padding:3px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:all .12s}
 .bd-era-y:disabled{background:var(--g1);color:var(--g5);cursor:not-allowed}
 .bd-era-y:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
-.bd-era-hint{font-size:10px;color:var(--g6);margin-left:4px}
+.bd-era-hint{font-size: 0.625rem;color:var(--g6);margin-left:4px}
 
 /* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
-.md-src-note{margin-top:6px;font-size:11px;line-height:1.5;color:var(--g6)}
+.md-src-note{margin-top:6px;font-size: 0.6875rem;line-height:1.5;color:var(--g6)}
 
 /* 退去者表示 */
 .md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
-  border-radius:8px;color:#e65100;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
-.md-discharge-banner .dc-ic{font-size:16px}
+  border-radius:8px;color:#e65100;font-size: 0.75rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.md-discharge-banner .dc-ic{font-size: 1rem}
 .md-discharge-banner .dc-msg{flex:1}
 /* mdDischarge ボタンは bn bo (orange) を継承 */
 #mdDischarge.is-restore{background:#fff;color:var(--ok);border-color:var(--ok)}
@@ -568,16 +568,16 @@ textarea{resize:vertical;min-height:60px}
 .rli.rli-discharged{opacity:.62;background:#fafafa}
 .rli.rli-discharged .rli-n{color:var(--g7)}
 .rli .rli-tag-discharged{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:8px;
-  font-size:10px;font-weight:700;background:#fff3e0;color:#e65100;vertical-align:middle}
+  font-size: 0.625rem;font-weight:700;background:#fff3e0;color:#e65100;vertical-align:middle}
 .rli-section-divider{margin:12px 0 6px;padding:6px 10px;border-top:1px dashed var(--g3);
-  font-size:11px;font-weight:700;color:var(--g6);background:transparent}
+  font-size: 0.6875rem;font-weight:700;color:var(--g6);background:transparent}
 
 /* dropdown の退去者表記 */
 select option.is-discharged{color:var(--g6)}
 
 /* ストレージ診断パネル */
 .storage-diag{margin-top:12px;padding:10px 12px;background:var(--g0);border:1px solid var(--g2);
-  border-radius:8px;font-size:11px;line-height:1.55}
+  border-radius:8px;font-size: 0.6875rem;line-height:1.55}
 .storage-diag .sd-row{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
 .storage-diag .sd-l{color:var(--g6);min-width:96px}
 .storage-diag .sd-v{color:var(--g9);font-weight:700;font-variant-numeric:tabular-nums}
@@ -591,11 +591,21 @@ select option.is-discharged{color:var(--g6)}
 .ld-ov.on{display:flex}
 .ld-ring{width:44px;height:44px;border:4px solid rgba(255,255,255,.3);
   border-top-color:#fff;border-radius:50%;animation:spin .75s linear infinite}
-.ld-msg{color:#fff;font-size:14px;font-weight:700}
-.ld-hint{color:rgba(255,255,255,.6);font-size:11px;margin-top:4px}
+.ld-msg{color:#fff;font-size: 0.875rem;font-weight:700}
+.ld-hint{color:rgba(255,255,255,.6);font-size: 0.6875rem;margin-top:4px}
 
 /* header layout shift: allow badge + date side-by-side */
 .hdr-r2{display:flex;align-items:center;gap:10px}
+
+/* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -603,9 +613,9 @@ select option.is-discharged{color:var(--g6)}
 <!-- 端末用途ガード（事務所PC専用。現場タブレットでは体重管理を開かせない＝誤操作防止） -->
 <div id="suDeviceBlock" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(255,255,255,.97);align-items:center;justify-content:center;padding:20px">
   <div style="max-width:440px;text-align:center;background:#fff;border:1px solid #e0e0e0;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18);padding:26px">
-    <div style="font-size:44px">🔒</div>
-    <h2 style="margin:8px 0;font-size:18px">この端末は現場用に設定されています</h2>
-    <p style="color:#666;font-size:14px;line-height:1.7">体重管理は<b>事務所PC</b>でご利用ください。</p>
+    <div style="font-size: 2.75rem">🔒</div>
+    <h2 style="margin:8px 0;font-size: 1.125rem">この端末は現場用に設定されています</h2>
+    <p style="color:#666;font-size: 0.875rem;line-height:1.7">体重管理は<b>事務所PC</b>でご利用ください。</p>
     <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #1a73e8;background:#fff;color:#1a73e8;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
   </div>
 </div>
@@ -679,12 +689,12 @@ select option.is-discharged{color:var(--g6)}
       </span>
     </div>
     <div class="mp-w">
-      <span style="font-size:12px;color:var(--g7);font-weight:700;margin-right:4px">対象月</span>
+      <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">対象月</span>
       <input type="month" id="listMonth">
       <button id="listMonthPrev">◀</button>
       <button id="listMonthNext">▶</button>
       <button id="listMonthNow" style="margin-left:6px">今月</button>
-      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--g7);margin-left:12px;cursor:pointer"><input type="checkbox" id="wrShowNonTarget">対象外も表示</label>
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size: 0.75rem;color:var(--g7);margin-left:12px;cursor:pointer"><input type="checkbox" id="wrShowNonTarget">対象外も表示</label>
     </div>
     <div class="srch">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -699,7 +709,7 @@ select option.is-discharged{color:var(--g6)}
       <table class="lt">
         <thead>
           <tr>
-            <th class="nm" style="text-align:left;padding-left:12px">入居者</th>
+            <th class="nm" style="text-align:start;padding-left:12px">入居者</th>
             <th>今月(kg)</th>
             <th>前月比</th>
             <th>6ヶ月比</th>
@@ -768,7 +778,7 @@ select option.is-discharged{color:var(--g6)}
         <button type="button" data-st="0.5">+0.5</button>
         <button type="button" data-st="1">+1.0</button>
       </div>
-      <div id="inWeightHint" style="font-size:11px;color:var(--g6);margin-top:6px;text-align:center"></div>
+      <div id="inWeightHint" style="font-size: 0.6875rem;color:var(--g6);margin-top:6px;text-align:center"></div>
     </div>
 
     <!-- 車椅子モード -->
@@ -787,14 +797,14 @@ select option.is-discharged{color:var(--g6)}
             <input type="number" id="inChair" step="0.1" min="1" max="50" inputmode="decimal" placeholder="0.0">
             <span class="unit">kg</span>
           </div>
-          <div style="font-size:10px;color:var(--g6);margin-top:4px;text-align:center" id="inChairHint"></div>
+          <div style="font-size: 0.625rem;color:var(--g6);margin-top:4px;text-align:center" id="inChairHint"></div>
         </div>
       </div>
       <div class="wc-calc" id="wcCalc">
         <div class="wc-eq">実測 — 車椅子 = 体重</div>
         <div class="wc-net"><span id="wcNet">—</span> <small>kg</small></div>
       </div>
-      <div id="inChairWeightHint" style="font-size:11px;color:var(--g6);margin-top:6px;text-align:center"></div>
+      <div id="inChairWeightHint" style="font-size: 0.6875rem;color:var(--g6);margin-top:6px;text-align:center"></div>
     </div>
 
     <!-- 食事形態（読み取り専用） — 編集は設定画面の入居者編集から -->
@@ -816,7 +826,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
 
     <button class="btn-go" id="inSave">記録を保存</button>
-    <div id="inExistsNote" style="text-align:center;margin-top:10px;font-size:12px;color:var(--warn-tx);font-weight:700"></div>
+    <div id="inExistsNote" style="text-align:center;margin-top:10px;font-size: 0.75rem;color:var(--warn-tx);font-weight:700"></div>
 
     <div class="iex-wrap" id="inExistingList"></div>
   </div>
@@ -866,7 +876,7 @@ select option.is-discharged{color:var(--g6)}
       <table class="ht" id="ivHist">
         <thead>
           <tr>
-            <th style="text-align:left;padding-left:10px">測定日</th>
+            <th style="text-align:start;padding-left:10px">測定日</th>
             <th>体重(kg)</th>
             <th>BMI</th>
             <th>前月比</th>
@@ -891,14 +901,14 @@ select option.is-discharged{color:var(--g6)}
       <span class="cd-t-r" id="gridMeta">—</span>
     </div>
     <div class="mp-w" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <span style="font-size:12px;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
+      <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
       <input type="month" id="gridMonth">
       <button id="gridMonthPrev">◀</button>
       <button id="gridMonthNext">▶</button>
       <button id="gridMonthNow" style="margin-left:6px">今月</button>
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
-    <div style="font-size:11px;color:var(--g6);margin-bottom:8px">
+    <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:8px">
       セルは「体重(kg) <small>(前月比)</small>」。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
       <b>氏名セル</b>…今月の入力画面を開く／<b>体重セル</b>…その記録を編集（空白は新規入力）
     </div>
@@ -913,8 +923,8 @@ select option.is-discharged{color:var(--g6)}
   <div class="mk-b" style="max-width:760px">
     <div class="mk-h" style="align-items:flex-start;gap:12px">
       <div style="flex:1;min-width:0">
-        <h3 style="font-size:15px;line-height:1.3">全入居者 一括入力</h3>
-        <div style="font-size:11px;color:var(--g6);margin-top:3px" id="bulkSub">—</div>
+        <h3 style="font-size: 0.9375rem;line-height:1.3">全入居者 一括入力</h3>
+        <div style="font-size: 0.6875rem;color:var(--g6);margin-top:3px" id="bulkSub">—</div>
       </div>
       <button class="mk-c" id="bulkClose" aria-label="閉じる">×</button>
     </div>
@@ -928,13 +938,13 @@ select option.is-discharged{color:var(--g6)}
           <label class="fl">対象月</label>
           <input type="month" id="bulkMonth">
         </div>
-        <div style="font-size:11px;color:var(--g6);padding-bottom:10px">
+        <div style="font-size: 0.6875rem;color:var(--g6);padding-bottom:10px">
           <div>空欄の行はスキップされます</div>
           <div>車椅子利用者は<b>実測値</b>（車椅子込み）を入力</div>
         </div>
       </div>
       <div class="bk-wrap" id="bulkList"></div>
-      <div id="bulkSummary" style="font-size:11px;color:var(--g7);margin-top:10px">入力済み: 0 名</div>
+      <div id="bulkSummary" style="font-size: 0.6875rem;color:var(--g7);margin-top:10px">入力済み: 0 名</div>
     </div>
     <div class="mk-f">
       <button class="bn bs" id="bulkCancel">キャンセル</button>
@@ -948,14 +958,14 @@ select option.is-discharged{color:var(--g6)}
   <div class="mk-b" style="max-width:920px">
     <div class="mk-h" style="align-items:flex-start;gap:12px">
       <div style="flex:1;min-width:0">
-        <h3 id="gr3yName" style="font-size:15px;line-height:1.3">—</h3>
-        <div style="font-size:11px;color:var(--g6);margin-top:3px" id="gr3yInfo">—</div>
+        <h3 id="gr3yName" style="font-size: 0.9375rem;line-height:1.3">—</h3>
+        <div style="font-size: 0.6875rem;color:var(--g6);margin-top:3px" id="gr3yInfo">—</div>
       </div>
       <button class="mk-c" id="gr3yClose" aria-label="閉じる">×</button>
     </div>
     <div class="mk-body">
       <div id="gr3yBlocks" class="gr-3y-blocks"></div>
-      <div style="font-size:10px;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
+      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
     </div>
   </div>
 </div>
@@ -967,7 +977,7 @@ select option.is-discharged{color:var(--g6)}
       <span>体重変動アラート</span>
       <span class="cd-t-r" id="alMeta">—</span>
     </div>
-    <div id="alRuleDesc" style="font-size:11px;color:var(--g7);background:var(--g0);padding:9px 11px;border-radius:8px;margin-bottom:12px;line-height:1.55"></div>
+    <div id="alRuleDesc" style="font-size: 0.6875rem;color:var(--g7);background:var(--g0);padding:9px 11px;border-radius:8px;margin-bottom:12px;line-height:1.55"></div>
     <div class="fc" id="alFilter">
       <button class="on" data-f="all">すべて</button>
       <button data-f="ng">警告のみ</button>
@@ -993,7 +1003,7 @@ select option.is-discharged{color:var(--g6)}
       <span>アラート検知ルール</span>
       <button class="bn bs bsm" id="thrReset" title="初期値に戻す">初期値に戻す</button>
     </div>
-    <div style="font-size:11px;color:var(--g6);margin-bottom:10px;line-height:1.5">
+    <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:10px;line-height:1.5">
       対象期間比で <b>kg または %</b> のいずれかが基準値以上のとき、該当レベルのアラートを出します。<br>
       項目を <b>0</b> にすると、その条件は無効になります（もう一方のみで判定）。
     </div>
@@ -1037,7 +1047,7 @@ select option.is-discharged{color:var(--g6)}
   <!-- Google Sheets (GAS Web App) 連携 -->
   <div class="cd">
     <div class="cd-t"><span>🌐 複数端末で共有（Google Sheets 連携）</span></div>
-    <div style="font-size:12px;color:var(--g7);line-height:1.6;margin-bottom:12px">
+    <div style="font-size: 0.75rem;color:var(--g7);line-height:1.6;margin-bottom:12px">
       Google Apps Script (GAS) で公開した Web App URL を登録すると、入居者・体重記録・検知ルールが<br>
       クラウド（Google Sheets）経由で他の端末と自動同期されます。
     </div>
@@ -1052,7 +1062,7 @@ select option.is-discharged{color:var(--g6)}
       <button class="bn bs bsm" id="btnApiSync">🔄 手動同期</button>
       <button class="bn br bsm" id="btnApiClear">🔌 連携解除</button>
     </div>
-    <div id="apiStatus" style="margin-top:10px;font-size:12px;color:var(--g6);line-height:1.55">
+    <div id="apiStatus" style="margin-top:10px;font-size: 0.75rem;color:var(--g6);line-height:1.55">
       GASをデプロイして取得したURLを入力して「URLを保存・接続」を押してください。
     </div>
     <!-- 診断結果パネル：🩺 ボタンや接続失敗時に表示される -->
@@ -1076,7 +1086,7 @@ select option.is-discharged{color:var(--g6)}
 
   <div class="cd">
     <div class="cd-t"><span>このアプリについて</span></div>
-    <div style="font-size:12px;color:var(--g7);line-height:1.7">
+    <div style="font-size: 0.75rem;color:var(--g7);line-height:1.7">
       データはお使いの端末（ブラウザ）に保存されます。別の端末で共有するには上記 Google Sheets 連携、<br>
       もしくはエクスポート/インポートを使用してください。<br>
       <span style="color:var(--g5)">version 1.1</span>
@@ -2935,7 +2945,7 @@ function _ensurePrintSheetStyle(){
     border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px}
   #printOverlay .ps-ttl{font-size:16pt;font-weight:700;letter-spacing:1px}
   #printOverlay .ps-sub{font-size:9pt;color:#333}
-  #printOverlay .ps-meta{font-size:9pt;text-align:right;line-height:1.55;color:#000}
+  #printOverlay .ps-meta{font-size:9pt;text-align:end;line-height:1.55;color:#000}
   #printOverlay table.ps-tbl{width:100%;border-collapse:collapse;table-layout:fixed;
     font-size:var(--ps-fz,11pt);font-variant-numeric:tabular-nums}
   #printOverlay table.ps-tbl th,#printOverlay table.ps-tbl td{border:1px solid #555;
@@ -2944,7 +2954,7 @@ function _ensurePrintSheetStyle(){
     line-height:1.15;padding:3px 2px;height:auto}
   #printOverlay table.ps-tbl td.no{width:22px;color:#555;font-size:var(--ps-fzh,10pt)}
   #printOverlay table.ps-tbl td.rm{width:32px;font-weight:700}
-  #printOverlay table.ps-tbl td.nm{text-align:left;padding-left:4px;font-weight:700;white-space:nowrap;
+  #printOverlay table.ps-tbl td.nm{text-align:start;padding-left:4px;font-weight:700;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
   #printOverlay .wcb{display:inline-block;margin-left:3px;padding:0 4px;background:#1565c0;
     color:#fff;border-radius:3px;font-size:var(--ps-wcb,8pt);vertical-align:middle}
@@ -3155,14 +3165,14 @@ function renderList(){
 
     const bmi = cur ? bmiOf(cur.weight, r.heightCm) : null;
     const bmiHtml = bmi!=null
-      ? `<div style="font-size:10px;color:${bmiCat(bmi).c};margin-top:2px">BMI ${bmi.toFixed(1)}</div>`
+      ? `<div style="font-size: 0.625rem;color:${bmiCat(bmi).c};margin-top:2px">BMI ${bmi.toFixed(1)}</div>`
       : '';
     // show the measurement date under the weight so users can see that the
     // value shown is the latest in the selected month (useful when a resident
     // has multiple measurements in the same month).
     const monthRecCount = cur ? DB.records.filter(x=> x.residentId===r.id && x.yearMonth===listMonth).length : 0;
     const dateSub = cur
-      ? `<div style="font-size:10px;color:var(--g6);margin-top:1px">${
+      ? `<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">${
           cur.measuredOn ? cur.measuredOn.slice(5).replace('-','/') : ymFmt(cur.yearMonth)
         }${monthRecCount>1 ? `<span style="margin-left:3px;padding:0 4px;background:var(--g1);color:var(--g7);border-radius:4px;font-weight:700">最新/${monthRecCount}件</span>` : ''}</div>`
       : '';
@@ -3171,7 +3181,7 @@ function renderList(){
       : `<span class="eb eb-m">未入力</span>`;
 
     const diffHtml = (d, p) => {
-      if(d===null || d===undefined) return '<span style="color:var(--g5);font-size:11px">—</span>';
+      if(d===null || d===undefined) return '<span style="color:var(--g5);font-size: 0.6875rem">—</span>';
       const cls = d>0 ? 'pos' : d<0 ? 'neg' : 'zero';
       const sign = d>0 ? '+' : '';
       return `<span class="df ${cls}">${sign}${d.toFixed(1)}kg<br>(${sign}${p.toFixed(1)}%)</span>`;
@@ -3297,7 +3307,7 @@ function renderGrid(){
         <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="この入居者の入力画面を開く">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
             <div style="min-width:0;flex:1">
-              <div style="font-size:13px;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
+              <div style="font-size: 0.8125rem;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
               ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
             </div>
             <div class="gr-btns">
@@ -3422,7 +3432,7 @@ function renderBulkList(){
   const residents = sortedResidents();
   $('#bulkSub').textContent = `測定日 ${date} / 対象月 ${ymFmt(ym)} / 登録 ${residents.length}名`;
   if(residents.length===0){
-    box.innerHTML = `<div style="padding:20px;text-align:center;color:var(--g6);font-size:12px">入居者が登録されていません</div>`;
+    box.innerHTML = `<div style="padding:20px;text-align:center;color:var(--g6);font-size: 0.75rem">入居者が登録されていません</div>`;
     updateBulkSummary();
     return;
   }
@@ -3434,7 +3444,7 @@ function renderBulkList(){
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
       const dstr = latestAny.measuredOn || ymFmt(latestAny.yearMonth);
-      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size:9px">${dstr}</div>`;
+      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size: 0.5625rem">${dstr}</div>`;
     }
     const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>` : '';
     const existBadge = existingRec ? `<span class="bk-ex">${date} に既存記録あり（上書き）</span>` : '';
@@ -3719,10 +3729,10 @@ function renderGrid3y(rid){
     const rowLabel = `<td class="gr-nm">体重(kg)<br><span class="gr-rm">(前月比)</span></td>`;
     const isLatest = (ci === chunks.length - 1);
     const badge = isLatest
-      ? `<span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size:10px;font-weight:700">直近12ヶ月</span>`
+      ? `<span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size: 0.625rem;font-weight:700">直近12ヶ月</span>`
       : (ci === 0
-          ? `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size:10px;font-weight:700">2〜3年前</span>`
-          : `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size:10px;font-weight:700">1〜2年前</span>`);
+          ? `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size: 0.625rem;font-weight:700">2〜3年前</span>`
+          : `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size: 0.625rem;font-weight:700">1〜2年前</span>`);
     html += `
       <div class="gr-3y-block">
         <div class="gr-3y-ttl">${badge}<span>${yearLabel}</span><small>（記録 ${blockFilled}件）</small></div>
@@ -3990,7 +4000,7 @@ function updateWeightHint(){
   const bmi = bmiOf(w, resident?.heightCm);
   const bmiPart = bmi!=null
     ? `<span class="bmi-b" style="background:#e3f2fd;color:var(--dn)">BMI ${bmi.toFixed(1)} <small style="font-weight:400">(${bmiCat(bmi).l})</small></span>`
-    : (w && rid && !resident?.heightCm ? `<span style="color:var(--g5);font-size:10px">（BMI算出には設定で身長登録が必要）</span>` : '');
+    : (w && rid && !resident?.heightCm ? `<span style="color:var(--g5);font-size: 0.625rem">（BMI算出には設定で身長登録が必要）</span>` : '');
   if(!rid || !ym || !w){ hint.innerHTML = bmiPart; return; }
   // Use the most recent INDIVIDUAL measurement (day-level) so daily/weekly
   // measurement users see the actual previous value, not last month's aggregate.
@@ -4689,7 +4699,7 @@ function drawStats(rid){
     : cell('BMI', '—', '身長を設定', '', 'color:var(--g5)');
 
   el.innerHTML =
-    cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size:11px;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
+    cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size: 0.6875rem;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
     bmiCell +
     cell('前月比', a?.diff1!=null ? `${a.diff1>0?'+':''}${a.diff1.toFixed(1)}` : '—',
          a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : '', d1Cls) +
@@ -4797,14 +4807,14 @@ function drawHist(rid){
     const dateLabel = moLabel +
                       `<br><small style="color:var(--g6);font-weight:400">入力 ${stampLabel}${updatedTag}</small>`;
     tr.innerHTML = `
-      <td style="text-align:left;padding-left:10px">${dateLabel}</td>
+      <td style="text-align:start;padding-left:10px">${dateLabel}</td>
       <td><b>${r.weight.toFixed(1)}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
       <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${r.stapleAmount}g</span>`:''}</td>
       <td>${sideLabel(r.sideForm)}</td>
       <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') || '<span style="color:var(--g5)">—</span>'}</td>
-      <td style="text-align:left;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
+      <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
         <button class="bn bo bsm" data-edit-id="${r.id}">編集</button>
         <button class="bn br bsm" data-del-id="${r.id}">削除</button>

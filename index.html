@@ -69,9 +69,9 @@ body {
   padding-right: max(16px, env(safe-area-inset-right));
   box-shadow: var(--sh);
 }
-.hdr h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+.hdr h1 { margin: 0; font-size: 1.1875rem; font-weight: 700; letter-spacing: .02em; }
 /* opacity を掛けると白が --pri と合成され 4.06:1 まで落ちて AA を割るため、白のまま使う（4.50:1） */
-.hdr .sub { margin: 2px 0 0; font-size: 12px; }
+.hdr .sub { margin: 2px 0 0; font-size: 0.75rem; }
 
 main {
   /* 2列を保つため幅を抑える（広げて3列にすると指定のペアが分断される。M-2 参照） */
@@ -83,11 +83,11 @@ main {
 .sec { margin: 0 0 26px; }
 .sec > h2 {
   margin: 0 0 10px; padding: 0 2px 6px;
-  font-size: 15px; font-weight: 700; color: var(--g7);
+  font-size: 0.9375rem; font-weight: 700; color: var(--g7);
   border-bottom: 2px solid var(--g2);
   display: flex; align-items: center; gap: 7px;
 }
-.sec > h2 .mk { font-size: 17px; }
+.sec > h2 .mk { font-size: 1.0625rem; }
 
 /* ── タイル配置 ──
    指定の並び順どおりに左上から流し込む。★列数は常に2で固定する。
@@ -109,10 +109,10 @@ main {
 .tile:active { transform: scale(.97); }
 /* HIG: フォーカスリングを消さない（キーボード操作の到達性） */
 .tile:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
-.tile .ic { font-size: 28px; line-height: 1; }
-.tile .nm { font-size: 13.5px; font-weight: 700; }
+.tile .ic { font-size: 1.75rem; line-height: 1; }
+.tile .nm { font-size: 0.84375rem; font-weight: 700; }
 /* --g6(#80868b) は白地で 3.68:1 と AA(4.5:1) を下回るため --g7(#5f6368)=5.96:1 を使う */
-.tile .note { font-size: 11px; color: var(--g7); font-weight: 400; }
+.tile .note { font-size: 0.6875rem; color: var(--g7); font-weight: 400; }
 
 /* 別サイトへ移動するタイルの目印。色だけに意味を持たせず「↗」と注記を併用する（HIG） */
 .tile.ext .nm::after { content: " ↗"; color: var(--g7); font-weight: 400; }
@@ -120,7 +120,7 @@ main {
 .foot {
   max-width: 620px; margin: 6px auto 0;   /* main と同じ幅に揃える */
   padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
-  font-size: 11.5px; color: var(--g7);
+  font-size: 0.71875rem; color: var(--g7);
 }
 
 @media (prefers-reduced-motion: reduce) {

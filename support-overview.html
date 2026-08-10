@@ -40,7 +40,7 @@
 html, body { height: 100%; }
 body {
   font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
-  font-size: 14px; color: var(--g9); background: var(--g1);
+  font-size: 0.875rem; color: var(--g9); background: var(--g1);
   display: flex; flex-direction: column; overflow: hidden;
 }
 
@@ -50,19 +50,19 @@ body {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: wrap;
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
 }
-.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
-.hdr-sub { font-size: 11px; opacity: .9; white-space: nowrap; }
+.hdr-title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; }
+.hdr-sub { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
 .hdr-sp { flex: 1; }
 .hdr-ctl { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.hdr-ctl label { font-size: 11px; opacity: .9; }
+.hdr-ctl label { font-size: 0.6875rem; opacity: .9; }
 .hdr-sel {
   min-height: 44px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
-  color: #fff; border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;
+  color: #fff; border-radius: 6px; padding: 4px 8px; font-size: 0.8125rem; cursor: pointer;
 }
 .hdr-sel option { color: #202124; }
 .hdr-btn {
   min-height: 44px; min-width: 44px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
-  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 0.8125rem; cursor: pointer;
   white-space: nowrap;
 }
 .hdr-btn:hover { background: rgba(255,255,255,.28); }
@@ -75,13 +75,13 @@ body {
 .seg-btn:first-child { border-radius: 6px 0 0 6px; }
 .seg-btn:last-child { border-radius: 0 6px 6px 0; border-left: none; }
 .seg-btn[aria-pressed="true"] { background: #fff; color: var(--pri-d); font-weight: 700; }
-.sync-state { font-size: 11px; opacity: .9; white-space: nowrap; }
+.sync-state { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
 
 /* ===== 凡例 ===== */
 .legend {
   flex-shrink: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 5px 12px; background: #fff; border-bottom: 1px solid var(--g3);
-  font-size: 11px; color: var(--g7);
+  font-size: 0.6875rem; color: var(--g7);
 }
 .lg { display: inline-flex; align-items: center; gap: 4px; }
 .lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--g3); flex-shrink: 0; }
@@ -106,13 +106,13 @@ body {
 }
 .b-head {
   padding: 5px 2px; text-align: center; border-right: 1px solid var(--g3);
-  font-size: 12px; line-height: 1.3; background: #fff;
+  font-size: 0.75rem; line-height: 1.3; background: #fff;
 }
-.b-head:first-child { position: sticky; left: 0; z-index: 2; background: var(--g0); font-size: 11px; color: var(--g6); }
-.b-head .h-day { font-weight: 700; font-size: 14px; }
+.b-head:first-child { position: sticky; left: 0; z-index: 2; background: var(--g0); font-size: 0.6875rem; color: var(--g6); }
+.b-head .h-day { font-weight: 700; font-size: 0.875rem; }
 .b-head .h-sat { color: #1565c0; }   /* 土=青 */
 .b-head .h-sun { color: #c0392b; }   /* 日=赤 */
-.b-head .h-cnt { display: block; font-size: 11px; color: var(--g6); font-weight: 400; margin-top: 1px; }
+.b-head .h-cnt { display: block; font-size: 0.6875rem; color: var(--g6); font-weight: 400; margin-top: 1px; }
 .b-head .h-cnt.zero { color: var(--ok); font-weight: 700; }   /* 0枠=空き日として強調 */
 .b-head .h-cnt.nodata { color: var(--g5); }                    /* データなし=中立 */
 
@@ -125,10 +125,10 @@ body {
   background: var(--g0); border-right: 1px solid var(--g3);
 }
 .tick {
-  position: absolute; right: 4px; left: 0; font-size: 10px; color: var(--g6);
-  text-align: right; transform: translateY(-50%);
+  position: absolute; right: 4px; left: 0; font-size: 0.625rem; color: var(--g6);
+  text-align: end; transform: translateY(-50%);
 }
-.tick.hour { font-weight: 700; color: var(--g8); font-size: 11px; }
+.tick.hour { font-weight: 700; color: var(--g8); font-size: 0.6875rem; }
 .b-lane {
   position: relative; height: var(--canvasH); border-right: 1px solid var(--g3);
   background-color: #fff;
@@ -142,16 +142,16 @@ body {
 .b-empty-slot {
   position: absolute; z-index: 5; left: 2px; right: 2px;
   border: 1px dashed var(--ok); border-radius: 6px; background: rgba(46,125,50,.05);
-  color: var(--ok); font-size: 10px; font-weight: 700;
+  color: var(--ok); font-size: 0.625rem; font-weight: 700;
   display: flex; align-items: center; justify-content: center; gap: 3px;
   overflow: hidden; pointer-events: none;
 }
-.b-empty-slot::before { content: "\25CB"; font-size: 9px; }   /* ○ = 色以外の手掛かり */
+.b-empty-slot::before { content: "\25CB"; font-size: 0.5625rem; }   /* ○ = 色以外の手掛かり */
 
 /* ===== 支援枠カード ===== */
 .b-task {
   position: absolute; z-index: 10; border-radius: 6px; border: 1px solid var(--g3);
-  font-size: 10.5px; line-height: 1.2; padding: 2px 4px 2px 7px; overflow: hidden;
+  font-size: 0.65625rem; line-height: 1.2; padding: 2px 4px 2px 7px; overflow: hidden;
   box-shadow: var(--sh-flat);
 }
 .b-task.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); --bar-color: var(--c-phys-b); }
@@ -171,11 +171,11 @@ body {
      transparent var(--fill, 100%), transparent 100%);
   opacity: .9;
 }
-.b-task .t-name { font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.b-task .t-code { font-size: 10px; color: var(--g8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-task .t-name { font-weight: 700; font-size: 0.6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-task .t-code { font-size: 0.625rem; color: var(--g8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .b-task .t-badge {
   position: absolute; top: 1px; right: 2px;
-  font-size: 9px; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 0.5625rem; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums;
   color: var(--g7); background: rgba(255,255,255,.82);
   border-radius: 4px; padding: 0 3px; pointer-events: none;
 }
@@ -186,13 +186,13 @@ body {
 .board-empty {
   position: absolute; inset: 0; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 12px; color: var(--g6);
-  font-size: 14px; text-align: center; padding: 24px;
+  font-size: 0.875rem; text-align: center; padding: 24px;
 }
 .board-empty.on { display: flex; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
-  font-size: 13px; z-index: 300; display: none; max-width: 90%;
+  font-size: 0.8125rem; z-index: 300; display: none; max-width: 90%;
   box-shadow: 0 4px 16px rgba(0,0,0,.3);
 }
 #toast.ng { background: var(--ng); }
@@ -239,7 +239,7 @@ body {
 .ovsw { display: inline-flex; border: 1px solid rgba(93,51,0,.42); border-radius: 8px; overflow: hidden; }
 .ovsw-btn {
   min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 14px; font-size: 13px; font-weight: 700; text-decoration: none; color: #5f3300;
+  padding: 0 14px; font-size: 0.8125rem; font-weight: 700; text-decoration: none; color: #5f3300;
   background: transparent; white-space: nowrap; cursor: pointer;
 }
 .ovsw-btn + .ovsw-btn { border-left: 1px solid rgba(93,51,0,.42); }
@@ -250,11 +250,11 @@ body {
 .ovcmp { text-decoration: none; }
 .ovzoom { display: inline-flex; align-items: center; gap: 2px; }
 .ovzoom .hdr-btn { min-width: 44px; padding: 6px 10px; }
-.ovz-lv { min-width: 46px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ovz-lv { min-width: 46px; text-align: center; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 /* 即時ツールチップ（ネイティブ title の約1秒待ち・小ささを解消） */
 #ovTip {
   position: fixed; z-index: 400; max-width: 300px; display: none;
-  background: var(--g9); color: #fff; font-size: 13px; line-height: 1.35;
+  background: var(--g9); color: #fff; font-size: 0.8125rem; line-height: 1.35;
   padding: 7px 10px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.32);
   pointer-events: none; white-space: normal; word-break: break-word;
 }

@@ -41,10 +41,10 @@ body {
   padding-right: max(16px, env(safe-area-inset-right));
   box-shadow: var(--sh);
 }
-.hdr h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .02em; }
-.hdr .sub { margin: 2px 0 0; font-size: 12px; }
+.hdr h1 { margin: 0; font-size: 1.125rem; font-weight: 700; letter-spacing: .02em; }
+.hdr .sub { margin: 2px 0 0; font-size: 0.75rem; }
 /* 見た目は変えずにタップ領域だけ44px級へ広げる（HIG） */
-.hdr .back { color: #fff; font-size: 12px; text-decoration: none; display: inline-block; padding: 10px 12px 10px 0; margin: -10px 0 -4px 0; }
+.hdr .back { color: #fff; font-size: 0.75rem; text-decoration: none; display: inline-block; padding: 10px 12px 10px 0; margin: -10px 0 -4px 0; }
 .hdr .back:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 .ctl { max-width: 860px; margin: 12px auto 0; padding: 0 12px; }
@@ -54,21 +54,21 @@ body {
 }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .fld { display: flex; flex-direction: column; gap: 4px; flex: 1 1 170px; min-width: 0; }
-.fld label { font-size: 12px; font-weight: 700; color: var(--g7); }
+.fld label { font-size: 0.75rem; font-weight: 700; color: var(--g7); }
 .fld input, .fld select {
-  font: inherit; font-size: 16px;           /* iOS で拡大されないよう16px以上 */
+  font: inherit; font-size: 1rem;           /* iOS で拡大されないよう16px以上 */
   padding: 9px 10px; min-height: 44px;      /* HIG: タップ領域44px以上 */
   border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
   width: 100%;
 }
 .fld input:focus-visible, .fld select:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
-.hint { font-size: 11.5px; color: var(--g7); margin: 6px 0 0; }
+.hint { font-size: 0.71875rem; color: var(--g7); margin: 6px 0 0; }
 /* 共通パレットの --warn-tx(#e65100) は --warn-bg 上で 3.6:1 と AA(4.5:1) を割るため濃い色を使う */
 .hint.warn { background: var(--warn-bg); color: #bf360c; padding: 7px 9px; border-radius: 8px; font-weight: 700; }
 
 .nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .btn {
-  font: inherit; font-size: 14px; font-weight: 700;
+  font: inherit; font-size: 0.875rem; font-weight: 700;
   min-height: 44px; padding: 10px 14px;
   border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
   cursor: pointer; transition: background .12s ease, border-color .12s ease;
@@ -78,7 +78,7 @@ body {
 .btn:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
 .btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
 .btn.pri:hover { background: var(--pri-d); border-color: var(--pri-d); }
-.nav .now { font-size: 16px; font-weight: 700; min-width: 8.5em; text-align: center; }
+.nav .now { font-size: 1rem; font-weight: 700; min-width: 8.5em; text-align: center; }
 .nav .sp { flex: 1 1 auto; }
 
 /* ══════════ 用紙（画面でも印刷と同じ寸法で見せる） ══════════ */
@@ -327,7 +327,7 @@ var BACK_SRC = (function () {
 })();
 
 /* 背中の図を1枚作る。no を渡すとその番号を枠で囲む。
-   図は必ず <img> で置く（背景画像にすると「背景のグラフィックを印刷」を
+   図は必ず <img alt=""> で置く（背景画像にすると「背景のグラフィックを印刷」を
    切っている環境で図だけ消えた紙が出るため）。 */
 function backFig(no, isOff) {
   var svg = document.createElementNS(SVGNS, 'svg');
