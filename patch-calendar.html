@@ -74,6 +74,7 @@ body {
   cursor: pointer; transition: background .12s ease, border-color .12s ease;
 }
 .btn:hover { border-color: var(--pri); background: var(--pri-l); }
+.btn:active { background: var(--pri-l); }   /* hover が効かないタッチ端末での押下フィードバック */
 .btn:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
 .btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
 .btn.pri:hover { background: var(--pri-d); border-color: var(--pri-d); }
@@ -84,6 +85,7 @@ body {
 .wrap { padding: 0 12px 28px; display: flex; justify-content: center; }
 .sheet {
   width: 194mm;                 /* A4縦 210mm − 余白8mm×2 */
+  flex: 0 0 auto;               /* 狭い画面で横に潰れないよう縮小を禁じる（.wrap は横スクロール） */
   height: 279mm;                /* 297mm − 8mm×2 から1mm余らせて2枚目送りを防ぐ */
   background: #fff; color: #000;
   overflow: hidden;
@@ -91,13 +93,12 @@ body {
   box-shadow: 0 2px 14px rgba(0,0,0,.22);
 }
 
-/* ── 貼付部位の図（画像＋赤枠のオーバーレイ）──
-   赤枠は画像の上に % 指定で重ねる。画像と枠がずれないよう、
-   入れ物は必ず画像と同じ縦横比（336:368）にして余白が出ないようにする */
-.fig { position: relative; aspect-ratio: 336 / 368; }
-.fig img { width: 100%; height: 100%; display: block; }
-.fig .mk { position: absolute; border: .7mm solid var(--mark); border-radius: 1mm; }
-.fig .mk.off { border-style: dashed; }   /* はがす場所（貼る場所と区別する） */
+/* ── 貼付部位の図 ──
+   画像と赤枠を1つの SVG に入れ、枠の座標を画像のピクセル座標で持つ。
+   こうすると入れ物の縦横比がどうであれ枠は必ず番号の上に乗り、図も歪まない
+   （CSS で画像に枠を重ねる方式は、幅と高さの制約が競合すると図が伸びる）。 */
+.fig-svg { display: block; }
+.fig-svg image { image-rendering: auto; }
 
 /* ── 用紙上部：見出し・順番図・注意書き ── */
 .sh-top { flex: 0 0 auto; }
@@ -115,6 +116,7 @@ body {
 .sh-body { display: flex; gap: 4mm; margin-top: 2mm; align-items: stretch; }
 .gbox { flex: 0 0 50mm; border: .4mm solid #000; padding: 1mm; display: flex; flex-direction: column; }
 .gbox .cap { font-size: 3.4mm; font-weight: 800; text-align: center; background: #efefef; padding: .6mm 0; margin-bottom: 1mm; }
+.gbox .fig-svg { width: 100%; height: auto; }
 .notes { flex: 1 1 auto; font-size: 3.1mm; line-height: 1.55; display: flex; flex-direction: column; }
 .notes .big { font-size: 3.6mm; font-weight: 800; }
 .notes .ln { display: block; }
@@ -122,6 +124,8 @@ body {
 .notes .legend { margin-top: auto; border: .4mm solid #000; padding: 1.6mm 2mm; display: flex; gap: 2.5mm; align-items: center; flex-wrap: wrap; }
 .notes .legend .sw { width: 6.5mm; height: 6.5mm; border: .7mm solid var(--mark); border-radius: 1mm; flex: 0 0 auto; }
 .notes .legend .sw.off { border-style: dashed; }
+/* 手書きチェック欄の見本（カレンダーの □ と同じ見た目にする） */
+.notes .legend .sw.box { border: .4mm solid #000; border-radius: .6mm; width: 5mm; height: 5mm; }
 .notes .legend b { font-size: 3.1mm; }
 
 /* ── 用紙下部：カレンダー ── */
@@ -151,7 +155,7 @@ body {
 .cell .cyc.off { background: #fff; color: #b00; border: .35mm solid #b00; }
 .cell .sp { flex: 1 1 auto; }
 .cell .cb { width: 4.2mm; height: 4.2mm; border: .4mm solid #000; border-radius: .6mm; flex: 0 0 auto; }
-.cell .fig { flex: 1 1 0; min-height: 0; max-width: 100%; margin: .3mm 0; }
+.cell .fig-svg { flex: 1 1 0; min-height: 0; width: 100%; margin: .3mm 0; }
 .cell .lb { font-size: 2.7mm; font-weight: 700; text-align: center; line-height: 1.1; white-space: nowrap; }
 .cell.empty .cb { visibility: hidden; }
 /* 図が1つも入らない週（貼付開始より前など）は高さを詰め、実際に使う日の図を大きく取る */
@@ -234,7 +238,7 @@ body {
       <div class="sh-body">
         <div class="gbox">
           <div class="cap">背中（貼る順番）</div>
-          <div class="fig" id="guide"></div>
+          <div id="guide"></div>
         </div>
         <div class="notes">
           <span class="ln big">アリドネ<sup>®</sup>パッチは 1日1回1枚。<b>1→2→…→8</b> の順に貼り、8が終わったら再び1に戻ります。</span>
@@ -245,6 +249,7 @@ body {
           <div class="legend">
             <span class="sw" aria-hidden="true"></span><b>赤い枠＝その日に貼る場所</b>
             <span class="sw off" aria-hidden="true"></span><b>点線の枠＝はがす場所</b>
+            <span class="sw box" aria-hidden="true"></span><b>貼り替えたら□にチェック</b>
           </div>
         </div>
       </div>
@@ -283,15 +288,20 @@ var SITES = [
 ];
 var CYCLE = SITES.length;                 /* 8箇所を順に一巡 */
 
-/* 番号枠の位置（切り出した画像に対する%）。画像から実測した値。
-   赤枠はこれより少し外側に描いて、番号枠を囲む形にする。 */
-var COLS = [31.85, 56.55];                            /* 左列・右列の左端 */
-var ROWS = [15.49, 38.04, 56.52, 75.00];              /* 1〜4段目の上端 */
-var BW = 11.90, BH = 10.60;                           /* 番号枠の幅・高さ */
-var PAD_X = 3.0, PAD_Y = 2.8;                         /* 赤枠のふくらみ */
+/* 番号枠の位置。画像そのもののピクセル座標で持つ（画像から実測した値）。
+   赤枠はこれより PAD だけ外側に描いて、番号枠を囲む形にする。 */
+var IMG_W = 336, IMG_H = 368;                         /* 切り出した画像の寸法 */
+var COLS = [107, 190];                                /* 左列・右列の左端 */
+var ROWS = [57, 140, 208, 276];                       /* 1〜4段目の上端 */
+var BW = 40, BH = 39;                                 /* 番号枠の幅・高さ */
+var PAD = 10;                                         /* 赤枠のふくらみ */
+var SVGNS = 'http://www.w3.org/2000/svg';
 
-/* 開始日・番号の localStorage 保存は承認済み例外（2026-08-08 代表承認）。氏名は保存しない。
-   旧版（8日サイクル・胸/上腕を含む）の apc_* とはキーを分け、古い設定を引き継がない。 */
+/* localStorage に置くのは開始日・開始番号・前日の場所だけ（原則11の承認済み例外は
+   2026-08-08 に開始日について得ている。番号・前日の場所も同種の非個人情報の設定値）。
+   氏名は保存しない。
+   旧版（8日サイクル・胸/上腕を含む）の apc_* とはキーを分け、古い設定を引き継がない。
+   番号の意味が変わったため、旧設定を引き継ぐと誤った表になるため。 */
 var LS_START = 'apc2_start';              /* 開始日 */
 var LS_NO    = 'apc2_no';                 /* 開始日に貼る番号 */
 var LS_PREV  = 'apc2_prev';               /* 前日に貼ってある場所（0=なし） */
@@ -320,24 +330,39 @@ var BACK_SRC = (function () {
    図は必ず <img> で置く（背景画像にすると「背景のグラフィックを印刷」を
    切っている環境で図だけ消えた紙が出るため）。 */
 function backFig(no, isOff) {
-  var box = document.createElement('div');
-  box.className = 'fig';
-  var im = document.createElement('img');
-  im.src = BACK_SRC;
-  im.alt = no ? ('背中の図：' + no + '番' + (isOff ? '（はがす場所）' : '（貼る場所）'))
-              : '背中の貼付箇所8か所の順番図';
-  box.appendChild(im);
+  var svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('class', 'fig-svg');
+  svg.setAttribute('viewBox', '0 0 ' + IMG_W + ' ' + IMG_H);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');   /* 入れ物の比が違っても歪ませない */
+  svg.setAttribute('role', 'img');
+  var ttl = document.createElementNS(SVGNS, 'title');
+  ttl.textContent = no ? ('背中の図：' + no + '番' + (isOff ? '（はがす場所）' : '（貼る場所）'))
+                       : '背中の貼付箇所8か所の順番図';
+  svg.appendChild(ttl);
+
+  var im = document.createElementNS(SVGNS, 'image');
+  im.setAttribute('x', '0'); im.setAttribute('y', '0');
+  im.setAttribute('width', IMG_W); im.setAttribute('height', IMG_H);
+  im.setAttribute('href', BACK_SRC);
+  /* 古い WebKit 向けに xlink 版も付ける */
+  im.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', BACK_SRC);
+  svg.appendChild(im);
+
   if (no) {
     var c = (no - 1) % 2, r = Math.floor((no - 1) / 2);
-    var mk = document.createElement('i');
-    mk.className = 'mk' + (isOff ? ' off' : '');
-    mk.style.left   = (COLS[c] - PAD_X) + '%';
-    mk.style.top    = (ROWS[r] - PAD_Y) + '%';
-    mk.style.width  = (BW + PAD_X * 2) + '%';
-    mk.style.height = (BH + PAD_Y * 2) + '%';
-    box.appendChild(mk);
+    var rc = document.createElementNS(SVGNS, 'rect');
+    rc.setAttribute('x', COLS[c] - PAD);
+    rc.setAttribute('y', ROWS[r] - PAD);
+    rc.setAttribute('width', BW + PAD * 2);
+    rc.setAttribute('height', BH + PAD * 2);
+    rc.setAttribute('rx', '4');
+    rc.setAttribute('fill', 'none');
+    rc.setAttribute('stroke', '#e0002a');
+    rc.setAttribute('stroke-width', '7');
+    if (isOff) rc.setAttribute('stroke-dasharray', '15 10');   /* はがす場所は点線で区別 */
+    svg.appendChild(rc);
   }
-  return box;
+  return svg;
 }
 
 /* ── 日付ユーティリティ ──
@@ -396,6 +421,12 @@ function loadState() {
   state.no    = okN !== null ? okN : DEFAULT_NO;
   state.prev  = okP !== null ? okP : DEFAULT_PREV;
 
+  /* 旧版（胸・上腕を含む8日サイクル）の設定は意味が変わったので端末から掃除する */
+  try {
+    localStorage.removeItem('apc_start');
+    sessionStorage.removeItem('apc_month');
+  } catch (e) { /* 消せなくても新版は読まないので実害はない */ }
+
   var t = new Date(), cur = { y: t.getFullYear(), m: t.getMonth() + 1 };
   var ss = null;
   try { ss = sessionStorage.getItem(SS_MONTH); } catch (e) { ss = null; }
@@ -439,10 +470,7 @@ function fillSelects() {
 }
 
 /* 上部の順番図。番号は図に描かれているので枠は付けない */
-function renderGuide() {
-  var f = backFig(0, false);
-  el.guide.appendChild(f.firstChild);     /* 画像だけを既存の .fig に入れる */
-}
+function renderGuide() { el.guide.appendChild(backFig(0, false)); }
 
 function renderCalendar() {
   var y = state.y, m = state.m, startMs = state.start.ms;
@@ -507,7 +535,7 @@ function renderCalendar() {
       }
       wk.appendChild(cell);
     }
-    if (!wk.querySelector('.fig')) wk.className += ' blank';   /* 図が無い週は詰める */
+    if (!wk.querySelector('.fig-svg')) wk.className += ' blank';   /* 図が無い週は詰める */
     el.weeks.appendChild(wk);
   }
 }
@@ -532,6 +560,9 @@ function renderHeaderInfo() {
     msg = '⚠ 開始日と場所は初期値です。印刷する前に、実際の貼付予定と合っているか必ず確認してください。 ';
   } else if (state.canSave === false) {
     msg = '⚠ この端末では設定を記憶できません。開き直すたびに入力し直してください。 ';
+  } else if (state.prev === state.no) {
+    /* 前日と同じ場所に貼る表になっている＝同一部位への連日貼付。気づかせて止める */
+    msg = '⚠ 前日の場所と開始日の場所が同じ' + state.no + '番です。同じ場所へ2日続けて貼る表になります。どちらかを直してください。 ';
   }
   el.sthint.className = msg ? 'hint warn' : 'hint';
   el.sthint.textContent = msg + base;
@@ -582,6 +613,9 @@ el.nm.addEventListener('input', function () { el.pnm.textContent = el.nm.value.t
 el.st.addEventListener('change', function () {
   var p = parseISODate(el.st.value);
   if (!p) { el.st.value = state.start.iso; return; }   /* 不正な日付は反映せず直前の値へ戻す */
+  /* 開始日を別の日に変えたら「前日に貼ってある場所」は前の設定のままにしない。
+     古い値のまま残すと、実際とは違う場所を「はがす場所」として印字してしまう */
+  if (p.iso !== state.start.iso) state.prev = 0;
   state.start = p; saveSettings(); render();
 });
 el.no.addEventListener('change', function () {
