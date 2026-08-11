@@ -91,7 +91,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .fg{margin-bottom:14px}
 .fl{display:block;font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:7px}
 .fl .req{color:var(--ng);margin-left:3px}
-input[type="text"],input[type="number"],input[type="month"],input[type="date"],textarea{
+input[type="text"],input[type="number"],input[type="month"],input[type="date"],input[type="password"],textarea{
   width:100%;padding:11px 12px;border:2px solid var(--g2);border-radius:8px;
   font-size: 0.9375rem;font-family:inherit;color:var(--g9);background:#fff;
   transition:border-color .2s;-webkit-appearance:none}
@@ -1056,6 +1056,11 @@ select option.is-discharged{color:var(--g6)}
       <input type="text" id="cfgApi" placeholder="https://script.google.com/macros/s/〇〇〇/exec">
       <div id="apiPersistDetail" class="api-persist-detail" style="display:none"></div>
     </div>
+    <div class="fg">
+      <label class="fl" for="cfgApiToken">合言葉（サーバー側で設定している場合のみ）</label>
+      <input type="password" id="cfgApiToken" autocomplete="off" placeholder="未設定なら空のままで構いません">
+      <div id="apiAuthNote" style="margin-top:6px;font-size:0.75rem;color:var(--g6);line-height:1.55"></div>
+    </div>
     <div class="ex-r">
       <button class="bn bp bsm" id="btnApiSave">💾 URLを保存・接続</button>
       <button class="bn bo bsm" id="btnApiDiagnose">🩺 接続診断</button>
@@ -1492,12 +1497,30 @@ setTimeout(()=>{
    — if the network fails they are queued in LS_PQ and replayed
    on the next successful sync.
    Data shape exchanged with the API:
-     GET  ?action=getAll  -> { residents:[], records:[], thresholds:{} }
-     POST { action, resident?, record?, id?, thresholds? }
-   Action names: saveResident | delResident | saveRecord | delRecord | saveThr
+     GET  ?action=getAll  -> { residents:[], records:[], thresholds:{} }   （旧サーバー向け）
+     POST { action, token?, resident?, record?, id?, thresholds? }
+     GET  （action なし）  -> { ok, ver, caps[], authRequired }            （疎通確認・版2から）
+   Action names: getAll | saveResident | delResident | saveRecord | delRecord | saveThr
    ============================================================ */
 const API_KEY = 'wtmgr_api_url';
 const LS_PQ   = 'wtmgr_pq_v1';
+
+/* 合言葉（サーバー側の書き込み・取得の認証）。
+   ★URL と違い三層バックアップにしない。資格情報を DB（同期対象のデータ塊）へ載せると、
+     バックアップの書き出しや端末間の受け渡しに合言葉が紛れ込むため、この端末の
+     localStorage 1箇所だけに置く。消えたら設定画面で入れ直す（データは失われない）。 */
+const API_TOKEN_KEY = 'wtmgr_api_token';
+let apiToken = '';
+function loadApiToken_(){ try{ return localStorage.getItem(API_TOKEN_KEY) || ''; }catch(e){ return ''; } }
+/* 保存は読み戻して確認する（プライベートモード等では setItem が例外にならず残らない）。 */
+function saveApiToken_(v){
+  apiToken = String(v || '').trim();
+  try{
+    if(apiToken) localStorage.setItem(API_TOKEN_KEY, apiToken);
+    else localStorage.removeItem(API_TOKEN_KEY);
+    return (localStorage.getItem(API_TOKEN_KEY) || '') === apiToken;
+  }catch(e){ return false; }
+}
 
 /* GAS Web App URL の永続化（三層独立バックアップ）
    ------------------------------------------------------------
@@ -1753,8 +1776,78 @@ async function _parseApiResponse(r){
   throw e;
 }
 
+/* ── サーバーの能力宣言（版2から）──
+   GAS が「送っていない項目を温存する（fieldMerge）」に対応しているかを疎通確認で観測し、
+   観測できるまでは従来どおり全項目を送る。先に部分送信へ切り替えると、旧サーバーでは
+   送らなかった項目が空になる＝直そうとした事故をこちらから起こすことになる
+   （多端末同期規約 原則7：能力宣言を観測してから新経路へ移る）。 */
+let apiCaps = { ver: 0, caps: [], authRequired: false, seen: false };
+function apiCan(cap){ return apiCaps.seen && apiCaps.caps.indexOf(cap) >= 0; }
+async function apiProbe(){
+  if(!apiUrl) return null;
+  try{
+    const r = await fetchTO(apiUrl, { cache:'no-store' });   // action なし＝疎通確認。データは返らない
+    const j = await _parseApiResponse(r);
+    if(j && typeof j === 'object'){
+      apiCaps = {
+        ver: Number(j.ver) || 0,
+        caps: Array.isArray(j.caps) ? j.caps.slice() : [],
+        authRequired: !!j.authRequired,
+        seen: true
+      };
+    }
+    return apiCaps;
+  }catch(e){ return null; }   // 観測できない＝旧サーバー扱いのまま（安全側）
+}
+/* 入居者行の「一部の項目だけ」を送る。
+   ------------------------------------------------------------
+   同じ入居者行を、別々の目的で別々の端末が書く（車椅子重量の自動更新・退去操作・
+   入居者情報の編集）。行を丸ごと送ると、送った側が持っている古い値で相手の編集を
+   上書きしてしまう。サーバーが fieldMerge に対応していれば、変えた項目だけを送って
+   他は触らせない（多端末同期規約 原則3）。
+   対応を観測できていない間は、従来どおり行全体を送る。ここで先走って部分送信すると、
+   旧サーバーでは送らなかった項目が空で潰される＝直そうとした事故を自分で起こす。 */
+function pushResidentFields_(r, fields){
+  if(!r || r.id == null) return;
+  if(typeof apiPush !== 'function') return;
+  if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r }); return; }
+  const part = { id: r.id };
+  fields.forEach(k=>{
+    // 値が無い項目は null を明示して送る＝「空にせよ」の意思表示（キー省略は温存の意味になる）
+    part[k] = (r[k] === undefined) ? null : r[k];
+  });
+  if(r.updatedAt != null) part.updatedAt = r.updatedAt;
+  /* _partial は送信されない（apiPost は resident/record/id/thresholds しか body に載せない）。
+     未送信キューに残った時、再送直前の引き直しへ「この項目だけを送る意図だった」と伝えるための印。 */
+  apiPush('saveResident', { resident: part, _partial: true });
+}
+/* 設定画面に「このサーバーは合言葉が要るのか」を出す。要るのに未入力なら、
+   同期が止まってから気づくのでなく、その場で分かるようにする（記号＋文字で示す）。 */
+function updateAuthNote_(){
+  const el = document.getElementById('apiAuthNote');
+  if(!el) return;
+  if(!apiCaps.seen){
+    el.textContent = 'サーバーの状態は未確認です（「URLを保存・接続」を押すと確認します）。';
+  }else if(apiCaps.authRequired){
+    el.textContent = apiToken
+      ? '✓ このサーバーは合言葉が必要です（入力済み）。'
+      : '▲ このサーバーは合言葉が必要です。入力しないと同期できません。';
+  }else{
+    el.textContent = 'このサーバーは合言葉なしで接続できます（空のままで構いません）。';
+  }
+}
 async function apiGet(){
   if(!apiUrl) return null;
+  /* 取得は可能なら POST で行う。GET だと合言葉がURLに載り、履歴やアクセスログに残るため。
+     旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。 */
+  if(apiCan('postGetAll')){
+    const r = await fetchTO(apiUrl, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'getAll', token: apiToken || undefined })
+    });
+    return _parseApiResponse(r);
+  }
   const r = await fetchTO(apiUrl + '?action=getAll', { cache:'no-store' });
   return _parseApiResponse(r);
 }
@@ -1763,6 +1856,7 @@ async function apiPost(action, data){
   data = data || {};
   const body = JSON.stringify({
     action,
+    token:    apiToken || undefined,   // 未設定なら送らない（移行中のサーバーは素通しする）
     resident: data.resident,
     record:   data.record,
     id:       data.id,
@@ -2012,7 +2106,18 @@ function _pqFreshenData(item){
     const id = d.resident && d.resident.id;
     if(!id) return { data: d };
     const cur = (DB.residents || []).find(r=> r && r.id === id);
-    return cur ? { data: Object.assign({}, d, { resident: cur }) } : { skip: true };
+    if(!cur) return { skip: true };
+    /* 部分送信で積まれた項目は、部分のまま最新値へ差し替える。ここで行全体に太らせると、
+       「車椅子重量だけ送る」はずの再送が、送るつもりのなかった項目まで運んで
+       他端末の編集を上書きしてしまう（送る範囲は積んだ時の意図どおりに保つ）。 */
+    if(d._partial !== true) return { data: Object.assign({}, d, { resident: cur }) };
+    const keys = Object.keys(d.resident);
+    const fresh = { id: cur.id };
+    keys.forEach(k=>{
+      if(k === 'id') return;
+      fresh[k] = Object.prototype.hasOwnProperty.call(cur, k) ? cur[k] : null;   // 消えた項目は「空にせよ」
+    });
+    return { data: Object.assign({}, d, { resident: fresh }) };
   }
   return { data: d };
 }
@@ -2438,7 +2543,9 @@ function wrPushMirrored(list){
   if(typeof apiPush !== 'function') return;   // 連携未設定の端末では何もしない
   list.forEach(function(r){
     if(!r || r.id == null) return;
-    try{ apiPush('saveResident', { resident: r }); }
+    /* 鏡映で動くのは suMirrorState が触る在籍・入院の2項目だけ（上記実装で確認済み）。
+       行ごと送ると、この端末が持っている古い身長・食事形態まで相手へ押し付けてしまう。 */
+    try{ pushResidentFields_(r, ['dischargedAt', 'hospitalized']); }
     catch(e){ /* 送信の失敗は名簿取り込み自体を止めない（安全側） */ }
   });
 }
@@ -4319,7 +4426,9 @@ $('#inSave').addEventListener('click', ()=>{
   toast(`${name} ${dateLabel} を保存しました`, 'ok');
   // sync to server
   apiPush('saveRecord', { record: savedRec });
-  if(chairResUpdated) apiPush('saveResident', { resident: chairResUpdated });
+  /* 記録保存のついでに動くのは車椅子重量だけ。氏名・居室・食事形態まで送ると、
+     他端末がその間に直した内容をこちらの古い値で消してしまう。 */
+  if(chairResUpdated) pushResidentFields_(chairResUpdated, ['wheelchairKg']);
   editingRecordId = null;
   $('#inExistsNote').textContent = '';
   clearInputForm();
@@ -5709,7 +5818,9 @@ $('#mdDischarge').addEventListener('click', ()=>{
     delete r.dischargedAt;
     r.updatedAt = new Date().toISOString();
     save();
-    apiPush('saveResident', { resident: r });
+    /* 在籍だけを送る。r には dischargedAt のキー自体が無くなっているので、
+       部分送信側が null を明示して「空にせよ」と伝える（キー省略＝温存とは区別する）。 */
+    pushResidentFields_(r, ['dischargedAt']);
     toast('復帰しました');
   } else {
     const n = (DB.records || []).filter(x=> x && x.residentId===editingId).length;
@@ -5723,7 +5834,7 @@ $('#mdDischarge').addEventListener('click', ()=>{
     r.dischargedAt = dNow();
     r.updatedAt = new Date().toISOString();
     save();
-    apiPush('saveResident', { resident: r });
+    pushResidentFields_(r, ['dischargedAt']);   // 在籍だけを送る（氏名・食事形態は触らない）
     // 入力・個別画面で退去者を選択していた場合はクリアして混乱を防ぐ
     if(UI.inRes === editingId) saveUI({inRes: ''});
     toast(`${r.name} を退去にしました`);
@@ -5970,14 +6081,19 @@ function refreshUrlPersistBadge(){
 (function wireSync(){
   // 起動時：3層 (LS / DB.apiUrl / UI.apiUrl) のいずれかから URL を復元し、全層を揃える
   apiUrl = loadApiUrlOnBoot();
+  apiToken = loadApiToken_();
   const cfgApi = $('#cfgApi');
   if(cfgApi) cfgApi.value = apiUrl || '';
+  const cfgTok = $('#cfgApiToken');
+  if(cfgTok) cfgTok.value = apiToken || '';
   refreshUrlPersistBadge();
   if(apiUrl){
     apiSetStatus('ok', '✅ 接続URL（保存済み）: …' + apiUrl.slice(-40));
-    // initial pull — non-blocking（現場端末ガード時はサーバ取得しない）
-    if(suGetDeviceRole() !== 'field') setTimeout(()=> syncFromAPI(true), 100);
+    /* 取得より先にサーバーの版・対応機能を観測する（部分送信へ移ってよいかの判定に使う）。
+       観測できなくても取得は従来どおり動く（旧サーバー扱いのまま進む）。 */
+    if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{ await apiProbe(); updateAuthNote_(); syncFromAPI(true); }, 100);
   }
+  updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
   /* 診断結果パネルの表示／非表示 */
   function showDiagPanel(lines, ok){
     const panel = $('#apiDiagOut');
@@ -6015,8 +6131,15 @@ function refreshUrlPersistBadge(){
     if(failed.length){
       toast(`⚠️ 一部の保存層が失敗（${failed.join(',')}）。他層から復元できます`,'err');
     }
+    /* 合言葉は URL と別に保存する（資格情報を DB へ載せないため）。
+       サーバーが未設定なら空のままでよい＝この段階では素通しされる。 */
+    if(!saveApiToken_($('#cfgApiToken') ? $('#cfgApiToken').value : '')){
+      toast('⚠️ 合言葉を保存できませんでした（プライベートブラウズ等）','err');
+    }
     apiSetStatus('sy','接続中...');
     hideDiagPanel();
+    await apiProbe();          // 版・対応機能・認証の要否を、取得の前に観測する
+    updateAuthNote_();
     const ok = await syncFromAPI(true);
     if(ok){
       toast('✅ URL を保存し同期しました（…' + url.slice(-30) + '）','ok');
