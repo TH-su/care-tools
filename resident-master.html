@@ -117,6 +117,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell .val.big{font-size: 1.125rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
+/* 体重セルは測定日を添えるぶん少しだけ広くする。等幅(flex:1)のままだと A4 で約65px しか
+   確保できず、日付が折り返して印刷の高さが増える（実測: 1.8 で増加0px・2.0 では逆に増える）。 */
+.row-cells .cell.wt-cell{flex:1.8}
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。左=薬剤、右=効果・効能。
    ★右列は固定幅。行は grid の行で揃うので、薬剤名が折り返しても効能は1行目に留まる。
@@ -941,6 +944,51 @@ function buildWeightIndex(list){
   });
   return idx;
 }
+/* 詳細画面用に1名分だけ取り出す（2026-08-11 追加）。
+   ★一覧の weightIdx は renderRoster が作るもので、詳細画面（openResident→renderView）は
+     その経路を通らない。ここで roster 全体から作り直す（loadWeightSource が生文字列を
+     キャッシュしているので、体重DBが同じ間は再parseされない）。
+   ★該当が無ければ null を返し、呼び出し側はマスタの静的値へフォールバックする。
+   ★フェイスシートの latestWeightOf と同じ契約。あちらを直したらこちらも直す。 */
+function latestWeightOf(masterId){
+  if(masterId==null||masterId==='') return null;
+  try{
+    var idx=buildWeightIndex(roster), k=String(masterId);
+    if(!Object.prototype.hasOwnProperty.call(idx,k)) return null;   /* 'constructor' 等を拾わない */
+    var w=idx[k];
+    return (w&&typeof w.weight==='number')?w:null;
+  }catch(e){ return null; }
+}
+/* 測定日を短く出す。同じ年なら「8/11」、違う年は「2025/8/11」。
+   ★セル幅が狭い（A4で約65px）ため、長い文字列を入れると折り返して印刷の高さが増える。
+     実測（A4本文幅718px・セル幅1.8倍）: 括弧の中を【4文字まで】に収めれば
+     「8/11」「25/12/3」「旧記録」のいずれでも印刷の高さは1pxも増えない。
+     5文字（例「移行時点」＋括弧）にすると折り返して +23px(6mm) 増える。 */
+function wtShortDate(on){
+  var s=String(on||'').slice(0,10), m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return '';
+  var y=new Date().getFullYear();
+  return (String(y)===m[1]) ? (+m[2])+'/'+(+m[3]) : m[1].slice(2)+'/'+(+m[2])+'/'+(+m[3]);
+}
+/* 詳細画面の「体重」「BMI」に出す値を作る。
+   体重の正本は体重管理アプリ。記録があればそれを使い、測定日を添える。
+   記録が無い端末・未登録の方は、マスタの静的値に「移行時点」と明示して出す。
+   ★BMI に注記は付けない（セルが狭く折り返すため）。体重セルの日付から出所が分かる。 */
+function weightView(r){
+  var lw=latestWeightOf(r&&r.id), out={};
+  if(lw){
+    var d=wtShortDate(lw.on);
+    out.weight = lw.weight+' kg'+(d?'（'+d+'）':'');
+    out.bmi    = calcBMI(r.height, lw.weight);
+    out.title  = '体重管理アプリの最新値'+(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')
+               + '／同期状況により古い場合があります';
+  }else{
+    out.weight = r.weight ? (r.weight+' kg（旧記録）') : '';
+    out.bmi    = calcBMI(r.height, r.weight);
+    out.title  = r.weight ? 'この端末の体重管理アプリに記録が見つかりません。移行時点の値です' : '';
+  }
+  return out;
+}
 var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで記録したら再読込で反映）
 
 /* ═══════════ 共通情報の自動コピー（全アプリ連携） ═══════════
@@ -1717,7 +1765,13 @@ function renderView(r){
         (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
       cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
       cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
-      cell('BMI',calcBMI(r.height,r.weight))+cell('身長',r.height?r.height+' cm':'')+cell('体重',r.weight?r.weight+' kg':'')+
+      /* 体重の正本は体重管理アプリ（同一オリジンの localStorage を読むだけ）。
+         記録が無い端末では従来どおりマスタの静的値を「移行時点」と明示して出す。
+         ★体重セルだけ少し広げる（wt-cell）。狭いままだと日付が折り返して印刷が伸びる。 */
+      (function(){var wv=weightView(r);
+        return cell('BMI',wv.bmi)+cell('身長',r.height?r.height+' cm':'')+
+          '<div class="cell wt-cell"'+(wv.title?' title="'+esc(wv.title)+'"':'')+'>'+
+          '<span class="lab">体重</span><span class="val">'+esc(wv.weight||'　')+'</span></div>';})()+
       cell('生活自立度',r.adl)+cell('認知症自立度',r.dementia)+
     '</div></div></div>';
   // 保険・制度／連絡先
@@ -2001,6 +2055,7 @@ function openEdit(rec){
     fld('dischargeDate','退去日',r.dischargeDate,'date')+
     fld('deathDate','ご逝去日',r.deathDate,'date')+
     fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
+    '<p class="muted" style="grid-column:1/-1;margin:-4px 0 4px">体重の最新値は<b>体重管理アプリ</b>が正です。ここは移行時点の記録で、詳細画面には体重管理アプリの最新値が出ます。</p>'+
     fld('adl','生活自立度',r.adl)+fld('dementia','認知症自立度',r.dementia)+
   '</div></div></div>';
 
@@ -2486,7 +2541,10 @@ var BULK_GROUPS=[
     ['careLevel','介護度','select',BULK_LEVELS],
     ['birthDate','生年月日','date'],['admissionDate','入居日','date'],
     ['dischargeDate','退去日','date'],['dischargeTo','退去先','text'],
-    ['height','身長cm','number'],['weight','体重kg','number'],
+    /* 体重は一括編集から外した（2026-08-11 管理者の指示）。正本は体重管理アプリで、
+       ここから138名分をまとめて入れると古い値を作り続けることになる。
+       1名ずつの編集画面には残してある（消すと保存済みの体重が次の保存で消えるため）。 */
+    ['height','身長cm','number'],
     ['adl','生活自立度','text'],['dementia','認知症自立度','text']]],
   ['system','保険・制度',[
     ['careCertStart','認定開始','date'],['careCertEnd','認定満了','date'],['certDate','認定日','date'],
