@@ -1540,13 +1540,53 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     }
   }
 
+  /* 保存データの読み取り状態。「キー不存在（初回起動＝正常な空）」と「parse失敗・型不正（破損）」を
+   * 区別する。破損を空データとして扱ったままクラウドへ push すると、他端末の正しいデータを
+   * 空で上書きしうるため、破損検知中は自動保存を止めて画面に警告を出す。 */
+  var dataCorrupt = { months: false, master: false };
+  function anyCorrupt() { return dataCorrupt.months || dataCorrupt.master; }
+  function markCorrupt(which) {
+    dataCorrupt[which] = true;
+    showCorruptWarning();
+  }
+  /* 復旧後に警告だけ残ると「停止中」の表示と実挙動(自動保存の再開)が食い違うため、読み直しで正常化したら消す */
+  function hideCorruptWarning() {
+    var el = $('corruptWarn');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+  function showCorruptWarning() {
+    var box = $('savedMonths');
+    if (!box || !box.parentNode) return;
+    var el = $('corruptWarn');
+    if (!el) {
+      el = document.createElement('p');
+      el.id = 'corruptWarn';
+      el.className = 'cloudstat err';
+      box.parentNode.insertBefore(el, box);
+    }
+    /* textContent＝氏名等をHTMLへ展開しない */
+    el.textContent = '⚠ この端末の保存データを読めませんでした（破損の可能性）。'
+      + 'クラウドへの自動保存を停止しています（空データで上書きしないため）。'
+      + '「書き出し(.json)」で今の内容を退避してから、バックアップの「読み込み」で復旧してください。';
+  }
+
   var lastAnalysis = null;   /* 直近の解析結果(保存用) */
   var lastParsed = null;     /* 直近の parseGrid 結果(資格マスタ取り込み用) */
 
   /* ===== 資格マスタ（職員名→所持資格を一度だけ登録。以降は名前照合で自動判定） ===== */
   var MASTER_KEY = 'shiftanalyzer:v1:qualmaster';
   var QUAL_LIST = ['初任者研修', '実務者研修', '介護福祉士', '看護師', '准看護師'];
-  function loadMaster() { try { var v = JSON.parse(localStorage.getItem(MASTER_KEY) || '{}'); return (v && typeof v === 'object' && Object.prototype.toString.call(v) !== '[object Array]') ? v : {}; } catch (e) { return {}; } }
+  function loadMaster() {
+    var raw;
+    try { raw = localStorage.getItem(MASTER_KEY); } catch (e) { markCorrupt('master'); return {}; }
+    if (raw === null || raw === undefined || raw === '') { dataCorrupt.master = false; return {}; }   /* 未登録＝正常な空 */
+    try {
+      var v = JSON.parse(raw);
+      if (!v || typeof v !== 'object' || Object.prototype.toString.call(v) === '[object Array]') { markCorrupt('master'); return {}; }
+      dataCorrupt.master = false;
+      return v;
+    } catch (e) { markCorrupt('master'); return {}; }
+  }
   function saveMaster(m) { return lsWrite(MASTER_KEY, m || {}); }
 
   function settings() {
@@ -1696,7 +1736,17 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   }
 
   /* ===== 保存月（氏名なしの集計値のみ）と合算 ===== */
-  function loadMonths() { try { var v = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); return (Object.prototype.toString.call(v) === '[object Array]') ? v : []; } catch (e) { return []; } }
+  function loadMonths() {
+    var raw;
+    try { raw = localStorage.getItem(LS_KEY); } catch (e) { markCorrupt('months'); return []; }
+    if (raw === null || raw === undefined || raw === '') { dataCorrupt.months = false; return []; }   /* 未保存＝正常な空 */
+    try {
+      var v = JSON.parse(raw);
+      if (Object.prototype.toString.call(v) !== '[object Array]') { markCorrupt('months'); return []; }
+      dataCorrupt.months = false;
+      return v;
+    } catch (e) { markCorrupt('months'); return []; }
+  }
   function saveMonths(a) { return lsWrite(LS_KEY, a || []); }
 
   function saveCurrent() {
@@ -1822,7 +1872,9 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       var x = months[i];
       var p = x.visitTotalMin > 0 ? (x.visitKaifukuMin / x.visitTotalMin * 100) : 0;
       var hasDetail = !!x.rawText;
-      html += '<tr><td><input type="checkbox" class="mchk" data-i="' + i + '" checked></td>' +
+      /* 選択の対応付けは配列位置でなく月ラベル（data-view/data-del と同方式）。
+       * 位置だと、他タブでの保存/削除や再描画で並びが変わったとき別の月を集計してしまう。 */
+      html += '<tr><td><input type="checkbox" class="mchk" data-label="' + esc(x.label) + '" checked></td>' +
         '<td>' + esc(x.label) + '</td>' +
         '<td class="num">' + h1(x.visitTotalMin) + 'h</td>' +
         '<td class="num">' + h1(x.visitKaifukuMin) + 'h</td>' +
@@ -1856,9 +1908,16 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     var months = loadMonths();
     var box = document.getElementById('combined');
     if (!box) return;
+    var byLabel = {};
+    for (var m = 0; m < months.length; m++) { if (months[m] && months[m].label) byLabel[months[m].label] = months[m]; }
     var chks = document.querySelectorAll('.mchk');
     var sel = [];
-    for (var i = 0; i < chks.length; i++) if (chks[i].checked) sel.push(months[parseInt(chks[i].getAttribute('data-i'), 10)]);
+    for (var i = 0; i < chks.length; i++) {
+      if (!chks[i].checked) continue;
+      var lb = chks[i].getAttribute('data-label');
+      /* 保存側から消えたラベルは飛ばす（他タブでの削除直後などに undefined を集計しない） */
+      if (lb !== null && Object.prototype.hasOwnProperty.call(byLabel, lb)) sel.push(byLabel[lb]);
+    }
     if (sel.length < 1) { box.innerHTML = ''; return; }
     var den = 0, num = 0, numJ = 0, simpleSum = 0;
     for (var j = 0; j < sel.length; j++) {
@@ -1881,11 +1940,39 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   var CLOUD_REV = 'shiftanalyzer:v1:cloudrev';
   var CLOUD_KEY = 'months';
 
+  function rememberToken() { var el = $('cloudRemember'); return !!(el && el.checked); }
+
+  /* 設定UIへ「この端末にトークンを記憶する」を追加（既定OFF）。共用端末でトークンが残らないようにする。
+   * 既に保存済みの端末は ON として引き継ぐ（既存運用を壊さない）。 */
+  function ensureRememberBox(initialOn) {
+    var el = $('cloudRemember');
+    if (!el) {
+      var tok = $('cloudToken');
+      var host = tok ? tok.parentNode : null;            /* トークン入力を包む <label class="opt"> */
+      if (!host || !host.parentNode) return null;
+      var lab = document.createElement('label');
+      lab.className = 'opt';
+      el = document.createElement('input');
+      el.type = 'checkbox';
+      el.id = 'cloudRemember';
+      lab.appendChild(el);
+      lab.appendChild(document.createTextNode(' この端末にトークンを記憶する'));
+      host.parentNode.insertBefore(lab, host.nextSibling);
+    }
+    el.checked = !!initialOn;
+    return el;
+  }
+
   function cloudCfg() {
     var url = ($('cloudUrl').value || '').trim();
     var token = ($('cloudToken').value || '').trim();
     var auto = autoEnabled();
-    try { localStorage.setItem(CLOUD_CFG, JSON.stringify({ url: url, token: token, auto: auto })); } catch (e) {}
+    var remember = rememberToken();
+    /* トークンは記憶ONの端末だけ保存する。OFFに切り替えた時はこの上書きで保存済みトークンも消える
+     * （URL・自動同期の設定は端末に残す）。トークンは画面・ログへ出さない。 */
+    var save = { url: url, auto: auto, remember: remember };
+    if (remember) save.token = token;
+    try { localStorage.setItem(CLOUD_CFG, JSON.stringify(save)); } catch (e) {}
     return { url: url, token: token, auto: auto };
   }
   function cloudStatus(msg, kind) {
@@ -1937,10 +2024,18 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     }).catch(function (e) { cloudStatus('取得失敗: ' + e.message, 'err'); });
   }
   function cloudPush(force) {
+    /* 先に両方読み出して破損フラグを最新化してから判定する（破損中は送らない＝クラウドの正データを空で潰さない） */
     var months = loadMonths();
+    var master = loadMaster();
+    if (anyCorrupt()) {
+      showCorruptWarning();
+      cloudStatus('この端末の保存データを読めないため保存を中止しました（先に「書き出し(.json)」で退避を）', 'err');
+      return;
+    }
+    hideCorruptWarning();
     if (!months.length) { cloudStatus('保存済みの月がありません（先にローカルに「保存」してください）', 'err'); return; }
     cloudStatus('クラウドへ保存中…');
-    cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: loadMaster() }, baseRev: getRev(), force: !!force })
+    cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: master }, baseRev: getRev(), force: !!force })
       .then(function (res) {
         if (res.readOnly) { cloudStatus('このトークンは閲覧専用です（保存は編集可トークンで）', 'err'); return; }
         if (res.conflict) {
@@ -2024,10 +2119,19 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   /* ローカルに未共有の変更がある時だけ保存。競合(他端末が先行)なら取得→統合→再送(最大2回) */
   function autoMaybePush(role, attempt) {
     if (role === 'ro') return Promise.resolve('取得のみ ' + hhmm() + '（閲覧トークン）');
+    /* 先に読み出して破損フラグを最新化してから判定する（破損中は送らない＝クラウドを空で潰さない） */
+    var months = loadMonths();
+    var master = loadMaster();
+    if (anyCorrupt()) {
+      showCorruptWarning();
+      return Promise.resolve('自動保存を停止中（この端末の保存データを読めません）');
+    }
+    hideCorruptWarning();
     var sig = localSig();
     if (sig === lastPushedSig) return Promise.resolve('最新に同期済 ' + hhmm());   /* 変更なし＝push不要 */
-    var months = loadMonths();
-    return cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: loadMaster() }, baseRev: getRev() })
+    /* 手動 cloudPush と同じガード: 保存月が0件なら送らない（空でクラウドの正データを消さない） */
+    if (!months.length) return Promise.resolve('保存月が無いため自動保存を見送りました ' + hhmm());
+    return cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: master }, baseRev: getRev() })
       .then(function (res) {
         if (res.readOnly) return '閲覧専用トークン（保存不可）';
         if (res.conflict) {
@@ -2149,12 +2253,16 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     $('exportBtn').addEventListener('click', exportAll);
     $('importBtn').addEventListener('click', function () { $('importInput').click(); });
     $('importInput').addEventListener('change', function () { if (this.files && this.files[0]) importFile(this.files[0]); this.value = ''; });
-    try {
-      var cc = JSON.parse(localStorage.getItem(CLOUD_CFG) || '{}');
-      if (cc.url) $('cloudUrl').value = cc.url;
-      if (cc.token) $('cloudToken').value = cc.token;
-      $('cloudAuto').checked = (cc.auto !== false);   /* 既定ON */
-    } catch (e) { $('cloudAuto').checked = true; }
+    var cc = {};
+    try { cc = JSON.parse(localStorage.getItem(CLOUD_CFG) || '{}') || {}; } catch (e) { cc = {}; }
+    if (cc.url) $('cloudUrl').value = cc.url;
+    /* remember 未記録の既存端末は「トークン保存済み＝記憶ON」とみなして引き継ぐ */
+    var remember = (typeof cc.remember === 'boolean') ? cc.remember : !!cc.token;
+    ensureRememberBox(remember);
+    if (remember && cc.token) $('cloudToken').value = cc.token;   /* OFFの端末は自動復元しない（メモリ内のみ） */
+    $('cloudAuto').checked = (cc.auto !== false);   /* 既定ON */
+    var rem = $('cloudRemember');
+    if (rem) rem.addEventListener('change', function () { cloudCfg(); });
     $('cloudPingBtn').addEventListener('click', cloudPing);
     $('cloudPullBtn').addEventListener('click', cloudPull);
     $('cloudPushBtn').addEventListener('click', function () { cloudPush(false); });
@@ -2170,6 +2278,11 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     $('rosterImportBtn').addEventListener('click', importRoster);
     $('masterAddBtn').addEventListener('click', addMasterName);
     $('masterName').addEventListener('keydown', function (e) { if (e.key === 'Enter') addMasterName(); });
+    /* 他タブでの保存/削除を取り込む（同じブラウザで複数タブを開いたときの表示ズレ防止） */
+    window.addEventListener('storage', function (ev) {
+      if (ev && ev.key && ev.key !== LS_KEY) return;
+      renderMonths();
+    });
     renderMaster();
     renderMonths();
   }
