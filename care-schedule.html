@@ -3452,41 +3452,83 @@ function normCat_(s) {   /* 半角数字→全角でカテゴリ照合（身体0
   for (const ch of s) { const i = '0123456789'.indexOf(ch); out += (i >= 0 ? z[i] : ch); }
   return out;
 }
-function findOrCreateResident_(name) {
+/* 氏名で既存利用者を探す（作成はしない）。空白の有無ゆれを吸収する照合は
+   findOrCreateResident_ と共通＝一括取込の事前チェックが本番と違う人に当たらないようにする。 */
+function findResident_(name) {
   const norm = n => String(n || '').replace(/[\s　]/g, '');
-  let r = DB.residents.find(x => x.name === name) || DB.residents.find(x => norm(x.name) === norm(name));
+  return DB.residents.find(x => x.name === name)
+      || DB.residents.find(x => norm(x.name) === norm(name))
+      || null;
+}
+function findOrCreateResident_(name) {
+  let r = findResident_(name);
   if (r) return { res: r, created: false };
   r = { id: ruid(), name, events: [], careLevel: '', copayRate: 1, welfareEquipUnits: 0, kana: '', external: false };
   DB.residents.push(r);
   return { res: r, created: true };
 }
+/* 一括取込の1行を解析する。DB には一切触れない（読み取りも書き込みもしない）。
+   取込本体と事前チェックの両方から呼ぶ＝区切り判定・正規化の解釈が二重定義にならないようにする
+   （別々に書くと、確認ダイアログに出す件数と実際に取り込まれる中身がずれる）。
+   戻り値: { err } または { name, dow, stype, st, en, cat, detail } */
+function parseBulkLine_(line, idx) {
+  /* 区切りはタブ優先→カンマ→2つ以上の空白。貼り付け元(Excel/メモ)を問わず取り込めるように */
+  let cols = line.split('\t');
+  if (cols.length < 5) cols = line.split(/[,，、]/);
+  if (cols.length < 5) cols = line.split(/[\s　]{2,}/);
+  cols = cols.map(c => c.trim());
+  if (cols.length < 5) return { err: `行${idx + 1}: 列が不足（最低: 利用者/曜日/区分/開始/終了）` };
+  const [name, dowS, kubun, startS, endS, catS, detailS] = cols;
+  const dKey = (dowS || '').replace('曜日', '').charAt(0);
+  if (BULK_DOW[dKey] === undefined) return { err: `行${idx + 1}: 曜日不明「${dowS}」` };
+  const dow = BULK_DOW[dKey];
+  const stype = (kubun.indexOf('通所') >= 0 || kubun.indexOf('デイ') >= 0) ? 'daycare' : 'visit';
+  const st = normTime_(startS), en = normTime_(endS);
+  if (!st || !en) return { err: `行${idx + 1}: 時刻が不正「${startS}-${endS}」` };
+  if (!name) return { err: `行${idx + 1}: 利用者名が空` };
+  return { name, dow, stype, st, en,
+           cat: stype === 'visit' ? normCat_(catS || '') : '',
+           detail: (detailS || '').trim() };
+}
 function applyBulkImport() {
   const lines = $('#f-bulk').value.split('\n').map(l => l.trim()).filter(l => l.length);
   if (!lines.length) { $('#f-bulk-result').textContent = '貼り付け内容がありません'; return; }
+  const parsed = lines.map((line, idx) => parseBulkLine_(line, idx));
+  /* 取り込む前に、介護度と食い違う訪問コマが何件になるかを数えて一度だけ確認する。
+     1行ずつ確認を出すと現場が回らないため、件数をまとめて1回だけ聞く。
+     ここでは DB を一切変更しない（未登録の利用者は介護度未設定として判定する＝
+     取込で新規作成される人は careLevel 空で作られるので、判定条件は本番と一致する）。 */
+  let mismatch = 0;
+  const seenKeys = {};
+  const normName_ = n => String(n || '').replace(/[\s　]/g, '');
+  parsed.forEach(p => {
+    if (p.err) return;
+    const r = findResident_(p.name);
+    /* 重複スキップされる行は実際には取り込まれないので数えない（取込本体と同じ
+       「同曜日・同種別・同開始時刻」判定を、既存イベントと同一取込内の先行行の両方に掛ける）。 */
+    const key = (r ? r.id : '新規:' + normName_(p.name)) + '|' + p.dow + '|' + p.stype + '|' + p.st;
+    const already = (r && (r.events || []).some(e =>
+      e.dayOfWeek === p.dow && e.serviceType === p.stype && e.startTime === p.st)) || seenKeys[key];
+    if (already) return;
+    seenKeys[key] = true;
+    if (p.stype !== 'visit') return;
+    if (visitCatMismatch_(p.cat, r ? r.careLevel : '')) mismatch++;
+  });
+  if (mismatch > 0 && !confirm(
+        `⚠ 介護度と食い違うサービス区分が ${mismatch}件 あります。\n`
+      + '要支援・事業対象者の訪問は総合事業のコード（【A11】【A12】【A21】【A22】）で算定します。\n\n'
+      + 'このまま取り込みますか？（取り込んだ後は利用者一覧の「⚠区分ちがい」でも確認できます）')) return;
   let added = 0, dup = 0, createdRes = 0; const errs = [];
   pushUndo();
-  lines.forEach((line, idx) => {
-    /* 区切りはタブ優先→カンマ→2つ以上の空白。貼り付け元(Excel/メモ)を問わず取り込めるように */
-    let cols = line.split('\t');
-    if (cols.length < 5) cols = line.split(/[,，、]/);
-    if (cols.length < 5) cols = line.split(/[\s　]{2,}/);
-    cols = cols.map(c => c.trim());
-    if (cols.length < 5) { errs.push(`行${idx + 1}: 列が不足（最低: 利用者/曜日/区分/開始/終了）`); return; }
-    const [name, dowS, kubun, startS, endS, catS, detailS] = cols;
-    const dKey = (dowS || '').replace('曜日', '').charAt(0);
-    if (BULK_DOW[dKey] === undefined) { errs.push(`行${idx + 1}: 曜日不明「${dowS}」`); return; }
-    const dow = BULK_DOW[dKey];
-    const stype = (kubun.indexOf('通所') >= 0 || kubun.indexOf('デイ') >= 0) ? 'daycare' : 'visit';
-    const st = normTime_(startS), en = normTime_(endS);
-    if (!st || !en) { errs.push(`行${idx + 1}: 時刻が不正「${startS}-${endS}」`); return; }
-    if (!name) { errs.push(`行${idx + 1}: 利用者名が空`); return; }
-    const { res, created } = findOrCreateResident_(name);
+  parsed.forEach(p => {
+    if (p.err) { errs.push(p.err); return; }
+    const { res, created } = findOrCreateResident_(p.name);
     if (created) createdRes++;
-    if ((res.events || []).some(e => e.dayOfWeek === dow && e.serviceType === stype && e.startTime === st)) { dup++; return; }
+    if ((res.events || []).some(e => e.dayOfWeek === p.dow && e.serviceType === p.stype && e.startTime === p.st)) { dup++; return; }
     res.events.push({
-      id: uid(), dayOfWeek: dow, serviceType: stype,
-      category: stype === 'visit' ? normCat_(catS || '') : '',
-      startTime: st, endTime: en, detail: (detailS || '').trim(), notes: '', units: 0, bathing: false
+      id: uid(), dayOfWeek: p.dow, serviceType: p.stype,
+      category: p.cat,
+      startTime: p.st, endTime: p.en, detail: p.detail, notes: '', units: 0, bathing: false
     });
     added++;
   });
@@ -4395,9 +4437,15 @@ function duplicateEvent() {
   if (!dowStr) { showToast('複製先の曜日を選択してください'); return; }
   const res = currentResident();
   if (!res) return;
-  pushUndo();
   const ev = res.events.find(e => e.id === editingEventId);
   if (!ev) return;
+  /* 食い違ったコマをそのまま増やさない（saveEvent と同じ確認を複製にも掛ける）。
+     ev の取得を pushUndo より前に移した＝対象が見つからない時に空の取り消し履歴を積まない。 */
+  if (ev.serviceType !== 'daycare') {
+    const catWarn = visitCatMismatch_(ev.category, res.careLevel);
+    if (catWarn && !confirm(catWarn + '\n\nこのまま複製しますか？')) return;
+  }
+  pushUndo();
   const newEv = { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) };
   res.events.push(newEv);
   saveDB();
@@ -4423,6 +4471,11 @@ function duplicateEventEveryday() {
     if (!exists) targets.push(dow);
   }
   if (targets.length === 0) { showToast('すでに全曜日に登録済みです'); return; }
+  /* 1件の食い違いが7曜日ぶんに増えるのを止める（saveEvent・duplicateEvent と同じ確認）。 */
+  if (ev.serviceType !== 'daycare') {
+    const catWarn = visitCatMismatch_(ev.category, res.careLevel);
+    if (catWarn && !confirm(catWarn + `\n\nこのまま${targets.length}曜日へ複製しますか？`)) return;
+  }
   pushUndo();
   targets.forEach(dow => res.events.push({ ...ev, id: uid(), dayOfWeek: dow }));
   saveDB();
