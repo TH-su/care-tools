@@ -30,7 +30,7 @@
 html, body { height: 100%; }
 body {
   font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
-  font-size: 14px; color: var(--g9); background: var(--g1);
+  font-size: 0.875rem; color: var(--g9); background: var(--g1);
   display: flex; flex-direction: column; overflow: hidden;
   touch-action: manipulation;
 }
@@ -43,22 +43,22 @@ body {
   overflow-x: auto;   /* 狭幅でボタンが溢れても横スクロールで全操作に到達可能 */
 }
 .hdr > *:not(.hdr-sp) { flex-shrink: 0; }   /* スペーサー以外は縮めず自然幅を維持 */
-.hdr-title { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.hdr-title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; }
 .hdr-date {
-  font-size: 15px; font-weight: 700; background: rgba(255,255,255,.15);
+  font-size: 0.9375rem; font-weight: 700; background: rgba(255,255,255,.15);
   border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 4px 10px;
   cursor: pointer; white-space: nowrap;
 }
 .hdr-btn {
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
-  color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 14px; cursor: pointer;
+  color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; cursor: pointer;
 }
 .hdr-btn:disabled { opacity: .35; }
 .hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; white-space: nowrap; }
 .hdr-btn.savebtn:hover { background: #1b5e20; }
 .hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
-.hdr-btn.app-link { font-size: 12px; padding: 6px 8px; white-space: nowrap; }
-.hdr-btn.wk { font-size: 12px; padding: 5px 7px; white-space: nowrap; }
+.hdr-btn.app-link { font-size: 0.75rem; padding: 6px 8px; white-space: nowrap; }
+.hdr-btn.wk { font-size: 0.75rem; padding: 5px 7px; white-space: nowrap; }
 /* 日単位ロックのチェックボックス（ヘッダー内・.hdrごと@media printで非表示＝印刷非干渉・盤面レイアウト非接触） */
 .hdr-lock {
   display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
@@ -71,16 +71,16 @@ body {
 /* 過ぎた日の自動保護中（計算ロック＝meta.lockedは書かない）。手動ロックの橙と区別できる控えめな色。
    色だけに意味を持たせないため、判別はtitle文言と🔒の有無でも行える（HIG: 色覚特性配慮）。 */
 .hdr-lock.auto { background: #5f6368; border-color: #9aa0a6; }
-@media (max-width: 700px) { .hdr-btn.app-link { font-size: 11px; padding: 5px 6px; } }
+@media (max-width: 700px) { .hdr-btn.app-link { font-size: 0.6875rem; padding: 5px 6px; } }
 .hdr-sp { flex: 1; }
 .badge {
-  border: none; border-radius: 14px; padding: 5px 12px; font-size: 12px;
+  border: none; border-radius: 14px; padding: 5px 12px; font-size: 0.75rem;
   font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .badge.warn { background: var(--warn-bg); color: var(--warn-tx); }
 .badge.ng { background: var(--ng-l); color: var(--ng); }
 .badge.off { display: none; }
-.save-state { font-size: 11px; opacity: .85; white-space: nowrap; }
+.save-state { font-size: 0.6875rem; opacity: .85; white-space: nowrap; }
 
 /* ===== 未配置トレイ ===== */
 .tray {
@@ -88,12 +88,12 @@ body {
 }
 .tray-head {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
-  font-size: 12px; color: var(--g7);
+  font-size: 0.75rem; color: var(--g7);
 }
-.tray-head b { color: var(--warn-tx); font-size: 14px; }
+.tray-head b { color: var(--warn-tx); font-size: 0.875rem; }
 .tray-btn {
   background: var(--pri-l); color: var(--pri-d); border: 1px solid var(--pri);
-  border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+  border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; font-weight: 700; cursor: pointer;
 }
 .tray-items {
   display: flex; gap: 6px; overflow-x: auto; padding: 0 10px 8px;
@@ -101,12 +101,12 @@ body {
 }
 .tray.closed .tray-items { display: none; }
 .chip {
-  flex-shrink: 0; border-radius: 8px; padding: 5px 9px; font-size: 12px;
+  flex-shrink: 0; border-radius: 8px; padding: 5px 9px; font-size: 0.75rem;
   border: 1px solid var(--g3); background: var(--g0); cursor: grab;
   user-select: none; -webkit-user-select: none; line-height: 1.35;
 }
 .chip .c-name { font-weight: 700; }
-.chip .c-sub { color: var(--g6); font-size: 11px; }
+.chip .c-sub { color: var(--g6); font-size: 0.6875rem; }
 .chip.k-phys { background: var(--c-phys); border-color: var(--c-phys-b); }
 .chip.k-life { background: var(--c-life); border-color: var(--c-life-b); }
 .chip.k-mix  { background: var(--c-mix);  border-color: var(--c-mix-b); }
@@ -128,7 +128,7 @@ body {
 }
 .b-head {
   padding: 4px 2px; text-align: center; border-right: 1px solid var(--g3);
-  font-size: 11px; line-height: 1.3; overflow: hidden; background: #fff;
+  font-size: 0.6875rem; line-height: 1.3; overflow: hidden; background: #fff;
   position: relative;   /* .h-other(別事業所時間)の絶対配置の基準。既存の静的子レイアウトは不変 */
 }
 /* 「時刻」隅ヘッダを横スクロール時に左固定(.b-headsの sticky top と合わせ左上に固定・要件2)。右「夜勤時刻」は非固定。印刷で解除 */
@@ -137,24 +137,24 @@ body {
    絶対配置＝ヘッダー高さ・DOM構造・D&D座標に一切影響しない。グリッドの高さ揃えで下部に余白が出る列に浮く。 */
 .b-head .h-other {
   position: absolute; left: 0; right: 0; bottom: 1px;
-  font-size: 8px; line-height: 1.05; color: #c0392b;
+  font-size: 0.5rem; line-height: 1.05; color: #c0392b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding: 0 2px; pointer-events: none;
   /* 満杯列(余白なし)で下端に重なっても可読なよう白ハロー。ボックス無し＝高さ・レイアウト不変 */
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff;
 }
-.b-head .h-no { font-weight: 700; color: var(--g6); font-size: 12px; }
-.b-head .h-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.b-head .h-no { font-weight: 700; color: var(--g6); font-size: 0.75rem; }
+.b-head .h-name { font-weight: 700; font-size: 0.8125rem; white-space: nowrap; }
 .b-head .h-name.manual { color: var(--pri); }
 .b-task.facwork { border: 1.5px solid #222; background: #fafafa; z-index: 5; }   /* 支援(z-index 10)の背面に敷く＝連続背景化 */
 body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
-.b-head .h-lock { font-size: 9px; margin-right: 2px; opacity: .8; }
-.b-head .h-time { color: var(--g6); font-size: 10px; }
-.b-head .h-role { display: inline-block; font-size: 9px; border-radius: 4px; padding: 0 4px; margin-right: 2px;
+.b-head .h-lock { font-size: 0.5625rem; margin-right: 2px; opacity: .8; }
+.b-head .h-time { color: var(--g6); font-size: 0.625rem; }
+.b-head .h-role { display: inline-block; font-size: 0.5625rem; border-radius: 4px; padding: 0 4px; margin-right: 2px;
   background: var(--c-mix); color: #4527a0; }
 .b-head .h-alert {
   display: inline-block; background: var(--ng-l); color: var(--ng);
-  font-size: 10px; font-weight: 700; border-radius: 8px; padding: 1px 6px; margin-top: 2px;
+  font-size: 0.625rem; font-weight: 700; border-radius: 8px; padding: 1px 6px; margin-top: 2px;
 }
 .b-head.z-facility { background: #f4f7f4; }
 .b-head.z-night { background: #f1eef8; }
@@ -171,10 +171,10 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
  * 不透明背景(var(--g0))で下へ潜る支援枠(z:10)/選択枠(z:20)をマスク。吹き出し(z:25)/全体コメント(z:30)は従来どおり軸の上に残る。
  * ticksはposition:absoluteのまま(stickyも包含ブロック)＝位置不変。印刷では body.printing/@media print で解除。 */
 .b-axis:not(.r) { position: -webkit-sticky; position: sticky; left: 0; z-index: 22; }
-.tick { position: absolute; right: 3px; left: 0; font-size: 10px; color: var(--g6);
-  text-align: right; transform: translateY(-50%); }
-.b-axis.r .tick { text-align: left; left: 3px; right: 0; }
-.tick.hour { font-weight: 700; color: var(--g8); font-size: 11px; }
+.tick { position: absolute; right: 3px; left: 0; font-size: 0.625rem; color: var(--g6);
+  text-align: end; transform: translateY(-50%); }
+.b-axis.r .tick { text-align: start; left: 3px; right: 0; }
+.tick.hour { font-weight: 700; color: var(--g8); font-size: 0.6875rem; }
 .tick.night { color: #4527a0; }
 .tick.night.hour { color: #311b92; font-weight: 700; }
 /* 空枠(タスクの無いレーン背景)は従来の白から薄グレーへ＝旧「勤務時間外」グレー相当(要件B6) */
@@ -199,7 +199,7 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-task {
   position: absolute; left: 2px; right: 2px; z-index: 10;
   border-radius: 6px; border: 1px solid var(--g3);
-  font-size: 10.5px; line-height: 1.25; padding: 2px 4px;
+  font-size: 0.65625rem; line-height: 1.25; padding: 2px 4px;
   overflow: hidden; cursor: grab; user-select: none; -webkit-user-select: none;
   box-shadow: 0 1px 2px rgba(0,0,0,.08);
 }
@@ -215,19 +215,19 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-task.k-free .t-name { color: #33691e; }
 .b-task.k-admin { background: #e8eef5; border-color: #90a4c8; }   /* 事務=薄青(画面・要件3) */
 .b-task.k-admin .t-name { color: #2c4a7c; }
-.b-task .t-time { font-size: 9.5px; color: var(--g7); white-space: nowrap; }
+.b-task .t-time { font-size: 0.59375rem; color: var(--g7); white-space: nowrap; }
 .b-task .t-time b { color: var(--g8); }
-.b-task .t-name { font-weight: 700; font-size: 11.5px; white-space: pre-wrap; overflow-wrap: anywhere; }   /* 名称は折り返し＋改行反映(枠は時間比例固定高＝親.b-taskのoverflow:hiddenでクリップ・A3非干渉) */
+.b-task .t-name { font-weight: 700; font-size: 0.71875rem; white-space: pre-wrap; overflow-wrap: anywhere; }   /* 名称は折り返し＋改行反映(枠は時間比例固定高＝親.b-taskのoverflow:hiddenでクリップ・A3非干渉) */
 .b-task .t-body { color: var(--g7); white-space: pre-wrap; }   /* 短枠結合パスの内容メモ改行を反映(タグ/内容は改行無し=無害・固定高overflow:hiddenでクリップ) */
 .b-task.changed { border: 3px double var(--g8); }     /* 時間変更=二重罫線（2026-06-12改） */
 .b-task .t-item {
   display: flex; justify-content: space-between; align-items: center; gap: 3px;
-  font-size: 10.5px; color: var(--g8); line-height: 1.35;
+  font-size: 0.65625rem; color: var(--g8); line-height: 1.35;
 }
 .b-task .t-item .t-item-tx { overflow: hidden; white-space: nowrap; }
 .b-task .t-item .t-item-tx.t-memo { white-space: pre-wrap; overflow-wrap: anywhere; }   /* 内容メモのみ改行反映(ケア内容行はnowrap維持=描画/□位置不変・固定高でクリップ) */
 .b-task .t-cb {
-  font-size: 15px; line-height: 1; padding: 1px 2px; cursor: pointer;
+  font-size: 0.9375rem; line-height: 1; padding: 1px 2px; cursor: pointer;
   color: var(--g6); flex-shrink: 0;
 }
 .b-task .t-cb.on { color: var(--ok); }
@@ -245,14 +245,14 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 .b-task.hosp.pre-admit { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.32) 0 5px, transparent 5px 12px); }
 .b-task .t-done {
   position: absolute; top: 1px; right: 2px; width: 16px; height: 16px;
-  border-radius: 50%; background: var(--ok); color: #fff; font-size: 11px;
+  border-radius: 50%; background: var(--ok); color: #fff; font-size: 0.6875rem;
   line-height: 16px; text-align: center; display: none;
 }
 .b-task.done .t-done { display: block; }
 .b-task.selected { box-shadow: 0 0 0 2px var(--pri), 0 2px 8px rgba(0,0,0,.25); z-index: 20; }
 /* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
  * outline は枠寸法に影響しない＝D&D座標計算/レイアウトに非干渉。🔗 バッジは枠左下に絶対配置。 */
-.b-task .t-group { position: absolute; bottom: 0; left: 2px; font-size: 10px; line-height: 1; opacity: .9; pointer-events: none; }
+.b-task .t-group { position: absolute; bottom: 0; left: 2px; font-size: 0.625rem; line-height: 1; opacity: .9; pointer-events: none; }
 body.printing .b-task.grouped { outline: none !important; }
 body.printing .b-task .t-group { display: none !important; }
 /* コメント: 固定ON=枠外フローティング吹き出し(b-cmt-layer)・未固定=📝バッジのみ */
@@ -283,12 +283,12 @@ body.printing .b-cmt { background: #fff; border: 1px solid #000; color: #000; bo
 body.printing .b-cmt-rs { display: none; }
 body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray: none; }
 .b-task .t-cmt-badge {
-  position: absolute; top: 0; right: 1px; font-size: 9px; line-height: 1;
+  position: absolute; top: 0; right: 1px; font-size: 0.5625rem; line-height: 1;
   opacity: .9; pointer-events: none; z-index: 12;
 }
 .b-task.done .t-cmt-badge { display: none; }
 /* 編集モーダル: コメントのスタイル設定行 */
-.cmt-style { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+.cmt-style { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 0.8125rem; }
 .cmt-style label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .cmt-style select.inp { width: auto; display: inline-block; padding: 4px 6px; }
 
@@ -301,7 +301,7 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
 }
 .b-note-bar {
   cursor: move; padding: 2px 6px; background: #fff3c4; border-bottom: 1px solid #e6cf6a; border-radius: 6px 6px 0 0;
-  font-size: 9px; color: #8a6d00; white-space: nowrap; overflow: hidden; touch-action: none;
+  font-size: 0.5625rem; color: #8a6d00; white-space: nowrap; overflow: hidden; touch-action: none;
   -webkit-user-select: none; user-select: none;
 }
 /* 全体コメントの書式メニュー（ウィンドウ右クリックで表示） */
@@ -310,12 +310,12 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
   border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 6px; min-width: 154px;
 }
 .note-ctx .nctx-row { display: flex; align-items: center; gap: 4px; margin: 3px 0; flex-wrap: wrap; }
-.note-ctx .nctx-lbl { font-size: 11px; color: #666; width: 30px; }
-.note-ctx button { border: 1px solid #ccc; background: #fff; border-radius: 4px; font-size: 12px; line-height: 1.6; padding: 1px 8px; cursor: pointer; color: #222; }
+.note-ctx .nctx-lbl { font-size: 0.6875rem; color: #666; width: 30px; }
+.note-ctx button { border: 1px solid #ccc; background: #fff; border-radius: 4px; font-size: 0.75rem; line-height: 1.6; padding: 1px 8px; cursor: pointer; color: #222; }
 .note-ctx button.on { border-color: var(--pri); box-shadow: 0 0 0 1px var(--pri) inset; }
 .note-ctx .nctx-color { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid #999; }
 .note-ctx .nctx-color.on { box-shadow: 0 0 0 2px var(--pri); }
-.note-ctx .nctx-bg { width: 18px; height: 18px; padding: 0; border-radius: 4px; border: 1px solid #999; font-size: 11px; line-height: 15px; color: #999; }
+.note-ctx .nctx-bg { width: 18px; height: 18px; padding: 0; border-radius: 4px; border: 1px solid #999; font-size: 0.6875rem; line-height: 15px; color: #999; }
 .note-ctx .nctx-bg.on { box-shadow: 0 0 0 2px var(--pri); }
 .note-ctx .nctx-del { color: #c62828; font-weight: 700; margin-left: auto; }
 body.printing .note-ctx { display: none !important; }
@@ -348,7 +348,7 @@ body.printing .b-note-adjust { display: none !important; }   /* 印刷完全非�
 .ghost {
   position: absolute; z-index: 60; pointer-events: none;
   border-radius: 6px; border: 2px dashed var(--pri); background: rgba(26,115,232,.12);
-  font-size: 10px; padding: 2px 4px; color: var(--pri-d); font-weight: 700;
+  font-size: 0.625rem; padding: 2px 4px; color: var(--pri-d); font-weight: 700;
 }
 .ghost.ok { border-color: var(--ok); background: rgba(46,125,50,.12); color: var(--ok); }
 .ghost.ng { border-color: var(--ng); background: rgba(198,40,40,.12); color: var(--ng); }
@@ -365,10 +365,10 @@ body.printing .b-note-adjust { display: none !important; }   /* 印刷完全非�
   box-shadow: 0 -2px 8px rgba(0,0,0,.08);
 }
 .bnav button {
-  flex: 1; border: none; background: none; font-size: 10px; color: var(--g6);
+  flex: 1; border: none; background: none; font-size: 0.625rem; color: var(--g6);
   cursor: pointer; padding-top: 4px;
 }
-.bnav button .bi { display: block; font-size: 19px; }
+.bnav button .bi { display: block; font-size: 1.1875rem; }
 .bnav button.on { color: var(--pri); font-weight: 700; }
 
 /* ===== モーダル ===== */
@@ -384,10 +384,10 @@ body.printing .b-note-adjust { display: none !important; }   /* 印刷完全非�
   -webkit-overflow-scrolling: touch;
 }
 .modal.on { display: block; }
-.modal h3 { font-size: 16px; margin-bottom: 12px; color: var(--g9); }
+.modal h3 { font-size: 1rem; margin-bottom: 12px; color: var(--g9); }
 /* 施設情報モーダルの定休日ピッカー */
 .fc-dow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
-.fc-dow label { display: inline-flex; align-items: center; gap: 3px; font-size: 14px; cursor: pointer; }
+.fc-dow label { display: inline-flex; align-items: center; gap: 3px; font-size: 0.875rem; cursor: pointer; }
 
 /* ===== カレンダー（日付ジャンプ・日付直下にポップオーバー配置） ===== */
 #mCal {
@@ -396,30 +396,30 @@ body.printing .b-note-adjust { display: none !important; }   /* 印刷完全非�
 }
 .cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .cal-nav .cal-mbtn { background: var(--g2); border: 1px solid var(--g3); color: var(--g8); }
-.cal-title { flex: 1; text-align: center; margin: 0 !important; font-size: 16px; }
+.cal-title { flex: 1; text-align: center; margin: 0 !important; font-size: 1rem; }
 .cal-dow { display: grid; grid-template-columns: repeat(7, 1fr); }
-.cal-dow span { text-align: center; font-size: 11px; color: var(--g6); padding: 4px 0; }
+.cal-dow span { text-align: center; font-size: 0.6875rem; color: var(--g6); padding: 4px 0; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
 .cal-cell {
-  text-align: center; padding: 10px 0; font-size: 14px; cursor: pointer;
+  text-align: center; padding: 10px 0; font-size: 0.875rem; cursor: pointer;
   border-radius: 8px; color: var(--g9); user-select: none;
 }
 .cal-cell.cal-blank { cursor: default; }
 .cal-cell:not(.cal-blank):active { background: var(--g2); }
 .cal-today { outline: 1px solid var(--pri); outline-offset: -1px; }
 .cal-sel { background: var(--pri); color: #fff; font-weight: 700; }
-.cal-foot { margin-top: 12px; text-align: right; }
+.cal-foot { margin-top: 12px; text-align: end; }
 .fld { margin-bottom: 10px; }
-.fld label { display: block; font-size: 12px; color: var(--g7); margin-bottom: 3px; font-weight: 700; }
+.fld label { display: block; font-size: 0.75rem; color: var(--g7); margin-bottom: 3px; font-weight: 700; }
 .inp, select.inp, textarea.inp {
   width: 100%; border: 1px solid var(--g3); border-radius: 8px; padding: 9px 10px;
-  font-size: 15px; background: #fff; font-family: inherit;
+  font-size: 0.9375rem; background: #fff; font-family: inherit;
 }
-textarea.inp { min-height: 110px; font-size: 12px; }
+textarea.inp { min-height: 110px; font-size: 0.75rem; }
 .row2 { display: flex; gap: 8px; }
 .row2 > * { flex: 1; }
 .btn {
-  border: none; border-radius: 8px; padding: 11px 16px; font-size: 14px;
+  border: none; border-radius: 8px; padding: 11px 16px; font-size: 0.875rem;
   font-weight: 700; cursor: pointer; background: var(--g2); color: var(--g8);
 }
 .btn.pri { background: var(--pri); color: #fff; }
@@ -429,21 +429,21 @@ textarea.inp { min-height: 110px; font-size: 12px; }
 /* 列（職員名）編集モーダル #mCol の行 */
 .col-erow { padding: 8px 0; border-bottom: 1px solid var(--g2); }
 .col-erow:last-child { border-bottom: none; }
-.col-erole { font-size: 12px; font-weight: 700; color: var(--g6); margin-bottom: 3px; }
+.col-erole { font-size: 0.75rem; font-weight: 700; color: var(--g6); margin-bottom: 3px; }
 .col-etime { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.col-etime label { font-size: 12px; color: var(--g7); font-weight: 700; }
+.col-etime label { font-size: 0.75rem; color: var(--g7); font-weight: 700; }
 .col-etime .inp { flex: 0 0 auto; width: auto; }
 .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .btn-row .sp { flex: 1; }
 .seg { display: flex; border: 1px solid var(--g3); border-radius: 8px; overflow: hidden; }
-.seg button { flex: 1; border: none; background: #fff; padding: 8px 4px; font-size: 13px; cursor: pointer; color: var(--g7); }
+.seg button { flex: 1; border: none; background: #fff; padding: 8px 4px; font-size: 0.8125rem; cursor: pointer; color: var(--g7); }
 .seg button.on { background: var(--pri); color: #fff; font-weight: 700; }
 .seg button:disabled, .seg button.locked { color: var(--g4); background: var(--g1); cursor: not-allowed; opacity: .6; }
 .seg button.on:disabled, .seg button.on.locked { background: var(--pri); color: #fff; opacity: 1; cursor: default; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips .pc {
   border: 1px solid var(--g3); background: var(--g0); border-radius: 14px;
-  padding: 5px 11px; font-size: 12px; cursor: pointer;
+  padding: 5px 11px; font-size: 0.75rem; cursor: pointer;
 }
 .chips .pc.on { background: var(--pri-l); border-color: var(--pri); color: var(--pri-d); font-weight: 700; }
 /* 業務枠の配色パレット（要件2） */
@@ -455,22 +455,22 @@ textarea.inp { min-height: 110px; font-size: 12px; }
 .color-swatches .sw.on { border-color: var(--pri); box-shadow: 0 0 0 2px var(--pri-l); }
 .color-picker-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .color-picker-row input[type=color] { width: 44px; height: 30px; padding: 0; border: 1px solid var(--g3); border-radius: 6px; cursor: pointer; }
-.btn.sm { padding: 4px 10px; font-size: 12px; }
-.hint { font-size: 11px; color: var(--g6); margin-top: 4px; line-height: 1.5; }
+.btn.sm { padding: 4px 10px; font-size: 0.75rem; }
+.hint { font-size: 0.6875rem; color: var(--g6); margin-top: 4px; line-height: 1.5; }
 .alist { border: 1px solid var(--g2); border-radius: 8px; margin-bottom: 8px; }
 .alist .ai {
-  padding: 9px 10px; border-bottom: 1px solid var(--g2); font-size: 13px;
+  padding: 9px 10px; border-bottom: 1px solid var(--g2); font-size: 0.8125rem;
   display: flex; align-items: center; gap: 8px; cursor: pointer;
 }
 .alist .ai:last-child { border-bottom: none; }
 .alist .ai .am { flex: 1; }
-.alist .ai .as { font-size: 11px; color: var(--g6); }
+.alist .ai .as { font-size: 0.6875rem; color: var(--g6); }
 
 /* トースト */
 #toast {
   position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
-  font-size: 13px; z-index: 300; display: none; max-width: 90%;
+  font-size: 0.8125rem; z-index: 300; display: none; max-width: 90%;
   box-shadow: 0 4px 16px rgba(0,0,0,.3);
 }
 #toast.ng { background: var(--ng); }
@@ -479,7 +479,7 @@ textarea.inp { min-height: 110px; font-size: 12px; }
 .board-empty {
   position: absolute; inset: 0; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 14px; color: var(--g6);
-  font-size: 14px; text-align: center; padding: 20px;
+  font-size: 0.875rem; text-align: center; padding: 20px;
 }
 .board-empty.on { display: flex; }
 
@@ -976,7 +976,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     </div>
   </div>
   <div class="fld" style="margin-top:10px"><label>予約列①（自由枠職員）の診断</label>
-    <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size:12px;line-height:1.5"></textarea>
+    <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">①固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
   </div>
   <div class="btn-row"><span class="sp"></span><button class="btn pri" id="stSave">保存して閉じる</button></div>
@@ -1939,7 +1939,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return null;
   }
 
-  /* 出勤中の既定業務種別。app.js の fillFacilityWork/fillUsuiFrames の対象判定と一致:
+  /* 出勤中の既定業務種別。app.js の fillFacilityWork/fillFreeWorkFrames の対象判定と一致:
    *  - 夜勤(zone==='night') / 外部支援専任職員(rules.facworkExclude) → null（施設業務を入れない）
    *  - 自由枠職員(rules.freeWork) → 'free'（自由枠・空欄）／ それ以外(訪問・施設・facWork窓持ち含む) → 'facility'（施設業務）。
    * 特例判定は氏名でなく非公開 roster の rules フラグ(st.flags)で行う。順序: 夜勤→facworkExclude→freeWork→facility。
@@ -2754,7 +2754,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var isMainRow = !!rows[ri].isMain;
         /* 夜勤の区分は【勤務記号が入っている行の区分】で決まる(スクショ実証)。
          * シフトでは夜勤記号を施設行/訪問行に分けて入力＝各勤務の区分はその行(主区分行 or 従区分行)の区分。
-         * 例: 龍さんは訪問行"8)"→夜訪問(明)・施設行"(21"→夜施設(入)の2件(異なる勤務＝重複ではない)。
+         * 例: 当該職員は訪問行"8)"→夜訪問(明)・施設行"(21"→夜施設(入)の2件(異なる勤務＝重複ではない)。
          * 主区分でまとめると施設行の勤務まで訪問扱い等の誤認識になるため、行の区分(division)をそのまま使う。 */
         var nightDiv = (division === '訪問') ? '訪問' : '施設';
         var nightDivs = [nightDiv];
@@ -2848,8 +2848,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var seen = {}, out = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      /* 夜勤は区分も鍵に含める＝行ごとに区分が決まるため、同名でも施設行/訪問行の別勤務(例: 龍の訪問明け
-       * と施設入り)を正しく両方残す。両列出力(double-emit)は廃止済のため同区分の重複は発生しない。 */
+      /* 夜勤は区分も鍵に含める＝行ごとに区分が決まるため、同名でも施設行/訪問行の別勤務(例: 当該職員の
+       * 訪問明けと施設入り)を正しく両方残す。両列出力(double-emit)は廃止済のため同区分の重複は発生しない。 */
       var dk = (a.zone === 'night') ? ((a.division || '') + '|') : '';
       var key = a.name + '|' + dk + (a.nightRole || '') + '|' + a.workStart + '|' + a.workEnd;
       if (seen[key]) continue;
@@ -4239,7 +4239,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *
    * 副作用（意図的な見送り・2026-08-03）: masterToCareDb の daycare ループは resident.floor も
    * 書いていたため、階のマスタ反映と「デイ専用者の自動作成」も止まる。
-   * 階の正本は入居者マスタの居室（せせらぎ利用表は居室→floor の順で解決する）。 */
+   * 階の正本は入居者マスタの居室（デイ利用表は居室→floor の順で解決する）。 */
   function stripMasterDaycare_(p) {
     if (!p || typeof p !== 'object') return p;
     if (p.daycare && p.daycare.length) delete p.daycare;   /* 空配列を残さない＝clean版とバイト一致 */
@@ -4346,7 +4346,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      *
      * 副作用（意図的・2026-08-03 から継続）: 階(resident.floor)のマスタ反映と
      * 「デイ専用者の自動作成」も行わない。階の正本は入居者マスタの居室
-     * （せせらぎ利用表は 居室→r.floor の順で解決する）。
+     * （デイ利用表は 居室→r.floor の順で解決する）。
      * マスタからデイを供給する設計へ戻す場合は data-contracts.md §6-⑧ の手順に従うこと。
      * 回帰テスト: tests/master_bathing.test.js */
     db.residents = residents;
@@ -6828,17 +6828,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { if (localStorage.getItem(CARE_KEY + '_backup_ws') !== null) { localStorage.removeItem(CARE_KEY + '_backup_ws'); freed = true; } } catch (e) {}
     try {
       var limit = shiftDate(todayKey(), -Math.max(7, settings.retentionDays));
+      /* 未送信編集がある日(ws_dirty_v1)は、保持期限を過ぎていても解放しない。
+       * quota で空きを作るためであっても、まだサーバへ届いていない編集を消すのは消失そのもの。
+       * 直後に clearDayDirty_ が走るため、消すと復旧の手掛かりも残らない。
+       * pruneOld と下の wsbase_ 解放は元から同じ保護を持っており、ここだけ抜けていた。 */
+      var dl = dirtyDayList_(), dirty = {}, di;
+      for (di = 0; di < dl.length; di++) dirty[dl[di]] = 1;
       var dates = listSavedDates(), i;
       for (i = 0; i < dates.length; i++) {
-        if (dates[i] < limit && dates[i] !== keepDate) {
+        if (dates[i] < limit && dates[i] !== keepDate && !dirty[dates[i]]) {
           try { localStorage.removeItem(dayKey(dates[i])); freed = true; } catch (e2) {}
         }
       }
       /* quota逼迫時は3-way祖先も解放（keepDate分は残す・祖先欠損はunionフォールバックで安全）。
        * ただし ①競合退避(wsbase_conflict_=復旧資産)は解放しない ②未送信編集がある日の祖先
        * (wsbase_<date>=3-way祖先)は3-wayマージに要るため解放しない（監査B-2）。 */
-      var dl = dirtyDayList_(), dirty = {}, di;
-      for (di = 0; di < dl.length; di++) dirty[dl[di]] = 1;
       for (i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
         if (!k || k.indexOf('wsbase_') !== 0) continue;
@@ -6861,9 +6865,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return false;
     }
   }
-  function loadDayData(date) {
+  /* 読めなかった wsday_ の原本を1世代だけ退避する（facility.js の _bak 退避と同型）。
+   * 読めない日は新規扱いで開き、その後の自動保存が同じキーを空盤面で上書きする＝手で救う材料まで
+   * 消える。上書き前に原本を別キーへ逃がしておく。退避キーは wsday_<date>_corrupt。
+   * 退避の失敗（quota等）で読込処理を止めない。同じ日の再退避は上書き＝常に最新の1世代を保持。 */
+  var corruptNotified_ = {};   /* 同一日で通知を繰り返さない（loadDayData は1画面で複数回呼ばれる） */
+  function stashCorruptDay_(date, raw) {
+    var okStash = false;
+    try { localStorage.setItem(dayKey(date) + '_corrupt', raw); okStash = true; } catch (e) {}
+    if (corruptNotified_[date]) return;
+    corruptNotified_[date] = true;
+    /* 無言で新規盤面にすると「データが消えた」ようにしか見えないため、必ず見える形で知らせる。 */
     try {
-      var raw = localStorage.getItem(dayKey(date));
+      toast(okStash
+        ? dateLabel(date) + ' の保存データを読み込めませんでした。原本を退避し、新規として開きます'
+        : dateLabel(date) + ' の保存データを読み込めませんでした（原本の退避にも失敗）。新規として開きます', true);
+    } catch (e2) {}
+  }
+  function loadDayData(date) {
+    var raw = null;
+    try {
+      raw = localStorage.getItem(dayKey(date));
       if (!raw) return null;
       var p = decodeDay_(raw);
       if (p && p.meta && p.staff && p.tasks) {
@@ -6884,7 +6906,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         return p;
       }
-    } catch (e) { /* 破損時は新規扱い */ }
+    } catch (e) { /* 破損時は新規扱い（下で原本を退避してから返す） */ }
+    /* ここに到達＝原本はあるのに復号／スキーマ検証を通らなかった。新規扱いで上書きされる前に退避する。
+     * raw が空・不存在の場合は上の early return 済み＝退避不要（未作成の日は破損ではない）。 */
+    if (raw) stashCorruptDay_(date, raw);
     return null;
   }
   function listSavedDates() {
@@ -6892,7 +6917,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
-        if (k && k.indexOf('wsday_') === 0) out.push(k.substring(6));
+        /* 日付形式のキーのみ＝破損退避(wsday_<date>_corrupt)を「保存日」として拾わない */
+        if (k && k.indexOf('wsday_') === 0 && /^\d{4}-\d{2}-\d{2}$/.test(k.substring(6))) out.push(k.substring(6));
       }
     } catch (e) {}
     out.sort();
@@ -6908,11 +6934,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < dates.length; i++) {
         if (dates[i] < limit && !dirty[dates[i]]) localStorage.removeItem(dayKey(dates[i]));
       }
-      /* 3-way祖先(wsbase_)・競合退避(wsbase_conflict_)も保持期限を過ぎたら掃除（リーク防止）。
+      /* 3-way祖先(wsbase_)・競合退避(wsbase_conflict_)・破損退避(wsday_<date>_corrupt)も
+       * 保持期限を過ぎたら掃除（リーク防止＝個人情報を無期限に残さない・quota逼迫時に解放できる）。
        * ただし未送信編集がある日の祖先(wsbase_<date>)は3-wayマージに要るため温存する
-       * （wsbase_conflict_<date> は復旧診断用のため期限超過なら従来どおり掃除）。 */
+       * （wsbase_conflict_<date> と破損退避は復旧診断用の写し＝正本ではないため期限超過なら掃除）。 */
       for (i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
+        var mCorrupt = k && /^wsday_(\d{4}-\d{2}-\d{2})_corrupt$/.exec(k);
+        if (mCorrupt) {
+          if (mCorrupt[1] < limit) { try { localStorage.removeItem(k); } catch (e3) {} }
+          continue;
+        }
         if (!k || k.indexOf('wsbase_') !== 0) continue;
         var isConflict = k.indexOf('wsbase_conflict_') === 0;
         var dt = k.replace('wsbase_conflict_', '').replace('wsbase_', '');
@@ -6941,7 +6973,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!k) continue;
         v = localStorage.getItem(k) || '';
         bytes += (k.length + v.length) * 2;
-        if (k.indexOf('wsday_') === 0) dayCount++;
+        /* 日数は listSavedDates と同じ日付形式判定に揃える＝破損退避(_corrupt)を日数に混ぜない */
+        if (k.indexOf('wsday_') === 0 && /^\d{4}-\d{2}-\d{2}$/.test(k.substring(6))) dayCount++;
       }
     } catch (e) { return; }
     el.textContent = 'この端末の使用量: 約' + Math.round(bytes / 1024) + ' KB（wsday_ ' + dayCount + '日分）';
@@ -7154,7 +7187,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     recordCareOp_({ t: 'detail',
                     ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
                     contents: (contents || []).slice() });
-    target.detail = detail; saveCareDb(db); toast('ケア内容を週間計画へ反映しました');
+    target.detail = detail;
+    /* 保存に失敗したら成功扱いにしない。true を返すと呼出側が detailDirty を降ろし、次の照合で
+     * 旧値が再投影されて編集が消える。同期未設定の端末では recordCareOp_ も記録しないため、
+     * ここで false を返さないと編集の痕跡がどこにも残らない。 */
+    if (!saveCareDb(db)) {
+      toast('週間計画へ保存できませんでした（端末の空き容量不足の可能性）。この編集はワークスケジュール側に残します', true);
+      return false;
+    }
+    toast('ケア内容を週間計画へ反映しました');
     return true;
   }
   /* サービスコード(svcCode)を週間計画(care_schedule_v2 の ev.category)へ書き戻す。detail と対称の双方向同期。
@@ -7177,7 +7218,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     recordCareOp_({ t: 'svc',
                     ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
                     svcCode: cat });
-    target.category = cat; saveCareDb(db); toast('サービスコードを週間計画へ反映しました');
+    target.category = cat;
+    /* detail 側と同じ理由で、保存失敗を成功扱いにしない（呼出側は svcDirty で ws の編集を保護する）。 */
+    if (!saveCareDb(db)) {
+      toast('週間計画へ保存できませんでした（端末の空き容量不足の可能性）。この編集はワークスケジュール側に残します', true);
+      return false;
+    }
+    toast('サービスコードを週間計画へ反映しました');
     return true;
   }
   /* ===== 入院フラグ（resident単位・週間計画と共有の care_schedule_v2）要件4 ===== */
@@ -10398,21 +10445,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
   }
 
-  /* 任意日の盤面を localStorage 保存＋クラウド put（現在表示中でなくても可）。 */
-  function putDayData_(date, day) {
-    lsSetDay_(date, day);
-    if (!syncOn()) return;
-    gas({ action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day }, function (j) {
-      if (j && j.ok) {
-        var d2 = loadDayData(date);
-        if (d2 && d2.meta) { d2.meta.rev = j.rev; lsSetDay_(date, d2); }
-      } else if (j && j.conflict) {
-        /* 競合: サーバに新しい版がありデータ損失を防ぐため上書きしない（この端末の保存は後で
-         * 翌週を開くとサーバ版に置換され得る）。最新取得後に再コピーするよう促す。 */
-        toast('翌週日は他端末が更新済みのため同期できませんでした。翌週を開いて最新取得後、再度コピーしてください', true);
-      }
-    });
-  }
+  /* 任意日の直接 put が必要になったら pushDayFor_ を使う（dirty管理・staffwipe抑止・ロック日の扱いを含む）。
+   * 素の put は生の action:'put' でこれらを迂回するため、ここには置かない。 */
 
   /* コピー前後で kind 別件数を突き合わせる。一致すれば '' を、欠落があれば内訳文字列を返す。
    * 「翌週へコピーしたのに一部の枠だけ消える」類の無言喪失を、保存前に検知するための安全網。 */
@@ -10617,24 +10651,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return out;
   }
   /* 列削除の可否: 通常の訪問/施設ゾーンかつ 予約列(自由枠①=RESERVED_EXCLUSIVE・外部支援専任等の予約席)・夜勤列でなく、
-   * 列内に支援枠(care)が1件も無い列のみ削除可（施設業務等の業務枠は入っていても可＝破棄する）。 */
+   * 列内に支援枠(care)が1件も無い列のみ削除可（施設業務等の業務枠は入っていても可＝破棄する）。
+   * manualCount = 列内の「手動由来の枠」件数（kind!=='care' かつ src!=='facwork' もしくは facManual
+   * ＝人が作った自由枠・手動休憩・手で動かした自動枠）。純自動の facwork と違いシフト再反映で戻らず
+   * Undo でも戻らないため、呼び出し側で確認ダイアログを挟む材料として返す（削除自体は従来どおり可）。 */
   function canDeleteColumn_(day, colDef) {
-    if (!colDef) return { ok: false, reason: '' };
-    if (colDef.zone === 'night') return { ok: false, reason: '夜勤列は削除できません。' };
+    if (!colDef) return { ok: false, reason: '', manualCount: 0 };
+    if (colDef.zone === 'night') return { ok: false, reason: '夜勤列は削除できません。', manualCount: 0 };
     var ids = colDef.staffIds || [], i, colBase = {};
     for (i = 0; i < ids.length; i++) {
       colBase[IM.baseSlotId(ids[i])] = true;
-      if (IM.RESERVED_EXCLUSIVE_SLOTS.indexOf(IM.baseSlotId(ids[i])) >= 0) return { ok: false, reason: '予約列（自由枠①）は削除できません。' };
+      if (IM.RESERVED_EXCLUSIVE_SLOTS.indexOf(IM.baseSlotId(ids[i])) >= 0) return { ok: false, reason: '予約列（自由枠①）は削除できません。', manualCount: 0 };
       var s = M.findStaff(day.staff, ids[i]);
-      if (s && s.flags && (s.flags.reservedSlot || s.flags.reservedExclusive)) return { ok: false, reason: '固定列（予約席）は削除できません。' };
+      if (s && s.flags && (s.flags.reservedSlot || s.flags.reservedExclusive)) return { ok: false, reason: '固定列（予約席）は削除できません。', manualCount: 0 };
     }
+    var manualCount = 0;
     for (i = 0; i < day.tasks.length; i++) {
       var t = day.tasks[i];
-      if (t.kind === 'care' && t.staffId && colBase[IM.baseSlotId(t.staffId)]) {
-        return { ok: false, reason: 'この列に支援枠があるため削除できません（支援を他の列へ移動してから削除してください）。' };
+      if (!t.staffId || !colBase[IM.baseSlotId(t.staffId)]) continue;
+      if (t.kind === 'care') {
+        return { ok: false, reason: 'この列に支援枠があるため削除できません（支援を他の列へ移動してから削除してください）。', manualCount: 0 };
       }
+      if (t.src !== 'facwork' || t.facManual) manualCount++;
     }
-    return { ok: true, reason: '' };
+    return { ok: true, reason: '', manualCount: manualCount };
   }
   function editColumnStaff(col) {
     var day = store.get();
@@ -10704,7 +10744,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function deleteColEdit_() {
     var day = store.get();
     var colDef = colByIndex_(day, editingCol_);
-    if (!colDef || !canDeleteColumn_(day, colDef).ok) { toast('この列は削除できません', true); return; }
+    var chk_ = canDeleteColumn_(day, colDef);
+    if (!colDef || !chk_.ok) { toast('この列は削除できません', true); return; }
+    /* 手動由来の枠は自動再生成もUndo復元もされない＝黙って消さず、件数を示して本人確認を取る。 */
+    if (chk_.manualCount) {
+      if (!window.confirm('この列には手動で作成・移動した枠が ' + chk_.manualCount +
+          '件あります。\n列を削除するとこれらの枠も削除され、Undo（元に戻す）では戻せません。\n削除しますか？')) return;
+    }
     var ids = colDef.staffIds || [], i, m, idSet = {};
     for (i = 0; i < ids.length; i++) { idSet[ids[i]] = true; idSet[IM.baseSlotId(ids[i])] = true; }
     /* 列内タスク(care無しは canDelete で保証＝施設業務等の業務枠のみ)を破棄。 */
@@ -10714,7 +10760,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (t.staffId && (idSet[t.staffId] || idSet[IM.baseSlotId(t.staffId)])) del.push(t.id);
     }
     /* 列内タスク破棄は履歴非汚染(store.auto)にする＝列削除(下のSET_STAFF)の1回Undoで列が戻る。
-     * 破棄されるのは自動施設業務/休憩枠のみ(careはcanDeleteColumn_で保証)＝再反映で自動再生成されるため復元不要。 */
+     * 破棄には手動枠も含まれ得る(直前のconfirmで本人確認済み)。自動施設業務/休憩枠は再反映で再生成される。 */
     store.auto(function () { for (var di = 0; di < del.length; di++) store.dispatch({ type: 'DELETE_TASK', id: del[di] }); });
     /* 列とstaffを取り除き再構成→relabel→staff.col同期（trimEmptyCols と同じ後処理） */
     var d2 = store.get(), cols = [];
@@ -10731,7 +10777,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < nstaff.length; i++) if (colBy[nstaff[i].id] !== undefined) nstaff[i].col = colBy[nstaff[i].id];
     store.dispatch({ type: 'SET_STAFF', staff: nstaff, columns: cols });
     try { flushAll_(); } catch (e) {}
-    toast('列を削除しました（Undoで復元可・シフト再反映で戻る場合があります）');
+    /* 実挙動どおりに伝える: 列内タスクの削除は store.auto＝履歴に載らないため、Undo で戻るのは列だけ。
+     * 自動の施設業務/休憩はシフト再反映で再生成されるが、手動枠は戻らない。 */
+    toast('列を削除しました（Undoで戻るのは列のみ・列内の枠は戻りません。自動の施設業務/休憩はシフト再反映で再生成されます）');
     hideModals();
   }
   /* 「＋列」: 選択ゾーン末尾へ手動の空列を追加（IM.addEmptyColumn はクローンを返す純粋関数＝Undo可能な通常アクション）。 */
@@ -10937,7 +10985,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function isFreeWork_(st) {
     return !!(st && st.flags && st.flags.freeWork);
   }
-  function fillUsuiFrames(day) {
+  function fillFreeWorkFrames(day) {
     var byStaff = {}, i;
     for (i = 0; i < day.tasks.length; i++) {
       var t0 = day.tasks[i];
@@ -11129,7 +11177,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) {}
     try { rebuildFacWindowTasks(); } catch (eN) {}   /* 訪問列内の施設業務窓を施設業務枠として配置 */
     try { autoPlaceCareInStore_(); } catch (eP) {}   /* 未配置ケアを出勤職員の列へ(夜勤訪問ケアの消失防止・要件2)。施設業務充填の前に占有化 */
-    try { fillUsuiFrames(store.get()); } catch (eU) {}   /* 自由枠職員(freeWork): 12-13休憩＋自由枠を敷き詰め */
+    try { fillFreeWorkFrames(store.get()); } catch (eU) {}   /* 自由枠職員(freeWork): 12-13休憩＋自由枠を敷き詰め */
     try { fillFixedBreaks(store.get()); } catch (eFB) {}  /* 固定休憩職員(fixedBreak): 固定休憩(施設業務充填の前に占有化) */
     try {
       var add = fillFacilityWork(store.get());
