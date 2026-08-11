@@ -127,7 +127,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ★左列は max-content。効能列を右端に飛ばさず、薬剤名のすぐ右（＝中央寄り）に置く。
      長い薬剤名がある方では minmax の下限0で縮み、はみ出さない。 */
 .meds2{display:grid; grid-template-columns:minmax(0,max-content) auto; column-gap:20px}
-.meds2-h{font-size:0.625rem; color:var(--g6); text-align:left; white-space:nowrap;
+.meds2-h{font-size:0.6875rem; color:var(--g6); text-align:left; white-space:nowrap;
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
@@ -430,7 +430,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
       <label style="font-size:0.75rem;color:var(--g6);display:block;margin-bottom:4px">効能辞書の点検</label>
       <p class="muted" style="margin:0 0 8px">
         「薬剤情報（定期）」の各行に効能を当てられているかを数えます。<b>1文字も書き込みません。</b>
-        辞書に無かった薬剤名をコピーして渡していただければ、次回に追加します。</p>
+        辞書に無かった薬剤名をコピーして渡していただければ、次回に追加します。一覧に出すのは<b>薬剤名らしき先頭の語だけ</b>で、注記の行は除いています。</p>
       <button class="btn btn-sec" id="medsAuditRun" type="button">🔎 点検する</button>
       <div id="medsAuditOut" style="margin-top:10px"></div>
     </div>
@@ -483,7 +483,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 <!-- 薬効辞書（薬剤名 → 効果・効能）。フェイスシートと共有する唯一の正本。
      読み込めなかった時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
-<script src="meds-effect-dict.js"></script>
+<script src="meds-effect-dict.js?v=2026-08-11"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -1460,7 +1460,7 @@ function medsRegularCell(text){
  *   ③ A4印刷で【2列にしたせいで折り返す】行がどれだけあるか（原則2 の実測）
  * ★氏名は画面にもログにも出さない。件数と薬剤名だけを扱う。
  * ★薬の項目だけを返す meds_view セクションで取る（medical は病名まで返すので使わない）。 */
-var medsAuditBusy=false;
+var medsAuditBusy=false, medsAuditStop=false;
 function medsAuditTextWidth(text,px){
   var m=medsAuditTextWidth._m;
   if(!m){
@@ -1469,7 +1469,52 @@ function medsAuditTextWidth(text,px){
     document.body.appendChild(m); medsAuditTextWidth._m=m;
   }
   m.style.fontSize=px+'px'; m.textContent=text;
-  return m.getBoundingClientRect().width;
+  var w=m.getBoundingClientRect().width;
+  m.textContent='';   /* 測り終えたら薬剤名を DOM に残さない */
+  return w;
+}
+/* A4に印刷した時、2列にしたせいで折り返す行が何行あるかを【実測】する。
+   ★幅・余白・列間を定数で持たない。本物の DOM（.sheet > .sec > .sec-body > .row-cells > .cell）を
+     A4本文幅で組み、1列版と2列版の各行の高さを比べる。CSS を直しても自動で追従する。
+   ★画面には出さない（左端の外に置き、測ったら必ず捨てる）。 */
+var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
+function medsAuditCountWrap(raw){
+  var box=document.createElement('div');
+  box.style.cssText='position:absolute;left:-99999px;top:0;width:'+MEDS_A4_CONTENT_PX+'px';
+  box.innerHTML='<div class="sheet"><div class="sec"><div class="sec-body"><div class="row-cells">'+
+    '<div class="cell" style="border-right:none" data-two></div>'+
+    '</div></div></div></div>';
+  var cellTwo=box.querySelector('[data-two]');
+  cellTwo.innerHTML=medsRegularCell(raw);
+  document.body.appendChild(box);
+  var n=0;
+  try{
+    var ds=cellTwo.querySelectorAll('.meds2-d');
+    if(ds.length){
+      /* 1行ぶんの高さは、その場の行の中で最も低いものを基準にする（フォント設定に依存しない） */
+      var unit=Infinity, i;
+      for(i=0;i<ds.length;i++){ var h=ds[i].getBoundingClientRect().height; if(h>0&&h<unit) unit=h; }
+      if(isFinite(unit)&&unit>0){
+        for(i=0;i<ds.length;i++){ if(ds[i].getBoundingClientRect().height>unit*1.5) n++; }
+      }
+    }
+  }catch(e){ n=0; }
+  box.parentNode.removeChild(box);
+  return n;
+}
+/* 未収録の一覧へ出す文字列を作る。この一覧は【施設の外へコピーして渡す】前提なので、
+   薬剤名らしき先頭語だけを取り出し、注記行は最初から出さない。
+   薬剤情報の自由文には「（院外）…」「訪問診療 ○○先生 処方」のような行が混ざり、
+   氏名・医師名・薬局名が入りうる（行をそのまま出していたのを 2026-08-11 に修正）。 */
+function medsAuditKey(line){
+  var s=String(line==null?'':line).trim().replace(/^【般】/,'');
+  if(!s) return '';
+  if(/^[（(\[■※＜<【〈]/.test(s)) return '';                                  // 注記・見出しで始まる行
+  if(/(先生|様|殿|訪問|薬局|病院|クリニック|医院|センター|担当)/.test(s)) return '';  // 人・施設が入りうる行
+  var head=s.split(/[\s　]/)[0];                                              // 用量・用法の手前まで
+  if(!head || /^[0-9０-９]/.test(head)) return '';                              // 「1錠 朝」のような用法だけの行
+  if(!/[ァ-ヶー一-龥A-Za-z]/.test(head)) return '';                              // 記号だけの行
+  return head.slice(0,24);
 }
 /* 薬備考に退避されている手書きの効能ブロックを取り出す（移行時に付いた見出しで始まる部分） */
 function medsAuditHandwritten(notes){
@@ -1491,13 +1536,24 @@ function runMedsAudit(){
   if(!CFG.url){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
   var targets=roster.filter(function(r){ return r && r.active!==false && r.id!=null; });
   if(!targets.length){ out.innerHTML='<p class="muted">名簿が空です。先に一覧を読み込んでください。</p>'; return; }
-  medsAuditBusy=true;
+  if(!confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
+      +'数分かかることがあります。始めますか？')) return;
+  medsAuditBusy=true; medsAuditStop=false;
   var st={people:0,withMeds:0,lines:0,hit:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0},err:0};
   var i=0;
   function step(){
+    /* 中止ボタン・モーダルを閉じた時はここで止める（閉じても走り続けないこと） */
+    if(medsAuditStop || !$('mSync').classList.contains('on')){
+      medsAuditBusy=false;
+      out.innerHTML='<p class="muted">点検を中止しました（'+i+' / '+targets.length+' 名まで読み取り。1文字も書いていません）。</p>';
+      return;
+    }
     if(i>=targets.length){ medsAuditBusy=false; medsAuditRender(out,st,targets.length); return; }
     var r=targets[i++];
-    out.innerHTML='<p class="muted">点検中… '+i+' / '+targets.length+' 名</p>';
+    out.innerHTML='<p class="muted">点検中… '+i+' / '+targets.length+' 名</p>'
+      +'<button class="btn btn-gray" type="button" id="medsAuditStopBtn">中止</button>';
+    var sb=$('medsAuditStopBtn');
+    if(sb) sb.addEventListener('click',function(){ medsAuditStop=true; });
     apiGet({action:'getSection',id:r.id,section:'meds_view'},15000).then(function(res){
       var sec=res&&res.section;
       if(!sec) { st.err++; return; }
@@ -1513,19 +1569,15 @@ function runMedsAudit(){
         st.lines++;
         if(effs[k]){ st.hit++; if(labels.indexOf(effs[k])<0) labels.push(effs[k]); }
         else{
-          var key=lines[k].trim().slice(0,48);
-          st.unknown[key]=(st.unknown[key]||0)+1;
+          var key=medsAuditKey(lines[k]);
+          if(key) st.unknown[key]=(st.unknown[key]||0)+1;
         }
       }
-      /* ③ 印刷で折り返す行を数える。A4縦・余白10mm の本文幅は約700px。
-         右列は「見出し」と「その方の効能ラベル」の広い方（印刷時は13px）。 */
-      var effCol=medsAuditTextWidth('効果・効能',10);
-      for(var j=0;j<labels.length;j++) effCol=Math.max(effCol,medsAuditTextWidth(labels[j],13));
-      var left=700-8-effCol, wrapped=0;
-      for(var m2=0;m2<lines.length;m2++){
-        var w=medsAuditTextWidth(lines[m2],14);
-        if(w>left && w<=700) wrapped++;      // 1列なら収まるが2列だと折り返す行
-      }
+      /* ③ 印刷で折り返す行を数える。
+         ★幅や余白を定数で持たない。CSS を変えるたびに数字がずれ、
+           「折り返し 0 行 ✅」が嘘になる（column-gap を 8→20 に変えた時に実際そうなった）。
+           A4の本文幅で【本物の2列ブロックを組んで測る】ので、CSS を変えても自動で追従する。 */
+      var wrapped=medsAuditCountWrap(raw);
       if(wrapped){ st.wrap.people++; st.wrap.lines+=wrapped; }
       /* ② 手書きの効能との突き合わせ（行数が一致した方だけ） */
       var hw=medsAuditHandwritten(sec.medsNotes);
@@ -1551,6 +1603,7 @@ function medsAuditRender(out,st,total){
   var hwPct=st.hw.cmp?Math.round(st.hw.same/st.hw.cmp*1000)/10:null;
   var keys=Object.keys(st.unknown).sort(function(a,b){return st.unknown[b]-st.unknown[a]});
   var h='<div style="font-size:0.8125rem;line-height:1.8">'+
+    '<div class="muted">辞書の版: '+esc(MedsEffect.version||'不明')+' / 収録 '+MedsEffect.size()+' 語</div>'+
     '<div><b>薬剤情報のある方</b>: '+st.withMeds+' 名 / 調べた '+st.people+' 名'+(st.err?'（取得できず '+st.err+' 名）':'')+'</div>'+
     '<div><b>効能を当てられた行</b>: '+st.hit+' / '+st.lines+' 行（<b>'+pct+'%</b>）</div>'+
     '<div><b>手書きの効能との一致</b>: '+
@@ -1560,7 +1613,7 @@ function medsAuditRender(out,st,total){
   if(keys.length){
     var txt=keys.map(function(k){return k+'\t'+st.unknown[k]}).join('\n');
     h+='<div style="margin-top:8px"><b>辞書に無かった薬剤（'+keys.length+' 種）</b>'+
-       '<p class="muted" style="margin:2px 0">下の枠をコピーして渡してください（薬剤名と件数だけです。氏名は含みません）。</p>'+
+       '<p class="muted" style="margin:2px 0">下の枠をコピーして渡してください。薬剤名と件数だけになるよう絞っていますが、<b>渡す前に一度目を通してください</b>。</p>'+
        '<textarea readonly style="width:100%;min-height:120px;font-size:12px;font-family:monospace">'+esc(txt)+'</textarea></div>';
   }else{
     h+='<div style="margin-top:8px">辞書に無かった薬剤: <b>なし</b> ✅</div>';
