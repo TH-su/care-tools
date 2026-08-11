@@ -3539,19 +3539,25 @@ function applyBulkImport() {
     }
   }
   let added = 0, dup = 0, createdRes = 0; const errs = [];
-  pushUndo();
+  /* 取り消し用に「この取込が実際に書いた id」だけを集める（スナップショットは積まない）。
+     複数の利用者へ書き、利用者そのものも新規作成する操作なので、1名分のスナップショットでは
+     戻せない。詳しくは Undo セクションの pushUndoBulk_ のコメント。 */
+  const undoAdded = [], undoCreated = [];
   parsed.forEach(p => {
     if (p.err) { errs.push(p.err); return; }
     const { res, created } = findOrCreateResident_(p.name);
-    if (created) createdRes++;
+    if (created) { createdRes++; undoCreated.push({ rid: res.id, fp: residentFingerprint_(res) }); }
     if ((res.events || []).some(e => e.dayOfWeek === p.dow && e.serviceType === p.stype && e.startTime === p.st)) { dup++; return; }
+    const evId = uid();
     res.events.push({
-      id: uid(), dayOfWeek: p.dow, serviceType: p.stype,
+      id: evId, dayOfWeek: p.dow, serviceType: p.stype,
       category: p.cat,
       startTime: p.st, endTime: p.en, detail: p.detail, notes: '', units: 0, bathing: false
     });
+    undoAdded.push({ rid: res.id, evId: evId });
     added++;
   });
+  pushUndoBulk_(undoAdded, undoCreated);
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   $('#f-bulk-result').textContent =
     `✓ 登録 ${added}件 / 重複スキップ ${dup}件 / 利用者を新規作成 ${createdRes}名` +
@@ -5215,25 +5221,168 @@ async function copyEventListTSV() {
 }
 
 // ── Undo ──
+/* スタックには2種類のエントリが混在する。
+     kind:'events' … 1名の events スナップショット（従来どおり。予定の保存/複製/毎日/削除/ドラッグが使う）
+     kind:'bulk'   … 一括取込が「実際に書いた id」の記録＝逆操作で取り消す
+   一括取込だけを別扱いにする理由: 複数の利用者へ書き、利用者そのものも新規作成するため、
+   1名分のスナップショットでは戻せない（選択中の1名しか戻らず、新規作成した利用者は残る）。
+   かといって DB 全体のスナップショットへ広げてはいけない。積んだ後にポーリングで入った
+   他端末の更新ごと巻き戻す＝クロス端末のデータ破壊になる（multi-device-sync 原則5に反する）。
+   逆操作なら、取込の後に人や他端末が加えた変更を構造的に巻き込まない。 */
 let undoStack = [];
+function pushUndoEntry_(entry) {
+  undoStack.push(entry);
+  if (undoStack.length > 30) undoStack.shift();
+}
 function pushUndo() {
   const res = currentResident();
   if (!res) return;
   // 利用者IDを併記する: 利用者切替後の Undo が別利用者の計画を丸ごと差し替える事故を防ぐ
-  undoStack.push({ rid: res.id, snap: JSON.stringify(res.events) });
-  if (undoStack.length > 30) undoStack.shift();
+  pushUndoEntry_({ kind: 'events', rid: res.id, snap: JSON.stringify(res.events) });
+}
+/* 一括取込の逆操作を積む。1件も書いていなければ積まない（空の履歴を作らない）。 */
+function pushUndoBulk_(addedEvents, createdResidents) {
+  if (!addedEvents.length && !createdResidents.length) return;
+  pushUndoEntry_({ kind: 'bulk', added: addedEvents, created: createdResidents });
 }
 function undo() {
+  if (!undoStack.length) { showToast('これ以上元に戻せません'); return; }
+  /* 直前の操作が一括取込ならそれを取り消す。利用者の選択に依存しない
+     ＝誰も選択していない状態で取り込んだ場合でも取り消せる。 */
+  if (undoStack[undoStack.length - 1].kind === 'bulk') { undoBulk_(undoStack.pop()); return; }
   const res = currentResident();
-  if (!res || !undoStack.length) { showToast('これ以上元に戻せません'); return; }
-  // 現在の利用者のスナップだけを適用対象にする（他利用者の分はスタックに残す）
+  if (!res) { showToast('これ以上元に戻せません'); return; }
+  // 現在の利用者のスナップだけを適用対象にする（他利用者の分・bulk はスタックに残す）
   let i = undoStack.length - 1;
-  while (i >= 0 && undoStack[i].rid !== res.id) i--;
+  while (i >= 0 && !(undoStack[i].kind !== 'bulk' && undoStack[i].rid === res.id)) i--;
   if (i < 0) { showToast('この利用者の取り消し履歴はありません'); return; }
   res.events = JSON.parse(undoStack[i].snap);
   undoStack.splice(i, 1);
   saveDB(); renderAll();
   showToast('元に戻しました');
+}
+/* 取込直後の「人が入れうる情報」の指紋。取り消す時にこれと違っていれば、取込の後に
+   誰か（この端末の人・他端末）が手を入れた＝消さずに残す判断に使う。events は別に数える。
+   ★これが無いと、取込の確認ダイアログ自身が案内している「取り込んだ後に介護度を設定」を
+   そのとおりに実行した利用者が、予定0件のまま無言で削除される。 */
+function residentFingerprint_(r) {
+  if (!r) return '';
+  return JSON.stringify([String(r.name || ''), String(r.careLevel || ''), String(r.room || ''),
+                         String(r.kana || ''), !!r.external, r.targetSchedule,
+                         !!r.hospitalized, !!r.movedOut, !!r.preAdmission,
+                         Math.max(0, Number(r.welfareEquipUnits) || 0), Number(r.copayRate) || 1]);
+}
+/* 一括取込の取り消し（逆操作）。この取込が作った id だけを取り除く。
+   DB を変更する前に「何をどれだけ消すか」を確定させ、人に確認してから適用する
+   （複数の利用者にまたがる破壊的操作を1キーで無確認に通さない＝介護現場要件3）。 */
+function undoBulk_(entry) {
+  /* ── (1) 影響範囲の算出。ここでは DB を一切変更しない ── */
+  const evByRid = Object.create(null);   // プロトタイプ汚染を避ける
+  (entry.added || []).forEach(a => {
+    if (!a || a.rid === undefined) return;
+    (evByRid[a.rid] = evByRid[a.rid] || Object.create(null))[a.evId] = true;
+  });
+  if (!Array.isArray(DB.residents)) { showToast('利用者データを読めないため取り消しません'); return; }
+  let willRemoveEv = 0;
+  Object.keys(evByRid).forEach(rid => {
+    const r = DB.residents.find(x => String(x.id) === String(rid));
+    if (!r || !Array.isArray(r.events)) return;   // 他端末で消えた利用者はそのまま（空上書きしない）
+    willRemoveEv += r.events.filter(e => e && evByRid[rid][e.id]).length;
+  });
+  /* 取込が新規作成した利用者は、次を【全て】満たす時だけ取り除く。1つでも欠けたら残す
+     ＝消さない側へ倒す（原則4）。同名の既存利用者は findResident_ が拾って created=false に
+     なるため、そもそも entry.created には入らない＝別人の巻き込み削除は構造的に起きない。 */
+  const delIds = [], delNames = [], kept = [];
+  (entry.created || []).forEach(c => {
+    const rid = (c && c.rid !== undefined) ? c.rid : c;          // 旧形式（id文字列）も受ける
+    const fp  = (c && c.fp  !== undefined) ? c.fp  : null;
+    const r = DB.residents.find(x => String(x.id) === String(rid));
+    if (!r) return;                                              // 既に居ない＝何もしない
+    /* 取込ぶんを除いてもまだ予定が残る＝取込の後に足された */
+    const rest = (Array.isArray(r.events) ? r.events : [])
+                   .filter(e => !(evByRid[rid] && evByRid[rid][e.id])).length;
+    if (rest > 0)                                   { kept.push(r.name || ''); return; }
+    if (r.masterId != null && r.masterId !== '')    { kept.push(r.name || ''); return; }   // 入居者マスタと紐づいた
+    if (r._fromMaster)                              { kept.push(r.name || ''); return; }   // マスタ同期が主張している
+    if (fp !== null && residentFingerprint_(r) !== fp) { kept.push(r.name || ''); return; }// 介護度等が入力された
+    delIds.push(rid); delNames.push(r.name || '（無名）');
+  });
+  if (!willRemoveEv && !delIds.length && !kept.length) { showToast('取り消す内容がありません'); return; }
+  /* ── (2) 確認。中止したら履歴を積み直す（取り消しの機会を失わせない） ── */
+  let q = `一括取込を取り消します。\n\n・予定 ${willRemoveEv}件 を削除`;
+  if (delIds.length) q += `\n・利用者 ${delIds.length}名 を削除\n　（${delNames.join('、')}）`;
+  q += '\n\nこの操作は元に戻せません。よろしいですか。';
+  if (!confirm(q)) { pushUndoEntry_(entry); showToast('取り消しを中止しました'); return; }
+  /* ── (3) 適用 ── */
+  let removedEv = 0, removedRes = 0;
+  Object.keys(evByRid).forEach(rid => {
+    const r = DB.residents.find(x => String(x.id) === String(rid));
+    if (!r || !Array.isArray(r.events)) return;
+    const before = r.events.length;
+    r.events = r.events.filter(e => !(e && evByRid[rid][e.id]));
+    removedEv += before - r.events.length;
+  });
+  delIds.forEach(rid => {
+    DB.residents = DB.residents.filter(x => String(x.id) !== String(rid));
+    if (String(DB.currentResidentId) === String(rid)) {
+      try { csSetSelection_((DB.residents[0] || {}).id || null); } catch (e) {}
+    }
+    removedRes++;
+  });
+  /* 端末に保存できたときだけクラウドへ送る（保存失敗のまま送ると、端末は取り消し前・
+     クラウドは取り消し後、という食い違いを全端末へ確定させてしまう＝原則4）。 */
+  const ok = saveDB();
+  populateResidentSelect(); renderResidentList(); renderAll();
+  if (!ok) { showToast('端末に保存できませんでした。クラウドへは送っていません'); return; }
+  showToast(`一括取込を取り消しました（予定 ${removedEv}件`
+          + (removedRes ? ` / 利用者 ${removedRes}名` : '') + 'を取り除きました）');
+  if (kept.length) {
+    alert('次の利用者は取り除きませんでした。\n（取込の後に予定が追加された、介護度などが入力された、'
+        + 'または入居者マスタと紐づいたため）\n\n'
+        + kept.join('\n') + '\n\n必要なら利用者一覧から個別に削除してください。');
+  }
+  csVerifyBulkUndo_(entry);
+}
+/* 取り消しの実体は削除なので、押した直後に他端末との競合が1回起きると、
+   csRebaseEdits の和集合マージ（消失より復活）が取込イベントを復活させる。
+   これは全ての削除操作に共通の性質で、和集合マージ側を弱めて解決してはいけない。
+   自動で消し直しはせず、取り消しきれなかった事実だけを人に見える形で知らせる。 */
+async function csVerifyBulkUndo_(entry) {
+  if (SIM_ON) return;               // 試算中は送らない（他の同期入口と作法を揃える）
+  if (!SYNC.hasTarget()) return;
+  try {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    /* push は _busy（先行の送受信中）でも false を返す。ここでデバウンスを潰しているので、
+       false を「送れた」と扱うと、どの送信トリガにも乗らないまま未送信で居座る。
+       戻り値を必ず見て、送れていなければ送信予約を張り直したうえで人に知らせる。 */
+    const pushed = await SYNC.push();   // 競合時は内部で pull→rebase→再push（DB が差し替わる＝id で引き直す）
+    if (!pushed) {
+      try { SYNC.scheduleAutoPush(); } catch (e2) {}
+      showToast('取り消しをクラウドへ送れていません。💾保存を押してください');
+      return;
+    }
+    let backEv = 0; const backRes = [];
+    (entry.added || []).forEach(a => {
+      const r = DB.residents.find(x => String(x.id) === String(a.rid));
+      if (r && (r.events || []).some(e => e.id === a.evId)) backEv++;
+    });
+    /* 競合リベースはサーバー側の利用者を消さないため、取り除いた利用者は競合1回で復活する。
+       予定が戻らないケース（他端末が先に消していた）では予定の件数だけでは検知できないので、
+       利用者そのものの復活も数えて伝える。 */
+    (entry.created || []).forEach(c => {
+      const rid = (c && c.rid !== undefined) ? c.rid : c;
+      const r = DB.residents.find(x => String(x.id) === String(rid));
+      if (r) backRes.push(r.name || '（無名）');
+    });
+    if (backEv > 0 || backRes.length > 0) {
+      alert('⚠ 他端末の更新と競合したため、一括取込を取り消しきれませんでした。\n\n'
+          + (backEv ? '・予定 ' + backEv + '件 が残っています\n' : '')
+          + (backRes.length ? '・利用者 ' + backRes.length + '名 が残っています（' + backRes.join('、') + '）\n' : '')
+          + '\n画面の内容を確認し、必要なら個別に削除してください。');
+    }
+  } catch (e) {
+    try { SYNC.log('❌ 取り消し後の確認に失敗: ' + e.message); } catch (e2) {}
+  }
 }
 
 // ── Context menu ──
@@ -5325,6 +5474,11 @@ document.addEventListener('keydown', e => {
     return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+    /* 文字入力中は OS/ブラウザ標準の「入力の取り消し」に任せる。ここで奪うと、
+       一括取込の貼り付け欄で打ち間違えて Cmd+Z を押しただけで、取込そのものの
+       取り消し（複数利用者にまたがる削除）が走る。 */
+    const t = e.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
     e.preventDefault();
     undo();
   }
