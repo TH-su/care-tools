@@ -17,22 +17,22 @@
 }
 html, body { margin: 0; padding: 0; }
 body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
-  color: var(--ink); background: var(--g1); font-size: 13px; }
+  color: var(--ink); background: var(--g1); font-size: 0.8125rem; }
 
 /* ── ツールバー ── */
 #toolbar { position: sticky; top: 0; z-index: 50; background: var(--blue); color: #fff;
   padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#toolbar h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+#toolbar h1 { font-size: 0.9375rem; margin: 0 8px 0 0; font-weight: 600; }
 #toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.12);
   border-radius: 6px; padding: 2px; }
 #toolbar button { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;
-  background: rgba(255,255,255,.15); color: #fff; font-size: 12.5px; }
+  background: rgba(255,255,255,.15); color: #fff; font-size: 0.78125rem; }
 #toolbar button:hover { background: rgba(255,255,255,.3); }
 #toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
 #toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
 #toolbar button.savebtn:hover { background: #1b5e20; }
 #toolbar button.savebtn.saving { background: #66bb6a; color: #fff; }
-#toolbar #ymLabel { font-weight: 700; font-size: 15px; padding: 0 8px; min-width: 86px; text-align: center; }
+#toolbar #ymLabel { font-weight: 700; font-size: 0.9375rem; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
 /* 印刷レイアウト(A3横／A3縦2分割)は誤選択が印刷事故に直結するため、選択中を黄色の太字で強調する
@@ -41,11 +41,11 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #printLayout button.on { background: var(--blue-d); color: #ffd400; font-weight: 800; }
 /* DO NOT DELETE: 非表示列(行)表示トグル（重要機能・トップ右固定）。CLAUDE.md §0 参照 */
 #toolbar .reveal-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; color: #fff; cursor: pointer; white-space: nowrap;
+  font-size: 0.6875rem; color: #fff; cursor: pointer; white-space: nowrap;
   background: rgba(255,255,255,.12); padding: 4px 9px; border-radius: 5px; }
 #toolbar .reveal-toggle input { cursor: pointer; margin: 0; }
 #toolbar .reveal-toggle + #syncBadge { margin-left: 6px; }
-#syncBadge { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 12px;
+#syncBadge { margin-left: auto; font-size: 0.75rem; padding: 4px 10px; border-radius: 12px;
   background: rgba(255,255,255,.15); cursor: pointer; white-space: nowrap; }
 #syncBadge.synced { background: #1e8a4c; }
 #syncBadge.dirty { background: #d68910; }
@@ -55,15 +55,15 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 
 .layerbar { display: flex; gap: 2px; padding: 6px 10px 0; align-items: flex-end; flex-wrap: wrap; }
 .layerbar button { border: 1px solid var(--g3); border-bottom: none; background: var(--g2);
-  border-radius: 8px 8px 0 0; padding: 6px 16px; cursor: pointer; font-size: 12.5px; color: #555; }
+  border-radius: 8px 8px 0 0; padding: 6px 16px; cursor: pointer; font-size: 0.78125rem; color: #555; }
 .layerbar button.on { background: #fff; font-weight: 700; color: var(--ink); }
 .layerbar .spacer { flex: 1; }
-.layerbar .hint { font-size: 11px; color: var(--g4); align-self: center; padding-right: 8px; }
+.layerbar .hint { font-size: 0.6875rem; color: var(--g4); align-self: center; padding-right: 8px; }
 /* 「行政提出用」タブと「編集用」タブ群の境目を分かりやすく＝左に余白（印刷では .layerbar ごと非表示で無干渉） */
-.layerbar .draftsep { align-self: center; font-size: 11px; color: var(--g4); margin: 0 4px 4px 14px; }
+.layerbar .draftsep { align-self: center; font-size: 0.6875rem; color: var(--g4); margin: 0 4px 4px 14px; }
 #draftTabs { display: inline-flex; gap: 2px; }
 #draftTabs .drafttab { border: 1px solid var(--g3); border-bottom: none; background: #fbf4e6;
-  border-radius: 8px 8px 0 0; padding: 6px 8px 6px 12px; cursor: pointer; font-size: 12px; color: #7a5b1e;
+  border-radius: 8px 8px 0 0; padding: 6px 8px 6px 12px; cursor: pointer; font-size: 0.75rem; color: #7a5b1e;
   display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
 #draftTabs .drafttab.on { background: #fff8ec; font-weight: 700; color: #6b4d12; box-shadow: inset 0 2px 0 var(--warn); }
 #draftTabs .drafttab.autopt { background: #eef1f5; color: #667; }
@@ -75,9 +75,9 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 .layerbar .adddraft { background: #fff; color: var(--warn); border-color: var(--warn); border-bottom: none; font-weight: 700; }
 .layerbar .confirmdraft { background: var(--ok); color: #fff; border: 1px solid var(--ok); border-radius: 7px;
   align-self: center; margin: 0 4px 4px; padding: 6px 14px; font-weight: 700; }
-.layerbar .confirmStamp { align-self: center; font-size: 11px; color: var(--blue-d); padding-right: 8px; white-space: nowrap; }
+.layerbar .confirmStamp { align-self: center; font-size: 0.6875rem; color: var(--blue-d); padding-right: 8px; white-space: nowrap; }
 #emptyGuide { background: #fff8e1; border: 1px solid var(--warn); border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
-#emptyGuide h2 { margin: 0 0 6px; color: #9a3412; font-size: 15px; }
+#emptyGuide h2 { margin: 0 0 6px; color: #9a3412; font-size: 0.9375rem; }
 #emptyGuide ol { margin: 8px 0; padding-left: 22px; }
 #emptyGuide li { margin: 6px 0; line-height: 1.5; }
 #emptyGuide code { background: #fff; border: 1px solid var(--g3); border-radius: 4px; padding: 1px 5px; }
@@ -94,7 +94,7 @@ body.fitscreen table.sheet thead th { position: static; }
 body.fitscreen table.sheet .sticky1, body.fitscreen table.sheet .sticky2 { position: static; }
 body.fitscreen table.sheet .noprint { display: none; }   /* 俯瞰時は連絡事項等の補助列を隠して縮小率を確保 */
 #btnFit.on { background: rgba(255,255,255,.38); }
-table.sheet { border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+table.sheet { border-collapse: separate; border-spacing: 0; font-size: 0.75rem; table-layout: fixed; }
 table.sheet th, table.sheet td { border-right: 1px solid #000; border-bottom: 1px solid #000;
   padding: 2px 3px; text-align: center; white-space: nowrap; background: #fff; }
 table.sheet { border-left: 1px solid #000; border-top: 1px solid #000; }
@@ -108,7 +108,7 @@ tr.staffline td { border-top: 2.5px solid #000; }
 .lastday { border-right: 3px double #000 !important; }
 /* 分割印刷(A3縦2分割)の各ページ見出し（前半/後半・日付範囲）。split描画(印刷/計測)時のみ生成され
    画面には出ない。印刷と計測(printsim)で同一寸法になるよう media非依存の通常ルールにする。 */
-table.sheet tr.splittitle th { text-align: left; font-size: 14px; font-weight: 700;
+table.sheet tr.splittitle th { text-align: left; font-size: 0.875rem; font-weight: 700;
   background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; padding: 3px 6px; }
 /* 印刷範囲（職員行）と必要数・残数行の境目 */
 tfoot tr:first-child td { border-top: 3px double #000; }
@@ -118,15 +118,15 @@ table.sheet thead .sticky1, table.sheet thead .sticky2 { z-index: 25; }
 td.namecell { font-weight: 600; text-align: left;
   overflow: hidden; text-overflow: ellipsis; cursor: grab; background: #fbfcfe; }
 td.notecell { text-align: left; overflow: hidden; text-overflow: ellipsis;
-  font-size: 10.5px; color: #666; cursor: pointer; }
-td.divcell { font-size: 12.5px; color: #000; font-weight: 600; background: #fbfcfe; }
-td.daycell { height: 26px; cursor: cell; overflow: hidden; font-size: 13.5px; }
-td.daycell.long1, table.eqcols td.long1 { font-size: 11px; }
-td.daycell.long2, table.eqcols td.long2 { font-size: 9.5px; letter-spacing: -0.3px; }
+  font-size: 0.65625rem; color: #666; cursor: pointer; }
+td.divcell { font-size: 0.78125rem; color: #000; font-weight: 600; background: #fbfcfe; }
+td.daycell { height: 26px; cursor: cell; overflow: hidden; font-size: 0.84375rem; }
+td.daycell.long1, table.eqcols td.long1 { font-size: 0.6875rem; }
+td.daycell.long2, table.eqcols td.long2 { font-size: 0.59375rem; letter-spacing: -0.3px; }
 /* 分割勤務(1日2勤務)のセルは2段表示。当該セルを含む行だけ自動的に高くなる（他行・列幅・固定見出しに影響しない）。
    font-sizeはlong1/long2の縮小より優先し、2段が読める大きさを確保する。 */
 td.daycell.multiduty { white-space: normal; line-height: 1.15; overflow: visible;
-  font-size: 11px !important; letter-spacing: 0; padding-top: 1px; padding-bottom: 1px; }
+  font-size: 0.6875rem !important; letter-spacing: 0; padding-top: 1px; padding-bottom: 1px; }
 /* 夜勤の残業（定時から延長された上がり時刻）を赤字・太字でハイライト。
    インラインspanのみ＝余白/行高/セル寸法に影響せず、印刷でも print-color-adjust:exact で赤が出る。 */
 .ot-hl { color: #c0392b !important; font-weight: 700 !important; }
@@ -139,7 +139,7 @@ td.daycell.consviol { box-shadow: inset 0 0 0 2px var(--warn); }
 td.daycell.ot { font-weight: 700; color: #8e44ad; }
 td.sumcell { background: #f4f7fb; font-weight: 600; }
 tr.grouphead td { background: var(--blue-d); color: #fff; font-weight: 700; text-align: left;
-  padding: 3px 8px; font-size: 11.5px; }
+  padding: 3px 8px; font-size: 0.71875rem; }
 /* デイサービス帯の直前に再掲する日付・曜日行（tbody内なので thead 用の配色を明示再現） */
 tr.rephead th { background: var(--headbg); color: #fff; font-weight: 700; }
 tr.rephead th.sat { background: var(--sat) !important; color: #fff !important; }
@@ -150,36 +150,36 @@ tr.dragover td { border-top: 2px solid var(--blue); }
 tr.hiddenrow td { opacity: .45; }
 /* 訪問介護員の休み数 集計行（画面確認用・印刷は noprint で非表示） */
 tr.summaryrow td { background: #eef3fb; border-top: 2px solid #b9cbe6; }
-tr.summaryrow td.namecell { font-size: 12px; font-weight: 700; color: #1a4a80; }
-tr.summaryrow td.divcell { font-size: 11px; color: #1a4a80; }
-tr.summaryrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 12px; color: #1a4a80; }
+tr.summaryrow td.namecell { font-size: 0.75rem; font-weight: 700; color: #1a4a80; }
+tr.summaryrow td.divcell { font-size: 0.6875rem; color: #1a4a80; }
+tr.summaryrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 0.75rem; color: #1a4a80; }
 tr.summaryrow td.sumdaycell.sun { color: #c0392b; }
 tr.summaryrow td.sumdaycell.sat { color: #1f6feb; }
 /* デイサービス職種別 出勤者数（介護士/看護師/合計）集計行。デイ帯と区別する緑系・画面のみ */
 tr.daysumrow td { background: #eaf5ee; border-top: 1px solid #bfe0cb; }
 tr.daysumrow.ds-care td { border-top: 2px solid #8fcea8; }
-tr.daysumrow td.namecell { font-size: 12px; font-weight: 700; color: #1b6b3a; }
-tr.daysumrow td.divcell { font-size: 11px; color: #1b6b3a; }
-tr.daysumrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 12px; color: #1b6b3a; }
+tr.daysumrow td.namecell { font-size: 0.75rem; font-weight: 700; color: #1b6b3a; }
+tr.daysumrow td.divcell { font-size: 0.6875rem; color: #1b6b3a; }
+tr.daysumrow td.sumdaycell { text-align: center; font-weight: 700; font-size: 0.75rem; color: #1b6b3a; }
 tr.daysumrow td.sumdaycell.sun { color: #c0392b; }
 tr.daysumrow td.sumdaycell.sat { color: #1f6feb; }
 tr.daysumrow.ds-total td { background: #d8eede; }
 tr.daysumrow.ds-total td.namecell, tr.daysumrow.ds-total td.sumdaycell { font-weight: 800; }
 .hidebtn { color: var(--g4); cursor: pointer; font-weight: 700; padding: 0 2px; }
 .hidebtn:hover { color: var(--red); }
-.showbtn { color: var(--blue); cursor: pointer; font-size: 10px; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
+.showbtn { color: var(--blue); cursor: pointer; font-size: 0.625rem; border: 1px solid var(--blue); border-radius: 4px; padding: 0 3px; }
 .offstats { margin-top: 10px; }
 tfoot td { background: var(--g2); font-weight: 600; position: sticky; z-index: 10; }
 tfoot input.need { width: 30px; text-align: center; border: 1px solid var(--g3); border-radius: 3px;
-  font-size: 11px; padding: 1px; }
+  font-size: 0.6875rem; padding: 1px; }
 tfoot input.need.ovr { background: var(--hl); border-color: var(--warn); font-weight: 700; }
 tfoot input.monthneed { width: 44px; background: #e8f1fb; border-color: var(--blue); font-weight: 700; }
 td.remain-ok { color: var(--ok); } td.remain-zero { color: var(--g4); } td.remain-minus { color: #fff; background: var(--red) !important; }
 
 #metricsBar { display: flex; gap: 10px; flex-wrap: wrap; padding: 8px 2px; }
 .sumbox { background: #fff; border: 1px solid var(--g3); border-radius: 8px; padding: 6px 14px; }
-.sumbox .k { font-size: 10.5px; color: var(--g4); }
-.sumbox .v { font-size: 17px; font-weight: 700; }
+.sumbox .k { font-size: 0.65625rem; color: var(--g4); }
+.sumbox .v { font-size: 1.0625rem; font-weight: 700; }
 .sumbox.hl { border-color: var(--blue); }
 .sumbox.warn .v { color: var(--warn); }
 
@@ -187,45 +187,45 @@ td.remain-ok { color: var(--ok); } td.remain-zero { color: var(--g4); } td.remai
 #palette { position: absolute; z-index: 100; background: #fff; border: 1px solid var(--g3);
   border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 8px; display: none; max-width: 300px; }
 #palette .symbtn { display: inline-block; margin: 2px; padding: 5px 9px; border: 1px solid var(--g3);
-  border-radius: 6px; cursor: pointer; font-size: 12.5px; background: #fff; }
+  border-radius: 6px; cursor: pointer; font-size: 0.78125rem; background: #fff; }
 #palette .symbtn:hover { border-color: var(--blue); background: var(--sel); }
-#palette .pal-section { font-size: 10px; color: var(--g4); margin: 4px 2px 2px; }
-#palette input { width: 100%; border: 1px solid var(--g3); border-radius: 5px; padding: 4px 6px; margin-top: 6px; font-size: 12.5px; }
+#palette .pal-section { font-size: 0.625rem; color: var(--g4); margin: 4px 2px 2px; }
+#palette input { width: 100%; border: 1px solid var(--g3); border-radius: 5px; padding: 4px 6px; margin-top: 6px; font-size: 0.78125rem; }
 #palette .pal-actions { display: flex; gap: 4px; margin-top: 6px; }
-#palette .pal-actions button { flex: 1; border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 4px; cursor: pointer; font-size: 11.5px; }
+#palette .pal-actions button { flex: 1; border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 4px; cursor: pointer; font-size: 0.71875rem; }
 #palette .palcolors { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
 #palette .colorsw { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--g3); cursor: pointer; display: inline-block; }
 #palette .colorsw:hover { outline: 2px solid var(--blue); }
 #palette .palcolors input[type=color] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--g3); border-radius: 4px; margin: 0; }
-#palette .palcolbtn { border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 11px; }
+#palette .palcolbtn { border: 1px solid var(--g3); background: var(--g1); border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 0.6875rem; }
 
 /* ── 汎用 ── */
 .panel { background: #fff; border: 1px solid var(--g3); border-radius: 10px; padding: 14px; margin: 10px 0; }
-.panel h2 { font-size: 14px; margin: 0 0 10px; }
-.panel h3 { font-size: 12.5px; margin: 14px 0 6px; color: var(--blue-d); }
+.panel h2 { font-size: 0.875rem; margin: 0 0 10px; }
+.panel h3 { font-size: 0.78125rem; margin: 14px 0 6px; color: var(--blue-d); }
 button.act { border: 1px solid var(--blue); background: var(--blue); color: #fff; border-radius: 6px;
-  padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+  padding: 6px 14px; cursor: pointer; font-size: 0.78125rem; }
 button.act.ghost { background: #fff; color: var(--blue); }
 button.act.danger { background: #fff; color: var(--red); border-color: var(--red); }
 button.act:disabled { opacity: .5; cursor: default; }
 input[type=text], input[type=number], input[type=password], select, textarea {
-  border: 1px solid var(--g3); border-radius: 6px; padding: 5px 7px; font-size: 12.5px; font-family: inherit; }
+  border: 1px solid var(--g3); border-radius: 6px; padding: 5px 7px; font-size: 0.78125rem; font-family: inherit; }
 textarea.paste { width: 100%; height: 110px; }
-table.plain { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.plain { border-collapse: collapse; width: 100%; font-size: 0.75rem; }
 table.plain th, table.plain td { border: 1px solid var(--g3); padding: 4px 6px; text-align: left; }
 table.plain th { background: var(--g2); }
 table.eqcols th, table.eqcols td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; }
 #reqGrid table.eqcols th, #reqGrid table.eqcols td { padding: 4px 1px; text-align: center; text-overflow: clip; }
 #reqGrid table.eqcols th:first-child, #reqGrid table.eqcols td:first-child { text-align: left; padding: 4px 6px; text-overflow: ellipsis; }
 table.plain input[type=text] { width: 90%; border: none; background: transparent; padding: 2px; }
-.muted { color: var(--g4); font-size: 11.5px; }
-.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10.5px; background: var(--g2); margin: 0 2px; }
+.muted { color: var(--g4); font-size: 0.71875rem; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.65625rem; background: var(--g2); margin: 0 2px; }
 .badge.new { background: #d5f5e3; color: #1e8449; }
 .badge.upd { background: #d6eaf8; color: #21618c; }
 .badge.ex { background: #fadbd8; color: #943126; }
 .flexrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .formgrid { display: grid; grid-template-columns: 130px 1fr; gap: 7px 10px; align-items: center; max-width: 640px; }
-.qualchk label, .symchk label { display: inline-block; margin-right: 10px; font-size: 12px; }
+.qualchk label, .symchk label { display: inline-block; margin-right: 10px; font-size: 0.75rem; }
 
 /* ── ドロワー ── */
 #drawer { position: fixed; top: 0; right: -480px; width: 460px; height: 100%; background: #fff;
@@ -296,15 +296,30 @@ body.printsim table.sheet .sticky1 { border-left: 1px solid #000; }   /* @media 
 body.printsim #printTitle { display: inline-block !important; width: auto; max-width: 100%; font-size: 16px; font-weight: 700; margin: 0 0 6px; }
 body.printsim.printsplit #printTitle { display: none !important; }   /* 分割印刷はタイトルを出さない(@media print と同期) */
 body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media print と同期(連勤オレンジ枠は紙に出さない) */
+
+/* ════════════════════════════════════════════════════════════
+   アクセシビリティ（2026-08-10 追加 / 通常表示への影響なし）
+   ・フォーカスリングはブラウザ標準のまま（元から outline を抑制していないため変更不要）
+   ・動きの抑制: OSで「視差効果を減らす」を有効にした端末のみ作用
+   ・印刷まわりの font-size は px のまま据え置き（帳票の寸法を守るため）
+   ════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 </style>
 </head>
 <body>
 <div id="toolbar">
   <h1>シフト作成・管理</h1>
   <span class="ymnav">
-    <button id="ymPrev" title="前月">◀</button>
+    <button id="ymPrev" title="前月" aria-label="前月">◀</button>
     <span id="ymLabel">2026-06</span>
-    <button id="ymNext" title="翌月">▶</button>
+    <button id="ymNext" title="翌月" aria-label="翌月">▶</button>
   </span>
   <label id="lockToggle" class="reveal-toggle" title="この月を確定してロック（画面編集を不可に）。実績・行政提出用もこの月の名簿に従います。編集するときはチェックを外してください。">
     <input type="checkbox" id="chkLock"> 🔒 ロック
@@ -316,8 +331,8 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
     <button data-view="official">行政提出</button>
     <button data-view="master">マスタ</button>
   </span>
-  <button id="btnUndo" title="元に戻す (Ctrl+Z)">↩</button>
-  <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)">↪</button>
+  <button id="btnUndo" title="元に戻す (Ctrl+Z)" aria-label="元に戻す">↩</button>
+  <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)" aria-label="やり直す">↪</button>
   <button id="btnHistory" title="変更履歴">履歴</button>
   <button id="btnSave" class="savebtn" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl+S / Cmd+S)">💾 保存</button>
   <button id="btnAuto" class="primary">⚡ 自動作成</button>
@@ -344,7 +359,7 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
   <span id="syncBadge" class="nosync" title="クリックで今すぐ同期">同期未設定</span>
 </div>
 
-<div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:13px">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
+<div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:0.8125rem">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
 
 <div class="layerbar" id="layerBar">
   <button data-layer="plan" class="on">予定（確定版）</button>
@@ -550,21 +565,12 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 <div id="overlay"></div>
 <div id="drawer"></div>
 
-<dialog id="dlgConfirm">
-  <h3 id="dlgConfirmTitle"></h3>
+<dialog id="dlgConfirm" aria-labelledby="dlgConfirmTitle" aria-describedby="dlgConfirmMsg">
+  <h3 id="dlgConfirmTitle">確認</h3>
   <p id="dlgConfirmMsg" style="white-space:pre-wrap"></p>
   <div class="flexrow" style="justify-content:flex-end">
     <button id="dlgConfirmNo" class="act ghost">キャンセル</button>
     <button id="dlgConfirmYes" class="act">OK</button>
-  </div>
-</dialog>
-
-<dialog id="dlgConflict">
-  <h3>同期の競合</h3>
-  <p id="dlgConflictMsg" style="white-space:pre-wrap"></p>
-  <div class="flexrow" style="justify-content:flex-end">
-    <button id="dlgConflictServer" class="act ghost">サーバ版を取得</button>
-    <button id="dlgConflictLocal" class="act">自分の編集で上書き</button>
   </div>
 </dialog>
 
@@ -1573,6 +1579,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 夜勤専従の6日サイクル（実シート準拠: 4連続入り→上がりのみ→休） */
   var NIGHT_CYCLE = ['(22', '8)(22', '8)(21', '7)(21', '7)', '休'];
 
+  /* 事業所ごとの定休日（曜日番号）。施設プロファイル未設定・取得不可の環境（テスト等）でも
+   * 従来と同じ挙動（通所のみ日曜が自動割当の対象外）になるようフォールバックに使う。 */
+  var DEFAULT_CLOSED_WEEKDAYS = { '施設': [], '訪問': [], '通所': [0] };
+
+  /* 施設プロファイル（ui/facility.js・work-scheduleと共有）の定休日を取り出す。
+   * ロジック層はUI層へ直接依存できないため window 経由で参照し、取れなければ既定へ倒す。 */
+  function closedWeekdaysMap() {
+    try {
+      if (typeof window === 'undefined' || !window.ShiftFacility ||
+          typeof window.ShiftFacility.loadFacilityProfile !== 'function') return null;
+      var p = window.ShiftFacility.loadFacilityProfile();
+      if (!p || !p.offices || !p.offices.length) return null;
+      var m = {};
+      for (var i = 0; i < p.offices.length; i++) {
+        var o = p.offices[i];
+        if (!o || !o.key) continue;
+        m[o.key] = (o.closedWeekdays && typeof o.closedWeekdays.length === 'number') ? o.closedWeekdays : [];
+      }
+      return m;
+    } catch (e) { return null; }
+  }
+
   function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
 
   function autoAssign(opts) {
@@ -1604,6 +1632,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
 
     function dow(day) { return new Date(opts.year, opts.month - 1, day).getDay(); }
+    /* 事業所の定休日（プロファイル優先・未設定は既定）。1回の autoAssign 中は同じ値を使う。 */
+    var closedMap = closedWeekdaysMap();
+    function closedWeekdaysOf(division) {
+      var key = division || '施設';
+      if (closedMap && Object.prototype.toString.call(closedMap[key]) === '[object Array]') return closedMap[key];
+      return DEFAULT_CLOSED_WEEKDAYS[key] || [];
+    }
     function needFor(day, cat) {
       if (dailyNeeds[day] && typeof dailyNeeds[day][cat] === 'number') return dailyNeeds[day][cat];
       if (typeof monthNeeds[cat] === 'number') return monthNeeds[cat];
@@ -1729,10 +1764,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (cat === 'early' && r.lateOnly) return false;
       if (cat === 'late' && r.earlyOnly) return false;
       if ((r.fixedOffWeekdays || []).indexOf(dow(day)) >= 0) return false;
-      /* 通所メインは日曜が原則休＝自動割当の対象外（既存の固定休曜日と同じ扱い）。
+      /* 事業所の定休日は自動割当の対象外（既存の固定休曜日と同じ扱い）。曜日は施設プロファイルの
+       * closedWeekdays が正（既定は通所=日曜のみ）＝施設ごとの休業日を設定で変えられる。
        * 割り当てられないので Phase3 が '休' を埋め、Phase4 もここで拒否されるため休のまま残る。
-       * 日曜に出す必要がある日は手動でセルに入力すれば以後の自動作成も既存入力として尊重する。 */
-      if (stf.mainDivision === '通所' && dow(day) === 0) return false;
+       * 定休日に出す必要がある日は手動でセルに入力すれば以後の自動作成も既存入力として尊重する。 */
+      if (closedWeekdaysOf(stf.mainDivision).indexOf(dow(day)) >= 0) return false;
       if (r.weekdaysOnly && (dow(day) === 0 || dow(day) === 6)) return false;
       var maxCons = r.maxConsecutive || 4;
       if (consBefore(stf, day) >= maxCons) return false;
@@ -2707,7 +2743,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict | storeerror | readonly
     statusDetail: '',
     listeners: [],
-    conflictHandler: null, // function(key, serverEntry, localData, done(choice))
     onResolved: null,      // 競合解決後に呼ばれる（UIの再読込用）
     pushTimer: null,
     storeError: false,     // localStorage書き込みに失敗中
@@ -2724,25 +2759,62 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.updateStatus();
       this.bindRecovery();
     },
-    /* 競合退避キー(local:conflictRescue:*)の掃除（2026-07-23 巻き戻り事故対応）。
-     * autoResolveConflict の鮮度ガードが退避した古い未送信編集を、savedAt が14日を超えたものだけ削除する。
+    /* 退避キー(local:conflictRescue:* / local:importRescue:*)の掃除（2026-07-23 巻き戻り事故対応）。
+     * ①savedAt が14日を超えたもの ②同一元キー系列で最新3世代を超える古いもの、を削除する。
+     * ②が無いと1つのキーの退避が世代ごとに無制限へ積み上がり、容量を圧迫する。
      * パース不能・時刻不明の退避キーは消さない（安全側）。reclaimSpace の解放対象には含めない
      * ＝再生成不能な復旧資産のため容量逼迫時も温存する。 */
     pruneConflictRescue: function () {
       try {
-        var prefix = PREFIX + 'local:conflictRescue:';
+        var prefixes = [PREFIX + 'local:conflictRescue:', PREFIX + 'local:importRescue:'];
         var maxAge = 14 * 24 * 60 * 60 * 1000;
+        var maxGen = 3;
         var now = Date.now();
+        var series = {};   /* 元キー系列（プレフィクス+元キー）→ 残った退避キーの一覧 */
         for (var i = localStorage.length - 1; i >= 0; i--) {
           var k = localStorage.key(i);
-          if (!k || k.indexOf(prefix) !== 0) continue;
+          if (!k) continue;
+          var pi = -1;
+          for (var p = 0; p < prefixes.length; p++) { if (k.indexOf(prefixes[p]) === 0) { pi = p; break; } }
+          if (pi < 0) continue;
           var v = lsGet(k);
           if (!v || typeof v.savedAt !== 'number') continue;   /* パース不能・時刻不明は消さない（安全側） */
           if ((now - v.savedAt) > maxAge) {
             try { localStorage.removeItem(k); } catch (e) {}
+            continue;
+          }
+          /* 末尾の :タイムスタンプ を落とした部分が元キー（元キー自身が : を含むため lastIndexOf） */
+          var rest = k.slice(prefixes[pi].length);
+          var cut = rest.lastIndexOf(':');
+          var base = prefixes[pi] + (cut > 0 ? rest.slice(0, cut) : rest);
+          if (!series[base]) series[base] = [];
+          series[base].push({ key: k, at: v.savedAt });
+        }
+        for (var b in series) {
+          if (!Object.prototype.hasOwnProperty.call(series, b)) continue;
+          var arr = series[b];
+          if (arr.length <= maxGen) continue;
+          arr.sort(function (x, y) { return y.at - x.at; });   /* 新しい順 */
+          for (var j = maxGen; j < arr.length; j++) {
+            try { localStorage.removeItem(arr[j].key); } catch (e) {}
           }
         }
       } catch (e) {}
+    },
+    /* 手元の未送信データを復旧用の退避キー(local:conflictRescue:*)へ写す。
+     * 世代ごとに :Date.now() の別キー＝2回目以降が1回目を無言上書きしない（掃除は14日でprune）。
+     * 同一キー・同一内容の再退避はセッション内で1回に抑える（競合の再試行で重複コピーが
+     * 増えて容量を食わないため。判定は内容のみ）。
+     * 戻り値: 退避済み（同一内容の既存退避を含む）なら true。 */
+    rescueLocal_: function (key, localVal, baseRev) {
+      if (!this._rescuedSig) this._rescuedSig = {};
+      var sig = null;
+      try { sig = JSON.stringify(localVal); } catch (e) {}
+      if (sig !== null && this._rescuedSig[key] === sig) return true;
+      var ok = lsSet(PREFIX + 'local:conflictRescue:' + key + ':' + Date.now(),
+        { savedAt: Date.now(), baseRev: baseRev || 0, data: localVal });
+      if (ok && sig !== null) this._rescuedSig[key] = sig;
+      return ok;
     },
     /* ネットワーク復帰・タブ復帰で自動的に同期を再試行する（オフライン固着の自動復帰）。
      * 旧Safari互換: addEventListener のみ使用。多重登録を _recoveryBound で防止。 */
@@ -3045,28 +3117,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       });
     },
 
-    handleConflicts: function (conflicts, idx) {
-      var self = this;
-      if (idx >= conflicts.length) {
-        if (self.onResolved) { try { self.onResolved(); } catch (e) {} }
-        return;
-      }
-      var c = conflicts[idx];
-      var localData = lsGet(PREFIX + c.key);
-      this.conflictHandler(c.key, c.server, localData, function (choice) {
-        if (choice === 'server') {
-          self.adoptServer(c, function () { self.handleConflicts(conflicts, idx + 1); });
-          return;
-        }
-        /* 自分の編集で上書き: baseRevをサーバに合わせ強制push（実データはpush時にlive取得） */
-        self.queue.enqueue(c.key, c.server.rev, Date.now());
-        if (self.queue.items[c.key]) self.queue.items[c.key].baseRev = c.server.rev;
-        self.saveMeta();
-        self.updateStatus();
-        self.schedulePush();
-        self.handleConflicts(conflicts, idx + 1);
-      });
-    },
+    /* 競合解決は autoResolveConflict が正（モーダルなしの自動解決）。 */
 
     /* サーバ版を採用。server.dataがnull（push競合でデータ未取得）の場合は、
      * 先に単一キーpullで実データを取得してから書き込む。取得失敗時は
@@ -3133,30 +3184,36 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           this.updateStatus('dirty', '同期の調整中です（自動で再試行します）');
           return;
         }
+        var qItem = this.queue.items[key];
+        /* 退避は鮮度に関係なく毎回行う（2026-08-08 監査S1）。この後のローカル優先の再送は
+         * 他端末がサーバへ入れた編集をサーバ上から置き換えるため、上書き前の手元コピーが
+         * 復旧の材料になる。退避の成否は主経路を止めない（失敗しても従来どおり進む）。 */
+        var rescued = this.rescueLocal_(key, localVal, qItem ? qItem.baseRev : 0);
         /* 鮮度ガード（2026-07-23 巻き戻り事故対応）: 未送信が古すぎる場合はローカル全面優先を止める。
          * 退避→サーバ版採用→告知の順。退避が失敗したらローカル優先の従来経路へ倒す（データを消さない）。
-         * 回数リセットはしない（stale経路も上記の上限で終端させる）。退避キーは毎回別世代（:Date.now()）で
-         * 同一キーの2回目以降が1回目を無言上書きしないようにする（掃除は14日でpruneConflictRescueが行う）。 */
-        var qItem = this.queue.items[key];
+         * 回数リセットはしない（stale経路も上記の上限で終端させる）。 */
         var policy = SC.conflictPolicy(qItem ? qItem.queuedAt : 0, Date.now());
-        if (policy === 'server-wins-stale') {
-          var rescued = lsSet(PREFIX + 'local:conflictRescue:' + key + ':' + Date.now(),
-            { savedAt: Date.now(), baseRev: qItem ? qItem.baseRev : 0, data: localVal });
-          if (rescued) {
-            this.adoptServer({ key: key, server: { rev: serverRev, data: (serverData !== undefined ? serverData : null) } }, function () {
-              if (self.onResolved) { try { self.onResolved(); } catch (e) {} }
-            });
-            /* 文言は「完了報告」でなく「実行宣言」: adoptServer は非同期で失敗もありうるため「採用しました」とは言わない。 */
-            var staleMsg = '未送信の編集が古すぎるため、サーバの最新版に合わせます（元の編集は端末内に退避済み）: ' + key;
-            this.updateStatus('conflict', staleMsg);   /* ステータス表示は毎回でよい */
-            /* alert はキーごとセッション1回だけ（1.5秒間隔での連続ポップアップを防ぐ） */
-            if (!this._staleAlerted) this._staleAlerted = {};
-            if (!this._staleAlerted[key]) {
-              try { alert('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。'); } catch (eA) {}
-              this._staleAlerted[key] = true;
-            }
-            return;
+        if (policy === 'server-wins-stale' && rescued) {
+          this.adoptServer({ key: key, server: { rev: serverRev, data: (serverData !== undefined ? serverData : null) } }, function () {
+            if (self.onResolved) { try { self.onResolved(); } catch (e) {} }
+          });
+          /* 文言は「完了報告」でなく「実行宣言」: adoptServer は非同期で失敗もありうるため「採用しました」とは言わない。 */
+          var staleMsg = '未送信の編集が古すぎるため、サーバの最新版に合わせます（元の編集は端末内に退避済み）: ' + key;
+          this.updateStatus('conflict', staleMsg);   /* ステータス表示は毎回でよい */
+          /* alert はキーごとセッション1回だけ（1.5秒間隔での連続ポップアップを防ぐ） */
+          if (!this._staleAlerted) this._staleAlerted = {};
+          if (!this._staleAlerted[key]) {
+            try { alert('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。'); } catch (eA) {}
+            this._staleAlerted[key] = true;
           }
+          return;
+        }
+        /* 再送で置き換えられる側（サーバ版）も退避する（2026-08-08 監査S1）。pull競合経路では
+         * serverData が引数で手元にあるので、:server 名前空間の退避キーへ写してから進む。
+         * push競合経路は serverData を持たない（null）ため対象外＝追加取得はしない
+         * （プロトコル不変・退避失敗は主経路を止めない）。 */
+        if (serverData !== undefined && serverData !== null && !isEmptyish(serverData)) {
+          this.rescueLocal_(key + ':server', serverData, serverRev);
         }
         /* ローカル優先: サーバの最新revを基準に再送（次のpushで上書き成功）。
          * SyncQueue.enqueueは既存キーのbaseRevを据え置くため、baseRevを直接更新する（重要）。 */
@@ -3282,6 +3339,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!obj || obj.app !== 'shiftapp' || !obj.data) throw new Error('バックアップ形式が不正です');
       var n = 0, staffReport = null;
       for (var key in obj.data) {
+        /* 勤務表(sched:*)は取込で全面置換されるため、上書き前に1世代退避する（取込ミスからの復旧材料）。
+         * 退避キーは pruneConflictRescue が14日/3世代で掃除する。退避の成否は取込を止めない。 */
+        if (String(key).indexOf('sched:') === 0) {
+          var cur = lsGet(PREFIX + key);
+          if (cur !== null && cur !== undefined && !isEmptyish(cur)) {
+            lsSet(PREFIX + 'local:importRescue:' + key + ':' + Date.now(),
+              { savedAt: Date.now(), baseRev: this.meta.revs[key] || 0, data: cur });
+          }
+        }
         if (key === 'staff' && SC && SC.mergeStaffPreserve) {
           /* 職員マスタは全体置換せず保護マージ＝古い名簿(empCode/退職/新規職員を持たない)を
            * 取り込んでも freeeコード消失・退職の先祖返り・職員消失を起こさない */
@@ -4974,18 +5040,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function () {
-          try {
-            var res = Store.importAll(JSON.parse(reader.result));
-            var msg = '✓ ' + res.count + 'キーを取り込みました';
-            if (res.staffReport) {
-              msg += '（職員: フィールド温存' + res.staffReport.preserved + '名・追加' + res.staffReport.added +
-                     '名・既存のみ' + res.staffReport.keptLocalOnly + '名を保持）';
-            }
-            document.getElementById('backupMsg').textContent = msg;
-            app.reloadFromStore();
-          } catch (err) {
-            document.getElementById('backupMsg').textContent = '✗ ' + err.message;
+          var msgEl = document.getElementById('backupMsg');
+          var obj;
+          try { obj = JSON.parse(reader.result); }
+          catch (err) { msgEl.textContent = '✗ ' + err.message; e.target.value = ''; return; }
+          /* 取込は現在のデータを上書きするため、中身（書き出し日時・キー数）を示して明示確認を取る。
+           * 確認前にファイル選択を解除する＝キャンセル時は何も書き換わらず、同じファイルを選び直せる。 */
+          var keys = 0;
+          if (obj && obj.data) {
+            for (var k in obj.data) { if (Object.prototype.hasOwnProperty.call(obj.data, k)) keys++; }
           }
+          var when = (obj && obj.exportedAt) ? String(obj.exportedAt) : '不明';
+          e.target.value = '';
+          app.confirm('バックアップの取り込み',
+            '書き出し日時: ' + when + '\n含まれるキー数: ' + keys +
+            '\n\nこの内容を現在のデータへ取り込みます（勤務表は上書き前に端末内へ1世代退避します）。実行しますか？',
+            function () {
+              try {
+                var res = Store.importAll(obj);
+                var msg = '✓ ' + res.count + 'キーを取り込みました';
+                if (res.staffReport) {
+                  msg += '（職員: フィールド温存' + res.staffReport.preserved + '名・追加' + res.staffReport.added +
+                         '名・既存のみ' + res.staffReport.keptLocalOnly + '名を保持）';
+                }
+                msgEl.textContent = msg;
+                app.reloadFromStore();
+              } catch (err) {
+                msgEl.textContent = '✗ ' + err.message;
+              }
+            });
         };
         reader.readAsText(file);
       });
@@ -5097,8 +5180,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var reqs = app.requests;
       var days = app.days;
       var w = 110 + days * 28;
-      var h = '<div class="hint" style="margin:2px 0 6px;color:#666;font-size:11px">セルをクリックすると <b>希 → 有 → 消去</b>（削除）と切り替わります。読み込んだ希望休・有給も、ここでクリック消去できます。</div>';
-      h += '<table class="plain eqcols" style="font-size:11px;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
+      var h = '<div class="hint" style="margin:2px 0 6px;color:#666;font-size:0.6875rem">セルをクリックすると <b>希 → 有 → 消去</b>（削除）と切り替わります。読み込んだ希望休・有給も、ここでクリック消去できます。</div>';
+      h += '<table class="plain eqcols" style="font-size:0.6875rem;table-layout:fixed;width:' + w + 'px"><colgroup><col style="width:110px">';
       for (var c = 0; c < days; c++) h += '<col style="width:28px">';
       h += '</colgroup>';
       /* 日付ヘッダー行を変数化し、最上部・中盤・最下部の3か所へ複製（縦長でも日付が分かるように） */
@@ -5480,10 +5563,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.render();
     },
 
+    /* CSV出力に使う名簿。凍結済みの月は当時の名簿(monthRoster)が正＝マスタの後日変更を過去月へ波及させない。
+     * ただし従業員コード(empCode)は運用属性なのでマスタ現在値を優先マージする（resolveConsRule と同じ整理）。
+     * 対象人数の表示もこの名簿で数え、表示件数とCSV出力件数の食い違いを防ぐ。 */
+    exportRoster: function () {
+      var app = this.app;
+      var roster = (typeof app.monthRoster === 'function') ? app.monthRoster() : (app.staff || []);
+      var out = [];
+      for (var i = 0; i < roster.length; i++) {
+        var st = roster[i];
+        if (!st) continue;
+        var m = (typeof app.masterStaffById_ === 'function') ? app.masterStaffById_(st.id) : null;
+        /* マスタ側にコードが無い場合は凍結名簿の値を残す（コードを失わない） */
+        if (!m || !m.empCode || m.empCode === st.empCode) { out.push(st); continue; }
+        var merged = {};
+        for (var k in st) { if (Object.prototype.hasOwnProperty.call(st, k)) merged[k] = st[k]; }
+        merged.empCode = m.empCode;
+        out.push(merged);
+      }
+      return out;
+    },
+
     /* 対象職員数（指定事業所・従業員コード設定済み・在籍） */
     countTargets: function (division) {
       var n = 0;
-      var staff = this.app.staff || [];
+      var staff = this.exportRoster();
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         if (st.active === false || !st.empCode) continue;
@@ -5659,7 +5763,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var sched = app.getSched(layer) || { cells: {} };
       var res = F.buildCsv({
         ym: app.ym,
-        staff: app.staff || [],
+        staff: this.exportRoster(),
         cells: sched.cells || {},
         subCells: sched.subCells || {},
         symbols: app.symbols || [],
@@ -6413,7 +6517,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         el = document.createElement('div');
         el.id = 'appToast'; el.className = 'noprint';
         el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9999;' +
-          'background:rgba(33,33,33,.92);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;' +
+          'background:rgba(33,33,33,.92);color:#fff;padding:9px 16px;border-radius:8px;font-size:0.8125rem;' +
           'box-shadow:0 4px 16px rgba(0,0,0,.25);pointer-events:none;opacity:0;transition:opacity .15s;max-width:90vw';
         document.body.appendChild(el);
       }
@@ -6878,39 +6982,69 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return { ym: this.ym, layer: this.layer, label: label || '(現在)', at: new Date().toLocaleTimeString(),
         sched: JSON.parse(JSON.stringify(this.sched)) };
     },
+    /* 戻り値: true=復元した / false=中止した（呼び出し側で履歴スタックを元へ戻すこと） */
     applySnap: function (snap) {
-      if (snap.ym !== this.ym) {
-        var p = snap.ym.split('-');
-        this.setYM(parseInt(p[0], 10), parseInt(p[1], 10));
-      }
-      if (snap.layer !== this.layer) {
-        this.layer = snap.layer;
+      var self = this;
+      var prevYM = this.ym, prevLayer = this.layer;
+      function gotoYM(ym) { var p = ym.split('-'); self.setYM(parseInt(p[0], 10), parseInt(p[1], 10)); }
+      function gotoLayer(layer) {
+        self.layer = layer;
         var lbs = document.querySelectorAll('#layerBar button');
-        for (var i = 0; i < lbs.length; i++) lbs[i].classList.toggle('on', lbs[i].getAttribute('data-layer') === snap.layer);
-        this.loadMonth();
+        for (var i = 0; i < lbs.length; i++) lbs[i].classList.toggle('on', lbs[i].getAttribute('data-layer') === layer);
+        self.loadMonth();
+      }
+      if (snap.ym !== this.ym) gotoYM(snap.ym);
+      if (snap.layer !== this.layer) gotoLayer(snap.layer);
+      /* 復元先のレイヤに戻れなかった場合は中止（削除済みドラフトの undo 対策）。
+       * loadMonth は存在しない draft: を 'plan' へ落とすため、そのまま続けると
+       * ドラフトの旧内容を予定（確定版）へ無確認で書き込み、同期で全端末へ広がる。
+       * 中止時は移動した月・レイヤも元へ戻す＝undo前の画面のまま何も変わらない。 */
+      if (this.layer !== snap.layer) {
+        if (this.ym !== prevYM) gotoYM(prevYM);
+        if (this.layer !== prevLayer) gotoLayer(prevLayer);
+        this.toast('対象の編集用シフトは削除済みのため元に戻せません');
+        this.rerender();
+        this.updateHistButtons();
+        return false;
       }
       this.sched = JSON.parse(JSON.stringify(snap.sched));
       this.refreshMonthMeta();   /* 復元した this.sched.meta にロック/スナップショットのキャッシュを必ず追従（同一レイヤundoでも） */
       this.saveSched(this.layer, this.sched);
       this.rerender();
       this.updateHistButtons();
+      return true;
     },
     undo: function () {
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._undo.length) return;
       var snap = this._undo.pop();
       this._redo.push(this.snapshotNow(snap.label));
-      this.applySnap(snap);
+      /* 中止＝何も復元していないので pop/push を取り消す（redo に実行されていない項目を残さない） */
+      if (this.applySnap(snap) === false) {
+        this._redo.pop();
+        this._undo.push(snap);
+        this.updateHistButtons();
+      }
     },
     redo: function () {
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._redo.length) return;
       var snap = this._redo.pop();
       this._undo.push(this.snapshotNow(snap.label));
-      this.applySnap(snap);
+      if (this.applySnap(snap) === false) {
+        this._undo.pop();
+        this._redo.push(snap);
+        this.updateHistButtons();
+      }
     },
     jumpTo: function (idx) {
-      while (this._undo.length > idx) this.undo();
+      /* undo が進まない場合（ロック中・復元先のレイヤ無しで中止）は打ち切る＝無限ループにしない */
+      var n = this._undo.length;
+      while (this._undo.length > idx) {
+        this.undo();
+        if (this._undo.length >= n) break;
+        n = this._undo.length;
+      }
     },
     updateHistButtons: function () {
       var u = document.getElementById('btnUndo'), r = document.getElementById('btnRedo');
