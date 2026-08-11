@@ -1609,6 +1609,19 @@ function visitCatMismatch_(cat, careLevel) {
   }
   return '';
 }
+/* 訪問の区分が介護度と食い違っているコマ数を数える（利用者一覧の棚卸し表示用）。
+   算定は止めない方針のため、既に登録済みの誤りは「そのコマを開いた人」にしか見えない。
+   一覧に件数を出して、開かなくても該当者を特定できるようにする。表示専用＝単位計算には使わない。
+   serviceType が未設定の古いコマは訪問扱い（盤面描画 renderGrid と同じ判定）。 */
+function residentCatMismatchCount_(res) {
+  const evs = (res && res.events) || [];
+  let n = 0;
+  for (const ev of evs) {
+    if (ev.serviceType === 'daycare') continue;
+    if (visitCatMismatch_(ev.category, res.careLevel)) n++;
+  }
+  return n;
+}
 
 // 通所介護 基本単位数（令和6年4月改定）介護度×所要時間区分。
 // 標準の時間区分: 3h(3時間以上4時間未満) 4h(4〜5h) 5h(5〜6h) 6h(6〜7h) 7h(7〜8h) 8h(8〜9h)。
@@ -4340,6 +4353,14 @@ function saveEvent() {
     closeEventModal(); renderAll();
     return;
   }
+  /* 介護度と区分が食い違ったまま保存しようとしたら、一度だけ確認する。
+     算定は止めない方針なので保存自体はできる（キャンセルすれば区分を選び直せる）。
+     食い違いが無ければ一切出ない＝要介護の利用者の操作は従来どおり。
+     警告枠は select の下＝狭い画面では折り返しの下に隠れうるため、保存の手前でもう一度出す。 */
+  if (($('input[name="serviceType"]:checked') || {}).value === 'visit') {
+    const catWarn = visitCatMismatch_($('#f-category').value, res.careLevel);
+    if (catWarn && !confirm(catWarn + '\n\nこのまま保存しますか？')) return;
+  }
   pushUndo();
   const stype = $('input[name="serviceType"]:checked').value;
   const { start, end } = getFormTimes();
@@ -4864,8 +4885,15 @@ function renderResidentListTable() {
     }
     const days = residentDaycareDays_(res);
     const dayCells = days.map(on => `<td class="rl-day">${on ? '<span class="on">○</span>' : ''}</td>`).join('');
+    /* 訪問の区分が介護度と食い違うコマがあれば、氏名セルに件数つきで出す。
+       列は増やさない（空行の colspan=14 と A3横印刷の列幅を動かさないため）。
+       色だけで伝えないよう「⚠区分N」と文字で書く。 */
+    const mism = residentCatMismatchCount_(res);
+    const mismBadge = mism
+      ? `<span style="font-size:inherit;color:var(--ng)" title="訪問のサービス区分が介護度と食い違っています">⚠区分${mism}</span>`
+      : '';
     h += '<tr>'
-      + `<td class="rl-name">${escHtml(res.name || '（無名）')}${res.external ? '<span style="font-size:inherit;color:#1565c0">（外）</span>' : ''}</td>`
+      + `<td class="rl-name">${escHtml(res.name || '（無名）')}${res.external ? '<span style="font-size:inherit;color:#1565c0">（外）</span>' : ''}${mismBadge}</td>`
       + `<td class="rl-mid">${careLevelShort_(s.careLevel)}</td>`
       + `<td class="rl-mid">${s.copayRate}割</td>`
       + dayCells
