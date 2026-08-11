@@ -18,8 +18,9 @@
     仮名欄に実在の氏名が入ったら保存前に警告する（照合はメモリ上のみ・実名は保存しない）。
   ★計算は2系統を並走させる。
     calc*Legacy = 週間計画アプリ(care-schedule.html)と同一の式。数字の出所を追えるように残す。
-    calc*Fixed  = 是正版。限度額算入額と請求額を分離し、通所の時間区分に下限を入れ、
-                  要支援の通所を日額算定から外す。主表示はこちら。
+  ★単位の計算は週間計画アプリ(care-schedule.html)と完全に同じ式にする。
+    2026-08-10 代表確認「現行アプリが表示している単位が正しい」。制度の解釈を自前で足さない。
+    処遇改善加算・減算まで含めた「請求ベース」は参考値として薄字で併記するだけにとどめる。
 -->
 <style>
 :root{
@@ -286,7 +287,7 @@ td.nowrap,#evTable td:nth-child(2){white-space:nowrap}
           <input id="p-welfare" type="number" min="0" step="1" inputmode="numeric" value="0">
         </div>
         <div class="fld">
-          <label for="p-sogo-dc">総合事業 通所（単位/月）</label>
+          <label for="p-sogo-dc">その他の月額単位（任意）</label>
           <input id="p-sogo-dc" type="number" min="0" step="1" inputmode="numeric" value="0">
         </div>
         <div class="fld" style="flex:2; justify-content:flex-end">
@@ -306,7 +307,7 @@ td.nowrap,#evTable td:nth-child(2){white-space:nowrap}
           <thead>
             <tr>
               <th>曜日</th><th>種別</th><th>サービス区分</th><th>開始</th><th>終了</th>
-              <th>入浴</th><th class="num">単位（是正版）</th><th class="num">現行アプリ</th><th class="noprint"></th>
+              <th>入浴</th><th class="num">単位</th><th class="num">参考:請求ベース</th><th class="noprint"></th>
             </tr>
           </thead>
           <tbody id="evBody"></tbody>
@@ -332,8 +333,7 @@ td.nowrap,#evTable td:nth-child(2){white-space:nowrap}
         <table id="bdTable">
           <thead>
             <tr>
-              <th>予定</th><th>内訳</th>
-              <th class="num">単位</th><th class="num">限度額算入</th><th class="num">請求対象</th>
+              <th>予定</th><th>内訳</th><th class="num">単位</th><th>扱い</th>
             </tr>
           </thead>
           <tbody id="bdBody"></tbody>
@@ -368,7 +368,7 @@ td.nowrap,#evTable td:nth-child(2){white-space:nowrap}
           <input id="o-price" type="number" min="0" step="0.01" inputmode="decimal" value="10.27">
         </div>
       </div>
-      <p class="hint">是正版では金額計算をこの単価に一本化します（現行アプリは一覧表だけ固定10円で計算しており、画面間で金額が一致しません）。</p>
+      <p class="hint">週間計画アプリと同じく、空欄または0のときは10.27円として計算します。</p>
     </div>
 
     <div class="cd">
@@ -403,7 +403,7 @@ td.nowrap,#evTable td:nth-child(2){white-space:nowrap}
           <input id="ov-gensan" type="number" min="0" max="100" step="0.1" inputmode="decimal" value="0">
         </div>
       </div>
-      <p class="hint">処遇改善加算は<b>％の自由入力</b>です（現行アプリは選択肢が最大14.5%までで、実勢率を入力できません）。</p>
+      <p class="hint">処遇改善加算は<b>％の自由入力</b>です。週間計画アプリの選択肢（最大14.5%）にない率も試せます。計算式は週間計画アプリと同じです。</p>
     </div>
 
     <div class="cd">
@@ -534,7 +534,6 @@ const CARE_LIMITS = {
 };
 const VISIT_CATS = ['身体０１','身体１','身体２','身体１生活１','身体１生活２','生活２','生活３'];
 const SOGO_CATS  = ['A21121','A21221','A2111','A21211'];
-const SUPPORT_LEVELS = ['要支援1','要支援2'];
 const WEEKS_PER_MONTH = 4.3;   // 本体と同一（今回は暦月展開しない）
 
 /* ══════════════════════════════════════════════════════════════
@@ -582,11 +581,6 @@ function getDaycareTimeKeyLegacy(startTime, endTime){
 }
 function getDaycareLevelMapLegacy(careLevel){
   return DAYCARE_BASE_UNITS[careLevel] || DAYCARE_BASE_UNITS['要介護1'];
-}
-/* 現行アプリの「盤面の計」と同じ値（処遇改善加算・同一建物減算を除外した合計） */
-function legacyDisplayUnits(ev, person, office){
-  const rows = legacyBreakdown(ev, person, office);
-  return Math.max(0, rows.reduce((s, r) => (r.outsideLimit || r.hideInDisplay) ? s : s + r.units, 0));
 }
 function legacyBreakdown(ev, person, office){
   const rows = [];
@@ -639,160 +633,50 @@ function legacyBreakdown(ev, person, office){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   3. 計算 — Fixed（是正版）
-      行ごとに limitCounted（区分支給限度基準額に算入するか）と
-      billable（保険請求の対象か）を持たせ、合計を用途別に分ける。
+   3. 集計
+      ★2026-08-10 代表確認: 現行アプリ(care-schedule.html)が表示している単位が正しい。
+        よって単位・月合計・限度額の使用率・自己負担は、現行アプリと同じ式でのみ出す。
+        当初この位置にあった「是正版」（通所の時間区分に下限を設ける／要支援を要介護1の
+        日額から外す／処遇改善加算を単位に含める）は誤りだったので撤去した。
+        制度の解釈を自前で足さない — 単位の定義は現行アプリを正とする。
+      参考値として、処遇改善加算と減算まで含めた「請求ベース」の単位・金額を別枠で併記する。
+      これは現行アプリにない補助情報であり、主表示を置き換えるものではない。
    ══════════════════════════════════════════════════════════════ */
-function getDaycareTimeKeyFixed(startTime, endTime){
-  const mins = timeDiffMins(startTime, endTime);
-  if (isNaN(mins) || mins <= 0) return { key: null, reason: 'time' };
-  if (mins < 3 * 60)  return { key: null, reason: 'short', mins };
-  if (mins <= 4 * 60) return { key: '3h', mins };
-  if (mins < 5 * 60)  return { key: '4h', mins };
-  if (mins < 6 * 60)  return { key: '5h', mins };
-  if (mins < 7 * 60)  return { key: '6h', mins };
-  if (mins < 8 * 60)  return { key: '7h', mins };
-  if (mins < 9 * 60)  return { key: '8h', mins };
-  return { key: '8h', reason: 'long', mins };
+
+/* 現行アプリの「計」= 処遇改善加算(outsideLimit)と同一建物減算(hideInDisplay)を除いた合計 */
+function sumDisplay_(rows){
+  return Math.max(0, rows.reduce((s, r) => (r.outsideLimit || r.hideInDisplay) ? s : s + r.units, 0));
 }
-/* 戻り値: { rows, warnings, sogoMonthly }
-   rows: [{label, units, limitCounted, billable}]
-   sogoMonthly: この予定が「週次ではなく月額包括」で計上される単位（0なら週次） */
-function fixedBreakdown(ev, person, office){
-  const rows = [], warnings = [];
-  let sogoMonthly = 0;
-
-  if (ev.serviceType === 'visit') {
-    const cat = ev.category || '';
-    if (SOGO_VISIT_CODES[cat]) {
-      const s = SOGO_VISIT_CODES[cat];
-      sogoMonthly = s.units;
-      rows.push({ label: s.label + '（総合事業・月額包括）', units: s.units, limitCounted: false, billable: true, monthly: true });
-      return { rows, warnings, sogoMonthly };
-    }
-    const base = VISIT_BASE_UNITS[cat] || 0;
-    if (!base) {
-      warnings.push('訪問のサービス区分が未選択の予定があります。');
-      return { rows, warnings, sogoMonthly };
-    }
-    const a = office.visit;
-    const code = getVisitCodeUnits(cat, num(a.tokuteijigyo), ev.startTime);
-    rows.push({ label: code.label, units: code.units, limitCounted: true, billable: true });
-
-    const chiiki = num(a.chiikiKasan);
-    if (chiiki > 0) {
-      const c = Math.floor(base * chiiki / 100);
-      if (c > 0) rows.push({ label: '特別地域加算（+' + chiiki + '%）', units: c, limitCounted: true, billable: true });
-    }
-    let subtotal = rows.reduce((s, r) => s + r.units, 0);
-    const gensan = num(a.douitsuGensan);
-    if (gensan > 0) {
-      const after = Math.floor(subtotal * (1 - gensan / 100));
-      /* 是正点①: 現行は同一建物減算を限度額の計算からも落としているが、減算後の単位が算入額。 */
-      rows.push({ label: '同一建物減算（-' + gensan + '%）', units: after - subtotal, limitCounted: true, billable: true });
-      subtotal = after;
-    }
-    const svc = num(a.svcStrength);
-    if (svc > 0) { rows.push({ label: 'サービス提供体制強化加算', units: svc, limitCounted: true, billable: true }); subtotal += svc; }
-    const nursing = num(a.nursingKasan);
-    if (nursing > 0) {
-      const nu = Math.floor(subtotal * (1 + nursing / 100)) - subtotal;
-      /* 処遇改善加算は区分支給限度基準額の枠外。ただし請求は発生する＝自己負担に乗る（是正点②）。 */
-      if (nu > 0) rows.push({ label: '処遇改善加算（限度額の枠外）', units: nu, limitCounted: false, billable: true });
-    }
-    return { rows, warnings, sogoMonthly };
-  }
-
-  /* ── 通所 ── */
-  const level = person.careLevel || '';
-  /* 是正点③: 要支援・未設定を要介護1の日額で計上しない。総合事業（月額）は上の欄で手入力。 */
-  if (!level) {
-    warnings.push('要介護度が未設定です。通所の単位を計算できません（対象者の条件で設定してください）。');
-    rows.push({ label: '通所介護（介護度未設定のため算定不可）', units: 0, limitCounted: true, billable: true, blocked: true });
-    return { rows, warnings, sogoMonthly };
-  }
-  if (SUPPORT_LEVELS.indexOf(level) >= 0) {
-    warnings.push(level + 'の通所は総合事業（月額包括）です。日額では計上せず、「総合事業 通所（単位/月）」欄の値を月合計に加算します。');
-    rows.push({ label: '通所（総合事業・月額欄で計上）', units: 0, limitCounted: true, billable: true, blocked: true });
-    return { rows, warnings, sogoMonthly };
-  }
-
-  const tk = getDaycareTimeKeyFixed(ev.startTime, ev.endTime);
-  if (!tk.key) {
-    if (tk.reason === 'short') {
-      warnings.push('所要時間が3時間未満の通所があります（' + tk.mins + '分）。該当する時間区分の単位数を持っていないため、この予定の単位は手入力してください。現行アプリは3時間未満でも「3時間以上4時間未満」の単位を付けます。');
-    } else {
-      warnings.push('通所の開始・終了時刻が正しく入力されていません。');
-    }
-    const manual = num(ev.manualUnits);
-    rows.push({
-      label: manual > 0 ? '通所介護（手入力）' : '通所介護（区分に該当なし・手入力が必要）',
-      units: manual, limitCounted: true, billable: true, needManual: true
-    });
-    return { rows, warnings, sogoMonthly };
-  }
-  if (tk.reason === 'long') {
-    warnings.push('所要時間が9時間以上の通所があります（' + tk.mins + '分）。「8時間以上9時間未満」の単位で計算しています。延長分は含みません。');
-  }
-
-  if (!DAYCARE_BASE_UNITS[level]) {
-    /* マスタ経由で「事業対象者」など想定外の文字列が入ることがある。
-       現行アプリは黙って要介護1の単位を当てるが、ここでは理由を出して0にする。 */
-    warnings.push('要介護度「' + level + '」は通所の単位表にありません。通所の単位を計算できないため0で計上しています。');
-    rows.push({ label: '通所介護（介護度「' + level + '」は単位表になし）', units: 0, limitCounted: true, billable: true, blocked: true });
-    return { rows, warnings, sogoMonthly };
-  }
-  const base = DAYCARE_BASE_UNITS[level][tk.key] || 0;
-  rows.push({ label: '通所介護（' + tk.key.replace('h', '時間区分') + '・' + level + '）', units: base, limitCounted: true, billable: true });
-
-  const a = office.daycare;
-  if (num(a.heavyCare)    > 0) rows.push({ label: '中重度者ケア体制加算',     units: num(a.heavyCare),    limitCounted: true, billable: true });
-  if (num(a.dementia)     > 0) rows.push({ label: '認知症加算',               units: num(a.dementia),     limitCounted: true, billable: true });
-  if (num(a.indvTraining) > 0) rows.push({ label: '個別機能訓練加算',          units: num(a.indvTraining), limitCounted: true, billable: true });
-  if (num(a.svcStrength)  > 0) rows.push({ label: 'サービス提供体制強化加算',  units: num(a.svcStrength),  limitCounted: true, billable: true });
-  if (ev.bathing && num(a.bathingType) > 0) rows.push({ label: '入浴介助加算', units: num(a.bathingType),  limitCounted: true, billable: true });
-
-  const flatTotal = rows.reduce((s, r) => s + r.units, 0);
-  const nursing = num(a.nursingKasan);
-  if (nursing > 0) {
-    const nu = Math.floor(flatTotal * (1 + nursing / 100)) - flatTotal;
-    if (nu > 0) rows.push({ label: '処遇改善加算（限度額の枠外）', units: nu, limitCounted: false, billable: true });
-  }
-  const gensan = num(a.douitsuGensan);
-  if (gensan > 0) rows.push({ label: '送迎なし減算', units: -gensan, limitCounted: true, billable: true });
-
-  return { rows, warnings, sogoMonthly };
+/* 参考: 加算・減算をすべて反映した請求ベースの合計 */
+function sumBillable_(rows){
+  return Math.max(0, rows.reduce((s, r) => s + r.units, 0));
 }
-
-function sumBy(rows, flag){
-  return rows.reduce((s, r) => s + (r[flag] ? r.units : 0), 0);
-}
-
-/* 試算全体の集計。是正版と現行値を同時に返す。 */
 function computeAll(person, office){
   const warnings = [];
-  let weekLimit = 0, weekBill = 0;
-  let legacyWeek = 0;
   const perEvent = [];
+  let weekUnits = 0, weekBill = 0;
 
   for (const ev of person.events) {
-    const f = fixedBreakdown(ev, person, office);
-    f.warnings.forEach(w => { if (warnings.indexOf(w) < 0) warnings.push(w); });
+    const rows   = legacyBreakdown(ev, person, office);
+    const isSogo = !!SOGO_VISIT_CODES[ev.category];
+    const units  = sumDisplay_(rows);    /* 現行アプリの「計」と同じ値 */
+    const bill   = sumBillable_(rows);   /* 参考 */
+    /* 総合事業は月額包括なので週次には積まない（現行アプリと同じ扱い） */
+    if (!isSogo) { weekUnits += units; weekBill += bill; }
 
-    const l = Math.max(0, sumBy(f.rows, 'limitCounted'));
-    const b = Math.max(0, sumBy(f.rows, 'billable'));
-    if (f.sogoMonthly > 0) {
-      /* 総合事業（訪問型）は同一コードを何コマ置いても月1回だけ＝週次には積まず、後段でコード単位に集約する */
-    } else {
-      weekLimit += l;
-      weekBill  += b;
+    /* 警告は「入力の抜け」だけに絞る。制度解釈にあたる警告は出さない */
+    if (ev.serviceType === 'visit' && !isSogo && !VISIT_BASE_UNITS[ev.category]) {
+      const w = 'サービス区分が選ばれていない訪問があります（単位0で計上しています）。';
+      if (warnings.indexOf(w) < 0) warnings.push(w);
     }
-    const legacyUnits = legacyDisplayUnits(ev, person, office);
-    if (!SOGO_VISIT_CODES[ev.category]) legacyWeek += legacyUnits;
-    perEvent.push({ ev, rows: f.rows, fixed: f.sogoMonthly > 0 ? f.sogoMonthly : b, fixedLimit: l, legacy: legacyUnits, monthly: f.sogoMonthly > 0 });
+    if (ev.serviceType === 'daycare' && isNaN(timeDiffMins(ev.startTime, ev.endTime))) {
+      const w = '開始・終了時刻が入っていない通所があります。時刻を入れてください。';
+      if (warnings.indexOf(w) < 0) warnings.push(w);
+    }
+    perEvent.push({ ev, rows, units, bill, monthly: isSogo });
   }
 
-  /* 総合事業（訪問型）: 同一コードは月1回・異なるコードは各1回 */
+  /* 総合事業（訪問型）: 同一コードは月1回・異なるコードは各1回（現行アプリと同じ） */
   const seen = new Set();
   let sogoVisitMonthly = 0;
   for (const ev of person.events) {
@@ -801,51 +685,34 @@ function computeAll(person, office){
       sogoVisitMonthly += SOGO_VISIT_CODES[ev.category].units;
     }
   }
-  const sogoDaycareMonthly = Math.max(0, num(person.sogoDaycareUnits));
-  const welfare = Math.max(0, num(person.welfareUnits));
+  const otherMonthly = Math.max(0, num(person.sogoDaycareUnits));
+  const welfare      = Math.max(0, num(person.welfareUnits));
 
-  /* 月換算は本体と同じ 4.3 週固定 */
-  const monthLimitSvc = Math.round(weekLimit * WEEKS_PER_MONTH);
-  const monthBillSvc  = Math.round(weekBill  * WEEKS_PER_MONTH);
-
-  /* 限度額算入額: サービス＋総合事業＋福祉用具 */
-  const monthLimitTotal = monthLimitSvc + sogoVisitMonthly + sogoDaycareMonthly + welfare;
-  /* 請求対象単位: サービス＋総合事業（福祉用具は別事業所の請求のため単位のみ算入し金額は別掲） */
-  const monthBillTotal  = monthBillSvc + sogoVisitMonthly + sogoDaycareMonthly;
+  /* 月換算は現行アプリと同じ 4.3 週固定 */
+  const monthUnits = Math.round(weekUnits * WEEKS_PER_MONTH) + sogoVisitMonthly + otherMonthly;
+  const totalUnits = monthUnits + welfare;
 
   const limit = CARE_LIMITS[person.careLevel] || 0;
-  const over  = limit > 0 ? Math.max(0, monthLimitTotal - limit) : 0;
-  const pct   = limit > 0 ? (monthLimitTotal / limit * 100) : 0;
+  const pct   = limit > 0 ? (totalUnits / limit * 100) : 0;
+  const over  = limit > 0 ? Math.max(0, totalUnits - limit) : 0;
 
-  const price = num(office.unitPrice) || 0;
+  /* 単価は現行アプリと同じく、空・0なら 10.27 へフォールバック */
+  const price = num(office.unitPrice) || 10.27;
   const rate  = num(person.copayRate) || 1;
-  /* 是正点②④: 限度内は負担割合ぶん、超過分は10割。処遇改善加算も請求に含める。
-     福祉用具も限度額に算入されるので、請求対象＋福祉用具の合計から超過を差し引く。
-     超過をサービス分と福祉用具分に分けて別々に引くと、福祉用具が原因で限度額を
-     超えたときに同じ単位へ10割と負担割合の両方を課金してしまう（自己負担が過大になる）。
-     なお超過をどちらへ帰属させても自己負担の合計額は変わらない。 */
-  const billPlusWelfare = monthBillTotal + welfare;
-  const inLimitBill  = Math.max(0, billPlusWelfare - over);
-  const copayInLimit = inLimitBill * price * rate / 10;
-  const copayOver    = over * price;
-  const copayTotal   = copayInLimit + copayOver;
+  const copay = totalUnits * price * rate / 10;   /* 現行アプリと同一式 */
 
-  /* 現行アプリの表示値（同じ条件で週間計画アプリを開いたときに出る数字） */
-  const legacyMonth = Math.round(legacyWeek * WEEKS_PER_MONTH) + sogoVisitMonthly;
-  const legacyTotal = legacyMonth + welfare;
-  const legacyPct   = limit > 0 ? (legacyTotal / limit * 100) : 0;
-  /* 現行アプリは単価が空・0のとき 10.27 へフォールバックする。併記する数字は実アプリに合わせる。 */
-  const legacyPrice = num(office.unitPrice) || 10.27;
-  const legacyCopay = legacyTotal * legacyPrice * rate / 10;
+  /* ── 参考値（現行アプリにはない補助情報） ──
+     請求ベース＝処遇改善加算と減算まで反映した単位。限度額を超えた分は10割で置いた場合の金額。 */
+  const refMonthBill = Math.round(weekBill * WEEKS_PER_MONTH) + sogoVisitMonthly + otherMonthly;
+  const refInLimit   = Math.max(0, refMonthBill + welfare - over);
+  const refCopay     = refInLimit * price * rate / 10 + over * price;
 
   return {
     perEvent, warnings,
-    weekLimit, weekBill,
-    monthLimitTotal, monthBillTotal,
-    sogoVisitMonthly, sogoDaycareMonthly, welfare,
-    limit, over, pct,
-    copayInLimit, copayOver, copayTotal,
-    legacy: { week: legacyWeek, month: legacyMonth, total: legacyTotal, pct: legacyPct, copay: legacyCopay },
+    weekUnits, monthUnits, totalUnits,
+    sogoVisitMonthly, otherMonthly, welfare,
+    limit, pct, over, price, rate, copay,
+    ref: { monthBill: refMonthBill, copay: refCopay },
   };
 }
 
@@ -997,17 +864,6 @@ function renderEvents(result){
       td.appendChild(sel);
     } else {
       td.textContent = '通所介護';
-      if (r && r.rows.some(x => x.needManual)) {
-        const inp = document.createElement('input');
-        inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.className = 'mini';
-        inp.setAttribute('inputmode', 'numeric');
-        inp.setAttribute('aria-label', '単位数を手入力');
-        inp.value = ev.manualUnits ? String(ev.manualUnits) : '';
-        inp.placeholder = '単位';
-        inp.addEventListener('change', () => { ev.manualUnits = num(inp.value); commit(); });
-        td.appendChild(document.createElement('br'));
-        td.appendChild(inp);
-      }
     }
     tr.appendChild(td);
 
@@ -1040,26 +896,21 @@ function renderEvents(result){
     } else { td.textContent = '—'; }
     tr.appendChild(td);
 
-    // 是正版の単位
+    // 単位（週間計画アプリと同じ値）
     td = document.createElement('td'); td.className = 'num';
     if (r) {
-      td.textContent = fmt(r.fixed);
+      td.textContent = fmt(r.units);
       if (r.monthly) { const s = document.createElement('span'); s.className = 'flag warn'; s.textContent = '月額'; td.appendChild(s); }
-      if (r.rows.some(x => x.blocked)) { const s = document.createElement('span'); s.className = 'flag ng'; s.textContent = '算定外'; td.appendChild(s); }
-      if (r.rows.some(x => x.needManual) && !num(ev.manualUnits)) { const s = document.createElement('span'); s.className = 'flag warn'; s.textContent = '要手入力'; td.appendChild(s); }
     }
     tr.appendChild(td);
 
-    // 現行アプリの値
+    // 参考: 請求ベース（処遇改善加算・減算まで反映）
     td = document.createElement('td'); td.className = 'num';
     if (r) {
-      /* 現行と是正で数字が違う行は色＋太字にするが、色だけに頼らず末尾に「差」の文字を添える */
-      const differs = Math.round(r.legacy) !== Math.round(r.fixed);
       const s = document.createElement('span');
-      s.className = 'legacy' + (differs ? ' diff' : '');
-      s.textContent = fmt(r.legacy);
+      s.className = 'legacy';
+      s.textContent = fmt(r.bill);
       td.appendChild(s);
-      if (differs) { const f2 = document.createElement('span'); f2.className = 'flag warn'; f2.textContent = '差'; td.appendChild(f2); }
     }
     tr.appendChild(td);
 
@@ -1109,10 +960,10 @@ function renderSummary(R){
   const g = $('#sumGrid'); g.textContent = '';
   g.appendChild(cell('要介護度', STATE.person.careLevel || '未設定', ''));
   g.appendChild(cell('区分支給限度基準額', R.limit ? fmt(R.limit) : '—', R.limit ? '単位/月' : ''));
-  g.appendChild(cell('限度額に算入する単位', fmt(R.monthLimitTotal), '単位/月'));
+  g.appendChild(cell('週合計', fmt(R.weekUnits), '単位/週'));
+  g.appendChild(cell('月合計', fmt(R.totalUnits), '単位/月'));
   g.appendChild(cell('限度額の超過', fmt(R.over), '単位/月', R.over > 0 ? 'over' : ''));
-  g.appendChild(cell('請求対象の単位', fmt(R.monthBillTotal), '単位/月'));
-  g.appendChild(cell('自己負担（概算）', '¥' + fmt(R.copayTotal), '/月', 'big'));
+  g.appendChild(cell('自己負担（概算）', '¥' + fmt(R.copay), '/月', 'big'));
 
   const fill = $('#pctFill');
   fill.style.width = Math.min(100, R.pct) + '%';
@@ -1125,21 +976,21 @@ function renderSummary(R){
   note.appendChild(p);
   if (R.over > 0) {
     const w = document.createElement('span');
-    w.className = 'flag ng'; w.textContent = '✕ 超過分は全額自己負担で計算しています';
+    w.className = 'flag ng'; w.textContent = '✕ 限度額を超えています';
     note.appendChild(w);
   }
-  const br = document.createElement('br'); note.appendChild(br);
+  note.appendChild(document.createElement('br'));
+  const ok = document.createElement('span');
+  ok.className = 'flag ok';
+  ok.textContent = '✓ 上の数字は週間計画アプリと同じ計算です';
+  note.appendChild(ok);
+  note.appendChild(document.createElement('br'));
+  /* 参考値。主表示を置き換えないよう、必ず「参考」と明記して薄字で出す。 */
   const lg = document.createElement('span');
   lg.className = 'legacy';
-  lg.textContent = '週間計画アプリでの表示: 月合計 ' + fmt(R.legacy.total) + ' 単位／使用率 '
-    + (R.limit ? R.legacy.pct.toFixed(1) + '%' : '—') + '／自己負担 ¥' + fmt(R.legacy.copay);
+  lg.textContent = '参考（請求ベース＝処遇改善加算・減算まで反映、超過分を10割で置いた場合）: 月 '
+    + fmt(R.ref.monthBill) + ' 単位／自己負担 ¥' + fmt(R.ref.copay);
   note.appendChild(lg);
-  if (Math.round(R.legacy.copay) !== Math.round(R.copayTotal)) {
-    const d = document.createElement('span');
-    d.className = 'flag warn';
-    d.textContent = '▲ 差額 ¥' + fmt(Math.abs(R.copayTotal - R.legacy.copay));
-    note.appendChild(d);
-  }
 }
 
 function renderBreakdown(R){
@@ -1159,25 +1010,26 @@ function renderBreakdown(R){
       const c0 = document.createElement('td'); c0.textContent = ri === 0 ? head : ''; tr.appendChild(c0);
       const c1 = document.createElement('td'); c1.textContent = r.label; tr.appendChild(c1);
       const c2 = document.createElement('td'); c2.className = 'num'; c2.textContent = fmt(r.units); tr.appendChild(c2);
-      const c3 = document.createElement('td'); c3.className = 'num'; c3.textContent = r.limitCounted ? fmt(r.units) : '—'; tr.appendChild(c3);
-      const c4 = document.createElement('td'); c4.className = 'num'; c4.textContent = r.billable ? fmt(r.units) : '—'; tr.appendChild(c4);
+      /* 週間計画アプリの「計」に入る行かどうか。入らない行も金額の参考のため残す。 */
+      const c3 = document.createElement('td');
+      c3.textContent = r.outsideLimit ? '限度額の枠外' : (r.hideInDisplay ? '計には入らない' : '計に含む');
+      tr.appendChild(c3);
       body.appendChild(tr);
     });
   });
 
   const extras = [
-    ['総合事業 訪問（月額包括）', R.sogoVisitMonthly, true, true],
-    ['総合事業 通所（月額・手入力）', R.sogoDaycareMonthly, true, true],
-    ['福祉用具貸与（月額）', R.welfare, true, false],
+    ['総合事業 訪問（月額包括）', R.sogoVisitMonthly],
+    ['その他の月額単位（手入力）', R.otherMonthly],
+    ['福祉用具貸与（月額）', R.welfare],
   ];
-  extras.forEach(([label, v, lim, bill]) => {
+  extras.forEach(([label, v]) => {
     if (!v) return;
     const tr = document.createElement('tr');
     const c0 = document.createElement('td'); c0.textContent = '月額'; tr.appendChild(c0);
     const c1 = document.createElement('td'); c1.textContent = label; tr.appendChild(c1);
     const c2 = document.createElement('td'); c2.className = 'num'; c2.textContent = fmt(v); tr.appendChild(c2);
-    const c3 = document.createElement('td'); c3.className = 'num'; c3.textContent = lim ? fmt(v) : '—'; tr.appendChild(c3);
-    const c4 = document.createElement('td'); c4.className = 'num'; c4.textContent = bill ? fmt(v) : '別請求'; tr.appendChild(c4);
+    const c3 = document.createElement('td'); c3.textContent = '計に含む'; tr.appendChild(c3);
     body.appendChild(tr);
   });
 }
@@ -1197,13 +1049,7 @@ function renderWarnings(R){
 }
 
 function renderSogoHint(){
-  const h = $('#sogoHint');
-  const lv = STATE.person.careLevel;
-  if (SUPPORT_LEVELS.indexOf(lv) >= 0) {
-    h.textContent = lv + 'の通所は総合事業（月額包括）です。市町村ごとに単位が違うため、「総合事業 通所（単位/月）」に実際の単位数を入力してください。';
-  } else {
-    h.textContent = '「総合事業 通所（単位/月）」は、要支援・事業対象者の通所型サービスを月額で計上するための欄です（要介護の方は0のままで構いません）。';
-  }
+  $('#sogoHint').textContent = '「その他の月額単位」は、週の予定では表せない月ぎめのサービスを月合計へ足すための欄です（不要なら0のまま）。';
 }
 
 function renderPrintMeta(){
@@ -1295,9 +1141,9 @@ function renderCases(){
     const add = (txt, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = txt; tr.appendChild(td); return td; };
     add(c.person.alias || '—');
     add(c.person.careLevel || '未設定');
-    add(fmt(R.monthLimitTotal), 'num');
+    add(fmt(R.totalUnits), 'num');
     add(R.limit ? R.pct.toFixed(1) + '%' : '—', 'num');
-    add('¥' + fmt(R.copayTotal), 'num');
+    add('¥' + fmt(R.copay), 'num');
     add(c.savedAt || '—');
     const td = document.createElement('td'); td.className = 'noprint';
     const bl = document.createElement('button');
@@ -1399,11 +1245,11 @@ function start_(){
   OFFICE_FIELDS.forEach(([sel]) => { const el = $(sel); if (el) el.addEventListener('change', formToOffice); });
 
   $('#btnAddVisit').addEventListener('click', () => {
-    STATE.person.events.push({ id: uid(), dayOfWeek: 0, serviceType: 'visit', category: '身体１', startTime: '09:00', endTime: '09:29', bathing: false, manualUnits: 0 });
+    STATE.person.events.push({ id: uid(), dayOfWeek: 0, serviceType: 'visit', category: '身体１', startTime: '09:00', endTime: '09:29', bathing: false });
     commit();
   });
   $('#btnAddDaycare').addEventListener('click', () => {
-    STATE.person.events.push({ id: uid(), dayOfWeek: 0, serviceType: 'daycare', category: '', startTime: '09:00', endTime: '16:00', bathing: true, manualUnits: 0 });
+    STATE.person.events.push({ id: uid(), dayOfWeek: 0, serviceType: 'daycare', category: '', startTime: '09:00', endTime: '16:00', bathing: true });
     commit();
   });
 
@@ -1540,7 +1386,7 @@ function copyFromResident(res, idx){
       startTime: e.startTime || '',
       endTime: e.endTime || '',
       bathing: !!e.bathing,
-      manualUnits: 0,
+
     })),
   };
   personToForm(); commit();
