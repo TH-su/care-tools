@@ -1782,7 +1782,8 @@ function renderView(r){
       cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
       /* 体重の正本は体重管理アプリ（同一オリジンの localStorage を読むだけ）。
          記録が無い端末では従来どおりマスタの静的値を「移行時点」と明示して出す。
-         ★体重セルだけ少し広げる（wt-cell）。狭いままだと日付が折り返して印刷が伸びる。 */
+         ★体重セルは広げない。widthは行で取り合いのため、広げると隣のセル（生活自立度・
+           認知症自立度）が折り返して印刷が +6mm 伸びる。測定日は小さい文字で添える。 */
       (function(){var wv=weightView(r);
         return '<div class="cell"'+(wv.bmiTitle?' title="'+esc(wv.bmiTitle)+'"':'')+'>'+
             '<span class="lab">BMI</span><span class="val">'+esc(wv.bmi||'　')+'</span></div>'+
