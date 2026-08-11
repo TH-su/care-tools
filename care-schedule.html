@@ -65,7 +65,9 @@ html, body { height: 100%; overflow: hidden;
 /* ── 試算モード（サンドボックス）──
    盤面の見た目・操作は通常と同一に保つ。違いはヘッダーの色・h1の但し書き・印刷の透かし・
    一部ボタンの無効化だけ。レイアウト計算（--hdr-h を参照する calc 3箇所）には一切触れない。 */
-.hdr-btns { overflow-x: auto; scrollbar-width: thin; }
+/* 55行目の flex-shrink:0 のままだと要素幅がコンテンツ幅に固定されてスクロールが発生しない。
+   縮められるように上書きして初めて overflow-x が効く（狭い画面で右端のボタンが押せるようになる）。 */
+.hdr-btns { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .hdr-btns::-webkit-scrollbar { height: 2px; }
 .hdr-btns::-webkit-scrollbar-thumb { background: rgba(255,255,255,.45); border-radius: 2px; }
 .hdr-btn.simbtn { background: #ef6c00; border-color: #ef6c00; font-weight: 700; }
@@ -895,7 +897,11 @@ select.inp { cursor: pointer; }
       <!-- 単位数は事業所設定＋サービス区分/時間から自動計算する（手入力は不可）。
            手入力を許すと、同期・事業所設定の保存のたびに走る再計算で黙って上書きされ、
            画面の値と算定根拠が食い違うため。 -->
-      <input class="inp" type="number" id="f-units" min="0" max="9999" step="1" readonly placeholder="自動計算" style="max-width:180px;background:var(--g1);color:var(--g7)">
+      <input class="inp" type="number" id="f-units" min="0" max="9999" step="1" readonly placeholder="自動計算" aria-describedby="f-units-note" style="max-width:180px;background:var(--g1);color:var(--g7)">
+      <!-- 通所を算定できない介護度（要支援1/2・事業対象者・自立・介護度未設定）のときだけ出す注意書き。
+           単位欄が空になる理由をその場で読める形にしておく（autoCalcUnits が出し入れする）。
+           説明本文なので 1rem（16px相当）。色は #7a4200 on #fff8e1 = 約7.4:1（介護現場要件の目標7:1を満たす）。 -->
+      <div id="f-units-note" role="status" style="display:none;margin-top:6px;font-size:1rem;line-height:1.6;color:#7a4200;background:#fff8e1;border:1px solid #ffe0a3;border-radius:6px;padding:8px 10px"></div>
     </div>
 
     <!-- 複製（編集時のみ表示） -->
@@ -949,7 +955,9 @@ select.inp { cursor: pointer; }
     <div class="hint-box" style="font-size:12px">
       反映するとこの端末とクラウドの週間計画が書き換わり、全端末へ配信されます。<br>
       ワークスケジュールは<b>表示中の日だけ</b>自動で追従します（他の日はその日を開いたとき。過去日は保護のため反映されません）。<br>
-      デイ利用表と週間計画俯瞰は自動では変わりません。反映後に開き直してください。
+      デイ利用表と週間計画俯瞰は自動では変わりません。反映後に開き直してください。<br>
+      <b>反映されるのは「予定」だけです。</b>試算中に変えた介護度・負担割合・福祉用具・事業所情報は反映されません
+      （新規利用者として登録する場合のみ、介護度・負担割合・福祉用具も一緒に登録します）。
     </div>
     <div class="btn-row">
       <button class="btn" onclick="SIM.closeApply()">キャンセル</button>
@@ -1740,8 +1748,11 @@ function getUnitBreakdown(ev, res) {
     const careLevel = (res && res.careLevel) || '';
     const levelMap = getDaycareLevelMap(careLevel);
     if (!levelMap) {
-      /* 明細を空にすると「なぜ0なのか」が画面から読み取れないため、理由の行を1つだけ出す。 */
-      rows.push({ label: '通所介護（' + (careLevel || '介護度未設定') + 'は算定対象外）', units: 0 });
+      /* 明細を空にすると「なぜ0なのか」が画面から読み取れないため、理由を出す。
+         盤面のラベルは1行省略（.ev-cat-label）で、印刷時は1列あたり8文字前後しか出ないため、
+         1行に詰め込むと肝心の理由が「通所介護（要支…」で切れる。2行に割って両方読めるようにする。 */
+      rows.push({ label: '通所介護', units: 0 });
+      rows.push({ label: '算定対象外', units: 0 });
       return rows;
     }
     const base = levelMap[getDaycareTimeKey(ev.startTime, ev.endTime)] || 0;
@@ -1868,6 +1879,23 @@ function autoCalcUnits() {
   /* 読み取り専用の自動計算表示（B9）。0/未算定のときは前の値を残さず空にする
      （手入力できない欄に、いまの条件と無関係な数字を出したままにしない）。 */
   $('#f-units').value = units > 0 ? units : '';
+  /* 通所で算定できない介護度のときだけ、単位欄が空になる理由をその場に出す。
+     出さないと「なぜ0なのか」が画面から読み取れず、入力ミスと区別できない。 */
+  const note = $('#f-units-note');
+  if (note) {
+    const lv = (res.careLevel || '').trim();
+    const show = (stype === 'daycare') && !isDaycareCalculable_(lv);
+    /* 理由は介護度ごとに違う。ひとまとめに「総合事業だから」と書くと、自立（保険給付の対象外）と
+       未設定（単なる入力漏れ）に対して事実と異なる説明を出すことになる。 */
+    let why = '';
+    if (!lv)                        why = '介護度が未設定のため、通所の単位数は算定していません。入居者マスタで介護度を設定してください。';
+    else if (lv === '自立')          why = '自立のため、通所の単位数は算定していません。介護保険の給付対象外です。';
+    else                             why = lv + ' のため、通所の単位数は算定していません。'
+                                         + '要支援・事業対象者の通所は総合事業（月額包括）で、要介護の通所介護単位では計上できません。';
+    /* role="status" は表示してから内容を入れる（display:none のまま書き換えると読み上げられない実装がある）。 */
+    note.style.display = show ? 'block' : 'none';
+    note.textContent = show ? (why + '予定として登録することはできます。') : '';
+  }
 }
 
 // 支給限度基準額（単位/月）令和6年4月改定
@@ -3604,8 +3632,12 @@ function renderColumnHeaders(res, coverage) {
         // 日合計は減算（同一建物減算）と処遇改善加算を含まない単位数（総合事業＝月額は週次日計から除外）
         const dayTotal = dayEvents.reduce((s, ev) =>
           SOGO_VISIT_CODES[ev.category] ? s : s + sumDisplayUnits(getUnitBreakdown(ev, res)), 0);
-        // 限度額超過判定は coverage を利用
-        const isOver = !!(coverage && dayEvents.some(ev => coverage.get(ev.id) === 0));
+        /* 限度額超過判定は coverage を利用。ただし coverage が 0 になる理由は2つあり、
+           「限度額を使い切って賄えなかった」だけでなく「そもそも単位が0＝算定対象外」でも 0 になる。
+           後者（要支援・自立・介護度未設定の通所）まで超過（赤字）にすると誤警告が画面と紙に出るため、
+           表示単位が正のイベントに限って超過とみなす。 */
+        const isOver = !!(coverage && dayEvents.some(ev =>
+          coverage.get(ev.id) === 0 && sumDisplayUnits(getUnitBreakdown(ev, res)) > 0));
         if (dayTotal > 0 || isOver) {
           const overClass = isOver ? ' over' : '';
           unitsHtml = `<span class="day-units${overClass}">${dayTotal}単位</span>`;
@@ -4100,6 +4132,9 @@ function clearForm() {
   $('#f-detail').value = '';
   $('#f-notes').value  = '';
   $('#f-units').value  = '';
+  /* 算定対象外の注意書きも一緒に消す（前の入居者の注意が次の入力に残らないようにする） */
+  const unitsNote = $('#f-units-note');
+  if (unitsNote) { unitsNote.textContent = ''; unitsNote.style.display = 'none'; }
   $('#dup-row').style.display = 'none';
   $('#f-dup-dow').value = '';
 }
@@ -5176,7 +5211,13 @@ const SIM = {
     SIM_ON = false;
     document.body.classList.remove('sim-mode');
     this.clearPersist();
+    /* 先に試算のコピーを確実に手放す。loadDB は「読めたときだけ差し替える」ため、
+       実キーが消えている・壊れている端末では試算のコピーが実DBとして生き残り、
+       次の保存でそれが実データとしてクラウドへ流れてしまう。 */
+    DB = { residents: [], currentResidentId: null, office: null };
     try { loadDB(); } catch (e) {}                    /* 実データを localStorage から読み直す */
+    /* 読めずに空のままなら端末バックアップから復元する（既存の安全網に接続する） */
+    try { csRestoreResidentsIfLost(); } catch (e) {}
     try { mergeCommonSchedule(); } catch (e) {}       /* 試算中に止めていたマスタ取込をここで1回 */
     if (this.saved) {
       SYNC._dirty = this.saved.dirty;
@@ -5286,7 +5327,6 @@ const SIM = {
       careLevel: simRes.careLevel || '', copayRate: simRes.copayRate || 1,
       welfareEquipUnits: simRes.welfareEquipUnits || 0,
       kana: simRes.kana || '', external: !!simRes.external,
-      office: JSON.parse(JSON.stringify(DB.office || {})),
     };
     const baseId = this.baseId, srcName = simRes.name || '';
 
