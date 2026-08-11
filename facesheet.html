@@ -123,6 +123,23 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
+/* 薬剤情報（定期）の2列表示（2026-08-11 追加）。入居者マスタと同じ見た目に揃える。
+   ★見出しも値も左揃え。右列は固定幅で、薬剤名が折り返しても効能は1行目に留まる。 */
+/* ★右列は固定幅にせず auto にする。固定にすると、その方の効能が「降圧・利尿」のように
+     短くても常に幅を取り、左列が狭まって【1列の時は収まっていた薬剤名が折り返す】。
+     折り返しは印刷の改ページ位置を動かすので（原則2）、右列は中身の最大幅ちょうどに留める。 */
+.meds2{display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:8px}
+.meds2-h{font-size:0.625rem; color:var(--g6); text-align:left; white-space:nowrap;
+  padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
+.meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
+.meds2-d{word-break:break-word; white-space:pre-wrap}
+.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:nowrap}
+.meds2-na{color:var(--g5)}
+@media print{
+  .meds2-h{border-bottom-color:#999}
+  .meds2-e{color:#000; font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
+  .meds2-na{color:#666}
+}
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
 .logline{display:flex; gap:10px; padding:5px 0; border-bottom:1px dotted var(--g3)}
@@ -255,6 +272,8 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- 薬効辞書（薬剤名 → 効果・効能）。入居者マスタと共有する唯一の正本 -->
+<script src="meds-effect-dict.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    フェイスシート（閲覧・印刷専用ビューア）
@@ -530,6 +549,32 @@ function weightCells(r){
 function cell(lab,val,big,sub,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span>'+
   (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'</div>'}
 function full(lab,val){return'<div class="cell" style="border-right:none"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
+/* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
+   効能は薬効辞書（meds-effect-dict.js）から引く【参考表示】で、保存はしない。
+   入居者マスタの medsRegularCell と同じ判断で、次のどれかなら従来どおり1列で出す:
+     ①辞書が読み込めていない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
+   ★行数がずれたまま並べると【別の薬の効能が並ぶ】ため、必ず1列へ戻す。 */
+function fullMeds(lab,val){
+  var raw = String(val == null ? '' : val);
+  if(!raw.trim()) return full(lab,val);
+  if(typeof MedsEffect === 'undefined' || typeof MedsEffect.effectsFor !== 'function') return full(lab,val);
+  var lines, effs;
+  try{
+    lines = raw.replace(/\r\n/g,'\n').split('\n');
+    effs  = MedsEffect.effectsFor(raw);
+  }catch(e){ return full(lab,val); }
+  if(!Array.isArray(effs) || effs.length !== lines.length) return full(lab,val);
+  var hit = false;
+  for(var k=0;k<effs.length;k++){ if(effs[k]){ hit = true; break; } }
+  if(!hit) return full(lab,val);
+  var h = '<div class="cell" style="border-right:none"><div class="meds2">'+
+    '<div class="meds2-h">'+esc(lab)+'</div><div class="meds2-h">効果・効能</div>';
+  for(var i=0;i<lines.length;i++){
+    h += '<div class="meds2-d">'+esc(lines[i]||'　')+'</div>'+
+         '<div class="meds2-e">'+(effs[i] ? esc(effs[i]) : '<span class="meds2-na">—</span>')+'</div>';
+  }
+  return h+'</div></div>';
+}
 function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'</div><div class="sec-body">'+body+'</div></div>'}
 function sheet(inner){return'<div class="sheet">'+inner+'</div>'}
 function logList(arr,withMeta){
@@ -659,7 +704,7 @@ function renderOfficeView(r){
     )+
     sec('服薬',
       '<div class="row-cells">'+cell('管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
-      full('薬剤情報（定期）',r.medsRegular)+
+      fullMeds('薬剤情報（定期）',r.medsRegular)+
       full('頓服・外用等',r.medsPrn)+
       '<div class="row-cells">'+full('薬備考',r.medsNotes)+full('注意を要する薬剤',r.highRiskMeds)+'</div>'
     )

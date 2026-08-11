@@ -35,6 +35,9 @@
 !/patch-calendar.html
 !/moushiokuri-viewer.html
 !/connection-settings.html
+# 薬効辞書（薬剤名 → 効果・効能）。入居者マスタとフェイスシートが共有する唯一の正本。
+# 一般的な薬効分類のみで、入居者の処方内容は含まない（2026-08-11 管理者の承認のうえ公開）
+!/meds-effect-dict.js
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
