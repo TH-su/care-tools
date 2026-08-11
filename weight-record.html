@@ -1821,6 +1821,16 @@ function pushResidentFields_(r, fields){
      未送信キューに残った時、再送直前の引き直しへ「この項目だけを送る意図だった」と伝えるための印。 */
   apiPush('saveResident', { resident: part, _partial: true });
 }
+/* 応答に載っている版から、いま繋がっているサーバーの能力を見直す。
+   画面を開いたままサーバーを前の版へ戻された場合、起動時の観測だけでは気づけず、
+   部分送信を続けて「送らなかった項目」を空で潰してしまうため。
+   版が読めない＝旧サーバーとみなし、次の送信から行全体に戻す（安全側）。 */
+function apiNoteVer_(res){
+  if(!apiCaps.seen) return;                       // まだ観測していない＝もともと全量送信
+  const v = res && res.ver != null ? Number(res.ver) : NaN;
+  if(v >= 2) return;                              // 対応版のまま
+  apiCaps = { ver: 0, caps: [], authRequired: apiCaps.authRequired, seen: true };
+}
 /* 設定画面に「このサーバーは合言葉が要るのか」を出す。要るのに未入力なら、
    同期が止まってから気づくのでなく、その場で分かるようにする（記号＋文字で示す）。 */
 function updateAuthNote_(){
@@ -1898,8 +1908,20 @@ async function apiDiagnose(url){
 
   // 2) 実際にリクエスト
   let r, text = '', errMsg = null, status = 0;
+  /* 合言葉を求めるサーバーでは、合言葉なしの取得は正しく拒まれる。診断がそれを
+     「接続失敗」と表示すると、設定は正しいのに直し方が分からなくなるため、
+     入力中（または保存済み）の合言葉を添えて、本番と同じ形で試す。 */
+  const diagTok = (($('#cfgApiToken') && $('#cfgApiToken').value.trim()) || apiToken || '');
   try{
-    r = await fetchTO(u + (u.includes('?')?'&':'?') + 'action=getAll', { cache:'no-store' }, 12000);
+    if(diagTok){
+      r = await fetchTO(u, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'getAll', token: diagTok })
+      }, 12000);
+    }else{
+      r = await fetchTO(u + (u.includes('?')?'&':'?') + 'action=getAll', { cache:'no-store' }, 12000);
+    }
     status = r.status;
     text = await r.text();
   }catch(e){
@@ -2080,9 +2102,16 @@ function pendingWriteIds(){
    ・比較は item._at（この書き込みを積んだ時刻）で行う。離脱時排水（_drainWriteQueueSync）で
      後から積まれた新しい版を巻き込んで消さないため（消すと最新版が二度と送られない）。
    ・フラッシュ中は触らない。flushPendingQueue の合流保存が「末尾追記のみ」を前提に
-     slice しているので、途中で要素を抜くと未送信分がずれて消える。 */
+     slice しているので、途中で要素を抜くと未送信分がずれて消える。
+   ・部分送信の成功では掃除しない。この掃除は「あとから送った内容が、前に積まれた内容を
+     すべて含んでいる」ことが前提で、行全体を送っていた頃は常に成り立っていた。項目を
+     絞って送るようになった今は、同じ入居者でも「別の項目を直した未送信」が混ざっており、
+     項目を見ずに捨てると その修正がサーバーへ届かないまま消える（例: 復帰の未送信が
+     車椅子重量の送信成功で捨てられ、次の同期で退去状態に戻る）。
+     残した分は再送直前に最新値へ引き直されるので、同じ値の上書きになるだけで害はない。 */
 function dropStalePending(item){
   if(_pqFlushing) return;
+  if(item && item.data && item.data._partial === true) return;
   const id = _pqItemId(item);
   if(id == null) return;
   const before = (item && item._at) || Date.now();
@@ -2111,6 +2140,9 @@ function _pqFreshenData(item){
        「車椅子重量だけ送る」はずの再送が、送るつもりのなかった項目まで運んで
        他端末の編集を上書きしてしまう（送る範囲は積んだ時の意図どおりに保つ）。 */
     if(d._partial !== true) return { data: Object.assign({}, d, { resident: cur }) };
+    /* サーバーを前の版へ戻した場合、部分のまま送ると「送らなかった項目」が空で潰される。
+       対応を確認できない時は行全体へ広げて送る（＝従来の送り方に落ちる）。 */
+    if(!apiCan('fieldMerge')) return { data: Object.assign({}, d, { resident: cur, _partial: false }) };
     const keys = Object.keys(d.resident);
     const fresh = { id: cur.id };
     keys.forEach(k=>{
@@ -2163,6 +2195,7 @@ function _writeDrain(){
   apiPost(item.action, item.data)
     .then(r=>{
       if(r && r.ok !== false){
+        apiNoteVer_(r);   // 応答の版で能力を見直す（サーバーを戻したまま部分送信を続けない）
         apiSetStatus('ok', '最終同期: '+ new Date().toLocaleTimeString('ja-JP'));
         dropStalePending(item);   // 同じ行の古い未送信を掃除（stale replay の根絶）
       }else{
