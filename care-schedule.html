@@ -1857,6 +1857,60 @@ const DEFAULT_OFFICE = {
 };
 let DB = { residents: [], currentResidentId: null, office: null };
 
+/* ══════════ 表示中の利用者＝「端末（タブ）ローカルのUI状態」 ══════════
+   currentResidentId は同期データ(care_schedule_v2)の中に同居しているため、そのままでは
+   「利用者を選び直す → クラウドへ保存 → 他端末が取り込む → 他端末の画面が別人へ切り替わる」
+   という連動が起きる（multi-device-sync 原則3: 独立して編集される項目を、丸ごと上書きされる
+   レコードに同居させない）。そこで【この端末が見ている人】をローカルに持ち、DBが差し替わる
+   たびに戻す。予定・利用者などの業務データの同期経路は一切変更しない。
+   ・sessionStorage = タブ単位（再読み込みしても現在地を失わない＝dev-principles 原則11）
+   ・localStorage  = 端末単位（新しいタブ・次回起動の初期値）
+   ・保存するのは利用者IDのみ。氏名・予定などの個人情報は保存しない。
+   ・値 '-' は「明示的に未選択」。キー自体が無い＝未決定で、その時だけ従来の保存値
+     （＝クラウド由来の最後の選択）を初期値として引き継ぐ（新規端末の初回のみ）。 */
+const CS_CURSEL_KEY  = 'cs_current_resident_v1';
+const CS_CURSEL_NONE = '-';
+function csReadSelection_() {          // undefined=未決定 / null=明示的に未選択 / id文字列
+  let raw = null;
+  try { raw = sessionStorage.getItem(CS_CURSEL_KEY); } catch (e) {}
+  if (raw == null) { try { raw = localStorage.getItem(CS_CURSEL_KEY); } catch (e) {} }
+  if (raw == null) return undefined;
+  return (raw === CS_CURSEL_NONE) ? null : raw;
+}
+function csWriteSelection_(id) {
+  const v = id ? String(id) : CS_CURSEL_NONE;
+  try { sessionStorage.setItem(CS_CURSEL_KEY, v); } catch (e) {}
+  try { localStorage.setItem(CS_CURSEL_KEY, v); } catch (e) {}
+}
+var csSelMissingNotified_ = null;      // 「削除されました」通知の重複防止（利用者idごとに1回）
+/* 利用者を選ぶ唯一の入口。★saveDB() は呼ばない＝この選択をクラウドへ伝播させない。 */
+function csSetSelection_(id) {
+  DB.currentResidentId = id || null;
+  csWriteSelection_(id);
+  csSelMissingNotified_ = null;
+}
+/* DBが丸ごと差し替わった後（起動loadDB・クラウド採用adopt・競合リベース）に呼び、
+   この端末の選択へ戻す。選択中の利用者が居なくなっていれば未選択にする（黙って別人を映さない）。
+   ★端末キーは書き換えない＝バックアップ復元などで本人が戻れば表示も戻る（消失より復活）。 */
+function csApplyDeviceSelection_(notify) {
+  let sel = csReadSelection_();
+  const undecided = (sel === undefined);
+  if (undecided) sel = DB.currentResidentId || null;   // 初回のみ: 保存値（クラウド由来）を種にする
+  const list = Array.isArray(DB.residents) ? DB.residents : [];
+  if (sel && !list.some(r => r && r.id === sel)) {
+    if (notify && csSelMissingNotified_ !== sel) {
+      csSelMissingNotified_ = sel;
+      try { showToast('表示していた利用者は削除されました。利用者を選び直してください'); } catch (e) {}
+    }
+    sel = null;
+  }
+  /* ★「未決定」を確定させるのは名簿が手元にある時だけ。新規端末は起動時点で名簿が空
+     （クラウド取得は約300ms後）なので、ここで未選択と確定させると、その後に届く
+     クラウドの選択を引き継げなくなる（＝毎回まっさらな画面で開いてしまう）。 */
+  if (undecided && list.length) csWriteSelection_(sel);
+  DB.currentResidentId = sel;
+}
+
 /* ── 利用者データ保護: クラウド同期が空/サンプル「あ」でローカルの実利用者を上書きする事故を防ぐ ──
    （シフトアプリの mayApplyServer/protectStaff と同思想。events は実データ判定に使わない＝
      予定ゼロの実利用者・マスタ連携利用者を誤って「サンプル」扱いしないため。） */
@@ -1990,6 +2044,9 @@ function loadDB() {
   // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
   recalcAllEventUnits();
   ensureServiceDict_();   // 辞書をメモリに同期（ここでは saveDB/saveLocalOnly を呼ばない＝startupPull の生文字列一致判定に非干渉）
+  /* 保存データに載っている currentResidentId（他端末の選択が混ざりうる）ではなく、
+     この端末（タブ）が見ていた利用者へ戻す。通知は呼び出し側で出す（起動時は黙って復元）。 */
+  csApplyDeviceSelection_(false);
   // 備考クリアは loadDB では実行しない。同期端末では起動pull完了後に呼ぶ（下部 Init）＝pullの上書きで巻き戻らないため。
 }
 /* 一回限りの備考(notes)クリア・マイグレーション（要件2）。全 residents[].events[].notes を空にする。
@@ -2229,8 +2286,11 @@ const SYNC = {
     try { mergeCommonSchedule(); } catch(e) {}
     csRestoreResidentsIfLost();   /* 採用結果がサンプル/空なら端末バックアップから復元 */
     csBackupResidents();          /* 実データを退避（次回ロスト時の復元元） */
-    /* ★クラウド採用は currentResidentId ごと差し替わる。入居者マスタから本人指定で
-       開いている間は、他端末の選択で無言に別人へ切り替わらないよう選び直す
+    /* ★クラウド採用は DB ごと差し替わる＝currentResidentId も他端末の選択に置き換わる。
+       この端末（タブ）が見ていた利用者へ必ず戻す（他端末の閲覧に画面を引きずられない）。
+       選択中の方が他端末で削除されていた場合はここで通知して未選択にする。 */
+    try { csApplyDeviceSelection_(true); } catch (e) {}
+    /* 入居者マスタから本人指定で開いている間は、その指定を優先して選び直す
        （職員が自分でセレクトを変えた後は csMasterRid が破棄済みなので何もしない）。 */
     try { csApplyMasterIdParam(true); } catch (e) {}
     populateResidentSelect();
@@ -2373,6 +2433,7 @@ const SYNC = {
         var mine = JSON.parse(JSON.stringify(DB));   // 編集済みローカルを退避（pullが上書きする前）
         await this.pull();                            // サーバー版採用＝rev前進・DB=server
         DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
+        try { csApplyDeviceSelection_(true); } catch (e) {}   // 土台=server版のため表示中の利用者も戻す
         if (csBathRestored_) {                        // 入浴を戻したら必ず知らせる（黙って加算側へ倒さない）
           this.updateStatusUI('要確認');
           this.log('⚠ 競合の解消で通所の入浴 ' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました');
@@ -3032,8 +3093,11 @@ function populateResidentSelect() {
 }
 function onResidentChange() {
   csMasterRid = null;   // 職員が自分で選び直した＝同期後の再適用で上書きしない
-  DB.currentResidentId = $('#resident-select').value || null;
-  saveDB(); renderAll();
+  /* ★saveDB() は呼ばない。表示中の利用者は端末（タブ）ローカルのUI状態であり、
+     クラウドへ保存すると他端末の画面まで同じ人へ切り替わるため（本アプリの同期は
+     予定・利用者データのみを運ぶ）。端末への保存は csSetSelection_ が行う。 */
+  csSetSelection_($('#resident-select').value || null);
+  renderAll();
 }
 /* ═══════════ 入居者マスタからの本人単位リンク（?masterId=） ═══════════
    ★URLの masterId は入居者マスタ側のID。このアプリの主キー（r.id）とは別物なので、
@@ -3041,8 +3105,8 @@ function onResidentChange() {
    ★このアプリはヘッダのセレクトに利用者名が常時出るため、専用の確認バーは置かない
      （固定ヘッダの高さを3箇所の calc が参照しており、増やすと表示・印刷が崩れるため）。
    ★該当者が居なければ選択を変えない＋理由を出す。黙って別人の画面を見せない。
-   ★saveDB() は呼ばない。currentResidentId は同期対象のDBに入っており、
-     URL由来の一時的な選択を他端末へ伝播させないため（多端末同期規約）。 */
+   ★saveDB() は呼ばない（csSetSelection_ が端末ローカルにだけ保存する）。
+     URL由来の選択を他端末へ伝播させないため（多端末同期規約）。 */
 function csReadMasterIdParam() {
   var p = null; try { p = new URLSearchParams(location.search); } catch (e) { return null; }
   if (!p || !p.get('masterId')) return null;
@@ -3050,8 +3114,8 @@ function csReadMasterIdParam() {
   if (!/^[0-9A-Za-z_-]{1,32}$/.test(id)) { showToast('⚠️ 指定された利用者を開けませんでした'); return null; }
   return id;
 }
-/* 起動pull・30秒ポーリングの adopt() は DB ごと差し替えるため currentResidentId も戻る。
-   マスタから来た指定をメモリに保持し、差し替え後に選び直す。
+/* 起動pull・30秒ポーリングの adopt() は DB ごと差し替わる（差し替え後は csApplyDeviceSelection_ が
+   この端末の選択へ戻す）。マスタから来た指定はそれより優先するため、メモリに保持して選び直す。
    ★職員が自分でセレクトを変えたら破棄する（後から上書きしない）＝ onResidentChange で解除。 */
 var csMasterRid = null;
 function csApplyMasterIdParam(isRetry) {
@@ -3074,7 +3138,7 @@ function csApplyMasterIdParam(isRetry) {
     if (!isRetry) showToast('「' + (hit.name || '') + '」を表示しています');   // 効いたことを分かるように
     return;
   }
-  DB.currentResidentId = hit.id;
+  csSetSelection_(hit.id);   // 端末ローカルにも記録＝以後の同期取り込みで戻されない
   populateResidentSelect();
   renderAll();
   showToast('入居者マスタから「' + (hit.name || '') + '」を開きました');
@@ -3132,7 +3196,7 @@ function addResident() {
     external: !!($('#f-new-external') && $('#f-new-external').checked),   /* 外部利用者フラグ(既定=施設内false) */
   };
   DB.residents.push(res);
-  if (!DB.currentResidentId) DB.currentResidentId = res.id;
+  if (!DB.currentResidentId) csSetSelection_(res.id);
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   $('#f-new-res').value = '';
   showToast(`「${name}」を追加しました`);
@@ -3209,7 +3273,7 @@ function removeResident(id) {
   if (!res) return;
   if (!confirm(`「${res.name}」を削除しますか？\n（この利用者の計画もすべて削除されます）`)) return;
   DB.residents = DB.residents.filter(r => r.id !== id);
-  if (DB.currentResidentId === id) DB.currentResidentId = (DB.residents[0] || {}).id || null;
+  if (DB.currentResidentId === id) csSetSelection_((DB.residents[0] || {}).id || null);
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
   showToast('削除しました');
 }
@@ -3256,7 +3320,7 @@ function moveOutResident(id) {
   res.movedOut = true;
   if (DB.currentResidentId === id) {
     const next = DB.residents.find(r => !r.movedOut && isScheduleTarget(r));
-    DB.currentResidentId = next ? next.id : null;
+    csSetSelection_(next ? next.id : null);
   }
   const ok = saveDB();
   populateResidentSelect(); renderResidentList(); renderAll();
@@ -4930,6 +4994,10 @@ applyScheduleDeviceGuard();
   try { populateResidentSelect(); renderResidentList(); renderAll(); } catch(e) {}
   showToast('この端末を事務所PCに設定しました');
 }); })();
+/* 名簿の確定後（マスタ取込・バックアップ復元のあと）に、この端末が見ていた利用者へ戻す。
+   loadDB 内でも呼んでいるが、その後で residents が入れ替わりうるためここで確定させる。
+   ここは通知あり＝同期先が無い端末でも「消えた理由」が分かるようにする。 */
+try { csApplyDeviceSelection_(true); } catch (e) {}
 populateResidentSelect();
 renderAll();
 /* ★復元の「後」に呼ぶ＝入居者マスタからの指定を優先させる。
@@ -4994,7 +5062,9 @@ window.addEventListener('storage', (e) => {
   _csStorageTimer = setTimeout(() => {
     _csStorageTimer = null;
     if (SYNC._dirty || _csBusyEditing()) return; // デバウンス中に編集が入ったら中止（自編集優先）
-    try { loadDB(); renderAll(); } catch (err) {}
+    /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
+       他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
+    try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
   }, 300);
 });
 // ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
