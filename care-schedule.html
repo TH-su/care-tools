@@ -62,6 +62,27 @@ html, body { height: 100%; overflow: hidden;
 .hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
 .hdr-btn.savebtn:hover { background: #1b5e20; }
 .hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
+/* ── 試算モード（サンドボックス）──
+   盤面の見た目・操作は通常と同一に保つ。違いはヘッダーの色・h1の但し書き・印刷の透かし・
+   一部ボタンの無効化だけ。レイアウト計算（--hdr-h を参照する calc 3箇所）には一切触れない。 */
+.hdr-btns { overflow-x: auto; scrollbar-width: thin; }
+.hdr-btns::-webkit-scrollbar { height: 2px; }
+.hdr-btns::-webkit-scrollbar-thumb { background: rgba(255,255,255,.45); border-radius: 2px; }
+.hdr-btn.simbtn { background: #ef6c00; border-color: #ef6c00; font-weight: 700; }
+.hdr-btn.simbtn:hover { background: #e65100; }
+.hdr-btn.applybtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
+.hdr-btn.applybtn:hover { background: #1b5e20; }
+.hdr-btn[disabled] { opacity: .38; cursor: not-allowed; }
+.hdr-btn[disabled]:hover { background: rgba(255,255,255,.15); }
+/* 白地のチップにする＝橙のヘッダー上（画面）でも、白い紙の上（印刷）でも読める */
+.sim-tag { display: none; font-size: 0.75rem; font-weight: 700; margin-left: 8px;
+  background: #fff; color: #b71c1c; border: 1px solid #b71c1c; border-radius: 4px;
+  padding: 1px 6px; white-space: nowrap;
+  print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+body.sim-mode .sim-tag { display: inline; }
+/* ヘッダーを橙にする＝画面上での取り違え防止（高さは変えないのでレイアウト無影響） */
+body.sim-mode .hdr { background: linear-gradient(135deg, #e65100 0%, #ff9800 100%); }
+body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
 /* ケア内容チップ（訪問介護の予定編集・要件4） */
 .care-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .care-chip { border: 1px solid #cfd8dc; background: #fff; color: #37474f; border-radius: 14px;
@@ -607,6 +628,17 @@ select.inp { cursor: pointer; }
   body.rl-print #mk-resident-list .btn-row { display: none !important; }
   body.rl-print #rl-table { font-size: 9px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.rl-print #rl-table th, body.rl-print #rl-table td { padding: 3px 4px; }
+
+  /* 試算モードの紙面表示。.hdr-btns と .summary-bar は上の 578 行で印刷から消えるため、
+     紙の上で実データと見分けるにはこの2つ（h1の但し書きと全面の透かし）が唯一の手段。 */
+  body.sim-mode::before {
+    content: '試 算'; position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 110pt; font-weight: 700; letter-spacing: .25em;
+    color: rgba(230, 81, 0, .12); transform: rotate(-28deg);
+    pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact;
+  }
+  body.sim-mode .sim-tag { display: inline; }
 }
 
 /* ── Responsive ── */
@@ -642,7 +674,7 @@ select.inp { cursor: pointer; }
 </div>
 
 <header class="hdr">
-  <h1>週間計画</h1>
+  <h1>週間計画<span class="sim-tag">（試算・未確定）</span></h1>
   <div class="resident-selector">
     <select class="resident-select" id="resident-select" onchange="onResidentChange()">
       <option value="">-- 利用者を選択 --</option>
@@ -652,6 +684,11 @@ select.inp { cursor: pointer; }
     <!-- アプリ間ジャンプ（daycare-roster.html と同形式・相対パス＝同一オリジン）。
          .hdr-btns は右寄せグループなので【先頭に足す】と既存ボタンの位置が動かない
          ＝現場の操作記憶を壊さない。.hdr-btns は @media print で display:none。 -->
+    <!-- 試算モード。上のコメントどおり【先頭に足す】＝既存ボタンの位置が動かない。
+         .hdr-btns は overflow-x:auto にしてあるので、増やしても右端が画面外へ出ない。 -->
+    <button class="hdr-btn simbtn" id="btnSimStart" onclick="SIM.enter()" title="試算モード：この盤面を自由に試せます。ワークスケジュール・デイ利用表・クラウドには一切反映されません">🧪 試算</button>
+    <button class="hdr-btn applybtn" id="btnSimApply" style="display:none" onclick="SIM.openApply()" title="試算の内容を実データへ反映する">✅ 実装</button>
+    <button class="hdr-btn simbtn" id="btnSimExit" style="display:none" onclick="SIM.exit()" title="試算を破棄して通常モードへ戻る">✕ 試算終了</button>
     <button class="hdr-btn" onclick="window.open('resident-master.html','_blank')" title="入居者マスタを開く（入居者情報の源泉）">👤 入居者マスタ</button>
     <button class="hdr-btn" onclick="window.open('work-schedule.html','_blank')" title="ワークスケジュールを開く">📋 ワースケ</button>
     <button class="hdr-btn" onclick="window.open('shift-app.html','_blank')" title="シフト作成アプリを開く">👥 シフト</button>
@@ -886,6 +923,41 @@ select.inp { cursor: pointer; }
 </div>
 
 <!-- Resident modal -->
+<!-- 試算の反映（実装）。試算モード中だけ開く。実データへ書き込む唯一の入口。 -->
+<div class="mk" id="mk-sim-apply">
+  <div class="md">
+    <div class="md-hd">
+      <h2>試算を実データへ反映</h2>
+      <button class="md-close" onclick="SIM.closeApply()">✕</button>
+    </div>
+    <div id="sim-diff" style="font-size:13px;line-height:1.7;max-height:38vh;overflow:auto;border:1px solid var(--g3);border-radius:6px;padding:8px 10px;margin-bottom:10px"></div>
+    <div class="form-row">
+      <label>反映先</label>
+      <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer">
+        <input type="radio" name="sim-target" value="over" checked onchange="SIM.onTargetChange()">
+        <span id="sim-over-label">この利用者の予定を置き換える</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer">
+        <input type="radio" name="sim-target" value="new" onchange="SIM.onTargetChange()">
+        <span>新規利用者として登録する</span>
+      </label>
+      <div id="sim-new-row" style="display:none;margin:6px 0 0 22px">
+        <input class="inp" id="sim-new-name" placeholder="氏名を入力" style="width:100%;max-width:280px">
+        <div style="font-size:12px;color:var(--g6);margin-top:4px">入居者マスタに同じ氏名が登録されると、後から自動で紐づきます。</div>
+      </div>
+    </div>
+    <div class="hint-box" style="font-size:12px">
+      反映するとこの端末とクラウドの週間計画が書き換わり、全端末へ配信されます。<br>
+      ワークスケジュールは<b>表示中の日だけ</b>自動で追従します（他の日はその日を開いたとき。過去日は保護のため反映されません）。<br>
+      デイ利用表と週間計画俯瞰は自動では変わりません。反映後に開き直してください。
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="SIM.closeApply()">キャンセル</button>
+      <button class="btn btn-pri" id="sim-apply-go" onclick="SIM.applyGo()">反映する</button>
+    </div>
+  </div>
+</div>
+
 <div class="mk" id="mk-resident">
   <div class="md">
     <div class="md-hd">
@@ -1575,14 +1647,25 @@ function calcVisitUnits(category, res, startTime) {
   return Math.max(0, units);
 }
 
-// 通所介護の基本単位テーブル参照（careLevel未設定や要支援1/2でも要介護1へフォールバック）
+/* 通所介護の基本単位テーブル参照。
+ * ★2026-08-11 変更: 表に無い介護度（要支援1/2・事業対象者・未設定）を要介護1へフォールバックするのを
+ *   やめた。要支援・事業対象者の通所は総合事業（月額包括）で、要介護の通所介護単位で計上するのは
+ *   誤請求の直接経路になる。当施設では要支援・事業対象者に通所を提供していないため（2026-08-11 確認）、
+ *   算定せず 0 とし、画面には「この介護度では算定対象外」と明示する。
+ *   将来 総合事業の通所型サービスを扱う場合は、SOGO_VISIT_CODES と同じ独立トラックを別に足すこと
+ *   （この表へ要支援の行を足すのは誤り）。 */
 function getDaycareLevelMap(careLevel) {
-  return DAYCARE_BASE_UNITS[careLevel] || DAYCARE_BASE_UNITS['要介護1'];
+  return DAYCARE_BASE_UNITS[careLevel] || null;
+}
+/* 通所を算定できる介護度か（要介護1〜5のみ）。UI の警告表示と算定停止で共用する。 */
+function isDaycareCalculable_(careLevel) {
+  return !!DAYCARE_BASE_UNITS[careLevel];
 }
 
 function calcDaycareUnits(startTime, endTime, bathing, res) {
   const careLevel = (res && res.careLevel) || '';
   const levelMap  = getDaycareLevelMap(careLevel);
+  if (!levelMap) return 0;   /* 算定対象外＝加算も付けない（0を返す） */
   const base      = levelMap[getDaycareTimeKey(startTime, endTime)] || 0;
   const a = (DB.office && DB.office.daycareAddons) || {};
 
@@ -1653,8 +1736,14 @@ function getUnitBreakdown(ev, res) {
       if (nursingUnits > 0) rows.push({ label: '処遇改善加算', units: nursingUnits, outsideLimit: true });
     }
   } else {
-    // daycare（careLevel未設定・要支援は要介護1へフォールバック）
-    const levelMap = getDaycareLevelMap((res && res.careLevel) || '');
+    // daycare。要介護1〜5以外（要支援1/2・事業対象者・未設定）は算定対象外＝加算も含めて計上しない。
+    const careLevel = (res && res.careLevel) || '';
+    const levelMap = getDaycareLevelMap(careLevel);
+    if (!levelMap) {
+      /* 明細を空にすると「なぜ0なのか」が画面から読み取れないため、理由の行を1つだけ出す。 */
+      rows.push({ label: '通所介護（' + (careLevel || '介護度未設定') + 'は算定対象外）', units: 0 });
+      return rows;
+    }
     const base = levelMap[getDaycareTimeKey(ev.startTime, ev.endTime)] || 0;
     rows.push({ label: '通所介護', units: base });
 
@@ -1857,6 +1946,15 @@ const DEFAULT_OFFICE = {
 };
 let DB = { residents: [], currentResidentId: null, office: null };
 
+/* ── 試算モードの遮断フラグ ──────────────────────────────────────────
+   true の間、この端末は care_schedule_v2 にも入居者マスタにもクラウドにも一切書かない。
+   同時に、外からDBを差し替える経路（起動pull・30秒ポーリング・storageイベント・
+   マスタ取込・可視復帰・online復帰・状態照会）もすべて止める。
+   ★localStorage に書いた時点で、同じ端末のワークスケジュールのタブが storage イベントを
+     受けて2秒後にクラウドへ送信する。「送らなければ安全」ではなく「書かなければ安全」。
+   この変数を見るガードは SIM.enter/exit と対で動く。増やすときは SIM.exit の復元も対で書くこと。 */
+var SIM_ON = false;
+
 /* ══════════ 表示中の利用者＝「端末（タブ）ローカルのUI状態」 ══════════
    currentResidentId は同期データ(care_schedule_v2)の中に同居しているため、そのままでは
    「利用者を選び直す → クラウドへ保存 → 他端末が取り込む → 他端末の画面が別人へ切り替わる」
@@ -1878,6 +1976,7 @@ function csReadSelection_() {          // undefined=未決定 / null=明示的�
   return (raw === CS_CURSEL_NONE) ? null : raw;
 }
 function csWriteSelection_(id) {
+  if (SIM_ON) return;   /* 試算中の利用者切替を端末に残さない（試算終了後は元の選択へ戻す） */
   const v = id ? String(id) : CS_CURSEL_NONE;
   try { sessionStorage.setItem(CS_CURSEL_KEY, v); } catch (e) {}
   try { localStorage.setItem(CS_CURSEL_KEY, v); } catch (e) {}
@@ -1941,6 +2040,7 @@ function csLooksLikeSampleOnly(residents) {
 }
 /* 正データを端末ローカルへ退避（同期されないキー）。サンプル/空は退避しない（=「あ」を昇格させない）。 */
 function csBackupResidents() {
+  if (SIM_ON) return;   /* 試算中の利用者を端末バックアップへ焼かない（後で「復元」経路から逆流するため） */
   try {
     if (!csLooksLikeSampleOnly(DB.residents) && csRealResidentCount(DB.residents) > 0) {
       localStorage.setItem(CS_RESIDENT_BACKUP_KEY, JSON.stringify({ at: Date.now(), residents: DB.residents }));
@@ -1949,6 +2049,7 @@ function csBackupResidents() {
 }
 /* 現在がサンプル/空で端末バックアップに正データがあれば自動復元（field端末はクラウドへ書き戻さない）。 */
 function csRestoreResidentsIfLost() {
+  if (SIM_ON) return false;   /* 試算中は端末バックアップからの復元をしない（試算盤面が突然戻る） */
   try {
     if (!csLooksLikeSampleOnly(DB.residents)) return false;   // 正データがあるなら何もしない
     const bk = JSON.parse(localStorage.getItem(CS_RESIDENT_BACKUP_KEY) || 'null');
@@ -2078,6 +2179,9 @@ function migrateClearNotes_() {
   } catch (e) { console.error('[migrate] 備考クリア失敗:', e); return false; }
 }
 function saveDB() {
+  /* 試算中は本物のキーへ一切書かない。呼び出し元は「保存できた」前提で描画を続けるので true を返し、
+     代わりに試算専用キーへ退避する（再読み込みで試算の続きから戻れるようにするため）。 */
+  if (SIM_ON) { SIM.persist(); return true; }
   ensureServiceDict_();   // 保存前に辞書をメモリへ同期（JSON.stringify より前）
   try {
     const json = JSON.stringify(DB);
@@ -2103,6 +2207,8 @@ function saveDB() {
 /* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存→クラウドへ即時push（2sデバウンス迂回）。
  * 同期先未設定でも端末には保存される。 */
 function manualSave() {
+  /* Ctrl/Cmd+S もここへ来る。試算中は反射的に押されても何も出さない。 */
+  if (SIM_ON) { showToast('試算中は保存しません。反映するには「✅ 実装」を押してください'); return; }
   try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
   const ok = saveDB();
   const synced = SYNC.hasTarget();
@@ -2174,6 +2280,7 @@ const SYNC = {
      解除は「push成功時」と「起動時にクラウドと内容一致した時」のみ。adopt では解除しない
      （競合リベース直後に push が失敗するとフラグが消え、次回起動の無条件採用で編集が消えるため）。 */
   markDirty() {
+    if (SIM_ON) return;   /* 未送信フラグを立てない（立てると離脱時 beacon と次回起動の再送対象になる） */
     this._dirty = true;
     try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e) {}
   },
@@ -2243,6 +2350,9 @@ const SYNC = {
     } catch(e) {}
   },
   async gas(payload) {
+    /* 最後の砦。上位（push/pull/poll）は個別に止めてあるが、将来ここを通る経路が増えても
+       試算中の書込みだけは通さない。読み取り(get/head)は害がないので通す。 */
+    if (SIM_ON && payload && payload.action === 'put') return { ok: false, error: '試算モード中は送信しません' };
     const t = this.target();
     payload.token = t.token;
     // text/plain で送信し CORS preflight を回避（ワースケと同一）
@@ -2257,6 +2367,7 @@ const SYNC = {
   },
   // リモート(data:DBオブジェクト)をローカルへ採用（事業所情報は欠落時ローカル維持）
   adopt(data, rev) {
+    if (SIM_ON) return false;   /* 試算盤面をサーバー版で差し替えない */
     const remote = data;
     if (!remote || typeof remote !== 'object') return false;
     /* ★上書き保護: ローカルが実データで、リモートが空/サンプル「あ」なら採用しない（実利用者を守る）。
@@ -2321,6 +2432,7 @@ const SYNC = {
   },
 
   async pull() {
+    if (SIM_ON) { this.log('🧪 試算モード中は同期しません'); return false; }
     if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
     if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
     this._busy = true;
@@ -2351,6 +2463,7 @@ const SYNC = {
      - dirty無し: 従来どおり pull()（挙動完全不変）
      - dirty有り: ①内容一致→rev同期＋解除 ②serverRev≦localRev→送信 ③serverRev>localRev→競合表示（ユーザー判断） */
   async startupPull() {
+    if (SIM_ON) return false;   /* 試算を復元して起動したときに、サーバー版で上書きしない */
     if (!this.hasPersistedDirty()) return this.pull();
     this._dirty = true;   // 前セッションの未送信状態を引き継ぐ（storage/poll の上書き保護も有効化）
     if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
@@ -2398,6 +2511,7 @@ const SYNC = {
   },
 
   async push(force) {
+    if (SIM_ON) { this.log('🧪 試算モード中は送信しません'); return false; }
     if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return false; }
     if (this._busy) { return false; }
     this._busy = true;
@@ -2480,6 +2594,7 @@ const SYNC = {
   },
 
   scheduleAutoPush() {
+    if (SIM_ON) return;   /* 2秒後の自動送信を予約しない（試算終了直後に満了して飛ぶのを防ぐ） */
     this.markDirty(); // 未送信フラグ（永続化＝タブ閉鎖後も次回起動で検知）
     this.updateStatusUI('未同期…');
     clearTimeout(this._pushTimer);
@@ -2489,6 +2604,7 @@ const SYNC = {
   // 定期ポーリング開始：他端末からの更新を自動検知
   startPolling() {
     if (this._pollTimer) clearInterval(this._pollTimer);
+    if (SIM_ON) return;   /* 試算中はポーリングを再開させない */
     if (!this.hasTarget()) return;
     this._pollTimer = setInterval(() => this.pollIfNeeded(), POLL_INTERVAL_MS);
   },
@@ -2497,6 +2613,7 @@ const SYNC = {
   },
   // クラウドの rev を確認し、新しければ自動pull
   async pollIfNeeded() {
+    if (SIM_ON) return;   /* 30秒ごとの取得を止める（試算盤面が突然サーバー版に戻るのを防ぐ） */
     if (this._busy) return;
     if (document.hidden) return; // 非表示タブではスキップ
     if (!this.hasTarget()) return;
@@ -2629,6 +2746,7 @@ function csRebaseEdits(server, mine) {
 
 // localStorage のみへ保存（クラウド同期トリガなし、pull時の循環防止用）
 function saveLocalOnly() {
+  if (SIM_ON) { SIM.persist(); return; }
   try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {}
   csBackupResidents();
 }
@@ -2670,6 +2788,7 @@ function onSyncInputChange() {
 }
 
 function openSyncModal() {
+  if (SIM_ON) { showToast('試算中はクラウド同期を開けません（試算を終了してからお使いください）'); return; }
   $('#sync-endpoint').value = SYNC.config.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = SYNC.config.token || '';
   $('#sync-auto').checked   = !!SYNC.config.auto;
@@ -2817,6 +2936,7 @@ function csApplyMasterHospitalized(tgt, c){
    （{residents:[...]}・メモリ内でのマージ専用）。共有名簿(LS)へは書かない＝唯一の書き手は resident-master。
    引数なしの既存呼び出し（起動時・adopt）は従来どおり共有名簿(LS)を読む。 */
 function mergeCommonSchedule(extData){
+  if (SIM_ON) return;   /* 試算中はマスタ取込をしない（利用者が勝手に増減し、試算盤面が壊れる） */
   var data = null;
   if (extData && typeof extData === 'object' && Array.isArray(extData.residents)){
     data = extData;
@@ -2905,6 +3025,7 @@ function csGetMasterCfg(){
 }
 /* 戻り値: 送信を開始したら true（cfg 無し・masterId 無しは false＝ローカルのみ） */
 function csPushMasterState(masterId, hospitalized){
+  if (SIM_ON) return false;   /* 入居者マスタへの外部送信は取り消せない。試算中は絶対に送らない */
   var cfg = csGetMasterCfg();
   if (!cfg || masterId == null) return false;
   try{
@@ -2976,6 +3097,7 @@ function csRosterToCommon_(list){
    （rev は未採用のまま＝変化があれば次tickで必ず拾い直す＝取りこぼさない） */
 function csStateRevTick_(){
   try{
+    if (SIM_ON) return;                                // 試算中は名簿の取り直しをしない（試算盤面が差し替わる）
     if (document.hidden) return;                       // hidden 中はスキップ（表示中のみ照会）
     if (suGetDeviceRole() === 'field') return;         // 現場ガード端末は照会しない（起動時pullと同じ基準）
     var cfg = csGetMasterCfg();
@@ -3328,6 +3450,8 @@ function moveOutResident(id) {
   if (ok) csReassertResidentFlag_(id, 'movedOut', true, '退去');
 }
 function toggleHospitalized(id) {
+  /* 入退院は入居者マスタへ片道で送信され、取り消せない。試算中は一切触らせない。 */
+  if (SIM_ON) { showToast('試算中は入退院の切替はできません（入居者マスタへ送信されるため）'); return; }
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
   res.hospitalized = !res.hospitalized;
@@ -4955,6 +5079,7 @@ function showToast(msg) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (ctxMenu.style.display !== 'none') { hideCtxMenu(); return; }
+    if ($('#mk-sim-apply').classList.contains('open')) { SIM.closeApply(); return; }
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
     if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
     if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
@@ -4980,6 +5105,236 @@ $('#mk-bulk').addEventListener('click', e => { if (e.target === $('#mk-bulk')) c
 $('#f-new-res').addEventListener('keydown', e => { if (e.key === 'Enter') addResident(); });
 $('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.display !== 'none') renderCareChips(); });
 
+/* ══════════════════════════════════════════════════════════════════════
+   試算モード（サンドボックス）
+   ─────────────────────────────────────────────────────────────────────
+   enter() : 実DBを退避し、DB をディープコピーへ差し替える。SIM_ON=true で
+             書込・取込のすべての経路が止まる（ガードは各関数の先頭で SIM_ON を見る）。
+   exit()  : 実データへ戻す。戻すときは退避したオブジェクトではなく localStorage を
+             読み直す。試算中に同じ端末のワークスケジュールが care_schedule_v2 を
+             書き換えている可能性があり、退避版を書き戻すとその更新を潰すため。
+   applyGo(): 試算の内容を実データへ反映する唯一の出口。
+   ★ガードを増やすときは、必ず exit() の復元処理と対で書くこと。
+   ══════════════════════════════════════════════════════════════════════ */
+const SIM_KEY = 'cs_sim_v1';   /* 試算の一時保存。care_schedule_v2 とは別キー・同期対象外 */
+
+const SIM = {
+  saved: null,     // 試算開始時に退避した実データ側の状態
+  baseId: null,    // 試算の土台にした利用者ID
+
+  /* ── 永続化（試算中の再読み込みで続きから戻れるように） ── */
+  persist() {
+    try { localStorage.setItem(SIM_KEY, JSON.stringify({ at: Date.now(), baseId: this.baseId, db: DB })); }
+    catch (e) { /* 容量超過でも試算自体は続行できる（復元できなくなるだけ） */ }
+  },
+  clearPersist() { try { localStorage.removeItem(SIM_KEY); } catch (e) {} },
+
+  syncButtons() {
+    const show = (id, on) => { const b = $('#' + id); if (b) b.style.display = on ? '' : 'none'; };
+    show('btnSimStart', !SIM_ON); show('btnSimApply', SIM_ON); show('btnSimExit', SIM_ON);
+    /* 外へ出るボタンは見た目でも押せなくする（関数側にも同じガードがある＝二重防御） */
+    const save = $('#btnSave'), sync = $('#sync-btn');
+    if (save) save.disabled = SIM_ON;
+    if (sync) sync.disabled = SIM_ON;
+  },
+
+  /* ── 開始 ── */
+  enter(restoredDb) {
+    if (SIM_ON) return;
+    /* 印刷の残留状態を先に落とす。PRINT_MAP が残ったまま再描画すると盤面が圧縮座標のままになり、
+       そこでドラッグすると誤った時刻が書き込まれる（既存コードにも同趣旨の警告あり）。 */
+    try { restoreWeekPrint_(); } catch (e) {}
+    try { clearRlPrintState_(); } catch (e) {}
+    /* 予約済みの自動送信を破棄し、ポーリングを止める */
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try { SYNC.stopPolling(); } catch (e) {}
+
+    this.saved = { dirty: SYNC._dirty, undo: undoStack.slice(), sel: DB.currentResidentId };
+    undoStack.length = 0;   /* 試算の操作が実データへ Undo されないよう履歴を分ける */
+
+    SIM_ON = true;
+    document.body.classList.add('sim-mode');
+    if (restoredDb) {
+      DB = restoredDb.db;
+      this.baseId = restoredDb.baseId || DB.currentResidentId;
+    } else {
+      DB = JSON.parse(JSON.stringify(DB));   /* 実DBには一切触れない完全なコピー */
+      this.baseId = DB.currentResidentId;
+      this.persist();
+    }
+    this.syncButtons();
+    try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) {}
+    showToast(restoredDb ? '試算モードで復元しました（どこにも反映されていません）'
+                         : '試算モードです。ここでの変更はどこにも反映されません');
+  },
+
+  /* ── 終了（破棄） ── */
+  exit(silent) {
+    if (!SIM_ON) return;
+    if (!silent && !confirm('試算を破棄して通常モードへ戻ります。よろしいですか。')) return;
+    try { restoreWeekPrint_(); } catch (e) {}
+    SIM_ON = false;
+    document.body.classList.remove('sim-mode');
+    this.clearPersist();
+    try { loadDB(); } catch (e) {}                    /* 実データを localStorage から読み直す */
+    try { mergeCommonSchedule(); } catch (e) {}       /* 試算中に止めていたマスタ取込をここで1回 */
+    if (this.saved) {
+      SYNC._dirty = this.saved.dirty;
+      undoStack.length = 0;
+      this.saved.undo.forEach(u => undoStack.push(u));
+      const sel = this.saved.sel;
+      if (sel && DB.residents.some(r => r.id === sel)) { try { csSetSelection_(sel); } catch (e) {} }
+    }
+    this.saved = null; this.baseId = null;
+    try { SYNC.startPolling(); } catch (e) {}
+    this.syncButtons();
+    try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) {}
+    if (!silent) showToast('通常モードへ戻りました');
+  },
+
+  /* ── 差分の算出（予定はID一致で突き合わせる） ── */
+  evLabel(ev) {
+    const d = DAYS_JA[ev.dayOfWeek] || '?';
+    const t = (ev.startTime || '--:--') + '〜' + (ev.endTime || '--:--');
+    const k = ev.serviceType === 'visit' ? (ev.category || '訪問') : ('通所' + (ev.bathing ? '（入浴）' : ''));
+    return d + ' ' + t + ' ' + k;
+  },
+  evSig(ev) {
+    return [ev.dayOfWeek, ev.serviceType, ev.startTime, ev.endTime, ev.category || '',
+            ev.bathing ? 1 : 0, ev.detail || '', ev.notes || ''].join('|');
+  },
+  diff(simEvents, realEvents) {
+    const byId = arr => { const m = new Map(); (arr || []).forEach(e => m.set(e.id, e)); return m; };
+    const s = byId(simEvents), r = byId(realEvents);
+    const added = [], removed = [], changed = [];
+    s.forEach((ev, id) => {
+      if (!r.has(id)) added.push(ev);
+      else if (this.evSig(ev) !== this.evSig(r.get(id))) changed.push({ before: r.get(id), after: ev });
+    });
+    r.forEach((ev, id) => { if (!s.has(id)) removed.push(ev); });
+    return { added, removed, changed };
+  },
+
+  /* ── 反映モーダル ── */
+  openApply() {
+    if (!SIM_ON) return;
+    const simRes = (DB.residents || []).find(r => r.id === this.baseId);
+    if (!simRes) { showToast('試算の対象になっている利用者が見つかりません'); return; }
+
+    /* 実データ側は localStorage を直接読む（DB は試算中のコピーなので実値ではない） */
+    let realRes = null;
+    try {
+      const real = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (real && Array.isArray(real.residents)) realRes = real.residents.find(r => r.id === this.baseId) || null;
+    } catch (e) {}
+
+    const d = this.diff(simRes.events, realRes ? realRes.events : []);
+    const box = $('#sim-diff'); box.textContent = '';
+    const line = (mark, cls, text) => {
+      const p = document.createElement('div');
+      const b = document.createElement('b'); b.textContent = mark + ' '; b.style.color = cls;
+      p.appendChild(b); p.appendChild(document.createTextNode(text));
+      box.appendChild(p);
+    };
+    const head = document.createElement('div');
+    head.style.cssText = 'font-weight:700;margin-bottom:6px';
+    head.textContent = '追加 ' + d.added.length + '件／変更 ' + d.changed.length + '件／削除 ' + d.removed.length + '件';
+    box.appendChild(head);
+    d.added.forEach(ev => line('＋', 'var(--ok)', this.evLabel(ev)));
+    d.changed.forEach(c => line('→', '#e65100', this.evLabel(c.before) + '  ⇒  ' + this.evLabel(c.after)));
+    d.removed.forEach(ev => line('－', 'var(--ng)', this.evLabel(ev)));
+    if (!d.added.length && !d.changed.length && !d.removed.length) {
+      const p = document.createElement('div'); p.style.color = 'var(--g6)';
+      p.textContent = '予定の変更はありません（介護情報や事業所情報だけを変えた場合もここには出ません）。';
+      box.appendChild(p);
+    }
+    $('#sim-over-label').textContent = '「' + (simRes.name || '—') + '」の予定を置き換える';
+    const over = document.querySelector('input[name="sim-target"][value="over"]');
+    if (over) over.checked = true;
+    if (!realRes) {
+      /* 試算中に追加した利用者など、実データ側に居ない場合は上書き先が無い */
+      if (over) { over.checked = false; over.disabled = true; }
+      const nw = document.querySelector('input[name="sim-target"][value="new"]');
+      if (nw) nw.checked = true;
+      $('#sim-new-name').value = simRes.name || '';
+    } else if (over) { over.disabled = false; }
+    this.onTargetChange();
+    $('#mk-sim-apply').classList.add('open');
+  },
+  closeApply() { $('#mk-sim-apply').classList.remove('open'); },
+  onTargetChange() {
+    const v = (document.querySelector('input[name="sim-target"]:checked') || {}).value;
+    $('#sim-new-row').style.display = (v === 'new') ? '' : 'none';
+  },
+
+  /* ── 反映の実行（実データへ書き込む唯一の経路） ── */
+  applyGo() {
+    if (!SIM_ON) return;
+    if (suGetDeviceRole() === 'field') { showToast('この端末（現場用）からは反映できません'); return; }
+    const mode = (document.querySelector('input[name="sim-target"]:checked') || {}).value;
+    const simRes = (DB.residents || []).find(r => r.id === this.baseId);
+    if (!simRes) { showToast('試算の対象になっている利用者が見つかりません'); return; }
+
+    let newName = '';
+    if (mode === 'new') {
+      newName = ($('#sim-new-name').value || '').trim();
+      if (!newName) { showToast('氏名を入力してください'); $('#sim-new-name').focus(); return; }
+    }
+    /* 試算側の値をここで確定させる（この後 DB は実データへ戻る） */
+    const payload = {
+      events: JSON.parse(JSON.stringify(simRes.events || [])),
+      careLevel: simRes.careLevel || '', copayRate: simRes.copayRate || 1,
+      welfareEquipUnits: simRes.welfareEquipUnits || 0,
+      kana: simRes.kana || '', external: !!simRes.external,
+      office: JSON.parse(JSON.stringify(DB.office || {})),
+    };
+    const baseId = this.baseId, srcName = simRes.name || '';
+
+    if (!confirm(mode === 'new'
+      ? '「' + newName + '」を新規利用者として登録し、試算の予定を反映します。\nこの内容は全端末へ配信されます。よろしいですか。'
+      : '「' + srcName + '」の予定を試算の内容で置き換えます。\nこの内容は全端末へ配信されます。よろしいですか。')) return;
+
+    this.closeApply();
+    this.exit(true);   /* 実データへ戻す。ここで localStorage の最新版が DB に入る */
+
+    try { SYNC.stopPolling(); } catch (e) {}
+    let okMsg = '';
+    if (mode === 'new') {
+      if (DB.residents.some(r => r.name === newName)) { showToast('同名の利用者が既にいます。氏名を変えてやり直してください'); try { SYNC.startPolling(); } catch (e) {} return; }
+      const res = {
+        id: ruid(), name: newName, events: payload.events.map(ev => ({ ...ev, id: uid() })),
+        careLevel: payload.careLevel, copayRate: payload.copayRate,
+        welfareEquipUnits: payload.welfareEquipUnits, kana: payload.kana, external: payload.external,
+      };
+      DB.residents.push(res);
+      csSetSelection_(res.id);
+      okMsg = '「' + newName + '」を登録して反映しました';
+    } else {
+      const target = DB.residents.find(r => r.id === baseId);
+      if (!target) { showToast('反映先の利用者が見つかりません（他端末で削除された可能性があります）'); try { SYNC.startPolling(); } catch (e) {} return; }
+      target.events = payload.events;
+      okMsg = '「' + (target.name || '') + '」へ反映しました';
+    }
+    recalcAllEventUnits();
+    const ok = saveDB();
+    if (!ok) { showToast('保存に失敗しました。反映は取り消されていません（画面の内容を確認してください）'); try { SYNC.startPolling(); } catch (e) {} return; }
+    /* 2秒デバウンスを迂回して即時にクラウドへ確定させる（一括編集の作法と同じ） */
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    if (SYNC.hasTarget()) { try { SYNC.push(); } catch (e) { SYNC.scheduleAutoPush(); } }
+    try { SYNC.startPolling(); } catch (e) {}
+    populateResidentSelect(); renderResidentList(); renderAll();
+    showToast(okMsg);
+  },
+
+  /* ── 起動時の復元 ── */
+  restore() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SIM_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved || !saved.db || !Array.isArray(saved.db.residents)) { this.clearPersist(); return; }
+    this.enter(saved);
+  },
+};
+
 // ── Init ──
 loadDB();
 SYNC.load();
@@ -4998,6 +5353,10 @@ applyScheduleDeviceGuard();
    loadDB 内でも呼んでいるが、その後で residents が入れ替わりうるためここで確定させる。
    ここは通知あり＝同期先が無い端末でも「消えた理由」が分かるようにする。 */
 try { csApplyDeviceSelection_(true); } catch (e) {}
+/* 試算モードの復元。実データの確定（loadDB・マスタ取込・バックアップ復元・選択の復帰）が
+   すべて終わった後にここで差し替える。この時点で SIM_ON が立つので、直後の startupPull
+   （300ms後）・30秒ポーリング・stateRev 照会は、それぞれのガードで止まる。 */
+try { SIM.syncButtons(); SIM.restore(); } catch (e) {}
 populateResidentSelect();
 renderAll();
 /* ★復元の「後」に呼ぶ＝入居者マスタからの指定を優先させる。
@@ -5034,6 +5393,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
 }
 // タブ復帰時の自動チェック：他端末の更新を即時反映
 document.addEventListener('visibilitychange', () => {
+  if (SIM_ON) return;   /* 試算中に他タブから戻っても取り込まない */
   if (!document.hidden && SYNC.hasTarget()) {
     SYNC.pollIfNeeded();
   }
@@ -5044,6 +5404,7 @@ document.addEventListener('visibilitychange', () => {
 setInterval(csStateRevTick_, CS_STATEREV_TICK_MS);
 setTimeout(csStateRevTick_, 1500);   // 起動時の基準確定（startupPull の300msと重ねない）
 document.addEventListener('visibilitychange', () => {
+  if (SIM_ON) return;                        /* 試算中は名簿の取り直しをしない */
   if (!document.hidden) csStateRevTick_();   // visible 復帰で即時1回（10秒スロットル・hidden中スキップは tick 内）
 });
 // 同一端末・別タブ（ワークスケジュール等）の care_schedule_v2 書き込みを即時反映。
@@ -5056,6 +5417,7 @@ function _csBusyEditing() {
          document.body.classList.contains('is-dragging-resize');
 }
 window.addEventListener('storage', (e) => {
+  if (SIM_ON) return;                      /* 試算中は他タブの書込を取り込まない（試算盤面が消えるため） */
   if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
   if (SYNC._dirty || _csBusyEditing()) return;   // 自端末の未送信編集／編集中は守る（クリーン時のみ取り込む）
   if (_csStorageTimer) clearTimeout(_csStorageTimer);
@@ -5069,6 +5431,7 @@ window.addEventListener('storage', (e) => {
 });
 // ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
 window.addEventListener('online', () => {
+  if (SIM_ON) return;   /* 試算中はネットワーク復帰でも同期しない */
   if (!SYNC.hasTarget()) return;
   if (SYNC._dirty) { SYNC.push(); } else { SYNC.pollIfNeeded(); }
 });
@@ -5077,6 +5440,7 @@ window.addEventListener('online', () => {
 // 両方発火して二重送信になっても、2通目は rev が古く GAS の楽観ロックで弾かれるだけ＝無害。
 // 永続dirtyフラグはここで解除しない（beacon の成否は確認できない＝次回起動の startupPull が検証する）。
 function csFlushOnExit_() {
+  if (SIM_ON) return;   /* 試算中にタブを閉じても送らない（beacon は中断されないので特に危険） */
   if (SYNC._dirty && SYNC.hasTarget()) {
     // 離脱時は sendBeacon を使用（非同期 fetch は中断されるため）
     try {
