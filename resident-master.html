@@ -117,9 +117,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell .val.big{font-size: 1.125rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-/* 体重セルは測定日を添えるぶん少しだけ広くする。等幅(flex:1)のままだと A4 で約65px しか
-   確保できず、日付が折り返して印刷の高さが増える（実測: 1.8 で増加0px・2.0 では逆に増える）。 */
-.row-cells .cell.wt-cell{flex:1.8}
+/* 測定日は本文より小さい文字で添える。
+   ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
+     （生活自立度・認知症自立度）が狭まって折り返し、印刷が +6mm 伸びる（実測）。
+     小さい文字なら幅を奪わずに収まり、隣が長い方でも増加0px（4パターンで実測）。 */
+.wt-on{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
+@media print{ .wt-on{color:#333} }
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。左=薬剤、右=効果・効能。
    ★右列は固定幅。行は grid の行で揃うので、薬剤名が折り返しても効能は1行目に留まる。
@@ -965,10 +968,15 @@ function latestWeightOf(masterId){
      「8/11」「25/12/3」「旧記録」のいずれでも印刷の高さは1pxも増えない。
      5文字（例「移行時点」＋括弧）にすると折り返して +23px(6mm) 増える。 */
 function wtShortDate(on){
-  var s=String(on||'').slice(0,10), m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(!m) return '';
-  var y=new Date().getFullYear();
-  return (String(y)===m[1]) ? (+m[2])+'/'+(+m[3]) : m[1].slice(2)+'/'+(+m[2])+'/'+(+m[3]);
+  var s=String(on||'').slice(0,10), y=String(new Date().getFullYear());
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  /* ★括弧内の文字数には印刷の予算がある（実測: これを超えると1行増えて +6mm）。
+     今年 → 「8/11」／昨年以前 → 「25/12」（日は落とす。正確な日付はツールチップにある） */
+  if(m) return (y===m[1]) ? (+m[2])+'/'+(+m[3]) : m[1].slice(2)+'/'+(+m[2]);
+  /* 体重アプリは measuredOn を空で保存できる。その時は対象月（yearMonth）しか無い */
+  var m2=s.match(/^(\d{4})-(\d{2})$/);
+  if(m2) return (y===m2[1]) ? (+m2[2])+'月' : m2[1].slice(2)+'/'+(+m2[2]);
+  return '';
 }
 /* 詳細画面の「体重」「BMI」に出す値を作る。
    体重の正本は体重管理アプリ。記録があればそれを使い、測定日を添える。
@@ -977,15 +985,22 @@ function wtShortDate(on){
 function weightView(r){
   var lw=latestWeightOf(r&&r.id), out={};
   if(lw){
-    var d=wtShortDate(lw.on);
-    out.weight = lw.weight+' kg'+(d?'（'+d+'）':'');
-    out.bmi    = calcBMI(r.height, lw.weight);
-    out.title  = '体重管理アプリの最新値'+(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')
-               + '／同期状況により古い場合があります';
+    out.val   = lw.weight+' kg';
+    out.note  = wtShortDate(lw.on) || '最新';     /* 日付が読めない記録でも出所は示す */
+    out.bmi   = calcBMI(r.height, lw.weight);
+    out.title = '体重管理アプリの最新値'+(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')
+              + '／同期状況により古い場合があります';
+    out.bmiTitle = out.bmi ? ('身長（入居者マスタ）と最新体重で計算'
+              +(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')) : '';
   }else{
-    out.weight = r.weight ? (r.weight+' kg（旧記録）') : '';
-    out.bmi    = calcBMI(r.height, r.weight);
-    out.title  = r.weight ? 'この端末の体重管理アプリに記録が見つかりません。移行時点の値です' : '';
+    out.val   = r.weight ? (r.weight+' kg') : '';
+    /* ★注記を出さない。体重アプリに記録が無い方は【改修前とまったく同じ表示】にして、
+       印刷の高さが1pxも変わらないことを構造的に保証する（実測で「旧記録」は+6mm）。
+       出所はツールチップで示す。日付が付いていない＝体重アプリの記録ではない、と読める */
+    out.note  = '';
+    out.bmi   = calcBMI(r.height, r.weight);
+    out.title = r.weight ? 'この端末の体重管理アプリに記録が見つかりません。移行時点の値です' : '';
+    out.bmiTitle = out.bmi ? '移行時点の体重で計算' : '';
   }
   return out;
 }
@@ -1769,9 +1784,12 @@ function renderView(r){
          記録が無い端末では従来どおりマスタの静的値を「移行時点」と明示して出す。
          ★体重セルだけ少し広げる（wt-cell）。狭いままだと日付が折り返して印刷が伸びる。 */
       (function(){var wv=weightView(r);
-        return cell('BMI',wv.bmi)+cell('身長',r.height?r.height+' cm':'')+
-          '<div class="cell wt-cell"'+(wv.title?' title="'+esc(wv.title)+'"':'')+'>'+
-          '<span class="lab">体重</span><span class="val">'+esc(wv.weight||'　')+'</span></div>';})()+
+        return '<div class="cell"'+(wv.bmiTitle?' title="'+esc(wv.bmiTitle)+'"':'')+'>'+
+            '<span class="lab">BMI</span><span class="val">'+esc(wv.bmi||'　')+'</span></div>'+
+          cell('身長',r.height?r.height+' cm':'')+
+          '<div class="cell"'+(wv.title?' title="'+esc(wv.title)+'"':'')+'>'+
+            '<span class="lab">体重</span><span class="val">'+esc(wv.val||'　')+
+            (wv.note?'<span class="wt-on">'+esc(wv.note)+'</span>':'')+'</span></div>';})()+
       cell('生活自立度',r.adl)+cell('認知症自立度',r.dementia)+
     '</div></div></div>';
   // 保険・制度／連絡先
@@ -2055,7 +2073,7 @@ function openEdit(rec){
     fld('dischargeDate','退去日',r.dischargeDate,'date')+
     fld('deathDate','ご逝去日',r.deathDate,'date')+
     fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
-    '<p class="muted" style="grid-column:1/-1;margin:-4px 0 4px">体重の最新値は<b>体重管理アプリ</b>が正です。ここは移行時点の記録で、詳細画面には体重管理アプリの最新値が出ます。</p>'+
+    '<p class="muted" style="grid-column:1/-1;margin:-4px 0 4px;font-size:0.8125rem">体重の最新値は<b>体重管理アプリ</b>が正です。ここは移行時点の記録で、詳細画面には体重管理アプリの最新値が出ます。</p>'+
     fld('adl','生活自立度',r.adl)+fld('dementia','認知症自立度',r.dementia)+
   '</div></div></div>';
 
