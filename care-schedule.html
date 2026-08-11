@@ -1269,7 +1269,7 @@ select.inp { cursor: pointer; }
       <button class="md-close" onclick="closeResidentListModal()">✕</button>
     </div>
     <div id="rl-total"></div>
-    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない）。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。</p>
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない）。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。<br>⚠区分ちがいN件＝訪問のサービス区分が介護度と食い違っているコマ数。該当コマを開いて区分を選び直してください（表示は一覧の対象者のみ）。</p>
     <div id="rl-scroll" style="overflow-x:auto">
       <table id="rl-table">
         <thead>
@@ -1612,7 +1612,9 @@ function visitCatMismatch_(cat, careLevel) {
 /* 訪問の区分が介護度と食い違っているコマ数を数える（利用者一覧の棚卸し表示用）。
    算定は止めない方針のため、既に登録済みの誤りは「そのコマを開いた人」にしか見えない。
    一覧に件数を出して、開かなくても該当者を特定できるようにする。表示専用＝単位計算には使わない。
-   serviceType が未設定の古いコマは訪問扱い（盤面描画 renderGrid と同じ判定）。 */
+   serviceType が未設定の古いコマは訪問扱い（盤面描画 renderGrid と同じ判定）。
+   なお算定側（getUnitBreakdown / sogoMonthlyUnits_）は serviceType === 'visit' で判定するため、
+   未設定の古いコマは単位0＝ここの件数と算定に載る件数は必ずしも一致しない（安全側に多めに出す）。 */
 function residentCatMismatchCount_(res) {
   const evs = (res && res.events) || [];
   let n = 0;
@@ -4887,10 +4889,12 @@ function renderResidentListTable() {
     const dayCells = days.map(on => `<td class="rl-day">${on ? '<span class="on">○</span>' : ''}</td>`).join('');
     /* 訪問の区分が介護度と食い違うコマがあれば、氏名セルに件数つきで出す。
        列は増やさない（空行の colspan=14 と A3横印刷の列幅を動かさないため）。
-       色だけで伝えないよう「⚠区分N」と文字で書く。 */
+       色だけで伝えないよう「⚠区分ちがいN件」と文字で書く。 */
     const mism = residentCatMismatchCount_(res);
+    /* 「⚠区分2」だと隣の介護度列（支2・3 等）と紛らわしいので、件数だと分かる表記にする。
+       title は印刷に出ず iPad でも出ないため、意味の説明は一覧上部の凡例に置いている。 */
     const mismBadge = mism
-      ? `<span style="font-size:inherit;color:var(--ng)" title="訪問のサービス区分が介護度と食い違っています">⚠区分${mism}</span>`
+      ? `<span style="font-size:inherit;color:var(--ng);margin-inline-start:4px" title="訪問のサービス区分が介護度と食い違っています">⚠区分ちがい${mism}件</span>`
       : '';
     h += '<tr>'
       + `<td class="rl-name">${escHtml(res.name || '（無名）')}${res.external ? '<span style="font-size:inherit;color:#1565c0">（外）</span>' : ''}${mismBadge}</td>`
