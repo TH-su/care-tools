@@ -124,7 +124,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ★右列は固定幅にせず auto にする。固定にすると、その方の効能が「降圧・利尿」のように
      短くても常に幅を取り、左列が狭まって【1列の時は収まっていた薬剤名が折り返す】。
      折り返しは印刷の改ページ位置を動かすので（原則2）、右列は中身の最大幅ちょうどに留める。 */
-.meds2{display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:8px}
+/* ★左列は max-content。効能列を右端に飛ばさず、薬剤名のすぐ右（＝中央寄り）に置く。
+     長い薬剤名がある方では minmax の下限0で縮み、はみ出さない。 */
+.meds2{display:grid; grid-template-columns:minmax(0,max-content) auto; column-gap:20px}
 .meds2-h{font-size:0.625rem; color:var(--g6); text-align:left; white-space:nowrap;
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
@@ -1675,7 +1677,11 @@ function renderView(r){
     '</div>'+
     '<div class="cell" style="border-right:none">'+medsRegularCell(r.medsRegular)+'</div>'+
     '<div class="row-cells">'+
-      '<div class="cell"><span class="lab">■薬備考■</span><div class="fulltext">'+esc(r.medsNotes||'　')+'</div></div>'+
+      /* ■薬備考■ の【表示だけ】を外した（2026-08-11 管理者の指示・別の内容を入れる予定の空き枠）。
+         ★medsNotes のデータは消していない。編集画面の入力欄も残してある。
+           入力欄まで消すと collectForm が拾わなくなり、次の保存で dataJson から
+           medsNotes が丸ごと消える（移行時の退避テキストも道連れになる）。 */
+      '<div class="cell"><span class="lab">　</span><div class="fulltext">　</div></div>'+
       '<div class="cell" style="border-right:none"><span class="lab">■問題行動 等■</span><div class="fulltext">'+esc(r.problemBehavior||'　')+'</div></div>'+
     '</div>'+
     '<div class="row-cells">'+
