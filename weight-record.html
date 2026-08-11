@@ -1912,6 +1912,9 @@ async function apiDiagnose(url){
      「接続失敗」と表示すると、設定は正しいのに直し方が分からなくなるため、
      入力中（または保存済み）の合言葉を添えて、本番と同じ形で試す。 */
   const diagTok = (($('#cfgApiToken') && $('#cfgApiToken').value.trim()) || apiToken || '');
+  /* どの方法で試したかを必ず出す。出さないと、失敗した時に「合言葉のせいか・URLのせいか」を
+     切り分けられない（合言葉の有無で送り方が変わるため）。 */
+  lines.push(diagTok ? '→ 合言葉つきで試します（POST）' : '→ 合言葉なしで試します（GET）');
   try{
     if(diagTok){
       r = await fetchTO(u, {
@@ -1931,6 +1934,11 @@ async function apiDiagnose(url){
     lines.push(`❌ 通信エラー: ${errMsg}`);
     if(/タイムアウト/.test(errMsg)){
       lines.push('  → GAS の起動に時間がかかっている可能性。数秒後に再試行してください');
+      lines.push('  → 続けて失敗する時は、次の順で切り分けてください：');
+      lines.push('     ① 上のURLをブラウザのアドレス欄に貼って開く');
+      lines.push('        （{"ok":true,…} が出れば連携先は生きています。何も出なければGAS側の問題）');
+      if(diagTok) lines.push('     ② 合言葉の欄を空にして、もう一度この診断を押す（送り方が変わります）');
+      lines.push('     ③ Apps Script の「デプロイを管理」で、最新バージョンがデプロイされているか確認');
     }
     return { ok:false, lines };
   }
@@ -6122,9 +6130,14 @@ function refreshUrlPersistBadge(){
   refreshUrlPersistBadge();
   if(apiUrl){
     apiSetStatus('ok', '✅ 接続URL（保存済み）: …' + apiUrl.slice(-40));
-    /* 取得より先にサーバーの版・対応機能を観測する（部分送信へ移ってよいかの判定に使う）。
-       観測できなくても取得は従来どおり動く（旧サーバー扱いのまま進む）。 */
-    if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{ await apiProbe(); updateAuthNote_(); syncFromAPI(true); }, 100);
+    /* 本業の同期を先に始める。版の観測はその後で構わない（観測できるまでは行全体を送る
+       ＝従来どおりの安全側）。観測を先に待つと、GASの起動が遅い時に同期の開始まで
+       つられて遅れ、待ち時間が二重になる。 */
+    if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{
+      await syncFromAPI(true);
+      await apiProbe();
+      updateAuthNote_();
+    }, 100);
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
   /* 診断結果パネルの表示／非表示 */
