@@ -708,7 +708,9 @@ function renderOfficeView(r){
       '<div class="row-cells">'+cell('管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
       fullMeds('薬剤情報（定期）',r.medsRegular)+
       full('頓服・外用等',r.medsPrn)+
-      '<div class="row-cells">'+full('薬備考',r.medsNotes)+full('注意を要する薬剤',r.highRiskMeds)+'</div>'
+      /* 薬備考の【表示だけ】を外した（2026-08-11 管理者の指示・入居者マスタ側と揃える）。
+         ★medsNotes のデータは消していない。フェイスシートは読み取り専用なので保存経路も無い。 */
+      '<div class="row-cells">'+full('注意を要する薬剤',r.highRiskMeds)+'</div>'
     )
   );
   // ADL・食事

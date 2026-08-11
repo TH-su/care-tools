@@ -133,7 +133,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
 .meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:nowrap}
 .meds2-na{color:var(--g5)}
+/* 薬剤名リンク。既存の本文と同じ色のまま、点線の下線でだけ「押せる」と分かるようにする */
+.mlink{color:inherit; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px}
+.mlink:hover,.mlink:focus{color:var(--pri-d); text-decoration-style:solid}
 @media print{
+  .mlink{color:#000 !important; text-decoration:none !important}   /* 紙では普通の文字に戻す */
   .meds2-h{border-bottom-color:#999}
   .meds2-e{color:#000; font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
   .meds2-na{color:#666}
@@ -1429,6 +1433,20 @@ function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><s
    ★次のどれかに当たる時は、従来どおり1列のまま出す:
      ①辞書が読み込めていない ②薬剤情報が空 ③1行も引けなかった
      — 全行が「—」に見えると「効能の無い薬ばかり」と誤読されるため、列そのものを作らない。 */
+/* 1行を「薬剤名＝お薬110番へのリンク」＋残り（用量・用法）に分けて組み立てる。
+   薬剤名を取り出せない行（注記・空行）はそのまま文字として出す。 */
+function medsLineHtml(line){
+  var raw = String(line == null ? '' : line);
+  if(!raw.trim()) return '　';
+  var q = medsDrugQuery(raw);
+  if(!q) return esc(raw);
+  var idx = raw.indexOf(q);
+  if(idx < 0) return esc(raw);
+  return esc(raw.slice(0, idx))
+    + '<a class="mlink" href="'+esc(OKUSURI_FORM)+'" target="_blank" rel="noopener noreferrer"'
+    + ' data-q="'+esc(q)+'" title="お薬110番で「'+esc(q)+'」を調べる">'+esc(q)+'</a>'
+    + esc(raw.slice(idx + q.length));
+}
 function medsRegularCell(text){
   var raw = String(text == null ? '' : text);
   var plain = '<span class="lab">■薬剤情報（定期）■</span><div class="fulltext">'+esc(raw||'　')+'</div>';
@@ -1448,7 +1466,7 @@ function medsRegularCell(text){
     '<div class="meds2-h">■薬剤情報（定期）■</div>'+
     '<div class="meds2-h">効果・効能</div>';
   for(var i=0;i<lines.length;i++){
-    h += '<div class="meds2-d">'+esc(lines[i]||'　')+'</div>'+
+    h += '<div class="meds2-d">'+medsLineHtml(lines[i])+'</div>'+
          '<div class="meds2-e">'+(effs[i] ? esc(effs[i]) : '<span class="meds2-na">—</span>')+'</div>';
   }
   return h+'</div>';
@@ -1472,6 +1490,42 @@ function medsAuditTextWidth(text,px){
   var w=m.getBoundingClientRect().width;
   m.textContent='';   /* 測り終えたら薬剤名を DOM に残さない */
   return w;
+}
+/* ── お薬110番（ハイパー薬事典）で薬剤名を引く（2026-08-11 追加）──
+   ★この検索は【POST でしか動かない】。GET でクエリを付けても「該当がありません」になる（実測）。
+     さらにサイトの文字コードは Shift_JIS。素の <a href> では引けないので、
+     クリック時に accept-charset="Shift_JIS" のフォームを組んで送る（変換はブラウザに任せる）。
+   ★飛ぶのは【薬剤名だけ】。入居者の氏名・居室・その他の情報は1文字も送らない。
+   ★JS が動かない時は素のリンクとして検索ページが開く（手で入力できる）。 */
+var OKUSURI_FORM = 'http://www.jah.ne.jp/~kako/frame_dwm_search.html';
+var OKUSURI_CGI  = 'http://www.jah.ne.jp/~kako/cgi-bin/dwm_kana_search.cgi/~kako/';
+/* サイトの仕様: 全角カタカナ・漢字で3字以上、先頭一致。
+   行の先頭から続くカタカナ・長音・漢字だけを取る（英字・数字・空白が来たら止める）。
+   「（院外）…」のような注記や「1錠 朝」はここで空になり、リンクを作らない。 */
+function medsDrugQuery(line){
+  var s = String(line == null ? '' : line).trim().replace(/^【般】/, '');
+  var m = s.match(/^[\u30A1-\u30FA\u30FC\u4E00-\u9FFF]{3,20}/);
+  return m ? m[0] : '';
+}
+function openOkusuri(q){
+  q = String(q || '').trim();
+  if(!q) return;
+  /* 先に空のタブを開いて opener を切る（開いた先から元のタブを操作されないため） */
+  var name = 'okusuri110', w = null;
+  try{ w = window.open('about:blank', name); }catch(e){}
+  if(w){ try{ w.opener = null; }catch(e){} }
+  var f = document.createElement('form');
+  f.method = 'POST';
+  f.action = OKUSURI_CGI;
+  f.acceptCharset = 'Shift_JIS';   /* ★これが無いと UTF-8 で送られ、必ず該当なしになる */
+  /* ポップアップを塞いでいる端末では window.open が null を返す。
+     その時はフォーム自身に新しいタブを開かせる（クリック由来なので通る）。 */
+  f.target = w ? name : '_blank';
+  var i = document.createElement('input');
+  i.type = 'hidden'; i.name = 'kana_ait'; i.value = q;
+  f.appendChild(i);
+  document.body.appendChild(f);
+  try{ f.submit(); } finally { if(f.parentNode) f.parentNode.removeChild(f); }
 }
 /* A4に印刷した時、2列にしたせいで折り返す行が何行あるかを【実測】する。
    ★幅・余白・列間を定数で持たない。本物の DOM（.sheet > .sec > .sec-body > .row-cells > .cell）を
@@ -2751,6 +2805,13 @@ function init(){
   $('mBulk').addEventListener('click',function(e){ if(e.target===$('mBulk')) closeBulk(); });
   $('syncClose').addEventListener('click',closeSync);
   if($('medsAuditRun')) $('medsAuditRun').addEventListener('click',runMedsAudit);
+  /* 薬剤名リンクは1箇所でまとめて受ける（行ごとに登録しない） */
+  document.addEventListener('click',function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a.mlink') : null;
+    if(!a) return;
+    ev.preventDefault();
+    openOkusuri(a.getAttribute('data-q'));
+  });
   $('appsClose').addEventListener('click',closeApps);
   $('mApps').addEventListener('click',function(e){if(e.target===this)closeApps()});
   $('syncTest').addEventListener('click',testSync);
