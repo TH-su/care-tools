@@ -421,6 +421,13 @@ select.inp { cursor: pointer; }
   border-radius: 0 6px 6px 0; font-size: 0.75rem; color: var(--g7); line-height: 1.6;
   white-space: pre-line;
 }
+/* 介護度とサービス区分が食い違う時だけ付ける警告表示（#f-units-note と同じ配色に揃える）。
+   通常のヒント（12px・グレー）はそのままで、警告の時だけ本文サイズまで上げて読み落としを防ぐ。
+   色だけで意味を伝えないよう、本文の先頭に「⚠」を置いている（visitCatMismatch_）。 */
+.hint-box.warn {
+  background: #fff8e1; border-left-color: #ffa000;
+  color: #7a4200; font-size: 1.0625rem;   /* 17px＝介護現場要件の本文下限。コントラスト比 約7.4:1 */
+}
 
 /* ── Buttons ── */
 .btn-row { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
@@ -836,7 +843,9 @@ select.inp { cursor: pointer; }
           <option value="A21211">訪問型独自サービス12　【A22】2,349単位</option>
         </optgroup>
       </select>
-      <div class="hint-box" id="category-hint" style="display:none"></div>
+      <!-- 区分の説明文と、介護度×区分の食い違い警告（.warn）を出す枠。role="status" は区分を
+           変えた瞬間に読み上げさせるため。表示してから中身を入れる（onCategoryChange）。 -->
+      <div class="hint-box" id="category-hint" role="status" style="display:none"></div>
     </div>
 
     <!-- 訪問介護: 自由入力 -->
@@ -1545,6 +1554,60 @@ function isSogoCat_(cat) { return !!(cat && SOGO_VISIT_CODES[cat]); }
 // カテゴリの表示名: 総合事業は略称（【A11】等）、要介護コードはそのまま返す
 function catDisplayLabel_(cat) {
   return (cat && SOGO_VISIT_CODES[cat]) ? SOGO_VISIT_CODES[cat].label : (cat || '');
+}
+
+/* ── 訪問介護「介護度 × サービス区分」の整合チェック（2026-08-11 追加）──
+ * 当施設の運用: 要支援1/2・事業対象者の訪問は総合事業コード（A21121 等）のみで算定する（2026-08-11 確認）。
+ *   よって「要支援の方に要介護コード」「要介護の方に総合事業コード」はどちらも常に誤り。
+ * 介護度プルダウン（#ci-level）に「事業対象者」の選択肢が無く、該当者は介護度を未設定のまま
+ *   登録する運用のため、未設定も要介護コード側の警告対象に含める。
+ *   未設定 × 総合事業コードは事業対象者の正常運用なので警告しない。
+ * ★算定は止めない: 訪問は実際に提供しているため、単位を0にすると既に入っているコマの数値が黙って変わる。
+ *   誤りは画面に出して現場に区分を直させる方針とした（通所は提供自体が無いため算定停止としたのと事情が違う）。
+ *   このため calcVisitUnits / getVisitCodeUnits は一切変更していない＝要介護の既存算定は不変。 */
+function visitLevelTrack_(careLevel) {
+  const lv = String(careLevel || '').trim();
+  if (!lv) return 'unknown';                        // 未設定（事業対象者の運用登録を含む）
+  if (lv.indexOf('要支援') === 0) return 'support';
+  if (lv.indexOf('要介護') === 0) return 'care';
+  return 'unknown';                                 // 想定外の表記は判定できないもの扱い
+}
+/* 食い違いがあれば警告文を、無ければ空文字を返す。
+   「何が起きたか＋次にどうすればよいか」を1文で書き、色に頼らないよう先頭に記号を置く。 */
+function visitCatMismatch_(cat, careLevel) {
+  if (!cat) return '';
+  const track = visitLevelTrack_(careLevel);
+  const lv    = String(careLevel || '').trim();
+  const SOGO_LIST = '【A11】【A12】【A21】【A22】';
+  if (isSogoCat_(cat)) {
+    if (track === 'care') {
+      return '⚠ ' + lv + ' の方に総合事業のサービス区分が選ばれています。'
+           + '総合事業（訪問型独自サービス）は要支援・事業対象者向けです。区分を選び直してください。';
+    }
+    return '';
+  }
+  if (!VISIT_BASE_UNITS[cat]) return '';            // 未知のコードは判定しない
+  if (track === 'support') {
+    return '⚠ ' + lv + ' の方に要介護のサービス区分が選ばれています。'
+         + '要支援・事業対象者の訪問は総合事業のコード（' + SOGO_LIST + '）で算定します。区分を選び直してください。';
+  }
+  if (track === 'unknown') {
+    /* 理由は介護度ごとに違う。ひとまとめに「未設定」と書くと、値が入っている入居者に事実と異なる
+       説明を出すことになる（通所側 autoCalcUnits と同じ作法）。介護度は #ci-level の選択肢以外にも
+       マスタ同期（su_residents_common）経由で任意の表記が入りうるため、非空の未知表記も拾う。 */
+    if (lv === '自立') {
+      return '⚠ 自立の方に要介護のサービス区分が選ばれています。介護保険の給付対象外です。'
+           + '事業対象者であれば総合事業のコード（' + SOGO_LIST + '）で算定します。入居者マスタの介護度を確認してください。';
+    }
+    if (lv === '事業対象者') {
+      return '⚠ 事業対象者の方に要介護のサービス区分が選ばれています。'
+           + '事業対象者の訪問は総合事業のコード（' + SOGO_LIST + '）で算定します。区分を選び直してください。';
+    }
+    return (lv ? ('⚠ 介護度が「' + lv + '」です。') : '⚠ 介護度が未設定です。')
+         + '事業対象者の方であれば、要介護のサービス区分ではなく'
+         + '総合事業のコード（' + SOGO_LIST + '）で算定します。入居者マスタの介護度を確認してください。';
+  }
+  return '';
 }
 
 // 通所介護 基本単位数（令和6年4月改定）介護度×所要時間区分。
@@ -4119,6 +4182,9 @@ function clearForm() {
   $('#f-dow').value = '';
   $$('input[name="serviceType"]').forEach(r => r.checked = false);
   $('#category-row').style.display = 'none';
+  /* 警告表示も一緒に落とす（前の入居者・前のコマの警告を次の入力に持ち越さない） */
+  $('#category-hint').classList.remove('warn');
+  $('#category-hint').textContent = '';
   $('#category-hint').style.display = 'none';
   $('#time-row-visit').style.display   = '';
   $('#time-row-daycare').style.display = 'none';
@@ -4142,13 +4208,17 @@ function clearForm() {
 function onServiceTypeChange() {
   const val = ($('input[name="serviceType"]:checked')||{}).value;
   $('#category-row').style.display      = val === 'visit'   ? '' : 'none';
-  $('#category-hint').style.display     = 'none';
+  $('#category-hint').classList.remove('warn');
+  $('#category-hint').style.display     = 'none';   /* 通所ではヒント枠ごと隠す（従来どおり） */
   $('#time-row-visit').style.display    = val === 'visit'   ? '' : 'none';
   $('#time-row-daycare').style.display  = val === 'daycare' ? '' : 'none';
   $('#bathing-row').style.display       = val === 'daycare' ? '' : 'none';
   /* ケア内容チップは訪問介護のみ（通所は対象外・要件4） */
   $('#care-chips-row').style.display    = val === 'visit'   ? '' : 'none';
-  if (val === 'visit') renderCareChips();
+  /* 訪問へ戻した時は区分が選ばれたまま残ることがあるため、ヒントと警告を選択内容から出し直す
+     （ここで出し直さないと、区分は選ばれているのに警告だけ出ない状態になる）。
+     表示更新だけを呼ぶ＝step の既定値と自動終了時刻には触れない。 */
+  if (val === 'visit') { renderCareChips(); refreshCategoryHint_(); }
   autoCalcUnits();
 }
 
@@ -4190,17 +4260,35 @@ function toggleCareChip(label) {
   renderCareChips();
 }
 
+/* 区分ヒントと介護度の食い違い警告の「表示だけ」を更新する。
+   step・自動終了時刻・単位計算には触れない＝サービス種別の切替から呼んでも入力補助の既定値を動かさない
+   （onServiceTypeChange から onCategoryChange を呼ぶと、区分未選択時の step が 60→300 に変わってしまう）。
+   既存コマの編集（openEditModal → onCategoryChange(false)）も同じ表示経路を通るため、
+   すでに登録済みの誤った区分も、そのコマを開いた時点で警告が出る。 */
+function refreshCategoryHint_() {
+  const cat    = $('#f-category').value;
+  const hintEl = $('#category-hint');
+  const warn = visitCatMismatch_(cat, (currentResident() || {}).careLevel);
+  const info = (cat && CAT_INFO[cat]) ? CAT_INFO[cat].hint : '';
+  hintEl.classList.toggle('warn', !!warn);
+  if (warn || info) {
+    /* role="status" は表示してから内容を入れる（display:none のまま書き換えると読み上げない実装がある）。 */
+    hintEl.style.display = '';
+    hintEl.textContent = warn ? (info ? warn + '\n\n' + info : warn) : info;
+  } else {
+    hintEl.style.display = 'none';
+    hintEl.textContent = '';
+  }
+}
+
 function onCategoryChange(autoFill = true) {
   const cat = $('#f-category').value;
-  const hintEl = $('#category-hint');
+  refreshCategoryHint_();
   if (cat && CAT_INFO[cat]) {
-    hintEl.textContent = CAT_INFO[cat].hint;
-    hintEl.style.display = '';
     const step = String(CAT_INFO[cat].step * 60); // mins → seconds
     $('#f-start').setAttribute('step', step);
     $('#f-end').setAttribute('step', step);
   } else {
-    hintEl.style.display = 'none';
     $('#f-start').setAttribute('step', '300');
     $('#f-end').setAttribute('step', '300');
   }
