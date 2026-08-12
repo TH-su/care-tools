@@ -546,6 +546,7 @@ textarea.fi{resize:vertical;min-height:60px}
 .obtn{min-height:44px;padding:6px 8px;border:2px solid var(--g2);border-radius:8px;
   background:#fff;color:var(--g9);font-size: 0.8125rem;font-weight:700;font-family:inherit;
   cursor:pointer;transition:background .15s,border-color .15s}
+.obtn.wide{width:100%;margin-top:8px}
 .obtn:hover{background:var(--g1);border-color:var(--g3)}
 .obtn:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
 
@@ -760,8 +761,8 @@ textarea.fi{resize:vertical;min-height:60px}
     <div class="grp">
       <div class="grp-h">人物追加</div>
       <div class="grp-btns">
-        <button class="tbtn" data-add="male"><span class="ico">■</span>男性</button>
-        <button class="tbtn" data-add="female"><span class="ico">●</span>女性</button>
+        <button class="tbtn" data-add="male"><span class="ico">□</span>男性</button>
+        <button class="tbtn" data-add="female"><span class="ico">○</span>女性</button>
         <button class="tbtn" data-add="unknown"><span class="ico">◇</span>不明</button>
       </div>
     </div>
@@ -864,6 +865,14 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <div id="propsLine" hidden>
       <div class="props-info" id="lineInfo"></div>
+      <div class="fg" id="lBarRow" hidden>
+        <div class="fl">横線の高さ（同じ親から出ている線・つながったきょうだい線すべてに反映されます）</div>
+        <div class="ord-btns">
+          <button class="obtn" id="btnBarUp" title="横線を上へ">↑ 上げる</button>
+          <button class="obtn" id="btnBarDown" title="横線を下へ">↓ 下げる</button>
+        </div>
+        <button class="obtn wide" id="btnBarAuto">自動の高さに戻す</button>
+      </div>
       <div class="fr">
         <div class="fg"><label class="fl">太さ</label>
           <select class="fi" id="lWidth">
@@ -1512,8 +1521,150 @@ function parentLineGeometry(parentLine) {
   }
   const endX = b.x;
   const endY = b.y - NODE_SIZE / 2;
-  const elbowY = (endY > startY) ? startY + Math.max(20, (endY - startY) / 2) : startY + 20;
+  const elbowY = parentBarY(parentLine, startY);
   return { startX, startY, endX, endY, elbowY };
+}
+
+/* 同じ起点（婚姻線または親ノード）から出る親子線は、横棒の高さをそろえる。
+   子の高さがまちまちだと横棒が段違いに何本もでき、夫婦の中央から1本の幹が
+   降りる家系図の形にならないため（2026-08-12 の指摘）。
+
+   まとめる基準は「線に書いてある fromId」ではなく「実際にどこから降りているか」。
+   長男は婚姻線を、次男は父を起点に引いた場合でも、降りてくる点は同じ夫婦の中央なので
+   同じまとまりとして扱わないと段違いが残る。 */
+function parentOriginKey(l) {
+  const anchor = marriageAnchorOf(l);
+  if (anchor) return 'm:' + anchor.id;
+  const m = state.doc.lines.find(ml =>
+    (ml.type === 'marriage' || ml.type === 'divorce') &&
+    (ml.fromId === l.fromId || ml.toId === l.fromId));
+  return m ? 'm:' + m.id : 'n:' + l.fromId;
+}
+function parentGroupOf(l) {
+  const key = parentOriginKey(l);
+  return state.doc.lines.filter(x => x.type === 'parent' && parentOriginKey(x) === key);
+}
+/* まとまりの中で一番上にいる子の上端。座標が壊れている線は数に入れない */
+function parentChildTop(group) {
+  let top = Infinity;
+  group.forEach(x => {
+    const c = state.doc.nodes.find(n => n.id === x.toId);
+    if (c && isFinite(c.y)) top = Math.min(top, c.y - NODE_SIZE / 2);
+  });
+  return isFinite(top) ? top : null;
+}
+/* 手で決めた高さは「起点からの距離」で持つ。絶対座標で持つと、家族全員を下へ動かした時に
+   起点のすぐ下へ吸い付いて、せっかく整えた高さが黙って失われるため */
+function parentBarY(l, startY) {
+  const group = parentGroupOf(l);
+  const childTop = parentChildTop(group);
+  const fixed = group.find(x => typeof x.barOffset === 'number' && isFinite(x.barOffset));
+  if (fixed) return clampBarY(startY + fixed.barOffset, startY, childTop);
+  const top = (childTop === null) ? startY + 40 : childTop;
+  return (top > startY) ? startY + Math.max(20, (top - startY) / 2) : startY + 20;
+}
+/* 横棒が起点より上や子より下へ行くと線が折り返して読めなくなるので、間に収める */
+function clampBarY(v, startY, childTop) {
+  const lo = startY + 16;
+  const hi = (childTop === null) ? lo + 200 : Math.max(lo, childTop - 16);
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/* きょうだい線は、人を介してつながった一続き（A-B-C）を1つのまとまりとして扱う。
+   横棒の高さはそのまとまりで共有する（バラバラだと段違いの棒が並ぶ）。 */
+function siblingGroupOf(l) {
+  const lines = [l];
+  const nodes = new Set([l.fromId, l.toId]);
+  const seen = new Set([l.id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    state.doc.lines.forEach(sl => {
+      if (sl.type !== 'sibling' || seen.has(sl.id)) return;
+      if (!nodes.has(sl.fromId) && !nodes.has(sl.toId)) return;
+      seen.add(sl.id); lines.push(sl);
+      nodes.add(sl.fromId); nodes.add(sl.toId);
+      grew = true;
+    });
+  }
+  return { lines, nodes };
+}
+/* きょうだいの横棒は人物より上に置く。この線より下げると図形に食い込む */
+function siblingTopLimit(g) {
+  let top = Infinity;
+  g.nodes.forEach(id => {
+    const n = state.doc.nodes.find(x => x.id === id);
+    if (n && isFinite(n.y)) top = Math.min(top, n.y);
+  });
+  return isFinite(top) ? top - NODE_SIZE / 2 - 4 : null;
+}
+const SIB_GAP_MIN = 4;     // 人物の上端からこれ以上は近づけない
+const SIB_GAP_MAX = 200;   // これ以上は上げられない（紙の外へ出て選べなくなるのを防ぐ）
+function siblingBarY(l) {
+  const g = siblingGroupOf(l);
+  const limit = siblingTopLimit(g);
+  const fixed = g.lines.find(x => typeof x.barOffset === 'number' && isFinite(x.barOffset));
+  if (fixed) return clampSiblingBarY(limit, fixed.barOffset);
+  /* 従来どおり、親子線があればその横棒に高さを合わせる。
+     どの親子線を選ぶかで高さが変わらないよう、見つかった中で一番上を採る */
+  let fromParent = null;
+  g.nodes.forEach(id => {
+    const pl = state.doc.lines.find(p => p.type === 'parent' && p.toId === id);
+    if (!pl) return;
+    const geo = parentLineGeometry(pl);
+    if (!geo) return;
+    fromParent = (fromParent === null) ? geo.elbowY : Math.min(fromParent, geo.elbowY);
+  });
+  if (fromParent !== null) return fromParent;
+  return clampSiblingBarY(limit, 16);
+}
+/* 高さは「人物の上端からどれだけ上か」で持つ。紙の外（上端より上）へは出さない */
+function clampSiblingBarY(limit, offset) {
+  if (limit === null) return 10;
+  const off = Math.max(SIB_GAP_MIN, Math.min(SIB_GAP_MAX, offset));
+  return Math.max(10, limit - off);
+}
+
+/* 横棒の高さを手で上げ下げする。同じまとまりの線すべてに同じ値を書き、段違いを防ぐ。
+   これ以上動かせない時は、その旨を伝える（無反応に見えて押し続けさせないため） */
+function adjustBarY(line, deltaOrNull) {
+  if (!line) return;
+  if (line.type === 'parent') {
+    const geo = parentLineGeometry(line);
+    if (!geo) return;                     // 相手が消えている線には触らない
+    const group = parentGroupOf(line);
+    const childTop = parentChildTop(group);
+    const before = geo.elbowY;
+    if (deltaOrNull === null) {
+      if (group.every(x => x.barOffset === undefined)) { flashStatus('すでに自動の高さです'); return; }
+      beforeChange();
+      group.forEach(x => { delete x.barOffset; });
+    } else {
+      const after = clampBarY(before + deltaOrNull, geo.startY, childTop);
+      if (after === before) { flashStatus(deltaOrNull < 0 ? 'これ以上は上げられません' : 'これ以上は下げられません'); return; }
+      beforeChange();
+      group.forEach(x => { x.barOffset = after - geo.startY; });
+    }
+  } else if (line.type === 'sibling') {
+    const g = siblingGroupOf(line);
+    const limit = siblingTopLimit(g);
+    const before = siblingBarY(line);
+    if (deltaOrNull === null) {
+      if (g.lines.every(x => x.barOffset === undefined)) { flashStatus('すでに自動の高さです'); return; }
+      beforeChange();
+      g.lines.forEach(x => { delete x.barOffset; });
+    } else {
+      if (limit === null) return;
+      const after = clampSiblingBarY(limit, limit - (before + deltaOrNull));
+      if (after === before) { flashStatus(deltaOrNull < 0 ? 'これ以上は上げられません' : 'これ以上は下げられません'); return; }
+      beforeChange();
+      g.lines.forEach(x => { x.barOffset = limit - after; });
+    }
+  } else {
+    return;
+  }
+  render();
+  flashStatus(deltaOrNull === null ? '横線の高さを自動に戻しました' : '横線の高さを変えました');
 }
 
 /* 線の見た目。既定は従来と同じ「黒・太さ2・実線」なので、
@@ -1589,27 +1740,7 @@ function drawLine(l) {
     // BFS through sibling-connected nodes to find any with a parent line.
     // This makes a chain like A-B-C share the same bar Y when A has a
     // parent line (or any of them does).
-    let barY = null;
-    {
-      const visited = new Set([a.id, b.id]);
-      const queue = [a.id, b.id];
-      while (queue.length) {
-        const id = queue.shift();
-        const pl = state.doc.lines.find(p => p.type === 'parent' && p.toId === id);
-        if (pl) {
-          const g = parentLineGeometry(pl);
-          if (g) { barY = g.elbowY; break; }
-        }
-        state.doc.lines.forEach(sl => {
-          if (sl.type !== 'sibling') return;
-          const other = sl.fromId === id ? sl.toId : (sl.toId === id ? sl.fromId : null);
-          if (other && !visited.has(other)) {
-            visited.add(other); queue.push(other);
-          }
-        });
-      }
-    }
-    if (barY === null) barY = Math.min(a.y, b.y) - NODE_SIZE / 2 - 20;
+    const barY = siblingBarY(l);
     group.add(new Konva.Line({
       points: [left.x, barY, right.x, barY], stroke, strokeWidth: sw, dash, hitStrokeWidth: 16
     }));
@@ -2451,6 +2582,8 @@ function showProperties(opts) {
     $('lineInfo').textContent = info;
     /* 矢印は自由線だけの設定。関係線では欄ごと隠す */
     $('lArrowRow').hidden = (l.type !== 'free');
+    /* 横線の高さは、子やきょうだいを横棒でそろえる線だけに出す */
+    $('lBarRow').hidden = !(l.type === 'parent' || l.type === 'sibling');
     $('lWidth').value = String((typeof l.width === 'number' && l.width > 0) ? l.width : 2);
     $('lDash').value = l.dash || 'solid';
     $('lColor').value = l.color || LINE_INK;
@@ -2526,6 +2659,11 @@ function bindPropertyInputs() {
       render();
     });
   });
+
+  /* 横線の高さ（親子線・きょうだい線の横棒）。同じまとまりの線すべてに反映する */
+  $('btnBarUp').addEventListener('click', () => adjustBarY(currentLine(), -10));
+  $('btnBarDown').addEventListener('click', () => adjustBarY(currentLine(), 10));
+  $('btnBarAuto').addEventListener('click', () => adjustBarY(currentLine(), null));
 
   /* 投げ縄の線の色・太さ */
   function currentFrame() {
@@ -3174,6 +3312,14 @@ function getContentBounds() {
     minY = Math.min(minY, t.y); maxY = Math.max(maxY, t.y + 30);
     any = true;
   });
+  /* きょうだいの横棒は人物より上に出るため、範囲に入れないと出力で切れる */
+  (state.doc.lines || []).forEach(l => {
+    if (l.type !== 'sibling') return;
+    const by = siblingBarY(l);
+    if (!isFinite(by)) return;
+    minY = Math.min(minY, by - 10);
+    any = true;
+  });
   /* 自由線・投げ縄を範囲に入れないと、JPG/PDF で端が切れる */
   (state.doc.lines || []).forEach(l => {
     if (l.type !== 'free') return;
@@ -3412,7 +3558,9 @@ function bindUIEvents() {
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     const tag = (document.activeElement && document.activeElement.tagName) || '';
-    const inEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    /* BUTTON を含めるのは、高さ調整などのボタンを押した直後に Delete を押して
+       選択中の線が消える事故を防ぐため（ボタン操作は連打前提のものがある） */
+    const inEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON';
     if (e.key === 'Escape') {
       if (state.mode.type !== 'select') {
         setMode({ type: 'select' });
