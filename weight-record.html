@@ -1786,7 +1786,9 @@ function apiCan(cap){ return apiCaps.seen && apiCaps.caps.indexOf(cap) >= 0; }
 async function apiProbe(){
   if(!apiUrl) return null;
   try{
-    const r = await fetchTO(apiUrl, { cache:'no-store' });   // action なし＝疎通確認。データは返らない
+    /* 制限時間は本番の通信(12秒)より短くする。観測は同期の前に一度だけ挟むので、
+       ここで長く待つと同期の開始がそのぶん遅れる。観測できなければ従来の送り方で続行する。 */
+    const r = await fetchTO(apiUrl, { cache:'no-store' }, 6000);   // action なし＝疎通確認。データは返らない
     const j = await _parseApiResponse(r);
     if(j && typeof j === 'object'){
       apiCaps = {
@@ -6130,13 +6132,17 @@ function refreshUrlPersistBadge(){
   refreshUrlPersistBadge();
   if(apiUrl){
     apiSetStatus('ok', '✅ 接続URL（保存済み）: …' + apiUrl.slice(-40));
-    /* 本業の同期を先に始める。版の観測はその後で構わない（観測できるまでは行全体を送る
-       ＝従来どおりの安全側）。観測を先に待つと、GASの起動が遅い時に同期の開始まで
-       つられて遅れ、待ち時間が二重になる。 */
+    /* 版の観測を先に行う。後回しにすると次の2つが壊れる:
+       ・合言葉を使うサーバーでは、取得が「合言葉を載せないGET」に落ちて必ず拒まれる
+         （合言葉つきの取得はPOST。POSTを使ってよいかは観測しないと分からない）
+       ・起動時の未送信の送り直しが、項目を絞った送信ではなく行全体に広がり、
+         他端末の編集を上書きしうる
+       待ち時間が二重になるのを避けるため、観測は短めの制限時間で打ち切る。
+       観測できなくても従来どおりの送り方で動くので、同期は止まらない。 */
     if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{
-      await syncFromAPI(true);
       await apiProbe();
       updateAuthNote_();
+      syncFromAPI(true);
     }, 100);
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
