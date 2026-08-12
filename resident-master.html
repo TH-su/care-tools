@@ -2710,18 +2710,23 @@ function openEdit(rec){
     fld('pastHistory','既往歴',r.pastHistory,'textarea')+
     fld('vaccinations','予防接種歴',r.vaccinations,'textarea')+
     fld('disclosure','告知の状況／病識',r.disclosure,'textarea')+
-    fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
-    fld('medsNotes','薬備考',r.medsNotes,'textarea')+
+    /* 薬剤情報（定期）と薬備考の入力欄は「薬剤情報」欄（頓服・外用等の上）へ移した
+       （2026-08-12 指示）。★入力欄は必ずどこかに1つ残す。無くすと collectForm が拾わなくなり、
+         保存しただけで dataJson から消える（GAS が丸ごと置き換えるため）。 */
   '</div></div>';
 
   // 入居者基本情報（外部様式）
   h+=bfEditHtml(r);
 
-  /* 服薬管理。管理方法・服薬介助度は様式の4段階へ移した（2026-08-12） */
-  h+='<div class="cd"><div class="fgroup"><h3>服薬管理</h3><div class="fgrid">'+
+  /* 薬剤情報（2026-08-12 指示で「服薬管理」から改名）。
+     管理方法・服薬介助度は様式の4段階へ移し、薬剤情報（定期）・薬備考をここへ移した。 */
+  h+='<div class="cd"><div class="fgroup"><h3>薬剤情報</h3><div class="fgrid">'+
     fld('formAdjust','剤形配慮',r.formAdjust,'select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル'])+
     fld('medRefusal','服薬拒否',r.medRefusal,'select',['','なし','時々あり','あり'])+
   '</div>'+
+    /* 医療情報から移設（2026-08-12 指示）。頓服・外用等のすぐ上に置く */
+    fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
+    fld('medsNotes','薬備考',r.medsNotes,'textarea')+
     fld('medsPrn','頓服・外用等（使用条件を含めて記入）',r.medsPrn,'textarea')+
     fld('highRiskMeds','注意を要する薬剤（向精神薬/抗凝固薬/麻薬 等）',r.highRiskMeds,'textarea')+'</div></div>';
 
