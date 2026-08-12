@@ -133,7 +133,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
      折り返しは印刷の改ページ位置を動かすので（原則2）、右列は中身の最大幅ちょうどに留める。 */
 /* ★左列は max-content。効能列を右端に飛ばさず、薬剤名のすぐ右（＝中央寄り）に置く。
      長い薬剤名がある方では minmax の下限0で縮み、はみ出さない。 */
-.meds2{display:grid; grid-template-columns:minmax(0,max-content) auto; column-gap:20px}
+/* 効果・効能の列を、紙の幅に対して5%ぶん右へ寄せる（2026-08-12 指示）。
+   ★％は「この枠（薬剤の枠）の幅」に対する割合で、枠は紙の65%しかない。
+     そのまま 5% と書くと紙に対しては 3.2% にしかならない（実測）。
+     紙の5% ＝ 枠の 5 ÷ 0.65 ≒ 7.7%。この対応関係は枠の比を変えたら計算し直すこと。 */
+.meds2{display:grid; grid-template-columns:minmax(0,max-content) auto; column-gap:calc(20px + 7.7%)}
 .meds2-h{font-size:0.6875rem; color:var(--g6); text-align:left; white-space:nowrap;
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
@@ -2359,10 +2363,11 @@ function renderView(r){
      管理方法・服薬介助は様式の4段階（上の大表）へ移した。 */
   h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
-      /* ★左右の比は 3:1。2:1 だと薬剤名の長い方で3行が折り返す（実測）。
-           4:1 以上にしても頓服欄の最小幅で頭打ちになり、折返しは1行から減らない。 */
-      '<div class="cell" style="flex:3">'+medsRegularCell(r.medsRegular)+'</div>'+
-      '<div class="cell" style="flex:1;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
+      /* 左右の境目は 65:35（2026-08-12 指示で 75:25 から10%ぶん左へ寄せた）。
+         ★元は 3:1（=75:25）。2:1 まで狭めると薬剤名の長い方で3行折り返したので、
+           これ以上は狭めないこと（実測値は data-contracts の印刷欄に記載）。 */
+      '<div class="cell" style="flex:65">'+medsRegularCell(r.medsRegular)+'</div>'+
+      '<div class="cell" style="flex:35;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
     '</div>'+
     '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">注意を要する薬剤</span><div class="fulltext">'+esc(r.highRiskMeds||'　')+'</div></div>'+
