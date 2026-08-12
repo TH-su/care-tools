@@ -2137,12 +2137,16 @@ function listDocs() {
 function suGenoNameKey(name) {
   return 'name:' + String(name == null ? '' : name).replace(/\s+/g, '');
 }
-function writeSuGenogram(name) {
-  var mid = window._suMasterId;
+/* opts.nameKeyOnly … masterId のキーを書かない（まとめ反映で他の方に現在のidを付けないため）
+   opts.done       … 書き終わり（失敗時も）に必ず呼ぶ。まとめ反映の順送りに使う */
+function writeSuGenogram(name, opts) {
+  opts = opts || {};
+  var fin = function () { if (opts.done) { try { opts.done(); } catch (e) {} } };
+  var mid = opts.nameKeyOnly ? '' : window._suMasterId;
   var nameKey = String(name == null ? '' : name).replace(/\s+/g, '') ? suGenoNameKey(name) : '';
-  if ((mid == null || mid === '') && !nameKey) return;   // 手がかりが何も無い時だけ何もしない
+  if ((mid == null || mid === '') && !nameKey) { fin(); return; }  // 手がかりが何も無い
   try {
-    if (!state.doc.nodes || !state.doc.nodes.length) return; // 空の家系図は書き出さない
+    if (!state.doc.nodes || !state.doc.nodes.length) { fin(); return; } // 空の家系図は書き出さない
     buildExportCanvas(function (canvas) {
       try {
         var img = canvas.toDataURL('image/jpeg', 0.6); // サムネイル（容量節約）
@@ -2154,8 +2158,56 @@ function writeSuGenogram(name) {
         if (nameKey) m[nameKey] = rec;
         localStorage.setItem('su_genograms', JSON.stringify(m));
       } catch (e) { /* 連携書き出し失敗は本体保存に影響させない（容量超過など） */ }
+      fin();
     });
-  } catch (e) { /* no-op */ }
+  } catch (e) { fin(); }
+}
+
+/* 共有キーへの書き出しは 2026-08-12 に入れた。それ以前に作った図には控えが無く、
+   入居者マスタ・フェイスシートの「家族構成図」欄に何も出ない。
+   起動時に一度だけ、控えの無い図をまとめて作る。
+
+   ★文書そのものは1バイトも書き換えない。localStorage から読んだ内容を画面に描いて写すだけで、
+     保存（saveDoc）は一切呼ばない。終わったら元の文書へ必ず戻す。
+   ★他の方の図に、いま開いている masterId を付けないこと（nameKeyOnly）。付けると
+     マスタの別人の欄に他人の家族構成図が出る。 */
+var _suBackfillDone = false;
+function backfillSuGenograms() {
+  if (_suBackfillDone) return;
+  _suBackfillDone = true;
+  var idx, m = {};
+  try { idx = listDocs() || []; } catch (e) { return; }
+  try { m = JSON.parse(localStorage.getItem('su_genograms') || '{}') || {}; } catch (e) { m = {}; }
+  var todo = [];
+  idx.forEach(function (e) {
+    var n = e && e.name;
+    if (!n) return;
+    var rec = m[suGenoNameKey(n)];
+    if (!(rec && rec.image)) todo.push(n);
+  });
+  if (!todo.length) return;
+  var savedDoc = state.doc, savedName = state.clientName;
+  var savedSel = state.selectedId, savedType = state.selectedType;
+  var made = 0;
+  function restore() {
+    state.doc = savedDoc; state.clientName = savedName;
+    state.selectedId = savedSel; state.selectedType = savedType;
+    render();
+    if (made) flashStatus('家族構成図 ' + made + '件を入居者マスタへ反映しました');
+  }
+  function step(i) {
+    if (i >= todo.length) { restore(); return; }
+    var n = todo[i], doc = null;
+    try { doc = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + n) || 'null'); } catch (e) { doc = null; }
+    if (!doc || !Array.isArray(doc.nodes) || !doc.nodes.length) { step(i + 1); return; }
+    state.doc = { nodes: doc.nodes || [], lines: doc.lines || [], frames: doc.frames || [], texts: doc.texts || [] };
+    state.clientName = n;
+    state.selectedId = null; state.selectedType = null;
+    render();
+    made++;
+    writeSuGenogram(n, { nameKeyOnly: true, done: function () { step(i + 1); } });
+  }
+  step(0);
 }
 
 /* クラウドの既存版を確認できないまま（取得失敗）新規として書き始めた利用者名。
@@ -2801,6 +2853,11 @@ function init() {
   }
   showProperties();
   updateModeStatus();
+
+  /* 控えの無い家族構成図をまとめて入居者マスタへ反映する（1回だけ・文書は書き換えない）。
+     ★loadDoc は非同期（クラウド確認が入ることがある）ので、読み込みが落ち着いてから始める。
+       開始時点の文書を控えて最後に必ず戻すので、途中で別の文書に化けることはない。 */
+  setTimeout(function () { try { backfillSuGenograms(); } catch (e) {} }, 1800);
 
   let resizeTimer = null;
   window.addEventListener('resize', () => {
