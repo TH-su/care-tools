@@ -536,6 +536,19 @@ textarea.fi{resize:vertical;min-height:60px}
 .props-info{font-size: 0.6875rem;color:var(--g6);line-height:1.5;margin-top:8px;padding:8px;
   background:var(--g0);border-radius:6px}
 
+/* 重なり順（前面/背面）。押し間違いが記録ミスに直結しないよう、
+   タップ領域は 44px 以上・隣とは 8px 以上あける（介護現場要件） */
+/* 作図中だけ、指のドラッグをスクロールに取られないようにする（iPad で線が引けなくなるため） */
+.canvas-scroll.drawing{touch-action:none}
+.ord-h{font-size: 0.75rem;font-weight:700;color:var(--g7);margin:14px 0 6px;
+  padding-top:12px;border-top:1px solid var(--g2)}
+.ord-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.obtn{min-height:44px;padding:6px 8px;border:2px solid var(--g2);border-radius:8px;
+  background:#fff;color:var(--g9);font-size: 0.8125rem;font-weight:700;font-family:inherit;
+  cursor:pointer;transition:background .15s,border-color .15s}
+.obtn:hover{background:var(--g1);border-color:var(--g3)}
+.obtn:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+
 /* footer hint */
 .kb-hint{font-size: 0.625rem;color:var(--g6);padding:6px 14px;text-align:center;border-top:1px solid var(--g2);background:#fff}
 
@@ -769,6 +782,13 @@ textarea.fi{resize:vertical;min-height:60px}
       </div>
     </div>
     <div class="grp">
+      <div class="grp-h">図形</div>
+      <div class="grp-btns">
+        <button class="tbtn" data-draw="free"><span class="ico">╱</span>自由線</button>
+        <button class="tbtn" data-draw="ellipse"><span class="ico">◌</span>投げ縄</button>
+      </div>
+    </div>
+    <div class="grp">
       <div class="grp-h">その他</div>
       <div class="grp-btns col1">
         <button class="tbtn" id="btnFrame"><span class="ico">⌐ ┘</span>同居枠</button>
@@ -812,9 +832,16 @@ textarea.fi{resize:vertical;min-height:60px}
       <strong>婚姻 ─</strong>: ボタン押下→ 結ぶ2人をクリック（順序不問）。<br>
       <strong>離婚 ⫽</strong>: 婚姻と同じ操作。中央に二重斜線が入る。<br>
       <strong>親子 ┃</strong>: ボタン押下→ <em>親→子</em> の順にクリック。親が婚姻線を持つ場合は<u>夫婦の中央</u>から自動で線が分岐する。<br>
+      　└ 1点目に<u>婚姻線そのものをクリック</u>してもよい。再婚などで婚姻線が2本ある時に、どちらの夫婦から降ろすかを選べる。<br>
       <strong>兄弟 ⊥</strong>: ボタン押下→ 兄弟2人をクリック。一方に親子線がある場合、その<u>親子線の中盤レベル</u>に兄弟バーが揃って配置される。<br>
       <strong>同居枠</strong>: ボタン押下→ 含めるノードを順にクリック→ 再度ボタンで確定。<br>
       <strong>テキスト</strong>: ボタン押下→ 配置したい場所をクリック。直後にプロパティ欄で文字入力。<br>
+      <strong>自由線 ╱</strong>: ボタン押下→ キャンバスを<u>ドラッグ</u>（クリック2回でも可）。選択すると両端につまみが出て長さ・角度を変えられる。太さ・線種・矢印・色はプロパティ欄。<br>
+      <strong>投げ縄 ◌</strong>: ボタン押下→ ドラッグで点線の楕円を描く。選択するとつまみで大きさ、上の丸ハンドルで向きを変えられる。<br>
+      <br>
+      <strong>■ 図形の中の文字・重なり順</strong><br>
+      人物を選んで「図形内の文字」に入力すると、図形の中に大きく表示される（死亡の塗りつぶしでは自動で白抜き）。<br>
+      何か選んでいる時にプロパティ欄下部の「重なり順」で、最前面／前面／背面／最背面へ移動できる（同居枠・関係線も対象）。<br>
       <br>
       モードのキャンセルは <kbd>Esc</kbd>、選択中の削除は <kbd>Delete</kbd>。
     </div>
@@ -830,16 +857,67 @@ textarea.fi{resize:vertical;min-height:60px}
       </div>
       <div class="fg"><label class="fl">メモ</label>
         <textarea class="fi" id="pNote" rows="3" placeholder="病歴・職業など"></textarea></div>
+      <div class="fg"><label class="fl">図形内の文字（図形の中に大きく表示）</label>
+        <input type="text" class="fi" id="pInner" autocomplete="off" placeholder="例: 父・キーパーソン・☆"></div>
       <div class="props-info" id="pInfo"></div>
     </div>
 
     <div id="propsLine" hidden>
       <div class="props-info" id="lineInfo"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">太さ</label>
+          <select class="fi" id="lWidth">
+            <option value="1">細い（1px）</option>
+            <option value="2" selected>標準（2px）</option>
+            <option value="3">太い（3px）</option>
+            <option value="5">極太（5px）</option>
+          </select></div>
+        <div class="fg"><label class="fl">線種</label>
+          <select class="fi" id="lDash">
+            <option value="solid" selected>実線</option>
+            <option value="dashed">破線</option>
+            <option value="dotted">点線</option>
+          </select></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">色</label>
+          <select class="fi" id="lColor">
+            <option value="#202124" selected>黒</option>
+            <option value="#5f6368">グレー</option>
+            <option value="#c62828">赤</option>
+            <option value="#1a73e8">青</option>
+            <option value="#2e7d32">緑</option>
+            <option value="#e65100">橙</option>
+          </select></div>
+        <div class="fg" id="lArrowRow"><label class="fl">矢印</label>
+          <select class="fi" id="lArrow">
+            <option value="none" selected>なし</option>
+            <option value="end">片方（終点）</option>
+            <option value="both">両方</option>
+          </select></div>
+      </div>
     </div>
 
     <div id="propsFrame" hidden>
       <div class="fg"><label class="fl">枠ラベル</label>
         <input type="text" class="fi" id="fLabel" placeholder="同居" autocomplete="off"></div>
+      <div class="fr" id="fEllipseRow" hidden>
+        <div class="fg"><label class="fl">線の色</label>
+          <select class="fi" id="fColor">
+            <option value="#26a69a" selected>ミント</option>
+            <option value="#202124">黒</option>
+            <option value="#c62828">赤</option>
+            <option value="#1a73e8">青</option>
+            <option value="#e65100">橙</option>
+          </select></div>
+        <div class="fg"><label class="fl">線の太さ</label>
+          <select class="fi" id="fWidth">
+            <option value="1">細い（1px）</option>
+            <option value="2" selected>標準（2px）</option>
+            <option value="3">太い（3px）</option>
+            <option value="5">極太（5px）</option>
+          </select></div>
+      </div>
       <div class="props-info" id="frameInfo"></div>
     </div>
 
@@ -860,6 +938,15 @@ textarea.fi{resize:vertical;min-height:60px}
           <option value="bold">太字</option>
           <option value="italic">斜体</option>
         </select></div>
+    </div>
+    <div id="propsOrder" hidden>
+      <div class="ord-h">重なり順</div>
+      <div class="ord-btns">
+        <button class="obtn" id="btnZFront" title="最前面へ移動">⤒ 最前面</button>
+        <button class="obtn" id="btnZUp" title="1つ前面へ移動">↑ 前面へ</button>
+        <button class="obtn" id="btnZDown" title="1つ背面へ移動">↓ 背面へ</button>
+        <button class="obtn" id="btnZBack" title="最背面へ移動">⤓ 最背面</button>
+      </div>
     </div>
   </aside>
 
@@ -882,6 +969,25 @@ const LS_LAST = 'genogram:lastClient';
 const LS_CLOUD_CFG = 'genogram:cloudCfg';
 const LS_PENDING = 'genogram:pendingSync';
 const NODE_FONT = "'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Meiryo',sans-serif";
+
+/* 重なり順（前面/背面）の既定値。z を持たない既存データはこの帯で
+   「同居枠 → 関係線 → テキスト → 人物」の順になり、統合前の描画順と一致する。
+   ＝保存済みの図は開いても見た目が変わらない。 */
+const Z_BASE = { frame: 1000, line: 2000, text: 3000, node: 4000 };
+/* 指で操作する端末ではつまみを大きくする（マウスは精密なので小さいまま） */
+const COARSE_POINTER = (function () {
+  try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
+  catch (e) { return false; }
+})();
+const ANCHOR_HIT = COARSE_POINTER ? 22 : 14;   // 端点つまみの当たり判定半径（指=44px相当）
+const TR_ANCHOR = COARSE_POINTER ? 20 : 12;    // 投げ縄の変形ハンドルの大きさ
+const DRAW_DRAG_MIN = 8;                       // これ以上動かしたらドラッグ、未満はクリック扱い
+const DECEASED_FILL = '#202124';               // 死亡＝塗りつぶし
+const INNER_FONT_MAX = 22;                     // 図形内の文字（既定サイズ）
+const INNER_FONT_MIN = 11;                     // 図形内の文字（縮小の下限）
+const LASSO_KEEP = '__lasso__';                // 投げ縄が旧版で消されないための番人（実在しない人物ID）
+const LINE_INK = '#202124';                    // 線の既定色
+const SEL_INK = '#26a69a';                     // 選択中の色
 
 // GAS script that users need to paste into Apps Script
 const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Script editor ========
@@ -1046,10 +1152,12 @@ function undo() {
 // ========== Konva setup ==========
 const stage = new Konva.Stage({ container: 'canvas', width: STAGE_W, height: STAGE_H });
 const layerBg = new Konva.Layer({ listening: false });
-const layerFrames = new Konva.Layer();
-const layerLines = new Konva.Layer();
-const layerNodes = new Konva.Layer();
-stage.add(layerBg, layerFrames, layerLines, layerNodes);
+/* 前面/背面を全要素で並べ替えるため、同居枠・関係線・テキスト・人物を1つの層にまとめる。
+   描画順＝配列への追加順なので、render() は z の昇順で追加するだけでよい。 */
+const layerMain = new Konva.Layer();
+/* 作図中のプレビュー専用。並べ替えの対象外で常に最前面・クリックを拾わない */
+const layerUI = new Konva.Layer({ listening: false });
+stage.add(layerBg, layerMain, layerUI);
 
 function drawBackground() {
   layerBg.destroyChildren();
@@ -1097,7 +1205,7 @@ function zoomToFit() {
   const availH = container.clientHeight - padY - 4;
   // Use content extent if any, else current logical stage
   let contentW = STAGE_W, contentH = STAGE_H;
-  if (state.doc.nodes.length || state.doc.texts.length) {
+  if (hasAnyContent()) {
     const b = getContentBounds();
     contentW = b.x + b.width;
     contentH = b.y + b.height;
@@ -1124,6 +1232,18 @@ function fitStageSize(growForContent = false) {
       w = Math.max(w, t.x + 200);
       h = Math.max(h, t.y + 40);
     });
+    /* 自由線・投げ縄も紙の広さに数える（数えないと画面外に置けて出力で切れる） */
+    (state.doc.lines || []).forEach(l => {
+      if (l.type !== 'free') return;
+      w = Math.max(w, l.x1 + 40, l.x2 + 40);
+      h = Math.max(h, l.y1 + 40, l.y2 + 40);
+    });
+    (state.doc.frames || []).forEach(f => {
+      if (f.type !== 'ellipse') return;
+      const r = Math.max(f.rx || 0, f.ry || 0);
+      w = Math.max(w, f.x + r + 40);
+      h = Math.max(h, f.y + r + 40);
+    });
   }
   STAGE_W = Math.ceil(w);
   STAGE_H = Math.ceil(h);
@@ -1133,20 +1253,71 @@ function fitStageSize(growForContent = false) {
   drawBackground();
 }
 
+// ========== 重なり順（前面/背面） ==========
+/* 全要素を1つの並びとして扱う。z を持たない要素は Z_BASE の帯＋配列内の位置で
+   既定値を決めるため、並べ替えを一度も使っていない図は従来と同じ順序で描かれる。 */
+function allElements() {
+  const out = [];
+  (state.doc.frames || []).forEach((el, i) => out.push({ el, kind: 'frame', idx: i }));
+  (state.doc.lines || []).forEach((el, i) => out.push({ el, kind: 'line', idx: i }));
+  (state.doc.texts || []).forEach((el, i) => out.push({ el, kind: 'text', idx: i }));
+  (state.doc.nodes || []).forEach((el, i) => out.push({ el, kind: 'node', idx: i }));
+  return out;
+}
+function elemZ(e) {
+  return (typeof e.el.z === 'number' && isFinite(e.el.z)) ? e.el.z : (Z_BASE[e.kind] + e.idx);
+}
+/* 並べ替えを一度でも使った図では、新しく置いた人物・テキスト・同居枠を最前面に出す。
+   一度も使っていない図では z を付けず、従来どおりの既定順（枠→線→文字→人物）に任せる。
+   ＝これまでの図の描かれ方は変わらず、並べ替え後の「新しく置いた物がどこに入るか」も一定になる。 */
+function newElementZ() {
+  const list = allElements();
+  if (!list.some(e => typeof e.el.z === 'number' && isFinite(e.el.z))) return null;
+  return Math.max.apply(null, list.map(elemZ)) + 1;
+}
+/* 新しく置いた要素は最前面に出す（後から描いた物が上に来る、という自然な期待に合わせる） */
+function frontZ() {
+  const list = allElements();
+  if (!list.length) return Z_BASE.node;
+  return Math.max.apply(null, list.map(elemZ)) + 1;
+}
+/* id → z の対応。render と部分再描画で同じ値を使うため毎回作り直す */
+let zMap = new Map();
+function computeZMap() {
+  zMap = new Map();
+  allElements().forEach(e => zMap.set(e.el.id, elemZ(e)));
+}
+/* 描画物を層に足す。geo=true は「人物の位置に連動して形が変わる物」で、
+   ノードのドラッグ中はこれだけを作り直す（ドラッグ中の図形を壊さないため） */
+function addDrawable(konvaNode, el, geo) {
+  konvaNode._zval = zMap.has(el.id) ? zMap.get(el.id) : 0;
+  if (geo) konvaNode.name('geo');
+  layerMain.add(konvaNode);
+}
+/* 部分再描画の後は追加順が崩れるので、_zval で並べ直す */
+function applyZOrder() {
+  const kids = layerMain.getChildren().slice();
+  kids.sort((a, b) => (a._zval || 0) - (b._zval || 0));
+  kids.forEach((k, i) => k.zIndex(i));
+}
+
 // ========== Render ==========
 function render() {
-  layerFrames.destroyChildren();
-  layerLines.destroyChildren();
-  layerNodes.destroyChildren();
+  layerMain.destroyChildren();
+  computeZMap();
 
-  state.doc.frames.forEach(drawFrame);
-  state.doc.lines.forEach(drawLine);
-  state.doc.texts.forEach(drawText);
-  state.doc.nodes.forEach(drawNode);
+  /* z の昇順に描く＝追加順がそのまま重なり順になる */
+  const ordered = allElements().sort((a, b) => elemZ(a) - elemZ(b));
+  ordered.forEach(e => {
+    if (e.kind === 'frame') drawFrame(e.el);
+    else if (e.kind === 'line') drawLine(e.el);
+    else if (e.kind === 'text') drawText(e.el);
+    else drawNode(e.el);
+  });
+  /* 変形ハンドル・端点つまみは選択中の要素の上に出す */
+  drawSelectionHandles();
 
-  layerFrames.batchDraw();
-  layerLines.batchDraw();
-  layerNodes.batchDraw();
+  layerMain.batchDraw();
 }
 
 function nodeStrokeColor(n) {
@@ -1159,9 +1330,13 @@ function nodeStrokeColor(n) {
 const SNAP = 10;
 function snap(v) { return Math.round(v / SNAP) * SNAP; }
 
+/* 作図中は既存の図形をドラッグできないようにする。
+   線を引こうとして人物を動かしてしまう事故を防ぐため（作図モードだけの制限） */
+function isDrawing() { return state.mode.type === 'draw'; }
+
 function drawNode(n) {
   const group = new Konva.Group({
-    x: n.x, y: n.y, draggable: true,
+    x: n.x, y: n.y, draggable: !isDrawing(),
     dragBoundFunc: function(pos) {
       // pos is in CSS coords; convert to logical, snap, clamp, convert back
       const z = state.zoom || 1;
@@ -1174,23 +1349,25 @@ function drawNode(n) {
   });
   const stroke = nodeStrokeColor(n);
   const sw = (state.selectedId === n.id) ? 3 : 2;
+  /* 死亡は塗りつぶしで表す（2026-08-12 の仕様変更。従来の ╳ 重ねは廃止） */
+  const nodeFill = n.deceased ? DECEASED_FILL : '#fff';
 
   // base shape
   let shape;
   if (n.type === 'male') {
     shape = new Konva.Rect({
       x: -NODE_SIZE / 2, y: -NODE_SIZE / 2, width: NODE_SIZE, height: NODE_SIZE,
-      stroke, strokeWidth: sw, fill: '#fff'
+      stroke, strokeWidth: sw, fill: nodeFill
     });
   } else if (n.type === 'female') {
     shape = new Konva.Circle({
       x: 0, y: 0, radius: NODE_SIZE / 2,
-      stroke, strokeWidth: sw, fill: '#fff'
+      stroke, strokeWidth: sw, fill: nodeFill
     });
   } else {
     shape = new Konva.RegularPolygon({
       x: 0, y: 0, sides: 4, radius: NODE_SIZE / 2 * 1.15,
-      stroke, strokeWidth: sw, fill: '#fff', rotation: 0
+      stroke, strokeWidth: sw, fill: nodeFill, rotation: 0
     });
   }
   group.add(shape);
@@ -1219,15 +1396,22 @@ function drawNode(n) {
     group.add(outer);
   }
 
-  // Deceased mark: ╳ across symbol
-  if (n.deceased) {
-    const r = NODE_SIZE / 2 + 6;
-    group.add(new Konva.Line({
-      points: [-r, -r, r, r], stroke: '#202124', strokeWidth: 2.5, listening: false
-    }));
-    group.add(new Konva.Line({
-      points: [-r, r, r, -r], stroke: '#202124', strokeWidth: 2.5, listening: false
-    }));
+  /* 図形の中に入れる文字。塗りつぶし（死亡）の時は黒地に黒字で読めなくなるため白抜きにする。
+     文字数が多い時は図形からはみ出さないよう、収まるまで文字を小さくする（下限11px） */
+  if (n.inner) {
+    const inner = new Konva.Text({
+      x: -NODE_SIZE / 2 + 3, width: NODE_SIZE - 6, align: 'center',
+      text: String(n.inner), fontSize: INNER_FONT_MAX, fontFamily: NODE_FONT,
+      fontStyle: 'bold', wrap: 'char',
+      fill: n.deceased ? '#ffffff' : '#202124', listening: false
+    });
+    let fs = INNER_FONT_MAX;
+    while (fs > INNER_FONT_MIN && inner.height() > NODE_SIZE - 6) {
+      fs -= 1;
+      inner.fontSize(fs);
+    }
+    inner.y(-inner.height() / 2);
+    group.add(inner);
   }
 
   // Label below
@@ -1280,33 +1464,51 @@ function drawNode(n) {
     handleNodeClick(n.id);
   });
 
-  layerNodes.add(group);
+  addDrawable(group, n, false);
+}
+
+/* 婚姻線・離婚線を親子線の起点として明示指定できる（fromId に婚姻線のIDを入れる）。
+   再婚などで婚姻線が2本ある人でも、どちらの夫婦から降ろすかを選べる。 */
+function marriageAnchorOf(parentLine) {
+  return state.doc.lines.find(x =>
+    x.id === parentLine.fromId && (x.type === 'marriage' || x.type === 'divorce')) || null;
 }
 
 // Compute parent-line geometry. If the parent has a marriage line, the
 // origin is set to the midpoint of that marriage line so the parent-child
 // line visually descends from the couple, not from a single parent.
 function parentLineGeometry(parentLine) {
-  const a = state.doc.nodes.find(n => n.id === parentLine.fromId);
   const b = state.doc.nodes.find(n => n.id === parentLine.toId);
-  if (!a || !b) return null;
-  const marriage = state.doc.lines.find(ml =>
-    (ml.type === 'marriage' || ml.type === 'divorce') &&
-    (ml.fromId === a.id || ml.toId === a.id));
+  if (!b) return null;
   let startX, startY;
-  if (marriage) {
-    const ma = state.doc.nodes.find(n => n.id === marriage.fromId);
-    const mb = state.doc.nodes.find(n => n.id === marriage.toId);
-    if (ma && mb) {
-      startX = (ma.x + mb.x) / 2;
-      startY = (ma.y + mb.y) / 2;
+  const anchor = marriageAnchorOf(parentLine);
+  if (anchor) {
+    /* 明示指定（婚姻線そのものを起点に選んだ場合） */
+    const ma = state.doc.nodes.find(n => n.id === anchor.fromId);
+    const mb = state.doc.nodes.find(n => n.id === anchor.toId);
+    if (!ma || !mb) return null;
+    startX = (ma.x + mb.x) / 2;
+    startY = (ma.y + mb.y) / 2;
+  } else {
+    const a = state.doc.nodes.find(n => n.id === parentLine.fromId);
+    if (!a) return null;
+    const marriage = state.doc.lines.find(ml =>
+      (ml.type === 'marriage' || ml.type === 'divorce') &&
+      (ml.fromId === a.id || ml.toId === a.id));
+    if (marriage) {
+      const ma = state.doc.nodes.find(n => n.id === marriage.fromId);
+      const mb = state.doc.nodes.find(n => n.id === marriage.toId);
+      if (ma && mb) {
+        startX = (ma.x + mb.x) / 2;
+        startY = (ma.y + mb.y) / 2;
+      } else {
+        startX = a.x;
+        startY = a.y + NODE_SIZE / 2;
+      }
     } else {
       startX = a.x;
       startY = a.y + NODE_SIZE / 2;
     }
-  } else {
-    startX = a.x;
-    startY = a.y + NODE_SIZE / 2;
   }
   const endX = b.x;
   const endY = b.y - NODE_SIZE / 2;
@@ -1314,14 +1516,36 @@ function parentLineGeometry(parentLine) {
   return { startX, startY, endX, endY, elbowY };
 }
 
-function drawLine(l) {
-  const a = state.doc.nodes.find(n => n.id === l.fromId);
-  const b = state.doc.nodes.find(n => n.id === l.toId);
-  if (!a || !b) return;
+/* 線の見た目。既定は従来と同じ「黒・太さ2・実線」なので、
+   設定していない既存の線は今までどおりに描かれる。 */
+function lineDashArray(l) {
+  if (l.dash === 'dashed') return [10, 6];
+  if (l.dash === 'dotted') return [2, 5];
+  return undefined;   // 実線
+}
+function lineStyleOf(l, isSel) {
+  const base = (typeof l.width === 'number' && l.width > 0) ? l.width : 2;
+  return {
+    stroke: isSel ? SEL_INK : (l.color || LINE_INK),
+    sw: isSel ? base + 1 : base,
+    dash: lineDashArray(l)
+  };
+}
 
-  const isSel = state.selectedId === l.id;
-  const stroke = isSel ? '#26a69a' : '#202124';
-  const sw = isSel ? 3 : 2;
+function drawLine(l) {
+  if (l.type === 'free') { drawFreeLine(l); return; }
+
+  const b = state.doc.nodes.find(n => n.id === l.toId);
+  const anchor = (l.type === 'parent') ? marriageAnchorOf(l) : null;
+  const a = anchor ? null : state.doc.nodes.find(n => n.id === l.fromId);
+  if (!b) return;
+  if (!anchor && !a) return;
+
+  /* 親子線モードで起点に選ばれている婚姻線は、選択中と同じ色で光らせる */
+  const isPicked = (state.mode.type === 'line' && state.mode.firstId === l.id);
+  const isSel = (state.selectedId === l.id) || isPicked;
+  const st = lineStyleOf(l, isSel);
+  const stroke = st.stroke, sw = st.sw, dash = st.dash;
 
   const group = new Konva.Group();
 
@@ -1332,9 +1556,11 @@ function drawLine(l) {
     const x1 = left.x + NODE_SIZE / 2;
     const x2 = right.x - NODE_SIZE / 2;
     // vertical drops to each node center
+    /* hitStrokeWidth: 親子線の起点として婚姻線そのものをクリックできるよう、
+       細い線でも押せる幅の当たり判定を持たせる（見た目の太さは変えない） */
     group.add(new Konva.Line({
       points: [left.x, left.y, left.x, midY, right.x, midY, right.x, right.y],
-      stroke, strokeWidth: sw
+      stroke, strokeWidth: sw, dash, hitStrokeWidth: 16
     }));
     if (l.type === 'divorce') {
       const cx = (left.x + right.x) / 2;
@@ -1348,12 +1574,14 @@ function drawLine(l) {
       }));
     }
   } else if (l.type === 'parent') {
+    /* hitStrokeWidth は親子線・きょうだい線にも付ける。太さ・線種・色を変えるには
+       まず線を選ぶ必要があり、2px の線は指でもマウスでも押しにくいため */
     const geom = parentLineGeometry(l);
     if (!geom) { return; }
     group.add(new Konva.Line({
       points: [geom.startX, geom.startY, geom.startX, geom.elbowY,
                geom.endX, geom.elbowY, geom.endX, geom.endY],
-      stroke, strokeWidth: sw
+      stroke, strokeWidth: sw, dash, hitStrokeWidth: 16
     }));
   } else if (l.type === 'sibling') {
     const left = a.x < b.x ? a : b;
@@ -1383,13 +1611,13 @@ function drawLine(l) {
     }
     if (barY === null) barY = Math.min(a.y, b.y) - NODE_SIZE / 2 - 20;
     group.add(new Konva.Line({
-      points: [left.x, barY, right.x, barY], stroke, strokeWidth: sw
+      points: [left.x, barY, right.x, barY], stroke, strokeWidth: sw, dash, hitStrokeWidth: 16
     }));
     group.add(new Konva.Line({
-      points: [a.x, barY, a.x, a.y - NODE_SIZE / 2], stroke, strokeWidth: sw, listening: false
+      points: [a.x, barY, a.x, a.y - NODE_SIZE / 2], stroke, strokeWidth: sw, dash, listening: false
     }));
     group.add(new Konva.Line({
-      points: [b.x, barY, b.x, b.y - NODE_SIZE / 2], stroke, strokeWidth: sw, listening: false
+      points: [b.x, barY, b.x, b.y - NODE_SIZE / 2], stroke, strokeWidth: sw, dash, listening: false
     }));
   }
 
@@ -1399,10 +1627,60 @@ function drawLine(l) {
     handleLineClick(l.id);
   });
 
-  layerLines.add(group);
+  addDrawable(group, l, true);
+}
+
+/* ========== 自由線（どこにも接続しない線） ==========
+   lines 配列に type:'free' として入れる。旧版のHTMLで開くと描かれないが
+   配列ごと保持されるため、保存し直してもデータは消えない。 */
+function drawFreeLine(l) {
+  const isSel = state.selectedId === l.id;
+  const st = lineStyleOf(l, isSel);
+  const group = new Konva.Group({ draggable: !isDrawing() });
+
+  const opts = {
+    points: [l.x1, l.y1, l.x2, l.y2],
+    stroke: st.stroke, strokeWidth: st.sw, dash: st.dash,
+    lineCap: 'round', lineJoin: 'round', hitStrokeWidth: 20
+  };
+  const shape = (l.arrow === 'end' || l.arrow === 'both')
+    ? new Konva.Arrow(Object.assign({}, opts, {
+        fill: st.stroke, pointerLength: 10, pointerWidth: 9,
+        pointerAtBeginning: l.arrow === 'both'
+      }))
+    : new Konva.Line(opts);
+  group.add(shape);
+
+  group._freeId = l.id;   // 端点つまみから線本体を探すための目印
+
+  group.on('click tap', (e) => { e.cancelBubble = true; handleLineClick(l.id); });
+  group.on('dragstart', () => {
+    if (!group._pushed) { beforeChange(); group._pushed = true; }
+    /* 線ごと動かす間、端点つまみは置き去りになるので消す（dragend の render で戻る） */
+    Array.prototype.slice.call(layerMain.find('.handle')).forEach(h => h.destroy());
+  });
+  group.on('dragend', () => {
+    /* stage の拡大縮小は層に掛かっているため、group の座標はそのまま論理座標。
+       ずらした分を線の両端へ足し込んで、group 自身は原点へ戻す */
+    /* 紙の外へ出すと描かれず選び直せない＝消えたように見えるため、
+       線の形は保ったまま、両端が紙の中に収まる範囲へ移動量を切り詰める */
+    const minX = Math.min(l.x1, l.x2), maxX = Math.max(l.x1, l.x2);
+    const minY = Math.min(l.y1, l.y2), maxY = Math.max(l.y1, l.y2);
+    const dx = Math.max(-minX, Math.min(STAGE_W - maxX, group.x()));
+    const dy = Math.max(-minY, Math.min(STAGE_H - maxY, group.y()));
+    l.x1 += dx; l.y1 += dy; l.x2 += dx; l.y2 += dy;
+    /* 位置を戻す前に線の座標を反映しておく（1コマだけ元の場所に描かれるのを防ぐ） */
+    updateFreeLinePoints(l);
+    group.position({ x: 0, y: 0 });
+    group._pushed = false;
+    deferRender();
+  });
+
+  addDrawable(group, l, false);
 }
 
 function drawFrame(f) {
+  if (f.type === 'ellipse') { drawLassoEllipse(f); return; }
   const nodes = (f.nodeIds || []).map(id => state.doc.nodes.find(n => n.id === id)).filter(Boolean);
   if (nodes.length === 0) return;
 
@@ -1416,6 +1694,9 @@ function drawFrame(f) {
   const stroke = isSel ? '#26a69a' : '#26a69a';
   const op = isSel ? 1.0 : 0.7;
 
+  /* 枠と見出しは1つの Group にまとめる。並べ替えは要素単位で行うため、
+     枠だけが前に出て見出しが後ろに残る、という食い違いを防ぐ */
+  const group = new Konva.Group();
   const rect = new Konva.Rect({
     x: minX, y: minY, width: maxX - minX, height: maxY - minY,
     stroke, strokeWidth: isSel ? 2.5 : 1.8, dash: [10, 5],
@@ -1425,13 +1706,52 @@ function drawFrame(f) {
     e.cancelBubble = true;
     handleFrameClick(f.id);
   });
-  layerFrames.add(rect);
+  group.add(rect);
 
-  layerFrames.add(new Konva.Text({
+  group.add(new Konva.Text({
     x: minX + 8, y: minY + 4,
     text: f.label || '同居', fontSize: 11, fontFamily: NODE_FONT,
     fill: '#26a69a', listening: false
   }));
+  addDrawable(group, f, true);
+}
+
+/* ========== 投げ縄（点線の楕円） ==========
+   frames 配列に type:'ellipse' として入れる。人物に紐づかず手で自由に囲むための図形で、
+   既存の「同居枠」（四角・自動伸縮）とは別物。旧版のHTMLでは nodeIds が空のため
+   描かれないが、配列ごと保持されるのでデータは消えない。 */
+function drawLassoEllipse(f) {
+  const isSel = state.selectedId === f.id;
+  const color = f.color || SEL_INK;
+  const group = new Konva.Group({
+    x: f.x, y: f.y, rotation: f.rotation || 0, draggable: !isDrawing()
+  });
+  const ell = new Konva.Ellipse({
+    x: 0, y: 0, radiusX: f.rx, radiusY: f.ry,
+    stroke: isSel ? SEL_INK : color,
+    strokeWidth: ((typeof f.width === 'number' && f.width > 0) ? f.width : 2) + (isSel ? 1 : 0),
+    dash: [10, 5], fillEnabled: false, hitStrokeWidth: 20,
+    opacity: isSel ? 1.0 : 0.85
+  });
+  group.add(ell);
+  if (f.label) {
+    group.add(new Konva.Text({
+      x: -f.rx, y: -f.ry - 16, width: f.rx * 2, align: 'center',
+      text: f.label, fontSize: 12, fontFamily: NODE_FONT,
+      fill: color, listening: false
+    }));
+  }
+  group.on('click tap', (e) => { e.cancelBubble = true; handleFrameClick(f.id); });
+  group.on('dragstart', () => { if (!group._pushed) { beforeChange(); group._pushed = true; } });
+  group.on('dragend', () => {
+    /* 中心が紙の外へ出ると選び直せなくなるため、中心は紙の中に留める */
+    f.x = Math.max(0, Math.min(STAGE_W, group.x()));
+    f.y = Math.max(0, Math.min(STAGE_H, group.y()));
+    group._pushed = false;
+    deferRender();
+  });
+  group._lassoId = f.id;   // 変形ハンドルの取り付け先を探すための目印
+  addDrawable(group, f, false);
 }
 
 function drawText(t) {
@@ -1443,7 +1763,7 @@ function drawText(t) {
     fontFamily: NODE_FONT,
     fontStyle: t.fontStyle || 'normal',
     fill: isSel ? '#26a69a' : '#202124',
-    draggable: true
+    draggable: !isDrawing()
   });
   text.on('mousedown touchstart', () => { text._pushed = false; });
   text.on('dragstart', () => {
@@ -1454,22 +1774,133 @@ function drawText(t) {
     e.cancelBubble = true;
     handleTextClick(t.id);
   });
-  layerNodes.add(text);
+  addDrawable(text, t, false);
 }
 
 // Partial redraw when a node is being dragged: only frames + lines
+/* 層を1つにまとめた後も、ドラッグ中に作り直すのは「人物の位置に連動する物」だけに絞る。
+   全部作り直すとドラッグ中の図形そのものが消えて操作が切れるため。 */
 function redrawDependents() {
-  layerFrames.destroyChildren();
-  layerLines.destroyChildren();
-  state.doc.frames.forEach(drawFrame);
-  state.doc.lines.forEach(drawLine);
-  layerFrames.batchDraw();
-  layerLines.batchDraw();
+  Array.prototype.slice.call(layerMain.find('.geo')).forEach(k => k.destroy());
+  computeZMap();
+  (state.doc.frames || []).forEach(f => { if (f.type !== 'ellipse') drawFrame(f); });
+  (state.doc.lines || []).forEach(l => { if (l.type !== 'free') drawLine(l); });
+  applyZOrder();
+  layerMain.batchDraw();
+}
+
+/* ========== 選択中の要素のつまみ・変形ハンドル ==========
+   並べ替えの対象外で常に最前面（_zval を最大値にする） */
+const Z_HANDLE = Number.MAX_SAFE_INTEGER;
+
+/* ドラッグ・変形の終了処理から render() を直に呼ぶと、いま操作している図形自身を
+   イベント処理の途中で壊すことになる。状態の更新は即時、描き直しは次の順番に回す。 */
+function deferRender() { setTimeout(() => render(), 0); }
+
+function drawSelectionHandles() {
+  if (!state.selectedId) return;
+  if (state.mode.type !== 'select') return;   // 作図・関係線モード中は出さない
+  if (state.selectedType === 'line') {
+    const l = (state.doc.lines || []).find(x => x.id === state.selectedId);
+    if (l && l.type === 'free') addFreeLineAnchors(l);
+  } else if (state.selectedType === 'frame') {
+    const f = (state.doc.frames || []).find(x => x.id === state.selectedId);
+    if (f && f.type === 'ellipse') addLassoTransformer(f);
+  }
+}
+
+/* 自由線の端点つまみ。見た目は小さく、当たり判定だけ指で押せる大きさにする */
+function addFreeLineAnchors(l) {
+  [['x1', 'y1'], ['x2', 'y2']].forEach(([kx, ky]) => {
+    const anchor = new Konva.Circle({
+      x: l[kx], y: l[ky], radius: 6,
+      fill: '#fff', stroke: SEL_INK, strokeWidth: 2, draggable: true,
+      /* つまみを紙の外へ出さない。座標はズームが掛かった値で渡るので割り戻して判定する
+         （人物のドラッグ dragBoundFunc と同じ作法） */
+      dragBoundFunc: function (pos) {
+        const z = state.zoom || 1;
+        return {
+          x: Math.max(0, Math.min(STAGE_W, pos.x / z)) * z,
+          y: Math.max(0, Math.min(STAGE_H, pos.y / z)) * z
+        };
+      },
+      hitFunc: function (ctx, shape) {
+        ctx.beginPath();
+        ctx.arc(0, 0, ANCHOR_HIT, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.fillStrokeShape(shape);
+      }
+    });
+    anchor.name('handle');
+    anchor._zval = Z_HANDLE;
+    anchor.on('dragstart', (e) => {
+      e.cancelBubble = true;
+      if (!anchor._pushed) { beforeChange(); anchor._pushed = true; }
+    });
+    anchor.on('dragmove', (e) => {
+      e.cancelBubble = true;
+      l[kx] = anchor.x(); l[ky] = anchor.y();
+      updateFreeLinePoints(l);
+      layerMain.batchDraw();
+    });
+    anchor.on('dragend', (e) => {
+      e.cancelBubble = true;
+      anchor._pushed = false;
+      deferRender();
+    });
+    layerMain.add(anchor);
+  });
+}
+
+/* つまみを動かしている間は線だけを書き換える（全体を作り直すとつまみが消えるため） */
+function updateFreeLinePoints(l) {
+  layerMain.getChildren().forEach(g => {
+    if (g._freeId !== l.id) return;
+    const s = g.getChildren()[0];
+    if (s && typeof s.points === 'function') s.points([l.x1, l.y1, l.x2, l.y2]);
+  });
+}
+
+/* 投げ縄の変形ハンドル（8方向のつまみ＋回転） */
+function addLassoTransformer(f) {
+  let target = null;
+  layerMain.getChildren().forEach(g => { if (g._lassoId === f.id) target = g; });
+  if (!target) return;
+  const tr = new Konva.Transformer({
+    nodes: [target], rotateEnabled: true, keepRatio: false,
+    anchorSize: TR_ANCHOR, anchorStroke: SEL_INK, anchorFill: '#fff',
+    borderStroke: SEL_INK, borderDash: [4, 3], rotateAnchorOffset: 26,
+    enabledAnchors: ['top-left', 'top-center', 'top-right', 'middle-left',
+                     'middle-right', 'bottom-left', 'bottom-center', 'bottom-right'],
+    boundBoxFunc: (oldBox, newBox) =>
+      (Math.abs(newBox.width) < 24 || Math.abs(newBox.height) < 24) ? oldBox : newBox
+  });
+  tr.name('handle');
+  tr._zval = Z_HANDLE;
+  layerMain.add(tr);
+
+  target.on('transformstart', () => {
+    if (!target._pushed) { beforeChange(); target._pushed = true; }
+  });
+  target.on('transformend', () => {
+    /* 楕円の中心は group の原点にあるので、拡大率をそのまま半径へ焼き込めば
+       見えている大きさと一致する。焼き込んだら倍率は 1 に戻す */
+    f.rx = Math.max(12, f.rx * Math.abs(target.scaleX()));
+    f.ry = Math.max(12, f.ry * Math.abs(target.scaleY()));
+    f.rotation = target.rotation();
+    f.x = target.x(); f.y = target.y();
+    target.scale({ x: 1, y: 1 });
+    target._pushed = false;
+    deferRender();
+  });
 }
 
 // ========== Mode handling ==========
 function setMode(mode) {
   state.mode = mode;
+  clearDrawPreview();
+  const scroller = document.querySelector('.canvas-scroll');
+  if (scroller) scroller.classList.toggle('drawing', mode.type === 'draw');
   updateModeStatus();
   updateModeButtons();
   render();
@@ -1485,12 +1916,20 @@ function updateModeStatus() {
     const labels = { marriage: '婚姻線', divorce: '離婚線', parent: '親子線', sibling: 'きょうだい線' };
     const label = labels[state.mode.lineType] || '関係線';
     if (state.mode.firstId) {
-      msg = `${label}モード: もう1つのノードをクリック (Esc=取消)`;
+      msg = state.mode.firstKind === 'line'
+        ? `${label}モード: 子のノードをクリック (Esc=取消)`
+        : `${label}モード: もう1つのノードをクリック (Esc=取消)`;
     } else if (state.mode.lineType === 'parent') {
-      msg = `${label}モード: 親→子 の順にクリック (Esc=取消)`;
+      msg = `${label}モード: 親のノード（または婚姻線）→ 子 の順にクリック (Esc=取消)`;
     } else {
       msg = `${label}モード: 結ぶ2つのノードをクリック (Esc=取消)`;
     }
+  } else if (state.mode.type === 'draw') {
+    bar.classList.add('line');
+    const label = state.mode.shape === 'ellipse' ? '投げ縄（点線の円）' : '自由線';
+    msg = state.mode.anchor
+      ? `${label}モード: 終点をクリック (Esc=取消)`
+      : `${label}モード: ドラッグで描く／クリック2回でも描けます (Esc=取消)`;
   } else if (state.mode.type === 'frame') {
     bar.classList.add('frame');
     const n = state.mode.nodeIds.length;
@@ -1505,6 +1944,9 @@ function updateModeStatus() {
 function updateModeButtons() {
   document.querySelectorAll('.tbtn[data-line]').forEach(b => {
     b.classList.toggle('on', state.mode.type === 'line' && state.mode.lineType === b.dataset.line);
+  });
+  document.querySelectorAll('.tbtn[data-draw]').forEach(b => {
+    b.classList.toggle('on', state.mode.type === 'draw' && state.mode.shape === b.dataset.draw);
   });
   $('btnFrame').classList.toggle('on', state.mode.type === 'frame');
   $('btnText').classList.toggle('on', state.mode.type === 'text');
@@ -1538,11 +1980,14 @@ function addNode(type) {
   beforeChange();
   const pos = nextNodePosition();
   const id = genId();
-  state.doc.nodes.push({
+  const z = newElementZ();
+  const node = {
     id, type, x: pos.x, y: pos.y,
     name: '', age: '', relation: '', note: '',
     deceased: false, isIP: false
-  });
+  };
+  if (z !== null) node.z = z;
+  state.doc.nodes.push(node);
   state.selectedId = id;
   state.selectedType = 'node';
   setMode({ type: 'select' });
@@ -1563,17 +2008,35 @@ function currentNode() {
   return state.doc.nodes.find(n => n.id === state.selectedId);
 }
 
+/* 婚姻線を起点に指定した親子線は、その婚姻線が消えると行き場を失う。
+   人物を消すと繋がる線も消える従来の扱いに合わせ、一緒に消す。 */
+function dropOrphanParentLines(removedLineIds) {
+  if (!removedLineIds || !removedLineIds.length) return;
+  state.doc.lines = state.doc.lines.filter(l =>
+    !(l.type === 'parent' && removedLineIds.indexOf(l.fromId) >= 0));
+}
+
 function deleteSelected() {
   if (!state.selectedId) return;
   beforeChange();
   const id = state.selectedId, type = state.selectedType;
   if (type === 'node') {
     state.doc.nodes = state.doc.nodes.filter(n => n.id !== id);
+    const removed = state.doc.lines
+      .filter(l => l.fromId === id || l.toId === id).map(l => l.id);
     state.doc.lines = state.doc.lines.filter(l => l.fromId !== id && l.toId !== id);
-    state.doc.frames.forEach(f => { f.nodeIds = (f.nodeIds || []).filter(nid => nid !== id); });
-    state.doc.frames = state.doc.frames.filter(f => (f.nodeIds || []).length > 0);
+    dropOrphanParentLines(removed);
+    /* 投げ縄は人物に紐づかない図形なので、この掃除の対象から必ず外す
+       （外さないと、人物を1人消した拍子に投げ縄が全部消える） */
+    state.doc.frames.forEach(f => {
+      if (f.type === 'ellipse') return;
+      f.nodeIds = (f.nodeIds || []).filter(nid => nid !== id);
+    });
+    state.doc.frames = state.doc.frames.filter(f =>
+      f.type === 'ellipse' || (f.nodeIds || []).length > 0);
   } else if (type === 'line') {
     state.doc.lines = state.doc.lines.filter(l => l.id !== id);
+    dropOrphanParentLines([id]);
   } else if (type === 'frame') {
     state.doc.frames = state.doc.frames.filter(f => f.id !== id);
   } else if (type === 'text') {
@@ -1586,7 +2049,7 @@ function deleteSelected() {
 }
 
 function clearAll() {
-  if (state.doc.nodes.length === 0 && state.doc.texts.length === 0) return;
+  if (!hasAnyContent()) return;
   if (!confirm('キャンバス上の全要素を削除しますか？（保存済みデータは残ります）')) return;
   beforeChange();
   state.doc = makeEmptyDoc();
@@ -1597,8 +2060,103 @@ function clearAll() {
   showProperties();
 }
 
+/* 「何か描かれているか」の判定。自由線・投げ縄だけの図も “中身あり” として扱う。
+   引数を省略すると今開いている図を見る（まとめ反映では保存済みの図を渡す） */
+function hasAnyContent(doc) {
+  const d = doc || state.doc;
+  return !!((d.nodes && d.nodes.length) ||
+            (d.texts && d.texts.length) ||
+            (d.lines || []).some(l => l.type === 'free') ||
+            (d.frames || []).some(f => f.type === 'ellipse'));
+}
+
+// ========== 自由線・投げ縄の作成 ==========
+function createFreeLine(x1, y1, x2, y2) {
+  beforeChange();
+  const l = {
+    id: genId(), type: 'free',
+    x1: Math.round(x1), y1: Math.round(y1),
+    x2: Math.round(x2), y2: Math.round(y2),
+    width: 2, dash: 'solid', arrow: 'none', color: LINE_INK,
+    z: frontZ()
+  };
+  state.doc.lines.push(l);
+  state.selectedId = l.id;
+  state.selectedType = 'line';
+  setMode({ type: 'select' });
+  showProperties();
+  flashStatus('自由線を引きました（右パネルで太さ・線種・矢印を変更できます）');
+}
+
+function createLassoEllipse(x1, y1, x2, y2) {
+  beforeChange();
+  const f = {
+    id: genId(), type: 'ellipse',
+    /* 旧版のHTMLが端末に残っていた場合の保険。旧版は人物を消すときに
+       「nodeIds が空の枠」を掃除するため、存在しないIDを1つ持たせて掃除対象から外す。
+       旧版はこのIDの人物を見つけられないので描画もしない＝データだけが残る。 */
+    nodeIds: [LASSO_KEEP],
+    x: Math.round((x1 + x2) / 2), y: Math.round((y1 + y2) / 2),
+    rx: Math.max(24, Math.round(Math.abs(x2 - x1) / 2)),
+    ry: Math.max(24, Math.round(Math.abs(y2 - y1) / 2)),
+    rotation: 0, label: '', color: SEL_INK, width: 2,
+    z: frontZ()
+  };
+  state.doc.frames.push(f);
+  state.selectedId = f.id;
+  state.selectedType = 'frame';
+  setMode({ type: 'select' });
+  showProperties();
+  flashStatus('投げ縄を置きました（つまみで大きさ・向きを変えられます）');
+}
+
+// ========== 前面／背面 ==========
+function currentSelectedElement() {
+  if (!state.selectedId) return null;
+  return allElements().find(e => e.el.id === state.selectedId) || null;
+}
+/* 並べ替えの前に全要素へ通し番号を振り直す。今の見た目の順番をそのまま番号にするので、
+   振り直しただけでは表示は一切変わらない（入れ替えを素直に書けるようにするための下ごしらえ） */
+function normalizeZ() {
+  const list = allElements().map(e => ({ e, z: elemZ(e) }));
+  list.sort((a, b) => a.z - b.z);
+  list.forEach((x, i) => { x.e.el.z = i; });
+  return list.map(x => x.e);
+}
+function reorderSelected(op) {
+  const sel = currentSelectedElement();
+  if (!sel) return;
+  /* 端に居る要素をさらに外へ動かそうとした時は何もしない。
+     ここで履歴を積むと「元に戻す」に空振りの段が挟まり、押しても何も変わらなく見えるため */
+  const cur = allElements().map(e => ({ id: e.el.id, z: elemZ(e) })).sort((a, b) => a.z - b.z);
+  const at = cur.findIndex(e => e.id === sel.el.id);
+  const last = cur.length - 1;
+  if ((op === 'front' || op === 'up') && at === last) return;
+  if ((op === 'back' || op === 'down') && at === 0) return;
+  beforeChange();
+  const ordered = normalizeZ();
+  const i = ordered.findIndex(e => e.el.id === sel.el.id);
+  const n = ordered.length;
+  if (i < 0) return;
+  if (op === 'front') {
+    sel.el.z = n;
+  } else if (op === 'back') {
+    sel.el.z = -1;
+  } else if (op === 'up' && i < n - 1) {
+    const other = ordered[i + 1].el;
+    const t = other.z; other.z = sel.el.z; sel.el.z = t;
+  } else if (op === 'down' && i > 0) {
+    const other = ordered[i - 1].el;
+    const t = other.z; other.z = sel.el.z; sel.el.z = t;
+  }
+  render();
+  const labels = { front: '最前面へ移動', up: '前面へ移動', down: '背面へ移動', back: '最背面へ移動' };
+  flashStatus(labels[op] || '並び順を変更しました');
+}
+
 // ========== Click handlers ==========
 function handleNodeClick(id) {
+  if (state.mode.type === 'draw') return;   // 作図中は選択を変えない
   if (state.mode.type === 'text') { placeTextAtPointer(); return; }
   if (state.mode.type === 'line') {
     if (!state.mode.firstId) {
@@ -1609,18 +2167,24 @@ function handleNodeClick(id) {
       // ignore self
     } else {
       const lt = state.mode.lineType;
+      const fromIsLine = state.mode.firstKind === 'line';
       // prevent duplicate same-type line
-      const dup = state.doc.lines.find(l =>
-        l.type === lt &&
-        ((l.fromId === state.mode.firstId && l.toId === id) ||
-         (l.fromId === id && l.toId === state.mode.firstId)));
+      const dup = fromIsLine
+        ? state.doc.lines.find(l =>
+            l.type === lt && l.fromId === state.mode.firstId && l.toId === id)
+        : state.doc.lines.find(l =>
+            l.type === lt &&
+            ((l.fromId === state.mode.firstId && l.toId === id) ||
+             (l.fromId === id && l.toId === state.mode.firstId)));
       if (!dup) {
         beforeChange();
         state.doc.lines.push({
           id: genId(), type: lt, fromId: state.mode.firstId, toId: id
         });
         const labels = { marriage: '婚姻線', divorce: '離婚線', parent: '親子線', sibling: 'きょうだい線' };
-        flashStatus(`${labels[lt] || '関係線'}を作成しました`);
+        flashStatus(fromIsLine
+          ? '婚姻線の中央から親子線を引きました'
+          : `${labels[lt] || '関係線'}を作成しました`);
       }
       setMode({ type: 'select' });
     }
@@ -1644,6 +2208,18 @@ function handleNodeClick(id) {
 
 function handleLineClick(id) {
   if (state.mode.type === 'text') { placeTextAtPointer(); return; }
+  /* 親子線モードの1点目に限り、婚姻線・離婚線そのものを起点として選べる。
+     再婚などで婚姻線が2本ある人でも、どちらの夫婦から降ろすかを指定できる。 */
+  if (state.mode.type === 'line' && state.mode.lineType === 'parent' && !state.mode.firstId) {
+    const l = state.doc.lines.find(x => x.id === id);
+    if (l && (l.type === 'marriage' || l.type === 'divorce')) {
+      state.mode.firstId = id;
+      state.mode.firstKind = 'line';
+      updateModeStatus();
+      render();
+    }
+    return;   // 他の種類の線は親子線の起点にできない（何も起きない）
+  }
   if (state.mode.type !== 'select') return;
   state.selectedId = id;
   state.selectedType = 'line';
@@ -1672,6 +2248,8 @@ function handleTextClick(id) {
 function placeTextAt(x, y) {
   beforeChange();
   const newText = { id: genId(), x, y, text: '', fontSize: 14, fontStyle: 'normal' };
+  const tz = newElementZ();
+  if (tz !== null) newText.z = tz;
   state.doc.texts.push(newText);
   state.selectedId = newText.id;
   state.selectedType = 'text';
@@ -1694,8 +2272,103 @@ function placeTextAtPointer() {
   placeTextAt(p.x / z, p.y / z);
 }
 
+/* ========== 自由線・投げ縄の作図（ドラッグ／クリック2回の両対応） ==========
+   ドラッグ: 押した所から離した所まで。DRAW_DRAG_MIN 未満しか動かなければクリック扱い。
+   クリック2回: 1回目で始点、2回目で終点。指でも操作しやすいよう両方を残す。 */
+let drawStart = null;      // 押し下げ位置（論理座標）
+let drawPreview = null;    // 作図中のプレビュー図形
+
+/* 論理座標。getPointerPosition は拡大率が掛かった値を返すため、割り戻して揃える
+   （テキスト配置・ノードのドラッグと同じ扱い） */
+function logicalPointer() {
+  const p = stage.getPointerPosition();
+  if (!p) return null;
+  const z = state.zoom || 1;
+  return { x: p.x / z, y: p.y / z };
+}
+
+function clearDrawPreview() {
+  drawStart = null;
+  if (drawPreview) {
+    drawPreview.destroy();
+    drawPreview = null;
+    layerUI.batchDraw();
+  }
+}
+
+function showDrawPreview(a, b) {
+  const isEllipse = state.mode.shape === 'ellipse';
+  if (!drawPreview) {
+    drawPreview = isEllipse
+      ? new Konva.Ellipse({ x: 0, y: 0, radiusX: 1, radiusY: 1,
+          stroke: SEL_INK, strokeWidth: 2, dash: [10, 5], fillEnabled: false })
+      : new Konva.Line({ points: [0, 0, 0, 0],
+          stroke: SEL_INK, strokeWidth: 2, dash: [6, 4], lineCap: 'round' });
+    layerUI.add(drawPreview);
+  }
+  if (isEllipse) {
+    drawPreview.x((a.x + b.x) / 2);
+    drawPreview.y((a.y + b.y) / 2);
+    drawPreview.radiusX(Math.max(1, Math.abs(b.x - a.x) / 2));
+    drawPreview.radiusY(Math.max(1, Math.abs(b.y - a.y) / 2));
+  } else {
+    drawPreview.points([a.x, a.y, b.x, b.y]);
+  }
+  layerUI.batchDraw();
+}
+
+function commitDraw(a, b) {
+  if (state.mode.shape === 'ellipse') createLassoEllipse(a.x, a.y, b.x, b.y);
+  else createFreeLine(a.x, a.y, b.x, b.y);
+}
+
+stage.on('mousedown touchstart', () => {
+  if (state.mode.type !== 'draw') return;
+  const p = logicalPointer();
+  if (!p) return;
+  drawStart = p;
+});
+
+/* 紙の外でマウスを離すと mouseup が届かず始点が残る。戻ってきた時に
+   古い始点から線が伸びて見えるので、外へ出た時点で描きかけを片付ける */
+stage.on('mouseleave', () => {
+  if (state.mode.type === 'draw') clearDrawPreview();
+});
+
+stage.on('mousemove touchmove', () => {
+  if (state.mode.type !== 'draw') return;
+  const origin = drawStart || state.mode.anchor;
+  if (!origin) return;
+  const p = logicalPointer();
+  if (!p) return;
+  showDrawPreview(origin, p);
+});
+
+stage.on('mouseup touchend', () => {
+  if (state.mode.type !== 'draw') return;
+  const p = logicalPointer();
+  const s = drawStart;
+  drawStart = null;
+  if (!p) { clearDrawPreview(); return; }
+  const moved = s && Math.sqrt(Math.pow(p.x - s.x, 2) + Math.pow(p.y - s.y, 2)) >= DRAW_DRAG_MIN;
+  if (moved) {
+    clearDrawPreview();
+    commitDraw(s, p);
+    return;
+  }
+  if (state.mode.anchor) {
+    const a = state.mode.anchor;
+    clearDrawPreview();
+    commitDraw(a, p);
+  } else if (s) {
+    state.mode.anchor = s;       // クリック2回方式の1回目
+    updateModeStatus();
+  }
+});
+
 // stage click on empty area (Konva-level)
 stage.on('click tap', (e) => {
+  if (state.mode.type === 'draw') return;   // 作図は上の押下/離上で処理済み
   if (state.mode.type === 'text') {
     placeTextAtPointer();
     return;
@@ -1737,6 +2410,8 @@ function showProperties(opts) {
   $('propsLine').hidden = state.selectedType !== 'line';
   $('propsFrame').hidden = state.selectedType !== 'frame';
   $('propsText').hidden = state.selectedType !== 'text';
+  /* 重なり順は種類を問わず、何か選んでいる時だけ出す */
+  $('propsOrder').hidden = state.selectedId === null;
 
   if (state.selectedType === 'node') {
     const n = currentNode();
@@ -1745,6 +2420,7 @@ function showProperties(opts) {
     $('pAge').value = (n.age === '' || n.age == null) ? '' : n.age;
     $('pRelation').value = n.relation || '';
     $('pNote').value = n.note || '';
+    $('pInner').value = n.inner || '';
     const flags = [];
     if (n.deceased) flags.push('死亡');
     if (n.isIP) flags.push('本人(IP)');
@@ -1765,13 +2441,34 @@ function showProperties(opts) {
   } else if (state.selectedType === 'line') {
     const l = state.doc.lines.find(x => x.id === state.selectedId);
     if (!l) return;
-    const labels = { marriage: '婚姻線', divorce: '離婚線', parent: '親子線', sibling: 'きょうだい線' };
-    $('lineInfo').textContent = `${labels[l.type] || l.type}（削除キーで削除）`;
+    const labels = { marriage: '婚姻線', divorce: '離婚線', parent: '親子線', sibling: 'きょうだい線', free: '自由線' };
+    let info = `${labels[l.type] || l.type}（削除キーで削除）`;
+    if (l.type === 'free') {
+      info = '自由線：選択中の両端のつまみを動かすと長さ・角度を変えられます（削除キーで削除）';
+    } else if (l.type === 'parent' && marriageAnchorOf(l)) {
+      info = '親子線：婚姻線の中央から出ています（削除キーで削除）';
+    }
+    $('lineInfo').textContent = info;
+    /* 矢印は自由線だけの設定。関係線では欄ごと隠す */
+    $('lArrowRow').hidden = (l.type !== 'free');
+    $('lWidth').value = String((typeof l.width === 'number' && l.width > 0) ? l.width : 2);
+    $('lDash').value = l.dash || 'solid';
+    $('lColor').value = l.color || LINE_INK;
+    $('lArrow').value = l.arrow || 'none';
   } else if (state.selectedType === 'frame') {
     const f = state.doc.frames.find(x => x.id === state.selectedId);
     if (!f) return;
     $('fLabel').value = f.label || '';
-    $('frameInfo').textContent = `${(f.nodeIds || []).length}人を含む同居枠（削除キーで削除）`;
+    const isEllipse = (f.type === 'ellipse');
+    $('fEllipseRow').hidden = !isEllipse;
+    $('fLabel').placeholder = isEllipse ? '（任意）囲みの見出し' : '同居';
+    if (isEllipse) {
+      $('fColor').value = f.color || SEL_INK;
+      $('fWidth').value = String((typeof f.width === 'number' && f.width > 0) ? f.width : 2);
+      $('frameInfo').textContent = '投げ縄：つまみで大きさ、上の丸ハンドルで向きを変えられます（削除キーで削除）';
+    } else {
+      $('frameInfo').textContent = `${(f.nodeIds || []).length}人を含む同居枠（削除キーで削除）`;
+    }
   } else if (state.selectedType === 'text') {
     const t = state.doc.texts.find(x => x.id === state.selectedId);
     if (!t) return;
@@ -1783,7 +2480,7 @@ function showProperties(opts) {
 
 // property edit binding (input → state, render)
 function bindPropertyInputs() {
-  ['pName', 'pAge', 'pRelation', 'pNote'].forEach(id => {
+  ['pName', 'pAge', 'pRelation', 'pNote', 'pInner'].forEach(id => {
     $(id).addEventListener('input', () => {
       const n = currentNode();
       if (!n) return;
@@ -1791,6 +2488,7 @@ function bindPropertyInputs() {
       n.age = $('pAge').value;
       n.relation = $('pRelation').value;
       n.note = $('pNote').value;
+      n.inner = $('pInner').value;
       render();
     });
     $(id).addEventListener('focus', () => {
@@ -1809,6 +2507,41 @@ function bindPropertyInputs() {
     if (!$('fLabel')._editPushed) { beforeChange(); $('fLabel')._editPushed = true; }
   });
   $('fLabel').addEventListener('blur', () => { $('fLabel')._editPushed = false; });
+
+  /* 線の見た目（関係線・自由線 共通）。既定値は従来と同じなので、
+     触っていない線の描かれ方は変わらない */
+  function currentLine() {
+    if (state.selectedType !== 'line') return null;
+    return state.doc.lines.find(x => x.id === state.selectedId) || null;
+  }
+  [['lWidth', 'width', v => parseInt(v, 10) || 2],
+   ['lDash', 'dash', v => v || 'solid'],
+   ['lColor', 'color', v => v || LINE_INK],
+   ['lArrow', 'arrow', v => v || 'none']].forEach(([id, key, conv]) => {
+    $(id).addEventListener('change', () => {
+      const l = currentLine();
+      if (!l) return;
+      beforeChange();
+      l[key] = conv($(id).value);
+      render();
+    });
+  });
+
+  /* 投げ縄の線の色・太さ */
+  function currentFrame() {
+    if (state.selectedType !== 'frame') return null;
+    return state.doc.frames.find(x => x.id === state.selectedId) || null;
+  }
+  [['fColor', 'color', v => v || SEL_INK],
+   ['fWidth', 'width', v => parseInt(v, 10) || 2]].forEach(([id, key, conv]) => {
+    $(id).addEventListener('change', () => {
+      const f = currentFrame();
+      if (!f) return;
+      beforeChange();
+      f[key] = conv($(id).value);
+      render();
+    });
+  });
   $('tText').addEventListener('input', () => {
     const t = state.doc.texts.find(x => x.id === state.selectedId);
     if (!t) return;
@@ -2146,7 +2879,7 @@ function writeSuGenogram(name, opts) {
   var nameKey = String(name == null ? '' : name).replace(/\s+/g, '') ? suGenoNameKey(name) : '';
   if ((mid == null || mid === '') && !nameKey) { fin(); return; }  // 手がかりが何も無い
   try {
-    if (!state.doc.nodes || !state.doc.nodes.length) { fin(); return; } // 空の家系図は書き出さない
+    if (!hasAnyContent()) { fin(); return; } // 空の家系図は書き出さない
     buildExportCanvas(function (canvas) {
       try {
         var img = canvas.toDataURL('image/jpeg', 0.6); // サムネイル（容量節約）
@@ -2199,7 +2932,7 @@ function backfillSuGenograms() {
     if (i >= todo.length) { restore(); return; }
     var n = todo[i], doc = null;
     try { doc = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + n) || 'null'); } catch (e) { doc = null; }
-    if (!doc || !Array.isArray(doc.nodes) || !doc.nodes.length) { step(i + 1); return; }
+    if (!doc || !hasAnyContent(doc)) { step(i + 1); return; }
     state.doc = { nodes: doc.nodes || [], lines: doc.lines || [], frames: doc.frames || [], texts: doc.texts || [] };
     state.clientName = n;
     state.selectedId = null; state.selectedType = null;
@@ -2348,7 +3081,7 @@ async function loadDoc(name, opts) {
 }
 
 function newDoc() {
-  if ((state.doc.nodes.length || state.doc.texts.length) &&
+  if (hasAnyContent() &&
     !confirm('現在の内容を破棄して新規作成しますか？\n（保存していない変更は失われます）')) return;
   state.clientName = '';
   state.doc = makeEmptyDoc();
@@ -2441,6 +3174,21 @@ function getContentBounds() {
     minY = Math.min(minY, t.y); maxY = Math.max(maxY, t.y + 30);
     any = true;
   });
+  /* 自由線・投げ縄を範囲に入れないと、JPG/PDF で端が切れる */
+  (state.doc.lines || []).forEach(l => {
+    if (l.type !== 'free') return;
+    minX = Math.min(minX, l.x1, l.x2); maxX = Math.max(maxX, l.x1, l.x2);
+    minY = Math.min(minY, l.y1, l.y2); maxY = Math.max(maxY, l.y1, l.y2);
+    any = true;
+  });
+  (state.doc.frames || []).forEach(f => {
+    if (f.type !== 'ellipse') return;
+    /* 回転していても収まるよう、長い方の半径で正方形に見積もる（安全側） */
+    const r = Math.max(f.rx || 0, f.ry || 0) + ((f.width || 2) / 2) + 18;
+    minX = Math.min(minX, f.x - r); maxX = Math.max(maxX, f.x + r);
+    minY = Math.min(minY, f.y - r); maxY = Math.max(maxY, f.y + r);
+    any = true;
+  });
 
   if (!any) return { x: 0, y: 0, width: STAGE_W, height: STAGE_H };
 
@@ -2461,10 +3209,14 @@ function buildExportCanvas(callback) {
 
   const bounds = getContentBounds();
   const PR = 2;
+  /* 作図中のプレビュー（点線の下書き）は出力に写さない */
+  const uiWasVisible = layerUI.visible();
+  layerUI.visible(false);
   const stagePng = stage.toDataURL({
     x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
     pixelRatio: PR, mimeType: 'image/png'
   });
+  layerUI.visible(uiWasVisible);
 
   // restore selection
   state.selectedId = prevSel; state.selectedType = prevType;
@@ -2590,6 +3342,24 @@ function bindUIEvents() {
     });
   });
 
+  // 自由線・投げ縄（もう一度押すと解除）
+  document.querySelectorAll('.tbtn[data-draw]').forEach(b => {
+    b.addEventListener('click', () => {
+      const shape = b.dataset.draw;
+      if (state.mode.type === 'draw' && state.mode.shape === shape) {
+        setMode({ type: 'select' });
+      } else {
+        setMode({ type: 'draw', shape: shape, anchor: null });
+      }
+    });
+  });
+
+  // 重なり順（前面／背面）
+  $('btnZFront').addEventListener('click', () => reorderSelected('front'));
+  $('btnZUp').addEventListener('click', () => reorderSelected('up'));
+  $('btnZDown').addEventListener('click', () => reorderSelected('down'));
+  $('btnZBack').addEventListener('click', () => reorderSelected('back'));
+
   // Frame mode (toggle: enter / commit)
   $('btnFrame').addEventListener('click', () => {
     if (state.mode.type === 'frame') {
@@ -2597,6 +3367,9 @@ function bindUIEvents() {
       const ids = state.mode.nodeIds;
       if (ids.length >= 1) {
         beforeChange();
+        /* 同居枠は自動で最前面に出さない（既定の帯＝最背面側に置く）。
+           枠の内側は Konva の当たり判定を持つため、人物より前に来ると
+           囲まれた人物をクリックもドラッグもできなくなるため。 */
         state.doc.frames.push({
           id: genId(), type: 'cohabitation',
           nodeIds: ids.slice(), padding: 22, label: '同居'
