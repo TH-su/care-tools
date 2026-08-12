@@ -141,6 +141,59 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .meds2-na{color:var(--g5)}
 /* 薬剤名リンク。既存の本文と同じ色のまま、点線の下線でだけ「押せる」と分かるようにする */
 .mlink{color:inherit; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px}
+/* ── 入居者基本情報（外部様式）のチェック表示（2026-08-12 追加） ──
+   画面と印刷で同じ見た目にする。□＋✓で、色だけに意味を持たせない（介護現場要件4）。
+   ★□は固定寸法（12px）なので、中身が空でも✓でも幅は動かない。だから未チェック時は
+     ✓を出さない（透明の✓を置くと、読み上げとコピー＆ペーストで全項目が「✓」になる）。 */
+.bfck{display:inline-flex; align-items:center; gap:4px; margin-right:12px; white-space:nowrap;
+  font-size:0.875rem; line-height:1.5}
+.bfck i{width:12px; height:12px; flex:0 0 12px; border:1px solid var(--g7); border-radius:2px;
+  display:inline-block; text-align:center; line-height:11px; font-size:11px; font-weight:700;
+  font-style:normal; color:var(--g9)}
+.bfck.on{font-weight:700}
+.bfwrap{display:flex; flex-wrap:wrap; padding:1px 0}
+.bfadl{width:100%; border-collapse:collapse; font-size:0.875rem}
+.bfadl th,.bfadl td{border:1px solid var(--g3); padding:2px 5px; vertical-align:middle}
+.bfadl thead th{background:var(--g1); font-size:0.6875rem; color:var(--g7); font-weight:700; text-align:center}
+.bfadl th.bfrow{width:88px; text-align:left; font-weight:700; background:var(--g0)}
+.bfadl td.bfc{width:46px; text-align:center}
+.bfadl .bfmark{font-style:normal; font-weight:700}
+.bfdis{width:100%; border-collapse:collapse; font-size:0.875rem}
+.bfdis th,.bfdis td{border:1px solid var(--g3); padding:2px 5px; word-break:break-word}
+.bfdis thead th{background:var(--g1); font-size:0.6875rem; color:var(--g7); font-weight:700}
+.bfdis .bfno{width:26px; color:var(--g6); text-align:center}
+.bfdis .bfonset{width:112px}
+.bfdis .bfhosp{width:34%}
+.bflegacy{font-size:0.8125rem; line-height:1.7}
+.bflegacy b{color:var(--g7)}
+/* ── 様式の編集UI（画面のみ。印刷面には出ない） ── */
+.bfe-h{margin:14px 0 4px; font-size:0.9375rem; color:var(--pri-d); border-bottom:1px solid var(--g2); padding-bottom:3px}
+.bfe-row{display:flex; align-items:flex-start; gap:8px; padding:4px 0; border-bottom:1px dotted var(--g2)}
+.bfe-lab{flex:0 0 120px; font-weight:700; font-size:0.875rem; color:var(--g7); padding-top:12px}
+.bfe-body{flex:1; min-width:0}
+/* タップ領域は44px以上（介護現場要件2）。チェックは手袋でも押せる大きさにする */
+.bfe{display:inline-flex; align-items:center; gap:6px; margin:0 12px 0 0; min-height:44px;
+  font-size:0.9375rem; cursor:pointer}
+.bfe input{width:20px; height:20px; flex:0 0 20px}
+.bfet,.bfes{padding:8px; border:1px solid var(--g3); border-radius:6px; font-size:0.9375rem;
+  min-height:44px; background:#fff; max-width:100%}
+.bfe-inline{display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:0.9375rem}
+.bfe-inline .fld{margin:0}
+.bfe-svc{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:0 12px}
+.bfe-svc1{display:flex; align-items:center; gap:6px}
+.bfe-svc1 .bfet{flex:1; min-width:0}
+@media (max-width:640px){ .bfe-row{flex-direction:column} .bfe-lab{flex:none; padding-top:0} }
+/* 「移行前の記載」は画面だけに出す（既存の .sec-unmapped と同じ扱い＝印刷の高さを変えない） */
+/* 紙は画面よりさらに詰める（様式化でページが増えないようにするため。実測で調整） */
+@media print{
+  .sec-bflegacy{display:none !important}
+  .bfadl,.bfdis{page-break-inside:avoid}
+  .bfck{line-height:1.35; margin-right:10px}
+  .bfck i{border-color:#333; color:#000}
+  .bfadl th,.bfadl td,.bfdis th,.bfdis td{padding:1px 4px; border-color:#666}
+  /* グレーの小さい文字はモノクロ印刷で潰れる（既存 .btbl .bno と同じ扱い） */
+  .bfadl thead th,.bfdis thead th,.bfdis .bfno{color:#000}
+}
 .mlink:hover,.mlink:focus{color:var(--pri-d); text-decoration-style:solid}
 @media print{
   .mlink{color:#000 !important; text-decoration:none !important}   /* 紙では普通の文字に戻す */
@@ -589,6 +642,13 @@ var SECTIONS={
   wishes:['complaint','wishSelf','wishFamily','goal','acp','dnar','strengths'],
   support:['supportLog'],
   medSupport:['medicalSupportLog']
+  /* ★入居者基本情報（外部様式）の18項目は、ここにも GAS の SECTIONS にも載せない。
+     載せる必要が無い＝どの getSection からも読まれないため（呼ばれているのは
+     facesheet_safe と meds_view の2つだけ・2026-08-12 実測）。
+     保存は saveResident が dataJson を丸ごと書き、事務所PCの表示は getResident が
+     丸ごと返すので、GAS を1行も変えずに新項目が往復する。
+     現場タブレット（facesheet_safe の20項目）へは意図的に出さない
+     ＝要配慮情報を現場端末のキャッシュに増やさない（personal-info.md）。 */
 };
 // 現場タブレット（field）で閲覧してよい「安全情報のみ」の正準リスト。
 // GAS getSection 'facesheet_safe' と facesheet.html の field 限定ビューが共有する契約。
@@ -596,9 +656,12 @@ var SECTIONS={
 // 服薬管理3項目（管理方法・介助度・拒否）は現場ケアに直結するため安全情報に含める（2026-07 決定）。
 // hospitalized（入院中の真偽のみ・病名等は含めない）は現場の見落とし防止のため追加（2026-08）。
 // この20項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+// 2026-08-12: 様式化した8項目（要配慮でなく現場のケアに直結するもの）を追加。28項目。
+// ★病名・サービス事業所・備考・同意は含めない（要配慮情報を現場端末に増やさない）。
 var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
   'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
-  'medMgmt','medAssist','medRefusal','hospitalized'];
+  'medMgmt','medAssist','medRefusal','hospitalized',
+  'adlGrid','moveAid','excreteWay','bathPlace','medLevel','medExists','bpsd','night'];
 // 対象アプリ（各ケアアプリに表示・記録する対象者かのフラグ）
 // 既定は全てON（介護現場では対象者の取りこぼしを避けるため。対象外を明示的に外す運用）
 var APP_TARGETS=[['excretion','排泄記録'],['weight','体重記録'],['schedule','週間計画']];
@@ -628,6 +691,11 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   // ★stateLog（状態の変更履歴・最大50件）も許可する。許可していないと、編集フォームから保存した
   //   だけで履歴が消える（入力欄が無いので collectForm が拾わず、GAS が dataJson を全置換するため）
   'hospitalized','hospitalizedAt','stateLog',
+  /* 入居者基本情報（外部様式）の18項目（2026-08-12 追加）。既存キーと併存させ、置き換えない */
+  'diseases','services','adlGrid','moveAid','bathPlace','excreteWay',
+  'medLevel','medExists','medContent','commLevel',
+  'dementiaExists','shortMemory','decisionAbility','communicateAbility','bpsd','night',
+  'nightSleepMed','formNote','infoConsent','bfSaved',
   // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避。
   // 2026-08-08 から詳細画面の「移行時の退避」欄に読み取り専用で表示する（印刷には出さない）。
   // 入力欄は作らないため、保存時はここを通して引き継ぐ（下の collectForm）。
@@ -639,6 +707,35 @@ var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri',
 // 同意・確認書。郵便物開封／主治医・薬管理は「有無」でなく取扱方法の文言が入るため全て文字列で受ける。
 var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
   ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
+
+/* ═══════════ 入居者基本情報（外部様式）の選択肢 ═══════════
+   2026-08-12 管理者の指示で、外部からいただく「入居者基本情報」の様式に合わせて
+   チェック式へ差し替えた。転記の手間を減らし、画面と紙をコンパクトにするのが目的。
+   ★既存キー（mobility・excretion・medMgmt 等）は1つも消していない。
+     入力欄を新様式へ移しただけで、値は「移行前の記載」として読み取り専用で残る。
+     消すと訪問診療アプリ・現場タブレットの安全情報20項目・一括編集が壊れる。 */
+var BF_LEVELS=[['self','自立'],['watch','見守り'],['part','一部介助'],['full','全介助']];
+var BF_ADL_ROWS=[['move','移動方法'],['oral','口腔清潔'],['meal','食　事'],['bath','入　浴'],['excrete','排　泄']];
+/* 様式の並び順（左列→中列→右列）をそのまま保つ。印刷が原本と同じ見た目になる */
+var BF_SERVICES=[['homeCare','訪問介護'],['homeBath','訪問入浴'],['shortStay','短期入所'],
+  ['homeNurse','訪問看護'],['dayCare','通所介護'],['dayRehab','通所リハ'],
+  ['homeRehab','訪問リハ'],['smallMulti','小規模多機能'],['groupHome','グループホーム'],
+  ['tokuyo','特養'],['roken','老健'],['svcOther','その他'],
+  ['welfareRent','福祉用具貸与']];
+var BF_MOVE_AID=[['walker','歩行器'],['wheelchair','車いす']];
+var BF_BATH_PLACE=[['home','自宅（浴室）'],['visitBath','訪問入浴'],['dayBath','通所系'],['wipe','清拭のみ']];
+var BF_EXCRETE_WAY=[['toilet','トイレ'],['pwc','PWC'],['catheter','膀胱留置カテーテル'],['selfCath','自己導尿'],['diaper','オムツ']];
+var BF_BPSD=[['hallu','幻視・幻聴'],['unrest','不穏'],['delusion','妄想'],['violence','暴言・暴力'],
+  ['dayNight','昼夜逆転'],['unclean','不潔行為'],['wander','徘徊'],['resist','介護への抵抗'],['bpsdOther','その他']];
+var BF_NIGHT=[['good','良眠'],['bad','不眠'],['nightOther','その他']];
+var BF_DEMENTIA_RANKS=['','自立','Ⅰ','Ⅱa','Ⅱb','Ⅲa','Ⅲb','Ⅳ','M'];
+var BF_SHORT_MEMORY=['','問題なし','問題あり'];
+var BF_DECISION=['','自立','いくらか困難','見守りが必要','判断できない'];
+var BF_TRANSMIT=['','伝えられる','いくらか困難','具体的要求に限られる','伝えられない'];
+var BF_MED_CONTENT=['','別紙参照','薬局へ確認してください'];
+var BF_YESNO=['','有','無'];
+var BF_COMM_LEVEL=['','自立','配慮が必要'];
+var BF_MAX_DISEASES=8;   // 病名表の行数上限（誤操作で無限に増やさない）
 
 /* ═══════════ API（トークン付き・タイムアウト・エラー処理） ═══════════ */
 function apiGet(params,timeoutMs){
@@ -1490,6 +1587,285 @@ function perResidentLinksHtml(r){
 }
 /* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
 function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
+
+/* ═══════════ 入居者基本情報（外部様式）── 正規化と旧データからの変換 ═══════════
+   方針（2026-08-12）:
+   ・保存済みの新項目があれば【必ずそれを優先】する。旧値からの推定と混ぜない
+     （混ぜると、人が外したチェックが次の表示で復活する＝消したのに戻る）
+   ・旧値からの変換は「機械的に確実な分だけ」。曖昧なものは空のままにする
+     （例: 入浴の「一般浴」から入浴場所は決められない。誤ったチェックは記録の誤り）
+   ・変換は【表示のためだけ】。ここで保存はしない。編集画面を開いて保存した時に確定する
+   ・置き換えた元の値は bfLegacy() が「移行前の記載」として返す（画面のみ・データは消さない） */
+function bfObj(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }
+function bfArr(v){ return Array.isArray(v) ? v : []; }
+function bfHas(s,re){ return re.test(String(s==null?'':s)); }
+function bfStr(v){ return String(v==null?'':v).trim(); }
+function bfCount(o){ return Object.keys(bfObj(o)).length; }
+/* 自立／見守り／一部介助／全介助 のどれかへ寄せる。判定できなければ '' を返す */
+function bfLevelOf(s){
+  var t=bfStr(s);
+  if(!t) return '';
+  if(/全介助|寝たきり/.test(t))            return 'full';
+  if(/一部介助|部分介助/.test(t))          return 'part';
+  if(/見守り|声かけ|手渡し/.test(t))       return 'watch';
+  if(/自立|独歩|自己管理|問題なし/.test(t)) return 'self';
+  return '';
+}
+/* 認知症自立度の表記ゆれを正す。「Ⅲa」と「IIIa」が混在すると選択肢に一致せず、
+   選択式に切り替わらない（＝様式化した意味が無い）。
+   ★文字列【全体】が変換形と一致する時だけ直す。「Ⅲa（H30判定）」のような
+     補足つきの記載は1文字も触らず、そのまま文字入力として残す（勝手に削らない・原則6）。 */
+var BF_RANK_ALIAS={'I':'Ⅰ','II':'Ⅱ','III':'Ⅲ','IV':'Ⅳ','Ⅰ':'Ⅰ','Ⅱ':'Ⅱ','Ⅲ':'Ⅲ','Ⅳ':'Ⅳ'};
+function bfNormRank(s){
+  var t=bfStr(s);
+  if(t==='' || BF_DEMENTIA_RANKS.indexOf(t)>0) return t;
+  var m=/^([IVⅠⅡⅢⅣ]+)\s*([ab]?)$/i.exec(t);
+  if(!m) return t;
+  var head=BF_RANK_ALIAS[m[1].toUpperCase()] || BF_RANK_ALIAS[m[1]];
+  if(!head) return t;
+  var cand=head+(m[2]||'').toLowerCase();
+  return BF_DEMENTIA_RANKS.indexOf(cand)>0 ? cand : t;
+}
+/* 表示用に正規化した1名分を返す（純関数・引数を書き換えない） */
+function bfView(r){
+  r=r||{};
+  var v={};
+  v.diseases  = bfArr(r.diseases).filter(function(d){ return d && (bfStr(d.name)||bfStr(d.onset)||bfStr(d.hospital)); });
+  v.services  = bfObj(r.services);
+  v.bpsd      = bfObj(r.bpsd);
+  v.night     = bfObj(r.night);
+  /* ★様式を一度でも保存したら、旧データからの推定を【全部止める】。
+       止めないと「—（未選択）」に戻した項目が旧自由文から毎回復活し、選び直せない。
+       未入力（まだ様式を触っていない）と、明示的に空（人が空にした）を区別する
+       ＝multi-device-sync 原則4。 */
+  var derive = !r.bfSaved;
+  var g = bfObj(r.adlGrid);
+  v.adlGrid = { move:    g.move    || (derive ? bfLevelOf(r.mobility)  : ''),
+                oral:    g.oral    || '',
+                meal:    g.meal    || '',
+                bath:    g.bath    || '',
+                excrete: g.excrete || (derive ? bfLevelOf(r.excretion) : '') };
+  /* 補助チェックは「保存済みが1つでもあれば、それが人の意思」＝推定を足さない */
+  v.moveAid = bfObj(r.moveAid);
+  if(derive && !bfCount(v.moveAid)){
+    v.moveAid={};
+    if(bfHas(r.mobility,/歩行器/))        v.moveAid.walker=true;
+    if(bfHas(r.mobility,/車椅子|車いす/)) v.moveAid.wheelchair=true;
+  }
+  v.excreteWay = bfObj(r.excreteWay);
+  if(derive && !bfCount(v.excreteWay)){
+    v.excreteWay={};
+    if(bfHas(r.excretion,/おむつ|オムツ/))  v.excreteWay.diaper=true;
+    if(bfHas(r.excretion,/ポータブル|PWC/)) v.excreteWay.pwc=true;
+    if(bfHas(r.excretion,/カテーテル/))     v.excreteWay.catheter=true;
+  }
+  v.bathPlace = bfObj(r.bathPlace);
+  if(derive && !bfCount(v.bathPlace)){
+    v.bathPlace={};
+    if(bfHas(r.bath,/清拭/)) v.bathPlace.wipe=true;   /* 一般浴・機械浴からは場所を決めない */
+  }
+  v.medLevel   = bfStr(r.medLevel)   || (derive ? (bfLevelOf(r.medAssist)||bfLevelOf(r.medMgmt)) : '');
+  /* 薬の有無だけは確実に決まる（定期薬が入っていれば「有」）。ただし保存後は人の入力を尊重する */
+  v.medExists  = bfStr(r.medExists)  || (derive && bfStr(r.medsRegular) ? '有' : '');
+  v.medContent = bfStr(r.medContent);
+  v.commLevel  = bfStr(r.commLevel);            /* 自由文からは推定しない */
+  v.dementia   = bfNormRank(r.dementia);        /* 既存キーをそのまま使う（自立度） */
+  v.dementiaKnown  = BF_DEMENTIA_RANKS.indexOf(v.dementia) > 0;
+  v.dementiaExists = bfStr(r.dementiaExists) || (derive && (v.dementia||bfStr(r.dementiaType)) ? '有' : '');
+  v.bedriddenRank      = bfStr(r.bedriddenRank);
+  v.shortMemory        = bfStr(r.shortMemory);
+  v.decisionAbility    = bfStr(r.decisionAbility);
+  v.communicateAbility = bfStr(r.communicateAbility);
+  /* ★睡眠薬の【薬剤名】は night の中に入れない。night は現場タブレットの安全情報に
+       含める（夜勤の判断に要る）が、getSection はオブジェクトを丸ごと返すため、
+       中に薬剤名を置くと現場端末へ実処方が渡ってしまう（安全情報は「服薬の薬剤名は含めない」契約）。
+       トップレベルの別キーにして、SAFE_FIELDS に入れないことで確実に止める。 */
+  v.nightSleepMed = bfStr(r.nightSleepMed);
+  v.formNote    = bfStr(r.formNote);
+  v.infoConsent = !!r.infoConsent;
+  return v;
+}
+/* 新様式に置き換えた「元の記載」。空のものは出さない。画面だけに出し、印刷には載せない */
+/* 様式で新設した18キー。入力欄が描画されていない時の温存に使う */
+var BF_FORM_KEYS=['diseases','services','adlGrid','moveAid','bathPlace','excreteWay',
+  'medLevel','medExists','medContent','commLevel',
+  'dementiaExists','shortMemory','decisionAbility','communicateAbility','bpsd','night',
+  'nightSleepMed','formNote','infoConsent',
+  /* 「様式を一度でも保存したか」。旧データからの推定を止めるための印。
+     これが無いと、利用者が「—（未選択）」に戻しても次の表示で旧自由文から復活する
+     ＝選び直せない（multi-device-sync 原則4「未入力」と「明示的に空」を区別する）。 */
+  'bfSaved'];
+var BF_LEGACY_KEYS=[['currentDiseases','治療中の病気'],['mobility','移動'],['excretion','排泄'],
+  ['bath','入浴'],['medMgmt','服薬 管理方法'],['medAssist','服薬介助'],['problemBehavior','問題行動 等']];
+function bfLegacy(r){
+  r=r||{};
+  return BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
+                       .filter(function(x){ return x.value!==''; });
+}
+/* ── 描画部品（詳細画面＝印刷面で共用） ── */
+/* ★□は固定寸法（12px）なので、✓を入れても入れなくても幅は動かない。
+     そのため未チェック時は✓を【出さない】。透明の✓を置くと、画面読み上げと
+     コピー＆ペーストで全項目が「✓」になり、チェック済みと区別できなくなる。
+   ★これは【表示専用】でクリックできない。role="checkbox" にすると読み上げが
+     「操作できるチェックボックス」と案内してしまうので img＋aria-label で状態を読ませる
+     （太字＝色以外の手がかりも併用・介護現場要件4） */
+function bfCk(on,label){
+  return '<span class="bfck'+(on?' on':'')+'" role="img" aria-label="'+esc(label)+(on?'（該当）':'（該当なし）')+'">'+
+         '<i aria-hidden="true">'+(on?'✓':'')+'</i>'+esc(label)+'</span>';
+}
+/* 4段階のセルを1行ぶん。選ばれていない段階も枠だけ出す（様式と同じ見え方にする） */
+function bfLevelCells(cur){
+  return BF_LEVELS.map(function(p){
+    return '<td class="bfc">'+(cur===p[0]?'<i class="bfmark">✓</i>':'')+'</td>';
+  }).join('');
+}
+function bfChkList(defs,obj){
+  obj=bfObj(obj);
+  return defs.map(function(p){ return bfCk(!!obj[p[0]], p[1]); }).join('');
+}
+/* 補足の自由文（様式の「（　　）」に相当）。空なら1文字も出さない＝行の高さを増やさない */
+function bfNote(o){
+  var n=bfStr(bfObj(o).note);
+  return n ? '<span style="margin-left:2px;font-size:0.875rem">（'+esc(n)+'）</span>' : '';
+}
+/* ── 編集フォームの部品 ──
+   data-bfck / data-bftx / data-bfsel / data-bfradio に「ドット区切りのパス」を持たせ、
+   collectForm が bfSet() で組み立てる。項目ごとに回収コードを書かない（増やす時の抜けを防ぐ）。 */
+function bfSet(root,path,val){
+  var parts=String(path).split('.'), cur=root, i, k;
+  for(i=0;i<parts.length-1;i++){
+    k=parts[i];
+    if(cur[k]==null || typeof cur[k]!=='object') cur[k] = /^\d+$/.test(parts[i+1]) ? [] : {};
+    cur=cur[k];
+  }
+  cur[parts[parts.length-1]]=val;
+}
+/* チェックが外れた項目・空文字は持たない（保存を小さく保ち、false の山を作らない） */
+function bfPrune(o){
+  o=bfObj(o); var out={};
+  Object.keys(o).forEach(function(k){
+    var v=o[k];
+    if(v===true) out[k]=true;
+    else if(typeof v==='string' && v.trim()!=='') out[k]=v.trim();
+  });
+  return out;
+}
+function bfEditCk(path,label,on){
+  return '<label class="bfe"><input type="checkbox" data-bfck="'+esc(path)+'"'+(on?' checked':'')+'>'+esc(label)+'</label>';
+}
+/* ★placeholder だけに頼らない。見出しの無い入力欄なので aria-label を必ず付ける（HIG フォーム） */
+function bfEditTx(path,val,ph,w){
+  return '<input class="bfet" type="text" data-bftx="'+esc(path)+'" value="'+esc(bfStr(val))+'"'+
+         ' placeholder="'+esc(ph||'')+'" aria-label="'+esc(ph||path)+'"'+(w?(' style="width:'+w+'"'):'')+'>';
+}
+function bfEditSel(path,val,opts){
+  return '<select class="bfes" data-bfsel="'+esc(path)+'">'+opts.map(function(o){
+    return '<option value="'+esc(o)+'"'+(bfStr(val)===o?' selected':'')+'>'+esc(o===''?'—':o)+'</option>';
+  }).join('')+'</select>';
+}
+/* 4段階のラジオ。「—」で未選択に戻せるようにする（選び直せないと誤入力が直せない） */
+function bfEditLevel(path,cur){
+  var nm='bfr_'+String(path).replace(/[^A-Za-z0-9]/g,'_');
+  return '<label class="bfe"><input type="radio" name="'+nm+'" data-bfradio="'+esc(path)+'" value=""'+(!cur?' checked':'')+'>—</label>'+
+    BF_LEVELS.map(function(p){
+      return '<label class="bfe"><input type="radio" name="'+nm+'" data-bfradio="'+esc(path)+'" value="'+p[0]+'"'+(cur===p[0]?' checked':'')+'>'+esc(p[1])+'</label>';
+    }).join('');
+}
+function bfEditRow(label,body){
+  return '<div class="bfe-row"><span class="bfe-lab">'+esc(label)+'</span><span class="bfe-body">'+body+'</span></div>';
+}
+function bfDisRowsEdit(list,startIdx){
+  var base=startIdx||0;
+  return list.map(function(d,n){
+    d=d||{}; var i=base+n;
+    return '<div class="bfe-row"><span class="bfe-lab">'+(i+1)+'</span><span class="bfe-body">'+
+      bfEditTx('diseases.'+i+'.name',d.name,'病名','30%')+
+      bfEditTx('diseases.'+i+'.onset',d.onset,'発症時期','22%')+
+      bfEditTx('diseases.'+i+'.hospital',d.hospital,'医療機関','38%')+
+    '</span></div>';
+  }).join('');
+}
+function bfEditTa(path,val,ph){
+  return '<textarea class="bfet" data-bftx="'+esc(path)+'" rows="2" placeholder="'+esc(ph||'')+'" style="width:100%">'+esc(bfStr(val))+'</textarea>';
+}
+/* 義歯は既存キー denture（無/有/部分義歯/総義歯）をそのまま使う。新しいキーを増やさない */
+function bfDenture(v){
+  var t=bfStr(v), has=(t!=='' && t!=='無');
+  return '<span style="font-size:0.875rem;margin-right:6px">義歯:</span>'+bfCk(has,'有')+bfCk(t==='無','無')+
+         ((t==='部分義歯'||t==='総義歯') ? '<span style="font-size:0.875rem">（'+esc(t)+'）</span>' : '');
+}
+/* 様式ぶんの編集UIをまとめて返す（openEdit から1回だけ呼ぶ）。
+   ★既存キー（denture・dementia・bedriddenRank・commNotes）は従来の data-k のまま使う。
+     新しいキーを作って二重管理にしない。 */
+function bfEditHtml(r){
+  var v=bfView(r);
+  var dis=v.diseases.slice(); while(dis.length<3) dis.push({});
+  var H='<div class="cd"><div class="fgroup"><h3>入居者基本情報（様式）</h3>'+
+    '<p class="muted" style="margin:-4px 0 10px">外部からいただく「入居者基本情報」と同じ並び・同じチェックです。'+
+    '空欄のままでも保存できます。</p>';
+  H+='<h4 class="bfe-h">病名・発症時期・医療機関</h4>'+
+     '<div id="bfDisList">'+bfDisRowsEdit(dis)+'</div>'+
+     '<button class="btn btn-sec" id="bfDisAdd" type="button">＋ 病名を追加</button>'+
+     '<p class="muted" style="margin-top:4px">要らない行は3つとも空にしてください（空の行は保存されません）。</p>';
+  H+='<h4 class="bfe-h">介護保険等サービス利用状況（利用頻度等）</h4><div class="bfe-svc">'+
+    BF_SERVICES.map(function(p){
+      var s=bfObj(v.services[p[0]]);
+      return '<div class="bfe-svc1">'+bfEditCk('services.'+p[0]+'.on',p[1],!!s.on)+
+             bfEditTx('services.'+p[0]+'.name',s.name,'事業所名')+'</div>';
+    }).join('')+'</div>';
+  H+='<h4 class="bfe-h">ADL</h4>';
+  H+=bfEditRow('移動方法', bfEditLevel('adlGrid.move',v.adlGrid.move)+'<br>'+
+      bfEditCk('moveAid.walker','歩行器',!!v.moveAid.walker)+
+      bfEditCk('moveAid.wheelchair','車いす',!!v.moveAid.wheelchair)+
+      bfEditTx('moveAid.note',v.moveAid.note,'補足'));
+  H+=bfEditRow('口腔清潔', bfEditLevel('adlGrid.oral',v.adlGrid.oral)+'<br>'+
+      /* 選択肢は移動前（食事欄）と同じまま。空欄を足すと、これまで自動的に「無」が入っていた
+         方が未記入になる＝依頼外の挙動変更になるため足さない */
+      '<span class="bfe-inline">'+fld('denture','義歯',r.denture,'select',['無','有','部分義歯','総義歯'])+'</span>');
+  H+=bfEditRow('食事', bfEditLevel('adlGrid.meal',v.adlGrid.meal)+
+      '<br><span class="muted">食事形態（主食・副食・形態・とろみ）は下の「食事」欄で入力します。</span>');
+  H+=bfEditRow('入浴', bfEditLevel('adlGrid.bath',v.adlGrid.bath)+'<br>'+
+      BF_BATH_PLACE.map(function(p){return bfEditCk('bathPlace.'+p[0],p[1],!!v.bathPlace[p[0]])}).join('')+
+      bfEditTx('bathPlace.note',v.bathPlace.note,'補足'));
+  H+=bfEditRow('排泄', bfEditLevel('adlGrid.excrete',v.adlGrid.excrete)+'<br>'+
+      BF_EXCRETE_WAY.map(function(p){return bfEditCk('excreteWay.'+p[0],p[1],!!v.excreteWay[p[0]])}).join('')+
+      bfEditTx('excreteWay.note',v.excreteWay.note,'補足'));
+  H+='<h4 class="bfe-h">服薬管理</h4>';
+  H+=bfEditRow('服薬管理', bfEditLevel('medLevel',v.medLevel)+'<br>'+
+      '<span class="bfe-inline">薬の有無 '+bfEditSel('medExists',v.medExists,BF_YESNO)+
+      '　内容 '+bfEditSel('medContent',v.medContent,BF_MED_CONTENT)+'</span>');
+  H+='<h4 class="bfe-h">コミュニケーション</h4>';
+  H+=bfEditRow('コミュニケーション', '<span class="bfe-inline">'+bfEditSel('commLevel',v.commLevel,BF_COMM_LEVEL)+'</span>')+
+     fld('commNotes','配慮の内容',r.commNotes,'textarea');
+  H+='<h4 class="bfe-h">認知症状等</h4><div class="fgrid">'+
+      /* 認知症自立度は選択式にした。既存の記載が選択肢に無い場合だけ文字入力のまま出す
+         （選択式に強制すると、選べない記載が保存で消える） */
+      (( !bfStr(r.dementia) || v.dementiaKnown )
+        ? fld('dementia','認知症自立度',v.dementia,'select',BF_DEMENTIA_RANKS)   /* 表記ゆれを正した値で選ぶ */
+        : fld('dementia','認知症自立度（元の記載のまま）',r.dementia))+          /* 選択肢に無い記載は触らない */
+      fld('bedriddenRank','障害高齢者の日常生活自立度',r.bedriddenRank,'select',['','J1','J2','A1','A2','B1','B2','C1','C2'])+
+    '</div>'+
+    '<div class="fgrid">'+
+      '<div class="fld"><label>認知症状</label>'+bfEditSel('dementiaExists',v.dementiaExists,BF_YESNO)+'</div>'+
+      '<div class="fld"><label>短期記憶</label>'+bfEditSel('shortMemory',v.shortMemory,BF_SHORT_MEMORY)+'</div>'+
+      '<div class="fld"><label>意思決定</label>'+bfEditSel('decisionAbility',v.decisionAbility,BF_DECISION)+'</div>'+
+      '<div class="fld"><label>伝達能力</label>'+bfEditSel('communicateAbility',v.communicateAbility,BF_TRANSMIT)+'</div>'+
+    '</div>';
+  H+=bfEditRow('行動・心理症状',
+      BF_BPSD.map(function(p){return bfEditCk('bpsd.'+p[0],p[1],!!v.bpsd[p[0]])}).join('')+
+      bfEditTx('bpsd.note',v.bpsd.note,'その他の内容'));
+  H+='<h4 class="bfe-h">夜間の状態</h4>';
+  H+=bfEditRow('夜間の状態',
+      bfEditCk('night.sleepMed','睡眠薬使用有',!!v.night.sleepMed)+
+      /* 薬剤名は night の外（現場タブレットへ渡さないため。bfView のコメント参照） */
+      bfEditTx('nightSleepMed',v.nightSleepMed,'薬剤名（睡眠薬）')+'<br>'+
+      BF_NIGHT.map(function(p){return bfEditCk('night.'+p[0],p[1],!!v.night[p[0]])}).join('')+
+      bfEditTx('night.note',v.night.note,'補足'));
+  H+='<h4 class="bfe-h">備考・同意</h4>'+
+     bfEditTa('formNote',v.formNote,'様式の備考欄')+
+     '<div style="margin-top:6px">'+bfEditCk('infoConsent','この情報を提供することについて、ご本人またはご家族から同意を頂いています。',v.infoConsent)+'</div>';
+  return H+'</div></div>';
+}
 /* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
    効能は薬効辞書（meds-effect-dict.js）から引く【参考表示】で、保存はしない。
    ★保存データは1文字も増えない。表示のたびに引き直すので、辞書を直せば全員に即反映される。
@@ -1842,28 +2218,52 @@ function renderView(r){
       '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックでジェノグラム作成／編集" style="flex:1;min-height:300px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
+  /* ══ 入居者基本情報（外部様式）ここから ══
+     2026-08-12 管理者の指示で、外部からいただく様式と同じ並び・同じチェック表示にした。
+     ★詳細画面と印刷は同じDOM。ここを変えると紙も変わる（今回はそれが指示） */
+  var bf=bfView(r);
+  // 病名・発症時期・医療機関（様式の1段目）
+  var bfDisRows='';
+  for(var bdi=0; bdi<Math.max(bf.diseases.length,3); bdi++){
+    var bd=bf.diseases[bdi]||{};
+    bfDisRows+='<tr><td class="bfno">'+(bdi+1)+'</td><td>'+esc(bd.name||'')+'</td>'+
+               '<td class="bfonset">'+esc(bd.onset||'')+'</td><td class="bfhosp">'+esc(bd.hospital||'')+'</td></tr>';
+  }
+  /* 病名とサービス利用状況は1つのセクションにまとめる。
+     縦書きの見出し（.sec-lbl）が最低の高さを作るので、小さな枠を分けるとそれだけで紙が伸びる（実測） */
+  h+='<div class="sec"><div class="sec-lbl">病名・サービス</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none">'+
+      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>病名</th>'+
+      '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th></tr></thead>'+
+      '<tbody>'+bfDisRows+'</tbody></table>'+
+    '</div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+      '<span class="lab">介護保険等サービス利用状況（利用頻度等）</span>'+
+      /* ★事業所名はチェックの有無にかかわらず出す。チェックを付け忘れただけで
+           入力した事業所名が画面からも紙からも消えると、入力が無かったように見える */
+      '<div class="bfwrap">'+BF_SERVICES.map(function(p){
+        var s=bfObj(bf.services[p[0]]);
+        return bfCk(!!s.on, p[1]+(bfStr(s.name)?('（'+bfStr(s.name)+'）'):''));
+      }).join('')+'</div>'+
+    '</div></div></div>';
   // 医療情報
   h+='<div class="sec"><div class="sec-lbl">医療情報</div><div class="sec-body">'+
     '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX番号',r.hospitalFax)+'</div>'+
     '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
     '<div class="row-cells">'+cell('かかりつけ薬局',r.pharmacy)+cell('電話番号',r.pharmacyTel)+cell('FAX番号',r.pharmacyFax)+'</div>'+
-    '<div class="row-cells">'+
-      '<div class="cell"><span class="lab">アレルギー</span><div class="fulltext">'+esc(r.allergy||'　')+'</div></div>'+
-      '<div class="cell" style="border-right:none"><span class="lab">治療中の病気</span><div class="fulltext">'+esc(r.currentDiseases||'　')+'</div></div>'+
-    '</div>'+
+    /* 「治療中の病気」の自由文は、上の病名表へ差し替えた（2026-08-12）。
+       ★データ（currentDiseases）は消していない。「移行前の記載」に読み取り専用で出す */
+    '<div class="cell" style="border-right:none"><span class="lab">アレルギー</span><div class="fulltext">'+esc(r.allergy||'　')+'</div></div>'+
     '<div class="row-cells">'+
       '<div class="cell"><span class="lab">副作用・禁忌 等</span><div class="fulltext">'+esc(r.sideEffects||'　')+'</div></div>'+
       '<div class="cell" style="border-right:none"><span class="lab">既往歴</span><div class="fulltext">'+esc(r.pastHistory||'　')+'</div></div>'+
     '</div>'+
     '<div class="cell" style="border-right:none">'+medsRegularCell(r.medsRegular)+'</div>'+
-    '<div class="row-cells">'+
-      /* ■薬備考■ の【表示だけ】を外した（2026-08-11 管理者の指示・別の内容を入れる予定の空き枠）。
-         ★medsNotes のデータは消していない。編集画面の入力欄も残してある。
-           入力欄まで消すと collectForm が拾わなくなり、次の保存で dataJson から
-           medsNotes が丸ごと消える（移行時の退避テキストも道連れになる）。 */
-      '<div class="cell"><span class="lab">　</span><div class="fulltext">　</div></div>'+
-      '<div class="cell" style="border-right:none"><span class="lab">■問題行動 等■</span><div class="fulltext">'+esc(r.problemBehavior||'　')+'</div></div>'+
-    '</div>'+
+    /* ■薬備考■ の表示は 2026-08-11 に外した。■問題行動 等■ は 2026-08-12 に
+       様式の「行動・心理症状」チェックへ差し替えたため、この行ごと無くした。
+       ★medsNotes も problemBehavior もデータは消していない。medsNotes は編集画面の入力欄が
+         残っており、problemBehavior は collectForm が既存値を引き継ぐ（下の BF_LEGACY_KEYS）。
+         引き継ぎを外すと、保存しただけで dataJson から消える（GAS が丸ごと置き換えるため）。 */
     '<div class="row-cells">'+
       '<div class="cell"><span class="lab">感染症</span><div class="fulltext">'+esc(r.infections||'　')+'</div></div>'+
       cell('血液型',r.bloodType)+
@@ -1874,9 +2274,10 @@ function renderView(r){
       '<div class="cell" style="border-right:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div>'+
     '</div>'+
   '</div></div>';
-  // 服薬管理
+  /* 服薬管理。管理方法・服薬介助は様式の4段階（上の大表）へ移した。
+     剤形配慮・服薬拒否・頓服・注意薬は様式に無い項目なのでここに残す */
   h+='<div class="sec"><div class="sec-lbl">服薬管理</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
+    '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
     '<div class="cell" style="border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">注意を要する薬剤</span><div class="fulltext">'+esc(r.highRiskMeds||'　')+'</div></div>'+
   '</div></div>';
@@ -1889,22 +2290,70 @@ function renderView(r){
     }).join('');
     h+='<div class="sec"><div class="sec-lbl">過去の臨時薬</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+plogHtml+'</div></div></div>';
   }
-  // ADL（生活動作）
-  h+='<div class="sec"><div class="sec-lbl">ADL</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('移動',r.mobility)+cell('移乗',r.transfer)+cell('排泄',r.excretion)+cell('入浴',r.bath)+'</div>'+
-    '<div class="row-cells">'+cell('更衣・整容',r.dress)+cell('嚥下',r.swallow)+cell('障害高齢者自立度',r.bedriddenRank)+cell('水分',r.water)+'</div>'+
+  /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
+     ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
+       （様式に無い＝消してよい、ではない。原則1） */
+  var bfMealTxt=[bfStr(r.mealStaple)?('主食:'+bfStr(r.mealStaple)):'',
+                 bfStr(r.mealSide)?('副食:'+bfStr(r.mealSide)):'',
+                 bfStr(r.mealForm),
+                 (bfStr(r.thickener)&&bfStr(r.thickener)!=='なし')?('とろみ'+bfStr(r.thickener)):''
+                ].filter(Boolean).join('　');
+  var bfSub={
+    move:    bfChkList(BF_MOVE_AID,bf.moveAid)+bfNote(bf.moveAid),
+    oral:    bfDenture(r.denture),
+    meal:    bfMealTxt?('<span style="font-size:0.875rem">食事形態（'+esc(bfMealTxt)+'）</span>'):'',
+    bath:    bfChkList(BF_BATH_PLACE,bf.bathPlace)+bfNote(bf.bathPlace),
+    excrete: bfChkList(BF_EXCRETE_WAY,bf.excreteWay)+bfNote(bf.excreteWay)
+  };
+  var bfRows=BF_ADL_ROWS.map(function(p){
+    return '<tr><th class="bfrow">'+esc(p[1])+'</th>'+bfLevelCells(bf.adlGrid[p[0]])+
+           '<td class="bfsub">'+(bfSub[p[0]]||'')+'</td></tr>';
+  }).join('');
+  bfRows+='<tr><th class="bfrow">服薬管理</th>'+bfLevelCells(bf.medLevel)+
+    '<td class="bfsub"><span style="font-size:0.875rem;margin-right:6px">薬の有無:</span>'+
+      bfCk(bf.medExists==='有','有')+bfCk(bf.medExists==='無','無')+
+      '<span style="font-size:0.875rem;margin:0 6px 0 8px">内容:</span>'+
+      bfCk(bf.medContent==='別紙参照','別紙参照')+
+      bfCk(bf.medContent==='薬局へ確認してください','薬局へ確認してください')+
+    '</td></tr>';
+  bfRows+='<tr><th class="bfrow">コミュニケーション</th><td class="bfsub" colspan="5">'+
+      bfCk(bf.commLevel==='自立','自立')+bfCk(bf.commLevel==='配慮が必要','配慮が必要')+
+      '<span style="font-size:0.875rem">（配慮の内容: '+esc(bfStr(r.commNotes)||'　')+'）</span></td></tr>';
+  bfRows+='<tr><th class="bfrow">認知症状等</th><td class="bfsub" colspan="5">'+
+      bfCk(bf.dementiaExists==='無','無')+bfCk(bf.dementiaExists==='有','有')+
+      '<span style="font-size:0.875rem;margin-right:14px">認知症自立度: <b>'+esc(bf.dementia||'　')+'</b></span>'+
+      '<span style="font-size:0.875rem">・障害高齢者の日常生活自立度: <b>'+esc(bf.bedriddenRank||'　')+'</b></span></td></tr>';
+  bfRows+='<tr><th class="bfrow">　</th><td class="bfsub" colspan="5" style="font-size:0.875rem">'+
+      '短期記憶 <b>'+esc(bf.shortMemory||'　')+'</b>　／　意思決定 <b>'+esc(bf.decisionAbility||'　')+'</b>'+
+      '　／　伝達能力 <b>'+esc(bf.communicateAbility||'　')+'</b></td></tr>';
+  bfRows+='<tr><th class="bfrow">行動・心理症状</th><td class="bfsub" colspan="5">'+
+      '<div class="bfwrap">'+bfChkList(BF_BPSD,bf.bpsd)+'</div>'+bfNote(bf.bpsd)+'</td></tr>';
+  bfRows+='<tr><th class="bfrow">夜間の状態</th><td class="bfsub" colspan="5">'+
+      bfCk(!!bf.night.sleepMed,'睡眠薬使用有')+
+      ((bf.night.sleepMed&&bf.nightSleepMed)?'<span style="font-size:0.875rem;margin-right:14px">（'+esc(bf.nightSleepMed)+'）</span>':'')+
+      bfChkList(BF_NIGHT,bf.night)+bfNote(bf.night)+'</td></tr>';
+  bfRows+='<tr><th class="bfrow">備考</th><td class="bfsub" colspan="5">'+
+      '<div class="fulltext">'+esc(bf.formNote||'　')+'</div></td></tr>';
+  h+='<div class="sec"><div class="sec-lbl">ADL・状態</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none">'+
+      '<table class="bfadl"><thead><tr><th class="bfrow">ADL</th>'+
+        BF_LEVELS.map(function(p){return '<th>'+esc(p[1])+'</th>'}).join('')+
+        '<th>要支援者は必要事項のみ記入</th></tr></thead><tbody>'+bfRows+'</tbody></table>'+
+      '<div style="margin-top:4px;font-size:0.875rem">'+
+        bfCk(bf.infoConsent,'この情報を提供することについて、ご本人またはご家族から同意を頂いています。')+
+      '</div>'+
+    '</div>'+
+    '<div class="row-cells">'+cell('移乗',r.transfer)+cell('更衣・整容',r.dress)+cell('嚥下',r.swallow)+cell('水分',r.water)+'</div>'+
     '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing)+'<div class="cell" style="flex:2;border-right:none"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
   '</div></div>';
-  // 認知・精神
-  h+='<div class="sec"><div class="sec-lbl">認知・精神</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+'</div>'+
+  /* 認知・精神とコミュニケーションを1つにまとめた（2026-08-12）。
+     様式化で「留意点」が上の大表へ移り、コミュニケーションの枠が1行だけになったため、
+     縦書き見出しの最低の高さぶん（実測 約120px）が丸ごと無駄になっていた。 */
+  h+='<div class="sec"><div class="sec-lbl">認知・意思疎通</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+
+      cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
     '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
-  '</div></div>';
-  // コミュニケーション
-  h+='<div class="sec"><div class="sec-lbl">コミュニケーション</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
-    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">留意点</span><div class="fulltext">'+esc(r.commNotes||'　')+'</div></div>'+
   '</div></div>';
   // 食事
   h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body"><div class="row-cells">'+
@@ -1957,6 +2406,23 @@ function renderView(r){
     return'<span class="tag" style="background:'+(on?'var(--ok-l);color:var(--ok)':'var(--g1);color:var(--g5)')+'">'+(on?'✓ ':'– ')+esc(p[1])+'</span>';
   }).join(' ');
   h+='<div class="sec"><div class="sec-lbl">対象</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対象アプリ</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">'+tBadges+'</div></div></div></div>';
+  /* 移行前の記載（読み取り専用・画面のみ・印刷には出さない）。
+     2026-08-12 に様式化した項目の「元の値」。自動変換できなかったぶんが残っているので、
+     人が新様式へ写すまで見えるようにしておく。★データは消していない（原則4）。 */
+  var bfOld=bfLegacy(r);
+  if(bfOld.length){
+    h+='<div class="sec sec-bflegacy"><div class="sec-lbl">移行前の記載</div><div class="sec-body">'+
+      '<div class="cell" style="border-right:none;background:var(--g0)"><span class="lab">この欄について</span>'+
+      '<div class="fulltext">上の様式へ差し替える前の記載です。表示のみで編集できません（印刷には出ません）。'+
+      '内容を様式へ写し終えたら、この欄は無視して構いません。</div></div>'+
+      bfOld.map(function(o,i){
+        var last=(i===bfOld.length-1);
+        return '<div class="cell" style="border-right:none'+(last?';border-bottom:none':'')+'">'+
+               '<span class="lab">'+esc(o.label)+'</span>'+
+               '<div class="fulltext bflegacy">'+esc(o.value)+'</div></div>';
+      }).join('')+
+    '</div></div>';
+  }
   /* 移行時の退避データ（読み取り専用・画面のみ）。
      元スプレッドシートにあってマスタに対応欄が無い値（保険証の有効期限・寝具リース・享年など）は
      unmappedRaw に保存されているが、これまでどの画面にも表示されず死蔵していた（2026-08-08 監査）。
@@ -2075,7 +2541,9 @@ function openEdit(rec){
     fld('deathDate','ご逝去日',r.deathDate,'date')+
     fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
     '<p class="muted" style="grid-column:1/-1;margin:-4px 0 4px;font-size:0.8125rem">体重の最新値は<b>体重管理アプリ</b>が正です。ここは移行時点の記録で、詳細画面には体重管理アプリの最新値が出ます。</p>'+
-    fld('adl','生活自立度',r.adl)+fld('dementia','認知症自立度',r.dementia)+
+    /* 認知症自立度（dementia）は「入居者基本情報（様式）」へ移した（2026-08-12）。
+       ここに残すと同じ項目の入力欄が2つになり、後から開いた方が勝つ */
+    fld('adl','生活自立度',r.adl)+
   '</div></div></div>';
 
   // 保険・制度／連絡先
@@ -2141,20 +2609,21 @@ function openEdit(rec){
     fld('allergy','アレルギー',r.allergy,'textarea')+
     fld('infections','感染症（B/C肝炎・結核・MRSA・疥癬 等）',r.infections,'textarea')+
     fld('medicalCare','医療処置（経管栄養/吸引/在宅酸素/ストーマ/カテーテル/インスリン/褥瘡処置 等）',r.medicalCare,'textarea')+
-    fld('currentDiseases','治療中の病気',r.currentDiseases,'textarea')+
+    /* 「治療中の病気」は様式の病名表へ、「問題行動 等」は様式の行動・心理症状へ移した（2026-08-12）。
+       入力欄は無くしたが、既存の値は collectForm が引き継ぐので消えない（BF_LEGACY_KEYS） */
     fld('sideEffects','副作用・禁忌 等',r.sideEffects,'textarea')+
     fld('pastHistory','既往歴',r.pastHistory,'textarea')+
     fld('vaccinations','予防接種歴',r.vaccinations,'textarea')+
     fld('disclosure','告知の状況／病識',r.disclosure,'textarea')+
     fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
     fld('medsNotes','薬備考',r.medsNotes,'textarea')+
-    fld('problemBehavior','問題行動 等（BPSD）',r.problemBehavior,'textarea')+
   '</div></div>';
 
-  // 服薬管理
+  // 入居者基本情報（外部様式）
+  h+=bfEditHtml(r);
+
+  /* 服薬管理。管理方法・服薬介助度は様式の4段階へ移した（2026-08-12） */
   h+='<div class="cd"><div class="fgroup"><h3>服薬管理</h3><div class="fgrid">'+
-    fld('medMgmt','管理方法',r.medMgmt,'select',['','自己管理','一包化','服薬カレンダー','一部介助','全介助'])+
-    fld('medAssist','服薬介助度',r.medAssist,'select',['','声かけ','手渡し','一部介助','全介助'])+
     fld('formAdjust','剤形配慮',r.formAdjust,'select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル'])+
     fld('medRefusal','服薬拒否',r.medRefusal,'select',['','なし','時々あり','あり'])+
   '</div>'+
@@ -2165,15 +2634,11 @@ function openEdit(rec){
   h+='<div class="cd"><div class="fgroup"><h3>過去の臨時薬</h3><div id="medsPastList"></div>'+
     '<button class="btn btn-sec" id="medsPastAdd" type="button">＋ 臨時薬を追加</button></div></div>';
 
-  // ADL（生活動作）
-  h+='<div class="cd"><div class="fgroup"><h3>ADL（生活動作）</h3><div class="fgrid">'+
-    fld('mobility','移動',r.mobility,'select',['','独歩','杖','歩行器','車椅子','全介助','寝たきり'])+
+  /* ADL（様式に無い項目だけ残す）。移動・排泄・入浴・障害高齢者自立度は様式へ移した（2026-08-12） */
+  h+='<div class="cd"><div class="fgroup"><h3>ADL（様式に無い項目）</h3><div class="fgrid">'+
     fld('transfer','移乗',r.transfer,'select',['','自立','見守り','一部介助','全介助'])+
-    fld('excretion','排泄',r.excretion,'select',['','自立','一部介助','全介助','おむつ','ポータブル','尿器/カテーテル'])+
-    fld('bath','入浴',r.bath,'select',['','一般浴','機械浴','シャワー浴','清拭'])+
     fld('dress','更衣・整容',r.dress,'select',['','自立','一部介助','全介助'])+
     fld('swallow','嚥下',r.swallow,'select',['','問題なし','むせあり','要注意','嚥下障害'])+
-    fld('bedriddenRank','障害高齢者自立度',r.bedriddenRank,'select',['','J1','J2','A1','A2','B1','B2','C1','C2'])+
     fld('water','水分摂取／制限',r.water)+
     fld('vision','視力（眼鏡）',r.vision)+fld('hearing','聴力（補聴器）',r.hearing)+
   '</div>'+fld('pressureUlcer','褥瘡（有無・部位）',r.pressureUlcer,'textarea')+'</div></div>';
@@ -2191,14 +2656,15 @@ function openEdit(rec){
   h+='<div class="cd"><div class="fgroup"><h3>コミュニケーション</h3><div class="fgrid">'+
     fld('preferredName','呼ばれたい呼称・愛称',r.preferredName)+
     fld('commMethod','主な意思疎通手段',r.commMethod,'select',['','言語','筆談','ジェスチャー','視線','その他'])+
-  '</div>'+fld('commNotes','コミュニケーションの留意点',r.commNotes,'textarea')+'</div></div>';
+  /* 留意点（commNotes）は様式の「配慮の内容」へ移した（2026-08-12）。ここには置かない */
+  '</div></div></div>';
 
   // 食事（食事形態・義歯）
   h+='<div class="cd"><div class="fgroup"><h3>食事</h3><div class="fgrid">'+
     fld('mealStaple','主食',r.mealStaple)+fld('mealSide','副食',r.mealSide)+
     fld('mealForm','食形態',r.mealForm,'select',['','常食','軟菜','きざみ','極きざみ','ミキサー','ペースト','ゼリー'])+
     fld('thickener','とろみ',r.thickener,'select',['','なし','薄め','中間','濃いめ'])+
-    fld('denture','義歯',r.denture,'select',['無','有','部分義歯','総義歯'])+
+  /* 義歯（denture）は様式の「口腔清潔」へ移した（2026-08-12）。同じキーの入力欄を2つ作らない */
   '</div>'+fld('mealNote','備考',r.mealNote,'textarea')+'</div></div>';
 
   // 嗜好・本人らしさ
@@ -2258,6 +2724,13 @@ function openEdit(rec){
   $('supportAdd').addEventListener('click',function(){collectSupport();editing.supportLog.unshift({date:todayISO(),text:''});renderSupportRows()});
   $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),note:''});renderCareHistRows()});
   $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
+  /* 病名の行を1行足す。既に入力された行は触らない（作り直すと入力中の文字が消える）。
+     行を消すボタンは作らない＝3つとも空にすれば保存時に落ちる（誤削除の入口を作らない） */
+  $('bfDisAdd').addEventListener('click',function(){
+    var box=$('bfDisList'), n=box.querySelectorAll('.bfe-row').length;
+    if(n>=BF_MAX_DISEASES){ toast('病名は'+BF_MAX_DISEASES+'行までです'); return; }
+    box.insertAdjacentHTML('beforeend',bfDisRowsEdit([{}],n));
+  });
   showScreen('edit');
 }
 function renderSupportRows(){
@@ -2417,6 +2890,57 @@ function collectForm(){
   var csEls=$('editBox').querySelectorAll('[data-consent]');
   if(csEls.length){rec.consents={};Array.prototype.forEach.call(csEls,function(inp){var v=(inp.value||'').trim();if(v)rec.consents[inp.getAttribute('data-consent')]=v})}
   else if(editing.consents)rec.consents=editing.consents;
+  /* ── 入居者基本情報（様式）の回収（2026-08-12）──
+     入力欄が描画されていない時は既存値を温存する（部分フォームでの全消し防止・dayUse と同じ作法） */
+  var bfEls=$('editBox').querySelectorAll('[data-bfck],[data-bftx],[data-bfsel],[data-bfradio]');
+  if(bfEls.length){
+    var bfTmp={};
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bfck]'),function(el){
+      bfSet(bfTmp,el.getAttribute('data-bfck'),!!el.checked);
+    });
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bftx],[data-bfsel]'),function(el){
+      bfSet(bfTmp,el.getAttribute('data-bftx')||el.getAttribute('data-bfsel'),bfStr(el.value));
+    });
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bfradio]'),function(el){
+      if(el.checked) bfSet(bfTmp,el.getAttribute('data-bfradio'),bfStr(el.value));
+    });
+    /* 病名は3つとも空の行を落とす（＝行を消す唯一の手段。誤削除のボタンを作らない） */
+    rec.diseases=bfArr(bfTmp.diseases).map(function(d){
+      d=bfObj(d);
+      return {name:bfStr(d.name),onset:bfStr(d.onset),hospital:bfStr(d.hospital)};
+    }).filter(function(d){ return d.name||d.onset||d.hospital; });
+    rec.services={};
+    BF_SERVICES.forEach(function(p){
+      var s=bfObj(bfTmp.services && bfTmp.services[p[0]]);
+      if(s.on||bfStr(s.name)) rec.services[p[0]]={on:!!s.on,name:bfStr(s.name)};
+    });
+    rec.adlGrid   = bfPrune(bfTmp.adlGrid);
+    rec.moveAid   = bfPrune(bfTmp.moveAid);
+    rec.bathPlace = bfPrune(bfTmp.bathPlace);
+    rec.excreteWay= bfPrune(bfTmp.excreteWay);
+    rec.bpsd      = bfPrune(bfTmp.bpsd);
+    rec.night     = bfPrune(bfTmp.night);
+    rec.medLevel  = bfStr(bfTmp.medLevel);
+    rec.medExists = bfStr(bfTmp.medExists);
+    rec.medContent= bfStr(bfTmp.medContent);
+    rec.commLevel = bfStr(bfTmp.commLevel);
+    rec.dementiaExists     = bfStr(bfTmp.dementiaExists);
+    rec.shortMemory        = bfStr(bfTmp.shortMemory);
+    rec.decisionAbility    = bfStr(bfTmp.decisionAbility);
+    rec.communicateAbility = bfStr(bfTmp.communicateAbility);
+    rec.nightSleepMed = bfStr(bfTmp.nightSleepMed);   /* 薬剤名は night の外（現場へ渡さない） */
+    rec.formNote    = bfStr(bfTmp.formNote);
+    rec.infoConsent = !!bfTmp.infoConsent;
+    /* 以後この方は「様式で入力済み」として扱い、旧自由文からの推定を止める。
+       これを立てないと「—」に戻した項目が次の表示で復活する */
+    rec.bfSaved = true;
+  }else{
+    BF_FORM_KEYS.forEach(function(k){ if(editing[k]!==undefined) rec[k]=editing[k]; });
+  }
+  /* 様式へ置き換えた旧項目には入力欄が無い。引き継がないと保存のたびに消える
+     （GAS は dataJson を丸ごと置き換えるため）。現場タブレットの安全情報にも使われている値なので、
+     消すと現場のフェイスシートから移動・服薬管理・問題行動が空になる。 */
+  BF_LEGACY_KEYS.forEach(function(p){ if(editing[p[0]]!==undefined) rec[p[0]]=editing[p[0]]; });
   rec.targetApps=[];
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
   collectMedsPast();
