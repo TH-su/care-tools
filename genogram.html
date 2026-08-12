@@ -2123,12 +2123,24 @@ function listDocs() {
   catch (e) { return []; }
 }
 
-/* 入居者マスタ連携：?resident=<masterId> 付きで開かれた場合、保存時に家系図サムネイルを
-   同一オリジン共有キー su_genograms（{[masterId]:{image,name,updatedAt}}）へ書き出す。
-   → 入居者マスタの「家系図」欄に自動表示される。masterId が無ければ何もしない（no-op）。 */
+/* 入居者マスタ連携：保存時に家族構成図のサムネイルを、同一オリジンの共有キー
+   su_genograms へ書き出す。入居者マスタとフェイスシートの「家族構成図」欄に自動表示される。
+
+   ★2026-08-12 変更: 以前は ?resident=<masterId> 付きで開かれた時しか書き出さなかった。
+     そのため【このアプリを直接開いて作った家系図は、マスタに一切出なかった】。
+     氏名をキーにした控えも必ず書くようにして、どちらの入口で作っても出るようにする。
+   キーは2種類:
+     m[<masterId>]      … マスタから「この方を各アプリで開く」で来た時（従来どおり）
+     m['name:'+正規化氏名] … 常に書く。読み手は masterId → 氏名 の順に探す
+   ★正規化は空白除去のみ（他アプリの名寄せと同じ作法。NFKC 正規化はしない）。
+   ★同姓同名は同じ図を指す（このアプリ自体が氏名を文書キーにしているため、元から同じ制限）。 */
+function suGenoNameKey(name) {
+  return 'name:' + String(name == null ? '' : name).replace(/\s+/g, '');
+}
 function writeSuGenogram(name) {
   var mid = window._suMasterId;
-  if (mid == null || mid === '') return;
+  var nameKey = String(name == null ? '' : name).replace(/\s+/g, '') ? suGenoNameKey(name) : '';
+  if ((mid == null || mid === '') && !nameKey) return;   // 手がかりが何も無い時だけ何もしない
   try {
     if (!state.doc.nodes || !state.doc.nodes.length) return; // 空の家系図は書き出さない
     buildExportCanvas(function (canvas) {
@@ -2137,9 +2149,11 @@ function writeSuGenogram(name) {
         var raw = localStorage.getItem('su_genograms');
         var m = {};
         if (raw) { try { m = JSON.parse(raw) || {}; } catch (e) { m = {}; } }
-        m[String(mid)] = { image: img, name: name, updatedAt: nowISO() };
+        var rec = { image: img, name: name, updatedAt: nowISO() };
+        if (mid != null && mid !== '') m[String(mid)] = rec;
+        if (nameKey) m[nameKey] = rec;
         localStorage.setItem('su_genograms', JSON.stringify(m));
-      } catch (e) { /* 連携書き出し失敗は本体保存に影響させない */ }
+      } catch (e) { /* 連携書き出し失敗は本体保存に影響させない（容量超過など） */ }
     });
   } catch (e) { /* no-op */ }
 }
@@ -2180,7 +2194,7 @@ async function saveDoc() {
     alert('端末への保存に失敗しました: ' + e.message);
     return;
   }
-  // 入居者マスタ連携：masterId 付きで開かれていればサムネイルを共有キーへ
+  // 入居者マスタ連携：サムネイルを共有キーへ（masterId と氏名の両方をキーにする）
   writeSuGenogram(name);
   // Step 2: cloud sync (async, with retry)
   if (CloudSync.isConfigured()) {

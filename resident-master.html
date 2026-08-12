@@ -124,6 +124,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* .bd-w（生年月日の和暦）も同じ作法。値の後ろに小さく添えるだけで幅を奪わない */
 .wt-on,.bd-w{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
 @media print{ .wt-on,.bd-w{color:#333} }
+/* 家族構成図のサムネイル。枠に収める（はみ出させない・縦横比を崩さない） */
+.geno-img{max-width:100%; max-height:100%; object-fit:contain}
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。左=薬剤、右=効果・効能。
    ★右列は固定幅。行は grid の行で揃うので、薬剤名が折り返しても効能は1行目に留まる。
@@ -361,6 +363,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .cell{border-color:#999}
   .geno-box{border:none !important; cursor:default !important}
   .geno-hint{display:none !important}
+  /* 家族構成図は紙にも出す。背景画像ではなく <img> なので「背景のグラフィックを印刷」の
+     設定に左右されず必ず刷られる。色を落とさないよう print-color-adjust を明示する。 */
+  .geno-img{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   @page{size:A4; margin:10mm}
 
   /* ── 誕生日一覧（A4縦1枚）──
@@ -598,13 +603,28 @@ function setDeviceRole(v){
   }catch(e){}
 }
 
-/* ── ジェノグラム（家系図）連携 ──
-   家系図アプリが保存した画像を同一オリジンの共有キー su_genograms（{[masterId]:{image,updatedAt}}）
-   から読み、マスタの表示欄に出す。欄クリックで家系図アプリ（resident=masterId 付き）へ遷移し作成/編集。 */
+/* ── 家族構成図（ジェノグラム）連携 ──
+   ジェノグラムアプリが保存したサムネイルを、同一オリジンの共有キー su_genograms から読んで
+   「家族構成図」欄に出す（画面・印刷とも）。欄クリックでアプリへ遷移し作成/編集。
+   キーは2種類: [masterId]（マスタから開いた時）と 'name:'+空白除去した氏名（常に書かれる）。
+   ★書き手はジェノグラムアプリのみ。ここは読み取り専用（data-contracts §2）。 */
 var SU_GENO_KEY='su_genograms';
 var GENOGRAM_APP='genogram.html'; // 家系図アプリのパス（用意でき次第ここを合わせる）
-function getGenogram(id){
-  try{var raw=localStorage.getItem(SU_GENO_KEY);if(!raw)return null;var m=JSON.parse(raw);var g=m&&m[String(id)];return(g&&g.image)?g.image:null}catch(e){return null}
+/* 家族構成図のサムネイルを探す。masterId → 氏名 の順に見る（2026-08-12）。
+   ★氏名で探す経路が無いと、ジェノグラムアプリを直接開いて作った図が一切出ない
+     （書き出しが ?resident= 付きの時しか走らなかったため）。
+   ★正規化は空白除去のみ（他アプリの名寄せと同じ作法）。同姓同名は同じ図を指す。 */
+function getGenogram(id,name){
+  try{
+    var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;
+    var m=JSON.parse(raw); if(!m||typeof m!=='object')return null;
+    var g=m[String(id)];
+    if(!(g&&g.image)){
+      var nm=String(name==null?'':name).replace(/\s+/g,'');
+      if(nm) g=m['name:'+nm];
+    }
+    return (g&&typeof g.image==='string'&&g.image)?g.image:null;
+  }catch(e){return null}
 }
 function openGenogram(id,name){
   if(id==null)return;
@@ -2277,10 +2297,10 @@ function renderView(r){
     '<div class="cell noprint-cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
   // 家族情報
   // 家族情報＋事業所（左 2/3）と ジェノグラム欄（右 1/3）を横並び
-  var genoImg=getGenogram(r.id);
+  var genoImg=getGenogram(r.id,r.name);
   var genoInner=genoImg
-    ? '<img src="'+esc(genoImg)+'" alt="ジェノグラム" style="max-width:100%;max-height:100%;object-fit:contain">'
-    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem;line-height:1.1">🧬</div>クリックして<br>ジェノグラムを作成<br><span style="font-size: 0.6875rem">（家系図アプリへ）</span></div>';
+    ? '<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'
+    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem;line-height:1.1">🧬</div>クリックして<br>家族構成図を作成<br><span style="font-size: 0.6875rem">（ジェノグラムアプリへ）</span></div>';
   h+='<div style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
     // 左 2/3：家族情報＋事業所
     '<div style="flex:2;min-width:0;display:flex;flex-direction:column">'+
@@ -2300,8 +2320,8 @@ function renderView(r){
       '</div></div>'+
     '</div>'+
     // 右 1/3：ジェノグラム（クリックで作成／家系図アプリへ）
-    '<div style="flex:1;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家系図</div><div class="sec-body" style="display:flex;padding:6px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックでジェノグラム作成／編集" style="flex:1;min-height:300px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+    '<div style="flex:1;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:6px">'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:300px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══

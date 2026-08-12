@@ -185,7 +185,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .logline .t{flex:1; white-space:pre-wrap; word-break:break-word}
 .geno-box{min-height:300px; display:flex; align-items:center; justify-content:center; cursor:pointer;
   background:var(--g0); border:1px dashed var(--g3); border-radius:8px; overflow:hidden}
-.geno-box img{max-width:100%; max-height:100%; object-fit:contain}
+.geno-box img,.geno-img{max-width:100%; max-height:100%; object-fit:contain}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
 .btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
@@ -227,6 +227,9 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   .sheet .sec{border-top:1px solid #000}
   .cell{border-color:#999}
   .geno-box{border:none !important; cursor:default !important}
+  .geno-hint{display:none !important}
+  /* 家族構成図は紙にも出す。<img> なので「背景のグラフィックを印刷」の設定に左右されない */
+  .geno-img{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   .hlchip{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   @page{size:A4; margin:10mm}
@@ -1146,13 +1149,13 @@ function renderOfficeView(r){
     )
   );
   // 家族・事業所
-  var genoImg=getGenogram(r.id);
-  var genoInner=genoImg?('<img src="'+esc(genoImg)+'" alt="ジェノグラム">'):'<div style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem">🧬</div>家系図アプリで作成</div>';
+  var genoImg=getGenogram(r.id,r.name);
+  var genoInner=genoImg?('<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'):'<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem">🧬</div>ジェノグラムアプリで作成</div>';
   P.family=sheet(
     sec('家族情報',
       full('ご家族氏名・続柄・役割',famName)+
       '<div class="row-cells">'+full('電話番号',famTel)+full('緊急連絡先',emg)+'</div>'+
-      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">家系図</span><div class="geno-box" id="genoBox" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
+      '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><div class="geno-box" id="genoBox" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
     )+
     sec('事業所',
       '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX',r.careOfficeFax)+'</div>'+
@@ -1212,8 +1215,20 @@ function renderOfficeView(r){
 }
 
 /* ジェノグラム（同一オリジン共有・読み取り専用） */
-function getGenogram(id){
-  try{var raw=localStorage.getItem(SU_GENO_KEY);if(!raw)return null;var m=JSON.parse(raw);var g=m&&m[String(id)];return(g&&g.image)?g.image:null}catch(e){return null}
+/* 家族構成図のサムネイルを探す。masterId → 氏名 の順に見る（2026-08-12・入居者マスタと同じ実装）。
+   ★氏名で探す経路が無いと、ジェノグラムアプリを直接開いて作った図が一切出ない。
+   ★正規化は空白除去のみ。同姓同名は同じ図を指す。 */
+function getGenogram(id,name){
+  try{
+    var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;
+    var m=JSON.parse(raw); if(!m||typeof m!=='object')return null;
+    var g=m[String(id)];
+    if(!(g&&g.image)){
+      var nm=String(name==null?'':name).replace(/\s+/g,'');
+      if(nm) g=m['name:'+nm];
+    }
+    return (g&&typeof g.image==='string'&&g.image)?g.image:null;
+  }catch(e){return null}
 }
 
 /* ═══════════ 画面遷移・ナビ ═══════════ */
