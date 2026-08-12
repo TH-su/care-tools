@@ -121,8 +121,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
      （生活自立度・認知症自立度）が狭まって折り返し、印刷が +6mm 伸びる（実測）。
      小さい文字なら幅を奪わずに収まり、隣が長い方でも増加0px（4パターンで実測）。 */
-.wt-on{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
-@media print{ .wt-on{color:#333} }
+/* .bd-w（生年月日の和暦）も同じ作法。値の後ろに小さく添えるだけで幅を奪わない */
+.wt-on,.bd-w{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
+@media print{ .wt-on,.bd-w{color:#333} }
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。左=薬剤、右=効果・効能。
    ★右列は固定幅。行は grid の行で揃うので、薬剤名が折り返しても効能は1行目に留まる。
@@ -182,6 +183,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bfe-svc{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:0 12px}
 .bfe-svc1{display:flex; align-items:center; gap:6px}
 .bfe-svc1 .bfet{flex:1; min-width:0}
+/* 生年月日の和暦入力（画面のみ）。日付欄のすぐ下に置く */
+.wareki-in{margin-top:4px; padding:8px; border:1px solid var(--g3); border-radius:6px;
+  font-size:0.875rem; min-height:44px; width:100%}
+.wareki-echo{font-size:0.8125rem; color:var(--g6); margin-top:2px; display:block; min-height:1.2em}
 @media (max-width:640px){ .bfe-row{flex-direction:column} .bfe-lab{flex:none; padding-top:0} }
 /* 「移行前の記載」は画面だけに出す（既存の .sec-unmapped と同じ扱い＝印刷の高さを変えない） */
 /* 紙は画面よりさらに詰める（様式化でページが増えないようにするため。実測で調整） */
@@ -702,6 +707,17 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   // （介護保険証の有効期限・寝具リース・享年など）
   'unmappedRaw'];
 var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
+/* 食事の時刻は施設共通（2026-08-12 指示）。起床・就寝はその方ごとなので既定を置かない。
+   ★これは「その方の記録が無いときに施設の標準を出す」重ね合わせ。保存済みの値があれば必ずそちらが勝つ。 */
+var RHYTHM_DEFAULTS={breakfast:'08:00', lunch:'12:00', snack:'15:00', dinner:'17:30'};
+function rhythmOf(r){
+  var src=(r&&r.rhythm&&typeof r.rhythm==='object')?r.rhythm:{}, out={};
+  RHYTHM_KEYS.forEach(function(p){
+    var v=String(src[p[0]]==null?'':src[p[0]]).trim();
+    out[p[0]] = v || RHYTHM_DEFAULTS[p[0]] || '';
+  });
+  return out;
+}
 // デイ利用日（曜日ごとの利用時間帯）。rhythm{} と同型のオブジェクトで保持する。
 var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
 // 同意・確認書。郵便物開封／主治医・薬管理は「有無」でなく取扱方法の文言が入るため全て文字列で受ける。
@@ -1235,6 +1251,69 @@ function fmtWareki(iso){
     }
   }
   return p.y+'.'+(p.m<10?'0':'')+p.m+'.'+(p.d<10?'0':'')+p.d;   // 明治より前は西暦で出す
+}
+/* 読み下し形の和暦（例「昭和15年1月1日」）。誕生日一覧の詰めた表記（S15.01.01）とは別用途で、
+   詳細画面・印刷・フェイスシートに西暦と並べて出す（2026-08-12 指示）。
+   ★明治より前は和暦にしない（元号表を持っていないので、当てずっぽうを出さない）。 */
+function fmtWarekiJp(iso){
+  var p=parseIsoDate(iso);
+  if(!p) return '';
+  var key=p.y*10000+p.m*100+p.d;
+  for(var i=0;i<ERAS.length;i++){
+    var e=ERAS[i];
+    if(key>=e.y*10000+e.m*100+e.d){
+      var n=p.y-e.y+1;
+      return e.name+(n===1?'元':n)+'年'+p.m+'月'+p.d+'日';
+    }
+  }
+  return '';
+}
+/* 和暦・西暦のどちらで打たれても ISO(YYYY-MM-DD) に直す（2026-08-12 指示）。
+   受ける形の例:
+     昭和15年1月1日 ／ 昭和15.1.1 ／ 昭和15/1/1 ／ S15.1.1 ／ s15-1-1 ／ 昭和元年12月25日
+     1940-01-01 ／ 1940/1/1 ／ 1940年1月1日
+   ★読み取れなければ空を返す。**呼び出し側は空のとき元の値を書き換えないこと**
+     （読めなかった入力で既存の生年月日を消さない）。
+   ★存在しない日付（昭和64年2月30日 等）は parseIsoDate が弾く。 */
+function parseAnyDate(input){
+  /* 全角の数字・英字（Ｓ１５）も受ける。現場は変換のまま打つことがある */
+  var s=String(input==null?'':input).trim()
+        .replace(/[０-９Ａ-Ｚａ-ｚ]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)})
+        .replace(/[．。・]/g,'.').replace(/[／]/g,'/').replace(/[－ー―‐]/g,'-')
+        .replace(/\s+/g,'');
+  if(!s) return '';
+  var pad=function(n){ n=+n; return (n<10?'0':'')+n; };
+  /* 西暦（4桁始まり） */
+  var m=/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(s);
+  if(m) return parseIsoDate(m[1]+'-'+pad(m[2])+'-'+pad(m[3])) ? m[1]+'-'+pad(m[2])+'-'+pad(m[3]) : '';
+  /* 和暦 */
+  m=/^(明治|大正|昭和|平成|令和|[MTSHRmtshr])(元|\d{1,2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(s);
+  if(!m) return '';
+  var head=m[1].toUpperCase(), era=null;
+  for(var i=0;i<ERAS.length;i++){
+    if(ERAS[i].name===m[1] || ERAS[i].c===head){ era=ERAS[i]; break; }
+  }
+  if(!era) return '';
+  var n=(m[2]==='元')?1:+m[2];
+  if(!(n>=1)) return '';
+  var y=era.y+n-1, mo=+m[3], d=+m[4];
+  var iso=y+'-'+pad(mo)+'-'+pad(d);
+  if(!parseIsoDate(iso)) return '';
+  /* その元号の開始日より前は受け付けない（昭和1年1月1日のような実在しない日付を作らない）。
+     終わりは次の元号の開始日で判定する（元号最終年の途中までは有効） */
+  var key=y*10000+mo*100+d, start=era.y*10000+era.m*100+era.d;
+  if(key<start) return '';
+  var idx=ERAS.indexOf(era);
+  if(idx>0){ var nx=ERAS[idx-1]; if(key>=nx.y*10000+nx.m*100+nx.d) return ''; }
+  return iso;
+}
+/* 生年月日のセル。西暦を主にして、和暦は小さい文字で添える。
+   ★同じ大きさで括弧書きにしてはいけない。セルの幅は行で取り合いなので、
+     広げると隣のセルが折り返して印刷が伸びる（体重欄で実測した失敗と同型）。 */
+function birthCell(lab,iso){
+  var w=fmtWarekiJp(iso);
+  return '<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val">'+
+         esc(fmtJDate(iso)||'　')+(w?'<span class="bd-w">'+esc(w)+'</span>':'')+'</span></div>';
 }
 function paintBdayBar(){
   var bar=$('bdayBar'); if(!bar) return;
@@ -2119,7 +2198,7 @@ function renderView(r){
   var famAddr=fam.map(function(f,i){return f.address?('①②③④⑤'.charAt(i)+f.address):''}).filter(Boolean).join('\n');
   var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
   var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')}).join('\n');
-  var rhythm=r.rhythm||{};
+  var rhythm=rhythmOf(r);   /* 食事の時刻は施設共通の既定を重ねる（保存済みがあればそちらが勝つ） */
   var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
   var dayUse=r.dayUse||{};
   var du=DAYUSE_KEYS.map(function(p){return dayUse[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(dayUse[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
@@ -2143,7 +2222,7 @@ function renderView(r){
   // 利用者基本情報
   h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
-      cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+
+      cell('氏名',r.name,true)+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
       cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
       cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
@@ -2258,7 +2337,8 @@ function renderView(r){
       '<div class="cell"><span class="lab">副作用・禁忌 等</span><div class="fulltext">'+esc(r.sideEffects||'　')+'</div></div>'+
       '<div class="cell" style="border-right:none"><span class="lab">既往歴</span><div class="fulltext">'+esc(r.pastHistory||'　')+'</div></div>'+
     '</div>'+
-    '<div class="cell" style="border-right:none">'+medsRegularCell(r.medsRegular)+'</div>'+
+    /* ■薬剤情報（定期）■＋効果・効能は「薬剤情報」欄の先頭へ移した（2026-08-12 指示）。
+       医療情報からは外す＝同じ内容を2箇所に出さない */
     /* ■薬備考■ の表示は 2026-08-11 に外した。■問題行動 等■ は 2026-08-12 に
        様式の「行動・心理症状」チェックへ差し替えたため、この行ごと無くした。
        ★medsNotes も problemBehavior もデータは消していない。medsNotes は編集画面の入力欄が
@@ -2274,11 +2354,17 @@ function renderView(r){
       '<div class="cell" style="border-right:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div>'+
     '</div>'+
   '</div></div>';
-  /* 服薬管理。管理方法・服薬介助は様式の4段階（上の大表）へ移した。
-     剤形配慮・服薬拒否・頓服・注意薬は様式に無い項目なのでここに残す */
-  h+='<div class="sec"><div class="sec-lbl">服薬管理</div><div class="sec-body">'+
+  /* 薬剤情報（2026-08-12 指示で「服薬管理」から改名）。
+     先頭に ■薬剤情報（定期）■＋効果・効能、その右に頓服・外用等を並べる。
+     管理方法・服薬介助は様式の4段階（上の大表）へ移した。 */
+  h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+
+    '<div class="row-cells">'+
+      /* ★左右の比は 3:1。2:1 だと薬剤名の長い方で3行が折り返す（実測）。
+           4:1 以上にしても頓服欄の最小幅で頭打ちになり、折返しは1行から減らない。 */
+      '<div class="cell" style="flex:3">'+medsRegularCell(r.medsRegular)+'</div>'+
+      '<div class="cell" style="flex:1;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
+    '</div>'+
     '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
-    '<div class="cell" style="border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">注意を要する薬剤</span><div class="fulltext">'+esc(r.highRiskMeds||'　')+'</div></div>'+
   '</div></div>';
   // 過去の臨時薬（新しい順）
@@ -2529,7 +2615,14 @@ function openEdit(rec){
   h+='<div class="cd"><div class="fgroup"><h3>基本情報</h3><div class="fgrid">'+
     fld('name','氏名',r.name)+fld('kana','ふりがな',r.kana)+fld('room','居室',r.room)+
     fld('gender','性別',r.gender,'select',['女','男'])+
-    fld('birthDate','生年月日',r.birthDate,'date')+
+    /* 生年月日は和暦でも打てる（2026-08-12 指示）。下の入力欄に「昭和15.1.1」等を入れると
+       上の日付欄が自動で埋まる。★読み取れない文字を打っても既存の日付は消さない */
+    '<div class="fld"><label for="f-birthDate">生年月日</label>'+
+      '<input id="f-birthDate" data-k="birthDate" type="'+(r.birthDate&&!isISODate(r.birthDate)?'text':'date')+'" value="'+esc(r.birthDate||'')+'">'+
+      '<input id="f-birthWareki" type="text" class="wareki-in" autocomplete="off" spellcheck="false"'+
+        ' placeholder="和暦でも可（例 昭和15.1.1）" aria-label="生年月日を和暦で入力">'+
+      '<span id="f-birthEcho" class="wareki-echo"></span>'+
+    '</div>'+
     fld('careLevel','介護度',r.careLevel,'select',levels)+
     fld('careCertStart','認定期間(開始)',r.careCertStart,'date')+fld('careCertEnd','認定期間(終了)',r.careCertEnd,'date')+
     fld('copayRate','負担割合',r.copayRate,'select',['1','2','3'])+fld('welfare','生保',r.welfare,'checkbox')+
@@ -2595,7 +2688,9 @@ function openEdit(rec){
   '</div><h3 style="margin-top:14px">デイ利用日（曜日ごとの利用時間帯）</h3><div class="fgrid">'+
     DAYUSE_KEYS.map(function(p){return'<div class="fld"><label>'+esc(p[1])+'</label><input data-dayuse="'+p[0]+'" placeholder="例 9-16" value="'+esc((r.dayUse&&r.dayUse[p[0]])||'')+'"></div>'}).join('')+
   '</div><h3 style="margin-top:14px">生活リズム</h3><div class="fgrid">'+
-    RHYTHM_KEYS.map(function(p){return'<div class="fld"><label>'+esc(p[1])+'</label><input data-rhythm="'+p[0]+'" type="time" value="'+esc(r.rhythm[p[0]]||'')+'"></div>'}).join('')+
+    /* 食事の時刻は施設共通の既定を最初から入れておく（2026-08-12 指示）。
+       ★入っている値は上書きしない。空欄の方にだけ既定を出す */
+    RHYTHM_KEYS.map(function(p){var rv=rhythmOf(r);return'<div class="fld"><label>'+esc(p[1])+'</label><input data-rhythm="'+p[0]+'" type="time" value="'+esc(rv[p[0]]||'')+'"></div>'}).join('')+
   '</div></div></div>';
 
   h+='<div class="cd"><div class="fgroup"><h3>医療情報</h3><div class="fgrid">'+
@@ -2726,6 +2821,28 @@ function openEdit(rec){
   $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
   /* 病名の行を1行足す。既に入力された行は触らない（作り直すと入力中の文字が消える）。
      行を消すボタンは作らない＝3つとも空にすれば保存時に落ちる（誤削除の入口を作らない） */
+  /* 生年月日：和暦入力欄 ⇄ 日付欄。読めた時だけ日付欄を書き換える（読めない入力で既存値を消さない） */
+  (function(){
+    var d=$('f-birthDate'), w=$('f-birthWareki'), echo=$('f-birthEcho');
+    if(!d||!w||!echo) return;
+    function paint(){
+      var jp=fmtWarekiJp(d.value);
+      echo.textContent = jp ? ('＝ '+jp) : '';
+    }
+    w.addEventListener('input',function(){
+      var raw=w.value.trim();
+      if(!raw){ echo.textContent=''; paint(); return; }
+      var iso=parseAnyDate(raw);
+      if(iso){
+        if(d.type!=='date') d.type='date';
+        d.value=iso; w.setCustomValidity(''); paint();
+      }else{
+        echo.textContent='（まだ読み取れません）';
+      }
+    });
+    d.addEventListener('change',paint);
+    paint();
+  })();
   $('bfDisAdd').addEventListener('click',function(){
     var box=$('bfDisList'), n=box.querySelectorAll('.bfe-row').length;
     if(n>=BF_MAX_DISEASES){ toast('病名は'+BF_MAX_DISEASES+'行までです'); return; }

@@ -120,6 +120,9 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap}
 .cell .val.big{font-size: 1.125rem; font-weight:700}
 .cell .sub{display:block; font-size: 0.625rem; color:var(--g6); margin-top:1px}  /* 値の出所・測定日 */
+/* 生年月日の和暦。値の後ろに小さく添えるだけで幅を奪わない（セルを広げると隣が折り返して紙が伸びる） */
+.bd-w{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
+@media print{ .bd-w{color:#333} }
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
 .fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
@@ -385,6 +388,44 @@ function setDeviceRole(v){try{localStorage.setItem(DEVICE_KEY,v)}catch(e){}}
 function isField(){return getDeviceRole()==='field'}
 function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
+/* 和暦（2026-08-12 追加・入居者マスタと同じ定義）。生年月日を西暦と並べて出すために使う。
+   ★ここは閲覧専用なので、和暦から西暦へ直す処理（parseAnyDate）は持たない。入力はマスタ側だけ。 */
+var ERAS=[
+  {c:'R', name:'令和', y:2019, m:5,  d:1},
+  {c:'H', name:'平成', y:1989, m:1,  d:8},
+  {c:'S', name:'昭和', y:1926, m:12, d:25},
+  {c:'T', name:'大正', y:1912, m:7,  d:30},
+  {c:'M', name:'明治', y:1868, m:1,  d:25}
+];
+function parseIsoDate(iso){
+  var s=String(iso==null?'':iso).slice(0,10);
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return null;
+  var y=+m[1],mo=+m[2],d=+m[3];
+  var t=new Date(y,mo-1,d);
+  if(t.getFullYear()!==y||t.getMonth()!==mo-1||t.getDate()!==d) return null;
+  return {y:y,m:mo,d:d};
+}
+function fmtWarekiJp(iso){
+  var p=parseIsoDate(iso);
+  if(!p) return '';
+  var key=p.y*10000+p.m*100+p.d;
+  for(var i=0;i<ERAS.length;i++){
+    var e=ERAS[i];
+    if(key>=e.y*10000+e.m*100+e.d){
+      var n=p.y-e.y+1;
+      return e.name+(n===1?'元':n)+'年'+p.m+'月'+p.d+'日';
+    }
+  }
+  return '';
+}
+/* 西暦を主に、和暦は小さい文字で添える（セルを広げない＝印刷の改ページ位置を動かさない） */
+function birthCell(lab,iso){
+  var w=fmtWarekiJp(iso);
+  return '<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val">'+
+         esc(fmtJDate(iso)||'　')+(w?'<span class="bd-w">'+esc(w)+'</span>':'')+'</span></div>';
+}
+/* 食事の時刻は施設共通（入居者マスタと同じ既定）。保存済みの値があればそちらが勝つ */
+var RHYTHM_DEFAULTS={breakfast:'08:00', lunch:'12:00', snack:'15:00', dinner:'17:30'};
 function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
 function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
 function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
@@ -620,26 +661,32 @@ function full(lab,val){return'<div class="cell" style="border-right:none"><span 
    入居者マスタの medsRegularCell と同じ判断で、次のどれかなら従来どおり1列で出す:
      ①辞書が読み込めていない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
    ★行数がずれたまま並べると【別の薬の効能が並ぶ】ため、必ず1列へ戻す。 */
-function fullMeds(lab,val){
+/* セルの【中身だけ】を返す（2026-08-12 分離）。呼び出し側が幅を決めた枠へ入れられるようにする。
+   1列へ戻す条件に当たった時は、従来と同じ「見出し＋本文」を返す。 */
+function fullMedsBody(lab,val){
+  var plain = '<span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(String(val==null?'':val)||'　')+'</div>';
   var raw = String(val == null ? '' : val);
-  if(!raw.trim()) return full(lab,val);
-  if(typeof MedsEffect === 'undefined' || typeof MedsEffect.effectsFor !== 'function') return full(lab,val);
+  if(!raw.trim()) return plain;
+  if(typeof MedsEffect === 'undefined' || typeof MedsEffect.effectsFor !== 'function') return plain;
   var lines, effs;
   try{
     lines = raw.replace(/\r\n/g,'\n').split('\n');
     effs  = MedsEffect.effectsFor(raw);
-  }catch(e){ return full(lab,val); }
-  if(!Array.isArray(effs) || effs.length !== lines.length) return full(lab,val);
+  }catch(e){ return plain; }
+  if(!Array.isArray(effs) || effs.length !== lines.length) return plain;
   var hit = false;
   for(var k=0;k<effs.length;k++){ if(effs[k]){ hit = true; break; } }
-  if(!hit) return full(lab,val);
-  var h = '<div class="cell" style="border-right:none"><div class="meds2">'+
+  if(!hit) return plain;
+  var h = '<div class="meds2">'+
     '<div class="meds2-h">'+esc(lab)+'</div><div class="meds2-h">効果・効能</div>';
   for(var i=0;i<lines.length;i++){
     h += '<div class="meds2-d">'+esc(lines[i]||'　')+'</div>'+
          '<div class="meds2-e">'+(effs[i] ? esc(effs[i]) : '<span class="meds2-na">—</span>')+'</div>';
   }
-  return h+'</div></div>';
+  return h+'</div>';
+}
+function fullMeds(lab,val){
+  return '<div class="cell" style="border-right:none">'+fullMedsBody(lab,val)+'</div>';
 }
 function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'</div><div class="sec-body">'+body+'</div></div>'}
 /* 様式に置き換えた「元の記載」。入居者マスタと同じ内容を、こちらでも画面だけに出す。
@@ -983,7 +1030,13 @@ function renderFieldView(r){
 /* 事務所PC：全項目をタブで切替（印刷時は全タブ展開） */
 function renderOfficeView(r){
   var bf=bfView(r);   // 入居者基本情報（外部様式）の表示用データ（2026-08-12 追加）
-  var rhythm=r.rhythm||{};
+  var rhythm=(function(src){   /* 食事の時刻は施設共通の既定を重ねる（保存済みが優先） */
+    src=(src&&typeof src==='object')?src:{};
+    var o={};
+    Object.keys(RHYTHM_DEFAULTS).forEach(function(k){ o[k]=RHYTHM_DEFAULTS[k]; });
+    Object.keys(src).forEach(function(k){ var v=String(src[k]==null?'':src[k]).trim(); if(v) o[k]=v; });
+    return o;
+  })(r.rhythm);
   var RH=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
   var rh=RH.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
   var dayUse=r.dayUse||{};
@@ -1009,7 +1062,7 @@ function renderOfficeView(r){
   var wt=weightCells(r);   // 体重・BMI は体重管理アプリの最新値を優先（無ければマスタの静的値）
   P.basic=sheet(
     sec('基本情報',
-      '<div class="row-cells">'+cell('氏名',r.name,true)+cell('性別',r.gender)+cell('生年月日',fmtJDate(r.birthDate))+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+'</div>'+
+      '<div class="row-cells">'+cell('氏名',r.name,true)+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+'</div>'+
       '<div class="row-cells">'+cell('介護度',r.careLevel)+cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+'</div>'+
       '<div class="row-cells">'+cell('入居日',r.admissionDate)+cell('退去日',r.dischargeDate,false,'','noprint-cell')+cell('ご逝去日',r.deathDate,false,'','noprint-cell')+cell('身長',r.height?r.height+' cm':'')+wt.weightCell+wt.bmiCell+'</div>'
     )+
@@ -1043,11 +1096,16 @@ function renderOfficeView(r){
     )+
     /* 「管理方法」「服薬介助」の自由文は様式の4段階＋薬の有無・内容へ差し替えた（2026-08-12）。
        ★剤形配慮・服薬拒否は様式に無い項目なので従来どおり残す（様式に無い＝消してよい、ではない） */
-    sec('服薬',
+    /* 2026-08-12 指示: 「服薬」→「薬剤情報」に改名し、■薬剤情報（定期）■＋効果・効能を先頭へ。
+       頓服・外用等はその右に並べる（入居者マスタと同じ並び） */
+    sec('薬剤情報',
+      '<div class="row-cells">'+
+        /* 左右の比は 3:1（入居者マスタと同じ。2:1 だと薬剤名の長い方で折り返しが増える＝実測） */
+        '<div class="cell" style="flex:3">'+fullMedsBody('薬剤情報（定期）',r.medsRegular)+'</div>'+
+        '<div class="cell" style="flex:1;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
+      '</div>'+
       '<div class="cell" style="border-right:none">'+bfTable('服薬','薬の有無・内容',bfMedRow(bf,true))+'</div>'+
       '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
-      fullMeds('薬剤情報（定期）',r.medsRegular)+
-      full('頓服・外用等',r.medsPrn)+
       /* 薬備考の【表示だけ】を外した（2026-08-11 管理者の指示・入居者マスタ側と揃える）。
          ★medsNotes のデータは消していない。フェイスシートは読み取り専用なので保存経路も無い。 */
       '<div class="row-cells">'+full('注意を要する薬剤',r.highRiskMeds)+'</div>'
