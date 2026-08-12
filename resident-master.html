@@ -136,7 +136,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* 効果・効能の列を、紙の幅に対して5%ぶん右へ寄せる（2026-08-12 指示）。
    ★％は「この枠（薬剤の枠）の幅」に対する割合で、枠は紙の65%しかない。
      そのまま 5% と書くと紙に対しては 3.2% にしかならない（実測）。
-     紙の5% ＝ 枠の 5 ÷ 0.65 ≒ 7.7%。この対応関係は枠の比を変えたら計算し直すこと。 */
+     紙の◯% ＝ 枠の ◯ ÷ 0.65。この対応関係は枠の比を変えたら計算し直すこと。
+   ★これ以上ここを増やしても効果・効能は右へ動かない（2026-08-12 実測）。
+     効能は枠の右端に貼り付いており、動ける余地が無い。増やすと薬剤名だけが折り返す。
+     さらに右へ寄せたい時は、隣の「頓服・外用等」の枠を右へ戻して余地を作る（flex の比）。 */
 .meds2{display:grid; grid-template-columns:minmax(0,max-content) auto; column-gap:calc(20px + 7.7%)}
 .meds2-h{font-size:0.6875rem; color:var(--g6); text-align:left; white-space:nowrap;
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
