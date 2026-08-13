@@ -1998,7 +1998,24 @@ async function apiDiagnose(url){
     return { ok:false, lines };
   }
   lines.push(`HTTP ステータス: ${status}`);
-  lines.push(`本文の先頭: ${(text||'').slice(0,140).replace(/\s+/g,' ') || '（空）'}`);
+  /* ★応答が【自分たちのJSON】だった時は、本文をそのまま出さない（2026-08-13）。
+       この診断は getAll を投げるので、成功応答の先頭140字には入居者の氏名・居室が入る。
+       同期に失敗すると診断が自動で走る作りのため、画面に氏名が出る機会が増えていた
+       （個人情報は画面表示も最小限＝personal-info 規約）。件数だけ出せば切り分けには足りる。
+     ★JSONとして読めない時は従来どおり先頭140字を出す。そこはHTMLのエラーページや
+       ログイン画面で、原因を突き止めるのに本文そのものが要る（入居者データは入らない）。 */
+  let _diagJson = null;
+  try{ _diagJson = JSON.parse(text); }catch(e){ _diagJson = null; }
+  if(_diagJson && typeof _diagJson === 'object'){
+    const _n = (v) => Array.isArray(v) ? v.length + '件' : (v == null ? '—' : '有');
+    lines.push(`応答: JSON（residents ${_n(_diagJson.residents)} / records ${_n(_diagJson.records)}`
+      + ` / thresholds ${_diagJson.thresholds ? '有' : '—'}`
+      + (_diagJson.ver != null ? ` / 版 ${_diagJson.ver}` : '')
+      + (_diagJson.error ? ` / エラー ${String(_diagJson.error).slice(0, 60)}` : '')
+      + '）※氏名は表示しません');
+  }else{
+    lines.push(`本文の先頭: ${(text||'').slice(0,140).replace(/\s+/g,' ') || '（空）'}`);
+  }
 
   // 3) 分類
   const classified = _classifyApiError(status, text);
