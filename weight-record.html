@@ -1723,6 +1723,13 @@ function fetchTO(url, opts, ms){
 /* HTTP ステータスやレスポンス本文の特徴から、よくある失敗の原因を判別して
    分かりやすい日本語メッセージに変換する。診断（apiDiagnose）からも再利用。 */
 function _classifyApiError(status, text){
+  /* 0) 404 は本文より先に見る（2026-08-13 追加）。
+     Google は「そのデプロイが見つからない」時も HTML のエラーページを返すため、
+     下の HTML 判定に先に食われて「アクセス権が全員になっていない」と誤案内していた。
+     権限を疑って設定を触らせる方が害が大きいので、ここで確定させる。 */
+  if(status === 404){
+    return `URLが見つかりません（HTTP 404）。デプロイ後に取得した /exec で終わるURLを確認してください`;
+  }
   // 1) アクセス権限エラー（最頻出）
   // GAS は「全員」設定でないと、未認証アクセスを Google ログインへリダイレクトし、
   // HTML が返ってくる（ステータスは 200 のことも 401/403 のこともある）。
@@ -1740,9 +1747,7 @@ function _classifyApiError(status, text){
   if(status === 401 || status === 403){
     return `権限エラー（HTTP ${status}）。GASデプロイ設定で「アクセスできるユーザー = 全員」を確認してください`;
   }
-  if(status === 404){
-    return `URLが見つかりません（HTTP 404）。デプロイ後に取得した /exec で終わるURLを確認してください`;
-  }
+  /* 404 は先頭で確定済み（上の 0) 参照）。ここでは扱わない。 */
   if(status >= 500){
     return `GAS側でエラー（HTTP ${status}）。Apps Scriptのログを確認してください`;
   }
@@ -1838,21 +1843,48 @@ function apiNoteVer_(res){
 function updateAuthNote_(){
   const el = document.getElementById('apiAuthNote');
   if(!el) return;
+  /* 保存済みの合言葉は伏せ字なので、画面からは「入っているか」しか分からない。文字数だけ出す。
+     サーバー側（スクリプトプロパティ）の値と突き合わせる時、これだけで貼り付け事故
+     （余分な改行・空白・全角）の大半に気づける。合言葉そのものは出さない。 */
+  const lenNote = apiToken ? '（保存済み: ' + apiToken.length + '文字）' : '';
   if(!apiCaps.seen){
-    el.textContent = 'サーバーの状態は未確認です（「URLを保存・接続」を押すと確認します）。';
+    el.textContent = 'サーバーの状態は未確認です（「URLを保存・接続」を押すと確認します）。' + lenNote;
   }else if(apiCaps.authRequired){
     el.textContent = apiToken
-      ? '✓ このサーバーは合言葉が必要です（入力済み）。'
+      ? '✓ このサーバーは合言葉が必要です（入力済み）。' + lenNote
       : '▲ このサーバーは合言葉が必要です。入力しないと同期できません。';
   }else{
-    el.textContent = 'このサーバーは合言葉なしで接続できます（空のままで構いません）。';
+    el.textContent = 'このサーバーは合言葉なしで接続できます（空のままで構いません）。' + lenNote;
   }
+}
+/* サーバーが返す生のエラー文（例 'Error: unauthorized'）を、現場が次の一手を取れる日本語にする。
+   ★同じ unauthorized でも原因は3つあり、文言を分けないと切り分けができない（2026-08-13 実害）。
+     エラーは「何が起きたか＋次にどうすればよいか」を日本語で示す（HIG・当社規約）。
+   ★unauthorized 以外は元の文をそのまま返す。知らないエラーを勝手に翻訳すると、
+     本当の原因が画面から消える。 */
+function apiFriendlyError_(raw){
+  const s = String(raw == null ? '' : raw);
+  if(!/unauthorized/i.test(s)) return s;
+  if(!apiToken){
+    return 'このサーバーは合言葉が必要ですが、この端末には保存されていません。設定画面で合言葉を入れて「💾 URLを保存・接続」を押してください（入力しただけでは保存されません）';
+  }
+  if(!apiCaps.seen){
+    return 'サーバーの状態を確認できないまま送信し、合言葉が通りませんでした。通信を確かめて画面を再読み込みしてください';
+  }
+  return '合言葉が一致しません。体重記録APIのスクリプトプロパティ WEIGHT_TOKEN と、設定画面の合言葉が同じか確認してください（前後の空白・全角に注意）';
 }
 async function apiGet(){
   if(!apiUrl) return null;
   /* 取得は可能なら POST で行う。GET だと合言葉がURLに載り、履歴やアクセスログに残るため。
-     旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。 */
-  if(apiCan('postGetAll')){
+     旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。
+     ★合言葉を持っていて、かつサーバーを【観測できていない】時も POST で送る（2026-08-13 追加）。
+       GET には合言葉を載せる手段が無いので、合言葉を要求するサーバーに対しては落ちた先が
+       100%失敗する＝フォールバックとして成立していない。「保存は正しいのに毎回 unauthorized」
+       になる経路がここだった。
+     ★「観測できた上で postGetAll が無い」場合は素直に GET へ落とす。こちらは本当に旧サーバー
+       （版1へ戻した時）で、POST を投げると unknown action で失敗する。手順書が保証している
+       「デプロイを1つ前へ戻せばアプリを触らず復帰できる」を壊さないため、2つは必ず区別する。 */
+  if(apiCan('postGetAll') || (apiToken && !apiCaps.seen)){
     const r = await fetchTO(apiUrl, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -1981,7 +2013,7 @@ async function syncFromAPI(showLoader){
   try{
     const json = await apiGet();
     if(!json) throw new Error('レスポンスが空です');
-    if(json.error) throw new Error(json.error);
+    if(json.error) throw new Error(apiFriendlyError_(json.error));
     const apiRes = Array.isArray(json.residents) ? json.residents : [];
     const apiRec = Array.isArray(json.records)   ? json.records   : [];
     const apiThr = json.thresholds && typeof json.thresholds === 'object' ? json.thresholds : null;
@@ -2209,9 +2241,12 @@ function _writeDrain(){
         apiSetStatus('ok', '最終同期: '+ new Date().toLocaleTimeString('ja-JP'));
         dropStalePending(item);   // 同じ行の古い未送信を掃除（stale replay の根絶）
       }else{
-        apiSetStatus('er', '書き込みエラー');
+        /* 理由が分かる時は必ず出す。「書き込み失敗」だけだと、合言葉の不一致でも
+           回線障害でも同じ表示になり、現場が何を直せばよいか判断できない。 */
+        const why = apiFriendlyError_(r && r.error);
+        apiSetStatus('er', why || '書き込みエラー');
         if(!item._drained) enqueuePending(item.action, item.data);
-        toast('⚠️ サーバー書き込み失敗（後で再送します）','err');
+        toast('⚠️ サーバー書き込み失敗（後で再送します）' + (why ? '：' + why : ''),'err');
       }
     })
     .catch(e=>{
