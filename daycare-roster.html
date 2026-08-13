@@ -520,6 +520,10 @@ table.wk .wk-blank { color: transparent; }
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- 共通データ層（Phase 0）。契約 → ドライバの順。ビルド不要・素の script src 1組。 -->
+<script src="su-data.js"></script>
+<script src="su-data-gas.js"></script>
+
 <script>
 'use strict';
 
@@ -575,6 +579,11 @@ function loadLocal() {
     return null;
   }
 }
+/* 共通データ層へ「接続先の決め方」を渡す（Phase 0）。
+   毎回 syncTarget() を呼ぶ形にしてあるので、設定が途中で変わっても次の通信から反映される
+   ＝従来の挙動と同じ。 */
+SU.data.init({ appId: 'daycare-roster', resolveTarget: function () { return syncTarget(); } });
+
 function syncTarget() {
   try {
     const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
@@ -586,19 +595,13 @@ function syncTarget() {
   } catch (e) {}
   return { endpoint: '', token: '' };
 }
-// GAS 共通トランスポート（get/put 共用）。care-schedule.html / work-schedule.html と同一契約：
-// text/plain で CORS preflight を回避し、{ok, data, rev, conflict, error} を返す。
+/* GAS 共通トランスポート（get/put 共用）。care-schedule.html / work-schedule.html と同一契約：
+   text/plain で CORS preflight を回避し、{ok, data, rev, conflict, error} を返す。
+   ★2026-08-13 Phase 0: 通信の実体を su-data.js（共通データ層）へ移した。
+     送る形・応答・例外は同一で、この関数の呼び出し側は一切変えていない。
+     接続先の解決（syncTarget）はこのアプリの都合なので、ここから渡し続ける。 */
 async function gasCall(payload) {
-  const t = syncTarget();
-  if (!t.endpoint) throw new Error('同期先が未設定です');
-  const res = await fetch(t.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // CORS preflight 回避
-    body: JSON.stringify(Object.assign({ token: t.token }, payload)),
-    redirect: 'follow'
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  return SU.data.kvRaw(payload);
 }
 /* ★2026-08-05 修正: ここで careRev を書き換えない。取得の直後には「未送信があれば結果を破棄する」
    分岐があり、従来は破棄した場合でも版だけが進んでいた。すると【古い DB × 新しい rev】の組合せが残り、
@@ -873,10 +876,8 @@ function dcrFetchMasterHosp(force){
   var cfg = dcrGetMasterCfg(); if (!cfg || !cfg.token) return Promise.resolve(false);
   if (!force && dcrHospMap && (Date.now() - dcrHospAt) < DCR_HOSP_TTL_MS) return Promise.resolve(false);
   dcrHospBusy = true;
-  var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') +
-            'action=getRoster&token=' + encodeURIComponent(cfg.token);
-  return fetch(url, { method:'GET', cache:'no-store', redirect:'follow' })
-    .then(function(r){ return r.json(); })
+  /* Phase 0: 入居者マスタからの名簿取得を共通データ層へ移した（GET+クエリの形は同一）。 */
+  return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token, transport: 'GET' })
     .then(function(j){
       if (!j || !Array.isArray(j.roster)) return false;
       var m = {}, vm = {}, sawVisitDay = false;
@@ -909,9 +910,9 @@ function dcrFetchMasterHosp(force){
 function dcrWatchMasterState(){
   var cfg = dcrGetMasterCfg(); if (!cfg) return;
   if (document.hidden) return;
-  var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev';
-  fetch(url, { method:'GET', cache:'no-store', redirect:'follow' })
-    .then(function(r){ return r.json(); })
+  /* Phase 0: 状態版数の監視も共通データ層へ。★合言葉は渡さない（この口は個人情報を返さないため、
+     不要な合言葉を投げない）。token を渡さなければ su-data 側もクエリに載せない。 */
+  SU.data.kvRaw({ action: 'stateRev' }, { endpoint: cfg.url, transport: 'GET' })
     .then(function(j){
       if (!j || j.ok !== true) return;                       // 未対応GAS＝静かに見送る
       var changed = !dcrHospRev || j.rev !== dcrHospRev.rev || j.srev !== dcrHospRev.srev;
