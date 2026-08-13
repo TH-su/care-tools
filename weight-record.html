@@ -1723,26 +1723,35 @@ function fetchTO(url, opts, ms){
 /* HTTP ステータスやレスポンス本文の特徴から、よくある失敗の原因を判別して
    分かりやすい日本語メッセージに変換する。診断（apiDiagnose）からも再利用。 */
 function _classifyApiError(status, text){
+  /* 判定の順序は「強い証拠 → 弱い証拠」（2026-08-13 レビュー指摘・低1 で整理）。
+     ログイン画面への誘導は本文にはっきり出る＝強い証拠なので最優先。
+     ステータスコードはそれより弱い証拠なので、その後ろに置く。 */
+  const isHtml = /<\s*html|<!DOCTYPE\s+html/i.test(text || '');
   // 1) アクセス権限エラー（最頻出）
   // GAS は「全員」設定でないと、未認証アクセスを Google ログインへリダイレクトし、
   // HTML が返ってくる（ステータスは 200 のことも 401/403 のこともある）。
-  if(/<\s*html|<!DOCTYPE\s+html/i.test(text || '')){
-    // ログインリダイレクト（"Sign in"・"Google Accounts"・accounts.google.com 等）
-    if(/login|accounts\.google\.com|sign[\s-]*in|ServiceLogin|Google\s+Accounts|googleusercontent\.com\/.*\/login/i.test(text)){
-      return 'GASのアクセス権が「全員」になっていません。デプロイの管理 → 編集 → 「アクセスできるユーザー」を「全員」に変更してください';
-    }
+  // ログインリダイレクト（"Sign in"・"Google Accounts"・accounts.google.com 等）
+  if(isHtml && /login|accounts\.google\.com|sign[\s-]*in|ServiceLogin|Google\s+Accounts|googleusercontent\.com\/.*\/login/i.test(text)){
+    return 'GASのアクセス権が「全員」になっていません。デプロイの管理 → 編集 → 「アクセスできるユーザー」を「全員」に変更してください';
+  }
+  /* 2) 404 は「そのデプロイが見つからない」。Google はこの時も HTML のエラーページを返すため、
+     下の一般HTML判定に食われて「アクセス権が全員になっていない」と誤案内していた（2026-08-13 実害）。
+     権限を疑って設定を触らせる方が害が大きいので、ログイン判定の直後に確定させる。 */
+  if(status === 404){
+    return `URLが見つかりません（HTTP 404）。デプロイ後に取得した /exec で終わるURLを確認してください`;
+  }
+  // 3) 上記以外の HTML
+  if(isHtml){
     if(/Authorization|authoriz|permission/i.test(text)){
       return 'GASの承認が完了していません。Apps Scriptエディタで一度「実行」を押し、スプレッドシート編集を承認してください';
     }
     return 'GASがHTMLを返しました（JSONではありません）。多くの場合、アクセス権が「全員」になっていないのが原因です';
   }
-  // 2) 明示的な HTTP エラー
+  // 4) 明示的な HTTP エラー
   if(status === 401 || status === 403){
     return `権限エラー（HTTP ${status}）。GASデプロイ設定で「アクセスできるユーザー = 全員」を確認してください`;
   }
-  if(status === 404){
-    return `URLが見つかりません（HTTP 404）。デプロイ後に取得した /exec で終わるURLを確認してください`;
-  }
+  /* 404 は上の 2) で確定済み。ここでは扱わない。 */
   if(status >= 500){
     return `GAS側でエラー（HTTP ${status}）。Apps Scriptのログを確認してください`;
   }
@@ -1838,27 +1847,71 @@ function apiNoteVer_(res){
 function updateAuthNote_(){
   const el = document.getElementById('apiAuthNote');
   if(!el) return;
+  /* 保存済みの合言葉は伏せ字なので、画面からは「入っているか」しか分からない。文字数だけ出す。
+     サーバー側（スクリプトプロパティ）の値と突き合わせる時、これだけで貼り付け事故
+     （余分な改行・空白・全角）の大半に気づける。合言葉そのものは出さない。 */
+  const lenNote = apiToken ? '（保存済み: ' + apiToken.length + '文字）' : '';
   if(!apiCaps.seen){
-    el.textContent = 'サーバーの状態は未確認です（「URLを保存・接続」を押すと確認します）。';
+    el.textContent = 'サーバーの状態は未確認です（「URLを保存・接続」を押すと確認します）。' + lenNote;
   }else if(apiCaps.authRequired){
     el.textContent = apiToken
-      ? '✓ このサーバーは合言葉が必要です（入力済み）。'
+      ? '✓ このサーバーは合言葉が必要です（入力済み）。' + lenNote
       : '▲ このサーバーは合言葉が必要です。入力しないと同期できません。';
   }else{
-    el.textContent = 'このサーバーは合言葉なしで接続できます（空のままで構いません）。';
+    el.textContent = 'このサーバーは合言葉なしで接続できます（空のままで構いません）。' + lenNote;
   }
+}
+/* サーバーが返す生のエラー文（例 'Error: unauthorized'）を、現場が次の一手を取れる日本語にする。
+   ★同じ unauthorized でも原因は3つあり、文言を分けないと切り分けができない（2026-08-13 実害）。
+     エラーは「何が起きたか＋次にどうすればよいか」を日本語で示す（HIG・当社規約）。
+   ★unauthorized 以外は元の文をそのまま返す。知らないエラーを勝手に翻訳すると、
+     本当の原因が画面から消える。 */
+function apiFriendlyError_(raw){
+  const s = String(raw == null ? '' : raw);
+  if(!/unauthorized/i.test(s)) return s;
+  if(!apiToken){
+    /* ★どの画面かを特定する（レビュー指摘・中3）。共通の「接続設定」アプリは体重のURLしか
+       扱っておらず合言葉の欄が無いため、「設定画面」とだけ書くと探して詰まる。 */
+    return 'このサーバーは合言葉が必要ですが、この端末には保存されていません。体重管理アプリの「設定」→「🌐 複数端末で共有」の合言葉欄に入れて「💾 URLを保存・接続」を押してください（入力しただけでは保存されません。共通の接続設定アプリには体重の合言葉欄はありません）';
+  }
+  if(!apiCaps.seen){
+    return 'サーバーの状態を確認できないまま送信し、合言葉が通りませんでした。通信を確かめて画面を再読み込みしてください';
+  }
+  return '合言葉が一致しません。体重記録APIのスクリプトプロパティ WEIGHT_TOKEN と、設定画面の合言葉が同じか確認してください（前後の空白・全角に注意）';
 }
 async function apiGet(){
   if(!apiUrl) return null;
   /* 取得は可能なら POST で行う。GET だと合言葉がURLに載り、履歴やアクセスログに残るため。
-     旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。 */
-  if(apiCan('postGetAll')){
+     旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。
+     ★合言葉を持っていて、かつサーバーを【観測できていない】時も POST で送る（2026-08-13 追加）。
+       GET には合言葉を載せる手段が無いので、合言葉を要求するサーバーに対しては落ちた先が
+       100%失敗する＝フォールバックとして成立していない。「保存は正しいのに毎回 unauthorized」
+       になる経路がここだった。
+     ★「観測できた上で postGetAll が無い」場合は素直に GET へ落とす。こちらは本当に旧サーバー
+       （版1へ戻した時）で、POST を投げると unknown action で失敗する。手順書が保証している
+       「デプロイを1つ前へ戻せばアプリを触らず復帰できる」を壊さないため、2つは必ず区別する。
+     ★推測で POST を選ぶ前に、もう一度だけ観測する（レビュー指摘・中1）。観測は起動時の1回だけで、
+       そこで6秒に間に合わなかった端末はセッション中ずっと未観測のままになる。その状態で
+       版1へ戻すと、旧コードなら GET で通っていた取得が unknown action で止まる＝
+       手順書の保証（デプロイを戻せばアプリを触らず復帰する）を条件つきに変えてしまう。 */
+  if(apiToken && !apiCaps.seen) await apiProbe();
+  if(apiCan('postGetAll') || (apiToken && !apiCaps.seen)){
+    const speculative = !apiCaps.seen;      // 観測できないまま POST に賭けたか
     const r = await fetchTO(apiUrl, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'getAll', token: apiToken || undefined })
     });
-    return _parseApiResponse(r);
+    const j = await _parseApiResponse(r);
+    /* 賭けが外れた時の受け身。版1は getAll を知らないので unknown action を返す（書き込みは
+       起きない＝副作用なし）。ここで版1と確定させ、1回だけ GET で取り直す。以後の送信も
+       ver0 扱い＝行全体の送信に戻るので、部分送信で項目を潰す事故も起きない。 */
+    if(speculative && j && j.error && /unknown action/i.test(String(j.error))){
+      apiCaps = { ver:0, caps:[], authRequired: apiCaps.authRequired, seen:true };
+      const rOld = await fetchTO(apiUrl + '?action=getAll', { cache:'no-store' });
+      return _parseApiResponse(rOld);
+    }
+    return j;
   }
   const r = await fetchTO(apiUrl + '?action=getAll', { cache:'no-store' });
   return _parseApiResponse(r);
@@ -1981,7 +2034,7 @@ async function syncFromAPI(showLoader){
   try{
     const json = await apiGet();
     if(!json) throw new Error('レスポンスが空です');
-    if(json.error) throw new Error(json.error);
+    if(json.error) throw new Error(apiFriendlyError_(json.error));
     const apiRes = Array.isArray(json.residents) ? json.residents : [];
     const apiRec = Array.isArray(json.records)   ? json.records   : [];
     const apiThr = json.thresholds && typeof json.thresholds === 'object' ? json.thresholds : null;
@@ -2209,9 +2262,12 @@ function _writeDrain(){
         apiSetStatus('ok', '最終同期: '+ new Date().toLocaleTimeString('ja-JP'));
         dropStalePending(item);   // 同じ行の古い未送信を掃除（stale replay の根絶）
       }else{
-        apiSetStatus('er', '書き込みエラー');
+        /* 理由が分かる時は必ず出す。「書き込み失敗」だけだと、合言葉の不一致でも
+           回線障害でも同じ表示になり、現場が何を直せばよいか判断できない。 */
+        const why = apiFriendlyError_(r && r.error);
+        apiSetStatus('er', why || '書き込みエラー');
         if(!item._drained) enqueuePending(item.action, item.data);
-        toast('⚠️ サーバー書き込み失敗（後で再送します）','err');
+        toast('⚠️ サーバー書き込み失敗（後で再送します）' + (why ? '：' + why : ''),'err');
       }
     })
     .catch(e=>{
