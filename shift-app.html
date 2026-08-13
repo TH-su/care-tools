@@ -246,7 +246,12 @@ dialog h3 { margin-top: 0; }
   tr.hiddenrow { display: none !important; }
   body { background: #fff; }
   main { padding: 0; }
-  #gridWrap { max-height: none; overflow: visible; border: none; }
+  /* 全体表示(fitscreen)のまま印刷しても表が切れないようにする（2026-08-13 実測で欠落を確認）。
+     applyFitScreen は #gridWrap にインライン height を残し、body.fitscreen は overflow:hidden を掛けるため、
+     どちらも印刷に効いたままだと下側の職員行が用紙上で切り落とされる（31名で下1/3が欠落）。
+     インライン指定と body.fitscreen の両方に勝つ必要があるため !important で無効化する。
+     全体表示OFF時は元から height なし・overflow:visible のため、この指定で印刷結果は変わらない。 */
+  #gridWrap { max-height: none !important; overflow: visible !important; height: auto !important; border: none; }
   /* 印刷は printMode 再レンダで可視列(氏名+区分+日付1..月末)のみのDOMにしインライン width(列幅の
    * 合計=applyPrintFitが算出した日付列幅)を使う。width:auto は table-layout:fixed の列幅指定を無効化し
    * A3横を埋められなくなるため使わない（旧 col{width:0} 方式の名残）。 */
@@ -281,7 +286,7 @@ body.printsim .pcol, body.printsim .noprint, body.printsim tfoot,
 body.printsim #toolbar, body.printsim .layerbar, body.printsim #metricsBar,
 body.printsim .showbtn, body.printsim .hidebtn { display: none !important; }
 body.printsim tr.hiddenrow { display: none !important; }
-body.printsim #gridWrap { max-height: none; overflow: visible; border: none; }
+body.printsim #gridWrap { max-height: none !important; overflow: visible !important; height: auto !important; border: none; }   /* @media print と同期（全体表示ONのままでも実寸で測れる） */
 body.printsim table.sheet { font-size: 13px; }   /* width:auto は使わない（印刷と同期・列幅をtable-layout:fixedで効かせる） */
 body.printsim table.sheet th, body.printsim table.sheet td { padding: 2px 1px; }
 body.printsim td.daycell { height: 26px; font-size: 13.5px; }
@@ -2560,25 +2565,41 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   measureAt : function(z) → その倍率での【実描画高】を返す（呼び出し側がDOMで実測する）
    *   availH    : 用紙の印字可能高（px）
    *   maxIter   : 反復上限（既定8）。到達しても必ず停止する＝印刷が固まらない
-   * 返り値 { zoom, iterations, fits }
+   *   minZoom   : この倍率より下へは絶対に縮めない床（任意）。省略時は床なし＝従来動作
+   * 返り値 { zoom, iterations, fits, floored }
    *
    * 収束の考え方: 超過している時は「余地÷実測高」を掛けて一度で必要な倍率まで落とす（比例補正）。
    * 丸めで再超過しうるので 0.995 を掛けて安全側に置く。比例補正が効かない（縮まない/不正値）場合は
-   * 必ず縮む固定刻み(0.99倍)へ退避する＝どんな measureAt でも有限回で必ず終わる。 */
-  function shrinkZoomToFit(zoom, measureAt, availH, maxIter) {
+   * 必ず縮む固定刻み(0.99倍)へ退避する＝どんな measureAt でも有限回で必ず終わる。
+   *
+   * ★床(minZoom)の意味（2026-08-13 追加）: このループは「zoom後の丸め誤差（実測で数%）」を
+   * 吸収するためのもので、倍率を何十分の一にするための仕組みではない。ところが measureAt が
+   * 倍率に反応しないブラウザ（getBoundingClientRect が zoom を反映しない旧仕様の実装）では
+   * 毎回「まだ超過している」と判定され、上限8回ぶん縮み続けて倍率が約1/60まで潰れた
+   * （Windows Chrome・A3横が用紙左上の小さな塊になる事故）。床を渡せば、測り方が壊れていても
+   * 被害は「床までの縮小」で頭打ちになる。 */
+  function shrinkZoomToFit(zoom, measureAt, availH, maxIter, minZoom) {
     var lim = (typeof maxIter === 'number' && maxIter > 0) ? maxIter : 8;
     var z = (typeof zoom === 'number' && isFinite(zoom) && zoom > 0) ? zoom : 1;
+    var floor = (typeof minZoom === 'number' && isFinite(minZoom) && minZoom > 0 && minZoom < z) ? minZoom : 0;
     var n = 0;
+    var floored = false;
     var h = measureAt(z);
     while (typeof h === 'number' && isFinite(h) && h > availH && n < lim) {
       var next = z * (availH / h) * 0.995;
       /* 比例補正が縮まない・不正値になる場合は固定刻みへ（無限ループと発散の両方を封じる） */
       if (!(next > 0) || !(next < z)) next = z * 0.99;
+      if (next < floor) { next = floor; floored = true; }
+      if (!(next < z)) break;          /* 床に到達＝これ以上は縮めない（同値で回り続けない） */
       z = next;
       n++;
       h = measureAt(z);
     }
-    return { zoom: z, iterations: n, fits: !(typeof h === 'number' && isFinite(h) && h > availH) };
+    return {
+      zoom: z, iterations: n,
+      fits: !(typeof h === 'number' && isFinite(h) && h > availH),
+      floored: floored
+    };
   }
 
   var api = { shrinkZoomToFit: shrinkZoomToFit };
@@ -7636,6 +7657,44 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (isFinite(h) && h > 0) ? h : 30;
     },
 
+    /* ★倍率の実寸検算は「測り方」がブラウザで割れる（2026-08-13 事故の原因）。
+     * zoom を当てた要素の getBoundingClientRect が何を返すかは実装で異なる:
+     *   ・Chrome 128+ の標準化仕様 … 視覚寸法（zoom 0.5 なら高さも半分になる）
+     *   ・旧仕様（同機能が無効な端末・WebKit系）… 実寸のまま。しかも罫線が1px未満に潰せないぶん
+     *     倍率を下げるほど【増える】
+     * 旧仕様の増加を「まだはみ出している」と読むと、縮小ループが上限回数ぶん空振りで縮み続け、
+     * 倍率が約1/60まで潰れて表が用紙の左上の小さな塊になる（Windows Chrome で発生）。
+     * 推測せず、実際に 0.5 を当てて確かめる。返り値 true=そのまま使える／false=倍率を掛けて直す。 */
+    zoomRectIsVisual_: function (table) {
+      try {
+        var keep = table.style.zoom;
+        /* 基準は必ず等倍で取る。呼び出し時点で既に倍率が乗っていること（分割印刷の幅検算など）が
+         * あり、その値を基準にすると比が狂って判定を誤る。 */
+        table.style.zoom = '1';
+        var h0 = table.getBoundingClientRect().height;
+        table.style.zoom = '0.5';
+        var h1 = table.getBoundingClientRect().height;
+        table.style.zoom = keep;
+        if (!(h0 > 0) || !(h1 > 0)) return true;   /* 測れない＝縮小ループ側が不正値で止まる（従来動作） */
+        return h1 < h0 * 0.75;                     /* 半分側へ動いていれば視覚寸法 */
+      } catch (e) { return true; }
+    },
+    /* 倍率 zz を当てた時に【紙に出る寸法】を返す測定器を作る（dim='height'|'width'）。
+     * 上の判定で実装差を吸収するため、どのブラウザでも同じ意味の値が返る。
+     * ※呼び出し側が printsim を当てた状態で使うこと（印刷と同一寸法で測るため）。 */
+    visualProbe_: function (table, dim) {
+      var visual = this.zoomRectIsVisual_(table);
+      return function (zz) {
+        table.style.zoom = zz.toFixed(3);
+        var r = table.getBoundingClientRect();
+        var v = (dim === 'width') ? r.width : r.height;
+        return visual ? v : v * zz;
+      };
+    },
+    /* 縮小ループに許す下限。ループの役目は zoom 後の丸め誤差（実測で数%）の吸収であって、
+     * 倍率を何分の一にもすることではない。測り方が壊れても被害をここで頭打ちにする。 */
+    shrinkFloor_: function (zoom) { return zoom * 0.85; },
+
     applyPrintFit: function () {
       /* A3縦2分割モード(グリッドビューのみ)。専用経路へ分岐し、A3横の既存ロジックには一切触れない。
        * printsplit クラスで split 時のみ #printTitle を隠す（各ページは表内 splittitle で識別）。 */
@@ -7705,13 +7764,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ※ official ビューは printsim を使わず実寸経路が別のため対象外（従来どおり）。 */
       if (useSim && table) {
         document.body.classList.add('printsim');
-        var fitRes = PF.shrinkZoomToFit(zoom, function (zz) {
-          table.style.zoom = zz.toFixed(3);
-          return table.getBoundingClientRect().height;
-        }, pxH - titleH);
+        /* 測り方の実装差は visualProbe_ が吸収し、それでも収束しない時は床(既定=計算値の85%)で止める */
+        var fitRes = PF.shrinkZoomToFit(zoom, this.visualProbe_(table, 'height'),
+          pxH - titleH, 8, this.shrinkFloor_(zoom));
         table.style.zoom = '';            /* 画面表示へ影響を残さない（印刷指定は下の fitStyle が担う） */
         document.body.classList.remove('printsim');
         zoom = fitRes.zoom;
+        z = zoom.toFixed(3);
+        if (fitRes.floored) {
+          this.toast('⚠ 印刷倍率の自動調整が下限で止まりました。用紙からはみ出す可能性があります（職員数が多い・行が高い場合）');
+        }
+      }
+      /* 用紙に出す前の最終検算（2026-08-13 追加）: A3横は最大構成（31日×日付列220px）でも 0.22、
+       * 縦方向も 100名規模で 0.2 程度までしか下がらない。0.10 未満は計測が壊れた時にしか起こらない値で、
+       * そのまま刷ると「用紙の左上に潰れた黒い塊」が出て紙が無駄になる。読める大きさで刷って知らせる。 */
+      if (!(zoom >= 0.10)) {
+        this.toast('⚠ 印刷倍率を正しく計算できませんでした。読める大きさで印刷します（複数ページになる場合があります）');
+        zoom = 0.10;
         z = zoom.toFixed(3);
       }
       var tableSel = (this.view === 'official') ? '#officialTable table' : '#gridWrap table.sheet';
@@ -7798,16 +7867,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 呼び出し側の printsim 解除に到達せず、画面がツールバーごと消えたまま固まる。 */
       if (!PF || typeof PF.shrinkZoomToFit !== 'function') return { z: z.toFixed(3), fits: true };
       var fits = true;
+      /* 床は「計算値の85%」で固定する（高さ→幅の2段でも合計85%までしか縮まない）。
+       * 測り方が壊れた端末で倍率が潰れて用紙の隅に印刷される事故を防ぐ（2026-08-13） */
+      var floor = this.shrinkFloor_(z);
       try {
-        var rh = PF.shrinkZoomToFit(z, function (zz) {
-          table.style.zoom = zz.toFixed(3);
-          return table.getBoundingClientRect().height;
-        }, availH);
+        var rh = PF.shrinkZoomToFit(z, this.visualProbe_(table, 'height'), availH, 8, floor);
         /* 幅は高さで確定した倍率から検算する。既に収まっていれば0回＝倍率は変わらない */
-        var rw = PF.shrinkZoomToFit(rh.zoom, function (zz) {
-          table.style.zoom = zz.toFixed(3);
-          return table.getBoundingClientRect().width;
-        }, pxW);
+        var rw = PF.shrinkZoomToFit(rh.zoom, this.visualProbe_(table, 'width'), pxW, 8, floor);
         z = rw.zoom;
         fits = rh.fits && rw.fits;
       } catch (e) {
