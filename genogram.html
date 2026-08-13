@@ -2246,7 +2246,9 @@ function pruneWrongMasterGenograms() {
     if (rr && Array.isArray(rr.residents)) roster = rr.residents;
   } catch (e) { roster = null; }
   if (!roster || !roster.length) return 0;   // 名簿を確認できない＝判定しない
-  var nameOf = {};
+  /* ★素の {} にしない。'toString' 等が継承で truthy になり、名簿に無い id を
+     「載っている」と誤判定する（このコードベースで既知の罠・resident-master.html の VIEWS 参照） */
+  var nameOf = Object.create(null);
   roster.forEach(function (r) {
     if (!r || r.masterId == null || r.masterId === '') return;
     var n = String(r.name == null ? '' : r.name).replace(/\s+/g, '');
@@ -2261,8 +2263,14 @@ function pruneWrongMasterGenograms() {
     if (!rec || typeof rec !== 'object' || typeof rec.image !== 'string' || !rec.image) return;
     var got = String(rec.name == null ? '' : rec.name).replace(/\s+/g, '');
     if (!got || got === want) return;                     // 判定できない／正しい → 触らない
+    /* ★先に「その図の本人の氏名キー」へ写してから消す。写し先に既に図がある時は、
+       更新時刻が新しい方を残す（写し先の方が新しければ上書きしない）。
+       通常この2つは同じ保存で同時に書かれるので同時刻になる。 */
     var nk = 'name:' + got;
-    if (!(m[nk] && m[nk].image)) m[nk] = rec;             // ★先に本人の氏名キーへ写してから消す
+    var cur = m[nk];
+    var newer = !(cur && cur.image) ||
+      String(cur.updatedAt == null ? '' : cur.updatedAt) < String(rec.updatedAt == null ? '' : rec.updatedAt);
+    if (newer) m[nk] = rec;
     delete m[k];
     changed++;
   });
@@ -2309,6 +2317,18 @@ async function saveDoc() {
   }
   // 入居者マスタ連携：サムネイルを共有キーへ（masterId と氏名の両方をキーにする）
   writeSuGenogram(name);
+  /* ★マスタの詳細から開いた（?resident=）のに、保存する文書名がその方の氏名と違う時は、
+     開いた元の方の欄には出ない（別人の欄に他人の図を出さないための束縛・2026-08-13）。
+     図は文書名の方の欄に出るので事故ではないが、黙っていると「作ったのに出ない」になる。
+     ★保存・同期のお知らせが先に出るので、それが消えた後に出す（上書きされないため）。 */
+  if (window._suMasterId &&
+      !suGenoMasterIdFor(name, window._suMasterId, window._suMasterName) && window._suMasterName) {
+    const _mn = window._suMasterName;
+    setTimeout(() => {
+      try { flashStatus('この図は「' + name + '」さんの欄に出ます（開いた元の「' + _mn + '」さんの欄には出ません）'); }
+      catch (e) {}
+    }, 2400);
+  }
   // Step 2: cloud sync (async, with retry)
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドへ同期中…');
@@ -2927,7 +2947,11 @@ function init() {
   setTimeout(function () {
     var pruned = 0;
     try { pruned = pruneWrongMasterGenograms(); } catch (e) {}
-    if (pruned) flashStatus('別の方の欄に出ていた家族構成図 ' + pruned + '件を切り離しました');
+    /* ★お知らせで転んでも backfill を止めない（コメントの「影響させない」と実装を揃える）。
+       文面は「何が起きたか＋図はどうなったか」まで書く（図が消えたと誤解させない） */
+    if (pruned) {
+      try { flashStatus('別の方の欄に出ていた家族構成図 ' + pruned + '件を切り離しました（図はお名前で残っています）'); } catch (e) {}
+    }
     try { backfillSuGenograms(); } catch (e) {}
   }, 1800);
 
