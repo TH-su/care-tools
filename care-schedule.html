@@ -24,7 +24,9 @@
   --g8: #3c4043;
   --g9: #202124;
   --hdr-h: 56px;
-  --sum-h: 80px;
+  /* 80px（2段）＋22px（参考値の注記の1段）。既存2段の高さ40pxずつは変えず、注記ぶんだけ増やす。
+     .cal-wrap / .days-panel の top は calc(--hdr-h + --sum-h) なので、盤面は自動で22px下がる。 */
+  --sum-h: 102px;
   --col-hdr-h: 44px;
   --time-w: 48px;
   --surcharge-w: 22px;
@@ -44,6 +46,8 @@ html, body { height: 100%; overflow: hidden;
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
 }
 .hdr h1 { font-size: 1rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+/* 印刷専用の注記。画面では場所を取らない（画面側はサマリーバー3段目に出している） */
+.print-rate-note { display: none; }
 .resident-selector { flex: 1; min-width: 0; }
 .resident-select {
   width: 100%; max-width: 220px;
@@ -107,6 +111,17 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
   overflow-x: auto; overflow-y: hidden;
 }
 .sum-row + .sum-row { border-top: 1px dashed var(--g3); }
+/* 参考値の注記の段。高さを固定して、上2段の高さ（各40px）を変えない */
+.sum-note-row { flex: 0 0 22px; align-items: center; background: var(--warn-bg, #fff8e1); }
+.rate-note {
+  font-size: 0.8125rem; line-height: 1.3; color: #7a4200; font-weight: 600; white-space: nowrap;
+}
+/* 特定施設のときだけ出す注意書き（限度額欄を空にする代わりに理由を書く） */
+.sum-tokutei-note {
+  font-size: 0.75rem; color: #7a4200; background: #fff8e1;
+  border: 1px solid #ffe0a3; border-radius: 6px; padding: 2px 8px;
+  white-space: nowrap; flex-shrink: 0; margin-inline-start: 6px;
+}
 .sum-row::-webkit-scrollbar { height: 2px; }
 .sum-row::-webkit-scrollbar-thumb { background: var(--g4); }
 .sum-group {
@@ -438,6 +453,43 @@ select.inp { cursor: pointer; }
 .btn-sec:hover { background: var(--g3); }
 .btn-ng { background: var(--ng); color: #fff; margin-left: auto; }
 .btn:hover { filter: brightness(0.96); }
+/* 数字が動く操作は塗りつぶしにしない（押し間違いを誘わない）。枠線＋確認を通す */
+.btn-danger-outline { background: #fff; color: #c62828; border: 2px solid var(--ng); }
+.btn-undo { background: #fff; color: #7a4200; border: 2px solid #ffa000; }
+
+/* ── 報酬マスタ 設定UI ── */
+.rm-lead { font-size: 0.8125rem; color: var(--g7); line-height: 1.7; margin-bottom: 10px; }
+.rate-note-inline { display: block; margin-top: 4px; color: #7a4200; font-weight: 600; }
+.rm-warn {
+  margin-bottom: 10px; padding: 8px 10px; font-size: 0.8125rem; line-height: 1.6;
+  color: #7a4200; background: #fff8e1; border: 1px solid #ffe0a3; border-radius: 6px;
+}
+.rm-tbl-hd {
+  margin: 14px 0 6px; font-size: 0.8125rem; font-weight: 700; color: var(--g8);
+  border-inline-start: 3px solid var(--pri2); padding-inline-start: 8px;
+}
+.rm-tbl-note { font-size: 0.75rem; color: var(--g6); line-height: 1.6; margin-bottom: 6px; }
+.rm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.rm-cell { display: flex; align-items: center; gap: 6px; }
+.rm-cell label { flex: 1 1 auto; font-size: 0.8125rem; color: var(--g7); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.rm-cell input {
+  flex: 0 0 84px; min-height: var(--tap-min, 44px); padding: 6px 8px; text-align: end;
+  border: 1.5px solid var(--g3); border-radius: 6px; font-size: 0.875rem;
+  font-variant-numeric: tabular-nums; background: var(--g0);
+}
+.rm-cell input:focus { border-color: var(--pri2); outline: none; }
+.rm-cell input.rm-text { flex: 1 1 120px; text-align: start; }
+/* 影響プレビュー */
+#rm-preview-body { font-size: 0.875rem; line-height: 1.8; color: var(--g8); }
+#rm-preview-body .rm-pv-head { font-weight: 700; font-size: 0.9375rem; margin-bottom: 8px; }
+#rm-preview-body table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.8125rem; }
+#rm-preview-body th, #rm-preview-body td { border: 1px solid var(--g3); padding: 5px 8px; text-align: end;
+  font-variant-numeric: tabular-nums; }
+#rm-preview-body th { background: var(--g1); text-align: center; }
+#rm-preview-body td.rm-pv-l { text-align: start; }
+#rm-preview-body .rm-pv-same { color: #2e7d32; font-weight: 700; }
+#rm-preview-body .rm-pv-diff { color: #c62828; font-weight: 700; }
 
 /* 利用者一覧モーダル（スコープ限定・既存レイアウト/印刷に非干渉） */
 #mk-resident-list .md { max-width: min(1180px, 96vw); }
@@ -614,6 +666,11 @@ select.inp { cursor: pointer; }
   body { overflow: auto; }
   /* 週ボードはA4縦。grid-body の高さは印刷圧縮時に JS(yOf) がインラインで設定する（非圧縮時は24h=1440px相当） */
   @page { size: A4 portrait; margin: 8mm; }
+  /* 参考値の注記を紙にも出す。ヘッダ内のインライン要素なので行を増やさず、
+     盤面の高さ（JS が設定する grid-body の height）にも触れない。 */
+  .print-rate-note { display: inline; font-size: 8px; font-weight: 600; color: #000;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  body.rl-print .print-rate-note { display: none; }   /* 一覧A3印刷では一覧側の注記を使う */
   body.week-print .event-block { font-size: 10px; }
   body.week-print .time-label, body.week-print .surcharge-band-label { font-size: 9px; }
   /* 省略マーク（早朝/深夜/16-20の空き圧縮）: 波線バンド＋ラベル */
@@ -684,6 +741,9 @@ select.inp { cursor: pointer; }
 
 <header class="hdr">
   <h1>週間計画<span class="sim-tag">（試算・未確定）</span></h1>
+  <!-- 週ボードA4印刷のときだけ紙に出る注記。ヘッダの中に置くので、盤面の高さ計算（yOf）にも
+       行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->
+  <span class="print-rate-note" id="print-rate-note"></span>
   <div class="resident-selector">
     <select class="resident-select" id="resident-select" onchange="onResidentChange()">
       <option value="">-- 利用者を選択 --</option>
@@ -717,7 +777,7 @@ select.inp { cursor: pointer; }
       <span class="sum-label">介護度</span>
       <span class="sum-val" id="sum-level">—</span>
     </div>
-    <div class="sum-group">
+    <div class="sum-group" id="sum-limit-group">
       <span class="sum-label">支給限度</span>
       <span class="sum-val" id="sum-limit">—</span>
       <span class="sum-unit">単位</span>
@@ -749,17 +809,21 @@ select.inp { cursor: pointer; }
       <span class="sum-label">自己負担(概算)</span>
       <span class="sum-val" id="sum-copay">¥—</span>
     </div>
-    <div class="sum-pct-wrap">
+    <div class="sum-pct-wrap" id="sum-pct-wrap">
       <span class="sum-unit">使用率</span>
       <div class="sum-pct-bar"><div class="sum-pct-fill" id="sum-pct-fill" style="width:0%"></div></div>
       <span class="sum-pct-val" id="sum-pct" style="color:var(--g7)">—%</span>
     </div>
+    <!-- 特定施設のときだけ出す。限度額の欄を空欄にするのではなく、出ない理由を書く -->
+    <span class="sum-tokutei-note" id="sum-tokutei-note" style="display:none"></span>
     <button class="sum-edit-btn" onclick="openEventListModal()" title="予定一覧">📋 一覧</button>
     <button class="sum-edit-btn" id="sync-btn" onclick="openSyncModal()" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" onclick="openOfficeInfoModal()">🏢 事業所情報</button>
     <button class="sum-edit-btn" onclick="openCareInfoModal()">⚙ 介護情報</button>
     <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
+  <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
+  <div class="sum-row sum-note-row"><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
@@ -836,12 +900,9 @@ select.inp { cursor: pointer; }
           <option value="生活２">生活２　20分以上45分未満</option>
           <option value="生活３">生活３　45分以上70分未満</option>
         </optgroup>
-        <optgroup label="■ 総合事業（要支援・事業対象者）">
-          <option value="A21121">訪問型独自サービス/211　【A11】1,000単位</option>
-          <option value="A21221">訪問型独自サービス/212　【A12】1,997単位</option>
-          <option value="A2111">訪問型独自サービス11　【A21】1,176単位</option>
-          <option value="A21211">訪問型独自サービス12　【A22】2,349単位</option>
-        </optgroup>
+        <!-- 総合事業の選択肢は報酬マスタ sogoVisit から起動時に生成する（renderSogoCategoryOptions_）。
+             以前はここに単位数を直書きしていたため、マスタと食い違う経路になっていた。 -->
+        <optgroup label="■ 総合事業（要支援・事業対象者）" id="cat-optgroup-sogo"></optgroup>
       </select>
       <!-- 区分の説明文と、介護度×区分の食い違い警告（.warn）を出す枠。role="status" は区分を
            変えた瞬間に読み上げさせるため。表示してから中身を入れる（onCategoryChange）。 -->
@@ -1084,8 +1145,9 @@ select.inp { cursor: pointer; }
 
     <div class="form-row">
       <label for="oi-unit-price">単位単価（円/単位）</label>
-      <input class="inp" type="number" id="oi-unit-price" min="9" max="13" step="0.01" value="10.27" style="max-width:120px">
-      <div class="hint-box" style="margin-top:6px">地域加算により変わります。1級地(東京都特別区等)=11.40、2級地=11.12、3級地=10.84…標準=10.00</div>
+      <!-- 初期値と説明文は報酬マスタ（unitPrice / unitPriceHint）から入れる -->
+      <input class="inp" type="number" id="oi-unit-price" min="9" max="13" step="0.01" style="max-width:120px">
+      <div class="hint-box" style="margin-top:6px" id="oi-unit-price-hint"></div>
     </div>
 
     <!-- 訪問介護 加算設定 -->
@@ -1098,48 +1160,23 @@ select.inp { cursor: pointer; }
         <div class="ci-grid">
           <div class="ci-field">
             <label>特定事業所加算</label>
-            <select id="oi-v-tokuteijigyo">
-              <option value="0">なし</option>
-              <option value="3">IV（+3%）</option>
-              <option value="5">III（+5%）</option>
-              <option value="10">II（+10%）</option>
-              <option value="20">I（+20%）</option>
-            </select>
+            <select id="oi-v-tokuteijigyo"></select>
           </div>
           <div class="ci-field">
             <label>サービス提供体制強化加算</label>
-            <select id="oi-v-svc-strength">
-              <option value="0">なし</option>
-              <option value="1">III（+1単位/回）</option>
-              <option value="3">II（+3単位/回）</option>
-              <option value="6">I（+6単位/回）</option>
-            </select>
+            <select id="oi-v-svc-strength"></select>
           </div>
           <div class="ci-field">
             <label>特別地域・中山間地域加算</label>
-            <select id="oi-v-chiiki">
-              <option value="0">なし</option>
-              <option value="10">中山間小規模（+10%）</option>
-              <option value="15">特別地域（+15%）</option>
-            </select>
+            <select id="oi-v-chiiki"></select>
           </div>
           <div class="ci-field">
             <label>介護職員等処遇改善加算</label>
-            <select id="oi-v-nursing">
-              <option value="0">なし</option>
-              <option value="6.2">V（+6.2%）</option>
-              <option value="8.3">III（+8.3%）</option>
-              <option value="13.3">II（+13.3%）</option>
-              <option value="14.5">I（+14.5%）</option>
-            </select>
+            <select id="oi-v-nursing"></select>
           </div>
           <div class="ci-field" style="grid-column:1/-1">
             <label>同一建物減算（訪問介護）</label>
-            <select id="oi-v-douitsu">
-              <option value="0">なし（対象外）</option>
-              <option value="10">同一建物居住者・月49人以下（−10%）</option>
-              <option value="15">同一建物居住者・月50人以上（−15%）</option>
-            </select>
+            <select id="oi-v-douitsu"></select>
           </div>
         </div>
         <div style="margin-top:8px;font-size:11px;color:var(--g6);line-height:1.6">
@@ -1158,61 +1195,31 @@ select.inp { cursor: pointer; }
         <div class="ci-grid">
           <div class="ci-field">
             <label>入浴介助加算（種別）</label>
-            <select id="oi-dc-bathing">
-              <option value="0">なし</option>
-              <option value="40">I型（+40単位/回）</option>
-              <option value="55">II型（+55単位/回）</option>
-            </select>
+            <select id="oi-dc-bathing"></select>
           </div>
           <div class="ci-field">
             <label>中重度者ケア体制加算</label>
-            <select id="oi-dc-heavy">
-              <option value="0">なし</option>
-              <option value="45">あり（+45単位/日）</option>
-            </select>
+            <select id="oi-dc-heavy"></select>
           </div>
           <div class="ci-field">
             <label>認知症加算</label>
-            <select id="oi-dc-dementia">
-              <option value="0">なし</option>
-              <option value="60">あり（+60単位/日）</option>
-            </select>
+            <select id="oi-dc-dementia"></select>
           </div>
           <div class="ci-field">
             <label>個別機能訓練加算</label>
-            <select id="oi-dc-training">
-              <option value="0">なし</option>
-              <option value="20">II（+20単位/日）</option>
-              <option value="56">Iイ（+56単位/日）</option>
-              <option value="76">Iロ（+76単位/日）</option>
-            </select>
+            <select id="oi-dc-training"></select>
           </div>
           <div class="ci-field">
             <label>サービス提供体制強化加算</label>
-            <select id="oi-dc-svc-strength">
-              <option value="0">なし</option>
-              <option value="6">III（+6単位/回）</option>
-              <option value="18">II（+18単位/回）</option>
-              <option value="22">I（+22単位/回）</option>
-            </select>
+            <select id="oi-dc-svc-strength"></select>
           </div>
           <div class="ci-field">
             <label>介護職員等処遇改善加算</label>
-            <select id="oi-dc-nursing">
-              <option value="0">なし</option>
-              <option value="5.8">IV（+5.8%）</option>
-              <option value="7.7">III（+7.7%）</option>
-              <option value="12.5">II（+12.5%）</option>
-              <option value="13.6">I（+13.6%）</option>
-            </select>
+            <select id="oi-dc-nursing"></select>
           </div>
           <div class="ci-field" style="grid-column:1/-1">
             <label>同一建物減算（送迎なし減算）</label>
-            <select id="oi-dc-douitsu">
-              <option value="0">なし（送迎あり）</option>
-              <option value="47">片道送迎なし（−47単位）</option>
-              <option value="94">往復送迎なし（−94単位）</option>
-            </select>
+            <select id="oi-dc-douitsu"></select>
           </div>
         </div>
         <div style="margin-top:8px;font-size:11px;color:var(--g6);line-height:1.6">
@@ -1221,9 +1228,73 @@ select.inp { cursor: pointer; }
       </div>
     </div>
 
+    <!-- ── 報酬マスタ（サービスコード・単位数・限度額）──
+         単位数はここでしか変えられない。適用は必ず「影響を確認して適用」を通す（差分プレビュー→確認→Undo可）。 -->
+    <div class="ci-section">
+      <div class="ci-section-hd" onclick="toggleCiSection('oi-rm-body')">
+        <span>▸ 報酬マスタ（サービスコード・単位数）</span>
+        <span style="font-size:11px;color:var(--g6);font-weight:400">改定・自治体差はここ</span>
+      </div>
+      <div class="ci-section-body" id="oi-rm-body">
+        <div class="rm-warn" id="oi-rm-filled" style="display:none"></div>
+        <p class="rm-lead">
+          この表の単位数が、盤面・印刷・利用者一覧・ワークスケジュールに出る数値の元になります。
+          変更すると<strong>全端末とワークスケジュールに反映されます</strong>。
+          <span class="rate-note-inline" id="oi-rm-disclaimer"></span>
+        </p>
+
+        <div class="ci-grid">
+          <div class="ci-field">
+            <label for="rm-facility-type">施設類型</label>
+            <select id="rm-facility-type"></select>
+          </div>
+          <div class="ci-field">
+            <label for="rm-revision-label">改定名</label>
+            <input class="inp" type="text" id="rm-revision-label" maxlength="40">
+          </div>
+          <div class="ci-field">
+            <label for="rm-municipality">自治体</label>
+            <input class="inp" type="text" id="rm-municipality" maxlength="40">
+          </div>
+          <div class="ci-field">
+            <label for="rm-fee-per-unit">報酬額(10割)の単価（円/単位）</label>
+            <input class="inp" type="number" id="rm-fee-per-unit" min="0.01" max="1000" step="0.01">
+          </div>
+        </div>
+        <div class="hint-box" id="rm-facility-hint" style="margin-top:6px"></div>
+
+        <!-- 各表の編集欄は renderRateMasterEditor_ が組み立てる -->
+        <div id="rm-tables"></div>
+
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-pri" onclick="rmReviewAndApply()">影響を確認して適用</button>
+          <button class="btn btn-sec" onclick="rmExportJSON()">JSONを書き出す</button>
+          <button class="btn btn-sec" onclick="$('#rm-import-file').click()">JSONを読み込む</button>
+          <button class="btn btn-undo" id="rm-undo-btn" onclick="rmUndo()" style="display:none">直前の内容へ戻す</button>
+          <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" onchange="rmImportJSON(this)">
+        </div>
+      </div>
+    </div>
+
     <div class="btn-row">
       <button class="btn btn-pri" onclick="saveOfficeInfo()">保存</button>
       <button class="btn btn-sec" onclick="closeOfficeInfoModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 報酬マスタ 影響プレビュー（適用の唯一の入口）── -->
+<div class="mk" id="mk-rm-preview">
+  <div class="md" style="max-width:560px">
+    <div class="md-hd">
+      <h2>報酬マスタの変更を適用します</h2>
+      <button class="md-close" onclick="closeRmPreview()">✕</button>
+    </div>
+    <div id="rm-preview-body"></div>
+    <div class="btn-row">
+      <!-- 数字が動く操作なので、実行側は塗りつぶしにせず枠線ボタンにする -->
+      <button class="btn btn-danger-outline" onclick="rmApplyConfirmed()">この内容で適用する</button>
+      <button class="btn btn-sec" onclick="closeRmPreview()">やめる</button>
     </div>
   </div>
 </div>
@@ -1269,7 +1340,10 @@ select.inp { cursor: pointer; }
       <button class="md-close" onclick="closeResidentListModal()">✕</button>
     </div>
     <div id="rl-total"></div>
-    <p style="font-size:12px;color:var(--g6);margin-bottom:10px">各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない）。使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。<br>⚠区分ちがいN件＝訪問のサービス区分が介護度と食い違っているコマ数。該当コマを開いて区分を選び直してください（表示は一覧の対象者のみ）。</p>
+    <!-- 説明文の単価は報酬マスタ feePerUnit から入れる（renderResidentListTable） -->
+    <p style="font-size:12px;color:var(--g6);margin-bottom:10px" id="rl-desc"></p>
+    <!-- 参考値の注記。画面でも A3 印刷でも出す -->
+    <div class="rm-warn" id="rl-rate-note"></div>
     <div id="rl-scroll" style="overflow-x:auto">
       <table id="rl-table">
         <thead>
@@ -1310,6 +1384,8 @@ select.inp { cursor: pointer; }
       <button class="md-close" onclick="closeResidentBulkModal()">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:8px">介護度・負担割合・福祉用具単位数・週間計画対象を一括編集し、「一括保存」で全件まとめて保存＋即時クラウド反映します（編集中は自動同期を停止します）。</p>
+    <!-- 使用単位%（プレビュー）を出すので参考値の注記を添える -->
+    <div class="rm-warn" id="rb-rate-note"></div>
     <div id="rb-scroll" style="overflow-x:auto">
       <table id="rb-table" class="rl-table-like">
         <thead>
@@ -1456,29 +1532,404 @@ const HOUR_PX    = 60;
 const TOTAL_HRS  = 24;
 const DAYS_JA    = ['月','火','水','木','金','土','日'];
 
-// 身体介護: step=1(1分単位) / 生活: step=5(5分単位)
-// mins: デフォルト終了までの分数
-const CAT_INFO = {
-  '身体０１':    { mins: 19, step: 1, hint: '20分未満（2時間ルール適用）\n服薬介助・体位変換・排泄介助など短時間ケア' },
-  '身体１':      { mins: 29, step: 1, hint: '20分以上30分未満' },
-  '身体２':      { mins: 59, step: 1, hint: '30分以上1時間未満' },
-  '身体１生活１':{ mins: 89, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助／合計45〜75分程度' },
-  '身体１生活２':{ mins: 119, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助2／合計1時間30分以上2時間未満' },
-  '生活２':      { mins: 45, step: 5, hint: '20分以上45分未満（デフォルト40分）' },
-  '生活３':      { mins: 60, step: 5, hint: '45分以上70分未満（デフォルト60分）' },
-  // 総合事業 訪問型独自サービス（要支援・事業対象者）
-  'A21121':      { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス/211（要支援・事業対象者）\n盤面表示【A11】／1,000単位' },
-  'A21221':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス/212（要支援・事業対象者）\n盤面表示【A12】／1,997単位' },
-  'A2111':       { mins: 45, step: 5, hint: '総合事業 訪問型独自サービス11（要支援・事業対象者）\n盤面表示【A21】／1,176単位' },
-  'A21211':      { mins: 60, step: 5, hint: '総合事業 訪問型独自サービス12（要支援・事業対象者）\n盤面表示【A22】／2,349単位' },
+/* ══ 報酬マスタ（サービスコード・単位数・限度額の唯一の定義場所）════════════════
+ * 2026-08-13 追加。自治体差（総合事業の独自サービス単位）と報酬改定に追従できるよう、
+ * それまで JS 定数へ直書きしていた表をここへ集約し、設定画面から編集できるようにした。
+ *
+ * ★既定値はこの日までの稼働値の完全な写しである。盤面に出ている単位数はケアマネの
+ *   提供票で採用されている数値のため、1単位も動かしていない（総当り比較で差分0件を確認）。
+ *   ここを直接書き換えると提供票と食い違う。値の変更は必ず設定画面「報酬マスタ」から行う
+ *   （影響プレビュー→確認→1手Undo の経路を通り、変更前後の差分が画面に出る）。
+ *
+ * 単位数の記載はこの1箇所だけにする。選択肢のラベル・ヒント文・加算プルダウンは
+ * すべてここから生成する（以前は総合事業の単位数が3箇所に重複記載されていた）。 */
+const RATE_MASTER_SCHEMA_V = 1;
+const RATE_MASTER_DEFAULT = {
+  v: RATE_MASTER_SCHEMA_V,
+  rev: 1,                                  // 内容の改訂番号。編集のたび +1（端末間の巻き戻し防止に使う）
+  revisionLabel: '令和6年4月改定',
+  municipality: '熊本市',
+  facilityType: 'jutaku',                  // jutaku=住宅型有料＋訪問介護併設 / tokutei=介護付(特定施設) / sakoju=サ高住
+  feePerUnit: 10,                          // 利用者一覧の報酬額(10割)の単価（円/単位・地域加算は反映しない運用）
+  unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）
+  // 単位単価の説明文（地域区分による差の案内）。文言ごと差し替えられるようにマスタへ置く
+  unitPriceHint: '地域加算により変わります。1級地(東京都特別区等)=11.40、2級地=11.12、3級地=10.84…標準=10.00',
+
+  // 訪問介護 区分メタ（mins=デフォルト終了までの分数 / step=時間の刻み 身体1分・生活5分）
+  catInfo: {
+    '身体０１':    { mins: 19,  step: 1, hint: '20分未満（2時間ルール適用）\n服薬介助・体位変換・排泄介助など短時間ケア' },
+    '身体１':      { mins: 29,  step: 1, hint: '20分以上30分未満' },
+    '身体２':      { mins: 59,  step: 1, hint: '30分以上1時間未満' },
+    '身体１生活１':{ mins: 89,  step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助／合計45〜75分程度' },
+    '身体１生活２':{ mins: 119, step: 1, hint: '身体介護＋生活援助の複合型\n身体1(20-30分)＋生活援助2／合計1時間30分以上2時間未満' },
+    '生活２':      { mins: 45,  step: 5, hint: '20分以上45分未満（デフォルト40分）' },
+    '生活３':      { mins: 60,  step: 5, hint: '45分以上70分未満（デフォルト60分）' },
+  },
+
+  // 訪問介護 基本単位数
+  visitBase: {
+    '身体０１':     163,
+    '身体１':       244,
+    '身体２':       387,
+    '身体１生活１':  309,  // 身体1(244)＋生活援助1(65)
+    '身体１生活２':  449,  // 身体1＋生活援助2（運用指定値・2026-07-07）
+    '生活２':       179,  // 20分以上45分未満
+    '生活３':       220,  // 45分以上70分未満
+  },
+
+  // 訪問介護サービスコード表（特定事業所加算・時間帯加算込みの単位数）
+  // キー: [区分][時間帯短縮][等級] 形式
+  visitCodeTable: {
+    // 特定事業所加算Ⅰ(+20%) 公式合成単位（基本単位×1.2・全訪問に適用）
+    '身体０１Ⅰ':   196,   // 163×1.2=195.6→196
+    '身体１Ⅰ':     293,   // 244×1.2=292.8→293
+    '身体２Ⅰ':     464,   // 387×1.2=464.4→464
+    '身体１生活１Ⅰ': 371,  // 309×1.2=370.8→371
+    '身体１生活２Ⅰ': 539,  // 449×1.2=538.8→539（基本単位は運用指定値449）
+    '生活２Ⅰ':     215,   // 179×1.2=214.8→215
+    '生活３Ⅰ':     264,   // 220×1.2=264
+    // 特定事業所加算Ⅱ(+10%)
+    '身体０１Ⅱ':   179,
+    '身体０１夜Ⅱ': 224,
+    '生活２Ⅱ':     197,
+    '生活３Ⅱ':     242,
+  },
+
+  /* 総合事業（介護予防・日常生活支援総合事業）訪問型独自サービス（要支援・事業対象者向け）
+     単位は固定。特定事業所加算・時間帯加算は適用せず、指定単位をそのまま計上する独立トラック。
+     ★自治体ごとに単位数が異なる。他市で使う場合はここを設定画面から差し替える。 */
+  sogoVisit: {
+    'A21121': { name: '訪問型独自サービス/211', label: '【A11】', units: 1000, mins: 45, step: 5 },
+    'A21221': { name: '訪問型独自サービス/212', label: '【A12】', units: 1997, mins: 60, step: 5 },
+    'A2111':  { name: '訪問型独自サービス11',   label: '【A21】', units: 1176, mins: 45, step: 5 },
+    'A21211': { name: '訪問型独自サービス12',   label: '【A22】', units: 2349, mins: 60, step: 5 },
+  },
+
+  /* 通所介護 基本単位数 介護度×所要時間区分。
+     標準の時間区分: 3h(3時間以上4時間未満) 4h(4〜5h) 5h(5〜6h) 6h(6〜7h) 7h(7〜8h) 8h(8〜9h)。
+     当施設の算定は表示スロット準拠: 4時間ちょうど(9:00-13:00)は '3h' 区分・4.5時間(9:00-13:30)は '4h' 区分。
+     ★要支援・事業対象者の行を足してはいけない（通所は総合事業＝月額包括で、要介護の単位では計上しない）。 */
+  daycareBase: {
+    '要介護1': { '3h': 370, '4h': 388, '5h': 430, '6h': 551, '7h': 649, '8h': 672 },
+    '要介護2': { '3h': 423, '4h': 444, '5h': 494, '6h': 634, '7h': 766, '8h': 794 },
+    '要介護3': { '3h': 479, '4h': 502, '5h': 560, '6h': 717, '7h': 887, '8h': 919 },
+    '要介護4': { '3h': 533, '4h': 560, '5h': 622, '6h': 800, '7h':1009, '8h':1044 },
+    '要介護5': { '3h': 588, '4h': 617, '5h': 687, '6h': 882, '7h':1130, '8h':1170 },
+  },
+
+  // 区分支給限度基準額（単位/月）
+  careLimits: {
+    '要支援1':  5032,
+    '要支援2':  10531,
+    '要介護1':  16765,
+    '要介護2':  19705,
+    '要介護3':  27048,
+    '要介護4':  30938,
+    '要介護5':  36217,
+  },
+
+  // 時間帯加算（訪問介護）開始時刻が該当帯に入る場合に適用
+  timeZones: [
+    { startH:  0, endH:  6, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
+    { startH:  6, endH:  8, label: '早朝加算', pct: 25, color: '#e65100', bg: 'rgba(230,81,0,0.07)'   },
+    { startH: 18, endH: 22, label: '夜間加算', pct: 25, color: '#1565c0', bg: 'rgba(21,101,192,0.07)' },
+    { startH: 22, endH: 24, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
+  ],
+  // 特定事業所加算 % → 等級（visitCodeTable のキー組立に使う）
+  tokuteiTierMap: { 3: 'Ⅳ', 5: 'Ⅲ', 10: 'Ⅱ', 20: 'Ⅰ' },
+  // 時間帯ラベル → コード短縮形。25%加算帯（早朝・夜間）はコード上「夜」、50%加算帯（深夜）は「深」
+  timeZoneShort: { '早朝加算': '夜', '夜間加算': '夜', '深夜加算': '深' },
+
+  /* 事業所情報の加算・減算プルダウン。opts は [値, 表示ラベル] の並び。
+     値そのものが算定に入る（%または単位）ため、ここも改定で動く。 */
+  addonOptions: {
+    visit: {
+      tokuteijigyo:  { selId: 'oi-v-tokuteijigyo',  label: '特定事業所加算',
+        opts: [[0,'なし'],[3,'IV（+3%）'],[5,'III（+5%）'],[10,'II（+10%）'],[20,'I（+20%）']] },
+      svcStrength:   { selId: 'oi-v-svc-strength',  label: 'サービス提供体制強化加算',
+        opts: [[0,'なし'],[1,'III（+1単位/回）'],[3,'II（+3単位/回）'],[6,'I（+6単位/回）']] },
+      chiikiKasan:   { selId: 'oi-v-chiiki',        label: '特別地域・中山間地域加算',
+        opts: [[0,'なし'],[10,'中山間小規模（+10%）'],[15,'特別地域（+15%）']] },
+      nursingKasan:  { selId: 'oi-v-nursing',       label: '介護職員等処遇改善加算',
+        opts: [[0,'なし'],[6.2,'V（+6.2%）'],[8.3,'III（+8.3%）'],[13.3,'II（+13.3%）'],[14.5,'I（+14.5%）']] },
+      douitsuGensan: { selId: 'oi-v-douitsu',       label: '同一建物減算（訪問介護）',
+        opts: [[0,'なし（対象外）'],[10,'同一建物居住者・月49人以下（−10%）'],[15,'同一建物居住者・月50人以上（−15%）']] },
+    },
+    daycare: {
+      bathingType:   { selId: 'oi-dc-bathing',      label: '入浴介助加算（種別）',
+        opts: [[0,'なし'],[40,'I型（+40単位/回）'],[55,'II型（+55単位/回）']] },
+      heavyCare:     { selId: 'oi-dc-heavy',        label: '中重度者ケア体制加算',
+        opts: [[0,'なし'],[45,'あり（+45単位/日）']] },
+      dementia:      { selId: 'oi-dc-dementia',     label: '認知症加算',
+        opts: [[0,'なし'],[60,'あり（+60単位/日）']] },
+      indvTraining:  { selId: 'oi-dc-training',     label: '個別機能訓練加算',
+        opts: [[0,'なし'],[20,'II（+20単位/日）'],[56,'Iイ（+56単位/日）'],[76,'Iロ（+76単位/日）']] },
+      svcStrength:   { selId: 'oi-dc-svc-strength', label: 'サービス提供体制強化加算',
+        opts: [[0,'なし'],[6,'III（+6単位/回）'],[18,'II（+18単位/回）'],[22,'I（+22単位/回）']] },
+      nursingKasan:  { selId: 'oi-dc-nursing',      label: '介護職員等処遇改善加算',
+        opts: [[0,'なし'],[5.8,'IV（+5.8%）'],[7.7,'III（+7.7%）'],[12.5,'II（+12.5%）'],[13.6,'I（+13.6%）']] },
+      douitsuGensan: { selId: 'oi-dc-douitsu',      label: '同一建物減算（送迎なし減算）',
+        opts: [[0,'なし（送迎あり）'],[47,'片道送迎なし（−47単位）'],[94,'往復送迎なし（−94単位）']] },
+    },
+  },
 };
+
+/* 単位・金額を出す画面に必ず添える注記。文言を1箇所にまとめ、表示漏れと文言のばらつきを防ぐ。 */
+const RATE_DISCLAIMER = '表示中の単位・金額は参考値です。請求根拠ではありません。請求は既存の方式で必ずご確認ください。';
+
+/* ── マスタから組み立てられる表（実体は applyRateMaster_ が入れる）──
+   参照側のコードと変数名は改修前のままにしてある＝算定関数は一切書き換えていない。 */
+let CAT_INFO             = {};   // 身体介護: step=1(1分単位) / 生活: step=5(5分単位) / mins: デフォルト終了までの分数
+let VISIT_BASE_UNITS     = {};   // 訪問介護 基本単位数
+let SOGO_VISIT_CODES     = {};   // 総合事業 訪問型独自サービス（固定単位・略称ラベル）
+let VISIT_CODE_TABLE     = {};   // 訪問介護サービスコード表（特定事業所加算・時間帯加算込み）
+let DAYCARE_BASE_UNITS   = {};   // 通所介護 基本単位数（介護度×所要時間区分）
+let CARE_LIMITS          = {};   // 区分支給限度基準額（単位/月）
+let TIME_SURCHARGE_ZONES = [];   // 時間帯加算の帯
+let TOKUTEI_TIER_MAP     = {};   // 特定事業所加算 % → 等級
+let TIME_ZONE_SHORT      = {};   // 時間帯ラベル → コード短縮形
+let FEE_PER_UNIT         = 10;   // 利用者一覧の報酬額(10割)の単価（円/単位）
+
+/* マスタ m の内容を上の各表へ展開する。DB には触らない（影響プレビューで前後を往復させるため）。 */
+function applyRateMaster_(m) {
+  const src = (m && typeof m === 'object') ? m : RATE_MASTER_DEFAULT;
+  VISIT_BASE_UNITS   = { ...src.visitBase };
+  VISIT_CODE_TABLE   = { ...src.visitCodeTable };
+  CARE_LIMITS        = { ...src.careLimits };
+  TOKUTEI_TIER_MAP   = { ...src.tokuteiTierMap };
+  TIME_ZONE_SHORT    = { ...src.timeZoneShort };
+  TIME_SURCHARGE_ZONES = (src.timeZones || []).map(z => ({ ...z }));
+  DAYCARE_BASE_UNITS = {};
+  for (const lv in (src.daycareBase || {})) DAYCARE_BASE_UNITS[lv] = { ...src.daycareBase[lv] };
+  SOGO_VISIT_CODES = {};
+  for (const code in (src.sogoVisit || {})) {
+    const s = src.sogoVisit[code];
+    SOGO_VISIT_CODES[code] = { name: s.name, label: s.label, units: Number(s.units) || 0 };
+  }
+  // 区分メタ＝要介護のヒントはマスタの文言、総合事業のヒントは単位数から組み立てる（重複記載をなくす）
+  CAT_INFO = {};
+  for (const k in (src.catInfo || {})) CAT_INFO[k] = { ...src.catInfo[k] };
+  for (const code in (src.sogoVisit || {})) {
+    const s = src.sogoVisit[code];
+    CAT_INFO[code] = {
+      mins: Number(s.mins) || 45,
+      step: Number(s.step) || 5,
+      hint: '総合事業 ' + s.name + '（要支援・事業対象者）\n盤面表示' + s.label
+          + '／' + (Number(s.units) || 0).toLocaleString() + '単位',
+    };
+  }
+  FEE_PER_UNIT = Number(src.feePerUnit) || 10;
+}
+
+// ── 報酬マスタの検証・正規化 ──────────────────────────────────────
+/* 方針: 値を黙って 0 にしない。0 にすると盤面の単位が静かに壊れ、提供票と食い違う。
+   ・欠けている／壊れている「表そのもの」は既定で補い、補ったことを filled で返して画面に出す
+   ・表が入っていれば、その中身を正とする（自治体でコードが増減するため既定とのマージはしない）
+   ・表の中の個別の値が数値として不正なものだけを落とし、落としたことを filled で返す */
+function rmClone_(o) { return JSON.parse(JSON.stringify(o)); }
+function rmNum_(v, min, max) {
+  const n = Number(v);
+  if (!isFinite(n) || n < min || n > max) return null;
+  return n;
+}
+function rmIsFilledObj_(o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length); }
+
+/* 単位数の表（コード→数値）。0以上99999以下の有限数のみ通す。
+   個別の値が不正なとき、その行を落とすと単位数が 0 になって盤面が静かに壊れる。
+   既定表に同じコードがあればその値を使い、無いコードのときだけ落とす（どちらも filled に出す）。 */
+function rmNormUnitsTable_(raw, defTable, name, filled) {
+  if (!rmIsFilledObj_(raw)) { filled.push(name + '（表が無いため既定を使用）'); return rmClone_(defTable); }
+  const out = {};
+  for (const k in raw) {
+    const n = rmNum_(raw[k], 0, 99999);
+    if (n === null) {
+      if (Object.prototype.hasOwnProperty.call(defTable, k)) {
+        out[k] = defTable[k];
+        filled.push(name + ' の「' + k + '」（数値でないため既定値 ' + defTable[k] + ' を使用）');
+      } else {
+        filled.push(name + ' の「' + k + '」（数値でなく既定にも無いため除外）');
+      }
+      continue;
+    }
+    out[k] = n;
+  }
+  if (!Object.keys(out).length) { filled.push(name + '（有効な値が無いため既定を使用）'); return rmClone_(defTable); }
+  return out;
+}
+
+function normalizeRateMaster_(raw) {
+  const d = RATE_MASTER_DEFAULT;
+  /* マスタを一度も保存していない端末（初回起動・この改修より前からの端末）は「異常」ではない。
+     既定をそのまま使うのが正しい動作なので、警告は出さずに黙って既定を返す。
+     警告を出すのは「マスタが入っているのに中身が壊れている」ときだけにする。 */
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { master: rmClone_(d), filled: [] };
+  }
+  const filled = [];
+  const src = raw;
+
+  const m = {
+    v: RATE_MASTER_SCHEMA_V,
+    rev: Math.max(0, Math.floor(rmNum_(src.rev, 0, 1e9) || 0)),
+    revisionLabel: typeof src.revisionLabel === 'string' && src.revisionLabel ? src.revisionLabel : d.revisionLabel,
+    municipality:  typeof src.municipality  === 'string' && src.municipality  ? src.municipality  : d.municipality,
+    facilityType:  (src.facilityType === 'tokutei' || src.facilityType === 'sakoju' || src.facilityType === 'jutaku')
+                     ? src.facilityType : 'jutaku',
+    feePerUnit: rmNum_(src.feePerUnit, 0.01, 1000) || d.feePerUnit,
+    unitPrice:  rmNum_(src.unitPrice,  1,    100)  || d.unitPrice,
+    unitPriceHint: typeof src.unitPriceHint === 'string' && src.unitPriceHint ? src.unitPriceHint : d.unitPriceHint,
+  };
+  if (src.facilityType && m.facilityType !== src.facilityType) filled.push('施設類型（未知の値のため住宅型を使用）');
+
+  m.visitBase      = rmNormUnitsTable_(src.visitBase,      d.visitBase,      '訪問介護 基本単位',   filled);
+  m.visitCodeTable = rmNormUnitsTable_(src.visitCodeTable, d.visitCodeTable, '訪問介護 コード表',   filled);
+  m.careLimits     = rmNormUnitsTable_(src.careLimits,     d.careLimits,     '区分支給限度基準額', filled);
+
+  // 総合事業: コードごとに 名称・略称・単位・所要時間
+  if (!rmIsFilledObj_(src.sogoVisit)) {
+    filled.push('総合事業 訪問型独自サービス（表が無いため既定を使用）');
+    m.sogoVisit = rmClone_(d.sogoVisit);
+  } else {
+    m.sogoVisit = {};
+    for (const code in src.sogoVisit) {
+      const s = src.sogoVisit[code] || {};
+      const u = rmNum_(s.units, 0, 99999);
+      if (u === null) { filled.push('総合事業「' + code + '」（単位数が数値でないため除外）'); continue; }
+      m.sogoVisit[code] = {
+        name:  typeof s.name  === 'string' && s.name  ? s.name  : code,
+        label: typeof s.label === 'string' && s.label ? s.label : ('【' + code + '】'),
+        units: u,
+        mins:  rmNum_(s.mins, 1, 1440) || 45,
+        step:  rmNum_(s.step, 1, 60)   || 5,
+      };
+    }
+    if (!Object.keys(m.sogoVisit).length) {
+      filled.push('総合事業 訪問型独自サービス（有効な行が無いため既定を使用）');
+      m.sogoVisit = rmClone_(d.sogoVisit);
+    }
+  }
+
+  // 通所: 介護度 → 時間区分 → 単位
+  if (!rmIsFilledObj_(src.daycareBase)) {
+    filled.push('通所介護 基本単位（表が無いため既定を使用）');
+    m.daycareBase = rmClone_(d.daycareBase);
+  } else {
+    m.daycareBase = {};
+    for (const lv in src.daycareBase) {
+      const row = src.daycareBase[lv];
+      if (!rmIsFilledObj_(row)) { filled.push('通所介護「' + lv + '」（行が空のため除外）'); continue; }
+      const o = {};
+      for (const tk in row) {
+        const n = rmNum_(row[tk], 0, 99999);
+        if (n === null) { filled.push('通所介護「' + lv + ' ' + tk + '」（数値でないため除外）'); continue; }
+        o[tk] = n;
+      }
+      if (Object.keys(o).length) m.daycareBase[lv] = o;
+    }
+    if (!Object.keys(m.daycareBase).length) {
+      filled.push('通所介護 基本単位（有効な行が無いため既定を使用）');
+      m.daycareBase = rmClone_(d.daycareBase);
+    }
+  }
+
+  // 区分メタ（要介護コードの既定所要時間・刻み・ヒント）
+  if (!rmIsFilledObj_(src.catInfo)) {
+    filled.push('訪問介護 区分メタ（表が無いため既定を使用）');
+    m.catInfo = rmClone_(d.catInfo);
+  } else {
+    m.catInfo = {};
+    for (const k in src.catInfo) {
+      const s = src.catInfo[k] || {};
+      m.catInfo[k] = {
+        mins: rmNum_(s.mins, 1, 1440) || 30,
+        step: rmNum_(s.step, 1, 60)   || 1,
+        hint: typeof s.hint === 'string' ? s.hint : '',
+      };
+    }
+  }
+
+  // 時間帯加算の帯
+  const zones = Array.isArray(src.timeZones) ? src.timeZones : null;
+  if (!zones || !zones.length) {
+    if (src.timeZones !== undefined) filled.push('時間帯加算（表が無いため既定を使用）');
+    m.timeZones = rmClone_(d.timeZones);
+  } else {
+    m.timeZones = [];
+    zones.forEach((z, i) => {
+      const sh = rmNum_(z && z.startH, 0, 24), eh = rmNum_(z && z.endH, 0, 24), p = rmNum_(z && z.pct, 0, 500);
+      if (sh === null || eh === null || p === null || eh <= sh) { filled.push('時間帯加算の' + (i + 1) + '行目（値が不正なため除外）'); return; }
+      m.timeZones.push({ startH: sh, endH: eh, pct: p,
+        label: typeof z.label === 'string' && z.label ? z.label : '時間帯加算',
+        color: typeof z.color === 'string' ? z.color : '#6a1b9a',
+        bg:    typeof z.bg    === 'string' ? z.bg    : 'rgba(106,27,154,0.06)' });
+    });
+    if (!m.timeZones.length) { filled.push('時間帯加算（有効な行が無いため既定を使用）'); m.timeZones = rmClone_(d.timeZones); }
+  }
+
+  m.tokuteiTierMap = rmIsFilledObj_(src.tokuteiTierMap) ? { ...src.tokuteiTierMap } : rmClone_(d.tokuteiTierMap);
+  m.timeZoneShort  = rmIsFilledObj_(src.timeZoneShort)  ? { ...src.timeZoneShort }  : rmClone_(d.timeZoneShort);
+
+  // 加算・減算プルダウン（selId と label は画面の構造なので既定を正とし、選択肢だけ持ち込む）
+  m.addonOptions = rmClone_(d.addonOptions);
+  const rawAo = (src.addonOptions && typeof src.addonOptions === 'object') ? src.addonOptions : {};
+  ['visit', 'daycare'].forEach(kind => {
+    const rk = rawAo[kind];
+    if (!rmIsFilledObj_(rk)) return;
+    for (const field in m.addonOptions[kind]) {
+      const ent = rk[field];
+      if (!ent || !Array.isArray(ent.opts) || !ent.opts.length) continue;
+      const opts = [];
+      ent.opts.forEach(pair => {
+        if (!Array.isArray(pair) || pair.length < 2) return;
+        const n = rmNum_(pair[0], -100, 99999);
+        if (n === null || typeof pair[1] !== 'string') return;
+        opts.push([n, pair[1]]);
+      });
+      if (opts.length) m.addonOptions[kind][field].opts = opts;
+      else filled.push('加算選択肢「' + m.addonOptions[kind][field].label + '」（有効な選択肢が無いため既定を使用）');
+    }
+  });
+
+  return { master: m, filled };
+}
+
+/* 単位単価の既定値。事業所情報が未設定・不正なときの落とし先を1箇所にまとめる
+   （以前は 10.27 が4箇所に直書きされ、直すときに拾い漏れる形だった）。 */
+function rmDefaultUnitPrice_() {
+  return Number(DB.rateMaster && DB.rateMaster.unitPrice) || RATE_MASTER_DEFAULT.unitPrice;
+}
+
+/* DB.rateMaster を正規化して各表へ展開する。起動時と、クラウドから採用した直後に呼ぶ。
+   戻り値 filled は「既定で補った項目」＝画面に出して黙って直さない。 */
+function ensureRateMaster_() {
+  const r = normalizeRateMaster_(DB.rateMaster);
+  DB.rateMaster = r.master;
+  applyRateMaster_(r.master);
+  return r.filled;
+}
+/* 表の中身が変わったかを見るための署名（rev だけだと手動編集された JSON を取りこぼす）。 */
+function rateMasterSignature_(m) {
+  if (!m) return '';
+  try {
+    return JSON.stringify([m.visitBase, m.visitCodeTable, m.sogoVisit, m.daycareBase,
+                           m.careLimits, m.timeZones, m.tokuteiTierMap, m.timeZoneShort,
+                           m.catInfo, m.feePerUnit, m.facilityType]);
+  } catch (e) { return ''; }
+}
 
 // ── serviceDict（WS へ渡す要介護コード辞書・care-schedule が唯一の書き手）──
 // 辞書はコード定数（CAT_INFO / WS_SVC_META）の射影。care_schedule_v2 ルートに相乗りし、既存同期経路で WS へ届く。
 // 総合事業（SOGO_VISIT_CODES）は固定単位の独立トラックのため辞書に載せない（WS 側の総合事業保護を裏返さない）。
-// ★版数規律: WS_SVC_META / CAT_INFO のコードを増減・変更したら必ず SERVICE_DICT_V を +1 する
-//（同一 v のまま codes が食い違うと署名 no-op が効かず端末間で上書き合戦になるため）。
-const SERVICE_DICT_V = 1;
+/* ★版数規律: 辞書の中身が変わったら必ず版数を上げる
+   （同一 v のまま codes が食い違うと署名 no-op が効かず端末間で上書き合戦になるため）。
+   2026-08-13: CAT_INFO の mins/step が報酬マスタから来るようになり、辞書の中身が実行時に
+   変わりうるので、版数を「コード側の基準版 ＋ マスタの改訂番号」で自動的に上げる。
+   マスタを編集するたび rev が +1 されるため、版数も単調増加する。
+   ★WS_SVC_META のコードを増減・変更したときは SERVICE_DICT_BASE_V を +1 する（従来どおり手動）。 */
+const SERVICE_DICT_BASE_V = 1;
+function serviceDictV_() {
+  return SERVICE_DICT_BASE_V + (Number(DB.rateMaster && DB.rateMaster.rev) || 0);
+}
 // 要介護 7 コードのメタ（キーは CAT_INFO / VISIT_BASE_UNITS と同一の全角表記）。mins/step は CAT_INFO から合成（二重定義しない）。
 const WS_SVC_META = {
   '身体０１':    { short: '身01',   cls: 'phys' },
@@ -1503,24 +1954,18 @@ function buildServiceDictCodes_() {
 function ensureServiceDict_() {
   try {
     const codes = buildServiceDictCodes_();
+    const V = serviceDictV_();
     const cur = DB.serviceDict;
-    if (cur && typeof cur.v === 'number' && cur.v > SERVICE_DICT_V) return false;   // 新しい辞書を巻き戻さない
-    if (cur && cur.v === SERVICE_DICT_V && JSON.stringify(cur.codes || {}) === JSON.stringify(codes)) return false;   // 署名一致 no-op
-    DB.serviceDict = { v: SERVICE_DICT_V, updatedAt: Date.now(), codes };
+    if (cur && typeof cur.v === 'number' && cur.v > V) return false;   // 新しい辞書を巻き戻さない
+    if (cur && cur.v === V && JSON.stringify(cur.codes || {}) === JSON.stringify(codes)) return false;   // 署名一致 no-op
+    DB.serviceDict = { v: V, updatedAt: Date.now(), codes };
     return true;
   } catch (e) {
     return false;
   }
 }
 
-// 時間帯加算（訪問介護）開始時刻が該当帯に入る場合に適用
-const TIME_SURCHARGE_ZONES = [
-  { startH:  0, endH:  6, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
-  { startH:  6, endH:  8, label: '早朝加算', pct: 25, color: '#e65100', bg: 'rgba(230,81,0,0.07)'   },
-  { startH: 18, endH: 22, label: '夜間加算', pct: 25, color: '#1565c0', bg: 'rgba(21,101,192,0.07)' },
-  { startH: 22, endH: 24, label: '深夜加算', pct: 50, color: '#6a1b9a', bg: 'rgba(106,27,154,0.06)' },
-];
-
+// 時間帯加算（訪問介護）開始時刻が該当帯に入る場合に適用 → 実体は報酬マスタ timeZones
 function getTimeSurchargeZone(startTime) {
   const h = parseInt((startTime || '').split(':')[0], 10);
   if (isNaN(h)) return null;
@@ -1530,26 +1975,9 @@ function getTimeSurchargeZone(startTime) {
   return null;
 }
 
-// 訪問介護 基本単位数（令和6年4月改定）
-const VISIT_BASE_UNITS = {
-  '身体０１':     163,
-  '身体１':       244,
-  '身体２':       387,
-  '身体１生活１':  309,  // 身体1(244)＋生活援助1(65)
-  '身体１生活２':  449,  // 身体1＋生活援助2（運用指定値・2026-07-07）
-  '生活２':       179,  // 20分以上45分未満
-  '生活３':       220,  // 45分以上70分未満
-};
-
-// 総合事業（介護予防・日常生活支援総合事業）訪問型独自サービス（要支援・事業対象者向け）
-// 単位は固定。特定事業所加算・時間帯加算は適用せず、指定単位をそのまま計上する独立トラック。
-// ev.category にはコード文字列（A21121 等）を格納し、盤面/印刷/一覧には label（略称）で表示する。
-const SOGO_VISIT_CODES = {
-  'A21121': { name: '訪問型独自サービス/211', label: '【A11】', units: 1000 },
-  'A21221': { name: '訪問型独自サービス/212', label: '【A12】', units: 1997 },
-  'A2111':  { name: '訪問型独自サービス11',   label: '【A21】', units: 1176 },
-  'A21211': { name: '訪問型独自サービス12',   label: '【A22】', units: 2349 },
-};
+/* 訪問介護 基本単位数 → 実体は報酬マスタ visitBase
+   総合事業 訪問型独自サービス → 実体は報酬マスタ sogoVisit
+   ev.category にはコード文字列（A21121 等）を格納し、盤面/印刷/一覧には label（略称）で表示する。 */
 function isSogoCat_(cat) { return !!(cat && SOGO_VISIT_CODES[cat]); }
 // カテゴリの表示名: 総合事業は略称（【A11】等）、要介護コードはそのまま返す
 function catDisplayLabel_(cat) {
@@ -1625,17 +2053,8 @@ function residentCatMismatchCount_(res) {
   return n;
 }
 
-// 通所介護 基本単位数（令和6年4月改定）介護度×所要時間区分。
-// 標準の時間区分: 3h(3時間以上4時間未満) 4h(4〜5h) 5h(5〜6h) 6h(6〜7h) 7h(7〜8h) 8h(8〜9h)。
-// 当施設の算定は表示スロット準拠: 4時間ちょうど(9:00-13:00)は '3h' 区分・4.5時間(9:00-13:30)は '4h' 区分（判定は getDaycareTimeKey）。
-const DAYCARE_BASE_UNITS = {
-  '要介護1': { '3h': 370, '4h': 388, '5h': 430, '6h': 551, '7h': 649, '8h': 672 },
-  '要介護2': { '3h': 423, '4h': 444, '5h': 494, '6h': 634, '7h': 766, '8h': 794 },
-  '要介護3': { '3h': 479, '4h': 502, '5h': 560, '6h': 717, '7h': 887, '8h': 919 },
-  '要介護4': { '3h': 533, '4h': 560, '5h': 622, '6h': 800, '7h':1009, '8h':1044 },
-  '要介護5': { '3h': 588, '4h': 617, '5h': 687, '6h': 882, '7h':1130, '8h':1170 },
-};
-
+/* 通所介護 基本単位数（介護度×所要時間区分）→ 実体は報酬マスタ daycareBase
+   判定は getDaycareTimeKey。当施設の算定は表示スロット準拠。 */
 function getDaycareTimeKey(startTime, endTime) {
   const mins = timeDiffMins(startTime, endTime);
   // 所要時間(分)で区分判定。4時間ちょうど(240分＝9:00-13:00)は当施設算定で「3時間以上4時間未満」区分に含める。
@@ -1648,29 +2067,9 @@ function getDaycareTimeKey(startTime, endTime) {
   return '8h';
 }
 
-// 特定事業所加算 % → 等級
-const TOKUTEI_TIER_MAP = { 3: 'Ⅳ', 5: 'Ⅲ', 10: 'Ⅱ', 20: 'Ⅰ' };
-// 時間帯ラベル → コード短縮形
-// 25%加算帯（早朝・夜間）はコード上「夜」、50%加算帯（深夜）は「深」
-const TIME_ZONE_SHORT  = { '早朝加算': '夜', '夜間加算': '夜', '深夜加算': '深' };
-
-// 訪問介護サービスコード表（特定事業所加算・時間帯加算込みの単位数）
-// キー: [区分][時間帯短縮][等級] 形式
-const VISIT_CODE_TABLE = {
-  // 特定事業所加算Ⅰ(+20%) 公式合成単位（基本単位×1.2・全訪問に適用）
-  '身体０１Ⅰ':   196,   // 163×1.2=195.6→196
-  '身体１Ⅰ':     293,   // 244×1.2=292.8→293
-  '身体２Ⅰ':     464,   // 387×1.2=464.4→464
-  '身体１生活１Ⅰ': 371,  // 309×1.2=370.8→371
-  '身体１生活２Ⅰ': 539,  // 449×1.2=538.8→539（基本単位は運用指定値449）
-  '生活２Ⅰ':     215,   // 179×1.2=214.8→215
-  '生活３Ⅰ':     264,   // 220×1.2=264
-  // 特定事業所加算Ⅱ(+10%)
-  '身体０１Ⅱ':   179,
-  '身体０１夜Ⅱ': 224,
-  '生活２Ⅱ':     197,
-  '生活３Ⅱ':     242,
-};
+/* 特定事業所加算 %→等級（tokuteiTierMap）・時間帯ラベル→コード短縮形（timeZoneShort）・
+   訪問介護サービスコード表（visitCodeTable／キーは [区分][時間帯短縮][等級] 形式）は
+   いずれも報酬マスタが実体。 */
 
 // コード単位（基本＋特定事業所加算＋時間帯加算）を返す
 function getVisitCodeUnits(category, tokuteijigyoPct, startTime) {
@@ -1898,8 +2297,8 @@ function kaigoWeekUnits_(events, res) {
 // coveredUnits = 限度額内で使える単位数（超過分は0または端数）
 // ※処遇改善加算は枠外なのでカバー計算から完全に除外
 function getEventCoverage(events, res) {
-  const limit = CARE_LIMITS[res.careLevel] || 0;
-  if (!limit) return null; // 介護度未設定 → 制限なし
+  const limit = effectiveCareLimit_(res.careLevel);
+  if (!limit) return null; // 介護度未設定・特定施設 → 制限なし
 
   const weeklyLimit = limit / 4.3; // 週あたりの限度目安
 
@@ -1976,16 +2375,32 @@ function autoCalcUnits() {
   }
 }
 
-// 支給限度基準額（単位/月）令和6年4月改定
-const CARE_LIMITS = {
-  '要支援1':  5032,
-  '要支援2':  10531,
-  '要介護1':  16765,
-  '要介護2':  19705,
-  '要介護3':  27048,
-  '要介護4':  30938,
-  '要介護5':  36217,
+/* 区分支給限度基準額（単位/月）→ 実体は報酬マスタ careLimits。
+   ★ここで既定マスタを展開する。以降 DB.rateMaster が読めた時点で ensureRateMaster_ が上書きする。
+     上の各表を使う関数はすべてこの行より後ろで呼ばれるため、初期化漏れは起きない。 */
+applyRateMaster_(RATE_MASTER_DEFAULT);
+
+/* ── 施設類型 ───────────────────────────────────────────────────
+ * jutaku（住宅型有料＋訪問介護併設・既定）／sakoju（サ高住）は同じ扱い＝改修前と完全に同一挙動。
+ * tokutei（介護付＝特定施設）は特定施設入居者生活介護が日額包括のため、区分支給限度基準額の
+ * 管理対象外。限度額・使用率・超過警告を出さない（単位の算定と報酬額は変更しない）。 */
+function facilityType_() {
+  const t = (DB.rateMaster && DB.rateMaster.facilityType) || 'jutaku';
+  return (t === 'tokutei' || t === 'sakoju') ? t : 'jutaku';
+}
+function isTokuteiFacility_() { return facilityType_() === 'tokutei'; }
+const FACILITY_TYPE_LABELS = {
+  jutaku: '住宅型有料老人ホーム＋訪問介護併設',
+  tokutei: '介護付有料老人ホーム（特定施設）',
+  sakoju: 'サービス付き高齢者向け住宅',
 };
+const TOKUTEI_LIMIT_NOTE = '特定施設（日額包括）のため、区分支給限度基準額の管理対象外です。';
+/* 限度額の実効値。特定施設では 0（＝限度額なし扱い）を返し、既存の「介護度未設定＝制限なし」
+   経路にそのまま乗せる。算定側（calcVisitUnits / calcDaycareUnits）には一切触れない。 */
+function effectiveCareLimit_(careLevel) {
+  if (isTokuteiFacility_()) return 0;
+  return CARE_LIMITS[careLevel] || 0;
+}
 
 const COLORS = {
   '身体０１':    { bg: '#f1f8e9', border: '#aed581', text: '#33691e' },
@@ -2046,11 +2461,15 @@ function addMins(hhmm, mins) {
 
 // ── DB ──
 const DEFAULT_OFFICE = {
-  unitPrice: 10.27,
+  unitPrice: RATE_MASTER_DEFAULT.unitPrice,
   visitAddons:   { tokuteijigyo: 0, svcStrength: 0, chiikiKasan: 0, nursingKasan: 0, douitsuGensan: 0 },
   daycareAddons: { bathingType: 0, heavyCare: 0, dementia: 0, indvTraining: 0, svcStrength: 0, nursingKasan: 0, douitsuGensan: 0 },
 };
-let DB = { residents: [], currentResidentId: null, office: null };
+let DB = { residents: [], currentResidentId: null, office: null, rateMaster: null };
+/* 起動時に既定で補った報酬マスタの項目（あれば設定画面で理由つきに出す。黙って直さない）。 */
+let RM_FILLED_AT_LOAD = [];
+/* 報酬マスタの1手Undo用。適用直前の内容を控える（null＝戻せる操作がまだ無い）。 */
+let RM_UNDO = null;
 
 /* ── 試算モードの遮断フラグ ──────────────────────────────────────────
    true の間、この端末は care_schedule_v2 にも入居者マスタにもクラウドにも一切書かない。
@@ -2248,6 +2667,9 @@ function loadDB() {
   DB.office.unitPrice     = DB.office.unitPrice     || DEFAULT_OFFICE.unitPrice;
   DB.office.visitAddons   = { ...DEFAULT_OFFICE.visitAddons,   ...(DB.office.visitAddons   || {}) };
   DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
+  /* 報酬マスタを展開する（未設定の端末は既定＝改修前と同じ数値で動く）。
+     単位数の表がここで確定してから recalcAllEventUnits を呼ぶ順序を守る。 */
+  RM_FILLED_AT_LOAD = ensureRateMaster_();
   // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
   recalcAllEventUnits();
   ensureServiceDict_();   // 辞書をメモリに同期（ここでは saveDB/saveLocalOnly を呼ばない＝startupPull の生文字列一致判定に非干渉）
@@ -2490,10 +2912,29 @@ const SYNC = {
     const remoteOfficeValid = remote.office && typeof remote.office === 'object'
                             && Object.keys(remote.office).length > 0;
     const preservedOffice = remoteOfficeValid ? null : DB.office;
+    /* 報酬マスタ: 単位数の正本なので office より強く守る。
+       ①リモートに入っていない（古い版の端末が push した）→ ローカルを保持
+       ②ローカルの改訂番号のほうが新しい → 巻き戻さない（serviceDict の版数ガードと同じ作法）
+       どちらでもなければリモートを採用する（＝他端末での正当な改定がここで反映される）。 */
+    const remoteRM = remote.rateMaster;
+    const localRM  = DB.rateMaster;
+    const remoteRMValid = remoteRM && typeof remoteRM === 'object' && Object.keys(remoteRM).length > 0;
+    let preservedRM = null;
+    if (!remoteRMValid) preservedRM = localRM;
+    else if (localRM && (Number(localRM.rev) || 0) > (Number(remoteRM.rev) || 0)) preservedRM = localRM;
+    const sigBefore = rateMasterSignature_(localRM);
+
     DB = { ...DB, ...remote };
     if (preservedOffice) DB.office = preservedOffice;
+    if (preservedRM) DB.rateMaster = preservedRM;
+    ensureRateMaster_();    // 採用直後に単位数の表を展開（戻り値の「既定で補った項目」は設定画面で出す）
     ensureServiceDict_();   // 採用直後に辞書を正規化（★markDirty は立てない＝pull毎push増幅の禁止・戻り値は捨てる）
     if (!Array.isArray(DB.residents)) DB.residents = [];
+    /* 単位数の表が変わったときだけ ev.units を焼き直す（他アプリへ送る値を古いまま残さない）。
+       markDirty は立てない＝この採用が push を誘発しない（起動時の recalc と同じ扱い）。 */
+    if (rateMasterSignature_(DB.rateMaster) !== sigBefore) {
+      try { recalcAllEventUnits(); } catch (e) {}
+    }
     saveLocalOnly();
     this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
     this.config.lastSync = Date.now();
@@ -3723,8 +4164,8 @@ function renderAll() {
 function renderSummaryBar(res) {
   if (!res) return;
   const careLevel     = res.careLevel || '';
-  const limit         = CARE_LIMITS[careLevel] || null;
-  const unitPrice     = Number((DB.office && DB.office.unitPrice)) || 10.27;
+  const limit         = effectiveCareLimit_(careLevel) || null;   // 特定施設は限度額管理の対象外＝null
+  const unitPrice     = Number((DB.office && DB.office.unitPrice)) || rmDefaultUnitPrice_();
   const copayRate     = Number(res.copayRate)      || 1;
   // 福祉用具は単位ベースで取り扱う（月額単位数）
   const welfareUnits  = Math.max(0, Number(res.welfareEquipUnits) || 0);
@@ -3766,6 +4207,21 @@ function renderSummaryBar(res) {
     $('#sum-pct').classList.remove('over');
     $('#sum-pct-fill').style.width = '0%';
     $('#sum-pct-fill').classList.remove('over');
+  }
+
+  /* 参考値の注記は常時出す。単位・金額が画面に出ている間は必ず読める位置に置く。 */
+  const noteEl = $('#sum-rate-note');
+  if (noteEl) noteEl.textContent = '※ ' + RATE_DISCLAIMER;
+
+  /* 特定施設は区分支給限度基準額の管理対象外。限度額と使用率を「—」で放置すると
+     「まだ入力していない」のか「対象外」なのか読み取れないので、欄ごと下げて理由を出す。 */
+  const tokutei = isTokuteiFacility_();
+  const limGrp = $('#sum-limit-group'), pctWrap = $('#sum-pct-wrap'), tkNote = $('#sum-tokutei-note');
+  if (limGrp)  limGrp.style.display  = tokutei ? 'none' : '';
+  if (pctWrap) pctWrap.style.display = tokutei ? 'none' : '';
+  if (tkNote) {
+    tkNote.style.display = tokutei ? '' : 'none';
+    tkNote.textContent   = tokutei ? TOKUTEI_LIMIT_NOTE : '';
   }
 }
 
@@ -3891,7 +4347,10 @@ function renderDayEvents(events, colEl, res, coverage) {
     const heightPx = Math.max(8, durationToPx(ev.startTime, ev.endTime));
     const { col, total } = layout.get(ev.id) || { col: 0, total: 1 };
     const colorKey = ev.serviceType === 'daycare' ? 'daycare' : (ev.category || '身体１');
-    const c = COLORS[colorKey] || COLORS['身体１'];
+    /* 報酬マスタに総合事業のコードを増やすと COLORS に色が無い。要介護の緑へ落とすと
+       別トラックのコマが要介護と同じ色で並んでしまうため、総合事業は紫系へ寄せる。 */
+    const c = COLORS[colorKey]
+          || (isSogoCat_(colorKey) ? COLORS['A21121'] : COLORS['身体１']);
 
     // 限度額カバー量（表示合計と同じ基準：処遇改善加算＋同一建物減算 を除外）
     const coveredUnits = coverage ? (function(){ const _v = coverage.get(ev.id); return _v === undefined ? null : _v; })() : null;
@@ -4544,7 +5003,11 @@ function toggleCiSection(id) {
 function onCareLevelChange() {
   const level = $('#ci-level').value;
   const lbl   = $('#ci-limit-label');
-  if (level && CARE_LIMITS[level]) {
+  if (isTokuteiFacility_()) {
+    // 特定施設では限度額そのものを管理しないため、金額を出さず理由を書く
+    lbl.textContent = TOKUTEI_LIMIT_NOTE;
+    lbl.style.display = '';
+  } else if (level && CARE_LIMITS[level]) {
     lbl.textContent = `支給限度基準額: ${CARE_LIMITS[level].toLocaleString()} 単位/月`;
     lbl.style.display = '';
   } else {
@@ -4587,10 +5050,344 @@ async function saveCareInfo() {
   }
 }
 
+/* ══ 報酬マスタ 設定UI ══════════════════════════════════════════════
+ * 単位数を書き換える唯一の入口。適用は必ず「影響プレビュー → 確認 → 適用（Undo可）」を通す。
+ * 変更は全端末とワークスケジュールへ波及するため、押した人が何が動くかを先に読めるようにする。 */
+
+/* 事業所情報モーダルの加算・減算プルダウンをマスタから生成する。
+   値を入れる前に呼ぶこと（選択肢が無い select に value を入れても入らない）。 */
+function renderAddonOptions_() {
+  const ao = (DB.rateMaster && DB.rateMaster.addonOptions) || RATE_MASTER_DEFAULT.addonOptions;
+  ['visit', 'daycare'].forEach(kind => {
+    const group = ao[kind] || {};
+    for (const field in group) {
+      const ent = group[field];
+      const sel = ent && ent.selId ? $('#' + ent.selId) : null;
+      if (!sel) continue;
+      sel.innerHTML = (ent.opts || [])
+        .map(p => `<option value="${escHtml(String(p[0]))}">${escHtml(String(p[1]))}</option>`).join('');
+      // 画面のラベルもマスタ側の文言に合わせる（表記のばらつきを1箇所で直せるように）
+      const lab = sel.parentElement && sel.parentElement.querySelector('label');
+      if (lab && ent.label) lab.textContent = ent.label;
+    }
+  });
+}
+
+/* 予定モーダルの「総合事業」選択肢をマスタから生成する（単位数の重複記載をここで解消）。 */
+function renderSogoCategoryOptions_() {
+  const g = $('#cat-optgroup-sogo');
+  if (!g) return;
+  const sv = (DB.rateMaster && DB.rateMaster.sogoVisit) || RATE_MASTER_DEFAULT.sogoVisit;
+  g.innerHTML = Object.keys(sv).map(code => {
+    const s = sv[code];
+    const txt = `${s.name}　${s.label}${(Number(s.units) || 0).toLocaleString()}単位`;
+    return `<option value="${escHtml(code)}">${escHtml(txt)}</option>`;
+  }).join('');
+}
+
+/* マスタに依存する画面パーツをまとめて描き直す。マスタを差し替えたら必ず呼ぶ。 */
+function refreshRateMasterUI_() {
+  try { renderSogoCategoryOptions_(); } catch (e) {}
+  try { renderAddonOptions_(); } catch (e) {}
+  const hint = $('#oi-unit-price-hint');
+  if (hint) hint.textContent = (DB.rateMaster && DB.rateMaster.unitPriceHint) || RATE_MASTER_DEFAULT.unitPriceHint;
+  /* 週ボードA4印刷に出す注記。利用者が未選択でも紙に出るよう、ここで一度入れておく
+     （renderSummaryBar は利用者が居ないと途中で戻るため、そちらには置かない）。 */
+  const pn = $('#print-rate-note');
+  if (pn) pn.textContent = '※ ' + RATE_DISCLAIMER;
+}
+
+/* data-rm-path の区切り記号。マスタのキー（区分名・介護度・時間区分・コード）に現れない記号を選ぶ。
+   以前は不可視の制御文字を使っていたが、整形やコピーで静かに落ちて壊れるため見える記号にした。 */
+const RM_PATH_SEP = '|';
+/* この記号を含むキーはパスに載せられないので編集欄を出さない（JSONの読み書きでは従来どおり扱える）。 */
+function rmPathSafe_(key) { return String(key).indexOf(RM_PATH_SEP) < 0; }
+
+/* 画面の入力欄から編集後のマスタを組み立てる（保存はしない）。 */
+function rmCollectFromForm_() {
+  const base = rmClone_(DB.rateMaster || RATE_MASTER_DEFAULT);
+  base.facilityType  = $('#rm-facility-type').value;
+  base.revisionLabel = $('#rm-revision-label').value.trim() || base.revisionLabel;
+  base.municipality  = $('#rm-municipality').value.trim()   || base.municipality;
+  base.feePerUnit    = Number($('#rm-fee-per-unit').value);
+  $$('#rm-tables [data-rm-path]').forEach(inp => {
+    const path = inp.getAttribute('data-rm-path').split(RM_PATH_SEP);
+    let node = base;
+    for (let i = 0; i < path.length - 1; i++) {
+      if (!node[path[i]] || typeof node[path[i]] !== 'object') node[path[i]] = {};
+      node = node[path[i]];
+    }
+    const last = path[path.length - 1];
+    node[last] = (inp.type === 'number') ? Number(inp.value) : inp.value;
+  });
+  return normalizeRateMaster_(base).master;
+}
+
+/* 表の編集欄を組み立てる。数値欄は data-rm-path にマスタ内の位置を持たせる（区切りは RM_PATH_SEP）。 */
+function renderRateMasterEditor_() {
+  const m = DB.rateMaster || RATE_MASTER_DEFAULT;
+
+  // 施設類型
+  const fsel = $('#rm-facility-type');
+  fsel.innerHTML = Object.keys(FACILITY_TYPE_LABELS)
+    .map(k => `<option value="${k}">${escHtml(FACILITY_TYPE_LABELS[k])}</option>`).join('');
+  fsel.value = facilityType_();
+  $('#rm-revision-label').value = m.revisionLabel || '';
+  $('#rm-municipality').value   = m.municipality  || '';
+  $('#rm-fee-per-unit').value   = m.feePerUnit;
+  $('#rm-facility-hint').textContent =
+      '住宅型有料・サ高住は同じ扱いです（区分支給限度額を管理します）。'
+    + '介護付（特定施設）を選ぶと、' + TOKUTEI_LIMIT_NOTE
+    + '限度額・使用率・超過の警告を出しません（単位数の計算そのものは変わりません）。';
+  const dis = $('#oi-rm-disclaimer');
+  if (dis) dis.textContent = '※ ' + RATE_DISCLAIMER;
+
+  // 起動時に既定で補った項目があれば、黙って直さずここに出す
+  const fw = $('#oi-rm-filled');
+  if (fw) {
+    if (RM_FILLED_AT_LOAD && RM_FILLED_AT_LOAD.length) {
+      fw.style.display = '';
+      fw.innerHTML = '⚠ 読み込んだ報酬マスタに不足・不正がありました。次の項目は既定値で補っています：<br>'
+                   + RM_FILLED_AT_LOAD.map(s => '・' + escHtml(s)).join('<br>');
+    } else {
+      fw.style.display = 'none';
+      fw.innerHTML = '';
+    }
+  }
+
+  const esc = escHtml;
+  const numCell = (label, path, val, step) =>
+      `<div class="rm-cell"><label title="${esc(label)}">${esc(label)}</label>`
+    + `<input type="number" step="${step || 1}" min="0" max="99999" value="${esc(String(val))}"`
+    + ` data-rm-path="${esc(path.join(RM_PATH_SEP))}" aria-label="${esc(label)}"></div>`;
+  const txtCell = (label, path, val) =>
+      `<div class="rm-cell"><label title="${esc(label)}">${esc(label)}</label>`
+    + `<input type="text" class="rm-text" value="${esc(String(val))}"`
+    + ` data-rm-path="${esc(path.join(RM_PATH_SEP))}" aria-label="${esc(label)}"></div>`;
+
+  let h = '';
+
+  h += `<div class="rm-tbl-hd">訪問介護 基本単位数</div>`;
+  h += `<div class="rm-grid">` + Object.keys(m.visitBase).filter(rmPathSafe_)
+        .map(k => numCell(k, ['visitBase', k], m.visitBase[k])).join('') + `</div>`;
+
+  h += `<div class="rm-tbl-hd">訪問介護 コード表（特定事業所加算・時間帯加算込み）</div>`;
+  h += `<div class="rm-tbl-note">キーは［区分］［時間帯］［等級］。ここに一致する組合せがあれば、計算より優先して使われます。</div>`;
+  h += `<div class="rm-grid">` + Object.keys(m.visitCodeTable).filter(rmPathSafe_)
+        .map(k => numCell(k, ['visitCodeTable', k], m.visitCodeTable[k])).join('') + `</div>`;
+
+  h += `<div class="rm-tbl-hd">総合事業 訪問型独自サービス（自治体で単位数が異なります）</div>`;
+  h += `<div class="rm-tbl-note">単位は固定で、特定事業所加算・時間帯加算は付きません。月額包括のため同じコードは月1回だけ計上します。</div>`;
+  Object.keys(m.sogoVisit).filter(rmPathSafe_).forEach(code => {
+    const s = m.sogoVisit[code];
+    h += `<div class="rm-grid">`
+      +  txtCell(code + ' 名称', ['sogoVisit', code, 'name'], s.name)
+      +  txtCell(code + ' 盤面表示', ['sogoVisit', code, 'label'], s.label)
+      +  numCell(code + ' 単位数', ['sogoVisit', code, 'units'], s.units)
+      +  numCell(code + ' 既定の所要分', ['sogoVisit', code, 'mins'], s.mins)
+      +  `</div>`;
+  });
+
+  h += `<div class="rm-tbl-hd">通所介護 基本単位数（介護度 × 所要時間区分）</div>`;
+  h += `<div class="rm-tbl-note">要支援・事業対象者の行は作りません（通所は総合事業＝月額包括のため、要介護の単位では計上しません）。</div>`;
+  Object.keys(m.daycareBase).filter(rmPathSafe_).forEach(lv => {
+    h += `<div class="rm-grid">` + Object.keys(m.daycareBase[lv]).filter(rmPathSafe_)
+          .map(tk => numCell(lv + ' ' + tk, ['daycareBase', lv, tk], m.daycareBase[lv][tk])).join('') + `</div>`;
+  });
+
+  h += `<div class="rm-tbl-hd">区分支給限度基準額（単位/月）</div>`;
+  h += `<div class="rm-grid">` + Object.keys(m.careLimits).filter(rmPathSafe_)
+        .map(k => numCell(k, ['careLimits', k], m.careLimits[k])).join('') + `</div>`;
+
+  h += `<div class="rm-tbl-hd">時間帯加算</div>`;
+  h += `<div class="rm-tbl-note">開始時刻がその帯に入る訪問に付きます（時は0〜24、率は%）。</div>`;
+  m.timeZones.forEach((z, i) => {
+    h += `<div class="rm-grid">`
+      +  txtCell((i + 1) + '行目 名称', ['timeZones', String(i), 'label'], z.label)
+      +  numCell((i + 1) + '行目 開始(時)', ['timeZones', String(i), 'startH'], z.startH)
+      +  numCell((i + 1) + '行目 終了(時)', ['timeZones', String(i), 'endH'], z.endH)
+      +  numCell((i + 1) + '行目 加算(%)', ['timeZones', String(i), 'pct'], z.pct)
+      +  `</div>`;
+  });
+
+  $('#rm-tables').innerHTML = h;
+  $('#rm-undo-btn').style.display = RM_UNDO ? '' : 'none';
+}
+
+/* 全利用者の集計を、いま展開されている表で取り直す（氏名は持たない＝IDと数値だけ）。 */
+function rmSnapshotAll_() {
+  return (DB.residents || []).map(res => {
+    const s = computeResidentSummary(res);
+    const evs = {};
+    (res.events || []).forEach(ev => {
+      try { evs[ev.id] = sumDisplayUnits(getUnitBreakdown(ev, res)); } catch (e) { evs[ev.id] = null; }
+    });
+    return { id: res.id, month: s.monthUnits, total: s.totalUnits, pct: s.pct, fee: s.fee, evs };
+  });
+}
+
+/* 変更前後の差分を数える。マスタを一時的に差し替えるが、必ず元へ戻す。 */
+function rmDiffAgainst_(newMaster) {
+  const before  = rmSnapshotAll_();
+  const restore = DB.rateMaster;
+  let after;
+  try {
+    applyRateMaster_(newMaster);
+    after = rmSnapshotAll_();
+  } finally {
+    applyRateMaster_(restore);   // 例外が出ても必ず現行の表へ戻す（画面の数字を壊さない）
+  }
+  let residents = 0, slots = 0, maxDelta = 0;
+  const rows = [];
+  before.forEach((b, i) => {
+    const a = after[i];
+    let slotDiff = 0;
+    for (const id in b.evs) {
+      if (b.evs[id] !== a.evs[id]) {
+        slotDiff++;
+        const d = Math.abs((a.evs[id] || 0) - (b.evs[id] || 0));
+        if (d > maxDelta) maxDelta = d;
+      }
+    }
+    const changed = slotDiff > 0 || b.month !== a.month || b.total !== a.total || b.fee !== a.fee;
+    if (changed) {
+      residents++; slots += slotDiff;
+      rows.push({ slotDiff, bMonth: b.month, aMonth: a.month, bFee: b.fee, aFee: a.fee,
+                  bPct: b.pct, aPct: a.pct });
+    }
+  });
+  return { residents, slots, maxDelta, rows, totalResidents: before.length };
+}
+
+let RM_PENDING = null;   // プレビュー中の適用候補
+
+function rmReviewAndApply() {
+  let m;
+  try { m = rmCollectFromForm_(); }
+  catch (e) { showToast('入力を読み取れませんでした。数値欄を確認してください'); return; }
+  rmOpenPreview_(m, '設定画面での編集');
+}
+
+/* filled は「呼び出し元が正規化したときに補った項目」。渡されたらそれを表示する。
+   ここで正規化し直すと、既に直った後の内容を検査することになり警告が消える＝黙って直す形になる。 */
+function rmOpenPreview_(newMaster, sourceLabel, filled) {
+  const d = rmDiffAgainst_(newMaster);
+  RM_PENDING = newMaster;
+  const notes = Array.isArray(filled) ? filled : normalizeRateMaster_(newMaster).filled;
+  let h = `<div class="rm-pv-head">${escHtml(sourceLabel)}の内容を反映します</div>`;
+  if (notes.length) {
+    h += `<div class="rm-warn">⚠ 次の項目は不足・不正のため既定値で補いました：<br>`
+       + notes.map(s => '・' + escHtml(s)).join('<br>') + `</div>`;
+  }
+  if (!d.residents) {
+    h += `<p class="rm-pv-same">この変更で動く数値はありません（対象 ${d.totalResidents} 名すべてで表示は変わりません）。</p>`;
+  } else {
+    h += `<p class="rm-pv-diff">対象 ${d.totalResidents} 名のうち <b>${d.residents} 名</b>・`
+       + `<b>${d.slots} コマ</b>の単位数が変わります（1コマあたり最大 ±${d.maxDelta} 単位）。</p>`;
+    h += `<table><thead><tr><th>変わるコマ</th><th>月合計（前→後）</th><th>使用率（前→後）</th><th>報酬額(10割)（前→後）</th></tr></thead><tbody>`;
+    d.rows.slice(0, 12).forEach(r => {
+      const pct = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
+      h += `<tr><td>${r.slotDiff}</td>`
+        +  `<td>${r.bMonth.toLocaleString()} → ${r.aMonth.toLocaleString()}</td>`
+        +  `<td>${pct(r.bPct)} → ${pct(r.aPct)}</td>`
+        +  `<td>${r.bFee.toLocaleString()} → ${r.aFee.toLocaleString()}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+    if (d.rows.length > 12) h += `<p class="rm-tbl-note">ほか ${d.rows.length - 12} 名（氏名は伏せています）</p>`;
+  }
+  h += `<div class="rm-warn">適用すると、この端末だけでなく<b>すべての端末とワークスケジュール</b>に反映されます。`
+     + `適用前の内容は自動で控えを取り、「直前の内容へ戻す」で1回だけ戻せます。<br>※ ${escHtml(RATE_DISCLAIMER)}</div>`;
+  $('#rm-preview-body').innerHTML = h;
+  $('#mk-rm-preview').classList.add('open');
+}
+function closeRmPreview() {
+  $('#mk-rm-preview').classList.remove('open');
+  RM_PENDING = null;
+}
+
+function rmApplyConfirmed() {
+  const m = RM_PENDING;
+  if (!m) { closeRmPreview(); return; }
+  /* 適用直前に care_schedule_v2 をまるごと控える。書き込みに失敗しても既存データは残す。 */
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) localStorage.setItem(LS_KEY + '_backup_rate_' + Date.now(), raw);
+  } catch (e) { /* 控えが取れなくても適用は続ける（控えは保険であって前提ではない） */ }
+  RM_UNDO = rmClone_(DB.rateMaster);
+  m.rev = (Number(DB.rateMaster && DB.rateMaster.rev) || 0) + 1;   // 版数を進める＝他端末が巻き戻さない
+  DB.rateMaster = m;
+  ensureRateMaster_();
+  RM_FILLED_AT_LOAD = [];
+  recalcAllEventUnits();      // ev.units（＝WSへ送る値）をこの場で焼き直す
+  ensureServiceDict_();       // 辞書の版数もマスタ改訂に追従させる
+  const ok = saveDB();
+  refreshRateMasterUI_();
+  renderRateMasterEditor_();
+  renderAll();
+  closeRmPreview();
+  showToast(ok ? '報酬マスタを適用しました（戻すには「直前の内容へ戻す」）' : '保存に失敗しました。内容は画面にのみ反映しています');
+}
+
+function rmUndo() {
+  if (!RM_UNDO) { showToast('戻せる変更がありません'); return; }
+  if (!confirm('報酬マスタを直前の内容へ戻します。よろしいですか？')) return;
+  const back = RM_UNDO;
+  back.rev = (Number(DB.rateMaster && DB.rateMaster.rev) || 0) + 1;   // 戻すのも「新しい変更」＝版数は進める
+  RM_UNDO = null;
+  DB.rateMaster = back;
+  ensureRateMaster_();
+  recalcAllEventUnits();
+  ensureServiceDict_();
+  saveDB();
+  refreshRateMasterUI_();
+  renderRateMasterEditor_();
+  renderAll();
+  showToast('報酬マスタを直前の内容へ戻しました');
+}
+
+function rmExportJSON() {
+  const blob = new Blob([JSON.stringify(DB.rateMaster || RATE_MASTER_DEFAULT, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const m = DB.rateMaster || RATE_MASTER_DEFAULT;
+  a.download = `報酬マスタ_${(m.municipality || '')}_${(m.revisionLabel || '')}.json`.replace(/\s/g, '');
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('報酬マスタを書き出しました');
+}
+
+function rmImportJSON(input) {
+  const file = input && input.files && input.files[0];
+  input.value = '';   // 同じファイルを続けて選べるようにする
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let raw;
+    try { raw = JSON.parse(String(reader.result)); }
+    catch (e) { alert('読み込めませんでした。JSONとして壊れています。\n書き出したファイルをそのまま選んでください。'); return; }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      alert('報酬マスタの形式ではありません。\n「JSONを書き出す」で作ったファイルを選んでください。'); return;
+    }
+    const norm = normalizeRateMaster_(raw);
+    // 表がひとつも入っていない＝別物のJSON。適用せず理由を出す（黙って既定で埋めない）
+    const hasAny = ['visitBase', 'visitCodeTable', 'sogoVisit', 'daycareBase', 'careLimits']
+      .some(k => raw[k] && typeof raw[k] === 'object' && Object.keys(raw[k]).length);
+    if (!hasAny) {
+      alert('報酬マスタの表（訪問基本単位・コード表・総合事業・通所・限度額）が1つも入っていません。\n適用しませんでした。');
+      return;
+    }
+    rmOpenPreview_(norm.master, '読み込んだJSON', norm.filled);
+  };
+  reader.onerror = () => alert('ファイルを読み込めませんでした。もう一度お試しください。');
+  reader.readAsText(file, 'utf-8');
+}
+
 // ── Office info modal (事業所共通) ──
 function openOfficeInfoModal() {
   const o = DB.office || DEFAULT_OFFICE;
-  $('#oi-unit-price').value = o.unitPrice || 10.27;
+  refreshRateMasterUI_();      // 加算プルダウンを先に組み立ててから値を入れる
+  renderRateMasterEditor_();
+  $('#oi-unit-price').value = o.unitPrice || rmDefaultUnitPrice_();
   const va = o.visitAddons || {};
   $('#oi-v-tokuteijigyo').value  = va.tokuteijigyo  || 0;
   $('#oi-v-svc-strength').value  = va.svcStrength   || 0;
@@ -4612,7 +5409,7 @@ function closeOfficeInfoModal() {
 }
 function saveOfficeInfo() {
   DB.office = {
-    unitPrice: Number($('#oi-unit-price').value) || 10.27,
+    unitPrice: Number($('#oi-unit-price').value) || rmDefaultUnitPrice_(),
     visitAddons: {
       tokuteijigyo: Number($('#oi-v-tokuteijigyo').value) || 0,
       svcStrength:  Number($('#oi-v-svc-strength').value) || 0,
@@ -4906,8 +5703,7 @@ function closeEventListModal() {
 }
 
 // ── 利用者一覧（横断集計） ──
-// 報酬額(10割)の単価＝固定10円/単位（ユーザー確定・地域加算は反映しない）
-const FEE_PER_UNIT = 10;
+// 報酬額(10割)の単価＝既定10円/単位（ユーザー確定・地域加算は反映しない）。実体は報酬マスタ feePerUnit
 // 介護度の短縮表示：要介護→数字のみ / 要支援→「支N」 / 未設定→「—」
 function careLevelShort_(careLevel) {
   if (!careLevel) return '—';
@@ -4927,7 +5723,7 @@ function residentDaycareDays_(res) {
 // 1利用者の集計。renderSummaryBar と同一算式を再利用（既存表示を壊さないため renderSummaryBar 自体は無改変）。
 function computeResidentSummary(res) {
   const careLevel    = (res && res.careLevel) || '';
-  const limit        = CARE_LIMITS[careLevel] || null;          // 負担限度額＝区分支給限度基準額（単位/月）
+  const limit        = effectiveCareLimit_(careLevel) || null;  // 負担限度額＝区分支給限度基準額（単位/月・特定施設は対象外）
   const copayRate    = Number(res && res.copayRate) || 1;
   const welfareUnits = Math.max(0, Number(res && res.welfareEquipUnits) || 0);
   const evs = (res && res.events) || [];
@@ -4948,6 +5744,20 @@ function renderResidentListTable() {
   const tfoot = $('#rl-tfoot');
   const totalEl = $('#rl-total');
   const list = csVisibleResidents().slice().sort(csResidentSort);   // 施設内→外部・各群ふりがな五十音(プルダウンと同順)
+  /* 凡例と注記。単価は報酬マスタから入れ、特定施設なら限度額の列が「—」になる理由も書く。 */
+  const desc = $('#rl-desc');
+  if (desc) {
+    desc.innerHTML = '各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。'
+      + `報酬額(10割)＝使用単位数(月)×${escHtml(String(FEE_PER_UNIT))}円（福祉用具は含まない）。`
+      + '使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。'
+      + (isTokuteiFacility_()
+          ? `<br>${escHtml(TOKUTEI_LIMIT_NOTE)}負担限度額・使用単位%は「—」で表示します。`
+          : '')
+      + '<br>⚠区分ちがいN件＝訪問のサービス区分が介護度と食い違っているコマ数。'
+      + '該当コマを開いて区分を選び直してください（表示は一覧の対象者のみ）。';
+  }
+  const rlNote = $('#rl-rate-note');
+  if (rlNote) rlNote.textContent = '※ ' + RATE_DISCLAIMER;
   if (!list.length) {
     tbody.innerHTML = '<tr><td id="rl-empty" colspan="14">表示対象の利用者がいません</td></tr>';
     if (tfoot) tfoot.innerHTML = '';
@@ -4992,7 +5802,7 @@ function renderResidentListTable() {
   if (totalEl) {
     totalEl.innerHTML = '報酬額(10割) 総合計'
       + `<span class="rl-total-amt">¥${totalFee.toLocaleString()}</span>`
-      + `<span class="rl-total-sub">対象 ${list.length}名・使用単位数(月)×10円（福祉用具除く）</span>`;
+      + `<span class="rl-total-sub">対象 ${list.length}名・使用単位数(月)×${FEE_PER_UNIT}円（福祉用具除く）</span>`;
   }
   if (tfoot) {
     tfoot.innerHTML = '<tr>'
@@ -5016,6 +5826,8 @@ function closeResidentListModal() {
 const RB_CARE_LEVELS = ['', '要支援1', '要支援2', '要介護1', '要介護2', '要介護3', '要介護4', '要介護5'];
 function openResidentBulkModal() {
   try { SYNC.stopPolling(); } catch (e) {}   // 編集中は自動pullを止める（未保存編集の巻き戻り防止）
+  const nt = $('#rb-rate-note');
+  if (nt) nt.textContent = '※ ' + RATE_DISCLAIMER;
   renderResidentBulkRows_();
   $('#mk-resident-bulk').classList.add('open');
 }
@@ -5487,6 +6299,7 @@ $('#mk-event').addEventListener('click',     e => { if (e.target === $('#mk-even
 $('#mk-resident').addEventListener('click',  e => { if (e.target === $('#mk-resident'))  closeResidentModal(); });
 $('#mk-care-info').addEventListener('click', e => { if (e.target === $('#mk-care-info')) closeCareInfoModal(); });
 $('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-office-info')) closeOfficeInfoModal(); });
+$('#mk-rm-preview').addEventListener('click', e => { if (e.target === $('#mk-rm-preview')) closeRmPreview(); });
 $('#mk-sync').addEventListener('click', e => { if (e.target === $('#mk-sync')) closeSyncModal(); });
 $('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-event-list')) closeEventListModal(); });
 $('#mk-bulk').addEventListener('click', e => { if (e.target === $('#mk-bulk')) closeBulkImport(); });
@@ -5730,6 +6543,9 @@ const SIM = {
 
 // ── Init ──
 loadDB();
+/* 報酬マスタに連動する選択肢（総合事業の区分・事業所情報の加算プルダウン）を作る。
+   予定モーダルを開く前に済ませておく必要があるため、ここで一度だけ呼ぶ。 */
+try { refreshRateMasterUI_(); } catch (e) {}
 SYNC.load();
 // 利用者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
 try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止めない */ }
