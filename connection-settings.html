@@ -277,7 +277,8 @@ var SYSTEMS = [
        （資格情報を同期対象のDBに載せないため）、他タブに巻き戻されることはない。
        代わりに体重管理は合言葉を起動時にしか読まないので、再読み込みが要る。 */
   { id:'weight', title:'体重管理',
-    apps:'体重管理', shape:'str2', key:'wtmgr_api_url', tokenKey:'wtmgr_api_token', urlRe:RE_GAS_ANY,
+    apps:'体重管理（合言葉はサーバー側で設定している場合のみ）', shape:'str2',
+    key:'wtmgr_api_url', tokenKey:'wtmgr_api_token', tokenOptional:true, urlRe:RE_GAS_ANY,
     liveWriteback:'開いている体重管理のタブが、画面を離れた時に元のURLへ戻します（合言葉は戻りません）' },
 
   { id:'msk', title:'申送ビューア',
@@ -506,7 +507,11 @@ function buildCard(sys, onSaved){
   cd.appendChild(acts);
   cd.appendChild(res);
 
-  var needsToken = !!tokIn;      /* 合言葉の欄を出した系統だけ「合言葉が未設定」を判定する */
+  /* 合言葉の欄を出した系統だけ「合言葉が未設定」を判定する。
+     ★ただし合言葉が任意の系統（tokenOptional）は除く。サーバー側が合言葉を要求していない間は
+       「未設定」が正しい状態であり、消えない警告バッジを出すと、要求されていない合言葉を
+       管理者が発明して入れる方向に働く（体重管理は WEIGHT_TOKEN 未設定なら素通しする設計）。 */
+  var needsToken = !!tokIn && !sys.tokenOptional;
   function refreshBadge(){
     var c=readCur(sys);
     var done = !!c.url && (!needsToken || !!c.token);
