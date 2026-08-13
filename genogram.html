@@ -2137,12 +2137,29 @@ function listDocs() {
 function suGenoNameKey(name) {
   return 'name:' + String(name == null ? '' : name).replace(/\s+/g, '');
 }
+/* この保存で masterId のキーを書いてよいか。書いてよければその masterId、駄目なら '' を返す。
+
+   ★2026-08-13（実害）: URL の ?resident=<masterId> は ?name=<氏名> の方のもの。
+     この束縛を見ずに書いていたため、マスタのAさんの欄から開いたまま【Bさんの文書】を
+     読み込んで保存すると su_genograms[AさんのID] にBさんの図が入り、
+     入居者マスタ・フェイスシートのAさんの「家族構成図」欄にBさんの家族が出ていた。
+     window._suMasterId は起動時に一度決まるだけで、文書を切り替えても消えない。
+   ★よって「保存する文書の氏名が URL の氏名と一致する時だけ」masterId のキーを書く。
+     一致しない時も氏名キーは書かれるので、その方の図が失われることはない。
+   ★正規化は空白除去のみ（他アプリの名寄せと同じ作法）。 */
+function suGenoMasterIdFor(docName, masterId, masterName) {
+  var mid = (masterId == null) ? '' : String(masterId);
+  if (!mid) return '';
+  var mn = String(masterName == null ? '' : masterName).replace(/\s+/g, '');
+  var dn = String(docName == null ? '' : docName).replace(/\s+/g, '');
+  return (mn && dn && mn === dn) ? mid : '';
+}
 /* opts.nameKeyOnly … masterId のキーを書かない（まとめ反映で他の方に現在のidを付けないため）
    opts.done       … 書き終わり（失敗時も）に必ず呼ぶ。まとめ反映の順送りに使う */
 function writeSuGenogram(name, opts) {
   opts = opts || {};
   var fin = function () { if (opts.done) { try { opts.done(); } catch (e) {} } };
-  var mid = opts.nameKeyOnly ? '' : window._suMasterId;
+  var mid = opts.nameKeyOnly ? '' : suGenoMasterIdFor(name, window._suMasterId, window._suMasterName);
   var nameKey = String(name == null ? '' : name).replace(/\s+/g, '') ? suGenoNameKey(name) : '';
   if ((mid == null || mid === '') && !nameKey) { fin(); return; }  // 手がかりが何も無い
   try {
@@ -2208,6 +2225,50 @@ function backfillSuGenograms() {
     writeSuGenogram(n, { nameKeyOnly: true, done: function () { step(i + 1); } });
   }
   step(0);
+}
+
+/* ── 別人の masterId に入ってしまった家族構成図の始末（2026-08-13）──
+   suGenoMasterIdFor を入れる前は、?resident=<Aさん> 付きで開いたまま【Bさんの文書】を保存すると
+   su_genograms[AさんのID] にBさんの図が入った。読み手（入居者マスタ・フェイスシート）にも
+   氏名の突き合わせを入れたので表示は止まるが、誤った控えを残すと【これから作る読み手】が
+   同じ事故を繰り返す。書き手であるこのアプリで始末する。
+
+   ★画像は1枚も捨てない。masterId のキーを消す前に、必ずその図の本人の氏名キーへ写す（原則4）。
+   ★誰のものかは共有名簿 su_residents_common（入居者マスタが書く・ここは読み取り専用）で引く。
+     名簿が無い・名簿にその id が無い・記録側の氏名が空 …のどれかなら【判定できない】ので触らない。
+   ★氏名キー（'name:'…）には一切触らない。 */
+function pruneWrongMasterGenograms() {
+  var m, roster = null;
+  try { m = JSON.parse(localStorage.getItem('su_genograms') || '{}'); } catch (e) { return 0; }
+  if (!m || typeof m !== 'object') return 0;
+  try {
+    var rr = JSON.parse(localStorage.getItem('su_residents_common') || 'null');
+    if (rr && Array.isArray(rr.residents)) roster = rr.residents;
+  } catch (e) { roster = null; }
+  if (!roster || !roster.length) return 0;   // 名簿を確認できない＝判定しない
+  var nameOf = {};
+  roster.forEach(function (r) {
+    if (!r || r.masterId == null || r.masterId === '') return;
+    var n = String(r.name == null ? '' : r.name).replace(/\s+/g, '');
+    if (n) nameOf[String(r.masterId)] = n;
+  });
+  var changed = 0;
+  Object.keys(m).forEach(function (k) {
+    if (k.indexOf('name:') === 0) return;                 // 氏名キーは対象外
+    var want = nameOf[k];
+    if (!want) return;                                    // 名簿に無い id は判定しない
+    var rec = m[k];
+    if (!rec || typeof rec !== 'object' || typeof rec.image !== 'string' || !rec.image) return;
+    var got = String(rec.name == null ? '' : rec.name).replace(/\s+/g, '');
+    if (!got || got === want) return;                     // 判定できない／正しい → 触らない
+    var nk = 'name:' + got;
+    if (!(m[nk] && m[nk].image)) m[nk] = rec;             // ★先に本人の氏名キーへ写してから消す
+    delete m[k];
+    changed++;
+  });
+  if (!changed) return 0;
+  try { localStorage.setItem('su_genograms', JSON.stringify(m)); } catch (e) { return 0; }
+  return changed;
 }
 
 /* クラウドの既存版を確認できないまま（取得失敗）新規として書き始めた利用者名。
@@ -2831,6 +2892,10 @@ function init() {
   var suParams = (function () { try { return new URLSearchParams(location.search); } catch (e) { return null; } })();
   window._suMasterId = suParams ? (suParams.get('resident') || null) : null;
   var suName = suParams ? (suParams.get('name') || '').trim() : '';
+  /* ★この masterId は「この氏名の方」のもの。別の方の文書を保存する時に masterId のキーを
+     書かないための束縛（suGenoMasterIdFor）。文書を切り替えても _suMasterId は消えないため、
+     これが無いと別人の欄に他人の家族構成図が出る（2026-08-13 実害） */
+  window._suMasterName = suName;
   if (suName) {
     $('clientName').value = suName;
     state.clientName = suName;
@@ -2856,8 +2921,15 @@ function init() {
 
   /* 控えの無い家族構成図をまとめて入居者マスタへ反映する（1回だけ・文書は書き換えない）。
      ★loadDoc は非同期（クラウド確認が入ることがある）ので、読み込みが落ち着いてから始める。
-       開始時点の文書を控えて最後に必ず戻すので、途中で別の文書に化けることはない。 */
-  setTimeout(function () { try { backfillSuGenograms(); } catch (e) {} }, 1800);
+       開始時点の文書を控えて最後に必ず戻すので、途中で別の文書に化けることはない。
+     ★先に「別人の欄に入ってしまった控え」を始末する（順序はどちらでもよいが、誤りを残したまま
+       増やさないため先にする）。どちらも失敗しても本体の編集には影響させない。 */
+  setTimeout(function () {
+    var pruned = 0;
+    try { pruned = pruneWrongMasterGenograms(); } catch (e) {}
+    if (pruned) flashStatus('別の方の欄に出ていた家族構成図 ' + pruned + '件を切り離しました');
+    try { backfillSuGenograms(); } catch (e) {}
+  }, 1800);
 
   let resizeTimer = null;
   window.addEventListener('resize', () => {
