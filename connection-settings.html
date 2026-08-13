@@ -508,14 +508,19 @@ function buildCard(sys, onSaved){
   cd.appendChild(res);
 
   /* 合言葉の欄を出した系統だけ「合言葉が未設定」を判定する。
-     ★ただし合言葉が任意の系統（tokenOptional）は除く。サーバー側が合言葉を要求していない間は
-       「未設定」が正しい状態であり、消えない警告バッジを出すと、要求されていない合言葉を
-       管理者が発明して入れる方向に働く（体重管理は WEIGHT_TOKEN 未設定なら素通しする設計）。 */
+     ★合言葉が任意の系統（tokenOptional）は【警告にしない】。サーバー側が要求していない間は
+       未設定が正しい状態であり、消えない警告を出すと、要求されていない合言葉を
+       管理者が発明して入れる方向に働く（体重管理は WEIGHT_TOKEN 未設定なら素通しする設計）。
+     ★ただし「入っているか」の情報は消さない（2026-08-13 レビュー指摘・中1）。
+       この画面は合言葉をプリフィルしない設計で、【設定済みかどうかはバッジだけが伝える】。
+       警告色にせず、括弧で状態だけ添える。 */
   var needsToken = !!tokIn && !sys.tokenOptional;
   function refreshBadge(){
     var c=readCur(sys);
     var done = !!c.url && (!needsToken || !!c.token);
-    badge.textContent = done ? '設定済み' : (c.url ? '合言葉が未設定' : '未設定');
+    var label = done ? '設定済み' : (c.url ? '合言葉が未設定' : '未設定');
+    if(done && tokIn && sys.tokenOptional) label += c.token ? '（合言葉あり）' : '（合言葉なし）';
+    badge.textContent = label;
     badge.className = 'badge '+(done?'set':'unset');
   }
   refreshBadge();
