@@ -1720,6 +1720,23 @@ function fetchTO(url, opts, ms){
   });
 }
 
+/* 応答本文を画面に出す時の共通ガード（2026-08-13 レビュー指摘・高1/高2）。
+   ------------------------------------------------------------
+   取得（getAll）の応答には入居者の氏名・居室が入る。失敗時に本文をそのまま出す実装が
+   診断パネルと同期失敗トーストの2箇所にあり、【JSONとして読めない時ほど本文を出す】ため、
+   BOM が付いた・途中で切れた応答では中身が個人データでも素通りしていた。
+   ★判定を「JSONとして読めたか」ではなく「個人データの形跡があるか」に置く。
+     読めるかどうかは通信の壊れ方に左右されるが、形跡は壊れても残るため。
+   ★形跡が無い本文（HTMLのログイン画面・エラーページ）は従来どおり出す。
+     そこには入居者データが入らず、原因を突き止めるのに本文そのものが要る。 */
+var _RE_PERSONAL_BODY = /"(residents|records|name|kana|room)"\s*:/;
+function _safeBodyPreview(text, n){
+  var raw = String(text == null ? '' : text).replace(/^﻿/, '');
+  if(_RE_PERSONAL_BODY.test(raw)){
+    return '（入居者データを含む可能性があるため本文は表示しません・全' + raw.length + '字）';
+  }
+  return raw.slice(0, n || 140).replace(/\s+/g, ' ') || '（空）';
+}
 /* HTTP ステータスやレスポンス本文の特徴から、よくある失敗の原因を判別して
    分かりやすい日本語メッセージに変換する。診断（apiDiagnose）からも再利用。 */
 function _classifyApiError(status, text){
@@ -1776,10 +1793,12 @@ async function _parseApiResponse(r){
     e.detail = { status: r.status, raw: '' };
     throw e;
   }
+  /* ★本文をそのまま埋めない（高2）。この文字列は syncFromAPI の catch から
+     トーストと接続状態欄へ出るため、診断より【先に】画面へ氏名が出ていた。 */
   const friendly = _classifyApiError(r.status, text)
     || (r.ok
-        ? `応答がJSONではありません: ${text.slice(0,80)}`
-        : `HTTP ${r.status}: ${text.slice(0,80) || r.statusText || '応答なし'}`);
+        ? `応答がJSONではありません: ${_safeBodyPreview(text, 80)}`
+        : `HTTP ${r.status}: ${_safeBodyPreview(text, 80) || r.statusText || '応答なし'}`);
   const e = new Error(friendly);
   e.detail = { status: r.status, raw: text };
   throw e;
@@ -1998,7 +2017,28 @@ async function apiDiagnose(url){
     return { ok:false, lines };
   }
   lines.push(`HTTP ステータス: ${status}`);
-  lines.push(`本文の先頭: ${(text||'').slice(0,140).replace(/\s+/g,' ') || '（空）'}`);
+  /* ★応答が【自分たちのJSON】だった時は、本文をそのまま出さない（2026-08-13）。
+       この診断は getAll を投げるので、成功応答の先頭140字には入居者の氏名・居室が入る。
+       同期に失敗すると診断が自動で走る作りのため、画面に氏名が出る機会が増えていた
+       （個人情報は画面表示も最小限＝personal-info 規約）。件数だけ出せば切り分けには足りる。
+     ★JSONとして読めない時は従来どおり先頭140字を出す。そこはHTMLのエラーページや
+       ログイン画面で、原因を突き止めるのに本文そのものが要る（入居者データは入らない）。 */
+  let _diagJson = null;
+  /* BOM を落としてから読む。付いているだけで JSON.parse が失敗し、
+     「読めなかった＝本文を出す」側へ落ちていた（レビュー指摘・高1）。 */
+  try{ _diagJson = JSON.parse(String(text||'').replace(/^﻿/, '')); }catch(e){ _diagJson = null; }
+  /* 配列・数値・文字列は「自分たちの応答の形」ではない。要約に入れると意味のない行になるので、
+     本文側（_safeBodyPreview がガードする）へ回す。 */
+  if(_diagJson && typeof _diagJson === 'object' && !Array.isArray(_diagJson)){
+    const _n = (v) => Array.isArray(v) ? v.length + '件' : (v == null || v === false ? '—' : '有');
+    lines.push(`応答: JSON（residents ${_n(_diagJson.residents)} / records ${_n(_diagJson.records)}`
+      + ` / thresholds ${_diagJson.thresholds ? '有' : '—'}`
+      + (_diagJson.ver != null ? ` / 版 ${_diagJson.ver}` : '')
+      + (_diagJson.error ? ` / エラー ${String(_diagJson.error).slice(0, 60)}` : '')
+      + '）※氏名は表示しません');
+  }else{
+    lines.push(`本文の先頭: ${_safeBodyPreview(text)}`);
+  }
 
   // 3) 分類
   const classified = _classifyApiError(status, text);
@@ -6240,8 +6280,28 @@ function refreshUrlPersistBadge(){
       toast(`⚠️ 一部の保存層が失敗（${failed.join(',')}）。他層から復元できます`,'err');
     }
     /* 合言葉は URL と別に保存する（資格情報を DB へ載せないため）。
-       サーバーが未設定なら空のままでよい＝この段階では素通しされる。 */
-    if(!saveApiToken_($('#cfgApiToken') ? $('#cfgApiToken').value : '')){
+       サーバーが未設定なら空のままでよい＝この段階では素通しされる。
+       ★欄が空で、かつ既に合言葉が保存されている時は、黙って消さない（レビュー指摘・中3）。
+         このタブを開いた【後】に接続設定や別タブで合言葉を入れると、こちらの欄は空のままで、
+         URLを直すつもりで保存を押しただけで合言葉が消えていた。消すのは破壊的操作なので
+         確認を挟む（原則: 取り消せない操作を1タップで実行させない）。 */
+    const _tokIn = $('#cfgApiToken');
+    const _tokVal = _tokIn ? _tokIn.value.trim() : '';
+    const _tokSaved = loadApiToken_();
+    let _skipToken = false;
+    if(!_tokVal && _tokSaved){
+      if(confirm('保存済みの合言葉を削除しますか？\n\n「キャンセル」を選ぶと、今の合言葉をそのまま残します。\n（別のタブや接続設定で入れた合言葉が、この画面には表示されていないことがあります）')){
+        /* 消す意思が確認できた時だけ空で上書きする */
+      }else{
+        _skipToken = true;
+        /* ★残すと決めた以上、この画面が持つ合言葉も保存済みの値へ揃える。
+           揃えないと、この直後の同期が空の合言葉で送られて unauthorized になる
+           （合言葉は起動時にしか読まないため、別タブでの設定を掴んでいない）。 */
+        apiToken = _tokSaved;
+        if(_tokIn) _tokIn.value = _tokSaved;   /* 残したことが画面から分かるように戻す */
+      }
+    }
+    if(!_skipToken && !saveApiToken_(_tokVal)){
       toast('⚠️ 合言葉を保存できませんでした（プライベートブラウズ等）','err');
     }
     apiSetStatus('sy','接続中...');
