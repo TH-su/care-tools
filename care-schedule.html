@@ -24,9 +24,10 @@
   --g8: #3c4043;
   --g9: #202124;
   --hdr-h: 56px;
-  /* 80px（2段）＋22px（参考値の注記の1段）。既存2段の高さ40pxずつは変えず、注記ぶんだけ増やす。
-     .cal-wrap / .days-panel の top は calc(--hdr-h + --sum-h) なので、盤面は自動で22px下がる。 */
-  --sum-h: 102px;
+  /* 80px（2段）＋26px（参考値の注記の1段）。既存2段の高さ40pxずつは変えず、注記ぶんだけ増やす。
+     .cal-wrap / .days-panel の top は calc(--hdr-h + --sum-h) なので、盤面は自動で26px下がる。
+     26px は注記を15px（介護現場要件の補助テキスト下限）で出すための最小の高さ。 */
+  --sum-h: 106px;
   --col-hdr-h: 44px;
   --time-w: 48px;
   --surcharge-w: 22px;
@@ -112,9 +113,11 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
 }
 .sum-row + .sum-row { border-top: 1px dashed var(--g3); }
 /* 参考値の注記の段。高さを固定して、上2段の高さ（各40px）を変えない */
-.sum-note-row { flex: 0 0 22px; align-items: center; background: var(--warn-bg, #fff8e1); }
+.sum-note-row { flex: 0 0 26px; align-items: center; background: var(--warn-bg, #fff8e1); }
+/* 常に画面に出る注記なので、介護現場要件の補助テキスト下限15pxを満たす。
+   コントラスト比は #7a4200 on #fff8e1 で約 7.4:1（目標の7:1以上）。 */
 .rate-note {
-  font-size: 0.8125rem; line-height: 1.3; color: #7a4200; font-weight: 600; white-space: nowrap;
+  font-size: 0.9375rem; line-height: 1.3; color: #7a4200; font-weight: 600; white-space: nowrap;
 }
 /* 特定施設のときだけ出す注意書き（限度額欄を空にする代わりに理由を書く） */
 .sum-tokutei-note {
@@ -482,7 +485,9 @@ select.inp { cursor: pointer; }
   border: 1.5px solid var(--g3); border-radius: 6px; font-size: 0.875rem;
   font-variant-numeric: tabular-nums; background: var(--g0);
 }
-.rm-cell input:focus { border-color: var(--pri2); outline: none; }
+/* フォーカスリングは消さない。単位数を打ち込む欄なので、いまどこを触っているかが見えないと
+   別のコードの値を書き換える事故につながる（枠線の色変化だけでは弱い）。 */
+.rm-cell input:focus { border-color: var(--pri2); outline: 3px solid #ffb300; outline-offset: 1px; }
 .rm-cell input.rm-text { flex: 1 1 120px; text-align: start; }
 /* 影響プレビュー */
 #rm-preview-body { font-size: 0.875rem; line-height: 1.8; color: var(--g8); }
@@ -661,7 +666,7 @@ select.inp { cursor: pointer; }
 
 /* ── Print ── */
 @media print {
-  .hdr-btns, .fab, #mk-event, #mk-resident, #mk-care-info, #mk-office-info, #mk-resident-list, #mk-resident-bulk, .toast, .summary-bar { display: none !important; }
+  .hdr-btns, .fab, #mk-event, #mk-resident, #mk-care-info, #mk-office-info, #mk-rm-preview, #mk-resident-list, #mk-resident-bulk, .toast, .summary-bar { display: none !important; }
   .hdr { position: static; box-shadow: none; }
   .cal-wrap { position: static; top: 0; height: auto; overflow: visible; }
   .days-panel { overflow: visible; }
@@ -1737,21 +1742,31 @@ function rmNum_(v, min, max) {
   return n;
 }
 function rmIsFilledObj_(o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length); }
+/* 取り込んだ JSON のキーをそのままオブジェクトへ入れる前の門番。
+   __proto__ 等を通すとプロトタイプを書き換えられる（読み込むのは管理者が選んだファイルだが、
+   壊れたファイルを掴んだときにアプリ全体が壊れるより、ここで落として理由を出すほうがよい）。 */
+const RM_UNSAFE_KEYS = { '__proto__': 1, 'prototype': 1, 'constructor': 1 };
+function rmSafeKey_(k) { return typeof k === 'string' && k !== '' && !RM_UNSAFE_KEYS[k]; }
 
-/* 単位数の表（コード→数値）。0以上99999以下の有限数のみ通す。
+/* 単位数の表（コード→数値）。min以上99999以下の有限数のみ通す。
    個別の値が不正なとき、その行を落とすと単位数が 0 になって盤面が静かに壊れる。
-   既定表に同じコードがあればその値を使い、無いコードのときだけ落とす（どちらも filled に出す）。 */
-function rmNormUnitsTable_(raw, defTable, name, filled) {
+   既定表に同じコードがあればその値を使い、無いコードのときだけ落とす（どちらも filled に出す）。
+   ★min は表ごとに違う。区分支給限度基準額は 0 を通してはいけない（effectiveCareLimit_ が
+     0 を「限度額なし＝制限なし」として扱うため、欄を空にしただけで限度額管理が静かに止まる）。 */
+function rmNormUnitsTable_(raw, defTable, name, filled, min) {
+  const lo = (typeof min === 'number') ? min : 0;
   if (!rmIsFilledObj_(raw)) { filled.push(name + '（表が無いため既定を使用）'); return rmClone_(defTable); }
   const out = {};
   for (const k in raw) {
-    const n = rmNum_(raw[k], 0, 99999);
+    if (!rmSafeKey_(k)) { filled.push(name + ' の「' + k + '」（使用できないキー名のため除外）'); continue; }
+    const n = rmNum_(raw[k], lo, 99999);
     if (n === null) {
+      const why = (lo > 0) ? ('数値でないか ' + lo + ' 未満のため') : '数値でないため';
       if (Object.prototype.hasOwnProperty.call(defTable, k)) {
         out[k] = defTable[k];
-        filled.push(name + ' の「' + k + '」（数値でないため既定値 ' + defTable[k] + ' を使用）');
+        filled.push(name + ' の「' + k + '」（' + why + '既定値 ' + defTable[k] + ' を使用）');
       } else {
-        filled.push(name + ' の「' + k + '」（数値でなく既定にも無いため除外）');
+        filled.push(name + ' の「' + k + '」（' + why + '、既定にも無いため除外）');
       }
       continue;
     }
@@ -1784,10 +1799,19 @@ function normalizeRateMaster_(raw) {
     unitPriceHint: typeof src.unitPriceHint === 'string' && src.unitPriceHint ? src.unitPriceHint : d.unitPriceHint,
   };
   if (src.facilityType && m.facilityType !== src.facilityType) filled.push('施設類型（未知の値のため住宅型を使用）');
+  /* 単価は金額に直結する。空欄・範囲外で既定へ戻したことを黙って済ませない（欄を消しただけで
+     単価が変わると、利用者一覧の報酬額と自己負担の概算が説明なく動く）。 */
+  if (src.feePerUnit !== undefined && rmNum_(src.feePerUnit, 0.01, 1000) === null) {
+    filled.push('報酬額(10割)の単価（値が不正なため既定 ' + d.feePerUnit + ' 円を使用）');
+  }
+  if (src.unitPrice !== undefined && rmNum_(src.unitPrice, 1, 100) === null) {
+    filled.push('単位単価（値が不正なため既定 ' + d.unitPrice + ' 円を使用）');
+  }
 
   m.visitBase      = rmNormUnitsTable_(src.visitBase,      d.visitBase,      '訪問介護 基本単位',   filled);
   m.visitCodeTable = rmNormUnitsTable_(src.visitCodeTable, d.visitCodeTable, '訪問介護 コード表',   filled);
-  m.careLimits     = rmNormUnitsTable_(src.careLimits,     d.careLimits,     '区分支給限度基準額', filled);
+  // 限度額だけ下限1。0 は「限度額なし」として扱われるため、空欄・0 を有効値にしてはいけない
+  m.careLimits     = rmNormUnitsTable_(src.careLimits,     d.careLimits,     '区分支給限度基準額', filled, 1);
 
   // 総合事業: コードごとに 名称・略称・単位・所要時間
   if (!rmIsFilledObj_(src.sogoVisit)) {
@@ -1796,6 +1820,7 @@ function normalizeRateMaster_(raw) {
   } else {
     m.sogoVisit = {};
     for (const code in src.sogoVisit) {
+      if (!rmSafeKey_(code)) { filled.push('総合事業「' + code + '」（使用できないキー名のため除外）'); continue; }
       const s = src.sogoVisit[code] || {};
       const u = rmNum_(s.units, 0, 99999);
       if (u === null) { filled.push('総合事業「' + code + '」（単位数が数値でないため除外）'); continue; }
@@ -1820,10 +1845,12 @@ function normalizeRateMaster_(raw) {
   } else {
     m.daycareBase = {};
     for (const lv in src.daycareBase) {
+      if (!rmSafeKey_(lv)) { filled.push('通所介護「' + lv + '」（使用できないキー名のため除外）'); continue; }
       const row = src.daycareBase[lv];
       if (!rmIsFilledObj_(row)) { filled.push('通所介護「' + lv + '」（行が空のため除外）'); continue; }
       const o = {};
       for (const tk in row) {
+        if (!rmSafeKey_(tk)) { filled.push('通所介護「' + lv + ' ' + tk + '」（使用できないキー名のため除外）'); continue; }
         const n = rmNum_(row[tk], 0, 99999);
         if (n === null) { filled.push('通所介護「' + lv + ' ' + tk + '」（数値でないため除外）'); continue; }
         o[tk] = n;
@@ -1843,6 +1870,7 @@ function normalizeRateMaster_(raw) {
   } else {
     m.catInfo = {};
     for (const k in src.catInfo) {
+      if (!rmSafeKey_(k)) { filled.push('訪問介護 区分メタ「' + k + '」（使用できないキー名のため除外）'); continue; }
       const s = src.catInfo[k] || {};
       m.catInfo[k] = {
         mins: rmNum_(s.mins, 1, 1440) || 30,
@@ -2018,7 +2046,15 @@ function visitCatMismatch_(cat, careLevel) {
     }
     return '';
   }
-  if (!VISIT_BASE_UNITS[cat]) return '';            // 未知のコードは判定しない
+  /* 報酬マスタに無い区分。2026-08-13 のマスタ外出しでコードを増減できるようになったため、
+     マスタからコードを消す・差し替えると既存のコマがここに来る。
+     単位は 0 になる（getVisitCodeUnits の `VISIT_BASE_UNITS[category] || 0`）ので、
+     黙って 0 を出さずに「なぜ 0 なのか」「次に何をすればよいか」を必ず画面へ出す。
+     一覧の ⚠区分ちがい 件数にもこの経路で載る（residentCatMismatchCount_）。 */
+  if (!VISIT_BASE_UNITS[cat]) {
+    return '⚠ サービス区分「' + cat + '」は報酬マスタにありません。単位数を計算できず 0 単位になります。'
+         + '区分を選び直すか、事業所情報の「報酬マスタ」でこのコードを戻してください。';
+  }
   if (track === 'support') {
     return '⚠ ' + lv + ' の方に要介護のサービス区分が選ばれています。'
          + '要支援・事業対象者の訪問は総合事業のコード（' + SOGO_LIST + '）で算定します。区分を選び直してください。';
@@ -2625,6 +2661,10 @@ function pruneCareBackups_() {
     };
     pruneTsGroup(LS_KEY + '_backup_');            // 自動生成の復旧退避（既存ポリシー不変・before_notes_clear/ws は末尾非数値で対象外）
     pruneTsGroup(LS_KEY + '_PRE_RESTORE_');       // 過去の手動復旧退避を同ポリシーで剪定
+    /* 報酬マスタ適用前の退避。'_backup_rate_<ts>' は上の '_backup_' 群では拾えない
+       （末尾が 'rate_<ts>' で純数値にならない）ため、独立した群として剪定する。
+       1件が DB 全体ぶんあり、放置すると localStorage の枠を食い潰して保存自体が落ちる。 */
+    pruneTsGroup(LS_KEY + '_backup_rate_');
     // 2026-07-01 の一回限り移行の事前バックアップ: 移行完了フラグが立っている時のみ削除（冪等・毎起動で無害）
     if (localStorage.getItem('care_notes_cleared_v1')) {
       try { localStorage.removeItem(LS_KEY + '_backup_before_notes_clear'); } catch (_) {}
@@ -2931,13 +2971,32 @@ const SYNC = {
     DB = { ...DB, ...remote };
     if (preservedOffice) DB.office = preservedOffice;
     if (preservedRM) DB.rateMaster = preservedRM;
-    ensureRateMaster_();    // 採用直後に単位数の表を展開（戻り値の「既定で補った項目」は設定画面で出す）
+    /* 採用直後に単位数の表を展開する。戻り値は「既定で補った項目」＝リモートのマスタが壊れていた
+       ことの記録なので捨てない（設定画面の「報酬マスタ」欄に出す）。 */
+    const rmFilled = ensureRateMaster_();
+    if (rmFilled && rmFilled.length) RM_FILLED_AT_LOAD = rmFilled;
     ensureServiceDict_();   // 採用直後に辞書を正規化（★markDirty は立てない＝pull毎push増幅の禁止・戻り値は捨てる）
     if (!Array.isArray(DB.residents)) DB.residents = [];
     /* 単位数の表が変わったときだけ ev.units を焼き直す（他アプリへ送る値を古いまま残さない）。
        markDirty は立てない＝この採用が push を誘発しない（起動時の recalc と同じ扱い）。 */
     if (rateMasterSignature_(DB.rateMaster) !== sigBefore) {
       try { recalcAllEventUnits(); } catch (e) {}
+      /* マスタに無い区分を使うコマが残っていれば、盤面の数字が黙って0に落ちる。
+         適用した端末はプレビューで気づけるが、降ってきた側は何も見えないので必ず知らせる。 */
+      try {
+        let miss = 0;
+        (DB.residents || []).forEach(r => (r.events || []).forEach(ev => { if (rmEventCodeMissing_(ev)) miss++; }));
+        if (miss) {
+          this.log('⚠️ 報酬マスタが更新され、' + miss + '件の予定が計算できなくなりました（0単位）');
+          showToast('報酬マスタが更新されました。' + miss + '件の予定でサービス区分を選び直してください');
+        }
+      } catch (e) {}
+    }
+    /* ローカルのマスタを守った＝サーバー正本にはこの内容が無い。押し戻さないと、旧版端末が1台
+       残っているだけでサーバーからマスタが欠けたままになり、新しい端末が既定値で起動する。
+       サンプル上書き拒否パス（上）と同じ作法で、事務所PCからだけ1回押し戻す。 */
+    if (preservedRM && suGetDeviceRole() !== 'field') {
+      setTimeout(function () { try { SYNC.markDirty(); SYNC.push(); } catch (e) {} }, 900);
     }
     saveLocalOnly();
     this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
@@ -5117,6 +5176,7 @@ function rmCollectFromForm_() {
   $$('#rm-tables [data-rm-path]').forEach(inp => {
     const path = inp.getAttribute('data-rm-path').split(RM_PATH_SEP);
     let node = base;
+    if (!path.every(rmSafeKey_)) return;   // 使用できないキー名は書き戻さない
     for (let i = 0; i < path.length - 1; i++) {
       if (!node[path[i]] || typeof node[path[i]] !== 'object') node[path[i]] = {};
       node = node[path[i]];
@@ -5218,15 +5278,35 @@ function renderRateMasterEditor_() {
   $('#rm-undo-btn').style.display = RM_UNDO ? '' : 'none';
 }
 
-/* 全利用者の集計を、いま展開されている表で取り直す（氏名は持たない＝IDと数値だけ）。 */
+/* この予定のサービス区分が、いまの報酬マスタに載っているか。
+   載っていない区分は単位が 0 になる（getVisitCodeUnits の `VISIT_BASE_UNITS[category] || 0`）。
+   マスタからコードを消す・差し替えると既存のコマがこれに当たるため、必ず数えて画面に出す。 */
+function rmEventCodeMissing_(ev) {
+  if (!ev || ev.serviceType === 'daycare') return false;
+  const cat = ev.category;
+  if (!cat) return false;                                  // 未設定は従来から訪問介護の既定扱い
+  return !SOGO_VISIT_CODES[cat] && !VISIT_BASE_UNITS[cat];
+}
+
+/* 全利用者の集計を、いま展開されている表で取り直す（氏名は持たない＝IDと数値だけ）。
+   evs は画面表示の単位、units はワークスケジュールへ送る ev.units 相当（フル計算）。
+   両方を見るのは、表示に出ない加算（処遇改善・同一建物減算）だけが動く変更を見落とさないため。 */
 function rmSnapshotAll_() {
   return (DB.residents || []).map(res => {
     const s = computeResidentSummary(res);
-    const evs = {};
+    const evs = {}, units = {};
+    let missing = 0;
     (res.events || []).forEach(ev => {
       try { evs[ev.id] = sumDisplayUnits(getUnitBreakdown(ev, res)); } catch (e) { evs[ev.id] = null; }
+      try {
+        units[ev.id] = (ev.serviceType === 'visit' || !ev.serviceType)
+          ? calcVisitUnits(ev.category, res, ev.startTime)
+          : calcDaycareUnits(ev.startTime, ev.endTime, ev.bathing, res);
+      } catch (e) { units[ev.id] = null; }
+      if (rmEventCodeMissing_(ev)) missing++;
     });
-    return { id: res.id, month: s.monthUnits, total: s.totalUnits, pct: s.pct, fee: s.fee, evs };
+    return { id: res.id, month: s.monthUnits, total: s.totalUnits, pct: s.pct, fee: s.fee,
+             limit: s.limit, evs, units, missing };
   });
 }
 
@@ -5234,33 +5314,59 @@ function rmSnapshotAll_() {
 function rmDiffAgainst_(newMaster) {
   const before  = rmSnapshotAll_();
   const restore = DB.rateMaster;
-  let after;
+  const beforeTokutei = isTokuteiFacility_();
+  let after, afterTokutei;
   try {
     applyRateMaster_(newMaster);
+    /* 施設類型は DB.rateMaster から読むため、限度額の分岐も一緒に差し替えないと
+       「限度額が消える変更」を差分として観測できない（H1）。 */
+    DB.rateMaster = newMaster;
+    afterTokutei = isTokuteiFacility_();
     after = rmSnapshotAll_();
   } finally {
+    DB.rateMaster = restore;
     applyRateMaster_(restore);   // 例外が出ても必ず現行の表へ戻す（画面の数字を壊さない）
   }
-  let residents = 0, slots = 0, maxDelta = 0;
+  let residents = 0, slots = 0, maxDelta = 0, missingBefore = 0, missingAfter = 0;
   const rows = [];
   before.forEach((b, i) => {
     const a = after[i];
+    missingBefore += b.missing; missingAfter += a.missing;
     let slotDiff = 0;
     for (const id in b.evs) {
-      if (b.evs[id] !== a.evs[id]) {
+      if (b.evs[id] !== a.evs[id] || b.units[id] !== a.units[id]) {
         slotDiff++;
         const d = Math.abs((a.evs[id] || 0) - (b.evs[id] || 0));
         if (d > maxDelta) maxDelta = d;
       }
     }
-    const changed = slotDiff > 0 || b.month !== a.month || b.total !== a.total || b.fee !== a.fee;
+    /* 使用率・限度額の変化も「動いた」に含める。ここを見ていないと、限度額の表だけを直した場合や
+       施設類型を特定施設へ切り替えた場合に「変わりません」と出てしまう（H1）。 */
+    const changed = slotDiff > 0 || b.month !== a.month || b.total !== a.total
+                 || b.fee !== a.fee || b.pct !== a.pct || b.limit !== a.limit;
     if (changed) {
       residents++; slots += slotDiff;
       rows.push({ slotDiff, bMonth: b.month, aMonth: a.month, bFee: b.fee, aFee: a.fee,
-                  bPct: b.pct, aPct: a.pct });
+                  bPct: b.pct, aPct: a.pct, bLimit: b.limit, aLimit: a.limit });
     }
   });
-  return { residents, slots, maxDelta, rows, totalResidents: before.length };
+  return { residents, slots, maxDelta, rows, totalResidents: before.length,
+           missingBefore, missingAfter, beforeTokutei, afterTokutei };
+}
+
+/* 基本単位を直したのに、コード表（[区分][時間帯][等級]）に同じ区分の行があって
+   そちらが優先されるため表示が動かない区分を挙げる（getVisitCodeUnits の ①②の分岐）。
+   報酬改定の反映漏れとして最初に踏む落とし穴なので、プレビューで名指しする。 */
+function rmMaskedByCodeTable_(newMaster) {
+  const cur = (DB.rateMaster && DB.rateMaster.visitBase) || {};
+  const nxt = (newMaster && newMaster.visitBase) || {};
+  const codeKeys = Object.keys((newMaster && newMaster.visitCodeTable) || {});
+  const masked = [];
+  for (const k in nxt) {
+    if (cur[k] === nxt[k]) continue;                       // 変えていない区分は関係ない
+    if (codeKeys.some(ck => ck.indexOf(k) === 0)) masked.push(k);
+  }
+  return masked;
 }
 
 let RM_PENDING = null;   // プレビュー中の適用候補
@@ -5283,16 +5389,50 @@ function rmOpenPreview_(newMaster, sourceLabel, filled) {
     h += `<div class="rm-warn">⚠ 次の項目は不足・不正のため既定値で補いました：<br>`
        + notes.map(s => '・' + escHtml(s)).join('<br>') + `</div>`;
   }
+  /* 施設類型を特定施設へ切り替えると、単位数が1つも動かなくても限度額管理が丸ごと止まる。
+     コマの差分とは別の話なので、差分表の有無と関係なく専用の枠で必ず出す。 */
+  if (!d.beforeTokutei && d.afterTokutei) {
+    h += `<div class="rm-warn">⚠ 施設類型を「${escHtml(FACILITY_TYPE_LABELS.tokutei)}」に変えます。`
+       + `${escHtml(TOKUTEI_LIMIT_NOTE)}<br>`
+       + `<b>支給限度額・使用率・限度額超過の警告を出さなくなります。</b>単位数の計算そのものは変わりません。</div>`;
+  } else if (d.beforeTokutei && !d.afterTokutei) {
+    const to = FACILITY_TYPE_LABELS[newMaster.facilityType] || '';
+    h += `<div class="rm-warn">⚠ 施設類型を「${escHtml(to)}」に変えます。`
+       + `支給限度額・使用率・限度額超過の警告を再び出すようになります。</div>`;
+  }
+  /* マスタからコードを消す・差し替えると、そのコードを使っている既存のコマが 0 単位になる。
+     ここで数えないと、他端末では盤面の数字が黙って 0 に落ちる（H2）。 */
+  if (d.missingAfter > d.missingBefore) {
+    h += `<div class="rm-warn">⚠ この変更で、報酬マスタに無いサービス区分を使う予定が`
+       + `<b>${d.missingAfter - d.missingBefore} コマ</b>増えます`
+       + `（合計 ${d.missingAfter} コマ）。<b>該当コマの単位数は 0 になります。</b><br>`
+       + `コードを差し替えた場合は、適用後に各コマの区分を選び直してください。`
+       + `残したいコードは削除せずマスタに置いてください。</div>`;
+  }
   if (!d.residents) {
     h += `<p class="rm-pv-same">この変更で動く数値はありません（対象 ${d.totalResidents} 名すべてで表示は変わりません）。</p>`;
+    /* 「基本単位を直したのに動かない」の正体はコード表の優先。黙っていると改定の反映漏れになる（M5）。 */
+    const masked = rmMaskedByCodeTable_(newMaster);
+    if (masked.length) {
+      h += `<div class="rm-warn">ヒント: 訪問介護の基本単位（${escHtml(masked.join('・'))}）を変えましたが、`
+         + `コード表に同じ区分の行があるため、そちらが優先されて表示は変わりません。`
+         + `改定を反映するにはコード表の値も直してください。</div>`;
+    }
   } else {
-    h += `<p class="rm-pv-diff">対象 ${d.totalResidents} 名のうち <b>${d.residents} 名</b>・`
-       + `<b>${d.slots} コマ</b>の単位数が変わります（1コマあたり最大 ±${d.maxDelta} 単位）。</p>`;
-    h += `<table><thead><tr><th>変わるコマ</th><th>月合計（前→後）</th><th>使用率（前→後）</th><th>報酬額(10割)（前→後）</th></tr></thead><tbody>`;
+    /* 何が変わるのかを取り違えないように書き分ける。コマが1つも動かない変更（限度額だけ・
+       施設類型だけ）で「単位数が変わります」と出すと、読んだ人が別の心配をする。 */
+    h += (d.slots > 0)
+      ? `<p class="rm-pv-diff">対象 ${d.totalResidents} 名のうち <b>${d.residents} 名</b>・`
+        + `<b>${d.slots} コマ</b>の単位数が変わります（1コマあたり最大 ±${d.maxDelta} 単位）。</p>`
+      : `<p class="rm-pv-diff">単位数が変わるコマはありません。対象 ${d.totalResidents} 名のうち`
+        + ` <b>${d.residents} 名</b>で、支給限度額・使用率などの表示が変わります。</p>`;
+    h += `<table><thead><tr><th>変わるコマ</th><th>月合計（前→後）</th><th>支給限度（前→後）</th><th>使用率（前→後）</th><th>報酬額(10割)（前→後）</th></tr></thead><tbody>`;
     d.rows.slice(0, 12).forEach(r => {
       const pct = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
+      const num = (v) => (v === null || v === undefined) ? '—' : v.toLocaleString();
       h += `<tr><td>${r.slotDiff}</td>`
         +  `<td>${r.bMonth.toLocaleString()} → ${r.aMonth.toLocaleString()}</td>`
+        +  `<td>${num(r.bLimit)} → ${num(r.aLimit)}</td>`
         +  `<td>${pct(r.bPct)} → ${pct(r.aPct)}</td>`
         +  `<td>${r.bFee.toLocaleString()} → ${r.aFee.toLocaleString()}</td></tr>`;
     });
@@ -5312,11 +5452,35 @@ function closeRmPreview() {
 function rmApplyConfirmed() {
   const m = RM_PENDING;
   if (!m) { closeRmPreview(); return; }
-  /* 適用直前に care_schedule_v2 をまるごと控える。書き込みに失敗しても既存データは残す。 */
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) localStorage.setItem(LS_KEY + '_backup_rate_' + Date.now(), raw);
-  } catch (e) { /* 控えが取れなくても適用は続ける（控えは保険であって前提ではない） */ }
+  /* 適用直前に care_schedule_v2 をまるごと控える。書き込みに失敗しても既存データは残す。
+     ★試算中は本物の localStorage へ一切書かない（SIM の不変条件。「送らなければ安全」ではなく
+       「書かなければ安全」＝同一端末の別タブが storage 経由で拾う経路を塞ぐため）。
+     ★控えは1件が DB 全体ぶんある。古い控えを先に消してから書き、枠を食い潰さないようにする
+       （容量不足で保存自体が落ちると、データ保護のための控えがデータ保存を止めることになる）。 */
+  if (!SIM_ON) {
+    const PFX = LS_KEY + '_backup_rate_';
+    const writeBackup = () => {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) localStorage.setItem(PFX + Date.now(), raw);
+    };
+    const dropOldest = (keepNewest) => {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf(PFX) === 0 && /^\d+$/.test(k.slice(PFX.length))) keys.push(k);
+      }
+      keys.sort();                                     // 末尾が純数値の固定長タイムスタンプ＝辞書順＝古い順
+      keys.slice(0, Math.max(0, keys.length - keepNewest))
+          .forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+    };
+    try {
+      dropOldest(1);      // 直近1件だけ残し、これから書く分と合わせて最大2件にする
+      writeBackup();
+    } catch (e) {
+      // 容量不足が疑われるときは控えを全部捨てて1回だけやり直す（それでも駄目なら控えなしで進める）
+      try { dropOldest(0); writeBackup(); } catch (e2) { /* 控えは保険であって前提ではない */ }
+    }
+  }
   RM_UNDO = rmClone_(DB.rateMaster);
   m.rev = (Number(DB.rateMaster && DB.rateMaster.rev) || 0) + 1;   // 版数を進める＝他端末が巻き戻さない
   DB.rateMaster = m;
@@ -5356,7 +5520,8 @@ function rmExportJSON() {
   const m = DB.rateMaster || RATE_MASTER_DEFAULT;
   a.download = `報酬マスタ_${(m.municipality || '')}_${(m.revisionLabel || '')}.json`.replace(/\s/g, '');
   a.click();
-  URL.revokeObjectURL(a.href);
+  // 同期 revoke はダウンロード開始前に URL を無効化することがある（Safari/iPad で無反応）。既存 exportJSON と同じ遅延にする
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   showToast('報酬マスタを書き出しました');
 }
 
@@ -5388,6 +5553,9 @@ function rmImportJSON(input) {
 
 // ── Office info modal (事業所共通) ──
 function openOfficeInfoModal() {
+  /* 編集中は自動pullを止める（一括編集モーダルと同じ作法）。ここを開いたまま取り込みが走ると、
+     入力欄が古いまま DB.rateMaster だけ差し替わり、適用で他端末の改定を巻き戻す。 */
+  try { SYNC.stopPolling(); } catch (e) {}
   const o = DB.office || DEFAULT_OFFICE;
   refreshRateMasterUI_();      // 加算プルダウンを先に組み立ててから値を入れる
   renderRateMasterEditor_();
@@ -5410,6 +5578,7 @@ function openOfficeInfoModal() {
 }
 function closeOfficeInfoModal() {
   $('#mk-office-info').classList.remove('open');
+  try { SYNC.startPolling(); } catch (e) {}   // 自動同期を再開（idempotent）
 }
 function saveOfficeInfo() {
   DB.office = {
@@ -6278,6 +6447,8 @@ function showToast(msg) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (ctxMenu.style.display !== 'none') { hideCtxMenu(); return; }
+    /* 影響プレビューは事業所情報の上に重なる。手前にあるものから閉じる。 */
+    if ($('#mk-rm-preview').classList.contains('open')) { closeRmPreview(); return; }
     if ($('#mk-sim-apply').classList.contains('open')) { SIM.closeApply(); return; }
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
     if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
@@ -6362,11 +6533,15 @@ const SIM = {
     if (restoredDb) {
       DB = restoredDb.db;
       this.baseId = restoredDb.baseId || DB.currentResidentId;
+      /* この改修より前に作られた試算の控えには rateMaster が入っていない。展開しないと
+         単位数の表が空のままになり、試算盤面だけ数字が全部0で出る。 */
+      try { ensureRateMaster_(); } catch (e) {}
     } else {
       DB = JSON.parse(JSON.stringify(DB));   /* 実DBには一切触れない完全なコピー */
       this.baseId = DB.currentResidentId;
       this.persist();
     }
+    try { refreshRateMasterUI_(); } catch (e) {}   /* 選択肢・注記を試算中のマスタに合わせる */
     this.syncButtons();
     try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) {}
     showToast(restoredDb ? '試算モードで復元しました（どこにも反映されていません）'
@@ -6384,8 +6559,11 @@ const SIM = {
     /* 先に試算のコピーを確実に手放す。loadDB は「読めたときだけ差し替える」ため、
        実キーが消えている・壊れている端末では試算のコピーが実DBとして生き残り、
        次の保存でそれが実データとしてクラウドへ流れてしまう。 */
-    DB = { residents: [], currentResidentId: null, office: null };
+    DB = { residents: [], currentResidentId: null, office: null, rateMaster: null };
     try { loadDB(); } catch (e) {}                    /* 実データを localStorage から読み直す */
+    /* loadDB が読めなかった端末ではマスタが null のまま残る。既定へ展開しておかないと
+       単位数の表が空のままになり、盤面の数字が全部0で出る。 */
+    try { ensureRateMaster_(); refreshRateMasterUI_(); } catch (e) {}
     /* 読めずに空のままなら端末バックアップから復元する（既存の安全網に接続する） */
     try { csRestoreResidentsIfLost(); } catch (e) {}
     try { mergeCommonSchedule(); } catch (e) {}       /* 試算中に止めていたマスタ取込をここで1回 */
@@ -6624,8 +6802,15 @@ document.addEventListener('visibilitychange', () => {
 // 未送信の自編集(_dirty)がある間は上書きしない（既存のpoll/競合処理に委ねる）。デバウンスで連続書込を集約。
 let _csStorageTimer = null;
 function _csBusyEditing() {
-  // 編集モーダル表示中／ドラッグ中は取り込みを保留（編集中イベントの下でDB差し替え・ドラッグ中断を防ぐ）
+  /* 編集モーダル表示中／ドラッグ中は取り込みを保留（編集中イベントの下でDB差し替え・ドラッグ中断を防ぐ）。
+     事業所情報（報酬マスタを内蔵）と影響プレビューも保留対象に入れる。
+     ここを開いたまま取り込みが走ると、画面の入力欄は古いまま DB.rateMaster だけ新しくなり、
+     そのまま適用すると他端末の改定を古い値で上書きしてしまう。 */
+  const oi = document.getElementById('mk-office-info');
+  const pv = document.getElementById('mk-rm-preview');
   return editingEventId != null ||
+         (oi && oi.classList.contains('open')) ||
+         (pv && pv.classList.contains('open')) ||
          document.body.classList.contains('is-dragging-move') ||
          document.body.classList.contains('is-dragging-resize');
 }
