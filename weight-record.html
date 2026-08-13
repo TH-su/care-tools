@@ -1720,6 +1720,10 @@ function fetchTO(url, opts, ms){
   });
 }
 
+/* 応答本文の先頭の BOM を落とす。付いているだけで JSON.parse が失敗するため、
+   【読む前に必ず通す】。診断だけ落として同期側で落とさないと、同じ応答に対して
+   「JSONとして要約できた」と「JSONとして解釈できません」が同時に出る（レビュー指摘・中3）。 */
+function _stripBom(text){ return String(text == null ? '' : text).replace(/^﻿/, ''); }
 /* 応答本文を画面に出す時の共通ガード（2026-08-13 レビュー指摘・高1/高2）。
    ------------------------------------------------------------
    取得（getAll）の応答には入居者の氏名・居室が入る。失敗時に本文をそのまま出す実装が
@@ -1729,13 +1733,21 @@ function fetchTO(url, opts, ms){
      読めるかどうかは通信の壊れ方に左右されるが、形跡は壊れても残るため。
    ★形跡が無い本文（HTMLのログイン画面・エラーページ）は従来どおり出す。
      そこには入居者データが入らず、原因を突き止めるのに本文そのものが要る。 */
-var _RE_PERSONAL_BODY = /"(residents|records|name|kana|room)"\s*:/;
+/* ★応答の形を増やす時は、ここの語も足すこと。`roster` は代理名簿（wrFetchMasterRoster）の形で、
+   いまは画面に出す経路が無いが、診断へ相乗りさせた瞬間に静かに漏れる（レビュー指摘・低3）。 */
+var _RE_PERSONAL_BODY = /"(residents|records|roster|name|kana|room|masterId)"\s*:/;
+/* 応答本文の先頭を「出してよい形」にして返す。空本文では空文字を返す
+   （呼び出し側の `|| r.statusText` のようなフォールバックを殺さないため・レビュー指摘・低1）。 */
 function _safeBodyPreview(text, n){
-  var raw = String(text == null ? '' : text).replace(/^﻿/, '');
-  if(_RE_PERSONAL_BODY.test(raw)){
+  var raw = _stripBom(text);
+  if(!raw) return '';
+  /* HTML はガードの対象外（レビュー指摘・低2）。Google のエラーページは埋め込みJSONに
+     "name": を含むことがあり、伏せると原因究明に要る本文まで消える。
+     HTML に入居者データは載らない（載るのは我々のJSON応答だけ）。 */
+  if(!/<\s*html|<!DOCTYPE\s+html/i.test(raw) && _RE_PERSONAL_BODY.test(raw)){
     return '（入居者データを含む可能性があるため本文は表示しません・全' + raw.length + '字）';
   }
-  return raw.slice(0, n || 140).replace(/\s+/g, ' ') || '（空）';
+  return raw.slice(0, n || 140).replace(/\s+/g, ' ');
 }
 /* HTTP ステータスやレスポンス本文の特徴から、よくある失敗の原因を判別して
    分かりやすい日本語メッセージに変換する。診断（apiDiagnose）からも再利用。 */
@@ -1783,9 +1795,10 @@ function _classifyApiError(status, text){
    - { __raw: text, __status: status } を error.detail に同梱し、診断画面で参照可能 */
 async function _parseApiResponse(r){
   const text = await r.text();
-  // JSON として解釈できれば即返す
+  // JSON として解釈できれば即返す（BOM は読む前に落とす。付いているだけで parse が失敗し、
+  // 「JSONではありません」と言いながら同期が止まっていた）
   if(text && text.trim()){
-    try{ return JSON.parse(text); }
+    try{ return JSON.parse(_stripBom(text)); }
     catch(e){ /* 続いて分類処理 */ }
   } else if(r.ok){
     // 空ボディだが 200 → 何かを返すべきメソッドで空はおかしい
@@ -1889,9 +1902,11 @@ function apiFriendlyError_(raw){
   const s = String(raw == null ? '' : raw);
   if(!/unauthorized/i.test(s)) return s;
   if(!apiToken){
-    /* ★どの画面かを特定する（レビュー指摘・中3）。共通の「接続設定」アプリは体重のURLしか
-       扱っておらず合言葉の欄が無いため、「設定画面」とだけ書くと探して詰まる。 */
-    return 'このサーバーは合言葉が必要ですが、この端末には保存されていません。体重管理アプリの「設定」→「🌐 複数端末で共有」の合言葉欄に入れて「💾 URLを保存・接続」を押してください（入力しただけでは保存されません。共通の接続設定アプリには体重の合言葉欄はありません）';
+    /* ★どの画面かを特定する。「設定画面」とだけ書くと探して詰まる。
+       ★案内先は【実在するものだけ】を書く。以前ここに「共通の接続設定には合言葉欄はありません」と
+         書いていたが、同じ改修で欄を追加したため誤案内になっていた（2026-08-13 レビュー指摘・高1）。
+         この文言が出るのは現場が止まっている瞬間なので、使える復旧経路を否定しない。 */
+    return 'このサーバーは合言葉が必要ですが、この端末には保存されていません。体重管理アプリの「設定」→「🌐 複数端末で共有」の合言葉欄に入れて「💾 URLを保存・接続」を押してください（入力しただけでは保存されません）。共通の「接続設定」からも入れられますが、その時はこの画面を再読み込みしてください（合言葉は起動時にしか読み込みません）';
   }
   if(!apiCaps.seen){
     return 'サーバーの状態を確認できないまま送信し、合言葉が通りませんでした。通信を確かめて画面を再読み込みしてください';
@@ -2026,7 +2041,7 @@ async function apiDiagnose(url){
   let _diagJson = null;
   /* BOM を落としてから読む。付いているだけで JSON.parse が失敗し、
      「読めなかった＝本文を出す」側へ落ちていた（レビュー指摘・高1）。 */
-  try{ _diagJson = JSON.parse(String(text||'').replace(/^﻿/, '')); }catch(e){ _diagJson = null; }
+  try{ _diagJson = JSON.parse(_stripBom(text)); }catch(e){ _diagJson = null; }
   /* 配列・数値・文字列は「自分たちの応答の形」ではない。要約に入れると意味のない行になるので、
      本文側（_safeBodyPreview がガードする）へ回す。 */
   if(_diagJson && typeof _diagJson === 'object' && !Array.isArray(_diagJson)){
@@ -2047,7 +2062,7 @@ async function apiDiagnose(url){
     return { ok:false, lines };
   }
   let json;
-  try{ json = JSON.parse(text); }
+  try{ json = JSON.parse(_stripBom(text)); }
   catch(e){
     lines.push('❌ 応答が JSON として解釈できません');
     lines.push('  → GAS の doGet が ContentService.createTextOutput(...JSON...) を返しているか確認');
@@ -6288,21 +6303,15 @@ function refreshUrlPersistBadge(){
     const _tokIn = $('#cfgApiToken');
     const _tokVal = _tokIn ? _tokIn.value.trim() : '';
     const _tokSaved = loadApiToken_();
-    let _skipToken = false;
-    if(!_tokVal && _tokSaved){
-      if(confirm('保存済みの合言葉を削除しますか？\n\n「キャンセル」を選ぶと、今の合言葉をそのまま残します。\n（別のタブや接続設定で入れた合言葉が、この画面には表示されていないことがあります）')){
-        /* 消す意思が確認できた時だけ空で上書きする */
-      }else{
-        _skipToken = true;
-        /* ★残すと決めた以上、この画面が持つ合言葉も保存済みの値へ揃える。
-           揃えないと、この直後の同期が空の合言葉で送られて unauthorized になる
-           （合言葉は起動時にしか読まないため、別タブでの設定を掴んでいない）。 */
-        apiToken = _tokSaved;
-        if(_tokIn) _tokIn.value = _tokSaved;   /* 残したことが画面から分かるように戻す */
-      }
-    }
-    if(!_skipToken && !saveApiToken_(_tokVal)){
-      toast('⚠️ 合言葉を保存できませんでした（プライベートブラウズ等）','err');
+    if(_tokVal){
+      if(!saveApiToken_(_tokVal)) toast('⚠️ 合言葉を保存できませんでした（プライベートブラウズ等）','err');
+    }else if(_tokSaved){
+      /* ★空欄は「変更しない」。接続設定（共通画面）と同じ意味に揃える（レビュー指摘・中2）。
+         2つの画面が同じ `wtmgr_api_token` を書くのに、片方が「空欄＝削除」だと、
+         別タブで入れた合言葉を知らない人がURLを直しただけで消してしまう。
+         削除は「🔌 連携解除」（確認つき）に集約した。 */
+      apiToken = _tokSaved;                    /* 起動後に他画面で入った値をこの画面にも取り込む */
+      if(_tokIn) _tokIn.value = _tokSaved;     /* 反映されたことが分かるように出す */
     }
     apiSetStatus('sy','接続中...');
     hideDiagPanel();
@@ -6343,6 +6352,11 @@ function refreshUrlPersistBadge(){
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
+    /* ★合言葉もここで消す（2026-08-13 レビュー指摘・中2）。保存は「空欄＝変更しない」に
+       統一したため、消す入口はここだけになる。連携を解除するのに資格情報だけ端末へ
+       残す理由も無い（次に別のサーバーへ繋ぐ時、古い合言葉が黙って送られる）。 */
+    saveApiToken_('');
+    if($('#cfgApiToken')) $('#cfgApiToken').value = '';
     if($('#cfgApi')) $('#cfgApi').value = '';
     apiSetStatus('of');
     $('#apiStatus').textContent = 'GASをデプロイして取得したURLを入力して「URLを保存・接続」を押してください。';
