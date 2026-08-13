@@ -456,6 +456,10 @@ select.inp { cursor: pointer; }
 /* 数字が動く操作は塗りつぶしにしない（押し間違いを誘わない）。枠線＋確認を通す */
 .btn-danger-outline { background: #fff; color: #c62828; border: 2px solid var(--ng); }
 .btn-undo { background: #fff; color: #7a4200; border: 2px solid #ffa000; }
+/* 今回足したボタンだけ 44px 以上にする（既存 .btn は 39px のまま＝他画面の並びを動かさない）。
+   単位数を書き換える操作なので、手袋・片手でも押し間違えない大きさを確保する。 */
+#oi-rm-body .btn, #mk-rm-preview .btn { min-height: var(--tap-min, 44px); }
+#oi-rm-body .btn-row, #mk-rm-preview .btn-row { gap: var(--tap-gap, 8px); }
 
 /* ── 報酬マスタ 設定UI ── */
 .rm-lead { font-size: 0.8125rem; color: var(--g7); line-height: 1.7; margin-bottom: 10px; }
