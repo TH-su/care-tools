@@ -17,7 +17,7 @@
 
   /* GAS への POST。全アプリで同一の形にする。
      text/plain にするのは CORS preflight を発生させないため（GAS は OPTIONS に応答しない）。 */
-  function post(payload, t) {
+  function post(payload, t, opts) {   // opts は現状未使用（契約の形を揃えるため受ける）
     if (!t || !t.endpoint) return Promise.reject(new Error('同期先が未設定です'));
     var body = {};
     for (var k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) body[k] = payload[k];
@@ -36,7 +36,11 @@
   /* GET 取得（キャッシュを踏まない読み取り。既存の no-store 指定をそのまま維持）。
      入居者マスタ(master.gs)は GET + クエリ文字列の形で叩かれている経路があるため、
      payload をクエリへ組み立てる。token は接続先に入っている時だけ載せる
-     （stateRev のように合言葉不要＝個人情報を返さない口があるため、無条件には付けない）。 */
+     （stateRev のように合言葉不要＝個人情報を返さない口があるため、無条件には付けない）。
+     ★改修前との差（意図的・2026-08-13）: 移設前の GET 2箇所は res.ok を見ずに r.json() へ流していた。
+       ここでは POST 側と同じく res.ok を判定する。500 等が返ったとき、移設前は JSON 解析の失敗、
+       移設後は 'HTTP 500' の例外になる。どちらも呼び出し側の同じ .catch に入るため画面の挙動は
+       変わらないが、「完全同一」ではないので記録に残す。POST と GET で判定が食い違う方が危うい。 */
   function getWithQuery(t, payload) {
     if (!t || !t.endpoint) return Promise.reject(new Error('同期先が未設定です'));
     var qs = [];
@@ -56,17 +60,17 @@
 
   var GAS = {
     // ── 汎用KV ──
-    kvGet: function (key, t) { return post({ action: 'get', key: key }, t); },
+    kvGet: function (key, t, opts) { return post({ action: 'get', key: key }, t, opts); },
 
     /* rev を送って楽観ロック。GAS が競合を返したらそのまま返す（判定はアプリ側の既存UIが行う）。 */
-    kvPut: function (key, value, rev, t) {
-      return post({ action: 'put', key: key, data: value, rev: rev }, t);
+    kvPut: function (key, value, rev, t, opts) {
+      return post({ action: 'put', key: key, data: value, rev: rev }, t, opts);
     },
 
     /* ページを閉じる直前の最終送信。fetch は unload で中断されるため sendBeacon を使う。
        Blob の type を text/plain にするのは POST と同じ理由（CORS preflight を起こさない）。
        戻り値はブラウザが送信キューに積めたかどうかだけ＝応答は受け取れない。 */
-    kvPutBeacon: function (key, value, rev, t) {
+    kvPutBeacon: function (key, value, rev, t, opts) {
       if (!t || !t.endpoint) return false;
       if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
       var body = JSON.stringify({ action: 'put', key: key, token: t.token, rev: rev, data: value });
@@ -85,8 +89,8 @@
     listResidents: function (t, opts) {
       return post({ action: (opts && opts.scope === 'safe') ? 'getRoster' : 'list' }, t);
     },
-    getResident: function (id, t) { return post({ action: 'get', id: id }, t); },
-    saveResident: function (id, patch, t) { return post({ action: 'save', id: id, patch: patch }, t); },
+    getResident: function (id, t, opts) { return post({ action: 'get', id: id }, t, opts); },
+    saveResident: function (id, patch, t, opts) { return post({ action: 'save', id: id, patch: patch }, t, opts); },
     getRoster: function (t, opts) {
       if (opts && opts.transport === 'GET') return getWithQuery(t, { action: 'getRoster' });
       return post({ action: 'getRoster' }, t);
@@ -109,7 +113,7 @@
     },
 
     /* UIの出し分け用。Phase 0 は現行と同じ「現場端末は保存不可」だけを表す。 */
-    can: function (action) {
+    can: function (action, entity) {
       var ctx = GAS.context();
       if (ctx.effective === 'safe') return action === 'view';
       return true;

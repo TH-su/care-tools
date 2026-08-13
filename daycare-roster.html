@@ -520,9 +520,12 @@ table.wk .wk-blank { color: transparent; }
 
 <div id="toast" role="status" aria-live="polite"></div>
 
-<!-- 共通データ層（Phase 0）。契約 → ドライバの順。ビルド不要・素の script src 1組。 -->
-<script src="su-data.js"></script>
-<script src="su-data-gas.js"></script>
+<!-- 共通データ層（Phase 0）。契約 → ドライバの順。ビルド不要・素の script src 1組。
+     ★?v= は必須。HTMLの no-store はサブリソースには効かないため、付けないと
+       「新しいHTML × 古いJS」の組合せが現場端末に残る（meds-effect-dict.js と同じ作法）。
+       データ層の契約を変えた日にこの値を更新する。 -->
+<script src="su-data.js?v=2026-08-13"></script>
+<script src="su-data-gas.js?v=2026-08-13"></script>
 
 <script>
 'use strict';
@@ -581,8 +584,21 @@ function loadLocal() {
 }
 /* 共通データ層へ「接続先の決め方」を渡す（Phase 0）。
    毎回 syncTarget() を呼ぶ形にしてあるので、設定が途中で変わっても次の通信から反映される
-   ＝従来の挙動と同じ。 */
-SU.data.init({ appId: 'daycare-roster', resolveTarget: function () { return syncTarget(); } });
+   ＝従来の挙動と同じ。
+   ★ここで素に SU.data.init(...) と書くと、su-data.js が読めなかったときに ReferenceError で
+     このスクリプトのトップレベルが止まり、末尾の init() まで届かず「押しても何も起きない画面」になる。
+     改修前は外部依存ゼロの1ファイルだったので、これは移設で新しく増える壊れ方。
+     読めていないことを画面に出し、残りの処理は続ける（入居者マスタの薬効辞書ガードと同じ作法）。 */
+var SU_DATA_READY = !!(window.SU && window.SU.data);
+if (SU_DATA_READY) {
+  SU.data.init({ appId: 'daycare-roster', resolveTarget: function () { return syncTarget(); } });
+} else {
+  document.addEventListener('DOMContentLoaded', function () {
+    try {
+      toast('データ層を読み込めていません（su-data.js）。同期できません。ページを再読み込みしてください');
+    } catch (e) {}
+  });
+}
 
 function syncTarget() {
   try {
@@ -599,9 +615,15 @@ function syncTarget() {
    text/plain で CORS preflight を回避し、{ok, data, rev, conflict, error} を返す。
    ★2026-08-13 Phase 0: 通信の実体を su-data.js（共通データ層）へ移した。
      送る形・応答・例外は同一で、この関数の呼び出し側は一切変えていない。
-     接続先の解決（syncTarget）はこのアプリの都合なので、ここから渡し続ける。 */
+     接続先の解決（syncTarget）はこのアプリの都合なので、ここから渡し続ける。
+   ★action で名前付き契約（kvGet / kvPut）へ振り分ける。逃げ道の kvRaw に主経路を通したままだと、
+     rev 楽観ロックの契約がデータ層を一度も通らず、バックエンドを差し替える時に結局ここを
+     もう一度書き直すことになる（＝Phase 0 の目的が果たせない）。 */
 async function gasCall(payload) {
-  return SU.data.kvRaw(payload);
+  var p = payload || {};
+  if (p.action === 'get') return SU.data.kvGet(p.key);
+  if (p.action === 'put') return SU.data.kvPut(p.key, p.data, p.rev);
+  return SU.data.kvRaw(p);          // それ以外は従来どおりそのまま通す
 }
 /* ★2026-08-05 修正: ここで careRev を書き換えない。取得の直後には「未送信があれば結果を破棄する」
    分岐があり、従来は破棄した場合でも版だけが進んでいた。すると【古い DB × 新しい rev】の組合せが残り、

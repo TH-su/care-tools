@@ -19,6 +19,11 @@
 (function (global) {
   'use strict';
 
+  /* 二重読み込み対策。'su-data.js' と 'su-data.js?v=…' の両方が読まれると、後から評価された方が
+     drivers 空の新インスタンスで上書きし、登録済みドライバが消える（＝全通信が失敗する）。
+     先に居る方を正として2回目は何もしない。 */
+  if (global.SU && global.SU.data) return;
+
   var LS_BACKEND_KEY = 'su_backend';     // 'gas'（既定） | 'supabase'（Phase 1で追加）
   var drivers = {};
   var cfg = {
@@ -39,26 +44,45 @@
     return 'gas';
   }
 
+  function driverError() {
+    return new Error('データ層を読み込めていません（su-data-gas.js）。ページを再読み込みしてください。'
+                   + '直らない場合は管理者へ連絡してください。');
+  }
   function driver() {
-    var n = driverName();
-    var d = drivers[n];
-    if (!d) {
-      throw new Error('データ層の読み込みに失敗しました（ドライバ「' + n + '」が見つかりません）。'
-                    + 'ページを再読み込みしてください。直らない場合は管理者へ連絡してください。');
-    }
+    var d = drivers[driverName()];
+    if (!d) throw driverError();
     return d;
+  }
+  /* 非同期APIは「同期 throw」しないで必ず Promise を返す。
+     ★ここが要点: 呼び出し側は `busy = true; api().then(...).catch(...)` の形で書かれており、
+       同期に throw すると .catch が付く前に抜けて busy フラグが立ちっぱなしになる
+       （＝その機能がセッション中ずっと止まる）。改修前の fetch は同期 throw しなかったので、
+       ここで throw すると新しい壊れ方を増やすことになる。 */
+  function call(method, args) {
+    var d = drivers[driverName()];
+    if (!d) return Promise.reject(driverError());
+    try { return Promise.resolve(d[method].apply(d, args)); }
+    catch (e) { return Promise.reject(e); }
   }
 
   /* 接続先の解決はアプリが持つ（アプリごとに設定の置き場所も、切替の作法も違うため）。
      毎回呼ぶ＝呼び出しの途中で接続先が切り替わる既存挙動（healStaleTarget 等）を壊さない。 */
+  /* 接続先が明示されているのに空だった場合は、既定の接続先へ落とさない。
+     落とすと「入居者マスタへ送るつもりの要求が、統合KVストアの接続先へ合言葉ごと飛ぶ」ことになり、
+     GET経路では合言葉がURLのクエリに載る（URLはログに残りうる）。混ぜずにエラーにする。 */
+  var MISSING_TARGET = '__su_missing_target__';
   function target(opts) {
-    if (opts && opts.endpoint) return { endpoint: opts.endpoint, token: opts.token || '' };
+    if (opts && Object.prototype.hasOwnProperty.call(opts, 'endpoint')) {
+      if (!opts.endpoint) return { endpoint: MISSING_TARGET, token: '' };
+      return { endpoint: opts.endpoint, token: opts.token || '' };
+    }
     if (typeof cfg.resolveTarget === 'function') {
       var t = cfg.resolveTarget() || {};
       return { endpoint: t.endpoint || '', token: t.token || '' };
     }
     return { endpoint: '', token: '' };
   }
+  function badTarget(t) { return !t || t.endpoint === MISSING_TARGET; }
 
   var SU_DATA = {
     /* ── 初期化 ──
@@ -79,28 +103,38 @@
     /* ── 汎用KV（統合KVストアGAS の後継）──
        care-schedule / work-schedule / weight-record / daycare-roster 等が使う。
        戻り値は現行GASの応答をそのまま返す: {ok, data, rev, error} */
-    kvGet: function (key, opts) { return driver().kvGet(key, target(opts), opts || {}); },
+    kvGet: function (key, opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvGet', [key, t, opts || {}]); },
 
     /* rev 不一致はGASが競合を返す。既存の競合UIをそのまま使えるよう応答は素通しする。 */
-    kvPut: function (key, value, rev, opts) { return driver().kvPut(key, value, rev, target(opts), opts || {}); },
+    kvPut: function (key, value, rev, opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvPut', [key, value, rev, t, opts || {}]); },
 
     /* ページを閉じる直前の最終送信（ベストエフォート）。
        fetch は unload で中断されるため sendBeacon を使う経路が既にあり、これも契約へ含める。
        ★戻り値は「ブラウザが送信を受け付けたか」だけ。応答は受け取れないので rev 不一致の判定は
          できない（サーバ側が rev で拒否するのが安全弁）。呼び出し側はこれを唯一の保存手段にしない。 */
     kvPutBeacon: function (key, value, rev, opts) {
-      return driver().kvPutBeacon(key, value, rev, target(opts), opts || {});
+      var t = target(opts);
+      if (badTarget(t)) return false;
+      try { return drivers[driverName()].kvPutBeacon(key, value, rev, t, opts || {}); }
+      catch (e) { return false; }   /* 閉じる直前の処理を例外で止めない */
     },
 
     /* 移行期間の逃げ道。head/list/ping など名前付き契約に無い action をそのまま通す。
        ★新しい呼び出しをこれで増やさない（増やすほど後のドライバ差し替えが重くなる）。 */
-    kvRaw: function (payload, opts) { return driver().kvRaw(payload || {}, target(opts), opts || {}); },
+    kvRaw: function (payload, opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvRaw', [payload || {}, t, opts || {}]); },
 
     /* ── 入居者（master.gs の後継）── */
-    listResidents: function (opts) { return driver().listResidents(target(opts), opts || {}); },
-    getResident:   function (id, opts) { return driver().getResident(id, target(opts), opts || {}); },
-    saveResident:  function (id, patch, opts) { return driver().saveResident(id, patch, target(opts), opts || {}); },
-    getRoster:     function (opts) { return driver().getRoster(target(opts), opts || {}); },
+    listResidents: function (opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('listResidents', [t, opts || {}]); },
+    getResident:   function (id, opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('getResident', [id, t, opts || {}]); },
+    saveResident:  function (id, patch, opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('saveResident', [id, patch, t, opts || {}]); },
+    getRoster:     function (opts) { var t = target(opts); return badTarget(t)
+      ? Promise.reject(new Error('同期先が未設定です')) : call('getRoster', [t, opts || {}]); },
 
     /* ── 認可コンテキスト ──
        Phase 0 では現行の端末ロールをそのまま返すだけ＝画面の出し分けは変わらない。
@@ -113,7 +147,7 @@
        クライアントから二重に送ると要配慮情報の第二のコピーを増やすだけになるため。
        Phase 1 で audit_log テーブルへ書く実装に差し替える。 */
     audit: function (action, entity, entityId, fields) {
-      return driver().audit(action, entity, entityId, fields);
+      return call('audit', [action, entity, entityId, fields]);
     },
 
     /* Phase 1 で実装。未実装であることを黙って隠さない。 */
