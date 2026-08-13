@@ -598,8 +598,9 @@ function setDeviceRole(v){
     localStorage.setItem(DEVICE_KEY,v);
     /* ★現場端末に切り替えたら一覧キャッシュを消す。
        画面は applyDeviceGuard でブロックされるが、キャッシュを残すと
-       端末内に氏名・生年月日が残り続けるため。 */
-    if(v==='field'){ localStorage.removeItem(ROSTER_KEY); roster=[]; }
+       端末内に氏名・生年月日が残り続けるため。
+       ★「開いていた方」の番号も同じ場所で消す（消す責務を2箇所に割らない）。 */
+    if(v==='field'){ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); roster=[]; }
   }catch(e){}
 }
 
@@ -1191,21 +1192,33 @@ function writeCommonRoster(){
 /* ═══ 開いていた方も再読み込みで失わない（2026-08-13 管理者の指示・原則11の適用） ═══
    ★このキーだけは「選択中の入居者」＝業務データに紐づく状態なので、通常のUI状態保存
      （タブid・ビューid）とは扱いを分ける。守ること:
-     ・保存するのは【利用者Noだけ】。氏名・生年月日・記録は1文字も端末に残さない
+     ・保存するのは【利用者Noだけ】。氏名・生年月日・記録は1文字も残さない
+     ・**sessionStorage を使う（localStorage ではない）**。理由は下記
      ・復元は openResident(id) 経由＝サーバーから取り直して描く（キャッシュを表示しない）
      ・名簿に居ない番号なら一覧へ倒す（前回の別人を開かない・未知値は既定へ）
+     ・URLで画面を指定して開かれた時（?view=bday 等）は復元しない（明示指定が勝つ）
+     ・接続先が未設定なら復元しない（詳細は取得できず、エラー画面に固定されるため）
      ・編集画面からの再読み込みは【詳細画面】へ戻す（未保存の入力を復元しない＝
        半端な入力が残ったフォームで保存されるより、開き直してもらう方が安全）
-     ・現場端末（su_device_role==='field'）では保存も復元もしない */
+     ・現場端末（su_device_role==='field'）では保存も復元もしない
+
+   ★localStorage にしない理由（2026-08-13 レビュー指摘・2件とも実害の側）:
+     ①**タブをまたいで混線する**。別のアプリから新しいタブでこの画面を開いて別の方を見ると、
+       先に開いていたタブを再読み込みした時に【その別の方】が出る
+     ②**日をまたいで残る**。夕方に詳細を開いたまま閉じた事務所PCが、翌朝いちばんに
+       他人の病名・処方・家族連絡先の画面で起動する。CLAUDE.md 介護現場要件9
+       「肩越しの覗き見を想定し、詳細は明示操作で開く」と正面から衝突する
+     sessionStorage ならタブ単位・タブを閉じたら消えるので、再読み込みでは残りつつ
+     ①②が同時に消える（原則11 が求めているのは「リロード」であって「翌日の起動」ではない）。 */
 var OPEN_KEY='rmaster_open_id';
 function saveOpenId(id){
   try{
-    if(id==null||id==='')localStorage.removeItem(OPEN_KEY);
-    else localStorage.setItem(OPEN_KEY,String(id));
+    if(id==null||id==='')sessionStorage.removeItem(OPEN_KEY);
+    else sessionStorage.setItem(OPEN_KEY,String(id));
   }catch(e){/* 保存できなくても本体の操作は続ける */}
 }
 function readOpenId(){
-  try{var v=localStorage.getItem(OPEN_KEY);return(v==null||v==='')?null:v}catch(e){return null}
+  try{var v=sessionStorage.getItem(OPEN_KEY);return(v==null||v==='')?null:v}catch(e){return null}
 }
 
 /* 絞り込みも再読み込みで失わない（dev-principles 原則11）。保存するのは種別idのみ。
@@ -1687,9 +1700,14 @@ function openResident(id){
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
   apiGet({action:'getResident',id:id}).then(function(d){
     var rec=(d&&d.record)||d;
-    if(!rec||rec.id==null){throw new Error('該当データなし')}
+    if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
     curResident=rec; setViewActions(true); renderView(rec);
-  }).catch(function(e){$('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>'});
+  }).catch(function(e){
+    /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
+       忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
+    if(e&&e.gone)saveOpenId(null);
+    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+  });
 }
 
 /* 詳細画面の「この方を各アプリで開く」行。
@@ -3197,8 +3215,9 @@ function applyDeviceGuard(){
   /* 現場端末と判明した時点で一覧キャッシュを消す。setDeviceRole でも消しているが、
      他アプリの設定画面から 'field' へ切り替えられた端末はこの経路を通らないため、
      次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
-  /* 現場端末と判った時点で「開いていた方」の番号も消す（端末に業務データの紐づけを残さない） */
-  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); localStorage.removeItem(OPEN_KEY); }catch(e){} roster=[]; }
+  /* 現場端末と判った時点で「開いていた方」の番号も消す（他アプリの設定画面から
+     'field' へ切り替えられた端末は setDeviceRole を通らないので、ここでも保険をかける） */
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[]; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }
@@ -3602,11 +3621,16 @@ function init(){
   // ── 端末用途ガード：現場タブレットはデータを一切読み込まずブロック表示 ──
   if(applyDeviceGuard()){setSync('現場端末','err');return}
   loadData();
-  /* ★前回開いていた方の詳細画面へ戻す（原則11）。名簿に居る番号の時だけ開く。
-     名簿が空（この端末で初めて開いた・キャッシュ無し）なら一覧のままにする＝
-     取り違えの疑いがある時は開かない側へ倒す。復元順は「保存済みタブ・絞り込みの後」。 */
+  /* ★前回開いていた方の詳細画面へ戻す（原則11）。復元順は「保存済みタブ・絞り込みの後」。
+     次のどれかに当たれば開かない＝迷ったら一覧のままにする（開かない側へ倒す）:
+     ・URLで画面が指定されている（?view=bday 等）… メニューの「🎂 誕生日一覧」を押したのに
+       詳細画面が覆いかぶさると、誕生日表を出したつもりで入居者の詳細に着地する
+     ・接続先が未設定 … 詳細は取得できないのでエラー画面に固定される（一覧はキャッシュで動く）
+     ・名簿にその番号が居ない … 前回の別人・退去済みを開かない */
+  var _urlView=(function(){try{return new URLSearchParams(location.search).get('view')}catch(e){return null}})();
   var _openId=readOpenId();
-  if(_openId!=null && roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
+  if(!_urlView && CFG.url && _openId!=null &&
+     roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
 }
 document.addEventListener('DOMContentLoaded',init);
 </script>
