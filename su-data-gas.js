@@ -63,6 +63,18 @@
       return post({ action: 'put', key: key, data: value, rev: rev }, t);
     },
 
+    /* ページを閉じる直前の最終送信。fetch は unload で中断されるため sendBeacon を使う。
+       Blob の type を text/plain にするのは POST と同じ理由（CORS preflight を起こさない）。
+       戻り値はブラウザが送信キューに積めたかどうかだけ＝応答は受け取れない。 */
+    kvPutBeacon: function (key, value, rev, t) {
+      if (!t || !t.endpoint) return false;
+      if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
+      var body = JSON.stringify({ action: 'put', key: key, token: t.token, rev: rev, data: value });
+      try {
+        return navigator.sendBeacon(t.endpoint, new Blob([body], { type: 'text/plain;charset=utf-8' }));
+      } catch (e) { return false; }
+    },
+
     /* transport:'GET' を渡すと GET+クエリ形式で送る（入居者マスタの一部経路がこの形）。 */
     kvRaw: function (payload, t, opts) {
       if (opts && opts.transport === 'GET') return getWithQuery(t, payload);

@@ -84,6 +84,14 @@
     /* rev 不一致はGASが競合を返す。既存の競合UIをそのまま使えるよう応答は素通しする。 */
     kvPut: function (key, value, rev, opts) { return driver().kvPut(key, value, rev, target(opts), opts || {}); },
 
+    /* ページを閉じる直前の最終送信（ベストエフォート）。
+       fetch は unload で中断されるため sendBeacon を使う経路が既にあり、これも契約へ含める。
+       ★戻り値は「ブラウザが送信を受け付けたか」だけ。応答は受け取れないので rev 不一致の判定は
+         できない（サーバ側が rev で拒否するのが安全弁）。呼び出し側はこれを唯一の保存手段にしない。 */
+    kvPutBeacon: function (key, value, rev, opts) {
+      return driver().kvPutBeacon(key, value, rev, target(opts), opts || {});
+    },
+
     /* 移行期間の逃げ道。head/list/ping など名前付き契約に無い action をそのまま通す。
        ★新しい呼び出しをこれで増やさない（増やすほど後のドライバ差し替えが重くなる）。 */
     kvRaw: function (payload, opts) { return driver().kvRaw(payload || {}, target(opts), opts || {}); },

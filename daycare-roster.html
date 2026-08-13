@@ -662,10 +662,10 @@ function scheduleSaverRetry_() {
 // タブ/アプリを閉じる直前、未送信があればベストエフォートで最終送信（rev不一致はサーバ側で拒否＝安全）。
 function flushPendingBeacon_() {
   try {
+    /* 送ってよいかの判定（未送信あり・実データあり）はここ＝アプリ側に残す。
+       Phase 0: 送信そのものは共通データ層へ。送る本文の形は従来と同一。 */
     if (!pendingFlags.size || !DB || !Array.isArray(DB.residents) || !DB.residents.length) return;
-    const t = syncTarget(); if (!t.endpoint || !navigator.sendBeacon) return;
-    const body = JSON.stringify({ action: 'put', key: LS_KEY, token: t.token, rev: careRev, data: DB });
-    navigator.sendBeacon(t.endpoint, new Blob([body], { type: 'text/plain;charset=utf-8' }));
+    SU.data.kvPutBeacon(LS_KEY, DB, careRev);
   } catch (e) {}
 }
 function pendingKey_(item, field) {
