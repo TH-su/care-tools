@@ -13,7 +13,8 @@
    コンテンツが主役なので、色は①アクセント1色 ②危険(赤) ③注意(琥珀) の3つに限定する。
    文字色は白背景に対しコントラスト比4.5:1以上を満たす値のみ使用（--g5/--g6 を darken 済み）。 */
 :root{
-  --pri:#1a73e8; --pri-l:#eaf1fd; --pri-d:#14509b;
+  /* --pri 系は入居者マスタと同時に更新（2026-08-14・白文字コントラスト6.39:1）。帳票の見た目を揃える */
+  --pri:#0b57d0; --pri-l:#ecf3fe; --pri-d:#0842a0;
   --ok:#1e6b23; --ok-l:#e8f5e9; --ng:#b3261e; --ng-l:#fdecea;
   --warn-bg:#fdf3e3; --warn-tx:#8a5200;
   --g0:#f7f8f9; --g1:#f1f3f4; --g2:#e5e7ea; --g3:#d2d5d9;
@@ -110,22 +111,25 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .sheet{background:#fff; border:2px solid var(--g9); border-radius:6px; overflow:hidden; margin-bottom:12px}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
+/* 2026-08-14 コンパクト化（入居者マスタと同時・同値）。セルは上下も詰める */
 .sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
-  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size: 0.8125rem; min-width:34px;
-  display:flex; align-items:center; justify-content:center; letter-spacing:2px}
+  border-right:1px solid var(--g9); padding:6px 3px; font-weight:700; font-size: 0.8125rem; min-width:30px;
+  display:flex; align-items:center; justify-content:center; letter-spacing:1.5px}
 .sheet .sec-body{flex:1; min-width:0}
-.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
+.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:3px 7px; min-width:0}
 .cell:last-child{border-right:none}
-.cell .lab{font-size: 0.6875rem; color:var(--g6); display:block; margin-bottom:2px}
-.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap}
-.cell .val.big{font-size: 1.125rem; font-weight:700}
+.cell .lab{font-size: 0.6875rem; color:var(--g6); display:block; margin-bottom:0; line-height:1.25}
+.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap; line-height:1.45}
+.cell .val.big{font-size: 1rem; font-weight:700}
+/* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす） */
+@media print{ .cell .val{font-size:0.875rem} }
 .cell .sub{display:block; font-size: 0.625rem; color:var(--g6); margin-top:1px}  /* 値の出所・測定日 */
 /* 生年月日の和暦。値の後ろに小さく添えるだけで幅を奪わない（セルを広げると隣が折り返して紙が伸びる） */
 .bd-w{font-size:0.6875rem; color:var(--g6); margin-left:2px; white-space:nowrap}
 @media print{ .bd-w{color:#333} }
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.5}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。入居者マスタと同じ見た目に揃える。
    ★見出しも値も左揃え。右列は固定幅で、薬剤名が折り返しても効能は1行目に留まる。 */
 /* ★右列は固定幅にせず auto にする。固定にすると、その方の効能が「降圧・利尿」のように
@@ -183,7 +187,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .logline{display:flex; gap:10px; padding:5px 0; border-bottom:1px dotted var(--g3)}
 .logline .d{flex-shrink:0; font-weight:700; color:var(--pri-d); min-width:92px}
 .logline .t{flex:1; white-space:pre-wrap; word-break:break-word}
-.geno-box{min-height:300px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+.geno-box{min-height:320px; display:flex; align-items:center; justify-content:center; cursor:pointer;
   background:var(--g0); border:1px dashed var(--g3); border-radius:8px; overflow:hidden}
 .geno-box img,.geno-img{max-width:100%; max-height:100%; object-fit:contain}
 

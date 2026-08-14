@@ -32,7 +32,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:8px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
 .hdr h1{font-size: 1rem; margin:0; font-weight:700; flex:1}
-.hdr .sync{font-size: 0.75rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
+/* 状態バッジは暗い下地で白文字のコントラストを確保する（白の重ねでは逆に下がる・実測8.9:1） */
+.hdr .sync{font-size: 0.75rem; background:rgba(0,0,0,.22); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
 
 /* ── 画面切替 ── */
@@ -44,9 +45,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 /* ── 一覧 ── */
 .search-bar{display:flex; gap:8px; margin-bottom:10px; align-items:center}
-.search-bar input{flex:1; padding:8px 11px; border:1px solid var(--g3); border-radius:9px}
+.search-bar input{flex:1; padding:8px 11px; border:1px solid var(--g3); border-radius:9px; min-height:44px}
 .filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
-.chip{padding:4px 11px; border:1px solid var(--g3); border-radius:15px; background:#fff; font-size: 0.8125rem; color:var(--g7)}
+.chip{padding:4px 11px; border:1px solid var(--g3); border-radius:15px; background:#fff; font-size: 0.8125rem; color:var(--g7);
+  min-height:36px; display:inline-flex; align-items:center}   /* 高さは維持する（見た目だけ締める） */
 .chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 /* ── 表示パターンのタブ（並べ方だけを変える。検索・在籍フィルタは全タブで有効） ── */
 .view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
@@ -73,7 +75,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @media(max-width:900px){ .fl-4col .rlist{grid-template-columns:repeat(2,1fr)} }
 @media(max-width:640px){
   .fl-2col{grid-template-columns:1fr}
-  .fl-2col .rsec{margin-bottom:18px}
+  .fl-2col .rsec{margin-bottom:14px}
   .fl-4col .rlist{grid-template-columns:1fr}
 }
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:8px}
@@ -108,7 +110,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
 .sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
-  border-right:1px solid var(--g9); padding:6px 3px; font-weight:700; font-size: 0.75rem; min-width:30px;
+  border-right:1px solid var(--g9); padding:6px 3px; font-weight:700; font-size: 0.8125rem; min-width:30px;
   display:flex; align-items:center; justify-content:center; letter-spacing:1.5px}
 .sheet .sec-body{flex:1; min-width:0}
 .grid{display:grid; gap:0}
@@ -116,13 +118,21 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:3px 7px; min-width:0}
 .cell:last-child{border-right:none}
 .cell .lab{font-size: 0.6875rem; color:var(--g7); display:block; margin-bottom:0; line-height:1.25}
-.cell .val{font-size: 0.875rem; word-break:break-word; white-space:pre-wrap; line-height:1.45}
+/* ★値の文字は画面15px（規約下限）を維持し、縮めるのは紙だけ（下の @media print） */
+.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap; line-height:1.45}
 /* 氏名は太字のまま一回り小さく。氏名セル(.w-name)は広めに取り、7文字＋空白でも1行に収める
    （★nowrap にはしない＝極端に長いお名前では折り返しを許す。「基本1行」の指示） */
 .cell .val.big{font-size: 1rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-.row-cells .cell.w-name{flex:2.4}
+/* 幅を食う3セルに明示配分する。氏名だけを広げると認定期間・生年月日が折り返して行が伸びる */
+.row-cells .cell.w-name{flex:2.0}
+.row-cells .cell.w-cert{flex:1.6}
+.row-cells .cell.w-birth{flex:1.4}
+/* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす） */
+@media print{
+  .cell .val{font-size:0.875rem}
+}
 /* 測定日は本文より小さい文字で添える。
    ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
      （生活自立度・認知症自立度）が狭まって折り返し、印刷が +6mm 伸びる（実測）。
@@ -224,7 +234,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
 
-.detail-actions{display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap}
+.detail-actions{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap}   /* 間隔8px＝誤タップ防止の下限（介護現場要件2） */
 /* 見た目は締めつつ、タップ領域は44pxを維持する（HIG・iPadでも使うため） */
 .btn{padding:8px 14px; border:none; border-radius:8px; font-size: 0.875rem; font-weight:700; min-height:44px}
 .btn-pri{background:var(--pri); color:#fff} .btn-ok{background:var(--ok); color:#fff}
@@ -234,7 +244,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 /* ── 編集フォーム ── */
 .fgroup{margin-bottom:18px}
-.fgroup h3{font-size: 0.875rem; color:var(--pri-d); border-left:4px solid var(--pri); padding-left:8px; margin:0 0 10px}
+.fgroup h3{font-size: 0.875rem; color:var(--pri-d); border-left:3px solid var(--pri); padding-left:8px; margin:0 0 10px}
 .fgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
 .fld{display:flex; flex-direction:column}
 .fld.wide{grid-column:1/-1}
@@ -247,7 +257,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
-  display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
+  display:flex; z-index:50; box-shadow:0 -1px 2px rgba(0,0,0,.06),0 -1px 3px rgba(0,0,0,.1)}
 .bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size: 0.6875rem; color:var(--g6);
   display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
 .bnav button.on{color:var(--pri)} .bnav button .ic{font-size: 1.25rem}
@@ -1459,7 +1469,7 @@ function parseAnyDate(input){
      広げると隣のセルが折り返して印刷が伸びる（体重欄で実測した失敗と同型）。 */
 function birthCell(lab,iso){
   var w=fmtWarekiJp(iso);
-  return '<div class="cell"><span class="lab">'+esc(lab)+'</span><span class="val">'+
+  return '<div class="cell w-birth"><span class="lab">'+esc(lab)+'</span><span class="val">'+
          esc(fmtJDate(iso)||'　')+(w?'<span class="bd-w">'+esc(w)+'</span>':'')+'</span></div>';
 }
 function paintBdayBar(){
@@ -1816,7 +1826,7 @@ function perResidentLinksHtml(r){
   }).join('');
   /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
   return '<div class="sec sec-applinks"><div class="sec-lbl">この方を各アプリで開く</div>'+
-         '<div class="sec-body" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px;align-items:center">'+body+'</div></div>';
+         '<div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:6px;align-items:center">'+body+'</div></div>';
 }
 /* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
 function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
@@ -2378,7 +2388,7 @@ function renderView(r){
     '<div class="row-cells">'+
       cell('氏名',r.name,true,'w-name')+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
       cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
-      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+
+      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''),false,'w-cert')+
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
     '</div>'+
     '<div class="row-cells">'+
@@ -2446,9 +2456,11 @@ function renderView(r){
         '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
       '</div></div>'+
     '</div>'+
-    // 右 1/3：ジェノグラム（クリックで作成／家系図アプリへ）
-    '<div style="flex:1;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:6px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:360px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+    // 右側：ジェノグラム（クリックで作成／編集）。
+    // ★「少し大きめに」は幅で実現する（flex 1→1.25）。家系図のサムネイルは横長が普通なので、
+    //   高さだけ増やしても幅で頭打ちになり余白が増えるだけ（2026-08-14 レビュー指摘）
+    '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:6px">'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:320px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══
