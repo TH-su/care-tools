@@ -385,8 +385,72 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .btbl .bno{color:#000}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .bday-ft{font-size:8px; color:#000}
+
+  /* ── A4様式（旧「利用者基本情報」1枚様式）──
+     ★body.a4-on を付けて【A4様式ボタンを押した時だけ】効かせる（bday-on と同じ作法）。
+       付けない印刷＝従来の詳細印刷・誕生日一覧は1pxも変わらない（原則2）。 */
+  body.a4-on .scr,
+  body.a4-on .hdr,
+  body.a4-on .bnav,
+  body.a4-on #toast{display:none !important}
+  body.a4-on #a4sheet{display:block; position:static; left:auto; z-index:auto}
 }
 .loading{text-align:center; color:var(--g5); padding:30px}
+
+/* ══════════ A4様式（旧「利用者基本情報」1枚様式・2026-08-13 管理者の指示）══════════
+   旧スプレッドシートのA4たて1枚の印刷様式を模倣する。画面には出さない（#a4sheet は常時非表示・
+   印刷時に body.a4-on が付いた時だけ表示）。フィット計測時のみ画面外に一時表示する。
+   寸法の考え方: @page A4 余白10mm → 印字面 190mm×277mm。190mm＝718px 基準で組み、
+   縦は 276mm(約1043px) に固定して最後の【支援経過】が残りを全部使う（＝紙を最大限使う）。
+   文字サイズは --a4fs 基準。長文で溢れる時は a4Fit() が 10.5→7.5px の範囲で縮める。 */
+#a4sheet{display:none}
+.a4s{width:190mm; height:276mm; display:flex; flex-direction:column; gap:4px;
+     background:#fff; color:#000; font-size:var(--a4fs,10.5px); line-height:1.35;
+     font-family:inherit; overflow:hidden}
+.a4s *{box-sizing:border-box}
+.a4s .a4-head{display:flex; justify-content:space-between; align-items:flex-end; flex:0 0 auto}
+.a4s .a4-title{font-size:calc(var(--a4fs,10.5px)*1.5); font-weight:700}
+.a4s .a4-fac{text-align:right; font-size:calc(var(--a4fs,10.5px)*1.05); line-height:1.4}
+.a4s .a4-sec{display:flex; border:1.5px solid #000; flex:0 0 auto}
+.a4s .a4-lbl{flex:0 0 17px; writing-mode:vertical-rl; text-align:center; letter-spacing:3px;
+             border-right:1px solid #000; padding:2px 0; font-weight:700;
+             font-size:calc(var(--a4fs,10.5px)*0.95)}
+.a4s .a4-bd{flex:1; min-width:0; display:flex; flex-direction:column}
+.a4s .a4-row{display:flex; border-top:1px solid #666}
+.a4s .a4-bd .a4-row:first-child{border-top:none}
+.a4s .a4-c{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px 2px; overflow:hidden}
+.a4s .a4-row .a4-c:first-child{border-left:none}
+.a4s .a4-h{font-size:calc(var(--a4fs,10.5px)*0.78); color:#333; display:block; line-height:1.2}
+.a4s .a4-v{display:block; font-weight:600; white-space:pre-wrap; word-break:break-word}
+.a4s .a4-v.ctr{text-align:center}
+.a4s .a4-v.nowrap{white-space:nowrap}
+.a4s .a4-free{white-space:pre-wrap; word-break:break-word; padding:2px 4px}
+/* 医療情報の右に添える生活リズムの縦タイムライン */
+.a4s .a4-mid{display:flex; flex:0 0 auto}
+.a4s .a4-mid-l{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px}
+.a4s .a4-rhy{flex:0 0 88px; border:1.5px solid #000; margin-left:4px; padding:3px 6px;
+             display:flex; flex-direction:column}
+.a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
+.a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
+                  border-left:2px solid #000; margin:4px 0 0 26px; padding-left:8px}
+.a4s .a4-rhy-i{white-space:nowrap; position:relative}
+.a4s .a4-rhy-i b{font-weight:600}
+.a4s .a4-rhy-i .tm{display:inline-block; min-width:34px; margin-left:-44px; text-align:right;
+                   padding-right:6px; background:#fff}
+/* 薬剤情報（定期）・薬備考・問題行動の3列 */
+.a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
+.a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px; overflow:hidden}
+.a4s .a4-meds>div:first-child{border-left:none; flex:1.15}
+.a4s .a4-bh{font-weight:700; font-size:calc(var(--a4fs,10.5px)*0.9)}
+/* 支援経過（残りの紙面を全部使う） */
+.a4s .a4-slog{flex:1; min-height:0; display:flex; flex-direction:column}
+.a4s .a4-slog-t{font-weight:700; flex:0 0 auto; padding:1px 0}
+.a4s .a4-slog-bx{flex:1; min-height:0; border:1.5px solid #000; padding:2px 4px; overflow:hidden}
+.a4s .a4-slog-r{display:flex; gap:8px; border-bottom:1px dotted #999; padding:1px 0}
+.a4s .a4-slog-r .d{flex:0 0 auto; font-weight:600}
+.a4s .a4-slog-r .t{flex:1; min-width:0; white-space:pre-wrap; word-break:break-word}
+/* フィット計測時に画面外へ一時表示するためのクラス（a4Fit が付け外しする） */
+#a4sheet.a4-measure{display:block; position:fixed; left:-9999px; top:0; z-index:-1}
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
@@ -446,6 +510,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
     <button class="btn btn-gray" id="backBtn">← 一覧</button>
     <button class="btn btn-pri" id="editBtn">✏️ 編集</button>
     <button class="btn btn-sec" id="printBtn">🖨️ 印刷</button>
+    <button class="btn btn-sec" id="a4Btn" title="以前から使用しているA4たて1枚の様式で印刷">🖨️ A4様式</button>
     <!-- 入院/復帰は編集フォームを通さず setState で状態だけを更新する（多端末で同時に触るため） -->
     <button class="btn btn-sec" id="hospBtn" hidden>🏥 入院にする</button>
   </div>
@@ -560,6 +625,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 </div>
 
 <div id="toast"></div>
+
+<!-- ════════ A4様式（旧スプレッドシートの「利用者基本情報」1枚様式）════════
+     画面には出さない（印刷専用）。中身は a4Print() が印刷の直前に組み立てる。
+     既存の詳細印刷(.sheet)には一切触れない — body.a4-on の時だけこちらが刷られる。 -->
+<div id="a4sheet" aria-hidden="true"></div>
 
 <!-- 薬効辞書（薬剤名 → 効果・効能）。フェイスシートと共有する唯一の正本。
      読み込めなかった時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
@@ -1686,9 +1756,10 @@ var curResident=null;
    curResident に前の方が残ったままだと、読み込み中や取得失敗の画面から
    ✏️編集を押して【別人の編集フォーム】が開く（＝別人への上書き事故）。 */
 function setViewActions(on){
-  var e=$('editBtn'), p=$('printBtn');
+  var e=$('editBtn'), p=$('printBtn'), a=$('a4Btn');
   if(e)e.disabled=!on;
   if(p)p.disabled=!on;   // 印刷も同様。読み込み中・失敗の画面を帳票として出さない
+  if(a)a.disabled=!on;   // A4様式も同様（前の方の様式を刷らせない）
 }
 function openResident(id){
   showScreen('view');
@@ -3264,6 +3335,149 @@ window.addEventListener('popstate',function(ev){
   try{showScreen('list');}finally{_navInPop=false;}
 });
 
+/* ═══════════ A4様式印刷（旧「利用者基本情報」1枚様式・2026-08-13 管理者の指示）═══════════
+   旧スプレッドシートで使っていたA4たて1枚の様式を模倣して出力する。
+   ・既存の詳細印刷（🖨️ 印刷）には一切触れない。A4様式ボタンを押した印刷だけがこの見た目になる
+   ・生年月日は和暦＋（西暦）で出す（旧様式の「生年月日|西暦」2列に対応）
+   ・体重は weightView（正本＝体重管理アプリの最新値）を使う
+   ・支援経過は新しい順に「紙に入るだけ」出す（1枚固定の様式のため。全件は従来の詳細印刷で出る）
+   ・文字は --a4fs 基準で、長文の方は a4Fit() が 10.5→7.5px の範囲で自動的に縮めて1枚に収める */
+function a4Cell(h,v,flex,cls){
+  return '<div class="a4-c"'+(flex?' style="flex:'+flex+'"':'')+'>'+
+    '<span class="a4-h">'+esc(h)+'</span><span class="a4-v'+(cls?' '+cls:'')+'">'+esc(String(v==null?'':v).trim()||'　')+'</span></div>';
+}
+function a4Days(from,to){
+  var a=parseIsoDate(from); if(!a)return'';
+  var b=to?parseIsoDate(to):new Date();
+  if(!b)b=new Date();
+  var d=Math.floor((b-a)/86400000);
+  return (isFinite(d)&&d>=0)?String(d):'';
+}
+function renderA4(r){
+  var w=weightView(r);
+  var wkg=(w&&w.val)?w.val:(r.weight?r.weight+' kg':'');
+  var bmi=(w&&w.bmi)?w.bmi:calcBMI(r.height,r.weight);
+  var rh=rhythmOf(r);
+  /* 生活リズム: 旧様式と同じ縦タイムライン。起床・就寝は記録がある方だけ出す */
+  var rhyRows=RHYTHM_KEYS.map(function(p){
+    var v=rh[p[0]]; if(!v)return'';
+    /* 旧様式は「8:00」表記。既定値（08:00）の先頭0だけ落とし、記録値の中身は変えない */
+    var tv=String(v).replace(/^0(\d:)/,'$1');
+    return '<div class="a4-rhy-i"><span class="tm">'+esc(tv)+'</span><b>'+esc(p[1])+'</b></div>';
+  }).filter(String).join('');
+  /* 家族: 1行1名。緊急連絡先列にはその方が緊急連絡先なら氏名を出す（旧様式の列構成） */
+  var fam=Array.isArray(r.family)?r.family.filter(function(f){return f&&(f.name||f.phone||f.address)}):[];
+  var famRows=fam.length?fam.map(function(f){
+    var nm=String(f.name||'')+(f.relation?'（'+f.relation+'）':'');
+    return '<div class="a4-row">'+
+      a4Cell('',nm,'1.1')+a4Cell('',f.address||'','1.5')+a4Cell('',f.phone||'','1')+
+      a4Cell('',f.emergency?nm:'','1')+'</div>';
+  }).join(''):'<div class="a4-row">'+a4Cell('','','1.1')+a4Cell('','','1.5')+a4Cell('','','1')+a4Cell('','','1')+'</div>';
+  /* 支援経過: 新しい順（詳細画面と同じ並び）。1枚固定の様式なので入るだけ出す */
+  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
+  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  var slogRows=slog.map(function(s){
+    return '<div class="a4-slog-r"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
+      '<span class="t">'+esc(s.text||'')+'</span></div>';
+  }).join('');
+  var certTerm=[r.careCertStart,r.careCertEnd].filter(Boolean).map(function(d){return String(d).slice(0,10)}).join(' 〜 ');
+  var h=
+  '<div class="a4s">'+
+    '<div class="a4-head"><div class="a4-title">■利用者基本情報■</div>'+
+      '<div class="a4-fac">有料老人ホーム ラウレアハレ<br>TEL：096-285-4811</div></div>'+
+    /* ── 基本事項 ── */
+    '<div class="a4-sec"><div class="a4-lbl">基本事項</div><div class="a4-bd">'+
+      '<div class="a4-row">'+
+        a4Cell('氏名',r.name,'1.6')+a4Cell('性別',r.gender,'0.55','ctr')+
+        a4Cell('生年月日',fmtWarekiJp(r.birthDate)||r.birthDate,'1.35')+
+        a4Cell('西暦',r.birthDate?('（'+String(r.birthDate).slice(0,10).replace(/-/g,'/')+'）'):'','1.1','ctr nowrap')+
+        a4Cell('年齢',calcAge(r.birthDate),'0.5','ctr')+a4Cell('介護度',r.careLevel,'0.7','ctr')+
+        a4Cell('認定期間',certTerm,'1.3')+a4Cell('負担割合',r.copayRate,'0.7','ctr')+a4Cell('生保の有無',r.welfare,'0.8','ctr')+
+      '</div>'+
+      '<div class="a4-row">'+
+        a4Cell('入居日',fmtJDate(r.admissionDate)||r.admissionDate,'1.2')+a4Cell('退去日',fmtJDate(r.dischargeDate)||r.dischargeDate,'1.2')+
+        a4Cell('入居期間',(function(){var d=a4Days(r.admissionDate,r.dischargeDate);return d?d+' 日':''})(),'0.9','ctr')+
+        a4Cell('BMI',bmi,'0.6','ctr')+a4Cell('身長',r.height?r.height+' cm':'','0.8','ctr')+
+        a4Cell('体重',wkg,'0.9','ctr')+
+        a4Cell('生活自立度',r.bedriddenRank,'0.9','ctr')+a4Cell('認知症自立度',r.dementia,'1','ctr')+
+      '</div>'+
+      '<div class="a4-row" style="flex:1;min-height:0"><div class="a4-c" style="flex:0 0 58px"><span class="a4-h">入居前状況</span></div>'+
+        '<div class="a4-c a4-free" style="flex:1">'+esc(r.preAdmission||'')+'</div></div>'+
+      '<div class="a4-row"><div class="a4-c" style="flex:0 0 58px"><span class="a4-h">退去後状況（行き先等）</span></div>'+
+        '<div class="a4-c a4-free" style="flex:1">'+esc(r.postDischarge||'')+'</div></div>'+
+    '</div></div>'+
+    /* ── 家族情報 ── */
+    '<div class="a4-sec"><div class="a4-lbl">家族情報</div><div class="a4-bd">'+
+      '<div class="a4-row">'+a4Cell('ご家族氏名','','1.1')+a4Cell('住所','','1.5')+a4Cell('電話番号','','1')+a4Cell('緊急連絡先','','1')+'</div>'+
+      famRows+
+    '</div></div>'+
+    /* ── 事業所＋医療情報（右に生活リズム）── */
+    '<div class="a4-mid"><div class="a4-mid-l">'+
+      '<div class="a4-sec"><div class="a4-lbl">事業所</div><div class="a4-bd">'+
+        '<div class="a4-row">'+a4Cell('居宅介護支援事業所',r.careOffice,'1.3')+a4Cell('介護支援専門員',r.careManager,'1')+
+          a4Cell('電話番号',r.careOfficeTel,'1')+a4Cell('FAX番号',r.careOfficeFax,'1')+'</div>'+
+        '<div class="a4-row">'+a4Cell('福祉用具',r.welfareEquip,'1.3')+a4Cell('担当者',r.welfareEquipStaff,'1')+
+          a4Cell('電話番号',r.welfareEquipTel,'1')+a4Cell('',' ','1')+'</div>'+
+      '</div></div>'+
+      '<div class="a4-sec" style="flex:1;min-height:0"><div class="a4-lbl">医療情報</div><div class="a4-bd">'+
+        '<div class="a4-row">'+a4Cell('かかりつけ病院',r.hospital,'1.3')+a4Cell('主治医',r.doctor,'1')+
+          a4Cell('電話番号',r.hospitalTel,'1')+a4Cell('FAX番号',r.hospitalFax,'1')+'</div>'+
+        '<div class="a4-row">'+a4Cell('救急搬送先（希望）',r.emergencyHospital,'1.3')+a4Cell('かかりつけ薬局',r.pharmacy,'1')+
+          a4Cell('電話番号',r.pharmacyTel,'1')+a4Cell('FAX番号',r.pharmacyFax,'1')+'</div>'+
+        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'1')+a4Cell('治療中の病気',r.currentDiseases,'1.6')+'</div>'+
+        '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'1')+a4Cell('既往歴',r.pastHistory,'1.6')+'</div>'+
+        '<div class="a4-meds">'+
+          '<div><span class="a4-bh">■薬剤情報（定期）■</span><div class="a4-free" style="padding:0">'+esc(r.medsRegular||'')+'</div></div>'+
+          '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(r.medsNotes||'')+'</div></div>'+
+          '<div><span class="a4-bh">■問題行動 等■</span><div class="a4-free" style="padding:0">'+esc(r.problemBehavior||'')+'</div></div>'+
+        '</div>'+
+      '</div></div>'+
+    '</div>'+
+    '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+rhyRows+'</div></div></div>'+
+    /* ── 食事 ── */
+    '<div class="a4-sec"><div class="a4-lbl">食事</div><div class="a4-bd"><div class="a4-row">'+
+      '<div class="a4-c" style="flex:1.3"><span class="a4-bh">■主食■</span><span class="a4-v">'+esc(r.mealStaple||'　')+'</span></div>'+
+      '<div class="a4-c" style="flex:1"><span class="a4-bh">■副食■</span><span class="a4-v">'+esc(r.mealSide||'　')+'</span></div>'+
+      '<div class="a4-c" style="flex:1.6"><span class="a4-bh">■備考■</span><span class="a4-v">'+esc(r.mealNote||'　')+'</span></div>'+
+    '</div></div></div>'+
+    /* ── 支援経過（残りの紙面を全部使う）── */
+    '<div class="a4-slog"><div class="a4-slog-t">【支援経過】</div><div class="a4-slog-bx">'+slogRows+'</div></div>'+
+  '</div>';
+  $('a4sheet').innerHTML=h;
+}
+/* 長文の方でも1枚に収まるよう、固定部（支援経過を除く）の高さを見て文字を縮める。
+   ★276mm≒1043px（190mm=718px 基準）。支援経過に最低 90px 残す。 */
+function a4Fit(){
+  var box=$('a4sheet'), sheet=box.querySelector('.a4s');
+  if(!sheet)return;
+  var slog=sheet.querySelector('.a4-slog');
+  box.classList.add('a4-measure');
+  try{
+    var budget=1043-90;
+    for(var fs=10.5; fs>=7.5; fs-=0.5){
+      sheet.style.setProperty('--a4fs',fs+'px');
+      sheet.style.height='auto';
+      if(slog)slog.style.display='none';
+      var hFixed=sheet.getBoundingClientRect().height;
+      if(slog)slog.style.display='';
+      if(hFixed<=budget)break;
+    }
+    sheet.style.height='';
+  }finally{
+    box.classList.remove('a4-measure');
+  }
+}
+function a4Print(){
+  if(!curResident)return;
+  renderA4(curResident);
+  a4Fit();
+  document.body.classList.add('a4-on');
+  /* 印刷が終わったら必ず通常表示へ戻す（キャンセル時も afterprint は発火する） */
+  var undo=function(){document.body.classList.remove('a4-on');window.removeEventListener('afterprint',undo)};
+  window.addEventListener('afterprint',undo);
+  window.print();
+}
+
 /* ═══════════ 端末用途ガード ═══════════ */
 function applyDeviceGuard(){
   var blocked=(getDeviceRole()==='field');
@@ -3641,6 +3855,7 @@ function init(){
   $('backBtn').addEventListener('click',function(){showScreen('list')});
   $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
   $('printBtn').addEventListener('click',function(){window.print()});
+  $('a4Btn').addEventListener('click',a4Print);
   $('hospBtn').addEventListener('click',toggleHosp);
   $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);
