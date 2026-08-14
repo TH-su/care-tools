@@ -2007,6 +2007,11 @@ async function apiDiagnose(url){
   /* どの方法で試したかを必ず出す。出さないと、失敗した時に「合言葉のせいか・URLのせいか」を
      切り分けられない（合言葉の有無で送り方が変わるため）。 */
   lines.push(diagTok ? '→ 合言葉つきで試します（POST）' : '→ 合言葉なしで試します（GET）');
+  /* 入力欄の未保存値で試した時はその旨を明示する。出さないと、診断の成功が
+     「保存済み合言葉の正しさの証拠」に見えて、同期失敗の切り分けを誤らせる（2026-08-14 実障害）。 */
+  if(diagTok && diagTok !== apiToken){
+    lines.push('  ※ 入力欄の合言葉（未保存）で試します。同期に使うには「💾 URLを保存・接続」で保存してください');
+  }
   try{
     if(diagTok){
       r = await fetchTO(u, {
@@ -6253,6 +6258,11 @@ function refreshUrlPersistBadge(){
   if(cfgApi) cfgApi.value = apiUrl || '';
   const cfgTok = $('#cfgApiToken');
   if(cfgTok) cfgTok.value = apiToken || '';
+  /* 「人が合言葉欄を触ったか」の印。ブラウザの自動入力は input を発火させないことが多く、
+     自動入力された別ツールのパスワード等で下の同期ガードが誤発火して「保存してください」と
+     誘導すると、正しい保存済み合言葉を誤った値で上書きさせてしまう（レビュー指摘・低）。 */
+  let _tokDirty = false;
+  cfgTok?.addEventListener('input', ()=>{ _tokDirty = true; });
   refreshUrlPersistBadge();
   if(apiUrl){
     apiSetStatus('ok', '✅ 接続URL（保存済み）: …' + apiUrl.slice(-40));
@@ -6352,6 +6362,21 @@ function refreshUrlPersistBadge(){
   });
   $('#btnApiSync')?.addEventListener('click', async ()=>{
     if(!apiUrl){ toast('先にURLを保存してください','err'); return; }
+    /* 入力欄に未保存の合言葉があるまま同期すると、送信には保存済みの値が使われ、
+       「診断は通るのに同期だけ unauthorized」という切り分け困難な状態になる
+       （2026-08-14 実障害）。同期せず保存へ誘導する。空欄は「変更しない」なので対象外。
+       トーストは1.8秒で消えるため、直前の診断の「✅ 接続OK」パネルが残ると
+       「両方通った」ように見える——案内は消えないパネル側にも出す（レビュー指摘・中）。 */
+    const _pendTok = $('#cfgApiToken') ? $('#cfgApiToken').value.trim() : '';
+    if(_tokDirty && _pendTok && _pendTok !== apiToken){
+      toast('入力欄の合言葉が未保存です。「💾 URLを保存・接続」を押して保存してから同期してください','err');
+      showDiagPanel([
+        '⚠️ 入力欄の合言葉が、この端末にまだ保存されていません',
+        '  → 同期は保存済みの合言葉で行うため、いまの入力欄の値は使われません',
+        '  → 「💾 URLを保存・接続」を押して保存してから、もう一度「🔄 手動同期」を押してください'
+      ], false);
+      return;
+    }
     hideDiagPanel();
     const ok = await syncFromAPI(true);
     if(ok) toast('✅ 同期完了','ok');
