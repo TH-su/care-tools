@@ -1309,18 +1309,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 日別「デイサービス(通所)の職種別出勤者数」を数える純粋関数。
-   * 返値: 配列 out（out[d] = {care:介護士数, nurse:看護師数, total:合計}）。
+   * 返値: 配列 out（out[d] = {care, nurse, total, careHelp, nurseHelp, totalHelp}）。
+   *   care/nurse/total は従来どおり【デイ所属＋応援の合算】（後方互換）。
+   *   *Help は そのうち応援(他部署からのヘルプ)ぶん。デイ所属のみ＝ care - careHelp。
    * - mainDivision==='通所' の職員: 主セル(cells)が勤務日(isWork)なら計上。
    * - それ以外(施設/訪問メイン)の職員: 従区分 subCells['通所'] に勤務があれば「通所応援」として計上。
+   * - countInHeadcount===false の職員（役員など「頭数に入れない」設定）は数えない。
+   *   他の全集計（computeMetrics/countCats/qualPct 等）と同じ基準。ここだけ見ていなかったため、
+   *   頭数外の勤務入力が介護士数へ +1 されていた（2026-08-14 修正）。
    * - isNurse(st): 看護師/准看護師資格なら true（→看護師、else 介護士）。
    * - isWork(v): セル文字列が勤務(出勤)なら true（休/公/希/有/欠・空欄は false）。
    * - isVisible(st): 当月に表示対象なら true（省略時 active!==false）。 */
   function countDaycareByProfession(staff, cells, subCells, days, isNurse, isWork, isVisible) {
     var out = [], d;
-    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0 };
+    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0, careHelp: 0, nurseHelp: 0, totalHelp: 0 };
     for (var i = 0; i < staff.length; i++) {
       var st = staff[i];
       if (isVisible ? !isVisible(st) : st.active === false) continue;
+      if (st.countInHeadcount === false) continue;
       var nurse = !!(isNurse && isNurse(st));
       var isDaycare = (st.mainDivision === '通所');
       var mainCells = (cells && cells[st.id]) || {};
@@ -1328,11 +1334,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (d = 1; d <= days; d++) {
         var v = isDaycare ? (mainCells[String(d)] || '') : (tsuusho[String(d)] || '');
         if (v !== '' && isWork && isWork(v)) {
-          if (nurse) out[d].nurse++; else out[d].care++;
+          if (nurse) { out[d].nurse++; if (!isDaycare) out[d].nurseHelp++; }
+          else { out[d].care++; if (!isDaycare) out[d].careHelp++; }
         }
       }
     }
-    for (d = 1; d <= days; d++) out[d].total = out[d].care + out[d].nurse;
+    for (d = 1; d <= days; d++) {
+      out[d].total = out[d].care + out[d].nurse;
+      out[d].totalHelp = out[d].careHelp + out[d].nurseHelp;
+    }
     return out;
   }
 
@@ -3807,9 +3817,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var isVis = ctx.isVisible || function (st) { return st.active !== false; };
       var counts = Agg.countDaycareByProfession(ctx.staff, ctx.sched.cells, ctx.sched.subCells, days, isNurse, isWork, isVis);
       var rows = [
-        { key: 'care', label: '介護士数', cls: 'care' },
-        { key: 'nurse', label: '看護師数', cls: 'nurse' },
-        { key: 'total', label: '合計数', cls: 'total' }
+        { key: 'care', helpKey: 'careHelp', label: '介護士数', cls: 'care' },
+        { key: 'nurse', helpKey: 'nurseHelp', label: '看護師数', cls: 'nurse' },
+        { key: 'total', helpKey: 'totalHelp', label: '合計数', cls: 'total' }
       ];
       var h = '';
       for (var r = 0; r < rows.length; r++) {
@@ -3821,7 +3831,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (dayRange && (d < from || d > to)) continue;   /* 分割印刷の範囲外日はセルを出さない */
           var dow = new Date(ctx.year, ctx.month - 1, d).getDay();
           var cc = 'sumdaycell' + (dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')) + (d === to ? ' lastday' : '');
-          h += '<td class="' + cc + '">' + (counts[d] ? counts[d][row.key] : 0) + '</td>';
+          /* 表示は「デイ所属＋ヘルプ」形式（例 3+1）。ヘルプ（施設/訪問メインの通所応援）が居る日だけ
+           * 「+n」を付け、居ない日は従来どおり単独数字（2026-08-14・本人指示）。
+           * counts[].care 等は合算のため、デイ所属ぶんは help を引いて求める。 */
+          var cnt = counts[d] ? counts[d][row.key] : 0;
+          var hlp = (counts[d] && counts[d][row.helpKey]) || 0;
+          h += '<td class="' + cc + '">' + (hlp > 0 ? ((cnt - hlp) + '+' + hlp) : cnt) + '</td>';
         }
         if (!pm) {
           h += '<td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td><td class="pcol"></td>';
