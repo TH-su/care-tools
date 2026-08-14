@@ -120,8 +120,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell .lab{font-size: 0.6875rem; color:var(--g7); display:block; margin-bottom:0; line-height:1.25}
 /* ★値の文字は画面15px（規約下限）を維持し、縮めるのは紙だけ（下の @media print） */
 .cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap; line-height:1.45}
-/* 氏名は太字のまま一回り小さく。氏名セル(.w-name)は広めに取り、7文字＋空白でも1行に収める
-   （★nowrap にはしない＝極端に長いお名前では折り返しを許す。「基本1行」の指示） */
+/* 氏名は太字のまま一回り小さく。紙は 0.9375rem×内容幅 約112px＝7文字＋空白までは1行（2026-08-14 実測）
+   （★nowrap にはしない＝それより長いお名前では折り返しを許す。「基本1行」の指示） */
 .cell .val.big{font-size: 1rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
@@ -134,7 +134,6 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .row-cells .cell.w-birth{flex:1.65}
 .row-cells .cell.w-adm{flex:1.3}
 .row-cells .cell.w-sm{flex:0.75}
-.row-cells .cell.w-pay{flex:0.85}
 /* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす）。
    2026-08-14 指示: 1枚目に家族情報・事業所・家族構成図まで収めるため、文字と余白を一段縮小 */
 @media print{
@@ -146,7 +145,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .sheet .fulltext{font-size:0.8125rem; line-height:1.4}
   .sheet .rhythm{font-size:0.8125rem}
   .sheet .sec-lbl{font-size:0.75rem; min-width:24px; padding:4px 2px; letter-spacing:1px}
-  .biz-geno-row{break-inside:avoid; page-break-inside:avoid}
+  .sheet .biz-geno-row{break-inside:avoid; page-break-inside:avoid}
 }
 /* 測定日は本文より小さい文字で添える。
    ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
@@ -393,7 +392,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .sheet{border:2px solid #000; page-break-inside:avoid}
   .sheet .sec{border-top:1px solid #000}
   .cell{border-color:#999}
-  .geno-box{border:none !important; cursor:default !important; min-height:110px !important}
+  .geno-box{border:none !important; cursor:default !important; min-height:200px !important}
   .geno-hint{display:none !important}
   /* 家族構成図は紙にも出す。背景画像ではなく <img> なので「背景のグラフィックを印刷」の
      設定に左右されず必ず刷られる。色を落とさないよう print-color-adjust を明示する。 */
@@ -2235,7 +2234,9 @@ function openOkusuri(q){
 /* A4に印刷した時、2列にしたせいで折り返す行が何行あるかを【実測】する。
    ★幅・余白・列間を定数で持たない。本物の DOM（.sheet > .sec > .sec-body > .row-cells > .cell）を
      A4本文幅で組み、1列版と2列版の各行の高さを比べる。CSS を直しても自動で追従する。
-   ★画面には出さない（左端の外に置き、測ったら必ず捨てる）。 */
+   ★画面には出さない（左端の外に置き、測ったら必ず捨てる）。
+   ※2026-08-14: 紙の .cell padding は print 側で 5px（画面は 7px）になったため、本測定は紙より約4px
+     狭い条件＝折返しを多めに数える保守側。実害はないが「CSSを直しても自動追従」は紙には厳密に成立しない */
 var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
 function medsAuditCountWrap(raw){
   var box=document.createElement('div');
@@ -2412,13 +2413,13 @@ function renderView(r){
       cell('氏名',r.name,true,'w-name')+cell('性別',r.gender,false,'w-sm')+birthCell('生年月日',r.birthDate)+
       cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'',false,'w-sm')+cell('介護度',r.careLevel)+
       cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''),false,'w-cert')+
-      cell('負担割合',copayLabel(r.copayRate),false,'w-pay')+cell('生保',r.welfare?'有':'',false,'w-sm')+
+      cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'',false,'w-sm')+
     '</div>'+
     '<div class="row-cells">'+
       cell('入居日',r.admissionDate,false,'w-adm')+
       /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
          退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示） */
-      '<div class="cell w-sm"><span class="lab">在籍状態</span><span class="val"'+
+      '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
         (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
       cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
       cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
@@ -2467,7 +2468,7 @@ function renderView(r){
     '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
   '</div></div></div>';
   // 事業所（左）＋ 家族構成図（右）。印刷では行ごと分割しない（.biz-geno-row＝break-inside:avoid）。
-  // 家族構成図の高さは事業所の4行に揃う（min-height は空状態の下限。紙では 110px まで縮む）
+  // 家族構成図の高さは「事業所の4行」と min-height の大きい方（紙は 200px を下限に確保＝図の可読性を落とさない）
   h+='<div class="biz-geno-row" style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
     '<div style="flex:2;min-width:0;display:flex"><div class="sec-lbl">事業所</div><div class="sec-body">'+
       '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
