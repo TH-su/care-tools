@@ -873,7 +873,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2 id="modal-title">予定を追加</h2>
-      <button class="md-close" onclick="closeEventModal()">✕</button>
+      <button class="md-close" onclick="closeEventModal()" aria-label="予定の入力を閉じる" title="予定の入力を閉じる">✕</button>
     </div>
 
     <div class="form-row">
@@ -1020,7 +1020,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>試算を実データへ反映</h2>
-      <button class="md-close" onclick="SIM.closeApply()">✕</button>
+      <button class="md-close" onclick="SIM.closeApply()" aria-label="反映せずに閉じる" title="反映せずに閉じる">✕</button>
     </div>
     <div id="sim-diff" style="font-size:13px;line-height:1.7;max-height:38vh;overflow:auto;border:1px solid var(--g3);border-radius:6px;padding:8px 10px;margin-bottom:10px"></div>
     <div class="form-row">
@@ -1056,7 +1056,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>利用者管理</h2>
-      <button class="md-close" onclick="closeResidentModal()">✕</button>
+      <button class="md-close" onclick="closeResidentModal()" aria-label="利用者管理を閉じる" title="利用者管理を閉じる">✕</button>
     </div>
     <div class="form-row">
       <label for="f-new-res">利用者を追加</label>
@@ -1080,7 +1080,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>予定の貼り付け一括登録</h2>
-      <button class="md-close" onclick="closeBulkImport()">✕</button>
+      <button class="md-close" onclick="closeBulkImport()" aria-label="予定の一括登録を閉じる" title="予定の一括登録を閉じる">✕</button>
     </div>
     <div class="form-row">
       <label>1行＝1予定。<b>タブ区切り</b>で貼り付けてください（Excel/スプレッドシートからコピー可）：</label>
@@ -1100,7 +1100,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:400px">
     <div class="md-hd">
       <h2>介護情報</h2>
-      <button class="md-close" onclick="closeCareInfoModal()">✕</button>
+      <button class="md-close" onclick="closeCareInfoModal()" aria-label="介護情報を閉じる" title="介護情報を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:14px" id="care-info-name"></p>
 
@@ -1153,7 +1153,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:480px">
     <div class="md-hd">
       <h2>事業所情報</h2>
-      <button class="md-close" onclick="closeOfficeInfoModal()">✕</button>
+      <button class="md-close" onclick="closeOfficeInfoModal()" aria-label="事業所情報を閉じる" title="事業所情報を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:14px">
       全利用者に共通する事業所単位の設定です（単位単価・加算・減算）
@@ -1304,7 +1304,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:560px">
     <div class="md-hd">
       <h2>報酬マスタの変更を適用します</h2>
-      <button class="md-close" onclick="closeRmPreview()">✕</button>
+      <button class="md-close" onclick="closeRmPreview()" aria-label="適用せずに閉じる" title="適用せずに閉じる">✕</button>
     </div>
     <div id="rm-preview-body"></div>
     <div class="btn-row">
@@ -1330,7 +1330,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:720px">
     <div class="md-hd">
       <h2>📋 予定一覧</h2>
-      <button class="md-close" onclick="closeEventListModal()">✕</button>
+      <button class="md-close" onclick="closeEventListModal()" aria-label="予定一覧を閉じる" title="予定一覧を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:10px">
       <span id="event-list-resident">—</span> の予定。テキスト形式で全件コピー可能です。
@@ -1353,7 +1353,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>👥 利用者一覧</h2>
-      <button class="md-close" onclick="closeResidentListModal()">✕</button>
+      <button class="md-close" onclick="closeResidentListModal()" aria-label="利用者一覧を閉じる" title="利用者一覧を閉じる">✕</button>
     </div>
     <div id="rl-total"></div>
     <!-- 説明文の単価は報酬マスタ feePerUnit から入れる（renderResidentListTable） -->
@@ -1397,7 +1397,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>✎ 利用者 一括編集</h2>
-      <button class="md-close" onclick="closeResidentBulkModal()">✕</button>
+      <button class="md-close" onclick="closeResidentBulkModal()" aria-label="利用者の一括編集を閉じる" title="利用者の一括編集を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:8px">介護度・負担割合・福祉用具単位数・週間計画対象を一括編集し、「一括保存」で全件まとめて保存＋即時クラウド反映します（編集中は自動同期を停止します）。</p>
     <!-- 使用単位%（プレビュー）を出すので参考値の注記を添える -->
@@ -1431,7 +1431,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:560px">
     <div class="md-hd">
       <h2>☁️ クラウド同期（Google スプレッドシート）</h2>
-      <button class="md-close" onclick="closeSyncModal()">✕</button>
+      <button class="md-close" onclick="closeSyncModal()" aria-label="クラウド同期設定を閉じる" title="クラウド同期設定を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:12px">
       Google スプレッドシートにデータを保存し、複数端末で共有できます。
@@ -3920,7 +3920,7 @@ function renderResidentList() {
         : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
            <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>
            <button class="del-res" style="color:var(--pre)" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>`}
-      <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">✕</button>
+      <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')" aria-label="この利用者を削除" title="この利用者を削除">✕</button>
     </li>`
   ).join('');
 }

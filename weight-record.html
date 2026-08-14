@@ -691,8 +691,8 @@ select option.is-discharged{color:var(--g6)}
     <div class="mp-w">
       <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">対象月</span>
       <input type="month" id="listMonth">
-      <button id="listMonthPrev">◀</button>
-      <button id="listMonthNext">▶</button>
+      <button id="listMonthPrev" aria-label="対象月を前の月へ" title="対象月を前の月へ">◀</button>
+      <button id="listMonthNext" aria-label="対象月を次の月へ" title="対象月を次の月へ">▶</button>
       <button id="listMonthNow" style="margin-left:6px">今月</button>
       <label style="display:inline-flex;align-items:center;gap:5px;font-size: 0.75rem;color:var(--g7);margin-left:12px;cursor:pointer"><input type="checkbox" id="wrShowNonTarget">対象外も表示</label>
     </div>
@@ -903,8 +903,8 @@ select option.is-discharged{color:var(--g6)}
     <div class="mp-w" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
       <input type="month" id="gridMonth">
-      <button id="gridMonthPrev">◀</button>
-      <button id="gridMonthNext">▶</button>
+      <button id="gridMonthPrev" aria-label="基準月を前の月へ" title="基準月を前の月へ">◀</button>
+      <button id="gridMonthNext" aria-label="基準月を次の月へ" title="基準月を次の月へ">▶</button>
       <button id="gridMonthNow" style="margin-left:6px">今月</button>
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
@@ -1104,7 +1104,7 @@ select option.is-discharged{color:var(--g6)}
   <div class="mk-b">
     <div class="mk-h">
       <h3 id="mdTitle">入居者の追加</h3>
-      <button class="mk-c" data-close>×</button>
+      <button class="mk-c" data-close aria-label="閉じる" title="閉じる">×</button>
     </div>
     <div class="mk-body">
       <div class="fg">
