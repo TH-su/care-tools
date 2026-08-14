@@ -9,7 +9,7 @@
 <title>入居者マスタ</title>
 <style>
 :root{
-  --pri:#1a73e8; --pri-l:#e8f0fe; --pri-d:#1557b0;
+  --pri:#0b57d0; --pri-l:#ecf3fe; --pri-d:#0842a0;
   --ok:#2e7d32; --ok-l:#e8f5e9; --ng:#c62828; --ng-l:#ffebee;
   --warn-bg:#fff8e1; --warn-tx:#e65100;
   /* 食形態チップ用。未定義のままだと color/background が無効値になり、
@@ -17,7 +17,9 @@
   --u:#6a1b9a; --u-bg:#f3e5f5;
   --g0:#f8f9fa; --g1:#f1f3f4; --g2:#e8eaed; --g3:#dadce0;
   --g5:#9aa0a6; --g6:#80868b; --g7:#5f6368; --g9:#202124;
-  --r:12px; --sh:0 1px 6px rgba(0,0,0,.12);
+  /* 2026-08-14 コンパクト化（管理者の指示）: 角丸をやや締め、影は2層の繊細なものへ（HIGの「服従性」＝
+     クロームを控えめに）。プライマリはコントラストの高い青へ寄せる（白文字で6.5:1・介護現場要件5） */
+  --r:10px; --sh:0 1px 2px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.1);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -28,23 +30,23 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 
 /* ── ヘッダー ── */
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
-  padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
-.hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
+  padding:8px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
+.hdr h1{font-size: 1rem; margin:0; font-weight:700; flex:1}
 .hdr .sync{font-size: 0.75rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
 
 /* ── 画面切替 ── */
-.scr{display:none; padding:14px; max-width:980px; margin:0 auto}
+.scr{display:none; padding:12px; max-width:980px; margin:0 auto}
 .scr.on{display:block}
 
 /* ── カード ── */
-.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px}
+.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:12px; margin-bottom:10px}
 
 /* ── 一覧 ── */
-.search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
-.search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
-.filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
-.chip{padding:5px 12px; border:1px solid var(--g3); border-radius:16px; background:#fff; font-size: 0.8125rem; color:var(--g7)}
+.search-bar{display:flex; gap:8px; margin-bottom:10px; align-items:center}
+.search-bar input{flex:1; padding:8px 11px; border:1px solid var(--g3); border-radius:9px}
+.filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
+.chip{padding:4px 11px; border:1px solid var(--g3); border-radius:15px; background:#fff; font-size: 0.8125rem; color:var(--g7)}
 .chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 /* ── 表示パターンのタブ（並べ方だけを変える。検索・在籍フィルタは全タブで有効） ── */
 .view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
@@ -54,9 +56,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .vtab:hover{color:var(--pri)}
 .vtab:focus-visible{outline:2px solid var(--pri); outline-offset:-2px; border-radius:6px}
 /* 区画（1階/2階/五十音の各行）の見出しと中身 */
-.rsec{margin-bottom:18px}
-.rsec>h3{font-size: 0.875rem; font-weight:700; color:var(--g7); margin:0 0 8px;
-         padding:6px 10px; background:var(--g1); border-left:4px solid var(--pri); border-radius:0 6px 6px 0}
+.rsec{margin-bottom:14px}
+.rsec>h3{font-size: 0.875rem; font-weight:700; color:var(--g7); margin:0 0 6px;
+         padding:4px 9px; background:var(--g1); border-left:3px solid var(--pri); border-radius:0 6px 6px 0}
 .rsec>h3 .cnt{font-weight:400; color:var(--g7); font-size: 0.75rem; margin-left:6px}
 .roster-count{font-size: 0.75rem; color:var(--g7); margin-bottom:8px}
 /* 階が判定できない人を黙って落とさないための区画（居室未登録など）。色で他と区別する */
@@ -74,20 +76,20 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .fl-2col .rsec{margin-bottom:18px}
   .fl-4col .rlist{grid-template-columns:1fr}
 }
-.rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px}
-.rcard{background:#fff; border:1px solid var(--g2); border-radius:10px; padding:12px; cursor:pointer; transition:.12s}
+.rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:8px}
+.rcard{background:#fff; border:1px solid var(--g2); border-radius:9px; padding:8px 10px; cursor:pointer; transition:.12s}
 .rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
-.rcard .nm{font-size: 1rem; font-weight:700}
+.rcard .nm{font-size: 0.9375rem; font-weight:700}
 .rcard .kn{font-size: 0.6875rem; color:var(--g6)}
-.rcard .meta{margin-top:6px; display:flex; gap:6px; flex-wrap:wrap}
-.tag{font-size: 0.6875rem; padding:2px 8px; border-radius:10px; background:var(--g1); color:var(--g7)}
+.rcard .meta{margin-top:4px; display:flex; gap:5px; flex-wrap:wrap}
+.tag{font-size: 0.6875rem; padding:1px 7px; border-radius:9px; background:var(--g1); color:var(--g7)}
 /* 追加情報のタグ。既存の居室(room)・介護度(care)・退去(out)の色は変えない */
 .tag.bd,.tag.ht,.tag.wt{background:var(--g0); color:var(--g7); border:1px solid var(--g2)}
 .tag.care{background:var(--pri-l); color:var(--pri-d)} .tag.room{background:#ede7f6; color:#5e35b1}
 .tag.out{background:var(--ng-l); color:var(--ng)}
 .tag.hosp{background:var(--warn-bg); color:var(--warn-tx); font-weight:700}
 /* 詳細画面「この方を各アプリで開く」のリンク。タップ領域は44px以上（HIG） */
-.rlink{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 14px;
+.rlink{display:inline-flex; align-items:center; gap:5px; min-height:44px; padding:6px 11px;
   border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--pri-d);
   font-size: 0.8125rem; text-decoration:none; white-space:nowrap}
 .rlink:hover{background:var(--pri-l)}
@@ -106,17 +108,21 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
 .sheet .sec-lbl{writing-mode:vertical-rl; text-orientation:upright; background:var(--g1);
-  border-right:1px solid var(--g9); padding:8px 4px; font-weight:700; font-size: 0.8125rem; min-width:34px;
-  display:flex; align-items:center; justify-content:center; letter-spacing:2px}
+  border-right:1px solid var(--g9); padding:6px 3px; font-weight:700; font-size: 0.75rem; min-width:30px;
+  display:flex; align-items:center; justify-content:center; letter-spacing:1.5px}
 .sheet .sec-body{flex:1; min-width:0}
 .grid{display:grid; gap:0}
-.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:6px 8px; min-width:0}
+/* 2026-08-14 コンパクト化: セルは上下も詰める（管理者の指示）。ラベルと値の行間も締める */
+.cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:3px 7px; min-width:0}
 .cell:last-child{border-right:none}
-.cell .lab{font-size: 0.6875rem; color:var(--g6); display:block; margin-bottom:2px}
-.cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap}
-.cell .val.big{font-size: 1.125rem; font-weight:700}
+.cell .lab{font-size: 0.6875rem; color:var(--g7); display:block; margin-bottom:0; line-height:1.25}
+.cell .val{font-size: 0.875rem; word-break:break-word; white-space:pre-wrap; line-height:1.45}
+/* 氏名は太字のまま一回り小さく。氏名セル(.w-name)は広めに取り、7文字＋空白でも1行に収める
+   （★nowrap にはしない＝極端に長いお名前では折り返しを許す。「基本1行」の指示） */
+.cell .val.big{font-size: 1rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
+.row-cells .cell.w-name{flex:2.4}
 /* 測定日は本文より小さい文字で添える。
    ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
      （生活自立度・認知症自立度）が狭まって折り返し、印刷が +6mm 伸びる（実測）。
@@ -126,7 +132,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @media print{ .wt-on,.bd-w{color:#333} }
 /* 家族構成図のサムネイル。枠に収める（はみ出させない・縦横比を崩さない） */
 .geno-img{max-width:100%; max-height:100%; object-fit:contain}
-.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.6}
+.fulltext{white-space:pre-wrap; word-break:break-word; font-size: 0.875rem; line-height:1.5}
 /* 薬剤情報（定期）の2列表示（2026-08-11 追加）。左=薬剤、右=効果・効能。
    ★右列は固定幅。行は grid の行で揃うので、薬剤名が折り返しても効能は1行目に留まる。
    ★見出しも値も左揃え（管理者の指定）。 */
@@ -218,8 +224,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
 
-.detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
-.btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
+.detail-actions{display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap}
+/* 見た目は締めつつ、タップ領域は44pxを維持する（HIG・iPadでも使うため） */
+.btn{padding:8px 14px; border:none; border-radius:8px; font-size: 0.875rem; font-weight:700; min-height:44px}
 .btn-pri{background:var(--pri); color:#fff} .btn-ok{background:var(--ok); color:#fff}
 .btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
 .btn-gray{background:var(--g2); color:var(--g7)} .btn-ng{background:#fff;color:var(--ng);border:1px solid var(--ng)}
@@ -1809,7 +1816,7 @@ function perResidentLinksHtml(r){
   }).join('');
   /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
   return '<div class="sec sec-applinks"><div class="sec-lbl">この方を各アプリで開く</div>'+
-         '<div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+body+'</div></div>';
+         '<div class="sec-body" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px;align-items:center">'+body+'</div></div>';
 }
 /* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
 function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
@@ -2369,7 +2376,7 @@ function renderView(r){
   // 利用者基本情報
   h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
-      cell('氏名',r.name,true)+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
+      cell('氏名',r.name,true,'w-name')+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
       cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
       cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''))+
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
@@ -2441,7 +2448,7 @@ function renderView(r){
     '</div>'+
     // 右 1/3：ジェノグラム（クリックで作成／家系図アプリへ）
     '<div style="flex:1;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:6px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:300px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:360px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══
