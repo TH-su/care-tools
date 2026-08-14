@@ -1013,8 +1013,8 @@ function renderAppList(){
   /* 訪問診療URLが未設定のときだけ、設定場所を案内する（毎回は出さない） */
   if(!vma) box.innerHTML+='<p class="applead" style="margin:4px 0 0">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>';
 }
-function openApps(){ renderAppList(); $('mApps').classList.add('on'); }
-function closeApps(){ $('mApps').classList.remove('on'); }
+function openApps(){ renderAppList(); $('mApps').classList.add('on'); navEnter(); }
+function closeApps(){ $('mApps').classList.remove('on'); if($('sc-list').classList.contains('on'))navLeave(); }
 
 /* ═══════════ 最新体重（体重管理アプリのデータを読むだけ・向こうは一切変更しない） ═══════════
    同一オリジン（th-su.github.io）なので localStorage を直接読める。
@@ -3206,8 +3206,63 @@ function showScreen(name){
     saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
     /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
     if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
+    navLeave();
+  }else{
+    navEnter();
   }
 }
+
+/* ── ブラウザの「戻る」・左スワイプで一覧へ戻す（2026-08-13 管理者の指示） ──
+   従来は画面切替が履歴に乗らず、個人画面で「戻る」を押すと介護ツールメニューまで出てしまった。
+   個人画面・編集画面に入る時に履歴を【1段だけ】積み、戻る1回＝一覧・もう1回＝メニューにする。
+   ・積むのは常に1段だけ（詳細→編集で重ねない。編集からの戻るも一覧＝現状の導線と同じ深さ）
+   ・UI操作（←一覧・下タブ・保存後の遷移など）で一覧へ戻る時は、積んだ1段を history.back() で
+     消費する。消費しないと「一覧に見えるのに、ページを出るのに戻るが2回要る」状態になる
+   ・popstate 経由の一覧表示では back() を呼ばない（呼ぶと往復が止まらない）
+   ・モーダル（同期設定・アプリ一覧・一括編集）が開いている時の「戻る」は【モーダルを閉じるだけ】。
+     一括編集は closeBulk の未保存確認に従い、取り消されたら段を積み直して何も変えない
+   ・判定は JS 変数（_navPushed）で持つ。csvStripViewParam の replaceState が
+     履歴エントリの state を消しても壊れないようにするため */
+var _navPushed=false,_navInPop=false;
+function navEnter(){
+  if(_navPushed)return;
+  try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+}
+function navLeave(){
+  if(!_navPushed||_navInPop)return;
+  _navPushed=false;
+  try{history.back();}catch(e){}
+}
+/* 開いている操作モーダルがあれば「閉じる関数」を返す（閉じたら true を返す関数）。
+   一括編集は closeBulk 内の未保存確認に従う（取り消しなら開いたまま false） */
+function navTopModal(){
+  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
+  if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
+  if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
+  return null;
+}
+window.addEventListener('popstate',function(ev){
+  /* 進む/戻るの両対応: いま居るエントリが「積んだ段」かどうかで旗を合わせる */
+  _navPushed=!!(ev&&ev.state&&ev.state.rmScr);
+  /* ★積んだ段へ「着地」した popstate（進むボタン・一部ブラウザの読み込み直後の発火）では
+     画面を変えない。ここで一覧へ落とすと、復元した個人画面が勝手に閉じる */
+  if(_navPushed)return;
+  /* ★モーダルが開いていれば、戻る1回ぶんは「閉じる」に充てる（画面は変えない） */
+  var m=navTopModal();
+  if(m){
+    var closed;
+    _navInPop=true;
+    try{closed=m();}finally{_navInPop=false;}
+    /* 取り消された（開いたまま）か、個人画面の上のモーダルだった場合は段を積み直す */
+    if(!closed||!$('sc-list').classList.contains('on')){
+      try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+    }
+    return;
+  }
+  if($('sc-list').classList.contains('on'))return;   // UI操作の消費分・一覧での戻る＝何もしない
+  _navInPop=true;
+  try{showScreen('list');}finally{_navInPop=false;}
+});
 
 /* ═══════════ 端末用途ガード ═══════════ */
 function applyDeviceGuard(){
@@ -3230,8 +3285,8 @@ function loadData(){
 }
 
 /* ═══════════ 同期設定 ═══════════ */
-function openSync(){$('cfgUrl').value=CFG.url;$('cfgToken').value=CFG.token;if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on')}
-function closeSync(){$('mSync').classList.remove('on')}
+function openSync(){$('cfgUrl').value=CFG.url;$('cfgToken').value=CFG.token;if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on');navEnter()}
+function closeSync(){$('mSync').classList.remove('on');if($('sc-list').classList.contains('on'))navLeave()}
 function saveSyncCfg(){
   CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
   if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
@@ -3334,6 +3389,7 @@ function bulkVal(r,k){
 function openBulk(){
   if(!CFG.url){ toast('⚠️ 同期設定のURLが未設定です'); return; }
   $('mBulk').classList.add('on');
+  navEnter();   // 戻る（スワイプ）1回で、ページを出ずにこのモーダルを閉じられるようにする
   if(bulkRows){ renderBulk(); return; }
   if(bulkLoading) return;
   bulkLoading=true;
@@ -3359,6 +3415,7 @@ function closeBulk(){
   if(bulkCellCount() && !confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')) return;
   bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
   paintBulkDirty(); $('mBulk').classList.remove('on');
+  if($('sc-list').classList.contains('on'))navLeave();
 }
 
 function renderBulk(){
@@ -3619,7 +3676,12 @@ function init(){
   $('syncSave').addEventListener('click',saveSyncCfg);
   $('mSync').addEventListener('click',function(e){if(e.target===this)closeSync()});
   // ── 端末用途ガード：現場タブレットはデータを一切読み込まずブロック表示 ──
-  if(applyDeviceGuard()){setSync('現場端末','err');return}
+  if(applyDeviceGuard()){
+    setSync('現場端末','err');
+    /* 現場端末でも、前回残った履歴の段は消費しておく（残すと「戻る」が1回空振りする） */
+    try{ if(history.state&&history.state.rmScr)history.back(); }catch(e){}
+    return;
+  }
   loadData();
   /* ★前回開いていた方の詳細画面へ戻す（原則11）。復元順は「保存済みタブ・絞り込みの後」。
      次のどれかに当たれば開かない＝迷ったら一覧のままにする（開かない側へ倒す）:
@@ -3627,10 +3689,16 @@ function init(){
        詳細画面が覆いかぶさると、誕生日表を出したつもりで入居者の詳細に着地する
      ・接続先が未設定 … 詳細は取得できないのでエラー画面に固定される（一覧はキャッシュで動く）
      ・名簿にその番号が居ない … 前回の別人・退去済みを開かない */
+  /* ★再読み込み時、前回積んだ履歴段が残っていることがある（pushState の state は再読込後も残る）。
+     二重に積まないよう、復元より【先】に旗を立てる（個人画面を復元するなら残った段をそのまま使う） */
+  var _hadNavState=false;
+  try{ if(history.state&&history.state.rmScr){ _hadNavState=true; _navPushed=true; } }catch(e){}
   var _urlView=(function(){try{return new URLSearchParams(location.search).get('view')}catch(e){return null}})();
   var _openId=readOpenId();
   if(!_urlView && CFG.url && _openId!=null &&
      roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
+  /* 個人画面を復元しなかったのに段が残っている場合は消費する（一覧からの戻るを1回で出られるように） */
+  if(_hadNavState&&$('sc-list').classList.contains('on')){ _navPushed=false; try{history.back();}catch(e){} }
 }
 document.addEventListener('DOMContentLoaded',init);
 </script>
