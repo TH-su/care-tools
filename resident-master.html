@@ -126,14 +126,27 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
 /* 幅を食う3セルに明示配分する。氏名だけを広げると認定期間・生年月日が折り返して行が伸びる。
-   認定期間は「開始 〜（改行）終了」の2行表記＋一回り小さい字（表示の形だけ・値は変えない） */
-.row-cells .cell.w-name{flex:2.4}
-.row-cells .cell.w-cert{flex:1.6}
+   2026-08-14 指示: 氏名の枠を狭め、認定期間は「開始 〜 終了」の1行表記へ（表示の形だけ・値は変えない）。
+   入居日(w-adm)も1行に収め、同じ行の小さい項目(w-sm)の左右を詰めて幅を融通する */
+.row-cells .cell.w-name{flex:1.8}
+.row-cells .cell.w-cert{flex:2.75}
 .row-cells .cell.w-cert .val{font-size:0.8125rem}
-.row-cells .cell.w-birth{flex:1.4}
-/* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす） */
+.row-cells .cell.w-birth{flex:1.65}
+.row-cells .cell.w-adm{flex:1.3}
+.row-cells .cell.w-sm{flex:0.75}
+.row-cells .cell.w-pay{flex:0.85}
+/* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす）。
+   2026-08-14 指示: 1枚目に家族情報・事業所・家族構成図まで収めるため、文字と余白を一段縮小 */
 @media print{
-  .cell .val{font-size:0.875rem}
+  .sheet .cell{padding:2px 5px}
+  .sheet .cell .lab{font-size:0.625rem}
+  .sheet .cell .val{font-size:0.8125rem}
+  .sheet .cell .val.big{font-size:0.9375rem}
+  .sheet .row-cells .cell.w-cert .val{font-size:0.75rem}
+  .sheet .fulltext{font-size:0.8125rem; line-height:1.4}
+  .sheet .rhythm{font-size:0.8125rem}
+  .sheet .sec-lbl{font-size:0.75rem; min-width:24px; padding:4px 2px; letter-spacing:1px}
+  .biz-geno-row{break-inside:avoid; page-break-inside:avoid}
 }
 /* 測定日は本文より小さい文字で添える。
    ★体重セルを広げてはいけない。widthは行で取り合いなので、広げると隣のセル
@@ -380,7 +393,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .sheet{border:2px solid #000; page-break-inside:avoid}
   .sheet .sec{border-top:1px solid #000}
   .cell{border-color:#999}
-  .geno-box{border:none !important; cursor:default !important}
+  .geno-box{border:none !important; cursor:default !important; min-height:110px !important}
   .geno-hint{display:none !important}
   /* 家族構成図は紙にも出す。背景画像ではなく <img> なので「背景のグラフィックを印刷」の
      設定に左右されず必ず刷られる。色を落とさないよう print-color-adjust を明示する。 */
@@ -2396,16 +2409,16 @@ function renderView(r){
   // 利用者基本情報
   h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
-      cell('氏名',r.name,true,'w-name')+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
-      cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
-      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜\n'+r.careCertEnd):''),false,'w-cert')+
-      cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
+      cell('氏名',r.name,true,'w-name')+cell('性別',r.gender,false,'w-sm')+birthCell('生年月日',r.birthDate)+
+      cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'',false,'w-sm')+cell('介護度',r.careLevel)+
+      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''),false,'w-cert')+
+      cell('負担割合',copayLabel(r.copayRate),false,'w-pay')+cell('生保',r.welfare?'有':'',false,'w-sm')+
     '</div>'+
     '<div class="row-cells">'+
-      cell('入居日',r.admissionDate)+
+      cell('入居日',r.admissionDate,false,'w-adm')+
       /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
          退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示） */
-      '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
+      '<div class="cell w-sm"><span class="lab">在籍状態</span><span class="val"'+
         (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
       cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
       cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
@@ -2414,7 +2427,7 @@ function renderView(r){
          ★体重セルは広げない。widthは行で取り合いのため、広げると隣のセル（生活自立度・
            認知症自立度）が折り返して印刷が +6mm 伸びる。測定日は小さい文字で添える。 */
       (function(){var wv=weightView(r);
-        return '<div class="cell"'+(wv.bmiTitle?' title="'+esc(wv.bmiTitle)+'"':'')+'>'+
+        return '<div class="cell w-sm"'+(wv.bmiTitle?' title="'+esc(wv.bmiTitle)+'"':'')+'>'+
             '<span class="lab">BMI</span><span class="val">'+esc(wv.bmi||'　')+'</span></div>'+
           cell('身長',r.height?r.height+' cm':'')+
           '<div class="cell"'+(wv.title?' title="'+esc(wv.title)+'"':'')+'>'+
@@ -2442,35 +2455,28 @@ function renderView(r){
     '<div class="row-cells">'+cell('退去先',r.dischargeTo,false,'noprint-cell')+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
     '<div class="cell" style="border-right:none"><span class="lab">入居前状況</span><div class="fulltext">'+esc(r.preAdmission||'　')+'</div></div>'+
     '<div class="cell noprint-cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
-  // 家族情報
-  // 家族情報＋事業所（左 2/3）と ジェノグラム欄（右 1/3）を横並び
+  // 家族情報（2026-08-14 指示: A4幅いっぱいに広げる。家族構成図は下の事業所の横にのみ置く）
   var genoImg=getGenogram(r.id,r.name);
   var genoInner=genoImg
     ? '<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'
     : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem;line-height:1.1">🧬</div>クリックして<br>家族構成図を作成<br><span style="font-size: 0.6875rem">（ジェノグラムアプリへ）</span></div>';
-  h+='<div style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
-    // 左 2/3：家族情報＋事業所
-    '<div style="flex:2;min-width:0;display:flex;flex-direction:column">'+
-      // 家族情報（行内境界は row 側で付与するため border-top なし）
-      '<div style="display:flex;flex:0 0 auto"><div class="sec-lbl">家族情報</div><div class="sec-body"><div class="row-cells">'+
-        '<div class="cell" style="flex:1.2"><span class="lab">ご家族氏名</span><div class="fulltext">'+esc(famName||'　')+'</div></div>'+
-        '<div class="cell" style="flex:1.5"><span class="lab">住所</span><div class="fulltext">'+esc(famAddr||'　')+'</div></div>'+
-        '<div class="cell"><span class="lab">電話番号</span><div class="fulltext">'+esc(famTel||'　')+'</div></div>'+
-        '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
-      '</div></div></div>'+
-      // 事業所
-      '<div style="display:flex;flex:1;border-top:1px solid var(--g9)"><div class="sec-lbl">事業所</div><div class="sec-body">'+
-        '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
-        '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
-        '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager)+'<div class="cell" style="flex:2;border-right:none"><span class="lab">デイ利用日</span><div class="rhythm">'+(du||'　')+'</div></div></div>'+
-        '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
-      '</div></div>'+
-    '</div>'+
-    // 右側：ジェノグラム（クリックで作成／編集）。
-    // ★「少し大きめに」は幅で実現する（flex 1→1.25）。家系図のサムネイルは横長が普通なので、
-    //   高さだけ増やしても幅で頭打ちになり余白が増えるだけ（2026-08-14 レビュー指摘）
-    '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:6px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:320px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+  h+='<div class="sec"><div class="sec-lbl">家族情報</div><div class="sec-body"><div class="row-cells">'+
+    '<div class="cell" style="flex:1.2"><span class="lab">ご家族氏名</span><div class="fulltext">'+esc(famName||'　')+'</div></div>'+
+    '<div class="cell" style="flex:1.5"><span class="lab">住所</span><div class="fulltext">'+esc(famAddr||'　')+'</div></div>'+
+    '<div class="cell"><span class="lab">電話番号</span><div class="fulltext">'+esc(famTel||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
+  '</div></div></div>';
+  // 事業所（左）＋ 家族構成図（右）。印刷では行ごと分割しない（.biz-geno-row＝break-inside:avoid）。
+  // 家族構成図の高さは事業所の4行に揃う（min-height は空状態の下限。紙では 110px まで縮む）
+  h+='<div class="biz-geno-row" style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
+    '<div style="flex:2;min-width:0;display:flex"><div class="sec-lbl">事業所</div><div class="sec-body">'+
+      '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
+      '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
+      '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager)+'<div class="cell" style="flex:2;border-right:none"><span class="lab">デイ利用日</span><div class="rhythm">'+(du||'　')+'</div></div></div>'+
+      '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
+    '</div></div>'+
+    '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:4px">'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══
@@ -2618,11 +2624,11 @@ function renderView(r){
     '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
   '</div></div>';
-  // 食事
-  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body"><div class="row-cells">'+
-    cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+
-    '<div class="cell" style="flex:2;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div>'+
-  '</div></div></div>';
+  // 食事（2026-08-14 指示: 備考だけを2行目の横長欄へ移し、1行目の各項目の下の無駄をなくす）
+  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+'</div>'+
+    '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div></div>'+
+  '</div></div>';
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
