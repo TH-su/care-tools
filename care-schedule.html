@@ -67,6 +67,10 @@ html, body { height: 100%; overflow: hidden;
 .hdr-btn.savebtn { background: #2e7d32; border-color: #2e7d32; font-weight: 700; }
 .hdr-btn.savebtn:hover { background: #1b5e20; }
 .hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
+/* 新しく足した取り消しボタンだけ 44px 以上にする（既存ボタンは現寸のまま＝並びを動かさない）。
+   ヘッダは高さ固定（56px・640px以下は52px）なので 44px はどちらでも収まり、盤面の位置は変わらない。
+   隣の試算ボタンとの間隔は gap 4px + margin 4px = 8px を確保する（誤タップ防止）。 */
+.hdr-btn.undobtn { min-height: var(--tap-min, 44px); margin-inline-end: 4px; }
 /* ── 試算モード（サンドボックス）──
    盤面の見た目・操作は通常と同一に保つ。違いはヘッダーの色・h1の但し書き・印刷の透かし・
    一部ボタンの無効化だけ。レイアウト計算（--hdr-h を参照する calc 3箇所）には一切触れない。 */
@@ -764,6 +768,9 @@ select.inp { cursor: pointer; }
          ＝現場の操作記憶を壊さない。.hdr-btns は @media print で display:none。 -->
     <!-- 試算モード。上のコメントどおり【先頭に足す】＝既存ボタンの位置が動かない。
          .hdr-btns は overflow-x:auto にしてあるので、増やしても右端が画面外へ出ない。 -->
+    <!-- 取り消しの入口。Cmd/Ctrl+Z と同じ undo() を呼ぶだけ（一括取込の確認・空履歴のトースト・
+         試算モードの履歴分離は undo() 側の既存実装がそのまま効く）。キーボードの無い iPad のための入口。 -->
+    <button class="hdr-btn undobtn" id="btnUndo" onclick="undo()" title="直前の操作を取り消す（一括取込の取り消しは確認あり・Ctrl/Cmd+Zと同じ）">↩ 元に戻す</button>
     <button class="hdr-btn simbtn" id="btnSimStart" onclick="SIM.enter()" title="試算モード：この盤面を自由に試せます。ワークスケジュール・デイ利用表・クラウドには一切反映されません">🧪 試算</button>
     <button class="hdr-btn applybtn" id="btnSimApply" style="display:none" onclick="SIM.openApply()" title="試算の内容を実データへ反映する">✅ 実装</button>
     <button class="hdr-btn simbtn" id="btnSimExit" style="display:none" onclick="SIM.exit()" title="試算を破棄して通常モードへ戻る">✕ 試算終了</button>
