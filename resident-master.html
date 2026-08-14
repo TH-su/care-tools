@@ -448,16 +448,24 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* 医療情報の右に添える生活リズムの縦タイムライン */
 .a4s .a4-mid{display:flex; flex:0 0 auto}
 .a4s .a4-mid-l{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px}
-.a4s .a4-rhy{flex:0 0 88px; border:1.5px solid #000; margin-left:4px; padding:3px 6px;
+/* 生活リズム（2026-08-14 作り直し・管理者の指示）:
+   「時刻（右揃え）｜下向き矢印の縦線｜ラベル（左揃え）」の3列。
+   ★以前はマイナスマージンで時刻を線の左へ張り出させており、環境によって線がラベルに重なった。
+     列で分ければ重なりは構造的に起きない。線は2列のあいだ＝欄のほぼ中央（左右のバランス）。 */
+.a4s .a4-rhy{flex:0 0 100px; border:1.5px solid #000; margin-left:4px; padding:3px 6px;
              display:flex; flex-direction:column}
 .a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
 .a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
-                  border-left:2px solid #000; margin:4px 0 0 26px; padding-left:8px}
-.a4s .a4-rhy-i{white-space:nowrap; position:relative}
-.a4s .a4-rhy-i b{font-weight:600}
-.a4s .a4-rhy-i .tm{display:inline-block; min-width:34px; margin-left:-44px; text-align:right;
-                   padding-right:6px; background:#fff;
-                   -webkit-print-color-adjust:exact; print-color-adjust:exact}
+                  margin-top:4px; position:relative}
+/* 下向き矢印の縦線。時刻列(36px)とラベル列のあいだに置き、下端は▼の分だけ空ける */
+.a4s .a4-rhy-ln{position:absolute; left:41px; top:1px; bottom:7px; width:2px; background:#000;
+                -webkit-print-color-adjust:exact; print-color-adjust:exact}
+.a4s .a4-rhy-ln::after{content:''; position:absolute; left:-3px; bottom:-7px; width:0; height:0;
+                border-left:4px solid transparent; border-right:4px solid transparent;
+                border-top:7px solid #000}
+.a4s .a4-rhy-i{display:flex; align-items:center; position:relative}
+.a4s .a4-rhy-i .tm{flex:0 0 36px; text-align:right; line-height:1.15}
+.a4s .a4-rhy-i b{font-weight:600; margin-left:12px; white-space:nowrap}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
 .a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px; overflow:hidden}
@@ -3402,7 +3410,13 @@ function renderA4(r){
     var v=rh[p[0]]; if(!v)return'';
     /* 旧様式は「8:00」表記。既定値（08:00）の先頭0だけ落とし、記録値の中身は変えない */
     var tv=String(v).replace(/^0(\d:)/,'$1');
-    return '<div class="a4-rhy-i"><span class="tm">'+esc(tv)+'</span><b>'+esc(p[1])+'</b></div>';
+    /* 「20:00〜21:00」のような幅の広い時刻は「〜」の【前】で折り返す（時刻列の幅を超えて
+       矢印線に近づくのを防ぐ。「20:00」「〜21:00」の2行なら両方とも列幅に収まる。
+       文字は1つも変えず、改行位置だけ決める） */
+    var tmHtml=(tv.length>6&&tv.indexOf('〜')>=0)
+      ? tv.split('〜').map(function(x){return esc(x)}).join('<br>〜')
+      : esc(tv);
+    return '<div class="a4-rhy-i"><span class="tm">'+tmHtml+'</span><b>'+esc(p[1])+'</b></div>';
   }).filter(String).join('');
   /* 家族: 1行1名。緊急連絡先列にはその方が緊急連絡先なら氏名を出す（旧様式の列構成） */
   var fam=Array.isArray(r.family)?r.family.filter(function(f){return f&&(f.name||f.phone||f.address)}):[];
@@ -3472,7 +3486,8 @@ function renderA4(r){
         '</div>'+
       '</div></div>'+
     '</div>'+
-    '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+rhyRows+'</div></div></div>'+
+    '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+
+      '<i class="a4-rhy-ln" aria-hidden="true"></i>'+rhyRows+'</div></div></div>'+
     /* ── 食事 ── */
     '<div class="a4-sec"><div class="a4-lbl">食事</div><div class="a4-bd"><div class="a4-row">'+
       '<div class="a4-c" style="flex:1.3"><span class="a4-bh">■主食■</span><span class="a4-v">'+esc(r.mealStaple||'　')+'</span></div>'+
