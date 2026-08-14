@@ -427,8 +427,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <style>
 :root{
-  /* ミント / 薄緑 基調パレット */
-  --pri:#26a69a;--pri-l:#e0f2f1;--pri-d:#00796b;
+  /* 青 基調パレット（2026-08-14 全ツール共通の青へ統一。キャンバスの選択色・描画色の選択肢は従来どおり） */
+  --pri:#0b57d0;--pri-l:#ecf3fe;--pri-d:#0842a0;
   --ok:#2e7d32;--ok-l:#e8f5e9;
   --warn-bg:#fff8e1;--warn-tx:#e65100;
   --ng:#c62828;--ng-l:#ffebee;
@@ -443,7 +443,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 
 /* topbar */
 .topbar{position:sticky;top:0;z-index:100;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.hdr{background:linear-gradient(135deg,#00796b,#26a69a);color:#fff;padding:10px 14px;
+.hdr{background:linear-gradient(135deg,#0842a0,#0b57d0);color:#fff;padding:10px 14px;
   display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;row-gap:8px}
 .hdr-l{flex:0 0 auto;min-width:0}
 .hdr-l h1{font-size: 1rem;font-weight:700;line-height:1.2;white-space:nowrap}
@@ -582,7 +582,7 @@ textarea.fi{resize:vertical;min-height:60px}
 .modal{background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:90vh;
   display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.25)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;
-  border-bottom:1px solid var(--g2);background:linear-gradient(135deg,#00796b,#26a69a);color:#fff;
+  border-bottom:1px solid var(--g2);background:linear-gradient(135deg,#0842a0,#0b57d0);color:#fff;
   border-radius:12px 12px 0 0}
 .modal-head h2{font-size: 1rem;font-weight:700}
 .modal-close{background:rgba(255,255,255,.2);color:#fff;border:none;width:30px;height:30px;

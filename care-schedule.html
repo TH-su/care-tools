@@ -10,8 +10,8 @@
 <title>週間計画</title>
 <style>
 :root {
-  --pri:  #1565c0;
-  --pri2: #1a73e8;
+  --pri:  #0842a0;
+  --pri2: #0b57d0;
   --ng:   #c62828;
   --pre:  #6a1b9a;   /* 入居前（2026-08-03 追加・白地とのコントラスト比 約8.6:1） */
   --g0: #fff;
@@ -99,7 +99,7 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
 .care-chip { border: 1px solid #cfd8dc; background: #fff; color: #37474f; border-radius: 14px;
   padding: 4px 12px; font-size: 0.8125rem; cursor: pointer; transition: background .12s; }
 .care-chip:hover { background: #eceff1; }
-.care-chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.care-chip.on { background: #0b57d0; border-color: #0b57d0; color: #fff; }
 
 /* ── Summary bar (2段構成) ── */
 .summary-bar {
@@ -278,7 +278,7 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
 }
 .day-col { position: relative; border-right: 1px solid var(--g3); cursor: cell; }
 .day-col:last-child { border-right: none; }
-.day-col.drop-target { background: rgba(26,115,232,.06); }
+.day-col.drop-target { background: rgba(11,87,208,.06); }
 
 /* ── Event blocks ──
    Background is rendered via ::before so text can overflow freely */
@@ -382,7 +382,7 @@ body.is-dragging-resize * { cursor: s-resize  !important; }
   width: 56px; height: 56px; border-radius: 50%;
   background: linear-gradient(135deg, var(--pri) 0%, var(--pri2) 100%);
   color: #fff; border: none; font-size: 1.625rem; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(21,101,192,.45);
+  box-shadow: 0 4px 12px rgba(8,66,160,.45);
   display: flex; align-items: center; justify-content: center;
   z-index: 50; transition: transform .15s;
 }
@@ -424,7 +424,7 @@ body.is-dragging-resize * { cursor: s-resize  !important; }
   font-size: 0.875rem; color: var(--g9); background: var(--g0);
   transition: border-color .15s; outline: none; appearance: none;
 }
-.inp:focus { border-color: var(--pri2); box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+.inp:focus { border-color: var(--pri2); box-shadow: 0 0 0 3px rgba(11,87,208,.12); }
 textarea.inp { resize: vertical; font-family: inherit; }
 select.inp { cursor: pointer; }
 .form-row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -435,7 +435,7 @@ select.inp { cursor: pointer; }
   padding: 6px 12px; border: 1.5px solid var(--g3); border-radius: 8px;
   transition: all .15s; flex: 1; justify-content: center;
 }
-.radio-label:has(input:checked) { border-color: var(--pri2); background: rgba(26,115,232,.07); color: var(--pri); }
+.radio-label:has(input:checked) { border-color: var(--pri2); background: rgba(11,87,208,.07); color: var(--pri); }
 .radio-label input[type="radio"] { accent-color: var(--pri2); width: 15px; height: 15px; }
 .hint-box {
   margin-top: 6px; padding: 7px 10px;
@@ -455,7 +455,7 @@ select.inp { cursor: pointer; }
 .btn-row { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
 .btn { padding: 9px 18px; border-radius: 8px; border: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all .15s; }
 .btn-pri { background: var(--pri2); color: #fff; }
-.btn-pri:hover { background: #1557b0; }
+.btn-pri:hover { background: #0842a0; }
 .btn-sec { background: var(--g2); color: var(--g8); }
 .btn-sec:hover { background: var(--g3); }
 .btn-ng { background: var(--ng); color: #fff; margin-left: auto; }
@@ -599,7 +599,7 @@ select.inp { cursor: pointer; }
   /* 2026-08-03「入居前」追加でボタンが4つになった。狭幅端末で押し間違えないよう折返しを許す（HIG・原則10） */
   flex-wrap: wrap; gap: 4px;
 }
-.res-item.active { border-color: var(--pri2); background: rgba(26,115,232,.06); font-weight: 600; }
+.res-item.active { border-color: var(--pri2); background: rgba(11,87,208,.06); font-weight: 600; }
 .res-item .del-res {
   background: none; border: none; color: var(--ng); cursor: pointer;
   font-size: 1rem; padding: 6px 9px; border-radius: 4px; min-height: 32px;   /* タップ領域を拡大（HIG・原則10） */
@@ -641,8 +641,8 @@ select.inp { cursor: pointer; }
   padding: 8px 10px; border: 1.5px solid var(--g3); border-radius: 8px;
   transition: all .15s;
 }
-.check-label:has(input:checked) { border-color: #1976d2; background: rgba(25,118,210,.07); color: #1565c0; }
-.check-label input[type="checkbox"] { width: 15px; height: 15px; accent-color: #1976d2; }
+.check-label:has(input:checked) { border-color: #0b57d0; background: rgba(11,87,208,.07); color: #0842a0; }
+.check-label input[type="checkbox"] { width: 15px; height: 15px; accent-color: #0b57d0; }
 
 /* ── Context menu ── */
 #ctx-menu {

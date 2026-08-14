@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
-  --pri:#1a73e8;--pri-l:#e8f0fe;--pri-d:#1557b0;
+  --pri:#0b57d0;--pri-l:#ecf3fe;--pri-d:#0842a0;
   --ok:#2e7d32;--ok-l:#e8f5e9;
   --warn-bg:#fff8e1;--warn-tx:#e65100;--warn-br:#f9a825;
   --ng:#c62828;--ng-l:#ffebee;--ng-br:#ef5350;
@@ -31,7 +31,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .topbar{position:sticky;top:0;z-index:100;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.12)}
 
 /* header */
-.hdr{background:linear-gradient(135deg,#1565c0,#1a73e8);color:#fff;padding:14px 18px;
+.hdr{background:linear-gradient(135deg,#0842a0,#0b57d0);color:#fff;padding:14px 18px;
   display:flex;align-items:center;justify-content:space-between}
 .hdr h1{font-size: 1.0625rem;font-weight:700}
 .hdr-sub{font-size: 0.75rem;opacity:.85;margin-top:2px}
@@ -143,7 +143,7 @@ textarea{resize:vertical;min-height:60px}
 .lt tr.alert-w td:first-child{border-left:4px solid var(--warn-br)}
 .lt .nm{font-weight:700;text-align:start;padding-left:12px;min-width:110px}
 .lt .rm{color:var(--g6);font-size: 0.6875rem;font-weight:400}
-.lt .nm-link{cursor:pointer;color:var(--pri-d);text-decoration:underline;text-decoration-color:rgba(21,101,192,.35);text-underline-offset:2px;padding:2px 1px;border-radius:3px;transition:background .12s,color .12s}
+.lt .nm-link{cursor:pointer;color:var(--pri-d);text-decoration:underline;text-decoration-color:rgba(8,66,160,.35);text-underline-offset:2px;padding:2px 1px;border-radius:3px;transition:background .12s,color .12s}
 .lt .nm-link:hover{background:var(--pri-l);color:var(--pri-d);text-decoration-color:var(--pri-d)}
 .lt .wt-cell{font-size: 0.9375rem;font-weight:700;font-variant-numeric:tabular-nums}
 .lt .df{font-size: 0.75rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -532,7 +532,7 @@ textarea{resize:vertical;min-height:60px}
 .bd-trio input{font-family:inherit;font-size: 0.875rem;font-weight:700;text-align:center;
   padding:6px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:border-color .12s,box-shadow .12s;min-width:0}
-.bd-trio input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
+.bd-trio input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(11,87,208,.15)}
 .bd-trio input.bd-err{border-color:var(--ng);box-shadow:0 0 0 3px rgba(198,40,40,.15)}
 .bd-trio #mdBirthY{width:64px}
 .bd-trio #mdBirthM,.bd-trio #mdBirthD{width:42px}
@@ -551,7 +551,7 @@ textarea{resize:vertical;min-height:60px}
   padding:3px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:all .12s}
 .bd-era-y:disabled{background:var(--g1);color:var(--g5);cursor:not-allowed}
-.bd-era-y:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
+.bd-era-y:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(11,87,208,.15)}
 .bd-era-hint{font-size: 0.625rem;color:var(--g6);margin-left:4px}
 
 /* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
@@ -618,7 +618,7 @@ select option.is-discharged{color:var(--g6)}
     <div style="font-size: 2.75rem">🔒</div>
     <h2 style="margin:8px 0;font-size: 1.125rem">この端末は現場用に設定されています</h2>
     <p style="color:#666;font-size: 0.875rem;line-height:1.7">体重管理は<b>事務所PC</b>でご利用ください。</p>
-    <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #1a73e8;background:#fff;color:#1a73e8;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
+    <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #0b57d0;background:#fff;color:#0b57d0;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
   </div>
 </div>
 
@@ -4829,8 +4829,8 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
     return;
   }
 
-  const color = key==='y1' ? '#1a73e8' : '#00838f';
-  const bgCol = key==='y1' ? 'rgba(26,115,232,0.12)' : 'rgba(0,131,143,0.10)';
+  const color = key==='y1' ? '#0b57d0' : '#00838f';
+  const bgCol = key==='y1' ? 'rgba(11,87,208,0.12)' : 'rgba(0,131,143,0.10)';
 
   // alerts are month-based: only color/enlarge the point that represents
   // the monthly-latest record (for daily mode, most points are neutral).
