@@ -133,7 +133,7 @@ textarea{resize:vertical;min-height:60px}
 /* list table */
 .lt-w{overflow-x:auto;border-radius:var(--r);box-shadow:var(--sh)}
 .lt{width:100%;border-collapse:collapse;background:#fff;min-width:640px}
-.lt th{background:#1565c0;color:#fff;padding:10px 8px;text-align:center;font-size: 0.6875rem;font-weight:700;white-space:nowrap;position:sticky;top:0}
+.lt th{background:var(--pri);color:#fff;padding:10px 8px;text-align:center;font-size: 0.6875rem;font-weight:700;white-space:nowrap;position:sticky;top:0}
 .lt td{padding:10px 8px;border-bottom:1px solid var(--g1);font-size: 0.8125rem;text-align:center;vertical-align:middle}
 .lt tr:last-child td{border-bottom:none}
 .lt tr.ev td{background:#fafafa}
@@ -411,10 +411,10 @@ textarea{resize:vertical;min-height:60px}
   font-variant-numeric:tabular-nums}
 .gr-t th,.gr-t td{padding:8px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);
   text-align:center;white-space:nowrap;background:#fff}
-.gr-t thead th{background:#1565c0;color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:3}
+.gr-t thead th{background:var(--pri);color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:3}
 .gr-t th.gr-nm,.gr-t td.gr-nm{position:sticky;left:0;z-index:2;text-align:start;background:#fff;
   min-width:160px;max-width:220px;border-right:2px solid var(--g2);font-weight:700;padding:8px 10px}
-.gr-t thead th.gr-nm{z-index:4;background:#1565c0;color:#fff}
+.gr-t thead th.gr-nm{z-index:4;background:var(--pri);color:#fff}
 .gr-t tr.ev td{background:#fafafa}
 .gr-t tr.ev td.gr-nm{background:#fafafa}
 .gr-t .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
@@ -485,9 +485,9 @@ textarea{resize:vertical;min-height:60px}
 .gr-3y-block .gr-3y-ttl small{font-size: 0.625rem;color:var(--g6);font-weight:400}
 .gr-3y-block table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size: 0.75rem;font-variant-numeric:tabular-nums}
 .gr-3y-block th,.gr-3y-block td{padding:7px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);text-align:center;white-space:nowrap;background:#fff}
-.gr-3y-block thead th{background:#1565c0;color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:2}
+.gr-3y-block thead th{background:var(--pri);color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:2}
 .gr-3y-block th.gr-nm,.gr-3y-block td.gr-nm{position:sticky;left:0;z-index:1;text-align:start;background:#fff;min-width:120px;max-width:180px;border-right:2px solid var(--g2);font-weight:700;padding:7px 10px}
-.gr-3y-block thead th.gr-nm{z-index:3;background:#1565c0;color:#fff}
+.gr-3y-block thead th.gr-nm{z-index:3;background:var(--pri);color:#fff}
 .gr-3y-block .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
 .gr-3y-block .gr-bmi{font-size: 0.625rem;color:var(--g6);line-height:1.2;margin-top:1px}
 .gr-3y-block .gr-em{color:var(--g5)}
@@ -3197,10 +3197,10 @@ function _ensurePrintSheetStyle(){
   st.textContent = `
   #printOverlay{display:none;position:fixed;inset:0;z-index:9999;background:#fff;overflow:auto;-webkit-overflow-scrolling:touch}
   #printOverlay.on{display:block}
-  #printOverlay .ps-toolbar{position:sticky;top:0;background:#1565c0;color:#fff;padding:10px 14px;
+  #printOverlay .ps-toolbar{position:sticky;top:0;background:var(--pri);color:#fff;padding:10px 14px;
     display:flex;gap:10px;align-items:center;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.2)}
   #printOverlay .ps-toolbar .ps-info{flex:1;font-size:13px;line-height:1.4}
-  #printOverlay .ps-toolbar button{background:#fff;color:#1565c0;border:none;padding:8px 18px;
+  #printOverlay .ps-toolbar button{background:#fff;color:var(--pri);border:none;padding:8px 18px;
     border-radius:5px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}
   #printOverlay .ps-toolbar button:active{transform:scale(.97)}
   #printOverlay .ps-page{max-width:210mm;margin:0 auto;padding:10mm 12mm;background:#fff;color:#000;
@@ -3220,7 +3220,7 @@ function _ensurePrintSheetStyle(){
   #printOverlay table.ps-tbl td.rm{width:32px;font-weight:700}
   #printOverlay table.ps-tbl td.nm{text-align:start;padding-left:4px;font-weight:700;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
-  #printOverlay .wcb{display:inline-block;margin-left:3px;padding:0 4px;background:#1565c0;
+  #printOverlay .wcb{display:inline-block;margin-left:3px;padding:0 4px;background:var(--pri);
     color:#fff;border-radius:3px;font-size:var(--ps-wcb,8pt);vertical-align:middle}
   #printOverlay table.ps-tbl td.prev,#printOverlay table.ps-tbl td.prev-chair,#printOverlay table.ps-tbl td.prev-net{
     width:8%;font-weight:700;background:#fafafa}

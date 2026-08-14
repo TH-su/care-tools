@@ -10,7 +10,7 @@
 <title>週間計画</title>
 <style>
 :root {
-  --pri:  #0842a0;
+  --pri:  #0842a0;   /* 注: 本ファイルの --pri は他ツールの --pri-d 相当（濃）。標準の青は --pri2 */
   --pri2: #0b57d0;
   --ng:   #c62828;
   --pre:  #6a1b9a;   /* 入居前（2026-08-03 追加・白地とのコントラスト比 約8.6:1） */
@@ -520,14 +520,14 @@ select.inp { cursor: pointer; }
 /* 報酬額(10割) 総合計バナー（上部・視認性高） */
 #rl-total { margin: 0 0 10px; padding: 10px 14px; border: 1px solid #90caf9; border-radius: 8px;
   background: #e8f2fd; color: #0d3c61; font-size: 0.9375rem; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-#rl-total .rl-total-amt { font-size: 1.3125rem; color: #1565c0; }
+#rl-total .rl-total-amt { font-size: 1.3125rem; color: var(--pri2); }
 #rl-total .rl-total-sub { font-size: 0.75rem; font-weight: 600; color: var(--g6); }
 /* 通所利用曜日（月〜土・6列をグループ視認） */
 #rl-table th.rl-day, #rl-table td.rl-day { width: 26px; min-width: 26px; padding: 7px 3px; text-align: center; background: #f3f8ff; }
 #rl-table th.rl-day { background: #e3eefb; }
 #rl-table td.rl-day .on { color: #2e7d32; font-weight: 700; }
 /* 報酬額(10割) 列・合計行 */
-#rl-table .rl-fee { text-align: end; font-weight: 700; color: #1565c0; }
+#rl-table .rl-fee { text-align: end; font-weight: 700; color: var(--pri2); }
 #rl-table tfoot td { border-top: 2px solid var(--g4); background: var(--g1); font-weight: 700; }
 #rl-table tfoot td.rl-foot-label { text-align: end; color: var(--g7); }
 /* 一括編集モーダル（#rl-table と同じ見た目を流用・入力欄は行内でコンパクト） */
