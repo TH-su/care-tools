@@ -406,7 +406,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 #a4sheet{display:none}
 .a4s{width:190mm; height:276mm; display:flex; flex-direction:column; gap:4px;
      background:#fff; color:#000; font-size:var(--a4fs,10.5px); line-height:1.35;
-     font-family:inherit; overflow:hidden}
+     font-family:inherit; overflow:hidden;
+     -webkit-text-size-adjust:100%; text-size-adjust:100%}
 .a4s *{box-sizing:border-box}
 .a4s .a4-head{display:flex; justify-content:space-between; align-items:flex-end; flex:0 0 auto}
 .a4s .a4-title{font-size:calc(var(--a4fs,10.5px)*1.5); font-weight:700}
@@ -436,7 +437,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-rhy-i{white-space:nowrap; position:relative}
 .a4s .a4-rhy-i b{font-weight:600}
 .a4s .a4-rhy-i .tm{display:inline-block; min-width:34px; margin-left:-44px; text-align:right;
-                   padding-right:6px; background:#fff}
+                   padding-right:6px; background:#fff;
+                   -webkit-print-color-adjust:exact; print-color-adjust:exact}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
 .a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px; overflow:hidden}
@@ -3270,6 +3272,7 @@ function saveResident(){
 
 /* ═══════════ 画面遷移 ═══════════ */
 function showScreen(name){
+  try{a4Off();}catch(e){}   // 画面が動いたらA4様式モードは無効（a4-on 残留の保険）
   ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
   if(name==='list'){
@@ -3342,6 +3345,8 @@ window.addEventListener('popstate',function(ev){
    ・体重は weightView（正本＝体重管理アプリの最新値）を使う
    ・支援経過は新しい順に「紙に入るだけ」出す（1枚固定の様式のため。全件は従来の詳細印刷で出る）
    ・文字は --a4fs 基準で、長文の方は a4Fit() が 10.5→7.5px の範囲で自動的に縮めて1枚に収める */
+/* A4様式のヘッダに刷る施設表記。番号が変わったらここ1箇所だけ直す（公開している代表番号） */
+var A4_FACILITY={name:'有料老人ホーム ラウレアハレ', tel:'096-285-4811'};
 function a4Cell(h,v,flex,cls){
   return '<div class="a4-c"'+(flex?' style="flex:'+flex+'"':'')+'>'+
     '<span class="a4-h">'+esc(h)+'</span><span class="a4-v'+(cls?' '+cls:'')+'">'+esc(String(v==null?'':v).trim()||'　')+'</span></div>';
@@ -3358,6 +3363,19 @@ function renderA4(r){
   var wkg=(w&&w.val)?w.val:(r.weight?r.weight+' kg':'');
   var bmi=(w&&w.bmi)?w.bmi:calcBMI(r.height,r.weight);
   var rh=rhythmOf(r);
+  /* ★「治療中の病気」「問題行動」は様式化後の正データ（diseases[]・bpsd）から組み立てる。
+     旧キー（currentDiseases / problemBehavior）は2026-08-12に入力欄が廃止された凍結値で、
+     新規登録の方は恒久的に空・移行済みの方は古い病名のまま。旧キーは【様式が空の時の控え】に回す。
+     この帳票は救急搬送先・処方と同じ紙に載る＝外部への申し送り想定なので、ここが最重要（H1）。 */
+  var bf=bfView(r);
+  var disTxt=bf.diseases.length
+    ? bf.diseases.map(function(d){
+        return bfStr(d.name)+(bfStr(d.onset)?'（'+bfStr(d.onset)+'）':'');
+      }).filter(String).join('、')
+    : String(r.currentDiseases||'');
+  var bpsdTxt=BF_BPSD.filter(function(p){return bf.bpsd[p[0]]}).map(function(p){return p[1]}).join('、');
+  if(bfStr(bf.bpsd.note))bpsdTxt+=(bpsdTxt?'／':'')+bfStr(bf.bpsd.note);
+  if(!bpsdTxt)bpsdTxt=String(r.problemBehavior||'');
   /* 生活リズム: 旧様式と同じ縦タイムライン。起床・就寝は記録がある方だけ出す */
   var rhyRows=RHYTHM_KEYS.map(function(p){
     var v=rh[p[0]]; if(!v)return'';
@@ -3384,13 +3402,13 @@ function renderA4(r){
   var h=
   '<div class="a4s">'+
     '<div class="a4-head"><div class="a4-title">■利用者基本情報■</div>'+
-      '<div class="a4-fac">有料老人ホーム ラウレアハレ<br>TEL：096-285-4811</div></div>'+
+      '<div class="a4-fac">'+esc(A4_FACILITY.name)+'<br>TEL：'+esc(A4_FACILITY.tel)+'</div></div>'+
     /* ── 基本事項 ── */
     '<div class="a4-sec"><div class="a4-lbl">基本事項</div><div class="a4-bd">'+
       '<div class="a4-row">'+
         a4Cell('氏名',r.name,'1.6')+a4Cell('性別',r.gender,'0.55','ctr')+
         a4Cell('生年月日',fmtWarekiJp(r.birthDate)||r.birthDate,'1.35')+
-        a4Cell('西暦',r.birthDate?('（'+String(r.birthDate).slice(0,10).replace(/-/g,'/')+'）'):'','1.1','ctr nowrap')+
+        a4Cell('西暦',parseIsoDate(r.birthDate)?('（'+String(r.birthDate).slice(0,10).replace(/-/g,'/')+'）'):'','1.1','ctr nowrap')+
         a4Cell('年齢',calcAge(r.birthDate),'0.5','ctr')+a4Cell('介護度',r.careLevel,'0.7','ctr')+
         a4Cell('認定期間',certTerm,'1.3')+a4Cell('負担割合',r.copayRate,'0.7','ctr')+a4Cell('生保の有無',r.welfare,'0.8','ctr')+
       '</div>'+
@@ -3399,7 +3417,7 @@ function renderA4(r){
         a4Cell('入居期間',(function(){var d=a4Days(r.admissionDate,r.dischargeDate);return d?d+' 日':''})(),'0.9','ctr')+
         a4Cell('BMI',bmi,'0.6','ctr')+a4Cell('身長',r.height?r.height+' cm':'','0.8','ctr')+
         a4Cell('体重',wkg,'0.9','ctr')+
-        a4Cell('生活自立度',r.bedriddenRank,'0.9','ctr')+a4Cell('認知症自立度',r.dementia,'1','ctr')+
+        a4Cell('生活自立度',r.bedriddenRank,'0.9','ctr')+a4Cell('認知症自立度',bfNormRank(r.dementia),'1','ctr')+
       '</div>'+
       '<div class="a4-row" style="flex:1;min-height:0"><div class="a4-c" style="flex:0 0 58px"><span class="a4-h">入居前状況</span></div>'+
         '<div class="a4-c a4-free" style="flex:1">'+esc(r.preAdmission||'')+'</div></div>'+
@@ -3424,12 +3442,12 @@ function renderA4(r){
           a4Cell('電話番号',r.hospitalTel,'1')+a4Cell('FAX番号',r.hospitalFax,'1')+'</div>'+
         '<div class="a4-row">'+a4Cell('救急搬送先（希望）',r.emergencyHospital,'1.3')+a4Cell('かかりつけ薬局',r.pharmacy,'1')+
           a4Cell('電話番号',r.pharmacyTel,'1')+a4Cell('FAX番号',r.pharmacyFax,'1')+'</div>'+
-        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'1')+a4Cell('治療中の病気',r.currentDiseases,'1.6')+'</div>'+
+        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'1')+a4Cell('治療中の病気',disTxt,'1.6')+'</div>'+
         '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'1')+a4Cell('既往歴',r.pastHistory,'1.6')+'</div>'+
         '<div class="a4-meds">'+
           '<div><span class="a4-bh">■薬剤情報（定期）■</span><div class="a4-free" style="padding:0">'+esc(r.medsRegular||'')+'</div></div>'+
           '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(r.medsNotes||'')+'</div></div>'+
-          '<div><span class="a4-bh">■問題行動 等■</span><div class="a4-free" style="padding:0">'+esc(r.problemBehavior||'')+'</div></div>'+
+          '<div><span class="a4-bh">■問題行動 等■</span><div class="a4-free" style="padding:0">'+esc(bpsdTxt)+'</div></div>'+
         '</div>'+
       '</div></div>'+
     '</div>'+
@@ -3441,7 +3459,10 @@ function renderA4(r){
       '<div class="a4-c" style="flex:1.6"><span class="a4-bh">■備考■</span><span class="a4-v">'+esc(r.mealNote||'　')+'</span></div>'+
     '</div></div></div>'+
     /* ── 支援経過（残りの紙面を全部使う）── */
-    '<div class="a4-slog"><div class="a4-slog-t">【支援経過】</div><div class="a4-slog-bx">'+slogRows+'</div></div>'+
+    /* ★件数を必ずタイトル側に出す（枠の末尾に置くと、切れた時に注記ごと消える） */
+    '<div class="a4-slog"><div class="a4-slog-t">【支援経過】'+
+      (slog.length?('（全'+slog.length+'件・入りきらない分は「🖨️ 印刷」で出力できます）'):'')+
+    '</div><div class="a4-slog-bx">'+slogRows+'</div></div>'+
   '</div>';
   $('a4sheet').innerHTML=h;
 }
@@ -3449,9 +3470,10 @@ function renderA4(r){
    ★276mm≒1043px（190mm=718px 基準）。支援経過に最低 90px 残す。 */
 function a4Fit(){
   var box=$('a4sheet'), sheet=box.querySelector('.a4s');
-  if(!sheet)return;
+  if(!sheet)return true;
   var slog=sheet.querySelector('.a4-slog');
   box.classList.add('a4-measure');
+  var fit=false;
   try{
     var budget=1043-90;
     for(var fs=10.5; fs>=7.5; fs-=0.5){
@@ -3460,23 +3482,42 @@ function a4Fit(){
       if(slog)slog.style.display='none';
       var hFixed=sheet.getBoundingClientRect().height;
       if(slog)slog.style.display='';
-      if(hFixed<=budget)break;
+      if(hFixed<=budget){fit=true;break;}
     }
-    sheet.style.height='';
   }finally{
+    /* ★高さの一時指定は例外時も必ず戻す。残ると 276mm 固定が効かず用紙をまたぐ */
+    sheet.style.height='';
     box.classList.remove('a4-measure');
   }
+  return fit;
+}
+/* A4様式モードの解除。★冪等にして複数の経路から呼ぶ。
+   afterprint が来ない環境（一部のiPad等）で body.a4-on が残ると、
+   次に押した通常の🖨️印刷が【前に開いていた別の方のA4様式】になる（＝別人の帳票事故）。
+   内容も消す＝前の方の氏名・処方をDOMに残さない。 */
+function a4Off(){
+  document.body.classList.remove('a4-on');
+  var b=$('a4sheet'); if(b)b.innerHTML='';
 }
 function a4Print(){
   if(!curResident)return;
-  renderA4(curResident);
-  a4Fit();
+  a4Off();   // 前回分が残っていても必ず作り直す
+  try{
+    renderA4(curResident);
+    if(!a4Fit())toast('記載量が多く、A4様式1枚には一部が入りません。全件は🖨️ 印刷をお使いください');
+  }catch(e){ a4Off(); toast('⚠️ A4様式を組み立てられませんでした'); return; }
   document.body.classList.add('a4-on');
-  /* 印刷が終わったら必ず通常表示へ戻す（キャンセル時も afterprint は発火する） */
-  var undo=function(){document.body.classList.remove('a4-on');window.removeEventListener('afterprint',undo)};
+  var undo=function(){a4Off();window.removeEventListener('afterprint',undo)};
   window.addEventListener('afterprint',undo);
-  window.print();
+  try{ window.print(); }catch(e){ a4Off(); }
 }
+/* 保険その2: afterprint が発火しない環境向け（印刷メディアの離脱を合図に戻す） */
+try{
+  var _a4mq=matchMedia('print');
+  var _a4mqFn=function(e){ if(!e.matches)a4Off(); };
+  if(_a4mq.addEventListener)_a4mq.addEventListener('change',_a4mqFn);
+  else if(_a4mq.addListener)_a4mq.addListener(_a4mqFn);
+}catch(e){}
 
 /* ═══════════ 端末用途ガード ═══════════ */
 function applyDeviceGuard(){
@@ -3854,7 +3895,8 @@ function init(){
   });
   $('backBtn').addEventListener('click',function(){showScreen('list')});
   $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
-  $('printBtn').addEventListener('click',function(){window.print()});
+  /* ★通常の印刷は必ず通常の見た目で刷る（a4-on の残留を構造的に封じる） */
+  $('printBtn').addEventListener('click',function(){a4Off();window.print()});
   $('a4Btn').addEventListener('click',a4Print);
   $('hospBtn').addEventListener('click',toggleHosp);
   $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
