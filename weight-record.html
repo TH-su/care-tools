@@ -179,6 +179,8 @@ textarea{resize:vertical;min-height:60px}
 /* empty */
 .empty{text-align:center;padding:32px 14px;color:var(--g6);font-size: 0.8125rem}
 .empty svg{width:48px;height:48px;opacity:.35;margin-bottom:8px}
+/* スクリーンリーダー専用（視覚・印刷レイアウトに影響しない） */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 /* chart area */
 .ch-w{position:relative;height:280px;margin-top:4px}
@@ -698,7 +700,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
     <div class="srch">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input type="text" id="listSearch" placeholder="名前・部屋番号で検索">
+      <input type="text" id="listSearch" placeholder="名前・部屋番号で検索" aria-label="名前・部屋番号で検索">
     </div>
     <div class="fc" id="listFilter">
       <button class="on" data-f="all">全員</button>
@@ -984,6 +986,7 @@ select option.is-discharged{color:var(--g6)}
       <button data-f="dn">減少のみ</button>
       <button data-f="up">増加のみ</button>
     </div>
+    <div id="alStatus" class="sr-only" role="status" aria-live="polite"></div>
     <div id="alList"></div>
   </div>
 </section>
@@ -5231,6 +5234,16 @@ function renderAlerts(){
     });
   }
   $('#alMeta').textContent = `${items.length} 件 / 警告 ${all.filter(x=>x.a.level==='ng').length} 件`;
+  // スクリーンリーダー通知は要約のみ（#alList を live にすると同期・フィルタのたびに
+  // 全カードを読み上げるため不可）。フィルタ名を含めるのは件数が同じフィルタ切替でも
+  // 通知するため（同期再描画はフィルタも件数も不変＝同文になり鳴らない）。変化時だけ書く。
+  const st = $('#alStatus');
+  if(st){
+    const fb = $('#alFilter button.on');
+    const fl = fb ? fb.textContent + '：' : '';
+    const msg = items.length===0 ? fl + '対象のアラートはありません' : `${fl}アラート ${items.length} 件`;
+    if(st.textContent !== msg) st.textContent = msg;
+  }
   updateAlertBadge(all);
 }
 
