@@ -779,8 +779,8 @@ select.inp { cursor: pointer; }
     <button class="hdr-btn" onclick="window.open('shift-app.html','_blank')" title="シフト作成アプリを開く">👥 シフト</button>
     <button class="hdr-btn" onclick="openResidentModal()">👤 利用者</button>
     <button class="hdr-btn" onclick="openBulkImport()" title="予定を貼り付けで一括登録">📋 一括取込</button>
-    <button class="hdr-btn" onclick="printWeek()">🖨</button>
-    <button class="hdr-btn" onclick="exportJSON()">⬇</button>
+    <button class="hdr-btn" onclick="printWeek()" aria-label="週ボードを印刷" title="週ボードを印刷">🖨</button>
+    <button class="hdr-btn" onclick="exportJSON()" aria-label="JSONを書き出す" title="JSONを書き出す">⬇</button>
     <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" onclick="manualSave()" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   </div>
 </header>
