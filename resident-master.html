@@ -118,7 +118,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell{border-right:1px solid var(--g3); border-bottom:1px solid var(--g3); padding:3px 7px; min-width:0}
 .cell:last-child{border-right:none}
 .cell .lab{font-size: 0.6875rem; color:var(--g7); display:block; margin-bottom:0; line-height:1.15}
-/* ★値の文字は画面15px（規約下限）を維持し、縮めるのは紙だけ（下の @media print） */
+/* ★値の文字は画面15px（規約下限）を維持し、縮めるのは紙だけ（下の @media print）。
+   例外: w-cert・w-tel・w-num（日付・電話・FAXの数字セル）は1行維持のため画面も13px（2026-08-14 電話欄の指示） */
 .cell .val{font-size: 0.9375rem; word-break:break-word; white-space:pre-wrap; line-height:1.4}
 /* 氏名は太字のまま一回り小さく。紙は 0.9375rem×内容幅 約112px＝7文字＋空白までは1行（2026-08-14 実測）
    （★nowrap にはしない＝それより長いお名前では折り返しを許す。「基本1行」の指示） */
@@ -139,12 +140,14 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    各行の先頭セル（居宅/福祉用具/前の居宅）だけ grow＝残りを吸収。デイ55%系は必ず 電話+FAX の和にする
    （行をまたいで累積%を一致させる＝罫線が一直線になる条件）。紙は下の @media print で別配分
    （紙の幅では2番号ペアがどのみち入らないため、名称・FAXのラベル/値の1行を優先した配分）。
-   w-q は ADL・状態の25%セル（4セル行と3セル行の罫線合わせ） */
+   w-q は ADL・状態の25%セル（4セル行と3セル行の罫線合わせ）。w-h は必ず w-q の2倍にする。
+   ★w-* の basis 合計は各行で必ず100%未満に保つ（超えると flex-wrap でセルが次の行へ落ち、罫線が崩れる） */
 .row-cells .cell.w-b2{flex:0 0 17%}
 .row-cells .cell.w-tel{flex:0 0 39.5%}
 .row-cells .cell.w-b4{flex:0 0 21%}
 .row-cells .cell.w-day{flex:0 0 60.5%; border-right:none}
 .row-cells .cell.w-q{flex:0 0 25%}
+.row-cells .cell.w-h{flex:0 0 50%; border-right:none}
 /* 電話・FAXは数字なので一回り小さくして1行に収める（認定期間 w-cert と同じ作法）。
    w-num は個別セル指定（FAX番号など）。★サ責（人名）は15pxのまま＝w-b4 全体には掛けない */
 .row-cells .cell.w-tel .val,
@@ -153,11 +156,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    2026-08-14 指示: 1枚目に家族情報・事業所・家族構成図まで収めるため、文字と余白を一段縮小 */
 @media print{
   .sheet .cell{padding:2px 5px}
-  .sheet .cell .lab{font-size:0.625rem; line-height:1.1}
+  .sheet .cell .lab{font-size:0.625rem; line-height:1.15}
   .sheet .cell .val{font-size:0.8125rem; line-height:1.3}
   .sheet .cell .val.big{font-size:0.9375rem}
   .sheet .row-cells .cell.w-cert .val{font-size:0.75rem}
-  /* 紙の事業所欄の配分（累積を row3 と一致させる: 名称grow25 → 担当19.9 → 電話30.6 → FAX24.5、デイ=55.1）。
+  /* 紙の事業所欄の配分（累積を row3 と一致させる: 名称grow25 → 担当19.9 → 電話30.1 → FAX25、デイ=55.1）。
      根拠: 紙幅415pxでは「居宅介護支援事業所」ラベル90px・FAX番号12桁90pxの1行維持が先で、電話ペアは折返し許容 */
   .sheet .row-cells .cell.w-b2{flex-basis:19.9%}
   .sheet .row-cells .cell.w-tel{flex-basis:30.1%}
@@ -1873,8 +1876,8 @@ function perResidentLinksHtml(r){
   /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
   /* 2026-08-14 指示: 縦書き見出し（約170pxの高さの原因）をやめ、ボタン高さに圧縮した横並びの帯にする。
      リンクのタップ領域44px（HIG）は維持する */
-  return '<div class="sec sec-applinks"><div class="sec-body" style="display:flex;gap:6px 8px;flex-wrap:wrap;padding:4px 8px;align-items:center">'+
-         '<span style="font-size: 0.6875rem;color:var(--g7);font-weight:700">この方を各アプリで開く</span>'+body+'</div></div>';
+  return '<div class="sec sec-applinks"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 8px;align-items:center">'+
+         '<span style="font-size: 0.8125rem;color:var(--g7);font-weight:700">この方を各アプリで開く</span>'+body+'</div></div>';
 }
 /* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
 function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
@@ -2650,7 +2653,7 @@ function renderView(r){
       '</div>'+
     '</div>'+
     '<div class="row-cells">'+cell('移乗',r.transfer)+cell('更衣・整容',r.dress,false,'w-q')+cell('嚥下',r.swallow,false,'w-q')+cell('水分',r.water,false,'w-q')+'</div>'+
-    '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing,false,'w-q')+'<div class="cell" style="flex:0 0 50%;border-right:none"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
+    '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing,false,'w-q')+'<div class="cell w-h"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
   '</div></div>';
   /* 認知・精神とコミュニケーションを1つにまとめた（2026-08-12）。
      様式化で「留意点」が上の大表へ移り、コミュニケーションの枠が1行だけになったため、
