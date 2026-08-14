@@ -2233,16 +2233,24 @@ function openOkusuri(q){
 }
 /* A4に印刷した時、2列にしたせいで折り返す行が何行あるかを【実測】する。
    ★幅・余白・列間を定数で持たない。本物の DOM（.sheet > .sec > .sec-body > .row-cells > .cell）を
-     A4本文幅で組み、1列版と2列版の各行の高さを比べる。CSS を直しても自動で追従する。
+     A4本文幅で組み、最小の行高さを1行ぶんとして、それを大きく超える行を折返しに数える。
+     CSS を直しても自動で追従する。
+   ★2026-08-15: 測定箱は詳細印刷（renderView）の「薬剤情報」sec と同じ
+     【sec-lbl＋65:35 の2セル】で組む。以前は1セル（枠 実測714px）で測っており、実物の薬剤セル
+     （同構成・718px幅での画面実測 約441px・紙は print CSS 算術で約448px。いずれも border-box）より
+     広い条件＝折返しを過少計上していた（2026-08-14 レビュー指摘）。
+     ★下の sec-lbl 文字列と flex:65/35 は renderView 側と必ず一致させること（比を変えたらここも変える）。
    ★画面には出さない（左端の外に置き、測ったら必ず捨てる）。
-   ※2026-08-14: 紙の .cell padding は print 側で 5px（画面は 7px）になったため、本測定は紙より約4px
-     狭い条件＝折返しを多めに数える保守側。実害はないが「CSSを直しても自動追従」は紙には厳密に成立しない */
+   ※2026-08-14: 紙は .cell padding が 5px（画面7px）・sec-lbl min-width が 24px（画面30px）で
+     セルが数px広く、効能列 .meds2-e の文字も紙では小さく左列が広がるため、本測定は紙より狭い条件
+     ＝折返しを多めに数える保守側。実害はないが「CSSを直しても自動追従」は紙には厳密に成立しない */
 var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
 function medsAuditCountWrap(raw){
   var box=document.createElement('div');
   box.style.cssText='position:absolute;left:-99999px;top:0;width:'+MEDS_A4_CONTENT_PX+'px';
-  box.innerHTML='<div class="sheet"><div class="sec"><div class="sec-body"><div class="row-cells">'+
-    '<div class="cell" style="border-right:none" data-two></div>'+
+  box.innerHTML='<div class="sheet"><div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body"><div class="row-cells">'+
+    '<div class="cell" style="flex:65" data-two></div>'+
+    '<div class="cell" style="flex:35;border-right:none"></div>'+
     '</div></div></div></div>';
   var cellTwo=box.querySelector('[data-two]');
   cellTwo.innerHTML=medsRegularCell(raw);
@@ -2544,7 +2552,9 @@ function renderView(r){
     '<div class="row-cells">'+
       /* 左右の境目は 65:35（2026-08-12 指示で 75:25 から10%ぶん左へ寄せた）。
          ★元は 3:1（=75:25）。2:1 まで狭めると薬剤名の長い方で3行折り返したので、
-           これ以上は狭めないこと（実測値は data-contracts の印刷欄に記載）。 */
+           これ以上は狭めないこと（実測値は data-contracts の印刷欄に記載）。
+         ★この比や sec-lbl を変えたら medsAuditCountWrap の測定箱も同じ構成に変えること
+           （揃えないと「効能辞書の点検」の折返し実測が実物とずれる。2026-08-15） */
       '<div class="cell" style="flex:65">'+medsRegularCell(r.medsRegular)+'</div>'+
       '<div class="cell" style="flex:35;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
     '</div>'+
