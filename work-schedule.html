@@ -640,9 +640,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 </head>
 <body>
 <div class="hdr">
-  <button class="hdr-btn" id="btnPrev">◀</button>
+  <button class="hdr-btn" id="btnPrev" aria-label="前の日へ" title="前日(-1日)">◀</button>
   <div class="hdr-date" id="hdrDate" role="button" title="クリックでカレンダー">----/--/--</div>
-  <button class="hdr-btn" id="btnNext">▶</button>
+  <button class="hdr-btn" id="btnNext" aria-label="次の日へ" title="翌日(+1日)">▶</button>
   <button class="hdr-btn wk" id="btnPrevWeek" title="先週(-7日)">先週</button>
   <button class="hdr-btn wk" id="btnToday" title="今日へ">今日</button>
   <button class="hdr-btn wk" id="btnNextWeek" title="来週(+7日)">来週</button>
@@ -658,8 +658,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="badge ng off" id="badgeShiftChg" title="シフトの未反映はありません">シフト未反映 0</button>
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
-  <button class="hdr-btn" id="btnUndo" disabled>↩</button>
-  <button class="hdr-btn" id="btnRedo" disabled>↪</button>
+  <button class="hdr-btn" id="btnUndo" disabled aria-label="元に戻す" title="元に戻す (Ctrl/Cmd+Z)">↩</button>
+  <button class="hdr-btn" id="btnRedo" disabled aria-label="やり直す" title="やり直す (Ctrl/Cmd+Shift+Z)">↪</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   <span class="save-state" id="saveState"></span>
 </div>
@@ -708,9 +708,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <!-- カレンダー（日付ジャンプ） -->
 <div class="modal" id="mCal">
   <div class="cal-nav">
-    <button class="hdr-btn cal-mbtn" id="calPrev" type="button">◀</button>
+    <button class="hdr-btn cal-mbtn" id="calPrev" type="button" aria-label="前の月へ" title="前の月へ">◀</button>
     <h3 id="calTitle" class="cal-title">----年--月</h3>
-    <button class="hdr-btn cal-mbtn" id="calNext" type="button">▶</button>
+    <button class="hdr-btn cal-mbtn" id="calNext" type="button" aria-label="次の月へ" title="次の月へ">▶</button>
   </div>
   <div class="cal-dow"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
   <div class="cal-grid" id="calGrid"></div>
