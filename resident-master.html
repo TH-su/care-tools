@@ -125,9 +125,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cell .val.big{font-size: 1rem; font-weight:700}
 .row-cells{display:flex; flex-wrap:wrap}
 .row-cells .cell{flex:1}
-/* 幅を食う3セルに明示配分する。氏名だけを広げると認定期間・生年月日が折り返して行が伸びる */
-.row-cells .cell.w-name{flex:2.0}
+/* 幅を食う3セルに明示配分する。氏名だけを広げると認定期間・生年月日が折り返して行が伸びる。
+   認定期間は「開始 〜（改行）終了」の2行表記＋一回り小さい字（表示の形だけ・値は変えない） */
+.row-cells .cell.w-name{flex:2.4}
 .row-cells .cell.w-cert{flex:1.6}
+.row-cells .cell.w-cert .val{font-size:0.8125rem}
 .row-cells .cell.w-birth{flex:1.4}
 /* 紙だけさらに一段詰める（画面の文字下限15pxは守りつつ、頁数を減らす） */
 @media print{
@@ -2388,7 +2390,7 @@ function renderView(r){
     '<div class="row-cells">'+
       cell('氏名',r.name,true,'w-name')+cell('性別',r.gender)+birthCell('生年月日',r.birthDate)+
       cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('介護度',r.careLevel)+
-      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''),false,'w-cert')+
+      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜\n'+r.careCertEnd):''),false,'w-cert')+
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'')+
     '</div>'+
     '<div class="row-cells">'+
