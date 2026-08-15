@@ -80,6 +80,29 @@ const server = app.listen(PORT, HOST, async () => {
   }
 });
 
+// 起動できなかった場合は、安全網に飲み込ませず具体的な対処を案内して終了する
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('');
+    console.error(`  ポート ${PORT} はすでに使用中です。`);
+    console.error('  古いSilverMailが起動したまま残っている可能性があります。');
+    console.error('  （その場合、ブラウザに表示されているのは更新前の古い画面です）');
+    console.error('');
+    console.error('  対処1: 古いSilverMailを終了してから起動し直す');
+    console.error('      npm run stop');
+    console.error('      npm start');
+    console.error('');
+    console.error('  対処2: 別のポートで起動する');
+    console.error(`      PORT=${PORT + 1} npm start`);
+    console.error('');
+  } else if (err.code === 'EACCES') {
+    console.error(`\n  ポート ${PORT} を使用する権限がありません。PORT=8745 npm start のように別のポートをお試しください。\n`);
+  } else {
+    console.error('\n  サーバーを起動できませんでした:', err.message, '\n');
+  }
+  process.exit(1);
+});
+
 async function shutdown() {
   console.log('\n  接続を閉じています…');
   server.close();
