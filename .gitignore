@@ -43,6 +43,14 @@
 !/su-data.js
 !/su-data-gas.js
 
+# SilverMail — 複数アカウント対応ローカルメーラー（2026-08-15）。
+# コードのみ公開。認証情報は ~/.silvermail/（リポジトリ外）とmacOSキーチェーンに保存され、
+# リポジトリ内には一切置かれない設計。念のため下で node_modules と data を明示除外。
+!/mailer
+mailer/node_modules/
+mailer/data/
+mailer/.DS_Store
+
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
 #  gas/ その他（master/med-api/moushiokuri-api/migrate）→ 正本はテーマ gas/（ローカルgit管理・非公開）
