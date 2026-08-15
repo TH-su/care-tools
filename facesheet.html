@@ -676,6 +676,9 @@ function paintTabs(){
 }
 function setView(v){
   curView=VIEWS.indexOf(v)>=0?v:'std';
+  /* ★現場端末では誕生日ビューへ入らない（生年月日が端末に届かず空の帳票になる）。
+     タブも隠しているが、保存値や将来の呼び出し経路からも入れないよう入口で止める */
+  if(isField()&&curView==='bday') curView='std';
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
   fsStripViewParam();
   paintTabs(); paintBdayBar(); renderRoster();
@@ -830,17 +833,22 @@ var weightIdx={};
      値が無い項目はタグごと出さない（現場端末では生年月日等が来ないので自然に出ない）。
    ★キーボードでも開けるようにする（role/tabindex/aria-label はフェイスシート固有の実装）。 */
 function rcardHtml(r){
-  var w=Object.prototype.hasOwnProperty.call(weightIdx,String(r.masterId))?weightIdx[String(r.masterId)]:null;
-  return '<div class="rcard" role="button" tabindex="0" aria-label="'+esc(r.name)+(r.room?('　'+r.room+'号室'):'')+' のフェイスシートを開く" data-id="'+esc(r.masterId)+'">'+
+  /* ★現場端末では 生年月日・身長・体重・入院中 のタグを出さない（2026-08-15 レビュー指摘）。
+     体重は同一オリジンの体重管理アプリ（localStorage）から作るため【サーバー側の役割制御が効かない】。
+     ここで落とさないと、詳細画面は守られているのに一覧だけ素通りする
+     （安全情報28項目に体重・生年月日は含まれない／介護現場要件9「一覧では最小限に」）。 */
+  var office=!isField();
+  var w=office&&Object.prototype.hasOwnProperty.call(weightIdx,String(r.masterId))?weightIdx[String(r.masterId)]:null;
+  return '<div class="rcard" role="button" tabindex="0" aria-label="'+esc(r.name)+(r.room?('　'+esc(r.room)+'号室'):'')+' のフェイスシートを開く" data-id="'+esc(r.masterId)+'">'+
     '<div class="nm">'+esc(r.name)+'</div>'+
     (r.kana?'<div class="kn">'+esc(r.kana)+'</div>':'')+
     '<div class="meta">'+
       (r.room?'<span class="tag room">'+esc(r.room)+'号室</span>':'')+
       (r.careLevel?'<span class="tag care">'+esc(r.careLevel)+'</span>':'')+
       (r.active===false?'<span class="tag out">退去</span>':'')+
-      (r.hospitalized?'<span class="tag hosp">🏥 入院中</span>':'')+
-      (r.birthDate?'<span class="tag bd">'+esc(fmtJDate(r.birthDate))+'生</span>':'')+
-      (r.height?'<span class="tag ht">'+esc(r.height)+'cm</span>':'')+
+      ((office&&r.hospitalized)?'<span class="tag hosp">🏥 入院中</span>':'')+
+      ((office&&r.birthDate)?'<span class="tag bd">'+esc(fmtJDate(r.birthDate))+'生</span>':'')+
+      ((office&&r.height)?'<span class="tag ht">'+esc(r.height)+'cm</span>':'')+
       (w?'<span class="tag wt" title="この端末の体重管理アプリにある最新値（同期状況により古い場合があります）">'+esc(w.weight)+'kg'+(w.on?'（'+esc(String(w.on).slice(0,10))+'）':'')+'</span>':'')+
     '</div></div>';
 }
@@ -860,8 +868,9 @@ function renderRoster(){
     if(q){var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();if(hay.indexOf(q)<0)return false}
     return true;
   }).sort(function(a,b){return String(a.room||'').localeCompare(String(b.room||''),'ja')||String(a.kana||'').localeCompare(String(b.kana||''),'ja')});
-  /* 体重の索引は描画のたびに作り直す。失敗しても空にして一覧は必ず描画する */
-  try{ weightIdx=buildWeightIndex(list); }catch(e){ weightIdx={}; }
+  /* 体重の索引は描画のたびに作り直す。失敗しても空にして一覧は必ず描画する。
+     ★現場端末では索引そのものを作らない（体重は安全情報に含めない・rcardHtml と二重で守る） */
+  try{ weightIdx=isField()?{}:buildWeightIndex(list); }catch(e){ weightIdx={}; }
   var cntEl=$('rosterCount');
   if(cntEl) cntEl.textContent=list.length?(list.length+'名'):'';
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。入居者マスタで登録するか「設定」で接続してください')+'</div>';return}
@@ -1105,6 +1114,9 @@ function weightCells(r){
 function cell(lab,val,big,sub,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val==null||val===''?'　':val)+'</span>'+
   (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'</div>'}
 function full(lab,val){return'<div class="cell" style="border-right:none"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
+/* full() と同じ長文セルだが【右の仕切り線を残す】版。横に2つ以上並べる時、最後以外はこちらを使う
+   （full() を並べると縦罫線が消え、入居者マスタと見た目が食い違う。2026-08-15 レビュー指摘） */
+function fcell(lab,val){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
 /* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
    効能は薬効辞書（meds-effect-dict.js）から引く【参考表示】で、保存はしない。
    入居者マスタの medsRegularCell と同じ判断で、次のどれかなら従来どおり1列で出す:
@@ -1561,10 +1573,12 @@ function renderOfficeView(r){
       '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX番号',r.hospitalFax)+'</div>'+
       '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
       '<div class="row-cells">'+cell('かかりつけ薬局',r.pharmacy)+cell('電話番号',r.pharmacyTel)+cell('FAX番号',r.pharmacyFax)+'</div>'+
-      /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示・マスタと同表記） */
-      '<div class="row-cells">'+full('副作用・禁忌 等',r.sideEffects)+full('既往歴（自由記載）',r.pastHistory)+'</div>'+
-      '<div class="row-cells">'+full('アレルギー',r.allergy)+full('感染症',r.infections)+cell('血液型',r.bloodType)+full('医療処置',r.medicalCare)+'</div>'+
-      '<div class="row-cells">'+full('予防接種歴',r.vaccinations)+
+      /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示・マスタと同表記）。
+         ★full() は必ず border-right:none を付けるので、横に並べる時は【最後以外】に使わない
+           （使うと仕切りの縦罫線が消える）。最後だけ full()、手前は fcell() を使う。 */
+      '<div class="row-cells">'+fcell('副作用・禁忌 等',r.sideEffects)+full('既往歴（自由記載）',r.pastHistory)+'</div>'+
+      '<div class="row-cells">'+fcell('アレルギー',r.allergy)+fcell('感染症',r.infections)+cell('血液型',r.bloodType)+full('医療処置',r.medicalCare)+'</div>'+
+      '<div class="row-cells">'+fcell('予防接種歴',r.vaccinations)+
         '<div class="cell" style="border-right:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div></div>'
     );
   S.meds=
@@ -1643,7 +1657,7 @@ function renderOfficeView(r){
   );
   S.wishes=sec('意向・ACP',
     '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
-    '<div class="row-cells">'+full('本人の意向',r.wishSelf)+full('家族の意向',r.wishFamily)+'</div>'+
+    '<div class="row-cells">'+fcell('本人の意向',r.wishSelf)+full('家族の意向',r.wishFamily)+'</div>'+
     full('生活目標・ニーズ',r.goal)+
     full('看取り・終末期の意向（ACP）',r.acp)+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'
@@ -1733,6 +1747,11 @@ function showScreen(name){
 }
 function applyRoleBadge(){
   var f=isField();var e=$('roleBadge');e.textContent=f?'現場':'事務所';e.className='role'+(f?' field':'');
+  /* ★誕生日ビューは現場端末では使えない（生年月日が端末に届かないので空の帳票になる）。
+     タブごと隠し、既に選ばれていたら標準へ戻す（「壊れている」と誤解されないように） */
+  var bt=$('viewTabs')?$('viewTabs').querySelector('.vtab[data-v="bday"]'):null;
+  if(bt) bt.style.display=f?'none':'';
+  if(f&&curView==='bday') setView('std');
   $('printBtn').style.display=f?'none':'';
   var pa=$('printAllBtn'); if(pa) pa.style.display=f?'none':'';   /* 現場端末では印刷させない（従来と同じ） */
   if(f) saveOpenId(null);   /* 現場端末では開いていた方を覚えない */
@@ -1857,7 +1876,8 @@ function boot(){
   paintTabs(); paintBdayBar();
   renderRoster();
   /* ★事務所端末は毎回 getRoster で取り直す（生年月日・身長・入院中のタグは共有名簿に無いため）。
-     現場端末は従来どおり＝共有名簿だけ。端末に生年月日等を増やさない。 */
+     現場端末は共有名簿を優先し、それが空の時だけ getRoster を呼ぶ（一覧が真っ白になるのを防ぐ）。
+     ★現場端末に余分な項目が届いた場合でも、一覧タグ側（rcardHtml）で落とすので画面には出ない。 */
   if(CFG.url&&!isField())refreshRosterFromGas();
   else if(!has&&CFG.url)refreshRosterFromGas();
   else if(roster.length)setSync('名簿OK','ok');
@@ -1880,7 +1900,14 @@ function boot(){
     if(op!=null&&CFG.url&&!isField()&&roster.some(function(r){return String(r.masterId)===String(op)})) openResident(op);
   }
 }
-window.addEventListener('storage',function(e){if(e.key===COMMON_KEY){loadCommonRoster();renderRoster()}});
+/* 入居者マスタが別タブで共有名簿を更新したら追随する。
+   ★事務所端末は getRoster で取り直す。共有名簿だけを読み直すと、生年月日・身長・入院中の
+     タグが一覧から消えてしまう（次に開き直すまで戻らない）。 */
+window.addEventListener('storage',function(e){
+  if(e.key!==COMMON_KEY)return;
+  loadCommonRoster();
+  if(!isField()&&CFG.url) refreshRosterFromGas(); else renderRoster();
+});
 document.addEventListener('DOMContentLoaded',function(){
   $('q').addEventListener('input',renderRoster);
   /* ビュー切替。矢印キーでも移動できるようにする（role="tab" の期待に合わせる） */

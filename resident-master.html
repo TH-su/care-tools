@@ -791,7 +791,18 @@ function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMont
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
 function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
 function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
-function calcStayDays(adm,dis){if(!adm)return'';var a=new Date(adm);if(isNaN(a))return'';var end=dis?new Date(dis):new Date();var d=Math.floor((end-a)/86400000);return d>=0?d:''}
+/* ISO(YYYY-MM-DD) を【ローカルの0時】の Date にする。不正なら null。
+   new Date('2020-04-01') は UTC 0時になるため、ローカルの「今」と引き算すると時差ぶんずれる */
+function csvLocalDate(iso){
+  var p=parseIsoDate(iso);
+  if(p) return new Date(p.y,p.m-1,p.d);
+  var d=new Date(iso);            // 非ISO（旧データの表記ゆれ）は従来どおり解釈する
+  return isNaN(d)?null:d;
+}
+/* 入居期間（日数）。★2026-08-15 修正: 開始日を new Date('YYYY-MM-DD') で作ると UTC 0時になり、
+   「今」はローカル時刻なので日本時間の 0〜9時だけ結果が1日少なくなっていた（フェイスシートと
+   食い違う）。両方ともローカルの0時基準に揃える。 */
+function calcStayDays(adm,dis){if(!adm)return'';var a=csvLocalDate(adm);if(!a)return'';var end=dis?csvLocalDate(dis):new Date();if(!end)return'';var d=Math.floor((end-a)/86400000);return d>=0?d:''}
 function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
 
 /* ── マスタ項目スキーマ（編集フォーム生成・連携の単一定義） ──
