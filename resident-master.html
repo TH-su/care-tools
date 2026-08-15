@@ -2073,7 +2073,7 @@ function bfDisRowsEdit(list,startIdx){
   return list.map(function(d,n){
     d=d||{}; var i=base+n;
     return '<div class="bfe-row"><span class="bfe-lab">'+(i+1)+'</span><span class="bfe-body">'+
-      bfEditTx('diseases.'+i+'.name',d.name,'病名','30%')+
+      bfEditTx('diseases.'+i+'.name',d.name,'既往歴','30%')+
       bfEditTx('diseases.'+i+'.onset',d.onset,'発症時期','22%')+
       bfEditTx('diseases.'+i+'.hospital',d.hospital,'医療機関','38%')+
     '</span></div>';
@@ -2097,9 +2097,9 @@ function bfEditHtml(r){
   var H='<div class="cd"><div class="fgroup"><h3>入居者基本情報（様式）</h3>'+
     '<p class="muted" style="margin:-4px 0 10px">外部からいただく「入居者基本情報」と同じ並び・同じチェックです。'+
     '空欄のままでも保存できます。</p>';
-  H+='<h4 class="bfe-h">病名・発症時期・医療機関</h4>'+
+  H+='<h4 class="bfe-h">既往歴・発症時期・医療機関</h4>'+
      '<div id="bfDisList">'+bfDisRowsEdit(dis)+'</div>'+
-     '<button class="btn btn-sec" id="bfDisAdd" type="button">＋ 病名を追加</button>'+
+     '<button class="btn btn-sec" id="bfDisAdd" type="button">＋ 既往歴を追加</button>'+
      '<p class="muted" style="margin-top:4px">要らない行は3つとも空にしてください（空の行は保存されません）。</p>';
   H+='<h4 class="bfe-h">介護保険等サービス利用状況（利用頻度等）</h4><div class="bfe-svc">'+
     BF_SERVICES.map(function(p){
@@ -2537,7 +2537,7 @@ function renderView(r){
   }
   /* 病名とサービス利用状況は1つのセクションにまとめる。
      縦書きの見出し（.sec-lbl）が最低の高さを作るので、小さな枠を分けるとそれだけで紙が伸びる（実測） */
-  h+='<div class="sec"><div class="sec-lbl">病名・サービス</div><div class="sec-body">'+
+  h+='<div class="sec"><div class="sec-lbl">既往歴・サービス</div><div class="sec-body">'+
     '<div class="cell" style="border-right:none">'+
       /* 見出しは「既往歴」（2026-08-15 指示。データのキーは diseases のまま＝保存内容は不変） */
       '<table class="bfdis"><thead><tr><th class="bfno"></th><th>既往歴</th>'+
@@ -3086,7 +3086,7 @@ function openEdit(rec){
   })();
   $('bfDisAdd').addEventListener('click',function(){
     var box=$('bfDisList'), n=box.querySelectorAll('.bfe-row').length;
-    if(n>=BF_MAX_DISEASES){ toast('病名は'+BF_MAX_DISEASES+'行までです'); return; }
+    if(n>=BF_MAX_DISEASES){ toast('既往歴は'+BF_MAX_DISEASES+'行までです'); return; }
     box.insertAdjacentHTML('beforeend',bfDisRowsEdit([{}],n));
   });
   showScreen('edit');

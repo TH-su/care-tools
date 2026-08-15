@@ -962,7 +962,8 @@ function bfDiseaseServiceBody(bf){
           '<td class="bfonset">'+esc(d.onset||'')+'</td><td class="bfhosp">'+esc(d.hospital||'')+'</td></tr>';
   }
   return '<div class="cell" style="border-right:none">'+
-      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>病名</th>'+
+      /* 見出しは「既往歴」（2026-08-15 指示。入居者マスタと表記を揃える。データのキーは diseases のまま） */
+      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>既往歴</th>'+
       '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th></tr></thead>'+
       '<tbody>'+rows+'</tbody></table>'+
     '</div>'+
