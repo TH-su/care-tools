@@ -229,8 +229,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bfdis th,.bfdis td{border:1px solid var(--g3); padding:2px 5px; word-break:break-word}
 .bfdis thead th{background:var(--g1); font-size:0.6875rem; color:var(--g7); font-weight:700}
 .bfdis .bfno{width:26px; color:var(--g6); text-align:center}
-.bfdis .bfonset{width:112px}
-.bfdis .bfhosp{width:34%}
+/* 2026-08-15: 既往歴表は「縦3×横2組」＝1行に4列×2。幅は2組ぶんで100%に収まる値にする
+   （旧: onset 112px・hosp 34% の1組ぶん。2組にしたのでそれぞれ半分以下へ） */
+.bfdis .bfonset{width:84px}
+.bfdis .bfhosp{width:16%}
+.bfdis .bfmid{border-left:2px solid var(--g5)}   /* 左右の組の境目 */
 .bflegacy{font-size:0.8125rem; line-height:1.7}
 .bflegacy b{color:var(--g7)}
 /* ── 様式の編集UI（画面のみ。印刷面には出ない） ── */
@@ -2528,19 +2531,27 @@ function renderView(r){
      2026-08-12 管理者の指示で、外部からいただく様式と同じ並び・同じチェック表示にした。
      ★詳細画面と印刷は同じDOM。ここを変えると紙も変わる（今回はそれが指示） */
   var bf=bfView(r);
-  // 病名・発症時期・医療機関（様式の1段目）
+  /* 既往歴・発症時期・医療機関（様式の1段目）。
+     2026-08-15 指示: 縦3×横2列＝6件を出す。番号は左列が上から 1..N、右列が N+1..2N（縦読みのまま）。
+     7件以上の方は行が増える（BF_MAX_DISEASES=8 なので最大4行）。★最低は必ず3行 */
+  var bfDisN=Math.max(3, Math.ceil(bf.diseases.length/2));
   var bfDisRows='';
-  for(var bdi=0; bdi<Math.max(bf.diseases.length,3); bdi++){
-    var bd=bf.diseases[bdi]||{};
-    bfDisRows+='<tr><td class="bfno">'+(bdi+1)+'</td><td>'+esc(bd.name||'')+'</td>'+
-               '<td class="bfonset">'+esc(bd.onset||'')+'</td><td class="bfhosp">'+esc(bd.hospital||'')+'</td></tr>';
+  for(var bdi=0; bdi<bfDisN; bdi++){
+    var bdL=bf.diseases[bdi]||{}, bdR=bf.diseases[bdi+bfDisN]||{};
+    bfDisRows+='<tr><td class="bfno">'+(bdi+1)+'</td><td>'+esc(bdL.name||'')+'</td>'+
+               '<td class="bfonset">'+esc(bdL.onset||'')+'</td><td class="bfhosp">'+esc(bdL.hospital||'')+'</td>'+
+               '<td class="bfno bfmid">'+(bdi+1+bfDisN)+'</td><td>'+esc(bdR.name||'')+'</td>'+
+               '<td class="bfonset">'+esc(bdR.onset||'')+'</td><td class="bfhosp">'+esc(bdR.hospital||'')+'</td></tr>';
   }
   /* 病名とサービス利用状況は1つのセクションにまとめる。
      縦書きの見出し（.sec-lbl）が最低の高さを作るので、小さな枠を分けるとそれだけで紙が伸びる（実測） */
   h+='<div class="sec"><div class="sec-lbl">既往歴・サービス</div><div class="sec-body">'+
     '<div class="cell" style="border-right:none">'+
-      /* 見出しは「既往歴」（2026-08-15 指示。データのキーは diseases のまま＝保存内容は不変） */
+      /* 見出しは「既往歴」（2026-08-15 指示。データのキーは diseases のまま＝保存内容は不変）。
+         横2組なので見出しも2組出す（.bfmid が組の境目の太い縦罫線） */
       '<table class="bfdis"><thead><tr><th class="bfno"></th><th>既往歴</th>'+
+      '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th>'+
+      '<th class="bfno bfmid"></th><th>既往歴</th>'+
       '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th></tr></thead>'+
       '<tbody>'+bfDisRows+'</tbody></table>'+
     '</div>'+
