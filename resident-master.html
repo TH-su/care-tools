@@ -2267,6 +2267,8 @@ function openOkusuri(q){
      セルが数px広く、効能列 .meds2-e の文字も紙では小さく左列が広がるため、本測定は紙より狭い条件
      ＝折返しを多めに数える保守側。実害はないが「CSSを直しても自動追従」は紙には厳密に成立しない */
 var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
+/* 戻り値: 0以上=折り返す行数／-1=測定できず（例外・高さ不取得）。
+   呼び出し側は -1 を件数へ混ぜず「測定できず」として人に見せること（0へ潰すと「0 行 ✅」の誤報になる）。 */
 function medsAuditCountWrap(raw){
   var box=document.createElement('div');
   box.style.cssText='position:absolute;left:-99999px;top:0;width:'+MEDS_A4_CONTENT_PX+'px';
@@ -2295,9 +2297,9 @@ function medsAuditCountWrap(raw){
       if(ph>0&&ph<unit) unit=ph;   /* min(観測最小, プローブ)。ph が取れない異常時は従来どおり観測最小のまま */
       if(isFinite(unit)&&unit>0){
         for(i=0;i<ds.length;i++){ if(ds[i].getBoundingClientRect().height>unit*1.5) n++; }
-      }
+      }else{ n=-1; }   /* 2列はあるのに高さが1つも取れない（実質 unit===Infinity の時だけ）＝測定不能。0件と区別する */
     }
-  }catch(e){ n=0; }
+  }catch(e){ n=-1; }   /* 測定失敗を 0 件に潰さない（潰すと「0 行 ✅」の誤報＝2026-08-15 中指摘） */
   box.parentNode.removeChild(box);
   return n;
 }
@@ -2338,7 +2340,7 @@ function runMedsAudit(){
   if(!confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
       +'数分かかることがあります。始めますか？')) return;
   medsAuditBusy=true; medsAuditStop=false;
-  var st={people:0,withMeds:0,lines:0,hit:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0},err:0};
+  var st={people:0,withMeds:0,lines:0,hit:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0,err:0},err:0};
   var i=0;
   function step(){
     /* 中止ボタン・モーダルを閉じた時はここで止める（閉じても走り続けないこと） */
@@ -2377,7 +2379,8 @@ function runMedsAudit(){
            「折り返し 0 行 ✅」が嘘になる（column-gap を 8→20 に変えた時に実際そうなった）。
            A4の本文幅で【本物の2列ブロックを組んで測る】ので、CSS を変えても自動で追従する。 */
       var wrapped=medsAuditCountWrap(raw);
-      if(wrapped){ st.wrap.people++; st.wrap.lines+=wrapped; }
+      if(wrapped<0){ st.wrap.err++; }   /* -1=測定失敗。0行と混ぜない（✅の誤報防止） */
+      else if(wrapped){ st.wrap.people++; st.wrap.lines+=wrapped; }
       /* ② 手書きの効能との突き合わせ（行数が一致した方だけ） */
       var hw=medsAuditHandwritten(sec.medsNotes);
       if(hw){
@@ -2408,7 +2411,9 @@ function medsAuditRender(out,st,total){
     '<div><b>手書きの効能との一致</b>: '+
       (hwPct===null?'比較できる方がいません':(hwPct+'%（'+st.hw.same+' / '+st.hw.cmp+' 行・対象 '+st.hw.people+' 名'+(st.hw.lenNG?'／行数が合わず比較できず '+st.hw.lenNG+' 名':'')+'）'))+'</div>'+
     '<div><b>A4印刷で折り返す行</b>: '+st.wrap.lines+' 行 / '+st.wrap.people+' 名'+
-      (st.wrap.lines?' <span style="color:var(--warn-tx)">（その方は印刷が1行分ずつ伸びます）</span>':' ✅')+'</div>';
+      /* ✅は「全員ぶん測れて0行」の時だけ。取得できず（st.err）の方も測れていないので✅を出さない（同型の誤報防止） */
+      (st.wrap.lines?' <span style="color:var(--warn-tx)">（その方は印刷が1行分ずつ伸びます）</span>':((st.wrap.err||st.err)?'':' ✅'))+
+      (st.wrap.err?' <span style="color:var(--ng)">⚠ ほかに '+st.wrap.err+' 名は折返しを測定できませんでした＝0行とは数えていません。再読み込み後にもう一度点検してください</span>':'')+'</div>';
   if(keys.length){
     var txt=keys.map(function(k){return k+'\t'+st.unknown[k]}).join('\n');
     h+='<div style="margin-top:8px"><b>辞書に無かった薬剤（'+keys.length+' 種）</b>'+
