@@ -2463,7 +2463,9 @@ function renderView(r){
       cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'',false,'w-sm')+
     '</div>'+
     '<div class="row-cells">'+
-      cell('入居日',r.admissionDate,false,'w-adm')+
+      /* 居室は 2026-08-15 に追加（帳票に部屋番号が無いのは実務上の欠落・フェイスシートと揃える）。
+         ★1行目には入れない。入れると認定期間と生年月日が折り返して紙が伸びる（実測） */
+      cell('居室',r.room,false,'w-sm')+cell('入居日',r.admissionDate,false,'w-adm')+
       /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
          退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示） */
       '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
