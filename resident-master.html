@@ -2696,24 +2696,8 @@ function renderView(r){
   '</div></div>';
   /* ★食事・認知・意思疎通の2欄は、2026-08-15 指示で【病名・サービスの直下】へ移した（上を参照）。
      ここには置かない（同じ欄を2箇所に出さない） */
-  // 支援経過（新しい順）
-  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
-  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
-  /* 2026-08-15 指示: 記録ごとの点線と上下余白を削除して縦圧縮（日付の太字で行の区切りは読める） */
-  var slogHtml=slog.length?slog.map(function(s){
-    return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
-  }).join(''):'<span style="color:var(--g5)">　</span>';
-  h+='<div class="sec"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
-  // 医療支援経過（訪問診療。新しい順）
-  var mlog=Array.isArray(r.medicalSupportLog)?r.medicalSupportLog.slice():[];
-  mlog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
-  if(mlog.length){
-    var mlogHtml=mlog.map(function(s){
-      var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
-      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'')+'</span></div>';
-    }).join('');
-    h+='<div class="sec"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
-  }
+  /* 嗜好・本人らしさ／生活歴／意向・ACP の3欄は【支援経過の上】に置く（2026-08-15 指示で移動）。
+     支援経過は件数で高さが伸びるので、その下に固定の欄を置くと紙のどこに出るか毎回変わっていた */
   // 嗜好・本人らしさ
   h+='<div class="sec"><div class="sec-lbl">嗜好・本人らしさ</div><div class="sec-body">'+
     '<div class="row-cells">'+cell('性格・気質',r.personality)+cell('趣味・特技',r.hobby)+cell('喫煙',r.smoking)+cell('飲酒',r.drinking)+'</div>'+
@@ -2736,6 +2720,26 @@ function renderView(r){
     '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
   '</div></div>';
+  // 支援経過（新しい順）
+  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
+  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  /* 2026-08-15 指示: 記録ごとの点線と上下余白を削除して縦圧縮（日付の太字で行の区切りは読める） */
+  var slogHtml=slog.length?slog.map(function(s){
+    return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
+  }).join(''):'<span style="color:var(--g5)">　</span>';
+  h+='<div class="sec"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
+  // 医療支援経過（訪問診療。新しい順）
+  var mlog=Array.isArray(r.medicalSupportLog)?r.medicalSupportLog.slice():[];
+  mlog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  if(mlog.length){
+    var mlogHtml=mlog.map(function(s){
+      var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
+      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'')+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
+  }
+  /* ★嗜好・本人らしさ／生活歴／意向・ACP の3欄は、2026-08-15 指示で【支援経過の上】へ移した（上を参照）。
+     ここには置かない（同じ欄を2箇所に出さない） */
   // 対象アプリ
   var tApps=Array.isArray(r.targetApps)?r.targetApps:null;
   var tBadges=APP_TARGETS.map(function(p){
