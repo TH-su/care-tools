@@ -517,7 +517,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-slog{flex:1; min-height:0; display:flex; flex-direction:column}
 .a4s .a4-slog-t{font-weight:700; flex:0 0 auto; padding:1px 0}
 .a4s .a4-slog-bx{flex:1; min-height:0; border:1.5px solid #000; padding:2px 4px; overflow:hidden}
-.a4s .a4-slog-r{display:flex; gap:8px; border-bottom:1px dotted #999; padding:1px 0}
+/* 2026-08-15 指示: 日付ごとの横線を削除し、できるだけ詰めて出す（同じ紙により多くの記録が載る）。
+   区切りは日付の太字で読めるので、線が無くても行の始まりは分かる。 */
+.a4s .a4-slog-r{display:flex; gap:6px; padding:0; line-height:1.2}
 .a4s .a4-slog-r .d{flex:0 0 auto; font-weight:600}
 .a4s .a4-slog-r .t{flex:1; min-width:0; white-space:pre-wrap; word-break:break-word}
 /* フィット計測時に画面外へ一時表示するためのクラス（a4Fit が付け外しする） */
