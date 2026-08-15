@@ -27,7 +27,7 @@ async function closeConnection(accountId) {
 }
 
 export function buildClient(account, password) {
-  return new ImapFlow({
+  const client = new ImapFlow({
     host: account.imap.host,
     port: Number(account.imap.port) || 993,
     secure: account.imap.secure !== false,
@@ -36,6 +36,11 @@ export function buildClient(account, password) {
     socketTimeout: 60 * 1000,
     greetingTimeout: 15 * 1000,
   });
+  // ImapFlowは失敗を Promise の reject に加えて 'error' イベントでも通知する。
+  // リスナーが無いとNodeが未捕捉例外としてプロセスごと終了させるため、生成時点で必ず付ける。
+  // （認証失敗の直後にサーバー側から接続を切られた場合などに非同期で発火する）
+  client.on('error', () => { /* 実際の失敗は呼び出し側がrejectで受け取る */ });
+  return client;
 }
 
 async function getClient(account) {
@@ -68,15 +73,16 @@ async function getClient(account) {
 function classifyError(err) {
   const e = new Error(friendlyMessage(err));
   e.cause = err;
-  e.authFailed = String(err?.authenticationFailed || err?.response || err?.message || '')
-    .match(/auth|login|credential|password/i) != null && err?.authenticationFailed !== false
-    ? Boolean(err?.authenticationFailed) : false;
-  if (err?.authenticationFailed) e.authFailed = true;
+  e.authFailed = Boolean(err?.authenticationFailed);
   return e;
 }
 
 function friendlyMessage(err) {
-  if (err?.authenticationFailed) return '認証に失敗しました。メールアドレスとパスワード（アプリパスワード）を確認してください。';
+  if (err?.authenticationFailed) {
+    return 'ログインを拒否されました。ユーザー名とパスワードを確認してください。'
+      + 'Gmail・iCloudでは通常のパスワードではなく「アプリパスワード」が必要です。'
+      + 'また、そのメールアドレスが本当にそのサーバー（例: imap.gmail.com）のアカウントかもご確認ください。';
+  }
   const msg = String(err?.message || err);
   if (/ENOTFOUND|EAI_AGAIN/.test(msg)) return 'サーバーが見つかりません。ホスト名を確認してください。';
   if (/ECONNREFUSED/.test(msg)) return '接続が拒否されました。ポート番号とSSL設定を確認してください。';
@@ -373,6 +379,9 @@ export async function testImap(account, password) {
     return { ok: true };
   } catch (err) {
     throw classifyError(err);
+  } finally {
+    // 失敗時はソケットが残るため必ず後始末する（成功時のlogout後は既に閉じている）
+    try { client.close(); } catch { /* 既に切断済み */ }
   }
 }
 

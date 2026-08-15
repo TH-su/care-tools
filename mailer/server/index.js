@@ -13,6 +13,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8744;
 const HOST = '127.0.0.1';
 
+// 手元で動かすアプリなので「落ちない」ことを最優先する安全網。
+// メールサーバー側の切断など想定外のエラーでプロセスが終了すると、
+// 画面は開いたままなのに操作が一切できなくなるため、記録だけして動き続ける。
+process.on('uncaughtException', (err) => {
+  console.error('  [警告] 想定外のエラーが発生しました（サーバーは継続します）:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('  [警告] 未処理のエラーが発生しました（サーバーは継続します）:', reason?.message || reason);
+});
+
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '30mb' })); // 添付のbase64を考慮
