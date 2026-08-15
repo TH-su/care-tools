@@ -2539,7 +2539,8 @@ function renderView(r){
      縦書きの見出し（.sec-lbl）が最低の高さを作るので、小さな枠を分けるとそれだけで紙が伸びる（実測） */
   h+='<div class="sec"><div class="sec-lbl">病名・サービス</div><div class="sec-body">'+
     '<div class="cell" style="border-right:none">'+
-      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>病名</th>'+
+      /* 見出しは「既往歴」（2026-08-15 指示。データのキーは diseases のまま＝保存内容は不変） */
+      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>既往歴</th>'+
       '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th></tr></thead>'+
       '<tbody>'+bfDisRows+'</tbody></table>'+
     '</div>'+
@@ -2552,6 +2553,21 @@ function renderView(r){
         return bfCk(!!s.on, p[1]+(bfStr(s.name)?('（'+bfStr(s.name)+'）'):''));
       }).join('')+'</div>'+
     '</div></div></div>';
+  /* 食事 →（2026-08-15 指示: この2欄を病名・サービスの直下＝1枚目へ移動。順は 食事 → 認知・意思疎通）
+     ★備考だけを2行目の横長欄へ（2026-08-14 指示・1行目の各項目の下の無駄をなくす） */
+  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+'</div>'+
+    '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div></div>'+
+  '</div></div>';
+  /* 認知・精神とコミュニケーションを1つにまとめた（2026-08-12）。
+     様式化で「留意点」が上の大表へ移り、コミュニケーションの枠が1行だけになったため、
+     縦書き見出しの最低の高さぶん（実測 約120px）が丸ごと無駄になっていた。 */
+  h+='<div class="sec"><div class="sec-lbl">認知・意思疎通</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+
+      cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
+  '</div></div>';
   // 医療情報
   h+='<div class="sec"><div class="sec-lbl">医療情報</div><div class="sec-body">'+
     '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX番号',r.hospitalFax)+'</div>'+
@@ -2663,20 +2679,8 @@ function renderView(r){
     '<div class="row-cells">'+cell('移乗',r.transfer)+cell('更衣・整容',r.dress,false,'w-q')+cell('嚥下',r.swallow,false,'w-q')+cell('水分',r.water,false,'w-q')+'</div>'+
     '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing,false,'w-q')+'<div class="cell w-h"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
   '</div></div>';
-  /* 認知・精神とコミュニケーションを1つにまとめた（2026-08-12）。
-     様式化で「留意点」が上の大表へ移り、コミュニケーションの枠が1行だけになったため、
-     縦書き見出しの最低の高さぶん（実測 約120px）が丸ごと無駄になっていた。 */
-  h+='<div class="sec"><div class="sec-lbl">認知・意思疎通</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+
-      cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
-    '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
-    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
-  '</div></div>';
-  // 食事（2026-08-14 指示: 備考だけを2行目の横長欄へ移し、1行目の各項目の下の無駄をなくす）
-  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body">'+
-    '<div class="row-cells">'+cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+'</div>'+
-    '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div></div>'+
-  '</div></div>';
+  /* ★食事・認知・意思疎通の2欄は、2026-08-15 指示で【病名・サービスの直下】へ移した（上を参照）。
+     ここには置かない（同じ欄を2箇所に出さない） */
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
