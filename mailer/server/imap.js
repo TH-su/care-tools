@@ -9,6 +9,11 @@ const mailboxCache = new Map();   // accountId -> { list, at }
 const previewCache = new Map();   // `${accountId}:${path}:${uid}` -> string
 const IDLE_CLOSE_MS = 5 * 60 * 1000;
 const MAILBOX_CACHE_MS = 60 * 1000;
+// プレビューは冒頭だけ読めればよい。base64は約4/3に膨らむので余裕を見た値。
+const PREVIEW_FETCH_BYTES = 4096;
+// これ以下のパートは丸ごと取る。部分取得（BODY[1]<0.4096>）は空を返すサーバーが
+// あるため、小さい本文では使わず、大きいHTMLメールにだけ使う。
+const PREVIEW_FULL_MAX = 32 * 1024;
 
 function touch(accountId) {
   const entry = pool.get(accountId);
@@ -232,23 +237,73 @@ export async function getPreviews(account, path, uids) {
   if (missing.length === 0) return result;
 
   await withLock(account, path, async (client) => {
-    for (const uid of missing) {
+    // ① 構造をまとめて1コマンドで取得（1通ずつ取ると往復が件数分かかり非常に遅い）
+    const parts = new Map();   // uid -> テキストパートの情報
+    try {
+      for await (const msg of client.fetch(missing.join(','), { uid: true, bodyStructure: true }, { uid: true })) {
+        const part = findTextPart(msg.bodyStructure);
+        if (part) parts.set(msg.uid, part);
+        else result[msg.uid] = '';
+      }
+    } catch {
+      for (const uid of missing) result[uid] = '';
+      return;
+    }
+
+    // ② 同じ取得方法ごとにまとめて本文を取る
+    //    （FETCHは1コマンドで1組のパートしか指定できないため、パート番号でグループ化する）
+    const store = (uid, part, buf, binary) => {
+      if (!buf || buf.length === 0) return false;
+      let text = decodePart(buf, part, binary);
+      if (part.isHtml) text = htmlToPreview(text);
+      const preview = text.replace(/\s+/g, ' ').trim().slice(0, 140);
+      previewCache.set(`${account.id}:${path}:${uid}`, preview);
+      result[uid] = preview;
+      return true;
+    };
+
+    const fetchGroup = async (partKey, groupUids, partial) => {
+      const failed = [];
+      const query = {
+        uid: true,
+        bodyParts: [partial ? { key: partKey, start: 0, maxLength: PREVIEW_FETCH_BYTES } : partKey],
+      };
       try {
-        const msg = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
-        const part = findTextPart(msg?.bodyStructure);
-        if (!part) { result[uid] = ''; continue; }
-        const dl = await client.download(String(uid), part.part, { uid: true, maxBytes: 16 * 1024 });
-        const chunks = [];
-        for await (const c of dl.content) chunks.push(c);
-        let text = decodePart(Buffer.concat(chunks), dl.meta, part);
-        if (part.isHtml) text = htmlToPreview(text);
-        const preview = text.replace(/\s+/g, ' ').trim().slice(0, 140);
-        previewCache.set(`${account.id}:${path}:${uid}`, preview);
-        result[uid] = preview;
+        for await (const msg of client.fetch(groupUids.join(','), query, { uid: true })) {
+          const part = parts.get(msg.uid);
+          // BINARY拡張で取得できた場合はサーバー側で転送符号化が解かれている
+          if (!part || !store(msg.uid, part, msg.bodyParts?.get(partKey), msg.binaryParts?.has(partKey))) {
+            failed.push(msg.uid);
+          }
+        }
       } catch {
-        result[uid] = '';
+        failed.push(...groupUids.filter(u => result[u] === undefined));
+      }
+      return failed;
+    };
+
+    const groups = new Map();   // `${パート番号}|${取得方法}` -> uid配列
+    for (const [uid, part] of parts) {
+      const partial = part.size > PREVIEW_FULL_MAX;
+      const key = `${part.part}|${partial ? 'partial' : 'full'}`;
+      if (!groups.has(key)) groups.set(key, { partKey: part.part, partial, uids: [] });
+      groups.get(key).uids.push(uid);
+    }
+
+    const retryFull = new Map();
+    for (const { partKey, partial, uids: groupUids } of groups.values()) {
+      const failed = await fetchGroup(partKey, groupUids, partial);
+      // 部分取得に対応しないサーバーでは空が返るため、まとめて全体取得で取り直す
+      if (partial && failed.length > 0) {
+        if (!retryFull.has(partKey)) retryFull.set(partKey, []);
+        retryFull.get(partKey).push(...failed);
       }
     }
+    for (const [partKey, retryUids] of retryFull) {
+      await fetchGroup(partKey, retryUids, false);
+    }
+
+    for (const uid of missing) if (result[uid] === undefined) result[uid] = '';
   });
   if (previewCache.size > 5000) {
     // 素朴なLRU代替: 古い半分を捨てる
@@ -264,7 +319,10 @@ function findTextPart(node, prefer = 'plain') {
     if (!n) return [];
     if (n.type === 'text' || /^text\//i.test(n.type || '')) {
       const subtype = (n.subtype || String(n.type).split('/')[1] || '').toLowerCase();
-      return [{ part: n.part || '1', subtype, isHtml: subtype === 'html', encoding: n.encoding, charset: n.parameters?.charset }];
+      return [{
+        part: n.part || '1', subtype, isHtml: subtype === 'html',
+        encoding: n.encoding, charset: n.parameters?.charset, size: n.size || 0,
+      }];
     }
     return (n.childNodes || []).flatMap(walk);
   };
@@ -272,23 +330,64 @@ function findTextPart(node, prefer = 'plain') {
   return parts.find(p => p.subtype === prefer) || parts[0] || null;
 }
 
-function decodePart(buf, meta, part) {
+// 文字コード名の揺れを TextDecoder が解釈できる名前へ寄せる
+// （日本語メールは iso-2022-jp / shift_jis / euc-jp が今も多く使われる）
+const CHARSET_ALIASES = {
+  'jis': 'iso-2022-jp',
+  'iso2022jp': 'iso-2022-jp',
+  'x-sjis': 'shift_jis',
+  'sjis': 'shift_jis',
+  'shift-jis': 'shift_jis',
+  'ms_kanji': 'shift_jis',
+  'windows-932': 'shift_jis',
+  'cp932': 'windows-31j',
+  'x-euc-jp': 'euc-jp',
+  'eucjp': 'euc-jp',
+  'unicode-1-1-utf-8': 'utf-8',
+  'utf8': 'utf-8',
+};
+
+// us-ascii と宣言しつつ実体はUTF-8、というメールが実際には多い。
+// 厳密にUTF-8として読めればUTF-8、読めなければ西欧圏の文字コードとして扱う。
+const ASCII_LABELS = new Set(['us-ascii', 'ascii', 'ansi_x3.4-1968', '', 'unknown-8bit', 'x-unknown']);
+
+function decodeText(data, charset) {
+  const raw = String(charset || '').trim().toLowerCase().replace(/^"|"$/g, '');
+  if (ASCII_LABELS.has(raw)) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(data);
+    } catch {
+      return new TextDecoder('windows-1252').decode(data);
+    }
+  }
+  const name = CHARSET_ALIASES[raw] || raw;
+  for (const candidate of [name, 'utf-8']) {
+    try {
+      return new TextDecoder(candidate).decode(data);
+    } catch { /* 未対応の文字コード名なら次を試す */ }
+  }
+  return data.toString('utf8');
+}
+
+// 生のパート本文（転送符号化されたまま）を読める文字列にする。
+// alreadyDecoded は BINARY 拡張などでサーバー側が符号化を解いて返した場合。
+function decodePart(buf, part, alreadyDecoded = false) {
   const encoding = (part.encoding || '').toLowerCase();
   let data = buf;
-  try {
-    if (encoding === 'base64') data = Buffer.from(buf.toString('ascii').replace(/\s+/g, ''), 'base64');
-    else if (encoding === 'quoted-printable') {
-      data = Buffer.from(buf.toString('ascii')
-        .replace(/=\r?\n/g, '')
-        .replace(/=([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))), 'binary');
-    }
-  } catch { data = buf; }
-  const charset = (part.charset || 'utf-8').toLowerCase();
-  try {
-    return new TextDecoder(charset).decode(data);
-  } catch {
-    return data.toString('utf8');
+  if (!alreadyDecoded) {
+    try {
+      if (encoding === 'base64') {
+        // 途中で切り取った本文でも壊れないよう4文字単位に丸める
+        const b64 = buf.toString('ascii').replace(/[^A-Za-z0-9+/=]/g, '');
+        data = Buffer.from(b64.slice(0, b64.length - (b64.length % 4)), 'base64');
+      } else if (encoding === 'quoted-printable') {
+        data = Buffer.from(buf.toString('latin1')
+          .replace(/=\r?\n/g, '')
+          .replace(/=([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))), 'latin1');
+      }
+    } catch { data = buf; }
   }
+  return decodeText(data, part.charset);
 }
 
 function htmlToPreview(html) {
