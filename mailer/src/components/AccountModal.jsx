@@ -99,6 +99,17 @@ export function AccountModal({ mode, account, accountCount, onClose, onSaved, on
     smtp: { host: form.smtpHost.trim(), port: Number(form.smtpPort) || 465, secure: form.smtpSecure },
   });
 
+  // Gmail・iCloudは「アプリパスワード」（16文字）が必須。通常のログインパスワードを
+  // 入れて拒否されるのが最も多い失敗なので、入力段階で気づけるようにする。
+  const appPwProvider = /(^|\.)gmail\.com$/i.test(form.imapHost.trim()) ? 'Google'
+    : /(^|\.)(icloud|me)\.com$/i.test(form.imapHost.trim()) ? 'Apple' : null;
+  // 表示上の区切り（Googleは空白、Appleはハイフン）は入力に含まれても無視してよい
+  const normalizedPassword = appPwProvider ? form.password.replace(/[\s-]/g, '') : form.password;
+  const appPwWarning = appPwProvider && normalizedPassword.length > 0 && normalizedPassword.length !== 16
+    ? `${appPwProvider}のアプリパスワードは16文字です（入力は${normalizedPassword.length}文字）。`
+      + '通常のログインパスワードでは接続できません。'
+    : null;
+
   const validate = () => {
     const errs = {};
     if (!EMAIL_RE.test(form.email.trim())) errs.email = 'メールアドレスの形式が正しくありません';
@@ -141,7 +152,7 @@ export function AccountModal({ mode, account, accountCount, onClose, onSaved, on
     setTesting(true);
     setTestResult(null);
     try {
-      const body = { account: buildAccount(), password: form.password || undefined };
+      const body = { account: buildAccount(), password: normalizedPassword || undefined };
       if (isEdit && !form.password) body.accountId = account.id;
       const r = await api.testAccount(body.account, body.password, body.accountId);
       setTestResult(r);
@@ -164,8 +175,8 @@ export function AccountModal({ mode, account, accountCount, onClose, onSaved, on
         if (!result?.imap?.ok) { setSaving(false); return; }
       }
       const acct = buildAccount();
-      if (isEdit) await api.updateAccount(account.id, acct, form.password || undefined);
-      else await api.saveAccount(acct, form.password);
+      if (isEdit) await api.updateAccount(account.id, acct, normalizedPassword || undefined);
+      else await api.saveAccount(acct, normalizedPassword);
       toast(isEdit ? 'アカウントを更新しました' : 'アカウントを追加しました', 'success');
       onSaved();
     } catch (err) {
@@ -228,11 +239,22 @@ export function AccountModal({ mode, account, accountCount, onClose, onSaved, on
               {field('表示名', 'name', { placeholder: '例）施設代表' })}
               {field('メールアドレス', 'email', { type: 'email', placeholder: 'you@example.com' })}
             </div>
-            {field('パスワード', 'password', {
-              type: 'password',
-              placeholder: isEdit ? '（変更する場合のみ入力）' : preset?.key === 'gmail' || preset?.key === 'icloud' ? 'アプリパスワード' : 'メールのパスワード',
-              autoComplete: 'new-password',
-            }, isEdit && account.hasPassword ? '保存済みのパスワードを使用中です' : undefined)}
+            <div className="field">
+              <label>パスワード</label>
+              <input
+                type="password"
+                value={form.password}
+                className={fieldErr.password ? 'invalid' : ''}
+                autoComplete="new-password"
+                placeholder={isEdit ? '（変更する場合のみ入力）'
+                  : appPwProvider ? 'アプリパスワード（16文字）' : 'メールのパスワード'}
+                onChange={e => set('password', e.target.value)}
+              />
+              {fieldErr.password && <div className="err">{fieldErr.password}</div>}
+              {!fieldErr.password && appPwWarning && <div className="hint warn">{appPwWarning}</div>}
+              {!fieldErr.password && !appPwWarning && isEdit && account.hasPassword
+                && <div className="hint">保存済みのパスワードを使用中です</div>}
+            </div>
 
             {preset?.key === 'custom' && (
               <div style={{ marginBottom: 14 }}>

@@ -53,7 +53,7 @@ npm run demo             # デモアカウント2つ＋サンプルメール入�
 
 | プロバイダ | 準備すること |
 |---|---|
-| **Gmail** | Googleアカウントで2段階認証を有効にし、[アプリパスワード](https://myaccount.google.com/apppasswords)を作成して、そのパスワードで追加 |
+| **Gmail**（Google Workspaceの独自ドメインを含む） | Googleアカウントで2段階認証を有効にし、[アプリパスワード](https://myaccount.google.com/apppasswords)（16文字）を作成して、そのパスワードで追加。通常のログインパスワードでは接続できません |
 | **iCloud** | [appleid.apple.com](https://account.apple.com/) →「サインインとセキュリティ」→「アプリ用パスワード」を発行 |
 | **Yahoo!メール** | Yahoo!メールの設定で「IMAP・POP・SMTPアクセス」を有効化 |
 | **独自ドメイン**（Xserver・さくら等） | 「その他」を選び、メールアドレス入力後「サーバーを自動検出」。検出できない場合は契約時のメール設定情報（IMAP/SMTPホスト名）を入力 |
