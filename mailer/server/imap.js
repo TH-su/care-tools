@@ -14,6 +14,11 @@ const PREVIEW_FETCH_BYTES = 4096;
 // これ以下のパートは丸ごと取る。部分取得（BODY[1]<0.4096>）は空を返すサーバーが
 // あるため、小さい本文では使わず、大きいHTMLメールにだけ使う。
 const PREVIEW_FULL_MAX = 32 * 1024;
+// 本文表示で読み込む上限。これを超える本文は先頭だけ表示する。
+const MESSAGE_TEXT_MAX = 2 * 1024 * 1024;
+// HTMLに埋め込むインライン画像の上限（sanitize.js側の制限と揃える）
+const INLINE_IMAGE_MAX = 2 * 1024 * 1024;
+const INLINE_TOTAL_MAX = 10 * 1024 * 1024;
 
 function touch(accountId) {
   const entry = pool.get(accountId);
@@ -314,20 +319,88 @@ export async function getPreviews(account, path, uids) {
 }
 
 function findTextPart(node, prefer = 'plain') {
-  if (!node) return null;
+  const { textParts } = collectParts(node);
+  return textParts.find(p => p.subtype === prefer) || textParts[0] || null;
+}
+
+// base64は元データの約4/3の大きさになる（改行分を差し引いた概算）
+function decodedSize(size, encoding) {
+  if (String(encoding || '').toLowerCase() === 'base64') return Math.round(size * 0.73);
+  return size;
+}
+
+// BODYSTRUCTURE を歩いて「本文パート」と「添付・インライン画像」に仕分ける。
+// これにより、巨大な添付を落とさずに本文だけを取得できる。
+function collectParts(root) {
+  const textParts = [];
+  const attachments = [];
   const walk = (n) => {
-    if (!n) return [];
-    if (n.type === 'text' || /^text\//i.test(n.type || '')) {
-      const subtype = (n.subtype || String(n.type).split('/')[1] || '').toLowerCase();
-      return [{
+    if (!n) return;
+    const type = String(n.type || '').toLowerCase();
+    if (Array.isArray(n.childNodes) && n.childNodes.length > 0 && type.startsWith('multipart/')) {
+      n.childNodes.forEach(walk);
+      return;
+    }
+    const disposition = String(n.disposition || '').toLowerCase();
+    const filename = n.dispositionParameters?.filename || n.parameters?.name || null;
+    const cid = n.id ? String(n.id).replace(/[<>]/g, '') : null;
+    const subtype = String(type.split('/')[1] || '').toLowerCase();
+    // 添付として送られたテキスト（notes.txt 等）は本文ではない
+    const isBody = /^text\/(plain|html)$/.test(type) && disposition !== 'attachment';
+    if (isBody) {
+      textParts.push({
         part: n.part || '1', subtype, isHtml: subtype === 'html',
         encoding: n.encoding, charset: n.parameters?.charset, size: n.size || 0,
-      }];
+      });
+      return;
     }
-    return (n.childNodes || []).flatMap(walk);
+    attachments.push({
+      part: n.part || '1',
+      filename,
+      contentType: type || 'application/octet-stream',
+      // BODYSTRUCTUREのサイズは符号化後の値。利用者に見せるのは復号後の目安サイズ。
+      size: decodedSize(n.size || 0, n.encoding),
+      encodedSize: n.size || 0,
+      encoding: n.encoding,
+      cid,
+      inline: disposition === 'inline' && Boolean(cid),
+    });
   };
-  const parts = walk(node);
-  return parts.find(p => p.subtype === prefer) || parts[0] || null;
+  walk(root);
+  return { textParts, attachments };
+}
+
+// 指定したパートをまとめて1コマンドで取得する。
+// 大きいパートは先頭だけ取り、部分取得に対応しないサーバー向けに全体取得で取り直す。
+async function fetchPartBuffers(client, uid, specs) {
+  const out = new Map();
+  if (specs.length === 0) return out;
+
+  const run = async (list, partial) => {
+    const failed = [];
+    const bodyParts = list.map(s => (partial ? { key: s.key, start: 0, maxLength: s.maxBytes } : s.key));
+    try {
+      for await (const msg of client.fetch(String(uid), { uid: true, bodyParts }, { uid: true })) {
+        for (const s of list) {
+          const buf = msg.bodyParts?.get(s.key);
+          if (buf && buf.length > 0) out.set(s.key, { buf, binary: Boolean(msg.binaryParts?.has(s.key)) });
+          else failed.push(s);
+        }
+      }
+    } catch {
+      failed.push(...list.filter(s => !out.has(s.key)));
+    }
+    return failed;
+  };
+
+  const partialSpecs = specs.filter(s => s.maxBytes && s.size > s.maxBytes);
+  const fullSpecs = specs.filter(s => !partialSpecs.includes(s));
+  if (fullSpecs.length > 0) await run(fullSpecs, false);
+  if (partialSpecs.length > 0) {
+    const failed = await run(partialSpecs, true);
+    if (failed.length > 0) await run(failed, false);
+  }
+  return out;
 }
 
 // 文字コード名の揺れを TextDecoder が解釈できる名前へ寄せる
@@ -369,25 +442,45 @@ function decodeText(data, charset) {
   return data.toString('utf8');
 }
 
-// 生のパート本文（転送符号化されたまま）を読める文字列にする。
+// 生のパート（転送符号化されたまま）を元のバイト列に戻す。
 // alreadyDecoded は BINARY 拡張などでサーバー側が符号化を解いて返した場合。
+function decodeBinaryPart(buf, encoding, alreadyDecoded = false) {
+  if (alreadyDecoded) return buf;
+  const enc = String(encoding || '').toLowerCase();
+  try {
+    if (enc === 'base64') {
+      // 途中で切り取った本文でも壊れないよう4文字単位に丸める
+      const b64 = buf.toString('ascii').replace(/[^A-Za-z0-9+/=]/g, '');
+      return Buffer.from(b64.slice(0, b64.length - (b64.length % 4)), 'base64');
+    }
+    if (enc === 'quoted-printable') {
+      return Buffer.from(buf.toString('latin1')
+        .replace(/=\r?\n/g, '')
+        .replace(/=([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))), 'latin1');
+    }
+  } catch { /* 壊れた符号化はそのまま扱う */ }
+  return buf;
+}
+
 function decodePart(buf, part, alreadyDecoded = false) {
-  const encoding = (part.encoding || '').toLowerCase();
-  let data = buf;
-  if (!alreadyDecoded) {
-    try {
-      if (encoding === 'base64') {
-        // 途中で切り取った本文でも壊れないよう4文字単位に丸める
-        const b64 = buf.toString('ascii').replace(/[^A-Za-z0-9+/=]/g, '');
-        data = Buffer.from(b64.slice(0, b64.length - (b64.length % 4)), 'base64');
-      } else if (encoding === 'quoted-printable') {
-        data = Buffer.from(buf.toString('latin1')
-          .replace(/=\r?\n/g, '')
-          .replace(/=([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))), 'latin1');
-      }
-    } catch { data = buf; }
-  }
-  return decodeText(data, part.charset);
+  return decodeText(decodeBinaryPart(buf, part.encoding, alreadyDecoded), part.charset);
+}
+
+// HTML本文 → 引用に使えるプレーンテキスト（改行を保つ）
+function htmlToPlain(html) {
+  return String(html)
+    .replace(/<style\b[\s\S]*?<\/style\s*>/gi, '')
+    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<\/(p|div|tr|li|h[1-6])\s*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (m, n) => String.fromCodePoint(Number(n)))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function htmlToPreview(html) {
@@ -401,26 +494,115 @@ function htmlToPreview(html) {
 }
 
 // ── メッセージ本文 ────────────────────────────────────────────
+const addrValue = (list) => ({ value: (list || []).map(a => ({ name: a.name || '', address: a.address || '' })) });
+
+// mailparser を通さず、必要なパートだけ取得して同じ形に組み立てる。
+// 添付は中身を落とさずメタ情報だけ返すので、巨大な添付があっても本文表示は速い。
+function buildParsed(msg, texts, inlineContents) {
+  const env = msg.envelope || {};
+  const headerText = msg.headers ? msg.headers.toString('utf8') : '';
+  const refLine = headerText.match(/^references:\s*([\s\S]*?)(?:\r?\n(?![ \t])|$)/im);
+  const references = refLine ? (refLine[1].match(/<[^>]+>/g) || []) : [];
+
+  return {
+    subject: env.subject || '',
+    from: addrValue(env.from),
+    to: addrValue(env.to),
+    cc: addrValue(env.cc),
+    replyTo: addrValue(env.replyTo),
+    date: env.date || msg.internalDate || new Date(),
+    messageId: env.messageId || null,
+    inReplyTo: env.inReplyTo || null,
+    references,
+    text: texts.plain || '',
+    html: texts.html || false,
+    attachments: inlineContents,
+  };
+}
+
 export async function getMessage(account, path, uid, { markSeen = true } = {}) {
   return withLock(account, path, async (client) => {
-    const msg = await client.fetchOne(String(uid), { uid: true, source: true, flags: true }, { uid: true });
-    if (!msg?.source) { const e = new Error('メッセージが見つかりません（削除された可能性があります）'); e.status = 404; throw e; }
+    const msg = await client.fetchOne(String(uid), {
+      uid: true, flags: true, envelope: true, bodyStructure: true, internalDate: true,
+      headers: ['references'],
+    }, { uid: true });
+    if (!msg) { const e = new Error('メッセージが見つかりません（削除された可能性があります）'); e.status = 404; throw e; }
     if (markSeen && !msg.flags?.has('\\Seen')) {
       await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true });
     }
-    const parsed = await simpleParser(msg.source, { skipImageLinks: false });
-    return { parsed, flags: msg.flags };
+
+    const { textParts, attachments } = collectParts(msg.bodyStructure);
+    // 構造が読めない特殊なメールは、従来どおり全体を取得して解析する
+    if (textParts.length === 0 && attachments.length === 0) {
+      const full = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
+      if (!full?.source) { const e = new Error('メッセージが見つかりません'); e.status = 404; throw e; }
+      const parsed = await simpleParser(full.source, { skipImageLinks: false });
+      return { parsed, flags: msg.flags };
+    }
+
+    // ① 本文パート（プレーンとHTML）をまとめて取得
+    const plainPart = textParts.find(p => !p.isHtml);
+    const htmlPart = textParts.find(p => p.isHtml);
+    const specs = [];
+    for (const p of [plainPart, htmlPart]) {
+      if (p) specs.push({ key: p.part, size: p.size, maxBytes: MESSAGE_TEXT_MAX });
+    }
+    const bufs = await fetchPartBuffers(client, uid, specs);
+    const readText = (p) => {
+      const hit = p && bufs.get(p.part);
+      return hit ? decodePart(hit.buf, p, hit.binary) : '';
+    };
+    const texts = { plain: readText(plainPart), html: readText(htmlPart) };
+    // HTMLしかないメールでも返信時に引用できるよう、本文テキストを起こしておく
+    if (!texts.plain && texts.html) texts.plain = htmlToPlain(texts.html);
+
+    // ② HTMLが参照しているインライン画像だけを取得（添付本体は取得しない）
+    const inlineContents = attachments.map(a => ({
+      filename: a.filename, contentType: a.contentType, size: a.size,
+      cid: a.cid, contentDisposition: a.inline ? 'inline' : 'attachment',
+    }));
+    if (texts.html) {
+      const referenced = new Set([...texts.html.matchAll(/cid:([^"'\s>)]+)/gi)]
+        .map(m => m[1].replace(/[<>]/g, '')));
+      let budget = INLINE_TOTAL_MAX;
+      const wanted = [];
+      attachments.forEach((a, i) => {
+        if (!a.cid || !referenced.has(a.cid) || a.size > INLINE_IMAGE_MAX || a.size > budget) return;
+        budget -= a.size;
+        wanted.push({ index: i, key: a.part, size: a.size, maxBytes: 0 });
+      });
+      if (wanted.length > 0) {
+        const imgs = await fetchPartBuffers(client, uid, wanted);
+        for (const w of wanted) {
+          const hit = imgs.get(w.key);
+          if (hit) {
+            inlineContents[w.index].content = decodeBinaryPart(hit.buf, attachments[w.index].encoding, hit.binary);
+          }
+        }
+      }
+    }
+
+    return { parsed: buildParsed(msg, texts, inlineContents), flags: msg.flags };
   });
 }
 
 export async function getAttachment(account, path, uid, index) {
   return withLock(account, path, async (client) => {
-    const msg = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
-    if (!msg?.source) { const e = new Error('メッセージが見つかりません'); e.status = 404; throw e; }
-    const parsed = await simpleParser(msg.source);
-    const att = (parsed.attachments || [])[index];
+    const msg = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
+    if (!msg) { const e = new Error('メッセージが見つかりません'); e.status = 404; throw e; }
+    const { attachments } = collectParts(msg.bodyStructure);
+    const att = attachments[index];
     if (!att) { const e = new Error('添付ファイルが見つかりません'); e.status = 404; throw e; }
-    return att;
+    // 該当パートだけを取り出す（メッセージ全体は読み込まない）
+    const dl = await client.download(String(uid), att.part, { uid: true });
+    if (!dl?.content) { const e = new Error('添付ファイルを取得できませんでした'); e.status = 404; throw e; }
+    const chunks = [];
+    for await (const c of dl.content) chunks.push(c);
+    return {
+      filename: att.filename || dl.meta?.filename || `添付ファイル${index + 1}`,
+      contentType: att.contentType || dl.meta?.contentType || 'application/octet-stream',
+      content: Buffer.concat(chunks),
+    };
   });
 }
 
