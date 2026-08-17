@@ -103,6 +103,55 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
+/* ── 印刷しない欄（2026-08-17 指示）──
+   入居者ごとに「この欄は紙に出さない」を選べる（ご家族へお渡しする紙で伏せる用途）。
+   ★画面には従来どおり全部出す。隠すのは紙だけ。
+   ★除外中であることを画面に必ず明示する（黙って消えると「入力が消えた」と誤解され、
+     同じ内容を二重に入力される。原則6「ユーザー記載内容のみを出力」の運用面の担保）。 */
+@media print{
+  [data-nop="1"]{display:none !important}
+  [data-nop-row="1"]{display:none !important}
+  .nop-tag,.nop-mark{display:none !important}
+  /* 行の最後のセルを伏せた時に、紙の右端へ残る縦罫線を消す（applyPrintHide が付ける） */
+  .row-cells .cell.nop-last{border-right:none !important}
+}
+.nop-tag{background:var(--warn-bg); color:var(--warn-tx); font-size:0.75rem; font-weight:700;
+  padding:3px 8px; border-bottom:1px solid var(--g3)}
+.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.6875rem; font-weight:700;
+  border-radius:999px; padding:1px 7px; margin-right:6px; white-space:nowrap}
+.nop-row{opacity:.6}
+/* ── 編集画面の見出しタブ（2026-08-17 指示）──
+   押すとその欄へジャンプする。★表示の切替ではないので入力中の値は失われない。
+   高さ44pxはタップ領域の下限（HIG・介護現場要件2）。事務所PCの幅では2行に収まる。
+   狭い画面では3行以上になるため、タブ帯だけを縦スクロールさせて本文を潰さない。 */
+.etabs{position:sticky; top:var(--hdr-h,52px); z-index:30; background:#fff;
+  border:1px solid var(--g2); border-radius:var(--r); box-shadow:var(--sh);
+  display:flex; flex-wrap:wrap; gap:8px; padding:8px; margin-bottom:10px;
+  max-height:124px; overflow-y:auto}
+/* gap 8px＝隣接要素の間隔の下限（介護現場要件2・誤タップ防止）。
+   max-height は2行ぶん（96px）＋余白16px＋12px。最後の12pxで3行目の頭が覗くので
+   「まだ下に続く」と分かる（ちょうど2行で切ると、隠れたタブの存在に気づけない）。
+   実測: タブ25個の総幅 2567px＝事務所PC（1280px）で3行。選択中のタブは markEditTab が見える位置へ寄せる */
+.etab{min-height:44px; padding:4px 12px; border:1px solid var(--g3); border-radius:22px;
+  background:#fff; color:var(--g7); font-size:0.8125rem; font-weight:700; cursor:pointer;
+  display:inline-flex; align-items:center}
+.etab.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+.etab:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+@media print{.etabs{display:none !important}}
+/* 支援経過（編集画面）: 過去分の折りたたみと読み取り専用の全件一覧 */
+.slog-past{margin:0 0 10px}
+.slog-past>summary{cursor:pointer; min-height:44px; display:flex; align-items:center;
+  font-size:0.8125rem; font-weight:700; color:var(--pri-d)}
+.slog-ro{max-height:320px; overflow-y:auto; border:1px solid var(--g2); border-radius:8px;
+  padding:8px; background:var(--g0)}
+.slog-ro .l{display:flex; gap:10px; padding:3px 0; border-bottom:1px dotted var(--g3); font-size:0.875rem}
+.slog-ro .l:last-child{border-bottom:none}
+.slog-ro .d{flex-shrink:0; font-weight:700; color:var(--pri-d); min-width:96px}
+.slog-ro .t{flex:1; white-space:pre-wrap; word-break:break-word}
+/* 行内の「印刷しない」チェック。ラベルごと押せるようにして44pxを確保する */
+.rowchk{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 8px;
+  font-size:0.8125rem; color:var(--g7); cursor:pointer}
+.rowchk input{width:auto}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
 
 /* ── 詳細（印刷レイアウト） ── */
@@ -596,6 +645,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
     <button class="btn btn-gray" id="editCancel">← 取消</button>
     <button class="btn btn-ok" id="saveBtn">💾 保存</button>
   </div>
+  <!-- 見出しタブ（2026-08-17 指示）。押すとその欄へジャンプする＝表示の切替ではないので
+       入力中の値は失われない。中身は buildEditTabs() が編集フォームの見出しから作る -->
+  <div class="etabs" id="editTabs" role="tablist" aria-label="編集する欄へ移動" hidden></div>
   <div id="editBox"></div>
 </section>
 
@@ -895,7 +947,10 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   // 2026-08-08 から詳細画面の「移行時の退避」欄に読み取り専用で表示する（印刷には出さない）。
   // 入力欄は作らないため、保存時はここを通して引き継ぐ（下の collectForm）。
   // （介護保険証の有効期限・寝具リース・享年など）
-  'unmappedRaw'];
+  'unmappedRaw',
+  /* 印刷しない欄（2026-08-17 追加）。{secs:[欄のキー,…]}。
+     ★ここに載せないと、編集画面でチェックしても保存の最後のホワイトリストで落ちる（無言で効かない） */
+  'printHide'];
 var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
 /* 食事の時刻は施設共通（2026-08-12 指示）。起床・就寝はその方ごとなので既定を置かない。
    ★これは「その方の記録が無いときに施設の標準を出す」重ね合わせ。保存済みの値があれば必ずそちらが勝つ。 */
@@ -2440,6 +2495,83 @@ function medsAuditRender(out,st,total){
   }
   out.innerHTML=h+'</div>';
 }
+/* ══ 印刷しない欄（2026-08-17 指示）══
+   ご家族へお渡しする紙で伏せたい欄を、入居者ごとに選べるようにした。
+   保存先は dataJson の printHide（{secs:[キー,…]}）。GAS は dataJson を丸ごと保存するので
+   サーバー側の変更は要らない。支援経過の「1件ごと」の除外は supportLog の要素に hide:true を
+   持たせる（別キーに日付＋本文で覚えさせると、本文を直した瞬間に対応が切れて除外が外れる）。
+   ★支援経過の同期（入居者マスタの GAS・support-log-sync.gs の _slsMerge）は既存要素を
+     オブジェクトのまま残すので、hide は取り込みで消えない（2026-08-17 実測）。
+
+   ★キーは「欄の見出し文字列」から引く後処理方式にした。renderView / renderFaceSheet の
+     組み立て（20欄・数百行）へ data 属性を足して回るのはデグレの危険が高く、見出しは
+     画面にも紙にも出ている＝人の目でも照合できるため。**見出しを変えたらこの表も直す**。
+   ★facesheet.html の PRINT_SECS / printHideSet / applyPrintHide と逐語同一にすること
+     （食い違うと、同じ設定でマスタは伏せてフェイスシートは出す＝伏せたつもりの情報が紙に載る）。 */
+var PRINT_SECS=[
+  ['basic','基本情報'],['insurance','保険・制度／連絡先'],['careHist','介護度の変更履歴'],
+  ['basicItems','基本事項'],['family','家族情報'],['biz','事業所'],['geno','家族構成図'],
+  ['disease','既往歴・サービス'],['meal','食事'],['mind','認知・意思疎通'],
+  ['medical','医療情報'],['meds','薬剤情報'],['pastMeds','過去の臨時薬'],['adl','ADL・状態'],
+  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・ACP'],
+  ['support','支援経過'],['medSupport','医療支援経過'],['targetApps','対象']
+];
+/* 除外指定を {キー:true} に正規化する。壊れた値・知らないキーは無視する（原則10 受信データを信じない）。
+   ★分からない時は「印刷する」側へ倒す。伏せ漏れは人が気づけるが、黙って消えた欄は気づけない。 */
+function printHideSet(r){
+  var v=r&&r.printHide, out={};
+  var arr=(v&&Array.isArray(v.secs))?v.secs:[];
+  var known={}; PRINT_SECS.forEach(function(p){known[p[0]]=1});
+  arr.forEach(function(k){ if(known[String(k)]) out[String(k)]=true });
+  return out;
+}
+/* 描画後の DOM へ除外を反映する。見出し（.sec-lbl）を持つ枠を1欄とみなすので、
+   .sec だけでなく事業所／家族構成図の2枠（.biz-geno-row の中）も拾える。 */
+function applyPrintHide(box,r){
+  if(!box)return;
+  var hid=printHideSet(r), lab2key={};
+  PRINT_SECS.forEach(function(p){lab2key[p[1]]=p[0]});
+  Array.prototype.forEach.call(box.querySelectorAll('.sec-lbl'),function(lbl){
+    var key=lab2key[(lbl.textContent||'').trim()];
+    if(!key||!hid[key])return;
+    var frame=lbl.parentElement; if(!frame)return;
+    frame.setAttribute('data-nop','1');
+    var body=frame.querySelector('.sec-body');
+    if(body&&!body.querySelector('.nop-tag')){
+      var tag=document.createElement('div');
+      tag.className='nop-tag';
+      tag.textContent='🚫 この欄は印刷しません（画面には出ます）';
+      body.insertBefore(tag,body.firstChild);
+    }
+  });
+  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。両方を伏せると、
+     中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）。全部伏せたら行ごと外す */
+  Array.prototype.forEach.call(box.querySelectorAll('.biz-geno-row'),function(row){
+    var lbls=row.querySelectorAll('.sec-lbl');
+    if(!lbls.length)return;
+    var allHid=Array.prototype.every.call(lbls,function(l){
+      return l.parentElement&&l.parentElement.getAttribute('data-nop')==='1';
+    });
+    if(allHid)row.setAttribute('data-nop','1');
+  });
+  /* ★再掲の始末。安全情報の帯（詳細画面の先頭）とフェイスシートの「サマリ」は、他の欄の値を
+     抜き出して**もう一度**出している。元の欄を伏せてもここに残ると伏せ漏れになる
+     （アレルギー・感染症・医療処置は、まさに家族向けの紙から外したい類の情報）。
+     由来を data-nop-of に書いておき、その欄が伏せられていれば一緒に紙から外す。 */
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-of]'),function(el){
+    if(hid[el.getAttribute('data-nop-of')]) el.setAttribute('data-nop-row','1');
+  });
+  /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
+     見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
+     クラスで付けること（style に直接書くと、伏せたセルが見えている画面側の罫線まで変わる）。 */
+  Array.prototype.forEach.call(box.querySelectorAll('.row-cells'),function(row){
+    var cells=row.querySelectorAll('.cell');
+    if(!cells.length||!cells[cells.length-1].hasAttribute('data-nop-row'))return;
+    for(var i=cells.length-1;i>=0;i--){
+      if(!cells[i].hasAttribute('data-nop-row')){ cells[i].classList.add('nop-last'); break }
+    }
+  });
+}
 function renderView(r){
   var fam=Array.isArray(r.family)?r.family:[];
   var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
@@ -2458,12 +2590,15 @@ function renderView(r){
   var hl=[];
   // 入院中は在不在そのものが変わるため先頭に出す（配薬・記録・食事の手配に直結）
   if(r.hospitalized)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">🏥 入院中</span>');
-  if(r.preferredName)hl.push('<span style="background:var(--pri-l);color:var(--pri-d);border-radius:999px;padding:3px 10px;font-weight:700">🙂 '+esc(r.preferredName)+'</span>');
-  if(r.allergy)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ アレルギー: '+esc(r.allergy)+'</span>');
-  if(r.infections)hl.push('<span style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ 感染症: '+esc(r.infections)+'</span>');
-  if(r.medicalCare)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
-  if(r.mealForm||r.thickener)hl.push('<span style="background:var(--u-bg);color:var(--u);border-radius:999px;padding:3px 10px;font-weight:700">🍚 '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
-  if(r.careHints)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">💡 対応のコツあり</span>');
+  /* ★data-nop-of は「この値がどの欄から来たか」。その欄を『印刷しない』にした時、
+     ここに再掲されたぶんも一緒に紙から外すために要る（伏せ漏れの防止・2026-08-17）。
+     入院中だけは欄に属さない状態表示なので付けない＝伏せ指定では消えない。 */
+  if(r.preferredName)hl.push('<span data-nop-of="mind" style="background:var(--pri-l);color:var(--pri-d);border-radius:999px;padding:3px 10px;font-weight:700">🙂 '+esc(r.preferredName)+'</span>');
+  if(r.allergy)hl.push('<span data-nop-of="medical" style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ アレルギー: '+esc(r.allergy)+'</span>');
+  if(r.infections)hl.push('<span data-nop-of="medical" style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ 感染症: '+esc(r.infections)+'</span>');
+  if(r.medicalCare)hl.push('<span data-nop-of="medical" style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
+  if(r.mealForm||r.thickener)hl.push('<span data-nop-of="meal" style="background:var(--u-bg);color:var(--u);border-radius:999px;padding:3px 10px;font-weight:700">🍚 '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
+  if(r.careHints)hl.push('<span data-nop-of="mind" style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">💡 対応のコツあり</span>');
   if(hl.length)h+='<div class="sec"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+hl.join('')+'</div></div>';
   // この方を各アプリで開く（入居者単位リンク・別タブなので今の画面を失わない）
   h+=perResidentLinksHtml(r);
@@ -2739,8 +2874,11 @@ function renderView(r){
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
   /* 2026-08-15 指示: 記録ごとの点線と上下余白を削除して縦圧縮（日付の太字で行の区切りは読める） */
+  /* 2026-08-17 指示: 1件ごとに「印刷しない」を選べる。画面には薄く残して印を付ける
+     （消してしまうと、伏せたのか記録が無いのかを画面で判別できない） */
   var slogHtml=slog.length?slog.map(function(s){
-    return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
+    var np=!!(s&&s.hide);
+    return'<div'+(np?' data-nop-row="1" class="nop-row"':'')+' style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+(np?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
   }).join(''):'<span style="color:var(--g5)">　</span>';
   h+='<div class="sec"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
   // 医療支援経過（訪問診療。新しい順）
@@ -2799,6 +2937,9 @@ function renderView(r){
   }
   h+='</div>';
   $('viewBox').innerHTML=h;
+  /* 「印刷しない」に指定された欄を紙から外す（画面には帯を付けて残す）。
+     ★描画のいちばん最後に掛ける。renderView 本体には手を入れない（既存レイアウトの保護） */
+  applyPrintHide($('viewBox'),r);
   paintHospBtn(r);
   // ジェノグラム欄クリック → 家系図アプリで作成/編集
   var gb=$('viewBox').querySelector('.geno-box');
@@ -2869,6 +3010,7 @@ function fld(k,label,val,type,opts){
 }
 function openEdit(rec){
   editing=rec?JSON.parse(JSON.stringify(rec)):{id:null,active:true,family:[],rhythm:{}};
+  supportShowAll=false;      // 別の方を開いたら「直近1年」に戻す（前の方の展開状態を持ち越さない）
   if(!Array.isArray(editing.family))editing.family=[];
   if(!editing.rhythm)editing.rhythm={};
   if(!Array.isArray(editing.supportLog))editing.supportLog=[];
@@ -2932,6 +3074,18 @@ function openEdit(rec){
       return'<label class="fld" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--g2);border-radius:8px;padding:10px"><input type="checkbox" data-target="'+p[0]+'"'+(on?' checked':'')+' style="width:auto">'+esc(p[1])+'</label>';
     }).join('')+
   '</div><p class="muted" style="margin-top:6px">既定は全てON。対象外の人だけチェックを外してください（既存記録は削除されません）。</p></div></div>';
+
+  /* 印刷しない欄（2026-08-17 指示）。ご家族へお渡しする紙で伏せたい欄を、この方について選ぶ。
+     ★データは消さない・画面にも従来どおり出る。効くのは紙だけ
+       （入居者マスタの「🖨️ 印刷」「🖨️ A4様式」／フェイスシートの印刷）。
+     ★現場タブレットには届かない（安全情報しか送っていないため。設定の有無に関係なく従来どおり） */
+  var curHide=printHideSet(r);
+  h+='<div class="cd"><div class="fgroup"><h3>印刷しない欄（ご家族へお渡しする紙で伏せる）</h3><div class="fgrid">'+
+    PRINT_SECS.map(function(p){
+      var on=!!curHide[p[0]];
+      return'<label class="fld" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--g2);border-radius:8px;padding:10px;min-height:44px"><input type="checkbox" data-psec="'+p[0]+'"'+(on?' checked':'')+' style="width:auto">'+esc(p[1])+'</label>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">チェックした欄は<b>紙に出ません</b>（画面には「🚫 この欄は印刷しません」と出ます）。支援経過は1件ごとにも選べます（下の「支援経過」欄）。</p></div></div>';
 
   h+='<div class="cd"><div class="fgroup"><h3>基本事項</h3><div class="fgrid">'+
     fld('dischargeTo','退去先（自宅/病院/他施設 等）',r.dischargeTo)+
@@ -3063,7 +3217,10 @@ function openEdit(rec){
     fld('strengths','本人の強み（ストレングス）',r.strengths,'textarea')+'</div></div>';
 
   // 支援経過（日付付きの時系列記録）
-  h+='<div class="cd"><div class="fgroup"><h3>支援経過</h3><div id="supportList"></div>'+
+  //   2026-08-17 指示: ①これまでの記録を全部読める一覧を上に置く ②入力行は既定で直近1年ぶん
+  //   （それ以前は下のボタンで展開）③入力欄は中身の長さに合わせて伸びる
+  h+='<div class="cd"><div class="fgroup"><h3>支援経過</h3>'+
+    '<div id="supportRO"></div><div id="supportList"></div><div id="supportMore"></div>'+
     '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div>';
 
   // 医療支援経過（訪問診療の受け皿。将来は訪問診療アプリから自動取込）
@@ -3124,18 +3281,145 @@ function openEdit(rec){
     box.insertAdjacentHTML('beforeend',bfDisRowsEdit([{}],n));
   });
   showScreen('edit');
+  /* ★画面に出してから組み立てる。非表示のうちは高さ（scrollHeight）が0になり、
+     支援経過の入力欄を中身に合わせて伸ばせない（見た目は56pxのままになる） */
+  buildEditTabs();
+  growAllSupport();
+}
+/* ══ 編集画面の見出しタブ（2026-08-17 指示）══
+   フォームの見出し（.fgroup > h3）からタブを作り、押すとその欄へジャンプする。
+   ★openEdit 本体（23枚のカード）には一切手を入れない後処理方式。カードを増減しても
+     タブは自動で追従する（＝見出しとタブが食い違わない）。
+   ★表示の切替ではないので、入力中の値は失われない。 */
+function hdrH(){ var e=document.querySelector('.hdr'); return e?e.offsetHeight:52 }
+function buildEditTabs(){
+  var bar=$('editTabs'), box=$('editBox');
+  if(!bar||!box)return;
+  /* タブ帯はヘッダーの直下に貼り付ける。ヘッダーの高さは端末幅で変わるので実測して渡す */
+  document.documentElement.style.setProperty('--hdr-h',hdrH()+'px');
+  var hs=box.querySelectorAll('.fgroup>h3');
+  if(!hs.length){bar.hidden=true;bar.innerHTML='';return}
+  var html='';
+  Array.prototype.forEach.call(hs,function(h3,i){
+    var card=h3.closest?h3.closest('.cd'):null;
+    var target=card||h3.parentElement;
+    target.id='ecd-'+i;
+    /* タブの文字は見出しの先頭部分だけにする（「対象アプリ（チェックした人だけ…）」のような
+       長い見出しがそのまま並ぶと、タブ帯が本文より高くなる）。全文は title で読める */
+    var full=(h3.textContent||'').trim();
+    var short=full.split(/[（(]/)[0].trim()||full;
+    html+='<button type="button" class="etab" role="tab" data-go="ecd-'+i+'" title="'+esc(full)+'">'+esc(short)+'</button>';
+  });
+  bar.innerHTML=html;
+  bar.hidden=false;
+  Array.prototype.forEach.call(bar.querySelectorAll('.etab'),function(b){
+    b.addEventListener('click',function(){ gotoEditSec(this.getAttribute('data-go')) });
+  });
+  markEditTab();
+}
+/* ヘッダーとタブ帯のぶんだけ上に余白を取ってスクロールする（見出しが帯の下に隠れないように）。
+   ★編集画面は縦に1万px を超えることがある（実測）。遠い欄へ滑らかに動かすと、長く流れ続けて
+     「どこへ行くのか分からない」ので、離れている時は瞬時に飛ぶ。
+   ★動きを減らす設定（prefers-reduced-motion）を尊重する（規約）。 */
+function gotoEditSec(id){
+  var el=$(id), bar=$('editTabs');
+  if(!el)return;
+  var off=hdrH()+(bar?bar.offsetHeight:0)+8;
+  var y=el.getBoundingClientRect().top+window.pageYOffset-off;
+  if(y<0)y=0;
+  var reduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var far=Math.abs(y-window.pageYOffset)>1200;
+  window.scrollTo({top:y,behavior:(reduce||far)?'auto':'smooth'});
+  markEditTab();
+}
+/* いま画面のどの欄にいるかをタブに反映する（現在地の明示・HIG「深さ」） */
+function markEditTab(){
+  var bar=$('editTabs'); if(!bar||bar.hidden)return;
+  var tabs=bar.querySelectorAll('.etab'), cur=null;
+  var line=hdrH()+bar.offsetHeight+16;
+  Array.prototype.forEach.call(tabs,function(b){
+    var el=$(b.getAttribute('data-go'));
+    if(el&&el.getBoundingClientRect().top<=line) cur=b;
+  });
+  Array.prototype.forEach.call(tabs,function(b){b.classList.toggle('on',b===cur)});
+  if(cur&&cur.offsetTop!=null){
+    /* タブ帯が2行を超えて隠れている時は、選択中のタブを見える位置へ寄せる */
+    var top=cur.offsetTop, bot=top+cur.offsetHeight;
+    if(top<bar.scrollTop||bot>bar.scrollTop+bar.clientHeight) bar.scrollTop=top-4;
+  }
+}
+/* ══ 支援経過（編集画面）══ 2026-08-17 指示で3点を変更した
+   ①入力行は既定で直近1年ぶんだけ（それ以前はボタンで展開）
+   ②入力欄は中身の長さに合わせて伸ばす（全文が見える）
+   ③これまでの記録を読むだけの一覧を上に出す（折りたたみ・新しい順・全件）
+   ★畳んだ行も editing.supportLog にそのまま残る。collectSupport は【画面に出ている行だけ】を
+     書き戻す方式なので、出していない行は元の値のまま保存される（原則4・消さない）。
+   ★行の data-si には【元の配列の位置】を入れること。絞り込み後の連番を入れると、
+     保存・削除・印刷除外が別の日の記録に当たる（表示と書き込み対象のずれ＝§6-⑨ と同型）。 */
+var supportShowAll=false;
+var SUP_RECENT_DAYS=366;        // 「直近1年」。うるう年ぶん1日多く見る
+function supIsRecent(s){
+  var p=parseIsoDate(String((s&&s.date)||'').slice(0,10));
+  if(!p)return true;            // 日付が無い・読めない記録は常に出す（隠れて編集できなくなるのを防ぐ）
+  var now=new Date();
+  var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  return (today-new Date(p.y,p.m-1,p.d))/86400000 <= SUP_RECENT_DAYS;   // 未来日付も「直近」に含める
+}
+function autoGrow(ta){
+  if(!ta)return;
+  ta.style.height='auto';
+  var need=ta.scrollHeight;
+  ta.style.height=Math.max(56,need?need+2:56)+'px';
+}
+function growAllSupport(){
+  var box=$('supportList'); if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.slog-ta'),autoGrow);
 }
 function renderSupportRows(){
-  var box=$('supportList');var h='';
-  editing.supportLog.forEach(function(s,i){
+  var box=$('supportList');if(!box)return;
+  var all=editing.supportLog, h='', shown=0;
+  all.forEach(function(s,i){
+    if(!(supportShowAll||supIsRecent(s)))return;
+    shown++;
     h+='<div class="fam-row" data-si="'+i+'" style="grid-template-columns:160px 1fr">'+
       '<div class="fld"><label>日付</label><input data-sk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
-      '<div class="fld"><label>内容</label><textarea data-sk="text" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<div class="fld"><label>内容</label><textarea data-sk="text" class="slog-ta" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<label class="rowchk" style="grid-column:1/-1"><input type="checkbox" data-shide="1"'+(s.hide?' checked':'')+'>🚫 この記録は印刷しない</label>'+
       '<button class="fam-del" type="button" data-sdel="'+i+'" style="grid-column:1/-1">削除</button>'+
     '</div>';
   });
   box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('.slog-ta'),function(ta){
+    autoGrow(ta);
+    ta.addEventListener('input',function(){autoGrow(this)});
+  });
   Array.prototype.forEach.call(box.querySelectorAll('[data-sdel]'),function(b){b.addEventListener('click',function(){collectSupport();editing.supportLog.splice(parseInt(this.getAttribute('data-sdel')),1);renderSupportRows()})});
+  renderSupportMore(all.length-shown);
+  renderSupportRO();
+}
+/* 「以前の記録も編集する」／「直近1年だけに戻す」。★切り替える前に必ず collectSupport()
+   （入力中の内容を editing へ戻してから描き直す＝打ちかけの文字を捨てない） */
+function renderSupportMore(hiddenCount){
+  var box=$('supportMore'); if(!box)return;
+  if(supportShowAll){
+    box.innerHTML='<button class="btn btn-sec" id="supportLess" type="button" style="margin-bottom:8px">直近1年だけ表示に戻す</button>';
+    $('supportLess').addEventListener('click',function(){collectSupport();supportShowAll=false;renderSupportRows()});
+  }else if(hiddenCount>0){
+    box.innerHTML='<button class="btn btn-sec" id="supportMoreBtn" type="button" style="margin-bottom:8px">以前の記録も編集する（'+hiddenCount+'件）</button>';
+    $('supportMoreBtn').addEventListener('click',function(){collectSupport();supportShowAll=true;renderSupportRows()});
+  }else box.innerHTML='';
+}
+/* これまでの記録を通しで読むための一覧（読むだけ・編集は下の入力行で行う） */
+function renderSupportRO(){
+  var box=$('supportRO'); if(!box)return;
+  var all=editing.supportLog.slice();
+  if(!all.length){box.innerHTML='';return}
+  all.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  box.innerHTML='<details class="slog-past"><summary>これまでの記録をまとめて読む（'+all.length+'件・新しい順）</summary>'+
+    '<div class="slog-ro">'+all.map(function(s){
+      return '<div class="l"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
+        '<span class="t">'+(s&&s.hide?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
+    }).join('')+'</div></details>';
 }
 function collectSupport(){
   var box=$('supportList');if(!box)return;
@@ -3144,6 +3428,10 @@ function collectSupport(){
     Array.prototype.forEach.call(row.querySelectorAll('[data-sk]'),function(inp){
       editing.supportLog[i][inp.getAttribute('data-sk')]=inp.value.trim?inp.value.trim():inp.value;
     });
+    /* 「印刷しない」は true の時だけ持たせる（false を書くと、使っていない方のデータに
+       意味のないキーが増える）。★画面に出ている行だけを見る＝畳んだ行の指定は元のまま残る */
+    var ck=row.querySelector('[data-shide]');
+    if(ck){ if(ck.checked) editing.supportLog[i].hide=true; else delete editing.supportLog[i].hide }
   });
 }
 /* ── 過去の臨時薬（日付付きの時系列記録・supportLog と同型） ── */
@@ -3335,6 +3623,15 @@ function collectForm(){
   BF_LEGACY_KEYS.forEach(function(p){ if(editing[p[0]]!==undefined) rec[p[0]]=editing[p[0]]; });
   rec.targetApps=[];
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  /* 印刷しない欄（2026-08-17）。入力欄が描画されていない時は既存値を温存する
+     （部分フォームでの全消し防止・dayUse / consents と同じ作法）。
+     ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る */
+  var psEls=$('editBox').querySelectorAll('[data-psec]');
+  if(psEls.length){
+    var psOn=[];
+    Array.prototype.forEach.call(psEls,function(inp){if(inp.checked)psOn.push(inp.getAttribute('data-psec'))});
+    if(psOn.length)rec.printHide={secs:psOn};
+  }else if(editing.printHide)rec.printHide=editing.printHide;
   collectMedsPast();
   rec.medsPastLog=editing.medsPastLog.filter(function(s){return s&&(s.date||s.text)});
   collectFam();
@@ -3397,6 +3694,8 @@ function showScreen(name){
   try{a4Off();}catch(e){}   // 画面が動いたらA4様式モードは無効（a4-on 残留の保険）
   ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
+  /* 見出しタブは編集画面のものなので、他の画面へ移ったら隠す（sticky が一覧に貼り付いて残らないように） */
+  if($('editTabs')&&name!=='edit')$('editTabs').hidden=true;
   if(name==='list'){
     window.scrollTo(0,0);
     saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
@@ -3481,10 +3780,46 @@ function a4Days(from,to){
   return (isFinite(d)&&d>=0)?String(d):'';
 }
 function renderA4(r){
-  var w=weightView(r);
+  /* ══ 印刷しない欄（2026-08-17 指示）══
+     A4様式は欄の構成が固定なので「枠は残して中身を空にする」。枠ごと消すと外部様式の体裁
+     （原本との対応）が崩れ、受け取った側がどの欄が抜けたのか分からなくなる。
+     ★描画用のコピーだけを空にする。元の r には一切触らない（画面・保存に影響させない）。
+     ★詳細画面の欄名とA4の欄名は1対1ではない。A4の「基本事項」は詳細の【基本情報＋基本事項】、
+       A4の「治療中の病気」は詳細の【既往歴・サービス】由来、「問題行動 等」は【ADL・状態】由来、
+       生活リズムは詳細の【事業所】欄の中にある。値がどの欄から来ているかで振り分ける。
+     ★A4に出ない欄（認知・意思疎通／嗜好／生活歴／意向・ACP 等）はここに書かない＝指定しても
+       A4の見た目は変わらない（通常の「🖨️ 印刷」では効く）。 */
+  var nop=printHideSet(r), nopW=false;
+  if(Object.keys(nop).length){
+    var A4_CLR={
+      basic:['name','kana','gender','birthDate','careLevel','careCertStart','careCertEnd','certDate',
+             'copayRate','welfare','admissionDate','dischargeDate','height','weight','adl','bedriddenRank','dementia'],
+      basicItems:['preAdmission','postDischarge'],
+      family:['family'],
+      biz:['careOffice','careManager','careOfficeTel','careOfficeFax',
+           'welfareEquip','welfareEquipStaff','welfareEquipTel','rhythm'],
+      medical:['hospital','doctor','hospitalTel','hospitalFax','emergencyHospital',
+               'pharmacy','pharmacyTel','pharmacyFax','allergy','sideEffects','pastHistory'],
+      meds:['medsRegular','medsNotes'],
+      meal:['mealStaple','mealSide','mealNote'],
+      disease:['diseases','currentDiseases'],
+      adl:['bpsd','problemBehavior'],
+      support:['supportLog']
+    };
+    var cp=JSON.parse(JSON.stringify(r));
+    Object.keys(A4_CLR).forEach(function(k){
+      if(!nop[k])return;
+      A4_CLR[k].forEach(function(f){ delete cp[f] });
+    });
+    nopW=!!nop.basic;   // 体重・BMIは体重管理アプリ（localStorage）から引くので別途止める
+    r=cp;
+  }
+  var w=nopW?null:weightView(r);
   var wkg=(w&&w.val)?w.val:(r.weight?r.weight+' kg':'');
-  var bmi=(w&&w.bmi)?w.bmi:calcBMI(r.height,r.weight);
-  var rh=rhythmOf(r);
+  var bmi=nopW?'':((w&&w.bmi)?w.bmi:calcBMI(r.height,r.weight));
+  /* 生活リズムは「保存が無い方にも施設共通の既定時刻を重ねて出す」仕様（2026-08-12 裁定）なので、
+     rhythm を消すだけでは既定が出てしまう。事業所欄を伏せた時はここで止める */
+  var rh=nop.biz?{}:rhythmOf(r);
   /* ★「治療中の病気」「問題行動」は様式化後の正データ（diseases[]・bpsd）から組み立てる。
      旧キー（currentDiseases / problemBehavior）は2026-08-12に入力欄が廃止された凍結値で、
      新規登録の方は恒久的に空・移行済みの方は古い病名のまま。旧キーは【様式が空の時の控え】に回す。
@@ -3519,8 +3854,9 @@ function renderA4(r){
       a4Cell('',nm,'1.1')+a4Cell('',f.address||'','1.5')+a4Cell('',f.phone||'','1')+
       a4Cell('',f.emergency?nm:'','1')+'</div>';
   }).join(''):'<div class="a4-row">'+a4Cell('','','1.1')+a4Cell('','','1.5')+a4Cell('','','1')+a4Cell('','','1')+'</div>';
-  /* 支援経過: 新しい順（詳細画面と同じ並び）。1枚固定の様式なので入るだけ出す */
-  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
+  /* 支援経過: 新しい順（詳細画面と同じ並び）。1枚固定の様式なので入るだけ出す。
+     ★1件ごとに「印刷しない」が付いた記録はここで落とす（2026-08-17） */
+  var slog=Array.isArray(r.supportLog)?r.supportLog.filter(function(s){return s&&!s.hide}):[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
   var slogRows=slog.map(function(s){
     return '<div class="a4-slog-r"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
@@ -4027,6 +4363,14 @@ function init(){
   /* ★通常の印刷は必ず通常の見た目で刷る（a4-on の残留を構造的に封じる） */
   $('printBtn').addEventListener('click',function(){a4Off();window.print()});
   $('a4Btn').addEventListener('click',a4Print);
+  /* 編集画面のスクロールに合わせて「今いる欄」のタブを光らせる（現在地の明示・HIG）。
+     passive でスクロール性能を落とさず、1フレーム1回に間引く。
+     タブが無い画面では markEditTab が即座に戻るので他画面には影響しない */
+  var tabTick=false;
+  window.addEventListener('scroll',function(){
+    if(tabTick)return; tabTick=true;
+    requestAnimationFrame(function(){ tabTick=false; try{markEditTab()}catch(e){} });
+  },{passive:true});
   $('hospBtn').addEventListener('click',toggleHosp);
   $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);

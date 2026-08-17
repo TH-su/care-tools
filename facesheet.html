@@ -58,6 +58,23 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
+/* ── 印刷しない欄（2026-08-17 指示）──
+   入居者ごとの「この欄は紙に出さない」指定。正本は入居者マスタの編集画面で、ここは反映するだけ。
+   ★画面には従来どおり全部出す。隠すのは紙だけ。
+   ★CSS・関数とも resident-master.html と逐語同一にすること（食い違うと、伏せたつもりの欄が
+     こちらの紙にだけ載る）。 */
+@media print{
+  [data-nop="1"]{display:none !important}
+  [data-nop-row="1"]{display:none !important}
+  .nop-tag,.nop-mark{display:none !important}
+  /* 行の最後のセルを伏せた時に、紙の右端へ残る縦罫線を消す（applyPrintHide が付ける） */
+  .row-cells .cell.nop-last{border-right:none !important}
+}
+.nop-tag{background:var(--warn-bg); color:var(--warn-tx); font-size:0.75rem; font-weight:700;
+  padding:3px 8px; border-bottom:1px solid var(--g3)}
+.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.6875rem; font-weight:700;
+  border-radius:999px; padding:1px 7px; margin-right:6px; white-space:nowrap}
+.nop-row{opacity:.6}
 .hdr .role{font-size: 0.6875rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .role.field{background:rgba(230,81,0,.92)}
 .hdr .sync{font-size: 0.75rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
@@ -1185,9 +1202,81 @@ function logList(arr,withMeta){
     var d=fmtJDate(s.date||s.changedAt)||s.date||s.changedAt||'';
     var meta=withMeta?[s.doctor,s.clinic].filter(Boolean).join(' / '):'';
     var tag=(s.source==='vma')?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'';
-    return'<div class="logline"><span class="d">'+esc(d)+'</span><span class="t">'+esc(s.text||s.value||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+tag+'</span></div>';
+    /* 1件ごとの「印刷しない」（入居者マスタで指定・2026-08-17）。画面には薄く残して印を付ける
+       ＝伏せたのか記録が無いのかを画面で見分けられるようにする */
+    var np=!!(s&&s.hide);
+    return'<div class="logline'+(np?' nop-row':'')+'"'+(np?' data-nop-row="1"':'')+'><span class="d">'+esc(d)+'</span><span class="t">'+(np?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||s.value||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+tag+'</span></div>';
   }).join('')+'</div>';
 }
+/* ══ 印刷しない欄（2026-08-17 指示）══
+   指定の正本は入居者マスタの編集画面（dataJson の printHide）。ここは読んで反映するだけで書かない。
+   ★入居者マスタ resident-master.html の PRINT_SECS / printHideSet / applyPrintHide と
+     逐語同一にすること（食い違うと、伏せたつもりの欄がこちらの紙にだけ載る）。
+   ★現場タブレットには printHide が届かない（安全情報しか送っていない）が、そもそも
+     ここで伏せたい要配慮情報は現場へ送られていないので、表示は従来どおりで問題ない。 */
+var PRINT_SECS=[
+  ['basic','基本情報'],['insurance','保険・制度／連絡先'],['careHist','介護度の変更履歴'],
+  ['basicItems','基本事項'],['family','家族情報'],['biz','事業所'],['geno','家族構成図'],
+  ['disease','既往歴・サービス'],['meal','食事'],['mind','認知・意思疎通'],
+  ['medical','医療情報'],['meds','薬剤情報'],['pastMeds','過去の臨時薬'],['adl','ADL・状態'],
+  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・ACP'],
+  ['support','支援経過'],['medSupport','医療支援経過'],['targetApps','対象']
+];
+function printHideSet(r){
+  var v=r&&r.printHide, out={};
+  var arr=(v&&Array.isArray(v.secs))?v.secs:[];
+  var known={}; PRINT_SECS.forEach(function(p){known[p[0]]=1});
+  arr.forEach(function(k){ if(known[String(k)]) out[String(k)]=true });
+  return out;
+}
+function applyPrintHide(box,r){
+  if(!box)return;
+  var hid=printHideSet(r), lab2key={};
+  PRINT_SECS.forEach(function(p){lab2key[p[1]]=p[0]});
+  Array.prototype.forEach.call(box.querySelectorAll('.sec-lbl'),function(lbl){
+    var key=lab2key[(lbl.textContent||'').trim()];
+    if(!key||!hid[key])return;
+    var frame=lbl.parentElement; if(!frame)return;
+    frame.setAttribute('data-nop','1');
+    var body=frame.querySelector('.sec-body');
+    if(body&&!body.querySelector('.nop-tag')){
+      var tag=document.createElement('div');
+      tag.className='nop-tag';
+      tag.textContent='🚫 この欄は印刷しません（画面には出ます）';
+      body.insertBefore(tag,body.firstChild);
+    }
+  });
+  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。両方を伏せると、
+     中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）。全部伏せたら行ごと外す */
+  Array.prototype.forEach.call(box.querySelectorAll('.biz-geno-row'),function(row){
+    var lbls=row.querySelectorAll('.sec-lbl');
+    if(!lbls.length)return;
+    var allHid=Array.prototype.every.call(lbls,function(l){
+      return l.parentElement&&l.parentElement.getAttribute('data-nop')==='1';
+    });
+    if(allHid)row.setAttribute('data-nop','1');
+  });
+  /* ★再掲の始末。安全情報の帯（詳細画面の先頭）とフェイスシートの「サマリ」は、他の欄の値を
+     抜き出して**もう一度**出している。元の欄を伏せてもここに残ると伏せ漏れになる
+     （アレルギー・感染症・医療処置は、まさに家族向けの紙から外したい類の情報）。
+     由来を data-nop-of に書いておき、その欄が伏せられていれば一緒に紙から外す。 */
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-of]'),function(el){
+    if(hid[el.getAttribute('data-nop-of')]) el.setAttribute('data-nop-row','1');
+  });
+  /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
+     見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
+     クラスで付けること（style に直接書くと、伏せたセルが見えている画面側の罫線まで変わる）。 */
+  Array.prototype.forEach.call(box.querySelectorAll('.row-cells'),function(row){
+    var cells=row.querySelectorAll('.cell');
+    if(!cells.length||!cells[cells.length-1].hasAttribute('data-nop-row'))return;
+    for(var i=cells.length-1;i>=0;i--){
+      if(!cells[i].hasAttribute('data-nop-row')){ cells[i].classList.add('nop-last'); break }
+    }
+  });
+}
+/* 再掲セルに「どの欄から来た値か」を書き込む。cell()/full() は必ず '<div class="cell"' で始まるので
+   先頭1回だけ差し替える。★ラッパーの div で包まないこと（.sec-body 直下の罫線構造が変わる） */
+function nopOf(html,key){ return String(html).replace('<div class="cell"','<div class="cell" data-nop-of="'+key+'"') }
 function careHistHtml(arr){
   var a=Array.isArray(arr)?arr.slice():[];
   a.sort(function(x,y){return String((y&&y.changedAt)||'').localeCompare(String((x&&x.changedAt)||''))});
@@ -1532,12 +1621,16 @@ function renderOfficeView(r){
        あちらの配置を変えたらこちらも変えること。 */
   var S={};
   // サマリ（本アプリ固有。マスタには無い「要点の再掲」）
+  /* ★サマリは他の欄の値の再掲。nopOf で「どの欄から来たか」を書いておき、その欄を
+     『印刷しない』にした時はここも紙から外す（伏せ漏れの防止・2026-08-17）。
+     ★空欄にせず、セルごと外す。アレルギー欄が空欄で紙に出ると、ご家族は「アレルギーなし」と
+       読む＝伏せたことが誤った安心に変わる。 */
   S.summary=sec('サマリ',
-    '<div class="row-cells">'+cell('氏名',r.name,true)+cell('呼称',r.preferredName)+cell('介護度',r.careLevel)+cell('居室',r.room)+'</div>'+
-    '<div class="row-cells">'+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('性別',r.gender)+cell('移動',r.mobility)+cell('食形態',[r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join('/'))+'</div>'+
-    full('アレルギー / 感染症',[r.allergy,r.infections].filter(Boolean).join(' ／ '))+
-    full('医療処置',r.medicalCare)+
-    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
+    '<div class="row-cells">'+cell('氏名',r.name,true)+nopOf(cell('呼称',r.preferredName),'mind')+cell('介護度',r.careLevel)+cell('居室',r.room)+'</div>'+
+    '<div class="row-cells">'+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('性別',r.gender)+cell('移動',r.mobility)+nopOf(cell('食形態',[r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join('/')),'meal')+'</div>'+
+    nopOf(full('アレルギー / 感染症',[r.allergy,r.infections].filter(Boolean).join(' ／ ')),'medical')+
+    nopOf(full('医療処置',r.medicalCare),'medical')+
+    '<div class="cell" data-nop-of="mind" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
   );
   var chist=careHistHtml(r.careLevelHistory);
   var wt=weightCells(r);   // 体重・BMI は体重管理アプリの最新値を優先（無ければマスタの静的値）
@@ -1691,6 +1784,10 @@ function renderOfficeView(r){
   $('ftabs').setAttribute('role','tablist');
   $('ftabs').innerHTML=TABS.map(function(t){return'<button class="ftab'+(t[0]===actTab?' on':'')+'" role="tab" aria-selected="'+(t[0]===actTab?'true':'false')+'" aria-controls="panel-'+t[0]+'" data-tab="'+t[0]+'">'+esc(t[1])+'</button>'}).join('');
   $('viewBox').innerHTML=TABS.map(function(t){return'<div class="fpanel'+(t[0]===actTab?' on':'')+'" role="tabpanel" id="panel-'+t[0]+'" aria-label="'+esc(t[1])+'" data-panel="'+t[0]+'">'+(P[t[0]]||'')+'</div>'}).join('');
+  /* 入居者マスタで「印刷しない」に指定された欄を紙から外す（画面には帯を付けて残す）。
+     ★全パネルに一括で掛ける。同じ欄がカテゴリタブと「全体」タブの2箇所に出るため、
+       片方だけに掛けると、そのタブから印刷したときだけ載る */
+  applyPrintHide($('viewBox'),r);
 
   Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(b){
     b.addEventListener('click',function(){
