@@ -3936,9 +3936,11 @@ function renderA4(r){
         a4Cell('認定期間',certTerm,'1.3')+a4Cell('負担割合',r.copayRate,'0.7','ctr')+
         /* 生保の有無（2026-08-17 指示）: 受給なし＝「無」・受給あり＝「有」と出す。
            ★welfare は真偽値。そのまま渡すと紙に「true」「false」と英字が出ていた（実測）。
+           ★真偽の判定は bulkTruthy を通す。素の truthy で見ると、旧形式の '無'・'なし'・'0' が
+             入っていた時に一括編集画面は「無」・この紙は「有」と食い違う（請求・公費に直結する）。
            ★基本情報を「印刷しない」にした時だけは空欄にする。伏せた欄に「無」と断定を出すと、
              伏せたことが「受給なし」という誤った事実として紙に残る（未入力の方は従来どおり「無」）。 */
-        a4Cell('生保の有無',(nop.basic?'':(r.welfare?'有':'無')),'0.8','ctr')+
+        a4Cell('生保の有無',(nop.basic?'':(bulkTruthy(r.welfare)?'有':'無')),'0.8','ctr')+
       '</div>'+
       '<div class="a4-row">'+
         a4Cell('入居日',fmtJDate(r.admissionDate)||r.admissionDate,'1.2')+a4Cell('退去日',fmtJDate(r.dischargeDate)||r.dischargeDate,'1.2')+
