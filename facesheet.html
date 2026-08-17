@@ -69,10 +69,14 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   .nop-tag,.nop-mark{display:none !important}
   /* 行の最後のセルを伏せた時に、紙の右端へ残る縦罫線を消す（applyPrintHide が付ける） */
   .row-cells .cell.nop-last{border-right:none !important}
+  /* 事業所を伏せた時に、右隣（家族構成図）の枠の左罫線が紙の左内縁へ来るのを消す。
+     ★家族構成図の枠は border-left をインラインで持つので !important が要る */
+  .biz-geno-row>.nop-first{border-left:none !important}
 }
 .nop-tag{background:var(--warn-bg); color:var(--warn-tx); font-size:0.75rem; font-weight:700;
   padding:3px 8px; border-bottom:1px solid var(--g3)}
-.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.6875rem; font-weight:700;
+/* 13px＝業務ツールの下限。「印刷しない」は取り違えると事故になる印なので小さくしない */
+.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.8125rem; font-weight:700;
   border-radius:999px; padding:1px 7px; margin-right:6px; white-space:nowrap}
 .nop-row{opacity:.6}
 .hdr .role{font-size: 0.6875rem; background:rgba(255,255,255,.18); padding:3px 9px; border-radius:14px; white-space:nowrap}
@@ -1246,15 +1250,19 @@ function applyPrintHide(box,r){
       body.insertBefore(tag,body.firstChild);
     }
   });
-  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。両方を伏せると、
-     中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）。全部伏せたら行ごと外す */
+  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。
+     ・両方を伏せる → 中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）→ 行ごと外す
+     ・事業所だけ伏せる → 右隣（家族構成図）の枠の左罫線が【紙の左内縁】に来て、シート枠のすぐ内側に
+       余分な縦線が1本走る（行の高さぶん・実測150px超）→ 見えている先頭の枠の左罫線を紙でだけ消す */
   Array.prototype.forEach.call(box.querySelectorAll('.biz-geno-row'),function(row){
     var lbls=row.querySelectorAll('.sec-lbl');
     if(!lbls.length)return;
-    var allHid=Array.prototype.every.call(lbls,function(l){
-      return l.parentElement&&l.parentElement.getAttribute('data-nop')==='1';
-    });
-    if(allHid)row.setAttribute('data-nop','1');
+    var frames=Array.prototype.map.call(lbls,function(l){return l.parentElement});
+    var vis=frames.filter(function(f){return f&&f.getAttribute('data-nop')!=='1'});
+    if(!vis.length){ row.setAttribute('data-nop','1'); return }
+    /* ★先頭が伏せられた時だけ付ける。伏せていない時に付けると、指定ゼロの方の帳票にも
+       クラスが載る（今は見た目が変わらないが、将来の CSS 変更で効きはじめる） */
+    if(vis[0]!==frames[0]) vis[0].classList.add('nop-first');
   });
   /* ★再掲の始末。安全情報の帯（詳細画面の先頭）とフェイスシートの「サマリ」は、他の欄の値を
      抜き出して**もう一度**出している。元の欄を伏せてもここに残ると伏せ漏れになる
@@ -1262,6 +1270,22 @@ function applyPrintHide(box,r){
      由来を data-nop-of に書いておき、その欄が伏せられていれば一緒に紙から外す。 */
   Array.prototype.forEach.call(box.querySelectorAll('[data-nop-of]'),function(el){
     if(hid[el.getAttribute('data-nop-of')]) el.setAttribute('data-nop-row','1');
+  });
+  /* ★中身が全部伏せられた入れ物は、入れ物ごと外す。
+     残すと紙に「空の帯」「空の行」＝罫線と余白だけが出る（安全情報の帯は実測17px）。
+     見出し（.sec-lbl）を持たない枠＝安全情報の帯なので、枠そのものも外す。
+     見出しを持つ枠（＝欄）は外さない＝欄の存在は残す（伏せたのは中身の再掲だけ）。 */
+  var conts=[];
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-row]'),function(el){
+    if(el.parentElement&&conts.indexOf(el.parentElement)<0)conts.push(el.parentElement);
+  });
+  conts.forEach(function(p){
+    if(!p.children.length)return;
+    var allHid=Array.prototype.every.call(p.children,function(c){return c.hasAttribute('data-nop-row')});
+    if(!allHid)return;
+    p.setAttribute('data-nop-row','1');
+    var sec=p.closest?p.closest('.sec'):null;
+    if(sec&&!sec.querySelector('.sec-lbl'))sec.setAttribute('data-nop','1');
   });
   /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
      見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
@@ -1274,9 +1298,17 @@ function applyPrintHide(box,r){
     }
   });
 }
-/* 再掲セルに「どの欄から来た値か」を書き込む。cell()/full() は必ず '<div class="cell"' で始まるので
-   先頭1回だけ差し替える。★ラッパーの div で包まないこと（.sec-body 直下の罫線構造が変わる） */
-function nopOf(html,key){ return String(html).replace('<div class="cell"','<div class="cell" data-nop-of="'+key+'"') }
+/* 再掲セルに「どの欄から来た値か」を書き込む。★ラッパーの div で包まないこと
+   （.sec-body 直下の罫線構造が変わる）。
+   ★cell() に列幅クラスを渡すと '<div class="cell w-sm"' になる。固定文字列で置換すると
+     【何も起きず例外も出ない】＝伏せ漏れに化けるので、クラス付きも拾える正規表現で置換し、
+     当たらなかった時は開発中に気づけるよう画面へ出す（値は出さない＝個人情報を残さない）。 */
+function nopOf(html,key){
+  var s=String(html);
+  var out=s.replace(/<div class="(cell[^"]*)"/, '<div class="$1" data-nop-of="'+key+'"');
+  if(out===s){ try{ toast('⚠ 印刷除外の紐づけに失敗しました（'+key+'）'); }catch(e){} }
+  return out;
+}
 function careHistHtml(arr){
   var a=Array.isArray(arr)?arr.slice():[];
   a.sort(function(x,y){return String((y&&y.changedAt)||'').localeCompare(String((x&&x.changedAt)||''))});
@@ -1535,13 +1567,18 @@ function renderHlBand(r){
   /* 入院中は在不在そのものが変わる（配薬・食事・記録の手配に直結）ため先頭に出す。
      現場ロール（安全項目のみ）でも見えるよう SAFE_FIELDS に hospitalized を含めている。
      受信値は !!v で正規化する（文字列 'true' 等が来ても真偽で扱う）。 */
+  /* ★data-nop-of は「この値がどの欄から来たか」。その欄を『印刷しない』にした時、
+     ここに再掲されたぶんも一緒に紙から外すために要る（伏せ漏れの防止・2026-08-17）。
+     ★この帯は #viewBox の【外】にあるので、applyPrintHide を別途この帯にも掛けること
+       （掛け忘れると、医療情報を伏せてもアレルギー・感染症・医療処置が紙に残る）。
+     入院中だけは欄に属さない状態表示なので付けない＝伏せ指定では消えない。 */
   if(!!r.hospitalized)hl.push('<span class="hlchip hl-warn">🏥 入院中</span>');
-  if(r.preferredName)hl.push('<span class="hlchip hl-info">🙂 呼称: '+esc(r.preferredName)+'</span>');
-  if(r.allergy)hl.push('<span class="hlchip hl-danger">⚠ アレルギー: '+esc(r.allergy)+'</span>');
-  if(r.infections)hl.push('<span class="hlchip hl-danger">⚠ 感染症: '+esc(r.infections)+'</span>');
-  if(r.medicalCare)hl.push('<span class="hlchip hl-warn">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
-  if(r.mealForm||r.thickener)hl.push('<span class="hlchip hl-info">🍚 食事: '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
-  if(r.careHints)hl.push('<span class="hlchip hl-warn">💡 対応のコツあり</span>');
+  if(r.preferredName)hl.push('<span class="hlchip hl-info" data-nop-of="mind">🙂 呼称: '+esc(r.preferredName)+'</span>');
+  if(r.allergy)hl.push('<span class="hlchip hl-danger" data-nop-of="medical">⚠ アレルギー: '+esc(r.allergy)+'</span>');
+  if(r.infections)hl.push('<span class="hlchip hl-danger" data-nop-of="medical">⚠ 感染症: '+esc(r.infections)+'</span>');
+  if(r.medicalCare)hl.push('<span class="hlchip hl-warn" data-nop-of="medical">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
+  if(r.mealForm||r.thickener)hl.push('<span class="hlchip hl-info" data-nop-of="meal">🍚 食事: '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
+  if(r.careHints)hl.push('<span class="hlchip hl-warn" data-nop-of="mind">💡 対応のコツあり</span>');
   $('hlBand').innerHTML=hl.length?'<div class="hlband" role="group" aria-label="安全上の注意">'+hl.join('')+'</div>':'';
 }
 
@@ -1625,9 +1662,11 @@ function renderOfficeView(r){
      『印刷しない』にした時はここも紙から外す（伏せ漏れの防止・2026-08-17）。
      ★空欄にせず、セルごと外す。アレルギー欄が空欄で紙に出ると、ご家族は「アレルギーなし」と
        読む＝伏せたことが誤った安心に変わる。 */
+  /* ★氏名だけは伏せない。どなたの帳票かが分からなくなると、紙そのものが取り違えの元になる
+     （伏せたい情報は中身であって、誰の紙かではない）。他は全て由来の欄に紐づける */
   S.summary=sec('サマリ',
-    '<div class="row-cells">'+cell('氏名',r.name,true)+nopOf(cell('呼称',r.preferredName),'mind')+cell('介護度',r.careLevel)+cell('居室',r.room)+'</div>'+
-    '<div class="row-cells">'+cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'')+cell('性別',r.gender)+cell('移動',r.mobility)+nopOf(cell('食形態',[r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join('/')),'meal')+'</div>'+
+    '<div class="row-cells">'+cell('氏名',r.name,true)+nopOf(cell('呼称',r.preferredName),'mind')+nopOf(cell('介護度',r.careLevel),'basic')+nopOf(cell('居室',r.room),'basic')+'</div>'+
+    '<div class="row-cells">'+nopOf(cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':''),'basic')+nopOf(cell('性別',r.gender),'basic')+nopOf(cell('移動',r.mobility),'adl')+nopOf(cell('食形態',[r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join('/')),'meal')+'</div>'+
     nopOf(full('アレルギー / 感染症',[r.allergy,r.infections].filter(Boolean).join(' ／ ')),'medical')+
     nopOf(full('医療処置',r.medicalCare),'medical')+
     '<div class="cell" data-nop-of="mind" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
@@ -1730,7 +1769,11 @@ function renderOfficeView(r){
       '<div class="cell"><span class="lab">電話番号</span><div class="fulltext">'+esc(famTel||'　')+'</div></div>'+
       '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
     '</div>'+
-    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><div class="geno-box" role="button" tabindex="0" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
+    /* ★data-nop-of="geno" が要る。この帳票では家族構成図が「家族情報」欄の中の1セルで、
+       見出し（.sec-lbl）を持たない＝見出し文字列からは特定できない。付けないと
+       「家族構成図」を印刷しないにしても【マスタの紙からは消え、こちらの紙には出る】。
+       家族構成図は疎遠・離別などの関係性が読み取れるので、伏せ漏れの実害が大きい（2026-08-17） */
+    '<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><div class="geno-box" role="button" tabindex="0" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
   );
   S.biz=sec('事業所',
     '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
@@ -1786,8 +1829,12 @@ function renderOfficeView(r){
   $('viewBox').innerHTML=TABS.map(function(t){return'<div class="fpanel'+(t[0]===actTab?' on':'')+'" role="tabpanel" id="panel-'+t[0]+'" aria-label="'+esc(t[1])+'" data-panel="'+t[0]+'">'+(P[t[0]]||'')+'</div>'}).join('');
   /* 入居者マスタで「印刷しない」に指定された欄を紙から外す（画面には帯を付けて残す）。
      ★全パネルに一括で掛ける。同じ欄がカテゴリタブと「全体」タブの2箇所に出るため、
-       片方だけに掛けると、そのタブから印刷したときだけ載る */
+       片方だけに掛けると、そのタブから印刷したときだけ載る。
+     ★安全情報の帯（#hlBand）は #viewBox の【外】にあるので別途掛ける。掛けないと
+       医療情報を伏せてもアレルギー・感染症・医療処置が紙の先頭に残る（印刷CSSにも
+       #hlBand の非表示指定は無く、.hlchip は色付きで刷る指定まで入っている）。 */
   applyPrintHide($('viewBox'),r);
+  applyPrintHide($('hlBand'),r);
 
   Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(b){
     b.addEventListener('click',function(){

@@ -114,10 +114,14 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .nop-tag,.nop-mark{display:none !important}
   /* 行の最後のセルを伏せた時に、紙の右端へ残る縦罫線を消す（applyPrintHide が付ける） */
   .row-cells .cell.nop-last{border-right:none !important}
+  /* 事業所を伏せた時に、右隣（家族構成図）の枠の左罫線が紙の左内縁へ来るのを消す。
+     ★家族構成図の枠は border-left をインラインで持つので !important が要る */
+  .biz-geno-row>.nop-first{border-left:none !important}
 }
 .nop-tag{background:var(--warn-bg); color:var(--warn-tx); font-size:0.75rem; font-weight:700;
   padding:3px 8px; border-bottom:1px solid var(--g3)}
-.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.6875rem; font-weight:700;
+/* 13px＝業務ツールの下限。「印刷しない」は取り違えると事故になる印なので小さくしない */
+.nop-mark{background:var(--warn-bg); color:var(--warn-tx); font-size:0.8125rem; font-weight:700;
   border-radius:999px; padding:1px 7px; margin-right:6px; white-space:nowrap}
 .nop-row{opacity:.6}
 /* ── 編集画面の見出しタブ（2026-08-17 指示）──
@@ -132,8 +136,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    max-height は2行ぶん（96px）＋余白16px＋12px。最後の12pxで3行目の頭が覗くので
    「まだ下に続く」と分かる（ちょうど2行で切ると、隠れたタブの存在に気づけない）。
    実測: タブ25個の総幅 2567px＝事務所PC（1280px）で3行。選択中のタブは markEditTab が見える位置へ寄せる */
+/* ★[hidden] は UA スタイルなので、作成者の display:flex に特異度と無関係に負ける。
+   1行足さないと「見出しが1つも無い時に隠す」経路で空の枠だけが出る */
+.etabs[hidden]{display:none !important}
+/* 文字サイズはフェイスシートの同型タブ（.ftab 0.875rem）に揃える */
 .etab{min-height:44px; padding:4px 12px; border:1px solid var(--g3); border-radius:22px;
-  background:#fff; color:var(--g7); font-size:0.8125rem; font-weight:700; cursor:pointer;
+  background:#fff; color:var(--g7); font-size:0.875rem; font-weight:700; cursor:pointer;
   display:inline-flex; align-items:center}
 .etab.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 .etab:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
@@ -646,8 +654,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
     <button class="btn btn-ok" id="saveBtn">💾 保存</button>
   </div>
   <!-- 見出しタブ（2026-08-17 指示）。押すとその欄へジャンプする＝表示の切替ではないので
-       入力中の値は失われない。中身は buildEditTabs() が編集フォームの見出しから作る -->
-  <div class="etabs" id="editTabs" role="tablist" aria-label="編集する欄へ移動" hidden></div>
+       入力中の値は失われない。中身は buildEditTabs() が編集フォームの見出しから作る。
+       ★role="tablist"/"tab" にはしない。実体は「その欄へ移動するリンク」で、対応する
+         tabpanel が無いため、読み上げでは「タブ・未選択」が25個並ぶだけになる。
+         現在地は aria-current で伝える（フェイスシートの本物のタブとは意味づけを分ける） -->
+  <nav class="etabs" id="editTabs" aria-label="編集する欄へ移動" hidden></nav>
   <div id="editBox"></div>
 </section>
 
@@ -2544,15 +2555,19 @@ function applyPrintHide(box,r){
       body.insertBefore(tag,body.firstChild);
     }
   });
-  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。両方を伏せると、
-     中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）。全部伏せたら行ごと外す */
+  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。
+     ・両方を伏せる → 中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）→ 行ごと外す
+     ・事業所だけ伏せる → 右隣（家族構成図）の枠の左罫線が【紙の左内縁】に来て、シート枠のすぐ内側に
+       余分な縦線が1本走る（行の高さぶん・実測150px超）→ 見えている先頭の枠の左罫線を紙でだけ消す */
   Array.prototype.forEach.call(box.querySelectorAll('.biz-geno-row'),function(row){
     var lbls=row.querySelectorAll('.sec-lbl');
     if(!lbls.length)return;
-    var allHid=Array.prototype.every.call(lbls,function(l){
-      return l.parentElement&&l.parentElement.getAttribute('data-nop')==='1';
-    });
-    if(allHid)row.setAttribute('data-nop','1');
+    var frames=Array.prototype.map.call(lbls,function(l){return l.parentElement});
+    var vis=frames.filter(function(f){return f&&f.getAttribute('data-nop')!=='1'});
+    if(!vis.length){ row.setAttribute('data-nop','1'); return }
+    /* ★先頭が伏せられた時だけ付ける。伏せていない時に付けると、指定ゼロの方の帳票にも
+       クラスが載る（今は見た目が変わらないが、将来の CSS 変更で効きはじめる） */
+    if(vis[0]!==frames[0]) vis[0].classList.add('nop-first');
   });
   /* ★再掲の始末。安全情報の帯（詳細画面の先頭）とフェイスシートの「サマリ」は、他の欄の値を
      抜き出して**もう一度**出している。元の欄を伏せてもここに残ると伏せ漏れになる
@@ -2560,6 +2575,22 @@ function applyPrintHide(box,r){
      由来を data-nop-of に書いておき、その欄が伏せられていれば一緒に紙から外す。 */
   Array.prototype.forEach.call(box.querySelectorAll('[data-nop-of]'),function(el){
     if(hid[el.getAttribute('data-nop-of')]) el.setAttribute('data-nop-row','1');
+  });
+  /* ★中身が全部伏せられた入れ物は、入れ物ごと外す。
+     残すと紙に「空の帯」「空の行」＝罫線と余白だけが出る（安全情報の帯は実測17px）。
+     見出し（.sec-lbl）を持たない枠＝安全情報の帯なので、枠そのものも外す。
+     見出しを持つ枠（＝欄）は外さない＝欄の存在は残す（伏せたのは中身の再掲だけ）。 */
+  var conts=[];
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-row]'),function(el){
+    if(el.parentElement&&conts.indexOf(el.parentElement)<0)conts.push(el.parentElement);
+  });
+  conts.forEach(function(p){
+    if(!p.children.length)return;
+    var allHid=Array.prototype.every.call(p.children,function(c){return c.hasAttribute('data-nop-row')});
+    if(!allHid)return;
+    p.setAttribute('data-nop-row','1');
+    var sec=p.closest?p.closest('.sec'):null;
+    if(sec&&!sec.querySelector('.sec-lbl'))sec.setAttribute('data-nop','1');
   });
   /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
      見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
@@ -3308,7 +3339,7 @@ function buildEditTabs(){
        長い見出しがそのまま並ぶと、タブ帯が本文より高くなる）。全文は title で読める */
     var full=(h3.textContent||'').trim();
     var short=full.split(/[（(]/)[0].trim()||full;
-    html+='<button type="button" class="etab" role="tab" data-go="ecd-'+i+'" title="'+esc(full)+'">'+esc(short)+'</button>';
+    html+='<button type="button" class="etab" data-go="ecd-'+i+'" title="'+esc(full)+'">'+esc(short)+'</button>';
   });
   bar.innerHTML=html;
   bar.hidden=false;
@@ -3341,7 +3372,14 @@ function markEditTab(){
     var el=$(b.getAttribute('data-go'));
     if(el&&el.getBoundingClientRect().top<=line) cur=b;
   });
-  Array.prototype.forEach.call(tabs,function(b){b.classList.toggle('on',b===cur)});
+  /* いちばん上（まだどの見出しも越えていない）なら先頭の欄を現在地にする。
+     ★これが無いと、編集画面を開いた直後はどのタブも光らず「現在地が分からない」 */
+  if(!cur&&tabs.length) cur=tabs[0];
+  /* 現在地は色だけで伝えない（読み上げにも渡す。色覚特性への配慮＝介護現場要件4） */
+  Array.prototype.forEach.call(tabs,function(b){
+    b.classList.toggle('on',b===cur);
+    if(b===cur)b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
+  });
   if(cur&&cur.offsetTop!=null){
     /* タブ帯が2行を超えて隠れている時は、選択中のタブを見える位置へ寄せる */
     var top=cur.offsetTop, bot=top+cur.offsetHeight;
@@ -3420,6 +3458,18 @@ function renderSupportRO(){
       return '<div class="l"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
         '<span class="t">'+(s&&s.hide?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
     }).join('')+'</div></details>';
+  /* ★開いた時に作り直す。この一覧は renderSupportRows の中でしか作られないので、
+     下の入力欄で直した内容が反映されず「直したのに一覧が古い」と見える。
+     開く操作のたびに入力中の内容を回収してから描き直す（再入を避けるため開いた時だけ） */
+  var d=box.querySelector('details');
+  if(d)d.addEventListener('toggle',function(){
+    if(!this.open)return;
+    var was=this;
+    collectSupport();
+    renderSupportRO();
+    var again=box.querySelector('details');
+    if(again&&again!==was)again.open=true;
+  });
 }
 function collectSupport(){
   var box=$('supportList');if(!box)return;
@@ -3625,11 +3675,20 @@ function collectForm(){
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
   /* 印刷しない欄（2026-08-17）。入力欄が描画されていない時は既存値を温存する
      （部分フォームでの全消し防止・dayUse / consents と同じ作法）。
-     ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る */
+     ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る。
+     ★★画面にチェック欄が無いキー（＝この版の PRINT_SECS に無い欄）は必ず温存する。
+       将来 欄を増やした後、GitHub Pages のキャッシュで旧版のまま動いている端末がその方を
+       保存すると、丸ごと作り直しでは新しい欄の伏せ指定が消え、次の印刷から紙に載る。
+       倒れる向きが情報漏えい側なので、知らないものは触らない（multi-device-sync 原則3・4）。 */
   var psEls=$('editBox').querySelectorAll('[data-psec]');
   if(psEls.length){
-    var psOn=[];
-    Array.prototype.forEach.call(psEls,function(inp){if(inp.checked)psOn.push(inp.getAttribute('data-psec'))});
+    var psOn=[], psKnown={};
+    Array.prototype.forEach.call(psEls,function(inp){
+      var k=inp.getAttribute('data-psec'); psKnown[k]=1;
+      if(inp.checked)psOn.push(k);
+    });
+    var psOld=(editing.printHide&&Array.isArray(editing.printHide.secs))?editing.printHide.secs:[];
+    psOld.forEach(function(k){ if(!psKnown[k]&&psOn.indexOf(k)<0)psOn.push(k) });
     if(psOn.length)rec.printHide={secs:psOn};
   }else if(editing.printHide)rec.printHide=editing.printHide;
   collectMedsPast();
