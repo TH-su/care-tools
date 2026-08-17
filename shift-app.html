@@ -14,6 +14,9 @@
   --headbg: #d06a5e;
   --g1: #f7f8fa; --g2: #eceef1; --g3: #d5d9de; --g4: #9aa1a9; --ink: #2b3138;
   --warn: #e67e22; --ok: #27ae60; --hl: #fff3c4; --sel: #cfe3f7;
+  /* 編集モード・同期状態の色（2026-08-17 追加。いずれも白文字とのコントラストを実測: 帯7.6:1／
+     readonly 5.5:1／conflict 7.1:1／storeerror 10:1）。新しい色を足す時はここに追記して実測値を書く。 */
+  --edit: #8a3d08; --st-ro: #5b6b7a; --st-conflict: #7d3c98; --st-storeerr: #7b241c;
 }
 html, body { margin: 0; padding: 0; }
 body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
@@ -52,6 +55,35 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #syncBadge.offline { background: #922b21; }
 #syncBadge.nosync { background: rgba(255,255,255,.15); }
 #syncBadge.syncing { background: #6c5ce7; }
+/* 未定義だった状態（readonly/conflict/storeerror）。JSは以前からこのクラスを付けており、
+   CSSが無いぶん既定の半透明白のまま＝「閲覧専用」「競合」「保存失敗」が視覚的に埋もれていた。
+   いずれも白文字とのコントラストは 5.5:1 以上（storeerror は約10:1）。文字も併記され色だけに依存しない。 */
+#syncBadge.readonly { background: var(--st-ro); }
+#syncBadge.conflict { background: var(--st-conflict); }
+#syncBadge.storeerror { background: var(--st-storeerr); }
+
+/* ── 編集モード（サーバー発行の編集権を1台だけが持つ・2026-08-17） ──
+   閲覧中は編集操作を受け付けない。状態は「帯の色」だけでなく必ず文字（✎/👁）でも示す。 */
+#toolbar #editToggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  white-space: nowrap; font-size: 0.78125rem; color: #fff; background: rgba(255,255,255,.15);
+  border-radius: 6px; padding: 0 12px; min-height: 44px; }
+#toolbar #editToggle:hover { background: rgba(255,255,255,.3); }
+#toolbar #editToggle input { cursor: pointer; margin: 0; width: 18px; height: 18px; }
+#toolbar #editToggle.disabled { opacity: .55; cursor: not-allowed; }
+#toolbar #modeBadge { font-size: 0.75rem; padding: 4px 10px; border-radius: 12px; white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.6); color: #fff; }
+#toolbar #modeBadge.edit { background: #fff; color: var(--edit); border-color: #fff; font-weight: 700; }
+/* 編集モード中のツールバーは深いオレンジ（白文字とのコントラスト 7.6:1・実測）。
+   青(--blue)とも既存の警告色(--warn #e67e22)とも別トーンにして、閲覧中と一目で区別できるようにする。
+   ボタンは半透明白のままなので自動的に追従する（個別指定は増やさない）。 */
+body.edit-mode #toolbar { background: var(--edit); }
+/* 移行バナー（旧版で溜まった未送信の編集がこの端末に残っている時だけ表示） */
+#lockBanner2 { background: #fff3cd; border-bottom: 1px solid #ffe69c; color: #7a5b00;
+  padding: 8px 12px; font-size: 0.8125rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#lockBanner2 button { min-height: 36px; }
+/* 退避データ一覧（マスタ→設定→バックアップ） */
+#rescueList table.plain td { vertical-align: middle; }
+#rescueList .muted { margin: 0; }
 
 .layerbar { display: flex; gap: 2px; padding: 6px 10px 0; align-items: flex-end; flex-wrap: wrap; }
 .layerbar button { border: 1px solid var(--g3); border-bottom: none; background: var(--g2);
@@ -352,6 +384,12 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
   <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
   <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
   <button onclick="window.open('shift-analyzer.html','_blank')" title="過去シフト・アナライザを開く">📊 過去シフト分析</button>
+  <!-- 編集モード（サーバー発行の編集権を1台だけが持つ）。閲覧中は編集操作を受け付けない。
+       .reveal-toggle は付けない（#toolbar .reveal-toggle の margin-left:auto と隣接セレクタを壊さないため）。 -->
+  <label id="editToggle" class="noprint" title="編集モードに切り替えます（同時に編集できるのは1台だけ・他端末は閲覧のまま自動更新されます）">
+    <input type="checkbox" id="togEdit"> ✎ 編集
+  </label>
+  <span id="modeBadge" class="noprint view">👁 閲覧モード</span>
   <!-- ════════════════════════════════════════════════════════════════
        DO NOT DELETE / DO NOT MOVE: 非表示列(行)表示機能（重要機能・運用要件で永久保護）
        「非表示行を表示」チェックボックス。app.js の revealHidden / grid.js の hidebtn・showbtn と連動。
@@ -365,6 +403,13 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 </div>
 
 <div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:0.8125rem">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
+
+<!-- 移行バナー: 旧版で溜まった未送信の編集がこの端末に残っている時だけ出る（閲覧モード時）。 -->
+<div id="lockBanner2" class="noprint" style="display:none">
+  <span id="pendingText"></span>
+  <button id="pendingSend" class="act">編集モードで確認して送信</button>
+  <button id="pendingDiscard" class="act ghost">破棄して最新を取得（退避します）</button>
+</div>
 
 <div class="layerbar" id="layerBar">
   <button data-layer="plan" class="on">予定（確定版）</button>
@@ -558,9 +603,14 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
         <h2>バックアップ</h2>
         <div class="flexrow">
           <button id="backupExport" class="act ghost">JSONエクスポート</button>
-          <label class="act ghost" style="display:inline-block">JSONインポート<input type="file" id="backupImport" accept=".json" style="display:none"></label>
+          <label id="backupImportLabel" class="act ghost" style="display:inline-block">JSONインポート<input type="file" id="backupImport" accept=".json" style="display:none"></label>
           <span id="backupMsg" class="muted"></span>
         </div>
+        <!-- 退避データ一覧: 競合解決・取込で上書きされる前の版（local:conflictRescue / local:importRescue）。
+             JSONエクスポートは local: を含まないため、ここが唯一の救出導線になる。 -->
+        <h2 style="margin-top:14px">退避データ一覧</h2>
+        <p class="muted">同期の競合やバックアップ取込で置き換えられる前の内容を、この端末内に自動退避したものです（14日・3世代で自動削除）。必要な版をダウンロードして保管できます。</p>
+        <div id="rescueList"></div>
       </div>
     </div>
   </div>
@@ -1927,13 +1977,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 送信キュー: キーと baseRev のみ保持（データ本体は持たず、push時に localStorage から live 取得する）。
    * ＝ _meta にデータを二重保存しない＝localStorage肥大化と保存の重さを根治。baseRevは最初の値を保持。 */
   function SyncQueue() {
-    this.items = {}; /* key -> {baseRev, queuedAt} */
+    this.items = {}; /* key -> {baseRev, queuedAt, epoch?} */
   }
-  SyncQueue.prototype.enqueue = function (key, baseRev, now) {
+  /* epoch＝登録時に保持していた編集権（リース）の世代。競合時の「ローカル優先」を
+   * リース連続保持中に限定する判定材料（editlock.js の conflictDecision が使う）。
+   * baseRev/queuedAt と同じく既存キーは据え置き＝最初の値（最古の未送信の世代）を保つ。 */
+  SyncQueue.prototype.enqueue = function (key, baseRev, now, epoch) {
     if (this.items[key]) {
       /* 既存は baseRev 据え置き＝サーバ側の競合検知を維持（最新データはpush時にlive取得） */
     } else {
-      this.items[key] = { baseRev: (typeof baseRev === 'number') ? baseRev : 0, queuedAt: now || 0 };
+      var it = { baseRev: (typeof baseRev === 'number') ? baseRev : 0, queuedAt: now || 0 };
+      if (typeof epoch === 'number') it.epoch = epoch;   /* 無指定は付けない＝旧形式と同じ「不明」 */
+      this.items[key] = it;
     }
   };
   SyncQueue.prototype.keys = function () {
@@ -1953,8 +2008,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (obj) {
       for (var k in obj) {
         var it = obj[k] || {};
-        /* 旧形式 {data, baseRev, queuedAt} の data は読み捨て＝肥大化した既存_metaを起動時に自動スリム化 */
-        q.items[k] = { baseRev: (typeof it.baseRev === 'number') ? it.baseRev : 0, queuedAt: it.queuedAt || 0 };
+        /* 旧形式 {data, baseRev, queuedAt} の data は読み捨て＝肥大化した既存_metaを起動時に自動スリム化。
+         * epoch を持たない旧形式は付けないまま復元＝「世代不明」として競合時は退避側に倒れる（安全側）。 */
+        var rec = { baseRev: (typeof it.baseRev === 'number') ? it.baseRev : 0, queuedAt: it.queuedAt || 0 };
+        if (typeof it.epoch === 'number') rec.epoch = it.epoch;
+        q.items[k] = rec;
       }
     }
     return q;
@@ -2047,6 +2105,110 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var api = { decideOnPull: decideOnPull, isUsableServerData: isUsableServerData, SyncQueue: SyncQueue, applyPushResult: applyPushResult, mergeStaffPreserve: mergeStaffPreserve, conflictPolicy: conflictPolicy, STALE_UNSENT_MS: STALE_UNSENT_MS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftSyncCore = api;
+})();
+/* ===== src/logic/editlock.js ===== */
+/* editlock.js — 編集リース（サーバ発行の単一編集権）の判断ロジック
+ * 純粋関数のみ（ネットワーク/DOM非依存）。旧Safari互換: ?. / ?? / replaceAll は使用しない。 */
+(function () {
+  'use strict';
+
+  var LEASE_TTL_MS = 30 * 60 * 1000;      /* サーバ側TTLと同値（残り時間の表示・更新間隔の算定に使う） */
+  var RENEW_BEFORE_MS = 20 * 60 * 1000;   /* 残り20分未満で更新＝TTL30分に対し約10分間隔のハートビート */
+
+  /* 鮮度ガード（STALE_UNSENT_MS / conflictPolicy）は synccore.js のものをそのまま使う＝二重定義を作らない。
+   * 解決は「呼び出し時」に行う（結合ビルドの読み込み順・テストのrequire順に依存しないため）。 */
+  function core_() {
+    if (typeof window !== 'undefined' && window.ShiftSyncCore) return window.ShiftSyncCore;
+    if (typeof require === 'function') {
+      try { return require('./synccore.js'); } catch (e) {}
+    }
+    return null;
+  }
+
+  function isNum_(v) { return typeof v === 'number' && isFinite(v); }
+
+  /* サーバ応答 {token, epoch, expiresAt} の防御的正規化。
+   * 型が揃わない・欠ける応答は null＝「リース無し」として扱う（不正な値で編集モードに入らない）。
+   * tabId は同一端末2タブの判定に使うローカル情報なので、付いていればそのまま持ち越す
+   * （落とすと再読み込みでタブの持ち主が分からなくなる）。 */
+  function normalizeLease(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.token !== 'string' || raw.token === '') return null;
+    if (!isNum_(raw.epoch)) return null;
+    if (!isNum_(raw.expiresAt) || raw.expiresAt <= 0) return null;
+    var out = { token: raw.token, epoch: raw.epoch, expiresAt: raw.expiresAt };
+    if (typeof raw.tabId === 'string' && raw.tabId !== '') out.tabId = raw.tabId;
+    return out;
+  }
+
+  /* リースがローカル時計で有効か（token あり かつ 期限が未来）。now 不明は無効＝安全側。 */
+  function isLeaseValid(lease, now) {
+    if (!lease || typeof lease.token !== 'string' || lease.token === '') return false;
+    if (!isNum_(lease.expiresAt) || !isNum_(now)) return false;
+    return lease.expiresAt > now;
+  }
+
+  /* 更新の要否。残りTTLが RENEW_BEFORE_MS 未満なら true。
+   * 失効済み（残りが負）も true＝ハートビートでサーバ検証に回す。リース無しは false（更新対象が無い）。 */
+  function shouldRenew(lease, now) {
+    if (!lease || !isNum_(lease.expiresAt) || !isNum_(now)) return false;
+    return (lease.expiresAt - now) < RENEW_BEFORE_MS;
+  }
+
+  /* 競合時の解決判定（本改修の芯・2026-08-17）。
+   * 従来は「未送信が6時間以内ならローカル全面優先」だったため、失効した端末が持つ古い全量が
+   * 他端末の新しい編集を丸ごと巻き戻せた。ローカル優先を「編集権を連続保持している端末」に限定する。
+   * input = {editMode, leaseValid, queuedEpoch, currentEpoch, queuedAt, now}
+   * 返り値: 'local-wins' | 'server-wins-rescue'（rescue＝退避してサーバ版を採用） */
+  function conflictDecision(input) {
+    var inp = input || {};
+    if (!inp.editMode) return 'server-wins-rescue';        /* 閲覧端末は書き込み側に立たない */
+    if (!inp.leaseValid) return 'server-wins-rescue';      /* 失効中の編集は他端末に引き継がれている可能性 */
+    /* epoch＝編集権の世代。刻印が無い（旧キュー）・現在の世代と違う（失効→再取得・強制引き継ぎ）
+     * 未送信は、その間の他端末の編集を上書きしうるため退避側へ倒す。 */
+    if (!isNum_(inp.queuedEpoch)) return 'server-wins-rescue';
+    if (!isNum_(inp.currentEpoch) || inp.queuedEpoch !== inp.currentEpoch) return 'server-wins-rescue';
+    var SC = core_();
+    if (!SC) return 'server-wins-rescue';                  /* 鮮度判定ができない＝安全側 */
+    if (SC.conflictPolicy(inp.queuedAt, inp.now) === 'server-wins-stale') return 'server-wins-rescue';
+    return 'local-wins';
+  }
+
+  /* push のエラー文字列の分類。'lost'＝編集権を失った（退避して降格する）、
+   * 'unsupported'＝旧サーバ（従来動作へ）、'other'＝通信/一過性（従来の再試行へ）。 */
+  function classifyPushError(msg) {
+    var m = String(msg === null || msg === undefined ? '' : msg);
+    if (m === 'editlock' || m === 'editlock-required' || m === 'locklost' || m === 'lockheld') return 'lost';
+    if (m === 'unknown action') return 'unsupported';
+    return 'other';
+  }
+
+  /* 同一端末2タブの二重編集ゲート。local:editLease の記録 {tabId, expiresAt} で判定する。
+   * 記録なし・自タブ・期限切れは true（＝このタブで編集ONにできる）。
+   * 他タブが未失効で保持している間だけ false。期限で自動的に true へ戻るため、
+   * タブがクラッシュしても端末が恒久的にロックアウトされない。 */
+  function canEnableEditInThisTab(leaseRec, tabId, now) {
+    if (!leaseRec || typeof leaseRec !== 'object') return true;
+    var owner = leaseRec.tabId;
+    if (typeof owner !== 'string' || owner === '') return true;          /* 持ち主不明の記録は縛りにしない */
+    if (typeof tabId === 'string' && tabId !== '' && owner === tabId) return true;
+    if (!isNum_(leaseRec.expiresAt)) return true;                        /* 期限不明＝記録として無効 */
+    if (!isNum_(now)) return false;                                      /* 判定不能は二重編集を防ぐ側 */
+    return !(leaseRec.expiresAt > now);
+  }
+
+  var api = {
+    normalizeLease: normalizeLease,
+    isLeaseValid: isLeaseValid,
+    shouldRenew: shouldRenew,
+    conflictDecision: conflictDecision,
+    classifyPushError: classifyPushError,
+    canEnableEditInThisTab: canEnableEditInThisTab,
+    LEASE_TTL_MS: LEASE_TTL_MS,
+    RENEW_BEFORE_MS: RENEW_BEFORE_MS
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftEditLock = api;
 })();
 /* ===== src/logic/holidays.js ===== */
 /* holidays.js — 日本の祝日計算（1980〜2099年対応・振替休日・国民の休日含む） */
@@ -2622,6 +2784,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 (function () {
   'use strict';
   var SC = (typeof window !== 'undefined') ? window.ShiftSyncCore : null;
+  /* 編集リースの判断（editlock.js・純関数）。解決は呼び出し時＝結合ビルドの読み込み順に依存しない。
+   * 未読込の環境（editlock.js を含まないビルド）では下の 2 ヘルパが従来動作へ倒れる＝新旧どちらでも壊れない。 */
+  var _el = null;
+  function EL_() {
+    if (!_el && typeof window !== 'undefined' && window.ShiftEditLock) _el = window.ShiftEditLock;
+    return _el;
+  }
+  function leaseValid_(lease, now) {
+    var e = EL_();
+    return e ? e.isLeaseValid(lease, now) : false;
+  }
+  function classifyPushError_(msg) {
+    var e = EL_();
+    if (e) return e.classifyPushError(msg);
+    return (String(msg) === 'unknown action') ? 'unsupported' : 'other';
+  }
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -2779,10 +2957,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     storeError: false,     // localStorage書き込みに失敗中
     readOnly: false,       // 閲覧専用トークン（push不可）
     _scopeKeys: null,      // 起動時プルのkeyed窓（app側がbootで設定＝recoverNow時も同じ窓で取得）
+    /* 編集リース（サーバ発行の単一編集権・2026-08-17）。既定は閲覧モード＝アップロード完全ゼロ。
+     * editMode は「サーバ検証を通ったリースを保持している」時だけ app 側が true にする。 */
+    editMode: false,
+    lease: null,           // {token, epoch, expiresAt, tabId} 正規化済み
+    lockCapable: null,     // サーバのリース対応（null=未判定 / true / false=旧サーバ）
+    heldConflicts: null,   // 閲覧中に解決を保留した競合キー（移行バナー用）
+    onBlockedWrite: null,  // 閲覧モードで編集が拒否された時の通知（見逃し経路の可視化）
+    onLockLostStart: null, // 編集権喪失の処理開始（UIが入力を遮断する）
+    onLockLost: null,      // 編集権喪失の処理完了（引数=サーバ版を採用した件数）
+    onLockLostFail: null,  // 退避に失敗して中断（引数=キー配列・ローカルは温存）
+    onLeaseReacquired: null, // 失効後に同じ端末で取り直した時（引数=世代差。UIが最新取得を行う）
+    lastReacquireGap: 0,   // 直近の取り直しでの世代差（1=自分だけ／1超=不在中に別の端末が編集した可能性）
 
     init: function () {
       this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
       this.queue = SC.SyncQueue.fromJSON(this.meta.queue);
+      /* リースは端末ローカルに永続（再読み込みでの編集モード復帰はサーバ検証後に app が行う）。
+       * 不正な記録は normalizeLease が null にする＝壊れた値で編集モードに入らない。 */
+      var el = EL_();
+      this.lease = el ? el.normalizeLease(this.getLocal('editLease')) : null;
+      this.heldConflicts = {};
       /* fromJSONが旧形式のデータ複製を落とすため、ここで一度書き戻すと肥大化した既存_metaが
        * 即座にスリム化され、容量を即時回復できる（圧縮も同時に適用される）。 */
       this.saveMeta();
@@ -2884,14 +3079,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return v === null ? (fallback === undefined ? null : fallback) : v;
     },
     /* 保存。localStorageへの書き込みに失敗したら storeError を立て、明示通知する。
-     * （データはメモリ上のqueueに残るため同期は試みるが、端末再起動で失われる旨を警告する） */
-    set: function (key, data) {
+     * （データはメモリ上のqueueに残るため同期は試みるが、端末再起動で失われる旨を警告する）
+     * opts.auto = 起動時の既定値補完など「ユーザー操作でない自動書き込み」の印。
+     * 閲覧モードでは一切書かない（ローカルにも書かない＝次回起動での再送も作らない）:
+     *   auto → 黙って 'skipped'（呼び出し側のメモリ内適用だけで従来の表示を維持する）
+     *   それ以外 → false ＋ onBlockedWrite 通知（遮断し切れていない編集入口を可視化する） */
+    set: function (key, data, opts) {
+      if (!this.editMode) {
+        if (opts && opts.auto) return 'skipped';
+        if (this.onBlockedWrite) { try { this.onBlockedWrite(key); } catch (eB) {} }
+        return false;
+      }
       var ok = lsSet(PREFIX + key, data);
       this.meta.dirty[key] = true;
       /* 正常な値で上書きできたら破損フラグを解除＝再送対象に復帰 */
       if (ok && this._corruptKeys) delete this._corruptKeys[key];
-      /* キューはキー+baseRevのみ登録（データ本体はlsSetで保存済み・push時にlive取得） */
-      this.queue.enqueue(key, this.meta.revs[key] || 0, Date.now());
+      /* キューはキー+baseRev+リース世代のみ登録（データ本体はlsSetで保存済み・push時にlive取得） */
+      this.queue.enqueue(key, this.meta.revs[key] || 0, Date.now(), this.lease ? this.lease.epoch : undefined);
       var metaOk = this.saveMeta();
       this.schedulePush();
       if (ok && metaOk) {
@@ -2910,8 +3114,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return v === null ? (fallback === undefined ? null : fallback) : v;
     },
     setLocal: function (key, data) { lsSet(PREFIX + 'local:' + key, data); },
+    /* 端末識別子（サーバがリースの保持者を判定するのに使う）。同期対象外のローカル設定として永続。
+     * 個人情報は含めない（乱数＋時刻のみ）。 */
+    ensureDeviceId: function () {
+      var id = this.getLocal('deviceId');
+      if (typeof id === 'string' && id) return id;
+      id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      this.setLocal('deviceId', id);
+      return id;
+    },
     /* キーを実削除（localStorageから除去＋メタ/キューからも除去）。削除済みドラフトのゴミ蓄積を防ぐ。 */
     remove: function (key) {
+      /* 閲覧モードは削除もしない（他端末が編集中の内容を消さない） */
+      if (!this.editMode) {
+        if (this.onBlockedWrite) { try { this.onBlockedWrite(key); } catch (eB) {} }
+        return false;
+      }
       try { localStorage.removeItem(PREFIX + key); } catch (e) {}
       if (this.meta) {
         if (this.meta.revs) delete this.meta.revs[key];
@@ -2992,11 +3210,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     /* 復帰トリガ。オフライン or 未送信がある時のみ再同期（健全時の無駄打ちを避ける）。 */
     recoverNow: function () {
+      var self = this;
       var cfg = this.getSyncConfig();
       if (!cfg || !cfg.url) return;
       if (this.status === 'syncing' || this._pushInFlight) return; /* 同期中は再同期を起動しない（並行push回避） */
       if (this.status !== 'offline' && this.queue.size() === 0) return;
-      if (this.queue.size() > 0) this.pushQueued(); else this.pullAll(this._scopeKeys || null);
+      /* 閲覧モードは取得のみ（未送信が残っていても送らない＝アップロード完全ゼロ） */
+      if (!this.editMode) { this.pullAll(this._scopeKeys || null); return; }
+      if (this.queue.size() > 0) {
+        /* 送信前に編集権を検証する。失効中に送ると、他端末が引き継いだ後のサーバへ
+         * 古い全量をぶつけることになる（巻き戻りの再発経路）。
+         * サーバ未対応の間は検証を挟まず従来どおり送る（新×旧の同期不変）。 */
+        if (this.lockCapable !== true) { this.pushQueued(); return; }
+        this.verifyLease().then(function (r) {
+          if (r === 'lost') return;   /* 閲覧へ降格済み＝送らない */
+          self.pushQueued();
+        });
+        return;
+      }
+      this.pullAll(this._scopeKeys || null);
     },
 
     /* ---- 状態通知 ---- */
@@ -3068,9 +3300,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * 絶対に適用しない（職員名などの消失防止）。ローカルに有効データがあればサーバを修復するため再送。 */
         if (!mayApplyServer(key, server.data, lv)) {
           corrupt.push(key);
-          if (lv !== null && lv !== undefined && !isEmptyish(lv) && !this.readOnly) {
+          /* 修復再送は編集モードのみ（閲覧端末はアップロード完全ゼロ＝失効した端末の
+           * 古い全量がサーバへ着地する経路を作らない） */
+          if (lv !== null && lv !== undefined && !isEmptyish(lv) && !this.readOnly && this.editMode) {
             /* 修復のため再送（実データはpush時にlsGetでlive取得） */
-            this.queue.enqueue(key, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now());
+            this.queue.enqueue(key, (server && typeof server.rev === 'number') ? server.rev : 0, Date.now(),
+              this.lease ? this.lease.epoch : undefined);
           }
           continue;
         }
@@ -3086,8 +3321,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             storeFailed.push(key);
           }
         } else if (decision === 'conflict') {
-          /* モーダルを出さず自動解決（ローカルに未送信編集あり＝ローカル優先） */
-          conflicts.push(key);
+          if (this.editMode) {
+            /* モーダルを出さず自動解決（ローカルに未送信編集あり＝リース連続保持ならローカル優先） */
+            conflicts.push(key);
+          } else {
+            /* 閲覧モードは自動解決しない: サーバ版を適用も退避もせず、revも進めず現状維持。
+             * 旧版で溜まった未送信の扱いは、編集モードへ切り替えた本人が移行バナーで決める。 */
+            if (!this.heldConflicts) this.heldConflicts = {};
+            this.heldConflicts[key] = {
+              serverRev: (server && typeof server.rev === 'number') ? server.rev : 0,
+              hasServerData: true
+            };
+          }
         }
       }
       return { conflicts: conflicts, corrupt: corrupt, storeFailed: storeFailed };
@@ -3160,9 +3405,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!mayApplyServer(c.key, data, localVal)) {
           /* 破損/null、または保護キーを空で上書きになる: 何も壊さず保留し、
            * ローカルに有効データがあれば修復のため再送 */
-          if (localVal !== null && localVal !== undefined && !isEmptyish(localVal) && !self.readOnly) {
+          /* 修復再送は編集モードのみ（閲覧端末からの再送経路を作らない・applyPullEntries_ と同方針） */
+          if (localVal !== null && localVal !== undefined && !isEmptyish(localVal) && !self.readOnly && self.editMode) {
             /* 修復のため再送（実データはpush時にlsGetでlive取得） */
-            self.queue.enqueue(c.key, (typeof rev === 'number') ? rev : (c.server ? c.server.rev : 0), Date.now());
+            self.queue.enqueue(c.key, (typeof rev === 'number') ? rev : (c.server ? c.server.rev : 0), Date.now(),
+              self.lease ? self.lease.epoch : undefined);
             self.saveMeta();
             self.schedulePush();
           }
@@ -3220,16 +3467,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * 他端末がサーバへ入れた編集をサーバ上から置き換えるため、上書き前の手元コピーが
          * 復旧の材料になる。退避の成否は主経路を止めない（失敗しても従来どおり進む）。 */
         var rescued = this.rescueLocal_(key, localVal, qItem ? qItem.baseRev : 0);
-        /* 鮮度ガード（2026-07-23 巻き戻り事故対応）: 未送信が古すぎる場合はローカル全面優先を止める。
-         * 退避→サーバ版採用→告知の順。退避が失敗したらローカル優先の従来経路へ倒す（データを消さない）。
-         * 回数リセットはしない（stale経路も上記の上限で終端させる）。 */
-        var policy = SC.conflictPolicy(qItem ? qItem.queuedAt : 0, Date.now());
-        if (policy === 'server-wins-stale' && rescued) {
+        /* 解決方針（2026-07-23 鮮度ガード → 2026-08-17 リース連続保持を追加）:
+         * ローカル全面優先は「編集モード ∧ リース有効 ∧ 未送信の世代=現在の世代 ∧ 鮮度内」の時だけ。
+         * それ以外は 退避→サーバ版採用→告知の順（失効端末・閲覧端末の古い全量で巻き戻さない）。
+         * 判定は editlock.js の純関数に集約。未読込の環境では従来の鮮度ガードのみへ倒す（挙動不変）。
+         * 退避が失敗したらローカル優先の従来経路へ倒す（データを消さない）。
+         * 回数リセットはしない（退避経路も上記の上限で終端させる）。 */
+        var elNow = Date.now();
+        /* サーバがリース未対応（lockCapable!==true）の間は判定を従来の鮮度ガードだけに保つ
+         * ＝計画の互換マトリクス「新クライアント×旧サーバ＝同期は不変」を厳守する
+         * （リースが存在しない環境で epoch 不一致を理由に退避へ倒すと、従来動作を変えてしまう）。 */
+        var el = (this.lockCapable === true) ? EL_() : null;
+        var policy = el ? el.conflictDecision({
+          editMode: this.editMode,
+          leaseValid: el.isLeaseValid(this.lease, elNow),
+          queuedEpoch: qItem ? qItem.epoch : undefined,
+          currentEpoch: this.lease ? this.lease.epoch : undefined,
+          queuedAt: qItem ? qItem.queuedAt : 0,
+          now: elNow
+        }) : (SC.conflictPolicy(qItem ? qItem.queuedAt : 0, elNow) === 'server-wins-stale' ? 'server-wins-rescue' : 'local-wins');
+        if (policy === 'server-wins-rescue' && rescued) {
           this.adoptServer({ key: key, server: { rev: serverRev, data: (serverData !== undefined ? serverData : null) } }, function () {
             if (self.onResolved) { try { self.onResolved(); } catch (e) {} }
           });
-          /* 文言は「完了報告」でなく「実行宣言」: adoptServer は非同期で失敗もありうるため「採用しました」とは言わない。 */
-          var staleMsg = '未送信の編集が古すぎるため、サーバの最新版に合わせます（元の編集は端末内に退避済み）: ' + key;
+          /* 文言は「完了報告」でなく「実行宣言」: adoptServer は非同期で失敗もありうるため「採用しました」とは言わない。
+           * 事由は鮮度だけでなくリース失効・世代不連続も含むため一般化した言い方にする。 */
+          var staleMsg = '他の端末の版が新しいため、サーバの最新版に合わせます（元の編集は端末内に退避済み）: ' + key;
           this.updateStatus('conflict', staleMsg);   /* ステータス表示は毎回でよい */
           /* alert はキーごとセッション1回だけ（1.5秒間隔での連続ポップアップを防ぐ） */
           if (!this._staleAlerted) this._staleAlerted = {};
@@ -3252,7 +3515,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (this.queue.items[key]) {
           this.queue.items[key].baseRev = serverRev;   /* 実データはpush時にlive取得 */
         } else {
-          this.queue.enqueue(key, serverRev, Date.now());
+          this.queue.enqueue(key, serverRev, Date.now(), this.lease ? this.lease.epoch : undefined);
         }
         this.saveMeta();
         this.schedulePush();
@@ -3276,6 +3539,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var cfg = this.getSyncConfig();
       if (!cfg || !cfg.url) return Promise.resolve('nosync');
       if (this.readOnly) { this.updateStatus(); return Promise.resolve('readonly'); }
+      /* 閲覧モードは一切送信しない（未送信が残っていてもサーバへ触れない＝アップロード完全ゼロ）。
+       * これはサーバの対応状況に関係なく普遍（旧サーバ相手でも閲覧端末は送らない）。 */
+      if (!this.editMode) { this.updateStatus(); return Promise.resolve('viewonly'); }
+      /* リースがローカル時計で失効している: 送らずサーバへ検証に行く（結果に応じて続行 or 閲覧へ降格）。
+       * 失効中の送信は、他端末が引き継いだ後のサーバへ古い全量をぶつける経路になる。
+       * サーバ未対応（lockCapable!==true）ではリース自体が存在しないため検査せず従来どおり送る（新×旧の同期不変）。 */
+      /* _leaseVerified＝直前の検証でサーバが「有効」と答えた印。端末の時計がサーバより進んでいると
+       * ローカル判定では常に失効に見え、検証→送信→検証…の無限ループになる。サーバの答えを1回だけ
+       * 信じて送信へ進める（消費したら元に戻す＝失効の検知そのものは失わない）。 */
+      if (this.lockCapable === true && !this._leaseVerified && !leaseValid_(this.lease, Date.now())) {
+        /* 検証で延長・取り直しができたら、そのまま送信を続ける（空きリースなら送れるはずの
+         * 未送信を、確認のためだけに次の操作まで留め置かない）。 */
+        this.verifyLease().then(function (r) {
+          if (r === 'ok' || r === 'reacquired') self.pushQueued();
+        });
+        return Promise.resolve('leasecheck');
+      }
+      this._leaseVerified = false;
       if (this._pushInFlight) return Promise.resolve('busy'); /* 再入ガード: 並行pushによる冗長通信/競合ノイズを防ぐ */
       var keys = this.queue.keys();
       if (keys.length === 0) { this.updateStatus(); return Promise.resolve('empty'); }
@@ -3299,7 +3580,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             else { self._corruptKeys[key] = true; try { console.warn('同期スキップ: ローカルデータを読めません（破損の可能性）:', key); } catch (e) {} }
             return null;
           }
-          return self.api({ action: 'push', key: key, data: liveData, baseRev: item.baseRev })
+          var payload = { action: 'push', key: key, data: liveData, baseRev: item.baseRev };
+          /* 編集券。サーバはリース有効中これが一致しない書き込みを拒否する（クライアント側の
+           * チェックだけでは未リロード端末・失効レースを防げないため）。
+           * 認証トークン(token)とは別フィールド。リースが無い運用（旧サーバ）では付けない
+           * ＝undefined を混ぜず、旧サーバへのリクエスト内容を従来と同一に保つ。 */
+          if (self.editMode && self.lease && self.lease.token) payload.editToken = self.lease.token;
+          return self.api(payload)
             .then(function (res) {
               if (res && res.readOnly) { self.readOnly = true; throw new Error('__READONLY__'); }
               var r = SC.applyPushResult(res);
@@ -3308,6 +3595,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                 self.meta.revs[key] = r.rev;
                 delete self.meta.dirty[key];
                 if (self._conflictRetries) self._conflictRetries[key] = 0;
+                /* 送信できた＝保留していた競合は解消済み（移行バナーに残骸を残さない） */
+                if (self.heldConflicts) delete self.heldConflicts[key];
                 self.saveMeta();
               } else if (r.status === 'conflict') {
                 /* モーダルを出さず自動解決（編集中のローカルを優先・空なら取得）。
@@ -3338,8 +3627,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           return 'readonly';
         }
         var msg = String(err && err.message ? err.message : err);
+        var kind = classifyPushError_(msg);
+        /* 編集権を失った（他端末が保持・強制引き継ぎ・厳格モードで券なし）: これを通信失敗として
+         * 再試行に流すと同じ古い全量を送り続ける。退避→サーバ版採用→閲覧へ降格へ回す。 */
+        if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
         /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
-        if (msg === 'unknown action' && !self._healing) {
+        if (kind === 'unsupported' && !self._healing) {
           self._healing = true;
           return self.healStaleTarget().then(function (healed) {
             self._healing = false;
@@ -3352,6 +3645,306 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.updateStatus('offline', msg);
         self.scheduleRetry();
         return 'offline';
+      });
+    },
+
+    /* ---- 編集リース（サーバ発行の単一編集権・2026-08-17） ----
+     * どのメソッドも専用の catch を持ち healStaleTarget を発火させない
+     * （旧サーバの unknown action で接続先を勝手に切り替えるのを防ぐ）。
+     * 応答は editlock.js の normalizeLease で防御的に正規化し、不正なら「リース無し」として扱う。 */
+
+    /* サーバがリースに対応しているかの能力検出（lockStatus を1回）。
+     * 返り値: 保持者情報 {name, expiresAt} または null。判定結果は Store.lockCapable。 */
+    probeLockSupport: function () {
+      var self = this;
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return Promise.resolve(null);
+      return this.api({ action: 'lockStatus' }).then(function (res) {
+        self.lockCapable = true;
+        var lock = (res && res.lock && typeof res.lock === 'object') ? res.lock : null;
+        if (!lock) return null;
+        return {
+          name: (typeof lock.name === 'string') ? lock.name : '',
+          expiresAt: (typeof lock.expiresAt === 'number') ? lock.expiresAt : 0
+        };
+      }).catch(function (err) {
+        var msg = String(err && err.message ? err.message : err);
+        /* 旧サーバ＝機能保留（従来動作のまま）。通信失敗は据え置き（null）＝次の機会に再判定。 */
+        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        return null;
+      });
+    },
+
+    /* 編集権の取得。takeover=true は他端末保持中の強制引き継ぎ（サーバが epoch+1 で発行）。
+     * tabId は呼び出し側（app）が渡す＝store は DOM/sessionStorage に触らない。
+     * 返り値: {ok:true, lease} / {ok:false, error:'lockheld'|'badresponse'|通信エラー文} */
+    acquireLease: function (name, takeover, tabId) {
+      var self = this;
+      var payload = { action: 'lockAcquire', deviceId: this.ensureDeviceId(),
+                      name: String(name === null || name === undefined ? '' : name) };
+      if (takeover) payload.takeover = true;
+      return this.api(payload).then(function (res) {
+        var el = EL_();
+        var lease = el ? el.normalizeLease(res && res.lease) : null;
+        if (!lease) return { ok: false, error: 'badresponse' };
+        if (typeof tabId === 'string' && tabId) lease.tabId = tabId;
+        self.lease = lease;
+        self.lockCapable = true;
+        self.setLocal('editLease', lease);
+        return { ok: true, lease: lease };
+      }).catch(function (err) {
+        var msg = String(err && err.message ? err.message : err);
+        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        return { ok: false, error: msg };
+      });
+    },
+
+    /* 編集権の期限延長（ハートビート）。応答が {lease:{…}} でも {expiresAt} だけでも受ける。 */
+    renewLease: function () {
+      var self = this;
+      if (!this.lease || !this.lease.token) return Promise.resolve({ ok: false, error: 'nolease' });
+      var cur = this.lease;
+      /* 券は必ず editToken で送る。api() が payload.token に認証トークンを入れるため、
+       * token フィールドに載せると認証トークンで上書きされ券が届かない（2026-08-17 契約確定）。 */
+      return this.api({ action: 'lockRenew', deviceId: this.ensureDeviceId(), editToken: cur.token }).then(function (res) {
+        var el = EL_();
+        var lease = el ? el.normalizeLease(res && res.lease) : null;
+        if (!lease && el) {
+          /* サーバの延長応答は {ok, lease:{expiresAt}} で token/epoch を含まない（不変なので省かれる）。
+           * 期限だけを受けて現行の券・世代を維持する（上位 {ok, expiresAt} 形も受ける）。 */
+          var exp = (res && res.lease && typeof res.lease.expiresAt === 'number') ? res.lease.expiresAt
+                  : ((res && typeof res.expiresAt === 'number') ? res.expiresAt : null);
+          if (exp !== null) lease = el.normalizeLease({ token: cur.token, epoch: cur.epoch, expiresAt: exp });
+        }
+        if (!lease) return { ok: false, error: 'badresponse' };   /* 形式不明＝現行リースを据え置き（何も壊さない） */
+        if (cur.tabId) lease.tabId = cur.tabId;
+        self.lease = lease;
+        self.setLocal('editLease', lease);
+        return { ok: true, lease: lease };
+      }).catch(function (err) {
+        var msg = String(err && err.message ? err.message : err);
+        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        return { ok: false, error: msg };
+      });
+    },
+
+    /* 編集権の返却（編集モードOFF）。成功でリースと編集モードを解除する。 */
+    releaseLease: function () {
+      var self = this;
+      var cur = this.lease;
+      if (!cur || !cur.token) { this.clearLease_(); this.updateStatus(); return Promise.resolve({ ok: true }); }
+      return this.api({ action: 'lockRelease', deviceId: this.ensureDeviceId(), editToken: cur.token }).then(function () {
+        self.clearLease_();
+        self.updateStatus();
+        return { ok: true };
+      }).catch(function (err) {
+        /* 返却できなかった: リースは保持したまま（勝手に編集モードを落とすと未送信の送信先を失う）。
+         * TTL30分で自動失効するため他端末が引き継げなくなることはない。 */
+        return { ok: false, error: String(err && err.message ? err.message : err) };
+      });
+    },
+
+    /* リースと編集モードの解除（業務データには触れない）。 */
+    clearLease_: function () {
+      this.lease = null;
+      this.editMode = false;
+      this.setLocal('editLease', null);
+    },
+
+    /* 送信前・タブ復帰時の検証。
+     * 'ok'=延長できた／'reacquired'=失効していたが同じ端末で取り直した（編集継続）／
+     * 'lost'=他端末が保持していた（退避して降格）／'network'=通信できない（編集モード維持）。
+     *
+     * サーバは「他端末が保持中」も「失効・空き」も同じ locklost を返す（保持者名は例外化で失われる）。
+     * これを一律に喪失として扱うと、昼休憩やスリープで30分放置しただけの端末が、誰とも競合していないのに
+     * 未送信を全部退避して閲覧へ降格してしまう。凍結仕様の遷移マトリクスどおり、まず同じ端末での
+     * 取り直しを1回試し、他端末が持っていた時（lockheld）だけ降格する。
+     * 取り直すと epoch が進むため、旧世代の未送信は競合時に自動退避される＝巻き戻り防止は既存機構が担保。 */
+    verifyLease: function () {
+      var self = this;
+      return this.renewLease().then(function (r) {
+        if (r && r.ok) { self._leaseVerified = true; return 'ok'; }
+        var err = r ? r.error : '';
+        if (err === 'nolease') return 'nolease';
+        var kind = classifyPushError_(err);
+        if (kind === 'unsupported') return 'unsupported';   /* 旧サーバ＝機能保留（編集モード維持） */
+        if (kind !== 'lost') return 'network';
+        var rec = self.lease || {};
+        var oldEpoch = (typeof rec.epoch === 'number') ? rec.epoch : null;
+        return self.acquireLease(self.getLocal('deviceName', ''), false, rec.tabId).then(function (a) {
+          if (a && a.ok) {
+            /* epoch はサーバで acquire ごとに +1・解放後も保持される単調カウンタ。
+             * 差が1なら「自分が取り直しただけ」、1を超えるなら【不在の間に別の端末が取得していた】
+             * ＝この端末の表示は古い可能性がある。編集を続ける前に最新を取り込む（鮮度確認）。
+             * 判定できない時も取り込む＝安全側（1往復増えるだけ）。 */
+            var ne = (a.lease && typeof a.lease.epoch === 'number') ? a.lease.epoch : null;
+            self.lastReacquireGap = (oldEpoch === null || ne === null) ? 999 : (ne - oldEpoch);
+            self._leaseVerified = true;
+            if (self.onLeaseReacquired) {
+              try {
+                var pr = self.onLeaseReacquired(self.lastReacquireGap);
+                if (pr && pr.then) return pr.then(function () { return 'reacquired'; },
+                                                  function () { return 'reacquired'; });
+              } catch (eR) {}
+            }
+            return 'reacquired';
+          }
+          if (String(a && a.error) === 'lockheld') { self.handleLockLost(); return 'lost'; }
+          /* 取り直しにも失敗（通信不能・応答不正）: 何も壊さず編集モードを維持する */
+          return 'network';
+        });
+      });
+    },
+
+    /* 編集権の喪失（他端末が保持・強制引き継ぎ・厳格モードで券なし）。
+     * 手順: ①入力遮断の通知 ②未送信キーの手元データを全部退避 ③1件でも退避に失敗したら中断
+     * （採用もキュー解消もせず全データ温存＝復旧材料が無い状態でローカルを消さない）
+     * ④全退避成功ならサーバ版を採用 ⑤キュー解消・閲覧へ降格 ⑥件数を通知。 */
+    handleLockLost: function () {
+      var self = this;
+      if (this._lockLostInFlight) return Promise.resolve('busy');
+      this._lockLostInFlight = true;
+      if (this.onLockLostStart) { try { this.onLockLostStart(); } catch (eS) {} }
+      var keys = this.queue.keys();
+      var failed = [];
+      var i, key, item, lv;
+      for (i = 0; i < keys.length; i++) {
+        key = keys[i];
+        item = this.queue.items[key];
+        lv = lsGet(PREFIX + key);
+        if (lv === null || lv === undefined) continue;   /* 送るものが無い＝退避の対象外 */
+        if (!this.rescueLocal_(key, lv, item ? item.baseRev : 0)) failed.push(key);
+      }
+      if (failed.length) {
+        this._lockLostInFlight = false;
+        this.storeError = true;
+        this.updateStatus('storeerror',
+          '他の端末が編集モードになりました。この端末の未送信の編集を端末内へ退避できなかったため、サーバ版の取り込みを中止しました（' + failed.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してから画面を再読み込みしてください。');
+        if (this.onLockLostFail) { try { this.onLockLostFail(failed); } catch (eF) {} }
+        return Promise.resolve('rescuefail');
+      }
+      var chain = Promise.resolve();
+      var adopted = 0;
+      keys.forEach(function (k) {
+        chain = chain.then(function () {
+          return new Promise(function (resolve) {
+            /* 実データはサーバから取り直す（needsPull）。保護判定・rev前進・キュー解消は adoptServer が担う。 */
+            self.adoptServer({ key: k, server: { rev: self.meta.revs[k] || 0, data: null, needsPull: true } }, function () {
+              adopted++;
+              resolve();
+            });
+          });
+        });
+      });
+      return chain.then(function () {
+        /* 採用が保留になったキー（保護判定の空拒否等）もキューから外す＝失効した編集が
+         * 後から再送される経路を残さない。手元の内容は上で退避済み。
+         * 保留中の競合記録も落とす（未送信が無くなった後に移行バナーが残らないように）。 */
+        for (var j = 0; j < keys.length; j++) {
+          self.queue.take(keys[j]);
+          if (self.heldConflicts) delete self.heldConflicts[keys[j]];
+        }
+        self.clearLease_();
+        self.saveMeta();
+        self.updateStatus();
+        if (self.onLockLost) { try { self.onLockLost(adopted); } catch (eL) {} }
+        self._lockLostInFlight = false;
+        return 'ok';
+      });
+    },
+
+    /* ---- 移行バナー（旧版で溜まった未送信の扱い） ---- */
+    /* 閲覧中に解決を保留した競合キーの一覧。[{key, baseRev(=キューの基準rev), serverRev}] */
+    getHeldConflicts: function () {
+      var out = [];
+      var h = this.heldConflicts || {};
+      for (var key in h) {
+        if (!Object.prototype.hasOwnProperty.call(h, key)) continue;
+        var item = this.queue ? this.queue.items[key] : null;
+        out.push({
+          key: key,
+          baseRev: item ? item.baseRev : 0,
+          serverRev: h[key] ? h[key].serverRev : 0
+        });
+      }
+      return out;
+    },
+    /* 「この端末の版で置き換える」（キー別・編集モードで本人が明示選択した時だけ）。
+     * 手元の内容を現在のリース世代・時刻で積み直す＝以後の競合解決で正当にローカル優先になる
+     * （旧キューのまま送ると世代不一致で必ず退避側へ倒れるため、ここで「今の編集」として宣言する）。
+     * 置き換えられるサーバ版は competing 側の退避（autoResolveConflict）で保全される。 */
+    resolveHeldKeep: function (key) {
+      if (!this.editMode) return false;   /* 閲覧モードでは書かない（アップロード完全ゼロ） */
+      var live = lsGet(PREFIX + key);
+      if (live === null || live === undefined) return false;   /* 送るものが無い */
+      this.queue.take(key);               /* 旧世代の登録を外してから積み直す（enqueue は既存キーを据え置くため） */
+      var ok = this.set(key, live);
+      if (this.heldConflicts) delete this.heldConflicts[key];
+      return ok;
+    },
+    /* 「サーバ版を採用」（キー別）。退避→単一キー採用→保留記録とキューを解消。
+     * 退避に失敗したら中断して温存（復旧材料が無い状態でローカルを消さない）。 */
+    resolveHeldAdopt: function (key) {
+      var self = this;
+      var h = (this.heldConflicts && this.heldConflicts[key]) ? this.heldConflicts[key] : null;
+      var item = this.queue ? this.queue.items[key] : null;
+      var lv = lsGet(PREFIX + key);
+      if (lv !== null && lv !== undefined && !isEmptyish(lv) &&
+          !this.rescueLocal_(key, lv, item ? item.baseRev : 0)) {
+        this.storeError = true;
+        this.updateStatus('storeerror',
+          'この端末の編集を退避できなかったため、サーバ版の取り込みを中止しました（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+        return Promise.resolve({ ok: false, error: 'rescuefail' });
+      }
+      return new Promise(function (resolve) {
+        self.adoptServer({ key: key, server: { rev: (h && h.serverRev) || 0, data: null, needsPull: true } }, function () {
+          if (self.heldConflicts) delete self.heldConflicts[key];
+          self.queue.take(key);
+          self.saveMeta();
+          self.updateStatus();
+          if (self.onResolved) { try { self.onResolved(); } catch (eR) {} }
+          resolve({ ok: true });
+        });
+      });
+    },
+    /* 「破棄して最新を取得」: 保留中の競合キーだけでなく未送信キュー全体を対象に、
+     * 退避 → 未送信の解消（dirty も落とす） → サーバから取り直す。
+     * 退避に失敗したキーは触らず温存（復旧材料が無い状態でローカルを消さない）。
+     * 返り値: {adopted(取り直したキー数), kept(温存したキー)} */
+    resolveHeldDiscard: function () {
+      var self = this;
+      var base = {}, list = this.getHeldConflicts(), i, k, lv;
+      for (i = 0; i < list.length; i++) base[list[i].key] = list[i].baseRev;
+      var qk = this.queue ? this.queue.keys() : [];
+      for (i = 0; i < qk.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(base, qk[i])) {
+          base[qk[i]] = this.queue.items[qk[i]] ? this.queue.items[qk[i]].baseRev : 0;
+        }
+      }
+      var kept = [], targets = [];
+      for (k in base) {
+        if (!Object.prototype.hasOwnProperty.call(base, k)) continue;
+        lv = lsGet(PREFIX + k);
+        if (lv !== null && lv !== undefined && !isEmptyish(lv) && !this.rescueLocal_(k, lv, base[k])) { kept.push(k); continue; }
+        targets.push(k);
+      }
+      for (i = 0; i < targets.length; i++) {
+        this.queue.take(targets[i]);
+        /* dirty を落とすまでが「解消」。残すと次のプルで再び競合と判定され保留に戻る。 */
+        if (this.meta && this.meta.dirty) delete this.meta.dirty[targets[i]];
+        if (this.heldConflicts) delete this.heldConflicts[targets[i]];
+      }
+      this.saveMeta();
+      this.updateStatus();
+      if (kept.length) {
+        this.storeError = true;
+        this.updateStatus('storeerror',
+          '未送信の編集を端末内へ退避できなかったため、一部のキーは取り直しを中止しました（' + kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+      }
+      if (!targets.length) return Promise.resolve({ adopted: 0, kept: kept });
+      return this.pullAll(targets).then(function () {
+        if (self.onResolved) { try { self.onResolved(); } catch (eR) {} }
+        return { adopted: targets.length, kept: kept };
       });
     },
 
@@ -4401,10 +4994,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           }
         });
       }
-      document.getElementById('staffAdd').addEventListener('click', function () { self.editStaff(null); });
-      document.getElementById('staffSyncAllowed').addEventListener('click', function () { self.syncAllowedFromShift(); });
-      document.getElementById('symAdd').addEventListener('click', function () { self.addSymbolRow(); });
-      document.getElementById('staffParse').addEventListener('click', function () { self.parseStaffPaste(); });
+      document.getElementById('staffAdd').addEventListener('click', function () { if (self.app.leaseGuard()) return; self.editStaff(null); });
+      document.getElementById('staffSyncAllowed').addEventListener('click', function () { if (self.app.leaseGuard()) return; self.syncAllowedFromShift(); });
+      document.getElementById('symAdd').addEventListener('click', function () { if (self.app.leaseGuard()) return; self.addSymbolRow(); });
+      document.getElementById('staffParse').addEventListener('click', function () { self.parseStaffPaste(); });   /* 解析（プレビュー）は閲覧でも可・取込ボタンで遮断する */
       this.initSettings();
       this.initSync();
       this.initBackup();
@@ -4414,6 +5007,75 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.renderStaff();
       this.renderSymbols();
       this.renderSettings();
+      this.renderRescueList();
+      this.syncBackupImportUI();
+    },
+
+    /* バックアップ取込は同期対象キーを全面上書きするため閲覧モードでは押させない（理由を title に出す）。 */
+    syncBackupImportUI: function () {
+      var lab = document.getElementById('backupImportLabel');
+      var inp = document.getElementById('backupImport');
+      var view = !(window.ShiftStore && window.ShiftStore.editMode);
+      if (inp) inp.disabled = view;
+      if (lab) {
+        lab.style.opacity = view ? '.55' : '';
+        lab.title = view ? '閲覧モードでは取り込めません（右上の「✎ 編集」をオンにしてください）'
+                         : 'JSONバックアップを取り込みます（勤務表は取込前に1世代退避されます）';
+      }
+    },
+
+    /* 退避データ一覧（同期の競合解決・バックアップ取込で置き換えられる前の内容）。
+     * JSONエクスポートは local:* を含まないため、退避を取り出せる導線はここだけ。
+     * 書き戻しボタンは置かない＝現在のデータへ誤って上書きする事故を作らない（中身はダウンロードで確認する）。 */
+    renderRescueList: function () {
+      var el = document.getElementById('rescueList');
+      if (!el) return;
+      var Store = window.ShiftStore;
+      var rows = [], i, k, m, name, v, cut;
+      for (i = 0; i < localStorage.length; i++) {
+        k = localStorage.key(i);
+        m = k ? k.match(/local:(conflictRescue|importRescue):(.+)$/) : null;
+        if (!m) continue;
+        name = m[1] + ':' + m[2];
+        v = Store.getLocal(name, null);   /* 圧縮保存されている場合も Store 側が復号する */
+        if (!v || typeof v.savedAt !== 'number') continue;
+        /* 末尾の :タイムスタンプ を落とした部分が元のキー（元キー自身が : を含むため lastIndexOf） */
+        cut = m[2].lastIndexOf(':');
+        rows.push({ local: name, kind: (m[1] === 'importRescue') ? '取込前' : '競合解決前',
+                    srcKey: (cut > 0 ? m[2].slice(0, cut) : m[2]), savedAt: v.savedAt, hint: rescueHint_(v.data) });
+      }
+      if (!rows.length) { el.innerHTML = '<p class="muted">退避データはありません。</p>'; return; }
+      rows.sort(function (a, b) { return b.savedAt - a.savedAt; });
+      var app = this.app;
+      var h = '<table class="plain"><tr><th>退避日時</th><th>種別</th><th>対象</th><th>内容の目安</th><th></th></tr>';
+      for (i = 0; i < rows.length; i++) {
+        var label = (app && app.keyLabel_) ? app.keyLabel_(rows[i].srcKey) : rows[i].srcKey;
+        h += '<tr><td>' + esc(fmtRescueTime_(rows[i].savedAt)) + '</td><td>' + esc(rows[i].kind) + '</td>' +
+          '<td>' + esc(label) + '</td><td>' + esc(rows[i].hint) + '</td>' +
+          '<td><button class="act ghost rescueDl" data-k="' + esc(rows[i].local) + '">JSONダウンロード</button></td></tr>';
+      }
+      el.innerHTML = h + '</table>';
+      var self = this;
+      el.onclick = function (e) {
+        if (!e.target || !e.target.classList || !e.target.classList.contains('rescueDl')) return;
+        self.downloadRescue_(e.target.getAttribute('data-k'));
+      };
+    },
+    downloadRescue_: function (localName) {
+      var Store = window.ShiftStore;
+      var msgEl = document.getElementById('backupMsg');
+      var v = Store.getLocal(localName, null);
+      if (!v) { if (msgEl) msgEl.textContent = '✗ 退避データを読めませんでした'; return; }
+      try {
+        var blob = new Blob([JSON.stringify(v, null, 1)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'shiftapp-rescue-' + String(localName).replace(/[^0-9A-Za-z-]+/g, '_') + '.json';
+        a.click();
+        if (msgEl) msgEl.textContent = '✓ 退避データをダウンロードしました';
+      } catch (e) {
+        if (msgEl) msgEl.textContent = '✗ ダウンロードできませんでした';
+      }
     },
 
     /* ── 職員一覧 ── */
@@ -4594,6 +5256,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         document.getElementById('edRetireWrap').style.display = show;
       };
       document.getElementById('edSave').onclick = function () {
+        if (app.leaseGuard()) return;
         var name = document.getElementById('edName').value.trim();
         if (!name) { alert('氏名を入力してください'); return; }
         st.name = name;
@@ -4636,6 +5299,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       };
       var del = document.getElementById('edDelete');
       if (del) del.onclick = function () {
+        if (app.leaseGuard()) return;
         app.confirm('職員の削除', st.name + ' を削除しますか？\n（過去のシフトデータは残りますが表示されなくなります。\n退職の場合は削除せず、ステータスを「退職」にして退職月を入力する方を推奨します。退職月以前のシフト・様式1はそのまま残ります）', function () {
           app.removeStaff(st.id);
           closeDrawer();
@@ -4669,6 +5333,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var el = document.getElementById('symTable');
       el.innerHTML = h;
       el.onchange = function (e) {
+        /* 記号表の値編集（コード/時刻/色/太字）は同期対象。閲覧モードでは受け付けず表示を元へ戻す
+         * （画面上だけ変わって保存されない＝「直したつもり」を作らない。色は端末内バックアップにも
+         *  書き込むため、ここを素通しすると後日の編集モード起動時に自動再適用でサーバへ流れる）。 */
+        if (app.leaseGuard()) { self.renderSymbols(); return; }
         var tr = closestTag(e.target, 'tr');
         if (!tr) return;
         var idx = parseInt(tr.getAttribute('data-idx'), 10);
@@ -4692,6 +5360,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!e.target.getAttribute) return;
         var act = e.target.getAttribute('data-act');
         if (act !== 'toggle' && act !== 'delete') return;
+        if (app.leaseGuard()) return;
         var tr = closestTag(e.target, 'tr');
         if (!tr) return;
         var idx = parseInt(tr.getAttribute('data-idx'), 10);
@@ -4718,6 +5387,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var sels = el.querySelectorAll('select');
       for (var j = 0; j < sels.length; j++) {
         sels[j].addEventListener('change', function (e) {
+          if (app.leaseGuard()) { self.renderSymbols(); return; }   /* 閲覧モードでは保存しない（表示を元へ戻す） */
           var tr = closestTag(e.target, 'tr');
           var idx = parseInt(tr.getAttribute('data-idx'), 10);
           app.symbols[idx][e.target.getAttribute('data-f')] = e.target.value;
@@ -4894,6 +5564,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '</table><div class="flexrow" style="margin-top:8px"><button class="act" id="staffImportGo">この内容で取り込む</button></div>';
       document.getElementById('staffImportPreview').innerHTML = h;
       document.getElementById('staffImportGo').onclick = function () {
+        if (app.leaseGuard()) return;
         var added = 0, updated = 0;
         for (var x = 0; x < r.staff.length; x++) {
           var p2 = r.staff[x];
@@ -4983,6 +5654,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '</table><div style="margin-top:10px"><button class="act" id="setSave">設定を保存</button> <span class="muted" id="setMsg"></span></div>';
       document.getElementById('settingsForm').innerHTML = h;
       document.getElementById('setSave').onclick = function () {
+        if (app.leaseGuard()) return;
         s.breakThresholdH = parseInt(document.getElementById('setThresh').value, 10);
         s.nightBreakH = parseFloat(document.getElementById('setNightBreak').value) || 2;
         s.paidLeaveCountsAsWork = document.getElementById('setPaid').checked;
@@ -5074,6 +5746,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('backupImport').addEventListener('change', function (e) {
         var file = e.target.files[0];
         if (!file) return;
+        /* 取込は同期対象キーを全面上書きする＝閲覧モードでは受け付けない（無音で0件になるのを防ぐ） */
+        if (app.leaseGuard()) { e.target.value = ''; return; }
         var reader = new FileReader();
         reader.onload = function () {
           var msgEl = document.getElementById('backupMsg');
@@ -5115,6 +5789,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function esc(s) {
     return String(s === undefined || s === null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  /* 退避データの「内容の目安」。中身を開かずに、どれを取り出すか選べる程度の情報だけ出す
+   * （氏名・勤務内容は一覧に並べない＝肩越しの覗き見を想定）。 */
+  function rescueHint_(data) {
+    if (data === null || data === undefined) return '（空）';
+    if (Object.prototype.toString.call(data) === '[object Array]') return data.length + '件';
+    if (typeof data === 'object') {
+      if (data.cells) {
+        var n = 0, sid, day;
+        for (sid in data.cells) {
+          if (!Object.prototype.hasOwnProperty.call(data.cells, sid)) continue;
+          for (day in data.cells[sid]) {
+            if (Object.prototype.hasOwnProperty.call(data.cells[sid], day) && data.cells[sid][day]) n++;
+          }
+        }
+        return '勤務 ' + n + 'セル';
+      }
+      var c = 0, key;
+      for (key in data) { if (Object.prototype.hasOwnProperty.call(data, key)) c++; }
+      return c + '項目';
+    }
+    return '—';
+  }
+  function fmtRescueTime_(ms) {
+    try {
+      var d = new Date(ms);
+      var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+      return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    } catch (e) { return String(ms); }
   }
   function closestTag(el, tag) {
     while (el && el !== document) {
@@ -5267,6 +5970,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         dragSid = null;
       });
       el.onclick = function (e) {
+        if (self.app.leaseGuard()) return;   /* 閲覧モードでは希望休を書き換えない */
         var td = e.target;
         while (td && td !== el && !(td.getAttribute && td.getAttribute('data-nm'))) td = td.parentNode;
         if (!td || td === el) return;
@@ -5306,6 +6010,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '</table><div class="flexrow" style="margin-top:8px"><button class="act" id="reqImportGo">この内容で登録する（既存の希望休と統合）</button></div>';
       document.getElementById('reqPreview').innerHTML = h;
       document.getElementById('reqImportGo').onclick = function () {
+        if (app.leaseGuard()) return;        /* 取込の登録も編集モードだけ（解析・プレビューは閲覧でも可） */
         var reqs = app.requests;
         var n = 0;
         for (var nm2 in r.entries) {
@@ -5321,6 +6026,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     applyToPlan: function () {
       var app = this.app;
+      if (app.leaseGuard()) return;
       if (app.lockGuard()) return;   /* ロック中の月は予定（確定版）へ反映しない */
       var sched = app.getSched('plan');
       var n = 0, skipped = 0;
@@ -5371,6 +6077,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 実績レイヤを行政提出用レイヤに複製（行政提出は実績に紐づく） */
     seedFromActual: function () {
       var app = this.app, self = this;
+      if (app.leaseGuard()) return;
       if (app.lockGuard()) return;   /* ロック中の月は行政提出用を書き換えない */
       var actual = app.getSched('actual');
       var n = 0;
@@ -5702,6 +6409,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var inputs = el.querySelectorAll('.fr-emp');
       for (var j = 0; j < inputs.length; j++) {
         inputs[j].addEventListener('change', function () {
+          if (self.app.leaseGuard()) { self.render(); return; }   /* 閲覧モードでは保存しない（表示を元へ戻す） */
           var sid = this.getAttribute('data-sid');
           for (var k = 0; k < self.app.staff.length; k++) {
             if (self.app.staff[k].id === sid) self.app.staff[k].empCode = this.value.trim();
@@ -5715,6 +6423,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
 
     applyPaste: function () {
+      if (this.app.leaseGuard()) return;
       var text = document.getElementById('frPaste').value;
       var parsed = F.parseEmployeePaste(text);
       var out = document.getElementById('frPasteResult');
@@ -5775,6 +6484,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var pats = el.querySelectorAll('.fr-pat');
       for (var p = 0; p < pats.length; p++) {
         pats[p].addEventListener('change', function () {
+          if (self.app.leaseGuard()) { self.renderMapList(); return; }
           var c = self.cfg();
           var v = this.value.trim();
           if (v) c.patternMap[this.getAttribute('data-sym')] = v;
@@ -5785,6 +6495,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var offs = el.querySelectorAll('.fr-off');
       for (var o = 0; o < offs.length; o++) {
         offs[o].addEventListener('change', function () {
+          if (self.app.leaseGuard()) { self.renderMapList(); return; }
           var c = self.cfg();
           c.offNames[this.getAttribute('data-sym')] = this.value.trim();
           self.saveCfg(c);
@@ -6104,8 +6815,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function finishWizard() {
     wiz.setupDone = true;
     saveFacilityProfile(wiz);
-    /* 職員一括登録（既存マスタへ投入・氏名重複はスキップ） */
-    if (app && app.staff && wiz._names) {
+    /* 職員一括登録（既存マスタへ投入・氏名重複はスキップ）。
+     * 施設情報そのものは端末ローカル（work-schedule と共有）なので閲覧モードでも保存できるが、
+     * 職員マスタは同期対象データなので編集モードでのみ書き込む（閲覧中は案内だけ出してスキップ）。 */
+    if (app && app.staff && wiz._names && !(app.leaseGuard && app.leaseGuard())) {
       var lines = String(wiz._names).split(/\r?\n/);
       var existing = {};
       for (var e = 0; e < app.staff.length; e++) existing[normName(app.staff[e].name)] = 1;
@@ -6133,7 +6846,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     app = a;
     applyOfficeLabels();
     var p = loadFacilityProfile();
-    if (!p.setupDone) openWizard();   /* 未存在含め setupDone:false なら初回ウィザード */
+    /* 初回ウィザードの自動起動は編集モードのみ。閲覧端末（他端末が編集中・共有ロック待ち）で
+     * 毎回モーダルが開くのを防ぐ。手動では［マスタ→設定→施設情報の設定］から開ける。 */
+    if (!p.setupDone && window.ShiftStore && window.ShiftStore.editMode) openWizard();   /* 未存在含め setupDone:false なら初回ウィザード */
   }
 
   window.ShiftFacility = {
@@ -6180,8 +6895,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── 起動 ── */
     boot: function () {
       Store.init();
+      Store.ensureDeviceId();          /* 編集権の保持者判定に使う端末ID（乱数・個人情報なし） */
+      this._tabId = this.tabId_();     /* 同一端末2タブの二重編集ゲート用 */
       this.loadAll();
-      if (this.ensureOrders()) Store.set('staff', this.staff);
+      /* 起動時の並び順補完は「自動書き込み」＝閲覧モードでは保存せずメモリ上の値だけで描画する */
+      if (this.ensureOrders()) Store.set('staff', this.staff, { auto: true });
       /* boot窓pull完了前は on-demand 月取得を発行しない（setYM→loadMonth が先に走るため当月が二重pullになる） */
       this._bootPullPending = true;
       /* 直前に表示していた月を復元（無ければ現在月）。リロードで現在月に戻る不具合の修正。 */
@@ -6200,18 +6918,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       window.ShiftFacility.init(this);   /* 事業所プルダウンのラベル反映＋初回ウィザード */
       window.ShiftMaster.render();
       this.bindSync();
+      this.bindEditLock();       /* 編集モードのトグル・通知・バッジ（既定は閲覧モード） */
       this.rerender();
       var self = this;
       this.notifyStaffRestore();
       /* どの入口（ボタン/Cmd+P/Ctrl+P）から印刷しても一枚化が効くようにする */
-      window.addEventListener('beforeprint', function () { self.applyPrintFit(); });
+      window.addEventListener('beforeprint', function () { self._printing = true; self.applyPrintFit(); });
       /* 印刷(またはキャンセル)後に、印刷用の切り詰めDOMから通常表示へ復帰する */
-      window.addEventListener('afterprint', function () { self.rerender(); });
+      window.addEventListener('afterprint', function () {
+        self._printing = false;
+        self.rerender();
+        /* 印刷中に届いた更新をここで反映（印刷物と画面の食い違いを残さない） */
+        if (self._pendingReload) { self._pendingReload = false; self.reloadFromStore(); }
+      });
       /* 起動時プル: keyed窓（端末共通キー＋前月/当月/翌月ぶんの月別キー）だけ取得＝全量転送の回避。
        * 窓はboot時点でスナップショットし、以後のrecoverNow（online/タブ復帰）でも同じ窓で取得する。 */
       this._syncWindowMonths = this.windowMonths_();
       var scope = this.recentSyncKeys_();
       Store._scopeKeys = scope;
+      /* サーバの編集リース対応を1回だけ確認（起動時プルと並行・専用catchで接続先の自動切替は起こさない）。
+       * 判定後に編集トグル／モードバッジ／閲覧ポーラーを初期化し、リースが生きていれば編集モードを復元する。 */
+      this.probeLock_().then(function () {
+        self.restoreEditMode_();
+        self.startLeaseTimers_();
+      });
       Store.pullAll(scope).then(function (r) {
         self._bootPullPending = false;
         if (r === 'ok') {
@@ -6221,6 +6951,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         /* 窓pullで当月が得られなかった場合（オフライン起動・クラウド空等）のみ on-demand 側が拾う（窓内で取得済みなら即return） */
         self.maybePullMonth_(self.ym);
+        /* 旧版で溜まった未送信が残っていれば移行バナーで扱いを選ばせる（プル完了後＝保留判定が済んでから） */
+        self.updatePendingBanner_();
       });
     },
 
@@ -6267,6 +6999,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this._staffRestored) {
         var n = this._staffRestored;
         this._staffRestored = 0;
+        /* 閲覧モードでは端末にもサーバにも書いていない（表示用のメモリ復元だけ）ので、そう伝える。 */
+        if (!Store.editMode) {
+          this.confirmInfo('職員名簿を表示用に復元しました',
+            '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を表示用に復元しました（この端末からは送信されません）。\n' +
+            'サーバ側も直す場合は［✎ 編集］をオンにしてから、もう一度画面を読み込んでください。');
+          return;
+        }
         this.confirmInfo('職員名簿を自動復元しました',
           '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため［マスタ→設定→バックアップ→JSONエクスポート］で保全することをおすすめします。');
       }
@@ -6278,7 +7017,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.symbols = Store.get('symbols', null);
       if (!this.symbols || !this.symbols.length) {
         this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
-        Store.set('symbols', this.symbols);
+        Store.set('symbols', this.symbols, { auto: true });
       }
       this.settings = Store.get('settings', null);
       if (!this.settings) {
@@ -6287,7 +7026,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           fteBaseHours: 160, weekStartDow: 6, printSize: 'A3 landscape',
           weekdayNeeds: { 0: { early: 4, late: 4 }, 1: { early: 4, late: 4 }, 2: { early: 4, late: 4 }, 3: { early: 4, late: 4 }, 4: { early: 4, late: 4 }, 5: { early: 4, late: 4 }, 6: { early: 4, late: 4 } }
         };
-        Store.set('settings', this.settings);
+        Store.set('settings', this.settings, { auto: true });
       }
       if (!this.settings.groupColors) {
         this.settings.groupColors = {
@@ -6307,10 +7046,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         if (!hasTextColor) {
           this.symbols = Sym.applyRecommendedColors(this.symbols);
-          Store.set('symbols', this.symbols);
+          Store.set('symbols', this.symbols, { auto: true });
         }
         this.settings.recommendedColorsApplied = true;
-        Store.set('settings', this.settings);
+        Store.set('settings', this.settings, { auto: true });
       }
       /* 参考シート(希望シフト回答)準拠の配色へ一度だけ全記号を移行する。
        * 既存記号の旧色・旧バックアップ(userColored)もリセットし、全記号がシート色に揃う。
@@ -6319,11 +7058,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ((this.settings.colorPaletteVer || 0) < COLOR_PALETTE_VER) {
         this.symbols = Sym.applyRecommendedColors(this.symbols);
         for (var pvi = 0; pvi < this.symbols.length; pvi++) this.symbols[pvi].userColored = false;
-        Store.set('symbols', this.symbols);
-        Store.setLocal('symColors', {});      /* 旧バックアップを破棄＝新配色が確実に適用される */
+        Store.set('symbols', this.symbols, { auto: true });
+        /* 旧バックアップの破棄は「移行を確定できる端末」＝編集モードだけで行う。
+         * 閲覧モードでも消すと、記号色の唯一の復旧材料（端末内バックアップ）を、
+         * 移行を保存できないまま失う。 */
+        if (Store.editMode) Store.setLocal('symColors', {});
         this.settings.colorPaletteVer = COLOR_PALETTE_VER;
         this.settings.recommendedColorsApplied = true;
-        Store.set('settings', this.settings);
+        Store.set('settings', this.settings, { auto: true });
       }
       /* ユーザーが設定した記号色を端末内バックアップから再適用する。
        * バックアップ(symColors)は同期対象外(local:)のため、クラウド同期で symbols が
@@ -6342,7 +7084,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (sc.colorDiv !== undefined && (sm.colorDiv || '') !== sc.colorDiv) { sm.colorDiv = sc.colorDiv; changed = true; }
           if (!sm.userColored) { sm.userColored = true; changed = true; }
         }
-        if (changed) Store.set('symbols', this.symbols);
+        if (changed) Store.set('symbols', this.symbols, { auto: true });
       }
     },
 
@@ -6358,7 +7100,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     reloadFromStore: function () {
       this.loadAll();
-      if (this.ensureOrders()) Store.set('staff', this.staff);
+      if (this.ensureOrders()) Store.set('staff', this.staff, { auto: true });
       this.sched = null;
       this.loadMonth();
       window.ShiftMaster.render();
@@ -6563,6 +7305,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     /* ロック切替: チェック=確定（現在のマスタを当月スナップショットに凍結）/解除=編集可（snapshotは保持） */
     toggleLock: function (on) {
+      /* 閲覧モードでは月ロックを触らせない（チェック状態は実データへ戻す） */
+      if (this.leaseGuard()) { this.syncLockUI(); return; }
       var p = this.planSched();
       if (!p.meta) p.meta = {};
       if (on) {
@@ -6587,6 +7331,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * （id基準で不足分を追加のみ＝既存の月別上書きを保全）。編集用タブ上ならそのタブだけに作用。 */
     mergeMasterIntoMonth: function () {
       if (!this.usingSnapshot()) return;
+      if (this.leaseGuard()) return;
       if (this.lockGuard()) return;
       var h = this.snapHost();
       var snap = h.sched.meta.staffSnap, have = {}, added = 0, i, j;
@@ -6599,6 +7344,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     /* スナップショットの氏名をその場（編集用タブ自身 or 月plan）だけ上書き（マスタ・他月/他タブに非波及） */
     editSnapName: function (sid) {
+      if (this.leaseGuard()) return;
       var h = this.snapHost();
       var snap = h.sched.meta && h.sched.meta.staffSnap;
       if (!snap) return;
@@ -6698,6 +7444,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
 
     createDraft: function () {
+      if (this.leaseGuard()) return;
       var self = this;
       var n = this.getDrafts().filter(function (d) { return !d.auto; }).length + 1;
       var label = prompt('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n);
@@ -6722,6 +7469,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* タブのダブルクリックでインライン名称変更（Enter=保存 / Esc=取消 / blur=保存）。
      * prompt()ダイアログを廃止。renderLayerBarが#draftTabsを作り直すため、最新DOMから対象を再取得する。 */
     renameDraft: function (id) {
+      if (this.leaseGuard()) return;
       var self = this;
       var d = this.findDraft(id);
       if (!d || d.auto) return;
@@ -6765,6 +7513,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
 
     deleteDraft: function (id) {
+      if (this.leaseGuard()) return;
       var self = this;
       var d = this.findDraft(id);
       if (!d) return;
@@ -6794,6 +7543,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     confirmDraft: function (id) {
       var self = this;
+      if (this.leaseGuard()) return;
       if (this.lockGuard()) return;   /* ロック中の確定は予定（確定版）を書き換えるため不可 */
       var draft = this.findDraft(id);
       if (!draft) return;
@@ -6952,18 +7702,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         sched: this.sched, requests: this.requests, holidays: this.holidays,
         results: this.results, counts: this.counts, metrics: this.metrics,
         warnCount: this.warnCount, revealHidden: this.revealHidden,
-        isLocked: this.isLockedNow(),   /* ロック中はグリッドの編集UI（パレット）を開かない */
-        onLockedEdit: function () { self.toast('🔒 ロック中です。編集するにはロックを外してください'); },
+        /* ロック中・閲覧モードはグリッドの編集UI（パレット）を開かない（grid.js は無改変） */
+        isLocked: this.isLockedNow() || !Store.editMode,
+        onLockedEdit: function () {
+          if (!Store.editMode) { self.leaseGuard(); return; }
+          self.toast('🔒 ロック中です。編集するにはロックを外してください');
+        },
         printTitle: this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）',  /* 分割印刷の各ページ見出しに流用 */
         recentColors: Store.getLocal('recentColors', []),
         isVisible: function (st) { return self.isVisibleInMonth(st, self.ym); },
-        onToggleDivision: function (sid, div, hide) { self.toggleHiddenDivision(sid, div, hide); },
-        onCellsColor: function (cells, color) { self.colorCells(cells, color); },
-        onCellsBold: function (cells) { self.boldCells(cells); },
-        onCellsChange: function (cells, value) { self.changeCells(cells, value); },
-        onDirectPattern: function (sids, value) { self.applyDirectPattern(sids, value); },
-        onPaste: function (changes) { self.pasteCells(changes); },
+        onToggleDivision: function (sid, div, hide) { if (self.leaseGuard()) return; self.toggleHiddenDivision(sid, div, hide); },
+        onCellsColor: function (cells, color) { if (self.leaseGuard()) return; self.colorCells(cells, color); },
+        onCellsBold: function (cells) { if (self.leaseGuard()) return; self.boldCells(cells); },
+        onCellsChange: function (cells, value) { if (self.leaseGuard()) return; self.changeCells(cells, value); },
+        onDirectPattern: function (sids, value) { if (self.leaseGuard()) return; self.applyDirectPattern(sids, value); },
+        onPaste: function (changes) { if (self.leaseGuard()) return; self.pasteCells(changes); },
         onNeedChange: function (day, cat, val) {
+          if (self.leaseGuard()) return;
           if (self.lockGuard()) return;
           self.capture('必要数変更 ' + day + '日');
           if (!self.sched.dailyNeeds[day]) self.sched.dailyNeeds[day] = {};
@@ -6972,6 +7727,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.rerender();
         },
         onMonthNeedChange: function (cat, val) {
+          if (self.leaseGuard()) return;
           if (self.lockGuard()) return;
           self.capture('前提数変更（' + (cat === 'early' ? '早番' : '遅番') + '）');
           if (!self.sched.monthNeeds) self.sched.monthNeeds = {};
@@ -6984,8 +7740,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.saveSched(self.layer, self.sched);
           self.rerender();
         },
-        onReorder: function (sid, beforeSid) { self.reorderShift(sid, beforeSid); },
+        onReorder: function (sid, beforeSid) { if (self.leaseGuard()) return; self.reorderShift(sid, beforeSid); },
         onMonthNote: function (sid) {
+          if (self.leaseGuard()) return;
           if (self.lockGuard()) return;
           var st = self.findStaff(sid);
           var cur = self.sched.notes[sid] || '';
@@ -6997,6 +7754,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.rerender();
         },
         onStaffEdit: function (sid) {
+          if (self.leaseGuard()) return;
           if (self.isLockedNow()) { self.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
           if (self.usingSnapshot()) { self.editSnapName(sid); return; }  /* 凍結月＝その月だけ氏名上書き（マスタ非波及） */
           window.ShiftMaster.editStaff(sid);
@@ -7051,6 +7809,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return true;
     },
     undo: function () {
+      if (this.leaseGuard()) return;
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._undo.length) return;
       var snap = this._undo.pop();
@@ -7063,6 +7822,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     },
     redo: function () {
+      if (this.leaseGuard()) return;
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }
       if (!this._redo.length) return;
       var snap = this._redo.pop();
@@ -7074,6 +7834,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     },
     jumpTo: function (idx) {
+      if (this.leaseGuard()) return;
       /* undo が進まない場合（ロック中・復元先のレイヤ無しで中止）は打ち切る＝無限ループにしない */
       var n = this._undo.length;
       while (this._undo.length > idx) {
@@ -7286,7 +8047,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var bk = Store.getLocal('staffBackup', null);
       if (bk && bk.staff && bk.staff.length) {
         this.staff = bk.staff;
-        Store.set('staff', this.staff); /* 復元＝サーバ修復のため再送 */
+        /* 復元＝サーバ修復のため再送。閲覧モードでは保存せず表示用のメモリ復元だけ（{auto:true}）。 */
+        Store.set('staff', this.staff, { auto: true });
         this._staffRestored = bk.staff.length;
       }
     },
@@ -7418,13 +8180,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.rerender();
     },
     reorderShift: function (sid, beforeSid) {
+      if (this.leaseGuard()) return;
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return; }   /* ロックは従来どおり要解除 */
       if (this.usingSnapshot()) { this.reorderInSnap('shiftOrder', sid, beforeSid, true); return; }            /* 確定月=その月のスナップショット順を更新(データ安全) */
       this.reorderBy('shiftOrder', this.sortedStaff, sid, beforeSid, true);                                     /* 非確定月=従来どおりマスタ順 */
     },
-    reorderMaster: function (sid, beforeSid) { this.reorderBy(null, this.masterSorted, sid, beforeSid, false); }, /* 入職順管理: グループは変えない（マスタ画面＝月ロック非対象） */
-    reorderOfficial: function (sid, beforeSid) { if (this.reorderGuard()) return; this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
-    reorderRequests: function (sid, beforeSid) { this.reorderBy('requestOrder', this.requestsSorted, sid, beforeSid, false); },
+    reorderMaster: function (sid, beforeSid) { if (this.leaseGuard()) return; this.reorderBy(null, this.masterSorted, sid, beforeSid, false); }, /* 入職順管理: グループは変えない（マスタ画面＝月ロック非対象） */
+    reorderOfficial: function (sid, beforeSid) { if (this.leaseGuard()) return; if (this.reorderGuard()) return; this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
+    reorderRequests: function (sid, beforeSid) { if (this.leaseGuard()) return; this.reorderBy('requestOrder', this.requestsSorted, sid, beforeSid, false); },
 
     saveSymbols: function () { Store.set('symbols', this.symbols); this.rerender(); },
     saveSettings: function () {
@@ -7604,7 +8367,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (sn === 0 && layer === 'official') { srcLayer = 'plan'; src = this.getSched('plan'); }
         var sn2 = 0;
         for (var s3 in src.cells) { if (hasAny(src.cells[s3])) sn2++; }
-        if (sn2 > 0) {
+        if (sn2 > 0 && !Store.editMode) {
+          /* 閲覧モードでは自動シード（コピー作成）をしない＝アップロードも保存もしない */
+          this.toast('👁 ' + LAYER_NAMES[layer] + 'は未入力です。編集モードにするとコピーを作成できます');
+        } else if (sn2 > 0) {
           this.confirm(LAYER_NAMES[layer] + 'レイヤは未入力です',
             LAYER_NAMES[srcLayer] + 'レイヤ（' + sn2 + '名分）をコピーして開始しますか？', function () {
               if (self.lockGuard()) return;   /* ロック中の月は実績/行政提出へ自動コピーしない */
@@ -7623,6 +8389,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── 自動作成 ── */
     runAuto: function () {
       var self = this;
+      if (this.leaseGuard()) return;
       if (this.lockGuard()) return;   /* ロック中の月は自動作成しない */
       var isDraft = this.layer.indexOf('draft:') === 0;
       if (this.layer !== 'plan' && !isDraft) {
@@ -7902,21 +8669,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     bindDialogs: function () {
       var self = this;
       this._confirmCb = null;
+      this._confirmCbNo = null;
       document.getElementById('dlgConfirmYes').addEventListener('click', function () {
         document.getElementById('dlgConfirm').close();
-        var cb = self._confirmCb; self._confirmCb = null;
+        var cb = self._confirmCb; self._confirmCb = null; self._confirmCbNo = null;
         if (cb) cb();
       });
       document.getElementById('dlgConfirmNo').addEventListener('click', function () {
-        self._confirmCb = null;
+        var cbNo = self._confirmCbNo;
+        self._confirmCb = null; self._confirmCbNo = null;
         document.getElementById('dlgConfirm').close();
+        /* 「はい／いいえ」で別々の処理が必要な選択（例: この端末の版で置き換える／サーバー版を採用）用。
+         * 省略時は従来どおり「閉じるだけ」＝既存の呼び出しは挙動不変。 */
+        if (cbNo) cbNo();
       });
     },
-    confirm: function (title, msg, cb) {
+    confirm: function (title, msg, cb, cbNo) {
       document.getElementById('dlgConfirmTitle').textContent = title;
       document.getElementById('dlgConfirmMsg').textContent = msg;
       document.getElementById('dlgConfirmNo').style.display = '';
       this._confirmCb = cb;
+      this._confirmCbNo = cbNo || null;
       document.getElementById('dlgConfirm').showModal();
     },
     confirmInfo: function (title, msg) {
@@ -7924,6 +8697,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('dlgConfirmMsg').textContent = msg;
       document.getElementById('dlgConfirmNo').style.display = 'none';
       this._confirmCb = null;
+      this._confirmCbNo = null;
       document.getElementById('dlgConfirm').showModal();
     },
 
@@ -7944,13 +8718,628 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           btn.classList.remove('saving');
         }, 1800);
       }
+      /* 閲覧モードでは端末にもサーバにも書かない＝「保存しました」と言ってはいけない（誤解が事故になる） */
+      if (!Store.editMode) {
+        flash('👁 閲覧モード');
+        this.toast('👁 閲覧モードのため送信されません（右上の「✎ 編集」をオンにしてください）');
+        return;
+      }
       var p = Store.pushQueued();
       if (p && p.then) {
-        p.then(function (r) { flash(r === 'nosync' ? '✓ 端末に保存' : '✓ 保存しました'); },
-               function () { flash('✓ 端末に保存'); });
+        p.then(function (r) {
+          if (r === 'viewonly') { flash('👁 閲覧モード'); return; }
+          if (r === 'leasecheck') { flash('⟳ 編集権を確認中'); return; }
+          if (r === 'locklost') { flash('⚠ 編集権を確認してください'); return; }
+          flash(r === 'nosync' ? '✓ 端末に保存' : '✓ 保存しました');
+        }, function () { flash('✓ 端末に保存'); });
       } else {
         flash('✓ 保存しました');
       }
+    },
+
+    /* ══════════════════════════════════════════════════════════════
+     * 編集モード（サーバー発行の編集権リース・2026-08-17）
+     * 同時に書けるのは1台だけ。閲覧端末はアップロードせず、60秒ごとに取得だけする。
+     * サーバー未対応（旧GAS）では「共有ロックなしの劣化モード」で従来どおり動く。
+     * ══════════════════════════════════════════════════════════════ */
+
+    /* タブ固有ID（sessionStorage＝タブを閉じれば消える）。同一端末の2タブ同時編集を防ぐ鍵。
+     * 使えない環境（プライベートモード等）では都度乱数＝編集を止めない（安全側は排他サーバーが担う）。 */
+    tabId_: function () {
+      try {
+        var id = sessionStorage.getItem('shiftapp:tabId');
+        if (!id) {
+          id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          sessionStorage.setItem('shiftapp:tabId', id);
+        }
+        return id;
+      } catch (e) {
+        return 't' + Math.random().toString(36).slice(2, 8);
+      }
+    },
+
+    /* 閲覧モードの編集ガード（lockGuard と同型: true が返ったら呼び出し側は処理を中止する）。 */
+    leaseGuard: function () {
+      if (Store.editMode) return false;
+      this.toast('👁 閲覧モードです。編集するには右上の「✎ 編集」をオンにしてください');
+      return true;
+    },
+
+    bindEditLock: function () {
+      var self = this;
+      if (this._editLockBound) return;   /* 二重束縛防止（bindToolbar と同じ流儀） */
+      this._editLockBound = true;
+      var tog = document.getElementById('togEdit');
+      if (tog) {
+        tog.addEventListener('change', function (e) {
+          if (e.target.checked) self.enableEdit_(); else self.disableEdit_();
+        });
+      }
+      /* 遮断し切れていない編集入口の可視化。3秒に1回だけ通知＝連続操作で埋もれない。 */
+      Store.onBlockedWrite = function () {
+        var now = Date.now();
+        if (self._blockedT && (now - self._blockedT) < 3000) return;
+        self._blockedT = now;
+        self.toast('👁 閲覧モードのため保存しませんでした（右上の「✎ 編集」をオンにしてください）');
+      };
+      /* 編集権を失った時（他端末が引き継いだ・厳格モードで券なし）。
+       * 退避の前に編集中セルを確定させる＝入力途中の内容も退避対象に入れる。 */
+      Store.onLockLostStart = function () {
+        try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+        /* 退避〜採用のあいだは触らせない（この間の入力は保存先が無い）。完了・失敗で必ず外す。 */
+        self.setBlockingOverlay_(true);
+      };
+      Store.onLockLost = function (n) {
+        self._offlineEdit = false;
+        self.setBlockingOverlay_(false);
+        self.setEditModeUI_(false);
+        self.reloadFromStore();
+        /* 誰が持っているかを確かめてから知らせる（「移りました」だけでは次の行動が決まらない） */
+        Store.probeLockSupport().then(function (holder) {
+          self._lockHolder = holder;
+          self.updateModeBadge();
+          var who = (holder && holder.name) ? holder.name + ' が編集モードになりました。' : '他の端末が編集モードになりました。';
+          self.confirmInfo('編集権が他の端末へ移りました',
+            who + '\n' +
+            (n ? ('この端末の未送信の編集 ' + n + '件は端末内に退避し、サーバの最新版を表示しました。\n' +
+                  '必要な編集は［✎ 編集］をオンにしてやり直してください（退避した内容は［マスタ→設定→バックアップ→退避データ一覧］から取り出せます）。')
+               : 'この端末は閲覧モードに切り替わりました。最新の内容を表示しています。'));
+        });
+      };
+      Store.onLockLostFail = function (keys) {
+        self.setBlockingOverlay_(false);
+        self.confirmInfo('⚠ この端末の編集を保全できませんでした',
+          '他の端末が編集モードになりましたが、この端末の未送信の編集を端末内へ退避できませんでした。\n' +
+          'そのため何も変更していません（' + keys.join(', ') + '）。\n' +
+          '［マスタ→設定→バックアップ→JSONエクスポート］でこの端末の内容を保存してから、画面を再読み込みしてください。');
+      };
+      /* 失効後に同じ端末で取り直した時は、編集を続ける前に最新を取り込む。
+       * 不在の間に他の端末が「取得→編集→解放」していた場合、古い表示のまま編集を続けると、
+       * その後の編集（現行世代の刻印つき）が競合時にローカル優先となり相手の編集を丸ごと消せる。 */
+      Store.onLeaseReacquired = function () { return self.checkRevsAndPull_(); };
+      var bSend = document.getElementById('pendingSend');
+      if (bSend) bSend.addEventListener('click', function () { self.resolvePendingSend_(); });
+      var bDiscard = document.getElementById('pendingDiscard');
+      if (bDiscard) bDiscard.addEventListener('click', function () { self.resolvePendingDiscard_(); });
+      this.setEditModeUI_(!!Store.editMode);
+      this.updateEditToggleEnabled_();
+    },
+
+    /* 入力遮断オーバーレイ（既存 #overlay を流用＝新しい重ね順を作らない）。
+     * 編集権の喪失処理中など「触らせてはいけない一瞬」に使う。 */
+    setBlockingOverlay_: function (on) {
+      var ov = document.getElementById('overlay');
+      if (!ov) return;
+      if (on) ov.classList.add('on'); else ov.classList.remove('on');
+    },
+
+    /* 画面表示をモードへ追従させる（帯の色・チェック状態・バッジ・保存ボタン・移行バナー）。 */
+    setEditModeUI_: function (on) {
+      document.body.classList.toggle('edit-mode', !!on);
+      var tog = document.getElementById('togEdit');
+      if (tog) tog.checked = !!on;
+      this.updateModeBadge();
+      this.updateSaveButton_();
+      this.updatePendingBanner_();
+      /* 「モードで押せる/押せない」が変わる入力欄（バックアップ取込）も一緒に更新する */
+      if (window.ShiftMaster && window.ShiftMaster.syncBackupImportUI) {
+        try { window.ShiftMaster.syncBackupImportUI(); } catch (e) {}
+      }
+    },
+
+    updateModeBadge: function () {
+      var el = document.getElementById('modeBadge');
+      if (!el) return;
+      var edit = !!Store.editMode;
+      el.className = 'noprint ' + (edit ? 'edit' : 'view');
+      var txt, tip;
+      if (edit) {
+        txt = '✎ 編集モード';
+        tip = (Store.lockCapable === true) ? 'この端末が編集権を持っています（表示中は自動で延長します）'
+                                           : '共有ロックなしで編集中です（サーバー更新後に排他が有効になります）';
+        if (this._offlineEdit) {
+          txt += '（オフライン編集中）';
+          tip = 'サーバーに届いていません。30分でロックが失効し、他の端末が引き継げる状態になります';
+        }
+      } else {
+        txt = '👁 閲覧モード';
+        if (this._lockHolder && this._lockHolder.name) txt += '（' + this._lockHolder.name + 'が編集中）';
+        tip = (Store.lockCapable === false) ? '共有ロックはサーバー更新後に有効になります'
+                                            : '編集するには「✎ 編集」をオンにしてください';
+      }
+      /* 端末名は textContent で入れる＝HTMLとして解釈されない（innerHTML 経路の escText は不要・
+       * ここで escText を通すと「&」等がそのまま文字として見えてしまう）。 */
+      el.textContent = txt;
+      el.title = tip;
+    },
+
+    updateSaveButton_: function () {
+      var b = document.getElementById('btnSave');
+      if (!b) return;
+      var view = !Store.editMode;
+      b.disabled = view;
+      b.title = view ? '閲覧モードでは送信しません（右上の「✎ 編集」をオンにしてください）'
+                     : '今すぐ保存＋クラウド同期 (Ctrl+S / Cmd+S)';
+    },
+
+    /* 閲覧専用トークン端末は編集モードに入れない（理由を title で示す）。 */
+    updateEditToggleEnabled_: function () {
+      var lab = document.getElementById('editToggle');
+      var tog = document.getElementById('togEdit');
+      if (!tog) return;
+      if (Store.readOnly) {
+        tog.disabled = true;
+        tog.checked = false;
+        if (lab) { lab.classList.add('disabled'); lab.title = '閲覧専用トークンのため編集モードは使えません'; }
+        return;
+      }
+      tog.disabled = false;
+      if (lab) {
+        lab.classList.remove('disabled');
+        lab.title = (Store.lockCapable === false)
+          ? '共有ロックはサーバー更新後に有効になります（今は排他なしで編集します）'
+          : '編集モードに切り替えます（同時に編集できるのは1台だけ・他端末は閲覧のまま自動更新されます）';
+      }
+    },
+
+    /* サーバーの編集リース対応を確認（1回）。保持者情報はバッジに出す。 */
+    probeLock_: function () {
+      var self = this;
+      return Store.probeLockSupport().then(function (holder) {
+        self._lockHolder = holder;
+        self.updateModeBadge();
+        self.updateEditToggleEnabled_();
+        return holder;
+      });
+    },
+
+    /* 再読み込み後の編集モード復帰（dev-principles 原則11）。
+     * ローカルのリースが未失効・このタブのもので、かつサーバー検証(renew)が通った時だけ復元する。
+     * 通信できない時は復元しない（他端末が引き継いでいる可能性があるため閲覧のまま）。 */
+    restoreEditMode_: function () {
+      var self = this;
+      var EL = window.ShiftEditLock;
+      if (!EL || Store.lockCapable !== true || Store.readOnly) return;
+      var rec = Store.getLocal('editLease', null);
+      var now = Date.now();
+      if (!EL.isLeaseValid(EL.normalizeLease(rec), now)) return;
+      if (!EL.canEnableEditInThisTab(rec, this._tabId, now)) return;
+      Store.verifyLease().then(function (r) {
+        /* reacquired＝前回の編集権が失効していたが誰も編集していなかった（同じ端末で取り直せた）。
+         * lost=handleLockLost が処理／network・その他=閲覧のまま。 */
+        if (r !== 'ok' && r !== 'reacquired') return;
+        Store.editMode = true;
+        self._offlineEdit = false;
+        self.setEditModeUI_(true);
+        self.toast('✎ 編集モードを復元しました');
+      });
+    },
+
+    /* 編集モードON。旧サーバーは劣化モード、対応サーバーは pull→取得→rev再確認の順。 */
+    enableEdit_: function () {
+      var self = this;
+      var tog = document.getElementById('togEdit');
+      var EL = window.ShiftEditLock;
+      function revert() { if (tog) { tog.disabled = false; tog.checked = !!Store.editMode; } }
+      if (Store.readOnly) {
+        revert();
+        this.confirmInfo('編集モードは使えません', '閲覧専用トークンで接続しているため、この端末からは編集できません。');
+        return;
+      }
+      if (tog) tog.disabled = true;
+      /* ①-a 対応可否が未確定（起動直後・前回の probe が通信失敗）: ここで1回だけ確かめる。
+       * 未確定のまま劣化モードへ入れると、厳格モードのサーバーで全 push が拒否され、
+       * 誤って退避・降格に至る（未確定＝旧サーバー、ではない）。 */
+      if (Store.lockCapable === null) {
+        this.probeLock_().then(function () {
+          if (tog) tog.disabled = false;
+          if (Store.lockCapable === null) {
+            revert();
+            self.confirmInfo('編集モードにできません',
+              'サーバーに接続できないため、編集権を確認できませんでした。\n通信状況を確認して、もう一度お試しください。');
+            return;
+          }
+          self.enableEdit_();   /* 判定できたので通常のフローへ入り直す */
+        });
+        return;
+      }
+      /* ①-b サーバー未対応が確定: 排他なしで編集する（同期の挙動は従来どおり）。必ず本人に断ってから入る。 */
+      if (Store.lockCapable !== true) {
+        revert();
+        this.confirm('共有ロックなしで編集します',
+          'サーバーの更新前のため、他の端末との排他ができません（従来と同じ動作です）。\n' +
+          '同時に他の端末で編集すると、あとから保存した内容で上書きされることがあります。\n' +
+          'このまま編集モードにしますか？',
+          function () {
+            Store.editMode = true;
+            self._offlineEdit = false;
+            self.setEditModeUI_(true);
+            self.afterEditOn_();
+          });
+        return;
+      }
+      /* ② 同一端末の別タブが編集中なら入らせない（期限切れなら canEnableEditInThisTab が true＝引き継げる） */
+      var rec = Store.getLocal('editLease', null);
+      var now0 = Date.now();
+      if (EL && !EL.canEnableEditInThisTab(rec, this._tabId, now0)) {
+        revert();
+        this.confirmInfo('この端末の別タブが編集モードです',
+          '同じ端末の別のタブが編集モードになっています。そのタブで編集するか、タブを閉じてください。\n' +
+          '（閉じた後は、編集権の期限が切れた時点でこのタブから引き継げます）');
+        return;
+      }
+      /* 期限切れの「別タブの記録」が残っている＝前のタブが閉じられた／クラッシュした可能性。
+       * 黙って奪うと、生きている別タブの編集が突然止まったように見えるので確認を挟む。 */
+      if (rec && rec.tabId && rec.tabId !== this._tabId && !this._tabTakeoverOk) {
+        revert();
+        this.confirm('前回の編集タブが残っています',
+          'この端末の別のタブが編集モードのまま残っています（編集権の期限は切れています）。\n' +
+          'このタブで編集を引き継ぎますか？（別タブが開いたままの場合、そちらでは保存できなくなります）',
+          function () {
+            self._tabTakeoverOk = true;   /* 二重確認にしない（このタブでは以後聞かない） */
+            self.enableEdit_();
+          });
+        return;
+      }
+      /* ③ 端末名（他端末に「誰が編集中か」を出すための表示名。氏名ではなく端末の呼び名を入れる） */
+      var name = Store.getLocal('deviceName', '');
+      if (!name) {
+        var input = null;
+        try { input = prompt('この端末の名前を入力してください（他の端末に「◯◯が編集中」と表示されます）', '事務所PC'); } catch (e) {}
+        if (input === null) { revert(); return; }
+        name = String(input).trim();
+        if (!name) { revert(); return; }
+        Store.setLocal('deviceName', name);
+      }
+      /* ④ 取得前に最新を取り込む→編集権を取得→取得の隙に他端末が書いた分を rev で再確認 */
+      Store.pullAll(this.recentSyncKeys_()).then(function () {
+        return Store.acquireLease(name, false, self._tabId);
+      }).then(function (r) {
+        if (r && r.ok) return self.afterAcquire_();
+        var err = r ? String(r.error) : '';
+        if (err !== 'lockheld') {
+          revert();
+          self.confirmInfo('編集モードに切り替えられません',
+            (err === 'nodevice' ? '端末IDを送れませんでした。画面を再読み込みしてください。'
+             : err === 'badresponse' ? 'サーバーの応答を解釈できませんでした。［マスタ→設定→接続テスト］で確認してください。'
+             : 'サーバーと通信できませんでした（' + err + '）。通信状況を確認して、もう一度お試しください。'));
+          return null;
+        }
+        /* 他端末が保持中: 保持者名と期限は acquire の応答から取れないため lockStatus で取り直す */
+        return Store.probeLockSupport().then(function (holder) {
+          self._lockHolder = holder;
+          revert();
+          self.updateModeBadge();
+          var who = (holder && holder.name) ? holder.name : '他の端末';
+          var until = (holder && holder.expiresAt) ? fmtClock(holder.expiresAt) : '';
+          self.confirm('他の端末が編集中です',
+            who + ' が編集モードです' + (until ? '（' + until + 'まで）' : '') + '。\n' +
+            '［キャンセル］閲覧のままにする\n' +
+            '［OK］強制的に引き継ぐ（相手は閲覧モードになり、送信前の編集は相手の端末内に退避されます）',
+            function () {
+              self.confirm('本当に引き継ぎますか？',
+                who + ' の編集を引き継ぎます。相手の画面は閲覧モードに切り替わります。\n' +
+                '相手がまだ送信していない編集は、相手の端末内に退避されます（相手側で復元できます）。\n' +
+                'よろしいですか？',
+                function () { self.takeover_(name); });
+            });
+          return null;
+        });
+      }).catch(function () {
+        revert();
+        self.toast('編集モードに切り替えられませんでした（通信を確認してください）');
+      });
+    },
+
+    /* 強制引き継ぎ（二段確認の後だけ呼ぶ） */
+    takeover_: function (name) {
+      var self = this;
+      var tog = document.getElementById('togEdit');
+      if (tog) tog.disabled = true;
+      Store.acquireLease(name, true, this._tabId).then(function (r) {
+        if (r && r.ok) return self.afterAcquire_();
+        if (tog) { tog.disabled = false; tog.checked = false; }
+        self.confirmInfo('引き継げませんでした', 'サーバーと通信できませんでした。もう一度お試しください。');
+        return null;
+      }).catch(function () {
+        if (tog) { tog.disabled = false; tog.checked = false; }
+        self.toast('引き継げませんでした（通信を確認してください）');
+      });
+    },
+
+    /* 取得成功後: rev を再確認して取り込み（取得の隙の着地を排除）→ 編集モードON */
+    afterAcquire_: function () {
+      var self = this;
+      return this.checkRevsAndPull_().then(function () { return null; }, function () { return null; }).then(function () {
+        Store.editMode = true;
+        self._offlineEdit = false;
+        self.setEditModeUI_(true);
+        self.reloadFromStore();
+        var tog = document.getElementById('togEdit');
+        if (tog) tog.disabled = false;
+        self.toast('✎ 編集モードになりました（この端末だけが編集できます）');
+        self.afterEditOn_();
+      });
+    },
+    /* 編集モードに入った直後の後処理（移行バナーからの導線をここで続ける） */
+    afterEditOn_: function () {
+      /* 施設情報の初回セットアップが未完了なら、この時点で従来どおりウィザードを出す
+       * （閲覧モードでは自動起動しない＝編集権を取れた端末だけで案内する） */
+      if (window.ShiftFacility && window.ShiftFacility.init) {
+        try { window.ShiftFacility.init(this); } catch (e2) {}
+      }
+      if (this._pendingAfterEnable) {
+        this._pendingAfterEnable = false;
+        this.resolvePendingKeys_();
+      }
+    },
+
+    /* 編集モードOFF: 未送信を送り切ってから編集権を返す（送れないうちは勝手に手放さない）。 */
+    disableEdit_: function () {
+      var self = this;
+      var tog = document.getElementById('togEdit');
+      if (tog) tog.disabled = true;
+      function finish() {
+        Store.editMode = false;
+        self._offlineEdit = false;
+        if (tog) tog.disabled = false;
+        self.setEditModeUI_(false);
+      }
+      if (Store.lockCapable !== true || !Store.lease) { finish(); return; }   /* 劣化モード＝返すリースが無い */
+      /* 編集権の返却は2経路（通常のOFF／退避して解除）から呼ぶので1か所にまとめる。
+       * 返せなかった時に黙って閲覧へ落とすと、他端末に「まだ誰かが編集中」と出続ける理由が分からない。 */
+      function release_() {
+        return Store.releaseLease().then(function (rr) {
+          /* すでに引き継がれていた場合は handleLockLost に任せる（未送信は上で処理済み） */
+          if (rr && !rr.ok && String(rr.error) === 'locklost') return Store.handleLockLost();
+          if (rr && !rr.ok) self.toast('編集権の返却に失敗しました（30分で自動的に失効します）');
+          return null;
+        });
+      }
+      Store.pushQueued().then(function (r) {
+        if (r === 'ok' || r === 'empty' || r === 'nosync' || r === 'readonly') {
+          return release_().then(function () { finish(); return null; });
+        }
+        /* 送信できていない: 編集権を放すと、この端末の内容だけ取り残される。本人に選ばせる。 */
+        if (tog) { tog.disabled = false; tog.checked = true; }
+        self.confirm('未送信の編集が残っています',
+          'サーバへ送信できていない編集が ' + Store.queue.size() + '件あります（通信状況を確認してください）。\n' +
+          '［OK］この端末内に退避して閲覧モードにする（サーバの最新版を表示します）\n' +
+          '［キャンセル］編集モードのままにして送信を待つ',
+          function () {
+            Store.resolveHeldDiscard().then(function (res) {
+              return release_().then(function () {
+                finish();
+                self.reloadFromStore();
+                self.confirmInfo('閲覧モードに切り替えました',
+                  (res.kept && res.kept.length)
+                    ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                    : '未送信の編集は端末内に退避しました（［マスタ→設定→バックアップ→退避データ一覧］から取り出せます）。');
+              });
+            });
+          });
+        return null;
+      }).catch(function () {
+        if (tog) { tog.disabled = false; tog.checked = true; }
+        self.toast('送信できませんでした。編集モードのままにします');
+      });
+    },
+
+    /* ── ハートビート／閲覧の自動更新（60秒・タブ表示中のみ） ── */
+    startLeaseTimers_: function () {
+      var self = this;
+      if (this._leaseTimer) return;
+      this._leaseTimer = setInterval(function () { self.leaseTick_(); }, 60000);
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) self.onTabVisible_();
+        });
+      }
+    },
+    leaseTick_: function () {
+      if (typeof document !== 'undefined' && document.hidden) return;   /* 隠れているタブは通信しない */
+      if (Store.editMode) {
+        if (Store.lockCapable !== true) return;                          /* 劣化モード＝延長するリースが無い */
+        var EL = window.ShiftEditLock;
+        if (!EL || !EL.shouldRenew(Store.lease, Date.now())) return;      /* 残りTTLが十分なら通信しない */
+        this.renewTick_();
+        return;
+      }
+      this.pollView_();
+    },
+    renewTick_: function () {
+      var self = this;
+      return Store.verifyLease().then(function (r) {
+        if (r === 'lost') return r;                 /* handleLockLost が退避・降格・通知まで行う */
+        if (r === 'reacquired') {
+          /* 失効していたが空いていた＝同じ端末で取り直せた。編集を続け、未送信を送る。
+           * 世代差が1を超える＝不在の間に別の端末が編集権を取っていた（最新は取り込み済み）。 */
+          self._offlineEdit = false;
+          self.updateModeBadge();
+          self.toast((Store.lastReacquireGap > 1)
+            ? '✎ 編集権を取り直しました（不在の間に他の端末が編集した可能性があります。最新を取得しました）'
+            : '✎ 編集権を取り直しました（他の端末は編集していません）');
+          Store.pushQueued();
+          return r;
+        }
+        self._offlineEdit = (r !== 'ok');           /* 通信不能でも編集は続けられる（失効しうる旨を表示） */
+        self.updateModeBadge();
+        return r;
+      });
+    },
+    /* 閲覧中の自動更新: revを1往復で確認し、進んだキーだけ取得して表示を更新する。 */
+    pollView_: function () {
+      var self = this;
+      if (Store.editMode || Store.lockCapable === null) return;   /* 未判定のうちは動かさない（probe 完了後に開始） */
+      if (this._printing || (document.body && document.body.classList.contains('printsim'))) return;
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return;                               /* 同期未設定＝沈黙（従来どおり） */
+      if (this._pollInFlight) return;
+      var last = (Store.meta && Store.meta.lastSync) ? Store.meta.lastSync : 0;
+      if (last && (Date.now() - last) < 10000) return;            /* 直近の取得から10秒以内はスキップ */
+      this._pollInFlight = true;
+      /* 結果はそのまま返す（'nochange'/'ok'/'error'）＝呼び出し側とテストで挙動を確かめられるように */
+      return this.checkRevsAndPull_().then(function (r) { self._pollInFlight = false; return r; },
+                                          function () { self._pollInFlight = false; return 'error'; });
+    },
+    onTabVisible_: function () {
+      var self = this;
+      if (Store.editMode) { if (Store.lockCapable === true) this.renewTick_(); return; }
+      /* サーバー更新後に開きっぱなしだったタブを取り込む（未対応判定のままにしない） */
+      if (Store.lockCapable !== true) {
+        this.probeLock_().then(function () {
+          /* サーバー更新後に対応が判明した場合、未復元なら編集モードの復元も試す（boot の1回で終わらせない） */
+          if (Store.lockCapable === true && !Store.editMode) self.restoreEditMode_();
+          self.pollView_();
+        });
+        return;
+      }
+      if (!Store.editMode) this.restoreEditMode_();
+      this.pollView_();
+    },
+
+    /* サーバーの rev を1往復で確認し、進んでいるキーだけ pull して画面を更新する。
+     * 対応サーバーは shiftStatus（rev索引1読み＝軽い／保持者名も返る）、旧サーバーは既存 head へフォールバック。
+     * 'unknown action' を受けたら未対応へ降格し、以後はタブ復帰時に再判定する。 */
+    checkRevsAndPull_: function () {
+      var self = this;
+      var useStatus = (Store.lockCapable === true);
+      var keys = this.recentSyncKeys_();
+      return Store.api(useStatus ? { action: 'shiftStatus', keys: keys } : { action: 'head', keys: keys })
+        .then(function (res) {
+          if (useStatus) {
+            self._lockHolder = (res && res.lock) ? res.lock : null;
+            self.updateModeBadge();
+          }
+          var revs = (res && res.revs) ? res.revs : {};
+          var changed = [], k, sv;
+          for (k in revs) {
+            if (!Object.prototype.hasOwnProperty.call(revs, k)) continue;
+            sv = (typeof revs[k] === 'number') ? revs[k] : 0;
+            if (sv > (Store.meta.revs[k] || 0)) changed.push(k);
+          }
+          if (!changed.length) return 'nochange';
+          return Store.pullAll(changed).then(function (r) {
+            if (r !== 'ok') return r;
+            /* 印刷中（プレビュー表示中）に再描画すると、用紙に出る内容が途中で入れ替わる。
+             * データの取り込みは済ませ、画面への反映だけ印刷終了後へ回す。 */
+            if (self._printing) { self._pendingReload = true; return 'ok'; }
+            self.reloadFromStore();      /* 表示中のタブ・月は維持される（rerender は現在地を変えない） */
+            for (var i = 0; i < changed.length; i++) {
+              /* 編集用の一覧が動いた時はドラフト本体も追加取得（起動時プルと同じ2段方式） */
+              if (changed[i].indexOf('drafts:') === 0) { self.pullWindowDrafts_(); break; }
+            }
+            self.updatePendingBanner_();
+            return 'ok';
+          });
+        })
+        .catch(function (err) {
+          var msg = String(err && err.message ? err.message : err);
+          if (msg === 'unknown action') {
+            /* 旧サーバー: 以後は head フォールバック（ポーラーは動かし続ける）。接続先は切り替えない。 */
+            Store.lockCapable = false;
+            self.updateModeBadge();
+            self.updateEditToggleEnabled_();
+          }
+          return 'error';
+        });
+    },
+
+    /* ── 移行バナー（旧版で溜まった未送信の扱い） ── */
+    updatePendingBanner_: function () {
+      var el = document.getElementById('lockBanner2');
+      if (!el) return;
+      var held = Store.getHeldConflicts ? Store.getHeldConflicts() : [];
+      var n = Store.queue ? Store.queue.size() : 0;
+      var show = !Store.editMode && (n > 0 || held.length > 0);
+      el.style.display = show ? '' : 'none';
+      if (!show) return;
+      var txt = document.getElementById('pendingText');
+      if (txt) {
+        txt.textContent = '⚠ この端末に送信できていない編集が ' + Math.max(n, held.length) + '件残っています' +
+          (held.length ? '（うち ' + held.length + '件はサーバー側が新しい版です）' : '') + '。';
+      }
+    },
+    resolvePendingSend_: function () {
+      this._pendingAfterEnable = true;   /* ONフロー完了後に afterEditOn_ が続きを実行する */
+      this.enableEdit_();
+    },
+    resolvePendingDiscard_: function () {
+      var self = this;
+      this.confirm('この端末の未送信の編集を破棄します',
+        'この端末に残っている未送信の編集を端末内へ退避し、サーバの最新版を取得して表示します。\n' +
+        '退避した内容は［マスタ→設定→バックアップ→退避データ一覧］から取り出せます。よろしいですか？',
+        function () {
+          Store.resolveHeldDiscard().then(function (res) {
+            self.reloadFromStore();
+            self.updatePendingBanner_();
+            self.confirmInfo('最新の内容を表示しました',
+              (res.kept && res.kept.length)
+                ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                : (res.adopted ? res.adopted + '件を取り直しました。' : '取り直す対象はありませんでした。'));
+          });
+        });
+    },
+    /* サーバー側が新しい版のキーを1件ずつ本人に確認して解決する（残りは通常の送信に任せる）。 */
+    resolvePendingKeys_: function () {
+      var self = this;
+      if (!Store.editMode) return;
+      var list = Store.getHeldConflicts();
+      if (!list.length) {
+        Store.pushQueued().then(function () { self.updatePendingBanner_(); });
+        return;
+      }
+      var item = list[0];
+      this.confirm('未送信の編集の扱い（' + this.keyLabel_(item.key) + '）',
+        this.keyLabel_(item.key) + ' は、サーバー側がこの端末より新しい版です。\n' +
+        '（この端末が元にした版: ' + item.baseRev + ' ／ サーバー: ' + item.serverRev + '）\n' +
+        '［OK］この端末の版で置き換える（サーバー側の版は端末内に退避されます）\n' +
+        '［キャンセル］サーバー版を採用する（この端末の版は端末内に退避されます）',
+        function () {
+          Store.resolveHeldKeep(item.key);
+          self.resolvePendingKeys_();
+        },
+        function () {
+          Store.resolveHeldAdopt(item.key).then(function () {
+            self.reloadFromStore();
+            self.resolvePendingKeys_();
+          });
+        });
+    },
+    /* キーの日本語名（確認ダイアログ用。「sched:2026-08:plan」では現場が判断できない） */
+    keyLabel_: function (key) {
+      var k = String(key), m;
+      m = k.match(/^sched:(\d{4}-\d{2}):(.+)$/);
+      if (m) {
+        if (m[2].indexOf('draft:') === 0) return m[1] + ' 編集用';
+        return m[1] + ' ' + (LAYER_NAMES[m[2]] || m[2]);
+      }
+      m = k.match(/^req:(\d{4}-\d{2})$/);
+      if (m) return m[1] + ' 希望休';
+      m = k.match(/^drafts:(\d{4}-\d{2})$/);
+      if (m) return m[1] + ' 編集用の一覧';
+      var fixed = { staff: '職員マスタ', symbols: 'シフト記号', settings: '設定', freee: 'freee設定' };
+      return fixed[k] || k;
     },
 
     /* ── 同期UI ── */
@@ -7971,6 +9360,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             '端末の保存容量の上限に達した可能性があります。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
         }
         if (status !== 'storeerror') self._storeErrorShown = false;
+        /* 閲覧専用トークンが判明したら編集トグルを無効化（理由は title に出す） */
+        self.updateEditToggleEnabled_();
+        self.updatePendingBanner_();
       });
       badge.addEventListener('click', function () {
         Store.pullAll().then(function (r) {
@@ -8005,6 +9397,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) { return String(iso); }
   }
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  /* epochミリ秒 → HH:MM（編集権の期限表示用。数値でなければ空文字＝表示しない） */
+  function fmtClock(ms) {
+    if (typeof ms !== 'number' || !isFinite(ms) || ms <= 0) return '';
+    try {
+      var d = new Date(ms);
+      return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    } catch (e) { return ''; }
+  }
   /* 'YYYY-MM' 生成: 基準(y,m)から delta ヶ月ずらした月を返す。月インデックス演算で1月/12月跨ぎを正しく処理。 */
   function ymShift_(y, m, delta) {
     var idx = y * 12 + (m - 1) + delta;
