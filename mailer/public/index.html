@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>SilverMail</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A84FF'/%3E%3Cpath d='M7 11.5l9 6 9-6M8.5 9h15a1.5 1.5 0 011.5 1.5v11a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 017 21.5v-11A1.5 1.5 0 018.5 9z' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  // テーマをペイント前に適用（フラッシュ防止）
+  (function () {
+    try {
+      var t = localStorage.getItem('silvermail-theme') || 'auto';
+      var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  })();
+</script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="root"></div>
+<script src="/app.js"></script>
+</body>
+</html>
