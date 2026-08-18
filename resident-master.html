@@ -2595,11 +2595,15 @@ function applyPrintHide(box,r){
   /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
      見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
      クラスで付けること（style に直接書くと、伏せたセルが見えている画面側の罫線まで変わる）。 */
+  /* ★紙で消えるのは printHide だけではない。退去日・ご逝去日・在籍状態・入居期間・退去先には
+     元から .noprint-cell が付いている。どちらの理由で消えても同じ穴（右端に罫線が残る）なので
+     両方を「紙で消える」とみなす */
+  function nopHidden_(c){ return c.hasAttribute('data-nop-row')||c.classList.contains('noprint-cell') }
   Array.prototype.forEach.call(box.querySelectorAll('.row-cells'),function(row){
     var cells=row.querySelectorAll('.cell');
-    if(!cells.length||!cells[cells.length-1].hasAttribute('data-nop-row'))return;
+    if(!cells.length||!nopHidden_(cells[cells.length-1]))return;
     for(var i=cells.length-1;i>=0;i--){
-      if(!cells[i].hasAttribute('data-nop-row')){ cells[i].classList.add('nop-last'); break }
+      if(!nopHidden_(cells[i])){ cells[i].classList.add('nop-last'); break }
     }
   });
 }
@@ -2646,11 +2650,15 @@ function renderView(r){
          ★1行目には入れない。入れると認定期間と生年月日が折り返して紙が伸びる（実測） */
       cell('居室',r.room,false,'w-sm')+cell('入居日',r.admissionDate,false,'w-adm')+
       /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
-         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示） */
-      '<div class="cell"><span class="lab">在籍状態</span><span class="val"'+
+         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示）。
+         ★2026-08-17 追加: 在籍状態と入居期間も紙には出さない。退去済みの方は
+           入居日＋入居期間から退去日を引き算で復元できてしまい、「退去」の赤字も紙に載っていた。
+           A4様式（renderA4）と同じ扱いに揃えた＝3種類の紙とも退去の事実を残さない。
+           画面では従来どおり全部見える（隠すのは紙だけ） */
+      '<div class="cell noprint-cell"><span class="lab">在籍状態</span><span class="val"'+
         (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
       cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
-      cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'')+
+      cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'',false,'noprint-cell')+
       /* 体重の正本は体重管理アプリ（同一オリジンの localStorage を読むだけ）。
          記録が無い端末では従来どおりマスタの静的値を「移行時点」と明示して出す。
          ★体重セルは広げない。widthは行で取り合いのため、広げると隣のセル（生活自立度・
