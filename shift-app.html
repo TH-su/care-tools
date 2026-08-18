@@ -14,9 +14,12 @@
   --headbg: #d06a5e;
   --g1: #f7f8fa; --g2: #eceef1; --g3: #d5d9de; --g4: #9aa1a9; --ink: #2b3138;
   --warn: #e67e22; --ok: #27ae60; --hl: #fff3c4; --sel: #cfe3f7;
-  /* 編集モード・同期状態の色（2026-08-17 追加。いずれも白文字とのコントラストを実測: 帯7.6:1／
-     readonly 5.5:1／conflict 7.1:1／storeerror 10:1）。新しい色を足す時はここに追記して実測値を書く。 */
-  --edit: #8a3d08; --st-ro: #5b6b7a; --st-conflict: #7d3c98; --st-storeerr: #7b241c;
+  /* 編集モード・同期状態の色（2026-08-17 追加。いずれも白文字とのコントラストを実測:
+     readonly 5.5:1／conflict 7.1:1／storeerror 10:1）。新しい色を足す時はここに追記して実測値を書く。
+     --edit は 2026-08-18 指示で明るい橙 #fc9423 に変更した。白文字では 2.1:1 で読めないため、
+     この帯の中だけ文字を --edit-ink（濃茶）に切り替える: 帯直上 8.0:1／半透明白ボタン上 10.5:1（実測）。 */
+  --edit: #fc9423; --edit-ink: #2b1000;
+  --st-ro: #5b6b7a; --st-conflict: #7d3c98; --st-storeerr: #7b241c;
 }
 html, body { margin: 0; padding: 0; }
 body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
@@ -72,11 +75,35 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar #editToggle.disabled { opacity: .55; cursor: not-allowed; }
 #toolbar #modeBadge { font-size: 0.75rem; padding: 4px 10px; border-radius: 12px; white-space: nowrap;
   border: 1px solid rgba(255,255,255,.6); color: #fff; }
-#toolbar #modeBadge.edit { background: #fff; color: var(--edit); border-color: #fff; font-weight: 700; }
-/* 編集モード中のツールバーは深いオレンジ（白文字とのコントラスト 7.6:1・実測）。
+#toolbar #modeBadge.edit { background: #fff; color: var(--edit-ink); border-color: #fff; font-weight: 700; }
+/* 編集モード中のツールバーは明るいオレンジ（2026-08-18 指示 #fc9423）。
    青(--blue)とも既存の警告色(--warn #e67e22)とも別トーンにして、閲覧中と一目で区別できるようにする。
-   ボタンは半透明白のままなので自動的に追従する（個別指定は増やさない）。 */
-body.edit-mode #toolbar { background: var(--edit); }
+   明るい地に白文字は読めない（2.1:1）ため、この帯の中に限って文字とボタンを濃色へ切り替える。
+   ── ここから下の body.edit-mode 限定ルールは、閲覧モード（青帯）の見た目を一切変えない ── */
+body.edit-mode #toolbar { background: var(--edit); color: var(--edit-ink); }
+body.edit-mode #toolbar h1 { color: var(--edit-ink); }         /* 継承で足りるが、帯の文字色を明示して取り違えを防ぐ */
+body.edit-mode #toolbar .ymnav { background: rgba(255,255,255,.3); }
+body.edit-mode #toolbar button { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar button:hover { background: rgba(255,255,255,.5); }
+/* .primary（白地・青文字）と .savebtn（緑地・白文字）は自己完結の配色。上の一括指定と
+   詳細度が同じで後勝ちになるため、同スコープで元の見た目に戻す（帯の色に引きずられない）。 */
+body.edit-mode #toolbar button.primary { background: #fff; color: var(--blue-d); }
+body.edit-mode #toolbar button.savebtn { background: #2e7d32; color: #fff; }
+body.edit-mode #toolbar button.savebtn:hover { background: #1b5e20; }
+body.edit-mode #toolbar button.savebtn.saving { background: #66bb6a; color: #fff; }
+body.edit-mode #toolbar #btnFit.on { background: rgba(255,255,255,.65); }   /* 選択中が地に埋もれないよう濃いめ */
+body.edit-mode #toolbar .tabs button.on { background: #fff; color: var(--edit-ink); }
+/* 印刷レイアウトの選択中は黄色文字(#ffd400)だが、この帯の中では濃色＋太字で示す（色だけに頼らない） */
+body.edit-mode #printLayout button.on { background: #fff; color: var(--edit-ink); font-weight: 800; }
+/* DO NOT DELETE 対象（#revealToggle）と #lockToggle が共有するクラス。色だけを帯に合わせる */
+body.edit-mode #toolbar .reveal-toggle { background: rgba(255,255,255,.3); color: var(--edit-ink); }
+body.edit-mode #toolbar #editToggle { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar #editToggle:hover { background: rgba(255,255,255,.5); }
+body.edit-mode #toolbar #modeBadge { color: var(--edit-ink); }
+/* 同期バッジの状態色は自己完結（濃色地＋白文字）。帯の濃色文字を継がせない。
+   .nosync だけは半透明白地で明橙の上では読めないため、この帯の中でだけ濃色地にする（白文字と 10.9:1・実測）。 */
+body.edit-mode #syncBadge { color: #fff; }
+body.edit-mode #syncBadge.nosync { background: rgba(43,16,0,.75); }
 /* 移行バナー（旧版で溜まった未送信の編集がこの端末に残っている時だけ表示） */
 #lockBanner2 { background: #fff3cd; border-bottom: 1px solid #ffe69c; color: #7a5b00;
   padding: 8px 12px; font-size: 0.8125rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -270,6 +297,14 @@ table.plain input[type=text] { width: 90%; border: none; background: transparent
 dialog { border: none; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.3); padding: 18px; max-width: 480px; }
 dialog::backdrop { background: rgba(0,0,0,.3); }
 dialog h3 { margin-top: 0; }
+/* 2択を明示する確認（App.confirm の opts 指定時だけ .wide2 が付く）。
+   同じ大きさの横長ボタンを並べ、どちらを押すかを本文でなくラベルで決められるようにする。
+   狭い画面では flex-wrap で縦積みになる（1行に無理に収めない）。 */
+#dlgConfirm .flexrow.wide2 { gap: 10px; margin-top: 14px; }
+#dlgConfirm .flexrow.wide2 button { flex: 1 1 170px; min-height: 44px; font-weight: 600; }
+/* 取り返しのつかない側（強制引継・引き継ぐ）は塗りつぶしの赤（白文字と 5.4:1・実測）。
+   二段確認を通した後にしか実行されないため、目立たせる側に倒す（2026-08-18 指示）。 */
+#dlgConfirm .flexrow.wide2 button.danger2 { background: var(--red); border-color: var(--red); color: #fff; }
 
 /* ── 印刷 ── */
 @media print {
@@ -598,6 +633,16 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
           <button id="syncNow" class="act ghost">今すぐ同期</button>
           <span id="syncMsg" class="muted"></span>
         </div>
+        <!-- 端末名: 他の端末の画面に「◯◯が編集中」と出る表示名。この端末だけの設定でクラウドへは送りません。 -->
+        <h3>この端末の名前</h3>
+        <div class="formgrid">
+          <label for="deviceNameInput">端末の呼び名</label><input type="text" id="deviceNameInput" maxlength="40" placeholder="例: 事務所PC">
+        </div>
+        <div class="flexrow" style="margin-top:8px">
+          <button id="deviceNameSave" class="act">保存</button>
+          <span id="deviceNameMsg" class="muted"></span>
+        </div>
+        <p class="muted">他の端末には、次に編集モードをオンにしたときから新しい名前で表示されます。</p>
       </div>
       <div class="panel">
         <h2>バックアップ</h2>
@@ -623,7 +668,8 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 <dialog id="dlgConfirm" aria-labelledby="dlgConfirmTitle" aria-describedby="dlgConfirmMsg">
   <h3 id="dlgConfirmTitle">確認</h3>
   <p id="dlgConfirmMsg" style="white-space:pre-wrap"></p>
-  <div class="flexrow" style="justify-content:flex-end">
+  <!-- ラベルは App.confirm の opts で差し替える（既定は キャンセル／OK）。2択を明示する時だけ .wide2 が付く -->
+  <div class="flexrow" id="dlgConfirmBtns" style="justify-content:flex-end">
     <button id="dlgConfirmNo" class="act ghost">キャンセル</button>
     <button id="dlgConfirmYes" class="act">OK</button>
   </div>
@@ -2114,6 +2160,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   var LEASE_TTL_MS = 30 * 60 * 1000;      /* サーバ側TTLと同値（残り時間の表示・更新間隔の算定に使う） */
   var RENEW_BEFORE_MS = 20 * 60 * 1000;   /* 残り20分未満で更新＝TTL30分に対し約10分間隔のハートビート */
+  /* 無操作の解除しきい値（2026-08-18）。従来はタブを開いていれば延長し続けたため、
+   * 席を離れた端末が編集権を持ち続け、他の端末が強制引き継ぎでしか編集できなかった。 */
+  var IDLE_RELEASE_MS = 30 * 60 * 1000;   /* 無操作30分で編集モードを自動解除 */
+  var IDLE_WARN_MS = 27 * 60 * 1000;      /* 解除の3分前に予告（続けたい人が操作で取り消せる猶予） */
 
   /* 鮮度ガード（STALE_UNSENT_MS / conflictPolicy）は synccore.js のものをそのまま使う＝二重定義を作らない。
    * 解決は「呼び出し時」に行う（結合ビルドの読み込み順・テストのrequire順に依存しないため）。 */
@@ -2153,6 +2203,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function shouldRenew(lease, now) {
     if (!lease || !isNum_(lease.expiresAt) || !isNum_(now)) return false;
     return (lease.expiresAt - now) < RENEW_BEFORE_MS;
+  }
+
+  /* 無操作の状態判定（純関数）。'active'＝継続 / 'warn'＝解除予告 / 'expired'＝解除。
+   * 起点や現在時刻が数値で取れない時は 'active'＝解除しない（判定できないことを理由に
+   * 編集中の端末を降格させると、厳格モードのサーバーでは未送信の送信先を失う）。
+   * 端末時計の巻き戻り等で起点が未来になった場合も負の経過＝'active'。 */
+  function idleState(lastActivityAt, now) {
+    if (!isNum_(lastActivityAt) || !isNum_(now)) return 'active';
+    var idle = now - lastActivityAt;
+    if (idle >= IDLE_RELEASE_MS) return 'expired';
+    if (idle >= IDLE_WARN_MS) return 'warn';
+    return 'active';
   }
 
   /* 競合時の解決判定（本改修の芯・2026-08-17）。
@@ -2204,8 +2266,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     conflictDecision: conflictDecision,
     classifyPushError: classifyPushError,
     canEnableEditInThisTab: canEnableEditInThisTab,
+    idleState: idleState,
     LEASE_TTL_MS: LEASE_TTL_MS,
-    RENEW_BEFORE_MS: RENEW_BEFORE_MS
+    RENEW_BEFORE_MS: RENEW_BEFORE_MS,
+    IDLE_RELEASE_MS: IDLE_RELEASE_MS,
+    IDLE_WARN_MS: IDLE_WARN_MS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftEditLock = api;
@@ -5728,6 +5793,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           app.reloadFromStore();
         });
       };
+      /* 端末名（他端末に「◯◯が編集中」と出る表示名）。初回は編集モードON時の入力欄で聞くが、
+       * あとから直せる場所が無かった（2026-08-18 追加）。
+       * この端末だけの設定（local: 接頭辞＝同期対象外）なので閲覧モードでも変更できる＝leaseGuard は通さない。
+       * 空欄は保存しない（未設定に戻すと編集モードONのたびに入力を求められるため）。 */
+      var dnIn = document.getElementById('deviceNameInput');
+      var dnMsg = document.getElementById('deviceNameMsg');
+      var dnBtn = document.getElementById('deviceNameSave');
+      if (dnIn) dnIn.value = Store.getLocal('deviceName', '') || '';
+      if (dnBtn) {
+        dnBtn.onclick = function () {
+          /* GAS 側の clampStr_(name, LOCK_NAME_MAX=40) と同値でクランプ＝送信時に黙って切られない */
+          var v = String(dnIn ? dnIn.value : '').trim().slice(0, 40);
+          if (!v) {
+            if (dnMsg) dnMsg.textContent = '✗ 端末の名前を入力してください（例: 事務所PC）';
+            return;
+          }
+          Store.setLocal('deviceName', v);
+          if (dnIn) dnIn.value = v;
+          if (dnMsg) dnMsg.textContent = '✓ 保存しました（他の端末には次に編集モードをオンにしたときから反映されます）';
+        };
+      }
     },
 
     /* ── バックアップ ── */
@@ -8684,15 +8770,40 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (cbNo) cbNo();
       });
     },
-    confirm: function (title, msg, cb, cbNo) {
+    /* 2択ダイアログのボタンを既定（キャンセル／OK）へ戻す。
+     * 「開く直前」に必ず通す＝Escで閉じた場合も含め、前回のラベルが次の確認へ漏れない。 */
+    resetConfirmButtons_: function () {
+      var no = document.getElementById('dlgConfirmNo');
+      var yes = document.getElementById('dlgConfirmYes');
+      var row = document.getElementById('dlgConfirmBtns');
+      if (no) { no.textContent = 'キャンセル'; no.className = 'act ghost'; }
+      if (yes) { yes.textContent = 'OK'; yes.className = 'act'; }
+      if (row) row.classList.remove('wide2');
+    },
+    /* opts（省略可）= {yesLabel, noLabel, danger}。指定時だけ「同じ大きさの横長ボタン2つ」に切り替える。
+     * 本文を読まなくてもラベルだけで選べる確認（例: 閲覧モード維持／強制引継）用。 */
+    confirm: function (title, msg, cb, cbNo, opts) {
+      this.resetConfirmButtons_();
       document.getElementById('dlgConfirmTitle').textContent = title;
       document.getElementById('dlgConfirmMsg').textContent = msg;
       document.getElementById('dlgConfirmNo').style.display = '';
+      if (opts) {
+        var no = document.getElementById('dlgConfirmNo');
+        var yes = document.getElementById('dlgConfirmYes');
+        var row = document.getElementById('dlgConfirmBtns');
+        if (opts.noLabel && no) no.textContent = opts.noLabel;
+        if (opts.yesLabel && yes) yes.textContent = opts.yesLabel;
+        /* 既定側（青）はキャンセル相当の No に置く＝取り返しのつく方を押しやすくする */
+        if (no) no.className = 'act';
+        if (yes && opts.danger) yes.className = 'act danger2';
+        if (row) row.classList.add('wide2');
+      }
       this._confirmCb = cb;
       this._confirmCbNo = cbNo || null;
       document.getElementById('dlgConfirm').showModal();
     },
     confirmInfo: function (title, msg) {
+      this.resetConfirmButtons_();
       document.getElementById('dlgConfirmTitle').textContent = title;
       document.getElementById('dlgConfirmMsg').textContent = msg;
       document.getElementById('dlgConfirmNo').style.display = 'none';
@@ -8760,9 +8871,149 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 閲覧モードの編集ガード（lockGuard と同型: true が返ったら呼び出し側は処理を中止する）。 */
     leaseGuard: function () {
-      if (Store.editMode) return false;
+      /* 編集の入口はほぼ全てここを通る＝編集操作そのものを「無操作タイマー」の操作として数える */
+      if (Store.editMode) { this.markActivity_(); return false; }
       this.toast('👁 閲覧モードです。編集するには右上の「✎ 編集」をオンにしてください');
       return true;
+    },
+
+    /* ── 無操作での自動解除（2026-08-18）──
+     * 従来は「タブを表示していれば無期限に延長」だったため、席を離れた端末が編集権を持ち続けた。
+     * 最終操作からの経過で判定する（判定そのものは editlock.js の idleState＝純関数）。 */
+
+    /* 最終操作時刻の更新。編集モード中だけ記録する（閲覧中は解除するものが無い）。 */
+    markActivity_: function () {
+      if (!Store.editMode) return;
+      this._lastActivityAt = Date.now();
+      this._idleWarned = false;   /* 操作があった＝予告はやり直せる */
+    },
+
+    /* 操作の検出。mousemove は含めない（通りすがりのポインタで延長されると30分が形骸化する）。
+     * wheel/scroll は連続発火するため1秒に1回へ間引く。capture＝途中で止められる経路でも拾う。 */
+    bindActivity_: function () {
+      var self = this;
+      if (this._activityBound) return;
+      this._activityBound = true;
+      if (typeof document === 'undefined' || !document.addEventListener) return;
+      function mark() { self.markActivity_(); }
+      var throttled = false;
+      function markThrottled() {
+        if (throttled) return;
+        throttled = true;
+        setTimeout(function () { throttled = false; }, 1000);
+        self.markActivity_();
+      }
+      /* Pointer Events 非対応の旧Safari（iOS12以前のiPad等）ではタップを拾えないため、
+       * その端末に限り mousedown/touchstart で代替する（対応端末では二重に数えない）。 */
+      if (typeof window !== 'undefined' && window.PointerEvent) {
+        document.addEventListener('pointerdown', mark, true);
+      } else {
+        document.addEventListener('mousedown', mark, true);
+        document.addEventListener('touchstart', mark, true);
+      }
+      document.addEventListener('keydown', mark, true);
+      /* options オブジェクト非対応の旧ブラウザでは truthy＝capture として解釈される（passive が効かないだけ） */
+      document.addEventListener('wheel', markThrottled, { capture: true, passive: true });
+      document.addEventListener('scroll', markThrottled, { capture: true, passive: true });
+    },
+
+    /* 無操作の監視。戻り値 true＝解除処理に入った（呼び出し側はリース延長を行わない）。 */
+    idleTick_: function () {
+      if (!Store.editMode) return false;
+      var EL = window.ShiftEditLock;
+      if (!EL || typeof EL.idleState !== 'function') return false;   /* 判定できない＝従来どおり延長する */
+      /* 印刷中・印刷シミュレーション中は予告も解除もしない。用紙の測定中に閲覧モードへ落ちると
+       * 再描画が走り、印刷物と画面が食い違う。次のtickへ持ち越す。 */
+      if (this._printing) return false;
+      if (typeof document !== 'undefined' && document.body && document.body.classList &&
+          document.body.classList.contains('printsim')) return false;
+      if (this._idleReleasing) return true;                          /* 解除処理が進行中＝二重に走らせない */
+      if (!this._lastActivityAt) this._lastActivityAt = Date.now();  /* 起点が無い（編集モード復元直後等）＝ここから測る */
+      var st = EL.idleState(this._lastActivityAt, Date.now());
+      if (st === 'active') { this._idleWarned = false; return false; }
+      if (st === 'warn') {
+        if (!this._idleWarned) {
+          this._idleWarned = true;
+          this.toast('まもなく編集モードを解除します（続けるには画面を操作してください）');
+        }
+        return false;
+      }
+      this.idleRelease_();
+      return true;
+    },
+
+    /* 無操作30分での自動解除。未送信を送り切れた時だけ編集権を返す。
+     * 送れないまま閲覧モードへ落とすと、厳格モードのサーバーでは以後この端末から送信できず
+     * 未送信の編集が行き場を失う＝データ保全を優先して編集モードを維持する。 */
+    idleRelease_: function () {
+      var self = this;
+      var tog = document.getElementById('togEdit');
+      this._idleReleasing = true;
+      if (tog) tog.disabled = true;
+      /* 入力途中のセルを確定させてから送る（打ちかけの内容を取り残さない） */
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+      function finish() {
+        Store.editMode = false;
+        self._offlineEdit = false;
+        self._idleReleasing = false;
+        self._idleWarned = false;
+        if (tog) tog.disabled = false;
+        self.setEditModeUI_(false);
+        /* 自分が手放した＝「◯◯が編集中」は消す（実際の保持者は取り直して反映する） */
+        self.afterSelfRelease_();
+        self.toast('無操作が30分続いたため編集モードを解除しました');
+      }
+      function keep(msg) {
+        self._idleReleasing = false;
+        self._idleWarned = false;
+        self._lastActivityAt = Date.now();   /* 次の判定まで間を置く＝毎分の再試行で通信が張り付かない */
+        if (tog) { tog.disabled = false; tog.checked = true; }
+        self.toast(msg);
+      }
+      /* 過渡状態（編集権の確認中・別の送信が進行中）。まだ「未送信が残っている」と判断できないので、
+       * 理由を語らずフラグだけ戻して次のtick（60秒後）にやり直す。無操作の起点は動かさない
+       * ＝ここで起点を更新すると、確認が済んだ頃には解除の機会が30分先へ流れてしまう。 */
+      function pending() {
+        self._idleReleasing = false;
+        if (tog) { tog.disabled = false; tog.checked = true; }
+      }
+      /* 送信中に他端末が引き継いだ: 退避・降格・通知は handleLockLost が行う（重ねて通知しない）。
+       * こちらはフラグだけ戻す（releaseLease 側の locklost 分岐と同型）。 */
+      function detach() {
+        self._idleReleasing = false;
+        self._idleWarned = false;
+        if (tog) tog.disabled = false;
+      }
+      /* 送り切れたか。nosync（同期未設定）・readonly（閲覧専用トークン）は送る相手がいないため送信済み扱い。 */
+      function sentAll_(r) {
+        if (r === 'nosync' || r === 'readonly') return true;
+        if (r !== 'ok' && r !== 'empty') return false;
+        return !Store.queue || Store.queue.size() === 0;
+      }
+      /* 送るものが無い時は push を撃たない。リースがローカル失効している状態で push を通すと、
+       * 送信前の編集権チェックが空きリースを取り直し、離席した端末がロックを握り直す
+       * ＝この機能の目的と逆になる（未送信がある時だけは、送信のために取り直す必要がある）。 */
+      var hasQueued = !!(Store.queue && Store.queue.size() > 0);
+      return (hasQueued ? Store.pushQueued() : Promise.resolve('empty')).then(function (r) {
+        if (r === 'leasecheck' || r === 'busy') { pending(); return null; }
+        if (r === 'locklost') { detach(); return null; }
+        if (!sentAll_(r)) { keep('未送信があるため編集モードを維持しています（通信状況を確認してください）'); return null; }
+        if (Store.lockCapable !== true || !Store.lease) { finish(); return null; }   /* 劣化モード＝返すリースが無い */
+        return Store.releaseLease().then(function (rr) {
+          if (rr && !rr.ok && String(rr.error) === 'locklost') {
+            /* すでに他端末へ引き継がれていた＝退避・降格・通知は handleLockLost に任せる（重ねて通知しない） */
+            self._idleReleasing = false;
+            self._idleWarned = false;
+            if (tog) tog.disabled = false;
+            return Store.handleLockLost();
+          }
+          if (rr && !rr.ok) self.toast('編集権の返却に失敗しました（30分で自動的に失効します）');
+          finish();
+          return null;
+        });
+      }).catch(function () {
+        keep('未送信があるため編集モードを維持しています（通信状況を確認してください）');
+      });
     },
 
     bindEditLock: function () {
@@ -8836,6 +9087,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 画面表示をモードへ追従させる（帯の色・チェック状態・バッジ・保存ボタン・移行バナー）。 */
     setEditModeUI_: function (on) {
       document.body.classList.toggle('edit-mode', !!on);
+      /* 編集モードに入った時点を無操作タイマーの起点にする（取得・復元・劣化モードの全経路を通る） */
+      if (on) { this._lastActivityAt = Date.now(); this._idleWarned = false; }
       var tog = document.getElementById('togEdit');
       if (tog) tog.checked = !!on;
       this.updateModeBadge();
@@ -8902,12 +9155,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     },
 
+    /* 保持者表示の記録（2026-08-18 修正）。自分が持っている編集権は「他端末が編集中」ではないので記録しない。
+     * 記録すると、この端末が編集をやめた瞬間にバッジへ自分の古い端末名が「◯◯が編集中」として残る。
+     * サーバーの保持者情報に端末IDは含まれない（GAS は変更しない）ため、期限の一致で自分かどうかを見る
+     * ＝取得・延長の応答で受け取った expiresAt をそのまま保持しているのは自分だけ。 */
+    setLockHolder_: function (lock) {
+      var mine = !!(lock && Store.lease && typeof lock.expiresAt === 'number' &&
+                    lock.expiresAt === Store.lease.expiresAt);
+      this._lockHolder = (lock && !mine) ? lock : null;
+      this.updateModeBadge();
+    },
+
+    /* 自分が編集権を手放した直後の後始末。先に保持者表示を消してから、実際の保持者を1回だけ取り直す。
+     * 消すのが先＝通信できなくても自分の古い端末名がバッジに残らない（クリアを優先する）。 */
+    afterSelfRelease_: function () {
+      var self = this;
+      this._lockHolder = null;
+      this.updateModeBadge();
+      if (Store.lockCapable !== true) return Promise.resolve(null);   /* 劣化モード＝取り直す相手がいない */
+      return Store.probeLockSupport().then(function (holder) {
+        self.setLockHolder_(holder);   /* 直後に他端末が取っていれば、その名前を出す */
+        return holder;
+      }, function () {
+        self._lockHolder = null;       /* 取り直せなくても古い名前は戻さない */
+        self.updateModeBadge();
+        return null;
+      });
+    },
+
     /* サーバーの編集リース対応を確認（1回）。保持者情報はバッジに出す。 */
     probeLock_: function () {
       var self = this;
       return Store.probeLockSupport().then(function (holder) {
-        self._lockHolder = holder;
-        self.updateModeBadge();
+        self.setLockHolder_(holder);
         self.updateEditToggleEnabled_();
         return holder;
       });
@@ -9032,17 +9312,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           self.updateModeBadge();
           var who = (holder && holder.name) ? holder.name : '他の端末';
           var until = (holder && holder.expiresAt) ? fmtClock(holder.expiresAt) : '';
+          /* 選択肢はボタンのラベルで語らせる（本文の［キャンセル］［OK］解説は廃止・2026-08-18）。
+           * 引き継ぎは相手の作業を止める操作なので、赤いボタン＋二段確認で扱う。 */
           self.confirm('他の端末が編集中です',
             who + ' が編集モードです' + (until ? '（' + until + 'まで）' : '') + '。\n' +
-            '［キャンセル］閲覧のままにする\n' +
-            '［OK］強制的に引き継ぐ（相手は閲覧モードになり、送信前の編集は相手の端末内に退避されます）',
+            '引き継ぐと相手は閲覧モードになり、送信前の編集は相手の端末内に退避されます。',
             function () {
               self.confirm('本当に引き継ぎますか？',
                 who + ' の編集を引き継ぎます。相手の画面は閲覧モードに切り替わります。\n' +
-                '相手がまだ送信していない編集は、相手の端末内に退避されます（相手側で復元できます）。\n' +
-                'よろしいですか？',
-                function () { self.takeover_(name); });
-            });
+                '相手がまだ送信していない編集は、相手の端末内に退避されます（相手側で復元できます）。',
+                function () { self.takeover_(name); }, null,
+                { noLabel: 'やめる', yesLabel: '引き継ぐ', danger: true });
+            }, null,
+            { noLabel: '閲覧モード維持', yesLabel: '強制引継', danger: true });
           return null;
         });
       }).catch(function () {
@@ -9110,9 +9392,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 返せなかった時に黙って閲覧へ落とすと、他端末に「まだ誰かが編集中」と出続ける理由が分からない。 */
       function release_() {
         return Store.releaseLease().then(function (rr) {
-          /* すでに引き継がれていた場合は handleLockLost に任せる（未送信は上で処理済み） */
+          /* すでに引き継がれていた場合は handleLockLost に任せる（未送信は上で処理済み・保持者名は相手のものが正しい） */
           if (rr && !rr.ok && String(rr.error) === 'locklost') return Store.handleLockLost();
           if (rr && !rr.ok) self.toast('編集権の返却に失敗しました（30分で自動的に失効します）');
+          /* 自分が手放した＝「◯◯が編集中」は消す。バッジのクリアは afterSelfRelease_ の冒頭で
+           * 同期的に済むので、実際の保持者を取り直す1往復は待たない（自動解除側と同じ順序＝
+           * 閲覧モードへの切り替えを通信で遅らせない）。 */
+          self.afterSelfRelease_();
           return null;
         });
       }
@@ -9150,6 +9436,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       if (this._leaseTimer) return;
       this._leaseTimer = setInterval(function () { self.leaseTick_(); }, 60000);
+      this.bindActivity_();   /* 無操作タイマーの操作検出（編集モード中のみ記録する） */
       if (typeof document !== 'undefined' && document.addEventListener) {
         document.addEventListener('visibilitychange', function () {
           if (!document.hidden) self.onTabVisible_();
@@ -9159,6 +9446,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     leaseTick_: function () {
       if (typeof document !== 'undefined' && document.hidden) return;   /* 隠れているタブは通信しない */
       if (Store.editMode) {
+        /* 無操作30分の解除が先。解除に入ったら延長はしない（延長すると解除の意味が消える） */
+        if (this.idleTick_()) return;
         if (Store.lockCapable !== true) return;                          /* 劣化モード＝延長するリースが無い */
         var EL = window.ShiftEditLock;
         if (!EL || !EL.shouldRenew(Store.lease, Date.now())) return;      /* 残りTTLが十分なら通信しない */
@@ -9204,7 +9493,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     onTabVisible_: function () {
       var self = this;
-      if (Store.editMode) { if (Store.lockCapable === true) this.renewTick_(); return; }
+      if (Store.editMode) {
+        /* 隠れている間は tick が走らない＝復帰時に無操作を測り直す（既に30分超なら解除へ） */
+        if (this.idleTick_()) return;
+        if (Store.lockCapable === true) this.renewTick_();
+        return;
+      }
       /* サーバー更新後に開きっぱなしだったタブを取り込む（未対応判定のままにしない） */
       if (Store.lockCapable !== true) {
         this.probeLock_().then(function () {
@@ -9228,8 +9522,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return Store.api(useStatus ? { action: 'shiftStatus', keys: keys } : { action: 'head', keys: keys })
         .then(function (res) {
           if (useStatus) {
-            self._lockHolder = (res && res.lock) ? res.lock : null;
-            self.updateModeBadge();
+            self.setLockHolder_((res && res.lock) ? res.lock : null);
           }
           var revs = (res && res.revs) ? res.revs : {};
           var changed = [], k, sv;
