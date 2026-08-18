@@ -5,7 +5,14 @@ import tls from 'node:tls';
 import {
   listAccounts, publicAccount, saveAccount, deleteAccount, getAccount, getSettings, saveSettings,
   getPassword,
+  listCalendarSources, getCalendarSource, saveCalendarSource, deleteCalendarSource,
+  publicCalendarSource, getCalendarSecrets,
 } from './store.js';
+import * as cal from './calendar.js';
+import * as tasksBackend from './tasks.js';
+import * as google from './google.js';
+import { extractSchedule } from './schedule-extract.js';
+import { localTimeZone } from './datetime.js';
 import { ops, formatMessage } from './mail-service.js';
 import { testImap } from './imap.js';
 import { testSmtp } from './smtp.js';
@@ -38,7 +45,14 @@ function resolveAccounts(idParam) {
 
 // ── アカウント管理 ────────────────────────────────────────────
 api.get('/accounts', h(async (req, res) => {
-  res.json({ accounts: listAccounts().map(publicAccount), settings: getSettings() });
+  res.json({
+    accounts: listAccounts().map(publicAccount),
+    settings: getSettings(),
+    calendarSources: cal.sourcesForClient(),
+    calendarTargets: cal.writableTargets(),
+    calendarRedirectUri: REDIRECT_URI,
+    timeZone: localTimeZone(),
+  });
 }));
 
 api.post('/accounts/test', h(async (req, res) => {
@@ -321,4 +335,203 @@ api.post('/draft', h(async (req, res) => {
 // ── 設定 ─────────────────────────────────────────────────────
 api.put('/settings', h(async (req, res) => {
   res.json({ settings: saveSettings(req.body || {}) });
+}));
+
+// ══════════════════════════════════════════════════════════════
+//  カレンダー / ToDo
+// ══════════════════════════════════════════════════════════════
+const PORT = Number(process.env.PORT) || 8744;
+const REDIRECT_URI = `http://127.0.0.1:${PORT}/api/oauth/google/callback`;
+
+function parseRange(req) {
+  const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 7 * 86400000);
+  const to = req.query.to ? new Date(req.query.to) : new Date(Date.now() + 60 * 86400000);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    const e = new Error('期間の指定が正しくありません'); e.status = 400; throw e;
+  }
+  return { from, to };
+}
+
+// ── 連携元の一覧・追加・更新・削除 ────────────────────────────
+api.get('/calendar/sources', h(async (req, res) => {
+  res.json({ sources: cal.sourcesForClient(), targets: cal.writableTargets(), redirectUri: REDIRECT_URI });
+}));
+
+api.post('/calendar/sources', h(async (req, res) => {
+  const { type, name, url, color } = req.body || {};
+  if (type !== 'ics') { const e = new Error('この方式には対応していません'); e.status = 400; throw e; }
+  if (!/^https?:\/\//i.test(String(url || ''))) {
+    const e = new Error('httpsで始まるカレンダーURLを入力してください'); e.status = 400; throw e;
+  }
+  const saved = await saveCalendarSource({ type: 'ics', name: name || '購読カレンダー', url, color: color || '#BF5AF2' });
+  // 追加時に一度読んで、URLが正しいかその場で確かめる
+  try {
+    cal.clearIcsCache(url);
+    await cal.listEvents({ from: new Date(), to: new Date(Date.now() + 86400000) });
+  } catch { /* 取得失敗は一覧側のエラー表示に任せる */ }
+  res.json({ source: publicCalendarSource(saved), sources: cal.sourcesForClient() });
+}));
+
+api.put('/calendar/sources/:id', h(async (req, res) => {
+  const existing = getCalendarSource(req.params.id);
+  if (!existing) { const e = new Error('カレンダーが見つかりません'); e.status = 404; throw e; }
+  const { name, color, enabled, calendars, defaultCalendarId } = req.body || {};
+  const patch = { ...existing };
+  if (name !== undefined) patch.name = name;
+  if (color !== undefined) patch.color = color;
+  if (enabled !== undefined) patch.enabled = Boolean(enabled);
+  if (defaultCalendarId !== undefined) patch.defaultCalendarId = defaultCalendarId;
+  if (Array.isArray(calendars)) {
+    const sel = new Map(calendars.map(c => [c.id, c.selected !== false]));
+    patch.calendars = (existing.calendars || []).map(c => (sel.has(c.id) ? { ...c, selected: sel.get(c.id) } : c));
+  }
+  const saved = await saveCalendarSource(patch);
+  res.json({ source: publicCalendarSource(saved), sources: cal.sourcesForClient() });
+}));
+
+api.delete('/calendar/sources/:id', h(async (req, res) => {
+  const source = getCalendarSource(req.params.id);
+  if (source?.type === 'google') {
+    const creds = await getCalendarSecrets(source);
+    if (creds.refreshToken) await google.revokeToken(creds.refreshToken);
+    google.forgetToken(source.id);
+  }
+  if (source?.url) cal.clearIcsCache(source.url);
+  await deleteCalendarSource(req.params.id);
+  res.json({ ok: true, sources: cal.sourcesForClient() });
+}));
+
+// Googleのカレンダー一覧を取り直す
+api.post('/calendar/sources/:id/sync', h(async (req, res) => {
+  const source = getCalendarSource(req.params.id);
+  if (!source || source.type !== 'google') { const e = new Error('Googleカレンダーが見つかりません'); e.status = 404; throw e; }
+  const saved = await cal.syncGoogleCalendars(source);
+  res.json({ source: publicCalendarSource(saved), sources: cal.sourcesForClient() });
+}));
+
+// ── Google連携（OAuth 2.0 / PKCE） ────────────────────────────
+api.post('/calendar/google/start', h(async (req, res) => {
+  const clientId = String(req.body?.clientId || '').trim();
+  const clientSecret = String(req.body?.clientSecret || '').trim();
+  if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+  const { authUrl, state } = google.startAuth({ clientId, clientSecret, redirectUri: REDIRECT_URI });
+  res.json({ authUrl, state, redirectUri: REDIRECT_URI });
+}));
+
+api.get('/calendar/google/status', h(async (req, res) => {
+  const p = google.getPending(String(req.query.state || ''));
+  if (!p) return res.json({ status: 'expired' });
+  res.json({
+    status: p.status, error: p.error || null,
+    source: p.sourceId ? publicCalendarSource(getCalendarSource(p.sourceId) || {}) : null,
+    sources: p.status === 'done' ? cal.sourcesForClient() : undefined,
+  });
+}));
+
+// Googleからのリダイレクト受け口（ブラウザが直接開く）
+api.get('/oauth/google/callback', async (req, res) => {
+  const state = String(req.query.state || '');
+  const p = google.getPending(state);
+  const page = (title, body, ok) => `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<title>${title}</title><style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:#f5f5f7;color:#1d1d1f;
+display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{background:#fff;border-radius:16px;padding:36px 40px;max-width:440px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.12)}
+.mark{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;font-size:26px;
+background:${ok ? '#e7f7ec' : '#fdecea'};color:${ok ? '#28a745' : '#ff3b30'}}
+h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e73;margin:0}
+</style></head><body><div class="card"><div class="mark">${ok ? '✓' : '!'}</div><h1>${title}</h1><p>${body}</p></div>
+<script>setTimeout(function(){window.close();},${ok ? 2500 : 8000});</script></body></html>`;
+
+  if (req.query.error) {
+    google.finishAuth(state, { status: 'error', error: `Googleで許可されませんでした（${req.query.error}）` });
+    return res.status(400).send(page('連携をキャンセルしました', 'SilverMailの画面に戻ってやり直せます。', false));
+  }
+  if (!p) return res.status(400).send(page('この連携リンクは期限切れです', 'SilverMailの画面からもう一度お試しください。', false));
+
+  try {
+    const tokens = await google.exchangeCode({
+      clientId: p.clientId, clientSecret: p.clientSecret,
+      code: String(req.query.code || ''), redirectUri: p.redirectUri, verifier: p.verifier,
+    });
+    if (!tokens.refresh_token) {
+      throw new Error('更新用トークンを受け取れませんでした。Googleアカウントの「サードパーティアクセス」から一度SilverMailを解除して、もう一度お試しください。');
+    }
+    const info = await google.fetchUserinfo(tokens.access_token);
+    const email = info.email || '';
+    const existing = listCalendarSources().find(s => s.type === 'google' && s.email && s.email === email);
+    let source = await saveCalendarSource({
+      ...(existing || {}),
+      type: 'google',
+      name: existing?.name || (email ? `Googleカレンダー（${email}）` : 'Googleカレンダー'),
+      email,
+      clientId: p.clientId,
+      color: existing?.color || '#0a7aff',
+      enabled: true,
+    }, { clientSecret: p.clientSecret, refreshToken: tokens.refresh_token });
+    google.forgetToken(source.id);
+    source = await cal.syncGoogleCalendars(source);
+    google.finishAuth(state, { status: 'done', sourceId: source.id });
+    res.send(page('Googleカレンダーに接続しました', 'このタブは閉じて、SilverMailの画面にお戻りください。', true));
+  } catch (err) {
+    google.finishAuth(state, { status: 'error', error: err.message });
+    res.status(500).send(page('接続できませんでした', String(err.message || err), false));
+  }
+});
+
+// ── 予定 ─────────────────────────────────────────────────────
+api.get('/calendar/events', h(async (req, res) => {
+  const { from, to } = parseRange(req);
+  const r = await cal.listEvents({ from, to });
+  res.json({ ...r, timeZone: localTimeZone() });
+}));
+
+api.post('/calendar/events', h(async (req, res) => {
+  const { sourceId, calendarId, event } = req.body || {};
+  if (!event?.title?.trim()) { const e = new Error('予定のタイトルを入力してください'); e.status = 400; throw e; }
+  if (!event?.start || !event?.end) { const e = new Error('開始と終了の日時を指定してください'); e.status = 400; throw e; }
+  const created = await cal.createEvent({ sourceId, calendarId, event });
+  res.json({ event: created });
+}));
+
+api.put('/calendar/events', h(async (req, res) => {
+  const { sourceId, calendarId, eventId, event } = req.body || {};
+  if (!sourceId || !eventId) { const e = new Error('対象の予定が指定されていません'); e.status = 400; throw e; }
+  const updated = await cal.updateEvent({ sourceId, calendarId, eventId, event });
+  res.json({ event: updated });
+}));
+
+api.post('/calendar/events/delete', h(async (req, res) => {
+  const { sourceId, calendarId, eventId } = req.body || {};
+  if (!sourceId || !eventId) { const e = new Error('対象の予定が指定されていません'); e.status = 400; throw e; }
+  res.json(await cal.removeEvent({ sourceId, calendarId, eventId }));
+}));
+
+// ── ToDo ─────────────────────────────────────────────────────
+api.get('/tasks', h(async (req, res) => {
+  res.json(await tasksBackend.listTasks({ includeDone: req.query.done !== '0' }));
+}));
+
+api.post('/tasks', h(async (req, res) => {
+  const { sourceId, listId, task } = req.body || {};
+  if (!task?.title?.trim()) { const e = new Error('ToDoの内容を入力してください'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.createTask({ sourceId, listId, task }) });
+}));
+
+api.put('/tasks', h(async (req, res) => {
+  const { sourceId, listId, taskId, patch } = req.body || {};
+  if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.updateTask({ sourceId, listId, taskId, patch: patch || {} }) });
+}));
+
+api.post('/tasks/delete', h(async (req, res) => {
+  const { sourceId, listId, taskId } = req.body || {};
+  if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
+  res.json(await tasksBackend.removeTask({ sourceId, listId, taskId }));
+}));
+
+// ── メール本文から日時の候補を出す ────────────────────────────
+api.post('/schedule/suggest', h(async (req, res) => {
+  const { subject = '', text = '', baseDate } = req.body || {};
+  res.json({ hints: extractSchedule({ subject, text, baseDate }) });
 }));

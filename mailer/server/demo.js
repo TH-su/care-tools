@@ -443,3 +443,40 @@ function parseAddressList(v) {
       return m ? { name: m[1].replace(/^"|"$/g, ''), address: m[2] } : { name: '', address: s };
     });
 }
+
+// ── デモ用のカレンダー / ToDo ────────────────────────────────
+// 起動時に「このMacの予定」へ入れるサンプル。実データがある場合は入れない。
+const atDay = (offset, hh, mm = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setHours(hh, mm, 0, 0);
+  return d.toISOString();
+};
+const allDayOf = (offset, days = 1) => {
+  const s = new Date(); s.setDate(s.getDate() + offset); s.setHours(0, 0, 0, 0);
+  const e = new Date(s); e.setDate(e.getDate() + days);
+  return { start: s.toISOString(), end: e.toISOString(), allDay: true };
+};
+
+export function demoEvents() {
+  return [
+    { title: '朝礼・申し送り', start: atDay(0, 9, 0), end: atDay(0, 9, 30), allDay: false, location: '1階 スタッフルーム' },
+    { title: 'ご家族面談（佐藤様）', start: atDay(0, 14, 0), end: atDay(0, 15, 0), allDay: false, location: '相談室', description: '302号室 佐藤トメ様のご長女との面談' },
+    { title: '事故防止委員会', start: atDay(-1, 16, 0), end: atDay(-1, 17, 0), allDay: false, location: '会議室' },
+    { title: 'サービス担当者会議', start: atDay(1, 13, 30), end: atDay(1, 14, 30), allDay: false, location: 'オンライン' },
+    { title: '訪問診療 立ち会い', start: atDay(2, 9, 0), end: atDay(2, 10, 0), allDay: false, location: '各居室' },
+    { title: '夏季レクリエーション', ...allDayOf(3), location: '中庭' },
+    { title: '設備資金のご相談（肥後みらい銀行）', start: atDay(5, 15, 0), end: atDay(5, 16, 0), allDay: false, location: '本店 法人融資部' },
+    { title: '集団指導（住宅型有料老人ホーム）', ...allDayOf(9), location: '熊本市役所' },
+  ];
+}
+
+export function demoTasks() {
+  return [
+    { title: '面会予約のお願いに返信する', due: atDay(0, 0), notes: '佐藤恵子様（302号室 佐藤トメ様のご長女）' },
+    { title: '7月分 給食委託費の請求書を確認して振込', due: atDay(1, 0) },
+    { title: '集団指導の提出資料を印刷しておく', due: atDay(8, 0) },
+    { title: '処遇改善加算の実績報告の準備', due: null },
+    { title: '9月のシフト表を配布する', due: atDay(-2, 0), done: true },
+  ];
+}

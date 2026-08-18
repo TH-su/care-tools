@@ -4,6 +4,7 @@ import * as imapBackend from './imap.js';
 import * as demoBackend from './demo.js';
 import * as smtp from './smtp.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
+import { extractSchedule } from './schedule-extract.js';
 
 export function backend(account) {
   return account.type === 'demo' ? demoBackend : imapBackend;
@@ -26,7 +27,7 @@ export const ops = {
 const addrList = (v) => (v?.value || []).map(a => ({ name: a.name || '', address: a.address || '' }));
 
 // mailparser の結果 → クライアントへ返すJSON
-export async function formatMessage(account, path, uid, { blockRemote = true } = {}) {
+export async function formatMessage(account, path, uid, { blockRemote = true, suggestSchedule = true } = {}) {
   const { parsed, flags } = await backend(account).getMessage(account, path, uid);
 
   const attachments = (parsed.attachments || []).map((a, index) => ({
@@ -48,6 +49,15 @@ export async function formatMessage(account, path, uid, { blockRemote = true } =
     html = textToHtml(parsed.text);
   }
 
+  // 本文から日時を拾い、「予定を作成」の初期値に使う（自動で登録はしない）
+  const scheduleHints = suggestSchedule
+    ? extractSchedule({
+      subject: parsed.subject || '',
+      text: parsed.text || '',
+      baseDate: (parsed.date || new Date()).toISOString(),
+    })
+    : [];
+
   return {
     accountId: account.id,
     mailbox: path,
@@ -67,5 +77,6 @@ export async function formatMessage(account, path, uid, { blockRemote = true } =
     hadRemoteImages,
     flagged: flags?.has?.('\\Flagged') ?? false,
     attachments: attachments.filter(a => !a.inline || !a.cid),
+    scheduleHints,
   };
 }

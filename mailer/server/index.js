@@ -6,8 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { api } from './api.js';
 import { closeAll } from './imap.js';
-import { DATA_DIR, listAccounts, saveAccount } from './store.js';
-import { DEMO_ACCOUNTS } from './demo.js';
+import {
+  DATA_DIR, listAccounts, saveAccount,
+  listLocalEvents, saveLocalEvent, listLocalTasks, saveLocalTask,
+} from './store.js';
+import { DEMO_ACCOUNTS, demoEvents, demoTasks } from './demo.js';
+import { ensureLocalSource, LOCAL_SOURCE_ID } from './calendar.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8744;
@@ -57,7 +61,15 @@ async function setupDemo() {
   for (const demo of DEMO_ACCOUNTS) {
     if (!existing.has(demo.id)) await saveAccount(demo);
   }
-  console.log('  デモモード: デモアカウントを追加しました');
+  // 予定とToDoも、まだ何も無いときだけサンプルを入れる
+  ensureLocalSource();
+  if (listLocalEvents().length === 0) {
+    for (const ev of demoEvents()) saveLocalEvent({ ...ev, sourceId: LOCAL_SOURCE_ID });
+  }
+  if (listLocalTasks().length === 0) {
+    for (const t of demoTasks()) saveLocalTask(t);
+  }
+  console.log('  デモモード: デモアカウント・サンプルの予定/ToDoを追加しました');
 }
 
 const server = app.listen(PORT, HOST, async () => {

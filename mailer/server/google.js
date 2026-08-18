@@ -1,0 +1,178 @@
+// Google OAuth 2.0（デスクトップアプリ方式・PKCE＋ループバック受け取り）と
+// Google Calendar / Google Tasks への API 呼び出し。
+// テストではエンドポイントを環境変数で差し替えてモックサーバーへ向ける。
+import crypto from 'node:crypto';
+
+const E = process.env;
+export const ENDPOINTS = {
+  auth: E.SILVERMAIL_GOOGLE_AUTH || 'https://accounts.google.com/o/oauth2/v2/auth',
+  token: E.SILVERMAIL_GOOGLE_TOKEN || 'https://oauth2.googleapis.com/token',
+  revoke: E.SILVERMAIL_GOOGLE_REVOKE || 'https://oauth2.googleapis.com/revoke',
+  calendar: E.SILVERMAIL_GOOGLE_CALENDAR || 'https://www.googleapis.com/calendar/v3',
+  tasks: E.SILVERMAIL_GOOGLE_TASKS || 'https://tasks.googleapis.com/tasks/v1',
+  userinfo: E.SILVERMAIL_GOOGLE_USERINFO || 'https://www.googleapis.com/oauth2/v3/userinfo',
+};
+
+export const SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/tasks',
+  'openid', 'email',
+].join(' ');
+
+// ── 認証フローの一時保管（サーバー再起動で消えてよい） ─────────
+const pending = new Map(); // state → {clientId, clientSecret, verifier, redirectUri, status, error, sourceId}
+
+const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+export function startAuth({ clientId, clientSecret, redirectUri }) {
+  const state = base64url(crypto.randomBytes(24));
+  const verifier = base64url(crypto.randomBytes(48));
+  const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
+  pending.set(state, { clientId, clientSecret, verifier, redirectUri, status: 'waiting' });
+  // 10分で失効
+  setTimeout(() => pending.delete(state), 10 * 60 * 1000).unref?.();
+
+  const url = new URL(ENDPOINTS.auth);
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', SCOPES);
+  url.searchParams.set('access_type', 'offline');
+  url.searchParams.set('prompt', 'consent');
+  url.searchParams.set('state', state);
+  url.searchParams.set('code_challenge', challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  return { state, authUrl: url.toString() };
+}
+
+export function getPending(state) {
+  return pending.get(state) || null;
+}
+
+export function finishAuth(state, patch) {
+  const p = pending.get(state);
+  if (p) Object.assign(p, patch);
+}
+
+async function postForm(url, params) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* HTMLエラーページ等 */ }
+  if (!res.ok) {
+    const detail = data?.error_description || data?.error || text.slice(0, 200);
+    const err = new Error(`Googleの認証に失敗しました: ${detail}`);
+    err.status = res.status === 401 || res.status === 400 ? 401 : 502;
+    err.authFailed = true;
+    throw err;
+  }
+  return data || {};
+}
+
+export function exchangeCode({ clientId, clientSecret, code, redirectUri, verifier }) {
+  return postForm(ENDPOINTS.token, {
+    client_id: clientId,
+    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    code,
+    code_verifier: verifier,
+    grant_type: 'authorization_code',
+    redirect_uri: redirectUri,
+  });
+}
+
+export function refreshAccessToken({ clientId, clientSecret, refreshToken }) {
+  return postForm(ENDPOINTS.token, {
+    client_id: clientId,
+    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
+  });
+}
+
+export async function revokeToken(token) {
+  try {
+    await postForm(ENDPOINTS.revoke, { token });
+  } catch { /* 失効済みでも問題ないので無視する */ }
+}
+
+// ── アクセストークンのキャッシュ ──────────────────────────────
+const tokenCache = new Map(); // sourceId → {token, expiresAt}
+
+export function forgetToken(sourceId) {
+  tokenCache.delete(sourceId);
+}
+
+async function accessTokenFor(source, creds) {
+  const cached = tokenCache.get(source.id);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  if (!creds.refreshToken) {
+    const err = new Error('Googleとの連携が切れています。設定から接続し直してください。');
+    err.status = 401; err.authFailed = true;
+    throw err;
+  }
+  const r = await refreshAccessToken({
+    clientId: creds.clientId, clientSecret: creds.clientSecret, refreshToken: creds.refreshToken,
+  });
+  const token = r.access_token;
+  tokenCache.set(source.id, { token, expiresAt: Date.now() + (Number(r.expires_in) || 3600) * 1000 });
+  return token;
+}
+
+/**
+ * Google APIを叩く。401なら1度だけトークンを取り直して再試行する。
+ * @param {'calendar'|'tasks'|'userinfo'} api
+ */
+export async function googleFetch(source, creds, api, path, { method = 'GET', query, body } = {}) {
+  const run = async (token) => {
+    const base = ENDPOINTS[api];
+    const url = new URL(api === 'userinfo' ? base : `${base}${path}`);
+    for (const [k, v] of Object.entries(query || {})) {
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+    }
+    const res = await fetch(url.toString(), {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 204) return {};
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* 空応答 */ }
+    return { res, data, text };
+  };
+
+  let token = await accessTokenFor(source, creds);
+  let out = await run(token);
+  if (out.res && out.res.status === 401) {
+    tokenCache.delete(source.id);
+    token = await accessTokenFor(source, creds);
+    out = await run(token);
+  }
+  if (!out.res) return out;
+  if (!out.res.ok) {
+    const msg = out.data?.error?.message || out.text?.slice(0, 200) || `HTTP ${out.res.status}`;
+    const err = new Error(`Google APIエラー: ${msg}`);
+    err.status = out.res.status === 401 || out.res.status === 403 ? 401 : 502;
+    err.authFailed = out.res.status === 401;
+    throw err;
+  }
+  return out.data || {};
+}
+
+// 認可直後（アクセストークンだけ手元にある状態）でメールアドレスを引く
+export async function fetchUserinfo(accessToken) {
+  try {
+    const res = await fetch(ENDPOINTS.userinfo, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
