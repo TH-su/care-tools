@@ -522,7 +522,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    縦は 276mm(約1043px) に固定して最後の【支援経過】が残りを全部使う（＝紙を最大限使う）。
    文字サイズは --a4fs 基準。長文で溢れる時は a4Fit() が 10.5→7.5px の範囲で縮める。 */
 #a4sheet{display:none}
-.a4s{width:190mm; height:276mm; display:flex; flex-direction:column; gap:4px;
+.a4s{width:190mm; height:276mm; display:flex; flex-direction:column; gap:3px;
      background:#fff; color:#000; font-size:var(--a4fs,10.5px); line-height:1.35;
      font-family:inherit; overflow:hidden;
      -webkit-text-size-adjust:100%; text-size-adjust:100%}
@@ -532,30 +532,30 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-fac{text-align:right; font-size:calc(var(--a4fs,10.5px)*1.05); line-height:1.4}
 .a4s .a4-sec{display:flex; border:1.5px solid #000; flex:0 0 auto}
 .a4s .a4-lbl{flex:0 0 17px; writing-mode:vertical-rl; text-align:center; letter-spacing:3px;
-             border-right:1px solid #000; padding:2px 0; font-weight:700;
+             border-right:1px solid #000; padding:1px 0; font-weight:700;
              font-size:calc(var(--a4fs,10.5px)*0.95)}
 .a4s .a4-bd{flex:1; min-width:0; display:flex; flex-direction:column}
 .a4s .a4-row{display:flex; border-top:1px solid #666}
 .a4s .a4-bd .a4-row:first-child{border-top:none}
-.a4s .a4-c{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px 2px; overflow:hidden}
+.a4s .a4-c{flex:1; min-width:0; border-left:1px solid #666; padding:0 3px 1px; overflow:hidden}
 .a4s .a4-row .a4-c:first-child{border-left:none}
 .a4s .a4-h{font-size:calc(var(--a4fs,10.5px)*0.78); color:#333; display:block; line-height:1.2}
 .a4s .a4-v{display:block; font-weight:600; white-space:pre-wrap; word-break:break-word}
 .a4s .a4-v.ctr{text-align:center}
 .a4s .a4-v.nowrap{white-space:nowrap}
-.a4s .a4-free{white-space:pre-wrap; word-break:break-word; padding:2px 4px}
+.a4s .a4-free{white-space:pre-wrap; word-break:break-word; padding:1px 3px}
 /* 医療情報の右に添える生活リズムの縦タイムライン */
 .a4s .a4-mid{display:flex; flex:0 0 auto}
-.a4s .a4-mid-l{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px}
+.a4s .a4-mid-l{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
 /* 生活リズム（2026-08-14 作り直し・管理者の指示）:
    「時刻（右揃え）｜下向き矢印の縦線｜ラベル（左揃え）」の3列。
    ★以前はマイナスマージンで時刻を線の左へ張り出させており、環境によって線がラベルに重なった。
      列で分ければ重なりは構造的に起きない。線は2列のあいだ＝欄のほぼ中央（左右のバランス）。 */
-.a4s .a4-rhy{flex:0 0 100px; border:1.5px solid #000; margin-left:4px; padding:3px 6px;
+.a4s .a4-rhy{flex:0 0 100px; border:1.5px solid #000; margin-left:3px; padding:2px 4px;
              display:flex; flex-direction:column}
 .a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
 .a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
-                  margin-top:4px; position:relative}
+                  margin-top:2px; position:relative}
 /* 下向き矢印の縦線。時刻列(36px)とラベル列のあいだに置き、下端は▼の分だけ空ける */
 .a4s .a4-rhy-ln{position:absolute; left:41px; top:1px; bottom:7px; width:2px; background:#000;
                 -webkit-print-color-adjust:exact; print-color-adjust:exact}
@@ -567,13 +567,13 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-rhy-i b{font-weight:600; margin-left:12px; white-space:nowrap}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
-.a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:1px 4px; overflow:hidden}
+.a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:0 3px; overflow:hidden}
 .a4s .a4-meds>div:first-child{border-left:none; flex:1.15}
 .a4s .a4-bh{font-weight:700; font-size:calc(var(--a4fs,10.5px)*0.9)}
 /* 支援経過（残りの紙面を全部使う） */
 .a4s .a4-slog{flex:1; min-height:0; display:flex; flex-direction:column}
-.a4s .a4-slog-t{font-weight:700; flex:0 0 auto; padding:1px 0}
-.a4s .a4-slog-bx{flex:1; min-height:0; border:1.5px solid #000; padding:2px 4px; overflow:hidden}
+.a4s .a4-slog-t{font-weight:700; flex:0 0 auto; padding:0}
+.a4s .a4-slog-bx{flex:1; min-height:0; border:1.5px solid #000; padding:1px 3px; overflow:hidden}
 /* 2026-08-15 指示: 日付ごとの横線を削除し、できるだけ詰めて出す（同じ紙により多くの記録が載る）。
    区切りは日付の太字で読めるので、線が無くても行の始まりは分かる。 */
 .a4s .a4-slog-r{display:flex; gap:6px; padding:0; line-height:1.2}
@@ -4022,7 +4022,14 @@ function a4Fit(){
   var fit=false;
   try{
     var budget=1043-90;
-    for(var fs=10.5; fs>=7.5; fs-=0.5){
+    /* ★上限は 12.0px（2026-08-17 指示「余白を縮めて文字を大きく」。従来は 10.5px 固定で頭打ち）。
+       ★これ以上上げない理由: 固定部は 13.5px でも 559px（上限953px）で収まるが、
+         支援経過の枠は【紙の残り全部】なので、文字を大きくするほど載る件数が減る。
+         実測（記録60件）: 10.5px=47件 / 12.0px=37件 / 13.5px=28件。
+         12.0px は「1割強 大きくなったと分かる」と「40件前後は載る」の折り合い。
+         変える時はこの数字を測り直してから決めること。
+       ★下限 7.5px は変えない。ここを下げると読めない紙になる */
+    for(var fs=12.0; fs>=7.5; fs-=0.5){
       sheet.style.setProperty('--a4fs',fs+'px');
       sheet.style.height='auto';
       if(slog)slog.style.display='none';
