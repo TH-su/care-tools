@@ -573,6 +573,19 @@ select.inp { cursor: pointer; }
 }
 .evlist-row.by-day  { grid-template-columns: 105px 170px 1fr; }
 .evlist-row.by-svc  { grid-template-columns: 32px 170px 105px 1fr; }
+/* 簡易表示: 事業所 / サービス区分 / 実施日(頻度) / 時間 / 備考 */
+/* 列幅は em 指定＝文字サイズを上げると列も広がる（px固定だと200%表示で文字が切れる。
+   行ごとに別グリッドなので auto 指定は使えない＝行間で桁がずれる）。 */
+.evlist-row.by-simple { grid-template-columns: 4.5em 7em 5.5em 7em minmax(8em, 1fr); border-left: 3px solid transparent; }
+.evlist-row.by-simple.visit   { border-left-color: #2e7d32; }
+.evlist-row.by-simple.daycare { border-left-color: #e65100; }
+.evlist-office { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evlist-office.visit   { color: #2e7d32; }
+.evlist-office.daycare { color: #e65100; }
+.evlist-freq   { font-weight: 700; color: var(--g8); white-space: nowrap; }
+/* 画面には出さず読み上げにだけ残す（事業所名を省いた2行目以降の行の文脈保持） */
+.evlist-sr { position: absolute; width: 1px; height: 1px; overflow: hidden;
+             clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .evlist-row:last-child { border-bottom: none; }
 .evlist-row:hover { background: var(--g1); }
 .evlist-time  { font-family: monospace; font-weight: 600; color: var(--g8); white-space: nowrap; }
@@ -1338,6 +1351,7 @@ select.inp { cursor: pointer; }
     <div class="evlist-tabs">
       <button class="evlist-tab active" id="evlist-tab-day" onclick="setEventListView('day')">📅 曜日別</button>
       <button class="evlist-tab"        id="evlist-tab-svc" onclick="setEventListView('svc')">🏥 サービス種別別（訪問・通所）</button>
+      <button class="evlist-tab"        id="evlist-tab-simple" onclick="setEventListView('simple')">📝 簡易表示</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn btn-pri" onclick="copyEventListText()">📋 全件コピー（テキスト）</button>
@@ -5788,10 +5802,13 @@ function formatEventFields(ev) {
   return { dow, stype, category, time, detail, dayOfWeek: ev.dayOfWeek, serviceType: ev.serviceType };
 }
 
+const EVLIST_VIEWS_ = ['day', 'svc', 'simple'];
 function setEventListView(mode) {
-  _evlistView = (mode === 'svc') ? 'svc' : 'day';
-  $('#evlist-tab-day').classList.toggle('active', _evlistView === 'day');
-  $('#evlist-tab-svc').classList.toggle('active', _evlistView === 'svc');
+  _evlistView = EVLIST_VIEWS_.indexOf(mode) >= 0 ? mode : 'day';
+  for (const v of EVLIST_VIEWS_) {
+    const btn = $('#evlist-tab-' + v);
+    if (btn) btn.classList.toggle('active', _evlistView === v);
+  }
   renderEventListBody();
 }
 
@@ -5804,9 +5821,9 @@ function renderEventListBody() {
     body.innerHTML = '<div class="evlist-empty">予定が登録されていません</div>';
     return;
   }
-  body.innerHTML = (_evlistView === 'svc')
-    ? renderEventListBySvc(sorted)
-    : renderEventListByDay(sorted);
+  body.innerHTML = (_evlistView === 'svc')    ? renderEventListBySvc(sorted)
+                 : (_evlistView === 'simple') ? renderSimplePlanList(sorted)
+                 : renderEventListByDay(sorted);
 }
 
 // 曜日別ビュー: ヘッダ「月曜日」+ 各行「開始〜終了 / サービス種別／区分 / 支援内容」
@@ -5869,6 +5886,164 @@ function renderEventListBySvc(sorted) {
     }
   }
   return html;
+}
+
+/* ── 簡易表示（事業所ごとに束ねる・2026-08-18 本人指定）─────────────────────────
+   1コマ＝1行の既存2ビューと違い、「同じ事業所・同じサービス区分・同じ時間帯」のコマを1行へ束ね、
+   週の骨格（どの事業所が・何を・週何回・いつ）を1画面で読めるようにする表示。
+     ・週7日そろい → 朝帯は「毎朝」/ 夜帯は「毎晩」/ その他の帯は「毎日」。7日未満は実施曜日を連記
+     ・束ねたコマの時間が不揃いなら時間は出さない（本人指定）
+     ・支援内容は常に出す。全件一致ならそのまま、食い違えば先頭1件＋「ほか」
+     ・通所の入浴は bathing から：全件→「毎回入浴」/ 一部→「入浴：火木」/ 無→表記なし
+   表示専用＝events は読むだけ。単位数・盤面・印刷・保存には一切関与しない。 */
+const TIME_BUCKETS_ = [
+  { key: 'morning', everyLabel: '毎朝', from:  4 * 60,      to: 10 * 60 + 59 },   /* 04:00〜10:59 */
+  { key: 'noon',    everyLabel: '毎日', from: 11 * 60,      to: 15 * 60 + 59 },   /* 11:00〜15:59 */
+  { key: 'evening', everyLabel: '毎日', from: 16 * 60,      to: 18 * 60 + 59 },   /* 16:00〜18:59 */
+  { key: 'night',   everyLabel: '毎晩', from: 19 * 60,      to: 27 * 60 + 59 },   /* 19:00〜翌03:59 */
+];
+const EVLIST_NO_TIME_SORT_ = 99999;   /* 時刻が読めないコマの並び順（末尾へ寄せる。Infinity は比較で NaN になるため使わない） */
+
+function evlistMinutes_(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t == null ? '' : t).trim());
+  if (!m) return null;
+  const v = (+m[1]) * 60 + (+m[2]);
+  return (v >= 0 && v < 1440) ? v : null;
+}
+/* 帯判定・並び順に使う分。00:00〜03:59 は前夜の続きとして扱うため +24時間する。 */
+function evlistSortMinutes_(t) {
+  const v = evlistMinutes_(t);
+  if (v === null) return null;
+  return v < 4 * 60 ? v + 1440 : v;
+}
+function evlistBucketOf_(t) {
+  const w = evlistSortMinutes_(t);
+  if (w === null) return null;
+  return TIME_BUCKETS_.find(b => w >= b.from && w <= b.to) || null;
+}
+
+function buildSimplePlanRows_(sorted) {
+  const map = new Map();
+  for (const ev of sorted) {
+    const isDaycare = ev.serviceType === 'daycare';
+    const svcKey    = isDaycare ? 'daycare' : 'visit';
+    /* 区分名は保存値のまま出す（総合事業だけ既存の略称変換を通す）。表記の勝手な整形はしない。 */
+    const category  = isDaycare ? '通所介護' : (catDisplayLabel_(ev.category) || '訪問介護');
+    const bucket    = evlistBucketOf_(ev.startTime);
+    const key       = [svcKey, category, bucket ? bucket.key : 'other'].join('\u0000');
+    let row = map.get(key);
+    if (!row) {
+      row = { svcKey, svcLabel: isDaycare ? '通所介護' : '訪問介護', category, bucket,
+              daySet: new Set(), timeSet: new Set(), details: [], total: 0,
+              bathCount: 0, bathDays: new Set(), sortMin: EVLIST_NO_TIME_SORT_ };
+      map.set(key, row);
+    }
+    row.total++;
+    if (typeof ev.dayOfWeek === 'number' && ev.dayOfWeek >= 0 && ev.dayOfWeek <= 6) row.daySet.add(ev.dayOfWeek);
+    row.timeSet.add(`${ev.startTime || ''}〜${ev.endTime || ''}`);
+    const detail = (ev.detail || ev.notes || '').replace(/\r?\n/g, ' ').trim();
+    if (detail && row.details.indexOf(detail) < 0) row.details.push(detail);
+    if (isDaycare && ev.bathing === true) {
+      row.bathCount++;
+      if (typeof ev.dayOfWeek === 'number' && ev.dayOfWeek >= 0 && ev.dayOfWeek <= 6) row.bathDays.add(ev.dayOfWeek);
+    }
+    const w = evlistSortMinutes_(ev.startTime);
+    if (w !== null && w < row.sortMin) row.sortMin = w;
+  }
+
+  const rows = [...map.values()].map(r => {
+    const days     = [...r.daySet].sort((a, b) => a - b);
+    const onlyTime = (r.timeSet.size === 1) ? [...r.timeSet][0] : '';
+    const time     = /^\d{1,2}:\d{2}〜\d{1,2}:\d{2}$/.test(onlyTime) ? onlyTime : '';
+    const freqLabel = (days.length === 7)
+      ? (r.bucket ? r.bucket.everyLabel : '毎日')
+      : days.map(d => DAYS_JA[d]).join('');
+    const noteParts = [];
+    if (r.svcKey === 'daycare' && r.bathCount > 0) {
+      noteParts.push(r.bathCount === r.total
+        ? '毎回入浴'
+        : '入浴：' + [...r.bathDays].sort((a, b) => a - b).map(d => DAYS_JA[d]).join(''));
+    }
+    if (r.details.length === 1)     noteParts.push(r.details[0]);
+    else if (r.details.length > 1)  noteParts.push(r.details[0] + ' ほか');
+    return { svcKey: r.svcKey, svcLabel: r.svcLabel, category: r.category, days,
+             freqLabel, time, note: noteParts.join('・'), count: r.total, sortMin: r.sortMin };
+  });
+
+  /* 並び順: 訪問→通所／区分は「その区分の最も早い開始時刻」順／同一区分内は帯の早い順。
+     例）身体（朝07:40・晩20:40）→ 生活3（13:00）→ 生活2（14:20）の順になる。 */
+  const catMin = new Map();
+  for (const r of rows) {
+    const k = r.svcKey + '\u0000' + r.category;
+    const cur = catMin.get(k);
+    if (cur === undefined || r.sortMin < cur) catMin.set(k, r.sortMin);
+  }
+  const svcOrder = { visit: 0, daycare: 1 };
+  rows.sort((a, b) =>
+       (svcOrder[a.svcKey] - svcOrder[b.svcKey])
+    || (catMin.get(a.svcKey + '\u0000' + a.category) - catMin.get(b.svcKey + '\u0000' + b.category))
+    || a.category.localeCompare(b.category, 'ja')
+    || (a.sortMin - b.sortMin));
+  return rows;
+}
+
+/* 事業所名は各事業所の先頭行にだけ出す（希望の表示どおり）。
+   2行目以降の空欄は読み上げで文脈が切れるため、画面に出ない .evlist-sr で事業所名を残す。 */
+function renderSimplePlanList(sorted) {
+  const rows = buildSimplePlanRows_(sorted);
+  if (!rows.length) return '<div class="evlist-empty">予定が登録されていません</div>';
+  let html = '', prevSvc = null;
+  for (const r of rows) {
+    const isFirst = (r.svcKey !== prevSvc);
+    prevSvc = r.svcKey;
+    const office = isFirst
+      ? escHtml(r.svcLabel)
+      : `<span class="evlist-sr">${escHtml(r.svcLabel)}</span>`;
+    html +=
+      `<div class="evlist-row by-simple ${r.svcKey}">` +
+        `<div class="evlist-office ${r.svcKey}">${office}</div>` +
+        `<div class="evlist-cat" title="${escHtml(r.category)}">${escHtml(r.category)}</div>` +
+        `<div class="evlist-freq">${escHtml(r.freqLabel)}</div>` +
+        `<div class="evlist-time">${escHtml(r.time)}</div>` +
+        (r.note
+          ? `<div class="evlist-detail" title="${escHtml(r.note)}">${escHtml(r.note)}</div>`
+          : `<div class="evlist-detail"></div>`) +
+      `</div>`;
+  }
+  return html;
+}
+
+/* テキストコピーの桁揃え（全角=2・半角=1 で数え、全角スペースで詰める） */
+function evlistDispWidth_(s) {
+  let w = 0;
+  for (const ch of String(s)) w += (ch.charCodeAt(0) < 0x100 || /[\uff61-\uff9f]/.test(ch)) ? 1 : 2;
+  return w;
+}
+function evlistPadTo_(s, width) {
+  const gap = width - evlistDispWidth_(s);
+  if (gap <= 0) return String(s);
+  return String(s) + '\u3000'.repeat(Math.floor(gap / 2)) + (gap % 2 ? ' ' : '');
+}
+function buildSimplePlanTextLines_(rows) {
+  const wOf   = Math.max(...rows.map(r => evlistDispWidth_(r.svcLabel)));
+  const wCat  = Math.max(...rows.map(r => evlistDispWidth_(r.category)));
+  const wFreq = Math.max(...rows.map(r => evlistDispWidth_(r.freqLabel)));
+  const wTime = Math.max(...rows.map(r => evlistDispWidth_(r.time)));
+  const lines = [];
+  let prevSvc = null;
+  for (const r of rows) {
+    const head = (r.svcKey === prevSvc) ? '' : r.svcLabel;
+    prevSvc = r.svcKey;
+    const line = [
+      evlistPadTo_(head, wOf),
+      evlistPadTo_(r.category, wCat),
+      evlistPadTo_(r.freqLabel, wFreq),
+      evlistPadTo_(r.time, wTime),
+      r.note ? `（${r.note}）` : '',
+    ].join('\u3000');
+    lines.push(line.replace(/[\s\u3000]+$/, ''));
+  }
+  return lines;
 }
 
 function openEventListModal() {
@@ -6149,11 +6324,21 @@ function printResidentList() {
 // テキスト/TSV出力（ビュー別に列順を切替）
 // 曜日別:    実施曜日　サービス種別　サービス区分　開始時刻〜終了時刻　支援内容
 // サービス別: 実施曜日　サービス区分　開始時刻〜終了時刻　支援内容
+// 簡易表示:  事業所　サービス区分　実施日(頻度)　開始時刻〜終了時刻　備考（束ねた1行＝コマ1件ではない）
 function buildEventListLines(separator) {
   const res = currentResident();
   if (!res) return { lines: [], header: '' };
   const sorted = getSortedEvents(res);
   const lines = [];
+  if (_evlistView === 'simple') {
+    const rows = buildSimplePlanRows_(sorted);
+    if (separator === '\t') {
+      for (const r of rows) lines.push([r.svcLabel, r.category, r.freqLabel, r.time, r.note].join(separator));
+      return { lines, header: ['事業所','サービス区分','実施日','時間','備考'].join(separator) };
+    }
+    /* テキストは桁を揃えて出す（事業所名は先頭行だけ・以降は字下げ） */
+    return { lines: buildSimplePlanTextLines_(rows), header: '' };
+  }
   if (_evlistView === 'svc') {
     // 訪問→通所の順に並べ替え
     const visits   = sorted.filter(ev => ev.serviceType !== 'daycare');
@@ -6196,10 +6381,13 @@ async function copyEventListText() {
   if (!res) { showToast('利用者が選択されていません'); return; }
   const { lines } = buildEventListLines('　'); // 全角スペース区切り
   if (!lines.length) { showToast('予定がありません'); return; }
-  const viewLabel = (_evlistView === 'svc') ? 'サービス種別別' : '曜日別';
+  const viewLabel = (_evlistView === 'svc')    ? 'サービス種別別'
+                  : (_evlistView === 'simple') ? '簡易'
+                  : '曜日別';
   const text = `${res.name || ''} 週間ケア計画（${viewLabel}）\n` + lines.join('\n');
   const ok = await copyToClipboardSafe(text);
-  showToast(ok ? `${lines.length}件をコピーしました` : 'コピーに失敗しました');
+  const unit = (_evlistView === 'simple') ? '行' : '件';
+  showToast(ok ? `${lines.length}${unit}をコピーしました` : 'コピーに失敗しました');
 }
 
 async function copyEventListTSV() {
@@ -6209,7 +6397,8 @@ async function copyEventListTSV() {
   if (!lines.length) { showToast('予定がありません'); return; }
   const text = header + '\n' + lines.join('\n');
   const ok = await copyToClipboardSafe(text);
-  showToast(ok ? `${lines.length}件を Excel 貼付用形式でコピーしました` : 'コピーに失敗しました');
+  const unit = (_evlistView === 'simple') ? '行' : '件';
+  showToast(ok ? `${lines.length}${unit}を Excel 貼付用形式でコピーしました` : 'コピーに失敗しました');
 }
 
 // ── Undo ──
