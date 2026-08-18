@@ -3837,8 +3837,12 @@ function a4Cell(h,v,flex,cls){
    ★new Date('YYYY-MM-DD') は UTC 0時になるため使わない。JST 0〜9時に1日ずれる */
 function a4Days(from,to){
   var a=csvLocalDate(from); if(!a)return'';
+  /* ★退去日が日付として読めない時は【空を返す】。移行では退去日欄の「未定」「-」等の
+     自由記述がそのまま入りうる（migrate.gs が利用者No単位で警告を出す設計）。
+     ここで今日まで数えると、同じ方の同じ日の紙で A4 だけ日数が出て詳細画面は空欄になる。
+     ★詳細画面 calcStayDays・フェイスシート fsStayDays と3本とも同じ向き（空欄）に揃えること */
   var b=to?csvLocalDate(to):new Date();
-  if(!b)b=new Date();
+  if(!b)return'';
   var d=Math.floor((b-a)/86400000);
   return (isFinite(d)&&d>=0)?String(d):'';
 }
@@ -3857,6 +3861,8 @@ function renderA4(r){
     var A4_CLR={
       basic:['name','kana','gender','birthDate','careLevel','careCertStart','careCertEnd','certDate',
              'copayRate','welfare','admissionDate','dischargeDate','height','weight','adl','bedriddenRank','dementia'],
+      /* ★dischargeDate と postDischarge は 2026-08-17 に A4 から描画ごと外したので、
+         ここで消しても見た目は変わらない。詳細画面との対応表として残置する */
       basicItems:['preAdmission','postDischarge'],
       family:['family'],
       biz:['careOffice','careManager','careOfficeTel','careOfficeFax',

@@ -584,7 +584,10 @@ function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w
    （入居者マスタ calcStayDays と同じ考え方。閲覧専用なので計算だけを持つ） */
 function fsStayDays(fromISO,toISO){
   var a=parseIsoDate(fromISO); if(!a) return '';
-  var b=toISO?parseIsoDate(toISO):null;
+  /* ★退去日が日付として読めない時は【空を返す】。今日まで数えると、同じ方の同じ日の紙で
+     入居者マスタの詳細画面（空欄）と食い違う。3本とも同じ向きに揃える（2026-08-17） */
+  var b=null;
+  if(toISO){ b=parseIsoDate(toISO); if(!b) return ''; }
   var s=new Date(a.y,a.m-1,a.d), e=b?new Date(b.y,b.m-1,b.d):new Date();
   var d=Math.floor((e-s)/86400000);
   return (isFinite(d)&&d>=0)?d:'';
