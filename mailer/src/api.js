@@ -64,6 +64,7 @@ export const api = {
   createTask: (sourceId, listId, task) => request('/tasks', { method: 'POST', body: { sourceId, listId, task } }),
   updateTask: (sourceId, listId, taskId, patch) => request('/tasks', { method: 'PUT', body: { sourceId, listId, taskId, patch } }),
   deleteTask: (sourceId, listId, taskId) => request('/tasks/delete', { method: 'POST', body: { sourceId, listId, taskId } }),
+  moveTask: (from, to) => request('/tasks/move', { method: 'POST', body: { from, to } }),
 
   suggestSchedule: (subject, text, baseDate) => request('/schedule/suggest', { method: 'POST', body: { subject, text, baseDate } }),
 };

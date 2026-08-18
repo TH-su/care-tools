@@ -106,21 +106,33 @@ function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu }) {
   );
 }
 
-function TasksTab({ tasks, loading, errors, onToggle, onAdd, onOpen, onMenu }) {
+function TasksTab({
+  tasks, loading, errors, onToggle, onAdd, onOpen, onMenu,
+  lists = [], dest, filter, onFilter, onDestMenu,
+}) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
+  const multi = lists.length > 1;
+  // Googleアカウントが1つだけなら、チップの表示から「（メールアドレス）」を省いて短くする
+  const oneAccount = new Set(lists.filter(l => l.sourceType === 'google').map(l => l.sourceId)).size <= 1;
+  const shortName = (l) => (oneAccount ? l.name.replace(/（[^（）]*@[^（）]*）\s*$/, '') : l.name);
+  const destList = lists.find(l => l.sourceId === dest?.sourceId && l.listId === dest?.listId) || lists[0];
+  const destName = destList ? shortName(destList) : 'このMacのToDo';
+  const shown = filter === 'all'
+    ? tasks
+    : tasks.filter(t => `${t.sourceId}|${t.listId}` === filter);
 
   const groups = useMemo(() => {
     const todayEnd = startOfDay(new Date()).getTime() + DAY_MS;
-    const open = tasks.filter(t => !t.done);
+    const open = shown.filter(t => !t.done);
     return {
       overdue: open.filter(t => t.due && new Date(t.due).getTime() < todayEnd - DAY_MS),
       today: open.filter(t => t.due && new Date(t.due).getTime() >= todayEnd - DAY_MS && new Date(t.due).getTime() < todayEnd),
       upcoming: open.filter(t => t.due && new Date(t.due).getTime() >= todayEnd),
       someday: open.filter(t => !t.due),
-      done: tasks.filter(t => t.done).slice(0, 20),
+      done: shown.filter(t => t.done).slice(0, 20),
     };
-  }, [tasks]);
+  }, [shown]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -131,16 +143,42 @@ function TasksTab({ tasks, loading, errors, onToggle, onAdd, onOpen, onMenu }) {
     inputRef.current?.focus();
   };
 
-  const openCount = tasks.filter(t => !t.done).length;
+  const openCount = shown.filter(t => !t.done).length;
 
   return (
     <>
+      {multi && (
+        <div className="list-chips">
+          <button className={cx(filter === 'all' && 'on')} onClick={() => onFilter('all')}>すべて</button>
+          {lists.map(l => (
+            <button
+              key={`${l.sourceId}|${l.listId}`}
+              className={cx(filter === `${l.sourceId}|${l.listId}` && 'on')}
+              onClick={() => onFilter(`${l.sourceId}|${l.listId}`)}
+              title={l.name}
+            >
+              {l.sourceType === 'google' && <Icon name="google" size={11} />}
+              {shortName(l)}
+            </button>
+          ))}
+        </div>
+      )}
+
       <form className="task-add" onSubmit={submit}>
         <Icon name="plus" size={15} className="ic" />
         <input
           ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)}
           placeholder="ToDoを追加（Enterで登録）"
         />
+        {multi && (
+          <button
+            type="button" className="dest" onClick={onDestMenu}
+            title={`保存先: ${destList?.name || destName}（クリックで変更）`}
+          >
+            <span className="nm">{destName}</span>
+            <Icon name="chevD" size={11} />
+          </button>
+        )}
       </form>
 
       {errors.map(e => (
@@ -177,6 +215,7 @@ export function SidePanel({
   hasSources,
   onNewEvent, onOpenEvent, onOpenCalendar, onManageSources,
   onToggleTask, onAddTask, onOpenTask, onTaskMenu, onRefresh,
+  taskLists, taskDest, taskFilter, onTaskFilter, onTaskDestMenu,
 }) {
   const todayCount = events.filter(ev => eventOnDay(ev, new Date())).length;
   const openTasks = tasks.filter(t => !t.done).length;
@@ -207,6 +246,8 @@ export function SidePanel({
                 <TasksTab
                   tasks={tasks} loading={tasksLoading} errors={taskErrors}
                   onToggle={onToggleTask} onAdd={onAddTask} onOpen={onOpenTask} onMenu={onTaskMenu}
+                  lists={taskLists} dest={taskDest} filter={taskFilter}
+                  onFilter={onTaskFilter} onDestMenu={onTaskDestMenu}
                 />
               )}
           </div>

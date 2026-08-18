@@ -512,10 +512,29 @@ api.get('/tasks', h(async (req, res) => {
   res.json(await tasksBackend.listTasks({ includeDone: req.query.done !== '0' }));
 }));
 
+// 保存先が指定されなければ、設定の既定リストへ入れる（無ければこのMac）
+function taskTarget(body) {
+  if (body?.sourceId) return { sourceId: body.sourceId, listId: body.listId };
+  const def = getSettings().defaultTaskList;
+  if (def?.sourceId && def.sourceId !== tasksBackend.LOCAL_TASK_SOURCE) {
+    // 連携が外れている場合に備えて、保存先がまだ生きているか確かめる
+    if (getCalendarSource(def.sourceId)) return { sourceId: def.sourceId, listId: def.listId };
+  }
+  return { sourceId: tasksBackend.LOCAL_TASK_SOURCE, listId: tasksBackend.LOCAL_TASK_LIST };
+}
+
 api.post('/tasks', h(async (req, res) => {
-  const { sourceId, listId, task } = req.body || {};
+  const { task } = req.body || {};
   if (!task?.title?.trim()) { const e = new Error('ToDoの内容を入力してください'); e.status = 400; throw e; }
-  res.json({ task: await tasksBackend.createTask({ sourceId, listId, task }) });
+  const target = taskTarget(req.body);
+  res.json({ task: await tasksBackend.createTask({ ...target, task }) });
+}));
+
+// このMacのToDo ⇄ Google ToDo の付け替え
+api.post('/tasks/move', h(async (req, res) => {
+  const { from, to } = req.body || {};
+  if (!from?.taskId || !to) { const e = new Error('移動元と移動先を指定してください'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.moveTask({ from, to }) });
 }));
 
 api.put('/tasks', h(async (req, res) => {

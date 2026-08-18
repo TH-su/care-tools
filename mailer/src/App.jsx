@@ -67,7 +67,9 @@ export function App() {
   const [calTargets, setCalTargets] = useState([]);
   const [redirectUri, setRedirectUri] = useState('');
   const [events, setEvents] = useState({ items: [], loading: false, errors: [] });
-  const [tasks, setTasks] = useState({ items: [], loading: false, errors: [] });
+  const [tasks, setTasks] = useState({ items: [], lists: [], loading: false, errors: [] });
+  const [taskDest, setTaskDest] = useState(null);      // ToDoの保存先 {sourceId, listId}
+  const [taskFilter, setTaskFilter] = useState('all'); // パネルの絞り込み
   const [panel, setPanel] = useState(() => loadJson('silvermail-panel', { open: true, tab: 'calendar' }));
   const [eventModal, setEventModal] = useState(null);  // {initial, hints, busy}
   const [sourceModal, setSourceModal] = useState(false);
@@ -121,6 +123,7 @@ export function App() {
       setCalSources(r.calendarSources || []);
       setCalTargets(r.calendarTargets || []);
       setRedirectUri(r.calendarRedirectUri || '');
+      if (r.settings.defaultTaskList) setTaskDest(r.settings.defaultTaskList);
       setPanel(p => ({ open: r.settings.panelOpen !== false, tab: r.settings.panelTab || p.tab }));
       applyTheme(r.settings.theme);
       setBoot({ loading: false, error: null });
@@ -530,7 +533,13 @@ export function App() {
     setTasks(t => ({ ...t, loading: true }));
     try {
       const res = await api.tasks();
-      setTasks({ items: res.tasks || [], loading: false, errors: res.errors || [] });
+      setTasks({ items: res.tasks || [], lists: res.lists || [], loading: false, errors: res.errors || [] });
+      // 保存先が未設定、または連携解除で消えたリストを指している場合は先頭へ戻す
+      setTaskDest((cur) => {
+        const lists = res.lists || [];
+        if (cur && lists.some(l => l.sourceId === cur.sourceId && l.listId === cur.listId)) return cur;
+        return lists[0] ? { sourceId: lists[0].sourceId, listId: lists[0].listId } : null;
+      });
     } catch (err) {
       setTasks(t => ({ ...t, loading: false, errors: [{ sourceId: 'api', name: 'ToDo', error: err.message }] }));
     }
@@ -640,13 +649,13 @@ export function App() {
     if (!m) return;
     const hint = m.scheduleHints?.[0];
     try {
-      await api.createTask(null, null, {
+      await api.createTask(taskDest?.sourceId || null, taskDest?.listId || null, {
         title: (m.subject || '（件名なし）').replace(/^\s*(re|fwd?)\s*:\s*/i, '').trim(),
         notes: mailNote(m),
         due: hint?.start || null,
         sourceMail: mailRef(m),
       });
-      toast('ToDoに追加しました', 'success');
+      toast(`${listLabel(taskDest)} に追加しました`, 'success');
       savePanel({ open: true, tab: 'tasks' });
       loadTasks();
     } catch (err) {
@@ -655,6 +664,29 @@ export function App() {
   };
 
   // ── ToDo 操作 ──
+  const listLabel = (t) => tasks.lists.find(l => l.sourceId === t?.sourceId && l.listId === t?.listId)?.name || 'ToDo';
+
+  const chooseTaskDest = (next) => {
+    setTaskDest(next);
+    api.saveSettings({ defaultTaskList: next }).catch(() => {});
+  };
+
+  const taskDestMenu = (e) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCtxMenu({
+      x: Math.max(8, rect.right - 240), y: rect.bottom + 4,
+      items: [
+        { header: true, label: '新しいToDoの保存先' },
+        ...tasks.lists.map(l => ({
+          label: l.name,
+          icon: (taskDest?.sourceId === l.sourceId && taskDest?.listId === l.listId) ? 'check' : (l.sourceType === 'google' ? 'google' : 'todo'),
+          onClick: () => chooseTaskDest({ sourceId: l.sourceId, listId: l.listId }),
+        })),
+      ],
+    });
+  };
+
   const toggleTask = async (t) => {
     setTasks(s => ({ ...s, items: s.items.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)) }));
     try {
@@ -667,9 +699,8 @@ export function App() {
   };
 
   const addTask = async (title) => {
-    const target = tasks.items.find(t => t.sourceType === 'local');
     try {
-      await api.createTask(target?.sourceId || null, target?.listId || null, { title });
+      await api.createTask(taskDest?.sourceId || null, taskDest?.listId || null, { title });
       loadTasks();
     } catch (err) {
       toast(err.message, 'error');
@@ -712,6 +743,22 @@ export function App() {
             loadTasks();
           } catch (err) { toast(err.message, 'error'); }
         } },
+        ...tasks.lists
+          .filter(l => !(l.sourceId === t.sourceId && l.listId === t.listId))
+          .map(l => ({
+            label: `${l.name} へ移動`,
+            icon: l.sourceType === 'google' ? 'google' : 'todo',
+            onClick: async () => {
+              try {
+                await api.moveTask(
+                  { sourceId: t.sourceId, listId: t.listId, taskId: t.taskId },
+                  { sourceId: l.sourceId, listId: l.listId },
+                );
+                toast(`${l.name} へ移動しました`, 'success');
+                loadTasks();
+              } catch (err) { toast(err.message, 'error'); }
+            },
+          })),
         { label: '予定にする', icon: 'calendarPlus', onClick: () => setEventModal({
           initial: {
             title: t.title,
@@ -979,6 +1026,11 @@ export function App() {
         onAddTask={addTask}
         onOpenTask={openTask}
         onTaskMenu={taskMenu}
+        taskLists={tasks.lists}
+        taskDest={taskDest}
+        taskFilter={taskFilter}
+        onTaskFilter={setTaskFilter}
+        onTaskDestMenu={taskDestMenu}
         onRefresh={() => { loadEvents(); loadTasks(); }}
       />
 

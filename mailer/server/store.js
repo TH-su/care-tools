@@ -148,7 +148,8 @@ const DEFAULT_SETTINGS = {
   defaultAccountId: null,   // 既定の差出人
   panelTab: 'calendar',     // 右パネルの表示（'calendar' | 'tasks'）
   panelOpen: true,          // 右パネルを開いておくか
-  defaultCalendar: null,    // 既定の登録先 {sourceId, calendarId}
+  defaultCalendar: null,    // 予定の既定の登録先 {sourceId, calendarId}
+  defaultTaskList: null,    // ToDoの既定の保存先 {sourceId, listId}
   weekStart: 0,             // 週の開始（0=日曜, 1=月曜）
 };
 

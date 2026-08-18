@@ -158,3 +158,44 @@ export async function removeTask({ sourceId, listId, taskId }) {
   await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
   return { ok: true };
 }
+
+// ── 1件取得とリスト間の移動 ──────────────────────────────────
+export async function getTask({ sourceId, listId, taskId }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) {
+    const t = listLocalTasks().find(x => x.id === taskId);
+    return t ? normalizeLocal(t) : null;
+  }
+  const source = getCalendarSource(sourceId);
+  if (!source) return null;
+  const creds = await getCalendarSecrets(source);
+  const data = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`);
+  return data?.id ? normalizeGoogle(source, { id: listId, title: 'ToDo' }, data) : null;
+}
+
+// 「このMacのToDo」⇄「Google ToDo」の付け替え。
+// APIに移動そのものが無いため、移動先に作ってから元を消す。
+export async function moveTask({ from, to }) {
+  const sameList = (from.sourceId || LOCAL_TASK_SOURCE) === (to.sourceId || LOCAL_TASK_SOURCE)
+    && (from.listId || LOCAL_TASK_LIST) === (to.listId || LOCAL_TASK_LIST);
+  if (sameList) return getTask(from);
+
+  const current = await getTask(from);
+  if (!current) { const e = new Error('移動するToDoが見つかりません'); e.status = 404; throw e; }
+
+  const created = await createTask({
+    sourceId: to.sourceId,
+    listId: to.listId,
+    task: {
+      title: current.title, notes: current.notes, due: current.due,
+      done: current.done, sourceMail: current.sourceMail,
+    },
+  });
+  try {
+    await removeTask(from);
+  } catch (err) {
+    // 元が消せなかった場合は二重に残るため、作った側を戻して整合を保つ
+    await removeTask({ sourceId: created.sourceId, listId: created.listId, taskId: created.taskId }).catch(() => {});
+    throw err;
+  }
+  return created;
+}
