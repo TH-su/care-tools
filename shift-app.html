@@ -53,8 +53,12 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar .reveal-toggle + #syncBadge { margin-left: 6px; }
 #syncBadge { margin-left: auto; font-size: 0.75rem; padding: 4px 10px; border-radius: 12px;
   background: rgba(255,255,255,.15); cursor: pointer; white-space: nowrap; }
-#syncBadge.synced { background: #1e8a4c; }
-#syncBadge.dirty { background: #d68910; }
+/* 地色は白文字とのコントラストで決める（介護現場要件: 目標7:1・下限4.5:1）。
+   旧値は同期済み 4.38:1・未送信あり 2.82:1 で、夜勤帯の照明下では「●未送信あり」が
+   最も見落としてはならない表示なのに最も読めなかった。同系色のまま明度だけ下げて
+   6.94:1 / 7.13:1 へ。暗くなるぶんの目立ちは太字で補う（色だけに意味を持たせない）。 */
+#syncBadge.synced { background: #156736; }
+#syncBadge.dirty { background: #7a4f00; font-weight: 700; }
 #syncBadge.offline { background: #922b21; }
 #syncBadge.nosync { background: rgba(255,255,255,.15); }
 #syncBadge.syncing { background: #6c5ce7; }
