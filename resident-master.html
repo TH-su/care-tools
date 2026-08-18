@@ -3957,7 +3957,12 @@ function renderA4(r){
            2026-08-09 の指示で出していない（.noprint-cell）ので、これで紙は3種類とも揃う。
            ★入居期間は残す。在籍中なら今日まで、退去済みなら退去日までを数える（値は変えない） */
         a4Cell('入居日',fmtJDate(r.admissionDate)||r.admissionDate,'1.2')+
-        a4Cell('入居期間',(function(){var d=a4Days(r.admissionDate,r.dischargeDate);return d?d+' 日':''})(),'0.9','ctr')+
+        /* 入居期間もこの様式に出さない（2026-08-17 指示）。退去日を紙から外しても、
+           入居日＋入居期間から退去日を引き算で復元できてしまうため。
+           ★退去済みの方だけ空欄にする形は採らない。その方だけ空欄だと「退去済み」と分かり、
+             退去の事実を紙に残さないという目的を部分的に損なう。
+           ★在籍中の方の入居期間は詳細画面の「🖨️ 印刷」に出る（そちらは従来どおり）。
+           ★a4Days は残す。消すと復活時に同じ不具合（常に空欄）を作り直すことになる */
         a4Cell('BMI',bmi,'0.6','ctr')+a4Cell('身長',r.height?r.height+' cm':'','0.8','ctr')+
         a4Cell('体重',wkg,'0.9','ctr')+
         a4Cell('生活自立度',r.bedriddenRank,'0.9','ctr')+a4Cell('認知症自立度',bfNormRank(r.dementia),'1','ctr')+
