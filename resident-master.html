@@ -1010,11 +1010,18 @@ var BF_COMM_LEVEL=['','自立','配慮が必要'];
 var BF_MAX_DISEASES=8;   // 病名表の行数上限（誤操作で無限に増やさない）
 
 /* ═══════════ API（トークン付き・タイムアウト・エラー処理） ═══════════ */
+/* ★通信の待ち時間（2026-08-18 見直し）。
+   従来 apiGet=12秒 / apiPost=15秒だったが、入居者マスタのGASは書き込み（保存・入院切替・
+   一括編集・定期薬連携）で LockService のロックを【最大20秒】待つ設計。つまり誰かが保存中だと
+   クライアント側が先に切れる＝混み合う朝ほど「取得に失敗しました: タイムアウト」が必ず出ていた。
+   ロック待ち20秒＋処理時間を吸収できる長さにする。GAS の実行上限は6分なので、この程度は許容。
+   ★これは症状の緩和であって、GAS の同時実行が詰まること自体は解消しない。
+     読み取りだけ自動で1回やり直す（apiGetRetry）と、失敗画面に再試行ボタンを併せて置く。 */
 function apiGet(params,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
   var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
   qs+='&token='+encodeURIComponent(CFG.token);
-  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET'},timeoutMs||12000).then(parseJson);
+  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET'},timeoutMs||25000).then(parseJson);
 }
 /* ★投げない版。`{ok:false, error, detail}` を throw せずそのまま返す。
    既存の apiPost は error があれば必ず throw するため、savePartial の
@@ -1023,7 +1030,7 @@ function apiGet(params,timeoutMs){
 function apiPostRaw(body,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
   body.token=CFG.token;
-  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||15000)
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||35000)
     .then(function(r){ return r.text().then(function(t){
       var d; try{ d=JSON.parse(t); }catch(e){ throw new Error('応答が不正です'); }
       if(d && d.ok===undefined && d.error) throw new Error(d.error);   // ok を持たない応答は従来どおり
@@ -1034,7 +1041,19 @@ function apiPost(body,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
   body.token=CFG.token;
   // text/plain で送信（GAS の CORS プリフライト回避）
-  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||15000).then(parseJson);
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||35000).then(parseJson);
+}
+/* 読み取りだけ1回やり直す。★書き込みは絶対に再試行しない（同じ保存が2回通り、
+   他端末の変更を巻き戻す・支援経過が二重になる等の実害が出る）。
+   間隔を1.2秒空けるのは、GAS の同時実行が詰まっている瞬間を外すため。 */
+function apiGetRetry(params,timeoutMs,tries){
+  tries=tries||2;
+  return apiGet(params,timeoutMs).catch(function(e){
+    if(tries<=1)throw e;
+    return new Promise(function(r){setTimeout(r,1200)}).then(function(){
+      return apiGetRetry(params,timeoutMs,tries-1);
+    });
+  });
 }
 function fetchWithTimeout(url,opt,ms){
   return new Promise(function(res,rej){
@@ -1919,7 +1938,7 @@ function openResident(id){
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
-  apiGet({action:'getResident',id:id}).then(function(d){
+  apiGetRetry({action:'getResident',id:id}).then(function(d){
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
     curResident=rec; setViewActions(true); renderView(rec);
@@ -1927,7 +1946,13 @@ function openResident(id){
     /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
        忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
     if(e&&e.gone)saveOpenId(null);
-    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+    /* ★やり直す手段を必ず画面に置く。従来はこの文言だけで、ページを再読み込みするしか
+       手が無かった（そして混み合う時間帯は再読み込みも同じ理由で失敗する） */
+    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+
+      (e&&e.gone?'':'<div style="margin-top:12px"><button class="btn btn-sec" id="viewRetry" type="button">🔄 もう一度読み込む</button></div>'+
+        '<div style="margin-top:8px;font-size:0.8125rem;color:var(--g6)">混み合う時間帯は、どなたかの保存が終わるまで数十秒かかることがあります。</div>')+
+      '</div>';
+    var rb=$('viewRetry'); if(rb)rb.addEventListener('click',function(){ openResident(id) });
   });
 }
 
@@ -3839,6 +3864,20 @@ function a4Cell(h,v,flex,cls){
   return '<div class="a4-c"'+(flex?' style="flex:'+flex+'"':'')+'>'+
     '<span class="a4-h">'+esc(h)+'</span><span class="a4-v'+(cls?' '+cls:'')+'">'+esc(String(v==null?'':v).trim()||'　')+'</span></div>';
 }
+/* 薬備考から、移行時の確認用の注記を落として紙に出す（2026-08-18 指示）。
+   実物: 【内服(定期薬)欄の2列目・分類未確認（定期薬の続き／効能／中止のいずれか要確認）】
+   これは migrate.gs（MEDS_EXTRA_TAG）が付ける【作業上の印】で、元の薬タブの2列目を
+   分類できないまま薬備考へ退避したことを示す。外部へ渡す様式に載せる内容ではない。
+   ★データからは消さない。消すと「まだ分類を確かめていない」方が分からなくなり、
+     migrate.gs の verifyImport がこの文言で数えている件数も合わなくなる。
+     編集画面の「薬備考」欄では従来どおり見える（人が確かめて消すまで残す）。
+   ★行の中に含まれていれば落とす（行頭一致にしない）。退避の実装は注記の直後に改行を入れるが、
+     元データ側で行が結合されている方がいても取りこぼさないため。 */
+function a4MedsNotes(v){
+  return String(v==null?'':v).split('\n')
+    .filter(function(ln){ return ln.indexOf('【内服(定期薬)欄の2列目')<0 })
+    .join('\n').replace(/^\n+/,'');
+}
 /* 入居期間（日数）。★2026-08-17 から【呼び出し無し】（A4様式から入居期間の欄を外したため）。
    消さずに残す: 消すと復活させる時に parseIsoDate を引き算する同じ不具合を作り直すことになる。
    ★2026-08-17 修正: parseIsoDate は {y,m,d} のオブジェクトを返すので、
@@ -4010,7 +4049,7 @@ function renderA4(r){
         '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'1')+a4Cell('既往歴',r.pastHistory,'1.6')+'</div>'+
         '<div class="a4-meds">'+
           '<div><span class="a4-bh">■薬剤情報（定期）■</span><div class="a4-free" style="padding:0">'+esc(r.medsRegular||'')+'</div></div>'+
-          '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(r.medsNotes||'')+'</div></div>'+
+          '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(a4MedsNotes(r.medsNotes))+'</div></div>'+
           '<div><span class="a4-bh">■問題行動 等■</span><div class="a4-free" style="padding:0">'+esc(bpsdTxt)+'</div></div>'+
         '</div>'+
       '</div></div>'+

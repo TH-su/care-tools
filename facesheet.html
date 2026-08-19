@@ -595,11 +595,18 @@ function fsStayDays(fromISO,toISO){
 function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
 
 /* ═══════════ GAS API（読み取り専用・トークン付き） ═══════════ */
+/* ★通信の待ち時間（2026-08-18 見直し）。
+   従来 apiGet=12秒 / apiPost=15秒だったが、入居者マスタのGASは書き込み（保存・入院切替・
+   一括編集・定期薬連携）で LockService のロックを【最大20秒】待つ設計。つまり誰かが保存中だと
+   クライアント側が先に切れる＝混み合う朝ほど「取得に失敗しました: タイムアウト」が必ず出ていた。
+   ロック待ち20秒＋処理時間を吸収できる長さにする。GAS の実行上限は6分なので、この程度は許容。
+   ★これは症状の緩和であって、GAS の同時実行が詰まること自体は解消しない。
+     読み取りだけ自動で1回やり直す（apiGetRetry）と、失敗画面に再試行ボタンを併せて置く。 */
 function apiGet(params,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
   var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
   qs+='&token='+encodeURIComponent(CFG.token);
-  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET',redirect:'follow'},timeoutMs||12000).then(parseJson);
+  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET',redirect:'follow'},timeoutMs||25000).then(parseJson);
 }
 function fetchWithTimeout(url,opt,ms){
   return new Promise(function(res,rej){
