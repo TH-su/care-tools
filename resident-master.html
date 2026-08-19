@@ -1196,7 +1196,11 @@ function srevTick(){
   }
   srevBusy=true;srevAt=Date.now();
   var url=mu+(mu.indexOf('?')>=0?'&':'?')+'action=stateRev';   // トークンを付けない（版数のみ・シートも開かない）
-  return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},5000)
+  /* ★待ち時間 10秒（2026-08-19 に 5秒から延長）。実行ログの実測でサーバー側の処理が
+     最大3.5秒かかっており、通信を足すと5秒を超えて空振りしていた。空振りすると
+     srevFailAt により【5分間まるごと休止】するため、他端末の変更が最大6分遅れて届く
+     （実行ログに6分間隔の穴として現れていた）。 */
+  return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)
     .then(function(r){return r.text()})
     .then(function(t){
       var d=null;try{d=JSON.parse(t)}catch(e){}
@@ -3876,13 +3880,26 @@ function saveStampSame_(a,b){
   var pa=Date.parse(a), pb=Date.parse(b);
   return isFinite(pa)&&isFinite(pb)&&Math.abs(pa-pb)<1000;
 }
-/* 保存が通った後の共通処理（正常応答でも、取り直しで確認できた時でも同じことをする） */
+/* 保存が通った後の共通処理（正常応答でも、取り直しで確認できた時でも同じことをする）。
+   ★2026-08-19: ここで openResident() を呼んで【同じ内容をもう一度サーバーから取り直していた】。
+     GAS 1往復は実測 1〜3.5秒かかるので、保存のたびに丸ごと1往復ぶん待たされていた
+     （実行ログでもサーバー側は健全＝遅さの実体はクライアントの往復回数だった）。
+     GAS が返す record は「保全キーを引き継いだ後の確定値」＝取り直したものと同じなので、
+     それで画面を組み立てる。
+   ★ただし応答に record が無い／id が取れない時は、従来どおり取り直す（安全側）。 */
 function afterSaveOk_(rec,saved){
-  var row=normRosterRow((saved&&saved.id!=null)?saved:rec);
+  var full=(saved&&saved.id!=null&&saved.name!=null)?saved:null;
+  var row=normRosterRow(full||rec);
   var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
   if(idx>=0)roster[idx]=row;else roster.push(row);
   saveRosterCache();writeCommonRoster();
-  openResident(row.id);
+  if(!full){ openResident(row.id); return; }        // 応答が不十分な時だけ取り直す
+  /* 取り直さずに詳細画面を出す（openResident の描画部分と同じ手順） */
+  showScreen('view');
+  saveOpenId(full.id);
+  curResident=full; setViewActions(true); renderView(full);
+  try{ paintHospBtn(full); }catch(e){}
+  try{ a4EnsureDayMap().then(function(){ patchDayUse(full); }).catch(function(){}); }catch(e){}
 }
 
 /* ═══════════ 画面遷移 ═══════════ */
