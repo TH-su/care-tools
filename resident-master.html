@@ -324,6 +324,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .bfadl th,.bfadl td,.bfdis th,.bfdis td{padding:1px 4px; border-color:#666}
   /* グレーの小さい文字はモノクロ印刷で潰れる（既存 .btbl .bno と同じ扱い） */
   .bfadl thead th,.bfdis thead th,.bfdis .bfno{color:#000}
+  /* デイ利用日が「未確認」の時の理由書きも黒に落とす。ここが読めないと、
+     受け取った側は空欄と区別できず『デイを使っていない』と読む（2026-08-19） */
+  .rhythm .du-note{color:#000}
 }
 .mlink:hover,.mlink:focus{color:var(--pri-d); text-decoration-style:solid}
 @media print{
@@ -334,6 +337,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 }
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
+/* デイ利用日が確かめられなかった時（2026-08-19）。空欄＝利用なし と必ず区別する。
+   ★色だけで区別しない。「未確認」という文字そのもので伝える（介護現場要件4） */
+.rhythm .du-unk{font-weight:700}
+.rhythm .du-note{color:var(--g5); font-size:0.8125rem}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap}   /* 間隔8px＝誤タップ防止の下限（介護現場要件2） */
 /* 見た目は締めつつ、タップ領域は44pxを維持する（HIG・iPadでも使うため） */
@@ -1971,10 +1978,15 @@ function openResident(id){
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
     curResident=rec; setViewActions(true); renderView(rec);
-    /* A4様式の「デイ利用」を先に取っておく。押した時には取得済み＝待ち時間が出ず、
-       印刷ダイアログもクリック直後に開く（iPad 等でユーザー操作から離れた print() を避ける）。
-       ★失敗しても何もしない（A4様式を押した時に改めて知らせる）。取得済みなら通信しない（TTL） */
-    try{ a4EnsureDayMap(); }catch(e2){}
+    /* デイ利用日（週間計画）を取り、届いたら画面のその欄だけ差し替える。
+       ★A4様式もこの取得結果を使うので、ボタンを押した時には取得済み＝待ち時間が出ず、
+         印刷ダイアログもクリック直後に開く（iPad 等でユーザー操作から離れた print() を避ける）。
+       ★差し替える前に「いま開いている方」と一致するか確かめる（別人の値を出さない）。 */
+    try{
+      a4EnsureDayMap().then(function(){
+        if(curResident&&String(curResident.id)===String(rec.id))patchDayUse(rec);
+      });
+    }catch(e2){}
   }).catch(function(e){
     /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
        忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
@@ -2673,8 +2685,9 @@ function renderView(r){
   var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')}).join('\n');
   var rhythm=rhythmOf(r);   /* 食事の時刻は施設共通の既定を重ねる（保存済みがあればそちらが勝つ） */
   var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
-  var dayUse=r.dayUse||{};
-  var du=DAYUSE_KEYS.map(function(p){return dayUse[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(dayUse[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  /* デイ利用日は【週間計画】から出す（2026-08-19 指示・A4様式と同じ正本に揃えた）。
+     マスタの r.dayUse は移行時の手書き値で実測で食い違うため使わない（編集画面には残っている） */
+  var du=dayUseHtml(r);
   var consents=r.consents||{};
   var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
 
@@ -2770,7 +2783,7 @@ function renderView(r){
     '<div style="flex:2;min-width:0;display:flex"><div class="sec-lbl">事業所</div><div class="sec-body">'+
       '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager,false,'w-b2')+cell('電話番号',r.careOfficeTel,false,'w-tel')+cell('FAX番号',r.careOfficeFax,false,'w-b4 w-num')+'</div>'+
       '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff,false,'w-b2')+cell('電話番号',r.welfareEquipTel,false,'w-tel')+cell('サ責',r.serviceManager,false,'w-b4')+'</div>'+
-      '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager,false,'w-b2')+'<div class="cell w-day"><span class="lab">デイ利用日</span><div class="rhythm">'+(du||'　')+'</div></div></div>'+
+      '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager,false,'w-b2')+'<div class="cell w-day"><span class="lab">デイ利用日</span><div class="rhythm du-cell">'+(du||'　')+'</div></div></div>'+
       '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
     '</div></div>'+
     '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:4px">'+
@@ -4007,6 +4020,9 @@ function a4BuildDayMap(db){
    ★待ち時間は 25秒＝このアプリの apiGet と同じ。統合GAS も書き込みで LockService を待つので、
      短くすると朝の混雑時に必ず切れて「未確認」の紙になる（2026-08-18 に入居者マスタ側で直した件と同型）。 */
 function a4EnsureDayMap(){
+  /* ★現場端末では取りに行かない・持っているものも使わない。全利用者の氏名を含む一覧を
+     現場のタブレットへ降ろさないため（安全情報に載せていない項目と同じ扱い）。 */
+  if(getDeviceRole()==='field')return Promise.resolve('現場端末ではデイ利用日を表示しません');
   var now=Date.now(), age;
   if(a4DayMap){ age=now-a4DayMap.at; if(age>=0&&age<A4_DAY_TTL)return Promise.resolve(''); }
   if(a4DayPromise)return a4DayPromise;
@@ -4058,6 +4074,50 @@ function a4DaysFor(r){
      利用者Noの違う方の紙に他人の通所日が載る（§6-⑨ の「食い違いが確定した」状態）。 */
   if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK;
   return {state:'none', days:null};                  // 週間計画は取れていて、通所予定が無い方
+}
+/* ═══ デイ利用日の表示（詳細画面・フェイスシート・それぞれの印刷で共用）═══
+   2026-08-19 の指示で【3枚の紙をすべて週間計画に揃えた】。入居者マスタの dayUse
+   （移行時の旧スプレッドシート由来の手書き値）はここでは使わない。
+   ★A4様式と同じ3値。「利用なし（空欄）」と「確かめられなかった（未確認）」を必ず区別する。
+     空欄で出すと『デイを使っていない方』と読まれるため。
+   ★この関数と patchDayUse は resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の利用日が出る。 */
+function dayUseHtml(r){
+  /* まだ取りに行っている最中。終わり次第 patchDayUse が差し替える */
+  if(!a4DayMap&&!a4DayFailAt)return '<span class="du-note">取得中…</span>';
+  var info=a4DaysFor(r);
+  if(info.state==='unknown')
+    return '<span class="du-unk">未確認</span><span class="du-note">週間計画を取得できませんでした</span>';
+  if(!info.days)return '';
+  return A4_DOW_JA.map(function(lb,i){
+    return info.days[i]?('<span>'+esc(lb)+' <b>'+esc(info.days[i])+'</b></span>'):'';
+  }).filter(Boolean).join('');
+}
+/* 取得が終わった後に画面のデイ利用日を差し替える。
+   ★フェイスシートは同じ欄を【カテゴリタブと「全体」タブの2箇所】に出すので、必ず全部を書き換える
+     （片方だけだと、そのタブから印刷した時だけ古い表示が載る）。
+   ★「いま画面に出ている方」と一致するかは呼び出し側で確かめる（別人の値を出さない）。 */
+function patchDayUse(r){
+  if(!r)return;
+  var els=document.querySelectorAll('.du-cell');
+  if(!els.length)return;
+  var html=dayUseHtml(r)||'　';
+  Array.prototype.forEach.call(els,function(e){ e.innerHTML=html; });
+}
+/* 印刷の直前に、デイ利用日が「取得中…」のまま紙に載るのを防ぐ。取得を待って画面を
+   差し替えてから刷る。★取れなくても必ず刷る（欄が「未確認」になるだけ）。
+   ★連打で印刷ダイアログが2枚開かないようにする。
+   ★「いま画面に出ている方」は呼び出し側から渡す（変数名がアプリごとに違うため）。 */
+var duPrinting=false;
+function printWithDayUse(rec,doPrint){
+  if(duPrinting)return;
+  duPrinting=true;
+  if(!a4DayMap&&!a4DayFailAt)toast('デイ利用（週間計画）を取得しています…');
+  a4EnsureDayMap().then(function(){
+    duPrinting=false;
+    if(rec)patchDayUse(rec);
+    doPrint();
+  });
 }
 function renderA4(r){
   /* デイ利用（週間計画）は【伏せる処理より先に】引く。基本情報を伏せると描画用コピーから
@@ -4737,7 +4797,7 @@ function init(){
   $('backBtn').addEventListener('click',function(){showScreen('list')});
   $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
   /* ★通常の印刷は必ず通常の見た目で刷る（a4-on の残留を構造的に封じる） */
-  $('printBtn').addEventListener('click',function(){a4Off();window.print()});
+  $('printBtn').addEventListener('click',function(){a4Off();printWithDayUse(curResident,function(){window.print()})});
   $('a4Btn').addEventListener('click',a4Print);
   /* 編集画面のスクロールに合わせて「今いる欄」のタブを光らせる（現在地の明示・HIG）。
      passive でスクロール性能を落とさず、1フレーム1回に間引く。
