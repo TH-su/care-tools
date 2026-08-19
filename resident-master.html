@@ -559,23 +559,33 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★以前はマイナスマージンで時刻を線の左へ張り出させており、環境によって線がラベルに重なった。
      列で分ければ重なりは構造的に起きない。線は2列のあいだ＝欄のほぼ中央（左右のバランス）。 */
 /* 右列は「デイ利用（上）＋生活リズム（下）」の2段（2026-08-19 指示）。
-   ★100px の幅は従来の生活リズムの幅をそのまま引き継ぐ＝左の事業所・医療情報の幅は1pxも変わらない。
-   ★生活リズムは flex:1 で残りを取る＝デイ利用の高さぶんだけ上下に縮む（指示どおり）。 */
-.a4s .a4-rt{flex:0 0 100px; margin-left:3px; display:flex; flex-direction:column; gap:3px}
-.a4s .a4-rhy{flex:1; min-height:0; border:1.5px solid #000; padding:2px 4px;
+   ★幅 88px（2026-08-19 に 100px から細くした・管理者の指示「できる限り細く」）。
+     細くしたぶんは左の事業所・医療情報が広がる＝長い病院名・薬剤名の折り返しが減り、
+     結果として紙が縦に縮んで支援経過が多く載る（実測は下の a4Fit のコメント）。
+     ★これ以上細くできない理由: 生活リズムの1行は 時刻30px＋間8px＋ラベル「おやつ」3文字
+       （12px×3=36px）＝74px。左右の padding 2px×2 と枠線 1.5px×2 を足すと 81px。
+       88px は「20:00」のような広い時刻表記の余裕ぶん。
+   ★生活リズムは【中身の高さだけ】を取り（flex:0 0 auto）、余りは全部デイ利用へ回す
+     （2026-08-19 指示「生活リズムを上下に縮めて」）。以前は flex:1 で余白を吸っており、
+     6項目で 97px しか要らないところに 158px を使っていた（実測）。 */
+.a4s .a4-rt{flex:0 0 88px; margin-left:3px; display:flex; flex-direction:column; gap:3px}
+.a4s .a4-rhy{flex:0 0 auto; border:1.5px solid #000; padding:2px 2px;
              display:flex; flex-direction:column}
 .a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
-.a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
+/* ★gap は入れない（2026-08-19 に 3px を試して差し戻し）。項目が2行になる方
+   （「20:00〜21:00」のような範囲表記）では 5本ぶん＝15px がそのまま紙の伸びになり、
+   支援経過が2件減った（実測）。行の高さ（文字×行間）だけで十分に読み分けられる。 */
+.a4s .a4-rhy-list{flex:0 0 auto; display:flex; flex-direction:column;
                   margin-top:2px; position:relative}
 /* 下向き矢印の縦線。時刻列(36px)とラベル列のあいだに置き、下端は▼の分だけ空ける */
-.a4s .a4-rhy-ln{position:absolute; left:41px; top:1px; bottom:7px; width:2px; background:#000;
+.a4s .a4-rhy-ln{position:absolute; left:34px; top:1px; bottom:7px; width:2px; background:#000;
                 -webkit-print-color-adjust:exact; print-color-adjust:exact}
 .a4s .a4-rhy-ln::after{content:''; position:absolute; left:-3px; bottom:-7px; width:0; height:0;
                 border-left:4px solid transparent; border-right:4px solid transparent;
                 border-top:7px solid #000}
 .a4s .a4-rhy-i{display:flex; align-items:center; position:relative}
-.a4s .a4-rhy-i .tm{flex:0 0 36px; text-align:right; line-height:1.15}
-.a4s .a4-rhy-i b{font-weight:600; margin-left:12px; white-space:nowrap}
+.a4s .a4-rhy-i .tm{flex:0 0 30px; text-align:right; line-height:1.15}
+.a4s .a4-rhy-i b{font-weight:600; margin-left:8px; white-space:nowrap}
 /* デイ利用（週間計画 care_schedule_v2 の読み取り専用参照・2026-08-19 指示）。
    月〜土の6列。列幅は 100px÷6≒15px しかないため時刻は【縦書き】にする
    （横書きだと「13.5」が入らない）。text-orientation:upright で数字を1文字ずつ立てて積むので、
@@ -583,10 +593,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★ここに出すのは週間計画（通所の予定）の実データだけ。マスタの dayUse（移行時の旧スプレッドシート
      由来の手書き値）は【出さない】。実測で両者は食い違う（旧値に 9-16 が残る一方、
      現在の週間計画は 9-13 と 9-13.5 の2種類しか無い）。外部へ渡す紙に古い方を載せない。 */
-.a4s .a4-day{flex:0 0 auto; border:1.5px solid #000; display:flex; flex-direction:column}
+.a4s .a4-day{flex:1; min-height:0; border:1.5px solid #000; display:flex; flex-direction:column}
 .a4s .a4-day-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center;
                line-height:1.2; border-bottom:1px solid #000}
-.a4s .a4-day-g{display:flex}
+.a4s .a4-day-g{display:flex; flex:1; min-height:0}
 .a4s .a4-day-c{flex:1; min-width:0; border-left:1px solid #666;
                display:flex; flex-direction:column; align-items:center}
 .a4s .a4-day-g .a4-day-c:first-child{border-left:none}
@@ -595,11 +605,20 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-day-v{writing-mode:vertical-rl; text-orientation:upright; -webkit-text-orientation:upright;
                font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:600; line-height:1;
                letter-spacing:0; padding:1px 0; min-height:1px}
+/* ★時間帯は曜日の見出しの【すぐ下】から始める（上揃え）。上下中央に置くと、文字数の違う曜日
+   （「9-13.5」6文字と「9-13」4文字）で開始位置がずれ、6列が不揃いに見える＝どの曜日の
+   時間かを目で追いにくい。夜勤帯・片手で読む紙なので、揃っていることを優先する。
+   ★文字を 0.95 倍へ上げるのは【やめた】（2026-08-19 に試して差し戻し）。同じ曜日に2枠ある方の
+     「9-13.5／14-16.5」は縦書き13文字で、0.85→0.95 にすると 15px 伸びる。すると右列が左の
+     医療情報より高くなって【紙全体が縦に伸び】、支援経過が2件減った（実測）。
+     縦書きの列は「いちばん長い方」で決まるので、余白が見えていても上げてはいけない。 */
 /* 見出しだけの行（家族情報の列名）は上下を最大限詰める（2026-08-19 指示）。
    a4Cell は値が空でも全角スペースを1文字入れて行の高さを作るので、その値行ごと消す。
    ★このクラスが付いた行にしか効かない＝他の枠の高さは1pxも変わらない。 */
 .a4s .a4-row.a4-hd .a4-c{padding:0 3px}
-.a4s .a4-row.a4-hd .a4-h{line-height:1.05}
+/* ★2026-08-19 追記: 行の高さは「文字サイズ×行間」で決まるので、そこまで詰める。
+   0.72倍・行間1.0 は他の欄の見出し（0.78倍・1.2）より一段小さいが、列名だけの行なので読める。 */
+.a4s .a4-row.a4-hd .a4-h{line-height:1; font-size:calc(var(--a4fs,10.5px)*0.72)}
 .a4s .a4-row.a4-hd .a4-v{display:none}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
@@ -4403,8 +4422,11 @@ function renderA4(r){
     '<div class="a4-rt">'+
       '<div class="a4-day"><div class="a4-day-t">'+(dayUnk?'デイ利用（未確認）':'デイ利用')+'</div>'+
         '<div class="a4-day-g">'+dayCells+'</div></div>'+
+      /* ★時刻が1件も無い時は矢印線を出さない（2026-08-19）。線は絶対配置で下端に▼を
+         はみ出させる作りなので、中身が空だと枠から6px 飛び出す（事業所欄を伏せた時に実測）。
+         枠そのものは残す＝A4様式は「枠を残して中身を空にする」（printHide の作法）。 */
       '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+
-        '<i class="a4-rhy-ln" aria-hidden="true"></i>'+rhyRows+'</div></div>'+
+        (rhyRows?'<i class="a4-rhy-ln" aria-hidden="true"></i>':'')+rhyRows+'</div></div>'+
     '</div></div>'+
     /* ── 食事 ── */
     '<div class="a4-sec"><div class="a4-lbl">食事</div><div class="a4-bd"><div class="a4-row">'+
@@ -4441,11 +4463,13 @@ function a4Fit(){
        ★★上限を上げられない第2の理由（高さとは別の制約）:
          ・縦書き見出し .a4-lbl は幅 17px 固定。行ボックスの幅は --a4fs×0.95×1.35 なので
            12.0px で 15.4px（内寸16px に対し余裕0.6px）。12.5px で超え、縦罫線を越えて本文に重なる
-         ・デイ利用 .a4-day-c の内寸は約15.3px（右列100px÷6列）。縦書き1文字の幅は
-           --a4fs×0.85 なので 12.0px では 10.2px。18px 相当まで当たらないが、
-           【上限を上げる時はこの3つ目も一緒に見る】こと（2026-08-19 追加）
-         ・生活リズム .a4-rhy は 100px 固定・時刻列 .tm は 36px 固定。「20:00〜21:00」のような
-           範囲表記は 12px で約39px となり時刻列を超える（実データには現在1件も無い＝2026-08-17 実測）
+         ・デイ利用 .a4-day-c の内寸は約13.5px（右列88px÷6列・2026-08-19 に 100px から細くした）。
+           縦書き1文字の幅は --a4fs×0.85 なので 12.0px では 10.2px＝余裕は3.3px しかない。
+           【上限を上げる時はこの3つ目も一緒に見る】こと（15.8px 相当で列からはみ出す）
+         ・生活リズム .a4-rhy は 88px 固定・時刻列 .tm は 30px 固定。「20:00〜21:00」のような
+           範囲表記は 12px で約39px となり時刻列を超えるので「〜」の前で折り返す
+           （実データには現在1件も無い＝2026-08-17 実測。折り返せば 12px でも枠に収まることは
+             2026-08-19 に実測済み＝紙は縦に伸びるが、はみ出しは起きない）
          高さ（budget）だけを測って上げると、この2つが先に壊れる。上げるなら固定幅も
          calc(var(--a4fs)*…) へ連動させること（見た目が変わるので要承認）
        ★下限 7.5px は変えない。ここを下げると読めない紙になる */
