@@ -19,6 +19,7 @@ export function Sidebar({
   accounts, mailboxes, counts, sel, collapsed,
   onToggleCollapse, onSelect, onCompose, onAddAccount, onSettings,
   onRefresh, refreshing, themeMode, onCycleTheme,
+  view, onOpenCalendar, onOpenTasks, todayEvents = 0, openTasks = 0,
 }) {
   const totalUnseen = accounts.reduce((s, a) => s + (counts[a.id]?.unseen || 0), 0);
 
@@ -34,6 +35,22 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-scroll">
+        <div className="side-section">
+          <button
+            className={cx('side-item', view === 'calendar' && 'active')}
+            onClick={onOpenCalendar}
+          >
+            <Icon name="calendar" size={17} className="icon" style={{ color: 'var(--accent)' }} />
+            <span className="label">カレンダー</span>
+            {todayEvents > 0 && <span className="count soft">{todayEvents}</span>}
+          </button>
+          <button className="side-item" onClick={onOpenTasks}>
+            <Icon name="todo" size={17} className="icon" style={{ color: 'var(--success)' }} />
+            <span className="label">ToDo</span>
+            {openTasks > 0 && <span className="count soft">{openTasks}</span>}
+          </button>
+        </div>
+
         <div className="side-section">
           {accounts.length > 1 && (
             <button

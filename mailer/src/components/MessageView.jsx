@@ -6,6 +6,7 @@ import {
 } from '../util.js';
 import { EmptyState, Spinner, Modal } from '../common.jsx';
 import { attachmentUrl } from '../api.js';
+import { eventTimeLabel, fmtDayLabel } from '../calendar-util.js';
 
 // メール本文iframeのベーススタイル
 function buildSrcdoc(message, { allowRemote, dark }) {
@@ -40,6 +41,7 @@ function buildSrcdoc(message, { allowRemote, dark }) {
 
 export function MessageView({
   open, row, dark, onReply, onAction, onAllowImages, onMoveMenu, onFromClick,
+  onCreateEvent, onCreateTask,
 }) {
   const [showDetail, setShowDetail] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -94,6 +96,11 @@ export function MessageView({
           {tbtn(flagged ? 'flagFill' : 'flag', flagged ? 'フラグを外す（F）' : 'フラグ（F）', () => onAction(flagged ? 'unflag' : 'flag'), { className: flagged ? 'flag-on' : '' })}
           {tbtn(seen ? 'mail' : 'mailOpen', seen ? '未開封にする（U）' : '開封済みにする', () => onAction(seen ? 'unread' : 'read'))}
           {tbtn('move', 'フォルダへ移動', (e) => onMoveMenu(e))}
+        </div>
+        <div className="sep" />
+        <div className="group">
+          {tbtn('calendarPlus', '予定を作成（S）', () => onCreateEvent?.(message), { disabled: !message })}
+          {tbtn('todo', 'ToDoに追加（T）', () => onCreateTask?.(message), { disabled: !message })}
         </div>
         <span className="spacer" />
       </div>
@@ -167,6 +174,29 @@ export function MessageView({
                     </button>
                   );
                 })}
+              </div>
+            )}
+
+            {message.scheduleHints?.length > 0 && (
+              <div className="schedule-banner">
+                <Icon name="calendarPlus" size={16} className="ic" />
+                <div className="body">
+                  <div className="t">このメールに日時が書かれています</div>
+                  <div className="chips">
+                    {message.scheduleHints.slice(0, 3).map((hint, i) => (
+                      <button
+                        key={i} className="chip" title={`「${hint.matched}」から`}
+                        onClick={() => onCreateEvent?.(message, hint)}
+                      >
+                        <span className="d">{fmtDayLabel(hint.start)}</span>
+                        <span className="tm">{eventTimeLabel({ start: hint.start, end: hint.end, allDay: hint.allDay })}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button className="add" onClick={() => onCreateEvent?.(message, message.scheduleHints[0])}>
+                  カレンダーに追加
+                </button>
               </div>
             )}
 

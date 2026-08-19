@@ -11,6 +11,13 @@ import { Compose } from './components/Compose.jsx';
 import { AccountModal } from './components/AccountModal.jsx';
 import { SettingsModal } from './components/SettingsModal.jsx';
 import { Onboarding } from './components/Onboarding.jsx';
+import { SidePanel } from './components/SidePanel.jsx';
+import { CalendarView } from './components/CalendarView.jsx';
+import { EventModal } from './components/EventModal.jsx';
+import { CalendarSourceModal } from './components/CalendarSourceModal.jsx';
+import {
+  startOfDay, addDays, startOfWeek, monthGrid, eventOnDay, fmtDayLabel,
+} from './calendar-util.js';
 
 const PAGE = 50;
 
@@ -52,8 +59,23 @@ export function App() {
   const [modal, setModal] = useState(null); // {type:'account',...} | {type:'settings'}
   const [ctxMenu, setCtxMenu] = useState(null);
 
+  // ── カレンダー / ToDo ──
+  const [view, setView] = useState('mail');            // 'mail' | 'calendar'
+  const [calView, setCalView] = useState(() => loadJson('silvermail-calview', 'month'));
+  const [calAnchor, setCalAnchor] = useState(() => new Date());
+  const [calSources, setCalSources] = useState([]);
+  const [calTargets, setCalTargets] = useState([]);
+  const [redirectUri, setRedirectUri] = useState('');
+  const [events, setEvents] = useState({ items: [], loading: false, errors: [] });
+  const [tasks, setTasks] = useState({ items: [], lists: [], loading: false, errors: [] });
+  const [taskDest, setTaskDest] = useState(null);      // ToDoの保存先 {sourceId, listId}
+  const [taskFilter, setTaskFilter] = useState('all'); // パネルの絞り込み
+  const [panel, setPanel] = useState(() => loadJson('silvermail-panel', { open: true, tab: 'calendar' }));
+  const [eventModal, setEventModal] = useState(null);  // {initial, hints, busy}
+  const [sourceModal, setSourceModal] = useState(false);
+
   // ── ペイン幅 ──
-  const [paneW, setPaneW] = useState(() => loadJson('silvermail-panes', { sidebar: 232, list: 368 }));
+  const [paneW, setPaneW] = useState(() => loadJson('silvermail-panes', { sidebar: 232, list: 368, panel: 316 }));
   const dragRef = useRef(null);
 
   const searchRef = useRef(null);
@@ -98,6 +120,11 @@ export function App() {
       const r = await api.bootstrap();
       setAccounts(r.accounts);
       setSettings(r.settings);
+      setCalSources(r.calendarSources || []);
+      setCalTargets(r.calendarTargets || []);
+      setRedirectUri(r.calendarRedirectUri || '');
+      if (r.settings.defaultTaskList) setTaskDest(r.settings.defaultTaskList);
+      setPanel(p => ({ open: r.settings.panelOpen !== false, tab: r.settings.panelTab || p.tab }));
       applyTheme(r.settings.theme);
       setBoot({ loading: false, error: null });
       if (r.accounts.length > 0) {
@@ -469,12 +496,295 @@ export function App() {
     }
   };
 
+  // ── カレンダー: 取得する期間 ──
+  // 画面の表示範囲に加えて、右パネルの「これから2週間」も必ず含める
+  const calRange = useMemo(() => {
+    const today = startOfDay(new Date());
+    let from = addDays(today, -7);
+    let to = addDays(today, 28);
+    if (view === 'calendar') {
+      if (calView === 'month') {
+        const grid = monthGrid(calAnchor, settings.weekStart || 0);
+        from = new Date(Math.min(from, addDays(grid[0], -1)));
+        to = new Date(Math.max(to, addDays(grid[41], 2)));
+      } else if (calView === 'week') {
+        const ws = startOfWeek(calAnchor, settings.weekStart || 0);
+        from = new Date(Math.min(from, addDays(ws, -1)));
+        to = new Date(Math.max(to, addDays(ws, 9)));
+      } else {
+        to = new Date(Math.max(to, addDays(startOfDay(calAnchor), 64)));
+      }
+    }
+    return { from: from.toISOString(), to: to.toISOString() };
+  }, [view, calView, calAnchor, settings.weekStart]);
+
+  const loadEvents = useCallback(async (range) => {
+    const r = range || calRange;
+    setEvents(e => ({ ...e, loading: true }));
+    try {
+      const res = await api.events(r.from, r.to);
+      setEvents({ items: res.events || [], loading: false, errors: res.errors || [] });
+    } catch (err) {
+      setEvents(e => ({ ...e, loading: false, errors: [{ sourceId: 'api', name: 'カレンダー', error: err.message }] }));
+    }
+  }, [calRange]);
+
+  const loadTasks = useCallback(async () => {
+    setTasks(t => ({ ...t, loading: true }));
+    try {
+      const res = await api.tasks();
+      setTasks({ items: res.tasks || [], lists: res.lists || [], loading: false, errors: res.errors || [] });
+      // 保存先が未設定、または連携解除で消えたリストを指している場合は先頭へ戻す
+      setTaskDest((cur) => {
+        const lists = res.lists || [];
+        if (cur && lists.some(l => l.sourceId === cur.sourceId && l.listId === cur.listId)) return cur;
+        return lists[0] ? { sourceId: lists[0].sourceId, listId: lists[0].listId } : null;
+      });
+    } catch (err) {
+      setTasks(t => ({ ...t, loading: false, errors: [{ sourceId: 'api', name: 'ToDo', error: err.message }] }));
+    }
+  }, []);
+
+  useEffect(() => { loadEvents(calRange); }, [calRange]); // eslint-disable-line
+  useEffect(() => { loadTasks(); }, [loadTasks]);
+
+  // 連携先が変わったら予定も取り直す
+  const applySources = useCallback((next) => {
+    if (Array.isArray(next)) setCalSources(next);
+    api.calendarSources()
+      .then(r => { setCalSources(r.sources); setCalTargets(r.targets); setRedirectUri(r.redirectUri); })
+      .catch(() => {});
+    loadEvents();
+    loadTasks();
+  }, [loadEvents, loadTasks]);
+
+  const savePanel = (next) => {
+    setPanel(next);
+    try { localStorage.setItem('silvermail-panel', JSON.stringify(next)); } catch { /* noop */ }
+    api.saveSettings({ panelOpen: next.open, panelTab: next.tab }).catch(() => {});
+  };
+
+  const togglePanel = (tab) => {
+    savePanel(panel.open && panel.tab === tab ? { ...panel, open: false } : { open: true, tab });
+  };
+
+  // ── 予定の作成・編集 ──
+  const openNewEvent = (at, opts = {}) => {
+    const base = at ? new Date(at) : new Date();
+    if (!opts.withTime && !(at instanceof Date && (base.getHours() || base.getMinutes()))) {
+      base.setHours(10, 0, 0, 0);
+    }
+    const start = base.toISOString();
+    setEventModal({
+      initial: { start, end: new Date(base.getTime() + 3600000).toISOString(), allDay: false },
+      hints: [],
+    });
+  };
+
+  const openEvent = (ev) => {
+    if (ev.editable === false) {
+      toast(`${ev.calendarName} は購読しているカレンダーのため編集できません`, 'info');
+      return;
+    }
+    setEventModal({ initial: { ...ev }, hints: [] });
+  };
+
+  const saveEvent = async ({ sourceId, calendarId, eventId, event }) => {
+    setEventModal(m => ({ ...m, busy: true }));
+    try {
+      if (eventId) await api.updateEvent(sourceId, calendarId, eventId, event);
+      else await api.createEvent(sourceId, calendarId, event);
+      setEventModal(null);
+      toast(eventId ? '予定を更新しました' : `${fmtDayLabel(event.start)} に予定を追加しました`, 'success');
+      loadEvents();
+      if (!panel.open) savePanel({ open: true, tab: 'calendar' });
+    } catch (err) {
+      setEventModal(m => ({ ...m, busy: false }));
+      toast(err.message, 'error');
+    }
+  };
+
+  const deleteEventNow = async () => {
+    const init = eventModal?.initial;
+    if (!init?.eventId) return;
+    setEventModal(m => ({ ...m, busy: true }));
+    try {
+      await api.deleteEvent(init.sourceId, init.calendarId, init.eventId);
+      setEventModal(null);
+      toast('予定を削除しました', 'success');
+      loadEvents();
+    } catch (err) {
+      setEventModal(m => ({ ...m, busy: false }));
+      toast(err.message, 'error');
+    }
+  };
+
+  // ── メール → 予定 / ToDo ──
+  const mailRef = (m) => ({ accountId: m.accountId, mailbox: m.mailbox, uid: m.uid, subject: m.subject || '' });
+
+  const mailNote = (m) => {
+    const who = m.from?.name ? `${m.from.name} <${m.from.address}>` : (m.from?.address || '');
+    const body = (m.text || '').trim().replace(/\n{3,}/g, '\n\n').slice(0, 600);
+    return [`メール「${m.subject || '（件名なし）'}」より`, `差出人: ${who}`, '', body].join('\n');
+  };
+
+  const createEventFromMail = (m, hint) => {
+    if (!m) return;
+    const pick = hint || m.scheduleHints?.[0];
+    const start = pick?.start || (() => { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0); return d.toISOString(); })();
+    const end = pick?.end || new Date(new Date(start).getTime() + 3600000).toISOString();
+    setEventModal({
+      initial: {
+        title: (m.subject || '').replace(/^\s*(re|fwd?)\s*:\s*/i, '').trim() || '（件名なし）',
+        start, end, allDay: Boolean(pick?.allDay),
+        description: mailNote(m),
+        attendees: m.from?.address ? [{ email: m.from.address, name: m.from.name || '' }] : [],
+        sourceMail: mailRef(m),
+      },
+      hints: m.scheduleHints || [],
+    });
+  };
+
+  const createTaskFromMail = async (m) => {
+    if (!m) return;
+    const hint = m.scheduleHints?.[0];
+    try {
+      await api.createTask(taskDest?.sourceId || null, taskDest?.listId || null, {
+        title: (m.subject || '（件名なし）').replace(/^\s*(re|fwd?)\s*:\s*/i, '').trim(),
+        notes: mailNote(m),
+        due: hint?.start || null,
+        sourceMail: mailRef(m),
+      });
+      toast(`${listLabel(taskDest)} に追加しました`, 'success');
+      savePanel({ open: true, tab: 'tasks' });
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  // ── ToDo 操作 ──
+  const listLabel = (t) => tasks.lists.find(l => l.sourceId === t?.sourceId && l.listId === t?.listId)?.name || 'ToDo';
+
+  const chooseTaskDest = (next) => {
+    setTaskDest(next);
+    api.saveSettings({ defaultTaskList: next }).catch(() => {});
+  };
+
+  const taskDestMenu = (e) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCtxMenu({
+      x: Math.max(8, rect.right - 240), y: rect.bottom + 4,
+      items: [
+        { header: true, label: '新しいToDoの保存先' },
+        ...tasks.lists.map(l => ({
+          label: l.name,
+          icon: (taskDest?.sourceId === l.sourceId && taskDest?.listId === l.listId) ? 'check' : (l.sourceType === 'google' ? 'google' : 'todo'),
+          onClick: () => chooseTaskDest({ sourceId: l.sourceId, listId: l.listId }),
+        })),
+      ],
+    });
+  };
+
+  const toggleTask = async (t) => {
+    setTasks(s => ({ ...s, items: s.items.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)) }));
+    try {
+      await api.updateTask(t.sourceId, t.listId, t.taskId, { done: !t.done });
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+      loadTasks();
+    }
+  };
+
+  const addTask = async (title) => {
+    try {
+      await api.createTask(taskDest?.sourceId || null, taskDest?.listId || null, { title });
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  const openMailRef = useCallback(async (ref) => {
+    if (!ref?.accountId || !accountsById[ref.accountId]) {
+      toast('元のメールのアカウントが見つかりません', 'error');
+      return;
+    }
+    setView('mail');
+    setSel({ kind: 'box', accountId: ref.accountId, path: ref.mailbox });
+    setOpen({ loading: true, message: null, error: null, imagesAllowed: settings.remoteImages === 'allow' });
+    try {
+      const r = await api.message(ref.accountId, ref.mailbox, ref.uid);
+      setOpen(o => ({ ...o, loading: false, message: r.message }));
+      setSelKeys([`${ref.accountId}|${ref.mailbox}|${ref.uid}`]);
+    } catch (err) {
+      setOpen({ loading: false, message: null, error: err.message, imagesAllowed: false });
+    }
+  }, [accountsById, settings.remoteImages, toast]);
+
+  const openTask = (t) => {
+    if (t.sourceMail) openMailRef(t.sourceMail);
+  };
+
+  const taskMenu = (e, t) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCtxMenu({
+      x: rect.left - 150, y: rect.bottom + 4,
+      items: [
+        ...(t.sourceMail ? [{ label: '元のメールを開く', icon: 'mail', onClick: () => openMailRef(t.sourceMail) }] : []),
+        { label: t.done ? '未完了に戻す' : '完了にする', icon: t.done ? 'circle' : 'checkCircle', onClick: () => toggleTask(t) },
+        { label: '今日を期限にする', icon: 'today', onClick: async () => {
+          try {
+            await api.updateTask(t.sourceId, t.listId, t.taskId, { due: startOfDay(new Date()).toISOString() });
+            loadTasks();
+          } catch (err) { toast(err.message, 'error'); }
+        } },
+        ...tasks.lists
+          .filter(l => !(l.sourceId === t.sourceId && l.listId === t.listId))
+          .map(l => ({
+            label: `${l.name} へ移動`,
+            icon: l.sourceType === 'google' ? 'google' : 'todo',
+            onClick: async () => {
+              try {
+                await api.moveTask(
+                  { sourceId: t.sourceId, listId: t.listId, taskId: t.taskId },
+                  { sourceId: l.sourceId, listId: l.listId },
+                );
+                toast(`${l.name} へ移動しました`, 'success');
+                loadTasks();
+              } catch (err) { toast(err.message, 'error'); }
+            },
+          })),
+        { label: '予定にする', icon: 'calendarPlus', onClick: () => setEventModal({
+          initial: {
+            title: t.title,
+            start: t.due || new Date().toISOString(),
+            end: new Date(new Date(t.due || Date.now()).getTime() + 3600000).toISOString(),
+            description: t.notes || '', sourceMail: t.sourceMail || undefined,
+          },
+          hints: [],
+        }) },
+        'sep',
+        { label: '削除', icon: 'trash', danger: true, onClick: async () => {
+          try {
+            await api.deleteTask(t.sourceId, t.listId, t.taskId);
+            loadTasks();
+          } catch (err) { toast(err.message, 'error'); }
+        } },
+      ],
+    });
+  };
+
   // ── キーボードショートカット ──
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
-      if (compose || modal || ctxMenu) return;
+      if (compose || modal || ctxMenu || eventModal || sourceModal) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault(); startCompose(); return;
       }
@@ -499,6 +809,8 @@ export function App() {
         case 'f': { const r = selectedRows(); if (r.length) doAction(r, r.some(x => !x.flagged) ? 'flag' : 'unflag'); break; }
         case 'u': { const r = selectedRows(); if (r.length) doAction(r, r.some(x => !x.seen) ? 'read' : 'unread'); break; }
         case 'r': if (open.message) { e.preventDefault(); startReply('reply', null); } break;
+        case 's': if (open.message) { e.preventDefault(); createEventFromMail(open.message); } break;
+        case 't': if (open.message) { e.preventDefault(); createTaskFromMail(open.message); } break;
         case 'c': e.preventDefault(); startCompose(); break;
         case '/': e.preventDefault(); searchRef.current?.focus(); break;
         default: break;
@@ -517,15 +829,17 @@ export function App() {
   // ── ペイン幅ドラッグ ──
   const startDrag = (which) => (e) => {
     e.preventDefault();
-    dragRef.current = { which, startX: e.clientX, start: paneW[which] };
+    dragRef.current = { which, startX: e.clientX, start: paneW[which] ?? 316 };
     const onMove = (ev) => {
       const d = dragRef.current;
       if (!d) return;
-      const delta = ev.clientX - d.startX;
+      // 右パネルは左端をつかむので、動かす向きが逆になる
+      const delta = (ev.clientX - d.startX) * (d.which === 'panel' ? -1 : 1);
       setPaneW(w => {
         const next = { ...w, [d.which]: Math.round(d.start + delta) };
         next.sidebar = Math.min(340, Math.max(180, next.sidebar));
         next.list = Math.min(560, Math.max(260, next.list));
+        next.panel = Math.min(460, Math.max(260, next.panel ?? 316));
         return next;
       });
     };
@@ -602,7 +916,12 @@ export function App() {
           try { localStorage.setItem('silvermail-collapsed', JSON.stringify(next)); } catch { /* noop */ }
           return next;
         })}
-        onSelect={(s) => { setSel(s); setSearch(''); setUnseenFilter(false); }}
+        onSelect={(s) => { setView('mail'); setSel(s); setSearch(''); setUnseenFilter(false); }}
+        view={view}
+        onOpenCalendar={() => setView('calendar')}
+        onOpenTasks={() => savePanel({ open: true, tab: 'tasks' })}
+        todayEvents={events.items.filter(ev => eventOnDay(ev, new Date())).length}
+        openTasks={tasks.items.filter(t => !t.done).length}
         onCompose={() => startCompose()}
         onAddAccount={() => setModal({ type: 'account', mode: 'add' })}
         onSettings={() => setModal({ type: 'settings' })}
@@ -617,6 +936,31 @@ export function App() {
         }}
       />
       <div className="resizer" onMouseDown={startDrag('sidebar')} />
+      {view === 'calendar' ? (
+        <CalendarView
+          events={events.items}
+          loading={events.loading}
+          errors={events.errors}
+          sources={calSources}
+          anchor={calAnchor}
+          view={calView}
+          weekStart={settings.weekStart || 0}
+          onAnchor={setCalAnchor}
+          onView={(v) => {
+            setCalView(v);
+            try { localStorage.setItem('silvermail-calview', JSON.stringify(v)); } catch { /* noop */ }
+          }}
+          onNew={openNewEvent}
+          onOpen={openEvent}
+          onRefresh={() => loadEvents()}
+          onManageSources={() => setSourceModal(true)}
+          onToggleSource={async (id, enabled) => {
+            try { applySources((await api.updateSource(id, { enabled })).sources); }
+            catch (err) { toast(err.message, 'error'); }
+          }}
+        />
+      ) : (
+      <>
       <MessageList
         title={viewTitle.title}
         subtitle={viewTitle.subtitle}
@@ -655,6 +999,39 @@ export function App() {
           openMoveMenu(e, row ? [row] : selectedRows());
         }}
         onFromClick={(from) => startCompose({ to: [from] })}
+        onCreateEvent={createEventFromMail}
+        onCreateTask={createTaskFromMail}
+      />
+      </>
+      )}
+
+      {panel.open && <div className="resizer" onMouseDown={startDrag('panel')} />}
+      <SidePanel
+        open={panel.open}
+        tab={panel.tab}
+        width={paneW.panel ?? 316}
+        onToggle={togglePanel}
+        events={events.items}
+        eventsLoading={events.loading}
+        eventErrors={events.errors}
+        tasks={tasks.items}
+        tasksLoading={tasks.loading}
+        taskErrors={tasks.errors}
+        hasSources={calSources.some(s => s.type !== 'local') || events.items.length > 0}
+        onNewEvent={openNewEvent}
+        onOpenEvent={openEvent}
+        onOpenCalendar={() => setView('calendar')}
+        onManageSources={() => setSourceModal(true)}
+        onToggleTask={toggleTask}
+        onAddTask={addTask}
+        onOpenTask={openTask}
+        onTaskMenu={taskMenu}
+        taskLists={tasks.lists}
+        taskDest={taskDest}
+        taskFilter={taskFilter}
+        onTaskFilter={setTaskFilter}
+        onTaskDestMenu={taskDestMenu}
+        onRefresh={() => { loadEvents(); loadTasks(); }}
       />
 
       {ctxMenu && <ContextMenu {...ctxMenu} onClose={() => setCtxMenu(null)} />}
@@ -695,6 +1072,29 @@ export function App() {
           onAddAccount={() => setModal({ type: 'account', mode: 'add' })}
           onClose={() => setModal(null)}
           onAccountsChanged={bootstrap}
+        />
+      )}
+
+      {eventModal && (
+        <EventModal
+          initial={eventModal.initial}
+          hints={eventModal.hints}
+          targets={calTargets}
+          busy={eventModal.busy}
+          onSave={saveEvent}
+          onDelete={deleteEventNow}
+          onClose={() => setEventModal(null)}
+          onOpenMail={(ref) => { setEventModal(null); openMailRef(ref); }}
+        />
+      )}
+
+      {sourceModal && (
+        <CalendarSourceModal
+          sources={calSources}
+          redirectUri={redirectUri}
+          toast={toast}
+          onChanged={applySources}
+          onClose={() => setSourceModal(false)}
         />
       )}
 
