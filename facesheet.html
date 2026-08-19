@@ -1839,6 +1839,75 @@ function printWithDayUse(rec,curId,doPrint){
     doPrint();
   }).catch(function(){ duPrinting=false; });
 }
+/* ══ 1つの欄に2件ぶんが区切りなしで入っている時、表示だけ行に分ける（2026-08-19 指示）══
+   移行元のスプレッドシートで、2つの医院の情報が1つのセルに続けて入力されていた方がいる
+   （病院名が2つ続く／電話番号が続けて12桁 等）。紙の上で読み分けられず、救急搬送先や
+   処方と同じ紙で外部へ渡すため、誤読の危険がそのまま残る。
+   ★データには一切触らない。紙と画面の【見え方】だけを変える。元の文字は1つも足さない・消さない。
+   ★件数は【電話番号】だけで決める。形が決まっていて確実に数えられる唯一の項目だから。
+     電話が1件しか無い方には何もしない＝取り違えの余地を作らない。
+   ★分けられない項目は元のまま出す（1つでも分けられなければ全部やめる、にはしない）。
+   ★この4本は resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の分かれ方をする。 */
+var MP_TEL_RE=/0\d{1,3}-\d{2,4}-\d{3,4}/g;
+var MP_ORG_RE=/(クリニック|病院|医院|診療所|センター|歯科|薬局|薬店)/g;
+function mpStr(v){ return String(v==null?'':v).trim(); }
+/* 電話・FAX: 「番号だけが2つ以上つながっている」時だけ分ける。
+   「096-000-0000（内線2）」のように番号以外の文字が1つでも混ざるなら触らない。 */
+function mpTel(v){
+  var s=mpStr(v);
+  if(!s||/[\n\r]/.test(s))return null;          // 既に分かれているなら触らない
+  var m=s.match(MP_TEL_RE);
+  if(!m||m.length<2)return null;
+  if(m.join('')!==s.replace(/[\s　]+/g,''))return null;
+  return m;
+}
+/* 医院名: 医療機関を表す語で切る。歯止めは2つ。
+   ①最後がその語で終わっていない時は切り方が分からないので触らない
+   ②切った先が「附属」「分院」等で始まる時は、そこは1つの名前の途中なので切らない
+     （「◯◯病院附属クリニック」を2つに割らない。実測で割れたので足した） */
+var MP_ORG_NG=/^(附属|付属|分院|別院|本院|新館|別館|東館|西館|南館|北館|第[0-9０-９一二三四五六七八九十])/;
+function mpOrg(v,n){
+  var s=mpStr(v);
+  if(!s||!(n>=2)||/[\n\r]/.test(s))return null;
+  var re=new RegExp(MP_ORG_RE.source,'g'), out=[], last=0, m;
+  while((m=re.exec(s))){
+    var e=m.index+m[0].length;
+    if(MP_ORG_NG.test(s.slice(e)))continue;     // ここで切ると1つの名前を割ってしまう
+    out.push(s.slice(last,e)); last=e;
+  }
+  if(last!==s.length)return null;
+  return out.length===n?out:null;
+}
+/* 氏名: 「姓 名」が n 組つながっている形の時だけ分ける。次の方の姓は2文字とみなす
+   （日本の姓でいちばん多い長さ）。★3文字姓の方では区切りが1文字ずれる。ただし文字は
+   1つも失われないので紙を見れば気づけ、編集画面の2行入力で直せる。 */
+var MP_NAME_NG=/^[々ゝゞヽヾー・]/;
+function mpPerson(v,n){
+  var s=mpStr(v);
+  if(!s||!(n>=2)||/[\n\r]/.test(s))return null;
+  var sp=[], re=/[ 　]/g, m;
+  while((m=re.exec(s)))sp.push(m.index);
+  if(sp.length!==n)return null;                 // 「姓 名」が n 組の形でなければ触らない
+  var out=[], start=0;
+  for(var i=1;i<n;i++){
+    var cut=sp[i]-2;
+    if(cut<=sp[i-1]+1)return null;              // 前の方の名が空になる＝仮定が成り立たない
+    if(MP_NAME_NG.test(s.slice(cut)))return null;  // 姓の先頭になり得ない字＝2文字の仮定が外れている
+    out.push(s.slice(start,cut)); start=cut;
+  }
+  out.push(s.slice(start));
+  return out;
+}
+/* 1つの医療機関グループ（機関名・担当者・電話・FAX）をまとめて判定する */
+function mpSplit(org,person,tel,fax){
+  var t=mpTel(tel), f=mpTel(fax), n=t?t.length:0;
+  if(!n)return null;
+  return {n:n, org:mpOrg(org,n), person:mpPerson(person,n), tel:t,
+          fax:(f&&f.length===n)?f:null};
+}
+/* 表示値。分けられなかった項目は元の値をそのまま返す */
+function mpVal(v,arr){ return (arr&&arr.length)?arr.join('\n'):v; }
 /* いまこの瞬間に開いている方の利用者No（印刷の待ち時間中に別の方へ移ったかの判定に使う）。
    入居者マスタの a4CurId_ と同じ役目。curRec は開き直すたびに別のオブジェクトになるので
    同一性ではなく利用者Noで比べる。 */
@@ -1963,11 +2032,15 @@ function renderOfficeView(r){
        副作用・禁忌を同じ行に）。 */
   S.disease=bfOfficeOnly(sec('既往歴・サービス',bfDiseaseServiceBody(bf)));
   S.legacy=bfLegacySec(r);
+  /* 医療機関が2件ぶん1つの欄に入っている方は、表示だけ行に分ける（2026-08-19 指示） */
+  var mfH=mpSplit(r.hospital,r.doctor,r.hospitalTel,r.hospitalFax);
+  var mfP=mpSplit(r.pharmacy,'',r.pharmacyTel,r.pharmacyFax);
   S.medical=
     sec('医療情報',
-      '<div class="row-cells">'+cell('かかりつけ病院',r.hospital)+cell('主治医',r.doctor)+cell('電話番号',r.hospitalTel)+cell('FAX番号',r.hospitalFax)+'</div>'+
+      /* 2件ぶんが1つの欄に入っている方は表示だけ行に分ける（入居者マスタと同じ扱い・2026-08-19） */
+      '<div class="row-cells">'+cell('かかりつけ病院',mpVal(r.hospital,mfH&&mfH.org))+cell('主治医',mpVal(r.doctor,mfH&&mfH.person))+cell('電話番号',mpVal(r.hospitalTel,mfH&&mfH.tel))+cell('FAX番号',mpVal(r.hospitalFax,mfH&&mfH.fax))+'</div>'+
       '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
-      '<div class="row-cells">'+cell('かかりつけ薬局',r.pharmacy)+cell('電話番号',r.pharmacyTel)+cell('FAX番号',r.pharmacyFax)+'</div>'+
+      '<div class="row-cells">'+cell('かかりつけ薬局',mpVal(r.pharmacy,mfP&&mfP.org))+cell('電話番号',mpVal(r.pharmacyTel,mfP&&mfP.tel))+cell('FAX番号',mpVal(r.pharmacyFax,mfP&&mfP.fax))+'</div>'+
       /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示・マスタと同表記）。
          ★full() は必ず border-right:none を付けるので、横に並べる時は【最後以外】に使わない
            （使うと仕切りの縦罫線が消える）。最後だけ full()、手前は fcell() を使う。 */
