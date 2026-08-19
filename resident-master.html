@@ -354,8 +354,6 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .fgroup{margin-bottom:18px}
 .fgroup h3{font-size: 0.875rem; color:var(--pri-d); border-left:3px solid var(--pri); padding-left:8px; margin:0 0 10px}
 .fgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
-/* 編集画面の欄に添える注記（2026-08-19 追加）。--g5 は白地で約2.6:1 と薄いので --g7 を使う */
-.fnote{grid-column:1/-1; margin:0 0 4px; font-size:0.8125rem; color:var(--g7); line-height:1.5}
 .fld{display:flex; flex-direction:column}
 .fld.wide{grid-column:1/-1}
 .fld label{font-size: 0.75rem; color:var(--g7); margin-bottom:3px}
@@ -2143,10 +2141,31 @@ var BF_FORM_KEYS=['diseases','services','adlGrid','moveAid','bathPlace','excrete
   'bfSaved'];
 var BF_LEGACY_KEYS=[['currentDiseases','治療中の病気'],['mobility','移動'],['excretion','排泄'],
   ['bath','入浴'],['medMgmt','服薬 管理方法'],['medAssist','服薬介助'],['problemBehavior','問題行動 等']];
+/* デイ利用日（旧 dayUse）を1行に畳む。2026-08-19 に入力欄を廃止した（表示は3枚の紙とも
+   週間計画から出すようになったため・管理者の裁定＝案②）。
+   ★曜日→時間帯のオブジェクトなので BF_LEGACY_KEYS（文字列キーの表）には入れられない。
+   ★元の値は書き換えない。移行前の記載は「人が元の記載を確かめるためのもの」なので、
+     見た目のために改行を「/」へ潰す以外は1文字も触らない。 */
+function bfLegacyDayUse(d){
+  d=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};
+  return DAYUSE_KEYS.map(function(p){
+    /* 元データは「9-」で改行して「16」と続く【縦書き】（旧スプレッドシート由来・実測）。
+       ハイフンで切れている改行は詰めて 9-16 に戻し、それ以外の改行は「/」で区切る
+       （2つの時間帯が並んでいる時に 9-1315-17 のような読めない文字列にしないため）。 */
+    var v=bfStr(d[p[0]]).split(/\s*\n\s*/).reduce(function(a,x){
+      if(!a)return x;
+      return a+((/-$/.test(a)||/^-/.test(x))?'':'/')+x;
+    },'');
+    return v?(p[1]+' '+v):'';
+  }).filter(String).join('　');
+}
 function bfLegacy(r){
   r=r||{};
-  return BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
-                       .filter(function(x){ return x.value!==''; });
+  var out=BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
+                        .filter(function(x){ return x.value!==''; });
+  var du=bfLegacyDayUse(r.dayUse);
+  if(du)out.push({label:'デイ利用日', value:du});
+  return out;
 }
 /* ── 描画部品（詳細画面＝印刷面で共用） ── */
 /* ★□は固定寸法（12px）なので、✓を入れても入れなくても幅は動かない。
@@ -3219,14 +3238,12 @@ function openEdit(rec){
     fld('welfareEquip','福祉用具',r.welfareEquip)+fld('welfareEquipStaff','担当者',r.welfareEquipStaff)+fld('welfareEquipTel','電話番号',r.welfareEquipTel)+
     fld('serviceManager','サービス提供責任者',r.serviceManager)+
     fld('prevCareOffice','前の居宅介護支援事業所',r.prevCareOffice)+fld('prevCareManager','前の担当ケアマネ',r.prevCareManager)+
-  '</div><h3 style="margin-top:14px">デイ利用日（曜日ごとの利用時間帯）</h3><div class="fgrid">'+
-    /* ★2026-08-19: デイ利用日の【表示】は3枚の紙とも週間計画から出すようになった。
-       この入力欄の値はどの紙にも出ない（保存はされる）。入口がここしか無いため、
-       職員が紙の誤りを直そうとしてここを触っても何も変わらない＝黙って時間を溶かす。
-       入力欄は指示外の削除を避けて残し、代わりに効かないことを画面に明記する。
-       恒久対応（編集画面から外して「移行前の記載」扱い）は管理者の裁定待ち */
-    '<p class="fnote">※この欄は画面・紙のどちらにも出ません。デイ利用日の表示は週間計画から取得します（表示を直すには週間計画アプリで予定を直してください）。</p>'+
-    DAYUSE_KEYS.map(function(p){return'<div class="fld"><label>'+esc(p[1])+'</label><input data-dayuse="'+p[0]+'" placeholder="例 9-16" value="'+esc((r.dayUse&&r.dayUse[p[0]])||'')+'"></div>'}).join('')+
+    /* 「デイ利用日」の入力欄は 2026-08-19 に廃止した（管理者の裁定＝案②）。
+       表示は3枚の紙（A4様式・詳細画面の印刷・フェイスシート）とも週間計画から出すので、
+       ここで入力しても何も変わらない＝直そうとした職員の時間を黙って溶かす欄だった。
+       ★データ（dayUse）は消していない。詳細画面の「移行前の記載」に読み取り専用で出る
+         （bfLegacyDayUse）。保存時の引き継ぎは collectForm を参照（外すと保存だけで消える）。
+       ★利用日を直すのは【週間計画アプリ】。ここではない。 */
   '</div><h3 style="margin-top:14px">生活リズム</h3><div class="fgrid">'+
     /* 食事の時刻は施設共通の既定を最初から入れておく（2026-08-12 指示）。
        ★入っている値は上書きしない。空欄の方にだけ既定を出す */
@@ -3699,9 +3716,10 @@ function collectForm(){
   rec.rhythm={};
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-rhythm]'),function(inp){if(inp.value)rec.rhythm[inp.getAttribute('data-rhythm')]=inp.value});
   // 入力欄が描画されていない場合は既存値を温存する（部分フォームでの全消しを防ぐ安全側フォールバック）
-  var duEls=$('editBox').querySelectorAll('[data-dayuse]');
-  if(duEls.length){rec.dayUse={};Array.prototype.forEach.call(duEls,function(inp){var v=(inp.value||'').trim();if(v)rec.dayUse[inp.getAttribute('data-dayuse')]=v})}
-  else if(editing.dayUse)rec.dayUse=editing.dayUse;
+  /* デイ利用日は 2026-08-19 に入力欄を廃止した（案②）。★既存の値は必ず引き継ぐ。
+     引き継がないと、編集画面で保存しただけで dataJson から消える（GAS は丸ごと置き換えるため）。
+     BF_LEGACY_KEYS の7項目とまったく同じ作法。 */
+  if(editing.dayUse)rec.dayUse=editing.dayUse;
   var csEls=$('editBox').querySelectorAll('[data-consent]');
   if(csEls.length){rec.consents={};Array.prototype.forEach.call(csEls,function(inp){var v=(inp.value||'').trim();if(v)rec.consents[inp.getAttribute('data-consent')]=v})}
   else if(editing.consents)rec.consents=editing.consents;

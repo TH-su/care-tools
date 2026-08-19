@@ -506,8 +506,8 @@ var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infect
   'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
   'medMgmt','medAssist','medRefusal','hospitalized',
   'adlGrid','moveAid','excreteWay','bathPlace','medLevel','medExists','bpsd','night'];
-/* ★2026-08-19 以降このファイルでは未使用。デイ利用日の表示は週間計画（dayUseHtml）へ移した。
-   入居者マスタ側では編集画面の入力欄でまだ使っているため、対応表として残す（削除しない）。 */
+/* ★デイ利用日の【現在値】の表示は週間計画（dayUseHtml）へ移した。この表を今も使うのは
+   「移行前の記載」（bfLegacyDayUse）＝旧 dayUse を人が確かめるための読み取り専用表示だけ。 */
 var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
 var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
   ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
@@ -1196,10 +1196,31 @@ function sec(lbl,body){return'<div class="sec"><div class="sec-lbl">'+esc(lbl)+'
    ★事務所ビュー専用。現場タブレットには元から値が来ない（安全情報に無い）。 */
 var BF_LEGACY_KEYS=[['currentDiseases','治療中の病気'],['mobility','移動'],['excretion','排泄'],
   ['bath','入浴'],['medMgmt','服薬 管理方法'],['medAssist','服薬介助'],['problemBehavior','問題行動 等']];
+/* デイ利用日（旧 dayUse）を1行に畳む。2026-08-19 に入力欄を廃止した（表示は3枚の紙とも
+   週間計画から出すようになったため・管理者の裁定＝案②）。
+   ★曜日→時間帯のオブジェクトなので BF_LEGACY_KEYS（文字列キーの表）には入れられない。
+   ★元の値は書き換えない。移行前の記載は「人が元の記載を確かめるためのもの」なので、
+     見た目のために改行を「/」へ潰す以外は1文字も触らない。 */
+function bfLegacyDayUse(d){
+  d=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};
+  return DAYUSE_KEYS.map(function(p){
+    /* 元データは「9-」で改行して「16」と続く【縦書き】（旧スプレッドシート由来・実測）。
+       ハイフンで切れている改行は詰めて 9-16 に戻し、それ以外の改行は「/」で区切る
+       （2つの時間帯が並んでいる時に 9-1315-17 のような読めない文字列にしないため）。 */
+    var v=bfStr(d[p[0]]).split(/\s*\n\s*/).reduce(function(a,x){
+      if(!a)return x;
+      return a+((/-$/.test(a)||/^-/.test(x))?'':'/')+x;
+    },'');
+    return v?(p[1]+' '+v):'';
+  }).filter(String).join('　');
+}
 function bfLegacy(r){
   r=r||{};
-  return BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
-                       .filter(function(x){ return x.value!==''; });
+  var out=BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
+                        .filter(function(x){ return x.value!==''; });
+  var du=bfLegacyDayUse(r.dayUse);
+  if(du)out.push({label:'デイ利用日', value:du});
+  return out;
 }
 function bfLegacySec(r){
   if(isField()) return '';
