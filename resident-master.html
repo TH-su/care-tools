@@ -551,7 +551,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    「時刻（右揃え）｜下向き矢印の縦線｜ラベル（左揃え）」の3列。
    ★以前はマイナスマージンで時刻を線の左へ張り出させており、環境によって線がラベルに重なった。
      列で分ければ重なりは構造的に起きない。線は2列のあいだ＝欄のほぼ中央（左右のバランス）。 */
-.a4s .a4-rhy{flex:0 0 100px; border:1.5px solid #000; margin-left:3px; padding:2px 4px;
+/* 右列は「デイ利用（上）＋生活リズム（下）」の2段（2026-08-19 指示）。
+   ★100px の幅は従来の生活リズムの幅をそのまま引き継ぐ＝左の事業所・医療情報の幅は1pxも変わらない。
+   ★生活リズムは flex:1 で残りを取る＝デイ利用の高さぶんだけ上下に縮む（指示どおり）。 */
+.a4s .a4-rt{flex:0 0 100px; margin-left:3px; display:flex; flex-direction:column; gap:3px}
+.a4s .a4-rhy{flex:1; min-height:0; border:1.5px solid #000; padding:2px 4px;
              display:flex; flex-direction:column}
 .a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
 .a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
@@ -565,6 +569,31 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-rhy-i{display:flex; align-items:center; position:relative}
 .a4s .a4-rhy-i .tm{flex:0 0 36px; text-align:right; line-height:1.15}
 .a4s .a4-rhy-i b{font-weight:600; margin-left:12px; white-space:nowrap}
+/* デイ利用（週間計画 care_schedule_v2 の読み取り専用参照・2026-08-19 指示）。
+   月〜土の6列。列幅は 100px÷6≒15px しかないため時刻は【縦書き】にする
+   （横書きだと「13.5」が入らない）。text-orientation:upright で数字を1文字ずつ立てて積むので、
+   「9-13.5」は縦に6文字ぶん並ぶ＝様式の縦罫の中に収まる。
+   ★ここに出すのは週間計画（通所の予定）の実データだけ。マスタの dayUse（移行時の旧スプレッドシート
+     由来の手書き値）は【出さない】。実測で両者は食い違う（旧値に 9-16 が残る一方、
+     現在の週間計画は 9-13 と 9-13.5 の2種類しか無い）。外部へ渡す紙に古い方を載せない。 */
+.a4s .a4-day{flex:0 0 auto; border:1.5px solid #000; display:flex; flex-direction:column}
+.a4s .a4-day-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center;
+               line-height:1.2; border-bottom:1px solid #000}
+.a4s .a4-day-g{display:flex}
+.a4s .a4-day-c{flex:1; min-width:0; border-left:1px solid #666;
+               display:flex; flex-direction:column; align-items:center}
+.a4s .a4-day-g .a4-day-c:first-child{border-left:none}
+.a4s .a4-day-h{width:100%; text-align:center; font-weight:700; line-height:1.2;
+               border-bottom:1px solid #666; font-size:calc(var(--a4fs,10.5px)*0.8)}
+.a4s .a4-day-v{writing-mode:vertical-rl; text-orientation:upright; -webkit-text-orientation:upright;
+               font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:600; line-height:1;
+               letter-spacing:0; padding:1px 0; min-height:1px}
+/* 見出しだけの行（家族情報の列名）は上下を最大限詰める（2026-08-19 指示）。
+   a4Cell は値が空でも全角スペースを1文字入れて行の高さを作るので、その値行ごと消す。
+   ★このクラスが付いた行にしか効かない＝他の枠の高さは1pxも変わらない。 */
+.a4s .a4-row.a4-hd .a4-c{padding:0 3px}
+.a4s .a4-row.a4-hd .a4-h{line-height:1.05}
+.a4s .a4-row.a4-hd .a4-v{display:none}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
 .a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:0 3px; overflow:hidden}
@@ -1942,6 +1971,10 @@ function openResident(id){
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
     curResident=rec; setViewActions(true); renderView(rec);
+    /* A4様式の「デイ利用」を先に取っておく。押した時には取得済み＝待ち時間が出ず、
+       印刷ダイアログもクリック直後に開く（iPad 等でユーザー操作から離れた print() を避ける）。
+       ★失敗しても何もしない（A4様式を押した時に改めて知らせる）。取得済みなら通信しない（TTL） */
+    try{ a4EnsureDayMap(); }catch(e2){}
   }).catch(function(e){
     /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
        忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
@@ -3895,7 +3928,142 @@ function a4Days(from,to){
   var d=Math.floor((b-a)/86400000);
   return (isFinite(d)&&d>=0)?String(d):'';
 }
+/* ═════════ デイ利用（週間計画 care_schedule_v2 の読み取り専用参照）2026-08-19 指示 ═════════
+   A4様式の右上に「月〜土 × 利用時間帯」を出すため、入居者マスタが【統合GAS】
+   （週間計画・ワースケ・シフト共通のGAS）の読み手として新しく加わる。
+   ★書き込みは一切しない。localStorage にも書かない（su_sync_common は読むだけ）。
+     データ契約は .claude/rules/data-contracts.md §2 に追記済み。
+   ★通所（デイ）の予定の正本は care_schedule_v2 のみ（§5・§6-⑧）。マスタ側の dayUse は
+     移行時の旧スプレッドシート由来の手書き値で、実測で現在値と食い違う。ここでは使わない。
+   ★取得できない時は【空欄のまま刷る】。古い値で埋めない。空欄になったことは画面に出して知らせる。 */
+var A4_DOW_JA=['月','火','水','木','金','土'];       // dayOfWeek 0..5（週間計画・せせらぎと同じ並び）
+var A4_DAY_TTL=120000;                              // 取得結果を使い回す時間（連続印刷を速くするため）
+var A4_DAY_FAIL_TTL=30000;                          // 失敗を覚えておく時間（押すたびに待たせない）
+var a4DayMap=null;                                  // {at, byMid, byName, dupMid, dupName} ／ null=未取得
+var a4DayPromise=null;                              // 取得中の重複起動を防ぐ
+var a4DayFailAt=0, a4DayFailMsg='';                 // 直近の失敗（短時間だけ覚える）
+function a4NmKey(s){ return String(s==null?'':s).replace(/\s+/g,''); }
+/* 統合GASの接続先。せせらぎ・全支援俯瞰と同じ解決順（su_sync_common → ws_settings）。
+   ★読む側でもURLの形を確かめる（せせらぎ等には無い上乗せ）。ワースケ・シフトが【書く時】に
+     使っている門番と同じ正規表現。この関数は接続先へ合言葉を送るので、localStorage が壊れた・
+     別の値が入った時に見ず知らずの URL へ合言葉を渡さないため（所有アプリの門番を迂回しない）。 */
+var A4_GAS_RE=/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
+function a4SyncTarget(){
+  try{ var c=JSON.parse(localStorage.getItem('su_sync_common')||'{}');
+       if(c&&A4_GAS_RE.test(String(c.endpoint||'').trim()))
+         return {endpoint:String(c.endpoint).trim(), token:String(c.token||'').trim()}; }catch(e){}
+  try{ var w=JSON.parse(localStorage.getItem('ws_settings')||'{}');
+       if(w&&A4_GAS_RE.test(String(w.endpoint||'').trim()))
+         return {endpoint:String(w.endpoint).trim(), token:String(w.token||'').trim()}; }catch(e){}
+  return {endpoint:'', token:''};
+}
+/* 「09:00」→「9」／「13:30」→「13.5」。★端数は嘘をつかず時刻のまま出す（例 9:10）。
+   .25/.5/.75 以外を無理に小数へ丸めると、紙の上で実際と違う終了時刻になる。
+   ★時・分とも範囲を見る。壊れた値（'30:00' 等）をそのまま紙に出さない唯一の関所。 */
+function a4HM(t){
+  var p=String(t==null?'':t).split(':');
+  if(p.length<2)return'';
+  var h=parseInt(p[0],10), m=parseInt(p[1],10);
+  if(!isFinite(h)||!isFinite(m)||h<0||h>23||m<0||m>59)return'';
+  if(m===0)return String(h);
+  if(m===15)return h+'.25';
+  if(m===30)return h+'.5';
+  if(m===45)return h+'.75';
+  return h+':'+(m<10?'0'+m:m);
+}
+/* 週間計画のDBから「その方の月〜土の通所時間帯」を引ける形に畳む。氏名は突合にのみ使う。
+   ★継承キー（toString 等）に当たらないよう素のオブジェクトにしない。 */
+function a4BuildDayMap(db){
+  var out={at:Date.now(), byMid:Object.create(null), byName:Object.create(null),
+           dupMid:Object.create(null), dupName:Object.create(null)};
+  var res=(db&&Array.isArray(db.residents))?db.residents:[];
+  res.forEach(function(r){
+    if(!r)return;
+    var days=['','','','','',''], any=false;
+    (Array.isArray(r.events)?r.events:[]).forEach(function(ev){
+      if(!ev||ev.serviceType!=='daycare')return;
+      var d=Number(ev.dayOfWeek);
+      if(!(d>=0&&d<6))return;                       // 日曜（6）は様式に欄が無いので出さない
+      var a=a4HM(ev.startTime), b=a4HM(ev.endTime);
+      if(!a||!b)return;
+      /* 同じ曜日に複数の通所予定がある方は【両方出す】。1枠しか持たない形にして後勝ちで
+         落とすと、紙だけが実際より少ない利用日数に見える（せせらぎは件数を数えて警告している） */
+      var lab=a+'-'+b;
+      days[d]=days[d]?(days[d]+'／'+lab):lab;
+      any=true;
+    });
+    if(!any)return;
+    var mid=(r.masterId==null||r.masterId==='')?null:String(r.masterId);
+    var rec={name:String(r.name||''), mid:mid, days:days};
+    /* ★同じ利用者Noの行が2つある時は【黙って後勝ちにしない】。旧表記の重複行は
+       実在しうる（data-contracts §6-⑧）。どちらが正か分からないので「未確認」に倒す */
+    if(mid){ if(out.byMid[mid])out.dupMid[mid]=true; else out.byMid[mid]=rec; }
+    var nk=a4NmKey(r.name);
+    if(nk){ if(out.byName[nk])out.dupName[nk]=true; else out.byName[nk]=rec; }
+  });
+  return out;
+}
+/* 取得（必要な時だけ・失敗しても投げない）。返すのは画面に出す注意文（不要なら空文字）。
+   ★待ち時間は 25秒＝このアプリの apiGet と同じ。統合GAS も書き込みで LockService を待つので、
+     短くすると朝の混雑時に必ず切れて「未確認」の紙になる（2026-08-18 に入居者マスタ側で直した件と同型）。 */
+function a4EnsureDayMap(){
+  var now=Date.now(), age;
+  if(a4DayMap){ age=now-a4DayMap.at; if(age>=0&&age<A4_DAY_TTL)return Promise.resolve(''); }
+  if(a4DayPromise)return a4DayPromise;
+  /* 直近に失敗したばかりなら押すたびに25秒待たせない（現場を止めない）。覚えるのは30秒だけ＝
+     統合GASが復旧すれば自動的に取りに行く */
+  if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
+  var t=a4SyncTarget();
+  if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
+  a4DayPromise=fetchWithTimeout(t.endpoint,{method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      var j=JSON.parse(txt);
+      /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる
+         （名簿取得の emptyGuarded と同じ作法・multi-device-sync 原則4） */
+      if(!j||!j.ok||!j.data||!Array.isArray(j.data.residents)||!j.data.residents.length)
+        throw new Error(String((j&&j.error)||'応答が不正です'));
+      a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
+      return '';
+    })
+    .catch(function(){ return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    .then(function(msg){ a4DayPromise=null; return msg; });
+  return a4DayPromise;
+}
+function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; }
+/* その方の月〜土を返す。★戻り値は必ず3値の state を持つ:
+     'ok'      … 通所予定が引けた（days に入る）
+     'none'    … 週間計画は取れていて、その方に通所予定が無い＝【本当に利用なし】
+     'unknown' … 確かめられなかった（未取得／氏名が食い違う／絞り込めない／重複行）
+   ★'none' と 'unknown' を必ず分ける。どちらも空欄で刷ると、週3回通っている方の紙が
+     「デイ利用なし」と読まれる。この様式は救急搬送先・処方と同じ紙で外部へ渡すので、
+     printHide の「伏せたセルは空欄にせず、セルごと外す（空欄は誤った安心に変わる）」と同じ考え方。
+   ★利用者Noで引いた後も氏名を突き合わせる（data-contracts §6-⑨ の不変条件2）。 */
+function a4DaysFor(r){
+  var UNK={state:'unknown', days:null};
+  if(!a4DayMap||!r)return UNK;
+  var nk=a4NmKey(r.name);
+  if(r.id!=null&&r.id!==''){
+    var key=String(r.id);
+    if(a4DayMap.dupMid[key])return UNK;             // 同じ利用者Noの行が2つ＝どちらか分からない
+    var rec=a4DayMap.byMid[key];
+    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK;
+  }
+  if(!nk)return UNK;                                 // 氏名が無ければ確かめようがない
+  if(a4DayMap.dupName[nk])return UNK;                // 同姓同名は引かない
+  var byNm=a4DayMap.byName[nk];
+  /* ★利用者Noを持つ記録は氏名では拾わない。その記録は【別の方】に束縛済みで、拾うと
+     利用者Noの違う方の紙に他人の通所日が載る（§6-⑨ の「食い違いが確定した」状態）。 */
+  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK;
+  return {state:'none', days:null};                  // 週間計画は取れていて、通所予定が無い方
+}
 function renderA4(r){
+  /* デイ利用（週間計画）は【伏せる処理より先に】引く。基本情報を伏せると描画用コピーから
+     氏名が消え、§6-⑨ の「利用者Noで引いた後に氏名を突き合わせる」が通らなくなるため
+     （関係の無い欄を伏せただけでデイ利用が空欄になってしまう）。 */
+  var dayInfo=a4DaysFor(r);
   /* ══ 印刷しない欄（2026-08-17 指示）══
      A4様式は欄の構成が固定なので「枠は残して中身を空にする」。枠ごと消すと外部様式の体裁
      （原本との対応）が崩れ、受け取った側がどの欄が抜けたのか分からなくなる。
@@ -3938,6 +4106,17 @@ function renderA4(r){
   /* 生活リズムは「保存が無い方にも施設共通の既定時刻を重ねて出す」仕様（2026-08-12 裁定）なので、
      rhythm を消すだけでは既定が出てしまう。事業所欄を伏せた時はここで止める */
   var rh=nop.biz?{}:rhythmOf(r);
+  /* デイ利用は詳細画面では【事業所】欄の中（dayUse が rhythm の隣）なので、生活リズムと同じ扱いにする。
+     ★確かめられなかった時（未取得・氏名の食い違い等）は空欄にせず「?」と「（未確認）」を紙に出す。
+       空欄のままだと『デイを使っていない方』と区別が付かず、週3回通っている方の紙が
+       「利用なし」と読まれる（伏せた欄を空欄にしないのと同じ理由）。
+     ★事業所欄を伏せた時は【意図して空にしている】ので「未確認」とは書かない。 */
+  var dayUnk=!nop.biz&&dayInfo.state==='unknown';
+  var dayArr=nop.biz?null:dayInfo.days;
+  var dayCells=A4_DOW_JA.map(function(lb,i){
+    return '<div class="a4-day-c"><span class="a4-day-h">'+esc(lb)+'</span>'+
+           '<span class="a4-day-v">'+esc(dayUnk?'?':((dayArr&&dayArr[i])||''))+'</span></div>';
+  }).join('');
   /* ★「治療中の病気」「問題行動」は様式化後の正データ（diseases[]・bpsd）から組み立てる。
      旧キー（currentDiseases / problemBehavior）は2026-08-12に入力欄が廃止された凍結値で、
      新規登録の方は恒久的に空・移行済みの方は古い病名のまま。旧キーは【様式が空の時の控え】に回す。
@@ -4029,10 +4208,11 @@ function renderA4(r){
     '</div></div>'+
     /* ── 家族情報 ── */
     '<div class="a4-sec"><div class="a4-lbl">家族情報</div><div class="a4-bd">'+
-      '<div class="a4-row">'+a4Cell('ご家族氏名','','1.1')+a4Cell('住所','','1.5')+a4Cell('電話番号','','1')+a4Cell('緊急連絡先','','1')+'</div>'+
+      /* 列名だけの行。a4-hd で値行（全角スペース1文字）を消し、上下を最大限詰める（2026-08-19 指示） */
+      '<div class="a4-row a4-hd">'+a4Cell('ご家族氏名','','1.1')+a4Cell('住所','','1.5')+a4Cell('電話番号','','1')+a4Cell('緊急連絡先','','1')+'</div>'+
       famRows+
     '</div></div>'+
-    /* ── 事業所＋医療情報（右に生活リズム）── */
+    /* ── 事業所＋医療情報（右にデイ利用＋生活リズム）── */
     '<div class="a4-mid"><div class="a4-mid-l">'+
       '<div class="a4-sec"><div class="a4-lbl">事業所</div><div class="a4-bd">'+
         '<div class="a4-row">'+a4Cell('居宅介護支援事業所',r.careOffice,'1.3')+a4Cell('介護支援専門員',r.careManager,'1')+
@@ -4054,8 +4234,13 @@ function renderA4(r){
         '</div>'+
       '</div></div>'+
     '</div>'+
-    '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+
-      '<i class="a4-rhy-ln" aria-hidden="true"></i>'+rhyRows+'</div></div></div>'+
+    /* 右列＝デイ利用（上）＋生活リズム（下）。2026-08-19 指示 */
+    '<div class="a4-rt">'+
+      '<div class="a4-day"><div class="a4-day-t">'+(dayUnk?'デイ利用（未確認）':'デイ利用')+'</div>'+
+        '<div class="a4-day-g">'+dayCells+'</div></div>'+
+      '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+
+        '<i class="a4-rhy-ln" aria-hidden="true"></i>'+rhyRows+'</div></div>'+
+    '</div></div>'+
     /* ── 食事 ── */
     '<div class="a4-sec"><div class="a4-lbl">食事</div><div class="a4-bd"><div class="a4-row">'+
       '<div class="a4-c" style="flex:1.3"><span class="a4-bh">■主食■</span><span class="a4-v">'+esc(r.mealStaple||'　')+'</span></div>'+
@@ -4091,6 +4276,9 @@ function a4Fit(){
        ★★上限を上げられない第2の理由（高さとは別の制約）:
          ・縦書き見出し .a4-lbl は幅 17px 固定。行ボックスの幅は --a4fs×0.95×1.35 なので
            12.0px で 15.4px（内寸16px に対し余裕0.6px）。12.5px で超え、縦罫線を越えて本文に重なる
+         ・デイ利用 .a4-day-c の内寸は約15.3px（右列100px÷6列）。縦書き1文字の幅は
+           --a4fs×0.85 なので 12.0px では 10.2px。18px 相当まで当たらないが、
+           【上限を上げる時はこの3つ目も一緒に見る】こと（2026-08-19 追加）
          ・生活リズム .a4-rhy は 100px 固定・時刻列 .tm は 36px 固定。「20:00〜21:00」のような
            範囲表記は 12px で約39px となり時刻列を超える（実データには現在1件も無い＝2026-08-17 実測）
          高さ（budget）だけを測って上げると、この2つが先に壊れる。上げるなら固定幅も
@@ -4121,6 +4309,36 @@ function a4Off(){
 }
 function a4Print(){
   if(!curResident)return;
+  /* デイ利用は別のGAS（統合GAS＝週間計画・ワースケ・シフト共通）から取るので、
+     取得を待ってから組み立てる。★取れなくても紙は必ず出す（デイ利用欄が空欄になるだけ）。
+     空欄になったことは画面に出して知らせる（古い値で埋めない）。
+     ★2回目以降は取得済みを使い回すので待ち時間は出ない（A4_DAY_TTL）。 */
+  /* ★取得を待つあいだの連打を無視する。待たせている間にもう一度押されると、
+     取得は1本にまとまる（a4DayPromise）が then が2回走り、印刷ダイアログが2枚開く */
+  if(a4Printing)return;
+  a4Printing=true;
+  /* ★比較は利用者No。curResident は開き直すたびに別のオブジェクトになるので、
+     同一性で見ると「同じ方を開き直しただけ」でも中止になる */
+  var whoId=a4CurId_();
+  /* ★取得中は必ず知らせる。TTL切れの再取得でも無言で待たせない（L1） */
+  var fresh=!!(a4DayMap&&(Date.now()-a4DayMap.at)>=0&&(Date.now()-a4DayMap.at)<A4_DAY_TTL);
+  if(!fresh)toast('デイ利用（週間計画）を取得しています…');
+  a4EnsureDayMap().then(function(warn){
+    a4Printing=false;
+    /* 待っているあいだに別の方の画面へ移っていたら刷らない（別人の帳票を出さない）。
+       ★黙って終わらせない。押したのに何も起きないと、操作者は壊れたと判断する */
+    if(whoId!==a4CurId_()){
+      toast('別の方の画面へ移ったため、A4様式の印刷を中止しました。もう一度押してください');
+      return;
+    }
+    if(warn)toast(warn);
+    a4PrintNow();
+  });
+}
+function a4CurId_(){ return (curResident&&curResident.id!=null)?String(curResident.id):null; }
+var a4Printing=false;
+function a4PrintNow(){
+  if(!curResident)return;
   a4Off();   // 前回分が残っていても必ず作り直す
   try{
     renderA4(curResident);
@@ -4147,7 +4365,10 @@ function applyDeviceGuard(){
      次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
   /* 現場端末と判った時点で「開いていた方」の番号も消す（他アプリの設定画面から
      'field' へ切り替えられた端末は setDeviceRole を通らないので、ここでも保険をかける） */
-  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[]; }
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[];
+    /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
+       元から書いていないが、メモリ上の控えもここで捨てる */
+    a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg=''; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }
