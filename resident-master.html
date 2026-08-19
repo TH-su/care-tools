@@ -359,6 +359,13 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .fld label{font-size: 0.75rem; color:var(--g7); margin-bottom:3px}
 .fld input,.fld select,.fld textarea{padding:9px 10px; border:1px solid var(--g3); border-radius:8px; width:100%}
 .fld textarea{min-height:72px; resize:vertical}
+/* 「1行に1医院」で入れられる欄（2026-08-19 指示）。医院が2つある方のための2行入力。
+   ★.wide を付けない＝列の幅は他の欄と変わらない。高さだけ増える。
+   ★min-height は textarea の既定(72px)を打ち消す。付け忘れると医療情報の欄だけ縦に伸びる。
+   ★高さは決め打ちしない。長い医院名は1件でも折り返して2行になるため、決め打つと
+     2件目が枠の外に隠れる（実測）。fitLines() が中身に合わせて伸ばし、
+     JSが動かない時も rows="2" で2行ぶんは見える。 */
+.fld textarea.lines{min-height:0; resize:vertical; line-height:1.5; overflow:hidden}
 .fam-row{display:grid; grid-template-columns:1fr 1fr; gap:6px; border:1px solid var(--g2); border-radius:8px; padding:8px; margin-bottom:8px}
 .fam-row .full{grid-column:1/-1}
 .fam-del{justify-self:end; background:none; border:none; color:var(--ng); font-size: 0.8125rem}
@@ -565,17 +572,22 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
      ★これ以上細くできない理由: 生活リズムの1行は 時刻30px＋間8px＋ラベル「おやつ」3文字
        （12px×3=36px）＝74px。左右の padding 2px×2 と枠線 1.5px×2 を足すと 81px。
        88px は「20:00」のような広い時刻表記の余裕ぶん。
-   ★生活リズムは【中身の高さだけ】を取り（flex:0 0 auto）、余りは全部デイ利用へ回す
-     （2026-08-19 指示「生活リズムを上下に縮めて」）。以前は flex:1 で余白を吸っており、
-     6項目で 97px しか要らないところに 158px を使っていた（実測）。 */
+   ★高さは デイ利用:生活リズム＝【3:7】（2026-08-19 の3回目の指示）。
+     ・flex-basis は【0】にする。auto（中身の大きさを基準にして余りだけ配る）だと、
+       利用日数の多い方ほどデイ利用の枠が広がって比率が崩れる（実測で 4:6〜6:4 に割れた）
+     ・3割で足りない時は中身の高さまで必ず確保される（min-height は既定の auto ＝ min-content が
+       下限。ここに min-height:0 を書くと縦書きの時間帯が切れて読めなくなる）
+     ・生活リズムは残りを取り、6項目を枠いっぱいに均等配置する
+     ★経緯: 一度「生活リズムは中身の高さだけ・余りは全部デイ利用へ」にしたが、
+       デイ利用の枠が縦に間延びし、生活リズムが窮屈になった＝行き過ぎだった。 */
 .a4s .a4-rt{flex:0 0 88px; margin-left:3px; display:flex; flex-direction:column; gap:3px}
-.a4s .a4-rhy{flex:0 0 auto; border:1.5px solid #000; padding:2px 2px;
+.a4s .a4-rhy{flex:7 1 0; border:1.5px solid #000; padding:2px 2px;
              display:flex; flex-direction:column}
 .a4s .a4-rhy-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center}
 /* ★gap は入れない（2026-08-19 に 3px を試して差し戻し）。項目が2行になる方
    （「20:00〜21:00」のような範囲表記）では 5本ぶん＝15px がそのまま紙の伸びになり、
-   支援経過が2件減った（実測）。行の高さ（文字×行間）だけで十分に読み分けられる。 */
-.a4s .a4-rhy-list{flex:0 0 auto; display:flex; flex-direction:column;
+   支援経過が2件減った（実測）。枠いっぱいへの均等配置（space-between）で読み分ける。 */
+.a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
                   margin-top:2px; position:relative}
 /* 下向き矢印の縦線。時刻列(36px)とラベル列のあいだに置き、下端は▼の分だけ空ける */
 .a4s .a4-rhy-ln{position:absolute; left:34px; top:1px; bottom:7px; width:2px; background:#000;
@@ -593,10 +605,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★ここに出すのは週間計画（通所の予定）の実データだけ。マスタの dayUse（移行時の旧スプレッドシート
      由来の手書き値）は【出さない】。実測で両者は食い違う（旧値に 9-16 が残る一方、
      現在の週間計画は 9-13 と 9-13.5 の2種類しか無い）。外部へ渡す紙に古い方を載せない。 */
-.a4s .a4-day{flex:1; min-height:0; border:1.5px solid #000; display:flex; flex-direction:column}
+.a4s .a4-day{flex:3 1 0; border:1.5px solid #000; display:flex; flex-direction:column}
 .a4s .a4-day-t{font-size:calc(var(--a4fs,10.5px)*0.85); font-weight:700; text-align:center;
                line-height:1.2; border-bottom:1px solid #000}
-.a4s .a4-day-g{display:flex; flex:1; min-height:0}
+.a4s .a4-day-g{display:flex; flex:1}
 .a4s .a4-day-c{flex:1; min-width:0; border-left:1px solid #666;
                display:flex; flex-direction:column; align-items:center}
 .a4s .a4-day-g .a4-day-c:first-child{border-left:none}
@@ -608,10 +620,15 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ★時間帯は曜日の見出しの【すぐ下】から始める（上揃え）。上下中央に置くと、文字数の違う曜日
    （「9-13.5」6文字と「9-13」4文字）で開始位置がずれ、6列が不揃いに見える＝どの曜日の
    時間かを目で追いにくい。夜勤帯・片手で読む紙なので、揃っていることを優先する。
+   ★ハイフンだけは横棒でなく【縦棒】にする（.hy）。縦組みで「9 から 13.5 まで」と読ませるため。
+     文字そのものは変えない（コピーすれば「9-13.5」のまま・データにも触れない）。
+     回転は inline-block + transform で行う。text-orientation:sideways は環境差があり、
+     効かない端末では横棒のまま出る＝見た目が端末ごとに割れる。
    ★文字を 0.95 倍へ上げるのは【やめた】（2026-08-19 に試して差し戻し）。同じ曜日に2枠ある方の
      「9-13.5／14-16.5」は縦書き13文字で、0.85→0.95 にすると 15px 伸びる。すると右列が左の
      医療情報より高くなって【紙全体が縦に伸び】、支援経過が2件減った（実測）。
      縦書きの列は「いちばん長い方」で決まるので、余白が見えていても上げてはいけない。 */
+.a4s .a4-day-v .hy{display:inline-block; transform:rotate(90deg)}
 /* 見出しだけの行（家族情報の列名）は上下を最大限詰める（2026-08-19 指示）。
    a4Cell は値が空でも全角スペースを1文字入れて行の高さを作るので、その値行ごと消す。
    ★このクラスが付いた行にしか効かない＝他の枠の高さは1pxも変わらない。 */
@@ -3154,11 +3171,35 @@ function fld(k,label,val,type,opts){
     return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'">'+o+'</select></div>';
   }
   if(type==='textarea')return'<div class="fld wide"><label>'+esc(label)+'</label><textarea data-k="'+k+'">'+v+'</textarea></div>';
+  /* 'lines' … 1行入力（input）では改行を入れられないが、2つの医院・2人の医師を
+     「1行に1件」で入れたい欄に使う（2026-08-19 指示）。保存の経路は input と同じ
+     （collectForm は data-k の value を読むだけ）ので、既存データは1バイトも変わらない。
+     ★入力欄を広げる（.wide）と編集画面の並びが変わるので付けない。高さだけ2行ぶん。 */
+  if(type==='lines')return'<div class="fld"><label>'+esc(label)+'</label><textarea data-k="'+k+'" class="lines" rows="2">'+v+'</textarea></div>';
   if(type==='checkbox')return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'"><option value=""'+(!val?' selected':'')+'>無</option><option value="1"'+(val?' selected':'')+'>有</option></select></div>';
   // ISO でない日付は text で表示（空にして消さない）
   var t=(type||'text');
   if(t==='date'&&val&&!isISODate(val))t='text';
   return'<div class="fld"><label>'+esc(label)+'</label><input data-k="'+k+'" type="'+t+'" value="'+v+'"></div>';
+}
+/* 2行入力の欄（.lines）を中身の行数に合わせる。入力中も追随させる。
+   ★44px を下回らせない（タップ領域）。★高さを一度 auto に戻してから測る
+     （前回の高さが残っていると縮まない）。 */
+function fitLines(){
+  var box=$('editBox'); if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('textarea.lines'),function(t){
+    if(t._lfit)return;
+    t._lfit=true;
+    var fit=function(){
+      t.style.height='auto';
+      t.style.height=Math.max(t.scrollHeight, 44)+'px';
+    };
+    t.addEventListener('input',fit);
+    fit();
+    /* ★画面がまだ表示されていない時に測ると scrollHeight が 0 に近く、最小の44pxで止まる。
+       表示された後にもう一度測る（実測で2件目が隠れた）。 */
+    setTimeout(fit,0);
+  });
 }
 function openEdit(rec){
   editing=rec?JSON.parse(JSON.stringify(rec)):{id:null,active:true,family:[],rhythm:{}};
@@ -3274,8 +3315,12 @@ function openEdit(rec){
   '</div></div></div>';
 
   h+='<div class="cd"><div class="fgroup"><h3>医療情報</h3><div class="fgrid">'+
-    fld('hospital','かかりつけ病院',r.hospital)+fld('doctor','主治医',r.doctor)+
-    fld('hospitalTel','電話番号',r.hospitalTel)+fld('hospitalFax','FAX番号',r.hospitalFax)+
+    /* ★この4つだけ2行入力（2026-08-19 指示）。移行時に2つの医院の情報が区切りなしで
+       1つの欄に入った方がおり（例: 病院名が2つ続けて入っている）、紙の上で読み分けられない。
+       機械的に分ける規則は無い（医院名のどこで切れるか判定できない）ので、
+       人が改行で分けられるようにした。改行は3枚の紙とも pre-wrap でそのまま出る。 */
+    fld('hospital','かかりつけ病院',r.hospital,'lines')+fld('doctor','主治医',r.doctor,'lines')+
+    fld('hospitalTel','電話番号',r.hospitalTel,'lines')+fld('hospitalFax','FAX番号',r.hospitalFax,'lines')+
     fld('emergencyHospital','救急搬送先（希望）',r.emergencyHospital)+fld('emergencyHospitalTel','急変時 連絡先TEL',r.emergencyHospitalTel,'tel')+
     fld('visitDay','往診曜日',r.visitDay)+
     fld('pharmacy','かかりつけ薬局',r.pharmacy)+fld('pharmacyTel','電話番号',r.pharmacyTel)+fld('pharmacyFax','FAX番号',r.pharmacyFax)+
@@ -3397,6 +3442,7 @@ function openEdit(rec){
   '</div><p class="muted" style="margin-top:6px">訪問診療アプリは上段の<b>入居者ID</b>で自動的に突合します（手入力は不要です）。下段の「訪問診療 患者ID」は<b>現在どのアプリからも参照されていません</b>。入力済みの値はそのまま保存し続けますが、入れても連携先は変わりません。</p></div></div>';
 
   $('editBox').innerHTML=h;
+  fitLines();
   renderFamRows();
   renderSupportRows();
   renderCareHistRows();
@@ -4296,10 +4342,15 @@ function renderA4(r){
        「利用なし」と読まれる（伏せた欄を空欄にしないのと同じ理由）。
      ★事業所欄を伏せた時は【意図して空にしている】ので「未確認」とは書かない。 */
   var dayUnk=!nop.biz&&dayInfo.state==='unknown';
+  /* 縦書きの中でハイフンだけを縦棒に見せる（縦組みの「9 から 13.5 まで」の読み）。
+     ★文字は1つも変えない。包むだけ＝コピーすれば「9-13.5」のまま、データにも触れない。
+     ★esc() の後に包む。esc はハイフンを変換しないので、この順で安全。 */
+  var a4DayTxt=function(s){ return esc(s).replace(/-/g,'<i class="hy">-</i>'); };
+
   var dayArr=nop.biz?null:dayInfo.days;
   var dayCells=A4_DOW_JA.map(function(lb,i){
     return '<div class="a4-day-c"><span class="a4-day-h">'+esc(lb)+'</span>'+
-           '<span class="a4-day-v">'+esc(dayUnk?'?':((dayArr&&dayArr[i])||''))+'</span></div>';
+           '<span class="a4-day-v">'+a4DayTxt(dayUnk?'?':((dayArr&&dayArr[i])||''))+'</span></div>';
   }).join('');
   /* ★「治療中の病気」「問題行動」は様式化後の正データ（diseases[]・bpsd）から組み立てる。
      旧キー（currentDiseases / problemBehavior）は2026-08-12に入力欄が廃止された凍結値で、
