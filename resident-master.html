@@ -3842,13 +3842,47 @@ function saveResident(){
   apiPost({action:'saveResident',record:rec}).then(function(d){
     var saved=(d&&d.record)||d;
     setSync('保存OK','ok');toast('✅ 保存しました');
-    // roster を更新（軽量行のみ）
-    var row=normRosterRow(saved.id!=null?saved:rec);
-    var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
-    if(idx>=0)roster[idx]=row;else roster.push(row);
-    saveRosterCache();writeCommonRoster();
-    openResident(row.id);
-  }).catch(function(e){setSync('保存失敗','err');toast('⚠️ 保存に失敗: '+e.message)}).then(function(){$('saveBtn').disabled=false});
+    afterSaveOk_(rec,saved);
+  }).catch(function(e){
+    /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（data-contracts §13・2026-08-19 実測）。
+       GAS の /exec は 302 を返し、fetch がそれを GET で追うと doGet が合言葉なしで走って
+       「認証エラー」を返す。doPost の実行そのものは完了している。タイムアウトでも同じ形になる。
+       ここで「失敗しました」とだけ出すと、職員は同じ保存をやり直す＝二重反映と混雑の悪化を招く。
+       **必ず取り直して、実際に入っているかを確かめてから表示を決める。** */
+    setSync('確認中…');
+    return apiGet({action:'getResident',id:rec.id},25000).then(function(d){
+      var got=(d&&d.record)||null;
+      if(got&&saveStampSame_(got.updatedAt,rec.updatedAt)){
+        setSync('保存OK','ok');
+        toast('✅ 保存しました（通信の応答は届きませんでしたが、保存されていることを確認しました）');
+        afterSaveOk_(rec,got);
+        return;
+      }
+      setSync('保存失敗','err');
+      toast('⚠️ 保存できませんでした（サーバー側にも入っていないことを確認しました）。もう一度お試しください');
+    }).catch(function(){
+      /* 確認そのものができなかった＝どちらとも言えない。「失敗した」と断定しない。
+         断定すると、実際には保存できている時にやり直して二重反映になる */
+      setSync('確認できず','err');
+      toast('⚠️ 保存できたか確認できませんでした。画面を再読み込みして、内容が入っているか確かめてください（もう一度保存する前に必ず確認）');
+    });
+  }).then(function(){$('saveBtn').disabled=false});
+}
+/* 保存の目印の照合。updatedAt はクライアントが決めた値をGASがそのまま書くので、
+   これが一致すれば「今回の保存が入った」と言い切れる。
+   ★スプレッドシートは ISO 文字列を日付セルへ自動変換することがあるので、
+     文字列一致ではなく【時刻として】比べる（1秒未満の差は同一とみなす）。 */
+function saveStampSame_(a,b){
+  var pa=Date.parse(a), pb=Date.parse(b);
+  return isFinite(pa)&&isFinite(pb)&&Math.abs(pa-pb)<1000;
+}
+/* 保存が通った後の共通処理（正常応答でも、取り直しで確認できた時でも同じことをする） */
+function afterSaveOk_(rec,saved){
+  var row=normRosterRow((saved&&saved.id!=null)?saved:rec);
+  var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
+  if(idx>=0)roster[idx]=row;else roster.push(row);
+  saveRosterCache();writeCommonRoster();
+  openResident(row.id);
 }
 
 /* ═══════════ 画面遷移 ═══════════ */
@@ -3974,7 +4008,11 @@ function a4Days(from,to){
      移行時の旧スプレッドシート由来の手書き値で、実測で現在値と食い違う。ここでは使わない。
    ★取得できない時は【空欄のまま刷る】。古い値で埋めない。空欄になったことは画面に出して知らせる。 */
 var A4_DOW_JA=['月','火','水','木','金','土'];       // dayOfWeek 0..5（週間計画・せせらぎと同じ並び）
-var A4_DAY_TTL=120000;                              // 取得結果を使い回す時間（連続印刷を速くするため）
+/* 取得結果を使い回す時間。★2026-08-19 に 120秒→10分へ延ばした。週間計画（通所の予定）は
+   週単位の予定表で頻繁には変わらないのに、詳細画面を開くたびに取りに行くと
+   通信が積み上がる（同じ script.google.com へマスタGASと並ぶため、ブラウザの
+   同時接続数も食い合う）。紙に載せる用途では10分の鮮度で十分。 */
+var A4_DAY_TTL=600000;
 var A4_DAY_FAIL_TTL=30000;                          // 失敗を覚えておく時間（押すたびに待たせない）
 var a4DayMap=null;                                  // {at, byMid, byName, dupMid, dupName} ／ null=未取得
 var a4DayPromise=null;                              // 取得中の重複起動を防ぐ
