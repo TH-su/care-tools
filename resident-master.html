@@ -128,7 +128,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    押すとその欄へジャンプする。★表示の切替ではないので入力中の値は失われない。
    高さ44pxはタップ領域の下限（HIG・介護現場要件2）。事務所PCの幅では2行に収まる。
    狭い画面では3行以上になるため、タブ帯だけを縦スクロールさせて本文を潰さない。 */
-.etabs{position:sticky; top:var(--hdr-h,52px); z-index:30; background:#fff;
+/* ★タブ帯は【ボタン帯の下】に貼り付ける。--eact-h は buildEditTabs が実測して入れる
+   （固定値にすると、画面が狭くてボタンが2行に折り返した時にタブがボタンへ潜り込む）。 */
+.etabs{position:sticky; top:calc(var(--hdr-h,52px) + var(--eact-h,60px)); z-index:30; background:#fff;
   border:1px solid var(--g2); border-radius:var(--r); box-shadow:var(--sh);
   display:flex; flex-wrap:wrap; gap:8px; padding:8px; margin-bottom:10px;
   max-height:124px; overflow-y:auto}
@@ -343,6 +345,15 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rhythm .du-note{color:var(--g7); font-size:0.8125rem}   /* --g5 はマスタ側が薄すぎる（約2.6:1） */
 
 .detail-actions{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap}   /* 間隔8px＝誤タップ防止の下限（介護現場要件2） */
+/* ★編集画面の「取消・保存」だけはヘッダーの直下に貼り付ける（2026-08-20 指示）。
+   フォームが23枚のカードに及ぶので、上まで戻らなくても保存できるようにする。
+   ・#sc-edit に限定する。詳細画面（726行）・誕生日一覧・一括編集の同じクラスには効かせない
+   ・背景はページと同じ色を敷く。透明のままだとスクロールしてきた入力欄が透けて重なる
+   ・z-index はタブ帯(30)より上、ヘッダー(50)より下。3段が上から
+     ヘッダー → ボタン → タブ帯 の順で重なる
+   ・印刷では従来どおり出ない（@media print で .detail-actions を消している） */
+#sc-edit .detail-actions{position:sticky; top:var(--hdr-h,52px); z-index:31;
+  background:var(--g0); padding:8px 0; margin-bottom:0}
 /* 見た目は締めつつ、タップ領域は44pxを維持する（HIG・iPadでも使うため） */
 .btn{padding:8px 14px; border:none; border-radius:8px; font-size: 0.875rem; font-weight:700; min-height:44px}
 .btn-pri{background:var(--pri); color:#fff} .btn-ok{background:var(--ok); color:#fff}
@@ -3533,11 +3544,19 @@ function openEdit(rec){
      タブは自動で追従する（＝見出しとタブが食い違わない）。
    ★表示の切替ではないので、入力中の値は失われない。 */
 function hdrH(){ var e=document.querySelector('.hdr'); return e?e.offsetHeight:52 }
+/* 編集画面のボタン帯の高さ（タブ帯を貼り付ける位置に使う）。
+   ★ボタンが折り返して2行になる端末があるので実測する。取れない時は1行ぶんの60px */
+function editBarH(){
+  var e=document.querySelector('#sc-edit .detail-actions');
+  var v=e?Math.round(e.getBoundingClientRect().height):0;
+  return v>0?v:60;
+}
 function buildEditTabs(){
   var bar=$('editTabs'), box=$('editBox');
   if(!bar||!box)return;
   /* タブ帯はヘッダーの直下に貼り付ける。ヘッダーの高さは端末幅で変わるので実測して渡す */
   document.documentElement.style.setProperty('--hdr-h',hdrH()+'px');
+  document.documentElement.style.setProperty('--eact-h',editBarH()+'px');
   var hs=box.querySelectorAll('.fgroup>h3');
   if(!hs.length){bar.hidden=true;bar.innerHTML='';return}
   var html='';
