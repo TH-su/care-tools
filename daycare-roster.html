@@ -592,7 +592,8 @@ table.wk .wk-blank { color: transparent; }
 /* ============================================================================
    通所せせらぎ（5タブ）— 参照中心（書込みは昼食薬lunchMedと非表示dcrHiddenの2フィールドのみ・全端末共通）
    データ源: care_schedule_v2（daycare イベント＋ residents の room / floor / lunchMed /
-             visitingMed / hospitalized / kana）。
+             visitingMed / hospitalized / kana / movedOut / preAdmitted）。
+   ★表に出さない人: 退去(movedOut)と入居前(preAdmitted)。どちらも週間計画が正本で本ツールは読むだけ。
    ★階(1階/2階)の決定は room（入居者マスタ由来の居室）を第一とする。2026-07-21 追加。
      room は care-schedule.html が su_residents_common から「master常勝」で取り込むため、
      入居者マスタで居室を直せば部屋移動が自動で追従する（旧経路＝ワークスケジュールの
@@ -1053,7 +1054,8 @@ function buildModel(db) {
 }
 
 /* ── 非表示設定（全端末共通で表示を絞る）─────────────────────────────────────
-   用途: 入居前などで居室未入力の利用者が表に正しく分配されない時、一時的に表から外す。
+   用途: 居室未入力などで利用者が表に正しく分配されない時、一時的に表から外す。
+        （2026-08-20 以降、入居前の方は preAdmitted で自動的に外れる＝手動で隠す必要はない）
    設計（2026-07-27 全端末共通化）:
      - 状態は care_schedule_v2 の利用者フィールド `dcrHidden`(boolean) に持つ＝サーバ正本・全端末共通。
        書込みは昼食薬(lunchMed)と同じ writeResidentFlag（read-fresh＋rev競合ガード）で当該1フィールドのみ更新。
@@ -1094,6 +1096,30 @@ function viewExcludingHidden(db) {
   if (!db || !Array.isArray(db.residents)) return db;
   if (!db.residents.some(r => r && r.dcrHidden)) return db;
   return Object.assign({}, db, { residents: db.residents.filter(r => !r.dcrHidden) });
+}
+
+/* ── 入居前(preAdmitted)の除外（2026-08-20 運用指示）─────────────────────────
+   入居前の方は「入居後にそのまま使えるよう週間計画を先に作っておく」運用のため、通所予定は
+   入っているが【まだ通っていない】。利用表・与薬・食数の帳票へ出すと実在しない利用者を数えるので、
+   週間計画で「入居済」にするまで5タブ全てと全集計から外す。
+     - 正本は週間計画の resident.preAdmitted のみ（data-contracts §5）。本ツールは読むだけで書かない。
+     - dcrHidden と同型のビュー分離にした。該当者ゼロなら db を同一参照で返す＝入居前を使っていない
+       間の挙動は完全に不変（描画・集計・印刷のどれも変わらない）。
+     - 黙って人を落とさないよう、外した人数を凡例に出す（画面のみ・紙には出さない）。 */
+let preAdmittedNowCount = 0;   // 表から外した「入居前かつ通所予定あり」の人数（凡例バッジ・空状態の説明用）
+function countPreAdmitted(db) {
+  const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  let n = 0;
+  for (const r of residents) {
+    if (!r || r.movedOut || !r.preAdmitted) continue;
+    if (isDaycareResident(r)) n++;   // 通所予定を持つ人だけ数える（元から表に出ない人は勘定に入れない）
+  }
+  return n;
+}
+function viewExcludingPreAdmitted(db) {
+  if (!db || !Array.isArray(db.residents)) return db;
+  if (!db.residents.some(r => r && r.preAdmitted)) return db;
+  return Object.assign({}, db, { residents: db.residents.filter(r => !r.preAdmitted) });
 }
 /* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
 const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
@@ -2168,6 +2194,12 @@ function renderLegend(sc) {
     box.appendChild(el('span', 'warn-badge noprint', '🙈 非表示 ' + hiddenNowCount + '名（全端末共通・右上で解除）'));
     box.appendChild(el('span', 'hide-print-note', '※非表示設定により ' + hiddenNowCount + '名を除外中'));
   }
+  // 入居前（週間計画で設定）を外している時も全タブで明示する（黙って人を落とさない）。
+  //   ★こちらは【画面のみ】（2026-08-20 運用方針: 運用上の注記は紙に出さない）。入居前は正しい業務状態で、
+  //     「解除し忘れ」を紙で知らせる必要がある非表示設定とは性質が違う＝紙面は現行のまま変えない。
+  if (preAdmittedNowCount) {
+    box.appendChild(el('span', 'warn-badge noprint', '🏠 入居前 ' + preAdmittedNowCount + '名（週間計画で「入居済」にすると表に出ます）'));
+  }
   stampPrintDate_();   // 印刷日は常に凡例の最後（＝右端）。印刷時のみ表示されるが、測定にも載せる
 }
 const TAB_KEY = 'dcr_activeTab';   // リロード後も同じタブを開くための端末保存（タブidは個人情報でない）
@@ -2197,6 +2229,10 @@ function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
   db = dcrOverlayMaster(db);   // 入居者マスタ由来の入院/訪問診療を【重ねたコピー】で描画（DBは書き換えない）
+  // 入居前（週間計画で設定）は「まだ通っていない」ので、非表示設定より先に丸ごと外す。
+  // ここで1回外せば、5タブ・全集計・非表示設定の候補一覧のすべてから自動的に消える。
+  preAdmittedNowCount = countPreAdmitted(db);
+  db = viewExcludingPreAdmitted(db);
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
   HIDE_CANDIDATES = collectHideCandidates(db);
   hiddenNowCount = HIDE_CANDIDATES.filter(c => c.hidden).length;   // 現候補のうち実際に隠れている人数
@@ -2215,9 +2251,17 @@ function renderAll(db) {
     $('weeklyPages').textContent = '';
     $('hospBox').style.display = 'none';
     empty.classList.add('on');
-    // 元データはあるが全員を非表示にしている場合は、その旨を出して解除へ導く（黙って空にしない）。
+    // 元データはあるが全員が「非表示設定」または「入居前」で落ちている場合は、その旨と戻し方を出す
+    // （黙って空にしない）。両方が同時に起きうるので、該当する理由を全部並べる。
+    const why = [], how = [];
     if (HIDE_CANDIDATES.length && hiddenNowCount >= HIDE_CANDIDATES.length) {
-      $('emptyMsg').textContent = '表示できる利用者がいません（' + hiddenNowCount + '名を非表示設定中）。右上「非表示設定」で解除できます。';
+      why.push(hiddenNowCount + '名を非表示設定中'); how.push('右上「非表示設定」で解除できます');
+    }
+    if (preAdmittedNowCount) {
+      why.push(preAdmittedNowCount + '名が入居前'); how.push('入居前の方は週間計画で「入居済」にすると表に出ます');
+    }
+    if (why.length) {
+      $('emptyMsg').textContent = '表示できる利用者がいません（' + why.join('／') + '）。' + how.join('。') + '。';
     } else {
       $('emptyMsg').textContent = db ? '通所（デイサービス）の予定がありません。' : '週間計画のデータが見つかりません。';
     }
