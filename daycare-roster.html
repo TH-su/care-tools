@@ -1106,20 +1106,29 @@ function viewExcludingHidden(db) {
      - dcrHidden と同型のビュー分離にした。該当者ゼロなら db を同一参照で返す＝入居前を使っていない
        間の挙動は完全に不変（描画・集計・印刷のどれも変わらない）。
      - 黙って人を落とさないよう、外した人数を凡例に出す（画面のみ・紙には出さない）。 */
-let preAdmittedNowCount = 0;   // 表から外した「入居前かつ通所予定あり」の人数（凡例バッジ・空状態の説明用）
+let preAdmittedNowCount = 0;      // 表から外した「入居前かつ通所予定あり」の人数（凡例バッジ・空状態の説明用）
+let preAdmittedHiddenCount = 0;   // うち非表示設定(dcrHidden)も付いている人数（下のコメント参照）
+/* ★入居前と非表示設定が重なっている人の予告（2026-08-20 レビュー指摘）。
+   本改修より前は「入居前の方を手動で非表示にする」のが公式の回避策だったため、
+   preAdmitted かつ dcrHidden の方が実データに残りうる。その人は入居前の間、非表示設定の
+   候補一覧（除外後の db から作る）にも出ないので dcrHidden を外す操作経路が無く、
+   入居済みに戻しても【非表示設定のせいで表に出ない】。凡例の「入居済にすると出ます」と
+   食い違うので、重なっている人数を先に知らせる（データは書き換えない＝解除は本人の操作）。 */
 function countPreAdmitted(db) {
   const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
-  let n = 0;
+  let n = 0, h = 0;
   for (const r of residents) {
     if (!r || r.movedOut || !r.preAdmitted) continue;
-    if (isDaycareResident(r)) n++;   // 通所予定を持つ人だけ数える（元から表に出ない人は勘定に入れない）
+    if (!isDaycareResident(r)) continue;   // 通所予定を持つ人だけ数える（元から表に出ない人は勘定に入れない）
+    n++;
+    if (r.dcrHidden) h++;
   }
-  return n;
+  return { total: n, hidden: h };
 }
 function viewExcludingPreAdmitted(db) {
   if (!db || !Array.isArray(db.residents)) return db;
   if (!db.residents.some(r => r && r.preAdmitted)) return db;
-  return Object.assign({}, db, { residents: db.residents.filter(r => !r.preAdmitted) });
+  return Object.assign({}, db, { residents: db.residents.filter(r => r && !r.preAdmitted) });
 }
 /* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
 const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
@@ -2198,7 +2207,10 @@ function renderLegend(sc) {
   //   ★こちらは【画面のみ】（2026-08-20 運用方針: 運用上の注記は紙に出さない）。入居前は正しい業務状態で、
   //     「解除し忘れ」を紙で知らせる必要がある非表示設定とは性質が違う＝紙面は現行のまま変えない。
   if (preAdmittedNowCount) {
-    box.appendChild(el('span', 'warn-badge noprint', '🏠 入居前 ' + preAdmittedNowCount + '名（週間計画で「入居済」にすると表に出ます）'));
+    let t = '🏠 入居前 ' + preAdmittedNowCount + '名（週間計画で「入居済」にすると表に出ます）';
+    // 非表示設定が重なっている人は、入居済にしても非表示のままで出てこない＝先に知らせる
+    if (preAdmittedHiddenCount) t += '／うち ' + preAdmittedHiddenCount + '名は非表示設定も付いています（入居済にした後、右上「非表示設定」で解除してください）';
+    box.appendChild(el('span', 'warn-badge noprint', t));
   }
   stampPrintDate_();   // 印刷日は常に凡例の最後（＝右端）。印刷時のみ表示されるが、測定にも載せる
 }
@@ -2231,7 +2243,8 @@ function renderAll(db) {
   db = dcrOverlayMaster(db);   // 入居者マスタ由来の入院/訪問診療を【重ねたコピー】で描画（DBは書き換えない）
   // 入居前（週間計画で設定）は「まだ通っていない」ので、非表示設定より先に丸ごと外す。
   // ここで1回外せば、5タブ・全集計・非表示設定の候補一覧のすべてから自動的に消える。
-  preAdmittedNowCount = countPreAdmitted(db);
+  const pre_ = countPreAdmitted(db);
+  preAdmittedNowCount = pre_.total; preAdmittedHiddenCount = pre_.hidden;
   db = viewExcludingPreAdmitted(db);
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
   HIDE_CANDIDATES = collectHideCandidates(db);
