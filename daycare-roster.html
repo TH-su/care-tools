@@ -80,7 +80,7 @@ body {
 .warn-badge { color: var(--ng); font-weight: 700; }
 .hide-print-note { display: none; }   /* 非表示適用中に印刷帳票だけへ出す注記（画面では非表示・@media print で表示）＝人が無言で欠落する事故を防ぐ */
 
-/* ===== 表（既存の利用表タブ・無改変）===== */
+/* ===== 表（利用表タブ）===== */
 .wrap {
   flex: 1; overflow: auto; padding: 12px; -webkit-overflow-scrolling: touch;
   position: relative;   /* .board-empty(position:absolute; inset:0) の位置指定祖先。無いとビューポート基準になりタブバーを覆う */
@@ -91,18 +91,50 @@ body {
 table.roster {
   border-collapse: collapse; background: #fff; margin: 0 auto; box-shadow: var(--sh);
   table-layout: fixed;
+  /* ★文字サイズを変数化（2026-08-17）。画面は従来どおり 0.75rem＝端末の文字サイズ設定に追従する
+     （px 直書きにするとブラウザの文字サイズ変更が効かなくなる＝改修前の 0.75rem からの後退になる）。
+     印刷時のみ fitRosterPrint_ が用紙1枚に収まる最大値を px で決める（帳票タブの --sh-fs と同じ作法）。
+     ★印刷の適用は @media print 内の後勝ち規則（#dyn-roster）で行い、画面へは持ち越さない。 */
+  --ro-fs: 0.75rem;
 }
 table.roster th, table.roster td {
-  border: 1px solid var(--line); padding: 2px 4px; font-size: 0.75rem; line-height: 1.3;
+  border: 1px solid var(--line); padding: 2px 4px; font-size: var(--ro-fs); line-height: 1.3;
   text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 table.roster thead th { background: var(--g1); font-weight: 700; height: 30px; }
 .col-time { width: 78px; background: var(--g0); }
 .col-rn   { width: 30px; color: var(--g6); font-weight: 400; background: var(--g0); }
+/* No.列は「何番目か」を数える目盛りで、現場が読み取る値ではない。列幅が固定なので印刷の文字拡大に
+   付き合わせると2桁(10〜)が欠ける。ここだけ従来サイズを上限にする（帳票タブの .c-rn と同じ扱い）。
+   ★min() なので縮小方向には従う（9pxまで縮む時は一緒に縮む）。
+   ★セレクタは必ず table.roster を付ける。`.col-rn` 単独では上の
+     `table.roster th, table.roster td`（クラス1＋要素2）に詳細度で負けて無効になる。 */
+table.roster .col-rn { font-size: min(var(--ro-fs), 12px); }
 .col-day  { width: 118px; }
+/* 階ラベル列（利用時間欄の右隣・2026-08-17 運用指示「2階が上・1階が下」）。
+   幅28pxに「階未設定」を横書きで入れると nowrap+overflow:hidden で切れて読めないため縦書きにする
+   （帳票タブの .c-sec と同じ理由・同じ作法）。色は他タブと統一（2階=緑／1階=水色／未設定=薄橙）。
+   色だけに意味を持たせず「２階」「１階」の文字でも示す（HIG: 色覚特性配慮）。 */
+.col-flr {
+  width: 28px; background: var(--g0); font-weight: 700;
+  writing-mode: vertical-rl; text-orientation: upright;
+}
+/* ★overflow と font-size は必ず table.roster 付きで指定する。`.col-flr` 単独では
+   `table.roster th, table.roster td`（クラス1＋要素2）に詳細度で負け、overflow:hidden のままになる
+   ＝1行しかない階ブロック（例「階未設定」1名）で縦書きラベルが切れる。
+   ★縦書きなので文字サイズは【列幅】を食う。28px 列に収まる上限を付ける（印刷の拡大時も欠けない）。
+     縮小方向には従う（min）。字間は 0（1文字ぶんの高さを無駄に増やさないため）。 */
+table.roster .col-flr { overflow: visible; letter-spacing: 0; font-size: min(var(--ro-fs), 15px); }
+.col-flr.f2 { background: var(--sese); }
+.col-flr.f1 { background: #b3e5fc; }
+.col-flr.f0 { background: #fff3e0; }   /* 階未設定＝黙って落とさず可視化（他タブの .nofloor と同色） */
+/* 同じ利用時間帯の中で階が切り替わる行に太い上罫線（border-collapse なので太い方が勝つ） */
+table.roster tr.flr-top td, table.roster tr.flr-top th { border-top: 2px solid var(--g8); }
 .th-day.sat { color: #1565c0; }
 .th-day.sun { color: #c0392b; }
-.plan-label { background: var(--g0); font-weight: 700; font-size: 0.75rem; writing-mode: horizontal-tb; }
+/* ★font-size は table.roster 付き（.plan-label 単独では上のセル規則に詳細度で負けて無効になる） */
+.plan-label { background: var(--g0); font-weight: 700; writing-mode: horizontal-tb; }
+table.roster .plan-label { font-size: var(--ro-fs); }
 td.user { text-align: start; }
 td.user.bath { background: var(--bath-bg); }        /* デイ参加日に入浴あり=黄 */
 td.empty { background: #fff; }
@@ -111,6 +143,9 @@ table.roster tr.spacer td { height: 10px; background: var(--g2); border-left: 1p
 /* 入院中（ワークスケジュールの入院入力＝care_schedule_v2 の hospitalized を反映）。
    色だけに頼らず「（入院）」の文言でも示す（HIG: 色覚特性配慮） */
 .hosp-tag { color: var(--ng); font-weight: 700; font-size: 0.6875rem; margin-left: 3px; white-space: nowrap; }
+/* 利用表の（入院）は本文サイズに連動させる（既定12px時は11px＝従来と同値）。固定pxだと印刷の
+   文字拡大時に（入院）だけ取り残されて見落とされる（帳票タブの .c-nm .hosp-tag と同じ扱い）。 */
+table.roster .hosp-tag { font-size: calc(var(--ro-fs) * 0.92); }
 tr.tot th { background: var(--g1); font-weight: 700; }
 tr.tot td { font-weight: 700; }
 tr.tot.use td { color: var(--pri-d); }
@@ -134,8 +169,11 @@ table.sheet th, table.sheet td {
    曜日見出しを colspan=3 で1行目に置く本表では、2行目に書いた幅指定は無視されて自動配分される。
    ★ここの値は JS の W（setupSheet が table 幅を明示するのに使う）と必ず一致させること。
    食い違うと fixed が差分を各列へ再配分し、colgroup 側の指定が黙って無効化される。
-   用紙の幅予算はどれも 1062px（A4横・A3縦とも 297mm − 余白8mm×2）。現在の内訳（2026-08-05 更新）:
-   med    : 24 + 20 + 6×(80+34+34) = 932px。右の備考パネル112+gap8 を足して 1052px ≦ 1062px
+   用紙の幅予算はどれも 1062px（A4横・A3縦とも 297mm − 余白8mm×2）。現在の内訳（2026-08-17 更新）:
+   med    : 24 + 20 + 6×(76+46+46) = 1052px ≦ 1062px
+     ★2026-08-17 運用指示: 右の備考パネル(112+gap8)を削除し、空いた幅を表へ回した
+       （氏名80→76・時刻34→46＝daylist と同値）。時刻列が46pxになったため印刷の文字拡大も解禁した
+       （SHEET_FS_MAX_BY_TAB に sc-med を追加）。
    daylist: 24 + 26 + 6×(76+46+46) = 1058px ≦ 1062px。備考は表の下＝表は全幅
    allweek: 44 +      6×(76+46+46) = 1052px ≦ 1062px
      ★2026-08-05: 氏名(96/100→76)を縮めて時刻(36/34→46)へ回した。時刻は帳票で最も読まれる値だが
@@ -151,16 +189,19 @@ table.sheet col.w-rn    { width: 20px; }
    ※印刷の文字拡大（最大15px）は .c-rn には効かない（下の min() で 11px 上限）。 */
 table.sheet col.w-rn-dl { width: 26px; }
 table.sheet col.w-rn-aw { width: 44px; }    /* 全員リスト用 No.列（合計行の「入居者」を収める・★JS W.rnAw と一致必須） */
-table.sheet col.w-nm    { width: 80px; }    /* med用 氏名列（右に備考・拡幅で折返し減＝行高も下がる） */
+table.sheet col.w-nm    { width: 76px; }    /* med用 氏名列（★JS W.nm と一致必須） */
 /* ★2026-08-05 運用指示: 氏名欄が広く時刻が小さくて読みづらいため、氏名を縮めて時刻へ回した。
    表の総幅(1052px)は据え置き＝用紙の幅予算(1062px)は変えていない。
    氏名76px でも .c-nm は折返す（欠けない）。時刻46px なら 13px 太字の「13:00」が余裕で入る。 */
 table.sheet col.w-nm-aw { width: 76px; }    /* 全員リスト用 氏名列（★JS W.nmAw と一致必須） */
 table.sheet col.w-nm-dl { width: 76px; }    /* デイ利用者一覧表用 氏名列（★JS W.nmDl と一致必須） */
-table.sheet col.w-tm    { width: 34px; }
+/* med用 時刻列。2026-08-17 に右の備考パネルを削除した幅（120px）を時刻へ回して 34→46px。
+   34px では 11px でも太字「13:00」が欠けるため padding を詰めて凌いでいたが、46px なら余裕で収まる
+   （daylist で実測済みの値と同一）。★JS W.tm と一致必須。 */
+table.sheet col.w-tm    { width: 46px; }
 table.sheet col.w-tm-aw { width: 46px; }    /* 全員リスト用 時刻列（★JS W.tmAw と一致必須） */
 table.sheet col.w-tm-dl { width: 46px; }    /* デイ利用者一覧表用 時刻列（★JS W.tmDl と一致必須） */
-/* 氏名は欠けさせない: 最小の氏名列(med=80px)でも nowrap だと8文字以上で末尾が切れる。
+/* 氏名は欠けさせない: 最小の氏名列(76px)でも nowrap だと8文字以上で末尾が切れる。
    氏名の欠落は帳票として許容できないため折返す（既存の利用表タブと同じ方針）。
    ★padding を詰めるのは必須。折返しの判定は「内容ボックス」で行われる一方 overflow:hidden は
    「パディングボックス」で切るため、既定の padding(左右3px)のままだと内容ボックスが狭まり、
@@ -169,9 +210,10 @@ table.sheet .c-nm {
   text-align: start; white-space: normal; word-break: break-all;
   padding-left: 1px; padding-right: 1px;
 }
-/* 時刻セル: 34px 列でも 11px フォントの「13:00」(31.6px)は描画可能幅に入らない。
-   34 − 左右border/padding を引くと実質 30px 前後で末尾の「0」が欠ける（開始9:00は4文字で収まり見落としやすい）。
-   列は幅予算(1062px)の都合で広げられないので、padding を詰めて 10px フォントで収める。 */
+/* 時刻セル: 列を 34px で運用していた頃、11px フォントの「13:00」(31.6px)が描画可能幅に入らず
+   末尾の「0」が欠けた（開始9:00は4文字で収まり見落としやすい）。その対策として padding を詰めてある。
+   ★2026-08-17 に全帳票の時刻列が46pxになったので余裕はあるが、詰めた padding は行高の節約にも
+     効いているため据え置く。 */
 /* 時刻は帳票で最も読まれる値。太字にして視認性を上げる（2026-08-05 運用指示）。
    色も本文と同じ濃さへ（従来の --g7 は薄く、縮小印刷で沈んでいた）。 */
 table.sheet .c-tm { color: var(--g9); font-size: var(--sh-tm); font-weight: 700;
@@ -204,11 +246,7 @@ table.sheet .c-sum-lb {
 /* safe center: 収まる時は中央、はみ出す時は左詰め。素の center だと内容が容器より広い場合に
    左側がはみ出してスクロールで到達できなくなる（区画ラベル列が永久に見えなくなる）。 */
 .sheet-row { display: flex; gap: 8px; align-items: flex-start; justify-content: safe center; width: max-content; min-width: 100%; }
-.note-panel {
-  flex: 0 0 112px; align-self: stretch;   /* 細く＋表と同じ高さに伸ばす（表を広げるため幅を詰める） */
-  background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
-  padding: 6px 8px; font-size: 0.625rem; line-height: 1.5; color: var(--g8);
-}
+/* ※薬用の右側備考パネル(.note-panel)は 2026-08-17 運用指示で削除した（空いた幅は表へ回した）。 */
 /* デイ利用者一覧表の備考は「表の下」に置く＝横幅を表に使い切る。幅は JS で表と同じにし中央寄せ・横並びでコンパクト。 */
 .note-below {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px;
@@ -263,8 +301,6 @@ table.sheet tr.cut-title th {
    印刷の文字拡大時に☆だけ取り残されて見落とされる。 */
 table.sheet .star { font-size: var(--sh-fs); }
 .nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
-.note-box { white-space: pre-wrap; }
-.med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 0.75rem; }
 
 /* ===== 薬用: 画面専用の入居者チェックリスト（印刷されない）===== */
 .chk-panel {
@@ -382,12 +418,24 @@ table.wk .wk-blank { color: transparent; }
     color: #000; padding: 0 2mm 1mm 0; }
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
-  /* 印刷時は列幅を詰めてA4縦の印刷可能幅(≈733px@96dpi)に確実に収める（固定列幅の合計＜用紙幅）。
-     width:auto＋margin auto で実寸サイズのまま中央寄せ。6列=620px／7列=708px でどちらも収まる。 */
-  table.roster { box-shadow: none; width: auto; }
-  .col-time { width: 68px; }
-  .col-rn { width: 24px; }
-  .col-day { width: 88px; }
+  /* 印刷の列幅はA4縦の印刷可能幅(≈733px@96dpi)を使い切る値を JS が算出して渡す
+     （setRosterPrintCols_ が --ro-w-* を表のインラインstyleへ設定＝曜日数で自動配分）。
+     ★2026-08-17 運用指示「左右に余白があるためできるだけ大きく」。旧指定は 68/24/88（合計620px）だったが、
+       width:auto のため自動レイアウトに置き換わり、実際には用紙幅733pxまで内容依存で引き伸ばされていた
+       （実測）。つまり余っていたのは幅ではなく【縦】と【文字の大きさ】で、列は不均等だった。
+       下の fallback 値は JS が動かなかった時の従来指定。
+     ★--ro-w-* は @media print の中でしか参照しない＝画面の列幅(78/30/118)は不変。
+     ★width は 100%（＝用紙の印刷可能幅ぴったり）。旧 width:auto では table-layout:fixed が無効化され
+       （CSS 2.1 §17.5.2.1「width:auto なら自動アルゴリズムを使う」）、列幅が内容依存でばらついていた
+       ＝人数の多い曜日だけ列が広く、少ない曜日は狭く、同じ氏名が曜日によって折り返す状態だった。
+       幅を明示すると固定レイアウトが成立し、曜日列が均等になる（元Excelと同じ見た目）。
+       ★固定レイアウトでは nowrap セルが列を超えると欠ける。利用時間列は文字サイズに比例して広げ、
+         No.列と階ラベルには文字サイズ上限を付けてあるのが対策（上の各規則）。 */
+  table.roster { box-shadow: none; width: 100%; }
+  .col-time { width: var(--ro-w-time, 68px); }
+  .col-flr  { width: var(--ro-w-flr, 26px); }
+  .col-rn { width: var(--ro-w-rn, 24px); }
+  .col-day { width: var(--ro-w-day, 88px); }
   table.roster th, table.roster td { border-color: #000; padding: 2px 3px; }
   /* 氏名＋（入院）で列が広がり用紙幅を超えるのを防ぐ: 印刷では折返して列幅を固定に保つ
      （nowrap のままだと列が伸び、入院者が複数曜日に出た時に A4縦の印刷可能幅を超える）。
@@ -484,7 +532,7 @@ table.wk .wk-blank { color: transparent; }
     <div class="sheet-title" id="medTitle">デイ利用者一覧表（薬用）</div>
     <div class="sheet-row">
       <table class="sheet" id="tblMed" aria-label="薬用一覧表"></table>
-      <aside class="note-panel" id="noteMed" aria-label="備考"></aside>
+      <!-- 右側の備考パネルは 2026-08-17 運用指示で削除（空いた幅は表の列へ回した） -->
       <aside class="chk-panel noprint" id="chkMed" aria-label="昼食薬チェック（全端末に保存・この欄は印刷されません）"></aside>
     </div>
   </section>
@@ -1050,10 +1098,18 @@ const countOn  = (ppl, d) => onDay(ppl, d).filter(p => !p.hosp).length;
 const countOff = (ppl, d) => offDay(ppl, d).filter(p => !p.hosp).length;
 
 /* ============================================================================
-   View 0 — 利用表（既存・無改変）
+   View 0 — 利用表（利用時間帯 × 居室階）
+   ★2026-08-17 運用指示: 各利用時間帯の中を居室の階で分け（２階が上・１階が下）、
+     階ラベルを利用時間欄の右隣に出す。氏名は階ごとに五十音順。
+     階の決定は他タブ（buildModel）と同じ「居室(room)が第一・週間計画のfloorが次・0=未設定」。
+     ★合計（入浴合計・利用合計）の数え方は改修前と完全に同一＝集計は触っていない。
    ============================================================================ */
+const FLOOR_ORDER = [2, 1, 0];                                        // ２階 → １階 → 階未設定
+const FLOOR_LABEL = { 2: '２階', 1: '１階', 0: '階未設定' };
+const byKana = (a, b) => String(a.kana || a.name).localeCompare(String(b.kana || b.name), 'ja');   // 五十音順（他タブと同じ整列規則）
+
 function collectDaycare(db) {
-  const plansMap = {};                       // key "s-e" -> { label, s, e, days:[7][] }
+  const plansMap = {};                       // key "s-e" -> { label, s, e, floors: { [floor]: days[7][] } }
   const hosp = new Set();
   const bath = [0, 0, 0, 0, 0, 0, 0];
   const use  = [0, 0, 0, 0, 0, 0, 0];
@@ -1062,6 +1118,9 @@ function collectDaycare(db) {
   for (const r of residents) {
     if (!r || r.movedOut) continue;
     const evs = Array.isArray(r.events) ? r.events : [];
+    // 階: ①居室(入居者マスタ由来) → ②週間計画の旧設定 → ③0=未設定（buildModel と同じ判定）
+    const floor = roomToFloor(r.room) || ((r.floor === 1 || r.floor === 2) ? r.floor : 0);
+    const kana  = String(r.kana || '');
     for (const ev of evs) {
       if (!ev || ev.serviceType !== 'daycare') continue;
       const dow = Number(ev.dayOfWeek);
@@ -1072,8 +1131,10 @@ function collectDaycare(db) {
       const isHosp = !!r.hospitalized;               // ワークスケジュール／週間計画の入院入力
       if (isHosp) hosp.add(name);
       const key = s + '-' + e;
-      if (!plansMap[key]) plansMap[key] = { label: minToLabel(s) + '〜' + minToLabel(e), s: s, e: e, days: [[], [], [], [], [], [], []] };
-      plansMap[key].days[dow].push({ name: name, bath: !!ev.bathing, hosp: isHosp });
+      if (!plansMap[key]) plansMap[key] = { label: minToLabel(s) + '〜' + minToLabel(e), s: s, e: e, floors: {} };
+      const fl = plansMap[key].floors;
+      if (!fl[floor]) fl[floor] = [[], [], [], [], [], [], []];
+      fl[floor][dow].push({ name: name, kana: kana, bath: !!ev.bathing, hosp: isHosp });
       if (!isHosp) {                                 // 入院中は実稼働ではないため合計に数えない
         use[dow]++;
         if (ev.bathing) bath[dow]++;
@@ -1081,8 +1142,60 @@ function collectDaycare(db) {
       if (dow > maxDay) maxDay = dow;
     }
   }
-  const plans = Object.values(plansMap).sort((a, b) => a.s - b.s || a.e - b.e);
+  // 時間帯ごとに階ブロックへ組み直す。該当者0名の階はブロックを作らない（空行を出さない）。
+  const plans = Object.values(plansMap).sort((a, b) => a.s - b.s || a.e - b.e).map(p => {
+    const blocks = [];
+    FLOOR_ORDER.forEach(f => {
+      const days = p.floors[f];
+      if (!days) return;
+      let rows = 0;
+      for (let d = 0; d <= 6; d++) { days[d].sort(byKana); if (days[d].length > rows) rows = days[d].length; }
+      if (rows) blocks.push({ floor: f, days: days, rows: rows });
+    });
+    return { label: p.label, s: p.s, e: p.e, blocks: blocks };
+  });
   return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: maxDay + 1 };
+}
+
+/* 印刷の列幅を用紙幅いっぱいに配分する（2026-08-17 運用指示「左右の余白を余らせない」）。
+   ★画面の列幅は不変。--ro-w-* は @media print の中でしか参照されない。
+   A4縦・余白8mm の印刷可能幅は 733px。固定分（利用時間+階+No.）を引いた残りを曜日数で割る。 */
+const RO_PR_TIME = 68, RO_PR_FLR = 28, RO_PR_RN = 24;   // 下限（従来の指定値）
+/* 利用時間ラベル（例 10:00〜13:30）が欠けない列幅を、実際のラベル文字列から測る。
+   ★固定レイアウトでは列幅を超えた nowrap セルは切られる。従来の 68px 指定は width:auto＝自動レイアウトに
+     救われて実際には 94px 貰っていただけで、幅を明示した今そのまま使うと 12px でも末尾が欠ける（実測）。
+   ★時刻は帳票で最も読まれる値なので、ここは必要な幅を必ず確保し、残りを曜日列へ配る。 */
+function rosterTimeColW_(table, f) {
+  // 見出し「利用時間」も測る（実データでは時間帯ラベルの方が広いが、暗黙の前提にしない）
+  const labels = table.querySelectorAll('tbody th.plan-label, thead th.col-time');
+  if (!labels.length) return Math.round(RO_PR_TIME * f / ROSTER_FS_BASE);
+  const cs = getComputedStyle(labels[0]);
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;'
+    + 'font-family:' + cs.fontFamily + ';font-weight:' + cs.fontWeight
+    + ';letter-spacing:' + cs.letterSpacing + ';font-size:' + f + 'px';
+  document.body.appendChild(probe);
+  let maxW = 0;
+  for (let i = 0; i < labels.length; i++) {
+    probe.textContent = labels[i].textContent;
+    const w = probe.getBoundingClientRect().width;
+    if (w > maxW) maxW = w;
+  }
+  probe.remove();
+  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + 2;   // padding＋罫線
+  return Math.max(RO_PR_TIME, Math.ceil(maxW + pad + 1));                                   // +1 は丸めの安全代
+}
+function setRosterPrintCols_(table, nCols, fs) {
+  const f = (fs > 0) ? fs : ROSTER_FS_BASE;
+  /* 階ラベルは縦書き＝列幅は1文字分で足りる／No.列は文字サイズ上限つき（上の CSS）なので固定。 */
+  const time  = rosterTimeColW_(table, f);
+  const avail = pageWidthPx_(null);                                     // A4縦8mm → 733.4px
+  const rest  = avail - time - RO_PR_FLR - RO_PR_RN;
+  const day   = Math.max(60, Math.floor(rest / Math.max(1, nCols)));    // 60px は氏名が読める下限の保険
+  table.style.setProperty('--ro-w-time', time + 'px');
+  table.style.setProperty('--ro-w-flr', RO_PR_FLR + 'px');
+  table.style.setProperty('--ro-w-rn', RO_PR_RN + 'px');
+  table.style.setProperty('--ro-w-day', day + 'px');
 }
 
 function renderRoster(db) {
@@ -1095,6 +1208,7 @@ function renderRoster(db) {
   const thead = el('thead');
   const htr = el('tr');
   htr.appendChild(el('th', 'col-time', '利用時間'));
+  htr.appendChild(el('th', 'col-flr', '階'));
   htr.appendChild(el('th', 'col-rn', ''));
   for (let d = 0; d < nCols; d++) {
     htr.appendChild(el('th', 'th-day col-day' + (d === 5 ? ' sat' : d === 6 ? ' sun' : ''), DAYS_JA[d]));
@@ -1104,35 +1218,47 @@ function renderRoster(db) {
 
   const tbody = el('tbody');
   data.plans.forEach((plan, pi) => {
-    let nRows = 1;
-    for (let d = 0; d < nCols; d++) nRows = Math.max(nRows, plan.days[d].length);
-    for (let i = 0; i < nRows; i++) {
-      const tr = el('tr');
-      if (i === 0) {
-        const lbl = el('th', 'plan-label', plan.label);
-        lbl.rowSpan = nRows;
-        tr.appendChild(lbl);
-      }
-      tr.appendChild(el('td', 'col-rn', String(i + 1)));
-      for (let d = 0; d < nCols; d++) {
-        const u = plan.days[d][i];
-        if (u) {
-          const td = el('td', 'user' + (u.bath ? ' bath' : ''));
-          td.appendChild(document.createTextNode(u.name));
-          if (u.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
-          td.title = u.name + (u.hosp ? '（入院）' : '') + (u.bath ? '（入浴あり）' : '');
-          tr.appendChild(td);
-        } else {
-          tr.appendChild(el('td', 'empty', ''));
+    // 利用時間ラベルは時間帯の全行（＝各階ブロックの行数の合計）を占有する
+    let nRows = 0;
+    plan.blocks.forEach(b => { nRows += b.rows; });
+    if (!nRows) nRows = 1;
+    let first = true;                                  // 時間帯の先頭行（利用時間ラベルを置く行）か
+    plan.blocks.forEach((blk, bi) => {
+      for (let i = 0; i < blk.rows; i++) {
+        const tr = el('tr');
+        if (first) {
+          const lbl = el('th', 'plan-label', plan.label);
+          lbl.rowSpan = nRows;
+          tr.appendChild(lbl);
         }
+        if (i === 0) {
+          const fl = el('th', 'col-flr f' + blk.floor, FLOOR_LABEL[blk.floor]);
+          fl.rowSpan = blk.rows;
+          tr.appendChild(fl);
+        }
+        tr.appendChild(el('td', 'col-rn', String(i + 1)));   // 連番は階ごとに1から（他タブと同じ作法）
+        for (let d = 0; d < nCols; d++) {
+          const u = blk.days[d][i];
+          if (u) {
+            const td = el('td', 'user' + (u.bath ? ' bath' : ''));
+            td.appendChild(document.createTextNode(u.name));
+            if (u.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+            td.title = u.name + (u.hosp ? '（入院）' : '') + (u.bath ? '（入浴あり）' : '');
+            tr.appendChild(td);
+          } else {
+            tr.appendChild(el('td', 'empty', ''));
+          }
+        }
+        if (bi > 0 && i === 0) tr.classList.add('flr-top');   // 同じ時間帯の中で階が切り替わる境目
+        tbody.appendChild(tr);
+        first = false;
       }
-      tbody.appendChild(tr);
-    }
+    });
     // 利用時間帯ブロックの間に空白行を1本入れて上下を分断（最後のブロックの後には入れない）
     if (pi < data.plans.length - 1) {
       const sp = el('tr', 'spacer');
       const spTd = el('td');
-      spTd.colSpan = 2 + nCols;   // plan-label列 + col-rn列 + 曜日列
+      spTd.colSpan = 3 + nCols;   // plan-label列 + col-flr列 + col-rn列 + 曜日列
       sp.appendChild(spTd);
       tbody.appendChild(sp);
     }
@@ -1141,14 +1267,19 @@ function renderRoster(db) {
 
   const tfoot = el('tfoot');
   const bathTr = el('tr', 'tot bath-row');
-  const bth = el('th', null, '入浴合計'); bth.colSpan = 2; bathTr.appendChild(bth);
+  const bth = el('th', null, '入浴合計'); bth.colSpan = 3; bathTr.appendChild(bth);   // 利用時間+階+No.
   for (let d = 0; d < nCols; d++) bathTr.appendChild(el('td', null, String(data.bath[d])));
   tfoot.appendChild(bathTr);
   const useTr = el('tr', 'tot use');
-  const uth = el('th', null, '利用合計'); uth.colSpan = 2; useTr.appendChild(uth);
+  const uth = el('th', null, '利用合計'); uth.colSpan = 3; useTr.appendChild(uth);
   for (let d = 0; d < nCols; d++) useTr.appendChild(el('td', null, String(data.use[d])));
   tfoot.appendChild(useTr);
   table.appendChild(tfoot);
+
+  /* 印刷の列幅を用紙幅いっぱいに配分（画面幅は不変）。
+     ★必ず表を組み立てた後に呼ぶ。利用時間ラベルの実幅を測って列幅を決めるため、
+       行が無い状態で呼ぶと仮の値(68px)になり、印刷フィットが走らない経路でラベルが欠ける。 */
+  setRosterPrintCols_(table, nCols);
 
   const hospBox = $('hospBox');
   if (data.hosp.length) { $('hospNames').textContent = data.hosp.join('　'); hospBox.style.display = ''; }
@@ -1167,9 +1298,9 @@ function renderRoster(db) {
 // ★この値は CSS の col.w-* と必ず一致させること（食い違うと fixed が差分を再配分し CSS 側が無効化される）。
 // rnAw/nmAw/tmAw=全員リスト用（ふりがな列を廃止した110pxを全列へ均等配分した値）／
 // nmDl=デイ利用者一覧表用（備考を表の下へ出すぶん氏名列を最大化）
-const W = { sec: 24, rn: 20, rnDl: 26, nm: 80, tm: 34, rnAw: 44, nmAw: 76, tmAw: 46, nmDl: 76, tmDl: 46 };
+const W = { sec: 24, rn: 20, rnDl: 26, nm: 76, tm: 46, rnAw: 44, nmAw: 76, tmAw: 46, nmDl: 76, tmDl: 46 };
 const TBL_W = {
-  day:     W.sec + W.rn   + NDAY * (W.nm   + W.tm * 2),   // 932  med：右に備考112+gap8=1052 ≦ 1062
+  day:     W.sec + W.rn   + NDAY * (W.nm   + W.tm * 2),   // 1052 med：右の備考を削除して表へ回した（≦1062）
   daylist: W.sec + W.rnDl + NDAY * (W.nmDl + W.tmDl * 2), // 1058 デイ利用者一覧表：24+26+6×(76+46+46)（≦A3縦 1062）
   allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)          // 1052 全員リスト：44+6×(76+46+46)（≦A3縦 1062）
 };
@@ -1425,11 +1556,12 @@ function renderAllweek(ppl) {
 }
 
 /* ============================================================================
-   View 3 — 薬用（A4横）: デイ利用者の上表のみ ＋ 右に備考（旧「昼食薬あり名簿」「薬」大ラベルは削除済み）。
+   View 3 — 薬用（A4横）: デイ利用者の上表のみ。
    元表のグリッドには塗りゼロ（＝入浴の黄は出さない）。右のチェック欄は画面専用(印刷しない)だが、
    チェックで付く薄オレンジは印刷にも出す（2026-07-21 運用指示）。
+   ★2026-08-17 運用指示: 右の備考パネルと上部の凡例メッセージを削除し、空いた幅を表の列へ回した
+     （氏名76・時刻46＝daylist と同値。旧「昼食薬あり名簿」「薬」大ラベルは以前に削除済み）。
    ============================================================================ */
-const MED_NOTES = ['☆昼食後の薬', '・せせらぎ利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
 
 function renderMed(ppl) {
   const table = $('tblMed');
@@ -1446,12 +1578,6 @@ function renderMed(ppl) {
 
   // 昼食薬(lunchMed=true)の人の氏名セルを薄オレンジに（同期済みの正データ由来＝全端末で一致・印刷にも出る）。
   ppl.forEach(p => { if (p.lunchMed) table.querySelectorAll('[data-pid="' + p.pid + '"]').forEach(td => td.classList.add('med-hl')); });
-
-  // 右側パネル: 備考のみ（幅を詰めて表を広げるため。旧「昼食薬あり名簿」「薬」大ラベルは運用方針で削除）
-  const note = $('noteMed');
-  note.textContent = '';
-  note.appendChild(el('div', 'med-list-h', '備考'));
-  MED_NOTES.forEach(t => note.appendChild(el('div', 'note-box', t)));
 
   // 右側: 昼食薬チェックリスト（このチェック欄自体は印刷されない）。
   // チェック＝その人の lunchMed を全端末へ保存・同期し、表の氏名セルが薄オレンジになる（色は印刷にも出る）。
@@ -1580,9 +1706,10 @@ const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限�
      ① このタブ別上限 … 時刻列(46px)に太字の「13:00」が欠けずに収まる最大（実測 15px）
      ② nameFitMaxFs_ … 氏名が2行に折り返さない最大（実データの最長氏名から算出・通常はこれが効く）
      ③ 用紙1枚に収まること … 下の実測ループ
-   ★拡大の対象は【時刻列を広げた2帳票だけ】。薬用(sc-med)は時刻列が 34px のままで、実測すると
-     15px では「9:00」の末尾が欠ける（192セル）。運用指示の対象外でもあるため従来どおり据え置く。 */
-const SHEET_FS_MAX_BY_TAB = { 'sc-daylist': 15, 'sc-allweek': 15 };
+   ★対象は【時刻列を46pxへ広げた帳票】。薬用(sc-med)は時刻列が 34px だったため 15px では「9:00」の
+     末尾が欠け、長らく対象外にしていた。2026-08-17 に右の備考パネルを削除して時刻列を46pxへ広げた
+     ＝daylist と同条件になったので解禁した。 */
+const SHEET_FS_MAX_BY_TAB = { 'sc-daylist': 15, 'sc-allweek': 15, 'sc-med': 15 };
 function sheetFsMax_(sc) { return SHEET_FS_MAX_BY_TAB[sc] || SHEET_FS_BASE; }
 
 /* 氏名が2行に折り返さない最大の文字サイズ（2026-08-05 運用指示）。
@@ -1662,7 +1789,17 @@ function withPrintMetrics_(fn, spec) {
       'font-size:9px;line-height:1.2;white-space:nowrap}' +
     '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
     '#sc-daylist table.sheet td,#sc-daylist table.sheet th{padding-top:3px;padding-bottom:3px}' +
-    'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}';
+    'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}' +
+    /* 利用表(table.roster)の印刷規則も再現する（fitRosterPrint_ の測定用）。
+       ★@media print の該当規則と必ず同じ内容に保つこと。列幅は印刷用の --ro-w-*（表のインラインstyle）
+         を参照させる＝画面幅(78/30/118)のまま測ると折返し行数が変わり高さを誤る。
+       ★セレクタは table.roster / .col-* に限定＝帳票タブ(table.sheet)の測定には影響しない。 */
+    'table.roster{box-shadow:none;width:100%}' +
+    '.col-time{width:var(--ro-w-time,68px)}.col-flr{width:var(--ro-w-flr,26px)}' +
+    '.col-rn{width:var(--ro-w-rn,24px)}.col-day{width:var(--ro-w-day,88px)}' +
+    'table.roster th,table.roster td{padding:2px 3px}' +
+    'table.roster td.user{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15}' +
+    'table.roster tr.spacer td{height:5px}';
   document.head.appendChild(st);
   try { return fn(); }
   finally {
@@ -1731,6 +1868,128 @@ function fitSheetPrint_(sc) {
     setSheetFont_(null); fittedFs = 0;
   }
 }
+/* ============================================================================
+   印刷フィット（fitRosterPrint_）— 利用表タブ用。2026-08-17 運用指示
+   「左右に余白があるためできるだけ大きく用紙に出力」に対する縦方向の対応。
+   列幅は setRosterPrintCols_ が用紙幅いっぱいに配分し、こちらは A4縦1枚に収まる最大の文字サイズを決める。
+   ★帳票タブ(fitSheetPrint_)と同じ考え方: 拡大は「収まることを実測してから採用」＝溢れた候補は採らない。
+   ★縮小は今回の追加。階でブロック分けすると行数が増える（曜日ごとに階の人数が違うため）ので、
+     従来1枚だった帳票が2枚に流れうる。読める下限(9px)までは縮めて1枚を維持し、縮めた時はトーストで知らせる。
+   ★文字サイズは @media print 限定の後勝ち規則（#dyn-roster）で適用する。インラインstyleに残すと
+     afterprint が発火しない環境（モバイルSafari/WebView）で画面が縮んだまま残るため。
+   ============================================================================ */
+const ROSTER_FS_BASE = 12, ROSTER_FS_MAX = 20, ROSTER_FS_MIN = 9;   // BASE は CSS の table.roster --ro-fs と一致させること
+/* ★上限20px の根拠: 狭い列は文字サイズに上限を持たせてあり（No.=12px・階=15px）、
+   利用時間列は文字に比例して広げる（setRosterPrintCols_）ので、20px でも欠けは起きない。
+   ここより上げても、実際に効くのは下の rosterNameFitMaxFs_（氏名が1行に収まる上限。
+   曜日列は 12px時102px → 20px時87px と狭くなるため、通常はこちらが先に効く）。 */
+let fittedRoFs = 0;                                                 // 直近の印刷で適用した文字サイズ（0=既定のまま）
+// 測定用: 画面へ一時的に適用する（測り終えたら必ず null で戻す）
+function setRosterFontLive_(fs) {
+  const t = $('roster');
+  if (!t) return;
+  if (fs == null) t.style.removeProperty('--ro-fs');
+  else t.style.setProperty('--ro-fs', fs.toFixed(2) + 'px');
+}
+/* 氏名が2行に折り返さない最大の文字サイズ（帳票タブの nameFitMaxFs_ と同じ考え方の利用表版）。
+   ★別関数にしてあるのは、対象セル（td.user）・基準サイズ（12px）・列幅が文字サイズで変わる点が
+     帳票タブ（td.c-nm・11px・固定幅）と違うため。共通化は3例目が出てから。
+   ★列幅は文字が大きいほど狭くなる（利用時間列へ回すため）。いちばん狭くなる上限側の幅で判定する＝安全側。 */
+function rosterNameFitMaxFs_(tbl, nCols, capMax) {
+  setRosterPrintCols_(tbl, nCols, capMax);
+  const cells = tbl.querySelectorAll('tbody td.user');
+  if (!cells.length) return capMax;
+  const cs = getComputedStyle(cells[0]);
+  // 安全代: clientWidth は整数丸め・文字幅は小数のため、ぴったりだと0.1px足りずに折り返す（2%＋1px引く）
+  const avail = (cells[0].clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - 1) * 0.98;
+  if (!(avail > 0)) return capMax;
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;'
+    + 'font-family:' + cs.fontFamily + ';font-weight:' + cs.fontWeight
+    + ';letter-spacing:' + cs.letterSpacing + ';font-size:' + ROSTER_FS_BASE + 'px';
+  document.body.appendChild(probe);
+  let maxW = 0;
+  const seen = Object.create(null);
+  for (let i = 0; i < cells.length; i++) {
+    // 氏名の直後に（入院）が続く場合があるので、先頭のテキストノード（＝氏名）だけを測る
+    const fc = cells[i].firstChild;
+    const t = String(((fc && fc.nodeType === 3) ? fc.nodeValue : cells[i].textContent) || '').trim();
+    if (!t || seen[t]) continue;
+    seen[t] = true;
+    probe.textContent = t;
+    const wpx = probe.getBoundingClientRect().width;
+    if (wpx > maxW) maxW = wpx;
+  }
+  probe.remove();
+  if (!(maxW > 0)) return capMax;
+  const fs = ROSTER_FS_BASE * (avail / maxW);
+  // 既定より小さくはしない（長い氏名が1人でも居ると際限なく小さくなるため。その場合は現状維持）
+  return Math.max(ROSTER_FS_BASE, Math.min(capMax, Math.floor(fs * 100) / 100));
+}
+// 印刷用: @media print の中だけで効く規則として注入する（画面には持ち越さない）
+function applyRosterPrintFont_(fs) {
+  const old = document.getElementById('dyn-roster');
+  if (old) old.remove();
+  if (fs == null) return;
+  const st = document.createElement('style');
+  st.id = 'dyn-roster';
+  st.textContent = '@media print{table.roster{--ro-fs:' + fs.toFixed(2) + 'px}}';
+  document.head.appendChild(st);
+}
+function fitRosterPrint_() {
+  const tbl = $('roster');
+  if (!tbl || !tbl.tBodies.length || !tbl.tBodies[0].rows.length) { applyRosterPrintFont_(null); fittedRoFs = 0; return; }
+  const avail = pageAvailPx_(null);            // 静的@page の A4縦8mm → 1062px
+  const nCols = tbl.tHead ? tbl.tHead.rows[0].querySelectorAll('th.th-day').length : NDAY;
+  // 文字サイズを変えるたびに列幅も引き直す（利用時間列が文字に比例するため）
+  const setFs = fs => { setRosterFontLive_(fs); setRosterPrintCols_(tbl, nCols, fs); };
+  let best = ROSTER_FS_BASE;
+  try {
+    withPrintMetrics_(() => {
+      setFs(ROSTER_FS_BASE);                   // まず既定サイズで測る
+      let fs = ROSTER_FS_BASE, h = measureSheetH_('sc-roster'), n = 0;
+      if (h > avail) {
+        while (h > avail && fs > ROSTER_FS_MIN && n < 8) {
+          let next = fs * (avail / h) * 0.995;                 // 比例補正
+          if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ封じ）
+          fs = Math.max(ROSTER_FS_MIN, next);
+          setFs(fs);
+          h = measureSheetH_('sc-roster');
+          n++;
+        }
+        /* ★縮めた結果ちゃんと1枚に入った時だけ採用する。下限(9px)まで縮めても収まらないなら
+           従来サイズへ戻す＝「読めない紙面で、しかも2枚」を避ける（改修前と同じ12pxで2枚に流す）。 */
+        best = (h <= avail) ? fs : ROSTER_FS_BASE;
+      } else {
+        /* 拡大の上限は「タブの上限(20px)」と「氏名が1行に収まる上限」の小さい方
+           （2026-08-05 に帳票タブで決めた「氏名を2行にしない」を利用表にも適用） */
+        const fsMax = rosterNameFitMaxFs_(tbl, nCols, ROSTER_FS_MAX);
+        setFs(fs);                             // 上限判定で触った列幅を測定時の値へ戻す
+        while (fs < fsMax && n < 8) {
+          const next = Math.min(fsMax, fs * (avail / h) * 0.99);
+          if (!(next > fs + 0.05)) break;      // これ以上伸びない（収束）
+          setFs(next);
+          const h2 = measureSheetH_('sc-roster');
+          if (h2 > avail) break;               // 溢れたら採らない（best は直前のまま）
+          best = next; fs = next; h = h2; n++;
+        }
+      }
+      /* ★列幅の最終確定は【この中で】行う。rosterTimeColW_ は padding の実測値を使うため、
+         測定用スタイル（印刷と同じ padding:2px 3px）の外で呼ぶと画面の padding:2px 4px で計算され、
+         「1枚に収まる」と判定した時の列幅と実際に刷る列幅がずれる。 */
+      setFs(best);
+    }, null);
+  } catch (e) {
+    best = ROSTER_FS_BASE;                     // 測定に失敗したら従来サイズで刷る（画面も紙も壊さない）
+    // 例外時は測定用スタイルの外で引き直す（padding が2px広く出る＝利用時間列が広い安全側）
+    try { setRosterPrintCols_(tbl, nCols, best); } catch (e2) {}
+  }
+  setRosterFontLive_(null);                    // ★測定用の一時適用は必ず戻す（画面は常に既定サイズ）
+  const changed = Math.abs(best - ROSTER_FS_BASE) > 0.01;
+  applyRosterPrintFont_(changed ? best : null);
+  fittedRoFs = changed ? best : 0;
+}
+
 /* 印刷日の文字列（YYYY/MM/DD）。印刷のたびに採り直すのでタブを開きっぱなしでも古くならない。 */
 function printDateText_() {
   const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
@@ -1748,10 +2007,12 @@ function stampPrintDate_() {
 function clearPrintState_() {
   clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
   document.body.classList.remove('pr-batch');
-  const nodes = document.querySelectorAll('#dyn-page');
+  const nodes = document.querySelectorAll('#dyn-page,#dyn-roster');   // 用紙指定＋利用表の印刷文字サイズ
   for (let i = 0; i < nodes.length; i++) nodes[i].remove();
   $('printBatch').textContent = '';     // ★氏名をDOMに残さない
   setSheetFont_(null);                  // 印刷用に縮めた文字サイズを画面へ持ち越さない
+  setRosterFontLive_(null);             // 同上（測定が中断された場合の保険）
+  fittedRoFs = 0;
 }
 function printNow() {
   clearPrintState_();
@@ -1765,9 +2026,11 @@ function printNow() {
     document.head.appendChild(st);      // ページ先頭の静的スタイルより後にappend＝後勝ち（コメント内にタグ表記を書かない＝構文チェッカの誤検知回避）
   }
   fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
+  if (sc === 'sc-roster') fitRosterPrint_();   // 利用表は専用のフィット（列幅は描画時に配分済み）
   // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）。
   // 拡大は「読みやすくなる」方向なので通知しない（毎回の印刷でトーストが出るのは邪魔）。
   if (fittedFs && fittedFs < SHEET_FS_BASE) toast('1枚に収めるため文字を ' + fittedFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
+  if (fittedRoFs && fittedRoFs < ROSTER_FS_BASE) toast('1枚に収めるため文字を ' + fittedRoFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
   if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
     const host = $('printBatch');
     host.textContent = '';
@@ -1792,7 +2055,11 @@ function printNow() {
 // beforeprint で同じ準備を通し、どの経路でもタブの用紙で出るようにする。
 window.addEventListener('beforeprint', function () {
   stampPrintDate_();   // ★早期returnの前に置く（利用表タブは printNow でも下のガードを通過するため）
-  if (document.querySelector('#dyn-page') || document.body.classList.contains('pr-batch')) return;   // printNow 経由なら準備済み
+  // printNow 経由なら準備済み。#dyn-roster も見るのは、利用表(spec=null)では #dyn-page が作られず
+  // 同じフィット計算を二度走らせてしまうため（結果は同じだが測定は重い）。
+  // ※ただし利用表で文字サイズが既定のまま（＝#dyn-roster を作らない）場合はここを通過し、
+  //   fitRosterPrint_ が2回走る。結果は同値で、末尾のタイマー条件も false になるため害はない。
+  if (document.querySelector('#dyn-page,#dyn-roster') || document.body.classList.contains('pr-batch')) return;
   const sc = activeTab();
   const spec = PRINT_SPEC[sc];
   if (spec) {
@@ -1802,6 +2069,7 @@ window.addEventListener('beforeprint', function () {
     document.head.appendChild(st);
   }
   fitSheetPrint_(sc);   // Cmd/Ctrl+P 経路でも同じ自動フィットを通す
+  if (sc === 'sc-roster') fitRosterPrint_();
   if (sc === 'sc-weekly') {
     const host = $('printBatch');
     host.textContent = '';
@@ -1819,7 +2087,12 @@ window.addEventListener('beforeprint', function () {
   //   sc-roster は spec=null かつ非weekly のため printNow 経由でも冒頭のガードを通過してここへ到達する
   //   （#dyn-page も pr-batch も作らないため）。条件を外して無条件に張ると、printNow が直前に仕掛けた
   //   done のタイマーを上書きし、afterprint 未発火時に done が走らず afterprint リスナが残留する。
-  if (spec || sc === 'sc-weekly') printTimer = setTimeout(clearPrintState_, 3000);
+  //   ★#dyn-roster の条件を足したのは、利用表(spec=null)でもこの経路が印刷用の文字サイズ規則を
+  //     作るようになったため。afterprint 未発火だと残留し、次に別タブで Ctrl+P した時に冒頭のガードが
+  //     それを見て早期returnし、前タブの用紙で刷られる（#dyn-page と同型の事故）。
+  //     ここへ到達した時点で冒頭のガードは通過済み＝#dyn-roster があれば今回のこのハンドラが作った物なので、
+  //     printNow が仕掛けた done のタイマーを奪う心配はない（printNow 経由なら冒頭で早期returnしている）。
+  if (spec || sc === 'sc-weekly' || document.querySelector('#dyn-roster')) printTimer = setTimeout(clearPrintState_, 3000);
 });
 window.addEventListener('afterprint', clearPrintState_);   // どの経路でも必ず後片付け
 
@@ -1830,10 +2103,13 @@ let MODEL = null;
 let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
 let MODEL_SUB  = '';   // 新4タブの指標
 const LEGENDS = {
-  'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '各セル＝利用者氏名／下段に日別の入浴合計・利用合計']],
+  'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '利用時間帯ごとに居室階（２階→１階）で分け、氏名は五十音順／下段に日別の入浴合計・利用合計']],
   'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
-  'sc-med':     [['t', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
+  /* 薬用の凡例メッセージは 2026-08-17 運用指示で削除（紙面の上部を空けて表を大きく出すため）。
+     チェック欄の説明は画面側のチェックリスト内（.chk-sub）に残っている＝案内は失われていない。
+     配列は空でも凡例バー自体は残す＝印刷日と⚠警告バッジ（階未設定・非表示中など）の置き場所。 */
+  'sc-med':     [],
   'sc-weekly':  [['t', 'デイ＝その日の利用者／２階＝デイに行かない方（2階食堂で昼食）。印刷は6曜日を一括で6枚出します']]
 };
 function activeTab() {
