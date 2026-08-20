@@ -425,6 +425,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   padding:8px; font-size: 0.8125rem; font-family:inherit; color:var(--g9)}
 .bulk-tbl input:focus,.bulk-tbl select:focus{outline:2px solid var(--pri); outline-offset:-2px; background:#fff}
 .bulk-tbl td.dirty{background:var(--warn-bg)}
+/* 値に改行が入りうる列（医療機関の4つ）。input だと往復で改行が落ちるので textarea にする。
+   ★表の行が高くならないよう1行ぶんに抑え、必要な人だけ縦に広げられるようにする。 */
+.bulk-tbl textarea.bk-lines{width:100%; min-height:0; height:34px; padding:6px 8px; border:none;
+  font:inherit; line-height:1.3; resize:vertical; background:transparent; overflow:auto}
 .bulk-tbl tr.bulk-out .bk-name{color:var(--g6)}
 .bulk-tbl tr.bulk-broken .bk-name::after{content:' ⚠'; color:var(--ng)}
 .bulk-tbl tr.bulk-hide{display:none}
@@ -600,7 +604,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    支援経過が2件減った（実測）。枠いっぱいへの均等配置（space-between）で読み分ける。 */
 .a4s .a4-rhy-list{flex:1; display:flex; flex-direction:column; justify-content:space-between;
                   margin-top:2px; position:relative}
-/* 下向き矢印の縦線。時刻列(36px)とラベル列のあいだに置き、下端は▼の分だけ空ける */
+/* 下向き矢印の縦線。時刻列(30px)とラベル列のあいだ（34px）に置き、下端は▼の分だけ空ける */
 .a4s .a4-rhy-ln{position:absolute; left:34px; top:1px; bottom:7px; width:2px; background:#000;
                 -webkit-print-color-adjust:exact; print-color-adjust:exact}
 .a4s .a4-rhy-ln::after{content:''; position:absolute; left:-3px; bottom:-7px; width:0; height:0;
@@ -610,7 +614,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .a4s .a4-rhy-i .tm{flex:0 0 30px; text-align:right; line-height:1.15}
 .a4s .a4-rhy-i b{font-weight:600; margin-left:8px; white-space:nowrap}
 /* デイ利用（週間計画 care_schedule_v2 の読み取り専用参照・2026-08-19 指示）。
-   月〜土の6列。列幅は 100px÷6≒15px しかないため時刻は【縦書き】にする
+   月〜土の6列。列幅は 88px÷6≒13.5px しかないため時刻は【縦書き】にする
    （横書きだと「13.5」が入らない）。text-orientation:upright で数字を1文字ずつ立てて積むので、
    「9-13.5」は縦に6文字ぶん並ぶ＝様式の縦罫の中に収まる。
    ★ここに出すのは週間計画（通所の予定）の実データだけ。マスタの dayUse（移行時の旧スプレッドシート
@@ -3207,7 +3211,10 @@ function fitLines(){
     t._lfit=true;
     var fit=function(){
       t.style.height='auto';
-      t.style.height=Math.max(t.scrollHeight, 44)+'px';
+      /* ★+2 は上下の枠線ぶん（*{box-sizing:border-box} なので高さに枠線が含まれる）。
+         足さないと overflow:hidden で最終行の下が2px 欠ける＝まさに見せたかった2行目が切れる。
+         既存の autoGrow（支援経過）も同じ +2 を入れている。 */
+      t.style.height=Math.max(t.scrollHeight + 2, 44)+'px';
     };
     t.addEventListener('input',fit);
     fit();
@@ -3461,7 +3468,6 @@ function openEdit(rec){
   '</div><p class="muted" style="margin-top:6px">訪問診療アプリは上段の<b>入居者ID</b>で自動的に突合します（手入力は不要です）。下段の「訪問診療 患者ID」は<b>現在どのアプリからも参照されていません</b>。入力済みの値はそのまま保存し続けますが、入れても連携先は変わりません。</p></div></div>';
 
   $('editBox').innerHTML=h;
-  fitLines();
   renderFamRows();
   renderSupportRows();
   renderCareHistRows();
@@ -3516,6 +3522,10 @@ function openEdit(rec){
      支援経過の入力欄を中身に合わせて伸ばせない（見た目は56pxのままになる） */
   buildEditTabs();
   growAllSupport();
+  /* ★fitLines も画面に出してから呼ぶ（growAllSupport と同じ理由・2026-08-20 レビュー指摘で移動）。
+     非表示のうちは scrollHeight が 0 に近く、最小の44pxで止まって2件目が隠れる。
+     関数の中に setTimeout の保険も残してあるが、作法をこちらへ揃える。 */
+  fitLines();
 }
 /* ══ 編集画面の見出しタブ（2026-08-17 指示）══
    フォームの見出し（.fgroup > h3）からタブを作り、押すとその欄へジャンプする。
@@ -4341,11 +4351,21 @@ function mpTel(v){
   if(m.join('')!==s.replace(/[\s　]+/g,''))return null;
   return m;
 }
-/* 医院名: 医療機関を表す語で切る。歯止めは2つ。
+/* 医院名: 医療機関を表す語で切る。歯止めは4つ。1つでも欠けると【実在しない機関名】を紙に作る。
    ①最後がその語で終わっていない時は切り方が分からないので触らない
    ②切った先が「附属」「分院」等で始まる時は、そこは1つの名前の途中なので切らない
-     （「◯◯病院附属クリニック」を2つに割らない。実測で割れたので足した） */
-var MP_ORG_NG=/^(附属|付属|分院|別院|本院|新館|別館|東館|西館|南館|北館|第[0-9０-９一二三四五六七八九十])/;
+   ③★切った先が医療機関の語そのもので始まる時も切らない。
+     これが無いと「◯◯歯科クリニック」が「◯◯歯科」「クリニック」に割れる。
+     歯科のいちばん普通の名乗り方なので実害が大きい（2026-08-20 のレビュー指摘）
+   ④★切り出した1件の「固有の部分」が2文字未満なら分割そのものをやめる。
+     「◯◯病院前薬局」を「◯◯病院」「前薬局」と割らない（固有部分が「前」の1文字＝不自然）。
+     ★1文字の固有名（「森クリニック」等）も分けない側へ倒れるが、外部へ渡る紙に
+       実在しない機関名を出すよりは「分けずに1行のまま出す」方が安全。 */
+var MP_ORG_NG=/^(附属|付属|分院|別院|本院|新館|別館|東館|西館|南館|北館|前|裏|横|第[0-9０-９一二三四五六七八九十]|クリニック|病院|医院|診療所|センター|歯科|薬局|薬店)/;
+function mpOrgOk(part){
+  var s=String(part).replace(new RegExp(MP_ORG_RE.source,'g'),'').replace(/[\s　・]/g,'');
+  return s.length>=2;
+}
 function mpOrg(v,n){
   var s=mpStr(v);
   if(!s||!(n>=2)||/[\n\r]/.test(s))return null;
@@ -4356,11 +4376,17 @@ function mpOrg(v,n){
     out.push(s.slice(last,e)); last=e;
   }
   if(last!==s.length)return null;
-  return out.length===n?out:null;
+  if(out.length!==n)return null;
+  for(var i=0;i<out.length;i++) if(!mpOrgOk(out[i])) return null;
+  return out;
 }
-/* 氏名: 「姓 名」が n 組つながっている形の時だけ分ける。次の方の姓は2文字とみなす
-   （日本の姓でいちばん多い長さ）。★3文字姓の方では区切りが1文字ずれる。ただし文字は
-   1つも失われないので紙を見れば気づけ、編集画面の2行入力で直せる。 */
+/* 氏名: 「姓 名」が n 組つながっている形の時だけ分ける。
+   ★あいだのかたまりが【4文字ちょうど】の時だけ分ける（名2文字＋姓2文字）。
+     5文字以上は「名3＋姓2」とも「名2＋姓3」とも読めて決められない。
+     例「太郎長谷川」は「太郎長／谷川」とも「太郎／長谷川」とも読めるので、
+     実在しない氏名を紙に出さないよう【分けない】側へ倒す（元のまま1行で出る）。
+     ★この制限を外すと3文字姓の方の氏名が1文字ずれて紙に載る。版面は整って見えるので
+       読み手が誤りに気づけない（2026-08-20 のレビュー指摘）。緩めないこと。 */
 var MP_NAME_NG=/^[々ゝゞヽヾー・]/;
 function mpPerson(v,n){
   var s=mpStr(v);
@@ -4370,9 +4396,10 @@ function mpPerson(v,n){
   if(sp.length!==n)return null;                 // 「姓 名」が n 組の形でなければ触らない
   var out=[], start=0;
   for(var i=1;i<n;i++){
+    if(sp[i]-(sp[i-1]+1)!==4)return null;       // ★4文字ちょうど以外は決められないので分けない
     var cut=sp[i]-2;
     if(cut<=sp[i-1]+1)return null;              // 前の方の名が空になる＝仮定が成り立たない
-    if(MP_NAME_NG.test(s.slice(cut)))return null;  // 姓の先頭になり得ない字＝2文字の仮定が外れている
+    if(MP_NAME_NG.test(s.slice(cut)))return null;  // 姓の先頭になり得ない字＝仮定が外れている
     out.push(s.slice(start,cut)); start=cut;
   }
   out.push(s.slice(start));
@@ -4472,9 +4499,15 @@ function renderA4(r){
     var v=rh[p[0]]; if(!v)return'';
     /* 旧様式は「8:00」表記。既定値（08:00）の先頭0だけ落とし、記録値の中身は変えない */
     var tv=String(v).replace(/^0(\d:)/,'$1');
-    /* 「20:00〜21:00」のような幅の広い時刻は「〜」の【前】で折り返す（時刻列の幅を超えて
-       矢印線に近づくのを防ぐ。「20:00」「〜21:00」の2行なら両方とも列幅に収まる。
-       文字は1つも変えず、改行位置だけ決める） */
+    /* 「20:00〜21:00」のような幅の広い時刻は「〜」の【前】で折り返す。文字は1つも変えず、
+       改行位置だけ決める。
+       ★2026-08-20 実測（--a4fs:12px 固定・記録1件で a4Fit が縮めない条件）:
+         「〜21:00」は12pxで約42px あり時刻列(30px)に入りきらないので、さらに「〜」の後で
+         折り返して【3行】になる（6:00 / 〜 / 07:00）。読みにくいが枠からはみ出しはしない
+         （11条件で `scrollWidth>clientWidth` と枠外への突き抜けを機械照合し、いずれも0件）。
+         ★実データにこの表記は現在1件も無い（2026-08-17 実測）。
+         入るようになって3行が気になる場合は、この行だけ時刻を小さくするか、
+         時刻列を広げてラベル側（余裕7px）から取る。どちらも実測してから決めること。 */
     var tmHtml=(tv.length>6&&tv.indexOf('〜')>=0)
       ? tv.split('〜').map(function(x){return esc(x)}).join('<br>〜')
       : esc(tv);
@@ -4795,8 +4828,11 @@ var BULK_GROUPS=[
     ['serviceManager','サービス提供責任者','text'],
     ['prevCareOffice','前の居宅','text'],['prevCareManager','前の担当ケアマネ','text']]],
   ['medical','医療機関',[
-    ['hospital','かかりつけ病院','text'],['doctor','主治医','text'],
-    ['hospitalTel','病院TEL','text'],['hospitalFax','病院FAX','text'],
+    /* ★この4つは 'lines'（1行の textarea）。医院が2件ある方は値に改行が入っており、
+       <input type="text"> では往復で改行が落ちて【2行に分けた医院名が1行へ戻る】
+       （2026-08-20 レビュー指摘。textarea なら値をそのまま持ち帰れる）。 */
+    ['hospital','かかりつけ病院','lines'],['doctor','主治医','lines'],
+    ['hospitalTel','病院TEL','lines'],['hospitalFax','病院FAX','lines'],
     ['emergencyHospital','救急搬送先','text'],['emergencyHospitalTel','急変時TEL','text'],
     ['visitDay','往診曜日','text'],
     ['pharmacy','かかりつけ薬局','text'],['pharmacyTel','薬局TEL','text'],['pharmacyFax','薬局FAX','text'],
@@ -4911,7 +4947,14 @@ function bulkCell(r,c){
   var ph='';
   if(type==='date'&&v&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v))){ tp='text'; ph=' placeholder="YYYY-MM-DD"'; }
   if(type==='number'&&v&&!/^-?\d+(\.\d+)?$/.test(String(v))) tp='text';
-  return '<input type="'+esc(tp)+'" '+base+ph+' value="'+esc(v)+'">';
+  /* ★改行入りの値は1行では潰れて見える。全文をマウスでも読めるようにする */
+  var ttl=/[\r\n]/.test(String(v==null?'':v)) ? (' title="'+esc(String(v))+'"') : '';
+  /* 'lines' … 値に改行が入りうる列。textarea にして往復で改行を保つ。
+     ★input のままだと、そのセルを1文字直しただけで改行が消えた1行が保存される。
+     ★行の高さは1行ぶん（rows=1）。表の見た目は input とほぼ変わらない。 */
+  if(type==='lines')
+    return '<textarea '+base+' rows="1" class="bk-lines"'+ttl+'>'+esc(v)+'</textarea>';
+  return '<input type="'+esc(tp)+'" '+base+ph+ttl+' value="'+esc(v)+'">';
 }
 
 /* 変更の記録。取得時の値に戻したら「変更なし」に戻す */
@@ -4923,7 +4966,13 @@ function onBulkInput(e){
   if(!r) return;
   var nv=(el.getAttribute('data-type')==='check')?el.checked:el.value;
   var ov=(r[k]==null)?'':r[k];
-  var same=(el.getAttribute('data-type')==='check')?(nv===bulkTruthy(ov)):(String(nv)===String(ov));
+  /* ★<input type="text"> は値に改行を保持できない（HTMLの value sanitization が \r\n を消す）。
+     2026-08-19 に「かかりつけ病院」等を2行入力にしたので、医院が2件ある方の値には改行が入る。
+     この表でそのセルに触れると、ブラウザが落とした改行のせいで【変更あり】と誤認し、
+     保存すると2行に分けた医院名が1行へ戻ってしまう。
+     改行を取り除いただけの値は「変更なし」として扱う（実際に文字を直した時だけ変更とする）。 */
+  var same=(el.getAttribute('data-type')==='check')?(nv===bulkTruthy(ov))
+          :(String(nv)===String(ov) || String(nv)===String(ov).replace(/[\r\n]/g,''));
   bulkDirty[id]=bulkDirty[id]||{};
   if(same) delete bulkDirty[id][k]; else bulkDirty[id][k]=nv;
   if(!Object.keys(bulkDirty[id]).length) delete bulkDirty[id];
