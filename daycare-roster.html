@@ -246,7 +246,15 @@ table.sheet .c-sum-lb {
 /* safe center: 収まる時は中央、はみ出す時は左詰め。素の center だと内容が容器より広い場合に
    左側がはみ出してスクロールで到達できなくなる（区画ラベル列が永久に見えなくなる）。 */
 .sheet-row { display: flex; gap: 8px; align-items: flex-start; justify-content: safe center; width: max-content; min-width: 100%; }
-/* ※薬用の右側備考パネル(.note-panel)は 2026-08-17 運用指示で削除した（空いた幅は表へ回した）。 */
+/* 薬用の右側備考パネル。2026-08-17 に一旦削除したが、2026-08-20 運用指示で【画面のみ】復活させた
+   （aside 側に .noprint を付けてあるので紙には出ない＝表の幅は 1052px のまま使い切れる）。
+   ★紙の幅予算から解放されたので、幅と文字サイズは画面で読める値にする
+     （旧 112px/0.625rem＝10px は A4横に収めるための窮屈な値だった。業務ツールの下限は13px）。 */
+.note-panel {
+  flex: 0 0 150px; align-self: stretch;
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
+  padding: 6px 8px; font-size: 0.8125rem; line-height: 1.5; color: var(--g8);
+}
 /* デイ利用者一覧表の備考は「表の下」に置く＝横幅を表に使い切る。幅は JS で表と同じにし中央寄せ・横並びでコンパクト。 */
 .note-below {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px;
@@ -301,6 +309,8 @@ table.sheet tr.cut-title th {
    印刷の文字拡大時に☆だけ取り残されて見落とされる。 */
 table.sheet .star { font-size: var(--sh-fs); }
 .nofloor { background: #fff3e0; }                     /* 階未設定＝黙って落とさず可視化 */
+.note-box { white-space: pre-wrap; }
+.med-list-h { background: var(--g1); font-weight: 700; text-align: center; font-size: 0.8125rem; }
 
 /* ===== 薬用: 画面専用の入居者チェックリスト（印刷されない）===== */
 .chk-panel {
@@ -532,7 +542,8 @@ table.wk .wk-blank { color: transparent; }
     <div class="sheet-title" id="medTitle">デイ利用者一覧表（薬用）</div>
     <div class="sheet-row">
       <table class="sheet" id="tblMed" aria-label="薬用一覧表"></table>
-      <!-- 右側の備考パネルは 2026-08-17 運用指示で削除（空いた幅は表の列へ回した） -->
+      <!-- 備考は【画面のみ】。noprint＝紙には出さない（2026-08-20 運用指示）。表の列幅は紙の幅を使い切ったまま -->
+      <aside class="note-panel noprint" id="noteMed" aria-label="備考（この欄は印刷されません）"></aside>
       <aside class="chk-panel noprint" id="chkMed" aria-label="昼食薬チェック（全端末に保存・この欄は印刷されません）"></aside>
     </div>
   </section>
@@ -1559,9 +1570,12 @@ function renderAllweek(ppl) {
    View 3 — 薬用（A4横）: デイ利用者の上表のみ。
    元表のグリッドには塗りゼロ（＝入浴の黄は出さない）。右のチェック欄は画面専用(印刷しない)だが、
    チェックで付く薄オレンジは印刷にも出す（2026-07-21 運用指示）。
-   ★2026-08-17 運用指示: 右の備考パネルと上部の凡例メッセージを削除し、空いた幅を表の列へ回した
+   ★2026-08-17 運用指示: 右の備考パネルと上部の凡例メッセージを紙から外し、空いた幅を表の列へ回した
      （氏名76・時刻46＝daylist と同値。旧「昼食薬あり名簿」「薬」大ラベルは以前に削除済み）。
+   ★2026-08-20 運用指示: 備考と凡例メッセージは【画面には残す】（.noprint＝紙には出さない）。
+     現場が画面で手順を確認できるようにするため。紙面と表の幅は 2026-08-17 の状態のまま。
    ============================================================================ */
+const MED_NOTES = ['☆昼食後の薬', '・せせらぎ利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
 
 function renderMed(ppl) {
   const table = $('tblMed');
@@ -1578,6 +1592,12 @@ function renderMed(ppl) {
 
   // 昼食薬(lunchMed=true)の人の氏名セルを薄オレンジに（同期済みの正データ由来＝全端末で一致・印刷にも出る）。
   ppl.forEach(p => { if (p.lunchMed) table.querySelectorAll('[data-pid="' + p.pid + '"]').forEach(td => td.classList.add('med-hl')); });
+
+  // 右側パネル: 備考（画面のみ・印刷されない）。aside に .noprint が付いている。
+  const note = $('noteMed');
+  note.textContent = '';
+  note.appendChild(el('div', 'med-list-h', '備考'));
+  MED_NOTES.forEach(t => note.appendChild(el('div', 'note-box', t)));
 
   // 右側: 昼食薬チェックリスト（このチェック欄自体は印刷されない）。
   // チェック＝その人の lunchMed を全端末へ保存・同期し、表の氏名セルが薄オレンジになる（色は印刷にも出る）。
@@ -2106,10 +2126,10 @@ const LEGENDS = {
   'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '利用時間帯ごとに居室階（２階→１階）で分け、氏名は五十音順／下段に日別の入浴合計・利用合計']],
   'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
-  /* 薬用の凡例メッセージは 2026-08-17 運用指示で削除（紙面の上部を空けて表を大きく出すため）。
-     チェック欄の説明は画面側のチェックリスト内（.chk-sub）に残っている＝案内は失われていない。
-     配列は空でも凡例バー自体は残す＝印刷日と⚠警告バッジ（階未設定・非表示中など）の置き場所。 */
-  'sc-med':     [],
+  /* 薬用の凡例メッセージは 'tn'＝【画面のみ】（2026-08-20 運用指示）。
+     2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
+     紙には出ないので、印刷の表の大きさは 2026-08-17 の状態のまま変わらない。 */
+  'sc-med':     [['tn', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
   'sc-weekly':  [['t', 'デイ＝その日の利用者／２階＝デイに行かない方（2階食堂で昼食）。印刷は6曜日を一括で6枚出します']]
 };
 function activeTab() {
@@ -2123,6 +2143,7 @@ function renderLegend(sc) {
     if (k === 'sw') { const s = el('span', 'lg'); s.appendChild(el('span', 'lg-sw')); s.appendChild(document.createTextNode(t)); box.appendChild(s); }
     else if (k === 'hosp') { const s = el('span', 'lg'); s.appendChild(el('span', 'hosp-tag', '（入院）')); s.appendChild(document.createTextNode(t.replace('（入院）', ''))); box.appendChild(s); }
     else if (k === 'star') { const s = el('span', 'lg'); s.appendChild(el('span', 'star', '☆')); s.appendChild(document.createTextNode(t.replace('☆', ''))); box.appendChild(s); }
+    else if (k === 'tn') box.appendChild(el('span', 'noprint', t));   // 画面のみ（紙には出さない）
     else box.appendChild(el('span', null, t));
   });
   // 階の出典を明示する。居室(入居者マスタ)由来が何名で、旧設定（ワークスケジュールのデイサービス
