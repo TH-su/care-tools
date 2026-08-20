@@ -353,6 +353,17 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ── 編集フォーム ── */
 .fgroup{margin-bottom:18px}
 .fgroup h3{font-size: 0.875rem; color:var(--pri-d); border-left:3px solid var(--pri); padding-left:8px; margin:0 0 10px}
+/* 見出しの右に操作ボタンを並べる（2026-08-19 指示）。
+   ★h3 を <div> で包んではいけない。編集画面の見出しタブ（buildEditTabs）は
+     .fgroup>h3 を拾って作るので、包んだ瞬間にタブが消える。
+   ★h3 の【中】にも入れてはいけない。タブの文字は h3.textContent から作るので、
+     ボタンの文字（「＋ 経過を追加」）がタブ名に混ざる。
+   兄弟のまま、CSS だけで横に並べる。 */
+.fgroup h3.h3-inline{display:inline-block; vertical-align:middle; margin:0 8px 10px 0}
+.btn.h3-btn{vertical-align:middle; margin:0 0 10px}
+/* 下のボタン群も左右に並べる（2026-08-19 指示）。折り返しても隣とは8px空ける＝誤タップ防止 */
+.row-btns{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.row-btns>div:empty{display:none}
 .fgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
 .fld{display:flex; flex-direction:column}
 .fld.wide{grid-column:1/-1}
@@ -3424,9 +3435,13 @@ function openEdit(rec){
   // 支援経過（日付付きの時系列記録）
   //   2026-08-17 指示: ①これまでの記録を全部読める一覧を上に置く ②入力行は既定で直近1年ぶん
   //   （それ以前は下のボタンで展開）③入力欄は中身の長さに合わせて伸びる
-  h+='<div class="cd"><div class="fgroup"><h3>支援経過</h3>'+
-    '<div id="supportRO"></div><div id="supportList"></div><div id="supportMore"></div>'+
-    '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div>';
+  h+='<div class="cd"><div class="fgroup"><h3 class="h3-inline">支援経過</h3>'+
+    /* 見出しの右にも同じボタンを置く（2026-08-19 指示）。記録が多い方だと入力行が
+       画面の下まで続くため、上からでも足せるようにする */
+    '<button class="btn btn-sec h3-btn" id="supportAddTop" type="button">＋ 経過を追加</button>'+
+    '<div id="supportRO"></div><div id="supportList"></div>'+
+    '<div class="row-btns"><div id="supportMore"></div>'+
+    '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div></div>';
 
   // 医療支援経過（訪問診療の受け皿。将来は訪問診療アプリから自動取込）
   h+='<div class="cd"><div class="fgroup"><h3>医療支援経過（訪問診療）</h3><div id="medLogList"></div>'+
@@ -3454,7 +3469,17 @@ function openEdit(rec){
   renderMedsPastRows();
   $('medsPastAdd').addEventListener('click',function(){collectMedsPast();editing.medsPastLog.unshift({date:todayISO(),text:''});renderMedsPastRows()});
   $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false});collectFam();renderFamRows()});
-  $('supportAdd').addEventListener('click',function(){collectSupport();editing.supportLog.unshift({date:todayISO(),text:''});renderSupportRows()});
+  /* 上下2つの「＋ 経過を追加」は同じ動き。★足した行へ移動する＝上のボタンから押した時に
+     「何も起きなかった」と見えるのを防ぐ（入力行は画面のずっと下にある） */
+  var supAdd=function(){
+    collectSupport();
+    editing.supportLog.unshift({date:todayISO(),text:''});
+    renderSupportRows();
+    var t=$('supportList')?$('supportList').querySelector('textarea,input'):null;
+    if(t){ try{ t.scrollIntoView({block:'center',behavior:'auto'}); t.focus(); }catch(e){} }
+  };
+  $('supportAdd').addEventListener('click',supAdd);
+  $('supportAddTop').addEventListener('click',supAdd);
   $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),note:''});renderCareHistRows()});
   $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
   /* 病名の行を1行足す。既に入力された行は触らない（作り直すと入力中の文字が消える）。
@@ -3615,10 +3640,10 @@ function renderSupportRows(){
 function renderSupportMore(hiddenCount){
   var box=$('supportMore'); if(!box)return;
   if(supportShowAll){
-    box.innerHTML='<button class="btn btn-sec" id="supportLess" type="button" style="margin-bottom:8px">直近1年だけ表示に戻す</button>';
+    box.innerHTML='<button class="btn btn-sec" id="supportLess" type="button">直近1年だけ表示に戻す</button>';
     $('supportLess').addEventListener('click',function(){collectSupport();supportShowAll=false;renderSupportRows()});
   }else if(hiddenCount>0){
-    box.innerHTML='<button class="btn btn-sec" id="supportMoreBtn" type="button" style="margin-bottom:8px">以前の記録も編集する（'+hiddenCount+'件）</button>';
+    box.innerHTML='<button class="btn btn-sec" id="supportMoreBtn" type="button">以前の記録も編集する（'+hiddenCount+'件）</button>';
     $('supportMoreBtn').addEventListener('click',function(){collectSupport();supportShowAll=true;renderSupportRows()});
   }else box.innerHTML='';
 }
