@@ -24,18 +24,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",
 
 /* ── ヘッダー ── */
 .hdr { position:sticky; top:0; z-index:100; /* 高さは --hdr-h と一致させる（.dayhd の top に使う） */ background:var(--pri); color:#fff;
-       padding:12px 16px; padding-left:max(16px,env(safe-area-inset-left));
+       padding:8px 16px; padding-left:max(16px,env(safe-area-inset-left));
        padding-right:max(16px,env(safe-area-inset-right)); box-shadow:var(--sh); }
 .hdr h1 { margin:0; font-size: 1.125rem; font-weight:700; letter-spacing:.02em; }
 .hdr .sub { margin:2px 0 0; font-size: 0.75rem; }
 .hdr .back { color:#fff; font-size: 0.75rem; text-decoration:none; display:inline-block;
-             padding:10px 12px 10px 0; margin:-10px 0 -4px 0; }
+             padding:10px 12px 10px 0; margin:-10px 0 -8px 0; }
 .hdr .back:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 
 /* ── 画面切替 ── */
-.scr { display:none; padding:12px; max-width:960px; margin:0 auto; }
+.scr { display:none; padding:10px; max-width:960px; margin:0 auto; }
 .scr.on { display:block; }
-.cd { background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px; }
+.cd { background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:10px; margin-bottom:8px; }
 
 /* ── ボトムナビ ── */
 .bnav { position:fixed; bottom:0; left:0; right:0; z-index:100; background:#fff;
@@ -47,7 +47,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",
 .bnav button:focus-visible { outline:2px solid var(--pri); outline-offset:-2px; }
 
 /* ── 操作バー ── */
-.bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+.bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
 .bar label { font-size: 0.75rem; color:var(--g7); }
 select, input[type=text], input[type=password], input[type=date] {
   font:inherit; font-size: 0.875rem; padding:11px 10px; border:1px solid var(--g3);
@@ -67,37 +67,45 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .rchip[aria-pressed="true"] .n { color:#dbe8fb; }
 
 /* ── タイムライン ── */
-.daygrp { margin-bottom:14px; }
-.dayhd { position:sticky; top:var(--hdr-h); z-index:5; background:var(--g0); padding:6px 2px;
+.daygrp { margin-bottom:8px; }
+.dayhd { position:sticky; top:var(--hdr-h); z-index:5; background:var(--g0); padding:4px 2px;
          font-size: 0.8125rem; font-weight:700; color:var(--g7); border-bottom:2px solid var(--g2); }
 .ev { background:#fff; border:1px solid var(--g2); border-left:4px solid var(--g3);
-      border-radius:8px; padding:10px 12px; margin-top:8px; }
+      border-radius:8px; padding:6px 10px; margin-top:4px; }
 .ev.s-day    { border-left-color:#f9a825; }
 .ev.s-night  { border-left-color:#5c6bc0; }
 .ev.s-daycare{ border-left-color:#26a69a; }
 .ev.k-notice { background:var(--g1); border-left-color:var(--g5); }
-.ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size: 0.75rem; color:var(--g6); margin-bottom:4px; }
+.ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size: 0.75rem; color:var(--g6); margin-bottom:2px; }
 .ev .tm { font-weight:700; color:var(--g9); font-variant-numeric:tabular-nums; }
-.ev .body { font-size: 0.875rem; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
-.ev .acts { margin-top:6px; }
-.ev .acts button { font:inherit; font-size: 0.75rem; padding:8px 12px; border:1px solid var(--g3);
-                   border-radius:6px; background:#fff; color:var(--g7); cursor:pointer; min-height:44px; }
+.ev .body { font-size: 0.875rem; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+/* ★メタ行の中に置く。独立した行にすると本文より背の高い余白が毎件付き、
+     一覧が本文の2倍以上に伸びる（2026-08-21 実測 118px 中 50px がこの行）。 */
+.ev .acts { margin-left:auto; align-self:center; }
+/* ★見た目は小さい箱（高さ24px）にし、タップ判定だけ ::after で 44px 角を確保する。
+     min-height:44px のままだと 44px の箱を描いてしまい、メタ行がその高さまで押し広げられる。
+     負マージンでメタ行への影響も消し、行の高さは文字ぶん（19px）に戻している。 */
+.ev .acts button { font:inherit; font-size: 0.75rem; line-height:1.5; padding:2px 8px; margin-block:-3px;
+                   border:1px solid var(--g3); border-radius:6px; background:#fff; color:var(--g7);
+                   cursor:pointer; position:relative; }
+.ev .acts button::after { content:''; position:absolute; left:0; right:0; top:50%;
+                          transform:translateY(-50%); height:44px; }
 .tag { display:inline-block; font-size: 0.6875rem; padding:1px 7px; border-radius:10px;
        background:var(--g1); color:var(--g7); }
 .tag.f-day { background:#e0f2f1; color:#00695c; }
-.sum { background:var(--pri-l); border:1px solid #cfe0fb; border-radius:8px; padding:10px 12px; margin-top:8px; }
-.sum .lbl { font-size: 0.6875rem; font-weight:700; color:var(--pri-d); margin-bottom:3px; }
-.sum .cat { margin:4px 0 0; }
+.sum { background:var(--pri-l); border:1px solid #cfe0fb; border-radius:8px; padding:8px 10px; margin-top:5px; }
+.sum .lbl { font-size: 0.6875rem; font-weight:700; color:var(--pri-d); margin-bottom:2px; }
+.sum .cat { margin:3px 0 0; }
 .sum .cat .tag { background:#fff; color:var(--pri-d); border:1px solid #cfe0fb; margin-right:4px; }
-.sum .body { font-size: 0.875rem; line-height:1.6; }
+.sum .body { font-size: 0.875rem; line-height:1.5; }
 
 .muted { color:var(--g6); font-size: 0.8125rem; }
 .note { background:var(--warn-bg); color:var(--warn-tx); border-radius:8px; padding:10px 12px;
         font-size: 0.8125rem; line-height:1.6; margin-bottom:12px; }
 .err  { background:var(--ng-l); color:var(--ng); border-radius:8px; padding:10px 12px;
         font-size: 0.8125rem; line-height:1.6; margin-bottom:12px; }
-.who { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:8px 12px;
-       margin-bottom:10px; font-size: 0.9375rem; font-weight:700; }
+.who { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:6px 10px;
+       margin-bottom:6px; font-size: 0.9375rem; font-weight:700; }
 .who .rm { font-weight:400; font-size: 0.75rem; color:var(--g6); margin-left:8px; }
 
 .field { margin-bottom:12px; }
@@ -116,7 +124,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 
 
 /* ── バイタル・食事（2026-08-04 追加） ── */
-.vmsec { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:12px; margin-bottom:12px; }
+.vmsec { background:#fff; border:1px solid var(--g2); border-radius:8px; padding:10px; margin-bottom:8px; }
 .vmsec > h3 { font-size: 0.8125rem; font-weight:700; color:var(--g7); margin-bottom:8px;
               display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 .vmsec > h3 .unit { font-weight:400; font-size: 0.6875rem; color:var(--g6); }
@@ -753,20 +761,24 @@ function evNode(e, dateStr){
     rp.textContent = '記入 ' + e.reporter;
     meta.appendChild(rp);
   }
-  w.appendChild(meta);
-  var bd = document.createElement('div');
-  bd.className = 'body';
-  bd.textContent = e.body;
-  w.appendChild(bd);
-
+  /* ★コピーボタンはメタ行の右端に入れる（本文の下に独立した行を作らない）。 */
   var acts = document.createElement('div');
   acts.className = 'acts noprint';
   var cb = document.createElement('button');
   cb.type = 'button';
-  cb.textContent = 'この1件をコピー';
+  cb.textContent = 'コピー';
+  /* 見える文字は「コピー」だけ。どの1件を指すのかは読み上げ名に時刻で添える
+     （見える文字をそのまま含めるので音声操作でも「コピー」で押せる＝WCAG 2.5.3）。 */
+  if(e.time) cb.setAttribute('aria-label', 'この1件をコピー（' + e.time + '）');
   cb.addEventListener('click', function(){ copyText(lineFor(e, dateStr)); });
   acts.appendChild(cb);
-  w.appendChild(acts);
+  meta.appendChild(acts);
+  w.appendChild(meta);
+
+  var bd = document.createElement('div');
+  bd.className = 'body';
+  bd.textContent = e.body;
+  w.appendChild(bd);
   return w;
 }
 
