@@ -13,6 +13,11 @@
   --blue: #2563a8; --blue-d: #1a4a80; --red: #c0392b; --sat: #2e6fbe; --sun: #d23b3b;
   --headbg: #d06a5e;
   --g1: #f7f8fa; --g2: #eceef1; --g3: #d5d9de; --g4: #9aa1a9; --ink: #2b3138;
+  /* 補助テキスト用の濃い灰（2026-08-23）。--g4(#9aa1a9) は白地 2.61:1・#f7f8fa 地 2.46:1 しかなく、
+   * 夜勤帯の照明・加齢による視認性低下に耐えないため、読ませる文字にはこちらを使う。
+   * 実測コントラスト: #ffffff 上 7.44:1 / #f7f8fa 上 7.00:1（社内目標 7:1 を両方で満たす）。
+   * --g4 自体は記号・表の淡色（td.remain-zero 等＝印刷に載る既存の見た目）用に据え置く。 */
+  --muted-ink: #4e5660;
   --warn: #e67e22; --ok: #27ae60; --hl: #fff3c4; --sel: #cfe3f7;
   /* 編集モード・同期状態の色（2026-08-17 追加。いずれも白文字とのコントラストを実測:
      readonly 5.5:1／conflict 7.1:1／storeerror 10:1）。新しい色を足す時はここに追記して実測値を書く。
@@ -281,7 +286,7 @@ table.eqcols th, table.eqcols td { white-space: nowrap; overflow: hidden; text-o
 #reqGrid table.eqcols th, #reqGrid table.eqcols td { padding: 4px 1px; text-align: center; text-overflow: clip; }
 #reqGrid table.eqcols th:first-child, #reqGrid table.eqcols td:first-child { text-align: left; padding: 4px 6px; text-overflow: ellipsis; }
 table.plain input[type=text] { width: 90%; border: none; background: transparent; padding: 2px; }
-.muted { color: var(--g4); font-size: 0.71875rem; }
+.muted { color: var(--muted-ink); font-size: 0.71875rem; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.65625rem; background: var(--g2); margin: 0 2px; }
 .badge.new { background: #d5f5e3; color: #1e8449; }
 .badge.upd { background: #d6eaf8; color: #21618c; }
