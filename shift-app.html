@@ -552,6 +552,7 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
         <button id="frCSV" class="act">freee用CSVダウンロード（Shift-JIS）</button>
         <span class="muted" id="frInfo"></span>
       </div>
+      <div class="muted" id="frPatternInfo" style="margin-top:4px"></div>
       <details id="frEmpDetails" style="margin-top:8px">
         <summary>従業員コードの取込・編集（freeeの従業員一覧を貼り付け）</summary>
         <textarea id="frPaste" rows="4" style="width:100%;margin:6px 0"
@@ -2083,6 +2084,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ・既存にのみ居る職員: 常に温存（インポートで職員が消える経路を仕様として塞ぐ。不要なら個別削除で対応）
    * ・インポートにのみ居る職員: 追加
    * 返り値: { staff, report: { preserved(フィールド温存が発生した人数), added, keptLocalOnly } } */
+  /* プレーンなオブジェクト（配列・null を除く）か */
+  function isPlainObj(o) {
+    return !!o && typeof o === 'object' && Object.prototype.toString.call(o) !== '[object Array]';
+  }
+  /* rules の1段マージ: base をベースに、imp が持つ項目だけ上書きする。
+   * 空値('' / null / undefined)の取込は base の非空値を上書きしない（トップレベルと同じ安全側）。 */
+  function mergeRules(base, imp) {
+    var out = {}, k;
+    for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+    for (k in imp) {
+      if (!Object.prototype.hasOwnProperty.call(imp, k)) continue;
+      var v = imp[k];
+      if ((v === '' || v === null || v === undefined) &&
+          out[k] !== undefined && out[k] !== null && out[k] !== '') continue;
+      out[k] = v;
+    }
+    return out;
+  }
+  /* 取込側に無い項目を温存したか（report.preserved の計上用） */
+  function rulesKept(mergedRules, imp) {
+    for (var k in mergedRules) {
+      if (Object.prototype.hasOwnProperty.call(mergedRules, k) &&
+          !Object.prototype.hasOwnProperty.call(imp, k)) return true;
+    }
+    return false;
+  }
   function mergeStaffPreserve(existing, imported) {
     var ex = (Object.prototype.toString.call(existing) === '[object Array]') ? existing : [];
     var im = (Object.prototype.toString.call(imported) === '[object Array]') ? imported : [];
@@ -2117,6 +2144,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         for (k in rec) {
           if (!Object.prototype.hasOwnProperty.call(rec, k)) continue;
           var v = rec[k];
+          /* rules は1段深くマージする（2026-08-22）。トップレベルと同じ「インポート側が持つ項目だけ
+           * 上書き」を rules の中にも適用する＝古い名簿を取り込んでも、そこに無い個人別設定
+           * （freeeCodeByTime・break2h 等）が消えない。取込で先祖返りさせないという本関数の
+           * 方針を rules へ広げたもので、項目を消す操作はマスタ画面での個別編集に寄せる。 */
+          if (k === 'rules' && isPlainObj(v) && isPlainObj(merged[k])) {
+            merged[k] = mergeRules(merged[k], v);
+            if (rulesKept(merged[k], v)) kept = true;
+            continue;
+          }
           /* 空値('' / null)のインポートは既存の非空値を上書きしない（コード入力前に取った古いバックアップの
            * empCode:'' 等で freeeコードが消えるのを防ぐ＝安全側。空へ戻したい場合はマスタ画面で個別に消す） */
           if ((v === '' || v === null || v === undefined) &&
@@ -2462,6 +2498,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) {}
     reloadPatterns();
     return FREEE_PATTERNS.length;
+  }
+  /* 使用中のパターン表の内訳（画面表示用）。
+   * source 'default' = 既定表そのまま / 'device' = この端末で編集した表を使用中。
+   * device の場合、既定にしか無いコードは reloadPatterns が末尾へ追記している。 */
+  function patternsStatus() {
+    var stored = loadStoredPatterns();
+    if (stored && patternsSignature(stored) === STALE_PLACEHOLDER_SIG) stored = null;
+    if (!stored) {
+      return { source: 'default', total: FREEE_PATTERNS.length, stored: 0, addedFromDefault: 0 };
+    }
+    var have = {}, i, add = 0;
+    for (i = 0; i < stored.length; i++) have[String(stored[i].code)] = true;
+    for (i = 0; i < DEFAULT_FREEE_PATTERNS.length; i++) {
+      if (!have[String(DEFAULT_FREEE_PATTERNS[i].code)]) add++;
+    }
+    return { source: 'device', total: FREEE_PATTERNS.length, stored: stored.length, addedFromDefault: add };
   }
   function getPatterns() { return FREEE_PATTERNS; }
   reloadPatterns();
@@ -2812,6 +2864,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     parseEmployeePaste: parseEmployeePaste,
     matchEmployees: matchEmployees,
     getPatterns: getPatterns,
+    patternsStatus: patternsStatus,
     reloadPatterns: reloadPatterns,
     parsePatternsText: parsePatternsText,
     serializePatterns: serializePatterns,
@@ -2914,9 +2967,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      形式 {endpoint, token, updatedAt}（ワースケ/週間計画と同じフィールド名）。 */
   var COMMON_SYNC_KEY = 'su_sync_common';
 
-  /* 消失防止の保護対象キー: 職員・記号(マスタ) ＋ 勤務表(sched:*) ＋ 希望休(req:*) ＋ 編集用一覧(drafts:*)。
-   * これらは「空」で非空ローカルを上書きしてはならない（クラウド/他端末経由の消失を防ぐ）。 */
-  var PROTECTED_KEYS = { staff: 1, symbols: 1 };
+  /* 消失防止の保護対象キー: 職員・記号(マスタ) ＋ freee設定 ＋ 勤務表(sched:*) ＋ 希望休(req:*) ＋ 編集用一覧(drafts:*)。
+   * これらは「空」で非空ローカルを上書きしてはならない（クラウド/他端末経由の消失を防ぐ）。
+   * freee は対応表(patternMap)と休暇名(offNames)を持つ設定で、消えると勤怠CSVの出力が崩れるため
+   * 2026-08-22 に追加した（同期・バックアップ取込の対象キーでありながら未保護だった）。 */
+  var PROTECTED_KEYS = { staff: 1, symbols: 1, freee: 1 };
   function isProtectedKey(key) {
     var k = String(key);
     return PROTECTED_KEYS[k] === 1 || k.indexOf('sched:') === 0 || k.indexOf('req:') === 0 ||
@@ -6509,6 +6564,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         'コード設定済み ' + n + '名が出力対象（月: ' + this.app.ym +
         '・' + (divVal === '全' ? '全事業所' : divVal) + '）' +
         (n === 0 ? ' ← 下の「従業員コードの取込・編集」で設定してください' : '');
+      /* いま効いている勤務パターン表を明示する（2026-08-22）。配信や端末保存で表が入れ替わっても
+       * 画面から気づけるようにする＝取り違えたコードを黙って出し続けない。 */
+      var pinfo = document.getElementById('frPatternInfo');
+      if (pinfo && F.patternsStatus) {
+        var ps = F.patternsStatus();
+        pinfo.textContent = (ps.source === 'default')
+          ? '勤務パターン表: 既定 ' + ps.total + '件を使用中（この端末での編集はありません）'
+          : '勤務パターン表: この端末で編集した ' + ps.stored + '件を使用中'
+            + (ps.addedFromDefault ? '（既定にしか無い ' + ps.addedFromDefault + '件を自動追記・計 ' + ps.total + '件）'
+                                   : '（計 ' + ps.total + '件）');
+      }
       /* コード未設定なら入力欄を自動で開く（折りたたみに隠れて気づかない問題を解消） */
       var det = document.getElementById('frEmpDetails');
       if (det && n === 0) det.open = true;
