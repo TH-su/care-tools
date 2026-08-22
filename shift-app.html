@@ -2365,7 +2365,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ★ソース保持/公開分離: 施設の実データ（実名系ラベル）はソースの STRIP 区間に保持し、
    *   build.sh が公開ビルド(dist)では generic 版へ置換する（2026-07-21 運用方針）。 */
   var PATTERN_STORE_KEY = 'shift_freee_patterns_v1';
-  var DEFAULT_FREEE_PATTERNS = [{"code":"101","name":"早番7-16","start":420,"end":960},{"code":"102","name":"遅番12-21","start":720,"end":1260},{"code":"103","name":"夜勤21-7","start":1260,"end":1860},{"code":"104","name":"夜勤23-9","start":1380,"end":1980},{"code":"105","name":"日勤9-18","start":540,"end":1080},{"code":"106","name":"日勤8:30-17:30","start":510,"end":1050},{"code":"107","name":"短時間9-14","start":540,"end":840},{"code":"108","name":"短時間13-17","start":780,"end":1020},{"code":"109","name":"半日9-13","start":540,"end":780},{"code":"110","name":"早番6:30-15:30","start":390,"end":930},{"code":"111","name":"遅番11-20","start":660,"end":1200},{"code":"112","name":"夜勤22-8","start":1320,"end":1920},{"code":"200","name":"健/有","start":540,"end":1080}];
+  var DEFAULT_FREEE_PATTERNS = [{"code":"101","name":"早7-16","start":420,"end":960},{"code":"102","name":"遅12-21","start":720,"end":1260},{"code":"103","name":"夜専①21-7","start":1260,"end":1860},{"code":"104","name":"夜専②23-9","start":1380,"end":1980},{"code":"105","name":"日①8-17","start":480,"end":1020},{"code":"106","name":"7-18","start":420,"end":1080},{"code":"107","name":"7-14:30","start":420,"end":870},{"code":"108","name":"デイ9-13:30","start":540,"end":810},{"code":"109","name":"7-9","start":420,"end":540},{"code":"110","name":"7-11","start":420,"end":660},{"code":"111","name":"7-12","start":420,"end":720},{"code":"112","name":"9-14","start":540,"end":840},{"code":"113","name":"13-16","start":780,"end":960},{"code":"114","name":"9:30-15","start":570,"end":900},{"code":"115","name":"日③9-18","start":540,"end":1080},{"code":"116","name":"遅11-20","start":660,"end":1200},{"code":"117","name":"日②8:30-17:30","start":510,"end":1050},{"code":"118","name":"厨①6:30-15:30","start":390,"end":930},{"code":"119","name":"厨②10-19","start":600,"end":1140},{"code":"120","name":"厨④7-16","start":420,"end":960},{"code":"121","name":"健有","start":540,"end":1080},{"code":"122","name":"早7-18","start":420,"end":960},{"code":"123","name":"夜①21-7","start":1260,"end":1860},{"code":"124","name":"夜②23-9","start":1380,"end":1980},{"code":"125","name":"早7-17","start":420,"end":960},{"code":"126","name":"9-20","start":540,"end":1200},{"code":"127","name":"7-16","start":420,"end":960},{"code":"128","name":"12-21","start":720,"end":1260},{"code":"129","name":"11-20","start":660,"end":1200},{"code":"130","name":"7-18","start":420,"end":1080},{"code":"131","name":"8-17","start":480,"end":1020},{"code":"132","name":"夜専①21-7(-8）","start":1260,"end":1860},{"code":"133","name":"23-9","start":1380,"end":1980},{"code":"134","name":"遅11:30‐20:30","start":690,"end":1230},{"code":"135","name":"18-21","start":1080,"end":1260},{"code":"136","name":"9-13","start":540,"end":780},{"code":"137","name":"12-21","start":720,"end":1260},{"code":"138","name":"9-15","start":540,"end":900},{"code":"139","name":"夜③22-8","start":1320,"end":1920},{"code":"140","name":"7-21","start":420,"end":1260},{"code":"141","name":"遅13-22","start":780,"end":1320},{"code":"142","name":"早7-16(6:30-)","start":420,"end":960},{"code":"143","name":"6:30-21","start":390,"end":1260},{"code":"144","name":"6:30-9","start":390,"end":540},{"code":"145","name":"早6:30-1530","start":390,"end":930},{"code":"146","name":"9:30-13:30","start":570,"end":810},{"code":"147","name":"7-22","start":420,"end":1320},{"code":"151","name":"遅12-21早遅手当なし","start":720,"end":1260},{"code":"152","name":"18-21早遅手当なし","start":1080,"end":1260},{"code":"153","name":"早7-16早遅手当なし","start":420,"end":960},{"code":"154","name":"16-21","start":960,"end":1260},{"code":"155","name":"夜①21-7(-8）","start":1260,"end":1860},{"code":"156","name":"夜専①21-7(-9）","start":1260,"end":1860},{"code":"157","name":"夜専③22-8","start":1320,"end":1920},{"code":"158","name":"15-17","start":900,"end":1020},{"code":"159","name":"9-12","start":540,"end":720},{"code":"160","name":"14:30-16:30","start":870,"end":990},{"code":"161","name":"22-8","start":1320,"end":1920},{"code":"163","name":"9-16:30","start":540,"end":990},{"code":"164","name":"9-17","start":540,"end":1020},{"code":"165","name":"7:30-16:30","start":450,"end":990},{"code":"166","name":"8:30-16","start":510,"end":960},{"code":"200","name":"健/有","start":540,"end":1080},{"code":"201","name":"7-18","start":420,"end":1080},{"code":"202","name":"健診","start":540,"end":780},{"code":"203","name":"健診（胃カメラ無し）","start":540,"end":600},{"code":"A999","name":"7-20","start":420,"end":1200}];
   var FREEE_PATTERNS = [];
 
   function pmMinToHM(min) {
@@ -2417,9 +2417,36 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (arr && arr.length) ? arr : null;
     } catch (e) { return null; }
   }
-  /* 保存済みマスタ（無ければ既定）で FREEE_PATTERNS の中身を差し替える。 */
+  /* 旧公開ビルドが配っていた仮パターン表の指紋（コード13件・実際の freee 表と時刻が食い違う）。
+   * これが端末に保存されたままだと 8:30-17:30→106 のような取り違えが起きるため、
+   * 完全一致した時だけ破棄して既定へ戻す。施設が自分で編集した表は破棄しない。 */
+  var STALE_PLACEHOLDER_SIG = '101:420-960|102:720-1260|103:1260-1860|104:1380-1980|105:540-1080|'
+    + '106:510-1050|107:540-840|108:780-1020|109:540-780|110:390-930|111:660-1200|112:1320-1920|200:540-1080';
+  function patternsSignature(arr) {
+    var parts = [];
+    for (var i = 0; i < arr.length; i++) parts.push(arr[i].code + ':' + arr[i].start + '-' + arr[i].end);
+    return parts.join('|');
+  }
+  /* 保存済みマスタ（無ければ既定）で FREEE_PATTERNS の中身を差し替える。
+   * 保存済みがある場合も、既定にしか無いコードは末尾へ追記する（新設コードが端末ごとに
+   * 欠けたままになるのを防ぐ）。既存行は書き換えない＝先頭一致優先なので既存の対応は不変。 */
   function reloadPatterns() {
-    var next = loadStoredPatterns() || DEFAULT_FREEE_PATTERNS;
+    var stored = loadStoredPatterns();
+    if (stored && patternsSignature(stored) === STALE_PLACEHOLDER_SIG) {
+      try { if (typeof localStorage !== 'undefined') localStorage.removeItem(PATTERN_STORE_KEY); } catch (e) {}
+      stored = null;
+    }
+    var next;
+    if (stored) {
+      next = [];
+      var have = {}, h;
+      for (h = 0; h < stored.length; h++) { next.push(stored[h]); have[String(stored[h].code)] = true; }
+      for (h = 0; h < DEFAULT_FREEE_PATTERNS.length; h++) {
+        if (!have[String(DEFAULT_FREEE_PATTERNS[h].code)]) next.push(DEFAULT_FREEE_PATTERNS[h]);
+      }
+    } else {
+      next = DEFAULT_FREEE_PATTERNS;
+    }
     FREEE_PATTERNS.length = 0;
     for (var i = 0; i < next.length; i++) FREEE_PATTERNS.push(next[i]);
     return FREEE_PATTERNS;
@@ -2442,6 +2469,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* 休み記号 → freee「全日休暇」名。空文字=その日は出力しない */
   var DEFAULT_OFF_NAMES = { '休': '公休', '公': '公休', '希': '公休', '有': '有給休暇', '明': '' };
+  /* 夜勤明けに希望休が併記された日（「7)(希」）に出力する freee の全日休暇名。
+   * 単独の「希」は従来どおり公休（要件2）で、この名称は明け＋希望休の組み合わせにだけ使う。 */
+  var ABSENCE_NAME = '欠勤';
 
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
   function daysInMonth(ym) {
@@ -2671,13 +2701,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           continue;
         }
         /* 3) 明けのみ（勤務・入り無し）: 連勤最後の明けの日は「公休」を出力。
-         *    「7)(有」のように休暇が併記されていればその休暇名を出力する */
+         *    「7)(有」のように休暇が併記されていればその休暇名を出力する。
+         *    例外: 「7)(希」（明け＋希望休）は欠勤として出力する（2026-08-22 依頼）。 */
         if (info2.nightOut) {
           var nameN = '公休';
           if (info2.offPart) {
             var okey = info2.offPart.code ? Sym.normalizeCell(info2.offPart.code) : '';
             if (Sym.ALIASES && Sym.ALIASES[okey]) okey = Sym.ALIASES[okey];
-            nameN = Object.prototype.hasOwnProperty.call(offNames, okey)
+            if (okey === '希') { nameN = ABSENCE_NAME; }
+            else nameN = Object.prototype.hasOwnProperty.call(offNames, okey)
               ? offNames[okey]
               : (info2.offPart.kind === 'paidOff' ? '有給休暇' : '公休');
             if (!nameN) nameN = '公休'; /* 明けの日は必ず休み扱い（空設定でも公休へ） */
