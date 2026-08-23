@@ -113,10 +113,14 @@ body.edit-mode #toolbar #modeBadge { color: var(--edit-ink); }
    .nosync だけは半透明白地で明橙の上では読めないため、この帯の中でだけ濃色地にする（白文字と 10.9:1・実測）。 */
 body.edit-mode #syncBadge { color: #fff; }
 body.edit-mode #syncBadge.nosync { background: rgba(43,16,0,.75); }
-/* 移行バナー（旧版で溜まった未送信の編集がこの端末に残っている時だけ表示） */
-#lockBanner2 { background: #fff3cd; border-bottom: 1px solid #ffe69c; color: #7a5b00;
+/* 移行バナー（旧版で溜まった未送信の編集がこの端末に残っている時だけ表示）
+   ＋未取得バナー（#staleBanner・表示中の月を読み込めていない時だけ表示）。
+   色・余白は同じルールに相乗りさせる＝新しい配色を発明しない。 */
+#lockBanner2, #staleBanner { background: #fff3cd; border-bottom: 1px solid #ffe69c; color: #7a5b00;
   padding: 8px 12px; font-size: 0.8125rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #lockBanner2 button { min-height: 36px; }
+/* 手袋・夜勤帯での誤タップを避けるため、新規ぶんは44px以上（隣接間隔は上の gap:8px）。 */
+#staleBanner button { min-height: 44px; }
 /* 退避データ一覧（マスタ→設定→バックアップ） */
 #rescueList table.plain td { vertical-align: middle; }
 #rescueList .muted { margin: 0; }
@@ -447,6 +451,12 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 </div>
 
 <div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:0.8125rem">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
+
+<!-- 未取得バナー: 表示中の月をサーバから読み込めていない時だけ出る（この月は編集させない）。 -->
+<div id="staleBanner" class="noprint" style="display:none">
+  <span id="staleText"></span>
+  <button id="staleRetry" class="act">再取得</button>
+</div>
 
 <!-- 移行バナー: 旧版で溜まった未送信の編集がこの端末に残っている時だけ出る（閲覧モード時）。 -->
 <div id="lockBanner2" class="noprint" style="display:none">
@@ -2047,6 +2057,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.items[key] = it;
     }
   };
+  /* 由来の印（第4層のサーバガード用・2026-08-23）。
+   * enqueue は既存キーを据え置く仕様のため、印だけは last-write-wins の専用setterで持つ。
+   * origin を渡さない呼び出し（＝通常のユーザー編集）は印を消す＝正当な書き込みが
+   * 「既定値/バックアップ由来」と誤認されてサーバに拒否され続けるのを防ぐ。 */
+  SyncQueue.prototype.markOrigin = function (key, origin) {
+    var it = this.items[key];
+    if (!it) return;
+    if (origin) it.origin = String(origin);
+    else if (it.origin !== undefined) delete it.origin;
+  };
   SyncQueue.prototype.keys = function () {
     var out = [];
     for (var k in this.items) out.push(k);
@@ -2068,6 +2088,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * epoch を持たない旧形式は付けないまま復元＝「世代不明」として競合時は退避側に倒れる（安全側）。 */
         var rec = { baseRev: (typeof it.baseRev === 'number') ? it.baseRev : 0, queuedAt: it.queuedAt || 0 };
         if (typeof it.epoch === 'number') rec.epoch = it.epoch;
+        /* 由来の印もリロードを跨いで復元する（消えると未送信の既定値が印なしで着地し、
+         * サーバの出荷時リセット拒否をすり抜ける）。 */
+        if (typeof it.origin === 'string') rec.origin = it.origin;
         q.items[k] = rec;
       }
     }
@@ -2286,6 +2309,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function classifyPushError(msg) {
     var m = String(msg === null || msg === undefined ? '' : msg);
     if (m === 'editlock' || m === 'editlock-required' || m === 'locklost' || m === 'lockheld') return 'lost';
+    /* 'guard'＝サーバ側のデータ保護で拒否された（一括消失・出荷時リセット・古いバックアップ復元）。
+     * 通信失敗と同じ 'other' に落とすと、同じ内容を無言で送り続ける無限リトライになる。 */
+    if (m === 'schedwipe' || m === 'staffshrink' || m === 'defaultsoverwrite' || m === 'backupoverwrite') return 'guard';
     if (m === 'unknown action') return 'unsupported';
     return 'other';
   }
@@ -3041,6 +3067,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < localVal.length; i++) if (localVal[i] && localVal[i].empCode) lc++;
     return lc >= 3 && sc === 0;
   }
+  /* 本人の承認を得れば force で通してよい拒否理由（＝正当な業務でも起きうる件数ガード）。
+   * 既定値の投入・端末バックアップからの復元は機械が作った書き込みなので、ここには入れない。 */
+  var GUARD_FORCEABLE = { schedwipe: 1, staffshrink: 1 };
+  /* 端末バックアップが「前のセッションのもの」と言える最小の時間差（旧版キューの由来判定に使う）。 */
+  var STALE_BACKUP_MS = 60 * 1000;
+  function sameJson_(a, b) {
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+  }
+  /* 中身が「工場出荷の記号そのもの」か。既定投入の直後に走る配色移行（全記号の userColored=false 化）
+   * まで含めて突き合わせる＝新品端末が作る2通りのどちらでも判定できる。
+   * 利用者が1文字でも直していれば一致しない＝正当な編集を誤って印付けしない。 */
+  function isFactorySymbols_(val) {
+    if (Object.prototype.toString.call(val) !== '[object Array]') return false;
+    var Sym = (typeof window !== 'undefined') ? window.ShiftSymbols : null;
+    if (!Sym || !Sym.DEFAULT_SYMBOLS) return false;
+    if (sameJson_(val, Sym.DEFAULT_SYMBOLS)) return true;
+    var migrated = [], i, k, o;
+    for (i = 0; i < Sym.DEFAULT_SYMBOLS.length; i++) {
+      o = {};
+      for (k in Sym.DEFAULT_SYMBOLS[i]) o[k] = Sym.DEFAULT_SYMBOLS[i][k];
+      o.userColored = false;
+      migrated.push(o);
+    }
+    return sameJson_(val, migrated);
+  }
   /* サーバ値をローカルへ適用してよいか。保護キーは「非空ローカルを空で上書き」を拒否 */
   function mayApplyServer(key, serverData, localVal) {
     if (serverData === null || serverData === undefined) return false; /* 破損/null */
@@ -3129,7 +3180,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     onLockLost: null,      // 編集権喪失の処理完了（引数=サーバ版を採用した件数）
     onLockLostFail: null,  // 退避に失敗して中断（引数=キー配列・ローカルは温存）
     onLeaseReacquired: null, // 失効後に同じ端末で取り直した時（引数=世代差。UIが最新取得を行う）
+    onServerGuard: null,     // サーバのデータ保護で書き込みが拒否された（引数=キー, エラー種別）
     lastReacquireGap: 0,   // 直近の取り直しでの世代差（1=自分だけ／1超=不在中に別の端末が編集した可能性）
+    /* ── サーバ状態の確認済み印（2026-08-23・巻き戻り防止の第2層） ──
+     * serverSeen[key]=true は「そのキーについてサーバの状態を確認できた」の意味。
+     * pull が成功した時だけ立てる＝取得できていない間は、既定値や端末バックアップで
+     * サーバを上書きしない（未取得の空/古い内容での上書き＝巻き戻りの根本経路を塞ぐ）。
+     * 永続化しない（リロード後は取り直すまで未確認＝安全側）。 */
+    serverSeen: null,
+    serverSeenAll: false,  // keyless全量pullが成功した＝全キーを確認済みとして扱える
+    dataFresh: null,       // null=未判定 / true=直近のpullが成功 / false=取得に失敗している
 
     init: function () {
       this.meta = lsGet(META_KEY) || { revs: {}, dirty: {}, lastSync: null };
@@ -3139,12 +3199,45 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var el = EL_();
       this.lease = el ? el.normalizeLease(this.getLocal('editLease')) : null;
       this.heldConflicts = {};
+      this.serverSeen = {};
+      this.serverSeenAll = false;
+      this._serverUnseen = {};
+      this.dataFresh = null;
+      this._guardBlocked = {};
+      this._guardRejects = {};
+      this._forceTried = {};
+      this.markLegacyOrigins_();
       /* fromJSONが旧形式のデータ複製を落とすため、ここで一度書き戻すと肥大化した既存_metaが
        * 即座にスリム化され、容量を即時回復できる（圧縮も同時に適用される）。 */
       this.saveMeta();
       this.pruneConflictRescue();
       this.updateStatus();
       this.bindRecovery();
+    },
+    /* 旧版（由来の印を持たない版）で積まれた未送信に、内容から印を付け直す。
+     * 印が無いまま送ると「工場出荷の記号」「端末内の古い名簿」がサーバのガードを素通りする。
+     * 誤検知を避けるため、機械が作った書き込みだけが満たす条件に限定する:
+     *   symbols … 中身が工場出荷の既定値そのもの（利用者が1文字でも直せば一致しない）
+     *   staff   … 中身が端末バックアップと同一 かつ そのバックアップが積まれた時刻より十分古い
+     *              （通常の職員編集は保存直後にバックアップを更新するので時刻差が出ない＝誤検知しない）
+     * 誤って印が付いても、サーバ側に中身が無ければ従来どおり通る＝初回セットアップは壊れない。 */
+    markLegacyOrigins_: function () {
+      if (!this.queue || !this.queue.markOrigin) return;
+      try {
+        var sym = this.queue.items['symbols'];
+        if (sym && !sym.origin && isFactorySymbols_(lsGet(PREFIX + 'symbols'))) {
+          this.queue.markOrigin('symbols', 'defaults');
+        }
+        var st = this.queue.items['staff'];
+        if (st && !st.origin && typeof st.queuedAt === 'number' && st.queuedAt > 0) {
+          var bk = lsGet(PREFIX + 'local:staffBackup');
+          var at = (bk && bk.at) ? Date.parse(bk.at) : NaN;
+          if (bk && bk.staff && isFinite(at) && (st.queuedAt - at) >= STALE_BACKUP_MS &&
+              sameJson_(lsGet(PREFIX + 'staff'), bk.staff)) {
+            this.queue.markOrigin('staff', 'backup');
+          }
+        }
+      } catch (e) {}
     },
     /* 退避キー(local:conflictRescue:* / local:importRescue:*)の掃除（2026-07-23 巻き戻り事故対応）。
      * ①savedAt が14日を超えたもの ②同一元キー系列で最新3世代を超える古いもの、を削除する。
@@ -3257,6 +3350,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (ok && this._corruptKeys) delete this._corruptKeys[key];
       /* キューはキー+baseRev+リース世代のみ登録（データ本体はlsSetで保存済み・push時にlive取得） */
       this.queue.enqueue(key, this.meta.revs[key] || 0, Date.now(), this.lease ? this.lease.epoch : undefined);
+      /* 由来の印。ユーザーが手で編集した set（auto でない）は必ず印を消す＝正当な編集が
+       * 「既定値/バックアップ由来」と誤認されてサーバに拒否され続けるのを防ぐ。
+       * origin を持たない自動書き込み（既定値を作った直後の配色移行・並び順採番など）は
+       * 印を据え置く＝送る中身は依然として既定値/バックアップ由来なので、印を落とすと
+       * 出荷時リセットがそのまま着地してしまう。 */
+      if (this.queue.markOrigin) {
+        if (opts && opts.origin) this.queue.markOrigin(key, opts.origin);
+        else if (!(opts && opts.auto)) this.queue.markOrigin(key, null);
+      }
+      /* サーバのデータ保護で止めたキーは、人が実際に編集した時だけ再送対象へ戻す
+       * （自動書き込みで解除すると 既定値の再投入→再拒否 のループが復活する）。 */
+      if (ok && !(opts && opts.auto) && this._guardBlocked) {
+        delete this._guardBlocked[key];
+        if (this._guardRejects) this._guardRejects[key] = 0;
+        /* 次に大きく減る保存をしたら、もう一度きちんと本人に確認する */
+        if (this._forceTried) delete this._forceTried[key];
+      }
       var metaOk = this.saveMeta();
       this.schedulePush();
       if (ok && metaOk) {
@@ -3298,7 +3408,81 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (this.queue) this.queue.take(key);
       if (this._corruptKeys) delete this._corruptKeys[key];
+      if (this._guardBlocked) delete this._guardBlocked[key];
       this.saveMeta();
+    },
+
+    /* そのキーについてサーバの状態を確認できたか（自動書き込みのゲート）。
+     * 同期未設定の端末は常に true＝単独運用の挙動を変えない。
+     * 参照は必ずこのメソッド経由にする（生のmapを直接見ると2つの例外を書き写し損なう）。 */
+    hasServerSeen: function (key) {
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return true;
+      /* 全量pull（同期バッジ）で一度は確認できても、その後そのキーの再取得に失敗したら
+       * そのキーだけ未確認へ戻す。serverSeenAll より先に見る＝一度押したバッジで
+       * 月別ゲートがセッション中ずっと無効化されるのを防ぐ。 */
+      if (this._serverUnseen && this._serverUnseen[key]) return false;
+      if (this.serverSeenAll) return true;
+      return !!(this.serverSeen && this.serverSeen[key] === true);
+    },
+    /* この端末で新しく作ったキー（サーバにまだ存在しないことが手元で確定している）。
+     * pull では決して現れないため、これを確認済みに数えないと新規ドラフトが永久に編集不可になる。 */
+    noteLocallyCreated_: function (key) {
+      if (!this.serverSeen) this.serverSeen = {};
+      this.serverSeen[String(key)] = true;
+      if (this._serverUnseen) delete this._serverUnseen[String(key)];
+    },
+    /* pull が成功した時だけ印を立てる（pullAll からのみ呼ぶ）。
+     * keyed pull＝要求したキーは応答に無くても「サーバに存在しない」と確認できた＝true。
+     * keyless pull＝サーバ側の全キーが返るため、以後どのキーも確認済みとして扱える。 */
+    markServerSeen_: function (optKeys, entries, optExclude) {
+      if (!this.serverSeen) this.serverSeen = {};
+      if (!this._serverUnseen) this._serverUnseen = {};
+      var i, k;
+      /* 応答は受け取ったが手元へ反映できなかったキー（保存失敗・サーバ側破損）は
+       * 「中身を持っていない」＝確認済みに数えない。数えると空のまま編集できてしまう。 */
+      var skip = {};
+      if (Object.prototype.toString.call(optExclude) === '[object Array]') {
+        for (i = 0; i < optExclude.length; i++) skip[String(optExclude[i])] = true;
+      }
+      var mark_ = function (self, key) {
+        if (skip[key]) {
+          delete self.serverSeen[key];
+          self._serverUnseen[key] = true;   /* 全量pull済みでもこのキーだけは未確認へ戻す */
+          return;
+        }
+        self.serverSeen[key] = true;
+        delete self._serverUnseen[key];
+      };
+      if (Object.prototype.toString.call(optKeys) === '[object Array]') {
+        for (i = 0; i < optKeys.length; i++) mark_(this, String(optKeys[i]));
+      } else {
+        /* 全量pull＝サーバの全キーが返る。以前の失敗で未確認へ戻したキーもここで解消する
+         * （取り込めなかったキーは、この直後の entries ループで立て直される）。 */
+        this.serverSeenAll = true;
+        this._serverUnseen = {};
+      }
+      for (k in entries) {
+        if (Object.prototype.hasOwnProperty.call(entries, k)) mark_(this, k);
+      }
+    },
+    /* rev突合(shiftStatus)で「サーバの方が新しくない」と分かったキーも確認済みに数える。
+     * revが進んでいるキーは中身を持っていない＝立てない（続く pullAll の成功で立つ）。 */
+    noteRevsSeen_: function (revs) {
+      if (!revs || typeof revs !== 'object') return;
+      if (!this.serverSeen) this.serverSeen = {};
+      for (var k in revs) {
+        if (!Object.prototype.hasOwnProperty.call(revs, k)) continue;
+        var sv = (typeof revs[k] === 'number') ? revs[k] : 0;
+        if (sv > ((this.meta && this.meta.revs && this.meta.revs[k]) || 0)) continue;
+        /* rev が一致していても、その中身を手元に持っていなければ「確認できた」ではない
+         * （復号不能・保存失敗でエントリだけ消えても _meta の rev は残るため）。
+         * 未送信のキーも数えない（送る側の内容が正で、サーバ状態を見たことにはならない）。 */
+        if (lsGet(PREFIX + k) === null) continue;
+        if (this.meta && this.meta.dirty && this.meta.dirty[k]) continue;
+        this.serverSeen[k] = true;
+        if (this._serverUnseen) delete this._serverUnseen[k];
+      }
     },
 
     /* 接続先の解決: 共通キー（他アプリと共有）を優先し、無ければ従来キー。 */
@@ -3412,6 +3596,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
       } else if (this.queue.size() > 0) {
         this.status = 'dirty'; this.statusDetail = '';
+      } else if (this.dataFresh === false) {
+        /* 取得に失敗している間は「✓ 同期済み」と言わない（画面は端末内の内容にすぎない）。
+         * 新しい状態は作らず既存の offline へ倒す＝バッジ辞書もCSSも無改変。
+         * null（未判定＝起動直後）は従来どおり synced のまま＝バッジが一瞬赤く点滅しない。 */
+        this.status = 'offline';
+        this.statusDetail = 'サーバから最新を取得できていません（画面は端末内の内容です）。通信状況を確認してください';
       } else {
         this.status = 'synced'; this.statusDetail = '';
       }
@@ -3434,7 +3624,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       }).then(function (json) {
-        if (json && json.error) throw new Error(json.error);
+        /* サーバが返した付随情報（was/now＝件数など）を捨てない。
+         * 捨てると「サーバーには480マス、今回の保存は30マス」の確認文が作れず、
+         * 本人が force で通すかどうかを判断できない。 */
+        if (json && json.error) {
+          var e = new Error(json.error);
+          e.detail = json;
+          throw e;
+        }
         return json;
       });
     },
@@ -3512,7 +3709,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return this.api(payload).then(function (res) {
         if (res.role) self.readOnly = (res.role === 'ro');
         var entries = res.entries || {};
+        /* 取得できた＝このpullで要求したキーはサーバの状態を確認できた（応答に無い＝不在と確認できた）。
+         * applyPullEntries_ は entries しか受け取らないため、optKeys を知るこの場所で印を立てる。 */
+        self.dataFresh = true;
         var applied = self.applyPullEntries_(entries);
+        /* 反映まで済んでから印を立てる（保存失敗・破損のキーは除外＝手元に中身が無いまま
+         * 「確認済み」になってサーバを空で上書きする経路を作らない）。 */
+        self.markServerSeen_(optKeys, entries, applied.storeFailed.concat(applied.corrupt));
         var conflicts = applied.conflicts;
         var corrupt = applied.corrupt;
         var storeFailed = applied.storeFailed;
@@ -3537,6 +3740,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return 'ok';
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
+        /* 取得できなかった＝serverSeen は一切立てない（この後の自動書き込みを止める根拠）。
+         * 要求したキーは「今この瞬間は確認できていない」＝全量pull済みでも未確認へ戻す。 */
+        self.dataFresh = false;
+        if (Object.prototype.toString.call(optKeys) === '[object Array]') {
+          if (!self._serverUnseen) self._serverUnseen = {};
+          for (var ui = 0; ui < optKeys.length; ui++) self._serverUnseen[String(optKeys[ui])] = true;
+        }
         /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
         if (msg === 'unknown action' && !self._healing) {
           self._healing = true;
@@ -3729,6 +3939,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         chain = chain.then(function () {
           var item = self.queue.items[key];
           if (!item) return null;
+          /* サーバのデータ保護で拒否されたキーは送らない（1.5秒ごとの再送ループを作らない）。
+           * 人が実際に編集した時（auto でない set）だけブロックが解ける。 */
+          if (self._guardBlocked && self._guardBlocked[key]) return null;
           /* データ本体はキューに持たず、送信直前に localStorage から最新を取得（_meta二重保存の解消） */
           var liveData = lsGet(PREFIX + key);
           if (liveData === null || liveData === undefined) {
@@ -3741,12 +3954,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             else { self._corruptKeys[key] = true; try { console.warn('同期スキップ: ローカルデータを読めません（破損の可能性）:', key); } catch (e) {} }
             return null;
           }
-          var payload = { action: 'push', key: key, data: liveData, baseRev: item.baseRev };
-          /* 編集券。サーバはリース有効中これが一致しない書き込みを拒否する（クライアント側の
-           * チェックだけでは未リロード端末・失効レースを防げないため）。
-           * 認証トークン(token)とは別フィールド。リースが無い運用（旧サーバ）では付けない
-           * ＝undefined を混ぜず、旧サーバへのリクエスト内容を従来と同一に保つ。 */
-          if (self.editMode && self.lease && self.lease.token) payload.editToken = self.lease.token;
+          var payload = self.buildPushPayload_(key, item, liveData);
           return self.api(payload)
             .then(function (res) {
               if (res && res.readOnly) { self.readOnly = true; throw new Error('__READONLY__'); }
@@ -3764,6 +3972,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                  * 多端末同時編集時の無限ループ防止に再試行回数を上限管理。 */
                 self.autoResolveConflict(key, r.serverRev, null);
               }
+            })
+            .catch(function (err) {
+              /* サーバのデータ保護による拒否だけをキー単位で受け止める。
+               * それ以外は必ず投げ直す＝既存の外側 catch（編集権喪失・旧サーバ切替・再試行）を変えない。 */
+              var m2 = String(err && err.message ? err.message : err);
+              if (m2 === '__READONLY__') throw err;
+              if (classifyPushError_(m2) !== 'guard') throw err;
+              return self.handleGuardReject_(key, m2, err && err.detail ? err.detail : null);
             });
         });
       });
@@ -3777,7 +3993,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * 残っている時だけ再武装＝破損キー単独での無限ループ(1.5s毎の再送/バッジ点滅)を防ぐ。 */
         var qk = self.queue.keys(), hasSendable = false;
         for (var qi = 0; qi < qk.length; qi++) {
-          if (!(self._corruptKeys && self._corruptKeys[qk[qi]])) { hasSendable = true; break; }
+          if (self._corruptKeys && self._corruptKeys[qk[qi]]) continue;
+          if (self._guardBlocked && self._guardBlocked[qk[qi]]) continue;
+          hasSendable = true; break;
         }
         if (hasSendable) self.schedulePush();
         return 'ok';
@@ -3953,6 +4171,121 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (String(a && a.error) === 'lockheld') { self.handleLockLost(); return 'lost'; }
           /* 取り直しにも失敗（通信不能・応答不正）: 何も壊さず編集モードを維持する */
           return 'network';
+        });
+      });
+    },
+
+    /* サーバのデータ保護（一括消失・出荷時リセット・古いバックアップ復元）で拒否された時の受け止め。
+     * 手順: ①そのキーを再送対象から外す ②手元の内容を退避 ③退避できた時だけサーバ版を取り込む
+     * ④利用者へ日本語で伝える。退避に失敗したら何も採用しない（復旧材料が無い状態で手元を消さない）。
+     * handleLockLost は流用しない（あれはキュー全キーを巻き戻す＝拒否された1キー以外の未送信まで失う）。 */
+    handleGuardReject_: function (key, err, detail) {
+      var self = this;
+      if (!this._guardBlocked) this._guardBlocked = {};
+      if (!this._guardRejects) this._guardRejects = {};
+      if (!this._forceTried) this._forceTried = {};
+      this._guardBlocked[key] = true;               /* 即ブロック＝1.5秒ごとの再送ループに入らせない */
+      var n = (this._guardRejects[key] || 0) + 1;
+      this._guardRejects[key] = n;
+      /* 件数ガード（勤務表の一括減少・名簿の大幅減）は、正当な業務でも発火する
+       * ＝自動作成の取り消し／編集用の確定／バックアップの取り込み。黙って巻き戻すと
+       * 利用者は同じ操作を繰り返すだけで前へ進めない（サーバ側の唯一の迂回路が使われない）。
+       * 件数を示して本人に選ばせ、承認された時だけ 1 回だけ force で通す。
+       * 既定値の投入・端末バックアップからの復元には出さない＝機械が作った書き込みなので
+       * 「はい」1回で症状（工場出荷リセット・古い名簿での置換）が再発する。 */
+      if (GUARD_FORCEABLE[String(err)] && !this._forceTried[key] && this.onGuardConfirm) {
+        this._forceTried[key] = true;
+        var ask = null;
+        try { ask = this.onGuardConfirm(key, String(err), detail || null); } catch (eC) { ask = null; }
+        if (ask && ask.then) {
+          return ask.then(function (yes) {
+            if (!yes) return self.finishGuardReject_(key, err, n);
+            return self.forcePush_(key).then(function (done) {
+              return done ? 'forced' : self.finishGuardReject_(key, err, n);
+            });
+          }, function () { return self.finishGuardReject_(key, err, n); });
+        }
+      }
+      return this.finishGuardReject_(key, err, n);
+    },
+
+    /* push 1件分の payload を組む（通常送信と強制送信で同じ形にする）。 */
+    buildPushPayload_: function (key, item, optLive) {
+      var liveData = (optLive === undefined) ? lsGet(PREFIX + key) : optLive;
+      var payload = { action: 'push', key: key, data: liveData, baseRev: item.baseRev };
+      /* 編集券。サーバはリース有効中これが一致しない書き込みを拒否する（クライアント側の
+       * チェックだけでは未リロード端末・失効レースを防げないため）。
+       * 認証トークン(token)とは別フィールド。リースが無い運用（旧サーバ）では付けない
+       * ＝undefined を混ぜず、旧サーバへのリクエスト内容を従来と同一に保つ。 */
+      if (this.editMode && this.lease && this.lease.token) payload.editToken = this.lease.token;
+      /* 由来の印。サーバは「無から作った既定値」「端末内の古いバックアップ」で
+       * 現役データを潰す書き込みだけを拒否できる。旧サーバは未知フィールドとして無視する
+       * （無い時はフィールドごと付けない＝旧サーバへのリクエストを従来と同一に保つ）。 */
+      if (item.origin === 'defaults') payload.defaultsInit = true;
+      else if (item.origin === 'backup') payload.restoreFromBackup = true;
+      return payload;
+    },
+
+    /* 本人の承認を得た1回だけの強制送信。成功で true。
+     * 失敗（通信不能・競合・別の拒否）は false を返すだけで再送も再帰もしない
+     * ＝呼び出し側が従来の 退避→サーバ版採用 へ進む（無限ループを作らない）。 */
+    forcePush_: function (key) {
+      var self = this;
+      var item = this.queue.items[key];
+      if (!item) return Promise.resolve(false);
+      var live = lsGet(PREFIX + key);
+      if (live === null || live === undefined) return Promise.resolve(false);
+      var payload = this.buildPushPayload_(key, item, live);
+      payload.force = true;
+      return this.api(payload).then(function (res) {
+        var r = SC.applyPushResult(res);
+        if (r.status !== 'pushed') return false;
+        self.queue.take(key);
+        self.meta.revs[key] = r.rev;
+        delete self.meta.dirty[key];
+        if (self.heldConflicts) delete self.heldConflicts[key];
+        delete self._guardBlocked[key];
+        self._guardRejects[key] = 0;
+        self.saveMeta();
+        self.updateStatus();
+        if (self.onGuardForced) { try { self.onGuardForced(key); } catch (eF) {} }
+        return true;
+      }, function () { return false; });
+    },
+
+    /* 拒否をそのまま受け入れる時の後始末（退避→サーバ版の取り込み→通知）。 */
+    finishGuardReject_: function (key, err, n) {
+      var self = this;
+      var item = this.queue.items[key];
+      var lv = lsGet(PREFIX + key);
+      if (lv !== null && lv !== undefined && !this.rescueLocal_(key, lv, item ? item.baseRev : 0)) {
+        /* 退避できなかった: キューもローカルも触らずに中断する（何も失わない側へ倒す） */
+        this.storeError = true;
+        this.updateStatus('storeerror',
+          'サーバ側のデータを守るため、この端末の変更は保留しました。端末内への退避に失敗したため、サーバの最新版の取り込みを中止しています（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+        return Promise.resolve('rescuefail');
+      }
+      this.queue.take(key);
+      delete this.meta.dirty[key];
+      if (this.heldConflicts) delete this.heldConflicts[key];
+      this.saveMeta();
+      function notify_() {
+        if (self.onServerGuard) { try { self.onServerGuard(key, err); } catch (eG) {} }
+        if (self.onResolved) { try { self.onResolved(); } catch (eR) {} }
+      }
+      if (n > 4) {
+        /* 取り直しを繰り返さない（既存 autoResolveConflict の4回上限と同型の終端） */
+        this.updateStatus('conflict', 'サーバ側のデータを守るため、この端末の変更を保留しました（' + key + '）');
+        notify_();
+        return Promise.resolve('blocked');
+      }
+      return new Promise(function (resolve) {
+        /* サーバ版を取り直して画面へ反映（保護判定・rev前進・キュー解消は adoptServer が担う） */
+        self.adoptServer({ key: key, server: { rev: (self.meta.revs[key] || 0), data: null, needsPull: true } }, function () {
+          self.saveMeta();
+          self.updateStatus('conflict', 'サーバ側のデータを守るため、この端末の変更を保留しました（' + key + '）');
+          notify_();
+          resolve('guard');
         });
       });
     },
@@ -7041,7 +7374,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var p = loadFacilityProfile();
     /* 初回ウィザードの自動起動は編集モードのみ。閲覧端末（他端末が編集中・共有ロック待ち）で
      * 毎回モーダルが開くのを防ぐ。手動では［マスタ→設定→施設情報の設定］から開ける。 */
-    if (!p.setupDone && window.ShiftStore && window.ShiftStore.editMode) openWizard();   /* 未存在含め setupDone:false なら初回ウィザード */
+    /* サーバの職員名簿を確認できていない端末では自動起動しない（名簿が空に見える端末で
+     * 初回セットアップが走り、サーバの現役名簿を潰す経路になるため）。旧 store とは従来動作へ倒す。 */
+    var seenStaff = !(window.ShiftStore && typeof window.ShiftStore.hasServerSeen === 'function') ||
+                    window.ShiftStore.hasServerSeen('staff');
+    if (!p.setupDone && window.ShiftStore && window.ShiftStore.editMode && seenStaff) openWizard();   /* 未存在含め setupDone:false なら初回ウィザード */
   }
 
   window.ShiftFacility = {
@@ -7067,6 +7404,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var PF = window.ShiftPrintFit;
 
   var LAYER_NAMES = { plan: '予定', actual: '実績', official: '行政提出用' };
+  /* 月別pullに失敗した後、同じ月へ再発行するまでの間隔。即時の無限再試行は避けつつ、
+   * 通信が戻れば月を開き直す・バッジを押す等で自然に再取得される長さにする。 */
+  var PULL_RETRY_MS = 30000;
 
   /* 特例: 出勤日ごとに休憩2時間とする職員（実働＝拘束−2h）。判定は氏名でなく非公開 roster の
    * rules.break2h フラグで行う。ワースケ側の固定休憩枠(14:00-16:00)と整合。 */
@@ -7091,8 +7431,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       Store.ensureDeviceId();          /* 編集権の保持者判定に使う端末ID（乱数・個人情報なし） */
       this._tabId = this.tabId_();     /* 同一端末2タブの二重編集ゲート用 */
       this.loadAll();
-      /* 起動時の並び順補完は「自動書き込み」＝閲覧モードでは保存せずメモリ上の値だけで描画する */
-      if (this.ensureOrders()) Store.set('staff', this.staff, { auto: true });
+      /* 起動時の並び順補完は「自動書き込み」＝閲覧モードでは保存せずメモリ上の値だけで描画する。
+       * サーバの名簿を確認できていない時も保存・送信しない（未取得の古い並びで上書きしない）。 */
+      if (this.ensureOrders() && this.serverSeen_('staff')) Store.set('staff', this.staff, { auto: true });
       /* boot窓pull完了前は on-demand 月取得を発行しない（setYM→loadMonth が先に走るため当月が二重pullになる） */
       this._bootPullPending = true;
       /* 直前に表示していた月を復元（無ければ現在月）。リロードで現在月に戻る不具合の修正。 */
@@ -7135,7 +7476,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.restoreEditMode_();
         self.startLeaseTimers_();
       });
-      Store.pullAll(scope).then(function (r) {
+      /* 起動時プルの結果は保持する（編集モードの復元がこの結果を条件にする＝同じ窓を二重に取りに行かない） */
+      this._bootPull = Store.pullAll(scope).then(function (r) {
         self._bootPullPending = false;
         if (r === 'ok') {
           self.reloadFromStore();
@@ -7144,8 +7486,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         /* 窓pullで当月が得られなかった場合（オフライン起動・クラウド空等）のみ on-demand 側が拾う（窓内で取得済みなら即return） */
         self.maybePullMonth_(self.ym);
+        self.updateMonthReadyUI_();   /* 取得できなかった月は「読み込めていません」の帯を出す */
         /* 旧版で溜まった未送信が残っていれば移行バナーで扱いを選ばせる（プル完了後＝保留判定が済んでから） */
         self.updatePendingBanner_();
+        return r;
       });
     },
 
@@ -7196,7 +7540,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!Store.editMode) {
           this.confirmInfo('職員名簿を表示用に復元しました',
             '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を表示用に復元しました（この端末からは送信されません）。\n' +
-            'サーバ側も直す場合は［✎ 編集］をオンにしてから、もう一度画面を読み込んでください。');
+            'この復元内容がサーバへ送られることはありません。サーバ側の名簿が正しいかは、通信できる端末で［✎ 編集］をオンにして確認してください。');
           return;
         }
         this.confirmInfo('職員名簿を自動復元しました',
@@ -7210,7 +7554,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.symbols = Store.get('symbols', null);
       if (!this.symbols || !this.symbols.length) {
         this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
-        Store.set('symbols', this.symbols, { auto: true });
+        /* origin:'defaults'＝「手元が空だったので工場出荷の既定値を作った」書き込みの印。
+         * サーバに現役の記号があるのにこれで上書きするのは巻き戻りなので、サーバ側が拒否できるようにする。 */
+        if (this.serverSeen_('symbols')) Store.set('symbols', this.symbols, { auto: true, origin: 'defaults' });
       }
       this.settings = Store.get('settings', null);
       if (!this.settings) {
@@ -7219,7 +7565,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           fteBaseHours: 160, weekStartDow: 6, printSize: 'A3 landscape',
           weekdayNeeds: { 0: { early: 4, late: 4 }, 1: { early: 4, late: 4 }, 2: { early: 4, late: 4 }, 3: { early: 4, late: 4 }, 4: { early: 4, late: 4 }, 5: { early: 4, late: 4 }, 6: { early: 4, late: 4 } }
         };
-        Store.set('settings', this.settings, { auto: true });
+        if (this.serverSeen_('settings')) Store.set('settings', this.settings, { auto: true, origin: 'defaults' });
       }
       if (!this.settings.groupColors) {
         this.settings.groupColors = {
@@ -7239,10 +7585,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         if (!hasTextColor) {
           this.symbols = Sym.applyRecommendedColors(this.symbols);
-          Store.set('symbols', this.symbols, { auto: true });
+          /* 既存の記号を加工して書き戻す処理＝出荷時リセットではないので origin は付けない
+           * （付けるとサーバに常に非空の記号があるため恒久的に拒否され、配色移行が壊れる）。 */
+          if (this.serverSeen_('symbols')) Store.set('symbols', this.symbols, { auto: true });
         }
         this.settings.recommendedColorsApplied = true;
-        Store.set('settings', this.settings, { auto: true });
+        if (this.serverSeen_('settings')) Store.set('settings', this.settings, { auto: true });
       }
       /* 参考シート(希望シフト回答)準拠の配色へ一度だけ全記号を移行する。
        * 既存記号の旧色・旧バックアップ(userColored)もリセットし、全記号がシート色に揃う。
@@ -7251,14 +7599,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ((this.settings.colorPaletteVer || 0) < COLOR_PALETTE_VER) {
         this.symbols = Sym.applyRecommendedColors(this.symbols);
         for (var pvi = 0; pvi < this.symbols.length; pvi++) this.symbols[pvi].userColored = false;
-        Store.set('symbols', this.symbols, { auto: true });
+        if (this.serverSeen_('symbols')) Store.set('symbols', this.symbols, { auto: true });
         /* 旧バックアップの破棄は「移行を確定できる端末」＝編集モードだけで行う。
          * 閲覧モードでも消すと、記号色の唯一の復旧材料（端末内バックアップ）を、
          * 移行を保存できないまま失う。 */
-        if (Store.editMode) Store.setLocal('symColors', {});
+        /* サーバの記号を確認できていない時も消さない（移行を確定できないまま唯一の復旧材料を捨てない） */
+        if (Store.editMode && this.serverSeen_('symbols')) Store.setLocal('symColors', {});
         this.settings.colorPaletteVer = COLOR_PALETTE_VER;
         this.settings.recommendedColorsApplied = true;
-        Store.set('settings', this.settings, { auto: true });
+        if (this.serverSeen_('settings')) Store.set('settings', this.settings, { auto: true });
       }
       /* ユーザーが設定した記号色を端末内バックアップから再適用する。
        * バックアップ(symColors)は同期対象外(local:)のため、クラウド同期で symbols が
@@ -7277,7 +7626,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (sc.colorDiv !== undefined && (sm.colorDiv || '') !== sc.colorDiv) { sm.colorDiv = sc.colorDiv; changed = true; }
           if (!sm.userColored) { sm.userColored = true; changed = true; }
         }
-        if (changed) Store.set('symbols', this.symbols, { auto: true });
+        if (changed && this.serverSeen_('symbols')) Store.set('symbols', this.symbols, { auto: true });
       }
     },
 
@@ -7293,7 +7642,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     reloadFromStore: function () {
       this.loadAll();
-      if (this.ensureOrders()) Store.set('staff', this.staff, { auto: true });
+      if (this.ensureOrders() && this.serverSeen_('staff')) Store.set('staff', this.staff, { auto: true });
       this.sched = null;
       this.loadMonth();
       window.ShiftMaster.render();
@@ -7332,6 +7681,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return s;
     },
     saveSched: function (layer, sched) {
+      /* 二重の砦: この月のサーバ状態を確認できていないなら書かない（leaseGuard を通らない入口が増えても守る）。
+       * 黙って捨てると「確認ダイアログでOKを押したのに何も起きない」無反応になるので必ず理由を出す。 */
+      if (!this.monthReady_(this.ym, layer || this.layer)) { this.notReadyToast_(); return; }
       Store.set(this.schedKey(layer), sched);
       if ((layer || this.layer) === this.layer) this.sched = sched;
     },
@@ -7358,6 +7710,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var w = this._syncWindowMonths || this.windowMonths_();
       for (var i = 0; i < w.length; i++) { if (w[i] === ym) return true; }
       return false;
+    },
+    /* そのキーについてサーバの状態を確認できたか（第2層のゲート）。
+     * hasServerSeen を持たない旧 store・テストのモック Store と組み合わせても従来動作へ倒す。 */
+    serverSeen_: function (key) {
+      if (!Store || typeof Store.hasServerSeen !== 'function') return true;
+      return Store.hasServerSeen(key);
+    },
+    /* その月を編集してよいか＝サーバの状態を確認できているか。
+     * 同期未設定（単独運用）は常に true＝改修前と挙動が変わらない。
+     * 月別キーは常に一括で pull するため plan 1本を代表にする。 */
+    monthReady_: function (ym, optLayer) {
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return true;
+      var m = ym || this.ym;
+      if (!this.serverSeen_('sched:' + m + ':plan')) return false;
+      /* 編集用ドラフト本体は2段目の pull でしか来ない＝月別キーが揃っていても未取得でありうる。
+       * 開いている（書き込む）レイヤがそのドラフトなら、本体まで確認できて初めて編集してよい。
+       * この端末で作った新規ドラフトは noteLocallyCreated_ が確認済みに数える
+       * （サーバに存在しないキーは pull に永久に現れない＝縛ると新規作成が壊れる）。 */
+      if (typeof optLayer === 'string' && optLayer.indexOf('draft:') === 0) {
+        return this.serverSeen_('sched:' + m + ':' + optLayer);
+      }
+      return true;
+    },
+    /* 未取得の月・未取得のドラフトで書き込みを止めた時の案内（leaseGuard と同じ文言に一本化）。 */
+    notReadyToast_: function () {
+      this.toast('この月はまだ読み込めていません（右上の同期ボタンで再取得できます）');
     },
     /* 起動時プルの全キー: 端末共通(全月共有) staff/symbols/settings/freee ＋ 窓内各月の月別キー。 */
     recentSyncKeys_: function () {
@@ -7402,12 +7781,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!cfg || !cfg.url) return;                 /* 同期未設定＝沈黙（従来どおり空表示のまま） */
       if (this._bootPullPending) return;            /* boot窓pull完了前は発行しない（当月二重pull防止・完了後にbootが再呼出） */
       if (!this._pulledYM) this._pulledYM = {};
-      if (this._pulledYM[ym]) return;               /* 当該ymは試行済＝再発行しない（再入ガード） */
+      if (!this._pullingYM) this._pullingYM = {};
+      if (!this._pullFailedAt) this._pullFailedAt = {};
+      if (this._pulledYM[ym]) return;               /* 当該ymは取得済＝再発行しない（再入ガード） */
+      if (this._pullingYM[ym]) return;              /* 発行中＝同一tickでの二重発行を防ぐ（同期的な印） */
       var planAbsent = (Store.get('sched:' + ym + ':plan', null) === null);
-      if (!planAbsent && this.inSyncWindow_(ym)) return; /* 窓内かつローカル有り＝起動時に取得済み */
-      this._pulledYM[ym] = true;
+      /* 窓内かつローカル有りでも、サーバの状態を確認できていなければ取り直す
+       * （起動時の窓pullが失敗した当月が、二度と再取得されないまま編集不可で固着するのを防ぐ）。 */
+      if (!planAbsent && this.inSyncWindow_(ym) && this.monthReady_(ym)) return;
+      /* 失敗直後の即時再発行だけ抑える。時間が経てば月を開き直す・バッジを押す等で再試行される。 */
+      if (this._pullFailedAt[ym] && (Date.now() - this._pullFailedAt[ym]) < PULL_RETRY_MS) return;
+      this._pullingYM[ym] = true;
       Store.pullAll(this.monthSyncKeys_(ym)).then(function (r) {
-        if (r !== 'ok') return;
+        self._pullingYM[ym] = false;
+        if (r !== 'ok') {
+          /* 失敗を恒久化しない: 印を立てず、次の再試行までの間隔だけ記録する */
+          self._pullFailedAt[ym] = Date.now();
+          self.updateMonthReadyUI_();
+          return;
+        }
+        self._pulledYM[ym] = true;
+        delete self._pullFailedAt[ym];
+        self.updateMonthReadyUI_();
         /* 第2弾: この月の編集用ドラフト本体 */
         var dkeys = self.draftBodyKeys_([ym]);
         if (dkeys.length) {
@@ -7417,6 +7812,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         /* 表示月が変わっていなければ取り込み結果を反映（別月へ移動済みなら何もしない） */
         if (self.ym === ym) { self.loadMonth(); self.rerender(); }
+      });
+    },
+    /* 表示中の編集用ドラフト本体（sched:YM:draft:<id>）が未取得なら、その1キーだけ取り直す。
+     * 起動時プル/月別プルの第2弾が失敗した端末で、ドラフトが未取得のまま帯が出続けるのを解く。 */
+    maybePullDraftBody_: function () {
+      var self = this;
+      if (typeof this.layer !== 'string' || this.layer.indexOf('draft:') !== 0) return;
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return;
+      if (this._bootPullPending) return;
+      if (!this.monthReady_(this.ym)) return;       /* 月そのものが未取得＝先に月を取る */
+      var key = this.schedKey(this.layer);
+      if (this.serverSeen_(key)) return;
+      if (!this._pullingYM) this._pullingYM = {};
+      if (!this._pullFailedAt) this._pullFailedAt = {};
+      if (this._pullingYM[key]) return;
+      if (this._pullFailedAt[key] && (Date.now() - this._pullFailedAt[key]) < PULL_RETRY_MS) return;
+      this._pullingYM[key] = true;
+      Store.pullAll([key]).then(function (r) {
+        self._pullingYM[key] = false;
+        /* 応答があっても中身を取り込めなかった（端末への保存失敗・サーバ側破損）ときは確認済みにならない。
+         * 無条件に成功扱いにすると loadMonth→再pull→loadMonth の無限ループになるため、
+         * 「確認済みになったか」で判定して次の再試行まで間隔を空ける。 */
+        if (r !== 'ok' || !self.serverSeen_(key)) {
+          self._pullFailedAt[key] = Date.now();
+          self.updateMonthReadyUI_();
+          return;
+        }
+        delete self._pullFailedAt[key];
+        if (self.schedKey(self.layer) === key) { self.loadMonth(); self.rerender(); }
+        self.updateMonthReadyUI_();
       });
     },
     loadMonth: function () {
@@ -7432,6 +7858,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.syncLockUI();
       /* 表示月がローカル未取得/窓外なら on-demand で keyed pull（月ごと1回・再入ガード付き） */
       this.maybePullMonth_(this.ym);
+      this.maybePullDraftBody_();
     },
 
     /* ── 月別ロック＆職員スナップショット（過去データ保護） ──
@@ -7561,6 +7988,62 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var banner = document.getElementById('lockBanner');
       if (banner) banner.style.display = locked ? '' : 'none';
       document.body.classList.toggle('month-locked', locked);
+      this.updateMonthReadyUI_();   /* 月別UIの唯一のファネル＝月切替・レイヤ切替に自動追従する */
+    },
+
+    /* 「この月をまだ読み込めていない」帯の出し入れ（#lockBanner と同型・印刷には出さない）。 */
+    updateMonthReadyUI_: function () {
+      if (typeof document === 'undefined' || !document.getElementById) return;
+      var el = document.getElementById('staleBanner');
+      if (!el) return;
+      var ready = this.monthReady_(this.ym, this.layer);
+      el.style.display = ready ? 'none' : '';
+      if (document.body && document.body.classList) document.body.classList.toggle('month-stale', !ready);
+      if (ready) return;
+      var t = document.getElementById('staleText');
+      if (t) t.textContent = '⚠ ' + this.ym + ' のデータをまだ読み込めていません。編集できません。';
+    },
+
+    /* ［再取得］ボタン: 表示中の月をもう一度取りに行く（本人の明示操作なので待ち時間は飛ばす）。 */
+    retryMonthPull_: function () {
+      var self = this, ym = this.ym;
+      if (typeof document === 'undefined' || !document.getElementById) return;
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return;
+      if (!this._pullingYM) this._pullingYM = {};
+      if (this._pullingYM[ym]) return;              /* 二度押しで二重発行しない */
+      if (this._pullFailedAt) delete this._pullFailedAt[ym];
+      var b = document.getElementById('staleRetry');
+      if (b) { b.disabled = true; b.textContent = '取得中…'; }
+      this._pullingYM[ym] = true;
+      /* monthOk＝月別キーが取れたか / draftOk＝編集用ドラフト本体まで取れたか。
+       * 月だけ取れた場合も画面には必ず反映する（取れた内容を捨てない）。 */
+      function done_(monthOk, draftOk) {
+        self._pullingYM[ym] = false;
+        if (b) { b.disabled = false; b.textContent = '再取得'; }
+        if (monthOk) {
+          if (!self._pulledYM) self._pulledYM = {};
+          self._pulledYM[ym] = true;
+          self.reloadFromStore();                   /* 表示中のタブ・月は変わらない */
+        }
+        if (!self._pullFailedAt) self._pullFailedAt = {};
+        if (monthOk && draftOk) {
+          delete self._pullFailedAt[ym];
+          self.toast('この月を読み込みました');
+        } else {
+          self._pullFailedAt[ym] = Date.now();
+          self.toast('まだ取得できません（通信状況を確認してください）');
+        }
+        self.updateMonthReadyUI_();
+      }
+      Store.pullAll(this.monthSyncKeys_(ym)).then(function (r) {
+        if (r !== 'ok') { done_(false, false); return; }
+        /* 第2弾: 編集用ドラフト本体まで取り直す。帯はドラフト本体の未取得でも出るため、
+         * 月別キーだけ取り直すと「押しても帯が消えないボタン」になる。 */
+        var dkeys = self.draftBodyKeys_([ym]);
+        if (!dkeys.length) { done_(true, true); return; }
+        Store.pullAll(dkeys).then(function (r2) { done_(true, r2 === 'ok'); });
+      });
     },
 
     /* レイヤ表示名（draft:* は編集用ラベル） */
@@ -7584,7 +8067,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ── 編集用ドラフト ── */
     draftsKey: function () { return 'drafts:' + this.ym; },
     getDrafts: function () { return Store.get(this.draftsKey(), []); },
-    saveDrafts: function (list) { Store.set(this.draftsKey(), list); },
+    saveDrafts: function (list) {
+      /* 二重の砦（未取得の月は書かない）。止めたことを必ず見せる＝無反応にしない。 */
+      if (!this.monthReady_(this.ym)) { this.notReadyToast_(); return; }
+      Store.set(this.draftsKey(), list);
+    },
     findDraft: function (id) {
       var l = this.getDrafts();
       for (var i = 0; i < l.length; i++) { if (l[i].id === id) return l[i]; }
@@ -7652,6 +8139,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * （新入職員を含む）で開始できる。以後この編集用タブは自動反映されない（既存タブと同じ凍結特性）。 */
       copy.meta = { seededFrom: 'plan', createdAt: new Date().toISOString(),
         staffSnap: JSON.parse(JSON.stringify(this.staff)) };
+      /* この端末で作った新規キー＝サーバに存在しないことが手元で確定している。
+       * 印を立てないと monthReady_ が永久に false になり、作った直後のタブを編集できない。 */
+      if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(this.schedKey('draft:' + id));
       this.saveSched('draft:' + id, copy);
       var list = this.getDrafts();
       list.push({ id: id, label: label, createdAt: new Date().toISOString() });
@@ -7713,7 +8203,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.confirm('編集用の削除', '編集用「' + d.label + '」を削除しますか？（予定・実績には影響しません）', function () {
         var list = self.getDrafts().filter(function (x) { return x.id !== id; });
         self.saveDrafts(list);
-        Store.remove(self.schedKey('draft:' + id)); /* キーごと実削除＝ゴミを残さない（空書き換えではなく除去） */
+        /* キーごと実削除＝ゴミを残さない（空書き換えではなく除去）。未取得の月では消さない（二重の砦）。 */
+        if (self.monthReady_(self.ym)) Store.remove(self.schedKey('draft:' + id));
+        else self.notReadyToast_();
         if (self.layer === 'draft:' + id) { self.gotoLayer('plan'); }
         else { self.renderLayerBar(); }
       });
@@ -7729,6 +8221,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!rp) {
         rp = { id: 'auto', label: '確定前（自動退避）', auto: true, createdAt: new Date().toISOString() };
         list.push(rp);
+        /* 新規に作る自動退避タブも「この端末で作った＝サーバに無い」印を立てる（createDraft と同じ理由）。 */
+        if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(this.schedKey('draft:' + rp.id));
         this.saveDrafts(list);
       }
       this.saveSched('draft:' + rp.id, copy);
@@ -7896,9 +8390,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         results: this.results, counts: this.counts, metrics: this.metrics,
         warnCount: this.warnCount, revealHidden: this.revealHidden,
         /* ロック中・閲覧モードはグリッドの編集UI（パレット）を開かない（grid.js は無改変） */
-        isLocked: this.isLockedNow() || !Store.editMode,
+        isLocked: this.isLockedNow() || !Store.editMode || !this.monthReady_(this.ym, this.layer),
         onLockedEdit: function () {
           if (!Store.editMode) { self.leaseGuard(); return; }
+          /* 未取得の月は「ロック中」ではない。ロックを外せと案内しても外す操作が存在せず行き止まりになる。
+           * 案内は leaseGuard の1本に寄せる＝以後この文言を直しても分岐しない。 */
+          if (!self.monthReady_(self.ym, self.layer)) { self.leaseGuard(); return; }
           self.toast('🔒 ロック中です。編集するにはロックを外してください');
         },
         printTitle: this.year + '年' + this.month + '月 勤務表（' + this.layerLabel(this.layer) + '）',  /* 分割印刷の各ページ見出しに流用 */
@@ -8222,7 +8719,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.staff.push(st);
       this.saveStaff();
     },
+    /* マスタ（名簿・記号）保存前の砦: そのキーのサーバ状態を確認できていないなら保存しない。
+     * 第1層（編集モードに入る条件）と揃える＝編集モードに入った後に取得できなくなった端末が、
+     * 起動時にメモリへ載せた既定値・古いバックアップをそのままサーバへ送るのを防ぐ。 */
+    masterReady_: function (key) {
+      if (this.serverSeen_(key)) return true;
+      this.toast('最新を取得できていないため保存しませんでした（右上の同期ボタンで再取得してください）');
+      return false;
+    },
     saveStaff: function () {
+      if (!this.masterReady_('staff')) return;
       this.ensureOrders(); /* 新規職員にも各画面の並び順を付与 */
       Store.set('staff', this.staff);
       this.protectStaff(); /* 端末ローカルに名簿バックアップを更新 */
@@ -8240,8 +8746,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var bk = Store.getLocal('staffBackup', null);
       if (bk && bk.staff && bk.staff.length) {
         this.staff = bk.staff;
-        /* 復元＝サーバ修復のため再送。閲覧モードでは保存せず表示用のメモリ復元だけ（{auto:true}）。 */
-        Store.set('staff', this.staff, { auto: true });
+        /* 復元＝サーバ修復のため再送。閲覧モードでは保存せず表示用のメモリ復元だけ（{auto:true}）。
+         * サーバの名簿を確認できていない時も送らない（取得できていないだけの端末が、
+         * 数か月前のバックアップで現役の名簿を置き換える経路を塞ぐ）。
+         * origin:'backup'＝端末内バックアップからの復元という印（サーバ側が現役データの上書きを拒否できる）。 */
+        if (this.serverSeen_('staff')) Store.set('staff', this.staff, { auto: true, origin: 'backup' });
         this._staffRestored = bk.staff.length;
       }
     },
@@ -8382,13 +8891,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     reorderOfficial: function (sid, beforeSid) { if (this.leaseGuard()) return; if (this.reorderGuard()) return; this.reorderBy('officialOrder', this.officialSorted, sid, beforeSid, false); },
     reorderRequests: function (sid, beforeSid) { if (this.leaseGuard()) return; this.reorderBy('requestOrder', this.requestsSorted, sid, beforeSid, false); },
 
-    saveSymbols: function () { Store.set('symbols', this.symbols); this.rerender(); },
+    saveSymbols: function () {
+      if (!this.masterReady_('symbols')) return;
+      Store.set('symbols', this.symbols);
+      this.rerender();
+    },
     saveSettings: function () {
       Store.set('settings', this.settings);
       /* 除外姓を変更したら次の取込から効くよう即時反映 */
       if (window.ShiftImporters) window.ShiftImporters.setExcludeSurnames(this.settings.excludeSurnames || []);
     },
-    saveRequests: function () { Store.set(this.reqKey(), this.requests); },
+    saveRequests: function () {
+      /* 二重の砦（未取得の月は書かない）。止めたことを必ず見せる＝無反応にしない。 */
+      if (!this.monthReady_(this.ym)) { this.notReadyToast_(); return; }
+      Store.set(this.reqKey(), this.requests);
+    },
 
     /* ── ツールバー ── */
     bindToolbar: function () {
@@ -8564,6 +9081,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 閲覧モードでは自動シード（コピー作成）をしない＝アップロードも保存もしない */
           this.toast('👁 ' + LAYER_NAMES[layer] + 'は未入力です。編集モードにするとコピーを作成できます');
         } else if (sn2 > 0) {
+          /* 自動シードは「書き込み」なので他の編集入口と同じ砦を通す。
+           * 確認ダイアログを出す前に判定する＝［はい］を押してから無反応になるのを防ぐ。 */
+          if (this.leaseGuard()) { this.rerender(); return; }
           this.confirm(LAYER_NAMES[layer] + 'レイヤは未入力です',
             LAYER_NAMES[srcLayer] + 'レイヤ（' + sn2 + '名分）をコピーして開始しますか？', function () {
               if (self.lockGuard()) return;   /* ロック中の月は実績/行政提出へ自動コピーしない */
@@ -8978,10 +9498,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 閲覧モードの編集ガード（lockGuard と同型: true が返ったら呼び出し側は処理を中止する）。 */
     leaseGuard: function () {
-      /* 編集の入口はほぼ全てここを通る＝編集操作そのものを「無操作タイマー」の操作として数える */
-      if (Store.editMode) { this.markActivity_(); return false; }
-      this.toast('👁 閲覧モードです。編集するには右上の「✎ 編集」をオンにしてください');
-      return true;
+      if (!Store.editMode) {
+        this.toast('👁 閲覧モードです。編集するには右上の「✎ 編集」をオンにしてください');
+        return true;
+      }
+      /* 編集の入口はほぼ全てここを通る＝編集操作そのものを「無操作タイマー」の操作として数える。
+       * 月の未取得より先に数える＝バナーと格闘している最中に無操作30分の自動解除が走らない。 */
+      this.markActivity_();
+      /* 表示中の月をサーバから取得できていない間は編集させない（古い/空の内容でサーバを上書きしない）。
+       * マスタ画面（職員・記号・設定・freee）は月別キーを書かないので巻き添えにしない。 */
+      if (this.view !== 'master' && !this.monthReady_(this.ym, this.layer)) {
+        this.notReadyToast_();
+        return true;
+      }
+      return false;
     },
 
     /* ── 無操作での自動解除（2026-08-18）──
@@ -9095,7 +9625,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       function sentAll_(r) {
         if (r === 'nosync' || r === 'readonly') return true;
         if (r !== 'ok' && r !== 'empty') return false;
-        return !Store.queue || Store.queue.size() === 0;
+        if (!Store.queue) return true;
+        /* サーバのデータ保護でブロックされたキーは、この端末からは二度と送れない（内容は退避済み）。
+         * これを「未送信」として数えると自動解除が永久に完了せず、編集権が返らないまま他端末が
+         * 強制引継しか選べなくなる。 */
+        var ks = Store.queue.keys(), qi;
+        for (qi = 0; qi < ks.length; qi++) {
+          if (Store._guardBlocked && Store._guardBlocked[ks[qi]]) continue;
+          return false;
+        }
+        return true;
       }
       /* 送るものが無い時は push を撃たない。リースがローカル失効している状態で push を通すと、
        * 送信前の編集権チェックが空きリースを取り直し、離席した端末がロックを握り直す
@@ -9175,6 +9714,71 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 不在の間に他の端末が「取得→編集→解放」していた場合、古い表示のまま編集を続けると、
        * その後の編集（現行世代の刻印つき）が競合時にローカル優先となり相手の編集を丸ごと消せる。 */
       Store.onLeaseReacquired = function () { return self.checkRevsAndPull_(); };
+      /* サーバのデータ保護で書き込みが拒否された時の案内（キーごとセッション1回だけダイアログ・以後はトースト）。
+       * 「何が起きたか＋次にどうすればよいか」を日本語で示す。件数は本人の次の行動を変えないので出さない。 */
+      Store.onServerGuard = function (key, err) {
+        var why = {
+          schedwipe: 'この月の勤務表が大きく減る内容でした。',
+          staffshrink: '職員名簿の人数が大きく減る内容でした。',
+          defaultsoverwrite: '初期設定として送ろうとした内容でした（サーバーには設定済みの内容があります）。',
+          backupoverwrite: 'この端末の古いバックアップからの復元でした。'
+        }[String(err)] || '';
+        var body = why + '\n' +
+          'サーバー側のデータを守るため、この端末の変更は保留しました。内容はこの端末に退避してあります' +
+          '（［マスタ→設定→バックアップ→退避データ一覧］から取り出せます）。\n' +
+          '画面はサーバーの最新版に更新しました。';
+        if (!self._guardAlerted) self._guardAlerted = {};
+        if (self._guardAlerted[key]) {
+          self.toast('サーバー側のデータを守るため、この端末の変更を保留しました（' + self.keyLabel_(key) + '）');
+          return;
+        }
+        self._guardAlerted[key] = true;
+        self.confirmInfo('この端末の変更を保留しました（' + self.keyLabel_(key) + '）', body);
+      };
+      /* 件数ガード（勤務表の一括減少・名簿の大幅減）で拒否された時だけ、件数を示して本人に選ばせる。
+       * 承認されたら Store が1回だけ force を付けて送り直す＝サーバが用意した唯一の迂回路を使う。
+       * これが無いと「自動作成の取り消し」「編集用の確定」「バックアップの取り込み」が
+       * 1.5秒後に必ず巻き戻り、利用者には前へ進む手立てが1つも無くなる。
+       * 既定値の投入・端末バックアップからの復元では呼ばれない（Store 側で対象外にしてある）。 */
+      Store.onGuardConfirm = function (key, err, detail) {
+        var was = (detail && typeof detail.was === 'number') ? detail.was : null;
+        var now = (detail && typeof detail.now === 'number') ? detail.now : null;
+        var isStaff = (String(err) === 'staffshrink');
+        var unit = isStaff ? '名' : 'マス';
+        var counts = (was === null || now === null) ? ''
+          : ('サーバー側は ' + was + unit + '、今回の保存は ' + now + unit + 'です。\n');
+        return new Promise(function (resolve) {
+          function answer_(v) {
+            if (!self._guardPending) return;
+            self._guardPending = null;
+            resolve(v);
+          }
+          self._guardPending = answer_;
+          self.confirm((isStaff ? '職員名簿' : 'この月の勤務表') + 'が大きく減ります（' + self.keyLabel_(key) + '）',
+            counts +
+            '意図して減らした場合（自動作成の取り消し・編集用の確定・バックアップの取り込みなど）は［置き換える］を選んでください。\n' +
+            '取りやめると、この端末の変更は端末内に退避し、画面はサーバーの最新版に戻ります。',
+            function () { answer_(true); },
+            function () { answer_(false); },
+            { noLabel: '取りやめる', yesLabel: '置き換える', danger: true });
+        });
+      };
+      /* Esc で閉じられた時も必ず答えを返す（返さないと送信チェーンが待ち続けて固まる）。 */
+      if (!this._guardCloseBound) {
+        this._guardCloseBound = true;
+        var dlgC = document.getElementById('dlgConfirm');
+        if (dlgC && dlgC.addEventListener) {
+          dlgC.addEventListener('close', function () {
+            if (self._guardPending) self._guardPending(false);
+          });
+        }
+      }
+      /* 強制送信が通った時の手応え（黙って終わると「置き換えたのか」が分からない）。 */
+      Store.onGuardForced = function (key) {
+        self.toast('サーバー側を、この端末の内容で置き換えました（' + self.keyLabel_(key) + '）');
+      };
+      var bRetry = document.getElementById('staleRetry');
+      if (bRetry) bRetry.addEventListener('click', function () { self.retryMonthPull_(); });
       var bSend = document.getElementById('pendingSend');
       if (bSend) bSend.addEventListener('click', function () { self.resolvePendingSend_(); });
       var bDiscard = document.getElementById('pendingDiscard');
@@ -9314,11 +9918,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       Store.verifyLease().then(function (r) {
         /* reacquired＝前回の編集権が失効していたが誰も編集していなかった（同じ端末で取り直せた）。
          * lost=handleLockLost が処理／network・その他=閲覧のまま。 */
-        if (r !== 'ok' && r !== 'reacquired') return;
-        Store.editMode = true;
-        self._offlineEdit = false;
-        self.setEditModeUI_(true);
-        self.toast('✎ 編集モードを復元しました');
+        if (r !== 'ok' && r !== 'reacquired') return null;
+        /* 再読み込み後の復帰も「最新を取得できている」ことを条件にする。
+         * リースだけ生きていて取得に失敗している状態で復帰すると、古い表示のまま編集できてしまう。 */
+        return self.ensureFresh_().then(function (fresh) {
+          if (!fresh) {
+            self.toast('最新を取得できないため閲覧モードのままにしました（通信状況を確認してください）');
+            return null;
+          }
+          Store.editMode = true;
+          self._offlineEdit = false;
+          self.setEditModeUI_(true);
+          self.toast('✎ 編集モードを復元しました');
+          return null;
+        });
       });
     },
 
@@ -9358,10 +9971,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           '同時に他の端末で編集すると、あとから保存した内容で上書きされることがあります。\n' +
           'このまま編集モードにしますか？',
           function () {
-            Store.editMode = true;
-            self._offlineEdit = false;
-            self.setEditModeUI_(true);
-            self.afterEditOn_();
+            /* 劣化モード（旧サーバー）も「最新を取得できている」ことを条件にする。
+             * この経路だけ pullAll を通らないため、開けたままにすると第1層に穴が残る
+             * ＝起動時プルに失敗した端末が、メモリ上の既定記号・古い名簿のまま編集モードに入り、
+             * 最初のマスタ保存でそれを（由来の印も付かない通常の編集として）サーバへ送ってしまう。
+             * 取得できたら必ず読み直す＝メモリの既定値/古いバックアップをサーバ版で置き換える。 */
+            self.ensureFresh_().then(function (fresh) {
+              if (!fresh) {
+                self.confirmInfo('最新を取得できないため編集モードにできません',
+                  'サーバーから最新の内容を取得できませんでした。通信状況を確認して、もう一度お試しください。\n' +
+                  '（取得できないまま編集すると、この端末の古い内容でサーバーを上書きしてしまいます）');
+                return;
+              }
+              Store.editMode = true;
+              self._offlineEdit = false;
+              self.setEditModeUI_(true);
+              self.reloadFromStore();
+              self.afterEditOn_();
+            });
           });
         return;
       }
@@ -9398,10 +10025,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!name) { revert(); return; }
         Store.setLocal('deviceName', name);
       }
-      /* ④ 取得前に最新を取り込む→編集権を取得→取得の隙に他端末が書いた分を rev で再確認 */
-      Store.pullAll(this.recentSyncKeys_()).then(function () {
+      /* ④ 取得前に最新を取り込む→編集権を取得→取得の隙に他端末が書いた分を rev で再確認。
+       * pullAll は失敗しても reject せず 'offline' を resolve するため、必ず戻り値で分岐する。
+       * 最新を取得できないまま編集モードに入ると、この端末の古い/空の内容でサーバを上書きしてしまう。 */
+      Store.pullAll(this.recentSyncKeys_()).then(function (pr) {
+        if (pr !== 'ok' && pr !== 'nosync') {
+          revert();
+          self.confirmInfo('最新を取得できないため編集モードにできません',
+            'サーバーから最新の内容を取得できませんでした。通信状況を確認して、もう一度お試しください。\n' +
+            '（取得できないまま編集すると、この端末の古い内容でサーバーを上書きしてしまいます）');
+          return null;   /* 中止のセンチネル。acquireLease は必ず {ok:…} を返し null を返さない */
+        }
         return Store.acquireLease(name, false, self._tabId);
       }).then(function (r) {
+        if (r === null) return null;   /* ④で中止済み＝二重ダイアログを出さない */
         if (r && r.ok) return self.afterAcquire_();
         var err = r ? String(r.error) : '';
         if (err !== 'lockheld') {
@@ -9445,7 +10082,46 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       var tog = document.getElementById('togEdit');
       if (tog) tog.disabled = true;
-      Store.acquireLease(name, true, this._tabId).then(function (r) {
+      /* 強制引き継ぎも「最新を取得できている」ことを条件にする（この経路は pullAll を通らないため、
+       * ここを開けたままにすると第1層に穴が残る）。取得済みなら通信は増えない。 */
+      this.ensureFresh_().then(function (fresh) {
+        if (!fresh) {
+          if (tog) { tog.disabled = false; tog.checked = !!Store.editMode; }
+          self.confirmInfo('最新を取得できないため引き継げません',
+            'サーバーから最新の内容を取得できませんでした。通信状況を確認して、もう一度お試しください。');
+          return null;
+        }
+        return self.takeoverAcquire_(name);
+      });
+    },
+    /* 編集に必要な端末共通キー（名簿・記号・設定）をサーバから確認できているか。
+     * dataFresh は月別pullの成功でも true になるため、これだけを鮮度の根拠にすると
+     * 名簿を一度も取得できていない端末が編集モードへ復帰してしまう（その後の
+     * 最初の手動保存が、端末内の古い名簿を印なしでサーバへ送る）。 */
+    editKeysSeen_: function () {
+      return this.serverSeen_('staff') && this.serverSeen_('symbols') && this.serverSeen_('settings');
+    },
+    /* 最新を取得できているか。取得済み（直近のpullが成功＋編集に必要なキーを確認済み）なら追加の通信をしない。
+     * 判定できない/失敗している時だけ、この場で1回取りに行く（enableEdit_ ④ と同じ窓）。 */
+    ensureFresh_: function () {
+      var self = this;
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return Promise.resolve(true);          /* 同期未設定＝単独運用（従来どおり） */
+      if (Store.dataFresh === true && this.editKeysSeen_()) return Promise.resolve(true);
+      if (typeof Store.dataFresh === 'undefined') return Promise.resolve(true);   /* 旧 store＝従来動作へ倒す */
+      /* 起動時プルが進行中なら、その結果を待つ（同じ窓をもう一度取りに行かない） */
+      if (this._bootPullPending && this._bootPull && this._bootPull.then) {
+        return this._bootPull.then(function (r0) { return (r0 === 'ok' || r0 === 'nosync'); });
+      }
+      return Store.pullAll(this.recentSyncKeys_()).then(function (r) {
+        self.updateMonthReadyUI_();
+        return (r === 'ok' || r === 'nosync');
+      });
+    },
+    takeoverAcquire_: function (name) {
+      var self = this;
+      var tog = document.getElementById('togEdit');
+      return Store.acquireLease(name, true, this._tabId).then(function (r) {
         if (r && r.ok) return self.afterAcquire_();
         if (tog) { tog.disabled = false; tog.checked = false; }
         self.confirmInfo('引き継げませんでした', 'サーバーと通信できませんでした。もう一度お試しください。');
@@ -9632,13 +10308,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             self.setLockHolder_((res && res.lock) ? res.lock : null);
           }
           var revs = (res && res.revs) ? res.revs : {};
+          /* rev を確認できた＝そのキーはサーバの状態が分かった（進んでいるキーは中身を持たないので除く） */
+          if (Store.noteRevsSeen_) Store.noteRevsSeen_(revs);
           var changed = [], k, sv;
           for (k in revs) {
             if (!Object.prototype.hasOwnProperty.call(revs, k)) continue;
             sv = (typeof revs[k] === 'number') ? revs[k] : 0;
             if (sv > (Store.meta.revs[k] || 0)) changed.push(k);
           }
-          if (!changed.length) return 'nochange';
+          if (!changed.length) {
+            /* 全キーが一致＝この端末は最新を持っていると確定できた。バッジのオフライン固着を解く。 */
+            Store.dataFresh = true;
+            Store.updateStatus();
+            self.updateMonthReadyUI_();
+            return 'nochange';
+          }
           return Store.pullAll(changed).then(function (r) {
             if (r !== 'ok') return r;
             /* 印刷中（プレビュー表示中）に再描画すると、用紙に出る内容が途中で入れ替わる。
