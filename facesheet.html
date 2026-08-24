@@ -222,8 +222,9 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .mtbl .mnum{font-variant-numeric:tabular-nums}
 .mtbl .mbad{color:var(--ng); font-weight:700}   /* 取得できなかった欄。紙では黒に落とす */
 .meal-ft{margin-top:6px; font-size:calc(var(--mfs,12px) * .85); line-height:1.35; color:#000}
+/* 画面だけに出す警告。紙に出ないので用紙の大きさに縛られない＝業務ツールの下限15pxで出す */
 .meal-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
-  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
+  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.9375rem; font-weight:700}
 @media print{ .meal-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
 .visually-hidden{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
 .empty{text-align:center; color:var(--g5); padding:40px 10px}
@@ -1000,7 +1001,11 @@ function renderRoster(){
   if(curView==='meal'){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
-    fitMealSheet();
+    /* ★用紙フィットは1打鍵ごとに走らせない。二分探索＋充填で数十回の強制レイアウトが要るため、
+       検索窓の入力が引っかかる（2026-08-24 レビュー指摘 M-4）。150ms 待って最後の1回だけ掛ける。
+       ★印刷経路（ボタン・Cmd+P）は直前に必ず自前で掛け直すので、紙の結果はこの遅延に左右されない。 */
+    clearTimeout(fitMealSheet._t);
+    fitMealSheet._t=setTimeout(function(){ try{ fitMealSheet(); }catch(e){} },150);
     return;
   }
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。入居者マスタで登録するか「設定」で接続してください')+'</div>';return}
@@ -1388,11 +1393,15 @@ function fitMealSheet(){
     }
     return want<=MEAL_NAME_PCT_MAX;
   };
+  /* ★収まりの判定にも詰め方にも、印字可能高さの1%（約15px＝4mm）を安全代として残す。
+     ぎりぎりまで使うと、測定時と実印刷のわずかな差（プリンタ余白の丸め・フォントの実測差）で
+     最終行が2枚目へ落ちる。「紙いっぱい」より「必ず1枚」を優先する（2026-08-24 レビュー指摘 M-1）。 */
+  var fitH=MEAL_PRINT_H_PX*0.99;
   var nameOk=true, heightOk=true;
   var test=function(fs){
     setFs(fs); setPv(MEAL_PV_BASE);
     nameOk=layout(fs);
-    heightOk=(sheet.offsetHeight<=MEAL_PRINT_H_PX);
+    heightOk=(sheet.offsetHeight<=fitH);
     return nameOk&&heightOk;
   };
   var sizeOf=function(k){ return Math.round((MEAL_FS_MIN+k*MEAL_FS_STEP)*100)/100 };
@@ -1409,17 +1418,18 @@ function fitMealSheet(){
   tbl.classList.toggle('namewrap',!nameOk);
 
   /* ③ 余った高さを全行の上下余白へ配る。★足しすぎて2枚目に落ちるのは絶対に避ける（最後に必ず戻す） */
+  var fillTo=fitH;
   var pv=MEAL_PV_BASE;
   if(heightOk){
     for(var t=0;t<8;t++){
-      var gap=MEAL_PRINT_H_PX-sheet.offsetHeight;
+      var gap=fillTo-sheet.offsetHeight;
       if(gap<2) break;
       pv+=(gap/(2*rowCnt))/fs;                /* px → em（セルの上下2辺・全行に等しく足す） */
       setPv(pv);
     }
     var guard=0;
-    while(sheet.offsetHeight>MEAL_PRINT_H_PX && pv>MEAL_PV_BASE && guard++<60){
-      var over=sheet.offsetHeight-MEAL_PRINT_H_PX;
+    while(sheet.offsetHeight>fillTo && pv>MEAL_PV_BASE && guard++<60){
+      var over=sheet.offsetHeight-fillTo;
       pv=Math.max(MEAL_PV_BASE, pv-Math.max(0.02,(over/(2*rowCnt))/fs));
       setPv(pv);
     }
@@ -1475,8 +1485,21 @@ window.addEventListener('beforeprint',function(){
   if(!mealViewActive_()) return;
   fitMealSheet();      /* ★ここでも測り直す。ボタンを通らない経路では未調整のまま刷られる */
   fsMealPageOn();
+  setTimeout(fsMealPageOff,60000);   /* 保険その3: afterprint も matchMedia も来ない環境向け */
 });
 window.addEventListener('afterprint',function(){ fsMealPageOff(); });
+/* 保険その2: afterprint が発火しない環境（一部のiPad等）向け。印刷メディアを抜けたら必ず外す。
+   ★ボタン経路(fsPrintMeal)は3経路で外すが、Cmd/Ctrl+P・PDF出力は上の beforeprint 経由なので、
+     ここで同じ保険を張らないと A3 の用紙指定が残り、次に個票を刷るとA3で出る
+     （原則2・2026-08-24 レビュー指摘 H-2）。 */
+(function(){
+  try{
+    if(!window.matchMedia) return;
+    var mq=window.matchMedia('print');
+    var h=function(ev){ if(!ev.matches) fsMealPageOff(); };
+    if(mq.addEventListener) mq.addEventListener('change',h); else if(mq.addListener) mq.addListener(h);
+  }catch(e){}
+})();
 
 /* ═══════════ 詳細取得（都度取得・キャッシュしない） ═══════════ */
 var curRec=null;
