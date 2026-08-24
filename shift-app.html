@@ -923,6 +923,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       res.parts.push({ kind: 'nightOut', endMin: endMin,
         pairKnown: !!outSym });
       rest = rest.slice(mo[0].length);
+    } else if (rest.charAt(0) === ')') {
+      /* 上がり時刻を書かない明け「)」「)(希」（2026-08-24 依頼）。時刻不明の夜勤上がりとして扱う。
+       * これまでは解釈できずCSVに1行も出なかった。実働時間は timecalc が前日の夜勤入りの
+       * 定時上がり(pairEnd)で仮計算し「夜勤上がりが未入力」を警告する（従来の未入力時と同じ扱い）。
+       * freee 出力では明けの日＝休み扱いのため、時刻が無くても公休/欠勤を決められる。 */
+      res.parts.push({ kind: 'nightOut', endMin: null, pairKnown: false });
+      rest = rest.slice(1);
     }
     if (rest !== '') {
       var mi = rest.match(RE_NIGHT_IN);
