@@ -510,6 +510,57 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @media print{ .bday-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
 @media (max-width:640px){ .bday-2col{grid-template-columns:1fr} }   /* スマホは縦積み（印刷は常に2列） */
 
+/* ── 食形態一覧（A3縦1枚の配膳表・2026-08-24 追加）──
+   ★フェイスシート facesheet.html の同名ブロックの【逐語コピー】。同じ紙が出ることが要件なので、
+     片方を直したらもう片方も必ず直すこと（PRINT_SECS と同じ作法）。
+     ★このファイルだけの追加は「一覧のセルを直接直せる（.med）」ことと、そのための画面用の
+       文字サイズ（--mfs は画面では読める大きさ・印刷の直前だけ用紙に合わせて縮める）。 */
+.meal-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
+.meal-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
+  border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
+.meal-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+/* ★色も戻すこと。戻さないと塗りボタン（保存・印刷）の白文字が薄い地色に載って読めなくなる
+   （2026-08-24 実測: #fff on #f1f3f4 ＝ コントラスト比 1.07:1） */
+.meal-bar button:disabled{opacity:.45; cursor:default; background:var(--g1); color:var(--g9)}
+.meal-bar .btn-save{background:var(--pri); color:#fff; border-color:var(--pri)}
+.meal-bar .btn-print{margin-left:auto}
+.meal-bar .st{font-size: 0.875rem; color:var(--g7); font-weight:700}
+.meal-bar .dirtymsg{font-size: 0.875rem; font-weight:700; color:var(--warn-tx)}
+/* 画面では横スクロール（狭い端末でも表を潰さない）。紙では全幅＝スクロールしない */
+.meal-sheet{background:#fff; padding:6px 4px; overflow-x:auto}
+.meal-hd{display:flex; align-items:baseline; gap:14px; margin-bottom:4px;
+  font-size:var(--mfs,16px); line-height:1.3; color:#000}
+.meal-hd .mt1{font-weight:700; font-size:calc(var(--mfs,16px) * 1.7); letter-spacing:.06em}
+.meal-hd .mt3{margin-left:auto; white-space:nowrap}
+/* ★画面でも紙と同じ列の比で見せる。狭い端末では横スクロール（.meal-sheet が overflow-x:auto）。
+   min-width をA3縦の印字可能幅(1062px)に合わせておかないと、画面では16pxで組むぶん
+   数字の列が潰れ、「負担割合」が縦1文字ずつに割れて編集しづらくなる（2026-08-24 実測）。 */
+.mtbl{border-collapse:collapse; table-layout:fixed; width:100%; min-width:1062px;
+  font-size:var(--mfs,16px); line-height:1.25; color:#000}
+/* この表だけ一覧画面の横幅の上限を外す（他のビュー・他の画面の幅は1pxも変えない） */
+body.meal-on #sc-list{max-width:none}
+.mtbl th,.mtbl td{border:1px solid #000; text-align:center; vertical-align:middle;
+  padding:var(--mpv,.3em) .25em; height:3.3em; font-weight:400;
+  white-space:pre-wrap; overflow-wrap:anywhere}
+/* 氏名は折り返さない。列幅は fitMealSheet() が実データの最長氏名から決める */
+.mtbl .mnm{white-space:nowrap}
+.mtbl.namewrap .mnm{white-space:pre-wrap}
+.mtbl .mno{border-left:none}          /* 連番列は左罫線なし（原本と同じ） */
+.mtbl thead .mno{border:none}         /* 見出しの連番セルは罫線なし（原本と同じ） */
+.mtbl .mnum{font-variant-numeric:tabular-nums}
+.mtbl .mbad{color:var(--ng); font-weight:700}   /* 取得できなかった欄。紙では黒に落とす */
+/* 直接編集できるセル。編集できることが【見て分かる】ようにする（点線＋カーソル）。
+   ★紙には出さない（下の @media print で消す）。画面と紙の見た目を変えるのはここだけ。 */
+.mtbl td.med{cursor:text; box-shadow:inset 0 -2px 0 var(--g2)}
+.mtbl td.med:hover{background:var(--g0)}
+.mtbl td.med:focus{outline:3px solid var(--focus); outline-offset:-3px; background:#fff}
+.mtbl td.med.dirty{background:var(--warn-bg)}          /* 未保存＝一括編集と同じ黄色 */
+.mtbl tr.mrow-locked td.med{cursor:not-allowed; box-shadow:none; background:var(--g1)}
+.meal-ft{margin-top:6px; font-size:calc(var(--mfs,16px) * .85); line-height:1.35; color:#000}
+.meal-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
+  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
+@media print{ .meal-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
+
 /* ── 印刷 ── */
 @media print{
   body{padding:0; background:#fff}
@@ -543,6 +594,23 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .btbl .bno{color:#000}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .bday-ft{font-size:8px; color:#000}
+
+  /* ── 食形態一覧（A3縦1枚）──
+     ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
+       付けない印刷＝従来の詳細印刷・誕生日一覧・A4様式は1pxも変わらない（原則2）。
+     ★用紙の指定（@page size:A3 portrait）は静的に書かない。印刷の直前だけ注入して必ず外す
+       （msMealPageOn / msMealPageOff）。静的に書くと他の印刷まで用紙が変わる。 */
+  body.meal-on .search-bar,
+  body.meal-on .view-tabs,
+  body.meal-on .filter-row,
+  body.meal-on .roster-count,
+  body.meal-on .bulk-open,
+  body.meal-on .meal-bar{display:none !important}
+  .meal-sheet{padding:0; overflow:visible}      /* 紙では横スクロールを作らない＝全幅で刷る */
+  /* 編集できる印（下線・黄色・枠）は紙に出さない。原本と同じ「黒い罫線だけ」の表にする */
+  .mtbl td.med{box-shadow:none !important; background:transparent !important; outline:none !important}
+  .mtbl .mbad{color:#000}
+  .mtbl tr.mrow-locked td.med{background:transparent !important}
 
   /* ── A4様式（旧「利用者基本情報」1枚様式）──
      ★body.a4-on を付けて【A4様式ボタンを押した時だけ】効かせる（bday-on と同じ作法）。
@@ -713,6 +781,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
     <button class="vtab"    data-v="fl4"   role="tab" aria-selected="false">階別（4列）</button>
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
+    <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
   </div>
   <!-- 誕生日ビュー専用の年度切替。印刷には出さない（年度は表の見出しに入る） -->
   <div class="bday-bar" id="bdayBar" style="display:none">
@@ -720,6 +789,14 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
     <span id="bdayFY" aria-live="polite"></span>
     <button type="button" id="bdayNext" aria-label="次の年度">▶</button>
     <button type="button" class="btn-print" id="bdayPrint">🖨️ 印刷</button>
+  </div>
+  <!-- 食形態一覧ビュー専用。印刷には出さない（body.meal-on の印刷CSSで消える） -->
+  <div class="meal-bar" id="mealBar" style="display:none">
+    <span class="st" id="mealStatus" role="status" aria-live="polite"></span>
+    <span class="dirtymsg" id="mealDirtyMsg"></span>
+    <button type="button" id="mealReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-save" id="mealSave" disabled>💾 保存</button>
+    <button type="button" class="btn-print" id="mealPrint">🖨️ A3縦で印刷</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -1572,7 +1649,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','bday'];
+var VIEWS=['std','fl2','fl4','kana','bday','meal'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -1608,12 +1685,17 @@ function paintTabs(){
   });
 }
 function setView(v){
-  curView=VIEWS.indexOf(v)>=0?v:'std';
+  var next=VIEWS.indexOf(v)>=0?v:'std';
+  /* ★食形態一覧に未保存の変更があるまま離れさせない（変更はメモリにしか無い）。
+     止めた時はタブの点灯も元へ戻す（押した見た目だけ変わって中身が変わらないのを防ぐ） */
+  if(curView==='meal'&&next!=='meal'&&!mealLeaveOk('ほかの表示に切り替える')){ paintTabs(); return }
+  curView=next;
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
   /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
      残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
   csvStripViewParam();
-  paintTabs(); paintBdayBar(); renderRoster();
+  paintTabs(); paintBdayBar(); paintMealBar(); renderRoster();
+  if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
 }
 
 /* ═══════════ 誕生日一覧（年度単位） ═══════════
@@ -1903,6 +1985,17 @@ function renderRoster(){
   try{ weightIdx=buildWeightIndex(list); }catch(e){ weightIdx={}; }   // 体重が出ないだけで一覧は必ず描画する
   var cntEl=$('rosterCount');
   if(cntEl) cntEl.textContent=list.length?(list.length+'名'):'';
+  /* ★食形態一覧は【自前のデータ】（getMealList）で描く。共有名簿が空でも表は出せるので、
+     下の「入居者がいません」より手前で片付ける。件数はビュー専用バーに出す。 */
+  if(curView==='meal'){
+    if(cntEl) cntEl.textContent='';
+    box.innerHTML=mealHtml(q);
+    mealBindCells(box);
+    /* 収まるかどうかを先に測って警告だけ出し、画面は読める大きさへ戻す（紙は印刷の直前に合わせる） */
+    fitMealSheet(); mealScreenReset_();
+    paintMealBar();
+    return;
+  }
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';return}
   var html;
   if(curView==='fl2'||curView==='fl4'){
@@ -2022,6 +2115,468 @@ function fitBdaySheet(){
 }
 
 /* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
+/* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
+   Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
+   ★表の作り（列幅・罫線・中央揃え）とA3縦フィット・用紙指定は facesheet.html の同名ブロックの
+     【逐語コピー】。同じ紙が出ることが要件なので、片方を直したらもう片方も必ず直すこと。
+   ★このファイルだけの追加＝「一覧のセルを直接直してマスタへ書き戻す」こと（2026-08-24 指示）。
+     ・直せるのは食事5項目だけ（主食・副食・食事備考・アレルギー・副作用/禁忌）。
+       氏名は全アプリの名寄せキー、居室・介護度は週間計画／体重管理／排泄ケア記録へそのまま伝わる、
+       年齢は生年月日からの計算値。どれもこの配膳表の画面からは触らせない
+       （従来どおり1人ずつの編集画面か「📊 一括編集」で直す）。
+     ・書き戻しは専用の口 action=saveMealList。savePartial（一括編集）には相乗りしない
+       （あちらの許可リストは要配慮情報を載せない約束。理由は gas/master.gs のコメント）。
+   ★端末に保存しない（localStorage には書かない）。未保存の変更もメモリだけに置く。 */
+var MEAL_KEYS=['id','name','kana','room','careLevel','copayRate','birthDate',
+               'mealStaple','mealSide','mealNote','allergy','sideEffects','broken'];
+/* 原本の列幅の比（facesheet.html と同じ値。片方だけ変えない）。
+   ★氏名列は【下限】。実データの最長氏名が1行に収まらない時は fitMealSheet() がここから広げ、
+     増やしたぶんを MEAL_FLEX の5列から比のまま差し引く。 */
+var MEAL_COLS=[
+  ['',      2.600,'mno'],  ['居室',    3.600,''],   ['入居者',  9.650,'mnm'],
+  ['年齢',   3.600,'mnum'],['介護度',   4.500,'mnum'],['負担|割合',4.006,'mnum'],
+  ['主食',  15.177,''],    ['副食',    14.869,''],  ['食事備考',17.268,''],
+  ['アレルギー',12.327,''],['禁忌等',  12.404,'']
+];
+var MEAL_NAME_COL=2, MEAL_FLEX=[6,7,8,9,10], MEAL_NAME_PCT_MAX=16;
+/* 一覧から直せる項目と、その日本語名（確認ダイアログとエラー文で使う。GAS の MEAL_LABEL と揃える） */
+var MEAL_EDIT=['mealStaple','mealSide','mealNote','allergy','sideEffects'];
+var MEAL_EDIT_LABEL={mealStaple:'主食',mealSide:'副食',mealNote:'食事備考',
+                     allergy:'アレルギー',sideEffects:'副作用・禁忌 等'};
+var MEAL_MAX_LEN=2000;                /* GAS 側 MEAL_MAX_LEN と同じ。送る前に画面でも止める */
+var mealRows=null;      /* 取得できた行（メモリのみ・端末には残さない） */
+var mealLoading=false;  /* 取得中（連打防止） */
+var mealSaving=false;   /* 保存中（連打防止） */
+var mealMsg='';         /* 画面に出す状態（進捗・失敗の理由） */
+var mealSeq=0;          /* 応答の追い越し対策。古い応答で新しい表を潰さない */
+var mealDirty={};       /* {id:{項目:新しい値}} 未保存の変更 */
+
+function mealPick_(o){
+  var r={};
+  for(var i=0;i<MEAL_KEYS.length;i++){ var k=MEAL_KEYS[i]; if(o[k]!==undefined&&o[k]!==null) r[k]=o[k]; }
+  return r;
+}
+function mealSetMsg_(m){ mealMsg=m; var e=$('mealStatus'); if(e) e.textContent=m; }
+/* 改行・空白の揺れをそろえる。<td contenteditable> は編集すると &nbsp; や末尾の改行が入るので、
+   「見た目が同じなら変更なし」と扱えるようにここで正規化する（触っただけで未保存にしない） */
+function mealNorm_(s){
+  return String(s==null?'':s).replace(/\r\n/g,'\n').replace(/ /g,' ').replace(/\n+$/,'');
+}
+function mealCellText_(el){ return mealNorm_(el.innerText); }
+/* 表示する値。未保存の変更があればそれを、無ければ取得時の値を返す（一括編集 bulkVal と同じ考え方） */
+function mealVal(r,k){
+  var d=mealDirty[r.id];
+  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  return (r[k]==null)?'':r[k];
+}
+function mealDirtyCells(){ var n=0,k; for(k in mealDirty) n+=Object.keys(mealDirty[k]).length; return n; }
+function mealDirtyPeople(){ var n=0,k; for(k in mealDirty) if(Object.keys(mealDirty[k]).length) n++; return n; }
+function mealRowOf(id){
+  if(mealRows) for(var i=0;i<mealRows.length;i++) if(String(mealRows[i].id)===String(id)) return mealRows[i];
+  return null;
+}
+function mealWho(id){
+  var r=mealRowOf(id);
+  return r ? (r.name + (r.room?('（'+r.room+'）'):'')) : ('No'+id);
+}
+/* サーバーからの「No12: …」を氏名（居室）へ置き換える（表に利用者No列が無いため。bulkNamed と同じ） */
+function mealNamed(msg){ return String(msg).replace(/No(\d+)/g,function(m,n){ return mealWho(n) }); }
+
+/* いま食形態一覧を「画面に出している」か。詳細画面へ移った時に用紙指定が効かないようにするため、
+   ビューidだけでなく一覧画面が表示中かも見る（見ないと個票の印刷までA3になる） */
+function mealViewActive_(){
+  var sc=$('sc-list');
+  return curView==='meal' && !!sc && sc.classList.contains('on');
+}
+function paintMealBar(){
+  var bar=$('mealBar'); if(!bar) return;
+  var on=mealViewActive_();
+  bar.style.display=on?'flex':'none';
+  document.body.classList.toggle('meal-on',on);   // 印刷CSSをこのビュー限定にするため
+  /* ★この表は在籍固定（配膳表のため）。押しても表が変わらない在籍/退去チップは画面から外す。
+     他のビューへ戻ったら必ず出し直す（既存の絞り込みは1つも変えていない） */
+  var fr=$('filterRow'); if(fr) fr.style.display=on?'none':'';
+  var st=$('mealStatus');
+  if(st) st.textContent = on ? (mealMsg || (mealRows?(mealRows.length+'名'):'')) : '';
+  var dm=$('mealDirtyMsg');
+  if(dm) dm.textContent = (on&&mealDirtyCells()) ? ('未保存: '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目') : '';
+  var rl=$('mealReload'), sv=$('mealSave'), pr=$('mealPrint');
+  if(rl) rl.disabled=mealLoading||mealSaving;
+  if(sv) sv.disabled=mealSaving||!mealDirtyCells();
+  if(pr) pr.disabled=mealLoading||mealSaving||!mealRows||!mealRows.length;
+}
+function mealLoad(force){
+  if(mealLoading||mealSaving) return;
+  if(mealRows&&!force) return;
+  if(!CFG.url){ mealRows=null; mealSetMsg_('同期設定のURLが未設定です'); paintMealBar(); renderRoster(); return }
+  var seq=++mealSeq;
+  mealLoading=true; mealSetMsg_('取得中…'); paintMealBar(); renderRoster();
+  apiGetRetry({action:'getMealList'},30000).then(function(d){
+    if(seq!==mealSeq) return;                       // 追い越された応答は捨てる
+    var rows=(d&&d.rows)||[];
+    if(!Array.isArray(rows)) throw new Error('応答が不正です');
+    /* ★職員マーカー行（居室 STAFF）は配膳表に載せない（他の一覧と同じ扱い） */
+    mealRows=rows.filter(function(r){ return String(r.room==null?'':r.room).trim().toUpperCase()!=='STAFF' })
+                 .map(mealPick_);
+    mealLoading=false; mealSetMsg_(''); paintMealBar(); renderRoster();
+  }).catch(function(e){
+    if(seq!==mealSeq) return;
+    mealLoading=false; mealRows=null;
+    /* ★GASがまだ古い時は、原因と次の手をそのまま出す（「取得に失敗」だけだと現場が動けない）。
+       フェイスシートには1人ずつ取得の逃げ道があるが、こちらは【編集】が目的で、
+       保存の口（saveMealList）も同じ貼り替えで入るため、逃げ道を作らず貼り替えを促す。 */
+    mealSetMsg_(/不明なaction/.test(String((e&&e.message)||''))
+      ? '入居者マスタGASの更新がまだです（getMealList が無い版）。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください'
+      : '取得に失敗しました: '+((e&&e.message)||e));
+    paintMealBar(); renderRoster();
+  });
+}
+/* 介護度は原本と同じく数字だけにする（要介護4 → 4）。要支援は「支1」。
+   それ以外（事業対象者・空欄など）は原文のまま出す（勝手に丸めない・原則6） */
+function mealCareLv_(v){
+  var s=String(v==null?'':v).trim().replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=/要介護\s*([1-5])/.exec(s); if(m) return m[1];
+  m=/要支援\s*([1-2])/.exec(s); if(m) return '支'+m[1];
+  return s;
+}
+/* 介護度の数値（平均に使う）。要支援・事業対象者は平均に入れない */
+function mealCareNum_(v){ var s=mealCareLv_(v); return /^[1-5]$/.test(s)?parseInt(s,10):null }
+/* 負担割合は原本と同じ表記（1／2／3／保護）。数字以外を落とすと「保護」が消えるので加工しない */
+function mealCopay_(v){ return String(v==null?'':v).trim() }
+
+function mealHtml(q){
+  if(!mealRows){
+    return (mealLoading||!mealMsg)
+      ? '<div class="loading">'+esc(mealMsg||'読み込み中…')+'</div>'
+      : '<div class="empty">'+esc(mealMsg)+
+        '<br>上の「🔄 最新に取り直す」を押すか、「同期設定」で接続をご確認ください</div>';
+  }
+  var rows=mealRows.slice();
+  if(q) rows=rows.filter(function(r){
+    var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();
+    return hay.indexOf(q)>=0;
+  });
+  rows.sort(byKana);                                   /* 原本と同じ五十音順 */
+  if(!rows.length) return '<div class="empty">該当する入居者がいません</div>';
+
+  var nMiss=0, ageSum=0, ageN=0, careSum=0, careN=0;
+  var body=rows.map(function(r,i){
+    var miss=(r.broken===true);
+    if(miss) nMiss++;
+    var age=calcAge(r.birthDate);
+    if(age!=='') { ageSum+=age; ageN++; }
+    var cn=mealCareNum_(r.careLevel);
+    if(cn!==null){ careSum+=cn; careN++; }
+    /* 読み取り専用の欄。取得できなかった行では「⚠取得できず」を出す
+       （空欄のままだと「特に指示なし」と読めてしまい、配膳の事故につながる） */
+    var v=function(s){
+      s=String(s==null?'':s);
+      if(s!=='') return esc(s);
+      return miss?'<span class="mbad">⚠取得できず</span>':'';
+    };
+    /* 直せる欄。★保存データが壊れている行は編集させない（空で上書きして本体を壊さないため） */
+    var ed=function(k){
+      var val=String(mealVal(r,k)||'');
+      if(miss) return '<td class="med mlock">'+(val?esc(val):'<span class="mbad">⚠取得できず</span>')+'</td>';
+      var d=mealDirty[r.id];
+      var dirty=!!(d&&Object.prototype.hasOwnProperty.call(d,k));
+      return '<td class="med'+(dirty?' dirty':'')+'" contenteditable="true" role="textbox" aria-multiline="true"'+
+        ' aria-label="'+esc(r.name)+' の'+MEAL_EDIT_LABEL[k]+'（直接編集できます）"'+
+        ' data-id="'+esc(r.id)+'" data-k="'+k+'">'+esc(val)+'</td>';
+    };
+    return '<tr'+(miss?' class="mrow-locked"':'')+'>'+
+      '<td class="mno mnum">'+(i+1)+'</td>'+
+      '<td class="mnum">'+esc(r.room)+'</td>'+
+      '<td class="mnm">'+esc(r.name)+'</td>'+
+      '<td class="mnum">'+v(age)+'</td>'+
+      '<td class="mnum">'+esc(mealCareLv_(r.careLevel))+'</td>'+
+      '<td class="mnum">'+v(mealCopay_(r.copayRate))+'</td>'+
+      ed('mealStaple')+ed('mealSide')+ed('mealNote')+ed('allergy')+ed('sideEffects')+'</tr>';
+  }).join('');
+
+  var today=new Date();
+  var stamp=today.getFullYear()+'/'+(today.getMonth()+1)+'/'+today.getDate();
+  var avg=[];
+  if(ageN) avg.push('平均年齢 '+(Math.round(ageSum/ageN*10)/10));
+  if(careN) avg.push('平均介護度 '+(Math.round(careSum/careN*100)/100));
+  var notes=['在籍'+rows.length+'名'];
+  if(q) notes.push('検索「'+q+'」で絞り込み中');
+  if(nMiss) notes.push('⚠ '+nMiss+'名は保存データが壊れています（この行は直せません・1人ずつの編集画面でご確認ください）');
+  notes.push('退去の方は載せていません');
+  notes.push('この表は「🚫 印刷しない」の指定を反映していません（施設内の配膳用）');
+  notes.push('主食〜禁忌等はこの表から直接直せます（直したら「💾 保存」）');
+
+  return '<div class="meal-sheet" id="mealSheet">'+
+    '<div class="meal-hd"><span class="mt1">食形態一覧</span>'+
+      '<span class="mt2">'+esc(avg.join('　'))+'</span>'+
+      '<span class="mt3">印刷日 '+stamp+'</span></div>'+
+    '<table class="mtbl"><colgroup>'+
+      MEAL_COLS.map(function(c){return '<col style="width:'+c[1]+'%">'}).join('')+
+    '</colgroup><thead><tr>'+
+      /* 見出しの「|」は改行位置の指定（原本と同じ「負担／割合」の切れ方にする）。
+         見出し文字はこちらで持つ固定値なので、esc したあとに置き換えても入力は混ざらない */
+      MEAL_COLS.map(function(c){return '<th'+(c[2]?' class="'+c[2]+'"':'')+'>'+esc(c[0]).replace(/\|/g,'<br>')+'</th>'}).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="meal-ft">'+esc(notes.join('　／　'))+'</div>'+
+  '</div>';
+}
+
+/* 編集（直せる欄だけ・平文だけ）。描画のたびに貼り直す */
+function mealBindCells(box){
+  Array.prototype.forEach.call(box.querySelectorAll('.med[contenteditable]'),function(el){
+    el.addEventListener('input',mealOnInput_);
+    /* ★貼り付けは平文だけ入れる。書式つきで貼るとHTMLが混ざり、見た目と保存値が食い違う */
+    el.addEventListener('paste',function(e){
+      var cb=e.clipboardData||window.clipboardData; if(!cb) return;
+      var s=String(cb.getData('text/plain')||'');
+      e.preventDefault();
+      try{ document.execCommand('insertText',false,s); }
+      catch(err){ this.textContent=this.textContent+s; }
+      mealOnInput_({target:this});
+    });
+    /* 画像・リンクのドロップも同じ理由で断る */
+    el.addEventListener('drop',function(e){ e.preventDefault(); });
+  });
+}
+function mealOnInput_(e){
+  var el=e.target; if(!el||!el.getAttribute) return;
+  var id=el.getAttribute('data-id'), k=el.getAttribute('data-k');
+  if(!id||!k) return;
+  var r=mealRowOf(id); if(!r) return;
+  var nv=mealCellText_(el), ov=mealNorm_(r[k]);
+  mealDirty[id]=mealDirty[id]||{};
+  if(nv===ov) delete mealDirty[id][k]; else mealDirty[id][k]=nv;
+  if(!Object.keys(mealDirty[id]).length) delete mealDirty[id];
+  el.classList.toggle('dirty',nv!==ov);
+  paintMealBar();
+}
+/* 未保存のまま離れようとした時の確認。離れてよければ true */
+function mealLeaveOk(what){
+  if(!mealDirtyCells()) return true;
+  return confirm('食形態一覧に未保存の変更が '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目あります。\n'+
+    what+'と、この変更は失われます。よろしいですか？');
+}
+function mealSaveGo(){
+  if(mealSaving||!mealDirtyCells()) return;
+  var ids=Object.keys(mealDirty), changes=[], cells=0, blanks=[], toolong=[];
+  for(var i=0;i<ids.length;i++){
+    var id=ids[i], f=mealDirty[id], r=mealRowOf(id);
+    if(!r) continue;                                   /* 取り直しで消えた方は送らない */
+    var send={}, k;
+    for(k in f){
+      if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
+      if(MEAL_EDIT.indexOf(k)<0) continue;             /* 画面側でも許可した項目だけに絞る */
+      send[k]=f[k]; cells++;
+      if(String(f[k])==='') blanks.push(mealWho(id)+' の'+MEAL_EDIT_LABEL[k]);
+      if(String(f[k]).length>MEAL_MAX_LEN) toolong.push(mealWho(id)+' の'+MEAL_EDIT_LABEL[k]);
+    }
+    if(!Object.keys(send).length) continue;
+    /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
+    changes.push({id:r.id,name:r.name,fields:send});
+  }
+  if(!changes.length){ toast('変更がありません'); return; }
+  if(toolong.length){
+    alert('長すぎる項目があるため保存しませんでした（'+MEAL_MAX_LEN+'文字まで）。\n\n'+toolong.slice(0,10).join('\n'));
+    return;
+  }
+  var msg=changes.length+'名 / '+cells+'項目を入居者マスタへ保存します。\n\n'+
+    (blanks.length?('⚠ 次の '+blanks.length+'項目は【空欄になります】。消してよろしければ続けてください。\n　'+
+      blanks.slice(0,10).join('\n　')+(blanks.length>10?('\n　…ほか'+(blanks.length-10)+'項目'):'')+'\n\n'):'')+
+    '直した項目だけが書き換わり、他の項目には触れません。\n'+
+    'この5項目はフェイスシートにもそのまま出ます。\n\nよろしいですか？';
+  if(!confirm(msg)) return;
+  mealSaving=true; mealSetMsg_('保存中…'); paintMealBar(); setSync('保存中…');
+  apiPostRaw({action:'saveMealList',changes:changes},60000).then(function(d){
+    mealSaving=false;
+    if(!d||d.ok!==true){
+      setSync('保存失敗','err'); mealSetMsg_('');
+      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(mealNamed).join('\n')):'';
+      alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det);
+      paintMealBar(); return;
+    }
+    if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
+    else setSync('保存できず','err');
+    /* ★書けなかった方の変更は【残す】。手元へ焼き付けて未保存の印を消すと、
+       画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので二度と送れなくなる */
+    var failed={};
+    if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    var kept=0;
+    for(var i2=0;i2<changes.length;i2++){
+      var c=changes[i2];
+      if(failed[String(c.id)]){ kept++; continue; }
+      var r2=mealRowOf(c.id);
+      if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+      delete mealDirty[String(c.id)];
+    }
+    if(d.warn&&d.warn.length)
+      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+
+        d.warn.map(mealNamed).join('\n'));
+    mealSetMsg_(''); paintMealBar(); renderRoster();
+  }).catch(function(e){
+    mealSaving=false; setSync('保存失敗','err'); mealSetMsg_('');
+    var m=String((e&&e.message)||e);
+    alert(/不明なaction/.test(m)
+      ? '入居者マスタGASの更新がまだのため保存できませんでした（saveMealList が無い版）。\n'+
+        '1文字も書き込んでいません。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください。'
+      : '保存できませんでした: '+m+'\n\n変更は黄色のまま残してあります。');
+    paintMealBar();
+  });
+}
+
+/* ── A3縦1枚を「いっぱいまで」使う（facesheet.html の同名関数の逐語コピー）──
+   ①文字サイズ ②氏名列の幅（最長氏名が1行で収まる幅） ③余った高さを全行の上下余白へ配る
+   ★このファイルでは【印刷の直前だけ】掛ける。画面はそのまま読める大きさ（--mfs 既定16px）で
+     編集させる（小さい文字で入力させない・介護現場要件1）。 */
+var MEAL_PAGE_MM = 8;
+var MEAL_PRINT_W_PX = (297-MEAL_PAGE_MM*2) * 96 / 25.4;   // A3縦の印字可能幅 ≈1062px
+var MEAL_PRINT_H_PX = (420-MEAL_PAGE_MM*2) * 96 / 25.4;   // 同 高さ ≈1527px
+var MEAL_FS_MIN=7, MEAL_FS_MAX=22, MEAL_FS_STEP=0.25;
+var MEAL_PV_BASE=0.3;
+function mealNameRatio_(tbl){
+  var cell=tbl.querySelector('tbody .mnm'); if(!cell) return 0;
+  var cs=getComputedStyle(cell), probe=document.createElement('span');
+  probe.style.cssText='position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;'+
+    'font-family:'+cs.fontFamily+';font-weight:'+cs.fontWeight+';letter-spacing:'+cs.letterSpacing+';font-size:100px';
+  document.body.appendChild(probe);
+  var max=0, cells=tbl.querySelectorAll('tbody .mnm');
+  for(var i=0;i<cells.length;i++){
+    probe.textContent=cells[i].textContent||'';
+    if(probe.offsetWidth>max) max=probe.offsetWidth;
+  }
+  probe.parentNode.removeChild(probe);
+  return max/100;
+}
+function fitMealSheet(){
+  var sheet=$('mealSheet'); if(!sheet) return;
+  if(!sheet.offsetParent) return;     /* 非表示のときは測らない（0px で「収まった」と誤判定する） */
+  var tbl=sheet.querySelector('.mtbl'); if(!tbl) return;
+  var cols=tbl.querySelectorAll('col');
+  if(cols.length!==MEAL_COLS.length) return;
+  var st=document.createElement('style');
+  st.textContent='#mealSheet{width:'+Math.round(MEAL_PRINT_W_PX)+'px !important;max-width:none !important;'+
+    'overflow:visible !important;padding:0 !important}'+
+    '#mealSheet .mtbl{min-width:0 !important}'+
+    '#mealSheet .meal-warn{display:none !important}';
+  document.head.appendChild(st);
+
+  var nameRatio=mealNameRatio_(tbl);
+  var rowCnt=tbl.rows.length||1;
+  var setFs=function(s){ sheet.style.setProperty('--mfs',s+'px') };
+  var setPv=function(v){ sheet.style.setProperty('--mpv',(Math.round(v*1000)/1000)+'em') };
+  var layout=function(fs){
+    var innerW=tbl.clientWidth||MEAL_PRINT_W_PX;
+    var needPx=nameRatio*fs + fs*0.5 + 3;
+    var base=MEAL_COLS[MEAL_NAME_COL][1];
+    var want=Math.max(base, needPx/innerW*100);
+    var pct=Math.min(want, MEAL_NAME_PCT_MAX);
+    var delta=pct-base, sum=0, i;
+    for(i=0;i<MEAL_FLEX.length;i++) sum+=MEAL_COLS[MEAL_FLEX[i]][1];
+    for(i=0;i<MEAL_COLS.length;i++){
+      var w=MEAL_COLS[i][1];
+      if(i===MEAL_NAME_COL) w=pct;
+      else if(MEAL_FLEX.indexOf(i)>=0) w=w-delta*(w/sum);
+      cols[i].style.width=(Math.round(w*1000)/1000)+'%';
+    }
+    return want<=MEAL_NAME_PCT_MAX;
+  };
+  var nameOk=true, heightOk=true;
+  var test=function(fs){
+    setFs(fs); setPv(MEAL_PV_BASE);
+    nameOk=layout(fs);
+    heightOk=(sheet.offsetHeight<=MEAL_PRINT_H_PX);
+    return nameOk&&heightOk;
+  };
+  var sizeOf=function(k){ return Math.round((MEAL_FS_MIN+k*MEAL_FS_STEP)*100)/100 };
+  var lo=0, hi=Math.round((MEAL_FS_MAX-MEAL_FS_MIN)/MEAL_FS_STEP);
+  if(test(sizeOf(lo))){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      if(test(sizeOf(mid))) lo=mid; else hi=mid-1;
+    }
+  }
+  var fs=sizeOf(lo);
+  test(fs);
+  tbl.classList.toggle('namewrap',!nameOk);
+  var pv=MEAL_PV_BASE;
+  if(heightOk){
+    for(var t=0;t<8;t++){
+      var gap=MEAL_PRINT_H_PX-sheet.offsetHeight;
+      if(gap<2) break;
+      pv+=(gap/(2*rowCnt))/fs;
+      setPv(pv);
+    }
+    var guard=0;
+    while(sheet.offsetHeight>MEAL_PRINT_H_PX && pv>MEAL_PV_BASE && guard++<60){
+      var over=sheet.offsetHeight-MEAL_PRINT_H_PX;
+      pv=Math.max(MEAL_PV_BASE, pv-Math.max(0.02,(over/(2*rowCnt))/fs));
+      setPv(pv);
+    }
+  }
+  var usedPct=Math.round(sheet.offsetHeight/MEAL_PRINT_H_PX*100);
+  st.remove();
+  var warn=sheet.querySelector('.meal-warn'), msg='';
+  if(!heightOk) msg='⚠️ 人数が多い（または備考が長い）ため、いちばん小さい文字でもA3縦1枚に収まりません。'+
+      '検索で絞り込むか、2枚に分けて印刷してください。';
+  else if(!nameOk) msg='⚠️ お名前が長い方がいるため、1行に収めきれませんでした（その方だけ2行になります）。'+
+      'お名前の表記をご確認ください。';
+  if(msg){
+    if(!warn){ warn=document.createElement('div'); warn.className='meal-warn'; sheet.insertBefore(warn,sheet.firstChild); }
+    warn.textContent=msg;
+  }else if(warn){ warn.parentNode.removeChild(warn); }
+  return {fs:fs, pv:pv, usedPct:usedPct, nameOk:nameOk, heightOk:heightOk};
+}
+/* 画面用の大きさへ戻す（印刷用に縮めたままだと、編集する文字が小さすぎる）。
+   ★収まらない旨の警告(.meal-warn)は消さない。印刷する前に気づけるように画面へ残す */
+function mealScreenReset_(){
+  var sheet=$('mealSheet'); if(!sheet) return;
+  sheet.style.removeProperty('--mfs'); sheet.style.removeProperty('--mpv');
+  var cols=sheet.querySelectorAll('.mtbl col');
+  for(var i=0;i<cols.length&&i<MEAL_COLS.length;i++) cols[i].style.width=MEAL_COLS[i][1]+'%';
+}
+/* 「🖨️ A3縦で印刷」。用紙の指定は静的CSSに書かず、印刷の直前だけ注入して必ず外す
+   （静的に書くと従来のA4印刷＝個票・誕生日一覧・A4様式まで用紙が変わる）。 */
+function msMealPageOn(){
+  if($('msMealPage')) return;
+  var st=document.createElement('style');
+  st.id='msMealPage';
+  st.textContent='@media print{@page{size:A3 portrait;margin:'+MEAL_PAGE_MM+'mm}}';
+  document.head.appendChild(st);   /* ページ冒頭の静的 @page より後ろへ足す＝後勝ち */
+}
+function msMealPageOff(){ var st=$('msMealPage'); if(st&&st.parentNode) st.parentNode.removeChild(st) }
+function msPrintMeal(){
+  if(!mealViewActive_()) return;
+  fitMealSheet();                  /* 直前に測り直す（窓の幅・取得内容が変わっていることがある） */
+  msMealPageOn();
+  var off=function(){ msMealPageOff(); mealScreenReset_(); };
+  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
+  try{
+    if(window.matchMedia){
+      var mq=window.matchMedia('print');
+      var h=function(ev){ if(!ev.matches){ off();
+        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
+      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
+    }
+  }catch(e){}
+  setTimeout(off,60000);           /* 保険: afterprint が来ないブラウザでも必ず戻す */
+  window.print();
+}
+/* OSの印刷ショートカット（Cmd/Ctrl+P）とPDF出力は上の関数を通らない。
+   ★食形態一覧を画面に出している時だけ同じ用紙指定を通す（他のビュー・詳細画面では何もしない）。 */
+window.addEventListener('beforeprint',function(){
+  if(!mealViewActive_()) return;
+  fitMealSheet();
+  msMealPageOn();
+});
+window.addEventListener('afterprint',function(){
+  msMealPageOff();
+  if(mealViewActive_()) mealScreenReset_();
+});
+/* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
+window.addEventListener('beforeunload',function(e){
+  if(!mealDirtyCells()) return;
+  e.preventDefault(); e.returnValue='';
+});
+
 var curResident=null;
 /* 詳細画面の編集・印刷ボタンの可否。取得できた本人がいる時だけ押せる。
    curResident に前の方が残ったままだと、読み込み中や取得失敗の画面から
@@ -4769,6 +5324,9 @@ function applyDeviceGuard(){
 function loadData(){
   loadRosterCache();renderRoster();
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
+  /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
+     （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
+  if(curView==='meal') mealLoad(false);
   if(CFG.url)refreshRoster();else setSync('未接続');
   srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
 }
@@ -5125,12 +5683,19 @@ function init(){
   // 保存された表示パターンのタブ状態だけ先に反映する。
   // ここで描画すると (a) 名簿読込前なので「入居者がいません」が一瞬出る
   // (b) 現場端末ガードで return する経路でも描画してしまう。描画は loadData に任せる。
-  paintTabs(); paintBdayBar();
+  paintTabs(); paintBdayBar(); paintMealBar();
   /* 誕生日ビューの年度切替・印刷。年度は端末に保存しない（毎回その日の年度で開く＝
      去年の年度のまま印刷してしまう事故を防ぐ） */
   if($('bdayPrev'))$('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
   if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){window.print()});
+  /* 食形態一覧: 取り直し・保存・A3縦印刷 */
+  if($('mealReload'))$('mealReload').addEventListener('click',function(){
+    if(!mealLeaveOk('サーバーから取り直す')) return;
+    mealDirty={}; mealLoad(true);
+  });
+  if($('mealSave'))$('mealSave').addEventListener('click',mealSaveGo);
+  if($('mealPrint'))$('mealPrint').addEventListener('click',msPrintMeal);
   Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
     c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');
       try{localStorage.setItem(FILTER_KEY,curFilter)}catch(e){}
