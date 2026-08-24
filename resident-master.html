@@ -553,12 +553,15 @@ body.meal-on #sc-list{max-width:none}
    ★紙には出さない（下の @media print で消す）。画面と紙の見た目を変えるのはここだけ。 */
 .mtbl td.med{cursor:text; box-shadow:inset 0 -2px 0 var(--g2)}
 .mtbl td.med:hover{background:var(--g0)}
-.mtbl td.med:focus{outline:3px solid var(--focus); outline-offset:-3px; background:#fff}
+/* ★色は var(--pri)。このファイルの :root には --focus が無く、未定義のカスタム属性を書くと
+   宣言ごと無効になって【フォーカスリングが消える】（2026-08-24 レビュー指摘 H-1） */
+.mtbl td.med:focus{outline:3px solid var(--pri); outline-offset:-3px; background:#fff}
 .mtbl td.med.dirty{background:var(--warn-bg)}          /* 未保存＝一括編集と同じ黄色 */
-.mtbl tr.mrow-locked td.med{cursor:not-allowed; box-shadow:none; background:var(--g1)}
+.mtbl td.mlock{cursor:not-allowed; box-shadow:none; background:var(--g1)}   /* 保存データが壊れている行＝直せない */
 .meal-ft{margin-top:6px; font-size:calc(var(--mfs,16px) * .85); line-height:1.35; color:#000}
+/* 画面だけに出す警告。紙に出ないので用紙の大きさに縛られない＝業務ツールの下限15pxで出す */
 .meal-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
-  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
+  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.9375rem; font-weight:700}
 @media print{ .meal-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
 
 /* ── 印刷 ── */
@@ -607,10 +610,13 @@ body.meal-on #sc-list{max-width:none}
   body.meal-on .bulk-open,
   body.meal-on .meal-bar{display:none !important}
   .meal-sheet{padding:0; overflow:visible}      /* 紙では横スクロールを作らない＝全幅で刷る */
+  /* ★画面用の最低幅(1062px)を紙では外す。外さないと、印字可能幅がそれを下回る条件
+     （プリンタ側で余白を広げた・A3以外を選んだ）で右端がはみ出す（facesheet と同じ指定） */
+  .mtbl{min-width:0}
   /* 編集できる印（下線・黄色・枠）は紙に出さない。原本と同じ「黒い罫線だけ」の表にする */
   .mtbl td.med{box-shadow:none !important; background:transparent !important; outline:none !important}
   .mtbl .mbad{color:#000}
-  .mtbl tr.mrow-locked td.med{background:transparent !important}
+  .mtbl td.mlock{background:transparent !important}
 
   /* ── A4様式（旧「利用者基本情報」1枚様式）──
      ★body.a4-on を付けて【A4様式ボタンを押した時だけ】効かせる（bday-on と同じ作法）。
@@ -1991,8 +1997,11 @@ function renderRoster(){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
     mealBindCells(box);
-    /* 収まるかどうかを先に測って警告だけ出し、画面は読める大きさへ戻す（紙は印刷の直前に合わせる） */
-    fitMealSheet(); mealScreenReset_();
+    /* ★ここでは用紙フィット（fitMealSheet）を掛けない。検索は1打鍵ごとにこの関数を通るので、
+       毎回かけると二分探索＋充填で数十回の強制レイアウトが走り、入力が引っかかる
+       （2026-08-24 レビュー指摘 M-4）。画面に要るのは氏名列の幅だけなので軽い方だけ掛ける。
+       用紙に収まるかの判定と警告は「取得のあと」と「印刷の直前」に行う。 */
+    mealScreenReset_();
     paintMealBar();
     return;
   }
@@ -2127,6 +2136,9 @@ function fitBdaySheet(){
      ・書き戻しは専用の口 action=saveMealList。savePartial（一括編集）には相乗りしない
        （あちらの許可リストは要配慮情報を載せない約束。理由は gas/master.gs のコメント）。
    ★端末に保存しない（localStorage には書かない）。未保存の変更もメモリだけに置く。 */
+/* ★フェイスシート側の MEAL_KEYS にある 'err' はここには無い。あちらは1人ずつ取得へ落ちる逃げ道を
+   持ち、その失敗を err で表すため。こちらは getMealList だけ（編集が目的で、保存の口も同じ
+   貼り替えで入る）なので err は発生しない。この1項目だけが意図的な差。 */
 var MEAL_KEYS=['id','name','kana','room','careLevel','copayRate','birthDate',
                'mealStaple','mealSide','mealNote','allergy','sideEffects','broken'];
 /* 原本の列幅の比（facesheet.html と同じ値。片方だけ変えない）。
@@ -2219,9 +2231,15 @@ function mealLoad(force){
     mealRows=rows.filter(function(r){ return String(r.room==null?'':r.room).trim().toUpperCase()!=='STAFF' })
                  .map(mealPick_);
     mealLoading=false; mealSetMsg_(''); paintMealBar(); renderRoster();
+    /* 取得のあとに1回だけ用紙フィットを掛け、A3縦1枚に収まらない時の警告を先に出す
+       （収まるかは人数と備考の長さで決まるので、取得のたびに測り直せば足りる）。
+       画面はそのあと読める大きさへ戻す（紙に合わせるのは印刷の直前）。 */
+    try{ fitMealSheet(); mealScreenReset_(); }catch(e2){}
   }).catch(function(e){
     if(seq!==mealSeq) return;
-    mealLoading=false; mealRows=null;
+    mealLoading=false;
+    /* ★未保存の変更がある時は表を消さない（消すと直した内容の行き先が無くなる・原則4） */
+    if(!mealDirtyCells()) mealRows=null;
     /* ★GASがまだ古い時は、原因と次の手をそのまま出す（「取得に失敗」だけだと現場が動けない）。
        フェイスシートには1人ずつ取得の逃げ道があるが、こちらは【編集】が目的で、
        保存の口（saveMealList）も同じ貼り替えで入るため、逃げ道を作らず貼り替えを促す。 */
@@ -2280,7 +2298,10 @@ function mealHtml(q){
       if(miss) return '<td class="med mlock">'+(val?esc(val):'<span class="mbad">⚠取得できず</span>')+'</td>';
       var d=mealDirty[r.id];
       var dirty=!!(d&&Object.prototype.hasOwnProperty.call(d,k));
-      return '<td class="med'+(dirty?' dirty':'')+'" contenteditable="true" role="textbox" aria-multiline="true"'+
+      /* ★role は付けない。<td> の暗黙ロール(cell)を上書きすると行と列の対応が崩れ、
+         スクリーンリーダーが表として読めなくなる。contenteditable だけで編集欄として伝わる
+         （2026-08-24 レビュー指摘 M-5）。 */
+      return '<td class="med'+(dirty?' dirty':'')+'" contenteditable="true"'+
         ' aria-label="'+esc(r.name)+' の'+MEAL_EDIT_LABEL[k]+'（直接編集できます）"'+
         ' data-id="'+esc(r.id)+'" data-k="'+k+'">'+esc(val)+'</td>';
     };
@@ -2357,7 +2378,13 @@ function mealLeaveOk(what){
     what+'と、この変更は失われます。よろしいですか？');
 }
 function mealSaveGo(){
-  if(mealSaving||!mealDirtyCells()) return;
+  if(mealSaving) return;
+  /* ★送る直前に、画面のセルの【いまの文字】をもう一度拾う。入力途中（IMEの変換確定前など）で
+     input が飛んでいないセルがあると、画面に見えている文字と送る値がずれる。
+     ここで拾い直せば「見えているとおりに保存される」（2026-08-24 レビュー指摘 L-1）。 */
+  var live=document.querySelectorAll('#rosterBox .med[contenteditable]');
+  for(var li=0;li<live.length;li++) mealOnInput_({target:live[li]});
+  if(!mealDirtyCells()) return;
   var ids=Object.keys(mealDirty), changes=[], cells=0, blanks=[], toolong=[];
   for(var i=0;i<ids.length;i++){
     var id=ids[i], f=mealDirty[id], r=mealRowOf(id);
@@ -2400,6 +2427,11 @@ function mealSaveGo(){
        画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので二度と送れなくなる */
     var failed={};
     if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    /* ★失敗の一覧(warn)はあるのに id(warnIds)が無い応答＝どれが失敗したか分からない。
+       その時は【全員ぶん未保存のまま残す】（消してしまうと二度と送れない・原則4）。
+       現行GASは必ず両方返すので通らない道だが、古い版・改造版に当たった時の安全側 */
+    if(d.warn&&d.warn.length&&!(d.warnIds&&d.warnIds.length))
+      for(var w2=0;w2<changes.length;w2++) failed[String(changes[w2].id)]=1;
     var kept=0;
     for(var i2=0;i2<changes.length;i2++){
       var c=changes[i2];
@@ -2446,6 +2478,29 @@ function mealNameRatio_(tbl){
   probe.parentNode.removeChild(probe);
   return max/100;
 }
+/* 氏名列を「最長氏名が1行で収まる幅」へ広げ、増えたぶんを MEAL_FLEX の5列から比のまま差し引く。
+   1行に収まらない（上限16%を超える）時は false を返す。
+   ★画面へ戻す時にも同じ計算を通す。基準値（9.65%）へ戻すだけだと、画面の16pxでは
+     長いお名前が隣の列へはみ出して重なって描かれる（2026-08-24 レビュー指摘 M-3）。 */
+function mealLayoutCols_(tbl,fs,nameRatio){
+  var cols=tbl.querySelectorAll('col');
+  if(cols.length!==MEAL_COLS.length) return true;
+  if(nameRatio==null) nameRatio=mealNameRatio_(tbl);
+  var innerW=tbl.clientWidth||MEAL_PRINT_W_PX;
+  var needPx=nameRatio*fs + fs*0.5 + 3;        /* 文字幅＋左右padding(.25em×2)＋罫線と安全代 */
+  var base=MEAL_COLS[MEAL_NAME_COL][1];
+  var want=Math.max(base, needPx/innerW*100);
+  var pct=Math.min(want, MEAL_NAME_PCT_MAX);
+  var delta=pct-base, sum=0, i;
+  for(i=0;i<MEAL_FLEX.length;i++) sum+=MEAL_COLS[MEAL_FLEX[i]][1];
+  for(i=0;i<MEAL_COLS.length;i++){
+    var w=MEAL_COLS[i][1];
+    if(i===MEAL_NAME_COL) w=pct;
+    else if(MEAL_FLEX.indexOf(i)>=0) w=w-delta*(w/sum);
+    cols[i].style.width=(Math.round(w*1000)/1000)+'%';
+  }
+  return want<=MEAL_NAME_PCT_MAX;
+}
 function fitMealSheet(){
   var sheet=$('mealSheet'); if(!sheet) return;
   if(!sheet.offsetParent) return;     /* 非表示のときは測らない（0px で「収まった」と誤判定する） */
@@ -2463,27 +2518,16 @@ function fitMealSheet(){
   var rowCnt=tbl.rows.length||1;
   var setFs=function(s){ sheet.style.setProperty('--mfs',s+'px') };
   var setPv=function(v){ sheet.style.setProperty('--mpv',(Math.round(v*1000)/1000)+'em') };
-  var layout=function(fs){
-    var innerW=tbl.clientWidth||MEAL_PRINT_W_PX;
-    var needPx=nameRatio*fs + fs*0.5 + 3;
-    var base=MEAL_COLS[MEAL_NAME_COL][1];
-    var want=Math.max(base, needPx/innerW*100);
-    var pct=Math.min(want, MEAL_NAME_PCT_MAX);
-    var delta=pct-base, sum=0, i;
-    for(i=0;i<MEAL_FLEX.length;i++) sum+=MEAL_COLS[MEAL_FLEX[i]][1];
-    for(i=0;i<MEAL_COLS.length;i++){
-      var w=MEAL_COLS[i][1];
-      if(i===MEAL_NAME_COL) w=pct;
-      else if(MEAL_FLEX.indexOf(i)>=0) w=w-delta*(w/sum);
-      cols[i].style.width=(Math.round(w*1000)/1000)+'%';
-    }
-    return want<=MEAL_NAME_PCT_MAX;
-  };
+  var layout=function(fs){ return mealLayoutCols_(tbl,fs,nameRatio) };
+  /* ★収まりの判定にも詰め方にも、印字可能高さの1%（約15px＝4mm）を安全代として残す。
+     ぎりぎりまで使うと、測定時と実印刷のわずかな差で最終行が2枚目へ落ちる。
+     「紙いっぱい」より「必ず1枚」を優先する（2026-08-24 レビュー指摘 M-1）。 */
+  var fitH=MEAL_PRINT_H_PX*0.99;
   var nameOk=true, heightOk=true;
   var test=function(fs){
     setFs(fs); setPv(MEAL_PV_BASE);
     nameOk=layout(fs);
-    heightOk=(sheet.offsetHeight<=MEAL_PRINT_H_PX);
+    heightOk=(sheet.offsetHeight<=fitH);
     return nameOk&&heightOk;
   };
   var sizeOf=function(k){ return Math.round((MEAL_FS_MIN+k*MEAL_FS_STEP)*100)/100 };
@@ -2497,17 +2541,18 @@ function fitMealSheet(){
   var fs=sizeOf(lo);
   test(fs);
   tbl.classList.toggle('namewrap',!nameOk);
+  var fillTo=fitH;
   var pv=MEAL_PV_BASE;
   if(heightOk){
     for(var t=0;t<8;t++){
-      var gap=MEAL_PRINT_H_PX-sheet.offsetHeight;
+      var gap=fillTo-sheet.offsetHeight;
       if(gap<2) break;
       pv+=(gap/(2*rowCnt))/fs;
       setPv(pv);
     }
     var guard=0;
-    while(sheet.offsetHeight>MEAL_PRINT_H_PX && pv>MEAL_PV_BASE && guard++<60){
-      var over=sheet.offsetHeight-MEAL_PRINT_H_PX;
+    while(sheet.offsetHeight>fillTo && pv>MEAL_PV_BASE && guard++<60){
+      var over=sheet.offsetHeight-fillTo;
       pv=Math.max(MEAL_PV_BASE, pv-Math.max(0.02,(over/(2*rowCnt))/fs));
       setPv(pv);
     }
@@ -2526,12 +2571,16 @@ function fitMealSheet(){
   return {fs:fs, pv:pv, usedPct:usedPct, nameOk:nameOk, heightOk:heightOk};
 }
 /* 画面用の大きさへ戻す（印刷用に縮めたままだと、編集する文字が小さすぎる）。
-   ★収まらない旨の警告(.meal-warn)は消さない。印刷する前に気づけるように画面へ残す */
+   ★収まらない旨の警告(.meal-warn)は消さない。印刷する前に気づけるように画面へ残す。
+   ★氏名列は基準値へ戻さず【画面の文字サイズで測り直す】。戻すだけだと長いお名前が
+     隣の列へはみ出して重なる（nowrap＋table-layout:fixed のため）。 */
 function mealScreenReset_(){
   var sheet=$('mealSheet'); if(!sheet) return;
   sheet.style.removeProperty('--mfs'); sheet.style.removeProperty('--mpv');
-  var cols=sheet.querySelectorAll('.mtbl col');
-  for(var i=0;i<cols.length&&i<MEAL_COLS.length;i++) cols[i].style.width=MEAL_COLS[i][1]+'%';
+  var tbl=sheet.querySelector('.mtbl'); if(!tbl) return;
+  if(!tbl.offsetParent) return;              /* 非表示なら測れない（0px で誤った幅を入れない） */
+  var fs=parseFloat(getComputedStyle(tbl).fontSize)||16;
+  tbl.classList.toggle('namewrap', !mealLayoutCols_(tbl,fs));
 }
 /* 「🖨️ A3縦で印刷」。用紙の指定は静的CSSに書かず、印刷の直前だけ注入して必ず外す
    （静的に書くと従来のA4印刷＝個票・誕生日一覧・A4様式まで用紙が変わる）。 */
@@ -2562,15 +2611,26 @@ function msPrintMeal(){
 }
 /* OSの印刷ショートカット（Cmd/Ctrl+P）とPDF出力は上の関数を通らない。
    ★食形態一覧を画面に出している時だけ同じ用紙指定を通す（他のビュー・詳細画面では何もしない）。 */
+function msMealAfterPrint_(){ msMealPageOff(); if(mealViewActive_()) mealScreenReset_(); }
 window.addEventListener('beforeprint',function(){
   if(!mealViewActive_()) return;
   fitMealSheet();
   msMealPageOn();
+  setTimeout(msMealAfterPrint_,60000);   /* 保険その3: afterprint も matchMedia も来ない環境向け */
 });
-window.addEventListener('afterprint',function(){
-  msMealPageOff();
-  if(mealViewActive_()) mealScreenReset_();
-});
+window.addEventListener('afterprint',msMealAfterPrint_);
+/* 保険その2: afterprint が発火しない環境（一部のiPad等）向け。印刷メディアを抜けたら必ず外す。
+   ★ボタン経路(msPrintMeal)は3経路で外すが、Cmd/Ctrl+P・PDF出力は上の beforeprint 経由なので、
+     ここで同じ保険を張らないと A3 の用紙指定が残り、次に個票やA4様式を刷るとA3で出る
+     （原則2・2026-08-24 レビュー指摘 H-2。既存の A4様式 _a4mq と同じ作法）。 */
+(function(){
+  try{
+    if(!window.matchMedia) return;
+    var mq=window.matchMedia('print');
+    var h=function(ev){ if(!ev.matches) msMealAfterPrint_(); };
+    if(mq.addEventListener) mq.addEventListener('change',h); else if(mq.addListener) mq.addListener(h);
+  }catch(e){}
+})();
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
   if(!mealDirtyCells()) return;
@@ -4593,7 +4653,11 @@ function showScreen(name){
     /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
     if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
     navLeave();
-  }else{
+  }
+  /* 画面を移ったら body.meal-on を付け直す/外す。mealViewActive_() は一覧が表示中かも見るので、
+     詳細・編集画面へ移れば必ず外れる（A4様式の a4Off と同じく、印から取り残しを作らない） */
+  try{ paintMealBar(); }catch(e){}
+  if(name!=='list'){
     navEnter();
   }
 }
