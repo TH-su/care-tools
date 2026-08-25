@@ -7,6 +7,7 @@ import {
   getPassword,
   listCalendarSources, getCalendarSource, saveCalendarSource, deleteCalendarSource,
   publicCalendarSource, getCalendarSecrets,
+  saveGoogleDraft, getGoogleDraft, googleDraftPublic,
 } from './store.js';
 import * as cal from './calendar.js';
 import * as tasksBackend from './tasks.js';
@@ -51,6 +52,7 @@ api.get('/accounts', h(async (req, res) => {
     calendarSources: cal.sourcesForClient(),
     calendarTargets: cal.writableTargets(),
     calendarRedirectUri: REDIRECT_URI,
+    googleDraft: googleDraftPublic(),
     timeZone: localTimeZone(),
   });
 }));
@@ -354,7 +356,10 @@ function parseRange(req) {
 
 // ── 連携元の一覧・追加・更新・削除 ────────────────────────────
 api.get('/calendar/sources', h(async (req, res) => {
-  res.json({ sources: cal.sourcesForClient(), targets: cal.writableTargets(), redirectUri: REDIRECT_URI });
+  res.json({
+    sources: cal.sourcesForClient(), targets: cal.writableTargets(),
+    redirectUri: REDIRECT_URI, googleDraft: googleDraftPublic(),
+  });
 }));
 
 api.post('/calendar/sources', h(async (req, res) => {
@@ -411,17 +416,23 @@ api.post('/calendar/sources/:id/sync', h(async (req, res) => {
 
 // ── Google連携（OAuth 2.0 / PKCE） ────────────────────────────
 // 許可画面へ行く前に設定だけ確かめる（ブラウザを開かない）
-api.post('/calendar/google/verify', h(async (req, res) => {
-  const clientId = String(req.body?.clientId || '').trim();
-  const clientSecret = String(req.body?.clientSecret || '').trim();
+// 入力欄が空のときは、前回の控えを使う（貼り直しの手間を省くため）
+async function googleCreds(body) {
+  const draft = await getGoogleDraft();
+  const clientId = String(body?.clientId || '').trim() || draft.clientId;
+  const clientSecret = String(body?.clientSecret || '').trim() || draft.clientSecret;
   if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+  await saveGoogleDraft({ clientId, clientSecret });
+  return { clientId, clientSecret };
+}
+
+api.post('/calendar/google/verify', h(async (req, res) => {
+  const { clientId, clientSecret } = await googleCreds(req.body);
   res.json(await google.verifyClient({ clientId, clientSecret }));
 }));
 
 api.post('/calendar/google/start', h(async (req, res) => {
-  const clientId = String(req.body?.clientId || '').trim();
-  const clientSecret = String(req.body?.clientSecret || '').trim();
-  if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+  const { clientId, clientSecret } = await googleCreds(req.body);
 
   // 通らないと分かっている設定でブラウザを開いても徒労なので、先に確かめる。
   // 判定できなかったとき（ネットワーク不調など）は止めずに進める。

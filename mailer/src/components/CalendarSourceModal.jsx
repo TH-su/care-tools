@@ -8,9 +8,11 @@ import { ACCOUNT_COLORS } from '../util.js';
 
 const GOOGLE_CONSOLE = 'https://console.cloud.google.com/apis/credentials';
 
-function GoogleConnect({ redirectUri, onConnected, onError }) {
+function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ clientId: '', clientSecret: '' });
+  const [form, setForm] = useState({ clientId: draft?.clientId || '', clientSecret: '' });
+  // 前回入力したシークレットが控えてあるか（空欄のままでも接続できる）
+  const [keepSecret, setKeepSecret] = useState(Boolean(draft?.hasSecret));
   const [phase, setPhase] = useState('idle'); // idle | checking | waiting
   const [result, setResult] = useState(null); // {ok, message}
   const pollRef = useRef(null);
@@ -18,7 +20,12 @@ function GoogleConnect({ redirectUri, onConnected, onError }) {
   useEffect(() => () => clearInterval(pollRef.current), []);
 
   // 入力を変えたら前回の判定は消す（古い結果が残って紛らわしいため）
-  const set = (patch) => { setForm(f => ({ ...f, ...patch })); setResult(null); };
+  const set = (patch) => {
+    setForm(f => ({ ...f, ...patch }));
+    setResult(null);
+    // シークレットを打ち直したら、控えではなく入力値を使う
+    if (patch.clientSecret !== undefined && patch.clientSecret !== '') setKeepSecret(false);
+  };
 
   // ブラウザを開かずに、IDとシークレットの組み合わせだけを確かめる
   const verify = async () => {
@@ -106,10 +113,12 @@ function GoogleConnect({ redirectUri, onConnected, onError }) {
               type="password" placeholder="GOCSPX-…"
               value={form.clientSecret} onChange={(e) => set({ clientSecret: e.target.value })}
             />
-            <div className={cx('hint', !form.clientSecret.trim() && form.clientId.trim() && 'warn')}>
-              {!form.clientSecret.trim() && form.clientId.trim()
-                ? '「ウェブ アプリケーション」で作成した場合、シークレットは必須です。'
-                : 'Macのキーチェーンに保存されます。リポジトリやファイルに平文で残りません。'}
+            <div className={cx('hint', !form.clientSecret.trim() && !keepSecret && form.clientId.trim() && 'warn')}>
+              {keepSecret && !form.clientSecret.trim()
+                ? '前回入力したシークレットを使います（変更するときだけ入力してください）。'
+                : (!form.clientSecret.trim() && form.clientId.trim()
+                  ? '「ウェブ アプリケーション」で作成した場合、シークレットは必須です。'
+                  : 'Macのキーチェーンに保存されます。リポジトリやファイルに平文で残りません。')}
             </div>
           </div>
 
@@ -277,7 +286,7 @@ function SourceRow({ source, onChange, onDelete, onSync, onError }) {
   );
 }
 
-export function CalendarSourceModal({ sources, redirectUri, onChanged, onClose, toast }) {
+export function CalendarSourceModal({ sources, redirectUri, googleDraft, onChanged, onClose, toast }) {
   const [confirm, setConfirm] = useState(null);
   const onError = (m) => toast(m, 'error');
 
@@ -306,6 +315,7 @@ export function CalendarSourceModal({ sources, redirectUri, onChanged, onClose, 
         <div className="section-label">追加する</div>
         <GoogleConnect
           redirectUri={redirectUri}
+          draft={googleDraft}
           onConnected={(next) => { onChanged(next); toast('Googleカレンダーに接続しました', 'success'); }}
           onError={onError}
         />

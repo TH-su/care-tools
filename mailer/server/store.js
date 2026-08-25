@@ -312,3 +312,51 @@ export function deleteLocalTask(id) {
 }
 
 export { DATA_DIR };
+
+// ── Google連携の入力途中の控え ────────────────────────────────
+// 接続が成功するまで値が消えると、試行のたびに貼り直しになるため、
+// クライアントIDと（可能ならキーチェーンに）シークレットを控えておく。
+// この控えはAPIの応答には出さない。
+const GOOGLE_DRAFT_FILE = path.join(DATA_DIR, 'google-draft.json');
+const GOOGLE_DRAFT_KEY = 'cal:draft:clientSecret';
+
+export async function saveGoogleDraft({ clientId, clientSecret }) {
+  const draft = readJson(GOOGLE_DRAFT_FILE, {});
+  if (clientId) draft.clientId = clientId;
+  if (clientSecret) {
+    const inKeychain = await keychainSet(GOOGLE_DRAFT_KEY, clientSecret);
+    if (inKeychain) {
+      draft.secretInKeychain = true;
+      delete draft.clientSecret;
+    } else {
+      draft.clientSecret = clientSecret;   // 0600のファイルに保存（他OS）
+      delete draft.secretInKeychain;
+    }
+  }
+  writeJson(GOOGLE_DRAFT_FILE, draft);
+  return draft;
+}
+
+export async function getGoogleDraft() {
+  const draft = readJson(GOOGLE_DRAFT_FILE, {});
+  let clientSecret = draft.clientSecret || '';
+  if (draft.secretInKeychain) {
+    const v = await keychainGet(GOOGLE_DRAFT_KEY);
+    if (v !== null) clientSecret = v;
+  }
+  return { clientId: draft.clientId || '', clientSecret };
+}
+
+// 画面へ渡してよい形（シークレットの有無だけ）
+export function googleDraftPublic() {
+  const draft = readJson(GOOGLE_DRAFT_FILE, {});
+  return {
+    clientId: draft.clientId || '',
+    hasSecret: Boolean(draft.clientSecret) || Boolean(draft.secretInKeychain),
+  };
+}
+
+export async function clearGoogleDraft() {
+  await keychainDelete(GOOGLE_DRAFT_KEY);
+  try { fs.rmSync(GOOGLE_DRAFT_FILE, { force: true }); } catch { /* 無ければよい */ }
+}
