@@ -17,10 +17,14 @@
   --r: 12px;
   --sh: 0 1px 6px rgba(0,0,0,.12);
   --hdr-h: 80px;   /* .hdr の実測高。日付見出しがヘッダーの下に潜らないよう共有する */
+  --bnav-h: 76px;  /* .bnav の実測高＋余白。本文の下余白に使う（init で更新する） */
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
        background:var(--g0); color:var(--g9); font-size: 0.9375rem; padding-bottom:76px; }
+/* ★ボトムナビが5つになり、狭い画面では文字が2行に折り返す。実測した高さを本文の下余白に
+     反映して、最後の記録がナビに隠れないようにする（--bnav-h は init で更新する）。 */
+body { padding-bottom: var(--bnav-h, 76px); }
 
 /* ── ヘッダー ── */
 .hdr { position:sticky; top:0; z-index:100; /* 高さは --hdr-h と一致させる（.dayhd の top に使う） */ background:var(--pri); color:#fff;
@@ -41,8 +45,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",
 .bnav { position:fixed; bottom:0; left:0; right:0; z-index:100; background:#fff;
         border-top:1px solid var(--g3); display:flex;
         padding-bottom:env(safe-area-inset-bottom); }
-.bnav button { flex:1; padding:12px 4px 14px; border:none; background:none; color:var(--g6);
-               font-size: 0.75rem; cursor:pointer; min-height:48px; }
+.bnav button { flex:1; padding:12px 2px 14px; border:none; background:none; color:var(--g6);
+               font-size: 0.75rem; line-height:1.3; cursor:pointer; min-height:48px; min-width:0; }
 .bnav button[aria-selected="true"] { color:var(--pri); font-weight:700; box-shadow:inset 0 3px 0 var(--pri); }
 .bnav button:focus-visible { outline:2px solid var(--pri); outline-offset:-2px; }
 
@@ -165,11 +169,41 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
                box-shadow:-1px 0 0 var(--g3), 1px 0 0 var(--g3); }
 .vmtbl thead th.hd { z-index:3; }
 
+/* ── 検索（2026-08-25 追加）──
+   既存の .rchip / .who / .daygrp / .ev / .sum をそのまま流用する（新しい色や余白体系を作らない）。 */
+mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
+/* ★AI要約の見出し行に「この方の全記録へ」を置くため flex にする。
+     ボタンが無い既存の呼び出し（入居者別・日付別）では、単一のテキストなので見え方は変わらない。 */
+.sum .lbl { display:flex; align-items:center; gap:8px; }
+.sum .lbl .acts { margin-left:auto; }
+.sum .acts button { font:inherit; font-size: 0.75rem; font-weight:400; line-height:1.5; padding:2px 8px;
+                    margin-block:-3px; border:1px solid #cfe0fb; border-radius:6px; background:#fff;
+                    color:var(--pri-d); cursor:pointer; position:relative; }
+.sum .acts button::after { content:''; position:absolute; left:0; right:0; top:50%;
+                           transform:translateY(-50%); height:44px; }
+/* メタ行に2つ以上ボタンが並ぶ時の間隔（介護現場要件: 隣接8px以上） */
+.ev .acts button + button, .sum .acts button + button { margin-left:8px; }
+/* 検索から飛んだ先の日付を見失わないよう、その日だけ色を付ける（動きは付けない） */
+.daygrp.jumped .dayhd { background:var(--pri-l); color:var(--pri-d); }
+.sqgrp { margin-bottom:12px; }
+/* 手袋・片手操作を想定し、チェックは文字ごと44pxで受ける（既存タブのチェックボックスは変更しない） */
+#scr-search .bar label { display:inline-flex; align-items:center; gap:6px; min-height:44px;
+                         font-size: 0.8125rem; }
+#scr-search .bar label input[type=checkbox] { width:20px; height:20px; }
+/* ★.sum .acts の ::after（44px の当たり判定）は本文の上に伸びる。位置指定要素なので
+     そのままだと後続の本文より前面に来て、本文の1行目をタップしただけで画面が飛ぶ。
+     検索結果だけラベル行に高さを与え、本文を position:relative にして前面へ出す
+     （既存タブの .sum には一切効かせない＝印刷の高さを変えないため）。 */
+#sqResult .sum .lbl { min-height:30px; }
+#sqResult .sum .body { position:relative; }
+
 @media print {
   @page { size:A4 portrait; margin:10mm; }
   * { -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
   body { background:#fff; padding-bottom:0; font-size:11px; }
-  .noprint, .bnav, .hdr, .bar, .rlist, .ev .acts { display:none !important; }
+  .noprint, .bnav, .hdr, .bar, .rlist, .ev .acts, .sum .acts { display:none !important; }
+  /* 飛んだ直後（3秒）に印刷しても、その日だけ色が付いた紙にならないようにする */
+  .daygrp.jumped .dayhd { background:var(--g1) !important; color:var(--g9) !important; }
   .vmsec { break-inside:avoid; page-break-inside:avoid; border:1px solid #999; }
   .vmwrap { overflow:visible; }
   /* 紙では横スクロールが無いので固定は不要。overflow:visible と併用すると
@@ -228,6 +262,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
         <label for="theDate">日付</label>
         <input type="date" id="theDate">
         <button class="btn" id="dateGo" type="button">表示</button>
+        <button class="btn" id="dateFresh" type="button" hidden>最新を取り直す</button>
         <span class="muted" id="dstatus"></span>
       </div>
     </div>
@@ -294,6 +329,31 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
       </p>
     </div>
   </section>
+  <!-- ── 検索（2026-08-25 追加）── -->
+  <section id="scr-search" class="scr" role="tabpanel" aria-labelledby="tab-search">
+    <div id="sqBanner"></div>
+    <div class="cd noprint">
+      <div class="bar">
+        <label for="sqText">検索</label>
+        <input type="text" id="sqText" placeholder="ことば・氏名" autocomplete="off"
+               autocapitalize="off" spellcheck="false" style="flex:1;min-width:140px;">
+        <button class="btn pri" id="sqGo" type="button">検索</button>
+        <button class="btn" id="sqClear" type="button">クリア</button>
+      </div>
+      <p class="hint">スペースで区切ると、そのすべてを含む記録を探します。申し送りの原文・AI要約・氏名・カテゴリが対象です。</p>
+      <div class="rlist" id="sqCats" role="group" aria-label="カテゴリで絞り込む"></div>
+      <div class="bar" style="margin-top:8px;">
+        <label><input type="checkbox" id="sqSyn"> 似た言い方も探す（例: 転倒 → 転落・ころんだ）</label>
+      </div>
+      <p class="muted" id="sqScope"></p>
+    </div>
+    <div class="bar noprint" id="sqActions" hidden>
+      <button class="btn" id="sqCopy" type="button">検索結果をまとめてコピー</button>
+    </div>
+    <div id="sqStat" class="muted" role="status" aria-live="polite" style="margin:0 2px 8px;line-height:1.6;"></div>
+    <div id="sqResult"></div>
+  </section>
+
 </main>
 
 <nav class="bnav noprint" role="tablist">
@@ -301,6 +361,7 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
   <button type="button" role="tab" id="tab-date" aria-controls="scr-date" data-scr="scr-date" aria-selected="false">日付別</button>
   <button type="button" role="tab" id="tab-vm" aria-controls="scr-vm" data-scr="scr-vm" aria-selected="false">バイタル・食事</button>
   <button type="button" role="tab" id="tab-cfg" aria-controls="scr-cfg" data-scr="scr-cfg" aria-selected="false">設定</button>
+  <button type="button" role="tab" id="tab-search" aria-controls="scr-search" data-scr="scr-search" aria-selected="false">検索</button>
 </nav>
 
 <div id="block">
@@ -482,9 +543,26 @@ function currentRange(){
   var to = new Date();
   return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
 }
+/* 読み込み済みか（＝手元のデータで描けるか）。DATA は load() で丸ごと差し替わる。 */
+function dataLoaded(){ return okYmd(DATA.from) && okYmd(DATA.to); }
+var LOADING = false;
+/* 直近の読み込みが失敗した理由。検索タブは #banner を持たないので、
+   これを持っておかないと「読みに行って失敗した」が「まだ読んでいません」と表示される。 */
+var LOAD_ERR = '';
+/* そのタブに必要な時だけ・初回だけ読む。読み込み済み／通信中／未設定なら何もしない。 */
+function ensureBaseData(){
+  if(LOADING || dataLoaded()) return;
+  var c = loadCfg();
+  if(!c.url || !c.token) return;
+  load();
+}
 function load(){
   var r = currentRange();
+  var t0 = Date.now();
+  LOADING = true;
+  LOAD_ERR = '';
   $('status').textContent = '読み込み中…';
+  if($('scr-search').classList.contains('on')) renderSearch();
   $('reload').disabled = true;
   return apiGet('events', { from:r.from, to:r.to }).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
@@ -494,15 +572,27 @@ function load(){
              ingested:(res.ingestedDates || null),
              loadedAt: Date.now(), lastTick: String(res.lastTick || '') };
     var tick = DATA.lastTick ? '／最終取込 ' + DATA.lastTick.replace('T',' ').substring(5,16) : '';
-    $('status').textContent = DATA.from + ' 〜 ' + DATA.to + '（' + DATA.events.length + '件）' + tick;
+    /* ★読み込みにかかった秒数を出す（改善の効果を体感でなく数値で見るため・2026-08-25） */
+    var sec = ((Date.now() - t0) / 1000).toFixed(1);
+    $('status').textContent = DATA.from + ' 〜 ' + DATA.to + '（' + DATA.events.length + '件）'
+      + tick + '／読込 ' + sec + '秒';
     renderBanner();
     renderResidentList();
     renderTimeline();
+    /* 検索タブを開いたままの読み込みでも、対象期間・件数・⚠️帯を古いまま残さない */
+    if($('scr-search').classList.contains('on')) renderSearch(); else sqSyncScope();
   })['catch'](function(e){
     $('status').textContent = '';
-    showError(apiErrMsg(e));
+    LOAD_ERR = apiErrMsg(e);
+    showError(LOAD_ERR);
     if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
-  }).then(function(){ $('reload').disabled = false; });
+  }).then(function(){
+    LOADING = false;
+    $('reload').disabled = false;
+    /* ★失敗の理由は LOADING を戻した【後】に出す。catch の中で呼ぶと、
+         renderSearch が「読み込んでいます」を表示したまま固まる。 */
+    if(LOAD_ERR && $('scr-search').classList.contains('on')) renderSearch();
+  });
 }
 function showError(msg){
   var b = $('banner');
@@ -522,11 +612,11 @@ function allDatesInRange(){
   while(ymd(d) <= DATA.to && out.length < cap){ out.push(ymd(d)); d = addDays(d, 1); }
   return out;
 }
-function bannerLine(cls, text){
+function bannerLine(cls, text, boxId){
   var d = document.createElement('div');
   d.className = cls;
   d.textContent = text;
-  $('banner').appendChild(d);
+  $(boxId || 'banner').appendChild(d);
 }
 /* 期間を長く取ると日付が並びすぎるため、新しい方から5日だけ挙げて残りは件数で示す */
 function briefDates(list){
@@ -539,14 +629,15 @@ function briefDates(list){
      職員が「その日は申し送りが無かった」と読む。介護記録として最も危険な誤読なので、
      『原文はすべて表示されています』とは取込済みの日についてしか言わない。
    ②「AI要約が未作成の日」は黄色（翌朝には付く。正常な待ち状態）。 */
-function renderBanner(){
-  $('banner').textContent = '';
+function renderBanner(boxId){
+  var box = boxId || 'banner';
+  $(box).textContent = '';
   var all = allDatesInRange();
   if(!all.length) return;
 
   if(!DATA.ingested){
     bannerLine('note', 'サーバーが取込状況を返しません。GAS を新しい版で再デプロイしてください'
-      + '（それまで「取り込まれていない日」の警告は出せません）。');
+      + '（それまで「取り込まれていない日」の警告は出せません）。', box);
     return;
   }
   var got = Object.create(null);
@@ -555,7 +646,7 @@ function renderBanner(){
   if(notIngested.length){
     bannerLine('err', '⚠️ まだ取り込まれていない日: ' + briefDates(notIngested)
       + '　この日の申し送りは表示されていません（「記録が無かった」ではありません）。'
-      + '続くようなら管理者へ連絡してください。');
+      + '続くようなら管理者へ連絡してください。', box);
   }
 
   var hasLedger = Object.create(null);
@@ -563,7 +654,7 @@ function renderBanner(){
   var noSum = all.filter(function(d){ return got[d] && !hasLedger[d]; });
   if(noSum.length){
     bannerLine('note', 'AI要約が未作成の日: ' + briefDates(noSum)
-      + '　（取り込み済みの日なので、申し送りの原文は表示されています）');
+      + '　（取り込み済みの日なので、申し送りの原文は表示されています）', box);
   }
 }
 
@@ -700,6 +791,7 @@ function renderTimeline(){
   dates.forEach(function(d){
     var grp = document.createElement('div');
     grp.className = 'daygrp';
+    grp.dataset.date = d;                 // 検索結果から「この方の全記録へ」で飛ぶ先の目印
     var hd = document.createElement('div');
     hd.className = 'dayhd';
     hd.textContent = fmtDate(d);
@@ -711,16 +803,25 @@ function renderTimeline(){
   });
 }
 
-function sumNode(l){
+/* terms / jump は検索タブ専用の任意引数。省略時（入居者別・日付別）は従来と同じ DOM を作る。 */
+function sumNode(l, terms, jump){
   var w = document.createElement('div');
   w.className = 'sum';
   var lb = document.createElement('div');
   lb.className = 'lbl';
   lb.textContent = 'AI要約';
+  if(jump){
+    /* ★.acts で包む。包まないと .sum .acts button の指定（44px の当たり判定を作る ::after を含む）が
+         当たらず、見た目どおりの25pxしか押せなくなる（2026-08-25 実測で検出）。 */
+    var sa = document.createElement('div');
+    sa.className = 'acts noprint';
+    sa.appendChild(jumpBtn(jump));
+    lb.appendChild(sa);
+  }
   w.appendChild(lb);
   var bd = document.createElement('div');
   bd.className = 'body';
-  bd.textContent = (l.time ? l.time + '　' : '') + l.summary;
+  hlText(bd, (l.time ? l.time + '　' : '') + l.summary, terms);
   w.appendChild(bd);
   if(l.categories && l.categories.length){
     var c = document.createElement('div');
@@ -728,7 +829,7 @@ function sumNode(l){
     l.categories.forEach(function(x){
       var t = document.createElement('span');
       t.className = 'tag';
-      t.textContent = x;
+      hlText(t, x, terms);
       c.appendChild(t);
     });
     w.appendChild(c);
@@ -736,7 +837,7 @@ function sumNode(l){
   return w;
 }
 
-function evNode(e, dateStr){
+function evNode(e, dateStr, terms, jump){
   var w = document.createElement('div');
   w.className = 'ev s-' + (e.shift || 'day') + (e.kind === 'notice' ? ' k-notice' : '');
   var meta = document.createElement('div');
@@ -772,12 +873,13 @@ function evNode(e, dateStr){
   if(e.time) cb.setAttribute('aria-label', 'この1件をコピー（' + e.time + '）');
   cb.addEventListener('click', function(){ copyText(lineFor(e, dateStr)); });
   acts.appendChild(cb);
+  if(jump) acts.appendChild(jumpBtn(jump));
   meta.appendChild(acts);
   w.appendChild(meta);
 
   var bd = document.createElement('div');
   bd.className = 'body';
-  bd.textContent = e.body;
+  hlText(bd, e.body, terms);
   w.appendChild(bd);
   return w;
 }
@@ -816,11 +918,39 @@ function fallbackCopy(s){
      読まれる画面なので、別の日の申し送りが混ざるのは誤読に直結する。
      要求ごとに連番を持ち、最後の要求以外の応答は捨てる。 */
 var DV_SEQ = 0;
-function renderDateView(){
+/* 読み込み時刻を「8:30」の形にする（いつの内容かを画面に必ず書くため） */
+function hhmm(ms){
+  if(!ms) return '';
+  var t = new Date(ms);
+  return t.getHours() + ':' + ('0' + t.getMinutes()).slice(-2);
+}
+function renderDateView(force){
   var box = $('dtimeline');
   var d = $('theDate').value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ toast('日付を選んでください', true); return; }
+
+  /* ★読み込み済みの期間の中なら、手元のデータで描く（追加の通信をしない・2026-08-25）。
+       load() は from〜to の全日を1回で取っているので、この範囲の日は必ず手元に揃っている。
+       範囲の外の日だけ、従来どおりその日を取りに行く。
+       ★★ただし手元のデータは load() を押した時点の写しで、申し送りの取り込みは30分ごと・
+         過去日にも後から行が増える。「いつ読み込んだ内容か」を必ず書き、
+         その場で取り直せるボタンを出す。書かないと「表示を押した＝最新を見た」と読まれ、
+         実在する記録を『取り込まれていません』と読み違える（このツールが最も避けたい誤読）。 */
+  if(!force && dataLoaded() && d >= DATA.from && d <= DATA.to){
+    ++DV_SEQ;                               // 飛んでくる途中の応答があれば捨てる
+    box.textContent = '';
+    var evs0 = DATA.events.filter(function(e){ return e.date === d; });
+    var lgs0 = DATA.ledger.filter(function(l){ return l.date === d; });
+    var at = hhmm(DATA.loadedAt);
+    $('dstatus').textContent = fmtDate(d) + '　' + evs0.length + '件（'
+      + (at ? at + ' に読み込んだ内容です' : '読み込み済みの範囲から表示') + '）';
+    $('dateFresh').hidden = false;
+    renderDateBody(box, d, evs0, lgs0, true);
+    return;
+  }
+
   var seq = ++DV_SEQ;
+  $('dateFresh').hidden = true;
   $('dstatus').textContent = '読み込み中…';
   $('dateGo').disabled = true;
   apiGet('events', { from:d, to:d }).then(function(res){
@@ -828,45 +958,7 @@ function renderDateView(){
     box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
     var evs = res.events || [], lgs = res.ledger || [];
     $('dstatus').textContent = fmtDate(d) + '　' + evs.length + '件';
-    if(!evs.length && !lgs.length){
-      var p = document.createElement('p');
-      p.className = 'muted';
-      p.textContent = 'この日の記録は取り込まれていません。';
-      box.appendChild(p);
-      return;
-    }
-    if(!evs.length){
-      /* 原文が未取込でも要約だけある日がある。要約を捨てて「記録なし」と見せない */
-      var w2 = document.createElement('div');
-      w2.className = 'err';
-      w2.textContent = 'この日の申し送り原文はまだ取り込まれていません（AI要約のみ表示します）。';
-      box.appendChild(w2);
-      lgs.forEach(function(l){ box.appendChild(sumNode(l)); });
-      return;
-    }
-    /* 入居者ごとにまとめる（同じ方の記録が離れて並ばないように） */
-    var order = [], map = {};
-    evs.slice().sort(sortWithin).forEach(function(e){
-      var k = (e.kind === 'resident' && e.name) ? normName(e.name) : ('#' + e.kind);
-      if(!map[k]){ map[k] = { label:(e.kind === 'resident' && e.name) ? e.name + ' 様'
-                                    : (e.kind === 'notice' ? '業務連絡' : '施設全体'), rows:[] };
-                   order.push(k); }
-      map[k].rows.push(e);
-    });
-    var lgMap = {};
-    lgs.forEach(function(l){ (lgMap[normName(l.name)] = lgMap[normName(l.name)] || []).push(l); });
-
-    order.forEach(function(k){
-      var grp = document.createElement('div');
-      grp.className = 'daygrp';
-      var hd = document.createElement('div');
-      hd.className = 'dayhd';
-      hd.textContent = map[k].label;
-      grp.appendChild(hd);
-      (lgMap[k] || []).forEach(function(l){ grp.appendChild(sumNode(l)); });
-      map[k].rows.forEach(function(e){ grp.appendChild(evNode(e, d)); });
-      box.appendChild(grp);
-    });
+    renderDateBody(box, d, evs, lgs, false);
   })['catch'](function(e){
     if(seq !== DV_SEQ) return;
     $('dstatus').textContent = '';
@@ -878,6 +970,58 @@ function renderDateView(){
   }).then(function(){
     /* 最後の要求が終わった時だけ操作を戻す（古い応答でボタンが早く戻らないように） */
     if(seq === DV_SEQ) $('dateGo').disabled = false;
+  });
+}
+
+/* 「その日の記録」の描画。取得経路（通信／手元のデータ）で見え方を変えない。
+   ★1点だけ差がある: 手元のデータで描く時は「取り込み済みだが記録が0件の日」を
+     区別できる（DATA.ingested を持っているため）。取込が止まった日と混同させない。 */
+function renderDateBody(box, d, evs, lgs, fromCache){
+  if(!evs.length && !lgs.length){
+    var p = document.createElement('p');
+    var ingested = fromCache && DATA.ingested
+                   && DATA.ingested.indexOf(d) >= 0;
+    if(ingested){
+      p.className = 'muted';
+      p.textContent = 'この日は取り込み済みですが、記録はありませんでした。';
+    }else{
+      p.className = 'muted';
+      p.textContent = 'この日の記録は取り込まれていません。';
+    }
+    box.appendChild(p);
+    return;
+  }
+  if(!evs.length){
+    /* 原文が未取込でも要約だけある日がある。要約を捨てて「記録なし」と見せない */
+    var w2 = document.createElement('div');
+    w2.className = 'err';
+    w2.textContent = 'この日の申し送り原文はまだ取り込まれていません（AI要約のみ表示します）。';
+    box.appendChild(w2);
+    lgs.forEach(function(l){ box.appendChild(sumNode(l)); });
+    return;
+  }
+  /* 入居者ごとにまとめる（同じ方の記録が離れて並ばないように） */
+  var order = [], map = {};
+  evs.slice().sort(sortWithin).forEach(function(e){
+    var k = (e.kind === 'resident' && e.name) ? normName(e.name) : ('#' + e.kind);
+    if(!map[k]){ map[k] = { label:(e.kind === 'resident' && e.name) ? e.name + ' 様'
+                                  : (e.kind === 'notice' ? '業務連絡' : '施設全体'), rows:[] };
+                 order.push(k); }
+    map[k].rows.push(e);
+  });
+  var lgMap = {};
+  lgs.forEach(function(l){ (lgMap[normName(l.name)] = lgMap[normName(l.name)] || []).push(l); });
+
+  order.forEach(function(k){
+    var grp = document.createElement('div');
+    grp.className = 'daygrp';
+    var hd = document.createElement('div');
+    hd.className = 'dayhd';
+    hd.textContent = map[k].label;
+    grp.appendChild(hd);
+    (lgMap[k] || []).forEach(function(l){ grp.appendChild(sumNode(l)); });
+    map[k].rows.forEach(function(e){ grp.appendChild(evNode(e, d)); });
+    box.appendChild(grp);
   });
 }
 
@@ -1584,10 +1728,460 @@ function vmCopyText(){
   return lines.join('\n');
 }
 
+/* ══════════════════════════════════════════════════════════
+   検索（2026-08-25 追加）
+   ★追加の通信は一切しない。「入居者別」タブで読み込み済みの DATA（events / ledger）
+     だけをメモリ上で絞り込む。サーバーへは1回も行かない＝押した瞬間に出る。
+   ★検索語は localStorage に保存しない（氏名を打つ可能性があるため。原則11の
+     「UI状態だけ保存する」に従い、タブの位置だけが保存される）。
+   ★0件は「無かった」ではなく「取り込み済みの中には見つからない」と書く。
+     取り込めていない日があれば、その⚠️帯を検索結果にも必ず出す。
+   ══════════════════════════════════════════════════════════ */
+
+/* AI要約に付くカテゴリ。データ側に1件も無い時も並べる（押して0件と分かる方が、
+   「そのカテゴリは存在しない」と思い込むより安全）。実データに未知のカテゴリが
+   あれば後ろに足す＝この配列を直さなくても取りこぼさない。 */
+var SQ_CATS = ['転倒・転落','発熱','ムセ込み・誤嚥リスク','皮膚トラブル','受診・入退院',
+               '服薬関連','排泄・排便管理','行動・心理','その他体調変化'];
+var SQ_SEL = {};        // 選択中のカテゴリ（画面の状態。保存しない）
+
+/* 似た言い方。★既定はOFF（勝手に検索範囲を広げない）。ONの時は
+   「何を含めて探したか」を必ず画面に出す（見えない拡張をしない）。 */
+var SQ_SYN = [
+  ['転倒','転落','転ん','ころん','尻もち','尻餅','しりもち','ずり落ち','ずり落'],
+  ['発熱','熱発','微熱','高熱','体温','解熱','クーリング'],
+  ['ムセ','むせ','咽せ','誤嚥','咳き込','せき込','痰','喀痰'],
+  ['皮膚','発赤','表皮剥離','スキンテア','内出血','褥瘡','じょくそう','水疱','擦過傷','剥離'],
+  ['受診','通院','往診','入院','退院','救急','搬送','外来','診察'],
+  ['服薬','内服','与薬','拒薬','飲み忘れ','残薬','薬'],
+  ['排便','排尿','下痢','便秘','失禁','浣腸','摘便','軟便','排泄'],
+  ['不穏','興奮','帰宅願望','大声','徘徊','拒否','せん妄'],
+  ['食欲','摂取量','食事量','完食','食思'],
+  ['痛み','疼痛','痛がる']
+];
+
+var SQ_LAST = null;     // 直近の検索結果（まとめコピー用。メモリのみ）
+var SQ_CATSIG = '';     // カテゴリチップを作り直すかの判定
+var SQ_TIMER = 0, SQ_IME = false;
+/* 一度に描く上限（現場のタブレットが固まらないように）。超えた分は必ず画面に明示する。 */
+var SQ_MAX_GROUPS = 20, SQ_MAX_ROWS = 200;
+
+/* 該当語に <mark> を付けて入れる。★innerHTML は使わない（既存規約）。
+   terms が空なら textContent と同じ＝既存の呼び出しは見え方が変わらない。 */
+function hlText(el, text, terms){
+  var str = String(text == null ? '' : text);
+  if(!terms || !terms.length){ el.textContent = str; return; }
+  /* ★小文字化で長さが変わる文字（'İ' が2文字になる等）があると、low の位置で str を
+       切り出した時に1文字ずれる（サロゲートペアを割ることもある）。長さが変わったら
+       大文字小文字の区別をやめずに素で照合する＝ずれるより拾えない方へ倒す。 */
+  var low = str.toLowerCase(), ci = true, spans = [];
+  if(low.length !== str.length){ low = str; ci = false; }
+  terms.forEach(function(t){
+    var q = ci ? String(t || '').toLowerCase() : String(t || '');
+    if(!q) return;                          // 空文字を許すと while が止まらない
+    var from = 0;
+    while(true){
+      var p = low.indexOf(q, from);
+      if(p < 0) break;
+      spans.push([p, p + q.length]);
+      from = p + q.length;
+    }
+  });
+  if(!spans.length){ el.textContent = str; return; }
+  spans.sort(function(a,b){ return (a[0] - b[0]) || (a[1] - b[1]); });
+  var merged = [], cur = [spans[0][0], spans[0][1]];
+  for(var i=1;i<spans.length;i++){
+    if(spans[i][0] <= cur[1]) cur[1] = Math.max(cur[1], spans[i][1]);
+    else { merged.push(cur); cur = [spans[i][0], spans[i][1]]; }
+  }
+  merged.push(cur);
+  var pos = 0;
+  merged.forEach(function(r){
+    if(r[0] > pos) el.appendChild(document.createTextNode(str.substring(pos, r[0])));
+    var m = document.createElement('mark');
+    m.textContent = str.substring(r[0], r[1]);
+    el.appendChild(m);
+    pos = r[1];
+  });
+  if(pos < str.length) el.appendChild(document.createTextNode(str.substring(pos)));
+}
+
+function jumpBtn(jump){
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = jump.label;
+  if(jump.aria) b.setAttribute('aria-label', jump.aria);
+  b.addEventListener('click', jump.go);
+  return b;
+}
+
+/* ── 検索条件 ──
+   スペース区切りは AND（すべてを含む記録）。同義語は語ごとの OR に展開する。 */
+function sqBuildQuery(){
+  var raw = String($('sqText').value || '').trim();
+  var syn = $('sqSyn').checked;
+  var words = raw ? raw.split(/[\s\u3000]+/).filter(function(w){ return !!w; }) : [];
+  var groups = words.map(function(w){
+    var alts = [w];
+    if(syn){
+      SQ_SYN.forEach(function(g){
+        var hit = false;
+        for(var i=0;i<g.length;i++){ if(g[i].indexOf(w) >= 0 || w.indexOf(g[i]) >= 0){ hit = true; break; } }
+        if(hit) g.forEach(function(x){ if(alts.indexOf(x) < 0) alts.push(x); });
+      });
+    }
+    return alts;
+  });
+  var cats = [];
+  for(var k in SQ_SEL){ if(SQ_SEL.hasOwnProperty(k) && SQ_SEL[k]) cats.push(k); }
+  var flat = [];
+  groups.forEach(function(g){ g.forEach(function(x){ if(flat.indexOf(x) < 0) flat.push(x); }); });
+  cats.forEach(function(c){ if(flat.indexOf(c) < 0) flat.push(c); });
+  return { words:words, groups:groups, cats:cats, syn:syn, terms:flat };
+}
+function sqHit(hay, groups){
+  var low = String(hay == null ? '' : hay).toLowerCase();
+  for(var i=0;i<groups.length;i++){
+    var ok = false;
+    for(var j=0;j<groups[i].length;j++){
+      if(low.indexOf(String(groups[i][j]).toLowerCase()) >= 0){ ok = true; break; }
+    }
+    if(!ok) return false;
+  }
+  return true;
+}
+function sqCatHit(l, cats){
+  if(!cats.length) return true;
+  var have = l.categories || [];
+  for(var i=0;i<cats.length;i++){ if(have.indexOf(cats[i]) >= 0) return true; }
+  return false;
+}
+
+/* 入居者ごとにまとめた検索結果を作る。
+   ★カテゴリはAI要約にしか付かない。カテゴリで絞った時に原文まで拾うと、
+     検索語に当たっていない本文が結果に混ざり「何が該当したのか」が読めなくなるので、
+     カテゴリ指定時の対象はAI要約だけにする（画面にもそう書く）。 */
+function sqSearch(q){
+  var map = {}, order = [], total = 0;
+  function box(key, label, isResident, sortName){
+    if(!map[key]){ map[key] = { key:key, label:label, isResident:isResident,
+                                sortName:sortName || '', rows:[] }; order.push(key); }
+    return map[key];
+  }
+  DATA.ledger.forEach(function(l){
+    if(!sqCatHit(l, q.cats)) return;
+    if(q.groups.length && !sqHit(String(l.summary || '') + '\n' + String(l.name || '')
+        + '\n' + (l.categories || []).join(','), q.groups)) return;
+    var nm = String(l.name || '');
+    var k = normName(nm);
+    var b = k ? box(k, nm + ' 様', true, nm) : box('#unknown', '氏名の記載がない要約', false, '');
+    b.rows.push({ t:'sum', date:l.date, data:l });
+    total++;
+  });
+  if(!q.cats.length){
+    DATA.events.forEach(function(e){
+      if(!sqHit(String(e.body || '') + '\n' + String(e.name || ''), q.groups)) return;
+      var b;
+      if(e.kind === 'resident' && e.name){ b = box(normName(e.name), e.name + ' 様', true, e.name); }
+      else { b = box('#' + e.kind, (e.kind === 'notice' ? '業務連絡' : '施設全体'), false, ''); }
+      b.rows.push({ t:'ev', date:e.date, data:e });
+      total++;
+    });
+  }
+  var groups = order.map(function(k){ return map[k]; });
+  /* 入居者は五十音順（一覧と同じ並び）。入居者以外は最後にまとめる。 */
+  groups.sort(function(a,b){
+    if(a.isResident !== b.isResident) return a.isResident ? -1 : 1;
+    if(!a.isResident) return a.label.localeCompare(b.label, 'ja');
+    return byKana(a.sortName, b.sortName);
+  });
+  groups.forEach(function(g){
+    g.rows.sort(function(x,y){
+      if(x.date !== y.date) return x.date < y.date ? 1 : -1;   // 日付降順
+      if(x.t !== y.t) return x.t === 'sum' ? -1 : 1;           // 同じ日は要約を先に
+      if(x.t === 'ev') return sortWithin(x.data, y.data);
+      return 0;
+    });
+  });
+  return { groups:groups, total:total };
+}
+
+/* 対象期間の常時表示＋カテゴリのチップ。★「どこまでを探したか」を必ず画面に置く。 */
+function sqSyncScope(){
+  var sc = $('sqScope');
+  if(dataLoaded()){
+    var at0 = hhmm(DATA.loadedAt);
+    sc.textContent = '対象期間: ' + DATA.from + ' 〜 ' + DATA.to
+      + (at0 ? '（' + at0 + ' に読み込んだ内容です。' : '（')
+      + '「入居者別」タブで読み込んだ範囲の、取り込み済みの記録だけを探します。追加の通信はしません）';
+  }else{
+    sc.textContent = '対象期間: まだ読み込んでいません';
+  }
+  var cnt = {};
+  DATA.ledger.forEach(function(l){
+    (l.categories || []).forEach(function(c){ cnt[c] = (cnt[c] || 0) + 1; });
+  });
+  var list = SQ_CATS.slice();
+  for(var c in cnt){ if(cnt.hasOwnProperty(c) && list.indexOf(c) < 0) list.push(c); }
+  /* ★選択中のカテゴリは、今の期間に1件も無くてもチップを残す。
+       消すと「画面に見えない条件で絞り込まれた状態」になり、外す手段が無くなる。 */
+  for(var k in SQ_SEL){ if(SQ_SEL.hasOwnProperty(k) && SQ_SEL[k] && list.indexOf(k) < 0) list.push(k); }
+  var boxEl = $('sqCats');
+  /* ★チップは中身（並びと件数）が変わった時だけ作り直す。
+       毎回作り直すと、入力のたびにボタンが差し替わって
+       キーボード操作のフォーカスが飛び、押した直後の見た目も一瞬戻る。 */
+  var sig = list.join('\u0001') + '|' + (dataLoaded() ? list.map(function(x){ return cnt[x] || 0; }).join(',') : '-');
+  if(sig !== SQ_CATSIG){
+    SQ_CATSIG = sig;
+    boxEl.textContent = '';
+    list.forEach(function(c){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rchip sqcat';
+      b.dataset.cat = c;
+      b.setAttribute('aria-pressed', String(!!SQ_SEL[c]));
+      b.appendChild(document.createTextNode(c));
+      if(dataLoaded()){
+        var n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = cnt[c] || 0;
+        b.appendChild(n);
+      }
+      b.addEventListener('click', function(){
+        SQ_SEL[c] = !SQ_SEL[c];
+        renderSearch();
+      });
+      boxEl.appendChild(b);
+    });
+  }else{
+    boxEl.querySelectorAll('.rchip').forEach(function(b){
+      b.setAttribute('aria-pressed', String(!!SQ_SEL[b.dataset.cat]));
+    });
+  }
+}
+
+/* 入居者別タブの、その日の位置へ飛ぶ */
+function sqJumpResident(key, date){
+  SEL = key;
+  goto('scr-resident');
+  renderResidentList();
+  renderTimeline();
+  if(!okYmd(date)) return;
+  var g = null, all = $('timeline').querySelectorAll('.daygrp');
+  for(var i=0;i<all.length;i++){ if(all[i].dataset.date === date){ g = all[i]; break; } }
+  if(!g){ toast('その日の記録は一覧にありませんでした', true); return; }
+  var hdr = 0;
+  try{ hdr = document.querySelector('.hdr').offsetHeight || 0; }catch(e){ hdr = 0; }
+  var top = g.getBoundingClientRect().top + (window.pageYOffset || 0) - hdr - 8;
+  window.scrollTo(0, top < 0 ? 0 : top);
+  /* ★押したボタンは非表示の画面に残るため、フォーカスが body へ落ちる。
+       飛び先の日付見出しへ移して、キーボード・読み上げでも現在地を失わないようにする。
+       スクロールは上で済ませているので preventScroll で二重に動かさない。 */
+  var hd2 = g.querySelector('.dayhd');
+  if(hd2){
+    hd2.setAttribute('tabindex', '-1');
+    try{ hd2.focus({ preventScroll:true }); }catch(e){ try{ hd2.focus(); }catch(e2){} }
+  }
+  g.classList.add('jumped');
+  setTimeout(function(){ g.classList.remove('jumped'); }, 3000);
+}
+function sqJumpDate(date){
+  if(!okYmd(date)) return;
+  $('theDate').value = date;
+  goto('scr-date');
+  renderDateView();
+}
+
+function renderSearch(){
+  sqSyncScope();
+  renderBanner('sqBanner');                 // 未取込の⚠️帯は検索結果にも必ず出す
+  var box = $('sqResult');
+  box.textContent = '';
+  $('sqActions').hidden = true;
+  SQ_LAST = null;
+  var stat = $('sqStat');
+  stat.textContent = '';
+
+  if(!dataLoaded()){
+    /* ★「通信中」「失敗した」「まだ読んでいない」を書き分ける。
+         失敗を『まだ読み込んでいません』と出すと、職員は待ち続けて原因に辿り着けない。 */
+    if(LOADING){
+      stat.textContent = '申し送りを読み込んでいます。しばらくお待ちください。';
+    }else if(LOAD_ERR){
+      stat.textContent = LOAD_ERR + '（読み込めていないので、まだ検索できません。'
+        + '「設定」タブで接続先と合言葉を確かめ、「入居者別」タブでもう一度読み込んでください）';
+    }else{
+      stat.textContent = 'まだ読み込んでいません。「入居者別」タブで期間を選んで読み込むと、'
+        + 'その範囲の中を検索できます。';
+    }
+    return;
+  }
+  var q = sqBuildQuery();
+  if(!q.words.length && !q.cats.length){
+    stat.textContent = 'ことばを入れるか、上のカテゴリを押してください。';
+    return;
+  }
+  var res = sqSearch(q);
+  SQ_LAST = { q:q, res:res, view:null, cutG:0, cutR:0 };
+
+  if(!res.total){
+    var p = document.createElement('div');
+    p.className = 'note';
+    p.textContent = 'この期間の取り込み済み記録の中には見つかりません（' + DATA.from + ' 〜 ' + DATA.to + '）。'
+      + '「該当の出来事が無かった」という意味ではありません。'
+      + '期間を広げる・ことばを変える・「似た言い方も探す」を入れて、もう一度お試しください。';
+    box.appendChild(p);
+    stat.textContent = sqCondText(q) + '／0件／対象 ' + DATA.from + '〜' + DATA.to
+      + '（取り込み済みの記録のみ）';
+    return;
+  }
+  /* ★描く量に上限を置く。150日ぶんを読んだ状態で1文字を打つと数千件・数万個の
+       <mark> を同期で作り、現場のタブレットが固まる。ただし打ち切りは必ず
+       「該当がここで終わった」と読ませない文言で明示する。 */
+  var view = [], shown = 0, cutG = 0, cutR = 0;
+  res.groups.forEach(function(g){
+    if(view.length >= SQ_MAX_GROUPS || shown >= SQ_MAX_ROWS){ cutG++; cutR += g.rows.length; return; }
+    var room = SQ_MAX_ROWS - shown;
+    var rows = (g.rows.length > room) ? g.rows.slice(0, room) : g.rows;
+    cutR += g.rows.length - rows.length;
+    shown += rows.length;
+    view.push({ key:g.key, label:g.label, isResident:g.isResident, rows:rows, all:g.rows.length });
+  });
+  SQ_LAST.view = view; SQ_LAST.cutG = cutG; SQ_LAST.cutR = cutR;
+
+  stat.textContent = sqCondText(q) + '／' + res.total + '件・'
+    + res.groups.filter(function(g){ return g.isResident; }).length + '名'
+    + (cutR ? '（うち ' + shown + '件を表示）' : '')
+    + '／対象 ' + DATA.from + '〜' + DATA.to + '（取り込み済みの記録のみ）';
+  if(cutR){
+    var nc = document.createElement('div');
+    nc.className = 'note';
+    nc.textContent = '表示は ' + shown + '件までです（残り ' + cutR + '件は表示していません）。'
+      + '「該当が ' + shown + '件で終わった」という意味ではありません。'
+      + 'ことばを足すか、カテゴリで絞ってからもう一度お試しください。';
+    box.appendChild(nc);
+  }
+  if(q.cats.length){
+    var n2 = document.createElement('div');
+    n2.className = 'muted';
+    n2.style.margin = '4px 0 8px';
+    n2.textContent = 'カテゴリはAI要約に付く印です。カテゴリで絞った結果にはAI要約だけが出ます'
+      + '（申し送りの原文は「この方の全記録へ」で確かめてください）。';
+    box.appendChild(n2);
+  }
+  $('sqActions').hidden = false;
+
+  view.forEach(function(g){
+    var wrap = document.createElement('div');
+    wrap.className = 'sqgrp';
+    var who = document.createElement('div');
+    who.className = 'who';
+    hlText(who, g.label, q.terms);
+    var m = g.isResident ? rosterByNorm(g.key) : null;
+    if(m && m.room){
+      var rm = document.createElement('span');
+      rm.className = 'rm';
+      rm.textContent = m.room + '号室';
+      who.appendChild(rm);
+    }
+    var cn = document.createElement('span');
+    cn.className = 'rm';
+    cn.textContent = (g.rows.length < g.all)
+      ? g.all + '件（先頭 ' + g.rows.length + '件を表示）' : g.all + '件';
+    who.appendChild(cn);
+    wrap.appendChild(who);
+
+    /* 日付ごとにまとめる（同じ日の要約と原文が離れないように） */
+    var seen = {}, dates = [];
+    g.rows.forEach(function(r){ if(!seen[r.date]){ seen[r.date] = []; dates.push(r.date); } seen[r.date].push(r); });
+    dates.forEach(function(d){
+      var grp = document.createElement('div');
+      grp.className = 'daygrp';
+      var hd = document.createElement('div');
+      hd.className = 'dayhd';
+      hd.textContent = fmtDate(d);
+      grp.appendChild(hd);
+      seen[d].forEach(function(r){
+        var jump = g.isResident
+          ? { label:'この方の全記録へ', aria:'この方の全記録へ（' + fmtDate(d) + '）',
+              go:(function(k, dd){ return function(){ sqJumpResident(k, dd); }; })(g.key, d) }
+          : { label:'この日を日付別で見る', aria:'この日を日付別で見る（' + fmtDate(d) + '）',
+              go:(function(dd){ return function(){ sqJumpDate(dd); }; })(d) };
+        grp.appendChild(r.t === 'sum' ? sumNode(r.data, q.terms, jump)
+                                      : evNode(r.data, d, q.terms, jump));
+      });
+      wrap.appendChild(grp);
+    });
+    box.appendChild(wrap);
+  });
+}
+
+/* 何をどう探したかの1行。同義語ONの時は展開した語を必ず見せる。 */
+function sqCondText(q){
+  var t = [];
+  if(q.words.length) t.push('検索: ' + q.words.join(' '));
+  if(q.cats.length) t.push('カテゴリ: ' + q.cats.join('・')
+    + (q.cats.length > 1 ? ' のいずれかを含む' : ''));
+  var s2 = t.join('／');
+  if(q.syn && q.words.length){
+    var ex = [];
+    q.groups.forEach(function(g){ g.slice(1).forEach(function(x){ if(ex.indexOf(x) < 0) ex.push(x); }); });
+    if(ex.length) s2 += '（似た言い方も含めました: ' + ex.join('・') + '）';
+    else s2 += '（似た言い方は登録がありませんでした）';
+  }
+  return s2;
+}
+
+/* まとめコピー。★先頭に対象期間と条件を必ず付ける（貼った先で
+   「これが全件」と読まれないように）。 */
+function sqCopyText(){
+  if(!SQ_LAST || !SQ_LAST.res.total || !SQ_LAST.view) return '';
+  var q = SQ_LAST.q, res = SQ_LAST.res;
+  var out = ['【申送ビューア 検索結果】' + sqCondText(q)
+             + '／対象 ' + DATA.from + '〜' + DATA.to + '（この期間の取り込み済み記録のみ）'];
+  /* 画面で打ち切った時は、貼った先で「これが全件」と読まれないよう必ず書く */
+  if(SQ_LAST.cutR){
+    out.push('※ 該当 ' + res.total + '件のうち先頭ぶんだけを載せています。'
+             + '「該当がここで終わった」という意味ではありません。');
+  }
+  SQ_LAST.view.forEach(function(g){
+    out.push('');
+    out.push('■ ' + g.label);
+    g.rows.forEach(function(r){
+      if(r.t === 'sum'){
+        out.push(fmtDate(r.date) + ' ' + (r.data.time ? r.data.time + ' ' : '') + '[AI要約] ' + r.data.summary);
+      }else{
+        out.push(fmtDate(r.date) + ' ' + (r.data.time ? r.data.time + ' ' : '') + r.data.body);
+      }
+    });
+  });
+  return out.join('\n');
+}
+
+function sqQueue(){
+  if(SQ_IME) return;                        // 変換中の途中の文字では検索しない
+  /* ★1文字だけでは自動実行しない（「のどのゴロゴロ」の1文字目「の」で全件に当たる）。
+       「検索」ボタン・Enter では従来どおり実行できるので、探せなくなるわけではない。 */
+  var raw = String($('sqText').value || '').trim();
+  var anyCat = false;
+  for(var k in SQ_SEL){ if(SQ_SEL.hasOwnProperty(k) && SQ_SEL[k]){ anyCat = true; break; } }
+  if(raw.length === 1 && !anyCat){
+    if(SQ_TIMER){ clearTimeout(SQ_TIMER); SQ_TIMER = 0; }
+    $('sqResult').textContent = '';
+    $('sqActions').hidden = true;
+    SQ_LAST = null;
+    $('sqStat').textContent = '1文字だけでは自動で検索しません（件数が多くなりすぎるため）。'
+      + 'もう1文字足すか、「検索」ボタンを押してください。';
+    return;
+  }
+  if(SQ_TIMER) clearTimeout(SQ_TIMER);
+  SQ_TIMER = setTimeout(function(){ SQ_TIMER = 0; renderSearch(); }, 200);
+}
+
 /* ── 画面切替（リロードで現在地を失わない）───────────────
    配列＋indexOf にする。オブジェクトのホワイトリストだと 'toString' 等が truthy になり、
    不正値がそのまま採用されてしまう。 */
-var SCREENS = ['scr-resident','scr-date','scr-vm','scr-cfg'];
+var SCREENS = ['scr-resident','scr-date','scr-vm','scr-cfg','scr-search'];
 function goto(id, remember){
   if(SCREENS.indexOf(id) < 0) id = SCREENS[0];
   SCREENS.forEach(function(s){ $(s).classList.toggle('on', s === id); });
@@ -1643,7 +2237,13 @@ function applyMasterIdParam(){
   $('cfgToken').value = cfg.token;
 
   document.querySelectorAll('.bnav button').forEach(function(b){
-    b.addEventListener('click', function(){ goto(b.dataset.scr); });
+    b.addEventListener('click', function(){
+      var scr = b.dataset.scr;
+      goto(scr);
+      /* ★そのタブに必要なものだけ読む（2026-08-25）。読み込み済みなら通信しない。 */
+      if(scr === 'scr-resident' || scr === 'scr-date' || scr === 'scr-search') ensureBaseData();
+      if(scr === 'scr-search') renderSearch();
+    });
   });
   $('days').addEventListener('change', function(){ lsSet(LS_DAYS, $('days').value); load(); });
   $('reload').addEventListener('click', load);
@@ -1658,7 +2258,31 @@ function applyMasterIdParam(){
     if(!rows.length){ toast('コピーする記録がありません', true); return; }
     copyText(rows.map(function(e){ return lineFor(e, e.date); }).join('\n'));
   });
-  $('dateGo').addEventListener('click', renderDateView);
+  $('dateGo').addEventListener('click', function(){ renderDateView(); });
+  /* 手元の写しではなく、その日をサーバーから取り直す */
+  $('dateFresh').addEventListener('click', function(){ renderDateView(true); });
+
+  /* ── 検索（2026-08-25 追加）──
+     ★検索語は保存しない。押した瞬間に手元のデータだけで絞り込む（通信なし）。 */
+  $('sqGo').addEventListener('click', function(){ if(SQ_TIMER){ clearTimeout(SQ_TIMER); SQ_TIMER = 0; } renderSearch(); });
+  $('sqText').addEventListener('input', sqQueue);
+  $('sqText').addEventListener('compositionstart', function(){ SQ_IME = true; });
+  $('sqText').addEventListener('compositionend', function(){ SQ_IME = false; sqQueue(); });
+  $('sqText').addEventListener('keydown', function(ev){
+    if(ev.key === 'Enter' && !SQ_IME){ ev.preventDefault(); if(SQ_TIMER){ clearTimeout(SQ_TIMER); SQ_TIMER = 0; } renderSearch(); }
+  });
+  $('sqSyn').addEventListener('change', renderSearch);
+  $('sqClear').addEventListener('click', function(){
+    $('sqText').value = '';
+    SQ_SEL = {};
+    renderSearch();
+    $('sqText').focus();
+  });
+  $('sqCopy').addEventListener('click', function(){
+    var t = sqCopyText();
+    if(!t){ toast('コピーする結果がありません', true); return; }
+    copyText(t);
+  });
 
   /* ── バイタル・食事（2026-08-04 追加）──
      ★保存するのは表示期間だけ。選択中の入居者は保存しない
@@ -1750,15 +2374,38 @@ function applyMasterIdParam(){
   var restore = savedView();
   /* masterId で開かれた時だけは、保存された画面より「入居者別」を優先する
      （マスタから飛んだのに設定画面が開く、という迷子を防ぐ） */
-  goto(applyMasterIdParam() ? 'scr-resident' : restore);
+  var opened = applyMasterIdParam() ? 'scr-resident' : restore;
+  goto(opened);
+
+  /* ボトムナビが5つになり狭い画面では2行に折り返す。実測して本文の下余白に反映する
+     （--hdr-h と同じ作法。妥当な範囲の値だけ採用し、外れたらCSSの既定に任せる）。 */
+  function syncBnavH(){
+    try{
+      if(!window.innerWidth || window.innerWidth < 200) return;
+      var h = document.querySelector('.bnav').offsetHeight;
+      /* ★増やす方向にしか動かさない。既存画面の下余白（76px）を狭めると、
+           これまでの見え方を理由なく変えることになる（原則2）。 */
+      if(h >= 40 && h <= 160 && (h + 12) > 76) document.documentElement.style.setProperty('--bnav-h', (h + 12) + 'px');
+    }catch(e){}
+  }
+  syncBnavH();
+  window.addEventListener('resize', syncBnavH);
+  /* フォントの読み込みで折り返し行数が変わることがあるため、確定後にもう一度測る */
+  window.addEventListener('load', syncBnavH);
 
   if(!cfg.url || !cfg.token){
     goto('scr-cfg', false);
     $('cfgInfo').textContent = '最初に接続先と合言葉を登録してください。';
+    sqSyncScope();
+  }else if(opened === 'scr-vm'){
+    /* ★表示中のタブに必要なものだけ読む（2026-08-25）。バイタル・食事に復元した時は
+       申し送り（events）を読みに行かない。入居者別・日付別・検索へ切り替えた時に
+       ensureBaseData() が初回だけ読む。 */
+    vmLoad();
+    sqSyncScope();
   }else{
     load();
-    /* リロードでバイタル・食事の画面に戻った時も、その画面のデータを読む */
-    if(savedView() === 'scr-vm') vmLoad();
+    if(opened === 'scr-search') renderSearch();
   }
 })();
 </script>
