@@ -176,3 +176,62 @@ export async function fetchUserinfo(accessToken) {
     return {};
   }
 }
+
+// ── 接続前の設定チェック ──────────────────────────────────────
+// ブラウザの許可画面へ行く前に「クライアントIDとシークレットの組み合わせが
+// Googleに存在するか」だけを確かめる。わざと通らない refresh_token を送り、
+// 返ってくるエラーの種類で判定する（トークンは発行されない）。
+export async function verifyClient({ clientId, clientSecret }) {
+  let res;
+  let data = null;
+  let text = '';
+  try {
+    res = await fetch(ENDPOINTS.token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+        grant_type: 'refresh_token',
+        refresh_token: 'silvermail-connection-probe',
+      }).toString(),
+    });
+    text = await res.text();
+    try { data = JSON.parse(text); } catch { /* HTMLエラーページ等 */ }
+  } catch (err) {
+    return {
+      ok: false, code: 'network',
+      message: `Googleに接続できませんでした（${err.message}）。ネットワークやプロキシの設定をご確認ください。`,
+    };
+  }
+
+  const code = data?.error || (res.ok ? 'ok' : `http_${res.status}`);
+  const detail = data?.error_description || '';
+
+  // invalid_grant = 「わざと無効にしたトークン」が拒まれただけ。
+  // ここまで来たということは、IDとシークレットはGoogleに認識されている。
+  if (code === 'invalid_grant') {
+    return { ok: true, code, message: 'クライアントIDとシークレットはGoogleに正しく認識されました。' };
+  }
+  if (code === 'invalid_client') {
+    return {
+      ok: false, code, detail,
+      message: /not found/i.test(detail)
+        ? 'このクライアントIDとシークレットの組み合わせがGoogleで見つかりません。①作成直後なら数分待つ ②シークレットを作り直して貼り直す ③プロジェクトの選択が合っているか、をご確認ください。'
+        : 'クライアントシークレットが一致しません。認証情報の画面で「シークレットを追加」から新しく発行して貼り直してください。',
+    };
+  }
+  if (code === 'unauthorized_client') {
+    return {
+      ok: false, code, detail,
+      message: 'このクライアントでは今回の方式が許可されていません。種類を「ウェブ アプリケーション」にして作り直してください。',
+    };
+  }
+  if (code === 'ok') {
+    return { ok: true, code, message: 'Googleとの通信を確認しました。' };
+  }
+  return {
+    ok: false, code, detail,
+    message: `Googleから予期しない応答がありました（${code}${detail ? `: ${detail}` : ''}）。`,
+  };
+}

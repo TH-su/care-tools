@@ -1141,3 +1141,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 }
 .task-add .dest:hover { background: var(--bg-active); color: var(--text); }
 .task-add .dest .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Google連携の事前チェック結果 */
+.verify-result {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 12px; line-height: 1.65;
+  border-radius: 9px; padding: 9px 11px; margin-bottom: 12px;
+}
+.verify-result .ic { flex-shrink: 0; margin-top: 1px; }
+.verify-result.ok { background: rgba(40, 167, 69, 0.1); color: var(--success); border: 1px solid rgba(40, 167, 69, 0.28); }
+.verify-result.ng { background: var(--warning-bg); color: var(--flag); border: 1px solid var(--warning-border); }
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn { flex: 1; }

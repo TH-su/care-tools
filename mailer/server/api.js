@@ -410,12 +410,28 @@ api.post('/calendar/sources/:id/sync', h(async (req, res) => {
 }));
 
 // ── Google連携（OAuth 2.0 / PKCE） ────────────────────────────
+// 許可画面へ行く前に設定だけ確かめる（ブラウザを開かない）
+api.post('/calendar/google/verify', h(async (req, res) => {
+  const clientId = String(req.body?.clientId || '').trim();
+  const clientSecret = String(req.body?.clientSecret || '').trim();
+  if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+  res.json(await google.verifyClient({ clientId, clientSecret }));
+}));
+
 api.post('/calendar/google/start', h(async (req, res) => {
   const clientId = String(req.body?.clientId || '').trim();
   const clientSecret = String(req.body?.clientSecret || '').trim();
   if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+
+  // 通らないと分かっている設定でブラウザを開いても徒労なので、先に確かめる。
+  // 判定できなかったとき（ネットワーク不調など）は止めずに進める。
+  const check = await google.verifyClient({ clientId, clientSecret });
+  if (!check.ok && (check.code === 'invalid_client' || check.code === 'unauthorized_client')) {
+    const e = new Error(check.message); e.status = 400; e.authFailed = true; throw e;
+  }
+
   const { authUrl, state } = google.startAuth({ clientId, clientSecret, redirectUri: REDIRECT_URI });
-  res.json({ authUrl, state, redirectUri: REDIRECT_URI });
+  res.json({ authUrl, state, redirectUri: REDIRECT_URI, check });
 }));
 
 api.get('/calendar/google/status', h(async (req, res) => {
@@ -474,6 +490,8 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
     google.finishAuth(state, { status: 'done', sourceId: source.id });
     res.send(page('Googleカレンダーに接続しました', 'このタブは閉じて、SilverMailの画面にお戻りください。', true));
   } catch (err) {
+    // 端末にも残す（画面を閉じたあとでも原因を追えるように）
+    console.error('  [Google連携] 失敗:', err?.message || err);
     google.finishAuth(state, { status: 'error', error: err.message });
     res.status(500).send(page('接続できませんでした', String(err.message || err), false));
   }
