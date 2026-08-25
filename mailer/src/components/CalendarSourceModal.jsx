@@ -8,16 +8,42 @@ import { ACCOUNT_COLORS } from '../util.js';
 
 const GOOGLE_CONSOLE = 'https://console.cloud.google.com/apis/credentials';
 
-function GoogleConnect({ redirectUri, onConnected, onError }) {
+function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ clientId: '', clientSecret: '' });
-  const [phase, setPhase] = useState('idle'); // idle | waiting
+  const [form, setForm] = useState({ clientId: draft?.clientId || '', clientSecret: '' });
+  // 前回入力したシークレットが控えてあるか（空欄のままでも接続できる）
+  const [keepSecret, setKeepSecret] = useState(Boolean(draft?.hasSecret));
+  const [phase, setPhase] = useState('idle'); // idle | checking | waiting
+  const [result, setResult] = useState(null); // {ok, message}
   const pollRef = useRef(null);
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
+  // 入力を変えたら前回の判定は消す（古い結果が残って紛らわしいため）
+  const set = (patch) => {
+    setForm(f => ({ ...f, ...patch }));
+    setResult(null);
+    // シークレットを打ち直したら、控えではなく入力値を使う
+    if (patch.clientSecret !== undefined && patch.clientSecret !== '') setKeepSecret(false);
+  };
+
+  // ブラウザを開かずに、IDとシークレットの組み合わせだけを確かめる
+  const verify = async () => {
+    if (!form.clientId.trim()) { onError('クライアントIDを入力してください'); return; }
+    setPhase('checking');
+    setResult(null);
+    try {
+      setResult(await api.googleVerify(form.clientId.trim(), form.clientSecret.trim()));
+    } catch (err) {
+      setResult({ ok: false, message: err.message });
+    } finally {
+      setPhase('idle');
+    }
+  };
+
   const start = async () => {
     if (!form.clientId.trim()) { onError('クライアントIDを入力してください'); return; }
+    setResult(null);
     try {
       const r = await api.googleStart(form.clientId.trim(), form.clientSecret.trim());
       setPhase('waiting');
@@ -40,7 +66,9 @@ function GoogleConnect({ redirectUri, onConnected, onError }) {
         } catch { /* ポーリング失敗は次回に任せる */ }
       }, 1500);
     } catch (err) {
-      onError(err.message);
+      // 失敗の理由は消えないよう画面に残す
+      setResult({ ok: false, message: err.message });
+      setPhase('idle');
     }
   };
 
@@ -62,11 +90,13 @@ function GoogleConnect({ redirectUri, onConnected, onError }) {
               <a href={GOOGLE_CONSOLE} target="_blank" rel="noreferrer">Google Cloud Console<Icon name="link" size={12} /></a>
               を開き、プロジェクトで <b>Google Calendar API</b> と <b>Google Tasks API</b> を有効にします
             </li>
-            <li>「認証情報を作成」→「OAuth クライアント ID」→ 種類は<b>デスクトップ アプリ</b>を選びます</li>
-            <li>表示された<b>クライアントID</b>と<b>クライアントシークレット</b>を下に貼り付けます</li>
+            <li>「OAuth同意画面」で User Type を選びます（Google Workspaceなら<b>内部</b>が手間なし）</li>
+            <li>「認証情報を作成」→「OAuth クライアント ID」→ 種類は<b>ウェブ アプリケーション</b>を選びます</li>
+            <li>「承認済みのリダイレクト URI」に下のURLを<b>そのまま</b>登録します</li>
+            <li>表示された<b>クライアントID</b>と<b>クライアントシークレット</b>を下に貼り付け、「設定を確認」を押します</li>
           </ol>
           <div className="redirect-note">
-            <span>「ウェブ アプリケーション」で作成した場合は、リダイレクトURIに次を登録してください</span>
+            <span>承認済みのリダイレクト URI（末尾にスラッシュを付けないでください）</span>
             <code>{redirectUri}</code>
           </div>
 
@@ -74,21 +104,39 @@ function GoogleConnect({ redirectUri, onConnected, onError }) {
             <label>クライアントID</label>
             <input
               placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com"
-              value={form.clientId} onChange={(e) => setForm(f => ({ ...f, clientId: e.target.value }))}
+              value={form.clientId} onChange={(e) => set({ clientId: e.target.value })}
             />
           </div>
           <div className="field">
             <label>クライアントシークレット</label>
             <input
               type="password" placeholder="GOCSPX-…"
-              value={form.clientSecret} onChange={(e) => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+              value={form.clientSecret} onChange={(e) => set({ clientSecret: e.target.value })}
             />
-            <div className="hint">Macのキーチェーンに保存されます。リポジトリやファイルに平文で残りません。</div>
+            <div className={cx('hint', !form.clientSecret.trim() && !keepSecret && form.clientId.trim() && 'warn')}>
+              {keepSecret && !form.clientSecret.trim()
+                ? '前回入力したシークレットを使います（変更するときだけ入力してください）。'
+                : (!form.clientSecret.trim() && form.clientId.trim()
+                  ? '「ウェブ アプリケーション」で作成した場合、シークレットは必須です。'
+                  : 'Macのキーチェーンに保存されます。リポジトリやファイルに平文で残りません。')}
+            </div>
           </div>
 
-          <button className="btn primary" onClick={start} disabled={phase === 'waiting'}>
-            {phase === 'waiting' ? <><Spinner small /> Googleの許可を待っています…</> : 'Googleにログインして許可する'}
-          </button>
+          {result && (
+            <div className={cx('verify-result', result.ok ? 'ok' : 'ng')}>
+              <Icon name={result.ok ? 'check' : 'warn'} size={15} className="ic" />
+              <span>{result.message}</span>
+            </div>
+          )}
+
+          <div className="btn-row">
+            <button className="btn secondary" onClick={verify} disabled={phase !== 'idle'}>
+              {phase === 'checking' ? <><Spinner small /> 確認中…</> : '設定を確認'}
+            </button>
+            <button className="btn primary" onClick={start} disabled={phase !== 'idle'}>
+              {phase === 'waiting' ? <><Spinner small /> Googleの許可を待っています…</> : 'Googleにログインして許可する'}
+            </button>
+          </div>
           {phase === 'waiting' && (
             <div className="hint" style={{ marginTop: 8 }}>
               別ウインドウでGoogleのログイン画面が開きます。表示されない場合はポップアップの許可をご確認ください。
@@ -238,7 +286,7 @@ function SourceRow({ source, onChange, onDelete, onSync, onError }) {
   );
 }
 
-export function CalendarSourceModal({ sources, redirectUri, onChanged, onClose, toast }) {
+export function CalendarSourceModal({ sources, redirectUri, googleDraft, onChanged, onClose, toast }) {
   const [confirm, setConfirm] = useState(null);
   const onError = (m) => toast(m, 'error');
 
@@ -267,6 +315,7 @@ export function CalendarSourceModal({ sources, redirectUri, onChanged, onClose, 
         <div className="section-label">追加する</div>
         <GoogleConnect
           redirectUri={redirectUri}
+          draft={googleDraft}
           onConnected={(next) => { onChanged(next); toast('Googleカレンダーに接続しました', 'success'); }}
           onError={onError}
         />
