@@ -450,18 +450,30 @@ function saveCfg(url, token){
 }
 
 /* ── API ──────────────────────────────────────────── */
+/* ★通信の内訳を測る（2026-08-25）。どこに時間が使われているかを分けないと、
+     打ち手が当てずっぽうになる。測定値は応答そのものに貼り付けて持ち回るので、
+     同時に別の通信が走っても取り違えない。持つのは【時刻と文字数だけ】で、
+     本文・氏名は一切保持しない。 */
 function fetchTO(url, ms){
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var t = setTimeout(function(){ if(ctl) ctl.abort(); }, ms || 20000);
   var opt = { cache:'no-store' };
   if(ctl) opt.signal = ctl.signal;
-  return fetch(url, opt).then(function(r){ clearTimeout(t); return r; },
-                             function(e){ clearTimeout(t); throw e; });
+  var t0 = Date.now();
+  return fetch(url, opt).then(function(r){
+    clearTimeout(t);
+    /* fetch が解決するのは「見出し（ヘッダ）が届いた時」＝GASの起動・スプレッドシートを
+       開く・読み取り・302の追従まで済んだ時点。本文の受信はこの後。 */
+    try{ r.__nt = { t0:t0, head:Date.now(), body:0, bytes:0 }; }catch(e){}
+    return r;
+  }, function(e){ clearTimeout(t); throw e; });
 }
 /* GAS はログイン用HTMLを 200 で返すことがあるため r.json() を使わず自前で判定する。 */
 function parseJson(r){
+  var nt = (r && r.__nt) || null;
   return r.text().then(function(txt){
     var s = String(txt || '').trim();
+    if(nt){ nt.body = Date.now(); nt.bytes = s.length; }
     if(s.charAt(0) !== '{' && s.charAt(0) !== '[') {
       if(s.indexOf('accounts.google.com') >= 0 || s.toLowerCase().indexOf('<!doctype') === 0){
         throw new Error('GAS_LOGIN');
@@ -470,6 +482,9 @@ function parseJson(r){
     }
     var o = JSON.parse(s);
     if(o && o.error) throw new Error('API:' + o.error);
+    if(nt && o && typeof o === 'object' && !(o instanceof Array)){
+      try{ o.__nt = nt; }catch(e){}
+    }
     return o;
   });
 }
@@ -572,15 +587,25 @@ function load(){
              ingested:(res.ingestedDates || null),
              loadedAt: Date.now(), lastTick: String(res.lastTick || '') };
     var tick = DATA.lastTick ? '／最終取込 ' + DATA.lastTick.replace('T',' ').substring(5,16) : '';
-    /* ★読み込みにかかった秒数を出す（改善の効果を体感でなく数値で見るため・2026-08-25） */
-    var sec = ((Date.now() - t0) / 1000).toFixed(1);
-    $('status').textContent = DATA.from + ' 〜 ' + DATA.to + '（' + DATA.events.length + '件）'
-      + tick + '／読込 ' + sec + '秒';
+    var nt = res.__nt || null;
     renderBanner();
     renderResidentList();
     renderTimeline();
     /* 検索タブを開いたままの読み込みでも、対象期間・件数・⚠️帯を古いまま残さない */
     if($('scr-search').classList.contains('on')) renderSearch(); else sqSyncScope();
+    /* ★読み込みにかかった秒数と、その内訳を出す（改善の効果を体感でなく数値で見るため）。
+         描画の【後】に組み立てる＝「表示」を実測にするため。 */
+    var done = Date.now();
+    var sec = ((done - t0) / 1000).toFixed(1);
+    var brk = '';
+    if(nt && nt.head && nt.body){
+      brk = '（サーバー ' + ((nt.head - nt.t0) / 1000).toFixed(1)
+          + ' ／受信 ' + ((nt.body - nt.head) / 1000).toFixed(1)
+          + ' ／表示 ' + ((done - nt.body) / 1000).toFixed(1)
+          + ' ／' + Math.round(nt.bytes / 1024) + 'KB）';
+    }
+    $('status').textContent = DATA.from + ' 〜 ' + DATA.to + '（' + DATA.events.length + '件）'
+      + tick + '／読込 ' + sec + '秒' + brk;
   })['catch'](function(e){
     $('status').textContent = '';
     LOAD_ERR = apiErrMsg(e);
