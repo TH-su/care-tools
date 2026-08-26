@@ -112,8 +112,7 @@ function TaskGroup({
     const at = sameLevel.findIndex(t => t.id === targetId);
     if (at < 0) return;
     const without = sameLevel.filter(t => t.id !== moving.id);
-    const insertAt = from < to ? at : Math.max(0, at);
-    const previous = insertAt > 0 ? without[insertAt - 1] : null;
+    const previous = at > 0 ? without[at - 1] : null;
     onReorder?.(moving, previous ? previous.taskId : null);
   };
 
@@ -200,8 +199,12 @@ function TasksTab({
   const groups = useMemo(() => {
     const todayEnd = startOfDay(new Date()).getTime() + DAY_MS;
     const open = shown.filter(t => !t.done);
-    // 完了済みは件数を切らない。溜まったら折りたためばよい
-    const done = shown.filter(t => t.done);
+    // 完了済みは件数を切らない。溜まったら折りたためばよい。
+    // ただし、親の下に並べて出すサブタスクは「完了」に重ねて出さない。
+    // 同じものが2か所に出ると、片方を消したのかと勘違いする。
+    const shownParents = new Set(open.map(t => `${t.sourceId}::${t.listId}::${t.taskId}`));
+    const done = shown.filter(t =>
+      t.done && !(t.parent && shownParents.has(`${t.sourceId}::${t.listId}::${t.parent}`)));
     if (sort !== 'date') {
       // 「自分の順序」では日付で分けない。並べた順のまま1本で出す（Google ToDo と同じ）
       return { manual: open, overdue: [], today: [], upcoming: [], someday: [], done };
