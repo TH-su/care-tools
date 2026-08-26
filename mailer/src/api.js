@@ -63,13 +63,18 @@ export const api = {
   deleteEvent: (sourceId, calendarId, eventId) => request('/calendar/events/delete', { method: 'POST', body: { sourceId, calendarId, eventId } }),
 
   // ── ToDo ──
-  tasks: () => request('/tasks'),
+  tasks: (sort) => request('/tasks', { query: sort ? { sort } : undefined }),
   createTask: (sourceId, listId, task) => request('/tasks', { method: 'POST', body: { sourceId, listId, task } }),
   updateTask: (sourceId, listId, taskId, patch) => request('/tasks', { method: 'PUT', body: { sourceId, listId, taskId, patch } }),
   deleteTask: (sourceId, listId, taskId) => request('/tasks/delete', { method: 'POST', body: { sourceId, listId, taskId } }),
   moveTask: (from, to) => request('/tasks/move', { method: 'POST', body: { from, to } }),
   setTaskParent: (sourceId, listId, taskId, parent) => request('/tasks/parent', { method: 'POST', body: { sourceId, listId, taskId, parent } }),
   setTaskDone: (sourceId, listId, taskId, done) => request('/tasks/done', { method: 'POST', body: { sourceId, listId, taskId, done } }),
+  clearCompleted: (sourceId, listId) => request('/tasks/clear', { method: 'POST', body: { sourceId, listId } }),
+  reorderTask: (sourceId, listId, taskId, previousId) => request('/tasks/reorder', { method: 'POST', body: { sourceId, listId, taskId, previousId } }),
+  createTaskList: (sourceId, title) => request('/tasks/lists', { method: 'POST', body: { sourceId, title } }),
+  renameTaskList: (sourceId, listId, title) => request('/tasks/lists', { method: 'PUT', body: { sourceId, listId, title } }),
+  deleteTaskList: (sourceId, listId) => request('/tasks/lists/delete', { method: 'POST', body: { sourceId, listId } }),
 
   suggestSchedule: (subject, text, baseDate) => request('/schedule/suggest', { method: 'POST', body: { subject, text, baseDate } }),
 };

@@ -669,7 +669,10 @@ api.post('/calendar/events/delete', h(async (req, res) => {
 
 // ── ToDo ─────────────────────────────────────────────────────
 api.get('/tasks', h(async (req, res) => {
-  res.json(await tasksBackend.listTasks({ includeDone: req.query.done !== '0' }));
+  res.json(await tasksBackend.listTasks({
+    includeDone: req.query.done !== '0',
+    sort: req.query.sort === 'date' ? 'date' : 'manual',
+  }));
 }));
 
 // 保存先が指定されなければ、設定の既定リストへ入れる（無ければこのMac）
@@ -701,6 +704,39 @@ api.put('/tasks', h(async (req, res) => {
   const { sourceId, listId, taskId, patch } = req.body || {};
   if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
   res.json({ task: await tasksBackend.updateTask({ sourceId, listId, taskId, patch: patch || {} }) });
+}));
+
+// 完了済みをまとめて削除する
+api.post('/tasks/clear', h(async (req, res) => {
+  const { sourceId, listId } = req.body || {};
+  res.json(await tasksBackend.clearCompleted({ sourceId, listId }));
+}));
+
+// 手動の並べ替え。previousId の後ろへ動かす（省略すると先頭）
+api.post('/tasks/reorder', h(async (req, res) => {
+  const { sourceId, listId, taskId, previousId } = req.body || {};
+  if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.reorderTask({ sourceId, listId, taskId, previousId: previousId || null }) });
+}));
+
+// ── リストそのものの管理 ──────────────────────────────────────
+api.post('/tasks/lists', h(async (req, res) => {
+  const { sourceId, title } = req.body || {};
+  if (!String(title || '').trim()) { const e = new Error('リスト名を入力してください'); e.status = 400; throw e; }
+  res.json({ list: await tasksBackend.createList({ sourceId, title }) });
+}));
+
+api.put('/tasks/lists', h(async (req, res) => {
+  const { sourceId, listId, title } = req.body || {};
+  if (!listId) { const e = new Error('対象のリストが指定されていません'); e.status = 400; throw e; }
+  if (!String(title || '').trim()) { const e = new Error('リスト名を入力してください'); e.status = 400; throw e; }
+  res.json({ list: await tasksBackend.renameList({ sourceId, listId, title }) });
+}));
+
+api.post('/tasks/lists/delete', h(async (req, res) => {
+  const { sourceId, listId } = req.body || {};
+  if (!listId) { const e = new Error('対象のリストが指定されていません'); e.status = 400; throw e; }
+  res.json(await tasksBackend.removeList({ sourceId, listId }));
 }));
 
 // サブタスクにする・親から外す（parent を null にすると同じ高さへ戻る）

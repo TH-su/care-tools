@@ -134,6 +134,31 @@ export function ConfirmDialog({ title, message, confirmLabel = '実行', danger,
   );
 }
 
+// ── 名前をひとつ尋ねるだけの小さな入力欄 ──
+// リスト名の作成・変更に使う。ブラウザの prompt() は見た目が浮くので自前で持つ
+export function PromptDialog({ title, label, value = '', confirmLabel = '決定', onConfirm, onCancel }) {
+  const [text, setText] = useState(value);
+  const ok = text.trim().length > 0;
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <form
+        className="modal-body"
+        onSubmit={(e) => { e.preventDefault(); if (ok) onConfirm(text.trim()); }}
+      >
+        <div className="field">
+          <label>{label}</label>
+          <input value={text} onChange={(e) => setText(e.target.value)} autoFocus maxLength={100} />
+        </div>
+      </form>
+      <div className="modal-foot">
+        <span className="spacer" />
+        <button className="btn secondary" onClick={onCancel}>キャンセル</button>
+        <button className="btn primary" disabled={!ok} onClick={() => ok && onConfirm(text.trim())}>{confirmLabel}</button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── コンテキストメニュー ──
 export function ContextMenu({ x, y, items, onClose }) {
   const ref = useRef(null);
