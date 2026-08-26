@@ -61,10 +61,18 @@ export function finishAuth(state, patch) {
 }
 
 async function postForm(url, params) {
+  // 未定義の値をそのまま渡すと URLSearchParams が "undefined" という文字列にしてしまう。
+  // client_id がそうなると、Googleは「The OAuth client was not found.」を返し、
+  // 設定が正しいのに設定の誤りに見える。空の項目は最初から送らない。
+  const form = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    form.set(k, String(v));
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params).toString(),
+    body: form.toString(),
   });
   const text = await res.text();
   let data = null;
@@ -124,6 +132,12 @@ async function accessTokenFor(source, creds) {
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   if (!creds.refreshToken) {
     const err = new Error('Googleとの連携が切れています。設定から接続し直してください。');
+    err.status = 401; err.authFailed = true;
+    throw err;
+  }
+  // ここが欠けたままGoogleへ送ると invalid_client になり、原因が設定側に見えてしまう
+  if (!creds.clientId) {
+    const err = new Error('保存されたクライアントIDが読み出せませんでした。設定から接続し直してください。');
     err.status = 401; err.authFailed = true;
     throw err;
   }

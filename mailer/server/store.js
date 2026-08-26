@@ -232,7 +232,10 @@ export async function saveCalendarSource(input, secrets = {}) {
 }
 
 export async function getCalendarSecrets(source) {
-  const out = {};
+  // クライアントIDは秘密ではないが、Google APIの呼び出しには必ず要る。
+  // ここで一緒に返さないと、呼び出し側が undefined のまま送ってしまい、
+  // Googleから「The OAuth client was not found.」が返る。
+  const out = { clientId: source.clientId || '' };
   for (const kind of ['clientSecret', 'refreshToken']) {
     if (source[`${kind}InKeychain`]) {
       const v = await keychainGet(secretKey(source.id, kind));

@@ -520,6 +520,9 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
   }
   if (!p) return res.status(400).send(page('この連携リンクは期限切れです', 'SilverMailの画面からもう一度お試しください。', false));
 
+  // どの段階で失敗したかを覚えておく。引き換えの後にも通信があり、
+  // ひとまとめに「引き換えに失敗」と出すと、原因の見当がまるで違う方を向く。
+  let step = '認可コードの引き換え';
   try {
     const tokens = await google.exchangeCode({
       clientId: p.clientId, clientSecret: p.clientSecret,
@@ -528,6 +531,7 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     if (!tokens.refresh_token) {
       throw new Error('更新用トークンを受け取れませんでした。Googleアカウントの「サードパーティアクセス」から一度SilverMailを解除して、もう一度お試しください。');
     }
+    step = 'アカウント情報の取得';
     const info = await google.fetchUserinfo(tokens.access_token);
     const email = info.email || '';
     const existing = listCalendarSources().find(s => s.type === 'google' && s.email && s.email === email);
@@ -541,6 +545,7 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
       enabled: true,
     }, { clientSecret: p.clientSecret, refreshToken: tokens.refresh_token });
     google.forgetToken(source.id);
+    step = 'カレンダー一覧の取り込み';
     source = await cal.syncGoogleCalendars(source);
     google.finishAuth(state, { status: 'done', sourceId: source.id });
     res.send(page('Googleカレンダーに接続しました', 'このタブは閉じて、SilverMailの画面にお戻りください。', true));
@@ -556,7 +561,7 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     };
     const usedPkce = Boolean(p.verifier);
     console.error('');
-    console.error('  ┌─ [Google連携] 引き換えに失敗しました ──────────');
+    console.error(`  ┌─ [Google連携] ${step}で失敗しました ──────────`);
     console.error('  │ アプリの版   :', buildLine());
     console.error('  │ 理由        :', err?.message || err);
     console.error('  │ HTTPステータス:', err?.googleStatus ?? '（不明）');
@@ -574,6 +579,7 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     // シークレットは長さだけ（写真に写っても困らない範囲にとどめる）。
     const rows = [
       ['アプリの版', buildLine()],
+      ['失敗した段階', step],
       // クライアントIDは秘密ではない（認可URLにも出る）ので、そのまま出して照合しやすくする
       ['クライアントID', p.clientId || '（無し）'],
       ['シークレット', p.clientSecret ? `設定あり（${String(p.clientSecret).length}文字）` : '（無し）'],
