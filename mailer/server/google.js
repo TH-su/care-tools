@@ -183,10 +183,12 @@ export async function fetchUserinfo(accessToken) {
 }
 
 // ── 接続前の設定チェック ──────────────────────────────────────
-// ブラウザの許可画面へ行く前に「クライアントIDとシークレットの組み合わせが
-// Googleに存在するか」だけを確かめる。わざと通らない refresh_token を送り、
-// 返ってくるエラーの種類で判定する（トークンは発行されない）。
-export async function verifyClient({ clientId, clientSecret }) {
+// ブラウザの許可画面へ行く前に、実際の接続と「同じ方式」で設定を確かめる。
+// わざと通らない認可コードを送り、返るエラーの種類で判定する（トークンは発行されない）。
+//
+// grant_type は authorization_code でなければならない。refresh_token で問い合わせると
+// Googleはシークレットより先にトークンを弾くため、シークレットの誤りを見逃す。
+export async function verifyClient({ clientId, clientSecret, redirectUri }) {
   let res;
   let data = null;
   let text = '';
@@ -197,8 +199,9 @@ export async function verifyClient({ clientId, clientSecret }) {
       body: new URLSearchParams({
         client_id: clientId,
         ...(clientSecret ? { client_secret: clientSecret } : {}),
-        grant_type: 'refresh_token',
-        refresh_token: 'silvermail-connection-probe',
+        grant_type: 'authorization_code',
+        code: 'silvermail-connection-probe',
+        ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       }).toString(),
     });
     text = await res.text();
@@ -213,17 +216,21 @@ export async function verifyClient({ clientId, clientSecret }) {
   const code = data?.error || (res.ok ? 'ok' : `http_${res.status}`);
   const detail = data?.error_description || '';
 
-  // invalid_grant = 「わざと無効にしたトークン」が拒まれただけ。
-  // ここまで来たということは、IDとシークレットはGoogleに認識されている。
-  if (code === 'invalid_grant') {
-    return { ok: true, code, message: 'クライアントIDとシークレットはGoogleに正しく認識されました。' };
+  // invalid_grant = 「わざと無効にした認可コード」が拒まれただけ。
+  // ここまで来たなら、ID・シークレット・リダイレクトURIはすべて通っている。
+  if (code === 'invalid_grant' || code === 'ok') {
+    return { ok: true, code, message: 'クライアントID・シークレット・リダイレクトURIのすべてを確認できました。' };
   }
   if (code === 'invalid_client') {
     return {
       ok: false, code, detail,
-      message: /not found/i.test(detail)
-        ? 'このクライアントIDとシークレットの組み合わせがGoogleで見つかりません。①作成直後なら数分待つ ②シークレットを作り直して貼り直す ③プロジェクトの選択が合っているか、をご確認ください。'
-        : 'クライアントシークレットが一致しません。認証情報の画面で「シークレットを追加」から新しく発行して貼り直してください。',
+      message: 'クライアントIDかシークレットが一致しません。認証情報の画面で「シークレットを追加」から新しく発行し、コピーアイコンで取得して貼り直してください（IDとシークレットが同じクライアントのものかもご確認ください）。',
+    };
+  }
+  if (code === 'redirect_uri_mismatch') {
+    return {
+      ok: false, code, detail,
+      message: `リダイレクトURIが登録されていません。認証情報の画面で「承認済みのリダイレクト URI」に ${redirectUri || 'このアプリのURI'} を追加してください（末尾のスラッシュなし）。`,
     };
   }
   if (code === 'unauthorized_client') {
@@ -231,9 +238,6 @@ export async function verifyClient({ clientId, clientSecret }) {
       ok: false, code, detail,
       message: 'このクライアントでは今回の方式が許可されていません。種類を「ウェブ アプリケーション」にして作り直してください。',
     };
-  }
-  if (code === 'ok') {
-    return { ok: true, code, message: 'Googleとの通信を確認しました。' };
   }
   return {
     ok: false, code, detail,

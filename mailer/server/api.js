@@ -434,7 +434,7 @@ api.delete('/calendar/google/draft', h(async (req, res) => {
 
 api.post('/calendar/google/verify', h(async (req, res) => {
   const { clientId, clientSecret } = await googleCreds(req.body);
-  res.json(await google.verifyClient({ clientId, clientSecret }));
+  res.json(await google.verifyClient({ clientId, clientSecret, redirectUri: REDIRECT_URI }));
 }));
 
 api.post('/calendar/google/start', h(async (req, res) => {
@@ -442,7 +442,7 @@ api.post('/calendar/google/start', h(async (req, res) => {
 
   // 通らないと分かっている設定でブラウザを開いても徒労なので、先に確かめる。
   // 判定できなかったとき（ネットワーク不調など）は止めずに進める。
-  const check = await google.verifyClient({ clientId, clientSecret });
+  const check = await google.verifyClient({ clientId, clientSecret, redirectUri: REDIRECT_URI });
   if (!check.ok && (check.code === 'invalid_client' || check.code === 'unauthorized_client')) {
     const e = new Error(check.message); e.status = 400; e.authFailed = true; throw e;
   }
