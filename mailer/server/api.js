@@ -703,6 +703,20 @@ api.put('/tasks', h(async (req, res) => {
   res.json({ task: await tasksBackend.updateTask({ sourceId, listId, taskId, patch: patch || {} }) });
 }));
 
+// サブタスクにする・親から外す（parent を null にすると同じ高さへ戻る）
+api.post('/tasks/parent', h(async (req, res) => {
+  const { sourceId, listId, taskId, parent } = req.body || {};
+  if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.setTaskParent({ sourceId, listId, taskId, parent: parent || null }) });
+}));
+
+// 親を完了にしたら、その下も一緒に完了にする
+api.post('/tasks/done', h(async (req, res) => {
+  const { sourceId, listId, taskId, done } = req.body || {};
+  if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }
+  res.json({ task: await tasksBackend.setDoneWithChildren({ sourceId, listId, taskId, done: Boolean(done) }) });
+}));
+
 api.post('/tasks/delete', h(async (req, res) => {
   const { sourceId, listId, taskId } = req.body || {};
   if (!taskId) { const e = new Error('対象のToDoが指定されていません'); e.status = 400; throw e; }

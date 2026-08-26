@@ -1247,3 +1247,31 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
   .diag-todos a { color: #8ab4f8; }
 }
 .diag-group { font-size: 12.5px; font-weight: 600; margin: 8px 0 2px; }
+
+/* サブタスク — Google ToDo と同じく入れ子は1段だけ */
+.task-item.child { padding-left: 26px; position: relative; }
+.task-item.child::before {
+  content: ""; position: absolute; left: 13px; top: 0; bottom: 0;
+  border-left: 1px solid var(--border);
+}
+.task-item.child .task-body .ttl { font-size: 12px; }
+.task-body .subs {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; color: var(--text-3); font-feature-settings: "tnum";
+}
+
+.subtask-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: 6px; }
+.subtask { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.subtask .tick { color: var(--text-3); padding: 2px; flex-shrink: 0; }
+.subtask .tick:hover { color: var(--accent); }
+.subtask.done .tick { color: var(--success); }
+.subtask .ttl { flex: 1; min-width: 0; text-align: left; font-size: 12.5px; padding: 2px; border-radius: 5px; }
+.subtask .ttl:hover { background: var(--bg-hover); }
+.subtask.done .ttl { color: var(--text-3); text-decoration: line-through; }
+.subtask-add {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px;
+}
+.subtask-add .ic { color: var(--text-3); flex-shrink: 0; }
+.subtask-add input { border: 0; background: transparent; padding: 2px; flex: 1; min-width: 0; font-size: 12.5px; }
+.subtask-add:focus-within { border-color: var(--accent); }

@@ -35,6 +35,9 @@ function normalizeLocal(t) {
     due: t.due || null,
     done: Boolean(t.done),
     doneAt: t.doneAt || null,
+    // 親のタスクID。Google ToDo と同じく1段だけの入れ子にする
+    parent: t.parent || null,
+    position: t.position || t.createdAt || '',
     sourceMail: t.sourceMail || null,
     updatedAt: t.updatedAt || t.createdAt || null,
   };
@@ -60,6 +63,8 @@ function normalizeGoogle(source, list, t) {
     due: fromGoogleDue(t.due),
     done: t.status === 'completed',
     doneAt: t.completed || null,
+    parent: t.parent || null,
+    position: t.position || '',
     sourceMail,
     updatedAt: t.updated || null,
   };
@@ -110,13 +115,16 @@ export async function createTask({ sourceId, listId, task }) {
     return normalizeLocal(saveLocalTask({
       title: task.title, notes: task.notes || '', due: task.due || null,
       done: Boolean(task.done), sourceMail: task.sourceMail || null,
+      parent: task.parent || null,
     }));
   }
   const source = getCalendarSource(sourceId);
   if (!source) { const e = new Error('ToDoの保存先が見つかりません'); e.status = 404; throw e; }
   const creds = await getCalendarSecrets(source);
+  // 親はクエリで渡す。本文に入れてもGoogleは無視する
   const created = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks`, {
     method: 'POST',
+    query: task.parent ? { parent: task.parent } : undefined,
     body: {
       title: task.title || '',
       notes: `${task.notes || ''}${encodeMailMark(task.sourceMail)}`.trim() || undefined,
@@ -157,6 +165,74 @@ export async function removeTask({ sourceId, listId, taskId }) {
   const creds = await getCalendarSecrets(source);
   await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
   return { ok: true };
+}
+
+// ── 親子関係（サブタスク） ────────────────────────────────────
+// Google ToDo の入れ子は1段だけ。孫は作れないので、親に親がいるときは
+// その親（＝いちばん上）に付ける。PATCHでは親を変えられないため move を使う。
+export async function setTaskParent({ sourceId, listId, taskId, parent }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) {
+    const all = listLocalTasks();
+    const current = all.find(t => t.id === taskId);
+    if (!current) { const e = new Error('ToDoが見つかりません'); e.status = 404; throw e; }
+    if (parent === taskId) { const e = new Error('自分自身を親にはできません'); e.status = 400; throw e; }
+    let top = parent || null;
+    if (top) {
+      const p = all.find(t => t.id === top);
+      if (!p) { const e = new Error('親のToDoが見つかりません'); e.status = 404; throw e; }
+      if (p.parent) top = p.parent;   // 孫は作らない
+      // 自分の子を親にすると輪になる
+      if (all.some(t => t.id === top && t.parent === taskId)) {
+        const e = new Error('自分の下にあるToDoは親にできません'); e.status = 400; throw e;
+      }
+    } else {
+      // 親から外すとき、自分の子は自分と同じ高さへ繰り上げる
+      for (const child of all.filter(t => t.parent === taskId)) {
+        saveLocalTask({ ...child, parent: null });
+      }
+    }
+    return normalizeLocal(saveLocalTask({ ...current, id: taskId, parent: top }));
+  }
+
+  const source = getCalendarSource(sourceId);
+  if (!source) { const e = new Error('ToDoの保存先が見つかりません'); e.status = 404; throw e; }
+  const creds = await getCalendarSecrets(source);
+
+  let top = parent || null;
+  if (top) {
+    if (top === taskId) { const e = new Error('自分自身を親にはできません'); e.status = 400; throw e; }
+    const p = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(top)}`);
+    if (p?.parent) top = p.parent;   // 孫は作らない
+  }
+  const moved = await googleFetch(
+    source, creds, 'tasks',
+    `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}/move`,
+    { method: 'POST', query: top ? { parent: top } : { parent: '' } },
+  );
+  return normalizeGoogle(source, { id: listId, title: 'ToDo' }, moved);
+}
+
+// 親を完了にしたら、その下も完了にする（Gmailのタスクと同じ動き）
+// 1つのリストの中だけを見る。子を探すのに全アカウントを取りに行かない
+async function tasksInList({ sourceId, listId }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) return listLocalTasks().map(normalizeLocal);
+  const source = getCalendarSource(sourceId);
+  if (!source) return [];
+  const creds = await getCalendarSecrets(source);
+  const data = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks`, {
+    query: { maxResults: 100, showCompleted: 'true', showHidden: 'true' },
+  });
+  return (data.items || []).map(t => normalizeGoogle(source, { id: listId, title: 'ToDo' }, t));
+}
+
+export async function setDoneWithChildren({ sourceId, listId, taskId, done }) {
+  const updated = await updateTask({ sourceId, listId, taskId, patch: { done } });
+  const siblings = await tasksInList({ sourceId, listId }).catch(() => []);
+  const children = siblings.filter(t => t.parent === taskId && t.done !== done);
+  // 子は互いに独立しているので、順番待ちさせる理由がない
+  await Promise.all(children.map(c =>
+    updateTask({ sourceId, listId, taskId: c.taskId, patch: { done } }).catch(() => {})));
+  return updated;
 }
 
 // ── 1件取得とリスト間の移動 ──────────────────────────────────

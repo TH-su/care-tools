@@ -73,15 +73,31 @@ function AgendaTab({ events, loading, errors, onNew, onOpen, onOpenCalendar, has
   );
 }
 
-function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu, onOpenMail }) {
+// 親のすぐ下に、その子を並べる。Google ToDo と同じく入れ子は1段だけ
+function withChildren(items, all) {
+  const shown = new Set(items.map(t => t.id));
+  const out = [];
+  for (const t of items) {
+    if (t.parent && shown.has(`${t.sourceId}::${t.listId}::${t.parent}`)) continue;   // 親と一緒に出す
+    out.push(t);
+    const kids = all
+      .filter(c => c.parent === t.taskId && c.sourceId === t.sourceId && c.listId === t.listId)
+      .sort((a, b) => String(a.position).localeCompare(String(b.position)));
+    out.push(...kids);
+  }
+  return out;
+}
+
+function TaskGroup({ label, items, all = [], tone, onToggle, onOpen, onMenu, onOpenMail }) {
   if (items.length === 0) return null;
+  const rows = withChildren(items, all);
   return (
     <div className="task-group">
       <div className={cx('task-group-label', tone)}>{label}<span className="n">{items.length}</span></div>
-      {items.map(t => {
+      {rows.map(t => {
         const due = dueLabel(t.due);
         return (
-          <div className={cx('task-item', t.done && 'done')} key={t.id}>
+          <div className={cx('task-item', t.done && 'done', t.parent && 'child')} key={t.id}>
             <button
               className="tick" onClick={() => onToggle(t)}
               aria-label={t.done ? '未完了に戻す' : '完了にする'} title={t.done ? '未完了に戻す' : '完了にする'}
@@ -101,6 +117,12 @@ function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu, onOpenMail })
                   </span>
                 )}
                 {t.sourceType === 'google' && <span className="src">{t.listName}</span>}
+                {(() => {
+                  const kids = all.filter(c => c.parent === t.taskId && c.sourceId === t.sourceId && c.listId === t.listId);
+                  if (kids.length === 0) return null;
+                  const doneCount = kids.filter(k => k.done).length;
+                  return <span className="subs"><Icon name="list" size={11} />{doneCount}/{kids.length}</span>;
+                })()}
               </span>
             </button>
             {t.sourceMail && (
@@ -212,11 +234,11 @@ function TasksTab({
       )}
 
       <div className="task-list">
-        <TaskGroup label="期限を過ぎています" tone="overdue" items={groups.overdue} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
-        <TaskGroup label="今日" tone="today" items={groups.today} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
-        <TaskGroup label="これから" items={groups.upcoming} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
-        <TaskGroup label="期限なし" items={groups.someday} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
-        <TaskGroup label="完了" tone="muted" items={groups.done} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="期限を過ぎています" tone="overdue" items={groups.overdue} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="今日" tone="today" items={groups.today} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="これから" items={groups.upcoming} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="期限なし" items={groups.someday} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="完了" tone="muted" items={groups.done} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
       </div>
       {openCount > 0 && <div className="task-foot">未完了 {openCount} 件</div>}
     </>
