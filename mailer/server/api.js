@@ -7,7 +7,7 @@ import {
   getPassword,
   listCalendarSources, getCalendarSource, saveCalendarSource, deleteCalendarSource,
   publicCalendarSource, getCalendarSecrets,
-  saveGoogleDraft, getGoogleDraft, googleDraftPublic,
+  saveGoogleDraft, getGoogleDraft, googleDraftPublic, clearGoogleDraft,
 } from './store.js';
 import * as cal from './calendar.js';
 import * as tasksBackend from './tasks.js';
@@ -426,6 +426,12 @@ async function googleCreds(body) {
   return { clientId, clientSecret };
 }
 
+// 控えを消して、まっさらな状態から入力し直す
+api.delete('/calendar/google/draft', h(async (req, res) => {
+  await clearGoogleDraft();
+  res.json({ ok: true, googleDraft: googleDraftPublic() });
+}));
+
 api.post('/calendar/google/verify', h(async (req, res) => {
   const { clientId, clientSecret } = await googleCreds(req.body);
   res.json(await google.verifyClient({ clientId, clientSecret }));
@@ -501,8 +507,21 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
     google.finishAuth(state, { status: 'done', sourceId: source.id });
     res.send(page('Googleカレンダーに接続しました', 'このタブは閉じて、SilverMailの画面にお戻りください。', true));
   } catch (err) {
-    // 端末にも残す（画面を閉じたあとでも原因を追えるように）
-    console.error('  [Google連携] 失敗:', err?.message || err);
+    // 端末にも残す（画面を閉じたあとでも原因を追えるように）。
+    // シークレットとコードは値を出さず、長さだけを記録する。
+    const len = (v) => (v ? `${String(v).length}文字` : '（無し）');
+    console.error('');
+    console.error('  ┌─ [Google連携] 引き換えに失敗しました ──────────');
+    console.error('  │ 理由        :', err?.message || err);
+    console.error('  │ HTTPステータス:', err?.googleStatus ?? '（不明）');
+    console.error('  │ Googleの応答 :', err?.googleBody || '（なし）');
+    console.error('  │ クライアントID:', p.clientId);
+    console.error('  │ シークレット  :', len(p.clientSecret));
+    console.error('  │ リダイレクトURI:', p.redirectUri);
+    console.error('  │ 認可コード    :', len(req.query.code));
+    console.error('  │ 検証子(PKCE) :', len(p.verifier));
+    console.error('  └────────────────────────────────────────');
+    console.error('');
     google.finishAuth(state, { status: 'error', error: err.message });
     res.status(500).send(page('接続できませんでした', String(err.message || err), false));
   }

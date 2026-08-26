@@ -65,9 +65,14 @@ async function postForm(url, params) {
   try { data = JSON.parse(text); } catch { /* HTMLエラーページ等 */ }
   if (!res.ok) {
     const detail = data?.error_description || data?.error || text.slice(0, 200);
-    const err = new Error(`Googleの認証に失敗しました: ${detail}`);
+    // 種別（invalid_client など）まで出す。説明文だけでは原因を絞れないため。
+    const kind = data?.error && data.error_description ? `${data.error} / ` : '';
+    const err = new Error(`Googleの認証に失敗しました: ${kind}${detail}`);
     err.status = res.status === 401 || res.status === 400 ? 401 : 502;
     err.authFailed = true;
+    err.googleStatus = res.status;
+    err.googleError = data?.error || null;
+    err.googleBody = text.slice(0, 400);
     throw err;
   }
   return data || {};

@@ -1153,3 +1153,4 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .verify-result.ng { background: var(--warning-bg); color: var(--flag); border: 1px solid var(--warning-border); }
 .btn-row { display: flex; gap: 8px; }
 .btn-row .btn { flex: 1; }
+.linkbtn { color: var(--accent); font-size: 11.5px; font-weight: 600; margin-left: 6px; text-decoration: underline; }
