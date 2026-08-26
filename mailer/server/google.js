@@ -78,6 +78,7 @@ async function postForm(url, params) {
     err.authFailed = true;
     err.googleStatus = res.status;
     err.googleError = data?.error || null;
+    err.googleDescription = data?.error_description || null;
     err.googleBody = text.slice(0, 400);
     throw err;
   }
@@ -189,6 +190,36 @@ export async function fetchUserinfo(accessToken) {
   }
 }
 
+// ── invalid_client の読み分け ────────────────────────────────
+// Googleは invalid_client をふたつの意味で返す。説明文で確実に見分けられる。
+//   "The OAuth client was not found."        → クライアントIDが見つからない
+//   "The provided client secret is invalid." → IDは実在し、シークレットだけが違う
+// この二つを一緒くたにすると、正しいIDを何度も貼り直すことになる。
+export function invalidClientCause(description) {
+  const d = String(description || '').toLowerCase();
+  if (d.includes('client was not found')) return 'clientId';
+  if (d.includes('client secret') || d.includes('unauthorized')) return 'clientSecret';
+  return 'unknown';
+}
+
+// クライアントIDは「番号-英数字.apps.googleusercontent.com」の形。
+// 末尾が1文字欠けただけでもGoogleは別物として扱うが、見た目ではまず気付けない。
+// 接尾辞を付けない短い形はGoogle側も受け付けるため、そこは指摘しない。
+export function looksTruncatedClientId(clientId) {
+  const t = String(clientId || '');
+  return t.includes('.') && !/\.apps\.googleusercontent\.com$/.test(t);
+}
+
+// クライアントIDが見つからないときの案内。原因の見当まで添える。
+export function clientIdNotFoundMessage(clientId) {
+  const hint = looksTruncatedClientId(clientId)
+    ? 'クライアントIDの末尾が「.apps.googleusercontent.com」で終わっていません。コピーの途中で切れています。'
+    : 'IDに余分な空白・全角空白・見えない文字が混ざっているか、末尾が欠けている可能性があります。';
+  return `クライアントIDがGoogleに見つかりません。${hint}`
+    + '認証情報の画面のコピーアイコンで取り直して貼り直してください'
+    + '（そのクライアントを削除した場合も、同じエラーになります）。';
+}
+
 // ── 接続前の設定チェック ──────────────────────────────────────
 // ブラウザの許可画面へ行く前に、実際の接続と「同じ方式」で設定を確かめる。
 // わざと通らない認可コードを送り、返るエラーの種類で判定する（トークンは発行されない）。
@@ -232,8 +263,18 @@ export async function verifyClient({ clientId, clientSecret, redirectUri }) {
     return { ok: true, code, message: 'クライアントID・シークレット・リダイレクトURIのすべてを確認できました。' };
   }
   if (code === 'invalid_client') {
+    const cause = invalidClientCause(detail);
+    if (cause === 'clientId') {
+      return { ok: false, code, cause, detail, message: clientIdNotFoundMessage(clientId) };
+    }
+    if (cause === 'clientSecret') {
+      return {
+        ok: false, code, cause, detail,
+        message: 'クライアントIDは見つかりましたが、シークレットが一致しません。認証情報の画面で「シークレットを追加」から新しく発行し、コピーアイコンで取得して貼り直してください。',
+      };
+    }
     return {
-      ok: false, code, detail,
+      ok: false, code, cause, detail,
       message: 'クライアントIDかシークレットが一致しません。認証情報の画面で「シークレットを追加」から新しく発行し、コピーアイコンで取得して貼り直してください（IDとシークレットが同じクライアントのものかもご確認ください）。',
     };
   }

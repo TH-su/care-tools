@@ -67,6 +67,7 @@ export function App() {
   const [calTargets, setCalTargets] = useState([]);
   const [redirectUri, setRedirectUri] = useState('');
   const [googleDraft, setGoogleDraft] = useState({ clientId: '', hasSecret: false });
+  const [build, setBuild] = useState(null);   // 動いているサーバーの版
   const [events, setEvents] = useState({ items: [], loading: false, errors: [] });
   const [tasks, setTasks] = useState({ items: [], lists: [], loading: false, errors: [] });
   const [taskDest, setTaskDest] = useState(null);      // ToDoの保存先 {sourceId, listId}
@@ -125,6 +126,7 @@ export function App() {
       setCalTargets(r.calendarTargets || []);
       setRedirectUri(r.calendarRedirectUri || '');
       if (r.googleDraft) setGoogleDraft(r.googleDraft);
+      if (r.build) setBuild(r.build);
       if (r.settings.defaultTaskList) setTaskDest(r.settings.defaultTaskList);
       setPanel(p => ({ open: r.settings.panelOpen !== false, tab: r.settings.panelTab || p.tab }));
       applyTheme(r.settings.theme);
@@ -557,6 +559,7 @@ export function App() {
       .then(r => {
         setCalSources(r.sources); setCalTargets(r.targets); setRedirectUri(r.redirectUri);
         if (r.googleDraft) setGoogleDraft(r.googleDraft);
+        if (r.build) setBuild(r.build);
       })
       .catch(() => {});
     loadEvents();
@@ -1098,6 +1101,7 @@ export function App() {
           sources={calSources}
           redirectUri={redirectUri}
           googleDraft={googleDraft}
+          build={build}
           toast={toast}
           onChanged={applySources}
           onClose={() => setSourceModal(false)}
