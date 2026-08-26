@@ -13,6 +13,14 @@ function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
   const [form, setForm] = useState({ clientId: draft?.clientId || '', clientSecret: '' });
   // 前回入力したシークレットが控えてあるか（空欄のままでも接続できる）
   const [keepSecret, setKeepSecret] = useState(Boolean(draft?.hasSecret));
+
+  // 控えが古いまま使われている疑いを断ち切るための「入力し直し」
+  const resetDraft = async () => {
+    try { await api.googleClearDraft(); } catch { /* 控えが無ければそれでよい */ }
+    setForm({ clientId: '', clientSecret: '' });
+    setKeepSecret(false);
+    setResult(null);
+  };
   const [phase, setPhase] = useState('idle'); // idle | checking | waiting
   const [result, setResult] = useState(null); // {ok, message}
   const pollRef = useRef(null);
@@ -115,7 +123,7 @@ function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
             />
             <div className={cx('hint', !form.clientSecret.trim() && !keepSecret && form.clientId.trim() && 'warn')}>
               {keepSecret && !form.clientSecret.trim()
-                ? '前回入力したシークレットを使います（変更するときだけ入力してください）。'
+                ? <>前回入力したシークレットを使います（変更するときだけ入力してください）。<button type="button" className="linkbtn" onClick={resetDraft}>入力し直す</button></>
                 : (!form.clientSecret.trim() && form.clientId.trim()
                   ? '「ウェブ アプリケーション」で作成した場合、シークレットは必須です。'
                   : 'Macのキーチェーンに保存されます。リポジトリやファイルに平文で残りません。')}

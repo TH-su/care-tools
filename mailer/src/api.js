@@ -52,6 +52,7 @@ export const api = {
   deleteSource: (id) => request(`/calendar/sources/${id}`, { method: 'DELETE' }),
   syncSource: (id) => request(`/calendar/sources/${id}/sync`, { method: 'POST' }),
   googleVerify: (clientId, clientSecret) => request('/calendar/google/verify', { method: 'POST', body: { clientId, clientSecret } }),
+  googleClearDraft: () => request('/calendar/google/draft', { method: 'DELETE' }),
   googleStart: (clientId, clientSecret) => request('/calendar/google/start', { method: 'POST', body: { clientId, clientSecret } }),
   googleStatus: (state) => request('/calendar/google/status', { query: { state } }),
 
