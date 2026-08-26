@@ -881,7 +881,7 @@ select option.is-discharged{color:var(--g6)}
             <th style="text-align:start;padding-left:10px">測定日</th>
             <th>体重(kg)</th>
             <th>BMI</th>
-            <th>前月比</th>
+            <th>前回比</th>
             <th>主食</th>
             <th>副食</th>
             <th>オプション</th>
@@ -4844,6 +4844,13 @@ function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
 }
 
+/* グラフのドットを「大きな丸」で強調する前回比のしきい値（kg）と、その時の半径。
+   月次アラート（注意=6 / 警告=7）に当たらない変化でも、直前の測定から
+   ±2kg 動いていれば見落とさないようにするための表示ルール。
+   半径は既存の「警告」と同じ 7px に揃えている。 */
+const WR_DOT_BIG_KG = 2;
+const WR_DOT_BIG_R  = 7;
+
 function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, dated){
   recs = recs || [];
   // labelsIn/dateKeysIn are supplied for daily ranges (w1/m1) that pad the
@@ -4884,19 +4891,42 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
   // alerts are month-based: only color/enlarge the point that represents
   // the monthly-latest record (for daily mode, most points are neutral).
   const monthlyLatestIds = new Set(getRecordsOf(rid).map(r=> r.id));
-  const pointBg = recs.map(r=>{
+
+  /* 前回比 ＝ グラフ上の「1つ前に描かれている点」との差。
+     画面に見えているものとだけ比べるので、職員が「何と比べた色か」を追える。
+     1週間・1ヶ月グラフは表示期間の外を見に行かないため、期間の最初の点は比較対象なし。 */
+  const prevDiffs = recs.map((r, i)=>{
+    if(!r) return null;
+    for(let k = i-1; k >= 0; k--){
+      if(recs[k]) return +(r.weight - recs[k].weight).toFixed(2);
+    }
+    return null;                              // 1つ前の点が無い（期間の先頭）
+  });
+  // ±WR_DOT_BIG_KG 以上動いた点の向き。'up'=増加（赤）/'dn'=減少（青）/null=該当なし
+  const bigDir = d => (d==null) ? null
+                    : (d >=  WR_DOT_BIG_KG) ? 'up'
+                    : (d <= -WR_DOT_BIG_KG) ? 'dn' : null;
+
+  const pointBg = recs.map((r, i)=>{
     if(!r) return 'rgba(0,0,0,0)';            // padded empty day → no point drawn
+    // 前回比が ±2kg 以上なら、月次アラートより優先して色を決める
+    // （直前の測定からの急な増減の方が、現場で先に手を打つべき情報のため）
+    const big = bigDir(prevDiffs[i]);
+    if(big) return big==='dn' ? '#1565c0' : '#c62828';
     if(!monthlyLatestIds.has(r.id)) return color;
     const a = analyze(rid, r.yearMonth);
     if(!a || a.level==='none') return color;
     const dir = alertDir(a);
     return dir==='dn' ? '#1565c0' : '#c62828';
   });
-  const pointRd = recs.map(r=>{
+  const pointRd = recs.map((r, i)=>{
     if(!r) return 0;                          // padded empty day → no point
-    if(!monthlyLatestIds.has(r.id)) return 3;
+    // 月次アラートで決まる大きさと、前回比±2kg の大きさの、大きい方を採る
+    const big = bigDir(prevDiffs[i]) ? WR_DOT_BIG_R : 0;
+    if(!monthlyLatestIds.has(r.id)) return Math.max(3, big);
     const a = analyze(rid, r.yearMonth);
-    return a?.level==='ng' ? 7 : a?.level==='w' ? 6 : 4;
+    const base = a?.level==='ng' ? 7 : a?.level==='w' ? 6 : 4;
+    return Math.max(base, big);
   });
 
   const yScale = { title:{display:true, text:'kg'}, grid:{color:'#f1f3f4'} };
@@ -4976,28 +5006,23 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
               const rec = recs[item.dataIndex];
               const lines = [];
               if(!rec) return lines;
-              // 月内最新の点は従来どおり前月比。月内のそれ以外の測定（dated モードで
-              // 増えた点）と日別グラフ（w1/m1）は、直前の測定との差＝前回比を出す。
-              const useMonthly = dated
-                ? monthlyLatestIds.has(rec.id)
-                : !(daily && rec.measuredOn);
-              if(!useMonthly){
-                // show diff vs the most recent earlier non-null point
-                let prev = null;
-                for(let i = item.dataIndex - 1; i >= 0; i--){
-                  if(recs[i]){ prev = recs[i]; break; }
-                }
-                if(prev){
-                  const d = +(rec.weight - prev.weight).toFixed(2);
-                  const s = d>0?'+':'';
-                  lines.push(`前回比: ${s}${d.toFixed(1)}kg`);
-                }
-              }else{
-                const a = analyze(rid, rec.yearMonth);
-                if(a?.diff1!==null && a?.diff1!==undefined){
-                  const s = a.diff1>0?'+':'';
-                  lines.push(`前月比: ${s}${a.diff1.toFixed(1)}kg (${s}${a.pct1.toFixed(1)}%)`);
-                }
+              /* 前回比は常に出す。ドットの色と大きさがこの値で決まるので、
+                 数字を見せないと色だけが意味を持つことになる（色だけで伝えない）。
+                 月内最終の点では、月次しきい値で判定する前月比も従来どおり併記する。
+                 ただし両者の基準が同じ記録になる時は同じ数字を2行出さず、
+                 前回比の行に％を添えるだけにする。 */
+              const d = prevDiffs[item.dataIndex];
+              const a = monthlyLatestIds.has(rec.id) ? analyze(rid, rec.yearMonth) : null;
+              const m1 = (a && a.diff1!==null && a.diff1!==undefined) ? a.diff1 : null;
+              const same = (d!=null && m1!=null && Math.abs(m1 - d) < 0.05);
+              if(d != null){
+                const s = d>0?'+':'';
+                const pctPart = same ? ` (${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%)` : '';
+                lines.push(`前回比: ${s}${d.toFixed(1)}kg${pctPart}`);
+              }
+              if(m1 != null && !same){
+                const s = m1>0?'+':'';
+                lines.push(`前月比: ${s}${m1.toFixed(1)}kg (${s}${a.pct1.toFixed(1)}%)`);
               }
               lines.push(`主食: ${mainLabel(rec.stapleForm)}${rec.stapleAmount!=null?` (${rec.stapleAmount}g)`:''}`);
               lines.push(`副食: ${sideLabel(rec.sideForm)}`);
@@ -5094,11 +5119,12 @@ function drawHist(rid){
     $('#ivHistCount').textContent = '0件';
     return;
   }
-  // group month-latest for the 前月比 column (alerts use monthly aggregation)
+  // 行の警告色（ed）は従来どおり月次しきい値で決める。前回比の列とは別の指標なので
+  // ここは変えない（analyze は「月ごとに1件へ丸めた系列」で注意/警告を判定する）。
   const monthlyLatestIds = new Set(getRecordsOf(rid).map(r=> r.id));
   // 測定日から対象月（YYYY-MM）を判定し、月が変わるたびに見出し行を挿入する
   let lastGroup = '';
-  recs.forEach(r=>{
+  recs.forEach((r, i)=>{
     const gm = (r.measuredOn && r.measuredOn.slice(0,7)) || r.yearMonth || '0000-00';
     if(gm !== lastGroup){
       lastGroup = gm;
@@ -5114,11 +5140,23 @@ function drawHist(rid){
     const a = isMonthly ? analyze(rid, r.yearMonth) : null;
     const tr = document.createElement('tr');
     if(a?.level==='ng' || a?.level==='w') tr.className = 'ed';
-    const df = a?.diff1;
-    const pc = a?.pct1;
+    /* 前回比：recs は新しい順に並んでいるので、1つ下の行（i+1）が直前の測定。
+       月ごとに1件へ丸めず全記録で比べるため、月に2回以上測った回にも必ず数値が出る
+       （従来は月内最終の記録以外が analyze の対象外で「—」になっていた）。
+       比較対象が無い最古の行だけ「—」。 */
+    const prevRec = recs[i+1] || null;
+    const df = prevRec ? +(r.weight - prevRec.weight).toFixed(1) : null;
+    const pc = (prevRec && prevRec.weight) ? +((r.weight - prevRec.weight) / prevRec.weight * 100).toFixed(1) : null;
     const diffHtml = (df==null)
       ? '<span style="color:var(--g5)">—</span>'
-      : (()=>{ const cls = df>0?'pos':df<0?'neg':'zero'; const s = df>0?'+':''; return `<span class="df ${cls}">${s}${df.toFixed(1)}<br><small>${s}${pc.toFixed(1)}%</small></span>`; })();
+      : (()=>{
+          const cls = df>0?'pos':df<0?'neg':'zero';
+          const s = df>0?'+':'';
+          // 何と比べた値かをホバーで示す（基準の記録が分からなくなるのを防ぐ）
+          const base = `${prevRec.measuredOn || ymFmt(prevRec.yearMonth)}（${prevRec.weight.toFixed(1)}kg）比`;
+          const pcHtml = (pc==null) ? '' : `<br><small>${s}${pc.toFixed(1)}%</small>`;
+          return `<span class="df ${cls}" title="${escapeHtml(base)}">${s}${df.toFixed(1)}${pcHtml}</span>`;
+        })();
     const bmi = bmiOf(r.weight, resident?.heightCm);
     const bmiHtml = bmi!=null
       ? `<span style="color:${bmiCat(bmi).c};font-weight:700">${bmi.toFixed(1)}</span>`
