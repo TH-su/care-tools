@@ -509,7 +509,13 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
   } catch (err) {
     // 端末にも残す（画面を閉じたあとでも原因を追えるように）。
     // シークレットとコードは値を出さず、長さだけを記録する。
-    const len = (v) => (v ? `${String(v).length}文字` : '（無し）');
+    // 末尾4文字だけ添える。貼り間違い（別のクライアントのシークレット）は
+    // 長さが同じで見分けが付かないため、これが決め手になる。
+    const len = (v) => {
+      const t = String(v || '');
+      if (!t) return '（無し）';
+      return t.length > 8 ? `${t.length}文字（末尾 ${t.slice(-4)}）` : `${t.length}文字`;
+    };
     console.error('');
     console.error('  ┌─ [Google連携] 引き換えに失敗しました ──────────');
     console.error('  │ 理由        :', err?.message || err);
