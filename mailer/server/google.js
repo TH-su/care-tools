@@ -26,8 +26,12 @@ const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\
 
 export function startAuth({ clientId, clientSecret, redirectUri }) {
   const state = base64url(crypto.randomBytes(24));
-  const verifier = base64url(crypto.randomBytes(48));
-  const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
+  // PKCEはシークレットを持たないクライアント（デスクトップ等）のための仕組み。
+  // シークレットありの「ウェブ アプリケーション」に付けると、Googleはクライアントを
+  // 照合できず invalid_client（The OAuth client was not found.）を返す。
+  const usePkce = !clientSecret;
+  const verifier = usePkce ? base64url(crypto.randomBytes(48)) : null;
+  const challenge = verifier ? base64url(crypto.createHash('sha256').update(verifier).digest()) : null;
   pending.set(state, { clientId, clientSecret, verifier, redirectUri, status: 'waiting' });
   // 10分で失効
   setTimeout(() => pending.delete(state), 10 * 60 * 1000).unref?.();
@@ -40,8 +44,10 @@ export function startAuth({ clientId, clientSecret, redirectUri }) {
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('prompt', 'consent');
   url.searchParams.set('state', state);
-  url.searchParams.set('code_challenge', challenge);
-  url.searchParams.set('code_challenge_method', 'S256');
+  if (challenge) {
+    url.searchParams.set('code_challenge', challenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+  }
   return { state, authUrl: url.toString() };
 }
 
@@ -83,7 +89,8 @@ export function exchangeCode({ clientId, clientSecret, code, redirectUri, verifi
     client_id: clientId,
     ...(clientSecret ? { client_secret: clientSecret } : {}),
     code,
-    code_verifier: verifier,
+    // 認可時にPKCEを使ったときだけ添える（使っていないのに送ると照合に失敗する）
+    ...(verifier ? { code_verifier: verifier } : {}),
     grant_type: 'authorization_code',
     redirect_uri: redirectUri,
   });
@@ -201,6 +208,9 @@ export async function verifyClient({ clientId, clientSecret, redirectUri }) {
         ...(clientSecret ? { client_secret: clientSecret } : {}),
         grant_type: 'authorization_code',
         code: 'silvermail-connection-probe',
+        // 本番と同じ形にする。シークレットが無いときだけPKCEを使うため、
+        // ここでも同じ条件でダミーの検証子を添える
+        ...(clientSecret ? {} : { code_verifier: 'silvermail-connection-probe-verifier' }),
         ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       }).toString(),
     });

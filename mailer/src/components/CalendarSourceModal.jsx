@@ -129,6 +129,11 @@ function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
                 {showSecret ? '隠す' : '表示'}
               </button>
             </div>
+            {showSecret && (
+              <div className="hint warn">
+                シークレットが画面に出ています。スクリーンショットや画面共有にご注意ください。
+              </div>
+            )}
             <div className={cx('hint', !form.clientSecret.trim() && !keepSecret && form.clientId.trim() && 'warn')}>
               {keepSecret && !form.clientSecret.trim()
                 ? <>前回入力したシークレットを使います（変更するときだけ入力してください）。<button type="button" className="linkbtn" onClick={resetDraft}>入力し直す</button></>
