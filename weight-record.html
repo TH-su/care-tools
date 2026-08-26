@@ -4925,23 +4925,39 @@ function destroyChart(key){
    - 段を分けているのは赤とオレンジの色相差だけなので、P型・D型色覚では
      見分けにくい。凡例の文字（警告／注意）とツールチップの数値が補う前提。
      色以外の手掛かりを増やす改修をする時は、この前提が変わることを踏まえる
-   凡例の丸の色は wrPaintLegendDots() が下の定数から流し込む（色の正本はここ1箇所）。 */
+   凡例の丸の色は wrPaintLegendDots() が下の定数から流し込む（色の正本はここ1箇所）。
+
+   【注意の2色を明るくしてある理由（2026-08-26 橋爪氏の指摘）】
+   当初は #e65100 / #0288d1 だったが、赤 #c62828 / 青 #1565c0 と見分けにくかった。
+   深刻度は「明るさの差」で読ませるので、注意側は必ず警告側より明るく保つこと。
+   暗く落とすと段が潰れる。逆に白背景とのコントラストは下がるので、
+   これ以上明るくはしない（現状で丸の輪郭が見える下限に近い）。 */
 const WR_DOT_BIG_KG = 2;
 const WR_DOT_BIG_R  = 7;
 const WR_C_NG_UP = '#c62828';   // 警告・増加＝赤
 const WR_C_NG_DN = '#1565c0';   // 警告・減少＝青
-const WR_C_W_UP  = '#e65100';   // 注意・増加＝オレンジ
-const WR_C_W_DN  = '#0288d1';   // 注意・減少＝水色
+const WR_C_W_UP  = '#ff9800';   // 注意・増加＝オレンジ（赤と明るさで離すため彩度・明度とも高く）
+const WR_C_W_DN  = '#29b6f6';   // 注意・減少＝水色（青と明るさで離すため彩度・明度とも高く）
 const WR_C_PLAIN = '#202124';   // どちらにも当たらない測定＝黒
+/* 注意の2色は明るいぶん白背景に溶けるので、縁だけ同系の濃色にして輪郭を作る
+   （警告・黒の丸は白縁のままで十分に見えるため変えない）。
+   結果として「白縁＝警告と通常／色縁＝注意」という、色相以外の手掛かりも1つ増える。 */
+const WR_B_W_UP  = '#e65100';   // 注意・増加の縁
+const WR_B_W_DN  = '#0277bd';   // 注意・減少の縁
+const WR_B_PLAIN = '#fff';      // それ以外の縁（従来どおり）
 
 /* 凡例の丸に、上の定数から色を流し込む。CSS 側にも同じ16進を書くと人手同期の約束が
    増え、片方だけ直した時に「凡例の色と実際の丸の色が違う」状態に黙って入るため、
    色の正本は上の WR_C_* 1箇所だけにする。 */
 function wrPaintLegendDots(){
-  const map = { 'c-ng-up':WR_C_NG_UP, 'c-ng-dn':WR_C_NG_DN,
-                'c-w-up':WR_C_W_UP,   'c-w-dn':WR_C_W_DN, 'c-plain':WR_C_PLAIN };
+  const map = { 'c-ng-up':[WR_C_NG_UP, WR_B_PLAIN], 'c-ng-dn':[WR_C_NG_DN, WR_B_PLAIN],
+                'c-w-up':[WR_C_W_UP, WR_B_W_UP],     'c-w-dn':[WR_C_W_DN, WR_B_W_DN],
+                'c-plain':[WR_C_PLAIN, WR_B_PLAIN] };
   for(const k in map){
-    document.querySelectorAll('.iv-note .dot.'+k).forEach(el=>{ el.style.background = map[k]; });
+    document.querySelectorAll('.iv-note .dot.'+k).forEach(el=>{
+      el.style.background = map[k][0];
+      el.style.borderColor = map[k][1];   // グラフの丸と同じ縁にする
+    });
   }
 }
 
@@ -5018,16 +5034,19 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
     const lv = a?.level;
     const dn = !!a && alertDir(a)==='dn';
     // ① 月次しきい値の「警告」＝赤／青（いちばん上の段）
-    if(lv==='ng') return { bg: dn ? WR_C_NG_DN : WR_C_NG_UP, r: 7 };
+    if(lv==='ng') return { bg: dn ? WR_C_NG_DN : WR_C_NG_UP, bd: WR_B_PLAIN, r: 7 };
     // ② 月次しきい値の「注意」＝オレンジ／水色
-    if(lv==='w')  return { bg: dn ? WR_C_W_DN  : WR_C_W_UP,  r: 6 };
+    if(lv==='w')  return { bg: dn ? WR_C_W_DN : WR_C_W_UP,
+                           bd: dn ? WR_B_W_DN : WR_B_W_UP, r: 6 };
     // ③ 月次に当たらない点の、前回比±2kg も同じ「注意」の段に置く
     const big = bigDir(prevDiffs[i]);
-    if(big) return { bg: big==='dn' ? WR_C_W_DN : WR_C_W_UP, r: WR_DOT_BIG_R };
+    if(big) return { bg: big==='dn' ? WR_C_W_DN : WR_C_W_UP,
+                     bd: big==='dn' ? WR_B_W_DN : WR_B_W_UP, r: WR_DOT_BIG_R };
     // ④ どちらでもない測定
-    return { bg: WR_C_PLAIN, r: isLatest ? 4 : 3 };
+    return { bg: WR_C_PLAIN, bd: WR_B_PLAIN, r: isLatest ? 4 : 3 };
   });
   const pointBg = pointState.map(s=> s ? s.bg : 'rgba(0,0,0,0)');
+  const pointBd = pointState.map(s=> s ? s.bd : 'rgba(0,0,0,0)');
   const pointRd = pointState.map(s=> s ? s.r : 0);
 
   const yScale = { title:{display:true, text:'kg'}, grid:{color:'#f1f3f4'} };
@@ -5074,7 +5093,7 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         borderColor:color,
         backgroundColor:bgCol,
         pointBackgroundColor: pointBg,
-        pointBorderColor: '#fff',
+        pointBorderColor: pointBd,
         pointBorderWidth: 2,
         pointRadius: pointRd,
         pointHoverRadius: 8,
