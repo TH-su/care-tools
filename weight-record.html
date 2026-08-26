@@ -224,10 +224,15 @@ textarea{resize:vertical;min-height:60px}
 .iv-note .nt{display:inline-flex;align-items:center;gap:5px}
 .iv-note .dot{display:inline-block;border-radius:50%;border:2px solid #fff;
   box-shadow:0 0 0 1px var(--g4);flex:none}
-.iv-note .dot.big{width:16px;height:16px}
-.iv-note .dot.mid{width:12px;height:12px}
-.iv-note .dot.up{background:#c62828}
-.iv-note .dot.dn{background:#1565c0}
+.iv-note .dot.big{width:15px;height:15px}
+.iv-note .dot.mid{width:13px;height:13px}
+.iv-note .dot.sm{width:10px;height:10px}
+/* ★ 下の5色は drawChart の WR_C_* と同じ値にすること（凡例と実際の丸が食い違うため） */
+.iv-note .dot.c-ng-up{background:#c62828}
+.iv-note .dot.c-ng-dn{background:#1565c0}
+.iv-note .dot.c-w-up{background:#e65100}
+.iv-note .dot.c-w-dn{background:#0288d1}
+.iv-note .dot.c-plain{background:#202124}
 .iv-note .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
   border:1px solid var(--g4);background:#fff8e1;flex:none}
 .st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
@@ -881,8 +886,9 @@ select option.is-discharged{color:var(--g6)}
       <div class="ch-w"><canvas id="ivChartAll"></canvas></div>
     </div>
     <div class="iv-note">
-      <span class="nt"><i class="dot big up"></i><i class="dot big dn"></i>大きい丸＝前回比が ±2.0kg 以上（増加は赤・減少は青）</span>
-      <span class="nt"><i class="dot mid up"></i><i class="dot mid dn"></i>中くらいの丸＝月次しきい値の注意・警告</span>
+      <span class="nt"><i class="dot big c-ng-up"></i><i class="dot big c-ng-dn"></i><b>警告</b>＝月次しきい値の警告（増加は赤／減少は青）</span>
+      <span class="nt"><i class="dot big c-w-up"></i><i class="dot big c-w-dn"></i><b>注意</b>＝月次しきい値の注意、または前回比 ±2.0kg 以上（増加はオレンジ／減少は水色）</span>
+      <span class="nt"><i class="dot sm c-plain"></i>黒＝どちらにも当たらない測定</span>
       <span class="nt">丸をタップすると数値が出ます。比べる相手は<b>表示中の期間の中で1つ前の測定</b>です。</span>
     </div>
   </div>
@@ -2463,8 +2469,11 @@ const ymPrev = (ym,step=1)=>{
   const d = new Date(y, m-1-step, 1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 };
-const ymFmt = ym => { const [y,m] = ym.split('-'); return `${Number(y)}年${Number(m)}月`; };
-const ymShort = ym => { const [,m] = ym.split('-'); return `${Number(m)}月`; };
+/* 対象月の表示用。GAS / CSV 由来で yearMonth が欠けた記録が1件でもあると、
+   ここが例外を投げて呼び出し元の画面ごと描画されなくなる（20箇所から呼ばれる）。
+   正しい 'YYYY-MM' に対する結果は従来と1文字も変わらない。 */
+const ymFmt = ym => { const [y,m] = String(ym==null?'':ym).split('-'); return (y && m) ? `${Number(y)}年${Number(m)}月` : '日付なし'; };
+const ymShort = ym => { const [,m] = String(ym==null?'':ym).split('-'); return m ? `${Number(m)}月` : '—'; };
 
 function toast(msg, kind='ok'){
   const el = $('#toast');
@@ -2498,7 +2507,11 @@ function getRecordsOf(residentId){
     const cur = byYm.get(r.yearMonth);
     if(!cur || recDateKey(r) > recDateKey(cur)) byYm.set(r.yearMonth, r);
   }
-  return [...byYm.values()].sort((a,b)=> a.yearMonth.localeCompare(b.yearMonth));
+  // yearMonth が欠けた記録を捨てずに並べる。null を localeCompare に渡すと例外になり、
+  // 壊れた記録が1件あるだけで一覧・個別・アラートが同時に落ちて画面に何も出なくなる
+  // （goto の try/catch に飲まれるため原因も見えない）。日付なしは先頭に置く。
+  return [...byYm.values()].sort((a,b)=>
+    String(a.yearMonth==null?'':a.yearMonth).localeCompare(String(b.yearMonth==null?'':b.yearMonth)));
 }
 /* All individual records (every measurement, including multiple within the same month). */
 function getAllRecordsOf(residentId){
@@ -4866,14 +4879,23 @@ function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
 }
 
-/* グラフのドットを「大きな丸」で強調する前回比のしきい値（kg）と、その時の半径。
-   月次アラート（注意=6 / 警告=7）に当たらない変化でも、直前の測定から
-   ±2kg 動いていれば見落とさないようにするための表示ルール。
-   半径を 8 にしているのは、通常4 < 注意6 < 警告7 < 前回比±2kg 8 の順序を崩さないため。
-   7 にすると、前月比 2.0〜2.5kg の「注意」が「警告」と同じ大きさ・同じ色になり、
-   既存の注意／警告の区別が画面から消える（既定しきい値 m1: wKg 1.5 / ngKg 2.5）。 */
+/* グラフのドットの色と大きさ。**色は深刻度、向きは暖色／寒色**で表す2段のはしご。
+
+     警告レベル … 赤（増加）／青（減少）      ← 月次しきい値の「警告」
+     注意レベル … オレンジ（増加）／水色（減少） ← 月次しきい値の「注意」、および前回比±2kg
+     どちらでもない … 黒
+
+   ＝「前月比の警告を3kgにすれば、2kg はオレンジ、3kg は赤」になる。
+   注意レベルをオレンジ／水色にしないと、既定の注意しきい値（m1 wKg=1.5）のせいで
+   2kg の変化が注意判定に入り、赤のまま残ってこの並びが成立しない。
+   ★ 下の5色は .iv-note .dot の CSS と同じ値にすること（凡例の丸と実際の丸が食い違うため）。 */
 const WR_DOT_BIG_KG = 2;
-const WR_DOT_BIG_R  = 8;
+const WR_DOT_BIG_R  = 7;
+const WR_C_NG_UP = '#c62828';   // 警告・増加＝赤
+const WR_C_NG_DN = '#1565c0';   // 警告・減少＝青
+const WR_C_W_UP  = '#e65100';   // 注意・増加＝オレンジ
+const WR_C_W_DN  = '#0288d1';   // 注意・減少＝水色
+const WR_C_PLAIN = '#202124';   // どちらにも当たらない測定＝黒
 
 function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, dated){
   recs = recs || [];
@@ -4940,27 +4962,26 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
                     : (d >=  WR_DOT_BIG_KG) ? 'up'
                     : (d <= -WR_DOT_BIG_KG) ? 'dn' : null;
 
-  const pointBg = recs.map((r, i)=>{
-    if(!r) return 'rgba(0,0,0,0)';            // padded empty day → no point drawn
-    // 前回比が ±2kg 以上なら、月次アラートより優先して色を決める
-    // （直前の測定からの急な増減の方が、現場で先に手を打つべき情報のため）
+  /* 点1つの見た目は1箇所で決める（色と大きさが別々の規則で決まると、
+     「赤いのに小さい」のような組み合わせが生まれて意味が読めなくなる）。 */
+  const pointState = recs.map((r, i)=>{
+    if(!r) return null;                       // padded empty day → 点を描かない
+    const isLatest = monthlyLatestIds.has(r.id);
+    const a = isLatest ? analyze(rid, r.yearMonth) : null;
+    const lv = a?.level;
+    const dn = !!a && alertDir(a)==='dn';
+    // ① 月次しきい値の「警告」＝赤／青（いちばん上の段）
+    if(lv==='ng') return { bg: dn ? WR_C_NG_DN : WR_C_NG_UP, r: 7 };
+    // ② 月次しきい値の「注意」＝オレンジ／水色
+    if(lv==='w')  return { bg: dn ? WR_C_W_DN  : WR_C_W_UP,  r: 6 };
+    // ③ 月次に当たらない点の、前回比±2kg も同じ「注意」の段に置く
     const big = bigDir(prevDiffs[i]);
-    if(big) return big==='dn' ? '#1565c0' : '#c62828';
-    if(!monthlyLatestIds.has(r.id)) return color;
-    const a = analyze(rid, r.yearMonth);
-    if(!a || a.level==='none') return color;
-    const dir = alertDir(a);
-    return dir==='dn' ? '#1565c0' : '#c62828';
+    if(big) return { bg: big==='dn' ? WR_C_W_DN : WR_C_W_UP, r: WR_DOT_BIG_R };
+    // ④ どちらでもない測定
+    return { bg: WR_C_PLAIN, r: isLatest ? 4 : 3 };
   });
-  const pointRd = recs.map((r, i)=>{
-    if(!r) return 0;                          // padded empty day → no point
-    // 月次アラートで決まる大きさと、前回比±2kg の大きさの、大きい方を採る
-    const big = bigDir(prevDiffs[i]) ? WR_DOT_BIG_R : 0;
-    if(!monthlyLatestIds.has(r.id)) return Math.max(3, big);
-    const a = analyze(rid, r.yearMonth);
-    const base = a?.level==='ng' ? 7 : a?.level==='w' ? 6 : 4;
-    return Math.max(base, big);
-  });
+  const pointBg = pointState.map(s=> s ? s.bg : 'rgba(0,0,0,0)');
+  const pointRd = pointState.map(s=> s ? s.r : 0);
 
   const yScale = { title:{display:true, text:'kg'}, grid:{color:'#f1f3f4'} };
   if(yRange){ yScale.min = yRange.min; yScale.max = yRange.max; }
@@ -5009,7 +5030,7 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         pointBorderColor: '#fff',
         pointBorderWidth: 2,
         pointRadius: pointRd,
-        pointHoverRadius: 10,            // 最大の点（前回比±2kg の 8）より大きくして反応が分かるようにする
+        pointHoverRadius: 8,
         tension:0.25,
         fill:true,
         borderWidth:2.5,
