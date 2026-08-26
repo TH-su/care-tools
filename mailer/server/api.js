@@ -560,6 +560,7 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     console.error('  │ アプリの版   :', buildLine());
     console.error('  │ 理由        :', err?.message || err);
     console.error('  │ HTTPステータス:', err?.googleStatus ?? '（不明）');
+    console.error('  │ Googleの説明 :', err?.googleDescription || '（なし）');
     console.error('  │ Googleの応答 :', err?.googleBody || '（なし）');
     console.error('  │ クライアントID:', p.clientId);
     console.error('  │ シークレット  :', len(p.clientSecret));
@@ -581,14 +582,22 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     ];
     // 原因が名指しできるときは、次にやることまで書く
     let tip = '';
-    if (err?.googleError === 'invalid_client' && p.clientSecret && usedPkce) {
-      tip = `<div class="tip"><b>このアプリが古い版のままです。</b><br>`
-        + `シークレットのあるクライアントにPKCEを付けており、Googleがクライアントを照合できません。`
-        + `ターミナルで <code>git pull origin main</code> のあと、`
-        + `<code>npm --prefix mailer run stop</code> → <code>npm --prefix mailer start</code> で起動し直してください。</div>`;
-    } else if (err?.googleError === 'invalid_client') {
-      tip = `<div class="tip">クライアントIDかシークレットが、Google Cloud Consoleのものと一致していない可能性があります。`
-        + `設定画面で「入力し直す」を押し、貼り直してからもう一度お試しください。</div>`;
+    if (err?.googleError === 'invalid_client') {
+      // Googleは invalid_client を「IDが無い」と「シークレットが違う」の両方で返す。
+      // 説明文で読み分けて、直す場所を一つに絞る。
+      const cause = google.invalidClientCause(err.googleDescription);
+      if (cause === 'clientId') {
+        tip = `<div class="tip"><b>クライアントIDの方です。</b><br>`
+          + `${esc(google.clientIdNotFoundMessage(p.clientId))}<br>`
+          + `設定画面の「入力し直す」から貼り直してください。</div>`;
+      } else if (cause === 'clientSecret') {
+        tip = `<div class="tip"><b>シークレットの方です。</b><br>`
+          + `クライアントIDはGoogleに見つかりました。一致しないのはシークレットだけです。`
+          + `認証情報の画面で「シークレットを追加」から新しく発行し、コピーアイコンで取得して貼り直してください。</div>`;
+      } else {
+        tip = `<div class="tip">クライアントIDかシークレットが、Google Cloud Consoleのものと一致していない可能性があります。`
+          + `設定画面で「入力し直す」を押し、貼り直してからもう一度お試しください。</div>`;
+      }
     } else if (err?.googleError === 'redirect_uri_mismatch') {
       tip = `<div class="tip">Google Cloud Consoleの「承認済みのリダイレクト URI」に`
         + `<code>${esc(p.redirectUri)}</code> をそのまま（末尾のスラッシュなしで）登録してください。</div>`;
