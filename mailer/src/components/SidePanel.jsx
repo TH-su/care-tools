@@ -88,16 +88,52 @@ function withChildren(items, all) {
   return out;
 }
 
-function TaskGroup({ label, items, all = [], tone, onToggle, onOpen, onMenu, onOpenMail }) {
+function TaskGroup({
+  label, items, all = [], tone, onToggle, onOpen, onMenu, onOpenMail,
+  draggable = false, onReorder,
+}) {
+  // ドラッグ中のもの と、いま落とそうとしている先
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+
   if (items.length === 0) return null;
   const rows = withChildren(items, all);
+
+  // 落とした先の1つ前を求めて、サーバーへ渡す（Googleは previous で位置を決める）
+  const drop = (targetId) => {
+    const from = rows.findIndex(t => t.id === dragId);
+    const to = rows.findIndex(t => t.id === targetId);
+    setDragId(null); setOverId(null);
+    if (from < 0 || to < 0 || from === to) return;
+    const moving = rows[from];
+    // 同じ親の中でだけ動かす。親をまたぐ移動はメニューの「サブタスクにする」に任せる
+    const sameLevel = rows.filter(t => (t.parent || null) === (moving.parent || null)
+      && t.sourceId === moving.sourceId && t.listId === moving.listId);
+    const at = sameLevel.findIndex(t => t.id === targetId);
+    if (at < 0) return;
+    const without = sameLevel.filter(t => t.id !== moving.id);
+    const insertAt = from < to ? at : Math.max(0, at);
+    const previous = insertAt > 0 ? without[insertAt - 1] : null;
+    onReorder?.(moving, previous ? previous.taskId : null);
+  };
+
   return (
     <div className="task-group">
-      <div className={cx('task-group-label', tone)}>{label}<span className="n">{items.length}</span></div>
+      {label && <div className={cx('task-group-label', tone)}>{label}<span className="n">{items.length}</span></div>}
       {rows.map(t => {
         const due = dueLabel(t.due);
         return (
-          <div className={cx('task-item', t.done && 'done', t.parent && 'child')} key={t.id}>
+          <div
+            className={cx('task-item', t.done && 'done', t.parent && 'child',
+              dragId === t.id && 'dragging', overId === t.id && 'drop-here')}
+            key={t.id}
+            draggable={draggable && !t.done}
+            onDragStart={(e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; }}
+            onDragEnd={() => { setDragId(null); setOverId(null); }}
+            onDragOver={(e) => { if (draggable && dragId && dragId !== t.id) { e.preventDefault(); setOverId(t.id); } }}
+            onDragLeave={() => setOverId(o => (o === t.id ? null : o))}
+            onDrop={(e) => { e.preventDefault(); drop(t.id); }}
+          >
             <button
               className="tick" onClick={() => onToggle(t)}
               aria-label={t.done ? '未完了に戻す' : '完了にする'} title={t.done ? '未完了に戻す' : '完了にする'}
@@ -146,7 +182,9 @@ function TaskGroup({ label, items, all = [], tone, onToggle, onOpen, onMenu, onO
 function TasksTab({
   tasks, loading, errors, onToggle, onAdd, onOpen, onMenu, onOpenMail,
   lists = [], dest, filter, onFilter, onDestMenu,
+  sort = 'manual', onSort, onReorder, onClearCompleted, onListMenu,
 }) {
+  const [showDone, setShowDone] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
   const multi = lists.length > 1;
@@ -162,14 +200,21 @@ function TasksTab({
   const groups = useMemo(() => {
     const todayEnd = startOfDay(new Date()).getTime() + DAY_MS;
     const open = shown.filter(t => !t.done);
+    // 完了済みは件数を切らない。溜まったら折りたためばよい
+    const done = shown.filter(t => t.done);
+    if (sort !== 'date') {
+      // 「自分の順序」では日付で分けない。並べた順のまま1本で出す（Google ToDo と同じ）
+      return { manual: open, overdue: [], today: [], upcoming: [], someday: [], done };
+    }
     return {
+      manual: [],
       overdue: open.filter(t => t.due && new Date(t.due).getTime() < todayEnd - DAY_MS),
       today: open.filter(t => t.due && new Date(t.due).getTime() >= todayEnd - DAY_MS && new Date(t.due).getTime() < todayEnd),
       upcoming: open.filter(t => t.due && new Date(t.due).getTime() >= todayEnd),
       someday: open.filter(t => !t.due),
-      done: shown.filter(t => t.done).slice(0, 20),
+      done,
     };
-  }, [shown]);
+  }, [shown, sort]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -184,6 +229,17 @@ function TasksTab({
 
   return (
     <>
+      <div className="task-bar">
+        <div className="sort-switch" role="group" aria-label="並び順">
+          <button className={cx(sort !== 'date' && 'on')} onClick={() => onSort?.('manual')} title="自分で並べた順（ドラッグで動かせます）">自分の順序</button>
+          <button className={cx(sort === 'date' && 'on')} onClick={() => onSort?.('date')} title="期限の近い順にまとめる">日付順</button>
+        </div>
+        <span className="spacer" />
+        <button className="iconbtn" title="リストの管理" aria-label="リストの管理" onClick={onListMenu}>
+          <Icon name="list" size={15} />
+        </button>
+      </div>
+
       {multi && (
         <div className="list-chips">
           <button className={cx(filter === 'all' && 'on')} onClick={() => onFilter('all')}>すべて</button>
@@ -234,11 +290,35 @@ function TasksTab({
       )}
 
       <div className="task-list">
+        {/* 「自分の順序」では、並べた順のまま1本で出す。ここだけドラッグで動かせる */}
+        <TaskGroup items={groups.manual} all={tasks} draggable onReorder={onReorder}
+          onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
         <TaskGroup label="期限を過ぎています" tone="overdue" items={groups.overdue} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
         <TaskGroup label="今日" tone="today" items={groups.today} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
         <TaskGroup label="これから" items={groups.upcoming} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
         <TaskGroup label="期限なし" items={groups.someday} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
-        <TaskGroup label="完了" tone="muted" items={groups.done} all={tasks} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+
+        {groups.done.length > 0 && (
+          <div className="done-block">
+            <button className="done-head" onClick={() => setShowDone(v => !v)}>
+              <Icon name={showDone ? 'chevD' : 'chevR'} size={13} />
+              <span>完了</span><span className="n">{groups.done.length}</span>
+              <span className="spacer" />
+              <span
+                className="clear-done" role="button" tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); onClearCompleted?.(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onClearCompleted?.(); } }}
+                title="完了済みをまとめて削除"
+              >
+                すべて削除
+              </span>
+            </button>
+            {showDone && (
+              <TaskGroup tone="muted" items={groups.done} all={tasks}
+                onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+            )}
+          </div>
+        )}
       </div>
       {openCount > 0 && <div className="task-foot">未完了 {openCount} 件</div>}
     </>
@@ -253,6 +333,7 @@ export function SidePanel({
   onNewEvent, onOpenEvent, onOpenCalendar, onManageSources,
   onToggleTask, onAddTask, onOpenTask, onTaskMenu, onOpenTaskMail, onRefresh,
   taskLists, taskDest, taskFilter, onTaskFilter, onTaskDestMenu,
+  taskSort, onTaskSort, onReorderTask, onClearCompleted, onTaskListMenu,
 }) {
   const todayCount = events.filter(ev => eventOnDay(ev, new Date())).length;
   const openTasks = tasks.filter(t => !t.done).length;
@@ -286,6 +367,8 @@ export function SidePanel({
                   onOpenMail={onOpenTaskMail}
                   lists={taskLists} dest={taskDest} filter={taskFilter}
                   onFilter={onTaskFilter} onDestMenu={onTaskDestMenu}
+                  sort={taskSort} onSort={onTaskSort} onReorder={onReorderTask}
+                  onClearCompleted={onClearCompleted} onListMenu={onTaskListMenu}
                 />
               )}
           </div>

@@ -1275,3 +1275,35 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .subtask-add .ic { color: var(--text-3); flex-shrink: 0; }
 .subtask-add input { border: 0; background: transparent; padding: 2px; flex: 1; min-width: 0; font-size: 12.5px; }
 .subtask-add:focus-within { border-color: var(--accent); }
+
+/* ToDoの並び順と、リストの管理 */
+.task-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.task-bar .spacer { flex: 1; }
+.sort-switch { display: inline-flex; background: var(--bg-inset); border-radius: 8px; padding: 2px; }
+.sort-switch button {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 11.5px; color: var(--text-2); padding: 4px 10px; border-radius: 6px;
+}
+.sort-switch button.on { background: var(--bg-elevated); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+/* ドラッグでの並べ替え */
+.task-item.dragging { opacity: .4; }
+.task-item.drop-here { box-shadow: inset 0 2px 0 var(--accent); }
+.task-item[draggable="true"] { cursor: grab; }
+.task-item[draggable="true"]:active { cursor: grabbing; }
+
+/* 完了済みの折りたたみ */
+.done-block { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 6px; }
+.done-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 11.5px; color: var(--text-2); padding: 4px 2px; border-radius: 6px;
+}
+.done-head:hover { background: var(--bg-hover); }
+.done-head .n {
+  min-width: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--bg-inset); font-size: 10.5px; font-feature-settings: "tnum";
+}
+.done-head .spacer { flex: 1; }
+.done-head .clear-done { font-size: 11px; color: var(--danger); padding: 2px 6px; border-radius: 5px; }
+.done-head .clear-done:hover { background: var(--danger-soft, rgba(255,59,48,.1)); }

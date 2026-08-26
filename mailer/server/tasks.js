@@ -80,7 +80,7 @@ async function googleLists(source, creds) {
   return (data.items || []).map(l => ({ id: l.id, title: l.title || 'ToDo' }));
 }
 
-export async function listTasks({ includeDone = true } = {}) {
+export async function listTasks({ includeDone = true, sort = 'manual' } = {}) {
   const errors = [];
   const lists = [{ sourceId: LOCAL_TASK_SOURCE, listId: LOCAL_TASK_LIST, name: 'このMacのToDo', sourceType: 'local' }];
   const tasks = listLocalTasks().map(normalizeLocal);
@@ -103,10 +103,18 @@ export async function listTasks({ includeDone = true } = {}) {
     }
   }));
 
-  const rank = (t) => (t.done ? 2 : 0) + (t.due ? 0 : 0.5);
-  tasks.sort((a, b) => rank(a) - rank(b)
-    || (a.due || '9999').localeCompare(b.due || '9999')
-    || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  // 並び順。'manual' は Google の「自分の順序」（position）、'date' は期限順。
+  // 既定は Google に合わせて自分の順序にする。
+  if (sort === 'date') {
+    const rank = (t) => (t.done ? 2 : 0) + (t.due ? 0 : 0.5);
+    tasks.sort((a, b) => rank(a) - rank(b)
+      || (a.due || '9999').localeCompare(b.due || '9999')
+      || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  } else {
+    tasks.sort((a, b) => (a.done === b.done ? 0 : (a.done ? 1 : -1))
+      || String(a.position).localeCompare(String(b.position))
+      || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  }
   return { tasks: includeDone ? tasks : tasks.filter(t => !t.done), lists, errors };
 }
 
@@ -165,6 +173,105 @@ export async function removeTask({ sourceId, listId, taskId }) {
   const creds = await getCalendarSecrets(source);
   await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
   return { ok: true };
+}
+
+// ── 手動の並べ替え ────────────────────────────────────────────
+// Googleは「その1つ前に来るタスク」を指定して動かす（previous）。
+// 先頭へ動かすときは previous を付けない。
+// 「このMacのToDo」には順序の考えが無いので、position を自前で振る。
+export async function reorderTask({ sourceId, listId, taskId, previousId }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) {
+    const all = listLocalTasks();
+    const moving = all.find(t => t.id === taskId);
+    if (!moving) { const e = new Error('ToDoが見つかりません'); e.status = 404; throw e; }
+    if (previousId === taskId) { const e = new Error('自分自身の後ろへは動かせません'); e.status = 400; throw e; }
+
+    // 同じ高さのものだけを並べ替える（親が同じもの同士）
+    const siblings = all
+      .filter(t => (t.parent || null) === (moving.parent || null))
+      .sort((a, b) => String(a.position || a.createdAt || '').localeCompare(String(b.position || b.createdAt || '')));
+    const rest = siblings.filter(t => t.id !== taskId);
+    const at = previousId ? rest.findIndex(t => t.id === previousId) + 1 : 0;
+    if (previousId && at === 0) { const e = new Error('移動先が見つかりません'); e.status = 404; throw e; }
+    rest.splice(at, 0, moving);
+
+    // 位置は等間隔の連番。桁を揃えておかないと文字列比較で狂う
+    rest.forEach((t, i) => saveLocalTask({ ...t, id: t.id, position: String(i * 10).padStart(10, '0') }));
+    return normalizeLocal(listLocalTasks().find(t => t.id === taskId));
+  }
+
+  const source = getCalendarSource(sourceId);
+  if (!source) { const e = new Error('ToDoの保存先が見つかりません'); e.status = 404; throw e; }
+  const creds = await getCalendarSecrets(source);
+  const moved = await googleFetch(
+    source, creds, 'tasks',
+    `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}/move`,
+    { method: 'POST', query: previousId ? { previous: previousId } : undefined },
+  );
+  return normalizeGoogle(source, { id: listId, title: 'ToDo' }, moved);
+}
+
+// ── 完了済みの一括削除 ────────────────────────────────────────
+// Googleには tasks.clear があるが、これは「完了済みを一覧から隠す」だけで
+// 実体は残る。SilverMailからも見えなくなるので、こちらでは本当に消す。
+export async function clearCompleted({ sourceId, listId }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) {
+    const done = listLocalTasks().filter(t => t.done);
+    for (const t of done) deleteLocalTask(t.id);
+    return { ok: true, removed: done.length };
+  }
+  const source = getCalendarSource(sourceId);
+  if (!source) { const e = new Error('ToDoの保存先が見つかりません'); e.status = 404; throw e; }
+  const creds = await getCalendarSecrets(source);
+  const data = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks`, {
+    query: { maxResults: 100, showCompleted: 'true', showHidden: 'true' },
+  });
+  const done = (data.items || []).filter(t => t.status === 'completed');
+  await Promise.all(done.map(t =>
+    googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(t.id)}`, { method: 'DELETE' })
+      .catch(() => {})));
+  return { ok: true, removed: done.length };
+}
+
+// ── リストそのものの管理 ──────────────────────────────────────
+// 「このMacのToDo」は1つきりの固定リストなので、作成も改名も削除もできない
+function assertGoogleList(sourceId) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) {
+    const e = new Error('このMacのToDoは、リストの追加や名前の変更ができません');
+    e.status = 400; throw e;
+  }
+  const source = getCalendarSource(sourceId);
+  if (!source) { const e = new Error('ToDoの保存先が見つかりません'); e.status = 404; throw e; }
+  return source;
+}
+
+export async function createList({ sourceId, title }) {
+  const source = assertGoogleList(sourceId);
+  const creds = await getCalendarSecrets(source);
+  const created = await googleFetch(source, creds, 'tasks', '/users/@me/lists', {
+    method: 'POST', body: { title: String(title || '').trim() || '新しいリスト' },
+  });
+  return { sourceId: source.id, listId: created.id, name: `${created.title}（${source.email || source.name}）`, sourceType: 'google' };
+}
+
+export async function renameList({ sourceId, listId, title }) {
+  const source = assertGoogleList(sourceId);
+  const creds = await getCalendarSecrets(source);
+  const updated = await googleFetch(source, creds, 'tasks', `/users/@me/lists/${encodeURIComponent(listId)}`, {
+    method: 'PATCH', body: { title: String(title || '').trim() || '新しいリスト' },
+  });
+  return { sourceId: source.id, listId: updated.id, name: `${updated.title}（${source.email || source.name}）`, sourceType: 'google' };
+}
+
+export async function removeList({ sourceId, listId }) {
+  const source = assertGoogleList(sourceId);
+  const creds = await getCalendarSecrets(source);
+  // リストを消すと中身も消える。何件消えるのかは、先に数えて呼び出し元へ返す
+  const data = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks`, {
+    query: { maxResults: 100, showCompleted: 'true', showHidden: 'true' },
+  }).catch(() => ({ items: [] }));
+  await googleFetch(source, creds, 'tasks', `/users/@me/lists/${encodeURIComponent(listId)}`, { method: 'DELETE' });
+  return { ok: true, removed: (data.items || []).length };
 }
 
 // ── 親子関係（サブタスク） ────────────────────────────────────

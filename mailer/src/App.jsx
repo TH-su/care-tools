@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { api } from './api.js';
 import { rowKey, displayFrom, replySubject, forwardSubject, quoteBody, forwardBody } from './util.js';
 import { Icon } from './icons.jsx';
-import { useToast, ContextMenu, Spinner } from './common.jsx';
+import { useToast, ContextMenu, Spinner, ConfirmDialog, PromptDialog } from './common.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { MessageList } from './components/MessageList.jsx';
 import { MessageView } from './components/MessageView.jsx';
@@ -53,6 +53,13 @@ export function App() {
   const [unseenFilter, setUnseenFilter] = useState(false);
   const [selKeys, setSelKeys] = useState([]);
   const [taskModal, setTaskModal] = useState(null);   // ToDoの詳細
+  const [confirm, setConfirm] = useState(null);       // 取り返しのつかない操作の確認
+  const [prompt, setPrompt] = useState(null);         // 名前の入力
+  // 並び順。Googleに合わせて既定は「自分の順序」
+  const [taskSort, setTaskSort] = useState(() => {
+    try { return localStorage.getItem('silvermail-tasksort') === 'date' ? 'date' : 'manual'; }
+    catch { return 'manual'; }
+  });
   const [taskBusy, setTaskBusy] = useState(false);
   const [open, setOpen] = useState({ loading: false, message: null, error: null, imagesAllowed: false });
   const [refreshing, setRefreshing] = useState(false);
@@ -625,7 +632,7 @@ export function App() {
   const loadTasks = useCallback(async () => {
     setTasks(t => ({ ...t, loading: true }));
     try {
-      const res = await api.tasks();
+      const res = await api.tasks(taskSort);
       setTasks({ items: res.tasks || [], lists: res.lists || [], loading: false, errors: res.errors || [] });
       // 保存先が未設定、または連携解除で消えたリストを指している場合は先頭へ戻す
       setTaskDest((cur) => {
@@ -636,7 +643,7 @@ export function App() {
     } catch (err) {
       setTasks(t => ({ ...t, loading: false, errors: [{ sourceId: 'api', name: 'ToDo', error: err.message }] }));
     }
-  }, []);
+  }, [taskSort]);
 
   useEffect(() => { loadEvents(calRange); }, [calRange]); // eslint-disable-line
   useEffect(() => { loadTasks(); }, [loadTasks]);
@@ -873,25 +880,164 @@ export function App() {
     }
   };
 
+  // ToDoの削除は、どこから消しても同じように取り消せるようにする。
+  // 子を持つ親を消すと子も道連れになるため、子も一緒に作り直す。
+  const deleteTaskWithUndo = useCallback(async (t) => {
+    if (!t?.taskId) return;
+    const kids = tasks.items.filter(x =>
+      x.parent === t.taskId && x.sourceId === t.sourceId && x.listId === t.listId);
+    await api.deleteTask(t.sourceId, t.listId, t.taskId);
+    loadTasks();
+    toast(
+      kids.length ? `ToDoとサブタスク${kids.length}件を削除しました` : 'ToDoを削除しました',
+      'success', UNDO_MS,
+      {
+        label: '元に戻す',
+        onClick: async () => {
+          try {
+            const back = await api.createTask(t.sourceId, t.listId, {
+              title: t.title, notes: t.notes, due: t.due, done: t.done, sourceMail: t.sourceMail,
+            });
+            // 子は、作り直した親の下に戻す
+            for (const k of kids) {
+              await api.createTask(k.sourceId, k.listId, {
+                title: k.title, notes: k.notes, due: k.due, done: k.done,
+                sourceMail: k.sourceMail, parent: back.task.taskId,
+              });
+            }
+            loadTasks();
+          } catch (err) { toast(err.message, 'error'); }
+        },
+      },
+    );
+  }, [tasks.items, toast, loadTasks]);
+
+  // リストの管理メニュー。Googleのリストだけが対象（このMacのToDoは1つきり）
+  const taskListMenu = (e) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const googleLists = tasks.lists.filter(l => l.sourceType === 'google');
+    const googleSources = [...new Map(
+      googleLists.map(l => [l.sourceId, l]),
+    ).values()];
+
+    setCtxMenu({
+      x: Math.max(8, rect.right - 240), y: rect.bottom + 4,
+      items: [
+        ...googleSources.map(src => ({
+          label: googleSources.length > 1 ? `リストを作る（${src.name.replace(/^[^（]*/, '').replace(/[（）]/g, '')}）` : 'リストを作る',
+          icon: 'plus',
+          onClick: () => setPrompt({
+            title: 'リストを作る', label: 'リスト名', value: '', confirmLabel: '作る',
+            onConfirm: (title) => { setPrompt(null); createTaskList(src.sourceId, title); },
+          }),
+        })),
+        ...(googleLists.length ? ['sep'] : []),
+        ...googleLists.map(l => ({
+          label: `「${l.name}」の名前を変える`,
+          icon: 'edit',
+          onClick: () => setPrompt({
+            title: 'リスト名を変える', label: 'リスト名', value: l.name.replace(/（[^（）]*）\s*$/, ''), confirmLabel: '変える',
+            onConfirm: (title) => { setPrompt(null); renameTaskList(l, title); },
+          }),
+        })),
+        ...(googleLists.length ? ['sep'] : []),
+        ...googleLists.map(l => ({
+          label: `「${l.name}」を削除`,
+          icon: 'trash', danger: true,
+          onClick: () => deleteTaskList(l),
+        })),
+        ...(googleLists.length === 0
+          ? [{ label: 'Googleと連携すると、リストを作れます', icon: 'google', onClick: () => setSourceModal(true) }]
+          : []),
+      ],
+    });
+  };
+
+  const changeTaskSort = (next) => {
+    setTaskSort(next);
+    try { localStorage.setItem('silvermail-tasksort', next); } catch { /* 保存できなくても動く */ }
+  };
+
+  // ドラッグで並べ替える。previousId の後ろへ動かす（先頭なら null）
+  const reorderTask = async (moving, previousId) => {
+    try {
+      await api.reorderTask(moving.sourceId, moving.listId, moving.taskId, previousId);
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+      loadTasks();
+    }
+  };
+
+  // 完了済みをまとめて片付ける。件数が分からないまま消すと不安なので、先に数えて尋ねる
+  const clearCompleted = (list) => {
+    const target = list || taskDest;
+    if (!target) return;
+    const count = tasks.items.filter(t =>
+      t.done && t.sourceId === target.sourceId && t.listId === target.listId).length;
+    if (count === 0) { toast('完了済みのToDoはありません', 'info', 2200); return; }
+    const name = listLabel(target);
+    setConfirm({
+      title: '完了済みをまとめて削除しますか？',
+      message: `${name} の完了済み ${count} 件を削除します。この操作は取り消せません。`,
+      danger: true, confirmLabel: `${count}件を削除`,
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          const r = await api.clearCompleted(target.sourceId, target.listId);
+          toast(`${r.removed} 件を削除しました`, 'success', 2600);
+          loadTasks();
+        } catch (err) { toast(err.message, 'error'); }
+      },
+    });
+  };
+
+  // ── リストそのものの管理 ──
+  const createTaskList = async (sourceId, title) => {
+    try {
+      const r = await api.createTaskList(sourceId, title);
+      toast(`「${title}」を作りました`, 'success', 2600);
+      await loadTasks();
+      setTaskDest({ sourceId: r.list.sourceId, listId: r.list.listId });
+    } catch (err) { toast(err.message, 'error'); }
+  };
+
+  const renameTaskList = async (list, title) => {
+    try {
+      await api.renameTaskList(list.sourceId, list.listId, title);
+      toast('リスト名を変えました', 'success', 2200);
+      loadTasks();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+
+  const deleteTaskList = (list) => {
+    const count = tasks.items.filter(t => t.sourceId === list.sourceId && t.listId === list.listId).length;
+    setConfirm({
+      title: 'リストを削除しますか？',
+      message: count > 0
+        ? `「${list.name}」と、その中の ${count} 件のToDoが消えます。この操作は取り消せません。`
+        : `「${list.name}」を削除します。`,
+      danger: true, confirmLabel: '削除',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await api.deleteTaskList(list.sourceId, list.listId);
+          toast('リストを削除しました', 'success', 2600);
+          setTaskFilter('all');
+          loadTasks();
+        } catch (err) { toast(err.message, 'error'); }
+      },
+    });
+  };
+
   const removeTask = async () => {
     const t = taskModal?.task;
     if (!t?.taskId) { setTaskModal(null); return; }
     setTaskBusy(true);
     try {
-      await api.deleteTask(t.sourceId, t.listId, t.taskId);
       setTaskModal(null);
-      toast('ToDoを削除しました', 'success', UNDO_MS, {
-        label: '元に戻す',
-        onClick: async () => {
-          try {
-            await api.createTask(t.sourceId, t.listId, {
-              title: t.title, notes: t.notes, due: t.due, done: t.done, sourceMail: t.sourceMail,
-            });
-            loadTasks();
-          } catch (err) { toast(err.message, 'error'); }
-        },
-      });
-      loadTasks();
+      await deleteTaskWithUndo(t);
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -960,10 +1106,8 @@ export function App() {
         }) },
         'sep',
         { label: '削除', icon: 'trash', danger: true, onClick: async () => {
-          try {
-            await api.deleteTask(t.sourceId, t.listId, t.taskId);
-            loadTasks();
-          } catch (err) { toast(err.message, 'error'); }
+          try { await deleteTaskWithUndo(t); }
+          catch (err) { toast(err.message, 'error'); }
         } },
       ],
     });
@@ -1216,6 +1360,13 @@ export function App() {
         onAddTask={addTask}
         onOpenTask={openTask}
         onOpenTaskMail={openMailRef}
+        taskSort={taskSort}
+        onTaskSort={changeTaskSort}
+        onReorderTask={reorderTask}
+        onClearCompleted={() => clearCompleted(taskFilter === 'all' ? taskDest : {
+          sourceId: taskFilter.split('|')[0], listId: taskFilter.split('|')[1],
+        })}
+        onTaskListMenu={taskListMenu}
         onTaskMenu={taskMenu}
         taskLists={tasks.lists}
         taskDest={taskDest}
@@ -1274,6 +1425,28 @@ export function App() {
           onDelete={deleteEventNow}
           onClose={() => setEventModal(null)}
           onOpenMail={(ref) => { setEventModal(null); openMailRef(ref); }}
+        />
+      )}
+
+      {prompt && (
+        <PromptDialog
+          title={prompt.title}
+          label={prompt.label}
+          value={prompt.value}
+          confirmLabel={prompt.confirmLabel}
+          onConfirm={prompt.onConfirm}
+          onCancel={() => setPrompt(null)}
+        />
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
+          danger={confirm.danger}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
         />
       )}
 
