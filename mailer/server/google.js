@@ -184,6 +184,15 @@ export async function googleFetch(source, creds, api, path, { method = 'GET', qu
   }
   if (!out.res) return out;
   if (!out.res.ok) {
+    // 「APIをまだ有効にしていない」は設定の誤りではなく、Google側で一度押すだけで済む。
+    // 認証の失敗と混ぜると、正しい認証情報を疑うことになるので分けて扱う。
+    const disabled = apiNotEnabled(out.data?.error);
+    if (disabled) {
+      const err = new Error(disabled.message);
+      err.status = 400;
+      err.apiDisabled = disabled;
+      throw err;
+    }
     const msg = out.data?.error?.message || out.text?.slice(0, 200) || `HTTP ${out.res.status}`;
     const err = new Error(`Google APIエラー: ${msg}`);
     err.status = out.res.status === 401 || out.res.status === 403 ? 401 : 502;
@@ -202,6 +211,32 @@ export async function fetchUserinfo(accessToken) {
   } catch {
     return {};
   }
+}
+
+// ── APIが有効になっていないとき ──────────────────────────────
+// Googleは「まだ有効にしていないAPI」を403 SERVICE_DISABLED と英語の長文で返す。
+// そのまま出しても、どこを押せばよいのかが分からないため、日本語と入口に置き換える。
+const API_LABEL = {
+  'calendar-json.googleapis.com': 'Google Calendar API',
+  'tasks.googleapis.com': 'Google Tasks API',
+};
+
+export function apiNotEnabled(googleError) {
+  const raw = String(googleError?.message || '');
+  const detail = (googleError?.details || []).find(d => d.reason === 'SERVICE_DISABLED');
+  if (!detail && !/has not been used in project|it is disabled/i.test(raw)) return null;
+  const service = detail?.metadata?.service || (raw.match(/([a-z0-9-]+\.googleapis\.com)/) || [])[1] || '';
+  const project = String(detail?.metadata?.consumer || '').replace(/^projects\//, '')
+    || (raw.match(/project (\d+)/) || [])[1] || '';
+  const url = detail?.metadata?.activationUrl
+    || (service && project ? `https://console.cloud.google.com/apis/library/${service}?project=${project}` : '');
+  const name = API_LABEL[service] || service || 'このAPI';
+  return {
+    service, project, url, name,
+    message: `${name} が${project ? `プロジェクト ${project} で` : ''}有効になっていません。`
+      + 'Google Cloud Console で有効にしてから、もう一度お試しください'
+      + '（有効にした直後は、反映まで数分かかることがあります）。',
+  };
 }
 
 // ── invalid_client の読み分け ────────────────────────────────

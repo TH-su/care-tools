@@ -495,17 +495,19 @@ api.get('/oauth/google/callback', async (req, res) => {
   const p = google.getPending(state);
   // 画面に出す値は必ずエスケープする（Googleの応答をそのまま埋め込むため）
   const esc = (v) => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const page = (title, body, ok, extra = '') => `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+  // tone: ok=済んだ / todo=あと一手 / error=止まった。印の色を合わせないと、文章と食い違って見える
+  const page = (title, body, ok, extra = '', tone = ok ? 'ok' : 'error') => `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
 <title>${esc(title)}</title><style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:#f5f5f7;color:#1d1d1f;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}
 .card{background:#fff;border-radius:16px;padding:36px 40px;max-width:520px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.12)}
 .mark{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;font-size:26px;
-background:${ok ? '#e7f7ec' : '#fdecea'};color:${ok ? '#28a745' : '#ff3b30'}}
+background:${tone === 'ok' ? '#e7f7ec' : tone === 'todo' ? '#fff4e0' : '#fdecea'};color:${tone === 'ok' ? '#28a745' : tone === 'todo' ? '#c77700' : '#ff3b30'}}
 h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e73;margin:0}
 .tip{margin-top:18px;padding:12px 14px;border-radius:10px;background:#fff8e6;border:1px solid #f3d68b;
 font-size:13px;line-height:1.8;color:#6b4e00;text-align:left}
 .tip code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 5px;font-size:12.5px}
+.tip a{color:#0a58ca;font-weight:600}
 dl{margin:16px 0 0;padding-top:14px;border-top:1px solid #e8e8ed;display:grid;grid-template-columns:auto 1fr;
 gap:6px 14px;font-size:12px;text-align:left;color:#8e8e93}
 dt{white-space:nowrap}
@@ -607,11 +609,25 @@ dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,m
     } else if (err?.googleError === 'redirect_uri_mismatch') {
       tip = `<div class="tip">Google Cloud Consoleの「承認済みのリダイレクト URI」に`
         + `<code>${esc(p.redirectUri)}</code> をそのまま（末尾のスラッシュなしで）登録してください。</div>`;
+    } else if (err?.apiDisabled) {
+      // Google側で有効にするだけで済む。押す場所へ直接行けるようにする
+      const d = err.apiDisabled;
+      const project = d.project ? `?project=${encodeURIComponent(d.project)}` : '';
+      const link = (svc, label) =>
+        `<a href="https://console.cloud.google.com/apis/library/${svc}${project}" target="_blank" rel="noreferrer">${label}を有効にする</a>`;
+      tip = `<div class="tip"><b>認証は通っています。</b>あとはGoogle側で、使うAPIを有効にするだけです。<br>`
+        + `${link('calendar-json.googleapis.com', 'Google Calendar API')}<br>`
+        + `${link('tasks.googleapis.com', 'Google Tasks API')}<br>`
+        + `どちらも有効にしたら、数分おいてから、もう一度お試しください。</div>`;
     }
     const details = tip + '<dl>' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
 
     google.finishAuth(state, { status: 'error', error: err.message });
-    res.status(500).send(page('接続できませんでした', String(err.message || err), false, details));
+    // APIの有効化待ちは「繋がらなかった」のではなく、Google側であと一手が要るだけ
+    const title = err?.apiDisabled ? 'あと一歩です' : '接続できませんでした';
+    const tone = err?.apiDisabled ? 'todo' : 'error';
+    res.status(err?.apiDisabled ? 400 : 500)
+      .send(page(title, String(err.message || err), false, details, tone));
   }
 });
 
