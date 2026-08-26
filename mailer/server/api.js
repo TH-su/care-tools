@@ -525,7 +525,7 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
     console.error('  │ シークレット  :', len(p.clientSecret));
     console.error('  │ リダイレクトURI:', p.redirectUri);
     console.error('  │ 認可コード    :', len(req.query.code));
-    console.error('  │ 検証子(PKCE) :', len(p.verifier));
+    console.error('  │ 検証子(PKCE) :', p.verifier ? len(p.verifier) : '（使用せず）');
     console.error('  └────────────────────────────────────────');
     console.error('');
     google.finishAuth(state, { status: 'error', error: err.message });
