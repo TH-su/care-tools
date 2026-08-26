@@ -213,17 +213,25 @@ export async function setTaskParent({ sourceId, listId, taskId, parent }) {
 }
 
 // 親を完了にしたら、その下も完了にする（Gmailのタスクと同じ動き）
+// 1つのリストの中だけを見る。子を探すのに全アカウントを取りに行かない
+async function tasksInList({ sourceId, listId }) {
+  if (!sourceId || sourceId === LOCAL_TASK_SOURCE) return listLocalTasks().map(normalizeLocal);
+  const source = getCalendarSource(sourceId);
+  if (!source) return [];
+  const creds = await getCalendarSecrets(source);
+  const data = await googleFetch(source, creds, 'tasks', `/lists/${encodeURIComponent(listId)}/tasks`, {
+    query: { maxResults: 100, showCompleted: 'true', showHidden: 'true' },
+  });
+  return (data.items || []).map(t => normalizeGoogle(source, { id: listId, title: 'ToDo' }, t));
+}
+
 export async function setDoneWithChildren({ sourceId, listId, taskId, done }) {
   const updated = await updateTask({ sourceId, listId, taskId, patch: { done } });
-  const { tasks } = await listTasks({ includeDone: true });
-  const children = tasks.filter(t =>
-    t.parent === taskId
-    && (t.sourceId || LOCAL_TASK_SOURCE) === (sourceId || LOCAL_TASK_SOURCE)
-    && (t.listId || LOCAL_TASK_LIST) === (listId || LOCAL_TASK_LIST));
-  for (const c of children) {
-    if (c.done === done) continue;
-    await updateTask({ sourceId, listId, taskId: c.taskId, patch: { done } }).catch(() => {});
-  }
+  const siblings = await tasksInList({ sourceId, listId }).catch(() => []);
+  const children = siblings.filter(t => t.parent === taskId && t.done !== done);
+  // 子は互いに独立しているので、順番待ちさせる理由がない
+  await Promise.all(children.map(c =>
+    updateTask({ sourceId, listId, taskId: c.taskId, patch: { done } }).catch(() => {})));
   return updated;
 }
 
