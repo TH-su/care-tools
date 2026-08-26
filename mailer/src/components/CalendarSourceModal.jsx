@@ -13,6 +13,7 @@ function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
   const [form, setForm] = useState({ clientId: draft?.clientId || '', clientSecret: '' });
   // 前回入力したシークレットが控えてあるか（空欄のままでも接続できる）
   const [keepSecret, setKeepSecret] = useState(Boolean(draft?.hasSecret));
+  const [showSecret, setShowSecret] = useState(false);
 
   // 控えが古いまま使われている疑いを断ち切るための「入力し直し」
   const resetDraft = async () => {
@@ -113,14 +114,21 @@ function GoogleConnect({ redirectUri, draft, onConnected, onError }) {
             <input
               placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com"
               value={form.clientId} onChange={(e) => set({ clientId: e.target.value })}
+              autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true"
             />
           </div>
           <div className="field">
             <label>クライアントシークレット</label>
-            <input
-              type="password" placeholder="GOCSPX-…"
-              value={form.clientSecret} onChange={(e) => set({ clientSecret: e.target.value })}
-            />
+            <div className="secret-row">
+              <input
+                type={showSecret ? 'text' : 'password'} placeholder="GOCSPX-…"
+                value={form.clientSecret} onChange={(e) => set({ clientSecret: e.target.value })}
+                autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true"
+              />
+              <button type="button" className="linkbtn" onClick={() => setShowSecret(v => !v)}>
+                {showSecret ? '隠す' : '表示'}
+              </button>
+            </div>
             <div className={cx('hint', !form.clientSecret.trim() && !keepSecret && form.clientId.trim() && 'warn')}>
               {keepSecret && !form.clientSecret.trim()
                 ? <>前回入力したシークレットを使います（変更するときだけ入力してください）。<button type="button" className="linkbtn" onClick={resetDraft}>入力し直す</button></>
