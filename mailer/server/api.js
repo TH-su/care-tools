@@ -19,6 +19,7 @@ import { testImap } from './imap.js';
 import { testSmtp } from './smtp.js';
 import { DEMO_ACCOUNTS, resetDemo } from './demo.js';
 import { BUILD, buildLine } from './build.js';
+import { diagnose } from './diagnose.js';
 
 export const api = express.Router();
 
@@ -463,6 +464,11 @@ api.delete('/calendar/google/draft', h(async (req, res) => {
 api.post('/calendar/google/verify', h(async (req, res) => {
   const { clientId, clientSecret } = await googleCreds(req.body);
   res.json(await google.verifyClient({ clientId, clientSecret, redirectUri: REDIRECT_URI }));
+}));
+
+// 画面から押せる接続診断。ターミナルの npm run diag と同じ判定を使う
+api.post('/calendar/google/diagnose', h(async (req, res) => {
+  res.json(await diagnose({ redirectUri: REDIRECT_URI }));
 }));
 
 api.post('/calendar/google/start', h(async (req, res) => {

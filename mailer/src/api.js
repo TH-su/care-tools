@@ -55,6 +55,7 @@ export const api = {
   googleClearDraft: () => request('/calendar/google/draft', { method: 'DELETE' }),
   googleStart: (clientId, clientSecret) => request('/calendar/google/start', { method: 'POST', body: { clientId, clientSecret } }),
   googleStatus: (state) => request('/calendar/google/status', { query: { state } }),
+  googleDiagnose: () => request('/calendar/google/diagnose', { method: 'POST' }),
 
   events: (from, to) => request('/calendar/events', { query: { from, to } }),
   createEvent: (sourceId, calendarId, event) => request('/calendar/events', { method: 'POST', body: { sourceId, calendarId, event } }),

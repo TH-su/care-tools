@@ -307,9 +307,71 @@ function SourceRow({ source, onChange, onDelete, onSync, onError }) {
   );
 }
 
+// 接続診断の結果。判定はサーバー側（server/diagnose.js）が持ち、
+// ターミナルの npm run diag とまったく同じものを表示する。
+function DiagnosisPanel({ result, onClose }) {
+  return (
+    <div className="diagnosis">
+      <div className="diagnosis-head">
+        <Icon name="search" size={15} className="ic" />
+        <b>接続診断</b>
+        <span className="spacer" />
+        <button className="iconbtn" title="閉じる" onClick={onClose}><Icon name="x" size={14} /></button>
+      </div>
+
+      {result.sections.map(sec => (
+        <div className="diag-sec" key={sec.title}>
+          <div className="diag-sec-title">{sec.title}</div>
+          {sec.items.map((it, i) => (it.heading ? (
+            <div className="diag-group" key={i}>{it.label}</div>
+          ) : (
+            <div className={cx('diag-item', it.ok ? 'ok' : 'ng')} key={i}>
+              <span className="mark">{it.ok ? '✓' : '✗'}</span>
+              <span className="body">
+                {it.label}{it.note && <span className="note">{it.note}</span>}
+                {it.mono && <div className="mono">{it.mono}</div>}
+              </span>
+            </div>
+          )))}
+        </div>
+      ))}
+
+      {result.todos.length > 0 ? (
+        <div className="diag-todos">
+          <b>次にやること（{result.todos.length}件）</b>
+          <ol>
+            {result.todos.map((t, i) => (
+              <li key={i}>
+                {t.what}
+                {t.url && <div><a href={t.url} target="_blank" rel="noreferrer">{t.url}</a></div>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : (
+        <div className="diag-todos ok"><b>問題は見つかりませんでした。</b></div>
+      )}
+    </div>
+  );
+}
+
 export function CalendarSourceModal({ sources, redirectUri, googleDraft, build, onChanged, onClose, toast }) {
   const [confirm, setConfirm] = useState(null);
+  // 繋がらないときに、原因を一度で突き止めるための診断
+  const [diag, setDiag] = useState(null);
+  const [diagBusy, setDiagBusy] = useState(false);
   const onError = (m) => toast(m, 'error');
+
+  const runDiagnosis = async () => {
+    setDiagBusy(true);
+    try {
+      setDiag(await api.googleDiagnose());
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setDiagBusy(false);
+    }
+  };
 
   const remove = async (source) => {
     setConfirm(null);
@@ -323,6 +385,7 @@ export function CalendarSourceModal({ sources, redirectUri, googleDraft, build, 
   return (
     <Modal title="カレンダーとToDoの接続" icon="calendar" onClose={onClose} className="source-modal">
       <div className="modal-body">
+        {diag && <DiagnosisPanel result={diag} onClose={() => setDiag(null)} />}
         <div className="src-list">
           {sources.map(s => (
             <SourceRow
@@ -354,6 +417,9 @@ export function CalendarSourceModal({ sources, redirectUri, googleDraft, build, 
             </span>
           : <span className="spacer" />}
         <span className="spacer" />
+        <button className="btn secondary" onClick={runDiagnosis} disabled={diagBusy}>
+          {diagBusy ? <><Spinner small /> 診断中…</> : '接続を診断'}
+        </button>
         <button className="btn primary" onClick={onClose}>閉じる</button>
       </div>
 
