@@ -73,7 +73,7 @@ function AgendaTab({ events, loading, errors, onNew, onOpen, onOpenCalendar, has
   );
 }
 
-function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu }) {
+function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu, onOpenMail }) {
   if (items.length === 0) return null;
   return (
     <div className="task-group">
@@ -90,12 +90,27 @@ function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu }) {
             </button>
             <button className="task-body" onClick={() => onOpen(t)}>
               <span className="ttl">{t.title}</span>
+              {/* 詳細（メモ）の1行目。中身があることが一覧で分かるようにする */}
+              {t.notes && <span className="notes">{t.notes.split('\n').find(l => l.trim()) || ''}</span>}
               <span className="meta">
                 {due && <span className={cx('due', !t.done && due.tone)}>{due.text}</span>}
-                {t.sourceMail && <span className="from-mail"><Icon name="mail" size={11} />メールから</span>}
+                {t.sourceMail && (
+                  <span className="from-mail" title={t.sourceMail.subject || ''}>
+                    <Icon name="mail" size={11} />
+                    {t.sourceMail.from || 'メールから'}
+                  </span>
+                )}
                 {t.sourceType === 'google' && <span className="src">{t.listName}</span>}
               </span>
             </button>
+            {t.sourceMail && (
+              <button
+                className="task-mail" onClick={(e) => { e.stopPropagation(); onOpenMail(t.sourceMail); }}
+                title={`元のメールを開く: ${t.sourceMail.subject || '（件名なし）'}`} aria-label="元のメールを開く"
+              >
+                <Icon name="mailOpen" size={15} />
+              </button>
+            )}
             <button className="task-more" onClick={(e) => onMenu(e, t)} aria-label="操作" title="操作">
               <Icon name="more" size={15} />
             </button>
@@ -107,7 +122,7 @@ function TaskGroup({ label, items, tone, onToggle, onOpen, onMenu }) {
 }
 
 function TasksTab({
-  tasks, loading, errors, onToggle, onAdd, onOpen, onMenu,
+  tasks, loading, errors, onToggle, onAdd, onOpen, onMenu, onOpenMail,
   lists = [], dest, filter, onFilter, onDestMenu,
 }) {
   const [draft, setDraft] = useState('');
@@ -197,11 +212,11 @@ function TasksTab({
       )}
 
       <div className="task-list">
-        <TaskGroup label="期限を過ぎています" tone="overdue" items={groups.overdue} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} />
-        <TaskGroup label="今日" tone="today" items={groups.today} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} />
-        <TaskGroup label="これから" items={groups.upcoming} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} />
-        <TaskGroup label="期限なし" items={groups.someday} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} />
-        <TaskGroup label="完了" tone="muted" items={groups.done} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} />
+        <TaskGroup label="期限を過ぎています" tone="overdue" items={groups.overdue} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="今日" tone="today" items={groups.today} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="これから" items={groups.upcoming} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="期限なし" items={groups.someday} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
+        <TaskGroup label="完了" tone="muted" items={groups.done} onToggle={onToggle} onOpen={onOpen} onMenu={onMenu} onOpenMail={onOpenMail} />
       </div>
       {openCount > 0 && <div className="task-foot">未完了 {openCount} 件</div>}
     </>
@@ -214,7 +229,7 @@ export function SidePanel({
   tasks, tasksLoading, taskErrors = [],
   hasSources,
   onNewEvent, onOpenEvent, onOpenCalendar, onManageSources,
-  onToggleTask, onAddTask, onOpenTask, onTaskMenu, onRefresh,
+  onToggleTask, onAddTask, onOpenTask, onTaskMenu, onOpenTaskMail, onRefresh,
   taskLists, taskDest, taskFilter, onTaskFilter, onTaskDestMenu,
 }) {
   const todayCount = events.filter(ev => eventOnDay(ev, new Date())).length;
@@ -246,6 +261,7 @@ export function SidePanel({
                 <TasksTab
                   tasks={tasks} loading={tasksLoading} errors={taskErrors}
                   onToggle={onToggleTask} onAdd={onAddTask} onOpen={onOpenTask} onMenu={onTaskMenu}
+                  onOpenMail={onOpenTaskMail}
                   lists={taskLists} dest={taskDest} filter={taskFilter}
                   onFilter={onTaskFilter} onDestMenu={onTaskDestMenu}
                 />

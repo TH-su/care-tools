@@ -616,10 +616,19 @@ export async function setFlags(account, path, uids, flags, add) {
   });
 }
 
+// 移した先での新しいUIDを拾う。これが無いと「元に戻す」で対象を指し示せない。
+// サーバーがUIDPLUSに対応していない場合は uidMap が返らないので、そのときは戻せない。
+function undoInfo(from, to, res) {
+  const map = res?.uidMap;
+  const uids = map ? [...(map instanceof Map ? map.values() : Object.values(map))].map(Number) : [];
+  if (uids.length === 0) return null;
+  return { from, to, uids };
+}
+
 export async function moveMessages(account, path, uids, targetPath) {
   return withLock(account, path, async (client) => {
-    await client.messageMove(uids.join(','), targetPath, { uid: true });
-    return { ok: true };
+    const res = await client.messageMove(uids.join(','), targetPath, { uid: true });
+    return { ok: true, undo: undoInfo(path, targetPath, res) };
   });
 }
 
@@ -628,11 +637,12 @@ export async function deleteMessages(account, path, uids) {
   const inTrash = trash && trash.path === path;
   return withLock(account, path, async (client) => {
     if (inTrash || !trash) {
+      // ゴミ箱の中での削除は本当に消える。戻せないので undo は付けない
       await client.messageDelete(uids.join(','), { uid: true });
-    } else {
-      await client.messageMove(uids.join(','), trash.path, { uid: true });
+      return { ok: true, undo: null };
     }
-    return { ok: true };
+    const res = await client.messageMove(uids.join(','), trash.path, { uid: true });
+    return { ok: true, undo: undoInfo(path, trash.path, res) };
   });
 }
 

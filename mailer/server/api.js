@@ -266,38 +266,40 @@ api.post('/action', h(async (req, res) => {
     if (!account) continue;
     const uids = (t.uids || []).map(Number);
     if (uids.length === 0) continue;
+    let out = null;
     try {
       switch (op) {
         case 'read': await ops.setFlags(account, t.mailbox, uids, ['\\Seen'], true); break;
         case 'unread': await ops.setFlags(account, t.mailbox, uids, ['\\Seen'], false); break;
         case 'flag': await ops.setFlags(account, t.mailbox, uids, ['\\Flagged'], true); break;
         case 'unflag': await ops.setFlags(account, t.mailbox, uids, ['\\Flagged'], false); break;
-        case 'delete': await ops.deleteMessages(account, t.mailbox, uids); break;
+        case 'delete': out = await ops.deleteMessages(account, t.mailbox, uids); break;
         case 'archive': {
           const target = await ops.findSpecial(account, '\\Archive');
           if (!target) throw new Error('アーカイブフォルダがありません');
-          await ops.moveMessages(account, t.mailbox, uids, target.path);
+          out = await ops.moveMessages(account, t.mailbox, uids, target.path);
           break;
         }
         case 'junk': {
           const target = await ops.findSpecial(account, '\\Junk');
           if (!target) throw new Error('迷惑メールフォルダがありません');
-          await ops.moveMessages(account, t.mailbox, uids, target.path);
+          out = await ops.moveMessages(account, t.mailbox, uids, target.path);
           break;
         }
         case 'notjunk': {
           const inbox = await ops.findSpecial(account, '\\Inbox');
-          await ops.moveMessages(account, t.mailbox, uids, inbox?.path || 'INBOX');
+          out = await ops.moveMessages(account, t.mailbox, uids, inbox?.path || 'INBOX');
           break;
         }
         case 'move': {
           if (!moveTo) throw new Error('移動先が指定されていません');
-          await ops.moveMessages(account, t.mailbox, uids, moveTo);
+          out = await ops.moveMessages(account, t.mailbox, uids, moveTo);
           break;
         }
         default: throw new Error(`不明な操作: ${op}`);
       }
-      results.push({ account: t.account, ok: true });
+      // 移した先と、そこでの新しいUID。画面の「元に戻す」がこれを使う
+      results.push({ account: t.account, ok: true, undo: out?.undo || null });
     } catch (err) {
       results.push({ account: t.account, ok: false, error: err.message });
     }

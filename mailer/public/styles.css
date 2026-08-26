@@ -287,17 +287,19 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 
 /* 行ホバー時のクイックアクション */
 .row-actions {
-  position: absolute; right: 8px; bottom: 7px;
-  display: none; gap: 2px;
+  position: absolute; right: 8px; bottom: 6px;
+  display: none; gap: 4px;
   background: var(--bg-elevated); border: 1px solid var(--border);
-  border-radius: 8px; padding: 2px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  border-radius: 10px; padding: 4px;
+  box-shadow: 0 3px 14px rgba(0,0,0,0.16);
 }
 .msg-row:hover .row-actions { display: inline-flex; }
 .msg-row.selected .row-actions { display: none; }
-.row-actions .iconbtn { width: 26px; height: 26px; }
-.row-actions .iconbtn:hover { color: var(--accent); }
-.row-actions .iconbtn.del:hover { color: var(--danger); }
+/* 的が小さいと押し間違える。文字を読むより先に押すものなので、はっきり大きく取る */
+.row-actions .iconbtn { width: 36px; height: 36px; border-radius: 8px; }
+.row-actions .iconbtn svg { width: 19px; height: 19px; }
+.row-actions .iconbtn:hover { color: var(--accent); background: var(--bg-inset); }
+.row-actions .iconbtn.del:hover { color: var(--danger); background: var(--danger-soft, rgba(255,59,48,.1)); }
 
 .list-loadmore { padding: 14px; text-align: center; color: var(--text-2); font-size: 12px; }
 
@@ -595,6 +597,24 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .toast .ic-err { color: var(--danger); }
 .toast .ic-info { color: var(--accent); }
 
+/* 取り消しボタン付きのトースト。押す猶予があることが、見ただけで分かるようにする */
+.toast .msg { min-width: 0; }
+.toast.has-action { padding-right: 8px; gap: 12px; }
+.toast-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--accent); font-size: 13px; font-weight: 600;
+  padding: 6px 12px; border-radius: 8px; white-space: nowrap;
+}
+.toast-action:hover { background: var(--bg-inset); }
+.toast-action .cd {
+  display: inline-grid; place-items: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 10px; background: var(--bg-inset);
+  font-size: 11.5px; font-weight: 600; color: var(--text-2);
+  font-feature-settings: "tnum";
+}
+
 /* ── オンボーディング ── */
 .onboard {
   height: 100%; display: flex; align-items: center; justify-content: center;
@@ -853,6 +873,36 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .task-item:hover .task-more { opacity: 1; }
 .task-more:hover { background: var(--bg-active); color: var(--text); }
 .task-foot { font-size: 11px; color: var(--text-3); padding: 6px 2px; border-top: 1px solid var(--border); }
+
+/* ToDoの詳細（メモ）の1行目。中身があるかどうかが一覧で分かる */
+.task-body .notes {
+  display: block; font-size: 11px; line-height: 1.5; color: var(--text-3);
+  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-item.done .notes { opacity: .65; }
+/* 元メールをその場で開く。ToDo側だけで用が足りるようにする */
+.task-mail { opacity: 0; color: var(--text-3); padding: 4px; border-radius: 6px; flex-shrink: 0; }
+.task-item:hover .task-mail { opacity: 1; }
+.task-mail:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* ToDoの詳細画面 */
+.task-modal .task-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.task-modal .tick.lg { color: var(--text-3); padding: 2px; flex-shrink: 0; }
+.task-modal .tick.lg:hover { color: var(--accent); }
+.task-modal .tick.lg.on { color: var(--success); }
+.task-title-input {
+  flex: 1; min-width: 0; font-size: 16px; font-weight: 600;
+  border: 0; background: transparent; padding: 6px 2px;
+  border-bottom: 1px solid var(--border); border-radius: 0;
+}
+.task-title-input:focus { border-bottom-color: var(--accent); outline: none; }
+.task-title-input.done { color: var(--text-3); text-decoration: line-through; }
+.task-modal .datetime-row { flex-wrap: wrap; gap: 8px; }
+.task-modal .mail-link { align-items: flex-start; gap: 8px; }
+.task-modal .mail-link .ml-body { flex: 1; min-width: 0; display: block; }
+.task-modal .mail-link .ml-sub { display: block; font-weight: 600; word-break: break-word; }
+.task-modal .mail-link .ml-from { display: block; font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.task-modal .mail-link .ml-go { font-size: 11px; font-weight: 600; flex: none; }
 
 /* ============================================================
    カレンダー画面
