@@ -385,7 +385,8 @@ export async function moveMessages(account, path, uids, targetPath) {
   const moved = box.filter(m => ids.has(m.uid));
   for (const m of moved) box.splice(box.indexOf(m), 1);
   target.push(...moved);
-  return { ok: true };
+  // ここではUIDが変わらないので、そのまま戻し先として使える
+  return { ok: true, undo: moved.length ? { from: path, to: targetPath, uids: moved.map(m => m.uid) } : null };
 }
 
 export async function deleteMessages(account, path, uids) {
@@ -393,7 +394,8 @@ export async function deleteMessages(account, path, uids) {
     const box = getBox(account, path);
     const ids = new Set(uids.map(Number));
     stores.get(account.id).Trash = box.filter(m => !ids.has(m.uid));
-    return { ok: true };
+    // ゴミ箱の中での削除は本当に消える。戻せない
+    return { ok: true, undo: null };
   }
   return moveMessages(account, path, uids, 'Trash');
 }

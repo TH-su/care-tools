@@ -38,26 +38,57 @@ export const useToast = () => useContext(ToastContext);
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-  const addToast = useCallback((message, type = 'info', duration = 3600) => {
-    const id = Date.now() + Math.random();
-    setToasts(t => [...t, { id, message, type }]);
+  const dismiss = useCallback((id) => setToasts(t => t.filter(x => x.id !== id)), []);
+
+  // action: { label, onClick } を渡すと、その場で取り消せるボタンが出る。
+  // countdown: true なら残り秒数も出す（送信の取り消しのように、締切がある操作向け）
+  const addToast = useCallback((message, type = 'info', duration = 3600, action = null) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    const until = Date.now() + duration;
+    setToasts(t => [...t, { id, message, type, action, until }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), duration);
+    return id;
   }, []);
+
+  // 取り消しの締切が来る前に、外から片付けたいことがある（送信が済んだときなど）
+  addToast.dismiss = dismiss;
+
   return (
     <ToastContext.Provider value={addToast}>
       {children}
       <div className="toast-container">
-        {toasts.map(({ id, message, type }) => (
-          <div key={id} className="toast">
+        {toasts.map(({ id, message, type, action, until }) => (
+          <div key={id} className={cxToast(type, action)}>
             {type === 'success' && <Icon name="check" size={16} className="ic-ok" />}
             {type === 'error' && <Icon name="warn" size={16} className="ic-err" />}
             {type === 'info' && <Icon name="mail" size={16} className="ic-info" />}
-            <span>{message}</span>
+            <span className="msg">{message}</span>
+            {action && (
+              <button
+                className="toast-action"
+                onClick={() => { dismiss(id); action.onClick(); }}
+              >
+                {action.label}
+                {action.countdown && <Countdown until={until} />}
+              </button>
+            )}
           </div>
         ))}
       </div>
     </ToastContext.Provider>
   );
+}
+
+const cxToast = (type, action) => `toast${action ? ' has-action' : ''}${type === 'error' ? ' err' : ''}`;
+
+// 残り秒数。締切があると分かるだけで、慌てずに押せる
+function Countdown({ until }) {
+  const [left, setLeft] = useState(Math.max(0, Math.ceil((until - Date.now()) / 1000)));
+  useEffect(() => {
+    const t = setInterval(() => setLeft(Math.max(0, Math.ceil((until - Date.now()) / 1000))), 250);
+    return () => clearInterval(t);
+  }, [until]);
+  return <span className="cd">{left}</span>;
 }
 
 // ── モーダル ──

@@ -14,6 +14,7 @@ import { Onboarding } from './components/Onboarding.jsx';
 import { SidePanel } from './components/SidePanel.jsx';
 import { CalendarView } from './components/CalendarView.jsx';
 import { EventModal } from './components/EventModal.jsx';
+import { TaskModal } from './components/TaskModal.jsx';
 import { CalendarSourceModal } from './components/CalendarSourceModal.jsx';
 import {
   startOfDay, addDays, startOfWeek, monthGrid, eventOnDay, fmtDayLabel,
@@ -51,6 +52,8 @@ export function App() {
   const [search, setSearch] = useState('');
   const [unseenFilter, setUnseenFilter] = useState(false);
   const [selKeys, setSelKeys] = useState([]);
+  const [taskModal, setTaskModal] = useState(null);   // ToDoの詳細
+  const [taskBusy, setTaskBusy] = useState(false);
   const [open, setOpen] = useState({ loading: false, message: null, error: null, imagesAllowed: false });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -315,6 +318,82 @@ export function App() {
     return [];
   };
 
+  // 取り消せる時間。短すぎると気付く前に消え、長すぎると画面に居座る
+  const UNDO_MS = 8000;
+
+  // 送信を押してから実際に送るまでの猶予。宛先違いや書き忘れは、押した直後に気付く
+  const SEND_DELAY_MS = 5000;
+  const pendingSend = useRef(null);
+
+  // 移した先から、元の場所へ戻す。移動でUIDが変わるので、戻し先は必ずサーバーの返答を使う
+  const undoAction = useCallback(async (results, groups) => {
+    const byAccount = new Map([...groups.values()].map(g => [g.account, g]));
+    try {
+      for (const r of results) {
+        if (!r.ok || !r.undo) continue;
+        const g = byAccount.get(r.account);
+        await api.action(
+          [{ account: r.account, mailbox: r.undo.to, uids: r.undo.uids }],
+          'move',
+          r.undo.from || g?.mailbox,
+        );
+      }
+      toast('元に戻しました', 'success', 2200);
+    } catch (err) {
+      toast(`元に戻せませんでした: ${err.message}`, 'error');
+    }
+    loadList({ silent: true });
+    refreshCounts();
+  }, [toast, loadList, refreshCounts]);
+
+  // 送信済み・下書きを開いていたら、送ったあとに一覧を取り直す
+  const afterSent = useCallback(() => {
+    const box = sel.kind === 'box' && (mailboxes[sel.accountId] || []).find(b => b.path === sel.path);
+    if (box?.specialUse === '\\Sent' || box?.specialUse === '\\Drafts') loadList({ silent: true });
+  }, [sel, mailboxes, loadList]);
+
+  // 送信を SEND_DELAY_MS だけ保留する。その間は「送信を取り消す」で書きかけに戻せる
+  const deferSend = useCallback(({ fromId, message, restore }) => {
+    const timer = setTimeout(async () => {
+      pendingSend.current = null;
+      try {
+        const result = await api.send(fromId, message);
+        toast(result.demo ? '送信しました（デモ: 送信済みに保存）' : '送信しました', 'success', 2600);
+        afterSent();
+      } catch (err) {
+        // 送れなかった中身を失わせない。書きかけに戻せる形で知らせる
+        toast(`送信できませんでした: ${err.message}`, 'error', 12000, {
+          label: '書きかけに戻す',
+          onClick: () => setCompose(restore),
+        });
+      }
+    }, SEND_DELAY_MS);
+
+    pendingSend.current = { timer, restore };
+    toast('送信します', 'info', SEND_DELAY_MS, {
+      label: '送信を取り消す',
+      countdown: true,
+      onClick: () => {
+        clearTimeout(timer);
+        pendingSend.current = null;
+        setCompose(restore);
+        toast('送信を取り消しました', 'info', 2400);
+      },
+    });
+  }, [toast, afterSent]);
+
+  // 猶予の途中で閉じられると、送ったつもりのメールが消える
+  useEffect(() => {
+    const warn = (e) => {
+      if (!pendingSend.current) return undefined;
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
+
   const doAction = useCallback(async (rows, op, moveTo) => {
     if (rows.length === 0) return;
     const keys = new Set(rows.map(rowKey));
@@ -355,14 +434,24 @@ export function App() {
           delete: 'ゴミ箱に移動しました', archive: 'アーカイブしました', junk: '迷惑メールに移動しました',
           notjunk: '受信に移動しました', move: '移動しました',
         };
-        if (labels[op]) toast(labels[op], 'success', 2200);
+        // 押し間違いはすぐ気付く。気付いてから探し回らずに済むよう、その場で戻せるようにする。
+        // 戻し先のUIDが分かるときだけ（サーバーがUIDPLUSに対応しているとき）出す
+        const undos = res.results.map(r => r.undo).filter(Boolean);
+        if (labels[op] && undos.length > 0) {
+          toast(labels[op], 'success', UNDO_MS, {
+            label: '元に戻す',
+            onClick: () => undoAction(res.results, groups),
+          });
+        } else if (labels[op]) {
+          toast(labels[op], 'success', 2200);
+        }
       }
       if (removing || op === 'read' || op === 'unread') refreshCounts();
     } catch (err) {
       toast(err.message, 'error');
       loadList({ silent: true });
     }
-  }, [open.message, toast, loadList, refreshCounts]);
+  }, [open.message, toast, loadList, refreshCounts, undoAction]);
 
   // 閲覧中メッセージへのアクション（ツールバー）
   const actOnOpen = (op) => {
@@ -628,7 +717,13 @@ export function App() {
   };
 
   // ── メール → 予定 / ToDo ──
-  const mailRef = (m) => ({ accountId: m.accountId, mailbox: m.mailbox, uid: m.uid, subject: m.subject || '' });
+  const mailRef = (m) => ({
+    accountId: m.accountId, mailbox: m.mailbox, uid: m.uid,
+    subject: m.subject || '',
+    // ToDo側で「誰からの、いつのメールか」が開かずに分かるようにする
+    from: m.from?.name ? `${m.from.name} <${m.from.address}>` : (m.from?.address || ''),
+    date: m.date || null,
+  });
 
   const mailNote = (m) => {
     const who = m.from?.name ? `${m.from.name} <${m.from.address}>` : (m.from?.address || '');
@@ -732,8 +827,58 @@ export function App() {
     }
   }, [accountsById, settings.remoteImages, toast]);
 
-  const openTask = (t) => {
-    if (t.sourceMail) openMailRef(t.sourceMail);
+  // 押したら詳細を開く。中身を見て直せないと、ただの一覧で終わってしまう
+  const openTask = (t) => setTaskModal({ task: t });
+
+  const saveTask = async ({ title, notes, due, done, list }) => {
+    const t = taskModal?.task;
+    setTaskBusy(true);
+    try {
+      if (!t?.taskId) {
+        await api.createTask(list?.sourceId || null, list?.listId || null, { title, notes, due, done });
+      } else {
+        await api.updateTask(t.sourceId, t.listId, t.taskId, { title, notes, due, done });
+        // リストを変えたときは、保存のあとに付け替える
+        if (list && (list.sourceId !== t.sourceId || list.listId !== t.listId)) {
+          await api.moveTask(
+            { sourceId: t.sourceId, listId: t.listId, taskId: t.taskId },
+            { sourceId: list.sourceId, listId: list.listId },
+          );
+        }
+      }
+      setTaskModal(null);
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setTaskBusy(false);
+    }
+  };
+
+  const removeTask = async () => {
+    const t = taskModal?.task;
+    if (!t?.taskId) { setTaskModal(null); return; }
+    setTaskBusy(true);
+    try {
+      await api.deleteTask(t.sourceId, t.listId, t.taskId);
+      setTaskModal(null);
+      toast('ToDoを削除しました', 'success', UNDO_MS, {
+        label: '元に戻す',
+        onClick: async () => {
+          try {
+            await api.createTask(t.sourceId, t.listId, {
+              title: t.title, notes: t.notes, due: t.due, done: t.done, sourceMail: t.sourceMail,
+            });
+            loadTasks();
+          } catch (err) { toast(err.message, 'error'); }
+        },
+      });
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setTaskBusy(false);
+    }
   };
 
   const taskMenu = (e, t) => {
@@ -1033,6 +1178,7 @@ export function App() {
         onToggleTask={toggleTask}
         onAddTask={addTask}
         onOpenTask={openTask}
+        onOpenTaskMail={openMailRef}
         onTaskMenu={taskMenu}
         taskLists={tasks.lists}
         taskDest={taskDest}
@@ -1049,10 +1195,8 @@ export function App() {
           accounts={composeAccounts}
           initial={compose}
           onClose={() => setCompose(null)}
-          onSent={() => {
-            const box = sel.kind === 'box' && (mailboxes[sel.accountId] || []).find(b => b.path === sel.path);
-            if (box?.specialUse === '\\Sent' || box?.specialUse === '\\Drafts') loadList({ silent: true });
-          }}
+          onDeferredSend={deferSend}
+          onSent={afterSent}
         />
       )}
 
@@ -1093,6 +1237,18 @@ export function App() {
           onDelete={deleteEventNow}
           onClose={() => setEventModal(null)}
           onOpenMail={(ref) => { setEventModal(null); openMailRef(ref); }}
+        />
+      )}
+
+      {taskModal && (
+        <TaskModal
+          task={taskModal.task}
+          lists={tasks.lists}
+          busy={taskBusy}
+          onSave={saveTask}
+          onDelete={removeTask}
+          onClose={() => setTaskModal(null)}
+          onOpenMail={(ref) => { setTaskModal(null); openMailRef(ref); }}
         />
       )}
 

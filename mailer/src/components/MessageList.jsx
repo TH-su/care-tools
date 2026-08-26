@@ -134,13 +134,13 @@ export function MessageList({
               </span>
               <span className="row-actions" onClick={e => e.stopPropagation()}>
                 <button className="iconbtn" title={r.flagged ? 'フラグを外す' : 'フラグ'} onClick={() => onQuickAction(r, r.flagged ? 'unflag' : 'flag')}>
-                  <Icon name="flag" size={14} />
+                  <Icon name="flag" size={19} />
                 </button>
                 <button className="iconbtn" title="アーカイブ" onClick={() => onQuickAction(r, 'archive')}>
-                  <Icon name="archive" size={14} />
+                  <Icon name="archive" size={19} />
                 </button>
                 <button className="iconbtn del" title="削除" onClick={() => onQuickAction(r, 'delete')}>
-                  <Icon name="trash" size={14} />
+                  <Icon name="trash" size={19} />
                 </button>
               </span>
             </button>

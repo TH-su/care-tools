@@ -58,16 +58,16 @@ function TokenInput({ tokens, onChange, autoFocus, placeholder }) {
 const toTokens = (list) => (list || []).map(a => ({ address: a.address, name: a.name || '', valid: EMAIL_RE.test(a.address || '') }));
 const joinTokens = (tokens) => tokens.map(t => (t.name ? `"${t.name}" <${t.address}>` : t.address)).join(', ');
 
-export function Compose({ accounts, initial, onClose, onSent }) {
+export function Compose({ accounts, initial, onClose, onSent, onDeferredSend }) {
   const toast = useToast();
   const [fromId, setFromId] = useState(initial.fromId || accounts[0]?.id);
   const [to, setTo] = useState(toTokens(initial.to));
   const [cc, setCc] = useState(toTokens(initial.cc));
-  const [bcc, setBcc] = useState([]);
+  const [bcc, setBcc] = useState(toTokens(initial.bcc));
   const [showCc, setShowCc] = useState((initial.cc || []).length > 0);
   const [subject, setSubject] = useState(initial.subject || '');
   const [body, setBody] = useState(initial.body || '');
-  const [attachments, setAttachments] = useState([]);
+  const [attachments, setAttachments] = useState(initial.attachments || []);
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState(null);
@@ -121,19 +121,44 @@ export function Compose({ accounts, initial, onClose, onSent }) {
     const v = validate();
     if (v) { setError(v); return; }
     setError(null);
+
+    const message = {
+      to: joinTokens(to),
+      cc: cc.length ? joinTokens(cc) : undefined,
+      bcc: bcc.length ? joinTokens(bcc) : undefined,
+      subject,
+      text: body,
+      attachments: attachments.map(({ filename, contentType, contentBase64 }) => ({ filename, contentType, contentBase64 })),
+      inReplyTo: initial.inReplyTo,
+      references: initial.references,
+      forwardOf: initial.forwardOf,
+    };
+
+    // 送信を少しのあいだ保留して、取り消せるようにする。
+    // 宛先違いや書き忘れは押した直後に気付くので、その数秒を親に預ける。
+    if (onDeferredSend) {
+      onDeferredSend({
+        fromId: from.id,
+        message,
+        // 取り消したら、書きかけをそのままの状態で開き直す
+        restore: {
+          fromId: from.id,
+          to: to.map(t => ({ address: t.address, name: t.name })),
+          cc: cc.map(t => ({ address: t.address, name: t.name })),
+          bcc: bcc.map(t => ({ address: t.address, name: t.name })),
+          subject, body, attachments,
+          inReplyTo: initial.inReplyTo,
+          references: initial.references,
+          forwardOf: initial.forwardOf,
+        },
+      });
+      onClose();
+      return;
+    }
+
     setSending(true);
     try {
-      const result = await api.send(from.id, {
-        to: joinTokens(to),
-        cc: cc.length ? joinTokens(cc) : undefined,
-        bcc: bcc.length ? joinTokens(bcc) : undefined,
-        subject,
-        text: body,
-        attachments: attachments.map(({ filename, contentType, contentBase64 }) => ({ filename, contentType, contentBase64 })),
-        inReplyTo: initial.inReplyTo,
-        references: initial.references,
-        forwardOf: initial.forwardOf,
-      });
+      const result = await api.send(from.id, message);
       toast(result.demo ? '送信しました（デモ: 送信済みに保存）' : '送信しました', 'success');
       onSent?.();
       onClose();
