@@ -223,18 +223,14 @@ textarea{resize:vertical;min-height:60px}
   display:flex;flex-wrap:wrap;gap:4px 14px}
 .iv-note .nt{display:inline-flex;align-items:center;gap:5px}
 .iv-note .dot{display:inline-block;border-radius:50%;border:2px solid #fff;
-  box-shadow:0 0 0 1px var(--g4);flex:none}
+  box-shadow:0 0 0 1px var(--g3);flex:none}
 .iv-note .dot.big{width:15px;height:15px}
-.iv-note .dot.mid{width:13px;height:13px}
 .iv-note .dot.sm{width:10px;height:10px}
-/* ★ 下の5色は drawChart の WR_C_* と同じ値にすること（凡例と実際の丸が食い違うため） */
-.iv-note .dot.c-ng-up{background:#c62828}
-.iv-note .dot.c-ng-dn{background:#1565c0}
-.iv-note .dot.c-w-up{background:#e65100}
-.iv-note .dot.c-w-dn{background:#0288d1}
-.iv-note .dot.c-plain{background:#202124}
+/* 色は付けない。起動時に wrPaintLegendDots() が WR_C_* から流し込む（正本はJS側1箇所）。
+   色が来るまでの見え方だけ、地色として薄いグレーを置いておく。 */
+.iv-note .dot{background:var(--g3)}
 .iv-note .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
-  border:1px solid var(--g4);background:#fff8e1;flex:none}
+  border:1px solid var(--g5);background:#fff8e1;flex:none}
 .st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:720px){.st-g{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.st-g{grid-template-columns:repeat(2,1fr)}}
@@ -2486,8 +2482,11 @@ function toast(msg, kind='ok'){
 /* Monthly summary: the latest record for the given year-month (by measured date).
    Used by list screen, analyze(), and anywhere monthly-aggregated data is expected. */
 function getRecord(residentId, ym){
+  // 体重が使えない記録を月の代表にしない（getRecordsOf と同じ規則にそろえる）。
+  // そろえないと、月内の最後に壊れた記録が1件入っただけで analyze が
+  // その月の前月比・3ヶ月比・6ヶ月比を丸ごと「—」にしてしまう。
   const ordered = DB.records
-    .filter(r => r.residentId===residentId && r.yearMonth===ym)
+    .filter(r => r.residentId===residentId && r.yearMonth===ym && wrWeightOk(r))
     .sort((a,b)=> recDateKey(b).localeCompare(recDateKey(a)));
   return ordered[0];
 }
@@ -2495,6 +2494,16 @@ function getRecordById(id){ return DB.records.find(r=> r.id===id) || null; }
 function getRecordByDate(residentId, date){
   return DB.records.find(r=> r.residentId===residentId && r.measuredOn===date) || null;
 }
+/* 体重が計算・表示に使える値か。normalizeRecord は数値化に失敗した体重を 0 にするため
+   （_toNumber 相当の経路が無い GAS / CSV 由来のデータで実際に起きる）、0 も弾く。
+   これを通らない記録は「比べない・出さない」に倒す（偽の急増減を出さないため）。
+   ★ 増やす時はここ1本を直す。以前は drawChart と drawHist に同じ判定が別名で2つあった。 */
+function wrWeightOk(r){
+  return !!r && typeof r.weight === 'number' && isFinite(r.weight) && r.weight > 0;
+}
+/* 対象月として使える 'YYYY-MM' か */
+function wrYmOk(ym){ return typeof ym === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(ym); }
+
 /* sort key: measuredOn (ISO yyyy-mm-dd) falls back to yearMonth-01, and createdAt disambiguates ties */
 function recDateKey(r){
   return (r.measuredOn || (r.yearMonth ? r.yearMonth+'-01' : '')) + '#' + (r.createdAt || '');
@@ -2504,14 +2513,26 @@ function getRecordsOf(residentId){
   const byYm = new Map();
   for(const r of DB.records){
     if(r.residentId !== residentId) continue;
+    // その月の「代表」に、体重が使えない記録を選ばない。選ぶと月次系列に穴が空き、
+    // 前月比・グラフ・統計タイルがその月を丸ごと失う（＝最新体重が1か月前に戻る）。
+    if(!wrWeightOk(r)) continue;
     const cur = byYm.get(r.yearMonth);
     if(!cur || recDateKey(r) > recDateKey(cur)) byYm.set(r.yearMonth, r);
   }
-  // yearMonth が欠けた記録を捨てずに並べる。null を localeCompare に渡すと例外になり、
-  // 壊れた記録が1件あるだけで一覧・個別・アラートが同時に落ちて画面に何も出なくなる
-  // （goto の try/catch に飲まれるため原因も見えない）。日付なしは先頭に置く。
-  return [...byYm.values()].sort((a,b)=>
-    String(a.yearMonth==null?'':a.yearMonth).localeCompare(String(b.yearMonth==null?'':b.yearMonth)));
+  /* 対象月を持たない記録は「月次の系列」に属さないので、ここでは返さない。
+     混ぜると次の3つが同時に壊れる:
+       ・analyze の findIndex/by(k) が1つずれ、前月比・3ヶ月比・6ヶ月比が別の月を指す
+         （空文字の yearMonth は '' <= '2026-08' が真になるので filter も素通りする）
+       ・drawStats の first が壊れた記録になり「記録期間中 0.0→58.0」と出る
+       ・1年グラフの12枠を1つ消費する／全期間グラフのX軸に「日付なし」が並ぶ
+     記録そのものは消えない。記録履歴は DB.records から独立に描いているので、
+     日付なしの行はそのまま一覧に出て編集・削除できる。
+     null を localeCompare に渡すと例外になり、壊れた記録1件で一覧・個別・アラートが
+     同時に落ちて画面が空になっていた（goto の try/catch に飲まれて原因も見えない）ため、
+     並べ替え側も文字列化しておく。 */
+  return [...byYm.values()]
+    .filter(r=> wrYmOk(r.yearMonth))
+    .sort((a,b)=> String(a.yearMonth).localeCompare(String(b.yearMonth)));
 }
 /* All individual records (every measurement, including multiple within the same month). */
 function getAllRecordsOf(residentId){
@@ -3134,7 +3155,10 @@ function analyze(residentId, ym){
   const bump = L => { if(L==='ng') level='ng'; else if(L==='w' && level!=='ng') level='w'; };
 
   const check = (prev, label, th) => {
-    if(!prev) return null;
+    // 基準か今回の体重が壊れている時は判定しない（0 を基準にすると pct が Infinity になり、
+    // 「【警告】前月比で58.0kg（+Infinity%）増加」がアラート・行の色・グラフに一斉に出る）
+    if(!prev || !(typeof prev.w === 'number' && isFinite(prev.w) && prev.w > 0)) return null;
+    if(!wrWeightOk(cur)) return null;
     const diff = +(cur.weight - prev.w).toFixed(2);
     const pct  = +(diff / prev.w * 100).toFixed(2);
     const absD = Math.abs(diff), absP = Math.abs(pct);
@@ -3566,6 +3590,7 @@ function prevMonthDiff(rid, ym, currentWeight){
     const prevYm = ymPrev(ym, k);
     const rec = getRecord(rid, prevYm);
     if(rec){
+      if(!wrWeightOk(rec)) return null;   // 壊れた体重を基準にしない（偽の急増減を出さない）
       return { diff: +(currentWeight - rec.weight).toFixed(1), fromYm: prevYm };
     }
   }
@@ -4492,7 +4517,7 @@ function updateEditBanner(){
   if(!banner || !saveBtn) return;
   const rec = editingRecordId ? getRecordById(editingRecordId) : null;
   if(rec){
-    const dateStr = rec.measuredOn || (rec.yearMonth+'-??');
+    const dateStr = rec.measuredOn || (wrYmOk(rec.yearMonth) ? rec.yearMonth+'-??' : '日付なし');
     banner.style.display = 'flex';
     banner.querySelector('.eb-msg').textContent = `編集中：${dateStr} の記録（保存すると上書きされます）`;
     saveBtn.textContent = '記録を更新';
@@ -4514,7 +4539,7 @@ function renderInputExistingList(){
     const editing = r.id===editingRecordId ? ' editing' : '';
     return `<div class="iex-row${editing}" data-rid="${r.id}">
       <div class="iex-d"><b>${r.measuredOn || ymFmt(r.yearMonth)}</b> <span class="iex-ym">${ymFmt(r.yearMonth)}</span></div>
-      <div class="iex-w"><b>${r.weight.toFixed(1)}</b><small>kg</small>${badge}</div>
+      <div class="iex-w"><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b><small>kg</small>${badge}</div>
       <div class="iex-act">
         <button type="button" class="bn bo bsm" data-iex-edit="${r.id}">編集</button>
         <button type="button" class="bn br bsm" data-iex-del="${r.id}">削除</button>
@@ -4779,6 +4804,7 @@ function recordsForRange(rid){
     // 同じ測定日に複数レコードがある場合は新しい方だけ採る（w1/m1 と同じ規則）。
     const byDate = new Map();
     getAllRecordsOf(rid).forEach(r=>{
+      if(!wrWeightOk(r)) return;              // 体重が使えない記録は系列に入れない
       // 対象月の判定は測定日ではなく yearMonth（対象月）で行う。
       // 月末に測って翌月分として登録する運用があっても取りこぼさない。
       if(!months.has(r.yearMonth)) return;
@@ -4799,6 +4825,7 @@ function recordsForRange(rid){
   // Build map: YYYY-MM-DD → record (latest entry for that day, in case of dupes).
   const byDate = new Map();
   getAllRecordsOf(rid).forEach(r=>{
+    if(!wrWeightOk(r)) return;                // 体重が使えない記録は系列に入れない
     const k = r.measuredOn || (r.yearMonth ? r.yearMonth + '-01' : '');
     if(!k) return;
     const prev = byDate.get(k);
@@ -4888,6 +4915,13 @@ function destroyChart(key){
    ＝「前月比の警告を3kgにすれば、2kg はオレンジ、3kg は赤」になる。
    注意レベルをオレンジ／水色にしないと、既定の注意しきい値（m1 wKg=1.5）のせいで
    2kg の変化が注意判定に入り、赤のまま残ってこの並びが成立しない。
+
+   【大きさについての注意（未決）】同じ「注意」の段に半径6（月次の注意）と
+   半径7（前回比±2kg）が同居している。直前の測定からの変化の方が急を要するという
+   判断で ±2kg を大きくしているが、その結果 **大きさは深刻度の指標になっていない**
+   （警告も7）。段を分けているのは赤とオレンジの色相差だけなので、
+   P型・D型色覚では見分けにくい。揃えるなら WR_DOT_BIG_R を 6 にする。
+   橋爪氏の判断待ち（2026-08-26 レビュー指摘 B-1）。
    ★ 下の5色は .iv-note .dot の CSS と同じ値にすること（凡例の丸と実際の丸が食い違うため）。 */
 const WR_DOT_BIG_KG = 2;
 const WR_DOT_BIG_R  = 7;
@@ -4896,6 +4930,17 @@ const WR_C_NG_DN = '#1565c0';   // 警告・減少＝青
 const WR_C_W_UP  = '#e65100';   // 注意・増加＝オレンジ
 const WR_C_W_DN  = '#0288d1';   // 注意・減少＝水色
 const WR_C_PLAIN = '#202124';   // どちらにも当たらない測定＝黒
+
+/* 凡例の丸に、上の定数から色を流し込む。CSS 側にも同じ16進を書くと人手同期の約束が
+   増え、片方だけ直した時に「凡例の色と実際の丸の色が違う」状態に黙って入るため、
+   色の正本は上の WR_C_* 1箇所だけにする。 */
+function wrPaintLegendDots(){
+  const map = { 'c-ng-up':WR_C_NG_UP, 'c-ng-dn':WR_C_NG_DN,
+                'c-w-up':WR_C_W_UP,   'c-w-dn':WR_C_W_DN, 'c-plain':WR_C_PLAIN };
+  for(const k in map){
+    document.querySelectorAll('.iv-note .dot.'+k).forEach(el=>{ el.style.background = map[k]; });
+  }
+}
 
 function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, dated){
   recs = recs || [];
@@ -4945,12 +4990,11 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
      失敗した体重を 0 にするため、素通しすると 0 を基準にした「+58.0kg」で
      大きな赤丸が立ち、その次の点にも「−58.0kg」の青丸が立つ（偽アラート2つ）。
      丸めは表と同じ小数1桁に揃える（表が「+2.0」なのに丸が大きくならない食い違いを防ぐ）。 */
-  const wOk = x => !!x && typeof x.weight === 'number' && isFinite(x.weight) && x.weight > 0;
   const prevCmp = recs.map((r, i)=>{
-    if(!wOk(r)) return null;
+    if(!wrWeightOk(r)) return null;
     for(let k = i-1; k >= 0; k--){
       if(!recs[k]) continue;                  // 日別グラフの穴（測定の無い日）は飛ばす
-      if(!wOk(recs[k])) return null;          // 基準が壊れているなら比べない
+      if(!wrWeightOk(recs[k])) return null;   // 基準が壊れているなら比べない
       const w0 = recs[k].weight;
       return { d: +(r.weight - w0).toFixed(1), pct: +((r.weight - w0) / w0 * 100).toFixed(1) };
     }
@@ -5104,7 +5148,8 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
 
 function drawStats(rid){
   const el = $('#ivStats');
-  const recs = rid ? getRecordsOf(rid) : [];
+  // 壊れた体重を最小・最大・開始値に混ぜない（「記録期間中 開始0.0→現58.0」を出さない）
+  const recs = rid ? getRecordsOf(rid).filter(wrWeightOk) : [];
   const resident = rid ? residentById(rid) : null;
   if(recs.length===0){
     el.innerHTML = `<div class="empty" style="grid-column:1/-1">データがまだありません。入力タブから記録してください。</div>`;
@@ -5210,8 +5255,7 @@ function drawHist(rid){
        素通しすると「前回比 +58.0kg」のような偽の急増が出る。yearMonth も measuredOn も
        無い記録があり得るので（この関数自身が「日付なし」を描いている）、
        ymFmt に null を渡して例外を投げ、表の残り全部を描かなくなることも防ぐ。 */
-    const wrOk = x => !!x && typeof x.weight === 'number' && isFinite(x.weight) && x.weight > 0;
-    const cmpOk = wrOk(r) && wrOk(prevRec);
+    const cmpOk = wrWeightOk(r) && wrWeightOk(prevRec);
     const df = cmpOk ? +(r.weight - prevRec.weight).toFixed(1) : null;
     const pc = cmpOk ? +((r.weight - prevRec.weight) / prevRec.weight * 100).toFixed(1) : null;
     const diffHtml = (df==null)
@@ -5270,7 +5314,7 @@ function drawHist(rid){
                       `<br><small style="color:var(--g6);font-weight:400">入力 ${stampLabel}${updatedTag}</small>`;
     tr.innerHTML = `
       <td style="text-align:start;padding-left:10px">${dateLabel}</td>
-      <td><b>${r.weight.toFixed(1)}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
+      <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
       <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${r.stapleAmount}g</span>`:''}</td>
@@ -6626,6 +6670,7 @@ applyWeightDeviceGuard();
 // after a page reload).
 populateResidentSelect($('#inResident'), {preferId: UI.inRes});
 populateResidentSelect($("#ivResident"), {preferId: UI.ivRes, fallbackFirst:true, includeDischarged:true});
+wrPaintLegendDots();
 goto(['list','input','indiv','grid','alert','cfg'].includes(UI.tab) ? UI.tab : 'list');
 /* ★前回状態を復元した「後」に呼ぶ＝入居者マスタからの指定を優先させる。
    逆順にすると前回開いていた別人が選択されたままになる（誤記録の元）。 */
