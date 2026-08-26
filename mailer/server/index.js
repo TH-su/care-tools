@@ -12,6 +12,7 @@ import {
 } from './store.js';
 import { DEMO_ACCOUNTS, demoEvents, demoTasks } from './demo.js';
 import { ensureLocalSource, LOCAL_SOURCE_ID } from './calendar.js';
+import { buildLine } from './build.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8744;
@@ -83,6 +84,7 @@ const server = app.listen(PORT, HOST, async () => {
   console.log('  │                                              │');
   console.log('  └──────────────────────────────────────────────┘');
   console.log('');
+  console.log(`  アプリの版  : ${buildLine()}`);
   console.log(`  データ保存先: ${DATA_DIR}`);
   console.log('  終了するには Ctrl+C を押してください');
   console.log('');

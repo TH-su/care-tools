@@ -18,6 +18,7 @@ import { ops, formatMessage } from './mail-service.js';
 import { testImap } from './imap.js';
 import { testSmtp } from './smtp.js';
 import { DEMO_ACCOUNTS, resetDemo } from './demo.js';
+import { BUILD, buildLine } from './build.js';
 
 export const api = express.Router();
 
@@ -28,6 +29,11 @@ const h = (fn) => (req, res) => {
     res.status(status).json({ error: err.message || 'サーバーエラーが発生しました', authFailed: Boolean(err.authFailed) });
   });
 };
+
+// 動いているサーバーの版。直したはずの不具合が残るとき、まずここを見る
+api.get('/health', (req, res) => {
+  res.json({ ok: true, build: BUILD });
+});
 
 function requireAccount(req) {
   const account = getAccount(req.query.account || req.body?.account);
@@ -54,6 +60,7 @@ api.get('/accounts', h(async (req, res) => {
     calendarRedirectUri: REDIRECT_URI,
     googleDraft: googleDraftPublic(),
     timeZone: localTimeZone(),
+    build: BUILD,
   });
 }));
 
@@ -358,7 +365,7 @@ function parseRange(req) {
 api.get('/calendar/sources', h(async (req, res) => {
   res.json({
     sources: cal.sourcesForClient(), targets: cal.writableTargets(),
-    redirectUri: REDIRECT_URI, googleDraft: googleDraftPublic(),
+    redirectUri: REDIRECT_URI, googleDraft: googleDraftPublic(), build: BUILD,
   });
 }));
 
@@ -415,13 +422,34 @@ api.post('/calendar/sources/:id/sync', h(async (req, res) => {
 }));
 
 // ── Google連携（OAuth 2.0 / PKCE） ────────────────────────────
+// 貼り付けに紛れ込む「見えない文字」を取り除く。
+// ブラウザやPDFからコピーすると、末尾の改行・全角空白・ゼロ幅文字・
+// 前後の引用符が付いてくることがあり、見た目は同じなのにGoogleは別物として扱う。
+export function cleanCredential(value) {
+  let t = String(value ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')      // ゼロ幅文字・BOM
+    .replace(/[\u00A0\u3000]/g, ' ')            // 改行なし空白・全角空白 → 半角空白
+    .replace(/[\r\n\t]/g, '')                  // 途中で折り返された改行
+    .trim();
+  // JSONなどから引用符ごとコピーした場合
+  if (t.length >= 2 && ((t[0] === '"' && t.at(-1) === '"') || (t[0] === "'" && t.at(-1) === "'"))) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
 // 許可画面へ行く前に設定だけ確かめる（ブラウザを開かない）
 // 入力欄が空のときは、前回の控えを使う（貼り直しの手間を省くため）
 async function googleCreds(body) {
   const draft = await getGoogleDraft();
-  const clientId = String(body?.clientId || '').trim() || draft.clientId;
-  const clientSecret = String(body?.clientSecret || '').trim() || draft.clientSecret;
+  const clientId = cleanCredential(body?.clientId) || draft.clientId;
+  const clientSecret = cleanCredential(body?.clientSecret) || draft.clientSecret;
   if (!clientId) { const e = new Error('クライアントIDを入力してください'); e.status = 400; throw e; }
+  // 掃除しても空白が残る＝2つの値をまとめて貼ってしまった等。先に気付けるようにする
+  if (/\s/.test(clientId) || /\s/.test(clientSecret || '')) {
+    const e = new Error('クライアントIDまたはシークレットに空白が混ざっています。もう一度コピーし直してください。');
+    e.status = 400; throw e;
+  }
   await saveGoogleDraft({ clientId, clientSecret });
   return { clientId, clientSecret };
 }
@@ -465,16 +493,26 @@ api.get('/calendar/google/status', h(async (req, res) => {
 api.get('/oauth/google/callback', async (req, res) => {
   const state = String(req.query.state || '');
   const p = google.getPending(state);
-  const page = (title, body, ok) => `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
-<title>${title}</title><style>
+  // 画面に出す値は必ずエスケープする（Googleの応答をそのまま埋め込むため）
+  const esc = (v) => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const page = (title, body, ok, extra = '') => `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<title>${esc(title)}</title><style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:#f5f5f7;color:#1d1d1f;
-display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.card{background:#fff;border-radius:16px;padding:36px 40px;max-width:440px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.12)}
+display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}
+.card{background:#fff;border-radius:16px;padding:36px 40px;max-width:520px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.12)}
 .mark{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;font-size:26px;
 background:${ok ? '#e7f7ec' : '#fdecea'};color:${ok ? '#28a745' : '#ff3b30'}}
 h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e73;margin:0}
-</style></head><body><div class="card"><div class="mark">${ok ? '✓' : '!'}</div><h1>${title}</h1><p>${body}</p></div>
-<script>setTimeout(function(){window.close();},${ok ? 2500 : 8000});</script></body></html>`;
+.tip{margin-top:18px;padding:12px 14px;border-radius:10px;background:#fff8e6;border:1px solid #f3d68b;
+font-size:13px;line-height:1.8;color:#6b4e00;text-align:left}
+.tip code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 5px;font-size:12.5px}
+dl{margin:16px 0 0;padding-top:14px;border-top:1px solid #e8e8ed;display:grid;grid-template-columns:auto 1fr;
+gap:6px 14px;font-size:12px;text-align:left;color:#8e8e93}
+dt{white-space:nowrap}
+dd{margin:0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#3a3a3c}
+</style></head><body><div class="card"><div class="mark">${ok ? '\u2713' : '!'}</div><h1>${esc(title)}</h1>
+<p>${esc(body)}</p>${extra}</div>
+<script>setTimeout(function(){window.close();},${ok ? 2500 : 600000});</script></body></html>`;
 
   if (req.query.error) {
     google.finishAuth(state, { status: 'error', error: `Googleで許可されませんでした（${req.query.error}）` });
@@ -516,8 +554,10 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
       if (!t) return '（無し）';
       return t.length > 8 ? `${t.length}文字（末尾 ${t.slice(-4)}）` : `${t.length}文字`;
     };
+    const usedPkce = Boolean(p.verifier);
     console.error('');
     console.error('  ┌─ [Google連携] 引き換えに失敗しました ──────────');
+    console.error('  │ アプリの版   :', buildLine());
     console.error('  │ 理由        :', err?.message || err);
     console.error('  │ HTTPステータス:', err?.googleStatus ?? '（不明）');
     console.error('  │ Googleの応答 :', err?.googleBody || '（なし）');
@@ -525,11 +565,38 @@ h1{font-size:17px;margin:0 0 8px}p{font-size:13.5px;line-height:1.75;color:#6e6e
     console.error('  │ シークレット  :', len(p.clientSecret));
     console.error('  │ リダイレクトURI:', p.redirectUri);
     console.error('  │ 認可コード    :', len(req.query.code));
-    console.error('  │ 検証子(PKCE) :', p.verifier ? len(p.verifier) : '（使用せず）');
+    console.error('  │ 検証子(PKCE) :', usedPkce ? len(p.verifier) : '（使用せず）');
     console.error('  └────────────────────────────────────────');
     console.error('');
+
+    // 画面にも手がかりを残す。失敗の報告は端末ではなく、この画面の写真で届くため。
+    // シークレットは長さだけ（写真に写っても困らない範囲にとどめる）。
+    const rows = [
+      ['アプリの版', buildLine()],
+      // クライアントIDは秘密ではない（認可URLにも出る）ので、そのまま出して照合しやすくする
+      ['クライアントID', p.clientId || '（無し）'],
+      ['シークレット', p.clientSecret ? `設定あり（${String(p.clientSecret).length}文字）` : '（無し）'],
+      ['PKCE', usedPkce ? '使用（S256）' : '使用せず'],
+      ['リダイレクトURI', p.redirectUri || '（無し）'],
+    ];
+    // 原因が名指しできるときは、次にやることまで書く
+    let tip = '';
+    if (err?.googleError === 'invalid_client' && p.clientSecret && usedPkce) {
+      tip = `<div class="tip"><b>このアプリが古い版のままです。</b><br>`
+        + `シークレットのあるクライアントにPKCEを付けており、Googleがクライアントを照合できません。`
+        + `ターミナルで <code>git pull origin main</code> のあと、`
+        + `<code>npm --prefix mailer run stop</code> → <code>npm --prefix mailer start</code> で起動し直してください。</div>`;
+    } else if (err?.googleError === 'invalid_client') {
+      tip = `<div class="tip">クライアントIDかシークレットが、Google Cloud Consoleのものと一致していない可能性があります。`
+        + `設定画面で「入力し直す」を押し、貼り直してからもう一度お試しください。</div>`;
+    } else if (err?.googleError === 'redirect_uri_mismatch') {
+      tip = `<div class="tip">Google Cloud Consoleの「承認済みのリダイレクト URI」に`
+        + `<code>${esc(p.redirectUri)}</code> をそのまま（末尾のスラッシュなしで）登録してください。</div>`;
+    }
+    const details = tip + '<dl>' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
+
     google.finishAuth(state, { status: 'error', error: err.message });
-    res.status(500).send(page('接続できませんでした', String(err.message || err), false));
+    res.status(500).send(page('接続できませんでした', String(err.message || err), false, details));
   }
 });
 

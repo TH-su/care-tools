@@ -307,7 +307,7 @@ function SourceRow({ source, onChange, onDelete, onSync, onError }) {
   );
 }
 
-export function CalendarSourceModal({ sources, redirectUri, googleDraft, onChanged, onClose, toast }) {
+export function CalendarSourceModal({ sources, redirectUri, googleDraft, build, onChanged, onClose, toast }) {
   const [confirm, setConfirm] = useState(null);
   const onError = (m) => toast(m, 'error');
 
@@ -347,6 +347,12 @@ export function CalendarSourceModal({ sources, redirectUri, googleDraft, onChang
       </div>
 
       <div className="modal-foot">
+        {/* 直したはずの不具合が残るときは、まずこの版が最新かを確かめる */}
+        {build?.id
+          ? <span className="build-line" title={build.commit ? `コミット ${build.commit}` : ''}>
+              アプリの版 <b>{build.id}</b>{build.date && `・${build.date}`}
+            </span>
+          : <span className="spacer" />}
         <span className="spacer" />
         <button className="btn primary" onClick={onClose}>閉じる</button>
       </div>
