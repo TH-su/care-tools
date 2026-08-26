@@ -791,9 +791,15 @@ export function App() {
   };
 
   const toggleTask = async (t) => {
-    setTasks(s => ({ ...s, items: s.items.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)) }));
+    const next = !t.done;
+    // 親を完了にしたら、その下も一緒に完了にする（Gmailのタスクと同じ）
+    const kidIds = tasks.items
+      .filter(x => x.parent === t.taskId && x.sourceId === t.sourceId && x.listId === t.listId)
+      .map(x => x.id);
+    const affected = new Set([t.id, ...kidIds]);
+    setTasks(s => ({ ...s, items: s.items.map(x => (affected.has(x.id) ? { ...x, done: next } : x)) }));
     try {
-      await api.updateTask(t.sourceId, t.listId, t.taskId, { done: !t.done });
+      await api.setTaskDone(t.sourceId, t.listId, t.taskId, next);
       loadTasks();
     } catch (err) {
       toast(err.message, 'error');
@@ -855,6 +861,18 @@ export function App() {
     }
   };
 
+  // 開いているToDoの下に足す
+  const addSubtask = async (title) => {
+    const t = taskModal?.task;
+    if (!t?.taskId) return;
+    try {
+      await api.createTask(t.sourceId, t.listId, { title, parent: t.taskId });
+      loadTasks();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
   const removeTask = async () => {
     const t = taskModal?.task;
     if (!t?.taskId) { setTaskModal(null); return; }
@@ -881,6 +899,12 @@ export function App() {
     }
   };
 
+  // 親にできるのは、同じリストにあって・自分ではなく・それ自身が子でないToDo。
+  // Google ToDo の入れ子は1段だけなので、孫を作らせない
+  const subtaskParents = (t) => tasks.items.filter(x =>
+    x.sourceId === t.sourceId && x.listId === t.listId
+    && x.taskId !== t.taskId && !x.parent && !x.done);
+
   const taskMenu = (e, t) => {
     e.preventDefault();
     e.stopPropagation();
@@ -890,6 +914,19 @@ export function App() {
       items: [
         ...(t.sourceMail ? [{ label: '元のメールを開く', icon: 'mail', onClick: () => openMailRef(t.sourceMail) }] : []),
         { label: t.done ? '未完了に戻す' : '完了にする', icon: t.done ? 'circle' : 'checkCircle', onClick: () => toggleTask(t) },
+        ...(t.parent
+          ? [{ label: '一段上げる（親から外す）', icon: 'chevL', onClick: async () => {
+            try { await api.setTaskParent(t.sourceId, t.listId, t.taskId, null); loadTasks(); }
+            catch (err) { toast(err.message, 'error'); }
+          } }]
+          : subtaskParents(t).slice(0, 6).map(p => ({
+            label: `「${p.title.slice(0, 14)}${p.title.length > 14 ? '…' : ''}」のサブタスクにする`,
+            icon: 'list',
+            onClick: async () => {
+              try { await api.setTaskParent(t.sourceId, t.listId, t.taskId, p.taskId); loadTasks(); }
+              catch (err) { toast(err.message, 'error'); }
+            },
+          }))),
         { label: '今日を期限にする', icon: 'today', onClick: async () => {
           try {
             await api.updateTask(t.sourceId, t.listId, t.taskId, { due: startOfDay(new Date()).toISOString() });
@@ -1244,11 +1281,19 @@ export function App() {
         <TaskModal
           task={taskModal.task}
           lists={tasks.lists}
+          subtasks={tasks.items
+            .filter(x => x.parent === taskModal.task?.taskId
+              && x.sourceId === taskModal.task?.sourceId
+              && x.listId === taskModal.task?.listId)
+            .sort((a, b) => String(a.position).localeCompare(String(b.position)))}
           busy={taskBusy}
           onSave={saveTask}
           onDelete={removeTask}
           onClose={() => setTaskModal(null)}
           onOpenMail={(ref) => { setTaskModal(null); openMailRef(ref); }}
+          onAddSubtask={addSubtask}
+          onToggleSubtask={toggleTask}
+          onOpenSubtask={(st) => setTaskModal({ task: st })}
         />
       )}
 

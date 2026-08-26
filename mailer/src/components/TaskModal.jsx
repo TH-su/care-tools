@@ -1,6 +1,6 @@
 // ToDoの詳細 — Google ToDo（Gmailのサイドパネル）と同じことが出来るようにする。
 // タイトル・詳細・期限・保存先リスト・完了/未完了・削除、そして元メールの確認。
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Modal, Spinner } from '../common.jsx';
 import { Icon } from '../icons.jsx';
 import { cx } from '../util.js';
@@ -8,7 +8,7 @@ import { toDateInput, toTimeInput, fromInputs } from '../calendar-util.js';
 
 const listKey = (l) => `${l.sourceId}|${l.listId}`;
 
-export function TaskModal({ task, lists = [], busy, onSave, onDelete, onClose, onOpenMail }) {
+export function TaskModal({ task, lists = [], subtasks = [], busy, onSave, onDelete, onClose, onOpenMail, onAddSubtask, onToggleSubtask, onOpenSubtask }) {
   const isEdit = Boolean(task?.taskId);
   const current = lists.find(l => l.sourceId === task?.sourceId && l.listId === task?.listId) || lists[0];
 
@@ -23,6 +23,8 @@ export function TaskModal({ task, lists = [], busy, onSave, onDelete, onClose, o
     list: current ? listKey(current) : '',
   });
   const [error, setError] = useState(null);
+  const [subDraft, setSubDraft] = useState('');
+  const subRef = useRef(null);
 
   const set = (patch) => setForm(f => ({ ...f, ...patch }));
 
@@ -119,6 +121,50 @@ export function TaskModal({ task, lists = [], busy, onSave, onDelete, onClose, o
             ))}
           </select>
         </div>
+
+        {/* サブタスク。Google ToDo と同じく入れ子は1段だけ */}
+        {isEdit && !task.parent && (
+          <div className="field">
+            <label>サブタスク{subtasks.length > 0 && `（${subtasks.filter(x => x.done).length}/${subtasks.length}）`}</label>
+            <div className="subtask-list">
+              {subtasks.map(st => (
+                <div className={cx('subtask', st.done && 'done')} key={st.id}>
+                  <button
+                    type="button" className="tick"
+                    onClick={() => onToggleSubtask?.(st)}
+                    title={st.done ? '未完了に戻す' : '完了にする'} aria-label={st.done ? '未完了に戻す' : '完了にする'}
+                  >
+                    <Icon name={st.done ? 'checkCircle' : 'circle'} size={16} />
+                  </button>
+                  <button type="button" className="ttl" onClick={() => onOpenSubtask?.(st)}>{st.title}</button>
+                </div>
+              ))}
+            </div>
+            <div className="subtask-add">
+              <Icon name="plus" size={14} className="ic" />
+              <input
+                ref={subRef} value={subDraft} onChange={(e) => setSubDraft(e.target.value)}
+                placeholder="サブタスクを追加（Enterで登録）"
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  // 外側のフォームが送信されて詳細が閉じてしまわないようにする
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const t = subDraft.trim();
+                  if (!t) return;
+                  setSubDraft('');
+                  onAddSubtask?.(t);
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {isEdit && task.parent && (
+          <div className="hint" style={{ marginBottom: 14 }}>
+            これは他のToDoのサブタスクです。一覧の「…」から「一段上げる」で外せます。
+          </div>
+        )}
 
         {task?.sourceMail && (
           <button type="button" className="mail-link" onClick={() => onOpenMail?.(task.sourceMail)}>
