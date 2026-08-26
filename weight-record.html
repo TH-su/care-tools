@@ -4708,16 +4708,56 @@ function syncChartVisibility(){
   $('#ivChartWrapAll').classList.toggle('off', !ivAllOn);
 }
 
+/* 測定日（YYYY-MM-DD）を「1970-01-01 からの通日」にする。
+   Chart.js の linear 軸に日付をそのまま渡すための x 値。
+   Date.UTC を使うのは、タイムゾーンで 1 日前後にずれないようにするため。 */
+function dayNumOf(iso){
+  if(!iso || typeof iso !== 'string') return null;
+  const p = iso.split('-');
+  if(p.length < 3) return null;
+  const y = Number(p[0]), m = Number(p[1]), d = Number(p[2]);
+  if(!isFinite(y) || !isFinite(m) || !isFinite(d)) return null;
+  return Math.round(Date.UTC(y, m-1, d) / 86400000);
+}
+/* 通日 → 'YYYY-MM' */
+function ymOfDayNum(n){
+  const dt = new Date(Math.round(n) * 86400000);
+  return dt.getUTCFullYear()+'-'+String(dt.getUTCMonth()+1).padStart(2,'0');
+}
+/* 'YYYY-MM' の 1 日の通日 */
+function dayNumOfYm(ym){ return dayNumOf(ym + '-01'); }
+
 /* Filter records to the primary chart's date window.
    - w1: past 7 days  (date-padded: today-6 → today; null where no measurement)
    - m1: past 31 days (date-padded: today-30 → today; null where no measurement)
-   - y1: past 12 months, monthly-latest records (getRecordsOf)
+   - y1: 記録のある直近 12 ヶ月に含まれる全測定（dated モード）
    For w1/m1 the returned `recs` is padded to match `labels` length so the X
    axis shows every date even when no measurement was recorded that day. */
 function recordsForRange(rid){
   if(!rid) return { recs:[], daily:false };
   if(ivRange === 'y1'){
-    return { recs: getRecordsOf(rid).slice(-12), daily:false };
+    /* 1 ヶ月に数回測定する方がいるため、月ごとの最新 1 件に丸めず全測定を返す。
+       対象月は従来と同じ「記録のある直近 12 ヶ月」（= getRecordsOf().slice(-12) の月）。
+       こうすれば従来表示されていた点は必ず残り、月 2 回以上の測定分だけが増える。 */
+    const months = new Set(getRecordsOf(rid).slice(-12).map(r=> r.yearMonth));
+    if(months.size === 0) return { recs:[], daily:false, dated:true };
+    // 同じ測定日に複数レコードがある場合は新しい方だけ採る（w1/m1 と同じ規則）。
+    const byDate = new Map();
+    getAllRecordsOf(rid).forEach(r=>{
+      // 対象月の判定は測定日ではなく yearMonth（対象月）で行う。
+      // 月末に測って翌月分として登録する運用があっても取りこぼさない。
+      if(!months.has(r.yearMonth)) return;
+      const k = r.measuredOn || (r.yearMonth ? r.yearMonth + '-01' : '');
+      if(!k) return;
+      const prev = byDate.get(k);
+      // newer id wins (record IDs are time-prefixed via uid())
+      if(!prev || (r.id || '') > (prev.id || '')) byDate.set(k, r);
+    });
+    // linear 軸の折れ線は x 昇順でないと線が行き戻るので、測定日順に並べる。
+    const recs = [...byDate.entries()]
+      .sort((a,b)=> a[0].localeCompare(b[0]))
+      .map(e=> e[1]);
+    return { recs, daily:false, dated:true };
   }
   const days = ivRange === 'w1' ? 7 : 31;
 
@@ -4779,7 +4819,7 @@ function renderIndiv(){
   }
 
   drawChart(rid, 'y1', $('#ivChartY1'), primary.recs, primary.daily, yRange,
-            primary.labels, primary.dateKeys);
+            primary.labels, primary.dateKeys, primary.dated);
   if(ivAllOn) drawChart(rid, 'all', $('#ivChartAll'), allMonthly, false, yRange);
   else destroyChart('all');
 
@@ -4804,14 +4844,18 @@ function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
 }
 
-function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
+function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, dated){
   recs = recs || [];
   // labelsIn/dateKeysIn are supplied for daily ranges (w1/m1) that pad the
   // X-axis with every date in the window; recs may contain null entries
   // for unmeasured days. For monthly modes we fall back to deriving from recs.
   const labels = labelsIn || recs.map(r=> daily ? (r.measuredOn || (r.yearMonth+'-01')) : ymFmt(r.yearMonth));
   const dateKeys = dateKeysIn || labels;
-  const data = recs.map(r=> r ? r.weight : null);
+  // dated モード（1年グラフ）は測定日の位置に点を置くため {x:通日, y:体重} で渡す。
+  // それ以外は従来どおりカテゴリ軸に値だけを並べる。
+  const data = dated
+    ? recs.map(r=> ({ x: dayNumOf(r.measuredOn || (r.yearMonth ? r.yearMonth+'-01' : '')), y: r.weight }))
+    : recs.map(r=> r ? r.weight : null);
 
   const ctx = canvas.getContext('2d');
   destroyChart(key);
@@ -4858,6 +4902,37 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
   const yScale = { title:{display:true, text:'kg'}, grid:{color:'#f1f3f4'} };
   if(yRange){ yScale.min = yRange.min; yScale.max = yRange.max; }
 
+  /* X軸。dated モード（1年グラフ）は「測定日の位置」に点を置くため、月を等間隔に
+     並べるカテゴリ軸ではなく通日の linear 軸を使う。Chart.js の time 軸は日付
+     アダプタの追加読み込みが要るので使わない（このツール群は外部ライブラリを
+     増やさない方針）。目盛りは従来と同じ「年月」を月初の位置に打ち、混み合う分は
+     autoSkip が間引く。 */
+  const xScale = { grid:{display:false}, ticks:{maxRotation:0, autoSkip:true} };
+  if(dated){
+    const xs = data.map(p=> p && p.x).filter(v=> typeof v === 'number' && isFinite(v));
+    if(xs.length){
+      const lo = Math.min(...xs), hi = Math.max(...xs);
+      // 左端は最初の測定月の1日に合わせ、右端は点が枠線に張り付かない程度の余白を足す
+      const xMin = dayNumOfYm(ymOfDayNum(lo));
+      const xMax = hi + Math.max(3, Math.round((hi - lo) * 0.02));
+      const monthTicks = [];
+      let ym = ymOfDayNum(xMin);
+      for(let i=0; i<15; i++){
+        const v = dayNumOfYm(ym);
+        // 右端の余白に翌月の目盛りが出ると「まだ記録の無い月」が見出しに出て紛らわしい。
+        // 目盛りは最後の測定日が属する月までにとどめる。
+        if(v == null || v > hi) break;
+        monthTicks.push({ value: v });
+        ym = ymPrev(ym, -1);   // 翌月へ
+      }
+      xScale.type = 'linear';
+      xScale.min = xMin;
+      xScale.max = xMax;
+      if(monthTicks.length) xScale.afterBuildTicks = axis => { axis.ticks = monthTicks.slice(); };
+      xScale.ticks.callback = v => ymFmt(ymOfDayNum(v));
+    }
+  }
+
   ivCharts[key] = new Chart(ctx, {
     type:'line',
     data:{
@@ -4890,7 +4965,7 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
               const idx = items[0].dataIndex;
               const rec = recs[idx];
               if(rec){
-                return daily
+                return (daily || dated)
                   ? (rec.measuredOn || ymFmt(rec.yearMonth))
                   : ymFmt(rec.yearMonth);
               }
@@ -4901,8 +4976,13 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
               const rec = recs[item.dataIndex];
               const lines = [];
               if(!rec) return lines;
-              if(daily && rec.measuredOn){
-                // for daily view: show diff vs the most recent earlier non-null point
+              // 月内最新の点は従来どおり前月比。月内のそれ以外の測定（dated モードで
+              // 増えた点）と日別グラフ（w1/m1）は、直前の測定との差＝前回比を出す。
+              const useMonthly = dated
+                ? monthlyLatestIds.has(rec.id)
+                : !(daily && rec.measuredOn);
+              if(!useMonthly){
+                // show diff vs the most recent earlier non-null point
                 let prev = null;
                 for(let i = item.dataIndex - 1; i >= 0; i--){
                   if(recs[i]){ prev = recs[i]; break; }
@@ -4931,7 +5011,7 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn){
       },
       scales:{
         y: yScale,
-        x:{ grid:{display:false}, ticks:{maxRotation:0, autoSkip:true} }
+        x: xScale
       }
     }
   });
