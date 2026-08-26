@@ -217,6 +217,19 @@ textarea{resize:vertical;min-height:60px}
 .iv-chart-wrap.off{display:none}
 .iv-chart-ttl{font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .iv-chart-ttl::before{content:'';width:10px;height:10px;border-radius:2px;background:var(--pri)}
+/* グラフの丸・表の色が何を意味するかの説明。丸の色と大きさだけに意味を持たせない
+   （ツールチップはタップしないと出ないので、一覧視の職員には届かないため）。 */
+.iv-note{font-size: 0.8125rem;line-height:1.6;color:var(--g7);margin-top:8px;
+  display:flex;flex-wrap:wrap;gap:4px 14px}
+.iv-note .nt{display:inline-flex;align-items:center;gap:5px}
+.iv-note .dot{display:inline-block;border-radius:50%;border:2px solid #fff;
+  box-shadow:0 0 0 1px var(--g4);flex:none}
+.iv-note .dot.big{width:16px;height:16px}
+.iv-note .dot.mid{width:12px;height:12px}
+.iv-note .dot.up{background:#c62828}
+.iv-note .dot.dn{background:#1565c0}
+.iv-note .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
+  border:1px solid var(--g4);background:#fff8e1;flex:none}
 .st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:720px){.st-g{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.st-g{grid-template-columns:repeat(2,1fr)}}
@@ -867,12 +880,21 @@ select option.is-discharged{color:var(--g6)}
       <div class="iv-chart-ttl">全期間の推移</div>
       <div class="ch-w"><canvas id="ivChartAll"></canvas></div>
     </div>
+    <div class="iv-note">
+      <span class="nt"><i class="dot big up"></i><i class="dot big dn"></i>大きい丸＝前回比が ±2.0kg 以上（増加は赤・減少は青）</span>
+      <span class="nt"><i class="dot mid up"></i><i class="dot mid dn"></i>中くらいの丸＝月次しきい値の注意・警告</span>
+      <span class="nt">丸をタップすると数値が出ます。比べる相手は<b>表示中の期間の中で1つ前の測定</b>です。</span>
+    </div>
   </div>
 
   <div class="cd">
     <div class="cd-t">
       <span>記録履歴</span>
       <span class="cd-t-r" id="ivHistCount">—</span>
+    </div>
+    <div class="iv-note">
+      <span class="nt">前回比＝<b>すぐ下の行（直前の測定）</b>との差です。</span>
+      <span class="nt"><i class="sw"></i>行の色は月次しきい値の注意・警告で、前回比とは別の指標です。</span>
     </div>
     <div class="lt-w lt-w-scroll">
       <table class="ht" id="ivHist">
@@ -4847,9 +4869,11 @@ function destroyChart(key){
 /* グラフのドットを「大きな丸」で強調する前回比のしきい値（kg）と、その時の半径。
    月次アラート（注意=6 / 警告=7）に当たらない変化でも、直前の測定から
    ±2kg 動いていれば見落とさないようにするための表示ルール。
-   半径は既存の「警告」と同じ 7px に揃えている。 */
+   半径を 8 にしているのは、通常4 < 注意6 < 警告7 < 前回比±2kg 8 の順序を崩さないため。
+   7 にすると、前月比 2.0〜2.5kg の「注意」が「警告」と同じ大きさ・同じ色になり、
+   既存の注意／警告の区別が画面から消える（既定しきい値 m1: wKg 1.5 / ngKg 2.5）。 */
 const WR_DOT_BIG_KG = 2;
-const WR_DOT_BIG_R  = 7;
+const WR_DOT_BIG_R  = 8;
 
 function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, dated){
   recs = recs || [];
@@ -4895,13 +4919,22 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
   /* 前回比 ＝ グラフ上の「1つ前に描かれている点」との差。
      画面に見えているものとだけ比べるので、職員が「何と比べた色か」を追える。
      1週間・1ヶ月グラフは表示期間の外を見に行かないため、期間の最初の点は比較対象なし。 */
-  const prevDiffs = recs.map((r, i)=>{
-    if(!r) return null;
+  /* 体重が数値として妥当な記録どうしでしか比べない。normalizeRecord は数値化に
+     失敗した体重を 0 にするため、素通しすると 0 を基準にした「+58.0kg」で
+     大きな赤丸が立ち、その次の点にも「−58.0kg」の青丸が立つ（偽アラート2つ）。
+     丸めは表と同じ小数1桁に揃える（表が「+2.0」なのに丸が大きくならない食い違いを防ぐ）。 */
+  const wOk = x => !!x && typeof x.weight === 'number' && isFinite(x.weight) && x.weight > 0;
+  const prevCmp = recs.map((r, i)=>{
+    if(!wOk(r)) return null;
     for(let k = i-1; k >= 0; k--){
-      if(recs[k]) return +(r.weight - recs[k].weight).toFixed(2);
+      if(!recs[k]) continue;                  // 日別グラフの穴（測定の無い日）は飛ばす
+      if(!wOk(recs[k])) return null;          // 基準が壊れているなら比べない
+      const w0 = recs[k].weight;
+      return { d: +(r.weight - w0).toFixed(1), pct: +((r.weight - w0) / w0 * 100).toFixed(1) };
     }
     return null;                              // 1つ前の点が無い（期間の先頭）
   });
+  const prevDiffs = prevCmp.map(x=> x ? x.d : null);
   // ±WR_DOT_BIG_KG 以上動いた点の向き。'up'=増加（赤）/'dn'=減少（青）/null=該当なし
   const bigDir = d => (d==null) ? null
                     : (d >=  WR_DOT_BIG_KG) ? 'up'
@@ -4976,7 +5009,7 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         pointBorderColor: '#fff',
         pointBorderWidth: 2,
         pointRadius: pointRd,
-        pointHoverRadius: 8,
+        pointHoverRadius: 10,            // 最大の点（前回比±2kg の 8）より大きくして反応が分かるようにする
         tension:0.25,
         fill:true,
         borderWidth:2.5,
@@ -5017,8 +5050,14 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
               const same = (d!=null && m1!=null && Math.abs(m1 - d) < 0.05);
               if(d != null){
                 const s = d>0?'+':'';
-                const pctPart = same ? ` (${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%)` : '';
-                lines.push(`前回比: ${s}${d.toFixed(1)}kg${pctPart}`);
+                // ％は前回比そのものから出す（点によって％が出たり出なかったりしないように）
+                const p = prevCmp[item.dataIndex]?.pct;
+                const pctPart = (p==null) ? '' : ` (${p>0?'+':''}${p.toFixed(1)}%)`;
+                // 基準が同じ記録になる時は「前月比」の名前も残す。この値はしきい値設定・
+                // アラート・統計タイル・集計グリッドが「前月比」と呼んでいる指標そのもので、
+                // グラフでだけ別名になると、丸の色の根拠を他の画面から追えなくなる。
+                const lbl = same ? '前回比（＝前月比）' : '前回比';
+                lines.push(`${lbl}: ${s}${d.toFixed(1)}kg${pctPart}`);
               }
               if(m1 != null && !same){
                 const s = m1>0?'+':'';
@@ -5145,15 +5184,28 @@ function drawHist(rid){
        （従来は月内最終の記録以外が analyze の対象外で「—」になっていた）。
        比較対象が無い最古の行だけ「—」。 */
     const prevRec = recs[i+1] || null;
-    const df = prevRec ? +(r.weight - prevRec.weight).toFixed(1) : null;
-    const pc = (prevRec && prevRec.weight) ? +((r.weight - prevRec.weight) / prevRec.weight * 100).toFixed(1) : null;
+    /* 比べられない記録は比べない（「—」に倒す）。GAS / CSV 経由で型が崩れると
+       normalizeRecord は数値化に失敗した体重を 0 にするため（wrOk の w>0 はその 0 を弾く）、
+       素通しすると「前回比 +58.0kg」のような偽の急増が出る。yearMonth も measuredOn も
+       無い記録があり得るので（この関数自身が「日付なし」を描いている）、
+       ymFmt に null を渡して例外を投げ、表の残り全部を描かなくなることも防ぐ。 */
+    const wrOk = x => !!x && typeof x.weight === 'number' && isFinite(x.weight) && x.weight > 0;
+    const cmpOk = wrOk(r) && wrOk(prevRec);
+    const df = cmpOk ? +(r.weight - prevRec.weight).toFixed(1) : null;
+    const pc = cmpOk ? +((r.weight - prevRec.weight) / prevRec.weight * 100).toFixed(1) : null;
     const diffHtml = (df==null)
       ? '<span style="color:var(--g5)">—</span>'
       : (()=>{
           const cls = df>0?'pos':df<0?'neg':'zero';
           const s = df>0?'+':'';
           // 何と比べた値かをホバーで示す（基準の記録が分からなくなるのを防ぐ）
-          const base = `${prevRec.measuredOn || ymFmt(prevRec.yearMonth)}（${prevRec.weight.toFixed(1)}kg）比`;
+          const when = prevRec.measuredOn || (prevRec.yearMonth ? ymFmt(prevRec.yearMonth) : '日付なし');
+          let base = `${when}（${prevRec.weight.toFixed(1)}kg）比`;
+          // 行の色は月次しきい値で付くので、色が付いた行にはその根拠も添える
+          // （列の前回比とは別の指標＝赤い理由が表のどこにも無い状態にしない）
+          if((a?.level==='ng' || a?.level==='w') && a.diff1!=null){
+            base += `／この行の色は前月比 ${a.diff1>0?'+':''}${a.diff1.toFixed(1)}kg による`;
+          }
           const pcHtml = (pc==null) ? '' : `<br><small>${s}${pc.toFixed(1)}%</small>`;
           return `<span class="df ${cls}" title="${escapeHtml(base)}">${s}${df.toFixed(1)}${pcHtml}</span>`;
         })();
