@@ -350,7 +350,11 @@ table.wk .wk-blank { color: transparent; }
    ★枠(.wk-flr)は氏名の有る全行に同じ幅で置く＝氏名の頭出しが全行・両ブロックで揃う。
      幅は rem 指定＝ラベルの文字サイズと独立させてある（階未設定だけ短い「未」を出しても頭出しはずれない）。
    ★左揃えにするのは氏名セルだけ。見出し（デイ／２階）と合計行は中央のまま＝既存の見た目を変えない。 */
-table.wk td.wk-nm { text-align: left; }
+/* 氏名は左揃えのまま、まとまりが見出し（デイ／２階）の真下あたりに来るよう左余白で寄せる
+   （2026-08-27 運用指示「左に寄り過ぎ」）。実データの氏名は空白なし4〜6文字・平均4.46文字なので、
+   5文字弱を基準に「氏名の中央≒列の中央」となる位置を実測で決めた。中央揃えにはしない
+   ＝頭出しが行ごとにずれると名簿として読みにくいため。 */
+table.wk td.wk-nm { text-align: left; padding-left: 5.1rem; }
 table.wk .wk-flr { display: inline-block; width: 1.6rem; font-size: 0.875rem; text-align: left; }
 
 .board-empty {
@@ -496,6 +500,13 @@ table.wk .wk-flr { display: inline-block; width: 1.6rem; font-size: 0.875rem; te
   body.pr-batch table.wk td, body.pr-batch table.wk th { font-size: 26pt; height: 10.1mm; }
   /* 階ラベルも用紙の文字サイズ(26pt)に合わせて拡大する。枠幅は氏名の場所を削り過ぎない値（実測で決定）。 */
   body.pr-batch table.wk .wk-flr { width: 2.4rem; font-size: 13pt; }
+  /* 用紙では氏名が 26pt＝画面より大きく、同じ列幅の中で占める割合が変わるため寄せ幅を別に取る。
+     ★値は「中央寄せ」と「はみ出さないこと」の両立点を実測して決めた（1.2rem: 中央からのズレ -16px／
+       最悪ケース＝6文字＋（入院）でも右端に余白 +4px）。これ以上増やすと最後の列で（入院）が
+       用紙の右余白に掛かって印字が欠ける。氏名を長くする改修をした時はここを測り直すこと。
+       測り方: 印刷相当のCSS（26pt・.wk-flr 2.4rem/13pt）を当てた幅756pxの箱に weeklyTable を描き、
+       各行の氏名レンジ(range)の右端とセル右端の差を取る。 */
+  body.pr-batch table.wk td.wk-nm { padding-left: 1.2rem; }
 }
 </style>
 </head>
