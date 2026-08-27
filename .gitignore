@@ -35,6 +35,9 @@
 !/patch-calendar.html
 !/moushiokuri-viewer.html
 !/connection-settings.html
+# 入居調整（申込〜入居の多機関連携ボード・2026-08-27）。コードのみ公開。
+# 相談者の情報は localStorage と GAS 側にあり、リポジトリには一切含まれない
+!/admission-flow.html
 # 薬効辞書（薬剤名 → 効果・効能）。入居者マスタとフェイスシートが共有する唯一の正本。
 # 一般的な薬効分類のみで、入居者の処方内容は含まない（2026-08-11 管理者の承認のうえ公開）
 !/meds-effect-dict.js
