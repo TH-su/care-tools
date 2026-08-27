@@ -354,8 +354,14 @@ table.wk .wk-blank { color: transparent; }
    （2026-08-27 運用指示「左に寄り過ぎ」）。実データの氏名は空白なし4〜6文字・平均4.46文字なので、
    5文字弱を基準に「氏名の中央≒列の中央」となる位置を実測で決めた。中央揃えにはしない
    ＝頭出しが行ごとにずれると名簿として読みにくいため。 */
-table.wk td.wk-nm { text-align: left; padding-left: 5.1rem; }
-table.wk .wk-flr { display: inline-block; width: 1.6rem; font-size: 0.875rem; text-align: left; }
+table.wk td.wk-nm { text-align: left; padding-left: 4.6rem; }
+/* ★ラベルを大きく／左へ動かす時は、枠(width)を広げた分だけ上の padding-left を減らすこと。
+     氏名の頭出し＝padding-left + 枠幅 なので、両方を同じ量だけ増減すれば氏名は1pxも動かない
+     （2026-08-27 運用指示「ラベルは少し大きく左へ・氏名はその位置で固定」）。 */
+table.wk .wk-flr { display: inline-block; width: 2.1rem; font-size: 1rem; text-align: left; }
+/* 人数（合計）は氏名と区別できるよう直上に横線を引き、少しだけ間を空ける。
+   ★氏名行の高さ・文字サイズは変えない（用紙1枚に収まる行数を減らさないため）。広げるのは合計行だけ。 */
+table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7px; height: 38px; }
 
 .board-empty {
   position: absolute; inset: 0; display: none; flex-direction: column;
@@ -499,14 +505,17 @@ table.wk .wk-flr { display: inline-block; width: 1.6rem; font-size: 0.875rem; te
   .pg table { break-inside: avoid; page-break-inside: avoid; }
   body.pr-batch table.wk td, body.pr-batch table.wk th { font-size: 26pt; height: 10.1mm; }
   /* 階ラベルも用紙の文字サイズ(26pt)に合わせて拡大する。枠幅は氏名の場所を削り過ぎない値（実測で決定）。 */
-  body.pr-batch table.wk .wk-flr { width: 2.4rem; font-size: 13pt; }
+  body.pr-batch table.wk .wk-flr { width: 2.9rem; font-size: 15pt; }
   /* 用紙では氏名が 26pt＝画面より大きく、同じ列幅の中で占める割合が変わるため寄せ幅を別に取る。
      ★値は「中央寄せ」と「はみ出さないこと」の両立点を実測して決めた（1.2rem: 中央からのズレ -16px／
        最悪ケース＝6文字＋（入院）でも右端に余白 +4px）。これ以上増やすと最後の列で（入院）が
        用紙の右余白に掛かって印字が欠ける。氏名を長くする改修をした時はここを測り直すこと。
        測り方: 印刷相当のCSS（26pt・.wk-flr 2.4rem/13pt）を当てた幅756pxの箱に weeklyTable を描き、
        各行の氏名レンジ(range)の右端とセル右端の差を取る。 */
-  body.pr-batch table.wk td.wk-nm { padding-left: 1.2rem; }
+  body.pr-batch table.wk td.wk-nm { padding-left: 0.7rem; }
+  /* 合計の横線と余白は用紙でも同じ考え方。行高は 10.1mm→13mm と少しだけ増やす
+     （最大行数でもA4縦1枚に収まる範囲＝氏名の文字を小さくせずに済む）。 */
+  body.pr-batch table.wk tr.wk-total td.wk-sum { padding-top: 2.5mm; height: 13mm; }
 }
 </style>
 </head>
@@ -916,6 +925,14 @@ var dcrHospMap = null;                // masterId(string) -> bool ／ null = 未
    入院を取りに行くのと同じ応答からそのまま導出する（追加のリクエストは発生しない）。
    ★週間計画側に visitingMed を入力するUIは無い＝現場の入力を潰す心配がない。 */
 var dcrVmedMap = null;                // masterId(string) -> bool ／ null = 未取得
+/* 居室（room）— 2026-08-27 追加。入居者マスタで居室を入れているのに「階未設定」になる不具合の対処。
+   原因: 週間計画アプリはマスタから取り込んだ room を saveLocalOnly()＝端末内にしか保存せず
+   （care-schedule.html「取り込みは saveLocalOnly()（ローカルのみ）で永続化」）、サーバー版の
+   care_schedule_v2 には room が載らない。本ツールは起動時にサーバー版へ差し替える（refresh）ため、
+   端末キャッシュで一瞬だけ正しい階が出て、その直後に「未」へ戻っていた。
+   対処は入院・訪問診療と同型＝【描画用のコピーにだけ】重ねる（書き込みは一切増やさない）。
+   ★空の居室では上書きしない＝マスタ未入力の人の現行値を消さない（care-schedule の master常勝と同型）。 */
+var dcrRoomMap = null;                // masterId(string) -> room(string) ／ null = 未取得（旧GAS等）
 var dcrHospAt  = 0;
 var dcrHospRev = null;                // 前回見た {rev, srev}
 var dcrHospBusy = false;
@@ -930,7 +947,7 @@ function dcrGetMasterCfg(){
   }catch(e){ return null; }
 }
 
-/* 入院・訪問診療を重ねた【描画用のコピー】を返す。db 自身は決して書き換えない。
+/* 入院・訪問診療・居室を重ねた【描画用のコピー】を返す。db 自身は決して書き換えない。
  *
  * ★2026-08-05 修正: 従来は引数の db を破壊的に書き換えていた。この db は多くの場合グローバル DB
  * そのもので、フラグ保存の背景ワーカー runSaver は DB のスナップショットを care_schedule_v2 へ
@@ -939,7 +956,7 @@ function dcrGetMasterCfg(){
  * 変更がある利用者だけを複製する copy-on-write にして、DB を汚さずに描画だけ変える。
  * 変更が無ければ db をそのまま返す＝従来どおり追加コストなし。 */
 function dcrOverlayMaster(db){
-  if ((!dcrHospMap && !dcrVmedMap) || !db || !Array.isArray(db.residents)) return db;
+  if ((!dcrHospMap && !dcrVmedMap && !dcrRoomMap) || !db || !Array.isArray(db.residents)) return db;
   var rs = db.residents.slice(), changed = false;
   for (var i = 0; i < rs.length; i++){
     var r = rs[i];
@@ -962,6 +979,16 @@ function dcrOverlayMaster(db){
         nr.visitingMed = w;
       }
     }
+    if (dcrRoomMap){
+      /* 居室はマスタ常勝。ただし地図に載っていない人（マスタ未入力・旧GAS）は触らない。
+         これで room→階 の判定（roomToFloor）が入居者マスタの値で決まり、
+         サーバー版 care_schedule_v2 に room が無くても「階未設定」に落ちない。 */
+      var rmv = dcrRoomMap[mid];
+      if (rmv && String(r.room == null ? '' : r.room) !== rmv){
+        if (!nr){ nr = {}; for (k in r) if (Object.prototype.hasOwnProperty.call(r, k)) nr[k] = r[k]; }
+        nr.room = rmv;
+      }
+    }
     if (nr){ rs[i] = nr; changed = true; }
   }
   if (!changed) return db;
@@ -971,8 +998,8 @@ function dcrOverlayMaster(db){
   return out;
 }
 
-/* マスタGASから名簿を取り、入院だけを取り出して保持する。
-   ★取得した氏名・生年月日などは一切保持しない（入院の真偽と masterId のみ）。 */
+/* マスタGASから名簿を取り、入院・往診曜日・居室だけを取り出して保持する。
+   ★取得した氏名・生年月日などは一切保持しない（入院の真偽・☆の真偽・居室番号と masterId のみ）。 */
 function dcrFetchMasterHosp(force){
   if (dcrHospBusy) return Promise.resolve(false);
   var cfg = dcrGetMasterCfg(); if (!cfg || !cfg.token) return Promise.resolve(false);
@@ -982,7 +1009,7 @@ function dcrFetchMasterHosp(force){
   return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token, transport: 'GET' })
     .then(function(j){
       if (!j || !Array.isArray(j.roster)) return false;
-      var m = {}, vm = {}, sawVisitDay = false;
+      var m = {}, vm = {}, rm = {}, sawVisitDay = false, sawRoom = false;
       j.roster.forEach(function(x){
         if (!x || x.masterId == null) { if (x && x.id != null) x.masterId = x.id; }
         var mid = (x && (x.masterId != null ? x.masterId : x.id));
@@ -996,8 +1023,15 @@ function dcrFetchMasterHosp(force){
           sawVisitDay = true;
           if (String(x.visitDay || '').trim() !== '') vm[String(mid)] = true;
         }
+        /* 居室。キーが実在する時だけ「配信あり」とし、値が空の人は地図に載せない
+           ＝未入力で現場（週間計画）の居室を消さない。 */
+        if (Object.prototype.hasOwnProperty.call(x, 'room')){
+          sawRoom = true;
+          var rv = String(x.room == null ? '' : x.room).trim();
+          if (rv) rm[String(mid)] = rv;
+        }
       });
-      dcrHospMap = m; dcrVmedMap = sawVisitDay ? vm : null; dcrHospAt = Date.now();
+      dcrHospMap = m; dcrVmedMap = sawVisitDay ? vm : null; dcrRoomMap = sawRoom ? rm : null; dcrHospAt = Date.now();
       if (typeof j.stateRev === 'number' || typeof j.srev === 'number') {
         dcrHospRev = { rev: j.stateRev, srev: j.srev };
       }
@@ -1752,7 +1786,7 @@ function weeklyTable(ppl, d) {
     tr.appendChild(cell(b[i]));
     tb.appendChild(tr);
   }
-  const sr = el('tr');
+  const sr = el('tr', 'wk-total');   // 直上の横線と余白（氏名と人数の区切り）はこの行にだけ効かせる
   sr.appendChild(el('td', 'wk-blank', ''));
   sr.appendChild(el('td', 'wk-sum', countOn(ppl, d) + '名'));    // 入院者を除いた実稼働
   sr.appendChild(el('td', 'wk-sum', countOff(ppl, d) + '名'));
@@ -2282,7 +2316,7 @@ function toast(msg, isNg) {
 function setSyncState(txt) { $('syncState').textContent = txt; }
 
 function renderAll(db) {
-  db = dcrOverlayMaster(db);   // 入居者マスタ由来の入院/訪問診療を【重ねたコピー】で描画（DBは書き換えない）
+  db = dcrOverlayMaster(db);   // 入居者マスタ由来の入院/訪問診療/居室を【重ねたコピー】で描画（DBは書き換えない）
   // 入居前（週間計画で設定）は「まだ通っていない」ので、非表示設定より先に丸ごと外す。
   // ここで1回外せば、5タブ・全集計・非表示設定の候補一覧のすべてから自動的に消える。
   const pre_ = countPreAdmitted(db);
