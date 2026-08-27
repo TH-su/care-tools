@@ -2445,13 +2445,42 @@ function mealSaveGo(){
         d.warn.map(mealNamed).join('\n'));
     mealSetMsg_(''); paintMealBar(); renderRoster();
   }).catch(function(e){
-    mealSaving=false; setSync('保存失敗','err'); mealSetMsg_('');
+    /* ★mealSaving はここでは戻さない。戻すと確認の往復中に「保存」「取り直し」が復活し、
+       追い越した応答で未保存の印を消しかねない（paintMealBar が両ボタンを mealSaving で止めている）。
+       戻すのは下の3つの終端それぞれで行う（戻し漏れ＝保存ボタンが二度と押せない）。 */
+    var seq0=mealSeq;
     var m=String((e&&e.message)||e);
-    alert(/不明なaction/.test(m)
-      ? '入居者マスタGASの更新がまだのため保存できませんでした（saveMealList が無い版）。\n'+
-        '1文字も書き込んでいません。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください。'
-      : '保存できませんでした: '+m+'\n\n変更は黄色のまま残してあります。');
-    paintMealBar();
+    if(/不明なaction/.test(m)){
+      setSync('保存失敗','err'); mealSetMsg_('');
+      alert('入居者マスタGASの更新がまだのため保存できませんでした（saveMealList が無い版）。\n'+
+        '1文字も書き込んでいません。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください。');
+      mealSaving=false; paintMealBar(); return;
+    }
+    /* ★§13: 失敗表示でも書けていることがある。getMealList で実物を突き合わせる（H2と同じ方針） */
+    setSync('確認中…'); mealSetMsg_('保存の確認中…');
+    apiGet({action:'getMealList'},30000).then(function(d){
+      /* ★この間に取り直しが走っていたら焼き付けない（mealRows が別物に差し替わっている。saveBulk の if(bulkRows) と同じ考え方） */
+      if(seq0!==mealSeq){ mealSaving=false; paintMealBar(); return; }
+      var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
+      var aN=v.applied.length,kN=v.kept.length,ap={},x;
+      for(x=0;x<v.applied.length;x++)ap[v.applied[x]]=1;
+      for(var i2=0;i2<changes.length;i2++){
+        var c=changes[i2]; if(!ap[String(c.id)]) continue;
+        var r2=mealRowOf(c.id);
+        if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+        delete mealDirty[String(c.id)];
+      }
+      if(kN===0){ setSync('保存OK','ok'); toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）'); }
+      else{
+        setSync('保存失敗','err');
+        alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      }
+      mealSetMsg_(''); mealSaving=false; paintMealBar(); renderRoster();
+    }).catch(function(){
+      setSync('確認できず','err'); mealSetMsg_('');
+      alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      mealSaving=false; paintMealBar();
+    });
   });
 }
 
@@ -3776,6 +3805,9 @@ function toggleHosp(){
   if(!curResident||curResident.id==null)return;
   if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
   var next=!curResident.hospitalized, b=$('hospBtn');
+  /* ★取り直しで照合する時のために「誰の・どちらへの変更か」を控える。
+     応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
+  var sid=curResident.id, want=next;
   if(b)b.disabled=true;
   setSync('保存中…');
   apiPost({action:'setState',id:curResident.id,hospitalized:next,src:'master'}).then(function(d){
@@ -3791,13 +3823,37 @@ function toggleHosp(){
     toast(curResident.hospitalized?'🏥 入院中にしました':'🏠 入院を解除しました');
     renderView(curResident);renderRoster();
   }).catch(function(e){
-    setSync('保存失敗','err');toast('⚠️ 変更に失敗: '+e.message);
-    if(b)b.disabled=false;
+    /* ★§13: 失敗表示でも書けていることがある。値の上書きなので取り直して現物で判定する */
+    setSync('確認中…');
+    apiGet({action:'getResident',id:sid},25000).then(function(d){
+      var got=(d&&d.record)||null;
+      /* ★成否は現物だけで決める。確認を待つ間に別の方を開かれても「反映できているのに失敗」と
+         誤報しない。画面の書き換え（curResident・renderView）だけを、いま開いている方が
+         同じ id の時に限る。 */
+      if(got&&got.hospitalized===want){
+        for(var i=0;i<roster.length;i++){
+          if(String(roster[i].id)===String(sid)){roster[i].hospitalized=want;break}
+        }
+        saveRosterCache();writeCommonRoster();
+        setSync('保存OK','ok');
+        toast((want?'🏥 入院中にしました':'🏠 入院を解除しました')+'（応答は届きませんでしたが、反映を確認しました）');
+        if(curResident&&String(curResident.id)===String(sid)){
+          curResident.hospitalized=want;
+          curResident.hospitalizedAt=got.hospitalizedAt||'';
+          renderView(curResident);
+        }
+        renderRoster();
+        return;
+      }
+      setSync('保存失敗','err');toast('⚠️ 変更できていません: '+e.message+'。もう一度お試しください');
+    }).catch(function(){
+      setSync('確認できず','err');toast('⚠️ 変更できたか確認できませんでした。画面を再読み込みして、入院の表示を確かめてください');
+    }).then(function(){ if(b)b.disabled=false; });
   });
 }
 
 /* ═══════════ 編集フォーム ═══════════ */
-var editing=null;
+var editing=null, editBaseUpdatedAt='';
 /* 未知値の救済（データ消失防止）:
    select の選択肢に無い既存値は、どの option にも selected が付かず先頭の空 option が選ばれ、
    編集画面を開いて保存しただけで値が空になって消える。同様に type=date は ISO 形式でない値を
@@ -3851,6 +3907,9 @@ function fitLines(){
 }
 function openEdit(rec){
   editing=rec?JSON.parse(JSON.stringify(rec)):{id:null,active:true,family:[],rhythm:{}};
+  /* ★楽観ロックの基準（GAS §14）。この画面を開いた時点の updatedAt を控え、保存時に同送する。
+     編集中に他端末が保存していれば GAS が 'conflict' で止める（後勝ちの丸ごと上書き防止）。 */
+  editBaseUpdatedAt=(rec&&rec.updatedAt)?String(rec.updatedAt):'';
   supportShowAll=false;      // 別の方を開いたら「直近1年」に戻す（前の方の展開状態を持ち越さない）
   if(!Array.isArray(editing.family))editing.family=[];
   if(!editing.rhythm)editing.rhythm={};
@@ -4580,12 +4639,27 @@ function saveResident(){
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
   if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
   rec.updatedAt=new Date().toISOString();
+  /* ★baseUpdatedAt は record の外に添える（旧GASは未知の項目を無視＝後方互換。
+     record 内に入れると旧GASが dataJson へ焼き込んでしまう）。新規(idなし)や
+     解釈できない値は送らない＝GAS側も従来動作。 */
+  var body={action:'saveResident',record:rec};
+  if(isFinite(Date.parse(editBaseUpdatedAt))) body.baseUpdatedAt=editBaseUpdatedAt;
   $('saveBtn').disabled=true;setSync('保存中…');
-  apiPost({action:'saveResident',record:rec}).then(function(d){
+  apiPost(body).then(function(d){
     var saved=(d&&d.record)||d;
     setSync('保存OK','ok');toast('✅ 保存しました');
+    editBaseUpdatedAt=String((saved&&saved.updatedAt)||rec.updatedAt||'');
     afterSaveOk_(rec,saved);
   }).catch(function(e){
+    /* ★楽観ロックの競合（GAS §14）。サーバーは1文字も書いていないと確定しているので、
+       §13の「実は書けているかも」の取り直し確認はしない（取り直すと他端末の版で
+       「サーバー側にも入っていない」と誤案内してしまう）。入力は画面に残す。 */
+    var m0=String((e&&e.message)||e);
+    if(m0.indexOf('conflict')>=0){
+      setSync('競合','err');
+      alert('⚠️ 他の端末がこの方を先に保存しています。\nこの画面の内容は保存されていません（1文字も書き込んでいません）。\n\n次の手順で直し直してください：\n1) いま直した箇所を控える（メモ・スクリーンショット）\n2) 一覧に戻って開き直し、最新の内容を確かめる\n3) 必要な箇所をもう一度直して保存する\n\n※開き直さずにもう一度保存しても、同じ理由で保存できません。');
+      return;
+    }
     /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（data-contracts §13・2026-08-19 実測）。
        GAS の /exec は 302 を返し、fetch がそれを GET で追うと doGet が合言葉なしで走って
        「認証エラー」を返す。doPost の実行そのものは完了している。タイムアウトでも同じ形になる。
@@ -4597,6 +4671,7 @@ function saveResident(){
       if(got&&saveStampSame_(got.updatedAt,rec.updatedAt)){
         setSync('保存OK','ok');
         toast('✅ 保存しました（通信の応答は届きませんでしたが、保存されていることを確認しました）');
+        editBaseUpdatedAt=String(got.updatedAt||'');
         afterSaveOk_(rec,got);
         return;
       }
@@ -4617,6 +4692,25 @@ function saveResident(){
 function saveStampSame_(a,b){
   var pa=Date.parse(a), pb=Date.parse(b);
   return isFinite(pa)&&isFinite(pb)&&Math.abs(pa-pb)<1000;
+}
+/* 一括保存の「実物確認」。送った変更(changes)とサーバーの現物(rows)を突き合わせ、
+   全項目一致した方だけを「保存済み」と判定する。判定を純関数に切り出すのは
+   gas/tests/master_confirm_test.js で機械検証するため（画面の配線はここを呼ぶだけにする）。
+   ★真偽値はサーバーが boolean、送信側が文字列のことがあるため String() で寄せて比べる。 */
+function verifyAppliedRows_(changes,rows){
+  var byId={},i;
+  for(i=0;i<(rows||[]).length;i++){ var r=rows[i]; if(r&&r.id!=null) byId[String(r.id)]=r; }
+  var applied=[],kept=[];
+  for(i=0;i<(changes||[]).length;i++){
+    var c=changes[i]; if(!c||c.id==null){ continue; }
+    var sv=byId[String(c.id)], ok=!!sv;
+    /* ★保存データが壊れている行(broken)は全項目を空で返してくるため、「空にする指定」と一致してしまう。保存済みと認めない */
+    if(ok&&sv.broken===true) ok=false;
+    if(ok){ for(var k in c.fields){ if(!Object.prototype.hasOwnProperty.call(c.fields,k)) continue;
+      if(String(sv[k]==null?'':sv[k])!==String(c.fields[k]==null?'':c.fields[k])){ ok=false; break; } } }
+    (ok?applied:kept).push(String(c.id));
+  }
+  return {applied:applied,kept:kept};
 }
 /* 保存が通った後の共通処理（正常応答でも、取り直しで確認できた時でも同じことをする）。
    ★2026-08-19: ここで openResident() を呼んで【同じ内容をもう一度サーバーから取り直していた】。
@@ -5687,16 +5781,18 @@ function saveBulk(){
   if(!confirm(msg)) return;
   var btn=$('bulkSave'); btn.disabled=true;
   if($('bulkClose')) $('bulkClose').disabled=true;
+  /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
   setSync('保存中…');
   apiPostRaw({action:'savePartial',changes:changes},60000).then(function(d){
     /* ★保存中に「閉じる」が押されると bulkRows が null になる。
        サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
-    if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster(); return; }
+    if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster();
+      if($('bulkClose')) $('bulkClose').disabled=false; return; }
     if(!d||d.ok!==true){
       setSync('保存失敗','err');
       var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(bulkNamed).join('\n')):'';
       alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det);
-      btn.disabled=false; return;
+      btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false; return;
     }
     if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
     else setSync('保存できず','err');
@@ -5705,6 +5801,11 @@ function saveBulk(){
        二度と送れなくなる（無言の消失）。サーバーは失敗した id を warnIds で返す。 */
     var failed = {};
     if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    /* ★失敗の一覧(warn)はあるのに id(warnIds)が無い応答＝どれが失敗したか分からない。
+       その時は【全員ぶん未保存のまま残す】（消してしまうと二度と送れない・原則4）。
+       現行GASは必ず両方返すので通らない道だが、古い版・改造版に当たった時の安全側 */
+    if(d.warn&&d.warn.length&&!(d.warnIds&&d.warnIds.length))
+      for(var w2=0;w2<changes.length;w2++) failed[String(changes[w2].id)]=1;
     var kept=0;
     for(var i2=0;i2<changes.length;i2++){
       var c=changes[i2];
@@ -5716,13 +5817,42 @@ function saveBulk(){
     }
     if(d.warn&&d.warn.length)
       alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.map(bulkNamed).join('\n'));
+    paintBulkDirty();  // 未保存が残る方がいれば「保存」を押せる状態に戻す（全件成功なら無効のまま）
     renderBulk();
     refreshRoster();   // 一覧と共有名簿を最新化（他アプリへも伝わる）
+    if($('bulkClose')) $('bulkClose').disabled=false;
   }).catch(function(e){
-    setSync('保存失敗','err');
-    alert('保存に失敗しました: '+e.message+'\n\n通信が途中で切れた場合、一部だけ保存されていることがあります。'+
-          '\n閉じて開き直し、内容を確認してください。');
-    if($('bulkSave')) $('bulkSave').disabled=false;
+    /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（契約書 §13）。
+       1人保存と同じく、必ず取り直して実物を確かめてから表示を決める。
+       一括は updatedAt の目印が使えないため、送った項目の【値そのもの】を getBulk で突き合わせる。 */
+    setSync('確認中…');
+    apiGet({action:'getBulk'},30000).then(function(d){
+      var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
+      var aN=v.applied.length,kN=v.kept.length,ap={},x;
+      for(x=0;x<v.applied.length;x++)ap[v.applied[x]]=1;
+      if(bulkRows){
+        for(var i2=0;i2<changes.length;i2++){
+          var c=changes[i2]; if(!ap[String(c.id)]) continue;      // 未確認の方は黄色のまま残す（原則4）
+          var r2=null;
+          for(var j2=0;j2<bulkRows.length;j2++) if(String(bulkRows[j2].id)===String(c.id)){ r2=bulkRows[j2]; break; }
+          if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+          delete bulkDirty[String(c.id)];
+        }
+        paintBulkDirty(); renderBulk();
+      }
+      if(kN===0){
+        setSync('保存OK','ok');
+        toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）');
+      }else{
+        setSync('保存失敗','err');
+        alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名（表の色を戻しました）\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      }
+      refreshRoster();
+    }).catch(function(){
+      setSync('確認できず','err');
+      alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+    }).then(function(){ if($('bulkSave')) $('bulkSave').disabled=false;
+      if($('bulkClose')) $('bulkClose').disabled=false; });
   });
 }
 
