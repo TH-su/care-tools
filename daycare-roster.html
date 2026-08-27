@@ -345,6 +345,13 @@ table.wk .wk-day { width: 16%; color: #ff0000; border: 2px solid var(--g9); }
 table.wk .wk-h { color: #ff0000; width: 42%; }
 table.wk .wk-sum { color: #111; }
 table.wk .wk-blank { color: transparent; }
+/* 階ラベル（2026-08-27 運用指示: 週間名簿でも居室の階が分かるようにする）。
+   ２階が上・１階が下で、各階ブロックの先頭の人にだけ「2F」「1F」を出す（並びは他タブと同じ五十音順）。
+   ★枠(.wk-flr)は氏名の有る全行に同じ幅で置く＝氏名の頭出しが全行・両ブロックで揃う。
+     幅は rem 指定＝ラベルの文字サイズと独立させてある（階未設定だけ短い「未」を出しても頭出しはずれない）。
+   ★左揃えにするのは氏名セルだけ。見出し（デイ／２階）と合計行は中央のまま＝既存の見た目を変えない。 */
+table.wk td.wk-nm { text-align: left; }
+table.wk .wk-flr { display: inline-block; width: 1.6rem; font-size: 0.875rem; text-align: left; }
 
 .board-empty {
   position: absolute; inset: 0; display: none; flex-direction: column;
@@ -487,6 +494,8 @@ table.wk .wk-blank { color: transparent; }
   .pg:last-child { break-after: auto; page-break-after: auto; } /* 末尾の空白ページ防止 */
   .pg table { break-inside: avoid; page-break-inside: avoid; }
   body.pr-batch table.wk td, body.pr-batch table.wk th { font-size: 26pt; height: 10.1mm; }
+  /* 階ラベルも用紙の文字サイズ(26pt)に合わせて拡大する。枠幅は氏名の場所を削り過ぎない値（実測で決定）。 */
+  body.pr-batch table.wk .wk-flr { width: 2.4rem; font-size: 13pt; }
 }
 </style>
 </head>
@@ -1684,6 +1693,24 @@ function renderMed(ppl) {
    View 4 — 週間名簿（A4縦×6・一括6枚印刷）
    B列=その日デイ利用 / C列=その日デイ非利用（＝2階食堂で昼食）。排他分割。
    ============================================================================ */
+/* 週間名簿の階ラベル。他タブの FLOOR_LABEL（２階／１階／階未設定）と別に持つのは、
+   氏名の左に置く枠が狭く、全角4文字の「階未設定」を読める大きさで入れられないため。
+   2026-08-27 運用指示で「2F」表記を採用（右列の見出し「２階」＝2階食堂で昼食、と読み違えないように）。 */
+const WK_FLR_LABEL = { 2: '2F', 1: '1F', 0: '未' };
+
+/* 氏名リストを居室の階ごとに ２階 → １階 → 階未設定（FLOOR_ORDER）の順へ組み直す。
+   五十音順は buildModel が整列済み＝filter で保たれる（renderDaylist / renderAllweek と同じ作法）。
+   返す要素の flr は「その階ブロックの先頭行」だけ階番号で、以降は null（＝ラベルを出さない行）。
+   階未設定の方は末尾ブロックに残す＝黙って落とさない（凡例の「⚠ 階未設定」と同じ方針）。 */
+function weeklyByFloor(list) {
+  const out = [];
+  FLOOR_ORDER.forEach(f => {
+    const g = list.filter(p => ((p.floor === 1 || p.floor === 2) ? p.floor : 0) === f);
+    g.forEach((p, i) => out.push({ p: p, flr: (i === 0) ? f : null }));
+  });
+  return out;
+}
+
 function weeklyTable(ppl, d) {
   const t = el('table', 'wk');
   const tb = el('tbody');
@@ -1692,14 +1719,18 @@ function weeklyTable(ppl, d) {
   hr.appendChild(el('td', 'wk-h', 'デイ'));
   hr.appendChild(el('td', 'wk-h', '２階'));
   tb.appendChild(hr);
-  const a = onDay(ppl, d), b = offDay(ppl, d);
+  const a = weeklyByFloor(onDay(ppl, d)), b = weeklyByFloor(offDay(ppl, d));
   const n = Math.max(a.length, b.length, 1);
   // 氏名セル: 入院者は他タブと同じく（入院）を付けて表示に残す（名簿から消さない）
-  const cell = p => {
-    const td = el('td');
-    if (p) {
-      td.appendChild(document.createTextNode(p.name));
-      if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+  // 先頭の階ラベル枠は氏名の有る全行に置く（文字が入るのは各階の先頭行だけ）＝氏名の頭出しが揃う
+  const cell = it => {
+    const td = el('td', 'wk-nm');
+    if (it) {
+      const fl = el('span', 'wk-flr', it.flr == null ? '' : WK_FLR_LABEL[it.flr]);
+      if (it.flr === 0) fl.title = '階未設定（居室が未登録）';
+      td.appendChild(fl);
+      td.appendChild(document.createTextNode(it.p.name));
+      if (it.p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
     }
     return td;
   };
