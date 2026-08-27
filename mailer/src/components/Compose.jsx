@@ -299,9 +299,9 @@ export function Compose({ accounts, initial, onClose, onSent, onDeferredSend }) 
       {confirmClose && (
         <div className="modal-backdrop" style={{ borderRadius: 'var(--radius-lg)' }}>
           <div className="modal" style={{ width: 340 }}>
-            <div className="modal-body" style={{ fontSize: 13, lineHeight: 1.7 }}>
+            <div className="modal-body" style={{ fontSize: 13.5, lineHeight: 1.7 }}>
               このメッセージを保存しますか？<br />
-              <span style={{ color: 'var(--text-2)', fontSize: 12 }}>保存しない場合、入力した内容は失われます。</span>
+              <span style={{ color: 'var(--text-2)', fontSize: 12.5 }}>保存しない場合、入力した内容は失われます。</span>
             </div>
             <div className="modal-foot" style={{ flexWrap: 'wrap' }}>
               <button className="btn danger-ghost" onClick={onClose}>保存しない</button>
