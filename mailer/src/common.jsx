@@ -120,7 +120,7 @@ export function Modal({ title, icon, onClose, children, footer, className, noEsc
 export function ConfirmDialog({ title, message, confirmLabel = '実行', danger, onConfirm, onCancel }) {
   return (
     <Modal title={title} onClose={onCancel}>
-      <div className="modal-body" style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-2)' }}>{message}</div>
+      <div className="modal-body" style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-2)' }}>{message}</div>
       <div className="modal-foot">
         <span className="spacer" />
         <button className="btn secondary" onClick={onCancel}>キャンセル</button>

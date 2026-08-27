@@ -50,7 +50,7 @@ export function SettingsModal({
       <div className="modal-body">
         <div className="settings-section">アカウント</div>
         {accounts.length === 0 && (
-          <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '4px 0 10px' }}>アカウントがまだありません。</p>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '4px 0 10px' }}>アカウントがまだありません。</p>
         )}
         {accounts.map(a => (
           <div className="acct-row" key={a.id}>
@@ -64,12 +64,12 @@ export function SettingsModal({
               <div className="em">{a.email}</div>
             </span>
             {a.type !== 'demo' && settings.defaultAccountId !== a.id && (
-              <button className="btn ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => update({ defaultAccountId: a.id })}>
+              <button className="btn ghost" style={{ padding: '4px 10px', fontSize: 12.5 }} onClick={() => update({ defaultAccountId: a.id })}>
                 既定にする
               </button>
             )}
             {a.type !== 'demo' && (
-              <button className="btn secondary" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => onEditAccount(a)}>
+              <button className="btn secondary" style={{ padding: '4px 12px', fontSize: 12.5 }} onClick={() => onEditAccount(a)}>
                 編集
               </button>
             )}
@@ -135,7 +135,7 @@ export function SettingsModal({
         </div>
 
         <div className="settings-section">情報</div>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.8 }}>
+        <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.8 }}>
           SilverMail 1.0 — シルバーユニックス株式会社のためのローカルメールクライアント。<br />
           パスワードはmacOSキーチェーン（または <code>~/.silvermail/</code>）にのみ保存され、外部に送信されることはありません。
         </p>

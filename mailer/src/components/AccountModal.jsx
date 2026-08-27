@@ -208,7 +208,7 @@ export function AccountModal({ mode, account, accountCount, onClose, onSaved, on
     >
       {step === 'provider' && (
         <div className="modal-body">
-          <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 14, lineHeight: 1.7 }}>
+          <p style={{ fontSize: 13.5, color: 'var(--text-2)', marginBottom: 14, lineHeight: 1.7 }}>
             メールプロバイダを選択してください。サーバー設定は自動で入力されます。
           </p>
           <div className="provider-grid">
