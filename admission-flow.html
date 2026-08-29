@@ -39,11 +39,11 @@ body {
 .hdr .sync {
   font-size: 0.71875rem; background: rgba(255,255,255,.16); color: #fff;
   border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 3px 10px;
-  cursor: pointer; white-space: nowrap;
+  cursor: pointer; white-space: nowrap; min-height: 44px;
 }
 .hdr .reload {
   background: none; border: none; color: #fff; font-size: 1.125rem; cursor: pointer;
-  padding: 6px; line-height: 1; border-radius: 8px; min-width: 40px; min-height: 40px;
+  padding: 6px; line-height: 1; border-radius: 8px; min-width: 44px; min-height: 44px;
 }
 .hdr .reload:active { background: rgba(255,255,255,.2); }
 
@@ -58,7 +58,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .cd h3 { margin: 0 0 8px; font-size: 0.9375rem; color: var(--g7); border-bottom: 2px solid var(--g2); padding-bottom: 5px; }
 
 /* ── 一覧 ── */
-.sumbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 12px; }
+.sumbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 12px; align-items: center; }
 .sumbar .pill {
   background: #fff; border: 1px solid var(--g3); border-radius: 999px;
   padding: 5px 12px; font-size: 0.78125rem; color: var(--g8); box-shadow: var(--sh);
@@ -75,6 +75,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
   padding: 10px 12px; margin: 0 0 8px; cursor: pointer;
 }
 .cand:active { background: var(--pri-l); }
+.cand.del { border-style: dashed; background: var(--g1); }
 .cand .nm { font-weight: 700; font-size: 0.9375rem; }
 .cand .kn { color: var(--g6); font-size: 0.71875rem; margin-left: 6px; }
 .cand .tags { margin-top: 4px; display: flex; gap: 5px; flex-wrap: wrap; }
@@ -88,6 +89,15 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .tag.lost { background: var(--g2); color: var(--g7); }
 .empty { text-align: center; color: var(--g6); font-size: 0.84375rem; padding: 26px 8px; }
 
+/* 一覧カードの進捗バー（今どの段階かを一目で） */
+.mini-steps { display: flex; gap: 3px; margin-top: 6px; }
+.mini-steps i {
+  flex: 1; height: 5px; border-radius: 3px; background: var(--g2); display: block;
+}
+.mini-steps i.on { background: var(--pri); }
+.mini-steps i.cur { background: var(--pri); box-shadow: 0 0 0 2px var(--pri-l); }
+.mini-lbl { font-size: 0.6875rem; color: var(--g6); margin-top: 3px; }
+
 /* ── 詳細 ── */
 .viewbar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
 .viewbar .sp { flex: 1; }
@@ -95,19 +105,23 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   font: inherit; font-size: 0.84375rem; font-weight: 700;
   background: #fff; color: var(--pri-d); border: 1px solid var(--g3); border-radius: 10px;
-  padding: 8px 13px; min-height: 40px; cursor: pointer; box-shadow: var(--sh);
+  padding: 8px 13px; min-height: 44px; cursor: pointer; box-shadow: var(--sh);
 }
 .btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
 .btn.warn { color: var(--warn); }
 .btn.danger { color: var(--err); }
 .btn:disabled { opacity: .45; cursor: default; }
-.btn.sm { font-size: 0.78125rem; padding: 5px 10px; min-height: 34px; }
+.btn.sm { font-size: 0.78125rem; padding: 5px 10px; min-height: 44px; }
+.btn:focus-visible, .stg:focus-visible, .cand:focus-visible, .bnav button:focus-visible,
+.tk .st:focus-visible, .tk .del:focus-visible, .hdr .sync:focus-visible, .hdr .reload:focus-visible {
+  outline: 3px solid var(--warn); outline-offset: 2px;
+}
 
 /* ステージ進行（タップで移動） */
-.stages { display: flex; flex-wrap: wrap; gap: 6px; }
+.stages { display: flex; flex-wrap: wrap; gap: 8px; }
 .stg {
   font: inherit; font-size: 0.75rem; border-radius: 999px; padding: 5px 11px; cursor: pointer;
-  background: var(--g1); color: var(--g7); border: 1px solid var(--g3);
+  background: var(--g1); color: var(--g7); border: 1px solid var(--g3); min-height: 44px;
 }
 .stg.done { background: var(--pri-l); color: var(--pri-d); border-color: var(--pri-l); }
 .stg.cur  { background: var(--pri); color: #fff; border-color: var(--pri); font-weight: 700; }
@@ -118,10 +132,24 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .kv dd { margin: 0; word-break: break-word; }
 
 /* 連携先 */
-.ct { border-top: 1px solid var(--g2); padding: 7px 0; font-size: 0.84375rem; }
+.ct { border-top: 1px solid var(--g2); padding: 8px 0; font-size: 0.84375rem; }
 .ct:first-of-type { border-top: none; }
 .ct .cat { font-size: 0.6875rem; color: var(--pri-d); background: var(--pri-l); border-radius: 6px; padding: 1px 7px; margin-right: 6px; }
 .ct .tel { color: var(--g7); font-size: 0.78125rem; margin-top: 1px; }
+.ct .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ct .acts a.btn { text-decoration: none; }
+
+/* 次にやること（連携の提示） */
+.nudge { border-top: 1px solid var(--g2); padding: 9px 0; }
+.nudge:first-of-type { border-top: none; }
+.nudge .ti { font-size: 0.875rem; font-weight: 700; }
+.nudge .wy { font-size: 0.75rem; color: var(--g7); margin-top: 2px; }
+.nudge .to { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+.nudge .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.nudge.done { opacity: .6; }
+.nudge.done .ti { text-decoration: line-through; }
+.cd.hot { border-color: var(--warn); }
+.cd.hot h3 { color: var(--warn); border-bottom-color: #ffe0b2; }
 
 /* タスク */
 .tk { display: flex; align-items: flex-start; gap: 8px; border-top: 1px solid var(--g2); padding: 7px 0; }
@@ -129,7 +157,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .tk .st {
   font: inherit; flex: none; font-size: 0.71875rem; font-weight: 700; border-radius: 8px;
   padding: 5px 0; width: 4.6em; text-align: center; cursor: pointer; border: 1px solid var(--g3);
-  background: #fff; color: var(--g7); min-height: 34px;
+  background: #fff; color: var(--g7); min-height: 44px;
 }
 .tk.st-wait .st { background: #fff8e1; color: #b26a00; border-color: #ffe082; }
 .tk.st-done .st { background: #e8f5e9; color: var(--ok); border-color: #c8e6c9; }
@@ -138,7 +166,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .tk.st-done .ti { color: var(--g6); text-decoration: line-through; }
 .tk .mt { font-size: 0.71875rem; color: var(--g6); display: flex; gap: 8px; flex-wrap: wrap; }
 .tk .mt .over { color: var(--err); font-weight: 700; }
-.tk .del { font: inherit; flex: none; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; padding: 4px 6px; }
+.tk .del { font: inherit; flex: none; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; padding: 4px 6px; min-width: 44px; min-height: 44px; }
 .tkgrp { margin: 6px 0 2px; font-size: 0.75rem; font-weight: 700; color: var(--g7); }
 .tkgrp .n { font-weight: 400; color: var(--g6); }
 .prog-line { height: 6px; background: var(--g2); border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
@@ -157,16 +185,30 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .fld label { font-size: 0.71875rem; color: var(--g7); }
 .fld input, .fld select, .fld textarea {
   font: inherit; font-size: 0.875rem; border: 1px solid var(--g3); border-radius: 8px;
-  padding: 8px 10px; background: #fff; color: var(--g9); min-height: 40px; width: 100%;
+  padding: 8px 10px; background: #fff; color: var(--g9); min-height: 44px; width: 100%;
 }
 .fld textarea { min-height: 64px; resize: vertical; }
 .fld input:focus, .fld select:focus, .fld textarea:focus { outline: 2px solid var(--pri); outline-offset: 0; }
 .frow { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .frow .fld { flex: 1; min-width: 8em; }
 .subrow { border: 1px dashed var(--g3); border-radius: 10px; padding: 8px; margin: 0 0 8px; }
-.subrow .rm { float: right; font: inherit; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; }
-.chk { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; min-height: 40px; }
+.subrow .rm { float: right; font: inherit; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; min-width: 44px; min-height: 44px; }
+.chk { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; min-height: 44px; }
 .chk input { width: 18px; height: 18px; }
+
+/* アセスメント（入居者マスタの外部様式と同じ形） */
+.asx { margin: 0 0 12px; }
+.asx > h4 { margin: 10px 0 4px; font-size: 0.8125rem; color: var(--pri-d); }
+.chkgrid { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.chkgrid .chk { min-height: 44px; }
+.lvrow { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--g2); padding: 4px 0; flex-wrap: wrap; }
+.lvrow > b { font-size: 0.8125rem; font-weight: 400; color: var(--g7); min-width: 5.5em; }
+.lvrow .opts { display: flex; gap: 10px; flex-wrap: wrap; }
+.lvrow .opts label { display: flex; align-items: center; gap: 4px; font-size: 0.8125rem; min-height: 44px; }
+.asx-view { font-size: 0.84375rem; }
+.asx-view .row { display: flex; gap: 8px; border-top: 1px solid var(--g2); padding: 5px 0; }
+.asx-view .row:first-child { border-top: none; }
+.asx-view .row > span:first-child { color: var(--g6); min-width: 7em; flex: none; }
 
 /* ── 下部ナビ ── */
 .bnav {
@@ -188,7 +230,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .mk.on { display: flex; align-items: flex-start; justify-content: center; }
 .md { background: #fff; border-radius: var(--r); max-width: 620px; width: 100%; margin: 4vh 0 8vh; padding: 14px 16px; }
 .md h2 { margin: 0 0 10px; font-size: 1rem; display: flex; align-items: center; }
-.md .md-close { margin-left: auto; font: inherit; background: none; border: none; font-size: 1.125rem; color: var(--g6); cursor: pointer; padding: 4px 8px; }
+.md .md-close { margin-left: auto; font: inherit; background: none; border: none; font-size: 1.125rem; color: var(--g6); cursor: pointer; padding: 4px 8px; min-width: 44px; min-height: 44px; }
 .md .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
 .md table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin: 8px 0; }
 .md th, .md td { border: 1px solid var(--g3); padding: 5px 8px; text-align: left; word-break: break-word; }
@@ -196,6 +238,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .note { font-size: 0.75rem; color: var(--g7); background: var(--g1); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 .note.warn { background: #fff8e1; color: #7a4f00; }
 .note.err { background: #fdecea; color: var(--err); }
+.note.ok { background: #e8f5e9; color: #1b5e20; }
 
 /* KPI */
 .kpi-tbl { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
@@ -282,6 +325,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
       </select>
     </div>
     <div class="fld" style="margin-top:8px"><label for="lostNote">メモ（任意）</label><input id="lostNote" type="text"></div>
+    <p class="note">見送りにしても入力した内容は消えません。あとから「進行中に戻す」で再開できます。</p>
     <div class="btn-row">
       <button class="btn" type="button" data-close="mk-lost">やめる</button>
       <button class="btn pri" id="lostBtn" type="button">見送りにする</button>
@@ -301,34 +345,50 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
   </div>
 </div>
 
+<!-- 連絡記録の下書き（連携提示からワンタップで開く） -->
+<div class="mk" id="mk-contact" role="dialog" aria-modal="true" aria-labelledby="cn-h">
+  <div class="md">
+    <h2 id="cn-h">連絡を記録する<button class="md-close" type="button" data-close="mk-contact" aria-label="閉じる">✕</button></h2>
+    <div id="cnBody"></div>
+    <div class="btn-row">
+      <button class="btn" type="button" data-close="mk-contact">やめる</button>
+      <button class="btn pri" id="cnSaveBtn" type="button">記録して「連絡済み」にする</button>
+    </div>
+  </div>
+</div>
+
 <!-- 使い方（標準フローの説明） -->
 <div class="mk" id="mk-help" role="dialog" aria-modal="true" aria-labelledby="help-h">
   <div class="md">
     <h2 id="help-h">使い方 — 入居までの標準フロー<button class="md-close" type="button" data-close="mk-help" aria-label="閉じる">✕</button></h2>
     <div style="font-size:0.84375rem">
       <p><b>1. 問い合わせが来たら「新規」で1件起票</b><br>
-      経路（ケアマネ紹介・病院連携室・家族direct等）と紹介元を必ず記録します。当日中の返信が原則です。</p>
+      経路（ケアマネ紹介・病院連携室・家族・本人等）と紹介元を必ず記録します。当日中の返信が原則です。</p>
       <p><b>2. ステージは上のボタンをタップして進める</b><br>
-      問い合わせ → 見学 → 体験入居 → 申込 → 入居調整 → 入居決定 → 契約済 → 入居済。日付は自動で刻まれます（編集画面で直せます）。</p>
+      問い合わせ → 見学 → 申込 → 入居審査 → 入居決定 → 契約済 → 入居済。日付は自動で刻まれます（編集画面で直せます）。</p>
       <p><b>3. 申込が入ったら「標準タスクを追加」</b><br>
-      ケアマネ・医療機関・薬局・家族・行政・施設内の定番のやり取りが一式起票されます。
-      タスクの状態は <b>未着手 → 依頼中（相手待ち）→ 完了</b> をタップで切替。期限を過ぎた未完了は赤く出ます。
-      「相手待ち」を使うと <b>ボールがどちらにあるか</b> が一覧でわかります。</p>
-      <p><b>4. 電話・FAX等のやり取りは「連絡記録」に1行残す</b><br>
-      あとから「言った・言わない」「送った・届いていない」を確認できます。</p>
-      <p><b>5. 入居決定になったら「入居者マスタへ登録」</b><br>
-      ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・家族）がそのまま入居者マスタに登録されます。二重登録は自動で防ぎます。</p>
-      <p><b>6. 入居済になったら「個人情報を整理してクローズ」</b><br>
-      連絡先・保険情報はマスタへ引き継ぎ済みなので、この台帳からは削除します（件数・経路・日付は集計のため残ります）。</p>
+      ケアマネ・医療機関・薬局・家族・行政・施設現場・いずみ・せせらぎ・厨房の定番のやり取りが一式起票されます。
+      タスクの状態は <b>未着手 → 相手待ち → 完了</b> をタップで切替。期限を過ぎた未完了は赤く出ます。</p>
+      <p><b>4. 情報が入ったら画面の一番上に「次にやること」が出る</b><br>
+      介護度の確定・食事形態・ADL・薬・入居希望日などを入力すると、<b>誰に伝えるべきか</b>が自動で出ます。
+      電話番号をタップして発信し、「記録して連絡済みにする」を押すと連絡記録に1行残ります。</p>
+      <p><b>5. 入居前アセスメントを埋める</b><br>
+      ADL・食事・排泄・入浴・移動・認知症・BPSD・夜間・服薬・病名などを、入居者マスタと<b>同じ様式</b>で記録します。
+      入居決定時にそのままマスタへ転載されるので、二重入力になりません。</p>
+      <p><b>6. 入居決定になったら「入居者マスタへ登録」</b><br>
+      集めた情報がそのまま入居者マスタに登録されます。二重登録は自動で防ぎます。
+      <b>登録するとその方は週間計画・デイ利用表に「入居済」として出ます。</b>入居日前なら週間計画で「入居前」を押してください。</p>
+      <p><b>7. 入力したものは消えません</b><br>
+      削除しても「削除済みも表示」から元に戻せます。端末の保存が壊れた時は自動でバックアップから復旧します。</p>
     </div>
     <div class="btn-row"><button class="btn pri" type="button" data-close="mk-help">閉じる</button></div>
   </div>
 </div>
 
-<!-- 同期状態 -->
+<!-- 同期状態・バックアップ -->
 <div class="mk" id="mk-sync" role="dialog" aria-modal="true" aria-labelledby="sync-h">
   <div class="md">
-    <h2 id="sync-h">同期状態<button class="md-close" type="button" data-close="mk-sync" aria-label="閉じる">✕</button></h2>
+    <h2 id="sync-h">同期とバックアップ<button class="md-close" type="button" data-close="mk-sync" aria-label="閉じる">✕</button></h2>
     <div id="syncBody"></div>
     <div class="btn-row"><button class="btn pri" type="button" data-close="mk-sync">閉じる</button></div>
   </div>
@@ -343,6 +403,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 </div>
 
 <div id="toast" role="status"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
 
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
@@ -350,10 +411,18 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 /* ═══════════════════════════════════════════════════════════════
    入居調整 / 申込から入居までの多機関連携ボード
    - 対象: 入居【前】の相談者（問い合わせ〜入居まで）。入居後の情報は入居者マスタが正
-   - 保存先: 統合KVストアGAS（su_sync_common の接続先・キー admission_flow_v1・rev楽観ロック）
-   - 端末キャッシュ: localStorage（事務所端末専用。現場端末ではブロック＋キャッシュ削除）
+   - 保存先: 入居調整【専用】GAS（adm_cfg の接続先・キー admission_flow_v1・rev楽観ロック）
+     ★統合KVストア（su_sync_common）は使わない。あちらはキー指定なしの一括取得と一覧取得に
+       フィルタが無く、閲覧専用の合言葉でも全件読めるため、入居前の相談者の氏名・連絡先を
+       置く場所として不適切（2026-08-29 の構造調査で確認）。専用GASは get/put/ping だけを持ち、
+       全件ダンプの経路そのものを実装していない。
+   - 端末キャッシュ: localStorage（事務所端末専用。2世代バックアップ＋書込検証つき）
    - 入居決定時: 入居者マスタGAS（rmaster_cfg）へ saveResident(id:null) で新規登録し、
      採番された id を控えて二重登録を防ぐ
+   - アセスメントは入居者マスタの「入居者基本情報（外部様式）」と同じキー・同じ値域で持つ。
+     ★旧キー（mobility・excretion・bath・medMgmt・medAssist・problemBehavior・currentDiseases）は
+       絶対に送らない。送るとマスタ側の様式チェックが自動推定を始め、「未入力」と「人が空にした」の
+       区別が付かなくなる（resident-master.html の bfSaved 契約）。
    - 描画は全て esc() でエスケープ（XSS防止）
    ═══════════════════════════════════════════════════════════════ */
 (function () {
@@ -385,17 +454,38 @@ function fmtDt(iso) {
   var d = new Date(iso); if (isNaN(d)) return String(iso);
   return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
 }
+function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
+function asObj(o) { return isObj(o) ? o : {}; }
+function asArr(a) { return Array.isArray(a) ? a : []; }
+function asStr(s) { return String(s == null ? '' : s); }
+/* 電話番号から発信用の数字だけを取り出す。取り出せない時は tel: を作らない（誤発信を作らない） */
+function telHref(s) {
+  var d = asStr(s).replace(/[^0-9+]/g, '');
+  return (d.length >= 6) ? ('tel:' + d) : '';
+}
 
 /* ── 端末の用途ガード（入居者マスタと同じ同一オリジンキー） ──
-   'field'（現場タブレット）ではこのアプリを開かない。相談者の連絡先・保険情報を
-   現場端末のキャッシュに残さないため、判明した時点でキャッシュも消す。
-   あくまで誤操作防止であり厳密な認証ではない（防御の実体は運用側）。 */
+   'field'（現場タブレット）ではこのアプリを開かない。
+   ★キャッシュの削除は「未送信の変更が無いこと」を確かめてからにする。
+     未送信を抱えたまま端末役割が変わると、その入力はどこにも残らず消える
+     （multi-device-sync 原則8「消去は保全ゲートの後ろ」）。 */
 var DEVICE_KEY = 'su_device_role';
 var CACHE_KEY = 'admf_cache';
+var CACHE_BAK = 'admf_cache_bak';
+var CACHE_BAK2 = 'admf_cache_bak2';
 function applyDeviceGuard() {
   var blocked = false;
   try { blocked = localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) {}
-  if (blocked) { try { localStorage.removeItem(CACHE_KEY); } catch (e) {} }
+  if (blocked) {
+    var unsent = false;
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (raw) { var o = JSON.parse(raw); unsent = !!(o && o.dirty); }
+    } catch (e) { unsent = true; }   /* 読めない＝判断できない。安全側（消さない）に倒す */
+    if (!unsent) {
+      try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(CACHE_BAK); localStorage.removeItem(CACHE_BAK2); } catch (e) {}
+    }
+  }
   $('deviceBlock').classList.toggle('on', blocked);
   return blocked;
 }
@@ -404,18 +494,23 @@ function applyDeviceGuard() {
 var STAGES = [
   ['inquiry', '問い合わせ'],
   ['tour', '見学'],
-  ['trial', '体験入居'],
   ['applied', '申込'],
-  ['coordinating', '入居調整'],
+  ['screening', '入居審査'],
   ['decided', '入居決定'],
   ['contracted', '契約済'],
   ['movedin', '入居済']
 ];
+/* 旧ステージの読み替え（2026-08-29 に体験入居を廃止し、入居調整→入居審査へ改称）。
+   ★読み込み時に一度だけ写す。書き換えないと stageIdx が -1 になり一覧の並びが崩れる。 */
+var STAGE_MIGRATE = { trial: 'applied', coordinating: 'screening' };
 function stageIdx(k) { for (var i = 0; i < STAGES.length; i++) if (STAGES[i][0] === k) return i; return -1; }
 function stageLabel(k) { var i = stageIdx(k); return i >= 0 ? STAGES[i][1] : (k === 'lost' ? '見送り' : String(k || '')); }
 
 var SOURCES = ['ケアマネ紹介', '病院・連携室', '地域包括', '家族・本人', 'Web', '電話', 'その他'];
 
+/* 連携先の区分。★内部事業所を独立させる（2026-08-29 指示）。
+   入居後に関わる先（施設現場・いずみ・せせらぎ・厨房）へ連絡漏れが起きないようにするため、
+   「施設内」ひとまとめではなく事業所ごとに分ける。旧データの 'internal' はそのまま表示できる。 */
 var CATS = [
   ['family', '家族・本人'],
   ['caremgr', '居宅ケアマネ'],
@@ -423,90 +518,315 @@ var CATS = [
   ['pharmacy', '薬局'],
   ['equip', '福祉用具'],
   ['gov', '行政・保険'],
-  ['internal', '施設内'],
+  ['facility', '施設現場'],
+  ['homecare', '訪問介護 いずみ'],
+  ['daycare', 'デイ せせらぎ'],
+  ['kitchen', '厨房'],
+  ['internal', '施設内（その他）'],
   ['other', 'その他']
 ];
 function catLabel(k) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === k) return CATS[i][1]; return String(k || ''); }
+/* 内部事業所（連絡先が未登録でも「連絡先を追加」で1タップ用意できるようにする） */
+var INTERNAL_CATS = ['facility', 'homecare', 'daycare', 'kitchen'];
 
 /* 方向: ask=こちらから依頼・送付 / get=先方から受領（相手待ちになりやすい）/ meet=日程調整 / do=施設内で実施 */
 var DIRS = [['ask', '依頼・送付'], ['get', '受領'], ['meet', '日程調整'], ['do', '施設内']];
 function dirLabel(k) { for (var i = 0; i < DIRS.length; i++) if (DIRS[i][0] === k) return DIRS[i][1]; return ''; }
 
-/* 標準タスク（申込〜入居の定番のやり取り）。[カテゴリ, 件名, 方向, 既定でチェック] */
+/* 標準タスク（申込〜入居の定番のやり取り）。[カテゴリ, 件名, 方向, 既定でチェック, 必要になるステージ]
+   ★ステージを持たせたのは「今の段階で何が残っているか」を出すため。 */
 var TEMPLATES = [
-  ['family', '入居申込書の受領', 'get', true],
-  ['family', '重要事項説明・契約日の調整', 'meet', true],
-  ['family', '入居時費用・支払方法の説明', 'ask', true],
-  ['family', '持ち物・入居日当日の案内', 'ask', true],
-  ['family', '緊急連絡先・キーパーソンの確認', 'get', true],
-  ['caremgr', '受入可否の回答（紹介元へ）', 'ask', true],
-  ['caremgr', 'フェイスシート・アセスメント情報の受領', 'get', true],
-  ['caremgr', 'サービス担当者会議の日程調整', 'meet', true],
-  ['caremgr', '入居後のケアマネ引継ぎの確認', 'ask', true],
-  ['hospital', '診療情報提供書の依頼', 'ask', true],
-  ['hospital', '診療情報提供書の受領', 'get', true],
-  ['hospital', '看護サマリ・退院サマリの受領', 'get', true],
-  ['hospital', '退院前カンファレンスへの出席', 'meet', false],
-  ['hospital', '協力医（往診）への受入依頼・初回往診日の調整', 'ask', true],
-  ['pharmacy', 'お薬手帳・薬情の受領', 'get', true],
-  ['pharmacy', '対応薬局への引継ぎ・一包化の調整', 'ask', true],
-  ['pharmacy', '服薬管理方法の確認（自己管理／施設管理）', 'get', true],
-  ['gov', '介護保険証・負担割合証の写しの受領', 'get', true],
-  ['gov', '住所変更・住民票の手続き案内', 'ask', true],
-  ['gov', '生活保護担当への連絡（該当時）', 'ask', false],
-  ['equip', 'ベッド・マットレス等の手配', 'ask', true],
-  ['equip', '福祉用具の搬入日調整', 'meet', true],
-  ['internal', '入居判定会議の実施', 'do', true],
-  ['internal', '居室の準備・清掃', 'do', true],
-  ['internal', '厨房へ食事形態・アレルギーの連絡', 'ask', true],
-  ['internal', '訪問介護（いずみ）の計画作成依頼', 'ask', true],
-  ['internal', 'デイ（せせらぎ）の利用調整（該当時）', 'ask', false],
-  ['internal', 'スタッフへの申し送り・受入準備の共有', 'ask', true]
+  ['family', '入居申込書の受領', 'get', true, 'applied'],
+  ['family', '重要事項説明・契約日の調整', 'meet', true, 'decided'],
+  ['family', '入居時費用・支払方法の説明', 'ask', true, 'decided'],
+  ['family', '持ち物・入居日当日の案内', 'ask', true, 'contracted'],
+  ['family', '緊急連絡先・キーパーソンの確認', 'get', true, 'applied'],
+  ['caremgr', '受入可否の回答（紹介元へ）', 'ask', true, 'screening'],
+  ['caremgr', 'フェイスシート・アセスメント情報の受領', 'get', true, 'applied'],
+  ['caremgr', 'サービス担当者会議の日程調整', 'meet', true, 'decided'],
+  ['caremgr', '入居後のケアマネ引継ぎの確認', 'ask', true, 'decided'],
+  ['hospital', '診療情報提供書の依頼', 'ask', true, 'applied'],
+  ['hospital', '診療情報提供書の受領', 'get', true, 'screening'],
+  ['hospital', '看護サマリ・退院サマリの受領', 'get', true, 'screening'],
+  ['hospital', '退院前カンファレンスへの出席', 'meet', false, 'decided'],
+  ['hospital', '協力医（往診）への受入依頼・初回往診日の調整', 'ask', true, 'contracted'],
+  ['pharmacy', 'お薬手帳・薬情の受領', 'get', true, 'screening'],
+  ['pharmacy', '対応薬局への引継ぎ・一包化の調整', 'ask', true, 'contracted'],
+  ['pharmacy', '服薬管理方法の確認（自己管理／施設管理）', 'get', true, 'screening'],
+  ['gov', '介護保険証・負担割合証の写しの受領', 'get', true, 'applied'],
+  ['gov', '住所変更・住民票の手続き案内', 'ask', true, 'contracted'],
+  ['gov', '生活保護担当への連絡（該当時）', 'ask', false, 'decided'],
+  ['equip', 'ベッド・マットレス等の手配', 'ask', true, 'decided'],
+  ['equip', '福祉用具の搬入日調整', 'meet', true, 'contracted'],
+  ['facility', '入居判定会議の実施', 'do', true, 'screening'],
+  ['facility', '居室の準備・清掃', 'do', true, 'contracted'],
+  ['facility', '介助方法・見守り体制の申し送り', 'ask', true, 'contracted'],
+  ['facility', '受入当日の担当・時間の共有', 'ask', true, 'contracted'],
+  ['kitchen', '食事形態・アレルギー・禁忌の連絡', 'ask', true, 'decided'],
+  ['kitchen', '食事開始日・回数の連絡', 'ask', true, 'contracted'],
+  ['homecare', '訪問介護（いずみ）の計画作成依頼', 'ask', true, 'decided'],
+  ['homecare', '訪問の開始日・訪問時間の調整', 'meet', true, 'contracted'],
+  ['daycare', 'デイ（せせらぎ）の利用調整（該当時）', 'ask', false, 'decided'],
+  ['daycare', 'デイの利用開始日・送迎の確認（該当時）', 'meet', false, 'contracted']
 ];
 
 var METHODS = ['電話', 'FAX', 'メール', 'LINE', '来訪', '訪問', '文書', 'その他'];
 
+/* ── 入居前アセスメント ──
+   ★入居者マスタ resident-master.html の「入居者基本情報（外部様式）」と
+     同じキー名・同じ値域にしてある。転記の手間と写し間違いを無くすため、
+     ここで入れた値は buildMasterRecord がそのままマスタへ渡す。
+     値域を変える時は必ずマスタ側（BF_* 定数）と一緒に直すこと。 */
+var BF_LEVELS = [['self', '自立'], ['watch', '見守り'], ['part', '一部介助'], ['full', '全介助']];
+var BF_ADL_ROWS = [['move', '移動方法'], ['oral', '口腔清潔'], ['meal', '食事'], ['bath', '入浴'], ['excrete', '排泄']];
+var BF_SERVICES = [['homeCare', '訪問介護'], ['homeBath', '訪問入浴'], ['shortStay', '短期入所'],
+  ['homeNurse', '訪問看護'], ['dayCare', '通所介護'], ['dayRehab', '通所リハ'],
+  ['homeRehab', '訪問リハ'], ['smallMulti', '小規模多機能'], ['groupHome', 'グループホーム'],
+  ['tokuyo', '特養'], ['roken', '老健'], ['svcOther', 'その他'],
+  ['welfareRent', '福祉用具貸与']];
+var BF_MOVE_AID = [['walker', '歩行器'], ['wheelchair', '車いす']];
+var BF_BATH_PLACE = [['home', '自宅（浴室）'], ['visitBath', '訪問入浴'], ['dayBath', '通所系'], ['wipe', '清拭のみ']];
+var BF_EXCRETE_WAY = [['toilet', 'トイレ'], ['pwc', 'PWC'], ['catheter', '膀胱留置カテーテル'], ['selfCath', '自己導尿'], ['diaper', 'オムツ']];
+var BF_BPSD = [['hallu', '幻視・幻聴'], ['unrest', '不穏'], ['delusion', '妄想'], ['violence', '暴言・暴力'],
+  ['dayNight', '昼夜逆転'], ['unclean', '不潔行為'], ['wander', '徘徊'], ['resist', '介護への抵抗'], ['bpsdOther', 'その他']];
+var BF_NIGHT = [['good', '良眠'], ['bad', '不眠'], ['nightOther', 'その他']];
+var BF_DEMENTIA_RANKS = ['', '自立', 'Ⅰ', 'Ⅱa', 'Ⅱb', 'Ⅲa', 'Ⅲb', 'Ⅳ', 'M'];
+var BF_BEDRIDDEN = ['', '自立', 'J1', 'J2', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+var BF_SHORT_MEMORY = ['', '問題なし', '問題あり'];
+var BF_DECISION = ['', '自立', 'いくらか困難', '見守りが必要', '判断できない'];
+var BF_TRANSMIT = ['', '伝えられる', 'いくらか困難', '具体的要求に限られる', '伝えられない'];
+var BF_MED_CONTENT = ['', '別紙参照', '薬局へ確認してください'];
+var BF_YESNO = ['', '有', '無'];
+var BF_COMM_LEVEL = ['', '自立', '配慮が必要'];
+var BF_MAX_DISEASES = 8;
+/* 帰宅願望は様式の BPSD 表に無いが、入居前に必ず押さえる項目なので自由記載欄として持つ
+   （マスタでは careHints＝介助のヒントへ入れる。様式の値域を勝手に増やさないため） */
+
+/* アセスメントの単純文字列項目。[キー, ラベル, 入力型, 選択肢] */
+var ASSESS_TEXT = [
+  ['medLevel', '服薬（介助の程度）', 'lv', null],
+  ['medExists', '服薬の有無', 'select', BF_YESNO],
+  ['medContent', '薬の内容', 'select', BF_MED_CONTENT],
+  ['medsRegular', '定期薬（分かる範囲で）', 'textarea', null],
+  ['commLevel', '意思疎通', 'select', BF_COMM_LEVEL],
+  ['dementiaExists', '認知症の有無', 'select', BF_YESNO],
+  ['dementia', '認知症高齢者の日常生活自立度', 'select', BF_DEMENTIA_RANKS],
+  ['bedriddenRank', '障害高齢者の日常生活自立度（寝たきり度）', 'select', BF_BEDRIDDEN],
+  ['shortMemory', '短期記憶', 'select', BF_SHORT_MEMORY],
+  ['decisionAbility', '日常の意思決定', 'select', BF_DECISION],
+  ['communicateAbility', '意思の伝達', 'select', BF_TRANSMIT],
+  ['nightSleepMed', '睡眠薬（薬剤名）', 'text', null],
+  ['mealForm', '食事形態（主食・副食の形）', 'text', null],
+  ['mealStaple', '主食', 'text', null],
+  ['mealSide', '副食', 'text', null],
+  ['thickener', 'とろみ', 'text', null],
+  ['denture', '義歯', 'select', ['', '無し', '上のみ', '下のみ', '上下', '不明']],
+  ['mealNote', '食事の留意点（禁忌・ムセ込み等）', 'textarea', null],
+  ['allergy', 'アレルギー', 'text', null],
+  ['infections', '感染症', 'text', null],
+  ['medicalCare', '医療的ケア（吸引・経管・インスリン等）', 'text', null],
+  ['pastHistory', '既往歴', 'textarea', null],
+  ['welfare', '生活保護', 'select', ['', '有', '無']],
+  ['careHints', '帰宅願望・妄想などの様子と対応のヒント', 'textarea', null],
+  ['lifeHistory', '生活歴（入居前の生活状況）', 'textarea', null],
+  ['personality', '人となり・性格', 'text', null],
+  ['hobby', '趣味・楽しみ', 'text', null],
+  ['foodPref', '食べ物の好き嫌い', 'text', null],
+  ['wishSelf', 'ご本人の意向', 'textarea', null],
+  ['wishFamily', 'ご家族の意向', 'textarea', null],
+  ['formNote', 'その他（様式の備考）', 'textarea', null]
+];
+/* 上のうち「マスタへ送る時にそのままのキーで渡すもの」。careHints も同名キーがマスタにある */
+function assessTextKeys() { return ASSESS_TEXT.map(function (p) { return p[0]; }); }
+
+/* ── 連携の提示ルール ──
+   「どの情報が入ったら誰に連絡すべきか」。保存のたびに前後を比べ、当てはまったものを
+   案件の nudges へ積む（提示は消えない。押した時だけ done になる）。
+   ★ここに書いた順に画面へ出る。文面は現場がそのまま口頭・FAXで使える粒度にしてある。 */
+var NUDGE_RULES = [
+  { id: 'careLevel', title: '介護度が確定しました', why: '区分に合わせた提供票・利用票の依頼と、区分変更の共有が要ります',
+    cats: ['caremgr'], test: function (p, n) { var a = asStr(p.careLevel), b = asStr(n.careLevel); return b && b !== '申請中' && b !== a; } },
+  { id: 'insurance', title: '介護保険の情報が入りました', why: '請求の準備（負担割合・保険者・認定期間）を施設現場と共有します',
+    cats: ['facility'], test: function (p, n) { return (!!n.insuredNo && n.insuredNo !== p.insuredNo) || (!!n.copayRate && n.copayRate !== p.copayRate); } },
+  { id: 'desiredDate', title: '入居希望日が決まりました', why: '退院日・サービス終了日との擦り合わせが要ります',
+    cats: ['caremgr', 'hospital'], test: function (p, n) { return !!n.desiredDate && n.desiredDate !== p.desiredDate; } },
+  { id: 'hospital', title: '医療機関が決まりました', why: '処方箋の受け渡し経路と、往診の可否を確認します',
+    cats: ['pharmacy', 'facility'], test: function (p, n) { return hasCat(n, 'hospital') && !hasCat(p, 'hospital'); } },
+  { id: 'pharmacy', title: '薬局が決まりました', why: '配薬先・一包化の可否を主治医と共有します',
+    cats: ['hospital'], test: function (p, n) { return hasCat(n, 'pharmacy') && !hasCat(p, 'pharmacy'); } },
+  { id: 'meal', title: '食事の情報が入りました', why: '食事形態・とろみ・アレルギー・禁忌を厨房へ伝えます',
+    cats: ['kitchen'], test: function (p, n) { return assessChanged(p, n, ['mealForm', 'mealStaple', 'mealSide', 'thickener', 'allergy', 'mealNote', 'denture']); } },
+  { id: 'adl', title: 'ADL・移動の情報が入りました', why: '居室の準備・見守り体制・福祉用具の手配に直結します',
+    cats: ['facility', 'equip'], test: function (p, n) { return assessObjChanged(p, n, ['adlGrid', 'moveAid', 'excreteWay', 'bathPlace']); } },
+  { id: 'meds', title: '服薬の情報が入りました', why: '配薬の体制（自己管理／施設管理）と受け取り方法を決めます',
+    cats: ['facility', 'pharmacy'], test: function (p, n) { return assessChanged(p, n, ['medLevel', 'medExists', 'medsRegular', 'medicalCare']); } },
+  { id: 'bpsd', title: '認知症・BPSDの情報が入りました', why: '夜勤帯の見守りと、帰宅願望への対応方針を申し送ります',
+    cats: ['facility'], test: function (p, n) { return assessChanged(p, n, ['dementia', 'dementiaExists', 'careHints']) || assessObjChanged(p, n, ['bpsd', 'night']); } },
+  { id: 'svcHome', title: '訪問介護の利用がありました', why: '訪問介護（いずみ）の計画作成と訪問時間の調整を始めます',
+    cats: ['homecare'], test: function (p, n) { return svcOn(n, 'homeCare') && !svcOn(p, 'homeCare'); } },
+  { id: 'svcDay', title: '通所介護の利用がありました', why: 'デイ（せせらぎ）の利用曜日・送迎の調整を始めます',
+    cats: ['daycare'], test: function (p, n) { return svcOn(n, 'dayCare') && !svcOn(p, 'dayCare'); } },
+  { id: 'stage_decided', title: '入居決定になりました', why: '入居日を全ての連携先へ一斉に伝えます（内部事業所を含む）',
+    cats: ['caremgr', 'hospital', 'pharmacy', 'equip', 'gov', 'facility', 'homecare', 'daycare', 'kitchen'],
+    test: function (p, n) { return n.stage === 'decided' && p.stage !== 'decided'; } },
+  { id: 'stage_contracted', title: '契約済になりました', why: '訪問診療・配薬・食事・訪問介護の開始日を確定します',
+    cats: ['hospital', 'pharmacy', 'kitchen', 'homecare'],
+    test: function (p, n) { return n.stage === 'contracted' && p.stage !== 'contracted'; } },
+  { id: 'stage_movedin', title: '入居済になりました', why: '受け入れ完了と当日の様子を内部事業所へ共有します',
+    cats: ['facility', 'kitchen', 'homecare', 'daycare'],
+    test: function (p, n) { return n.stage === 'movedin' && p.stage !== 'movedin'; } }
+];
+function hasCat(c, cat) { return asArr(c.contacts).some(function (ct) { return ct && ct.cat === cat && (ct.org || ct.person || ct.tel); }); }
+function svcOn(c, key) { var s = asObj(asObj(c.assess).services)[key]; return !!(s && s.on); }
+function assessChanged(p, n, keys) {
+  var a = asObj(p.assess), b = asObj(n.assess);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (asStr(b[k]) && asStr(b[k]) !== asStr(a[k])) return true;
+  }
+  return false;
+}
+function assessObjChanged(p, n, keys) {
+  var a = asObj(p.assess), b = asObj(n.assess);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var sb = JSON.stringify(asObj(b[k])), sa = JSON.stringify(asObj(a[k]));
+    if (sb !== '{}' && sb !== sa) return true;
+  }
+  return false;
+}
+
 /* ── データ ──
-   DB = { v:1, updatedAt:ISO, candidates:[c…] }
+   DB = { v:2, updatedAt:ISO, candidates:[c…] }
    c  = { id, name, kana, gender, birthDate, phone, careLevel, source, sourceDetail,
           desiredDate, room, note, insuredNo, insurer, careCertStart, careCertEnd, copayRate,
           family:[{name,relation,phone,emergency}], contacts:[{id,cat,org,person,tel,fax,note}],
           tasks:[{id,cat,title,dir,due,st,doneAt,note,updatedAt}],
           log:[{id,at,partner,method,summary}],
+          nudges:[{id,at,rule,cats,title,why,done,doneAt}],
+          assess:{ …入居者マスタの外部様式と同じキー… , updatedAt },
           stage, stageDates:{}, lostReason, lostNote,
-          masterId, masterSyncedAt, masterPendingStamp, piiCleared,
-          deleted, updatedAt }
-   ★端末間の統合は「案件(c)単位で updatedAt の新しい方を採用」。削除は deleted:true の
-     墓標にして残す（消してしまうと、他端末の古い版との統合で復活するため）。 */
+          masterId, masterSyncedAt, masterPendingStamp,
+          deleted, deletedAt, updatedAt }
+   ★端末間の統合は「案件(c)単位」ではなく【項目単位】。タスク・連絡記録・連携先・家族・
+     提示は id で和集合を取る（multi-device-sync 原則5「消失より復活」）。
+     案件まるごと新しい方を採ると、2端末が同じ人の別の欄を編集していた時に片方が丸ごと消える。
+   ★削除は deleted:true の墓標。物理削除はしない（120日で消す処理は 2026-08-29 に廃止）。
+     消すと他端末の古い版との統合で復活し、しかも「戻す」手段が無くなるため。 */
+var DB_V = 2;
 var KV_KEY = 'admission_flow_v1';
-var DB = { v: 1, updatedAt: '', candidates: [] };
+var DB = { v: DB_V, updatedAt: '', candidates: [] };
 var kvRev = 0;          // 直近に観測したサーバ版（次回 put の楽観ロックに使う）
 var dirty = false;      // 未送信の変更があるか
 var pushTimer = null;
 var pushing = false;
 var lastPullAt = 0;
+var retryWait = 0;      // 指数バックオフの現在待ち時間(ms)
+var serverCaps = null;  // ping で観測したサーバーの能力宣言
+var cacheRecovered = ''; // 起動時にバックアップから復旧したか（人へ知らせる）
 
-function loadCache() {
-  try {
-    var s = localStorage.getItem(CACHE_KEY);
-    if (s) { var o = JSON.parse(s); if (o && o.db && Array.isArray(o.db.candidates)) { DB = o.db; kvRev = Number(o.rev) || 0; dirty = !!o.dirty; } }
-  } catch (e) {}
+/* 受け取ったデータを必ず正規化する（サーバー応答・キャッシュ・取り込みファイルの全経路）。
+   ★受信データを信じない（multi-device-sync 原則10）。旧レコードで stageDates や tasks が
+     欠けていると、一覧の描画が丸ごと落ちて「全部消えた」ように見える。 */
+function normalizeCand(c) {
+  if (!isObj(c)) return null;
+  if (!c.id) c.id = newId('c');
+  c.name = asStr(c.name); c.kana = asStr(c.kana);
+  if (!Array.isArray(c.family)) c.family = [];
+  if (!Array.isArray(c.contacts)) c.contacts = [];
+  if (!Array.isArray(c.tasks)) c.tasks = [];
+  if (!Array.isArray(c.log)) c.log = [];
+  if (!Array.isArray(c.nudges)) c.nudges = [];
+  if (!isObj(c.stageDates)) c.stageDates = {};
+  if (!isObj(c.assess)) c.assess = {};
+  c.contacts.forEach(function (ct) { if (ct && !ct.id) ct.id = newId('k'); });
+  c.tasks.forEach(function (t) { if (t && !t.id) t.id = newId('t'); });
+  c.log.forEach(function (l) { if (l && !l.id) l.id = newId('l'); });
+  c.nudges.forEach(function (g) { if (g && !g.id) g.id = newId('n'); });
+  /* 旧ステージの読み替え。stageDates 側のキーも一緒に写す（日付だけ取り残さない） */
+  if (STAGE_MIGRATE[c.stage]) c.stage = STAGE_MIGRATE[c.stage];
+  Object.keys(STAGE_MIGRATE).forEach(function (oldK) {
+    var newK = STAGE_MIGRATE[oldK];
+    if (c.stageDates[oldK] && !c.stageDates[newK]) c.stageDates[newK] = c.stageDates[oldK];
+  });
+  if (c.stage !== 'lost' && stageIdx(c.stage) < 0) c.stage = 'inquiry';
+  c.deleted = !!c.deleted;
+  c.updatedAt = asStr(c.updatedAt) || nowIso();
+  return c;
 }
+function normalizeDb(db) {
+  var out = { v: DB_V, updatedAt: asStr(asObj(db).updatedAt) || nowIso(), candidates: [] };
+  asArr(asObj(db).candidates).forEach(function (c) {
+    var n = normalizeCand(c); if (n) out.candidates.push(n);
+  });
+  return out;
+}
+
+/* ── 端末キャッシュ（2世代バックアップ・書込検証つき） ──
+   体重管理（weight-record.html）と同じ作法。①文字列化できるか ②読み直せるか を
+   確かめてから書き、書いた後に読み戻して一致を確認する。
+   ★失敗を握りつぶさない。保存できていないのに「保存しました」と出すのが最悪の事故。 */
+function cachePayload() { return JSON.stringify({ db: DB, rev: kvRev, dirty: dirty, at: nowIso() }); }
 function saveCache() {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ db: DB, rev: kvRev, dirty: dirty })); } catch (e) {}
+  var body;
+  try { body = cachePayload(); } catch (e) { toast('⚠️ 端末への保存に失敗しました（データの形が壊れています）'); return false; }
+  try { JSON.parse(body); } catch (e) { toast('⚠️ 端末への保存に失敗しました（検証に失敗）'); return false; }
+  try {
+    /* ローテーションは「今ある正データ」が十分な大きさの時だけ。壊れた小さな値で
+       バックアップを潰さないため（weight-record の cur.length 判定と同じ考え方）。 */
+    var cur = localStorage.getItem(CACHE_KEY);
+    if (cur && cur.length > 40) {
+      var b1 = localStorage.getItem(CACHE_BAK);
+      if (b1 && b1.length > 40) { try { localStorage.setItem(CACHE_BAK2, b1); } catch (e2) {} }
+      localStorage.setItem(CACHE_BAK, cur);
+    }
+    localStorage.setItem(CACHE_KEY, body);
+    if (localStorage.getItem(CACHE_KEY) !== body) throw new Error('verify');
+    return true;
+  } catch (e) {
+    toast('⚠️ 端末に保存できませんでした（容量不足の可能性）。同期はできています。不要なタブを閉じて再度お試しください');
+    return false;
+  }
+}
+function readCacheSlot(key) {
+  try {
+    var s = localStorage.getItem(key);
+    if (!s) return null;
+    var o = JSON.parse(s);
+    if (o && o.db && Array.isArray(o.db.candidates)) return o;
+  } catch (e) {}
+  return null;
+}
+function loadCache() {
+  var o = readCacheSlot(CACHE_KEY);
+  if (!o) { o = readCacheSlot(CACHE_BAK); if (o) cacheRecovered = '1世代前'; }
+  if (!o) { o = readCacheSlot(CACHE_BAK2); if (o) cacheRecovered = '2世代前'; }
+  if (!o) return;
+  DB = normalizeDb(o.db); kvRev = Number(o.rev) || 0; dirty = !!o.dirty;
+}
+/* 設定画面から呼ぶ手動復元。現状も saveCache のローテーションで退避されるので往復できる */
+function restoreFromBackup(slot) {
+  var o = readCacheSlot(slot);
+  if (!o) { toast('そのバックアップは見つかりませんでした'); return; }
+  var n = normalizeDb(o.db);
+  if (!confirm('バックアップ（' + (slot === CACHE_BAK ? '1世代前' : '2世代前') + '・案件' + n.candidates.length + '件）を読み込みます。\n\n' +
+    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')) return;
+  /* ★置き換えではなく統合。置き換えにすると、バックアップ以降に増えた案件と、
+     他端末がサーバーへ入れた新しい内容を、この端末の古い版で潰すことになる。 */
+  DB = mergeDb(DB, n);
+  DB.updatedAt = nowIso();
+  dirty = true; saveCache(); renderAll(); schedulePush();
+  toast('バックアップから復元しました');
 }
 
-/* ── 同期（統合KVストア） ──
-   接続先は他アプリと同じ su_sync_common（無ければ ws_settings）。このアプリでは設定させず、
-   接続設定ページ（connection-settings.html）で入れた値を読むだけにする。 */
+/* ── 同期（入居調整【専用】GAS） ──
+   接続先は adm_cfg（接続設定ページで入れた値）を読むだけ。
+   ★統合KVストア（su_sync_common）へはフォールバックしない。取り違えると相談者の
+     氏名・連絡先が、閲覧専用トークンでも全件読める置き場へ書かれてしまう。 */
 function syncTarget() {
   try {
-    var c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
-    if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
-  } catch (e) {}
-  try {
-    var s = JSON.parse(localStorage.getItem('ws_settings') || '{}');
-    if (s && s.endpoint) return { endpoint: String(s.endpoint).trim(), token: String(s.token || '').trim() };
+    var c = JSON.parse(localStorage.getItem('adm_cfg') || '{}');
+    if (c && c.url) return { endpoint: String(c.url).trim(), token: String(c.token || '').trim() };
   } catch (e) {}
   return { endpoint: '', token: '' };
 }
@@ -520,26 +840,100 @@ function setSync(txt, cls) {
   el.style.background = (cls === 'err') ? 'rgba(255,205,205,.35)' : 'rgba(255,255,255,.16)';
 }
 
-/* 統合: サーバ版とローカル版を案件単位で突き合わせる。新しい updatedAt が勝つ。
-   ★丸ごとどちらかを採用すると、2端末が別々の案件を編集していた時に片方が消える。 */
+/* ── 統合（項目単位の和集合） ──
+   同じ案件を2端末が触っていた時、片方の入力を丸ごと捨てないための中核。
+   ・配列（tasks / log / contacts / family / nudges）は id で union。両方にあるものは updatedAt の新しい方
+   ・log は追記専用（消さない）
+   ・単純な項目は「案件の updatedAt が新しい方」を土台にし、土台側が空で相手に値があれば相手を採る
+     （空で上書きしない＝消失より復活） */
+function mergeById(a, b, keyFn) {
+  var by = {}, order = [];
+  function put(x) {
+    if (!x) return;
+    var k = keyFn(x);
+    if (!k) { k = 'anon-' + order.length; }
+    if (!by[k]) { order.push(k); by[k] = x; return; }
+    var cur = by[k];
+    var xa = asStr(x.updatedAt || x.at || ''), ca = asStr(cur.updatedAt || cur.at || '');
+    if (xa > ca) by[k] = x;
+    else if (!xa && !ca) by[k] = mergeShallowPreferFilled(cur, x);
+  }
+  asArr(a).forEach(put); asArr(b).forEach(put);
+  return order.map(function (k) { return by[k]; });
+}
+function mergeShallowPreferFilled(base, other) {
+  var out = {}, k;
+  for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+  for (k in other) {
+    if (!Object.prototype.hasOwnProperty.call(other, k)) continue;
+    var bv = out[k], ov = other[k];
+    if (bv === undefined || bv === null || bv === '' || (Array.isArray(bv) && !bv.length)) out[k] = ov;
+  }
+  return out;
+}
+function mergeCand(a, b) {
+  /* 新しい方を土台にする（どちらが「今の姿」に近いか） */
+  var base = (asStr(a.updatedAt) >= asStr(b.updatedAt)) ? a : b;
+  var other = (base === a) ? b : a;
+  var out = mergeShallowPreferFilled(base, other);
+  out.tasks = mergeById(a.tasks, b.tasks, function (t) { return t.id; });
+  out.contacts = mergeById(a.contacts, b.contacts, function (t) { return t.id; });
+  out.nudges = mergeById(a.nudges, b.nudges, function (t) { return t.id; });
+  out.family = mergeById(a.family, b.family, function (f) { return (f.name || '') + '|' + (f.relation || '') + '|' + (f.phone || ''); });
+  /* 連絡記録は追記専用。消えることの害が、重複することの害より大きい */
+  out.log = mergeById(a.log, b.log, function (l) { return l.id; });
+  /* ステージ日付は union。同じ段階に両方の日付があるときは【新しい版の値】を採る。
+     ★「早い方が勝つ」にすると、人が編集画面で日付を後ろへ直しても統合で巻き戻る。 */
+  out.stageDates = {};
+  Object.keys(asObj(other.stageDates)).forEach(function (k) {
+    if (asObj(other.stageDates)[k]) out.stageDates[k] = asObj(other.stageDates)[k];
+  });
+  Object.keys(asObj(base.stageDates)).forEach(function (k) {
+    if (asObj(base.stageDates)[k]) out.stageDates[k] = asObj(base.stageDates)[k];
+  });
+  /* アセスメントは項目単位で「空でない方」を採る */
+  out.assess = mergeAssess(asObj(a.assess), asObj(b.assess));
+  /* 削除は「削除された」を優先しない。戻せる状態を保つため、新しい操作の方に従う */
+  out.deleted = !!base.deleted;
+  out.updatedAt = asStr(base.updatedAt) || nowIso();
+  return out;
+}
+function mergeAssess(a, b) {
+  var newer = (asStr(a.updatedAt) >= asStr(b.updatedAt)) ? a : b;
+  var older = (newer === a) ? b : a;
+  var out = {}, k;
+  for (k in older) if (Object.prototype.hasOwnProperty.call(older, k)) out[k] = older[k];
+  for (k in newer) {
+    if (!Object.prototype.hasOwnProperty.call(newer, k)) continue;
+    var v = newer[k];
+    var empty = (v === '' || v === null || v === undefined) ||
+      (isObj(v) && !Object.keys(v).length) || (Array.isArray(v) && !v.length);
+    if (!empty || out[k] === undefined) out[k] = v;
+  }
+  return out;
+}
 function mergeDb(local, remote) {
-  var by = {}, out = [];
+  var by = {}, order = [];
   function put(c) {
     if (!c || !c.id) return;
-    var cur = by[c.id];
-    if (!cur || String(c.updatedAt || '') > String(cur.updatedAt || '')) by[c.id] = c;
+    if (!by[c.id]) { order.push(c.id); by[c.id] = c; return; }
+    by[c.id] = mergeCand(by[c.id], c);
   }
-  (remote.candidates || []).forEach(put);
-  (local.candidates || []).forEach(put);
-  Object.keys(by).forEach(function (k) { out.push(by[k]); });
-  /* 墓標の掃除: 削除から120日を過ぎたものは物理削除（統合相手はもう居ない） */
-  var lim = Date.now() - 120 * 86400000;
-  out = out.filter(function (c) {
-    if (!c.deleted) return true;
-    var t = Date.parse(c.updatedAt || ''); return !(isFinite(t) && t < lim);
-  });
+  asArr(asObj(remote).candidates).forEach(put);
+  asArr(asObj(local).candidates).forEach(put);
+  var out = order.map(function (k) { return by[k]; });
   out.sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
-  return { v: 1, updatedAt: (String(local.updatedAt || '') > String(remote.updatedAt || '') ? local.updatedAt : remote.updatedAt) || nowIso(), candidates: out };
+  return { v: DB_V, updatedAt: nowIso(), candidates: out };
+}
+
+/* サーバー応答が空・極端に減っている時に採用しない（週間計画 adopt の写し）。
+   ★採用を見送った時は kvRev を進めない。進めると、その後の正当な更新まで取りこぼす。 */
+function liveCount(db) { return asArr(asObj(db).candidates).filter(function (c) { return c && !c.deleted; }).length; }
+var rejectedRev = -1;
+function serverLooksLost(remote) {
+  var mine = liveCount(DB), theirs = liveCount(remote);
+  if (mine < 3) return false;                 /* 母数が小さい時は判定しない */
+  return theirs === 0 || theirs < mine * 0.5;
 }
 
 function pull(showToast) {
@@ -550,14 +944,23 @@ function pull(showToast) {
   return SU.data.kvGet(KV_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     lastPullAt = Date.now();
+    var rev = Number(j.rev) || 0;
     if (j.data && Array.isArray(j.data.candidates)) {
-      /* 未送信の変更があるときは、サーバ版へ丸ごと入れ替えず統合する（自分の編集を消さない） */
-      DB = dirty ? mergeDb(DB, j.data) : j.data;
-      kvRev = Number(j.rev) || 0;
-    } else {
-      /* サーバにまだ無い＝初回。ローカルをそのまま使い、次の push で書く */
-      kvRev = Number(j.rev) || 0;
+      var remote = normalizeDb(j.data);
+      if (serverLooksLost(remote)) {
+        if (rejectedRev !== rev) {
+          rejectedRev = rev;
+          alert('⚠️ サーバー側の台帳が大きく減っています。\n\n' +
+            'この端末: ' + liveCount(DB) + '件 ／ サーバー: ' + liveCount(remote) + '件\n\n' +
+            'この端末の内容を消さないため、取り込みを中止しました。\n' +
+            '心当たりが無ければ、別の端末で誤った操作が無かったかを確かめてください。');
+        }
+        setSync('要確認（サーバーが空）', 'err');
+        return false;                          /* ★rev は進めない */
+      }
+      DB = dirty ? mergeDb(DB, remote) : remote;
     }
+    kvRev = rev;
     saveCache(); renderAll();
     setSync(dirty ? '未送信あり' : '同期OK');
     if (dirty) schedulePush();
@@ -566,6 +969,45 @@ function pull(showToast) {
   }).catch(function (e) {
     setSync('オフライン', 'err');
     if (showToast) toast('読み込めませんでした: ' + (e && e.message || e));
+    return false;
+  });
+}
+
+/* 起動時は「サーバー版を無条件に採る」をしない（週間計画 startupPull の写し）。
+   未送信を抱えたまま起動して丸ごと入れ替えると、その端末の入力が黙って消える。 */
+function startupPull() {
+  if (!SU_DATA_READY) { setSync('データ層エラー', 'err'); return Promise.resolve(false); }
+  var t = syncTarget();
+  if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
+  setSync('同期中…');
+  return SU.data.kvGet(KV_KEY).then(function (j) {
+    if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
+    lastPullAt = Date.now();
+    var rev = Number(j.rev) || 0;
+    var remote = (j.data && Array.isArray(j.data.candidates)) ? normalizeDb(j.data) : null;
+    if (!remote) {
+      kvRev = rev;
+      /* ★サーバーに台帳がまだ無く、この端末には案件がある＝接続先を新設した直後。
+         押し出さないと、他の端末は空の一覧を見て同じ人をもう一度起票してしまう。 */
+      if (!dirty && DB.candidates.length) { dirty = true; }
+      saveCache(); renderAll(); setSync(dirty ? '未送信あり' : '同期OK');
+      if (dirty) schedulePush();
+      return true;
+    }
+    if (!dirty) {
+      if (serverLooksLost(remote)) { setSync('要確認（サーバーが空）', 'err'); return false; }
+      DB = remote; kvRev = rev; saveCache(); renderAll(); setSync('同期OK'); return true;
+    }
+    /* ① 中身が同じなら未送信は解消済み ② サーバーが古いなら送る ③ どちらも進んでいたら統合 */
+    var same = JSON.stringify(asArr(DB.candidates)) === JSON.stringify(asArr(remote.candidates));
+    if (same) { kvRev = rev; dirty = false; saveCache(); renderAll(); setSync('同期OK'); return true; }
+    if (rev <= kvRev) { kvRev = rev; saveCache(); renderAll(); setSync('未送信あり'); schedulePush(); return true; }
+    DB = mergeDb(DB, remote); kvRev = rev; saveCache(); renderAll();
+    setSync('未送信あり'); schedulePush();
+    toast('他の端末の変更と統合しました（どちらの入力も残しています）');
+    return true;
+  }).catch(function (e) {
+    setSync('オフライン', 'err');
     return false;
   });
 }
@@ -580,75 +1022,231 @@ function schedulePush() {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(push, 1800);
 }
-function push() {
+/* 指数バックオフ（1.5倍・最大5分）。固定間隔だと、長い障害の間ずっと同じ頻度で叩き続ける */
+function schedulePushRetry() {
+  retryWait = retryWait ? Math.min(Math.round(retryWait * 1.5), 300000) : 8000;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(push, retryWait);
+}
+function push(force) {
   if (!dirty || pushing || !SU_DATA_READY) return;
   var t = syncTarget();
   if (!t.endpoint) { setSync('未接続'); return; }
   pushing = true; setSync('保存中…');
   var sentAt = DB.updatedAt;
-  SU.data.kvPut(KV_KEY, DB, kvRev).then(function (j) {
+  var opts = force ? { force: true } : null;
+  kvPutWithOpts(DB, kvRev, opts).then(function (j) {
     pushing = false;
     if (j && j.ok) {
       kvRev = Number(j.rev) || kvRev;
-      /* 送信中に新しい編集が入っていなければ既送信にする */
+      retryWait = 0;
       if (DB.updatedAt === sentAt) dirty = false;
       saveCache(); setSync(dirty ? '未送信あり' : '同期OK');
       if (dirty) schedulePush();
       return;
     }
+    /* サーバーの一括消失ガード。件数を見せて人に決めてもらう（自動では絶対に通さない） */
+    if (j && j.error === 'admwipe') {
+      setSync('保存が拒否されました', 'err');
+      var ok = confirm('⚠ 案件が大きく減るため、サーバーが保存を拒否しました。\n\n' +
+        'サーバー: ' + j.was + ' 件 ／ この端末: ' + j.now + ' 件\n\n' +
+        '【この端末の画面が正しい場合】「OK」で上書きします。\n' +
+        '【身に覚えがない場合】「キャンセル」を押し、⟳ で最新を取り直してください。');
+      if (ok) { pushing = false; return push(true); }
+      setSync('未送信あり', 'err');
+      return;
+    }
+    if (j && (j.error === 'toolarge' || j.error === 'nodata')) {
+      setSync('保存できません', 'err');
+      alert(j.error === 'toolarge'
+        ? '台帳が大きくなりすぎて保存できません。\n\n右上のバッジ →「⬇️ 書き出し（JSON）」でファイルに残したうえで、'
+          + '入居済み・見送りの古い案件を削除してください（削除しても「削除済みも表示」から戻せます）。'
+        : '送るデータが空のため、サーバーが保存を拒否しました。\n\n画面を再読み込みしてから、もう一度お試しください。');
+      return;
+    }
     if (j && j.conflict) {
-      /* 他端末が先に更新＝最新を取得して案件単位で統合し、もう一度送る */
       setSync('統合中…');
       return SU.data.kvGet(KV_KEY).then(function (g) {
         if (!g || !g.ok) throw new Error((g && g.error) || '応答エラー');
-        if (g.data && Array.isArray(g.data.candidates)) DB = mergeDb(DB, g.data);
+        if (g.data && Array.isArray(g.data.candidates)) DB = mergeDb(DB, normalizeDb(g.data));
         kvRev = Number(g.rev) || 0;
         DB.updatedAt = nowIso();
         saveCache(); renderAll();
-        return SU.data.kvPut(KV_KEY, DB, kvRev).then(function (j2) {
-          if (j2 && j2.ok) { kvRev = Number(j2.rev) || kvRev; dirty = false; saveCache(); setSync('同期OK'); }
-          else { setSync('未送信あり', 'err'); schedulePushRetry(); }
+        /* ★通常経路（上）と同じ作法で、送信中に入った編集を「送信済み」にしない。
+           ここで無条件に dirty=false にすると、統合中の1〜3秒に入れた入力が
+           次回起動の「未送信が無いならサーバー版を採用」で端末からも消える。 */
+        var sentAt2 = DB.updatedAt;
+        return kvPutWithOpts(DB, kvRev, null).then(function (j2) {
+          if (j2 && j2.ok) {
+            kvRev = Number(j2.rev) || kvRev; retryWait = 0;
+            if (DB.updatedAt === sentAt2) dirty = false;
+            saveCache(); setSync(dirty ? '未送信あり' : '同期OK');
+            if (dirty) schedulePush();
+          } else { setSync('未送信あり', 'err'); schedulePushRetry(); }
         });
       }).catch(function () { setSync('未送信あり', 'err'); schedulePushRetry(); });
     }
     throw new Error((j && j.error) || '応答エラー');
-  }).catch(function () {
+  }).catch(function (e) {
     pushing = false;
-    setSync('オフライン（自動再送）', 'err');
-    schedulePushRetry();
+    /* 「失敗」と返ってもサーバーには書けていることがある（data-contracts §13）。
+       決めつけず取り直して確かめ、入っていれば未送信を解消する。 */
+    verifyPushed().then(function (done) {
+      if (done) { setSync('同期OK'); return; }
+      setSync('オフライン（自動再送）', 'err');
+      schedulePushRetry();
+    });
   });
 }
-function schedulePushRetry() {
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(push, 8000);
+/* su-data の kvPut は opts を素通しする。force はサーバーのガードを人の承認で越えるためだけに使う */
+function kvPutWithOpts(data, rev, opts) {
+  if (opts && opts.force) return SU.data.kvRaw({ action: 'put', key: KV_KEY, data: data, rev: rev, force: true });
+  return SU.data.kvPut(KV_KEY, data, rev);
 }
-/* 閉じる直前の最終送信（ベストエフォート）。rev不一致はサーバ側が拒否するので安全 */
-window.addEventListener('pagehide', function () {
+function verifyPushed() {
+  if (!SU_DATA_READY) return Promise.resolve(false);
+  return SU.data.kvGet(KV_KEY).then(function (g) {
+    if (!g || !g.ok || !g.data || !Array.isArray(g.data.candidates)) return false;
+    var same = JSON.stringify(asArr(normalizeDb(g.data).candidates)) === JSON.stringify(asArr(DB.candidates));
+    if (same) { kvRev = Number(g.rev) || kvRev; dirty = false; retryWait = 0; saveCache(); }
+    return same;
+  }).catch(function () { return false; });
+}
+
+/* 閉じる直前の最終送信（ベストエフォート）。rev不一致はサーバ側が拒否するので二重送信は無害。
+   ★iOS Safari は beforeunload が発火しないことが多いので pagehide にも結線する。
+   ★beacon は成否を読めないので、これを唯一の保存手段にしない（次回起動の startupPull が検証する）。 */
+function flushOnExit() {
   if (dirty && SU_DATA_READY) { try { SU.data.kvPutBeacon(KV_KEY, DB, kvRev); } catch (e) {} }
+}
+window.addEventListener('pagehide', flushOnExit);
+window.addEventListener('beforeunload', function (ev) {
+  flushOnExit();
+  /* 編集中の入力を抱えたまま閉じようとしたら止める（保存していない内容は復元できない） */
+  if (editing && editDirty) { ev.preventDefault(); ev.returnValue = ''; return ''; }
 });
-/* 画面へ戻ってきた時、5分以上経っていたら取り直す（他端末の編集を拾う） */
+/* 画面へ戻ってきた時、5分以上経っていたら取り直す。ただし編集中は保留（rev を進めないので次回拾える） */
 document.addEventListener('visibilitychange', function () {
-  if (!document.hidden && Date.now() - lastPullAt > 5 * 60000) pull(false);
+  if (document.hidden) return;
+  if (busyEditing()) return;
+  if (Date.now() - lastPullAt > 5 * 60000) pull(false);
 });
+window.addEventListener('online', function () {
+  if (dirty) { retryWait = 0; push(); } else if (Date.now() - lastPullAt > 60000) pull(false);
+});
+/* 同じ端末の別タブが書いた時に取り込む。編集中・未送信中は取り込まない */
+window.addEventListener('storage', function (ev) {
+  if (!ev || ev.key !== CACHE_KEY) return;
+  if (dirty || busyEditing()) return;
+  clearTimeout(window.__admStorageTm);
+  window.__admStorageTm = setTimeout(function () {
+    if (dirty || busyEditing()) return;
+    var o = readCacheSlot(CACHE_KEY);
+    if (!o) return;
+    DB = normalizeDb(o.db); kvRev = Number(o.rev) || kvRev;
+    renderAll();
+  }, 300);
+});
+function busyEditing() {
+  if ($('sc-edit').classList.contains('on')) return true;
+  var mods = document.querySelectorAll('.mk.on');
+  return mods.length > 0;
+}
 
 /* ── 案件の取得・変更 ── */
-function activeCands() { return DB.candidates.filter(function (c) { return !c.deleted; }); }
+var showDeleted = false;
+function activeCands() { return DB.candidates.filter(function (c) { return showDeleted ? true : !c.deleted; }); }
 function findCand(id) {
   for (var i = 0; i < DB.candidates.length; i++) if (DB.candidates[i].id === id) return DB.candidates[i];
   return null;
 }
-function touch(c) { c.updatedAt = nowIso(); markDirty(); }
+function touch(c) { c.updatedAt = nowIso(); sealUndo(c); markDirty(); }
 
 function blankCand() {
   return {
     id: newId('c'), name: '', kana: '', gender: '', birthDate: '', phone: '', careLevel: '',
     source: '', sourceDetail: '', desiredDate: '', room: '', note: '',
     insuredNo: '', insurer: '', careCertStart: '', careCertEnd: '', copayRate: '',
-    family: [], contacts: [], tasks: [], log: [],
-    stage: 'inquiry', stageDates: {}, lostReason: '', lostNote: '',
-    masterId: null, masterSyncedAt: '', masterPendingStamp: '', piiCleared: false,
-    deleted: false, updatedAt: nowIso()
+    family: [], contacts: [], tasks: [], log: [], nudges: [], assess: {},
+    /* ★起票した日を「問い合わせ」の日付として刻む。ここを空にすると、月次ファネルの
+       問い合わせ列と一覧の「今月の問い合わせ」が永久に0のままになる（stageDates は
+       ステージを【移動した】時にしか刻まれないため、最初の段階だけ誰も入れない）。 */
+    stage: 'inquiry', stageDates: { inquiry: todayYmd() }, lostReason: '', lostNote: '',
+    masterId: null, masterSyncedAt: '', masterPendingStamp: '',
+    deleted: false, deletedAt: '', updatedAt: nowIso()
   };
+}
+
+/* ── 取り消し（元に戻す） ──
+   ★DB全体のスナップショットにはしない。積んだ後に他端末の更新が入ると、
+     戻した瞬間にその更新ごと巻き戻る（週間計画 pushUndo の設計理由と同じ）。
+     案件1件ぶんの逆操作だけを積む。 */
+var undoStack = [];
+function pushUndo(entry) { undoStack.push(entry); if (undoStack.length > 30) undoStack.shift(); }
+/* ★取り消しは「操作の前後」を両方控える。
+   前(pre)だけだと、取り消しまでの間に他端末が入れた変更まで巻き戻す
+   （その端末は未送信でないため再送せず、サーバーからも恒久に消える）。
+   後(post)と今を比べ、【自分の操作以降に誰も触っていない項目だけ】を戻す。 */
+function pushUndoCand(c, label) {
+  pushUndo({ kind: 'cand', id: c.id, label: label, snap: JSON.stringify(c), post: '' });
+}
+/* 直前に積んだ取り消し記録へ「操作後の姿」を封じる。touch() から呼ぶ＝全ての変更経路を拾う */
+function sealUndo(c) {
+  var e = undoStack[undoStack.length - 1];
+  if (e && e.kind === 'cand' && e.id === c.id && !e.post) e.post = JSON.stringify(c);
+}
+var UNDO_ARRAY_KEYS = { tasks: 't', log: 'l', contacts: 'k', nudges: 'n', family: 'f' };
+function undoKeyOf(k, x) {
+  if (k === 'family') return (x.name || '') + '|' + (x.relation || '') + '|' + (x.phone || '');
+  return x.id;
+}
+function canUndo() { return undoStack.length > 0; }
+/* pre（操作前）へ戻す。ただし post（操作直後）と今が違う項目は、他端末が後から
+   変えたものなので触らない。配列は「自分が足した要素だけ外し、自分が消した要素だけ戻す」。 */
+function undoApply(cur, pre, post) {
+  var keys = {}, k;
+  for (k in pre) keys[k] = 1;
+  for (k in cur) keys[k] = 1;
+  if (post) for (k in post) keys[k] = 1;
+  Object.keys(keys).forEach(function (key) {
+    if (key === 'id' || key === 'updatedAt') return;
+    if (UNDO_ARRAY_KEYS[key]) {
+      var preIds = {}, postIds = {};
+      asArr(pre[key]).forEach(function (x) { preIds[undoKeyOf(key, x)] = x; });
+      asArr(post ? post[key] : pre[key]).forEach(function (x) { postIds[undoKeyOf(key, x)] = 1; });
+      /* ①自分の操作で増えた要素を外す ②他端末が足したものは残す */
+      var out = asArr(cur[key]).filter(function (x) {
+        var id = undoKeyOf(key, x);
+        return !(postIds[id] && !preIds[id]);
+      });
+      /* ③自分の操作で消えた要素を戻す（今も無いものだけ） */
+      var have = {};
+      out.forEach(function (x) { have[undoKeyOf(key, x)] = 1; });
+      Object.keys(preIds).forEach(function (id) { if (!have[id]) out.push(preIds[id]); });
+      cur[key] = out;
+      return;
+    }
+    /* 単純項目・アセスメント: 操作直後から変わっていない時だけ戻す */
+    if (post && JSON.stringify(cur[key]) !== JSON.stringify(post[key])) return;
+    if (Object.prototype.hasOwnProperty.call(pre, key)) cur[key] = pre[key];
+    else delete cur[key];
+  });
+}
+function doUndo() {
+  var e = undoStack.pop();
+  if (!e) { toast('元に戻せる操作はありません'); return; }
+  if (e.kind === 'cand') {
+    var cur = findCand(e.id);
+    var snap = normalizeCand(JSON.parse(e.snap));
+    if (!cur) { DB.candidates.push(snap); }
+    else {
+      var post = e.post ? normalizeCand(JSON.parse(e.post)) : null;
+      undoApply(cur, snap, post);
+      cur.updatedAt = nowIso();
+    }
+    markDirty(); renderAll();
+    toast('元に戻しました（' + (e.label || '直前の操作') + '）');
+  }
 }
 
 /* ── 進捗の計算 ── */
@@ -661,10 +1259,38 @@ function taskStats(c) {
   });
   return { total: t.length, done: done, wait: wait, over: over };
 }
+/* 今のステージまでに必要な標準タスクのうち、まだ起票されていない／終わっていないもの */
+function stageTodo(c) {
+  var cur = stageIdx(c.stage);
+  if (cur < 0) return { missing: [], undone: [] };
+  var have = {};
+  asArr(c.tasks).forEach(function (t) { have[t.cat + '|' + t.title] = t; });
+  var missing = [], undone = [];
+  TEMPLATES.forEach(function (tp) {
+    if (!tp[3]) return;                          /* 既定でチェックしないものは「必須」扱いしない */
+    if (stageIdx(tp[4]) > cur) return;           /* まだ先の段階のものは求めない */
+    var t = have[tp[0] + '|' + tp[1]];
+    if (!t) missing.push(tp);
+    else if (t.st !== 'done') undone.push(t);
+  });
+  return { missing: missing, undone: undone };
+}
 
 /* ═══════════ 画面遷移 ═══════════ */
 var curId = null;      // 詳細・編集で開いている案件
+/* ★再読み込みしても直前の画面のままにする（dev-principles 原則11・全アプリ共通）。
+   保存するのは画面idだけ。氏名・記録・選択中の案件のような業務データは保存しない
+   （取り違えの危険があるためスコープ外）。未知の値はホワイトリストで既定へ落とす。 */
+var VIEW_KEY = 'admf_view';
+function saveViewState(name) {
+  if (name !== 'list' && name !== 'kpi') return;   /* 案件に紐づく画面は保存しない */
+  try { localStorage.setItem(VIEW_KEY, name); } catch (e) {}
+}
+function loadViewState() {
+  try { return (localStorage.getItem(VIEW_KEY) === 'kpi') ? 'kpi' : 'list'; } catch (e) { return 'list'; }
+}
 function showScreen(name) {
+  saveViewState(name);
   ['list', 'view', 'edit', 'kpi'].forEach(function (s) {
     $('sc-' + s).classList.toggle('on', s === name);
   });
@@ -679,20 +1305,27 @@ function closeModal(id) { $(id).classList.remove('on'); }
 Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function (b) {
   b.addEventListener('click', function () { closeModal(b.getAttribute('data-close')); });
 });
+/* Escape で閉じる（開いているものだけ）。キーボードのある事務所端末で迷子にならないため */
+document.addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Escape') return;
+  var open = document.querySelectorAll('.mk.on');
+  if (open.length) { open[open.length - 1].classList.remove('on'); }
+});
 
 /* ═══════════ 一覧 ═══════════ */
 function renderList() {
   var cands = activeCands();
   var box = $('listBox');
 
-  /* サマリー: 今月の問い合わせ・進行中・今月入居予定 */
   var ym = todayYmd().slice(0, 7);
-  var inThisMonth = 0, working = 0, moveThisMonth = 0, waitAll = 0, overAll = 0;
-  cands.forEach(function (c) {
+  var inThisMonth = 0, working = 0, moveThisMonth = 0, waitAll = 0, overAll = 0, nudgeAll = 0, delCount = 0;
+  DB.candidates.forEach(function (c) {
+    if (c.deleted) { delCount++; return; }
     if ((c.stageDates.inquiry || '').slice(0, 7) === ym) inThisMonth++;
     if (c.stage !== 'movedin' && c.stage !== 'lost') {
       working++;
       var st = taskStats(c); waitAll += st.wait; overAll += st.over;
+      nudgeAll += openNudges(c).length;
     }
     var mv = c.stageDates.movedin || c.desiredDate;
     if (c.stage !== 'lost' && c.stage !== 'movedin' && (mv || '').slice(0, 7) === ym) moveThisMonth++;
@@ -701,24 +1334,30 @@ function renderList() {
     '<span class="pill">今月の問い合わせ <b>' + inThisMonth + '</b>件</span>' +
     '<span class="pill">進行中 <b>' + working + '</b>件</span>' +
     '<span class="pill">今月入居予定 <b>' + moveThisMonth + '</b>件</span>' +
-    (overAll ? '<span class="pill" style="border-color:#f5c6c0"><span style="color:var(--err);font-weight:700">期限超過 ' + overAll + '</span></span>' : '');
+    (nudgeAll ? '<span class="pill" style="border-color:#ffcc80"><span style="color:var(--warn);font-weight:700">連絡待ち ' + nudgeAll + '</span></span>' : '') +
+    (overAll ? '<span class="pill" style="border-color:#f5c6c0"><span style="color:var(--err);font-weight:700">期限超過 ' + overAll + '</span></span>' : '') +
+    (delCount ? '<button class="pill" id="toggleDel" type="button" style="cursor:pointer">' +
+      (showDeleted ? '削除済みを隠す' : '削除済みも表示 (' + delCount + ')') + '</button>' : '') +
+    (canUndo() ? '<button class="pill" id="undoBtn" type="button" style="cursor:pointer">↩ 元に戻す</button>' : '');
 
   if (!cands.length) {
     box.innerHTML = '<div class="empty">まだ案件がありません。<br>問い合わせが来たら下の「➕新規」で起票してください。</div>';
+    bindSumbar();
     return;
   }
 
-  /* ステージごとに区切って出す（進行中→入居済→見送りの順） */
   var h = '';
   var groups = STAGES.map(function (s) { return { key: s[0], label: s[1], items: [] }; });
   var lost = { key: 'lost', label: '見送り・離脱', items: [] };
+  var del = { key: 'del', label: '削除済み', items: [] };
   cands.forEach(function (c) {
+    if (c.deleted) { del.items.push(c); return; }
     if (c.stage === 'lost') { lost.items.push(c); return; }
     var i = stageIdx(c.stage); if (i < 0) i = 0;
     groups[i].items.push(c);
   });
-  /* 進行中のステージを申込側から出す（動いている案件が上に来る） */
-  var order = ['coordinating', 'decided', 'contracted', 'applied', 'trial', 'tour', 'inquiry', 'movedin'];
+  /* 動いている案件が上に来る並び */
+  var order = ['screening', 'decided', 'contracted', 'applied', 'tour', 'inquiry', 'movedin'];
   order.forEach(function (key) {
     var g = null;
     for (var i = 0; i < groups.length; i++) if (groups[i].key === key) g = groups[i];
@@ -727,14 +1366,20 @@ function renderList() {
     g.items.sort(function (a, b) { return String(a.desiredDate || '9999').localeCompare(String(b.desiredDate || '9999')); });
     g.items.forEach(function (c) { h += candCard(c); });
   });
-  if (lost.items.length) {
-    h += '<div class="stage-h">' + esc(lost.label) + '<span class="n">' + lost.items.length + '件</span></div>';
-    lost.items.forEach(function (c) { h += candCard(c); });
-  }
+  [lost, del].forEach(function (g) {
+    if (!g.items.length) return;
+    h += '<div class="stage-h">' + esc(g.label) + '<span class="n">' + g.items.length + '件</span></div>';
+    g.items.forEach(function (c) { h += candCard(c); });
+  });
   box.innerHTML = h;
   Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function (b) {
     b.addEventListener('click', function () { openView(b.getAttribute('data-open')); });
   });
+  bindSumbar();
+}
+function bindSumbar() {
+  if ($('toggleDel')) $('toggleDel').addEventListener('click', function () { showDeleted = !showDeleted; renderList(); });
+  if ($('undoBtn')) $('undoBtn').addEventListener('click', doUndo);
 }
 function candCard(c) {
   var st = taskStats(c);
@@ -743,28 +1388,108 @@ function candCard(c) {
   if (c.careLevel) tags += '<span class="tag">' + esc(c.careLevel) + '</span>';
   if (c.desiredDate) tags += '<span class="tag">希望 ' + esc(fmtD(c.desiredDate)) + '</span>';
   if (c.room) tags += '<span class="tag">' + esc(c.room) + '号室予定</span>';
-  if (c.stage === 'lost') {
+  var nd = openNudges(c).length;
+  if (c.deleted) {
+    tags += '<span class="tag lost">削除済み ' + esc(fmtD(c.deletedAt)) + '</span>';
+  } else if (c.stage === 'lost') {
     tags += '<span class="tag lost">' + esc(c.lostReason || '理由未記入') + '</span>';
-  } else if (c.stage === 'movedin') {
-    tags += '<span class="tag ok">入居 ' + esc(fmtD(c.stageDates.movedin)) + '</span>' +
-            (c.masterId ? '<span class="tag ok">マスタ登録済</span>' : '<span class="tag warn">マスタ未登録</span>');
-  } else if (st.total) {
-    tags += '<span class="tag prog">タスク ' + st.done + '/' + st.total + '</span>';
-    if (st.wait) tags += '<span class="tag wait">相手待ち ' + st.wait + '</span>';
-    if (st.over) tags += '<span class="tag over">期限超過 ' + st.over + '</span>';
-  } else if (stageIdx(c.stage) >= stageIdx('applied')) {
-    tags += '<span class="tag warn">タスク未作成</span>';
+  } else {
+    if (nd) tags += '<span class="tag wait">要連絡 ' + nd + '</span>';
+    if (c.stage === 'movedin') {
+      tags += '<span class="tag ok">入居 ' + esc(fmtD(c.stageDates.movedin)) + '</span>' +
+        (c.masterId ? '<span class="tag ok">マスタ登録済</span>' : '<span class="tag warn">マスタ未登録</span>');
+    } else if (st.total) {
+      tags += '<span class="tag prog">タスク ' + st.done + '/' + st.total + '</span>';
+      if (st.wait) tags += '<span class="tag wait">相手待ち ' + st.wait + '</span>';
+      if (st.over) tags += '<span class="tag over">期限超過 ' + st.over + '</span>';
+    } else if (stageIdx(c.stage) >= stageIdx('applied')) {
+      tags += '<span class="tag warn">タスク未作成</span>';
+    }
   }
-  return '<button class="cand" type="button" data-open="' + esc(c.id) + '">' +
+  /* 段階バー（今どこか）。見送り・削除済みには出さない */
+  var steps = '';
+  if (!c.deleted && c.stage !== 'lost') {
+    var cur = stageIdx(c.stage);
+    steps = '<span class="mini-steps" aria-hidden="true">' +
+      STAGES.map(function (s, i) { return '<i class="' + (i < cur ? 'on' : (i === cur ? 'on cur' : '')) + '"></i>'; }).join('') +
+      '</span><span class="mini-lbl">' + esc(stageLabel(c.stage)) + '（' + (cur + 1) + '/' + STAGES.length + '）</span>';
+  }
+  return '<button class="cand' + (c.deleted ? ' del' : '') + '" type="button" data-open="' + esc(c.id) + '">' +
     '<span class="nm">' + esc(c.name || '（氏名未入力）') + '</span>' +
     (c.kana ? '<span class="kn">' + esc(c.kana) + '</span>' : '') +
-    '<span class="tags">' + tags + '</span></button>';
+    '<span class="tags">' + tags + '</span>' + steps + '</button>';
+}
+
+/* ═══════════ 連携の提示（次にやること） ═══════════ */
+function openNudges(c) { return asArr(c.nudges).filter(function (g) { return g && !g.done; }); }
+/* 保存の前後を比べ、当てはまったルールの提示を積む。同じルールの未完了が既にあれば増やさない */
+function applyNudgeRules(prev, next) {
+  var added = 0;
+  var open = {};
+  asArr(next.nudges).forEach(function (g) { if (g && !g.done) open[g.rule] = true; });
+  NUDGE_RULES.forEach(function (rule) {
+    var hit = false;
+    try { hit = !!rule.test(prev, next); } catch (e) { hit = false; }
+    if (!hit || open[rule.id]) return;
+    next.nudges.push({
+      id: newId('n'), at: nowIso(), rule: rule.id, cats: rule.cats.slice(),
+      title: rule.title, why: rule.why, done: false, doneAt: ''
+    });
+    added++;
+  });
+  return added;
+}
+/* 提示に紐づく連絡先。未登録なら「登録がありません」を出して編集へ誘導する */
+function contactsFor(c, cats) {
+  var out = [];
+  cats.forEach(function (cat) {
+    asArr(c.contacts).forEach(function (ct) {
+      if (ct && ct.cat === cat && (ct.org || ct.person || ct.tel || ct.fax)) out.push(ct);
+    });
+  });
+  return out;
+}
+function nudgeCardHtml(c) {
+  var list = asArr(c.nudges).slice().sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  var open = list.filter(function (g) { return !g.done; });
+  var done = list.filter(function (g) { return g.done; });
+  if (!list.length) return '';
+  var h = '<div class="cd' + (open.length ? ' hot' : '') + '"><h3>' + (open.length ? '📣 次にやること（' + open.length + '件）' : '連携の記録') + '</h3>';
+  open.forEach(function (g) {
+    var cts = contactsFor(c, asArr(g.cats));
+    h += '<div class="nudge"><div class="ti">' + esc(g.title) + '</div>' +
+      '<div class="wy">' + esc(g.why) + '</div><div class="to">' +
+      asArr(g.cats).map(function (k) { return '<span class="tag">' + esc(catLabel(k)) + '</span>'; }).join('') + '</div>';
+    if (cts.length) {
+      h += '<div class="acts">';
+      cts.forEach(function (ct) {
+        var href = telHref(ct.tel);
+        if (href) h += '<a class="btn sm" href="' + esc(href) + '">📞 ' + esc(ct.org || catLabel(ct.cat)) + '</a>';
+        if (ct.fax) h += '<button class="btn sm" type="button" data-copyfax="' + esc(ct.fax) + '">📠 FAX ' + esc(ct.fax) + '</button>';
+      });
+      h += '</div>';
+    } else {
+      h += '<p class="note warn" style="margin:6px 0 0">この連絡先はまだ登録されていません。「✏️ 編集」の連携先に追加すると、ここから直接かけられます。</p>';
+    }
+    h += '<div class="acts"><button class="btn sm pri" type="button" data-ndlog="' + esc(g.id) + '">📝 記録して「連絡済み」にする</button>' +
+      '<button class="btn sm" type="button" data-nddone="' + esc(g.id) + '">連絡済みにする</button></div></div>';
+  });
+  if (done.length) {
+    h += '<details style="margin-top:8px"><summary style="font-size:0.78125rem;color:var(--g7);min-height:44px">連絡済み ' + done.length + '件</summary>';
+    done.forEach(function (g) {
+      h += '<div class="nudge done"><div class="ti">' + esc(g.title) + '</div>' +
+        '<div class="wy">連絡済み ' + esc(fmtDt(g.doneAt)) + '</div></div>';
+    });
+    h += '</details>';
+  }
+  h += '</div>';
+  return h;
 }
 
 /* ═══════════ 詳細 ═══════════ */
 function openView(id) {
   var c = findCand(id);
-  if (!c || c.deleted) { toast('この案件は見つかりません'); showScreen('list'); renderList(); return; }
+  if (!c) { toast('この案件は見つかりません'); showScreen('list'); renderList(); return; }
   curId = id;
   renderView(c);
   showScreen('view');
@@ -775,10 +1500,20 @@ function renderView(c) {
 
   h += '<div class="viewbar">' +
     '<button class="btn sm" id="vBack" type="button">← 一覧</button><span class="sp"></span>' +
+    (canUndo() ? '<button class="btn sm" id="vUndo" type="button">↩ 元に戻す</button>' : '') +
     '<button class="btn sm" id="vEdit" type="button">✏️ 編集</button>' +
-    (c.stage !== 'lost' && c.stage !== 'movedin' ? '<button class="btn sm warn" id="vLost" type="button">見送りにする</button>' : '') +
-    (c.stage === 'lost' ? '<button class="btn sm" id="vRevive" type="button">進行中に戻す</button>' : '') +
+    (!c.deleted && c.stage !== 'lost' && c.stage !== 'movedin' ? '<button class="btn sm warn" id="vLost" type="button">見送りにする</button>' : '') +
+    (!c.deleted && c.stage === 'lost' ? '<button class="btn sm" id="vRevive" type="button">進行中に戻す</button>' : '') +
     '</div>';
+
+  if (c.deleted) {
+    h += '<div class="cd"><h3>削除済みの案件</h3>' +
+      '<p class="note warn">この案件は ' + esc(fmtDt(c.deletedAt)) + ' に削除されました。内容は消えていません。</p>' +
+      '<button class="btn pri" id="vRestore" type="button">↩ 削除を取り消す</button></div>';
+  }
+
+  /* 次にやること（連携の提示）は一番上に置く。見落とすと連絡漏れになるため */
+  h += nudgeCardHtml(c);
 
   /* ステージ */
   var cur = stageIdx(c.stage);
@@ -786,11 +1521,25 @@ function renderView(c) {
   STAGES.forEach(function (s, i) {
     var cls = 'stg' + (i < cur ? ' done' : '') + (i === cur ? ' cur' : '');
     var d = c.stageDates[s[0]];
-    h += '<button class="' + cls + '" type="button" data-stage="' + esc(s[0]) + '">' + esc(s[1]) +
+    h += '<button class="' + cls + '" type="button" data-stage="' + esc(s[0]) + '"' +
+      (i === cur ? ' aria-current="step"' : '') + '>' + esc(s[1]) +
       (d ? '<span class="stg-date">' + esc(fmtD(d)) + '</span>' : '') + '</button>';
   });
   h += '</div>';
   if (c.stage === 'lost') h += '<p class="note warn">見送り（' + esc(c.lostReason || '理由未記入') + (c.lostNote ? '：' + esc(c.lostNote) : '') + '）</p>';
+  /* この段階で残っていること */
+  if (!c.deleted && c.stage !== 'lost') {
+    var td = stageTodo(c);
+    if (td.missing.length || td.undone.length) {
+      h += '<p class="note warn" style="margin-top:8px"><b>' + esc(stageLabel(c.stage)) + ' までに必要で、まだ終わっていないこと</b><br>' +
+        td.undone.map(function (t) { return '・' + esc(t.title) + '（' + esc(catLabel(t.cat)) + '）'; }).join('<br>') +
+        (td.undone.length && td.missing.length ? '<br>' : '') +
+        td.missing.map(function (tp) { return '・' + esc(tp[1]) + '（' + esc(catLabel(tp[0])) + '・未起票）'; }).join('<br>') +
+        (td.missing.length ? '<br><span style="color:var(--g7)">未起票のものは「標準タスクを追加」で一括起票できます。</span>' : '') + '</p>';
+    } else {
+      h += '<p class="note ok" style="margin-top:8px">この段階で必要な連携は、すべて起票済み・完了しています。</p>';
+    }
+  }
   h += '</div>';
 
   /* 基本情報 */
@@ -799,7 +1548,7 @@ function renderView(c) {
     (c.gender ? '<dt>性別</dt><dd>' + esc(c.gender) + '</dd>' : '') +
     (c.birthDate ? '<dt>生年月日</dt><dd>' + esc(c.birthDate) + '</dd>' : '') +
     (c.careLevel ? '<dt>介護度</dt><dd>' + esc(c.careLevel) + '</dd>' : '') +
-    (c.phone ? '<dt>連絡先</dt><dd>' + esc(c.phone) + '</dd>' : '') +
+    (c.phone ? '<dt>連絡先</dt><dd>' + esc(c.phone) + (telHref(c.phone) ? ' <a class="btn sm" href="' + esc(telHref(c.phone)) + '">📞 発信</a>' : '') + '</dd>' : '') +
     (c.source ? '<dt>経路</dt><dd>' + esc(c.source) + (c.sourceDetail ? '：' + esc(c.sourceDetail) : '') + '</dd>' : '') +
     (c.desiredDate ? '<dt>希望入居時期</dt><dd>' + esc(c.desiredDate) + '</dd>' : '') +
     (c.room ? '<dt>予定居室</dt><dd>' + esc(c.room) + '号室</dd>' : '') +
@@ -816,20 +1565,33 @@ function renderView(c) {
           (f.phone ? ' ' + esc(f.phone) : '') + (f.emergency ? ' ★緊急' : '');
       }).join('　／　') + '</div>';
   }
-  if (c.piiCleared) h += '<p class="note">個人情報は整理済みです（入居者マスタへ引き継ぎ後に削除）。</p>';
   h += '</div>';
+
+  /* 入居前アセスメント（入居者マスタの様式と同じ項目） */
+  h += assessViewHtml(c);
 
   /* 連携先 */
   h += '<div class="cd"><h3>連携先</h3>';
   if (c.contacts && c.contacts.length) {
     c.contacts.forEach(function (ct) {
+      var href = telHref(ct.tel);
       h += '<div class="ct"><span class="cat">' + esc(catLabel(ct.cat)) + '</span><b>' + esc(ct.org || '') + '</b>' +
         (ct.person ? '　' + esc(ct.person) + ' 様' : '') +
         ((ct.tel || ct.fax) ? '<div class="tel">' + (ct.tel ? 'TEL ' + esc(ct.tel) : '') + (ct.fax ? '　FAX ' + esc(ct.fax) : '') + '</div>' : '') +
-        (ct.note ? '<div class="tel">' + esc(ct.note) + '</div>' : '') + '</div>';
+        (ct.note ? '<div class="tel">' + esc(ct.note) + '</div>' : '') +
+        '<div class="acts">' +
+        (href ? '<a class="btn sm" href="' + esc(href) + '">📞 発信</a>' : '') +
+        (ct.fax ? '<button class="btn sm" type="button" data-copyfax="' + esc(ct.fax) + '">📠 FAX番号をコピー</button>' : '') +
+        '<button class="btn sm" type="button" data-ctlog="' + esc(ct.id) + '">📝 連絡を記録</button>' +
+        '</div></div>';
     });
   } else {
     h += '<p class="empty" style="padding:8px 0">未登録（「編集」から追加できます）</p>';
+  }
+  var missingInternal = INTERNAL_CATS.filter(function (k) { return !hasCat(c, k); });
+  if (missingInternal.length) {
+    h += '<p class="note">入居後に関わる先が未登録です: ' + esc(missingInternal.map(catLabel).join('・')) +
+      '。<button class="btn sm" type="button" id="addInternalBtn" style="margin-left:6px">まとめて追加</button></p>';
   }
   h += '</div>';
 
@@ -852,20 +1614,19 @@ function renderView(c) {
       var stTxt = t.st === 'done' ? '完了' : (t.st === 'wait' ? '相手待ち' : '未着手');
       var over = t.st !== 'done' && t.due && t.due < today;
       h += '<div class="tk ' + stCls + '">' +
-        '<button class="st" type="button" data-tk="' + esc(t.id) + '" aria-label="状態を切替（未着手→相手待ち→完了）">' + stTxt + '</button>' +
+        '<button class="st" type="button" data-tk="' + esc(t.id) + '" aria-label="' + esc(t.title) + ' の状態を切替（未着手→相手待ち→完了）">' + stTxt + '</button>' +
         '<div class="bd"><div class="ti">' + esc(t.title) + '</div>' +
         '<div class="mt">' + (dirLabel(t.dir) ? '<span>' + esc(dirLabel(t.dir)) + '</span>' : '') +
         (t.due ? '<span class="' + (over ? 'over' : '') + '">期限 ' + esc(fmtD(t.due)) + (over ? '（超過）' : '') + '</span>' : '') +
         (t.st === 'done' && t.doneAt ? '<span>完了 ' + esc(fmtD(t.doneAt)) + '</span>' : '') +
         (t.note ? '<span>' + esc(t.note) + '</span>' : '') + '</div></div>' +
-        '<button class="del" type="button" data-tkdel="' + esc(t.id) + '" aria-label="このタスクを削除">✕</button></div>';
+        '<button class="del" type="button" data-tkdel="' + esc(t.id) + '" aria-label="' + esc(t.title) + ' を削除">✕</button></div>';
     });
   });
   if (!st.total) h += '<p class="empty" style="padding:8px 0">タスクがありません。申込が入ったら「標準タスクを追加」を押してください。</p>';
   h += '<div class="btn-row" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
     '<button class="btn sm pri" id="tkTplBtn" type="button">📋 標準タスクを追加</button>' +
     '<button class="btn sm" id="tkAddBtn" type="button">＋ 個別に追加</button></div>';
-  /* 個別追加フォーム（普段は隠す） */
   h += '<div id="tkAddForm" hidden style="margin-top:10px" class="subrow"><div class="frow">' +
     '<div class="fld"><label for="tkCat">相手</label><select id="tkCat">' +
     CATS.map(function (p) { return '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
@@ -903,35 +1664,48 @@ function renderView(c) {
   /* 入居者マスタ連携 */
   h += '<div class="cd"><h3>入居者マスタへの反映</h3>';
   if (c.masterId != null && c.masterId !== '') {
-    h += '<p class="note">✅ 登録済み（' + esc(fmtDt(c.masterSyncedAt)) + '）。以後の情報の変更は<b>入居者マスタ側</b>で行ってください（<a href="resident-master.html">入居者マスタを開く</a>）。</p>';
-    if (c.stage === 'movedin' && !c.piiCleared) {
-      h += '<button class="btn sm warn" id="msCleanBtn" type="button">🧹 個人情報を整理してクローズ</button>' +
-        '<p class="note">連絡先・保険情報・ご家族の電話番号をこの台帳から削除します（マスタへ引き継ぎ済みのため）。氏名・日付・経路は集計のために残ります。</p>';
-    }
+    h += '<p class="note ok">✅ 登録済み（' + esc(fmtDt(c.masterSyncedAt)) + '）。以後の情報の変更は<b>入居者マスタ側</b>で行ってください（<a href="resident-master.html">入居者マスタを開く</a>）。</p>' +
+      '<p class="note warn"><b>週間計画の確認をお願いします。</b>マスタに登録された方は、週間計画とデイ利用表に「入居済」として出ます。' +
+      '入居日より前であれば、<a href="care-schedule.html">週間計画</a>でその方を開き「入居前」を押してください（押すまでデイ利用表にも出続けます）。</p>';
   } else if (c.masterPendingStamp) {
     h += '<p class="note err">⚠️ 前回の登録結果を確認できていません。もう一度登録する前に、必ず「登録確認」を押してください（二重登録防止）。</p>' +
       '<button class="btn sm pri" id="msVerifyBtn" type="button">登録確認</button>';
-  } else if (stageIdx(c.stage) >= stageIdx('decided') && c.stage !== 'lost') {
-    h += '<p style="font-size:0.84375rem">ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・ご家族）を入居者マスタへそのまま登録します。</p>' +
+  } else if (stageIdx(c.stage) >= stageIdx('decided') && c.stage !== 'lost' && !c.deleted) {
+    h += '<p style="font-size:0.84375rem">ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・ご家族・入居前アセスメント）を入居者マスタへそのまま登録します。</p>' +
       '<button class="btn pri" id="msOpenBtn" type="button">🗂️ 入居者マスタへ登録</button>';
   } else {
     h += '<p class="note">「入居決定」まで進むと、ここから入居者マスタへ登録できます。</p>';
   }
   h += '</div>';
 
-  /* 削除（誤起票の取り消し） */
-  h += '<div style="text-align:center;margin:18px 0"><button class="btn sm danger" id="vDel" type="button">この案件を削除</button></div>';
+  if (!c.deleted) {
+    h += '<div style="text-align:center;margin:18px 0"><button class="btn sm danger" id="vDel" type="button">この案件を削除</button>' +
+      '<p class="note" style="max-width:32em;margin:8px auto 0">削除しても内容は消えません。一覧の「削除済みも表示」から元に戻せます。</p></div>';
+  }
 
   $('viewBox').innerHTML = h;
+  bindViewEvents(c);
+}
 
-  /* ── イベント ── */
+/* 詳細画面のイベント配線（renderView が innerHTML を差し替えるたびに張り直す） */
+function bindViewEvents(c) {
   $('vBack').addEventListener('click', function () { showScreen('list'); renderList(); });
   $('vEdit').addEventListener('click', function () { openEdit(c.id); });
+  if ($('vUndo')) $('vUndo').addEventListener('click', doUndo);
   if ($('vLost')) $('vLost').addEventListener('click', function () {
     $('lostReason').value = ''; $('lostNote').value = ''; openModal('mk-lost');
   });
   if ($('vRevive')) $('vRevive').addEventListener('click', function () {
-    c.stage = 'coordinating'; c.lostReason = ''; c.lostNote = ''; touch(c); renderView(c); toast('進行中に戻しました');
+    pushUndoCand(c, '見送りから戻す');
+    /* ★理由・メモは消さない。「一度見送りになった」事実は集計と経緯に要る */
+    c.stage = 'screening';
+    if (!c.stageDates.screening) c.stageDates.screening = todayYmd();
+    touch(c); renderView(c); toast('進行中（入居審査）に戻しました');
+  });
+  if ($('vRestore')) $('vRestore').addEventListener('click', function () {
+    pushUndoCand(c, '削除の取り消し');
+    c.deleted = false; c.deletedAt = '';
+    touch(c); renderView(c); toast('削除を取り消しました');
   });
   Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-stage]'), function (b) {
     b.addEventListener('click', function () { setStage(c, b.getAttribute('data-stage')); });
@@ -943,10 +1717,46 @@ function renderView(c) {
     b.addEventListener('click', function () {
       var t = (c.tasks || []).filter(function (x) { return x.id === b.getAttribute('data-tkdel'); })[0];
       if (!t) return;
-      if (!confirm('タスク「' + t.title + '」を削除しますか？')) return;
+      if (!confirm('タスク「' + t.title + '」を削除しますか？\n（「↩ 元に戻す」で戻せます）')) return;
+      pushUndoCand(c, 'タスクの削除');
       c.tasks = c.tasks.filter(function (x) { return x.id !== t.id; });
       touch(c); renderView(c);
     });
+  });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-copyfax]'), function (b) {
+    b.addEventListener('click', function () { copyText(b.getAttribute('data-copyfax')); });
+  });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-ctlog]'), function (b) {
+    b.addEventListener('click', function () {
+      var ct = asArr(c.contacts).filter(function (x) { return x.id === b.getAttribute('data-ctlog'); })[0];
+      openContactModal(c, ct, null);
+    });
+  });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-ndlog]'), function (b) {
+    b.addEventListener('click', function () {
+      var g = asArr(c.nudges).filter(function (x) { return x.id === b.getAttribute('data-ndlog'); })[0];
+      if (!g) return;
+      var ct = contactsFor(c, asArr(g.cats))[0] || null;
+      openContactModal(c, ct, g);
+    });
+  });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-nddone]'), function (b) {
+    b.addEventListener('click', function () {
+      var g = asArr(c.nudges).filter(function (x) { return x.id === b.getAttribute('data-nddone'); })[0];
+      if (!g) return;
+      pushUndoCand(c, '連絡済みにする');
+      g.done = true; g.doneAt = nowIso();
+      touch(c); renderView(c); toast('連絡済みにしました');
+    });
+  });
+  if ($('addInternalBtn')) $('addInternalBtn').addEventListener('click', function () {
+    pushUndoCand(c, '内部事業所の追加');
+    INTERNAL_CATS.forEach(function (k) {
+      if (hasCat(c, k)) return;
+      c.contacts.push({ id: newId('k'), cat: k, org: catLabel(k), person: '', tel: '', fax: '', note: '' });
+    });
+    touch(c); renderView(c);
+    toast('内部事業所を追加しました。電話番号は「編集」から入れてください');
   });
   $('tkTplBtn').addEventListener('click', function () { openTplModal(c); });
   $('tkAddBtn').addEventListener('click', function () { $('tkAddForm').hidden = !$('tkAddForm').hidden; });
@@ -965,19 +1775,81 @@ function renderView(c) {
   });
   if ($('msOpenBtn')) $('msOpenBtn').addEventListener('click', function () { openMasterModal(c); });
   if ($('msVerifyBtn')) $('msVerifyBtn').addEventListener('click', function () { verifyMaster(c); });
-  if ($('msCleanBtn')) $('msCleanBtn').addEventListener('click', function () { cleanPii(c); });
-  $('vDel').addEventListener('click', function () {
-    if (!confirm('「' + (c.name || 'この案件') + '」を削除しますか？（集計からも消えます。見送りの場合は削除でなく「見送りにする」を使ってください）')) return;
-    c.deleted = true; touch(c);
-    showScreen('list'); renderList(); toast('削除しました');
+  if ($('vDel')) $('vDel').addEventListener('click', function () {
+    if (!confirm('「' + (c.name || 'この案件') + '」を削除しますか？\n\n内容は消えません。一覧の「削除済みも表示」から元に戻せます。\n（見送りの場合は削除ではなく「見送りにする」を使ってください）')) return;
+    pushUndoCand(c, '案件の削除');
+    c.deleted = true; c.deletedAt = nowIso(); touch(c);
+    showScreen('list'); renderList(); toast('削除しました（元に戻せます）');
   });
+}
+/* クリップボードは権限で失敗しうる。失敗したら選択してコピーできる形で見せる（黙って諦めない） */
+function copyText(s) {
+  var t = asStr(s);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(function () { toast('コピーしました: ' + t); })
+      .catch(function () { window.prompt('コピーしてください', t); });
+    return;
+  }
+  window.prompt('コピーしてください', t);
+}
+
+/* ── アセスメントの表示（入力済みのものだけ出す） ── */
+function assessViewHtml(c) {
+  var a = asObj(c.assess);
+  var rows = [];
+  function row(label, val) { if (val) rows.push('<div class="row"><span>' + esc(label) + '</span><span>' + esc(val) + '</span></div>'); }
+  function pick(map, obj) {
+    var o = asObj(obj), out = [];
+    map.forEach(function (p) { if (o[p[0]]) out.push(p[1]); });
+    if (o.note) out.push('（' + o.note + '）');
+    return out.join('・');
+  }
+  var adl = asObj(a.adlGrid), adlTxt = [];
+  BF_ADL_ROWS.forEach(function (p) {
+    var v = adl[p[0]]; if (!v) return;
+    var lv = BF_LEVELS.filter(function (l) { return l[0] === v; })[0];
+    adlTxt.push(p[1] + '：' + (lv ? lv[1] : v));
+  });
+  row('ADL', adlTxt.join(' ／ '));
+  row('移動の補助', pick(BF_MOVE_AID, a.moveAid));
+  row('入浴（場所）', pick(BF_BATH_PLACE, a.bathPlace));
+  row('排泄の方法', pick(BF_EXCRETE_WAY, a.excreteWay));
+  row('BPSD', pick(BF_BPSD, a.bpsd));
+  row('夜間', pick(BF_NIGHT, a.night));
+  var svc = asObj(a.services), svcTxt = [];
+  BF_SERVICES.forEach(function (p) {
+    var s = asObj(svc[p[0]]);
+    if (s.on || s.name) svcTxt.push(p[1] + (s.name ? '（' + s.name + '）' : ''));
+  });
+  row('利用中のサービス', svcTxt.join('・'));
+  var dis = asArr(a.diseases).filter(function (d) { return d && (d.name || d.onset || d.hospital); });
+  if (dis.length) {
+    row('病名', dis.map(function (d) {
+      return asStr(d.name) + (d.onset ? '（' + d.onset + '〜）' : '') + (d.hospital ? ' ' + d.hospital : '');
+    }).join(' ／ '));
+  }
+  ASSESS_TEXT.forEach(function (p) {
+    var v = asStr(a[p[0]]); if (!v) return;
+    row(p[1], v);
+  });
+  if (!rows.length) {
+    return '<div class="cd"><h3>入居前アセスメント</h3>' +
+      '<p class="empty" style="padding:8px 0">まだ入力がありません。「✏️ 編集」から、生活状況・ADL・食事・排泄・入浴・認知症などを記録できます。<br>' +
+      '入居者マスタと同じ様式なので、入居決定時にそのまま転載されます。</p></div>';
+  }
+  return '<div class="cd"><h3>入居前アセスメント</h3><div class="asx-view">' + rows.join('') + '</div>' +
+    '<p class="note">この内容は入居者マスタの「入居者基本情報（様式）」へそのまま転載されます。</p></div>';
 }
 
 function setStage(c, key) {
   if (c.stage === key) return;
+  var prev = JSON.parse(JSON.stringify(c));
+  pushUndoCand(c, 'ステージの変更');
   c.stage = key;
   if (!c.stageDates[key]) c.stageDates[key] = todayYmd();
+  var n = applyNudgeRules(prev, c);
   touch(c); renderView(c);
+  if (n) toast(stageLabel(key) + 'へ移動しました。次にやること ' + n + '件を追加しました');
 }
 function cycleTask(c, tid) {
   var t = (c.tasks || []).filter(function (x) { return x.id === tid; })[0];
@@ -993,6 +1865,7 @@ $('lostBtn').addEventListener('click', function () {
   var c = findCand(curId); if (!c) return;
   var r = $('lostReason').value;
   if (!r) { toast('理由を選んでください（集計に使います）'); return; }
+  pushUndoCand(c, '見送りにする');
   c.stage = 'lost'; c.lostReason = r; c.lostNote = $('lostNote').value.trim();
   if (!c.stageDates.lost) c.stageDates.lost = todayYmd();
   touch(c); closeModal('mk-lost'); renderView(c);
@@ -1002,43 +1875,92 @@ $('lostBtn').addEventListener('click', function () {
 function openTplModal(c) {
   var have = {};
   (c.tasks || []).forEach(function (t) { have[t.cat + '|' + t.title] = true; });
+  var cur = stageIdx(c.stage);
   var h = '';
   CATS.forEach(function (cat) {
     var items = TEMPLATES.filter(function (t) { return t[0] === cat[0]; });
     if (!items.length) return;
     h += '<div class="tkgrp">' + esc(cat[1]) + '</div>';
-    items.forEach(function (t, idx) {
+    items.forEach(function (t) {
       var dup = have[t[0] + '|' + t[1]];
       var gi = TEMPLATES.indexOf(t);
+      var needNow = stageIdx(t[4]) <= cur;
       h += '<label class="chk"><input type="checkbox" data-tpl="' + gi + '"' +
-        (dup ? ' disabled' : (t[3] ? ' checked' : '')) + '>' +
-        esc(t[1]) + '<span style="color:var(--g6);font-size:0.6875rem">（' + esc(dirLabel(t[2])) + (dup ? '・追加済み' : '') + '）</span></label>';
+        (dup ? ' disabled' : ((t[3] && needNow) ? ' checked' : '')) + '>' +
+        esc(t[1]) + '<span style="color:var(--g6);font-size:0.6875rem">（' + esc(dirLabel(t[2])) +
+        '・' + esc(stageLabel(t[4])) + 'まで' + (dup ? '・追加済み' : '') + '）</span></label>';
     });
   });
-  $('tplBox').innerHTML = h;
+  $('tplBox').innerHTML =
+    '<p class="note">いまのステージ（' + esc(stageLabel(c.stage)) + '）までに必要なものへ最初からチェックが入っています。先の段階のものも必要なら入れてください。</p>' + h;
   openModal('mk-tpl');
 }
 $('tplAddBtn').addEventListener('click', function () {
   var c = findCand(curId); if (!c) return;
   var n = 0;
+  pushUndoCand(c, '標準タスクの一括追加');
   Array.prototype.forEach.call($('tplBox').querySelectorAll('input[data-tpl]:checked'), function (i) {
     var t = TEMPLATES[Number(i.getAttribute('data-tpl'))];
     if (!t) return;
     c.tasks.push({ id: newId('t'), cat: t[0], title: t[1], dir: t[2], due: '', st: 'todo', doneAt: '', note: '', updatedAt: nowIso() });
     n++;
   });
-  if (n) { touch(c); renderView(c); }
+  if (n) { touch(c); renderView(c); } else { undoStack.pop(); }
   closeModal('mk-tpl');
-  toast(n ? n + '件のタスクを追加しました' : '追加する項目がありません');
+  toast(n ? n + '件のタスクを追加しました（↩ 元に戻すで取り消せます）' : '追加する項目がありません');
+});
+
+/* ═══════════ 連絡の記録（連携提示・連携先からワンタップで開く） ═══════════ */
+var cnCtx = null;   // { candId, nudgeId }
+function openContactModal(c, ct, nudge) {
+  cnCtx = { candId: c.id, nudgeId: nudge ? nudge.id : '' };
+  var partner = ct ? ((ct.org || catLabel(ct.cat)) + (ct.person ? ' ' + ct.person : '')) : '';
+  var summary = nudge ? nudge.title : '';
+  var href = ct ? telHref(ct.tel) : '';
+  $('cnBody').innerHTML =
+    (nudge ? '<p class="note warn"><b>' + esc(nudge.title) + '</b><br>' + esc(nudge.why) + '</p>' : '') +
+    (href || (ct && ct.fax) ?
+      '<div class="acts" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+      (href ? '<a class="btn sm pri" href="' + esc(href) + '">📞 ' + esc(ct.tel) + ' へ発信</a>' : '') +
+      (ct && ct.fax ? '<button class="btn sm" type="button" id="cnFax">📠 FAX ' + esc(ct.fax) + ' をコピー</button>' : '') +
+      '</div>' : '') +
+    '<div class="frow">' +
+    '<div class="fld"><label for="cnAt">日時</label><input id="cnAt" type="datetime-local"></div>' +
+    '<div class="fld"><label for="cnPartner">相手</label><input id="cnPartner" type="text" value="' + esc(partner) + '"></div>' +
+    '<div class="fld"><label for="cnMethod">手段</label><select id="cnMethod">' +
+    METHODS.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select></div>' +
+    '</div><div class="fld" style="margin-top:8px"><label for="cnSummary">内容（1行）</label>' +
+    '<input id="cnSummary" type="text" value="' + esc(summary) + '"></div>';
+  if ($('cnFax')) $('cnFax').addEventListener('click', function () { copyText(ct.fax); });
+  openModal('mk-contact');
+}
+$('cnSaveBtn').addEventListener('click', function () {
+  if (!cnCtx) return;
+  var c = findCand(cnCtx.candId); if (!c) { closeModal('mk-contact'); return; }
+  var sum = $('cnSummary').value.trim();
+  if (!sum) { toast('内容を入力してください'); return; }
+  var at = $('cnAt').value;
+  c.log.push({
+    id: newId('l'), at: at ? new Date(at).toISOString() : nowIso(),
+    partner: $('cnPartner').value.trim(), method: $('cnMethod').value, summary: sum
+  });
+  if (cnCtx.nudgeId) {
+    var g = asArr(c.nudges).filter(function (x) { return x.id === cnCtx.nudgeId; })[0];
+    if (g) { g.done = true; g.doneAt = nowIso(); }
+  }
+  touch(c); closeModal('mk-contact'); renderView(c);
+  toast('記録しました');
 });
 
 /* ═══════════ 編集 ═══════════ */
-var editing = null;   // 編集中の作業コピー（保存するまで DB に触らない）
+var editing = null;    // 編集中の作業コピー（保存するまで DB に触らない）
+var editBase = null;   // 編集を始めた時点の姿（保存時に「自分が変えた項目」だけを当てるため）
+var editDirty = false;
 function openEdit(id) {
   var src = id ? findCand(id) : null;
-  editing = src ? JSON.parse(JSON.stringify(src)) : blankCand();
-  if (!Array.isArray(editing.family)) editing.family = [];
-  if (!Array.isArray(editing.contacts)) editing.contacts = [];
+  editing = src ? normalizeCand(JSON.parse(JSON.stringify(src))) : blankCand();
+  editBase = src ? JSON.parse(JSON.stringify(editing)) : null;
+  editDirty = false;
   renderEdit();
   showScreen('edit');
 }
@@ -1054,6 +1976,82 @@ function fld(k, label, val, type, opts) {
       ? '<textarea id="f-' + esc(k) + '" data-k="' + esc(k) + '">' + esc(val || '') + '</textarea>'
       : '<input id="f-' + esc(k) + '" data-k="' + esc(k) + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">') +
     '</div>';
+}
+/* アセスメントの入力欄。キーと値域は入居者マスタの様式と1対1（勝手に増やさない） */
+function assessEditHtml(a) {
+  var h = '<div class="cd"><h3>入居前アセスメント（入居者マスタと同じ様式）</h3>' +
+    '<p class="note">ここで入れた内容は、入居決定時にそのまま入居者マスタへ転載されます（二重入力になりません）。分かる範囲で構いません。</p><div class="asx">';
+
+  h += '<h4>ADL（介助の程度）</h4>';
+  BF_ADL_ROWS.forEach(function (row) {
+    var v = asStr(asObj(a.adlGrid)[row[0]]);
+    h += '<div class="lvrow"><b>' + esc(row[1]) + '</b><span class="opts">' +
+      BF_LEVELS.map(function (l) {
+        return '<label><input type="radio" name="adl-' + esc(row[0]) + '" data-agrid="' + esc(row[0]) + '" value="' + esc(l[0]) + '"' +
+          (v === l[0] ? ' checked' : '') + '>' + esc(l[1]) + '</label>';
+      }).join('') +
+      '<label><input type="radio" name="adl-' + esc(row[0]) + '" data-agrid="' + esc(row[0]) + '" value=""' + (v ? '' : ' checked') + '>—</label>' +
+      '</span></div>';
+  });
+
+  function chkGroup(title, key, defs) {
+    var o = asObj(a[key]);
+    var s = '<h4>' + esc(title) + '</h4><div class="chkgrid">' +
+      defs.map(function (p) {
+        return '<label class="chk"><input type="checkbox" data-aobj="' + esc(key) + '.' + esc(p[0]) + '"' + (o[p[0]] ? ' checked' : '') + '>' + esc(p[1]) + '</label>';
+      }).join('') + '</div>' +
+      '<div class="fld"><label for="an-' + esc(key) + '">補足</label><input id="an-' + esc(key) + '" data-anote="' + esc(key) + '" value="' + esc(o.note || '') + '"></div>';
+    return s;
+  }
+  h += chkGroup('移動の補助', 'moveAid', BF_MOVE_AID);
+  h += chkGroup('入浴（場所）', 'bathPlace', BF_BATH_PLACE);
+  h += chkGroup('排泄の方法', 'excreteWay', BF_EXCRETE_WAY);
+  h += chkGroup('BPSD（帰宅願望・妄想など）', 'bpsd', BF_BPSD);
+  h += chkGroup('夜間の様子', 'night', BF_NIGHT);
+
+  h += '<h4>入居前に利用していたサービス</h4>';
+  BF_SERVICES.forEach(function (p) {
+    var s = asObj(asObj(a.services)[p[0]]);
+    h += '<div class="frow" style="margin-bottom:4px"><label class="chk" style="min-width:11em">' +
+      '<input type="checkbox" data-asvc="' + esc(p[0]) + '.on"' + (s.on ? ' checked' : '') + '>' + esc(p[1]) + '</label>' +
+      '<div class="fld" style="flex:2"><input data-asvc="' + esc(p[0]) + '.name" placeholder="事業所名" value="' + esc(s.name || '') + '"></div></div>';
+  });
+
+  h += '<h4>病名（治療中の病気）</h4>';
+  var dis = asArr(a.diseases);
+  for (var i = 0; i < BF_MAX_DISEASES; i++) {
+    var d = asObj(dis[i]);
+    if (i >= 3 && !d.name && !d.onset && !d.hospital) continue;   /* 空行は3行まで出す */
+    h += '<div class="frow" style="margin-bottom:4px">' +
+      '<div class="fld" style="flex:2"><input data-adis="' + i + '.name" placeholder="病名" value="' + esc(d.name || '') + '"></div>' +
+      '<div class="fld"><input data-adis="' + i + '.onset" placeholder="発症時期" value="' + esc(d.onset || '') + '"></div>' +
+      '<div class="fld" style="flex:2"><input data-adis="' + i + '.hospital" placeholder="医療機関" value="' + esc(d.hospital || '') + '"></div></div>';
+  }
+
+  h += '<h4>その他の項目</h4><div class="fgrid">';
+  ASSESS_TEXT.forEach(function (p) {
+    var k = p[0], label = p[1], type = p[2], opts = p[3];
+    var v = asStr(a[k]);
+    if (type === 'select') {
+      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label><select id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' +
+        (opts || []).map(function (o) {
+          return '<option value="' + esc(o) + '"' + (v === o ? ' selected' : '') + '>' + esc(o === '' ? '—' : o) + '</option>';
+        }).join('') + '</select></div>';
+    } else if (type === 'lv') {
+      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label><select id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' +
+        ['<option value="">—</option>'].concat(BF_LEVELS.map(function (l) {
+          return '<option value="' + esc(l[0]) + '"' + (v === l[0] ? ' selected' : '') + '>' + esc(l[1]) + '</option>';
+        })).join('') + '</select></div>';
+    } else if (type === 'textarea') {
+      h += '<div class="fld wide"><label for="a-' + esc(k) + '">' + esc(label) + '</label>' +
+        '<textarea id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' + esc(v) + '</textarea></div>';
+    } else {
+      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label>' +
+        '<input id="a-' + esc(k) + '" data-ak="' + esc(k) + '" value="' + esc(v) + '"></div>';
+    }
+  });
+  h += '</div></div></div>';
+  return h;
 }
 function renderEdit() {
   var r = editing;
@@ -1090,7 +2088,8 @@ function renderEdit() {
       '<label class="chk"><input type="checkbox" data-famk="emergency" data-fami="' + i + '"' + (f.emergency ? ' checked' : '') + '>緊急連絡先</label>' +
       '</div></div>';
   });
-  h += '</div><button class="btn sm" id="famAdd" type="button">＋ ご家族を追加</button></div>';
+  h += '</div><button class="btn sm" id="famAdd" type="button">＋ ご家族を追加</button>' +
+    '<p class="note">ご家族の状況（同居・遠方・キーパーソン等）は下のアセスメント「生活歴」「ご家族の意向」にも書けます。</p></div>';
 
   h += '<div class="cd"><h3>連携先（事業所・機関）</h3><div id="ctBox">';
   r.contacts.forEach(function (ct, i) {
@@ -1105,8 +2104,12 @@ function renderEdit() {
       '<div class="fld" style="flex:2"><label>メモ</label><input data-ctk="note" data-cti="' + i + '" value="' + esc(ct.note || '') + '"></div>' +
       '</div></div>';
   });
-  h += '</div><button class="btn sm" id="ctAdd" type="button">＋ 連携先を追加</button>' +
-    '<p class="note">居宅ケアマネ・医療機関・薬局をここに登録しておくと、入居決定時にそのまま入居者マスタへ引き継がれます。</p></div>';
+  h += '</div><div class="frow"><button class="btn sm" id="ctAdd" type="button">＋ 連携先を追加</button>' +
+    '<button class="btn sm" id="ctAddInternal" type="button">＋ 内部事業所（施設現場・いずみ・せせらぎ・厨房）</button></div>' +
+    '<p class="note">居宅ケアマネ・医療機関・薬局をここに登録しておくと、入居決定時にそのまま入居者マスタへ引き継がれます。' +
+    '内部事業所を登録しておくと、情報が入った時に「誰へ連絡するか」が自動で出ます。</p></div>';
+
+  h += assessEditHtml(asObj(r.assess));
 
   h += '<div class="cd"><h3>ステージ日付（自動で入ります。直したい時だけ）</h3><div class="fgrid">';
   STAGES.forEach(function (s) {
@@ -1116,8 +2119,14 @@ function renderEdit() {
   h += '</div></div>';
 
   $('editBox').innerHTML = h;
-
-  /* 入力→作業コピーへ反映（家族・連携先の行は再描画があるため、都度収集でなく change で書く） */
+  bindEditEvents();
+}
+function bindEditEvents() {
+  /* どの入力でも「変更あり」を立てる。未保存のまま閉じさせないため */
+  Array.prototype.forEach.call($('editBox').querySelectorAll('input,select,textarea'), function (inp) {
+    inp.addEventListener('input', function () { editDirty = true; });
+    inp.addEventListener('change', function () { editDirty = true; });
+  });
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-famk]'), function (inp) {
     inp.addEventListener('change', function () {
       var i = Number(inp.getAttribute('data-fami')), k = inp.getAttribute('data-famk');
@@ -1133,10 +2142,16 @@ function renderEdit() {
     });
   });
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-famrm]'), function (b) {
-    b.addEventListener('click', function () { collectEditInputs(); editing.family.splice(Number(b.getAttribute('data-famrm')), 1); renderEdit(); });
+    b.addEventListener('click', function () {
+      if (!confirm('この行を削除しますか？')) return;
+      collectEditInputs(); editing.family.splice(Number(b.getAttribute('data-famrm')), 1); editDirty = true; renderEdit();
+    });
   });
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-ctrm]'), function (b) {
-    b.addEventListener('click', function () { collectEditInputs(); editing.contacts.splice(Number(b.getAttribute('data-ctrm')), 1); renderEdit(); });
+    b.addEventListener('click', function () {
+      if (!confirm('この連携先を削除しますか？')) return;
+      collectEditInputs(); editing.contacts.splice(Number(b.getAttribute('data-ctrm')), 1); editDirty = true; renderEdit();
+    });
   });
   $('famAdd').addEventListener('click', function () {
     collectEditInputs(); editing.family.push({ name: '', relation: '', phone: '', emergency: false }); renderEdit();
@@ -1144,45 +2159,151 @@ function renderEdit() {
   $('ctAdd').addEventListener('click', function () {
     collectEditInputs(); editing.contacts.push({ id: newId('k'), cat: 'caremgr', org: '', person: '', tel: '', fax: '', note: '' }); renderEdit();
   });
+  $('ctAddInternal').addEventListener('click', function () {
+    collectEditInputs();
+    INTERNAL_CATS.forEach(function (k) {
+      var exists = editing.contacts.some(function (ct) { return ct.cat === k; });
+      if (exists) return;
+      editing.contacts.push({ id: newId('k'), cat: k, org: catLabel(k), person: '', tel: '', fax: '', note: '' });
+    });
+    editDirty = true; renderEdit();
+  });
   $('eCancel').addEventListener('click', function () {
+    if (editDirty && !confirm('保存していない入力があります。破棄してよろしいですか？')) return;
+    editing = null; editBase = null; editDirty = false;
     if (curId && findCand(curId)) { openView(curId); } else { showScreen('list'); renderList(); }
   });
   $('eSave').addEventListener('click', saveEdit);
 }
-/* 再描画・保存の前に、単純フィールドと家族・連携先の入力値を作業コピーへ回収する */
+/* 再描画・保存の前に、入力値を作業コピーへ回収する */
 function collectEditInputs() {
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-k]'), function (inp) {
+  var box = $('editBox');
+  Array.prototype.forEach.call(box.querySelectorAll('[data-k]'), function (inp) {
     editing[inp.getAttribute('data-k')] = (typeof inp.value === 'string') ? inp.value.trim() : inp.value;
   });
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-famk]'), function (inp) {
+  Array.prototype.forEach.call(box.querySelectorAll('[data-famk]'), function (inp) {
     var i = Number(inp.getAttribute('data-fami')), k = inp.getAttribute('data-famk');
     if (!editing.family[i]) return;
     editing.family[i][k] = (k === 'emergency') ? !!inp.checked : inp.value.trim();
   });
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-ctk]'), function (inp) {
+  Array.prototype.forEach.call(box.querySelectorAll('[data-ctk]'), function (inp) {
     var i = Number(inp.getAttribute('data-cti')), k = inp.getAttribute('data-ctk');
     if (!editing.contacts[i]) return;
     editing.contacts[i][k] = inp.value.trim();
   });
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-sd]'), function (inp) {
+  Array.prototype.forEach.call(box.querySelectorAll('[data-sd]'), function (inp) {
     var k = inp.getAttribute('data-sd');
     if (inp.value) editing.stageDates[k] = inp.value; else delete editing.stageDates[k];
   });
+  /* ── アセスメント ── */
+  if (!isObj(editing.assess)) editing.assess = {};
+  var a = editing.assess;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-ak]'), function (inp) {
+    a[inp.getAttribute('data-ak')] = inp.value.trim();
+  });
+  var grid = {};
+  Array.prototype.forEach.call(box.querySelectorAll('[data-agrid]'), function (inp) {
+    if (!inp.checked) return;
+    if (inp.value) grid[inp.getAttribute('data-agrid')] = inp.value;
+  });
+  a.adlGrid = grid;
+  ['moveAid', 'bathPlace', 'excreteWay', 'bpsd', 'night'].forEach(function (key) { a[key] = {}; });
+  Array.prototype.forEach.call(box.querySelectorAll('[data-aobj]'), function (inp) {
+    var parts = inp.getAttribute('data-aobj').split('.');
+    if (!a[parts[0]]) a[parts[0]] = {};
+    if (inp.checked) a[parts[0]][parts[1]] = true;
+  });
+  Array.prototype.forEach.call(box.querySelectorAll('[data-anote]'), function (inp) {
+    var key = inp.getAttribute('data-anote');
+    if (!a[key]) a[key] = {};
+    if (inp.value.trim()) a[key].note = inp.value.trim(); else delete a[key].note;
+  });
+  var svc = {};
+  Array.prototype.forEach.call(box.querySelectorAll('[data-asvc]'), function (inp) {
+    var parts = inp.getAttribute('data-asvc').split('.');
+    if (!svc[parts[0]]) svc[parts[0]] = { on: false, name: '' };
+    if (parts[1] === 'on') svc[parts[0]].on = !!inp.checked;
+    else svc[parts[0]].name = inp.value.trim();
+  });
+  var svcOut = {};
+  Object.keys(svc).forEach(function (k) { if (svc[k].on || svc[k].name) svcOut[k] = svc[k]; });
+  a.services = svcOut;
+  var dis = [];
+  Array.prototype.forEach.call(box.querySelectorAll('[data-adis]'), function (inp) {
+    var parts = inp.getAttribute('data-adis').split('.');
+    var i = Number(parts[0]);
+    if (!dis[i]) dis[i] = { name: '', onset: '', hospital: '' };
+    dis[i][parts[1]] = inp.value.trim();
+  });
+  a.diseases = dis.filter(function (d) { return d && (d.name || d.onset || d.hospital); });
+  /* 空のオブジェクトは残さない（「未入力」と「明示的に空」を区別する） */
+  ['moveAid', 'bathPlace', 'excreteWay', 'bpsd', 'night', 'adlGrid'].forEach(function (k) {
+    if (a[k] && !Object.keys(a[k]).length) delete a[k];
+  });
+  a.updatedAt = nowIso();
+}
+/* 保存: 作業コピーで丸ごと置き換えず、「自分が変えた項目」だけを現在のデータへ当てる。
+   ★編集画面を開いている間に他端末が足したタスク・連絡記録・提示を消さないため。 */
+function changedKeys(base, now) {
+  var keys = {}, k;
+  var skip = { tasks: 1, log: 1, nudges: 1, updatedAt: 1 };
+  var all = {};
+  for (k in (base || {})) all[k] = 1;
+  for (k in (now || {})) all[k] = 1;
+  /* ★now 側だけを回すと「チェックを全部外した（キーごと消えた）」項目が検出できず、
+     画面から消したはずの値が残り続ける（明示的な空が反映されない）。 */
+  Object.keys(all).forEach(function (key) {
+    if (skip[key]) return;
+    var a = base ? base[key] : undefined;
+    var b = now ? now[key] : undefined;
+    if (JSON.stringify(a) !== JSON.stringify(b)) keys[key] = true;
+  });
+  return keys;
 }
 function saveEdit() {
+  if (!editing) return;            /* 連打対策（1回目の保存で editing は空になる） */
   collectEditInputs();
   if (!editing.name) { toast('氏名は必須です'); return; }
-  /* 家族・連携先の空行は落とす */
-  editing.family = editing.family.filter(function (f) { return f.name || f.phone; });
-  editing.contacts = editing.contacts.filter(function (ct) { return ct.org || ct.person || ct.tel; });
-  editing.updatedAt = nowIso();
-  var idx = -1;
-  for (var i = 0; i < DB.candidates.length; i++) if (DB.candidates[i].id === editing.id) idx = i;
-  if (idx >= 0) DB.candidates[idx] = editing; else DB.candidates.push(editing);
-  curId = editing.id;
+  /* ★空行は落とさない。メモだけ書いた連携先・続柄だけ入れた家族も、書いた人には意味がある */
+  var isNew = !findCand(editing.id);
+  var target = isNew ? null : findCand(editing.id);
+  var prev = target ? JSON.parse(JSON.stringify(target)) : blankCand();
+  var saved;
+  if (isNew) {
+    editing.updatedAt = nowIso();
+    DB.candidates.push(editing);
+    saved = editing;
+  } else {
+    var ck = changedKeys(editBase, editing);
+    pushUndoCand(target, '編集の保存');
+    Object.keys(ck).forEach(function (k) {
+      if (k === 'contacts' || k === 'family') {
+        target[k] = editing[k];      /* 画面で全行を持っているので、そのまま採る */
+        return;
+      }
+      if (k === 'assess') {
+        var ak = changedKeys(asObj(asObj(editBase).assess), asObj(editing.assess));
+        if (!isObj(target.assess)) target.assess = {};
+        var na = asObj(editing.assess);
+        Object.keys(ak).forEach(function (x) {
+          /* 画面から消えた項目は消す（人が空にした、を反映する） */
+          if (Object.prototype.hasOwnProperty.call(na, x)) target.assess[x] = na[x];
+          else delete target.assess[x];
+        });
+        target.assess.updatedAt = nowIso();
+        return;
+      }
+      target[k] = editing[k];
+    });
+    target.updatedAt = nowIso();
+    saved = target;
+  }
+  var n = applyNudgeRules(prev, saved);
+  curId = saved.id;
   markDirty();
-  toast('保存しました');
-  openView(editing.id);
+  editing = null; editBase = null; editDirty = false;
+  toast(n ? '保存しました。次にやること ' + n + '件を追加しました' : '保存しました');
+  openView(saved.id);
 }
 
 /* ═══════════ 入居者マスタへの反映 ═══════════
@@ -1196,6 +2317,29 @@ function masterCfg() {
 }
 function firstContact(c, cat) {
   return (c.contacts || []).filter(function (ct) { return ct.cat === cat; })[0] || null;
+}
+/* 様式（外部様式18項目）のキー。1つでも入っていれば bfSaved を立てる。
+   ★bfSaved を立てないと、マスタ側が旧自由文からの自動推定を続け、
+     「人が選んで空にした」項目が毎回復活して選び直せなくなる（resident-master.html の契約）。 */
+var BF_FORM_KEYS = ['diseases', 'services', 'adlGrid', 'moveAid', 'bathPlace', 'excreteWay',
+  'medLevel', 'medExists', 'medContent', 'commLevel',
+  'dementiaExists', 'shortMemory', 'decisionAbility', 'communicateAbility', 'bpsd', 'night',
+  'nightSleepMed', 'formNote'];
+/* 様式ではないが、マスタの ALLOWED_KEYS にあり、そのまま渡してよい項目 */
+var PLAIN_ASSESS_KEYS = ['dementia', 'bedriddenRank', 'welfare',
+  'mealStaple', 'mealSide', 'mealForm', 'thickener', 'denture', 'mealNote',
+  'allergy', 'infections', 'medicalCare', 'pastHistory', 'medsRegular',
+  'careHints', 'lifeHistory', 'personality', 'hobby', 'foodPref',
+  'wishSelf', 'wishFamily'];
+/* ★絶対に送ってはいけない旧キー（送るとマスタの様式チェックが自動推定を始める）。
+   この配列は「送らないことの宣言」であり、参照はテストが行う。 */
+var MASTER_FORBIDDEN_KEYS = ['mobility', 'excretion', 'bath', 'medMgmt', 'medAssist', 'problemBehavior', 'currentDiseases'];
+
+function notEmptyVal(v) {
+  if (v === '' || v === null || v === undefined) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (isObj(v)) return Object.keys(v).length > 0;
+  return true;
 }
 /* 案件 → マスタ record（入居者マスタの ALLOWED_KEYS の範囲だけを作る） */
 function buildMasterRecord(c, admissionDate) {
@@ -1217,11 +2361,26 @@ function buildMasterRecord(c, admissionDate) {
   if (hp) { rec.hospital = hp.org || ''; rec.doctor = hp.person || ''; if (hp.tel) rec.hospitalTel = hp.tel; if (hp.fax) rec.hospitalFax = hp.fax; }
   var ph = firstContact(c, 'pharmacy');
   if (ph) { rec.pharmacy = ph.org || ''; if (ph.tel) rec.pharmacyTel = ph.tel; if (ph.fax) rec.pharmacyFax = ph.fax; }
+  var eq = firstContact(c, 'equip');
+  if (eq) { rec.welfareEquip = eq.org || ''; rec.welfareEquipStaff = eq.person || ''; if (eq.tel) rec.welfareEquipTel = eq.tel; }
   if (c.family && c.family.length) {
     rec.family = c.family.map(function (f) {
       return { name: f.name || '', relation: f.relation || '', role: '', address: '', phone: f.phone || '', emergency: !!f.emergency };
     });
   }
+  /* ── 入居前アセスメント（様式そのまま） ── */
+  var a = asObj(c.assess), anyForm = false;
+  BF_FORM_KEYS.forEach(function (k) {
+    var v = a[k];
+    if (!notEmptyVal(v)) return;
+    rec[k] = v; anyForm = true;
+  });
+  PLAIN_ASSESS_KEYS.forEach(function (k) {
+    var v = a[k];
+    if (!notEmptyVal(v)) return;
+    rec[k] = v;
+  });
+  if (anyForm) rec.bfSaved = true;
   /* 入居前の経緯（マスタの「入居までの経過」欄へ）。連絡記録の全文は移さない＝台帳側に残す */
   var lines = [];
   if (c.source) lines.push('経路: ' + c.source + (c.sourceDetail ? '（' + c.sourceDetail + '）' : ''));
@@ -1229,6 +2388,8 @@ function buildMasterRecord(c, admissionDate) {
   if (c.note) lines.push('メモ: ' + c.note);
   var undone = (c.tasks || []).filter(function (t) { return t.st !== 'done'; });
   if (undone.length) lines.push('※未完了の連携タスク: ' + undone.map(function (t) { return t.title; }).join(' / '));
+  var openNd = openNudges(c);
+  if (openNd.length) lines.push('※未対応の連携: ' + openNd.map(function (g) { return g.title; }).join(' / '));
   if (lines.length) rec.preAdmission = lines.join('\n');
   /* 対象アプリは既定（全てON）。外す運用はマスタ側で行う */
   rec.targetApps = ['excretion', 'weight', 'schedule'];
@@ -1275,6 +2436,7 @@ function openMasterModal(c) {
   }
   var adm = c.stageDates.movedin || c.desiredDate || todayYmd();
   msRec = null;
+  var preview = buildMasterRecord(c, adm);
   var rows = [];
   function row(label, val) { if (val) rows.push('<tr><th>' + esc(label) + '</th><td>' + esc(val) + '</td></tr>'); }
   row('氏名', c.name + (c.kana ? '（' + c.kana + '）' : ''));
@@ -1286,12 +2448,20 @@ function openMasterModal(c) {
   var cm = firstContact(c, 'caremgr'); if (cm) row('居宅ケアマネ', (cm.org || '') + (cm.person ? '　' + cm.person : ''));
   var hp = firstContact(c, 'hospital'); if (hp) row('医療機関', (hp.org || '') + (hp.person ? '　' + hp.person : ''));
   var ph = firstContact(c, 'pharmacy'); if (ph) row('薬局', ph.org || '');
+  var eq = firstContact(c, 'equip'); if (eq) row('福祉用具', eq.org || '');
   if (c.family && c.family.length) row('ご家族', c.family.map(function (f) { return (f.name || '') + (f.relation ? '（' + f.relation + '）' : ''); }).join('、'));
+  /* アセスメントは「何項目が転載されるか」を出す（全文はプレビューが長くなりすぎる） */
+  var formCount = BF_FORM_KEYS.filter(function (k) { return notEmptyVal(preview[k]); }).length;
+  var plainCount = PLAIN_ASSESS_KEYS.filter(function (k) { return notEmptyVal(preview[k]); }).length;
+  if (formCount + plainCount) row('入居前アセスメント', '様式 ' + formCount + '項目・その他 ' + plainCount + '項目を転載します');
   var undone = (c.tasks || []).filter(function (t) { return t.st !== 'done'; });
   $('msBody').innerHTML =
     '<p style="font-size:0.84375rem">以下の内容で入居者マスタに<b>新規登録</b>します。登録後の変更はマスタ側で行ってください。</p>' +
     '<table>' + rows.join('') + '</table>' +
     '<div class="fld" style="max-width:16em"><label for="msAdm">入居日（予定）</label><input id="msAdm" type="date" value="' + esc(adm) + '"></div>' +
+    '<p class="note warn"><b>登録するとその方は週間計画・デイ利用表に「入居済」として出ます。</b>' +
+    '入居者マスタには「入居前」という区別がないためです。入居日より前に登録する場合は、登録後に' +
+    '<a href="care-schedule.html">週間計画</a>でその方を開き「入居前」を押してください。</p>' +
     (undone.length ? '<p class="note warn">未完了の連携タスクが ' + undone.length + ' 件あります（登録は可能です。未完了の一覧はマスタの「入居までの経過」欄に注記されます）。</p>' : '');
   $('msSendBtn').disabled = false;
   openModal('mk-master');
@@ -1300,10 +2470,29 @@ $('msSendBtn').addEventListener('click', function () {
   var c = findCand(curId); if (!c) return;
   if (c.masterId != null && c.masterId !== '') { closeModal('mk-master'); return; }
   var adm = $('msAdm') ? $('msAdm').value : '';
-  msRec = buildMasterRecord(c, adm);
   $('msSendBtn').disabled = true;
+  toast('確認中…');
+  /* ★送信前に同姓同名を確かめる。マスタGASには重複チェックが無く、2回送れば2行できる。
+     照会できない時は止めない（通信不良で登録そのものができなくなる方が困る）。 */
+  preflightDuplicate(c).then(function (go) {
+    if (!go) { $('msSendBtn').disabled = false; toast('登録を中止しました'); return; }
+    return sendMasterRecord(c, adm);
+  });
+});
+function preflightDuplicate(c) {
+  return masterGet({ action: 'getRoster' }, 20000).then(function (d) {
+    var list = (d && d.roster) || d || [];
+    var same = asArr(list).filter(function (r) { return normName(r.name) === normName(c.name); });
+    if (!same.length) return true;
+    return confirm('入居者マスタに同じお名前の方が ' + same.length + '名 登録されています（利用者No: ' +
+      same.map(function (r) { return r.id; }).join('・') + '）。\n\n' +
+      '別人であれば「OK」で登録を続けます。同じ方であれば「キャンセル」を押し、マスタ側で確認してください。');
+  }).catch(function () { return true; });
+}
+function sendMasterRecord(c, adm) {
+  msRec = buildMasterRecord(c, adm);
   toast('登録中…');
-  masterPost({ action: 'saveResident', record: msRec }).then(function (d) {
+  return masterPost({ action: 'saveResident', record: msRec }).then(function (d) {
     var saved = (d && d.record) || d || {};
     if (saved && saved.id != null) {
       c.masterId = saved.id; c.masterSyncedAt = nowIso(); c.masterPendingStamp = '';
@@ -1311,29 +2500,28 @@ $('msSendBtn').addEventListener('click', function () {
       toast('✅ 入居者マスタへ登録しました');
       return;
     }
-    /* 応答に id が無い＝入ったかどうか不明。取り直して確かめる */
     return confirmMasterWrite(c);
   }).catch(function () {
     /* 保存が「失敗」と返っても、サーバーには書かれていることがある（GASのリダイレクト・
        タイムアウト時）。ここで安易に再送すると二重登録になるため、必ず取り直して確かめる。 */
     return confirmMasterWrite(c);
   }).then(function () { $('msSendBtn').disabled = false; });
-});
-/* 直近の送信がマスタへ入ったかを getRoster で確かめる。
-   氏名（空白除去）一致 かつ updatedAt が送信時の刻印と一致（1秒未満の差）なら「入った」。 */
+}
 function normName(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
+function findMasterHit(list, c, stamp) {
+  var hit = null;
+  asArr(list).forEach(function (r) {
+    if (normName(r.name) !== normName(c.name)) return;
+    var pa = Date.parse(r.updatedAt || ''), pb = Date.parse(stamp || '');
+    if (isFinite(pa) && isFinite(pb) && Math.abs(pa - pb) < 1000) hit = r;
+  });
+  return hit;
+}
 function confirmMasterWrite(c) {
   var stamp = msRec && msRec.updatedAt;
   return masterGet({ action: 'getRoster' }, 25000).then(function (d) {
-    /* 応答の形は入居者マスタと同じ緩さで受ける（roster プロパティ or 素の配列） */
     var list = (d && d.roster) || d || [];
-    if (!Array.isArray(list)) list = [];
-    var hit = null;
-    list.forEach(function (r) {
-      if (normName(r.name) !== normName(c.name)) return;
-      var pa = Date.parse(r.updatedAt || ''), pb = Date.parse(stamp || '');
-      if (isFinite(pa) && isFinite(pb) && Math.abs(pa - pb) < 1000) hit = r;
-    });
+    var hit = findMasterHit(list, c, stamp);
     if (hit) {
       c.masterId = hit.id; c.masterSyncedAt = nowIso(); c.masterPendingStamp = '';
       touch(c); closeModal('mk-master'); renderView(c);
@@ -1344,26 +2532,18 @@ function confirmMasterWrite(c) {
       toast('⚠️ 登録できませんでした（マスタ側にも入っていないことを確認しました）。もう一度お試しください');
     }
   }).catch(function () {
-    /* 確認そのものができなかった＝どちらとも言えない。刻印を残し、再送の前に「登録確認」を必須にする */
     c.masterPendingStamp = stamp || nowIso();
     touch(c); closeModal('mk-master'); renderView(c);
     toast('⚠️ 登録できたか確認できませんでした。「登録確認」を押してから再実行してください');
   });
 }
-/* 「登録確認」: 刻印でマスタを照合。見つかれば登録済みに、無ければ再送できる状態に戻す */
 function verifyMaster(c) {
   var stamp = c.masterPendingStamp;
   if (!stamp) return;
   toast('確認中…');
   masterGet({ action: 'getRoster' }, 25000).then(function (d) {
     var list = (d && d.roster) || d || [];
-    if (!Array.isArray(list)) list = [];
-    var hit = null;
-    list.forEach(function (r) {
-      if (normName(r.name) !== normName(c.name)) return;
-      var pa = Date.parse(r.updatedAt || ''), pb = Date.parse(stamp);
-      if (isFinite(pa) && isFinite(pb) && Math.abs(pa - pb) < 1000) hit = r;
-    });
+    var hit = findMasterHit(list, c, stamp);
     if (hit) {
       c.masterId = hit.id; c.masterSyncedAt = nowIso(); c.masterPendingStamp = '';
       toast('✅ 登録されていました（二重登録はありません）');
@@ -1376,46 +2556,59 @@ function verifyMaster(c) {
     toast('確認できませんでした: ' + (e && e.message || e));
   });
 }
-/* 入居済み＋マスタ登録済みの案件から、引き継ぎ済みの個人情報を落とす。
-   集計（件数・経路・日付・見送り理由）に使う項目と氏名は残す。 */
-function cleanPii(c) {
-  if (!confirm('連絡先・保険情報・ご家族・連携先・連絡記録をこの台帳から削除します（入居者マスタへ引き継ぎ済み）。よろしいですか？')) return;
-  c.phone = ''; c.birthDate = ''; c.insuredNo = ''; c.insurer = ''; c.copayRate = '';
-  c.careCertStart = ''; c.careCertEnd = '';
-  c.family = []; c.contacts = []; c.log = []; c.note = '';
-  c.tasks = (c.tasks || []).map(function (t) {
-    return { id: t.id, cat: t.cat, title: t.title, dir: t.dir, due: '', st: t.st, doneAt: t.doneAt, note: '', updatedAt: t.updatedAt };
-  });
-  c.piiCleared = true;
-  touch(c); renderView(c);
-  toast('個人情報を整理しました');
-}
 
-/* ═══════════ KPI（月次ファネル） ═══════════ */
+/* ═══════════ KPI ═══════════ */
 function renderKpi() {
-  var cands = activeCands();
-  /* 直近6か月。各月に「その月に問い合わせ/見学/申込/決定/入居の日付が入った件数」を数える */
+  var cands = DB.candidates.filter(function (c) { return !c.deleted; });
   var months = [];
   var d = new Date();
   for (var i = 5; i >= 0; i--) {
     var m = new Date(d.getFullYear(), d.getMonth() - i, 1);
     months.push(m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2));
   }
-  var keys = [['inquiry', '問い合わせ'], ['tour', '見学'], ['applied', '申込'], ['decided', '入居決定'], ['movedin', '入居']];
   var h = '<div class="cd"><h3>月次ファネル（直近6か月）</h3><div style="overflow-x:auto"><table class="kpi-tbl"><tr><th>月</th>';
-  keys.forEach(function (k) { h += '<th>' + esc(k[1]) + '</th>'; });
-  h += '</tr>';
+  STAGES.forEach(function (s) { h += '<th>' + esc(s[1]) + '</th>'; });
+  h += '<th>見送り</th></tr>';
+  var totals = {};
   months.forEach(function (ym) {
     h += '<tr><td class="l">' + esc(ym.replace('-', '/')) + '</td>';
-    keys.forEach(function (k) {
-      var n = cands.filter(function (c) { return (c.stageDates[k[0]] || '').slice(0, 7) === ym; }).length;
+    STAGES.forEach(function (s) {
+      var n = cands.filter(function (c) { return (c.stageDates[s[0]] || '').slice(0, 7) === ym; }).length;
+      totals[s[0]] = (totals[s[0]] || 0) + n;
       h += '<td>' + (n || '') + '</td>';
     });
-    h += '</tr>';
+    var nl = cands.filter(function (c) { return (c.stageDates.lost || '').slice(0, 7) === ym; }).length;
+    totals.lost = (totals.lost || 0) + nl;
+    h += '<td>' + (nl || '') + '</td></tr>';
   });
-  h += '</table></div><p class="note">数字は「その月にその段階へ進んだ件数」。見学実施率・成約率が落ちている段階が、次に手を入れる場所です。</p></div>';
+  h += '<tr><td class="l"><b>合計</b></td>';
+  STAGES.forEach(function (s) { h += '<td><b>' + (totals[s[0]] || 0) + '</b></td>'; });
+  h += '<td><b>' + (totals.lost || 0) + '</b></td></tr>';
+  h += '</table></div>';
 
-  /* 見送り理由 */
+  /* 段階別の転換率（直近6か月の合計から） */
+  function rate(a, b) {
+    var x = totals[a] || 0, y = totals[b] || 0;
+    return x ? Math.round(y / x * 100) + '%' : '—';
+  }
+  h += '<div style="overflow-x:auto;margin-top:10px"><table class="kpi-tbl"><tr>' +
+    '<th>問い合わせ→見学</th><th>見学→申込</th><th>申込→入居決定</th><th>問い合わせ→入居</th></tr><tr>' +
+    '<td>' + rate('inquiry', 'tour') + '</td><td>' + rate('tour', 'applied') + '</td>' +
+    '<td>' + rate('applied', 'decided') + '</td><td>' + rate('inquiry', 'movedin') + '</td></tr></table></div>';
+
+  /* 問い合わせ→入居までの日数（中央値）。実績のある案件だけで数える */
+  var days = [];
+  cands.forEach(function (c) {
+    var a = Date.parse(c.stageDates.inquiry || ''), b = Date.parse(c.stageDates.movedin || '');
+    if (isFinite(a) && isFinite(b) && b >= a) days.push(Math.round((b - a) / 86400000));
+  });
+  if (days.length) {
+    days.sort(function (x, y) { return x - y; });
+    var mid = days.length % 2 ? days[(days.length - 1) / 2] : Math.round((days[days.length / 2 - 1] + days[days.length / 2]) / 2);
+    h += '<p class="note">問い合わせから入居までの日数（中央値）: <b>' + mid + '日</b>（' + days.length + '件の実績）</p>';
+  }
+  h += '<p class="note">数字は「その月にその段階へ進んだ件数」。転換率が落ちている段階が、次に手を入れる場所です。</p></div>';
+
   var lost = cands.filter(function (c) { return c.stage === 'lost'; });
   h += '<div class="cd"><h3>見送り・離脱の理由</h3>';
   if (lost.length) {
@@ -1430,17 +2623,20 @@ function renderKpi() {
   }
   h += '</div>';
 
-  /* 進行中の停滞（14日以上動きがない） */
+  /* 連絡待ち（提示が残っている案件） */
+  var pend = cands.filter(function (c) { return c.stage !== 'lost' && openNudges(c).length; });
+  h += '<div class="cd"><h3>連絡が残っている案件</h3>';
+  if (pend.length) { pend.forEach(function (c) { h += candCard(c); }); }
+  else { h += '<p class="empty" style="padding:8px 0">ありません。</p>'; }
+  h += '</div>';
+
   var stale = cands.filter(function (c) {
     if (c.stage === 'movedin' || c.stage === 'lost') return false;
     var t = Date.parse(c.updatedAt || ''); return isFinite(t) && (Date.now() - t) > 14 * 86400000;
   });
   h += '<div class="cd"><h3>14日以上動きのない案件</h3>';
-  if (stale.length) {
-    stale.forEach(function (c) { h += candCard(c); });
-  } else {
-    h += '<p class="empty" style="padding:8px 0">ありません。</p>';
-  }
+  if (stale.length) { stale.forEach(function (c) { h += candCard(c); }); }
+  else { h += '<p class="empty" style="padding:8px 0">ありません。</p>'; }
   h += '</div>';
 
   $('kpiBox').innerHTML = h;
@@ -1449,32 +2645,118 @@ function renderKpi() {
   });
 }
 
-/* ═══════════ 同期状態モーダル ═══════════ */
+/* ═══════════ 同期状態・バックアップ ═══════════ */
+function slotInfo(key) {
+  try {
+    var s = localStorage.getItem(key);
+    if (!s) return null;
+    var o = JSON.parse(s);
+    return { at: asStr(o.at), n: asArr(asObj(o.db).candidates).length, size: s.length };
+  } catch (e) { return null; }
+}
 function renderSyncModal() {
   var t = syncTarget(), m = masterCfg();
+  var b1 = slotInfo(CACHE_BAK), b2 = slotInfo(CACHE_BAK2), cu = slotInfo(CACHE_KEY);
+  var caps = serverCaps;
+  var guardOk = caps && asArr(caps.guards).indexOf('admwipe') >= 0;
+  /* ★接続先の取り違え検知。統合GASを指していると相談者の台帳が
+     「閲覧専用の合言葉でも全件読める置き場」へ書かれてしまう。 */
+  var serverOk = !caps || asStr(caps.server) === 'silverunix-admission';
   $('syncBody').innerHTML =
     '<dl class="kv">' +
-    '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（統合KVストア）' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
+    '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（入居調整の専用サーバー）' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
     '<dt>入居者マスタ</dt><dd>' + (m.url ? '設定済み' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
-    '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + '</dd>' +
+    '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり）' : '') + '</dd>' +
+    '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' +
+      DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' +
+    '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style="color:var(--g6)">未確認</span>') +
+      ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>' +
+    '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>' +
     '</dl>' +
-    '<p class="note">接続先の設定は <a href="connection-settings.html">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。台帳は「週間計画」等と同じ同期先、マスタ登録は「入居者マスタ」と同じ接続先を使います。</p>';
+    (caps && !serverOk ? '<p class="note err">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' +
+      esc(asStr(caps.server) || '不明') + '）。<a href="connection-settings.html">接続設定</a>の「入居調整」に、'
+      + '入居調整データAPI の /exec URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') +
+    (caps && serverOk && !guardOk ? '<p class="note err">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>' : '') +
+    '<p class="note">接続先の設定は <a href="connection-settings.html">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。</p>' +
+    '<h2 style="font-size:0.9375rem;margin:12px 0 6px">端末のバックアップ</h2>' +
+    '<dl class="kv">' +
+    '<dt>いまの保存</dt><dd>' + (cu ? cu.n + '件（' + esc(fmtDt(cu.at)) + '）' : 'なし') + '</dd>' +
+    '<dt>1世代前</dt><dd>' + (b1 ? b1.n + '件（' + esc(fmtDt(b1.at)) + '）<button class="btn sm" id="syR1" type="button" style="margin-left:6px">復元</button>' : 'なし') + '</dd>' +
+    '<dt>2世代前</dt><dd>' + (b2 ? b2.n + '件（' + esc(fmtDt(b2.at)) + '）<button class="btn sm" id="syR2" type="button" style="margin-left:6px">復元</button>' : 'なし') + '</dd>' +
+    '</dl>' +
+    '<div class="btn-row" style="justify-content:flex-start">' +
+    '<button class="btn sm" id="syExport" type="button">⬇️ 書き出し（JSON）</button>' +
+    '<button class="btn sm" id="syImport" type="button">⬆️ 取り込み（JSON）</button></div>' +
+    '<p class="note">書き出したファイルには合言葉は含まれません。取り込みは<b>置き換えではなく統合</b>です（今ある案件は消えません）。</p>';
+  if ($('syPing')) $('syPing').addEventListener('click', pingServer);
+  if ($('syR1')) $('syR1').addEventListener('click', function () { restoreFromBackup(CACHE_BAK); closeModal('mk-sync'); });
+  if ($('syR2')) $('syR2').addEventListener('click', function () { restoreFromBackup(CACHE_BAK2); closeModal('mk-sync'); });
+  $('syExport').addEventListener('click', exportJson);
+  $('syImport').addEventListener('click', function () { $('importFile').click(); });
   openModal('mk-sync');
 }
+function pingServer() {
+  if (!SU_DATA_READY) { toast('データ層を読み込めていません'); return; }
+  if (!syncTarget().endpoint) { toast('同期先が未設定です'); return; }
+  toast('確認中…');
+  SU.data.kvRaw({ action: 'ping' }).then(function (j) {
+    if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
+    serverCaps = j;
+    renderSyncModal();
+    toast('サーバー版 ' + asStr(j.codeVersion));
+  }).catch(function (e) {
+    toast('確認できませんでした: ' + (e && e.message || e));
+  });
+}
+function exportJson() {
+  try {
+    var body = JSON.stringify({ app: 'admission-flow', at: nowIso(), db: DB }, null, 1);
+    var blob = new Blob([body], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'admission-flow-' + todayYmd() + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    toast('書き出しました');
+  } catch (e) { toast('書き出せませんでした'); }
+}
+$('importFile').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  this.value = '';
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () {
+    var o;
+    try { o = JSON.parse(String(rd.result)); } catch (e) { toast('読み込めませんでした（JSONではありません）'); return; }
+    var incoming = normalizeDb(asObj(o).db || o);
+    if (!incoming.candidates.length) { toast('案件が入っていないファイルです'); return; }
+    if (!confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\n\n' +
+      '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？')) return;
+    DB = mergeDb(DB, incoming);
+    markDirty(); renderAll(); closeModal('mk-sync');
+    toast('取り込みました（' + DB.candidates.length + '件）');
+  };
+  rd.readAsText(f);
+});
 
 /* ═══════════ 描画まとめ・起動 ═══════════ */
 function renderAll() {
   renderList();
   if ($('sc-view').classList.contains('on')) {
     var c = curId && findCand(curId);
-    if (c && !c.deleted) renderView(c); else { showScreen('list'); }
+    if (c) renderView(c); else { showScreen('list'); }
   }
   if ($('sc-kpi').classList.contains('on')) renderKpi();
+  /* ★編集画面は再描画しない（入力途中の値を消さない）。保存時に項目単位で当てる */
 }
 
 Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function (b) {
   b.addEventListener('click', function () {
     var k = b.getAttribute('data-nav');
+    if (editing && editDirty && k !== 'help') {
+      if (!confirm('保存していない入力があります。破棄して移動しますか？')) return;
+      editing = null; editBase = null; editDirty = false;
+    }
     if (k === 'list') { showScreen('list'); renderList(); }
     else if (k === 'new') { curId = null; openEdit(null); }
     else if (k === 'kpi') { renderKpi(); showScreen('kpi'); }
@@ -1482,7 +2764,10 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
   });
 });
 $('syncChip').addEventListener('click', renderSyncModal);
-$('reloadBtn').addEventListener('click', function () { pull(true); });
+$('reloadBtn').addEventListener('click', function () {
+  if (busyEditing()) { toast('編集中は取り込みません。保存してから押してください'); return; }
+  pull(true);
+});
 
 (function init() {
   if (applyDeviceGuard()) return;
@@ -1491,7 +2776,14 @@ $('reloadBtn').addEventListener('click', function () { pull(true); });
   }
   loadCache();
   renderList();
-  pull(false);
+  if (loadViewState() === 'kpi') { renderKpi(); showScreen('kpi'); }
+  if (cacheRecovered) {
+    setTimeout(function () {
+      alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\n\n' +
+        '案件 ' + DB.candidates.length + '件を表示しています。内容に不足があれば、⟳ でサーバーから最新を取り直してください。');
+    }, 300);
+  }
+  startupPull();
 })();
 
 })();
