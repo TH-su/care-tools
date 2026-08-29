@@ -123,6 +123,14 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
 .rate-note {
   font-size: 0.9375rem; line-height: 1.3; color: #7a4200; font-weight: 600; white-space: nowrap;
 }
+/* 使用率（福祉用具込み）と盤面の超過判定（訪問・通所のみ）が食い違う時だけ出す。
+   注記の段は overflow-x:auto・white-space:nowrap なので、増えても上2段の高さは動かない
+   ＝--sum-h と、それを参照する3箇所の calc() に影響しない。
+   コントラスト比は #b71c1c on #fff8e1 で約 7.8:1（目標の7:1以上）。 */
+.sum-limit-warn {
+  font-size: 0.9375rem; line-height: 1.3; color: #b71c1c; font-weight: 700;
+  white-space: nowrap; flex-shrink: 0; margin-inline-end: 12px;
+}
 /* 特定施設のときだけ出す注意書き（限度額欄を空にする代わりに理由を書く） */
 .sum-tokutei-note {
   font-size: 0.75rem; color: #7a4200; background: #fff8e1;
@@ -859,7 +867,7 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="rate-note" id="sum-rate-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
@@ -956,6 +964,10 @@ select.inp { cursor: pointer; }
         <input class="inp" type="time" id="f-end" step="60">
       </div>
     </div>
+    <!-- 時間の重なり・2時間ルールの警告。訪問・通所の両方で出すため時間欄の外に置く。
+         role="status" は時刻を変えた瞬間に読み上げさせるため（区分の警告と同じ作法）。 -->
+    <div class="hint-box warn" id="plan-warn" role="status" style="display:none"></div>
+
     <!-- 通所介護: 選択肢のみ -->
     <div class="form-row form-row-2col" id="time-row-daycare" style="display:none">
       <div>
@@ -1571,7 +1583,9 @@ function _handle(e, method) {
  * ここでやるのは【記録と通知だけ】。復旧も再試行もしないので、既存の動作は一切変わらない。
  * 起動時の例外も拾えるよう、この <script> の先頭に置く（後ろに置くと boot の失敗を逃す）。
  * showToast / SYNC はこの下で定義されるが、ハンドラが走るのは読み込み後なので参照できる。
- * それでも安全側に try/catch で包む＝エラー報告そのものが二次エラーを出さないため。 */
+ * それでも安全側に try/catch で包む＝エラー報告そのものが二次エラーを出さないため。
+ * ★限界: 読み込みの最序盤（SYNC・$ の定義行より前）で落ちた場合は、報告先そのものが
+ *   まだ無いので画面にもログにも出ない（ブラウザのコンソールにだけ残る）。 */
 var _csErrLastSig = '', _csErrLastAt = 0;
 function _csReportError_(kind, msg, where) {
   try {
@@ -2155,6 +2169,77 @@ function residentCatMismatchCount_(res) {
     if (visitCatMismatch_(ev.category, res.careLevel)) n++;
   }
   return n;
+}
+
+/* ── 予定どうしの時間の整合（2026-08-29 追加）──────────────────────────────
+   ①同じ曜日で時間が重なっていないか（同じ時間に2つの支援は実施できない）
+   ②訪問どうしの間隔が2時間未満でないか（2時間ルール）
+   ★どちらも算定そのものは変えない＝【検出して知らせるだけ】にする。
+     2時間ルール（前の訪問の終了から次の開始まで概ね2時間未満なら、所要時間を合算して
+     1回として算定する）は、頻回訪問の届出・夜間帯の扱いなど個別要件で結論が変わる。
+     機械が単位を書き換えると提供票と食い違うため、判断はケアマネに残す。
+   ★総合事業（訪問型独自サービス）は月額包括で回数算定ではないため、②の対象外にする
+     （対象にすると要支援の方の画面に、行うことのない確認が毎回出る）。
+   戻り値は警告文の配列。空＝問題なし。呼び出し側は「まとめて1回だけ」確認に使う。 */
+const PLAN_INTERVAL_MIN = 120;
+function planTimeWarnings_(res, cand, excludeId) {
+  const out = [];
+  if (!res || !cand || cand.dayOfWeek == null || isNaN(cand.dayOfWeek)) return out;
+  if (!cand.startTime || !cand.endTime) return out;
+  const cs = timeToMins(cand.startTime), ce = timeToMins(cand.endTime);
+  if (!(cs < ce)) return out;
+  const isVisit = e => (e && e.serviceType !== 'daycare');
+  const isSogo  = e => !!(e && isSogoCat_(e.category));
+  const label = e => (e.serviceType === 'daycare' ? '通所介護' : (e.category || '訪問介護'))
+                   + ' ' + e.startTime + '〜' + e.endTime;
+  const over = [], near = [];
+  const evs = (res.events || []).filter(e =>
+    e && e.id !== excludeId && e.dayOfWeek === cand.dayOfWeek && e.startTime && e.endTime);
+  for (const e of evs) {
+    const es = timeToMins(e.startTime), ee = timeToMins(e.endTime);
+    if (cs < ee && es < ce) { over.push(label(e)); continue; }   /* 重なり */
+    if (isVisit(cand) && isVisit(e) && !isSogo(cand) && !isSogo(e)) {
+      const gap = (cs >= ee) ? (cs - ee) : (es - ce);
+      if (gap < PLAN_INTERVAL_MIN) near.push(label(e) + '（間隔 ' + gap + '分）');
+    }
+  }
+  const dow = DAYS_JA[cand.dayOfWeek] || '';
+  if (over.length) {
+    out.push('⚠ ' + dow + '曜日の次の予定と時間が重なっています：\n・' + over.join('\n・')
+      + '\n同じ時間に2つの支援は実施できません。時間を見直してください。');
+  }
+  if (near.length) {
+    out.push('⚠ ' + dow + '曜日の次の訪問との間隔が2時間未満です：\n・' + near.join('\n・')
+      + '\n訪問介護は前の訪問の終了から概ね2時間未満で次を行う場合、所要時間を合算して'
+      + '1回として算定します（2時間ルール）。この画面の単位数は合算せずに出しているため、'
+      + '提供票と食い違わないか確認してください。');
+  }
+  return out;
+}
+/* いま入力中の内容で①②を出し直す。表示だけ＝単位計算にも既定値にも触れない。 */
+function refreshPlanWarn_() {
+  const box = $('#plan-warn');
+  if (!box) return;
+  const hide = () => { box.style.display = 'none'; box.textContent = ''; };
+  const res = currentResident();
+  const stype = ($('input[name="serviceType"]:checked') || {}).value;
+  const dowS = $('#f-dow').value;
+  if (!res || !stype || dowS === '') return hide();
+  const t = getFormTimes();
+  if (!t.start || !t.end || t.start >= t.end) return hide();
+  const w = planTimeWarnings_(res, {
+    dayOfWeek: parseInt(dowS, 10), serviceType: stype,
+    category: stype === 'visit' ? $('#f-category').value : '',
+    startTime: t.start, endTime: t.end
+  }, editingEventId);
+  if (!w.length) return hide();
+  box.style.display = '';
+  box.textContent = w.join('\n\n');
+}
+/* 保存・複製の手前で出す確認文（無ければ null）。1コマにつき1回だけ聞く。 */
+function planWarnConfirmText_(res, cand, excludeId) {
+  const w = planTimeWarnings_(res, cand, excludeId);
+  return w.length ? w.join('\n\n') : null;
 }
 
 /* 通所介護 基本単位数（介護度×所要時間区分）→ 実体は報酬マスタ daycareBase
@@ -4363,6 +4448,20 @@ function renderSummaryBar(res) {
     $('#sum-pct-fill').classList.remove('over');
   }
 
+  /* 盤面の「限度額超過」（赤い枠）は訪問・通所だけで週枠を按分しており、福祉用具の単位を
+     差し引いていない。一方この使用率は福祉用具を含めた合計で出すため、福祉用具が大きい方では
+     「使用率は100%超なのに盤面のコマが1つも赤くない」という食い違いが起きる。
+     どちらの計算も変えない（提供票と突き合わせている数字を動かさない・盤面と紙の見え方も不変）。
+     食い違いが実際に起きている時だけ、その理由を画面に出す。 */
+  const limWarnEl = $('#sum-limit-warn');
+  if (limWarnEl) {
+    const mismatch = !!(limit && welfareUnits > 0 && totalUnits > limit && monthUnits <= limit);
+    limWarnEl.style.display = mismatch ? '' : 'none';
+    limWarnEl.textContent = mismatch
+      ? '⚠ 福祉用具を含めると限度額を超えています（盤面の赤い枠は訪問・通所だけで判定しています）'
+      : '';
+  }
+
   /* 参考値の注記は常時出す。単位・金額が画面に出ている間は必ず読める位置に置く。 */
   const noteEl = $('#sum-rate-note');
   if (noteEl) noteEl.textContent = '※ ' + RATE_DISCLAIMER;
@@ -4864,6 +4963,7 @@ function openEditModal(id) {
   $('#f-detail').value = ev.detail || '';
   $('#f-notes').value  = ev.notes  || '';
   autoCalcUnits();   // 単位数は保存値ではなく、いまの事業所設定での計算値を表示する（読み取り専用・B9）
+  refreshPlanWarn_();   /* 登録済みのコマを開いた時点で、重なり・2時間ルールもその場で分かるようにする */
   $('#dup-row').style.display = '';
   if (ev.serviceType === 'visit') renderCareChips();   /* detail設定後にチップを現状態へ同期(要件4) */
   $('#mk-event').classList.add('open');
@@ -4894,6 +4994,9 @@ function clearForm() {
   $('#f-detail').value = '';
   $('#f-notes').value  = '';
   $('#f-units').value  = '';
+  /* 時間の警告も一緒に落とす（前のコマの重なり・2時間ルールを次の入力に持ち越さない） */
+  const planWarn = $('#plan-warn');
+  if (planWarn) { planWarn.textContent = ''; planWarn.style.display = 'none'; }
   /* 算定対象外の注意書きも一緒に消す（前の入居者の注意が次の入力に残らないようにする） */
   const unitsNote = $('#f-units-note');
   if (unitsNote) { unitsNote.textContent = ''; unitsNote.style.display = 'none'; }
@@ -4916,6 +5019,7 @@ function onServiceTypeChange() {
      表示更新だけを呼ぶ＝step の既定値と自動終了時刻には触れない。 */
   if (val === 'visit') { renderCareChips(); refreshCategoryHint_(); }
   autoCalcUnits();
+  refreshPlanWarn_();
 }
 
 /* ── ケア内容チップ（ワースケと同一の選択肢）。detail を正本に '・' 区切りで連携（双方向同期はdetail経由） ──
@@ -4990,6 +5094,7 @@ function onCategoryChange(autoFill = true) {
   }
   if (autoFill) autoFillEndTime();
   autoCalcUnits();
+  refreshPlanWarn_();
 }
 
 function autoFillEndTime() {
@@ -5002,6 +5107,7 @@ function autoFillEndTime() {
     $('#f-end').value = addMins(start, CAT_INFO[cat].mins);
   }
   autoCalcUnits();
+  refreshPlanWarn_();
 }
 
 function getFormTimes() {
@@ -5044,6 +5150,18 @@ function saveEvent() {
     const catWarn = visitCatMismatch_($('#f-category').value, res.careLevel);
     if (catWarn && !confirm(catWarn + '\n\nこのまま保存しますか？')) return;
   }
+  /* 時間の重なり・2時間ルールも保存の手前でまとめて1回だけ聞く（区分ちがいと同じ作法）。
+     警告枠は時刻欄の下＝狭い画面では折り返しの下に隠れうるため、ここでもう一度出す。 */
+  {
+    const st0 = ($('input[name="serviceType"]:checked') || {}).value;
+    const t0 = getFormTimes();
+    const tw = planWarnConfirmText_(res, {
+      dayOfWeek: parseInt($('#f-dow').value, 10), serviceType: st0,
+      category: st0 === 'visit' ? $('#f-category').value : '',
+      startTime: t0.start, endTime: t0.end
+    }, editingEventId);
+    if (tw && !confirm(tw + '\n\nこのまま保存しますか？')) return;
+  }
   pushUndo();
   const stype = $('input[name="serviceType"]:checked').value;
   const { start, end } = getFormTimes();
@@ -5084,6 +5202,11 @@ function duplicateEvent() {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
     if (catWarn && !confirm(catWarn + '\n\nこのまま複製しますか？')) return;
   }
+  /* 複製先の曜日で重なり・2時間ルールを見る（元の曜日では問題なくても複製先で起きる）。 */
+  {
+    const tw = planWarnConfirmText_(res, { ...ev, dayOfWeek: parseInt(dowStr, 10) }, null);
+    if (tw && !confirm(tw + '\n\nこのまま複製しますか？')) return;
+  }
   pushUndo();
   const newEv = { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) };
   res.events.push(newEv);
@@ -5114,6 +5237,16 @@ function duplicateEventEveryday() {
   if (ev.serviceType !== 'daycare') {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
     if (catWarn && !confirm(catWarn + `\n\nこのまま${targets.length}曜日へ複製しますか？`)) return;
+  }
+  /* 1件の複製が7曜日ぶんに増える経路。どの曜日で起きるかを数えて、まとめて1回だけ聞く
+     （曜日ごとに確認を出すと現場が回らない）。 */
+  {
+    const hit = targets.filter(dow => planTimeWarnings_(res, { ...ev, dayOfWeek: dow }, null).length);
+    if (hit.length) {
+      const sample = planTimeWarnings_(res, { ...ev, dayOfWeek: hit[0] }, null).join('\n\n');
+      if (!confirm(sample + `\n\n同じことが ${hit.length}曜日（`
+        + hit.map(d => DAYS_JA[d]).join('・') + `）で起きます。\nこのまま${targets.length}曜日へ複製しますか？`)) return;
+    }
   }
   pushUndo();
   targets.forEach(dow => res.events.push({ ...ev, id: uid(), dayOfWeek: dow }));
@@ -6700,6 +6833,11 @@ function ctxDuplicate(dow) {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
     if (catWarn && !confirm(catWarn + '\n\nこのまま複製しますか？')) return;
   }
+  /* 盤面からの複製も同じ確認を通す（いちばん手数の少ない経路だけ無言で通る抜けを作らない）。 */
+  {
+    const tw = planWarnConfirmText_(res, { ...ev, dayOfWeek: dow }, null);
+    if (tw && !confirm(tw + '\n\nこのまま複製しますか？')) return;
+  }
   pushUndo();
   const newEv = { ...ev, id: uid(), dayOfWeek: dow };
   res.events.push(newEv);
@@ -6769,6 +6907,12 @@ $('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-eve
 $('#mk-bulk').addEventListener('click', e => { if (e.target === $('#mk-bulk')) closeBulkImport(); });
 $('#f-new-res').addEventListener('keydown', e => { if (e.key === 'Enter') addResident(); });
 $('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.display !== 'none') renderCareChips(); });
+/* 曜日・時刻を変えるたびに、重なり／2時間ルールの警告を出し直す。
+   既存の inline onchange（autoFillEndTime 等）は触らず、こちらを重ねて張る。 */
+['f-dow', 'f-start', 'f-end', 'f-dc-start', 'f-dc-end'].forEach(function (id) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', function () { try { refreshPlanWarn_(); } catch (e) {} });
+});
 
 /* ══════════════════════════════════════════════════════════════════════
    試算モード（サンドボックス）
@@ -7095,14 +7239,19 @@ function _csBusyEditing() {
      事業所情報（報酬マスタを内蔵）と影響プレビューも保留対象に入れる。
      ここを開いたまま取り込みが走ると、画面の入力欄は古いまま DB.rateMaster だけ新しくなり、
      そのまま適用すると他端末の改定を古い値で上書きしてしまう。
-     ★入力欄を持つモーダルは【全部】ここに載せる（2026-08-29 追加）。載せ忘れると、
-       そのモーダルを開いたまま別タブ・別端末の書き込みが届いた時に、画面の入力欄は古いまま
-       DB だけ差し替わり、そのまま保存して他端末の更新を巻き戻す。
+     ★載せる基準は「DB 由来の値を入力欄に読み込んでいるか」（2026-08-29 追加）。
+       載せ忘れると、そのモーダルを開いたまま別タブ・別端末の書き込みが届いた時に、
+       画面の入力欄は古いまま DB だけ差し替わり、そのまま保存して他端末の更新を巻き戻す。
        予定(mk-event)と利用者(mk-resident)は呼び出し側2箇所では見ていたが、別タブの書き込みを
        取り込む storage 経路だけが素通りしていたため、判定をこの1箇所へ揃えた。
-       モーダルを新設したら、入力欄を持つかどうかでこの表に足すか決めること。 */
+       ★逆に、DB 由来の値を持たないモーダルは載せない。載せると取り込みが遅れるぶん、
+       操作が古い DB に当たって不利になるだけで、守れるものが無い：
+         ・貼り付け一括登録(mk-bulk) … 入力は手で貼ったテキストだけ。取り込みで消えず、
+           applyBulkImport は取り込み後の新しい DB に当たった方が正しい
+         ・同期設定(mk-sync) … 入力は別キーの接続先。載せると同期ログを見ている間だけ同期が止まる
+         ・試算の適用(mk-sim-apply) … 試算中は SIM_ON が全経路を止めるので二重に要らない */
   const BUSY_MODAL_IDS = ['mk-event', 'mk-resident', 'mk-resident-bulk', 'mk-care-info',
-                          'mk-bulk', 'mk-office-info', 'mk-rm-preview'];
+                          'mk-office-info', 'mk-rm-preview'];
   for (let i = 0; i < BUSY_MODAL_IDS.length; i++) {
     const el = document.getElementById(BUSY_MODAL_IDS[i]);
     if (el && el.classList.contains('open')) return true;
@@ -7111,18 +7260,31 @@ function _csBusyEditing() {
          document.body.classList.contains('is-dragging-move') ||
          document.body.classList.contains('is-dragging-resize');
 }
-window.addEventListener('storage', (e) => {
-  if (SIM_ON) return;                      /* 試算中は他タブの書込を取り込まない（試算盤面が消えるため） */
-  if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
-  if (SYNC._dirty || _csBusyEditing()) return;   // 自端末の未送信編集／編集中は守る（クリーン時のみ取り込む）
+/* ★編集中に届いた書き込みは【捨てずに待つ】（2026-08-29 追加）。
+   storage イベントは再配送されず、この経路に「次の機会」は存在しない。ポーリングも拾えない：
+   版数 `ws_sync_revs.care` はタブ間で共有され、書いた側のタブ（ワースケ等）が push 成功時に
+   既に進めているため、head 照会は「変更なし」と判定して adopt しない。
+   したがって編集中を理由に return すると、その更新は端末のメモリに二度と入らないまま古い DB が残り、
+   次の保存（saveDB は DB 全量を書く）で相手の書き込みを丸ごと、無音で上書きする。
+   編集が終わるまで1秒ごとに待ち直し、終わったら必ず取り込む。
+   ただし自端末に未送信の編集がある間は従来どおり取り込まない（既存の競合処理に委ねる）。 */
+function csScheduleStorageAdopt_(delay) {
   if (_csStorageTimer) clearTimeout(_csStorageTimer);
   _csStorageTimer = setTimeout(() => {
     _csStorageTimer = null;
-    if (SYNC._dirty || _csBusyEditing()) return; // デバウンス中に編集が入ったら中止（自編集優先）
+    if (SIM_ON) return;                                              // 試算に入ったら取り込まない
+    if (SYNC._dirty) return;                                         // 自端末の未送信編集が最優先（既存方針）
+    if (_csBusyEditing()) { csScheduleStorageAdopt_(1000); return; } // 編集中は捨てずに待ち直す
     /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
        他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
     try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
-  }, 300);
+  }, delay);
+}
+window.addEventListener('storage', (e) => {
+  if (SIM_ON) return;                      /* 試算中は他タブの書込を取り込まない（試算盤面が消えるため） */
+  if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
+  if (SYNC._dirty) return;                 // 自端末の未送信編集がある間は取り込まない（クリーン時のみ）
+  csScheduleStorageAdopt_(300);
 });
 // ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
 window.addEventListener('online', () => {
