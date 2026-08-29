@@ -610,13 +610,20 @@ select.inp { cursor: pointer; }
   padding: 9px 10px; border-radius: 6px; border: 1px solid var(--g3);
   margin-bottom: 6px; font-size: 0.875rem;
   /* 2026-08-03「入居前」追加でボタンが4つになった。狭幅端末で押し間違えないよう折返しを許す（HIG・原則10） */
-  flex-wrap: wrap; gap: 4px;
+  flex-wrap: wrap; gap: var(--tap-gap, 8px);   /* 隣接ボタンの間隔8px以上（介護現場要件2）。旧値4px */
 }
 .res-item.active { border-color: var(--pri2); background: rgba(11,87,208,.06); font-weight: 600; }
 .res-item .del-res {
   background: none; border: none; color: var(--ng); cursor: pointer;
-  font-size: 1rem; padding: 6px 9px; border-radius: 4px; min-height: 32px;   /* タップ領域を拡大（HIG・原則10） */
+  font-size: 1rem; padding: 6px 9px; border-radius: 4px;
+  /* 44px＝介護現場要件2（手袋・片手操作での誤タップ防止）。旧値32pxから引き上げ。
+     このリストは利用者モーダル内＝印刷では mk-resident ごと display:none のため紙面に影響しない。 */
+  min-height: var(--tap-min, 44px);
 }
+/* 取り消せない削除（✕）だけは隣のボタンからさらに離す（gap 8px ＋ ここ 8px ＝ 16px）。
+   誤タップがその利用者の週間計画の消失に直結するため。
+   ✕は文字が細く、min-height だけでは当たり判定が 30px 幅にしかならないので幅も 44px にする。 */
+.res-item .del-res.res-del-x { margin-inline-start: var(--tap-gap, 8px); min-width: var(--tap-min, 44px); }
 
 /* ── Toast ── */
 .toast {
@@ -3934,14 +3941,18 @@ function renderResidentList() {
         : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
            <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>
            <button class="del-res" style="color:var(--pre)" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>`}
-      <button class="del-res" onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')" aria-label="この利用者を削除" title="この利用者を削除">✕</button>
+      <button class="del-res res-del-x" ${csOutStyle(r, 'var(--ng)')}${csOutAttr(r)} onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')" aria-label="この利用者を削除"${csMasterOwned(r) ? '' : ' title="この利用者を削除"'}>✕</button>
     </li>`
   ).join('');
 }
 function addResident() {
   const name = $('#f-new-res').value.trim();
   if (!name) return;
-  if (DB.residents.some(r => r.name === name)) { showToast('同名の利用者が既に存在します'); return; }
+  /* 重複判定は一括取込の照合（findResident_＝空白を無視）に合わせる。ここだけ完全一致だと
+     氏名の間に空白を入れた版と入れない版が別人として併存でき、以後の取込がどちらに当たるかで
+     同じ方の計画が2件に分かれる（表記ゆれの取り違え）。 */
+  const dupRes = findResident_(name);
+  if (dupRes) { showToast(`「${dupRes.name}」が既に登録されています（空白の有無は同じ利用者として扱います）`); return; }
   const res = {
     id: ruid(), name, events: [],
     careLevel: '', copayRate: 1, welfareEquipUnits: 0,
@@ -4090,13 +4101,36 @@ function applyBulkImport() {
   showToast(`一括登録: ${added}件を追加しました`);
 }
 function removeResident(id) {
-  const res = DB.residents.find(r => r.id === id);
-  if (!res) return;
-  if (!confirm(`「${res.name}」を削除しますか？\n（この利用者の計画もすべて削除されます）`)) return;
+  const idx = DB.residents.findIndex(r => r.id === id);
+  if (idx < 0) return;
+  const res = DB.residents[idx];
+  /* 在籍・退去と同じく、マスタ紐づきの利用者は入居者マスタが正本。ここで消しても次の名簿同期が
+     予定ゼロの本人を作り直す（mergeCommonSchedule の events:[] 新規取り込み）＝
+     週間計画だけが消えて本人は戻る＝現場には「計画が消えた」としか見えない。
+     ボタンも無効化してあるが、万一ここへ届いても消さずに操作先を案内する。 */
+  if (res.masterId != null && res.masterId !== '') {
+    showToast('入居者マスタで管理されている利用者です。週間計画から外すには「一括編集」の週間計画対象のチェックを外してください');
+    return;
+  }
+  /* 破壊的操作の前に「何が消えるか」を数えて出す（件数を見せずに通さない）。 */
+  const evN = Array.isArray(res.events) ? res.events.length : 0;
+  if (!confirm(`「${res.name}」を削除しますか？\n\n・この利用者の週間計画（予定 ${evN}件）も一緒に削除されます\n\n直後であれば ↩ 取消（Ctrl・Cmd+Z）で元に戻せます。`)) return;
+  /* 削除の前に care_schedule_v2 全体を退避する。この直後の saveDB() は csBackupResidents() を
+     呼び、端末バックアップ(cs_residents_backup_v1)を【削除後の名簿】で上書きしてしまう。
+     既存の自動復元 csRestoreResidentsIfLost は「全消し／サンプルのみ」しか対象にしないため、
+     複数名のうち1名を消した場合はどの復元経路にも掛からない＝退避はここでしか作れない。
+     キー形式は pruneCareBackups_ の剪定対象に合わせる（最新1件は常に保持・7日で自動削除）。 */
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) localStorage.setItem(LS_KEY + '_backup_' + Date.now(), raw);
+  } catch (e) {}
+  /* 取り消し履歴（1手Undo）。予定の取り消しと違い利用者そのものが消えるため、
+     currentResident() に依存しない独立の種類で積む。 */
+  pushUndoEntry_({ kind: 'resident', idx: idx, snap: JSON.stringify(res) });
   DB.residents = DB.residents.filter(r => r.id !== id);
   if (DB.currentResidentId === id) csSetSelection_((DB.residents[0] || {}).id || null);
   saveDB(); populateResidentSelect(); renderResidentList(); renderAll();
-  showToast('削除しました');
+  showToast(`「${res.name}」を削除しました（↩ 取消で元に戻せます）`);
 }
 /* 利用者直下フラグ（movedOut / hospitalized）の再主張。世代番号は「利用者×項目」ごとに持つ
    （連続操作で、先に飛んだ push の完了処理が後の操作を巻き戻さないため。項目別なので
@@ -6426,11 +6460,34 @@ function pushUndoBulk_(addedEvents, createdResidents) {
   if (!addedEvents.length && !createdResidents.length) return;
   pushUndoEntry_({ kind: 'bulk', added: addedEvents, created: createdResidents });
 }
+/* 利用者削除の取り消し。削除された本人は currentResident() で引けないので、
+   一括取込の取り消しと同じく「利用者の選択に依存しない」経路にする。
+   既に同じidが復活している場合（競合リベースの和集合マージで戻った）は二重登録しない。 */
+function undoRemoveResident_(entry) {
+  let res = null;
+  try { res = JSON.parse(entry.snap); } catch (e) {}
+  if (!res || res.id === undefined) { showToast('元に戻せませんでした（取り消し履歴を読めません）'); return; }
+  if (!Array.isArray(DB.residents)) DB.residents = [];
+  if (DB.residents.some(r => r && String(r.id) === String(res.id))) {
+    showToast(`「${res.name || ''}」は既に復元されています`);
+    return;
+  }
+  const at = Math.max(0, Math.min(DB.residents.length, Number(entry.idx) || 0));
+  DB.residents.splice(at, 0, res);          /* 元の並び位置へ戻す */
+  csSetSelection_(res.id);                  /* 戻った本人を表示して、効いたことを分かるようにする */
+  const ok = saveDB();
+  populateResidentSelect(); renderResidentList(); renderAll();
+  showToast(ok
+    ? `「${res.name || ''}」を元に戻しました（予定 ${(res.events || []).length}件）`
+    : '端末に保存できませんでした。ブラウザのストレージ容量を確認してもう一度お試しください');
+}
 function undo() {
   if (!undoStack.length) { showToast('これ以上元に戻せません'); return; }
   /* 直前の操作が一括取込ならそれを取り消す。利用者の選択に依存しない
      ＝誰も選択していない状態で取り込んだ場合でも取り消せる。 */
   if (undoStack[undoStack.length - 1].kind === 'bulk') { undoBulk_(undoStack.pop()); return; }
+  /* 直前の操作が利用者削除ならその利用者を戻す（同上・選択に依存しない）。 */
+  if (undoStack[undoStack.length - 1].kind === 'resident') { undoRemoveResident_(undoStack.pop()); return; }
   const res = currentResident();
   if (!res) { showToast('これ以上元に戻せません'); return; }
   // 現在の利用者のスナップだけを適用対象にする（他利用者の分・bulk はスタックに残す）
