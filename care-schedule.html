@@ -525,17 +525,23 @@ select.inp { cursor: pointer; }
 #rl-table .rl-pct.warn { color: #f57c00; }
 #rl-table .rl-pct.ok   { color: #2e7d32; }
 #rl-empty { padding: 24px; text-align: center; color: var(--g6); font-size: 0.8125rem; }
-/* 報酬額(10割) 総合計バナー（上部・視認性高） */
+/* 報酬額 総合計バナー（上部・視認性高） */
 #rl-total { margin: 0 0 10px; padding: 10px 14px; border: 1px solid #90caf9; border-radius: 8px;
   background: #e8f2fd; color: #0d3c61; font-size: 0.9375rem; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 #rl-total .rl-total-amt { font-size: 1.3125rem; color: var(--pri2); }
+#rl-total .rl-total-exp-label { font-size: 0.8125rem; color: var(--g7); }
+#rl-total .rl-total-exp { font-size: 1.3125rem; color: #00695c; }
 #rl-total .rl-total-sub { font-size: 0.75rem; font-weight: 600; color: var(--g6); }
 /* 通所利用曜日（月〜土・6列をグループ視認） */
 #rl-table th.rl-day, #rl-table td.rl-day { width: 26px; min-width: 26px; padding: 7px 3px; text-align: center; background: #f3f8ff; }
 #rl-table th.rl-day { background: #e3eefb; }
 #rl-table td.rl-day .on { color: #2e7d32; font-weight: 700; }
-/* 報酬額(10割) 列・合計行 */
+/* 報酬額・報酬額(想定) 列・合計行 */
 #rl-table .rl-fee { text-align: end; font-weight: 700; color: var(--pri2); }
+/* 想定は別の色にして「報酬額の隣の似た数字」に見えないようにする（色だけに頼らず列名でも区別）。 */
+#rl-table .rl-fee-exp { color: #00695c; }
+/* 限度額で頭打ちになった行＝報酬額と想定が食い違う行。下線で位置を示す（色だけで伝えない）。 */
+#rl-table .rl-fee-exp.capped { text-decoration: underline; text-underline-offset: 2px; }
 #rl-table tfoot td { border-top: 2px solid var(--g4); background: var(--g1); font-weight: 700; }
 #rl-table tfoot td.rl-foot-label { text-align: end; color: var(--g7); }
 /* 一括編集モーダル（#rl-table と同じ見た目を流用・入力欄は行内でコンパクト） */
@@ -1410,7 +1416,8 @@ select.inp { cursor: pointer; }
             <th>使用単位数<br>(月)</th>
             <th>福祉用具<br>単位数</th>
             <th>使用単位%</th>
-            <th class="rl-fee-h">報酬額(10割)<br>(円)</th>
+            <th class="rl-fee-h">報酬額<br>(円)</th>
+            <th class="rl-fee-h">報酬額(想定)<br>(円)</th>
           </tr>
         </thead>
         <tbody id="rl-tbody"></tbody>
@@ -2489,7 +2496,20 @@ function getEventCoverage(events, res) {
   const limit = effectiveCareLimit_(res.careLevel);
   if (!limit) return null; // 介護度未設定・特定施設 → 制限なし
 
-  const weeklyLimit = limit / 4.3; // 週あたりの限度目安
+  /* ★週枠は「限度額から、週次の按分を通らずに先に消費されるぶんを引いた残り」を按分する
+     （2026-08-30 管理者の裁定＝限度額を超えたらコマも赤くする）。
+     引く2つはどちらも下のループで週枠を消費しない:
+       ・福祉用具（月額の単位数。そもそもコマとして盤面に無い）
+       ・総合事業（月額包括。ループ冒頭で「満額カバー・週枠を消費しない」扱い）
+     引かないと、サマリーの使用率（この2つを含めて計算）が100%を超えていても
+     盤面のコマだけが限度内に見え、判定基準が画面内で2つある状態になる。
+     福祉用具の単位が大きい方ほどズレが大きかった。 */
+  const welfareUnits = Math.max(0, Number(res && res.welfareEquipUnits) || 0);
+  const monthlyFixedUnits = welfareUnits + sogoMonthlyUnits_(events);
+  /* 先に消費されるぶんだけで限度額に達している時は週枠0＝全コマが超過（赤）になる。
+     0で止めるのは意味のない負の週枠を残さないためで、判定の結果は負のままでも同じ
+     （remaining が最初から0以下＝全コマ超過）。挙動を変える行ではない。 */
+  const weeklyLimit = Math.max(0, limit - monthlyFixedUnits) / 4.3; // 週あたりの限度目安
 
   // 曜日→時刻順にソート
   const sorted = [...events].sort((a, b) =>
@@ -4448,17 +4468,16 @@ function renderSummaryBar(res) {
     $('#sum-pct-fill').classList.remove('over');
   }
 
-  /* 盤面の「限度額超過」（赤い枠）は訪問・通所だけで週枠を按分しており、福祉用具の単位を
-     差し引いていない。一方この使用率は福祉用具を含めた合計で出すため、福祉用具が大きい方では
-     「使用率は100%超なのに盤面のコマが1つも赤くない」という食い違いが起きる。
-     どちらの計算も変えない（提供票と突き合わせている数字を動かさない・盤面と紙の見え方も不変）。
-     食い違いが実際に起きている時だけ、その理由を画面に出す。 */
+  /* ★2026-08-30 の裁定で、盤面の「限度額超過」（赤い枠）も福祉用具・総合事業を差し引いた
+     残りで判定するようになった（getEventCoverage）。判定基準は画面内で1つに揃っている。
+     それでも、この状態＝「訪問・通所だけなら限度内なのに、福祉用具を含めると超過」は
+     理由を出す価値がある。出さないと、予定を減らしても赤が消えない理由が現場に分からない。 */
   const limWarnEl = $('#sum-limit-warn');
   if (limWarnEl) {
     const mismatch = !!(limit && welfareUnits > 0 && totalUnits > limit && monthUnits <= limit);
     limWarnEl.style.display = mismatch ? '' : 'none';
     limWarnEl.textContent = mismatch
-      ? '⚠ 福祉用具を含めると限度額を超えています（盤面の赤い枠は訪問・通所だけで判定しています）'
+      ? '⚠ 福祉用具を含めると限度額を超えています（訪問・通所だけなら限度内です。盤面の赤い枠は福祉用具を差し引いた残りで判定しています）'
       : '';
   }
 
@@ -6291,9 +6310,21 @@ function computeResidentSummary(res) {
   const totalUnits = monthUnits + welfareUnits;
   // 使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（既存ヘッダ「使用率」と一致）
   const pct = (limit && totalUnits > 0) ? Math.round(totalUnits / limit * 1000) / 10 : null;
-  // 報酬額(10割)＝使用単位数(月)×10円（福祉用具は含まない＝訪問＋通所のみ・ユーザー確定）
+  // 報酬額＝使用単位数(月)×10円（福祉用具は含まない＝訪問＋通所のみ・ユーザー確定）
   const fee = monthUnits * FEE_PER_UNIT;
-  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct, fee };
+  /* 報酬額(想定)＝実際に算定される額に近い見積り（2026-08-30 管理者の指示で追加）。
+     入居者の使用単位が負担限度額を超えて算定されることはないため、
+       ①限度額で頭打ちにする（超過ぶんは算定されない）
+       ②そこから福祉用具の単位を引く（福祉用具は当社の報酬ではない）
+     の順で出す。式: min(限度額, 使用単位数(月)+福祉用具単位) − 福祉用具単位
+     ・限度額を超えていない方は、引き算が打ち消し合って「報酬額」と同額になる
+     ・限度額が無い方（特定施設・介護度未設定）は頭打ちが働かないので同じく同額
+     ・福祉用具だけで限度額を超える異常値では負にせず0へ倒す */
+  const cappedUnits   = limit ? Math.min(limit, totalUnits) : totalUnits;
+  const expectedUnits = Math.max(0, cappedUnits - welfareUnits);
+  const feeExpected   = expectedUnits * FEE_PER_UNIT;
+  return { careLevel, limit, copayRate, welfareUnits, monthUnits, totalUnits, pct,
+           fee, expectedUnits, feeExpected };
 }
 
 function renderResidentListTable() {
@@ -6306,7 +6337,12 @@ function renderResidentListTable() {
   const desc = $('#rl-desc');
   if (desc) {
     desc.innerHTML = '各利用者の介護度・負担・利用状況の横断一覧。月〜土＝通所(デイ)利用日に○。'
-      + `報酬額(10割)＝使用単位数(月)×${escHtml(String(FEE_PER_UNIT))}円（福祉用具は含まない）。`
+      + `報酬額＝使用単位数(月)×${escHtml(String(FEE_PER_UNIT))}円（福祉用具は含まない）。`
+      /* 想定の意味は必ず式で書く。「実際の請求額」と誤読されると、限度額を超えている方の
+         請求根拠として使われかねない（この一覧は参考値であって請求根拠ではない）。 */
+      + '報酬額(想定)＝負担限度額で頭打ちにした単位から福祉用具単位を引いて算出'
+      + '（使用単位が限度額を超えて算定されることはないため、実際の額に近い見積り）。'
+      + '限度額を超えていない方・負担限度額が「—」の方は報酬額と同額になる。'
       + '使用単位%＝(使用単位数＋福祉用具単位数)÷負担限度額（ヘッダの「使用率」と一致）。'
       + (isTokuteiFacility_()
           ? `<br>${escHtml(TOKUTEI_LIMIT_NOTE)}負担限度額・使用単位%は「—」で表示します。`
@@ -6317,16 +6353,17 @@ function renderResidentListTable() {
   const rlNote = $('#rl-rate-note');
   if (rlNote) rlNote.textContent = '※ ' + RATE_DISCLAIMER;
   if (!list.length) {
-    tbody.innerHTML = '<tr><td id="rl-empty" colspan="14">表示対象の利用者がいません</td></tr>';
+    tbody.innerHTML = '<tr><td id="rl-empty" colspan="15">表示対象の利用者がいません</td></tr>';
     if (tfoot) tfoot.innerHTML = '';
     if (totalEl) totalEl.innerHTML = '';
     return;
   }
   let h = '';
-  let totalFee = 0;
+  let totalFee = 0, totalFeeExp = 0;
   list.forEach(res => {
     const s = computeResidentSummary(res);
     totalFee += s.fee;
+    totalFeeExp += s.feeExpected;
     let pctCell = '<td class="rl-mid">—</td>';
     if (s.pct !== null) {
       const cls = s.pct >= 100 ? 'over' : s.pct >= 80 ? 'warn' : 'ok';
@@ -6335,7 +6372,7 @@ function renderResidentListTable() {
     const days = residentDaycareDays_(res);
     const dayCells = days.map(on => `<td class="rl-day">${on ? '<span class="on">○</span>' : ''}</td>`).join('');
     /* 訪問の区分が介護度と食い違うコマがあれば、氏名セルに件数つきで出す。
-       列は増やさない（空行の colspan=14 と A3横印刷の列幅を動かさないため）。
+       列は増やさない（空行の colspan=15 と A3横印刷の列幅を動かさないため）。
        色だけで伝えないよう「⚠区分ちがいN件」と文字で書く。 */
     const mism = residentCatMismatchCount_(res);
     /* 「⚠区分2」だと隣の介護度列（支2・3 等）と紛らわしいので、件数だと分かる表記にする。
@@ -6353,19 +6390,26 @@ function renderResidentListTable() {
       + `<td>${s.welfareUnits.toLocaleString()}</td>`
       + pctCell
       + `<td class="rl-fee">${s.fee.toLocaleString()}</td>`
+      /* 想定は「限度額で頭打ちにした後」の額。頭打ちが効いた行だけ報酬額と違う値になるので、
+         その行はひと目で分かるようにする（色だけで伝えず、下の凡例に意味を書く）。 */
+      + `<td class="rl-fee rl-fee-exp${s.feeExpected < s.fee ? ' capped' : ''}">${s.feeExpected.toLocaleString()}</td>`
       + '</tr>';
   });
   tbody.innerHTML = h;
   // 上部バナー（総合計）と tfoot 合計行
   if (totalEl) {
-    totalEl.innerHTML = '報酬額(10割) 総合計'
+    totalEl.innerHTML = '報酬額 総合計'
       + `<span class="rl-total-amt">¥${totalFee.toLocaleString()}</span>`
-      + `<span class="rl-total-sub">対象 ${list.length}名・使用単位数(月)×${FEE_PER_UNIT}円（福祉用具除く）</span>`;
+      + '<span class="rl-total-exp-label">想定</span>'
+      + `<span class="rl-total-exp">¥${totalFeeExp.toLocaleString()}</span>`
+      + `<span class="rl-total-sub">対象 ${list.length}名・報酬額＝使用単位数(月)×${FEE_PER_UNIT}円（福祉用具除く）`
+      + '／想定＝負担限度額で頭打ちにした単位から福祉用具を引いた額</span>';
   }
   if (tfoot) {
     tfoot.innerHTML = '<tr>'
-      + '<td class="rl-foot-label" colspan="13">報酬額(10割) 合計</td>'
+      + '<td class="rl-foot-label" colspan="13">報酬額 合計</td>'
       + `<td class="rl-fee">${totalFee.toLocaleString()}</td>`
+      + `<td class="rl-fee rl-fee-exp">${totalFeeExp.toLocaleString()}</td>`
       + '</tr>';
   }
 }
