@@ -1563,6 +1563,42 @@ function _handle(e, method) {
 <div class="toast" id="toast"></div>
 
 <script>
+/* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
+ * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
+ * どこにも出なかった（空 catch も多い）。盤面が途中まで描かれて止まっても、現場からは
+ * 「開かない」「動かない」としか伝わらず、何が起きたか誰も分からなかった。
+ *
+ * ここでやるのは【記録と通知だけ】。復旧も再試行もしないので、既存の動作は一切変わらない。
+ * 起動時の例外も拾えるよう、この <script> の先頭に置く（後ろに置くと boot の失敗を逃す）。
+ * showToast / SYNC はこの下で定義されるが、ハンドラが走るのは読み込み後なので参照できる。
+ * それでも安全側に try/catch で包む＝エラー報告そのものが二次エラーを出さないため。 */
+var _csErrLastSig = '', _csErrLastAt = 0;
+function _csReportError_(kind, msg, where) {
+  try {
+    var brief = String(msg == null ? '' : (msg.message || msg)).slice(0, 120);
+    var sig = kind + '|' + brief + '|' + where;
+    var now = Date.now();
+    /* 同じ例外が描画のたびに出続けると操作の邪魔になるので、30秒は1件目だけ出す */
+    if (sig === _csErrLastSig && now - _csErrLastAt < 30000) return;
+    _csErrLastSig = sig; _csErrLastAt = now;
+    try { SYNC.log('⚠️ ' + kind + '：' + brief + (where ? '（' + where + '）' : '')); } catch (e) {}
+    /* 「何が起きたか＋次にどうすればよいか」を日本語で出す（介護現場要件8）。
+       入力済みの予定・利用者は localStorage に保存済みなので再読み込みで消えない。
+       消えるのは開いたままのモーダルの入力欄だけなので、そこだけを控えてもらう。 */
+    try { showToast('⚠ 画面でエラーが起きました。入力中の内容を控えて再読み込みしてください'); } catch (e) {}
+  } catch (e) {}
+}
+window.addEventListener('error', function (e) {
+  /* 画像・スクリプトの読み込み失敗も同じイベントで来るが、あちらは message を持たない。
+     通信の一時失敗で毎回トーストを出しても現場は対処できないので、例外だけを対象にする。 */
+  if (!e || (!e.message && !e.error)) return;
+  var where = e.filename ? (String(e.filename).split('/').pop() + ':' + (e.lineno || 0)) : '';
+  _csReportError_('スクリプトエラー', e.message || (e.error && e.error.message) || '不明', where);
+});
+window.addEventListener('unhandledrejection', function (e) {
+  _csReportError_('未処理の失敗', (e && e.reason) || '不明', '');
+});
+
 // ── Constants ──
 const LS_KEY     = 'care_schedule_v2';
 const HOUR_PX    = 60;
@@ -7058,12 +7094,20 @@ function _csBusyEditing() {
   /* 編集モーダル表示中／ドラッグ中は取り込みを保留（編集中イベントの下でDB差し替え・ドラッグ中断を防ぐ）。
      事業所情報（報酬マスタを内蔵）と影響プレビューも保留対象に入れる。
      ここを開いたまま取り込みが走ると、画面の入力欄は古いまま DB.rateMaster だけ新しくなり、
-     そのまま適用すると他端末の改定を古い値で上書きしてしまう。 */
-  const oi = document.getElementById('mk-office-info');
-  const pv = document.getElementById('mk-rm-preview');
+     そのまま適用すると他端末の改定を古い値で上書きしてしまう。
+     ★入力欄を持つモーダルは【全部】ここに載せる（2026-08-29 追加）。載せ忘れると、
+       そのモーダルを開いたまま別タブ・別端末の書き込みが届いた時に、画面の入力欄は古いまま
+       DB だけ差し替わり、そのまま保存して他端末の更新を巻き戻す。
+       予定(mk-event)と利用者(mk-resident)は呼び出し側2箇所では見ていたが、別タブの書き込みを
+       取り込む storage 経路だけが素通りしていたため、判定をこの1箇所へ揃えた。
+       モーダルを新設したら、入力欄を持つかどうかでこの表に足すか決めること。 */
+  const BUSY_MODAL_IDS = ['mk-event', 'mk-resident', 'mk-resident-bulk', 'mk-care-info',
+                          'mk-bulk', 'mk-office-info', 'mk-rm-preview'];
+  for (let i = 0; i < BUSY_MODAL_IDS.length; i++) {
+    const el = document.getElementById(BUSY_MODAL_IDS[i]);
+    if (el && el.classList.contains('open')) return true;
+  }
   return editingEventId != null ||
-         (oi && oi.classList.contains('open')) ||
-         (pv && pv.classList.contains('open')) ||
          document.body.classList.contains('is-dragging-move') ||
          document.body.classList.contains('is-dragging-resize');
 }
