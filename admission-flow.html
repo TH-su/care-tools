@@ -264,7 +264,33 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 #toast.on { display: block; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-@media print { .hdr, .bnav, #toast, .mk { display: none !important; } body { padding: 0; } }
+
+/* ══ ご相談シートの印刷（ラウレアハレ様式の紙面をそのまま再現） ══
+   画面では隠し、印刷の時だけ出す。A4縦1枚に収める（2026-08-30 指示）。
+   ★罫線・項目の並び・選択肢の文言は紙と1対1。直す時は紙の現物と突き合わせること。 */
+#printSheet { display: none; }
+#printSheet .ps-title { font-size: 12pt; font-weight: 700; letter-spacing: .05em; }
+#printSheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+#printSheet td { border: 1px solid #000; padding: 1px 3px; font-size: 7.6pt; line-height: 1.25; vertical-align: middle; word-break: break-all; }
+#printSheet td.lb { background: #fff; text-align: center; font-weight: 700; white-space: nowrap; }
+#printSheet td.lb-l { text-align: left; }
+#printSheet td.vr { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: .3em; text-align: center; width: 1.6em; font-weight: 700; }
+#printSheet td.val { font-weight: 400; }
+#printSheet td.tall { height: 7mm; }
+#printSheet .opt { display: inline-block; padding: 0 2px; }
+#printSheet .opt.on { border: 1.4px solid #000; border-radius: 999px; padding: 0 5px; font-weight: 700; }
+#printSheet .memo { height: 55mm; vertical-align: top; }   /* 紙と同じく備考を大きく取る（A4縦1枚に収まる範囲） */
+#printSheet .memo div { font-size: 7.6pt; white-space: pre-wrap; line-height: 1.35; }
+#printSheet .hd { display: flex; align-items: flex-end; gap: 8px; margin: 0 0 3px; }
+#printSheet .hd .sp { flex: 1; }
+#printSheet .hd .pd { font-size: 7.6pt; }
+
+@media print {
+  .hdr, .bnav, #toast, .mk, main { display: none !important; }
+  body { padding: 0; background: #fff; }
+  #printSheet.on { display: block !important; }
+  @page { size: A4 portrait; margin: 7mm; }
+}
 </style>
 </head>
 <body>
@@ -372,9 +398,13 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
       <p><b>4. 情報が入ったら画面の一番上に「次にやること」が出る</b><br>
       介護度の確定・食事形態・ADL・薬・入居希望日などを入力すると、<b>誰に伝えるべきか</b>が自動で出ます。
       電話番号をタップして発信し、「記録して連絡済みにする」を押すと連絡記録に1行残ります。</p>
-      <p><b>5. 入居前アセスメントを埋める</b><br>
-      ADL・食事・排泄・入浴・移動・認知症・BPSD・夜間・服薬・病名などを、入居者マスタと<b>同じ様式</b>で記録します。
-      入居決定時にそのままマスタへ転載されるので、二重入力になりません。</p>
+      <p><b>5. 申込後の聞き取りは「ご相談シート」に入れる</b><br>
+      紙の<b>ご相談シートと同じ並び・同じ選択肢</b>です（受付・ご相談者／ご本人・キーパーソン／介護保険／障害福祉・生活保護／
+      身体状況／医療／ご意向）。聞きながらそのまま埋められます。<br>
+      詳細画面の <b>🖨 ご相談シートを印刷</b> で、紙とほぼ同じ体裁（A4縦1枚）で印刷できます。
+      消耗品・寝具リース・オムツ／パッドサイズは、スプレッドシートと同じく画面だけで持ち、紙には出ません。<br>
+      入居決定時に入居者マスタの様式へ<b>自動で変換して</b>転載されるので、二重入力になりません
+      （紙の3択は「一部介助」へ寄せ、元の記載を様式の備考に残します）。</p>
       <p><b>6. 入居決定になったら「入居者マスタへ登録」</b><br>
       集めた情報がそのまま入居者マスタに登録されます。二重登録は自動で防ぎます。
       <b>登録するとその方は週間計画・デイ利用表に「入居済」として出ます。</b>入居日前なら週間計画で「入居前」を押してください。</p>
@@ -401,6 +431,9 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
   <p style="font-size:0.84375rem;color:var(--g7)">この端末は「現場用」に設定されています。<br>入居調整は入居前の方の連絡先を扱うため、現場端末では開けません。</p>
   <p><a href="index.html">メニューへ戻る</a></p>
 </div>
+
+<!-- ご相談シートの印刷面（画面では非表示・印刷時のみ表示） -->
+<div id="printSheet"></div>
 
 <div id="toast" role="status"></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -602,41 +635,122 @@ var BF_MAX_DISEASES = 8;
 /* 帰宅願望は様式の BPSD 表に無いが、入居前に必ず押さえる項目なので自由記載欄として持つ
    （マスタでは careHints＝介助のヒントへ入れる。様式の値域を勝手に増やさないため） */
 
-/* アセスメントの単純文字列項目。[キー, ラベル, 入力型, 選択肢] */
+/* ══ ご相談シート（ラウレアハレ様式）の選択肢 ══
+   ★2026-08-30 指示: 申込後の聞き取りは【ご相談シートを入力の正】とする。
+     現場が使っている紙と画面の並び・選択肢を同じにして、聞きながらそのまま埋められるようにする。
+     入居者マスタへ送る時だけ、マスタ様式の値へ機械的に変換する（変換表は toMasterLevel_ 等）。 */
+var SH_ARIMU = ['', '有', '無'];
+var SH_YOUHI = ['', '必要', '不要'];
+var SH_SURU = ['', 'する', 'しない'];
+var SH_VISION = ['', '1.支障なし', '2.眼鏡', '3.支障あり'];
+var SH_HEARING = ['', '1.支障なし', '2.補聴器', '3.支障あり'];
+var SH_WALK = ['', '1.自立', '2.補助具', '3.不可'];
+var SH_CARE3 = ['', '1.自立', '2.見守り', '3.介助'];
+var SH_MEALTYPE = ['', '1.普通食', '2.介護食', '3.他'];
+var SH_DENTURE = ['', '無し', '総義歯', '部分義歯（上）', '部分義歯（下）', '部分義歯（上・下）'];
+var SH_PLACE = ['', '自宅', '入院中'];
+var SH_GUARANTOR = ['', '2名', '1名', 'いない'];
+var SH_REFER = ['', '希望する', '希望しない'];
+var SH_GENDER = ['', '男', '女'];
+/* 相談シートの3択（自立/見守り/介助）→ 入居者マスタの様式（self/watch/part/full）。
+   ★「介助」は一部か全部かを紙が区別していないので part（一部介助）へ寄せ、
+     元の記載を formNote に残して人が後から直せるようにする（勝手に全介助へ格上げしない）。 */
+function toMasterLevel_(v) {
+  var s = String(v || '');
+  if (s.indexOf('自立') >= 0) return 'self';
+  if (s.indexOf('見守り') >= 0) return 'watch';
+  if (s.indexOf('介助') >= 0) return 'part';
+  return '';
+}
+
+/* ご相談シートの入力項目。[キー, ラベル, 入力型, 選択肢]
+   型: text / textarea / select / num
+   ★並びは紙のとおり。印刷（相談シート）もこの定義から組み立てるので、
+     項目を足す時は SHEET_PRINT 側の配置も一緒に直すこと。 */
 var ASSESS_TEXT = [
-  ['medLevel', '服薬（介助の程度）', 'lv', null],
-  ['medExists', '服薬の有無', 'select', BF_YESNO],
-  ['medContent', '薬の内容', 'select', BF_MED_CONTENT],
-  ['medsRegular', '定期薬（分かる範囲で）', 'textarea', null],
-  ['commLevel', '意思疎通', 'select', BF_COMM_LEVEL],
-  ['dementiaExists', '認知症の有無', 'select', BF_YESNO],
-  ['dementia', '認知症高齢者の日常生活自立度', 'select', BF_DEMENTIA_RANKS],
-  ['bedriddenRank', '障害高齢者の日常生活自立度（寝たきり度）', 'select', BF_BEDRIDDEN],
-  ['shortMemory', '短期記憶', 'select', BF_SHORT_MEMORY],
-  ['decisionAbility', '日常の意思決定', 'select', BF_DECISION],
-  ['communicateAbility', '意思の伝達', 'select', BF_TRANSMIT],
-  ['nightSleepMed', '睡眠薬（薬剤名）', 'text', null],
-  ['mealForm', '食事形態（主食・副食の形）', 'text', null],
-  ['mealStaple', '主食', 'text', null],
-  ['mealSide', '副食', 'text', null],
-  ['thickener', 'とろみ', 'text', null],
-  ['denture', '義歯', 'select', ['', '無し', '上のみ', '下のみ', '上下', '不明']],
-  ['mealNote', '食事の留意点（禁忌・ムセ込み等）', 'textarea', null],
-  ['allergy', 'アレルギー', 'text', null],
-  ['infections', '感染症', 'text', null],
+  /* ── 受付・相談者 ── */
+  ['receivedAt', '受付日時', 'text', null],
+  ['consulterName', 'ご相談者氏名', 'text', null],
+  ['consulterTel', 'ご相談者 電話番号', 'text', null],
+  /* ── ご本人・キーパーソン ── */
+  ['address', 'ご本人 ご住所', 'text', null],
+  ['kpName', 'キーパーソン 氏名', 'text', null],
+  ['kpGender', 'キーパーソン 性別', 'select', SH_GENDER],
+  ['kpRelation', 'キーパーソン 続柄', 'text', null],
+  ['kpTel', 'キーパーソン 電話番号', 'text', null],
+  ['kpAddress', 'キーパーソン ご住所', 'text', null],
+  /* ── 介護保険 ── */
+  ['certified', '要介護認定', 'select', SH_ARIMU],
+  ['servicesNote', '利用中の介護サービス等', 'textarea', null],
+  ['cmChange', '居宅・ケアマネの変更', 'select', SH_SURU],
+  ['cmChangeNote', '　変更先・備考', 'text', null],
+  /* ── 障害福祉・生活保護 ── */
+  ['disabilityKinds', '障害種類（身体・精神・知的）', 'text', null],
+  ['disabilityBook', '障害者手帳', 'select', SH_ARIMU],
+  ['welfare', '生活保護', 'select', SH_ARIMU],
+  ['welfareAmount', '　受給費（円）', 'text', null],
+  ['guarantor', '連帯保証人', 'select', SH_GUARANTOR],
+  /* ── 身体状況 ── */
+  ['pastHistory', '病歴', 'textarea', null],
+  ['impairment', '機能障害等', 'text', null],
+  ['height', '身長(cm)', 'text', null],
+  ['weight', '体重(kg)', 'text', null],
+  ['visitStatus', '通院状況', 'text', null],
+  ['medMgmtNeed', '服薬管理', 'select', SH_YOUHI],
+  ['bloodType', '血液型', 'text', null],
+  ['vision', '視力', 'select', SH_VISION],
+  ['hearing', '聴力', 'select', SH_HEARING],
+  ['walking', '歩行', 'select', SH_WALK],
+  ['denture', '義歯', 'select', SH_DENTURE],
+  ['bathLv', '入浴', 'select', SH_CARE3],
+  ['mealLv', '食事', 'select', SH_CARE3],
+  ['excreteLv', '排泄', 'select', SH_CARE3],
+  ['excreteDay', '排泄 日中', 'text', null],
+  ['excreteNight', '排泄 夜間', 'text', null],
+  ['excreteOther', '排泄 その他', 'text', null],
+  ['mealType', '食事形態', 'select', SH_MEALTYPE],
+  ['mealStaple', '　主食', 'text', null],
+  ['mealSide', '　副食', 'text', null],
+  ['mealOther', '　その他（食事形態）', 'text', null],
+  ['dementiaExists', '認知症', 'select', SH_ARIMU],
+  ['dementiaNote', '　認知症の内容', 'text', null],
+  ['commNotes', '意思疎通', 'text', null],
+  /* ── 医療 ── */
+  ['currentPlace', '現在の状況', 'select', SH_PLACE],
+  ['currentHospital', '　入院先の病院', 'text', null],
+  ['placeReason', '　理由', 'text', null],
+  ['doctorNow', '現主治医', 'text', null],
+  ['specialMeds', '特殊な薬', 'text', null],
+  ['diseasesNow', '治療中の病気', 'textarea', null],
+  ['doctorChange', '主治医変更', 'select', SH_SURU],
+  ['pharmacyContract', '薬局契約', 'select', SH_SURU],
+  ['allergyExists', 'アレルギー', 'select', ['', 'なし', 'あり'], null],
+  ['allergy', '　アレルギーの内容', 'text', null],
+  /* ── 消耗品（スプレッドシートでは非表示の行。画面には出すが印刷はしない） ── */
+  ['supplies', '消耗品', 'text', null],
+  ['beddingRental', '寝具リース', 'text', null],
+  ['diaperSize', 'オムツサイズ', 'text', null],
+  ['padSize', 'パッドサイズ', 'text', null],
+  /* ── 意向・結論 ── */
+  ['wishFamily', 'Fa：ご家族の意向', 'textarea', null],
+  ['wishSelf', 'S：ご本人の意向', 'textarea', null],
+  ['meetDate', '面談日', 'date', null],
+  ['urgent', '早急な対応', 'select', SH_YOUHI],
+  ['continueConsult', '継続相談', 'select', SH_SURU],
+  ['referOther', '他施設への紹介', 'select', SH_REFER],
+  /* ── 施設内で使う補助項目（紙には無いが、連携提示とマスタ転載に使う） ── */
   ['medicalCare', '医療的ケア（吸引・経管・インスリン等）', 'text', null],
-  ['pastHistory', '既往歴', 'textarea', null],
-  ['welfare', '生活保護', 'select', ['', '有', '無']],
+  ['infections', '感染症', 'text', null],
+  ['medsRegular', '定期薬（分かる範囲で）', 'textarea', null],
   ['careHints', '帰宅願望・妄想などの様子と対応のヒント', 'textarea', null],
   ['lifeHistory', '生活歴（入居前の生活状況）', 'textarea', null],
   ['personality', '人となり・性格', 'text', null],
   ['hobby', '趣味・楽しみ', 'text', null],
   ['foodPref', '食べ物の好き嫌い', 'text', null],
-  ['wishSelf', 'ご本人の意向', 'textarea', null],
-  ['wishFamily', 'ご家族の意向', 'textarea', null],
-  ['formNote', 'その他（様式の備考）', 'textarea', null]
+  ['formNote', 'その他の備考', 'textarea', null]
 ];
-/* 上のうち「マスタへ送る時にそのままのキーで渡すもの」。careHints も同名キーがマスタにある */
+/* 印刷しない項目（スプレッドシートで行が隠れているもの・2026-08-30 指示） */
+var SHEET_HIDDEN_KEYS = { supplies: 1, beddingRental: 1, diaperSize: 1, padSize: 1 };
 function assessTextKeys() { return ASSESS_TEXT.map(function (p) { return p[0]; }); }
 
 /* ── 連携の提示ルール ──
@@ -655,13 +769,16 @@ var NUDGE_RULES = [
   { id: 'pharmacy', title: '薬局が決まりました', why: '配薬先・一包化の可否を主治医と共有します',
     cats: ['hospital'], test: function (p, n) { return hasCat(n, 'pharmacy') && !hasCat(p, 'pharmacy'); } },
   { id: 'meal', title: '食事の情報が入りました', why: '食事形態・とろみ・アレルギー・禁忌を厨房へ伝えます',
-    cats: ['kitchen'], test: function (p, n) { return assessChanged(p, n, ['mealForm', 'mealStaple', 'mealSide', 'thickener', 'allergy', 'mealNote', 'denture']); } },
+    cats: ['kitchen'], test: function (p, n) { return assessChanged(p, n, ['mealType', 'mealStaple', 'mealSide', 'mealOther', 'thickener', 'allergy', 'allergyExists', 'mealNote', 'denture']); } },
   { id: 'adl', title: 'ADL・移動の情報が入りました', why: '居室の準備・見守り体制・福祉用具の手配に直結します',
-    cats: ['facility', 'equip'], test: function (p, n) { return assessObjChanged(p, n, ['adlGrid', 'moveAid', 'excreteWay', 'bathPlace']); } },
+    cats: ['facility', 'equip'], test: function (p, n) {
+      return assessChanged(p, n, ['walking', 'bathLv', 'mealLv', 'excreteLv', 'excreteDay', 'excreteNight']) ||
+        assessObjChanged(p, n, ['adlGrid', 'moveAid', 'excreteWay', 'bathPlace']);
+    } },
   { id: 'meds', title: '服薬の情報が入りました', why: '配薬の体制（自己管理／施設管理）と受け取り方法を決めます',
-    cats: ['facility', 'pharmacy'], test: function (p, n) { return assessChanged(p, n, ['medLevel', 'medExists', 'medsRegular', 'medicalCare']); } },
+    cats: ['facility', 'pharmacy'], test: function (p, n) { return assessChanged(p, n, ['medLevel', 'medExists', 'medsRegular', 'medicalCare', 'medMgmtNeed', 'specialMeds']); } },
   { id: 'bpsd', title: '認知症・BPSDの情報が入りました', why: '夜勤帯の見守りと、帰宅願望への対応方針を申し送ります',
-    cats: ['facility'], test: function (p, n) { return assessChanged(p, n, ['dementia', 'dementiaExists', 'careHints']) || assessObjChanged(p, n, ['bpsd', 'night']); } },
+    cats: ['facility'], test: function (p, n) { return assessChanged(p, n, ['dementia', 'dementiaExists', 'dementiaNote', 'careHints']) || assessObjChanged(p, n, ['bpsd', 'night']); } },
   { id: 'svcHome', title: '訪問介護の利用がありました', why: '訪問介護（いずみ）の計画作成と訪問時間の調整を始めます',
     cats: ['homecare'], test: function (p, n) { return svcOn(n, 'homeCare') && !svcOn(p, 'homeCare'); } },
   { id: 'svcDay', title: '通所介護の利用がありました', why: 'デイ（せせらぎ）の利用曜日・送迎の調整を始めます',
@@ -1502,6 +1619,7 @@ function renderView(c) {
     '<button class="btn sm" id="vBack" type="button">← 一覧</button><span class="sp"></span>' +
     (canUndo() ? '<button class="btn sm" id="vUndo" type="button">↩ 元に戻す</button>' : '') +
     '<button class="btn sm" id="vEdit" type="button">✏️ 編集</button>' +
+    '<button class="btn sm" id="vPrint" type="button">🖨 ご相談シートを印刷</button>' +
     (!c.deleted && c.stage !== 'lost' && c.stage !== 'movedin' ? '<button class="btn sm warn" id="vLost" type="button">見送りにする</button>' : '') +
     (!c.deleted && c.stage === 'lost' ? '<button class="btn sm" id="vRevive" type="button">進行中に戻す</button>' : '') +
     '</div>';
@@ -1692,6 +1810,7 @@ function bindViewEvents(c) {
   $('vBack').addEventListener('click', function () { showScreen('list'); renderList(); });
   $('vEdit').addEventListener('click', function () { openEdit(c.id); });
   if ($('vUndo')) $('vUndo').addEventListener('click', doUndo);
+  if ($('vPrint')) $('vPrint').addEventListener('click', function () { printSheet(c); });
   if ($('vLost')) $('vLost').addEventListener('click', function () {
     $('lostReason').value = ''; $('lostNote').value = ''; openModal('mk-lost');
   });
@@ -1804,12 +1923,16 @@ function assessViewHtml(c) {
     if (o.note) out.push('（' + o.note + '）');
     return out.join('・');
   }
-  var adl = asObj(a.adlGrid), adlTxt = [];
-  BF_ADL_ROWS.forEach(function (p) {
-    var v = adl[p[0]]; if (!v) return;
-    var lv = BF_LEVELS.filter(function (l) { return l[0] === v; })[0];
-    adlTxt.push(p[1] + '：' + (lv ? lv[1] : v));
+  /* ADL はご相談シートの3択を出す。様式（adlGrid）でしか入っていない口腔清潔だけ併記する */
+  var adlTxt = [];
+  [['walking', '歩行'], ['bathLv', '入浴'], ['mealLv', '食事'], ['excreteLv', '排泄']].forEach(function (p) {
+    if (asStr(a[p[0]])) adlTxt.push(p[1] + '：' + asStr(a[p[0]]));
   });
+  var oral = asObj(a.adlGrid).oral;
+  if (oral) {
+    var lv = BF_LEVELS.filter(function (l) { return l[0] === oral; })[0];
+    adlTxt.push('口腔清潔：' + (lv ? lv[1] : oral));
+  }
   row('ADL', adlTxt.join(' ／ '));
   row('移動の補助', pick(BF_MOVE_AID, a.moveAid));
   row('入浴（場所）', pick(BF_BATH_PLACE, a.bathPlace));
@@ -1977,80 +2100,112 @@ function fld(k, label, val, type, opts) {
       : '<input id="f-' + esc(k) + '" data-k="' + esc(k) + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">') +
     '</div>';
 }
-/* アセスメントの入力欄。キーと値域は入居者マスタの様式と1対1（勝手に増やさない） */
+/* ご相談シート（ラウレアハレ様式）の入力欄。
+   ★並び・選択肢は紙のとおり。聞きながらそのまま埋められるようにするため。
+     マスタ様式でしか持っていない項目（口腔清潔・BPSD・夜間・自立度など）は
+     下の「マスタ様式の追加項目（任意）」にまとめ、二重入力にならないようにしてある。 */
+function shFld(k, label, type, opts, val) {
+  var id = 'a-' + k;
+  if (type === 'select') {
+    return '<div class="fld"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
+      '<select id="' + esc(id) + '" data-ak="' + esc(k) + '">' +
+      (opts || []).map(function (o) {
+        return '<option value="' + esc(o) + '"' + (asStr(val) === o ? ' selected' : '') + '>' + esc(o === '' ? '—' : o) + '</option>';
+      }).join('') + '</select></div>';
+  }
+  if (type === 'textarea') {
+    return '<div class="fld wide"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
+      '<textarea id="' + esc(id) + '" data-ak="' + esc(k) + '">' + esc(val) + '</textarea></div>';
+  }
+  return '<div class="fld"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
+    '<input id="' + esc(id) + '" data-ak="' + esc(k) + '" type="' + (type === 'date' ? 'date' : 'text') + '" value="' + esc(val) + '"></div>';
+}
+/* 紙の見出しごとの区切り。[見出し, そこに入るキーの配列] */
+var SHEET_GROUPS = [
+  ['受付・ご相談者', ['receivedAt', 'consulterName', 'consulterTel']],
+  ['ご本人・キーパーソン', ['address', 'kpName', 'kpGender', 'kpRelation', 'kpTel', 'kpAddress']],
+  ['介護保険', ['certified', 'servicesNote', 'cmChange', 'cmChangeNote']],
+  ['障害福祉・生活保護', ['disabilityKinds', 'disabilityBook', 'welfare', 'welfareAmount', 'guarantor']],
+  ['身体状況', ['pastHistory', 'impairment', 'height', 'weight', 'visitStatus', 'medMgmtNeed', 'bloodType',
+    'vision', 'hearing', 'walking', 'denture',
+    'bathLv', 'mealLv', 'excreteLv', 'excreteDay', 'excreteNight', 'excreteOther',
+    'mealType', 'mealStaple', 'mealSide', 'mealOther', 'dementiaExists', 'dementiaNote', 'commNotes']],
+  ['医療', ['currentPlace', 'currentHospital', 'placeReason', 'doctorNow', 'specialMeds', 'diseasesNow',
+    'doctorChange', 'pharmacyContract', 'allergyExists', 'allergy']],
+  ['消耗品（紙には印刷されません）', ['supplies', 'beddingRental', 'diaperSize', 'padSize']],
+  ['ご意向・結論', ['wishFamily', 'wishSelf', 'meetDate', 'urgent', 'continueConsult', 'referOther']],
+  ['施設内の補足（紙には印刷されません）', ['medicalCare', 'infections', 'medsRegular', 'careHints',
+    'lifeHistory', 'personality', 'hobby', 'foodPref', 'formNote']]
+];
 function assessEditHtml(a) {
-  var h = '<div class="cd"><h3>入居前アセスメント（入居者マスタと同じ様式）</h3>' +
-    '<p class="note">ここで入れた内容は、入居決定時にそのまま入居者マスタへ転載されます（二重入力になりません）。分かる範囲で構いません。</p><div class="asx">';
-
-  h += '<h4>ADL（介助の程度）</h4>';
-  BF_ADL_ROWS.forEach(function (row) {
-    var v = asStr(asObj(a.adlGrid)[row[0]]);
-    h += '<div class="lvrow"><b>' + esc(row[1]) + '</b><span class="opts">' +
-      BF_LEVELS.map(function (l) {
-        return '<label><input type="radio" name="adl-' + esc(row[0]) + '" data-agrid="' + esc(row[0]) + '" value="' + esc(l[0]) + '"' +
-          (v === l[0] ? ' checked' : '') + '>' + esc(l[1]) + '</label>';
-      }).join('') +
-      '<label><input type="radio" name="adl-' + esc(row[0]) + '" data-agrid="' + esc(row[0]) + '" value=""' + (v ? '' : ' checked') + '>—</label>' +
-      '</span></div>';
+  var byKey = {};
+  ASSESS_TEXT.forEach(function (p) { byKey[p[0]] = p; });
+  var h = '<div class="cd"><h3>ご相談シート（申込後の聞き取り）</h3>' +
+    '<p class="note">紙の「ご相談シート」と同じ並び・同じ選択肢です。分かる範囲で構いません。' +
+    '入居決定時に入居者マスタへ転載され、詳細画面の「🖨 ご相談シートを印刷」でそのままの紙面で印刷できます。</p><div class="asx">';
+  SHEET_GROUPS.forEach(function (g) {
+    h += '<h4>' + esc(g[0]) + '</h4><div class="fgrid">';
+    g[1].forEach(function (k) {
+      var d = byKey[k]; if (!d) return;
+      h += shFld(k, d[1], d[2], d[3], asStr(a[k]));
+    });
+    h += '</div>';
   });
+  h += '</div></div>';
 
+  /* ── マスタ様式でしか持っていない項目（任意） ── */
+  h += '<details class="cd"><summary style="min-height:44px;font-size:0.9375rem;color:var(--g7)">' +
+    'マスタ様式の追加項目（任意・紙には印刷されません）</summary>' +
+    '<p class="note">入居者マスタの「入居者基本情報（様式）」にあって、ご相談シートには無い項目です。' +
+    '分かる範囲で入れておくと、入居後の様式が埋まった状態から始められます。</p><div class="asx">';
+  h += '<h4>口腔清潔（介助の程度）</h4><div class="fgrid">' +
+    '<div class="fld"><label for="a-oral">口腔清潔</label><select id="a-oral" data-agrid="oral">' +
+    ['<option value="">—</option>'].concat(BF_LEVELS.map(function (l) {
+      return '<option value="' + esc(l[0]) + '"' + (asObj(a.adlGrid).oral === l[0] ? ' selected' : '') + '>' + esc(l[1]) + '</option>';
+    })).join('') + '</select></div></div>';
   function chkGroup(title, key, defs) {
     var o = asObj(a[key]);
-    var s = '<h4>' + esc(title) + '</h4><div class="chkgrid">' +
-      defs.map(function (p) {
-        return '<label class="chk"><input type="checkbox" data-aobj="' + esc(key) + '.' + esc(p[0]) + '"' + (o[p[0]] ? ' checked' : '') + '>' + esc(p[1]) + '</label>';
+    return '<h4>' + esc(title) + '</h4><div class="chkgrid">' +
+      defs.map(function (pp) {
+        return '<label class="chk"><input type="checkbox" data-aobj="' + esc(key) + '.' + esc(pp[0]) + '"' + (o[pp[0]] ? ' checked' : '') + '>' + esc(pp[1]) + '</label>';
       }).join('') + '</div>' +
       '<div class="fld"><label for="an-' + esc(key) + '">補足</label><input id="an-' + esc(key) + '" data-anote="' + esc(key) + '" value="' + esc(o.note || '') + '"></div>';
-    return s;
   }
-  h += chkGroup('移動の補助', 'moveAid', BF_MOVE_AID);
-  h += chkGroup('入浴（場所）', 'bathPlace', BF_BATH_PLACE);
+  h += chkGroup('移動の補助（具体）', 'moveAid', BF_MOVE_AID);
+  h += chkGroup('入浴の場所', 'bathPlace', BF_BATH_PLACE);
   h += chkGroup('排泄の方法', 'excreteWay', BF_EXCRETE_WAY);
-  h += chkGroup('BPSD（帰宅願望・妄想など）', 'bpsd', BF_BPSD);
+  h += chkGroup('BPSD', 'bpsd', BF_BPSD);
   h += chkGroup('夜間の様子', 'night', BF_NIGHT);
-
+  h += '<h4>認知・その他</h4><div class="fgrid">' +
+    shFld('nightSleepMed', '睡眠薬（薬剤名）', 'text', null, asStr(a.nightSleepMed)) +
+    shFld('dementia', '認知症高齢者の日常生活自立度', 'select', BF_DEMENTIA_RANKS, asStr(a.dementia)) +
+    shFld('bedriddenRank', '障害高齢者の日常生活自立度', 'select', BF_BEDRIDDEN, asStr(a.bedriddenRank)) +
+    shFld('shortMemory', '短期記憶', 'select', BF_SHORT_MEMORY, asStr(a.shortMemory)) +
+    shFld('decisionAbility', '日常の意思決定', 'select', BF_DECISION, asStr(a.decisionAbility)) +
+    shFld('communicateAbility', '意思の伝達', 'select', BF_TRANSMIT, asStr(a.communicateAbility)) +
+    shFld('commLevel', '意思疎通（様式の区分）', 'select', BF_COMM_LEVEL, asStr(a.commLevel)) +
+    shFld('medLevel', '服薬（介助の程度）', 'select', BF_LEVELS.map(function (l) { return l[0]; }), asStr(a.medLevel)) +
+    shFld('thickener', 'とろみ', 'text', null, asStr(a.thickener)) +
+    shFld('mealNote', '食事の留意点', 'textarea', null, asStr(a.mealNote)) +
+    '</div>';
   h += '<h4>入居前に利用していたサービス</h4>';
-  BF_SERVICES.forEach(function (p) {
-    var s = asObj(asObj(a.services)[p[0]]);
+  BF_SERVICES.forEach(function (pp) {
+    var sv = asObj(asObj(a.services)[pp[0]]);
     h += '<div class="frow" style="margin-bottom:4px"><label class="chk" style="min-width:11em">' +
-      '<input type="checkbox" data-asvc="' + esc(p[0]) + '.on"' + (s.on ? ' checked' : '') + '>' + esc(p[1]) + '</label>' +
-      '<div class="fld" style="flex:2"><input data-asvc="' + esc(p[0]) + '.name" placeholder="事業所名" value="' + esc(s.name || '') + '"></div></div>';
+      '<input type="checkbox" data-asvc="' + esc(pp[0]) + '.on"' + (sv.on ? ' checked' : '') + '>' + esc(pp[1]) + '</label>' +
+      '<div class="fld" style="flex:2"><input data-asvc="' + esc(pp[0]) + '.name" placeholder="事業所名" value="' + esc(sv.name || '') + '"></div></div>';
   });
-
-  h += '<h4>病名（治療中の病気）</h4>';
+  h += '<h4>病名（様式の表）</h4>';
   var dis = asArr(a.diseases);
-  for (var i = 0; i < BF_MAX_DISEASES; i++) {
-    var d = asObj(dis[i]);
-    if (i >= 3 && !d.name && !d.onset && !d.hospital) continue;   /* 空行は3行まで出す */
+  for (var i2 = 0; i2 < BF_MAX_DISEASES; i2++) {
+    var d2 = asObj(dis[i2]);
+    if (i2 >= 3 && !d2.name && !d2.onset && !d2.hospital) continue;
     h += '<div class="frow" style="margin-bottom:4px">' +
-      '<div class="fld" style="flex:2"><input data-adis="' + i + '.name" placeholder="病名" value="' + esc(d.name || '') + '"></div>' +
-      '<div class="fld"><input data-adis="' + i + '.onset" placeholder="発症時期" value="' + esc(d.onset || '') + '"></div>' +
-      '<div class="fld" style="flex:2"><input data-adis="' + i + '.hospital" placeholder="医療機関" value="' + esc(d.hospital || '') + '"></div></div>';
+      '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.name" placeholder="病名" value="' + esc(d2.name || '') + '"></div>' +
+      '<div class="fld"><input data-adis="' + i2 + '.onset" placeholder="発症時期" value="' + esc(d2.onset || '') + '"></div>' +
+      '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.hospital" placeholder="医療機関" value="' + esc(d2.hospital || '') + '"></div></div>';
   }
-
-  h += '<h4>その他の項目</h4><div class="fgrid">';
-  ASSESS_TEXT.forEach(function (p) {
-    var k = p[0], label = p[1], type = p[2], opts = p[3];
-    var v = asStr(a[k]);
-    if (type === 'select') {
-      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label><select id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' +
-        (opts || []).map(function (o) {
-          return '<option value="' + esc(o) + '"' + (v === o ? ' selected' : '') + '>' + esc(o === '' ? '—' : o) + '</option>';
-        }).join('') + '</select></div>';
-    } else if (type === 'lv') {
-      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label><select id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' +
-        ['<option value="">—</option>'].concat(BF_LEVELS.map(function (l) {
-          return '<option value="' + esc(l[0]) + '"' + (v === l[0] ? ' selected' : '') + '>' + esc(l[1]) + '</option>';
-        })).join('') + '</select></div>';
-    } else if (type === 'textarea') {
-      h += '<div class="fld wide"><label for="a-' + esc(k) + '">' + esc(label) + '</label>' +
-        '<textarea id="a-' + esc(k) + '" data-ak="' + esc(k) + '">' + esc(v) + '</textarea></div>';
-    } else {
-      h += '<div class="fld"><label for="a-' + esc(k) + '">' + esc(label) + '</label>' +
-        '<input id="a-' + esc(k) + '" data-ak="' + esc(k) + '" value="' + esc(v) + '"></div>';
-    }
-  });
-  h += '</div></div></div>';
+  h += '</div></details>';
   return h;
 }
 function renderEdit() {
@@ -2201,12 +2356,15 @@ function collectEditInputs() {
   Array.prototype.forEach.call(box.querySelectorAll('[data-ak]'), function (inp) {
     a[inp.getAttribute('data-ak')] = inp.value.trim();
   });
-  var grid = {};
+  /* ★adlGrid は画面に出ている項目（口腔清潔）だけを書き換える。
+     入浴・食事・排泄・移動はご相談シート側が正で、マスタへ送る時に変換する。
+     ここで丸ごと置き換えると、様式から入れた既存の値を消してしまう。 */
+  if (!isObj(a.adlGrid)) a.adlGrid = {};
   Array.prototype.forEach.call(box.querySelectorAll('[data-agrid]'), function (inp) {
-    if (!inp.checked) return;
-    if (inp.value) grid[inp.getAttribute('data-agrid')] = inp.value;
+    var key = inp.getAttribute('data-agrid');
+    if (inp.tagName === 'INPUT' && inp.type === 'radio' && !inp.checked) return;
+    if (inp.value) a.adlGrid[key] = inp.value; else delete a.adlGrid[key];
   });
-  a.adlGrid = grid;
   ['moveAid', 'bathPlace', 'excreteWay', 'bpsd', 'night'].forEach(function (key) { a[key] = {}; });
   Array.prototype.forEach.call(box.querySelectorAll('[data-aobj]'), function (inp) {
     var parts = inp.getAttribute('data-aobj').split('.');
@@ -2330,11 +2488,76 @@ var PLAIN_ASSESS_KEYS = ['dementia', 'bedriddenRank', 'welfare',
   'mealStaple', 'mealSide', 'mealForm', 'thickener', 'denture', 'mealNote',
   'allergy', 'infections', 'medicalCare', 'pastHistory', 'medsRegular',
   'careHints', 'lifeHistory', 'personality', 'hobby', 'foodPref',
-  'wishSelf', 'wishFamily'];
+  'wishSelf', 'wishFamily',
+  /* 2026-08-30 追加（ご相談シートの項目。いずれもマスタの許可キー） */
+  'height', 'weight', 'bloodType', 'vision', 'hearing', 'commNotes'];
+/* 歩行（1.自立 / 2.補助具 / 3.不可）→ 様式の移動方法（self / part / full）。
+   ★「補助具」は自立でも全介助でもないので一部介助へ寄せる。元の記載は formNote に残す */
+function walkToMasterLevel_(v) {
+  var t = String(v || '');
+  if (t.indexOf('自立') >= 0) return 'self';
+  if (t.indexOf('補助具') >= 0) return 'part';
+  if (t.indexOf('不可') >= 0) return 'full';
+  return '';
+}
+/* 食事形態: 紙の「1.普通食 / 2.介護食（主:  副: ） / 3.他（  ）」を1行の文字列にする */
+function mealFormText_(a) {
+  var t = asStr(a.mealType);
+  if (!t) return '';
+  if (t.indexOf('普通食') >= 0) return '普通食';
+  if (t.indexOf('介護食') >= 0) {
+    var pt = [];
+    if (asStr(a.mealStaple)) pt.push('主: ' + asStr(a.mealStaple));
+    if (asStr(a.mealSide)) pt.push('副: ' + asStr(a.mealSide));
+    return '介護食' + (pt.length ? '（' + pt.join(' ') + '）' : '');
+  }
+  return asStr(a.mealOther) ? ('その他: ' + asStr(a.mealOther)) : 'その他';
+}
 /* ★絶対に送ってはいけない旧キー（送るとマスタの様式チェックが自動推定を始める）。
    この配列は「送らないことの宣言」であり、参照はテストが行う。 */
 var MASTER_FORBIDDEN_KEYS = ['mobility', 'excretion', 'bath', 'medMgmt', 'medAssist', 'problemBehavior', 'currentDiseases'];
 
+/* ご相談シート → マスタ様式。元の assess は書き換えず、送信用の写しを作って返す */
+function sheetToMasterAssess_(src) {
+  var a = {}, k;
+  for (k in src) if (Object.prototype.hasOwnProperty.call(src, k)) a[k] = src[k];
+  /* ADL（様式の5行）。紙にある4つを変換し、口腔清潔は様式側の入力をそのまま使う */
+  var grid = {};
+  var cur = asObj(a.adlGrid);
+  if (cur.oral) grid.oral = cur.oral;
+  var mv = walkToMasterLevel_(a.walking); if (mv) grid.move = mv; else if (cur.move) grid.move = cur.move;
+  var ml = toMasterLevel_(a.mealLv); if (ml) grid.meal = ml; else if (cur.meal) grid.meal = cur.meal;
+  var bl = toMasterLevel_(a.bathLv); if (bl) grid.bath = bl; else if (cur.bath) grid.bath = cur.bath;
+  var el = toMasterLevel_(a.excreteLv); if (el) grid.excrete = el; else if (cur.excrete) grid.excrete = cur.excrete;
+  if (Object.keys(grid).length) a.adlGrid = grid; else delete a.adlGrid;
+  /* 食事形態 */
+  var mf = mealFormText_(a); if (mf) a.mealForm = mf;
+  /* 服薬の有無（紙は「服薬管理 必要・不要」しか持たない） */
+  if (!asStr(a.medExists)) {
+    if (asStr(a.medsRegular) || asStr(a.medMgmtNeed) === '必要') a.medExists = '有';
+    else if (asStr(a.medMgmtNeed) === '不要') a.medExists = '無';
+  }
+  /* アレルギー: 「なし」を選んだ時は空にせず「なし」と書く（未入力と区別する） */
+  if (asStr(a.allergyExists) === 'なし' && !asStr(a.allergy)) a.allergy = 'なし';
+  /* 障害福祉 */
+  var db = [];
+  if (asStr(a.disabilityKinds)) db.push(asStr(a.disabilityKinds));
+  if (asStr(a.disabilityBook)) db.push('手帳' + asStr(a.disabilityBook));
+  if (db.length) a.disabilityCert = db.join('／');
+  /* 特殊な薬はハイリスク薬へ */
+  if (asStr(a.specialMeds)) a.highRiskMeds = asStr(a.specialMeds);
+  /* 紙の粒度で失われる情報を、様式の備考へ残す（人が後から直せるように） */
+  var fn = [];
+  if (asStr(a.formNote)) fn.push(asStr(a.formNote));
+  if (asStr(a.walking)) fn.push('歩行（相談シート）: ' + asStr(a.walking));
+  [['bathLv', '入浴'], ['mealLv', '食事'], ['excreteLv', '排泄']].forEach(function (pp) {
+    if (asStr(a[pp[0]])) fn.push(pp[1] + '（相談シート）: ' + asStr(a[pp[0]]));
+  });
+  if (asStr(a.dementiaNote)) fn.push('認知症: ' + asStr(a.dementiaNote));
+  if (asStr(a.mealOther)) fn.push('食事形態その他: ' + asStr(a.mealOther));
+  if (fn.length) a.formNote = fn.join('\n');
+  return a;
+}
 function notEmptyVal(v) {
   if (v === '' || v === null || v === undefined) return false;
   if (Array.isArray(v)) return v.length > 0;
@@ -2368,8 +2591,12 @@ function buildMasterRecord(c, admissionDate) {
       return { name: f.name || '', relation: f.relation || '', role: '', address: '', phone: f.phone || '', emergency: !!f.emergency };
     });
   }
-  /* ── 入居前アセスメント（様式そのまま） ── */
+  /* ── 入居前アセスメント ──
+     ご相談シートの値を、入居者マスタの様式（ALLOWED_KEYS の範囲）へ変換して渡す。
+     ★紙が持っていない粒度（一部介助か全介助か等）は勝手に決めず、
+       変換したことと元の記載を formNote／preAdmission に残す。 */
   var a = asObj(c.assess), anyForm = false;
+  a = sheetToMasterAssess_(a);
   BF_FORM_KEYS.forEach(function (k) {
     var v = a[k];
     if (!notEmptyVal(v)) return;
@@ -2384,6 +2611,26 @@ function buildMasterRecord(c, admissionDate) {
   /* 入居前の経緯（マスタの「入居までの経過」欄へ）。連絡記録の全文は移さない＝台帳側に残す */
   var lines = [];
   if (c.source) lines.push('経路: ' + c.source + (c.sourceDetail ? '（' + c.sourceDetail + '）' : ''));
+  /* ご相談シートにあって、入居者マスタに対応する欄が無い項目。文章にして経過欄へ残す
+     （捨てると聞き取った内容が入居後に辿れなくなる） */
+  var sh = asObj(c.assess);
+  [['receivedAt', '受付日時'], ['consulterName', 'ご相談者'], ['consulterTel', 'ご相談者電話'],
+   ['address', 'ご本人住所'], ['kpName', 'キーパーソン'], ['kpRelation', 'キーパーソン続柄'],
+   ['kpTel', 'キーパーソン電話'], ['kpAddress', 'キーパーソン住所'],
+   ['certified', '要介護認定'], ['servicesNote', '利用中の介護サービス等'],
+   ['cmChange', 'ケアマネ変更'], ['cmChangeNote', 'ケアマネ変更の備考'],
+   ['welfareAmount', '生活保護受給費'], ['guarantor', '連帯保証人'],
+   ['impairment', '機能障害等'], ['visitStatus', '通院状況'], ['medMgmtNeed', '服薬管理'],
+   ['excreteDay', '排泄(日中)'], ['excreteNight', '排泄(夜間)'], ['excreteOther', '排泄(その他)'],
+   ['currentPlace', '現在の状況'], ['currentHospital', '入院先'], ['placeReason', '理由'],
+   ['doctorNow', '現主治医'], ['doctorChange', '主治医変更'], ['pharmacyContract', '薬局契約'],
+   ['diseasesNow', '治療中の病気'],
+   ['supplies', '消耗品'], ['beddingRental', '寝具リース'], ['diaperSize', 'オムツサイズ'], ['padSize', 'パッドサイズ'],
+   ['meetDate', '面談日'], ['urgent', '早急な対応'], ['continueConsult', '継続相談'], ['referOther', '他施設への紹介']
+  ].forEach(function (pp) {
+    var v = asStr(sh[pp[0]]);
+    if (v) lines.push(pp[1] + ': ' + v);
+  });
   STAGES.forEach(function (s) { if (c.stageDates[s[0]]) lines.push(s[1] + ': ' + c.stageDates[s[0]]); });
   if (c.note) lines.push('メモ: ' + c.note);
   var undone = (c.tasks || []).filter(function (t) { return t.st !== 'done'; });
@@ -2555,6 +2802,143 @@ function verifyMaster(c) {
   }).catch(function (e) {
     toast('確認できませんでした: ' + (e && e.message || e));
   });
+}
+
+/* ═══════════ ご相談シートの印刷（ラウレアハレ様式の再現） ═══════════
+   紙面（スプレッドシート「相談シート」）と同じ並び・同じ選択肢・同じ罫線で組み立てる。
+   ★選択式は「全部の選択肢を出し、選んだものに○を付ける」＝紙に手で丸を付けた状態と同じ見え方。
+   ★スプレッドシートで行が隠れている項目（消耗品・寝具リース・オムツ／パッドサイズ）は
+     紙に出ないので、ここでも出さない（SHEET_HIDDEN_KEYS）。 */
+function psEsc(v) { return esc(asStr(v)); }
+/* 選択肢を並べ、選ばれたものに○を付ける。値は「1.自立」のように番号付きでも一致させる */
+function psOpts(val, opts) {
+  var v = asStr(val);
+  return opts.map(function (o) {
+    var hit = v && (v === o || v.indexOf(o) >= 0 || o.indexOf(v) >= 0);
+    return '<span class="opt' + (hit ? ' on' : '') + '">' + esc(o) + '</span>';
+  }).join(' ・ ');
+}
+function psCell(label, val, cls) { return '<td class="' + (cls || 'val') + '">' + psEsc(val) + '</td>'; }
+function renderPrintSheet(c) {
+  var a = asObj(c.assess);
+  var km = (c.family || [])[0] || {};
+  function ct(cat) { return firstContact(c, cat) || {}; }
+  var cm = ct('caremgr'), hp = ct('hospital'), eq = ct('equip');
+  var h = '';
+  h += '<table><colgroup>' +
+    '<col style="width:3%"><col style="width:9%"><col style="width:10%"><col style="width:10%">' +
+    '<col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%">' +
+    '<col style="width:9%"><col style="width:9%"><col style="width:10%">' +
+    '</colgroup>';
+
+  /* ── 見出し（紙と同じく罫線の中に置く） ── */
+  h += '<tr><td class="lb lb-l" colspan="6" style="border:none;padding:2px 0"><span class="ps-title">【ラウレアハレ　ご相談シート】</span></td>' +
+    '<td class="lb">受付日時 :</td><td class="val" colspan="4">' + psEsc(a.receivedAt) + '</td></tr>';
+  h += '<tr><td colspan="7" style="border:none"></td>' +
+    '<td class="pd" colspan="4" style="border:none;text-align:right">印刷日 : ' + psEsc(todayYmd().replace(/-/g, '/')) + '</td></tr>';
+
+  /* ── 相談者・本人・キーパーソン ── */
+  h += '<tr><td class="lb" colspan="2">ご相談者氏名</td>' + '<td class="val" colspan="4">' + psEsc(a.consulterName) + '</td>' +
+    '<td class="lb">電話番号</td><td class="val" colspan="4">' + psEsc(a.consulterTel) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="2" rowspan="2">ご本人氏名</td><td class="val" colspan="3" rowspan="2">' + psEsc(c.name) +
+    (c.kana ? '<br><span style="font-size:6.6pt">' + psEsc(c.kana) + '</span>' : '') + '</td>' +
+    '<td class="lb" rowspan="2">' + psOpts(c.gender, ['男', '女']) + '</td>' +
+    '<td class="lb">生年月日</td><td class="val" colspan="4">' + psEsc(c.birthDate) + '</td></tr>';
+  h += '<tr><td class="lb">ご住所</td><td class="val" colspan="4">' + psEsc(a.address) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="2" rowspan="2">キーパーソン</td><td class="val" colspan="3">' + psEsc(a.kpName || km.name) + '</td>' +
+    '<td class="lb">' + psOpts(a.kpGender, ['男', '女']) + '</td>' +
+    '<td class="lb">電話番号</td><td class="val" colspan="4">' + psEsc(a.kpTel || km.phone) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="3">続柄（' + psEsc(a.kpRelation || km.relation) + '）</td>' +
+    '<td class="lb">ご住所</td><td class="val" colspan="4">' + psEsc(a.kpAddress) + '</td></tr>';
+
+  /* ── 介護・福祉サービス等 ── */
+  h += '<tr><td class="vr" rowspan="8">介護・福祉サービス等</td><td class="lb" rowspan="6">介護保険</td>' +
+    '<td class="lb">要介護認定</td><td class="lb-l lb">' + psOpts(a.certified, ['有', '無']) + '</td>' +
+    '<td class="lb">介護度</td><td class="val">' + psEsc(c.careLevel) + '</td>' +
+    '<td class="lb">認定期間</td><td class="val" colspan="4">' + psEsc(c.careCertStart) + ' 〜 ' + psEsc(c.careCertEnd) + '</td></tr>';
+  h += '<tr><td class="lb lb-l" colspan="9">利用中の介護サービス等</td></tr>';
+  h += '<tr><td class="val tall" colspan="9" style="vertical-align:top">' + psEsc(a.servicesNote) + '</td></tr>';
+  h += '<tr><td class="lb">病院・相談員</td><td class="val" colspan="3">' + psEsc(hp.org) + (hp.person ? '　' + psEsc(hp.person) : '') + '</td>' +
+    '<td class="lb">連絡先</td><td class="val" colspan="4">' + psEsc(hp.tel) + '</td></tr>';
+  h += '<tr><td class="lb">居宅・ケアマネ</td><td class="val" colspan="3">' + psEsc(cm.org) + (cm.person ? '　' + psEsc(cm.person) : '') + '</td>' +
+    '<td class="lb">変更</td><td class="lb lb-l" colspan="4">' + psOpts(a.cmChange, ['する', 'しない']) +
+    '（' + psEsc(a.cmChangeNote) + '）</td></tr>';
+  h += '<tr><td class="lb">福祉用具貸与</td><td class="val" colspan="3">' + psEsc(eq.org) + '</td>' +
+    '<td class="lb">連絡先</td><td class="val" colspan="4">' + psEsc(eq.tel) + '</td></tr>';
+  h += '<tr><td class="lb">障害福祉</td><td class="lb">障害種類</td><td class="lb lb-l" colspan="3">' +
+    psOpts(a.disabilityKinds, ['身体', '精神', '知的']) + '</td>' +
+    '<td class="lb">手帳</td><td class="lb lb-l" colspan="3">' + psOpts(a.disabilityBook, ['有', '無']) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="2">生活保護</td><td class="lb">' + psOpts(a.welfare, ['有', '無']) + '</td>' +
+    '<td class="lb">受給費</td><td class="val">' + psEsc(a.welfareAmount) + ' 円</td>' +
+    '<td class="lb">連帯保証人</td><td class="lb lb-l" colspan="4">' + psOpts(a.guarantor, ['2名', '1名', 'いない']) + '</td></tr>';
+
+  /* ── 身体状況 ── */
+  h += '<tr><td class="vr" rowspan="13">身　体　状　況</td><td class="lb">病歴</td><td class="val" colspan="9">' + psEsc(a.pastHistory) + '</td></tr>';
+  h += '<tr><td class="lb">機能障害等</td><td class="val" colspan="5">' + psEsc(a.impairment) + '</td>' +
+    '<td class="lb">身長・体重</td><td class="val" colspan="3">' + psEsc(a.height) + ' cm　' + psEsc(a.weight) + ' kg</td></tr>';
+  h += '<tr><td class="lb">通院状況</td><td class="val" colspan="5">' + psEsc(a.visitStatus) + '</td>' +
+    '<td class="lb">服薬管理</td><td class="lb lb-l" colspan="3">' + psOpts(a.medMgmtNeed, ['必要', '不要']) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="3">視力</td><td class="lb" colspan="3">聴力</td><td class="lb" colspan="2">歩行</td>' +
+    '<td class="lb lb-l" colspan="2" rowspan="4" style="vertical-align:top">【備考】<br>義歯：' + psEsc(a.denture) + '</td></tr>';
+  var vis = ['1.支障なし', '2.眼鏡', '3.支障あり'], hea = ['1.支障なし', '2.補聴器', '3.支障あり'], wal = ['1.自立', '2.補助具', '3.不可'];
+  for (var i = 0; i < 3; i++) {
+    h += '<tr><td class="lb lb-l" colspan="3">' + psOpts(a.vision, [vis[i]]) + '</td>' +
+      '<td class="lb lb-l" colspan="3">' + psOpts(a.hearing, [hea[i]]) + '</td>' +
+      '<td class="lb lb-l" colspan="2">' + psOpts(a.walking, [wal[i]]) + '</td></tr>';
+  }
+  h += '<tr><td class="lb" colspan="3">入浴</td><td class="lb" colspan="3">食事</td><td class="lb" colspan="2">排泄</td><td class="lb" colspan="2"></td></tr>';
+  var care3 = ['1.自立', '2.見守り', '3.介助'], subs = [['日中', a.excreteDay], ['夜間', a.excreteNight], ['その他', a.excreteOther]];
+  for (var k = 0; k < 3; k++) {
+    h += '<tr><td class="lb lb-l" colspan="3">' + psOpts(a.bathLv, [care3[k]]) + '</td>' +
+      '<td class="lb lb-l" colspan="3">' + psOpts(a.mealLv, [care3[k]]) + '</td>' +
+      '<td class="lb lb-l" colspan="2">' + psOpts(a.excreteLv, [care3[k]]) + '</td>' +
+      '<td class="lb">' + esc(subs[k][0]) + '</td><td class="val">' + psEsc(subs[k][1]) + '</td></tr>';
+  }
+  h += '<tr><td class="lb">食事形態</td><td class="lb lb-l" colspan="9">' +
+    psOpts(a.mealType, ['1.普通食']) + '　' + psOpts(a.mealType, ['2.介護食']) +
+    '（主: ' + psEsc(a.mealStaple) + '　副: ' + psEsc(a.mealSide) + '）　' +
+    psOpts(a.mealType, ['3.他']) + '（' + psEsc(a.mealOther) + '）</td></tr>';
+  h += '<tr><td class="lb">認知症</td><td class="lb lb-l" colspan="5">' +
+    psOpts(a.dementiaExists, ['有']) + '（' + psEsc(a.dementiaNote) + '）・' + psOpts(a.dementiaExists, ['無']) + '</td>' +
+    '<td class="lb">意思疎通</td><td class="val" colspan="3">' + psEsc(a.commNotes) + '</td></tr>';
+
+  /* ── 医療 ── */
+  h += '<tr><td class="vr" rowspan="4">医療</td><td class="lb">現在の状況</td><td class="lb lb-l" colspan="5">' +
+    psOpts(a.currentPlace, ['自宅']) + '・' + psOpts(a.currentPlace, ['入院中']) + '（病院: ' + psEsc(a.currentHospital) + '）</td>' +
+    '<td class="lb">理由</td><td class="val" colspan="3">' + psEsc(a.placeReason) + '</td></tr>';
+  h += '<tr><td class="lb">現主治医</td><td class="val" colspan="3">' + psEsc(a.doctorNow || hp.person) + '</td>' +
+    '<td class="lb">特殊な薬</td><td class="val" colspan="2">' + psEsc(a.specialMeds) + '</td>' +
+    '<td class="lb">主治医変更</td><td class="lb lb-l" colspan="2">' + psOpts(a.doctorChange, ['する', 'しない']) + '</td></tr>';
+  h += '<tr><td class="lb">治療中の病気</td><td class="val" colspan="6">' + psEsc(a.diseasesNow) + '</td>' +
+    '<td class="lb">薬局契約</td><td class="lb lb-l" colspan="2">' + psOpts(a.pharmacyContract, ['する', 'しない']) + '</td></tr>';
+  h += '<tr><td class="lb">アレルギー</td><td class="lb lb-l" colspan="6">' +
+    psOpts(a.allergyExists, ['なし']) + '・' + psOpts(a.allergyExists, ['あり']) + '（' + psEsc(a.allergy) + '）</td>' +
+    '<td class="lb">血液型</td><td class="val" colspan="2">' + psEsc(a.bloodType) + ' 型</td></tr>';
+
+  /* ── 備考・意向・結論 ── */
+  h += '<tr><td class="vr">備考</td><td class="memo" colspan="10"><div>' + psEsc(c.note) + '</div></td></tr>';
+  h += '<tr><td class="lb"></td><td class="lb">Fa :</td><td class="val" colspan="4">' + psEsc(a.wishFamily) + '</td>' +
+    '<td class="lb">S :</td><td class="val" colspan="4">' + psEsc(a.wishSelf) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="2">見学日</td><td class="val" colspan="2">' + psEsc(c.stageDates.tour) + '</td>' +
+    '<td class="lb">面談日</td><td class="val" colspan="2">' + psEsc(a.meetDate) + '</td>' +
+    '<td class="lb">入居日</td><td class="val" colspan="3">' + psEsc(c.stageDates.movedin || c.desiredDate) + '</td></tr>';
+  h += '<tr><td class="lb" colspan="2">早急な対応</td><td class="lb lb-l" colspan="2">' + psOpts(a.urgent, ['必要', '不要']) + '</td>' +
+    '<td class="lb">継続相談</td><td class="lb lb-l" colspan="2">' + psOpts(a.continueConsult, ['する', 'しない']) + '</td>' +
+    '<td class="lb">他施設への紹介</td><td class="lb lb-l" colspan="3">' + psOpts(a.referOther, ['希望する', '希望しない']) + '</td></tr>';
+  h += '</table>';
+  return h;
+}
+/* 印刷を実行する。印刷面だけを表示し、終わったら必ず元へ戻す（画面が壊れたままにならないように） */
+function printSheet(c) {
+  var box = $('printSheet');
+  box.innerHTML = renderPrintSheet(c);
+  box.classList.add('on');
+  var restore = function () { box.classList.remove('on'); box.innerHTML = ''; };
+  if (window.onafterprint !== undefined) {
+    var once = function () { restore(); window.removeEventListener('afterprint', once); };
+    window.addEventListener('afterprint', once);
+  }
+  setTimeout(function () { window.print(); setTimeout(restore, 1500); }, 60);
 }
 
 /* ═══════════ KPI ═══════════ */
