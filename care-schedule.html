@@ -2981,6 +2981,9 @@ const SYNC = {
   _pollTimer: null,
   _busy: false,
   _dirty:  false,   // ローカルに未プッシュの変更があるか
+  /* 編集を始めた時点の版数。push はこの値を送る（markDirty で固定・clearDirty/adopt で解除）。
+     null は「固定していない」＝送信時の現在値を使う（従来動作）。 */
+  _baseRev: null,
   _remoteTs: 0,    // 最後にチェックしたリモートのタイムスタンプ
   _rejectedRev: -1, // 上書き保護で採用拒否したサンプルrev（同revの再ログ/再pushを抑止）
 
@@ -3022,11 +3025,20 @@ const SYNC = {
      （競合リベース直後に push が失敗するとフラグが消え、次回起動の無条件採用で編集が消えるため）。 */
   markDirty() {
     if (SIM_ON) return;   /* 未送信フラグを立てない（立てると離脱時 beacon と次回起動の再送対象になる） */
+    /* ★編集を始めた時点の版数を固定する（2026-08-30 レビュー指摘・中-1の対策）。
+       版数キー ws_sync_revs.care はワースケと共有で、あちらが書き込むと進む。送信時に
+       読み直すと「自分が編集を始めた後にワースケが進めた版」を名乗ることになり、
+       サーバーが競合と判定できずワースケの変更（支援内容・区分・入院・昼食薬）を
+       無音で上書きする。ワースケの差分ジャーナルは push 成功時に消えるため自己修復も
+       効かない。ここで固定しておけばサーバーが conflict を返し、既存の csRebaseEdits
+       （和集合・入浴の和）が働いて「消える」ではなく「両方残る」側へ倒れる。 */
+    if (!this._dirty) this._baseRev = this.loadCareRev();
     this._dirty = true;
     try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e) {}
   },
   clearDirty() {
     this._dirty = false;
+    this._baseRev = null;   // 送信済み＝次の編集で取り直す
     try { localStorage.removeItem(CS_DIRTY_KEY); } catch(e) {}
   },
   hasPersistedDirty() {
@@ -3171,6 +3183,9 @@ const SYNC = {
     this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
     this.config.lastSync = Date.now();
     this._dirty = false;   // メモリのみ解除。永続フラグ(CS_DIRTY_KEY)は push成功/起動時一致でのみ解除
+    /* 土台がサーバー版に変わった＝固定していた版数はもう基準にならない。null に戻すことで、
+       競合解消の直後の再 push は「採用したサーバー版の版数」で送る（無限競合を作らない）。 */
+    this._baseRev = null;
     this.save();
     recalcAllEventUnits();
     try { mergeCommonSchedule(); } catch(e) {}
@@ -3297,8 +3312,11 @@ const SYNC = {
     this.updateStatusUI('保存中…');
     try {
       ensureServiceDict_();   // payload 構築前に辞書を自己修復（競合リベースで server 丸取りした後の再push でも辞書を復元）
+      /* 版数は「編集を始めた時点」の固定値を送る（中-1）。固定が無い時（未編集の再送・
+         前セッションから引き継いだ未送信）だけ現在値へ倒す＝従来と同じ挙動。 */
+      const baseRev = (this._baseRev != null) ? this._baseRev : this.loadCareRev();
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
-                                 rev: this.loadCareRev(), data: DB, force: !!force });
+                                 rev: baseRev, data: DB, force: !!force });
       if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
         this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
@@ -7349,7 +7367,7 @@ function csFlushOnExit_() {
     try {
       const t = SYNC.target();
       const payload = JSON.stringify({ action: 'put', key: 'care_schedule_v2',
-        rev: SYNC.loadCareRev(), data: DB, token: t.token });
+        rev: (SYNC._baseRev != null ? SYNC._baseRev : SYNC.loadCareRev()), data: DB, token: t.token });
       navigator.sendBeacon(t.endpoint, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
     } catch(_) {}
   }
