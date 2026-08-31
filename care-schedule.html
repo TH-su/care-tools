@@ -873,7 +873,7 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="cs-oldpeer-warn" style="display:none"></span><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="rate-note" id="sum-rate-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" onclick="this.style.display='none'" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
@@ -2859,11 +2859,13 @@ function csFieldBaseBuild_(db) {
   }
   return map;
 }
-function csFieldBaseSnapshot_(db) {
-  CS_FIELD_BASE = csFieldBaseBuild_(db || DB);
+function csFieldBaseSet_(map) {
+  if (!map || typeof map !== 'object') return;
+  CS_FIELD_BASE = map;
   try { localStorage.setItem(CS_FIELD_BASE_KEY, JSON.stringify(CS_FIELD_BASE)); }
   catch (e) { /* 容量超過なら土台を持たない＝従来動作へ倒れるだけ（保存は止めない） */ }
 }
+function csFieldBaseSnapshot_(db) { csFieldBaseSet_(csFieldBaseBuild_(db || DB)); }
 function csFieldBaseLoad_() {
   if (CS_FIELD_BASE) return CS_FIELD_BASE;
   try {
@@ -2892,27 +2894,69 @@ var csFieldsKept_ = 0;
 /* 他タブ（ワースケ・別ウィンドウの週間計画）が localStorage を書き換えていたら、その版を土台に
    自分の編集を載せ直す。★saveDB の【前】に必ず通す。通さずに書くと、自分の保存が相手の
    書き込みを消したうえに指紋まで自分のものへ更新され、送信前マージも発火しなくなる。 */
+/* 相手の版から【予定(events)だけ】を取り込む（2026-08-31 レビュー H-1/H-2 の対策）。
+   csRebaseEdits は「server(＝相手)を土台に自分の events を載せる」設計なので、その戻り値をそのまま
+   DB にすると、保存のたびに相手タブの 報酬マスタ・サービス辞書・事業所情報・介護度などの
+   利用者直下スカラー・表示中の利用者まで自分の値を上書きしてしまう（実測で rateMaster rev5→rev1）。
+   これらは正規の同期経路（adopt）が rev 比較つきで解決する領分なので、ここでは触らない。
+   相手にしか居ない利用者だけは丸ごと足す（消失より復活）。 */
+function csMergeEventsFrom_(other, mine) {
+  const out = JSON.parse(JSON.stringify(mine));
+  if (!other || !Array.isArray(other.residents) || !Array.isArray(out.residents)) return out;
+  const merged = csRebaseEdits(other, mine);     // 既存の規則（id単位・入浴の和・3-way）で events を作る
+  const byId = {};
+  for (let i = 0; i < merged.residents.length; i++) {
+    const r = merged.residents[i];
+    if (r && r.id !== undefined) byId[r.id] = r;
+  }
+  for (let i = 0; i < out.residents.length; i++) {
+    const r = out.residents[i];
+    if (!r || r.id === undefined) continue;
+    const m = byId[r.id];
+    if (m && Array.isArray(m.events)) r.events = m.events;   // 取り込むのは events だけ
+    delete byId[r.id];
+  }
+  for (const id in byId) {
+    if (Object.prototype.hasOwnProperty.call(byId, id)) out.residents.push(byId[id]);
+  }
+  return out;
+}
 var _csAbsorbing = false;
 function csAbsorbForeignWrite_() {
-  if (_csAbsorbing || SIM_ON) return 0;
+  const none = { changed: false, gained: 0, fieldsKept: 0, bathRestored: 0 };
+  if (_csAbsorbing || SIM_ON) return none;
   const raw = csLocalReplacedJson_();
-  if (!raw) return 0;
+  if (!raw) return none;
   let other = null;
-  try { other = JSON.parse(raw); } catch (e) { return 0; }
-  if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return 0;
+  try { other = JSON.parse(raw); } catch (e) { return none; }
+  if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return none;
   _csAbsorbing = true;
   try {
-    csNoteOldPeerWrite_();                       // 未送信中の書き換え＝相手が古い版である動かぬ証拠
+    csNoteOldPeerWrite_();                       // 未送信中に古い版のタブが書いていたら知らせる
     const before = csCountEventsAll_(DB.residents);
-    DB = csRebaseEdits(other, DB);               // 土台＝相手の版／自分の編集は id・フィールド単位で残る
+    const beforeJson = JSON.stringify(DB);
+    DB = csMergeEventsFrom_(other, DB);
+    const changed = JSON.stringify(DB) !== beforeJson;
     const gained = csCountEventsAll_(DB.residents) - before;
+    /* ★区分(category)を相手の値に採ったら単位数を焼き直す。放置すると区分と単位が食い違ったまま
+       ワークスケジュールへ送られる（レビュー M-1）。 */
+    if (changed && (csFieldsKept_ > 0 || csBathRestored_ > 0)) {
+      try { recalcAllEventUnits(); } catch (e) {}
+    }
     if (gained > 0 || csFieldsKept_ > 0) {
       try {
         showToast('別タブの更新を取り込みました（予定 ' + (gained > 0 ? gained : 0) + '件・入力 '
                   + csFieldsKept_ + '件）');
       } catch (e) {}
     }
-    return gained;
+    /* ★入浴（加算）を相手の値に戻したら必ず知らせる。黙って加算側へ倒さないのは既存の規約
+       （競合経路と同じ扱い・レビュー H-3）。 */
+    if (csBathRestored_ > 0) {
+      try { showToast('別タブの更新で通所の入浴（加算）' + csBathRestored_ + '件をクラウド側の値に戻しました。ご確認ください'); } catch (e) {}
+      try { SYNC.log('⚠ 別タブの取り込みで通所の入浴（加算）' + csBathRestored_ + '件を「入浴あり」に戻しました。外したつもりの入浴が戻っていないか確認してください'); } catch (e) {}
+    }
+    return { changed: changed, gained: gained > 0 ? gained : 0,
+             fieldsKept: csFieldsKept_, bathRestored: csBathRestored_ };
   } finally { _csAbsorbing = false; }
 }
 
@@ -2920,9 +2964,29 @@ function csAbsorbForeignWrite_() {
    新しいワースケは未送信フラグ(care_schedule_dirty_v1)を見て書き込みを止めるため、この状況は
    「古いコードを読み込んだままのタブが動いている」ことの動かぬ証拠になる（版の申告に頼らない）。
    端末のコード版を検知する仕組みがこれまで無かったことが、2026-08-03〜05 の3度の再発の原因だった。 */
+const CS_WRITER_STAMP_KEY = 'cs_writer_stamp_v1';   // 同期対象外・端末ローカルのみ
+const CS_TAB_ID = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const CS_STAMP_FRESH_MS = 8000;
+/* localStorage(care_schedule_v2) を書く直前に「この版の週間計画が書きました」と名乗る。
+   相手が名乗っていれば新しい版＝警告しない。名乗りが無ければ古い版（この版より前のタブ）。 */
+function csStampWriter_() {
+  try { localStorage.setItem(CS_WRITER_STAMP_KEY, JSON.stringify({ app: 'care', tab: CS_TAB_ID, at: Date.now() })); }
+  catch (e) {}
+}
+/* 直前の書き手が「自分以外の、名乗った新しいタブ」なら false（古くない）。
+   自分の名乗りしか無い＝相手は名乗らずに書いた＝古い版、と判定する。 */
+function csPeerIsOldVersion_() {
+  try {
+    const st = JSON.parse(localStorage.getItem(CS_WRITER_STAMP_KEY) || 'null');
+    if (st && st.app === 'care' && st.tab && st.tab !== CS_TAB_ID
+        && (Date.now() - Number(st.at || 0)) < CS_STAMP_FRESH_MS) return false;
+  } catch (e) {}
+  return true;
+}
 let _csOldPeerWarned = false;
 function csNoteOldPeerWrite_() {
   if (!SYNC._dirty || _csOldPeerWarned) return;
+  if (!csPeerIsOldVersion_()) return;   /* 同じ版の別タブが書いた＝正常（誤警告を出さない） */
   _csOldPeerWarned = true;
   try {
     const el = $('#cs-oldpeer-warn');
@@ -3070,6 +3134,8 @@ function csGenDiff_(genResidents) {
   return { add, del };
 }
 function openRestoreModal(note) {
+  /* 開き直した時に前回のクラウド一覧（古い差分表示）が残らないようにする（レビュー L-3）。 */
+  try { const cb = $('#restore-cloud'); if (cb) { cb.innerHTML = ''; cb.style.display = 'none'; } } catch (e) {}
   const box = $('#restore-body');
   const noteEl = $('#restore-note');
   if (noteEl) {
@@ -3126,6 +3192,32 @@ function restoreFromGen_(idx, whole) {
   csApplyRestore_(res, whole, when, d);
 }
 
+/* 「足す」の中身: いま無い利用者・いま無いコマだけを足す。今あるコマの中身には一切触らない。
+   （原則5「消失より復活」＝戻す操作が別の消失を生まないようにする） */
+function csRestoreAddOnly_(current, gen) {
+  const out = JSON.parse(JSON.stringify(Array.isArray(current) ? current : []));
+  if (!Array.isArray(gen)) return out;
+  const byId = {};
+  for (let i = 0; i < out.length; i++) if (out[i] && out[i].id !== undefined) byId[out[i].id] = out[i];
+  for (let i = 0; i < gen.length; i++) {
+    const gr = gen[i];
+    if (!gr || gr.id === undefined) continue;
+    const cur = byId[gr.id];
+    if (!cur) { const add = JSON.parse(JSON.stringify(gr)); out.push(add); byId[add.id] = add; continue; }
+    if (!Array.isArray(cur.events)) cur.events = [];
+    const have = {};
+    for (let k = 0; k < cur.events.length; k++) {
+      if (cur.events[k] && cur.events[k].id !== undefined) have[cur.events[k].id] = true;
+    }
+    const gEvents = Array.isArray(gr.events) ? gr.events : [];
+    for (let k = 0; k < gEvents.length; k++) {
+      const e = gEvents[k];
+      if (e && e.id !== undefined && !have[e.id]) cur.events.push(JSON.parse(JSON.stringify(e)));
+    }
+  }
+  return out;
+}
+
 /* 復元の実行本体（端末の控え・クラウドの履歴の両方から呼ぶ唯一の経路）。
    ★ここが「戻す」側の要。丸ごと戻すと今日の入力が消えうるので、足す＝和集合を既定にしている。 */
 function csApplyRestore_(res, whole, when, d) {
@@ -3135,10 +3227,10 @@ function csApplyRestore_(res, whole, when, d) {
   if (whole) {
     DB.residents = JSON.parse(JSON.stringify(res));
   } else {
-    /* 足す＝控えを mine 側に置いた和集合（消失より復活・既存の競合リベースと同じ規則）。
-       今ある予定は server 側として全部残る。 */
-    const merged = csRebaseEdits({ residents: DB.residents }, { residents: res });
-    DB.residents = merged.residents;
+    /* ★足す＝「いま無いコマだけを足す」真の和集合（2026-08-31 レビュー M-5）。
+       従来は控えを mine 側に置いた競合リベースで、同じ id のコマは控えの中身で置き換わっていた＝
+       「今の予定は1件も消えません」と言いながら、今日打った支援内容が旧版に戻ることがあった。 */
+    DB.residents = csRestoreAddOnly_(DB.residents, res);
   }
   recalcAllEventUnits();
   if (!saveDB()) { showToast('復元を保存できませんでした'); return false; }
@@ -3183,7 +3275,11 @@ async function loadCloudHistory_() {
     try { if (g.savedAt) when = new Date(g.savedAt).toLocaleString('ja-JP'); } catch (e) {}
     const isDay = !!g.day;
     const label = isDay ? ('日次 ' + g.day) : ('版 ' + (Number(g.rev) || 0));
-    const arg = isDay ? ("'" + escHtml(String(g.day)) + "', null") : ("null, " + (Number(g.rev) || 0));
+    /* ★サーバー応答をそのまま onclick へ埋めない（受信データを信じない・原則10）。
+       日付は形を検証してからにし、外れたものは版数扱いにする。 */
+    const dayOk = isDay && /^\d{4}-\d{2}-\d{2}$/.test(String(g.day));
+    if (isDay && !dayOk) continue;
+    const arg = dayOk ? ("'" + String(g.day) + "', null") : ("null, " + (Number(g.rev) || 0));
     html +=
       '<div class="evlist-row" style="grid-template-columns:170px 110px 1fr auto;gap:10px">' +
         '<div class="evlist-time">' + escHtml(when) + '</div>' +
@@ -3288,6 +3384,14 @@ function pruneCareBackups_() {
        （末尾が 'rate_<ts>' で純数値にならない）ため、独立した群として剪定する。
        1件が DB 全体ぶんあり、放置すると localStorage の枠を食い潰して保存自体が落ちる。 */
     pruneTsGroup(LS_KEY + '_backup_rate_');
+    /* フィールドの土台（cs_field_base_v1）は全コマの支援内容・区分の写しで、剪定対象が無いと
+       容量を押し上げて保存自体を落としかねない（レビュー L-4）。DB より明らかに大きい＝
+       壊れているか古い形なので捨てる。土台が無ければ従来動作（自分優先）へ倒れるだけで実害は無い。 */
+    try {
+      const fb = localStorage.getItem(CS_FIELD_BASE_KEY);
+      const db = localStorage.getItem(LS_KEY);
+      if (fb && db && fb.length > db.length) localStorage.removeItem(CS_FIELD_BASE_KEY);
+    } catch (_) {}
     // 2026-07-01 の一回限り移行の事前バックアップ: 移行完了フラグが立っている時のみ削除（冪等・毎起動で無害）
     if (localStorage.getItem('care_notes_cleared_v1')) {
       try { localStorage.removeItem(LS_KEY + '_backup_before_notes_clear'); } catch (_) {}
@@ -3384,6 +3488,7 @@ function saveDB() {
   try { csAbsorbForeignWrite_(); } catch (e) {}
   try {
     const json = JSON.stringify(DB);
+    try { csStampWriter_(); } catch (e) {}   // 書く直前に版を名乗る（相手の誤警告を防ぐ・失敗しても保存は止めない）
     localStorage.setItem(LS_KEY, json);
     // 書込検証：実際に保存されたか確認（クォータ超過などを即検知）
     const verify = localStorage.getItem(LS_KEY);
@@ -3748,9 +3853,9 @@ const SYNC = {
            指紋が無い端末（この版より前から動いている）は従来どおりの判定に倒す＝挙動不変。 */
         const mineOnDisk = csDiskIsMine_(localRaw);
         this.saveCareRev(Number(j.rev) || 0);
-        /* 中身がサーバーと一致した＝フィールドの土台を焼き直してよい唯一の起動時経路。
-           巻き戻されていた場合(mineOnDisk=false)も、いま端末にある内容＝サーバーの内容なので土台として正しい。 */
-        try { csFieldBaseSnapshot_(DB); } catch (e) {}
+        /* 中身がサーバーと一致した＝土台を確定してよい唯一の起動時経路。
+           ★DB ではなく【サーバーが返した内容】から作る（判定の後に画面で編集されうるため・レビュー M-2）。 */
+        try { csFieldBaseSet_(csFieldBaseBuild_(j.data)); } catch (e) {}
         this.clearDirty();
         this.config.lastSync = Date.now();
         this.save();
@@ -3796,13 +3901,18 @@ const SYNC = {
       /* 版数は「編集を始めた時点」の固定値を送る（中-1）。固定が無い時（未編集の再送・
          前セッションから引き継いだ未送信）だけ現在値へ倒す＝従来と同じ挙動。 */
       const baseRev = (this._baseRev != null) ? this._baseRev : this.loadCareRev();
+      /* ★土台は「送る内容」から作って凍結する。応答待ちの1〜3秒の間に職員が入力すると、
+         その編集まで「サーバーと一致していた値」として焼かれ、次のマージで相手の値に負ける
+         （レビュー M-2）。 */
+      let sentBase = null;
+      try { sentBase = csFieldBaseBuild_(DB); } catch (e) {}
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: baseRev, data: DB, force: !!force });
       if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
         this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
-        /* 送信が通った＝サーバーの中身はいまの DB と一致した。フィールドの土台を焼き直す。 */
-        try { csFieldBaseSnapshot_(DB); } catch (e) {}
+        /* 送信が通った＝サーバーの中身は「送った内容」と一致した。その内容で土台を確定する。 */
+        try { csFieldBaseSet_(sentBase); } catch (e) {}
         this.clearDirty();
         this.save();
         this.log(`✅ 保存完了（rev ${j.rev}）`);
@@ -4045,6 +4155,7 @@ function saveLocalOnly() {
   if (SIM_ON) { SIM.persist(); return; }
   try {
     const json = JSON.stringify(DB);
+    try { csStampWriter_(); } catch (e) {}   /* saveDB と同じ＝どちらの経路で書いても版を名乗る */
     localStorage.setItem(LS_KEY, json);
     csRememberLocalFp_(json);   /* saveDB と同じ＝どちらの経路で書いても指紋がずれない */
   } catch(e) {}
@@ -7847,9 +7958,10 @@ function csScheduleStorageAdopt_(delay) {
        未送信を保ったまま、相手の版を土台にして自分の編集を載せ直す。 */
     if (SYNC._dirty) {
       try {
-        csAbsorbForeignWrite_();
-        saveLocalOnly();                    // 取り込んだ結果を端末へ（指紋もここで更新される）
-        populateResidentSelect(); renderAll();
+        const r = csAbsorbForeignWrite_();
+        /* ★変わった時だけ書き戻す。無条件に書くと相手タブの storage を叩き、
+           未送信どうしのタブが書き合って止まらない（レビュー M-3）。 */
+        if (r && r.changed) { saveLocalOnly(); populateResidentSelect(); renderAll(); }
       } catch (err) {}
       return;
     }
@@ -7858,6 +7970,9 @@ function csScheduleStorageAdopt_(delay) {
     try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
   }, delay);
 }
+/* 別タブ（ワースケ・別ウィンドウの週間計画）が care_schedule_v2 を書いた時の受け口。
+   ★2026-08-31 に方針変更: 未送信中も【捨てない】。捨てると storage は再配送されず、
+   版数キーはタブ間共有でポーリングも拾えないため、相手の書き込みは二度と入らない。 */
 window.addEventListener('storage', (e) => {
   if (SIM_ON) return;                      /* 試算中は他タブの書込を取り込まない（試算盤面が消えるため） */
   if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
