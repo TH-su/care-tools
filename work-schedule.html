@@ -6843,6 +6843,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* quota逼迫時は3-way祖先も解放（keepDate分は残す・祖先欠損はunionフォールバックで安全）。
        * ただし ①競合退避(wsbase_conflict_=復旧資産)は解放しない ②未送信編集がある日の祖先
        * (wsbase_<date>=3-way祖先)は3-wayマージに要るため解放しない（監査B-2）。 */
+      /* 最後の手段として週間計画の世代退避も解放する（本体 care_schedule_v2 と
+         未送信データには触れない）。ここまで来ている＝日データの解放でも足りていない。 */
+      try { if (localStorage.getItem(CARE_KEY + '_gens_ws') !== null) { localStorage.removeItem(CARE_KEY + '_gens_ws'); freed = true; } } catch (e5) {}
       for (i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
         if (!k || k.indexOf('wsbase_') !== 0) continue;
@@ -11358,12 +11361,76 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
     });
   }
+  /* ══ 週間計画の未送信編集を踏まない（2026-08-31 追加）══════════════════════════
+     事故: 週間計画で入力した支援が消える／変更が全部元に戻る、が現場で続いた。
+     道筋: 週間計画は編集を localStorage(care_schedule_v2) へ即書きし、未送信フラグを立てて
+       2秒後に送る。その2秒の間にワースケがサーバー版を adoptCare すると、共有データを
+       【丸ごと】上書きする＝週間計画の編集は localStorage から消える。週間計画側は
+       「未送信中は他タブの書き込みを取り込まない」ので画面には残り、気づけない。
+       そこで再読み込み／タブを閉じると、消えた版が読み込まれる。
+     対策: 未送信フラグが立っている間は上書きしない。取りやめではなく【待つ】＝フラグが
+       降りたら取り直す（捨てると、その更新は二度と入らない）。
+     ★フラグは同一オリジンの localStorage なので、週間計画が書いたものをそのまま読める。
+     ★待ちが長引いたら黙って止めない（5分で知らせる）。 */
+  var CARE_DIRTY_KEY = 'care_schedule_dirty_v1';   /* 週間計画の未送信フラグ（あちらが正本） */
+  var CARE_GENS_KEY  = CARE_KEY + '_gens_ws';      /* 上書き前の旧版（世代・端末ローカルのみ） */
+  var CARE_GENS_MAX  = 3, CARE_GENS_BUDGET = 400000;
+  var carePendingAdopt_ = null, carePendingTimer_ = null, carePendingWarned_ = false;
+  function careEditingElsewhere_() {
+    try { return localStorage.getItem(CARE_DIRTY_KEY) === '1'; } catch (e) { return false; }
+  }
+  /* 上書き前の旧版を世代で残す。1世代だけの退避（_backup_ws）は、事故のあと数十秒で
+     次の上書きに流されて役に立たない。容量が苦しければ古い順に捨てる（本体保存は止めない）。 */
+  function careBackupGen_(oldRaw) {
+    if (!oldRaw) return;
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem(CARE_GENS_KEY) || '[]'); } catch (e0) { arr = []; }
+      if (!(arr instanceof Array)) arr = [];
+      if (arr.length && arr[arr.length - 1].json === oldRaw) return;   /* 変化なし */
+      arr.push({ at: Date.now(), json: oldRaw });
+      while (arr.length > CARE_GENS_MAX) arr.shift();
+      var total = 0, i;
+      for (i = 0; i < arr.length; i++) total += arr[i].json.length;
+      while (arr.length > 1 && total > CARE_GENS_BUDGET) { total -= arr[0].json.length; arr.shift(); }
+      try { localStorage.setItem(CARE_GENS_KEY, JSON.stringify(arr)); }
+      catch (e1) { try { localStorage.setItem(CARE_GENS_KEY, JSON.stringify(arr.slice(-1))); } catch (e2) {} }
+    } catch (e) {}
+  }
+  function careFlushPendingAdopt_() {
+    if (!carePendingAdopt_) {
+      if (carePendingTimer_) { clearInterval(carePendingTimer_); carePendingTimer_ = null; }
+      return;
+    }
+    if (careEditingElsewhere_()) {
+      if (!carePendingWarned_ && (Date.now() - carePendingAdopt_.since) > 5 * 60 * 1000) {
+        carePendingWarned_ = true;
+        toast('週間計画に未送信の変更が5分以上残っています。週間計画のタブで保存をご確認ください');
+      }
+      return;
+    }
+    var notify = carePendingAdopt_.notify;
+    carePendingAdopt_ = null; carePendingWarned_ = false;
+    if (carePendingTimer_) { clearInterval(carePendingTimer_); carePendingTimer_ = null; }
+    /* 保留していた版は古くなっている可能性があるので、取り直してから取り込む
+       （保留中の版をそのまま当てると、待っている間の他端末の更新を落とす）。 */
+    try { pullCareNow(notify); } catch (e) {}
+  }
   function adoptCare(data, rev, notify) {
+    if (careEditingElsewhere_()) {
+      carePendingAdopt_ = { notify: notify,
+        since: (carePendingAdopt_ && carePendingAdopt_.since) || Date.now() };
+      if (!carePendingTimer_) carePendingTimer_ = setInterval(careFlushPendingAdopt_, 2000);
+      return;
+    }
     var raw = '';
     try {
       raw = JSON.stringify(data);
       var old = localStorage.getItem(CARE_KEY);
-      if (old && old !== raw) localStorage.setItem(CARE_KEY + '_backup_ws', old);
+      if (old && old !== raw) {
+        localStorage.setItem(CARE_KEY + '_backup_ws', old);
+        careBackupGen_(old);
+      }
       localStorage.setItem(CARE_KEY, raw);
     } catch (e) { return; }
     saveRevsPatch({ care: rev });
