@@ -2814,6 +2814,10 @@ const CS_LOCAL_FP_KEY = 'care_schedule_localfp_v1';   // 同期対象外・端�
 const CS_GENS_KEY     = 'cs_backup_gens_v1';          // 同上（世代バックアップ）
 const CS_GENS_MAX     = 20;                           // 世代数の上限
 const CS_GENS_BUDGET  = 1200000;                      // 世代の合計文字数の上限（UTF-16で約2.4MB）
+/* 「日ごとに1つは必ず残す」保持日数（2026-08-31 本人指示）。この日数の内側にある
+   【その日の最初の控え】は、同じ日に何度保存しても最後まで捨てない。容量が本当に足りない時だけ
+   古い日から落とす（最新の日の控えと最新1件は必ず残す）。 */
+const CS_GENS_DAYS    = 7;
 
 /* 長さ＋FNV-1a 風の簡易ハッシュ。衝突しても実害は「余計に1回マージする」だけなので暗号強度は不要。 */
 function csFingerprint_(json) {
@@ -3054,51 +3058,114 @@ function csReadGens_() {
     return Array.isArray(a) ? a : [];
   } catch (e) { return []; }
 }
-/* 上限を超えたら古い順に落とす。ただし【その日の最初の1件】は最後まで残す
-   （日をまたいで気づいた時に、その日の始まりの姿へ戻せるようにするため）。 */
-function csTrimGens_(gens) {
-  const firstOfDay = {};
+/* その日の最初の控えの位置（日付→添字）。ここが「日ごとに1つ」の実体。 */
+function csGensFirstOfDay_(gens) {
+  const first = {};
   for (let i = 0; i < gens.length; i++) {
-    const d = gens[i].day;
-    if (d && firstOfDay[d] === undefined) firstOfDay[d] = i;
+    const d = gens[i] && gens[i].day;
+    if (d && first[d] === undefined) first[d] = i;
   }
-  const keepIdx = {};
-  for (const d in firstOfDay) { if (Object.prototype.hasOwnProperty.call(firstOfDay, d)) keepIdx[firstOfDay[d]] = true; }
+  return first;
+}
+/* 次に捨ててよい1件の添字を返す（古い順・-1＝捨ててよいものが無い）。
+     keepAnchors=true … 「その日の最初」は候補にしない
+     keepDays        … 新しい方から数えてこの日数ぶんの「その日の最初」は候補にしない
+   最新の1件は、どの段階でも絶対に候補にしない。 */
+function csGenVictimIndex_(gens, keepAnchors, keepDays) {
+  const first = csGensFirstOfDay_(gens);
+  const anchorDayOf = {};
+  for (const d in first) {
+    if (Object.prototype.hasOwnProperty.call(first, d)) anchorDayOf[first[d]] = d;
+  }
+  const days = Object.keys(first).sort().reverse();      // 新しい日から
+  const recent = {};
+  for (let i = 0; i < days.length && i < keepDays; i++) recent[days[i]] = true;
+  for (let i = 0; i < gens.length - 1; i++) {            // 末尾（最新）は守る
+    const d = anchorDayOf[i];
+    if (d === undefined) return i;                       // その日の最初でない＝まずここから捨てる
+    if (keepAnchors) continue;
+    if (recent[d]) continue;                             // 保持日数の内側の控えは守る
+    return i;
+  }
+  return -1;
+}
+/* 上限を超えたら捨てる。捨てる順は
+     ①その日の最初でない古い控え → ②保持日数を超えた古い日の控え → ③最新の日以外の控え
+   ★「日ごとに1つは必ず残す」（2026-08-31 本人指示）。従来は②③が無く、容量が苦しくなると
+     古い日から順に消えていた（30名規模では事故後12回の保存で前日の姿が流れていた）。 */
+function csTrimGens_(gens) {
   let out = gens.slice();
-  const size = () => out.reduce((n, g) => n + (g.json ? g.json.length : 0), 0);
-  /* ①まず「その日の最初」でない古いものから落とす */
-  for (let i = 0; (out.length > CS_GENS_MAX || size() > CS_GENS_BUDGET) && i < gens.length; i++) {
-    if (keepIdx[i]) continue;
-    const idx = out.indexOf(gens[i]);
-    if (idx >= 0 && out.length > 1) out.splice(idx, 1);
+  /* ⓪保持日数より古い日は、容量に余裕があっても持たない。
+     小さい施設だと日ごとの控えだけで枠を埋め尽くし、直近の細かい控え（同じ日の途中の姿）が
+     入らなくなるため。保持するのは新しい方から CS_GENS_DAYS 日ぶん。 */
+  {
+    const first = csGensFirstOfDay_(out);
+    const days = Object.keys(first).sort().reverse();
+    if (days.length > CS_GENS_DAYS) {
+      const keep = {};
+      for (let i = 0; i < CS_GENS_DAYS; i++) keep[days[i]] = true;
+      const kept = out.filter((g, i) => (g && g.day && keep[g.day]) || i === out.length - 1);
+      if (kept.length) out = kept;                 // 最新1件だけは日付に関わらず必ず残す
+    }
   }
-  /* ②それでも溢れるなら、古い日から落とす（最新の1件は必ず残す） */
-  while ((out.length > CS_GENS_MAX || size() > CS_GENS_BUDGET) && out.length > 1) out.shift();
+  const size = () => out.reduce((n, g) => n + (g && g.json ? g.json.length : 0), 0);
+  const over = () => (out.length > CS_GENS_MAX || size() > CS_GENS_BUDGET);
+  for (let guard = 0; over() && guard < 2000; guard++) {
+    let v = csGenVictimIndex_(out, true, CS_GENS_DAYS);
+    if (v < 0) v = csGenVictimIndex_(out, false, CS_GENS_DAYS);
+    if (v < 0) v = csGenVictimIndex_(out, false, 1);
+    if (v < 0) break;                                    // 最新の日の控えと最新1件だけ＝これ以上は捨てない
+    out.splice(v, 1);
+  }
   return out;
 }
 function csWriteGens_(gens) {
   let a = gens;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     try { localStorage.setItem(CS_GENS_KEY, JSON.stringify(a)); return true; }
     catch (e) {
       if (a.length <= 1) return false;      // これ以上減らせない＝あきらめる（本体の保存は止めない）
-      a = a.slice(1);                       // 容量不足: 古い世代を捨てて再試行
+      /* ★容量不足でも、捨てる順は剪定と同じ（日ごとの控えを最後に回す）。
+         ここで機械的に先頭を落とすと、いちばん守りたい古い日の控えから消える。 */
+      let v = csGenVictimIndex_(a, true, CS_GENS_DAYS);
+      if (v < 0) v = csGenVictimIndex_(a, false, CS_GENS_DAYS);
+      if (v < 0) v = csGenVictimIndex_(a, false, 1);
+      if (v < 0) v = 0;
+      a = a.slice(0, v).concat(a.slice(v + 1));
     }
   }
   return false;
 }
-/* 保存のたびに1世代積む。内容が変わっていなければ積まない（同じ姿で埋め尽くさない）。 */
-function csPushBackupGen_() {
+/* 保存のたびに1世代積む。内容が変わっていなければ積まない（同じ姿で埋め尽くさない）。
+   force=true のときだけ、内容が同じでも積む（＝その日の最初の控えを作る経路）。 */
+function csPushBackupGen_(force) {
   if (SIM_ON) return;                       /* 試算の盤面を世代に焼かない（復元経路から逆流する） */
   try {
     if (csLooksLikeSampleOnly(DB.residents) || csRealResidentCount(DB.residents) === 0) return;
     const json = JSON.stringify(DB.residents);
     const gens = csReadGens_();
-    if (gens.length && gens[gens.length - 1].json === json) return;
+    if (!force && gens.length && gens[gens.length - 1].json === json) return;
     const at = Date.now();
     gens.push({ at: at, day: csJstDay_(at), res: csRealResidentCount(DB.residents),
                 ev: csCountEventsAll_(DB.residents), json: json });
     csWriteGens_(csTrimGens_(gens));
+  } catch (e) {}
+}
+
+/* その日の控えを【編集より前】に1件作る（起動直後に呼ぶ）。
+   保存のたびに積むだけの作りだと、「その日の最初の保存＝事故そのもの」だった場合に
+   壊れたあとの姿しか残らない。起動時に積めば、その日の始まりの姿（＝前日の終わり）が必ず残る。
+   ★内容が前日と同じでも積む。日付の付いた控えが1件も無い日を作らないため。
+   なお日付をまたいでタブを開きっぱなしにした場合は、その日の最初の保存が控えになる。 */
+function csEnsureDayAnchor_() {
+  if (SIM_ON) return;
+  try {
+    const today = csJstDay_(Date.now());
+    const gens = csReadGens_();
+    for (let i = gens.length - 1; i >= 0; i--) {
+      if (gens[i] && gens[i].day === today) return;   // 今日の控えは既にある
+    }
+    csPushBackupGen_(true);
   } catch (e) {}
 }
 
@@ -3147,12 +3214,18 @@ function openRestoreModal(note) {
     box.innerHTML = '<div class="evlist-empty">まだ控えがありません（保存すると残ります）</div>';
   } else {
     let html = '';
+    const firstOfDay = csGensFirstOfDay_(gens);
+    const isAnchor = {};
+    for (const dd in firstOfDay) {
+      if (Object.prototype.hasOwnProperty.call(firstOfDay, dd)) isAnchor[firstOfDay[dd]] = true;
+    }
     for (let i = gens.length - 1; i >= 0; i--) {
       const g = gens[i];
       let res = [];
       try { res = JSON.parse(g.json); } catch (e) { res = []; }
       const d = csGenDiff_(res);
-      const when = new Date(g.at).toLocaleString('ja-JP');
+      const when = new Date(g.at).toLocaleString('ja-JP')
+                 + (isAnchor[i] ? '（その日の最初）' : '');
       const diff = (d.add ? '<span style="color:#2e7d32;font-weight:700">戻せる予定 ' + d.add + '件</span>' : '差はありません')
                  + (d.del ? ' ／ <span style="color:#c62828;font-weight:700">今だけにある予定 ' + d.del + '件</span>' : '');
       html +=
@@ -7844,6 +7917,8 @@ SYNC.load();
 try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止めない */ }
 // 起動時にローカルが既にサンプル/空化していれば端末バックアップから復元、正データなら退避を更新
 try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e) {}
+/* その日の始まりの姿を必ず1件残す（編集より前に積む＝事故のあとの姿しか残らないのを防ぐ） */
+try { csEnsureDayAnchor_(); } catch(e) {}
 applyScheduleDeviceGuard();
 (function(){ var b = document.getElementById('suDeviceUnlock'); if (b) b.addEventListener('click', function(){
   try { localStorage.setItem(SU_DEVICE_KEY, 'office'); } catch(e) {}
