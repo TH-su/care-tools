@@ -873,7 +873,7 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="rate-note" id="sum-rate-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="cs-oldpeer-warn" style="display:none"></span><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
@@ -1400,7 +1400,13 @@ select.inp { cursor: pointer; }
       <strong>丸ごと戻す</strong>＝その時点の姿に置き換えます（今だけにある予定は消えます）。
     </p>
     <div id="restore-note" style="font-size:13px;font-weight:700;color:#b71c1c;margin-bottom:8px;display:none"></div>
-    <div id="restore-body" style="border:1px solid var(--g3);border-radius:8px;max-height:60vh;overflow:auto"></div>
+    <div id="restore-body" style="border:1px solid var(--g3);border-radius:8px;max-height:44vh;overflow:auto"></div>
+    <!-- クラウドの履歴（読み取り専用の history を呼ぶ。押すまで何も変えない） -->
+    <div style="display:flex;gap:8px;align-items:center;margin:10px 0 6px">
+      <button class="btn" id="btn-cloud-hist" onclick="loadCloudHistory_()">☁️ クラウドの履歴を読む</button>
+      <span style="font-size:12px;color:var(--g6)">この端末の控えが流れてしまった日でも、サーバーに残っている過去の姿から戻せます</span>
+    </div>
+    <div id="restore-cloud" style="border:1px solid var(--g3);border-radius:8px;max-height:32vh;overflow:auto;display:none"></div>
   </div>
 </div>
 
@@ -2819,6 +2825,111 @@ function csFingerprint_(json) {
 function csRememberLocalFp_(json) {
   try { localStorage.setItem(CS_LOCAL_FP_KEY, csFingerprint_(json)); } catch (e) {}
 }
+
+/* ── ワースケが書いた入力を消さないための「土台」（2026-08-31 追加・3-wayマージ）──────────
+   csRebaseEdits はイベントを id 単位で【丸ごと】mine 優先に差し替えるため、自分が触っていない
+   フィールドまで自分の（古い）値で上書きしていた。ワースケは同じイベントの支援内容(detail)と
+   サービス区分(category)を書き戻すので、週間計画で別の予定を1つ保存しただけで相手の入力が
+   黙って元に戻る。件数が変わらないため、サーバーの部分消失ガード(planshrink)でも止まらない。
+   ここでは「最後にサーバーと一致していた時の値」を土台として持ち、
+     ・自分がその値を変えていない → 相手(server)の値を採る（＝相手の入力が生き残る）
+     ・自分が変えている           → 従来どおり自分の値を採る（＝自分の編集は消えない）
+   土台を知らないイベント（新規作成・この版より前から動いていた端末）は従来どおり mine 優先＝挙動不変。
+   ★土台を焼き直してよいのは「サーバーと内容が一致した瞬間」だけ（採用・送信成功・起動時の一致確認）。
+     保存のたびに焼くと自分の編集が土台に混ざり、相手の値を勝たせる誤りになる。 */
+const CS_FIELD_BASE_KEY = 'cs_field_base_v1';       // 同期対象外・端末ローカルのみ
+const CS_MERGE_FIELDS   = ['detail', 'category'];   // ワースケが書き戻すフィールド（入浴は既存の「和」で別扱い）
+let CS_FIELD_BASE = null;                           // { evId: { detail, category } }
+
+function csFieldBaseBuild_(db) {
+  const map = {};
+  const rs = (db && Array.isArray(db.residents)) ? db.residents : [];
+  for (let i = 0; i < rs.length; i++) {
+    const evs = (rs[i] && Array.isArray(rs[i].events)) ? rs[i].events : [];
+    for (let j = 0; j < evs.length; j++) {
+      const ev = evs[j];
+      if (!ev || ev.id === undefined) continue;
+      const rec = {};
+      for (let f = 0; f < CS_MERGE_FIELDS.length; f++) {
+        const key = CS_MERGE_FIELDS[f];
+        rec[key] = (ev[key] == null ? '' : String(ev[key]));
+      }
+      map[ev.id] = rec;
+    }
+  }
+  return map;
+}
+function csFieldBaseSnapshot_(db) {
+  CS_FIELD_BASE = csFieldBaseBuild_(db || DB);
+  try { localStorage.setItem(CS_FIELD_BASE_KEY, JSON.stringify(CS_FIELD_BASE)); }
+  catch (e) { /* 容量超過なら土台を持たない＝従来動作へ倒れるだけ（保存は止めない） */ }
+}
+function csFieldBaseLoad_() {
+  if (CS_FIELD_BASE) return CS_FIELD_BASE;
+  try {
+    const raw = localStorage.getItem(CS_FIELD_BASE_KEY);
+    CS_FIELD_BASE = raw ? JSON.parse(raw) : null;
+  } catch (e) { CS_FIELD_BASE = null; }
+  return CS_FIELD_BASE;
+}
+function csFieldBaseRec_(id) {
+  const b = csFieldBaseLoad_();
+  return (b && Object.prototype.hasOwnProperty.call(b, id)) ? b[id] : null;
+}
+/* 3-way の判定本体（純関数＝テストで固定する）。
+   base 未知 → mine（従来）／mine が base のまま → server（相手の入力を残す）／自分が変えた → mine。 */
+function csPickField_(field, mineVal, serverVal, baseRec) {
+  const norm = function (v) { return (v == null ? '' : String(v)); };
+  if (!baseRec || baseRec[field] === undefined) return { value: mineVal, tookServer: false };
+  if (norm(mineVal) === norm(baseRec[field]) && norm(serverVal) !== norm(mineVal)) {
+    return { value: serverVal, tookServer: true };
+  }
+  return { value: mineVal, tookServer: false };
+}
+/* 直近のマージで「相手の入力を残した」フィールド数。呼び出し元が人に知らせるために使う。 */
+var csFieldsKept_ = 0;
+
+/* 他タブ（ワースケ・別ウィンドウの週間計画）が localStorage を書き換えていたら、その版を土台に
+   自分の編集を載せ直す。★saveDB の【前】に必ず通す。通さずに書くと、自分の保存が相手の
+   書き込みを消したうえに指紋まで自分のものへ更新され、送信前マージも発火しなくなる。 */
+var _csAbsorbing = false;
+function csAbsorbForeignWrite_() {
+  if (_csAbsorbing || SIM_ON) return 0;
+  const raw = csLocalReplacedJson_();
+  if (!raw) return 0;
+  let other = null;
+  try { other = JSON.parse(raw); } catch (e) { return 0; }
+  if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return 0;
+  _csAbsorbing = true;
+  try {
+    csNoteOldPeerWrite_();                       // 未送信中の書き換え＝相手が古い版である動かぬ証拠
+    const before = csCountEventsAll_(DB.residents);
+    DB = csRebaseEdits(other, DB);               // 土台＝相手の版／自分の編集は id・フィールド単位で残る
+    const gained = csCountEventsAll_(DB.residents) - before;
+    if (gained > 0 || csFieldsKept_ > 0) {
+      try {
+        showToast('別タブの更新を取り込みました（予定 ' + (gained > 0 ? gained : 0) + '件・入力 '
+                  + csFieldsKept_ + '件）');
+      } catch (e) {}
+    }
+    return gained;
+  } finally { _csAbsorbing = false; }
+}
+
+/* 未送信の編集を抱えている最中に別タブが localStorage を書き換えた＝相手は 2026-08-31 より前の版。
+   新しいワースケは未送信フラグ(care_schedule_dirty_v1)を見て書き込みを止めるため、この状況は
+   「古いコードを読み込んだままのタブが動いている」ことの動かぬ証拠になる（版の申告に頼らない）。
+   端末のコード版を検知する仕組みがこれまで無かったことが、2026-08-03〜05 の3度の再発の原因だった。 */
+let _csOldPeerWarned = false;
+function csNoteOldPeerWrite_() {
+  if (!SYNC._dirty || _csOldPeerWarned) return;
+  _csOldPeerWarned = true;
+  try {
+    const el = $('#cs-oldpeer-warn');
+    if (el) { el.textContent = '⚠ 古い版のタブが動いています（ワークスケジュール等）。そのタブを再読み込みしてください'; el.style.display = ''; }
+  } catch (e) {}
+  try { SYNC.log('⚠ 未送信の編集がある最中に別タブがデータを書き換えました＝そのタブは古い版です。再読み込みしてください'); } catch (e) {}
+}
 /* localStorage が「自分が最後に書いた内容」と違えば、その JSON を返す（＝他タブが書き換えた）。
    同じ・読めない・指紋が無い（初回起動）なら null＝判定しない。 */
 /* localStorage の内容が「自分が最後に書いたもの」か。指紋を持たない端末（この版より前から
@@ -3012,6 +3123,14 @@ function restoreFromGen_(idx, whole) {
        + '今ある予定は1件も消えません。\n\nよろしいですか？');
   if (!d.add && !d.del) { showToast('この控えと今の内容に差はありません'); return; }
   if (!confirm(q)) return;
+  csApplyRestore_(res, whole, when, d);
+}
+
+/* 復元の実行本体（端末の控え・クラウドの履歴の両方から呼ぶ唯一の経路）。
+   ★ここが「戻す」側の要。丸ごと戻すと今日の入力が消えうるので、足す＝和集合を既定にしている。 */
+function csApplyRestore_(res, whole, when, d) {
+  if (!Array.isArray(res) || !res.length) { showToast('控えを読めませんでした'); return false; }
+  const diff = d || csGenDiff_(res);
   pushUndo();                                  /* 復元も1手で取り消せるようにする */
   if (whole) {
     DB.residents = JSON.parse(JSON.stringify(res));
@@ -3022,13 +3141,82 @@ function restoreFromGen_(idx, whole) {
     DB.residents = merged.residents;
   }
   recalcAllEventUnits();
-  if (!saveDB()) { showToast('復元を保存できませんでした'); return; }
+  if (!saveDB()) { showToast('復元を保存できませんでした'); return false; }
   populateResidentSelect(); renderAll();
   closeRestoreModal();
-  showToast(whole ? (when + ' の姿に戻しました') : ('予定 ' + d.add + '件を戻しました'));
+  showToast(whole ? (when + ' の姿に戻しました') : ('予定 ' + diff.add + '件を戻しました'));
   /* 復元はクラウドへも送る。件数が大きく戻る＝サーバーのガードに当たることがあるが、
      その時は既存の確認ダイアログが出て人が判断する（黙って force はしない）。 */
   if (SYNC.hasTarget()) { try { SYNC.push(); } catch (e) {} }
+  return true;
+}
+
+/* ── クラウドの履歴（サーバーに残る30世代＋日次30日）から戻す（2026-08-31 追加）──────────
+   これまでサーバー側に履歴を積みながら、それを呼び出す画面がアプリに1つも無く、
+   「翌日以降の復旧」は人が手作業でHTTPを組むしかなかった。読み取り専用の history だけを使い、
+   書き戻しは通常の保存経路（人の確認つき）に通す＝書き込み経路は増やさない。 */
+async function loadCloudHistory_() {
+  const box = $('#restore-cloud');
+  if (!box) return;
+  box.style.display = '';
+  if (SIM_ON) { box.innerHTML = '<div class="evlist-empty">試算中は使えません</div>'; return; }
+  if (!SYNC.hasTarget()) {
+    box.innerHTML = '<div class="evlist-empty">同期先が未設定です（設定 → クラウド同期）</div>';
+    return;
+  }
+  box.innerHTML = '<div class="evlist-empty">読み込み中…</div>';
+  let j = null;
+  try { j = await SYNC.gas({ action: 'history', key: 'care_schedule_v2' }); } catch (e) { j = null; }
+  if (!j || !j.ok) {
+    const why = (j && j.error === 'unknown action')
+      ? '（サーバー側の更新がまだのようです。接続テストで「防御：…planhistory」が出るか確認してください）'
+      : (j && j.error ? '（' + escHtml(String(j.error)) + '）' : '');
+    box.innerHTML = '<div class="evlist-empty">クラウドの履歴を読めませんでした' + why + '</div>';
+    return;
+  }
+  const gens = Array.isArray(j.generations) ? j.generations : [];
+  if (!gens.length) { box.innerHTML = '<div class="evlist-empty">クラウドに過去の姿がありません</div>'; return; }
+  let html = '';
+  for (let i = 0; i < gens.length; i++) {
+    const g = gens[i];
+    let when = '(不明)';
+    try { if (g.savedAt) when = new Date(g.savedAt).toLocaleString('ja-JP'); } catch (e) {}
+    const isDay = !!g.day;
+    const label = isDay ? ('日次 ' + g.day) : ('版 ' + (Number(g.rev) || 0));
+    const arg = isDay ? ("'" + escHtml(String(g.day)) + "', null") : ("null, " + (Number(g.rev) || 0));
+    html +=
+      '<div class="evlist-row" style="grid-template-columns:170px 110px 1fr auto;gap:10px">' +
+        '<div class="evlist-time">' + escHtml(when) + '</div>' +
+        '<div class="evlist-cat">' + escHtml(label) + '</div>' +
+        '<div class="evlist-detail">' + Math.round((Number(g.bytes) || 0) / 1024) + ' KB</div>' +
+        '<div><button class="btn" onclick="restoreFromCloud_(' + arg + ')">この版から戻す</button></div>' +
+      '</div>';
+  }
+  box.innerHTML = html;
+}
+async function restoreFromCloud_(day, rev) {
+  if (SIM_ON) { showToast('試算中は復元できません'); return; }
+  if (!SYNC.hasTarget()) { showToast('同期先が未設定です'); return; }
+  const req = { action: 'history', key: 'care_schedule_v2' };
+  if (day) req.day = day; else req.rev = Number(rev) || 0;
+  showToast('クラウドの履歴を取得しています…');
+  let j = null;
+  try { j = await SYNC.gas(req); } catch (e) { j = null; }
+  if (!j || !j.ok || !j.data || !Array.isArray(j.data.residents)) {
+    showToast('その版を読めませんでした' + (j && j.error ? '（' + j.error + '）' : ''));
+    return;
+  }
+  const res = j.data.residents;
+  const d = csGenDiff_(res);
+  let when = day ? ('日次 ' + day) : ('版 ' + (Number(rev) || 0));
+  try { if (j.updatedAt) when += '（' + new Date(j.updatedAt).toLocaleString('ja-JP') + '）'; } catch (e) {}
+  if (!d.add && !d.del) { showToast('この版と今の内容に差はありません'); return; }
+  const q = 'クラウドの ' + when + ' の姿と比べます。\n\n'
+          + '・戻せる予定：' + d.add + '件\n・今だけにある予定：' + d.del + '件\n\n'
+          + '「OK」＝足す（いま無い予定だけを戻します。今の予定は1件も消えません）\n'
+          + '「キャンセル」＝何もしません';
+  if (!confirm(q)) return;
+  csApplyRestore_(res, false, when, d);
 }
 
 /* 巻き戻りを検知した時に、復元をその場で案内する（黙って直さない＝本人裁定「止めて人に聞く」）。 */
@@ -3190,6 +3378,10 @@ function saveDB() {
      代わりに試算専用キーへ退避する（再読み込みで試算の続きから戻れるようにするため）。 */
   if (SIM_ON) { SIM.persist(); return true; }
   ensureServiceDict_();   // 保存前に辞書をメモリへ同期（JSON.stringify より前）
+  /* ★書く前に、他タブが書き換えていないかを見て、あれば取り込んでから書く（2026-08-31）。
+     ここを通さずに書くと、自分の保存が相手の書き込みを消したうえに指紋まで自分のものへ
+     更新され、送信前マージ（csMergeLocalBeforePush_）も二度と発火しなくなる。 */
+  try { csAbsorbForeignWrite_(); } catch (e) {}
   try {
     const json = JSON.stringify(DB);
     localStorage.setItem(LS_KEY, json);
@@ -3450,6 +3642,8 @@ const SYNC = {
     saveLocalOnly();
     this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
     this.config.lastSync = Date.now();
+    /* サーバー版を採用した＝いまの中身がサーバーと一致した瞬間。フィールドの土台を焼き直す。 */
+    try { csFieldBaseSnapshot_(DB); } catch (e) {}
     this._dirty = false;   // メモリのみ解除。永続フラグ(CS_DIRTY_KEY)は push成功/起動時一致でのみ解除
     /* 土台がサーバー版に変わった＝固定していた版数はもう基準にならない。null に戻すことで、
        競合解消の直後の再 push は「採用したサーバー版の版数」で送る（無限競合を作らない）。 */
@@ -3554,6 +3748,9 @@ const SYNC = {
            指紋が無い端末（この版より前から動いている）は従来どおりの判定に倒す＝挙動不変。 */
         const mineOnDisk = csDiskIsMine_(localRaw);
         this.saveCareRev(Number(j.rev) || 0);
+        /* 中身がサーバーと一致した＝フィールドの土台を焼き直してよい唯一の起動時経路。
+           巻き戻されていた場合(mineOnDisk=false)も、いま端末にある内容＝サーバーの内容なので土台として正しい。 */
+        try { csFieldBaseSnapshot_(DB); } catch (e) {}
         this.clearDirty();
         this.config.lastSync = Date.now();
         this.save();
@@ -3604,6 +3801,8 @@ const SYNC = {
       if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
         this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
+        /* 送信が通った＝サーバーの中身はいまの DB と一致した。フィールドの土台を焼き直す。 */
+        try { csFieldBaseSnapshot_(DB); } catch (e) {}
         this.clearDirty();
         this.save();
         this.log(`✅ 保存完了（rev ${j.rev}）`);
@@ -3783,6 +3982,7 @@ const SYNC = {
 var csBathRestored_ = 0;
 function csRebaseEdits(server, mine) {
   csBathRestored_ = 0;
+  csFieldsKept_ = 0;
   if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
   var out = JSON.parse(JSON.stringify(server));
   var byId = {}, i;
@@ -3814,6 +4014,16 @@ function csRebaseEdits(server, mine) {
          入浴を外す操作自体は、競合していなければ従来どおりそのまま通る。 */
       var se = sById[id];
       if (se && se.bathing === true && cp.bathing !== true) { cp.bathing = true; csBathRestored_++; }
+      /* ★自分が触っていない支援内容・サービス区分は、相手(server)の値を残す（2026-08-31・3-way）。
+         ここが無いと、ワースケが書いた入力を「別の予定を1つ保存しただけ」で消してしまう。 */
+      if (se && typeof CS_MERGE_FIELDS !== 'undefined' && typeof csPickField_ === 'function') {
+        var baseRec = (typeof csFieldBaseRec_ === 'function') ? csFieldBaseRec_(id) : null;
+        for (var fi = 0; fi < CS_MERGE_FIELDS.length; fi++) {
+          var fname = CS_MERGE_FIELDS[fi];
+          var pick = csPickField_(fname, cp[fname], se[fname], baseRec);
+          if (pick.tookServer) { cp[fname] = pick.value; csFieldsKept_++; }
+        }
+      }
       merged.push(cp); seen[id] = true;
     }
     for (k = 0; k < sEvents.length; k++) {            /* server限定イベントは保持 */
@@ -7630,8 +7840,19 @@ function csScheduleStorageAdopt_(delay) {
   _csStorageTimer = setTimeout(() => {
     _csStorageTimer = null;
     if (SIM_ON) return;                                              // 試算に入ったら取り込まない
-    if (SYNC._dirty) return;                                         // 自端末の未送信編集が最優先（既存方針）
     if (_csBusyEditing()) { csScheduleStorageAdopt_(1000); return; } // 編集中は捨てずに待ち直す
+    /* ★未送信の編集がある間も【捨てない】（2026-08-31）。従来はここで return しており、
+       storage イベントは再配送されず、版数キーはタブ間共有でポーリングも拾えないため、
+       相手の書き込みは二度と入らず次の保存で無音で上書きしていた。
+       未送信を保ったまま、相手の版を土台にして自分の編集を載せ直す。 */
+    if (SYNC._dirty) {
+      try {
+        csAbsorbForeignWrite_();
+        saveLocalOnly();                    // 取り込んだ結果を端末へ（指紋もここで更新される）
+        populateResidentSelect(); renderAll();
+      } catch (err) {}
+      return;
+    }
     /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
        他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
     try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
@@ -7640,7 +7861,8 @@ function csScheduleStorageAdopt_(delay) {
 window.addEventListener('storage', (e) => {
   if (SIM_ON) return;                      /* 試算中は他タブの書込を取り込まない（試算盤面が消えるため） */
   if (!e || e.key !== LS_KEY) return;      // care_schedule_v2 以外の書込は無視
-  if (SYNC._dirty) return;                 // 自端末の未送信編集がある間は取り込まない（クリーン時のみ）
+  /* ★未送信中でも予約する（2026-08-31）。取り込み側が「捨てる」のではなく
+     「相手の版を土台に自分の編集を載せ直す」ようになったため、ここで止める理由が無くなった。 */
   csScheduleStorageAdopt_(300);
 });
 // ネットワーク復帰で即再同期（オフライン固着の自動復帰）。未送信があれば送信、無ければ最新を取得。
