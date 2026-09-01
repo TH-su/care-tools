@@ -813,6 +813,7 @@ select.inp { cursor: pointer; }
 .wk-ev-icons { display: flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
 .wk-ev-icons img { max-width: 16mm; max-height: 16mm; }
 .wk-onsen { font-size: 14mm; line-height: 1.05; color: #b5121b; text-align: center; }
+.wk-ev-icons img.wk-onsen-img { max-width: 20mm; max-height: 20mm; }
 /* 支援内容が長いコマだけ文字を落とす（枠からはみ出させない） */
 .wk-ev-body.long  { font-size: 2.8mm; line-height: 1.2; }
 .wk-ev-body.xlong { font-size: 2.3mm; line-height: 1.15; }
@@ -7578,7 +7579,13 @@ function buildWeeklySheetHtml_(res) {
       const col  = WK_SHEET_COLORS[kind] || WK_SHEET_COLORS.visit;
       const w    = 100 / p.lanes, left = w * p.lane;
       const icons = wkIconsFor_(p.ev);
-      const onsen = (kind === 'daycare' && p.ev.bathing === true) ? '<div class="wk-onsen">♨</div>' : '';
+      /* 入浴あり（加算の根拠）の印。元様式の温泉マークの画像が登録されていればそれを、
+         無ければ記号（♨）を赤で出す＝画像が届く前でも紙は成立する。 */
+      const onsen = (kind === 'daycare' && p.ev.bathing === true)
+        ? (WK_SHEET_ICONS['入浴']
+            ? '<div class="wk-ev-icons"><img class="wk-onsen-img" src="' + escHtml(WK_SHEET_ICONS['入浴']) + '" alt="入浴"></div>'
+            : '<div class="wk-onsen">♨</div>')
+        : '';
       const main  = wkMainText_(p.ev);
       const cls   = (kind === 'daycare') ? 'wk-ev-main' : '';
       /* 狭い枠（帯の等分・左右分割）は文字を落として、時刻も内容も枠内に収める */
