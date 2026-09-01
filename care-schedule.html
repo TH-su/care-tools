@@ -180,6 +180,17 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
   box-shadow: -4px 0 8px rgba(255,255,255,.9);
 }
 .sum-edit-btn:hover { background: var(--g2); }
+/* 盤面ロック（2026-08-31 本人指示）。触るつもりが無いのに支援の枠がドラッグで動く事故を止める。
+   ★高さは既存の兄弟ボタンに合わせる。44pxへ広げると1段40pxの帯からはみ出し、--sum-h（106px）と
+   それを参照する3箇所の calc() が動く＝盤面が下がる（原則2の画面レイアウト保護に反する）。
+   代わりに横のタップ幅を広げ、状態を色と文字（🔒/🔓）の両方で示す。 */
+.sum-lock-btn { padding-inline: 14px; font-weight: 700; min-height: 38px; }   /* 段(40px)いっぱいまで縦を広げる＝押し損ねを減らす。40pxを超えると帯が伸びるので上限はここ */
+.sum-lock-btn.on { background: #fdecea; color: #b71c1c; border-color: #e57373; }
+.sum-lock-btn.on:hover { background: #fbdcd8; }
+/* ロック中は「掴めそうな見た目」をやめる（押しても動かない理由が見た目で分かるように） */
+body.board-locked .event-block,
+body.board-locked .event-block:active { cursor: default; }
+body.board-locked .resize-handle { display: none; }
 
 /* ── No resident ── */
 .no-resident {
@@ -866,6 +877,8 @@ select.inp { cursor: pointer; }
     </div>
     <!-- 特定施設のときだけ出す。限度額の欄を空欄にするのではなく、出ない理由を書く -->
     <span class="sum-tokutei-note" id="sum-tokutei-note" style="display:none"></span>
+    <button class="sum-edit-btn sum-lock-btn" id="board-lock-btn" onclick="toggleBoardLock()"
+            aria-pressed="false" title="押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）">🔓 移動ロック</button>
     <button class="sum-edit-btn" onclick="openEventListModal()" title="予定一覧">📋 一覧</button>
     <button class="sum-edit-btn" id="sync-btn" onclick="openSyncModal()" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" onclick="openOfficeInfoModal()">🏢 事業所情報</button>
@@ -5305,6 +5318,7 @@ function renderDayColumns(res, coverage) {
       col.addEventListener('click', function(e) {
         if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮が残留していたら復元のみ（誤時刻での新規作成を防ぐ）
         if (e.target.closest('.event-block')) return;
+        if (csBoardLockedBlock_()) return;                // ★ロック中は空き枠のタップで追加しない
         if (wasDragging) return;
         const rect = col.getBoundingClientRect();
         const relY = e.clientY - rect.top;
@@ -5409,6 +5423,7 @@ function renderDayEvents(events, colEl, res, coverage) {
     block.addEventListener('contextmenu', e => {
       e.preventDefault();
       e.stopPropagation();
+      if (csBoardLockedBlock_()) return;   // ★ロック中は複製・削除のメニューを出さない
       showCtxMenu(ev, e.clientX, e.clientY);
     });
 
@@ -5425,6 +5440,53 @@ function renderDayEvents(events, colEl, res, coverage) {
 
     colEl.appendChild(block);
   }
+}
+
+/* ── 盤面ロック（2026-08-31 本人指示）───────────────────────────────────────
+   「画面を操作するつもりが無いのに、支援の枠が別の場所へドラッグされてしまう」事故を止める。
+   止めるのは次の4つだけ:
+     ①枠のドラッグ移動 ②時間の伸縮（リサイズ） ③空き枠のタップからの新規追加
+     ④長押し／右クリックのメニュー（複製・削除）
+   止めないもの: 枠を押して内容を見る・直す（保存は本人が押す）、印刷、同期、一覧・復元。
+   ★覚えるのは UI の状態だけ（dev-principles 原則11）。業務データも氏名も保存しない。
+   ★既定は「解除」＝これまでの操作感を変えない。ロックした端末は再読み込みしてもロックのまま。 */
+const CS_LOCK_KEY = 'cs_board_lock_v1';   // 同期対象外・端末ローカルのみ
+let BOARD_LOCKED = false;
+function csLoadBoardLock_() {
+  try { BOARD_LOCKED = (localStorage.getItem(CS_LOCK_KEY) === '1'); } catch (e) { BOARD_LOCKED = false; }
+  csApplyBoardLock_();
+}
+function csApplyBoardLock_() {
+  try { document.body.classList.toggle('board-locked', !!BOARD_LOCKED); } catch (e) {}
+  const b = (typeof $ === 'function') ? $('#board-lock-btn') : null;
+  if (!b) return;
+  b.textContent = BOARD_LOCKED ? '🔒 ロック中' : '🔓 移動ロック';
+  b.classList.toggle('on', !!BOARD_LOCKED);
+  b.setAttribute('aria-pressed', BOARD_LOCKED ? 'true' : 'false');
+  b.title = BOARD_LOCKED
+    ? 'ロック中：支援の枠は動きません。押すと解除します（内容の確認・修正はロック中でもできます）'
+    : '押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）';
+}
+function toggleBoardLock() {
+  BOARD_LOCKED = !BOARD_LOCKED;
+  try { localStorage.setItem(CS_LOCK_KEY, BOARD_LOCKED ? '1' : '0'); } catch (e) {}
+  csApplyBoardLock_();
+  try {
+    showToast(BOARD_LOCKED
+      ? '🔒 盤面をロックしました（支援の枠は動きません）'
+      : '🔓 ロックを解除しました（枠を動かせます）');
+  } catch (e) {}
+}
+/* ロック中なら true を返して操作を止める。★黙って効かないUIにしない＝理由と解除方法を必ず出す。 */
+let _csLockToastAt = 0;
+function csBoardLockedBlock_() {
+  if (!BOARD_LOCKED) return false;
+  const now = Date.now();
+  if (now - _csLockToastAt > 1500) {     // 連続タップでトーストを溢れさせない
+    _csLockToastAt = now;
+    try { showToast('🔒 ロック中です。動かすには「🔒 ロック中」を押して解除してください'); } catch (e) {}
+  }
+  return true;
 }
 
 // ── Overlap layout ──
@@ -5480,6 +5542,7 @@ function touchEv(e) {
 
 function startMove(e, ev, blockEl) {
   if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮の残留時は移動させない（誤時刻保存の防止）
+  if (csBoardLockedBlock_()) return;                // ★盤面ロック中は動かさない（入口ではなくここで止める）
   if (e && e.preventDefault) e.preventDefault();
   const blockRect = blockEl.getBoundingClientRect();
   drag = {
@@ -5500,6 +5563,7 @@ function startMove(e, ev, blockEl) {
 
 function startResize(e, ev, blockEl) {
   if (PRINT_MAP) { restoreWeekPrint_(); return; }   // 印刷圧縮の残留時はリサイズさせない（誤時刻保存の防止）
+  if (csBoardLockedBlock_()) return;                // ★盤面ロック中は伸縮させない
   if (e && e.preventDefault) e.preventDefault();
   drag = {
     type: 'resize',
@@ -7919,6 +7983,8 @@ try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止�
 try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e) {}
 /* その日の始まりの姿を必ず1件残す（編集より前に積む＝事故のあとの姿しか残らないのを防ぐ） */
 try { csEnsureDayAnchor_(); } catch(e) {}
+/* 盤面ロックの状態を戻す（再読み込みで解除されない＝置いてある端末はロックのまま） */
+try { csLoadBoardLock_(); } catch(e) {}
 applyScheduleDeviceGuard();
 (function(){ var b = document.getElementById('suDeviceUnlock'); if (b) b.addEventListener('click', function(){
   try { localStorage.setItem(SU_DEVICE_KEY, 'office'); } catch(e) {}
