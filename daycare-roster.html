@@ -975,6 +975,17 @@ var dcrVmedMap = null;                // masterId(string) -> bool ／ null = 未
    対処は入院・訪問診療と同型＝【描画用のコピーにだけ】重ねる（書き込みは一切増やさない）。
    ★空の居室では上書きしない＝マスタ未入力の人の現行値を消さない（care-schedule の master常勝と同型）。 */
 var dcrRoomMap = null;                // masterId(string) -> room(string) ／ null = 未取得（旧GAS等）
+/* 姓と名の切れ目（2026-09-01）。masterId(string) -> {cut:姓の文字数, len:空白を除いた氏名の文字数}／null = 未取得。
+   ★保持するのは【数値2つだけ】で、マスタの氏名の文字は一切持たない（上の「氏名は保持しない」を崩さない）。
+   ★なぜ要るか（2026-09-01 実測）: 週間名簿が読む週間計画(care_schedule_v2)の氏名には空白が入っていない
+     （デイ母集団32名中31名）。care-schedule は既存利用者の name をマスタから更新しないため
+     （name は名寄せの照合キー。csMergeCommon が更新するのは masterId/careLevel/room/kana/
+     targetSchedule/movedOut/hospitalized だけ）＝マスタで空白を入れても週間計画へは伝わらない。
+     マスタ側には空白が入っているので、切れ目だけを借りて表示のときに全角スペースを差し込む。
+     文字数から推測して割るのではなくマスタ由来＝実在しない氏名を紙に出さない。
+   ★len は取り違え防止の照合用。改名や別人紐づけでマスタと週間計画の氏名が食い違う時は
+     切れ目を使わない（＝空白なしで出す）安全側に倒す。 */
+var dcrNameCutMap = null;
 var dcrHospAt  = 0;
 var dcrHospRev = null;                // 前回見た {rev, srev}
 var dcrHospBusy = false;
@@ -1041,7 +1052,8 @@ function dcrOverlayMaster(db){
 }
 
 /* マスタGASから名簿を取り、入院・往診曜日・居室だけを取り出して保持する。
-   ★取得した氏名・生年月日などは一切保持しない（入院の真偽・☆の真偽・居室番号と masterId のみ）。 */
+   ★取得した氏名・生年月日などは一切保持しない（入院の真偽・☆の真偽・居室番号・姓と名の切れ目の
+     位置（数値2つ）と masterId のみ）。氏名の文字そのものはこの経路では持たない。 */
 function dcrFetchMasterHosp(force){
   if (dcrHospBusy) return Promise.resolve(false);
   var cfg = dcrGetMasterCfg(); if (!cfg || !cfg.token) return Promise.resolve(false);
@@ -1051,7 +1063,7 @@ function dcrFetchMasterHosp(force){
   return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token, transport: 'GET' })
     .then(function(j){
       if (!j || !Array.isArray(j.roster)) return false;
-      var m = {}, vm = {}, rm = {}, sawVisitDay = false, sawRoom = false;
+      var m = {}, vm = {}, rm = {}, nc = {}, sawVisitDay = false, sawRoom = false, sawName = false;
       j.roster.forEach(function(x){
         if (!x || x.masterId == null) { if (x && x.id != null) x.masterId = x.id; }
         var mid = (x && (x.masterId != null ? x.masterId : x.id));
@@ -1065,6 +1077,17 @@ function dcrFetchMasterHosp(force){
           sawVisitDay = true;
           if (String(x.visitDay || '').trim() !== '') vm[String(mid)] = true;
         }
+        /* 姓と名の切れ目。氏名そのものは保持せず、空白の位置と文字数（数値2つ）だけを取る。
+           空白が複数ある氏名は最初の空白を姓名の区切りとみなす（マスタの入力どおり）。 */
+        if (Object.prototype.hasOwnProperty.call(x, 'name')){
+          sawName = true;
+          var nv = String(x.name == null ? '' : x.name).trim();
+          var sp = /[\s\u3000]/.exec(nv);
+          if (sp && sp.index > 0){
+            var bare = nv.replace(/[\s\u3000]/g, '');
+            if (sp.index < bare.length) nc[String(mid)] = { cut: sp.index, len: bare.length };
+          }
+        }
         /* 居室。キーが実在する時だけ「配信あり」とし、値が空の人は地図に載せない
            ＝未入力で現場（週間計画）の居室を消さない。 */
         if (Object.prototype.hasOwnProperty.call(x, 'room')){
@@ -1073,7 +1096,9 @@ function dcrFetchMasterHosp(force){
           if (rv) rm[String(mid)] = rv;
         }
       });
-      dcrHospMap = m; dcrVmedMap = sawVisitDay ? vm : null; dcrRoomMap = sawRoom ? rm : null; dcrHospAt = Date.now();
+      dcrHospMap = m; dcrVmedMap = sawVisitDay ? vm : null; dcrRoomMap = sawRoom ? rm : null;
+      dcrNameCutMap = sawName ? nc : null;   // 氏名を返さない旧GASでは地図を作らない＝従来どおり空白なしで出す
+      dcrHospAt = Date.now();
       if (typeof j.stateRev === 'number' || typeof j.srev === 'number') {
         dcrHospRev = { rev: j.stateRev, srev: j.srev };
       }
@@ -1132,8 +1157,18 @@ function buildModel(db) {
     const fPlan = (r.floor === 1 || r.floor === 2) ? r.floor : 0;
     const floor = fRoom || fPlan;
     floorSrcCount[fRoom ? 'room' : (fPlan ? 'plan' : 'none')]++;
+    /* マスタ由来の「姓と名の切れ目」。空白を除いた文字数が食い違う人（改名・別人紐づけ）には
+       使わない＝間違った位置に空白を入れた氏名を紙に出さない（安全側は「空白なしで出す」）。 */
+    let nameCut = 0;
+    if (dcrNameCutMap && r.masterId != null){
+      const ci = dcrNameCutMap[String(r.masterId)];
+      const bare = String(r.name || '').replace(/[\s\u3000]/g, '');
+      if (ci && bare.length === ci.len && ci.cut > 0 && ci.cut < bare.length) nameCut = ci.cut;
+    }
     people.push({
       name: String(r.name || '（無名）'),
+      nameCut: nameCut,                    // 0＝切れ目が分からない（推測しない）
+
       kana: String(r.kana || ''),
       rid: (r.id != null ? r.id : null),                   // 昼食薬の書戻し時にサーバDBの当該入居者を引く安定キー
       masterId: (r.masterId != null ? r.masterId : null),  // 同上（マスタ由来の一意ID・氏名照合より優先）
@@ -1801,14 +1836,19 @@ function weeklyByFloor(list) {
   return out;
 }
 
-/* 氏名の姓と名のあいだを全角スペースに揃える（2026-09-01 運用指示）。
-   ★分けるのは【入居者マスタの氏名欄に既に空白が入っている時だけ】。空白の無い氏名を
-     文字数から推測して割らない＝実在しない氏名を紙に出さないため（facesheet / resident-master の
-     氏名分割と同じ方針・2026-08-20 のレビュー指摘）。マスタは半角スペースで運用する前提なので、
-     ここは「入っている空白を全角へ揃える」だけに徹する。氏名の文字そのものは変えない。
-   ★連続した空白は1つにまとめ、前後の空白は落とす（マスタの入力揺れで頭出しがずれないように）。 */
-function wkNameSpaced(nm) {
-  return String(nm == null ? '' : nm).trim().replace(/[\s\u3000]+/g, '　');
+/* 氏名の姓と名のあいだを全角スペースにして返す（2026-09-01 運用指示）。切れ目の決め方は2つだけ:
+     ①氏名に既に空白が入っている … その位置を尊重し、半角・全角どちらでも全角へ揃える
+        （連続空白は1つに、前後の空白は落とす＝マスタの入力揺れで頭出しがずれないように）
+     ②入っていない … 入居者マスタ由来の切れ目(nameCut)があればそこに全角スペースを差し込む
+   ★どちらも無い時は【そのまま出す】。文字数から推測して割らない＝「太郎長谷川」を
+     「太郎長／谷川」と割るような、実在しない氏名を紙に出さないため
+     （facesheet / resident-master の氏名分割と同じ方針・2026-08-20 のレビュー指摘）。
+   ★氏名の文字そのものは足しも消しもしない（空白の有無だけを整える）。 */
+function wkNameSpaced(p) {
+  const s = String(((p && p.name) == null) ? '' : p.name).trim();
+  if (/[\s\u3000]/.test(s)) return s.replace(/[\s\u3000]+/g, '　');
+  const c = (p && p.nameCut) || 0;
+  return (c > 0 && c < s.length) ? (s.slice(0, c) + '　' + s.slice(c)) : s;
 }
 
 function weeklyTable(ppl, d) {
@@ -1846,7 +1886,7 @@ function weeklyTable(ppl, d) {
          ★白抜きの☆(U+2606)を氏名と同じ大きさで出す＝専用の縮小・字下げはしない。
            氏名の一部として中央揃えに含める（「☆○○　○○」でひとまとまりに見える）。
            他タブの ☆＝訪問診療 とは別物。週間名簿タブに訪問診療の☆は出ないので紙面では混ざらない。 */
-      tx.appendChild(document.createTextNode((it.p.star ? '☆' : '') + wkNameSpaced(it.p.name)));
+      tx.appendChild(document.createTextNode((it.p.star ? '☆' : '') + wkNameSpaced(it.p)));
       if (it.p.hosp) tx.appendChild(el('span', 'hosp-tag', '（入院）'));   // 氏名の右へぶら下げる（氏名の中央位置は動かない）
       box.appendChild(tx);
     }
