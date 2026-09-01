@@ -11,7 +11,8 @@
 <style>
 /* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
-   ★書き込みは利用者フィールドの昼食薬(lunchMed)と非表示(dcrHidden)の2点のみ（2026-07-23/27/28）。
+   ★書き込みは利用者フィールドの昼食薬(lunchMed)・非表示(dcrHidden)・同姓の目印(dcrStar)の3点のみ
+     （2026-07-23/27/28・2026-09-01）。
      楽観的UI＋背景保存（queueFlags/runSaver）で全端末共通に同期する。通常はrevキャッシュで1往復PUT、
      版ずれ時のみ最新GET＋自分の未確定フラグを載せ直して再PUT（rev競合ガード維持）。
      予定・時刻・辞書・rev運用や他フィールドには書き込まない＝他端末が編集中の週間計画を壊さない。 */
@@ -341,24 +342,42 @@ table.wk td, table.wk th {
   font-size: 1.375rem; font-weight: 700; text-align: center; vertical-align: middle;
   height: 30px; padding: 1px; border: none; white-space: nowrap;
 }
+/* 列構成（2026-09-01 運用指示「デイ列は不要・２階の方を画面の中央へ」）:
+     曜日 16%｜左余白 9%｜氏名 50%｜右余白 25%
+   ★左側の合計（16+9=25%）と右余白（25%）を同値にしてある＝氏名列の中心が
+     画面・紙面のちょうど中央になる。どれか1つを動かす時はこの等式を必ず保つこと（崩すと中央からずれる）。 */
 table.wk .wk-day { width: 16%; color: #ff0000; border: 2px solid var(--g9); }
-table.wk .wk-h { color: #ff0000; width: 42%; }
+table.wk .wk-pad { width: 9%; }
+table.wk .wk-pad-r { width: 25%; }
+table.wk .wk-h { color: #ff0000; width: 50%; }
 table.wk .wk-sum { color: #111; }
 table.wk .wk-blank { color: transparent; }
+/* 氏名は中央揃え・少しだけ大きく（2026-09-01 運用指示）。中央揃えは table.wk td の既定のまま。
+   ★大きくするのは氏名セルだけ。曜日・見出し（２階）・合計の文字サイズは触らない。 */
+table.wk td.wk-nm { font-size: 1.5rem; }
+/* 氏名1行分の器。階ラベルをこの中で絶対配置するための基準として置く
+   （td に position:relative を付けるやり方はブラウザ差が出るため避ける）。 */
+table.wk td.wk-nm .wk-nmin { position: relative; display: block; }
+/* （入院）は氏名の右へ絶対配置で【ぶら下げる】。インラインのままだと「氏名＋（入院）」全体が
+   中央に来る＝入院中の方だけ氏名が左へずれて、他の行と中央が揃わない（2026-09-01 運用指示
+   「氏名は中央揃え」）。絶対配置なら氏名そのものが常に中央で、（入院）は氏名の直後に付く。
+   ★top は指定しない＝インラインだった時と同じ高さに出る（ベースラインを崩さない）。 */
+table.wk td.wk-nm .wk-nmtx { position: relative; }
+table.wk td.wk-nm .wk-nmtx .hosp-tag { position: absolute; left: 100%; }
 /* 階ラベル（2026-08-27 運用指示: 週間名簿でも居室の階が分かるようにする）。
    ２階が上・１階が下で、各階ブロックの先頭の人にだけ「2F」「1F」を出す（並びは他タブと同じ五十音順）。
-   ★枠(.wk-flr)は氏名の有る全行に同じ幅で置く＝氏名の頭出しが全行・両ブロックで揃う。
-     幅は rem 指定＝ラベルの文字サイズと独立させてある（階未設定だけ短い「未」を出しても頭出しはずれない）。
-   ★左揃えにするのは氏名セルだけ。見出し（デイ／２階）と合計行は中央のまま＝既存の見た目を変えない。 */
-/* 氏名は左揃えのまま、まとまりが見出し（デイ／２階）の真下あたりに来るよう左余白で寄せる
-   （2026-08-27 運用指示「左に寄り過ぎ」）。実データの氏名は空白なし4〜6文字・平均4.46文字なので、
-   5文字弱を基準に「氏名の中央≒列の中央」となる位置を実測で決めた。中央揃えにはしない
-   ＝頭出しが行ごとにずれると名簿として読みにくいため。 */
-table.wk td.wk-nm { text-align: left; padding-left: 4.6rem; }
-/* ★ラベルを大きく／左へ動かす時は、枠(width)を広げた分だけ上の padding-left を減らすこと。
-     氏名の頭出し＝padding-left + 枠幅 なので、両方を同じ量だけ増減すれば氏名は1pxも動かない
-     （2026-08-27 運用指示「ラベルは少し大きく左へ・氏名はその位置で固定」）。 */
-table.wk .wk-flr { display: inline-block; width: 2.1rem; font-size: 1rem; text-align: left; }
+   ★左揃え（2026-09-01 運用指示）。氏名を中央揃えにしたので、ラベルは絶対配置で左端に固定する。
+     インラインのままだと氏名の長さでラベルの位置が行ごとに動き「2F」と「1F」の頭が揃わない。
+     絶対配置はインラインの流れから外れるので、氏名の中央位置は1pxも動かない。
+   ★left は氏名（中央揃え）に被らない位置を実測で決めた。氏名を大きくする改修をした時は測り直すこと
+     （測り方: 各行のラベルの右端と氏名レンジ(range)の左端の差を取る）。 */
+table.wk .wk-flr {
+  position: absolute; left: 4%; top: 50%; transform: translateY(-50%);
+  width: 2.1rem; font-size: 1rem; text-align: left;
+}
+/* 空行 tr.wk-gap（見出し「２階」の下と、1F・階未設定ブロックの上／2026-09-01 運用指示）は
+   専用の高さ指定を持たない。中身が空の td なので table.wk td の既定の高さ
+   （画面30px／紙面10.1mm）がそのまま効く＝氏名ちょうど1行分になる。 */
 /* 人数（合計）は氏名と区別できるよう直上に横線を引き、少しだけ間を空ける。
    ★氏名行の高さ・文字サイズは変えない（用紙1枚に収まる行数を減らさないため）。広げるのは合計行だけ。 */
 table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7px; height: 38px; }
@@ -504,15 +523,16 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   .pg:last-child { break-after: auto; page-break-after: auto; } /* 末尾の空白ページ防止 */
   .pg table { break-inside: avoid; page-break-inside: avoid; }
   body.pr-batch table.wk td, body.pr-batch table.wk th { font-size: 26pt; height: 10.1mm; }
-  /* 階ラベルも用紙の文字サイズ(26pt)に合わせて拡大する。枠幅は氏名の場所を削り過ぎない値（実測で決定）。 */
-  body.pr-batch table.wk .wk-flr { width: 2.9rem; font-size: 15pt; }
-  /* 用紙では氏名が 26pt＝画面より大きく、同じ列幅の中で占める割合が変わるため寄せ幅を別に取る。
-     ★値は「中央寄せ」と「はみ出さないこと」の両立点を実測して決めた（1.2rem: 中央からのズレ -16px／
-       最悪ケース＝6文字＋（入院）でも右端に余白 +4px）。これ以上増やすと最後の列で（入院）が
-       用紙の右余白に掛かって印字が欠ける。氏名を長くする改修をした時はここを測り直すこと。
-       測り方: 印刷相当のCSS（26pt・.wk-flr 2.4rem/13pt）を当てた幅756pxの箱に weeklyTable を描き、
-       各行の氏名レンジ(range)の右端とセル右端の差を取る。 */
-  body.pr-batch table.wk td.wk-nm { padding-left: 0.7rem; }
+  /* 氏名だけ少しだけ大きく（2026-09-01 運用指示）。曜日・見出し（２階）・合計は 26pt のまま。
+     ★大きくすると1枚に入る行数が減る。行数の上限は「用紙1枚に収まること」で頭打ちなので、
+       ここを上げる時は最多人数の曜日でA4縦1枚に収まるか必ず測り直すこと。 */
+  body.pr-batch table.wk td.wk-nm { font-size: 28pt; }
+  /* 階ラベルも用紙の文字サイズに合わせて拡大する。
+     ★left は画面(4%)より左へ寄せ、氏名列の左端より更に外（左の余白列の上）へ出す。紙面は氏名が
+       28pt＝画面より大きく、中央揃えの氏名が左へ伸びてラベルに迫るため。
+       実測（最長ケース＝☆＋姓名7文字＋（入院））: left:0 だと間隔10px しかないが、-1.2rem で29px 取れる。
+       左の余白列（曜日の右・9%分）は空なので、ここへ出しても他の要素には当たらない。 */
+  body.pr-batch table.wk .wk-flr { width: 2.9rem; font-size: 15pt; left: -1.2rem; }
   /* 合計の横線と余白は用紙でも同じ考え方。行高は 10.1mm→13mm と少しだけ増やす
      （最大行数でもA4縦1枚に収まる範囲＝氏名の文字を小さくせずに済む）。 */
   body.pr-batch table.wk tr.wk-total td.wk-sum { padding-top: 2.5mm; height: 13mm; }
@@ -530,6 +550,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
        「更新」「印刷」の位置は動かさない＝現場の操作記憶を壊さないため左側へ足す。
        .hdr は @media print で display:none のため帳票には出ない。 -->
   <button class="hdr-btn" id="btnHide" aria-label="利用者の非表示設定を開く（全端末共通）" aria-haspopup="dialog">🙈 非表示設定</button>
+  <button class="hdr-btn" id="btnStar" aria-label="同姓の目印（☆）の設定を開く（全端末共通）" aria-haspopup="dialog">☆ 同姓の目印</button>
   <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタアプリを新しいタブで開く">👤 入居者マスタ</button>
   <button class="hdr-btn" id="btnCare" aria-label="週間計画アプリを新しいタブで開く">📅 週間計画</button>
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
@@ -606,6 +627,26 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   </div>
 </div>
 
+<!-- 同姓の目印（☆）設定モーダル（2026-09-01 運用指示）。care_schedule_v2 の利用者フィールド
+     dcrStar(boolean) へ保存＝サーバ正本・全端末共通。非表示設定(dcrHidden)と同型・同じ書込み経路。
+     用途: 同姓の方がいて取り違えの恐れがある方に、週間名簿の氏名の頭へ☆を出す。
+     ★元データ（週間計画の予定・氏名そのもの）は一切変更しない。☆が付くのは週間名簿タブの表示だけ。
+     既定は hidden 属性で非表示。openStarModal/closeStarModal で開閉する。 -->
+<div class="modal-ov noprint" id="starModal" role="dialog" aria-modal="true" aria-labelledby="starModalTitle" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title" id="starModalTitle">同姓の目印（☆）</span>
+      <button class="modal-x" id="starClose" type="button" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-sub">チェックした利用者は、週間名簿の氏名の頭に☆が付きます（全端末で共通）。同姓の方がいて取り違えの恐れがある時に使います。週間計画の予定や氏名そのものは変更しません。</div>
+    <div class="modal-list" id="starList"></div>
+    <div class="modal-foot">
+      <button class="modal-btn" id="starClearAll" type="button">すべて外す</button>
+      <button class="modal-btn pri" id="starDone" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <!-- 共通データ層（Phase 0）。契約 → ドライバの順。ビルド不要・素の script src 1組。
@@ -619,7 +660,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 'use strict';
 
 /* ============================================================================
-   通所せせらぎ（5タブ）— 参照中心（書込みは昼食薬lunchMedと非表示dcrHiddenの2フィールドのみ・全端末共通）
+   通所せせらぎ（5タブ）— 参照中心（書込みは lunchMed / dcrHidden / dcrStar の3フィールドのみ・全端末共通）
    データ源: care_schedule_v2（daycare イベント＋ residents の room / floor / lunchMed /
              visitingMed / hospitalized / kana / movedOut / preAdmitted）。
    ★表に出さない人: 退去(movedOut)と入居前(preAdmitted)。どちらも週間計画が正本で本ツールは読むだけ。
@@ -627,7 +668,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      room は care-schedule.html が su_residents_common から「master常勝」で取り込むため、
      入居者マスタで居室を直せば部屋移動が自動で追従する（旧経路＝ワークスケジュールの
      デイサービスマスタ手書き floor は、room が取れない時のフォールバックとして残す）。
-   ★書込みは昼食薬(lunchMed)と非表示(dcrHidden)の2利用者フィールドのみ。予定/時刻/辞書/rev運用には書き込まない。
+   ★書込みは昼食薬(lunchMed)・非表示(dcrHidden)・同姓の目印(dcrStar)の3利用者フィールドのみ。
+     予定/時刻/辞書/rev運用には書き込まない。
    5タブは「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」の単一モデルの別表現。
    「２階」は居室の階(floor)ではなく『その日デイに行かない人が2階食堂で昼食を摂る』場所の意味。
    既知の制約: 自費区分（赤/緑）は週間計画に無いため非対応。
@@ -1097,6 +1139,7 @@ function buildModel(db) {
       masterId: (r.masterId != null ? r.masterId : null),  // 同上（マスタ由来の一意ID・氏名照合より優先）
       floor: floor,                                        // 0=階未設定（居室・週間計画とも不明）
       lunchMed: !!r.lunchMed,
+      star: !!r.dcrStar,                 // 同姓の目印（週間名簿だけで氏名の頭に☆を出す・2026-09-01）
       visitingMed: !!r.visitingMed,      // 訪問診療（☆）— 新フラグ。未入力なら false
       hosp: !!r.hospitalized,
       days: days
@@ -1118,8 +1161,9 @@ function buildModel(db) {
        万一どこかで落ちても「再表示」に倒れる＝消失より復活（multi-device-sync 原則5）で安全側。
      - フィルタは renderAll で db.residents を1回絞るだけ。各描画関数（roster/daylist/allweek/med/weekly）は
        無改変で、5タブ全てと全集計から自動的に外れる。非表示ゼロなら db をそのまま渡す＝挙動完全不変。 */
-let HIDE_CANDIDATES = [];        // 非表示設定ウィンドウ用: 全デイ母集団 {name,kana,hidden,rid,masterId}（五十音順・非表示者も含む）
+let HIDE_CANDIDATES = [];        // 非表示設定／☆印設定ウィンドウ用: 全デイ母集団 {name,kana,hidden,star,rid,masterId}（五十音順・非表示者も含む）
 let hiddenNowCount = 0;          // 現候補のうち実際に非表示になっている人数（バッジ・ボタン表示用）
+let starNowCount = 0;            // 現候補のうち☆印が付いている人数（ボタン表示用）
 // デイ母集団の判定（roster は日曜も表示するため dow 0..6。buildModel の月〜土より広く取り、全タブの表示対象を漏れなく候補にする）
 function isDaycareResident(r) {
   const evs = Array.isArray(r.events) ? r.events : [];
@@ -1140,7 +1184,8 @@ function collectHideCandidates(db) {
     if (!r || r.movedOut) continue;
     if (!isDaycareResident(r)) continue;
     out.push({ name: String(r.name || '（無名）'), kana: String(r.kana || ''),
-               hidden: !!r.dcrHidden, rid: (r.id != null ? r.id : null), masterId: (r.masterId != null ? r.masterId : null) });
+               hidden: !!r.dcrHidden, star: !!r.dcrStar,
+               rid: (r.id != null ? r.id : null), masterId: (r.masterId != null ? r.masterId : null) });
   }
   out.sort((a, b) => (a.kana || a.name).localeCompare(b.kana || b.name, 'ja'));   // 五十音順
   return out;
@@ -1756,40 +1801,71 @@ function weeklyByFloor(list) {
   return out;
 }
 
+/* 氏名の姓と名のあいだを全角スペースに揃える（2026-09-01 運用指示）。
+   ★分けるのは【入居者マスタの氏名欄に既に空白が入っている時だけ】。空白の無い氏名を
+     文字数から推測して割らない＝実在しない氏名を紙に出さないため（facesheet / resident-master の
+     氏名分割と同じ方針・2026-08-20 のレビュー指摘）。マスタは半角スペースで運用する前提なので、
+     ここは「入っている空白を全角へ揃える」だけに徹する。氏名の文字そのものは変えない。
+   ★連続した空白は1つにまとめ、前後の空白は落とす（マスタの入力揺れで頭出しがずれないように）。 */
+function wkNameSpaced(nm) {
+  return String(nm == null ? '' : nm).trim().replace(/[\s\u3000]+/g, '　');
+}
+
 function weeklyTable(ppl, d) {
   const t = el('table', 'wk');
   const tb = el('tbody');
   const hr = el('tr');
   hr.appendChild(el('td', 'wk-day', DAYS_JA[d] + '曜日'));
-  hr.appendChild(el('td', 'wk-h', 'デイ'));
+  hr.appendChild(el('td', 'wk-pad', ''));
   hr.appendChild(el('td', 'wk-h', '２階'));
+  hr.appendChild(el('td', 'wk-pad-r', ''));
   tb.appendChild(hr);
-  const a = weeklyByFloor(onDay(ppl, d)), b = weeklyByFloor(offDay(ppl, d));
-  const n = Math.max(a.length, b.length, 1);
-  // 氏名セル: 入院者は他タブと同じく（入院）を付けて表示に残す（名簿から消さない）
-  // 先頭の階ラベル枠は氏名の有る全行に置く（文字が入るのは各階の先頭行だけ）＝氏名の頭出しが揃う
-  const cell = it => {
+  /* 2026-09-01 運用指示: デイ列は載せない。この表は「その日デイに行かない方＝2階食堂で昼食」だけの名簿。
+     ★onDay / countOn は利用表・一覧表・全員リストの各タブで使い続けるので関数はそのまま残す。 */
+  const rows = weeklyByFloor(offDay(ppl, d));
+  // 空行（1行分の空き）。見出し「２階」の下と、階が変わる直前に入れる。
+  const gapRow = () => {
+    const tr = el('tr', 'wk-gap');
+    for (let k = 0; k < 4; k++) tr.appendChild(el('td', 'wk-blank', ''));
+    return tr;
+  };
+  // 氏名行: 入院者は他タブと同じく（入院）を付けて表示に残す（名簿から消さない）。
+  // 階ラベルは .wk-nmin の中で絶対配置＝氏名の長さに関わらず全行・全ブロックで頭が揃う。
+  const nameRow = it => {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'wk-blank', ''));
+    tr.appendChild(el('td', 'wk-blank', ''));
     const td = el('td', 'wk-nm');
+    const box = el('span', 'wk-nmin');
     if (it) {
       const fl = el('span', 'wk-flr', it.flr == null ? '' : WK_FLR_LABEL[it.flr]);
       if (it.flr === 0) fl.title = '階未設定（居室が未登録）';
-      td.appendChild(fl);
-      td.appendChild(document.createTextNode(it.p.name));
-      if (it.p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
+      box.appendChild(fl);
+      const tx = el('span', 'wk-nmtx');
+      /* ☆＝同姓の目印（2026-09-01 運用指示）。同姓の方がいて取り違えの恐れがある方に付ける。
+         ★白抜きの☆(U+2606)を氏名と同じ大きさで出す＝専用の縮小・字下げはしない。
+           氏名の一部として中央揃えに含める（「☆○○　○○」でひとまとまりに見える）。
+           他タブの ☆＝訪問診療 とは別物。週間名簿タブに訪問診療の☆は出ないので紙面では混ざらない。 */
+      tx.appendChild(document.createTextNode((it.p.star ? '☆' : '') + wkNameSpaced(it.p.name)));
+      if (it.p.hosp) tx.appendChild(el('span', 'hosp-tag', '（入院）'));   // 氏名の右へぶら下げる（氏名の中央位置は動かない）
+      box.appendChild(tx);
     }
-    return td;
-  };
-  for (let i = 0; i < n; i++) {
-    const tr = el('tr');
+    td.appendChild(box);
+    tr.appendChild(td);
     tr.appendChild(el('td', 'wk-blank', ''));
-    tr.appendChild(cell(a[i]));
-    tr.appendChild(cell(b[i]));
-    tb.appendChild(tr);
-  }
+    return tr;
+  };
+  tb.appendChild(gapRow());                                     // 見出し「２階」の下の1行分の空き
+  if (!rows.length) tb.appendChild(nameRow(null));              // 0名の日でも表の形は崩さない（従来どおり）
+  rows.forEach((it, i) => {
+    if (i > 0 && it.flr != null) tb.appendChild(gapRow());      // 1F・階未設定ブロックの上の1行分の空き
+    tb.appendChild(nameRow(it));
+  });
   const sr = el('tr', 'wk-total');   // 直上の横線と余白（氏名と人数の区切り）はこの行にだけ効かせる
   sr.appendChild(el('td', 'wk-blank', ''));
-  sr.appendChild(el('td', 'wk-sum', countOn(ppl, d) + '名'));    // 入院者を除いた実稼働
-  sr.appendChild(el('td', 'wk-sum', countOff(ppl, d) + '名'));
+  sr.appendChild(el('td', 'wk-blank', ''));
+  sr.appendChild(el('td', 'wk-sum', countOff(ppl, d) + '名'));   // 入院者を除いた実稼働
+  sr.appendChild(el('td', 'wk-blank', ''));
   tb.appendChild(sr);
   t.appendChild(tb);
   return t;
@@ -2241,7 +2317,7 @@ const LEGENDS = {
      2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
      紙には出ないので、印刷の表の大きさは 2026-08-17 の状態のまま変わらない。 */
   'sc-med':     [['tn', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
-  'sc-weekly':  [['t', 'デイ＝その日の利用者／２階＝デイに行かない方（2階食堂で昼食）。印刷は6曜日を一括で6枚出します']]
+  'sc-weekly':  [['t', '２階＝その日デイに行かない方（2階食堂で昼食）／☆＝同姓の方がいます（右上「同姓の目印」で設定）。印刷は6曜日を一括で6枚出します']]
 };
 function activeTab() {
   const b = document.querySelector('.tnav button[aria-selected="true"]');
@@ -2325,10 +2401,13 @@ function renderAll(db) {
   // 非表示設定を反映: 候補一覧（非表示者も含む・五十音）を作り、db から非表示を除いたビューを全描画へ渡す。
   HIDE_CANDIDATES = collectHideCandidates(db);
   hiddenNowCount = HIDE_CANDIDATES.filter(c => c.hidden).length;   // 現候補のうち実際に隠れている人数
+  starNowCount = HIDE_CANDIDATES.filter(c => c.star).length;       // 同上（☆印）
   updateHideButton();
-  // 非表示モーダルを開いたまま裏で候補が変わっても（更新/保存/起動時取得）、一覧を権威データへ再同期する。
+  updateStarButton();
+  // 各モーダルを開いたまま裏で候補が変わっても（更新/保存/起動時取得）、一覧を権威データへ再同期する。
   // ★これが無いと、開いたままのチェックボックスが古い並びを指し、別人を非表示にしうる（識別子照合と二重の防御）。
   try { if (!$('hideModal').hidden) renderHideList(); } catch (e) {}
+  try { if (!$('starModal').hidden) renderStarList(); } catch (e) {}
   const view = viewExcludingHidden(db);   // 非表示ゼロなら db 原本（挙動完全不変）
   MODEL = buildModel(view);
   const empty = $('boardEmpty');
@@ -2441,6 +2520,8 @@ function hideCandidateFromCb_(cb) {
     (mid && x.masterId != null && String(x.masterId) === mid) ||
     (rid && x.rid != null && String(x.rid) === rid)) || null;
 }
+// ☆印モーダルも同じ候補配列・同じ安定IDで引く（別人に印を付けないための照合は非表示設定と同一）。
+const starCandidateFromCb_ = hideCandidateFromCb_;
 function openHideModal() {
   renderHideList();
   const m = $('hideModal');
@@ -2451,6 +2532,51 @@ function openHideModal() {
 function closeHideModal() {
   $('hideModal').hidden = true;
   if (hideModalPrevFocus && hideModalPrevFocus.focus) { try { hideModalPrevFocus.focus(); } catch (e) {} }
+}
+
+/* ── 同姓の目印（☆）設定モーダルの描画・開閉（2026-09-01 運用指示）──
+   非表示設定(dcrHidden)と同型: 候補一覧は同じ HIDE_CANDIDATES（全デイ母集団・五十音順）を使い、
+   保存は同じ writeResidentFlag（楽観的UI＋背景保存・read-fresh＋rev競合ガード）で dcrStar のみ更新する。
+   ★☆が出るのは週間名簿タブの氏名の頭だけ。氏名そのもの・週間計画の予定は変更しない。 */
+function updateStarButton() {
+  const b = $('btnStar');
+  if (!b) return;
+  b.textContent = starNowCount ? ('☆ 同姓の目印 (' + starNowCount + ')') : '☆ 同姓の目印';
+  b.classList.toggle('active', starNowCount > 0);   // 有効時は目立たせる（黙って印を付けない）
+}
+let starModalPrevFocus = null;
+function renderStarList() {
+  const box = $('starList');
+  const keepScroll = box.scrollTop;   // 背景保存/更新のたびに作り直しても閲覧位置を保つ（トグル時のガタつき防止）
+  box.textContent = '';
+  if (!HIDE_CANDIDATES.length) {
+    box.appendChild(el('div', 'modal-empty', 'デイサービスの利用者がいません。'));
+    return;
+  }
+  HIDE_CANDIDATES.forEach(c => {
+    const lb = el('label', 'modal-item');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = c.star;   // サーバ正本(dcrStar)から復元
+    // ★配列位置でなく安定ID(masterId/内部id)で紐付ける。裏で候補順がずれても別人に印を付けない（非PII）。
+    cb.dataset.mid = (c.masterId != null ? String(c.masterId) : '');
+    cb.dataset.rid = (c.rid != null ? String(c.rid) : '');
+    cb.setAttribute('aria-label', c.name + ' に同姓の目印（☆）を付ける');
+    lb.appendChild(cb);
+    lb.appendChild(document.createTextNode(c.name));   // 氏名は textContent（個人情報・XSS防止）
+    if (c.kana) lb.appendChild(el('span', 'mi-kana', c.kana));
+    box.appendChild(lb);
+  });
+  box.scrollTop = keepScroll;   // 閲覧位置を復元
+}
+function openStarModal() {
+  renderStarList();
+  const m = $('starModal');
+  starModalPrevFocus = document.activeElement;   // 閉じたらトリガーへ戻す
+  m.hidden = false;
+  const f = $('starClose'); if (f) f.focus();
+}
+function closeStarModal() {
+  $('starModal').hidden = true;
+  if (starModalPrevFocus && starModalPrevFocus.focus) { try { starModalPrevFocus.focus(); } catch (e) {} }
 }
 
 function init() {
@@ -2470,11 +2596,20 @@ function init() {
   $('hideClose').addEventListener('click', closeHideModal);
   $('hideDone').addEventListener('click', closeHideModal);
   $('hideModal').addEventListener('click', e => { if (e.target === $('hideModal')) closeHideModal(); });   // 背景クリックで閉じる
+  // 同姓の目印（☆）設定モーダル
+  $('btnStar').addEventListener('click', openStarModal);
+  $('starClose').addEventListener('click', closeStarModal);
+  $('starDone').addEventListener('click', closeStarModal);
+  $('starModal').addEventListener('click', e => { if (e.target === $('starModal')) closeStarModal(); });   // 背景クリックで閉じる
+  /* Esc で閉じる／Tab をモーダル内に閉じ込める（HIG: キーボード到達性）。
+     ★2026-09-01: ☆印設定モーダルを足したので「開いている方のモーダル」に効かせる形へ広げた。
+       非表示設定だけの時の挙動は従来と同一（開いていない側は素通りする）。 */
   document.addEventListener('keydown', e => {
-    if ($('hideModal').hidden) return;
-    if (e.key === 'Escape') { closeHideModal(); return; }
-    if (e.key === 'Tab') {   // フォーカスをモーダル内に閉じ込める（HIG: キーボード到達性）
-      const f = [...$('hideModal').querySelectorAll('button, input')].filter(x => !x.disabled && x.offsetParent !== null);
+    const mv = [['hideModal', closeHideModal], ['starModal', closeStarModal]].find(x => !$(x[0]).hidden);
+    if (!mv) return;
+    if (e.key === 'Escape') { mv[1](); return; }
+    if (e.key === 'Tab') {
+      const f = [...$(mv[0]).querySelectorAll('button, input')].filter(x => !x.disabled && x.offsetParent !== null);
       if (!f.length) return;
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -2493,6 +2628,19 @@ function init() {
     const items = HIDE_CANDIDATES.filter(c => c.hidden).map(c => ({ rid: c.rid, masterId: c.masterId, name: c.name }));
     if (!items.length) { toast('非表示の利用者はいません'); return; }
     writeResidentFlag(items, 'dcrHidden', false, '非表示設定');   // 全端末へ反映
+  });
+  $('starList').addEventListener('change', e => {
+    const cb = e.target;
+    if (!cb || cb.type !== 'checkbox') return;
+    const c = starCandidateFromCb_(cb);   // 安定IDで引く（並び替え耐性）
+    if (!c) { toast('一覧が更新されました。もう一度開き直してください', true); renderStarList(); return; }
+    // dcrStar を全端末共通で保存（queueFlags が即時反映＋背景保存。runSaver がモーダルも再同期）
+    writeResidentFlag([{ rid: c.rid, masterId: c.masterId, name: c.name }], 'dcrStar', cb.checked, '同姓の目印');
+  });
+  $('starClearAll').addEventListener('click', () => {
+    const items = HIDE_CANDIDATES.filter(c => c.star).map(c => ({ rid: c.rid, masterId: c.masterId, name: c.name }));
+    if (!items.length) { toast('☆印が付いている利用者はいません'); return; }
+    writeResidentFlag(items, 'dcrStar', false, '同姓の目印');   // 全端末へ反映
   });
   $('tnav').addEventListener('click', e => { const b = e.target.closest('button[data-sc]'); if (b) goto(b.dataset.sc); });
 
