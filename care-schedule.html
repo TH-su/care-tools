@@ -814,7 +814,13 @@ select.inp { cursor: pointer; }
 .wk-ev-icons img { max-width: 16mm; max-height: 16mm; }
 .wk-onsen { font-size: 14mm; line-height: 1.05; color: #b5121b; text-align: center; }
 /* 支援内容が長いコマだけ文字を落とす（枠からはみ出させない） */
-.wk-ev-body.long { font-size: 2.8mm; line-height: 1.2; }
+.wk-ev-body.long  { font-size: 2.8mm; line-height: 1.2; }
+.wk-ev-body.xlong { font-size: 2.3mm; line-height: 1.15; }
+/* 左右に分かれた枠・帯を等分した枠は、時刻が折り返して溢れるため一段落とす */
+.wk-ev.narrow .wk-ev-time, .wk-ev.tight .wk-ev-time { font-size: 2.9mm; letter-spacing: 0; padding: 0.3mm 0; }
+.wk-ev.narrow .wk-ev-body, .wk-ev.tight .wk-ev-body { font-size: 2.5mm; line-height: 1.15; }
+.wk-ev.narrow .wk-ev-main, .wk-ev.tight .wk-ev-main { font-size: 3.2mm; }
+.wk-ev.tight .wk-onsen { font-size: 5mm; }
 
 /* ══ A3週間予定表の印刷（body.wk-print のときだけ）══════════════════════════════
    既存の印刷（週ボードA4・利用者一覧A3）とは完全に別経路。ここでしか使わない指定だけを書く。 */
@@ -6807,6 +6813,9 @@ function restoreScrollSync_() {
 
 window.addEventListener('beforeprint', function () {
   if (document.body.classList.contains('rl-print')) return;   // 利用者一覧A3印刷は別経路＝触らない
+  /* A3週間予定表も別経路。ここを通すと毎回 PRINT_MAP（印刷用の圧縮座標）が張られ、
+     残留したままドラッグすると誤った時刻で保存される既知の事故に近づく（2026-09-01 レビュー中3）。 */
+  if (document.body.classList.contains('wk-print')) return;
   document.body.classList.add('week-print');
   buildPrintMap_(currentResident());
   resetScrollSync_();
@@ -7375,6 +7384,15 @@ function clearRlPrintState_() {
   document.body.classList.remove('rl-print');
   const nodes = document.querySelectorAll('#rl-a3-page');
   for (let i = 0; i < nodes.length; i++) nodes[i].remove();
+  /* ★A3週間予定表の状態もここで落とす（2026-09-01 レビュー高1）。
+     afterprint が来ない環境（一部WebView/PDF）で残ると、次に押した週ボードA4印刷・利用者一覧A3印刷が
+     まるごと「A3の週間予定表」に化ける（実測済み）。印刷の入口はすべてこの共通クリーナを通るので、
+     ここに入れておけば入口ごとの取りこぼしが起きない。 */
+  document.body.classList.remove('wk-print');
+  const wkNodes = document.querySelectorAll('#wk-a3-page');
+  for (let i = 0; i < wkNodes.length; i++) wkNodes[i].remove();
+  const wkBox = document.getElementById('wk-sheet');
+  if (wkBox) wkBox.innerHTML = '';        /* 氏名を画面のDOMに残さない */
 }
 // 利用者一覧のみをA3横で印刷（週ボードのA4印刷経路は無改変・一覧印刷時だけ @page を動的注入）
 /* ══ A3週間予定表（2026-09-01 本人指示）════════════════════════════════════════════
@@ -7408,6 +7426,11 @@ function wkY_(mins) {
   if (m <= 1200) return WK_AXIS.band + 9 * WK_AXIS.hour + ((m - 1020) / 180) * WK_AXIS.hour;  /* 17–20 を1行へ */
   return WK_AXIS.band + 10 * WK_AXIS.hour + ((m - 1200) / 240) * WK_AXIS.night;       /* 夜間帯 */
 }
+/* 圧縮された帯（1時間あたりの高さが本文の1/3以下）。ここに複数コマが入る日は帯を等分して並べる。
+   ★帯は「早朝」「夕(17-20)」「夜間(20-24)」を別々に扱う。まとめて等分すると、22時のコマが
+     17時の位置から描かれて時間帯を誤って読ませる（実測で確認）。 */
+const WK_ZONES = [{ a: 0, b: 480 }, { a: 1020, b: 1200 }, { a: 1200, b: 1440 }];
+
 /* コマの種類＝色の規則（本人確定）: 通所→黄／支援内容に「買物」を含む訪問→緑／その他の訪問→青灰 */
 function wkKindOf_(ev) {
   if (!ev) return 'visit';
@@ -7484,7 +7507,28 @@ function wkLayoutDay_(events) {
     it.top = it.top - lift;
     it.h   = Math.max(0.5, Math.min(want, nextTop - it.top - GAP));
   }
-  return items.map(it => ({ ev: it.ev, top: it.top, h: it.h, lane: it.lane, lanes: lanes }));
+  /* ★圧縮された帯に2件以上あるときは、帯を等分して順番に置く（2026-09-01 レビュー高3）。
+     早朝(0–8時)は30mm・夕夜(17–24時)は37.4mm しか無いのに、訪問1件の下限が15mm あるため、
+     時間に比例させたままだと2件目以降が 1〜8mm に潰れ、時刻も支援内容も1文字も出ずに
+     「紙から訪問が消える」（実測で夜間2件の22/28通りが該当）。
+     等分なら必ず全件が出る。狭いときは文字も落とす（tight）。 */
+  for (let z = 0; z < WK_ZONES.length; z++) {
+    const zone = WK_ZONES[z];
+    const inZone = items.filter(it => it.a >= zone.a && it.a < zone.b);
+    if (inZone.length < 2) continue;
+    inZone.sort((x, y) => x.a - y.a);
+    const zTop = wkY_(zone.a), zBottom = wkY_(zone.b);
+    const share = Math.max(0.5, (zBottom - zTop - GAP * (inZone.length - 1)) / inZone.length);
+    for (let k = 0; k < inZone.length; k++) {
+      inZone[k].top  = zTop + k * (share + GAP);
+      inZone[k].h    = share;
+      inZone[k].lane = 0;                 /* 縦に並べるので横割りは解く（幅を残して読めるようにする） */
+      inZone[k].tight = share < 12;
+    }
+  }
+  const laneCount = items.some(it => it.lane > 0) ? lanes : 1;
+  return items.map(it => ({ ev: it.ev, top: it.top, h: it.h, lane: it.lane,
+                            lanes: laneCount, tight: !!it.tight }));
 }
 /* 紙面を組み立てる。戻り値は HTML 文字列（テストで中身を確かめられるよう純粋な組み立てにする）。 */
 function buildWeeklySheetHtml_(res) {
@@ -7537,11 +7581,13 @@ function buildWeeklySheetHtml_(res) {
       const onsen = (kind === 'daycare' && p.ev.bathing === true) ? '<div class="wk-onsen">♨</div>' : '';
       const main  = wkMainText_(p.ev);
       const cls   = (kind === 'daycare') ? 'wk-ev-main' : '';
+      /* 狭い枠（帯の等分・左右分割）は文字を落として、時刻も内容も枠内に収める */
+      const narrow = (p.lanes > 1 ? ' narrow' : '') + (p.tight ? ' tight' : '');
       cells +=
-        '<div class="wk-ev" style="top:' + p.top.toFixed(2) + 'mm;height:' + p.h.toFixed(2) + 'mm;'
+        '<div class="wk-ev' + narrow + '" style="top:' + p.top.toFixed(2) + 'mm;height:' + p.h.toFixed(2) + 'mm;'
           + 'left:calc(' + left + '% + 0.6mm);width:calc(' + w + '% - 1.2mm);background:' + col.body + '">'
         + '<div class="wk-ev-time" style="background:' + col.time + '">' + escHtml(wkTimeText_(p.ev)) + '</div>'
-        + '<div class="wk-ev-body' + (main.length > 12 ? ' long' : '') + '"><div class="' + cls + '">'
+        + '<div class="wk-ev-body' + (main.length > 24 ? ' xlong' : (main.length > 12 ? ' long' : '')) + '"><div class="' + cls + '">'
         + escHtml(main) + '</div>'
         + onsen
         + (icons.length ? '<div class="wk-ev-icons">'
@@ -7571,8 +7617,11 @@ function printWeeklySheet() {
   if (!res) { showToast('利用者が選択されていません'); return; }
   const box = $('#wk-sheet');
   if (!box) return;
+  /* ★順序が大事: 先に残骸を落としてから紙面を組む。共通クリーナは（他の印刷入口のために）
+     #wk-sheet の中身も空にするので、逆順にすると自分で組んだ紙面を自分で消して白紙が出る
+     （実測で白紙になった）。 */
+  clearRlPrintState_();
   box.innerHTML = buildWeeklySheetHtml_(res);
-  clearRlPrintState_();                       /* 直前の印刷の残骸を必ず落としてから始める */
   document.body.classList.add('wk-print');
   const st = document.createElement('style');
   st.id = 'wk-a3-page';
@@ -7583,15 +7632,22 @@ function printWeeklySheet() {
     if (cleaned) return;
     cleaned = true;
     document.body.classList.remove('wk-print');
-    const el = document.getElementById('wk-a3-page');
-    if (el && el.parentNode) el.parentNode.removeChild(el);
+    const els = document.querySelectorAll('#wk-a3-page');   /* 多重クリックで増えても全部落とす */
+    for (let i = 0; i < els.length; i++) els[i].remove();
     const b = document.getElementById('wk-sheet');
     if (b) b.innerHTML = '';                  /* 氏名を画面のDOMに残さない */
     window.removeEventListener('afterprint', done);
   };
   window.addEventListener('afterprint', done);
-  window.print();
-  setTimeout(done, 60000);                    /* afterprint が来ない環境の保険（紙面が残り続けない） */
+  /* ★保険は window.print() の【前】に張る（2026-09-01 レビュー高2）。
+     印刷がポリシーで拒否される環境では print() が例外を投げ、後ろに置くと保険に到達しない＝
+     紙面（氏名）と印刷状態が残り続ける。 */
+  setTimeout(done, 60000);
+  try { window.print(); }
+  catch (e) {
+    done();                                   /* 印刷できない環境ではその場で後始末する */
+    try { showToast('この端末では印刷を開始できませんでした'); } catch (e2) {}
+  }
 }
 
 function printResidentList() {
