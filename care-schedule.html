@@ -7451,7 +7451,8 @@ const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.eve + WK_AXIS.night
 const WK_SHEET_COLORS = {
   daycare: { time: '#FFFF00', body: '#FFFF00' },   /* 通所介護 */
   shop:    { time: '#92D050', body: '#92D050' },   /* 買物代行（元様式の実値） */
-  rise:    { time: '#CDDC39', body: '#CDDC39' },   /* 起床時支援・就寝時支援＝黄緑（本人指示 2026-09-02） */
+  rise:    { time: '#55FF00', body: '#55FF00' },   /* 起床時支援・就寝時支援の帯＝黄緑
+                                                      RGB(85,255,0)＝本人指定の色（2026-09-02） */
   visit:   { time: '#9FDCF7', body: '#9FDCF7' },   /* 訪問介護＝水色（本人指示 2026-09-02。
                                                       元様式の #A5B6CB は暗いとの判断で明るい水色へ） */
 };
@@ -7476,26 +7477,32 @@ function wkY_(mins) {
      17時の位置から描かれて時間帯を誤って読ませる（実測で確認）。 */
 const WK_ZONES = [{ a: 0, b: 420 }, { a: 1020, b: 1200 }, { a: 1200, b: 1440 }];
 
-/* 支援内容が空の「身体01」を、時間帯の呼び名に置き換える判定（2026-09-02 本人指示）。
-   朝（9:00より前に始まる）＝起床時支援 ／ 夕方以降（17:00以降に始まる）＝就寝時支援。
-   ★色（黄緑）と文言の両方がこの判定を使うので、ここ1か所にまとめる。 */
-function wkBandLabel_(ev) {
-  if (!ev || ev.serviceType === 'daycare') return '';
-  if (String(ev.detail || '').trim()) return '';        /* 入力があれば置き換えない（原則6） */
+/* 「起床時支援・就寝時支援の帯」かどうか（＝色の判定・2026-09-02 本人指示）。
+   身体01 のコマで、朝（9:00より前に始まる）または夕方以降（17:00以降に始まる）ならこの帯。
+   ★支援内容の記載があっても帯は帯として扱う。「就寝時支援＋軟膏塗布」の意味なので、
+     色は通常の就寝時支援と同じにする（記載は入力どおり「軟膏」のまま出す）。 */
+function wkIsBandSlot_(ev) {
+  if (!ev || ev.serviceType === 'daycare') return false;
   const cat = (typeof catDisplayLabel_ === 'function' ? catDisplayLabel_(ev.category) : '') || '';
   const norm = cat.replace(/０/g, '0').replace(/１/g, '1').replace(/\s/g, '');
-  if (norm !== '身体01') return '';
+  if (norm !== '身体01') return false;
   const st = timeToMins(ev.startTime);
-  if (st < 9 * 60)   return '起床時支援';
-  if (st >= 17 * 60) return '就寝時支援';
-  return '';
+  return (st < 9 * 60 || st >= 17 * 60);
 }
-/* コマの種類＝色の規則: 通所→黄／買物→緑／起床時・就寝時支援→黄緑／その他の訪問→水色 */
+/* 帯の呼び名（＝文言の判定）。支援内容が入力されていればその入力をそのまま出すので、
+   ここでは空を返す（原則6・利用者の記載を勝手に置き換えない）。 */
+function wkBandLabel_(ev) {
+  if (!wkIsBandSlot_(ev)) return '';
+  if (String(ev.detail || '').trim()) return '';
+  return (timeToMins(ev.startTime) < 9 * 60) ? '起床時支援' : '就寝時支援';
+}
+/* コマの種類＝色の規則: 通所→黄／起床時・就寝時支援の帯→黄緑／買物→緑／その他の訪問→水色。
+   ★帯の判定を買物より先に置く。「とにかく帯なら統一の色」という本人指示に合わせるため。 */
 function wkKindOf_(ev) {
   if (!ev) return 'visit';
   if (ev.serviceType === 'daycare') return 'daycare';
+  if (wkIsBandSlot_(ev)) return 'rise';
   if (String(ev.detail || '').indexOf('買物') >= 0) return 'shop';
-  if (wkBandLabel_(ev)) return 'rise';
   return 'visit';
 }
 /* 時刻の表記。元様式に合わせ、通所は半角コロン・訪問は全角コロンで出す。 */
