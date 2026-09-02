@@ -409,6 +409,17 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
 .modal.on{display:flex}
 .modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
+/* 氏名を直す時の2段階目。一括編集モーダル（z-index:150）の【上】に重ねる */
+#mNameWarn{z-index:160}
+#mNameWarn .box{max-width:640px}
+.nw-body{font-size:0.875rem; line-height:1.75; color:var(--g9); max-height:58vh; overflow:auto}
+.nw-body p{margin:0 0 10px}
+.nw-body ol{margin:6px 0 10px; padding-inline-start:1.4em}
+.nw-body li{margin-bottom:8px}
+.nw-body .muted{color:var(--g7); font-size:0.8125rem}
+.nw-names{background:var(--g1); border-radius:8px; padding:8px 12px; margin:0 0 12px; font-weight:600}
+.nw-danger{background:var(--warn-bg); border:1px solid var(--warn-tx); border-radius:8px;
+  padding:10px 12px; margin:0 0 12px}
 .modal h2{font-size: 1rem; margin:0 0 12px}
 /* ── 一括編集（2026-08-08 追加。既存の .modal / .fld には一切触れない） ── */
 #mBulk .box{max-width:1500px; width:98vw; max-height:92vh; padding:12px; display:flex; flex-direction:column}
@@ -426,11 +437,16 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bulk-tbl th,.bulk-tbl td{border-bottom:1px solid var(--g2); border-right:1px solid var(--g2); padding:0}
 .bulk-tbl thead th{position:sticky; top:0; z-index:3; background:var(--g1); padding:7px 8px;
   font-size: 0.75rem; text-align:start; font-weight:700; color:var(--g9)}
-/* 氏名列は横スクロールしても残す。★背景色は必須（無いと下の行が透ける） */
-.bulk-tbl .bk-name{position:sticky; left:0; z-index:2; background:#fff; padding:5px 8px;
-  font-weight:700; min-width:132px; max-width:132px; overflow:hidden; text-overflow:ellipsis}
-.bulk-tbl thead .bk-name{z-index:4; background:var(--g1)}
-.bulk-tbl .bk-room{position:sticky; left:132px; z-index:2; background:#fff; min-width:74px}
+/* 氏名列は横スクロールしても残す。★背景色は必須（無いと下の行が透ける）
+   ★2026-09-02: 氏名も直せるようにしたので入力欄が入る。padding は input 側が持つ
+     （他のセルと同じ作法）。★これで thead 側の padding も消えるため下で入れ直す。
+     幅は 132→150px（入力欄に余裕を持たせる）。★居室列の left も同じだけずらすこと
+     （ずらさないと sticky の2列が重なって氏名が読めなくなる） */
+.bulk-tbl .bk-name{position:sticky; left:0; z-index:2; background:#fff; padding:0;
+  min-width:150px; max-width:150px}
+.bulk-tbl .bk-name input{font-weight:700; min-width:0}
+.bulk-tbl thead .bk-name{z-index:4; background:var(--g1); padding:7px 8px}
+.bulk-tbl .bk-room{position:sticky; left:150px; z-index:2; background:#fff; min-width:74px}
 .bulk-tbl thead .bk-room{z-index:4; background:var(--g1)}
 .bulk-tbl input,.bulk-tbl select{width:100%; min-width:92px; border:none; background:transparent;
   padding:8px; font-size: 0.8125rem; font-family:inherit; color:var(--g9)}
@@ -440,8 +456,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★表の行が高くならないよう1行ぶんに抑え、必要な人だけ縦に広げられるようにする。 */
 .bulk-tbl textarea.bk-lines{width:100%; min-height:0; height:34px; padding:6px 8px; border:none;
   font:inherit; line-height:1.3; resize:vertical; background:transparent; overflow:auto}
-.bulk-tbl tr.bulk-out .bk-name{color:var(--g6)}
-.bulk-tbl tr.bulk-broken .bk-name::after{content:' ⚠'; color:var(--ng)}
+/* ★入力できる欄になったので --g6（≒3.5:1）では足りない。--g7（≒5.9:1）で AA を満たす */
+.bulk-tbl tr.bulk-out .bk-name,.bulk-tbl tr.bulk-out .bk-name input{color:var(--g7)}
+/* ★入力欄が幅いっぱいなので、⚠ を文字の後ろに置くと押し出される。角に重ねる
+   （セルは position:sticky＝位置の基準になっている）。理由は title にも出している */
+.bulk-tbl tr.bulk-broken .bk-name::after{content:'⚠'; color:var(--ng); position:absolute;
+  right:2px; top:0; font-size:0.6875rem; line-height:1.4; pointer-events:none}
 .bulk-tbl tr.bulk-hide{display:none}
 .bulk-foot{flex:0 0 auto; display:flex; gap:8px; align-items:center; justify-content:flex-end;
   padding-top:10px; flex-wrap:wrap}
@@ -912,7 +932,9 @@ body.meal-on #sc-list{max-width:none}
     <h2>📊 一括編集</h2>
     <p class="bulk-note">
       表の上で複数の方をまとめて直せます。<b>直した項目だけ</b>が保存され、他の項目には一切触れません。<br>
-      氏名・在籍状態・支援経過・家族情報・入院の状態は、取り違えを防ぐためこの画面では扱いません（1人ずつの編集画面で変更してください）。
+      在籍状態・支援経過・家族情報・入院の状態は、取り違えを防ぐためこの画面では扱いません（1人ずつの編集画面で変更してください）。<br>
+      <b>氏名</b>は直せます（2026-09-02〜）。<b>スペースの調整</b>は他のアプリに影響しませんが、<b>文字そのものを変える</b>と
+      家族構成図・デイ利用日・体重の最新値・支援経過の取込が「無い」ように見えます（保存前にもう一度確認します）。
     </p>
     <div class="bulk-tabs" id="bulkTabs"></div>
     <div class="bulk-tools">
@@ -925,6 +947,22 @@ body.meal-on #sc-list{max-width:none}
       <span class="grow" id="bulkDirtyMsg">変更はありません</span>
       <button class="btn btn-gray" id="bulkClose" type="button">閉じる</button>
       <button class="btn btn-ok" id="bulkSave" type="button" disabled>💾 変更を保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 氏名を直す時の2段階目（2026-09-02 管理者の裁定＝案B） ════════
+     ★native の confirm を使わない。1クリックで confirm を2枚続けて出すと、Chrome が2枚目に
+       「このページでこれ以上ダイアログを表示しない」を出す。チェックされると以後
+       confirm は無条件 false・alert は無音になり、【保存ボタンが無反応になる】うえ、
+       §13 の「保存できたか確認しました」の案内まで出なくなる。 -->
+<div class="modal" id="mNameWarn">
+  <div class="box">
+    <h2>⚠️ 氏名の文字そのものを変えます</h2>
+    <div class="nw-body" id="nameWarnBody"></div>
+    <div class="bulk-foot">
+      <button class="btn btn-gray" id="nameWarnCancel" type="button">やめる</button>
+      <button class="btn btn-ok" id="nameWarnOk" type="button">この内容で保存する</button>
     </div>
   </div>
 </div>
@@ -5528,10 +5566,13 @@ function testSync(){
  *      一覧の検索・タブ・印刷・誕生日一覧のフィット処理に一切影響しない
  *   2. 保存は GAS の `savePartial`。**直した項目だけ**を書き、他の約100項目には触れない
  *      （`saveResident` は dataJson を丸ごと置換するので使わない）
- *   3. 氏名・在籍・支援経過・家族・入院フラグ・退避データは**列に出さない**。
+ *   3. **氏名は 2026-09-02 に解禁した**（照合用＝旧氏名 / 書き込み＝新氏名 を分ける・§15）。
+ *      在籍・支援経過・家族・入院フラグ・退避データは**列に出さない**。
  *      サーバー側 `BULK_FIELDS` でも拒否する（二重の歯止め）
  *   4. 絞り込みは**行の表示/非表示だけ**。再描画しないので、入力中の値とフォーカスが消えない
- *      （一覧の `renderRoster` は 1打鍵ごとに innerHTML を作り直すため、その経路は使わない）
+ *      （一覧の `renderRoster` は 1打鍵ごとに innerHTML を作り直すため、その経路は使わない）。
+ *      ※`refreshBulkNames_`（保存が氏名不一致で失敗した時だけ）は例外的に再描画する。
+ *        値は `bulkDirty` から復元されるが、フォーカスとスクロール位置は飛ぶ
  *   5. セルごとにイベントを付けず、`tbody` に1つだけ付ける（138行×12列でも重くならない）
  *   6. 変更は `bulkDirty` に持ち、DOM を正本にしない。列グループを切り替えても消えない
  *   7. 保存前に「対象人数・項目・他アプリへ波及する項目」を出して確認を取る
@@ -5577,6 +5618,10 @@ var BULK_GROUPS=[
 var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
   dischargeDate:'退去日',doctor:'主治医',visitDay:'往診曜日',hospital:'かかりつけ病院'};
 var bulkRows=null, bulkDirty={}, bulkGroup='basic', bulkLoading=false;
+/* ★氏名の取り直し（refreshBulkNames_）が飛んでいる間に保存が成功したり表を閉じたりすると、
+   遅れて届いた古い応答が bulkRows[].name を旧値へ書き戻す。書き戻すと以後サーバーの照合が
+   永久に通らなくなる（M-5 で潰した袋小路が別経路で復活する）。世代が変わった応答は捨てる。 */
+var bulkGen=0;
 
 /* ★真偽の解釈は必ずここ1箇所。表示側と差分判定側で解釈が違うと、
    旧形式（'有'・'1'）の行でチェックを外しても「変更なし」と判定され、
@@ -5621,6 +5666,7 @@ function openBulk(){
 }
 function closeBulk(){
   if(bulkCellCount() && !confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')) return;
+  bulkGen++;                     // 実行中の氏名取り直しの応答を無効にする
   bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
   paintBulkDirty(); $('mBulk').classList.remove('on');
   if($('sc-list').classList.contains('on'))navLeave();
@@ -5645,7 +5691,10 @@ function renderBulk(){
     var dj=bulkDirty[r.id]||{};
     var mark=function(k){ return Object.prototype.hasOwnProperty.call(dj,k)?' dirty':''; };
     h+='<tr data-id="'+esc(r.id)+'" class="'+cls.join(' ')+'">'+
-       '<td class="bk-name" title="'+esc(r.name)+(r.broken?' ／ 保存データの形式が不正です':'')+'">'+esc(r.name)+'</td>'+
+       /* ★氏名も直せる（2026-09-02 指示）。title は【開いた時の氏名】＝サーバーが
+          「別の方に変わっていないか」の照合に使う値。直している最中でも元が誰か分かる */
+       '<td class="bk-name'+mark('name')+'" title="'+esc(r.name)+(r.broken?' ／ 保存データの形式が不正です':'')+'">'+
+         bulkCell(r,['name','氏名','text'])+'</td>'+
        '<td class="bk-room'+mark('room')+'">'+bulkCell(r,['room','居室','text'])+'</td>';
     for(var c=0;c<cols.length;c++) h+='<td class="'+mark(cols[c][0]).replace(/^ /,'')+'">'+bulkCell(r,cols[c])+'</td>';
     h+='</tr>';
@@ -5730,7 +5779,10 @@ function applyBulkFilter(){
     var tr=body.rows[i], r=bulkRows[i];
     var hide=(!showOut&&r.active===false);
     if(!hide&&q){
-      var hay=(String(r.name||'')+' '+String(r.kana||'')+' '+String(r.room||'')).toLowerCase();
+      /* ★氏名は「開いた時の値」と「直している途中の値」の両方で当てる。
+         片方だけだと、直した氏名で探しても出てこない（L-10） */
+      var hay=(String(r.name||'')+' '+String(bulkVal(r,'name')||'')+' '+
+               String(r.kana||'')+' '+String(r.room||'')).toLowerCase();
       hide=hay.indexOf(q)<0;
     }
     tr.classList.toggle('bulk-hide',hide);
@@ -5750,7 +5802,116 @@ function bulkWho(id){
 function bulkNamed(msg){
   return String(msg).replace(/No(\d+)/g, function(m,n){ return bulkWho(n); });
 }
+/* 氏名の正規化。★サーバーの _bulkNorm（gas/master.gs）と【同じ規則】にすること。
+   食い違うと、画面が「表記だけの調整」と判定した変更をサーバーが別人と見なして止める。
+   他アプリの名寄せ（a4NmKey・wtNormName・ジェノグラムのキー）も同じ空白除去のみ。 */
+function bulkNormName(s){ return String(s==null?'':s).replace(/\s+/g,''); }
+
+/* 氏名を直す方を「表記だけ（スペース）」と「文字そのものが変わる」に分ける。
+   ★名寄せが空白除去のみなので、前者は他アプリに1バイトも影響しない。
+     後者だけが、家族構成図・デイ利用日・体重の最新値・支援経過の取込を静かに欠けさせる。
+   ★この2つを同じ重さで警告しないこと。安全な変更に重い警告を出すと読み飛ばされ、
+     危険な変更が同じ重さで並ぶと軽く見える＝両方向に効く劣化になる。
+   引数の changes は saveBulk が組み立てたもの（c.name＝旧氏名／c.fields.name＝新氏名）。 */
+function bulkNameReview(changes){
+  var out={bad:[],spaceOnly:[],keyChanged:[],dup:[]}, i;
+  for(i=0;i<changes.length;i++){
+    var c=changes[i];
+    if(!Object.prototype.hasOwnProperty.call(c.fields,'name')) continue;
+    var nv=String(c.fields.name==null?'':c.fields.name), ov=String(c.name==null?'':c.name);
+    if(bulkNormName(nv)===''){ out.bad.push(bulkWho(c.id)+'：氏名が空です'); continue; }
+    if(/[\r\n\t]/.test(nv)){ out.bad.push(bulkWho(c.id)+'：氏名に改行・タブが入っています'); continue; }
+    (bulkNormName(nv)===bulkNormName(ov)?out.spaceOnly:out.keyChanged).push({id:c.id,old:ov,now:nv});
+  }
+  /* 直した【後】の氏名で同姓同名になる方を見つける。名寄せが空白除去のみなので、
+     同姓同名は家族構成図・体重の最新値などで同じ方として扱われる（契約書 §5・§6-⑨）。
+     ★bulkVal を使う＝まだ保存していない変更も織り込んだ「保存後の姿」で数える */
+  var map={}, j;
+  for(j=0;j<bulkRows.length;j++){
+    var rr=bulkRows[j];
+    if(rr.active===false) continue;                    /* 退去者との衝突までは追わない */
+    var kk=bulkNormName(bulkVal(rr,'name'));
+    if(kk) (map[kk]=map[kk]||[]).push(rr);
+  }
+  var seen={};
+  for(i=0;i<out.keyChanged.length;i++){
+    var key=bulkNormName(out.keyChanged[i].now);
+    if(seen[key]||!map[key]||map[key].length<2) continue;
+    seen[key]=1;
+    out.dup.push(out.keyChanged[i].now+'（'+map[key].length+'名）');
+  }
+  return out;
+}
+
+/* サーバーの現在の氏名だけを取り直して表に反映する（2026-09-02 レビュー M-5）。
+   ★未保存の変更は1つも捨てない。捨てると「閉じて開き直す」しか手が無くなり、
+     同じ表で直していた【他の方の変更まで道連れ】になる（原則4）。
+   ★自分も氏名を直していた方は、相手の変更を黙って上書きしない。氏名の変更だけ取り下げ、
+     何が起きたかを見せて人に決めさせる（他の項目の未保存はそのまま残す）。 */
+function refreshBulkNames_(){
+  var gen=bulkGen;                                   /* 追い越された応答を捨てるための世代 */
+  var back=function(){ if($('bulkSave')) $('bulkSave').disabled=!bulkCellCount(); };
+  if($('bulkSave')) $('bulkSave').disabled=true;     /* 取り直し中は押させない（M-1） */
+  setSync('氏名を確認中…');
+  apiGet({action:'getBulk'},30000).then(function(d){
+    /* ★閉じられた／その間に保存が走った＝この応答は古い。1バイトも触らない */
+    if(!bulkRows||gen!==bulkGen){ setSync(''); return; }
+    var rows=(d&&d.rows)||[], byId={}, i, moved=[], both=[];
+    if(!rows.length){ setSync('確認できず','err'); back(); return; }   // 空応答を成功として扱わない
+    for(i=0;i<rows.length;i++) if(rows[i]&&rows[i].id!=null) byId[String(rows[i].id)]=rows[i];
+    for(i=0;i<bulkRows.length;i++){
+      var r=bulkRows[i], key=String(r.id), sv=byId[key];
+      /* ★型を確かめてから使う。旧版・改造版のサーバーが name を返さないと
+         文字列 'undefined' を照合キーに焼き付けてしまう（multi-device-sync 原則10） */
+      if(!sv||typeof sv.name!=='string') continue;
+      if(sv.name===String(r.name==null?'':r.name)) continue;
+      var dd=bulkDirty[key];
+      if(dd&&Object.prototype.hasOwnProperty.call(dd,'name')){
+        both.push(String(r.name)+' → '+sv.name);
+        delete dd.name;
+        if(!Object.keys(dd).length) delete bulkDirty[key];
+      }else{
+        moved.push(String(r.name)+' → '+sv.name);
+      }
+      r.name=sv.name;                            // 照合に使う「開いた時の氏名」を現物へ合わせる
+    }
+    renderBulk(); paintBulkDirty(); back();
+    if(!moved.length&&!both.length){
+      setSync('変わっていません','err');
+      alert('サーバー側の氏名は、表と同じでした。\n\nもう一度「保存」を押してください。'+
+        '\nそれでも同じ理由で止まる場合は、表を閉じて開き直してください'+
+        '（未保存の変更は失われます。先に控えを取ってください）。');
+      return;
+    }
+    setSync('氏名を最新にしました','ok');
+    /* ★「相手」を断定しない。同じ分岐は【この表からの直前の保存】が
+       B列まで通って dataJson で失敗した時にも起きる（§15 の不変条件9） */
+    alert('この方の氏名が、いま保存しようとした内容と食い違っていました。\n'+
+      '（他の端末で直された場合と、この表からの直前の保存が途中で止まった場合があります）\n\n'+
+      '表の氏名をサーバーの現在の値にしました。'+
+      '未保存の変更（黄色いセル）はそのまま残っています。もう一度「保存」を押してください。\n\n'+
+      (moved.length?('・氏名が変わっていた方: '+moved.slice(0,10).join('／')+
+        (moved.length>10?(' ほか'+(moved.length-10)+'名'):'')+'\n'):'')+
+      (both.length?('・あなたも氏名を直していた方: '+both.slice(0,10).join('／')+'\n'+
+        '　→ この方の【氏名の変更だけ】取り下げました（他の項目の変更は残っています）。\n'+
+        '　　現在の氏名を上書きしてよいか確かめてから、入れ直してください。\n'):''));
+  }).catch(function(){ setSync('確認できず','err'); back(); });
+}
+
 function saveBulk(){
+  /* ★氏名の前後の空白は落とす（1人ずつの編集画面 collectForm が .trim() しているのと同じ作法）。
+     名寄せは空白除去なので突合には影響しないが、共有名簿に配られて【全アプリの表示】に残る。
+     落とした結果が元と同じなら「変更なし」に戻す（空白だけ足して消しても未保存が残らない）。 */
+  Object.keys(bulkDirty).forEach(function(id){
+    var d0=bulkDirty[id];
+    if(!d0||typeof d0.name!=='string') return;
+    d0.name=d0.name.trim();
+    var r0=null; for(var i0=0;i0<bulkRows.length;i0++) if(String(bulkRows[i0].id)===String(id)) r0=bulkRows[i0];
+    if(r0&&d0.name===String(r0.name==null?'':r0.name)){
+      delete d0.name;
+      if(!Object.keys(d0).length) delete bulkDirty[id];
+    }
+  });
   var changes=[], ids=Object.keys(bulkDirty), hitDown={};
   for(var i=0;i<ids.length;i++){
     var id=ids[i], f=bulkDirty[id], r=null;
@@ -5760,7 +5921,8 @@ function saveBulk(){
     /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
     changes.push({id:r.id,name:r.name,fields:f});
   }
-  if(!changes.length){ toast('変更がありません'); return; }
+  /* ★trim で dirty が空になった時、ここで戻ると黄色いセルと「未保存 1名」が残る（L-1） */
+  if(!changes.length){ paintBulkDirty(); if(bulkRows) renderBulk(); toast('変更がありません'); return; }
   /* 退去日を入れても在籍は自動で変わらない。共有名簿には active===false の方の退去日しか
      載らないため、「入れたのに他アプリに出ない」になる。保存前に必ず知らせる */
   var leftOpen=[];
@@ -5771,14 +5933,86 @@ function saveBulk(){
     for(var q3=0;q3<bulkRows.length;q3++)
       if(String(bulkRows[q3].id)===String(cc.id)&&bulkRows[q3].active!==false){ leftOpen.push(bulkWho(cc.id)); break; }
   }
+  /* ── 氏名の点検。空・改行は【送る前に】止める。サーバーでも止まるが、ここで止めた方が
+     「どの方か」を氏名で示せる（サーバーは利用者Noしか知らない） ── */
+  var nmv=bulkNameReview(changes);
+  if(nmv.bad.length){
+    alert('保存できません。氏名を直してから、もう一度「保存」を押してください。\n\n'+nmv.bad.join('\n')+
+      '\n\n氏名を空にすると、この方を全てのアプリで探せなくなります。');
+    return;
+  }
+  /* 1段階目は件数だけ。危険な方（文字が変わる）は2段階目で1件ずつ出す */
+  var nmMsg='';
+  if(nmv.spaceOnly.length||nmv.keyChanged.length)
+    nmMsg='✏️ 氏名を直す方: '+(nmv.spaceOnly.length+nmv.keyChanged.length)+'名\n'+
+      (nmv.spaceOnly.length?('　・表記だけの調整（スペース）: '+nmv.spaceOnly.length+'名 … 他のアプリへの影響はありません\n'):'')+
+      (nmv.keyChanged.length?('　・文字そのものが変わる: '+nmv.keyChanged.length+'名 … このあと、もう一度確認します\n'):'')+'\n';
+  /* ★BULK_DOWNSTREAM に name は入れていない。あちらは「直すと現場アプリ側の値まで
+     置き換わる」項目の一覧だが、週間計画・ワースケは氏名を更新しない（masterId で
+     紐づけるだけ）ため、同じ文言に混ぜると事実と違う案内になる。氏名は専用の警告で扱う */
   var down=Object.keys(hitDown).map(function(k){return BULK_DOWNSTREAM[k]}).join('・');
-  var msg=changes.length+'名 / '+bulkCellCount()+'項目を保存します。\n\n'+
+  var msg=changes.length+'名 / '+bulkCellCount()+'項目を保存します。\n\n'+nmMsg+
     (leftOpen.length?('⚠ 在籍のまま退去日を入れた方が '+leftOpen.length+'名います（'+leftOpen.slice(0,10).join(',')+'）。\n'+
       '　在籍状態は自動で変わりません。1人ずつの編集画面で「退去」に変えるまで、他アプリには退去日が伝わりません。\n\n'):'')+
     '直した項目だけが書き換わり、他の項目には触れません。\n'+
     (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
     '\nよろしいですか？';
   if(!confirm(msg)) return;
+  /* ── 2段階目（2026-09-02 管理者の裁定＝案B）。文字そのものが変わる氏名だけ、もう一度確認する。
+     氏名は他の項目と違い、直した瞬間に別のアプリの表示が【エラーを出さずに】欠ける。
+     「無い」ように見えるだけなので、後から誰も気づけない。だから件数ではなく1件ずつ出す。
+     ★スペースだけの調整はここへ来ない（1段階のまま）。
+     ★自前のモーダルで出す。native の confirm を2枚続けると Chrome のダイアログ抑止を招く
+       （openNameWarn_ の見出しコメント参照・2026-09-02 レビュー M-2）。 */
+  if(nmv.keyChanged.length){ openNameWarn_(nmv,function(){ saveBulkGo_(changes,nmv); }); return; }
+  saveBulkGo_(changes,nmv);
+}
+
+/* 氏名を直す時の2段階目。危険度の高い順に並べる（いちばん上が「紙が誤って読まれる」＝
+   取り返しがつかないもの）。★native の confirm は使わない。1クリックで confirm を2枚
+   続けて出すと Chrome が2枚目に「このページでこれ以上ダイアログを表示しない」を出し、
+   チェックされると以後 confirm は無条件 false・alert は無音＝【保存ボタンが無反応になる】。
+   ★本文に入れる氏名は必ず esc() を通す（5文字版）。 */
+function openNameWarn_(nmv,onOk){
+  var names=nmv.keyChanged.slice(0,10).map(function(o){
+      return '<div>「'+esc(o.old)+'」 → <b>「'+esc(o.now)+'」</b></div>'; }).join('')+
+    (nmv.keyChanged.length>10?('<div class="muted">ほか '+(nmv.keyChanged.length-10)+'名</div>'):'');
+  $('nameWarnBody').innerHTML=
+    '<p>次の <b>'+nmv.keyChanged.length+'名</b> の氏名を、スペースではなく<b>文字そのもの</b>を変えます。</p>'+
+    '<div class="nw-names">'+names+'</div>'+
+    (nmv.dup.length?('<p class="nw-danger"><b>⚠️ 直した後に同姓同名になります: '+esc(nmv.dup.join('・'))+'</b><br>'+
+      '同姓同名の方は、家族構成図や体重の最新値が同じ方のものとして扱われます。</p>'):'')+
+    '<p class="nw-danger"><b>① デイ利用日が、紙の上で誤って読まれることがあります（いちばん重い）</b><br>'+
+      'A4様式・詳細画面の印刷・フェイスシートで「▲ 未確認」になります。'+
+      '<b>週間計画側の記録が利用者Noで紐づいていない方は「未確認」ではなく【空欄】</b>になり、'+
+      '紙の上で「デイ利用なし」と読まれます。この様式は救急搬送先や処方と同じ紙で'+
+      '<b>外部（居宅・病院）へ渡ります</b>。<br>'+
+      '→ <b>印刷の前に、週間計画アプリでも同じ氏名に直してください。</b></p>'+
+    '<p>スペースの調整と違い、文字が変わると次のことも起きます（<b>エラーは出ません。「無い」ように見えるだけです</b>）。</p>'+
+    '<ol>'+
+      '<li><b>排泄ケア記録のマスタ連携が止まります。</b>以後この方をマスタで入院・退去にしても届かず、'+
+        '居室・ふりがな・介護度も更新されません。<b>自然には戻りません</b>'+
+        '（排泄ケア記録で氏名を揃えるか「表記ゆれ確認済み」にすると戻ります）</li>'+
+      '<li><b>家族構成図</b>が「未作成」になります（図そのものは消えていません。'+
+        'ジェノグラムで新しい氏名で保存し直すと戻ります）</li>'+
+      '<li><b>支援経過の取込</b>が見送られます（元のスプレッドシートの氏名も直してください）</li>'+
+      '<li><b>申送ビューア</b>で居室が出ず、五十音の並びが変わります</li>'+
+      '<li><b>体重の最新値</b>が古い値に戻ります（体重管理アプリ側が利用者Noで紐づいていない方だけ）</li>'+
+    '</ol>'+
+    '<p class="muted">週間計画・ワークスケジュールの表示は自動では変わりません（旧表記のまま残ります）。'+
+      '週間計画側に利用者Noで紐づいていない行があると、予定ゼロの行が新しく作られることがあります。</p>';
+  var ok=$('nameWarnOk'), no=$('nameWarnCancel');
+  function shut(){ $('mNameWarn').classList.remove('on');
+    ok.removeEventListener('click',go); no.removeEventListener('click',shut); }
+  function go(){ shut(); onOk(); }
+  ok.addEventListener('click',go); no.addEventListener('click',shut);
+  $('mNameWarn').classList.add('on');
+  ok.focus();
+}
+
+/* 送信本体。1段階目（＋氏名を直した時は2段階目）を通った後だけ呼ばれる。 */
+function saveBulkGo_(changes,nmv){
+  bulkGen++;                     /* 実行中の氏名取り直しがあれば、その応答を無効にする */
   var btn=$('bulkSave'); btn.disabled=true;
   if($('bulkClose')) $('bulkClose').disabled=true;
   /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
@@ -5791,8 +6025,27 @@ function saveBulk(){
     if(!d||d.ok!==true){
       setSync('保存失敗','err');
       var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(bulkNamed).join('\n')):'';
-      alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det);
-      btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false; return;
+      /* ★氏名の一括編集は 2026-09-02 に足した。入居者マスタのGAS（Apps Script「入居者マスタAPI」）を
+         貼り替えるまでの間、氏名だけがサーバーに弾かれる。その時の文言は
+         「「name」は一括編集できません」で、現場には何のことか分からない。理由を添える。
+         ★データは1文字も変わらない（安全側に落ちる）ので、氏名以外はそのまま使ってよい。 */
+      /* ★判定はサーバーが返す【固定文言】だけに合わせる。「氏名」で広く見ると
+         「氏名が変わっています（別の方の可能性）」＝他端末との競合にも当たり、
+         関係の無いGASの貼り替えへ現場を誘導する（2026-09-02 レビュー指摘 M-4）。 */
+      var hint=((nmv.spaceOnly.length||nmv.keyChanged.length)&&/「name」は一括編集できません/.test(det))
+        ? '\n\n※ 氏名の一括編集は、入居者マスタのGAS（Apps Script「入居者マスタAPI」）の貼り替えが'
+          +'済んでいないと使えません。貼り替えるまで、氏名以外の項目は従来どおり保存できます。'
+        : '';
+      alert('保存できませんでした。1文字も書き込んでいません。\n\n'+((d&&d.error)||'原因不明')+det+hint);
+      /* ★「氏名が変わっています」＝サーバー側の氏名が動いた（他端末の編集、または
+         直前の書き込みが B列まで通って dataJson で失敗した行）。この状態は照合が
+         二度と通らず、表を閉じる以外に手が無かった＝【他の方の未保存も道連れ】になる。
+         閉じさせずに、氏名だけ取り直して照合をやり直せるようにする（原則4・2026-09-02 レビュー M-5）。 */
+      if($('bulkClose')) $('bulkClose').disabled=false;
+      /* ★保存ボタンは取り直しの終端で戻す。ここで戻すと、getBulk が飛んでいる間に
+         押し直せてしまい、成功した保存を古い応答が旧氏名へ巻き戻す（M-1） */
+      if(/氏名が変わっています/.test(det)){ refreshBulkNames_(); return; }
+      btn.disabled=false; return;
     }
     if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
     else setSync('保存できず','err');
