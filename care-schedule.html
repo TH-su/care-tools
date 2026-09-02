@@ -4520,6 +4520,36 @@ function csApplyMasterHospitalized(tgt, c){
   tgt.hospitalized = v;
   return 1;
 }
+/* 姓と名の切れ目をマスタから写す（hospitalized と同型＝写すだけでなく消す規則も持つ）。戻り値は変更件数(0/1)。
+   写すのは【数値2つだけ】: nameCut＝姓の文字数／nameCutLen＝空白を除いた氏名の文字数。
+   ★なぜ要るか（2026-09-02）: デイ利用表の週間名簿は氏名を「姓　名」で出すが、切れ目は入居者マスタに
+     しか無く、マスタ接続設定(rmaster_cfg)は端末ごと＝設定の無い職員PCでは空白なしになっていた。
+     入院・居室と同じく、マスタ接続のあるこの端末が共有データ(care_schedule_v2)へ写して全端末に配る。
+     配る経路: この取込は saveLocalOnly（push しない）。クラウドへは同一端末のワースケが運ぶ
+     （storage 変化→schedulePushCare）か、次にこの端末で週間計画を保存した時に届く。
+   ★name そのものには空白を入れない（name は名寄せ・ワースケ側の氏名照合キー。書き換えると別人扱いになる）。
+   ★消す規則（allowDelete）: マスタに空白が無い／空白を除いた氏名が食い違う（改名・別人紐づけ）時は
+     古い切れ目を消す＝間違った位置で割った実在しない氏名を紙に出さない。ただし消すのは
+     【マスタGASから今取ったばかりの名簿（extData）】で判定できた時だけ。起動時に読む共有名簿(LS)は
+     resident-master を最後に開いた時点の写しで古いことがあり、それで消すと「起動のたびに消える→
+     rev 変化で付き直す」の往復になる（2026-09-02 レビュー指摘）。古い名簿では写すだけ＝消失より復活。 */
+function csApplyMasterNameCut(tgt, c, allowDelete){
+  if (!tgt || !c) return 0;
+  var nv = String(c.name == null ? '' : c.name).trim();
+  var sp = /\s/.exec(nv);
+  var bare = nv.replace(/\s+/g, '');
+  var cut = 0;
+  if (sp && sp.index > 0 && sp.index < bare.length && bare === suNormName(tgt.name)) cut = sp.index;
+  if (cut > 0){
+    if (tgt.nameCut === cut && tgt.nameCutLen === bare.length) return 0;
+    tgt.nameCut = cut; tgt.nameCutLen = bare.length;
+    return 1;
+  }
+  if (!allowDelete) return 0;
+  if (!Object.prototype.hasOwnProperty.call(tgt, 'nameCut') && !Object.prototype.hasOwnProperty.call(tgt, 'nameCutLen')) return 0;
+  delete tgt.nameCut; delete tgt.nameCutLen;
+  return 1;
+}
 /* 利用者マスタの共通情報を取り込み（週間計画アプリ用。master を正とする）
    extData: stateRev連携（凍結仕様S4）が getRoster 直取得から組み立てた su_residents_common 相当
    （{residents:[...]}・メモリ内でのマージ専用）。共有名簿(LS)へは書かない＝唯一の書き手は resident-master。
@@ -4549,6 +4579,8 @@ function mergeCommonSchedule(extData){
   }
   var list = (data && Array.isArray(data.residents)) ? data.residents : null;
   if (!list || !list.length) return false;
+  /* 今マスタGASから取った名簿か（extData）。姓名の切れ目を【消す】判定はこの時だけ許す（csApplyMasterNameCut） */
+  var fromMaster = !!(extData && typeof extData === 'object' && Array.isArray(extData.residents) && data === extData);
   if (!Array.isArray(DB.residents)) DB.residents = [];
   var byMid = {}, byName = {};
   DB.residents.forEach(function(r){
@@ -4582,6 +4614,7 @@ function mergeCommonSchedule(extData){
       /* 復帰（active=true）: マスタで在籍に戻ったら退去フラグを解除する（この時点で masterId 紐づき確定・計画は保持） */
       if (tgt.movedOut){ tgt.movedOut = false; changed++; }
       changed += csApplyMasterHospitalized(tgt, c);
+      changed += csApplyMasterNameCut(tgt, c, fromMaster);   /* 姓と名の切れ目（数値2つ）。デイ利用表の週間名簿が全端末で「姓　名」を出すため（2026-09-02） */
     } else {
       if (tS === false) return; // 週間計画 対象外の master 利用者は取り込まない
       DB.residents.push({

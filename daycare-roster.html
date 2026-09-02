@@ -983,6 +983,10 @@ var dcrRoomMap = null;                // masterId(string) -> room(string) ／ nu
      targetSchedule/movedOut/hospitalized だけ）＝マスタで空白を入れても週間計画へは伝わらない。
      マスタ側には空白が入っているので、切れ目だけを借りて表示のときに全角スペースを差し込む。
      文字数から推測して割るのではなくマスタ由来＝実在しない氏名を紙に出さない。
+   ★マスタ接続の無い端末（2026-09-02）: この地図は作れない（接続設定は端末ごと）ので、週間計画がマスタ取込時に
+     共有データの利用者へ写す nameCut／nameCutLen（数値2つ・care-schedule csApplyMasterNameCut）を buildModel で
+     読む。地図がある端末は従来どおり直読みを優先＝MacBook 側の挙動は不変（マスタ取得が終わる前の初回描画だけは
+     地図が無いので共有値を使う＝空白ありの方向の一時差のみ）。
    ★len は取り違え防止の照合用。改名や別人紐づけでマスタと週間計画の氏名が食い違う時は
      切れ目を使わない（＝空白なしで出す）安全側に倒す。 */
 var dcrNameCutMap = null;
@@ -1160,10 +1164,20 @@ function buildModel(db) {
     /* マスタ由来の「姓と名の切れ目」。空白を除いた文字数が食い違う人（改名・別人紐づけ）には
        使わない＝間違った位置に空白を入れた氏名を紙に出さない（安全側は「空白なしで出す」）。 */
     let nameCut = 0;
-    if (dcrNameCutMap && r.masterId != null){
-      const ci = dcrNameCutMap[String(r.masterId)];
+    if (dcrNameCutMap){
+      /* マスタ接続のある端末: 従来どおり、この端末で取ったばかりのマスタ直読み（最新）を使う */
+      if (r.masterId != null){
+        const ci = dcrNameCutMap[String(r.masterId)];
+        const bare = String(r.name || '').replace(/[\s\u3000]/g, '');
+        if (ci && bare.length === ci.len && ci.cut > 0 && ci.cut < bare.length) nameCut = ci.cut;
+      }
+    } else {
+      /* マスタ接続の無い端末（2026-09-02）: 週間計画がマスタから共有データへ写した切れ目
+         nameCut／nameCutLen（数値2つ）を使う。文字数が合う時だけ＝改名後の古い値で実在しない氏名を
+         紙に出さない。整数かも見る（受信データを信じない・multi-device-sync 原則10）。 */
+      const sc = r.nameCut, sl = r.nameCutLen;
       const bare = String(r.name || '').replace(/[\s\u3000]/g, '');
-      if (ci && bare.length === ci.len && ci.cut > 0 && ci.cut < bare.length) nameCut = ci.cut;
+      if (Number.isInteger(sc) && Number.isInteger(sl) && bare.length === sl && sc > 0 && sc < bare.length) nameCut = sc;
     }
     people.push({
       name: String(r.name || '（無名）'),
