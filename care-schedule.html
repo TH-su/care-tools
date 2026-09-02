@@ -783,12 +783,26 @@ select.inp { cursor: pointer; }
      見出し18mm ＋ 曜日見出し13mm ＋ 本体242mm = 273mm（281mm に収まる）。 */
 #wk-sheet { display: none; }
 .wk-sheet { width: 400mm; color: #000; font-family: inherit; }   /* 元様式の余白10mmに合わせる */
+/* 見出しの段：左＝氏名（元様式どおり下線つき）／中央＝表題／右＝印刷日 */
+.wk-head-row { display: flex; align-items: flex-end; height: 15mm; margin-bottom: 4mm; }
+/* ★左右を同じ幅にして、表題が紙の中央に来るようにする（左右が違う幅だと中央がずれる）。
+   表題は折り返させない（折り返すと段の高さ15mmを超えて上へはみ出す）。 */
 .wk-title {
-  height: 15mm; display: flex; align-items: flex-end; gap: 2mm;
+  display: flex; align-items: flex-end; gap: 2mm; height: 100%;
   font-size: 9mm; font-weight: 700; letter-spacing: .5mm;   /* 元様式 22pt×125% ≒ 9.7mm */
   padding-inline-start: 8mm; border-bottom: 0.6mm solid #000;
-  width: 40%;                      /* 元様式の下線＝表の左1/3ほど */
-  margin-bottom: 4mm;
+  width: 30%; flex: 0 0 30%;       /* 元様式の下線＝表の左1/3ほど */
+  white-space: nowrap; overflow: hidden;
+}
+.wk-sheet-title {
+  flex: 1 1 auto; text-align: center; align-self: center;
+  font-size: 9.5mm; font-weight: 700; letter-spacing: 1mm; line-height: 1.1;
+  white-space: nowrap;
+}
+.wk-printed {
+  width: 30%; flex: 0 0 30%; text-align: end; align-self: flex-end;
+  font-size: 4.5mm; font-weight: 600; padding-inline-end: 2mm; padding-bottom: 1mm;
+  white-space: nowrap;
 }
 /* 列幅は元様式の比率（帯 1.22+2.66 単位 ／ 時刻 2.66×5 単位 ／ 曜日 4×5 単位×7日）。 */
 .wk-grid { display: grid; grid-template-columns: 10mm 34mm repeat(7, 1fr); }
@@ -7436,7 +7450,8 @@ const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.eve + WK_AXIS.night
    元様式は時刻の行と内容の行を【同じ色】で塗っている（濃淡は付けていない）。 */
 const WK_SHEET_COLORS = {
   daycare: { time: '#FFFF00', body: '#FFFF00' },   /* 通所介護 */
-  shop:    { time: '#92D050', body: '#92D050' },   /* 買物代行 */
+  shop:    { time: '#92D050', body: '#92D050' },   /* 買物代行（元様式の実値） */
+  rise:    { time: '#CDDC39', body: '#CDDC39' },   /* 起床時支援・就寝時支援＝黄緑（本人指示 2026-09-02） */
   visit:   { time: '#9FDCF7', body: '#9FDCF7' },   /* 訪問介護＝水色（本人指示 2026-09-02。
                                                       元様式の #A5B6CB は暗いとの判断で明るい水色へ） */
 };
@@ -7461,11 +7476,27 @@ function wkY_(mins) {
      17時の位置から描かれて時間帯を誤って読ませる（実測で確認）。 */
 const WK_ZONES = [{ a: 0, b: 420 }, { a: 1020, b: 1200 }, { a: 1200, b: 1440 }];
 
-/* コマの種類＝色の規則（本人確定）: 通所→黄／支援内容に「買物」を含む訪問→緑／その他の訪問→青灰 */
+/* 支援内容が空の「身体01」を、時間帯の呼び名に置き換える判定（2026-09-02 本人指示）。
+   朝（9:00より前に始まる）＝起床時支援 ／ 夕方以降（17:00以降に始まる）＝就寝時支援。
+   ★色（黄緑）と文言の両方がこの判定を使うので、ここ1か所にまとめる。 */
+function wkBandLabel_(ev) {
+  if (!ev || ev.serviceType === 'daycare') return '';
+  if (String(ev.detail || '').trim()) return '';        /* 入力があれば置き換えない（原則6） */
+  const cat = (typeof catDisplayLabel_ === 'function' ? catDisplayLabel_(ev.category) : '') || '';
+  const norm = cat.replace(/０/g, '0').replace(/１/g, '1').replace(/\s/g, '');
+  if (norm !== '身体01') return '';
+  const st = timeToMins(ev.startTime);
+  if (st < 9 * 60)   return '起床時支援';
+  if (st >= 17 * 60) return '就寝時支援';
+  return '';
+}
+/* コマの種類＝色の規則: 通所→黄／買物→緑／起床時・就寝時支援→黄緑／その他の訪問→水色 */
 function wkKindOf_(ev) {
   if (!ev) return 'visit';
   if (ev.serviceType === 'daycare') return 'daycare';
-  return (String(ev.detail || '').indexOf('買物') >= 0) ? 'shop' : 'visit';
+  if (String(ev.detail || '').indexOf('買物') >= 0) return 'shop';
+  if (wkBandLabel_(ev)) return 'rise';
+  return 'visit';
 }
 /* 時刻の表記。元様式に合わせ、通所は半角コロン・訪問は全角コロンで出す。 */
 function wkTimeText_(ev) {
@@ -7485,17 +7516,11 @@ function wkMainText_(ev) {
   if (wkKindOf_(ev) === 'daycare') return 'デイサービス';   /* 様式の固定文言（利用者の入力ではない） */
   const d = String(ev.detail || '').trim();
   if (d) return d;                                          /* 入力された支援内容が最優先（原則6） */
-  const cat = catDisplayLabel_(ev.category) || '';
-  /* ★支援内容が空で「身体01」のコマは、紙では時間帯の呼び名に置き換える（本人指示 2026-09-02）。
-       朝（9:00より前に始まる）＝起床時支援 ／ 夕方以降（17:00以降に始まる）＝就寝時支援
-     日中の身体01はそのまま区分を出す。データは書き換えず、紙の表記だけを変える。 */
-  const norm = cat.replace(/０/g, '0').replace(/１/g, '1').replace(/\s/g, '');
-  if (norm === '身体01') {
-    const st = timeToMins(ev.startTime);
-    if (st < 9 * 60)  return '起床時支援';
-    if (st >= 17 * 60) return '就寝時支援';
-  }
-  return cat || '訪問介護';
+  /* 支援内容が空で「身体01」のコマは、紙では時間帯の呼び名に置き換える（判定は wkBandLabel_）。
+     データは書き換えず、紙の表記だけを変える。日中の身体01はそのまま区分を出す。 */
+  const band = wkBandLabel_(ev);
+  if (band) return band;
+  return catDisplayLabel_(ev.category) || '訪問介護';
 }
 /* 支援内容の語からイラストを引く（'・' と '/' の両方で区切る） */
 function wkIconsFor_(ev) {
@@ -7679,7 +7704,14 @@ function buildWeeklySheetHtml_(res) {
   let headHtml = '<div class="wk-head"></div><div class="wk-head"></div>';
   for (let i = 0; i < 7; i++) headHtml += '<div class="wk-head">' + escHtml(DAYS_JA[i]) + '</div>';
 
-  return '<div class="wk-title">' + escHtml(name) + '様</div>'
+  /* 印刷日＝この紙を作った日（ボタンを押した日）。年月日で出す。 */
+  const now = new Date();
+  const printed = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
+  return '<div class="wk-head-row">'
+       +   '<div class="wk-title">' + escHtml(name) + '様</div>'
+       +   '<div class="wk-sheet-title">１週間のスケジュール</div>'
+       +   '<div class="wk-printed">印刷日：' + escHtml(printed) + '</div>'
+       + '</div>'
        + '<div class="wk-grid">' + headHtml + '</div>'
        + '<div class="wk-grid">'
        +   '<div class="wk-band-col" style="height:' + H + 'mm">' + bandHtml + '</div>'
