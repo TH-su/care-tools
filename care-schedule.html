@@ -810,26 +810,28 @@ select.inp { cursor: pointer; }
          border: 0.25mm solid #000; display: flex; flex-direction: column; }
 /* 枠内の文字は入る限り大きく（元様式は時刻18pt・内容12pt）。曜日の列幅は約51mmで、
    「13：00～14：00」11文字が 4.4mm でちょうど収まる。 */
-.wk-ev-time { text-align: center; font-size: 4.4mm; font-weight: 700; line-height: 1.2;
-              padding: 0.8mm 0; letter-spacing: 0; }
+/* 時刻は「13：00～14：00」の11文字が曜日の列（約51mm）に収まる限界まで大きくする。
+   全角の記号が1文字ぶんの幅を取るため、わずかに字間を詰めて 4.9mm まで上げている。 */
+.wk-ev-time { text-align: center; font-size: 4.9mm; font-weight: 700; line-height: 1.2;
+              padding: 0.8mm 0; letter-spacing: -0.15mm; white-space: nowrap; }
 /* 見出しは時刻のすぐ下（元様式と同じ）。温泉マークは残りの余白の中央に置く。 */
-.wk-ev-body { flex: 1; text-align: center; font-size: 4mm; font-weight: 700; line-height: 1.25;
+.wk-ev-body { flex: 1; text-align: center; font-size: 5mm; font-weight: 700; line-height: 1.25;
               padding: 0.5mm 0.8mm; word-break: break-word;
               display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
 .wk-ev-body > .wk-onsen, .wk-ev-body > .wk-ev-icons { margin-block: auto; }
-.wk-ev-main { font-size: 6mm; font-weight: 700; }       /* 「デイサービス」＝元様式18pt相当 */
+.wk-ev-main { font-size: 7mm; font-weight: 700; }       /* 「デイサービス」 */
 .wk-ev-icons { display: flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
 .wk-ev-icons img { max-width: 22mm; max-height: 22mm; }
 /* 掃除・洗濯のイラストは【枠の直下】に置く（元様式と同じ。枠の色は文字だけに掛ける） */
 .wk-ev-under { position: absolute; display: flex; align-items: flex-start; justify-content: center;
                gap: 1.5mm; overflow: hidden; }
-.wk-ev-under img { max-height: 100%; max-width: 47%; object-fit: contain; }
+.wk-ev-under img { max-height: 100%; max-width: 49%; object-fit: contain; }
 /* 温泉マークは黄色枠の中央あたりに大きく（本人指示） */
 .wk-onsen { font-size: 22mm; line-height: 1; color: #b5121b; text-align: center; }
 .wk-ev-icons img.wk-onsen-img { max-width: 34mm; max-height: 30mm; }
 /* 支援内容が長いコマだけ文字を落とす（枠からはみ出させない） */
-.wk-ev-body.long  { font-size: 3.4mm; line-height: 1.2; }
-.wk-ev-body.xlong { font-size: 2.8mm; line-height: 1.15; }
+.wk-ev-body.long  { font-size: 3.8mm; line-height: 1.2; }
+.wk-ev-body.xlong { font-size: 3mm; line-height: 1.15; }
 /* 左右に分かれた枠・帯を等分した枠は、時刻が折り返して溢れるため一段落とす */
 .wk-ev.narrow .wk-ev-time, .wk-ev.tight .wk-ev-time { font-size: 3.2mm; letter-spacing: 0; padding: 0.3mm 0; }
 .wk-ev.narrow .wk-ev-body, .wk-ev.tight .wk-ev-body { font-size: 3mm; line-height: 1.15; }
@@ -7435,7 +7437,8 @@ const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.eve + WK_AXIS.night
 const WK_SHEET_COLORS = {
   daycare: { time: '#FFFF00', body: '#FFFF00' },   /* 通所介護 */
   shop:    { time: '#92D050', body: '#92D050' },   /* 買物代行 */
-  visit:   { time: '#A5B6CB', body: '#A5B6CB' },   /* 訪問介護 */
+  visit:   { time: '#9FDCF7', body: '#9FDCF7' },   /* 訪問介護＝水色（本人指示 2026-09-02。
+                                                      元様式の #A5B6CB は暗いとの判断で明るい水色へ） */
 };
 /* 支援内容の語で引くイラスト。元Excelの画像を受け取ったら data URI をここへ入れる。
    空のままなら何も描かない（場所だけ空ける）＝画像が届いた時点でここだけ差し替えれば完成する。 */
@@ -7481,7 +7484,18 @@ function wkTimeText_(ev) {
 function wkMainText_(ev) {
   if (wkKindOf_(ev) === 'daycare') return 'デイサービス';   /* 様式の固定文言（利用者の入力ではない） */
   const d = String(ev.detail || '').trim();
-  return d || catDisplayLabel_(ev.category) || '訪問介護';
+  if (d) return d;                                          /* 入力された支援内容が最優先（原則6） */
+  const cat = catDisplayLabel_(ev.category) || '';
+  /* ★支援内容が空で「身体01」のコマは、紙では時間帯の呼び名に置き換える（本人指示 2026-09-02）。
+       朝（9:00より前に始まる）＝起床時支援 ／ 夕方以降（17:00以降に始まる）＝就寝時支援
+     日中の身体01はそのまま区分を出す。データは書き換えず、紙の表記だけを変える。 */
+  const norm = cat.replace(/０/g, '0').replace(/１/g, '1').replace(/\s/g, '');
+  if (norm === '身体01') {
+    const st = timeToMins(ev.startTime);
+    if (st < 9 * 60)  return '起床時支援';
+    if (st >= 17 * 60) return '就寝時支援';
+  }
+  return cat || '訪問介護';
 }
 /* 支援内容の語からイラストを引く（'・' と '/' の両方で区切る） */
 function wkIconsFor_(ev) {
@@ -7637,7 +7651,9 @@ function buildWeeklySheetHtml_(res) {
         '<div class="wk-ev' + narrow + '" style="top:' + p.top.toFixed(2) + 'mm;height:' + p.h.toFixed(2) + 'mm;'
           + 'left:calc(' + left + '% + 0.6mm);width:calc(' + w + '% - 1.2mm);background:' + col.body + '">'
         + '<div class="wk-ev-time" style="background:' + col.time + '">' + escHtml(wkTimeText_(p.ev)) + '</div>'
-        + '<div class="wk-ev-body' + (main.length > 24 ? ' xlong' : (main.length > 12 ? ' long' : '')) + '"><div class="' + cls + '">'
+        /* 文字数で段階を分ける。曜日の列は約50mm＝5mmの字なら10文字で一杯になるので、
+           8文字を超えたら1段落とす（本人指示：長い支援内容は今の大きさのままでよい）。 */
+        + '<div class="wk-ev-body' + (main.length > 14 ? ' xlong' : (main.length > 8 ? ' long' : '')) + '"><div class="' + cls + '">'
         + escHtml(main) + '</div>'
         + onsen
         + '</div></div>';
@@ -7646,7 +7662,7 @@ function buildWeeklySheetHtml_(res) {
       if (icons.length) {
         const underTop = p.top + p.h + 0.6;
         const room = Math.max(0, (p.nextTop === undefined ? WK_BODY_H : p.nextTop) - underTop - 0.6);
-        const uh = Math.min(WK_ROW * 2, room);
+        const uh = Math.min(WK_ROW * 3, room);   /* イラストを大きく（本人指示・最大3行ぶん） */
         if (uh >= 5) {
           cells +=
             '<div class="wk-ev-under" style="top:' + underTop.toFixed(2) + 'mm;height:' + uh.toFixed(2) + 'mm;'
