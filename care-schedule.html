@@ -7409,11 +7409,14 @@ const WK_AXIS   = { band: 30, hour: 19.4, night: 18 };                 /* mm */
 const WK_MIN_H  = 9;
 const WK_MIN_H_VISIT = 15;
 const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.night;     /* 242mm */
-/* 色（元様式の見た目に合わせた近似値。元Excelを受け取ったら実値へ差し替える1か所） */
+/* 色は元様式（週間サービス表.xlsm）の塗りつぶし実値。目視の近似ではなく、
+   ファイルの styles.xml から取り出した値をそのまま使う（2026-09-02 確認）。
+     通所＝FFFF00 ／ 訪問＝A5B6CB（テーマ3・tint 0.6）／ 買物代行＝92D050
+   元様式は時刻の行と内容の行を【同じ色】で塗っている（濃淡は付けていない）。 */
 const WK_SHEET_COLORS = {
-  daycare: { time: '#ffff00', body: '#ffff00' },   /* 通所介護 */
-  shop:    { time: '#70ad47', body: '#70ad47' },   /* 買物代行 */
-  visit:   { time: '#8ea9db', body: '#b8cce4' },   /* 訪問介護 */
+  daycare: { time: '#FFFF00', body: '#FFFF00' },   /* 通所介護 */
+  shop:    { time: '#92D050', body: '#92D050' },   /* 買物代行 */
+  visit:   { time: '#A5B6CB', body: '#A5B6CB' },   /* 訪問介護 */
 };
 /* 支援内容の語で引くイラスト。元Excelの画像を受け取ったら data URI をここへ入れる。
    空のままなら何も描かない（場所だけ空ける）＝画像が届いた時点でここだけ差し替えれば完成する。 */
@@ -7444,12 +7447,15 @@ function wkKindOf_(ev) {
 }
 /* 時刻の表記。元様式に合わせ、通所は半角コロン・訪問は全角コロンで出す。 */
 function wkTimeText_(ev) {
-  /* 元様式は「9:00〜13:30」「8：40〜9：00」＝時の先頭0を落とし、通所は半角・訪問は全角コロン。 */
-  const trim = (t) => String(t || '').replace(/^0(\d):/, '$1:');
-  const a = trim(ev.startTime), b = trim(ev.endTime);
+  /* 元様式の実際の表記に合わせる（週間サービス表.xlsm の全140件を数えて確認・2026-09-02）:
+       ・コロンは全角「：」（U+FF1A。271件中271件が全角。半角は別用途の9件のみ）
+       ・区切りは全角チルダ「～」（U+FF5E。140件すべて。波ダッシュ〜U+301C ではない）
+       ・時の先頭の0は付けない（「8：40～9：00」）
+     通所・訪問で書き分けはしていない（以前の実装は通所だけ半角にしていた＝様式と違っていた）。 */
+  const fw = (t) => String(t || '').replace(/^0(\d):/, '$1:').replace(':', '：');
+  const a = fw(ev.startTime), b = fw(ev.endTime);
   if (!a || !b) return '';
-  return (wkKindOf_(ev) === 'daycare') ? (a + '〜' + b)
-                                       : (a.replace(':', '：') + '〜' + b.replace(':', '：'));
+  return a + '～' + b;
 }
 /* 見出し文字。通所は「デイサービス」、訪問は支援内容（無ければサービス区分）。
    ★勝手な文言は足さない（入力されたものだけを出す・原則6）。 */
