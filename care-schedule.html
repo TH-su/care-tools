@@ -782,46 +782,59 @@ select.inp { cursor: pointer; }
    ★寸法はすべて mm。A3横の印刷可能域は 420×297mm − 余白8mm = 404×281mm。
      見出し18mm ＋ 曜日見出し13mm ＋ 本体242mm = 273mm（281mm に収まる）。 */
 #wk-sheet { display: none; }
-.wk-sheet { width: 404mm; color: #000; font-family: inherit; }
+.wk-sheet { width: 400mm; color: #000; font-family: inherit; }   /* 元様式の余白10mmに合わせる */
 .wk-title {
-  height: 18mm; display: flex; align-items: flex-end; gap: 2mm;
-  font-size: 7mm; font-weight: 700; letter-spacing: .5mm;
+  height: 15mm; display: flex; align-items: flex-end; gap: 2mm;
+  font-size: 9mm; font-weight: 700; letter-spacing: .5mm;   /* 元様式 22pt×125% ≒ 9.7mm */
   padding-inline-start: 8mm; border-bottom: 0.6mm solid #000;
   width: 40%;                      /* 元様式の下線＝表の左1/3ほど */
   margin-bottom: 4mm;
 }
-.wk-grid { display: grid; grid-template-columns: 12mm 22mm repeat(7, 1fr); }
+/* 列幅は元様式の比率（帯 1.22+2.66 単位 ／ 時刻 2.66×5 単位 ／ 曜日 4×5 単位×7日）。 */
+.wk-grid { display: grid; grid-template-columns: 10mm 34mm repeat(7, 1fr); }
 .wk-cell { border: 0.25mm solid #000; }
-.wk-head { height: 13mm; display: flex; align-items: center; justify-content: center;
-           font-size: 5mm; font-weight: 700; border: 0.5mm solid #000; }
+.wk-head { height: 12mm; display: flex; align-items: center; justify-content: center;
+           font-size: 6mm; font-weight: 700; border: 0.5mm solid #000; }
 .wk-band-col, .wk-time-col, .wk-day-col { position: relative; border: 0.5mm solid #000; }
 .wk-band { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: center;
-           border-bottom: 0.5mm solid #000; font-size: 4.2mm; font-weight: 700;
+           border-bottom: 0.5mm solid #000; font-size: 5.4mm; font-weight: 700;
            writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 1mm; }
 .wk-band:last-child { border-bottom: none; }
-.wk-time { position: absolute; right: 2mm; font-size: 4mm; font-weight: 600; transform: translateY(-50%); }
+/* 時刻は元様式と同じ 18pt 相当まで大きくする（列幅34mmに「10:00」が余裕で収まる） */
+.wk-time { position: absolute; right: 3mm; font-size: 6.4mm; font-weight: 600; transform: translateY(-50%);
+           background: #fff; padding: 0 1mm; line-height: 1; }
 .wk-line   { position: absolute; left: 0; right: 0; border-top: 0.25mm solid #000; }
 .wk-line.q { border-top-color: #bbb; }      /* 15分の細線（元様式の薄い罫線） */
 /* コマ。色は WK_SHEET_COLORS が決める（通所=黄／訪問=青灰／買物=緑） */
 .wk-ev { position: absolute; left: 0.6mm; right: 0.6mm; overflow: hidden;
          border: 0.25mm solid #000; display: flex; flex-direction: column; }
-.wk-ev-time { text-align: center; font-size: 3.6mm; font-weight: 700; line-height: 1.25;
-              padding: 0.6mm 0; letter-spacing: .2mm; }
-.wk-ev-body { flex: 1; text-align: center; font-size: 3.2mm; font-weight: 700; line-height: 1.3;
-              padding: 0.4mm 0.6mm; word-break: break-word; }
-.wk-ev-main { font-size: 4.6mm; font-weight: 700; }     /* 「デイサービス」のような主見出し */
+/* 枠内の文字は入る限り大きく（元様式は時刻18pt・内容12pt）。曜日の列幅は約51mmで、
+   「13：00～14：00」11文字が 4.4mm でちょうど収まる。 */
+.wk-ev-time { text-align: center; font-size: 4.4mm; font-weight: 700; line-height: 1.2;
+              padding: 0.8mm 0; letter-spacing: 0; }
+/* 見出しは時刻のすぐ下（元様式と同じ）。温泉マークは残りの余白の中央に置く。 */
+.wk-ev-body { flex: 1; text-align: center; font-size: 4mm; font-weight: 700; line-height: 1.25;
+              padding: 0.5mm 0.8mm; word-break: break-word;
+              display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+.wk-ev-body > .wk-onsen, .wk-ev-body > .wk-ev-icons { margin-block: auto; }
+.wk-ev-main { font-size: 6mm; font-weight: 700; }       /* 「デイサービス」＝元様式18pt相当 */
 .wk-ev-icons { display: flex; align-items: center; justify-content: center; gap: 1mm; flex-wrap: wrap; }
-.wk-ev-icons img { max-width: 16mm; max-height: 16mm; }
-.wk-onsen { font-size: 14mm; line-height: 1.05; color: #b5121b; text-align: center; }
-.wk-ev-icons img.wk-onsen-img { max-width: 20mm; max-height: 20mm; }
+.wk-ev-icons img { max-width: 22mm; max-height: 22mm; }
+/* 掃除・洗濯のイラストは【枠の直下】に置く（元様式と同じ。枠の色は文字だけに掛ける） */
+.wk-ev-under { position: absolute; display: flex; align-items: flex-start; justify-content: center;
+               gap: 1.5mm; overflow: hidden; }
+.wk-ev-under img { max-height: 100%; max-width: 47%; object-fit: contain; }
+/* 温泉マークは黄色枠の中央あたりに大きく（本人指示） */
+.wk-onsen { font-size: 22mm; line-height: 1; color: #b5121b; text-align: center; }
+.wk-ev-icons img.wk-onsen-img { max-width: 34mm; max-height: 30mm; }
 /* 支援内容が長いコマだけ文字を落とす（枠からはみ出させない） */
-.wk-ev-body.long  { font-size: 2.8mm; line-height: 1.2; }
-.wk-ev-body.xlong { font-size: 2.3mm; line-height: 1.15; }
+.wk-ev-body.long  { font-size: 3.4mm; line-height: 1.2; }
+.wk-ev-body.xlong { font-size: 2.8mm; line-height: 1.15; }
 /* 左右に分かれた枠・帯を等分した枠は、時刻が折り返して溢れるため一段落とす */
-.wk-ev.narrow .wk-ev-time, .wk-ev.tight .wk-ev-time { font-size: 2.9mm; letter-spacing: 0; padding: 0.3mm 0; }
-.wk-ev.narrow .wk-ev-body, .wk-ev.tight .wk-ev-body { font-size: 2.5mm; line-height: 1.15; }
-.wk-ev.narrow .wk-ev-main, .wk-ev.tight .wk-ev-main { font-size: 3.2mm; }
-.wk-ev.tight .wk-onsen { font-size: 5mm; }
+.wk-ev.narrow .wk-ev-time, .wk-ev.tight .wk-ev-time { font-size: 3.2mm; letter-spacing: 0; padding: 0.3mm 0; }
+.wk-ev.narrow .wk-ev-body, .wk-ev.tight .wk-ev-body { font-size: 3mm; line-height: 1.15; }
+.wk-ev.narrow .wk-ev-main, .wk-ev.tight .wk-ev-main { font-size: 3.6mm; }
+.wk-ev.tight .wk-onsen { font-size: 6mm; }
 
 /* ══ A3週間予定表の印刷（body.wk-print のときだけ）══════════════════════════════
    既存の印刷（週ボードA4・利用者一覧A3）とは完全に別経路。ここでしか使わない指定だけを書く。 */
@@ -7403,12 +7416,18 @@ function clearRlPrintState_() {
        0:00–8:00 →早朝帯 ／ 8:00–17:00 →1時間=1行 ／ 17:00–20:00 →1行 ／ 20:00–24:00 →夜間帯
      の区分線形写像にする（週ボード印刷の PRINT_MAP と同じ考え方）。単調増加なので
      早朝5:00 や 21:00 の訪問も必ず帯の中に収まり、順序も入れ替わらない。 */
-const WK_AXIS   = { band: 30, hour: 19.4, night: 18 };                 /* mm */
+/* 元様式（週間サービス表.xlsm）の実測値に合わせる（2026-09-02）:
+     行の高さ 19.5pt・印刷倍率125% → 1行 = 19.5 × 1.25 = 24.4pt = 8.6mm
+     1時間 = 2行 ／ 早朝帯 = 2行 ／ 17:00〜20:00 = 3行 ／ 夜間帯 = 2行
+     時刻ラベルは 7:00〜17:00 と 20:00（18:00・19:00 は元様式でも空欄）
+   ★7:00 を軸に載せることで、7時台の訪問が「8:00 の線の手前」に自然に収まる（本人指示）。 */
+const WK_ROW    = 8.6;                                                  /* 1行(mm) */
+const WK_AXIS   = { band: WK_ROW * 2, hour: WK_ROW * 2, eve: WK_ROW * 3, night: WK_ROW * 2 };
 /* コマの最低高さ(mm)。元様式は短い訪問（8:40〜9:00・17:00〜17:20）も文字とイラストが入る大きさで
    描いてあるため、実時間より小さくならないように下限を置く。通所は時間どおりで足りる。 */
 const WK_MIN_H  = 9;
-const WK_MIN_H_VISIT = 15;
-const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.night;     /* 242mm */
+const WK_MIN_H_VISIT = 14;
+const WK_BODY_H = WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.eve + WK_AXIS.night;   /* 232.2mm */
 /* 色は元様式（週間サービス表.xlsm）の塗りつぶし実値。目視の近似ではなく、
    ファイルの styles.xml から取り出した値をそのまま使う（2026-09-02 確認）。
      通所＝FFFF00 ／ 訪問＝A5B6CB（テーマ3・tint 0.6）／ 買物代行＝92D050
@@ -7429,15 +7448,15 @@ const WK_SHEET_ICONS = {
 /* 時刻(分) → 紙面上のY(mm)。範囲外は端で止める（負の位置・はみ出しを作らない）。 */
 function wkY_(mins) {
   const m = Math.max(0, Math.min(1440, Number(mins) || 0));
-  if (m <= 480)  return (m / 480) * WK_AXIS.band;                                     /* 早朝帯 */
-  if (m <= 1020) return WK_AXIS.band + ((m - 480) / 60) * WK_AXIS.hour;               /* 8:00–17:00 */
-  if (m <= 1200) return WK_AXIS.band + 9 * WK_AXIS.hour + ((m - 1020) / 180) * WK_AXIS.hour;  /* 17–20 を1行へ */
-  return WK_AXIS.band + 10 * WK_AXIS.hour + ((m - 1200) / 240) * WK_AXIS.night;       /* 夜間帯 */
+  if (m <= 420)  return (m / 420) * WK_AXIS.band;                                       /* 0:00–7:00 早朝帯 */
+  if (m <= 1020) return WK_AXIS.band + ((m - 420) / 60) * WK_AXIS.hour;                 /* 7:00–17:00 等倍 */
+  if (m <= 1200) return WK_AXIS.band + 10 * WK_AXIS.hour + ((m - 1020) / 180) * WK_AXIS.eve;  /* 17–20 を3行へ */
+  return WK_AXIS.band + 10 * WK_AXIS.hour + WK_AXIS.eve + ((m - 1200) / 240) * WK_AXIS.night; /* 夜間帯 */
 }
 /* 圧縮された帯（1時間あたりの高さが本文の1/3以下）。ここに複数コマが入る日は帯を等分して並べる。
    ★帯は「早朝」「夕(17-20)」「夜間(20-24)」を別々に扱う。まとめて等分すると、22時のコマが
      17時の位置から描かれて時間帯を誤って読ませる（実測で確認）。 */
-const WK_ZONES = [{ a: 0, b: 480 }, { a: 1020, b: 1200 }, { a: 1200, b: 1440 }];
+const WK_ZONES = [{ a: 0, b: 420 }, { a: 1020, b: 1200 }, { a: 1200, b: 1440 }];
 
 /* コマの種類＝色の規則（本人確定）: 通所→黄／支援内容に「買物」を含む訪問→緑／その他の訪問→青灰 */
 function wkKindOf_(ev) {
@@ -7538,8 +7557,18 @@ function wkLayoutDay_(events) {
     }
   }
   const laneCount = items.some(it => it.lane > 0) ? lanes : 1;
+  /* 同じレーンの次のコマの上端（無ければ紙面の下端）。イラストを枠の直下へ置く余白の計算に使う。 */
+  const sorted = items.slice().sort((a, b) => a.top - b.top);
+  for (let i = 0; i < sorted.length; i++) {
+    let nx = WK_BODY_H;
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (sorted[j].lane === sorted[i].lane) { nx = sorted[j].top; break; }
+    }
+    sorted[i].nextTop = nx;
+  }
   return items.map(it => ({ ev: it.ev, top: it.top, h: it.h, lane: it.lane,
-                            lanes: laneCount, tight: !!it.tight }));
+                            lanes: laneCount, tight: !!it.tight,
+                            nextTop: (it.nextTop === undefined ? WK_BODY_H : it.nextTop) }));
 }
 /* 紙面を組み立てる。戻り値は HTML 文字列（テストで中身を確かめられるよう純粋な組み立てにする）。 */
 function buildWeeklySheetHtml_(res) {
@@ -7549,8 +7578,8 @@ function buildWeeklySheetHtml_(res) {
 
   /* 左の帯（早朝／午前／午後／夜間） */
   const bands = [
-    { label: '早朝', a: 0,    b: 480 },
-    { label: '午前', a: 480,  b: 720 },
+    { label: '早朝', a: 0,    b: 420 },
+    { label: '午前', a: 420,  b: 720 },
     { label: '午後', a: 720,  b: 1200 },
     { label: '夜間', a: 1200, b: 1440 },
   ];
@@ -7562,22 +7591,26 @@ function buildWeeklySheetHtml_(res) {
   }
 
   /* 時刻の目盛。元様式に合わせ 8:00〜17:00 と 20:00 だけを出す（18:00・19:00 は空欄のまま） */
-  let timeHtml = '', lineHtml = '';
-  const hourLabels = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20];
+  /* 時刻ラベル：7:00〜17:00 と 20:00（18:00・19:00 は元様式でも空欄） */
+  let timeHtml = '', lineHtml = '', timeLineHtml = '';
+  const hourLabels = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20];
   for (const h of hourLabels) {
     const y = wkY_(h * 60);
     timeHtml += '<div class="wk-time" style="top:' + y.toFixed(2) + 'mm">' + h + ':00</div>';
   }
-  /* 罫線：時間の線（濃い）と15分の線（薄い）。元様式と同じく本文の全幅に引く */
-  const hourLines = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20];
-  for (const h of hourLines) lineHtml += '<div class="wk-line" style="top:' + wkY_(h * 60).toFixed(2) + 'mm"></div>';
-  for (let h = 8; h < 17; h++) {
-    for (const q of [15, 30, 45]) {
-      lineHtml += '<div class="wk-line q" style="top:' + wkY_(h * 60 + q).toFixed(2) + 'mm"></div>';
-    }
+  /* 罫線。曜日の列には時間の線（濃い）と30分の線（薄い）を引く。
+     ★時刻の列には【時刻に被る線を引かない】（本人指示）。被らない30分の線だけを薄く引く。 */
+  const hourMins = hourLabels.map(h => h * 60);
+  for (const m of hourMins) lineHtml += '<div class="wk-line" style="top:' + wkY_(m).toFixed(2) + 'mm"></div>';
+  const halfMins = [];
+  for (let h = 7; h < 17; h++) halfMins.push(h * 60 + 30);
+  for (const m of [140, 280]) halfMins.push(m);            /* 早朝帯の薄い線 */
+  for (const m of [1100, 1160, 1260, 1320, 1380]) halfMins.push(m);   /* 夕・夜間帯の薄い線 */
+  for (const m of halfMins) {
+    const y = wkY_(m).toFixed(2);
+    lineHtml     += '<div class="wk-line q" style="top:' + y + 'mm"></div>';
+    timeLineHtml += '<div class="wk-line q" style="top:' + y + 'mm"></div>';
   }
-  for (const m of [120, 240, 360]) lineHtml += '<div class="wk-line q" style="top:' + wkY_(m).toFixed(2) + 'mm"></div>';
-  for (const m of [1260, 1320, 1380]) lineHtml += '<div class="wk-line q" style="top:' + wkY_(m).toFixed(2) + 'mm"></div>';
 
   /* 曜日の列 */
   let daysHtml = '';
@@ -7607,9 +7640,21 @@ function buildWeeklySheetHtml_(res) {
         + '<div class="wk-ev-body' + (main.length > 24 ? ' xlong' : (main.length > 12 ? ' long' : '')) + '"><div class="' + cls + '">'
         + escHtml(main) + '</div>'
         + onsen
-        + (icons.length ? '<div class="wk-ev-icons">'
-             + icons.map(src => '<img src="' + escHtml(src) + '" alt="">').join('') + '</div>' : '')
         + '</div></div>';
+      /* ★掃除・洗濯などのイラストは【枠の直下】に置く（元様式と同じ・本人指示）。
+         次のコマに掛からない範囲でだけ出し、入る高さが無ければ出さない。 */
+      if (icons.length) {
+        const underTop = p.top + p.h + 0.6;
+        const room = Math.max(0, (p.nextTop === undefined ? WK_BODY_H : p.nextTop) - underTop - 0.6);
+        const uh = Math.min(WK_ROW * 2, room);
+        if (uh >= 5) {
+          cells +=
+            '<div class="wk-ev-under" style="top:' + underTop.toFixed(2) + 'mm;height:' + uh.toFixed(2) + 'mm;'
+              + 'left:calc(' + left + '% + 0.6mm);width:calc(' + w + '% - 1.2mm)">'
+            + icons.map(src => '<img src="' + escHtml(src) + '" alt="">').join('')
+            + '</div>';
+        }
+      }
     }
     daysHtml += '<div class="wk-day-col" style="height:' + H + 'mm">' + cells + '</div>';
   }
@@ -7622,7 +7667,7 @@ function buildWeeklySheetHtml_(res) {
        + '<div class="wk-grid">' + headHtml + '</div>'
        + '<div class="wk-grid">'
        +   '<div class="wk-band-col" style="height:' + H + 'mm">' + bandHtml + '</div>'
-       +   '<div class="wk-time-col" style="height:' + H + 'mm">' + timeHtml + lineHtml + '</div>'
+       +   '<div class="wk-time-col" style="height:' + H + 'mm">' + timeLineHtml + timeHtml + '</div>'
        +   daysHtml
        + '</div>';
 }
@@ -7642,7 +7687,7 @@ function printWeeklySheet() {
   document.body.classList.add('wk-print');
   const st = document.createElement('style');
   st.id = 'wk-a3-page';
-  st.textContent = '@media print{@page{size:A3 landscape;margin:8mm}}';
+  st.textContent = '@media print{@page{size:A3 landscape;margin:10mm}}';   /* 元様式と同じ余白 */
   document.head.appendChild(st);
   let cleaned = false;
   const done = function () {
