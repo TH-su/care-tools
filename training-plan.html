@@ -762,6 +762,16 @@ function normBedriddenRank(v) {
   if (m) return m[1].toUpperCase() + m[2];
   return t;
 }
+/* 要介護度は様式の「要介護度」欄の下に数字だけを出す（原本Excelは全角「３」）。
+   入居者マスタは「要介護2」の形で返すので、接頭辞を落として全角数字に寄せる。
+   要支援・未知の表記はそのまま返す（勝手に書き換えない・原則6） */
+function normCareLevel(v) {
+  var t = s_(v).trim();
+  var m = /^(?:要介護)?\s*([1-5１-５])$/.exec(t);
+  if (!m) return t;
+  var d = m[1].replace(/[1-5]/, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); });
+  return d;
+}
 function isKnownRank(kind, v) {
   var t = s_(v).trim();
   if (t === '') return true;   /* 空欄は「未知」ではない */
@@ -842,7 +852,7 @@ function normalizePlan(src) {
   }
   if (isObj_(s.basic)) {
     p.basic.name = s_(s.basic.name); p.basic.kana = s_(s.basic.kana); p.basic.gender = s_(s.basic.gender);
-    p.basic.birthDate = s_(s.basic.birthDate); p.basic.careLevel = s_(s.basic.careLevel);
+    p.basic.birthDate = s_(s.basic.birthDate); p.basic.careLevel = normCareLevel(s.basic.careLevel);
     p.basic.dementiaRank = s_(s.basic.dementiaRank); p.basic.bedriddenRank = s_(s.basic.bedriddenRank);
   }
   if (isObj_(s.health)) {
@@ -983,7 +993,7 @@ global.TP = {
   addDays: addDays, diffDays: diffDays, cmpYmd: cmpYmd,
   nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts,
   normalizeName: normalizeName, splitSentences: splitSentences, diffSentences: diffSentences,
-  normDementiaRank: normDementiaRank, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
+  normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, isRetro: isRetro,
   prevDateMismatches: prevDateMismatches,
   validateImport: validateImport, mergeImport: mergeImport
@@ -2899,7 +2909,7 @@ function applyMaster(p, got) {
   put('basic.kana', rec.kana || row.kana, 'ふりがな');
   put('basic.gender', rec.gender || row.gender, '性別');
   put('basic.birthDate', rec.birthDate || row.birthDate, '生年月日');
-  put('basic.careLevel', rec.careLevel || row.careLevel, '要介護度');
+  put('basic.careLevel', normCareLevel(rec.careLevel || row.careLevel), '要介護度');
   var dem = TP.normDementiaRank((got.bulk && got.bulk.dementia) || rec.dementia);
   var bed = TP.normBedriddenRank((got.sec && got.sec.bedriddenRank) || rec.bedriddenRank || (got.bulk && got.bulk.adl) || rec.adl);
   put('basic.dementiaRank', dem, '認知症自立度');

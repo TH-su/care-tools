@@ -231,7 +231,7 @@
     return { y: y, m: mo, d: d, iso: m[0] };
   }
 
-  /* 'YYYY-MM-DD' → '令和8年9月2日' / '昭和9年2月15日'。元年は「元年」。不正値は '' */
+  /* 'YYYY-MM-DD' → '令和8年9月2日' / '昭和30年1月1日'（架空の例）。元年は「元年」。不正値は '' */
   function toWareki(iso) {
     var p = parseIso(iso);
     if (!p) return '';
