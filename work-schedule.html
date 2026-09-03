@@ -3073,11 +3073,41 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 常に空予約するため、当日出勤者にフラグが現れなくてもこのIDの列は排他予約する（従来挙動の維持）。 */
   var RESERVED_EXCLUSIVE_SLOTS = ['slot_visit_1'];
   function stripName_(n) { return String(n === null || n === undefined ? '' : n).replace(/[\s　]/g, ''); }
-  /* リーダー等の役割マーカー「(L)」「（L）」（全角Ｌ含む）を末尾から除いた突合キー。
-   * シフト側の氏名と、手動でリネームしたワースケ列名（例『氏名(L)』）を同一人物として突合するため。
-   * 空白除去(stripName_)後の末尾 (L)/（L） のみ除去する。
-   * 末尾括弧の運用注記（例『(2階)』）や前方一致は別人誤マージの源になるため対象にしない。 */
-  function normLeaderName_(n) { return stripName_(n).replace(/[（(][LＬ][)）]$/, ''); }
+  /* リーダー等の役割マーカーを除いた突合キー。
+   * シフト側の氏名と、手動でリネームしたワースケ列名を同一人物として突合するために使う。
+   * 空白は stripName_ が先に落とすので『L 氏名』は『L氏名』として扱われる。
+   *
+   * ★2026-09-03 拡張: 末尾の (L) しか外しておらず、現場で使われている
+   *   『L氏名』『L 氏名』が別人と判定され、シフト再反映のたびに列が1本増えていた
+   *   （実害: 夜勤列が2列→3列）。前後・括弧の有無・役割語まで対象を広げる。
+   *
+   * 取り除く形:
+   *   末尾 … 氏名(L) 氏名（Ｌ） 氏名[L] 氏名【リーダー】 氏名L
+   *   先頭 … (L)氏名 【Ｌ】氏名 L氏名
+   * 役割語は LEADER_MARK_RE の集合だけ（L / Ｌ / l / ｌ / リーダー / ﾘｰﾀﾞｰ / leader）。
+   *
+   * ★守る条件（誤マージの防止）:
+   *   - 括弧の中身が役割語の時だけ外す。『(2階)』のような運用注記は残す
+   *   - 外した後に【日本語の文字が残る】時だけ採用する。『L』だけの列名を空キーに潰すと
+   *     無関係な列どうしが同一人物として突合され、別人の枠へ上書きされる
+   *   - 前方一致・部分一致は使わない（『架空』と『架空甲』は別人のまま） */
+  var LEADER_MARK_RE = /^(?:[LＬlｌ]|リーダー|ﾘｰﾀﾞｰ|[Ll][Ee][Aa][Dd][Ee][Rr])$/;
+  var LEADER_BR_TAIL_RE = /[（(\[［【]([^（()）\[\]［］【】]{1,8})[)）\]］】]$/;
+  var LEADER_BR_HEAD_RE = /^[（(\[［【]([^（()）\[\]［］【】]{1,8})[)）\]］】]/;
+  var LEADER_BARE_TAIL_RE = /[LＬlｌ]$/;
+  var LEADER_BARE_HEAD_RE = /^[LＬlｌ]/;
+  /* 役割マーカーを外した残りが氏名として使えるか（1文字以上かつ日本語を含む）。 */
+  function leaderRest_(t) { return t.length >= 1 && /[^\x00-\x7F]/.test(t); }
+  function normLeaderName_(n) {
+    var s = stripName_(n), m, t;
+    m = s.match(LEADER_BR_TAIL_RE);
+    if (m && LEADER_MARK_RE.test(m[1])) { t = s.slice(0, s.length - m[0].length); if (leaderRest_(t)) s = t; }
+    m = s.match(LEADER_BR_HEAD_RE);
+    if (m && LEADER_MARK_RE.test(m[1])) { t = s.slice(m[0].length); if (leaderRest_(t)) s = t; }
+    t = s.replace(LEADER_BARE_TAIL_RE, ''); if (t !== s && leaderRest_(t)) s = t;
+    t = s.replace(LEADER_BARE_HEAD_RE, ''); if (t !== s && leaderRest_(t)) s = t;
+    return s;
+  }
 
   /* 曜日キー（care-schedule 規約 0=月..6=日 と同順） */
   var DOW_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -4000,13 +4030,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     })();
 
     /* 手動保護スロットの職員名（force時は無効） */
-    var lockedNames = {}, locked = 0;
+    var lockedNames = {}, lockedPartial = [], locked = 0;
     if (!force) {
       for (i = 0; i < staff.length; i++) {
         if (String(staff[i].id).indexOf('slot_') === 0 && staff[i].manual && staff[i].name) {
-          lockedNames[normLeaderName_(staff[i].name)] = true; locked++;   /* (L)等の役割マーカーを吸収して突合 */
+          var rawNm_ = stripName_(staff[i].name), keyNm_ = normLeaderName_(staff[i].name);
+          lockedNames[keyNm_] = true; locked++;   /* (L)等の役割マーカーを吸収して突合 */
+          /* 役割マーカーを付けた列だけ、氏名の【一部】しか書いていない場合も突合対象にする。 */
+          if (keyNm_ && keyNm_ !== rawNm_) lockedPartial.push(keyNm_);
         }
       }
+    }
+    /* ★2026-09-03: 保護列に氏名の一部だけを書く運用への対応。
+     * 実害: 夜勤リーダーの列を『姓のみ＋(L)』に手動リネームしていたところ、
+     * シフト側のフルネーム（姓＋名）と一致せず別人と判定され、シフト変更のたびに
+     * 夜勤列が 2列→3列に増えて同じ職員が2箇所に表示されていた。
+     *
+     * 前方一致は本来「別人の誤マージ」の源（『架空』と『架空甲』）なので、次の3条件を全部満たす時だけ通す:
+     *   ① その列に【役割マーカー(L等)が付いている】＝人が明示的にリーダー指定した列であること
+     *   ② 完全一致では突合できないこと（完全一致は lockedNames が担当）
+     *   ③ その日の出勤者の中で一致候補が【ちょうど1人】であること
+     *      （2人以上該当する日は誰か決められないため、従来どおり別人として扱う＝誤マージしない）
+     * 照合は役割マーカーを除いた氏名どうしの前方一致（どちらが短くてもよい）。 */
+    var lockedPartialHit = {};
+    for (var lp_ = 0; lp_ < lockedPartial.length; lp_++) {
+      var pk_ = lockedPartial[lp_], cand_ = {}, nCand_ = 0, only_ = '';
+      for (var pj_ = 0; pj_ < parsed.length; pj_++) {
+        var nk_ = normLeaderName_(parsed[pj_].name);
+        if (!nk_ || lockedNames[nk_]) continue;               /* 完全一致は別経路 */
+        if (nk_.indexOf(pk_) !== 0 && pk_.indexOf(nk_) !== 0) continue;
+        if (!cand_[nk_]) { cand_[nk_] = true; nCand_++; only_ = nk_; }
+      }
+      if (nCand_ === 1) lockedPartialHit[only_] = true;       /* 一意の時だけ同一人物とみなす */
     }
     /* 非保護スロットを空に戻す */
     for (i = 0; i < staff.length; i++) {
@@ -4022,7 +4077,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var groups = { facility: [], visit: [], nfa: [], nfi: [], nva: [], nvi: [] };
     for (i = 0; i < parsed.length; i++) {
       var p = parsed[i];
-      if (lockedNames[normLeaderName_(p.name)]) continue;   /* シフト側の氏名が手動保護『氏名(L)』列に留まる=重複列防止 */
+      var pKey_ = normLeaderName_(p.name);
+      if (lockedNames[pKey_] || lockedPartialHit[pKey_]) continue;   /* シフト側の氏名が手動保護『氏名(L)』列に留まる=重複列防止 */
       if (p.zone === 'night') {
         var dk = (p.division === '訪問') ? 'v' : 'f';
         var rk = (p.nightRole === 'iri') ? 'i' : 'a';
