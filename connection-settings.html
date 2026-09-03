@@ -269,6 +269,12 @@ var SYSTEMS = [
     apps:'入居調整（入居前の相談者の台帳。専用の合言葉を使います）',
     shape:'obj', key:'adm_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_EXEC },
 
+  /* 個別機能訓練計画書（2026-09-03）: 疾患名・治療経過を含む計画書を、入居調整と同じ理由で
+     get/put/ping しか持たない専用GASに分け、合言葉も別にした（所有アプリは training-plan.html・キー tp_cfg）。 */
+  { id:'tp', title:'個別機能訓練計画書',
+    apps:'個別機能訓練計画書（せせらぎの計画書。専用の合言葉を使います）',
+    shape:'obj', key:'tp_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_EXEC },
+
   { id:'master', title:'入居者マスタ・フェイスシート',
     apps:'入居者マスタ／フェイスシート（週間計画・体重・デイ利用表もここを参照します。入居調整の「マスタへ登録」もここを使います）',
     shape:'obj', key:'rmaster_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY,

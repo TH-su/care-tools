@@ -45,6 +45,8 @@
 # 個人情報は一切含まない（接続先・合言葉もアプリ側の localStorage から渡される）。
 !/su-data.js
 !/su-data-gas.js
+!/training-plan.html
+!/training-plan-form.js
 
 # SilverMail — 複数アカウント対応ローカルメーラー（2026-08-15）。
 # コードのみ公開。認証情報は ~/.silvermail/（リポジトリ外）とmacOSキーチェーンに保存され、
