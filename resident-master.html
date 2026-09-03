@@ -79,6 +79,27 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .fl-4col .rlist{grid-template-columns:1fr}
 }
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:8px}
+/* ── 入居日順（2026-09-02 追加）。左に入居年月日・右に既存のカード ── */
+.adm-bar{display:flex; align-items:center; gap:8px; padding:8px 0; flex-wrap:wrap}
+.adm-bar .lb{font-size: 0.8125rem; color:var(--g7)}
+.adm-bar .nt{font-size: 0.75rem; color:var(--g7)}
+.achip{min-height:44px; padding:8px 14px; border:1px solid var(--g3); background:#fff; color:var(--g7);
+  border-radius:999px; font-size: 0.8125rem; font-family:inherit; cursor:pointer}
+.achip.on{background:var(--pri-l); border-color:var(--pri); color:var(--pri); font-weight:700}
+.achip:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.admlist{display:flex; flex-direction:column; gap:8px}
+.adm-row{display:grid; grid-template-columns:132px 1fr; gap:10px; align-items:center}
+.adm-d{font-size: 0.8125rem; font-weight:700; color:var(--g9); text-align:end; white-space:nowrap;
+  background:var(--g0); border:1px solid var(--g2); border-radius:8px; padding:8px 10px; align-self:stretch;
+  display:flex; flex-direction:column; justify-content:center; gap:2px}
+.adm-d .yr{font-size: 0.75rem; font-weight:400; color:var(--g7)}
+.adm-d.none{background:var(--warn-bg); border-color:var(--warn-tx); color:var(--warn-tx); font-weight:400}
+.adm-row .rcard{min-width:0}
+/* 狭い画面では日付を上、カードを下へ（132pxを削るとカードが潰れるため） */
+@media (max-width:560px){
+  .adm-row{grid-template-columns:1fr; gap:4px}
+  .adm-d{text-align:start; align-self:auto}
+}
 .rcard{background:#fff; border:1px solid var(--g2); border-radius:9px; padding:8px 10px; cursor:pointer; transition:.12s}
 .rcard:hover{box-shadow:var(--sh); border-color:var(--pri)}
 .rcard .nm{font-size: 0.9375rem; font-weight:700}
@@ -806,8 +827,17 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="fl2"   role="tab" aria-selected="false">階別（左右）</button>
     <button class="vtab"    data-v="fl4"   role="tab" aria-selected="false">階別（4列）</button>
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
+    <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
+  </div>
+  <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
+       ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
+  <div class="adm-bar" id="admBar" style="display:none">
+    <span class="lb">並び順</span>
+    <button type="button" class="achip" data-o="desc">新しい順</button>
+    <button type="button" class="achip" data-o="asc">古い順</button>
+    <span class="nt" id="admNote"></span>
   </div>
   <!-- 誕生日ビュー専用の年度切替。印刷には出さない（年度は表の見出しに入る） -->
   <div class="bday-bar" id="bdayBar" style="display:none">
@@ -1695,7 +1725,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','bday','meal'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -1740,8 +1770,90 @@ function setView(v){
   /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
      残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
   csvStripViewParam();
-  paintTabs(); paintBdayBar(); paintMealBar(); renderRoster();
+  paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); renderRoster();
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
+  if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
+}
+
+/* ═══════════ 入居日順（2026-09-02 指示） ═══════════
+   左に入居年月日・右に既存のカード（押すと詳細へ）。
+   ★並び順は保存する UI 状態のみ（原則11）。氏名・記録は1文字も保存しない。 */
+/* 入居日は【共有名簿には無い】項目。名簿(getRoster)に足すとGASの貼り替えが要るうえ、
+   1つのタブのためだけに全アプリへ配る構造物が太る。食形態一覧が getMealList で
+   自前に取るのと同じ作法で、このタブを開いた時に getBulk から1回だけ取る。
+   ★メモリのみ（localStorage に業務データを置かない）。★取れなくても一覧は必ず描く。 */
+var admMap=null, admLoading=false, admErr='';
+function admOf(r){
+  if(admMap){ var v=admMap[String(r.id)]; if(v) return v; }
+  return _ymd(r.admissionDate);   /* 将来 GAS 側が名簿に載せた時は、そちらも使える */
+}
+function admEnsure(){
+  if(admMap||admLoading) return;
+  if(!CFG.url){ admErr='同期設定のURLが未設定です'; paintAdmBar(); return; }
+  admLoading=true; admErr=''; paintAdmBar();
+  apiGet({action:'getBulk'},30000).then(function(d){
+    var rows=(d&&d.rows)||[], m={};
+    /* ★空応答を成功として扱わない（全員「未登録」の画面を正しい結果として見せない） */
+    if(!rows.length){ admErr='入居日を取得できませんでした'; return; }
+    for(var i=0;i<rows.length;i++){
+      var x=rows[i]; if(!x||x.id==null) continue;
+      var v=_ymd(x.admissionDate); if(v) m[String(x.id)]=v;
+    }
+    admMap=m;
+  }).catch(function(){ admErr='入居日を取得できませんでした（通信）'; })
+    .then(function(){ admLoading=false; paintAdmBar(); if(curView==='adm') renderRoster(); });
+}
+var ADM_ORDER_KEY='rmaster_adm_order';
+var ADM_ORDERS=['desc','asc'];
+var admOrder=(function(){
+  try{var v=localStorage.getItem(ADM_ORDER_KEY);return ADM_ORDERS.indexOf(v)>=0?v:'desc'}catch(e){return'desc'}
+})();
+function setAdmOrder(o){
+  admOrder=ADM_ORDERS.indexOf(o)>=0?o:'desc';
+  try{localStorage.setItem(ADM_ORDER_KEY,admOrder)}catch(e){}
+  paintAdmBar(); renderRoster();
+}
+function paintAdmBar(){
+  var bar=$('admBar'); if(!bar) return;
+  bar.style.display=(curView==='adm')?'flex':'none';
+  Array.prototype.forEach.call(bar.querySelectorAll('.achip'),function(b){
+    var on=b.getAttribute('data-o')===admOrder;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
+  });
+}
+/* 入居日で並べる。同じ日は居室→ヨミで安定させる（日付だけだと描画のたびに順が揺れる）。 */
+function byAdmission(a,b){
+  var x=admOf(a), y=admOf(b);
+  if(x!==y) return (admOrder==='asc') ? (x<y?-1:1) : (x<y?1:-1);
+  return byRoom(a,b);
+}
+function admHtml(list){
+  /* ★入居日が無い方を落とさない（居室未登録を「階未設定」に出すのと同じ方針）。
+     落とすと画面から消え、入力漏れに誰も気づけない。
+     ★旧GAS（ROSTER_EXTRA に admissionDate が無い版）では全員ここに入る＝
+       「機能が壊れた」ではなく「サーバー側の貼り替えがまだ」だと分かる文言にする。 */
+  var dated=[], none=[];
+  list.forEach(function(r){ (admOf(r)?dated:none).push(r); });
+  dated.sort(byAdmission); none.sort(byRoom);
+  var note=$('admNote');
+  if(note) note.textContent=admLoading ? '入居日を取得中…'
+    : admErr ? ('⚠ '+admErr+'（下の一覧は入居日なしで出しています）')
+    : dated.length ? ('入居日あり '+dated.length+'名'+(none.length?(' ／ 未登録 '+none.length+'名'):''))
+    : (list.length?'入居日が登録されている方がいません':'');
+  var rows=dated.map(function(r){
+    var d=String(admOf(r)).split('-');
+    return '<div class="adm-row">'+
+      '<div class="adm-d"><span class="yr">'+esc(d[0])+'年</span>'+
+        esc(parseInt(d[1],10)+'月'+parseInt(d[2],10)+'日')+'</div>'+
+      rcardHtml(r)+'</div>';
+  }).join('');
+  var noneRows=none.map(function(r){
+    return '<div class="adm-row"><div class="adm-d none">入居日<br>未登録</div>'+rcardHtml(r)+'</div>';
+  }).join('');
+  var h='<div class="admlist">'+rows+'</div>';
+  if(none.length) h+='<div class="rsec nofloor" style="margin-top:14px"><h3>入居日が未登録'+
+    '<span class="cnt">'+none.length+'名</span></h3><div class="admlist">'+noneRows+'</div></div>';
+  return h;
 }
 
 /* ═══════════ 誕生日一覧（年度単位） ═══════════
@@ -2067,6 +2179,8 @@ function renderRoster(){
       var a=bucket[p[0]]; if(!a) return '';
       return secHtml(p[0],a.sort(byKana));
     }).join('')+secHtml('その他',other.sort(byKana),'nofloor');   // ヨミ未登録・五十音で分類できないヨミ
+  }else if(curView==='adm'){
+    html=admHtml(list);
   }else if(curView==='bday'){
     html=bdayHtml(list);
   }else{
@@ -5520,7 +5634,8 @@ function applyDeviceGuard(){
 }
 /* キャッシュ即時表示＋（URLがあれば）ネット同期。init と端末解除後で共用 */
 function loadData(){
-  loadRosterCache();renderRoster();
+  paintAdmBar();loadRosterCache();renderRoster();
+  if(curView==='adm') admEnsure();   /* 再読込でこのタブに戻った時も取りに行く（原則11） */
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
   /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
      （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
@@ -6135,6 +6250,9 @@ function init(){
   paintTabs(); paintBdayBar(); paintMealBar();
   /* 誕生日ビューの年度切替・印刷。年度は端末に保存しない（毎回その日の年度で開く＝
      去年の年度のまま印刷してしまう事故を防ぐ） */
+  if($('admBar'))Array.prototype.forEach.call($('admBar').querySelectorAll('.achip'),function(b){
+    b.addEventListener('click',function(){setAdmOrder(this.getAttribute('data-o'))});
+  });
   if($('bdayPrev'))$('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
   if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){window.print()});
