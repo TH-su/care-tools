@@ -206,10 +206,16 @@ body.view-cur .fprev{display:none}
 
 /* ── 様式比較（左＝過去の期・読み取り専用／右＝今回・様式の中で直せる）──
    ★.sheet の中身（罫線・文字寸法）はここでは一切触らない。触れるのは入れ物だけ。 */
-.cmp{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);align-items:start}
-@media (max-width:1100px){.cmp{grid-template-columns:1fr}}
-.cmp>div{min-width:0}
-.cmp h3{margin-bottom:var(--sp-1)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-1) var(--sp-3);align-items:start}
+.cmp>*{min-width:0}
+.cmp-span{grid-column:1 / -1}
+.cmp h3{margin:0}
+/* 帯→見出し→表の順で行を組む。同じ行にある左右の見出しは同じ高さになるので、表の上端が揃う。
+   狭い画面（1列）では「左の見出し→左の表→右の見出し→右の表」の順に並べ直す */
+@media (max-width:1100px){
+  .cmp{grid-template-columns:1fr}
+  .cmp-span{order:0} .cmp-h-l{order:1} #cmpLeft{order:2} .cmp-h-r{order:3} #cmpRight{order:4}
+}
 .cmp-host{overflow:auto;background:var(--c-surface);border:1px solid var(--c-border);
   border-radius:var(--r-sm);padding:var(--sp-1)}
 .cmp-tip{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:var(--tap-gap);
@@ -457,20 +463,17 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <span class="muted" id="cmpNote"></span>
     </div>
     <div id="cmpWarn"></div>
+    <!-- 見出し・帯・表を「同じグリッドの行」に置く＝左右の表の上端が必ず揃う（2026-09-03 指摘: 右だけ帯があり右の表が下にずれていた） -->
     <div class="cmp" style="margin-top:var(--sp-2)">
-      <div>
-        <h3 id="cmpLeftTitle">前回（読み取り専用）</h3>
-        <div id="cmpLeft" class="cmp-host"></div>
+      <div id="cmpTip" class="cmp-tip cmp-span" role="status" aria-live="polite">
+        <span id="cmpTipLabel">欄を選ぶと、ここに欄名と文字数が出ます</span>
+        <span id="cmpTipCount" class="cnt"></span>
+        <button id="cmpTipCopy" class="btn sm sp" type="button" disabled>前回をコピー</button>
       </div>
-      <div>
-        <h3>今回（様式の中で直せます）</h3>
-        <div id="cmpTip" class="cmp-tip" role="status" aria-live="polite">
-          <span id="cmpTipLabel">欄を選ぶと、ここに欄名と文字数が出ます</span>
-          <span id="cmpTipCount" class="cnt"></span>
-          <button id="cmpTipCopy" class="btn sm sp" type="button" disabled>前回をコピー</button>
-        </div>
-        <div id="cmpRight" class="cmp-host"></div>
-      </div>
+      <h3 id="cmpLeftTitle" class="cmp-h cmp-h-l">前回（読み取り専用）</h3>
+      <h3 class="cmp-h cmp-h-r">今回（様式の中で直せます）</h3>
+      <div id="cmpLeft" class="cmp-host"></div>
+      <div id="cmpRight" class="cmp-host"></div>
     </div>
   </div>
 
