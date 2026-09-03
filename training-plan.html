@@ -397,6 +397,10 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       </div>
       <p class="muted" id="statusHint"></p>
     </div>
+    <div class="stack" id="moveEvalBox" style="margin-top:var(--sp-3)" hidden>
+      <button id="btnMoveEvalPrev" class="btn" type="button">このⅢを前の期の報告へ移す</button>
+      <span class="muted">前の期の報告書欄（達成度・Ⅲ）がまだ空のため、この期のⅢを前の期へ移せます</span>
+    </div>
   </div>
 
   <div class="cd">
@@ -410,16 +414,20 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <select id="sTrend"><option value="">選んでください</option><option>改善</option><option>維持</option><option>低下</option></select></div>
       <div><label for="sNote">自由記入（80字まで・事実のみ）</label>
         <input type="text" id="sNote" maxlength="80" autocomplete="off"></div>
+      <div><label for="sEnv">環境・福祉用具の変化（任意・80字まで・事実のみ）</label>
+        <input type="text" id="sEnv" maxlength="80" autocomplete="off"
+               placeholder="住環境や福祉用具で実際に変わったことがあれば、その事実だけを短く書いてください"></div>
     </div>
     <fieldset style="border:0;margin-top:var(--sp-3)">
       <legend style="font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2)">観察タグ</legend>
       <div id="sTags" class="stack" style="margin-top:var(--sp-2)"></div>
     </fieldset>
     <div class="stack" style="margin-top:var(--sp-3)">
-      <label style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
+      <label id="sRephraseWrap" style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
         <input type="checkbox" id="sRephrase" style="width:auto;min-height:auto">
         言い回しも更新する（rephrase）
       </label>
+      <p class="muted" id="sRephraseNote" hidden>v4では毎回、目標・社会参加・環境を更新します</p>
       <button id="btnGenEval" class="btn" type="button">Ⅲを埋める（依頼）</button>
       <button id="btnGenNext" class="btn" type="button">次期を生成（依頼）</button>
       <button id="btnAiRegen" class="btn" type="button">再提案</button>
@@ -491,6 +499,10 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <!-- ══════════ 印刷プレビュー ══════════ -->
 <section id="scr-print" class="scr" aria-label="印刷プレビュー">
   <div class="pv-bar no-print">
+    <div class="stack" role="group" aria-label="印刷する種類">
+      <button id="pvKindPlan" class="btn pri" type="button" aria-pressed="true">計画書</button>
+      <button id="pvKindReport" class="btn" type="button" aria-pressed="false">報告書</button>
+    </div>
     <button id="btnPrint" class="btn pri" type="button">印刷</button>
     <button id="btnMarkPrinted" class="btn" type="button">印刷済にする</button>
     <button id="btnMarkExplained" class="btn" type="button">説明日を入力</button>
@@ -505,6 +517,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       </select>
     </div>
   </div>
+  <p class="muted no-print">計画書＝達成度・Ⅲなし／報告書＝達成度（一部を既定）・Ⅲあり</p>
   <div id="printWarn"></div>
   <div id="sheetHost"></div>
 </section>
@@ -569,6 +582,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <h2>AI生成（文案の下書き）</h2>
     <p class="muted">APIキーは<strong>この端末のブラウザにだけ</strong>置きます。計画書のGAS・一覧の索引・取込用JSONには送りません。
       キーは Anthropic のコンソール（console.anthropic.com）で発行したものを入れてください。1件あたりの費用の目安は20円ほどです。</p>
+    <p class="muted">次期を作ると、前の期の報告書欄（達成度・Ⅲ）と次の期の計画書欄を1回で作ります。</p>
     <div class="grid2" style="margin-top:var(--sp-3)">
       <div><label for="aiKey">APIキー</label>
         <input type="password" id="aiKey" autocomplete="new-password" spellcheck="false"
@@ -644,6 +658,11 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <select id="spAchShort"><option value="">未評価</option><option>達成</option><option>一部</option><option>未達</option></select></div>
       <div><label for="spAchLong">長期目標の達成度</label>
         <select id="spAchLong"><option value="">未評価</option><option>達成</option><option>一部</option><option>未達</option></select></div>
+    </div>
+    <div style="margin-top:var(--sp-3)">
+      <label for="spEnv">環境・福祉用具の変化（任意）</label>
+      <input type="text" id="spEnv" maxlength="80" autocomplete="off"
+             placeholder="住環境や福祉用具で実際に変わったことがあれば、その事実だけを短く書いてください">
     </div>
     <fieldset style="border:0;margin-top:var(--sp-3)">
       <legend style="font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2)">観察タグ（任意）</legend>
@@ -931,6 +950,7 @@ function emptyPlan(planDate) {
     status: 'none', statusLog: [],
     generation: { requestedAt: '', requestedBy: '', mode: '', rephrase: false, sample: null, doneAt: '' },
     origin: { kind: 'human', source: '', basePlanId: '', promptVersion: '', model: '', at: '' },
+    evalOrigin: null,
     audit: { createdAt: '', updatedAt: '', updatedBy: '', retro: false },
     basic: { name: '', kana: '', gender: '', birthDate: '', careLevel: '', dementiaRank: '', bedriddenRank: '' },
     planner: '', plannerJob: '', programPlanner: '',
@@ -964,7 +984,9 @@ function normalizePlan(src) {
   if (isObj_(s.explained)) { p.explained.date = s_(s.explained.date); p.explained.explainer = s_(s.explained.explainer); }
   if (isObj_(s.signature)) { p.signature.receivedOn = s_(s.signature.receivedOn); p.signature.by = s_(s.signature.by); }
   p.statusLog = asArr_(s.statusLog).filter(isObj_).map(function (l) {
-    return { status: s_(l.status), at: s_(l.at), by: s_(l.by) };
+    var e = { status: s_(l.status), at: s_(l.at), by: s_(l.by) };
+    if (s_(l.note)) e.note = s_(l.note);   /* 印刷済の記録につく「計画書」「報告書」の別（E） */
+    return e;
   });
   if (isObj_(s.generation)) {
     p.generation.requestedAt = s_(s.generation.requestedAt);
@@ -978,7 +1000,8 @@ function normalizePlan(src) {
       },
       trend: s_(s.generation.sample.trend),
       tags: asArr_(s.generation.sample.tags).map(s_),
-      note: s_(s.generation.sample.note)
+      note: s_(s.generation.sample.note),
+      envChange: s_(s.generation.sample.envChange)
     } : null;
     p.generation.doneAt = s_(s.generation.doneAt);
   }
@@ -988,6 +1011,10 @@ function normalizePlan(src) {
     p.origin.source = s_(s.origin.source); p.origin.basePlanId = s_(s.origin.basePlanId);
     p.origin.promptVersion = s_(s.origin.promptVersion); p.origin.model = s_(s.origin.model);
     p.origin.at = s_(s.origin.at);
+  }
+  /* 前の期（base）へAIが評価を書いた印。人が確かめて欄を編集するまで confirmed は false のまま（原則6） */
+  if (isObj_(s.evalOrigin) && s_(s.evalOrigin.kind) === 'ai') {
+    p.evalOrigin = { kind: 'ai', at: s_(s.evalOrigin.at), confirmed: s.evalOrigin.confirmed === true };
   }
   if (isObj_(s.audit)) {
     p.audit.createdAt = s_(s.audit.createdAt); p.audit.updatedAt = s_(s.audit.updatedAt);
@@ -1206,6 +1233,41 @@ function mergeImport(existingPlans, incomingPlans) {
   return { plans: out, added: added, skipped: skipped };
 }
 
+/* ── 印刷用の写し（計画書／報告書）の空欄化・既定（M4 D21・D22）──
+   kind='plan' は達成度・Ⅲを空にする（○が付かず、Ⅲが空欄で印刷される）。
+   kind='report' は達成度が空なら「一部」を既定にする。保存データは触らない（呼び出し側が写しに適用する）。 */
+function applyPrintKind(o, kind) {
+  var src = isObj_(o) ? o : {};
+  var out = {
+    shortAchievement: s_(src.shortAchievement), longAchievement: s_(src.longAchievement),
+    changes: s_(src.changes), issues: s_(src.issues)
+  };
+  if (kind === 'plan') {
+    out.shortAchievement = ''; out.longAchievement = ''; out.changes = ''; out.issues = '';
+  } else if (kind === 'report') {
+    if (!out.shortAchievement) out.shortAchievement = '一部';
+    if (!out.longAchievement) out.longAchievement = '一部';
+  }
+  return out;
+}
+
+/* ── AIの出力の形の判定（aiShapeNotes v2・item C）。文言の組立は呼び出し側が行う ── */
+var ACH_VALUES = ['達成', '一部', '未達', ''];
+function achievementValid(v) { return ACH_VALUES.indexOf(s_(v)) >= 0; }
+var CHANGE_PREFIXES = ['（機能）', '（活動）', '（参加）'];
+/* changes（Ⅲ 実施による変化）に3接頭辞がそろっているか。空文字は判定対象外（true） */
+function changesHasAllPrefixes(v) {
+  var t = s_(v);
+  if (!t) return true;
+  for (var i = 0; i < CHANGE_PREFIXES.length; i++) if (t.indexOf(CHANGE_PREFIXES[i]) < 0) return false;
+  return true;
+}
+/* 目標欄が指定の接頭辞で始まっているか。空文字は判定対象外（true） */
+function goalHasPrefix(v, prefix) {
+  var t = s_(v);
+  return !t || t.indexOf(s_(prefix)) === 0;
+}
+
 global.TP = {
   ID_RE: ID_RE, YMD_RE: YMD_RE, STATUSES: STATUSES, STATUS_LABEL: STATUS_LABEL,
   DUE_RULES: DUE_RULES, STATE_RANK: STATE_RANK, PLAN_MONTHS: PLAN_MONTHS, PLAN_DAYS: PLAN_DAYS,
@@ -1218,7 +1280,9 @@ global.TP = {
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, isRetro: isRetro,
   prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods,
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
-  validateImport: validateImport, mergeImport: mergeImport
+  validateImport: validateImport, mergeImport: mergeImport,
+  applyPrintKind: applyPrintKind,
+  achievementValid: achievementValid, changesHasAllPrefixes: changesHasAllPrefixes, goalHasPrefix: goalHasPrefix
 };
 })(typeof window !== 'undefined' ? window : this);
 </script>
@@ -1290,7 +1354,7 @@ function isFieldDevice() {
 
 /* ── 画面状態（UIだけ・ホワイトリスト復元）── */
 var LS = { scr: 'tp_scr', sort: 'tp_listSort', filter: 'tp_listFilter', view: 'tp_editView', zoom: 'tp_previewZoom', staff: 'tp_staff',
-           cmpOffset: 'tp_cmpOffset', aiModel: 'tp_ai_model', aiOn: 'tp_ai_enabled' };
+           cmpOffset: 'tp_cmpOffset', aiModel: 'tp_ai_model', aiOn: 'tp_ai_enabled', printKind: 'tp_printKind' };
 var SCREENS = ['scr-list', 'scr-edit', 'scr-print', 'scr-settings'];
 var SORTS = ['due', 'name', 'state'];
 var FILTERS = ['day', 'all'];
@@ -1298,6 +1362,9 @@ var FILTERS = ['day', 'all'];
 var VIEWS = ['sheet', 'list', 'both', 'prev', 'cur'];
 var CMP_OFFSETS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 var ZOOMS = ['fit', '100', '75', '50'];
+/* 印刷の種類（既定＝計画書・D21）。'plan'＝達成度・Ⅲなし／'report'＝達成度（一部を既定）・Ⅲあり */
+var PRINT_KINDS = ['plan', 'report'];
+function printKind() { return lsGet(LS.printKind, PRINT_KINDS, 'plan'); }
 function lsGet(key, allow, def) {
   try {
     var v = localStorage.getItem(key);
@@ -1917,18 +1984,18 @@ var FIELDS = {
   'treatmentCourse':       { label: '治療経過', limit: 120, kind: 'text', ai: false },
   'diseaseControl':        { label: 'コントロール状態', limit: 80, kind: 'text', ai: false },
   'precautions':           { label: '留意事項', limit: 120, kind: 'text', ai: false },
-  'shortAchievement':      { label: '短期目標の達成度', limit: 0, kind: 'ach' },
+  'shortAchievement':      { label: '短期目標の達成度（報告書に印刷）', limit: 0, kind: 'ach' },
   'shortGoalFunction':     { label: '短期目標（機能）', limit: 60, kind: 'text' },
   'shortGoalActivity':     { label: '短期目標（活動）', limit: 60, kind: 'text' },
   'shortGoalParticipation':{ label: '短期目標（参加）', limit: 60, kind: 'text' },
-  'longAchievement':       { label: '長期目標の達成度', limit: 0, kind: 'ach' },
+  'longAchievement':       { label: '長期目標の達成度（報告書に印刷）', limit: 0, kind: 'ach' },
   'longGoalFunction':      { label: '長期目標（機能）', limit: 60, kind: 'text' },
   'longGoalActivity':      { label: '長期目標（活動）', limit: 60, kind: 'text' },
   'longGoalParticipation': { label: '長期目標（参加）', limit: 60, kind: 'text' },
   'homeExercise':          { label: '自主訓練（居宅でおこなうこと）', limit: 120, kind: 'text' },
   'remarks':               { label: '備考', limit: 120, kind: 'text' },
-  'changes':               { label: 'Ⅲ 実施による変化', limit: 200, kind: 'text' },
-  'issues':                { label: 'Ⅲ 課題とその要因', limit: 200, kind: 'text' }
+  'changes':               { label: 'Ⅲ 実施による変化（報告書に印刷）', limit: 200, kind: 'text' },
+  'issues':                { label: 'Ⅲ 課題とその要因（報告書に印刷）', limit: 200, kind: 'text' }
 };
 (function () {   /* プログラム4行×5欄を機械生成（様式の {{programs[n].xxx}} と同じ並び） */
   var cols = [['content', '内容', 60, 'text'], ['caution', '留意点', 60, 'text'],
@@ -1953,7 +2020,7 @@ var GROUPS = [
   { title: '訓練プログラム 3', keys: ['programs.2.content', 'programs.2.caution', 'programs.2.frequency', 'programs.2.duration', 'programs.2.staff'] },
   { title: '訓練プログラム 4', keys: ['programs.3.content', 'programs.3.caution', 'programs.3.frequency', 'programs.3.duration', 'programs.3.staff'] },
   { title: '自主訓練・備考', keys: ['homeExercise', 'remarks'] },
-  { title: 'Ⅲ 実施による変化・課題', note: 'ここは毎回書き直します（前回の文をそのまま使いません）。',
+  { title: 'Ⅲ 実施による変化・課題', note: 'その期の目標（機能・活動・参加）に対する評価。報告書に印刷します。',
     keys: ['changes', 'issues'] }
 ];
 var TAGS = ['歩行安定', '歩行不安定', '意欲向上', '意欲低下', '参加良好', '参加減少', '体調不良あり', '入院あり', '転倒あり', '出席良好', '欠席多い'];
@@ -2111,6 +2178,7 @@ function renderEdit() {
   renderTimeline();
   renderStaffSelects();
   renderMeta();
+  renderMoveEvalBox();
   renderSample();
   renderFields();
   renderCompare();
@@ -2174,7 +2242,9 @@ function renderPlanSelect() {
   sel.disabled = false;
   for (var i = 0; i < DOC.plans.length; i++) {
     var p = DOC.plans[i];
-    var opt = el('option', null, '第' + p.seq + '期　' + (p.planDate || '日付なし') + '　' + (TP.STATUS_LABEL[p.status] || ''));
+    var label = '第' + p.seq + '期　' + (p.planDate || '日付なし') + '　' + (TP.STATUS_LABEL[p.status] || '');
+    if (p.evalOrigin && p.evalOrigin.kind === 'ai' && !p.evalOrigin.confirmed) label += '・報告書欄はAI案（未確認）';
+    var opt = el('option', null, label);
     opt.value = String(i);
     if (i === curPlanIdx) opt.selected = true;
     sel.appendChild(opt);
@@ -2338,12 +2408,14 @@ function onStatusChange() {
   }
   setStatus(v);
 }
-function setStatus(v) {
+function setStatus(v, note) {
   var p = curPlan();
   if (!p || p.status === v) return false;
   if (v === 'signed' && !p.explained.date) return false;
   p.status = v;
-  p.statusLog.push({ status: v, at: nowIso(), by: currentStaffName() });
+  var log = { status: v, at: nowIso(), by: currentStaffName() };
+  if (note) log.note = note;   /* 印刷済にする時の「計画書」「報告書」の別（E） */
+  p.statusLog.push(log);
   if (p.statusLog.length > 50) p.statusLog = p.statusLog.slice(-50);
   $('fStatus').value = v;
   renderPlanSelect();
@@ -2352,30 +2424,68 @@ function setStatus(v) {
   return true;
 }
 
+/* ── このⅢを前の期の報告へ移す（D20 の移行補助・item G）──
+   条件: 今の期の changes か issues が非空・origin.kind==='ai'・前の期が存在し、
+   前の期の changes と issues が両方空の時だけボタンを出す（転記済みの原本は壊さない・原則6） */
+function canMoveEvalToPrev(p) {
+  if (!p) return false;
+  if (p.status === 'printed' || p.status === 'signed') return false;   /* 印刷済・署名済の期の報告書欄は空にしない */
+  if (!(s_(p.changes) || s_(p.issues))) return false;
+  if (!p.origin || s_(p.origin.kind) !== 'ai') return false;
+  var prev = prevPlan();
+  if (!prev) return false;
+  if (s_(prev.changes) || s_(prev.issues)) return false;
+  return true;
+}
+function renderMoveEvalBox() {
+  var box = $('moveEvalBox');
+  box.hidden = !canMoveEvalToPrev(curPlan());
+}
+function moveEvalToPrev() {
+  var p = curPlan(), prev = prevPlan();
+  if (!canMoveEvalToPrev(p)) return;
+  if (!confirm('この期のⅢ（実施による変化・課題）と達成度を、前の期（第' + prev.seq + '期）の報告として移します。\n\n' +
+    '移した後、この期の報告書欄は空になります。よろしいですか？')) return;
+  prev.shortAchievement = p.shortAchievement;
+  prev.longAchievement = p.longAchievement;
+  prev.changes = p.changes;
+  prev.issues = p.issues;
+  p.shortAchievement = ''; p.longAchievement = ''; p.changes = ''; p.issues = '';
+  markDirty();
+  renderEdit();
+  saveNow(true);
+  toast('前の期（第' + prev.seq + '期）へ移しました');
+}
+
 /* ── 本人の様子（AIへの依頼のもと）── */
 function sampleOf(p) {
-  if (!p.generation.sample) p.generation.sample = { achievement: { short: '', long: '' }, trend: '', tags: [], note: '' };
+  if (!p.generation.sample) p.generation.sample = { achievement: { short: '', long: '' }, trend: '', tags: [], note: '', envChange: '' };
   if (!p.generation.sample.achievement) p.generation.sample.achievement = { short: '', long: '' };
   if (Object.prototype.toString.call(p.generation.sample.tags) !== '[object Array]') p.generation.sample.tags = [];
+  if (p.generation.sample.envChange == null) p.generation.sample.envChange = '';
   return p.generation.sample;
 }
 function renderSample() {
   var p = curPlan();
   var box = $('sTags');
   clear(box);
-  var sm = p ? sampleOf(p) : { achievement: {}, tags: [], trend: '', note: '' };
+  var sm = p ? sampleOf(p) : { achievement: {}, tags: [], trend: '', note: '', envChange: '' };
   $('sAchShort').value = s_(sm.achievement.short);
   $('sAchLong').value = s_(sm.achievement.long);
   $('sTrend').value = s_(sm.trend);
   $('sNote').value = s_(sm.note);
+  $('sEnv').value = s_(sm.envChange);
   $('sRephrase').checked = !!(p && p.generation.rephrase);
-  ['sAchShort', 'sAchLong', 'sTrend', 'sNote', 'sRephrase', 'btnGenEval', 'btnGenNext'].forEach(function (id) { $(id).disabled = !p; });
+  ['sAchShort', 'sAchLong', 'sTrend', 'sNote', 'sEnv', 'sRephrase', 'btnGenEval', 'btnGenNext'].forEach(function (id) { $(id).disabled = !p; });
   /* 鍵がある端末では、そのままAIを呼ぶ（無い端末は今までどおり「依頼」として記録する） */
   var aiOk = aiReady();
   var emptyEval = !!(p && !s_(p.changes) && !s_(p.issues));
   $('btnGenEval').textContent = aiOk ? (emptyEval ? 'AIで埋める' : 'Ⅲを埋める（AI）') : 'Ⅲを埋める（依頼）';
   $('btnGenEval').classList.toggle('pri', !!(aiOk && emptyEval && p));
   $('btnGenNext').textContent = aiOk ? '次期を作ってAIで生成' : '次期を生成（依頼）';
+  /* v4はAIが直接呼べる端末では毎回PLAN_KEYSを更新するため、rephraseの選択は意味を持たない（依頼キューの端末だけ従来どおり出す） */
+  $('sRephraseWrap').hidden = aiOk;
+  $('sRephraseNote').hidden = !aiOk;
   $('btnAiRegen').hidden = !aiOk;
   $('btnAiRegen').disabled = !p || aiBusy;
   if (aiBusy) { $('btnGenEval').disabled = true; $('btnGenNext').disabled = true; }
@@ -2531,11 +2641,20 @@ function fieldRow(k, plan, prev) {
   applyFitMark(k);
   return row;
 }
+/* AIが前の期（base）へ評価を書いた後、職員がその報告書欄（達成度・Ⅲ）を実際に編集したら
+   「未確認」の印を消す（見落とし防止・原則6）。編集以外（AIの再書き込み等）では確認済みにしない */
+function markEvalConfirmedIfNeeded(p, path) {
+  if (!p || !p.evalOrigin || p.evalOrigin.kind !== 'ai' || p.evalOrigin.confirmed) return;
+  if (EVAL_KEYS.indexOf(path) < 0) return;
+  p.evalOrigin.confirmed = true;
+  renderPlanSelect();
+}
 var diffTimer = null;
 function onFieldInput(k) {
   var p = curPlan();
   if (!p) return;
   setPath(p, k, s_(FEL[k].input.value));
+  markEvalConfirmedIfNeeded(p, k);
   updateCount(k);
   markDirty();
   clearTimeout(diffTimer);
@@ -2707,6 +2826,14 @@ function planForSheet(p, opts) {
     var note = retroNote(p), rem = s_(o.remarks);
     if (note && rem.indexOf(note) < 0) o.remarks = rem ? (rem + '\n' + note) : note;
   }
+  /* 計画書＝達成度・Ⅲを空欄にする（○が付かない）。報告書＝達成度が空なら「一部」を既定にする
+     （D22・保存データは変えない・写しにだけ効く。判定は window.TP の純関数） */
+  var kind = opts && opts.kind;
+  if (kind === 'plan' || kind === 'report') {
+    var pk = TP.applyPrintKind(o, kind);
+    o.shortAchievement = pk.shortAchievement; o.longAchievement = pk.longAchievement;
+    o.changes = pk.changes; o.issues = pk.issues;
+  }
   return o;
 }
 /* 様式の組み立て結果を安全に入れる。innerHTML は使わない。
@@ -2848,7 +2975,7 @@ var CONFLICT_PATHS = (function () {
     /* 「本人の様子」（生成依頼のもと）と依頼の中身も突き合わせる。ここを見ていないと、
        依頼日時だけ相手の値を採って中身は古いまま＝「依頼済みなのに様子が空」という食い違いが残る */
     'generation.sample.achievement.short', 'generation.sample.achievement.long',
-    'generation.sample.trend', 'generation.sample.note',
+    'generation.sample.trend', 'generation.sample.note', 'generation.sample.envChange',
     'generation.mode', 'generation.rephrase', 'generation.requestedBy']);
   return a;
 })();
@@ -2876,6 +3003,7 @@ function pathLabel(path) {
     'generation.sample.achievement.short': '本人の様子（短期目標の達成度）',
     'generation.sample.achievement.long': '本人の様子（長期目標の達成度）',
     'generation.sample.trend': '本人の様子（傾向）', 'generation.sample.note': '本人の様子（ひとこと）',
+    'generation.sample.envChange': '本人の様子（環境・福祉用具の変化）',
     'generation.mode': '生成の依頼内容', 'generation.rephrase': '言い回しも更新する',
     'generation.requestedBy': '生成を依頼した職員'
   };
@@ -2921,7 +3049,9 @@ function unionStatusLog(mine, theirs) {
     k = s_(b[i].at) + '|' + s_(b[i].status);
     if (have[k]) continue;
     have[k] = 1;
-    out.push({ status: s_(b[i].status), at: s_(b[i].at), by: s_(b[i].by) });
+    var entry = { status: s_(b[i].status), at: s_(b[i].at), by: s_(b[i].by) };
+    if (s_(b[i].note)) entry.note = s_(b[i].note);   /* 印刷済の記録につく「計画書」「報告書」の別（E）を落とさない */
+    out.push(entry);
   }
   out.sort(function (x, y) { return s_(x.at) < s_(y.at) ? -1 : (s_(x.at) > s_(y.at) ? 1 : 0); });
   return out;
@@ -3733,6 +3863,7 @@ function onSheetInput(field, value, td) {
   var path = SHEET_EDIT[s_(field)];
   if (!path) return;                 /* 白名簿に無い欄は書かない（見出しごと書き換わるのを防ぐ） */
   setPath(p, path, stripSheetHead(field, value));
+  markEvalConfirmedIfNeeded(p, path);
   syncListField(path);
   setCmpField(field);
   markDirty();                       /* 1.5秒のデバウンスで保存（既存の作法） */
@@ -3783,6 +3914,7 @@ function applyPick() {
   if (!p || !PICK) { closePickPop(); return; }
   var v = s_($('pkSel').value), path = PICK.path, label = sheetLabel(PICK.field);
   setPath(p, path, v);
+  markEvalConfirmedIfNeeded(p, path);
   syncListField(path);
   var meta = $(path === 'basic.dementiaRank' ? 'fDementia' : (path === 'basic.bedriddenRank' ? 'fBedridden' : ''));
   if (meta) meta.value = v;
@@ -3797,76 +3929,81 @@ function applyPick() {
      取込用JSON・トースト・エラー文言には1文字も載せない（M2 絶対条件3）。
    ★AIへ送るのは「前回の計画のうち ai:false でない欄」と「本人の様子」だけ。
      氏名・生年月日・病名・治療経過・コントロール状態・留意事項は送らない（D5）。 */
-/* システムプロンプト v3（M1計画 付録A の原文。版は origin.promptVersion に残す） */
+/* システムプロンプト v4（M4計画 付録A の原文・凍結。版は origin.promptVersion に残す） */
 var AI_SYSTEM = [
   'あなたは通所介護事業所の機能訓練指導員を補助する文書作成支援です。',
-  '前回の「個別機能訓練計画書」（厚生労働省 別紙様式３－３）と、職員が選んだ「本人の様子」をもとに、',
-  '次期（3か月後）の計画書の文案を作ります。最終判断と修正は必ず職員が行います。',
+  '「個別機能訓練計画書」（厚生労働省 別紙様式３－３）について、前の期の計画書と職員が選んだ「本人の様子」をもとに、',
+  '(a) 前の期の【報告書】欄＝目標達成度とⅢ（実施による変化・課題とその要因）、(b) 次の期の【計画書】欄 を作ります。',
+  '最終判断と修正は必ず職員が行います。',
   '',
   '【絶対に守ること】',
-  '1. 入力に無い事実を書かない。病名・数値（血圧・体重・歩数・回数・時間・距離）・薬剤名・入院・転倒・',
-  '   出席状況（休まず／欠席など）・家族の発言・医師の指示・新しい診断は、入力にある場合だけ、入力の表現の',
-  '   範囲で使う。入力に無ければ書かない。空欄は空欄のまま返す。',
-  '2. 医療・介護の専門職が読んで不自然な表現を使わない（例:「完治」「劇的に改善」「筋力が2倍」「認知症が治った」',
-  '   「著明に改善」「完全に自立」）。評価は観察できる行動・参加状況の言葉で書く（例:「見守りで安定」',
-  '   「声かけで可能」「意欲的に参加」）。「素晴らしい」「頑張っている」などの評価語は使わない。',
-  '3. 前向きだが誇張しない。改善は「維持できている」「安定している」「取り組めている」の程度に留め、',
-  '   「本人の様子」が低下を示すときは低下を隠さず、安全配慮（見守り・介助量）と目標の現実的な調整を書く。',
-  '   維持も成果として書く。',
-  '4. 目標（短期・長期の機能/活動/参加）と訓練プログラム（内容）は原則そのまま維持する。',
-  '   変えてよいのは「本人の様子」の達成度・傾向が達成または低下を示すときだけで、変更は語句の微修正',
-  '   （負荷・見守り度・範囲）に限る。プログラムの追加・削除・順序変更はしない。変更した理由は「課題とその要因」に書く。',
-  '   rephrase=true のときだけ、意味を変えずに言い回しを更新してよい（数値・固有名詞・「〜のために〜する」の型は維持）。',
-  '5. 入力に含まれる次の欄は内容を変えずに返す: 本人の希望・家族の希望・社会参加・居宅環境・自主訓練・備考。',
-  '   rephrase=false では言い回しの「揺らし」もしない。',
-  '   （病名欄・治療経過・コントロール状態・留意事項・頻度・時間・実施者・留意点は入力に含まれず、システムが前回から複写する）',
-  '6. 「Ⅲ 実施による変化」と「課題とその要因」は毎回書き直す。前回の文をそのまま再利用しない。',
-  '   前回の評価文（changes / issues）と「本人の様子」を根拠に、文体は前回計画書に合わせ、',
-  '   3か月の実施で観察された変化（達成・一部達成・未達の言葉を含めてよい）→今後の課題とその要因の順に書く。',
-  '   一文は40〜60字。前回計画書が無い初回作成では changes / issues を "" で返す。',
-  '7. 「達成度」欄（shortAchievement / longAchievement）は「達成」「一部」「未達」のいずれか、または空文字。',
-  '   「本人の様子」の達成度がそのまま与えられていればそれを使い、無ければ空文字（職員が選ぶ）。',
-  '8. 目標は「機能」「活動」「参加」を書き分け、同じ文を3欄にコピーしない。目標は「〜できる」「〜を続けられる」の到達形。',
-  '   プログラム内容は「〜のために〜する」の型を守る。要介護度・自立度は公式表記に限り、略語を作らない。',
-  '9. 各欄の文字数上限を超えない（改行は \\n、上限に含める。上限値はシステムが入力で渡す limits に従う）。',
-  '10. 出力は JSON オブジェクトのみ。前置き・説明・コードフェンス・コメント・免責を付けない。',
-  '   キーは入力の prev と同じ。値は文字列。空欄は ""。programs は必ず4要素の配列で content だけを返す。',
-  '   入力に無いキーを増やさない。日付・氏名・作成者・職種・要介護度・性別・生年月日は出力に含めない。',
+  '1. 入力に無い事実を書かない。病名・数値（血圧・体重・歩数・回数・時間・距離）・薬剤名・入院・転倒・出席状況・',
+  '   家族の発言・医師の指示・新しい診断・福祉用具の導入は、入力（前の期の文・本人の様子・環境や福祉用具の変化・自由記入）に',
+  '   ある場合だけ、その表現の範囲で使う。無ければ書かない。',
+  '2. 医療・介護の専門職が読んで不自然な表現を使わない（「完治」「劇的に改善」「筋力が2倍」「認知症が治った」「著明に改善」',
+  '   「完全に自立」など）。評価は観察できる行動・参加状況の言葉で書く（「見守りで安定」「声かけで可能」「意欲的に参加」）。',
+  '   「素晴らしい」「頑張っている」などの評価語は使わない。',
+  '3. 前向きだが誇張しない。「維持できている」「安定している」「取り組めている」の程度に留め、低下のときは低下を隠さず、',
+  '   安全配慮（見守り・介助量）と現実的な目標調整を書く。維持も成果として書く。',
+  '4. 【報告書欄＝前の期の評価（evalPrev / evalSelf）】',
+  '   - shortAchievement / longAchievement は、本人の様子に指定があればその値、無ければ「一部」。',
+  '   - changes（実施による変化）は、その期のⅡの3目標（機能・活動・参加）それぞれへの評価を',
+  '     「（機能）…。（活動）…。（参加）…。」の3文で書く。各文40〜60字。達成度と調子を揃える（一部なら一部達成・継続の趣旨）。',
+  '   - issues（課題とその要因）は、未達・一部の要因と次の期の目標へのつなぎを2〜3文で書く。次の期の目標文と矛盾させない。',
+  '5. 【計画書欄＝次の期（plan）】',
+  '   - hopeSelf / hopeFamily は原則そのまま返す（自由記入に本人・家族の新しい発言があれば、その表現で反映）。',
+  '   - socialParticipation / homeEnvironment は現状に合わせて追記・更新する。環境・福祉用具の変化や本人の様子に根拠があれば',
+  '     それを反映し、無ければ意味を変えずに言い回しを更新する（事実を足さない）。',
+  '   - 短期目標3欄（shortGoalFunction / shortGoalActivity / shortGoalParticipation）と長期目標3欄は、その人のADLに特化して',
+  '     組み直す。接頭辞「（機能）」「（活動）」「（参加）」を先頭に付け、「〜できる」「〜を続けられる」の到達形。',
+  '     機能＝筋力・バランス・可動域・耐久性など身体の働き、活動＝歩行・移乗・排泄・入浴・食事など生活行為、',
+  '     参加＝役割・行事・外出・交流。前の期の達成度に応じて、達成→一段先、一部→継続と焦点の明確化、未達→現実的な調整。',
+  '     3欄に同じ文を書かない。短期は3か月で目指す行為、長期は1年程度の到達像。',
+  '   - programs[0..3].content は上の目標に対応するよう内容を微修正する（「〜のために〜する」の型・4行・追加削除順序変更なし・',
+  '     空の行は空のまま）。頻度・時間・実施者・留意点は出力に含めない（システムが複写する）。',
+  '   - homeExercise / remarks は原則そのまま。',
+  '6. 枠同士の整合: 目標3欄 ↔ programs ↔ 前の期の changes / issues ↔ socialParticipation（参加目標と食い違わない）↔',
+  '   homeEnvironment（活動目標の前提と食い違わない）が矛盾しないこと。',
+  '7. 文字数上限は入力の limits に従う（改行は \\n で上限に含める）。要介護度・自立度は公式表記に限る。',
+  '8. 出力は JSON のみ（前置き・説明・コードフェンス・コメント・免責なし）。日付・氏名・作成者・職種・要介護度・性別・生年月日は',
+  '   出力に含めない。空欄は ""。',
   '',
   '【入力の形】',
-  '{ "mode": "next" | "fill_eval",',
-  '  "rephrase": false | true,',
+  '{ "mode": "next" | "fill_eval" | "backfill",',
   '  "sample": { "achievement": {"short": "達成"|"一部"|"未達"|"", "long": 同左},',
-  '              "trend": "改善"|"維持"|"低下",',
-  '              "tags": ["歩行安定","歩行不安定","意欲向上","意欲低下","参加良好","参加減少","体調不良あり","入院あり","転倒あり","出席良好","欠席多い"],',
-  '              "note": "職員の自由記入（任意・事実のみ・短文）" },',
+  '              "trend": "改善"|"維持"|"低下", "tags": [...], "note": "職員の自由記入（事実のみ）",',
+  '              "envChange": "環境・福祉用具の変化（任意・事実のみ）" },',
   '  "limits": { "<欄名>": <上限文字数>, ... },',
-  '  "prev": { "hopeSelf","hopeFamily","socialParticipation","homeEnvironment",',
-  '            "shortAchievement","longAchievement",',
-  '            "shortGoalFunction","shortGoalActivity","shortGoalParticipation",',
-  '            "longGoalFunction","longGoalActivity","longGoalParticipation",',
-  '            "programs":[{"content"}×4], "homeExercise","remarks","changes","issues" },',
-  '  "prevprev_eval": { "changes": "...", "issues": "..." }   // 前々回の評価（あれば。文体の参考にだけ使う）',
+  '  "prev": { 前の期の計画書欄: hopeSelf, hopeFamily, socialParticipation, homeEnvironment,',
+  '            shortGoalFunction, shortGoalActivity, shortGoalParticipation, longGoalFunction, longGoalActivity, longGoalParticipation,',
+  '            programs:[{content}×4], homeExercise, remarks, changes, issues },',
+  '  "prevprev_eval": { "changes": "...", "issues": "..." },',
+  '  "next": { backfill のとき: planDate, 目標6欄, changes, issues }',
   '}',
-  'mode="next"      … 次期計画の上記全欄を返す（changes / issues は前回の実施を踏まえた新しい評価）',
-  'mode="fill_eval" … changes と issues の2キーだけを返す（前回計画書の空欄を埋める）'
+  'mode="next"      … evalPrev（前の期の報告書欄）と plan（次の期の計画書欄）を返す',
+  'mode="fill_eval" … evalSelf（その期の報告書欄）だけを返す（prev はその期自身）',
+  'mode="backfill"  … evalPrev（前の期）・plan（間の期の計画書欄）・evalSelf（間の期の報告書欄。期間が終わっているため）を返し、next と矛盾させない'
 ].join('\n');
 var AI_URL = 'https://api.anthropic.com/v1/messages';
 var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
 /* `fallbacks`（応答拒否時の自動代替・ベータ）に対応しているモデルだけに付ける。
    sonnet-5 に付けると API が 400「does not support the `fallbacks` parameter」で拒否する（2026-09-03 実測） */
 var AI_FALLBACK_MODELS = ['claude-opus-5'];
-var AI_VER = 'tp-rewrite-v3';
+var AI_VER = 'tp-rewrite-v4';
 var AI_BACKFILL_LINE = 'この期は前回と次期の間の期。次期の評価と矛盾しない範囲で書く。';
-var AI_OUT_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
-  'shortAchievement', 'longAchievement',
+/* 【計画書欄】次の期（plan）に入る欄。達成度・Ⅲ（changes/issues）は含まない（EVAL_KEYS 側・D20） */
+var PLAN_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
   'shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation',
   'longGoalFunction', 'longGoalActivity', 'longGoalParticipation',
-  'homeExercise', 'remarks', 'changes', 'issues'];
-/* 「そのまま返すこと」になっている欄（プロンプト規則5）。違っていたら書き換えられた印として断る */
-var AI_SAME_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment', 'homeExercise', 'remarks'];
+  'homeExercise', 'remarks'];
+/* 【報告書欄】その期の評価（evalPrev / evalSelf）に入る欄（D20） */
+var EVAL_KEYS = ['shortAchievement', 'longAchievement', 'changes', 'issues'];
+/* 「そのまま返すこと」になっている欄（プロンプト規則5）。socialParticipation/homeEnvironment は
+   毎回更新する欄になったため、差分があっても警告しない（M4 実装レビュー・item B）。
+   違っていたら書き換えられた印として断る */
+var AI_SAME_KEYS = ['hopeSelf', 'hopeFamily', 'homeExercise', 'remarks'];
 var AI_NOTES = {};      /* planId → 確かめてほしいことの一覧（メモリだけ・保存しない） */
-var AI_UNDO = {};       /* planId → AIを入れる直前の控え（メモリだけ・保存もエクスポートもしない） */
+var AI_UNDO = {};       /* planId → AIを入れる直前の控え（メモリだけ・保存もエクスポートもしない。前の期の分も含めて複数持てる） */
 var aiBusy = false;
 
 /* ── キーはこの3つの関数だけが触る ── */
@@ -3890,58 +4027,86 @@ function aiReady() { return aiEnabled() && !!aiKey(); }
 
 /* 欄ごとの文字数の目安（プロンプトの limits）。AIに任せない欄は入れない */
 function aiLimits() {
-  var o = {};
-  for (var i = 0; i < AI_OUT_KEYS.length; i++) {
-    var k = AI_OUT_KEYS[i];
-    if (FIELDS[k] && FIELDS[k].limit) o[k] = FIELDS[k].limit;
-  }
+  var o = {}, i, k;
+  for (i = 0; i < EVAL_KEYS.length; i++) { k = EVAL_KEYS[i]; if (FIELDS[k] && FIELDS[k].limit) o[k] = FIELDS[k].limit; }
+  for (i = 0; i < PLAN_KEYS.length; i++) { k = PLAN_KEYS[i]; if (FIELDS[k] && FIELDS[k].limit) o[k] = FIELDS[k].limit; }
   o['programs[].content'] = FIELDS['programs.0.content'].limit;
   return o;
 }
-/* AIへ渡す「前回の計画」。ai:false の欄（病名・治療経過・コントロール状態・留意事項・
-   プログラムの頻度/時間/実施者/留意点）は入れない（D5） */
+/* AIへ渡す「前の期の計画書欄」。ai:false の欄（病名・治療経過・コントロール状態・留意事項・
+   プログラムの頻度/時間/実施者/留意点）は入れない（D5）。changes/issues（その期の報告書欄）も
+   参考として添える（付録A 入力の形）。達成度（shortAchievement/longAchievement）は入れない
+   （evalPrev/evalSelf として AI が作るもの・本人の様子の achievement で指定する）。 */
 function aiPrev(p) {
   var o = {}, i;
-  for (i = 0; i < AI_OUT_KEYS.length; i++) o[AI_OUT_KEYS[i]] = s_(getPath(p, AI_OUT_KEYS[i]));
+  for (i = 0; i < PLAN_KEYS.length; i++) o[PLAN_KEYS[i]] = s_(getPath(p, PLAN_KEYS[i]));
+  o.changes = s_(getPath(p, 'changes'));
+  o.issues = s_(getPath(p, 'issues'));
   o.programs = [];
   for (i = 0; i < 4; i++) o.programs.push({ content: s_(getPath(p, 'programs.' + i + '.content')) });
   return o;
 }
-function aiInput(mode, base, pp, nx, sm, rephrase) {
+/* 次の期の6目標欄（backfill で next として渡す分） */
+var NEXT_GOAL_KEYS = ['shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation',
+  'longGoalFunction', 'longGoalActivity', 'longGoalParticipation'];
+function aiInput(mode, base, pp, nx, sm) {
   var inp = {
-    mode: (mode === 'fill_eval') ? 'fill_eval' : 'next',
-    rephrase: !!rephrase,
+    mode: (mode === 'fill_eval' || mode === 'backfill') ? mode : 'next',
     sample: {
       achievement: { short: s_(sm.achievement.short), long: s_(sm.achievement.long) },
       trend: s_(sm.trend),
       tags: (Object.prototype.toString.call(sm.tags) === '[object Array]' ? sm.tags : []).map(s_),
-      note: s_(sm.note)
+      note: s_(sm.note),
+      envChange: s_(sm.envChange)
     },
     limits: aiLimits(),
     prev: aiPrev(base)
   };
   if (pp) inp.prevprev_eval = { changes: s_(pp.changes), issues: s_(pp.issues) };
-  if (mode === 'backfill' && nx) inp.next = { planDate: s_(nx.planDate), changes: s_(nx.changes), issues: s_(nx.issues) };
+  if (mode === 'backfill' && nx) {
+    var n = { planDate: s_(nx.planDate) }, i;
+    for (i = 0; i < NEXT_GOAL_KEYS.length; i++) n[NEXT_GOAL_KEYS[i]] = s_(getPath(nx, NEXT_GOAL_KEYS[i]));
+    n.changes = s_(nx.changes); n.issues = s_(nx.issues);
+    inp.next = n;
+  }
   return inp;
 }
-/* 構造化出力（json_schema）の雛形。
+/* 構造化出力（json_schema）の雛形（付録B）。
    ★使えるのは 基本型・enum・const・anyOf/allOf・内部$ref・default・required・
      additionalProperties:false・string の format だけ。
      件数や文字数の制限（minItems/maxItems・minLength/maxLength・minimum/maximum・pattern）は
      受け付けられず 400 で返るため【書かない】。プログラム4行の担保は applyAi 側で行う。 */
-function aiSchema(mode) {
+function evalSchema() {
+  return {
+    type: 'object', additionalProperties: false,
+    required: ['shortAchievement', 'longAchievement', 'changes', 'issues'],
+    properties: {
+      shortAchievement: { type: 'string' }, longAchievement: { type: 'string' },
+      changes: { type: 'string' }, issues: { type: 'string' }
+    }
+  };
+}
+function planSchema() {
   var props = {}, req = [], i;
-  if (mode === 'fill_eval') {
-    return { type: 'object', additionalProperties: false, required: ['changes', 'issues'],
-      properties: { changes: { type: 'string' }, issues: { type: 'string' } } };
-  }
-  for (i = 0; i < AI_OUT_KEYS.length; i++) { props[AI_OUT_KEYS[i]] = { type: 'string' }; req.push(AI_OUT_KEYS[i]); }
+  for (i = 0; i < PLAN_KEYS.length; i++) { props[PLAN_KEYS[i]] = { type: 'string' }; req.push(PLAN_KEYS[i]); }
   props.programs = {
     type: 'array',
     items: { type: 'object', additionalProperties: false, required: ['content'], properties: { content: { type: 'string' } } }
   };
   req.push('programs');
   return { type: 'object', additionalProperties: false, required: req, properties: props };
+}
+function aiSchema(mode) {
+  if (mode === 'fill_eval') {
+    return { type: 'object', additionalProperties: false, required: ['evalSelf'],
+      properties: { evalSelf: evalSchema() } };
+  }
+  if (mode === 'backfill') {
+    return { type: 'object', additionalProperties: false, required: ['evalPrev', 'plan', 'evalSelf'],
+      properties: { evalPrev: evalSchema(), plan: planSchema(), evalSelf: evalSchema() } };
+  }
+  return { type: 'object', additionalProperties: false, required: ['evalPrev', 'plan'],
+    properties: { evalPrev: evalSchema(), plan: planSchema() } };
 }
 /* ★AIへの通信はこの1か所だけ。呼び出し元は body を渡すだけにする（テストでも差し替えやすい）。
    ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
@@ -4004,24 +4169,55 @@ function aiParse(j) {
   if (!out || typeof out !== 'object') throw new Error('AI_BAD_JSON');
   return out;
 }
-/* 返ってきた形の確かめ（雛形＝json_schema では件数を縛れないので機械で見る）。
-   ★ここでは直さない。「確かめること」として文言だけ返し、値の始末は applyAi が行う */
-function aiShapeNotes(out, mode) {
-  var notes = [];
-  if (mode === 'fill_eval') return notes;
-  var pg = (out && Object.prototype.toString.call(out.programs) === '[object Array]') ? out.programs : [];
+/* 返ってきた形の確かめ（雛形＝json_schema では件数や接頭辞を縛れないので機械で見る・aiShapeNotes v2）。
+   ★ここでは直さない。「確かめること」として文言だけ返し、値の始末は applyAi が行う。
+   目標6欄の接頭辞・Ⅲの3接頭辞・達成度の値・programs 4件を見る（item C）。 */
+/* 判定そのものは window.TP の純関数（achievementValid / changesHasAllPrefixes / goalHasPrefix）。
+   ここでは文言の組み立てだけ行う */
+function checkEvalShape(ev, notes) {
+  if (!ev) return;
+  if (!TP.achievementValid(ev.shortAchievement)) notes.push('短期目標の達成度が「達成・一部・未達」のいずれでもありません');
+  if (!TP.achievementValid(ev.longAchievement)) notes.push('長期目標の達成度が「達成・一部・未達」のいずれでもありません');
+  if (!TP.changesHasAllPrefixes(ev.changes)) {
+    notes.push('Ⅲ 実施による変化に「（機能）」「（活動）」「（参加）」の3つの接頭辞がそろっていません');
+  }
+}
+var GOAL_PREFIX = [['shortGoalFunction', '（機能）'], ['shortGoalActivity', '（活動）'], ['shortGoalParticipation', '（参加）'],
+  ['longGoalFunction', '（機能）'], ['longGoalActivity', '（活動）'], ['longGoalParticipation', '（参加）']];
+function checkPlanShape(pl, notes) {
+  if (!pl) return;
+  for (var i = 0; i < GOAL_PREFIX.length; i++) {
+    var k = GOAL_PREFIX[i][0], pfx = GOAL_PREFIX[i][1];
+    if (!TP.goalHasPrefix(pl[k], pfx)) {
+      notes.push((FIELDS[k] ? FIELDS[k].label : k) + 'が接頭辞「' + pfx + '」で始まっていません');
+    }
+  }
+  var pg = (Object.prototype.toString.call(pl.programs) === '[object Array]') ? pl.programs : [];
   if (pg.length !== 4) notes.push('プログラムが4行で返っていません（不足分は前期の値）');
+}
+function aiShapeNotes(out, mode) {
+  var notes = [], o = out || {};
+  if (mode === 'fill_eval') { checkEvalShape(o.evalSelf, notes); return notes; }
+  if (mode === 'backfill') {
+    checkEvalShape(o.evalPrev, notes);
+    checkPlanShape(o.plan, notes);
+    checkEvalShape(o.evalSelf, notes);
+    return notes;
+  }
+  checkEvalShape(o.evalPrev, notes);
+  checkPlanShape(o.plan, notes);
   return notes;
 }
 /* ── AI生成の入口（凍結仕様の名前）──────────────────────────────
-   aiGenerate({mode, plan, prev, next, sample, rephrase}) → Promise<{out, notes}>
+   aiGenerate({mode, plan, prev, next, sample}) → Promise<{out, notes}>
      mode      'next'（次期）／'backfill'（間の期）／'fill_eval'（Ⅲだけ埋める）
      plan      文案を入れる先の期（fill_eval では、この期がそのままAIへ渡す「前回」になる）
      prev      1つ前の期（next・backfill でAIへ渡す「前回」／fill_eval では前々回として渡る）
      next      後ろに続く期（backfill のときだけ、矛盾しない文案にするために渡す）
-     sample    本人の様子（達成度・傾向・観察タグ・自由記入）
-     rephrase  言い回しも更新するか
+     sample    本人の様子（達成度・傾向・観察タグ・自由記入・環境や福祉用具の変化）
      prevprev  （任意）前々回の期。next・backfill でⅢの言い回しが重ならないように渡す
+   mode="next"／"backfill" は evalPrev（前の期の報告書欄）と plan（対象の期の計画書欄）を、
+   mode="fill_eval" は evalSelf（その期の報告書欄）を返す（backfill はさらに evalSelf も返す）。
    ★画面の状態には触らない（どの期に入れるか・保存・画面表示は呼び出し側の仕事）。
    ★fetch を含むため window.TP（純関数の層）には出さない。 */
 function aiGenerate(req) {
@@ -4031,13 +4227,13 @@ function aiGenerate(req) {
   var pp = (mode === 'fill_eval') ? (q.prev || null) : (q.prevprev || null);
   if (!base) return Promise.reject(new Error('AI_NO_BASE'));
   var s = q.sample || {};
-  var sm = { achievement: s.achievement || {}, trend: s.trend, tags: s.tags, note: s.note };
+  var sm = { achievement: s.achievement || {}, trend: s.trend, tags: s.tags, note: s.note, envChange: s.envChange };
   var body = {
     model: aiModel(),
     max_tokens: 4096,
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: (mode === 'backfill' ? AI_BACKFILL_LINE + '\n' : '') +
-      JSON.stringify(aiInput(mode, base, pp, q.next || null, sm, !!q.rephrase)) }],
+      JSON.stringify(aiInput(mode, base, pp, q.next || null, sm)) }],
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema(mode) } }
   };
   if (AI_FALLBACK_MODELS.indexOf(body.model) >= 0) body.fallbacks = 'default';
@@ -4140,13 +4336,15 @@ function curAiMode() {
   if (!DOC || curPlanIdx < 0) return 'next';
   return (curPlanIdx < DOC.plans.length - 1) ? 'backfill' : 'next';
 }
-/* AIが書き込む欄の一覧（控え・確認・空返しの見分けに使う） */
+/* AIが書き込む欄の一覧（p 自身に書く分・控え・確認・空返しの見分けに使う）。
+   evalPrev は「前の期（base）」に書くため、ここには含めない（applyAi 側で別に控える）。 */
 function aiWriteKeys(mode) {
-  if (mode === 'fill_eval') return ['changes', 'issues'];
-  var ks = AI_OUT_KEYS.slice(), cols = ['content', 'caution', 'frequency', 'duration', 'staff'], n, c;
+  if (mode === 'fill_eval') return EVAL_KEYS.slice();
+  var ks = PLAN_KEYS.slice(), cols = ['content', 'caution', 'frequency', 'duration', 'staff'], n, c;
   for (n = 0; n < 4; n++) {
     for (c = 0; c < cols.length; c++) ks.push('programs.' + n + '.' + cols[c]);
   }
+  if (mode === 'backfill') ks = ks.concat(EVAL_KEYS);   /* backfill は同じ期に評価（evalSelf）も入る */
   return ks;
 }
 /* ★人が確認・印刷・署名まで進めた期を、断りなくAIの文案で置き換えない（原則4）。
@@ -4192,9 +4390,9 @@ function aiRun(mode, opts) {
   }
   clearAiError();
   setAiBusy(true);
-  var mid = curMasterId, pid = s_(p.planId), model = aiModel();
+  var mid = curMasterId, pid = s_(p.planId), basePid = base ? s_(base.planId) : '', model = aiModel();
   /* AIへの1往復は aiGenerate（凍結仕様の入口）に任せる。ここは「どの期に入れるか」だけを見る */
-  var req = { mode: mode, plan: p, sample: sm, rephrase: !!p.generation.rephrase };
+  var req = { mode: mode, plan: p, sample: sm };
   if (mode === 'fill_eval') req.prev = pp;      /* Ⅲだけ埋める時は、この期が「前回」・pp が前々回 */
   else { req.prev = base; req.prevprev = pp; req.next = nx; }
   aiGenerate(req).then(function (r) {
@@ -4202,10 +4400,13 @@ function aiRun(mode, opts) {
     setAiBusy(false);
     /* ★送っている間に別の方・別の期へ移っていることがある。必ず頼んだ相手に返す */
     if (mid !== curMasterId) { toast('別の方の画面に切り替わったため、AIの文案は入れませんでした'); return; }
-    var tgt = null, i;
-    for (i = 0; i < DOC.plans.length; i++) if (s_(DOC.plans[i].planId) === pid) tgt = DOC.plans[i];
+    var tgt = null, baseTgt = null, i;
+    for (i = 0; i < DOC.plans.length; i++) {
+      if (s_(DOC.plans[i].planId) === pid) tgt = DOC.plans[i];
+      if (basePid && s_(DOC.plans[i].planId) === basePid) baseTgt = DOC.plans[i];
+    }
     if (!tgt) { toast('対象の期が見つからないため、AIの文案は入れませんでした'); return; }
-    applyAi(tgt, base, out, mode, model);
+    applyAi(tgt, baseTgt, out, mode, model);
   }).catch(function (e) {
     setAiBusy(false);
     if (mid !== curMasterId) { toast('先ほどの方のAI生成に失敗しました（' + aiErrText(e) + '）'); return; }
@@ -4232,86 +4433,155 @@ function aiTextWarnings(p, sm) {
 /* AIが空文字で返してもよい欄（毎回書き直す欄・職員が選ぶ達成度）。
    これ以外は、空で返ってきても前の期から写した内容を消さない（空上書き保護・原則4） */
 var AI_EMPTY_OK = { 'changes': 1, 'issues': 1, 'shortAchievement': 1, 'longAchievement': 1 };
-function applyAi(p, base, out, mode, model) {
-  var notes = [], i, n;
-  /* ★入れる直前の内容を控える（「元に戻す」用・メモリだけ。保存にもエクスポートにも出さない） */
-  var wkeys = aiWriteKeys(mode);
+/* 欄を1つ書く（共通処理）。AI_EMPTY_OK 以外の欄は、空で返ってきても前の期の内容を残す */
+function putField(target, notes, k, v) {
+  var val = s_(v).replace(/\r\n/g, '\n');
+  var label = FIELDS[k] ? FIELDS[k].label : k;
+  var old = s_(getPath(target, k));
+  if (!val && old && !AI_EMPTY_OK[k]) {
+    notes.push(label + 'はAIが空で返したため、前の期の内容を残しました');
+    return;
+  }
+  setPath(target, k, val);
+  var lim = FIELDS[k] ? FIELDS[k].limit : 0;
+  if (lim && val.length > lim) notes.push(label + 'が目安（' + lim + '字）を超えています（' + val.length + '字）');
+}
+/* 前の期の報告書欄（evalPrev の4欄）のうち、既に記載されている（原本転記・人の入力・
+   以前のAI生成のいずれか）欄の一覧を返す。★転記された原本を壊さない（原則6）。空の欄だけを書き込む対象にする */
+function prevEvalEmptyFields(p) {
+  return EVAL_KEYS.filter(function (k) { return !s_(p && getPath(p, k)); });
+}
+/* 1つの期に評価（evalSelf＝達成度＋Ⅲ）を入れる。達成度が空なら「一部」を既定にする（D22）。
+   fill_eval（自分の期にAIで埋める）は職員の確認ダイアログ（aiOverwriteOk）を通った後に呼ぶため、常に4欄とも書く */
+function applyEvalToPlan(target, ev, notes) {
+  var e = ev || {};
+  putField(target, notes, 'shortAchievement', e.shortAchievement);
+  putField(target, notes, 'longAchievement', e.longAchievement);
+  putField(target, notes, 'changes', e.changes);
+  putField(target, notes, 'issues', e.issues);
+  if (!s_(target.shortAchievement)) target.shortAchievement = '一部';
+  if (!s_(target.longAchievement)) target.longAchievement = '一部';
+}
+/* 前の期（base）へ evalPrev を入れる：欄ごとに「既存が空の欄だけ」入れる（原則6）。
+   期首に署名を受け、期末に報告書欄を埋めるのが通常運用のため、base.status が printed／signed でも
+   内容が空の欄には書く（status は finalizeAiWrite 側で降格しないよう別途守る）。
+   戻り: 1つでも欄を書いたら true（何も書かなければ false＝呼び出し側は「上書きしませんでした」を出す） */
+function applyEvalPrevToBase(target, ev, notes) {
+  var e = ev || {};
+  var empties = prevEvalEmptyFields(target);
+  var kept = EVAL_KEYS.filter(function (k) { return empties.indexOf(k) < 0; });
+  for (var i = 0; i < empties.length; i++) putField(target, notes, empties[i], e[empties[i]]);
+  if (!s_(target.shortAchievement)) target.shortAchievement = '一部';
+  if (!s_(target.longAchievement)) target.longAchievement = '一部';
+  if (!empties.length) {
+    notes.push('前の期のⅢは既に記載があるため上書きしませんでした（必要なら前の期を開いて『AIで埋める』）');
+  } else {
+    for (var j = 0; j < kept.length; j++) {
+      notes.push('前の期の' + (FIELDS[kept[j]] ? FIELDS[kept[j]].label : kept[j]) + 'は既に記載があるため残しました');
+    }
+  }
+  return !!empties.length;
+}
+/* 次の期（対象の期）の計画書欄（PLAN_KEYS + programs[].content）を入れる。
+   頻度・時間・実施者・留意点・その他のプログラム欄は前の期（base）から複写する（AIに任せない・D5） */
+function applyPlanToPlan(target, base, pl, notes) {
+  var out = pl || {}, i, n;
+  for (i = 0; i < AI_SAME_KEYS.length; i++) {
+    var k = AI_SAME_KEYS[i];
+    if (s_(out[k]) !== s_(getPath(base, k))) {
+      notes.push('AIが「' + FIELDS[k].label + '」を書き換えました（前の期と見比べてください）');
+    }
+  }
+  for (i = 0; i < PLAN_KEYS.length; i++) putField(target, notes, PLAN_KEYS[i], out[PLAN_KEYS[i]]);
+  var pg = (Object.prototype.toString.call(out.programs) === '[object Array]') ? out.programs : [];
+  for (n = 0; n < 4; n++) {
+    if (n >= pg.length) {            /* 返ってこなかった行は前の期の内容をそのまま入れる（空にしない） */
+      setPath(target, 'programs.' + n + '.content', s_(getPath(base, 'programs.' + n + '.content')));
+    } else {
+      putField(target, notes, 'programs.' + n + '.content', (pg[n] || {}).content);
+    }
+    setPath(target, 'programs.' + n + '.caution', s_(getPath(base, 'programs.' + n + '.caution')));
+    setPath(target, 'programs.' + n + '.frequency', s_(getPath(base, 'programs.' + n + '.frequency')));
+    setPath(target, 'programs.' + n + '.duration', s_(getPath(base, 'programs.' + n + '.duration')));
+    setPath(target, 'programs.' + n + '.staff', s_(getPath(base, 'programs.' + n + '.staff')));
+  }
+}
+/* AIを入れる直前の値を控える（「元に戻す」用・メモリだけ。保存にもエクスポートにも出さない） */
+function snapshotFields(target, keys) {
   var snap = {
-    fields: {}, status: s_(p.status), log: null,
-    origin: JSON.parse(JSON.stringify(p.origin || {})),
-    generation: JSON.parse(JSON.stringify(p.generation || {}))
+    fields: {}, status: s_(target.status), log: null,
+    origin: JSON.parse(JSON.stringify(target.origin || {})),
+    generation: JSON.parse(JSON.stringify(target.generation || {}))
   };
-  for (i = 0; i < wkeys.length; i++) snap.fields[wkeys[i]] = s_(getPath(p, wkeys[i]));
-  function put(k, v) {
-    var val = s_(v).replace(/\r\n/g, '\n');
-    var label = FIELDS[k] ? FIELDS[k].label : k;
-    var old = s_(getPath(p, k));
-    if (!val && old && !AI_EMPTY_OK[k]) {
-      notes.push(label + 'はAIが空で返したため、前の期の内容を残しました');
-      return;
-    }
-    setPath(p, k, val);
-    var lim = FIELDS[k] ? FIELDS[k].limit : 0;
-    if (lim && val.length > lim) {
-      notes.push(label + 'が目安（' + lim + '字）を超えています（' + val.length + '字）');
-    }
-  }
-  if (mode === 'fill_eval') {
-    put('changes', out.changes);
-    put('issues', out.issues);
+  for (var i = 0; i < keys.length; i++) snap.fields[keys[i]] = s_(getPath(target, keys[i]));
+  return snap;
+}
+/* 書き込み後の来歴・状態を1つの期に立て、控えを AI_UNDO へ積む。
+   転記（origin.kind='import'）の期に評価だけ入れた時は、来歴の種別を変えない
+   （転記の印が消えると作成日を触った時に遡及の印が付いてしまう・M1 §3-2） */
+function finalizeAiWrite(target, snap, srcLabel, basePlanId, model, opts) {
+  opts = opts || {};
+  if (target.origin && s_(target.origin.kind) === 'import') {
+    target.origin.promptVersion = AI_VER;
+    target.origin.model = s_(model);
   } else {
-    /* ①そのまま返す約束の欄が変わっていないか */
-    for (i = 0; i < AI_SAME_KEYS.length; i++) {
-      var k = AI_SAME_KEYS[i];
-      if (s_(out[k]) !== s_(getPath(base, k))) {
-        notes.push('AIが「' + FIELDS[k].label + '」を書き換えました（前の期と見比べてください）');
-      }
-    }
-    for (i = 0; i < AI_OUT_KEYS.length; i++) put(AI_OUT_KEYS[i], out[AI_OUT_KEYS[i]]);
-    var pg = (Object.prototype.toString.call(out.programs) === '[object Array]') ? out.programs : [];
-    /* ★プログラムが4行そろっているかは【ここで】確かめる（雛形では件数を縛れない・aiSchema の断り書き） */
-    notes = notes.concat(aiShapeNotes(out, mode));
-    for (n = 0; n < 4; n++) {
-      if (n >= pg.length) {            /* 返ってこなかった行は前の期の内容をそのまま入れる（空にしない） */
-        setPath(p, 'programs.' + n + '.content', s_(getPath(base, 'programs.' + n + '.content')));
-      } else {
-        put('programs.' + n + '.content', (pg[n] || {}).content);
-      }
-      /* ②頻度・時間・実施者・留意点は入力値（前の期の値）で上書きする＝AIに任せない（D5） */
-      setPath(p, 'programs.' + n + '.caution', s_(getPath(base, 'programs.' + n + '.caution')));
-      setPath(p, 'programs.' + n + '.frequency', s_(getPath(base, 'programs.' + n + '.frequency')));
-      setPath(p, 'programs.' + n + '.duration', s_(getPath(base, 'programs.' + n + '.duration')));
-      setPath(p, 'programs.' + n + '.staff', s_(getPath(base, 'programs.' + n + '.staff')));
-    }
-  }
-  notes = notes.concat(aiTextWarnings(p, sampleOf(p)));
-  /* 転記（原本）の期にⅢだけ入れた時は、来歴（origin.kind='import'）を残す。
-     ★ここを 'ai' に変えると原本転記の印が消え、作成日を触った時に遡及の印が付いてしまう（M1 §3-2） */
-  if (mode === 'fill_eval' && p.origin && s_(p.origin.kind) === 'import') {
-    p.origin.promptVersion = AI_VER;
-    p.origin.model = s_(model);
-  } else {
-    p.origin = {
-      kind: 'ai', source: s_(mode), basePlanId: base ? s_(base.planId) : '',
+    target.origin = {
+      kind: 'ai', source: s_(srcLabel), basePlanId: s_(basePlanId || ''),
       promptVersion: AI_VER, model: s_(model), at: nowIso()
     };
+  }
+  /* AIが書き直した期は「AI生成」に戻す（「確認・修正済」のまま中身だけ変わるのを防ぐ）。
+     印刷済・家族署名受領済は aiRun / applyAi の内容ガードで既に守られている。
+     ★opts.keepStatus＝前の期（base）へ評価だけ足す時は、印刷済・署名済の状態を降格しない（item1） */
+  if (!opts.keepStatus && target.status !== 'draft_ai' && target.status !== 'signed') {
+    if (target === curPlan()) setStatus('draft_ai');
+    else {
+      target.status = 'draft_ai';
+      target.statusLog.push({ status: 'draft_ai', at: nowIso(), by: currentStaffName() });
+    }
+    snap.log = target.statusLog[target.statusLog.length - 1] || null;
+  }
+  AI_UNDO[s_(target.planId)] = snap;
+}
+/* mode="next"/"backfill" は p（対象の期）に plan（＋backfill なら evalSelf）を、
+   base（前の期）に evalPrev を入れる＝1回の出力で2つの期を更新する（D20）。
+   mode="fill_eval" は p 自身に evalSelf だけを入れる。 */
+function applyAi(p, base, out, mode, model) {
+  var notes = aiShapeNotes(out, mode).slice();
+  var o = out || {};
+  var pSnap = snapshotFields(p, aiWriteKeys(mode));
+  if (mode === 'fill_eval') {
+    applyEvalToPlan(p, o.evalSelf, notes);
+    notes = notes.concat(aiTextWarnings(p, sampleOf(p)));
+  } else {
+    applyPlanToPlan(p, base, o.plan, notes);
+    if (mode === 'backfill') {
+      applyEvalToPlan(p, o.evalSelf, notes);
+      notes = notes.concat(aiTextWarnings(p, sampleOf(p)));
+    }
+  }
+  finalizeAiWrite(p, pSnap, mode, base ? base.planId : '', model);
+  if (mode !== 'fill_eval' && base) {
+    var baseSnap = snapshotFields(base, EVAL_KEYS);
+    var baseLocked = (base.status === 'printed' || base.status === 'signed');
+    var wroteEvalPrev = applyEvalPrevToBase(base, o.evalPrev, notes);
+    if (wroteEvalPrev) {
+      notes = notes.concat(aiTextWarnings(base, sampleOf(p)));
+      finalizeAiWrite(base, baseSnap, 'evalPrev', '', model, { keepStatus: baseLocked });
+      /* 印刷済・署名済の期の報告書欄にAIが書いた印。職員がその欄を実際に編集するまで残す（見落とし防止） */
+      base.evalOrigin = { kind: 'ai', at: nowIso(), confirmed: false };
+      if (baseLocked) {
+        notes.push('前の期（' + (TP.STATUS_LABEL[base.status] || base.status) +
+          '）の報告書欄にAIの評価を入れました。前の期を開いて必ず確認してください');
+      }
+      renderPlanSelect();
+    }
   }
   p.generation.mode = (mode === 'fill_eval') ? 'fill_eval' : 'next';
   p.generation.doneAt = nowIso();
   if (!p.generation.requestedAt) p.generation.requestedAt = p.generation.doneAt;
   if (!p.generation.requestedBy) p.generation.requestedBy = currentStaffName() || '（職員未選択）';
   AI_NOTES[s_(p.planId)] = notes;
-  /* AIが書き直した期は「AI生成」に戻す（「確認・修正済」のまま中身だけ変わるのを防ぐ）。
-     印刷済・家族署名受領済は aiRun で断っているのでここには来ない */
-  if (p.status !== 'draft_ai' && p.status !== 'signed') {
-    if (p === curPlan()) setStatus('draft_ai');
-    else {
-      p.status = 'draft_ai';
-      p.statusLog.push({ status: 'draft_ai', at: nowIso(), by: currentStaffName() });
-    }
-    snap.log = p.statusLog[p.statusLog.length - 1] || null;
-  }
-  AI_UNDO[s_(p.planId)] = snap;
   markDirty();
   renderEdit();
   toast(notes.length
@@ -4347,6 +4617,7 @@ function openSamplePop(mode, opts) {
   $('spTrend').value = s_(sm.trend) || '維持';        /* 傾向の既定は「維持」 */
   $('spAchShort').value = s_(sm.achievement.short);
   $('spAchLong').value = s_(sm.achievement.long);
+  $('spEnv').value = s_(sm.envChange);
   renderPopTags();
   var ready = aiReady();
   $('spNote').textContent = ready
@@ -4367,6 +4638,7 @@ function sampleGo() {
   sm.trend = $('spTrend').value;
   sm.achievement.short = $('spAchShort').value;
   sm.achievement.long = $('spAchLong').value;
+  sm.envChange = s_($('spEnv').value).slice(0, 80);
   var mode = POP.mode, fresh = !!POP.fresh;
   markDirty();
   closeSamplePop();
@@ -4418,15 +4690,30 @@ function clearAiKey() {
 }
 
 /* ═══════════ 印刷プレビューと印刷 ═══════════ */
+/* 計画書／報告書の切替（既定＝計画書・D21）。表示だけを引き直す＝保存データは変えない */
+function renderPvKind() {
+  var k = printKind();
+  $('pvKindPlan').classList.toggle('pri', k === 'plan');
+  $('pvKindPlan').setAttribute('aria-pressed', k === 'plan' ? 'true' : 'false');
+  $('pvKindReport').classList.toggle('pri', k === 'report');
+  $('pvKindReport').setAttribute('aria-pressed', k === 'report' ? 'true' : 'false');
+}
+function setPvKind(k) {
+  if (PRINT_KINDS.indexOf(k) < 0) return;
+  lsSet(LS.printKind, k);
+  renderPvKind();
+  buildPreview();
+}
 function buildPreview() {
   var host = $('sheetHost'), warn = $('printWarn');
   clear(host); clear(warn);
   host.style.zoom = '';
+  renderPvKind();
   var p = curPlan();
   if (!p) { banner(warn, 'warn', '計画がありません。編集画面で計画を作ってから印刷してください。'); return; }
   if (!FORM_READY) { banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていません。ページを再読み込みしてください。'); return; }
   try {
-    mountSheet(host, TP_FORM.buildSheet(planForSheet(p), { signature: true }));
+    mountSheet(host, TP_FORM.buildSheet(planForSheet(p, { kind: printKind() }), { signature: true }));
   } catch (e) {
     banner(warn, 'err', '様式を組み立てられませんでした（' + errText(e) + '）。');
     return;
@@ -4835,6 +5122,7 @@ function bindUI() {
   $('planSel').addEventListener('change', function () { switchPlan(this.value); });
   $('btnNewPlan').addEventListener('click', addPlan);
   $('btnPullMaster').addEventListener('click', pullMaster);
+  $('btnMoveEvalPrev').addEventListener('click', moveEvalToPrev);
   $('editView').addEventListener('change', function () { lsSet(LS.view, this.value); applyEditView(this.value); });
   $('cmpSel').addEventListener('change', function () {
     lsSet(LS.cmpOffset, s_(this.value) || '1');
@@ -4866,6 +5154,7 @@ function bindUI() {
   $('sAchLong').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).achievement.long = this.value; markDirty(); });
   $('sTrend').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).trend = this.value; markDirty(); });
   $('sNote').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).note = s_(this.value).slice(0, 80); markDirty(); });
+  $('sEnv').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).envChange = s_(this.value).slice(0, 80); markDirty(); });
   $('sRephrase').addEventListener('change', function () { var p = curPlan(); if (!p) return; p.generation.rephrase = this.checked; markDirty(); });
   /* 鍵があればその場でAIを呼び、無ければ今までどおり依頼として記録する（aiRun の中で分ける） */
   $('btnGenEval').addEventListener('click', function () { aiRun('fill_eval'); });
@@ -4889,10 +5178,19 @@ function bindUI() {
 
   $('btnPrint').addEventListener('click', doPrint);
   $('pvZoom').addEventListener('change', function () { lsSet(LS.zoom, this.value); applyZoom(); });
+  $('pvKindPlan').addEventListener('click', function () { setPvKind('plan'); });
+  $('pvKindReport').addEventListener('click', function () { setPvKind('report'); });
   $('btnMarkPrinted').addEventListener('click', function () {
-    if (!curPlan()) { toast('計画がありません'); return; }
-    if (setStatus('printed')) toast('「印刷済」にしました');
-    else toast('すでに「印刷済」以降です');
+    var p = curPlan();
+    if (!p) { toast('計画がありません'); return; }
+    var kind = printKind(), note = (kind === 'report') ? '報告書' : '計画書';
+    if (setStatus('printed', note)) { toast('「印刷済」にしました（' + note + '）'); return; }
+    if (p.status !== 'printed' && p.status !== 'signed') { toast('すでに「印刷済」以降です'); return; }
+    /* 状態は変えず（5段階のまま）、statusLog にだけ「計画書」「報告書」の記録を足す（E） */
+    p.statusLog.push({ status: 'printed', at: nowIso(), by: currentStaffName(), note: note });
+    if (p.statusLog.length > 50) p.statusLog = p.statusLog.slice(-50);
+    markDirty();
+    toast(note + 'を印刷済として記録しました（状態は「' + (TP.STATUS_LABEL[p.status] || p.status) + '」のままです）');
   });
   $('btnMarkExplained').addEventListener('click', function () {
     if (!curPlan()) { toast('計画がありません'); return; }
