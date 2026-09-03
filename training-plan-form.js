@@ -7,7 +7,9 @@
    公開API
      TP_FORM.buildSheet(plan, opts) -> HTMLElement（div.sheet.tp-sheet）
      TP_FORM.fitSheet(el, opts)     -> {scale, shrunkFields, minFontPx, ...}
-     TP_FORM.toWareki(iso) / warekiEra(iso) / PAGE_CSS / TEMPLATE / VERSION
+     TP_FORM.fieldTds(sheet)        -> [{field, a1, td}]（画面側が差分表示・コピーで欄を引く）
+     TP_FORM.setFieldText(sheet, field, value) -> boolean（再構築せず1欄だけ書き換える）
+     TP_FORM.toWareki(iso) / warekiEra(iso) / PAGE_CSS / TEMPLATE / PICK_CELLS / VERSION
    前提・注意
      ・fitSheet は「表示されている要素」でしか測れない（非表示だと offsetHeight=0 で
        “収まった”と誤判定する。facesheet.html fitBdaySheet の教訓）。非表示なら measured:false で戻る
@@ -15,11 +17,13 @@
      ・@page（層A）は呼び出し側が印刷直前に注入・終了後に外す（既存ツールの作法）。TP_FORM.PAGE_CSS を使う
      ・個人情報は一切ログに出さない（console 呼び出しをこのファイルに置かない）
      ・DOM は createElement / textContent のみで組む（innerHTML への文字列代入なし）
+     ・opts.editable=true は画面（様式比較の右側）専用（M2 §3）。印刷経路は editable を渡さないので
+       印刷される DOM は M1 と1文字も変わらない（編集用の属性・クラスは editable のときだけ付ける）
    ────────────────────────────────────────────────────────────────── */
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-02.1';
+  var VERSION = '2026-09-03.1';
 
   /* ── 用紙・寸法 ───────────────────────────────────────────────── */
   var MM_PER_PT = 25.4 / 72;          /* 1pt = 0.3528mm */
@@ -59,6 +63,14 @@
   /* 自立度の正規化コード（これ以外は○を付けない＝勝手に解釈しない） */
   var BEDRIDDEN = ['自立', 'J1', 'J2', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
   var DEMENTIA = ['自立', 'Ⅰ', 'Ⅱa', 'Ⅱb', 'Ⅲa', 'Ⅲb', 'Ⅳ', 'M'];
+
+  /* 選択式のセル（editable でも自由入力にせず、クリックで opts.onPick を呼ぶ）。
+     A8/AF8/V6 は様式の固定文言セルで data-field を持たないため a1 で引く。
+     editable のときだけ td へ data-pick（＝下の値）を付ける＝印刷 DOM は無改変。 */
+  var PICK_CELLS = {
+    A32: 'shortAchievement', AF32: 'longAchievement',
+    A8: 'basic.bedriddenRank', AF8: 'basic.dementiaRank', V6: 'basic.birthDate'
+  };
 
   /* ── 様式テンプレート（form_template.json から機械生成して埋め込み。手打ち転記はしない） ── */
   var TEMPLATE = {
@@ -364,6 +376,29 @@
     return '';
   }
 
+  /* setFieldText 用。plan ではなく値そのものから○の対象を決める（描画時の判定は上の2つのまま） */
+  function achieveTargetOfValue(v) {
+    var s = String(v == null ? '' : v).trim(), i;
+    for (i = 0; i < ACHIEVEMENTS.length; i++) if (ACHIEVEMENTS[i] === s) return s;
+    return '';
+  }
+  function circleTargetOfValue(kind, v) {
+    var s = String(v == null ? '' : v).trim(), i;
+    if (kind === 'bedridden') {
+      for (i = 0; i < BEDRIDDEN.length; i++) if (BEDRIDDEN[i] === s) return s;
+      return '';
+    }
+    if (kind === 'dementia') {
+      for (i = 0; i < DEMENTIA.length; i++) if (DEMENTIA[i] === s) return s;
+      return '';
+    }
+    if (kind === 'birthEra') {
+      var era = parseIso(s) ? warekiEra(s) : s;   /* 生年月日でも元号名でも受ける */
+      return (era === '大正' || era === '昭和') ? era : '';
+    }
+    return '';
+  }
+
   /* ── スタイル（印刷様式は Excel 再現優先。tokens.css の対象外＝計画 D10） ────── */
   var CSS = [
     '.tp-sheet{position:relative;box-sizing:border-box;margin:0;padding:0;background:#fff;color:#000;',
@@ -381,7 +416,16 @@
     '.tp-sheet .tp-in.tp-nowrap>.tp-tx{white-space:pre;overflow-wrap:normal}',
     '.tp-sheet .tp-circ{position:relative;display:inline-block;white-space:pre}',
     '.tp-sheet .tp-circ::after{content:"";position:absolute;left:-.22em;right:-.22em;top:-.14em;bottom:-.14em;',
-    '  border:1px solid #000;border-radius:50%;pointer-events:none}'
+    '  border:1px solid #000;border-radius:50%;pointer-events:none}',
+    /* 画面（様式比較の編集）専用。tp-screen は editable のときだけ付くので印刷様式には掛からない。
+       それでも紙に出ないことを二重に担保するため、print では背景と outline を打ち消す
+       （.tp-sheet は print-color-adjust:exact なので背景色は放っておくと印刷される） */
+    '.tp-sheet.tp-screen td.tp-diff .tp-in{background:#fff9c4}',
+    '.tp-sheet.tp-screen [contenteditable]:focus{outline:2px solid #0b57d0;outline-offset:-2px}',
+    '@media print{',
+    '  .tp-sheet.tp-screen td.tp-diff .tp-in{background:transparent}',
+    '  .tp-sheet.tp-screen [contenteditable]:focus{outline:none}',
+    '}'
   ].join('\n');
 
   function ensureStyle(doc) {
@@ -499,10 +543,77 @@
     return td;
   }
 
+  /* ── 編集モード（M2 §3・画面の様式比較の右側だけで使う） ───────────────── */
+
+  /* contenteditable の指定値。plaintext-only 未対応のブラウザは "true" に落とす
+     （値は textContent で取るので、書式付きで貼られても保存されるのは文字だけ） */
+  var _ce = null;
+  function ceMode(doc) {
+    if (_ce) return _ce;
+    _ce = 'true';
+    try {
+      var t = (doc || root.document).createElement('div');
+      t.setAttribute('contenteditable', 'plaintext-only');
+      if (t.contentEditable === 'plaintext-only') _ce = 'plaintext-only';
+    } catch (e) { _ce = 'true'; }
+    return _ce;
+  }
+
+  /* 編集中のセルから値を取り出す。改行は \n に揃え、末尾の改行は落とす
+     （ブラウザが編集中に足す末尾の改行を保存値に混ぜない） */
+  function editedValue(el) {
+    return String((el && el.textContent) == null ? '' : el.textContent)
+      .replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+  }
+
+  /* 選択式セル: 自由入力にしない。クリックで onPick（ポップアップは呼び出し側が出す） */
+  function bindPick(td, field, onPick) {
+    td.setAttribute('data-pick', field);
+    if (!onPick) return;
+    td.addEventListener('click', function () { onPick(field, td); });
+  }
+
+  /* 自由記述セル: .tp-tx を編集可能にする（td ではなくセル内の文字要素に付ける＝罫線と行高を触らない） */
+  function bindText(doc, td, field, tx, labels, opts) {
+    var lb = labels[field];
+    tx.setAttribute('contenteditable', ceMode(doc));
+    tx.setAttribute('role', 'textbox');
+    tx.setAttribute('tabindex', '0');
+    tx.setAttribute('aria-label', (lb == null || lb === '') ? field : String(lb));
+    if (typeof opts.onInput === 'function') {
+      tx.addEventListener('input', function () { opts.onInput(field, editedValue(tx), td); });
+    }
+    if (typeof opts.onFocus === 'function') {
+      tx.addEventListener('focus', function () { opts.onFocus(field, td); });
+    }
+    if (typeof opts.onBlur === 'function') {
+      tx.addEventListener('blur', function () { opts.onBlur(field, td); });
+    }
+  }
+
+  function makeEditable(sheet, opts) {
+    var doc = sheet.ownerDocument || root.document;
+    var labels = opts.labels || {};
+    var onPick = (typeof opts.onPick === 'function') ? opts.onPick : null;
+    var tds = sheet.querySelectorAll('td[data-a1]'), i, td, a1, field, tx;
+    for (i = 0; i < tds.length; i++) {
+      td = tds[i];
+      a1 = td.getAttribute('data-a1') || '';
+      if (PICK_CELLS[a1]) { bindPick(td, PICK_CELLS[a1], onPick); continue; }
+      field = td.getAttribute('data-field') || '';
+      if (!field) continue;
+      tx = td.querySelector('.tp-tx');
+      if (tx) bindText(doc, td, field, tx, labels, opts);
+    }
+  }
+
   /**
    * 計画1件から印刷様式（A4縦1枚）の DOM を作る。
    * @param {Object} plan  training_plan スキーマの plans[i]
-   * @param {Object} [opts] {signature:boolean=true, scale:number, fontStack:string, doc:Document}
+   * @param {Object} [opts] {signature:boolean=true, scale:number, fontStack:string, doc:Document,
+   *                         editable:boolean=false, labels:{field:label},
+   *                         onInput:(field,value,td), onPick:(field,td), onFocus:(field,td), onBlur:(field,td)}
+   *   editable=true のときだけ tp-screen クラス・contenteditable・data-pick が付く（印刷経路では付かない）
    * @returns {HTMLElement} div.sheet.tp-sheet（呼び出し側が任意の親に append する）
    */
   function buildSheet(plan, opts) {
@@ -511,6 +622,7 @@
     ensureStyle(doc);
     plan = plan || {};
     var sign = opts.signature !== false;
+    var editable = opts.editable === true;
     var nr = TEMPLATE.nrows, nc = TEMPLATE.ncols;
 
     /* 占有グリッド（結合セルの内側にダミー td を出さないため） */
@@ -525,7 +637,7 @@
     }
 
     var sheet = doc.createElement('div');
-    sheet.className = 'sheet tp-sheet';
+    sheet.className = 'sheet tp-sheet' + (editable ? ' tp-screen' : '');
     if (opts.fontStack) sheet.style.setProperty('--tp-font', opts.fontStack);
     sheet.setAttribute('data-tp-version', VERSION);
     sheet.setAttribute('data-tp-sign', sign ? '1' : '0');
@@ -566,7 +678,95 @@
     tbl.appendChild(tb);
     sheet.appendChild(tbl);
     applyScale(sheet, (typeof opts.scale === 'number' && opts.scale > 0) ? opts.scale : nominalScale(sign));
+    if (editable) makeEditable(sheet, opts);
     return sheet;
+  }
+
+  /* ── 欄の走査と部分更新（画面側の差分表示・コピー・AI反映が使う） ─────────── */
+
+  var _byA1 = null;
+  function templateCellOf(a1) {
+    if (!_byA1) {
+      _byA1 = {};
+      for (var i = 0; i < TEMPLATE.cells.length; i++) _byA1[TEMPLATE.cells[i].a1] = TEMPLATE.cells[i];
+    }
+    return _byA1[a1] || null;
+  }
+
+  /**
+   * 様式の中の {{field}} セルを並び順で返す。
+   * @param {HTMLElement} sheet buildSheet が返した要素
+   * @returns {Array} [{field, a1, td}]（選択式でも data-field を持つ達成度セルは含む）
+   */
+  function fieldTds(sheet) {
+    var out = [];
+    if (!sheet || !sheet.querySelectorAll) return out;
+    var tds = sheet.querySelectorAll('td[data-field]'), i, td;
+    for (i = 0; i < tds.length; i++) {
+      td = tds[i];
+      out.push({
+        field: td.getAttribute('data-field') || '',
+        a1: td.getAttribute('data-a1') || '',
+        td: td
+      });
+    }
+    return out;
+  }
+
+  function findFieldTd(sheet, field) {
+    if (!sheet || !sheet.querySelector) return null;
+    var f = String(field == null ? '' : field);
+    if (!f) return null;
+    var td = null, a1;
+    try { td = sheet.querySelector('td[data-field="' + f.replace(/["\\]/g, '\\$&') + '"]'); } catch (e) { td = null; }
+    if (td) return td;
+    /* data-field を持たない選択式セル（自立度・元号）は PICK_CELLS から a1 で引く */
+    for (a1 in PICK_CELLS) {
+      if (PICK_CELLS[a1] === f) {
+        td = sheet.querySelector('td[data-a1="' + a1 + '"]');
+        if (td) return td;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 様式の1欄だけを書き換える（作り直さないので contenteditable・イベント・○囲みが残る）。
+   * value の意味はセルの作りで決まる:
+   *   ・達成度／自立度／元号（選択式）… 値そのもの（'達成'・'A1'・'昭和' か生年月日）。該当語を○で囲う
+   *   ・{{…}} が1つのセル … その {{…}} だけを value に置き換える（見出しの固定文言は残す）
+   *   ・{{…}} が複数のセル（病名＋発症日＋直近の入院日など）… value をセルの文字としてそのまま入れる
+   * @param {HTMLElement} sheet buildSheet が返した要素
+   * @param {string} field data-field の値、または PICK_CELLS の値
+   * @param {string} value
+   * @returns {boolean} 書き換えたら true（該当セルが無ければ false ＝呼び出し側が気づける）
+   */
+  function setFieldText(sheet, field, value) {
+    var td = findFieldTd(sheet, field);
+    if (!td) return false;
+    var tx = td.querySelector('.tp-tx');
+    if (!tx) return false;
+    var doc = td.ownerDocument || root.document;
+    var a1 = td.getAttribute('data-a1') || '';
+    var cl = templateCellOf(a1);
+    var v = String(value == null ? '' : value);
+    while (tx.firstChild) tx.removeChild(tx.firstChild);
+    if (ACHIEVE_CELLS[a1]) {
+      tx.appendChild(achieveFragment(doc, stripTailNewlines(String(cl ? cl.v : '')), achieveTargetOfValue(v)));
+      return true;
+    }
+    if (CIRCLE_CELLS[a1]) {
+      tx.appendChild(circleFragment(doc, stripTailNewlines(String(cl ? cl.v : '')),
+        circleTargetOfValue(CIRCLE_CELLS[a1], v)));
+      return true;
+    }
+    var tpl = String(cl ? cl.v : '');
+    var ph = tpl.match(/\{\{[A-Za-z0-9_.\[\]]+\}\}/g);
+    /* 置換文字列に $& 等が含まれても壊れないよう関数で返す */
+    tx.textContent = (ph && ph.length === 1)
+      ? stripTailNewlines(tpl.replace(ph[0], function () { return v; }))
+      : v;
+    return true;
   }
 
   /* ── 層B: 固定比率グリッドの縮尺適用 ─────────────────────────────── */
@@ -675,8 +875,11 @@
     PAGE_W_MM: PAGE_W_MM,
     PAGE_H_MM: PAGE_H_MM,
     MIN_FONT_PX: MIN_FONT_PX,
+    PICK_CELLS: PICK_CELLS,
     buildSheet: buildSheet,
     fitSheet: fitSheet,
+    fieldTds: fieldTds,
+    setFieldText: setFieldText,
     ensureStyle: ensureStyle,
     applyScale: applyScale,
     nominalScale: nominalScale,

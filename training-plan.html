@@ -136,7 +136,7 @@ textarea{resize:vertical;min-height:5.5rem}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--sp-3)}
 
 /* ── 一覧 ── */
-.lrow{display:grid;grid-template-columns:minmax(8rem,1.6fr) 5rem 7rem 8rem 7rem 8rem auto;
+.lrow{display:grid;grid-template-columns:minmax(8rem,1.6fr) 5rem 7rem 8rem 7rem 6rem 8rem auto;
   gap:var(--sp-2);align-items:center;padding:var(--sp-2) var(--sp-2);
   border-bottom:1px solid var(--c-border);font-size:var(--fs-xs)}
 .lrow.head{font-weight:var(--fw-bold);color:var(--c-ink2);background:var(--c-surface2);
@@ -192,6 +192,32 @@ body.view-cur .fprev{display:none}
 .fit.shrunk{color:var(--c-warn);font-weight:var(--fw-bold)}
 .dsum{font-size:var(--fs-2xs);color:var(--c-ink2);margin-top:var(--sp-1)}
 .dsum .add{background:var(--c-ok-bg);color:var(--c-ok);border-radius:3px;padding:0 3px}
+.sp{margin-left:auto}
+
+/* ── 期のタイムライン（作成済＝✓／未作成＝✕。色だけでなく記号と文言でも表す）── */
+.tl{display:flex;flex-direction:column;gap:var(--sp-1);margin-top:var(--sp-2)}
+.tl-row{display:flex;flex-wrap:wrap;gap:var(--tap-gap);align-items:center;
+  border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface);
+  padding:var(--sp-1) var(--sp-2);font-size:var(--fs-xs);min-height:var(--tap-min)}
+.tl-row.miss{border-color:var(--c-danger);background:var(--c-danger-bg);color:var(--c-danger);
+  font-weight:var(--fw-bold)}
+.tl-row.on{box-shadow:inset 0 0 0 2px var(--c-primary)}
+.tl-mk{font-weight:var(--fw-heavy)}
+
+/* ── 様式比較（左＝過去の期・読み取り専用／右＝今回・様式の中で直せる）──
+   ★.sheet の中身（罫線・文字寸法）はここでは一切触らない。触れるのは入れ物だけ。 */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);align-items:start}
+@media (max-width:1100px){.cmp{grid-template-columns:1fr}}
+.cmp>div{min-width:0}
+.cmp h3{margin-bottom:var(--sp-1)}
+.cmp-host{overflow:auto;background:var(--c-surface);border:1px solid var(--c-border);
+  border-radius:var(--r-sm);padding:var(--sp-1)}
+.cmp-tip{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:var(--tap-gap);
+  align-items:center;background:var(--c-info-bg);color:var(--c-ink);border-radius:var(--r-sm);
+  padding:var(--sp-1) var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-2xs);
+  min-height:var(--tap-min)}
+body.mode-sheet #fieldsBox{display:none}
+body.mode-list #cmpBox{display:none}
 
 /* ── 印刷プレビュー ── */
 .pv-bar{display:flex;flex-wrap:wrap;gap:var(--tap-gap);align-items:center;margin-bottom:var(--sp-3)}
@@ -279,7 +305,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <div class="cd" style="padding:var(--sp-2)">
     <div class="lrow head" aria-hidden="true">
       <div>氏名</div><div>要介護度</div><div>次回期限</div><div>期限まで</div>
-      <div>状態</div><div>欠落・前回日</div><div></div>
+      <div>状態</div><div>未作成</div><div>欠落・前回日</div><div></div>
     </div>
     <div id="listBox"></div>
   </div>
@@ -300,6 +326,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnNewPlan" class="btn" type="button">今回の計画を追加</button>
       <button id="btnPullMaster" class="btn" type="button">マスタから基本情報を取り込む</button>
     </div>
+    <!-- 3か月ごとの期の並び。作成済＝✓／未作成＝✕（予定日つき・その場で作れる） -->
+    <div id="planTimeline" class="tl"></div>
   </div>
   <!-- 名簿の氏名と計画書に写した氏名が食い違った時だけ出る直しバー（本人確認バーの直下） -->
   <div id="nameFixBar"></div>
@@ -388,8 +416,11 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       </label>
       <button id="btnGenEval" class="btn" type="button">Ⅲを埋める（依頼）</button>
       <button id="btnGenNext" class="btn" type="button">次期を生成（依頼）</button>
+      <button id="btnAiRegen" class="btn" type="button">再提案</button>
     </div>
     <p class="muted" id="genState" style="margin-top:var(--sp-2)"></p>
+    <div id="aiErr"></div>
+    <div id="aiNotes"></div>
   </div>
 
   <div class="cd">
@@ -397,12 +428,49 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <div>
         <label for="editView">表示</label>
         <select id="editView">
-          <option value="both">前回と今回</option>
-          <option value="prev">前回のみ</option>
-          <option value="cur">今回のみ</option>
+          <option value="sheet">様式比較（既定）</option>
+          <option value="both">欄一覧：前回と今回</option>
+          <option value="prev">欄一覧：前回のみ</option>
+          <option value="cur">欄一覧：今回のみ</option>
         </select>
       </div>
       <span class="muted" id="fitSummary"></span>
+    </div>
+  </div>
+
+  <!-- 様式比較：左＝過去の期（読み取り専用）／右＝今回（様式の中で直接編集） -->
+  <div class="cd" id="cmpBox">
+    <div class="stack">
+      <div>
+        <label for="cmpSel">左に出す期</label>
+        <select id="cmpSel"></select>
+      </div>
+      <div>
+        <label for="cmpZoom">表示倍率</label>
+        <select id="cmpZoom">
+          <option value="fit">幅に合わせる</option>
+          <option value="100">100%</option>
+          <option value="75">75%</option>
+          <option value="50">50%</option>
+        </select>
+      </div>
+      <span class="muted" id="cmpNote"></span>
+    </div>
+    <div id="cmpWarn"></div>
+    <div class="cmp" style="margin-top:var(--sp-2)">
+      <div>
+        <h3 id="cmpLeftTitle">前回（読み取り専用）</h3>
+        <div id="cmpLeft" class="cmp-host"></div>
+      </div>
+      <div>
+        <h3>今回（様式の中で直せます）</h3>
+        <div id="cmpTip" class="cmp-tip" role="status" aria-live="polite">
+          <span id="cmpTipLabel">欄を選ぶと、ここに欄名と文字数が出ます</span>
+          <span id="cmpTipCount" class="cnt"></span>
+          <button id="cmpTipCopy" class="btn sm sp" type="button" disabled>前回をコピー</button>
+        </div>
+        <div id="cmpRight" class="cmp-host"></div>
+      </div>
     </div>
   </div>
 
@@ -483,8 +551,42 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <input type="text" id="setWarnDays" inputmode="numeric" autocomplete="off"></div>
     </div>
     <div class="stack" style="margin-top:var(--sp-3)">
+      <label style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
+        <input type="checkbox" id="setRetroNote" style="width:auto;min-height:auto">
+        遡って作った計画に、その旨の注記を印刷する
+      </label>
+    </div>
+    <div class="stack" style="margin-top:var(--sp-3)">
       <button id="btnSettingsSave" class="btn pri" type="button">設定を保存</button>
       <span class="muted" id="setState"></span>
+    </div>
+  </div>
+
+  <div class="cd">
+    <h2>AI生成（文案の下書き）</h2>
+    <p class="muted">APIキーは<strong>この端末のブラウザにだけ</strong>置きます。計画書のGAS・一覧の索引・取込用JSONには送りません。
+      キーは Anthropic のコンソール（console.anthropic.com）で発行したものを入れてください。1件あたりの費用の目安は20円ほどです。</p>
+    <div class="grid2" style="margin-top:var(--sp-3)">
+      <div><label for="aiKey">APIキー</label>
+        <input type="password" id="aiKey" autocomplete="new-password" spellcheck="false"
+               placeholder="入れ直す時だけ入力してください"></div>
+      <div><label for="aiModel">モデル</label>
+        <select id="aiModel">
+          <option value="claude-opus-5">claude-opus-5（既定）</option>
+          <option value="claude-sonnet-5">claude-sonnet-5（軽い・安い）</option>
+        </select></div>
+    </div>
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <label style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
+        <input type="checkbox" id="aiEnabled" style="width:auto;min-height:auto">
+        この端末でAI生成を使う
+      </label>
+      <span class="muted" id="aiKeyMask" role="status" aria-live="polite"></span>
+    </div>
+    <div class="stack" style="margin-top:var(--sp-3)">
+      <button id="btnAiSave" class="btn pri" type="button">AIの設定を保存</button>
+      <button id="btnAiClear" class="btn danger" type="button">キーを消去</button>
+      <span class="muted" id="aiState"></span>
     </div>
   </div>
 </section>
@@ -523,6 +625,43 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <div class="stack" style="margin-top:var(--sp-4)">
       <button id="imApply" class="btn pri" type="button">この内容で取り込む</button>
       <button id="imCancel" class="btn" type="button">やめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 計画を作った直後に出す「本人の様子」の小ポップ（AIへ渡す事実を選ぶ） -->
+<div id="samplePop" class="modal" role="dialog" aria-modal="true" aria-labelledby="spTitle">
+  <div class="box">
+    <h2 id="spTitle">本人の様子（事実だけを選んでください）</h2>
+    <p class="muted" id="spNote"></p>
+    <div class="grid2" style="margin-top:var(--sp-3)">
+      <div><label for="spTrend">傾向（必須）</label>
+        <select id="spTrend"><option value="">選んでください</option><option>改善</option><option>維持</option><option>低下</option></select></div>
+      <div><label for="spAchShort">短期目標の達成度</label>
+        <select id="spAchShort"><option value="">未評価</option><option>達成</option><option>一部</option><option>未達</option></select></div>
+      <div><label for="spAchLong">長期目標の達成度</label>
+        <select id="spAchLong"><option value="">未評価</option><option>達成</option><option>一部</option><option>未達</option></select></div>
+    </div>
+    <fieldset style="border:0;margin-top:var(--sp-3)">
+      <legend style="font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2)">観察タグ（任意）</legend>
+      <div id="spTags" class="stack" style="margin-top:var(--sp-2)"></div>
+    </fieldset>
+    <div class="stack" style="margin-top:var(--sp-4)">
+      <button id="spGo" class="btn pri" type="button">生成する</button>
+      <button id="spLater" class="btn" type="button">あとで</button>
+    </div>
+  </div>
+</div>
+
+<!-- 様式の中の選択式の欄（達成度・自立度）をクリックした時に出す -->
+<div id="pickPop" class="modal" role="dialog" aria-modal="true" aria-labelledby="pkTitle">
+  <div class="box" style="max-width:420px">
+    <h2 id="pkTitle">欄を選ぶ</h2>
+    <label for="pkSel" id="pkLabel">値</label>
+    <select id="pkSel"></select>
+    <div class="stack" style="margin-top:var(--sp-4)">
+      <button id="pkApply" class="btn pri" type="button">この値にする</button>
+      <button id="pkCancel" class="btn" type="button">やめる</button>
     </div>
   </div>
 </div>
@@ -659,7 +798,8 @@ function buildAlerts(rows, opts) {
       days: (state === 'none' || !due) ? null : diffDays(due, today),
       status: STATUSES.indexOf(s_(r.status)) >= 0 ? s_(r.status) : 'none',
       count: Number(r.count) || 0, gapCount: Number(r.gapCount) || 0,
-      prevMismatch: Number(r.prevMismatch) || 0
+      prevMismatch: Number(r.prevMismatch) || 0,
+      missingCount: Number(r.missingCount) || 0
     });
   }
   list.sort(function (a, b) {
@@ -950,6 +1090,84 @@ function validateImport(raw, roster) {
        対象者を選び直させる（取り違えたまま黙って書かない）。 */
 }
 
+/* ── 未作成の期（欠落期）の洗い出し（M2 §1）──
+   起点＝いちばん古い期の作成日。各期の作成日から「次の予定日」（dueRule。既定は暦月3か月の
+   応当日）を出し、
+     ・次に実在する計画が【予定日＋猶予（既定45日・D18）より後】なら、その間を予定日の刻みで
+       「未作成」として埋める（翌月1日運用のような数日のずれで誤検知しないための猶予）
+     ・最後の期より後ろは【猶予なし】で、予定日が今日以前のものを「未作成」とする
+       （猶予は「少し遅れて作った計画を次の期と誤認しない」ための仕組み。次の計画が無い区間には
+         意味がなく、過ぎた予定日を出さないと「作成できていない分」が見えないため）
+   戻り: [{kind:'plan'|'missing', date, planId?, seq?}]（作成日の昇順）
+   ★渡された配列は書き換えない（純関数）。作成日が日付でない期は数に入れない。 */
+function expectedPeriods(plans, today, rule, graceDays) {
+  var src = asArr_(plans).filter(function (p) { return p && isYmd(p.planDate); }).slice();
+  src.sort(function (a, b) { return cmpYmd(a && a.planDate, b && b.planDate); });
+  var out = [];
+  if (!src.length) return out;
+  var g = Number(graceDays);
+  if (!isFinite(g) || g < 0) g = 45;
+  var r = DUE_RULES.indexOf(s_(rule)) >= 0 ? s_(rule) : 'calendar';
+  var td = isYmd(today) ? s_(today) : '';
+  var GUARD = 400;            /* 予定日が進まない・日付が壊れている時に無限に増やさない */
+  for (var i = 0; i < src.length; i++) {
+    out.push({
+      kind: 'plan', date: s_(src[i].planDate),
+      planId: s_(src[i].planId), seq: Number(src[i].seq) || (i + 1)
+    });
+    var from = s_(src[i].planDate);
+    var limit = (i + 1 < src.length) ? s_(src[i + 1].planDate) : '';
+    var n = 0;
+    while (n++ < GUARD) {
+      var due = nextDueOf(from, r);
+      if (!due || cmpYmd(due, from) <= 0) break;
+      if (limit) {
+        if (cmpYmd(limit, addDays(due, g)) <= 0) break;   /* 猶予の内に次の計画がある＝欠けていない */
+      } else if (!td || cmpYmd(due, td) > 0) {
+        break;                    /* 末尾側は猶予なし＝予定日が今日以前なら未作成として出す */
+      }
+      out.push({ kind: 'missing', date: due });
+      from = due;
+    }
+  }
+  return out;
+}
+
+/* 各期の「並び順どおりなら入っているはずの前回作成日」を planId → 直前の期の作成日 で返す（M2）。
+   期を足す・作成日を動かす【前】に控えておき、動かした後に autoPrevDateFixes へ渡す。
+   ★渡された配列は書き換えない（純関数）。作成日が日付でない期・planId が無い期は数に入れない */
+function prevNeighborMap(plans) {
+  var src = asArr_(plans).filter(function (p) { return p && isYmd(p.planDate) && s_(p.planId); }).slice();
+  src.sort(function (a, b) { return cmpYmd(a.planDate, b.planDate); });
+  var out = {};
+  for (var i = 0; i < src.length; i++) out[s_(src[i].planId)] = (i > 0) ? s_(src[i - 1].planDate) : '';
+  return out;
+}
+/* 期の並びが変わった後、後ろの期の「前回作成日」を追随させる対象を返す（M2）。
+   規則: その期の前回作成日が【並びが変わる前の直前の期の作成日】と同じ（＝自動で入った値）で、
+   かつ転記（origin.kind==='import'）でない期だけ、【今の直前の期の作成日】へ入れ替える。
+   ★人が原本どおりに直した値と、原本から転記した期は動かさない（原則6）
+   ★wasPrev に無い期（いま作った期）は触らない
+   戻り: [{planId, from, to}]（実際に書き換えるのは呼び出し側） */
+function autoPrevDateFixes(plans, wasPrev) {
+  var src = asArr_(plans).filter(function (p) { return p && isYmd(p.planDate) && s_(p.planId); }).slice();
+  src.sort(function (a, b) { return cmpYmd(a.planDate, b.planDate); });
+  var map = (wasPrev && typeof wasPrev === 'object') ? wasPrev : {};
+  var out = [], i, q, id, was, now;
+  for (i = 0; i < src.length; i++) {
+    q = src[i];
+    id = s_(q.planId);
+    if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
+    if (q.origin && s_(q.origin.kind) === 'import') continue;
+    was = s_(map[id]);
+    if (s_(q.prevPlanDate) !== was) continue;
+    now = (i > 0) ? s_(src[i - 1].planDate) : '';
+    if (now === was) continue;
+    out.push({ planId: id, from: was, to: now });
+  }
+  return out;
+}
+
 /* 前回作成日（prevPlanDate）が直前の期の作成日と食い違う期を拾う（§3-2）。
    ★原本（Excel）に実例があるため、値は【直さない】で数だけ返す（原則6）。
    作成日で並べ直した写しで見る＝渡された配列は触らない（純関数）。
@@ -995,7 +1213,8 @@ global.TP = {
   normalizeName: normalizeName, splitSentences: splitSentences, diffSentences: diffSentences,
   normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, isRetro: isRetro,
-  prevDateMismatches: prevDateMismatches,
+  prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods,
+  prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport
 };
 })(typeof window !== 'undefined' ? window : this);
@@ -1067,11 +1286,14 @@ function isFieldDevice() {
 }
 
 /* ── 画面状態（UIだけ・ホワイトリスト復元）── */
-var LS = { scr: 'tp_scr', sort: 'tp_listSort', filter: 'tp_listFilter', view: 'tp_editView', zoom: 'tp_previewZoom', staff: 'tp_staff' };
+var LS = { scr: 'tp_scr', sort: 'tp_listSort', filter: 'tp_listFilter', view: 'tp_editView', zoom: 'tp_previewZoom', staff: 'tp_staff',
+           cmpOffset: 'tp_cmpOffset', aiModel: 'tp_ai_model', aiOn: 'tp_ai_enabled' };
 var SCREENS = ['scr-list', 'scr-edit', 'scr-print', 'scr-settings'];
 var SORTS = ['due', 'name', 'state'];
 var FILTERS = ['day', 'all'];
-var VIEWS = ['both', 'prev', 'cur'];
+/* 'sheet'＝様式比較（既定・D19）／'list' と 'both'/'prev'/'cur'＝欄一覧 */
+var VIEWS = ['sheet', 'list', 'both', 'prev', 'cur'];
+var CMP_OFFSETS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 var ZOOMS = ['fit', '100', '75', '50'];
 function lsGet(key, allow, def) {
   try {
@@ -1081,6 +1303,13 @@ function lsGet(key, allow, def) {
   return def;
 }
 function lsSet(key, val) { try { localStorage.setItem(key, s_(val)); } catch (e) {} }
+/* 書けたかどうかを読み戻して返す（成功表示だけが残るのを防ぐ・プライベートブラウズ対策） */
+function lsSave(key, val) {
+  try {
+    localStorage.setItem(key, s_(val));
+    return localStorage.getItem(key) === s_(val);
+  } catch (e) { return false; }
+}
 
 /* ── 接続設定 ── */
 var CFG = { url: '', token: '' };          /* tp_cfg（計画書 専用GAS） */
@@ -1173,7 +1402,8 @@ function defSettings() {
   return {
     staff: [],                       /* [{id,name,job}]（全端末共通・専用GASの索引に持つ） */
     defaults: { planner: '', explainer: '', programPlanner: '' },   /* 職員id */
-    dueRule: 'calendar', warnDays: 28
+    dueRule: 'calendar', warnDays: 28,
+    retroNote: false               /* 遡って作った計画の注記を印刷するか（既定OFF・D15） */
   };
 }
 function settings() {
@@ -1187,6 +1417,8 @@ function settings() {
     d.defaults.programPlanner = s_(s.defaults.programPlanner);
   }
   d.dueRule = TP.DUE_RULES.indexOf(s_(s.dueRule)) >= 0 ? s_(s.dueRule) : 'calendar';
+  d.retroNote = s.retroNote === true;
+  /* ★AIのキー（tp_ai_key）はこの設定に入れない。索引は全端末で共有されるため置き場所にしない */
   var w = Number(s.warnDays);
   d.warnDays = (isFinite(w) && w >= 0 && w <= 365) ? Math.round(w) : 28;
   return d;
@@ -1384,7 +1616,9 @@ function indexRowOf(doc) {
     count: plans.length,
     gapCount: (doc && Object.prototype.toString.call(doc.gaps) === '[object Array]') ? doc.gaps.length : 0,
     /* 前回作成日が直前の期と食い違う期の数（一覧に出すだけ。値そのものは直さない） */
-    prevMismatch: TP.prevDateMismatches(plans).length
+    prevMismatch: TP.prevDateMismatches(plans).length,
+    /* 3か月ごとの期のうち計画が残っていない期の数（M2 §1・保存が通った時に入れ直す） */
+    missingCount: missingCountOf(plans)
   };
 }
 /* 計画の保存が通った後で索引を直す（別便）。失敗しても計画そのものは保存済み。
@@ -1537,7 +1771,8 @@ function listRows() {
       latestPlanId: s_(idxRow.latestPlanId), latestPlanDate: s_(idxRow.latestPlanDate),
       nextDue: s_(idxRow.nextDue), status: s_(idxRow.status),
       count: Number(idxRow.count) || 0, gapCount: Number(idxRow.gapCount) || 0,
-      prevMismatch: Number(idxRow.prevMismatch) || 0
+      prevMismatch: Number(idxRow.prevMismatch) || 0,
+      missingCount: Number(idxRow.missingCount) || 0
     });
   }
   /* 名簿に無いのに計画が残っている方（過去の退去者など）も「全員」表示では出す */
@@ -1552,7 +1787,8 @@ function listRows() {
         latestPlanId: s_(x.latestPlanId), latestPlanDate: s_(x.latestPlanDate),
         nextDue: s_(x.nextDue), status: s_(x.status),
         count: Number(x.count) || 0, gapCount: Number(x.gapCount) || 0,
-        prevMismatch: Number(x.prevMismatch) || 0, offRoster: true
+        prevMismatch: Number(x.prevMismatch) || 0, missingCount: Number(x.missingCount) || 0,
+        offRoster: true
       });
     });
   }
@@ -1618,6 +1854,17 @@ function renderList() {
     td.appendChild(stateBadge(row));
     tr.appendChild(td);
     tr.appendChild(cell('状態', TP.STATUS_LABEL[row.status] || '未作成'));
+    /* 3か月ごとの期のうち、計画が残っていない期の数（開かなくても分かるように出す） */
+    var mc = el('div');
+    mc.setAttribute('data-label', '未作成');
+    if (row.missingCount) {
+      var mb = el('span', 'badge overdue', '✕ ' + row.missingCount + '期');
+      mb.setAttribute('title', '3か月ごとの期のうち、計画が残っていない期の数');
+      mc.appendChild(mb);
+    } else {
+      mc.appendChild(document.createTextNode('—'));
+    }
+    tr.appendChild(mc);
     /* 欠落（原本の無い期）と、前回作成日が直前の期と食い違う期を同じ欄に出す */
     var notes = [];
     if (row.gapCount) notes.push('欠落' + row.gapCount + '件');
@@ -1645,6 +1892,8 @@ function showScreen(id, opts) {
   for (var k = 0; k < btns.length; k++) btns[k].classList.toggle('on', btns[k].getAttribute('data-scr') === id);
   $('btnBack').hidden = (id === 'scr-list');
   lsSet(LS.scr, id);
+  /* 表示されていない間は測れない（0と出る）。編集画面に出した後で測り直す */
+  if (id === 'scr-edit' && editMode() === 'sheet') scheduleCmpFit();
   if (id === 'scr-print' && !(opts && opts.skipBuild)) buildPreview();
   if (id === 'scr-settings') renderSettings();
   window.scrollTo(0, 0);
@@ -1749,6 +1998,9 @@ function openResident(masterId, wantScr) {
   if (!CFG.url) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
   setSync('読み込み中…');
   clearTimeout(saveTimer);
+  clearAiError();
+  AI_NOTES = {};          /* 前の方のAIの注意書きを持ち越さない（メモリだけ） */
+  AI_UNDO = {};           /* 「元に戻す」の控えも持ち越さない（別の方の内容を戻さないため） */
   dirty = false;
   return tpGet(docKey(id)).then(function (j) {
     if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
@@ -1789,6 +2041,8 @@ function openResident(masterId, wantScr) {
     return false;
   });
 }
+/* ★未使用（L0裁定#7で呼び出しを外した）。索引を書くのは「保存に成功した後」「起動時の自己修復」
+   「索引を再構築」の3経路だけ。表示経路から呼び戻さないこと。 */
 function healIndexRow(id) {
   if (!IDX_OK || !DOC) return;
   var want = indexRowOf(DOC), have = IDX.rows[id];
@@ -1843,15 +2097,20 @@ function renderEdit() {
         mism.map(function (x) { return x.seq; }).join('・') + '期）。原本の値をそのまま残しています（直す時は人が直します）。');
     }
   }
+  /* 遡って作った計画の断り書き。★過去の日付そのものは警告しない（M2 §2）。
+     印刷に注記を出すかは設定（既定OFF・D15）に従うので、文面もそれに合わせる */
   if (plan && plan.audit && plan.audit.retro) {
-    banner(host, 'warn', 'この計画は作成日より後に登録されています（遡及作成）。印刷面の備考に記録整備であることを書いてください。');
+    banner(host, 'info', 'この計画は作成日（' + s_(plan.planDate) + '）より後に登録されています。登録した日時は記録として残ります。' +
+      (settings().retroNote ? '印刷面の備考に、遡って作成した旨の注記が入ります。' : '印刷には出さない設定です（設定画面で変えられます）。'));
   }
   renderNameFix();
   renderPlanSelect();
+  renderTimeline();
   renderStaffSelects();
   renderMeta();
   renderSample();
   renderFields();
+  renderCompare();
   updateSaveState();
   scheduleProbe();
 }
@@ -2034,19 +2293,34 @@ function onMetaChange(path, raw) {
     var st = settings();
     var oldAuto = TP.nextDueOf(p.planDate, st.dueRule);
     var oldFrom = p.planDate;
+    /* 並べ替える前の「並び順どおりなら入っていたはずの値」を控えておく（下で見分けに使う） */
+    var wasPrev = neighborPrevDate(p), wasFirst = firstDateAll();
+    var wasPrevMap = TP.prevNeighborMap(DOC.plans);   /* 後ろの期を追随させるための控え */
+    var keepId = s_(p.planId);
     setPath(p, path, val);
     /* 自動で入れた値のままなら追随させる。人が手で直した値は動かさない */
     if (!p.nextDue || p.nextDue === oldAuto) p.nextDue = TP.nextDueOf(val, st.dueRule);
     if (!p.period.from || p.period.from === oldFrom) p.period.from = val;
     if (p.nextDue) p.period.to = TP.addDays(p.nextDue, -1);
     p.audit.retro = TP.isRetro(p, p.audit.createdAt || nowIso());
+    sortPlans();                    /* 作成日順に並べ直し、期の番号を振り直す */
+    keepPlanIdx(keepId);            /* 並びが変わっても、開いている期は同じ計画のまま */
+    refreshOrderDates(p, wasPrev, wasFirst);
+    /* 並びが変わったら、後ろの期の「前回作成日」も自動値のぶんだけ追随させる */
+    var followed = applyPrevDateFollow(wasPrevMap);
     renderMeta();
     renderPlanSelect();
+    renderTimeline();
+    renderFields();                 /* 並びが変わると「前回」も変わる＝欄一覧の前回列も引き直す */
+    renderCompare();
     markDirty();
+    if (followed) toast('作成日を変えたので、後の期の「前回作成日」も並びに合わせました（' + followed + '件）');
     return;
   }
   setPath(p, path, val);
   if (path === 'explained.date') updateStatusHint();
+  /* 様式比較を出している時は右側のセルと差分の色も引き直す（同じ値を2か所で食い違わせない） */
+  if (editMode() === 'sheet') renderCompare();
   markDirty();
 }
 function onStatusChange() {
@@ -2070,6 +2344,7 @@ function setStatus(v) {
   if (p.statusLog.length > 50) p.statusLog = p.statusLog.slice(-50);
   $('fStatus').value = v;
   renderPlanSelect();
+  renderTimeline();                 /* タイムラインの状態表示も同じ値にする */
   markDirty();
   return true;
 }
@@ -2092,6 +2367,16 @@ function renderSample() {
   $('sNote').value = s_(sm.note);
   $('sRephrase').checked = !!(p && p.generation.rephrase);
   ['sAchShort', 'sAchLong', 'sTrend', 'sNote', 'sRephrase', 'btnGenEval', 'btnGenNext'].forEach(function (id) { $(id).disabled = !p; });
+  /* 鍵がある端末では、そのままAIを呼ぶ（無い端末は今までどおり「依頼」として記録する） */
+  var aiOk = aiReady();
+  var emptyEval = !!(p && !s_(p.changes) && !s_(p.issues));
+  $('btnGenEval').textContent = aiOk ? (emptyEval ? 'AIで埋める' : 'Ⅲを埋める（AI）') : 'Ⅲを埋める（依頼）';
+  $('btnGenEval').classList.toggle('pri', !!(aiOk && emptyEval && p));
+  $('btnGenNext').textContent = aiOk ? '次期を作ってAIで生成' : '次期を生成（依頼）';
+  $('btnAiRegen').hidden = !aiOk;
+  $('btnAiRegen').disabled = !p || aiBusy;
+  if (aiBusy) { $('btnGenEval').disabled = true; $('btnGenNext').disabled = true; }
+  renderAiNotes(p);
   for (var i = 0; i < TAGS.length; i++) {
     var t = TAGS[i];
     var b = el('button', 'btn sm', t);
@@ -2114,6 +2399,7 @@ function renderSample() {
   } else {
     $('genState').textContent = '';
   }
+  if (aiBusy) $('genState').textContent = 'AIに文案を頼んでいます…（10〜30秒ほどかかります）';
 }
 function toggleTag(tag) {
   var p = curPlan();
@@ -2400,7 +2686,7 @@ function retroNote(p) {
 /* 様式へ渡す写しを作る（元の plan は書き換えない＝組み立て中に画面のデータを触らせない）。
    training-plan-form.js は入れ子のまま読む（basic.name／health.diagnosis／explained.date）。
    平らな別名も一緒に載せておく＝様式側が平らな名前を見る実装でも欄が空にならない。 */
-function planForSheet(p) {
+function planForSheet(p, opts) {
   var o = JSON.parse(JSON.stringify(p));
   o.name = p.basic.name; o.kana = p.basic.kana; o.gender = p.basic.gender;
   o.careLevel = p.basic.careLevel; o.birthDate = p.basic.birthDate;
@@ -2410,8 +2696,11 @@ function planForSheet(p) {
   o.explainer = p.explained.explainer; o.explainedDate = p.explained.date;
   o.signatureBy = p.signature.by; o.signatureOn = p.signature.receivedOn;
   o.prevPlanDate = p.prevPlanDate; o.firstPlanDate = p.firstPlanDate;
-  /* 遡及作成は、紙の特記事項にその旨を残す（§3-2 の安全弁）。★写しにだけ足す＝保存データは変えない */
-  if (p.audit && p.audit.retro) {
+  /* 遡及作成は、紙の特記事項にその旨を残す（§3-2 の安全弁）。★写しにだけ足す＝保存データは変えない。
+     ★出すかどうかは設定「遡及作成の注記を印刷する」に従う（既定OFF・D15）
+     ★opts.retroNote===false（様式の中で直接編集する右側）では付けない。付けたまま備考セルを
+       直すと、人が書いていない注記ごと remarks に保存されてしまうため（原則6） */
+  if (p.audit && p.audit.retro && settings().retroNote && !(opts && opts.retroNote === false)) {
     var note = retroNote(p), rem = s_(o.remarks);
     if (note && rem.indexOf(note) < 0) o.remarks = rem ? (rem + '\n' + note) : note;
   }
@@ -2809,25 +3098,40 @@ function applyConflict() {
 }
 
 /* ═══════════ 計画の追加・マスタからの引継ぎ ═══════════ */
-function addPlan() {
-  if (!DOC) return;
-  var today = todayYmd();
-  var i;
+function addPlan() { return addPlanAt(todayYmd()); }
+/* 予定日（未作成の期）を指定して作る（M2 §2）。作成日は後からいつでも直せる。
+   前回作成日＝直前に実在する期／初回作成日＝いちばん古い期／期間・次回期限は作成日から計算する。
+   ★他の期のデータ（前回作成日など）は書き換えない。並びと期の番号だけ振り直す（原則6）。
+   opts.silent = true のときは「本人の様子」の小ポップを出さない。 */
+function addPlanAt(date, opts) {
+  if (!DOC) return null;
+  opts = opts || {};
+  var d = s_(date), i, q;
+  if (!TP.isYmd(d)) { toast('日付の形が違います（年-月-日で入れてください）'); return null; }
+  if (TP.cmpYmd(d, todayYmd()) > 0) { toast('作成日に未来の日付は入れられません'); return null; }
   for (i = 0; i < DOC.plans.length; i++) {
-    if (DOC.plans[i].planDate === today) {
-      if (!confirm('同じ作成日（' + today + '）の計画が既にあります。もう1つ作りますか？')) return;
+    if (DOC.plans[i].planDate === d) {
+      if (!confirm('同じ作成日（' + d + '）の計画が既にあります。もう1つ作りますか？')) return null;
       break;
     }
   }
-  var base = DOC.plans.length ? DOC.plans[DOC.plans.length - 1] : null;
+  /* 直前に実在する期を写しのもとにする（間の期を作る時も、その期の前の内容から作る） */
+  var base = null, next = null;
+  for (i = 0; i < DOC.plans.length; i++) {
+    q = DOC.plans[i];
+    if (!q || !TP.isYmd(q.planDate)) continue;
+    if (TP.cmpYmd(q.planDate, d) < 0) { if (!base || TP.cmpYmd(q.planDate, base.planDate) > 0) base = q; }
+    else if (TP.cmpYmd(q.planDate, d) > 0) { if (!next || TP.cmpYmd(q.planDate, next.planDate) < 0) next = q; }
+  }
   var st = settings();
-  var p = base ? TP.normalizePlan(JSON.parse(JSON.stringify(base))) : TP.emptyPlan(today);
-  p.planId = newPlanId(curMasterId, today);
-  p.planDate = today;
+  var p = base ? TP.normalizePlan(JSON.parse(JSON.stringify(base))) : TP.emptyPlan(d);
+  p.planId = newPlanId(curMasterId, d);
+  p.planDate = d;
   p.prevPlanDate = base ? s_(base.planDate) : '';
-  p.firstPlanDate = DOC.plans.length ? s_(DOC.plans[0].planDate) : today;
-  p.nextDue = TP.nextDueOf(today, st.dueRule);
-  p.period = { from: today, to: p.nextDue ? TP.addDays(p.nextDue, -1) : '' };
+  var first = firstDateAll();
+  p.firstPlanDate = (first && TP.cmpYmd(first, d) <= 0) ? first : d;
+  p.nextDue = TP.nextDueOf(d, st.dueRule);
+  p.period = { from: d, to: p.nextDue ? TP.addDays(p.nextDue, -1) : '' };
   p.visitDate = ''; p.cmReportDate = '';
   p.explained = { date: '', explainer: staffName(st.defaults.explainer) };
   p.signature = { receivedOn: '', by: '' };
@@ -2836,6 +3140,8 @@ function addPlan() {
   p.generation = { requestedAt: '', requestedBy: '', mode: '', rephrase: false, sample: null, doneAt: '' };
   p.origin = { kind: 'human', source: '', basePlanId: base ? s_(base.planId) : '', promptVersion: '', model: '', at: nowIso() };
   p.audit = { createdAt: nowIso(), updatedAt: nowIso(), updatedBy: currentStaffName(), retro: false };
+  /* 遡って作った印はデータに残す（印刷に出すかは設定・D15） */
+  p.audit.retro = TP.isRetro(p, p.audit.createdAt);
   /* Ⅲ（実施による変化・課題）と達成度は毎回書き直す欄。前回の文を持ち越さない */
   p.changes = ''; p.issues = '';
   p.shortAchievement = ''; p.longAchievement = '';
@@ -2849,12 +3155,18 @@ function addPlan() {
     if (!p.basic.birthDate) p.basic.birthDate = row.birthDate;
     p.basic.careLevel = row.careLevel || p.basic.careLevel;   /* 介護度は今の値を写す（過去の期は動かさない） */
   }
+  var wasPrev = TP.prevNeighborMap(DOC.plans);   /* 足す前の並びを控える（後ろの期の追随に使う） */
   DOC.plans.push(p);
   sortPlans();
-  for (i = 0; i < DOC.plans.length; i++) if (DOC.plans[i].planId === p.planId) curPlanIdx = i;
+  /* 間に入れた時は、後ろの期の「前回作成日」がこの期を指すように直す（自動値だけ・転記は触らない） */
+  var followed = applyPrevDateFollow(wasPrev);
+  keepPlanIdx(p.planId);
   markDirty();
   renderEdit();
-  toast('第' + p.seq + '期の計画を作りました（作成日 ' + today + '）');
+  toast('第' + p.seq + '期の計画を作りました（作成日 ' + d + '）' +
+    (followed ? '。後の期の「前回作成日」もこの期に合わせました' : ''));
+  if (opts.silent !== true) openSamplePop(next ? 'backfill' : 'next', { fresh: true });
+  return p;
 }
 /* 入居者マスタから基本情報を引き継ぐ（読み取りのみ・空欄だけ埋める）。
    マスタに無い「直近の入院日」は手入力のまま（勝手に埋めない）。 */
@@ -2909,7 +3221,7 @@ function applyMaster(p, got) {
   put('basic.kana', rec.kana || row.kana, 'ふりがな');
   put('basic.gender', rec.gender || row.gender, '性別');
   put('basic.birthDate', rec.birthDate || row.birthDate, '生年月日');
-  put('basic.careLevel', normCareLevel(rec.careLevel || row.careLevel), '要介護度');
+  put('basic.careLevel', TP.normCareLevel(rec.careLevel || row.careLevel), '要介護度');
   var dem = TP.normDementiaRank((got.bulk && got.bulk.dementia) || rec.dementia);
   var bed = TP.normBedriddenRank((got.sec && got.sec.bedriddenRank) || rec.bedriddenRank || (got.bulk && got.bulk.adl) || rec.adl);
   put('basic.dementiaRank', dem, '認知症自立度');
@@ -2941,6 +3253,1150 @@ function applyMaster(p, got) {
   toast(filled.length
     ? ('マスタから取り込みました：' + filled.join('・') + (unknown.length ? '　※' + unknown.join('・') + 'は様式に無い表記です。確かめてください' : ''))
     : 'マスタから新たに入る項目はありませんでした');
+}
+
+/* ═══════════ 期の並び（タイムライン）と後追い作成 ═══════════ */
+var GRACE_DAYS = 45;   /* 未作成と見なすまでの猶予（D18）。翌月1日運用の数日ずれで誤検知しない幅 */
+
+/* 3か月ごとの期の並び（作成済＝plan／未作成＝missing）。計算は純関数に閉じている */
+function timelineOf(plans) {
+  return TP.expectedPeriods(plans, todayYmd(), settings().dueRule, GRACE_DAYS);
+}
+function missingCountOf(plans) {
+  var tl = timelineOf(plans), n = 0;
+  for (var i = 0; i < tl.length; i++) if (tl[i].kind === 'missing') n++;
+  return n;
+}
+function planIdxOf(planId) {
+  var id = s_(planId);
+  if (!DOC || !DOC.plans) return -1;
+  for (var i = 0; i < DOC.plans.length; i++) if (s_(DOC.plans[i].planId) === id) return i;
+  return -1;
+}
+/* 並べ替えた後も「同じ計画」を開いたままにする（別の期にすり替わらないようにする） */
+function keepPlanIdx(planId) {
+  var i = planIdxOf(planId);
+  if (i >= 0) { curPlanIdx = i; return true; }
+  return false;
+}
+/* 並び順から見た「この期の直前の作成日」と「いちばん古い作成日」 */
+function neighborPrevDate(p) {
+  if (!DOC || !DOC.plans || !p) return '';
+  var best = '';
+  for (var i = 0; i < DOC.plans.length; i++) {
+    var q = DOC.plans[i];
+    if (!q || q === p || !TP.isYmd(q.planDate)) continue;
+    if (TP.cmpYmd(q.planDate, s_(p.planDate)) >= 0) continue;
+    if (!best || TP.cmpYmd(q.planDate, best) > 0) best = s_(q.planDate);
+  }
+  return best;
+}
+function firstDateAll() {
+  if (!DOC || !DOC.plans) return '';
+  var best = '';
+  for (var i = 0; i < DOC.plans.length; i++) {
+    var q = DOC.plans[i];
+    if (!q || !TP.isYmd(q.planDate)) continue;
+    if (!best || TP.cmpYmd(q.planDate, best) < 0) best = s_(q.planDate);
+  }
+  return best;
+}
+/* 作成日を変えた後、この期の「前回作成日・初回作成日」を並び順から入れ直す。
+   ★自動で入っていた値（＝並び順と一致していた値）だけを動かす。
+     原本どおりに人が直した値は動かさない（原則6・前回日不一致は一覧と編集画面で断っている） */
+function refreshOrderDates(p, wasPrev, wasFirst) {
+  if (!p) return;
+  var np = neighborPrevDate(p), nf = firstDateAll();
+  if (!s_(p.prevPlanDate) || s_(p.prevPlanDate) === s_(wasPrev)) p.prevPlanDate = np;
+  if (!s_(p.firstPlanDate) || s_(p.firstPlanDate) === s_(wasFirst)) p.firstPlanDate = nf;
+}
+/* 期を足した・作成日を動かした後、【後ろの期】の前回作成日を並び順へ追随させる（M2）。
+   動かすのは自動で入っていた値だけ（人が直した値・原本から転記した期は触らない＝TP.autoPrevDateFixes）。
+   wasPrev は動かす前に TP.prevNeighborMap で控えた対応表。戻り: 直した期の数 */
+function applyPrevDateFollow(wasPrev) {
+  if (!DOC || !DOC.plans) return 0;
+  var fx = TP.autoPrevDateFixes(DOC.plans, wasPrev), i, k, n = 0;
+  for (i = 0; i < fx.length; i++) {
+    for (k = 0; k < DOC.plans.length; k++) {
+      if (s_(DOC.plans[k].planId) !== fx[i].planId) continue;
+      DOC.plans[k].prevPlanDate = fx[i].to;
+      n++;
+    }
+  }
+  return n;
+}
+/* 期の並びを画面に出す。未作成の期は✕＋予定日＋「この期を作成」（色だけに頼らない） */
+function renderTimeline() {
+  var host = $('planTimeline');
+  if (!host) return;
+  clear(host);
+  if (!DOC) return;
+  if (!DOC.plans.length) {
+    host.appendChild(el('p', 'muted', '計画がまだありません。「今回の計画を追加」で作るか、一覧の「JSON取込」で原本を取り込んでください。'));
+    return;
+  }
+  var tl = timelineOf(DOC.plans), miss = 0, i;
+  for (i = 0; i < tl.length; i++) {
+    var it = tl[i];
+    var row = el('div', 'tl-row' + (it.kind === 'missing' ? ' miss' : ''));
+    if (it.kind === 'plan') {
+      var idx = planIdxOf(it.planId);
+      var pl = (idx >= 0) ? DOC.plans[idx] : null;
+      if (idx === curPlanIdx) { row.classList.add('on'); row.setAttribute('aria-current', 'true'); }
+      row.appendChild(el('span', 'tl-mk', '✓'));
+      row.appendChild(el('span', null, '第' + it.seq + '期　' + it.date + '　' +
+        (TP.STATUS_LABEL[pl ? pl.status : 'none'] || '未作成')));
+      var b = el('button', 'btn sm sp', idx === curPlanIdx ? '編集中' : '開く');
+      b.type = 'button';
+      b.disabled = (idx < 0 || idx === curPlanIdx);
+      b.setAttribute('data-idx', String(idx));
+      b.setAttribute('aria-label', '第' + it.seq + '期（' + it.date + '）を開く');
+      b.addEventListener('click', function () { switchPlan(this.getAttribute('data-idx')); });
+      row.appendChild(b);
+    } else {
+      miss++;
+      row.appendChild(el('span', 'tl-mk', '✕'));
+      row.appendChild(el('span', null, '未作成　予定日 ' + it.date));
+      var c = el('button', 'btn sm pri sp', 'この期を作成');
+      c.type = 'button';
+      c.setAttribute('data-date', it.date);
+      c.setAttribute('aria-label', it.date + 'の期を作成する');
+      c.addEventListener('click', function () { addPlanAt(this.getAttribute('data-date')); });
+      row.appendChild(c);
+    }
+    host.appendChild(row);
+  }
+  host.appendChild(el('p', 'muted', miss
+    ? ('✕ 未作成 ' + miss + '期（3か月ごとの期のうち、計画が残っていない期です。作成日は後から直せます）')
+    : '✓ 3か月ごとの期に抜けはありません'));
+}
+
+/* ═══════════ 様式比較（左＝過去の期／右＝今回をその様式の中で編集） ═══════════ */
+var CMP = { left: null, right: null, field: '' };
+/* zoom に対応していないブラウザでは等倍のまま横スクロールで見てもらう（transform は使わない） */
+var CMP_ZOOM_OK = (function () {
+  try { return !!(window.CSS && CSS.supports && CSS.supports('zoom', '0.5')); } catch (e) { return false; }
+})();
+/* 様式（training-plan-form.js）の欄名 → この画面のデータの場所。
+   1つのセルに複数の欄が入っている所（病名・発症日・直近の入院日）は複数返す。 */
+var SHEET_PATHS = {
+  'hopeSelf': ['hopeSelf'], 'hopeFamily': ['hopeFamily'],
+  'socialParticipation': ['socialParticipation'], 'homeEnvironment': ['homeEnvironment'],
+  'health': ['health.diagnosis', 'health.onsetDate', 'health.lastHospitalization'],
+  'treatmentCourse': ['treatmentCourse'], 'diseaseControl': ['diseaseControl'], 'precautions': ['precautions'],
+  'shortAchievement': ['shortAchievement'], 'longAchievement': ['longAchievement'],
+  'shortGoalFunction': ['shortGoalFunction'], 'shortGoalActivity': ['shortGoalActivity'],
+  'shortGoalParticipation': ['shortGoalParticipation'],
+  'longGoalFunction': ['longGoalFunction'], 'longGoalActivity': ['longGoalActivity'],
+  'longGoalParticipation': ['longGoalParticipation'],
+  'homeExercise': ['homeExercise'], 'remarks': ['remarks'], 'changes': ['changes'], 'issues': ['issues'],
+  'createdDate': ['planDate'], 'prevDate': ['prevPlanDate'], 'firstDate': ['firstPlanDate'],
+  'nameKana': ['basic.name', 'basic.kana'], 'careLevel': ['basic.careLevel'], 'gender': ['basic.gender'],
+  'birth': ['basic.birthDate'], 'planner': ['planner'], 'plannerJob': ['plannerJob'],
+  'programPlanner': ['programPlanner'], 'explained': ['explained.date', 'explained.explainer']
+};
+/* 様式の中で直に書き換えてよい欄。
+   ・セルの中身が丸ごとその欄の文章である所（自由記述の欄とプログラム表）
+   ・見出しが同じセルに入っている3欄（治療経過・コントロール状態・留意事項）は、
+     見出しの接頭辞（様式の雛形の {{欄}} より前）を剥がしてから保存する＝下の SHEET_HEAD
+   病名・発症日・直近の入院日（A20）は1つのセルに3欄が入っていて分けられないので【入れない】
+   ＝「欄一覧」で直す。 */
+var SHEET_EDIT = {};
+/* 見出しが同じセルに入っている欄（打ち込まれた文字から見出しを剥がして保存する） */
+var SHEET_HEAD = { 'treatmentCourse': 1, 'diseaseControl': 1, 'precautions': 1 };
+(function () {
+  var free = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
+    'treatmentCourse', 'diseaseControl', 'precautions',
+    'shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation',
+    'longGoalFunction', 'longGoalActivity', 'longGoalParticipation',
+    'homeExercise', 'remarks', 'changes', 'issues'];
+  var cols = ['content', 'caution', 'frequency', 'duration', 'staff'];
+  var i, n, c;
+  for (i = 0; i < free.length; i++) SHEET_EDIT[free[i]] = free[i];
+  for (n = 0; n < 4; n++) {
+    for (c = 0; c < cols.length; c++) {
+      SHEET_PATHS['programs[' + n + '].' + cols[c]] = ['programs.' + n + '.' + cols[c]];
+      SHEET_EDIT['programs[' + n + '].' + cols[c]] = 'programs.' + n + '.' + cols[c];
+    }
+  }
+})();
+/* クリックで選ぶ欄（自由入力にしない）。選択肢は画面に既にある select から写す＝表記を1つに保つ */
+var SHEET_PICK = {
+  'shortAchievement': { path: 'shortAchievement', from: 'f_shortAchievement', label: '短期目標の達成度' },
+  'longAchievement': { path: 'longAchievement', from: 'f_longAchievement', label: '長期目標の達成度' },
+  'dementia': { path: 'basic.dementiaRank', from: 'fDementia', label: '認知症高齢者の日常生活自立度' },
+  'basic.dementiaRank': { path: 'basic.dementiaRank', from: 'fDementia', label: '認知症高齢者の日常生活自立度' },
+  'bedridden': { path: 'basic.bedriddenRank', from: 'fBedridden', label: '障害高齢者の日常生活自立度' },
+  'basic.bedriddenRank': { path: 'basic.bedriddenRank', from: 'fBedridden', label: '障害高齢者の日常生活自立度' }
+};
+/* 様式側にしか出てこない欄名（この画面では直せないもの）の日本語 */
+var SHEET_OTHER_LABEL = { 'basic.birthDate': '生年月日（元号）' };
+function sheetLabel(f) {
+  var k = s_(f), paths = SHEET_PATHS[k];
+  if (paths && FIELDS[paths[0]]) return FIELDS[paths[0]].label;
+  if (SHEET_PICK[k]) return SHEET_PICK[k].label;
+  return SHEET_OTHER_LABEL[k] || FORM_FIELD_LABEL[k] || k;
+}
+var SHEET_LABELS = null;
+function sheetLabels() {
+  if (SHEET_LABELS) return SHEET_LABELS;
+  SHEET_LABELS = {};
+  Object.keys(SHEET_PATHS).forEach(function (k) { SHEET_LABELS[k] = sheetLabel(k); });
+  Object.keys(SHEET_PICK).forEach(function (k) { SHEET_LABELS[k] = sheetLabel(k); });
+  Object.keys(SHEET_OTHER_LABEL).forEach(function (k) { SHEET_LABELS[k] = sheetLabel(k); });
+  return SHEET_LABELS;
+}
+function editMode() { return document.body.classList.contains('mode-sheet') ? 'sheet' : 'list'; }
+function cmpOffset() {
+  var v = Number(lsGet(LS.cmpOffset, CMP_OFFSETS, '1')) || 1;
+  if (!DOC || curPlanIdx <= 0) return 1;
+  return Math.min(Math.max(1, v), curPlanIdx);
+}
+function cmpOffsetName(k) { return (k === 1) ? '前回' : (k === 2) ? '前々回' : (k + 'つ前'); }
+function leftPlan() {
+  if (!DOC || curPlanIdx < 0) return null;
+  var i = curPlanIdx - cmpOffset();
+  return (i >= 0 && i < DOC.plans.length) ? DOC.plans[i] : null;
+}
+function renderCompareSel() {
+  var sel = $('cmpSel');
+  clear(sel);
+  var max = (DOC && curPlanIdx > 0) ? curPlanIdx : 0;
+  if (!max) {
+    var o = el('option', null, '（前の期はありません）');
+    o.value = '';
+    sel.appendChild(o);
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  for (var k = 1; k <= max; k++) {
+    var p = DOC.plans[curPlanIdx - k];
+    var op = el('option', null, cmpOffsetName(k) + '　第' + p.seq + '期（' + (p.planDate || '日付なし') + '）');
+    op.value = String(k);
+    sel.appendChild(op);
+  }
+  sel.value = String(cmpOffset());
+}
+/* 画面用の印。様式ファイル側の画面CSS（差分の色・フォーカス枠）はこの印で効く。
+   印刷に使う写し（印刷プレビュー・収容の試算）には付けない。 */
+function markScreenSheet(host) {
+  var sh = host.querySelector('.sheet');
+  if (sh) sh.classList.add('tp-screen');
+}
+/* 白名簿に無い欄は、様式ファイルが編集できる形にしていても編集を外す。
+   ★入力できるのに保存されない欄（黙って消える欄）を作らないため。 */
+function lockCells(sheet) {
+  if (!sheet) return;
+  var tds = sheet.querySelectorAll('td[data-field]'), i;
+  for (i = 0; i < tds.length; i++) {
+    var f = s_(tds[i].getAttribute('data-field'));
+    if (SHEET_EDIT[f] || SHEET_PICK[f]) continue;
+    var tx = tds[i].querySelector('.tp-tx');
+    if (!tx || tx.getAttribute('contenteditable') == null) continue;
+    tx.removeAttribute('contenteditable');
+    tx.removeAttribute('role');
+    tx.removeAttribute('tabindex');
+    /* 病名・発症日・直近の入院日は1つのセルに3欄が入っている＝様式の中では分けられない */
+    tds[i].setAttribute('title', (f === 'health')
+      ? 'この欄（病名・発症日・直近の入院日）は上の「欄一覧」で直します'
+      : 'この欄は上の「この期の基本事項」か「欄一覧」で直します');
+  }
+}
+function renderCompare() {
+  var box = $('cmpBox');
+  if (!box || editMode() !== 'sheet') return;
+  var warn = $('cmpWarn'), L = $('cmpLeft'), R = $('cmpRight');
+  clear(warn); clear(L); clear(R);
+  CMP.left = null; CMP.right = null;
+  CMP_DIFF_MSG = '';
+  resetCmpTip();
+  renderCompareSel();
+  $('cmpZoom').value = lsGet(LS.zoom, ZOOMS, 'fit');
+  var p = curPlan();
+  if (!p) {
+    L.appendChild(el('p', 'muted', 'この方の計画はまだありません。上の「今回の計画を追加」で作るか、一覧の「JSON取込」で原本を取り込んでください。'));
+    return;
+  }
+  if (!FORM_READY) {
+    banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていないため、様式比較は出せません。「欄一覧」に切り替えて入力してください。');
+    return;
+  }
+  var lp = leftPlan();
+  $('cmpLeftTitle').textContent = lp
+    ? (cmpOffsetName(cmpOffset()) + '　第' + lp.seq + '期（' + (lp.planDate || '日付なし') + '）読み取り専用')
+    : '前の期はありません';
+  try {
+    if (lp) {
+      mountSheet(L, TP_FORM.buildSheet(planForSheet(lp), { signature: true }));
+      markScreenSheet(L);
+    } else {
+      L.appendChild(el('p', 'muted', 'この方の最初の期です（左に並べる過去の計画はありません）。'));
+    }
+    mountSheet(R, TP_FORM.buildSheet(planForSheet(p, { retroNote: false }), {
+      signature: true, editable: true, labels: sheetLabels(),
+      onInput: onSheetInput, onPick: onSheetPick, onFocus: onSheetFocus, onBlur: onSheetBlur
+    }));
+    markScreenSheet(R);
+  } catch (e) {
+    clear(L); clear(R);
+    banner(warn, 'err', '様式を組み立てられませんでした（' + errText(e) + '）。「欄一覧」に切り替えて入力してください。');
+    return;
+  }
+  CMP.left = L.querySelector('.sheet');
+  CMP.right = R.querySelector('.sheet');
+  lockCells(CMP.right);
+  /* 様式ファイルが直接編集に対応していない版でも黙って読み取り専用にしない（silent fail 禁止） */
+  if (CMP.right && !CMP.right.querySelector('[contenteditable]')) {
+    var b = el('div', 'banner warn');
+    b.setAttribute('role', 'status');
+    b.appendChild(el('div', null, 'この版の様式ファイルは、様式の中での直接編集に対応していません。右側は表示だけです。入力は「欄一覧」に切り替えて行ってください。'));
+    var sw = el('button', 'btn', '欄一覧に切り替える');
+    sw.type = 'button';
+    sw.style.marginTop = 'var(--sp-2)';
+    sw.addEventListener('click', function () {
+      $('editView').value = 'both';
+      lsSet(LS.view, 'both');
+      applyEditView('both');
+    });
+    b.appendChild(sw);
+    warn.appendChild(b);
+  }
+  markCmpDiff();
+  fontsReady().then(function () {
+    if (!CMP.right || CMP.right !== R.querySelector('.sheet')) return;   /* 組み直しが入っていたら測らない */
+    fitCmp();
+  });
+}
+/* 収まるかを測り直す（層B〜D。fitSheet は同じ要素に何度呼んでも元に戻してから測る）。
+   表示されていない時は測れない（offsetParent が無いと0と出て「収まった」と誤判定する） */
+function fitCmp() {
+  if (editMode() !== 'sheet' || !$('scr-edit').classList.contains('on')) return;
+  $('cmpLeft').style.zoom = '';
+  $('cmpRight').style.zoom = '';
+  var res = null;
+  try {
+    if (CMP.left) TP_FORM.fitSheet(CMP.left);
+    if (CMP.right) res = TP_FORM.fitSheet(CMP.right) || null;
+  } catch (e) { res = null; }
+  if (res && res.measured) { lastFit = res; applyFitMarks(); }
+  applyCmpZoom();
+}
+var cmpFitTimer = null;
+function scheduleCmpFit() { clearTimeout(cmpFitTimer); cmpFitTimer = setTimeout(fitCmp, 250); }
+function applyCmpZoom() {
+  var z = lsGet(LS.zoom, ZOOMS, 'fit'), i;
+  var ids = ['cmpLeft', 'cmpRight'];
+  for (i = 0; i < ids.length; i++) {
+    var host = $(ids[i]);
+    var sheet = host.querySelector('.sheet');
+    host.style.zoom = '';
+    if (!sheet || !CMP_ZOOM_OK) continue;
+    var r = (z === 'fit') ? Math.min(1, (host.clientWidth - 8) / (sheet.offsetWidth || 1)) : (Number(z) / 100);
+    if (r > 0 && r < 0.999) host.style.zoom = String(Math.round(r * 1000) / 1000);
+  }
+  renderCmpNote();
+}
+/* 下の1行に「差分の件数」と「倍率の断り書き」を両方出す（片方が消えないように1か所で作る） */
+var CMP_DIFF_MSG = '';
+function renderCmpNote() {
+  var zoomMsg = CMP_ZOOM_OK ? ''
+    : 'このブラウザは縮小表示に対応していないため、実寸のまま出しています（横にスクロールしてご覧ください）。';
+  $('cmpNote').textContent = [CMP_DIFF_MSG, zoomMsg].filter(function (x) { return !!x; }).join('　');
+}
+var cmpDiffTimer = null;
+function scheduleCmpDiff() { clearTimeout(cmpDiffTimer); cmpDiffTimer = setTimeout(markCmpDiff, 300); }
+/* 左（過去の期）と中身が違う欄に印を付ける。色は様式ファイルの画面CSS（紙には出ない） */
+function markCmpDiff() {
+  var right = CMP.right, p = curPlan(), lp = leftPlan();
+  if (!right || !p) return;
+  var tds = right.querySelectorAll('td[data-field]'), i, k, n = 0;
+  for (i = 0; i < tds.length; i++) {
+    var paths = SHEET_PATHS[s_(tds[i].getAttribute('data-field'))];
+    var diff = false;
+    if (lp && paths) {
+      for (k = 0; k < paths.length; k++) {
+        if (s_(getPath(p, paths[k])) !== s_(getPath(lp, paths[k]))) { diff = true; break; }
+      }
+    }
+    tds[i].classList.toggle('tp-diff', diff);
+    if (diff) n++;
+  }
+  CMP_DIFF_MSG = lp ? ('前の期と違う欄 ' + n + '件（薄い色で塗っています。紙には出ません）') : '';
+  renderCmpNote();
+}
+function resetCmpTip() {
+  CMP.field = '';
+  $('cmpTipLabel').textContent = '欄を選ぶと、ここに欄名と文字数が出ます';
+  $('cmpTipCount').textContent = '';
+  $('cmpTipCount').classList.remove('over');
+  syncCmpCopyBtn();
+}
+/* 欄名と文字数の【表示だけ】を更新する（なぞった時に呼ぶ）。
+   ★コピー先（CMP.field）は変えない＝ボタンへマウスを動かす途中で書き込み先がすり替わらない */
+function showCmpTip(field) {
+  var f = s_(field), path = SHEET_EDIT[f], p = curPlan();
+  $('cmpTipLabel').textContent = sheetLabel(f);
+  var cnt = $('cmpTipCount');
+  cnt.textContent = '';
+  cnt.classList.remove('over');
+  if (p && path && FIELDS[path] && FIELDS[path].limit) {
+    var n = s_(getPath(p, path)).length, lim = FIELDS[path].limit;
+    cnt.textContent = n + ' / ' + lim + '字' + (n > lim ? '（⚠ 印刷で切れる恐れ）' : '');
+    cnt.classList.toggle('over', n > lim);
+  }
+}
+/* 「前回をコピー」の書き込み先をボタンの文字にも出す＝なぞっている欄と食い違っても取り違えない */
+function syncCmpCopyBtn() {
+  var b = $('cmpTipCopy'), f = s_(CMP.field), path = SHEET_EDIT[f], lp = leftPlan();
+  var ok = !!(f && path && lp);
+  b.disabled = !ok;
+  b.textContent = ok ? ('「' + sheetLabel(f) + '」に' + cmpOffsetName(cmpOffset()) + 'をコピー') : '前回をコピー';
+  b.setAttribute('aria-label', ok
+    ? (sheetLabel(f) + 'に' + cmpOffsetName(cmpOffset()) + 'の内容をコピーする')
+    : '欄を選ぶと、その欄に前の期の内容をコピーできます');
+}
+/* コピー先を決めるのは「その欄に入った時」だけ（フォーカス・クリック）。なぞっただけでは決めない */
+function setCmpField(field) {
+  CMP.field = s_(field);
+  showCmpTip(CMP.field);
+  syncCmpCopyBtn();
+}
+/* 欄の文字だけを差し替える（○囲み・編集できる状態を保つ）。
+   対応していない版の様式ファイルでは組み直す。 */
+function setSheetField(field, value) {
+  if (!CMP.right) return;
+  if (window.TP_FORM && typeof TP_FORM.setFieldText === 'function') {
+    try { TP_FORM.setFieldText(CMP.right, field, s_(value)); return; } catch (e) {}
+  }
+  renderCompare();
+}
+function copyPrevToCur() {
+  var p = curPlan(), lp = leftPlan(), f = CMP.field, path = SHEET_EDIT[f];
+  if (!p || !lp || !path) return;
+  setPath(p, path, s_(getPath(lp, path)));
+  syncListField(path);
+  setSheetField(f, s_(getPath(p, path)));
+  setCmpField(f);
+  markDirty();
+  scheduleCmpDiff();
+  scheduleCmpFit();
+  toast(sheetLabel(f) + 'に' + cmpOffsetName(cmpOffset()) + 'の内容を写しました');
+}
+/* 欄一覧側の入力欄も同じ値にする（同じ内容を2つの画面で食い違わせない） */
+function syncListField(path) {
+  var f = FEL[path];
+  if (!f) return;
+  f.input.value = s_(getPath(curPlan(), path));
+  updateCount(path);
+  clearTimeout(diffTimer);
+  diffTimer = setTimeout(function () { renderPrevDiff(path); }, 400);
+}
+/* 見出しが同じセルに入っている欄の「見出しの部分」を様式の雛形から取る。
+   例）治療経過のセルの雛形は「治療経過（…）\n{{treatmentCourse}}」＝ {{ の直前までが見出し。
+   ★見出しの文言は様式ファイルが正本。この画面には書き写さない（版がずれても食い違わない） */
+var SHEET_HEAD_TX = null;
+function sheetHeadPrefix(field) {
+  var f = s_(field);
+  if (!SHEET_HEAD[f]) return '';
+  if (!SHEET_HEAD_TX) {
+    var cells = (window.TP_FORM && TP_FORM.TEMPLATE && TP_FORM.TEMPLATE.cells) || [];
+    if (!cells.length) return '';     /* 様式ファイルが未読み込みの時は覚え込まない（次に取り直す） */
+    var map = {}, i;
+    for (i = 0; i < cells.length; i++) {
+      var c = cells[i] || {}, k = s_(c.field);
+      if (!k || !SHEET_HEAD[k] || map[k] != null) continue;
+      var v = s_(c.v), at = v.indexOf('{{');
+      map[k] = (at > 0) ? v.slice(0, at) : '';
+    }
+    SHEET_HEAD_TX = map;
+  }
+  return s_(SHEET_HEAD_TX[f]);
+}
+/* 打ち込まれた文字から見出しを取り除いて、欄の中身だけを返す。
+   見出しの末尾の改行まで消して打たれた時も拾う。見出しごと消された時は打った文字をそのまま使う */
+function stripSheetHead(field, value) {
+  var pre = sheetHeadPrefix(field), v = s_(value);
+  if (!pre) return v;
+  if (v.indexOf(pre) === 0) return v.slice(pre.length);
+  var head = pre.replace(/\s+$/, '');
+  if (head && v.indexOf(head) === 0) return v.slice(head.length).replace(/^\n/, '');
+  return v;
+}
+/* ── 様式の中のセルが編集された（training-plan-form.js の onInput から呼ばれる）── */
+function onSheetInput(field, value, td) {
+  var p = curPlan();
+  if (!p) return;
+  var path = SHEET_EDIT[s_(field)];
+  if (!path) return;                 /* 白名簿に無い欄は書かない（見出しごと書き換わるのを防ぐ） */
+  setPath(p, path, stripSheetHead(field, value));
+  syncListField(path);
+  setCmpField(field);
+  markDirty();                       /* 1.5秒のデバウンスで保存（既存の作法） */
+  scheduleCmpDiff();
+}
+function onSheetFocus(field, td) { setCmpField(field); }
+function onSheetBlur(field, td) {
+  if (dirty) saveNow(false);         /* 欄から離れたら保存する */
+  scheduleCmpFit();                  /* 1枚に収まるかを測り直す */
+}
+function onSheetPick(field, td) {
+  setCmpField(field);                /* クリックでもコピー先を確定する（なぞっただけでは変えない） */
+  if (s_(field) === 'basic.birthDate') {
+    toast('生年月日は入居者マスタから引き継ぎます（この画面では直せません）');
+    return;
+  }
+  var def = SHEET_PICK[s_(field)];
+  if (!def) { toast(sheetLabel(field) + 'は上の「この期の基本事項」で直します'); return; }
+  openPickPop(field, def);
+}
+var PICK = null;
+function openPickPop(field, def) {
+  var p = curPlan();
+  if (!p) return;
+  PICK = { field: s_(field), path: def.path };
+  var sel = $('pkSel'), src = $(def.from), i;
+  clear(sel);
+  if (src && src.options && src.options.length) {
+    for (i = 0; i < src.options.length; i++) {
+      var o = el('option', null, src.options[i].textContent);
+      o.value = src.options[i].value;
+      sel.appendChild(o);
+    }
+  } else {
+    var o0 = el('option', null, '（未選択）');
+    o0.value = '';
+    sel.appendChild(o0);
+  }
+  $('pkTitle').textContent = def.label;
+  $('pkLabel').textContent = def.label;
+  sel.value = s_(getPath(p, def.path));
+  $('pickPop').classList.add('on');
+  sel.focus();
+}
+function closePickPop() { $('pickPop').classList.remove('on'); PICK = null; }
+function applyPick() {
+  var p = curPlan();
+  if (!p || !PICK) { closePickPop(); return; }
+  var v = s_($('pkSel').value), path = PICK.path, label = sheetLabel(PICK.field);
+  setPath(p, path, v);
+  syncListField(path);
+  var meta = $(path === 'basic.dementiaRank' ? 'fDementia' : (path === 'basic.bedriddenRank' ? 'fBedridden' : ''));
+  if (meta) meta.value = v;
+  closePickPop();
+  markDirty();
+  renderCompare();                   /* ○囲みの位置が変わるので組み直す */
+  toast(label + 'を変えました');      /* ★閉じる前に控えた欄名を使う（閉じると PICK は空になる） */
+}
+
+/* ═══════════ AI生成（api.anthropic.com を直接呼ぶ・D16） ═══════════
+   ★APIキーは localStorage 'tp_ai_key' にだけ置く。計画書の専用GAS・一覧の索引（settings）・
+     取込用JSON・トースト・エラー文言には1文字も載せない（M2 絶対条件3）。
+   ★AIへ送るのは「前回の計画のうち ai:false でない欄」と「本人の様子」だけ。
+     氏名・生年月日・病名・治療経過・コントロール状態・留意事項は送らない（D5）。 */
+/* システムプロンプト v3（M1計画 付録A の原文。版は origin.promptVersion に残す） */
+var AI_SYSTEM = [
+  'あなたは通所介護事業所の機能訓練指導員を補助する文書作成支援です。',
+  '前回の「個別機能訓練計画書」（厚生労働省 別紙様式３－３）と、職員が選んだ「本人の様子」をもとに、',
+  '次期（3か月後）の計画書の文案を作ります。最終判断と修正は必ず職員が行います。',
+  '',
+  '【絶対に守ること】',
+  '1. 入力に無い事実を書かない。病名・数値（血圧・体重・歩数・回数・時間・距離）・薬剤名・入院・転倒・',
+  '   出席状況（休まず／欠席など）・家族の発言・医師の指示・新しい診断は、入力にある場合だけ、入力の表現の',
+  '   範囲で使う。入力に無ければ書かない。空欄は空欄のまま返す。',
+  '2. 医療・介護の専門職が読んで不自然な表現を使わない（例:「完治」「劇的に改善」「筋力が2倍」「認知症が治った」',
+  '   「著明に改善」「完全に自立」）。評価は観察できる行動・参加状況の言葉で書く（例:「見守りで安定」',
+  '   「声かけで可能」「意欲的に参加」）。「素晴らしい」「頑張っている」などの評価語は使わない。',
+  '3. 前向きだが誇張しない。改善は「維持できている」「安定している」「取り組めている」の程度に留め、',
+  '   「本人の様子」が低下を示すときは低下を隠さず、安全配慮（見守り・介助量）と目標の現実的な調整を書く。',
+  '   維持も成果として書く。',
+  '4. 目標（短期・長期の機能/活動/参加）と訓練プログラム（内容）は原則そのまま維持する。',
+  '   変えてよいのは「本人の様子」の達成度・傾向が達成または低下を示すときだけで、変更は語句の微修正',
+  '   （負荷・見守り度・範囲）に限る。プログラムの追加・削除・順序変更はしない。変更した理由は「課題とその要因」に書く。',
+  '   rephrase=true のときだけ、意味を変えずに言い回しを更新してよい（数値・固有名詞・「〜のために〜する」の型は維持）。',
+  '5. 入力に含まれる次の欄は内容を変えずに返す: 本人の希望・家族の希望・社会参加・居宅環境・自主訓練・備考。',
+  '   rephrase=false では言い回しの「揺らし」もしない。',
+  '   （病名欄・治療経過・コントロール状態・留意事項・頻度・時間・実施者・留意点は入力に含まれず、システムが前回から複写する）',
+  '6. 「Ⅲ 実施による変化」と「課題とその要因」は毎回書き直す。前回の文をそのまま再利用しない。',
+  '   前回の評価文（changes / issues）と「本人の様子」を根拠に、文体は前回計画書に合わせ、',
+  '   3か月の実施で観察された変化（達成・一部達成・未達の言葉を含めてよい）→今後の課題とその要因の順に書く。',
+  '   一文は40〜60字。前回計画書が無い初回作成では changes / issues を "" で返す。',
+  '7. 「達成度」欄（shortAchievement / longAchievement）は「達成」「一部」「未達」のいずれか、または空文字。',
+  '   「本人の様子」の達成度がそのまま与えられていればそれを使い、無ければ空文字（職員が選ぶ）。',
+  '8. 目標は「機能」「活動」「参加」を書き分け、同じ文を3欄にコピーしない。目標は「〜できる」「〜を続けられる」の到達形。',
+  '   プログラム内容は「〜のために〜する」の型を守る。要介護度・自立度は公式表記に限り、略語を作らない。',
+  '9. 各欄の文字数上限を超えない（改行は \\n、上限に含める。上限値はシステムが入力で渡す limits に従う）。',
+  '10. 出力は JSON オブジェクトのみ。前置き・説明・コードフェンス・コメント・免責を付けない。',
+  '   キーは入力の prev と同じ。値は文字列。空欄は ""。programs は必ず4要素の配列で content だけを返す。',
+  '   入力に無いキーを増やさない。日付・氏名・作成者・職種・要介護度・性別・生年月日は出力に含めない。',
+  '',
+  '【入力の形】',
+  '{ "mode": "next" | "fill_eval",',
+  '  "rephrase": false | true,',
+  '  "sample": { "achievement": {"short": "達成"|"一部"|"未達"|"", "long": 同左},',
+  '              "trend": "改善"|"維持"|"低下",',
+  '              "tags": ["歩行安定","歩行不安定","意欲向上","意欲低下","参加良好","参加減少","体調不良あり","入院あり","転倒あり","出席良好","欠席多い"],',
+  '              "note": "職員の自由記入（任意・事実のみ・短文）" },',
+  '  "limits": { "<欄名>": <上限文字数>, ... },',
+  '  "prev": { "hopeSelf","hopeFamily","socialParticipation","homeEnvironment",',
+  '            "shortAchievement","longAchievement",',
+  '            "shortGoalFunction","shortGoalActivity","shortGoalParticipation",',
+  '            "longGoalFunction","longGoalActivity","longGoalParticipation",',
+  '            "programs":[{"content"}×4], "homeExercise","remarks","changes","issues" },',
+  '  "prevprev_eval": { "changes": "...", "issues": "..." }   // 前々回の評価（あれば。文体の参考にだけ使う）',
+  '}',
+  'mode="next"      … 次期計画の上記全欄を返す（changes / issues は前回の実施を踏まえた新しい評価）',
+  'mode="fill_eval" … changes と issues の2キーだけを返す（前回計画書の空欄を埋める）'
+].join('\n');
+var AI_URL = 'https://api.anthropic.com/v1/messages';
+var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
+var AI_VER = 'tp-rewrite-v3';
+var AI_BACKFILL_LINE = 'この期は前回と次期の間の期。次期の評価と矛盾しない範囲で書く。';
+var AI_OUT_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
+  'shortAchievement', 'longAchievement',
+  'shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation',
+  'longGoalFunction', 'longGoalActivity', 'longGoalParticipation',
+  'homeExercise', 'remarks', 'changes', 'issues'];
+/* 「そのまま返すこと」になっている欄（プロンプト規則5）。違っていたら書き換えられた印として断る */
+var AI_SAME_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment', 'homeExercise', 'remarks'];
+var AI_NOTES = {};      /* planId → 確かめてほしいことの一覧（メモリだけ・保存しない） */
+var AI_UNDO = {};       /* planId → AIを入れる直前の控え（メモリだけ・保存もエクスポートもしない） */
+var aiBusy = false;
+
+/* ── キーはこの3つの関数だけが触る ── */
+function aiKey() {
+  try { return s_(localStorage.getItem('tp_ai_key')).trim(); } catch (e) { return ''; }
+}
+function setAiKey(v) {
+  try {
+    if (s_(v)) localStorage.setItem('tp_ai_key', s_(v));
+    else localStorage.removeItem('tp_ai_key');
+    return true;
+  } catch (e) { return false; }
+}
+function maskKey(k) {
+  var t = s_(k);
+  return t ? (t.slice(0, 4) + '●●●●●●●●') : '';
+}
+function aiModel() { return lsGet(LS.aiModel, AI_MODELS, AI_MODELS[0]); }
+function aiEnabled() { return lsGet(LS.aiOn, ['1', '0'], '1') === '1'; }
+function aiReady() { return aiEnabled() && !!aiKey(); }
+
+/* 欄ごとの文字数の目安（プロンプトの limits）。AIに任せない欄は入れない */
+function aiLimits() {
+  var o = {};
+  for (var i = 0; i < AI_OUT_KEYS.length; i++) {
+    var k = AI_OUT_KEYS[i];
+    if (FIELDS[k] && FIELDS[k].limit) o[k] = FIELDS[k].limit;
+  }
+  o['programs[].content'] = FIELDS['programs.0.content'].limit;
+  return o;
+}
+/* AIへ渡す「前回の計画」。ai:false の欄（病名・治療経過・コントロール状態・留意事項・
+   プログラムの頻度/時間/実施者/留意点）は入れない（D5） */
+function aiPrev(p) {
+  var o = {}, i;
+  for (i = 0; i < AI_OUT_KEYS.length; i++) o[AI_OUT_KEYS[i]] = s_(getPath(p, AI_OUT_KEYS[i]));
+  o.programs = [];
+  for (i = 0; i < 4; i++) o.programs.push({ content: s_(getPath(p, 'programs.' + i + '.content')) });
+  return o;
+}
+function aiInput(mode, base, pp, nx, sm, rephrase) {
+  var inp = {
+    mode: (mode === 'fill_eval') ? 'fill_eval' : 'next',
+    rephrase: !!rephrase,
+    sample: {
+      achievement: { short: s_(sm.achievement.short), long: s_(sm.achievement.long) },
+      trend: s_(sm.trend),
+      tags: (Object.prototype.toString.call(sm.tags) === '[object Array]' ? sm.tags : []).map(s_),
+      note: s_(sm.note)
+    },
+    limits: aiLimits(),
+    prev: aiPrev(base)
+  };
+  if (pp) inp.prevprev_eval = { changes: s_(pp.changes), issues: s_(pp.issues) };
+  if (mode === 'backfill' && nx) inp.next = { planDate: s_(nx.planDate), changes: s_(nx.changes), issues: s_(nx.issues) };
+  return inp;
+}
+/* 構造化出力（json_schema）の雛形。
+   ★使えるのは 基本型・enum・const・anyOf/allOf・内部$ref・default・required・
+     additionalProperties:false・string の format だけ。
+     件数や文字数の制限（minItems/maxItems・minLength/maxLength・minimum/maximum・pattern）は
+     受け付けられず 400 で返るため【書かない】。プログラム4行の担保は applyAi 側で行う。 */
+function aiSchema(mode) {
+  var props = {}, req = [], i;
+  if (mode === 'fill_eval') {
+    return { type: 'object', additionalProperties: false, required: ['changes', 'issues'],
+      properties: { changes: { type: 'string' }, issues: { type: 'string' } } };
+  }
+  for (i = 0; i < AI_OUT_KEYS.length; i++) { props[AI_OUT_KEYS[i]] = { type: 'string' }; req.push(AI_OUT_KEYS[i]); }
+  props.programs = {
+    type: 'array',
+    items: { type: 'object', additionalProperties: false, required: ['content'], properties: { content: { type: 'string' } } }
+  };
+  req.push('programs');
+  return { type: 'object', additionalProperties: false, required: req, properties: props };
+}
+/* ★AIへの通信はこの1か所だけ。呼び出し元は body を渡すだけにする（テストでも差し替えやすい）。
+   ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
+var AI_TIMEOUT_MS = 90000;
+function aiFetch(body) {
+  var key = aiKey();
+  if (!key) return Promise.reject(new Error('AI_NO_KEY'));
+  if (typeof fetch !== 'function') return Promise.reject(new Error('AI_NO_FETCH'));
+  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  var opt = {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'anthropic-beta': 'server-side-fallback-2026-07-01'
+    },
+    body: JSON.stringify(body)
+  };
+  if (ctl) opt.signal = ctl.signal;
+  var pr = fetch(AI_URL, opt).then(function (res) {
+    var st = Number(res && res.status) || 0;
+    return Promise.resolve(res.text()).then(function (t) {
+      if (st < 200 || st >= 300) throw new Error('AI_HTTP_' + st);
+      var j = null;
+      try { j = JSON.parse(String(t)); } catch (e) { throw new Error('AI_BAD_JSON'); }
+      return j;
+    });
+  }, function () { throw new Error('AI_NETWORK'); });
+  return withTimeout(pr, AI_TIMEOUT_MS).catch(function (e) {
+    if (s_(e && e.message) === 'タイムアウト') {
+      if (ctl) { try { ctl.abort(); } catch (e2) {} }   /* 実際の要求も打ち切る */
+      throw new Error('AI_TIMEOUT');
+    }
+    throw e;
+  });
+}
+function aiParse(j) {
+  if (!j || typeof j !== 'object') throw new Error('AI_BAD_JSON');
+  if (s_(j.stop_reason) === 'refusal') throw new Error('AI_REFUSAL');
+  var c = (Object.prototype.toString.call(j.content) === '[object Array]') ? j.content : [];
+  var txt = '', i;
+  for (i = 0; i < c.length; i++) {
+    if (c[i] && c[i].type === 'text' && s_(c[i].text)) { txt = s_(c[i].text); break; }
+  }
+  if (!txt) throw new Error('AI_NO_TEXT');
+  var out = null;
+  try { out = JSON.parse(txt); } catch (e) { throw new Error('AI_BAD_JSON'); }
+  if (!out || typeof out !== 'object') throw new Error('AI_BAD_JSON');
+  return out;
+}
+/* 返ってきた形の確かめ（雛形＝json_schema では件数を縛れないので機械で見る）。
+   ★ここでは直さない。「確かめること」として文言だけ返し、値の始末は applyAi が行う */
+function aiShapeNotes(out, mode) {
+  var notes = [];
+  if (mode === 'fill_eval') return notes;
+  var pg = (out && Object.prototype.toString.call(out.programs) === '[object Array]') ? out.programs : [];
+  if (pg.length !== 4) notes.push('プログラムが4行で返っていません（不足分は前期の値）');
+  return notes;
+}
+/* ── AI生成の入口（凍結仕様の名前）──────────────────────────────
+   aiGenerate({mode, plan, prev, next, sample, rephrase}) → Promise<{out, notes}>
+     mode      'next'（次期）／'backfill'（間の期）／'fill_eval'（Ⅲだけ埋める）
+     plan      文案を入れる先の期（fill_eval では、この期がそのままAIへ渡す「前回」になる）
+     prev      1つ前の期（next・backfill でAIへ渡す「前回」／fill_eval では前々回として渡る）
+     next      後ろに続く期（backfill のときだけ、矛盾しない文案にするために渡す）
+     sample    本人の様子（達成度・傾向・観察タグ・自由記入）
+     rephrase  言い回しも更新するか
+     prevprev  （任意）前々回の期。next・backfill でⅢの言い回しが重ならないように渡す
+   ★画面の状態には触らない（どの期に入れるか・保存・画面表示は呼び出し側の仕事）。
+   ★fetch を含むため window.TP（純関数の層）には出さない。 */
+function aiGenerate(req) {
+  var q = req || {};
+  var mode = (q.mode === 'fill_eval') ? 'fill_eval' : ((q.mode === 'backfill' && q.next) ? 'backfill' : 'next');
+  var base = (mode === 'fill_eval') ? q.plan : q.prev;
+  var pp = (mode === 'fill_eval') ? (q.prev || null) : (q.prevprev || null);
+  if (!base) return Promise.reject(new Error('AI_NO_BASE'));
+  var s = q.sample || {};
+  var sm = { achievement: s.achievement || {}, trend: s.trend, tags: s.tags, note: s.note };
+  var body = {
+    model: aiModel(),
+    max_tokens: 4096,
+    system: AI_SYSTEM,
+    messages: [{ role: 'user', content: (mode === 'backfill' ? AI_BACKFILL_LINE + '\n' : '') +
+      JSON.stringify(aiInput(mode, base, pp, q.next || null, sm, !!q.rephrase)) }],
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema(mode) } },
+    fallbacks: 'default'
+  };
+  return aiFetch(body).then(function (j) {
+    var out = aiParse(j);
+    return { out: out, notes: aiShapeNotes(out, mode) };
+  });
+}
+/* 何が起きたか＋次にどうすればよいかを日本語で出す。★キーそのものは絶対に載せない */
+function aiErrText(e) {
+  var m = s_(e && e.message ? e.message : e);
+  if (m === 'AI_NO_KEY') return 'AIのキーがこの端末にありません。設定画面の「AI生成」で入れてください';
+  if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
+  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'AIのキーが受け付けられませんでした（' + m.slice(8) + '）。設定画面でキーを入れ直してください';
+  if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
+  if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
+  if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。もう一度お試しください';
+  if (m === 'AI_REFUSAL') return 'AIが文案の作成を控えました。「本人の様子」に書いた内容を見直して、もう一度お試しください';
+  if (m === 'AI_BAD_JSON' || m === 'AI_NO_TEXT') return 'AIの返事を読み取れませんでした。もう一度お試しください';
+  if (m === 'AI_NETWORK') return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';
+  if (m === 'AI_TIMEOUT' || m === 'タイムアウト') return 'AIの返事が届きませんでした（時間切れ）。もう一度お試しください';
+  return 'AIの呼び出しに失敗しました。もう一度お試しください';
+}
+function clearAiError() { clear($('aiErr')); }
+function showAiError(msg, retry) {
+  var host = $('aiErr');
+  clear(host);
+  var b = el('div', 'banner err');
+  b.setAttribute('role', 'alert');
+  b.appendChild(el('div', null, msg));
+  if (retry) {
+    var r = el('button', 'btn', 'もう一度試す');
+    r.type = 'button';
+    r.style.marginTop = 'var(--sp-2)';
+    r.addEventListener('click', function () { clearAiError(); retry(); });
+    b.appendChild(r);
+  }
+  host.appendChild(b);
+  if (!$('scr-edit').classList.contains('on')) toast(msg);
+}
+function renderAiNotes(p) {
+  var host = $('aiNotes');
+  clear(host);
+  if (!p) return;
+  var pid = s_(p.planId);
+  var list = AI_NOTES[pid] || [];
+  var snap = AI_UNDO[pid] || null;
+  if (!list.length && !snap) return;
+  var b = el('div', 'banner warn');
+  b.setAttribute('role', 'status');
+  if (list.length) {
+    b.appendChild(el('div', null, '▲ AIの文案について確かめること（' + list.length + '件）'));
+    for (var i = 0; i < list.length; i++) b.appendChild(el('div', null, '・' + list[i]));
+  } else {
+    b.appendChild(el('div', null, 'AIの文案を入れました。中身は必ず職員が確かめてください'));
+  }
+  if (snap) {
+    /* ★入れる直前の内容に戻せるようにする（この画面を開いている間だけ・原則4） */
+    var u = el('button', 'btn', '元に戻す（AIを入れる前の内容に戻す）');
+    u.type = 'button';
+    u.style.marginTop = 'var(--sp-2)';
+    u.addEventListener('click', function () { aiUndo(pid); });
+    b.appendChild(u);
+  }
+  host.appendChild(b);
+}
+/* AIの文案を入れる直前の内容へ戻す（控えはメモリだけ。保存済みの内容はこの後の保存で上書きされる） */
+function aiUndo(planId) {
+  var pid = s_(planId), snap = AI_UNDO[pid], p = null, i;
+  if (!snap || !DOC) return;
+  for (i = 0; i < DOC.plans.length; i++) if (s_(DOC.plans[i].planId) === pid) p = DOC.plans[i];
+  if (!p) { toast('対象の期が見つからないため、戻せませんでした'); return; }
+  Object.keys(snap.fields).forEach(function (k) { setPath(p, k, snap.fields[k]); });
+  p.origin = snap.origin;
+  p.generation = snap.generation;
+  /* 状態は「AIが動かした分」だけ戻す（人が後から変えた状態は動かさない） */
+  if (snap.log && p.statusLog.length && p.statusLog[p.statusLog.length - 1] === snap.log) {
+    p.statusLog.pop();
+    p.status = snap.status;
+  }
+  delete AI_UNDO[pid];
+  delete AI_NOTES[pid];
+  markDirty();
+  renderEdit();
+  toast('AIの文案を入れる前の内容に戻しました');
+}
+function setAiBusy(on) {
+  aiBusy = !!on;
+  if (on) {
+    ['btnGenEval', 'btnGenNext', 'btnAiRegen'].forEach(function (id) { $(id).disabled = true; });
+    $('genState').textContent = 'AIに文案を頼んでいます…（10〜30秒ほどかかります）';
+  } else {
+    renderSample();
+  }
+}
+/* いま開いている期の後ろに別の期があるなら「間の期」として作る（次期の評価と矛盾しないように） */
+function curAiMode() {
+  if (!DOC || curPlanIdx < 0) return 'next';
+  return (curPlanIdx < DOC.plans.length - 1) ? 'backfill' : 'next';
+}
+/* AIが書き込む欄の一覧（控え・確認・空返しの見分けに使う） */
+function aiWriteKeys(mode) {
+  if (mode === 'fill_eval') return ['changes', 'issues'];
+  var ks = AI_OUT_KEYS.slice(), cols = ['content', 'caution', 'frequency', 'duration', 'staff'], n, c;
+  for (n = 0; n < 4; n++) {
+    for (c = 0; c < cols.length; c++) ks.push('programs.' + n + '.' + cols[c]);
+  }
+  return ks;
+}
+/* ★人が確認・印刷・署名まで進めた期を、断りなくAIの文案で置き換えない（原則4）。
+   opts.skipConfirm＝作ったばかりの空の期・失敗後の再試行（既に確認を取っている） */
+function aiOverwriteOk(p, mode, opts) {
+  if (p.status === 'printed' || p.status === 'signed') {
+    showAiError('この期は「' + (TP.STATUS_LABEL[p.status] || p.status) +
+      '」のため、AIの文案では書き換えません。新しい期を作るか、状態を戻してからお試しください', null);
+    return false;
+  }
+  if (opts && opts.skipConfirm) return true;
+  var keys = aiWriteKeys(mode), has = false, i;
+  for (i = 0; i < keys.length; i++) { if (s_(getPath(p, keys[i]))) { has = true; break; } }
+  if (!has && p.status !== 'reviewed') return true;
+  var what = (mode === 'fill_eval') ? '「Ⅲ 実施による変化」と「課題とその要因」' : 'この期の本文';
+  return confirm('第' + p.seq + '期の' + what + 'を、AIの文案で置き換えます。\n\n' +
+    '状態：' + (TP.STATUS_LABEL[p.status] || '未作成') + '\n' +
+    '（入れた後は「元に戻す」で直前の内容に戻せます）\n\nよろしいですか？');
+}
+function aiRun(mode, opts) {
+  opts = opts || {};
+  var p = curPlan();
+  if (!p) { toast('先に計画を作ってください'); return; }
+  /* 鍵が無ければ従来どおり「依頼キュー」に積む（Claude Code で処理する経路・M1のまま）。
+     作ったばかりの期は前の期の内容を写し済みなので、依頼は「Ⅲを埋める」として積む
+     （M1 の 'next'＝開いている期を『前回』として次期を作る、と食い違わせない） */
+  if (!aiReady()) {
+    requestGeneration((mode === 'fill_eval' || s_(opts.queueAs) === 'fill_eval') ? 'fill_eval' : 'next');
+    return;
+  }
+  if (aiBusy) { toast('いまAIに問い合わせています。少しお待ちください'); return; }
+  var sm = sampleOf(p);
+  if (!sm.trend) { toast('「傾向（改善・維持・低下）」は必ず選んでください'); $('sTrend').focus(); return; }
+  if (!aiOverwriteOk(p, mode, opts)) return;   /* 入れ直す前に、人の手が入った期かどうかを確かめる */
+  var idx = curPlanIdx;
+  var base = (mode === 'fill_eval') ? p : (DOC.plans[idx - 1] || null);
+  var pp = (mode === 'fill_eval') ? (DOC.plans[idx - 1] || null) : (DOC.plans[idx - 2] || null);
+  var nx = DOC.plans[idx + 1] || null;
+  if (mode === 'backfill' && !nx) mode = 'next';
+  if (mode !== 'fill_eval' && !base) {
+    toast('前の期が無いため、この期はAIで作れません（「欄一覧」から入力してください）');
+    return;
+  }
+  clearAiError();
+  setAiBusy(true);
+  var mid = curMasterId, pid = s_(p.planId), model = aiModel();
+  /* AIへの1往復は aiGenerate（凍結仕様の入口）に任せる。ここは「どの期に入れるか」だけを見る */
+  var req = { mode: mode, plan: p, sample: sm, rephrase: !!p.generation.rephrase };
+  if (mode === 'fill_eval') req.prev = pp;      /* Ⅲだけ埋める時は、この期が「前回」・pp が前々回 */
+  else { req.prev = base; req.prevprev = pp; req.next = nx; }
+  aiGenerate(req).then(function (r) {
+    var out = r.out;
+    setAiBusy(false);
+    /* ★送っている間に別の方・別の期へ移っていることがある。必ず頼んだ相手に返す */
+    if (mid !== curMasterId) { toast('別の方の画面に切り替わったため、AIの文案は入れませんでした'); return; }
+    var tgt = null, i;
+    for (i = 0; i < DOC.plans.length; i++) if (s_(DOC.plans[i].planId) === pid) tgt = DOC.plans[i];
+    if (!tgt) { toast('対象の期が見つからないため、AIの文案は入れませんでした'); return; }
+    applyAi(tgt, base, out, mode, model);
+  }).catch(function (e) {
+    setAiBusy(false);
+    if (mid !== curMasterId) { toast('先ほどの方のAI生成に失敗しました（' + aiErrText(e) + '）'); return; }
+    showAiError(aiErrText(e), function () { aiRun(mode, { skipConfirm: true, queueAs: opts.queueAs }); });
+  });
+}
+/* Ⅲに入れてはいけないもの（入力に無い数値・薬・出席状況）を機械で拾って画面に出す。
+   ★止めない。人が確かめて直せるように「確かめること」として並べる */
+var AI_NUM_RE = /[0-9０-９]/;
+var AI_DRUG_RE = /(錠|カプセル|ｍｇ|mg|ミリグラム|服薬|内服|点滴|注射|処方)/;
+var AI_TAG_WORDS = { '入院': '入院あり', '転倒': '転倒あり', '休まず': '出席良好', '欠席': '欠席多い' };
+function aiTextWarnings(p, sm) {
+  var out = [], t = s_(p.changes) + '\n' + s_(p.issues);
+  if (AI_NUM_RE.test(t)) out.push('Ⅲの文に数字が入っています（入力に無い数値は消してください）');
+  if (AI_DRUG_RE.test(t)) out.push('Ⅲの文に薬に関わる語が入っています（計画書には書きません）');
+  var tags = (sm && Object.prototype.toString.call(sm.tags) === '[object Array]') ? sm.tags : [];
+  Object.keys(AI_TAG_WORDS).forEach(function (w) {
+    if (t.indexOf(w) >= 0 && tags.indexOf(AI_TAG_WORDS[w]) < 0) {
+      out.push('Ⅲの文に「' + w + '」が入っていますが、観察タグでは選ばれていません（事実を確かめてください）');
+    }
+  });
+  return out;
+}
+/* AIが空文字で返してもよい欄（毎回書き直す欄・職員が選ぶ達成度）。
+   これ以外は、空で返ってきても前の期から写した内容を消さない（空上書き保護・原則4） */
+var AI_EMPTY_OK = { 'changes': 1, 'issues': 1, 'shortAchievement': 1, 'longAchievement': 1 };
+function applyAi(p, base, out, mode, model) {
+  var notes = [], i, n;
+  /* ★入れる直前の内容を控える（「元に戻す」用・メモリだけ。保存にもエクスポートにも出さない） */
+  var wkeys = aiWriteKeys(mode);
+  var snap = {
+    fields: {}, status: s_(p.status), log: null,
+    origin: JSON.parse(JSON.stringify(p.origin || {})),
+    generation: JSON.parse(JSON.stringify(p.generation || {}))
+  };
+  for (i = 0; i < wkeys.length; i++) snap.fields[wkeys[i]] = s_(getPath(p, wkeys[i]));
+  function put(k, v) {
+    var val = s_(v).replace(/\r\n/g, '\n');
+    var label = FIELDS[k] ? FIELDS[k].label : k;
+    var old = s_(getPath(p, k));
+    if (!val && old && !AI_EMPTY_OK[k]) {
+      notes.push(label + 'はAIが空で返したため、前の期の内容を残しました');
+      return;
+    }
+    setPath(p, k, val);
+    var lim = FIELDS[k] ? FIELDS[k].limit : 0;
+    if (lim && val.length > lim) {
+      notes.push(label + 'が目安（' + lim + '字）を超えています（' + val.length + '字）');
+    }
+  }
+  if (mode === 'fill_eval') {
+    put('changes', out.changes);
+    put('issues', out.issues);
+  } else {
+    /* ①そのまま返す約束の欄が変わっていないか */
+    for (i = 0; i < AI_SAME_KEYS.length; i++) {
+      var k = AI_SAME_KEYS[i];
+      if (s_(out[k]) !== s_(getPath(base, k))) {
+        notes.push('AIが「' + FIELDS[k].label + '」を書き換えました（前の期と見比べてください）');
+      }
+    }
+    for (i = 0; i < AI_OUT_KEYS.length; i++) put(AI_OUT_KEYS[i], out[AI_OUT_KEYS[i]]);
+    var pg = (Object.prototype.toString.call(out.programs) === '[object Array]') ? out.programs : [];
+    /* ★プログラムが4行そろっているかは【ここで】確かめる（雛形では件数を縛れない・aiSchema の断り書き） */
+    notes = notes.concat(aiShapeNotes(out, mode));
+    for (n = 0; n < 4; n++) {
+      if (n >= pg.length) {            /* 返ってこなかった行は前の期の内容をそのまま入れる（空にしない） */
+        setPath(p, 'programs.' + n + '.content', s_(getPath(base, 'programs.' + n + '.content')));
+      } else {
+        put('programs.' + n + '.content', (pg[n] || {}).content);
+      }
+      /* ②頻度・時間・実施者・留意点は入力値（前の期の値）で上書きする＝AIに任せない（D5） */
+      setPath(p, 'programs.' + n + '.caution', s_(getPath(base, 'programs.' + n + '.caution')));
+      setPath(p, 'programs.' + n + '.frequency', s_(getPath(base, 'programs.' + n + '.frequency')));
+      setPath(p, 'programs.' + n + '.duration', s_(getPath(base, 'programs.' + n + '.duration')));
+      setPath(p, 'programs.' + n + '.staff', s_(getPath(base, 'programs.' + n + '.staff')));
+    }
+  }
+  notes = notes.concat(aiTextWarnings(p, sampleOf(p)));
+  /* 転記（原本）の期にⅢだけ入れた時は、来歴（origin.kind='import'）を残す。
+     ★ここを 'ai' に変えると原本転記の印が消え、作成日を触った時に遡及の印が付いてしまう（M1 §3-2） */
+  if (mode === 'fill_eval' && p.origin && s_(p.origin.kind) === 'import') {
+    p.origin.promptVersion = AI_VER;
+    p.origin.model = s_(model);
+  } else {
+    p.origin = {
+      kind: 'ai', source: s_(mode), basePlanId: base ? s_(base.planId) : '',
+      promptVersion: AI_VER, model: s_(model), at: nowIso()
+    };
+  }
+  p.generation.mode = (mode === 'fill_eval') ? 'fill_eval' : 'next';
+  p.generation.doneAt = nowIso();
+  if (!p.generation.requestedAt) p.generation.requestedAt = p.generation.doneAt;
+  if (!p.generation.requestedBy) p.generation.requestedBy = currentStaffName() || '（職員未選択）';
+  AI_NOTES[s_(p.planId)] = notes;
+  /* AIが書き直した期は「AI生成」に戻す（「確認・修正済」のまま中身だけ変わるのを防ぐ）。
+     印刷済・家族署名受領済は aiRun で断っているのでここには来ない */
+  if (p.status !== 'draft_ai' && p.status !== 'signed') {
+    if (p === curPlan()) setStatus('draft_ai');
+    else {
+      p.status = 'draft_ai';
+      p.statusLog.push({ status: 'draft_ai', at: nowIso(), by: currentStaffName() });
+    }
+    snap.log = p.statusLog[p.statusLog.length - 1] || null;
+  }
+  AI_UNDO[s_(p.planId)] = snap;
+  markDirty();
+  renderEdit();
+  toast(notes.length
+    ? ('AIの文案を入れました（確かめること ' + notes.length + '件）。中身は必ず職員が確かめてください')
+    : 'AIの文案を入れました。中身は必ず職員が確かめてください');
+}
+
+/* ── 計画を作った直後の「本人の様子」の小ポップ ── */
+var POP = null;
+function renderPopTags() {
+  var p = curPlan(), box = $('spTags');
+  clear(box);
+  if (!p) return;
+  var sm = sampleOf(p);
+  for (var i = 0; i < TAGS.length; i++) {
+    var t = TAGS[i];
+    var b = el('button', 'btn sm', t);
+    b.type = 'button';
+    b.setAttribute('data-tag', t);
+    var on = sm.tags.indexOf(t) >= 0;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) { b.classList.add('pri'); b.textContent = '✓ ' + t; }
+    b.addEventListener('click', function () { toggleTag(this.getAttribute('data-tag')); renderPopTags(); });
+    box.appendChild(b);
+  }
+}
+function openSamplePop(mode, opts) {
+  var p = curPlan();
+  if (!p) return;
+  /* fresh＝作ったばかりの期（中身は前の期の写し・Ⅲは空）。上書きの確認は出さない */
+  POP = { mode: s_(mode) || 'next', planId: s_(p.planId), fresh: !!(opts && opts.fresh) };
+  var sm = sampleOf(p);
+  $('spTrend').value = s_(sm.trend) || '維持';        /* 傾向の既定は「維持」 */
+  $('spAchShort').value = s_(sm.achievement.short);
+  $('spAchLong').value = s_(sm.achievement.long);
+  renderPopTags();
+  var ready = aiReady();
+  $('spNote').textContent = ready
+    ? (POP.mode === 'backfill'
+        ? 'この期は前の期と次の期の間の期です。次の期の評価と食い違わない文案をAIに作ってもらいます。氏名・生年月日・病名は送りません。'
+        : '選んだ内容と前の期の文だけをAIに渡します（氏名・生年月日・病名は送りません）。')
+    : 'この端末にはAIのキーがありません。押すと「依頼」として記録します（Claude Code で文案を作る経路）。';
+  $('spGo').textContent = ready ? '生成する' : '依頼として記録する';
+  $('samplePop').classList.add('on');
+  $('spTrend').focus();
+}
+function closeSamplePop() { $('samplePop').classList.remove('on'); POP = null; }
+function sampleGo() {
+  var p = curPlan();
+  if (!p || !POP) { closeSamplePop(); return; }
+  if (!$('spTrend').value) { toast('「傾向（改善・維持・低下）」は必ず選んでください'); $('spTrend').focus(); return; }
+  var sm = sampleOf(p);
+  sm.trend = $('spTrend').value;
+  sm.achievement.short = $('spAchShort').value;
+  sm.achievement.long = $('spAchLong').value;
+  var mode = POP.mode, fresh = !!POP.fresh;
+  markDirty();
+  closeSamplePop();
+  renderSample();
+  /* 鍵の無い端末では「Ⅲを埋める」依頼として積む（この期は前の期の写しが入っているため） */
+  aiRun(mode, { skipConfirm: fresh, queueAs: fresh ? 'fill_eval' : '' });
+}
+/* ── 設定画面のAI欄（この端末だけの設定。キーは画面にそのまま出さない）── */
+function renderAiSettings() {
+  $('aiModel').value = aiModel();
+  $('aiEnabled').checked = aiEnabled();
+  $('aiKey').value = '';
+  var k = aiKey();
+  $('aiKeyMask').textContent = k
+    ? ('保存済み：' + maskKey(k) + '（この端末のブラウザにだけ入っています）')
+    : 'キーは未設定です（AI生成は使えません）';
+}
+function saveAiSettings() {
+  var v = s_($('aiKey').value).trim();
+  var m = $('aiModel').value;
+  var ok1 = lsSave(LS.aiModel, AI_MODELS.indexOf(m) >= 0 ? m : AI_MODELS[0]);
+  var ok2 = lsSave(LS.aiOn, $('aiEnabled').checked ? '1' : '0');
+  if (!ok1 || !ok2) {
+    $('aiState').textContent = 'この端末に設定を保存できませんでした（プライベートブラウズ等）';
+    renderAiSettings();
+    renderSample();
+    return;
+  }
+  if (v) {
+    if (!setAiKey(v)) { $('aiState').textContent = 'この端末に保存できませんでした（プライベートブラウズ等）'; return; }
+    $('aiState').textContent = '保存しました（キーはこの端末のブラウザにだけ残ります）';
+  } else {
+    $('aiState').textContent = aiKey()
+      ? 'モデルと使う・使わないを保存しました（キーはそのままです）'
+      : 'モデルを保存しました（キーは未設定のままです）';
+  }
+  renderAiSettings();
+  renderSample();
+}
+function clearAiKey() {
+  if (!aiKey()) { $('aiState').textContent = 'キーは入っていません'; return; }
+  if (!confirm('この端末に保存しているAIのキーを消します。\n\n※計画書の中身は消えません。AI生成は使えなくなります（前回複写と依頼キューは今までどおり使えます）。\n\n消しますか？')) return;
+  var done = setAiKey('');
+  $('aiState').textContent = (done && !aiKey())
+    ? 'キーを消しました'
+    : 'この端末からキーを消せませんでした（ブラウザの設定をご確認ください）';
+  renderAiSettings();
+  renderSample();
 }
 
 /* ═══════════ 印刷プレビューと印刷 ═══════════ */
@@ -2984,8 +4440,8 @@ function renderPrintWarn(warn, p) {
   if (lastFit && lastFit.measured && lastFit.fits === false) {
     warn.appendChild(el('div', 'tp-warn', '⚠ A4縦1枚に収まっていません（幅 ' + s_(lastFit.widthMm) + 'mm × 高さ ' + s_(lastFit.heightMm) + 'mm）。字数を減らしてください'));
   }
-  if (p && p.audit && p.audit.retro) {
-    warn.appendChild(el('div', 'tp-warn', '▲ この計画は作成日より後に登録されています。記録整備として作った場合は備考にその旨を書いてください。'));
+  if (p && p.audit && p.audit.retro && settings().retroNote) {
+    warn.appendChild(el('div', 'tp-warn', '▲ この計画は作成日より後に登録されています。備考に「遡って作成」の注記を入れて印刷します。'));
   }
   if (p && !p.explained.date) {
     warn.appendChild(el('div', 'tp-warn', '▲ 説明日が空欄です。ご本人・ご家族へ説明したら日付を入れてください。'));
@@ -3165,6 +4621,8 @@ function renderSettings() {
   var st = settings();
   $('setDueRule').value = st.dueRule;
   $('setWarnDays').value = String(st.warnDays);
+  $('setRetroNote').checked = !!st.retroNote;
+  renderAiSettings();
   renderStaffSelects();
   $('setPlanner').value = staffName(st.defaults.planner);
   $('setExplainer').value = staffName(st.defaults.explainer);
@@ -3260,6 +4718,7 @@ function saveSettings() {
   var w = Number(s_($('setWarnDays').value).replace(/[^0-9]/g, ''));
   if (!isFinite(w) || w < 0 || w > 365) { $('setState').textContent = '警告日数は0〜365で入れてください'; return; }
   var rule = $('setDueRule').value;
+  var retro = $('setRetroNote').checked;
   var st = settings();
   function idOfName(nm) {
     for (var i = 0; i < st.staff.length; i++) if (s_(st.staff[i].name) === s_(nm)) return s_(st.staff[i].id);
@@ -3275,6 +4734,7 @@ function saveSettings() {
     idx.settings.dueRule = TP.DUE_RULES.indexOf(rule) >= 0 ? rule : 'calendar';
     idx.settings.warnDays = Math.round(w);
     idx.settings.defaults = d;
+    idx.settings.retroNote = !!retro;   /* ★AIのキーはここに入れない（索引は全端末で共有される） */
   }).then(function () {
     $('setState').textContent = '保存しました';
     toast('設定を保存しました');
@@ -3283,24 +4743,30 @@ function saveSettings() {
 }
 
 /* ═══════════ 画面状態の復元・起動 ═══════════ */
+/* 'sheet'＝様式比較（既定）／それ以外＝欄一覧。欄一覧の中の「前回と今回／前回のみ／今回のみ」は今までどおり */
 function applyEditView(v) {
-  document.body.classList.remove('view-prev', 'view-cur');
+  document.body.classList.remove('view-prev', 'view-cur', 'mode-sheet', 'mode-list');
+  var sheet = (v === 'sheet');
+  document.body.classList.add(sheet ? 'mode-sheet' : 'mode-list');
   if (v === 'prev') document.body.classList.add('view-prev');
   if (v === 'cur') document.body.classList.add('view-cur');
+  if (sheet) renderCompare();
 }
 function restoreUiState() {
   $('listSort').value = lsGet(LS.sort, SORTS, 'due');
   $('listFilter').value = lsGet(LS.filter, FILTERS, 'day');
-  var v = lsGet(LS.view, VIEWS, 'both');
-  $('editView').value = v;
+  var v = lsGet(LS.view, VIEWS, 'sheet');            /* 既定は様式比較（D19） */
+  $('editView').value = (v === 'list') ? 'both' : v;
   applyEditView(v);
   $('pvZoom').value = lsGet(LS.zoom, ZOOMS, 'fit');
+  $('cmpZoom').value = lsGet(LS.zoom, ZOOMS, 'fit');
 }
 function switchPlan(idx) {
   var i = Number(idx);
   if (!DOC || !(i >= 0 && i < DOC.plans.length)) return;
   if (dirty) saveNow(true);
   curPlanIdx = i;
+  clearAiError();
   renderEdit();
 }
 function refreshAll() {
@@ -3352,6 +4818,29 @@ function bindUI() {
   $('btnNewPlan').addEventListener('click', addPlan);
   $('btnPullMaster').addEventListener('click', pullMaster);
   $('editView').addEventListener('change', function () { lsSet(LS.view, this.value); applyEditView(this.value); });
+  $('cmpSel').addEventListener('change', function () {
+    lsSet(LS.cmpOffset, s_(this.value) || '1');
+    renderCompare();
+  });
+  $('cmpZoom').addEventListener('change', function () {
+    lsSet(LS.zoom, this.value);
+    $('pvZoom').value = this.value;
+    applyCmpZoom();
+  });
+  $('cmpTipCopy').addEventListener('click', copyPrevToCur);
+  /* 様式の上をなぞった時も、その欄の名前と文字数を出す（クリックしなくても分かる）。
+     ★表示だけ。コピー先は変えない（指摘対応） */
+  $('cmpRight').addEventListener('mouseover', function (ev) {
+    var n = ev.target;
+    while (n && n !== this && n.nodeType === 1) {
+      if (n.getAttribute && n.getAttribute('data-field')) { showCmpTip(n.getAttribute('data-field')); return; }
+      n = n.parentNode;
+    }
+  });
+  /* 様式から離れたら、いま選んでいる欄（コピー先）の表示に戻す */
+  $('cmpRight').addEventListener('mouseleave', function () {
+    if (CMP.field) showCmpTip(CMP.field); else resetCmpTip();
+  });
   $('btnSave').addEventListener('click', function () { saveNow(true); });
   $('btnToPrint').addEventListener('click', function () { if (dirty) saveNow(true); showScreen('scr-print'); });
 
@@ -3360,8 +4849,25 @@ function bindUI() {
   $('sTrend').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).trend = this.value; markDirty(); });
   $('sNote').addEventListener('change', function () { var p = curPlan(); if (!p) return; sampleOf(p).note = s_(this.value).slice(0, 80); markDirty(); });
   $('sRephrase').addEventListener('change', function () { var p = curPlan(); if (!p) return; p.generation.rephrase = this.checked; markDirty(); });
-  $('btnGenEval').addEventListener('click', function () { requestGeneration('fill_eval'); });
-  $('btnGenNext').addEventListener('click', function () { requestGeneration('next'); });
+  /* 鍵があればその場でAIを呼び、無ければ今までどおり依頼として記録する（aiRun の中で分ける） */
+  $('btnGenEval').addEventListener('click', function () { aiRun('fill_eval'); });
+  /* 鍵があれば「次の期を作る」→本人の様子の小ポップ→その場で生成（M2 §4 の起動経路）。
+     ★開いている期をAIで作り直す動きにはしない（既存の期を断りなく上書きしないため） */
+  $('btnGenNext').addEventListener('click', function () {
+    if (aiReady()) {
+      /* ★このボタンは「新しい期を作る」動き。押し間違いで期が増えないように1度だけ確かめる */
+      var d = todayYmd();
+      if (!confirm('作成日 ' + d + ' の新しい期を作り、AIで文案を生成します。よろしいですか？')) return;
+      addPlanAt(d);
+    } else requestGeneration('next');
+  });
+  $('btnAiRegen').addEventListener('click', function () { openSamplePop(curAiMode()); });
+  $('spGo').addEventListener('click', sampleGo);
+  $('spLater').addEventListener('click', closeSamplePop);
+  $('pkApply').addEventListener('click', applyPick);
+  $('pkCancel').addEventListener('click', closePickPop);
+  $('btnAiSave').addEventListener('click', saveAiSettings);
+  $('btnAiClear').addEventListener('click', clearAiKey);
 
   $('btnPrint').addEventListener('click', doPrint);
   $('pvZoom').addEventListener('change', function () { lsSet(LS.zoom, this.value); applyZoom(); });
@@ -3404,6 +4910,8 @@ function bindUI() {
     if (e.key !== 'Escape') return;
     $('conflictModal').classList.remove('on');
     $('importModal').classList.remove('on');
+    closeSamplePop();
+    closePickPop();
   });
 
   $('btnCfgSave').addEventListener('click', saveCfg);
@@ -3439,7 +4947,10 @@ function bindUI() {
   });
   window.addEventListener('resize', function () {
     clearTimeout(window.__tpRz);
-    window.__tpRz = setTimeout(function () { if ($('scr-print').classList.contains('on')) applyZoom(); }, 250);
+    window.__tpRz = setTimeout(function () {
+      if ($('scr-print').classList.contains('on')) applyZoom();
+      if ($('scr-edit').classList.contains('on') && editMode() === 'sheet') applyCmpZoom();
+    }, 250);
   });
 }
 
