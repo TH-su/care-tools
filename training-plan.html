@@ -3853,6 +3853,9 @@ var AI_SYSTEM = [
 ].join('\n');
 var AI_URL = 'https://api.anthropic.com/v1/messages';
 var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
+/* `fallbacks`（応答拒否時の自動代替・ベータ）に対応しているモデルだけに付ける。
+   sonnet-5 に付けると API が 400「does not support the `fallbacks` parameter」で拒否する（2026-09-03 実測） */
+var AI_FALLBACK_MODELS = ['claude-opus-5'];
 var AI_VER = 'tp-rewrite-v3';
 var AI_BACKFILL_LINE = 'この期は前回と次期の間の期。次期の評価と矛盾しない範囲で書く。';
 var AI_OUT_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
@@ -3948,22 +3951,32 @@ function aiFetch(body) {
   if (!key) return Promise.reject(new Error('AI_NO_KEY'));
   if (typeof fetch !== 'function') return Promise.reject(new Error('AI_NO_FETCH'));
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
-  var opt = {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'anthropic-beta': 'server-side-fallback-2026-07-01'
-    },
-    body: JSON.stringify(body)
+  var headers = {
+    'content-type': 'application/json',
+    'x-api-key': key,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true'
   };
+  if (body && body.fallbacks) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+  var opt = { method: 'POST', headers: headers, body: JSON.stringify(body) };
   if (ctl) opt.signal = ctl.signal;
   var pr = fetch(AI_URL, opt).then(function (res) {
     var st = Number(res && res.status) || 0;
     return Promise.resolve(res.text()).then(function (t) {
-      if (st < 200 || st >= 300) throw new Error('AI_HTTP_' + st);
+      if (st < 200 || st >= 300) {
+        /* API は理由を JSON で返す（{"error":{"message":…}}）。画面に出せるよう detail に添える。キーは含まれない */
+        var detail = '';
+        try { var ej = JSON.parse(String(t)); detail = s_(ej && ej.error && ej.error.message); } catch (e0) { detail = ''; }
+        /* 対応表の取りこぼしで fallbacks が拒否された時は、外して1回だけ送り直す（他の原因は再送しない） */
+        if (st === 400 && body && body.fallbacks && /fallbacks/i.test(detail)) {
+          var b2 = {};
+          for (var k in body) if (Object.prototype.hasOwnProperty.call(body, k) && k !== 'fallbacks') b2[k] = body[k];
+          return aiFetch(b2);
+        }
+        var err = new Error('AI_HTTP_' + st);
+        err.detail = detail.slice(0, 200);
+        throw err;
+      }
       var j = null;
       try { j = JSON.parse(String(t)); } catch (e) { throw new Error('AI_BAD_JSON'); }
       return j;
@@ -4025,9 +4038,9 @@ function aiGenerate(req) {
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: (mode === 'backfill' ? AI_BACKFILL_LINE + '\n' : '') +
       JSON.stringify(aiInput(mode, base, pp, q.next || null, sm, !!q.rephrase)) }],
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema(mode) } },
-    fallbacks: 'default'
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema(mode) } }
   };
+  if (AI_FALLBACK_MODELS.indexOf(body.model) >= 0) body.fallbacks = 'default';
   return aiFetch(body).then(function (j) {
     var out = aiParse(j);
     return { out: out, notes: aiShapeNotes(out, mode) };
@@ -4036,12 +4049,14 @@ function aiGenerate(req) {
 /* 何が起きたか＋次にどうすればよいかを日本語で出す。★キーそのものは絶対に載せない */
 function aiErrText(e) {
   var m = s_(e && e.message ? e.message : e);
+  var d = s_(e && e.detail);
+  var why = d ? ('　AIの返答: ' + d) : '';
   if (m === 'AI_NO_KEY') return 'AIのキーがこの端末にありません。設定画面の「AI生成」で入れてください';
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
-  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'AIのキーが受け付けられませんでした（' + m.slice(8) + '）。設定画面でキーを入れ直してください';
+  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'AIのキーが受け付けられませんでした（' + m.slice(8) + '）。設定画面でキーを入れ直してください' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
-  if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。もう一度お試しください';
+  if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。' + why;
   if (m === 'AI_REFUSAL') return 'AIが文案の作成を控えました。「本人の様子」に書いた内容を見直して、もう一度お試しください';
   if (m === 'AI_BAD_JSON' || m === 'AI_NO_TEXT') return 'AIの返事を読み取れませんでした。もう一度お試しください';
   if (m === 'AI_NETWORK') return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';
