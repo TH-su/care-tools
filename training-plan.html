@@ -345,7 +345,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <!-- D30/D32: 取り消した期（trash）。無ければ非表示（管理者指示「表示不要」） -->
   <div class="cd" id="trashCard" hidden>
     <h3>取り消した期（<span id="trashCount">0</span>件）</h3>
-    <p class="muted">「元に戻す」でいつでも戻せます。「完全に削除」は元に戻せません</p>
+    <p class="muted" id="trashHint">「元に戻す」でいつでも戻せます。「完全に削除」は元に戻せません</p>
     <div id="trashList" class="tl"></div>
   </div>
   <!-- 名簿の氏名と計画書に写した氏名が食い違った時だけ出る直しバー（本人確認バーの直下） -->
@@ -3776,12 +3776,15 @@ function fmtDateTime(iso) {
   return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) +
     ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
 }
-/* DOC.trash が空ならカードごと隠す（管理者指示「表示不要」） */
+/* 利用者を開いている間は、取り消した期が無くてもカードを出す（ここに残ることを画面で示す・2026-09-04 指示）。
+   利用者を開いていない時だけ隠す。 */
 function renderTrashCard() {
   var card = $('trashCard');
   if (!card) return;
-  var list = $('trashList');
-  if (!DOC || !DOC.trash || !DOC.trash.length) { card.hidden = true; clear(list); return; }
+  var list = $('trashList'), hint = $('trashHint');
+  if (!DOC) { card.hidden = true; clear(list); return; }
+  card.hidden = false;
+  if (!DOC.trash) DOC.trash = [];
   clear(list);
   var shown = 0;
   for (var i = 0; i < DOC.trash.length; i++) {
@@ -3810,12 +3813,14 @@ function renderTrashCard() {
     list.appendChild(row);
   }
   $('trashCount').textContent = String(shown);
+  if (hint) hint.hidden = !shown;                              /* 空のときは操作の説明を出さない */
+  if (!shown) list.appendChild(el('p', 'muted', '取り消した期はありません'));
   if (shown < DOC.trash.length) {
     list.appendChild(el('p', 'muted', '（このほかに、中身を読み取れない取り消しの記録が ' +
       (DOC.trash.length - shown) + '件あります。件数を合わせるため残しています）'));
   }
 }
-/* 元に戻す（D32）。同じ期が既に生きている時は戻さず、取り消しの記録だけ捨てる。 */
+/* 元に戻す（D32）。同じ期が既に生きている時は【何も捨てず】案内だけ出す（レビュー中2）。 */
 function restoreTrash(idxStr) {
   if (!DOC || !DOC.trash) return;
   var idx = parseInt(idxStr, 10);
