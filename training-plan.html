@@ -260,6 +260,25 @@ body.mode-list #cmpBox{display:none}
 .modal .box{background:var(--c-surface);border-radius:var(--r);max-width:720px;width:100%;
   max-height:88vh;overflow:auto;padding:var(--sp-4);box-shadow:var(--shadow-2)}
 
+/* ── 欄を大きく開く窓（様式比較の1欄だけを、前回と今回で読める大きさに並べる）──
+   様式比較は A4 を画面幅に縮めて出すため文字が小さい。直したい欄だけをここに移す。
+   ★中身は .sheet ではないので、様式の再現（training-plan-form.js）には一切触れない */
+#fieldPop .box{max-width:1200px;display:flex;flex-direction:column;max-height:92vh;padding:var(--sp-4)}
+.fp-head{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:baseline}
+.fp-head h2{margin:0}
+.fp-cols{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin-top:var(--sp-3);
+  flex:1;min-height:0}
+@media (max-width:900px){.fp-cols{grid-template-columns:1fr}}
+.fp-col{min-width:0;min-height:0;display:flex;flex-direction:column}
+.fp-col h3{margin:0 0 var(--sp-1);font-size:var(--fs-xs);color:var(--c-ink2)}
+.fp-text{flex:1;min-height:max(220px,30vh);padding:var(--sp-3);border:1px solid var(--c-border);
+  border-radius:var(--r-md);font-size:var(--fs-base);line-height:var(--lh-loose);
+  font-family:inherit;color:var(--c-ink);white-space:pre-wrap;word-break:break-word;overflow:auto}
+#fpPrev{background:var(--c-bg)}
+#fpPrev.empty{color:var(--c-ink3)}
+textarea#fpCur{background:var(--c-surface);resize:none;width:100%}
+.fp-foot{margin-top:var(--sp-4)}
+
 /* ── ボトムナビ ── */
 .bnav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:var(--c-surface);
   border-top:1px solid var(--c-border);display:flex;padding-bottom:env(safe-area-inset-bottom)}
@@ -532,7 +551,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <div id="cmpTip" class="cmp-tip cmp-span" role="status" aria-live="polite">
         <span id="cmpTipLabel">欄を選ぶと、ここに欄名と文字数が出ます</span>
         <span id="cmpTipCount" class="cnt"></span>
-        <button id="cmpTipCopy" class="btn sm sp" type="button" disabled>前回をコピー</button>
+        <button id="cmpTipZoom" class="btn sm sp" type="button" disabled>大きく開いて直す</button>
+        <button id="cmpTipCopy" class="btn sm" type="button" disabled>前回をコピー</button>
         <button id="cmpTipAdjust" class="btn sm" type="button" hidden>AIで調整</button>
       </div>
       <h3 id="cmpLeftTitle" class="cmp-h cmp-h-l">前回（読み取り専用）</h3>
@@ -762,6 +782,35 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <div class="stack" style="margin-top:var(--sp-4)">
       <button id="pkApply" class="btn pri" type="button">この値にする</button>
       <button id="pkCancel" class="btn" type="button">やめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 様式比較で欄を大きく開いて直す窓（前回と今回だけを読める大きさで並べる）
+     開き方: セルをダブルクリック／帯の「大きく開いて直す」。1回クリックでの直接編集は今までどおり残す -->
+<div id="fieldPop" class="modal" role="dialog" aria-modal="true" aria-labelledby="fpTitle">
+  <div class="box">
+    <div class="fp-head">
+      <h2 id="fpTitle">欄</h2>
+      <span class="muted" id="fpSub"></span>
+    </div>
+    <div class="fp-cols">
+      <div class="fp-col">
+        <h3 id="fpPrevTitle">前回（読み取り専用）</h3>
+        <div id="fpPrev" class="fp-text" role="note" tabindex="0"></div>
+      </div>
+      <div class="fp-col">
+        <h3><label for="fpCur">今回（ここで直します）</label></h3>
+        <textarea id="fpCur" class="fp-text"></textarea>
+      </div>
+    </div>
+    <div class="fp-foot stack">
+      <button id="fpPrevField" class="btn" type="button">← 前の欄</button>
+      <button id="fpNextField" class="btn" type="button">次の欄 →</button>
+      <button id="fpCopy" class="btn" type="button">前回をコピー</button>
+      <button id="fpAdjust" class="btn" type="button" hidden>AIで調整</button>
+      <span id="fpCount" class="cnt"></span>
+      <button id="fpClose" class="btn pri" type="button">閉じる</button>
     </div>
   </div>
 </div>
@@ -2416,6 +2465,7 @@ function renderEdit() {
   renderSample();
   renderFields();
   renderCompare();
+  if (fpOpen()) renderFieldPop();   /* 開いている「大きく開いて直す」窓も取り直す（AIで調整の後など） */
   updateSaveState();
   scheduleProbe();
 }
@@ -4335,6 +4385,7 @@ function resetCmpTip() {
   $('cmpTipCount').classList.remove('over');
   syncCmpCopyBtn();
   syncCmpAdjustBtn();
+  syncCmpZoomBtn();
 }
 /* 欄名と文字数の【表示だけ】を更新する（なぞった時に呼ぶ）。
    ★コピー先（CMP.field）は変えない＝ボタンへマウスを動かす途中で書き込み先がすり替わらない */
@@ -4370,12 +4421,22 @@ function syncCmpAdjustBtn() {
   if (target) b.textContent = '「' + sheetLabel(f) + '」をAIで調整';
   b.disabled = aiBusy;
 }
+/* 「大きく開いて直す」も同じ作法（SHEET_EDIT にある文章の欄だけ・開く先を CMP.field に束縛） */
+function syncCmpZoomBtn() {
+  var b = $('cmpTipZoom'), f = s_(CMP.field), ok = !!(f && SHEET_EDIT[f]);
+  b.disabled = !ok;
+  b.textContent = ok ? ('「' + sheetLabel(f) + '」を大きく開く') : '大きく開いて直す';
+  b.setAttribute('aria-label', ok
+    ? (sheetLabel(f) + 'を大きく開いて、前回と見比べながら直す')
+    : '欄を選ぶと、その欄を大きく開いて直せます');
+}
 /* コピー先を決めるのは「その欄に入った時」だけ（フォーカス・クリック）。なぞっただけでは決めない */
 function setCmpField(field) {
   CMP.field = s_(field);
   showCmpTip(CMP.field);
   syncCmpCopyBtn();
   syncCmpAdjustBtn();
+  syncCmpZoomBtn();
 }
 /* 欄の文字だけを差し替える（○囲み・編集できる状態を保つ）。
    対応していない版の様式ファイルでは組み直す。 */
@@ -4406,6 +4467,123 @@ function syncListField(path) {
   updateCount(path);
   clearTimeout(diffTimer);
   diffTimer = setTimeout(function () { renderPrevDiff(path); }, 400);
+}
+/* ═══════════ 欄を大きく開いて直す窓（2026-09-05 指示・様式比較の1欄だけを読める大きさで）═══════════
+   様式比較は A4 を画面幅に縮めて出すため文字が小さい。直したい欄だけを、前回と今回で並べてここに出す。
+   ・開き方: 様式（右）のセルをダブルクリック／帯の「大きく開いて直す」。
+     1回クリックでの様式の中の直接編集は今までどおり残す（既存の操作を変えない）
+   ・対象は SHEET_EDIT にある文章の欄だけ。選択式（達成度・自立度）と読み取り専用セルは今までどおり
+   ・書き込み経路は様式の中で直した時（onSheetInput）と同じ＝欄一覧とも同期し、1.5秒で保存
+   ・窓の中の「AIで調整」は行内・帯のものと同じ関数（aiRun('adjust')）を呼ぶ */
+var FPOP = null;    /* { field, lastFocus } 開いている間だけ入る */
+function fpOpen() { return !!(FPOP && $('fieldPop').classList.contains('on')); }
+/* 様式の並び順で、この窓で直せる欄を並べる（「前の欄／次の欄」の送り順） */
+function fpFields() {
+  var out = [], i, f;
+  if (!CMP.right) return out;
+  var tds = CMP.right.querySelectorAll('td[data-field]');
+  for (i = 0; i < tds.length; i++) {
+    f = s_(tds[i].getAttribute('data-field'));
+    if (SHEET_EDIT[f] && out.indexOf(f) < 0) out.push(f);
+  }
+  return out;
+}
+function openFieldPop(field) {
+  var f = s_(field), path = SHEET_EDIT[f];
+  if (!curPlan()) { toast('この方の計画はまだありません'); return; }
+  if (!path) { toast(sheetLabel(f) + 'はこの窓では直せません（上の「欄一覧」で直します）'); return; }
+  if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
+  FPOP = { field: f, lastFocus: document.activeElement };
+  setCmpField(f);                       /* 帯の書き込み先も揃える（取り違え防止） */
+  renderFieldPop();
+  $('fieldPop').classList.add('on');
+  $('fpCur').focus();
+}
+function closeFieldPop() {
+  if (!FPOP) { $('fieldPop').classList.remove('on'); return; }
+  var back = FPOP.lastFocus;
+  FPOP = null;
+  $('fieldPop').classList.remove('on');
+  if (dirty) saveNow(false);
+  scheduleCmpFit();                     /* 文字数が変わっているので1枚に収まるか測り直す */
+  try { if (back && back.focus) back.focus(); } catch (e) {}
+}
+function renderFieldPop() {
+  if (!FPOP) return;
+  var f = FPOP.field, path = SHEET_EDIT[f], p = curPlan(), lp = leftPlan();
+  if (!p || !path) { closeFieldPop(); return; }
+  var def = FIELDS[path] || {};
+  $('fpTitle').textContent = sheetLabel(f);
+  $('fpSub').textContent = (def.limit ? ('目安 ' + def.limit + '字') : '') +
+    (def.ai === false ? '　※AIに送りません' : '');
+  $('fpPrevTitle').textContent = lp
+    ? (cmpOffsetName(cmpOffset()) + '　第' + lp.seq + '期（' + (lp.planDate || '日付なし') + '）読み取り専用')
+    : '前の期はありません';
+  var pv = lp ? s_(getPath(lp, path)) : '';
+  var prevBox = $('fpPrev');
+  prevBox.textContent = lp ? (pv || '（この欄は空欄です）') : '（左に並べる過去の計画はありません）';
+  prevBox.classList.toggle('empty', !pv);
+  var cur = $('fpCur'), v = s_(getPath(p, path));
+  if (cur.value !== v) cur.value = v;   /* 打っている最中に書き戻さない */
+  cur.setAttribute('aria-label', sheetLabel(f) + '（今回）');
+  fpUpdateCount();
+  $('fpCopy').disabled = !lp;
+  $('fpCopy').textContent = lp ? (cmpOffsetName(cmpOffset()) + 'をコピー') : '前回をコピー';
+  var adj = $('fpAdjust'), canAdj = ADJUST_FIELDS.indexOf(path) >= 0 && aiReady();
+  adj.hidden = !canAdj;
+  adj.disabled = aiBusy;
+  var list = fpFields(), at = list.indexOf(f);
+  $('fpPrevField').disabled = !(at > 0);
+  $('fpNextField').disabled = !(at >= 0 && at < list.length - 1);
+}
+function fpUpdateCount() {
+  var f = FPOP && FPOP.field, path = f && SHEET_EDIT[f], def = path ? (FIELDS[path] || {}) : {};
+  var cnt = $('fpCount'), n = s_($('fpCur').value).length;
+  if (!def.limit) { cnt.textContent = n + '字'; cnt.classList.remove('over'); return; }
+  cnt.textContent = n + ' / ' + def.limit + '字' + (n > def.limit ? '（⚠ 印刷で切れる恐れ）' : '');
+  cnt.classList.toggle('over', n > def.limit);
+}
+/* 窓で打った文字を、様式の中で直した時（onSheetInput）と同じ経路で入れる */
+function fpOnInput() {
+  var p = curPlan(), f = FPOP && FPOP.field, path = f && SHEET_EDIT[f];
+  if (!p || !path) return;
+  setPath(p, path, s_($('fpCur').value));
+  markEvalConfirmedIfNeeded(p, path);
+  syncListField(path);
+  setSheetField(f, s_(getPath(p, path)));   /* 後ろの様式にもその場で映す */
+  fpUpdateCount();
+  showCmpTip(f);                            /* 後ろの帯の文字数も揃える（窓を閉じた時に古い数を残さない） */
+  markDirty();
+  scheduleCmpDiff();
+}
+function fpCopyPrev() {
+  var p = curPlan(), lp = leftPlan(), f = FPOP && FPOP.field, path = f && SHEET_EDIT[f];
+  if (!p || !lp || !path) return;
+  $('fpCur').value = s_(getPath(lp, path));
+  fpOnInput();
+  $('fpCur').focus();
+  toast(sheetLabel(f) + 'に' + cmpOffsetName(cmpOffset()) + 'の内容を写しました');
+}
+/* 様式の並び順で隣の欄へ移る（窓を閉じずに通しで直せる） */
+function fpGo(step) {
+  if (!FPOP) return;
+  var list = fpFields(), at = list.indexOf(FPOP.field), to = at + step;
+  if (at < 0 || to < 0 || to >= list.length) return;
+  if (dirty) saveNow(false);
+  FPOP.field = list[to];
+  setCmpField(FPOP.field);
+  renderFieldPop();
+  $('fpCur').focus();
+}
+/* 窓の中でフォーカスが外へ出ないようにする（HIG: モーダル） */
+function fpTrapTab(e) {
+  if (!fpOpen() || e.key !== 'Tab') return;
+  var box = $('fieldPop').querySelector('.box');
+  var f = box.querySelectorAll('button:not([disabled]):not([hidden]), textarea, [tabindex="0"]');
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 /* 見出しが同じセルに入っている欄の「見出しの部分」を様式の雛形から取る。
    例）治療経過のセルの雛形は「治療経過（…）\n{{treatmentCourse}}」＝ {{ の直前までが見出し。
@@ -5013,6 +5191,8 @@ function setAiBusy(on) {
 function setAdjustBusy(on) {
   for (var i = 0; i < ADJ_BTNS.length; i++) ADJ_BTNS[i].disabled = !!on;
   syncCmpAdjustBtn();
+  var fb = $('fpAdjust');
+  if (fb) fb.disabled = !!on;
 }
 /* いま開いている期の後ろに別の期があるなら「間の期」として作る（次期の評価と矛盾しないように） */
 function curAiMode() {
@@ -5885,6 +6065,30 @@ function renderBatchAllSummary(host) {
   b.setAttribute('role', sum.warn ? 'alert' : 'status');
   for (var i = 0; i < sum.lines.length; i++) b.appendChild(el('div', null, sum.lines[i]));
   host.appendChild(b);
+}
+
+/* 欄ごとの「AIで調整」の反映（D25・item D）。返った欄だけを今の期に入れて差分表示＋AI_UNDOで戻せるようにする。
+   ★前の期には触らない・status は変えない・origin.kind は変えない＝人の編集の延長（applyAi と違い finalizeAiWrite は呼ばない）。
+   同じ期で欄ごとの「AIで調整」を続けて実行した時は、まだ控えに無い欄だけを追記する
+   （既に控えにある欄はそのまま＝最初の「AIを入れる前」の値を保つ。レビュー item1）
+   ★2026-09-05 復旧: 2026-09-04 の別改修（7b87824）でこの関数だけが巻き添えで消えており、
+     「AIで調整」を押すと応答は返るのに反映されずエラーになっていた（呼び出しは残っていた） */
+function applyAiAdjust(p, out, fields, model) {
+  var notes = aiShapeNotes(out, 'adjust', fields).slice();
+  var o = out || {};
+  var pid = s_(p.planId);
+  var snap = AI_UNDO[pid] || snapshotFields(p, []);
+  for (var i = 0; i < fields.length; i++) {
+    if (!Object.prototype.hasOwnProperty.call(snap.fields, fields[i])) snap.fields[fields[i]] = s_(getPath(p, fields[i]));
+    putField(p, notes, fields[i], o[fields[i]]);
+  }
+  AI_UNDO[pid] = snap;
+  AI_NOTES[pid] = notes;
+  markDirty();
+  renderEdit();
+  toast(notes.length
+    ? ('AIで調整しました（確かめること ' + notes.length + '件）。中身は必ず職員が確かめてください')
+    : 'AIで調整しました。中身は必ず職員が確かめてください');
 }
 
 /* ── 計画を作った直後の「本人の様子」の小ポップ ── */
@@ -6857,6 +7061,33 @@ function bindUI() {
   });
   $('cmpTipCopy').addEventListener('click', copyPrevToCur);
   /* 「AIで調整」の書き込み先は、なぞった欄ではなく CMP.field（クリックで選んだ欄）を見る（copyPrevToCurと同じ作法） */
+  /* 2026-09-05: 欄を大きく開いて直す窓。帯のボタンと、様式（右）のセルのダブルクリックで開く。
+     1回クリックでの様式の中の直接編集は今までどおり（既存の操作は変えない） */
+  $('cmpTipZoom').addEventListener('click', function () { openFieldPop(CMP.field); });
+  $('cmpRight').addEventListener('dblclick', function (ev) {
+    var t = ev.target, td = (t && t.closest) ? t.closest('td[data-field]') : null;
+    if (!td) return;
+    var f = s_(td.getAttribute('data-field'));
+    if (!SHEET_EDIT[f]) return;          /* 選択式・読み取り専用のセルは今までどおり */
+    ev.preventDefault();
+    try { var sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) {}
+    openFieldPop(f);
+  });
+  $('fpCur').addEventListener('input', fpOnInput);
+  $('fpCur').addEventListener('change', fpOnInput);
+  $('fpCopy').addEventListener('click', fpCopyPrev);
+  $('fpAdjust').addEventListener('click', function () {
+    var f = FPOP && FPOP.field, path = f && SHEET_EDIT[f];
+    if (!path) return;
+    aiRun('adjust', { field: path, btn: $('fpAdjust') });
+  });
+  $('fpPrevField').addEventListener('click', function () { fpGo(-1); });
+  $('fpNextField').addEventListener('click', function () { fpGo(1); });
+  $('fpClose').addEventListener('click', closeFieldPop);
+  $('fieldPop').addEventListener('mousedown', function (ev) {
+    if (ev.target === $('fieldPop')) closeFieldPop();   /* 背面をクリックしたら閉じる */
+  });
+  $('fieldPop').addEventListener('keydown', fpTrapTab);
   $('cmpTipAdjust').addEventListener('click', function () {
     var p = curPlan(), f = s_(CMP.field), path = SHEET_EDIT[f];
     if (!p || !path || ADJUST_FIELDS.indexOf(path) < 0) return;
@@ -6959,6 +7190,7 @@ function bindUI() {
     if (!(BULK && BULK.running)) $('bulkModal').classList.remove('on');   /* 高1: 実行中は閉じない（他モーダルは従来どおり） */
     closeSamplePop();
     closePickPop();
+    closeFieldPop();
   });
 
   $('btnCfgSave').addEventListener('click', saveCfg);
