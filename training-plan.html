@@ -1091,6 +1091,33 @@ function normalizeTrash(arr) {
   }
   return out;
 }
+/* ── 目標6欄の「言い回しが変わっていない」箇所（D35）──
+   ①前の期と同じ文（空白を無視して完全一致）②短期と長期で同じ観点（機能どうし・活動どうし・参加どうし）が同じ文
+   戻り: { samePrev:[欄名…], samePair:[長期側の欄名…], fields:[言い直す欄名（重複なし・様式の並び順）] }
+   ★渡されたオブジェクトは書き換えない（純関数）。空欄どうしは対象にしない（初回の期・未記入） */
+var GOAL_SHORT_KEYS = ['shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation'];
+var GOAL_LONG_KEYS = ['longGoalFunction', 'longGoalActivity', 'longGoalParticipation'];
+function goalTextKey_(v) { return s_(v).replace(/[\s\u3000]+/g, ''); }
+function goalRepeats(cur, prev) {
+  var c = isObj_(cur) ? cur : {}, q = isObj_(prev) ? prev : {};
+  var all = GOAL_SHORT_KEYS.concat(GOAL_LONG_KEYS);
+  var samePrev = [], samePair = [], want = {}, i, k, a, b;
+  for (i = 0; i < all.length; i++) {
+    k = all[i];
+    a = goalTextKey_(c[k]);
+    if (!a) continue;
+    if (a === goalTextKey_(q[k])) { samePrev.push(k); want[k] = 1; }
+  }
+  for (i = 0; i < GOAL_SHORT_KEYS.length; i++) {
+    a = goalTextKey_(c[GOAL_SHORT_KEYS[i]]);
+    b = goalTextKey_(c[GOAL_LONG_KEYS[i]]);
+    /* 短期と長期が同じ文なら、広い到達像を書く長期側を言い直す */
+    if (a && a === b) { samePair.push(GOAL_LONG_KEYS[i]); want[GOAL_LONG_KEYS[i]] = 1; }
+  }
+  var fields = [];
+  for (i = 0; i < all.length; i++) if (want[all[i]]) fields.push(all[i]);
+  return { samePrev: samePrev, samePair: samePair, fields: fields };
+}
 /* 転記（import）以外で、作成日が登録日時より7日以上前なら「遡及」の印を立てる */
 function isRetro(plan, createdAtIso) {
   if (!plan || plan.origin.kind === 'import') return false;
@@ -1331,7 +1358,7 @@ global.TP = {
   normalizeName: normalizeName, splitSentences: splitSentences, diffSentences: diffSentences,
   normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, normalizeTrash: normalizeTrash, isRetro: isRetro,
-  prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods,
+  prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods, goalRepeats: goalRepeats,
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport,
   applyPrintKind: applyPrintKind,
@@ -4378,6 +4405,9 @@ var AI_SYSTEM = [
   '     機能＝筋力・バランス・可動域・耐久性など身体の働き、活動＝歩行・移乗・排泄・入浴・食事など生活行為、',
   '     参加＝役割・行事・外出・交流。前の期の達成度に応じて、達成→一段先、一部→継続と焦点の明確化、未達→現実的な調整。',
   '     3欄に同じ文を書かない。短期は3か月で目指す行為、長期は1年程度の到達像。',
+  '     ★短期3欄・長期3欄のいずれも、前の期の同じ欄と【同じ文をそのまま返さない】。内容が実質同じでも、語順・動詞・',
+  '     条件（どこで・何を使って・どのくらい）の書き方のどれかを必ず変える。ただし入力に無い事実は足さない。',
+  '     短期と長期で同じ観点（機能どうし・活動どうし・参加どうし）に同じ文を書かない（長期はより広い到達像にする）。',
   '   - programs[0..3].content は上の目標に対応するよう内容を微修正する（「〜のために〜する」の型・4行・追加削除順序変更なし・',
   '     空の行は空のまま）。頻度・時間・実施者・留意点は出力に含めない（システムが複写する）。',
   '   - homeExercise / remarks は原則そのまま。',
@@ -4415,7 +4445,7 @@ var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
 /* `fallbacks`（応答拒否時の自動代替・ベータ）に対応しているモデルだけに付ける。
    sonnet-5 に付けると API が 400「does not support the `fallbacks` parameter」で拒否する（2026-09-03 実測） */
 var AI_FALLBACK_MODELS = ['claude-opus-5'];
-var AI_VER = 'tp-rewrite-v5';
+var AI_VER = 'tp-rewrite-v6';
 var AI_BACKFILL_LINE = 'この期は前回と次期の間の期。次期の評価と矛盾しない範囲で書く。';
 /* 【計画書欄】次の期（plan）に入る欄。達成度・Ⅲ（changes/issues）は含まない（EVAL_KEYS 側・D20） */
 var PLAN_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
@@ -5138,6 +5168,58 @@ function applyAi(p, base, out, mode, model) {
   toast(notes.length
     ? ('AIの文案を入れました（確かめること ' + notes.length + '件）。中身は必ず職員が確かめてください')
     : 'AIの文案を入れました。中身は必ず職員が確かめてください');
+  /* D35/D36: 目標6欄が前の期と同じ文のままなら、その欄だけを1回だけ自動で言い直す */
+  if (mode !== 'fill_eval' && base) autoRewordGoals(p, base, model);
+}
+/* ── 目標の言い回しが変わっていない時の自動言い直し（D35・D36）──
+   ①前の期と同じ文 ②短期と長期で同じ観点が同じ文 の欄だけを、adjust の1往復で言い直す。
+   ★前の期には触らない・新しい事実は足さない・追加の往復は1回だけ。
+   AIが使えない端末や印刷済・署名済の期では書き換えず、確かめることに出すだけにする（原則1）。 */
+function autoRewordGoals(p, base, model) {
+  if (!p || !base) return;
+  var rep = TP.goalRepeats(p, base);
+  if (!rep.fields.length) return;
+  var pid = s_(p.planId), mid = curMasterId, i;
+  var label = function (k) { return FIELDS[k] ? FIELDS[k].label : k; };
+  var names = rep.fields.map(label).join('・');
+  if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
+  if (!aiReady() || aiBusy || p.status === 'printed' || p.status === 'signed') {
+    AI_NOTES[pid].push(names + 'が前の期と同じ文のままです。「AIで調整」か手直しで言い回しを変えてください');
+    renderEdit();
+    return;
+  }
+  setAiBusy(true);
+  $('genState').textContent = '目標の言い回しを直しています…（あと1回だけ問い合わせます）';
+  aiGenerate({ mode: 'adjust', fields: rep.fields, plan: p, prev: base, sample: sampleOf(p) }).then(function (r) {
+    setAiBusy(false);
+    if (mid !== curMasterId) return;          /* 別の方の画面に移っていたら入れない */
+    var tgt = null, k;
+    for (k = 0; k < DOC.plans.length; k++) if (s_(DOC.plans[k].planId) === pid) tgt = DOC.plans[k];
+    if (!tgt) return;
+    if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
+    var list = AI_NOTES[pid];
+    /* 言い直しの返りにも形の検査（接頭辞・文字数）が掛かっている。その注意も残す */
+    if (r && Object.prototype.toString.call(r.notes) === '[object Array]') {
+      for (i = 0; i < r.notes.length; i++) list.push(r.notes[i]);
+    }
+    for (i = 0; i < rep.fields.length; i++) putField(tgt, list, rep.fields[i], (r.out || {})[rep.fields[i]]);
+    var again = TP.goalRepeats(tgt, base), stuck = {}, done = [], left = [];
+    for (i = 0; i < again.fields.length; i++) stuck[again.fields[i]] = 1;
+    for (i = 0; i < rep.fields.length; i++) {
+      if (stuck[rep.fields[i]]) left.push(label(rep.fields[i]));
+      else done.push(label(rep.fields[i]));
+    }
+    if (done.length) list.push(done.join('・') + 'が前の期と同じ文だったため、AIで言い直しました（内容を確かめてください）');
+    if (left.length) list.push(left.join('・') + 'は言い直しても同じ文のままです。手で直してください');
+    markDirty();
+    renderEdit();
+  }).catch(function (e) {
+    setAiBusy(false);
+    if (mid !== curMasterId) return;
+    if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
+    AI_NOTES[pid].push(names + 'の言い直しに失敗しました（' + aiErrText(e) + '）。欄ごとの「AIで調整」でやり直せます');
+    renderEdit();
+  });
 }
 /* 欄ごとの「AIで調整」の反映（D25・item D）。返った欄だけを今の期に入れて差分表示＋AI_UNDOで戻せるようにする。
    ★前の期には触らない・status は変えない・origin.kind は変えない＝人の編集の延長（applyAi と違い finalizeAiWrite は呼ばない）。
