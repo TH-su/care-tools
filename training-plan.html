@@ -139,7 +139,8 @@ textarea{resize:vertical;min-height:5.5rem}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--sp-3)}
 
 /* ── 一覧 ── */
-.lrow{display:grid;grid-template-columns:minmax(8rem,1.6fr) 5rem 7rem 8rem 7rem 6rem 8rem auto;
+#listBox{overflow-x:auto}   /* 列が増えた分の逃げ。ページ全体を横スクロールさせない */
+.lrow{display:grid;grid-template-columns:minmax(8rem,1.6fr) 5.5rem 5rem 7rem 8rem 7rem 6rem 8rem auto;
   gap:var(--sp-2);align-items:center;padding:var(--sp-2) var(--sp-2);
   border-bottom:1px solid var(--c-border);font-size:var(--fs-xs)}
 .lrow.head{font-weight:var(--fw-bold);color:var(--c-ink2);background:var(--c-surface2);
@@ -332,7 +333,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   </div>
   <div class="cd" style="padding:var(--sp-2)">
     <div class="lrow head" aria-hidden="true">
-      <div>氏名</div><div>要介護度</div><div>次回期限</div><div>期限まで</div>
+      <div>氏名</div><div>入居日</div><div>要介護度</div><div>次回期限</div><div>期限まで</div>
       <div>状態</div><div>未作成</div><div>欠落・前回日</div><div></div>
     </div>
     <div id="listBox"></div>
@@ -353,6 +354,11 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       </div>
       <button id="btnNewPlan" class="btn" type="button">今回の計画を追加</button>
       <button id="btnPullMaster" class="btn" type="button">マスタから基本情報を取り込む</button>
+    </div>
+    <!-- D46: 作成できていなかった過去の期を、日付を指定して作る（期の番号・前回作成日は自動で振り直す） -->
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <div><label for="addAtDate">日付を指定して期を追加</label><input type="date" id="addAtDate"></div>
+      <button id="btnAddAt" class="btn" type="button">この日付で期を追加</button>
     </div>
     <!-- D33: 作成日は期の選択のすぐ下（欄は1つのまま・二重に置かない） -->
     <div class="stack" style="margin-top:var(--sp-2)">
@@ -853,6 +859,31 @@ function dueState(nextDue, today, warnDays) {
 
 /* 氏名の正規化（名寄せ用）。空白だけ除く。異体字は直さない（原則6） */
 function normalizeName(v) { return s_(v).replace(/[\s　]+/g, ''); }
+/* 異体字の吸収（D44）。【取込の照合だけ】に使う。保存する氏名は名簿の表記に揃える（名簿が正本）。
+   ★normalizeName そのものは変えない（保存時の氏名照合など、既存の厳密一致を緩めない） */
+/* ★旧字体→常用字だけを束ねる。別姓になりうる異体字（嶋/島・嶌/島・舘/館）は入れない。
+   ★齊は「斉」の旧字体、齋は「斎」の旧字体。斎藤と斉藤は別姓なので互いに束ねない（レビュー高1） */
+var NAME_FOLD = {
+  '髙': '高', '﨑': '崎', '嵜': '崎', '惠': '恵', '齋': '斎', '齊': '斉', '邊': '辺', '邉': '辺',
+  '廣': '広', '國': '国', '櫻': '桜', '眞': '真', '實': '実', '壽': '寿',
+  '德': '徳', '澤': '沢', '濱': '浜', '藏': '蔵', '榮': '栄', '靜': '静', '瀨': '瀬',
+  '燈': '灯', '龜': '亀', '鐵': '鉄', '稻': '稲', '穗': '穂', '萬': '万', '與': '与', '來': '来',
+  '兒': '児', '曻': '昇', '檜': '桧', '橫': '横', '𠮷': '吉'
+};
+function foldName(v) {
+  var t = normalizeName(v);
+  try { t = t.normalize('NFC'); } catch (e) {}
+  var out = '', i, ch, code, next;
+  /* サロゲートペア（𠮷 など）は上位＋下位がそろっている時だけ1文字として扱う */
+  for (i = 0; i < t.length; i++) {
+    ch = t.charAt(i);
+    code = t.charCodeAt(i);
+    next = (i + 1 < t.length) ? t.charCodeAt(i + 1) : 0;
+    if (code >= 0xD800 && code <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) { ch = t.substr(i, 2); i++; }
+    out += Object.prototype.hasOwnProperty.call(NAME_FOLD, ch) ? NAME_FOLD[ch] : ch;
+  }
+  return out;
+}
 
 /* 一覧の行を作る。退去者（退去日が今日以前）はアラートの対象外にし「終了」で残す。
    rows: [{masterId,name,kana,careLevel,dischargeDate,active,isDaycare,
@@ -880,6 +911,7 @@ function buildAlerts(rows, opts) {
     list.push({
       masterId: s_(r.masterId), name: s_(r.name), kana: s_(r.kana),
       careLevel: s_(r.careLevel), dischargeDate: s_(r.dischargeDate),
+      admissionDate: isYmd(r.admissionDate) ? s_(r.admissionDate) : '',
       isDaycare: !!r.isDaycare, ended: ended || inactive,
       latestPlanId: s_(r.latestPlanId), latestPlanDate: s_(r.latestPlanDate),
       nextDue: due, state: state,
@@ -1389,7 +1421,7 @@ global.TP = {
   isYmd: isYmd, parseYmd: parseYmd, daysInMonth: daysInMonth, addMonthsClamp: addMonthsClamp,
   addDays: addDays, diffDays: diffDays, cmpYmd: cmpYmd,
   nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts,
-  normalizeName: normalizeName, splitSentences: splitSentences, diffSentences: diffSentences,
+  normalizeName: normalizeName, foldName: foldName, splitSentences: splitSentences, diffSentences: diffSentences,
   normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, normalizeTrash: normalizeTrash, isRetro: isRetro,
   prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods, goalRepeats: goalRepeats,
@@ -1633,6 +1665,7 @@ function normRosterRow(r) {
     masterId: s_(r.id != null ? r.id : r.masterId),
     name: s_(r.name), kana: s_(r.kana), room: s_(r.room), gender: s_(r.gender),
     careLevel: s_(r.careLevel), birthDate: s_(r.birthDate), dischargeDate: s_(r.dischargeDate),
+    admissionDate: s_(r.admissionDate),   /* 一覧に出す入居日（名簿が返さない端末では空） */
     active: r.active !== false
   };
 }
@@ -1674,6 +1707,29 @@ function loadRoster() {
     MASTER_OK = false;
     MASTER_MSG = '入居者マスタから名簿を取得できませんでした（' + errText(e) + '）。引継ぎはできません。';
     if (!ROSTER.length) loadRosterFromCommon();
+    return false;
+  });
+}
+/* 入居日は名簿（getRoster）に含まれない。入居者マスタ画面と同じく getBulk から1回だけ取り、名簿の行に足す。
+   取れなかった時は空のまま（一覧は「—」）にし、要約に理由を出す。★現場用の合言葉では返らない */
+var ADM_MSG = '';
+function loadAdmissionDates() {
+  ADM_MSG = '';
+  if (!MCFG.url || !ROSTER.length || ROSTER_SRC !== 'gas') return Promise.resolve(false);
+  return mGetRetry({ action: 'getBulk' }, 30000).then(function (d) {
+    var rows = (d && Object.prototype.toString.call(d.rows) === '[object Array]') ? d.rows : [];
+    if (!rows.length) { ADM_MSG = '入居日を取得できませんでした'; return false; }
+    var m = {}, i;
+    for (i = 0; i < rows.length; i++) {
+      var x = rows[i];
+      if (!x || x.id == null) continue;
+      var v = s_(x.admissionDate).slice(0, 10);
+      if (TP.isYmd(v)) m[s_(x.id)] = v;
+    }
+    for (i = 0; i < ROSTER.length; i++) ROSTER[i].admissionDate = m[ROSTER[i].masterId] || '';
+    return true;
+  }).catch(function () {
+    ADM_MSG = '入居日を取得できませんでした（通信）';
     return false;
   });
 }
@@ -1961,7 +2017,7 @@ function listRows() {
     idxRow = (IDX && IDX.rows[r.masterId]) || {};
     rows.push({
       masterId: r.masterId, name: r.name, kana: r.kana, careLevel: r.careLevel,
-      dischargeDate: r.dischargeDate, active: r.active,
+      dischargeDate: r.dischargeDate, admissionDate: r.admissionDate, active: r.active,
       isDaycare: isDayTarget(r),
       latestPlanId: s_(idxRow.latestPlanId), latestPlanDate: s_(idxRow.latestPlanDate),
       nextDue: s_(idxRow.nextDue), status: s_(idxRow.status),
@@ -2028,7 +2084,8 @@ function renderList() {
   var c = TP.alertCounts(rows);
   $('listSummary').textContent = '対象 ' + rows.length + '名（超過 ' + c.overdue + '・要注意 ' + c.warn +
     '・計画なし ' + c.none + '・期限内 ' + c.ok + (c.ended ? '・終了 ' + c.ended : '') + '）' +
-    (IDX_OK ? '' : '  ※索引を読めていないため、期限は表示できていません');
+    (IDX_OK ? '' : '  ※索引を読めていないため、期限は表示できていません') +
+    (ADM_MSG ? '  ※' + ADM_MSG : '');
   if (!rows.length) {
     var empty = el('p', 'muted', ROSTER.length
       ? '表示できる方がいません。絞込を「全員」に変えると、退去された方や通所予定の無い方も出ます。'
@@ -2042,6 +2099,7 @@ function renderList() {
     var tr = el('div', 'lrow');
     tr.appendChild(el('div', 'nm', row.name || '（氏名不明）'));
     /* data-label は狭い画面で項目名を出すために使う（広い画面では見出し行が出るので何も出ない） */
+    tr.appendChild(cell('入居日', row.admissionDate || '—'));
     tr.appendChild(cell('要介護度', row.careLevel || '—'));
     tr.appendChild(cell('次回期限', row.nextDue || '—'));
     var td = el('div');
@@ -5690,8 +5748,16 @@ function readJsonFile(file) {
 function bkMatchRoster(nameNorm) {
   var hits = [];
   if (!nameNorm) return hits;
-  for (var i = 0; i < ROSTER.length; i++) {
+  var i;
+  /* ① まず厳密一致（今までどおり）。1件でもあればそれが正 */
+  for (i = 0; i < ROSTER.length; i++) {
     if (TP.normalizeName(ROSTER[i].name) === nameNorm) hits.push(ROSTER[i]);
+  }
+  if (hits.length) return hits;
+  /* ② 0件の時だけ異体字（髙/高・惠/恵・𠮷/吉 など）を吸収して突き合わせる。吸収しても1人に絞れなければ除外のまま */
+  var want = TP.foldName(nameNorm);
+  for (i = 0; i < ROSTER.length; i++) {
+    if (TP.foldName(ROSTER[i].name) === want) hits.push(ROSTER[i]);
   }
   return hits;
 }
@@ -5715,7 +5781,7 @@ function bkPeriodNameMismatch(plans, subjectNameNorm) {
   for (var i = 0; i < plans.length; i++) {
     var p = plans[i];
     var nm = (p && typeof p === 'object' && p.basic && typeof p.basic === 'object') ? s_(p.basic.name) : '';
-    if (nm && TP.normalizeName(nm) !== subjectNameNorm) return true;
+    if (nm && TP.foldName(nm) !== TP.foldName(subjectNameNorm)) return true;   /* 異体字の違いは別人扱いにしない */
   }
   return false;
 }
@@ -5751,12 +5817,17 @@ function bkBuildRow(file, parsed) {
   }
   /* 中1: 確定した利用者番号・planId を差し込んだ写しで TP.validateImport を空打ちし、
      v・planId・planDate・件数上限の不備を実行前に見つける（実行時にも同じ検証を掛ける・二重で構わない） */
+  /* D45: 異体字で一致した時は、保存する氏名を名簿の表記に揃える（原本の表記のまま入れると保存時の照合で詰まる）。
+     subject が完全一致でも、どれかの期の basic.name（紙に出る氏名）だけ異体字なら、その期も揃える（表記の混在を紙に出さない） */
+  var rosterNorm = TP.normalizeName(hits[0].name);
+  var folded = (rosterNorm !== subjectNameNorm) || bkAnyPeriodNameDiffers(plans, rosterNorm);
   var copy;
   try { copy = JSON.parse(JSON.stringify(raw)); } catch (e2) { copy = null; }
   if (!copy) { row.reasonText = '読めません（除外）：内部エラー（写しを作れませんでした）'; return row; }
   copy.subject = (copy.subject && typeof copy.subject === 'object' &&
     Object.prototype.toString.call(copy.subject) !== '[object Array]') ? copy.subject : {};
   copy.subject.masterId = masterId;
+  if (folded) bkAlignNames(copy, hits[0]);
   var copyPlans = Object.prototype.toString.call(copy.plans) === '[object Array]' ? copy.plans : [];
   bkAssignPlanIds(copyPlans, masterId);
   var valRes = TP.validateImport(copy, ROSTER);
@@ -5764,8 +5835,32 @@ function bkBuildRow(file, parsed) {
     row.judge = 'invalid'; row.reasonText = '取り込めません：' + (valRes.errors[0] || '検証エラー'); return row;
   }
   row.judge = 'take'; row.masterId = masterId; row.rosterName = hits[0].name; row.rosterActive = hits[0].active !== false;
-  row.raw = raw; row.reasonText = '取り込む';
+  row.rosterRow = hits[0]; row.folded = folded;
+  row.raw = raw; row.reasonText = folded ? '取り込む（異体字を名簿の表記に揃えます）' : '取り込む';
   return row;
+}
+/* どれかの期の basic.name（紙に出る氏名）が名簿の表記と違うか（空欄は数えない） */
+function bkAnyPeriodNameDiffers(plans, rosterNorm) {
+  for (var i = 0; i < plans.length; i++) {
+    var p = plans[i];
+    var nm = (p && typeof p === 'object' && p.basic && typeof p.basic === 'object') ? s_(p.basic.name) : '';
+    if (nm && TP.normalizeName(nm) !== rosterNorm) return true;
+  }
+  return false;
+}
+/* D45: 氏名を名簿の表記に揃える（異体字で一致した時だけ呼ぶ。紙に出る basic.name も揃える）。
+   ★空欄の氏名は書き足さない・ふりがなは空の時だけ補う（告知していない変更をしない・原則6） */
+function bkAlignNames(doc, rosterRow) {
+  if (!doc || !rosterRow) return;
+  doc.subject.nameNorm = TP.normalizeName(rosterRow.name);
+  if (!s_(doc.subject.kana) && s_(rosterRow.kana)) doc.subject.kana = s_(rosterRow.kana);
+  var plans = Object.prototype.toString.call(doc.plans) === '[object Array]' ? doc.plans : [];
+  for (var i = 0; i < plans.length; i++) {
+    var p = plans[i];
+    if (!p || typeof p !== 'object' || !p.basic || typeof p.basic !== 'object') continue;
+    if (s_(p.basic.name)) p.basic.name = s_(rosterRow.name);
+    if (!s_(p.basic.kana) && s_(rosterRow.kana)) p.basic.kana = s_(rosterRow.kana);
+  }
 }
 function bkLoadFiles(files) {
   BULK = { rows: [], running: false };
@@ -5831,6 +5926,7 @@ function bkRunOne(r) {
   raw.subject = (raw.subject && typeof raw.subject === 'object' &&
     Object.prototype.toString.call(raw.subject) !== '[object Array]') ? raw.subject : {};
   raw.subject.masterId = masterId;   /* D41: 利用者番号はこの画面が名簿と突き合わせて確定する */
+  if (r.folded) bkAlignNames(raw, r.rosterRow);   /* D45: 異体字で一致した時は名簿の表記に揃える */
   var plans = Object.prototype.toString.call(raw.plans) === '[object Array]' ? raw.plans : [];
   bkAssignPlanIds(plans, masterId);   /* 低1: 同じ作成日の中だけの連番で振る（プレビューと同じ規則） */
   var valRes = TP.validateImport(raw, ROSTER);
@@ -5845,6 +5941,11 @@ function bkRunOne(r) {
       ? normServerDoc(j.data, masterId)
       : { v: 1, subject: { masterId: masterId, nameNorm: '', kana: '' }, plans: [], trash: [], gaps: [] };
     if (!cur.subject.nameNorm) { cur.subject.nameNorm = valRes.doc.subject.nameNorm; cur.subject.kana = valRes.doc.subject.kana; }
+    /* 中3: 異体字で一致した時は、既にある文書の subject も名簿の表記に揃える（揃えないと保存時の照合で詰まったまま） */
+    if (r.folded && r.rosterRow) {
+      cur.subject.nameNorm = TP.normalizeName(r.rosterRow.name);
+      if (!s_(cur.subject.kana) && s_(r.rosterRow.kana)) cur.subject.kana = s_(r.rosterRow.kana);
+    }
     var trashIds = {}, ti, tpid;
     for (ti = 0; ti < cur.trash.length; ti++) {
       tpid = s_(cur.trash[ti].plan && cur.trash[ti].plan.planId);
@@ -6099,6 +6200,7 @@ function refreshAll() {
   return loadIndex()
     .then(function () { return loadServerGuards(); })
     .then(function () { return loadRoster(); })
+    .then(function () { return loadAdmissionDates(); })
     .then(function () { return loadDaySet(); })
     .then(function () {
       renderStaffSelects();
@@ -6155,6 +6257,13 @@ function bindUI() {
   $('fStatus').addEventListener('change', onStatusChange);
   $('planSel').addEventListener('change', function () { switchPlan(this.value); });
   $('btnNewPlan').addEventListener('click', addPlan);
+  $('addAtDate').max = todayYmd();   /* 未来日は入力段階で止める（addPlanAt 側の断りも残る） */
+  $('btnAddAt').addEventListener('click', function () {
+    if (!DOC) { toast('計画書をまだ読み込めていません。一覧から利用者を開いてください'); return; }
+    var d = s_($('addAtDate').value);
+    if (!d) { toast('日付を入れてください'); $('addAtDate').focus(); return; }
+    if (addPlanAt(d)) $('addAtDate').value = '';   /* 作れた時だけ欄を空にする（失敗時は入力を残す） */
+  });
   $('btnPullMaster').addEventListener('click', pullMaster);
   $('btnMoveEvalPrev').addEventListener('click', moveEvalToPrev);
   $('editView').addEventListener('change', function () { lsSet(LS.view, this.value); applyEditView(this.value); });
