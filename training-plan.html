@@ -154,6 +154,21 @@ textarea{resize:vertical;min-height:5.5rem}
   /* 見出し行が消えるので、値だけでは何の日付か分からなくなる。項目名を各値の前に出す */
   .lrow>[data-label]::before{content:attr(data-label) "：";color:var(--c-ink3)}
 }
+/* ── まとめて取込：照合表（D38〜D41）── */
+.bkrow{display:grid;grid-template-columns:1.4fr 1fr 1.4fr 4rem 1.6fr 1.6fr;
+  gap:var(--sp-2);align-items:center;padding:var(--sp-2) var(--sp-2);
+  border-bottom:1px solid var(--c-border);font-size:var(--fs-xs)}
+.bkrow.head{font-weight:var(--fw-bold);color:var(--c-ink2);background:var(--c-surface2);
+  font-size:var(--fs-2xs)}
+.bkrow.skip{color:var(--c-ink3)}
+@media (max-width:820px){
+  .bkrow{grid-template-columns:1fr;row-gap:var(--sp-1)}
+  .bkrow.head{display:none}
+  .bkrow>[data-label]::before{content:attr(data-label) "：";color:var(--c-ink3)}
+  .bkrow>[data-label]:empty::before{content:none}   /* 低10: 結果が空の間はラベルだけ出さない */
+}
+#bulkModal .box{max-width:960px}
+
 .badge{display:inline-flex;align-items:center;gap:var(--sp-1);border-radius:999px;
   padding:2px var(--sp-2);font-size:var(--fs-2xs);font-weight:var(--fw-bold);white-space:nowrap}
 .badge.overdue{background:var(--c-danger-bg);color:var(--c-danger)}
@@ -311,6 +326,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnReload" class="btn" type="button">最新を読み込む</button>
       <button id="btnRebuildIdx" class="btn" type="button">索引を再構築</button>
       <button id="btnImport" class="btn" type="button">JSON取込</button>
+      <button id="btnBulk" class="btn" type="button">まとめて取込</button>
     </div>
     <p class="muted" style="margin-top:var(--sp-2)" id="listSummary"></p>
   </div>
@@ -668,6 +684,21 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <div class="stack" style="margin-top:var(--sp-4)">
       <button id="imApply" class="btn pri" type="button">この内容で取り込む</button>
       <button id="imCancel" class="btn" type="button">やめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- まとめて取込（過去の計画書JSONを複数まとめて取り込む。D38〜D41・書き込む前に照合表で確認） -->
+<div id="bulkModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+  <div class="box">
+    <h2 id="bkTitle">まとめて取込</h2>
+    <label for="bulkFiles">JSONファイルを選ぶ（複数可）</label>
+    <input type="file" id="bulkFiles" multiple accept="application/json,.json">
+    <div id="bkBody"></div>
+    <p class="muted" id="bkProgress" aria-live="polite"></p>
+    <div class="stack" style="margin-top:var(--sp-4)">
+      <button id="bulkGo" class="btn pri" type="button" disabled>この内容で取り込む</button>
+      <button id="bkClose" class="btn" type="button">閉じる</button>
     </div>
   </div>
 </div>
@@ -5611,6 +5642,287 @@ function applyImport() {
   });
 }
 
+/* ═══════════ まとめて取込（過去の計画書JSONを複数まとめて取り込む・D38〜D41） ═══════════
+   ★既存の「JSON取込」（onImportFile/openImportModal/applyImport）は変更しない。別経路として置く。
+   流れ: ファイル選択→照合表を組み立てて表示（まだ書き込まない）→確認して bulkGo→1名ずつ順に書き込み。 */
+var BULK = null;   /* {rows:[{fileName,origName,rosterName,rosterActive,masterId,periodCount,judge,reasonText,raw,resultEl}], running} */
+var BULK_MAX = 60;   /* 中6: 一度に選べる件数の上限 */
+
+/* openBulkModal は【実行中は作り直さない】（レビュー高1）。画面を閉じても running な BULK は
+   closeBulkModal が保持するので、開き直した時はそのまま同じ進行状況を見せる。 */
+function openBulkModal() {
+  if (BULK && BULK.running) {
+    $('bulkModal').classList.add('on');
+    toast('取り込み中です。終わるまでお待ちください');
+    return;
+  }
+  BULK = { rows: [], running: false };
+  clear($('bkBody'));
+  $('bkProgress').textContent = '';
+  $('bulkFiles').value = '';
+  $('bulkFiles').disabled = false;
+  $('bulkGo').disabled = true;
+  $('bulkModal').classList.add('on');
+  $('bulkFiles').focus();
+}
+/* 実行中（BULK.running）は状態を消さない（レビュー高1）。画面（.on）だけ閉じ、
+   bkRunAll 側のループはそのまま走り続けて完了処理・ボタン復帰まで正しく行える。 */
+function closeBulkModal() {
+  $('bulkModal').classList.remove('on');
+  if (BULK && BULK.running) return;
+  BULK = null;
+}
+function readJsonFile(file) {
+  return new Promise(function (resolve) {
+    if (file.size > 2 * 1024 * 1024) { resolve({ ok: false, reason: 'ファイルが大きすぎます（2MBまで）' }); return; }
+    var fr = new FileReader();
+    fr.onerror = function () { resolve({ ok: false, reason: 'ファイルを読めませんでした' }); };
+    fr.onload = function () {
+      var obj;
+      try { obj = JSON.parse(String(fr.result)); }
+      catch (e) { resolve({ ok: false, reason: 'JSONとして読めませんでした' }); return; }
+      resolve({ ok: true, raw: obj });
+    };
+    fr.readAsText(file);
+  });
+}
+/* 名簿（ROSTER）と原本の氏名を TP.normalizeName で（空白を除いて）突き合わせる */
+function bkMatchRoster(nameNorm) {
+  var hits = [];
+  if (!nameNorm) return hits;
+  for (var i = 0; i < ROSTER.length; i++) {
+    if (TP.normalizeName(ROSTER[i].name) === nameNorm) hits.push(ROSTER[i]);
+  }
+  return hits;
+}
+/* 同じ作成日の中だけの連番で planId を振る（レビュー低1）。
+   ★planId が既に入っている期には触らない。渡された配列そのものを書き換える（呼び出し側が写しを渡す）。
+   ★プレビュー（bkBuildRow）と実行（bkRunOne）の両方から呼ぶ。どちらも新しい写しに対して呼ぶため、
+     入力（plans の並び・日付）が同じなら同じIDになる（順序に依存する決め方だが、原本の並びは変えていない）。 */
+function bkAssignPlanIds(plans, masterId) {
+  var seqByDate = {}, i, p, d;
+  for (i = 0; i < plans.length; i++) {
+    p = plans[i];
+    if (!p || typeof p !== 'object' || s_(p.planId)) continue;
+    d = s_(p.planDate);
+    seqByDate[d] = (seqByDate[d] || 0) + 1;
+    p.planId = 'tp_' + masterId + '_' + d + '_imp' + seqByDate[d];
+  }
+}
+/* 紙に出る氏名（各期の basic.name）が subject.nameNorm と食い違っていないか（レビュー高3）。
+   ★basic.name が空の期は判定の対象外（他の理由で除外されるべきものはそちらに任せる）。 */
+function bkPeriodNameMismatch(plans, subjectNameNorm) {
+  for (var i = 0; i < plans.length; i++) {
+    var p = plans[i];
+    var nm = (p && typeof p === 'object' && p.basic && typeof p.basic === 'object') ? s_(p.basic.name) : '';
+    if (nm && TP.normalizeName(nm) !== subjectNameNorm) return true;
+  }
+  return false;
+}
+/* 1ファイル分の照合結果を組み立てる（D39の4判定＋レビュー高2・高3・中1）。まだ何も書き込まない。 */
+function bkBuildRow(file, parsed) {
+  var row = { fileName: file.name, origName: '', rosterName: '', rosterActive: true, masterId: '',
+    periodCount: null, judge: 'unreadable', reasonText: '', raw: null };
+  if (!parsed.ok) { row.reasonText = '読めません（除外）：' + parsed.reason; return row; }
+  var raw = parsed.raw;
+  if (!raw || typeof raw !== 'object' || Object.prototype.toString.call(raw) === '[object Array]') {
+    row.reasonText = '読めません（除外）：JSONの形が違います'; return row;
+  }
+  var sub = (raw.subject && typeof raw.subject === 'object' &&
+    Object.prototype.toString.call(raw.subject) !== '[object Array]') ? raw.subject : {};
+  row.origName = s_(sub.nameNorm);
+  var plans = Object.prototype.toString.call(raw.plans) === '[object Array]' ? raw.plans : [];
+  row.periodCount = plans.length;
+  if (!plans.length) { row.reasonText = '読めません（除外）：plans が空です'; return row; }
+  var subjectNameNorm = TP.normalizeName(sub.nameNorm);
+  var hits = bkMatchRoster(subjectNameNorm);
+  if (hits.length === 0) { row.judge = 'no-roster'; row.reasonText = '名簿に見つかりません（除外）'; return row; }
+  if (hits.length > 1) { row.judge = 'dup-roster'; row.reasonText = '同じ氏名が複数います（除外）'; return row; }
+  var masterId = hits[0].masterId;
+  /* 高2: 原本が利用者番号を持っていて、照合結果と違うなら取り違えの恐れがあるため除外する
+     （空のときだけ確定を許す。同じ番号なら問題ない）。 */
+  var origMasterId = s_(sub.masterId);
+  if (origMasterId && origMasterId !== masterId) {
+    row.judge = 'mismatch-id'; row.reasonText = '原本の利用者番号が照合結果と違います（除外）'; return row;
+  }
+  /* 高3: 紙に出る氏名（各期の basic.name）が期によって違っていないか */
+  if (bkPeriodNameMismatch(plans, subjectNameNorm)) {
+    row.judge = 'mismatch-name'; row.reasonText = '原本の中で氏名が期によって違います（除外）'; return row;
+  }
+  /* 中1: 確定した利用者番号・planId を差し込んだ写しで TP.validateImport を空打ちし、
+     v・planId・planDate・件数上限の不備を実行前に見つける（実行時にも同じ検証を掛ける・二重で構わない） */
+  var copy;
+  try { copy = JSON.parse(JSON.stringify(raw)); } catch (e2) { copy = null; }
+  if (!copy) { row.reasonText = '読めません（除外）：内部エラー（写しを作れませんでした）'; return row; }
+  copy.subject = (copy.subject && typeof copy.subject === 'object' &&
+    Object.prototype.toString.call(copy.subject) !== '[object Array]') ? copy.subject : {};
+  copy.subject.masterId = masterId;
+  var copyPlans = Object.prototype.toString.call(copy.plans) === '[object Array]' ? copy.plans : [];
+  bkAssignPlanIds(copyPlans, masterId);
+  var valRes = TP.validateImport(copy, ROSTER);
+  if (!valRes.ok) {
+    row.judge = 'invalid'; row.reasonText = '取り込めません：' + (valRes.errors[0] || '検証エラー'); return row;
+  }
+  row.judge = 'take'; row.masterId = masterId; row.rosterName = hits[0].name; row.rosterActive = hits[0].active !== false;
+  row.raw = raw; row.reasonText = '取り込む';
+  return row;
+}
+function bkLoadFiles(files) {
+  BULK = { rows: [], running: false };
+  clear($('bkBody'));
+  $('bulkGo').disabled = true;
+  $('bkProgress').textContent = '読み込み中…';
+  var chain = Promise.resolve();
+  files.forEach(function (f) {
+    chain = chain.then(function () {
+      return readJsonFile(f).then(function (parsed) { BULK.rows.push(bkBuildRow(f, parsed)); });
+    });
+  });
+  chain.then(function () {
+    $('bkProgress').textContent = '';
+    renderBkTable();
+  });
+}
+function bkCell(label, txt) {
+  var d = el('div', null, txt);
+  d.setAttribute('data-label', label);
+  return d;
+}
+function bkRowEl(r) {
+  var row = el('div', 'bkrow' + (r.judge === 'take' ? '' : ' skip'));
+  row.appendChild(bkCell('ファイル名', r.fileName));
+  row.appendChild(bkCell('原本の氏名', r.origName || '—'));
+  row.appendChild(bkCell('名簿の氏名・利用者番号', r.judge === 'take' ?
+    (r.rosterName + (r.rosterActive ? '' : '（退去）') + '（' + r.masterId + '）') : '—'));
+  row.appendChild(bkCell('期数', r.periodCount == null ? '—' : (r.periodCount + '期')));
+  var jc = el('div', null); jc.setAttribute('data-label', '判定');
+  /* 低7: 除外はエラーではないので赤（overdue）ではなく灰（none）で出す */
+  jc.appendChild(el('span', 'badge ' + (r.judge === 'take' ? 'ok' : 'none'), r.reasonText));
+  row.appendChild(jc);
+  var rc = el('div', null, ''); rc.setAttribute('data-label', '結果');
+  r.resultEl = rc;
+  row.appendChild(rc);
+  return row;
+}
+function renderBkTable() {
+  var body = $('bkBody');
+  clear(body);
+  if (!BULK || !BULK.rows.length) { $('bulkGo').disabled = true; return; }
+  var head = el('div', 'bkrow head');
+  var heads = ['ファイル名', '原本の氏名', '名簿の氏名・利用者番号', '期数', '判定', '結果'];
+  for (var h = 0; h < heads.length; h++) head.appendChild(el('div', null, heads[h]));
+  body.appendChild(head);
+  var take = 0, exclude = 0, i;
+  for (i = 0; i < BULK.rows.length; i++) {
+    if (BULK.rows[i].judge === 'take') take++; else exclude++;
+    body.appendChild(bkRowEl(BULK.rows[i]));
+  }
+  body.appendChild(el('p', 'muted', '取り込む ' + take + '件／除外 ' + exclude + '件'));
+  $('bulkGo').disabled = !take;
+}
+/* 1名分の書き込み（applyImportと同じ作法：取り消し置き場にある planId は取り込まない・
+   楽観ロック競合は失敗として次へ進む）。★ここでは【失敗しても reject しない】
+   （呼び出し側の bkRunAll が1件ずつ順に回し、途中で止めないため）。 */
+function bkRunOne(r) {
+  var masterId = r.masterId;
+  var raw;
+  try { raw = JSON.parse(JSON.stringify(r.raw)); } catch (e) { raw = null; }
+  if (!raw) return Promise.resolve({ ok: false, added: 0, text: '失敗：内部エラー（写しを作れませんでした）' });
+  raw.subject = (raw.subject && typeof raw.subject === 'object' &&
+    Object.prototype.toString.call(raw.subject) !== '[object Array]') ? raw.subject : {};
+  raw.subject.masterId = masterId;   /* D41: 利用者番号はこの画面が名簿と突き合わせて確定する */
+  var plans = Object.prototype.toString.call(raw.plans) === '[object Array]' ? raw.plans : [];
+  bkAssignPlanIds(plans, masterId);   /* 低1: 同じ作成日の中だけの連番で振る（プレビューと同じ規則） */
+  var valRes = TP.validateImport(raw, ROSTER);
+  if (!valRes.ok || !valRes.doc) {
+    return Promise.resolve({ ok: false, added: 0, text: '失敗：' + (valRes.errors[0] || '検証エラー') });
+  }
+  var incoming = valRes.doc.plans;
+  return tpGet(docKey(masterId)).then(function (j) {
+    if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
+    var rev = Number(j.rev) || 0;
+    var cur = (j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]')
+      ? normServerDoc(j.data, masterId)
+      : { v: 1, subject: { masterId: masterId, nameNorm: '', kana: '' }, plans: [], trash: [], gaps: [] };
+    if (!cur.subject.nameNorm) { cur.subject.nameNorm = valRes.doc.subject.nameNorm; cur.subject.kana = valRes.doc.subject.kana; }
+    var trashIds = {}, ti, tpid;
+    for (ti = 0; ti < cur.trash.length; ti++) {
+      tpid = s_(cur.trash[ti].plan && cur.trash[ti].plan.planId);
+      if (tpid) trashIds[tpid] = 1;
+    }
+    var skippedTrash = 0, incomingLive = [];
+    for (ti = 0; ti < incoming.length; ti++) {
+      if (trashIds[s_(incoming[ti].planId)]) { skippedTrash++; continue; }
+      incomingLive.push(incoming[ti]);
+    }
+    var m = TP.mergeImport(cur.plans, incomingLive);
+    if (!m.added) {
+      return { ok: true, added: 0, warnings: valRes.warnings, text: '既にあった ' + m.skipped.length + '件' +
+        (skippedTrash ? '・取り消し済み ' + skippedTrash + '件' : '') };
+    }
+    cur.plans = m.plans;
+    mergeGaps(cur, valRes.doc.gaps);   /* 中4: 欠落台帳も増える方向で取り込む（単発取込＝applyImportと同じ作法） */
+    return tpPut(docKey(masterId), cur, rev).then(function (r2) {
+      if (!r2 || !r2.ok) {
+        var msg = (r2 && r2.conflict) ? '他の端末と重なりました' : s_((r2 && r2.error) || '応答エラー');
+        throw new Error(msg);
+      }
+      return updateIndexFor(masterId, cur).then(function (idxOk) {
+        return { ok: true, added: m.added, idxFail: !idxOk, warnings: valRes.warnings, text: '追加 ' + m.added + '件' +
+          (m.skipped.length ? '・既にあった ' + m.skipped.length + '件' : '') +
+          (skippedTrash ? '・取り消し済み ' + skippedTrash + '件' : '') };
+      });
+    });
+  }).catch(function (e) {
+    return { ok: false, added: 0, text: '失敗：' + errText(e) };
+  });
+}
+function bkRunAll() {
+  if (!BULK || BULK.running) return;
+  var run = BULK;   /* 高1: 実行スコープを固定する。ループ内は BULK を直接見ない（closeBulkModal で null になっても止まらないため） */
+  var targets = [], i;
+  for (i = 0; i < run.rows.length; i++) if (run.rows[i].judge === 'take') targets.push(run.rows[i]);
+  if (!targets.length) return;
+  /* 中3: 未保存の編集があり、その利用者が対象に含まれるなら中止する（取り違えて上書きしないため） */
+  if (dirty && curMasterId) {
+    for (i = 0; i < targets.length; i++) {
+      if (targets[i].masterId === curMasterId) { toast('先に保存してください'); return; }
+    }
+  }
+  if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); return; }
+  run.running = true;
+  $('bulkGo').disabled = true;
+  $('bulkFiles').disabled = true;
+  var total = targets.length, okCount = 0, ngCount = 0, addedTotal = 0, idxFailCount = 0, successIds = {};
+  function next(idx) {
+    if (idx >= total) {
+      run.running = false;
+      $('bulkGo').disabled = false;
+      $('bulkFiles').disabled = false;
+      $('bkProgress').textContent = '完了：成功 ' + okCount + '人・失敗 ' + ngCount + '人・追加した期の合計 ' + addedTotal + '期' +
+        (idxFailCount ? '・索引未更新 ' + idxFailCount + '件（一覧の「索引を再構築」で直せます）' : '');   /* 低8 */
+      renderList();
+      /* 中3: 開いている利用者へ実際に書いていたら在庫を取り直す（applyImportと同じ作法） */
+      if (curMasterId && successIds[curMasterId]) openResident(curMasterId);
+      return;
+    }
+    var r = targets[idx];
+    $('bkProgress').textContent = (idx + 1) + '/' + total + ' 実行中…（' + r.fileName + '）';
+    bkRunOne(r).then(function (res) {
+      if (res.ok) { okCount++; addedTotal += res.added; successIds[r.masterId] = true; } else { ngCount++; }
+      if (res.idxFail) idxFailCount++;
+      if (r.resultEl) {
+        /* 中2: 検証の warnings を捨てず「（注意 N件）」で出す。本文は title 属性へ */
+        var warn = (res.warnings && res.warnings.length) ? res.warnings : [];
+        r.resultEl.textContent = res.text + (warn.length ? '（注意 ' + warn.length + '件）' : '');
+        if (warn.length) r.resultEl.title = warn.join('\n');
+      }
+      next(idx + 1);
+    });
+  }
+  next(0);
+}
+
 /* ═══════════ 設定 ═══════════ */
 function renderSettings() {
   $('cfgUrl').value = CFG.url;
@@ -5818,6 +6130,19 @@ function bindUI() {
     onImportFile(this.files && this.files[0]);
     this.value = '';
   });
+  $('btnBulk').addEventListener('click', function () {
+    if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); showScreen('scr-settings'); return; }
+    openBulkModal();
+  });
+  $('bulkFiles').addEventListener('change', function () {
+    var files = Array.prototype.slice.call(this.files || []);
+    this.value = '';
+    if (!files.length) return;
+    if (files.length > BULK_MAX) { toast('一度に選べるのは' + BULK_MAX + '件までです'); return; }   /* 中6 */
+    bkLoadFiles(files);
+  });
+  $('bulkGo').addEventListener('click', bkRunAll);
+  $('bkClose').addEventListener('click', closeBulkModal);
   $('staffSel').addEventListener('change', function () { lsSet(LS.staff, this.value); });
 
   for (var k = 0; k < META.length; k++) {
@@ -5943,6 +6268,7 @@ function bindUI() {
     if (e.key !== 'Escape') return;
     $('conflictModal').classList.remove('on');
     $('importModal').classList.remove('on');
+    if (!(BULK && BULK.running)) $('bulkModal').classList.remove('on');   /* 高1: 実行中は閉じない（他モーダルは従来どおり） */
     closeSamplePop();
     closePickPop();
   });
@@ -5964,7 +6290,7 @@ function bindUI() {
   window.addEventListener('pagehide', flushOnExit);
   window.addEventListener('beforeunload', function (ev) {
     flushOnExit();
-    if (dirty) { ev.preventDefault(); ev.returnValue = ''; return ''; }
+    if (dirty || (BULK && BULK.running)) { ev.preventDefault(); ev.returnValue = ''; return ''; }   /* 中5 */
   });
   /* ブラウザのメニューから印刷された時も、用紙の指定だけは効かせる（終わったら外す） */
   window.addEventListener('beforeprint', function () {
