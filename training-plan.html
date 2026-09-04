@@ -335,16 +335,26 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnNewPlan" class="btn" type="button">今回の計画を追加</button>
       <button id="btnPullMaster" class="btn" type="button">マスタから基本情報を取り込む</button>
     </div>
+    <!-- D33: 作成日は期の選択のすぐ下（欄は1つのまま・二重に置かない） -->
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <div><label for="fPlanDate">作成日（この期の日付・変更できます）</label><input type="date" id="fPlanDate"></div>
+    </div>
     <!-- 3か月ごとの期の並び。作成済＝✓／未作成＝✕（予定日つき・その場で作れる） -->
     <div id="planTimeline" class="tl"></div>
+  </div>
+  <!-- D30/D32: 取り消した期（trash）。無ければ非表示（管理者指示「表示不要」） -->
+  <div class="cd" id="trashCard" hidden>
+    <h3>取り消した期（<span id="trashCount">0</span>件）</h3>
+    <p class="muted">「元に戻す」でいつでも戻せます。「完全に削除」は元に戻せません</p>
+    <div id="trashList" class="tl"></div>
   </div>
   <!-- 名簿の氏名と計画書に写した氏名が食い違った時だけ出る直しバー（本人確認バーの直下） -->
   <div id="nameFixBar"></div>
 
   <div class="cd">
     <h3>この期の基本事項</h3>
+    <p class="muted">作成日は上の「計画（期）」のところで直せます</p>
     <div class="grid2">
-      <div><label for="fPlanDate">作成日（様式）</label><input type="date" id="fPlanDate"></div>
       <div><label for="fPrevDate">前回作成日</label><input type="date" id="fPrevDate"></div>
       <div><label for="fFirstDate">初回作成日</label><input type="date" id="fFirstDate"></div>
       <div><label for="fPeriodFrom">計画期間（開始）</label><input type="date" id="fPeriodFrom"></div>
@@ -737,6 +747,10 @@ var DUE_RULES = ['calendar', 'min', 'days90'];
 var STATE_RANK = { overdue:0, warn:1, none:2, ok:3, ended:4 };
 var PLAN_MONTHS = 3;          /* 3月ごとに1回以上（Ⅰイの要件） */
 var PLAN_DAYS = 90;           /* 日数ルールを選んだ時の日数 */
+/* 【報告書欄】その期の評価に入る欄（D20・D34）。evalOrigin.fields の絞り込みにも使う。
+   ★アプリ側（下のスクリプト）にも同じ並びの EVAL_KEYS があるが、この層は document 等に触れず
+     単体で評価できる形に保つ決まりのため、あえて別に持つ（意図的な重複）。 */
+var EVAL_KEYS = ['shortAchievement', 'longAchievement', 'changes', 'issues'];
 
 function s_(v) { return String(v == null ? '' : v); }
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -1034,6 +1048,11 @@ function normalizePlan(src) {
   /* 前の期（base）へAIが評価を書いた印。人が確かめて欄を編集するまで confirmed は false のまま（原則6） */
   if (isObj_(s.evalOrigin) && s_(s.evalOrigin.kind) === 'ai') {
     p.evalOrigin = { kind: 'ai', at: s_(s.evalOrigin.at), confirmed: s.evalOrigin.confirmed === true };
+    /* D34: AIが実際に書いた欄名（EVAL_KEYS のうち既知のものだけ）。無ければ持たない */
+    if (Object.prototype.toString.call(s.evalOrigin.fields) === '[object Array]') {
+      var evFields = s.evalOrigin.fields.map(s_).filter(function (k) { return EVAL_KEYS.indexOf(k) >= 0; });
+      if (evFields.length) p.evalOrigin.fields = evFields;
+    }
   }
   if (isObj_(s.audit)) {
     p.audit.createdAt = s_(s.audit.createdAt); p.audit.updatedAt = s_(s.audit.updatedAt);
@@ -1058,6 +1077,18 @@ function normalizePlan(src) {
     p.v2.lastDischargeDate = s_(s.v2.lastDischargeDate);
   }
   return p;
+}
+/* ── 取り消し置き場（trash）1件のひな形と正規化（D30）──
+   plan.planId が空の要素は捨てる。★渡された配列は書き換えない（純関数） */
+function normalizeTrash(arr) {
+  var src = asArr_(arr), out = [];
+  for (var i = 0; i < src.length; i++) {
+    var t = isObj_(src[i]) ? src[i] : {};
+    var p = normalizePlan(t.plan);
+    if (!p.planId) continue;
+    out.push({ at: s_(t.at), by: s_(t.by), plan: p });
+  }
+  return out;
 }
 /* 転記（import）以外で、作成日が登録日時より7日以上前なら「遡及」の印を立てる */
 function isRetro(plan, createdAtIso) {
@@ -1298,7 +1329,7 @@ global.TP = {
   nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts,
   normalizeName: normalizeName, splitSentences: splitSentences, diffSentences: diffSentences,
   normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
-  emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, isRetro: isRetro,
+  emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, normalizeTrash: normalizeTrash, isRetro: isRetro,
   prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods,
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport,
@@ -1447,6 +1478,12 @@ function tpPing() {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
   return withTimeout(SU.data.kvRaw({ action: 'ping' }, tpTarget()), 20000);
 }
+/* 「完全に削除」だけがこの経路を使う。合計件数（plans+trash）が1件減る保存を、この1回だけ通す。
+   force は使わない（D32・専用GAS側は 2026-09-04 から allowDrop:true を件数-1の保存だけ通す）。 */
+function tpPutAllowDrop(key, data, rev) {
+  if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
+  return withTimeout(SU.data.kvRaw({ action: 'put', key: key, data: data, rev: rev, allowDrop: true }, tpTarget()), 30000);
+}
 function docKey(masterId) { return 'training_plan:' + masterId; }
 var IDX_KEY = 'training_plan:index';
 
@@ -1483,11 +1520,16 @@ var DAY_OK = false;
 var DAY_MSG = '';
 var IDX = null, IDX_REV = 0, IDX_OK = false;
 var IDX_PENDING = {};     /* 索引の更新に失敗した利用者番号（メモリだけ・端末に残さない） */
-var DOC = null, DOC_REV = 0, DOC_COUNT = 0;   /* DOC_COUNT = サーバーが持っている計画の件数 */
+var DOC = null, DOC_REV = 0, DOC_COUNT = 0;   /* DOC_COUNT = サーバーが持っている「計画＋取り消し置き場」の合計件数 */
 var DOC_BASE = null;      /* 読み込めた／保存できた時点のサーバーの写し（競合の3点比較の基準） */
 var curMasterId = '', curPlanIdx = -1;
 var dirty = false, pushing = false, saveTimer = null, probeTimer = null;
 var lastFit = null;
+var EVAL_WARN_BASE_IDS = [];   /* D34: 取り消した期のAI生成が前の期の報告書欄を埋めていた可能性の警告（planId・メモリだけ） */
+/* 専用GASの「守り」一覧（ping の応答・メモリだけ）。null＝まだ確かめていない。
+   取り消し（plans→trash）は 2026-09-04 版のGAS（allowdrop1）でないと件数減少ガードに当たるため、
+   古い版に繋がっている端末では手前で止めて理由を伝える（countdrop の素っ気ない拒否にしない）。 */
+var SRV_GUARDS = null;
 
 function defSettings() {
   return {
@@ -2078,8 +2120,13 @@ function emptyDoc(masterId, row) {
   return {
     v: 1,
     subject: { masterId: s_(masterId), nameNorm: TP.normalizeName(row && row.name), kana: s_(row && row.kana) },
-    plans: [], gaps: []
+    plans: [], trash: [], gaps: []
   };
+}
+/* 保存・件数判定の単位（D30）。取り消し置き場（trash）も合計に数える＝取り消しは保存の件数を減らさない */
+function docTotal(doc) {
+  return (doc && Object.prototype.toString.call(doc.plans) === '[object Array]' ? doc.plans.length : 0) +
+    (doc && Object.prototype.toString.call(doc.trash) === '[object Array]' ? doc.trash.length : 0);
 }
 
 function openResident(masterId, wantScr) {
@@ -2092,6 +2139,7 @@ function openResident(masterId, wantScr) {
   clearAiError();
   AI_NOTES = {};          /* 前の方のAIの注意書きを持ち越さない（メモリだけ） */
   AI_UNDO = {};           /* 「元に戻す」の控えも持ち越さない（別の方の内容を戻さないため） */
+  EVAL_WARN_BASE_IDS = [];   /* D34の警告も別の方には持ち越さない（メモリだけ） */
   dirty = false;
   return tpGet(docKey(id)).then(function (j) {
     if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
@@ -2106,6 +2154,7 @@ function openResident(masterId, wantScr) {
           kana: s_(j.data.subject && j.data.subject.kana)
         },
         plans: j.data.plans.map(TP.normalizePlan),
+        trash: TP.normalizeTrash(j.data.trash),
         gaps: (Object.prototype.toString.call(j.data.gaps) === '[object Array]' ? j.data.gaps : []).map(function (g) {
           return { from: s_(g && g.from), to: s_(g && g.to), note: s_(g && g.note) };
         })
@@ -2114,7 +2163,7 @@ function openResident(masterId, wantScr) {
       DOC = emptyDoc(id, row);
     }
     if (!DOC.subject.nameNorm && row) DOC.subject.nameNorm = TP.normalizeName(row.name);
-    DOC_COUNT = DOC.plans.length;
+    DOC_COUNT = docTotal(DOC);
     curMasterId = id;
     sortPlans();
     DOC_BASE = JSON.parse(JSON.stringify(DOC));   /* 競合の3点比較の基準にする */
@@ -2194,9 +2243,11 @@ function renderEdit() {
     banner(host, 'info', 'この計画は作成日（' + s_(plan.planDate) + '）より後に登録されています。登録した日時は記録として残ります。' +
       (settings().retroNote ? '印刷面の備考に、遡って作成した旨の注記が入ります。' : '印刷には出さない設定です（設定画面で変えられます）。'));
   }
+  renderEvalWarnBanners(host);
   renderNameFix();
   renderPlanSelect();
   renderTimeline();
+  renderTrashCard();
   renderStaffSelects();
   renderMeta();
   renderMoveEvalBox();
@@ -2943,8 +2994,8 @@ function saveNow(explicit) {
     renderNameFix();
     return;
   }
-  if (DOC.plans.length < DOC_COUNT) {
-    showSaveError('計画の件数がサーバー（' + DOC_COUNT + '期）より減っています（' + DOC.plans.length + '期）。取り違えの恐れがあるため保存しませんでした。画面を開き直してください。');
+  if (docTotal(DOC) < DOC_COUNT) {
+    showSaveError('計画と取り消し置き場の合計件数がサーバー（' + DOC_COUNT + '件）より減っています（' + docTotal(DOC) + '件）。取り違えの恐れがあるため保存しませんでした。画面を開き直してください。');
     return;
   }
   touchAudit();
@@ -2964,7 +3015,7 @@ function saveNow(explicit) {
     if (j && j.ok) {
       pushing = false;
       DOC_REV = Number(j.rev) || (DOC_REV + 1);
-      DOC_COUNT = DOC.plans.length;
+      DOC_COUNT = docTotal(DOC);
       try { DOC_BASE = JSON.parse(snapshot); } catch (e2) { DOC_BASE = null; }   /* 送れた内容＝サーバーの中身 */
       if (JSON.stringify(DOC) === snapshot) dirty = false;   /* 送信中に入った編集は未保存のまま残す */
       setSync('同期OK', 'ok');
@@ -3055,6 +3106,7 @@ function normServerDoc(data, id) {
       kana: s_(data && data.subject && data.subject.kana)
     },
     plans: (Object.prototype.toString.call(data && data.plans) === '[object Array]' ? data.plans : []).map(TP.normalizePlan),
+    trash: TP.normalizeTrash(data && data.trash),
     gaps: (Object.prototype.toString.call(data && data.gaps) === '[object Array]' ? data.gaps : []).map(function (g) {
       return { from: s_(g && g.from), to: s_(g && g.to), note: s_(g && g.note) };
     })
@@ -3133,16 +3185,37 @@ function handleConflict(mid) {
     if (!g || !g.ok) throw new Error(s_((g && g.error) || '応答エラー'));
     var srvRev = Number(g.rev) || 0;
     var srv = normServerDoc(g.data, id);
+    /* ★D32: 取り消し置き場（trash）も planId で和集合にする（消失より復活）。
+       和集合に載っている期は、まだ手元で生きていても「取り消しは有効」として plans 側から外す
+       （中身は trash に残るので失われない）。 */
+    var trashHave = {}, ti, tpid;
+    for (ti = 0; ti < DOC.trash.length; ti++) {
+      tpid = s_(DOC.trash[ti].plan && DOC.trash[ti].plan.planId);
+      if (tpid) trashHave[tpid] = 1;
+    }
+    var trashAdded = 0;
+    for (ti = 0; ti < srv.trash.length; ti++) {
+      tpid = s_(srv.trash[ti].plan && srv.trash[ti].plan.planId);
+      if (!tpid || trashHave[tpid]) continue;
+      DOC.trash.push(srv.trash[ti]);
+      trashHave[tpid] = 1;
+      trashAdded++;
+    }
+    for (ti = DOC.plans.length - 1; ti >= 0; ti--) {
+      if (trashHave[s_(DOC.plans[ti].planId)]) DOC.plans.splice(ti, 1);
+    }
     var byId = {}, baseById = {}, i;
     for (i = 0; i < DOC.plans.length; i++) byId[DOC.plans[i].planId] = DOC.plans[i];
     var basePlans = (DOC_BASE && Object.prototype.toString.call(DOC_BASE.plans) === '[object Array]') ? DOC_BASE.plans : null;
     if (basePlans) for (i = 0; i < basePlans.length; i++) baseById[basePlans[i].planId] = basePlans[i];
-    /* サーバーにしか無い期は無条件で取り込む（消失より復活） */
+    /* サーバーにしか無い期は無条件で取り込む（消失より復活）。取り消し済み（trashHave）は取り込まない */
     var added = 0;
     for (i = 0; i < srv.plans.length; i++) {
-      if (!byId[srv.plans[i].planId]) {
+      var spid = s_(srv.plans[i].planId);
+      if (trashHave[spid]) continue;
+      if (!byId[spid]) {
         DOC.plans.push(srv.plans[i]);
-        byId[srv.plans[i].planId] = srv.plans[i];
+        byId[spid] = srv.plans[i];
         added++;
       }
     }
@@ -3169,18 +3242,19 @@ function handleConflict(mid) {
     sortPlans();
     if (!diffs.length) {
       DOC_REV = srvRev;                 /* この直後に必ず保存するので、ここでは進めてよい */
-      DOC_COUNT = srv.plans.length;
+      DOC_COUNT = srv.plans.length + srv.trash.length;
       renderEdit();
       var msg = [];
       if (added) msg.push('計画 ' + added + '件');
       if (took) msg.push('欄 ' + took + '件');
       if (gapAdded) msg.push('欠落台帳 ' + gapAdded + '件');
       if (tagAdded) msg.push('本人の様子のタグ ' + tagAdded + '件');
+      if (trashAdded) msg.push('取り消した期 ' + trashAdded + '件');
       toast(msg.length ? ('他の端末の変更を取り込みました（' + msg.join('・') + '）') : '最新版を取り直しました');
       saveNow(true);
       return;
     }
-    openConflictModal(diffs, added, took, gapAdded, srvRev, srv.plans.length, tagAdded);
+    openConflictModal(diffs, added, took, gapAdded, srvRev, srv.plans.length + srv.trash.length, tagAdded, trashAdded);
   }).catch(function (e) {
     if (id !== curMasterId) {
       toast('先ほど開いていた方の最新版を取り直せませんでした（' + errText(e) + '）。一覧から開き直してください。');
@@ -3190,13 +3264,14 @@ function handleConflict(mid) {
     showSaveError('他の端末の変更を取り直せませんでした（' + errText(e) + '）。入力はこの画面に残っています。');
   });
 }
-function openConflictModal(diffs, added, took, gapAdded, srvRev, srvCount, tagAdded) {
+function openConflictModal(diffs, added, took, gapAdded, srvRev, srvCount, tagAdded, trashAdded) {
   var box = $('cfList');
   clear(box);
   if (added) box.appendChild(el('p', 'muted', 'このほかに、サーバーにだけあった計画 ' + added + '件はそのまま取り込みました。'));
   if (took) box.appendChild(el('p', 'muted', 'この端末で触っていない欄 ' + took + '件は、他の端末の内容をそのまま取り込みました。'));
   if (gapAdded) box.appendChild(el('p', 'muted', '欠落台帳の ' + gapAdded + '件も取り込みました。'));
   if (tagAdded) box.appendChild(el('p', 'muted', '「本人の様子」のタグ ' + tagAdded + '件は、他の端末で付けた分も残しました。'));
+  if (trashAdded) box.appendChild(el('p', 'muted', '取り消した期 ' + trashAdded + '件も取り込みました。'));
   for (var i = 0; i < diffs.length; i++) {
     var d = diffs[i];
     var row = el('div', 'fldrow');
@@ -3523,6 +3598,13 @@ function renderTimeline() {
       b.setAttribute('aria-label', '第' + it.seq + '期（' + it.date + '）を開く');
       b.addEventListener('click', function () { switchPlan(this.getAttribute('data-idx')); });
       row.appendChild(b);
+      var del = el('button', 'btn sm danger', '取り消す');
+      del.type = 'button';
+      del.disabled = (idx < 0);
+      del.setAttribute('data-idx', String(idx));
+      del.setAttribute('aria-label', '第' + it.seq + '期（' + it.date + '）を取り消す');
+      del.addEventListener('click', function () { deletePlan(this.getAttribute('data-idx')); });
+      row.appendChild(del);
     } else {
       miss++;
       row.appendChild(el('span', 'tl-mk', '✕'));
@@ -3539,6 +3621,255 @@ function renderTimeline() {
   host.appendChild(el('p', 'muted', miss
     ? ('✕ 未作成 ' + miss + '期（3か月ごとの期のうち、計画が残っていない期です。作成日は後から直せます）')
     : '✓ 3か月ごとの期に抜けはありません'));
+}
+
+/* ═══════════ 取り消し（D30〜D32）═══════════
+   取り消しは「隠す」のではなく DOC.plans から外して DOC.trash へ移す。
+   取り消した期は期の並び・様式比較・印刷・期限計算にいっさい出さない（timelineOf 等は DOC.plans しか見ない＝そのまま）。 */
+function deletePlan(idxStr) {
+  if (!DOC || !DOC.plans) return;
+  var idx = parseInt(idxStr, 10);
+  if (!(idx >= 0) || idx >= DOC.plans.length) return;
+  var p = DOC.plans[idx];
+  if (!p) return;
+  if (!trashReady()) {
+    toast('この端末が繋がっている計画書GASは古い版のため、期の取り消しを保存できません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+    return;
+  }
+  var stateLabel = TP.STATUS_LABEL[p.status] || '未作成';
+  if (!confirm('第' + p.seq + '期（作成日 ' + (p.planDate || '日付なし') + '・' + stateLabel +
+      '）を取り消します。取り消した期は「取り消した期」に残り、あとから元に戻せます。よろしいですか？')) return;
+  /* D31: 印刷済／家族署名受領済／転記（origin.kind==='import'）は2段階目の確認を挟む */
+  var reasons = [];
+  if (p.status === 'printed') reasons.push('この期は「印刷済」です。紙で配ったものがある可能性があります。');
+  else if (p.status === 'signed') reasons.push('この期は「家族署名受領済」です。ご家族に配ったものがある可能性があります。');
+  if (p.origin && p.origin.kind === 'import') reasons.push('この期は原本からの転記です。取り消すと原本との対応が分かりにくくなります。');
+  if (reasons.length && !confirm(reasons.join('') + 'それでも取り消しますか？')) return;
+
+  var wasCurrent = (curPlanIdx === idx);
+  var curId = (!wasCurrent && curPlanIdx >= 0 && DOC.plans[curPlanIdx]) ? s_(DOC.plans[curPlanIdx].planId) : '';
+  var neighborId = wasCurrent
+    ? (idx > 0 ? s_(DOC.plans[idx - 1].planId) : (DOC.plans.length > 1 ? s_(DOC.plans[1].planId) : ''))
+    : '';
+  var seqForToast = p.seq, dateForToast = p.planDate;
+
+  DOC.plans.splice(idx, 1);
+  if (!DOC.trash) DOC.trash = [];
+  DOC.trash.push({ at: nowIso(), by: currentStaffName(), plan: p });
+  sortPlans();
+
+  if (wasCurrent) {
+    if (!neighborId || !keepPlanIdx(neighborId)) curPlanIdx = DOC.plans.length ? 0 : -1;
+  } else if (curId) {
+    keepPlanIdx(curId);
+  }
+  noteEvalWarnAfterDelete(p);
+  markDirty();
+  renderEdit();
+  saveNow(true);
+  toast('第' + seqForToast + '期（' + (dateForToast || '日付なし') + '）を取り消しました。「取り消した期」から元に戻せます');
+}
+/* D34: 取り消した期を作った時のAI生成が、前の期（base）の報告書欄も一緒に埋めていた可能性を控える。
+   ★自動では消さない・触らない。編集画面の警告（renderEvalWarnBanners）に出すだけ。 */
+function noteEvalWarnAfterDelete(p) {
+  if (!DOC || !DOC.plans) return;
+  var basePid = s_(p.origin && p.origin.basePlanId);
+  if (!basePid) return;
+  var idx = planIdxOf(basePid);
+  if (idx < 0) return;
+  var base = DOC.plans[idx];
+  if (base.evalOrigin && base.evalOrigin.kind === 'ai' && base.evalOrigin.confirmed !== true) {
+    if (EVAL_WARN_BASE_IDS.indexOf(basePid) < 0) EVAL_WARN_BASE_IDS.push(basePid);
+  }
+}
+/* D34の警告。まだ未確認（evalOrigin.confirmed !== true）のうちだけ出す。人が編集すれば
+   markEvalConfirmedIfNeeded が confirmed を立てるので、そこで自然に消える。 */
+function renderEvalWarnBanners(host) {
+  if (!DOC || !DOC.plans) { EVAL_WARN_BASE_IDS = []; return; }
+  var keep = [];
+  for (var i = 0; i < EVAL_WARN_BASE_IDS.length; i++) {
+    var pid = EVAL_WARN_BASE_IDS[i];
+    var idx = planIdxOf(pid);
+    if (idx < 0) continue;   /* 前の期自体も取り消された等 */
+    var base = DOC.plans[idx];
+    if (!base.evalOrigin || base.evalOrigin.kind !== 'ai' || base.evalOrigin.confirmed === true) continue;
+    keep.push(pid);
+    var b = el('div', 'banner warn');
+    b.setAttribute('role', 'alert');
+    b.appendChild(el('div', null, 'この期を作った時のAI生成で、前の期（第' + base.seq +
+      '期）の報告書欄（達成度・Ⅲ・課題）にも文が入っています。前の期を開いて確かめてください。'));
+    var row = el('div', 'stack');
+    row.style.marginTop = 'var(--sp-2)';
+    var openBtn = el('button', 'btn sm', '第' + base.seq + '期を開く');
+    openBtn.type = 'button';
+    openBtn.setAttribute('data-idx', String(idx));
+    openBtn.addEventListener('click', function () { switchPlan(this.getAttribute('data-idx')); });
+    row.appendChild(openBtn);
+    if (Object.prototype.toString.call(base.evalOrigin.fields) === '[object Array]' && base.evalOrigin.fields.length) {
+      var clearBtn = el('button', 'btn sm danger', 'AIが入れた欄だけ消す');
+      clearBtn.type = 'button';
+      clearBtn.setAttribute('data-idx', String(idx));
+      clearBtn.addEventListener('click', function () { clearEvalOriginFields(this.getAttribute('data-idx')); });
+      row.appendChild(clearBtn);
+    }
+    b.appendChild(row);
+    host.appendChild(b);
+  }
+  EVAL_WARN_BASE_IDS = keep;
+}
+/* D34「AIが入れた欄だけ消す」。evalOrigin.fields に挙がっている欄だけを空にする（それ以外には絶対に触らない）。 */
+function clearEvalOriginFields(idxStr) {
+  if (!DOC || !DOC.plans) return;
+  var idx = parseInt(idxStr, 10);
+  if (!(idx >= 0) || idx >= DOC.plans.length) return;
+  var base = DOC.plans[idx];
+  var fields = (base.evalOrigin && Object.prototype.toString.call(base.evalOrigin.fields) === '[object Array]') ? base.evalOrigin.fields : [];
+  if (!fields.length) return;
+  var labels = fields.map(function (k) { return FIELDS[k] ? FIELDS[k].label : k; }).join('・');
+  if (!confirm('第' + base.seq + '期の「' + labels + '」を空にします（AIが入れた欄だけです）。よろしいですか？')) return;
+  for (var i = 0; i < fields.length; i++) setPath(base, fields[i], '');
+  base.evalOrigin = null;
+  markDirty();
+  renderEdit();
+  saveNow(true);
+  toast('AIが入れた欄を消しました');
+}
+
+/* ═══════════ 取り消した期（trash）── 元に戻す／完全に削除 ═══════════ */
+/* ISO日時 → 画面表示用（この端末のローカル時刻・YYYY-MM-DD HH:MM）。todayYmd と同じ考え方（ローカル時刻） */
+function fmtDateTime(iso) {
+  var d = new Date(s_(iso));
+  if (isNaN(d.getTime())) return s_(iso);
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) +
+    ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
+/* DOC.trash が空ならカードごと隠す（管理者指示「表示不要」） */
+function renderTrashCard() {
+  var card = $('trashCard');
+  if (!card) return;
+  var list = $('trashList');
+  if (!DOC || !DOC.trash || !DOC.trash.length) { card.hidden = true; clear(list); return; }
+  card.hidden = false;
+  $('trashCount').textContent = String(DOC.trash.length);
+  clear(list);
+  for (var i = 0; i < DOC.trash.length; i++) {
+    var t = DOC.trash[i], p = t.plan || {};
+    var row = el('div', 'tl-row');
+    row.appendChild(el('span', null, '作成日 ' + (p.planDate || '日付なし') + '　取り消し ' +
+      fmtDateTime(t.at) + '　' + (s_(t.by) || '職員未選択')));
+    var rb = el('button', 'btn sm sp', '元に戻す');
+    rb.type = 'button';
+    rb.setAttribute('data-idx', String(i));
+    rb.setAttribute('aria-label', '第' + (p.seq || '?') + '期（' + (p.planDate || '日付なし') + '）を元に戻す');
+    rb.addEventListener('click', function () { restoreTrash(this.getAttribute('data-idx')); });
+    row.appendChild(rb);
+    var db = el('button', 'btn sm danger', '完全に削除');
+    db.type = 'button';
+    db.setAttribute('data-idx', String(i));
+    db.setAttribute('aria-label', '第' + (p.seq || '?') + '期（' + (p.planDate || '日付なし') + '）を完全に削除する');
+    db.addEventListener('click', function () { permanentlyDeleteTrash(this.getAttribute('data-idx')); });
+    row.appendChild(db);
+    list.appendChild(row);
+  }
+}
+/* 元に戻す（D32）。同じ期が既に生きている時は戻さず、取り消しの記録だけ捨てる。 */
+function restoreTrash(idxStr) {
+  if (!DOC || !DOC.trash) return;
+  var idx = parseInt(idxStr, 10);
+  if (!(idx >= 0) || idx >= DOC.trash.length) return;
+  var item = DOC.trash[idx];
+  if (!item || !item.plan) return;
+  DOC.trash.splice(idx, 1);
+  if (planIdxOf(item.plan.planId) >= 0) {
+    toast('同じ期が既にあるため、取り消した記録だけを削除しました');
+  } else {
+    DOC.plans.push(item.plan);
+    sortPlans();
+    keepPlanIdx(item.plan.planId);
+    var restored = curPlan();
+    toast('第' + (restored ? restored.seq : item.plan.seq) + '期（' + (item.plan.planDate || '日付なし') + '）を元に戻しました');
+  }
+  markDirty();
+  renderEdit();
+  saveNow(true);
+}
+/* pushing（送信中）が終わるまで待つ。完全に削除の前に、保留中の保存を必ず終わらせるため。
+   時間切れでも reject しない＝呼び出し側が dirty を見て成功・失敗を判断する。 */
+function waitPushingDone(maxMs) {
+  return new Promise(function (resolve) {
+    var start = Date.now();
+    (function poll() {
+      if (!pushing || (Date.now() - start) > (maxMs || 35000)) { resolve(); return; }
+      setTimeout(poll, 150);
+    })();
+  });
+}
+/* 完全に削除（D32）。復帰不可のため必ず2段階confirm。allowDrop:true の put を1回だけ送る（force は使わない）。 */
+function permanentlyDeleteTrash(idxStr) {
+  if (!DOC || !DOC.trash) return;
+  var idx = parseInt(idxStr, 10);
+  if (!(idx >= 0) || idx >= DOC.trash.length) return;
+  var item = DOC.trash[idx];
+  if (!item || !item.plan) return;
+  var p = item.plan;
+  if (!confirm('第' + p.seq + '期（作成日 ' + (p.planDate || '日付なし') + '）を完全に削除します。よろしいですか？')) return;
+  if (!confirm('完全に削除すると元に戻せません。本当によろしいですか？')) return;
+  if (pushing) { toast('保存中です。少し待ってからもう一度お試しください'); return; }
+  var doc = DOC, mid = curMasterId;
+  var run = function () { doPermanentDelete(doc, mid, idx); };
+  if (dirty) {
+    saveNow(true);
+    waitPushingDone().then(function () {
+      if (mid === curMasterId && dirty) {
+        toast('保存できなかったため、完全に削除を中止しました。保存してからもう一度お試しください');
+        return;
+      }
+      run();
+    });
+  } else {
+    run();
+  }
+}
+/* ★doc・mid は呼び出し時点の写し。待っている間に別の方へ切り替えられても、
+   別人の DOC へ書いたり、別人の rev で送ったりしない（saveNow / handleConflict と同じ考え方）。 */
+function doPermanentDelete(doc, mid, idx) {
+  if (mid !== curMasterId) {
+    toast('別の方の画面に切り替わったため、完全に削除を中止しました。もう一度開いてお試しください');
+    return;
+  }
+  if (!doc || !doc.trash || !(idx >= 0) || idx >= doc.trash.length) return;
+  var item = doc.trash[idx];
+  if (!item) return;
+  doc.trash.splice(idx, 1);
+  renderTrashCard();
+  var snapshot = JSON.stringify(doc);
+  var rev = DOC_REV;
+  pushing = true;
+  updateSaveState();
+  tpPutAllowDrop(docKey(mid), doc, rev).then(function (j) {
+    pushing = false;
+    if (mid !== curMasterId) { updateSaveState(); return; }
+    if (j && j.ok) {
+      DOC_REV = Number(j.rev) || (rev + 1);
+      DOC_COUNT = docTotal(doc);
+      try { DOC_BASE = JSON.parse(snapshot); } catch (e2) { DOC_BASE = null; }
+      updateSaveState();
+      updateIndexFor(mid, doc);
+      renderTrashCard();
+      toast('完全に削除しました');
+      return;
+    }
+    doc.trash.splice(idx, 0, item);
+    renderTrashCard();
+    updateSaveState();
+    if (j && j.conflict) toast('他の端末と重なりました。画面を開き直してからもう一度お試しください');
+    else toast('完全に削除できませんでした: ' + errText({ message: s_((j && j.error) || '応答エラー') }));
+  }).catch(function (e) {
+    pushing = false;
+    doc.trash.splice(idx, 0, item);
+    if (mid === curMasterId) { renderTrashCard(); updateSaveState(); }
+    toast('完全に削除できませんでした: ' + errText(e));
+  });
 }
 
 /* ═══════════ 様式比較（左＝過去の期／右＝今回をその様式の中で編集） ═══════════ */
@@ -4745,12 +5076,15 @@ function applyAi(p, base, out, mode, model) {
   if (mode !== 'fill_eval' && base) {
     var baseSnap = snapshotFields(base, EVAL_KEYS);
     var baseLocked = (base.status === 'printed' || base.status === 'signed');
+    /* D34: 実際にAIが書き込む欄名を、書く前に控えておく（applyEvalPrevToBase が空欄を埋めてしまう前） */
+    var evalPrevFields = prevEvalEmptyFields(base);
     var wroteEvalPrev = applyEvalPrevToBase(base, o.evalPrev, notes);
     if (wroteEvalPrev) {
       notes = notes.concat(aiTextWarnings(base, sampleOf(p)));
       finalizeAiWrite(base, baseSnap, 'evalPrev', '', model, { keepStatus: baseLocked });
-      /* 印刷済・署名済の期の報告書欄にAIが書いた印。職員がその欄を実際に編集するまで残す（見落とし防止） */
-      base.evalOrigin = { kind: 'ai', at: nowIso(), confirmed: false };
+      /* 印刷済・署名済の期の報告書欄にAIが書いた印。職員がその欄を実際に編集するまで残す（見落とし防止）。
+         fields はD34の「AIが入れた欄だけ消す」で使う（実際に書いた欄名だけ）。 */
+      base.evalOrigin = { kind: 'ai', at: nowIso(), confirmed: false, fields: evalPrevFields.slice() };
       if (baseLocked) {
         notes.push('前の期（' + (TP.STATUS_LABEL[base.status] || base.status) +
           '）の報告書欄にAIの評価を入れました。前の期を開いて必ず確認してください');
@@ -5087,15 +5421,27 @@ function applyImport() {
     var rev = Number(j.rev) || 0;
     var cur = (j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]')
       ? normServerDoc(j.data, targetId)
-      : { v: 1, subject: { masterId: targetId, nameNorm: '', kana: '' }, plans: [], gaps: [] };
+      : { v: 1, subject: { masterId: targetId, nameNorm: '', kana: '' }, plans: [], trash: [], gaps: [] };
     if (row) { cur.subject.nameNorm = TP.normalizeName(row.name); cur.subject.kana = s_(row.kana); }
     else if (!cur.subject.nameNorm) { cur.subject.nameNorm = res.doc.subject.nameNorm; cur.subject.kana = res.doc.subject.kana; }
-    var m = TP.mergeImport(cur.plans, incoming);
+    /* 取り消し済み（trash）に同じ planId があるものは取り込まない（取り消したものが黙って復活しないため） */
+    var trashIds = {}, ti;
+    for (ti = 0; ti < cur.trash.length; ti++) {
+      var tpid = s_(cur.trash[ti].plan && cur.trash[ti].plan.planId);
+      if (tpid) trashIds[tpid] = 1;
+    }
+    var skippedTrash = 0, incomingLive = [];
+    for (ti = 0; ti < incoming.length; ti++) {
+      if (trashIds[s_(incoming[ti].planId)]) { skippedTrash++; continue; }
+      incomingLive.push(incoming[ti]);
+    }
+    var m = TP.mergeImport(cur.plans, incomingLive);
     if (!m.added) {
       $('imApply').disabled = false;
       $('importModal').classList.remove('on');
       setSync('同期OK', 'ok');
-      toast('新しく取り込む計画はありませんでした（' + m.skipped.length + '件は既にあります）');
+      toast('新しく取り込む計画はありませんでした（' + m.skipped.length + '件は既にあります' +
+        (skippedTrash ? '・取り消し済み ' + skippedTrash + '件は飛ばしました' : '') + '）');
       return;
     }
     cur.plans = m.plans;
@@ -5111,7 +5457,8 @@ function applyImport() {
       $('imApply').disabled = false;
       $('importModal').classList.remove('on');
       setSync('同期OK', 'ok');
-      toast('取り込みました（追加 ' + m.added + '件' + (m.skipped.length ? '・既にあった ' + m.skipped.length + '件は飛ばしました' : '') + '）' +
+      toast('取り込みました（追加 ' + m.added + '件' + (m.skipped.length ? '・既にあった ' + m.skipped.length + '件は飛ばしました' : '') +
+        (skippedTrash ? '・取り消し済み ' + skippedTrash + '件は飛ばしました' : '') + '）' +
         (renamed ? '　※氏名は名簿の値に合わせました' : ''));
       updateIndexFor(targetId, cur).then(function () { renderList(); });
       if (curMasterId === targetId) openResident(targetId);
@@ -5187,6 +5534,7 @@ function testCfg() {
       $('cfgState').textContent = '⚠ 別のGAS（' + name + '）に繋がっています。計画書【専用】のURLを入れてください';
       return;
     }
+    if (Object.prototype.toString.call(j.guards) === '[object Array]') SRV_GUARDS = j.guards.map(s_);
     $('cfgState').textContent = '✓ 繋がりました（版 ' + s_(j.codeVersion) + '・守り ' +
       ((Object.prototype.toString.call(j.guards) === '[object Array]') ? j.guards.join('/') : '—') + '）';
   }).catch(function (e) {
@@ -5278,9 +5626,24 @@ function switchPlan(idx) {
   clearAiError();
   renderEdit();
 }
+/* 起動時に1回だけ ping して、サーバーの守り一覧を控える（失敗しても止めない＝分からないまま進む） */
+function loadServerGuards() {
+  if (!CFG.url || !SU_READY) return Promise.resolve(null);
+  return tpPing().then(function (j) {
+    if (j && j.ok && Object.prototype.toString.call(j.guards) === '[object Array]') SRV_GUARDS = j.guards.map(s_);
+    return SRV_GUARDS;
+  }).catch(function () { return null; });
+}
+/* 取り消し（plans→trash）を受け付けるサーバーか。分からない時は止めない
+   （最後の砦はサーバーの countdrop で、データは壊れない）。 */
+function trashReady() {
+  if (!SRV_GUARDS) return true;
+  return SRV_GUARDS.indexOf('allowdrop1') >= 0;
+}
 function refreshAll() {
   setSync('読み込み中…');
   return loadIndex()
+    .then(function () { return loadServerGuards(); })
     .then(function () { return loadRoster(); })
     .then(function () { return loadDaySet(); })
     .then(function () {
@@ -5453,7 +5816,7 @@ function bindUI() {
     if (!dirty || !DOC || !curMasterId || !CFG.url || !SU_READY) return;
     var chk = subjectCheck();
     if (!chk.ok) return;                       /* 照合できない内容は最後まで書かない */
-    if (DOC.plans.length < DOC_COUNT) return;  /* 件数が減る送信はしない */
+    if (docTotal(DOC) < DOC_COUNT) return;  /* 件数（計画＋取り消し置き場）が減る送信はしない */
     try { SU.data.kvPutBeacon(docKey(curMasterId), DOC, DOC_REV, tpTarget()); } catch (e) {}
   }
   window.addEventListener('pagehide', flushOnExit);
