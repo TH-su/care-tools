@@ -23,13 +23,17 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-03.1';
+  var VERSION = '2026-09-04.1';
 
   /* ── 用紙・寸法 ───────────────────────────────────────────────── */
   var MM_PER_PT = 25.4 / 72;          /* 1pt = 0.3528mm */
   var PX_PER_PT = 96 / 72;            /* 1pt = 1.3333px（CSS 96dpi） */
-  var PAGE_W_MM = 194;                /* A4縦 210mm − 余白8mm×2 */
-  var PAGE_H_MM = 281;                /* A4縦 297mm − 余白8mm×2 */
+  /* 余白は 5mm（2026-09-04 指示「用紙に上下左右最大限」）。8mm から詰めた。
+     一般的なレーザー・インクジェットの最小余白（3〜4mm台）の内側。外枠の罫線が欠けるプリンタがあれば
+     ここと PAGE_CSS の2か所を同時に戻す（片方だけ変えると1枚に収まらなくなる） */
+  var PAGE_MARGIN_MM = 5;
+  var PAGE_W_MM = 210 - PAGE_MARGIN_MM * 2;   /* A4縦 210mm − 余白×2 ＝ 200 */
+  var PAGE_H_MM = 297 - PAGE_MARGIN_MM * 2;   /* A4縦 297mm − 余白×2 ＝ 287 */
   var SAFE = 0.99;                    /* 層D: 印字可能寸法の99%を超えたら zoom */
   var SHEET_W_PT = 620;               /* 原本の総幅（62列×10pt） */
   var BORDER_PX = 1;                  /* 細罫線（thin）の描画幅 */
@@ -39,7 +43,7 @@
   var SIGN_ROW_PT = 14;               /* D14 署名行の行高（原本の最終行 5.25pt を置き換える） */
 
   var FONT_STACK = '"ＭＳ 明朝","MS Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif';
-  var PAGE_CSS = '@page{size:A4 portrait;margin:8mm}';
+  var PAGE_CSS = '@page{size:A4 portrait;margin:' + PAGE_MARGIN_MM + 'mm}';
 
   /* 非折返しの単セル見出し。Excel と同じく右へはみ出させる（colspan 拡張は右罫線を落とすため使わない） */
   var OVERFLOW_CELLS = {

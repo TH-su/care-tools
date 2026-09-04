@@ -232,6 +232,9 @@ body.mode-list #cmpBox{display:none}
 .pv-bar{display:flex;flex-wrap:wrap;gap:var(--tap-gap);align-items:center;margin-bottom:var(--sp-3)}
 #sheetHost{background:var(--c-surface);padding:var(--sp-2);border-radius:var(--r-md);
   overflow:auto;box-shadow:var(--shadow-1)}
+/* 用紙は高さで頭打ちになり幅に余りが出る（実測 187mm／印字域 194mm）。左詰めだと紙の右側だけ空くので、
+   入れ物の中で左右中央に置く（画面のプレビューも印刷も同じ位置）。.tp-sheet の中身には触れていない */
+#sheetHost>.tp-sheet{margin-left:auto;margin-right:auto}
 #probeHost{position:absolute;left:-20000px;top:0;width:260mm;pointer-events:none}
 
 /* ── モーダル ── */
@@ -5446,7 +5449,7 @@ function applyZoom() {
 }
 /* 用紙の指定は様式ファイル側の定義を正とする（食い違うと紙の余白がずれる） */
 function pageCss() {
-  return (FORM_READY && window.TP_FORM.PAGE_CSS) ? String(window.TP_FORM.PAGE_CSS) : '@page{size:A4 portrait;margin:8mm}';
+  return (FORM_READY && window.TP_FORM.PAGE_CSS) ? String(window.TP_FORM.PAGE_CSS) : '@page{size:A4 portrait;margin:5mm}';
 }
 /* 用紙は印刷の直前にだけ固定する（既存ツールと同じ作法。終わったら必ず外す） */
 function doPrint() {
