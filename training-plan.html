@@ -342,7 +342,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <!-- 3か月ごとの期の並び。作成済＝✓／未作成＝✕（予定日つき・その場で作れる） -->
     <div id="planTimeline" class="tl"></div>
   </div>
-  <!-- D30/D32: 取り消した期（trash）。無ければ非表示（管理者指示「表示不要」） -->
+  <!-- D30/D32: 取り消した期（trash）。利用者を開いている間は0件でも出す（2026-09-04 指示） -->
   <div class="cd" id="trashCard" hidden>
     <h3>取り消した期（<span id="trashCount">0</span>件）</h3>
     <p class="muted" id="trashHint">「元に戻す」でいつでも戻せます。「完全に削除」は元に戻せません</p>
@@ -2614,7 +2614,7 @@ function renderSample() {
   } else {
     $('genState').textContent = '';
   }
-  if (aiBusy) $('genState').textContent = 'AIに文案を頼んでいます…（10〜30秒ほどかかります）';
+  if (aiBusy) $('genState').textContent = aiRewording ? AI_REWORD_MSG : 'AIに文案を頼んでいます…（10〜30秒ほどかかります）';
 }
 function toggleTag(tag) {
   var p = curPlan();
@@ -3784,11 +3784,11 @@ function renderTrashCard() {
   var list = $('trashList'), hint = $('trashHint');
   if (!DOC) { card.hidden = true; clear(list); return; }
   card.hidden = false;
-  if (!DOC.trash) DOC.trash = [];
+  var arr = (Object.prototype.toString.call(DOC.trash) === '[object Array]') ? DOC.trash : [];   /* 描画で正本を書き換えない */
   clear(list);
   var shown = 0;
-  for (var i = 0; i < DOC.trash.length; i++) {
-    var t = DOC.trash[i], p = (t && t.plan) || {};
+  for (var i = 0; i < arr.length; i++) {
+    var t = arr[i], p = (t && t.plan) || {};
     /* planId の無い壊れた記録は操作させない（戻す先が決められない）。数には残す＝件数のつじつまは合う */
     if (!s_(p.planId)) continue;
     shown++;
@@ -3814,10 +3814,10 @@ function renderTrashCard() {
   }
   $('trashCount').textContent = String(shown);
   if (hint) hint.hidden = !shown;                              /* 空のときは操作の説明を出さない */
-  if (!shown) list.appendChild(el('p', 'muted', '取り消した期はありません'));
-  if (shown < DOC.trash.length) {
-    list.appendChild(el('p', 'muted', '（このほかに、中身を読み取れない取り消しの記録が ' +
-      (DOC.trash.length - shown) + '件あります。件数を合わせるため残しています）'));
+  if (!shown && !arr.length) list.appendChild(el('p', 'muted', '取り消した期はありません'));
+  if (shown < arr.length) {
+    list.appendChild(el('p', 'muted', '（中身を読み取れない取り消しの記録が ' +
+      (arr.length - shown) + '件あります。件数を合わせるため残しています）'));
   }
 }
 /* 元に戻す（D32）。同じ期が既に生きている時は【何も捨てず】案内だけ出す（レビュー中2）。 */
@@ -4468,6 +4468,14 @@ var ADJUST_FIELDS = ['socialParticipation',
   'shortGoalFunction', 'shortGoalActivity', 'shortGoalParticipation',
   'longGoalFunction', 'longGoalActivity', 'longGoalParticipation'];
 var AI_NOTES = {};      /* planId → 確かめてほしいことの一覧（メモリだけ・保存しない） */
+var aiRewording = false;   /* 目標の自動言い直し（2回目の往復）の最中か。表示の文言に使う */
+var AI_REWORD_MSG = '目標の言い回しを直しています…（あと1回だけ問い合わせます）';
+/* 同じ注意を二重に積まない（1回目の検査と言い直しの検査で同じ文になることがある） */
+function pushNote(list, msg) {
+  var m = s_(msg);
+  if (!list || !m || list.indexOf(m) >= 0) return;
+  list.push(m);
+}
 var AI_UNDO = {};       /* planId → AIを入れる直前の控え（メモリだけ・保存もエクスポートもしない。前の期の分も含めて複数持てる） */
 var aiBusy = false;
 
@@ -4819,6 +4827,7 @@ function renderAiNotes(p) {
   var list = AI_NOTES[pid] || [];
   var snap = AI_UNDO[pid] || null;
   undoBtn.hidden = !snap;
+  undoBtn.disabled = aiBusy;   /* 問い合わせの最中は押させない（戻した後に書き戻す事故を防ぐ） */
   if (!list.length && !snap) return;
   var b = el('div', 'banner warn');
   b.setAttribute('role', 'status');
@@ -5184,68 +5193,74 @@ function autoRewordGoals(p, base, model) {
   if (!p || !base) return;
   var rep = TP.goalRepeats(p, base);
   if (!rep.fields.length) return;
-  var pid = s_(p.planId), mid = curMasterId, i;
+  var pid = s_(p.planId), basePid = s_(base.planId), mid = curMasterId, i;
   var label = function (k) { return FIELDS[k] ? FIELDS[k].label : k; };
   var names = rep.fields.map(label).join('・');
   if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
   if (!aiReady() || aiBusy || p.status === 'printed' || p.status === 'signed') {
-    AI_NOTES[pid].push(names + 'が前の期と同じ文のままです。「AIで調整」か手直しで言い回しを変えてください');
+    pushNote(AI_NOTES[pid], names + 'が前の期と同じ文のままです。「AIで調整」か手直しで言い回しを変えてください');
     renderEdit();
     return;
   }
+  /* ★頼んでいる間に職員がその欄を直すことがある。依頼時の値を控えて、変わっていた欄には入れない
+     （生成は「入れました」と出た後なので、職員は普通に書き換えられる状態にある＝原則1・原則4） */
+  var before = {};
+  for (i = 0; i < rep.fields.length; i++) before[rep.fields[i]] = s_(getPath(p, rep.fields[i]));
+  /* ★「元に戻す」の控えも見張る。戻された後に書き戻すと、戻したはずの期にAI文が復活してしまう */
+  var undoAtRequest = AI_UNDO[pid] || null;
+  aiRewording = true;
   setAiBusy(true);
-  $('genState').textContent = '目標の言い回しを直しています…（あと1回だけ問い合わせます）';
+  setAdjustBusy(true);          /* 欄ごとの「AIで調整」も止める（aiRunAdjust と同じ作法） */
+  var undoBtn = $('btnAiUndo');
+  if (undoBtn) undoBtn.disabled = true;
+  $('genState').textContent = AI_REWORD_MSG;
   aiGenerate({ mode: 'adjust', fields: rep.fields, plan: p, prev: base, sample: sampleOf(p) }).then(function (r) {
-    setAiBusy(false);
-    if (mid !== curMasterId) return;          /* 別の方の画面に移っていたら入れない */
-    var tgt = null, k;
-    for (k = 0; k < DOC.plans.length; k++) if (s_(DOC.plans[k].planId) === pid) tgt = DOC.plans[k];
-    if (!tgt) return;
+    if (mid !== curMasterId) { toast('別の方の画面に切り替わったため、目標の言い直しは入れませんでした'); return; }
+    if ((AI_UNDO[pid] || null) !== undoAtRequest) {
+      toast('「元に戻す」を押したため、目標の言い直しは入れませんでした');
+      return;
+    }
+    var tgt = null, baseTgt = null, k;
+    for (k = 0; k < DOC.plans.length; k++) {
+      if (s_(DOC.plans[k].planId) === pid) tgt = DOC.plans[k];
+      if (basePid && s_(DOC.plans[k].planId) === basePid) baseTgt = DOC.plans[k];
+    }
+    if (!tgt) { toast('対象の期が見つからないため、目標の言い直しは入れませんでした'); return; }
     if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
     var list = AI_NOTES[pid];
-    /* 言い直しの返りにも形の検査（接頭辞・文字数）が掛かっている。その注意も残す */
+    /* 言い直しの返りにも形の検査（接頭辞・文字数）が掛かっている。その注意も残す（同じ文は積まない） */
     if (r && Object.prototype.toString.call(r.notes) === '[object Array]') {
-      for (i = 0; i < r.notes.length; i++) list.push(r.notes[i]);
+      for (i = 0; i < r.notes.length; i++) pushNote(list, r.notes[i]);
     }
-    for (i = 0; i < rep.fields.length; i++) putField(tgt, list, rep.fields[i], (r.out || {})[rep.fields[i]]);
-    var again = TP.goalRepeats(tgt, base), stuck = {}, done = [], left = [];
+    var kept = {}, done = [], left = [], keptNames = [], f;
+    for (i = 0; i < rep.fields.length; i++) {
+      f = rep.fields[i];
+      if (s_(getPath(tgt, f)) !== before[f]) { kept[f] = 1; keptNames.push(label(f)); continue; }
+      putField(tgt, list, f, (r.out || {})[f]);
+    }
+    var again = TP.goalRepeats(tgt, baseTgt || base), stuck = {};
     for (i = 0; i < again.fields.length; i++) stuck[again.fields[i]] = 1;
     for (i = 0; i < rep.fields.length; i++) {
-      if (stuck[rep.fields[i]]) left.push(label(rep.fields[i]));
-      else done.push(label(rep.fields[i]));
+      f = rep.fields[i];
+      if (kept[f]) continue;
+      if (stuck[f]) left.push(label(f));
+      else done.push(label(f));
     }
-    if (done.length) list.push(done.join('・') + 'が前の期と同じ文だったため、AIで言い直しました（内容を確かめてください）');
-    if (left.length) list.push(left.join('・') + 'は言い直しても同じ文のままです。手で直してください');
+    if (done.length) pushNote(list, done.join('・') + 'が前の期と同じ文だったため、AIで言い直しました（内容を確かめてください）');
+    if (left.length) pushNote(list, left.join('・') + 'は言い直しても同じ文のままです。手で直してください');
+    if (keptNames.length) pushNote(list, keptNames.join('・') + 'は職員が直したため、AIの言い直しは入れませんでした');
     markDirty();
-    renderEdit();
   }).catch(function (e) {
-    setAiBusy(false);
-    if (mid !== curMasterId) return;
+    if (mid !== curMasterId) { toast('先ほどの方の目標の言い直しに失敗しました（' + aiErrText(e) + '）'); return; }
     if (!AI_NOTES[pid]) AI_NOTES[pid] = [];
-    AI_NOTES[pid].push(names + 'の言い直しに失敗しました（' + aiErrText(e) + '）。欄ごとの「AIで調整」でやり直せます');
+    pushNote(AI_NOTES[pid], names + 'の言い直しに失敗しました（' + aiErrText(e) + '）。欄ごとの「AIで調整」でやり直せます');
+  }).finally(function () {
+    /* 成功・失敗・早期returnのどの経路でも、必ず画面の状態を戻す（aiRunAdjust と同じ作法） */
+    aiRewording = false;
+    setAiBusy(false);
+    setAdjustBusy(false);
     renderEdit();
   });
-}
-/* 欄ごとの「AIで調整」の反映（D25・item D）。返った欄だけを今の期に入れて差分表示＋AI_UNDOで戻せるようにする。
-   ★前の期には触らない・status は変えない・origin.kind は変えない＝人の編集の延長（applyAi と違い finalizeAiWrite は呼ばない）。
-   同じ期で欄ごとの「AIで調整」を続けて実行した時は、まだ控えに無い欄だけを追記する
-   （既に控えにある欄はそのまま＝最初の「AIを入れる前」の値を保つ。レビュー item1） */
-function applyAiAdjust(p, out, fields, model) {
-  var notes = aiShapeNotes(out, 'adjust', fields).slice();
-  var o = out || {};
-  var pid = s_(p.planId);
-  var snap = AI_UNDO[pid] || snapshotFields(p, []);
-  for (var i = 0; i < fields.length; i++) {
-    if (!Object.prototype.hasOwnProperty.call(snap.fields, fields[i])) snap.fields[fields[i]] = s_(getPath(p, fields[i]));
-    putField(p, notes, fields[i], o[fields[i]]);
-  }
-  AI_UNDO[pid] = snap;
-  AI_NOTES[pid] = notes;
-  markDirty();
-  renderEdit();
-  toast(notes.length
-    ? ('AIで調整しました（確かめること ' + notes.length + '件）。中身は必ず職員が確かめてください')
-    : 'AIで調整しました。中身は必ず職員が確かめてください');
 }
 
 /* ── 計画を作った直後の「本人の様子」の小ポップ ── */
