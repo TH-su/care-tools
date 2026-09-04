@@ -1084,9 +1084,10 @@ function normalizeTrash(arr) {
   var src = asArr_(arr), out = [];
   for (var i = 0; i < src.length; i++) {
     var t = isObj_(src[i]) ? src[i] : {};
-    var p = normalizePlan(t.plan);
-    if (!p.planId) continue;
-    out.push({ at: s_(t.at), by: s_(t.by), plan: p });
+    /* ★1件も捨てない。捨てるとサーバーが持っている件数より手元が少なくなり、
+       以後どの保存も件数減少ガードで断られる（原因が画面から分からない詰み方をする）。
+       planId が無い壊れた記録は「取り消した期」に出さないだけにする（renderTrashCard）。 */
+    out.push({ at: s_(t.at), by: s_(t.by), plan: normalizePlan(t.plan) });
   }
   return out;
 }
@@ -3652,11 +3653,15 @@ function deletePlan(idxStr) {
     ? (idx > 0 ? s_(DOC.plans[idx - 1].planId) : (DOC.plans.length > 1 ? s_(DOC.plans[1].planId) : ''))
     : '';
   var seqForToast = p.seq, dateForToast = p.planDate;
+  var wasPrevMap = TP.prevNeighborMap(DOC.plans);   /* 外す前の並びを控える（後ろの期の追随に使う） */
 
   DOC.plans.splice(idx, 1);
   if (!DOC.trash) DOC.trash = [];
   DOC.trash.push({ at: nowIso(), by: currentStaffName(), plan: p });
   sortPlans();
+  /* 間の期を取り消した時は、後ろの期の「前回作成日」がこの期を指したままにならないよう追随させる
+     （自動で入った値だけ・人が手で直した値と転記は触らない＝作成日を変えた時と同じ規則） */
+  var followed = applyPrevDateFollow(wasPrevMap);
 
   if (wasCurrent) {
     if (!neighborId || !keepPlanIdx(neighborId)) curPlanIdx = DOC.plans.length ? 0 : -1;
@@ -3667,7 +3672,8 @@ function deletePlan(idxStr) {
   markDirty();
   renderEdit();
   saveNow(true);
-  toast('第' + seqForToast + '期（' + (dateForToast || '日付なし') + '）を取り消しました。「取り消した期」から元に戻せます');
+  toast('第' + seqForToast + '期（' + (dateForToast || '日付なし') + '）を取り消しました。「取り消した期」から元に戻せます' +
+    (followed ? '。後の期の「前回作成日」も並びに合わせました' : ''));
 }
 /* D34: 取り消した期を作った時のAI生成が、前の期（base）の報告書欄も一緒に埋めていた可能性を控える。
    ★自動では消さない・触らない。編集画面の警告（renderEvalWarnBanners）に出すだけ。 */
@@ -3749,27 +3755,37 @@ function renderTrashCard() {
   if (!card) return;
   var list = $('trashList');
   if (!DOC || !DOC.trash || !DOC.trash.length) { card.hidden = true; clear(list); return; }
-  card.hidden = false;
-  $('trashCount').textContent = String(DOC.trash.length);
   clear(list);
+  var shown = 0;
   for (var i = 0; i < DOC.trash.length; i++) {
-    var t = DOC.trash[i], p = t.plan || {};
+    var t = DOC.trash[i], p = (t && t.plan) || {};
+    /* planId の無い壊れた記録は操作させない（戻す先が決められない）。数には残す＝件数のつじつまは合う */
+    if (!s_(p.planId)) continue;
+    shown++;
+    var when = (p.planDate || '日付なし');
     var row = el('div', 'tl-row');
-    row.appendChild(el('span', null, '作成日 ' + (p.planDate || '日付なし') + '　取り消し ' +
+    row.appendChild(el('span', null, '作成日 ' + when + '　取り消し ' +
       fmtDateTime(t.at) + '　' + (s_(t.by) || '職員未選択')));
     var rb = el('button', 'btn sm sp', '元に戻す');
     rb.type = 'button';
+    rb.disabled = pushing;                     /* 送信中は触らせない（配列が動くと復元の前提が崩れる） */
     rb.setAttribute('data-idx', String(i));
-    rb.setAttribute('aria-label', '第' + (p.seq || '?') + '期（' + (p.planDate || '日付なし') + '）を元に戻す');
+    rb.setAttribute('aria-label', '作成日 ' + when + 'の期を元に戻す');
     rb.addEventListener('click', function () { restoreTrash(this.getAttribute('data-idx')); });
     row.appendChild(rb);
     var db = el('button', 'btn sm danger', '完全に削除');
     db.type = 'button';
+    db.disabled = pushing;
     db.setAttribute('data-idx', String(i));
-    db.setAttribute('aria-label', '第' + (p.seq || '?') + '期（' + (p.planDate || '日付なし') + '）を完全に削除する');
+    db.setAttribute('aria-label', '作成日 ' + when + 'の期を完全に削除する');
     db.addEventListener('click', function () { permanentlyDeleteTrash(this.getAttribute('data-idx')); });
     row.appendChild(db);
     list.appendChild(row);
+  }
+  $('trashCount').textContent = String(shown);
+  if (shown < DOC.trash.length) {
+    list.appendChild(el('p', 'muted', '（このほかに、中身を読み取れない取り消しの記録が ' +
+      (DOC.trash.length - shown) + '件あります。件数を合わせるため残しています）'));
   }
 }
 /* 元に戻す（D32）。同じ期が既に生きている時は戻さず、取り消しの記録だけ捨てる。 */
@@ -3779,16 +3795,18 @@ function restoreTrash(idxStr) {
   if (!(idx >= 0) || idx >= DOC.trash.length) return;
   var item = DOC.trash[idx];
   if (!item || !item.plan) return;
-  DOC.trash.splice(idx, 1);
+  /* 同じ期が既に生きている時は【何も捨てない】。ここで trash を1件減らすと合計件数が減り、
+     この画面のその後の保存がすべて断られる（入力途中の欄も道連れになる）。 */
   if (planIdxOf(item.plan.planId) >= 0) {
-    toast('同じ期が既にあるため、取り消した記録だけを削除しました');
-  } else {
-    DOC.plans.push(item.plan);
-    sortPlans();
-    keepPlanIdx(item.plan.planId);
-    var restored = curPlan();
-    toast('第' + (restored ? restored.seq : item.plan.seq) + '期（' + (item.plan.planDate || '日付なし') + '）を元に戻しました');
+    toast('同じ作成日の期が既にあるため、元に戻しませんでした（取り消した記録はそのまま残しています）');
+    return;
   }
+  DOC.trash.splice(idx, 1);
+  DOC.plans.push(item.plan);
+  sortPlans();
+  keepPlanIdx(item.plan.planId);
+  var restored = curPlan();
+  toast('第' + (restored ? restored.seq : item.plan.seq) + '期（' + (item.plan.planDate || '日付なし') + '）を元に戻しました');
   markDirty();
   renderEdit();
   saveNow(true);
@@ -3812,11 +3830,11 @@ function permanentlyDeleteTrash(idxStr) {
   var item = DOC.trash[idx];
   if (!item || !item.plan) return;
   var p = item.plan;
-  if (!confirm('第' + p.seq + '期（作成日 ' + (p.planDate || '日付なし') + '）を完全に削除します。よろしいですか？')) return;
+  if (!confirm('取り消した期（作成日 ' + (p.planDate || '日付なし') + '）を完全に削除します。よろしいですか？')) return;
   if (!confirm('完全に削除すると元に戻せません。本当によろしいですか？')) return;
   if (pushing) { toast('保存中です。少し待ってからもう一度お試しください'); return; }
   var doc = DOC, mid = curMasterId;
-  var run = function () { doPermanentDelete(doc, mid, idx); };
+  var run = function () { doPermanentDelete(doc, mid, idx, item); };
   if (dirty) {
     saveNow(true);
     waitPushingDone().then(function () {
@@ -3832,27 +3850,44 @@ function permanentlyDeleteTrash(idxStr) {
 }
 /* ★doc・mid は呼び出し時点の写し。待っている間に別の方へ切り替えられても、
    別人の DOC へ書いたり、別人の rev で送ったりしない（saveNow / handleConflict と同じ考え方）。 */
-function doPermanentDelete(doc, mid, idx) {
+function doPermanentDelete(doc, mid, idx, item) {
   if (mid !== curMasterId) {
     toast('別の方の画面に切り替わったため、完全に削除を中止しました。もう一度開いてお試しください');
     return;
   }
+  /* ★待っている間に画面が読み直されている（openResident で DOC ごと入れ替わる）ことがある。
+     その古い写しを送るとサーバーの新しい内容を巻き戻してしまうので、必ず中止する。 */
+  if (doc !== DOC) {
+    toast('画面を読み直したため、完全に削除を中止しました。もう一度お試しください');
+    return;
+  }
   if (!doc || !doc.trash || !(idx >= 0) || idx >= doc.trash.length) return;
-  var item = doc.trash[idx];
+  if (item && doc.trash[idx] !== item) {
+    toast('取り消した期の並びが変わったため、完全に削除を中止しました。もう一度お試しください');
+    renderTrashCard();
+    return;
+  }
+  item = doc.trash[idx];
   if (!item) return;
   doc.trash.splice(idx, 1);
-  renderTrashCard();
   var snapshot = JSON.stringify(doc);
   var rev = DOC_REV;
   pushing = true;
+  setSync('保存中…');
+  renderTrashCard();          /* pushing を見てボタンを止めるので splice の後に呼ぶ */
   updateSaveState();
   tpPutAllowDrop(docKey(mid), doc, rev).then(function (j) {
     pushing = false;
     if (mid !== curMasterId) { updateSaveState(); return; }
     if (j && j.ok) {
       DOC_REV = Number(j.rev) || (rev + 1);
-      DOC_COUNT = docTotal(doc);
-      try { DOC_BASE = JSON.parse(snapshot); } catch (e2) { DOC_BASE = null; }
+      /* 件数は【送った写し】から数える。応答が返るまでの間に手元が動いていても、
+         サーバーが持っている件数とずれない（DOC_BASE と同じ根拠にそろえる） */
+      var sent = null;
+      try { sent = JSON.parse(snapshot); } catch (e2) { sent = null; }
+      DOC_COUNT = sent ? docTotal(sent) : docTotal(doc);
+      DOC_BASE = sent;
+      setSync('同期OK', 'ok');
       updateSaveState();
       updateIndexFor(mid, doc);
       renderTrashCard();
@@ -3860,6 +3895,7 @@ function doPermanentDelete(doc, mid, idx) {
       return;
     }
     doc.trash.splice(idx, 0, item);
+    setSync('保存できません', 'err');
     renderTrashCard();
     updateSaveState();
     if (j && j.conflict) toast('他の端末と重なりました。画面を開き直してからもう一度お試しください');
@@ -3867,7 +3903,7 @@ function doPermanentDelete(doc, mid, idx) {
   }).catch(function (e) {
     pushing = false;
     doc.trash.splice(idx, 0, item);
-    if (mid === curMasterId) { renderTrashCard(); updateSaveState(); }
+    if (mid === curMasterId) { setSync('保存できません', 'err'); renderTrashCard(); updateSaveState(); }
     toast('完全に削除できませんでした: ' + errText(e));
   });
 }
@@ -5519,6 +5555,7 @@ function saveCfg() {
   try { localStorage.setItem('tp_cfg', JSON.stringify({ url: url, token: token })); }
   catch (e) { $('cfgState').textContent = 'この端末に保存できませんでした（プライベートブラウズ等）'; return; }
   readCfgs();
+  SRV_GUARDS = null;            /* 接続先が変わったら、前の接続先の守り一覧を持ち越さない */
   $('cfgState').textContent = '保存しました';
   toast('接続設定を保存しました');
   /* 索引だけでなく名簿・デイ判定まで読み直す（初回セットアップでも一覧が
