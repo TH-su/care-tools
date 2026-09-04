@@ -5056,11 +5056,26 @@ function a4HM(t){
 /* 週間計画のDBから「その方の月〜土の通所時間帯」を引ける形に畳む。氏名は突合にのみ使う。
    ★継承キー（toString 等）に当たらないよう素のオブジェクトにしない。 */
 function a4BuildDayMap(db){
+  /* ★allMid/allName は「週間計画にその方の記録が在るか」だけを見るための索引（2026-09-04 追加）。
+     通所の有無を問わず【全員】を入れる。これが無いと
+       「週間計画にその方の記録が無い」＝確かめられない  と
+       「記録はあるが通所を使っていない」＝本当に利用なし  を区別できず、
+     前者まで空欄で刷ってしまう（§12 が明文で禁じた『デイ利用なし』と読まれる状態）。
+     ★上の byMid/byName（通所索引）には一切足さない・触らない。あちらへ通所の無い行まで入れると
+       重複判定(dupMid/dupName)の対象が広がり、いま ok で引けている方まで unknown へ倒れる。 */
   var out={at:Date.now(), byMid:Object.create(null), byName:Object.create(null),
-           dupMid:Object.create(null), dupName:Object.create(null)};
+           dupMid:Object.create(null), dupName:Object.create(null),
+           allMid:Object.create(null), allName:Object.create(null),
+           dupAllMid:Object.create(null), dupAllName:Object.create(null)};
   var res=(db&&Array.isArray(db.residents))?db.residents:[];
   res.forEach(function(r){
     if(!r)return;
+    /* 在籍確認用の索引は、通所を1件も持たない方も含めて先に作る（下の early return より前） */
+    var mid0=(r.masterId==null||r.masterId==='')?null:String(r.masterId);
+    var nk0=a4NmKey(r.name);
+    var all={name:String(r.name||''), mid:mid0};
+    if(mid0){ if(out.allMid[mid0])out.dupAllMid[mid0]=true; else out.allMid[mid0]=all; }
+    if(nk0){ if(out.allName[nk0])out.dupAllName[nk0]=true; else out.allName[nk0]=all; }
     var days=['','','','','',''], any=false;
     (Array.isArray(r.events)?r.events:[]).forEach(function(ev){
       if(!ev||ev.serviceType!=='daycare')return;
@@ -5129,23 +5144,46 @@ function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; 
      printHide の「伏せたセルは空欄にせず、セルごと外す（空欄は誤った安心に変わる）」と同じ考え方。
    ★利用者Noで引いた後も氏名を突き合わせる（data-contracts §6-⑨ の不変条件2）。 */
 function a4DaysFor(r){
-  var UNK={state:'unknown', days:null};
-  if(!a4DayMap||!r)return UNK;
+  /* ★why は「なぜ確かめられなかったか」。人が次に取るべき行動が違うので画面で出し分ける
+     （取得し直す／週間計画にその方を作る／氏名を揃える）。 */
+  var UNK=function(why){ return {state:'unknown', days:null, why:why}; };
+  if(!a4DayMap||!r)return UNK('fetch');
   var nk=a4NmKey(r.name);
   if(r.id!=null&&r.id!==''){
     var key=String(r.id);
-    if(a4DayMap.dupMid[key])return UNK;             // 同じ利用者Noの行が2つ＝どちらか分からない
+    if(a4DayMap.dupMid[key])return UNK('name');     // 同じ利用者Noの行が2つ＝どちらか分からない
     var rec=a4DayMap.byMid[key];
-    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK;
+    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK('name');
   }
-  if(!nk)return UNK;                                 // 氏名が無ければ確かめようがない
-  if(a4DayMap.dupName[nk])return UNK;                // 同姓同名は引かない
+  if(!nk)return UNK('name');                         // 氏名が無ければ確かめようがない
+  if(a4DayMap.dupName[nk])return UNK('name');        // 同姓同名は引かない
   var byNm=a4DayMap.byName[nk];
   /* ★利用者Noを持つ記録は氏名では拾わない。その記録は【別の方】に束縛済みで、拾うと
      利用者Noの違う方の紙に他人の通所日が載る（§6-⑨ の「食い違いが確定した」状態）。 */
-  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK;
-  return {state:'none', days:null};                  // 週間計画は取れていて、通所予定が無い方
+  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK('name');
+  /* ═══ ここから下は「通所索引で引けなかった」だけ（2026-09-04 追加）═══
+     空欄（＝デイ利用なし）で刷ってよいのは、週間計画にその方の記録が【確かに在る】と
+     言い切れる時だけ。言い切れないまま空欄にすると、氏名を直した方や利用者Noを持たない
+     記録の方の紙が「デイ利用なし」と読まれる。§15 で氏名の一括編集を解禁したため、
+     これは机上の話ではなくなった（週間計画には masterId を持たない記録が実在する）。
+     ★判定の作法は上の通所索引とまったく同じ＝利用者Noで引いた後も氏名を突き合わせ、
+       重複・食い違い・絞り込めない時は【出さない側】へ倒す（§6-⑨ の不変条件2）。 */
+  if(r.id!=null&&r.id!==''){
+    var akey=String(r.id);
+    if(a4DayMap.dupAllMid[akey])return UNK('name');
+    var arec=a4DayMap.allMid[akey];
+    if(arec)return (a4NmKey(arec.name)===nk)?{state:'none', days:null}:UNK('name');
+  }
+  if(a4DayMap.dupAllName[nk])return UNK('name');
+  var aNm=a4DayMap.allName[nk];
+  if(aNm)return (aNm.mid==null)?{state:'none', days:null}:UNK('name');
+  return UNK('absent');                              // 週間計画にこの方の記録が無い＝確かめられない
 }
+/* 「未確認」の理由の文言。★空欄で刷る誤りを塞いだ以上、なぜ確かめられなかったのかまで
+   人に見せないと、直しようがないまま「未確認」の紙が出続ける。 */
+var A4_UNK_WHY={fetch:'週間計画を取得できませんでした',
+                absent:'週間計画にこの方の記録がありません',
+                name:'週間計画の氏名と一致しません'};
 /* ═══ デイ利用日の表示（詳細画面・フェイスシート・それぞれの印刷で共用）═══
    2026-08-19 の指示で【3枚の紙をすべて週間計画に揃えた】。入居者マスタの dayUse
    （移行時の旧スプレッドシート由来の手書き値）はここでは使わない。
@@ -5159,7 +5197,8 @@ function dayUseHtml(r){
   var info=a4DaysFor(r);
   /* ★記号と文字を併記する（色だけで意味を伝えない・介護現場要件4） */
   if(info.state==='unknown')
-    return '<span class="du-unk">▲ 未確認</span><span class="du-note">週間計画を取得できませんでした</span>';
+    return '<span class="du-unk">▲ 未確認</span><span class="du-note">'+
+           esc(A4_UNK_WHY[info.why]||A4_UNK_WHY.fetch)+'</span>';
   if(!info.days)return '';
   return A4_DOW_JA.map(function(lb,i){
     return info.days[i]?('<span>'+esc(lb)+' <b>'+esc(info.days[i])+'</b></span>'):'';
