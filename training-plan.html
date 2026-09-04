@@ -322,14 +322,18 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <select id="listFilter">
           <option value="day">在籍デイ利用者</option>
           <option value="all">全員（退去含む）</option>
+          <option value="aidraft">AI下書きあり</option>
         </select>
       </div>
       <button id="btnReload" class="btn" type="button">最新を読み込む</button>
       <button id="btnRebuildIdx" class="btn" type="button">索引を再構築</button>
       <button id="btnImport" class="btn" type="button">JSON取込</button>
       <button id="btnBulk" class="btn" type="button">まとめて取込</button>
+      <button id="btnBatchAll" class="btn" type="button" hidden>未作成の期を全員分まとめてAIで作る</button>
+      <button id="btnBatchAllStop" class="btn danger" type="button" hidden>中止</button>
     </div>
     <p class="muted" style="margin-top:var(--sp-2)" id="listSummary"></p>
+    <p class="muted" id="batchAllState" role="status" aria-live="polite"></p>
   </div>
   <div class="cd" style="padding:var(--sp-2)">
     <div class="lrow head" aria-hidden="true">
@@ -355,6 +359,12 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnNewPlan" class="btn" type="button">今回の計画を追加</button>
       <button id="btnPullMaster" class="btn" type="button">マスタから基本情報を取り込む</button>
     </div>
+    <!-- D47〜D50: 未作成の期をまとめてAIで作る（1人分＝いま開いている方・凍結仕様） -->
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <button id="btnBatchAi" class="btn" type="button" hidden>未作成の期をまとめてAIで作る</button>
+      <button id="btnBatchStop" class="btn danger" type="button" hidden>中止</button>
+    </div>
+    <p class="muted" id="batchAiState" role="status" aria-live="polite"></p>
     <!-- D46: 作成できていなかった過去の期を、日付を指定して作る（期の番号・前回作成日は自動で振り直す） -->
     <div class="stack" style="margin-top:var(--sp-2)">
       <div><label for="addAtDate">日付を指定して期を追加</label><input type="date" id="addAtDate"></div>
@@ -894,7 +904,7 @@ function buildAlerts(rows, opts) {
   var warnDays = Number(opts.warnDays);
   if (!isFinite(warnDays) || warnDays < 0) warnDays = 28;
   var rule = DUE_RULES.indexOf(s_(opts.dueRule)) >= 0 ? s_(opts.dueRule) : 'calendar';
-  var scope = opts.scope === 'all' ? 'all' : 'day';
+  var scope = (opts.scope === 'all' || opts.scope === 'aidraft') ? opts.scope : 'day';
   var sort = (opts.sort === 'name' || opts.sort === 'state') ? opts.sort : 'due';
   var list = [];
   var src = Object.prototype.toString.call(rows) === '[object Array]' ? rows : [];
@@ -903,6 +913,8 @@ function buildAlerts(rows, opts) {
     var ended = !!(isYmd(r.dischargeDate) && today && cmpYmd(r.dischargeDate, today) <= 0);
     var inactive = (r.active === false);
     if (scope === 'day' && (ended || inactive || !r.isDaycare)) continue;
+    /* AI下書きあり（絞込・D47〜D50拡張）: 状態が draft_ai の期がある人だけ。在籍・退去は問わない */
+    if (scope === 'aidraft' && !(Number(r.aiDraftCount) || 0)) continue;
     var due = isYmd(r.nextDue) ? r.nextDue : nextDueOf(r.latestPlanDate, rule);
     var state;
     if (ended || inactive) state = 'ended';
@@ -919,7 +931,9 @@ function buildAlerts(rows, opts) {
       status: STATUSES.indexOf(s_(r.status)) >= 0 ? s_(r.status) : 'none',
       count: Number(r.count) || 0, gapCount: Number(r.gapCount) || 0,
       prevMismatch: Number(r.prevMismatch) || 0,
-      missingCount: Number(r.missingCount) || 0
+      missingCount: Number(r.missingCount) || 0,
+      /* 状態が draft_ai（AI生成のまま＝未確認）の期の数（一括AI作成の目印。D47〜D50拡張） */
+      aiDraftCount: Number(r.aiDraftCount) || 0
     });
   }
   list.sort(function (a, b) {
@@ -1503,7 +1517,7 @@ var LS = { scr: 'tp_scr', sort: 'tp_listSort', filter: 'tp_listFilter', view: 't
            cmpOffset: 'tp_cmpOffset', aiModel: 'tp_ai_model', aiOn: 'tp_ai_enabled', printKind: 'tp_printKind' };
 var SCREENS = ['scr-list', 'scr-edit', 'scr-print', 'scr-settings'];
 var SORTS = ['due', 'name', 'state'];
-var FILTERS = ['day', 'all'];
+var FILTERS = ['day', 'all', 'aidraft'];
 /* 'sheet'＝様式比較（既定・D19）／'list' と 'both'/'prev'/'cur'＝欄一覧 */
 var VIEWS = ['sheet', 'list', 'both', 'prev', 'cur'];
 var CMP_OFFSETS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -1869,8 +1883,17 @@ function indexRowOf(doc) {
     /* 前回作成日が直前の期と食い違う期の数（一覧に出すだけ。値そのものは直さない） */
     prevMismatch: TP.prevDateMismatches(plans).length,
     /* 3か月ごとの期のうち計画が残っていない期の数（M2 §1・保存が通った時に入れ直す） */
-    missingCount: missingCountOf(plans)
+    missingCount: missingCountOf(plans),
+    /* 状態が draft_ai（一括AI作成などでAIの文案のまま・未確認）の期の数（D47〜D50拡張） */
+    aiDraftCount: aiDraftCountOf(plans)
   };
+}
+/* 状態が draft_ai の期の数（一覧の「AI下書き」バッジ・絞込用） */
+function aiDraftCountOf(plans) {
+  var arr = (Object.prototype.toString.call(plans) === '[object Array]') ? plans : [];
+  var n = 0;
+  for (var i = 0; i < arr.length; i++) if (arr[i] && arr[i].status === 'draft_ai') n++;
+  return n;
 }
 /* 計画の保存が通った後で索引を直す（別便）。失敗しても計画そのものは保存済み。
    失敗はメモリに覚えて画面に出し、「索引を再構築」で直せるようにする。 */
@@ -2023,7 +2046,8 @@ function listRows() {
       nextDue: s_(idxRow.nextDue), status: s_(idxRow.status),
       count: Number(idxRow.count) || 0, gapCount: Number(idxRow.gapCount) || 0,
       prevMismatch: Number(idxRow.prevMismatch) || 0,
-      missingCount: Number(idxRow.missingCount) || 0
+      missingCount: Number(idxRow.missingCount) || 0,
+      aiDraftCount: Number(idxRow.aiDraftCount) || 0
     });
   }
   /* 名簿に無いのに計画が残っている方（過去の退去者など）も「全員」表示では出す */
@@ -2039,6 +2063,7 @@ function listRows() {
         nextDue: s_(x.nextDue), status: s_(x.status),
         count: Number(x.count) || 0, gapCount: Number(x.gapCount) || 0,
         prevMismatch: Number(x.prevMismatch) || 0, missingCount: Number(x.missingCount) || 0,
+        aiDraftCount: Number(x.aiDraftCount) || 0,
         offRoster: true
       });
     });
@@ -2074,6 +2099,7 @@ function renderBanners() {
   if (MASTER_MSG) banner(host, 'warn', MASTER_MSG);
   if (ROSTER_SRC === 'common') banner(host, 'info', '入居者マスタへ繋がらないため、端末に配られている共有名簿で表示しています（古い可能性があります）。');
   if (DAY_MSG) banner(host, 'info', DAY_MSG);
+  renderBatchAllSummary(host);   /* 中7: 一括AI作成（全員分）の結果は描き直しても残す */
 }
 function renderList() {
   renderBanners();
@@ -2088,7 +2114,9 @@ function renderList() {
     (ADM_MSG ? '  ※' + ADM_MSG : '');
   if (!rows.length) {
     var empty = el('p', 'muted', ROSTER.length
-      ? '表示できる方がいません。絞込を「全員」に変えると、退去された方や通所予定の無い方も出ます。'
+      ? (lsGet(LS.filter, FILTERS, 'day') === 'aidraft'
+          ? 'AIの下書きが残っている方はいません。絞込を「在籍デイ利用者」や「全員」に戻してください。'
+          : '表示できる方がいません。絞込を「全員」に変えると、退去された方や通所予定の無い方も出ます。')
       : '名簿を読み込めていません。設定画面で入居者マスタの接続先を確かめてください。');
     empty.style.padding = 'var(--sp-4)';
     box.appendChild(empty);
@@ -2106,7 +2134,16 @@ function renderList() {
     td.setAttribute('data-label', '期限まで');
     td.appendChild(stateBadge(row));
     tr.appendChild(td);
-    tr.appendChild(cell('状態', TP.STATUS_LABEL[row.status] || '未作成'));
+    var stc = el('div');
+    stc.setAttribute('data-label', '状態');
+    stc.appendChild(document.createTextNode(TP.STATUS_LABEL[row.status] || '未作成'));
+    /* 一括AI作成などで入った下書き（status='draft_ai'）の数（D47〜D50拡張）。無ければ何も出さない */
+    if (row.aiDraftCount) {
+      var db2 = el('span', 'badge warn', 'AI下書き ' + row.aiDraftCount + '期');
+      db2.setAttribute('title', 'AIが作った文案のまま、まだ職員が確認していない期の数');
+      stc.appendChild(db2);
+    }
+    tr.appendChild(stc);
     /* 3か月ごとの期のうち、計画が残っていない期の数（開かなくても分かるように出す） */
     var mc = el('div');
     mc.setAttribute('data-label', '未作成');
@@ -2128,6 +2165,7 @@ function renderList() {
     b.type = 'button';
     b.setAttribute('data-id', row.masterId);
     b.setAttribute('aria-label', (row.name || '利用者') + 'の計画書を開く');
+    b.disabled = batchBusy();   /* 高: 実行中に描き直された行も押せないままにする */
     b.addEventListener('click', function () { openResident(this.getAttribute('data-id')); });
     act.appendChild(b);
     tr.appendChild(act);
@@ -2249,9 +2287,12 @@ function docTotal(doc) {
     (doc && Object.prototype.toString.call(doc.trash) === '[object Array]' ? doc.trash.length : 0);
 }
 
-function openResident(masterId, wantScr) {
+function openResident(masterId, wantScr, opts) {
   var id = s_(masterId);
   if (!TP.ID_RE.test(id)) { toast('利用者番号の形が違います'); return Promise.resolve(false); }
+  /* 高: 一括作成の実行中に別の方を開くと、開いていた方の残りの期が無言で飛ぶ
+     （読み込み中の計画書を古い内容で上書きしてしまう）。一括自身の呼び出しだけ opts.internal で通す */
+  if (batchBusy() && !(opts && opts.internal)) { toast('一括作成の実行中です。終わるまでお待ちください'); return Promise.resolve(false); }
   if (dirty && !confirm('保存していない変更があります。別の方を開くと、この端末の入力は失われます。よろしいですか？')) return Promise.resolve(false);
   if (!CFG.url) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
   setSync('読み込み中…');
@@ -2364,6 +2405,7 @@ function renderEdit() {
       (settings().retroNote ? '印刷面の備考に、遡って作成した旨の注記が入ります。' : '印刷には出さない設定です（設定画面で変えられます）。'));
   }
   renderEvalWarnBanners(host);
+  renderBatchSingleSummary(host);   /* 中7: 一括AI作成（1人分）の結果は描き直しても残す */
   renderNameFix();
   renderPlanSelect();
   renderTimeline();
@@ -4833,6 +4875,12 @@ function aiShapeNotes(out, mode, fields) {
    mode="adjust" は fields で指定した欄だけを返す（item B・D）。
    ★画面の状態には触らない（どの期に入れるか・保存・画面表示は呼び出し側の仕事）。
    ★fetch を含むため window.TP（純関数の層）には出さない。 */
+/* q.model（AI_MODELS のいずれかの時だけ）で端末の既定モデルを上書きする（D50・一括AI作成専用）。
+   無い・不正な値の時は今までどおり aiModel()（端末の既定設定）を使う */
+function aiModelFor(q) {
+  var m = s_(q && q.model);
+  return (AI_MODELS.indexOf(m) >= 0) ? m : aiModel();
+}
 function aiGenerate(req) {
   var q = req || {};
   if (q.mode === 'adjust') {
@@ -4843,7 +4891,7 @@ function aiGenerate(req) {
     var smAdj = { achievement: sAdj.achievement || {}, trend: sAdj.trend, tags: sAdj.tags, note: sAdj.note,
       envChange: sAdj.envChange, adlNote: sAdj.adlNote };
     var bodyAdj = {
-      model: aiModel(),
+      model: aiModelFor(q),
       max_tokens: 1024,
       system: AI_SYSTEM,
       messages: [{ role: 'user', content: JSON.stringify(aiInput('adjust', q.prev || null, null, null, smAdj, { fields: fields, cur: q.plan })) }],
@@ -4862,7 +4910,7 @@ function aiGenerate(req) {
   var s = q.sample || {};
   var sm = { achievement: s.achievement || {}, trend: s.trend, tags: s.tags, note: s.note, envChange: s.envChange, adlNote: s.adlNote };
   var body = {
-    model: aiModel(),
+    model: aiModelFor(q),
     max_tokens: 4096,
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: (mode === 'backfill' ? AI_BACKFILL_LINE + '\n' : '') +
@@ -5306,7 +5354,7 @@ function autoRewordGoals(p, base, model) {
   var undoBtn = $('btnAiUndo');
   if (undoBtn) undoBtn.disabled = true;
   $('genState').textContent = AI_REWORD_MSG;
-  aiGenerate({ mode: 'adjust', fields: rep.fields, plan: p, prev: base, sample: sampleOf(p) }).then(function (r) {
+  aiGenerate({ mode: 'adjust', fields: rep.fields, plan: p, prev: base, sample: sampleOf(p), model: model }).then(function (r) {
     if (mid !== curMasterId) { toast('別の方の画面に切り替わったため、目標の言い直しは入れませんでした'); return; }
     if ((AI_UNDO[pid] || null) !== undoAtRequest) {
       toast('「元に戻す」を押したため、目標の言い直しは入れませんでした');
@@ -5353,6 +5401,490 @@ function autoRewordGoals(p, base, model) {
     setAdjustBusy(false);
     renderEdit();
   });
+}
+
+/* ═══════════ 未作成の期をまとめてAIで作る（D47〜D50・凍結仕様）═══════════
+   対象は未作成の期がある方すべて（D47・2026-09-04 変更。在籍デイ利用者に限らない）。ただし
+   退去された方は【退去日までの抜けだけ】を作り、名簿に無い方・退去日の分からない利用終了の方は作らない
+   （提供実績の無い期間の計画書を作らないため。batchAiLimitFor）。全部が下書き（draft_ai）のまま残り、
+   目印を3つ入れる：①状態はdraft_aiのまま（finalizeAiWriteの既定） ②origin.source ③generation.sample.note。
+   モデルは端末の設定に関係なく claude-sonnet-5 固定（D50）。 */
+var BATCH_AI_MODEL = 'claude-sonnet-5';
+/* D49（2026-09-04 変更）: 上限なし＝未作成の期はすべて作る。連鎖が長い方はAIがAIの上に重ねるため、
+   下書きの確認がより重要になる（要約と「AI下書き」バッジで分かるようにしてある） */
+var BATCH_AI = { running: false };     /* 1人分（編集画面）の実行中フラグ */
+var BATCH_ALL = { running: false };   /* 全員分（一覧画面）の実行中フラグ */
+var BATCH_STOP = false;               /* 中止ボタン（1人分・全員分で共有）。現在の1期を終えたところで見る */
+/* 中: 「中止」は今の期を終えてから効く（最大1分ほどかかる）。押したことがその場で分かるようにする */
+function requestBatchStop() {
+  BATCH_STOP = true;
+  var msg = '中止します（いま作成中の期を終えたところで止まります。最大1分ほどかかります）';
+  if (BATCH_ALL.running) setBatchAllState(msg);
+  if (BATCH_AI.running) setBatchAiState(msg);
+  var a = $('btnBatchStop'), b = $('btnBatchAllStop');
+  if (a) a.disabled = true;
+  if (b) b.disabled = true;
+}
+/* 1人分と全員分は同時に走らせない（同じ DOC へ2本の非同期チェーンが走るのを防ぐ） */
+function batchBusy() { return !!(BATCH_AI.running || BATCH_ALL.running); }
+/* 中: 単発の「AIで生成」「AIで調整」が飛んでいる間は一括を始めない。返ってきた応答が
+   端末既定のモデルで本文を書き、D50 のモデル固定が破れる（同じ期へ2本の書き込みも走る） */
+function batchStartBlocked() { return !!(batchBusy() || aiBusy); }
+/* 高: 連続して失敗した時の歯止め（鍵の失効・通信断で残り全期を空回りさせない）。
+   成功するたびに 0 へ戻す。止めた理由は要約に出す */
+var BATCH_FAIL_RUN = 0;
+var BATCH_STOP_REASON = '';
+var BATCH_FAIL_MAX = 5;          /* 人をまたいで連続5期失敗したら全体を止める */
+var BATCH_FAIL_MAX_ONE = 3;      /* 同じ方で連続3期失敗したら全体を止める */
+/* 再試行しても直らないエラー（鍵・設定の問題）。この時は残りの期を試さずにその場で止める */
+function aiErrFatal(e) { return /AI_NO_KEY|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
+/* 一括の要約はメモリだけに持ち、描き直しのたびに出し直す（一覧の再描画で消えないようにする）。
+   ★氏名を含むため localStorage には置かない */
+var BATCH_LAST_SUMMARY = null;
+function setBatchAiState(msg) { var n = $('batchAiState'); if (n) n.textContent = msg || ''; }
+function setBatchAllState(msg) { var n = $('batchAllState'); if (n) n.textContent = msg || ''; }
+function toggleBatchAiButtons(on) {
+  var b = $('btnBatchAi'), s = $('btnBatchStop');
+  /* 全員分の実行中は、人と人の間でも編集画面のボタンを戻さない（中2） */
+  if (b) b.disabled = !!on || BATCH_ALL.running;
+  if (s) { s.hidden = !on; s.disabled = false; }
+}
+function toggleBatchAllButtons(on) {
+  var b = $('btnBatchAll'), s = $('btnBatchAllStop');
+  if (b) b.disabled = !!on;
+  if (s) { s.hidden = !on; s.disabled = false; }
+  /* 高: 実行中は一覧の「開く」も押せなくする（席を外している間に触られると、
+     開いていた方の残りの期が無言で飛ぶ）。openResident 側にも同じ締め出しを置く */
+  var list = $('listBox');
+  if (list) {
+    var btns = list.querySelectorAll('button'), i;
+    for (i = 0; i < btns.length; i++) btns[i].disabled = !!on;
+  }
+}
+/* aiReady() でない端末では2つのボタンとも出さない（AIを直接呼べない端末向けの経路は作らない） */
+function syncBatchAiVisibility() {
+  var ok = aiReady();
+  var a = $('btnBatchAi'), b = $('btnBatchAll');
+  if (a) a.hidden = !ok;
+  if (b) b.hidden = !ok;
+}
+/* 高1: 一時的な混雑・タイムアウトは10秒待って1回だけやり直す（97期を通すと必ず何度か当たる） */
+function aiGenerateRetry(req, tries) {
+  var left = (typeof tries === 'number') ? tries : 2;
+  return aiGenerate(req).catch(function (e) {
+    var m = s_(e && e.message);
+    var again = /AI_HTTP_(429|500|502|503|529)/.test(m) || /AI_TIMEOUT|タイムアウト/.test(m);
+    if (!again || left <= 1) throw e;
+    return new Promise(function (r) { setTimeout(r, 10000); }).then(function () { return aiGenerateRetry(req, left - 1); });
+  });
+}
+/* 高1: AI生成に失敗した期を【取り消し置き場】へ移す。plans から外すので「未作成（✕）」に戻り、
+   次に一括を回した時にまた対象になる。合計件数は変わらないのでサーバーの件数ガードにも触れない。
+   ★addPlanAt が後ろの期の「前回作成日」を動かしていたら、それも元へ戻す */
+function batchDiscardPlan(pid, wasPrevAfterAdd) {
+  /* 中: 古い版のGASでは「plans から外す保存」が件数ガードで拒否され、以後どの保存も通らなくなる。
+     その端末では期を動かさない（起動時にも断っているので通常はここへ来ない） */
+  if (!trashReady()) return false;
+  var i = planIdxOf(pid);
+  if (i < 0) return false;
+  var p = DOC.plans[i];
+  DOC.plans.splice(i, 1);
+  if (Object.prototype.toString.call(DOC.trash) !== '[object Array]') DOC.trash = [];
+  DOC.trash.push({ at: nowIso(), by: '一括AI作成（失敗）', plan: p });
+  sortPlans();
+  if (wasPrevAfterAdd) applyPrevDateFollow(wasPrevAfterAdd);
+  curPlanIdx = DOC.plans.length ? DOC.plans.length - 1 : -1;
+  markDirty();
+  return true;
+}
+/* D48: 未作成の期を古い順にすべて返す（「間の抜け」も「最新の期より後」も対象）。
+   高: limitYmd（退去日／今日）より後の期は作らない＝提供実績の無い期間の計画書を作らない。
+   戻り: {dates:[...古い順のYMD...], skippedOld: 0（上限は設けない）} */
+function batchAiPlanDates(doc, limitYmd) {
+  var plans = (doc && Object.prototype.toString.call(doc.plans) === '[object Array]') ? doc.plans : [];
+  var lim = TP.isYmd(limitYmd) ? s_(limitYmd) : todayYmd();
+  if (TP.cmpYmd(lim, todayYmd()) > 0) lim = todayYmd();   /* 先の日付は受け付けない */
+  var tl = TP.expectedPeriods(plans, lim, settings().dueRule, GRACE_DAYS);
+  var lastPlanDate = '', i, q;
+  for (i = 0; i < plans.length; i++) {
+    q = plans[i];
+    if (q && TP.isYmd(q.planDate) && (!lastPlanDate || TP.cmpYmd(q.planDate, lastPlanDate) > 0)) lastPlanDate = q.planDate;
+  }
+  var gap = [], after = [];
+  for (i = 0; i < tl.length; i++) {
+    if (tl[i].kind !== 'missing') continue;
+    if (TP.cmpYmd(tl[i].date, lim) > 0) continue;   /* 高: 限度日より後は作らない（間の抜けも同じ） */
+    if (lastPlanDate && TP.cmpYmd(tl[i].date, lastPlanDate) < 0) gap.push(tl[i].date); else after.push(tl[i].date);
+  }
+  return { dates: gap.concat(after), skippedOld: 0 };
+}
+/* confirm に出す「第○期　日付」の一覧（作る前の見込みの期番号。既存＋これから作る分を合わせて数える） */
+function batchAiPreviewList(doc, dates) {
+  var plans = (doc && Object.prototype.toString.call(doc.plans) === '[object Array]') ? doc.plans : [];
+  var all = [], i;
+  for (i = 0; i < plans.length; i++) if (plans[i] && TP.isYmd(plans[i].planDate)) all.push(plans[i].planDate);
+  all = all.concat(dates);
+  all.sort(TP.cmpYmd);
+  return dates.map(function (d) { return { date: d, seq: all.indexOf(d) + 1 }; });
+}
+/* 高: その方の期をどこまで作ってよいかを名簿から決める（提供実績の無い期間の計画書を作らないため）。
+   ・退去日が今日以前 → 退去日まで（それより後の期は作らない）
+   ・名簿に無い方 → 作らない（氏名の照合ができず、退去日も分からない）
+   ・利用終了（active=false）で退去日が無い → 作らない（どこで打ち切るか決められない）
+   戻り: {ok:true, limit:'YYYY-MM-DD', ended:bool} / {ok:false, reason:'…'} */
+function batchAiLimitFor(masterId) {
+  var today = todayYmd(), r = rosterOf(masterId);
+  if (!r) return { ok: false, reason: '名簿に無いため飛ばしました（氏名を照合できず、いつまでの期かも決められません）' };
+  var d = s_(r.dischargeDate);
+  if (TP.isYmd(d) && TP.cmpYmd(d, today) <= 0) return { ok: true, limit: d, ended: true };
+  if (r.active === false) return { ok: false, reason: '利用終了ですが退去日が無いため飛ばしました（いつまでの期か決められません）' };
+  return { ok: true, limit: today, ended: false };
+}
+/* いま開いている利用者の「未作成の期をまとめてAIで作る」本体。全員分（一覧）からも同じ関数を呼ぶ
+   （opts.confirm=false で確認ダイアログを省く＝先に一覧側で1回だけ確認済みのため）。
+   戻り: Promise<{created:[date...], failedGen:[{date,reason}...], skippedOld, aborted, switched, saveFailed, canceled, noTarget}> */
+function runBatchAiForOpenResident(opts) {
+  opts = opts || {};
+  if (!DOC) return Promise.resolve({ created: [], failedGen: [], skippedOld: 0, aborted: false, saveFailed: false, noTarget: true });
+  var plan = batchAiPlanDates(DOC, opts.limitYmd);
+  if (!plan.dates.length) {
+    return Promise.resolve({ created: [], failedGen: [], skippedOld: plan.skippedOld, aborted: false, saveFailed: false, noTarget: true });
+  }
+  if (opts.confirm !== false) {
+    var preview = batchAiPreviewList(DOC, plan.dates);
+    var lines = preview.map(function (x) { return '第' + x.seq + '期　' + x.date; }).join('\n');
+    var msg = '未作成の期（' + plan.dates.length + '期）をAIで作ります。本人の様子は未入力のため「維持・一部」で作ります。全部が下書きになります。\n' +
+      (opts.endedNote ? (opts.endedNote + '\n') : '') + '各期の計画の内容は外部のAI（Anthropic）へ送ります。\n\n' + lines +
+      (plan.skippedOld ? ('\n\n（これより古い未作成 ' + plan.skippedOld + '期は上限のため作りません）') : '') +
+      '\n\nよろしいですか？';
+    if (!confirm(msg)) {
+      return Promise.resolve({ created: [], failedGen: [], skippedOld: plan.skippedOld, aborted: false, saveFailed: false, canceled: true });
+    }
+  }
+  var mid = curMasterId, created = [], createdIds = [], failedGen = [], evalPrevWrites = [], total = plan.dates.length;
+  var failRunOne = 0;   /* 高: この方で連続して失敗した期の数 */
+  clearAiError();
+  /* ★BATCH_STOP はここでリセットしない（中1）。全員分では人と人の間に押した「中止」が
+     ここで消えてしまい、残り全員が続行してしまうため。リセットは起動ボタン側で行う */
+  BATCH_AI.running = true;
+  setAiBusy(true);
+  setAdjustBusy(true);
+  toggleBatchAiButtons(true);
+  function saveAndContinue(i) {
+    if (mid !== curMasterId) return { aborted: true, switched: true };
+    /* 一括の最中は自動言い直し（D36）は走らない（aiBusy のため）。目標の言い回しは生成そのものに任せる。
+       それでも他の経路で busy が解けている場合に備えて、続きがある間は掛け直す */
+    if (BATCH_AI.running && !BATCH_STOP) { setAiBusy(true); setAdjustBusy(true); }
+    saveNow(true);
+    return waitPushingDone().then(function () {
+      if (mid !== curMasterId) return { aborted: true, switched: true };
+      /* 中5: 送信中で保存が先送りされていることがある。もう一度だけ明示保存して待つ */
+      if (!dirty) return step(i + 1);
+      saveNow(true);
+      return waitPushingDone().then(function () {
+        if (mid !== curMasterId) return { aborted: true, switched: true };
+        if (dirty) return { saveFailed: true };   /* 2回試しても保存できない：ここで止める */
+        return step(i + 1);
+      });
+    });
+  }
+  function step(i) {
+    if (BATCH_STOP) return { aborted: true };
+    if (mid !== curMasterId) return { aborted: true, switched: true };
+    if (i >= total) return {};
+    var date = plan.dates[i];
+    setBatchAiState((i + 1) + '/' + total + ' 期目を作成中…（' + date + '）');
+    var p = addPlanAt(date, { silent: true });
+    if (!p) { failedGen.push({ date: date, reason: '期を作成できませんでした' }); return saveAndContinue(i); }
+    var idx = planIdxOf(p.planId);
+    var base = (idx > 0) ? DOC.plans[idx - 1] : null;
+    var pp = (idx > 1) ? DOC.plans[idx - 2] : null;
+    var next = (idx >= 0 && idx + 1 < DOC.plans.length) ? DOC.plans[idx + 1] : null;
+    if (!base) { failedGen.push({ date: date, reason: '前の期が無いため作れませんでした' }); return saveAndContinue(i); }
+    var mode = next ? 'backfill' : 'next';
+    /* D47〜D50 目印①③の一部：本人の様子は既定（維持・一部・タグ空・note は既定文言）で作る */
+    var sm = sampleOf(p);
+    sm.trend = '維持'; sm.achievement.short = '一部'; sm.achievement.long = '一部';
+    sm.tags = []; sm.envChange = ''; sm.adlNote = '';
+    sm.note = '一括作成（本人の様子は未入力・維持で作成）';
+    var pid = s_(p.planId), basePid = s_(base.planId);
+    var wasPrevAfterAdd = TP.prevNeighborMap(DOC.plans);   /* 失敗して取り消す時に戻すための控え */
+    /* 高3: この生成で「前の期」の報告書欄（達成度・Ⅲ）が埋まるかを、書く前に見ておく（要約に出すため） */
+    var willFillPrev = (mode !== 'fill_eval') && prevEvalEmptyFields(base).length > 0;
+    var baseDate = s_(base.planDate), baseLocked = (base.status === 'printed' || base.status === 'signed');
+    return aiGenerateRetry({ mode: mode, plan: p, sample: sm, prev: base, prevprev: pp, next: next, model: BATCH_AI_MODEL })
+      .then(function (r) {
+        /* 「中止」は【この期を終えてから】止める＝送信済みの応答は捨てずに反映する（呼び出しを無駄にしない）。
+           別の方の画面に移った時だけ入れない */
+        if (mid !== curMasterId) return;
+        var tgt = null, baseTgt = null, k;
+        for (k = 0; k < DOC.plans.length; k++) {
+          if (s_(DOC.plans[k].planId) === pid) tgt = DOC.plans[k];
+          if (s_(DOC.plans[k].planId) === basePid) baseTgt = DOC.plans[k];
+        }
+        if (!tgt) { failedGen.push({ date: date, reason: '対象の期が見つかりませんでした' }); return; }
+        applyAi(tgt, baseTgt, r.out, mode, BATCH_AI_MODEL);
+        if (willFillPrev && baseTgt) evalPrevWrites.push({ date: baseDate, locked: baseLocked });
+        /* 目印②：applyAi（finalizeAiWrite）が origin を書き直した後に入れる（最終的に保存される値にする）。
+           ★この期がこの後【別の期の「前の期」】になると、applyAi の evalPrev 書き込みで
+             origin がもう一度上書きされてしまうため、ここで入れるのは仮の値。
+             最終的な保存値は step(0) 完了後にすべて入れ直す（下の再スタンプ）。 */
+        tgt.origin.source = '一括AI作成 ' + todayYmd();
+        tgt.origin.basePlanId = basePid;
+        created.push(date);
+        createdIds.push({ id: pid, basePlanId: basePid });
+        failRunOne = 0; BATCH_FAIL_RUN = 0;   /* 高: 1期でも通れば連続失敗の数え直し */
+      })
+      .catch(function (e) {
+        /* 高1: 失敗した期は【残さない】。addPlanAt は前の期を丸写しするので、残すと
+           「前の期と同じ中身の計画書」が作成済みとして居座り、次の一括でも拾われない。
+           取り消し置き場へ移して✕（未作成）に戻し、要約に理由を出す */
+        var moved = (mid === curMasterId) ? batchDiscardPlan(pid, wasPrevAfterAdd) : false;
+        failedGen.push({ date: date, reason: 'AI生成に失敗（' + (moved ? '作りかけの期は取り消し置き場へ戻しました'
+          : (trashReady() ? '期は残っています' : 'この端末が繋がっているGASは古い版のため取り消せませんでした。手で取り消してください')) +
+          '）：' + aiErrText(e) });
+        /* 高: 恒久的な失敗（鍵・設定）と、連続失敗はその場で全体を止める。
+           97期を空回りさせて取り消し置き場をゴミで埋めないため */
+        failRunOne++; BATCH_FAIL_RUN++;
+        if (aiErrFatal(e)) {
+          BATCH_STOP = true;
+          BATCH_STOP_REASON = 'AIの設定か鍵に問題があるため止めました（' + aiErrText(e) + '）。設定画面のAPIキーを確かめてください';
+        } else if (failRunOne >= BATCH_FAIL_MAX_ONE || BATCH_FAIL_RUN >= BATCH_FAIL_MAX) {
+          BATCH_STOP = true;
+          BATCH_STOP_REASON = '続けて ' + (failRunOne >= BATCH_FAIL_MAX_ONE ? failRunOne : BATCH_FAIL_RUN) +
+            '期の作成に失敗したため止めました（' + aiErrText(e) + '）';
+        }
+      })
+      .then(function () { return saveAndContinue(i); });
+  }
+  /* 目印②の仕上げ：この期がどこかで「前の期」として使われた時、applyAi の evalPrev 書き込み
+     （finalizeAiWrite）が origin を作り直し、上で入れた目印を消してしまうことがある
+     （後ろに続く期を作るたびに前の期が evalPrev の書き込み先になりうるため）。
+     全期を作り終えた後に、この一括作成で作った期だけもう一度目印を入れ直し、最終値を保存する。 */
+  function restampOriginAndSave(result) {
+    if (!createdIds.length || mid !== curMasterId) return result || {};
+    var markDate = '一括AI作成 ' + todayYmd(), changed = false, ci, idxc, q;
+    for (ci = 0; ci < createdIds.length; ci++) {
+      idxc = planIdxOf(createdIds[ci].id);
+      if (idxc < 0) continue;
+      q = DOC.plans[idxc];
+      if (!q.origin) continue;
+      if (s_(q.origin.source) !== markDate) { q.origin.source = markDate; changed = true; }
+      /* 高3・低1: 「どの期から作ったか」も evalPrev の書き込みで消えるので入れ直す */
+      if (s_(q.origin.basePlanId) !== s_(createdIds[ci].basePlanId)) { q.origin.basePlanId = s_(createdIds[ci].basePlanId); changed = true; }
+    }
+    if (!changed) return result || {};
+    markDirty();
+    saveNow(true);
+    return waitPushingDone().then(function () {
+      if (mid !== curMasterId) return { aborted: true, switched: true };
+      if (!dirty) return result || {};
+      saveNow(true);
+      return waitPushingDone().then(function () {
+        if (mid !== curMasterId) return { aborted: true, switched: true };
+        if (dirty) return { saveFailed: true };   /* 目印の入れ直しの保存が失敗：その旨を返す */
+        return result || {};
+      });
+    });
+  }
+  /* 中: どの経路（同期の例外も含む）でも実行中フラグとボタンを必ず戻す。
+     戻さないと、画面を読み込み直すまで一括もふつうのAI生成も使えなくなる */
+  function finBatchAi(result, err) {
+    BATCH_AI.running = false;
+    toggleBatchAiButtons(false);
+    setAiBusy(false);
+    setAdjustBusy(false);
+    setBatchAiState('');
+    if (err) {
+      BATCH_STOP = true;
+      BATCH_STOP_REASON = BATCH_STOP_REASON || ('思わぬエラーで止まりました（' + aiErrText(err) + '）');
+      failedGen.push({ date: '（処理の途中）', reason: '思わぬエラーで止まりました：' + aiErrText(err) });
+    }
+    return {
+      created: created, failedGen: failedGen, skippedOld: plan.skippedOld,
+      evalPrevWrites: evalPrevWrites,
+      aborted: !!(err || (result && (result.aborted || BATCH_STOP))),
+      switched: !!(result && result.switched),
+      saveFailed: !!(result && result.saveFailed),
+      stopReason: BATCH_STOP_REASON
+    };
+  }
+  return Promise.resolve().then(function () { return step(0); }).then(restampOriginAndSave)
+    .then(function (result) { return finBatchAi(result, null); }, function (e) { return finBatchAi(null, e); });
+}
+/* 1人分の要約の材料を作る（画面に出す文の配列）。高3: 前の期の報告書欄に書いた分も必ず出す */
+function batchSingleSummaryLines(r) {
+  var parts = ['作った ' + r.created.length + '期'];
+  if (r.failedGen.length) parts.push('AI生成に失敗 ' + r.failedGen.length + '期');
+  if (r.saveFailed) parts.push('保存に失敗したためここで止めました');
+  else if (r.aborted) parts.push(r.stopReason ? r.stopReason : '中止しました');
+  var lines = ['一括AI作成：' + parts.join('・')], i;
+  var ev = (r.evalPrevWrites || []), locked = ev.filter(function (x) { return x.locked; });
+  if (ev.length) {
+    lines.push('前の期の報告書欄（達成度・Ⅲ）も埋めました：' + ev.length + '期' +
+      (locked.length ? '（うち印刷済・家族署名受領済 ' + locked.length + '期＝必ず確認してください）' : ''));
+    lines.push('　対象の期：' + ev.map(function (x) { return x.date; }).join('・'));
+  }
+  for (i = 0; i < r.failedGen.length; i++) lines.push('・' + r.failedGen[i].date + '　' + r.failedGen[i].reason);
+  return { lines: lines, warn: !!(r.failedGen.length || r.saveFailed || locked.length) };
+}
+/* 1人分の完了後：画面を出し直し、トーストと編集画面のバナーに要約を残す。
+   中7: 要約はメモリに保持し、renderEdit のたびに出し直す（画面の描き直しで消えないようにする） */
+function finishBatchAiSingleUI(r) {
+  var sum = batchSingleSummaryLines(r);
+  BATCH_LAST_SUMMARY = { kind: 'single', masterId: curMasterId, lines: sum.lines, warn: sum.warn };
+  renderEdit();
+  toast(sum.lines[0]);
+}
+/* 保持している要約を編集画面に出す（その利用者の分だけ） */
+function renderBatchSingleSummary(host) {
+  var sum = BATCH_LAST_SUMMARY;
+  if (!sum || sum.kind !== 'single' || sum.masterId !== curMasterId || !sum.lines.length) return;
+  var b = el('div', 'banner ' + (sum.warn ? 'warn' : 'info'));
+  b.setAttribute('role', sum.warn ? 'alert' : 'status');
+  for (var i = 0; i < sum.lines.length; i++) b.appendChild(el('div', null, sum.lines[i]));
+  host.appendChild(b);
+}
+/* 一覧の絞込を一時的に指定の値にして listRows() を読み、必ず元へ戻す（原則11：
+   ユーザーが選んだ絞込は localStorage にそのまま残す。listRows 自体は変えない）。
+   中6: listRows が落ちても戻すよう finally を使う */
+function indexRowsWithScope(scope) {
+  var saved;
+  try { saved = localStorage.getItem(LS.filter); } catch (e) { saved = undefined; }
+  lsSet(LS.filter, scope);
+  try {
+    return listRows();
+  } finally {
+    try {
+      if (saved == null) localStorage.removeItem(LS.filter); else localStorage.setItem(LS.filter, saved);
+    } catch (e2) {}
+  }
+}
+/* 全員分（D47: 未作成の期がある方すべて・一覧画面）。1人ずつ開いて「1人分」の本体を実行し、失敗しても次へ進む。
+   高: 退去された方は【退去日までの抜けだけ】を作る。名簿に無い方・退去日の分からない利用終了の方は飛ばす
+   （氏名の照合ができず、どこで期を打ち切るかも決められないため） */
+function runBatchAiAllResidents() {
+  if (batchStartBlocked()) { toast('いまAIの処理を実行しています。終わるまでお待ちください'); return; }
+  if (dirty) { toast('保存していない編集が残っています。保存してから実行してください'); return; }
+  /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
+  if (!trashReady()) {
+    toast('この端末が繋がっている計画書GASは古い版のため、一括では作れません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+    return;
+  }
+  /* D47（2026-09-04 変更）: 在籍デイ利用者だけでなく、未作成の期がある方すべてを対象にする */
+  var all = indexRowsWithScope('all').filter(function (r) { return (Number(r.missingCount) || 0) > 0; });
+  var rows = [], skipped = [], endedCount = 0, i, lim;
+  for (i = 0; i < all.length; i++) {
+    lim = batchAiLimitFor(all[i].masterId);
+    if (!lim.ok) { skipped.push({ name: all[i].name, reason: lim.reason }); continue; }
+    if (lim.ended) endedCount++;
+    rows.push({ row: all[i], limit: lim.limit, ended: !!lim.ended });
+  }
+  if (!rows.length) {
+    BATCH_STOP_REASON = '';
+    BATCH_LAST_SUMMARY = batchAllSummary([], false, skipped);
+    renderList();
+    toast(skipped.length ? ('作れる方がいません（飛ばした方 ' + skipped.length + '人・理由は一覧の上に出ています）') : '未作成の期がある方はいません');
+    return;
+  }
+  var maxTotal = 0;
+  for (i = 0; i < rows.length; i++) maxTotal += Number(rows[i].row.missingCount) || 0;
+  if (!confirm('対象 ' + rows.length + '人・未作成 ' + maxTotal + '期を、AIでまとめて作ります（未作成の期がある方すべてが対象です）。\n\n' +
+      (endedCount ? ('うち退去・利用終了の方 ' + endedCount + '人：退去日までの抜けだけを作ります（退去日より後の期は作りません）。\n') : '') +
+      (skipped.length ? ('名簿に無い方など ' + skipped.length + '人は飛ばします（理由は終わった後に一覧へ出します）。\n') : '') +
+      '各期の計画の内容は外部のAI（Anthropic）へ送ります。\n' +
+      '本人の様子は未入力のため「維持・一部」で作ります。全部が下書きになります。\n' +
+      'およそ ' + Math.max(1, Math.round(maxTotal * 25 / 60)) + '分かかる見込みです。この画面は開いたままにしてください。\n' +
+      '「中止」で途中まで止められます。\n\nよろしいですか？')) return;
+  BATCH_ALL.running = true;
+  BATCH_STOP = false;   /* 中1: リセットは入口のここだけ */
+  BATCH_FAIL_RUN = 0;
+  BATCH_STOP_REASON = '';
+  BATCH_LAST_SUMMARY = null;   /* 低: 前回の要約を今回の結果と読み違えないよう、始める時に消す */
+  renderList();
+  toggleBatchAllButtons(true);
+  var results = [], n = 0;
+  function step() {
+    if (BATCH_STOP || n >= rows.length) return Promise.resolve();
+    var it = rows[n], row = it.row; n++;
+    setBatchAllState(n + '/' + rows.length + '人目を処理中…');
+    /* 高: 一括自身の「開く」だけは締め出しを通す（引数で渡す＝読み込み中に押された分は通さない） */
+    return openResident(row.masterId, 'scr-list', { internal: true }).then(function (ok) {
+      if (!ok) { results.push({ name: row.name, created: 0, failed: 0, reason: '計画書を開けませんでした' }); return step(); }
+      /* 高1: 計画が1件も無い方は「前の期」が無いため対象外（1期目は人が作る） */
+      if (!DOC || !DOC.plans.length) {
+        results.push({ name: row.name, created: 0, failed: 0, reason: '計画が1件もないため飛ばしました（1期目は人が作ってください）', prevWrites: 0, prevLocked: 0 });
+        return step();
+      }
+      return runBatchAiForOpenResident({ confirm: false, limitYmd: it.limit }).then(function (r) {
+        /* 中: 途中で止まった方を「終わった」と読み違えないよう、中断の理由も必ず残す */
+        var parts = [];
+        if (r.noTarget) parts.push(it.ended ? '作る期はありません（退去日より後の期は作りません）' : '未作成の期はありませんでした');
+        if (r.saveFailed) parts.push('保存に失敗したため途中で止めました');
+        else if (r.switched) parts.push('途中で別の方の画面に切り替わったため止めました（残りの期は作っていません）');
+        else if (r.aborted) parts.push(r.stopReason || 'ここで中止しました（残りの期は作っていません）');
+        if (r.failedGen.length) parts.push(r.failedGen.map(function (f) { return f.date + '：' + f.reason; }).join('／'));
+        var ev = r.evalPrevWrites || [];
+        results.push({ name: row.name, created: r.created.length, failed: r.failedGen.length, reason: parts.join('　'),
+          prevWrites: ev.length, prevLocked: ev.filter(function (x) { return x.locked; }).length });
+        if (r.saveFailed) BATCH_STOP = true;   /* 1人分の規約と同じ：保存に失敗したらそこで止める */
+        return step();
+      });
+    }, function (e) {
+      results.push({ name: row.name, created: 0, failed: 0, reason: '計画書を開けませんでした（' + aiErrText(e) + '）' });
+      return step();
+    });
+  }
+  /* 中: 例外が漏れても実行中フラグとボタンを必ず戻す（戻らないと読み込み直すまで使えなくなる） */
+  function finBatchAll(err) {
+    BATCH_ALL.running = false;
+    toggleBatchAllButtons(false);
+    toggleBatchAiButtons(false);   /* 中2: 全員分が終わったら編集画面のボタンも戻す */
+    setAiBusy(false);
+    setAdjustBusy(false);
+    setBatchAllState('');
+    if (err) results.push({ name: '', created: 0, failed: 0, reason: '思わぬエラーで止まりました：' + aiErrText(err) });
+    BATCH_LAST_SUMMARY = batchAllSummary(results, !!(BATCH_STOP || err), skipped);   /* 中7: 一覧を描き直しても消えないよう保持 */
+    renderList();
+    toast(err ? '一括AI作成は途中で止まりました（結果は一覧の上に出ています）' : '一括AI作成が終わりました（結果は一覧の上に出ています）');
+  }
+  return step().then(function () { finBatchAll(null); }, function (e) { finBatchAll(e); });
+}
+/* 全員分の結果表の材料（氏名／作った期数／失敗理由）。中7: 一覧の描き直しで消えないよう保持する */
+function batchAllSummary(results, stoppedEarly, skipped) {
+  var sk = (Object.prototype.toString.call(skipped) === '[object Array]') ? skipped : [];
+  if (!results.length && !sk.length) return null;
+  var totalCreated = 0, totalFailed = 0, totalPrev = 0, totalLocked = 0, i;
+  for (i = 0; i < results.length; i++) {
+    totalCreated += results[i].created; totalFailed += results[i].failed;
+    totalPrev += (results[i].prevWrites || 0); totalLocked += (results[i].prevLocked || 0);
+  }
+  var lines = ['一括AI作成（全員分・' + fmtDateTime(nowIso()) + '）：対象 ' + results.length + '人・作った ' + totalCreated + '期' +
+    (totalFailed ? '・AI生成に失敗 ' + totalFailed + '期' : '') + (stoppedEarly ? '（途中で止めました）' : '')];
+  if (BATCH_STOP_REASON) lines.push('※' + BATCH_STOP_REASON);
+  if (totalPrev) {
+    lines.push('前の期の報告書欄（達成度・Ⅲ）も埋めました：' + totalPrev + '期' +
+      (totalLocked ? '（うち印刷済・家族署名受領済 ' + totalLocked + '期＝必ず確認してください）' : ''));
+  }
+  for (i = 0; i < results.length; i++) {
+    lines.push((results[i].name || '（氏名不明）') + '　作った ' + results[i].created + '期' +
+      (results[i].failed ? '　失敗 ' + results[i].failed + '期' : '') + (results[i].reason ? '　' + results[i].reason : ''));
+  }
+  /* 高: 作らなかった方も必ず出す（黙って飛ばすと「全員できた」と読まれる） */
+  if (sk.length) {
+    lines.push('作らなかった方：' + sk.length + '人');
+    for (i = 0; i < sk.length; i++) lines.push('　' + (sk[i].name || '（氏名不明）') + '　' + sk[i].reason);
+  }
+  return { kind: 'all', masterId: '', lines: lines, warn: !!(totalFailed || stoppedEarly || totalLocked || sk.length) };
+}
+/* 保持している全員分の要約を一覧に出す */
+function renderBatchAllSummary(host) {
+  var sum = BATCH_LAST_SUMMARY;
+  if (!sum || sum.kind !== 'all' || !sum.lines.length) return;
+  var b = el('div', 'banner ' + (sum.warn ? 'warn' : 'info'));
+  b.setAttribute('role', sum.warn ? 'alert' : 'status');
+  for (var i = 0; i < sum.lines.length; i++) b.appendChild(el('div', null, sum.lines[i]));
+  host.appendChild(b);
 }
 
 /* ── 計画を作った直後の「本人の様子」の小ポップ ── */
@@ -5433,6 +5965,7 @@ function saveAiSettings() {
     $('aiState').textContent = 'この端末に設定を保存できませんでした（プライベートブラウズ等）';
     renderAiSettings();
     renderSample();
+    syncBatchAiVisibility();
     return;
   }
   if (v) {
@@ -5445,6 +5978,7 @@ function saveAiSettings() {
   }
   renderAiSettings();
   renderSample();
+  syncBatchAiVisibility();
 }
 function clearAiKey() {
   if (!aiKey()) { $('aiState').textContent = 'キーは入っていません'; return; }
@@ -5455,6 +5989,7 @@ function clearAiKey() {
     : 'この端末からキーを消せませんでした（ブラウザの設定をご確認ください）';
   renderAiSettings();
   renderSample();
+  syncBatchAiVisibility();
 }
 
 /* ═══════════ 印刷プレビューと印刷 ═══════════ */
@@ -6217,9 +6752,18 @@ function announceOverdue() {
 function bindUI() {
   var nav = document.querySelectorAll('.bnav button');
   for (var i = 0; i < nav.length; i++) {
-    nav[i].addEventListener('click', function () { showScreen(this.getAttribute('data-scr')); });
+    nav[i].addEventListener('click', function () {
+      /* 高: 一括作成の実行中は画面を移らない（作成中の期が別画面で描き直されるのを避ける） */
+      if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
+      showScreen(this.getAttribute('data-scr'));
+    });
   }
-  $('btnBack').addEventListener('click', function () { if (dirty) saveNow(true); showScreen('scr-list'); renderList(); });
+  $('btnBack').addEventListener('click', function () {
+    if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
+    if (dirty) saveNow(true);
+    showScreen('scr-list');
+    renderList();
+  });
   $('listSort').addEventListener('change', function () { lsSet(LS.sort, this.value); renderList(); });
   $('listFilter').addEventListener('change', function () { lsSet(LS.filter, this.value); renderList(); });
   $('btnReload').addEventListener('click', function () { refreshAll().then(function () { toast('最新を読み込みました'); }); });
@@ -6245,6 +6789,9 @@ function bindUI() {
   });
   $('bulkGo').addEventListener('click', bkRunAll);
   $('bkClose').addEventListener('click', closeBulkModal);
+  /* D47〜D50: 未作成の期を全員分（未作成の期がある方すべて）まとめてAIで作る */
+  $('btnBatchAll').addEventListener('click', function () { runBatchAiAllResidents(); });
+  $('btnBatchAllStop').addEventListener('click', requestBatchStop);
   $('staffSel').addEventListener('change', function () { lsSet(LS.staff, this.value); });
 
   for (var k = 0; k < META.length; k++) {
@@ -6255,7 +6802,11 @@ function bindUI() {
     })(META[k]);
   }
   $('fStatus').addEventListener('change', onStatusChange);
-  $('planSel').addEventListener('change', function () { switchPlan(this.value); });
+  $('planSel').addEventListener('change', function () {
+    /* 中: 一括作成の実行中に期を切り替えると、書き込み先が変わってしまう */
+    if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); renderEdit(); return; }
+    switchPlan(this.value);
+  });
   $('btnNewPlan').addEventListener('click', addPlan);
   $('addAtDate').max = todayYmd();   /* 未来日は入力段階で止める（addPlanAt 側の断りも残る） */
   $('btnAddAt').addEventListener('click', function () {
@@ -6265,6 +6816,34 @@ function bindUI() {
     if (addPlanAt(d)) $('addAtDate').value = '';   /* 作れた時だけ欄を空にする（失敗時は入力を残す） */
   });
   $('btnPullMaster').addEventListener('click', pullMaster);
+  /* D47〜D50: 未作成の期をまとめてAIで作る（1人分＝いま開いている方） */
+  $('btnBatchAi').addEventListener('click', function () {
+    if (!DOC) { toast('計画書をまだ読み込めていません。一覧から利用者を開いてください'); return; }
+    if (batchStartBlocked()) { toast('いまAIの処理を実行しています。終わるまでお待ちください'); return; }
+    /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
+    if (!trashReady()) {
+      toast('この端末が繋がっている計画書GASは古い版のため、一括では作れません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+      return;
+    }
+    /* 高1: 計画が1件も無い方は「前の期」が無いため一括では作れない（1期目は人が作る） */
+    if (!DOC.plans.length) { toast('計画が1件もない方は一括では作れません。先に1期目を作ってください'); return; }
+    /* 高: 退去された方は退去日までしか作らない。名簿に無い方などは作らない */
+    var lim = batchAiLimitFor(curMasterId);
+    if (!lim.ok) { toast('この方は一括では作れません：' + lim.reason); return; }
+    BATCH_STOP = false;   /* 中1: リセットは入口のここだけ */
+    BATCH_FAIL_RUN = 0;
+    BATCH_STOP_REASON = '';
+    BATCH_LAST_SUMMARY = null;   /* 低: 前回の要約を今回の結果と読み違えないよう、始める時に消す */
+    renderEdit();
+    runBatchAiForOpenResident({ confirm: true, limitYmd: lim.limit,
+      endedNote: lim.ended ? ('この方は退去日 ' + lim.limit + ' で終了しているため、退去日までの抜けだけを作ります。') : '' }).then(function (r) {
+      if (r.canceled) return;
+      if (r.switched) { toast('先ほど開いていた方の一括作成は途中で止めました'); return; }   /* 中4 */
+      if (r.noTarget) { toast('未作成の期はありません'); return; }
+      finishBatchAiSingleUI(r);
+    });
+  });
+  $('btnBatchStop').addEventListener('click', requestBatchStop);
   $('btnMoveEvalPrev').addEventListener('click', moveEvalToPrev);
   $('editView').addEventListener('change', function () { lsSet(LS.view, this.value); applyEditView(this.value); });
   $('cmpSel').addEventListener('change', function () {
@@ -6399,7 +6978,8 @@ function bindUI() {
   window.addEventListener('pagehide', flushOnExit);
   window.addEventListener('beforeunload', function (ev) {
     flushOnExit();
-    if (dirty || (BULK && BULK.running)) { ev.preventDefault(); ev.returnValue = ''; return ''; }   /* 中5 */
+    /* 高: 50分の一括作成を無警告で閉じさせない（途中の期までは保存済み） */
+    if (dirty || (BULK && BULK.running) || batchBusy()) { ev.preventDefault(); ev.returnValue = ''; return ''; }   /* 中5 */
   });
   /* ブラウザのメニューから印刷された時も、用紙の指定だけは効かせる（終わったら外す） */
   window.addEventListener('beforeprint', function () {
@@ -6431,6 +7011,7 @@ function boot() {
   }
   IDX = normIndex(null);
   bindUI();
+  syncBatchAiVisibility();   /* D47〜D50: 一括AI作成のボタンは aiReady() の端末だけに出す */
   restoreUiState();
   renderList();
   if (!SU_READY) { setSync('データ層エラー', 'err'); return; }
