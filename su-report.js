@@ -132,10 +132,16 @@
   function refresh() {
     dlg.querySelector('#sur-prev').textContent = compose(dlg.querySelector('#sur-sym').value.trim());
   }
+  // 送信先は【端末の localStorage】から読む（他ツールの接続先と同じ流儀＝配信物に URL や合言葉を載せない）。
+  // index.html は公開リポジトリに載るため、window.SU_REPORT_ENDPOINT を HTML に直書きしてはいけない。
+  // 設定する時: 接続設定画面 or コンソールで localStorage.setItem('su_report_endpoint', '<exec URL>?k=<合言葉>')
+  function endpoint() {
+    try { return window.SU_REPORT_ENDPOINT || localStorage.getItem('su_report_endpoint') || ''; } catch (e) { return ''; }
+  }
   fab.addEventListener('click', function () {
     refresh();
     dlg.querySelector('#sur-msg').hidden = true;
-    if (window.SU_REPORT_ENDPOINT) dlg.querySelector('#sur-send').hidden = false;
+    if (endpoint()) dlg.querySelector('#sur-send').hidden = false;
     dlg.showModal();
     dlg.querySelector('#sur-sym').focus();
   });
