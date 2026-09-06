@@ -66,3 +66,4 @@ mailer/.DS_Store
 #  demo-data.json / staff-roster.json / shiftapp-backup-*.json → 実職員名を含む
 #  visiting-medical-app/             → 訪問診療（要配慮個人情報）・本番は clinic-app
 #  *.php / .claude/ / CLAUDE.md / design/ / assets/  → テーマ本体・harness・docs
+!/kotowaza-jiten.html
