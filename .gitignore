@@ -45,6 +45,9 @@
 # 個人情報は一切含まない（接続先・合言葉もアプリ側の localStorage から渡される）。
 !/su-data.js
 !/su-data-gas.js
+# 不具合報告の共有部品（2026-09-06）。個人情報は集めない設計で、収集するのは端末・ブラウザ・
+# 画面サイズ・JSエラー・接続設定の有無（真偽のみ）だけ。localStorage の値は読まない。
+!/su-report.js
 !/training-plan.html
 !/training-plan-form.js
 
