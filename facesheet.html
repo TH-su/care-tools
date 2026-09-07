@@ -2546,15 +2546,37 @@ function renderOfficeView(r){
   var du=dayUseHtml(r);
   var consents=r.consents||{};
   var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
+   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
+   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
+   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
+   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
+     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
+var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
+function famNo(i, n){
+  if(n<2) return '';
+  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
+}
+function famWho(f){
+  if(!f) return '';
+  var nm=String(f.name==null?'':f.name).trim();
+  if(!nm) return '';
+  return nm+(f.kp?':KP':'')+(f.relation?('（'+String(f.relation).trim()+'）'):'');
+}
   var fam=Array.isArray(r.family)?r.family:[];
-  var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
+  var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
   /* 住所（2026-08-15 指示で追加・入居者マスタと同じ表示）。事務所ビュー専用＝現場端末には
      family そのものが届かない（SAFE_FIELDS に無い）ので、ここは office のみで評価される。 */
-  var famAddr=fam.map(function(f,i){return f.address?('①②③④⑤'.charAt(i)+f.address):''}).filter(Boolean).join('\n');
-  var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
+  /* ★番号は famNo で振る（2名以上の時だけ・家族欄と同じ番号）。列ごとに数え直さない */
+  var famAddr=fam.map(function(f,i){return f.address?(famNo(i,fam.length)+f.address):''}).filter(Boolean).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?(famNo(i,fam.length)+f.phone):''}).filter(Boolean).join('\n');
   /* ★緊急連絡先は電話番号も出す（入居者マスタは氏名と続柄だけだが、現場での連絡に要るため
      本アプリでは従来どおり残す。情報を減らす方向へは揃えない） */
-  var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.phone?(' '+f.phone):'')}).join('\n');
+  /* ★番号は家族の並び順で振る（緊急だけ数え直すと、家族欄の番号と食い違う） */
+  var emg=fam.map(function(f,i){ return f&&f.emergency
+    ? (famNo(i,fam.length)+famWho(f)+(f.phone?(' '+String(f.phone).trim()):'')) : ''; })
+    .filter(Boolean).join('\n');
 
   /* ══ セクションを1本ずつ組み立てる（2026-08-15 指示）══
      ★同じHTMLを2箇所に書かない。カテゴリタブと「全体」タブは、この S を並べ替えて使う。

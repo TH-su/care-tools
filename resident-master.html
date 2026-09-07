@@ -628,6 +628,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★white-space は pre-wrap のまま（normal にすると桁を揃えた連続スペースが1つに詰まる）。 */
 .wtbl .hmed{word-break:keep-all; overflow-wrap:break-word}
 .wtbl .heff{white-space:nowrap; text-align:center}
+/* 電話は1つずつ1行に収める。市外局番と番号が分かれると読み違えるため（2026-09-07 指示）。
+   ★行そのものは複数（家族の人数ぶん）。折り返さないのは1件ずつの中だけ。 */
+.wtbl .ftel{white-space:pre; word-break:keep-all; overflow-wrap:break-word}
 .wtbl .hnm{white-space:nowrap}
 .w-empty{color:var(--g5)}
 
@@ -644,6 +647,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mdtbl .mdok{text-align:center}
 .mdtbl .mdok{padding:0}
 /* チェックは見た目20pxのまま、押せる範囲をラベルで44pxに広げる */
+/* 家族欄のチェックボックス（緊急連絡先・KP）。押せる範囲を44pxにする（介護現場要件2） */
+.fam-row .fchk{display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer}
+.fam-row .fchk input{width:20px; height:20px; margin:0}
+.fam-row .fchk span{font-size: 0.875rem}
 .mdtbl .mdok label{display:flex; align-items:center; justify-content:center;
   min-height:44px; min-width:44px; margin:0 auto; cursor:pointer}
 .mdtbl .mdok input{width:20px; height:20px; margin:0}
@@ -2563,6 +2570,24 @@ function bkOf(r){
   }
   return o;
 }
+/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
+   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
+   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
+   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
+   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
+     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
+var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
+function famNo(i, n){
+  if(n<2) return '';
+  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
+}
+function famWho(f){
+  if(!f) return '';
+  var nm=String(f.name==null?'':f.name).trim();
+  if(!nm) return '';
+  return nm+(f.kp?':KP':'')+(f.relation?('（'+String(f.relation).trim()+'）'):'');
+}
 /* 在籍者だけを五十音順で返す（帳票5種の共通の母集団）。
    ★引数は取らない。renderRoster が渡す list は【検索語と絞り込みチップで既に削られた後】なので、
      それを母集団にすると「検索したまま切り替えて刷った紙」が一部だけの表になるのに、
@@ -2908,8 +2933,9 @@ function wSheet(id, title, cols, body, n, note, ownBody){
 /* ═══ 家族情報一覧（A3横・複数ページ）═══
    原本の列のうち、各種証の期限・寝具リース・同意確認書は【作らない】（管理者指示・2026-09-04。
    マスタに該当欄が無く、空欄の列を並べても意味がないため）。 */
-var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',6],['pay','負担割合',6],
-  ['em','緊急連絡先',12],['emtel','電話',10],['fam','家族',15],['famtel','電話',12],['addr','住所',26]];
+/* ★家族は全員入るので、家族・電話・住所を広めに取る（2026-09-07 指示） */
+var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',4],['pay','負担割合',5],
+  ['em','緊急連絡先',13],['emtel','電話',11],['fam','家族',15],['famtel','電話',11],['addr','住所',28]];
 function famPay(v){
   var t=String(v==null?'':v).trim();
   if(!t) return '';
@@ -2923,17 +2949,32 @@ function famHtml(){
   var body=base.map(function(r0,i){
     var b=bkOf(r0), rec=fullOf(r0);
     var fam=(rec&&Array.isArray(rec.family))?rec.family:[];
-    var em=fam.filter(function(f){ return f&&f.emergency; });
-    var ot=fam.filter(function(f){ return f&&!f.emergency; });
-    function who(f){ return String(f.name||'').trim()+(f.relation?('（'+String(f.relation).trim()+'）'):''); }
-    var v={no:(i+1), name:b.name||'', lv:b.careLevel||'', pay:famPay(b.copayRate),
-           em:em.map(who).join('\n'), emtel:em.map(function(f){return String(f.phone||'').trim()}).filter(String).join('\n'),
-           fam:ot.map(who).join('\n'), famtel:ot.map(function(f){return String(f.phone||'').trim()}).filter(String).join('\n'),
-           addr:fam.map(function(f){return String(f.address||'').trim()}).filter(String).join('\n')};
+    var n=fam.length;
+    /* ★「家族」は登録している方を【全員】出す（緊急連絡先の方も含む）。
+       「緊急連絡先」は緊急の印が付いた方【だけ】。2026-09-07 管理者指示。
+       ★番号は家族の並び順で1回だけ振り、電話・住所・緊急連絡先にも同じ番号を使う。
+       列ごとに数え直すと「①の電話」が別人のものになる。
+       ★電話や住所が空の方はその列に出さない（番号が同じなので誰のものかは分かる）。 */
+    function pick(get, only){
+      return fam.map(function(f,k){
+        if(!f) return '';
+        if(only && !f.emergency) return '';
+        var t=String(get(f)==null?'':get(f)).trim();
+        return t?(famNo(k,n)+t):'';
+      }).filter(Boolean).join('\n');
+    }
+    var v={no:(i+1), name:b.name||'', lv:histLv(b.careLevel), pay:famPay(b.copayRate),
+           em:    pick(famWho, true),
+           emtel: pick(function(f){ return f.phone; }, true),
+           fam:   pick(famWho, false),
+           famtel:pick(function(f){ return f.phone; }, false),
+           addr:  pick(function(f){ return f.address; }, false)};
     return '<tr>'+FAM_COLS.map(function(c){
       if(c[0]==='no') return '<td class="wno">'+v.no+'</td>';
       if(c[0]==='name'||c[0]==='lv'||c[0]==='pay') return '<td class="wct">'+esc(v[c[0]])+'</td>';
-      return '<td>'+wCell(rec, v[c[0]])+'</td>';
+      /* 電話は1つずつ1行に収める（折り返すと市外局番と番号が分かれて読みにくい） */
+      var cls=(c[0]==='emtel'||c[0]==='famtel')?' class="ftel"':'';
+      return '<td'+cls+'>'+wCell(rec, v[c[0]])+'</td>';
     }).join('')+'</tr>';
   }).join('');
   return wSheet('famSheet','家族情報一覧',FAM_COLS,body,base.length, shLoadNote());
@@ -4877,10 +4918,13 @@ function applyPrintHide(box,r){
 }
 function renderView(r){
   var fam=Array.isArray(r.family)?r.family:[];
-  var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
-  var famAddr=fam.map(function(f,i){return f.address?('①②③④⑤'.charAt(i)+f.address):''}).filter(Boolean).join('\n');
-  var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
-  var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')}).join('\n');
+  var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
+  /* ★番号は famNo で振る（2名以上の時だけ・家族欄と同じ番号）。列ごとに数え直さない */
+  var famAddr=fam.map(function(f,i){return f.address?(famNo(i,fam.length)+f.address):''}).filter(Boolean).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?(famNo(i,fam.length)+f.phone):''}).filter(Boolean).join('\n');
+  /* ★番号は家族の並び順で振る（緊急だけ数え直すと、家族欄の番号と食い違う） */
+  var emg=fam.map(function(f,i){ return f&&f.emergency?(famNo(i,fam.length)+famWho(f)):''; })
+    .filter(Boolean).join('\n');
   var rhythm=rhythmOf(r);   /* 食事の時刻は施設共通の既定を重ねる（保存済みがあればそちらが勝つ） */
   var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
   /* デイ利用日は【週間計画】から出す（2026-08-19 指示・A4様式と同じ正本に揃えた）。
@@ -5628,7 +5672,7 @@ function openEdit(rec){
   renderMedLogRows();
   renderMedsPastRows();
   $('medsPastAdd').addEventListener('click',function(){collectMedsPast();editing.medsPastLog.unshift({date:todayISO(),text:''});renderMedsPastRows()});
-  $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false});collectFam();renderFamRows()});
+  $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false,kp:false});collectFam();renderFamRows()});
   /* 上下2つの「＋ 経過を追加」は同じ動き。★足した行へ移動する＝上のボタンから押した時に
      「何も起きなかった」と見えるのを防ぐ（入力行は画面のずっと下にある） */
   var supAdd=function(){
@@ -5959,7 +6003,10 @@ function renderFamRows(){
       // 住所は郵便番号・番地・建物名で複数行になることがある。input だと改行が除去され、
       // 開いて保存しただけで行構成が失われるため textarea にする。
       '<div class="fld full"><label>住所</label><textarea data-fk="address" rows="2">'+esc(f.address)+'</textarea></div>'+
-      '<div class="fld"><label>緊急連絡先</label><select data-fk="emergency"><option value=""'+(!f.emergency?' selected':'')+'>—</option><option value="1"'+(f.emergency?' selected':'')+'>緊急連絡先</option></select></div>'+
+      /* ★プルダウンからチェックボックスへ（2026-09-07 指示）。押す回数が減り、
+         入っているかどうかが一目で分かる。押せる範囲は44pxを確保する（介護現場要件2） */
+      '<div class="fld"><label>緊急連絡先</label><label class="fchk"><input type="checkbox" data-fk="emergency"'+(f.emergency?' checked':'')+'><span>緊急連絡先</span></label></div>'+
+      '<div class="fld"><label>KP（キーパーソン）</label><label class="fchk"><input type="checkbox" data-fk="kp"'+(f.kp?' checked':'')+'><span>KP</span></label></div>'+
       '<button class="fam-del" type="button" data-del="'+i+'">削除</button>'+
     '</div>';
   });
@@ -5971,7 +6018,8 @@ function collectFam(){
     var i=parseInt(row.getAttribute('data-i'));if(isNaN(i)||!editing.family[i])return;
     Array.prototype.forEach.call(row.querySelectorAll('[data-fk]'),function(inp){
       var k=inp.getAttribute('data-fk');
-      editing.family[i][k]=(k==='emergency')?!!inp.value:inp.value.trim();
+      /* チェックボックスは checked を見る（value は 'on' 固定なので value で見ると必ず true になる） */
+      editing.family[i][k]=(k==='emergency'||k==='kp')?!!inp.checked:inp.value.trim();
     });
   });
 }
@@ -6166,6 +6214,23 @@ function saveStampSame_(a,b){
    全項目一致した方だけを「保存済み」と判定する。判定を純関数に切り出すのは
    gas/tests/master_confirm_test.js で機械検証するため（画面の配線はここを呼ぶだけにする）。
    ★真偽値はサーバーが boolean、送信側が文字列のことがあるため String() で寄せて比べる。 */
+/* 家族の配列を、比較できる形に揃える。★サーバーの _famNorm（gas/master.gs）と同じ規則。
+   食い違うと「送ったのに一致しない」＝いつまでも未保存の色が残る。 */
+function famCmp_(v){
+  if(Object.prototype.toString.call(v)!=='[object Array]') return [];
+  var K=['name','relation','role','phone','address','emergency','kp'], out=[];
+  for(var i=0;i<v.length;i++){
+    var f=v[i]; if(!f||typeof f!=='object') continue;
+    var o={};
+    for(var j=0;j<K.length;j++){
+      var k=K[j];
+      o[k]=(k==='emergency'||k==='kp')?!!bulkTruthy(f[k]):String(f[k]==null?'':f[k]).trim();
+    }
+    if(o.name===''&&o.phone===''&&o.address==='') continue;
+    out.push(o);
+  }
+  return out;
+}
 function verifyAppliedRows_(changes,rows){
   var byId={},i;
   for(i=0;i<(rows||[]).length;i++){ var r=rows[i]; if(r&&r.id!=null) byId[String(r.id)]=r; }
@@ -6176,6 +6241,12 @@ function verifyAppliedRows_(changes,rows){
     /* ★保存データが壊れている行(broken)は全項目を空で返してくるため、「空にする指定」と一致してしまう。保存済みと認めない */
     if(ok&&sv.broken===true) ok=false;
     if(ok){ for(var k in c.fields){ if(!Object.prototype.hasOwnProperty.call(c.fields,k)) continue;
+      /* ★家族は配列。String() で比べると両方 "[object Object]" になり、
+         【入っていなくても「保存済み」と判定する】。中身で比べる（2026-09-07）。 */
+      if(k==='family'){
+        if(JSON.stringify(famCmp_(sv[k]))!==JSON.stringify(famCmp_(c.fields[k]))){ ok=false; break; }
+        continue;
+      }
       if(String(sv[k]==null?'':sv[k])!==String(c.fields[k]==null?'':c.fields[k])){ ok=false; break; } } }
     (ok?applied:kept).push(String(c.id));
   }
@@ -6756,7 +6827,7 @@ function renderA4(r){
   /* 家族: 1行1名。緊急連絡先列にはその方が緊急連絡先なら氏名を出す（旧様式の列構成） */
   var fam=Array.isArray(r.family)?r.family.filter(function(f){return f&&(f.name||f.phone||f.address)}):[];
   var famRows=fam.length?fam.map(function(f){
-    var nm=String(f.name||'')+(f.relation?'（'+f.relation+'）':'');
+    var nm=famWho(f);   /* KP は氏名の後に :KP（他の画面と同じ見せ方に揃える） */
     return '<div class="a4-row">'+
       a4Cell('',nm,'1.1')+a4Cell('',f.address||'','1.5')+a4Cell('',f.phone||'','1')+
       a4Cell('',f.emergency?nm:'','1')+'</div>';
@@ -7058,6 +7129,29 @@ function testSync(){
  */
 var BULK_LEVELS=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
 /* 列の定義。★GAS の BULK_FIELDS に無いキーを足してもサーバーが拒否する（先に GAS を直すこと） */
+/* 家族の一括編集の枠。実データの最大が3名なので3枠。増やす時はここだけ直す
+   （列の生成も保存も、この数から導いている＝二重管理しない）。 */
+var BULK_FAM_SLOTS=3;
+var BULK_FAM_ITEMS=[['name','氏名','text'],['relation','続柄','text'],
+                    ['phone','電話','text'],['address','住所','text'],
+                    ['emergency','緊急','check'],['kp','KP','check']];
+var BULK_FAM_COLS=(function(){
+  var out=[], i, j;
+  for(i=0;i<BULK_FAM_SLOTS;i++)
+    for(j=0;j<BULK_FAM_ITEMS.length;j++)
+      out.push(['fam'+i+'_'+BULK_FAM_ITEMS[j][0], (i+1)+'.'+BULK_FAM_ITEMS[j][1],
+                BULK_FAM_ITEMS[j][2]]);
+  return out;
+})();
+/* 'fam0_name' → {i:0, key:'name'}。合わない文字列には null を返す（他の項目と取り違えない） */
+function bulkFamKey(k){
+  var m=/^fam(\d+)_([A-Za-z]+)$/.exec(String(k==null?'':k));
+  if(!m) return null;
+  var i=parseInt(m[1],10);
+  if(!(i>=0&&i<BULK_FAM_SLOTS)) return null;
+  for(var j=0;j<BULK_FAM_ITEMS.length;j++) if(BULK_FAM_ITEMS[j][0]===m[2]) return {i:i, key:m[2]};
+  return null;
+}
 var BULK_GROUPS=[
   ['basic','基本',[
     ['kana','ふりがな','text'],['gender','性別','select',['','女','男']],
@@ -7091,7 +7185,24 @@ var BULK_GROUPS=[
     ['emergencyHospital','救急搬送先','text'],['emergencyHospitalTel','急変時TEL','text'],
     ['visitDay','往診曜日','text'],
     ['pharmacy','かかりつけ薬局','text'],['pharmacyTel','薬局TEL','text'],['pharmacyFax','薬局FAX','text'],
-    ['bloodType','血液型','select',['','A','B','O','AB','不明']]]]
+    ['bloodType','血液型','select',['','A','B','O','AB','不明']]]],
+  /* ★薬剤情報（2026-09-07 管理者指示）。複数行の項目は 'lines'（1行の textarea）にする。
+     <input type="text"> だと往復で改行が落ち、【何剤も並んだ処方が1行に潰れる】
+     （医院名で同じことが起きたので 2026-08-20 に 'lines' を用意した）。
+     ★medsRegular は訪問診療アプリの setMeds と同じ項目。契約 §2 を読んでから触ること。 */
+  ['meds','薬剤',[
+    ['medsRegular','薬剤情報（定期）','lines'],
+    ['medsPrn','頓服・外用等','lines'],
+    ['medsNotes','薬備考','lines'],
+    ['highRiskMeds','注意を要する薬剤','lines'],
+    ['formAdjust','剤形配慮','select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル']],
+    ['medRefusal','服薬拒否','select',['','なし','時々あり','あり']]]],
+  /* ★家族情報（2026-09-07 管理者指示）。家族は【配列】なので、1人あたり
+     BULK_FAM_SLOTS 人ぶんの枠に開いて1セルずつ編集する。
+     実測（2026-09-07・在籍32名）: 0名1人・1名6人・2名14人・3名11人＝【最大3名】。
+     ★4人目以降が居る方は、この画面の枠に出ない。保存の時も【触らずそのまま残す】
+       （枠に無いものを消してしまうと、画面に一度も出なかった家族が黙って消える）。 */
+  ['family','家族',BULK_FAM_COLS]
 ];
 /* 直すと現場アプリ側の値まで置き換わる項目（data-contracts §5「マスタ非空常勝」）。保存前に必ず知らせる */
 var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
@@ -7115,7 +7226,38 @@ function bulkCellCount(){ var n=0,k; for(k in bulkDirty) n+=Object.keys(bulkDirt
 function bulkVal(r,k){
   var d=bulkDirty[r.id];
   if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  /* 家族の枠は配列から引く（r.family は getBulk が返す。古いGASでは undefined＝空欄） */
+  var fk=bulkFamKey(k);
+  if(fk){
+    var arr=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+    var f=arr[fk.i];
+    if(!f) return (fk.key==='emergency'||fk.key==='kp')?false:'';
+    return (f[fk.key]==null)?((fk.key==='emergency'||fk.key==='kp')?false:''):f[fk.key];
+  }
   return (r[k]==null)?'':r[k];
+}
+/* 変更のあった枠から、その方の家族の配列を組み立て直す。
+   ★4人目以降（枠に出ていない家族）は元のまま残す。枠の数だけで作り直すと、
+     画面に一度も出なかった家族が黙って消える（原則4）。
+   ★氏名・電話・住所がすべて空の枠は落とす（空の行を増やさない）。サーバー側の
+     _famNorm と同じ規則にすること（片方だけ緩いと、画面と保存結果が食い違う）。 */
+function bulkFamBuild(r, dirty){
+  var orig=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+  var out=[], i, j;
+  for(i=0;i<BULK_FAM_SLOTS;i++){
+    var src=orig[i]||{}, o={};
+    for(j=0;j<BULK_FAM_ITEMS.length;j++){
+      var key=BULK_FAM_ITEMS[j][0], dk='fam'+i+'_'+key;
+      var v=Object.prototype.hasOwnProperty.call(dirty,dk)?dirty[dk]:src[key];
+      o[key]=(key==='emergency'||key==='kp')?bulkTruthy(v):String(v==null?'':v).trim();
+    }
+    /* 枠に出ない項目（role など）は元の値を引き継ぐ */
+    o.role=String((src&&src.role)==null?'':src.role).trim();
+    if(o.name===''&&o.phone===''&&o.address==='') continue;
+    out.push(o);
+  }
+  for(i=BULK_FAM_SLOTS;i<orig.length;i++) if(orig[i]) out.push(orig[i]);   /* 4人目以降はそのまま */
+  return out;
 }
 
 function openBulk(){
@@ -7397,8 +7539,19 @@ function saveBulk(){
     for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===String(id)){ r=bulkRows[j]; break; }
     if(!r) continue;
     var k; for(k in f) if(BULK_DOWNSTREAM[k]) hitDown[k]=1;
+    /* ★家族の枠（fam0_name 等）は、そのままでは送らない。サーバーが受けるのは family の
+       配列1つだけ。枠を1つでも直していたら、その方の家族を組み立て直して差し替える。
+       ★枠のキーは必ず取り除く（残すと「一括編集できません」でその方の保存が丸ごと落ちる）。 */
+    var famHit=false, snd={};
+    for(k in f){
+      if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
+      if(bulkFamKey(k)){ famHit=true; continue; }
+      snd[k]=f[k];
+    }
+    if(famHit) snd.family=bulkFamBuild(r,f);
+    if(!Object.keys(snd).length) continue;
     /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
-    changes.push({id:r.id,name:r.name,fields:f});
+    changes.push({id:r.id,name:r.name,fields:snd});
   }
   /* ★trim で dirty が空になった時、ここで戻ると黄色いセルと「未保存 1名」が残る（L-1） */
   if(!changes.length){ paintBulkDirty(); if(bulkRows) renderBulk(); toast('変更がありません'); return; }
