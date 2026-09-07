@@ -626,6 +626,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <div><label for="stJob">職種</label><input type="text" id="stJob" autocomplete="off"></div>
       <button id="btnStaffAdd" class="btn" type="button">職員を追加</button>
     </div>
+    <p class="muted" id="staffState" role="status" aria-live="polite"></p>
   </div>
 
   <div class="cd">
@@ -6968,8 +6969,13 @@ function renderSettings() {
     var b = el('button', 'btn sm danger', '削除');
     b.type = 'button';
     b.setAttribute('data-id', s_(s.id));
+    b.setAttribute('data-name', s_(s.name));
+    b.setAttribute('data-job', s_(s.job));
     b.setAttribute('aria-label', s_(s.name) + 'を職員一覧から削除する');
-    b.addEventListener('click', function () { removeStaff(this.getAttribute('data-id')); });
+    /* ★氏名・職種も渡す：同じ氏名が2つ登録されている時に、押した行だけを消すため */
+    b.addEventListener('click', function () {
+      removeStaff(this.getAttribute('data-id'), this.getAttribute('data-name'), this.getAttribute('data-job'));
+    });
     act.appendChild(b);
     row.appendChild(act);
     box.appendChild(row);
@@ -7008,35 +7014,93 @@ function testCfg() {
     $('cfgState').textContent = '✕ 繋がりません（' + errText(e) + '）';
   });
 }
+/* 職員の追加・削除は保存に1〜3秒かかる。押している間は押せなくし、結果はその場に残す
+   （トーストだけだと数秒で消え、失敗したのか効かなかったのかが分からない。
+     連打で同じ氏名が二重に登録される事故も防ぐ）。2026-09-07 */
+var STAFF_BUSY = false;
+function setStaffBusy(on, msg) {
+  STAFF_BUSY = !!on;
+  var b1 = $('btnStaffAdd');
+  if (b1) b1.disabled = !!on;
+  var btns = $('staffBox') ? $('staffBox').querySelectorAll('button') : [];
+  for (var i = 0; i < btns.length; i++) btns[i].disabled = !!on;
+  setStaffState(msg || '');
+}
+function setStaffState(msg) { var n = $('staffState'); if (n) n.textContent = msg || ''; }
 function addStaff() {
+  if (STAFF_BUSY) return;
   var name = s_($('stName').value).trim();
   var job = s_($('stJob').value).trim();
-  if (!name) { toast('氏名を入れてください'); $('stName').focus(); return; }
+  if (!name) { setStaffState('氏名を入れてください'); $('stName').focus(); return; }
+  /* 同じ氏名が既にある時は断りを入れる（連打による二重登録を防ぐ） */
+  var st = settings(), i;
+  for (i = 0; i < st.staff.length; i++) {
+    if (s_(st.staff[i].name) === name) {
+      if (!confirm('「' + name + '」はすでに職員一覧にあります。同姓同名の別の方でなければ、追加せずに閉じてください。\n\nこのまま追加しますか？')) {
+        setStaffState('追加をやめました（すでに同じ氏名があります）');
+        return;
+      }
+      break;
+    }
+  }
   var id = 'st' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  setStaffBusy(true, '追加しています…');
+  /* 他の端末と索引の取り合いになった時は、既定の2回より多めに粘る（索引は小さいので安い） */
   saveIndex(function (idx) {
     if (!idx.settings) idx.settings = defSettings();
     if (Object.prototype.toString.call(idx.settings.staff) !== '[object Array]') idx.settings.staff = [];
     idx.settings.staff.push({ id: id, name: name, job: job });
-  }).then(function () {
+  }, false, 4).then(function () {
     $('stName').value = ''; $('stJob').value = '';
+    STAFF_BUSY = false;
     renderSettings();
+    setStaffState('「' + name + '」を追加しました');
     toast('職員を追加しました');
-  }).catch(function (e) { toast('追加できませんでした: ' + errText(e)); });
+  }).catch(function (e) {
+    setStaffBusy(false, '追加できませんでした：' + staffErrText(e));
+  });
 }
-function removeStaff(id) {
-  var nm = staffName(id);
+/* 保存が通らなかった理由を、次にどうすればよいかまで含めて日本語で出す */
+function staffErrText(e) {
+  var m = s_(e && e.message);
+  if (/countdrop/.test(m)) return '一覧の件数が減る保存になるため、サーバーが受け付けませんでした（画面を開き直してからやり直してください）';
+  if (/conflict|重なりました/.test(m)) return '他の端末（または別のタブ）が同時に保存しました。この画面を開き直してから、もう一度お試しください';
+  if (/sizelimit/.test(m)) return '一覧の大きさが上限を超えています（設定の「索引を再構築」を試してください）';
+  if (/badtoken/.test(m)) return '合言葉が合っていません（設定の接続先を確かめてください）';
+  if (/未設定/.test(m)) return '接続先が未設定です（設定の接続先を入れてください）';
+  return m || '原因不明';
+}
+function removeStaff(id, name, job) {
+  if (STAFF_BUSY) return;
+  var nm = s_(name) || staffName(id);
   if (!confirm('「' + nm + '」を職員の一覧から外します。\n\n※これまでに保存した計画書の作成者名はそのまま残ります。よろしいですか？')) return;
   /* ★外す前に「いまの操作者が本人か」を見ておく。外した後では一覧に居ないため
      currentStaffId() が常に空になり、端末に残った職員idを消せない（消し忘れる）。 */
   var wasMe = (currentStaffId() === id);
+  setStaffBusy(true, '外しています…');
   saveIndex(function (idx) {
-    var list = (idx.settings && Object.prototype.toString.call(idx.settings.staff) === '[object Array]') ? idx.settings.staff : [];
-    idx.settings.staff = list.filter(function (x) { return s_(x.id) !== s_(id); });
-  }).then(function () {
+    if (!idx.settings) idx.settings = defSettings();
+    var list = (Object.prototype.toString.call(idx.settings.staff) === '[object Array]') ? idx.settings.staff.slice() : [];
+    /* ★1件だけ消す。同じ氏名が2つ登録されている時（さらに万一 id まで同じ時）に
+       まとめて消えないよう、押した行と同じ id・氏名・職種のものを1件だけ外す */
+    var hit = -1, i, x;
+    for (i = 0; i < list.length; i++) {
+      x = list[i] || {};
+      if (s_(x.id) === s_(id) && s_(x.name) === s_(name) && s_(x.job) === s_(job)) { hit = i; break; }
+    }
+    if (hit < 0) for (i = 0; i < list.length; i++) { if (s_((list[i] || {}).id) === s_(id)) { hit = i; break; } }
+    if (hit < 0) throw new Error('この職員はすでに一覧にありません（画面を開き直してください）');
+    list.splice(hit, 1);
+    idx.settings.staff = list;
+  }, false, 4).then(function () {
     if (wasMe) lsSet(LS.staff, '');
+    STAFF_BUSY = false;
     renderSettings();
+    setStaffState('「' + nm + '」を職員一覧から外しました');
     toast('職員を外しました');
-  }).catch(function (e) { toast('外せませんでした: ' + errText(e)); });
+  }).catch(function (e) {
+    setStaffBusy(false, '外せませんでした：' + staffErrText(e));
+  });
 }
 function saveSettings() {
   var w = Number(s_($('setWarnDays').value).replace(/[^0-9]/g, ''));
