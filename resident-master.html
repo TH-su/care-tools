@@ -2919,6 +2919,10 @@ function shPrintWide_(kind){
    ★辞書に個人情報は入れない（薬剤名と効能だけ）。誰が飲んでいるかは保存しない。
    ★保存先は入居者情報ブックの med_dict タブ（gas/med-dict.gs）。master シートには触れない。 */
 var mdDict=null, mdMap=null, mdLoading=false, mdErr='', mdDirty=false, mdBusy='';
+/* ★編集中の値は【メモリに持つ】。DOMだけに置くと、背景の取り直し（fullEnsure/mdEnsure）が
+   終わった時の再描画で入力が黙って消える（2026-09-04 実測。AIの下書き155件が丸ごと消えた）。
+   キーは薬剤名。保存に成功したら捨てる。 */
+var mdEdits=Object.create(null);
 
 /* 辞書のキー。★サーバーの _mdKey（gas/med-dict.gs）と【同じ規則】にすること。
    食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。 */
@@ -2999,6 +3003,10 @@ function mdHtml(list){
     var e=(mdMap&&mdMap[d.name])||null;
     var eff=e?String(e.effect||''):'';
     var ok=!!(e&&e.ok);
+    /* ★編集中の値があれば必ずそちらを出す（再描画で入力を捨てない） */
+    if(Object.prototype.hasOwnProperty.call(mdEdits,d.name)){
+      eff=String(mdEdits[d.name].effect||''); ok=!!mdEdits[d.name].ok;
+    }
     if(eff){ known++; if(!ok) ai++; }
     return '<tr data-md="'+esc(d.name)+'">'+
       '<td class="mdc">'+(i+1)+'</td>'+
@@ -3032,11 +3040,23 @@ function mdRead(){
   Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
     var name=tr.getAttribute('data-md');
     var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
-    out.push({name:name, effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)});
+    var v={name:name, effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)};
+    /* ★メモリの編集を優先。描き直しの直後は DOM が古い値に戻っていることがある */
+    if(Object.prototype.hasOwnProperty.call(mdEdits,name)){
+      v.effect=String(mdEdits[name].effect||''); v.ok=!!mdEdits[name].ok;
+    }
+    out.push(v);
   });
   return out;
 }
-function mdMarkDirty(){ mdDirty=true; if($('mdSave')) $('mdSave').disabled=false; paintShBars(); }
+/* 1行ぶんの編集をメモリへ写す（再描画に耐えるように） */
+function mdRemember(tr){
+  if(!tr) return;
+  var name=tr.getAttribute('data-md'); if(!name) return;
+  var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
+  mdEdits[name]={effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)};
+}
+function mdMarkDirty(tr){ mdRemember(tr); mdDirty=true; if($('mdSave')) $('mdSave').disabled=false; paintShBars(); }
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
 function mdSave(){
@@ -3049,7 +3069,7 @@ function mdSave(){
     return {name:x.name, effect:x.effect, ok:x.ok, src:'ai'};
   })},60000).then(function(d){
     if(d&&d.error) throw new Error(d.error);
-    mdDirty=false;
+    mdDirty=false; mdEdits=Object.create(null);   /* 保存できたので編集メモリは捨てる */
     toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+'）');
     mdBusy=''; mdEnsure(true);            /* ★書いたら必ず取り直して現物で確かめる（契約 §13） */
   }).catch(function(e){
@@ -3157,7 +3177,11 @@ function mdAiFill(){
     if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
       var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
       if(!inp||inp.value.trim()!=='') return;
-      if(Object.prototype.hasOwnProperty.call(got,name)){ inp.value=got[name]; n++; }
+      if(Object.prototype.hasOwnProperty.call(got,name)){
+        inp.value=got[name];
+        mdRemember(tr);          /* ★メモリにも入れる（再描画で消えないように） */
+        n++;
+      }
     });
     mdBusy='';
     if(n) mdMarkDirty();
@@ -7213,10 +7237,12 @@ function init(){
   if($('mdPrint')) $('mdPrint').addEventListener('click',mdPrint);
   /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
   if($('rosterBox')) $('rosterBox').addEventListener('input',function(e){
-    if(curView==='md'&&e.target&&e.target.classList&&e.target.classList.contains('mde')) mdMarkDirty();
+    if(curView==='md'&&e.target&&e.target.classList&&e.target.classList.contains('mde'))
+      mdMarkDirty(e.target.closest('tr[data-md]'));
   });
   if($('rosterBox')) $('rosterBox').addEventListener('change',function(e){
-    if(curView==='md'&&e.target&&e.target.type==='checkbox') mdMarkDirty();
+    if(curView==='md'&&e.target&&e.target.type==='checkbox')
+      mdMarkDirty(e.target.closest('tr[data-md]'));
   });
   /* 食形態一覧: 取り直し・保存・A3縦印刷 */
   if($('mealReload'))$('mealReload').addEventListener('click',function(){
