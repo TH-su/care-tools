@@ -2947,8 +2947,20 @@ function csRememberLocalFp_(json) {
    ★土台を焼き直してよいのは「サーバーと内容が一致した瞬間」だけ（採用・送信成功・起動時の一致確認）。
      保存のたびに焼くと自分の編集が土台に混ざり、相手の値を勝たせる誤りになる。 */
 const CS_FIELD_BASE_KEY = 'cs_field_base_v1';       // 同期対象外・端末ローカルのみ
-const CS_MERGE_FIELDS   = ['detail', 'category'];   // ワースケが書き戻すフィールド（入浴は既存の「和」で別扱い）
-let CS_FIELD_BASE = null;                           // { evId: { detail, category } }
+/* 3-way マージの対象＝「自分が触っていなければ相手の値を残す」フィールド。
+   ★予定の中身は【全部】ここに載せる（2026-09-07 追加）。
+     以前は detail と category だけだった。予定の照合は id 単位で「自分が勝つ」設計のため、
+     ここに無いフィールドは【自分が触っていなくても】古いスナップショットの値で相手の保存を
+     上書きする。2026-09-07、木曜の訪問を 10:00〜11:00 → 14:00〜15:00 へ変更して保存したのに
+     数日後に 10:00〜11:00 へ戻る事故が起きた（同時に足した通所は server 限定なので残り、
+     「片方だけ戻る」という見え方になった）。
+     ★載せないフィールド:
+       ・bathing … 既存の「和」（どちらかが true なら true）で別扱い。加算の根拠なので消さない側へ倒す
+       ・units   … 画面から入力しない導出値。保存後に recalcAllEventUnits() が一括で書き直す
+       ・id      … 照合キーそのもの
+   新しいフィールドを予定に足したら、ここにも足すこと（足し忘れると、そのフィールドだけ巻き戻る）。 */
+const CS_MERGE_FIELDS   = ['detail', 'category', 'startTime', 'endTime', 'dayOfWeek', 'serviceType', 'notes'];
+let CS_FIELD_BASE = null;                           // { evId: { 上記フィールド } }
 
 function csFieldBaseBuild_(db) {
   const map = {};
@@ -4116,6 +4128,13 @@ const SYNC = {
         await this.pull();                            // サーバー版採用＝rev前進・DB=server
         DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
         try { csApplyDeviceSelection_(true); } catch (e) {}   // 土台=server版のため表示中の利用者も戻す
+        /* この端末が触っていない項目でクラウド側の値を残した件数を記録に残す（2026-09-07 追加）。
+           2026-09-07 の巻き戻り事故は、まさにこの経路が【古い端末の値で相手の保存を上書き】して
+           起きたのに、記録が1行も残らず後から追えなかった。alert は出さない＝競合のたびに出て
+           操作の邪魔になるため、同期モーダルのログにだけ残す。 */
+        if (csFieldsKept_) {
+          this.log('　└ この端末が触っていない ' + csFieldsKept_ + ' 項目は、クラウド側の値を残しました（古い内容で上書きしていません）');
+        }
         if (csBathRestored_) {                        // 入浴を戻したら必ず知らせる（黙って加算側へ倒さない）
           this.updateStatusUI('要確認');
           this.log('⚠ 競合の解消で通所の入浴 ' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました');
