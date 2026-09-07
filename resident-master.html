@@ -2943,19 +2943,19 @@ function mdEnsure(force){
   if(!CFG.url){ mdErr='同期設定のURLが未設定です'; paintShBars(); return; }
   mdLoading=true; mdErr=''; paintShBars();
   apiGet({action:'getMedDict'},30000).then(function(d){
+    /* ★0件は正常（まだ1件も登録していない）。空とエラーを混同しない */
     var rows=(d&&d.rows)||[];
-    /* ★0件は正常（まだ1件も登録していない）。エラーと区別する。
-       ★GASが古い版だと「不明なaction」が返る。原因が分かる文言にする（何度押しても直らないため）。
-         この画面以外は従来どおり動く＝先に画面を配っても壊れない（multi-device-sync 原則7）。 */
-    if(d&&d.error){
-      mdErr = /不明なaction/.test(String(d.error))
-        ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
-        : '薬効辞書を取得できませんでした';
-      return;
-    }
     mdDict=rows; mdMap=Object.create(null);
     for(var i=0;i<rows.length;i++){ var k=mdKey(rows[i].name); if(k) mdMap[k]=rows[i]; }
-  }).catch(function(){ mdErr='薬効辞書を取得できませんでした（通信）'; })
+  }).catch(function(e){
+    /* ★parseJson は応答の error を【例外】に変える（.then には来ない）。ここで見分ける。
+       ★GASが古い版だと「不明なaction」。何度押しても直らないので、原因が分かる文言にする。
+         この画面以外は従来どおり動く＝先に画面を配っても壊れない（multi-device-sync 原則7）。 */
+    var m=String((e&&e.message)||e||'');
+    mdErr = /不明なaction/.test(m)
+      ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
+      : ('薬効辞書を取得できませんでした'+(m?('：'+m):''));
+  })
     .then(function(){ mdLoading=false; paintShBars();
       if(curView==='md'||curView==='hist') renderRoster(); });
 }
