@@ -610,6 +610,25 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .wtbl tbody tr{break-inside:avoid; page-break-inside:avoid}   /* 1人の行を途中で割らない */
 .w-empty{color:var(--g5)}
 
+/* ── 薬効辞書（薬剤名→効能）2026-09-04 ── */
+.mdtbl{border-collapse:collapse; table-layout:fixed; width:100%; max-width:1100px; margin:0 auto}
+.mdtbl th,.mdtbl td{border:1px solid var(--g3); padding:4px 6px; line-height:1.35;
+  vertical-align:middle; text-align:start; font-size: 0.8125rem}
+.mdtbl th{background:var(--g2); font-weight:700; text-align:center; white-space:nowrap}
+.mdtbl .mdc{text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums}
+.mdtbl input.mde{width:100%; box-sizing:border-box; min-height:34px; padding:4px 6px;
+  border:1px solid var(--g3); border-radius:6px; font:inherit}
+.mdtbl input.mde:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+.mdtbl .mdok{text-align:center}
+.mdtbl .mdok input{width:20px; height:20px}
+/* 薬剤師の確認が済んでいない下書きは、色だけでなく文字でも分かるようにする（介護現場要件4） */
+.mdbadge{display:inline-block; padding:1px 6px; border-radius:999px; font-size: 0.6875rem; font-weight:700}
+.mdbadge.ai{background:var(--warn-bg); color:var(--warn-tx)}
+.mdbadge.ok{background:var(--g2); color:var(--g9)}
+.md-lead{max-width:1100px; margin:0 auto 8px; font-size: 0.8125rem; color:var(--g7); line-height:1.5}
+.md-lead b{color:var(--ng)}
+.md-prog{font-size: 0.8125rem; color:var(--g7)}
+
 /* ── 食形態一覧（A3縦1枚の配膳表・2026-08-24 追加）──
    ★フェイスシート facesheet.html の同名ブロックの【逐語コピー】。同じ紙が出ることが要件なので、
      片方を直したらもう片方も必ず直すこと（PRINT_SECS と同じ作法）。
@@ -726,6 +745,13 @@ body.meal-on #sc-list{max-width:none}
   .wtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .wtbl .wno{color:#000}
   .w-empty{color:#000}
+
+  body.md-on .search-bar, body.md-on .view-tabs, body.md-on .filter-row,
+  body.md-on .roster-count, body.md-on .sh-bar, body.md-on .md-lead{display:none !important}
+  .mdtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .mdtbl input.mde{border:0; padding:0}          /* 紙では入力欄の枠を出さない */
+  .mdtbl thead{display:table-header-group}
+  .mdtbl tr{break-inside:avoid; page-break-inside:avoid}
 
   /* ── 食形態一覧（A3縦1枚）──
      ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
@@ -922,6 +948,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
     <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
+    <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -969,6 +996,15 @@ body.meal-on #sc-list{max-width:none}
     <span class="st" id="histStatus" role="status" aria-live="polite"></span>
     <button type="button" id="histReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="histPrint">🖨️ A3横で印刷</button>
+  </div>
+  <!-- 薬効辞書ビュー専用。印刷には出さない（body.md-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="mdBar" style="display:none">
+    <span class="st" id="mdStatus" role="status" aria-live="polite"></span>
+    <span class="md-prog" id="mdProg"></span>
+    <button type="button" id="mdReload">🔄 最新に取り直す</button>
+    <button type="button" id="mdAi">🤖 未登録をAIで下書き</button>
+    <button type="button" class="btn-save" id="mdSave" disabled>💾 保存</button>
+    <button type="button" class="btn-print" id="mdPrint">🖨️ 印刷</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -1841,7 +1877,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','fam','hist'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','fam','hist','md'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -1890,7 +1926,8 @@ function setView(v){
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
-  if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); }
+  if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
+  if(curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
 }
 
 /* ═══════════ 入居日順（2026-09-02 指示） ═══════════
@@ -2318,6 +2355,8 @@ function renderRoster(){
     html=famHtml(list);
   }else if(curView==='hist'){
     html=histHtml(list);
+  }else if(curView==='md'){
+    html=mdHtml(list);
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -2486,6 +2525,12 @@ function paintShBars(){
   var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
   if($('famStatus'))  $('famStatus').textContent  = (curView==='fam')  ? wmsg : '';
   if($('histStatus')) $('histStatus').textContent = (curView==='hist') ? wmsg : '';
+  var m=$('mdBar'); if(m) m.style.display=(curView==='md')?'flex':'none';
+  if($('mdStatus')) $('mdStatus').textContent=(curView==='md')
+    ? (mdBusy || (mdLoading?'薬効辞書を取得しています…':(mdErr||wmsg))) : '';
+  if($('mdProg')) $('mdProg').textContent=(curView==='md'&&mdDict)
+    ? ('辞書 '+mdDict.length+'件'+(mdDirty?'　※未保存の変更があります':'')) : '';
+  if($('mdSave')) $('mdSave').disabled=!mdDirty;
 }
 /* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
 function lvNum(v){
@@ -2833,7 +2878,7 @@ function histHtml(list){
     return '<tr>'+HIST_COLS.map(function(c){
       if(c[0]==='no') return '<td class="wno">'+v.no+'</td>';
       if(c[0]==='name'||c[0]==='lv') return '<td class="wct">'+esc(v[c[0]])+'</td>';
-      if(c[0]==='eff') return '<td></td>';   /* 薬効の辞書ができるまで空欄 */
+      if(c[0]==='eff') return '<td>'+mdEffectsHtml(v.med)+'</td>';   /* 薬効辞書から引く */
       return '<td>'+wCell(rec, v[c[0]])+'</td>';
     }).join('')+'</tr>';
   }).join('');
@@ -2864,6 +2909,274 @@ function shPrintWide_(kind){
       if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
     }
   }catch(e){}
+  setTimeout(off,60000);
+  window.print();
+}
+/* ═══════════ 薬効辞書（薬剤名→効能）2026-09-04 管理者指示 ═══════════
+   「病歴・薬一覧」の効能列を出すための辞書。入居者ごとではなく【薬剤名をキーにした共有辞書】。
+   ★薬効はAIの下書き。薬剤師（管理者）が確認して初めて「確認済み」に上げる。
+     未確認のものは画面でも紙でも ＊ を付けて、確認済みと見分けられるようにする。
+   ★辞書に個人情報は入れない（薬剤名と効能だけ）。誰が飲んでいるかは保存しない。
+   ★保存先は入居者情報ブックの med_dict タブ（gas/med-dict.gs）。master シートには触れない。 */
+var mdDict=null, mdMap=null, mdLoading=false, mdErr='', mdDirty=false, mdBusy='';
+
+/* 辞書のキー。★サーバーの _mdKey（gas/med-dict.gs）と【同じ規則】にすること。
+   食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。 */
+function mdKey(s){ return String(s==null?'':s).replace(/　/g,' ').replace(/\s+/g,' ').trim(); }
+
+/* 内服の1行から薬剤名を取り出す。「エゼミチブ錠10mg 1錠分1 朝食後」→「エゼミチブ錠」
+   ★用量は落として同じ薬をまとめる（12mg と 24mg で辞書が2行に割れるのを防ぐ）。
+     落とすのは【末尾の数字＋単位】だけ。先頭や途中の数字は薬の名前の一部（例: FK配合散）。 */
+function mdDrugName(line){
+  var t=mdKey(line); if(!t) return '';
+  t=t.split(' ')[0];
+  t=t.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:mg|ｍｇ|g|ｇ|μg|ug|mcg|ml|ｍｌ|mL|%|％|単位|IU)$/i,'');
+  return mdKey(t);
+}
+/* 内服欄（複数行）から薬剤名の配列を返す。順番は原文のまま＝効能列が内服の行と揃う */
+function mdNamesOf(medText){
+  return String(medText==null?'':medText).split(/\r?\n/).map(mdDrugName);
+}
+function mdEnsure(force){
+  if(mdLoading) return;
+  if(mdDict&&!force) return;
+  if(!CFG.url){ mdErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  mdLoading=true; mdErr=''; paintShBars();
+  apiGet({action:'getMedDict'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    /* ★0件は正常（まだ1件も登録していない）。エラーと区別する。
+       ★GASが古い版だと「不明なaction」が返る。原因が分かる文言にする（何度押しても直らないため）。
+         この画面以外は従来どおり動く＝先に画面を配っても壊れない（multi-device-sync 原則7）。 */
+    if(d&&d.error){
+      mdErr = /不明なaction/.test(String(d.error))
+        ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
+        : '薬効辞書を取得できませんでした';
+      return;
+    }
+    mdDict=rows; mdMap=Object.create(null);
+    for(var i=0;i<rows.length;i++){ var k=mdKey(rows[i].name); if(k) mdMap[k]=rows[i]; }
+  }).catch(function(){ mdErr='薬効辞書を取得できませんでした（通信）'; })
+    .then(function(){ mdLoading=false; paintShBars();
+      if(curView==='md'||curView==='hist') renderRoster(); });
+}
+/* 内服欄に対応する効能を、内服の行数と同じ行数で返す。
+   ★引けなかった行は空行にする（詰めない）。詰めると効能が1行ずつ上にずれて【別の薬の効能】になる。 */
+function mdEffectsHtml(medText){
+  var names=mdNamesOf(medText);
+  if(!names.length||(names.length===1&&!names[0])) return '';
+  var out=names.map(function(n){
+    if(!n) return '';
+    var e=mdMap?mdMap[n]:null;
+    if(!e||!String(e.effect||'').trim()) return '';
+    return esc(String(e.effect).trim())+(e.ok?'':'＊');
+  });
+  /* 末尾の空行は落とす（意味のない空白行を紙に出さない）。途中の空行は残す＝行がずれない */
+  while(out.length&&!out[out.length-1]) out.pop();
+  return out.join('<br>');
+}
+/* いま画面にある入居者の内服から、薬剤名と使用人数を集める（多い順→五十音順） */
+function mdCollect(list){
+  var base=shBase(list), cnt=Object.create(null);
+  base.forEach(function(r){
+    var rec=fullOf(r); if(!rec) return;
+    var seen=Object.create(null);
+    mdNamesOf(rec.medsRegular).forEach(function(n){
+      if(!n||seen[n]) return; seen[n]=1;
+      cnt[n]=(cnt[n]||0)+1;
+    });
+  });
+  var out=[];
+  for(var k in cnt) if(Object.prototype.hasOwnProperty.call(cnt,k)) out.push({name:k, n:cnt[k]});
+  out.sort(function(a,b){ return (b.n-a.n) || String(a.name).localeCompare(String(b.name),'ja'); });
+  return out;
+}
+function mdHtml(list){
+  if(!fullMap) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+
+    esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
+  var drugs=mdCollect(list);
+  var known=0, ai=0;
+  var body=drugs.map(function(d,i){
+    var e=(mdMap&&mdMap[d.name])||null;
+    var eff=e?String(e.effect||''):'';
+    var ok=!!(e&&e.ok);
+    if(eff){ known++; if(!ok) ai++; }
+    return '<tr data-md="'+esc(d.name)+'">'+
+      '<td class="mdc">'+(i+1)+'</td>'+
+      '<td>'+esc(d.name)+'</td>'+
+      '<td class="mdc">'+d.n+'</td>'+
+      '<td><input class="mde" type="text" value="'+esc(eff)+'" maxlength="40" '+
+        'aria-label="'+esc(d.name)+' の効能"></td>'+
+      '<td class="mdok"><input type="checkbox" '+(ok?'checked':'')+' aria-label="確認済み"></td>'+
+      '<td class="mdc">'+(eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):'')+'</td>'+
+      '<td class="mdc">'+esc(e?(e.at||''):'')+'</td>'+
+    '</tr>';
+  }).join('');
+  return '<div class="sh-sheet" id="mdSheet">'+
+    '<div class="sh-hd"><div class="st1">薬効辞書</div></div>'+
+    '<div class="md-lead">いま処方に出てくる薬剤名を集めた表です。効能は「病歴・薬一覧」の効能列に出ます。'+
+    '<br><b>「AIで下書き」で入る効能は薬剤師の確認を経ていません。</b>確認したら右の「確認済み」に印を付けてください。'+
+    '未確認のものは一覧と紙で末尾に ＊ が付きます。'+
+    '<br>用量は落として同じ薬をまとめています（例: 12mg と 24mg は同じ1行）。</div>'+
+    '<table class="mdtbl"><colgroup>'+
+      '<col style="width:4%"><col style="width:32%"><col style="width:7%"><col style="width:27%">'+
+      '<col style="width:7%"><col style="width:11%"><col style="width:12%"></colgroup>'+
+    '<thead><tr><th>No</th><th>薬剤名</th><th>人数</th><th>効能</th><th>確認済み</th><th>状態</th><th>更新日</th></tr></thead>'+
+    '<tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">'+drugs.length+'種類　／　効能あり '+known+'　／　うちAI下書き '+ai+
+      '　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+/* 画面の入力を拾う（保存とAIの両方で使う） */
+function mdRead(){
+  var out=[], box=$('mdSheet'); if(!box) return out;
+  Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
+    var name=tr.getAttribute('data-md');
+    var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
+    out.push({name:name, effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)});
+  });
+  return out;
+}
+function mdMarkDirty(){ mdDirty=true; if($('mdSave')) $('mdSave').disabled=false; paintShBars(); }
+/* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
+   空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
+function mdSave(){
+  var items=mdRead().filter(function(x){ return x.effect!==''; });
+  if(!items.length){ toast('保存するものがありません（効能が空の行は送りません）',false); return; }
+  if(!CFG.url){ toast('同期設定のURLが未設定です',false); return; }
+  if($('mdSave')) $('mdSave').disabled=true;
+  mdBusy='保存しています…'; paintShBars();
+  apiPost({action:'setMedDict', items:items.map(function(x){
+    return {name:x.name, effect:x.effect, ok:x.ok, src:'ai'};
+  })},60000).then(function(d){
+    if(d&&d.error) throw new Error(d.error);
+    mdDirty=false;
+    toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+'）');
+    mdBusy=''; mdEnsure(true);            /* ★書いたら必ず取り直して現物で確かめる（契約 §13） */
+  }).catch(function(e){
+    mdBusy=''; if($('mdSave')) $('mdSave').disabled=false;
+    toast('保存できませんでした：'+String((e&&e.message)||e),false);
+    paintShBars();
+  });
+}
+
+/* ═══ AIで効能の下書きを作る ═══
+   ★訓練計画アプリ（training-plan.html）と同じ「ブラウザから api.anthropic.com を直接呼ぶ」方式。
+     鍵は同一オリジンの localStorage 'tp_ai_key' を共用する（訓練計画で設定済みなら追加設定は不要）。
+   ★薬効は【下書き】。確認済みには自動で上げない。分からない薬は空のまま返させる（推測で埋めない）。
+   ★送るのは薬剤名だけ。入居者の氏名・人数・処方の並びは1文字も送らない。 */
+var MD_AI_URL='https://api.anthropic.com/v1/messages';
+var MD_AI_MODEL='claude-sonnet-5';
+var MD_AI_CHUNK=40;      /* 1回に尋ねる薬剤名の数 */
+var MD_AI_TIMEOUT=90000;
+function mdAiKey(){ try{ return String(localStorage.getItem('tp_ai_key')||'').trim(); }catch(e){ return ''; } }
+function mdAiAsk(names){
+  var key=mdAiKey();
+  if(!key) return Promise.reject(new Error('AI_NO_KEY'));
+  var body={ model:MD_AI_MODEL, max_tokens:2000, messages:[{role:'user', content:
+    '次の日本の医薬品それぞれについて、主な効能を日本語の短い語（8文字以内）で答えてください。\n'+
+    '・一般名でも商品名でも、その薬の代表的な用途を1つだけ書く（例: 高血圧／胃酸抑制／便秘／解熱鎮痛／抗血栓）\n'+
+    '・特定できない、または自信が無いものは必ず空文字 "" にする。推測で埋めないこと\n'+
+    '・出力はJSON配列のみ。説明文は書かない。形式: [{"name":"（入力そのまま）","effect":"（8文字以内 or 空）"}]\n\n'+
+    names.join('\n') }] };
+  var ctl=(typeof AbortController==='function')?new AbortController():null;
+  var opt={method:'POST', headers:{
+    'content-type':'application/json', 'x-api-key':key,
+    'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'
+  }, body:JSON.stringify(body)};
+  if(ctl) opt.signal=ctl.signal;
+  var to=null;
+  var pr=new Promise(function(res,rej){
+    to=setTimeout(function(){ if(ctl){ try{ctl.abort()}catch(e){} } rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
+    fetch(MD_AI_URL,opt).then(function(r){
+      return r.text().then(function(t){
+        if(r.status<200||r.status>=300){
+          var msg=''; try{ var ej=JSON.parse(t); msg=String((ej&&ej.error&&ej.error.message)||''); }catch(e0){}
+          var err=new Error('AI_HTTP_'+r.status); err.detail=msg.slice(0,200); throw err;
+        }
+        return JSON.parse(t);
+      });
+    }).then(res, rej);
+  });
+  return pr.then(function(j){ clearTimeout(to); return mdAiParse(j, names); },
+                 function(e){ clearTimeout(to); throw e; });
+}
+function mdAiParse(j, names){
+  var txt='';
+  var c=(j&&Object.prototype.toString.call(j.content)==='[object Array]')?j.content:[];
+  for(var i=0;i<c.length;i++) if(c[i]&&c[i].type==='text') txt+=String(c[i].text||'');
+  var m=txt.match(/\[[\s\S]*\]/);
+  if(!m) throw new Error('AI_BAD_JSON');
+  var arr=JSON.parse(m[0]);
+  if(Object.prototype.toString.call(arr)!=='[object Array]') throw new Error('AI_BAD_JSON');
+  /* ★返ってきた名前が送ったものと違えば捨てる（別の薬の効能を入れない） */
+  var want=Object.create(null); names.forEach(function(n){ want[n]=1; });
+  var out={};
+  arr.forEach(function(x){
+    if(!x) return;
+    var n=mdKey(x.name); if(!n||!want[n]) return;
+    var e=String(x.effect==null?'':x.effect).trim();
+    if(e.length>20) e=e.slice(0,20);     /* 長文が返っても表を壊さない */
+    if(e) out[n]=e;
+  });
+  return out;
+}
+function mdAiFill(){
+  if(curView!=='md') return;
+  var rows=mdRead();
+  var todo=rows.filter(function(x){ return x.effect===''; }).map(function(x){ return x.name; });
+  if(!todo.length){ toast('未登録の薬はありません'); return; }
+  if(!mdAiKey()){
+    toast('AIのキーが未設定です。個別機能訓練計画書アプリの「AI設定」でキーを入れると、この画面でも使えます',false);
+    return;
+  }
+  if(!confirm('未登録の '+todo.length+' 種類の効能をAIに下書きさせます。\n\n'+
+              '・薬剤名だけを送ります（入居者の情報は送りません）\n'+
+              '・入った効能は【薬剤師の確認前】です。確認したら「確認済み」に印を付けてください\n'+
+              '・そのままでは保存されません。内容を見てから「保存」を押してください\n\n'+
+              '進めますか？')) return;
+  var chunks=[], i;
+  for(i=0;i<todo.length;i+=MD_AI_CHUNK) chunks.push(todo.slice(i,i+MD_AI_CHUNK));
+  var got={}, done=0, ng=0;
+  if($('mdAi')) $('mdAi').disabled=true;
+  function step(k){
+    if(k>=chunks.length) return Promise.resolve();
+    mdBusy='AIに尋ねています… '+done+' / '+todo.length+'種類';
+    paintShBars();
+    return mdAiAsk(chunks[k]).then(function(o){
+      for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+      done+=chunks[k].length;
+    }).catch(function(e){
+      ng++;
+      /* ★1回の失敗で全部を捨てない。取れたぶんは反映して、失敗した数を人に伝える */
+      done+=chunks[k].length;
+      if(String((e&&e.message)||'')==='AI_NO_KEY') throw e;
+    }).then(function(){ return step(k+1); });
+  }
+  step(0).then(function(){
+    var box=$('mdSheet'), n=0;
+    if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
+      var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
+      if(!inp||inp.value.trim()!=='') return;
+      if(Object.prototype.hasOwnProperty.call(got,name)){ inp.value=got[name]; n++; }
+    });
+    mdBusy='';
+    if(n) mdMarkDirty();
+    if($('mdAi')) $('mdAi').disabled=false;
+    paintShBars();
+    toast(n+'件に下書きを入れました'+(ng?('（'+ng+'回ぶん取得できませんでした）'):'')+
+          '。内容を確かめてから「保存」を押してください');
+  }).catch(function(e){
+    mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
+    toast('AIに尋ねられませんでした：'+String((e&&e.message)||e),false);
+  });
+}
+/* 薬効辞書を刷る（A4縦・複数ページ） */
+function mdPrint(){
+  if(curView!=='md') return;
+  msSheetPageOn('size:A4 portrait;margin:10mm');
+  document.body.classList.add('md-on');
+  var off=function(){ msSheetPageOff(); document.body.classList.remove('md-on'); };
+  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
   setTimeout(off,60000);
   window.print();
 }
@@ -6892,7 +7205,19 @@ function init(){
   if($('famPrint')) $('famPrint').addEventListener('click',function(){shPrintWide_('fam')});
   if($('histPrint'))$('histPrint').addEventListener('click',function(){shPrintWide_('hist')});
   if($('famReload'))$('famReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
-  if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
+  if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true); mdEnsure(true)});
+  /* 薬効辞書（2026-09-04 追加） */
+  if($('mdReload'))$('mdReload').addEventListener('click',function(){fullEnsure(true); mdEnsure(true)});
+  if($('mdAi'))    $('mdAi').addEventListener('click',mdAiFill);
+  if($('mdSave'))  $('mdSave').addEventListener('click',mdSave);
+  if($('mdPrint')) $('mdPrint').addEventListener('click',mdPrint);
+  /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
+  if($('rosterBox')) $('rosterBox').addEventListener('input',function(e){
+    if(curView==='md'&&e.target&&e.target.classList&&e.target.classList.contains('mde')) mdMarkDirty();
+  });
+  if($('rosterBox')) $('rosterBox').addEventListener('change',function(e){
+    if(curView==='md'&&e.target&&e.target.type==='checkbox') mdMarkDirty();
+  });
   /* 食形態一覧: 取り直し・保存・A3縦印刷 */
   if($('mealReload'))$('mealReload').addEventListener('click',function(){
     if(!mealLeaveOk('サーバーから取り直す')) return;
