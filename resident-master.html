@@ -581,7 +581,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ・左端に行番号（罫線なし）、その右に介護度1〜5の列
    ・氏名セルだけを黒1px罫で囲む（空欄も枠を出す＝原本と同じ）
    ・右外に「平均介護度」「介護4以上割合」、最下行に「人数」と「合計」 */
-.lvlwrap{display:flex; gap:14px; justify-content:center; align-items:flex-start}
+/* ★幅を測れるように内容ぴったりにする（shFit_ が .lvlwrap の offsetWidth を見る） */
+.lvlwrap{display:flex; gap:14px; justify-content:center; align-items:flex-start;
+  width:max-content; max-width:100%; margin:0 auto}
 .lvltbl{border-collapse:collapse; table-layout:fixed}
 .lvltbl th,.lvltbl td{padding:var(--lvpad,2px) 4px; line-height:1.3; text-align:center;
   white-space:nowrap; font-size:var(--lvfs,13px)}
@@ -616,11 +618,16 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   vertical-align:middle; text-align:start; font-size: 0.8125rem}
 .mdtbl th{background:var(--g2); font-weight:700; text-align:center; white-space:nowrap}
 .mdtbl .mdc{text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums}
-.mdtbl input.mde{width:100%; box-sizing:border-box; min-height:34px; padding:4px 6px;
+/* ★ここは入力画面なので、タップ領域は44pxを確保する（介護現場要件2・HIG） */
+.mdtbl input.mde{width:100%; box-sizing:border-box; min-height:44px; padding:6px 8px;
   border:1px solid var(--g3); border-radius:6px; font:inherit}
 .mdtbl input.mde:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 .mdtbl .mdok{text-align:center}
-.mdtbl .mdok input{width:20px; height:20px}
+.mdtbl .mdok{padding:0}
+/* チェックは見た目20pxのまま、押せる範囲をラベルで44pxに広げる */
+.mdtbl .mdok label{display:flex; align-items:center; justify-content:center;
+  min-height:44px; min-width:44px; margin:0 auto; cursor:pointer}
+.mdtbl .mdok input{width:20px; height:20px; margin:0}
 /* 薬剤師の確認が済んでいない下書きは、色だけでなく文字でも分かるようにする（介護現場要件4） */
 .mdbadge{display:inline-block; padding:1px 6px; border-radius:999px; font-size: 0.6875rem; font-weight:700}
 .mdbadge.ai{background:var(--warn-bg); color:var(--warn-tx)}
@@ -1917,6 +1924,9 @@ function setView(v){
   /* ★食形態一覧に未保存の変更があるまま離れさせない（変更はメモリにしか無い）。
      止めた時はタブの点灯も元へ戻す（押した見た目だけ変わって中身が変わらないのを防ぐ） */
   if(curView==='meal'&&next!=='meal'&&!mealLeaveOk('ほかの表示に切り替える')){ paintTabs(); return }
+  /* 薬効辞書の未保存も同じ（メモリにしか無い） */
+  if(curView==='md'&&next!=='md'&&mdDirty&&
+     !confirm('薬効辞書に未保存の変更があります。\n切り替えると失われます。よろしいですか？')){ paintTabs(); return }
   curView=next;
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
   /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
@@ -2309,6 +2319,10 @@ function renderRoster(){
   if(cntEl) cntEl.textContent=list.length?(list.length+'名'):'';
   /* ★食形態一覧は【自前のデータ】（getMealList）で描く。共有名簿が空でも表は出せるので、
      下の「入居者がいません」より手前で片付ける。件数はビュー専用バーに出す。 */
+  /* ★帳票ビューは母集団が roster（絞り込み前）なので、絞り込み後の件数を出すと
+     シート脚注の人数と食い違う。meal と同じく空にする */
+  if(cntEl && (curView==='cm'||curView==='lvl'||curView==='fam'||curView==='hist'||curView==='md'))
+    cntEl.textContent='';
   if(curView==='meal'){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
@@ -2348,15 +2362,15 @@ function renderRoster(){
   }else if(curView==='bday'){
     html=bdayHtml(list);
   }else if(curView==='cm'){
-    html=cmHtml(list);
+    html=cmHtml();
   }else if(curView==='lvl'){
-    html=lvlHtml(list);
+    html=lvlHtml();
   }else if(curView==='fam'){
-    html=famHtml(list);
+    html=famHtml();
   }else if(curView==='hist'){
-    html=histHtml(list);
+    html=histHtml();
   }else if(curView==='md'){
-    html=mdHtml(list);
+    html=mdHtml();
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -2508,9 +2522,14 @@ function bkOf(r){
   }
   return o;
 }
-/* 在籍者だけを五十音順で返す（この2帳票の共通の母集団） */
-function shBase(list){
-  return (list||[]).filter(function(r){ return r && r.active!==false; }).slice().sort(byKana);
+/* 在籍者だけを五十音順で返す（帳票5種の共通の母集団）。
+   ★引数は取らない。renderRoster が渡す list は【検索語と絞り込みチップで既に削られた後】なので、
+     それを母集団にすると「検索したまま切り替えて刷った紙」が一部だけの表になるのに、
+     脚注は『対象 在籍のみ』と断言してしまう（受け取った側は完全な一覧だと読む）。
+     介護度別に至っては平均介護度・介護4以上割合が誤った母集団の値になる＝経営数値の紙。
+     退去チップのままだと0名の紙が出る。帳票は必ず roster（絞り込み前）から作る。 */
+function shBase(){
+  return (roster||[]).filter(function(r){ return r && r.active!==false; }).slice().sort(byKana);
 }
 function paintShBars(){
   var c=$('cmBar'), l=$('lvlBar'), f=$('famBar'), h=$('histBar');
@@ -2563,8 +2582,8 @@ function daysSince(iso){
 var CM_COLS=[['no','No',''],['room','居室',''],['name','入居者','cnm'],['adm','入居日',''],
   ['days','日数','cnum'],['age','年齢','cnum'],['lv','介護度',''],
   ['office','居宅','cof'],['cm','CM','ccm'],['tel','CM TEL',''],['fax','CM FAX','']];
-function cmHtml(list){
-  var base=shBase(list);
+function cmHtml(){
+  var base=shBase();
   if(!bkRows) return '<div class="sh-sheet" id="cmSheet"><div class="loading">'+
     esc(bkLoading?'居宅・担当ケアマネを取得しています…':(bkErr||'取得していません'))+'</div></div>';
   var rows=base.map(bkOf);
@@ -2604,8 +2623,8 @@ function cmHtml(list){
    ★1〜5に当てはまらない方（要支援・未登録）は【落とさず】表の下に別記する。
      落とすと合計が合わず、しかも誰が漏れたのか分からなくなる。 */
 var LVL_MIN_ROWS=18;   /* 原本と同じ行数。人数が多い時はその分だけ伸ばす */
-function lvlHtml(list){
-  var base=shBase(list);
+function lvlHtml(){
+  var base=shBase();
   var cols=[[],[],[],[],[]], other=[];
   base.forEach(function(r){
     var n=lvNum(r.careLevel);
@@ -2640,19 +2659,25 @@ function lvlHtml(list){
         '<div><div class="k">介護4以上割合</div><div class="v">'+(hi==null?'—':hi.toFixed(1)+'%')+'</div></div>'+
       '</div>'+
     '</div>'+otherLine+
-    '<div class="sh-ft">'+total+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+    '<div class="sh-ft">在籍 '+base.length+'名（表に載せた '+total+'名'+
+      (other.length?('・該当外 '+other.length+'名'):'')+'）　／　五十音順　／　印刷日 '+
+      esc(shStamp())+'</div>'+
   '</div>';
 }
 
 /* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
    実際の高さ・幅を測り、収まる範囲でいちばん大きい文字を二分探索で選ぶ。
    ★行数で決め打ちしない。人数も氏名の長さも変わるため、決め打ちは必ずどこかで破れる。 */
-function shFit_(sheet, wMM, hMM, apply, minPx, maxPx){
+function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel){
   if(!sheet||!sheet.offsetParent) return null;   /* 非表示では測らない（高さ0で「収まった」と誤判定） */
   var H=(hMM-20)*96/25.4, W=(wMM-20)*96/25.4;   /* 用紙 − 上下左右10mm */
   function tall(){ return sheet.scrollHeight; }
+  /* ★測るのは「紙に並ぶもの全部」。表だけを測ると、横に並ぶパネル（介護度別の
+     合計・平均介護度・介護4以上割合）の幅が抜け、収まったと誤判定して紙で表が圧縮される
+     （2026-09-04 実測: 表711px＝上限ぴったりでも、実際に並ぶ幅は832px＞718px）。 */
   function wide(){
-    var t=sheet.querySelector('table');
+    var t=widthSel?sheet.querySelector(widthSel):sheet.querySelector('table');
+    if(!t) t=sheet.querySelector('table');
     return t?Math.max(t.offsetWidth, t.scrollWidth):sheet.scrollWidth;
   }
   function fits(){ return tall()<=H-8 && wide()<=W-6; }
@@ -2686,7 +2711,7 @@ function fitLvlSheet(){
     sh.style.setProperty('--lvpad', (px>=13?4:px>=10?3:2)+'px');
     sh.style.setProperty('--lvcw', Math.round(px*7.6)+'px');
     sh.style.setProperty('--shd1', Math.round(px*1.8)+'px');
-  }, 6, 20);
+  }, 6, 20, '.lvlwrap');
   shWarn_(sh, r); return r;
 }
 /* 収まらない時は黙って溢れさせない。画面にだけ理由を出す（紙には出さない） */
@@ -2705,9 +2730,15 @@ function msSheetPageOn(css){
   document.head.appendChild(st);
 }
 function msSheetPageOff(){ var st=$('msSheetPage'); if(st&&st.parentNode) st.parentNode.removeChild(st); }
+/* いま帳票を「画面に出している」か。ビューidだけ見ると、詳細画面（個票・A4様式）を刷る時にも
+   用紙がA4横／A3横へ化ける（既存の mealViewActive_ が同じ穴を塞いでいる）。 */
+function shViewActive_(kind){
+  var sc=$('sc-list');
+  return curView===kind && !!sc && sc.classList.contains('on');
+}
 function shPrint_(kind){
   var on=(kind==='cm')?'cm-on':'lvl-on';
-  if(curView!==kind) return;
+  if(!shViewActive_(kind)) return;
   if(kind==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
   else           { fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm'); }
   document.body.classList.add(on);
@@ -2727,20 +2758,25 @@ function shPrint_(kind){
 }
 /* ⌘/Ctrl+P でも同じ用紙・同じ採寸で刷る（ボタンを通らない経路） */
 window.addEventListener('beforeprint',function(){
-  if(curView==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm');
+  /* ★ビューidだけでなく一覧画面が表示中かも見る（見ないと個票の印刷まで用紙が化ける） */
+  if(shViewActive_('cm')){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm');
     document.body.classList.add('cm-on'); }
-  else if(curView==='lvl'){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
+  else if(shViewActive_('lvl')){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
     document.body.classList.add('lvl-on'); }
-  else if(curView==='fam'||curView==='hist'){
-    wApplyFs($(curView==='fam'?'famSheet':'histSheet'), 12);
+  else if(shViewActive_('fam')||shViewActive_('hist')){
+    var k=shViewActive_('fam')?'fam':'hist';
+    wApplyFs($(k==='fam'?'famSheet':'histSheet'), 12);
     msSheetPageOn('size:A3 landscape;margin:10mm');
-    document.body.classList.add(curView==='fam'?'fam-on':'hist-on');
+    document.body.classList.add(k==='fam'?'fam-on':'hist-on');
   }
+  else if(shViewActive_('md')){ msSheetPageOn('size:A4 portrait;margin:10mm');
+    document.body.classList.add('md-on'); }   /* ⌘/Ctrl+P でも同じ用紙にする */
 });
 window.addEventListener('afterprint',function(){
   msSheetPageOff();
   document.body.classList.remove('cm-on');  document.body.classList.remove('lvl-on');
   document.body.classList.remove('fam-on'); document.body.classList.remove('hist-on');
+  document.body.classList.remove('md-on');
 });
 /* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
    スプレッドシート「入居者情報」の【家族情報一覧】【病歴・薬】と同じ列で一覧にする。
@@ -2754,7 +2790,7 @@ function fullEnsure(force){
   if(fullLoading) return;
   if(fullMap&&!force) return;
   if(!CFG.url){ fullErr='同期設定のURLが未設定です'; paintShBars(); return; }
-  var ids=shBase(roster||[]).map(function(r){ return r.id; });
+  var ids=shBase().map(function(r){ return r.id; });
   if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
   var gen=++fullGen;
   fullLoading=true; fullErr=''; fullDone=0; fullTotal=ids.length;
@@ -2784,11 +2820,20 @@ function fullEnsure(force){
     });
 }
 function fullOf(r){ return (fullMap&&fullMap[String(r.id)])||null; }
+/* ★取得できなかった理由は【全部】出す。1つでも欠けると、その列が全員空欄の紙になり
+   「無い」と読まれる（getBulk が落ちれば負担割合が、辞書が落ちれば効能が空欄になる）。
+   この画面自身が wCell と §12 で「空欄で刷らない」を明文化しているので、その例外を作らない。 */
 function shLoadNote(){
-  if(fullLoading) return '取得しています… '+fullDone+' / '+fullTotal+'名';
-  if(fullErr) return fullErr;
-  if(!fullMap) return '未取得';
-  return (fullBad&&fullBad.length) ? ('取得できなかった方が '+fullBad.length+'名います') : '';
+  var a=[];
+  if(fullLoading) a.push('取得しています… '+fullDone+' / '+fullTotal+'名');
+  else if(fullErr) a.push(fullErr);
+  else if(!fullMap) a.push('未取得');
+  else if(fullBad&&fullBad.length) a.push('取得できなかった方が '+fullBad.length+'名います');
+  if(bkErr) a.push('介護度・負担割合を取得できませんでした（'+bkErr+'）');
+  else if(!bkRows&&!bkLoading) a.push('介護度・負担割合が未取得です');
+  if(mdErr) a.push(mdErr);
+  else if(!mdDict&&!mdLoading) a.push('薬効辞書が未取得です（効能の列は空欄になります）');
+  return a.join('　／　');
 }
 /* 値が無い時に空欄で出さない（空欄は「無い」と読まれる）。取れていない時は「取得できず」と書く */
 function wCell(rec, v){
@@ -2818,8 +2863,11 @@ function famPay(v){
   if(!t) return '';
   return /^[123]$/.test(t) ? (t+'割') : t;   /* 「保護」等はそのまま出す */
 }
-function famHtml(list){
-  var base=shBase(list);
+function famHtml(){
+  var base=shBase();
+  /* ★取得前に「全員 取得できず」の表を刷らせない（病歴薬と同じ作法） */
+  if(!fullMap) return '<div class="sh-sheet" id="famSheet"><div class="loading">'+
+    esc(shLoadNote()||'家族情報を取得しています…')+'</div></div>';
   var body=base.map(function(r0,i){
     var b=bkOf(r0), rec=fullOf(r0);
     var fam=(rec&&Array.isArray(rec.family))?rec.family:[];
@@ -2867,8 +2915,10 @@ function histPastMeds(rec){
     return dt?(dt+' '+t):t;
   }).filter(String).join('\n');
 }
-function histHtml(list){
-  var base=shBase(list);
+function histHtml(){
+  var base=shBase();
+  if(!fullMap) return '<div class="sh-sheet" id="histSheet"><div class="loading">'+
+    esc(shLoadNote()||'病歴・薬を取得しています…')+'</div></div>';
   var body=base.map(function(r0,i){
     var b=bkOf(r0), rec=fullOf(r0);
     var v={no:(i+1), name:b.name||'', lv:b.careLevel||'',
@@ -2894,7 +2944,7 @@ function wApplyFs(sheet, px){
   sheet.style.setProperty('--shd1', Math.round(px*1.8)+'px');
 }
 function shPrintWide_(kind){
-  if(curView!==kind) return;
+  if(!shViewActive_(kind)) return;
   var on=(kind==='fam')?'fam-on':'hist-on';
   wApplyFs($(kind==='fam'?'famSheet':'histSheet'), 12);
   msSheetPageOn('size:A3 landscape;margin:10mm');
@@ -2979,8 +3029,8 @@ function mdEffectsHtml(medText){
   return out.join('<br>');
 }
 /* いま画面にある入居者の内服から、薬剤名と使用人数を集める（多い順→五十音順） */
-function mdCollect(list){
-  var base=shBase(list), cnt=Object.create(null);
+function mdCollect(){
+  var base=shBase(), cnt=Object.create(null);
   base.forEach(function(r){
     var rec=fullOf(r); if(!rec) return;
     var seen=Object.create(null);
@@ -2994,10 +3044,10 @@ function mdCollect(list){
   out.sort(function(a,b){ return (b.n-a.n) || String(a.name).localeCompare(String(b.name),'ja'); });
   return out;
 }
-function mdHtml(list){
+function mdHtml(){
   if(!fullMap) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+
     esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
-  var drugs=mdCollect(list);
+  var drugs=mdCollect();
   var known=0, ai=0;
   var body=drugs.map(function(d,i){
     var e=(mdMap&&mdMap[d.name])||null;
@@ -3014,7 +3064,8 @@ function mdHtml(list){
       '<td class="mdc">'+d.n+'</td>'+
       '<td><input class="mde" type="text" value="'+esc(eff)+'" maxlength="40" '+
         'aria-label="'+esc(d.name)+' の効能"></td>'+
-      '<td class="mdok"><input type="checkbox" '+(ok?'checked':'')+' aria-label="確認済み"></td>'+
+      '<td class="mdok"><label><input type="checkbox" '+(ok?'checked':'')+
+        ' aria-label="'+esc(d.name)+' を確認済みにする"></label></td>'+
       '<td class="mdc">'+(eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):'')+'</td>'+
       '<td class="mdc">'+esc(e?(e.at||''):'')+'</td>'+
     '</tr>';
@@ -3060,22 +3111,58 @@ function mdMarkDirty(tr){ mdRemember(tr); mdDirty=true; if($('mdSave')) $('mdSav
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
 function mdSave(){
-  var items=mdRead().filter(function(x){ return x.effect!==''; });
-  if(!items.length){ toast('保存するものがありません（効能が空の行は送りません）',false); return; }
+  /* ★送るのは【実際に変えた行】だけ。表示中の全行を送ると、他端末（薬剤師）が付けた
+     「確認済み」と直した文言を、こちらの古い表示で黙って上書きする（原則4・
+     multi-device-sync 原則3「独立フィールドを丸ごと上書きに同居させない」）。
+     変更していない行の更新日まで今日に書き換わり、いつ何が戻ったのか追えなくなる。 */
+  var items=mdRead().filter(function(x){
+    if(x.effect==='') return false;                       /* 空は送らない（空上書き保護） */
+    var cur=(mdMap&&mdMap[x.name])||null;
+    if(!cur) return true;                                  /* 新しい薬は送る */
+    return String(cur.effect||'')!==x.effect || !!cur.ok!==x.ok;   /* 変わった行だけ */
+  });
+  if(!items.length){ toast('変更がありません（変えた行だけを保存します）'); return; }
   if(!CFG.url){ toast('同期設定のURLが未設定です',false); return; }
   if($('mdSave')) $('mdSave').disabled=true;
   mdBusy='保存しています…'; paintShBars();
+  /* src は送らない＝サーバー側の既存値を保つ（人が直した行まで 'ai' に戻さない） */
   apiPost({action:'setMedDict', items:items.map(function(x){
-    return {name:x.name, effect:x.effect, ok:x.ok, src:'ai'};
+    return {name:x.name, effect:x.effect, ok:x.ok};
   })},60000).then(function(d){
     if(d&&d.error) throw new Error(d.error);
     mdDirty=false; mdEdits=Object.create(null);   /* 保存できたので編集メモリは捨てる */
     toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+'）');
-    mdBusy=''; mdEnsure(true);            /* ★書いたら必ず取り直して現物で確かめる（契約 §13） */
+    /* 保存できた後も辞書を取り直す（更新日・他端末の変更を画面へ反映するため）。
+       ★§13（失敗表示でも書かれていることがある）への備えは下の catch 側。 */
+    mdBusy=''; mdEnsure(true);
   }).catch(function(e){
-    mdBusy=''; if($('mdSave')) $('mdSave').disabled=false;
-    toast('保存できませんでした：'+String((e&&e.message)||e),false);
-    paintShBars();
+    mdBusy='';
+    /* ★失敗しても「1文字も書かれていない」と決めつけない（契約 §13）。必ず取り直してから
+       文言を決める。辞書は同じ内容を送っても同じ結果になる（冪等）ので、取り直して
+       入っていれば成功として扱う。 */
+    var sent={}; items.forEach(function(x){ sent[x.name]=x.effect; });
+    apiGet({action:'getMedDict'},30000).then(function(d){
+      var rows=(d&&d.rows)||[], n=0;
+      for(var i=0;i<rows.length;i++){
+        var k=mdKey(rows[i].name);
+        if(Object.prototype.hasOwnProperty.call(sent,k) &&
+           String(rows[i].effect||'')===sent[k]) n++;
+      }
+      if(n===items.length){
+        mdDirty=false; mdEdits=Object.create(null);
+        toast('保存できていました（応答は失敗でしたが、取り直して確認しました）');
+        mdDict=rows; mdMap=Object.create(null);
+        for(var j=0;j<rows.length;j++){ var kk=mdKey(rows[j].name); if(kk) mdMap[kk]=rows[j]; }
+        renderRoster();
+      }else{
+        if($('mdSave')) $('mdSave').disabled=false;
+        toast('保存できませんでした：'+String((e&&e.message)||e)+
+              '（'+items.length+'件中 '+n+'件は入っていました）',false);
+      }
+    }).catch(function(){
+      if($('mdSave')) $('mdSave').disabled=false;
+      toast('保存できたか確認できませんでした：'+String((e&&e.message)||e),false);
+    }).then(function(){ paintShBars(); });
   });
 }
 
@@ -3218,11 +3305,20 @@ function mdAiFill(){
 }
 /* 薬効辞書を刷る（A4縦・複数ページ） */
 function mdPrint(){
-  if(curView!=='md') return;
+  if(!shViewActive_('md')) return;
   msSheetPageOn('size:A4 portrait;margin:10mm');
   document.body.classList.add('md-on');
   var off=function(){ msSheetPageOff(); document.body.classList.remove('md-on'); };
   try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
+  /* 保険: afterprint が来ない環境でも印刷メディアを抜けたら必ず外す（他の3経路と同じ3重にする） */
+  try{
+    if(window.matchMedia){
+      var mq=window.matchMedia('print');
+      var h=function(ev){ if(!ev.matches){ off();
+        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
+      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
+    }
+  }catch(e){}
   setTimeout(off,60000);
   window.print();
 }
@@ -3764,7 +3860,9 @@ window.addEventListener('afterprint',msMealAfterPrint_);
 })();
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
-  if(!mealDirtyCells()) return;
+  /* ★薬効辞書の未保存も対象。AIの下書きはメモリにしか無く、再読込・タブを閉じると消える
+     （2026-09-04 に再描画で155件消えた件と同じ損失がリロード経路に残っていた） */
+  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty)) return;
   e.preventDefault(); e.returnValue='';
 });
 
@@ -6615,7 +6713,10 @@ function applyDeviceGuard(){
   if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[];
     /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
        元から書いていないが、メモリ上の控えもここで捨てる */
-    a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg=''; }
+    a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
+    /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
+    bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
+    mdEdits=Object.create(null); mdDirty=false; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }
@@ -6627,6 +6728,11 @@ function loadData(){
   /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
      （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
   if(curView==='meal') mealLoad(false);
+  /* 帳票5種も同じ（名簿とは別のAPIで作るので renderRoster だけでは空のまま。
+     バーも出さないと🔄・💾・🖨️のボタンが1つも出ない画面になる） */
+  paintShBars();
+  if(curView==='cm'||curView==='lvl') bkEnsure(false);
+  if(curView==='fam'||curView==='hist'||curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
   if(CFG.url)refreshRoster();else setSync('未接続');
   srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
 }
@@ -7234,7 +7340,7 @@ function init(){
   // 保存された表示パターンのタブ状態だけ先に反映する。
   // ここで描画すると (a) 名簿読込前なので「入居者がいません」が一瞬出る
   // (b) 現場端末ガードで return する経路でも描画してしまう。描画は loadData に任せる。
-  paintTabs(); paintBdayBar(); paintMealBar();
+  paintTabs(); paintBdayBar(); paintMealBar(); paintShBars();
   /* 誕生日ビューの年度切替・印刷。年度は端末に保存しない（毎回その日の年度で開く＝
      去年の年度のまま印刷してしまう事故を防ぐ） */
   if($('admBar'))Array.prototype.forEach.call($('admBar').querySelectorAll('.achip'),function(b){
