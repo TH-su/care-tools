@@ -2530,6 +2530,30 @@ function renderFieldView(r){
 }
 
 /* 事務所PC：全項目をタブで切替（印刷時は全タブ展開） */
+/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
+   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
+   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
+   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
+   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
+     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
+var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
+function famNo(i, n){
+  if(n<2) return '';
+  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
+}
+function famWho(f){
+  if(!f) return '';
+  var nm=String(f.name==null?'':f.name).trim();
+  var rel=String(f.relation==null?'':f.relation).trim();
+  /* ★氏名が空でも空文字を返さない。返すと家族列だけ欠番になり、電話・住所に残った
+     同じ番号が【誰のものか分からなくなる】（番号を2列で一致させるのが今回の要点）。
+     移行データには氏名が空で電話・住所だけある家族が実在しうる（migrate.gs が警告つきで残す）。
+     A4様式の緊急連絡先セルも空欄になり「緊急連絡先なし」と読まれる。 */
+  if(!nm) return rel?('（'+rel+'）'):'（氏名未記載）';
+  return nm+(f.kp?':KP':'')+(rel?('（'+rel+'）'):'');
+}
+
 function renderOfficeView(r){
   var bf=bfView(r);   // 入居者基本情報（外部様式）の表示用データ（2026-08-12 追加）
   var rhythm=(function(src){   /* 食事の時刻は施設共通の既定を重ねる（保存済みが優先） */
@@ -2546,24 +2570,6 @@ function renderOfficeView(r){
   var du=dayUseHtml(r);
   var consents=r.consents||{};
   var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
-/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
-   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
-     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
-   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
-   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
-   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
-     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
-var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
-function famNo(i, n){
-  if(n<2) return '';
-  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
-}
-function famWho(f){
-  if(!f) return '';
-  var nm=String(f.name==null?'':f.name).trim();
-  if(!nm) return '';
-  return nm+(f.kp?':KP':'')+(f.relation?('（'+String(f.relation).trim()+'）'):'');
-}
   var fam=Array.isArray(r.family)?r.family:[];
   var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
   /* 住所（2026-08-15 指示で追加・入居者マスタと同じ表示）。事務所ビュー専用＝現場端末には

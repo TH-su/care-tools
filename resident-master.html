@@ -477,6 +477,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    ★表の行が高くならないよう1行ぶんに抑え、必要な人だけ縦に広げられるようにする。 */
 .bulk-tbl textarea.bk-lines{width:100%; min-height:0; height:34px; padding:6px 8px; border:none;
   font:inherit; line-height:1.3; resize:vertical; background:transparent; overflow:auto}
+/* 枠に入りきらない家族が居ることの表示（読み取り専用） */
+.bulk-tbl .bk-note{display:block; padding:6px 8px; color:var(--g7); cursor:help; white-space:nowrap}
+.bulk-tbl .bk-note-0{color:var(--g5); cursor:default}
+/* 家族の形が壊れていて読めなかった行の、家族の枠。入力欄そのものを出さない
+   （空欄の入力欄を出すと、1つ直した瞬間に読めなかった元データを空で上書きする）。 */
+.bulk-tbl .bk-lock{display:block; padding:6px 8px; color:var(--g7); background:#fff6e5; cursor:help}
 /* ★入力できる欄になったので --g6（≒3.5:1）では足りない。--g7（≒5.9:1）で AA を満たす */
 .bulk-tbl tr.bulk-out .bk-name,.bulk-tbl tr.bulk-out .bk-name input{color:var(--g7)}
 /* ★入力欄が幅いっぱいなので、⚠ を文字の後ろに置くと押し出される。角に重ねる
@@ -630,7 +636,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .wtbl .heff{white-space:nowrap; text-align:center}
 /* 電話は1つずつ1行に収める。市外局番と番号が分かれると読み違えるため（2026-09-07 指示）。
    ★行そのものは複数（家族の人数ぶん）。折り返さないのは1件ずつの中だけ。 */
-.wtbl .ftel{white-space:pre; word-break:keep-all; overflow-wrap:break-word}
+/* ★pre は【ソフトラップ自体を禁止】するので overflow-wrap の逃げ道が消え、
+   長い1件（migrate が ' / ' で複数番号を連結した値）が右隣の列へ重なって刷られる。
+   pre-wrap にすると「1件は1行のまま／どうしても入らない1件だけ折り返す」になる
+   （.hmed と同じ考え方・2026-09-07 レビュー H-3）。 */
+.wtbl .ftel{white-space:pre-wrap; word-break:keep-all; overflow-wrap:break-word}
 .wtbl .hnm{white-space:nowrap}
 .w-empty{color:var(--g5)}
 
@@ -2585,8 +2595,13 @@ function famNo(i, n){
 function famWho(f){
   if(!f) return '';
   var nm=String(f.name==null?'':f.name).trim();
-  if(!nm) return '';
-  return nm+(f.kp?':KP':'')+(f.relation?('（'+String(f.relation).trim()+'）'):'');
+  var rel=String(f.relation==null?'':f.relation).trim();
+  /* ★氏名が空でも空文字を返さない。返すと家族列だけ欠番になり、電話・住所に残った
+     同じ番号が【誰のものか分からなくなる】（番号を2列で一致させるのが今回の要点）。
+     移行データには氏名が空で電話・住所だけある家族が実在しうる（migrate.gs が警告つきで残す）。
+     A4様式の緊急連絡先セルも空欄になり「緊急連絡先なし」と読まれる。 */
+  if(!nm) return rel?('（'+rel+'）'):'（氏名未記載）';
+  return nm+(f.kp?':KP':'')+(rel?('（'+rel+'）'):'');
 }
 /* 在籍者だけを五十音順で返す（帳票5種の共通の母集団）。
    ★引数は取らない。renderRoster が渡す list は【検索語と絞り込みチップで既に削られた後】なので、
@@ -2934,8 +2949,10 @@ function wSheet(id, title, cols, body, n, note, ownBody){
    原本の列のうち、各種証の期限・寝具リース・同意確認書は【作らない】（管理者指示・2026-09-04。
    マスタに該当欄が無く、空欄の列を並べても意味がないため）。 */
 /* ★家族は全員入るので、家族・電話・住所を広めに取る（2026-09-07 指示） */
-var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',4],['pay','負担割合',5],
-  ['em','緊急連絡先',13],['emtel','電話',11],['fam','家族',15],['famtel','電話',11],['addr','住所',28]];
+/* ★介護度は数字だけとは限らない。histLv は「要支援1」「自立」等をそのまま返し、
+   .wct は nowrap なので狭いと隣の列へ重なる。負担割合の「保護」も同様（2026-09-07 レビュー M-2）。 */
+var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',6],['pay','負担割合',6],
+  ['em','緊急連絡先',13],['emtel','電話',11],['fam','家族',15],['famtel','電話',11],['addr','住所',25]];
 function famPay(v){
   var t=String(v==null?'':v).trim();
   if(!t) return '';
@@ -6005,8 +6022,12 @@ function renderFamRows(){
       '<div class="fld full"><label>住所</label><textarea data-fk="address" rows="2">'+esc(f.address)+'</textarea></div>'+
       /* ★プルダウンからチェックボックスへ（2026-09-07 指示）。押す回数が減り、
          入っているかどうかが一目で分かる。押せる範囲は44pxを確保する（介護現場要件2） */
-      '<div class="fld"><label>緊急連絡先</label><label class="fchk"><input type="checkbox" data-fk="emergency"'+(f.emergency?' checked':'')+'><span>緊急連絡先</span></label></div>'+
-      '<div class="fld"><label>KP（キーパーソン）</label><label class="fchk"><input type="checkbox" data-fk="kp"'+(f.kp?' checked':'')+'><span>KP</span></label></div>'+
+      /* ★外側は label にしない（for も包含も無い label は、読み上げに宛先の無いラベルとして出る）。
+         押せる範囲44pxは .fchk 側で確保している。 */
+      '<div class="fld"><span class="lb">連絡先の区分</span>'+
+        '<label class="fchk"><input type="checkbox" data-fk="emergency"'+(f.emergency?' checked':'')+'><span>緊急連絡先</span></label>'+
+        '<label class="fchk"><input type="checkbox" data-fk="kp"'+(f.kp?' checked':'')+'><span>KP（キーパーソン）</span></label>'+
+      '</div>'+
       '<button class="fam-del" type="button" data-del="'+i+'">削除</button>'+
     '</div>';
   });
@@ -7141,6 +7162,11 @@ var BULK_FAM_COLS=(function(){
     for(j=0;j<BULK_FAM_ITEMS.length;j++)
       out.push(['fam'+i+'_'+BULK_FAM_ITEMS[j][0], (i+1)+'.'+BULK_FAM_ITEMS[j][1],
                 BULK_FAM_ITEMS[j][2]]);
+  /* ★枠に入りきらない家族が居ることを見せる（実測 2026-09-07: 退去者6名が4名登録。
+     一括編集は退去者も含む143名を出すので、この画面に必ず現れる）。
+     保存では触らず残しているが、【居ることが画面に出ない】と「3名だけ」と誤解する。
+     読み取り専用の列（'note'）にして、直すのは詳細画面へ誘導する。 */
+  out.push(['famMore','枠外','note']);
   return out;
 })();
 /* 'fam0_name' → {i:0, key:'name'}。合わない文字列には null を返す（他の項目と取り違えない） */
@@ -7223,10 +7249,13 @@ function bulkGroupDef(id){ for(var i=0;i<BULK_GROUPS.length;i++) if(BULK_GROUPS[
 function bulkDirtyCount(){ var n=0,k; for(k in bulkDirty) if(Object.keys(bulkDirty[k]).length) n++; return n; }
 function bulkCellCount(){ var n=0,k; for(k in bulkDirty) n+=Object.keys(bulkDirty[k]).length; return n; }
 /* 表示中の値。未保存の変更があればそれを、無ければ取得時の値を返す */
-function bulkVal(r,k){
-  var d=bulkDirty[r.id];
-  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
-  /* 家族の枠は配列から引く（r.family は getBulk が返す。古いGASでは undefined＝空欄） */
+/* サーバーから取った時の値（未保存の変更は見ない）。
+   ★表示（bulkVal）と差分判定（onBulkInput）は【必ずこの1本】を通す。
+     別々に書くと、家族の枠のように r[k] に存在しないキーで
+     「表示は配列から・判定は r[k]（常に空）」となり、
+     値を空にする／チェックを外す操作が【変更なし】と見なされて黙って捨てられる
+     （2026-09-07 レビュー H-1。KPと緊急連絡先が付けられるのに外せなかった）。 */
+function bulkOrig_(r,k){
   var fk=bulkFamKey(k);
   if(fk){
     var arr=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
@@ -7234,7 +7263,12 @@ function bulkVal(r,k){
     if(!f) return (fk.key==='emergency'||fk.key==='kp')?false:'';
     return (f[fk.key]==null)?((fk.key==='emergency'||fk.key==='kp')?false:''):f[fk.key];
   }
-  return (r[k]==null)?'':r[k];
+  return (r&&r[k]==null)?'':(r?r[k]:'');
+}
+function bulkVal(r,k){
+  var d=bulkDirty[r.id];
+  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  return bulkOrig_(r,k);
 }
 /* 変更のあった枠から、その方の家族の配列を組み立て直す。
    ★4人目以降（枠に出ていない家族）は元のまま残す。枠の数だけで作り直すと、
@@ -7326,7 +7360,23 @@ function renderBulk(){
 }
 /* 1セル分のHTML。★属性値に入れるものは必ず esc() を通す（5文字版） */
 function bulkCell(r,c){
-  var k=c[0], type=c[2], v=bulkVal(r,k);
+  var k=c[0], type=c[2];
+  /* 枠に入りきらない家族の人数。読み取り専用なので bulkVal を通さない（未保存の変更を持たない） */
+  if(type==='note'&&k==='famMore'){
+    var fa=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+    var ex=fa.length-BULK_FAM_SLOTS;
+    if(ex<=0) return '<span class="bk-note bk-note-0">—</span>';
+    return '<span class="bk-note" title="この画面の枠は'+BULK_FAM_SLOTS+'名ぶんです。'+ex+
+           '名は枠に出ていませんが、保存しても消えません。直すにはその方を開いて「家族」タブへ">+'+
+           ex+'名</span>';
+  }
+  var v=bulkVal(r,k);
+  /* ★家族の形が壊れていて読めなかった行（getBulk が familyBad を立てる）は、家族の枠を
+     【入力欄にしない】。空欄の入力欄を出すと、1つ触った時点で bulkFamBuild が
+     「家族なし」から組み直し、読めなかった元の家族を空で上書きする（原則4）。
+     直すのは詳細画面（その方を開いて「家族」タブ）。2026-09-07 レビュー M-4。 */
+  if(r&&r.familyBad&&bulkFamKey(k))
+    return '<span class="bk-lock" title="家族の情報を読み取れませんでした。ここでは直せません（触ると元の情報が消えます）。その方を開いて「家族」タブで入れ直してください">読取不可</span>';
   var base='data-id="'+esc(r.id)+'" data-k="'+esc(k)+'"';
   if(type==='select'){
     var opts=c[3]||[''], sv=String(v==null?'':v);
@@ -7370,14 +7420,18 @@ function onBulkInput(e){
   var r=null; for(var i=0;i<bulkRows.length;i++) if(String(bulkRows[i].id)===String(id)){ r=bulkRows[i]; break; }
   if(!r) return;
   var nv=(el.getAttribute('data-type')==='check')?el.checked:el.value;
-  var ov=(r[k]==null)?'':r[k];
+  var ov=bulkOrig_(r,k);   /* ★表示と同じ経路で引く（家族の枠は r[k] に存在しない） */
   /* ★<input type="text"> は値に改行を保持できない（HTMLの value sanitization が \r\n を消す）。
      2026-08-19 に「かかりつけ病院」等を2行入力にしたので、医院が2件ある方の値には改行が入る。
      この表でそのセルに触れると、ブラウザが落とした改行のせいで【変更あり】と誤認し、
      保存すると2行に分けた医院名が1行へ戻ってしまう。
      改行を取り除いただけの値は「変更なし」として扱う（実際に文字を直した時だけ変更とする）。 */
+  /* ★この救済は textarea には当てない。textarea は改行を保持できるので、
+     「2行を1行にまとめた」という【本当の編集】まで変更なしとして捨ててしまう
+     （2026-09-07 に処方4項目を lines にしたので、複数行が常態＝踏む確率が高い）。 */
+  var isTa=(el.tagName==='TEXTAREA');
   var same=(el.getAttribute('data-type')==='check')?(nv===bulkTruthy(ov))
-          :(String(nv)===String(ov) || String(nv)===String(ov).replace(/[\r\n]/g,''));
+          :(String(nv)===String(ov) || (!isTa && String(nv)===String(ov).replace(/[\r\n]/g,'')));
   bulkDirty[id]=bulkDirty[id]||{};
   if(same) delete bulkDirty[id][k]; else bulkDirty[id][k]=nv;
   if(!Object.keys(bulkDirty[id]).length) delete bulkDirty[id];
@@ -7533,7 +7587,7 @@ function saveBulk(){
       if(!Object.keys(d0).length) delete bulkDirty[id];
     }
   });
-  var changes=[], ids=Object.keys(bulkDirty), hitDown={};
+  var changes=[], ids=Object.keys(bulkDirty), hitDown={}, famIds=[];
   for(var i=0;i<ids.length;i++){
     var id=ids[i], f=bulkDirty[id], r=null;
     for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===String(id)){ r=bulkRows[j]; break; }
@@ -7545,10 +7599,11 @@ function saveBulk(){
     var famHit=false, snd={};
     for(k in f){
       if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
-      if(bulkFamKey(k)){ famHit=true; continue; }
+      /* ★読めなかった行は家族を組み立て直さない（画面でも触れないが、二重の歯止め） */
+      if(bulkFamKey(k)){ if(!r.familyBad) famHit=true; continue; }
       snd[k]=f[k];
     }
-    if(famHit) snd.family=bulkFamBuild(r,f);
+    if(famHit){ snd.family=bulkFamBuild(r,f); famIds.push(String(r.id)); }
     if(!Object.keys(snd).length) continue;
     /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
     changes.push({id:r.id,name:r.name,fields:snd});
@@ -7643,12 +7698,55 @@ function openNameWarn_(nmv,onOk){
 }
 
 /* 送信本体。1段階目（＋氏名を直した時は2段階目）を通った後だけ呼ばれる。 */
+/* ★家族は【丸ごと置き換え】で送る。表を開いた時のスナップショットから作るので、
+   開いている間に他端末・他タブがその方に家族を足していると、それを消してしまう
+   （savePartial は書く直前に行を読み直すが、family だけはその意味が消える）。
+   送る直前に取り直し、対象の方の家族が開いた時と違っていたら【1文字も書かずに】人へ見せる
+   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。 */
+function bulkFamGuard_(famIds){
+  if(!famIds||!famIds.length) return Promise.resolve(null);
+  return apiGet({action:'getBulk'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    if(!rows.length) return null;              /* 取れなければ従来どおり進む（保存を止めない） */
+    var byId={}, i;
+    for(i=0;i<rows.length;i++) if(rows[i]&&rows[i].id!=null) byId[String(rows[i].id)]=rows[i];
+    var moved=[];
+    for(i=0;i<famIds.length;i++){
+      var id=famIds[i], sv=byId[id], mine=null;
+      for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===id){ mine=bulkRows[j]; break; }
+      if(!sv||!mine) continue;
+      if(JSON.stringify(famCmp_(sv.family))!==JSON.stringify(famCmp_(mine.family))) moved.push(id);
+    }
+    return moved.length?{moved:moved, rows:rows}:null;
+  }).catch(function(){ return null; });        /* 通信できない時は止めない（現場を止めない） */
+}
 function saveBulkGo_(changes,nmv){
   bulkGen++;                     /* 実行中の氏名取り直しがあれば、その応答を無効にする */
   var btn=$('bulkSave'); btn.disabled=true;
   if($('bulkClose')) $('bulkClose').disabled=true;
   /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
   setSync('保存中…');
+  /* ★家族を含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
+  var famIds2=[]; for(var ci=0;ci<changes.length;ci++)
+    if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'family'))
+      famIds2.push(String(changes[ci].id));
+  bulkFamGuard_(famIds2).then(function(g){
+  if(g){
+    btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false;
+    setSync('中止しました','err');
+    /* 取り直した家族を表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
+    for(var gi=0;gi<g.rows.length;gi++){
+      var sv=g.rows[gi]; if(!sv||sv.id==null) continue;
+      for(var gj=0;gj<bulkRows.length;gj++)
+        if(String(bulkRows[gj].id)===String(sv.id)) bulkRows[gj].family=sv.family;
+    }
+    renderBulk();
+    alert('保存を中止しました（1文字も書いていません）。\n\n'+
+      '表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
+      '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'+
+      '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
+    return;
+  }
   apiPostRaw({action:'savePartial',changes:changes},60000).then(function(d){
     /* ★保存中に「閉じる」が押されると bulkRows が null になる。
        サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
@@ -7664,6 +7762,11 @@ function saveBulkGo_(changes,nmv){
       /* ★判定はサーバーが返す【固定文言】だけに合わせる。「氏名」で広く見ると
          「氏名が変わっています（別の方の可能性）」＝他端末との競合にも当たり、
          関係の無いGASの貼り替えへ現場を誘導する（2026-09-02 レビュー指摘 M-4）。 */
+      /* 家族・薬剤も 2026-09-07 に足した項目。古いGASのままだと同じ形で弾かれる */
+      var hint2=/「(家族情報|薬剤情報（定期）|頓服・外用等|薬備考|注意を要する薬剤|剤形配慮|服薬拒否)」は一括編集できません/.test(det)
+        ? '\n\n※ 家族情報と薬剤情報の一括編集は、入居者マスタのGAS（Apps Script「入居者マスタAPI」）の'
+          +'貼り替えが済むまで使えません。データは1文字も変わっていません。'
+        : '';
       var hint=((nmv.spaceOnly.length||nmv.keyChanged.length)&&/「name」は一括編集できません/.test(det))
         ? '\n\n※ 氏名の一括編集は、入居者マスタのGAS（Apps Script「入居者マスタAPI」）の貼り替えが'
           +'済んでいないと使えません。貼り替えるまで、氏名以外の項目は従来どおり保存できます。'
@@ -7739,6 +7842,7 @@ function saveBulkGo_(changes,nmv){
     }).then(function(){ if($('bulkSave')) $('bulkSave').disabled=false;
       if($('bulkClose')) $('bulkClose').disabled=false; });
   });
+  });   /* bulkFamGuard_ の then を閉じる */
 }
 
 /* ═══════════ 初期化 ═══════════ */
