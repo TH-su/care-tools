@@ -569,7 +569,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ── 現入居者家族CM表（A4横1枚。原本の列順どおり）── */
 /* ★A4横1枚で【高さ】が先に限界に来る（33行）。余白と行間を詰めたぶんを文字サイズに回す。
    幅は余っているので width:100% で使い切る（列が広がって読みやすくなる）。 */
-.cmtbl{border-collapse:collapse; table-layout:auto; margin:0 auto; width:100%}
+/* ★画面では内容ぴったりの幅にする。width:100% にすると shFit_ の wide() が
+   【器の幅】を測ることになり、器が紙より広い環境（.scr の max-width を広げた・
+   印刷メディアが当たった状態で採寸した）で「収まらない」と誤判定して最小文字に落ちる。
+   紙でだけ全幅に広げる（全セル nowrap なので行数・行高は変わらない＝高さの採寸に影響しない）。 */
+.cmtbl{border-collapse:collapse; table-layout:auto; margin:0 auto;
+  width:max-content; max-width:100%}
 .cmtbl th,.cmtbl td{border:1px solid #000; padding:var(--cmpad,1px) var(--cmpx,6px);
   line-height:1.15; white-space:nowrap; text-align:center}
 .cmtbl th{background:var(--g2); font-weight:700}
@@ -616,7 +621,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .wtbl tbody.hgrp{break-inside:avoid; page-break-inside:avoid}
 /* ★内服は「服薬時点まで含めて1行」を狙う。空白（語）の区切りだけで折り返し、
    薬剤名や用量の【途中では切らない】。極端に長い記載だけが2行になる。 */
-.wtbl .hmed{white-space:normal; word-break:keep-all; overflow-wrap:normal}
+/* ★語の区切りだけで折り返す（薬剤名や用量の途中で切らない）。
+   ただし overflow-wrap:break-word を必ず残すこと。外すと【分割点が1つも無い長い記載】
+   （空白を含まない行・長い商品名＋メーカー名）が折り返せず、右隣の効能列へ重なって刷られる。
+   fitHistSheet は5%が1行に収まらないことを許容している＝この状況は設計上いつでも起こる。
+   ★white-space は pre-wrap のまま（normal にすると桁を揃えた連続スペースが1つに詰まる）。 */
+.wtbl .hmed{word-break:keep-all; overflow-wrap:break-word}
 .wtbl .heff{white-space:nowrap; text-align:center}
 .wtbl .hnm{white-space:nowrap}
 .wtbl .hprn{vertical-align:top}
@@ -653,7 +663,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mdtbl .mddel:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 .mdtbl tr.mdgone td{opacity:.45; text-decoration:line-through}
 .mdtbl tr.mdgone .mddel{text-decoration:none; color:var(--pri)}
-@media print{ .mdtbl .mddel{display:none !important} .mdtbl tr.mdgone{display:none !important} }
+/* 紙には削除の列そのものを出さない（見出しだけの空列が紙幅を食う）。
+   削除予定の行も出さない＝脚注の件数と紙の行数を合わせる（下の mdHtml の数え方と対） */
+@media print{ .mdtbl .mdd{display:none !important} .mdtbl tr.mdgone{display:none !important} }
 
 /* ── 食形態一覧（A3縦1枚の配膳表・2026-08-24 追加）──
    ★フェイスシート facesheet.html の同名ブロックの【逐語コピー】。同じ紙が出ることが要件なので、
@@ -754,6 +766,7 @@ body.meal-on #sc-list{max-width:none}
   body.cm-on .roster-count,body.lvl-on .roster-count,
   body.cm-on .sh-bar,      body.lvl-on .sh-bar{display:none !important}
   .sh-sheet{padding:0; overflow:visible}       /* 紙では横スクロールを作らない＝全幅で刷る */
+  .cmtbl{width:100%}                           /* 紙では余った幅も使い切る */
   .cmtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .cmtbl .cno{color:#000}                      /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .lvltbl .lvrow{color:#000}
@@ -1959,7 +1972,9 @@ function setView(v){
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
   if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
-  if(curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
+  /* ★「最新に取り直す」ボタンは廃止したが、他端末（薬剤師）の更新が永久に見えないのは困る。
+     このビューへ入るたびに取り直す。★未保存の変更がある時は取り直さない（入力を捨てないため）。 */
+  if(curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(!mdDirty); }
 }
 
 /* ═══════════ 入居日順（2026-09-02 指示） ═══════════
@@ -2403,7 +2418,10 @@ function renderRoster(){
   if(curView==='bday') fitBdaySheet();
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
-  if(curView==='hist') fitHistSheet();
+  /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
+     248行×4サイズ＝最大992回の強制レイアウトが走って入力が引っかかる
+     （食形態一覧で 2026-08-24 に同じ判断をしている）。しかも hist の母集団は検索を見ないので
+     出力は1pxも変わらない＝丸ごと無駄仕事。採寸は「取得のあと」と「印刷の直前」に行う。 */
 }
 /* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める。
    ★高さは「見出し＋（左右の表のうち高い方）＋脚注」で計算する。
@@ -2846,7 +2864,7 @@ function fullEnsure(force){
     .then(function(){
       if(gen!==fullGen) return;
       fullLoading=false; paintShBars();
-      if(curView==='fam'||curView==='hist') renderRoster();
+      if(curView==='fam'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); }
     });
 }
 function fullOf(r){ return (fullMap&&fullMap[String(r.id)])||null; }
@@ -2918,8 +2936,9 @@ function famHtml(){
   return wSheet('famSheet','家族情報一覧',FAM_COLS,body,base.length, shLoadNote());
 }
 
-/* ═══ 病歴・薬一覧（A3横・複数ページ）═══
-   原本の列どおり。「効能」は薬効の辞書がまだ無いので今は空欄で出す（管理者指示・後日埋める）。 */
+/* ═══ 病歴・薬一覧（A3縦・複数ページ）═══
+   原本の列どおり（過去の臨時薬だけは 2026-09-04 の指示で外した）。
+   効能は薬効辞書（med_dict）から引き、薬剤師未確認のものには ＊ を付ける。 */
 /* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
    ★内服は「服薬時点まで含めて1行」に収まる幅を最優先で取る（32%）。 */
 /* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
@@ -2929,7 +2948,11 @@ function famHtml(){
 var HIST_COLS=[['no','No',3],['name','入居者',8],['lv','介護度',3],['dis','治療中の病気',11],
   ['past','既往歴',11],['med','内服（定期薬）',46],['eff','効能',8],
   ['prn','頓服・外用等',10]];
-var HIST_MED_PCT=46;        /* 上の内服列の % と必ず一致させる（採寸がこれを使う） */
+/* ★手で二重に持たない（片方だけ直すと採寸が黙ってずれる）。列の定義から引く */
+var HIST_MED_PCT=(function(){
+  for(var i=0;i<HIST_COLS.length;i++) if(HIST_COLS[i][0]==='med') return HIST_COLS[i][2];
+  return 46;
+})();
 var HIST_FIT_RATIO=0.95;    /* この割合が1行に収まる最大の文字サイズを選ぶ */
 var HIST_FS_MAX=11;         /* 文字サイズの上限。これ以上は1行率が上がらず紙が増えるだけ（下の実測） */
 function histDiseases(rec){
@@ -3026,10 +3049,24 @@ function fitHistSheet(){
      13px＝99%・7ページ。1行に収める目的は11pxで達成でき、それ以上大きくしても紙が増えるだけ。
      「なるべくA3縦に収まるよう」との兼ね合いでここが最良点。 */
   var best=8, ratio=0;
-  for(var px=HIST_FS_MAX;px>=8;px--){ var rr=okRatio(px); if(rr>=HIST_FIT_RATIO){ best=px; ratio=rr; break; } if(px===8) ratio=rr; }
-  probe.parentNode.removeChild(probe);
+  try{
+    for(var px=HIST_FS_MAX;px>=8;px--){ var rr=okRatio(px); if(rr>=HIST_FIT_RATIO){ best=px; ratio=rr; break; } if(px===8) ratio=rr; }
+  }finally{ if(probe.parentNode) probe.parentNode.removeChild(probe); }
   wApplyFs(sh, best);
-  return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length, colPx:Math.round(colPx)};
+  /* ★1人ぶん（tbody）が1ページに収まらないと break-inside:avoid は無視され、rowspan が
+     ページ境界で割れる。割れた続きのページには氏名も介護度も出ないので【誰の処方か分からない紙】になる。
+     黙って出さず、画面にだけ知らせる（印刷CSSで .sh-warn は消える）。 */
+  var PAGE=(420-20)*96/25.4, over=0;
+  var gs=sh.querySelectorAll('tbody.hgrp');
+  for(var gi=0;gi<gs.length;gi++) if(gs[gi].offsetHeight>PAGE) over++;
+  var w2=sh.querySelector('.sh-warn');
+  if(over||ratio<1){
+    if(!w2){ w2=document.createElement('div'); w2.className='sh-warn'; sh.insertBefore(w2, sh.firstChild); }
+    w2.textContent=(over?('1ページに収まらない方が '+over+'名います（紙が途中で割れ、続きのページに氏名が出ません）。'):'')+
+      (ratio<1?('内服が1行に収まらない記載が '+Math.round((1-ratio)*texts.length)+'件あります。'):'');
+  }else if(w2&&w2.parentNode){ w2.parentNode.removeChild(w2); }
+  return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length,
+          colPx:Math.round(colPx), overPage:over};
 }
 function shPrintWide_(kind){
   if(!shViewActive_(kind)) return;
@@ -3114,22 +3151,7 @@ function mdEnsure(force){
       : ('薬効辞書を取得できませんでした'+(m?('：'+m):''));
   })
     .then(function(){ mdLoading=false; paintShBars();
-      if(curView==='md'||curView==='hist') renderRoster(); });
-}
-/* 内服欄に対応する効能を、内服の行数と同じ行数で返す。
-   ★引けなかった行は空行にする（詰めない）。詰めると効能が1行ずつ上にずれて【別の薬の効能】になる。 */
-function mdEffectsHtml(medText){
-  var names=mdNamesOf(medText);
-  if(!names.length||(names.length===1&&!names[0])) return '';
-  var out=names.map(function(n){
-    if(!n) return '';
-    var e=mdMap?mdMap[n]:null;
-    if(!e||!String(e.effect||'').trim()) return '';
-    return esc(String(e.effect).trim())+(e.ok?'':'＊');
-  });
-  /* 末尾の空行は落とす（意味のない空白行を紙に出さない）。途中の空行は残す＝行がずれない */
-  while(out.length&&!out[out.length-1]) out.pop();
-  return out.join('<br>');
+      if(curView==='md'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); } });
 }
 /* 一覧に出す薬剤名を集める。
    ★母集団は【辞書の全行】∪【いまの処方に出てくる薬】∪【この画面で手で足した薬】。
@@ -3160,7 +3182,7 @@ function mdHtml(){
   if(!fullMap) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+
     esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
   var drugs=mdCollect();
-  var known=0, ai=0;
+  var known=0, ai=0, shown=0;
   var body=drugs.map(function(d,i){
     var e=(mdMap&&mdMap[d.name])||null;
     var eff=e?String(e.effect||''):'';
@@ -3169,7 +3191,9 @@ function mdHtml(){
     if(Object.prototype.hasOwnProperty.call(mdEdits,d.name)){
       eff=String(mdEdits[d.name].effect||''); ok=!!mdEdits[d.name].ok;
     }
-    if(eff){ known++; if(!ok) ai++; }
+    /* ★脚注の件数は【紙に出る行】で数える。削除予定は紙に出ないので数えない
+       （数えると「153種類」と書いてあるのに150行しか無い紙になる） */
+    if(!mdDels[d.name]){ shown++; if(eff){ known++; if(!ok) ai++; } }
     var gone=!!mdDels[d.name];
     return '<tr data-md="'+esc(d.name)+'"'+(gone?' class="mdgone"':'')+'>'+
       '<td class="mdc">'+(i+1)+'</td>'+
@@ -3177,12 +3201,12 @@ function mdHtml(){
       '<td class="mdc">'+d.n+'</td>'+
       '<td><input class="mde" type="text" value="'+esc(eff)+'" maxlength="40" '+
         (gone?'disabled ':'')+'aria-label="'+esc(d.name)+' の効能"></td>'+
-      '<td class="mdok"><label><input type="checkbox" '+(ok?'checked':'')+(gone?' disabled':'')+
+      '<td class="mdok mdd"><label><input type="checkbox" '+(ok?'checked':'')+(gone?' disabled':'')+
         ' aria-label="'+esc(d.name)+' を確認済みにする"></label></td>'+
       '<td class="mdc">'+(gone?'<span class="mdbadge ai">削除予定</span>':
         (eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):''))+'</td>'+
       '<td class="mdc">'+esc(e?(e.at||''):'')+'</td>'+
-      '<td class="mdc"><button type="button" class="mddel" data-del="'+esc(d.name)+'">'+
+      '<td class="mdc mdd"><button type="button" class="mddel" data-del="'+esc(d.name)+'">'+
         (gone?'戻す':'削除')+'</button></td>'+
     '</tr>';
   }).join('');
@@ -3192,15 +3216,18 @@ function mdHtml(){
     '<br><b>「AIで下書き」で入る効能は薬剤師の確認を経ていません。</b>確認したら「確認済み」に印を付けてください。'+
     '未確認のものは一覧と紙で末尾に ＊ が付きます。'+
     '<br>薬でないものは「削除」を押して保存すると辞書から消えます（押した時点では消えず、保存で確定します）。'+
+    '<b>ただし、いまの処方に出ている名前は辞書から消しても一覧には残ります</b>（処方欄から拾っているため）。'+
     '新しい薬は「＋ 薬を足す」から追加できます。'+
     '<br>人数はいまの処方に出てくる方の数です（0名＝手で足した薬・処方から外れた薬）。'+
     '用量は落として同じ薬をまとめています（例: 12mg と 24mg は同じ1行）。</div>'+
     '<table class="mdtbl"><colgroup>'+
       '<col style="width:4%"><col style="width:28%"><col style="width:6%"><col style="width:24%">'+
-      '<col style="width:7%"><col style="width:10%"><col style="width:11%"><col style="width:10%"></colgroup>'+
-    '<thead><tr><th>No</th><th>薬剤名</th><th>人数</th><th>効能</th><th>確認済み</th><th>状態</th><th>更新日</th><th>削除</th></tr></thead>'+
+      '<col class="mdd" style="width:7%"><col style="width:10%"><col style="width:11%">'+
+      '<col class="mdd" style="width:10%"></colgroup>'+
+    '<thead><tr><th>No</th><th>薬剤名</th><th>人数</th><th>効能</th><th class="mdd">確認済み</th>'+
+      '<th>状態</th><th>更新日</th><th class="mdd">削除</th></tr></thead>'+
     '<tbody>'+body+'</tbody></table>'+
-    '<div class="sh-ft">'+drugs.length+'種類　／　効能あり '+known+'　／　うちAI下書き '+ai+
+    '<div class="sh-ft">'+shown+'種類　／　効能あり '+known+'　／　うちAI下書き '+ai+
       (Object.keys(mdDels).length?('　／　削除予定 '+Object.keys(mdDels).length):'')+
       '　／　'+(mdOrder==='count'?'使用人数順':'五十音順')+'　／　印刷日 '+esc(shStamp())+'</div>'+
   '</div>';
@@ -3231,16 +3258,23 @@ function mdMarkDirty(tr){ mdRemember(tr); mdDirty=true; if($('mdSave')) $('mdSav
 /* 薬を手で足す。★辞書に既にある名前は足さない（同じ行が2つできると、どちらが正か分からなくなる） */
 function mdAddDrug(){
   if(curView!=='md') return;
+  /* ★辞書が取れていない間は足さない。mdMap が null だと重複判定が必ず素通りし、
+     サーバーに既にある薬を「無い」と見なして上書きする＝他端末の効能と『確認済み』を
+     黙って潰す（原則4・multi-device-sync 原則3）。 */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、追加できません',false); return; }
   var raw=prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
   if(raw==null) return;
   var name=mdDrugName(raw);
   if(!name){ toast('薬剤名が読み取れませんでした',false); return; }
-  var dup=(mdMap&&mdMap[name]) || mdNew.indexOf(name)>=0;
+  /* ★重複判定は【いま一覧に出ている集合】で行う。辞書だけを見ていると、処方から拾って
+     一覧に並んでいる薬を「無い」と見なして足し、入力途中の値ごと上書きする */
+  var cur=mdCollect(), dup=false;
+  for(var ci=0;ci<cur.length;ci++) if(cur[ci].name===name){ dup=true; break; }
   if(dup){ toast('「'+name+'」は既に一覧にあります'); return; }
   var eff=prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
   if(eff==null) return;
   mdNew.push(name);
-  mdEdits[name]={effect:String(eff||'').trim(), ok:false};
+  mdEdits[name]={effect:String(eff||'').trim().slice(0,40), ok:false};   /* 入力欄と同じ上限 */
   mdDirty=true; if($('mdSave')) $('mdSave').disabled=false;
   renderRoster();
   toast('「'+name+'」を足しました。内容を確かめてから「保存」を押してください');
@@ -3248,13 +3282,34 @@ function mdAddDrug(){
 /* 削除の印を付ける／外す。★押した時点では消さない（保存で確定する＝押し間違いを戻せる） */
 function mdToggleDel(name){
   if(!name) return;
-  if(mdDels[name]) delete mdDels[name]; else mdDels[name]=1;
-  mdDirty=true; if($('mdSave')) $('mdSave').disabled=false;
-  renderRoster();
+  if(mdDels[name]){ delete mdDels[name]; mdRecalcDirty_(); renderRoster(); return; }
+  /* ★この画面で足したばかりの薬は、辞書にまだ無い＝消すものがない。足したこと自体を取り消す */
+  var ni=mdNew.indexOf(name);
+  if(ni>=0){
+    mdNew.splice(ni,1); delete mdEdits[name];
+    mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」の追加を取り消しました');
+    return;
+  }
+  /* ★辞書に無い薬（処方から拾っただけの行）は消せない。押しても印だけ残って外せなくなるので、
+     押せない理由をその場で伝える。なお辞書から消しても処方に出ている限り一覧には残る。 */
+  if(!(mdMap&&mdMap[name])){
+    toast('「'+name+'」はまだ辞書に入っていないので、消すものがありません',false);
+    return;
+  }
+  mdDels[name]=1; mdRecalcDirty_(); renderRoster();
+}
+/* L-9: 印や編集を全部取り消したら未保存ではなくなる。数え直さないと離脱確認が出続ける */
+function mdRecalcDirty_(){
+  mdDirty = Object.keys(mdDels).length>0 || Object.keys(mdEdits).length>0;
+  if($('mdSave')) $('mdSave').disabled=!mdDirty;
+  paintShBars();
 }
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
 function mdSave(){
+  /* ★同上。取れていない状態で保存すると、サーバー側の効能と『確認済み』を空の表示で潰す */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、保存できません',false); return; }
   /* ★送るのは【実際に変えた行】だけ。表示中の全行を送ると、他端末（薬剤師）が付けた
      「確認済み」と直した文言を、こちらの古い表示で黙って上書きする（原則4・
      multi-device-sync 原則3「独立フィールドを丸ごと上書きに同居させない」）。
@@ -3282,7 +3337,8 @@ function mdSave(){
     if(d&&d.error) throw new Error(d.error);
     /* 保存できたので編集メモリ・削除の印・手入力の控えは捨てる */
     mdDirty=false; mdEdits=Object.create(null); mdDels=Object.create(null); mdNew=[];
-    toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+'）');
+    toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+
+          '・削除'+((d&&d.deleted)||0)+'）');
     /* 保存できた後も辞書を取り直す（更新日・他端末の変更を画面へ反映するため）。
        ★§13（失敗表示でも書かれていることがある）への備えは下の catch 側。 */
     mdBusy=''; mdEnsure(true);
@@ -3291,15 +3347,19 @@ function mdSave(){
     /* ★失敗しても「1文字も書かれていない」と決めつけない（契約 §13）。必ず取り直してから
        文言を決める。辞書は同じ内容を送っても同じ結果になる（冪等）ので、取り直して
        入っていれば成功として扱う。 */
-    var sent={}; items.forEach(function(x){ if(!x.del) sent[x.name]=x.effect; });
-    var want=Object.keys(sent).length;
+    /* ★削除も数える。数えないと【削除だけの保存】が want===0 になり、実際は消えていても
+       「保存できませんでした」と出る（契約 §13 の取り直し確認が削除にだけ効かない状態だった）。 */
+    var sent={}, gone={};
+    items.forEach(function(x){ if(x.del) gone[x.name]=1; else sent[x.name]=x.effect; });
+    var want=Object.keys(sent).length+Object.keys(gone).length;
     apiGet({action:'getMedDict'},30000).then(function(d){
-      var rows=(d&&d.rows)||[], n=0;
+      var rows=(d&&d.rows)||[], n=0, have=Object.create(null);
       for(var i=0;i<rows.length;i++){
-        var k=mdKey(rows[i].name);
+        var k=mdKey(rows[i].name); have[k]=1;
         if(Object.prototype.hasOwnProperty.call(sent,k) &&
            String(rows[i].effect||'')===sent[k]) n++;
       }
+      for(var gk in gone) if(Object.prototype.hasOwnProperty.call(gone,gk) && !have[gk]) n++;
       if(n===want && want>0){
         mdDirty=false; mdEdits=Object.create(null); mdDels=Object.create(null); mdNew=[];
         toast('保存できていました（応答は失敗でしたが、取り直して確認しました）');
@@ -3395,7 +3455,8 @@ function mdAiParse(j, names){
 function mdAiFill(){
   if(curView!=='md') return;
   var rows=mdRead();
-  var todo=rows.filter(function(x){ return x.effect===''; }).map(function(x){ return x.name; });
+  /* 削除予定の行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる） */
+  var todo=rows.filter(function(x){ return x.effect==='' && !mdDels[x.name]; }).map(function(x){ return x.name; });
   if(!todo.length){ toast('未登録の薬はありません'); return; }
   if(!mdAiKey()){
     toast('AIのキーが未設定です。個別機能訓練計画書アプリの「AI設定」でキーを入れると、この画面でも使えます',false);
