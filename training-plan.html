@@ -684,6 +684,32 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <span class="muted" id="aiState"></span>
     </div>
   </div>
+
+  <!-- D54〜D56: 担当者をまとめて直す（保守用・めったに使わないので設定画面に置く） -->
+  <div class="cd">
+    <h2>担当者をまとめて直す</h2>
+    <p class="muted">作成日がこの日以降の期について、<strong>説明者・主な実施者（プログラム表）・プログラム作成者</strong>を、選んだ職員に揃えます。
+      計画作成者は変えません（その期を作った人の記録として残します）。<br>
+      すでに何か書いてある欄だけを置き換えます（空欄は空のまま。説明していない期に説明者名を入れないため）。
+      プログラム表は内容が入っている行だけが対象です。</p>
+    <div class="stack" style="margin-top:var(--sp-3)">
+      <div><label for="fixFrom">この日以降の期</label><input type="date" id="fixFrom"></div>
+      <div><label for="fixStaff">揃える職員</label><select id="fixStaff"></select></div>
+    </div>
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <label style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
+        <input type="checkbox" id="fixFillEmpty" style="width:auto;min-height:auto">
+        空欄にも入れる（既定は入れない）
+      </label>
+    </div>
+    <div class="stack" style="margin-top:var(--sp-3)">
+      <button id="btnFixPreview" class="btn" type="button">対象を数える</button>
+      <button id="btnFixRun" class="btn danger" type="button" disabled>まとめて直す</button>
+      <button id="btnFixStop" class="btn" type="button" hidden>中止</button>
+    </div>
+    <div id="fixResult"></div>
+    <p class="muted" id="fixState" role="status" aria-live="polite"></p>
+  </div>
 </section>
 
 </main>
@@ -2536,7 +2562,7 @@ function renderPlanSelect() {
 }
 function renderStaffSelects() {
   var st = settings();
-  var ids = ['fPlanner', 'fExplainer', 'fProgPlanner', 'setPlanner', 'setExplainer', 'setProgPlanner'];
+  var ids = ['fPlanner', 'fExplainer', 'fProgPlanner', 'setPlanner', 'setExplainer', 'setProgPlanner', 'fixStaff'];
   for (var i = 0; i < ids.length; i++) {
     var sel = $(ids[i]);
     if (!sel) continue;
@@ -5606,7 +5632,7 @@ function requestBatchStop() {
   if (b) b.disabled = true;
 }
 /* 1人分と全員分は同時に走らせない（同じ DOC へ2本の非同期チェーンが走るのを防ぐ） */
-function batchBusy() { return !!(BATCH_AI.running || BATCH_ALL.running); }
+function batchBusy() { return !!(BATCH_AI.running || BATCH_ALL.running || FIX_ALL.running); }
 /* 中: 単発の「AIで生成」「AIで調整」が飛んでいる間は一括を始めない。返ってきた応答が
    端末既定のモデルで本文を書き、D50 のモデル固定が破れる（同じ期へ2本の書き込みも走る） */
 function batchStartBlocked() { return !!(batchBusy() || aiBusy); }
@@ -6029,6 +6055,152 @@ function runBatchAiAllResidents() {
     toast(err ? '一括AI作成は途中で止まりました（結果は一覧の上に出ています）' : '一括AI作成が終わりました（結果は一覧の上に出ています）');
   }
   return step().then(function () { finBatchAll(null); }, function (e) { finBatchAll(e); });
+}
+/* ═══════════ 担当者をまとめて直す（D54〜D56・2026-09-07 承認）═══════════
+   作成日が指定日以降の期の「説明者（explained.explainer）」「主な実施者（programs[].staff）」
+   「プログラム作成者（programPlanner）」を、選んだ職員に揃える。
+   ・計画作成者（planner）は変えない（その期を作った人の記録）
+   ・すでに何か書いてある欄だけ置き換える（空欄は空のまま。「空欄にも入れる」を選んだ時だけ入れる）
+   ・プログラム表は内容が入っている行だけ（空の行に実施者だけ入れない）
+   ・印刷済・家族署名受領済の期も対象（D56）。紙と食い違う可能性があるので件数を必ず出す
+   ★氏名はコードに書かない。設定の職員一覧から選ばれた値をそのまま入れる */
+var FIX_ALL = { running: false };
+var FIX_STOP = false;
+var FIX_LAST = null;          /* 直前の結果（画面の描き直しで消えないよう保持・氏名を含むので localStorage には置かない） */
+function requestFixStop() {
+  FIX_STOP = true;
+  setFixState('中止します（いま処理中の方を終えたところで止まります）');
+  var b = $('btnFixStop');
+  if (b) b.disabled = true;
+}
+function setFixState(msg) { var n = $('fixState'); if (n) n.textContent = msg || ''; }
+function toggleFixButtons(on) {
+  var a = $('btnFixPreview'), b = $('btnFixRun'), c = $('btnFixStop');
+  if (a) a.disabled = !!on;
+  if (b) b.disabled = !!on || !FIX_LAST || !FIX_LAST.canRun;
+  if (c) { c.hidden = !on; c.disabled = false; }
+}
+/* 1つの期の対象欄を数える／直す。write=false なら数えるだけ。戻り: 変えた（変わる）欄の数 */
+function fixPlanFields(p, name, fillEmpty, write) {
+  var n = 0, i;
+  var apply = function (cur, put) {
+    var v = s_(cur);
+    if (!v && !fillEmpty) return;      /* 空欄は触らない */
+    if (v === name) return;            /* 既に同じなら触らない（audit を無駄に動かさない） */
+    n++;
+    if (write) put(name);
+  };
+  apply(p.explained && p.explained.explainer, function (v) { p.explained.explainer = v; });
+  apply(p.programPlanner, function (v) { p.programPlanner = v; });
+  var rows = (Object.prototype.toString.call(p.programs) === '[object Array]') ? p.programs : [];
+  for (i = 0; i < rows.length; i++) {
+    if (!rows[i] || !s_(rows[i].content)) continue;   /* 内容が空の行は実施者も入れない */
+    (function (row) { apply(row.staff, function (v) { row.staff = v; }); })(rows[i]);
+  }
+  return n;
+}
+/* 1人分（開いている DOC）を数える／直す。戻り: {plans, fields, locked} */
+function fixScanDoc(doc, from, name, fillEmpty, write) {
+  var out = { plans: 0, fields: 0, locked: 0 };
+  var plans = (doc && Object.prototype.toString.call(doc.plans) === '[object Array]') ? doc.plans : [];
+  for (var i = 0; i < plans.length; i++) {
+    var p = plans[i];
+    if (!p || !TP.isYmd(p.planDate) || TP.cmpYmd(p.planDate, from) < 0) continue;
+    var n = fixPlanFields(p, name, fillEmpty, write);
+    if (!n) continue;
+    out.plans++;
+    out.fields += n;
+    if (p.status === 'printed' || p.status === 'signed') out.locked++;
+    if (write) {
+      /* 誰がいつ直したかを期ごとに残す（saveNow の touchAudit は開いている期しか触らない） */
+      if (!p.audit.createdAt) p.audit.createdAt = nowIso();
+      p.audit.updatedAt = nowIso();
+      p.audit.updatedBy = currentStaffName();
+    }
+  }
+  return out;
+}
+function renderFixResult(host) {
+  var r = FIX_LAST;
+  if (!r || !r.lines.length) return;
+  var b = el('div', 'banner ' + (r.warn ? 'warn' : 'info'));
+  b.setAttribute('role', r.warn ? 'alert' : 'status');
+  for (var i = 0; i < r.lines.length; i++) b.appendChild(el('div', null, r.lines[i]));
+  host.appendChild(b);
+}
+function showFixResult() {
+  var host = $('fixResult');
+  if (!host) return;
+  clear(host);
+  renderFixResult(host);
+}
+/* 数える（write=false）／直す（write=true）を全員分で回す */
+function runFixAll(write) {
+  if (batchBusy()) { toast('いま別の一括処理を実行しています。終わるまでお待ちください'); return; }
+  if (dirty) { toast('保存していない編集が残っています。保存してから実行してください'); return; }
+  var from = s_($('fixFrom').value), name = s_($('fixStaff').value), fillEmpty = !!$('fixFillEmpty').checked;
+  if (!TP.isYmd(from)) { toast('「この日以降の期」の日付を入れてください'); $('fixFrom').focus(); return; }
+  if (!name) { toast('「揃える職員」を選んでください（設定の職員一覧に無ければ先に追加してください）'); $('fixStaff').focus(); return; }
+  if (write && (!FIX_LAST || !FIX_LAST.canRun || FIX_LAST.from !== from || FIX_LAST.name !== name || FIX_LAST.fillEmpty !== fillEmpty)) {
+    toast('先に「対象を数える」を押して、変わる件数を確かめてください');
+    return;
+  }
+  if (write) {
+    if (!confirm('作成日が ' + from + ' 以降の期について、説明者・主な実施者・プログラム作成者を「' + name + '」に揃えます。\n\n' +
+        '対象 ' + FIX_LAST.people + '人・' + FIX_LAST.plans + '期・' + FIX_LAST.fields + '欄' +
+        (FIX_LAST.locked ? ('\nうち印刷済・家族署名受領済の期 ' + FIX_LAST.locked + '期（すでに紙で配ったものと食い違う可能性があります）') : '') +
+        '\n\n計画作成者は変えません。この操作は元に戻せません（GAS側に直前10世代の控えは残ります）。\n\nよろしいですか？')) return;
+  }
+  var rows = indexRowsWithScope('all');
+  if (!rows.length) { toast('対象になる方がいません'); return; }
+  FIX_ALL.running = true;
+  FIX_STOP = false;
+  toggleFixButtons(true);
+  var n = 0, people = 0, plans = 0, fields = 0, locked = 0, failed = [], detail = [];
+  function step() {
+    if (FIX_STOP || n >= rows.length) return Promise.resolve();
+    var row = rows[n]; n++;
+    setFixState(n + '/' + rows.length + '人目を' + (write ? '直しています' : '数えています') + '…');
+    return openResident(row.masterId, 'scr-settings', { internal: true }).then(function (ok) {
+      if (!ok) { failed.push(s_(row.name) + '：計画書を開けませんでした'); return step(); }
+      var r = fixScanDoc(DOC, from, name, fillEmpty, write);
+      if (!r.plans) return step();
+      people++; plans += r.plans; fields += r.fields; locked += r.locked;
+      detail.push(s_(row.name) + '　' + r.plans + '期・' + r.fields + '欄' + (r.locked ? '（印刷済' + r.locked + '期）' : ''));
+      if (!write) return step();
+      markDirty();
+      saveNow(true);
+      return waitPushingDone().then(function () {
+        if (!dirty) return step();
+        saveNow(true);
+        return waitPushingDone().then(function () {
+          if (dirty) { failed.push(s_(row.name) + '：保存できませんでした'); FIX_STOP = true; }
+          return step();
+        });
+      });
+    }, function (e) {
+      failed.push(s_(row.name) + '：計画書を開けませんでした（' + errText(e) + '）');
+      return step();
+    });
+  }
+  function fin(err) {
+    FIX_ALL.running = false;
+    setFixState('');
+    var lines = [(write ? '担当者をまとめて直しました' : '対象を数えました') + '（' + fmtDateTime(nowIso()) + '）：' +
+      '対象 ' + people + '人・' + plans + '期・' + fields + '欄' + (FIX_STOP ? '（途中で止めました）' : '')];
+    if (locked) lines.push('うち印刷済・家族署名受領済の期 ' + locked + '期' + (write ? '（紙で配ったものと食い違っていないか確かめてください）' : '（このまま直すと紙と食い違う可能性があります）'));
+    if (!write && people) lines.push('この内容でよければ「まとめて直す」を押してください。');
+    for (var i = 0; i < detail.length && i < 30; i++) lines.push('　' + detail[i]);
+    if (detail.length > 30) lines.push('　… ほか ' + (detail.length - 30) + '人');
+    for (var k = 0; k < failed.length; k++) lines.push('・' + failed[k]);
+    if (err) lines.push('思わぬエラーで止まりました：' + errText(err));
+    FIX_LAST = { lines: lines, warn: !!(failed.length || locked || err || FIX_STOP), canRun: !write && people > 0 && !FIX_STOP && !failed.length,
+      from: from, name: name, fillEmpty: fillEmpty, people: people, plans: plans, fields: fields, locked: locked };
+    toggleFixButtons(false);
+    showFixResult();
+    if (write) { renderList(); toast('担当者の一括修正が終わりました'); }
+  }
+  return step().then(function () { fin(null); }, function (e) { fin(e); });
 }
 /* 全員分の結果表の材料（氏名／作った期数／失敗理由）。中7: 一覧の描き直しで消えないよう保持する */
 function batchAllSummary(results, stoppedEarly, skipped) {
@@ -7193,6 +7365,16 @@ function bindUI() {
     closeFieldPop();
   });
 
+  /* D54〜D56: 担当者をまとめて直す（数える → 確かめる → 直す） */
+  $('btnFixPreview').addEventListener('click', function () { runFixAll(false); });
+  $('btnFixRun').addEventListener('click', function () { runFixAll(true); });
+  $('btnFixStop').addEventListener('click', requestFixStop);
+  ['fixFrom', 'fixStaff', 'fixFillEmpty'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      /* 条件を変えたら数え直しから（古い件数のまま実行させない） */
+      if (FIX_LAST) { FIX_LAST.canRun = false; toggleFixButtons(false); }
+    });
+  });
   $('btnCfgSave').addEventListener('click', saveCfg);
   $('btnCfgTest').addEventListener('click', testCfg);
   $('btnStaffAdd').addEventListener('click', addStaff);
