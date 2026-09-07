@@ -2418,9 +2418,10 @@ function renderRoster(){
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
   /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
-     248行×4サイズ＝最大992回の強制レイアウトが走って入力が引っかかる
-     （食形態一覧で 2026-08-24 に同じ判断をしている）。しかも hist の母集団は検索を見ないので
-     出力は1pxも変わらない＝丸ごと無駄仕事。採寸は「取得のあと」と「印刷の直前」に行う。 */
+     248行×最大6サイズ＝1488回の文字幅計測に加え、表全体の強制レイアウトが6往復走って
+     入力が引っかかる（食形態一覧で 2026-08-24 に同じ判断をしている）。
+     しかも hist の母集団は検索を見ないので出力は1pxも変わらない＝丸ごと無駄仕事。
+     採寸は「取得のあと」と「印刷の直前」に行う。 */
 }
 /* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める。
    ★高さは「見出し＋（左右の表のうち高い方）＋脚注」で計算する。
@@ -2812,8 +2813,10 @@ window.addEventListener('beforeprint',function(){
     document.body.classList.add('lvl-on'); }
   else if(shViewActive_('fam')||shViewActive_('hist')){
     var k=shViewActive_('fam')?'fam':'hist';
-    if(k==='hist') fitHistSheet(); else wApplyFs($('famSheet'), 12);
-    msSheetPageOn('size:A3 portrait;margin:10mm');
+    /* ★ボタン経路（shPrintWide_）が直前に採寸済みなら、ここでは測り直さない
+       （print() の直後に beforeprint が来るので、そのままだと1回の印刷で2度走る） */
+    if(k==='hist'){ if(!shHistFitted_) fitHistSheet(); } else wApplyFs($('famSheet'), 12);
+    msSheetPageOn(HIST_PAGE_CSS);
     document.body.classList.add(k==='fam'?'fam-on':'hist-on');
   }
   else if(shViewActive_('md')){ msSheetPageOn('size:A4 portrait;margin:10mm');
@@ -2824,6 +2827,7 @@ window.addEventListener('afterprint',function(){
   document.body.classList.remove('cm-on');  document.body.classList.remove('lvl-on');
   document.body.classList.remove('fam-on'); document.body.classList.remove('hist-on');
   document.body.classList.remove('md-on');
+  shHistFitted_=false;
 });
 /* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
    スプレッドシート「入居者情報」の【家族情報一覧】【病歴・薬】と同じ列で一覧にする。
@@ -2957,6 +2961,12 @@ var HIST_MED_PCT=(function(){
 var HIST_FIT_RATIO=0.95;    /* この割合が1行に収まる最大の文字サイズを選ぶ */
 var HIST_FS_MAX=13;         /* 文字サイズの上限 */
 var HIST_FS_MIN=8;          /* 下限。これより小さいと紙で読めない */
+/* ★用紙の寸法は1箇所で持つ。余白を変えた時に採寸と @page が黙ってずれないようにする
+   （HIST_MED_PCT を列定義から引いているのと同じ理由）。 */
+var HIST_PAGE_MM=10;                                   /* @page の margin と必ず同じ値 */
+var HIST_PAGE_CSS='size:A3 portrait;margin:'+HIST_PAGE_MM+'mm';
+var HIST_PAGE_W=(297-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字幅 */
+var HIST_PAGE_H=(420-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字高さ */
 function histDiseases(rec){
   if(!rec) return '';
   /* 様式の病名表（diseases）があればそれを使い、無ければ旧自由文（currentDiseases）に落とす */
@@ -3033,8 +3043,7 @@ function fitHistSheet(){
   var texts=[], i;
   for(i=0;i<cells.length;i++){ var t=cells[i].textContent.trim(); if(t) texts.push(t); }
   if(!texts.length){ wApplyFs(sh,11); return null; }
-  var PAPER=(297-20)*96/25.4;                 /* A3縦の印字幅 */
-  var colPx=PAPER*HIST_MED_PCT/100 - 14;      /* 左右の余白ぶんを引く */
+  var colPx=HIST_PAGE_W*HIST_MED_PCT/100 - 14;   /* 左右の余白ぶんを引く */
   var probe=document.createElement('span');
   probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;left:-9999px;top:0';
   probe.style.fontFamily=getComputedStyle(sh).fontFamily;
@@ -3051,28 +3060,60 @@ function fitHistSheet(){
      32名・248薬剤なので1枚には物理的に入らない。小さくすればページは減るが、
      ある所から先は行数が下限に達して【小さくしても減らない】。その手前で止めるのが最良点。
      実測（2026-09-04・頓服列を外した後）: 11px＝4ページ／10px＝4／9px＝3／8px＝3／7px＝3。
-     ＝9px が「3ページを出す最大の文字」。 */
-  var PAGE=(420-20)*96/25.4;
+     ＝9px が「3ページを出す最大の文字」。
+     ★★採寸のあいだは【紙と同じ幅・余白】に固定する。画面のままだと表の幅が 948px（.scr の
+       max-width 980px − padding）で、紙の 1047px より約1割狭い。1行率は紙基準で数えているのに
+       高さだけ画面基準で測ると、同じセルについて2つの条件が食い違う。しかも窓を狭めた端末では
+       さらに縮んで【同じデータ・同じ紙なのに、押した端末の窓幅で紙の文字サイズが変わる】。
+       この関数の冒頭に書いたとおり、それは避けなければならない。 */
   var tblEl=sh.querySelector('table');
-  var best=HIST_FS_MIN, ratio=0, bestPages=Infinity;
+  var best=HIST_FS_MIN, ratio=0, bestPages=Infinity, over=0;
+  var savedW=sh.style.width, savedP=sh.style.padding;
+  /* ★紙のページ割りを模す。ceil(全体の高さ÷ページ高) では次の4つを数え落とす:
+       ①各ページ先頭で繰り返す thead ②見出し・注記・脚注 ③break-inside:avoid による
+       ページ下端の余白（1人ぶんの塊が丸ごと次ページへ送られる）。いずれもページを増やす側。 */
+  function pagesFor(){
+    if(!tblEl) return 1;
+    var headH=tblEl.tHead?tblEl.tHead.offsetHeight:0;
+    var extra=Math.max(0, sh.offsetHeight-tblEl.offsetHeight);   /* 見出し＋注記＋脚注 */
+    var gs=tblEl.querySelectorAll('tbody.hgrp');
+    var avail=HIST_PAGE_H-extra-headH, pages=1, y=0;
+    for(var gi=0;gi<gs.length;gi++){
+      var h=gs[gi].offsetHeight;
+      if(y && y+h>avail){ pages++; y=0; avail=HIST_PAGE_H-headH; }
+      y+=h;
+    }
+    return pages;
+  }
   try{
+    sh.style.padding='0'; sh.style.width=Math.round(HIST_PAGE_W)+'px';   /* 印刷CSSと同条件 */
     for(var px=HIST_FS_MAX;px>=HIST_FS_MIN;px--){
       var rr=okRatio(px);
       if(rr<HIST_FIT_RATIO) continue;               /* 1行に収まらない大きさは採らない */
       wApplyFs(sh, px);
-      var pages=tblEl?Math.ceil(tblEl.offsetHeight/PAGE):1;
+      var pages=pagesFor();
       /* 同じページ数なら大きい方を残す（先に見た方＝大きい方が勝つ） */
       if(pages<bestPages){ bestPages=pages; best=px; ratio=rr; }
     }
     if(!isFinite(bestPages)) ratio=okRatio(HIST_FS_MIN);   /* どの大きさでも1行にならない時 */
-  }finally{ if(probe.parentNode) probe.parentNode.removeChild(probe); }
-  wApplyFs(sh, best);
+    wApplyFs(sh, best);
+    /* ★M-2: 1人ぶんに使える高さは【2ページ目以降＝ページ高 − 繰り返す thead】。
+       ページ高そのままで見ると、その差の帯域で警告が出ないまま紙が割れる。 */
+    var headH2=tblEl&&tblEl.tHead?tblEl.tHead.offsetHeight:0;
+    var limit=HIST_PAGE_H-headH2;
+    over=0;
+    var gs2=sh.querySelectorAll('tbody.hgrp');
+    for(var gj=0;gj<gs2.length;gj++) if(gs2[gj].offsetHeight>limit) over++;
+    bestPages=pagesFor();
+  }finally{
+    /* ★例外が出ても、画面のフォントと幅を必ず元に戻す（途中で試したサイズのまま残さない） */
+    try{ wApplyFs(sh, best); }catch(e2){}
+    sh.style.width=savedW; sh.style.padding=savedP;
+    if(probe.parentNode) probe.parentNode.removeChild(probe);
+  }
   /* ★1人ぶん（tbody）が1ページに収まらないと break-inside:avoid は無視され、rowspan が
      ページ境界で割れる。割れた続きのページには氏名も介護度も出ないので【誰の処方か分からない紙】になる。
-     黙って出さず、画面にだけ知らせる（印刷CSSで .sh-warn は消える）。 */
-  var PAGE=(420-20)*96/25.4, over=0;
-  var gs=sh.querySelectorAll('tbody.hgrp');
-  for(var gi=0;gi<gs.length;gi++) if(gs[gi].offsetHeight>PAGE) over++;
+     黙って出さず、画面にだけ知らせる（印刷CSSで .sh-warn は消える）。判定は上の try の中で済ませた。 */
   var w2=sh.querySelector('.sh-warn');
   if(over||ratio<1){
     if(!w2){ w2=document.createElement('div'); w2.className='sh-warn'; sh.insertBefore(w2, sh.firstChild); }
@@ -3080,14 +3121,14 @@ function fitHistSheet(){
       (ratio<1?('内服が1行に収まらない記載が '+Math.round((1-ratio)*texts.length)+'件あります。'):'');
   }else if(w2&&w2.parentNode){ w2.parentNode.removeChild(w2); }
   return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length,
-          colPx:Math.round(colPx), overPage:over,
-          pages:(tblEl?Math.ceil(tblEl.offsetHeight/PAGE):1)};
+          colPx:Math.round(colPx), overPage:over, pages:bestPages};
 }
+var shHistFitted_=false;   /* ボタン経路で採寸済みか（beforeprint の二度打ちを防ぐ） */
 function shPrintWide_(kind){
   if(!shViewActive_(kind)) return;
   var on=(kind==='fam')?'fam-on':'hist-on';
-  if(kind==='hist') fitHistSheet(); else wApplyFs($('famSheet'), 12);
-  msSheetPageOn('size:A3 portrait;margin:10mm');
+  if(kind==='hist'){ fitHistSheet(); shHistFitted_=true; } else wApplyFs($('famSheet'), 12);
+  msSheetPageOn(HIST_PAGE_CSS);
   document.body.classList.add(on);
   var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
   try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
