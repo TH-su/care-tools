@@ -62,6 +62,16 @@ button.btn.pri { background:var(--pri); border-color:var(--pri); color:#fff; fon
 button.btn:disabled { opacity:.5; cursor:default; }
 button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--pri); outline-offset:1px; }
 
+/* ── 期間バー（3タブ共有・2026-09-07）──
+   見た目は既存の .bar のまま。チェックの当たり判定だけ、検索タブの既存規約と同じ 44px にそろえる
+   （手袋・片手操作を想定し、文字ごと押せるようにする）。 */
+.rgbar label.rgchk { display:inline-flex; align-items:center; gap:6px; min-height:44px;
+                     font-size: 0.8125rem; color:var(--g7); cursor:pointer; }
+.rgbar label.rgchk input[type=checkbox] { width:20px; height:20px; }
+.rgbar label.rgchk:focus-within { outline:2px solid var(--pri); outline-offset:1px; border-radius:6px; }
+/* 使えない側（直近N日 or 日付指定）を、押せないと分かる見た目にする */
+.rgbar select:disabled, .rgbar input[type=date]:disabled { background:var(--g1); color:var(--g6); }
+
 /* ── 入居者リスト ── */
 .rlist { display:flex; flex-wrap:wrap; gap:6px; }
 .rchip { font:inherit; font-size: 0.875rem; padding:11px 12px; border:1px solid var(--g3); border-radius:20px;
@@ -231,9 +241,10 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
   <section id="scr-resident" class="scr on" role="tabpanel" aria-labelledby="tab-resident">
     <div id="banner"></div>
     <div class="cd noprint">
-      <div class="bar">
-        <label for="days">期間</label>
-        <select id="days">
+      <!-- 期間バー（3タブ共有・2026-09-07）。入居者別・バイタル・検索は同じ部品・同じ値。 -->
+      <div class="bar rgbar noprint">
+        <label for="rgDays-r">期間</label>
+        <select id="rgDays-r" data-rg="r">
           <option value="7">直近7日</option>
           <option value="14" selected>直近14日</option>
           <option value="30">直近30日</option>
@@ -241,7 +252,11 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
           <option value="90">直近90日</option>
           <option value="150">直近150日</option>
         </select>
-        <button class="btn" id="reload" type="button">読み込み</button>
+        <label class="rgchk"><input type="checkbox" id="rgSpan-r" data-rg="r"> 日付で指定</label>
+        <input type="date" id="rgFrom-r" data-rg="r" aria-label="開始日" disabled>
+        <span class="muted" aria-hidden="true">〜</span>
+        <input type="date" id="rgTo-r" data-rg="r" aria-label="終了日" disabled>
+        <button class="btn" id="rgLoad-r" data-rg="r" type="button">読み込み</button>
         <span class="muted" id="status"></span>
       </div>
       <div class="rlist" id="rlist"></div>
@@ -273,22 +288,22 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
   <section id="scr-vm" class="scr" role="tabpanel" aria-labelledby="tab-vm">
     <div id="vmBanner"></div>
     <div class="cd noprint">
-      <div class="bar">
-        <label for="vmDays">期間</label>
-        <select id="vmDays">
-          <option value="14">直近14日</option>
-          <option value="30" selected>直近30日</option>
+      <!-- 期間バー（3タブ共有）。ここで変えると入居者別・検索も同じ期間になる。 -->
+      <div class="bar rgbar noprint">
+        <label for="rgDays-v">期間</label>
+        <select id="rgDays-v" data-rg="v">
+          <option value="7">直近7日</option>
+          <option value="14" selected>直近14日</option>
+          <option value="30">直近30日</option>
           <option value="60">直近60日</option>
           <option value="90">直近90日</option>
           <option value="150">直近150日</option>
-          <option value="custom">日付を指定</option>
         </select>
-        <span id="vmSpan" hidden>
-          <input type="date" id="vmFrom" aria-label="開始日">
-          <span class="muted">〜</span>
-          <input type="date" id="vmTo" aria-label="終了日">
-        </span>
-        <button class="btn" id="vmReload" type="button">読み込み</button>
+        <label class="rgchk"><input type="checkbox" id="rgSpan-v" data-rg="v"> 日付で指定</label>
+        <input type="date" id="rgFrom-v" data-rg="v" aria-label="開始日" disabled>
+        <span class="muted" aria-hidden="true">〜</span>
+        <input type="date" id="rgTo-v" data-rg="v" aria-label="終了日" disabled>
+        <button class="btn" id="rgLoad-v" data-rg="v" type="button">読み込み</button>
         <span class="muted" id="vmStatus"></span>
       </div>
       <div class="rlist" id="vmList"></div>
@@ -333,6 +348,23 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
   <section id="scr-search" class="scr" role="tabpanel" aria-labelledby="tab-search">
     <div id="sqBanner"></div>
     <div class="cd noprint">
+      <!-- 期間バー（3タブ共有）。ここで変えると入居者別・バイタルも同じ期間になる。 -->
+      <div class="bar rgbar noprint">
+        <label for="rgDays-s">期間</label>
+        <select id="rgDays-s" data-rg="s">
+          <option value="7">直近7日</option>
+          <option value="14" selected>直近14日</option>
+          <option value="30">直近30日</option>
+          <option value="60">直近60日</option>
+          <option value="90">直近90日</option>
+          <option value="150">直近150日</option>
+        </select>
+        <label class="rgchk"><input type="checkbox" id="rgSpan-s" data-rg="s"> 日付で指定</label>
+        <input type="date" id="rgFrom-s" data-rg="s" aria-label="開始日" disabled>
+        <span class="muted" aria-hidden="true">〜</span>
+        <input type="date" id="rgTo-s" data-rg="s" aria-label="終了日" disabled>
+        <button class="btn" id="rgLoad-s" data-rg="s" type="button">読み込み</button>
+      </div>
       <div class="bar">
         <label for="sqText">検索</label>
         <input type="text" id="sqText" placeholder="ことば・氏名" autocomplete="off"
@@ -384,16 +416,19 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
 
 var LS_CFG   = 'msk_cfg';      // {url, token}
 var LS_VIEW  = 'msk_view';     // 直前に開いていた画面（リロードで現在地を失わない）
-var LS_DAYS  = 'msk_days';     // 期間（日数）
+var LS_RANGE = 'msk_range';    // 期間（3タブ共有・UI状態のみ）{mode,days,from,to}
+var LS_DAYS  = 'msk_days';     // 【旧】入居者別の期間（日数）。引き継ぎのために読むだけ・消さない
 var LS_CPDT  = 'msk_copyDate'; // コピーに日付を付けるか
-var LS_VMDAYS= 'msk_vmDays';   // バイタル・食事の表示期間（UI状態のみ・個人情報は保存しない）
+var LS_VMDAYS= 'msk_vmDays';   // 【旧】バイタル・食事の表示期間。引き継ぎのために読むだけ・消さない
 var ROSTER_KEY = 'su_residents_common';   // 読取専用（書き手は入居者マスタのみ）
 var ROLE_KEY   = 'su_device_role';
 
 var $ = function(id){ return document.getElementById(id); };
 
-/* 表示中のデータ。メモリ上のみで保持する（保存しない） */
-var DATA = { from:'', to:'', events:[], ledger:[], loadedAt:0 };
+/* 表示中のデータ。メモリ上のみで保持する（保存しない）。
+   reqFrom / reqTo は【こちらが要求した期間】。画面の期間と一致するかの判定に使う
+   （サーバーが返す from/to と比べると、サーバー側が丸めた時に永久に不一致になる）。 */
+var DATA = { from:'', to:'', reqFrom:'', reqTo:'', events:[], ledger:[], loadedAt:0 };
 var SEL = '';        // 選択中の入居者（正規化キー）
 var ROSTER = [];     // su_residents_common の写し（読取専用）
 
@@ -552,35 +587,207 @@ function byKana(a, b){
      壊れた値（空文字・別形式）が来ると、日付を1日ずつ進める while が止まらず
      画面が固まる。形式が違えば「こちらが要求した期間」を使う。 */
 function okYmd(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s)); }
-function currentRange(){
-  var n = parseInt($('days').value, 10);
-  if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = 14;
+
+/* ══════════════════════════════════════════════════════════
+   期間（入居者別・バイタル・検索の3タブ共有・2026-09-07）
+   ★以前はタブごとに別々の期間を持っていた。別々だと、検索タブで「6月を探したつもり」
+     なのに入居者別が読んだ8月の中を探す、という取り違えが起きる。期間は1本だけ持ち、
+     どのタブで操作しても3タブに同じ値が入る。
+   ★保存するのは UI 状態（mode/days/from/to）だけ。氏名・記録は保存しない（原則11）。
+   ══════════════════════════════════════════════════════════ */
+var VM_MAX_DAYS = 150;             // GAS 側 _range() の上限と合わせる
+var RG_DAYS_OPTS = ['7','14','30','60','90','150'];   // プルダウンの選択肢（これ以外は既定へ）
+var RG_DEF_DAYS = 14;              // 既定は直近14日（2026-09-07 に3タブ共通の既定として承認）
+var RG_TABS = ['r','v','s'];       // 入居者別 / バイタル・食事 / 検索
+var RANGE = { mode:'recent', days:RG_DEF_DAYS, from:'', to:'' };
+
+/* 期間の解決。開始日と終了日が逆でも受け付け、150日を超えたら開始日を切り上げる
+   （旧 vmRange の挙動をそのまま共有側へ移した）。壊れた値は既定（直近14日）へ落とす。 */
+function sharedRange(){
+  if(RANGE.mode === 'span'){
+    var f = RANGE.from, t = RANGE.to;
+    if(okYmd(f) && okYmd(t)){
+      if(f > t){ var s = f; f = t; t = s; }            // 逆に入れても受け付ける
+      var d0 = new Date(t + 'T00:00:00'), lim = ymd(addDays(d0, -(VM_MAX_DAYS - 1)));
+      if(f < lim) f = lim;                             // 長すぎる指定は開始日を切り上げる
+      return { from:f, to:t, mode:'span' };
+    }
+    return { from:'', to:'', mode:'span', invalid:true };
+  }
+  var n = parseInt(RANGE.days, 10);
+  if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = RG_DEF_DAYS;
   var to = new Date();
-  return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
+  return { from: ymd(addDays(to, -(n - 1))), to: ymd(to), mode:'recent' };
 }
+
+function rgSave(){
+  lsSet(LS_RANGE, JSON.stringify({ mode:RANGE.mode, days:RANGE.days, from:RANGE.from, to:RANGE.to }));
+}
+/* 起動時の復元。新キー → 旧 msk_days → 旧 msk_vmDays の順に引き継ぐ。
+   ★旧キーは読むだけで消さない（古い版のビューアを開いた時に期間が飛ばないように）。
+   ★旧 msk_vmDays の 'custom' は引き継がない（日付そのものは保存されていないため）。
+   ★不正値・未知値は既定へ落とす（壊れた値で起動不能にしない・原則11）。 */
+function rgRestore(){
+  try{
+    var o = JSON.parse(lsGet(LS_RANGE) || 'null');
+    if(o && typeof o === 'object' && !(o instanceof Array)){
+      var n = String(o.days);
+      RANGE = {
+        mode: (o.mode === 'span') ? 'span' : 'recent',
+        days: (RG_DAYS_OPTS.indexOf(n) >= 0) ? parseInt(n, 10) : RG_DEF_DAYS,
+        from: okYmd(o.from) ? String(o.from) : '',
+        to:   okYmd(o.to)   ? String(o.to)   : ''
+      };
+      /* 「日付で指定」なのに日付が壊れている＝そのままでは読み込めない。既定へ落とす。 */
+      if(RANGE.mode === 'span' && !(RANGE.from && RANGE.to)) RANGE.mode = 'recent';
+      return;
+    }
+  }catch(e){}
+  var old = [lsGet(LS_DAYS), lsGet(LS_VMDAYS)];
+  for(var i=0;i<old.length;i++){
+    if(RG_DAYS_OPTS.indexOf(String(old[i])) >= 0){
+      RANGE = { mode:'recent', days:parseInt(old[i], 10), from:'', to:'' };
+      return;
+    }
+  }
+  RANGE = { mode:'recent', days:RG_DEF_DAYS, from:'', to:'' };
+}
+
+/* 3タブの期間UIを RANGE に合わせる。
+   ★どのタブで操作しても、残り2タブの表示が即座に同じ値になる（これが共有の実体）。 */
+function rgSyncUI(){
+  var span = (RANGE.mode === 'span');
+  RG_TABS.forEach(function(p){
+    var sel = $('rgDays-' + p), ck = $('rgSpan-' + p), f = $('rgFrom-' + p), t = $('rgTo-' + p);
+    if(!sel || !ck || !f || !t) return;
+    sel.value = String(RANGE.days);
+    if(sel.selectedIndex < 0) sel.value = String(RG_DEF_DAYS);   // 選択肢に無い値は既定へ
+    ck.checked = span;
+    f.value = RANGE.from;
+    t.value = RANGE.to;
+    /* チェックON で日付2つを有効・日数プルダウンを無効。OFF でその逆。 */
+    sel.disabled = span;
+    f.disabled = !span;
+    t.disabled = !span;
+  });
+}
+/* どれか1つのUIが操作された。3タブぶんの状態を1本の RANGE に取り込み、保存し、全タブへ返す。 */
+function rgReadUI(p){
+  var sel = $('rgDays-' + p), ck = $('rgSpan-' + p), f = $('rgFrom-' + p), t = $('rgTo-' + p);
+  if(!sel || !ck || !f || !t) return;
+  var n = parseInt(sel.value, 10);
+  if(!isNaN(n) && n >= 1 && n <= VM_MAX_DAYS) RANGE.days = n;
+  RANGE.mode = ck.checked ? 'span' : 'recent';
+  RANGE.from = okYmd(f.value) ? f.value : '';
+  RANGE.to   = okYmd(t.value) ? t.value : '';
+  /* 「日付で指定」に切り替えた直後で空欄なら、いま見ている直近N日をそのまま入れる
+     （空欄のまま押させて「入れてください」を出さないため。旧バイタルタブと同じ配慮）。 */
+  if(RANGE.mode === 'span' && !(RANGE.from && RANGE.to)){
+    var now = new Date();
+    if(!RANGE.to) RANGE.to = ymd(now);
+    if(!RANGE.from) RANGE.from = ymd(addDays(now, -(RANGE.days - 1)));
+  }
+  rgSave();
+  rgSyncUI();
+}
+
+/* いま表示している画面。期間を変えた時に「どのタブのデータを読み直すか」の判定に使う。 */
+function currentScreen(){
+  for(var i=0;i<SCREENS.length;i++){
+    var el = $(SCREENS[i]);
+    if(el && el.classList.contains('on')) return SCREENS[i];
+  }
+  return '';
+}
+
+/* ★最優先の安全装置。期間を変えてから、そのタブを読み直すまでの間、
+     古い期間のデータを新しい期間の結果として描かない
+     （6月を検索したつもりで8月の結果を読む、という形の誤読を作らないため）。 */
+var RG_STALE_MSG = '期間が変わりました。読み込み中…';
+function rgStaleInto(box, loading, err){
+  var p = document.createElement('p');
+  p.className = 'muted';
+  p.textContent = loading ? RG_STALE_MSG
+    : (err ? '期間が変わりましたが読み込めませんでした（' + err + '）。「読み込み」をもう一度押してください。'
+           : '期間が変わりました。「読み込み」を押してください。');
+  box.appendChild(p);
+}
+function baseStale(){
+  if(!dataLoaded()) return false;         // 未読は「まだ読み込んでいません」側の表示に任せる
+  var r = sharedRange();
+  if(r.invalid) return false;             // 期間が未確定な間は判定しない
+  return (DATA.reqFrom !== r.from || DATA.reqTo !== r.to);
+}
+function vmStale(){
+  if(!vmLoaded()) return false;
+  var r = sharedRange();
+  if(r.invalid) return false;
+  return (VM.reqFrom !== r.from || VM.reqTo !== r.to);
+}
+/* 古い期間のデータを画面から下ろす（描き直しは、読み込みが終わった時に各 render が行う） */
+function rgClearBase(){
+  renderBanner();
+  renderResidentList();
+  renderTimeline();
+  if($('scr-search').classList.contains('on')) renderSearch(); else sqSyncScope();
+}
+function rgClearVm(){ vmRenderBanner(); vmRenderList(); vmRenderBody(); }
+
+/* 期間が変わった時。★表示中のタブのデータだけ読み直す（開かない人に余計な通信を起こさない）。
+   他のタブは、そのタブを開いた時に ensureBaseData() / ensureVmData() が読み直す。 */
+function rgApply(){
+  if(currentScreen() === 'scr-vm'){
+    if(baseStale()) rgClearBase();
+    ensureVmData();
+  }else{
+    if(vmStale()) rgClearVm();
+    ensureBaseData();
+  }
+}
+/* 「読み込み」ボタン。いま見ているタブのデータを、この期間で取り直す。 */
+function rgReload(){
+  if(currentScreen() === 'scr-vm'){ if(!VM_LOADING) vmLoad(); }
+  else if(!LOADING) load();
+}
+/* 通信中は、その期間を扱うタブの「読み込み」を押せなくする */
+function rgBusyBase(on){ ['r','s'].forEach(function(p){ var b = $('rgLoad-' + p); if(b) b.disabled = on; }); }
+function rgBusyVm(on){ var b = $('rgLoad-v'); if(b) b.disabled = on; }
+
 /* 読み込み済みか（＝手元のデータで描けるか）。DATA は load() で丸ごと差し替わる。 */
 function dataLoaded(){ return okYmd(DATA.from) && okYmd(DATA.to); }
+function vmLoaded(){ return okYmd(VM.from) && okYmd(VM.to); }
+/* 検索して良い状態か（読み込み済み＋期間が今の指定と一致している） */
+function sqUsable(){ return dataLoaded() && !baseStale(); }
 var LOADING = false;
 /* 直近の読み込みが失敗した理由。検索タブは #banner を持たないので、
    これを持っておかないと「読みに行って失敗した」が「まだ読んでいません」と表示される。 */
 var LOAD_ERR = '';
-/* そのタブに必要な時だけ・初回だけ読む。読み込み済み／通信中／未設定なら何もしない。 */
+/* そのタブに必要な時だけ読む。読み込み済みで期間も一致していれば何もしない。
+   ★2026-09-07: 「未読なら読む」から「未読 or 期間が RANGE と不一致なら読む」に広げた。
+     広げないと、別のタブで期間を変えてからこのタブを開いた時に、古い期間のデータが
+     新しい期間の結果として残る。 */
 function ensureBaseData(){
-  if(LOADING || dataLoaded()) return;
+  var stale = baseStale();
+  if(!stale && dataLoaded()) return;
+  if(LOADING) return;
   var c = loadCfg();
-  if(!c.url || !c.token) return;
+  if(!c.url || !c.token){ if(stale) rgClearBase(); return; }
   load();
 }
 function load(){
-  var r = currentRange();
+  var r = sharedRange();
+  if(r.invalid){ $('status').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
   var t0 = Date.now();
   LOADING = true;
   LOAD_ERR = '';
   $('status').textContent = '読み込み中…';
-  if($('scr-search').classList.contains('on')) renderSearch();
-  $('reload').disabled = true;
+  rgBusyBase(true);
+  /* ★期間が変わっている間は、古い期間のデータを画面から下ろしてから読みに行く */
+  if(baseStale()) rgClearBase();
+  else if($('scr-search').classList.contains('on')) renderSearch();
   return apiGet('events', { from:r.from, to:r.to }).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
+             reqFrom:r.from, reqTo:r.to,
              events:(res.events || []), ledger:(res.ledger || []),
              /* undefined（旧デプロイのGAS＝能力を持たない）と [] （1日も取り込めていない）を
                 潰さない。潰すと、ビューアだけ先に配った時に全期間が誤って赤くなる。 */
@@ -613,10 +820,20 @@ function load(){
     if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
   }).then(function(){
     LOADING = false;
-    $('reload').disabled = false;
+    rgBusyBase(false);
     /* ★失敗の理由は LOADING を戻した【後】に出す。catch の中で呼ぶと、
-         renderSearch が「読み込んでいます」を表示したまま固まる。 */
-    if(LOAD_ERR && $('scr-search').classList.contains('on')) renderSearch();
+         renderSearch が「読み込んでいます」を表示したまま固まる。
+       ★期間を変えた読み込みが失敗した時も同じ。「読み込み中…」のまま残さない。
+         ここで renderBanner は呼ばない —— showError が #banner に出した理由を消してしまうため。 */
+    if(LOAD_ERR){
+      if(baseStale()){ renderResidentList(); renderTimeline(); }
+      if($('scr-search').classList.contains('on')) renderSearch();
+    }
+    /* ★通信中に期間がもう一度変わった時は、ここで追いかける。
+         追いかけないと ensureBaseData() が通信中で見送った変更が誰にも拾われず、
+         画面が「期間が変わりました。読み込み中…」のまま止まる。
+       ★失敗した時は追いかけない（else if）。DATA が古いままなので永久に読み直し続ける。 */
+    else if(baseStale()) load();
   });
 }
 function showError(msg){
@@ -657,6 +874,8 @@ function briefDates(list){
 function renderBanner(boxId){
   var box = boxId || 'banner';
   $(box).textContent = '';
+  /* ★古い期間の⚠️帯を、新しい期間のものとして出さない（未取込日の指摘は期間に紐づく） */
+  if(baseStale()) return;
   var all = allDatesInRange();
   if(!all.length) return;
 
@@ -702,6 +921,8 @@ function residentIndex(){
 function renderResidentList(){
   var box = $('rlist');
   box.textContent = '';
+  /* ★古い期間の一覧を出さない（人数も件数も期間で変わる） */
+  if(baseStale()){ rgStaleInto(box, LOADING, LOAD_ERR); return; }
   var list = residentIndex();
   if(!list.length){
     var p = document.createElement('span');
@@ -768,6 +989,8 @@ function renderTimeline(){
   box.textContent = '';
   $('who').textContent = '';
   $('ractions').hidden = true;
+  /* ★古い期間のタイムラインを出さない。コピー・印刷も止める（期間の違う紙を作らせない） */
+  if(baseStale()){ rgStaleInto(box, LOADING, LOAD_ERR); return; }
   if(!SEL){
     var p = document.createElement('p');
     p.className = 'muted';
@@ -961,7 +1184,9 @@ function renderDateView(force){
          過去日にも後から行が増える。「いつ読み込んだ内容か」を必ず書き、
          その場で取り直せるボタンを出す。書かないと「表示を押した＝最新を見た」と読まれ、
          実在する記録を『取り込まれていません』と読み違える（このツールが最も避けたい誤読）。 */
-  if(!force && dataLoaded() && d >= DATA.from && d <= DATA.to){
+  /* ★期間が変わった直後（手元の写しが古い期間のもの）は、手元では描かずその日を取りに行く。
+       日付別は単日の画面なので期間UIは持たないが、写しの中身は共有の期間に追随させる。 */
+  if(!force && dataLoaded() && !baseStale() && d >= DATA.from && d <= DATA.to){
     ++DV_SEQ;                               // 飛んでくる途中の応答があれば捨てる
     box.textContent = '';
     var evs0 = DATA.events.filter(function(e){ return e.date === d; });
@@ -1056,8 +1281,11 @@ function renderDateBody(box, d, evs, lgs, fromCache){
    ★グラフは外部ライブラリを使わずインラインSVGで描く
      （care-tools は外部ライブラリ原則なし。医療情報の画面でCDN依存を増やさない。印刷でも崩れない）。
    ══════════════════════════════════════════════════════════ */
-var VM = { from:'', to:'', vitals:[], meals:[], vitalDates:[], mealDates:[], notes:'' };
+/* reqFrom / reqTo は【こちらが要求した期間】。DATA と同じ理由で持つ（baseStale の注記を参照）。 */
+var VM = { from:'', to:'', reqFrom:'', reqTo:'', vitals:[], meals:[], vitalDates:[], mealDates:[], notes:'' };
 var VMSEL = '';
+var VM_LOADING = false;
+var VM_ERR = '';        // 直近の読み込みが失敗した理由（期間変更後の表示に使う）
 
 /* 項目の定義。色は意味づけを固定する（画面と凡例で必ず一致させる）。 */
 var VM_SERIES = [
@@ -1073,36 +1301,28 @@ var VM_MEALS = [
   { key:'dMain', label:'夕・主食', color:'#4527a0' }, { key:'dSide', label:'夕・副食', color:'#9575cd' }
 ];
 
-var VM_MAX_DAYS = 150;      // GAS 側 _range() の上限と合わせる
+/* 期間は3タブ共有（sharedRange）に一本化した。VM_MAX_DAYS の宣言も共有側へ移してある。 */
 
-/* 期間。「日付を指定」なら2つの日付の間、それ以外は直近N日。
-   ★入力が不正な時は既定（直近30日）へ落とす。壊れた値で読み込みに行かない。 */
-function vmRange(){
-  var sel = $('vmDays').value;
-  if(sel === 'custom'){
-    var f = $('vmFrom').value, t = $('vmTo').value;
-    var ok = /^\d{4}-\d{2}-\d{2}$/;
-    if(ok.test(f) && ok.test(t)){
-      if(f > t){ var s = f; f = t; t = s; }            // 逆に入れても受け付ける
-      /* 長すぎる指定は開始日を切り上げる（GAS 側も同じ上限で丸める） */
-      var d0 = new Date(t + 'T00:00:00'), lim = ymd(addDays(d0, -(VM_MAX_DAYS - 1)));
-      if(f < lim) f = lim;
-      return { from:f, to:t, custom:true };
-    }
-    return { from:'', to:'', custom:true, invalid:true };
-  }
-  var n = parseInt(sel, 10);
-  if(isNaN(n) || n < 1 || n > VM_MAX_DAYS) n = 30;
-  var to = new Date();
-  return { from: ymd(addDays(to, -(n-1))), to: ymd(to) };
+/* このタブに必要な時だけ読む。読み込み済みで期間も一致していれば何もしない。 */
+function ensureVmData(){
+  var stale = vmStale();
+  if(!stale && vmLoaded()) return;
+  if(VM_LOADING) return;
+  if(!loadCfg().url){ if(stale) rgClearVm(); return; }
+  vmLoad();
 }
 function vmLoad(){
-  var r = vmRange();
+  var r = sharedRange();
   if(r.invalid){ $('vmStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
+  VM_LOADING = true;
+  VM_ERR = '';
   $('vmStatus').textContent = '読み込み中…';
-  $('vmReload').disabled = true;
+  rgBusyVm(true);
+  /* ★期間が変わっている間は、古い期間のグラフ・表を画面から下ろしてから読みに行く */
+  if(vmStale()) rgClearVm();
   return apiGet('measures', { from:r.from, to:r.to }).then(function(res){
     VM = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
+           reqFrom:r.from, reqTo:r.to,
            vitals:(res.vitals || []), meals:(res.meals || []),
            vitalDates:(res.vitalDates || []), mealDates:(res.mealDates || []),
            notes:String(res.thresholdNotes || ''),
@@ -1113,14 +1333,27 @@ function vmLoad(){
   })['catch'](function(e){
     $('vmStatus').textContent = '';
     $('vmBanner').textContent = '';
-    var d = document.createElement('div'); d.className = 'err'; d.textContent = apiErrMsg(e);
+    VM_ERR = apiErrMsg(e);
+    var d = document.createElement('div'); d.className = 'err'; d.textContent = VM_ERR;
     $('vmBanner').appendChild(d);
     if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
-  }).then(function(){ $('vmReload').disabled = false; });
+  }).then(function(){
+    VM_LOADING = false;
+    rgBusyVm(false);
+    /* ★期間を変えた読み込みが失敗した時、「読み込み中…」のまま残さない。
+         ここで vmRenderBanner は呼ばない（上で出した失敗の理由を消してしまうため）。 */
+    if(VM_ERR){
+      if(vmStale()){ vmRenderList(); vmRenderBody(); }
+    }
+    /* ★load() と同じ理由。通信中に変わった期間を追いかける（失敗時は追いかけない） */
+    else if(vmStale()) vmLoad();
+  });
 }
 
 function vmRenderBanner(){
   var b = $('vmBanner'); b.textContent = '';
+  /* ★古い期間の⚠️帯を、新しい期間のものとして出さない */
+  if(vmStale()) return;
 
   /* ★「まだ取り込めていない日」を必ず先に出す。
      これが無いと、取込が止まった日も表では全項目「−」になり、
@@ -1186,6 +1419,7 @@ function vmIndex(){
 }
 function vmRenderList(){
   var box = $('vmList'); box.textContent = '';
+  if(vmStale()){ rgStaleInto(box, VM_LOADING, VM_ERR); return; }
   var list = vmIndex();
   if(!list.length){
     var p = document.createElement('span'); p.className = 'muted';
@@ -1617,6 +1851,8 @@ function mergeBy(list, keys){
 function vmRenderBody(){
   var box = $('vmBody'); box.textContent = '';
   $('vmWho').textContent = ''; $('vmActions').hidden = true;
+  /* ★古い期間のグラフ・表を出さない。印刷・数値コピーも止める（期間の違う紙を作らせない） */
+  if(vmStale()){ rgStaleInto(box, VM_LOADING, VM_ERR); return; }
   if(!VMSEL){
     var p = document.createElement('p'); p.className = 'muted';
     p.textContent = VM.vitals.length || VM.meals.length ? '上の一覧から入居者を選んでください。' : '';
@@ -1934,13 +2170,18 @@ function sqSearch(q){
 /* 対象期間の常時表示＋カテゴリのチップ。★「どこまでを探したか」を必ず画面に置く。 */
 function sqSyncScope(){
   var sc = $('sqScope');
-  if(dataLoaded()){
+  /* ★2026-09-07: 期間は3タブ共有になった。「入居者別タブで読み込んだ範囲」「追加の通信はしません」は
+       事実と合わなくなったので書き換える（上の期間バーで読み直せる＝通信は起こりうる）。 */
+  var usable = sqUsable();
+  if(baseStale()){
+    sc.textContent = '検索対象期間: ' + RG_STALE_MSG;
+  }else if(usable){
     var at0 = hhmm(DATA.loadedAt);
-    sc.textContent = '対象期間: ' + DATA.from + ' 〜 ' + DATA.to
+    sc.textContent = '検索対象期間: ' + DATA.from + ' 〜 ' + DATA.to
       + (at0 ? '（' + at0 + ' に読み込んだ内容です。' : '（')
-      + '「入居者別」タブで読み込んだ範囲の、取り込み済みの記録だけを探します。追加の通信はしません）';
+      + '取り込み済みの記録だけを探します）';
   }else{
-    sc.textContent = '対象期間: まだ読み込んでいません';
+    sc.textContent = '検索対象期間: まだ読み込んでいません';
   }
   var cnt = {};
   DATA.ledger.forEach(function(l){
@@ -1955,7 +2196,7 @@ function sqSyncScope(){
   /* ★チップは中身（並びと件数）が変わった時だけ作り直す。
        毎回作り直すと、入力のたびにボタンが差し替わって
        キーボード操作のフォーカスが飛び、押した直後の見た目も一瞬戻る。 */
-  var sig = list.join('\u0001') + '|' + (dataLoaded() ? list.map(function(x){ return cnt[x] || 0; }).join(',') : '-');
+  var sig = list.join('\u0001') + '|' + (usable ? list.map(function(x){ return cnt[x] || 0; }).join(',') : '-');
   if(sig !== SQ_CATSIG){
     SQ_CATSIG = sig;
     boxEl.textContent = '';
@@ -1966,7 +2207,7 @@ function sqSyncScope(){
       b.dataset.cat = c;
       b.setAttribute('aria-pressed', String(!!SQ_SEL[c]));
       b.appendChild(document.createTextNode(c));
-      if(dataLoaded()){
+      if(usable){
         var n = document.createElement('span');
         n.className = 'n';
         n.textContent = cnt[c] || 0;
@@ -2027,6 +2268,12 @@ function renderSearch(){
   var stat = $('sqStat');
   stat.textContent = '';
 
+  /* ★最優先の安全装置。期間を変えてから読み直すまでの間、古い期間の検索結果を出さない
+       （6月を検索したつもりで8月の結果を読む、という形の誤読を作らないため）。 */
+  if(baseStale()){
+    rgStaleInto(box, LOADING, LOAD_ERR);
+    return;
+  }
   if(!dataLoaded()){
     /* ★「通信中」「失敗した」「まだ読んでいない」を書き分ける。
          失敗を『まだ読み込んでいません』と出すと、職員は待ち続けて原因に辿り着けない。 */
@@ -2034,9 +2281,9 @@ function renderSearch(){
       stat.textContent = '申し送りを読み込んでいます。しばらくお待ちください。';
     }else if(LOAD_ERR){
       stat.textContent = LOAD_ERR + '（読み込めていないので、まだ検索できません。'
-        + '「設定」タブで接続先と合言葉を確かめ、「入居者別」タブでもう一度読み込んでください）';
+        + '「設定」タブで接続先と合言葉を確かめ、上の「読み込み」をもう一度押してください）';
     }else{
-      stat.textContent = 'まだ読み込んでいません。「入居者別」タブで期間を選んで読み込むと、'
+      stat.textContent = 'まだ読み込んでいません。上の「期間」を選んで「読み込み」を押すと、'
         + 'その範囲の中を検索できます。';
     }
     return;
@@ -2252,8 +2499,8 @@ function applyMasterIdParam(){
   loadRoster();
 
   /* UI 状態の復元（既知値のみ。不正値は既定へ） */
-  var d = lsGet(LS_DAYS);
-  if(['7','14','30','60','90','150'].indexOf(d) >= 0) $('days').value = d;
+  rgRestore();
+  rgSyncUI();
   $('copyDate').checked = (lsGet(LS_CPDT) !== '0');
   $('theDate').value = ymd(addDays(new Date(), -1));
 
@@ -2265,13 +2512,28 @@ function applyMasterIdParam(){
     b.addEventListener('click', function(){
       var scr = b.dataset.scr;
       goto(scr);
-      /* ★そのタブに必要なものだけ読む（2026-08-25）。読み込み済みなら通信しない。 */
+      /* ★そのタブに必要なものだけ読む（2026-08-25）。読み込み済みで期間も一致していれば通信しない。
+           期間が変わっていれば、そのタブを開いた時にここで読み直す（2026-09-07）。 */
       if(scr === 'scr-resident' || scr === 'scr-date' || scr === 'scr-search') ensureBaseData();
+      if(scr === 'scr-vm') ensureVmData();
       if(scr === 'scr-search') renderSearch();
     });
   });
-  $('days').addEventListener('change', function(){ lsSet(LS_DAYS, $('days').value); load(); });
-  $('reload').addEventListener('click', load);
+
+  /* ── 期間バー（3タブ共有・2026-09-07）──
+     どのタブで操作しても RANGE が変わり、残り2タブの表示も即座に同じ値になる。 */
+  RG_TABS.forEach(function(p){
+    var sel = $('rgDays-' + p), ck = $('rgSpan-' + p), f = $('rgFrom-' + p),
+        t = $('rgTo-' + p), b = $('rgLoad-' + p);
+    if(!sel || !ck || !f || !t || !b) return;
+    var onEdit = function(){ rgReadUI(p); rgApply(); };
+    sel.addEventListener('change', onEdit);
+    ck.addEventListener('change', onEdit);
+    f.addEventListener('change', onEdit);
+    t.addEventListener('change', onEdit);
+    b.addEventListener('click', function(){ rgReadUI(p); rgReload(); });
+  });
+
   $('printBtn').addEventListener('click', function(){ window.print(); });
   $('copyDate').addEventListener('change', function(){ lsSet(LS_CPDT, $('copyDate').checked ? '1' : '0'); });
   $('copyAll').addEventListener('click', function(){
@@ -2310,30 +2572,8 @@ function applyMasterIdParam(){
   });
 
   /* ── バイタル・食事（2026-08-04 追加）──
-     ★保存するのは表示期間だけ。選択中の入居者は保存しない
+     ★期間は3タブ共有（上の期間バー）に一本化した。選択中の入居者は保存しない
        （復元すると、別の職員が開いた時に前の方の画面が「その人の記録」として出るため）。 */
-  var vd = lsGet(LS_VMDAYS);
-  if(['14','30','60','90','150','custom'].indexOf(vd) >= 0) $('vmDays').value = vd;
-  /* 「日付を指定」の時だけ日付欄を出す。既定は今日を終了日、30日前を開始日にしておく
-     （空欄のまま押させて「入れてください」を出さないため）。★日付は業務データではなく
-     画面の状態なので保存はするが、氏名・記録は保存しない（原則11・個人情報規約）。 */
-  function vmSyncSpan(){
-    var on = $('vmDays').value === 'custom';
-    $('vmSpan').hidden = !on;
-    if(on && !$('vmTo').value){
-      $('vmTo').value = ymd(new Date());
-      $('vmFrom').value = ymd(addDays(new Date(), -29));
-    }
-  }
-  vmSyncSpan();
-  $('vmDays').addEventListener('change', function(){
-    lsSet(LS_VMDAYS, $('vmDays').value);
-    vmSyncSpan();
-    if($('vmDays').value !== 'custom' || ($('vmFrom').value && $('vmTo').value)) vmLoad();
-  });
-  $('vmFrom').addEventListener('change', vmLoad);
-  $('vmTo').addEventListener('change', vmLoad);
-  $('vmReload').addEventListener('click', vmLoad);
   $('vmPrint').addEventListener('click', function(){ window.print(); });
   $('vmCopy').addEventListener('click', function(){
     if(!VMSEL){ toast('入居者を選んでください', true); return; }
@@ -2341,13 +2581,8 @@ function applyMasterIdParam(){
     if(!t){ toast('コピーする数値がありません', true); return; }
     copyText(t);
   });
-  /* この画面を開いた時に初めて読み込む（開かない人に余計な通信を起こさない） */
-  document.querySelectorAll('.bnav button').forEach(function(b){
-    if(b.dataset.scr !== 'scr-vm') return;
-    b.addEventListener('click', function(){
-      if(!VM.vitals.length && !VM.meals.length && loadCfg().url) vmLoad();
-    });
-  });
+  /* この画面を開いた時に初めて読み込む（開かない人に余計な通信を起こさない）。
+     ★配線は上の .bnav ハンドラの ensureVmData() に一本化した（2026-09-07）。 */
   $('cfgSave').addEventListener('click', function(){
     var u = $('cfgUrl').value.trim(), t = $('cfgToken').value.trim();
     if(u && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(u)){
@@ -2425,11 +2660,11 @@ function applyMasterIdParam(){
   }else if(opened === 'scr-vm'){
     /* ★表示中のタブに必要なものだけ読む（2026-08-25）。バイタル・食事に復元した時は
        申し送り（events）を読みに行かない。入居者別・日付別・検索へ切り替えた時に
-       ensureBaseData() が初回だけ読む。 */
-    vmLoad();
+       ensureBaseData() が読む。 */
+    ensureVmData();
     sqSyncScope();
   }else{
-    load();
+    ensureBaseData();
     if(opened === 'scr-search') renderSearch();
   }
 })();
