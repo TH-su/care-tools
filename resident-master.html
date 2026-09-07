@@ -597,6 +597,19 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   font-variant-numeric:tabular-nums}
 .lvl-other{margin-top:6px; font-size: 0.75rem; color:var(--ng); font-weight:700}
 
+/* ── 家族情報一覧・病歴薬一覧（A3横・複数ページ）──
+   原本（スプレッドシート）と同じ列順・黒1px罫・地色なし。1名の情報量が多いので
+   セル内は折り返す（切らない）。切ると処方や連絡先が紙から消えるため。 */
+.wtbl{border-collapse:collapse; table-layout:fixed; width:100%}
+.wtbl th,.wtbl td{border:1px solid #000; padding:var(--wpad,3px) 5px; line-height:1.3;
+  vertical-align:top; text-align:start; font-size:var(--wfs,12px);
+  word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap}
+.wtbl th{background:var(--g2); font-weight:700; text-align:center; white-space:nowrap}
+.wtbl .wno{text-align:center; font-variant-numeric:tabular-nums; color:var(--g7)}
+.wtbl .wct{text-align:center; white-space:nowrap}
+.wtbl tbody tr{break-inside:avoid; page-break-inside:avoid}   /* 1人の行を途中で割らない */
+.w-empty{color:var(--g5)}
+
 /* ── 食形態一覧（A3縦1枚の配膳表・2026-08-24 追加）──
    ★フェイスシート facesheet.html の同名ブロックの【逐語コピー】。同じ紙が出ることが要件なので、
      片方を直したらもう片方も必ず直すこと（PRINT_SECS と同じ作法）。
@@ -700,6 +713,19 @@ body.meal-on #sc-list{max-width:none}
   .cmtbl .cno{color:#000}                      /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .lvltbl .lvrow{color:#000}
   .sh-ft{color:#000}
+
+  /* ── 家族情報一覧・病歴薬一覧（A3横・複数ページ）──
+     ★body.fam-on / body.hist-on を付けている時だけ効かせる（他の紙を1pxも変えない）。
+     ★見出しを各ページの先頭に出す。出さないと2枚目以降がどの列か分からない紙になる。 */
+  body.fam-on .search-bar,  body.hist-on .search-bar,
+  body.fam-on .view-tabs,   body.hist-on .view-tabs,
+  body.fam-on .filter-row,  body.hist-on .filter-row,
+  body.fam-on .roster-count,body.hist-on .roster-count,
+  body.fam-on .sh-bar,      body.hist-on .sh-bar{display:none !important}
+  .wtbl thead{display:table-header-group}
+  .wtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .wtbl .wno{color:#000}
+  .w-empty{color:#000}
 
   /* ── 食形態一覧（A3縦1枚）──
      ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
@@ -894,6 +920,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
     <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 CM表</button>
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
+    <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
+    <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -929,6 +957,18 @@ body.meal-on #sc-list{max-width:none}
     <span class="st" id="lvlStatus" role="status" aria-live="polite"></span>
     <button type="button" id="lvlReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="lvlPrint">🖨️ A4縦で印刷</button>
+  </div>
+  <!-- 家族情報ビュー専用。印刷には出さない（body.fam-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="famBar" style="display:none">
+    <span class="st" id="famStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="famReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="famPrint">🖨️ A3横で印刷</button>
+  </div>
+  <!-- 病歴・薬ビュー専用。印刷には出さない（body.hist-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="histBar" style="display:none">
+    <span class="st" id="histStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="histReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="histPrint">🖨️ A3横で印刷</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -1801,7 +1841,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','fam','hist'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -1850,6 +1890,7 @@ function setView(v){
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
+  if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); }
 }
 
 /* ═══════════ 入居日順（2026-09-02 指示） ═══════════
@@ -2273,6 +2314,10 @@ function renderRoster(){
     html=cmHtml(list);
   }else if(curView==='lvl'){
     html=lvlHtml(list);
+  }else if(curView==='fam'){
+    html=famHtml(list);
+  }else if(curView==='hist'){
+    html=histHtml(list);
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -2429,12 +2474,18 @@ function shBase(list){
   return (list||[]).filter(function(r){ return r && r.active!==false; }).slice().sort(byKana);
 }
 function paintShBars(){
-  var c=$('cmBar'), l=$('lvlBar');
+  var c=$('cmBar'), l=$('lvlBar'), f=$('famBar'), h=$('histBar');
   if(c) c.style.display=(curView==='cm')?'flex':'none';
   if(l) l.style.display=(curView==='lvl')?'flex':'none';
+  if(f) f.style.display=(curView==='fam')?'flex':'none';
+  if(h) h.style.display=(curView==='hist')?'flex':'none';
   var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
   if($('cmStatus'))  $('cmStatus').textContent  = (curView==='cm')  ? msg : '';
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
+  /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
+  var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
+  if($('famStatus'))  $('famStatus').textContent  = (curView==='fam')  ? wmsg : '';
+  if($('histStatus')) $('histStatus').textContent = (curView==='hist') ? wmsg : '';
 }
 /* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
 function lvNum(v){
@@ -2635,11 +2686,187 @@ window.addEventListener('beforeprint',function(){
     document.body.classList.add('cm-on'); }
   else if(curView==='lvl'){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
     document.body.classList.add('lvl-on'); }
+  else if(curView==='fam'||curView==='hist'){
+    wApplyFs($(curView==='fam'?'famSheet':'histSheet'), 12);
+    msSheetPageOn('size:A3 landscape;margin:10mm');
+    document.body.classList.add(curView==='fam'?'fam-on':'hist-on');
+  }
 });
 window.addEventListener('afterprint',function(){
   msSheetPageOff();
-  document.body.classList.remove('cm-on'); document.body.classList.remove('lvl-on');
+  document.body.classList.remove('cm-on');  document.body.classList.remove('lvl-on');
+  document.body.classList.remove('fam-on'); document.body.classList.remove('hist-on');
 });
+/* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
+   スプレッドシート「入居者情報」の【家族情報一覧】【病歴・薬】と同じ列で一覧にする。
+   ★在籍者のみ・五十音順（CM表・介護度別と同じ母集団 shBase）。
+   ★家族・病名・処方は【共有名簿にも getBulk にも無い】。1名ずつ getResident で取る。
+     在籍32名で32回。同時に5本までにして、進み具合を画面に出す（無言で30秒待たせない）。
+   ★取れなかった方は【空欄にせず「取得できず」と出す】。空欄だと「家族なし」「薬なし」に読める。
+   ★読み取り専用。この2ビューはマスタを1バイトも更新しない。 */
+var fullMap=null, fullLoading=false, fullErr='', fullDone=0, fullTotal=0, fullBad=null, fullGen=0;
+function fullEnsure(force){
+  if(fullLoading) return;
+  if(fullMap&&!force) return;
+  if(!CFG.url){ fullErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  var ids=shBase(roster||[]).map(function(r){ return r.id; });
+  if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
+  var gen=++fullGen;
+  fullLoading=true; fullErr=''; fullDone=0; fullTotal=ids.length;
+  var got={}, bad=[], i=0, LANES=5;
+  paintShBars();
+  function next(){
+    if(gen!==fullGen) return Promise.resolve();          /* 取り直しに追い越されたら捨てる */
+    if(i>=ids.length) return Promise.resolve();
+    var id=ids[i++];
+    return apiGet({action:'getResident',id:id},30000).then(function(d){
+      var rec=(d&&d.record)||null;
+      if(rec&&rec.id!=null) got[String(id)]=rec; else bad.push(id);
+    }).catch(function(){ bad.push(id); })
+      .then(function(){ fullDone++; paintShBars(); return next(); });
+  }
+  var lanes=[]; for(var k=0;k<LANES;k++) lanes.push(next());
+  Promise.all(lanes).then(function(){
+    if(gen!==fullGen) return;
+    /* ★1件も取れなければ成功として扱わない（全員空欄の帳票を正しい結果として刷らせない） */
+    if(!Object.keys(got).length){ fullErr='取得できませんでした'; return; }
+    fullMap=got; fullBad=bad;
+  }).catch(function(){ if(gen===fullGen) fullErr='取得できませんでした（通信）'; })
+    .then(function(){
+      if(gen!==fullGen) return;
+      fullLoading=false; paintShBars();
+      if(curView==='fam'||curView==='hist') renderRoster();
+    });
+}
+function fullOf(r){ return (fullMap&&fullMap[String(r.id)])||null; }
+function shLoadNote(){
+  if(fullLoading) return '取得しています… '+fullDone+' / '+fullTotal+'名';
+  if(fullErr) return fullErr;
+  if(!fullMap) return '未取得';
+  return (fullBad&&fullBad.length) ? ('取得できなかった方が '+fullBad.length+'名います') : '';
+}
+/* 値が無い時に空欄で出さない（空欄は「無い」と読まれる）。取れていない時は「取得できず」と書く */
+function wCell(rec, v){
+  if(!rec) return '<span class="w-empty">取得できず</span>';
+  var t=String(v==null?'':v).trim();
+  return t?esc(t):'';
+}
+function wSheet(id, title, cols, body, n, note){
+  return '<div class="sh-sheet" id="'+id+'">'+
+    '<div class="sh-hd"><div class="st1">'+esc(title)+'</div></div>'+
+    (note?('<div class="lvl-other">'+esc(note)+'</div>'):'')+
+    '<table class="wtbl"><colgroup>'+cols.map(function(c){
+      return '<col style="width:'+c[2]+'%">'; }).join('')+'</colgroup>'+
+    '<thead><tr>'+cols.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+'</tr></thead>'+
+    '<tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">'+n+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+
+/* ═══ 家族情報一覧（A3横・複数ページ）═══
+   原本の列のうち、各種証の期限・寝具リース・同意確認書は【作らない】（管理者指示・2026-09-04。
+   マスタに該当欄が無く、空欄の列を並べても意味がないため）。 */
+var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',6],['pay','負担割合',6],
+  ['em','緊急連絡先',12],['emtel','電話',10],['fam','家族',15],['famtel','電話',12],['addr','住所',26]];
+function famPay(v){
+  var t=String(v==null?'':v).trim();
+  if(!t) return '';
+  return /^[123]$/.test(t) ? (t+'割') : t;   /* 「保護」等はそのまま出す */
+}
+function famHtml(list){
+  var base=shBase(list);
+  var body=base.map(function(r0,i){
+    var b=bkOf(r0), rec=fullOf(r0);
+    var fam=(rec&&Array.isArray(rec.family))?rec.family:[];
+    var em=fam.filter(function(f){ return f&&f.emergency; });
+    var ot=fam.filter(function(f){ return f&&!f.emergency; });
+    function who(f){ return String(f.name||'').trim()+(f.relation?('（'+String(f.relation).trim()+'）'):''); }
+    var v={no:(i+1), name:b.name||'', lv:b.careLevel||'', pay:famPay(b.copayRate),
+           em:em.map(who).join('\n'), emtel:em.map(function(f){return String(f.phone||'').trim()}).filter(String).join('\n'),
+           fam:ot.map(who).join('\n'), famtel:ot.map(function(f){return String(f.phone||'').trim()}).filter(String).join('\n'),
+           addr:fam.map(function(f){return String(f.address||'').trim()}).filter(String).join('\n')};
+    return '<tr>'+FAM_COLS.map(function(c){
+      if(c[0]==='no') return '<td class="wno">'+v.no+'</td>';
+      if(c[0]==='name'||c[0]==='lv'||c[0]==='pay') return '<td class="wct">'+esc(v[c[0]])+'</td>';
+      return '<td>'+wCell(rec, v[c[0]])+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  return wSheet('famSheet','家族情報一覧',FAM_COLS,body,base.length, shLoadNote());
+}
+
+/* ═══ 病歴・薬一覧（A3横・複数ページ）═══
+   原本の列どおり。「効能」は薬効の辞書がまだ無いので今は空欄で出す（管理者指示・後日埋める）。 */
+var HIST_COLS=[['no','No',3],['name','入居者',9],['lv','介護度',5],['dis','治療中の病気',16],
+  ['past','既往歴',16],['med','内服（定期薬）',20],['eff','効能',8],
+  ['prn','頓服・外用等',13],['pastmed','過去の臨時薬',10]];
+function histDiseases(rec){
+  if(!rec) return '';
+  /* 様式の病名表（diseases）があればそれを使い、無ければ旧自由文（currentDiseases）に落とす */
+  if(Array.isArray(rec.diseases)&&rec.diseases.length){
+    return rec.diseases.map(function(d){
+      if(!d) return '';
+      var t=String(d.name||'').trim();
+      if(!t) return '';
+      var sub=[String(d.onset||'').trim(), String(d.hospital||'').trim()].filter(String).join('・');
+      return sub?(t+'（'+sub+'）'):t;
+    }).filter(String).join('\n');
+  }
+  return String(rec.currentDiseases||'').trim();
+}
+function histPastMeds(rec){
+  if(!rec||!Array.isArray(rec.medsPastLog)) return '';
+  return rec.medsPastLog.map(function(x){
+    if(!x) return '';
+    var t=String(x.text||'').trim(); if(!t) return '';
+    var dt=String(x.date||'').trim();
+    return dt?(dt+' '+t):t;
+  }).filter(String).join('\n');
+}
+function histHtml(list){
+  var base=shBase(list);
+  var body=base.map(function(r0,i){
+    var b=bkOf(r0), rec=fullOf(r0);
+    var v={no:(i+1), name:b.name||'', lv:b.careLevel||'',
+           dis:histDiseases(rec), past:(rec?String(rec.pastHistory||''):''),
+           med:(rec?String(rec.medsRegular||''):''), eff:'',
+           prn:(rec?String(rec.medsPrn||''):''), pastmed:histPastMeds(rec)};
+    return '<tr>'+HIST_COLS.map(function(c){
+      if(c[0]==='no') return '<td class="wno">'+v.no+'</td>';
+      if(c[0]==='name'||c[0]==='lv') return '<td class="wct">'+esc(v[c[0]])+'</td>';
+      if(c[0]==='eff') return '<td></td>';   /* 薬効の辞書ができるまで空欄 */
+      return '<td>'+wCell(rec, v[c[0]])+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  return wSheet('histSheet','病歴・薬一覧',HIST_COLS,body,base.length, shLoadNote());
+}
+
+/* この2つは1枚に収まらない（原本も521行/656行）。文字を無理に縮めず、読める大きさを保ったまま
+   複数ページで刷る。見出しは印刷CSSで各ページの先頭に繰り返す。 */
+function wApplyFs(sheet, px){
+  if(!sheet) return;
+  sheet.style.setProperty('--wfs', px+'px');
+  sheet.style.setProperty('--wpad', (px>=12?3:2)+'px');
+  sheet.style.setProperty('--shd1', Math.round(px*1.8)+'px');
+}
+function shPrintWide_(kind){
+  if(curView!==kind) return;
+  var on=(kind==='fam')?'fam-on':'hist-on';
+  wApplyFs($(kind==='fam'?'famSheet':'histSheet'), 12);
+  msSheetPageOn('size:A3 landscape;margin:10mm');
+  document.body.classList.add(on);
+  var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
+  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
+  try{
+    if(window.matchMedia){
+      var mq=window.matchMedia('print');
+      var h=function(ev){ if(!ev.matches){ off();
+        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
+      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
+    }
+  }catch(e){}
+  setTimeout(off,60000);
+  window.print();
+}
 /* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
    Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
    ★表の作り（列幅・罫線・中央揃え）とA3縦フィット・用紙指定は facesheet.html の同名ブロックの
@@ -6662,6 +6889,10 @@ function init(){
   if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){shPrint_('lvl')});
   if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
+  if($('famPrint')) $('famPrint').addEventListener('click',function(){shPrintWide_('fam')});
+  if($('histPrint'))$('histPrint').addEventListener('click',function(){shPrintWide_('hist')});
+  if($('famReload'))$('famReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
+  if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
   /* 食形態一覧: 取り直し・保存・A3縦印刷 */
   if($('mealReload'))$('mealReload').addEventListener('click',function(){
     if(!mealLeaveOk('サーバーから取り直す')) return;
