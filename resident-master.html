@@ -629,7 +629,6 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .wtbl .hmed{word-break:keep-all; overflow-wrap:break-word}
 .wtbl .heff{white-space:nowrap; text-align:center}
 .wtbl .hnm{white-space:nowrap}
-.wtbl .hprn{vertical-align:top}
 .w-empty{color:var(--g5)}
 
 /* ── 薬効辞書（薬剤名→効能）2026-09-04 ── */
@@ -2945,16 +2944,19 @@ function famHtml(){
    ★内服は「服薬時点まで含めて1行」を最優先にするので、紙幅の46%を割り当てる。
      実測（2026-09-04・248行）: 中央値35桁・48桁以内が95%・最長81桁。
      A3縦の印字幅1047px×46% ＝ 約481px＝全角48桁（文字10px時）。 */
-var HIST_COLS=[['no','No',3],['name','入居者',8],['lv','介護度',3],['dis','治療中の病気',11],
-  ['past','既往歴',11],['med','内服（定期薬）',46],['eff','効能',8],
-  ['prn','頓服・外用等',10]];
+/* ★過去の臨時薬（2026-09-04）と頓服・外用等（同日の追加指示）は載せない。
+   空いた幅は病名・既往歴へ多めに回す。この2列は rowspan で1人ぶんの高さを決めるため、
+   狭いと行数が増えて【薬剤の行数より tbody が高くなり】紙が増える。 */
+var HIST_COLS=[['no','No',3],['name','入居者',8],['lv','介護度',3],['dis','治療中の病気',16],
+  ['past','既往歴',16],['med','内服（定期薬）',46],['eff','効能',8]];
 /* ★手で二重に持たない（片方だけ直すと採寸が黙ってずれる）。列の定義から引く */
 var HIST_MED_PCT=(function(){
   for(var i=0;i<HIST_COLS.length;i++) if(HIST_COLS[i][0]==='med') return HIST_COLS[i][2];
   return 46;
 })();
 var HIST_FIT_RATIO=0.95;    /* この割合が1行に収まる最大の文字サイズを選ぶ */
-var HIST_FS_MAX=11;         /* 文字サイズの上限。これ以上は1行率が上がらず紙が増えるだけ（下の実測） */
+var HIST_FS_MAX=13;         /* 文字サイズの上限 */
+var HIST_FS_MIN=8;          /* 下限。これより小さいと紙で読めない */
 function histDiseases(rec){
   if(!rec) return '';
   /* 様式の病名表（diseases）があればそれを使い、無ければ旧自由文（currentDiseases）に落とす */
@@ -2997,15 +2999,13 @@ function histHtml(){
       '<td rowspan="'+span+'">'+wCell(rec, histDiseases(rec))+'</td>',
       '<td rowspan="'+span+'">'+wCell(rec, rec?String(rec.pastHistory||''):'')+'</td>'
     ].join('');
-    var tail='<td class="hprn" rowspan="'+span+'">'+wCell(rec, rec?String(rec.medsPrn||''):'')+'</td>';
     var rows='';
     for(var k=0;k<lines.length;k++){
       var e=(names[k]&&mdMap)?mdMap[names[k]]:null;
       var eff=(e&&String(e.effect||'').trim())?(esc(String(e.effect).trim())+(e.ok?'':'＊')):'';
       rows+='<tr>'+(k===0?head:'')+
         '<td class="hmed">'+(lines[k]?esc(lines[k]):(rec?'':'<span class="w-empty">取得できず</span>'))+'</td>'+
-        '<td class="heff">'+eff+'</td>'+
-        (k===0?tail:'')+'</tr>';
+        '<td class="heff">'+eff+'</td></tr>';
     }
     return '<tbody class="hgrp">'+rows+'</tbody>';
   }).join('');
@@ -3045,12 +3045,26 @@ function fitHistSheet(){
     for(var k=0;k<texts.length;k++){ probe.textContent=texts[k]; if(probe.offsetWidth<=colPx) n++; }
     return n/texts.length;
   }
-  /* ★上限は11px。実測（2026-09-04・248行）で 11px＝1行率100%・5ページ、12px＝100%・6ページ、
-     13px＝99%・7ページ。1行に収める目的は11pxで達成でき、それ以上大きくしても紙が増えるだけ。
-     「なるべくA3縦に収まるよう」との兼ね合いでここが最良点。 */
-  var best=8, ratio=0;
+  /* ★選び方（2026-09-04 追加指示「なるべくA3縦1枚に」）:
+       ①内服が1行に収まる割合が HIST_FIT_RATIO 以上 かつ
+       ②【ページ数がいちばん少ない】中で、いちばん大きい文字。
+     32名・248薬剤なので1枚には物理的に入らない。小さくすればページは減るが、
+     ある所から先は行数が下限に達して【小さくしても減らない】。その手前で止めるのが最良点。
+     実測（2026-09-04・頓服列を外した後）: 11px＝4ページ／10px＝4／9px＝3／8px＝3／7px＝3。
+     ＝9px が「3ページを出す最大の文字」。 */
+  var PAGE=(420-20)*96/25.4;
+  var tblEl=sh.querySelector('table');
+  var best=HIST_FS_MIN, ratio=0, bestPages=Infinity;
   try{
-    for(var px=HIST_FS_MAX;px>=8;px--){ var rr=okRatio(px); if(rr>=HIST_FIT_RATIO){ best=px; ratio=rr; break; } if(px===8) ratio=rr; }
+    for(var px=HIST_FS_MAX;px>=HIST_FS_MIN;px--){
+      var rr=okRatio(px);
+      if(rr<HIST_FIT_RATIO) continue;               /* 1行に収まらない大きさは採らない */
+      wApplyFs(sh, px);
+      var pages=tblEl?Math.ceil(tblEl.offsetHeight/PAGE):1;
+      /* 同じページ数なら大きい方を残す（先に見た方＝大きい方が勝つ） */
+      if(pages<bestPages){ bestPages=pages; best=px; ratio=rr; }
+    }
+    if(!isFinite(bestPages)) ratio=okRatio(HIST_FS_MIN);   /* どの大きさでも1行にならない時 */
   }finally{ if(probe.parentNode) probe.parentNode.removeChild(probe); }
   wApplyFs(sh, best);
   /* ★1人ぶん（tbody）が1ページに収まらないと break-inside:avoid は無視され、rowspan が
@@ -3066,7 +3080,8 @@ function fitHistSheet(){
       (ratio<1?('内服が1行に収まらない記載が '+Math.round((1-ratio)*texts.length)+'件あります。'):'');
   }else if(w2&&w2.parentNode){ w2.parentNode.removeChild(w2); }
   return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length,
-          colPx:Math.round(colPx), overPage:over};
+          colPx:Math.round(colPx), overPage:over,
+          pages:(tblEl?Math.ceil(tblEl.offsetHeight/PAGE):1)};
 }
 function shPrintWide_(kind){
   if(!shViewActive_(kind)) return;
