@@ -3086,13 +3086,15 @@ function mdSave(){
    ★送るのは薬剤名だけ。入居者の氏名・人数・処方の並びは1文字も送らない。 */
 var MD_AI_URL='https://api.anthropic.com/v1/messages';
 var MD_AI_MODEL='claude-sonnet-5';
-var MD_AI_CHUNK=40;      /* 1回に尋ねる薬剤名の数 */
+var MD_AI_CHUNK=25;      /* 1回に尋ねる薬剤名の数。★大きくしすぎると応答が上限で切れて丸ごと捨てる
+                            （2026-09-04 実測: 40件×max_tokens 2000 で2つ目の塊から AI_BAD_JSON） */
+var MD_AI_MAXTOK=8000;   /* 応答の上限。薬剤名が長い塊でも切れない大きさにする */
 var MD_AI_TIMEOUT=90000;
 function mdAiKey(){ try{ return String(localStorage.getItem('tp_ai_key')||'').trim(); }catch(e){ return ''; } }
 function mdAiAsk(names){
   var key=mdAiKey();
   if(!key) return Promise.reject(new Error('AI_NO_KEY'));
-  var body={ model:MD_AI_MODEL, max_tokens:2000, messages:[{role:'user', content:
+  var body={ model:MD_AI_MODEL, max_tokens:MD_AI_MAXTOK, messages:[{role:'user', content:
     '次の日本の医薬品それぞれについて、主な効能を日本語の短い語（8文字以内）で答えてください。\n'+
     '・一般名でも商品名でも、その薬の代表的な用途を1つだけ書く（例: 高血圧／胃酸抑制／便秘／解熱鎮痛／抗血栓）\n'+
     '・特定できない、または自信が無いものは必ず空文字 "" にする。推測で埋めないこと\n'+
@@ -3124,10 +3126,21 @@ function mdAiParse(j, names){
   var txt='';
   var c=(j&&Object.prototype.toString.call(j.content)==='[object Array]')?j.content:[];
   for(var i=0;i<c.length;i++) if(c[i]&&c[i].type==='text') txt+=String(c[i].text||'');
+  var arr=null;
   var m=txt.match(/\[[\s\S]*\]/);
-  if(!m) throw new Error('AI_BAD_JSON');
-  var arr=JSON.parse(m[0]);
-  if(Object.prototype.toString.call(arr)!=='[object Array]') throw new Error('AI_BAD_JSON');
+  if(m){ try{ var p=JSON.parse(m[0]);
+    if(Object.prototype.toString.call(p)==='[object Array]') arr=p; }catch(e){} }
+  /* ★丸ごとパースできなくても、完成している要素だけは拾う。
+     応答が上限で切れた時に「全部捨てる」と、答えは出ているのに1件も入らない
+     （2026-09-04 実測。上限は上げたが、長い塊でまた起きうるので拾えるようにしておく）。 */
+  if(!arr){
+    arr=[];
+    var re=/\{[^{}]*"name"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*"effect"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*\}/g, mm;
+    while((mm=re.exec(txt))){
+      try{ arr.push({name:JSON.parse('"'+mm[1]+'"'), effect:JSON.parse('"'+mm[2]+'"')}); }catch(e2){}
+    }
+  }
+  if(!arr.length) throw new Error('AI_BAD_JSON');
   /* ★返ってきた名前が送ったものと違えば捨てる（別の薬の効能を入れない） */
   var want=Object.create(null); names.forEach(function(n){ want[n]=1; });
   var out={};
@@ -3166,10 +3179,19 @@ function mdAiFill(){
       for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
       done+=chunks[k].length;
     }).catch(function(e){
-      ng++;
-      /* ★1回の失敗で全部を捨てない。取れたぶんは反映して、失敗した数を人に伝える */
-      done+=chunks[k].length;
       if(String((e&&e.message)||'')==='AI_NO_KEY') throw e;
+      /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
+         それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
+      var half=Math.ceil(chunks[k].length/2);
+      if(chunks[k].length<=2) { ng++; done+=chunks[k].length; return; }
+      var a=chunks[k].slice(0,half), b=chunks[k].slice(half);
+      return mdAiAsk(a).then(function(o){
+        for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+      }).catch(function(){ ng++; }).then(function(){
+        return mdAiAsk(b).then(function(o){
+          for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+        }).catch(function(){ ng++; });
+      }).then(function(){ done+=chunks[k].length; });
     }).then(function(){ return step(k+1); });
   }
   step(0).then(function(){
