@@ -551,6 +551,52 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @media print{ .bday-warn{display:none !important} }   /* 警告は画面だけ。印刷物には出さない */
 @media (max-width:640px){ .bday-2col{grid-template-columns:1fr} }   /* スマホは縦積み（印刷は常に2列） */
 
+/* ── 帳票ビュー共通のバー（CM表・介護度別。誕生日/食形態のバーと同じ作り）── */
+.sh-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
+.sh-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
+  border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
+.sh-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+.sh-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
+.sh-bar .st{font-size: 0.8125rem; color:var(--g7)}
+.sh-sheet{background:#fff; padding:6px 4px; overflow-x:auto}
+.sh-hd{text-align:center; margin-bottom:6px}
+.sh-hd .st1{font-size:var(--shd1,22px); font-weight:700; letter-spacing:.06em; line-height:1.2}
+.sh-ft{margin-top:6px; text-align:end; font-size: 0.625rem; color:var(--g7)}
+.sh-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
+  background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
+@media print{ .sh-warn{display:none !important} }
+
+/* ── 現入居者家族CM表（A4横1枚。原本の列順どおり）── */
+.cmtbl{border-collapse:collapse; table-layout:auto; margin:0 auto; width:auto}
+.cmtbl th,.cmtbl td{border:1px solid #000; padding:var(--cmpad,2px) 5px; line-height:1.25;
+  white-space:nowrap; text-align:center}
+.cmtbl th{background:var(--g2); font-weight:700}
+.cmtbl .cno,.cmtbl .cnum{font-variant-numeric:tabular-nums}
+.cmtbl .cnm,.cmtbl .cof,.cmtbl .ccm{text-align:start}
+.cm-sum{display:flex; gap:18px; justify-content:center; margin-bottom:4px;
+  font-size:var(--cmsum,13px); font-weight:700}
+.cm-sum b{font-variant-numeric:tabular-nums}
+
+/* ── 介護度別表（A4縦1枚。スクリーンショットの様式どおり）──
+   ・左端に行番号（罫線なし）、その右に介護度1〜5の列
+   ・氏名セルだけを黒1px罫で囲む（空欄も枠を出す＝原本と同じ）
+   ・右外に「平均介護度」「介護4以上割合」、最下行に「人数」と「合計」 */
+.lvlwrap{display:flex; gap:14px; justify-content:center; align-items:flex-start}
+.lvltbl{border-collapse:collapse; table-layout:fixed}
+.lvltbl th,.lvltbl td{padding:var(--lvpad,2px) 4px; line-height:1.3; text-align:center;
+  white-space:nowrap; font-size:var(--lvfs,13px)}
+.lvltbl .lvh{font-weight:700; font-size:calc(var(--lvfs,13px) * 1.25); border:0}
+.lvltbl .lvn{border:1px solid #000; width:var(--lvcw,120px)}
+.lvltbl .lvrow{border:0; color:var(--g7); font-variant-numeric:tabular-nums; width:2.4em}
+.lvltbl .lvcnt{font-weight:700; font-size:calc(var(--lvfs,13px) * 1.4); border:0;
+  font-variant-numeric:tabular-nums}
+.lvltbl .lvlbl{font-weight:700; border:0; text-align:end}
+.lvl-side{display:flex; flex-direction:column; gap:16px; font-size:var(--lvfs,13px)}
+.lvl-side .k{font-weight:700}
+.lvl-side .v{font-style:italic; font-weight:700; font-size:calc(var(--lvfs,13px) * 1.6);
+  font-variant-numeric:tabular-nums}
+.lvl-other{margin-top:6px; font-size: 0.75rem; color:var(--ng); font-weight:700}
+
 /* ── 食形態一覧（A3縦1枚の配膳表・2026-08-24 追加）──
    ★フェイスシート facesheet.html の同名ブロックの【逐語コピー】。同じ紙が出ることが要件なので、
      片方を直したらもう片方も必ず直すこと（PRINT_SECS と同じ作法）。
@@ -638,6 +684,22 @@ body.meal-on #sc-list{max-width:none}
   .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .btbl .bno{color:#000}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .bday-ft{font-size:8px; color:#000}
+
+  /* ── CM表（A4横1枚）・介護度別（A4縦1枚）──
+     ★body.cm-on / body.lvl-on を付けている時だけ効かせる。付けないと他のビュー・他タブの
+       紙まで変わる（誕生日一覧A4・個票A4・食形態A3は1pxも変えない）。
+     ★用紙（CM表のA4横）は静的に書かない。書くと従来のA4縦印刷まで用紙が変わるため、
+       印刷の直前に msSheetPageOn() が @page を注入し、終わったら必ず外す。 */
+  body.cm-on .search-bar,  body.lvl-on .search-bar,
+  body.cm-on .view-tabs,   body.lvl-on .view-tabs,
+  body.cm-on .filter-row,  body.lvl-on .filter-row,
+  body.cm-on .roster-count,body.lvl-on .roster-count,
+  body.cm-on .sh-bar,      body.lvl-on .sh-bar{display:none !important}
+  .sh-sheet{padding:0; overflow:visible}       /* 紙では横スクロールを作らない＝全幅で刷る */
+  .cmtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .cmtbl .cno{color:#000}                      /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
+  .lvltbl .lvrow{color:#000}
+  .sh-ft{color:#000}
 
   /* ── 食形態一覧（A3縦1枚）──
      ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
@@ -830,6 +892,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
+    <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 CM表</button>
+    <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -853,6 +917,18 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="mealReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-save" id="mealSave" disabled>💾 保存</button>
     <button type="button" class="btn-print" id="mealPrint">🖨️ A3縦で印刷</button>
+  </div>
+  <!-- CM表ビュー専用。印刷には出さない（body.cm-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="cmBar" style="display:none">
+    <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="cmReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="cmPrint">🖨️ A4横で印刷</button>
+  </div>
+  <!-- 介護度別ビュー専用。印刷には出さない（body.lvl-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="lvlBar" style="display:none">
+    <span class="st" id="lvlStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="lvlReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="lvlPrint">🖨️ A4縦で印刷</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -1725,7 +1801,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -1770,9 +1846,10 @@ function setView(v){
   /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
      残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
   csvStripViewParam();
-  paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); renderRoster();
+  paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); paintShBars(); renderRoster();
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
+  if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
 }
 
 /* ═══════════ 入居日順（2026-09-02 指示） ═══════════
@@ -2192,6 +2269,10 @@ function renderRoster(){
     html=admHtml(list);
   }else if(curView==='bday'){
     html=bdayHtml(list);
+  }else if(curView==='cm'){
+    html=cmHtml(list);
+  }else if(curView==='lvl'){
+    html=lvlHtml(list);
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -2200,6 +2281,8 @@ function renderRoster(){
     el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
   });
   if(curView==='bday') fitBdaySheet();
+  if(curView==='cm')   fitCmSheet();
+  if(curView==='lvl')  fitLvlSheet();
 }
 /* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める。
    ★高さは「見出し＋（左右の表のうち高い方）＋脚注」で計算する。
@@ -2305,6 +2388,258 @@ function fitBdaySheet(){
 }
 
 /* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
+/* ═══════════ 帳票ビュー（CM表・介護度別）2026-09-04 指示 ═══════════
+   Googleスプレッドシート「入居者情報」の【現入居者家族CM表】【介護度別表】と同じ見た目にする。
+   ★どちらも【在籍者のみ・五十音順】（管理者指示）。絞り込みチップには従わない。
+     従うと端末ごとに保存された設定で人数が変わり、同じ帳票なのに紙が変わる（誕生日一覧と同じ轍）。
+   ★書かない。この2ビューはマスタを1バイトも更新しない（読み取り専用）。
+   ★居宅・CM・電話・入居日は【共有名簿(getRoster)には無い】項目なので getBulk から取る。
+     入居日順タブ(admEnsure)と同じ出どころだが、あちらは入居日しか持たないため別に持つ。 */
+var bkRows=null, bkLoading=false, bkErr='';
+function bkEnsure(force){
+  if(bkLoading) return;
+  if(bkRows&&!force) return;
+  if(!CFG.url){ bkErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  bkLoading=true; bkErr=''; paintShBars();
+  apiGet({action:'getBulk'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    /* ★空応答を成功として扱わない（全員が空欄の帳票を正しい結果として刷らせない） */
+    if(!rows.length){ bkErr='取得できませんでした（0件）'; return; }
+    bkRows=rows;
+  }).catch(function(){ bkErr='取得できませんでした（通信）'; })
+    .then(function(){ bkLoading=false; paintShBars();
+      if(curView==='cm'||curView==='lvl') renderRoster(); });
+}
+/* 名簿の1件に、getBulk 側の項目を重ねた読み取り用の写しを返す（マスタは書き換えない） */
+function bkOf(r){
+  var o={id:r.id, name:r.name, kana:r.kana, room:r.room, careLevel:r.careLevel, active:r.active};
+  if(bkRows){
+    for(var i=0;i<bkRows.length;i++){
+      var x=bkRows[i];
+      if(x&&String(x.id)===String(r.id)){
+        for(var k in x){ if(Object.prototype.hasOwnProperty.call(x,k)) o[k]=x[k]; }
+        break;
+      }
+    }
+  }
+  return o;
+}
+/* 在籍者だけを五十音順で返す（この2帳票の共通の母集団） */
+function shBase(list){
+  return (list||[]).filter(function(r){ return r && r.active!==false; }).slice().sort(byKana);
+}
+function paintShBars(){
+  var c=$('cmBar'), l=$('lvlBar');
+  if(c) c.style.display=(curView==='cm')?'flex':'none';
+  if(l) l.style.display=(curView==='lvl')?'flex':'none';
+  var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
+  if($('cmStatus'))  $('cmStatus').textContent  = (curView==='cm')  ? msg : '';
+  if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
+}
+/* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
+function lvNum(v){
+  var m=/要介護\s*([1-5１-５])/.exec(String(v==null?'':v));
+  if(!m) return null;
+  return '12345'.indexOf(String(m[1]).replace(/[１-５]/g,function(c){
+    return String.fromCharCode(c.charCodeAt(0)-0xFEE0); }))+1;
+}
+function shStamp(){
+  var t=new Date();
+  return t.getFullYear()+'.'+(t.getMonth()+1)+'.'+t.getDate();
+}
+/* 今日時点の満年齢 */
+function ageNow(iso){
+  var p=parseIsoDate(iso); if(!p) return null;
+  var t=new Date(), a=t.getFullYear()-p.y;
+  var m=t.getMonth()+1, d=t.getDate();
+  if(m<p.m||(m===p.m&&d<p.d)) a--;
+  return (a>=0&&a<140)?a:null;
+}
+/* 入居からの日数 */
+function daysSince(iso){
+  var p=parseIsoDate(iso); if(!p) return null;
+  var a=new Date(p.y,p.m-1,p.d), t=new Date();
+  var n=Math.floor((new Date(t.getFullYear(),t.getMonth(),t.getDate())-a)/86400000);
+  return (n>=0&&n<40000)?n:null;
+}
+
+/* ═══ 現入居者家族CM表（A4横1枚）═══ */
+var CM_COLS=[['no','No',''],['room','居室',''],['name','入居者','cnm'],['adm','入居日',''],
+  ['days','日数','cnum'],['age','年齢','cnum'],['lv','介護度',''],
+  ['office','居宅','cof'],['cm','CM','ccm'],['tel','CM TEL',''],['fax','CM FAX','']];
+function cmHtml(list){
+  var base=shBase(list);
+  if(!bkRows) return '<div class="sh-sheet" id="cmSheet"><div class="loading">'+
+    esc(bkLoading?'居宅・担当ケアマネを取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var rows=base.map(bkOf);
+  var ages=[], lvs=[];
+  var body=rows.map(function(r,i){
+    var ag=ageNow(r.birthDate), dy=daysSince(r.admissionDate), lv=lvNum(r.careLevel);
+    if(ag!=null) ages.push(ag);
+    if(lv!=null) lvs.push(lv);
+    var v={no:(i+1), room:r.room||'', name:r.name||'',
+           adm:(_ymd(r.admissionDate)?_ymd(r.admissionDate).replace(/-/g,'/'):''),
+           days:(dy==null?'':dy), age:(ag==null?'':ag), lv:(lv==null?(r.careLevel||''):lv),
+           office:r.careOffice||'', cm:r.careManager||'',
+           tel:r.careOfficeTel||'', fax:r.careOfficeFax||''};
+    return '<tr>'+CM_COLS.map(function(c){
+      return '<td class="'+(c[2]||(c[0]==='no'?'cno':''))+'">'+esc(v[c[0]])+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  var avgAge=ages.length?(ages.reduce(function(a,b){return a+b},0)/ages.length):null;
+  var avgLv =lvs.length ?(lvs.reduce(function(a,b){return a+b},0)/lvs.length) :null;
+  return '<div class="sh-sheet" id="cmSheet">'+
+    '<div class="sh-hd"><div class="st1">現入居者家族CM表</div></div>'+
+    '<div class="cm-sum">'+
+      '<span>平均年齢 <b>'+(avgAge==null?'—':avgAge.toFixed(2))+'</b></span>'+
+      '<span>平均介護度 <b>'+(avgLv==null?'—':avgLv.toFixed(2))+'</b></span>'+
+      '<span>'+esc(shStamp())+'</span>'+
+    '</div>'+
+    '<table class="cmtbl"><thead><tr>'+
+      CM_COLS.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">'+rows.length+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+
+/* ═══ 介護度別表（A4縦1枚）═══
+   ★スクリーンショットの様式どおり: 介護度1〜5の列に氏名を積み、右に平均介護度と介護4以上割合、
+     最下段に人数と合計。空欄の行も枠を出す（原本と同じ）。
+   ★1〜5に当てはまらない方（要支援・未登録）は【落とさず】表の下に別記する。
+     落とすと合計が合わず、しかも誰が漏れたのか分からなくなる。 */
+var LVL_MIN_ROWS=18;   /* 原本と同じ行数。人数が多い時はその分だけ伸ばす */
+function lvlHtml(list){
+  var base=shBase(list);
+  var cols=[[],[],[],[],[]], other=[];
+  base.forEach(function(r){
+    var n=lvNum(r.careLevel);
+    if(n) cols[n-1].push(r); else other.push(r);
+  });
+  var cnt=cols.map(function(a){ return a.length; });
+  var total=cnt.reduce(function(a,b){ return a+b; },0);
+  var sum=0; cols.forEach(function(a,i){ sum+=a.length*(i+1); });
+  var avg=total?(sum/total):null;
+  var hi=total?((cnt[3]+cnt[4])/total*100):null;
+  var nrow=Math.max(LVL_MIN_ROWS, cnt.reduce(function(a,b){ return Math.max(a,b); },0));
+  var head='<tr><td class="lvlbl">介護度</td>'+
+    [1,2,3,4,5].map(function(n){ return '<td class="lvh">'+n+'</td>'; }).join('')+'</tr>';
+  var body='';
+  for(var i=0;i<nrow;i++){
+    body+='<tr><td class="lvrow">'+(i+1)+'</td>'+
+      cols.map(function(a){ return '<td class="lvn">'+esc(a[i]?a[i].name:'')+'</td>'; }).join('')+
+    '</tr>';
+  }
+  var foot='<tr><td class="lvlbl">人数</td>'+
+    cnt.map(function(n){ return '<td class="lvcnt">'+n+'</td>'; }).join('')+'</tr>';
+  var otherLine = other.length
+    ? '<div class="lvl-other">※ 介護度1〜5に当てはまらない方 '+other.length+'名（要支援・未登録）は上の表と平均に含めていません</div>'
+    : '';
+  return '<div class="sh-sheet" id="lvlSheet">'+
+    '<div class="sh-hd"><div class="st1">介護度別表</div></div>'+
+    '<div class="lvlwrap">'+
+      '<table class="lvltbl"><tbody>'+head+body+foot+'</tbody></table>'+
+      '<div class="lvl-side">'+
+        '<div><div class="k">合計</div><div class="v">'+total+'</div></div>'+
+        '<div><div class="k">平均介護度</div><div class="v">'+(avg==null?'—':avg.toFixed(2))+'</div></div>'+
+        '<div><div class="k">介護4以上割合</div><div class="v">'+(hi==null?'—':hi.toFixed(1)+'%')+'</div></div>'+
+      '</div>'+
+    '</div>'+otherLine+
+    '<div class="sh-ft">'+total+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+
+/* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
+   実際の高さ・幅を測り、収まる範囲でいちばん大きい文字を二分探索で選ぶ。
+   ★行数で決め打ちしない。人数も氏名の長さも変わるため、決め打ちは必ずどこかで破れる。 */
+function shFit_(sheet, wMM, hMM, apply, minPx, maxPx){
+  if(!sheet||!sheet.offsetParent) return null;   /* 非表示では測らない（高さ0で「収まった」と誤判定） */
+  var H=(hMM-20)*96/25.4, W=(wMM-20)*96/25.4;   /* 用紙 − 上下左右10mm */
+  function tall(){ return sheet.scrollHeight; }
+  function wide(){
+    var t=sheet.querySelector('table');
+    return t?Math.max(t.offsetWidth, t.scrollWidth):sheet.scrollWidth;
+  }
+  function fits(){ return tall()<=H-8 && wide()<=W-6; }
+  var STEP=0.25, lo=0, hi=Math.round((maxPx-minPx)/STEP);
+  var sizeOf=function(k){ return Math.round((minPx+k*STEP)*100)/100; };
+  apply(sizeOf(lo));
+  if(fits()){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  apply(sizeOf(lo));
+  return {size:sizeOf(lo), fits:fits(), h:tall(), w:wide(), H:Math.round(H), W:Math.round(W)};
+}
+function fitCmSheet(){
+  var sh=$('cmSheet'); if(!sh) return null;
+  var r=shFit_(sh, 297, 210, function(px){       /* A4横 */
+    sh.style.setProperty('--cmpad', (px>=11?3:px>=9?2:1)+'px');
+    sh.style.setProperty('--cmsum', Math.round(px*1.1)+'px');
+    sh.style.setProperty('--shd1',  Math.round(px*1.7)+'px');
+    var t=sh.querySelector('.cmtbl'); if(t) t.style.fontSize=px+'px';
+  }, 6, 18);
+  shWarn_(sh, r); return r;
+}
+function fitLvlSheet(){
+  var sh=$('lvlSheet'); if(!sh) return null;
+  var r=shFit_(sh, 210, 297, function(px){       /* A4縦 */
+    sh.style.setProperty('--lvfs', px+'px');
+    sh.style.setProperty('--lvpad', (px>=13?4:px>=10?3:2)+'px');
+    sh.style.setProperty('--lvcw', Math.round(px*7.6)+'px');
+    sh.style.setProperty('--shd1', Math.round(px*1.8)+'px');
+  }, 6, 20);
+  shWarn_(sh, r); return r;
+}
+/* 収まらない時は黙って溢れさせない。画面にだけ理由を出す（紙には出さない） */
+function shWarn_(sheet, r){
+  var w=sheet.querySelector('.sh-warn');
+  if(r&&!r.fits){
+    if(!w){ w=document.createElement('div'); w.className='sh-warn'; sheet.insertBefore(w, sheet.firstChild); }
+    w.textContent='1枚に収まりません（人数か氏名が長すぎます）。紙が複数枚になります。';
+  }else if(w&&w.parentNode){ w.parentNode.removeChild(w); }
+}
+/* 用紙の指定は静的に書かず、刷る直前に足して必ず外す（食形態一覧の msMealPageOn と同じ作法） */
+function msSheetPageOn(css){
+  msSheetPageOff();
+  var st=document.createElement('style'); st.id='msSheetPage';
+  st.textContent='@media print{@page{'+css+'}}';
+  document.head.appendChild(st);
+}
+function msSheetPageOff(){ var st=$('msSheetPage'); if(st&&st.parentNode) st.parentNode.removeChild(st); }
+function shPrint_(kind){
+  var on=(kind==='cm')?'cm-on':'lvl-on';
+  if(curView!==kind) return;
+  if(kind==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
+  else           { fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm'); }
+  document.body.classList.add(on);
+  var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
+  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
+  /* 保険: afterprint が来ない環境でも印刷メディアを抜けたら必ず外す（残すと次の印刷が別用紙になる） */
+  try{
+    if(window.matchMedia){
+      var mq=window.matchMedia('print');
+      var h=function(ev){ if(!ev.matches){ off();
+        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
+      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
+    }
+  }catch(e){}
+  setTimeout(off,60000);   /* 保険その3 */
+  window.print();
+}
+/* ⌘/Ctrl+P でも同じ用紙・同じ採寸で刷る（ボタンを通らない経路） */
+window.addEventListener('beforeprint',function(){
+  if(curView==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm');
+    document.body.classList.add('cm-on'); }
+  else if(curView==='lvl'){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
+    document.body.classList.add('lvl-on'); }
+});
+window.addEventListener('afterprint',function(){
+  msSheetPageOff();
+  document.body.classList.remove('cm-on'); document.body.classList.remove('lvl-on');
+});
 /* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
    Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
    ★表の作り（列幅・罫線・中央揃え）とA3縦フィット・用紙指定は facesheet.html の同名ブロックの
@@ -6322,6 +6657,11 @@ function init(){
   if($('bdayPrev'))$('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
   if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
+  /* CM表・介護度別（2026-09-04 追加） */
+  if($('cmPrint'))  $('cmPrint').addEventListener('click',function(){shPrint_('cm')});
+  if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){shPrint_('lvl')});
+  if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
+  if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
   /* 食形態一覧: 取り直し・保存・A3縦印刷 */
   if($('mealReload'))$('mealReload').addEventListener('click',function(){
     if(!mealLeaveOk('サーバーから取り直す')) return;
