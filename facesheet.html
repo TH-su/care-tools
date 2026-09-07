@@ -844,6 +844,13 @@ function paintBdayBar(){
 /* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる。
    ★このビューは帳票専用。行をタップしても詳細へは遷移させない（.rcard を作らない）。 */
 function bdayHtml(list){
+  /* ★対象は【在籍者のみ】に固定する（2026-09-04 管理者承認）。
+     絞り込みチップ（在籍／退去／在籍＋退去）には従わない。従っていた頃は、
+     チップが端末ごとに localStorage へ保存されるせいで【同じ表なのに端末で人数が変わり】、
+     「在籍＋退去」のままの端末では143名が並んでA4縦1枚に物理的に入らなかった
+     （Macは1枚・PCは6枚に割れる、という報告の原因）。
+     誕生日を祝うための帳票なので、退去された方を載せる用途がない。 */
+  list = (list || []).filter(function(r){ return r && r.active !== false; });
   /* 除外は「未登録」と「書式が不正」を必ず分ける（欠落に気づけなくなるため） */
   var rows=[],noBd=0,badBd=[];
   list.forEach(function(r){
@@ -896,7 +903,9 @@ function bdayHtml(list){
   var base=fyOfDate(today);
   var fyNote = (bdayFY!==base) ? '　※'+bdayFY+'年度の表示（年齢は'+(bdayFY+1)+'年3月31日時点）' : '';
   /* ★どの絞り込みで出した紙かを必ず残す（残さないと一部だけの表が完全な一覧に見える） */
-  var scope=(curFilter==='active'?'在籍のみ':curFilter==='out'?'退去のみ':'在籍＋退去');
+  /* ★この表は絞り込みに関係なく在籍者のみ（上の filter）。紙にもそう書く。
+     「一部だけの表」が完全な一覧に見えると誕生会の対象者が漏れるため、範囲は必ず紙に残す。 */
+  var scope='在籍のみ';
   var qNow=(($('q')&&$('q').value)||'').trim();
   var scopeNote='　／　対象 '+scope+(qNow?'　／　検索「'+esc(qNow)+'」で絞り込み中':'');
   return '<div class="bday-sheet" id="bdaySheet">'+
@@ -1044,6 +1053,22 @@ function renderRoster(){
   if(curView==='bday') fitBdaySheet();
 }
 /* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める */
+/* ═══ 誕生日一覧を刷る（2026-09-04 追加）═══
+   ★刷る直前に必ず採寸し直す。描画時の1回だけだと、窓の幅を変えた後・別のタブを見ている間に
+     再描画された後などに【未調整のまま】刷られる（食形態一覧は既に同じ備えをしている）。
+   ★ボタンと ⌘/Ctrl+P の両方を通す。PCでは⌘/Ctrl+Pで刷る人が多い。 */
+function bdayViewActive_(){
+  var s=document.getElementById('bdaySheet');
+  return !!(typeof curView!=='undefined' && curView==='bday' && s && s.offsetParent);
+}
+function bdayPrintGo_(){
+  try{ if(bdayViewActive_()) fitBdaySheet(); }catch(e){}
+  window.print();
+}
+window.addEventListener('beforeprint',function(){
+  if(!bdayViewActive_()) return;
+  try{ fitBdaySheet(); }catch(e){}
+});
 var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
 var BDAY_PRINT_W_PX = 190 * 96 / 25.4;   // A4縦210mm − 左右マージン10mm
 function fitBdaySheet(){
@@ -1077,7 +1102,9 @@ function fitBdaySheet(){
     sheet.style.setProperty('--bhd1',   Math.round(s*2.1)+'px');
     sheet.style.setProperty('--bhd2',   Math.round(s*1.4)+'px');
   }
-  function tooTall(){ return measure()>BDAY_PRINT_H_PX; }
+  /* 高さにも安全余裕を置く（幅と同じ考え方）。境目ぴったりだと、端末の行の丸め方が
+     1px違うだけで最終行が2枚目へ落ちる。8px＝約2mm。 */
+  function tooTall(){ return measure()>BDAY_PRINT_H_PX-8; }
   function tooWide(){ return width()>BDAY_PRINT_W_PX-6; }   /* 幅は6pxの安全余裕（紙では左右が切れる） */
   function fits(){ return !tooTall() && !tooWide(); }
   var MAX=22, MIN=7, STEP=0.25;
@@ -2978,7 +3005,7 @@ document.addEventListener('DOMContentLoaded',function(){
   /* 誕生日ビューの年度送りと印刷。★年度は端末に保存しない（古い年度のまま刷らせない） */
   $('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   $('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
-  $('bdayPrint').addEventListener('click',function(){window.print()});
+  $('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
   /* 食形態一覧の取り直しとA3印刷 */
   if($('mealReload')) $('mealReload').addEventListener('click',function(){mealLoad(true)});
   if($('mealPrint')) $('mealPrint').addEventListener('click',fsPrintMeal);
