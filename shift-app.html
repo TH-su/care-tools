@@ -7483,8 +7483,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.restoreEditMode_();
         self.startLeaseTimers_();
       });
+      /* ★2026-09-08 起動の高速化(第2弾): 窓pullを【当月ぶん】と【前月・翌月ぶん】へ分け、並行に取る。
+       *
+       * 理由: serverSeen はメモリのみ（リロードで毎回リセット）なので、窓pullが終わるまで
+       * monthReady_ が false ＝「まだ読み込めていません。編集できません」の帯が出続ける。
+       * 実測で19キーの窓pullに13秒かかっており、その間ずっと編集できなかった。
+       * 当月ぶん（共通4＋当月5＝9キー）だけ先に確定させれば、その半分ほどで編集を開始できる。
+       *
+       * ★キーは重複させない（同じキーを2本のpullで同時に取り込むと、取り込み順で競合判定が揺れる）。
+       * ★取りに行くキーの集合は分割前と完全に同一＝取得内容・保存内容は変わらない。
+       * ★閲覧モードでは pushQueued が即returnするため、pullが2本になっても送信は増えない。 */
+      var grp_ = this.bootPullGroups_(scope);
+      var curKeys = grp_.cur, restKeys = grp_.rest, restMonths = grp_.restMonths, wi_;
+      if (restKeys.length) {
+        if (!this._pullingYM) this._pullingYM = {};
+        /* 背景取得中の月に切り替えられても maybePullMonth_ が二重に出さないよう印を立てる */
+        for (wi_ = 0; wi_ < restMonths.length; wi_++) this._pullingYM[restMonths[wi_]] = true;
+        var clearRest_ = function () {
+          for (var k_ = 0; k_ < restMonths.length; k_++) self._pullingYM[restMonths[k_]] = false;
+        };
+        Store.pullAll(restKeys).then(function (r) {
+          clearRest_();
+          if (r === 'ok') { self.reloadFromStore(); self.updateMonthReadyUI_(); }
+        }, clearRest_);
+      }
       /* 起動時プルの結果は保持する（編集モードの復元がこの結果を条件にする＝同じ窓を二重に取りに行かない） */
-      this._bootPull = Store.pullAll(scope).then(function (r) {
+      this._bootPull = Store.pullAll(curKeys).then(function (r) {
         self._bootPullPending = false;
         if (r === 'ok') {
           self.reloadFromStore();
@@ -7751,6 +7775,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.toast('この月はまだ読み込めていません（右上の同期ボタンで再取得できます）');
     },
     /* 起動時プルの全キー: 端末共通(全月共有) staff/symbols/settings/freee ＋ 窓内各月の月別キー。 */
+    /* 起動時プルの2分割（2026-09-08）。cur=画面に必要な当月ぶん、rest=前月・翌月ぶん。
+     * ★不変条件: cur ∪ rest ＝ 窓キー全体（取りこぼし無し）、cur ∩ rest ＝ 空（重複無し）。
+     *   同じキーを2本のpullで同時に取り込むと取り込み順で競合判定が揺れるため、重複は作らない。
+     * 回帰テスト: tests/keyed_pull.test.js ⑦ */
+    bootPullGroups_: function (scope) {
+      var all = scope || this.recentSyncKeys_();
+      var cur = ['staff', 'symbols', 'settings', 'freee'].concat(this.monthSyncKeys_(this.ym));
+      var rest = [], restMonths = [], i;
+      for (i = 0; i < all.length; i++) if (cur.indexOf(all[i]) < 0) rest.push(all[i]);   /* 差集合 */
+      var months = this._syncWindowMonths || this.windowMonths_();
+      for (i = 0; i < months.length; i++) if (months[i] !== this.ym) restMonths.push(months[i]);
+      return { cur: cur, rest: rest, restMonths: restMonths };
+    },
     recentSyncKeys_: function () {
       var keys = ['staff', 'symbols', 'settings', 'freee'];
       var months = this.windowMonths_();
