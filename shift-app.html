@@ -2319,7 +2319,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 'guard'＝サーバ側のデータ保護で拒否された（一括消失・出荷時リセット・古いバックアップ復元）。
      * 通信失敗と同じ 'other' に落とすと、同じ内容を無言で送り続ける無限リトライになる。 */
     if (m === 'schedwipe' || m === 'staffshrink' || m === 'defaultsoverwrite' || m === 'backupoverwrite') return 'guard';
-    if (m === 'unknown action') return 'unsupported';
+    /* 接続先が「もう存在しない」と確定できるエラー（2026-09-08 に HTTP 404 を追加）。
+     * unknown action … 旧世代のデプロイが生きているが対応アクションが無い
+     * HTTP 404       … デプロイがアーカイブ/削除された＝そのURLは二度と復活しない
+     * どちらもサーバー側の確定的な答えなので、稼働中URLへの自動切替を許す。
+     * 通信失敗（fetchの例外・タイムアウト）は一時的でありうるため 'other' のまま＝勝手に切り替えない。
+     * ★404を入れた理由: 404では自動切替が働かず、その端末だけ永久にオフラインのままだった
+     *   （接続先は端末のlocalStorageにあるため、他の端末は正常に見える／再起動でも直らない）。 */
+    if (m === 'unknown action' || m === 'HTTP 404') return 'unsupported';
     return 'other';
   }
 
@@ -2992,6 +2999,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (e) return e.classifyPushError(msg);
     return (String(msg) === 'unknown action') ? 'unsupported' : 'other';
   }
+
+  /* 接続先が存在しない時の案内（2026-09-08）。この端末の設定が古い世代のデプロイを指している状態で、
+   * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
+  var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
+    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -3754,13 +3766,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!self._serverUnseen) self._serverUnseen = {};
           for (var ui = 0; ui < optKeys.length; ui++) self._serverUnseen[String(optKeys[ui])] = true;
         }
-        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
-        if (msg === 'unknown action' && !self._healing) {
+        /* 接続先URLが死んでいる(unknown action / HTTP 404)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行。
+         * 判定は push 側と同じ classifyPushError_ に寄せる（2箇所で条件がずれないように）。 */
+        if (classifyPushError_(msg) === 'unsupported' && !self._healing) {
           self._healing = true;
           return self.healStaleTarget().then(function (healed) {
             self._healing = false;
             if (healed) return self.pullAll();
-            self.updateStatus('offline', msg);
+            /* 切替先も無い＝この端末の接続先が古いまま。原因も直し方も現場に伝える
+               （'HTTP 404' とだけ出しても何をすればよいか分からない）。 */
+            self.updateStatus('offline', DEAD_ENDPOINT_MSG);
             self.scheduleRetry();
             return 'offline';
           });
@@ -4017,13 +4032,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 編集権を失った（他端末が保持・強制引き継ぎ・厳格モードで券なし）: これを通信失敗として
          * 再試行に流すと同じ古い全量を送り続ける。退避→サーバ版採用→閲覧へ降格へ回す。 */
         if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
-        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
+        /* 接続先URLが死んでいる(unknown action / HTTP 404)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
         if (kind === 'unsupported' && !self._healing) {
           self._healing = true;
           return self.healStaleTarget().then(function (healed) {
             self._healing = false;
             if (healed) return self.pushQueued();
-            self.updateStatus('offline', msg);
+            self.updateStatus('offline', DEAD_ENDPOINT_MSG);
             self.scheduleRetry();
             return 'offline';
           });
