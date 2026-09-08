@@ -482,7 +482,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bulk-tbl .bk-note-0{color:var(--g5); cursor:default}
 /* 家族の形が壊れていて読めなかった行の、家族の枠。入力欄そのものを出さない
    （空欄の入力欄を出すと、1つ直した瞬間に読めなかった元データを空で上書きする）。 */
-.bulk-tbl .bk-lock{display:block; padding:6px 8px; color:var(--g7); background:#fff6e5; cursor:help}
+.bulk-tbl .bk-lock{display:block; padding:6px 8px; color:var(--g7); background:var(--warn-bg); cursor:help}
 /* ★入力できる欄になったので --g6（≒3.5:1）では足りない。--g7（≒5.9:1）で AA を満たす */
 .bulk-tbl tr.bulk-out .bk-name,.bulk-tbl tr.bulk-out .bk-name input{color:var(--g7)}
 /* ★入力欄が幅いっぱいなので、⚠ を文字の後ろに置くと押し出される。角に重ねる
@@ -651,6 +651,14 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mdtbl th{background:var(--g2); font-weight:700; text-align:center; white-space:nowrap}
 .mdtbl .mdc{text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums}
 /* ★ここは入力画面なので、タップ領域は44pxを確保する（介護現場要件2・HIG） */
+/* 薬剤名も直せる。効能欄と同じ作りにして、どちらも同じように触れることを見た目で示す */
+.mdtbl input.mdn{width:100%; box-sizing:border-box; min-height:44px; padding:6px 8px;
+  border:1px solid var(--g3); border-radius:6px; font:inherit; background:#fff}
+.mdtbl input.mdn:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+/* 名前を直している最中の行は、保存前だと分かるようにする（効能の「未保存」と同じ考え方） */
+.mdtbl input.mdn.mdren{background:var(--warn-bg); border-color:var(--pri)}
+/* 改名の内容を文字でも出す（色だけで意味を伝えない） */
+.mdtbl .mdren-note{display:block; margin-top:2px; color:var(--warn-tx); font-size:11px; word-break:break-all}
 .mdtbl input.mde{width:100%; box-sizing:border-box; min-height:44px; padding:6px 8px;
   border:1px solid var(--g3); border-radius:6px; font:inherit}
 .mdtbl input.mde:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
@@ -672,7 +680,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .md-lead b{color:var(--ng)}
 .md-prog{font-size: 0.8125rem; color:var(--g7)}
 .sh-bar .lb{font-size: 0.8125rem; color:var(--g7)}
-.sh-bar .mdchip[aria-pressed="true"]{background:var(--pri); color:#fff; border-color:var(--pri)}
+.sh-bar .mdchip[aria-pressed="true"],
+.sh-bar button[aria-pressed="true"]{background:var(--pri); color:#fff; border-color:var(--pri)}
 /* 削除は押し間違えると辞書から消えるので、44pxの領域を確保したうえで色でも区別する */
 .mdtbl .mddel{min-height:44px; min-width:44px; padding:4px 8px; border:1px solid var(--g3);
   border-radius:8px; background:#fff; color:var(--ng); font-size: 0.8125rem; cursor:pointer}
@@ -804,7 +813,12 @@ body.meal-on #sc-list{max-width:none}
   body.md-on .search-bar, body.md-on .view-tabs, body.md-on .filter-row,
   body.md-on .roster-count, body.md-on .sh-bar, body.md-on .md-lead{display:none !important}
   .mdtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
-  .mdtbl input.mde{border:0; padding:0}          /* 紙では入力欄の枠を出さない */
+  /* 紙では入力欄の枠と未保存の色を出さない。★.mdn.mdren（詳細度0,3,1）に負けないよう
+     同じ詳細度で並べる（2026-09-08 レビュー L-2） */
+  .mdtbl input.mde,
+  .mdtbl input.mdn,
+  .mdtbl input.mdn.mdren{border:0; padding:0; background:transparent}
+  .mdtbl .mdren-note{display:none}
   .mdtbl thead{display:table-header-group}
   .mdtbl tr{break-inside:avoid; page-break-inside:avoid}
 
@@ -1059,6 +1073,7 @@ body.meal-on #sc-list{max-width:none}
     <span class="lb">並び</span>
     <button type="button" class="mdchip" data-o="kana">五十音順</button>
     <button type="button" class="mdchip" data-o="count">使用人数順</button>
+    <button type="button" id="mdHidden" aria-pressed="false">👁 非表示も表示</button>
     <button type="button" id="mdAdd">＋ 薬を足す</button>
     <button type="button" id="mdAi">🤖 未登録をAIで下書き</button>
     <button type="button" class="btn-save" id="mdSave" disabled>💾 保存</button>
@@ -1978,6 +1993,9 @@ function setView(v){
   /* 薬効辞書の未保存も同じ（メモリにしか無い） */
   if(curView==='md'&&next!=='md'&&mdDirty&&
      !confirm('薬効辞書に未保存の変更があります。\n切り替えると失われます。よろしいですか？')){ paintTabs(); return }
+  /* ★「失われます」に同意したのだから、本当に捨てる。残すと、破棄したはずの改名（＝旧行の削除）や
+     非表示が、あとから別の保存に紛れてサーバーの行を消す（2026-09-08 レビュー M-3）。 */
+  if(curView==='md') mdClearPending_();
   curView=next;
   try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
   /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
@@ -2635,6 +2653,14 @@ function paintShBars(){
     var on=b.getAttribute('data-o')===mdOrder;
     b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
   });
+  /* 非表示の切替。件数も出す（0件なら押しても何も増えないことが分かる） */
+  var hb=$('mdHidden');
+  if(hb&&curView==='md'){
+    var hn=mdHiddenTotal_();
+    hb.textContent=(mdShowHidden?'👁 非表示を隠す':'👁 非表示も表示')+(hn?('（'+hn+'）'):'');
+    /* 見た目は aria-pressed のCSSで出す（.on は .mdchip 用で、このボタンには効かない） */
+    hb.setAttribute('aria-pressed',mdShowHidden?'true':'false');
+  }
 }
 /* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
 function lvNum(v){
@@ -3216,6 +3242,27 @@ var mdEdits=Object.create(null);
 var mdDels=Object.create(null);
 /* 手で足した薬（まだ辞書に無いもの）。処方に出てこない薬もここから入る */
 var mdNew=[];
+/* ★一覧から外す印（2026-09-08 管理者指示）。処方欄から拾っただけの行は辞書に実体が無く、
+   行を消しても次に開くと処方から拾い直されて【戻ってくる】。消えたままにするには
+   「この名前は一覧に出さない」という印をサーバーに残すしかない。
+   ★非表示は消去ではない。効能と『確認済み』は残し、「非表示も表示」で戻せる。
+   値は true=これから隠す / false=これから戻す（どちらも保存で確定する）。 */
+var mdHides=Object.create(null);
+var mdShowHidden=false;
+/* ★薬剤名の付け替え（2026-09-08 管理者指示）。辞書のキーは薬剤名そのものなので、
+   改名は【旧行を消して新行を作る】操作になる。保存を押すまで確定しない。
+   キーは元の名前、値は新しい名前。 */
+var mdRenames=Object.create(null);
+/* いま画面に出す名前（改名が入力中ならそちら）。表示と判定は必ずこの1本を通す
+   ——別々に書くと、改名した行の効能や確認済みが元の名前で拾われて食い違う */
+function mdShownName(name){
+  return Object.prototype.hasOwnProperty.call(mdRenames,name)?mdRenames[name]:name;
+}
+/* その名前が「いま一覧から外れている」か。保存前の印を、保存済みの状態より優先する */
+function mdIsHidden(name, ent){
+  if(Object.prototype.hasOwnProperty.call(mdHides,name)) return !!mdHides[name];
+  return !!(ent&&ent.hidden);
+}
 var MD_ORDERS=['kana','count'];
 var MD_ORDER_KEY='rmaster_md_order';
 var mdOrder=(function(){
@@ -3272,7 +3319,9 @@ function mdEnsure(force){
      処方だけを見ていた頃は、管理者が手で足した薬や、処方から消えた薬が一覧から消え、
      編集も削除もできなかった（＝薬でないものを消す手段が無かった）。
    ★人数は処方から数える。辞書にしか無い薬は0名（それ自体は正常）。 */
-function mdCollect(){
+/* withHidden=true なら非表示のものも含めて返す（重複判定・改名の衝突判定はこちらを使う。
+   見えている行だけで判定すると、隠れている同名の行と衝突して保存が落ちる） */
+function mdCollect(withHidden){
   var base=shBase(), cnt=Object.create(null), all=Object.create(null);
   base.forEach(function(r){
     var rec=fullOf(r); if(!rec) return;
@@ -3285,7 +3334,15 @@ function mdCollect(){
   if(mdDict) for(var i=0;i<mdDict.length;i++){ var k0=mdKey(mdDict[i].name); if(k0) all[k0]=1; }
   for(var j=0;j<mdNew.length;j++){ var k1=mdKey(mdNew[j]); if(k1) all[k1]=1; }
   var out=[];
-  for(var k in all) if(Object.prototype.hasOwnProperty.call(all,k)) out.push({name:k, n:cnt[k]||0});
+  for(var k in all) if(Object.prototype.hasOwnProperty.call(all,k)){
+    /* ★非表示の行は既定では出さない。「非表示も表示」を押した時だけ出す（戻せる形を残す） */
+    /* ★一覧から外すのは【もう保存されている非表示】だけ。押したばかりの印で行を消すと、
+       打ち消し線も「戻す」ボタンも見えないまま消え、押し間違いをその場で直せない
+       （削除の印は打ち消し線で残るのに、非表示だけ挙動が違った・2026-09-08 レビュー M-6）。 */
+    var ent0=(mdMap&&mdMap[k])||null;
+    if(!withHidden && !mdShowHidden && ent0 && ent0.hidden && mdIsHidden(k,ent0)) continue;
+    out.push({name:k, n:cnt[k]||0});
+  }
   if(mdOrder==='count')
     out.sort(function(a,b){ return (b.n-a.n) || String(a.name).localeCompare(String(b.name),'ja'); });
   else
@@ -3297,7 +3354,10 @@ function mdHtml(){
     esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
   var drugs=mdCollect();
   var known=0, ai=0, shown=0;
-  var body=drugs.map(function(d,i){
+  /* ★通し番号は【紙に出る行】で数える。配列の添字を使うと、非表示や削除予定を
+     印刷CSSで消した紙が 1,2,5,6… と欠番になる（2026-09-08 レビュー M-7）。 */
+  var no=0;
+  var body=drugs.map(function(d){
     var e=(mdMap&&mdMap[d.name])||null;
     var eff=e?String(e.effect||''):'';
     var ok=!!(e&&e.ok);
@@ -3307,18 +3367,38 @@ function mdHtml(){
     }
     /* ★脚注の件数は【紙に出る行】で数える。削除予定は紙に出ないので数えない
        （数えると「153種類」と書いてあるのに150行しか無い紙になる） */
-    if(!mdDels[d.name]){ shown++; if(eff){ known++; if(!ok) ai++; } }
-    var gone=!!mdDels[d.name];
+    var hid=mdIsHidden(d.name,e);
+    var gone=!!mdDels[d.name] || hid;
+    if(!gone){ shown++; no++; if(eff){ known++; if(!ok) ai++; } }
+    /* ★消す／隠すと決めた行では、改名の入力も元の名前に戻して見せる。
+       入力欄は disabled で触れないのに新しい名前が出ていると、保存で
+       「名前も変わる」と読めてしまう（保存では送らない＝表示と一致させる）。 */
+    var nm=gone?d.name:mdShownName(d.name);
+    var renamed=(!gone && nm!==d.name);
+    /* 状態欄。消す・隠すが決まっている行は、効能の状態より【そちらを先に】見せる */
+    var unhide=(Object.prototype.hasOwnProperty.call(mdHides,d.name)&&!mdHides[d.name]);
+    /* ★色だけで意味を伝えない（介護現場要件4）。入力欄の色と title は
+       タッチ端末では読めないので、状態の欄に文字で「旧 → 新」を出す。 */
+    var badge = mdDels[d.name] ? '<span class="mdbadge ai">削除予定</span>'
+              : hid ? ('<span class="mdbadge ai">'+
+                       (Object.prototype.hasOwnProperty.call(mdHides,d.name)?'非表示にする':'非表示')+'</span>')
+              : unhide ? '<span class="mdbadge ai">一覧に戻す</span>'
+              : renamed ? ('<span class="mdbadge ai">名前を直す</span><span class="mdren-note">'+
+                           esc(d.name)+' → '+esc(nm)+'</span>')
+              : (eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):'');
     return '<tr data-md="'+esc(d.name)+'"'+(gone?' class="mdgone"':'')+'>'+
-      '<td class="mdc">'+(i+1)+'</td>'+
-      '<td>'+esc(d.name)+'</td>'+
+      '<td class="mdc">'+(gone?'':String(no))+'</td>'+
+      /* ★薬剤名も直せる（2026-09-08 管理者指示）。辞書のキーそのものなので、
+         保存時に「旧を消して新を作る」に変換する。人数>0 の行は保存前に確認を出す。 */
+      '<td><input class="mdn'+(renamed?' mdren':'')+'" type="text" value="'+esc(nm)+'" maxlength="60" '+
+        (gone?'disabled ':'')+'aria-label="薬剤名（'+esc(d.name)+'）"'+
+        (renamed?(' title="'+esc(d.name)+' → '+esc(nm)+'（保存で確定）"'):'')+'></td>'+
       '<td class="mdc">'+d.n+'</td>'+
       '<td><input class="mde" type="text" value="'+esc(eff)+'" maxlength="40" '+
         (gone?'disabled ':'')+'aria-label="'+esc(d.name)+' の効能"></td>'+
       '<td class="mdok mdd"><label><input type="checkbox" '+(ok?'checked':'')+(gone?' disabled':'')+
         ' aria-label="'+esc(d.name)+' を確認済みにする"></label></td>'+
-      '<td class="mdc">'+(gone?'<span class="mdbadge ai">削除予定</span>':
-        (eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):''))+'</td>'+
+      '<td class="mdc">'+badge+'</td>'+
       '<td class="mdc">'+esc(e?(e.at||''):'')+'</td>'+
       '<td class="mdc mdd"><button type="button" class="mddel" data-del="'+esc(d.name)+'">'+
         (gone?'戻す':'削除')+'</button></td>'+
@@ -3329,8 +3409,11 @@ function mdHtml(){
     '<div class="md-lead">薬剤名と効能の辞書です。効能は「病歴・薬一覧」の効能列に出ます。'+
     '<br><b>「AIで下書き」で入る効能は薬剤師の確認を経ていません。</b>確認したら「確認済み」に印を付けてください。'+
     '未確認のものは一覧と紙で末尾に ＊ が付きます。'+
-    '<br>薬でないものは「削除」を押して保存すると辞書から消えます（押した時点では消えず、保存で確定します）。'+
-    '<b>ただし、いまの処方に出ている名前は辞書から消しても一覧には残ります</b>（処方欄から拾っているため）。'+
+    '<br><b>薬剤名も効能も、この画面で直せます。</b>直したら「保存」を押してください。'+
+    '<br>薬でないものは「削除」を押して保存すると一覧から消えます（押した時点では消えず、保存で確定します）。'+
+    'いまの処方に出ている名前は処方欄から拾っているので、辞書の行を消しても戻ってきます。'+
+    'そのため<b>「一覧に出さない」印を付けて隠します</b>（効能と「確認済み」は消えません）。'+
+    '隠したものは上の「非表示も表示」で見えるようになり、「戻す」で戻せます。'+
     '新しい薬は「＋ 薬を足す」から追加できます。'+
     '<br>人数はいまの処方に出てくる方の数です（0名＝手で足した薬・処方から外れた薬）。'+
     '用量は落として同じ薬をまとめています（例: 12mg と 24mg は同じ1行）。</div>'+
@@ -3343,8 +3426,33 @@ function mdHtml(){
     '<tbody>'+body+'</tbody></table>'+
     '<div class="sh-ft">'+shown+'種類　／　効能あり '+known+'　／　うちAI下書き '+ai+
       (Object.keys(mdDels).length?('　／　削除予定 '+Object.keys(mdDels).length):'')+
+      (mdPendCount_('hide')?('　／　非表示にする '+mdPendCount_('hide')):'')+
+      (mdPendCount_('show')?('　／　戻す '+mdPendCount_('show')):'')+
+      (mdPendCount_('ren')?('　／　名前を直す '+mdPendCount_('ren')):'')+
+      (mdHiddenTotal_()?('　／　非表示 '+mdHiddenTotal_()+'件'):'')+
       '　／　'+(mdOrder==='count'?'使用人数順':'五十音順')+'　／　印刷日 '+esc(shStamp())+'</div>'+
   '</div>';
+}
+/* 保存待ちの件数。★脚注と塗り分けで同じ関数を通す（別々に数えると表示だけずれる） */
+function mdPendCount_(kind){
+  var n=0, k;
+  if(kind==='ren'){ for(k in mdRenames) if(Object.prototype.hasOwnProperty.call(mdRenames,k)) n++; return n; }
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k)){
+    if(kind==='hide'? mdHides[k] : !mdHides[k]) n++;
+  }
+  return n;
+}
+/* いま実際に隠れている件数（保存済み＋保存待ちの印を織り込む） */
+function mdHiddenTotal_(){
+  if(!mdDict) return 0;
+  var seen=Object.create(null), n=0, i, k;
+  for(i=0;i<mdDict.length;i++){
+    k=mdKey(mdDict[i].name); if(!k||seen[k]) continue; seen[k]=1;
+    if(mdIsHidden(k,mdDict[i])) n++;
+  }
+  /* 辞書にまだ無い名前を隠した場合（処方から拾った行）もここで数える */
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k) && mdHides[k] && !seen[k]) n++;
+  return n;
 }
 /* 画面の入力を拾う（保存とAIの両方で使う） */
 function mdRead(){
@@ -3357,6 +3465,8 @@ function mdRead(){
     if(Object.prototype.hasOwnProperty.call(mdEdits,name)){
       v.effect=String(mdEdits[name].effect||''); v.ok=!!mdEdits[name].ok;
     }
+    /* 改名も同じ理由でメモリを正とする（DOM だけ見ると再描画で消える） */
+    v.newName=mdShownName(name);
     out.push(v);
   });
   return out;
@@ -3367,8 +3477,18 @@ function mdRemember(tr){
   var name=tr.getAttribute('data-md'); if(!name) return;
   var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
   mdEdits[name]={effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)};
+  /* ★薬剤名の付け替え。元と同じ（空白のゆれを含む）なら「変更なし」に戻す
+     ——戻さないと、触っただけの行が保存対象に残り、旧行の削除と新行の作成が空振りする */
+  var nin=tr.querySelector('input.mdn');
+  if(nin){
+    var nv=mdKey(nin.value);
+    if(nv===''||nv===name) delete mdRenames[name];
+    else mdRenames[name]=nv;
+  }
 }
-function mdMarkDirty(tr){ mdRemember(tr); mdDirty=true; if($('mdSave')) $('mdSave').disabled=false; paintShBars(); }
+/* ★数え直して決める。「名前を直して元に戻した」だけの行で未保存が立ち続けると、
+   保存しても「変更がありません」なのに離脱確認だけ出る（2026-09-08 レビュー L-3）。 */
+function mdMarkDirty(tr){ mdRemember(tr); mdRecalcDirty_(); }
 /* 薬を手で足す。★辞書に既にある名前は足さない（同じ行が2つできると、どちらが正か分からなくなる） */
 function mdAddDrug(){
   if(curView!=='md') return;
@@ -3382,9 +3502,17 @@ function mdAddDrug(){
   if(!name){ toast('薬剤名が読み取れませんでした',false); return; }
   /* ★重複判定は【いま一覧に出ている集合】で行う。辞書だけを見ていると、処方から拾って
      一覧に並んでいる薬を「無い」と見なして足し、入力途中の値ごと上書きする */
-  var cur=mdCollect(), dup=false;
+  /* ★隠れているものも含めて見る。見えている行だけで判定すると、非表示にした薬を
+     足し直せてしまい、足したのに一覧へ出てこない（非表示の印が効いたまま） */
+  var cur=mdCollect(true), dup=false;
   for(var ci=0;ci<cur.length;ci++) if(cur[ci].name===name){ dup=true; break; }
-  if(dup){ toast('「'+name+'」は既に一覧にあります'); return; }
+  if(dup){
+    var ent0=(mdMap&&mdMap[name])||null;
+    toast(mdIsHidden(name,ent0)
+      ? ('「'+name+'」は既にありますが、いまは非表示です。「👁 非表示も表示」から戻せます')
+      : ('「'+name+'」は既に一覧にあります'), !mdIsHidden(name,ent0));
+    return;
+  }
   var eff=prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
   if(eff==null) return;
   mdNew.push(name);
@@ -3393,31 +3521,122 @@ function mdAddDrug(){
   renderRoster();
   toast('「'+name+'」を足しました。内容を確かめてから「保存」を押してください');
 }
-/* 削除の印を付ける／外す。★押した時点では消さない（保存で確定する＝押し間違いを戻せる） */
+/* 「削除」を押した時の動き（2026-09-08 管理者指示で意味を1つに揃えた）。
+   ★押した時点では何も消さない（保存で確定する＝押し間違いを戻せる）。
+   ★意味は【この名前を一覧から消す】。実現の仕方だけが行の出どころで変わる:
+       ①この画面で足したばかり     → 足したこと自体を取り消す（サーバーには何も無い）
+       ②処方に出ている名前         → 辞書の行を消しても処方から拾い直されて戻るので、
+                                     「一覧に出さない」印を付ける（効能と確認済みは残す）
+       ③辞書にしか無い（人数0）    → 辞書の行を消す
+     以前は②で「まだ辞書に入っていないので消すものがありません」と断って【消せなかった】。
+     一覧から消したいのに消せない＝道具として使えないので、②を非表示で実現する。 */
 function mdToggleDel(name){
   if(!name) return;
+  /* ★辞書が取れていないと「辞書にあるか」を判定できず、行を消すべき所を非表示にするなど
+     取り違える。追加・保存と同じく、取れていない間は触らせない（レビュー L-9） */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、いま消せません',false); return; }
+  /* 既に印が付いていれば外す（削除・非表示のどちらでも「戻す」で戻る） */
   if(mdDels[name]){ delete mdDels[name]; mdRecalcDirty_(); renderRoster(); return; }
-  /* ★この画面で足したばかりの薬は、辞書にまだ無い＝消すものがない。足したこと自体を取り消す */
+  var ent=(mdMap&&mdMap[name])||null;
+  if(Object.prototype.hasOwnProperty.call(mdHides,name)){
+    delete mdHides[name]; mdRecalcDirty_(); renderRoster(); return;
+  }
+  if(ent&&ent.hidden){                       /* 保存済みの非表示を戻す */
+    mdHides[name]=false; mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」を一覧に戻します。「保存」を押すと確定します');
+    return;
+  }
+  /* ① 足したばかりの薬 */
   var ni=mdNew.indexOf(name);
   if(ni>=0){
-    mdNew.splice(ni,1); delete mdEdits[name];
+    mdNew.splice(ni,1); delete mdEdits[name]; delete mdRenames[name];
     mdRecalcDirty_(); renderRoster();
     toast('「'+name+'」の追加を取り消しました');
     return;
   }
-  /* ★辞書に無い薬（処方から拾っただけの行）は消せない。押しても印だけ残って外せなくなるので、
-     押せない理由をその場で伝える。なお辞書から消しても処方に出ている限り一覧には残る。 */
-  if(!(mdMap&&mdMap[name])){
-    toast('「'+name+'」はまだ辞書に入っていないので、消すものがありません',false);
+  /* ② 処方に出ている名前は、辞書の行を消しても戻ってくる → 非表示にする */
+  if(mdInRx_(name)){
+    mdHides[name]=true; mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」を一覧から外します（処方欄には残ります）。「保存」を押すと確定します');
     return;
   }
-  mdDels[name]=1; mdRecalcDirty_(); renderRoster();
+  /* ③ 辞書にしか無い行は、行そのものを消す */
+  if(ent){ mdDels[name]=1; mdRecalcDirty_(); renderRoster(); return; }
+  /* ここに来るのは辞書にも処方にも無い名前＝起こらないはずだが、黙って何もしない画面にしない */
+  toast('「'+name+'」は辞書にも処方にも見つかりませんでした',false);
+}
+/* いまの処方にその薬剤名が出てくるか（＝辞書から消しても一覧に戻ってくるか） */
+function mdInRx_(name){
+  var list=mdCollect(true);
+  for(var i=0;i<list.length;i++) if(list[i].name===name) return list[i].n>0;
+  return false;
+}
+/* 保存できた後の後片づけ。★1本にまとめておく。3箇所に散らしていると、
+   保存待ちの種類を1つ足すたびにどれかで消し忘れ、次の保存に古い指示が混ざる。 */
+function mdClearPending_(){
+  mdDirty=false;
+  mdEdits=Object.create(null); mdDels=Object.create(null);
+  mdHides=Object.create(null); mdRenames=Object.create(null);
+  mdNew=[];
 }
 /* L-9: 印や編集を全部取り消したら未保存ではなくなる。数え直さないと離脱確認が出続ける */
 function mdRecalcDirty_(){
-  mdDirty = Object.keys(mdDels).length>0 || Object.keys(mdEdits).length>0;
+  mdDirty = Object.keys(mdDels).length>0 || Object.keys(mdEdits).length>0
+         || Object.keys(mdHides).length>0 || Object.keys(mdRenames).length>0;
   if($('mdSave')) $('mdSave').disabled=!mdDirty;
   paintShBars();
+}
+/* 改名を送れる形に整える。送ってよければ [{from,to,rowIndexOfMdRead}]、
+   送ってはいけない理由があれば {error:'…'} を返す。
+   ★止める理由を【保存を押した後】にまとめて見るのは、途中まで書いてから落ちるのを避けるため。
+     1件でも駄目なら1文字も送らない（一括編集の savePartial と同じ作法）。 */
+function mdRenamePlan_(rows){
+  var plan=[], i, k;
+  var skip=Object.create(null);          /* 消す・隠す行の改名は送らない（画面でも元に戻して見せている） */
+  for(k in mdDels) if(Object.prototype.hasOwnProperty.call(mdDels,k)) skip[k]=1;
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k) && mdHides[k]) skip[k]=1;
+  /* 最終的な名前の集合を作る。★非表示の行も含める（見えていない同名と衝突すると
+     旧行を消して新行を作った瞬間に、隠れていた行が別の効能で復活する） */
+  var all=mdCollect(true), fin=Object.create(null), src=Object.create(null);
+  for(i=0;i<all.length;i++){
+    var nm=all[i].name;
+    var to=(Object.prototype.hasOwnProperty.call(mdRenames,nm)&&!skip[nm])?mdRenames[nm]:nm;
+    if(fin[to]) return {error:'「'+to+'」が2つになります（'+src[to]+' と '+nm+'）。'+
+                              '別の名前にするか、どちらかを削除してください'};
+    fin[to]=1; src[to]=nm;
+  }
+  for(k in mdRenames) if(Object.prototype.hasOwnProperty.call(mdRenames,k)){
+    if(skip[k]) continue;
+    var v=mdKey(mdRenames[k]);
+    if(v===''||v===k) continue;
+    var row=null;
+    for(i=0;i<rows.length;i++) if(rows[i].name===k){ row=rows[i]; break; }
+    plan.push({from:k, to:v, effect:row?row.effect:'', ok:row?row.ok:false});
+  }
+  return {plan:plan};
+}
+/* ★改名は【旧行を消して新行を作る】＝丸ごと置き換えなので、「変わった行だけ送る」保護が効かない。
+   表を開いている間に薬剤師が別端末でその薬の効能や『確認済み』を直していると、それを消す。
+   送る直前に1回だけ取り直し、対象の行が開いた時と違っていたら【1文字も書かずに】人へ見せる
+   （一括編集の家族欄 bulkFamGuard_ と同じ作法・2026-09-08 レビュー M-4）。
+   ★取り直せない時は止めない（現場を止めない）。 */
+function mdRenameGuard_(ren){
+  if(!ren||!ren.length) return Promise.resolve(null);
+  return apiGet({action:'getMedDict'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    if(!rows.length) return null;
+    var sv=Object.create(null), i;
+    for(i=0;i<rows.length;i++){ var k=mdKey(rows[i].name); if(k) sv[k]=rows[i]; }
+    var moved=[];
+    for(i=0;i<ren.length;i++){
+      var mine=(mdMap&&mdMap[ren[i].from])||null, now=sv[ren[i].from]||null;
+      if(!mine&&!now) continue;
+      if(!mine||!now){ moved.push(ren[i].from); continue; }
+      if(String(mine.effect||'')!==String(now.effect||'') || !!mine.ok!==!!now.ok ||
+         !!mine.hidden!==!!now.hidden) moved.push(ren[i].from);
+    }
+    return moved.length?{moved:moved, rows:rows}:null;
+  }).catch(function(){ return null; });
 }
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
@@ -3428,7 +3647,43 @@ function mdSave(){
      「確認済み」と直した文言を、こちらの古い表示で黙って上書きする（原則4・
      multi-device-sync 原則3「独立フィールドを丸ごと上書きに同居させない」）。
      変更していない行の更新日まで今日に書き換わり、いつ何が戻ったのか追えなくなる。 */
-  var items=mdRead().filter(function(x){
+  var all=mdRead();
+  var rp=mdRenamePlan_(all);
+  if(rp.error){ toast(rp.error,false); return; }
+  var ren=rp.plan, renFrom=Object.create(null), ri;
+  for(ri=0;ri<ren.length;ri++) renFrom[ren[ri].from]=ren[ri].to;
+  /* ★処方に出ている薬の名前を変えると、その方たちの効能が引けなくなる（引くキーは処方欄の
+     薬剤名なので、辞書だけ名前を変えても対応が切れる）。黙って切らずに、影響を数えて確認する。 */
+  var warn=[], cntAll=mdCollect(true);
+  for(ri=0;ri<ren.length;ri++){
+    for(var ci=0;ci<cntAll.length;ci++)
+      if(cntAll[ci].name===ren[ri].from && cntAll[ci].n>0){
+        warn.push('・'+ren[ri].from+' → '+ren[ri].to+'（'+cntAll[ci].n+'名の処方に出ています）');
+        break;
+      }
+  }
+  /* ★用量が付いたままの名前は、処方欄からは【永久に引けない】辞書行になる
+     （引く時に末尾の用量を落としてから突き合わせるため）。保存前に知らせる（レビュー L-7）。 */
+  var dz=[];
+  for(ri=0;ri<ren.length;ri++)
+    if(mdDrugName(ren[ri].to)!==ren[ri].to)
+      dz.push('・'+ren[ri].to+' →（引く時は「'+mdDrugName(ren[ri].to)+'」になります）');
+  if(dz.length && !confirm('次の名前には用量が付いています。\n\n'+dz.join('\n')+
+      '\n\n効能は【末尾の用量を落とした名前】で引くので、このままだと処方欄と結び付きません。\n'+
+      '用量を外した名前にすることをおすすめします。\n\nこのまま進めますか？')) return;
+  if(warn.length && !confirm('次の薬は、いまの処方に出ている名前です。\n\n'+warn.join('\n')+
+      '\n\n名前を変えると、次の2つが起きます。\n'+
+      '① この方たちの「病歴・薬一覧」の効能列が【空になります】\n'+
+      '　（効能は処方欄の薬剤名で引いているためです）\n'+
+      '② 元の名前の行は【一覧に残ります】\n'+
+      '　（処方欄から拾っているので、辞書の行を消しても戻ってきます）\n'+
+      '　消したい場合は、保存したあと元の名前の行で「削除」も押してください\n\n'+
+      '処方欄の書き方そのものを直したい場合は、その方の詳細画面で内服の行を直してください。\n\n'+
+      'このまま名前を変えますか？')) return;
+
+  var items=all.filter(function(x){
+    if(mdDels[x.name]) return false;                      /* 消す行は下で del として送る */
+    if(renFrom[x.name]) return false;                     /* 改名する行は下で「旧を消して新を作る」 */
     if(x.effect==='') return false;                       /* 空は送らない（空上書き保護） */
     var cur=(mdMap&&mdMap[x.name])||null;
     if(!cur) return true;                                  /* 新しい薬は送る */
@@ -3439,20 +3694,64 @@ function mdSave(){
   for(var dn in mdDels) if(Object.prototype.hasOwnProperty.call(mdDels,dn)){
     if(mdMap&&mdMap[dn]) dels.push({name:dn, del:true});   /* 辞書に無い行は送る必要がない */
   }
-  items=items.filter(function(x){ return !mdDels[x.name]; }).concat(dels);
-  if(!items.length){ toast('変更がありません（変えた行・消す行だけを保存します）'); return; }
+  /* 一覧から外す／戻す印。★辞書に行が無い名前でもサーバーは印だけの行を作る（それが要点） */
+  var hides=[];
+  for(var hn in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,hn)){
+    var was=!!((mdMap&&mdMap[hn])||{}).hidden;
+    if(was===!!mdHides[hn]) continue;                      /* 既にその状態なら送らない */
+    hides.push({name:hn, hide:!!mdHides[hn]});
+  }
+  /* 改名は【旧を消す→新を作る】の2件に開く。★効能が空でも新しい行は作りたいので、
+     効能が空の時は del だけを送る（サーバーは効能が空の set を書かない＝空上書き保護） */
+  /* ★順番が命。旧の削除と新の作成を1組ずつ交互に積むと、名前が数珠つなぎ（A→B・B→C）や
+     入れ替え（A↔B）になった時に【書いた直後の行を次の削除が殺す】。実測で2行が1行になり、
+     薬剤師が付けた『確認済み』が失われた（2026-09-08 レビュー H-1）。
+     必ず【消す指示を全部先に、書く指示を全部あとに】積む。サーバー側にも
+     「この保存で書いた行は消さない」歯止めを置いてあるが、順番で直すのが本筋。 */
+  var renItems=[];
+  for(ri=0;ri<ren.length;ri++)
+    if(mdMap&&mdMap[ren[ri].from]) renItems.push({name:ren[ri].from, del:true});
+  for(ri=0;ri<ren.length;ri++)
+    if(ren[ri].effect!=='') renItems.push({name:ren[ri].to, effect:ren[ri].effect, ok:ren[ri].ok});
+  items=items.concat(dels).concat(hides).concat(renItems);
+  if(!items.length){ toast('変更がありません（変えた行・消す行・隠す行だけを保存します）'); return; }
   if(!CFG.url){ toast('同期設定のURLが未設定です',false); return; }
   if($('mdSave')) $('mdSave').disabled=true;
   mdBusy='保存しています…'; paintShBars();
-  /* src は送らない＝サーバー側の既存値を保つ（人が直した行まで 'ai' に戻さない） */
+  mdRenameGuard_(ren).then(function(gd){
+  if(gd){
+    mdBusy=''; if($('mdSave')) $('mdSave').disabled=false;
+    /* 取り直した内容を画面へ反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
+    mdDict=gd.rows; mdMap=Object.create(null);
+    for(var qi=0;qi<gd.rows.length;qi++){ var qk=mdKey(gd.rows[qi].name); if(qk) mdMap[qk]=gd.rows[qi]; }
+    renderRoster(); paintShBars();
+    alert('保存を中止しました（1文字も書いていません）。\n\n'+
+      '表を開いてから、他の端末で次の薬が変わっています（'+gd.moved.length+'件）。\n'+
+      gd.moved.map(function(x){ return '・'+x; }).join('\n')+'\n\n'+
+      '名前を変える操作は、その行を【丸ごと置き換えます】。このまま送ると相手の変更が消えます。\n'+
+      '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
+    return;
+  }
+  /* src は送らない。★サーバー側が「指定が無ければ既存の由来を保つ」ようにしてある
+     （2026-09-08 レビュー L-6 まで 'ai' で埋めていて、人が直した行も ai に戻っていた）。 */
   apiPost({action:'setMedDict', items:items.map(function(x){
-    return x.del ? {name:x.name, del:true} : {name:x.name, effect:x.effect, ok:x.ok};
+    if(x.del) return {name:x.name, del:true};
+    if(typeof x.hide==='boolean') return {name:x.name, hide:x.hide};
+    return {name:x.name, effect:x.effect, ok:x.ok};
   })},60000).then(function(d){
     if(d&&d.error) throw new Error(d.error);
+    /* ★古い版のGASは hide を知らない。知らないキーは「効能が空」の枝に落ちて【何も書かず】
+       {ok:true, added:0, updated:0, deleted:0} を返す。そのまま成功にすると、消えたと信じた行が
+       次に開いた時に戻ってくる（無言の取りこぼし・multi-device-sync 原則7）。
+       送ったのに件数が返らない時は【失敗として扱い、印を残す】（2026-09-08 レビュー H-2）。 */
+    if(hides.length && !((d&&d.hidden)||(d&&d.shown)))
+      throw new Error('薬効辞書のGAS（入居者マスタの Apps Script プロジェクト・ファイル med-dict）が'+
+                      '古い版のため、一覧から外す指示が反映されませんでした');
     /* 保存できたので編集メモリ・削除の印・手入力の控えは捨てる */
-    mdDirty=false; mdEdits=Object.create(null); mdDels=Object.create(null); mdNew=[];
+    mdClearPending_();
     toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+
-          '・削除'+((d&&d.deleted)||0)+'）');
+          '・削除'+((d&&d.deleted)||0)+
+          ((d&&d.hidden)?('・非表示'+d.hidden):'')+((d&&d.shown)?('・戻し'+d.shown):'')+'）');
     /* 保存できた後も辞書を取り直す（更新日・他端末の変更を画面へ反映するため）。
        ★§13（失敗表示でも書かれていることがある）への備えは下の catch 側。 */
     mdBusy=''; mdEnsure(true);
@@ -3463,19 +3762,28 @@ function mdSave(){
        入っていれば成功として扱う。 */
     /* ★削除も数える。数えないと【削除だけの保存】が want===0 になり、実際は消えていても
        「保存できませんでした」と出る（契約 §13 の取り直し確認が削除にだけ効かない状態だった）。 */
-    var sent={}, gone={};
-    items.forEach(function(x){ if(x.del) gone[x.name]=1; else sent[x.name]=x.effect; });
-    var want=Object.keys(sent).length+Object.keys(gone).length;
+    var sent={}, gone={}, hid={};
+    items.forEach(function(x){
+      if(x.del) gone[x.name]=1;
+      else if(typeof x.hide==='boolean') hid[x.name]=x.hide;
+      else sent[x.name]=x.effect;
+    });
+    var want=Object.keys(sent).length+Object.keys(gone).length+Object.keys(hid).length;
     apiGet({action:'getMedDict'},30000).then(function(d){
-      var rows=(d&&d.rows)||[], n=0, have=Object.create(null);
+      var rows=(d&&d.rows)||[], n=0, have=Object.create(null), hv=Object.create(null);
       for(var i=0;i<rows.length;i++){
-        var k=mdKey(rows[i].name); have[k]=1;
+        var k=mdKey(rows[i].name); have[k]=1; hv[k]=!!rows[i].hidden;
         if(Object.prototype.hasOwnProperty.call(sent,k) &&
            String(rows[i].effect||'')===sent[k]) n++;
       }
       for(var gk in gone) if(Object.prototype.hasOwnProperty.call(gone,gk) && !have[gk]) n++;
+      /* ★非表示も数える。数えないと【隠すだけの保存】が want と合わず、実際は入っていても
+         「保存できませんでした」と出る（削除で同じことが起きて 2026-09-04 に直した形と同じ） */
+      for(var hk in hid) if(Object.prototype.hasOwnProperty.call(hid,hk)){
+        if(!!(hv[hk])===!!hid[hk]) n++;
+      }
       if(n===want && want>0){
-        mdDirty=false; mdEdits=Object.create(null); mdDels=Object.create(null); mdNew=[];
+        mdClearPending_();
         toast('保存できていました（応答は失敗でしたが、取り直して確認しました）');
         mdDict=rows; mdMap=Object.create(null);
         for(var j=0;j<rows.length;j++){ var kk=mdKey(rows[j].name); if(kk) mdMap[kk]=rows[j]; }
@@ -3490,6 +3798,7 @@ function mdSave(){
       toast('保存できたか確認できませんでした：'+String((e&&e.message)||e),false);
     }).then(function(){ paintShBars(); });
   });
+  });   /* mdRenameGuard_ の then を閉じる */
 }
 
 /* ═══ AIで効能の下書きを作る ═══
@@ -3570,7 +3879,11 @@ function mdAiFill(){
   if(curView!=='md') return;
   var rows=mdRead();
   /* 削除予定の行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる） */
-  var todo=rows.filter(function(x){ return x.effect==='' && !mdDels[x.name]; }).map(function(x){ return x.name; });
+  /* 隠す行・消す行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる）。
+     ★尋ねるのは【新しい名前】。改名の途中なら、直した後の名前で引く方が当たる。 */
+  var todo=rows.filter(function(x){
+    return x.effect==='' && !mdDels[x.name] && !mdIsHidden(x.name,(mdMap&&mdMap[x.name])||null);
+  }).map(function(x){ return x.newName||x.name; });
   if(!todo.length){ toast('未登録の薬はありません'); return; }
   if(!mdAiKey()){
     toast('AIのキーが未設定です。個別機能訓練計画書アプリの「AI設定」でキーを入れると、この画面でも使えます',false);
@@ -3613,8 +3926,11 @@ function mdAiFill(){
     if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
       var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
       if(!inp||inp.value.trim()!=='') return;
-      if(Object.prototype.hasOwnProperty.call(got,name)){
-        inp.value=got[name];
+      /* ★尋ねたのは【新しい名前】なので、受け取りも同じ名前で引く。
+         元の名前で引くと、改名した行にだけ下書きが入らない（黙って空のまま残る） */
+      var ask=mdShownName(name);
+      if(Object.prototype.hasOwnProperty.call(got,ask)){
+        inp.value=got[ask];
         mdRemember(tr);          /* ★メモリにも入れる（再描画で消えないように） */
         n++;
       }
@@ -7077,7 +7393,7 @@ function applyDeviceGuard(){
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
     /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
     bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
-    mdEdits=Object.create(null); mdDels=Object.create(null); mdNew=[]; mdDirty=false; }
+    mdClearPending_(); mdShowHidden=false; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }
@@ -7889,6 +8205,9 @@ function init(){
   if($('mdBar'))   Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
     b.addEventListener('click',function(){ setMdOrder(this.getAttribute('data-o')) });
   });
+  if($('mdHidden')) $('mdHidden').addEventListener('click',function(){
+    mdShowHidden=!mdShowHidden; paintShBars(); renderRoster();
+  });
   if($('mdAi'))    $('mdAi').addEventListener('click',mdAiFill);
   if($('mdSave'))  $('mdSave').addEventListener('click',mdSave);
   if($('mdPrint')) $('mdPrint').addEventListener('click',mdPrint);
@@ -7899,7 +8218,8 @@ function init(){
     if(b) mdToggleDel(b.getAttribute('data-del'));
   });
   if($('rosterBox')) $('rosterBox').addEventListener('input',function(e){
-    if(curView==='md'&&e.target&&e.target.classList&&e.target.classList.contains('mde'))
+    if(curView==='md'&&e.target&&e.target.classList&&
+       (e.target.classList.contains('mde')||e.target.classList.contains('mdn')))
       mdMarkDirty(e.target.closest('tr[data-md]'));
   });
   if($('rosterBox')) $('rosterBox').addEventListener('change',function(e){
