@@ -7488,8 +7488,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self._bootPullPending = false;
         if (r === 'ok') {
           self.reloadFromStore();
-          /* 第2弾: 取り込んだ各 drafts:YM を読み、編集用ドラフト本体(sched:YM:draft:<id>)を追加取得（2段方式） */
-          self.pullWindowDrafts_();
+          /* ★2026-09-08 起動の高速化: 以前はここで【窓内3か月ぶんの編集用ドラフト本体を全部】
+           * 先読みしていた（pullWindowDrafts_）。実測で 12件・307KB・15.4秒かかり、
+           * 起動全体（約27秒）の半分以上をこれ1つが占めていた。
+           * ドラフト本体は「そのドラフトを開いた時」だけ必要で、未取得なら maybePullDraftBody_ が
+           * 1キーだけ取り直す仕組みが既にある（monthReady_ も開いているレイヤしか見ない）。
+           * よって先読みをやめ、表示中のレイヤがドラフトの時だけ1件取る。取得内容・保存内容は不変。 */
+          self.maybePullDraftBody_();
         }
         /* 窓pullで当月が得られなかった場合（オフライン起動・クラウド空等）のみ on-demand 側が拾う（窓内で取得済みなら即return） */
         self.maybePullMonth_(self.ym);
@@ -7769,6 +7774,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return keys;
     },
     /* 窓内の各 drafts:YM を読み、編集用ドラフト本体(sched:YM:draft:<id>)を keyed pull（起動時プルの第2弾）。 */
+    /* ★2026-09-08 以降、どこからも呼んでいない（起動が15秒遅くなるため先読みを廃止した）。
+     * 窓内の全ドラフト本体を一括取得したくなった時のために形だけ残す。復活させる前に
+     * 「起動時に12件・307KB・15.4秒かかった」実測を思い出すこと。 */
     pullWindowDrafts_: function () {
       var self = this;
       var months = this._syncWindowMonths || this.windowMonths_();
@@ -7823,7 +7831,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     /* 表示中の編集用ドラフト本体（sched:YM:draft:<id>）が未取得なら、その1キーだけ取り直す。
      * 起動時プル/月別プルの第2弾が失敗した端末で、ドラフトが未取得のまま帯が出続けるのを解く。 */
-    maybePullDraftBody_: function () {
+    maybePullDraftBody_: function (force) {
       var self = this;
       if (typeof this.layer !== 'string' || this.layer.indexOf('draft:') !== 0) return;
       var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
@@ -7831,7 +7839,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this._bootPullPending) return;
       if (!this.monthReady_(this.ym)) return;       /* 月そのものが未取得＝先に月を取る */
       var key = this.schedKey(this.layer);
-      if (this.serverSeen_(key)) return;
+      /* force=true: 取得済みでも取り直す。閲覧中のドラフトを他端末が更新した時に使う
+         （ドラフト本体キーは head の照会対象に入っていないため、一覧の変化を合図にする）。 */
+      if (!force && this.serverSeen_(key)) return;
       if (!this._pullingYM) this._pullingYM = {};
       if (!this._pullFailedAt) this._pullFailedAt = {};
       if (this._pullingYM[key]) return;
@@ -10336,10 +10346,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              * データの取り込みは済ませ、画面への反映だけ印刷終了後へ回す。 */
             if (self._printing) { self._pendingReload = true; return 'ok'; }
             self.reloadFromStore();      /* 表示中のタブ・月は維持される（rerender は現在地を変えない） */
+            /* 編集用の一覧が動いた時も、まとめ先読みはしない（起動時と同じ理由）。
+             * ただし【表示中のドラフト】だけは取り直す＝他端末の編集が画面に反映されなくならないように。 */
+            var draftsMoved_ = false;
             for (var i = 0; i < changed.length; i++) {
-              /* 編集用の一覧が動いた時はドラフト本体も追加取得（起動時プルと同じ2段方式） */
-              if (changed[i].indexOf('drafts:') === 0) { self.pullWindowDrafts_(); break; }
+              if (changed[i].indexOf('drafts:') === 0) { draftsMoved_ = true; break; }
             }
+            self.maybePullDraftBody_(draftsMoved_);
             self.updatePendingBanner_();
             return 'ok';
           });
