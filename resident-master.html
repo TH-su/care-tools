@@ -633,6 +633,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
    fitHistSheet は5%が1行に収まらないことを許容している＝この状況は設計上いつでも起こる。
    ★white-space は pre-wrap のまま（normal にすると桁を揃えた連続スペースが1つに詰まる）。 */
 .wtbl .hmed{word-break:keep-all; overflow-wrap:break-word}
+/* 服薬時点。★内服と同じ扱い（語の区切りで折り返し、どうしても入らない時だけ語中で折る）。
+   nowrap にすると隣の効能列へ重なる（2026-09-07 レビュー H-3 と同じ罠）。 */
+.wtbl .htime{word-break:keep-all; overflow-wrap:break-word}
 .wtbl .heff{white-space:nowrap; text-align:center}
 /* 電話は1つずつ1行に収める。市外局番と番号が分かれると読み違えるため（2026-09-07 指示）。
    ★行そのものは複数（家族の人数ぶん）。折り返さないのは1件ずつの中だけ。 */
@@ -3035,13 +3038,20 @@ function famHtml(){
 /* ★過去の臨時薬（2026-09-04）と頓服・外用等（同日の追加指示）は載せない。
    空いた幅は病名・既往歴へ多めに回す。この2列は rowspan で1人ぶんの高さを決めるため、
    狭いと行数が増えて【薬剤の行数より tbody が高くなり】紙が増える。 */
+/* ★2026-09-08 管理者指示: 内服列が幅を取りすぎていたので狭め、効能との間に「服薬時点」を足した。
+   幅は実データの桁数で決めた（在籍32名・内服248行の実測）:
+     薬剤名＋用量 … 中央12桁／95%17桁／最大26桁
+     服薬時点     … 中央 8桁／95%13桁／最大21桁
+   17:13 の比で 26%:20% とし、病名・既往歴の幅（rowspan で1人ぶんの高さを決める）は変えない。 */
 var HIST_COLS=[['no','No',3],['name','入居者',8],['lv','介護度',3],['dis','治療中の病気',16],
-  ['past','既往歴',16],['med','内服（定期薬）',46],['eff','効能',8]];
+  ['past','既往歴',16],['med','内服（定期薬）',26],['time','服薬時点',20],['eff','効能',8]];
 /* ★手で二重に持たない（片方だけ直すと採寸が黙ってずれる）。列の定義から引く */
-var HIST_MED_PCT=(function(){
-  for(var i=0;i<HIST_COLS.length;i++) if(HIST_COLS[i][0]==='med') return HIST_COLS[i][2];
-  return 46;
-})();
+function histColPct_(id, dflt){
+  for(var i=0;i<HIST_COLS.length;i++) if(HIST_COLS[i][0]===id) return HIST_COLS[i][2];
+  return dflt;
+}
+var HIST_MED_PCT=histColPct_('med',26);
+var HIST_TIME_PCT=histColPct_('time',20);
 var HIST_FIT_RATIO=0.95;    /* この割合が1行に収まる最大の文字サイズを選ぶ */
 var HIST_FS_MAX=13;         /* 文字サイズの上限 */
 var HIST_FS_MIN=8;          /* 下限。これより小さいと紙で読めない */
@@ -3097,8 +3107,12 @@ function histHtml(){
     for(var k=0;k<lines.length;k++){
       var e=(names[k]&&mdMap)?mdMap[names[k]]:null;
       var eff=(e&&String(e.effect||'').trim())?(esc(String(e.effect).trim())+(e.ok?'':'＊')):'';
+      /* ★内服列は「薬剤名＋用量」、服薬時点列は「1錠分1 夕食後」等（2026-09-08 管理者指示）。
+         効能は従来どおり mdDrugName で引く（この分け方とは別経路。上のコメント参照）。 */
+      var pt=medSplit_(lines[k]);
       rows+='<tr>'+(k===0?head:'')+
-        '<td class="hmed">'+(lines[k]?esc(lines[k]):(rec?'':'<span class="w-empty">取得できず</span>'))+'</td>'+
+        '<td class="hmed">'+(lines[k]?esc(pt.name):(rec?'':'<span class="w-empty">取得できず</span>'))+'</td>'+
+        '<td class="htime">'+esc(pt.use)+'</td>'+
         '<td class="heff">'+eff+'</td></tr>';
     }
     return '<tbody class="hgrp">'+rows+'</tbody>';
@@ -3122,12 +3136,17 @@ function wApplyFs(sheet, px){
      メーカー名のかっこ書きで簡単に外れる。 */
 function fitHistSheet(){
   var sh=$('histSheet'); if(!sh||!sh.offsetParent) return null;
-  var cells=sh.querySelectorAll('td.hmed');
+  /* ★2026-09-08 追加: 内服だけでなく【服薬時点も】測る。片方しか測らないと、
+     測らなかった列が折り返して行が高くなり、紙が増えたまま「1行に収まっている」と判定する。
+     測るのは列ごとに違う幅なので、文字列と幅を組にして持つ。 */
+  var cells=sh.querySelectorAll('td.hmed'), tcells=sh.querySelectorAll('td.htime');
   if(!cells.length){ wApplyFs(sh,11); return null; }
   var texts=[], i;
-  for(i=0;i<cells.length;i++){ var t=cells[i].textContent.trim(); if(t) texts.push(t); }
+  var colPx=HIST_PAGE_W*HIST_MED_PCT/100 - 14;    /* 左右の余白ぶんを引く */
+  var colPxT=HIST_PAGE_W*HIST_TIME_PCT/100 - 14;
+  for(i=0;i<cells.length;i++){ var t=cells[i].textContent.trim(); if(t) texts.push([t,colPx]); }
+  for(i=0;i<tcells.length;i++){ var t2=tcells[i].textContent.trim(); if(t2) texts.push([t2,colPxT]); }
   if(!texts.length){ wApplyFs(sh,11); return null; }
-  var colPx=HIST_PAGE_W*HIST_MED_PCT/100 - 14;   /* 左右の余白ぶんを引く */
   var probe=document.createElement('span');
   probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;left:-9999px;top:0';
   probe.style.fontFamily=getComputedStyle(sh).fontFamily;
@@ -3135,7 +3154,10 @@ function fitHistSheet(){
   function okRatio(px){
     probe.style.fontSize=px+'px';
     var n=0;
-    for(var k=0;k<texts.length;k++){ probe.textContent=texts[k]; if(probe.offsetWidth<=colPx) n++; }
+    for(var k=0;k<texts.length;k++){
+      probe.textContent=texts[k][0];
+      if(probe.offsetWidth<=texts[k][1]) n++;      /* ★各セルを【その列の幅】で見る */
+    }
     return n/texts.length;
   }
   /* ★選び方（2026-09-04 追加指示「なるべくA3縦1枚に」）:
@@ -3287,12 +3309,37 @@ function mdKey(s){ return String(s==null?'':s).replace(/　/g,' ').replace(/\s+/
      スペースだけで切っていた頃は【行全体が薬剤名】になって効能が永久に引けなかった。
      本番実測（在籍32名・内服248行）: この変更で切り出しが変わる行は7種類。
      引けていたのに引けなくなる行は【0】で、効能の出る行は 233→236 に増える。
-     ★半角コロンも入れるのは、全角と半角が混在して打たれるため（どちらか一方だと取りこぼす）。 */
+     ★半角コロンも入れるのは、全角と半角が混在して打たれるため（どちらか一方だと取りこぼす）。
+   ★メーカー名の「」『』は落とす（2026-09-08 管理者指示「メーカー名は不要」）。
+     本番実測: 効能が引ける行は 236/248 のまま変わらず、辞書側の
+     「〇〇錠10mg「YD」」形の行12件が0名になって整理できるようになる。
+   ★★用量は【落としたまま】にする。残すと辞書のキーが用量ごとに割れ、本番実測で
+     効能が引ける行が 236→42 に激減した（辞書150件がほぼ用量なしで作られているため）。
+     同じ薬の効能は用量が違っても同じなので、割ると薬剤師の確認対象だけが増える
+     （148→173種類・22件が用量ちがいで2行以上に分裂）。
+     用量は【内服列の表示】に残す（medSplit_ が薬剤名＋用量を出す）。 */
 function mdDrugName(line){
-  var t=mdKey(line); if(!t) return '';
+  var t=mdKey(String(line==null?'':line).replace(/[「『][^」』]*[」』]/g,'')); if(!t) return '';
   t=t.split(/[ ：:]/)[0];
   t=t.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:mg|ｍｇ|g|ｇ|μg|ug|mcg|ml|ｍｌ|mL|%|％|単位|IU)$/i,'');
   return mdKey(t);
+}
+/* 用法・服薬時点の始まりを見分ける形。「1錠分1 朝食後」「1日2回」「週に一回」など。
+   ★ここに挙げるのは【実データに出てくる形】だけにする。広げすぎると薬剤名の途中で切れる。
+     本番実測（在籍32名・内服248行）で 237行が分けられ、残り11行は用法の記載が無いもの
+     （医療機関名・「なし」・用量だけの行）。 */
+var MED_USE_RE=/(?:[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:錠|包|カプセル|cap|ｇ|g|mL|ml|枚|袋|吸入)?\s*分\s*[0-9０-９]|[0-9０-９]+\s*日\s*[0-9０-９]+\s*(?:回|吸入)|[0-9０-９]+\s*回\s*[0-9０-９]|週に|隔日|朝昼夕食後|朝夕食後|朝昼食後|朝食後|夕食後|昼食後|毎食後|就寝前|起床時|食間|食前|頓用|痛い時|発熱時|不眠時|便秘時)/;
+/* 内服の1行を「薬剤名＋用量」と「服薬時点」に分ける（2026-09-08 管理者指示）。
+   ★効能を引くキー（mdDrugName）とは【別物】。あちらは薬の同一性、こちらは紙の見せ方。
+     一本化しようとすると、どちらかが必ず壊れる——用法の形で切ると効能が引ける行が
+     236→222 に減る（実測）ので、キーは従来どおり最初の空白／コロンで切る。
+   ★用法の形が見つからない行は【分けない】。無理に切ると薬剤名の途中で切れる。 */
+function medSplit_(line){
+  var t=mdKey(String(line==null?'':line).replace(/[「『][^」』]*[」』]/g,''));
+  if(!t) return {name:'', use:''};
+  var m=MED_USE_RE.exec(t);
+  if(!m) return {name:t, use:''};
+  return {name:mdKey(t.slice(0,m.index).replace(/[ ：:]+$/,'')), use:mdKey(t.slice(m.index))};
 }
 /* 内服欄（複数行）から薬剤名の配列を返す。順番は原文のまま＝効能列が内服の行と揃う */
 function mdNamesOf(medText){
