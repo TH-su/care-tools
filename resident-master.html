@@ -861,6 +861,15 @@ body.meal-on #sc-list{max-width:none}
 
   body.md-on .search-bar, body.md-on .view-tabs, body.md-on .filter-row,
   body.md-on .roster-count, body.md-on .sh-bar, body.md-on .md-lead{display:none !important}
+
+  /* ── 居室一覧（A4横・1階/2階で1枚ずつ）──
+     ★他の帳票と同じく、検索欄・ビュータブ・絞り込み・件数・操作バーは紙に出さない。
+       この指定が抜けていたため、タブ等が図の上に積まれて【1階の図がA4横1枚に収まらなかった】
+       （2026-09-08 管理者指摘）。
+     ★脚注も出さない。管理者指示は「1階の図面としてのみ」で、原本にも脚注は無い。 */
+  body.room-on .search-bar, body.room-on .view-tabs, body.room-on .filter-row,
+  body.room-on .roster-count, body.room-on .sh-bar,
+  body.room-on .rp-sheet .sh-ft{display:none !important}
   .mdtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   /* 紙では入力欄の枠と未保存の色を出さない。★.mdn.mdren（詳細度0,3,1）に負けないよう
      同じ詳細度で並べる（2026-09-08 レビュー L-2） */
