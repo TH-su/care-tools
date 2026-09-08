@@ -484,24 +484,16 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @supports (width:1cqw){
   .rp-sheet{container-type:inline-size; --rpfs:calc(var(--rpk)*1cqw)}
 }
-.rp-hd{text-align:center; font-size:calc(var(--rpfs)*1.5); font-weight:600; margin:0 0 calc(var(--rpfs)*0.9)}
-.rp-body{position:relative; padding:calc(var(--rpfs)*2.9) 0 calc(var(--rpfs)*4.6)}
-/* 方位。原本と同じく左上に「東↗」・中央下に「西↘」 */
-.rp-dir{position:absolute; display:flex; align-items:center; gap:.25em;
-  font-size:calc(var(--rpfs)*1.15); color:#000; pointer-events:none}
-.rp-dir .rp-ar{font-size:calc(var(--rpfs)*1.9); line-height:1}
-.rp-e{left:6%; top:calc(var(--rpfs)*-2.6)}
-/* ★「西」は図の下の余白に置く。下げすぎると紙からはみ出して文字だけ消える（実測） */
-/* ★「西」は図の【空きマス】に置く（.rp-cell.rp-dirc）。絶対配置にすると紙の外へ出て
-   文字だけ消えた（実測: 紙の高さ680pxに対し下端702px）。マスなら必ず紙の中に入る。 */
-.rp-cell.rp-dirc{border:0; flex-direction:column; gap:0; justify-content:flex-start;
-  font-size:calc(var(--rpfs)*1.15)}
-.rp-cell.rp-dirc .rp-ar{font-size:calc(var(--rpfs)*1.9); line-height:1}
+/* 表題。原本は1階が左寄せ・2階が中央（そのまま模倣する） */
+.rp-hd{text-align:center; font-size:calc(var(--rpfs)*1.5); font-weight:600; margin:0 0 calc(var(--rpfs)*1.4)}
+.rp-hd-l{text-align:left; padding-left:calc(var(--rpfs)*0.6)}
+.rp-body{position:relative}
+/* ★方位（東・西と矢印）は 2026-09-08 管理者指示で削除した。
+   図の余白に絶対配置していたぶんの上下の余白も要らない。 */
 /* ★高さは【縦横比】で持つ。grid-template-rows の fr は、器の高さが決まっていないと
    比率にならず中身の高さで決まる（実測: 紙の高さ718pxに対し図が432pxしか使えなかった）。
    採寸が紙の寸法から比を計算して aspect-ratio に入れるので、画面でも紙でも形が変わらない。 */
-.rp-grid{display:grid; width:100%; font-size:var(--rpfs); line-height:1.25;
-  aspect-ratio:var(--rpar, 3 / 2)}
+.rp-grid{display:grid; width:100%; font-size:var(--rpfs); line-height:1.25}
 .rp-cell{border:var(--rpbd); display:flex; flex-direction:column; justify-content:center;
   align-items:center; text-align:center; padding:2px 1px; min-width:0; overflow:hidden}
 /* 辺を選ぶ箱（厨房のL字など）。既定の四方を消してから指定の辺だけ引く */
@@ -510,9 +502,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rp-cell.rp-nb.rp-t{border-top:var(--rpbd)}
 .rp-cell.rp-nb.rp-r{border-right:var(--rpbd)}
 .rp-cell.rp-nb.rp-b{border-bottom:var(--rpbd)}
-/* 居室は「番号（上）」と「氏名（下）」。原本と同じ配分で、番号は上寄せ・氏名は下寄せ */
-.rp-room{justify-content:space-between; padding:calc(var(--rpfs)*0.35) 1px calc(var(--rpfs)*0.75)}
-.rp-no{font-size:calc(var(--rpfs)*1.0)}
+/* 居室は「番号（上）」と「氏名（中央）」。氏名の位置は 2026-09-08 管理者指示。
+   番号は絶対配置で上に固定し、氏名はマスの中央に置く（互いの位置に影響しない）。 */
+.rp-room{position:relative; justify-content:center; padding:1px}
+.rp-no{position:absolute; top:calc(var(--rpfs)*0.30); left:0; right:0; text-align:center;
+  font-size:calc(var(--rpfs)*1.0)}
 /* ★氏名は【1行】。原本も全員1行で、折り返すとセルが縦に伸びて図の形が崩れる。
    入りきらない時は、採寸（fitRoomSheets）が文字を小さくして1行に収める。 */
 .rp-nm{font-size:calc(var(--rpfs)*1.0); white-space:nowrap}
@@ -2885,95 +2879,59 @@ function fitCmSheet(){
   }, 6, 22);
   shWarn_(sh, r); return r;
 }
-/* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示
-   「印刷時も最大限大きく」）。
+/* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示）。
+   ★図の形（列幅・行高・縦横比）は原本の実測値で固定してある。ここで決めるのは【文字の大きさ】だけ。
    ★★採寸のあいだは【紙と同じ幅】に固定する。画面のままだと器の幅（実測933px）を測るので、
      紙の幅（1047px）を使い切れず、しかも【窓の広さで紙の文字サイズが変わる】。
      病歴・薬で同じ罠を踏んで直した（契約 §17）。finally で必ず元へ戻す。
-   ★2枚は【同じ文字サイズ】にする。原本も1階・2階で同じ大きさで、別々に最大化すると
-     並べた時に明らかに不揃いになる（実測 21.5px と 15.5px）。
-     両方が収まる最大の共通サイズを二分探索で選ぶ。 */
+   ★2枚は【同じ文字サイズ】。原本も1階・2階で同じ大きさで、別々に最大化すると
+     並べた時に明らかに不揃いになる（実測 21.5px と 15.5px）。 */
 function fitRoomSheets(){
   var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
   if(!shs.length||!shs[0].offsetParent) return null;
   var PW=Math.round((297-20)*96/25.4), PH=(210-20)*96/25.4;   /* A4横 − 上下左右10mm */
   var saved=shs.map(function(sh){ return [sh.style.width, sh.style.padding]; });
-  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。採寸中は器が紙幅なので px と一致する */
+  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。採寸中は器が紙幅なので px と一致する。
+     ★--rpfs は当てない。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、
+       画面でも紙の px がそのまま使われて、狭い画面で文字がセルから切れる（実測8セル）。 */
   function apply(px){
     var k=Math.round(px*100/PW*1000)/1000;
-    /* ★--rpfs は【当てない】。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、
-       画面でも紙の px がそのまま使われて、狭い画面で文字がセルから切れる（実測8セル）。 */
     shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
   }
-  /* ★収まったかの見方。器（.rp-grid）は紙幅に固定してあるので「器の幅が紙より広いか」を
-     見ても意味がない（必ず紙幅と同じになり、常に収まらないと判定して最小サイズに張り付く。
-     実測で 5px に張り付いた）。見るのは【中身が器からはみ出していないか】。
-     セル単位でも見て、氏名や「機能訓練室」が切れない最大サイズを選ぶ。 */
+  /* 収まったかの見方: ①紙の高さに入る ②どのマスの中身もマスから溢れない。
+     図の幅は紙幅いっぱいなので、幅そのものは常に一致する（見るのは中身のはみ出し）。 */
   function fits(){
     for(var i=0;i<shs.length;i++){
       if(shs[i].scrollHeight>PH-8) return false;
-      var g=shs[i].querySelector('.rp-grid');
-      if(g && g.scrollWidth>g.clientWidth+1) return false;
       var cs=shs[i].querySelectorAll('.rp-cell');
       for(var j=0;j<cs.length;j++)
         if(cs[j].scrollWidth>cs[j].clientWidth+1||cs[j].scrollHeight>cs[j].clientHeight+1) return false;
     }
     return true;
   }
-  /* 図の高さ＝紙の高さ −（見出し＋脚注＋方位の文字ぶん）。それを縦横比として持たせる */
-  function fill(){
-    shs.forEach(function(sh){
-      var g=sh.querySelector('.rp-grid'), bd=sh.querySelector('.rp-body'),
-          hd=sh.querySelector('.rp-hd'), ft=sh.querySelector('.sh-ft');
-      if(!g||!bd) return;
-      g.style.removeProperty('--rpar');
-      var cs=getComputedStyle(bd);
-      var pad=parseFloat(cs.paddingTop||0)+parseFloat(cs.paddingBottom||0);
-      /* ★下の fits() が「PH-8 以下」を求めるので、それより確実に小さく取る。
-         同じ値にすると、紙いっぱいに広げた瞬間に「収まらない」と判定して
-         文字が最小サイズに張り付く（実測で 5px に張り付いた）。 */
-      var avail=PH-(hd?hd.offsetHeight:0)-(ft?ft.offsetHeight:0)-pad-16;
-      if(avail<=40) return;
-      g.style.setProperty('--rpar', PW+' / '+Math.floor(avail));
-      /* ★見出しの下余白のように offsetHeight に入らない余白がある。計算だけだと数px はみ出し、
-         いちばん小さい文字でも「収まらない」と判定され続ける（実測で 5px に張り付いた）。
-         ★1回だけ引き戻すと、縮めたぶん紙が余る（実測で紙の89%しか使えなかった）。
-         目標との差が2px以内になるまで詰める（数回で収まる）。 */
-      for(var it=0; it<4; it++){
-        var diff=(PH-16)-sh.scrollHeight;
-        if(Math.abs(diff)<=2) break;
-        avail+=diff;
-        if(avail<=40) break;
-        g.style.setProperty('--rpar', PW+' / '+Math.floor(avail));
-      }
-    });
-  }
   var best=5;
   try{
     shs.forEach(function(sh){ sh.style.padding='0'; sh.style.width=PW+'px'; });
     var STEP=0.25, lo=0, hi=Math.round((26-5)/STEP);
     var sizeOf=function(k){ return Math.round((5+k*STEP)*100)/100; };
-    apply(sizeOf(lo)); fill();
+    apply(sizeOf(lo));
     if(fits()){
       while(lo<hi){
         var mid=Math.ceil((lo+hi)/2);
-        apply(sizeOf(mid)); fill();       /* ★文字を変えると見出し・脚注の高さも変わる */
+        apply(sizeOf(mid));
         if(fits()) lo=mid; else hi=mid-1;
       }
     }
     best=sizeOf(lo);
-    apply(best); fill();
+    apply(best);
   }finally{
     shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; });
   }
   apply(best);                                  /* 元の幅に戻してからもう一度当てる */
-  var out=shs.map(function(sh){
+  return shs.map(function(sh){
     var g=sh.querySelector('.rp-grid');
-    var r={size:best, fits:true, h:sh.scrollHeight, w:g?Math.max(g.offsetWidth,g.scrollWidth):0,
-           H:Math.round(PH), W:PW};
-    return r;
+    return {size:best, fits:true, h:sh.scrollHeight, w:g?g.offsetWidth:0, H:Math.round(PH), W:PW};
   });
-  return out;
 }
 function fitLvlSheet(){
   var sh=$('lvlSheet'); if(!sh) return null;
@@ -3424,51 +3382,59 @@ function shPrintWide_(kind){
         4辺すべてを引くと箱が割れて見えるので、辺を選べるようにしてある。 */
 var ROOM_PLAN={
   f1:{
-    title:'部屋番号割当表（1階）',
-    /* 列幅・行高は原本の見た目の比率。居室8列を 1 として、右側の諸室をその比で置く */
-    cols:[1,1,1,1,1,1,1,1,0.80,1.10,1.10,0.90,1.10],
-    rows:[0.55,1.35,0.50,1.35,1.10,0.85],
+    title:'部屋番号割当表（1階）', align:'left',
+    /* 罫線の実測値（原本の写真を2400x1800で解析して得た画素位置）。
+       縦: 118,285,454,625,797,967,1136,1304,1474,1591,1654,1767,1862,1952,2150
+       横: 365,472,526,685,781,830,984,1134,1305,1480
+       列幅・行高はその差そのもの。図の縦横比も実測（2032:1115）。 */
+    ar:[2032,1115],
+    cols:[167,169,171,172,170,169,168,170,117,63,113,95,90,106,92],
+    rows:[107,54,159,96,49,154,150,171,175],
     cells:[
-      /* 上段の居室（東←→西。原本は左から 116→102） */
-      {r:2,c:1,room:'116'},{r:2,c:2,room:'114'},{r:2,c:3,room:'112'},{r:2,c:4,room:'110'},
-      {r:2,c:5,room:'108'},{r:2,c:6,room:'106'},{r:2,c:7,room:'104'},
-      {r:2,c:8,room:'102',note:'応接室'},
-      /* 厨房（リネンの上まで含むL字）。左上の空きは辺を選んで厨房と一体に見せる */
-      {r:1,c:9,t:'',sides:'lt'},
-      {r:1,c:10,rs:2,cs:2,t:'厨房'},
-      {r:2,c:9,t:'リネン'},
-      {r:1,c:12,rs:2,cs:2,t:'機能訓練室'},
-      /* 廊下 */
-      {r:3,c:1,cs:8,t:''},
+      /* 上段の居室（左から 116→102） */
+      {r:2,rs:2,c:1,room:'116'},{r:2,rs:2,c:2,room:'114'},{r:2,rs:2,c:3,room:'112'},
+      {r:2,rs:2,c:4,room:'110'},{r:2,rs:2,c:5,room:'108'},{r:2,rs:2,c:6,room:'106'},
+      {r:2,rs:2,c:7,room:'104'},{r:2,rs:2,c:8,room:'102',note:'応接室'},
+      /* 厨房は左下がリネンに切り取られたL字。先に厨房を描き、あとからリネンを重ねる */
+      {r:1,rs:3,c:9,cs:3,t:'厨房'},
+      {r:3,c:9,t:'リネン'},
+      {r:2,rs:4,c:12,cs:4,t:'機能訓練室'},
+      /* 廊下（居室8列＋リネンの列まで） */
+      {r:4,c:1,cs:9,t:''},
       /* 下段の居室（左から 115→101） */
-      {r:4,c:1,room:'115'},{r:4,c:2,room:'113'},{r:4,c:3,room:'111'},{r:4,c:4,room:'109'},
-      {r:4,c:5,room:'107'},{r:4,c:6,room:'105',note:'（倉庫）'},
-      {r:4,c:7,room:'103',note:'（倉庫）'},{r:4,c:8,room:'101',note:'（倉庫）'},
-      {r:4,c:9,t:'EV'},{r:5,c:9,rs:2,t:'玄関'},
-      {r:4,c:10,cs:2,t:'トイレ'},{r:5,c:10,cs:2,t:'事務室'},{r:6,c:10,cs:2,t:'浴室'},
-      {r:4,c:12,cs:2,t:'静養室'},{r:5,c:12,t:'トイレ'},{r:6,c:12,cs:2,t:'浴室'},
-      {r:5,c:4,cs:2,dir:'西'}
+      {r:5,rs:2,c:1,room:'115'},{r:5,rs:2,c:2,room:'113'},{r:5,rs:2,c:3,room:'111'},
+      {r:5,rs:2,c:4,room:'109'},{r:5,rs:2,c:5,room:'107'},{r:5,rs:2,c:6,room:'105',note:'（倉庫）'},
+      {r:5,rs:2,c:7,room:'103',note:'（倉庫）'},{r:5,rs:2,c:8,room:'101',note:'（倉庫）'},
+      {r:5,rs:2,c:9,t:'EV'},{r:7,rs:2,c:9,cs:2,t:'玄関'},
+      {r:6,c:11,t:'トイレ'},{r:7,rs:2,c:11,cs:2,t:'事務室'},{r:9,c:11,cs:2,t:'浴室'},
+      {r:6,c:14,cs:2,t:'静養室'},
+      /* 右の浴室も左上がトイレに切り取られたL字。先に浴室、あとからトイレを重ねる */
+      {r:7,rs:3,c:14,cs:2,t:'浴室'},
+      {r:7,c:14,t:'トイレ'}
     ]
   },
   f2:{
-    title:'部屋番号割当表（2階）',
-    cols:[1,1,1,1,1,1,1,1,0.80,0.95,1.00,0.70,1.15],
-    rows:[1.35,0.50,1.35,0.95,0.95,0.95,0.95],
+    title:'部屋番号割当表（2階）', align:'center',
+    /* 縦: 104,278,457,638,820,1001,1179,1357,1538,1658,1722,1843,1943,2040,2260
+       横: 426,650,750,816,972,1157,1339,1520,1709 */
+    ar:[2156,1283],
+    cols:[174,179,181,182,181,178,178,181,120,64,121,100,97,220],
+    rows:[224,100,66,156,185,182,181,189],
     cells:[
       {r:1,c:1,room:'216'},{r:1,c:2,room:'214'},{r:1,c:3,room:'212'},{r:1,c:4,room:'210'},
       {r:1,c:5,room:'208'},{r:1,c:6,room:'206'},{r:1,c:7,room:'204'},{r:1,c:8,room:'202'},
-      {r:1,c:9,t:'キッチン'},{r:1,c:10,cs:3,t:'食堂'},{r:1,c:13,t:'介護職員室'},
-      {r:2,c:1,cs:8,t:''},{r:2,c:13,t:'相談室'},
-      {r:3,c:1,room:'215'},{r:3,c:2,room:'213'},{r:3,c:3,room:'211'},{r:3,c:4,room:'209'},
-      {r:3,c:5,room:'207'},{r:3,c:6,room:'205'},{r:3,c:7,room:'203'},
-      {r:3,c:8,room:'201',note:'（洗濯場）'},
-      {r:3,c:9,t:'EV'},{r:3,c:13,t:'浴室'},
-      {r:3,c:11,t:'リネン'},{r:3,c:12,rs:5,t:'トイレ'},
-      {r:4,c:11,room:'218'},{r:4,c:13,room:'217'},
-      {r:5,c:11,room:'220'},{r:5,c:13,room:'219'},
-      {r:6,c:11,room:'222'},{r:6,c:13,room:'221'},
-      {r:7,c:11,room:'224'},{r:7,c:13,room:'223'},
-      {r:4,c:4,cs:2,dir:'西'}
+      {r:1,c:9,t:'キッチン'},{r:1,c:10,cs:4,t:'食堂'},{r:1,c:14,t:'介護職員室'},
+      {r:2,c:1,cs:9,t:''},
+      {r:2,rs:2,c:14,t:'相談室'},
+      {r:3,rs:2,c:1,room:'215'},{r:3,rs:2,c:2,room:'213'},{r:3,rs:2,c:3,room:'211'},
+      {r:3,rs:2,c:4,room:'209'},{r:3,rs:2,c:5,room:'207'},{r:3,rs:2,c:6,room:'205'},
+      {r:3,rs:2,c:7,room:'203'},{r:3,rs:2,c:8,room:'201',note:'（洗濯場）'},
+      {r:3,rs:2,c:9,t:'EV'},
+      {r:4,c:11,t:'リネン'},{r:4,c:12,t:'トイレ'},{r:4,c:14,t:'浴室'},
+      {r:5,c:11,cs:2,room:'218'},{r:5,c:14,room:'217'},
+      {r:6,c:11,cs:2,room:'220'},{r:6,c:14,room:'219'},
+      {r:7,c:11,cs:2,room:'222'},{r:7,c:14,room:'221'},
+      {r:8,c:11,cs:2,room:'224'},{r:8,c:14,room:'223'}
     ]
   }
 };
@@ -3503,22 +3469,20 @@ function roomCellHtml(cl, occ){
       '<div class="rp-no">'+esc(cl.room)+'</div>'+
       '<div class="rp-nm">'+body+'</div></div>';
   }
-  if(cl.dir)
-    return '<div class="rp-cell rp-dirc" style="'+st+'">'+
-      '<span class="rp-ar">↘</span><span>'+esc(cl.dir)+'</span></div>';
   return '<div class="rp-cell'+roomSideCls(cl.sides)+'" style="'+st+'">'+
     (cl.t?('<div class="rp-lb">'+esc(cl.t)+'</div>'):'')+'</div>';
 }
 function roomFloorHtml(key){
   var p=ROOM_PLAN[key], occ=roomOccupants();
+  /* ★列幅・行高・縦横比はすべて原本の実測値。図の形を計算で作らない
+     （2026-09-08 管理者指示「居室のサイズや罫線の位置など、全て全く同じように」）。 */
   var st='grid-template-columns:'+p.cols.map(function(x){return x+'fr'}).join(' ')+';'+
-         'grid-template-rows:'+p.rows.map(function(x){return x+'fr'}).join(' ')+';';
+         'grid-template-rows:'+p.rows.map(function(x){return x+'fr'}).join(' ')+';'+
+         'aspect-ratio:'+p.ar[0]+' / '+p.ar[1]+';';
   return '<div class="sh-sheet rp-sheet" id="roomSheet_'+key+'">'+
-    '<div class="rp-hd">'+esc(p.title)+'</div>'+
+    '<div class="rp-hd'+(p.align==='left'?' rp-hd-l':'')+'">'+esc(p.title)+'</div>'+
     '<div class="rp-body">'+
-      '<div class="rp-dir rp-e"><span class="rp-ar">↗</span><span>東</span></div>'+
       '<div class="rp-grid" style="'+st+'">'+p.cells.map(function(c){return roomCellHtml(c,occ)}).join('')+'</div>'+
-
     '</div>'+
     '<div class="sh-ft">'+roomFtNote(key,occ)+'　／　印刷日 '+esc(shStamp())+'</div>'+
   '</div>';
