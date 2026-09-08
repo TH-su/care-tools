@@ -3818,6 +3818,10 @@ const SYNC = {
   // GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける）
   friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
+    /* 接続先が存在しない（アーカイブ/削除されたデプロイのURLを保存している端末）。
+       原因も直し方も出す＝「HTTP 404」だけでは現場が動けない。 */
+    if (e === 'deadendpoint') return 'この端末の同期先（GASのURL）が見つかりません。'
+      + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
     /* サーバー側の一括消失ガード（2026-08-05）。保存は行われていない＝クラウドのデータは無傷。 */
     if (e === 'bathwipe') return '通所の入浴（加算）が一度に大量に減るため、クラウド側が保存を拒否しました。'
@@ -3870,6 +3874,13 @@ const SYNC = {
       body: JSON.stringify(payload),
       redirect: 'follow'
     });
+    /* ★2026-09-08: 404 は例外にせず {error:'deadendpoint'} として返す。
+       404＝そのデプロイがアーカイブ/削除された（＝このURLは二度と復活しない）という確定的な答えで、
+       接続先の自動切替（healStaleTarget）を働かせるべき合図。従来は例外に落ちていたため切替が起きず、
+       古いURLを保存している端末だけが再起動しても永久にオフラインのままだった
+       （接続先は端末ごとの localStorage にあるので、他の端末は正常に見える）。
+       500・429 等は一時的でありうるので従来どおり例外＝通信失敗として扱う（誤切替を作らない）。 */
+    if (res.status === 404) return { ok: false, error: 'deadendpoint' };
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
@@ -3990,7 +4001,7 @@ const SYNC = {
     this.updateStatusUI('取得中…');
     try {
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });   // 切替後に1回だけ再取得（pull再入はしない）
       }
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
@@ -4023,7 +4034,7 @@ const SYNC = {
     this.updateStatusUI('確認中…');
     try {
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
@@ -4223,7 +4234,7 @@ const SYNC = {
         }
       } catch (e) { /* head 失敗時は従来の get に委ねる */ }
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && j.error === 'unknown action' && await this.healStaleTarget()) {
+      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
       if (!j.ok) return;
