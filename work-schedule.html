@@ -9707,11 +9707,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* cb は必ず1回だけ・15秒で必ず応答（無応答でも固まらないようにする） */
     var called = false;
     function deliver(v) {
-      /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
-      if (!retried && v && v.error === 'unknown action') {
+      /* 接続先URLが死んでいる(unknown action＝旧世代／deadendpoint＝404で消滅)ときは
+         ws_settings の稼働URLへ自動切替して1回だけ再試行 */
+      if (!retried && v && (v.error === 'unknown action' || v.error === 'deadendpoint')) {
         healStaleTarget(function (healed) {
           if (healed) { gasCall(payload, cb, true); }
-          else { try { cb(v); } catch (e) {} }
+          else {
+            /* 切替先も無い＝この端末の接続先が古いまま。原因と直し方を画面に出す
+               （「オフライン（自動再試行）」だけでは、待っても直らないことが伝わらない）。 */
+            if (v.error === 'deadendpoint') {
+              try { setSyncState('⚠ 同期先が見つかりません（設定の確認が必要）'); } catch (e2) {}
+              try { toast('この端末の同期先（GASのURL）が見つかりません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e3) {}
+            }
+            try { cb(v); } catch (e) {}
+          }
         });
         return;
       }
@@ -9721,7 +9730,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var timer = setTimeout(function () { once(null); }, 15000);
     try {
       fetch(settings.endpoint, { method: 'POST', body: JSON.stringify(payload) })
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          /* ★2026-09-08: HTTPステータスを見る。従来は 404 でも r.json() が例外になり null へ落ちて
+           * 「通信失敗」と区別できず、接続先の自動切替が働かなかった。その結果、アーカイブ済みの
+           * 古いデプロイURLを保存している端末だけが、再起動しても永久にオフラインのままだった
+           * （接続先は端末ごとの localStorage にあるため、他の端末は正常に見える）。
+           * 404＝そのデプロイは存在しない、という確定的な答えなので切替の合図にしてよい。
+           * 500・429 等は一時的でありうるので従来どおり通信失敗として扱う（誤切替を作らない）。 */
+          if (!r.ok) return { error: (r.status === 404) ? 'deadendpoint' : ('HTTP ' + r.status) };
+          return r.json();
+        })
         .then(function (j) { once(j || null); })
         .catch(function () { once(null); });
     } catch (e) { once(null); }
