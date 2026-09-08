@@ -6134,8 +6134,16 @@ function buildEditTabs(){
   if(!hs.length){bar.hidden=true;bar.innerHTML='';return}
   var html='';
   Array.prototype.forEach.call(hs,function(h3,i){
+    /* ★行き先は「その見出しが始める区画」。カードに見出しが1つならカード、
+         2つ以上あるならその見出しそのものにする。
+       ★以前はいつでもカードに id を付けていたため、【1枚のカードに見出しが2つある場合に
+         後の見出しが id を上書きし、前のタブが行き先を失って押しても何も起きなかった】。
+         実際「事業所」タブがそうなっていた（同じカードに「生活リズム」がある）。
+         行き先が消えるとタブの現在地表示（markEditTab）も光らなくなる。
+         2026-09-08 管理者指摘。 */
     var card=h3.closest?h3.closest('.cd'):null;
-    var target=card||h3.parentElement;
+    var only=!!(card&&card.querySelectorAll('.fgroup>h3').length===1);
+    var target=(card&&only)?card:h3;
     target.id='ecd-'+i;
     /* タブの文字は見出しの先頭部分だけにする（「対象アプリ（チェックした人だけ…）」のような
        長い見出しがそのまま並ぶと、タブ帯が本文より高くなる）。全文は title で読める */
