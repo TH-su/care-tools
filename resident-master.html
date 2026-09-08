@@ -473,6 +473,58 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   padding:8px; font-size: 0.8125rem; font-family:inherit; color:var(--g9)}
 .bulk-tbl input:focus,.bulk-tbl select:focus{outline:2px solid var(--pri); outline-offset:-2px; background:#fff}
 .bulk-tbl td.dirty{background:var(--warn-bg)}
+/* ═══ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══
+   原本は手描き寄りの単純な間取り図。罫線は細い実線1本、文字は黒、塗りなし。
+   ★文字サイズは1箇所（--rpfs）で持ち、採寸（fitRoomSheet）が紙に合わせて決める。 */
+/* ★文字の大きさは【紙の幅に対する割合】で持つ。px で固定すると、採寸は紙幅(1047px)で
+   行うのに画面は器の幅(実測933px)なので、画面でだけ文字がセルからはみ出して切れる
+   （実測で8セル）。1cqw＝この紙の幅の1% なので、画面でも紙でも見た目の比率が変わらない。
+   ★cqw を解さない古い端末には px の既定値が残る（図は出る。大きさだけ固定）。 */
+.rp-sheet{--rpk:1.30; --rpfs:13px; --rpbd:1px solid #000}
+@supports (width:1cqw){
+  .rp-sheet{container-type:inline-size; --rpfs:calc(var(--rpk)*1cqw)}
+}
+.rp-hd{text-align:center; font-size:calc(var(--rpfs)*1.5); font-weight:600; margin:0 0 calc(var(--rpfs)*0.9)}
+.rp-body{position:relative; padding:calc(var(--rpfs)*2.9) 0 calc(var(--rpfs)*4.6)}
+/* 方位。原本と同じく左上に「東↗」・中央下に「西↘」 */
+.rp-dir{position:absolute; display:flex; align-items:center; gap:.25em;
+  font-size:calc(var(--rpfs)*1.15); color:#000; pointer-events:none}
+.rp-dir .rp-ar{font-size:calc(var(--rpfs)*1.9); line-height:1}
+.rp-e{left:6%; top:calc(var(--rpfs)*-2.6)}
+/* ★「西」は図の下の余白に置く。下げすぎると紙からはみ出して文字だけ消える（実測） */
+/* ★「西」は図の【空きマス】に置く（.rp-cell.rp-dirc）。絶対配置にすると紙の外へ出て
+   文字だけ消えた（実測: 紙の高さ680pxに対し下端702px）。マスなら必ず紙の中に入る。 */
+.rp-cell.rp-dirc{border:0; flex-direction:column; gap:0; justify-content:flex-start;
+  font-size:calc(var(--rpfs)*1.15)}
+.rp-cell.rp-dirc .rp-ar{font-size:calc(var(--rpfs)*1.9); line-height:1}
+/* ★高さは【縦横比】で持つ。grid-template-rows の fr は、器の高さが決まっていないと
+   比率にならず中身の高さで決まる（実測: 紙の高さ718pxに対し図が432pxしか使えなかった）。
+   採寸が紙の寸法から比を計算して aspect-ratio に入れるので、画面でも紙でも形が変わらない。 */
+.rp-grid{display:grid; width:100%; font-size:var(--rpfs); line-height:1.25;
+  aspect-ratio:var(--rpar, 3 / 2)}
+.rp-cell{border:var(--rpbd); display:flex; flex-direction:column; justify-content:center;
+  align-items:center; text-align:center; padding:2px 1px; min-width:0; overflow:hidden}
+/* 辺を選ぶ箱（厨房のL字など）。既定の四方を消してから指定の辺だけ引く */
+.rp-cell.rp-nb{border:0}
+.rp-cell.rp-nb.rp-l{border-left:var(--rpbd)}
+.rp-cell.rp-nb.rp-t{border-top:var(--rpbd)}
+.rp-cell.rp-nb.rp-r{border-right:var(--rpbd)}
+.rp-cell.rp-nb.rp-b{border-bottom:var(--rpbd)}
+/* 居室は「番号（上）」と「氏名（下）」。原本と同じ配分で、番号は上寄せ・氏名は下寄せ */
+.rp-room{justify-content:space-between; padding:calc(var(--rpfs)*0.35) 1px calc(var(--rpfs)*0.75)}
+.rp-no{font-size:calc(var(--rpfs)*1.0)}
+/* ★氏名は【1行】。原本も全員1行で、折り返すとセルが縦に伸びて図の形が崩れる。
+   入りきらない時は、採寸（fitRoomSheets）が文字を小さくして1行に収める。 */
+.rp-nm{font-size:calc(var(--rpfs)*1.0); white-space:nowrap}
+.rp-lb{font-size:calc(var(--rpfs)*1.0)}
+/* 同じ居室に2名以上。画面だけで知らせ、紙は原本どおり（色を足さない） */
+.rp-room.rp-dup .rp-nm{color:var(--warn-tx)}
+@media print{ .rp-room.rp-dup .rp-nm{color:#000} }
+/* 2枚の紙にする（1階／2階）。最後の1枚のあとで改ページしない */
+@media print{
+  body.room-on .rp-sheet{break-after:page; page-break-after:always}
+  body.room-on .rp-sheet:last-of-type{break-after:auto; page-break-after:auto}
+}
 /* 値に改行が入りうる列（医療機関の4つ）。input だと往復で改行が落ちるので textarea にする。
    ★表の行が高くならないよう1行ぶんに抑え、必要な人だけ縦に広げられるようにする。 */
 .bulk-tbl textarea.bk-lines{width:100%; min-height:0; height:34px; padding:6px 8px; border:none;
@@ -1018,6 +1070,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
     <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 CM表</button>
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
+    <button class="vtab"    data-v="room"  role="tab" aria-selected="false">🗺️ 居室一覧</button>
     <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
@@ -1052,6 +1105,11 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" class="btn-print" id="cmPrint">🖨️ A4横で印刷</button>
   </div>
   <!-- 介護度別ビュー専用。印刷には出さない（body.lvl-on の印刷CSSで消える） -->
+  <!-- 居室一覧ビュー専用。1階・2階でA4横2枚に刷る -->
+  <div class="sh-bar" id="roomBar" style="display:none">
+    <span class="st" id="roomStatus" role="status" aria-live="polite"></span>
+    <button type="button" class="btn-print" id="roomPrint">🖨️ A4横で印刷（1階・2階の2枚）</button>
+  </div>
   <div class="sh-bar" id="lvlBar" style="display:none">
     <span class="st" id="lvlStatus" role="status" aria-live="polite"></span>
     <button type="button" id="lvlReload">🔄 最新に取り直す</button>
@@ -1953,7 +2011,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','fam','hist','md'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','room','fam','hist','md'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -2439,6 +2497,8 @@ function renderRoster(){
     html=cmHtml();
   }else if(curView==='lvl'){
     html=lvlHtml();
+  }else if(curView==='room'){
+    html=roomHtml();
   }else if(curView==='fam'){
     html=famHtml();
   }else if(curView==='hist'){
@@ -2455,6 +2515,7 @@ function renderRoster(){
   if(curView==='bday') fitBdaySheet();
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
+  if(curView==='room') fitRoomSheets();
   /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
      248行×最大6サイズ＝1488回の文字幅計測に加え、表全体の強制レイアウトが6往復走って
      入力が引っかかる（食形態一覧で 2026-08-24 に同じ判断をしている）。
@@ -2637,6 +2698,9 @@ function paintShBars(){
   var c=$('cmBar'), l=$('lvlBar'), f=$('famBar'), h=$('histBar');
   if(c) c.style.display=(curView==='cm')?'flex':'none';
   if(l) l.style.display=(curView==='lvl')?'flex':'none';
+  var rm=$('roomBar'); if(rm) rm.style.display=(curView==='room')?'flex':'none';
+  if($('roomStatus')) $('roomStatus').textContent=(curView==='room')
+    ? (roster&&roster.length?'':'名簿を取得しています…') : '';
   if(f) f.style.display=(curView==='fam')?'flex':'none';
   if(h) h.style.display=(curView==='hist')?'flex':'none';
   var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
@@ -2821,6 +2885,96 @@ function fitCmSheet(){
   }, 6, 22);
   shWarn_(sh, r); return r;
 }
+/* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示
+   「印刷時も最大限大きく」）。
+   ★★採寸のあいだは【紙と同じ幅】に固定する。画面のままだと器の幅（実測933px）を測るので、
+     紙の幅（1047px）を使い切れず、しかも【窓の広さで紙の文字サイズが変わる】。
+     病歴・薬で同じ罠を踏んで直した（契約 §17）。finally で必ず元へ戻す。
+   ★2枚は【同じ文字サイズ】にする。原本も1階・2階で同じ大きさで、別々に最大化すると
+     並べた時に明らかに不揃いになる（実測 21.5px と 15.5px）。
+     両方が収まる最大の共通サイズを二分探索で選ぶ。 */
+function fitRoomSheets(){
+  var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
+  if(!shs.length||!shs[0].offsetParent) return null;
+  var PW=Math.round((297-20)*96/25.4), PH=(210-20)*96/25.4;   /* A4横 − 上下左右10mm */
+  var saved=shs.map(function(sh){ return [sh.style.width, sh.style.padding]; });
+  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。採寸中は器が紙幅なので px と一致する */
+  function apply(px){
+    var k=Math.round(px*100/PW*1000)/1000;
+    /* ★--rpfs は【当てない】。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、
+       画面でも紙の px がそのまま使われて、狭い画面で文字がセルから切れる（実測8セル）。 */
+    shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
+  }
+  /* ★収まったかの見方。器（.rp-grid）は紙幅に固定してあるので「器の幅が紙より広いか」を
+     見ても意味がない（必ず紙幅と同じになり、常に収まらないと判定して最小サイズに張り付く。
+     実測で 5px に張り付いた）。見るのは【中身が器からはみ出していないか】。
+     セル単位でも見て、氏名や「機能訓練室」が切れない最大サイズを選ぶ。 */
+  function fits(){
+    for(var i=0;i<shs.length;i++){
+      if(shs[i].scrollHeight>PH-8) return false;
+      var g=shs[i].querySelector('.rp-grid');
+      if(g && g.scrollWidth>g.clientWidth+1) return false;
+      var cs=shs[i].querySelectorAll('.rp-cell');
+      for(var j=0;j<cs.length;j++)
+        if(cs[j].scrollWidth>cs[j].clientWidth+1||cs[j].scrollHeight>cs[j].clientHeight+1) return false;
+    }
+    return true;
+  }
+  /* 図の高さ＝紙の高さ −（見出し＋脚注＋方位の文字ぶん）。それを縦横比として持たせる */
+  function fill(){
+    shs.forEach(function(sh){
+      var g=sh.querySelector('.rp-grid'), bd=sh.querySelector('.rp-body'),
+          hd=sh.querySelector('.rp-hd'), ft=sh.querySelector('.sh-ft');
+      if(!g||!bd) return;
+      g.style.removeProperty('--rpar');
+      var cs=getComputedStyle(bd);
+      var pad=parseFloat(cs.paddingTop||0)+parseFloat(cs.paddingBottom||0);
+      /* ★下の fits() が「PH-8 以下」を求めるので、それより確実に小さく取る。
+         同じ値にすると、紙いっぱいに広げた瞬間に「収まらない」と判定して
+         文字が最小サイズに張り付く（実測で 5px に張り付いた）。 */
+      var avail=PH-(hd?hd.offsetHeight:0)-(ft?ft.offsetHeight:0)-pad-16;
+      if(avail<=40) return;
+      g.style.setProperty('--rpar', PW+' / '+Math.floor(avail));
+      /* ★見出しの下余白のように offsetHeight に入らない余白がある。計算だけだと数px はみ出し、
+         いちばん小さい文字でも「収まらない」と判定され続ける（実測で 5px に張り付いた）。
+         ★1回だけ引き戻すと、縮めたぶん紙が余る（実測で紙の89%しか使えなかった）。
+         目標との差が2px以内になるまで詰める（数回で収まる）。 */
+      for(var it=0; it<4; it++){
+        var diff=(PH-16)-sh.scrollHeight;
+        if(Math.abs(diff)<=2) break;
+        avail+=diff;
+        if(avail<=40) break;
+        g.style.setProperty('--rpar', PW+' / '+Math.floor(avail));
+      }
+    });
+  }
+  var best=5;
+  try{
+    shs.forEach(function(sh){ sh.style.padding='0'; sh.style.width=PW+'px'; });
+    var STEP=0.25, lo=0, hi=Math.round((26-5)/STEP);
+    var sizeOf=function(k){ return Math.round((5+k*STEP)*100)/100; };
+    apply(sizeOf(lo)); fill();
+    if(fits()){
+      while(lo<hi){
+        var mid=Math.ceil((lo+hi)/2);
+        apply(sizeOf(mid)); fill();       /* ★文字を変えると見出し・脚注の高さも変わる */
+        if(fits()) lo=mid; else hi=mid-1;
+      }
+    }
+    best=sizeOf(lo);
+    apply(best); fill();
+  }finally{
+    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; });
+  }
+  apply(best);                                  /* 元の幅に戻してからもう一度当てる */
+  var out=shs.map(function(sh){
+    var g=sh.querySelector('.rp-grid');
+    var r={size:best, fits:true, h:sh.scrollHeight, w:g?Math.max(g.offsetWidth,g.scrollWidth):0,
+           H:Math.round(PH), W:PW};
+    return r;
+  });
+  return out;
+}
 function fitLvlSheet(){
   var sh=$('lvlSheet'); if(!sh) return null;
   var r=shFit_(sh, 210, 297, function(px){       /* A4縦 */
@@ -2854,9 +3008,10 @@ function shViewActive_(kind){
   return curView===kind && !!sc && sc.classList.contains('on');
 }
 function shPrint_(kind){
-  var on=(kind==='cm')?'cm-on':'lvl-on';
+  var on=(kind==='cm')?'cm-on':(kind==='room')?'room-on':'lvl-on';
   if(!shViewActive_(kind)) return;
   if(kind==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
+  else if(kind==='room'){ fitRoomSheets(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
   else           { fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm'); }
   document.body.classList.add(on);
   var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
@@ -2880,6 +3035,8 @@ window.addEventListener('beforeprint',function(){
     document.body.classList.add('cm-on'); }
   else if(shViewActive_('lvl')){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
     document.body.classList.add('lvl-on'); }
+  else if(shViewActive_('room')){ fitRoomSheets(); msSheetPageOn('size:A4 landscape;margin:10mm');
+    document.body.classList.add('room-on'); }
   else if(shViewActive_('fam')||shViewActive_('hist')){
     var k=shViewActive_('fam')?'fam':'hist';
     /* ★ボタン経路（shPrintWide_）が直前に採寸済みなら、ここでは測り直さない
@@ -3249,6 +3406,143 @@ function shPrintWide_(kind){
   setTimeout(off,60000);
   window.print();
 }
+/* ═══════════ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══════════
+   紙の原本（1階・2階の2枚）を模して、間取りの箱をそのまま並べる。
+   ★氏名は【マスタの居室番号から引く】。図に氏名を書き込まない（書くと入退去のたびに
+     コードを直すことになり、必ず現実とずれる。実際、原本の写真では 220 に氏名があるが
+     いまは空室）。
+   ★間取り（どの箱がどこにあるか・厨房や機能訓練室などの名前）は建物の形なので定数に持つ。
+   ★居室に固定の用途がある場合（101〜105 の倉庫・102 応接室・201 洗濯場）は note に書く。
+     その部屋に入居者が登録されたら【氏名が勝つ】（用途が変わった時に黙って古い表示を出さない）。
+
+   ── セルの書き方 ──
+   {r:行, c:列, rs:縦の連結, cs:横の連結, room:'116'}            … 居室（番号＋氏名）
+   {r:…, c:…, t:'厨房'}                                          … 固定の名前の箱
+   {r:…, c:…, t:'', sides:'lt'}                                  … 罫線を一部だけ引く箱
+        sides は l/t/r/b の組み合わせ。省略＝四方すべて。
+        原本には「厨房の左下がリネンに切り取られている」ようなL字の箱があり、
+        4辺すべてを引くと箱が割れて見えるので、辺を選べるようにしてある。 */
+var ROOM_PLAN={
+  f1:{
+    title:'部屋番号割当表（1階）',
+    /* 列幅・行高は原本の見た目の比率。居室8列を 1 として、右側の諸室をその比で置く */
+    cols:[1,1,1,1,1,1,1,1,0.80,1.10,1.10,0.90,1.10],
+    rows:[0.55,1.35,0.50,1.35,1.10,0.85],
+    cells:[
+      /* 上段の居室（東←→西。原本は左から 116→102） */
+      {r:2,c:1,room:'116'},{r:2,c:2,room:'114'},{r:2,c:3,room:'112'},{r:2,c:4,room:'110'},
+      {r:2,c:5,room:'108'},{r:2,c:6,room:'106'},{r:2,c:7,room:'104'},
+      {r:2,c:8,room:'102',note:'応接室'},
+      /* 厨房（リネンの上まで含むL字）。左上の空きは辺を選んで厨房と一体に見せる */
+      {r:1,c:9,t:'',sides:'lt'},
+      {r:1,c:10,rs:2,cs:2,t:'厨房'},
+      {r:2,c:9,t:'リネン'},
+      {r:1,c:12,rs:2,cs:2,t:'機能訓練室'},
+      /* 廊下 */
+      {r:3,c:1,cs:8,t:''},
+      /* 下段の居室（左から 115→101） */
+      {r:4,c:1,room:'115'},{r:4,c:2,room:'113'},{r:4,c:3,room:'111'},{r:4,c:4,room:'109'},
+      {r:4,c:5,room:'107'},{r:4,c:6,room:'105',note:'（倉庫）'},
+      {r:4,c:7,room:'103',note:'（倉庫）'},{r:4,c:8,room:'101',note:'（倉庫）'},
+      {r:4,c:9,t:'EV'},{r:5,c:9,rs:2,t:'玄関'},
+      {r:4,c:10,cs:2,t:'トイレ'},{r:5,c:10,cs:2,t:'事務室'},{r:6,c:10,cs:2,t:'浴室'},
+      {r:4,c:12,cs:2,t:'静養室'},{r:5,c:12,t:'トイレ'},{r:6,c:12,cs:2,t:'浴室'},
+      {r:5,c:4,cs:2,dir:'西'}
+    ]
+  },
+  f2:{
+    title:'部屋番号割当表（2階）',
+    cols:[1,1,1,1,1,1,1,1,0.80,0.95,1.00,0.70,1.15],
+    rows:[1.35,0.50,1.35,0.95,0.95,0.95,0.95],
+    cells:[
+      {r:1,c:1,room:'216'},{r:1,c:2,room:'214'},{r:1,c:3,room:'212'},{r:1,c:4,room:'210'},
+      {r:1,c:5,room:'208'},{r:1,c:6,room:'206'},{r:1,c:7,room:'204'},{r:1,c:8,room:'202'},
+      {r:1,c:9,t:'キッチン'},{r:1,c:10,cs:3,t:'食堂'},{r:1,c:13,t:'介護職員室'},
+      {r:2,c:1,cs:8,t:''},{r:2,c:13,t:'相談室'},
+      {r:3,c:1,room:'215'},{r:3,c:2,room:'213'},{r:3,c:3,room:'211'},{r:3,c:4,room:'209'},
+      {r:3,c:5,room:'207'},{r:3,c:6,room:'205'},{r:3,c:7,room:'203'},
+      {r:3,c:8,room:'201',note:'（洗濯場）'},
+      {r:3,c:9,t:'EV'},{r:3,c:13,t:'浴室'},
+      {r:3,c:11,t:'リネン'},{r:3,c:12,rs:5,t:'トイレ'},
+      {r:4,c:11,room:'218'},{r:4,c:13,room:'217'},
+      {r:5,c:11,room:'220'},{r:5,c:13,room:'219'},
+      {r:6,c:11,room:'222'},{r:6,c:13,room:'221'},
+      {r:7,c:11,room:'224'},{r:7,c:13,room:'223'},
+      {r:4,c:4,cs:2,dir:'西'}
+    ]
+  }
+};
+/* 居室番号 → 在籍者。★同じ番号に2名いることが実際にある（実測 2026-09-08: 208 が2名）ので、
+   先に見つけた1名で切り捨てず【配列で持つ】。捨てると片方の方が紙から消える。 */
+function roomOccupants(){
+  var m=Object.create(null);
+  (roster||[]).forEach(function(r){
+    if(!r||r.active===false) return;
+    var k=String(r.room==null?'':r.room).trim();
+    if(!k) return;
+    (m[k]=m[k]||[]).push(r);
+  });
+  for(var k2 in m) if(Object.prototype.hasOwnProperty.call(m,k2)) m[k2].sort(byKana);
+  return m;
+}
+function roomSideCls(sides){
+  if(sides==null) return '';
+  var out=' rp-nb';
+  ['l','t','r','b'].forEach(function(x){ if(String(sides).indexOf(x)>=0) out+=' rp-'+x; });
+  return out;
+}
+function roomCellHtml(cl, occ){
+  var st='grid-row:'+cl.r+' / span '+(cl.rs||1)+';grid-column:'+cl.c+' / span '+(cl.cs||1)+';';
+  if(cl.room){
+    var who=occ[cl.room]||[];
+    var body = who.length
+      ? who.map(function(x){ return esc(String(x.name||'').trim())+'様'; }).join('<br>')
+      : (cl.note?esc(cl.note):'');
+    /* ★2名以上は「同じ番号に2名」と分かる形で両方出す（黙って1名にしない） */
+    return '<div class="rp-cell rp-room'+(who.length>1?' rp-dup':'')+'" style="'+st+'">'+
+      '<div class="rp-no">'+esc(cl.room)+'</div>'+
+      '<div class="rp-nm">'+body+'</div></div>';
+  }
+  if(cl.dir)
+    return '<div class="rp-cell rp-dirc" style="'+st+'">'+
+      '<span class="rp-ar">↘</span><span>'+esc(cl.dir)+'</span></div>';
+  return '<div class="rp-cell'+roomSideCls(cl.sides)+'" style="'+st+'">'+
+    (cl.t?('<div class="rp-lb">'+esc(cl.t)+'</div>'):'')+'</div>';
+}
+function roomFloorHtml(key){
+  var p=ROOM_PLAN[key], occ=roomOccupants();
+  var st='grid-template-columns:'+p.cols.map(function(x){return x+'fr'}).join(' ')+';'+
+         'grid-template-rows:'+p.rows.map(function(x){return x+'fr'}).join(' ')+';';
+  return '<div class="sh-sheet rp-sheet" id="roomSheet_'+key+'">'+
+    '<div class="rp-hd">'+esc(p.title)+'</div>'+
+    '<div class="rp-body">'+
+      '<div class="rp-dir rp-e"><span class="rp-ar">↗</span><span>東</span></div>'+
+      '<div class="rp-grid" style="'+st+'">'+p.cells.map(function(c){return roomCellHtml(c,occ)}).join('')+'</div>'+
+
+    '</div>'+
+    '<div class="sh-ft">'+roomFtNote(key,occ)+'　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+/* 脚注。★人数は【この紙に出た方】で数える。名簿の在籍数を出すと、居室番号が図に無い方が
+   いた時に「32名」と書いてあるのに紙には31名しか出ていない紙になる。 */
+function roomFtNote(key,occ){
+  var p=ROOM_PLAN[key], n=0, dup=0, rooms=Object.create(null), all=Object.create(null), fk;
+  /* ★「図に無い居室番号」は【全階ぶんの図】と突き合わせる。この階だけで見ると、
+     もう一方の階の番号が全部「図に無い」と並ぶ（実測で1階の脚注に2階の21室が出た）。 */
+  for(fk in ROOM_PLAN) if(Object.prototype.hasOwnProperty.call(ROOM_PLAN,fk))
+    ROOM_PLAN[fk].cells.forEach(function(c){ if(c.room) all[c.room]=1; });
+  p.cells.forEach(function(c){ if(c.room){ rooms[c.room]=1; var w=occ[c.room]||[]; n+=w.length; if(w.length>1) dup++; } });
+  var out=[], k;
+  for(k in occ) if(Object.prototype.hasOwnProperty.call(occ,k) && !all[k]) out.push(k);
+  return n+'名'+(dup?('　／　★同じ居室に2名以上 '+dup+'室'):'')+
+         (out.length?('　／　★図に無い居室番号 '+out.join('・')):'')+
+         '　／　対象 在籍のみ';
+}
+function roomHtml(){
+  if(!roster||!roster.length) return '<div class="sh-sheet"><div class="loading">名簿を取得しています…</div></div>';
+  return roomFloorHtml('f1')+roomFloorHtml('f2');
+}
+
 /* ═══════════ 薬効辞書（薬剤名→効能）2026-09-04 管理者指示 ═══════════
    「病歴・薬一覧」の効能列を出すための辞書。入居者ごとではなく【薬剤名をキーにした共有辞書】。
    ★薬効はAIの下書き。薬剤師（管理者）が確認して初めて「確認済み」に上げる。
@@ -8255,6 +8549,7 @@ function init(){
   /* CM表・介護度別（2026-09-04 追加） */
   if($('cmPrint'))  $('cmPrint').addEventListener('click',function(){shPrint_('cm')});
   if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){shPrint_('lvl')});
+  if($('roomPrint')) $('roomPrint').addEventListener('click',function(){shPrint_('room')});
   if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
   if($('famPrint')) $('famPrint').addEventListener('click',function(){shPrintWide_('fam')});
