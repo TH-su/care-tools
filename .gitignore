@@ -50,6 +50,10 @@
 !/su-report.js
 !/training-plan.html
 !/training-plan-form.js
+# 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。
+# 職員の情報は専用スプレッドシート＋職員マスタAPI（GAS）側にあり、リポジトリには一切含まれない
+!/staff-master.html
+!/staff-master-calc.js
 
 # SilverMail — 複数アカウント対応ローカルメーラー（2026-08-15）。
 # コードのみ公開。認証情報は ~/.silvermail/（リポジトリ外）とmacOSキーチェーンに保存され、
