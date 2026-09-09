@@ -278,6 +278,24 @@ body.mode-list #cmpBox{display:none}
 #fpPrev.empty{color:var(--c-ink3)}
 textarea#fpCur{background:var(--c-surface);resize:none;width:100%}
 .fp-foot{margin-top:var(--sp-4)}
+/* 1つのセルに3欄が入っている所（病名・発症日・直近の入院日）は、窓の中で欄ごとに縦に並べる */
+.fp-multi{margin-top:var(--sp-3);flex:1;min-height:0;overflow:auto;
+  display:flex;flex-direction:column;gap:var(--sp-3)}
+.fp-mrow{border:1px solid var(--c-border);border-radius:var(--r-md);
+  padding:var(--sp-3);background:var(--c-surface)}
+.fp-mrow h3{margin:0 0 var(--sp-1);font-size:var(--fs-xs);color:var(--c-ink2)}
+.fp-mcols{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3)}
+@media (max-width:900px){.fp-mcols{grid-template-columns:1fr}}
+.fp-mcols .fp-text{min-height:max(96px,12vh)}
+.fp-mcols input.fp-text{min-height:0;white-space:normal}
+.fp-mcap{font-size:var(--fs-2xs);color:var(--c-ink3);margin-bottom:var(--sp-1)}
+/* カレンダーと文字の併用（発症日・直近の入院日）。文字の欄が正で、カレンダーは日付の形の時だけ入る */
+.dpair{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
+/* 既定の input は width:100%。ここだけ横に並ぶよう width を解く（幅が足りなければ折り返す） */
+.dpair input[type="date"]{flex:0 0 auto;width:auto;min-width:11rem}
+.dpair input[type="text"]{flex:1 1 12ch;width:auto;min-width:10ch}
+/* カレンダーと文字が横に並ぶだけの幅を取る（2列の grid2 の中で1行を丸ごと使う） */
+.gwide{grid-column:1/-1}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:var(--c-surface);
@@ -450,7 +468,23 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
           <option value="C1">C1</option>
           <option value="C2">C2</option>
         </select></div>
+      <!-- 入院・新規診断などで身体状況が変わった時に直す欄（2026-09-09 指示）。
+           様式では1つのセルに3欄が同居しているため、様式比較の右側では欄ごとの窓からも直せる -->
+      <div><label for="fDiagnosis">病名</label><input type="text" id="fDiagnosis" autocomplete="off"></div>
+      <div class="gwide"><label for="fOnsetDate">発症日・受傷日</label>
+        <div class="dpair">
+          <input type="date" id="fOnsetPick" aria-label="発症日・受傷日をカレンダーから選ぶ">
+          <input type="text" id="fOnsetDate" autocomplete="off" aria-label="発症日・受傷日（文字でも入れられます）">
+        </div>
+      </div>
+      <div class="gwide"><label for="fHospDate">直近の入院日</label>
+        <div class="dpair">
+          <input type="date" id="fHospPick" aria-label="直近の入院日をカレンダーから選ぶ">
+          <input type="text" id="fHospDate" autocomplete="off" aria-label="直近の入院日（文字でも入れられます）">
+        </div>
+      </div>
     </div>
+    <p class="muted">病名・発症日・直近の入院日は、カレンダーから選ぶか文字で直接入れられます。「不明」「令和7年3月頃」のような書き方もそのまま入ります。</p>
     <div class="stack" style="margin-top:var(--sp-3)">
       <div>
         <label for="fStatus">状態</label>
@@ -822,7 +856,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <h2 id="fpTitle">欄</h2>
       <span class="muted" id="fpSub"></span>
     </div>
-    <div class="fp-cols">
+    <div class="fp-cols" id="fpCols">
       <div class="fp-col">
         <h3 id="fpPrevTitle">前回（読み取り専用）</h3>
         <div id="fpPrev" class="fp-text" role="note" tabindex="0"></div>
@@ -832,6 +866,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <textarea id="fpCur" class="fp-text"></textarea>
       </div>
     </div>
+    <!-- 1セルに3欄が入っている所（病名・発症日・直近の入院日）は、ここに欄ごとに並べる -->
+    <div id="fpMulti" class="fp-multi" hidden></div>
     <div class="fp-foot stack">
       <button id="fpPrevField" class="btn" type="button">← 前の欄</button>
       <button id="fpNextField" class="btn" type="button">次の欄 →</button>
@@ -2636,6 +2672,51 @@ var RANK_SELECTS = [
   ['fBedridden', 'basic.bedriddenRank', 'bedridden', '障害高齢者の日常生活自立度']
 ];
 var lastRankWarn = '';
+/* ── この期の基本事項の「病名・発症日・直近の入院日」（2026-09-09 指示）──
+   カレンダーと文字の併用。文字の欄が正（保存されるのはこちら）で、カレンダーは
+   年-月-日の形で入っている時だけ値が入る。「不明」「令和7年3月頃」もそのまま入れられる。
+   [文字の欄のid, カレンダーのid（無ければ null）, データの場所] */
+var HEALTH_META = [
+  ['fDiagnosis', null, 'health.diagnosis'],
+  ['fOnsetDate', 'fOnsetPick', 'health.onsetDate'],
+  ['fHospDate', 'fHospPick', 'health.lastHospitalization']
+];
+var HEALTH_PATHS = {};
+(function () { for (var i = 0; i < HEALTH_META.length; i++) HEALTH_PATHS[HEALTH_META[i][2]] = 1; })();
+function healthRowOf(path) {
+  for (var i = 0; i < HEALTH_META.length; i++) if (HEALTH_META[i][2] === s_(path)) return HEALTH_META[i];
+  return null;
+}
+/* カレンダー側だけを文字の欄に合わせる（日付の形でない時は空にする＝文字は消さない） */
+function syncHealthPick(row) {
+  if (!row || !row[1]) return;
+  var v = s_($(row[0]).value), d = TP.isYmd(v) ? v : '';
+  if ($(row[1]).value !== d) $(row[1]).value = d;
+}
+/* 保存してある中身を3欄へ映す。path を渡すとその欄だけ。打っている欄には触らない */
+function syncHealthMeta(path) {
+  var p = curPlan(), i, row, v;
+  for (i = 0; i < HEALTH_META.length; i++) {
+    row = HEALTH_META[i];
+    if (path && row[2] !== s_(path)) continue;
+    v = p ? s_(getPath(p, row[2])) : '';
+    if (document.activeElement !== $(row[0]) && $(row[0]).value !== v) $(row[0]).value = v;
+    syncHealthPick(row);
+  }
+}
+function renderHealthMeta() {
+  var p = curPlan(), i, row, v;
+  for (i = 0; i < HEALTH_META.length; i++) {
+    row = HEALTH_META[i];
+    v = p ? s_(getPath(p, row[2])) : '';
+    $(row[0]).value = v;
+    $(row[0]).disabled = !p;
+    if (row[1]) {
+      $(row[1]).value = TP.isYmd(v) ? v : '';
+      $(row[1]).disabled = !p;
+    }
+  }
+}
 function renderMeta() {
   var p = curPlan();
   for (var i = 0; i < META.length; i++) {
@@ -2663,6 +2744,7 @@ function renderMeta() {
     if (raw && !rs.value) unknownRank.push(RANK_SELECTS[r][3]);
   }
   warnUnknownRank(p, unknownRank);
+  renderHealthMeta();
   $('fStatus').value = p ? p.status : 'none';
   $('fStatus').disabled = !p;
   updateStatusHint();
@@ -3007,6 +3089,8 @@ function onFieldInput(k) {
   setPath(p, k, s_(FEL[k].input.value));
   markEvalConfirmedIfNeeded(p, k);
   updateCount(k);
+  /* 病名・発症日・直近の入院日は「この期の基本事項」「様式のセル」「3欄の窓」にも出ている */
+  if (HEALTH_PATHS[k]) { syncHealthMeta(k); setSheetMultiText('health'); fpMultiSync(k); }
   markDirty();
   clearTimeout(diffTimer);
   diffTimer = setTimeout(function () { renderPrevDiff(k); }, 400);
@@ -4217,6 +4301,106 @@ var SHEET_PATHS = {
 var SHEET_EDIT = {};
 /* 見出しが同じセルに入っている欄（打ち込まれた文字から見出しを剥がして保存する） */
 var SHEET_HEAD = { 'treatmentCourse': 1, 'diseaseControl': 1, 'precautions': 1 };
+/* ── 1つのセルに複数の欄が入っている所（病名・発症日・直近の入院日）──
+   様式では A20 の1セルに3欄が同居している。見出し（様式の雛形の {{欄}} の間の文字）で
+   切り分けて保存する。★見出しの文言は様式ファイルが正本＝この画面には書き写さない。
+   見出しが消された時は保存せず、欄から離れた時に保存してある中身から組み直す（原則4）。 */
+var SHEET_MULTI = { 'health': 1 };
+/* 様式のプレースホルダ名 → この画面のデータの場所 */
+var MULTI_PH_PATH = {
+  'diagnosis': 'health.diagnosis',
+  'onsetDate': 'health.onsetDate',
+  'lastHospitalization': 'health.lastHospitalization'
+};
+/* 日付の形なら和暦で紙に出る欄（様式の PH_DATEISH と同じ扱い）。
+   ★セルから読み戻す時は「今の値を紙の形にした文字列」と見比べ、変わっていない欄は書き換えない
+     ＝年-月-日で持っている日付が、触っていないのに和暦の文字へ化けるのを防ぐ */
+var MULTI_DATEISH = { 'health.onsetDate': 1, 'health.lastHospitalization': 1 };
+/* セル単位の日本語（1セルに複数欄が入る所は、欄名ではなくセルの名前を出す） */
+var SHEET_CELL_LABEL = { 'health': '病名・発症日・直近の入院日' };
+/* 見出しが壊れている間だけ立てる印（欄から離れた時に組み直して消す） */
+var MULTI_BROKEN = {};
+var SHEET_MULTI_PARTS = null;
+/* 雛形の文字列を「見出し」と「欄」に分ける。
+   例）"病名：{{diagnosis}} 発症日・受傷日：{{onsetDate}} …"
+       → lits=['病名：',' 発症日・受傷日：',…] / paths=['health.diagnosis',…] */
+function splitTemplateCell(v) {
+  var re = /\{\{([A-Za-z0-9_.\[\]]+)\}\}/g, lits = [], paths = [], last = 0, m, i;
+  while ((m = re.exec(v))) {
+    lits.push(v.slice(last, m.index));
+    paths.push(s_(MULTI_PH_PATH[m[1]]));
+    last = m.index + m[0].length;
+  }
+  if (!paths.length) return null;
+  for (i = 0; i < paths.length; i++) if (!paths[i]) return null;   /* 対応表に無い欄があれば使わない */
+  lits.push(s_(v.slice(last)).replace(/[\r\n]+[ \t\u3000]*$/, ''));   /* 紙と同じく末尾の改行は落とす */
+  return { lits: lits, paths: paths };
+}
+function sheetMultiParts(field) {
+  var f = s_(field);
+  if (!SHEET_MULTI[f]) return null;
+  if (!SHEET_MULTI_PARTS) {
+    var cells = (window.TP_FORM && TP_FORM.TEMPLATE && TP_FORM.TEMPLATE.cells) || [];
+    if (!cells.length) return null;      /* 様式ファイルが未読み込みの時は覚え込まない（次に取り直す） */
+    var map = {}, i;
+    for (i = 0; i < cells.length; i++) {
+      var c = cells[i] || {}, k = s_(c.field);
+      if (!k || !SHEET_MULTI[k] || map[k]) continue;
+      map[k] = splitTemplateCell(s_(c.v));
+    }
+    SHEET_MULTI_PARTS = map;
+  }
+  return SHEET_MULTI_PARTS[f] || null;
+}
+/* その欄の見出し（様式の雛形の literal）を、そのまま欄名に使う。
+   ★紙に出ている言い方（病名／発症日・受傷日／直近の入院日）と画面の言い方を揃える。
+   見出しが取れない時は欄一覧の呼び名（FIELDS）に落とす */
+function multiFieldLabel(field, i) {
+  var parts = sheetMultiParts(field);
+  var lit = parts ? s_(parts.lits[i]) : '';
+  lit = lit.replace(/^[\s\u3000]+|[\s\u3000]+$/g, '').replace(/[：:]$/, '');
+  if (lit) return lit;
+  var def = parts ? (FIELDS[parts.paths[i]] || {}) : {};
+  return s_(def.label);
+}
+/* その欄の「いま保存されている値」を、様式が紙に出すのと同じ形にした文字列 */
+function multiShownValue(path, p) {
+  var raw = s_(getPath(p, path));
+  if (MULTI_DATEISH[path] && TP.isYmd(raw) && window.TP_FORM && typeof TP_FORM.toWareki === 'function') {
+    return s_(TP_FORM.toWareki(raw));
+  }
+  return raw;
+}
+/* セルに打ち込まれた文字を見出しで切り分ける。見出しが消えていたら null（＝保存しない） */
+function parseSheetMulti(field, text) {
+  var parts = sheetMultiParts(field);
+  if (!parts) return null;
+  var t = s_(text), lits = parts.lits, out = [], pos, i, lit, at;
+  if (lits[0] && t.indexOf(lits[0]) !== 0) return null;
+  pos = s_(lits[0]).length;
+  for (i = 0; i < parts.paths.length; i++) {
+    lit = s_(lits[i + 1]);
+    if (!lit) { out.push(t.slice(pos)); pos = t.length; continue; }
+    at = t.indexOf(lit, pos);
+    if (at < 0) return null;
+    out.push(t.slice(pos, at));
+    pos = at + lit.length;
+  }
+  return out;
+}
+/* 保存してある中身から、そのセルの文字を様式どおりに組み直して当てる */
+function setSheetMultiText(field) {
+  var p = curPlan();
+  if (!p || !CMP.right || !FORM_READY) return;
+  var cells = (TP_FORM.TEMPLATE && TP_FORM.TEMPLATE.cells) || [], i, v = null;
+  for (i = 0; i < cells.length; i++) {
+    if (s_((cells[i] || {}).field) === s_(field)) { v = s_(cells[i].v); break; }
+  }
+  if (v == null) return;
+  try {
+    setSheetField(field, TP_FORM.stripTailNewlines(TP_FORM.fillTemplate(v, planForSheet(p, { retroNote: false }))));
+  } catch (e) {}
+}
 (function () {
   var free = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
     'treatmentCourse', 'diseaseControl', 'precautions',
@@ -4246,6 +4430,7 @@ var SHEET_PICK = {
 var SHEET_OTHER_LABEL = { 'basic.birthDate': '生年月日（元号）' };
 function sheetLabel(f) {
   var k = s_(f), paths = SHEET_PATHS[k];
+  if (SHEET_CELL_LABEL[k]) return SHEET_CELL_LABEL[k];   /* 1セルに複数欄が入る所はセルの名前を出す */
   if (paths && FIELDS[paths[0]]) return FIELDS[paths[0]].label;
   if (SHEET_PICK[k]) return SHEET_PICK[k].label;
   return SHEET_OTHER_LABEL[k] || FORM_FIELD_LABEL[k] || k;
@@ -4304,16 +4489,20 @@ function lockCells(sheet) {
   var tds = sheet.querySelectorAll('td[data-field]'), i;
   for (i = 0; i < tds.length; i++) {
     var f = s_(tds[i].getAttribute('data-field'));
+    /* 1セルに3欄が入っている所（病名・発症日・直近の入院日）は、見出しを残したまま直せる。
+       見出しを消してしまった時は保存せず、欄から離れた時に組み直す（onSheetBlur） */
+    if (SHEET_MULTI[f] && sheetMultiParts(f)) {
+      tds[i].setAttribute('title', '「病名：」「発症日・受傷日：」「直近の入院日：」の見出しはそのままにして直します。' +
+        'ダブルクリックすると欄ごとに分けた窓で直せます');
+      continue;
+    }
     if (SHEET_EDIT[f] || SHEET_PICK[f]) continue;
     var tx = tds[i].querySelector('.tp-tx');
     if (!tx || tx.getAttribute('contenteditable') == null) continue;
     tx.removeAttribute('contenteditable');
     tx.removeAttribute('role');
     tx.removeAttribute('tabindex');
-    /* 病名・発症日・直近の入院日は1つのセルに3欄が入っている＝様式の中では分けられない */
-    tds[i].setAttribute('title', (f === 'health')
-      ? 'この欄（病名・発症日・直近の入院日）は上の「欄一覧」で直します'
-      : 'この欄は上の「この期の基本事項」か「欄一覧」で直します');
+    tds[i].setAttribute('title', 'この欄は上の「この期の基本事項」か「欄一覧」で直します');
   }
 }
 function renderCompare() {
@@ -4464,7 +4653,7 @@ function showCmpTip(field) {
 /* 「前回をコピー」の書き込み先をボタンの文字にも出す＝なぞっている欄と食い違っても取り違えない */
 function syncCmpCopyBtn() {
   var b = $('cmpTipCopy'), f = s_(CMP.field), path = SHEET_EDIT[f], lp = leftPlan();
-  var ok = !!(f && path && lp);
+  var ok = !!(f && (path || (SHEET_MULTI[f] && sheetMultiParts(f))) && lp);
   b.disabled = !ok;
   b.textContent = ok ? ('「' + sheetLabel(f) + '」に' + cmpOffsetName(cmpOffset()) + 'をコピー') : '前回をコピー';
   b.setAttribute('aria-label', ok
@@ -4483,7 +4672,8 @@ function syncCmpAdjustBtn() {
 }
 /* 「大きく開いて直す」も同じ作法（SHEET_EDIT にある文章の欄だけ・開く先を CMP.field に束縛） */
 function syncCmpZoomBtn() {
-  var b = $('cmpTipZoom'), f = s_(CMP.field), ok = !!(f && SHEET_EDIT[f]);
+  var b = $('cmpTipZoom'), f = s_(CMP.field);
+  var ok = !!(f && (SHEET_EDIT[f] || (SHEET_MULTI[f] && sheetMultiParts(f))));
   b.disabled = !ok;
   b.textContent = ok ? ('「' + sheetLabel(f) + '」を大きく開く') : '大きく開いて直す';
   b.setAttribute('aria-label', ok
@@ -4509,7 +4699,20 @@ function setSheetField(field, value) {
 }
 function copyPrevToCur() {
   var p = curPlan(), lp = leftPlan(), f = CMP.field, path = SHEET_EDIT[f];
-  if (!p || !lp || !path) return;
+  if (!p || !lp) return;
+  /* 1セルに3欄が入っている所は3欄ともまとめて写す（セルの一部だけ前回になるのを避ける） */
+  if (!path && SHEET_MULTI[f]) {
+    var parts = sheetMultiParts(f);
+    if (!parts) return;
+    for (var i = 0; i < parts.paths.length; i++) {
+      writeHealthField(parts.paths[i], s_(getPath(lp, parts.paths[i])), '');
+    }
+    setCmpField(f);
+    scheduleCmpFit();
+    toast(sheetLabel(f) + 'に' + cmpOffsetName(cmpOffset()) + 'の内容を写しました');
+    return;
+  }
+  if (!path) return;
   setPath(p, path, s_(getPath(lp, path)));
   syncListField(path);
   setSheetField(f, s_(getPath(p, path)));
@@ -4544,26 +4747,30 @@ function fpFields() {
   var tds = CMP.right.querySelectorAll('td[data-field]');
   for (i = 0; i < tds.length; i++) {
     f = s_(tds[i].getAttribute('data-field'));
-    if (SHEET_EDIT[f] && out.indexOf(f) < 0) out.push(f);
+    if ((SHEET_EDIT[f] || (SHEET_MULTI[f] && sheetMultiParts(f))) && out.indexOf(f) < 0) out.push(f);
   }
   return out;
 }
 function openFieldPop(field) {
-  var f = s_(field), path = SHEET_EDIT[f];
+  var f = s_(field), path = SHEET_EDIT[f], multi = !!(SHEET_MULTI[f] && sheetMultiParts(f));
   if (!curPlan()) { toast('この方の計画はまだありません'); return; }
-  if (!path) { toast(sheetLabel(f) + 'はこの窓では直せません（上の「欄一覧」で直します）'); return; }
+  if (!path && !multi) { toast(sheetLabel(f) + 'はこの窓では直せません（上の「欄一覧」で直します）'); return; }
   if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
-  FPOP = { field: f, lastFocus: document.activeElement };
+  FPOP = { field: f, multi: multi, rows: [], lastFocus: document.activeElement };
   setCmpField(f);                       /* 帯の書き込み先も揃える（取り違え防止） */
   renderFieldPop();
   $('fieldPop').classList.add('on');
-  $('fpCur').focus();
+  var first = multi ? (FPOP.rows[0] && FPOP.rows[0].input) : $('fpCur');
+  if (first) first.focus();
 }
 function closeFieldPop() {
   if (!FPOP) { $('fieldPop').classList.remove('on'); return; }
   var back = FPOP.lastFocus;
   FPOP = null;
   $('fieldPop').classList.remove('on');
+  $('fpMulti').hidden = true;
+  clear($('fpMulti'));
+  $('fpCols').hidden = false;
   if (dirty) saveNow(false);
   scheduleCmpFit();                     /* 文字数が変わっているので1枚に収まるか測り直す */
   try { if (back && back.focus) back.focus(); } catch (e) {}
@@ -4571,7 +4778,12 @@ function closeFieldPop() {
 function renderFieldPop() {
   if (!FPOP) return;
   var f = FPOP.field, path = SHEET_EDIT[f], p = curPlan(), lp = leftPlan();
-  if (!p || !path) { closeFieldPop(); return; }
+  if (!p) { closeFieldPop(); return; }
+  if (FPOP.multi) { renderFieldPopMulti(p, lp); return; }
+  if (!path) { closeFieldPop(); return; }
+  $('fpCols').hidden = false;
+  $('fpMulti').hidden = true;
+  clear($('fpMulti'));
   var def = FIELDS[path] || {};
   $('fpTitle').textContent = sheetLabel(f);
   $('fpSub').textContent = (def.limit ? ('目安 ' + def.limit + '字') : '') +
@@ -4596,7 +4808,124 @@ function renderFieldPop() {
   $('fpPrevField').disabled = !(at > 0);
   $('fpNextField').disabled = !(at >= 0 && at < list.length - 1);
 }
+/* 1セルに3欄が入っている所（病名・発症日・直近の入院日）を、欄ごとに分けて出す */
+function renderFieldPopMulti(p, lp) {
+  var f = FPOP.field, parts = sheetMultiParts(f), i;
+  if (!parts) { closeFieldPop(); return; }
+  $('fpTitle').textContent = sheetLabel(f);
+  $('fpSub').textContent = '欄ごとに分けて直します　※AIに送りません';
+  $('fpPrevTitle').textContent = '';
+  $('fpCols').hidden = true;
+  var box = $('fpMulti');
+  box.hidden = false;
+  clear(box);
+  FPOP.rows = [];
+  for (i = 0; i < parts.paths.length; i++) FPOP.rows.push(buildFpMultiRow(box, parts.paths[i], i, p, lp));
+  $('fpCount').textContent = '';
+  $('fpAdjust').hidden = true;
+  $('fpCopy').disabled = !lp;
+  $('fpCopy').textContent = lp ? (cmpOffsetName(cmpOffset()) + 'を3欄ともコピー') : '前回をコピー';
+  var list = fpFields(), at = list.indexOf(f);
+  $('fpPrevField').disabled = !(at > 0);
+  $('fpNextField').disabled = !(at >= 0 && at < list.length - 1);
+}
+function buildFpMultiRow(box, path, i, p, lp) {
+  var def = FIELDS[path] || {}, dateish = !!MULTI_DATEISH[path], id = 'fpM' + i;
+  var name = multiFieldLabel(FPOP ? FPOP.field : 'health', i);
+  var row = el('div', 'fp-mrow');
+  var h = el('h3');
+  var lab = el('label', null, name);
+  lab.setAttribute('for', id);
+  h.appendChild(lab);
+  row.appendChild(h);
+  var cols = el('div', 'fp-mcols');
+  var pc = el('div');
+  pc.appendChild(el('div', 'fp-mcap', lp
+    ? (cmpOffsetName(cmpOffset()) + '　第' + lp.seq + '期（' + (lp.planDate || '日付なし') + '）読み取り専用')
+    : '前の期はありません'));
+  var pv = lp ? s_(getPath(lp, path)) : '';
+  var pbox = el('div', 'fp-text', lp ? (pv || '（この欄は空欄です）') : '（左に並べる過去の計画はありません）');
+  pbox.setAttribute('role', 'note');
+  pbox.setAttribute('tabindex', '0');
+  if (!pv) pbox.classList.add('empty');
+  pc.appendChild(pbox);
+  var cc = el('div');
+  cc.appendChild(el('div', 'fp-mcap', '今回（ここで直します）'));
+  var input = document.createElement(dateish ? 'input' : 'textarea');
+  input.id = id;
+  input.className = 'fp-text';
+  input.value = s_(getPath(p, path));
+  input.setAttribute('aria-label', name + '（今回）');
+  var pick = null;
+  if (dateish) {
+    input.type = 'text';
+    input.autocomplete = 'off';
+    pick = document.createElement('input');
+    pick.type = 'date';
+    pick.id = id + 'p';
+    pick.setAttribute('aria-label', name + 'をカレンダーから選ぶ');
+    pick.value = TP.isYmd(input.value) ? input.value : '';
+    var pair = el('div', 'dpair');
+    pair.appendChild(pick);
+    pair.appendChild(input);
+    cc.appendChild(pair);
+  } else {
+    cc.appendChild(input);
+  }
+  var cnt = el('span', 'cnt', '');
+  cc.appendChild(cnt);
+  cols.appendChild(pc);
+  cols.appendChild(cc);
+  row.appendChild(cols);
+  box.appendChild(row);
+  var rec = { path: path, input: input, pick: pick, cnt: cnt };
+  input.addEventListener('input', function () { fpMultiInput(rec); });
+  input.addEventListener('change', function () { fpMultiInput(rec); });
+  input.addEventListener('blur', function () { if (dirty) saveNow(false); });
+  if (pick) {
+    pick.addEventListener('change', function () {
+      if (!pick.value) return;          /* カレンダーを空にしただけでは文字を消さない（原則4） */
+      input.value = pick.value;
+      fpMultiInput(rec);
+    });
+  }
+  fpMultiCount(rec);
+  return rec;
+}
+function fpMultiInput(rec) {
+  writeHealthField(rec.path, rec.input.value, 'pop');
+  if (rec.pick) {
+    var d = TP.isYmd(s_(rec.input.value)) ? s_(rec.input.value) : '';
+    if (rec.pick.value !== d) rec.pick.value = d;
+  }
+  fpMultiCount(rec);
+  if (FPOP) showCmpTip(FPOP.field);
+}
+function fpMultiCount(rec) {
+  var def = FIELDS[rec.path] || {}, n = s_(rec.input.value).length;
+  if (!def.limit) { rec.cnt.textContent = n + '字'; rec.cnt.classList.remove('over'); return; }
+  rec.cnt.textContent = n + ' / ' + def.limit + '字' + (n > def.limit ? '（⚠ 印刷で切れる恐れ）' : '');
+  rec.cnt.classList.toggle('over', n > def.limit);
+}
+/* 窓の外（様式のセル・基本事項・欄一覧）で直された分を窓へ映す（打っている欄には触らない） */
+function fpMultiSync(path) {
+  if (!fpOpen() || !FPOP.multi) return;
+  var p = curPlan();
+  if (!p) return;
+  for (var i = 0; i < FPOP.rows.length; i++) {
+    var r = FPOP.rows[i];
+    if (path && r.path !== s_(path)) continue;
+    var v = s_(getPath(p, r.path));
+    if (document.activeElement !== r.input && r.input.value !== v) r.input.value = v;
+    if (r.pick) {
+      var d = TP.isYmd(v) ? v : '';
+      if (r.pick.value !== d) r.pick.value = d;
+    }
+    fpMultiCount(r);
+  }
+}
 function fpUpdateCount() {
+  if (FPOP && FPOP.multi) return;
   var f = FPOP && FPOP.field, path = f && SHEET_EDIT[f], def = path ? (FIELDS[path] || {}) : {};
   var cnt = $('fpCount'), n = s_($('fpCur').value).length;
   if (!def.limit) { cnt.textContent = n + '字'; cnt.classList.remove('over'); return; }
@@ -4618,7 +4947,18 @@ function fpOnInput() {
 }
 function fpCopyPrev() {
   var p = curPlan(), lp = leftPlan(), f = FPOP && FPOP.field, path = f && SHEET_EDIT[f];
-  if (!p || !lp || !path) return;
+  if (!p || !lp || !f) return;
+  if (FPOP.multi) {
+    for (var i = 0; i < FPOP.rows.length; i++) {
+      var r = FPOP.rows[i];
+      r.input.value = s_(getPath(lp, r.path));
+      fpMultiInput(r);
+    }
+    if (FPOP.rows[0]) FPOP.rows[0].input.focus();
+    toast(sheetLabel(f) + 'に' + cmpOffsetName(cmpOffset()) + 'の内容を写しました');
+    return;
+  }
+  if (!path) return;
   $('fpCur').value = s_(getPath(lp, path));
   fpOnInput();
   $('fpCur').focus();
@@ -4631,15 +4971,18 @@ function fpGo(step) {
   if (at < 0 || to < 0 || to >= list.length) return;
   if (dirty) saveNow(false);
   FPOP.field = list[to];
+  FPOP.multi = !!(SHEET_MULTI[FPOP.field] && sheetMultiParts(FPOP.field));
+  FPOP.rows = [];
   setCmpField(FPOP.field);
   renderFieldPop();
-  $('fpCur').focus();
+  var first = FPOP.multi ? (FPOP.rows[0] && FPOP.rows[0].input) : $('fpCur');
+  if (first) first.focus();
 }
 /* 窓の中でフォーカスが外へ出ないようにする（HIG: モーダル） */
 function fpTrapTab(e) {
   if (!fpOpen() || e.key !== 'Tab') return;
   var box = $('fieldPop').querySelector('.box');
-  var f = box.querySelectorAll('button:not([disabled]):not([hidden]), textarea, [tabindex="0"]');
+  var f = box.querySelectorAll('button:not([disabled]):not([hidden]), textarea, input:not([disabled]), [tabindex="0"]');
   if (!f.length) return;
   var first = f[0], last = f[f.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -4676,10 +5019,40 @@ function stripSheetHead(field, value) {
   if (head && v.indexOf(head) === 0) return v.slice(head.length).replace(/^\n/, '');
   return v;
 }
+/* 病名・発症日・直近の入院日を、どの入口（様式のセル／3欄の窓／この期の基本事項／欄一覧）から
+   直しても同じ経路で書く。打っている最中の入口だけは書き戻さない（文字が飛ぶため） */
+function writeHealthField(path, value, origin) {
+  var p = curPlan();
+  if (!p) return;
+  setPath(p, path, s_(value));
+  if (origin !== 'list') syncListField(path);
+  if (origin !== 'meta') syncHealthMeta(path);
+  if (origin !== 'sheet') setSheetMultiText('health');
+  if (origin !== 'pop') fpMultiSync(path);
+  markDirty();
+  scheduleCmpDiff();
+}
+/* 1セルに3欄が入っている所が様式の中で打たれた時。見出しで切り分けて、変わった欄だけ書く */
+function onSheetMultiInput(field, value) {
+  var p = curPlan();
+  if (!p) return;
+  var f = s_(field), parts = sheetMultiParts(f);
+  if (!parts) return;
+  setCmpField(f);
+  var got = parseSheetMulti(f, value);
+  if (!got) { MULTI_BROKEN[f] = 1; return; }   /* 見出しが壊れている間は書かない */
+  delete MULTI_BROKEN[f];
+  for (var i = 0; i < parts.paths.length; i++) {
+    var path = parts.paths[i], typed = s_(got[i]);
+    if (typed === multiShownValue(path, p)) continue;   /* 触っていない欄は書き換えない */
+    writeHealthField(path, typed, 'sheet');
+  }
+}
 /* ── 様式の中のセルが編集された（training-plan-form.js の onInput から呼ばれる）── */
 function onSheetInput(field, value, td) {
   var p = curPlan();
   if (!p) return;
+  if (SHEET_MULTI[s_(field)]) { onSheetMultiInput(field, value); return; }
   var path = SHEET_EDIT[s_(field)];
   if (!path) return;                 /* 白名簿に無い欄は書かない（見出しごと書き換わるのを防ぐ） */
   setPath(p, path, stripSheetHead(field, value));
@@ -4691,6 +5064,14 @@ function onSheetInput(field, value, td) {
 }
 function onSheetFocus(field, td) { setCmpField(field); }
 function onSheetBlur(field, td) {
+  var f = s_(field);
+  /* 見出し（「病名：」など）を消したまま離れた時は、保存してある中身から組み直して知らせる。
+     ★打った文字で上書きしない＝切り分けられない文字列を保存しない（原則4） */
+  if (MULTI_BROKEN[f]) {
+    delete MULTI_BROKEN[f];
+    setSheetMultiText(f);
+    toast('「病名：」「発症日・受傷日：」「直近の入院日：」の見出しが消えていたため、直前の内容に戻しました。ダブルクリックで欄ごとに開けます');
+  }
   if (dirty) saveNow(false);         /* 欄から離れたら保存する */
   scheduleCmpFit();                  /* 1枚に収まるかを測り直す */
 }
@@ -7311,6 +7692,33 @@ function bindUI() {
       node.addEventListener('blur', function () { if (dirty) saveNow(false); });
     })(META[k]);
   }
+  /* 病名・発症日・直近の入院日（カレンダーと文字の併用）。文字の欄が正で、カレンダーは補助 */
+  for (var hh = 0; hh < HEALTH_META.length; hh++) {
+    (function (row) {
+      var tx = $(row[0]);
+      tx.addEventListener('input', function () {
+        if (!curPlan()) return;
+        writeHealthField(row[2], tx.value, 'meta');
+        syncHealthPick(row);
+      });
+      tx.addEventListener('change', function () {
+        if (!curPlan()) return;
+        writeHealthField(row[2], tx.value, 'meta');
+        syncHealthPick(row);
+      });
+      tx.addEventListener('blur', function () { if (dirty) saveNow(false); scheduleCmpFit(); });
+      if (!row[1]) return;
+      var dp = $(row[1]);
+      dp.addEventListener('change', function () {
+        if (!curPlan()) return;
+        if (!dp.value) return;          /* カレンダーを空にしただけでは文字を消さない（原則4） */
+        tx.value = dp.value;
+        writeHealthField(row[2], dp.value, 'meta');
+        if (dirty) saveNow(false);
+        scheduleCmpFit();
+      });
+    })(HEALTH_META[hh]);
+  }
   $('fStatus').addEventListener('change', onStatusChange);
   $('planSel').addEventListener('change', function () {
     /* 中: 一括作成の実行中に期を切り替えると、書き込み先が変わってしまう */
@@ -7374,7 +7782,7 @@ function bindUI() {
     var t = ev.target, td = (t && t.closest) ? t.closest('td[data-field]') : null;
     if (!td) return;
     var f = s_(td.getAttribute('data-field'));
-    if (!SHEET_EDIT[f]) return;          /* 選択式・読み取り専用のセルは今までどおり */
+    if (!SHEET_EDIT[f] && !(SHEET_MULTI[f] && sheetMultiParts(f))) return;   /* 選択式・読み取り専用のセルは今までどおり */
     ev.preventDefault();
     try { var sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) {}
     openFieldPop(f);
