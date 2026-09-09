@@ -595,6 +595,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     </div>
   </div>
   <p class="muted no-print">計画書＝達成度・Ⅲなし／報告書＝達成度（一部を既定）・Ⅲあり</p>
+  <p id="pvDateNote" class="muted no-print"></p>
   <div id="printWarn"></div>
   <div id="sheetHost"></div>
 </section>
@@ -1485,6 +1486,21 @@ function applyPrintKind(o, kind) {
   return out;
 }
 
+/* ── 報告書に刷る上段の日付（D57）──
+   報告書は次の期の計画書と同じ日に刷り、ご家族へ一緒に説明する運用のため、上段の日付をその日に合わせる。
+   作成日＝次の期の作成日／前回作成日＝この期の作成日（＝上段の並びが次の計画書と揃う）。
+   次の期がまだ無い・日付の形が違う時は何も変えない＝この期の日付のまま刷る（D58）。
+   linked は「次の期に合わせられたか」。画面にだけ知らせるために使う（紙には出さない）。
+   ★保存データは触らない（呼び出し側が印刷用の写しにだけ適用する）。 */
+function reportHeaderDates(cur, next) {
+  var c = isObj_(cur) ? cur : {};
+  var n = isObj_(next) ? next : null;
+  var curDate = s_(c.planDate);
+  var nextDate = n ? s_(n.planDate) : '';
+  if (!isYmd(nextDate)) return { planDate: curDate, prevPlanDate: s_(c.prevPlanDate), linked: false, nextPlanDate: '' };
+  return { planDate: nextDate, prevPlanDate: curDate, linked: true, nextPlanDate: nextDate };
+}
+
 /* ── AIの出力の形の判定（aiShapeNotes v2・item C）。文言の組立は呼び出し側が行う ── */
 var ACH_VALUES = ['達成', '一部', '未達', ''];
 function achievementValid(v) { return ACH_VALUES.indexOf(s_(v)) >= 0; }
@@ -1517,7 +1533,7 @@ global.TP = {
   prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods, goalRepeats: goalRepeats,
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport,
-  applyPrintKind: applyPrintKind,
+  applyPrintKind: applyPrintKind, reportHeaderDates: reportHeaderDates,
   achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix
 };
 })(typeof window !== 'undefined' ? window : this);
@@ -2257,7 +2273,14 @@ function showScreen(id, opts) {
   for (var i = 0; i < SCREENS.length; i++) $(SCREENS[i]).classList.toggle('on', SCREENS[i] === id);
   var btns = document.querySelectorAll('.bnav button');
   for (var k = 0; k < btns.length; k++) btns[k].classList.toggle('on', btns[k].getAttribute('data-scr') === id);
-  $('btnBack').hidden = (id === 'scr-list');
+  /* 戻り先は「一つ前の画面」。印刷プレビューからは、見ていた計画書の画面へ戻す
+     （印刷のたびに利用者一覧まで戻らないようにする） */
+  var back = (id === 'scr-print' && curMasterId) ? 'scr-edit' : 'scr-list';
+  var bb = $('btnBack');
+  bb.hidden = (id === 'scr-list');
+  bb.setAttribute('data-back', back);
+  bb.setAttribute('aria-label', back === 'scr-edit' ? '計画書の画面へ戻る' : '一覧へ戻る');
+  bb.title = (back === 'scr-edit') ? '計画書の画面へ戻る' : '一覧へ戻る';
   lsSet(LS.scr, id);
   /* 表示されていない間は測れない（0と出る）。編集画面に出した後で測り直す */
   if (id === 'scr-edit' && editMode() === 'sheet') scheduleCmpFit();
@@ -2341,6 +2364,7 @@ function setPath(obj, path, val) {
 /* ═══════════ 編集 ═══════════ */
 function curPlan() { return (DOC && DOC.plans && curPlanIdx >= 0) ? DOC.plans[curPlanIdx] : null; }
 function prevPlan() { return (DOC && DOC.plans && curPlanIdx > 0) ? DOC.plans[curPlanIdx - 1] : null; }
+function nextPlan() { return (DOC && DOC.plans && curPlanIdx >= 0 && curPlanIdx + 1 < DOC.plans.length) ? DOC.plans[curPlanIdx + 1] : null; }
 function sortPlans() {
   if (!DOC || !DOC.plans) return;
   DOC.plans.sort(function (a, b) { return TP.cmpYmd(a && a.planDate, b && b.planDate); });
@@ -3158,6 +3182,13 @@ function planForSheet(p, opts) {
     var pk = TP.applyPrintKind(o, kind);
     o.shortAchievement = pk.shortAchievement; o.longAchievement = pk.longAchievement;
     o.changes = pk.changes; o.issues = pk.issues;
+  }
+  /* 報告書は次の期の計画書と同じ日に刷って一緒に説明する運用のため、上段の日付を次の期に合わせる（D57）。
+     次の期が無ければこの期の日付のまま（D58）。★写しにだけ効く＝保存データは変えない */
+  if (kind === 'report') {
+    var rd = TP.reportHeaderDates(p, opts && opts.nextPlan);
+    o.planDate = rd.planDate;
+    o.prevPlanDate = rd.prevPlanDate;
   }
   return o;
 }
@@ -6388,13 +6419,16 @@ function setPvKind(k) {
 function buildPreview() {
   var host = $('sheetHost'), warn = $('printWarn');
   clear(host); clear(warn);
+  $('pvDateNote').textContent = '';
   host.style.zoom = '';
   renderPvKind();
   var p = curPlan();
   if (!p) { banner(warn, 'warn', '計画がありません。編集画面で計画を作ってから印刷してください。'); return; }
   if (!FORM_READY) { banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていません。ページを再読み込みしてください。'); return; }
+  var np = nextPlan();
+  renderPvDateNote(p, np);
   try {
-    mountSheet(host, TP_FORM.buildSheet(planForSheet(p, { kind: printKind() }), { signature: true }));
+    mountSheet(host, TP_FORM.buildSheet(planForSheet(p, { kind: printKind(), nextPlan: np }), { signature: true }));
   } catch (e) {
     banner(warn, 'err', '様式を組み立てられませんでした（' + errText(e) + '）。');
     return;
@@ -6403,14 +6437,31 @@ function buildPreview() {
   fontsReady().then(function () {
     try { lastFit = sheet ? (TP_FORM.fitSheet(sheet) || null) : null; }
     catch (e2) { lastFit = null; banner(warn, 'warn', '1枚に収める調整ができませんでした。印刷前に見た目を確かめてください。'); }
-    renderPrintWarn(warn, p);
+    renderPrintWarn(warn, p, np);
     applyZoom();
   });
 }
+/* 報告書をどの日付で刷るかを、画面にだけ出す（.no-print＝紙には出ない）。計画書の時は何も出さない */
+function renderPvDateNote(p, np) {
+  var box = $('pvDateNote');
+  box.textContent = '';
+  if (printKind() !== 'report') return;
+  var rd = TP.reportHeaderDates(p, np);
+  var w = (window.TP_FORM && typeof TP_FORM.toWareki === 'function') ? TP_FORM.toWareki : null;
+  var shown = (w ? s_(w(rd.planDate)) : '') || s_(rd.planDate) || '（作成日が空欄です）';
+  box.textContent = rd.linked
+    ? ('報告書は次の期の計画書と同じ日付で刷ります：作成日 ' + shown + '／前回作成日はこの期の作成日。')
+    : ('次の期の計画書がまだないため、この期の作成日 ' + shown + ' で刷ります。');
+}
 /* 縮んだ欄の警告は【画面だけ】に出す（.tp-warn は @media print で消える＝紙には出ない） */
-function renderPrintWarn(warn, p) {
+function renderPrintWarn(warn, p, np) {
   var shrunk = Object.keys(fitKeySet(lastFit && lastFit.shrunkFields));
   var floor = Object.keys(fitKeySet(lastFit && lastFit.floorHit));
+  /* 報告書は次の期の計画書と同じ日付で刷る運用。次の期がまだ無い期はそれができない（D58） */
+  if (printKind() === 'report' && p && !TP.reportHeaderDates(p, np).linked) {
+    warn.appendChild(el('div', 'tp-warn', '▲ 次の期の計画書がまだありません。報告書はこの期の作成日で刷ります。' +
+      '次の期を作ってから刷り直すと、次の計画書と同じ日付になります。'));
+  }
   if (lastFit && lastFit.measured === false) {
     warn.appendChild(el('div', 'tp-warn', '▲ 1枚に収める調整ができませんでした（' + s_(lastFit.reason) + '）。印刷前に見た目を確かめてください。'));
   }
@@ -7202,8 +7253,10 @@ function bindUI() {
   $('btnBack').addEventListener('click', function () {
     if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
     if (dirty) saveNow(true);
-    showScreen('scr-list');
-    renderList();
+    var to = s_(this.getAttribute('data-back'));
+    if (SCREENS.indexOf(to) < 0) to = 'scr-list';
+    showScreen(to);
+    if (to === 'scr-list') renderList();
   });
   $('listSort').addEventListener('change', function () { lsSet(LS.sort, this.value); renderList(); });
   $('listFilter').addEventListener('change', function () { lsSet(LS.filter, this.value); renderList(); });
