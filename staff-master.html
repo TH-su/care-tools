@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.3">
+<meta name="stfm-build" content="2026-09-10.4">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -796,7 +796,7 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-10.3</p>
+    <p class="muted">版 2026-09-10.4</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -857,13 +857,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.3
+   職員マスタ 2026-09-10.4
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.3';
+var BUILD = '2026-09-10.4';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -2648,7 +2648,9 @@ function currentPeriod() {
     if (!f || !t || f > t) return null;
     return { from: f, to: t };
   }
-  var p = SC().period(ST.dashPeriod, ST.dashYear, asOf);
+  /* period(kind, y, m, asOf)。年度・暦年では月を使わないので null を渡す（ここで asOf を第3引数に
+     渡すと基準日が届かず、過去の基準日で期間末をクランプできなくなる。2026-09-10 修正） */
+  var p = SC().period(ST.dashPeriod, ST.dashYear, null, asOf);
   return (p && p.from && p.to) ? p : null;
 }
 
@@ -2682,8 +2684,13 @@ function renderDash() {
   clearNode(cards);
   var asOf = asOfDate();
   var head = SC().headAt(ST.rows, asOf);
-  cards.appendChild(kpiCard('在職者数', num(head), '名', '基準日 ' + jpDate(asOf) + ' 時点'));
+  cards.appendChild(kpiCard('在職者数', num(head), '名', '基準日 ' + jpDate(asOf) + ' 時点（期間ではありません）'));
   var tv = safeTurnover(p.from, p.to);
+  /* 退職者数・入職者数は「指定した期間の実数」。離職率の脚注に小さく出すだけでは見落とされるため、
+     独立したカードにして期間を明記する（2026-09-10 管理者の指摘） */
+  var span = jpDate(p.from) + ' 〜 ' + jpDate(p.to);
+  cards.appendChild(kpiCard('退職者数（期間）', num(tv && tv.leavers), '名', span));
+  cards.appendChild(kpiCard('入職者数（期間）', num(tv && tv.hires), '名', span));
   cards.appendChild(kpiCard('離職率（期間）', pct(tv && tv.rate), '%', turnoverSub(tv), turnoverRef(tv)));
   var from12 = shiftYear(asOf, -1);
   var tv12 = from12 ? safeTurnover(from12, asOf) : null;
