@@ -2205,7 +2205,7 @@ function syncSiteRatios() {
   if (!w) return;
   var msg = '';
   if (ST.caps === null) msg = '接続を確かめられていないため、兼務比率はまだ入力できません。設定画面の「接続テスト」で確かめてください';
-  else if (!canRatio) msg = '職員マスタの GAS を更新すると兼務比率を保存できます';
+  else if (!canRatio) msg = '職員マスタの GAS を更新し、setup を実行すると兼務比率を保存できます';
   else if (bad) msg = '兼務比率は 0〜100 の整数で入れてください（小数や範囲外は保存されません）';
   else if (n && total !== 100) msg = '兼務比率の合計が100%になっていません（現在 ' + total + '%）。このままでも保存できます';
   w.textContent = msg;
