@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.2">
+<meta name="stfm-build" content="2026-09-10.3">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -528,6 +528,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 .fdlg .fd-tbl a.open{color:var(--c-link);font-size:var(--fs-2xs);display:inline-flex;align-items:center;
      min-height:var(--tap-min);padding:0 var(--sp-2)}
 .fdlg .fd-note{margin-top:var(--sp-1)}
+/* ドロップ領域（2026-09-10.3 追加。押すと「ファイルを選ぶ」と同じ画面が開く） */
+.fdlg .fdrop{display:flex;align-items:center;justify-content:center;text-align:center;
+     width:100%;min-height:88px;padding:var(--sp-3);cursor:pointer;
+     border:2px dashed var(--c-border);border-radius:var(--r-md);
+     background:var(--c-surface2);color:var(--c-ink2);font-size:var(--fs-sm)}
+/* 強調は色替えだけ。動きを足さないので「動きを減らす」設定でも見え方が変わらない */
+.fdlg .fdrop.hot{border-color:var(--c-primary);background:var(--c-info-bg);color:var(--c-ink)}
 
 /* トースト */
 #toast{position:fixed;left:50%;bottom:var(--sp-6);transform:translateX(-50%);background:var(--c-ink);
@@ -789,7 +796,7 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-10.2</p>
+    <p class="muted">版 2026-09-10.3</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -825,6 +832,8 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 
   <h2 class="sec" style="margin-top:var(--sp-3)">書類を追加する</h2>
   <div class="form">
+    <button type="button" class="fdrop s12" id="fileDrop"
+      aria-label="ファイルをドラッグ&amp;ドロップする場所。押すとファイルを選ぶ画面が開きます">ここにファイルをドラッグ&amp;ドロップ、または「ファイルを選ぶ」</button>
     <div class="fld s5">
       <label for="fdFile">ファイルを選ぶ（PDF・JPEG・PNG／10MBまで）</label>
       <input type="file" id="fdFile" accept="application/pdf,image/jpeg,image/png">
@@ -848,13 +857,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.2
+   職員マスタ 2026-09-10.3
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.2';
+var BUILD = '2026-09-10.3';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1000,7 +1009,9 @@ var ST = {
   bulk: false, dirty: {}, conflicts: {},
   detail: null, imp: null, busy: false,
   /* caps: ping が返す「サーバーが持っている機能」。null＝まだ確かめられていない */
-  caps: null, capsRetried: false, filesBusy: false
+  caps: null, capsRetried: false, filesBusy: false,
+  /* dropFile: 落としたファイルを「ファイルを選ぶ」欄へ移せない端末のための控え（端末には残さない） */
+  dropFile: null
 };
 
 function asOfDate() { return ST.asOf || SC().today(); }
@@ -2377,22 +2388,27 @@ function openFiles() {
   fdOpener = b;
   $('fdTitle').textContent = '添付書類 — ' + (txt(row && row.name) || '（氏名未入力）');
   $('fdFile').value = '';
+  ST.dropFile = null;
   $('fdTitleIn').value = '';
   fillFileKinds();
   $('fdPick').textContent = FD_PICK_HELP;
   setState('fdState', '', '', '');
   setFilesBusy(false);
+  setDropHot(false);
+  bindWinDrop(true);                   /* 外に落とされてもブラウザがファイルを開かないようにする */
   var dlg = $('filesDlg');
   if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
 }
 function closeFiles() {
   var dlg = $('filesDlg');
+  bindWinDrop(false);                  /* close が起きない古い端末でも必ず外す */
   if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
 }
 
 function pickedFile() {
   var el = $('fdFile');
-  return (el && el.files && el.files[0]) ? el.files[0] : null;
+  if (el && el.files && el.files[0]) return el.files[0];
+  return ST.dropFile || null;          /* 欄へ移せなかった端末で落としたファイル */
 }
 /* 種類が空で来る端末があるので、その時だけ拡張子から補う */
 function fileMime(f) {
@@ -2433,6 +2449,86 @@ function onFilePick() {
     setState('fdState', '', '', '');
     $('fdUpload').disabled = ST.filesBusy;
   }
+}
+
+/* ── ドラッグ&ドロップ（2026-09-10.3 追加）──────────────
+   落としたファイルは「ファイルを選ぶ」欄へ入れ直し、検査も送信もこれまでと同じ経路に流す。
+   この画面は1件ずつ送る作りなので、2件以上落とされたら最初の1件だけを受け取る。 */
+function setDropHot(on) {
+  var z = $('fileDrop');
+  if (z) z.classList.toggle('hot', !!on);
+}
+/* ダイアログの外に落とされた時に、ブラウザがそのファイルを開いて画面が変わるのを止める */
+function blockWinDrop(e) { if (e) e.preventDefault(); }
+function bindWinDrop(on) {
+  if (on) {
+    window.addEventListener('dragover', blockWinDrop);
+    window.addEventListener('drop', blockWinDrop);
+  } else {
+    window.removeEventListener('dragover', blockWinDrop);
+    window.removeEventListener('drop', blockWinDrop);
+  }
+}
+function setDroppedFile(f) {
+  var el = $('fdFile');
+  ST.dropFile = null;
+  if (!el) { ST.dropFile = f; return; }
+  el.value = '';                                       /* 前に選んだファイルを必ず外してから入れ直す */
+  try {
+    if (typeof DataTransfer === 'function') {
+      var dt = new DataTransfer();
+      dt.items.add(f);
+      el.files = dt.files;
+    }
+  } catch (err) { /* 欄へ移せない端末。下の控えで受ける */ }
+  if (!(el.files && el.files.length === 1)) ST.dropFile = f;
+}
+function onDropOver(e) {
+  e.preventDefault();                                  /* これが無いと drop が起きない */
+  if (e.dataTransfer) { try { e.dataTransfer.dropEffect = ST.filesBusy ? 'none' : 'copy'; } catch (err) { /* 端末による */ } }
+  setDropHot(!ST.filesBusy);
+}
+function onDropLeave(e) {
+  if (e) e.preventDefault();
+  setDropHot(false);
+}
+function onFileDrop(e) {
+  e.preventDefault();
+  setDropHot(false);
+  if (ST.filesBusy) {
+    setState('fdState', 'warn', 'いま送信中です', '前の書類を送り終えてから、もう一度落としてください。');
+    return;
+  }
+  var list = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files : null;
+  var n = list ? list.length : 0;
+  if (!n) {
+    setState('fdState', 'warn', 'ファイルを受け取れませんでした',
+      'フォルダやリンクではなく、ファイルそのものを落としてください。「ファイルを選ぶ」からも選べます。');
+    return;
+  }
+  var f = list[0];
+  var msg = checkPicked(f);                            /* 検査は「ファイルを選ぶ」と同じ */
+  setDroppedFile(f);
+  onFilePick();                                        /* ファイル名の表示・送れるかの判定も同じ経路 */
+  if (n > 1) {
+    if (msg) {
+      setState('fdState', 'warn', 'このファイルは送れません',
+        msg + '（' + n + '件落とされましたが、1件ずつお願いします。最初の1件だけを受け取りました）');
+    } else {
+      setState('fdState', 'warn', '1件ずつお願いします',
+        n + '件落とされました。この画面は1件ずつ送る作りです。最初の1件「' + txt(f.name) +
+        '」だけを受け取りました。残りは、これを送ったあとにもう一度落としてください。');
+    }
+  }
+}
+/* ドロップ領域はキーボードでも使えるボタン。押したら「ファイルを選ぶ」と同じ画面を開く */
+function openFilePicker() {
+  if (ST.filesBusy) {
+    setState('fdState', 'warn', 'いま送信中です', '前の書類を送り終えてから、もう一度お選びください。');
+    return;
+  }
+  var el = $('fdFile');
+  if (el && typeof el.click === 'function') el.click();
 }
 
 function readAsB64(f) {
@@ -2486,6 +2582,7 @@ function uploadPicked() {
     if (row && nf.fid) row.filesJson = toArr(row.filesJson).concat([nf]);
     if (row) applyFilesRev(row, d && d.rev);
     $('fdFile').value = '';
+    ST.dropFile = null;
     $('fdTitleIn').value = '';
     $('fdPick').textContent = FD_PICK_HELP;
     renderFiles();
@@ -3134,13 +3231,21 @@ function bindEvents() {
   /* 添付書類（ダイアログ。Esc と「閉じる」で閉じ、開いたボタンへ戻る） */
   $('filesBtn').addEventListener('click', openFiles);
   $('fdClose').addEventListener('click', closeFiles);
-  $('fdFile').addEventListener('change', onFilePick);
+  $('fdFile').addEventListener('change', function () { ST.dropFile = null; onFilePick(); });
   $('fdUpload').addEventListener('click', uploadPicked);
+  /* ドロップ領域（押す＝「ファイルを選ぶ」と同じ／落とす＝同じ検査経路） */
+  $('fileDrop').addEventListener('click', openFilePicker);
+  $('fileDrop').addEventListener('dragenter', onDropOver);
+  $('fileDrop').addEventListener('dragover', onDropOver);
+  $('fileDrop').addEventListener('dragleave', onDropLeave);
+  $('fileDrop').addEventListener('drop', onFileDrop);
   /* 送信中の Esc は無視する（閉じても通信は止まらず、結果を出す先が無くなる） */
   $('filesDlg').addEventListener('cancel', function (ev) {
     if (ST.filesBusy) ev.preventDefault();
   });
   $('filesDlg').addEventListener('close', function () {
+    bindWinDrop(false);                /* 閉じたら window の受けを外す（ほかの画面に影響させない） */
+    setDropHot(false);
     var b = fdOpener;
     fdOpener = null;
     if (b && typeof b.focus === 'function' && !b.disabled) b.focus();
