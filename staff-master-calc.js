@@ -6,7 +6,7 @@
        タイムゾーンずれを踏まない。JST を要するのは today() だけ）
      ・旧スプレッドシート「職員一覧」の1行をアプリの項目へ写す（判定できないものは埋めずに issues へ）
    公開API（凍結。名前・引数・戻り値を変えない）
-     StaffCalc.ymd / normDate / today / age / tenure / statusOf / headAt / leavers / turnover
+     StaffCalc.ymd / normDate / toWareki / today / age / tenure / statusOf / headAt / leavers / turnover
      StaffCalc.period / averageTenureYears / averageAge / composition
      StaffCalc.normName / normKana / parseCsv / toCsv
      StaffCalc.LABELS / ENUMS / mapLegacyRow / diffFields
@@ -21,7 +21,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-09.1';
+  var VERSION = '2026-09-10.1';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -167,6 +167,10 @@
     var s = normDash(nfkc(raw)).replace(/^[\s　]+|[\s　]+$/g, '');
     if (s === '') return null;
 
+    /* 途中の空白（'R 8. 9. 10'）と末尾の「生」（'昭和55年4月3日生'）を落としてから照合する */
+    s = s.replace(RE_SPACE, '').replace(/生$/, '');
+    if (s === '') return null;
+
     if (RE_SERIAL.test(s)) {                                    /* Excel/Sheets のシリアル値 */
       var base = daysFromCivil(1899, 12, 30);
       var o = civilFromDays(base + parseInt(s, 10));
@@ -189,6 +193,31 @@
     m = RE_YMD8.exec(s);
     if (m) return build(+m[1], +m[2], +m[3]);
 
+    return null;
+  }
+
+  /* ── 和暦の読み下し（入力の確認用。保存する値は常に 'YYYY-MM-DD'） ── */
+
+  /* 改元日（グレゴリオ暦）。新しい元号から順に見て、最初に「始まり以降」に当たったものを採る */
+  var ERA_START = [
+    { name: '令和', y: 2019, m: 5, d: 1 },
+    { name: '平成', y: 1989, m: 1, d: 8 },
+    { name: '昭和', y: 1926, m: 12, d: 25 },
+    { name: '大正', y: 1912, m: 7, d: 30 },
+    { name: '明治', y: 1868, m: 1, d: 25 }
+  ];
+
+  /* 'YYYY-MM-DD' → '令和8年9月10日'（元号の1年目は「元年」）。明治より前・読めない値は null */
+  function toWareki(s) {
+    var o = ymd(s);
+    if (!o) return null;
+    var day = daysFromCivil(o.y, o.m, o.d);
+    for (var i = 0; i < ERA_START.length; i++) {
+      var e = ERA_START[i];
+      if (day < daysFromCivil(e.y, e.m, e.d)) continue;
+      var n = o.y - e.y + 1;                                    /* 改元年は前の元号と同じ西暦なので引き算だけで足りる */
+      return e.name + (n === 1 ? '元' : n) + '年' + o.m + '月' + o.d + '日';
+    }
     return null;
   }
 
@@ -376,7 +405,7 @@
     rev: '版',
     updatedAt: '更新日時',
     updatedBy: '更新元',
-    legacyNo: '旧No',
+    legacyNo: '職員No',
     name: '氏名',
     kana: 'フリガナ',
     birthDate: '生年月日',
@@ -825,6 +854,7 @@
     VERSION: VERSION,
     ymd: ymd,
     normDate: normDate,
+    toWareki: toWareki,
     today: today,
     age: age,
     tenure: tenure,

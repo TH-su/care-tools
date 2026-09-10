@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-09.1">
+<meta name="stfm-build" content="2026-09-10.1">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -416,7 +416,9 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
 /* フォーム */
 .form{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--sp-2);margin-bottom:var(--sp-3)}
 .fld{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0}
-.fld>label,.fld>.lbl{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight)}
+.fld>label,.fld>.lbl{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight);display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);min-width:0}
+/* 和暦の読み下しはラベル行の右端に出す（欄の下に置くと1画面に収まらなくなるため・2026-09-10） */
+.fld>label>.fnote{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .fld input,.fld select,.fld textarea{min-height:var(--tap-min);padding:var(--sp-1) var(--sp-3);
      font-size:var(--fs-base);border:1px solid var(--c-border);border-radius:var(--r-md);
      background:var(--c-surface);color:var(--c-ink);width:100%}
@@ -428,6 +430,11 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
 .fld input[aria-invalid="true"],.fld select[aria-invalid="true"]{border-color:var(--c-danger);border-width:2px}
 .ferr{font-size:var(--fs-2xs);color:var(--c-danger);line-height:var(--lh-tight)}
 .ferr[hidden]{display:none}
+/* 注意（保存は止めない）と、日付欄の和暦の読み下し */
+.fwarn{font-size:var(--fs-2xs);color:var(--c-warn);line-height:var(--lh-tight)}
+.fwarn[hidden]{display:none}
+.fnote{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight)}
+.fnote[hidden]{display:none}
 .chkwrap{display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)}
 .chkwrap label{font-size:var(--fs-sm)}
 .chkwrap input{width:auto;min-width:var(--tap-min)}
@@ -616,11 +623,11 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 
   <h2 class="sec">基本情報</h2>
   <div class="form">
-    <div class="fld s1"><label for="f_legacyNo">旧No</label><input type="text" id="f_legacyNo" readonly aria-readonly="true" tabindex="-1"></div>
+    <div class="fld s1"><label for="f_legacyNo">職員No</label><input type="text" id="f_legacyNo" autocomplete="off" aria-describedby="w_legacyNo"><p class="fwarn" id="w_legacyNo" hidden></p></div>
     <div class="fld s3"><label for="f_name">氏名（必須）</label><input type="text" id="f_name" autocomplete="off" aria-describedby="e_name" placeholder="姓と名の間は半角スペース1つ"><p class="ferr" id="e_name" hidden></p></div>
     <div class="fld s3"><label for="f_kana">フリガナ</label><input type="text" id="f_kana" autocomplete="off" placeholder="全角カタカナで入力"></div>
     <div class="fld s2"><label for="f_gender">性別</label><select id="f_gender"></select></div>
-    <div class="fld s2"><label for="f_birthDate">生年月日</label><input type="date" id="f_birthDate" aria-describedby="e_birthDate"><p class="ferr" id="e_birthDate" hidden></p></div>
+    <div class="fld s2"><label for="f_birthDate">生年月日<span class="fnote" id="r_birthDate" hidden></span></label><input type="text" id="f_birthDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_birthDate e_birthDate"><p class="ferr" id="e_birthDate" hidden></p></div>
     <div class="fld s1"><label for="f_age">年齢（自動）</label><input type="text" id="f_age" readonly aria-readonly="true" tabindex="-1" title="生年月日と基準日から計算した値です"></div>
   </div>
 
@@ -636,10 +643,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 
   <h2 class="sec">雇用条件</h2>
   <div class="form">
-    <div class="fld s2"><label for="f_hireDate">入職日（必須）</label><input type="date" id="f_hireDate" aria-describedby="e_hireDate"><p class="ferr" id="e_hireDate" hidden></p></div>
-    <div class="fld s2"><label for="f_retireDate">退職日</label><input type="date" id="f_retireDate" aria-describedby="e_retireDate"><p class="ferr" id="e_retireDate" hidden></p></div>
+    <div class="fld s2"><label for="f_hireDate">入職日（必須）<span class="fnote" id="r_hireDate" hidden></span></label><input type="text" id="f_hireDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_hireDate e_hireDate"><p class="ferr" id="e_hireDate" hidden></p></div>
+    <div class="fld s2"><label for="f_retireDate">退職日<span class="fnote" id="r_retireDate" hidden></span></label><input type="text" id="f_retireDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_retireDate e_retireDate"><p class="ferr" id="e_retireDate" hidden></p></div>
     <div class="fld s1"><label for="f_tenure" title="入職日と退職日（無ければ基準日）から自動計算">勤続</label><input type="text" id="f_tenure" readonly aria-readonly="true" tabindex="-1"></div>
-    <div class="fld s2"><label for="f_careStartDate">介護就職</label><input type="date" id="f_careStartDate"></div>
+    <div class="fld s2"><label for="f_careStartDate">介護就職<span class="fnote" id="r_careStartDate" hidden></span></label><input type="text" id="f_careStartDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_careStartDate e_careStartDate"><p class="ferr" id="e_careStartDate" hidden></p></div>
     <div class="fld s1"><label for="f_careYears" title="介護就職の日付から自動計算">介護経験</label><input type="text" id="f_careYears" readonly aria-readonly="true" tabindex="-1"></div>
     <div class="fld s2"><label for="f_primarySite">主たる事業所</label><select id="f_primarySite" aria-describedby="e_primarySite"></select><p class="ferr" id="e_primarySite" hidden></p></div>
     <div class="fld s2"><label for="f_jobTitle">職種</label><input type="text" id="f_jobTitle" autocomplete="off" placeholder="複数は「・」で区切る"></div>
@@ -666,7 +673,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 
   <h2 class="sec">取得日・備考</h2>
   <div class="form">
-    <div class="fld s2"><label for="f_cwDate">介護福祉士 取得日</label><input type="date" id="f_cwDate" aria-describedby="e_cwDate" disabled><p class="ferr" id="e_cwDate" hidden></p></div>
+    <div class="fld s2"><label for="f_cwDate">介護福祉士 取得日<span class="fnote" id="r_cwDate" hidden></span></label><input type="text" id="f_cwDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_cwDate e_cwDate" disabled><p class="ferr" id="e_cwDate" hidden></p></div>
     <div class="fld s1"><label for="f_cwYears" title="取得日から自動計算">取得後</label><input type="text" id="f_cwYears" readonly aria-readonly="true" tabindex="-1"></div>
     <div class="fld s9"><label for="f_note">備考</label><textarea id="f_note" rows="2"></textarea></div>
   </div>
@@ -779,12 +786,12 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-09.1
+   職員マスタ 2026-09-10.1
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-09.1';
+var BUILD = '2026-09-10.1';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -871,7 +878,7 @@ function fieldLabel(k) {
   return txt(L[k] || FALLBACK_LABELS[k] || k);
 }
 var FALLBACK_LABELS = {
-  id: '職員ID', legacyNo: '旧No', name: '氏名', kana: 'フリガナ', birthDate: '生年月日',
+  id: '職員ID', legacyNo: '職員No', name: '氏名', kana: 'フリガナ', birthDate: '生年月日',
   gender: '性別', phone: '電話', address: '住所', emergencyJson: '緊急連絡先',
   employmentType: '雇用区分', jobTitle: '職種', position: '役職', siteFacility: '施設',
   siteVisit: '訪問', siteDay: '通所', siteCm: '居宅', primarySite: '主たる事業所',
@@ -1104,6 +1111,9 @@ var LIST_COLS = [
   { k: 'note', label: '備考', kind: 'text', edit: 'text' }
 ];
 var SORT_OF_COL = { legacyNo: 'no', name: 'kana', hireDate: 'hire', primarySite: 'office' };
+/* 一括編集で日付として直すセル（詳細フォームと同じく西暦・和暦のどちらでも打てる） */
+var DATE_COL_KEYS = {};
+LIST_COLS.forEach(function (c) { if (c.edit === 'date') DATE_COL_KEYS[c.k] = true; });
 
 function buildListHead() {
   var tr = h('tr');
@@ -1219,9 +1229,12 @@ function buildCellEditor(row, col) {
     enumPairs(col.enumKey).forEach(function (p) { el.appendChild(h('option', { value: p[0] }, p[1])); });
     el.value = txt(v);
   } else if (col.edit === 'date') {
-    el = h('input', { 'data-f': col.k, 'aria-label': lab });
-    if (!v || DATE_RE.test(txt(v))) { el.type = 'date'; } else { el.type = 'text'; }
+    el = h('input', {
+      type: 'text', 'data-f': col.k, 'aria-label': lab, autocomplete: 'off',
+      placeholder: '2026-09-10 / R8.9.10'
+    });
     el.value = txt(v);
+    setCellDateTitle(el);
   } else if (col.edit === 'check') {
     el = h('input', { type: 'checkbox', 'data-f': col.k, 'aria-label': lab });
     el.checked = !!v;
@@ -1230,6 +1243,12 @@ function buildCellEditor(row, col) {
     el.value = txt(v);
   }
   return el;
+}
+
+/* 日付セルの読み下しは title に入れる（表の行の高さを変えないため） */
+function setCellDateTitle(el) {
+  var w = warekiOf(el.value);
+  if (w) el.setAttribute('title', w); else el.removeAttribute('title');
 }
 
 function mergedRow(id) {
@@ -1419,6 +1438,23 @@ function onCellChange(ev) {
   var id = tr.getAttribute('data-id');
   var v = (el.type === 'checkbox') ? !!el.checked : txt(el.value);
   setDirty(id, f, v);
+}
+
+/* セルを離れた時に日付を 'YYYY-MM-DD' へ直す。読めない値はそのまま残し、
+   rowErrors がその行を検証エラーにして一括保存を止める（勝手に捨てない） */
+function onCellBlur(ev) {
+  var el = ev.target;
+  if (!el || !el.getAttribute || el.tagName !== 'INPUT') return;
+  var f = el.getAttribute('data-f');
+  if (!f || !DATE_COL_KEYS[f]) return;
+  var tr = el.closest('tr');
+  var id = tr && tr.getAttribute('data-id');
+  if (!id) return;
+  var raw = txt(el.value).trim();
+  var v = raw === '' ? '' : SC().normDate(raw);
+  el.value = v ? v : raw;
+  setCellDateTitle(el);
+  setDirty(id, f, txt(el.value));
 }
 
 function onCellKey(ev) {
@@ -1650,6 +1686,94 @@ var FORM_MAP = {
   position: 'f_position', employmentType: 'f_employmentType', workStyle: 'f_workStyle', note: 'f_note'
 };
 
+/* ── 日付欄（西暦・和暦のどちらでも打てる） ─────────────────────
+   保存する値は今までどおり 'YYYY-MM-DD' のみ。欄を離れた時と保存の直前に
+   StaffCalc.normDate() を通して直し、読めた時だけ和暦の読み下しを下に出す */
+var DATE_FIELD_IDS = ['f_birthDate', 'f_hireDate', 'f_retireDate', 'f_careStartDate', 'f_cwDate'];
+var DATE_ERR_ID = {
+  f_birthDate: 'e_birthDate', f_hireDate: 'e_hireDate', f_retireDate: 'e_retireDate',
+  f_careStartDate: 'e_careStartDate', f_cwDate: 'e_cwDate'
+};
+var DATE_NOTE_ID = {
+  f_birthDate: 'r_birthDate', f_hireDate: 'r_hireDate', f_retireDate: 'r_retireDate',
+  f_careStartDate: 'r_careStartDate', f_cwDate: 'r_cwDate'
+};
+var DATE_BAD_MSG = '日付を読み取れません。2026-09-10 または R8.9.10 の形で入れてください';
+
+/* 'YYYY-MM-DD' → '令和8年9月10日'。それ以外・空は ''（計算モジュールが古い版でも落ちない） */
+function warekiOf(v) {
+  var s = txt(v).trim();
+  if (!DATE_RE.test(s)) return '';
+  var f = SC() ? SC().toWareki : null;
+  return (typeof f === 'function') ? txt(f(s) || '') : '';
+}
+
+function setDateNote(id, msg) {
+  var n = $(DATE_NOTE_ID[id]);
+  if (!n) return;
+  n.textContent = txt(msg);
+  n.hidden = !msg;
+}
+
+/* 欄の値を 'YYYY-MM-DD' に直す。空はそのまま空。読めない値は打ち直せるように残す */
+function normalizeDateField(id) {
+  var el = $(id);
+  if (!el) return true;
+  var raw = txt(el.value).trim();
+  if (raw === '') {
+    if (el.value !== '') el.value = '';
+    setDateNote(id, '');
+    return true;
+  }
+  var v = SC().normDate(raw);
+  el.value = v ? v : raw;
+  setDateNote(id, v ? warekiOf(v) : '');
+  return !!v;
+}
+function normalizeDateFields() { DATE_FIELD_IDS.forEach(function (id) { normalizeDateField(id); }); }
+function refreshDateNotes() { DATE_FIELD_IDS.forEach(function (id) { setDateNote(id, warekiOf($(id).value)); }); }
+
+/* ── 職員No（自動採番と重複の注意） ───────────────────────────── */
+
+/* 読み込み済みの全職員から最大値+1。ゼロ埋めは既存で最も多い桁数に合わせる（001…178 → 179） */
+function nextLegacyNo() {
+  var max = null, lens = {};
+  ST.rows.forEach(function (r) {
+    var digits = txt(r.legacyNo).replace(/[^0-9]/g, '');
+    if (!digits) return;
+    var n = parseInt(digits, 10);
+    if (!isFinite(n)) return;
+    if (max === null || n > max) max = n;
+    lens[digits.length] = (lens[digits.length] || 0) + 1;
+  });
+  var width = 0, bestN = 0;
+  Object.keys(lens).forEach(function (k) {
+    var len = Number(k);
+    /* 同数なら桁の多い方に合わせる（ゼロ埋めの並びを崩さない） */
+    if (lens[k] > bestN || (lens[k] === bestN && len > width)) { width = len; bestN = lens[k]; }
+  });
+  var s = String(max === null ? 1 : max + 1);
+  while (s.length < width) s = '0' + s;
+  return s;
+}
+
+/* 他の方と番号が重なっていたら注意を出す（主キーは職員IDなので保存は止めない） */
+function updateLegacyDup() {
+  var box = $('w_legacyNo');
+  if (!box) return;
+  var v = txt($('f_legacyNo').value).trim();
+  var mine = ST.detail ? txt(ST.detail.id) : '';
+  var hit = false;
+  if (v) {
+    for (var i = 0; i < ST.rows.length; i++) {
+      if (txt(ST.rows[i].id) === mine) continue;
+      if (txt(ST.rows[i].legacyNo).trim() === v) { hit = true; break; }
+    }
+  }
+  box.textContent = hit ? 'この職員Noは他の方が使っています' : '';
+  box.hidden = !hit;
+}
+
 function fillSelect(id, group, emptyLabel) {
   var s = $(id);
   clearNode(s);
@@ -1678,7 +1802,7 @@ function syncCwDate() {
   var cw = $('qualChips').querySelector('[data-code="cw"]');
   var on = !!(cw && cw.getAttribute('aria-pressed') === 'true');
   $('f_cwDate').disabled = !on;
-  if (!on) $('f_cwDate').value = '';
+  if (!on) { $('f_cwDate').value = ''; setDateNote('f_cwDate', ''); }
 }
 
 function openDetail(id) {
@@ -1687,6 +1811,9 @@ function openDetail(id) {
   /* 一括編集の未保存とこの画面の入力が二重になるのを防ぐ（どちらが正か分からなくなる） */
   if (id && ST.bulk && ST.dirty[id]) { toast('一括編集を保存するか取消してから開いてください'); return; }
   var base = row ? normRow(row) : normRow({});
+  /* 新規は職員Noを自動で入れておく。取消でもこの番号に戻るよう base 側に持たせる
+     （既存の職員は保存されている値をそのまま出す＝採番しない） */
+  if (!id) base.legacyNo = nextLegacyNo();
   ST.detail = { id: id || '', rev: row ? row.rev : 0, base: base, quals: {}, insShown: false, conflict: null };
   /* 資格は code → 元のアイテムの写しで持つ（その他の名称 label と取得日を落とさない） */
   toArr(base.qualsJson).forEach(function (q) {
@@ -1708,6 +1835,9 @@ function openDetail(id) {
 
 function fillForm(r) {
   Object.keys(FORM_MAP).forEach(function (k) { $(FORM_MAP[k]).value = txt(r[k]); });
+  /* 職員Noが空の方（取込前に登録された等）には、次に空いている番号を候補として薄く示す。
+     勝手に入れはしない（原則6）。人が打つか、この番号を見て決められるようにするだけ。 */
+  $('f_legacyNo').placeholder = txt($('f_legacyNo').value) ? '' : nextLegacyNo();
   $('f_onLeave').checked = !!r.onLeave;
   var em = toArr(r.emergencyJson)[0] || {};
   $('f_emName').value = txt(em.name);
@@ -1728,12 +1858,16 @@ function fillForm(r) {
   $('f_empIns').setAttribute('aria-readonly', 'true');
   $('insShow').hidden = false;
   $('insHide').hidden = true;
-  ['e_name', 'e_hireDate', 'e_retireDate', 'e_birthDate', 'e_cwDate', 'e_primarySite', 'e_empIns'].forEach(function (id) {
-    $(id).hidden = true; $(id).textContent = '';
-  });
-  ['f_name', 'f_hireDate', 'f_retireDate', 'f_birthDate', 'f_cwDate', 'f_primarySite'].forEach(function (id) {
-    $(id).removeAttribute('aria-invalid');
-  });
+  ['e_name', 'e_hireDate', 'e_retireDate', 'e_birthDate', 'e_careStartDate', 'e_cwDate',
+    'e_primarySite', 'e_empIns'].forEach(function (id) {
+      $(id).hidden = true; $(id).textContent = '';
+    });
+  ['f_name', 'f_hireDate', 'f_retireDate', 'f_birthDate', 'f_careStartDate', 'f_cwDate',
+    'f_primarySite'].forEach(function (id) {
+      $(id).removeAttribute('aria-invalid');
+    });
+  refreshDateNotes();
+  updateLegacyDup();
 }
 
 function collectForm() {
@@ -1794,6 +1928,7 @@ function updateDirtyUi() {
 function onFormInput() {
   updateDerived();
   updateDirtyUi();
+  updateLegacyDup();
 }
 
 function showFieldError(fieldId, errId, msg) {
@@ -1815,19 +1950,29 @@ function validateDetail() {
   showFieldError('f_hireDate', 'e_hireDate', '');
   showFieldError('f_retireDate', 'e_retireDate', '');
   showFieldError('f_birthDate', 'e_birthDate', '');
+  showFieldError('f_careStartDate', 'e_careStartDate', '');
   showFieldError('f_cwDate', 'e_cwDate', '');
   showFieldError('f_primarySite', 'e_primarySite', '');
+  /* 読み取れない日付。ここで止めるので、以降の日付どうしの比べ算には 'YYYY-MM-DD' しか来ない */
+  var badDate = {};
+  DATE_FIELD_IDS.forEach(function (id) {
+    var v = txt($(id).value).trim();
+    if (!v || DATE_RE.test(v)) return;
+    showFieldError(id, DATE_ERR_ID[id], DATE_BAD_MSG);
+    badDate[id] = true;
+    bad.push(id);
+  });
   if (!cur.name) { showFieldError('f_name', 'e_name', '氏名を入れてください'); bad.push('f_name'); }
   if (!cur.hireDate) { showFieldError('f_hireDate', 'e_hireDate', '入職日を入れてください'); bad.push('f_hireDate'); }
   /* 主たる事業所は必須にしない（旧データの退職者は所属不明。空＝未設定・全体集計のみ） */
-  if (cur.birthDate && cur.hireDate && cur.hireDate <= cur.birthDate) {
+  if (!badDate.f_birthDate && !badDate.f_hireDate && cur.birthDate && cur.hireDate && cur.hireDate <= cur.birthDate) {
     showFieldError('f_hireDate', 'e_hireDate', '入職日は生年月日より後の日付にしてください'); bad.push('f_hireDate');
   }
-  if (cur.retireDate && cur.hireDate && cur.retireDate < cur.hireDate) {
+  if (!badDate.f_retireDate && !badDate.f_hireDate && cur.retireDate && cur.hireDate && cur.retireDate < cur.hireDate) {
     showFieldError('f_retireDate', 'e_retireDate', '退職日は入職日以降にしてください'); bad.push('f_retireDate');
   }
   var cwDate = txt($('f_cwDate').value);
-  if (cwDate && cwDate > SC().today()) {
+  if (!badDate.f_cwDate && cwDate && cwDate > SC().today()) {
     showFieldError('f_cwDate', 'e_cwDate', '取得日が未来の日付になっています'); bad.push('f_cwDate');
   }
   return bad;
@@ -1835,6 +1980,8 @@ function validateDetail() {
 
 function saveDetail() {
   if (!ST.detail || ST.busy) return;
+  normalizeDateFields();                 /* 打ちかけの和暦も送る前に 'YYYY-MM-DD' へ直す */
+  updateDerived();
   var bad = validateDetail();
   if (bad.length) { $(bad[0]).focus(); toast('赤い欄を直してください'); return; }
   var cur = collectForm();
@@ -2107,7 +2254,7 @@ function compCard(title, key) {
    CSV 取込
    ════════════════════════════════════════════════════════════════ */
 var IMPORT_KEYS = [
-  ['legacyNo', '旧No'], ['id', '職員ID'], ['name', '氏名'], ['kana', 'フリガナ'], ['gender', '性別'],
+  ['legacyNo', '職員No'], ['id', '職員ID'], ['name', '氏名'], ['kana', 'フリガナ'], ['gender', '性別'],
   ['birthDate', '生年月日'], ['hireDate', '入職日'], ['retireDate', '退職日'], ['jobTitle', '職種'],
   ['position', '役職'], ['employmentType', '雇用区分'], ['workStyle', '勤務形態'],
   ['primarySite', '主たる事業所'], ['phone', '電話'], ['address', '住所'], ['careStartDate', '介護就職'],
@@ -2123,7 +2270,8 @@ var LEGACY_HEADER = {
   quals: '資格', qualDate: '資格取得日', empInsNo: '雇用保険番号', note: '備考'
 };
 var HEADER_ALIAS = {
-  'no': 'legacyNo', '職員no': 'legacyNo', '職員id': 'id', 'id': 'id',
+  /* 見出しの別名は消さない（過去に書き出した CSV を読めなくしないため。'旧no' は改称前の見出し） */
+  'no': 'legacyNo', '職員no': 'legacyNo', '旧no': 'legacyNo', '職員id': 'id', 'id': 'id',
   '氏名': 'name', '名前': 'name', '姓名': 'name', 'フリガナ': 'kana', 'ふりがな': 'kana', 'カナ': 'kana',
   '性別': 'gender', '生年月日': 'birthDate', '入職日': 'hireDate', '入社日': 'hireDate',
   '退職日': 'retireDate', '職種': 'jobTitle', '役職': 'position', '雇用': 'employmentType',
@@ -2563,6 +2711,7 @@ function bindEvents() {
   $('listBody').addEventListener('input', onCellChange);
   $('listBody').addEventListener('change', onCellChange);
   $('listBody').addEventListener('keydown', onCellKey);
+  $('listBody').addEventListener('focusout', onCellBlur);   /* blur は上がってこないので focusout で受ける */
 
   $('backBtn').addEventListener('click', function () { showScreen('list'); });
   $('dtSave').addEventListener('click', saveDetail);
@@ -2580,6 +2729,15 @@ function bindEvents() {
       $(id).addEventListener('input', onFormInput);
       $(id).addEventListener('change', onFormInput);
     });
+  /* 日付欄は離れた時に正規化してから検証する（validateDetail より先に登録する） */
+  DATE_FIELD_IDS.forEach(function (id) {
+    $(id).addEventListener('blur', function () {
+      normalizeDateField(id);
+      if (!ST.detail) return;
+      onFormInput();
+      validateDetail();
+    });
+  });
   ['f_name', 'f_hireDate', 'f_retireDate', 'f_birthDate', 'f_cwDate'].forEach(function (id) {
     $(id).addEventListener('blur', function () { if (ST.detail) validateDetail(); });
   });
