@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.5">
+<meta name="stfm-build" content="2026-09-10.7">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -536,6 +536,16 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 /* 強調は色替えだけ。動きを足さないので「動きを減らす」設定でも見え方が変わらない */
 .fdlg .fdrop.hot{border-color:var(--c-primary);background:var(--c-info-bg);color:var(--c-ink)}
 
+/* 選択肢の管理（2026-09-10.6 追加。ダイアログの枠は添付書類と同じ .fdlg を使う） */
+.fdlg .ed-tbl td.act{white-space:nowrap}
+.fdlg .ed-tbl td.act .btn{margin-right:var(--sp-1)}
+.fdlg .ed-tbl input.edlab{width:100%;min-height:var(--tap-min);padding:var(--sp-1) var(--sp-2);
+     border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface);
+     color:var(--c-ink);font-size:var(--fs-xs)}
+.fdlg .ed-code{font-size:var(--fs-2xs);color:var(--c-ink2);font-variant-numeric:tabular-nums}
+.fdlg .ed-code + .badge{margin-left:var(--sp-1)}
+.fdlg .ed-use{font-variant-numeric:tabular-nums}
+
 /* トースト */
 #toast{position:fixed;left:50%;bottom:var(--sp-6);transform:translateX(-50%);background:var(--c-ink);
      color:var(--c-bg);border-radius:9999px;padding:var(--sp-2) var(--sp-5);font-size:var(--fs-sm);
@@ -795,8 +805,16 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
     <div id="cfgState" class="state" role="status" hidden></div>
   </div>
   <div class="cd">
+    <h3 class="sub">選択肢の管理</h3>
+    <p class="muted">雇用区分と資格の選択肢を、追加・並べ替え・非表示・削除できます。コードは配り直しません（既存の職員データはそのままです）。</p>
+    <div class="row" style="margin-top:var(--sp-2)">
+      <button type="button" class="btn" id="enumBtn" aria-haspopup="dialog" disabled>選択肢の管理</button>
+      <span class="muted grow" id="enumWhy" hidden></span>
+    </div>
+  </div>
+  <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-10.5</p>
+    <p class="muted">版 2026-09-10.7</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -850,6 +868,65 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
   </div>
 </dialog>
 
+<!-- ══ 選択肢の管理（雇用区分・資格）══ -->
+<dialog id="enumDlg" class="fdlg" aria-labelledby="edTitle">
+  <div class="fd-head">
+    <h2 id="edTitle">選択肢の管理</h2>
+    <button type="button" class="btn" id="edClose">閉じる</button>
+  </div>
+
+  <p class="muted">上から順に画面へ出ます。「非表示」にした選択肢は新しく選べなくなりますが、すでに登録されている方の表示には使われます。使われている選択肢は削除できません。</p>
+
+  <div id="edState" class="state" role="status" hidden></div>
+
+  <h2 class="sec" id="edEmpH">雇用区分</h2>
+  <div class="tbl-wrap">
+    <table class="small-tbl ed-tbl">
+      <caption class="sr-only">雇用区分の選択肢</caption>
+      <thead>
+        <tr>
+          <th scope="col">ラベル</th>
+          <th scope="col">コード</th>
+          <th scope="col">使用</th>
+          <th scope="col">並べ替え</th>
+          <th scope="col">表示</th>
+          <th scope="col">削除</th>
+        </tr>
+      </thead>
+      <tbody id="edBodyEmp"></tbody>
+    </table>
+  </div>
+  <div class="row" style="margin-top:var(--sp-2)">
+    <button type="button" class="btn" id="edAddEmp">＋ 追加</button>
+  </div>
+
+  <h2 class="sec" id="edQualH" style="margin-top:var(--sp-3)">資格</h2>
+  <div class="tbl-wrap">
+    <table class="small-tbl ed-tbl">
+      <caption class="sr-only">資格の選択肢</caption>
+      <thead>
+        <tr>
+          <th scope="col">ラベル</th>
+          <th scope="col">コード</th>
+          <th scope="col">使用</th>
+          <th scope="col">並べ替え</th>
+          <th scope="col">表示</th>
+          <th scope="col">削除</th>
+        </tr>
+      </thead>
+      <tbody id="edBodyQual"></tbody>
+    </table>
+  </div>
+  <div class="row" style="margin-top:var(--sp-2)">
+    <button type="button" class="btn" id="edAddQual">＋ 追加</button>
+  </div>
+
+  <div class="row" style="margin-top:var(--sp-3)">
+    <button type="button" class="btn pri" id="edSave" disabled>保存</button>
+    <span class="muted grow" id="edHint">保存すると、この画面を開いている全員の選択肢が入れ替わります。</span>
+  </div>
+</dialog>
+
 <div id="toast" role="status"></div>
 
 <script src="staff-master-calc.js"></script>
@@ -857,13 +934,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.5
+   職員マスタ 2026-09-10.7
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.5';
+var BUILD = '2026-09-10.7';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -936,7 +1013,10 @@ function labelOf(group, code) {
   var g = E[group] || {};
   var c = txt(code);
   if (!c) return '';
-  return txt(g[c] || c);
+  if (g[c]) return txt(g[c]);
+  /* calc.js が差し替え（setEnums）を持たない版でも、サーバーから来た名前で出す。
+     どちらにも無ければ従来どおりコードをそのまま返す */
+  return txt(serverEnumLabel(group, c) || c);
 }
 function enumPairs(group) {
   var E = (SC() && SC().ENUMS) || {};
@@ -1010,6 +1090,9 @@ var ST = {
   detail: null, imp: null, busy: false,
   /* caps: ping が返す「サーバーが持っている機能」。null＝まだ確かめられていない */
   caps: null, capsRetried: false, filesBusy: false,
+  /* enums: サーバー（meta.enumsJson）の選択肢。null＝まだ取れていない＝calc.js の既定値で動く
+     enumsAt: 選択肢を最後に保存した時刻（サーバーの目印）。null＝受け取れていない＝突き合わせを求めない */
+  enums: {}, enumUsage: {}, enumsAt: null, enumDraft: null, enumBusy: false,
   /* dropFile: 落としたファイルを「ファイルを選ぶ」欄へ移せない端末のための控え（端末には残さない） */
   dropFile: null
 };
@@ -1320,7 +1403,8 @@ function buildCellEditor(row, col) {
   if (col.edit === 'select') {
     el = h('select', { 'data-f': col.k, 'aria-label': lab });
     el.appendChild(h('option', { value: '' }, '—'));
-    enumPairs(col.enumKey).forEach(function (p) { el.appendChild(h('option', { value: p[0] }, p[1])); });
+    choicePairs(col.enumKey).forEach(function (p) { el.appendChild(h('option', { value: p[0] }, p[1])); });
+    addKeptOption(el, col.enumKey, v);        /* 「非表示」の値でも欄から消さない */
     el.value = txt(v);
   } else if (col.edit === 'date') {
     el = h('input', {
@@ -1871,21 +1955,42 @@ function updateLegacyDup() {
   box.hidden = !hit;
 }
 
-function fillSelect(id, group, emptyLabel) {
+/* keepCode: いま入っている値。「非表示」にされた選択肢でも欄から消さない
+   （開いて保存しただけで値が変わってしまうのを防ぐ） */
+function fillSelect(id, group, emptyLabel, keepCode) {
   var s = $(id);
   clearNode(s);
   s.appendChild(h('option', { value: '' }, emptyLabel || '—'));
-  enumPairs(group).forEach(function (p) { s.appendChild(h('option', { value: p[0] }, p[1])); });
+  choicePairs(group).forEach(function (p) { s.appendChild(h('option', { value: p[0] }, p[1])); });
+  addKeptOption(s, group, keepCode);
+}
+function addKeptOption(sel, group, code) {
+  var c = txt(code), i;
+  if (!c) return;
+  for (i = 0; i < sel.options.length; i++) { if (sel.options[i].value === c) return; }
+  sel.appendChild(h('option', { value: c }, labelOf(group, c)));
 }
 
-function buildQualChips() {
+/* keepCodes: その方が持っている資格コード。「非表示」でもチップを残す（保存で落とさないため） */
+function buildQualChips(keepCodes) {
   var box = $('qualChips');
   clearNode(box);
-  enumPairs('qualCodes').forEach(function (p) {
-    box.appendChild(h('button', {
-      type: 'button', cls: 'chip', 'data-code': p[0], 'aria-pressed': 'false', text: p[1],
-      onclick: function (ev) { toggleQual(ev.currentTarget); }
-    }));
+  var seen = {};
+  choicePairs('qualCodes').forEach(function (p) {
+    seen[p[0]] = true;
+    box.appendChild(qualChip(p[0], p[1]));
+  });
+  (Array.isArray(keepCodes) ? keepCodes : []).forEach(function (c) {
+    var code = txt(c);
+    if (!code || seen[code]) return;
+    seen[code] = true;
+    box.appendChild(qualChip(code, labelOf('qualCodes', code)));
+  });
+}
+function qualChip(code, label) {
+  return h('button', {
+    type: 'button', cls: 'chip', 'data-code': code, 'aria-pressed': 'false', text: label,
+    onclick: function (ev) { toggleQual(ev.currentTarget); }
   });
 }
 function toggleQual(btn) {
@@ -1920,6 +2025,7 @@ function openDetail(id) {
     if (txt(q.acquiredOn)) o.acquiredOn = txt(q.acquiredOn);
     ST.detail.quals[o.code] = o;
   });
+  rebuildDetailChoices();
   fillForm(base);
   $('dtName').textContent = row ? (txt(row.name) || '（氏名未入力）') : '（新規の職員）';
   $('dtMeta').textContent = row ? ('職員ID ' + row.id + '／版 ' + row.rev) : '未登録';
@@ -2307,17 +2413,19 @@ function updateFilesBtn() {
 /* サーバーが持っている機能を ping で確かめる（失敗しても画面は動かす） */
 function refreshCaps() {
   var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url)) { ST.caps = null; updateFilesBtn(); return Promise.resolve(); }
+  if (!URL_OK_RE.test(cfg.url)) { ST.caps = null; updateFilesBtn(); updateEnumBtn(); return Promise.resolve(); }
   return apiPing().then(function (d) {
     setCaps(d);
   }).catch(function () {
     ST.caps = null;
     updateFilesBtn();
+    updateEnumBtn();
   });
 }
 function setCaps(d) {
   ST.caps = (d && Array.isArray(d.caps)) ? d.caps.map(txt) : [];
   updateFilesBtn();
+  updateEnumBtn();
 }
 
 /* 保存された行の版を書き戻す（詳細フォームの楽観ロックが古い版で競合しないように） */
@@ -3168,6 +3276,7 @@ function onSaveCfg() {
   setState('cfgState', 'ok', '保存しました', '「接続テスト」で通じるか確かめてください。');
   refreshCaps();
   loadList();
+  loadEnums();
 }
 function onTest() {
   setState('cfgState', '', '確認中…', 'サーバーに問い合わせています。');
@@ -3179,6 +3288,428 @@ function onTest() {
   }).catch(function (e) {
     setState('cfgState', 'err', '接続できませんでした（' + errText(e) + '）', errHint(e));
   });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   選択肢の管理（雇用区分・資格。2026-09-10.6 追加）
+   ・正本はサーバー（meta.enumsJson）。取れなければ calc.js の既定値のまま動く。
+   ・「非表示」は新しく選ばせないだけで、既にその値が入っている方の表示には使う。
+   ════════════════════════════════════════════════════════════════ */
+var ENUM_GROUPS = [
+  { g: 'employmentType', name: '雇用区分', body: 'edBodyEmp', add: 'edAddEmp' },
+  { g: 'qualCodes', name: '資格', body: 'edBodyQual', add: 'edAddQual' }
+];
+var ENUM_LABEL_MAX = 30;
+var ENUM_CODE_RE = /^[A-Za-z0-9_]{1,24}$/;
+var ENUM_MAX_ROWS = 60;
+/* 後勝ちを断られた時のサーバーの文面（gas/staff-api.gs の ENUM_CONFLICT_MSG と1字一句そろえる）。
+   この文面の時だけ「開き直す」を出す＝入力し直しの手間を、他のエラーには掛けない */
+var ENUM_CONFLICT_MSG = '他の端末が先に選択肢を変えました。開き直してから、もう一度お願いします';
+/* 既定コード（calc.js が持っている分）は起動時に控える。サーバーが削除を断るので画面でも押せなくする */
+var DEFAULT_ENUM_CODES = { employmentType: [], qualCodes: [] };
+var edOpener = null;
+
+/* サーバーが返した enumsAt を控える。文字列でなければ null＝古いGAS＝expect を送らない（従来どおり） */
+function noteEnumsAt(d) {
+  ST.enumsAt = (d && typeof d.enumsAt === 'string') ? d.enumsAt : null;
+}
+function isManagedEnum(group) { return group === 'employmentType' || group === 'qualCodes'; }
+function enumGroupDef(group) {
+  var out = null;
+  ENUM_GROUPS.forEach(function (x) { if (x.g === group) out = x; });
+  return out;
+}
+function snapshotDefaultEnumCodes() {
+  ENUM_GROUPS.forEach(function (x) {
+    DEFAULT_ENUM_CODES[x.g] = enumPairs(x.g).map(function (p) { return p[0]; });
+  });
+}
+function isDefaultEnumCode(group, code) {
+  return (DEFAULT_ENUM_CODES[group] || []).indexOf(txt(code)) >= 0;
+}
+
+function normEnumList(v) {
+  if (!Array.isArray(v)) return null;
+  var out = [], seen = {}, i, it;
+  for (i = 0; i < v.length; i++) {
+    it = v[i];
+    var code = txt(it && it.code), label = txt(it && it.label);
+    /* 形が違うものが1つでもあれば、そのグループは丸ごと使わない（中途半端な差し替えをしない） */
+    if (!ENUM_CODE_RE.test(code) || !label || label.length > ENUM_LABEL_MAX || seen[code]) return null;
+    seen[code] = true;
+    out.push({ code: code, label: label, hidden: !!(it && it.hidden === true) });
+  }
+  return out.length ? out : null;
+}
+/* サーバーから来た選択肢を画面と calc.js に反映する。使えなければ何もしない（既定値のまま） */
+function applyEnums(o) {
+  if (!o || typeof o !== 'object') return false;
+  var next = {}, got = false;
+  ENUM_GROUPS.forEach(function (x) {
+    var a = normEnumList(o[x.g]);
+    if (a) { next[x.g] = a; got = true; }
+    else if (ST.enums && ST.enums[x.g]) { next[x.g] = ST.enums[x.g]; }
+  });
+  if (!got) return false;
+  ST.enums = next;
+  if (SC() && typeof SC().setEnums === 'function') SC().setEnums(next);
+  return true;
+}
+function serverEnumList(group) {
+  var a = ST.enums && ST.enums[group];
+  return Array.isArray(a) ? a : null;
+}
+function serverEnumLabel(group, code) {
+  var a = serverEnumList(group), i;
+  for (i = 0; a && i < a.length; i++) { if (a[i].code === code) return a[i].label; }
+  return '';
+}
+/* 新しく選ばせる並び（「非表示」を除く）。管理していないグループは従来どおり */
+function choicePairs(group) {
+  if (!isManagedEnum(group)) return enumPairs(group);
+  if (SC() && typeof SC().visibleEnum === 'function') {
+    var v = SC().visibleEnum(group);
+    if (Array.isArray(v)) {
+      return v.map(function (p) { return [txt(p && p[0]), txt(p && p[1])]; });
+    }
+  }
+  var a = serverEnumList(group);
+  if (a) {
+    return a.filter(function (x) { return !x.hidden; }).map(function (x) { return [x.code, x.label]; });
+  }
+  return enumPairs(group);
+}
+
+/* 詳細を開いた方が持っているコードは、「非表示」でも欄・チップに残す */
+function detailKeepCodes() {
+  var d = ST.detail, out = [], k;
+  if (d && d.quals) {
+    for (k in d.quals) { if (Object.prototype.hasOwnProperty.call(d.quals, k)) out.push(k); }
+  }
+  return out;
+}
+function rebuildDetailChoices() {
+  var d = ST.detail;
+  buildQualChips(detailKeepCodes());
+  fillSelect('f_employmentType', 'employmentType', '—', d && d.base ? d.base.employmentType : '');
+}
+/* 選択肢が入れ替わったあとに画面を作り直す。開きかけの詳細の入力は保つ（押した資格・選んだ区分） */
+function refreshChoiceUi() {
+  var pressed = [], cur = txt($('f_employmentType').value);
+  Array.prototype.forEach.call($('qualChips').children, function (b) {
+    if (b.getAttribute('aria-pressed') === 'true') pressed.push(txt(b.getAttribute('data-code')));
+  });
+  var keep = pressed.slice();
+  detailKeepCodes().forEach(function (c) { if (keep.indexOf(c) < 0) keep.push(c); });
+  buildQualChips(keep);
+  Array.prototype.forEach.call($('qualChips').children, function (b) {
+    var c = txt(b.getAttribute('data-code')), on = pressed.indexOf(c) >= 0;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.textContent = (on ? '✓ ' : '') + labelOf('qualCodes', c);
+  });
+  fillSelect('f_employmentType', 'employmentType', '—', cur);
+  $('f_employmentType').value = cur;
+  if (ST.detail) syncCwDate();
+  if (ST.loaded) renderList();               /* 一覧に出ている名前も入れ替える */
+}
+
+function normUsage(u) {
+  var out = {};
+  ENUM_GROUPS.forEach(function (x) {
+    var g = u && u[x.g], m = {}, k, n;
+    if (!g || typeof g !== 'object') return;
+    for (k in g) {
+      if (!Object.prototype.hasOwnProperty.call(g, k)) continue;
+      n = Number(g[k]);
+      m[txt(k)] = (isFinite(n) && n > 0) ? Math.floor(n) : 0;
+    }
+    out[x.g] = m;
+  });
+  return out;
+}
+/* 使用件数。null＝サーバーから受け取れていない（分からない） */
+function enumUsageOf(group, item) {
+  if (item && item.isNew) return 0;
+  var m = ST.enumUsage && ST.enumUsage[group];
+  if (!m) return null;
+  var n = Number(m[txt(item && item.code)]);
+  return isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/* 起動時に1回。取れなくても既定値で動く（旧GASでも止めない） */
+function loadEnums() {
+  var cfg = loadCfg();
+  if (!URL_OK_RE.test(cfg.url) || !cfg.token) return Promise.resolve(false);
+  return apiPost('getEnums', {}).then(function (d) {
+    ST.enumUsage = normUsage(d.usage);
+    noteEnumsAt(d);
+    if (!applyEnums(d.enums)) return false;
+    refreshChoiceUi();
+    return true;
+  }).catch(function () { return false; });
+}
+
+function updateEnumBtn() {
+  var b = $('enumBtn');
+  if (!b) return;
+  var cfg = loadCfg(), why = '';
+  if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '接続先URLと合言葉を入れて保存してください';
+  else if (ST.caps === null) why = '接続を確かめられていません。「接続テスト」で確かめてください';
+  else if (!capsHas('enums')) why = '職員マスタの GAS を更新してください';
+  b.disabled = !!why;
+  if (why) b.setAttribute('title', why); else b.removeAttribute('title');
+  var wy = $('enumWhy');
+  if (wy) { wy.textContent = why; wy.hidden = !why; }
+}
+
+function draftFromCurrent() {
+  var out = {};
+  ENUM_GROUPS.forEach(function (x) {
+    var a = serverEnumList(x.g);
+    out[x.g] = a ? a.map(function (it) { return { code: it.code, label: it.label, hidden: !!it.hidden }; })
+      : enumPairs(x.g).map(function (p) { return { code: p[0], label: p[1], hidden: false }; });
+  });
+  return out;
+}
+function nextEnumCode(group) {
+  var used = {}, i;
+  (ST.enumDraft && ST.enumDraft[group] || []).forEach(function (it) { used[it.code] = true; });
+  (serverEnumList(group) || []).forEach(function (it) { used[it.code] = true; });
+  for (i = 1; i <= 999; i++) { if (!used['x' + i]) return 'x' + i; }
+  return '';
+}
+
+function openEnums() {
+  var b = $('enumBtn');
+  if (!b || b.disabled) return;
+  edOpener = b;
+  var dlg = $('enumDlg');
+  /* 開いている dialog に showModal をもう一度呼ぶと例外になる（＝再試行で画面が固まる）。
+     開く操作はここだけ、中身の取り直しは loadEnumDialog だけが行う */
+  if (!dlg.open && !dlg.hasAttribute('open')) {
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+  loadEnumDialog();
+}
+/* いまの選択肢と使用件数を取り直してダイアログの中身を作る。「もう一度読み込む」もこれを呼ぶ */
+function loadEnumDialog() {
+  ST.enumBusy = false;
+  ST.enumDraft = null;
+  ENUM_GROUPS.forEach(function (x) { clearNode($(x.body)); });
+  $('edSave').disabled = true;
+  setState('edState', '', '読み込み中…', 'いまの選択肢と使用件数を取り直しています。');
+  /* 使用件数は「いま」の値でないと削除の可否を誤る。開くたびに取り直す */
+  apiPost('getEnums', {}).then(function (d) {
+    ST.enumUsage = normUsage(d.usage);
+    noteEnumsAt(d);
+    var ok = applyEnums(d.enums);
+    if (ok) refreshChoiceUi();
+    ST.enumDraft = draftFromCurrent();
+    renderEnumRows();
+    $('edSave').disabled = false;
+    if (ok) setState('edState', '', '', '');
+    else setState('edState', 'warn', 'サーバーの選択肢を読み取れませんでした',
+      'この画面には、いま使っている選択肢を出しています。保存すると、この内容でサーバーを上書きします。');
+  }).catch(function (e) {
+    ST.enumDraft = null;
+    $('edSave').disabled = true;             /* 読めていない内容で上書きさせない */
+    setState('edState', 'err', 'いまの選択肢を取り出せませんでした（' + errText(e) + '）',
+      errHint(e), 'もう一度読み込む', function () { loadEnumDialog(); });
+  });
+}
+function closeEnums() {
+  /* 送信中は閉じない（閉じても通信は止まらず、結果を出す先が無くなる。Esc と同じ扱い） */
+  if (ST.enumBusy) return;
+  var dlg = $('enumDlg');
+  if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+}
+
+function setEnumBusy(on) {
+  ST.enumBusy = !!on;
+  $('edSave').disabled = ST.enumBusy || !ST.enumDraft;
+  $('edSave').textContent = ST.enumBusy ? '保存中…' : '保存';
+  ENUM_GROUPS.forEach(function (x) { $(x.add).disabled = ST.enumBusy; });
+  renderEnumRows();
+}
+
+function renderEnumRows() {
+  ENUM_GROUPS.forEach(function (x) {
+    var body = $(x.body);
+    if (!body) return;
+    clearNode(body);
+    var list = (ST.enumDraft && ST.enumDraft[x.g]) || [];
+    list.forEach(function (it, i) { body.appendChild(enumRow(x, it, i, list.length)); });
+  });
+}
+function enumRow(gx, it, i, total) {
+  var idBase = 'ed_' + gx.g + '_' + i;
+  var n = enumUsageOf(gx.g, it);
+  var name = it.label || it.code;
+  var lab = h('input', {
+    type: 'text', id: idBase + '_label', cls: 'edlab', autocomplete: 'off',
+    maxlength: String(ENUM_LABEL_MAX), val: it.label, disabled: ST.enumBusy,
+    oninput: function (ev) { it.label = txt(ev.currentTarget.value); }
+  });
+  var codeTd = h('td', null, [
+    h('span', { cls: 'ed-code', text: it.code }),
+    it.hidden ? h('span', { cls: 'badge', text: '非表示' }) : null
+  ]);
+  var up = h('button', {
+    type: 'button', cls: 'btn sm', text: '↑', 'aria-label': name + ' を上へ移動',
+    disabled: (i === 0 || ST.enumBusy) ? true : null,
+    onclick: function () { moveEnumRow(gx.g, i, -1); }
+  });
+  var down = h('button', {
+    type: 'button', cls: 'btn sm', text: '↓', 'aria-label': name + ' を下へ移動',
+    disabled: (i >= total - 1 || ST.enumBusy) ? true : null,
+    onclick: function () { moveEnumRow(gx.g, i, 1); }
+  });
+  up.id = idBase + '_up';
+  down.id = idBase + '_down';
+  var vis = h('button', {
+    type: 'button', cls: 'btn sm', text: it.hidden ? '表示する' : '非表示にする',
+    'aria-label': name + (it.hidden ? ' を表示する' : ' を非表示にする'),
+    disabled: ST.enumBusy ? true : null,
+    onclick: function () { it.hidden = !it.hidden; renderEnumRows(); focusEnumEl(idBase + '_vis'); }
+  });
+  vis.id = idBase + '_vis';
+  var why = '';
+  if (n === null) why = '使用件数を受け取れていないため削除できません。開き直して確かめてください';
+  else if (n > 0) why = n + '名が使っています。非表示にできます';
+  else if (isDefaultEnumCode(gx.g, it.code)) why = 'もとから用意されている選択肢は削除できません。非表示にできます';
+  var del = h('button', {
+    type: 'button', cls: 'btn sm warnb', text: '削除', 'aria-label': name + ' を削除',
+    disabled: (why || ST.enumBusy) ? true : null,
+    onclick: function () { removeEnumRow(gx.g, i); }
+  });
+  if (why) del.setAttribute('title', why);
+  return h('tr', null, [
+    h('td', null, [h('label', { cls: 'sr-only', for: idBase + '_label' }, gx.name + ' ' + (i + 1) + '番目のラベル'), lab]),
+    codeTd,
+    h('td', { cls: 'ed-use num', text: (n === null) ? '—' : (n + '名') }),
+    h('td', { cls: 'act' }, [up, down]),
+    h('td', { cls: 'act' }, vis),
+    h('td', { cls: 'act' }, del)
+  ]);
+}
+function focusEnumEl(id) {
+  var el = $(id);
+  if (el && typeof el.focus === 'function' && !el.disabled) el.focus();
+}
+function moveEnumRow(group, i, step) {
+  if (ST.enumBusy || !ST.enumDraft) return;
+  var a = ST.enumDraft[group], j = i + step;
+  if (!a || j < 0 || j >= a.length) return;
+  var t = a[i]; a[i] = a[j]; a[j] = t;
+  renderEnumRows();
+  var base = 'ed_' + group + '_' + j;
+  var want = step < 0 ? base + '_up' : base + '_down';
+  var el = $(want);
+  focusEnumEl((el && !el.disabled) ? want : (base + '_label'));
+}
+function removeEnumRow(group, i) {
+  if (ST.enumBusy || !ST.enumDraft) return;
+  var a = ST.enumDraft[group];
+  if (!a || !a[i]) return;
+  if (!window.confirm('「' + (a[i].label || a[i].code) + '」を選択肢から消します。よろしいですか？')) return;
+  a.splice(i, 1);
+  renderEnumRows();
+  var gx = enumGroupDef(group);
+  if (gx) focusEnumEl(gx.add);
+  setState('edState', '', '', '');
+}
+function addEnumRow(group) {
+  if (ST.enumBusy || !ST.enumDraft) return;
+  var a = ST.enumDraft[group];
+  if (!a) return;
+  if (a.length >= ENUM_MAX_ROWS) {
+    setState('edState', 'warn', 'これ以上は増やせません', '選択肢は1グループ ' + ENUM_MAX_ROWS + '件までです。使っていないものを消すか、非表示にしてください。');
+    return;
+  }
+  var code = nextEnumCode(group);
+  if (!code) return;
+  a.push({ code: code, label: '', hidden: false, isNew: true });
+  renderEnumRows();
+  focusEnumEl('ed_' + group + '_' + (a.length - 1) + '_label');
+  setState('edState', '', '', '');
+}
+
+/* 送る前に画面側でも確かめる（サーバーに断られてから気づかせない） */
+function checkEnumDraft() {
+  var out = [], first = '';
+  ENUM_GROUPS.forEach(function (x) {
+    var a = (ST.enumDraft && ST.enumDraft[x.g]) || [], byLabel = {};
+    if (!a.length) out.push(x.name + ': 選択肢が1つもありません');
+    a.forEach(function (it, i) {
+      var lb = txt(it.label).trim();
+      if (!lb) {
+        out.push(x.name + ' ' + (i + 1) + '番目: ラベルを入れてください');
+        if (!first) first = 'ed_' + x.g + '_' + i + '_label';
+        return;
+      }
+      if (lb.length > ENUM_LABEL_MAX) {
+        out.push(x.name + ' 「' + lb.slice(0, 12) + '」: ' + ENUM_LABEL_MAX + '字までです');
+        if (!first) first = 'ed_' + x.g + '_' + i + '_label';
+        return;
+      }
+      if (byLabel[lb]) {
+        out.push(x.name + ' 「' + lb + '」: 同じ名前が2つあります');
+        if (!first) first = 'ed_' + x.g + '_' + i + '_label';
+        return;
+      }
+      byLabel[lb] = true;
+    });
+  });
+  return { errs: out, focus: first };
+}
+function enumsToSend() {
+  var out = {};
+  ENUM_GROUPS.forEach(function (x) {
+    out[x.g] = ((ST.enumDraft && ST.enumDraft[x.g]) || []).map(function (it) {
+      return { code: it.code, label: txt(it.label).trim(), hidden: !!it.hidden };
+    });
+  });
+  return out;
+}
+function saveEnums() {
+  if (ST.enumBusy || !ST.enumDraft) return;
+  var c = checkEnumDraft();
+  if (c.errs.length) {
+    setState('edState', 'warn', '保存できません', c.errs.slice(0, 3).join(' / ')
+      + (c.errs.length > 3 ? '（ほか ' + (c.errs.length - 3) + '件）' : ''));
+    focusEnumEl(c.focus);
+    return;
+  }
+  setEnumBusy(true);
+  setState('edState', '', '保存中…', 'サーバーに送っています。');
+  var payload = { enums: enumsToSend(), by: loadCfg().by };
+  /* 開いてから他の端末が保存していたら断ってもらう。enumsAt を受け取れていない
+     （＝古いGAS）時だけ省く＝そのサーバーでは従来どおり通る */
+  if (typeof ST.enumsAt === 'string') payload.expect = ST.enumsAt;
+  apiPost('setEnums', payload).then(function (d) {
+    ST.enumUsage = normUsage(d.usage);
+    noteEnumsAt(d);
+    applyEnums(d.enums);
+    refreshChoiceUi();
+    ST.enumDraft = draftFromCurrent();
+    renderEnumRows();
+    setState('edState', 'ok', '保存しました', '詳細画面の選択肢と資格を入れ替えました。');
+    toast('選択肢を保存しました');
+  }).catch(function (e) {
+    if (errText(e) === ENUM_CONFLICT_MSG) {
+      /* 後勝ちを断られた＝サーバーの方が新しい。1文字も書かれていないので、取り直してからやり直す */
+      setState('edState', 'err', ENUM_CONFLICT_MSG,
+        'この画面の内容は保存していません。「開き直す」で最新の選択肢を取り直してから、もう一度直してください。',
+        '開き直す', function () { loadEnumDialog(); });
+      return;
+    }
+    setState('edState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e) + errDetail(e, 3));
+  }).then(doneEnumSave, doneEnumSave);
+}
+/* 保存の後始末。行を作り直した拍子にフォーカスが body へ落ちるので、保存ボタンへ戻す */
+function doneEnumSave() {
+  setEnumBusy(false);
+  focusEnumEl('edSave');
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -3313,6 +3844,23 @@ function bindEvents() {
   $('impRunBtn').addEventListener('click', runImport);
   $('expBtn').addEventListener('click', runExport);
 
+  /* 選択肢の管理（ダイアログ。Esc と「閉じる」で閉じ、開いたボタンへ戻る） */
+  $('enumBtn').addEventListener('click', openEnums);
+  $('edClose').addEventListener('click', closeEnums);
+  $('edSave').addEventListener('click', saveEnums);
+  ENUM_GROUPS.forEach(function (x) {
+    $(x.add).addEventListener('click', function () { addEnumRow(x.g); });
+  });
+  /* 送信中の Esc は無視する（閉じても通信は止まらず、結果を出す先が無くなる） */
+  $('enumDlg').addEventListener('cancel', function (ev) {
+    if (ST.enumBusy) ev.preventDefault();
+  });
+  $('enumDlg').addEventListener('close', function () {
+    var b = edOpener;
+    edOpener = null;
+    if (b && typeof b.focus === 'function' && !b.disabled) b.focus();
+  });
+
   $('saveCfgBtn').addEventListener('click', onSaveCfg);
   $('testBtn').addEventListener('click', onTest);
   $('cfgShowToken').addEventListener('change', function () {
@@ -3349,6 +3897,7 @@ function init() {
     return;
   }
   restoreUi();
+  snapshotDefaultEnumCodes();      /* 既定コード（消せない）を、差し替えの前に控える */
   fillSelect('f_gender', 'gender', '—');
   fillSelect('f_primarySite', 'primarySite', '—');
   fillSelect('f_employmentType', 'employmentType', '—');
@@ -3361,8 +3910,10 @@ function init() {
   showScreen(ST.screen);
   $('bulkBar').hidden = true;
   updateFilesBtn();
+  updateEnumBtn();
   refreshCaps();               /* サーバーが持っている機能を先に確かめる（書類ボタンの可否） */
   loadList();
+  loadEnums();                 /* 選択肢はサーバーが正本。取れなければ既定値のまま動く */
 }
 
 if (document.readyState === 'loading') {

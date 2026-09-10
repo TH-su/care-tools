@@ -9,7 +9,7 @@
      StaffCalc.ymd / normDate / toWareki / today / age / tenure / statusOf / headAt / leavers / turnover
      StaffCalc.period / averageTenureYears / averageAge / composition
      StaffCalc.normName / normKana / parseCsv / toCsv
-     StaffCalc.LABELS / ENUMS / mapLegacyRow / diffFields
+     StaffCalc.LABELS / ENUMS / setEnums / visibleEnum / mapLegacyRow / diffFields
    前提・注意
      ・依存ゼロ。ブラウザ（iPad Safari）と node の両方で動く。ES2018 以下の構文だけを使う
      ・console 呼び出しをこのファイルに置かない（個人情報がログに出る経路を作らない）
@@ -21,7 +21,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-10.1';
+  var VERSION = '2026-09-10.7';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -457,8 +457,8 @@
       cw: '介護福祉士',
       jitsumu: '実務者研修',
       shonin: '初任者研修',
-      helper1: 'ヘルパー1級',
       helper2: 'ヘルパー2級',
+      helper1: 'ヘルパー1級',
       kiso: '基礎研修',
       cm: '介護支援専門員',
       nurse: '看護師',
@@ -474,6 +474,57 @@
       other: 'その他'
     }
   };
+
+  /* ── 選択肢マスタ（サーバー保存の雇用区分・資格／spec-enums.md §6）─────────
+     上の ENUMS は「サーバーが無い・古い」ときの既定値としてそのまま残す。
+     起動時に getEnums が取れたら setEnums で差し替える。並び順と hidden は
+     ENUM_LISTS が覚える（ENUMS は {コード:名前} なので順序と非表示を持てない）。 */
+  var ENUM_LISTS = { employmentType: null, qualCodes: null };
+
+  /* サーバーの選択肢を反映する。obj[群] が [{code,label,hidden}] の配列のときだけ差し替える。
+     hidden のものも ENUMS には入れる（既存データの表示に要る）。
+     空配列は無視する＝応答が壊れても画面の選択肢を失わない（安全側に倒す）。
+     戻り値: 差し替えた群の数 */
+  function setEnums(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    var groups = ['employmentType', 'qualCodes'], applied = 0;
+    for (var g = 0; g < groups.length; g++) {
+      var key = groups[g], src = obj[key];
+      if (!Object.prototype.hasOwnProperty.call(ENUMS, key) || !src || !src.length) continue;
+      if (Object.prototype.toString.call(src) !== '[object Array]') continue;
+      var dict = {}, list = [];
+      for (var i = 0; i < src.length; i++) {
+        var it = src[i];
+        if (!it || typeof it !== 'object') continue;
+        var code = trim(it.code);
+        if (!code || Object.prototype.hasOwnProperty.call(dict, code)) continue;   /* 同じコードは先勝ち */
+        var label = trim(it.label) || code;                                        /* 名前が無ければコードを出す */
+        dict[code] = label;
+        list.push({ code: code, label: label, hidden: it.hidden === true });
+      }
+      if (!list.length) continue;
+      ENUMS[key] = dict;
+      ENUM_LISTS[key] = list;
+      applied++;
+    }
+    return applied;
+  }
+
+  /* 画面の選択肢を作るための [[コード, 名前], …]。hidden は落とす。
+     サーバーから受け取っていない群（性別・主たる事業所・勤務形態）は ENUMS の並びをそのまま出す。 */
+  function visibleEnum(group) {
+    var list = Object.prototype.hasOwnProperty.call(ENUM_LISTS, group) ? ENUM_LISTS[group] : null;
+    var out = [], i;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (!list[i].hidden) out.push([list[i].code, list[i].label]);
+      return out;
+    }
+    var dict = ENUMS[group];
+    if (!dict) return out;
+    var ks = Object.keys(dict);
+    for (i = 0; i < ks.length; i++) out.push([ks[i], dict[ks[i]]]);
+    return out;
+  }
 
   /* 在職者だけの構成比。未設定は「未設定」でまとめ、件数の多い順に並べる */
   function composition(rows, key) {
@@ -872,6 +923,8 @@
     toCsv: toCsv,
     LABELS: LABELS,
     ENUMS: ENUMS,
+    setEnums: setEnums,
+    visibleEnum: visibleEnum,
     mapLegacyRow: mapLegacyRow,
     diffFields: diffFields,
     normQuals: normQuals,
