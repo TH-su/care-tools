@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.4">
+<meta name="stfm-build" content="2026-09-10.5">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -796,7 +796,7 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-10.4</p>
+    <p class="muted">版 2026-09-10.5</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -857,13 +857,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.4
+   職員マスタ 2026-09-10.5
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.4';
+var BUILD = '2026-09-10.5';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1196,7 +1196,7 @@ var LIST_COLS = [
   { k: 'quals', label: '資格', kind: 'quals' },
   { k: 'note', label: '備考', kind: 'text', edit: 'text' }
 ];
-var SORT_OF_COL = { legacyNo: 'no', name: 'kana', hireDate: 'hire', primarySite: 'office' };
+var SORT_OF_COL = { legacyNo: 'no', name: 'kana', hireDate: 'hire', retireDate: 'retire', primarySite: 'office' };
 /* 一括編集で日付として直すセル（詳細フォームと同じく西暦・和暦のどちらでも打てる） */
 var DATE_COL_KEYS = {};
 LIST_COLS.forEach(function (c) { if (c.edit === 'date') DATE_COL_KEYS[c.k] = true; });
@@ -1239,6 +1239,14 @@ function sortedRows() {
     var x = '', y = '';
     if (key === 'no') { x = padNo(a.legacyNo); y = padNo(b.legacyNo); }
     else if (key === 'hire') { x = txt(a.hireDate); y = txt(b.hireDate); }
+    else if (key === 'retire') {
+      /* 退職日の無い方（在職中）は、昇順でも降順でも最後に置く。
+         空文字をそのまま比べると昇順で先頭に来てしまい、退職者を古い順に見たい時に邪魔になる */
+      var ra = txt(a.retireDate), rb = txt(b.retireDate);
+      if (ra && !rb) return -1;
+      if (!ra && rb) return 1;
+      x = ra; y = rb;
+    }
     else if (key === 'office') { x = labelOf('primarySite', a.primarySite); y = labelOf('primarySite', b.primarySite); }
     else { x = SC().normKana(a.kana || a.name); y = SC().normKana(b.kana || b.name); }
     if (x === y) return txt(a.id) < txt(b.id) ? -1 : 1;
@@ -3179,7 +3187,7 @@ function onTest() {
 function restoreUi() {
   ST.screen = pickAllowed(UI_KEYS.scr, SAVED_SCREENS, 'list');
   ST.filter = pickAllowed(UI_KEYS.filter, ['all', 'active', 'retired'], 'active');
-  ST.sort = pickAllowed(UI_KEYS.sort, ['no', 'kana', 'hire', 'office'], 'kana');
+  ST.sort = pickAllowed(UI_KEYS.sort, ['no', 'kana', 'hire', 'retire', 'office'], 'kana');
   ST.sortDir = pickAllowed(UI_KEYS.sortDir, ['asc', 'desc'], 'asc');
   ST.dashPeriod = pickAllowed(UI_KEYS.dashPeriod, ['fy', 'cy', 'custom'], 'fy');
   var y = Number(lsGet(UI_KEYS.dashYear));
