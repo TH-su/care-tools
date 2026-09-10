@@ -8,6 +8,7 @@
    公開API（凍結。名前・引数・戻り値を変えない）
      StaffCalc.ymd / normDate / toWareki / today / age / tenure / statusOf / headAt / leavers / turnover
      StaffCalc.period / averageTenureYears / averageAge / composition
+     StaffCalc.belongsTo / siteRatios / ratioTotal / siteStats（事業所別の集計・兼務比率）
      StaffCalc.normName / normKana / parseCsv / toCsv
      StaffCalc.LABELS / ENUMS / setEnums / visibleEnum / mapLegacyRow / diffFields
    前提・注意
@@ -21,7 +22,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-10.7';
+  var VERSION = '2026-09-10.8';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -396,6 +397,111 @@
       sum += v; n++;
     }
     return n ? round(sum / n, 1) : null;
+  }
+
+  /* ── 事業所別の集計・兼務比率 ─────────────────────────────────────
+     数え方は実人数（本人裁定）。施設20%・訪問80%の人は「施設で1名」かつ「訪問で1名」に
+     数え、各事業所の合計は全体の在職者数と一致しない（案分すると実配置の人数が読めなくなる）。
+     兼務比率は入力・保存・表示のためだけに持ち、集計には当面使わない。 */
+
+  var SITE_CODES  = ['facility', 'visit', 'day', 'cm'];
+  var SITE_ACTIVE = ['facility', 'visit', 'day'];               /* 居宅は休止中のため入力欄の既定から外す */
+  var SITE_COL    = { facility: 'siteFacility', visit: 'siteVisit', day: 'siteDay', cm: 'siteCm' };
+  var SITE_LABEL  = { facility: '施設', visit: '訪問', day: '通所', cm: '居宅' };
+  var KITCHEN_SITES = { facility: 50, day: 50 };                /* 厨房は施設:通所 = 1:1 の兼務（本人裁定） */
+
+  /* 真偽列の読み取り。statusOf の onLeave と同じ寛容さ（保存経路で 1 や '1' に化けるため） */
+  function isOn(v) {
+    return v === true || v === 1 || v === '1' || v === 'true';
+  }
+
+  /* 事業所4列がすべて偽で、主たる事業所が厨房＝施設と通所の兼務として導出する行 */
+  function isKitchenDerived(row) {
+    if (!row || typeof row !== 'object') return false;
+    for (var i = 0; i < SITE_CODES.length; i++) {
+      if (isOn(row[SITE_COL[SITE_CODES[i]]])) return false;     /* 1つでも印があれば入力値が正 */
+    }
+    return row.primarySite === 'kitchen';
+  }
+
+  function belongsTo(row, site) {
+    if (!row || typeof row !== 'object') return false;
+    if (!Object.prototype.hasOwnProperty.call(SITE_COL, site)) return false;
+    if (isOn(row[SITE_COL[site]])) return true;
+    if (!isKitchenDerived(row)) return false;
+    return Object.prototype.hasOwnProperty.call(KITCHEN_SITES, site);
+  }
+
+  /* 兼務比率 {facility:20, visit:80}。所属していない事業所のキーは落とす（表示の食い違いを作らない） */
+  function siteRatios(row) {
+    var out = {}, i;
+    var src = row ? row.siteRatiosJson : null;
+    if (src && typeof src === 'object' && Object.prototype.toString.call(src) !== '[object Array]') {
+      var ks = Object.keys(src);
+      for (i = 0; i < ks.length; i++) {
+        if (!belongsTo(row, ks[i])) continue;
+        var v = src[ks[i]];
+        if (v === null || v === undefined || typeof v === 'boolean') continue;
+        if (typeof v === 'string' && trim(v) === '') continue;
+        var n = Number(v);
+        if (!isFinite(n)) continue;                             /* 数値にできない値は落とす */
+        n = Math.round(n);
+        /* 0〜100 の外は 0/100 へ丸めずに落とす。サーバーは 0〜100 の整数しか受け付けないので、
+           範囲外の値はシートを直接いじった等の異常。100 に丸めると合計の注意も出ず異常が隠れる */
+        if (n < 0 || n > 100) continue;
+        out[ks[i]] = n;
+      }
+    }
+    if (!Object.keys(out).length && isKitchenDerived(row)) {
+      var kk = Object.keys(KITCHEN_SITES);
+      for (i = 0; i < kk.length; i++) out[kk[i]] = KITCHEN_SITES[kk[i]];
+    }
+    return out;
+  }
+
+  function ratioTotal(row) {
+    var r = siteRatios(row), ks = Object.keys(r), sum = 0;
+    for (var i = 0; i < ks.length; i++) sum += r[ks[i]];
+    return sum;
+  }
+
+  /* 事業所1つぶんの行。人数は headAt、離職率は turnover をそのまま使う（式を二重に持たない） */
+  function siteStatRow(site, label, sub, from, to, asOf, opt) {
+    var t = turnover(sub, from, to, opt);
+    return {
+      site: site,
+      label: label,
+      head: headAt(sub, asOf),
+      leavers: t.leavers,
+      rate: t.rate,
+      rateRef: t.rateRef,
+      avgHead: t.avgHead,
+      hires: t.hires
+    };
+  }
+
+  /* 事業所別の集計。最後にどの事業所にも属さない行を「事業所の指定なし」で足す。
+     元の rows は書き換えず、部分集合を新しい配列に集めてから渡す */
+  function siteStats(rows, from, to, asOf, opt) {
+    var a = asOf || today();
+    var list = (rows && rows.length) ? rows : [];
+    var out = [], i, j;
+    for (i = 0; i < SITE_CODES.length; i++) {
+      var code = SITE_CODES[i];
+      var sub = [];
+      for (j = 0; j < list.length; j++) if (belongsTo(list[j], code)) sub.push(list[j]);
+      out.push(siteStatRow(code, SITE_LABEL[code], sub, from, to, a, opt));
+    }
+    var rest = [];
+    for (j = 0; j < list.length; j++) {
+      var hit = false;
+      for (i = 0; i < SITE_CODES.length; i++) {
+        if (belongsTo(list[j], SITE_CODES[i])) { hit = true; break; }
+      }
+      if (!hit) rest.push(list[j]);
+    }
+    out.push(siteStatRow('', '事業所の指定なし', rest, from, to, a, opt));
+    return out;
   }
 
   /* ── ラベル・語彙 ──────────────────────────────────────────────── */
@@ -917,6 +1023,15 @@
     averageTenureYears: averageTenureYears,
     averageAge: averageAge,
     composition: composition,
+    SITE_CODES: SITE_CODES,
+    SITE_ACTIVE: SITE_ACTIVE,
+    SITE_COL: SITE_COL,
+    SITE_LABEL: SITE_LABEL,
+    KITCHEN_SITES: KITCHEN_SITES,
+    belongsTo: belongsTo,
+    siteRatios: siteRatios,
+    ratioTotal: ratioTotal,
+    siteStats: siteStats,
     normName: normName,
     normKana: normKana,
     parseCsv: parseCsv,

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.7">
+<meta name="stfm-build" content="2026-09-10.8">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -374,8 +374,8 @@ main{padding:var(--sp-2) var(--sp-4) var(--sp-7)}
 .scr.on{display:block}
 .cd{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);
      padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3)}
-h2.sec{font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2);
-     border-bottom:1px solid var(--c-border);padding-bottom:var(--sp-1);margin-bottom:var(--sp-1)}
+h2.sec{font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2);line-height:var(--lh-tight);
+     border-bottom:1px solid var(--c-border);padding-bottom:0;margin-bottom:var(--sp-1)}
 h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-2)}
 .muted{color:var(--c-ink2);font-size:var(--fs-sm)}
 .row{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
@@ -413,8 +413,9 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
 .state.warn{text-align:left;background:var(--c-warn-bg);border:1px solid var(--c-warn);border-radius:var(--r-lg)}
 .state p{margin-top:var(--sp-2)}
 
-/* フォーム */
-.form{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--sp-2);margin-bottom:var(--sp-3)}
+/* フォーム（段どうしの間隔と節の間隔は 2026-09-10.8 で1段詰めた。理由は .subbar と同じ） */
+.form{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--sp-2);row-gap:var(--sp-1);
+     margin-bottom:var(--sp-2)}
 .fld{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0}
 .fld>label,.fld>.lbl{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight);display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);min-width:0}
 /* 和暦の読み下しはラベル行の右端に出す（欄の下に置くと1画面に収まらなくなるため・2026-09-10） */
@@ -442,16 +443,28 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
 .s5{grid-column:span 5}.s6{grid-column:span 6}.s7{grid-column:span 7}.s8{grid-column:span 8}
 .s9{grid-column:span 9}.s10{grid-column:span 10}.s11{grid-column:span 11}.s12{grid-column:1 / -1}
 
+/* 所属事業所と兼務比率（2026-09-10.8 追加。1行に収めるため .fld の幅指定を上書きする） */
+.sites{display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--sp-4);row-gap:var(--sp-1);
+     min-height:var(--tap-min)}
+.sites .sgrp{display:flex;align-items:center;gap:var(--sp-1);min-width:0}
+.sites .sgrp[hidden]{display:none}
+.sites .sgrp>label{font-size:var(--fs-sm);white-space:nowrap;cursor:pointer}
+.sites input[type="checkbox"]{width:auto;min-width:var(--tap-min)}
+.sites input.ratio{width:4.5em;flex:0 0 auto;text-align:right;font-size:var(--fs-sm);
+     padding:var(--sp-1) var(--sp-1)}
+.sites input.ratio:disabled{background:var(--c-surface2);color:var(--c-ink3)}
+.sites .unit{font-size:var(--fs-2xs);color:var(--c-ink2)}
+
 /* 資格チップ */
-.chips{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+.chips{display:flex;flex-wrap:wrap;gap:var(--sp-2);row-gap:var(--sp-1)}
 .chip{min-height:var(--tap-min);padding:0 var(--sp-3);border-radius:9999px;border:1px solid var(--c-border);
      background:var(--c-surface);color:var(--c-ink2);cursor:pointer;font-size:var(--fs-sm)}
 .chip[aria-pressed="true"]{background:var(--c-primary);color:var(--c-primary-ink);border-color:var(--c-primary)}
 
-/* 詳細の固定バー */
+/* 詳細の固定バー（余白は 2026-09-10.8 で1段詰めた。所属事業所の1行を足しても1画面に収めるため） */
 .subbar{position:sticky;top:var(--hdr-h);z-index:90;display:flex;align-items:center;gap:var(--sp-3);
      flex-wrap:wrap;background:var(--c-surface);border-bottom:1px solid var(--c-border);
-     padding:var(--sp-2) var(--sp-4);margin:0 calc(-1 * var(--sp-4)) var(--sp-3)}
+     padding:var(--sp-1) var(--sp-4);margin:0 calc(-1 * var(--sp-4)) var(--sp-2)}
 .subbar .who{font-weight:var(--fw-bold)}
 .subbar .meta{font-size:var(--fs-2xs);color:var(--c-ink2)}
 /* 押せない理由。長くても1行に収めて固定バーを太らせない（全文は同じ内容が title にも出る） */
@@ -683,6 +696,38 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
     <div class="fld s2"><label for="f_careStartDate">介護就職<span class="fnote" id="r_careStartDate" hidden></span></label><input type="text" id="f_careStartDate" autocomplete="off" placeholder="2026-09-10 / R8.9.10" aria-describedby="r_careStartDate e_careStartDate"><p class="ferr" id="e_careStartDate" hidden></p></div>
     <div class="fld s1"><label for="f_careYears" title="介護就職の日付から自動計算">介護経験</label><input type="text" id="f_careYears" readonly aria-readonly="true" tabindex="-1"></div>
     <div class="fld s2"><label for="f_primarySite">主たる事業所</label><select id="f_primarySite" aria-describedby="e_primarySite"></select><p class="ferr" id="e_primarySite" hidden></p></div>
+    <!-- 所属事業所（兼務可）。居宅は休止中のため、その方が付いている時だけ4つめを出す（2026-09-10.8） -->
+    <div class="fld s7" id="siteBox">
+      <span class="lbl" id="lbl_sites">所属事業所（兼務可）</span>
+      <!-- 見出しの文字は見えていても支援技術には組と結び付かないため、group として名前を与える -->
+      <div class="sites" id="siteRow" role="group" aria-labelledby="lbl_sites" aria-describedby="w_sites">
+        <span class="sgrp" id="sg_facility">
+          <input type="checkbox" id="f_siteFacility"><label for="f_siteFacility">施設</label>
+          <label class="sr-only" for="f_ratio_facility">施設の兼務比率（パーセント）</label>
+          <input type="number" class="ratio" id="f_ratio_facility" min="0" max="100" step="1"
+            inputmode="numeric" autocomplete="off" aria-describedby="w_sites"><span class="unit" aria-hidden="true">%</span>
+        </span>
+        <span class="sgrp" id="sg_visit">
+          <input type="checkbox" id="f_siteVisit"><label for="f_siteVisit">訪問</label>
+          <label class="sr-only" for="f_ratio_visit">訪問の兼務比率（パーセント）</label>
+          <input type="number" class="ratio" id="f_ratio_visit" min="0" max="100" step="1"
+            inputmode="numeric" autocomplete="off" aria-describedby="w_sites"><span class="unit" aria-hidden="true">%</span>
+        </span>
+        <span class="sgrp" id="sg_day">
+          <input type="checkbox" id="f_siteDay"><label for="f_siteDay">通所</label>
+          <label class="sr-only" for="f_ratio_day">通所の兼務比率（パーセント）</label>
+          <input type="number" class="ratio" id="f_ratio_day" min="0" max="100" step="1"
+            inputmode="numeric" autocomplete="off" aria-describedby="w_sites"><span class="unit" aria-hidden="true">%</span>
+        </span>
+        <span class="sgrp" id="sg_cm" hidden>
+          <input type="checkbox" id="f_siteCm"><label for="f_siteCm">居宅</label>
+          <label class="sr-only" for="f_ratio_cm">居宅の兼務比率（パーセント）</label>
+          <input type="number" class="ratio" id="f_ratio_cm" min="0" max="100" step="1"
+            inputmode="numeric" autocomplete="off" aria-describedby="w_sites"><span class="unit" aria-hidden="true">%</span>
+        </span>
+      </div>
+      <p class="fwarn" id="w_sites" hidden></p>
+    </div>
     <div class="fld s2"><label for="f_jobTitle">職種</label><input type="text" id="f_jobTitle" autocomplete="off" placeholder="複数は「・」で区切る"></div>
     <div class="fld s2"><label for="f_position">役職</label><input type="text" id="f_position" autocomplete="off"></div>
     <div class="fld s2"><label for="f_employmentType">雇用区分</label><select id="f_employmentType"></select></div>
@@ -814,7 +859,7 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-10.7</p>
+    <p class="muted">版 2026-09-10.8</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -934,13 +979,13 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.7
+   職員マスタ 2026-09-10.8
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.7';
+var BUILD = '2026-09-10.8';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1035,7 +1080,8 @@ var FALLBACK_LABELS = {
   employmentType: '雇用区分', jobTitle: '職種', position: '役職', siteFacility: '施設',
   siteVisit: '訪問', siteDay: '通所', siteCm: '居宅', primarySite: '主たる事業所',
   workStyle: '勤務形態', hireDate: '入職日', retireDate: '退職日', onLeave: '休職',
-  careStartDate: '介護就職', qualsJson: '資格', empInsNo: '雇用保険番号', note: '備考'
+  careStartDate: '介護就職', qualsJson: '資格', empInsNo: '雇用保険番号', note: '備考',
+  siteRatiosJson: '兼務比率'
 };
 
 /* ── 列の型 ──────────────────────────────────────────── */
@@ -1069,9 +1115,36 @@ function normRow(raw) {
   /* 添付書類の目録。サーバーだけが書き換える列なので ARR_FIELDS には入れない
      （collectForm・diffFields・EXPORT_COLS・取込の対応表のどれにも載せない） */
   r.filesJson = toArr(raw ? raw.filesJson : null);
+  /* 兼務比率。所属の正は真偽4列で、こちらは表示・保存のためだけに持つ（集計には使わない） */
+  r.siteRatiosJson = toRatioObj(raw ? raw.siteRatiosJson : null);
   return r;
 }
+
+/* 兼務比率を {facility:20, visit:80} の形にそろえる。知らないキー・数にできない値は落とす。
+   並びは SITE_UI の順で作るので、JSON.stringify で比べられる（未保存の判定に使う） */
+function toRatioObj(v) {
+  var src = v, out = {}, i, n;
+  if (typeof src === 'string') {
+    if (!src.trim()) return out;
+    try { src = JSON.parse(src); } catch (e) { return out; }
+  }
+  if (!src || typeof src !== 'object' || Array.isArray(src)) return out;
+  for (i = 0; i < SITE_UI.length; i++) {
+    if (!Object.prototype.hasOwnProperty.call(src, SITE_UI[i].code)) continue;
+    n = Number(src[SITE_UI[i].code]);
+    if (!isFinite(n)) continue;
+    n = Math.round(n);
+    /* 0〜100 の外は 0/100 へ丸めずに落とす（算出モジュールと同じ扱い）。
+       100 に丸めると合計がちょうど100になり、値がおかしいことに誰も気づけなくなる */
+    if (n < 0 || n > 100) continue;
+    out[SITE_UI[i].code] = n;
+  }
+  return out;
+}
+
 function sameVal(a, b, key) {
+  /* 兼務比率は素のオブジェクト。文字にすると常に同じに見えるので、そろえてから比べる */
+  if (key === 'siteRatiosJson') return JSON.stringify(toRatioObj(a)) === JSON.stringify(toRatioObj(b));
   /* 資格は並び順と空の取得日をそろえてから比べる（開いた直後に未保存扱いにしないため） */
   if (key === 'qualsJson' && SC() && typeof SC().normQuals === 'function') {
     return JSON.stringify(SC().normQuals(a)) === JSON.stringify(SC().normQuals(b));
@@ -1860,6 +1933,56 @@ function refreshRow(id) {
 /* ════════════════════════════════════════════════════════════════
    詳細フォーム
    ════════════════════════════════════════════════════════════════ */
+/* ── 所属事業所（兼務可）───────────────────────────────────────
+   並び・列名・欄のidはこの表が正。calc.js が古い版でも画面が動くように持っておく。
+   所属の正は既存の真偽4列で、比率（siteRatiosJson）は表示・保存のためだけに持つ。 */
+var SITE_UI = [
+  { code: 'facility', col: 'siteFacility', label: '施設', chk: 'f_siteFacility', ratio: 'f_ratio_facility', grp: 'sg_facility' },
+  { code: 'visit', col: 'siteVisit', label: '訪問', chk: 'f_siteVisit', ratio: 'f_ratio_visit', grp: 'sg_visit' },
+  { code: 'day', col: 'siteDay', label: '通所', chk: 'f_siteDay', ratio: 'f_ratio_day', grp: 'sg_day' },
+  { code: 'cm', col: 'siteCm', label: '居宅', chk: 'f_siteCm', ratio: 'f_ratio_cm', grp: 'sg_cm' }
+];
+var SITE_CHK_BY_COL = {};
+SITE_UI.forEach(function (s) { SITE_CHK_BY_COL[s.col] = s.chk; });
+var SITE_ACTIVE_DEF = ['facility', 'visit', 'day'];   /* 居宅は休止中のため入力欄の既定から外す */
+
+/* 既定で欄を出す事業所か（calc.js が新しければそちらの指定に従う） */
+function siteIsActive(code) {
+  var a = (SC() && Array.isArray(SC().SITE_ACTIVE) && SC().SITE_ACTIVE.length) ? SC().SITE_ACTIVE : SITE_ACTIVE_DEF;
+  return a.indexOf(code) >= 0;
+}
+/* その方がその事業所に所属しているか。厨房の導出は calc.js が持つ（古い版なら真偽列だけで見る） */
+function belongsToSite(row, code) {
+  var f = SC() ? SC().belongsTo : null;
+  if (typeof f === 'function') { try { return !!f(row, code); } catch (e) { /* 古い版に備える */ } }
+  var col = '';
+  SITE_UI.forEach(function (s) { if (s.code === code) col = s.col; });
+  return truthy(row ? row[col] : false);
+}
+/* 表示用の兼務比率。厨房の 50:50 の導出も calc.js が返す（古い版なら保存されている値だけ） */
+function siteRatiosOf(row) {
+  var f = SC() ? SC().siteRatios : null;
+  if (typeof f === 'function') {
+    try { var o = f(row); if (o && typeof o === 'object') return o; } catch (e) { /* 古い版に備える */ }
+  }
+  return toRatioObj(row ? row.siteRatiosJson : null);
+}
+
+/* 厨房の方（所属の印がひとつも無い）を、施設：通所＝1：1 の兼務として開くための値。
+   判定と比率は算出モジュールに任せる＝同じ規則を画面側に書き写さない。導出が働かなければ null */
+function kitchenDerivedOf(base) {
+  if (!base) return null;
+  var any = false;
+  SITE_UI.forEach(function (s) { if (truthy(base[s.col])) any = true; });
+  if (any) return null;                                        /* 印があるなら入力値が正 */
+  var ratios = siteRatiosOf(base);
+  if (!ratios || !Object.keys(ratios).length) return null;     /* 厨房でなければ空が返る */
+  var out = {};
+  SITE_UI.forEach(function (s) { out[s.col] = Object.prototype.hasOwnProperty.call(ratios, s.code); });
+  out.siteRatiosJson = ratios;
+  return out;
+}
+
 var FORM_MAP = {
   legacyNo: 'f_legacyNo', name: 'f_name', kana: 'f_kana', gender: 'f_gender', birthDate: 'f_birthDate',
   phone: 'f_phone', address: 'f_address', hireDate: 'f_hireDate', retireDate: 'f_retireDate',
@@ -2016,7 +2139,15 @@ function openDetail(id) {
   /* 新規は職員Noを自動で入れておく。取消でもこの番号に戻るよう base 側に持たせる
      （既存の職員は保存されている値をそのまま出す＝採番しない） */
   if (!id) base.legacyNo = nextLegacyNo();
-  ST.detail = { id: id || '', rev: row ? row.rev : 0, base: base, quals: {}, insShown: false, conflict: null };
+  /* 厨房の方は所属の印が無く、施設：通所＝1：1 の兼務として画面に出す（本人裁定 2026-09-10）。
+     その導出値を base にも持たせ、開いただけで「未保存」に見えないようにする。
+     ★導出のままサーバーへ部分更新すると、印は false のままなので次に開いた時また導出が働き、
+       1つでも残した所属が元の施設・通所に戻ってしまう。そのため保存時は所属4列と比率を送って確定させる
+       （下の kitchenDerived）。4つとも外した時は導出の条件そのものなので、次に開くとまた 50:50 で出る。 */
+  var derived = kitchenDerivedOf(base);
+  if (derived) { for (var dk in derived) { if (Object.prototype.hasOwnProperty.call(derived, dk)) base[dk] = derived[dk]; } }
+  ST.detail = { id: id || '', rev: row ? row.rev : 0, base: base, quals: {}, insShown: false,
+                conflict: null, kitchenDerived: !!derived };
   /* 資格は code → 元のアイテムの写しで持つ（その他の名称 label と取得日を落とさない） */
   toArr(base.qualsJson).forEach(function (q) {
     if (!q || !q.code) return;
@@ -2035,6 +2166,50 @@ function openDetail(id) {
   updateFilesBtn();
   showScreen('detail');
   $('f_name').focus();
+}
+
+/* 所属事業所の欄をこの方の値で作り直す。居宅（休止中）は付いている方にだけ出す＝外せる */
+function fillSites(r) {
+  var ratios = siteRatiosOf(r);
+  SITE_UI.forEach(function (s) {
+    var chk = $(s.chk), ri = $(s.ratio), grp = $(s.grp);
+    var on = belongsToSite(r, s.code);
+    if (chk) chk.checked = on;
+    if (ri) ri.value = Object.prototype.hasOwnProperty.call(ratios, s.code) ? String(ratios[s.code]) : '';
+    if (grp && !siteIsActive(s.code)) grp.hidden = !on;
+  });
+  syncSiteRatios();
+}
+
+/* チェックの入っていない事業所の比率欄は空にして押せなくする。
+   合計が100でないときだけ注意を1行出す（保存は止めない）。
+   サーバーが兼務比率を持たない版なら、比率欄だけ使えなくする（チェックは従来どおり使える） */
+function syncSiteRatios() {
+  var canRatio = capsHas('siteRatio');
+  var total = 0, n = 0, bad = 0;
+  SITE_UI.forEach(function (s) {
+    var chk = $(s.chk), ri = $(s.ratio);
+    if (!chk || !ri) return;
+    var on = !!chk.checked;
+    if (!on && ri.value !== '') ri.value = '';
+    ri.disabled = !on || !canRatio;
+    var v = txt(ri.value).trim();
+    /* 数え方は collectForm と同じにする。ここだけ小数を数えると、
+       「合計100%」と出ているのに保存されない値ができる（2026-09-10 レビュー 中3） */
+    if (on && v !== '') {
+      if (/^[0-9]{1,3}$/.test(v) && Number(v) <= 100) { total += Number(v); n++; }
+      else bad++;
+    }
+  });
+  var w = $('w_sites');
+  if (!w) return;
+  var msg = '';
+  if (ST.caps === null) msg = '接続を確かめられていないため、兼務比率はまだ入力できません。設定画面の「接続テスト」で確かめてください';
+  else if (!canRatio) msg = '職員マスタの GAS を更新すると兼務比率を保存できます';
+  else if (bad) msg = '兼務比率は 0〜100 の整数で入れてください（小数や範囲外は保存されません）';
+  else if (n && total !== 100) msg = '兼務比率の合計が100%になっていません（現在 ' + total + '%）。このままでも保存できます';
+  w.textContent = msg;
+  w.hidden = !msg;
 }
 
 function fillForm(r) {
@@ -2070,6 +2245,7 @@ function fillForm(r) {
     'f_primarySite'].forEach(function (id) {
       $(id).removeAttribute('aria-invalid');
     });
+  fillSites(r);
   refreshDateNotes();
   updateLegacyDup();
 }
@@ -2093,7 +2269,27 @@ function collectForm() {
     quals.push(q);
   });
   o.qualsJson = quals;
-  BOOL_FIELDS.forEach(function (k) { if (k !== 'onLeave') o[k] = !!(ST.detail && ST.detail.base[k]); });
+  /* 所属事業所は画面のチェックが正（2026-09-10.8 で編集できるようにした）。
+     欄の無い列だけ、これまでどおり読み込んだ値をそのまま持ち回る */
+  BOOL_FIELDS.forEach(function (k) {
+    if (k === 'onLeave') return;
+    var chk = $(SITE_CHK_BY_COL[k] || '');
+    o[k] = chk ? !!chk.checked : !!(ST.detail && ST.detail.base[k]);
+  });
+  /* 兼務比率はサーバーが対応している時だけ送る（対応していない版は受け付けない項目として全件中止になる） */
+  if (capsHas('siteRatio')) {
+    var ratios = {};
+    SITE_UI.forEach(function (s) {
+      var chk = $(s.chk), ri = $(s.ratio);
+      if (!chk || !chk.checked || !ri) return;
+      var v = txt(ri.value).trim();
+      if (!/^[0-9]{1,3}$/.test(v)) return;          /* 空欄・整数でない値はキーを作らない */
+      var nv = Number(v);
+      if (nv < 0 || nv > 100) return;
+      ratios[s.code] = nv;
+    });
+    o.siteRatiosJson = ratios;
+  }
   if (ST.detail && ST.detail.insShown) o.empInsNo = txt($('f_empIns').value).trim();
   return o;
 }
@@ -2199,6 +2395,20 @@ function saveDetail() {
     ['name', 'hireDate'].forEach(function (f) {
       if (Object.prototype.hasOwnProperty.call(fields, f) && !txt(fields[f])) { delete fields[f]; dropped.push(fieldLabel(f)); }
     });
+    /* 厨房の導出で開いた行は、差分が無くても所属4列と兼務比率を送って実データに確定させる。
+       送らないと印が false のままで、次に開いた時にまた導出が働く（人が外した所属が戻る） */
+    if (ST.detail.kitchenDerived) {
+      var siteTouched = false;
+      SITE_UI.forEach(function (su) { if (!!cur[su.col] !== !!ST.detail.base[su.col]) siteTouched = true; });
+      if (capsHas('siteRatio')) {
+        SITE_UI.forEach(function (su) { fields[su.col] = !!cur[su.col]; });
+        fields.siteRatiosJson = cur.siteRatiosJson || {};
+      } else if (siteTouched) {
+        /* 兼務比率を保存できない版。所属だけは確定させないと、外した所属がまた導出で戻る。
+           所属を触っていないなら何も送らない＝導出の 50:50 を黙って捨てない（レビュー 中2） */
+        SITE_UI.forEach(function (su) { fields[su.col] = !!cur[su.col]; });
+      }
+    }
     if (!Object.keys(fields).length) { toast('変更はありません'); return; }
     body = { rows: [{ id: ST.detail.id, rev: ST.detail.rev, fields: fields }], by: cfg.by || '' };
   } else {
@@ -2420,12 +2630,14 @@ function refreshCaps() {
     ST.caps = null;
     updateFilesBtn();
     updateEnumBtn();
+    if (ST.detail) syncSiteRatios();
   });
 }
 function setCaps(d) {
   ST.caps = (d && Array.isArray(d.caps)) ? d.caps.map(txt) : [];
   updateFilesBtn();
   updateEnumBtn();
+  if (ST.detail) syncSiteRatios();       /* 詳細を開いたまま分かった時に比率欄を開ける */
 }
 
 /* 保存された行の版を書き戻す（詳細フォームの楽観ロックが古い版で競合しないように） */
@@ -2814,9 +3026,11 @@ function renderDash() {
   cards.appendChild(kpiCard('平均勤続年数', num(SC().averageTenureYears(ST.rows, asOf)), '年', '在職者のみ'));
   cards.appendChild(kpiCard('平均年齢', num(SC().averageAge(ST.rows, asOf)), '歳', '在職者のみ（生年月日のある方）'));
   clearNode(comp);
-  [['employmentType', '雇用区分別'], ['jobTitle', '職種別'], ['primarySite', '事業所別']].forEach(function (pair) {
+  [['employmentType', '雇用区分別'], ['jobTitle', '職種別']].forEach(function (pair) {
     comp.appendChild(compCard(pair[1], pair[0]));
   });
+  /* 事業所別は表（在籍数・退職者数・離職率）。古い計算モジュールでは従来の構成比カードに戻す */
+  comp.appendChild(siteCard(p.from, p.to, asOf) || compCard('事業所別', 'primarySite'));
 }
 
 function shiftYear(d, n) {
@@ -2874,6 +3088,43 @@ function compCard(title, key) {
     ]));
   });
   return card;
+}
+
+/* 事業所別の在籍数・退職者数・離職率。数え方は実人数（兼務は所属する事業所すべてで1名）。
+   計算モジュールが siteStats を持たない古い版なら null を返し、従来の構成比カードに戻す */
+function siteCard(from, to, asOf) {
+  var f = SC() ? SC().siteStats : null;
+  if (typeof f !== 'function') return null;
+  var list = [];
+  try { list = f(ST.rows, from, to, asOf, {}) || []; } catch (e) { return null; }
+  if (!list.length) return null;
+  var body = h('tbody');
+  list.forEach(function (x) {
+    /* 居宅は休止中。在籍も退職者もいない期間は行ごと出さない（既存データは消さない） */
+    if (x.site === 'cm' && !Number(x.head) && !Number(x.leavers)) return;
+    var rate = pct(x.rate);
+    body.appendChild(h('tr', null, [
+      h('th', { scope: 'row', text: txt(x.label) }),
+      h('td', { cls: 'num', text: num(x.head) + '名' }),
+      h('td', { cls: 'num', text: num(x.leavers) + '名' }),
+      h('td', { cls: 'num', text: (rate === '—') ? '—' : (rate + '%') })
+    ]));
+  });
+  var tbl = h('table', { cls: 'small-tbl' }, [
+    h('caption', { cls: 'sr-only', text: '事業所別の在籍数・退職者数・離職率' }),
+    h('thead', null, h('tr', null, [
+      h('th', { scope: 'col', text: '事業所' }),
+      h('th', { scope: 'col', text: '在籍数' }),
+      h('th', { scope: 'col', text: '退職者数' }),
+      h('th', { scope: 'col', text: '離職率' })
+    ])),
+    body
+  ]);
+  return h('div', { cls: 'cd' }, [
+    h('h3', { cls: 'sub', text: '事業所別' }),
+    h('div', { cls: 'tbl-wrap' }, tbl),
+    h('p', { cls: 'muted', text: '兼務の方は所属する事業所すべてで1名として数えます。合計は在職者数と一致しません。離職率の母数（平均在籍者数）は役員兼使用人を既定で除きます' })
+  ]);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -3183,8 +3434,8 @@ function runImport() {
    ════════════════════════════════════════════════════════════════ */
 var EXPORT_COLS = ['id', 'legacyNo', 'name', 'kana', 'birthDate', 'gender', 'phone', 'address',
   'emergencyJson', 'employmentType', 'jobTitle', 'position', 'siteFacility', 'siteVisit', 'siteDay',
-  'siteCm', 'primarySite', 'workStyle', 'hireDate', 'retireDate', 'onLeave', 'careStartDate',
-  'qualsJson', 'note'];
+  'siteCm', 'siteRatiosJson', 'primarySite', 'workStyle', 'hireDate', 'retireDate', 'onLeave',
+  'careStartDate', 'qualsJson', 'note'];
 
 function exportCell(row, k) {
   if (BOOL_FIELDS.indexOf(k) >= 0) return row[k] ? '1' : '0';
@@ -3192,6 +3443,13 @@ function exportCell(row, k) {
     return toArr(row.qualsJson).map(function (q) {
       return labelOf('qualCodes', q && q.code) + (q && q.acquiredOn ? '(' + txt(q.acquiredOn) + ')' : '');
     }).join('・');
+  }
+  if (k === 'siteRatiosJson') {
+    var r = siteRatiosOf(row), out = [];
+    SITE_UI.forEach(function (s) {
+      if (Object.prototype.hasOwnProperty.call(r, s.code)) out.push(s.label + String(r[s.code]));
+    });
+    return out.join('/');
   }
   if (k === 'emergencyJson') return toArr(row.emergencyJson).length ? JSON.stringify(row.emergencyJson) : '';
   if (k === 'gender' || k === 'employmentType' || k === 'workStyle' || k === 'primarySite') return labelOf(k, row[k]);
@@ -3803,6 +4061,15 @@ function bindEvents() {
       $(id).addEventListener('input', onFormInput);
       $(id).addEventListener('change', onFormInput);
     });
+  /* 所属事業所（チェック＝所属／数値＝兼務比率）。外した事業所の比率は空にして押せなくする */
+  SITE_UI.forEach(function (s) {
+    var chk = $(s.chk), ri = $(s.ratio);
+    if (chk) chk.addEventListener('change', function () { syncSiteRatios(); onFormInput(); });
+    if (ri) {
+      ri.addEventListener('input', function () { syncSiteRatios(); onFormInput(); });
+      ri.addEventListener('change', function () { syncSiteRatios(); onFormInput(); });
+    }
+  });
   /* 日付欄は離れた時に正規化してから検証する（validateDetail より先に登録する） */
   DATE_FIELD_IDS.forEach(function (id) {
     $(id).addEventListener('blur', function () {
