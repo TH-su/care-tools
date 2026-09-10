@@ -114,6 +114,7 @@ body {
 .chip.k-brk  { background: var(--c-brk);  border-color: var(--c-brk-b); }
 .chip.k-free { background: var(--c-free); border-color: var(--c-free-b); }
 .chip.k-admin { background: #e8eef5; border-color: #90a4c8; }   /* 事務(トレイchip・要件3) */
+.chip.bumped::before { content: '⚠'; color: var(--ng); margin-right: 2px; }   /* 重なりで盤面から退避した枠(app.js が bumped を付与) */
 
 /* ===== ボード ===== */
 .board-wrap {
@@ -249,6 +250,10 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
   line-height: 16px; text-align: center; display: none;
 }
 .b-task.done .t-done { display: block; }
+/* 重なり表示(2026-09-10): 同一レーンで時間が重なる枠は board.js が inline で横幅を分割し、
+ * この赤い内側罫線＋破線で「重なっている枠」だと分かるようにする。寸法(left/width)はJS側のみが決め、
+ * ここでは色と罫線だけ＝A3印刷レイアウトの寸法には非干渉。.selected の青枠を消さないよう前に置く。 */
+.b-task.overlapped { box-shadow: inset 0 0 0 2px var(--ng), 0 1px 2px rgba(0,0,0,.08); border-style: dashed; }
 .b-task.selected { box-shadow: 0 0 0 2px var(--pri), 0 2px 8px rgba(0,0,0,.25); z-index: 20; }
 /* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
  * outline は枠寸法に影響しない＝D&D座標計算/レイアウトに非干渉。🔗 バッジは枠左下に絶対配置。 */
@@ -557,6 +562,9 @@ body.printing .tick { font-size: 18px; font-weight: 600; }
 body.printing .tick.hour { font-size: 21px; font-weight: 700; }
 body.printing .b-task.changed { border: 2.5px double #000 !important; }
 body.printing .b-task.tentative { border-style: dashed !important; }
+/* 重なり枠は印刷でも識別できるように黒の破線＋内側罫線（印刷の box-shadow:none を上書き）。
+ * 横幅の分割は board.js の inline(left/width)＝ここでは寸法を変えない。 */
+body.printing .b-task.p-task.overlapped { box-shadow: inset 0 0 0 1.5px #000 !important; border: 1px dashed #000 !important; }
 /* 入院中: 極薄＋斜線で区別（チェック欄は出さない・要件B7）。斜線は淡灰で文字(#c9c9c9)を妨げない */
 body.printing .b-task.hosp { opacity: 1; filter: none; -webkit-filter: none; border-color: #c9c9c9 !important;
   background-image: repeating-linear-gradient(45deg, #b8b8b8 0 4px, transparent 4px 10px) !important; }   /* 入院中の斜線=濃く(印刷・文字#c9c9c9よりわずかに濃い程度) */
@@ -658,6 +666,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="badge ng off" id="badgeShiftChg" title="シフトの未反映はありません">シフト未反映 0</button>
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
+  <button class="badge ng off" id="badgeOv" title="同じ職員の同時刻に重なった枠・退避した枠">重なり 0</button>
   <button class="hdr-btn" id="btnUndo" disabled aria-label="元に戻す" title="元に戻す (Ctrl/Cmd+Z)">↩</button>
   <button class="hdr-btn" id="btnRedo" disabled aria-label="やり直す" title="やり直す (Ctrl/Cmd+Shift+Z)">↪</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
@@ -933,6 +942,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <h3>アラート</h3>
   <div class="fld"><label>未配置の支援（F-09）</label><div class="alist" id="alUn"></div></div>
   <div class="fld"><label>休憩未配置（勤務<span id="alBrH">7</span>時間以上・F-10）</label><div class="alist" id="alBr"></div></div>
+  <div class="fld"><label>重なり退避（同時刻に別の枠があったため未配置へ）</label><div class="alist" id="alBump"></div></div>
+  <div class="fld"><label>盤面に残る重なり（ロック日・旧端末由来）</label><div class="alist" id="alOv"></div></div>
   <div class="btn-row"><span class="sp"></span><button class="btn" id="alClose">閉じる</button></div>
 </div>
 
@@ -1524,6 +1535,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * newTask で全タスクを作り直すため、facManual と同様ここで拾わないと parked 状態が失われる。
      * falsy のときはキー自体を作らない＝既存タスクの daySig が変わらず余分な push を出さない。 */
     if (props.parked) t.parked = true;
+    /* bumped = 重なりで未配置へ退避された印 {from}（2026-09-10）。parked と同じ理由で作り直し経路でも保持する
+     * （落ちると「重なり退避」バッジ/一覧が過少になる。parked は残るので自動再配置はされない）。falsy ならキーを作らない。 */
+    if (props.bumped && typeof props.bumped === 'object') t.bumped = props.bumped;
     return t;
   }
 
@@ -1691,7 +1705,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (!hasBreak) noBreak.push(st);
     }
-    return { unassigned: unassigned, noBreak: noBreak,
+    /* overlaps: 盤面に残っている同一職員の重畳ペア（ロック日・旧端末由来）。bumped: 重なりでトレイへ退避された枠。
+     * どちらも派生値。count は従来どおり 未配置＋休憩 のみ（既存の利用箇所の意味を変えない）。 */
+    var overlaps = [], byStaffA = {}, kA;
+    for (i = 0; i < day.tasks.length; i++) {
+      var ta = day.tasks[i];
+      if (!ta || ta.staffId === null || ta.staffId === undefined) continue;
+      (byStaffA['.' + ta.staffId] || (byStaffA['.' + ta.staffId] = [])).push(ta);
+    }
+    for (kA in byStaffA) {
+      if (!Object.prototype.hasOwnProperty.call(byStaffA, kA)) continue;
+      var arrA = byStaffA[kA];
+      if (arrA.length < 2) continue;
+      arrA.sort(function (a, b) { return (a.start - b.start) || cmpId_(a, b); });
+      var stA = findStaff(day.staff, arrA[0].staffId);
+      for (i = 0; i < arrA.length; i++) {
+        for (var j2 = i + 1; j2 < arrA.length && arrA[j2].start < arrA[i].end; j2++) {
+          if (overlap(arrA[i].start, arrA[i].end, arrA[j2].start, arrA[j2].end)) {
+            overlaps.push({ staffId: arrA[i].staffId, staffName: stA ? stA.name : '', a: arrA[i], b: arrA[j2] });
+          }
+        }
+      }
+    }
+    var bumped = [];
+    for (i = 0; i < day.tasks.length; i++) {
+      if (day.tasks[i] && day.tasks[i].staffId === null && day.tasks[i].bumped) bumped.push(day.tasks[i]);
+    }
+    return { unassigned: unassigned, noBreak: noBreak, overlaps: overlaps, bumped: bumped,
              count: unassigned.length + noBreak.length };
   }
 
@@ -1905,6 +1945,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var c = {}, kk, pp = transfer[t.id];
         for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
         for (kk in pp) if (Object.prototype.hasOwnProperty.call(pp, kk)) c[kk] = pp[kk];  /* パッチ適用: staffId＋手動カスタマイズ移譲（start/end は残す札を維持） */
+        if (pp.staffId !== undefined && pp.staffId !== null) { delete c.parked; delete c.bumped; }   /* 配置済みになった札にトレイ印/退避印を残さない */
         out.push(c);
       } else out.push(t);
     }
@@ -2041,15 +2082,136 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return n;
   }
-  /* マージ後の盤面修復: ①列(staff)不在のstaffId→care=トレイへ/非care=破棄
-   * ②同一列のcare重畳→後発(start,id順)をトレイへ ③非care(break→facility→その他)の重畳→残余へクリップ(20分未満破棄)。
-   * 両端末の編集が同じ時間帯に重なった場合でも、盤面・A3印刷に重畳枠を残さない。 */
-  function repairBoard_(tasks, staff) {
-    var staffIds = {}, i, j, t;
+  /* ===== 不変条件「同一職員(staffId)の枠は時間重複しない」の強制（純関数・2026-09-10）=====
+   * 経緯: 重なりは D&D/エディタ(validatePlacement)とクラウドマージ後(repairBoard_)でしか防がれず、
+   * 週間計画追従(claim)・シフト同期の張替(remapTasksToOccupant)・読込整形(normalizeNightCareDivision)・
+   * 複数選択移動・翌週コピー等の自動経路は無検査だった。描画は配列順の全幅重ね置きなので後発が前の枠を
+   * 画面・A3印刷とも完全に隠す（支援の実施漏れ＝収益直結）。本関数を store の dispatch 後・読込後・
+   * 送信前の単一チョークポイントとして通し、盤面に重畳枠を残さない。
+   *
+   * 方針（2026-09-10 本人裁定）:
+   *  優先 = 種別(支援 > 手動の非支援 > 自動充填) → 既配置(prev で同id・同位置) > 新参 → start昇順 → id順
+   *  ・支援が負けた: 未配置トレイへ退避（staffId=null・parked=true・bumped={from}）。自動再配置しない
+   *  ・非支援が負けた: 残余区間へクリップ（占有終端を20分へ繰上げ＝D&D縮小配置 TS.facResidual と同じ刻み・
+   *    20分未満破棄・断片は facManual・2本目以降は新id）。残余ゼロ: 自動充填=削除／手動枠=トレイへ退避
+   *  ・staff に無い staffId の枠は触らない（rescueOrphanTasks / repairBoard_ 前段の領分）
+   *  ・重なりが無ければ入力配列を【同一参照】で返す（daySig 不変＝余分な push を出さない・冪等）
+   * bumped に時刻(at)を持たせない＝複数端末が同じ盤面を修復しても同一結果（taskSig 一致で競合往復を増やさない）。 */
+  var OVL_MIN = 20;
+  /* 自動充填枠（結合可能な施設業務/自由枠/休憩）＝負けたら残余へクリップし、残余ゼロなら削除してよい枠 */
+  function isAutoFiller_(t) {
+    if (!t || t.kind === 'care') return false;
+    if (t.src === 'facwork') return true;
+    return t.kind === 'facility' && t.label === '施設業務';
+  }
+  function overlapTier_(t) {
+    if (t.kind === 'care') return 0;
+    return isAutoFiller_(t) ? 2 : 1;
+  }
+  /* [s,e) から占有 occ を差し引いた残余。占有の終端は20分グリッドへ繰上げ（TS.facResidual と同じ規則）。 */
+  function residualGrid_(s, e, occ, minLen) {
+    var rounded = [], i;
+    for (i = 0; i < occ.length; i++) rounded.push([occ[i][0], Math.ceil(occ[i][1] / 20) * 20]);
+    return subtractIntervals_(s, e, rounded, minLen || OVL_MIN);
+  }
+  function hasOverlapIn_(sorted) {
+    var maxEnd = -Infinity, i;
+    for (i = 0; i < sorted.length; i++) {
+      if (sorted[i].start < maxEnd) return true;
+      if (sorted[i].end > maxEnd) maxEnd = sorted[i].end;
+    }
+    return false;
+  }
+  function normalizeOverlap(prevTasks, nextTasks, staff) {
+    var rep = { tasks: nextTasks, bumped: [], clipped: 0, removed: 0, changed: false };
+    if (!nextTasks || nextTasks.length < 2) return rep;
+    var staffIds = {}, i, t, k;
     for (i = 0; i < (staff || []).length; i++) {
       if (staff[i] && staff[i].id !== undefined && staff[i].id !== null) staffIds['.' + staff[i].id] = 1;
     }
-    var cares = [], others = [];
+    var byStaff = {};
+    for (i = 0; i < nextTasks.length; i++) {
+      t = nextTasks[i];
+      if (!t || t.staffId === null || t.staffId === undefined) continue;
+      k = '.' + t.staffId;
+      if (!staffIds[k]) continue;   /* 列不在＝本関数の対象外（孤児退避は別関数の領分） */
+      if (!(t.end > t.start)) continue;
+      (byStaff[k] || (byStaff[k] = [])).push(t);
+    }
+    var prevIdx = indexById_(prevTasks || []);
+    function incumbent_(x) {
+      var p = prevIdx['.' + x.id];
+      return !!(p && p.staffId === x.staffId && p.start === x.start && p.end === x.end);
+    }
+    function rank_(a, b) {
+      var ta = overlapTier_(a), tb = overlapTier_(b);
+      if (ta !== tb) return ta - tb;
+      var ia = incumbent_(a) ? 0 : 1, ib = incumbent_(b) ? 0 : 1;
+      if (ia !== ib) return ia - ib;
+      var ka = a.kind === 'break' ? 0 : 1, kb = b.kind === 'break' ? 0 : 1;   /* 同格なら休憩を先に（旧 repairBoard_ の break>facility を保つ） */
+      if (ka !== kb) return ka - kb;
+      return (a.start - b.start) || cmpId_(a, b);
+    }
+    var repl = {}, changed = false;
+    for (k in byStaff) {
+      if (!Object.prototype.hasOwnProperty.call(byStaff, k)) continue;
+      var arr = byStaff[k].slice();
+      arr.sort(function (a, b) { return (a.start - b.start) || cmpId_(a, b); });
+      if (!hasOverlapIn_(arr)) continue;
+      arr.sort(rank_);
+      var occ = [], j, hit;
+      for (i = 0; i < arr.length; i++) {
+        t = arr[i];
+        hit = false;
+        for (j = 0; j < occ.length; j++) if (t.start < occ[j][1] && occ[j][0] < t.end) { hit = true; break; }
+        if (!hit) { occ.push([t.start, t.end]); continue; }
+        changed = true;
+        if (t.kind === 'care' || (!isAutoFiller_(t) && residualGrid_(t.start, t.end, occ).length === 0)) {
+          /* 支援 or 残余ゼロの手動枠 → トレイ退避（UNASSIGN と同じ形＋退避印） */
+          var bc = cloneTask_(t);
+          bc.staffId = null; bc.done = false; bc.facBg = null; bc.parked = true;
+          bc.bumped = { from: t.staffId };
+          repl['.' + t.id] = [bc];
+          rep.bumped.push({ id: t.id, from: t.staffId, kind: t.kind,
+                            name: t.kind === 'care' ? t.residentName : (t.label || '') });
+          continue;
+        }
+        var segs = residualGrid_(t.start, t.end, occ);
+        if (!segs.length) { repl['.' + t.id] = []; rep.removed++; continue; }   /* 自動充填の全被覆＝削除 */
+        var frags = [];
+        for (j = 0; j < segs.length; j++) {
+          var nt = cloneTask_(t);
+          if (j > 0) nt.id = genId('t');
+          nt.start = segs[j][0]; nt.end = segs[j][1];
+          nt.facManual = true;
+          occ.push([nt.start, nt.end]);
+          frags.push(nt);
+        }
+        repl['.' + t.id] = frags;
+        rep.clipped++;
+      }
+    }
+    if (!changed) return rep;
+    var out = [];
+    for (i = 0; i < nextTasks.length; i++) {
+      t = nextTasks[i];
+      var key = t ? '.' + t.id : null;
+      if (key !== null && Object.prototype.hasOwnProperty.call(repl, key)) {
+        for (k = 0; k < repl[key].length; k++) out.push(repl[key][k]);
+      } else out.push(t);
+    }
+    rep.tasks = out; rep.changed = true;
+    return rep;
+  }
+  /* マージ後の盤面修復: ①列(staff)不在のstaffId→care=トレイへ/非care=破棄
+   * ②同一列のcare重畳→後発(start,id順)をトレイへ ③非care(break→facility→その他)の重畳→残余へクリップ(20分未満破棄)。
+   * 両端末の編集が同じ時間帯に重なった場合でも、盤面・A3印刷に重畳枠を残さない。 */
+  function repairBoard_(tasks, staff, ancestorTasks) {
+    var staffIds = {}, i, t;
+    for (i = 0; i < (staff || []).length; i++) {
+      if (staff[i] && staff[i].id !== undefined && staff[i].id !== null) staffIds['.' + staff[i].id] = 1;
+    }
+    var kept = [];
     for (i = 0; i < tasks.length; i++) {
       t = tasks[i];
       if (!t) continue;
@@ -2062,50 +2224,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (t.kind === 'care' || t.src !== 'facwork' || t.facManual) { t = cloneTask_(t); t.staffId = null; }
         else continue;
       }
-      if (t.kind === 'care') cares.push(t); else others.push(t);
+      kept.push(t);
     }
-    var out = [];
-    var placed = {};  /* '.staffId' -> [[s,e],...]（care確定分） */
-    cares.sort(function (a, b) { return (a.start - b.start) || cmpId_(a, b); });
-    for (i = 0; i < cares.length; i++) {
-      t = cares[i];
-      if (t.staffId === null || t.staffId === undefined) { out.push(t); continue; }
-      var key = '.' + t.staffId;
-      var arr = placed[key] || (placed[key] = []);
-      var hit = false;
-      for (j = 0; j < arr.length; j++) {
-        if (t.start < arr[j][1] && arr[j][0] < t.end) { hit = true; break; }
-      }
-      if (hit) { t = cloneTask_(t); t.staffId = null; out.push(t); }
-      else { arr.push([t.start, t.end]); out.push(t); }
-    }
-    var prio = { 'break': 0, 'facility': 1 };
-    others.sort(function (a, b) {
-      var pa = Object.prototype.hasOwnProperty.call(prio, a.kind) ? prio[a.kind] : 2;
-      var pb = Object.prototype.hasOwnProperty.call(prio, b.kind) ? prio[b.kind] : 2;
-      return (pa - pb) || (a.start - b.start) || cmpId_(a, b);
-    });
-    var occupied = {};
-    for (var pk in placed) {
-      if (!Object.prototype.hasOwnProperty.call(placed, pk)) continue;
-      occupied[pk] = placed[pk].slice();
-    }
-    for (i = 0; i < others.length; i++) {
-      t = others[i];
-      if (t.staffId === null || t.staffId === undefined) { out.push(t); continue; }
-      var key2 = '.' + t.staffId;
-      var occ = occupied[key2] || (occupied[key2] = []);
-      var segs = subtractIntervals_(t.start, t.end, occ, 20);
-      for (j = 0; j < segs.length; j++) {
-        var nt = cloneTask_(t);
-        if (j > 0) nt.id = genId('t');
-        nt.start = segs[j][0];
-        nt.end = segs[j][1];
-        occ.push([nt.start, nt.end]);
-        out.push(nt);
-      }
-    }
-    return out;
+    /* 重畳の解消は normalizeOverlap（単一ポリシー）へ委譲。祖先＝既配置判定に使う（両端末が動かした枠は
+     * どちらも新参＝start,id 順の決定的タイブレーク）。支援は parked+bumped 付きでトレイへ＝直後の
+     * 自動配置(placeOrphanCare_)が別列へ無言で置き直さない。 */
+    return normalizeOverlap(ancestorTasks || [], kept, staff).tasks;
   }
   /* skipRefs（本日のみ削除の墓標）判定用。ev={resName,id,start,end,detail}。
    * 参照キー: evId（あれば）／'resName|start'。 */
@@ -2328,7 +2452,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ロック日(＝確定した実績)は repairBoard_ の再配置(列不在ケアをトレイへ/非care破棄)を掛けない＝散らさない。
      * remapTasksToPair_(氏名でstaffIdを採用ペアへ再マップ・配置は保全)は維持。通常日は従来どおり修復する。 */
     if (meta.locked === true) return { meta: meta, staff: staff, columns: columns, tasks: remapped };
-    return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(remapped, staff) };
+    return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(remapped, staff, a.tasks || []) };
   }
 
   /* 退去/入院/入居前マスクの適用方針（純関数・2026-08-05 追加）。
@@ -2394,7 +2518,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     coalesceSkipRefs: coalesceSkipRefs,
     cloneNotesForWeekCopy_: cloneNotesForWeekCopy_,
     mergeNotes3_: mergeNotes3_,
-    careMaskPolicy: careMaskPolicy
+    careMaskPolicy: careMaskPolicy,
+    normalizeOverlap: normalizeOverlap,
+    isAutoFiller: isAutoFiller_
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -4614,6 +4740,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         for (var p in patch) if (Object.prototype.hasOwnProperty.call(patch, p)) nt[p] = patch[p];
         /* 列へ割当(staffId非null)されたら手動トレイ印(parked)を解除＝以後は自動配置の対象に戻す(要件2) */
         if (nt.staffId !== null && nt.staffId !== undefined && nt.parked) nt.parked = false;
+        if (nt.staffId !== null && nt.staffId !== undefined && nt.bumped) delete nt.bumped;   /* 重なり退避印も配置で解除（再退避時の誤計上防止） */
         out.push(nt);
       } else out.push(t);
     }
@@ -4785,6 +4912,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (d0.meta && d0.meta.locked) {
         return { meta: d0.meta, staff: d0.staff, columns: d0.columns, tasks: M.sanitizeTasks(d0.tasks) };
       }
+      /* 重畳解消(normalizeOverlap)は reduce 内でなく dispatch 側のチョークポイントで掛ける（prev/frozen 判定が要るため） */
       return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
                tasks: M.migrateNameOnly(M.clearCareTags(M.normalizeTaskContents(M.dedupCareSlots(M.sanitizeTasks(d0.tasks))))) };
     }
@@ -5010,11 +5138,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var past = [], future = [];
     var autoDepth = 0;   /* >0 の間の dispatch は履歴に積まない（自動処理＝Undo対象外・ユーザー操作だけを戻す） */
     var subs = [];
+    /* ===== 重畳の不変条件チョークポイント（2026-09-10）=====
+     * reduce の結果に M.normalizeOverlap を掛け「同一職員の枠は時間重複しない」を全アクションで保証する。
+     * - 非 auto の dispatch: 即時（prev＝直前の day.tasks＝既配置判定の基準）
+     * - store.auto 内: 最外周の終了時に一括（prev＝auto 開始時のスナップショット）。逐次適用だと
+     *   週間計画で同一職員の2件の時刻を入替えた時に1件目の追従で誤退避が起きるため
+     * - INIT_DAY: prev 無し（既配置判定はタイブレークのみ）。action.frozen（ロック日/過去日の自動保護）なら
+     *   以後その day では掛けない＝確定した実績を端末側で組み替えない（本人裁定: ロック日はデータ不変）
+     * - ロック解除遷移(meta.locked true→非true)でも掛ける（ロック中に溜まった重畳を解除時点で解消）
+     * 退避/縮小の集計は repair に溜め、takeRepair() で1回だけ取り出す（app がトースト表示）。 */
+    var frozen = !!(day.meta && day.meta.locked);
+    var autoBase = null, autoInit = false;
+    var repair = { bumped: [], clipped: 0, removed: 0 };
 
     function notify() {
       for (var i = 0; i < subs.length; i++) {
         try { subs[i](day); } catch (e) { /* 購読者の例外は伝播させない */ }
       }
+    }
+    function enforce_(prevTasks, next) {
+      if (frozen || (next.meta && next.meta.locked)) return next;
+      var r = M.normalizeOverlap(prevTasks, next.tasks, next.staff);
+      if (!r.changed) return next;
+      var b;
+      for (b = 0; b < r.bumped.length; b++) repair.bumped.push(r.bumped[b]);
+      repair.clipped += r.clipped; repair.removed += r.removed;
+      return { meta: next.meta, staff: next.staff, columns: next.columns, tasks: r.tasks };
     }
 
     return {
@@ -5022,6 +5171,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       dispatch: function (action) {
         var next = reduce(day, action);
         if (next === day) return;
+        var isInit = action.type === 'INIT_DAY';
+        var unlock = !!(day.meta && day.meta.locked === true) && !(next.meta && next.meta.locked);
+        /* frozen の更新は INIT_DAY と ロック解除遷移のみ（解除時は app が「過去日の自動保護が残るか」を action.frozen で渡す。
+         * 更新しないと解除後もその日の全 dispatch が無検査のまま残る） */
+        if (isInit || unlock) frozen = !!action.frozen;
+        if (autoDepth > 0) {
+          if (isInit) { autoInit = true; autoBase = null; }
+          else if (unlock) { autoInit = true; autoBase = null; }   /* 解除遷移も一括時に prev 無しで掛ける */
+        } else if (isInit || unlock) {
+          next = enforce_(null, next);
+        } else if (next.tasks !== day.tasks) {
+          next = enforce_(day.tasks, next);
+        }
         if (action.type === 'INIT_DAY') { past = []; future = []; }
         else if (autoDepth > 0 || (action && action.nohist)) {
           /* 自動処理(reconcile/シフト反映/自動配置/マスタseed等)の変更は履歴に積まない。
@@ -5035,10 +5197,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         day = next;
         notify();
       },
-      /* fn 内の全 dispatch を履歴に積まない（自動処理の一括ラップ・ネスト可）。 */
+      /* fn 内の全 dispatch を履歴に積まない（自動処理の一括ラップ・ネスト可）。最外周の終了時に重畳を一括解消。 */
       auto: function (fn) {
+        if (autoDepth === 0) { autoBase = day; autoInit = false; }
         autoDepth++;
-        try { fn(); } finally { autoDepth--; }
+        try { fn(); } finally {
+          autoDepth--;
+          if (autoDepth === 0) {
+            var base = autoBase; autoBase = null;
+            if (base !== day || autoInit) {
+              var fixed = enforce_(autoInit ? null : (base ? base.tasks : null), day);
+              if (fixed !== day) { day = fixed; notify(); }
+            }
+            autoInit = false;
+          }
+        }
+      },
+      /* 直近の重畳解消の集計を1回だけ返す（呼ぶと空になる）。無ければ null */
+      takeRepair: function () {
+        if (!repair.bumped.length && !repair.clipped && !repair.removed) return null;
+        var r = repair;
+        repair = { bumped: [], clipped: 0, removed: 0 };
+        return r;
       },
       undo: function () {
         if (!past.length) return false;
@@ -5802,6 +5982,63 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return els;
   }
 
+  /* 同一レーン(職員列)内で時間が重なる枠を横並び(サブ列)に割り付ける純粋関数。
+   * 戻り値: { taskId: {idx: サブ列番号(0起点), n: そのクラスタのサブ列数} }。
+   * 重なりの無い枠(単独クラスタ)は含めない＝重なりが無い日は描画が従来と1バイトも変わらない。
+   * 判定は同一列(st.col)・実配置(staffId あり＆既知職員)の枠のみ。開始時刻→id順に走査して
+   * 連結成分(a.start < b.end && b.start < a.end の連鎖)を作り、成分内で貪欲に
+   * 「最後の終了時刻が開始時刻以下の最初のサブ列」へ入れる(区間グラフの彩色)。 */
+  function overlapLayout(tasks, staffById) {
+    var map = {}, byLane = {}, i;
+    if (!tasks || !tasks.length || !staffById) return map;
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (!t || t.staffId === null || t.staffId === undefined) continue;
+      if (typeof t.start !== 'number' || typeof t.end !== 'number') continue;
+      if (!(t.end > t.start)) continue;   /* 破損枠は buildTask も描画しない＝割付対象外 */
+      var st = staffById[t.staffId];
+      if (!st) continue;                  /* 未知職員(列不明)は割付しない */
+      var key = 'c' + st.col;
+      if (!byLane[key]) byLane[key] = [];
+      byLane[key].push(t);
+    }
+    for (var lk in byLane) {
+      if (!Object.prototype.hasOwnProperty.call(byLane, lk)) continue;
+      var arr = byLane[lk];
+      arr.sort(function (a, b) {
+        if (a.start !== b.start) return a.start - b.start;
+        var ia = String(a.id), ib = String(b.id);
+        return ia < ib ? -1 : (ia > ib ? 1 : 0);
+      });
+      var comp = [], compEnd = null;
+      for (i = 0; i <= arr.length; i++) {
+        var cur = i < arr.length ? arr[i] : null;
+        if (cur && compEnd !== null && cur.start < compEnd) {   /* 直前までの成分と重なる＝同じクラスタ */
+          comp.push(cur);
+          if (cur.end > compEnd) compEnd = cur.end;
+          continue;
+        }
+        assignComp_(comp, map);            /* 成分の切れ目(または末尾)でサブ列を確定 */
+        if (!cur) break;
+        comp = [cur]; compEnd = cur.end;
+      }
+    }
+    return map;
+  }
+  /* 連結成分1つぶんのサブ列割付。単独枠(長さ1)は写像に入れない＝従来描画のまま。 */
+  function assignComp_(comp, map) {
+    if (!comp || comp.length < 2) return;
+    var ends = [], picked = [], i, j;
+    for (i = 0; i < comp.length; i++) {
+      var col = -1;
+      for (j = 0; j < ends.length; j++) { if (ends[j] <= comp[i].start) { col = j; break; } }
+      if (col < 0) { col = ends.length; ends.push(comp[i].end); }
+      else ends[col] = comp[i].end;
+      picked.push(col);
+    }
+    for (i = 0; i < comp.length; i++) map[comp[i].id] = { idx: picked[i], n: ends.length };
+  }
+
   /* ボード全体を再描画
    * opts: { selectedIds, printMode, hospSet:{利用者名:true} } */
   function render(boardEl, day, zones, scale, opts) {
@@ -5894,6 +6131,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     }
 
+    /* 重なり表示(2026-09-10): 同一レーンで時間が重なる枠を横並び(サブ列)に割り付ける。
+     * 重なりが無い日は空写像＝従来と同じ描画。画面・印刷とも同じ割付を使う。 */
+
     /* タスク配置（夜勤列は右軸マッピング） */
     var hospSet = opts.hospSet || {};
     var moSet = opts.movedOutSet || {};
@@ -5903,6 +6143,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 旧表記行を退去にしただけで、確定済み（ロック済み）の枠が丸ごと消えた（実測100枠）。
      * ロック＝確定した予定なので「消す」ではなく「実施しないと分かる形で残す」が正しい。 */
     var moSoftSet = opts.movedOutSoftSet || {};
+    /* 退去者(moSet)の支援は描画しないためクラスタ計算からも除く（描かれない枠のせいで残った枠が半幅になるのを防ぐ） */
+    var ovlSrc = [];
+    for (var ov0 = 0; ov0 < day.tasks.length; ov0++) {
+      var ovt = day.tasks[ov0];
+      if (ovt.kind === 'care' && moSet[ovt.residentName]) continue;
+      ovlSrc.push(ovt);
+    }
+    var ovlMap = overlapLayout(ovlSrc, staffById);
     for (var t = 0; t < day.tasks.length; t++) {
       var task = day.tasks[t];
       if (task.kind === 'care' && moSet[task.residentName]) continue;  /* 退去者のケアは盤面・印刷とも非表示（入院=極薄に対し退去=完全非表示） */
@@ -5915,8 +6163,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                  hosp: !!(task.kind === 'care' && hospSet[task.residentName]),
                  pre: !!(task.kind === 'care' && preSet[task.residentName]),
                  moved: !!(task.kind === 'care' && moSoftSet[task.residentName]) };
-      /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する */
-      if (!opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
+      var ovl = Object.prototype.hasOwnProperty.call(ovlMap, task.id) ? ovlMap[task.id] : null;
+      /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する
+       * （重なりクラスタの枠は横並び表示を優先し、まとめ拡張しない） */
+      if (!ovl && !opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
           (task.kind === 'facility' || task.kind === 'free') &&
           Math.floor(task.start / 60) === Math.floor((task.end - 1) / 60)) {
         var hcc = facHourCount[st.col];
@@ -5936,6 +6186,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       }
       var bEl = buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex);
+      if (bEl && ovl) {
+        /* inline 指定は印刷CSS(body.printing .b-task.p-task の left/right・!important無し)より優先＝
+         * 画面・印刷とも同じ横並びになる。data-ovl は「何分割の何番目か」の確認用。 */
+        bEl.style.left = (ovl.idx * 100 / ovl.n) + '%';
+        bEl.style.width = (100 / ovl.n) + '%';
+        bEl.style.right = 'auto';
+        bEl.className += ' overlapped';
+        bEl.setAttribute('data-ovl', ovl.idx + '/' + ovl.n);
+      }
       if (bEl) laneEl.appendChild(bEl);
     }
 
@@ -5967,6 +6226,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     render: render,
     buildTask: buildTask,
     kindClass: kindClass,
+    overlapLayout: overlapLayout,
     yFor: yFor,
     clampNightMin: clampNightMin,
     markHeadAlerts: markHeadAlerts
@@ -6962,6 +7222,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           try { IM.reassertReservedSlots(p.staff, p.columns, p.tasks, resolveReservedFlags_); } catch (eRs) {}
           try { recordReserveDiag_(p.staff, 'load', date); } catch (eD) {}
           IM.rescueOrphanTasks(p.staff, p.tasks);   /* 安全網: 参照先を失った支援枠を未配置トレイへ(消失防止・要件1) */
+          /* 重畳解消（2026-09-10）: 上の整形(夜勤寄せ・予約席再主張)は同一列の時間重複を再生成し得るため、読込の出口で
+           * 不変条件(同一職員の枠は重ならない)を通す。非当日の送信 pushDayFor_ もこの出力を使う＝サーバーへ重畳版を送らない。
+           * 過去日の自動保護(autoLockPast_)中はデータを組み替えない（本人裁定: ロック日はデータ不変・表示で警告） */
+          if (!autoLockPast_(p)) {
+            try {
+              var ovlL_ = M.normalizeOverlap(null, p.tasks, p.staff);
+              if (ovlL_.changed) { p.tasks = ovlL_.tasks; overlapRepairs_++; }
+            } catch (eOvL) {}
+          }
         }
         return p;
       }
@@ -7112,11 +7381,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       if (location.hash !== '#' + date) { hashNavigating_ = true; location.hash = '#' + date; }
     } catch (eHash) {}
+    var repSw0_ = overlapRepairs_;   /* この切替で重畳解消が起きたか（下の偽dirty補正の抑止判定） */
     var day = loadDayData(date) || S.emptyDay(date);
     day.meta.date = date;
     var wasDirtySw = false;
     try { wasDirtySw = isDayDirty_(date); } catch (eDs) {}
-    store.dispatch({ type: 'INIT_DAY', day: day });
+    store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
     try { store.auto(seedFromMaster); } catch (e) {}   /* 自動生成は履歴非汚染(手動imMasterSeedは非ラップ=Undo可) */
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     /* 偽dirty補正（seed/reconcile の後で行う）：INIT_DAY→subscribe→schedulePushDay は
@@ -7126,7 +7396,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 丸ごと採用／無ければ pull 後に schedulePushDay で seed 盤面を送信、の両立）。
      * これを怠ると、閲覧しただけの日が pull で 3-wayマージ経路に入り、祖先欠損時に他端末の編集を巻き戻す。 */
     try {
-      if (syncOn() && !wasDirtySw) {
+      /* 重畳解消が起きた日は本当に変化しているので補正しない＝dirty のまま pull へ進み、同版なら push・
+       * 新版なら3-wayマージで送る（修復をローカルに閉じ込めない・2026-09-10） */
+      if (syncOn() && !wasDirtySw && overlapRepairs_ === repSw0_) {
         lastPushed.day = daySig(store.get());
         clearDayDirty_(date);
         if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
@@ -7354,6 +7626,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var d = store.get();
     if (d && d.meta && d.meta.locked) return true;
     return autoLockPast_(d);
+  }
+  /* INIT_DAY へ渡す凍結フラグ（2026-09-10）: 手動ロック(meta.locked)または過去日の自動保護(autoLockPast_)の日は
+   * store の重畳解消チョークポイントを掛けない＝確定した実績を端末側で組み替えない（表示側の並列表示・警告のみ）。 */
+  function initFrozen_(day) { return !!((day && day.meta && day.meta.locked) || autoLockPast_(day)); }
+  /* 重畳解消が起きた回数。switchDate/起動の「偽dirty補正」が修復済み盤面の送信を握りつぶさないための判定に使う。 */
+  var overlapRepairs_ = 0;
+  /* store が解消した退避/縮小の集計を1回だけ取り出してトーストする（描画の購読で毎回呼ぶ・無ければ何もしない） */
+  function reportOverlapRepair_() {
+    var rep = null;
+    try { rep = store.takeRepair(); } catch (eTR) { rep = null; }
+    if (!rep) return;
+    overlapRepairs_++;
+    var parts = [];
+    if (rep.bumped.length) parts.push('同時刻に別の枠があったため ' + rep.bumped.length + '件を未配置へ退避');
+    if (rep.clipped) parts.push('重なった業務枠 ' + rep.clipped + '件を縮小');
+    if (rep.removed) parts.push('二重の業務枠 ' + rep.removed + '件を整理');
+    toast('⚠ 重なりを解消: ' + parts.join('／') + (rep.bumped.length ? '（未配置トレイと「重なり」バッジをご確認ください）' : ''),
+          !!rep.bumped.length);
   }
   /* ── ロック中のシフト変化の検知（2026-08-03 追加・盤面は一切書き換えない）──
    * meta.shiftStamp は「最後に反映した時点のシフト内容」の署名。現在のシフトから作った署名と
@@ -8154,6 +8444,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     bu.className = 'badge warn' + (alerts.unassigned.length ? '' : ' off');
     bb.textContent = '休憩⚠ ' + alerts.noBreak.length;
     bb.className = 'badge ng' + (alerts.noBreak.length ? '' : ' off');
+    /* 重なり（2026-09-10）: 盤面に残る重畳ペア(ロック日・旧端末由来)＋重なりで退避した枠。赤バッジ＝クリックで一覧 */
+    var bo = $('badgeOv');
+    if (bo) {
+      var nOvl_ = (alerts.overlaps || []).length, nBmp_ = (alerts.bumped || []).length;
+      bo.textContent = nOvl_ ? ('重なり ' + nOvl_ + (nBmp_ ? '／退避 ' + nBmp_ : '')) : ('重なり退避 ' + nBmp_);
+      bo.className = 'badge ng' + ((nOvl_ + nBmp_) ? '' : ' off');
+      bo.title = nOvl_ ? '同じ職員の同時刻に枠が重なっています（横並びで表示中）。クリックで一覧' : '同時刻に別の枠があったため未配置へ退避した枠';
+    }
 
     renderTray(day, alerts);
     $('boardEmpty').className = 'board-empty' + (day.columns.length ? '' : ' on');
@@ -8184,7 +8482,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (t.staffId !== null) continue;
       n++;
       var c = document.createElement('div');
-      c.className = 'chip ' + B.kindClass(t);
+      c.className = 'chip ' + B.kindClass(t) + (t.bumped ? ' bumped' : '');
+      if (t.bumped) c.title = '同時刻に別の枠があったため未配置へ退避（元の列に置き直すか、時間を変えてください）';
       c.setAttribute('data-id', t.id);
       var svc = M.SVC[t.svcCode];
       var name = t.kind === 'care' ? t.residentName
@@ -8956,6 +9255,44 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
         br.appendChild(d);
       })(alerts.noBreak[j]);
+    }
+    /* 重なり（2026-09-10）: 退避した枠と、盤面に残る重畳ペア */
+    var bump = $('alBump');
+    if (bump) {
+      bump.innerHTML = '';
+      var bl = alerts.bumped || [];
+      if (!bl.length) bump.innerHTML = '<div class="ai"><span class="am">なし 🎉</span></div>';
+      for (var bi = 0; bi < bl.length; bi++) {
+        (function (t) {
+          var d = document.createElement('div');
+          d.className = 'ai';
+          var name = t.kind === 'care' ? t.residentName : (t.label || (t.kind === 'break' ? '休憩' : (t.kind === 'free' ? '自由枠' : '施設業務')));
+          var from = M.findStaff(day.staff, t.bumped && t.bumped.from);
+          d.innerHTML = '<span class="am"></span><span class="as"></span>';
+          d.querySelector('.am').textContent = name;
+          d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime) + (from && from.name ? '（元: ' + from.name + '）' : '');
+          d.addEventListener('click', function () { openEditor(t.id); });
+          bump.appendChild(d);
+        })(bl[bi]);
+      }
+    }
+    var ov = $('alOv');
+    if (ov) {
+      ov.innerHTML = '';
+      var ol = alerts.overlaps || [];
+      if (!ol.length) ov.innerHTML = '<div class="ai"><span class="am">なし 🎉</span></div>';
+      for (var oi = 0; oi < ol.length; oi++) {
+        (function (o) {
+          var d = document.createElement('div');
+          d.className = 'ai';
+          function nm(t) { return t.kind === 'care' ? t.residentName : (t.label || (t.kind === 'break' ? '休憩' : (t.kind === 'free' ? '自由枠' : '施設業務'))); }
+          d.innerHTML = '<span class="am"></span><span class="as"></span>';
+          d.querySelector('.am').textContent = (o.staffName || '') + '：' + nm(o.a) + ' × ' + nm(o.b);
+          d.querySelector('.as').textContent = M.fmtRange(o.a.start, o.a.end, TS.minToTime) + ' / ' + M.fmtRange(o.b.start, o.b.end, TS.minToTime);
+          d.addEventListener('click', function () { openEditor(o.b.id); });
+          ov.appendChild(d);
+        })(ol[oi]);
+      }
     }
     showModal('mAlerts');
   }
@@ -9941,7 +10278,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       markDayDirty_(date);
       if (isCur) {
         lastPushed.day = '';
-        store.dispatch({ type: 'INIT_DAY', day: mergedLk_ });
+        store.dispatch({ type: 'INIT_DAY', day: mergedLk_, frozen: true });
         schedulePushDay();
       } else {
         lsSetDay_(date, mergedLk_);
@@ -9971,7 +10308,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       clearDayDirty_(date);
       if (isCur) {
         reassertBoardFixes_(serverDay);   /* 列固定の自己修復（saveBase_/sig計算後＝差分はpushで伝播） */
-        store.dispatch({ type: 'INIT_DAY', day: serverDay });
+        store.dispatch({ type: 'INIT_DAY', day: serverDay, frozen: initFrozen_(serverDay) });
         /* INIT_DAY はクラウド盤面で tasks を全置換するため、置換直後に reconcile を掛け直して
          * 週間計画＝正本へ再追従（careInitDone前はローカルcare未確定のため掛けない）。 */
         if (careInitDone) { try { reconcileWeekly(); } catch (eRD) {} }
@@ -9994,7 +10331,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (isCur) lastPushed.day = '';   /* マージ結果の再送を抑止しない(単一スロット＝非当日はグローバルを触らない) */
     if (isCur) {
       reassertBoardFixes_(merged);   /* 列固定の自己修復（マージ結果にも適用） */
-      store.dispatch({ type: 'INIT_DAY', day: merged });
+      store.dispatch({ type: 'INIT_DAY', day: merged, frozen: initFrozen_(merged) });
       if (careInitDone) { try { reconcileWeekly(); } catch (eRD2) {} }
       schedulePushDay();
       if (notify) toast('他端末の更新をこの端末の編集と統合しました');
@@ -10696,6 +11033,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* 保存に失敗したまま翌週へ移動すると、seed/reconcile/シフト反映が盤面だけ再構成するため
        * 「コピーできたように見えてコメント・グループ化・配色だけ消える」。失敗時は必ず中止する。 */
+      /* 重畳解消（2026-09-10）: 役割再配置以外の張替(最右slot・_bN→base)や施設業務のコピーで同一列に重なりが残り得る。
+       * 件数検証の後・保存の前に不変条件を通す（退避分は開いた先の未配置トレイと「重なり」バッジで気付ける）。 */
+      try {
+        var ovlC_ = M.normalizeOverlap(null, tasks, staffOut);
+        if (ovlC_.changed) { tasks = ovlC_.tasks; day.tasks = tasks; conflicts += ovlC_.bumped.length + ovlC_.clipped + ovlC_.removed; }
+      } catch (eOvC) {}
       if (!lsSetDay_(nd, day)) {
         toast('翌週への保存に失敗したためコピーを中止しました（端末の空き容量をご確認ください）', true);
         return;
@@ -11752,7 +12095,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 日単位ロックの切替（通常dispatch=Undo可・daySigに含まれpushで全端末へ伝播）。 */
     if ($('chkLock')) $('chkLock').addEventListener('change', function () {
       var on = $('chkLock').checked;
-      store.dispatch({ type: 'SET_META', patch: { locked: on } });
+      /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
+      store.dispatch({ type: 'SET_META', patch: { locked: on }, frozen: !on && autoLockPast_(store.get()) });
       /* 解除は、GAS のロック防波堤（既存ロック日への非ロック上書き拒否）を通すため当該日付の次回putを force に。 */
       if (!on) { var ud_ = store.get().meta.date; if (ud_) unlockForceDates_[ud_] = true; }
       /* 即時反映: dispatch直後の subscribe が張った 400ms デバウンス保存を待たず flushAll_ で
@@ -11803,6 +12147,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
+    if ($('badgeOv')) $('badgeOv').addEventListener('click', openAlerts);
     /* 押せる見た目なのに無反応にしない（HIG）。理由に応じて、その場で反映まで完結させる。 */
     if ($('badgeShiftChg')) $('badgeShiftChg').addEventListener('click', function () {
       var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
@@ -12232,7 +12577,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         d.tasks[i].done = false;
         d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
       }
-      store.dispatch({ type: 'INIT_DAY', day: d });
+      store.dispatch({ type: 'INIT_DAY', day: d, frozen: initFrozen_(d) });
       scheduleSave();
       hideModals();
       toast(src + ' から複製しました（曜日テンプレート運用）');
@@ -12685,7 +13030,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     day.meta.date = ui.currentDate;
 
     store = S.createStore(S.emptyDay(ui.currentDate));
-    store.subscribe(function () { scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
+    /* 重畳解消の集計は購読の先頭で取り出す（印刷中は renderAll が早期 return するため、そこでは取りこぼす） */
+    store.subscribe(function () { reportOverlapRepair_(); scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
     /* 初回読込も INIT_DAY reducer を通し、正規化(混入tags除去/ケア重複収束/contents重複+checks再マップ/退化枠一掃)を確実化。
      * 従来は createStore(day) で初期dayをreducer非経由で設定していたため、初回のみ正規化が走らなかった(要件1/2)。 */
     /* 未送信(dirty)でない日はブート時に lastPushed を現内容へ初期化＝無変更ブートの空push(rev空回り)を抑止。
@@ -12694,7 +13040,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 本当にdirtyな日は何もしない＝デバウンス後に自動再送。他日付/careの未送信はリトライtickが回収する。 */
     var wasDirtyBoot = false;
     try { wasDirtyBoot = isDayDirty_(ui.currentDate); } catch (eD0) {}
-    store.dispatch({ type: 'INIT_DAY', day: day });
+    var repBoot0_ = overlapRepairs_;
+    store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
@@ -12707,7 +13054,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 立てる偽dirtyを打ち消す。実際に未送信でない日は seed後の盤面で lastPushed を合わせ dirty/タイマーを解除。
      * 本当にdirtyな日は何もしない＝デバウンス後に自動再送。他日付/careの未送信はリトライtickが回収する。 */
     try {
-      if (syncOn() && !wasDirtyBoot) {
+      if (syncOn() && !wasDirtyBoot && overlapRepairs_ === repBoot0_) {   /* 重畳解消が起きた日は補正しない(2026-09-10) */
         lastPushed.day = daySig(store.get());
         clearDayDirty_(ui.currentDate);
         if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
