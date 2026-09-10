@@ -57,6 +57,26 @@ html, body { height: 100%; overflow: hidden;
   font-size: 0.875rem; font-weight: 600; cursor: pointer; outline: none; appearance: none;
 }
 .resident-select option { color: var(--g9); background: #fff; }
+/* ── 氏名の枠が潰れないようにする（2026-09-10 追加・画面だけ）──────────────────
+   .resident-selector は flex:1＝flex-basis:0 のため、ヘッダの中身が横幅を超えると
+   【伸びる余地が無くなり 0px まで潰れ、氏名が完全に隠れる】。
+   実測（ボタン10個の現状・氏名あり）: 幅 320〜768px で枠 0px＝iPhone 全機種と iPad 縦が該当。
+   834px でも 49px しか出ない。1024px 以上でようやく従来どおり。
+   あふれるぶんはボタン群（.hdr-btns は overflow-x:auto）の横スクロールへ逃がす。
+   120px は全角7文字ぶん。氏名の大半はこれで読め、長い方も候補一覧を開けば全文が出る。
+   ★@media screen で囲うのは印刷を守るため。週ボードA4印刷ではヘッダごと紙に出て
+     （@media print は .hdr-btns だけを消し .hdr は残す）、この枠の氏名も印字される。
+     紙の体裁を1mmも動かさないよう、画面用の指定を印刷へ持ち込まない。 */
+@media screen {
+  .resident-selector { min-width: 120px; }
+  /* 片手・手袋でも押せる高さにする（介護現場要件2）。ヘッダは高さ固定（56px／640px以下は52px）で
+     44px は収まるため、--hdr-h を参照する3箇所の calc＝盤面の位置は動かない。
+     ★高さは padding で作り、min-height は floor としてだけ置く。select の中身を
+     min-height だけで伸ばすと、余った高さをどう配るか（中央か上寄せか）がブラウザ差になり、
+     iOS Safari で氏名が上に寄って見えうる。padding なら行の上下に同じだけ空くので必ず中央に来る。
+     12px×2 + 行17px + 枠1px×2 ≒ 43px で、min-height の 44px が最後の1pxを埋める。 */
+  .resident-select { padding-block: 12px; min-height: var(--tap-min, 44px); text-overflow: ellipsis; }
+}
 .hdr-btns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .hdr-btn {
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
