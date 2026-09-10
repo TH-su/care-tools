@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-10.1">
+<meta name="stfm-build" content="2026-09-10.2">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -454,6 +454,8 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
      padding:var(--sp-2) var(--sp-4);margin:0 calc(-1 * var(--sp-4)) var(--sp-3)}
 .subbar .who{font-weight:var(--fw-bold)}
 .subbar .meta{font-size:var(--fs-2xs);color:var(--c-ink2)}
+/* 押せない理由。長くても1行に収めて固定バーを太らせない（全文は同じ内容が title にも出る） */
+.subbar #filesWhy{max-width:24em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* 一覧の表 */
 .tbl-wrap{overflow:auto;border:1px solid var(--c-border);border-radius:var(--r-lg);
@@ -514,6 +516,18 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 .badge.new{background:var(--c-ok-bg);border-color:var(--c-ok);color:var(--c-ink)}
 .badge.upd{background:var(--c-warn-bg);border-color:var(--c-warn);color:var(--c-ink)}
 .badge.ask{background:var(--c-danger-bg);border-color:var(--c-danger);color:var(--c-ink)}
+
+/* 添付書類のダイアログ（2026-09-10.2 追加。詳細フォームの高さは変えない） */
+dialog.fdlg{border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);
+     color:var(--c-ink);padding:var(--sp-4);width:min(920px,94vw);max-height:88vh;overflow:auto;
+     box-shadow:var(--shadow-2)}
+dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
+.fdlg .fd-head{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-2)}
+.fdlg .fd-head h2{font-size:var(--fs-lg);font-weight:var(--fw-bold);flex:1;min-width:0}
+.fdlg .fd-tbl td.act{white-space:nowrap}
+.fdlg .fd-tbl a.open{color:var(--c-link);font-size:var(--fs-2xs);display:inline-flex;align-items:center;
+     min-height:var(--tap-min);padding:0 var(--sp-2)}
+.fdlg .fd-note{margin-top:var(--sp-1)}
 
 /* トースト */
 #toast{position:fixed;left:50%;bottom:var(--sp-6);transform:translateX(-50%);background:var(--c-ink);
@@ -615,6 +629,9 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
     <span class="who grow" id="dtName">（新規）</span>
     <span class="meta" id="dtMeta"></span>
     <span class="meta" id="dtStatus"></span>
+    <!-- 添付書類はこの行だけに足す（フォーム本体には要素を増やさない＝1280×800 で1画面のまま） -->
+    <span class="fnote" id="filesWhy" hidden></span>
+    <button type="button" class="btn" id="filesBtn" aria-label="添付書類" aria-haspopup="dialog" disabled>📎 書類 (0)</button>
     <button type="button" class="btn" id="dtCancel">取消</button>
     <button type="button" class="btn pri" id="dtSave" disabled>保存</button>
   </div>
@@ -772,12 +789,57 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-09.1</p>
+    <p class="muted">版 2026-09-10.2</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
 
 </main>
+
+<!-- ══ 添付書類（Drive保存）══ -->
+<dialog id="filesDlg" class="fdlg" aria-labelledby="fdTitle">
+  <div class="fd-head">
+    <h2 id="fdTitle">添付書類</h2>
+    <button type="button" class="btn" id="fdClose">閉じる</button>
+  </div>
+
+  <div id="fdState" class="state" role="status" hidden></div>
+
+  <div class="tbl-wrap" id="fdListWrap" hidden>
+    <table class="small-tbl fd-tbl" id="fdTbl">
+      <caption class="sr-only">この職員に登録されている書類</caption>
+      <thead>
+        <tr>
+          <th scope="col">種類</th>
+          <th scope="col">表題</th>
+          <th scope="col">元のファイル名</th>
+          <th scope="col">サイズ</th>
+          <th scope="col">追加日</th>
+          <th scope="col">操作</th>
+        </tr>
+      </thead>
+      <tbody id="fdBody"></tbody>
+    </table>
+  </div>
+  <p class="muted" id="fdEmpty" hidden>まだ書類がありません</p>
+
+  <h2 class="sec" style="margin-top:var(--sp-3)">書類を追加する</h2>
+  <div class="form">
+    <div class="fld s5">
+      <label for="fdFile">ファイルを選ぶ（PDF・JPEG・PNG／10MBまで）</label>
+      <input type="file" id="fdFile" accept="application/pdf,image/jpeg,image/png">
+    </div>
+    <div class="fld s3"><label for="fdKind">種類</label><select id="fdKind"></select></div>
+    <div class="fld s4">
+      <label for="fdTitleIn">表題（任意・60字まで）</label>
+      <input type="text" id="fdTitleIn" maxlength="60" autocomplete="off" placeholder="令和8年度 など">
+    </div>
+  </div>
+  <div class="row">
+    <button type="button" class="btn pri" id="fdUpload">アップロード</button>
+    <span class="muted grow" id="fdPick">ファイルは Google ドライブに保存します。この画面には保存しません。</span>
+  </div>
+</dialog>
 
 <div id="toast" role="status"></div>
 
@@ -786,12 +848,13 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-10.1
+   職員マスタ 2026-09-10.2
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
+   ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-10.1';
+var BUILD = '2026-09-10.2';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -914,6 +977,9 @@ function normRow(raw) {
   STR_FIELDS.forEach(function (k) { r[k] = txt(raw ? raw[k] : ''); });
   BOOL_FIELDS.forEach(function (k) { r[k] = truthy(raw ? raw[k] : false); });
   ARR_FIELDS.forEach(function (k) { r[k] = toArr(raw ? raw[k] : null); });
+  /* 添付書類の目録。サーバーだけが書き換える列なので ARR_FIELDS には入れない
+     （collectForm・diffFields・EXPORT_COLS・取込の対応表のどれにも載せない） */
+  r.filesJson = toArr(raw ? raw.filesJson : null);
   return r;
 }
 function sameVal(a, b, key) {
@@ -932,7 +998,9 @@ var ST = {
   screen: 'list', filter: 'active', sort: 'kana', sortDir: 'asc', q: '',
   asOf: '', dashPeriod: 'fy', dashYear: 0, dashFrom: '', dashTo: '',
   bulk: false, dirty: {}, conflicts: {},
-  detail: null, imp: null, busy: false
+  detail: null, imp: null, busy: false,
+  /* caps: ping が返す「サーバーが持っている機能」。null＝まだ確かめられていない */
+  caps: null, capsRetried: false, filesBusy: false
 };
 
 function asOfDate() { return ST.asOf || SC().today(); }
@@ -976,10 +1044,10 @@ function mkErr(msg, hint) {
 }
 function errText(e) { return txt((e && e.userMsg) || (e && e.message) || e); }
 function errHint(e) { return txt(e && e.hint) || '時間をおいてもう一度お試しください。続くときは設定画面で接続先URLと合言葉を確かめてください。'; }
-/* 検証NGの明細（サーバーの detail）。何が引っかかったかを先頭5件だけ本文に足す */
-function errDetail(e) {
+/* 検証NGの明細（サーバーの detail）。何が引っかかったかを先頭5件（n 指定で先頭n件）だけ本文に足す */
+function errDetail(e, n) {
   var a = (e && Array.isArray(e.detail)) ? e.detail : [];
-  var head = a.slice(0, 5).map(function (x) { return txt(x); }).filter(Boolean);
+  var head = a.slice(0, (typeof n === 'number' && n > 0) ? n : 5).map(function (x) { return txt(x); }).filter(Boolean);
   if (!head.length) return '';
   return ' 内訳: ' + head.join(' / ') + (a.length > head.length ? '（ほか ' + (a.length - head.length) + '件）' : '');
 }
@@ -987,7 +1055,8 @@ function errDetail(e) {
 function isPartial(e) { return !!(e && e.partial === true); }
 function partialList(e, key) { return (e && Array.isArray(e[key])) ? e[key] : []; }
 
-function apiPost(action, body) {
+/* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
+function apiPost(action, body, timeoutMs) {
   var cfg = loadCfg(), payload = { action: action, token: cfg.token }, k;
   if (!URL_OK_RE.test(cfg.url)) {
     return Promise.reject(mkErr('接続先が設定されていません', '右上の歯車（設定）で接続先URLと合言葉を入れて保存してください。'));
@@ -997,7 +1066,9 @@ function apiPost(action, body) {
   }
   if (body) { for (k in body) { if (Object.prototype.hasOwnProperty.call(body, k)) payload[k] = body[k]; } }
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
-  var timer = ctl ? setTimeout(function () { ctl.abort(); }, 45000) : 0;
+  var ms = Number(timeoutMs);
+  if (!isFinite(ms) || ms <= 0) ms = 45000;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0;
   var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
   if (ctl) opt.signal = ctl.signal;
   return fetch(cfg.url, opt).then(function (res) {
@@ -1023,7 +1094,11 @@ function apiPost(action, body) {
     }
     return d;
   }).catch(function (e) {
-    if (e && e.name === 'AbortError') throw mkErr('応答がないため中断しました', '通信環境を確かめ、時間をおいてもう一度お試しください。保存の場合はサーバー側に入っていることがあるので、再読み込みで確かめてください。');
+    if (e && e.name === 'AbortError') {
+      var ae = mkErr('応答がないため中断しました', '通信環境を確かめ、時間をおいてもう一度お試しください。保存の場合はサーバー側に入っていることがあるので、再読み込みで確かめてください。');
+      ae.aborted = true;
+      throw ae;
+    }
     if (e && e.userMsg) throw e;
     throw mkErr('通信に失敗しました', '通信環境を確かめ、時間をおいてもう一度お試しください。');
   }).then(function (d) {
@@ -1378,6 +1453,9 @@ function loadList(quiet) {
     }
     buildListHead();
     renderList();
+    updateFilesBtn();                 /* 行が入れ替わるので書類の件数を取り直す */
+    /* 起動直後の ping だけ落ちていると「書類」が押せないままになる。読み込めた時に1回だけ取り直す */
+    if (ST.caps === null && !ST.capsRetried) { ST.capsRetried = true; refreshCaps(); }
     if (ST.screen === 'dash') renderDash();
   }).catch(function (e) {
     if (!ST.rows.length) $('listWrap').hidden = true;
@@ -1829,6 +1907,7 @@ function openDetail(id) {
   setState('dtState', '', '', '');
   updateDerived();
   updateDirtyUi();
+  updateFilesBtn();
   showScreen('detail');
   $('f_name').focus();
 }
@@ -2070,6 +2149,7 @@ function applyDetailResult(d, cur, dropped, partialErr) {
     toast('保存しました');
   }
   updateDirtyUi();
+  updateFilesBtn();          /* 新規は登録できた時点で「書類」が押せるようになる */
 }
 
 function showDetailConflict() {
@@ -2132,6 +2212,332 @@ function hideIns() {
   $('insShow').hidden = false;
   $('insHide').hidden = true;
   updateDirtyUi();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   添付書類（Drive保存）
+   ・画面が持つのは目録（filesJson）だけ。PDF・画像の本体は Google ドライブ。
+   ・filesJson はサーバー専用列。collectForm / diffFields / EXPORT_COLS / 取込には載せない。
+   ・端末（stfm_*）には何も残さない。
+   ════════════════════════════════════════════════════════════════ */
+var FILE_KINDS = [
+  ['resume', '履歴書'], ['license', '資格者証'], ['idcard', '免許証・身分証'],
+  ['contract', '契約書'], ['health', '健康診断'], ['other', 'その他']
+];
+var FILE_MIMES = ['application/pdf', 'image/jpeg', 'image/png'];
+var FILE_EXT_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+var FILE_MAX_BYTES = 10 * 1024 * 1024;
+var FILE_MAX_COUNT = 100;
+/* Drive のファイルIDに使われる文字だけ。ほかの文字が混ざったものは「開く」を出さない */
+var FID_RE = /^[A-Za-z0-9_-]+$/;
+var FD_PICK_HELP = 'ファイルは Google ドライブに保存します。この画面には保存しません。';
+var fdOpener = null;
+
+function capsHas(name) { return !!(ST.caps && ST.caps.indexOf(name) >= 0); }
+
+function fileKindLabel(code) {
+  var c = txt(code), out = '';
+  FILE_KINDS.forEach(function (p) { if (!out && p[0] === c) out = p[1]; });
+  return out || (c ? c : '—');
+}
+function fmtBytes(v) {
+  var n = Number(v);
+  if (!isFinite(n) || n < 0) return '—';
+  if (n < 1024 * 1024) return String(Math.max(1, Math.round(n / 1024))) + ' KB';
+  return String(Math.round(n / (1024 * 1024) * 10) / 10) + ' MB';
+}
+function fmtAdded(v) {
+  var s = txt(v).slice(0, 10);
+  return DATE_RE.test(s) ? s.replace(/-/g, '/') : '';
+}
+function normFile(o) {
+  return {
+    fid: txt(o && o.fid), name: txt(o && o.name), kind: txt(o && o.kind), title: txt(o && o.title),
+    size: Number(o && o.size) || 0, mime: txt(o && o.mime), addedAt: txt(o && o.addedAt), by: txt(o && o.by)
+  };
+}
+
+/* 開いている職員の書類目録（無ければ空） */
+function detailFiles() {
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  var row = id ? ST.byId[id] : null;
+  return row ? toArr(row.filesJson) : [];
+}
+
+/* 「📎 書類 (n)」の件数と、押せないときの理由を作り直す */
+function updateFilesBtn() {
+  var b = $('filesBtn');
+  if (!b) return;
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  var cfg = loadCfg();
+  var n = detailFiles().length;
+  b.textContent = '📎 書類 (' + n + ')';
+  b.setAttribute('aria-label', '添付書類 ' + n + '件');
+  var why = '';
+  if (!id) why = '先に保存してください';
+  else if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '右上の歯車（設定）で接続先を設定してください';
+  else if (ST.caps === null) why = '接続を確かめられていません。設定画面の「接続テスト」で確かめてください';
+  else if (!capsHas('files')) why = '職員マスタの GAS を更新してください';
+  b.disabled = !!why;
+  if (why) b.setAttribute('title', why); else b.removeAttribute('title');
+  /* title は指してみないと読めない。押せない理由は固定バーにも1行出す */
+  var wy = $('filesWhy');
+  if (wy) { wy.textContent = why; wy.hidden = !why; }
+}
+
+/* サーバーが持っている機能を ping で確かめる（失敗しても画面は動かす） */
+function refreshCaps() {
+  var cfg = loadCfg();
+  if (!URL_OK_RE.test(cfg.url)) { ST.caps = null; updateFilesBtn(); return Promise.resolve(); }
+  return apiPing().then(function (d) {
+    setCaps(d);
+  }).catch(function () {
+    ST.caps = null;
+    updateFilesBtn();
+  });
+}
+function setCaps(d) {
+  ST.caps = (d && Array.isArray(d.caps)) ? d.caps.map(txt) : [];
+  updateFilesBtn();
+}
+
+/* 保存された行の版を書き戻す（詳細フォームの楽観ロックが古い版で競合しないように） */
+function applyFilesRev(row, rev) {
+  var n = Number(rev);
+  if (isFinite(n) && n > 0) row.rev = n;
+  if (ST.detail && txt(ST.detail.id) === txt(row.id)) {
+    ST.detail.rev = row.rev;
+    if (ST.detail.base) ST.detail.base.filesJson = toArr(row.filesJson);
+    $('dtMeta').textContent = '職員ID ' + row.id + '／版 ' + row.rev;
+  }
+}
+
+function fillFileKinds() {
+  var s = $('fdKind');
+  if (!s) return;
+  clearNode(s);
+  s.appendChild(h('option', { value: '' }, '— 選んでください'));
+  FILE_KINDS.forEach(function (p) { s.appendChild(h('option', { value: p[0] }, p[1])); });
+  s.value = '';
+}
+
+function renderFiles() {
+  var body = $('fdBody');
+  if (!body) return;
+  clearNode(body);
+  var arr = detailFiles();
+  $('fdListWrap').hidden = !arr.length;
+  $('fdEmpty').hidden = !!arr.length;
+  arr.forEach(function (f) {
+    var fid = txt(f && f.fid);
+    var nm = txt(f && f.title) || txt(f && f.name) || 'この書類';
+    var act = h('td', { cls: 'act' });
+    if (FID_RE.test(fid)) {
+      act.appendChild(h('a', {
+        cls: 'open', href: 'https://drive.google.com/file/d/' + fid + '/view',
+        target: '_blank', rel: 'noopener', 'aria-label': nm + ' を開く（別のタブ）', text: '開く'
+      }));
+    } else {
+      act.appendChild(h('span', { cls: 'muted', text: 'このIDでは開けません' }));
+    }
+    var del = h('button', {
+      type: 'button', cls: 'btn sm warnb', text: '削除', 'aria-label': nm + ' を削除',
+      onclick: function () { removeFileEntry(fid, f); }
+    });
+    /* fid が読めなくても削除は押せる（サーバーは目録との一致で消すので、開けない要素も外せる） */
+    del.disabled = ST.filesBusy;
+    act.appendChild(del);
+    body.appendChild(h('tr', null, [
+      h('td', { text: fileKindLabel(f && f.kind) }),
+      h('td', { text: txt(f && f.title) }),
+      h('td', { text: txt(f && f.name) }),
+      h('td', { cls: 'num', text: fmtBytes(f && f.size) }),
+      h('td', { cls: 'num', text: fmtAdded(f && f.addedAt) }),
+      act
+    ]));
+  });
+}
+
+function setFilesBusy(on) {
+  ST.filesBusy = !!on;
+  $('fdUpload').disabled = ST.filesBusy;
+  $('fdUpload').textContent = ST.filesBusy ? '送信中…' : 'アップロード';
+  $('fdFile').disabled = ST.filesBusy;
+  $('fdKind').disabled = ST.filesBusy;
+  $('fdTitleIn').disabled = ST.filesBusy;
+  renderFiles();                       /* 送信中は削除も押せなくする（版がずれないように） */
+}
+
+function openFiles() {
+  var b = $('filesBtn');
+  if (!b || b.disabled) return;
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  if (!id) return;
+  var row = ST.byId[id];
+  fdOpener = b;
+  $('fdTitle').textContent = '添付書類 — ' + (txt(row && row.name) || '（氏名未入力）');
+  $('fdFile').value = '';
+  $('fdTitleIn').value = '';
+  fillFileKinds();
+  $('fdPick').textContent = FD_PICK_HELP;
+  setState('fdState', '', '', '');
+  setFilesBusy(false);
+  var dlg = $('filesDlg');
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+}
+function closeFiles() {
+  var dlg = $('filesDlg');
+  if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+}
+
+function pickedFile() {
+  var el = $('fdFile');
+  return (el && el.files && el.files[0]) ? el.files[0] : null;
+}
+/* 種類が空で来る端末があるので、その時だけ拡張子から補う */
+function fileMime(f) {
+  var t = txt(f && f.type).toLowerCase();
+  if (t === 'image/jpg') t = 'image/jpeg';
+  if (t) return t;
+  var m = /\.([A-Za-z0-9]+)$/.exec(txt(f && f.name));
+  return m ? txt(FILE_EXT_MIME[m[1].toLowerCase()]) : '';
+}
+/* 送る前に画面側でも確かめる（サーバーに断られてから気づかせない） */
+function checkPicked(f) {
+  if (!f) return 'ファイルを選んでください。';
+  if (FILE_MIMES.indexOf(fileMime(f)) < 0) {
+    return 'この形式は保存できません。PDF・JPEG・PNG のいずれかを選び直してください。';
+  }
+  if (Number(f.size) > FILE_MAX_BYTES) {
+    return 'ファイルが大きすぎます（' + fmtBytes(f.size) + '／上限 10MB）。スキャンの解像度を下げるか、分けて取り込んでから選び直してください。';
+  }
+  if (detailFiles().length >= FILE_MAX_COUNT) {
+    return 'この方の書類は上限の ' + FILE_MAX_COUNT + '件に達しています。古い書類を削除してから追加してください。';
+  }
+  return '';
+}
+function onFilePick() {
+  var f = pickedFile();
+  if (!f) {
+    $('fdPick').textContent = FD_PICK_HELP;
+    setState('fdState', '', '', '');
+    $('fdUpload').disabled = ST.filesBusy;
+    return;
+  }
+  $('fdPick').textContent = txt(f.name) + '（' + fmtBytes(f.size) + '）';
+  var msg = checkPicked(f);
+  if (msg) {
+    setState('fdState', 'warn', 'このファイルは送れません', msg);
+    $('fdUpload').disabled = true;                     /* 送らずに止める（通信も起こさない） */
+  } else {
+    setState('fdState', '', '', '');
+    $('fdUpload').disabled = ST.filesBusy;
+  }
+}
+
+function readAsB64(f) {
+  return new Promise(function (resolve, reject) {
+    var fr = new FileReader();
+    fr.onerror = function () {
+      reject(mkErr('ファイルを読めませんでした', 'ファイルが開かれたままになっていないか確かめ、もう一度選び直してください。'));
+    };
+    fr.onload = function () {
+      var s = txt(fr.result), i = s.indexOf(',');
+      var b64 = (s.slice(0, 5) === 'data:' && i > 0) ? s.slice(i + 1) : '';
+      if (!b64) {
+        reject(mkErr('ファイルを読み取れませんでした', '別の形式で保存し直してから、もう一度選び直してください。'));
+        return;
+      }
+      resolve(b64);                                    /* 'data:…;base64,' を外した本体だけを送る */
+    };
+    fr.readAsDataURL(f);
+  });
+}
+
+function uploadPicked() {
+  if (ST.filesBusy) return;
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  if (!id) {
+    setState('fdState', 'warn', '先に職員を保存してください', 'この方はまだ登録されていません。「保存」で登録してから書類を追加してください。');
+    return;
+  }
+  var f = pickedFile();
+  var msg = checkPicked(f);
+  if (msg) { setState('fdState', 'warn', 'このファイルは送れません', msg); return; }
+  var kind = txt($('fdKind').value);
+  if (!kind) {
+    setState('fdState', 'warn', '書類の種類を選んでください', '履歴書・資格者証・免許証・身分証・契約書・健康診断・その他 から選んでください。');
+    $('fdKind').focus();
+    return;
+  }
+  var title = txt($('fdTitleIn').value).trim().slice(0, 60);
+  var cfg = loadCfg();
+  setFilesBusy(true);
+  setState('fdState', '', '送信中…', 'Google ドライブに保存しています。大きいファイルは少し時間がかかります。');
+  readAsB64(f).then(function (b64) {
+    return apiPost('uploadFile', {
+      id: id, name: txt(f.name).slice(0, 120), mime: fileMime(f), kind: kind,
+      title: title, dataB64: b64, by: cfg.by || ''
+    }, 120000);                                        /* 10MB の送信は 45 秒では終わらないことがある */
+  }).then(function (d) {
+    var row = ST.byId[id];
+    var nf = normFile(d && d.file);
+    ST.ver = Number(d && d.ver) || ST.ver;
+    if (row && nf.fid) row.filesJson = toArr(row.filesJson).concat([nf]);
+    if (row) applyFilesRev(row, d && d.rev);
+    $('fdFile').value = '';
+    $('fdTitleIn').value = '';
+    $('fdPick').textContent = FD_PICK_HELP;
+    renderFiles();
+    updateFilesBtn();
+    if (nf.fid) {
+      setState('fdState', 'ok', '追加しました', fileKindLabel(nf.kind) + '「' + (nf.title || nf.name) + '」を保存しました。');
+      toast('書類を追加しました');
+    } else {
+      setState('fdState', 'warn', '保存はできましたが一覧に出せませんでした',
+        'サーバーの応答に書類の情報が足りません。いったん閉じて「再読み込み」を押し、一覧に出ているか確かめてください。');
+    }
+  }).catch(function (e) {
+    if (e && e.aborted) {
+      /* 送れたか送れていないか分からない。ここで「もう一度」と促すと同じ書類が2つ入る */
+      setState('fdState', 'warn', '送信に時間がかかっています',
+        '一覧を再読み込みして、書類が入っていないことを確かめてからもう一度お試しください。');
+      return;
+    }
+    setState('fdState', 'err', '追加できませんでした（' + errText(e) + '）',
+      errHint(e) + ' 選んだファイルはそのまま残しています。直したうえで、もう一度「アップロード」を押してください。' + errDetail(e, 3));
+  }).then(function () { setFilesBusy(false); }, function () { setFilesBusy(false); });
+}
+
+function removeFileEntry(fid, f) {
+  if (ST.filesBusy) return;
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  if (!id || !txt(fid)) return;
+  var nm = txt(f && f.title) || txt(f && f.name) || 'この書類';
+  if (!window.confirm(nm + ' を書類の一覧から外します。\nDrive の「削除済み」フォルダへ移動します。元に戻す時は Drive で戻せます。\nよろしいですか？')) return;
+  var cfg = loadCfg();
+  setFilesBusy(true);
+  setState('fdState', '', '削除中…', 'サーバーに送っています。');
+  apiPost('removeFile', { id: id, fid: txt(fid), by: cfg.by || '' }).then(function (d) {
+    var row = ST.byId[id];
+    ST.ver = Number(d && d.ver) || ST.ver;
+    if (row) {
+      row.filesJson = toArr(row.filesJson).filter(function (x) { return txt(x && x.fid) !== txt(fid); });
+      applyFilesRev(row, d && d.rev);
+    }
+    renderFiles();
+    updateFilesBtn();
+    var ws = (d && Array.isArray(d.warnings)) ? d.warnings.map(txt).filter(function (w) { return !!w; }) : [];
+    if (ws.length) {
+      setState('fdState', 'warn', '一覧からは外しました', ws.join(' / ') + ' Drive 側は手で移してください');
+    } else {
+      setState('fdState', 'ok', '削除しました', nm + ' を一覧から外しました。Drive の「削除済み」フォルダに残っています。');
+    }
+    toast('書類を削除しました');
+  }).catch(function (e) {
+    setState('fdState', 'err', '削除できませんでした（' + errText(e) + '）',
+      errHint(e) + ' 一覧はそのままです。閉じて「再読み込み」を押すと最新の状態になります。' + errDetail(e, 3));
+  }).then(function () { setFilesBusy(false); }, function () { setFilesBusy(false); });
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -2648,11 +3054,13 @@ function onSaveCfg() {
   }
   saveCfg({ url: url, token: txt($('cfgToken').value).trim(), by: txt($('cfgBy').value).trim() });
   setState('cfgState', 'ok', '保存しました', '「接続テスト」で通じるか確かめてください。');
+  refreshCaps();
   loadList();
 }
 function onTest() {
   setState('cfgState', '', '確認中…', 'サーバーに問い合わせています。');
   apiPing().then(function (d) {
+    setCaps(d);                       /* 使える機能はここでも取り直す（書類ボタンの可否に効く） */
     var caps = Array.isArray(d.caps) ? d.caps.join('・') : '—';
     setState('cfgState', 'ok', '接続できました', '版 ' + txt(d.build || d.ver) + '／使える機能: ' + caps
       + (d.authRequired === true ? '／合言葉が必要です' : ''));
@@ -2722,6 +3130,21 @@ function bindEvents() {
   });
   $('insShow').addEventListener('click', revealIns);
   $('insHide').addEventListener('click', hideIns);
+
+  /* 添付書類（ダイアログ。Esc と「閉じる」で閉じ、開いたボタンへ戻る） */
+  $('filesBtn').addEventListener('click', openFiles);
+  $('fdClose').addEventListener('click', closeFiles);
+  $('fdFile').addEventListener('change', onFilePick);
+  $('fdUpload').addEventListener('click', uploadPicked);
+  /* 送信中の Esc は無視する（閉じても通信は止まらず、結果を出す先が無くなる） */
+  $('filesDlg').addEventListener('cancel', function (ev) {
+    if (ST.filesBusy) ev.preventDefault();
+  });
+  $('filesDlg').addEventListener('close', function () {
+    var b = fdOpener;
+    fdOpener = null;
+    if (b && typeof b.focus === 'function' && !b.disabled) b.focus();
+  });
   ['f_legacyNo', 'f_name', 'f_kana', 'f_gender', 'f_birthDate', 'f_phone', 'f_address', 'f_emName',
     'f_emRel', 'f_emPhone', 'f_hireDate', 'f_retireDate', 'f_careStartDate', 'f_primarySite',
     'f_jobTitle', 'f_position', 'f_employmentType', 'f_workStyle', 'f_empIns', 'f_onLeave',
@@ -2811,11 +3234,14 @@ function init() {
   fillSelect('f_employmentType', 'employmentType', '—');
   fillSelect('f_workStyle', 'workStyle', '—');
   buildQualChips();
+  fillFileKinds();
   fillSettings();
   bindEvents();
   buildListHead();
   showScreen(ST.screen);
   $('bulkBar').hidden = true;
+  updateFilesBtn();
+  refreshCaps();               /* サーバーが持っている機能を先に確かめる（書類ボタンの可否） */
   loadList();
 }
 
