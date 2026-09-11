@@ -237,6 +237,14 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .fl .ti { font-weight: 600; font-size: 0.875rem; word-break: break-all; }
 .fl .mt { font-size: 0.75rem; color: var(--g6); margin-top: 2px; word-break: break-all; }
 .fl .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+/* ファイルの受け口（クリックでもドラッグ＆ドロップでも同じ所に入る） */
+#flDrop {
+  border: 2px dashed var(--g3); border-radius: 10px; padding: 12px;
+  background: var(--g0); transition: background .15s, border-color .15s;
+}
+#flDrop.over { border-color: var(--pri); background: var(--pri-l); }
+#flDrop .dh { margin: 8px 0 0; font-size: 0.75rem; color: var(--g6); }
+#flChosen { margin: 6px 0 0; font-size: 0.8125rem; font-weight: 700; color: var(--pri-d); }
 
 /* ── モーダル ── */
 .mk { display: none; position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); padding: 16px; overflow: auto; }
@@ -403,6 +411,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
     <p class="note">対象: <b id="flWho"></b><br>
       ファイルは Google ドライブに保存します。この端末には残しません。<br>
       PDF・写真（JPEG/PNG）・Word・Excel、1つ 10MB まで。<br>
+      メールに届いたPDFは、<b>この画面へ直接ドラッグ＆ドロップ</b>できます。<br>
       <b>保存には15〜30秒ほどかかります。</b>この画面を閉じずにお待ちください。</p>
     <div class="frow">
       <div class="fld"><label for="flKind">種類</label><select id="flKind"></select></div>
@@ -411,8 +420,13 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
     </div>
     <div class="frow" style="margin-top:6px">
       <div class="fld" style="flex:2"><label for="flPick">ファイル</label>
-        <input id="flPick" type="file"
-          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png"></div>
+        <div id="flDrop">
+          <input id="flPick" type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png">
+          <p class="dh">この枠にファイルをドラッグ＆ドロップしてもかまいません（1つずつ）。</p>
+        </div>
+        <p id="flChosen" hidden></p>
+      </div>
     </div>
     <p class="note err" id="flErr" hidden></p>
     <div class="btn-row">
@@ -2166,6 +2180,9 @@ var FILES = {};
 var filesRev = 0;
 var filesBusy = false;
 var fileModalCand = '';
+/* 選ばれたファイル。クリックで選んでもドロップしても、必ずここに入る。
+   ★input.files への代入は端末によって効かないので、画面の正はこの変数にする。 */
+var flFile = null;
 /* 添付が使えるか。使えない時は「なぜ」を日本語で持つ（押して初めて失敗する状態を作らない） */
 var filesState = { ready: false, why: '書類の一覧をまだ取得していません。右上の ⟳ を押してください。' };
 
@@ -2274,11 +2291,71 @@ function openFileModal(c) {
   sel.value = 'medinfo';
   $('flTitle').value = '';
   $('flPick').value = '';
+  setChosenFile(null);
+  $('flDrop').classList.remove('over');
   $('flWho').textContent = c.name || '（氏名未入力）';
   $('flErr').hidden = true; $('flErr').textContent = '';
   $('flGo').disabled = false; $('flGo').textContent = 'この書類を保存';
   setFileDlgBusy(false);
   openModal('mk-file');
+}
+
+/* 選んだファイルを1か所に控え、名前と大きさを画面に出す。
+   ★出さないと、ドロップした人は「入ったのか」が分からない（枠の色が戻るだけ）。 */
+function setChosenFile(f) {
+  flFile = f || null;
+  var el = $('flChosen');
+  if (!el) return;
+  if (!flFile) { el.hidden = true; el.textContent = ''; return; }
+  el.hidden = false;
+  el.textContent = '選んだファイル: ' + flFile.name + '（' + fmtBytes(flFile.size) + '）';
+}
+
+/* ドラッグ＆ドロップの配線（ダイアログの中ならどこへ落としても受け取る）。
+   ★ページの既定動作を止めるのは、ダイアログが開いている間だけにする。
+     止めないと、狙いを外したPDFをブラウザが開いてしまい、入力中の画面ごと失われる。 */
+function bindFileDrop() {
+  var dlg = $('mk-file'), zone = $('flDrop');
+  if (!dlg || !zone) return;
+  function on(el, ev, fn) { el.addEventListener(ev, fn); }
+  function stop(e) { e.preventDefault(); e.stopPropagation(); }
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    on(dlg, ev, function (e) {
+      if (filesBusy) return;                 /* 送信中は受け取らない */
+      stop(e);
+      try { e.dataTransfer.dropEffect = 'copy'; } catch (e2) {}
+      zone.classList.add('over');
+    });
+  });
+  ['dragleave', 'dragend'].forEach(function (ev) {
+    on(dlg, ev, function (e) {
+      /* ダイアログの外へ出た時だけ戻す（中の要素をまたぐたびに点滅させない） */
+      if (e.relatedTarget && dlg.contains(e.relatedTarget)) return;
+      zone.classList.remove('over');
+    });
+  });
+  on(dlg, 'drop', function (e) {
+    stop(e);
+    zone.classList.remove('over');
+    if (filesBusy) { toast('保存中です。終わってからもう一度どうぞ'); return; }
+    var dt = e.dataTransfer, list = dt && dt.files ? dt.files : null;
+    if (!list || !list.length) {
+      $('flErr').textContent = 'ファイルとして受け取れませんでした。「ファイルを選択」から選んでください';
+      $('flErr').hidden = false;
+      return;
+    }
+    $('flErr').hidden = true;
+    /* 端末が許せば、見た目の「選択されていません」も合わせて直す（失敗しても本筋は変数側） */
+    try { $('flPick').files = dt.files; } catch (e3) {}
+    setChosenFile(list[0]);
+    if (list.length > 1) toast('1つずつ保存します。最初の1件を受け取りました');
+  });
+  /* ダイアログが開いている間は、外したドロップでブラウザにファイルを開かせない */
+  ['dragover', 'drop'].forEach(function (ev) {
+    on(document, ev, function (e) {
+      if (dlg.classList.contains('on')) e.preventDefault();
+    });
+  });
 }
 
 /* 形式の判定。★拡張子を正とする。
@@ -2320,8 +2397,10 @@ function doUploadFile() {
   $('flErr').hidden = true;
   if (filesBusy) { err('前の書類を保存しています。終わるまでお待ちください'); return; }
   if (!c) { err('案件が見つかりません。画面を開き直してください'); return; }
-  var f = $('flPick').files && $('flPick').files[0];
-  if (!f) { err('ファイルを選んでください'); return; }
+  var f = flFile;
+  if (!f) { err('ファイルを選んでください（枠へドラッグ＆ドロップもできます）'); return; }
+  /* フォルダを落とすと、名前も大きさも持たない File として届く */
+  if (!f.size) { err('フォルダや中身の無いファイルは保存できません。ファイルを1つ選んでください'); return; }
   var mime = fileMimeOf(f);
   if (!mime) { err('この形式は保存できません（PDF・写真・Word・Excel のみ）'); return; }
   if (f.size > FILE_MAX_BYTES) { err('ファイルが大きすぎます（1つ 10MB まで。今回は ' + fmtBytes(f.size) + '）'); return; }
@@ -3525,6 +3604,10 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
   });
 });
 $('flGo').addEventListener('click', doUploadFile);
+$('flPick').addEventListener('change', function () {
+  setChosenFile(this.files && this.files[0]);
+});
+bindFileDrop();
 $('syncChip').addEventListener('click', renderSyncModal);
 $('reloadBtn').addEventListener('click', function () {
   if (busyEditing()) { toast('編集中は取り込みません。保存してから押してください'); return; }
