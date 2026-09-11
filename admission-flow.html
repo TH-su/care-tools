@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
+<!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
+     2026-09-12 追加: 添付書類で診療情報提供書などを扱うようになったため揃えた） -->
+<meta http-equiv="Cache-Control" content="no-store">
 <!-- 入居前の相談者の連絡先・保険情報を扱うページなので、一覧ページと同じく検索エンジンに辿らせない -->
 <meta name="robots" content="noindex,nofollow">
 <title>入居調整</title>
@@ -225,6 +228,16 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .bnav button .ic { font-size: 1.25rem; line-height: 1; }
 .bnav button.on { color: var(--pri-d); background: var(--pri-l); font-weight: 700; }
 
+/* ── 添付書類 ── */
+.fl { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+      border: 1px solid var(--g3); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.fl .knd { background: var(--g1); color: var(--g7); border-radius: 999px;
+           padding: 2px 8px; font-size: 0.6875rem; white-space: nowrap; }
+.fl .bd { flex: 1; min-width: 11em; }
+.fl .ti { font-weight: 600; font-size: 0.875rem; word-break: break-all; }
+.fl .mt { font-size: 0.75rem; color: var(--g6); margin-top: 2px; word-break: break-all; }
+.fl .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
 /* ── モーダル ── */
 .mk { display: none; position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); padding: 16px; overflow: auto; }
 .mk.on { display: flex; align-items: flex-start; justify-content: center; }
@@ -379,6 +392,32 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
     <div class="btn-row">
       <button class="btn" type="button" data-close="mk-contact">やめる</button>
       <button class="btn pri" id="cnSaveBtn" type="button">記録して「連絡済み」にする</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添付書類の追加 -->
+<div class="mk" id="mk-file" role="dialog" aria-modal="true" aria-labelledby="fl-h">
+  <div class="md">
+    <h2 id="fl-h">書類を追加<button class="md-close" type="button" data-close="mk-file" aria-label="閉じる">✕</button></h2>
+    <p class="note">対象: <b id="flWho"></b><br>
+      ファイルは Google ドライブに保存します。この端末には残しません。<br>
+      PDF・写真（JPEG/PNG）・Word・Excel、1つ 10MB まで。<br>
+      <b>保存には15〜30秒ほどかかります。</b>この画面を閉じずにお待ちください。</p>
+    <div class="frow">
+      <div class="fld"><label for="flKind">種類</label><select id="flKind"></select></div>
+      <div class="fld" style="flex:2"><label for="flTitle">表題（任意）</label>
+        <input id="flTitle" type="text" placeholder="例: 転院時サマリー"></div>
+    </div>
+    <div class="frow" style="margin-top:6px">
+      <div class="fld" style="flex:2"><label for="flPick">ファイル</label>
+        <input id="flPick" type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png"></div>
+    </div>
+    <p class="note err" id="flErr" hidden></p>
+    <div class="btn-row">
+      <button class="btn" type="button" data-close="mk-file">やめる</button>
+      <button class="btn pri" id="flGo" type="button">この書類を保存</button>
     </div>
   </div>
 </div>
@@ -1505,6 +1544,8 @@ function candCard(c) {
   if (c.careLevel) tags += '<span class="tag">' + esc(c.careLevel) + '</span>';
   if (c.desiredDate) tags += '<span class="tag">希望 ' + esc(fmtD(c.desiredDate)) + '</span>';
   if (c.room) tags += '<span class="tag">' + esc(c.room) + '号室予定</span>';
+  var nf = candFiles(c.id).length;
+  if (nf) tags += '<span class="tag">📎 ' + nf + '</span>';
   var nd = openNudges(c).length;
   if (c.deleted) {
     tags += '<span class="tag lost">削除済み ' + esc(fmtD(c.deletedAt)) + '</span>';
@@ -1687,6 +1728,9 @@ function renderView(c) {
 
   /* 入居前アセスメント（入居者マスタの様式と同じ項目） */
   h += assessViewHtml(c);
+
+  /* 添付書類（PDF・写真。本体は Google ドライブ） */
+  h += filesCardHtml(c);
 
   /* 連携先 */
   h += '<div class="cd"><h3>連携先</h3>';
@@ -1892,6 +1936,13 @@ function bindViewEvents(c) {
     c.log.push({ id: newId('l'), at: at ? new Date(at).toISOString() : nowIso(), partner: $('lgPartner').value.trim(), method: $('lgMethod').value, summary: sum });
     touch(c); renderView(c); toast('記録しました');
   });
+  if ($('flAddBtn')) $('flAddBtn').addEventListener('click', function () { openFileModal(c); });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-fdl]'), function (b) {
+    b.addEventListener('click', function () { downloadFileEntry(c, b.getAttribute('data-fdl')); });
+  });
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-fdel]'), function (b) {
+    b.addEventListener('click', function () { removeFileEntry(c, b.getAttribute('data-fdel')); });
+  });
   if ($('msOpenBtn')) $('msOpenBtn').addEventListener('click', function () { openMasterModal(c); });
   if ($('msVerifyBtn')) $('msVerifyBtn').addEventListener('click', function () { verifyMaster(c); });
   if ($('vDel')) $('vDel').addEventListener('click', function () {
@@ -2074,6 +2125,332 @@ $('cnSaveBtn').addEventListener('click', function () {
   touch(c); closeModal('mk-contact'); renderView(c);
   toast('記録しました');
 });
+
+/* ═══════════════════════════════════════════════════════════════
+   添付書類（PDF・写真・Word/Excel）
+   ---------------------------------------------------------------
+   ・画面が持つのは目録（見出し）だけ。本体は Google ドライブ。
+   ・目録はサーバー専用。台帳（DB）には1文字も混ぜない
+     ＝古いコードの端末が台帳を丸ごと送っても、書類の一覧は消えない。
+   ・端末（localStorage）には目録も本体も残さない（個人情報を持ち歩かない）。
+   ・「開く」＝Drive（Googleログイン要）／「ダウンロード」＝アプリ経由（合言葉だけ）。
+   ═══════════════════════════════════════════════════════════════ */
+var FILE_KINDS = [
+  ['medinfo', '診療情報提供書'], ['nursesum', '看護サマリー'], ['adl', 'ADL・介護サマリー'],
+  ['insurance', '介護保険証・負担割合証'], ['meds', 'お薬手帳・処方箋'],
+  ['interview', '面談・見学記録'], ['contract', '契約書類'], ['other', 'その他']
+];
+/* サーバー（admission-api.gs の FILE_MIMES）と対で保つこと */
+var FILE_MIMES = [
+  'application/pdf', 'image/jpeg', 'image/png',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+];
+/* 端末によっては file.type が空で届く（特に .docx / .xlsx）。拡張子から決め直す */
+var FILE_EXT_MIME = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+};
+var FILE_MAX_BYTES = 10 * 1024 * 1024;
+var FILE_MAX_COUNT = 50;
+/* Drive のファイルIDに使われる文字だけ。ほかが混ざったものは「開く」を出さない */
+var FID_RE = /^[A-Za-z0-9_-]+$/;
+
+/* 案件ID → 目録の配列。★DB には入れない */
+var FILES = {};
+var filesRev = 0;
+var filesBusy = false;
+var fileModalCand = '';
+/* 添付が使えるか。使えない時は「なぜ」を日本語で持つ（押して初めて失敗する状態を作らない） */
+var filesState = { ready: false, why: '書類の一覧をまだ取得していません。右上の ⟳ を押してください。' };
+
+function fileKindLabel(code) {
+  var c = asStr(code), out = '';
+  FILE_KINDS.forEach(function (p) { if (!out && p[0] === c) out = p[1]; });
+  return out || (c || '—');
+}
+function fmtBytes(v) {
+  var n = Number(v);
+  if (!isFinite(n) || n < 0) return '—';
+  if (n < 1024 * 1024) return String(Math.max(1, Math.round(n / 1024))) + ' KB';
+  return String(Math.round(n / (1024 * 1024) * 10) / 10) + ' MB';
+}
+function candFiles(id) { return asArr(FILES[asStr(id)]); }
+
+function apiFiles(payload) {
+  if (!SU_DATA_READY) return Promise.reject(new Error('データ層を読み込めていません'));
+  if (!syncTarget().endpoint) return Promise.reject(new Error('接続先が未設定です'));
+  return SU.data.kvRaw(payload);
+}
+
+/* 目録を取り直す。失敗しても画面は動かす（添付だけが使えない状態にする） */
+function refreshFiles() {
+  if (!syncTarget().endpoint) {
+    FILES = {}; filesState = { ready: false, why: '接続先が未設定です。接続設定ページで「入居調整」の接続先を入れてください。' };
+    return Promise.resolve(false);
+  }
+  return apiFiles({ action: 'filesGet' }).then(function (r) {
+    if (r && r.ok) {
+      FILES = asObj(r.files);
+      filesRev = Number(r.filesRev) || 0;
+      filesState = { ready: true, why: '' };
+      return true;
+    }
+    /* 「unknown action」＝サーバーがまだ古い版。ここで分かれば、押して初めて失敗する状態にならない */
+    filesState = (r && asStr(r.error) === 'unknown action')
+      ? { ready: false, why: 'サーバー（入居調整データAPI）が添付書類に未対応です。GAS を新しい版に更新してください。' }
+      : { ready: false, why: '書類の一覧を取れませんでした（' + (asStr(r && r.error) || '応答エラー') + '）。右上の ⟳ で取り直してください。' };
+    return false;
+  }).catch(function (e) {
+    filesState = { ready: false, why: '書類の一覧を取れませんでした（' + asStr(e && e.message) + '）。右上の ⟳ で取り直してください。' };
+    return false;
+  });
+}
+
+/* 未送信の編集を先に送る。サーバーに案件が無いと書類を紐づけられないため。
+   ★push() は戻り値を持たないので、送信済み（dirty が下りる）のを短く待つ。
+     待ちきれなくてもそのまま進む＝サーバーが「同期してから」と日本語で返す。 */
+function flushBeforeUpload() {
+  if (!dirty) return Promise.resolve();
+  push();
+  return new Promise(function (resolve) {
+    var left = 24;                       /* 300ms × 24 ≒ 7秒 */
+    var iv = setInterval(function () {
+      if (!dirty || --left <= 0) { clearInterval(iv); resolve(); }
+    }, 300);
+  });
+}
+
+function filesCardHtml(c) {
+  var h = '<div class="cd"><h3>添付書類</h3>';
+  if (!filesState.ready) {
+    return h + '<p class="note warn">' + esc(filesState.why) + '</p></div>';
+  }
+  var arr = candFiles(c.id);
+  if (!arr.length) {
+    h += '<p class="empty" style="padding:8px 0">まだ書類がありません。<br>診療情報提供書・看護サマリーなどの PDF をここに保存できます。</p>';
+  }
+  arr.forEach(function (f) {
+    var fid = asStr(f && f.fid);
+    var nm = asStr(f && f.title) || asStr(f && f.name) || 'この書類';
+    h += '<div class="fl"><span class="knd">' + esc(fileKindLabel(f && f.kind)) + '</span>' +
+      /* 表題が無いときは見出しがファイル名そのものになる。下の行に同じものを重ねて出さない */
+      '<div class="bd"><div class="ti">' + esc(nm) + '</div>' +
+      '<div class="mt">' + (asStr(f && f.title) ? esc(asStr(f && f.name)) + '　' : '') + esc(fmtBytes(f && f.size)) +
+      (f && f.addedAt ? '　' + esc(fmtD(asStr(f.addedAt).slice(0, 10))) : '') + '</div></div>' +
+      '<div class="acts">' +
+      (FID_RE.test(fid)
+        ? '<a class="btn sm" href="https://drive.google.com/file/d/' + esc(fid) + '/view" target="_blank" rel="noopener" aria-label="' + esc(nm) + ' を Google ドライブで開く">開く</a>'
+        : '') +
+      '<button class="btn sm" type="button" data-fdl="' + esc(fid) + '" aria-label="' + esc(nm) + ' をダウンロード">⬇ ダウンロード</button>' +
+      '<button class="btn sm warn" type="button" data-fdel="' + esc(fid) + '" aria-label="' + esc(nm) + ' を削除">削除</button>' +
+      '</div></div>';
+  });
+  h += '<div class="btn-row" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+    '<button class="btn sm pri" id="flAddBtn" type="button"' + (arr.length >= FILE_MAX_COUNT ? ' disabled' : '') +
+    '>＋ 書類を追加</button></div>';
+  if (arr.length >= FILE_MAX_COUNT) {
+    h += '<p class="note warn">この方の書類は上限（' + FILE_MAX_COUNT + '件）です。古いものを削除してください。</p>';
+  } else if (arr.length) {
+    h += '<p class="note">「開く」は Google ドライブで表示します。<b>このドライブへの権限がある端末だけ</b>で使えます' +
+      '（権限が無いと「アクセス権をリクエスト」画面になります。<b>そこから申請しないでください</b>）。' +
+      'それ以外の端末では「⬇ ダウンロード」をお使いください。こちらはどの端末でも使えます。</p>';
+  }
+  return h + '</div>';
+}
+
+/* ── 追加 ── */
+function openFileModal(c) {
+  fileModalCand = c.id;
+  var sel = $('flKind');
+  sel.innerHTML = FILE_KINDS.map(function (p) {
+    return '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>';
+  }).join('');
+  sel.value = 'medinfo';
+  $('flTitle').value = '';
+  $('flPick').value = '';
+  $('flWho').textContent = c.name || '（氏名未入力）';
+  $('flErr').hidden = true; $('flErr').textContent = '';
+  $('flGo').disabled = false; $('flGo').textContent = 'この書類を保存';
+  setFileDlgBusy(false);
+  openModal('mk-file');
+}
+
+/* 形式の判定。★拡張子を正とする。
+   ・file.type は端末によって空で届く（.docx / .xlsx で実際に起きる）ので当てにできない
+   ・逆に file.type だけを信じると、v.exe を「PDFです」と申告されたまま保存してしまう
+   拡張子が無いファイルの時だけ file.type を見る。 */
+function fileMimeOf(f) {
+  var parts = asStr(f && f.name).toLowerCase().split('.');
+  var ext = parts.length > 1 ? parts[parts.length - 1] : '';
+  if (ext) return FILE_EXT_MIME[ext] || '';
+  var m = asStr(f && f.type).toLowerCase();
+  return FILE_MIMES.indexOf(m) >= 0 ? m : '';
+}
+
+function readAsB64(file) {
+  return new Promise(function (resolve, reject) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      var s = String(fr.result || '');
+      var at = s.indexOf(',');
+      resolve(at >= 0 ? s.slice(at + 1) : s);
+    };
+    fr.onerror = function () { reject(new Error('ファイルを読めませんでした')); };
+    fr.readAsDataURL(file);
+  });
+}
+
+/* 送信中はダイアログを閉じさせない。閉じて別の案件を開くと、
+   遅れて届いた応答が【前の案件】の画面を描き直して取り違えて見える。 */
+function setFileDlgBusy(on) {
+  Array.prototype.forEach.call($('mk-file').querySelectorAll('[data-close]'), function (b) {
+    b.disabled = !!on;
+  });
+}
+
+function doUploadFile() {
+  var c = findCand(fileModalCand);
+  function err(m) { $('flErr').textContent = m; $('flErr').hidden = false; }
+  $('flErr').hidden = true;
+  if (filesBusy) { err('前の書類を保存しています。終わるまでお待ちください'); return; }
+  if (!c) { err('案件が見つかりません。画面を開き直してください'); return; }
+  var f = $('flPick').files && $('flPick').files[0];
+  if (!f) { err('ファイルを選んでください'); return; }
+  var mime = fileMimeOf(f);
+  if (!mime) { err('この形式は保存できません（PDF・写真・Word・Excel のみ）'); return; }
+  if (f.size > FILE_MAX_BYTES) { err('ファイルが大きすぎます（1つ 10MB まで。今回は ' + fmtBytes(f.size) + '）'); return; }
+  if (candFiles(c.id).length >= FILE_MAX_COUNT) { err('この方の書類は上限（' + FILE_MAX_COUNT + '件）です'); return; }
+
+  var kind = $('flKind').value, title = $('flTitle').value.trim();
+  /* ★送る前の fid を控える。通信断のあと「保存できていたか」を、名前ではなく
+     【新しい fid が増えたか】で判定するため。同じ名前の書類（スキャン.pdf など）が
+     既にあると、名前一致だけでは「前からあった物」を見て保存済みと誤報してしまう。 */
+  var beforeFids = {};
+  candFiles(c.id).forEach(function (x) { beforeFids[asStr(x && x.fid)] = 1; });
+  filesBusy = true;
+  $('flGo').disabled = true;
+  /* ★15〜30秒かかる（実測）。秒数が動いていないと「固まった」と見えて、
+     もう一度押される＝同じ書類が二重に保存される。経過を出し続ける。 */
+  var sec = 0, tick = setInterval(function () {
+    sec++; $('flGo').textContent = '保存中… ' + sec + '秒';
+  }, 1000);
+  function done() {
+    clearInterval(tick);
+    filesBusy = false; $('flGo').disabled = false; $('flGo').textContent = 'この書類を保存';
+    setFileDlgBusy(false);
+  }
+  setFileDlgBusy(true);
+  $('flGo').textContent = '保存中… 0秒';
+  flushBeforeUpload().then(function () {
+    return readAsB64(f);
+  }).then(function (b64) {
+    return apiFiles({
+      action: 'uploadFile', cid: c.id, name: f.name, mime: mime,
+      kind: kind, title: title, dataB64: b64
+    });
+  }).then(function (r) {
+    done();
+    if (!r || !r.ok) {
+      err(asStr(r && r.error) +
+        (r && r.detail && r.detail.length ? '（' + r.detail.join('／') + '）' : ''));
+      return;
+    }
+    FILES[c.id] = candFiles(c.id).concat([r.file]);
+    filesRev = Number(r.filesRev) || filesRev;
+    closeModal('mk-file');
+    renderView(c); renderList();
+    toast('書類を保存しました');
+  }).catch(function (e) {
+    done();
+    /* ★通信が切れた場合、サーバー側では保存が済んでいることがある（往復に17〜27秒かかるため）。
+       ここで目録を取り直して画面に反映しないと、人は「失敗した」と読んでもう一度上げ、
+       同じ書類が2件保存される。取り直した結果を見て、入っていれば入っていると言う。 */
+    err('保存できませんでした（' + asStr(e && e.message) + '）。一覧を取り直しています…');
+    refreshFiles().then(function () {
+      var now = candFiles(c.id).filter(function (x) {
+        return !beforeFids[asStr(x && x.fid)] && asStr(x && x.name) === asStr(f.name);
+      });
+      renderView(c); renderList();
+      if (now.length) {
+        $('flErr').hidden = true; $('flErr').textContent = '';
+        closeModal('mk-file');
+        toast('通信は切れましたが、書類は保存されていました（二重に上げないでください）');
+      } else {
+        err('保存できませんでした（' + asStr(e && e.message) + '）。一覧にも入っていません。もう一度お試しください');
+      }
+    });
+  });
+}
+
+/* ── ダウンロード（Googleへログインしていない端末でも見られる経路） ── */
+/* base64 → Blob。10MB を一度に扱うと重いので 512KB ずつ刻む */
+function b64ToBlob(b64, mime) {
+  var bin = atob(asStr(b64).replace(/\s+/g, ''));
+  var step = 512 * 1024, parts = [], i, j, slice, bytes;
+  for (i = 0; i < bin.length; i += step) {
+    slice = bin.slice(i, i + step);
+    bytes = new Uint8Array(slice.length);
+    for (j = 0; j < slice.length; j++) bytes[j] = slice.charCodeAt(j);
+    parts.push(bytes);
+  }
+  return new Blob(parts, { type: mime || 'application/octet-stream' });
+}
+/* 端末に保存させる。download 属性が効かない端末では別タブで開く
+   （人が共有ボタンから保存できる形にして、黙って何も起きない状態にしない） */
+function saveBlobAs(blob, name) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  if ('download' in a) {
+    a.href = url; a.download = asStr(name) || 'document'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  } else {
+    window.open(url, '_blank');
+  }
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+}
+
+function downloadFileEntry(c, fid) {
+  if (filesBusy) { toast('ほかの書類の処理中です。少し待ってからお試しください'); return; }
+  var f = candFiles(c.id).filter(function (x) { return asStr(x && x.fid) === asStr(fid); })[0];
+  if (!f) { toast('この書類は見つかりません。⟳ で取り直してください'); return; }
+  filesBusy = true;
+  toast('取り出しています…（5〜20秒かかります）');
+  apiFiles({ action: 'downloadFile', cid: c.id, fid: fid }).then(function (r) {
+    filesBusy = false;
+    if (!r || !r.ok) { toast(asStr(r && r.error) || '取り出せませんでした'); return; }
+    saveBlobAs(b64ToBlob(r.dataB64, asStr(r.mime)), asStr(r.name) || asStr(f.name));
+    toast('ダウンロードしました');
+  }).catch(function (e) {
+    filesBusy = false;
+    toast('取り出せませんでした（' + asStr(e && e.message) + '）');
+  });
+}
+
+/* ── 削除（論理削除。実体は Drive の「削除済み」へ移るだけ） ── */
+function removeFileEntry(c, fid) {
+  if (filesBusy) { toast('ほかの書類の処理中です。少し待ってからお試しください'); return; }
+  var f = candFiles(c.id).filter(function (x) { return asStr(x && x.fid) === asStr(fid); })[0];
+  var nm = f ? (asStr(f.title) || asStr(f.name) || 'この書類') : 'この書類';
+  if (!confirm('書類「' + nm + '」を一覧から外しますか？\n\nGoogle ドライブの「削除済み」フォルダへ移すだけで、実体は消えません。')) return;
+  filesBusy = true;
+  apiFiles({ action: 'removeFile', cid: c.id, fid: fid }).then(function (r) {
+    filesBusy = false;
+    if (!r || !r.ok) { toast(asStr(r && r.error) || '削除できませんでした'); return; }
+    FILES[c.id] = candFiles(c.id).filter(function (x) { return asStr(x && x.fid) !== asStr(fid); });
+    filesRev = Number(r.filesRev) || filesRev;
+    renderView(c); renderList();
+    toast('一覧から外しました' + (r.warnings && r.warnings.length ? '（' + r.warnings.join('／') + '）' : ''));
+  }).catch(function (e) {
+    filesBusy = false;
+    toast('削除できませんでした（' + asStr(e && e.message) + '）');
+  });
+}
 
 /* ═══════════ 編集 ═══════════ */
 var editing = null;    // 編集中の作業コピー（保存するまで DB に触らない）
@@ -3147,10 +3524,11 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
     else if (k === 'help') { openModal('mk-help'); }
   });
 });
+$('flGo').addEventListener('click', doUploadFile);
 $('syncChip').addEventListener('click', renderSyncModal);
 $('reloadBtn').addEventListener('click', function () {
   if (busyEditing()) { toast('編集中は取り込みません。保存してから押してください'); return; }
-  pull(true);
+  pull(true).then(function () { return refreshFiles(); }).then(function () { renderAll(); });
 });
 
 (function init() {
@@ -3167,7 +3545,8 @@ $('reloadBtn').addEventListener('click', function () {
         '案件 ' + DB.candidates.length + '件を表示しています。内容に不足があれば、⟳ でサーバーから最新を取り直してください。');
     }, 300);
   }
-  startupPull();
+  /* 添付の目録はサーバーにしか無い（端末には残さない）。台帳のあとに取り直す */
+  startupPull().then(function () { return refreshFiles(); }).then(function () { renderAll(); });
 })();
 
 })();
