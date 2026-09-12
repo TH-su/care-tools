@@ -3029,8 +3029,72 @@ function csPickField_(field, mineVal, serverVal, baseRec) {
   }
   return { value: mineVal, tookServer: false };
 }
+
+/* ── 著者印（2026-09-12 追加・本人指示「勝手に変換されないように」）─────────────────
+   週間計画の画面で人が入力した【サービス区分(category)】と【支援内容(detail)】に、入力した時刻の印を
+   付ける。マージでは印の新しい側を採るので、印を持たない書き込み（ワークスケジュールの書き戻し・
+   古いタブや別端末が抱えていた昔の値）では、こちらの入力が消えない。
+   ★印には「印を付けた時の値の指紋」を添える。印だけ見ると、印を残したまま値だけ書き換えた
+     書き込み（印を付けない書き手）を新しい入力と誤認する。指紋が合わない印は【無印】として扱う。
+   ★秒で持つ（ミリ秒だと桁が増えるだけで、人の入力の前後関係はこれで足りる）。 */
+const CS_STAMP_AT = { category: 'catAt', detail: 'detAt' };
+const CS_STAMP_FP = { category: 'catFp', detail: 'detFp' };
+function csAuthorFp_(v) { return csFingerprint_(v == null ? '' : String(v)); }
+/* 信用してよい印を返す（指紋が合わない＝印の後で誰かが書き換えた → 0＝無印）。 */
+function csAuthoredAt_(ev, field) {
+  if (!ev) return 0;
+  const at = Number(ev[CS_STAMP_AT[field]]) || 0;
+  if (!at) return 0;
+  const fp = ev[CS_STAMP_FP[field]];
+  if (fp === undefined || fp === null || fp === '') return at;   /* 指紋の無い印（将来の別経路）はそのまま信じる */
+  return (String(fp) === csAuthorFp_(ev[field])) ? at : 0;
+}
+/* 人が画面で入力したフィールドに印を押す。値が変わっていなければ前の印をそのまま持ち越す
+   （＝「触っていない欄の印だけ新しくなる」ことを防ぐ）。prev が無い＝新規作成は両方に押す。 */
+function csStampAuthored_(prevEv, nextEv, nowSec) {
+  const t = Number(nowSec) || Math.floor(Date.now() / 1000);
+  const norm = (v) => (v == null ? '' : String(v));
+  for (const field in CS_STAMP_AT) {
+    if (!Object.prototype.hasOwnProperty.call(CS_STAMP_AT, field)) continue;
+    const kAt = CS_STAMP_AT[field], kFp = CS_STAMP_FP[field];
+    const changed = !prevEv || norm(prevEv[field]) !== norm(nextEv[field]);
+    const keep = (!changed && csAuthoredAt_(prevEv, field)) ? csAuthoredAt_(prevEv, field) : 0;
+    nextEv[kAt] = changed ? t : (keep || t);   /* 既存の印が壊れていたら押し直す（この保存も人の入力） */
+    nextEv[kFp] = csAuthorFp_(nextEv[field]);
+  }
+  return nextEv;
+}
+/* 印つきの3-way。印がある側が勝つ→同じなら従来の土台判定（csPickField_）へ落とす。 */
+function csPickFieldStamped_(field, mineEv, serverEv, baseRec) {
+  const norm = function (v) { return (v == null ? '' : String(v)); };
+  if (CS_STAMP_AT[field]) {
+    const ma = csAuthoredAt_(mineEv, field), sa = csAuthoredAt_(serverEv, field);
+    if (ma > sa) return { value: mineEv[field], tookServer: false, at: ma };
+    if (sa > ma) {
+      return { value: serverEv[field],
+               tookServer: norm(serverEv[field]) !== norm(mineEv[field]), at: sa };
+    }
+    const p = csPickField_(field, mineEv[field], serverEv[field], baseRec);
+    return { value: p.value, tookServer: p.tookServer, at: ma };
+  }
+  const q = csPickField_(field, mineEv[field], serverEv[field], baseRec);
+  return { value: q.value, tookServer: q.tookServer, at: 0 };
+}
 /* 直近のマージで「相手の入力を残した」フィールド数。呼び出し元が人に知らせるために使う。 */
 var csFieldsKept_ = 0;
+/* 直近のマージで区分・支援内容が外から変わった中身（人に見せる用・最大5件）。 */
+var csFieldChanges_ = [];
+/* 外から変わった区分・支援内容を人が読める1行にする（件数だけでは何が変わったか分からない）。 */
+function csFieldChangeText_() {
+  if (!csFieldChanges_ || !csFieldChanges_.length) return '';
+  const label = { category: '区分', detail: '支援内容' };
+  const days = (typeof DAYS_JA !== 'undefined') ? DAYS_JA : [];
+  return csFieldChanges_.map(function (c) {
+    return (days[c.dow] || '?') + ' ' + (c.start || '') + ' ' + (label[c.field] || c.field) + ' '
+         + (c.from === '' || c.from == null ? '（空）' : c.from) + '→'
+         + (c.to === '' || c.to == null ? '（空）' : c.to);
+  }).join(' / ');
+}
 
 /* 他タブ（ワースケ・別ウィンドウの週間計画）が localStorage を書き換えていたら、その版を土台に
    自分の編集を載せ直す。★saveDB の【前】に必ず通す。通さずに書くと、自分の保存が相手の
@@ -3085,10 +3149,13 @@ function csAbsorbForeignWrite_() {
       try { recalcAllEventUnits(); } catch (e) {}
     }
     if (gained > 0 || csFieldsKept_ > 0) {
+      const chg = csFieldChangeText_();
       try {
         showToast('別タブの更新を取り込みました（予定 ' + (gained > 0 ? gained : 0) + '件・入力 '
-                  + csFieldsKept_ + '件）');
+                  + csFieldsKept_ + '件）' + (chg ? '：' + chg : ''));
       } catch (e) {}
+      /* ★区分・支援内容が外から変わった時は中身を記録に残す（2026-09-12・何が変わったか追えるように）。 */
+      if (chg) { try { SYNC.log('⚠ 別タブの取り込みで次の内容が変わりました：' + chg); } catch (e) {} }
     }
     /* ★入浴（加算）を相手の値に戻したら必ず知らせる。黙って加算側へ倒さないのは既存の規約
        （競合経路と同じ扱い・レビュー H-3）。 */
@@ -4165,6 +4232,8 @@ const SYNC = {
            操作の邪魔になるため、同期モーダルのログにだけ残す。 */
         if (csFieldsKept_) {
           this.log('　└ この端末が触っていない ' + csFieldsKept_ + ' 項目は、クラウド側の値を残しました（古い内容で上書きしていません）');
+          const chg_ = csFieldChangeText_();
+          if (chg_) this.log('　└ 区分・支援内容の変化：' + chg_);
         }
         if (csBathRestored_) {                        // 入浴を戻したら必ず知らせる（黙って加算側へ倒さない）
           this.updateStatusUI('要確認');
@@ -4321,6 +4390,7 @@ var csBathRestored_ = 0;
 function csRebaseEdits(server, mine) {
   csBathRestored_ = 0;
   csFieldsKept_ = 0;
+  csFieldChanges_ = [];
   if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
   var out = JSON.parse(JSON.stringify(server));
   var byId = {}, i;
@@ -4354,12 +4424,23 @@ function csRebaseEdits(server, mine) {
       if (se && se.bathing === true && cp.bathing !== true) { cp.bathing = true; csBathRestored_++; }
       /* ★自分が触っていない支援内容・サービス区分は、相手(server)の値を残す（2026-08-31・3-way）。
          ここが無いと、ワースケが書いた入力を「別の予定を1つ保存しただけ」で消してしまう。 */
-      if (se && typeof CS_MERGE_FIELDS !== 'undefined' && typeof csPickField_ === 'function') {
+      if (se && typeof CS_MERGE_FIELDS !== 'undefined' && typeof csPickFieldStamped_ === 'function') {
         var baseRec = (typeof csFieldBaseRec_ === 'function') ? csFieldBaseRec_(id) : null;
         for (var fi = 0; fi < CS_MERGE_FIELDS.length; fi++) {
           var fname = CS_MERGE_FIELDS[fi];
-          var pick = csPickField_(fname, cp[fname], se[fname], baseRec);
-          if (pick.tookServer) { cp[fname] = pick.value; csFieldsKept_++; }
+          var pick = csPickFieldStamped_(fname, cp, se, baseRec);
+          if (pick.tookServer) {
+            /* 区分・支援内容が外から変わった時は件数だけでなく中身も控える（黙って変えない）。 */
+            if (CS_STAMP_AT[fname] && csFieldChanges_.length < 5) {
+              csFieldChanges_.push({ dow: cp.dayOfWeek, start: cp.startTime, field: fname,
+                                     from: cp[fname], to: pick.value });
+            }
+            cp[fname] = pick.value; csFieldsKept_++;
+          }
+          if (CS_STAMP_AT[fname] && pick.at) {   /* 採った値の印を持ち越す（印だけ古いまま残さない） */
+            cp[CS_STAMP_AT[fname]] = pick.at;
+            cp[CS_STAMP_FP[fname]] = csAuthorFp_(pick.value);
+          }
         }
       }
       merged.push(cp); seen[id] = true;
@@ -5119,11 +5200,11 @@ function applyBulkImport() {
     if (created) { createdRes++; undoCreated.push({ rid: res.id, fp: residentFingerprint_(res) }); }
     if ((res.events || []).some(e => e.dayOfWeek === p.dow && e.serviceType === p.stype && e.startTime === p.st)) { dup++; return; }
     const evId = uid();
-    res.events.push({
+    res.events.push(csStampAuthored_(null, {
       id: evId, dayOfWeek: p.dow, serviceType: p.stype,
       category: p.cat,
       startTime: p.st, endTime: p.en, detail: p.detail, notes: '', units: 0, bathing: false
-    });
+    }));
     undoAdded.push({ rid: res.id, evId: evId });
     added++;
   });
@@ -6140,11 +6221,14 @@ function saveEvent() {
        手入力値が算定と食い違うのを防ぐ）。保存後に recalcAllEventUnits() が一括で書く。 */
     bathing:     stype === 'daycare' ? $('#f-bathing').checked : false,
   };
+  /* ★人がこの画面で入力した区分・支援内容には著者印を押す（2026-09-12）。
+     外部（ワークスケジュール等）の書き込みより新しい印になるので、入力が勝手に置き換わらない。 */
   if (editingEventId) {
-    res.events[idx] = { ...res.events[idx], ...ev };
+    const prevEv = res.events[idx];
+    res.events[idx] = csStampAuthored_(prevEv, { ...prevEv, ...ev });
     showToast('予定を更新しました');
   } else {
-    res.events.push({ id: uid(), ...ev });
+    res.events.push(csStampAuthored_(null, { id: uid(), ...ev }));
     showToast('予定を追加しました');
   }
   recalcAllEventUnits();   // units を書く唯一の経路（新規・変更後の予定にも必ず計算値が入る）
@@ -6171,7 +6255,7 @@ function duplicateEvent() {
     if (tw && !confirm(tw + '\n\nこのまま複製しますか？')) return;
   }
   pushUndo();
-  const newEv = { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) };
+  const newEv = csStampAuthored_(null, { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) });
   res.events.push(newEv);
   saveDB();
   renderAll();
