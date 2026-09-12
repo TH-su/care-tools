@@ -913,10 +913,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <div class="btn-row">
       <button class="btn pri" id="imMasterApply">マスタを取込</button>
       <button class="btn" id="imMasterSeed">この日へ生成</button>
-      <button class="btn ok" id="imMasterToCare">週間計画へ反映</button>
     </div>
-    <div class="hint">「週間計画へ反映」は同一端末の care-schedule.html（care_schedule_v2）の
-      訪問介護予定をマスタで置き換えます（既存はバックアップ）。</div>
+    <div class="hint">支援マスタは<b>この画面の当日生成にだけ</b>使います。
+      週間計画アプリの訪問介護予定は書き換えません（2026-09-12 に「週間計画へ反映」を廃止）。</div>
   </div>
   <div id="imExport" style="display:none">
     <div class="fld">
@@ -8387,7 +8386,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         staleWarned_ = stamp;
         try { localStorage.setItem(wk_, stamp); } catch (e1) {}
         toast('支援マスタが' + (age_ >= 0 ? age_ + 'か月前の版' : '版の分からない内容') +
-              'のため自動反映を見送りました（反映するには「週間計画へ反映」）', true);
+              'のため、週間計画へは反映しません（週間計画の予定はそのままです）', true);
       }
       return;
     }
@@ -8513,33 +8512,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (m) return m[1] + '年' + Number(m[2]) + '月版' + (src.indexOf('CARE') === 0 ? '（週間計画から作成）' : '（エクセルWSから作成）');
     return src || '版の情報なし';
   }
-  function pushMasterToCare() {
-    var master = loadMaster();
-    if (!master) { toast('先に支援マスタを取り込んでください', true); return; }
-    var imp = masterApplyImpact_(master, loadCareDb());
-    var msg = '週間計画の「訪問介護」予定をマスタ内容で置き換えます。\n\n' +
-      '使用するマスタ: ' + masterLabel_(master) + '\n\n' +
-      '・置き換わる利用者: ' + imp.replaced + '名（現在の訪問予定 ' + imp.replacedEv + '件はマスタの内容に入れ替わります）\n' +
-      '・そのまま残る利用者: ' + imp.keptRes + '名（訪問予定 ' + imp.keptEv + '件。マスタに載っていないため【訪問予定は】触りません）\n' +
-      '・通所（デイ）の予定・入浴・階：【変更しません】（マスタからは反映しない仕様です）\n' +
-      (imp.newRes ? '・マスタにだけ居る利用者: ' + imp.newRes + '名が新規に追加されます\n' +
-        '　　' + imp.newNames.slice(0, 5).join('、') +
-        (imp.newNames.length > 5 ? ' ほか' + (imp.newNames.length - 5) + '名' : '') + '\n' +
-        '　　※見覚えのある方が「新規」に出る場合、氏名の表記ゆれで二重登録になります。中止してください\n' : '') +
-      '\n通所等の予定と他の利用者情報は保持され、元データはバックアップされます。\n' +
-      'マスタが古いと、その後に週間計画で加えた変更が失われます。よろしいですか？';
-    if (!window.confirm(msg)) return;
-    var db = IM.masterToCareDb(master, loadCareDb());
-    db.wsMasterStamp = masterStamp();
-    if (saveCareDb(db)) {
-      var n = 0;
-      for (var k in master.weekdays) n += master.weekdays[k].length;
-      toast('週間計画へ反映: 利用者' + db.residents.length + '名・予定' + n + '件（同一端末で care-schedule.html を開くと反映されています）');
-      reconcileWeekly();
-    } else {
-      toast('保存に失敗しました', true);
-    }
-  }
+  /* ★手動の「週間計画へ反映」（旧 pushMasterToCare）は 2026-09-12 に廃止した（本人指示）。
+   * 支援マスタは当日の枠を生成するためのもので、週間計画の訪問介護予定を置き換える道具ではない。
+   * このボタンは収載者の訪問予定を丸ごとマスタ内容で作り直す（イベントIDも振り直す）ため、
+   * 週間計画で直した区分・支援内容が古いマスタの値へ戻る事故の最後の経路だった。
+   * 週間計画の予定を作り直す必要が出たら、週間計画アプリ側の一括登録・復元を使う。
+   * 回帰テスト: tests/care_writeback_policy.test.js */
 
   /* ===== レンダリング ===== */
   /* 選択表示のみを差分適用（全再描画しない）。.selected は純CSS(box-shadow+z-index)＝盤面の他要素・
@@ -9359,7 +9337,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       stale = age >= 3;
     }
     elState.style.color = stale ? '#c0392b' : '';
-    elState.title = stale ? 'このマスタは3か月以上前の内容です。「週間計画へ反映」は、その後の変更を失う恐れがあります' : '';
+    elState.title = stale ? 'このマスタは3か月以上前の内容です（当日の枠の生成にだけ使われます）' : '';
   }
   var staleWarned_ = '';   /* 鮮度警告を出した版（localStorage が書けない端末でも1回で止める） */
   /* 現在日時。版の古さ判定で複数箇所から使うため1か所に集約（IIFE内・外部からの差し替えは不可） */
@@ -12577,7 +12555,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (fresh.length) store.dispatch({ type: 'ADD_TASKS', tasks: fresh });
       $('imResult').textContent = 'マスタから ' + fresh.length + '件を生成しました';
     });
-    $('imMasterToCare').addEventListener('click', pushMasterToCare);
 
     /* 出力タブ */
     $('exWeekXls').addEventListener('click', function () {
