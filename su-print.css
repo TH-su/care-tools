@@ -1,0 +1,51 @@
+/* su-print.css — 印刷共通モジュール v0.1（su-print.js と対で読み込む） */
+
+/* 採寸・印刷中に、印刷範囲(root)の外側を隠す（JS が付与） */
+.su-print-hidden { display: none !important; }
+
+/* 印刷日スタンプ（spec.stamp: true のとき root 先頭に入る） */
+.su-print-stamp { font-size: 9px; line-height: 1.2; text-align: end; color: #000; margin: 0 0 2mm; }
+@media screen { body:not(.su-printing) .su-print-stamp { display: none; } }
+
+@media print {
+  /* 画面のズーム・変形を紙に持ち込まない（A3縦1枚収まり等の保護） */
+  .su-print-root { zoom: 1 !important; transform: none !important; margin: 0 !important; box-shadow: none !important; }
+  /* 罫線・背景色を確実に出す（帳票は読み取りに直結） */
+  .su-print-root, .su-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* 設定ダイアログ・トースト類は紙に出さない */
+  #su-print-dialog, .su-print-noprint, .noprint { display: none !important; }
+  /* 表の行が用紙境界で切れないようにする。
+     ★root を body にしているツールでは【文書中のすべての tr】に効く＝ツール側に tr への
+       break-inside 指定が無ければ、これは新規の改ページ規則になる（行が下端で分割されず
+       次の紙へ送られ、ページ下端に空きが残る）。1枚に収まる帳票では枚数は変わらないが、
+       2枚以上に流れる条件では改ページ位置が変わりうる。導入時は移行前のPDFと突き合わせること。
+     ★見込み枚数をこの挙動の前提で数えているツール（spec.pagesOf）があるので、外す時は
+       そちらも直す。 */
+  .su-print-root tr { break-inside: avoid; page-break-inside: avoid; }
+}
+
+/* ───── 設定ダイアログ ───── */
+#su-print-dialog { border: 0; border-radius: 12px; padding: 0; max-width: min(92vw, 420px); width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #1c1c1e; }
+#su-print-dialog::backdrop { background: rgba(0,0,0,.35); }
+.su-pd { padding: 18px 20px 16px; display: grid; gap: 12px; }
+.su-pd h2 { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+.su-pd h2 small { font-weight: 400; color: #6e6e73; font-size: 15px; margin-left: 8px; }
+.su-pd label { display: grid; grid-template-columns: 5em 1fr; align-items: center; gap: 8px; font-weight: 600; }
+/* ★タップ領域は 44px・本文は 17px 以上（介護現場の操作画面。誤タップは記録ミスに直結する）。
+   補助テキスト（見込み枚数・注記）は 15px を下回らない。 */
+.su-pd select { min-height: 44px; font-size: 17px; border: 1px solid #c7c7cc; border-radius: 8px; padding: 0 10px; background: #fff; color: inherit; }
+.su-pd-est { margin: 0; min-height: 1.5em; font-size: 15px; color: #3a3a3c; background: #f2f2f7; border-radius: 8px; padding: 8px 10px; }
+.su-pd-remember { grid-template-columns: auto 1fr !important; font-weight: 400 !important; font-size: 15px; color: #3a3a3c; min-height: 44px; align-items: center; }
+.su-pd-remember input[type="checkbox"] { width: 22px; height: 22px; }
+.su-pd-btns { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; margin-top: 4px; }
+.su-pd-btns button { min-height: 44px; padding: 0 14px; border-radius: 9px; border: 1px solid #c7c7cc; background: #fff; font-size: 17px; font-weight: 600; color: #1c1c1e; cursor: pointer; }
+.su-pd-btns .su-pd-primary { background: #0a58ca; border-color: #0a58ca; color: #fff; }
+.su-pd-btns button:active { transform: scale(.98); }
+@media (prefers-color-scheme: dark) {
+  #su-print-dialog { background: #1c1c1e; color: #f2f2f7; }
+  .su-pd h2 small, .su-pd-remember { color: #aeaeb2; }
+  .su-pd select, .su-pd-btns button { background: #2c2c2e; color: #f2f2f7; border-color: #48484a; }
+  .su-pd-est { background: #2c2c2e; color: #d1d1d6; }
+  .su-pd-btns .su-pd-primary { background: #0a84ff; border-color: #0a84ff; }
+}

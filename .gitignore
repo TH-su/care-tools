@@ -48,6 +48,12 @@
 # 不具合報告の共有部品（2026-09-06）。個人情報は集めない設計で、収集するのは端末・ブラウザ・
 # 画面サイズ・JSエラー・接続設定の有無（真偽のみ）だけ。localStorage の値は読まない。
 !/su-report.js
+# 印刷共通モジュール（2026-09-12・管理者承認のうえ公開）。用紙・余白・収め方の設定画面と、
+# 用紙1枚に収める採寸だけを持つ。氏名・接続先・合言葉は一切含まない
+# （端末に保存するのも localStorage: su_print_prefs の用紙・余白・収め方のみ）。
+# daycare-roster.html が読み込む。M2 以降（resident-master・shift-app・work-schedule）も同じ1本を共有する。
+!/su-print.js
+!/su-print.css
 !/training-plan.html
 !/training-plan-form.js
 # 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。

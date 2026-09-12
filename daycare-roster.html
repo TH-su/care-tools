@@ -94,7 +94,7 @@ table.roster {
   table-layout: fixed;
   /* ★文字サイズを変数化（2026-08-17）。画面は従来どおり 0.75rem＝端末の文字サイズ設定に追従する
      （px 直書きにするとブラウザの文字サイズ変更が効かなくなる＝改修前の 0.75rem からの後退になる）。
-     印刷時のみ fitRosterPrint_ が用紙1枚に収まる最大値を px で決める（帳票タブの --sh-fs と同じ作法）。
+     印刷時のみ su-print が用紙1枚に収まる最大値を px で決める（帳票タブの --sh-fs と同じ作法）。
      ★印刷の適用は @media print 内の後勝ち規則（#dyn-roster）で行い、画面へは持ち越さない。 */
   --ro-fs: 0.75rem;
 }
@@ -159,7 +159,7 @@ tr.tot.use td { color: var(--pri-d); }
 
 /* ===== 共通: 帳票テーブル（View1/2/3）===== */
 table.sheet { border-collapse: collapse; background: #fff; margin: 0 auto; table-layout: fixed; box-shadow: var(--sh); }
-/* ★文字サイズは変数化してある（2026-08-05）。印刷時は fitSheetPrint_ が用紙に収まる最大値へ
+/* ★文字サイズは変数化してある（2026-08-05）。印刷時は su-print が用紙に収まる最大値へ
    自動調整する。画面は既定値のまま＝画面表示は従来と同じ見え方。 */
 table.sheet { --sh-fs: 11px; --sh-tm: 10px; }
 table.sheet th, table.sheet td {
@@ -538,6 +538,11 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   body.pr-batch table.wk tr.wk-total td.wk-sum { padding-top: 2.5mm; height: 13mm; }
 }
 </style>
+<!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、1枚に収める採寸）。
+     ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
+     ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
+       「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
+<link rel="stylesheet" href="su-print.css?v=2026-09-12">
 </head>
 <body>
 
@@ -554,7 +559,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   <button class="hdr-btn" id="btnMaster" aria-label="入居者マスタアプリを新しいタブで開く">👤 入居者マスタ</button>
   <button class="hdr-btn" id="btnCare" aria-label="週間計画アプリを新しいタブで開く">📅 週間計画</button>
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
-  <button class="hdr-btn" id="btnPrint" aria-label="表示中のタブを印刷">印刷</button>
+  <button class="hdr-btn" id="btnPrint" aria-label="表示中のタブの印刷設定を開く" aria-haspopup="dialog">印刷</button>
 </header>
 
 <nav class="tnav" id="tnav" role="tablist" aria-label="帳票の切り替え">
@@ -655,6 +660,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
        データ層の契約を変えた日にこの値を更新する。 -->
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
+<script src="su-print.js?v=2026-09-12"></script>
 
 <script>
 'use strict';
@@ -1355,6 +1361,11 @@ function collectDaycare(db) {
    ★画面の列幅は不変。--ro-w-* は @media print の中でしか参照されない。
    A4縦・余白8mm の印刷可能幅は 733px。固定分（利用時間+階+No.）を引いた残りを曜日数で割る。 */
 const RO_PR_TIME = 68, RO_PR_FLR = 28, RO_PR_RN = 24;   // 下限（従来の指定値）
+/* 列幅を配分する元になる印刷可能幅(px@96dpi)。既定は A4縦・余白8mm（194mm = 733.2px）。
+   ★印刷の準備中は su-print が確定した実際の用紙幅（state.metrics.wPx）を【引数で】渡す
+     ＝職員が用紙を変えたら列幅の配分も追従する。モジュール変数で持たない（印刷準備中に
+     背景更新の renderRoster が走ると、その時の用紙幅で列幅を焼き直してしまうため）。 */
+const RO_PR_W_DEFAULT = (210 - 8 * 2) / 25.4 * 96;
 /* 利用時間ラベル（例 10:00〜13:30）が欠けない列幅を、実際のラベル文字列から測る。
    ★固定レイアウトでは列幅を超えた nowrap セルは切られる。従来の 68px 指定は width:auto＝自動レイアウトに
      救われて実際には 94px 貰っていただけで、幅を明示した今そのまま使うと 12px でも末尾が欠ける（実測）。
@@ -1379,11 +1390,11 @@ function rosterTimeColW_(table, f) {
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + 2;   // padding＋罫線
   return Math.max(RO_PR_TIME, Math.ceil(maxW + pad + 1));                                   // +1 は丸めの安全代
 }
-function setRosterPrintCols_(table, nCols, fs) {
+function setRosterPrintCols_(table, nCols, fs, availW) {
   const f = (fs > 0) ? fs : ROSTER_FS_BASE;
   /* 階ラベルは縦書き＝列幅は1文字分で足りる／No.列は文字サイズ上限つき（上の CSS）なので固定。 */
   const time  = rosterTimeColW_(table, f);
-  const avail = pageWidthPx_(null);                                     // A4縦8mm → 733.4px
+  const avail = (availW > 0) ? availW : RO_PR_W_DEFAULT;                // 既定 A4縦8mm → 733.2px
   const rest  = avail - time - RO_PR_FLR - RO_PR_RN;
   const day   = Math.max(60, Math.floor(rest / Math.max(1, nCols)));    // 60px は氏名が読める下限の保険
   table.style.setProperty('--ro-w-time', time + 'px');
@@ -1935,30 +1946,35 @@ function renderWeekly(ppl) {
 }
 
 /* ============================================================================
-   印刷 — タブごとに用紙を切り替える（動的 @page 注入）
+   印刷 — 共通モジュール su-print へ委譲する（2026-09-12 移行）
+   タブごとの用紙・余白・収め方を SUPrint.define で宣言し、@page の注入・採寸・
+   1枚に収める文字サイズの決定・後始末はモジュール側が受け持つ。
+   ★ここに書くのは「このツール固有のこと」だけ（用紙の既定・帳票の採寸対象・
+     氏名が1行に収まる上限・一括6枚の組み立て）。
+   ★印刷ボタンは設定画面（用紙・余白・収め方）を開く。Cmd/Ctrl+P でも同じ用紙で出る
+     （su-print が beforeprint を受け、setActive したタブの設定で同じ準備を通す）。
+   ★用紙・余白・収め方の変更は端末ごとに localStorage(su_print_prefs) へ保存される。
+     保存されるのは用紙・余白・収め方だけで、氏名・記録は入らない。
    ============================================================================ */
-const PRINT_SPEC = {
-  'sc-roster':  null,                                              // 静的@page(A4縦8mm)をそのまま使う＝注入しない
-  'sc-daylist': { size: 'A3 portrait',  margin: '8mm' },   /* 上段+下段で行数が多くA4横1枚に入らないためA3縦。備考は表の下＝横幅は全幅使用 */
+const PRINT_VIEWS = {
+  'sc-roster':  { label: '利用表',           paper: 'A4 portrait',  margin: 8 },
+  /* 上段+下段で行数が多くA4横1枚に入らないためA3縦。備考は表の下＝横幅は全幅使用 */
+  'sc-daylist': { label: 'デイ利用者一覧表', paper: 'A3 portrait',  margin: 8 },
   /* ★2026-08-05: 一度 A3縦へ広げたが、運用指示により A4横へ戻した。
      文字の拡大は「氏名が2行に折り返さない上限」で頭打ちになるため、A3の縦の余りは活かせない。
      印字可能幅は A3縦・A4横とも 1062px で同じ＝列幅の設計（時刻列の拡幅）はそのまま活きる。 */
-  'sc-allweek': { size: 'A4 landscape', margin: '8mm' },
-  'sc-med':     { size: 'A4 landscape', margin: '8mm' },
-  'sc-weekly':  { size: 'A4 portrait',  margin: '15mm 5mm 0 5mm' }
+  'sc-allweek': { label: '全員リスト',       paper: 'A4 landscape', margin: 8 },
+  'sc-med':     { label: '薬用',             paper: 'A4 landscape', margin: 8 },
+  'sc-weekly':  { label: '週間名簿（6枚）',  paper: 'A4 portrait',  margin: '15 5 0 5' }
 };
-// 冪等クリア: afterprint が発火しない環境（モバイルSafari/WebView/PDF出力）で注入した@pageが
-// 次の印刷ジョブへ漏れるのを防ぐ。全ての印刷エントリポイントの先頭でも呼ぶ。
-// あわせて一括印刷用DOM（氏名を含む）を破棄する。
-let printTimer = null;
-
 /* ============================================================================
-   印刷フィット（fitSheetPrint_）— 用紙1枚に収まる最大の文字サイズへ自動調整する。
+   印刷フィット（帳票3タブ）— 用紙1枚に収まる最大の文字サイズへ自動調整する。
    ★CSS の `table.sheet { --sh-fs / --sh-tm }` を書き換える方式。zoom や transform:scale と違い
      文字が実解像度で描かれ罫線も潰れない（帳票＝与薬・食数の読み取りに直結するため画質優先）。
    ★列幅（colgroup の px 指定）と表の総幅は変えない＝幅予算(1062px)と印刷レイアウトは不変。
      縮むのは行の高さだけ。
-   収束は shift-app.html の shrinkZoomToFit と同じ考え方（比例補正→固定刻みフォールバック→反復上限）。
+   ★候補サイズの探索（二分探索・0.25px 刻み）と採寸は su-print が受け持つ。ここが渡すのは
+     「適用のしかた（setSheetFont_）」と「拡大の上限（nameFitMaxFs_）」だけ。
    ★下限 SHEET_FS_MIN を下回ってまでは縮めない。読めない紙面を出すくらいなら2枚に流す。
    （2026-08-05 運用指示「36名までは調整なしで1枚に入るように」を満たすための実装） */
 const SHEET_FS_BASE = 11, SHEET_TM_BASE = 10;   // 画面既定（CSS の table.sheet と一致させること）
@@ -2013,62 +2029,6 @@ function nameFitMaxFs_(sc, capMax) {
   const fs = SHEET_FS_BASE * (avail / maxW);
   return Math.max(SHEET_FS_BASE, Math.min(capMax, Math.floor(fs * 100) / 100));
 }
-let fittedFs = 0;                               // 直近の印刷で適用した文字サイズ（0=既定のまま）。通知に使う
-const PAGE_MM_H = { 'A4 portrait': 297, 'A4 landscape': 210, 'A3 portrait': 420, 'A3 landscape': 297 };
-const PAGE_MM_W = { 'A4 portrait': 210, 'A4 landscape': 297, 'A3 portrait': 297, 'A3 landscape': 420 };
-function pageMarginMm_(spec) { return spec ? (parseFloat(spec.margin) || 0) : 8; }   // 上下左右同値の指定のみ対象
-// 用紙の印刷可能高さ(px@96dpi)。spec 無し（利用表）は静的@page の A4縦8mm。
-function pageAvailPx_(spec) {
-  const mmH = (spec && PAGE_MM_H[spec.size]) ? PAGE_MM_H[spec.size] : 297;
-  return (mmH - pageMarginMm_(spec) * 2) / 25.4 * 96;
-}
-// 用紙の印刷可能幅(px@96dpi)。A3縦・A4横はどちらも 297mm 幅＝1062px（列幅予算の根拠）。
-function pageWidthPx_(spec) {
-  const mmW = (spec && PAGE_MM_W[spec.size]) ? PAGE_MM_W[spec.size] : 210;
-  return (mmW - pageMarginMm_(spec) * 2) / 25.4 * 96;
-}
-/* 画面のままでは実際の紙面高を測れない（@media print のルールが効かない）ため、高さに効く印刷ルール
-   だけを一時的に画面へ適用して測る。★ここは @media print の該当規則と必ず同じ内容に保つこと。
-   ★用紙の「幅」も再現する。凡例や表題は幅で折返し行数が変わるため、画面幅のまま測ると
-     窓が狭い端末で高さを過大に見積もり、不必要に小さい文字で印刷してしまう。 */
-function withPrintMetrics_(fn, spec) {
-  const w = Math.round(pageWidthPx_(spec));
-  const wrap = $('wrap');
-  const sx = window.pageXOffset, sy = window.pageYOffset;                 // 測定用に幅を変えるので
-  const wl = wrap ? wrap.scrollLeft : 0, wt = wrap ? wrap.scrollTop : 0;  // 閲覧位置を保全して戻す
-  const st = document.createElement('style');
-  st.textContent =
-    '.hdr,#toast,.tnav{display:none!important}.noprint{display:none!important}' +
-    /* 非表示設定が有効な時だけ凡例に出る注記。印刷時のみ表示＝再現しないと凡例を低く見積もり、
-       縮小が要る局面（37名〜）で「収まる」と誤判定して2枚に溢れる。@media print の規則と同内容にする。 */
-    '.hide-print-note{display:inline!important;font-weight:700}' +
-    'html,body{width:' + w + 'px!important;min-width:0!important;overflow:visible!important}' +
-    '.wrap{overflow:visible;padding:0;width:' + w + 'px!important}' +
-    /* 印刷日も再現する（@media print の .print-date と同内容）。凡例の flex に入る要素なので、
-       出さずに測ると折返し＝高さを過小評価する。 */
-    '.print-date{display:inline-block!important;margin-left:auto;' +
-      'font-size:9px;line-height:1.2;white-space:nowrap}' +
-    '.legend{width:' + w + 'px!important}table.sheet{box-shadow:none}' +
-    '#sc-daylist table.sheet td,#sc-daylist table.sheet th{padding-top:3px;padding-bottom:3px}' +
-    'table.sheet td.c-nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere}' +
-    /* 利用表(table.roster)の印刷規則も再現する（fitRosterPrint_ の測定用）。
-       ★@media print の該当規則と必ず同じ内容に保つこと。列幅は印刷用の --ro-w-*（表のインラインstyle）
-         を参照させる＝画面幅(78/30/118)のまま測ると折返し行数が変わり高さを誤る。
-       ★セレクタは table.roster / .col-* に限定＝帳票タブ(table.sheet)の測定には影響しない。 */
-    'table.roster{box-shadow:none;width:100%}' +
-    '.col-time{width:var(--ro-w-time,68px)}.col-flr{width:var(--ro-w-flr,26px)}' +
-    '.col-rn{width:var(--ro-w-rn,24px)}.col-day{width:var(--ro-w-day,88px)}' +
-    'table.roster th,table.roster td{padding:2px 3px}' +
-    'table.roster td.user{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15}' +
-    'table.roster tr.spacer td{height:5px}';
-  document.head.appendChild(st);
-  try { return fn(); }
-  finally {
-    st.remove();
-    if (wrap) { wrap.scrollLeft = wl; wrap.scrollTop = wt; }
-    window.scrollTo(sx, sy);
-  }
-}
 /* ★--sh-fs/--sh-tm は CSS で table.sheet に定義されている。:root へ入れても table.sheet 自身の宣言が
    勝つため、必ず各 table.sheet のインラインstyleへ設定する（インラインが最優先）。 */
 function setSheetFont_(fs) {
@@ -2078,64 +2038,13 @@ function setSheetFont_(fs) {
     t.style.setProperty('--sh-tm', (fs * (SHEET_TM_BASE / SHEET_FS_BASE)).toFixed(2) + 'px');   // 時刻は本文との比率を維持
   });
 }
-// 現在のタブの「紙に載る総高」= 凡例＋セクション（表題・表・備考を含む）
-function measureSheetH_(sc) {
-  const lg = $('legend'), sec = document.getElementById(sc);
-  return (lg ? lg.getBoundingClientRect().height : 0) + (sec ? sec.getBoundingClientRect().height : 0);
-}
-function fitSheetPrint_(sc) {
-  const sec = document.getElementById(sc);
-  if (!sec || !sec.querySelector('table.sheet')) return;   // 対象は table.sheet の3タブのみ（利用表・週間名簿は従来どおり）
-  const spec = PRINT_SPEC[sc];
-  if (spec && /\s/.test(String(spec.margin).trim())) return;   // 上下左右が同値でない margin は高さ算出が合わない＝フィットしない
-  const avail = pageAvailPx_(spec);
-  try {
-    withPrintMetrics_(() => {
-      setSheetFont_(SHEET_FS_BASE);                 // まず既定サイズで測る
-      let fs = SHEET_FS_BASE, h = measureSheetH_(sc), n = 0;
-      if (h > avail) {
-        /* 収まらない → 縮める（従来どおり）。下限を割ってまでは縮めない＝読めない紙面を出さない。 */
-        while (h > avail && fs > SHEET_FS_MIN && n < 8) {
-          let next = fs * (avail / h) * 0.995;      // 比例補正
-          if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ・発散の封じ）
-          fs = Math.max(SHEET_FS_MIN, next);
-          setSheetFont_(fs);
-          h = measureSheetH_(sc);
-          n++;
-        }
-      } else {
-        /* 余白がある → 1枚に収まる範囲で大きくする（2026-08-05 運用指示「上下に伸ばして大きく」）。
-           ★必ず「収まることを実測してから採用」する。溢れた候補は採らずに直前の値で確定する
-           （＝拡大が原因で2枚に流れることが構造的に起きない）。 */
-        /* 拡大の上限は「タブ別の上限」と「氏名が1行に収まる上限」の小さい方
-           （2026-08-05 運用指示: 氏名を2行にしない） */
-        let best = SHEET_FS_BASE, fsMax = nameFitMaxFs_(sc, sheetFsMax_(sc));
-        while (fs < fsMax && n < 8) {
-          let next = Math.min(fsMax, fs * (avail / h) * 0.99);
-          if (!(next > fs + 0.05)) break;           // これ以上伸びない（収束）
-          setSheetFont_(next);
-          const h2 = measureSheetH_(sc);
-          if (h2 > avail) { break; }                 // 溢れたら採らない（best は直前のまま）
-          best = next; fs = next; h = h2; n++;
-        }
-        setSheetFont_(best);
-        fs = best;
-      }
-      if (fs === SHEET_FS_BASE) { setSheetFont_(null); fittedFs = 0; }   // 既定のまま＝画面・印刷とも従来どおり
-      else fittedFs = fs;                            // 拡大・縮小とも呼び出し側へ知らせる（黙って変えない）
-    }, spec);
-  } catch (e) {
-    // 測定に失敗したら縮小を持ち越さない（画面が縮んだままになる方が害が大きい）
-    setSheetFont_(null); fittedFs = 0;
-  }
-}
 /* ============================================================================
-   印刷フィット（fitRosterPrint_）— 利用表タブ用。2026-08-17 運用指示
+   印刷フィット（利用表タブ）— 2026-08-17 運用指示
    「左右に余白があるためできるだけ大きく用紙に出力」に対する縦方向の対応。
-   列幅は setRosterPrintCols_ が用紙幅いっぱいに配分し、こちらは A4縦1枚に収まる最大の文字サイズを決める。
-   ★帳票タブ(fitSheetPrint_)と同じ考え方: 拡大は「収まることを実測してから採用」＝溢れた候補は採らない。
-   ★縮小は今回の追加。階でブロック分けすると行数が増える（曜日ごとに階の人数が違うため）ので、
-     従来1枚だった帳票が2枚に流れうる。読める下限(9px)までは縮めて1枚を維持し、縮めた時はトーストで知らせる。
+   列幅は setRosterPrintCols_ が用紙幅いっぱいに配分し、文字サイズは su-print が
+   「1枚に収まる最大」を探索する（ここが渡すのは適用のしかたと拡大の上限）。
+   ★下限(9px)まで縮めても収まらない時は既定サイズ(12px)で刷る（fit.minFallback:'base'）。
+     読めない紙面で、しかも2枚になるのを避ける＝改修前と同じ12pxで2枚に流す。
    ★文字サイズは @media print 限定の後勝ち規則（#dyn-roster）で適用する。インラインstyleに残すと
      afterprint が発火しない環境（モバイルSafari/WebView）で画面が縮んだまま残るため。
    ============================================================================ */
@@ -2144,7 +2053,6 @@ const ROSTER_FS_BASE = 12, ROSTER_FS_MAX = 20, ROSTER_FS_MIN = 9;   // BASE は 
    利用時間列は文字に比例して広げる（setRosterPrintCols_）ので、20px でも欠けは起きない。
    ここより上げても、実際に効くのは下の rosterNameFitMaxFs_（氏名が1行に収まる上限。
    曜日列は 12px時102px → 20px時87px と狭くなるため、通常はこちらが先に効く）。 */
-let fittedRoFs = 0;                                                 // 直近の印刷で適用した文字サイズ（0=既定のまま）
 // 測定用: 画面へ一時的に適用する（測り終えたら必ず null で戻す）
 function setRosterFontLive_(fs) {
   const t = $('roster');
@@ -2156,8 +2064,8 @@ function setRosterFontLive_(fs) {
    ★別関数にしてあるのは、対象セル（td.user）・基準サイズ（12px）・列幅が文字サイズで変わる点が
      帳票タブ（td.c-nm・11px・固定幅）と違うため。共通化は3例目が出てから。
    ★列幅は文字が大きいほど狭くなる（利用時間列へ回すため）。いちばん狭くなる上限側の幅で判定する＝安全側。 */
-function rosterNameFitMaxFs_(tbl, nCols, capMax) {
-  setRosterPrintCols_(tbl, nCols, capMax);
+function rosterNameFitMaxFs_(tbl, nCols, capMax, availW) {
+  setRosterPrintCols_(tbl, nCols, capMax, availW);
   const cells = tbl.querySelectorAll('tbody td.user');
   if (!cells.length) return capMax;
   const cs = getComputedStyle(cells[0]);
@@ -2197,58 +2105,39 @@ function applyRosterPrintFont_(fs) {
   st.textContent = '@media print{table.roster{--ro-fs:' + fs.toFixed(2) + 'px}}';
   document.head.appendChild(st);
 }
-function fitRosterPrint_() {
+/* su-print へ渡す「利用表の文字サイズの適用」。候補サイズごとに呼ばれる。
+   ★文字サイズを変えるたびに列幅も引き直す（利用時間列が文字に比例して広がるため）。
+   ★確定時（isFinal）は画面へ当てた一時サイズを外し、@media print 限定の後勝ち規則へ移す。
+     インラインstyleに残すと afterprint が発火しない環境（モバイルSafari/WebView）で画面が
+     縮んだまま残る。列幅(--ro-w-*)は @media print の中でしか参照されないので残してよい。
+   ★列幅の確定は【採寸窓の中】で起きる（su-print が printRulesOn の内側で呼ぶ）。
+     rosterTimeColW_ は padding の実測値を使うため、印刷と同じ padding:2px 3px が当たっていない
+     所で呼ぶと「1枚に収まる」と判定した時の列幅と実際に刷る列幅がずれる。 */
+function applyRosterFit_(px, _target, state, isFinal) {
   const tbl = $('roster');
-  if (!tbl || !tbl.tBodies.length || !tbl.tBodies[0].rows.length) { applyRosterPrintFont_(null); fittedRoFs = 0; return; }
-  const avail = pageAvailPx_(null);            // 静的@page の A4縦8mm → 1062px
-  const nCols = tbl.tHead ? tbl.tHead.rows[0].querySelectorAll('th.th-day').length : NDAY;
-  // 文字サイズを変えるたびに列幅も引き直す（利用時間列が文字に比例するため）
-  const setFs = fs => { setRosterFontLive_(fs); setRosterPrintCols_(tbl, nCols, fs); };
-  let best = ROSTER_FS_BASE;
-  try {
-    withPrintMetrics_(() => {
-      setFs(ROSTER_FS_BASE);                   // まず既定サイズで測る
-      let fs = ROSTER_FS_BASE, h = measureSheetH_('sc-roster'), n = 0;
-      if (h > avail) {
-        while (h > avail && fs > ROSTER_FS_MIN && n < 8) {
-          let next = fs * (avail / h) * 0.995;                 // 比例補正
-          if (!(next > 0) || !(next < fs)) next = fs * 0.97;   // 縮まない/不正値なら固定刻み（無限ループ封じ）
-          fs = Math.max(ROSTER_FS_MIN, next);
-          setFs(fs);
-          h = measureSheetH_('sc-roster');
-          n++;
-        }
-        /* ★縮めた結果ちゃんと1枚に入った時だけ採用する。下限(9px)まで縮めても収まらないなら
-           従来サイズへ戻す＝「読めない紙面で、しかも2枚」を避ける（改修前と同じ12pxで2枚に流す）。 */
-        best = (h <= avail) ? fs : ROSTER_FS_BASE;
-      } else {
-        /* 拡大の上限は「タブの上限(20px)」と「氏名が1行に収まる上限」の小さい方
-           （2026-08-05 に帳票タブで決めた「氏名を2行にしない」を利用表にも適用） */
-        const fsMax = rosterNameFitMaxFs_(tbl, nCols, ROSTER_FS_MAX);
-        setFs(fs);                             // 上限判定で触った列幅を測定時の値へ戻す
-        while (fs < fsMax && n < 8) {
-          const next = Math.min(fsMax, fs * (avail / h) * 0.99);
-          if (!(next > fs + 0.05)) break;      // これ以上伸びない（収束）
-          setFs(next);
-          const h2 = measureSheetH_('sc-roster');
-          if (h2 > avail) break;               // 溢れたら採らない（best は直前のまま）
-          best = next; fs = next; h = h2; n++;
-        }
-      }
-      /* ★列幅の最終確定は【この中で】行う。rosterTimeColW_ は padding の実測値を使うため、
-         測定用スタイル（印刷と同じ padding:2px 3px）の外で呼ぶと画面の padding:2px 4px で計算され、
-         「1枚に収まる」と判定した時の列幅と実際に刷る列幅がずれる。 */
-      setFs(best);
-    }, null);
-  } catch (e) {
-    best = ROSTER_FS_BASE;                     // 測定に失敗したら従来サイズで刷る（画面も紙も壊さない）
-    // 例外時は測定用スタイルの外で引き直す（padding が2px広く出る＝利用時間列が広い安全側）
-    try { setRosterPrintCols_(tbl, nCols, best); } catch (e2) {}
+  if (!tbl) return;
+  if (px == null) {                                  // 既定へ戻す（後始末）
+    setRosterFontLive_(null);
+    applyRosterPrintFont_(null);
+    return;
   }
-  setRosterFontLive_(null);                    // ★測定用の一時適用は必ず戻す（画面は常に既定サイズ）
-  const changed = Math.abs(best - ROSTER_FS_BASE) > 0.01;
-  applyRosterPrintFont_(changed ? best : null);
-  fittedRoFs = changed ? best : 0;
+  const availW = (state && state.metrics) ? state.metrics.wPx : 0;   // 用紙が変われば列幅の予算も変わる
+  setRosterFontLive_(isFinal ? null : px);                           // 採寸中だけ画面へ当てて測る
+  setRosterPrintCols_(tbl, rosterPrintCols_(tbl), px, availW);
+  applyRosterPrintFont_(Math.abs(px - ROSTER_FS_BASE) > 0.01 ? px : null);
+}
+// 曜日列の本数（利用表の thead から採る。取れなければ月〜土）
+function rosterPrintCols_(tbl) {
+  const n = tbl.tHead ? tbl.tHead.rows[0].querySelectorAll('th.th-day').length : 0;
+  return n || NDAY;
+}
+/* 拡大の上限（su-print が採寸窓の中で1回だけ呼ぶ）: 「タブの上限(20px)」と
+   「氏名が1行に収まる上限」の小さい方。データが無い時は既定サイズ＝拡大しない。 */
+function rosterFitMax_(_target, state) {
+  const tbl = $('roster');
+  if (!tbl || !tbl.tBodies.length || !tbl.tBodies[0].rows.length) return ROSTER_FS_BASE;
+  const availW = (state && state.metrics) ? state.metrics.wPx : 0;
+  return rosterNameFitMaxFs_(tbl, rosterPrintCols_(tbl), ROSTER_FS_MAX, availW);
 }
 
 /* 印刷日の文字列（YYYY/MM/DD）。印刷のたびに採り直すのでタブを開きっぱなしでも古くならない。 */
@@ -2257,7 +2146,8 @@ function printDateText_() {
   return '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
 }
 /* 凡例の右端に印刷日を置く（無ければ作る）。renderLegend の最後と、印刷の直前の両方から呼ぶ。
-   ★印刷経路は printNow（印刷ボタン）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。両方から呼ぶ。 */
+   ★印刷経路は印刷ボタン（設定画面）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。どちらも
+     su-print の before フック（printBefore_）からここを通る。 */
 function stampPrintDate_() {
   const box = $('legend');
   if (!box) return;
@@ -2265,97 +2155,126 @@ function stampPrintDate_() {
   if (!n) { n = el('span', 'print-date'); box.appendChild(n); }
   n.textContent = printDateText_();
 }
-function clearPrintState_() {
-  clearTimeout(printTimer); printTimer = null;   // ★前ジョブの保険タイマーを必ず止める
+/* ── su-print へのビュー登録 ─────────────────────────────────────────────────
+   ★root は body。どのタブを紙に出すかは既存の @media print 規則（.hdr/.tnav/#toast/.noprint を
+     隠す・.scr.on だけを出す）が決めているので、印刷範囲の絞り込み（モジュールの hideOutside）は
+     使わない＝列幅・余白・文字の設計は移行前のまま（dev-principles 原則2）。
+   ★ただし su-print.css の @media print 規則は新たに効く。実質 no-op（zoom:1 / transform:none /
+     margin:0 / padding:0 / print-color-adjust:exact / .noprint は既存規則と同内容）を除き、
+     【新規】なのは `.su-print-root tr { break-inside: avoid }` の1つ＝行が用紙の下端で分割されず
+     次の紙へ送られる。1枚に収まる帳票では枚数は変わらず、移行前後で 20条件の実PDFが
+     枚数・用紙・向きとも一致することを確認済み。2枚以上に流れる条件の改ページ位置は
+     下の pagesOf がこの挙動を前提に数えている。
+   ★stamp は false。印刷日は既存の「凡例の右端」（stampPrintDate_）を使う。モジュール既定の
+     スタンプを足すと紙面に印刷日が2つ出る。
+   ★氏名を含む一括印刷用DOMは before で作り after で必ず捨てる。after は afterprint・
+     3秒の保険タイマー・pagehide のどの経路でも走る（SUPrint.clear）。 */
+function printBefore_(sc) {
+  return function () {
+    clearWeeklyBatch_();          // 前ジョブの取り残しを落とす（冪等）
+    stampPrintDate_();            // 印刷日は毎回採り直す（タブを開きっぱなしでも古くならない）
+    if (sc === 'sc-weekly') buildWeeklyBatch_();
+  };
+}
+/* 週間名簿の一括6枚（氏名を含む）。印刷準備のときだけ作る。 */
+function buildWeeklyBatch_() {
+  const host = $('printBatch');
+  host.textContent = '';
+  const ppl = MODEL || [];
+  for (let d = 0; d < NDAY; d++) {
+    const pg = el('div', 'pg');
+    pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
+    pg.appendChild(weeklyTable(ppl, d));
+    host.appendChild(pg);         // ★ちょうど6要素（末尾の空白ページ防止）
+  }
+  document.body.classList.add('pr-batch');
+}
+function clearWeeklyBatch_() {
   document.body.classList.remove('pr-batch');
-  const nodes = document.querySelectorAll('#dyn-page,#dyn-roster');   // 用紙指定＋利用表の印刷文字サイズ
-  for (let i = 0; i < nodes.length; i++) nodes[i].remove();
-  $('printBatch').textContent = '';     // ★氏名をDOMに残さない
-  setSheetFont_(null);                  // 印刷用に縮めた文字サイズを画面へ持ち越さない
-  setRosterFontLive_(null);             // 同上（測定が中断された場合の保険）
-  fittedRoFs = 0;
+  const host = $('printBatch');
+  if (host) host.textContent = '';    // ★氏名をDOMに残さない
 }
-function printNow() {
-  clearPrintState_();
-  stampPrintDate_();
-  const sc = activeTab();
-  const spec = PRINT_SPEC[sc];
-  if (spec) {
-    const st = document.createElement('style');
-    st.id = 'dyn-page';
-    st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
-    document.head.appendChild(st);      // ページ先頭の静的スタイルより後にappend＝後勝ち（コメント内にタグ表記を書かない＝構文チェッカの誤検知回避）
-  }
-  fitSheetPrint_(sc);                   // 用紙1枚に収まる最大の文字サイズへ（収まるなら既定のまま）
-  if (sc === 'sc-roster') fitRosterPrint_();   // 利用表は専用のフィット（列幅は描画時に配分済み）
-  // 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）。
-  // 拡大は「読みやすくなる」方向なので通知しない（毎回の印刷でトーストが出るのは邪魔）。
-  if (fittedFs && fittedFs < SHEET_FS_BASE) toast('1枚に収めるため文字を ' + fittedFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
-  if (fittedRoFs && fittedRoFs < ROSTER_FS_BASE) toast('1枚に収めるため文字を ' + fittedRoFs.toFixed(1) + 'px に縮小しました（利用者が多いため）');
-  if (sc === 'sc-weekly') {             // 一括6枚: 6ページを構築して並べる
-    const host = $('printBatch');
-    host.textContent = '';
-    const ppl = MODEL || [];
-    for (let d = 0; d < NDAY; d++) {
-      const pg = el('div', 'pg');
-      pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
-      pg.appendChild(weeklyTable(ppl, d));
-      host.appendChild(pg);             // ★ちょうど6要素（末尾の空白ページ防止）
-    }
-    document.body.classList.add('pr-batch');
-  }
-  let cleaned = false;
-  const done = function () { if (cleaned) return; cleaned = true; clearPrintState_(); window.removeEventListener('afterprint', done); };
-  window.addEventListener('afterprint', done);
-  // afterprint 未発火の保険。★モジュールスコープに保持し、次ジョブ開始時の clearPrintState_() で
-  //   必ず止める（放置すると前ジョブのタイマーが次ジョブ中に発火し、@page と印刷用DOMを消してしまう）。
-  printTimer = setTimeout(done, 3000);
-  window.print();
+/* 縮小したら黙らずに知らせる（＝紙面が小さくなった理由が現場に分かるように）。
+   拡大は「読みやすくなる」方向なので通知しない（毎回の印刷でトーストが出るのは邪魔）。 */
+function printShrinkToast_(base) {
+  return function (px) {
+    if (px < base) toast('1枚に収めるため文字を ' + px.toFixed(1) + 'px に縮小しました（利用者が多いため）');
+  };
 }
-// OSの印刷ショートカット（Cmd/Ctrl+P）は printNow を通らないため、用紙指定が効かない。
-// beforeprint で同じ準備を通し、どの経路でもタブの用紙で出るようにする。
-window.addEventListener('beforeprint', function () {
-  stampPrintDate_();   // ★早期returnの前に置く（利用表タブは printNow でも下のガードを通過するため）
-  // printNow 経由なら準備済み。#dyn-roster も見るのは、利用表(spec=null)では #dyn-page が作られず
-  // 同じフィット計算を二度走らせてしまうため（結果は同じだが測定は重い）。
-  // ※ただし利用表で文字サイズが既定のまま（＝#dyn-roster を作らない）場合はここを通過し、
-  //   fitRosterPrint_ が2回走る。結果は同値で、末尾のタイマー条件も false になるため害はない。
-  if (document.querySelector('#dyn-page,#dyn-roster') || document.body.classList.contains('pr-batch')) return;
-  const sc = activeTab();
-  const spec = PRINT_SPEC[sc];
-  if (spec) {
-    const st = document.createElement('style');
-    st.id = 'dyn-page';
-    st.textContent = '@media print{@page{size:' + spec.size + ';margin:' + spec.margin + '}}';
-    document.head.appendChild(st);
+function definePrintViews_() {
+  if (!window.SUPrint) {
+    toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true);
+    return;
   }
-  fitSheetPrint_(sc);   // Cmd/Ctrl+P 経路でも同じ自動フィットを通す
-  if (sc === 'sc-roster') fitRosterPrint_();
-  if (sc === 'sc-weekly') {
-    const host = $('printBatch');
-    host.textContent = '';
-    for (let d = 0; d < NDAY; d++) {
-      const pg = el('div', 'pg');
-      pg.appendChild(el('div', 'pg-date', printDateText_()));
-      pg.appendChild(weeklyTable(MODEL || [], d));
-      host.appendChild(pg);
+  // 帳票3タブ（table.sheet）: --sh-fs と --sh-tm を連動させて高さフィット
+  ['sc-daylist', 'sc-allweek', 'sc-med'].forEach(function (sc) {
+    SUPrint.define(sc, Object.assign({}, PRINT_VIEWS[sc], {
+      root: 'body', stamp: false,
+      fit: {
+        /* ★合否は【高さだけ】で見る（checkWidth:false）。列幅は colgroup の px で予算管理して
+             あり文字サイズではほとんど変わらないため、幅を合否に入れると 1px の超過で全候補が
+             不合格になり、縮めれば1枚に入る帳票が既定サイズのまま複数枚で出る（移行前は高さのみ判定）。
+             幅の超過は設定画面の「⚠ 横がはみ出します」で従来どおり知らせる。
+           ★刻みは 0.05px（移行前の比例補正が出していた値へ寄せる。0.25px 刻みでは最大 0.2px 小さくなる）。 */
+        mode: 'height', base: SHEET_FS_BASE, min: SHEET_FS_MIN, step: 0.05, checkWidth: false,
+        target: '#' + sc + ' table.sheet',
+        max: function () { return nameFitMaxFs_(sc, sheetFsMax_(sc)); },
+        apply: function (px) { setSheetFont_(px); }
+      },
+      before: printBefore_(sc), after: clearWeeklyBatch_,
+      onShrink: printShrinkToast_(SHEET_FS_BASE)
+    }));
+  });
+  // 利用表: --ro-fs と列幅 --ro-w-* を連動。下限まで縮めても収まらない時は既定サイズで刷る
+  //   （読めない紙面で、しかも2枚になるのを避ける＝2026-08-17 の判断を minFallback で表す）
+  SUPrint.define('sc-roster', Object.assign({}, PRINT_VIEWS['sc-roster'], {
+    root: 'body', stamp: false,
+    fit: {
+      mode: 'height', base: ROSTER_FS_BASE, min: ROSTER_FS_MIN, step: 0.05, checkWidth: false,
+      target: '#roster', minFallback: 'base',
+      max: rosterFitMax_, apply: applyRosterFit_
+    },
+    before: printBefore_('sc-roster'), after: clearWeeklyBatch_,
+    onShrink: printShrinkToast_(ROSTER_FS_BASE)
+  }));
+  // 週間名簿: 文字サイズは @media print 内で固定（26pt/28pt）＝収め方の対象外。6枚を組んで刷る
+  SUPrint.define('sc-weekly', Object.assign({}, PRINT_VIEWS['sc-weekly'], {
+    root: 'body', stamp: false, fit: { mode: 'none' },
+    before: printBefore_('sc-weekly'), after: clearWeeklyBatch_,
+    /* 見込み枚数は「1日ぶん(.pg)が何枚に流れるか」の合計で数える。
+       ★.pg は break-after:page で必ず新しい紙から始まるため、全体の高さ÷紙の高さでは合わない。
+       ★さらに【行は用紙の境界で切れない】（tr の break-inside:avoid）。積み切れない行は次の紙へ
+         送られ、ページ下端に空きが残る。高さ÷紙の高さで割ると、この空きの分だけ枚数を数え落とす
+         （実測: 52名・A4縦5mm で 10枚と出たが実際は14枚）。1行ずつ積んで数える。 */
+    pagesOf: function (state, dflt) {
+      const pgs = document.querySelectorAll('#printBatch .pg');
+      if (!pgs.length) return dflt;
+      const availH = state.metrics.hPx;
+      let total = 0;
+      for (let i = 0; i < pgs.length; i++) {
+        const pg = pgs[i], tbl = pg.querySelector('table');
+        if (!tbl) { total += Math.max(1, Math.ceil(pg.getBoundingClientRect().height / availH)); continue; }
+        const lead = tbl.getBoundingClientRect().top - pg.getBoundingClientRect().top;   // 印刷日(.pg-date)の分
+        const rows = tbl.tBodies.length ? tbl.tBodies[0].rows : [];
+        const hs = [];
+        let sum = 0;
+        for (let r = 0; r < rows.length; r++) { const h = rows[r].getBoundingClientRect().height; hs.push(h); sum += h; }
+        if (lead + sum <= availH + 0.5) { total += 1; continue; }          // 印刷日＋表がそのまま1枚に収まる
+        /* 収まらない場合、表は break-inside:avoid のため【残りの余白には入らず次の紙から始まる】
+           （実測: 印刷日だけの紙が1枚できて、その次の紙から表が流れる）。
+           表が流れ始めたら、行は用紙の境界で切れない（tr の break-inside:avoid）ので1行ずつ積んで数える。 */
+        let pages = 1, used = 0;
+        for (let r = 0; r < hs.length; r++) {
+          if (used > 0 && used + hs[r] > availH + 0.5) { pages++; used = 0; }
+          used += hs[r];
+        }
+        total += 1 + pages;                                                 // 印刷日だけの紙 ＋ 表の紙
+      }
+      return total;
     }
-    document.body.classList.add('pr-batch');
-  }
-  // afterprint 未発火の保険（printNow と同じ理由）。放置すると @page と氏名DOMが残り、
-  // 次に別タブで Ctrl+P すると冒頭のガードが古い #dyn-page を見て早期returnし、前タブの用紙で刷られる。
-  // ★下の条件が printTimer 競合を防ぐ唯一の防御＝外さないこと。
-  //   sc-roster は spec=null かつ非weekly のため printNow 経由でも冒頭のガードを通過してここへ到達する
-  //   （#dyn-page も pr-batch も作らないため）。条件を外して無条件に張ると、printNow が直前に仕掛けた
-  //   done のタイマーを上書きし、afterprint 未発火時に done が走らず afterprint リスナが残留する。
-  //   ★#dyn-roster の条件を足したのは、利用表(spec=null)でもこの経路が印刷用の文字サイズ規則を
-  //     作るようになったため。afterprint 未発火だと残留し、次に別タブで Ctrl+P した時に冒頭のガードが
-  //     それを見て早期returnし、前タブの用紙で刷られる（#dyn-page と同型の事故）。
-  //     ここへ到達した時点で冒頭のガードは通過済み＝#dyn-roster があれば今回のこのハンドラが作った物なので、
-  //     printNow が仕掛けた done のタイマーを奪う心配はない（printNow 経由なら冒頭で早期returnしている）。
-  if (spec || sc === 'sc-weekly' || document.querySelector('#dyn-roster')) printTimer = setTimeout(clearPrintState_, 3000);
-});
-window.addEventListener('afterprint', clearPrintState_);   // どの経路でも必ず後片付け
+  }));
+  SUPrint.setActive(activeTab());
+}
 
 /* ============================================================================
    タブ / 凡例 / UI
@@ -2426,12 +2345,25 @@ function goto(sc) {
   document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === sc));
   renderLegend(sc);
   $('hdrSub').textContent = (sc === 'sc-roster') ? ROSTER_SUB : MODEL_SUB;   // タブごとの指標を出し分け
-  $('btnPrint').setAttribute('aria-label', (PRINT_SPEC[sc] ? PRINT_SPEC[sc].size : 'A4 portrait') + ' で印刷');
-  try { if (PRINT_SPEC.hasOwnProperty(sc)) localStorage.setItem(TAB_KEY, sc); } catch (e) {}
+  printSetActive_(sc);
+  try { if (PRINT_VIEWS.hasOwnProperty(sc)) localStorage.setItem(TAB_KEY, sc); } catch (e) {}
+}
+/* 印刷の対象タブを su-print へ伝える（Cmd/Ctrl+P もこのタブの用紙で出る）。
+   読み上げラベルには「いま出る用紙」を載せる＝この端末で保存済みの設定があればそれを優先。 */
+function printSetActive_(sc) {
+  const def = PRINT_VIEWS[sc];
+  if (!def) return;
+  let paper = def.paper;
+  if (window.SUPrint) {
+    SUPrint.setActive(sc);
+    try { const sv = SUPrint.prefs(sc).get(); if (sv && sv.paper) paper = sv.paper; } catch (e) {}
+    if (SUPrint.paperLabel) paper = SUPrint.paperLabel(paper);   // 'A4 portrait' → 'A4 縦'
+  }
+  $('btnPrint').setAttribute('aria-label', def.label + 'の印刷設定を開く（現在 ' + paper + '）');
 }
 // 保存済みタブ（既知のタブのみ）。無効/未保存は利用表。
 function savedTab() {
-  try { const s = localStorage.getItem(TAB_KEY); if (s && PRINT_SPEC.hasOwnProperty(s)) return s; } catch (e) {}
+  try { const s = localStorage.getItem(TAB_KEY); if (s && PRINT_VIEWS.hasOwnProperty(s)) return s; } catch (e) {}
   return 'sc-roster';
 }
 
@@ -2638,7 +2570,10 @@ function init() {
   // 手動更新なのにトーストが出ない＝成功・失敗が現場に見えなくなる）。
   $('btnRefresh').addEventListener('click', () => refresh(false));
   $('btnRefresh2').addEventListener('click', () => refresh(false));
-  $('btnPrint').addEventListener('click', printNow);
+  $('btnPrint').addEventListener('click', () => {
+    if (window.SUPrint) SUPrint.openDialog(activeTab());
+    else toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true);
+  });
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
   window.addEventListener('pagehide', flushPendingBeacon_);
   // アプリ間ジャンプ（既存 shift-app.html と同じく相対パス・別タブ）。
@@ -2700,6 +2635,7 @@ function init() {
 
   // 旧・端末ローカル方式の非表示キーは全端末共通(dcrHidden)へ移行済み＝不要なので掃除する（残っても読まれない）。
   try { localStorage.removeItem('dcr_hidden'); } catch (e) {}
+  definePrintViews_();   // ★描画（goto → printSetActive_）より前に登録しておく
   DB = loadLocal();
   const restore = savedTab();   // ★renderAll 内の goto(activeTab()) が DOM既定(利用表)を保存で上書きする前に確保
   renderAll(DB);
