@@ -3822,6 +3822,7 @@ const SYNC = {
   _pushTimer: null,
   _pollTimer: null,
   _busy: false,
+  _polling: false, // pollIfNeeded の再入防止（前回の照会が終わる前に次の30秒が来た時）
   _dirty:  false,   // ローカルに未プッシュの変更があるか
   /* 編集を始めた時点の版数。push はこの値を送る（markDirty で固定・clearDirty/adopt で解除）。
      null は「固定していない」＝送信時の現在値を使う（従来動作）。 */
@@ -3886,13 +3887,21 @@ const SYNC = {
   hasPersistedDirty() {
     try { return localStorage.getItem(CS_DIRTY_KEY) === '1'; } catch(e) { return false; }
   },
+  /* 直前の「定常表示」。'取得中…' 等の一時表示は覚えない＝失敗が表示条件に達しない時の戻し先 */
+  _statusBefore: '同期',
   updateStatusUI(text) {
-    const el = $('#sync-status'); if (el) el.textContent = text || '同期';
+    const t = text || '同期';
+    if (t !== '取得中…' && t !== '保存中…' && t !== '確認中…') this._statusBefore = t;
+    const el = $('#sync-status'); if (el) el.textContent = t;
   },
+  LOG_MAX_LINES: 200,   /* 表示ログの保持行数（据置き端末で開けたままでも肥大させない） */
   log(msg) {
     const el = $('#sync-log'); if (!el) return;
     const t = new Date().toLocaleTimeString('ja-JP');
-    el.textContent = `[${t}] ${msg}\n` + (el.textContent || '');
+    const next = `[${t}] ${msg}\n` + (el.textContent || '');
+    /* 先頭が最新＝古い行は末尾。上限を超えたぶんは古い方から捨てる（新しい失敗の記録を残す） */
+    const lines = next.split('\n');
+    el.textContent = (lines.length > this.LOG_MAX_LINES) ? lines.slice(0, this.LOG_MAX_LINES).join('\n') : next;
   },
 
   validateEndpoint(url) {
@@ -3910,6 +3919,10 @@ const SYNC = {
     if (e === 'deadendpoint') return 'この端末の同期先（GASのURL）が見つかりません。'
       + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    /* NetPolicy が3回の再試行後に投げる文言（Google側の一過性404/停止）。
+       接続先の付け替えを促さない＝現場に無駄な設定変更をさせない。
+       （gas() は throw で返すため通常は到達しない・翻訳表の備え） */
+    if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
     /* サーバー側の一括消失ガード（2026-08-05）。保存は行われていない＝クラウドのデータは無傷。 */
     if (e === 'bathwipe') return '通所の入浴（加算）が一度に大量に減るため、クラウド側が保存を拒否しました。'
       + 'この端末の内容が古い可能性があります。「⬇️ クラウドから取得」で最新を取り直してください'
@@ -3948,28 +3961,156 @@ const SYNC = {
       localStorage.setItem('ws_sync_revs', JSON.stringify(o));
     } catch(e) {}
   },
+  /* ── 通信の一時不良と「接続先が死んだ」の切り分け ───────────────────────────
+     出典: ワークスケジュールアプリ src/logic/netpolicy.js と同じ規則。
+     GAS 本体が正常でも Google のフロントエンドは一過性の 404（3〜14秒遅れて返る・実測 約1.5%）と
+     25秒超の停止（約3.5%）をクラスタ状に返す。1回の失敗で判定すると生きている接続先を
+     「死んだ」と誤断定し、healStaleTarget →「同期先（GASのURL）が見つかりません」を出してしまう
+     （2026-09-08 の事象）。規則は ①分類 ②再試行 ③死亡の確認 の3段。 */
+  NetPolicy: {
+    MAX_ATTEMPTS: 3,
+    RETRY_DELAYS: [1500, 4000],     // 1回目失敗後 1.5秒・2回目失敗後 4秒
+    ATTEMPT_TIMEOUT_MS: 15000,      // 1試行あたりの上限（>25秒の停止に付き合わない）
+    CONFIRM_TIMEOUT_MS: 8000,       // 死亡確認 ping の上限
+    DEAD_MIN_COUNT: 3,              // 速い404がこの回数連続するまで死亡を疑わない
+    DEAD_MIN_SPAN_MS: 20000,        // かつ最初の404からこの時間が経つまで確認しない（クラスタ内で判定しない）
+    LATCH_MS: 60000,                // 死亡確定の直後この時間は確認pingを打ち直さない（ワースケと同じ扱い）
+    _fast404: 0,                    // 連続した「速い404」の回数
+    _first404At: 0,                 // その連続が始まった時刻
+    _confirmedAt: 0,                // 直近に死亡を確定した時刻（ラッチ中は404を一時不良として扱う）
+    /* 応答を 'ok'（200）/ 'notfound'（404）/ 'transient'（その他の非2xx・タイムアウト・
+       ネットワーク断・JSON崩れ）の3種へ分類する。 */
+    classify(status, err) {
+      if (err) return 'transient';
+      if (status === 200) return 'ok';
+      if (status === 404) return 'notfound';
+      return 'transient';
+    },
+    /* 200 が返ったら連続カウントを解除（生きている証拠）。確定ラッチも解除する。 */
+    noteOk() { this._fast404 = 0; this._first404At = 0; this._confirmedAt = 0; },
+    reset() { this.noteOk(); },
+    /* 404 の記録。15秒以上かかった404は Google 側の詰まりの症状なので数えない
+       （タイムアウトも数えないがカウントを解除もしない＝クラスタを跨いで判定できる）。 */
+    note404(elapsedMs) {
+      if (elapsedMs >= this.ATTEMPT_TIMEOUT_MS) return;
+      if (!this._fast404) this._first404At = Date.now();
+      this._fast404++;
+    },
+    /* 死亡を確定した直後の記録（ラッチ）。確定の連打・確認pingの連投を止める。 */
+    markConfirmed() { this._confirmedAt = Date.now(); },
+    /* 死亡確認 ping を打ってよいか（回数と経過時間の両方を満たした時だけ）。
+       確定直後 LATCH_MS の間は打たない＝その間の404は一時不良として再試行・throw の経路へ倒す。 */
+    shouldConfirmDead() {
+      if (this._confirmedAt && (Date.now() - this._confirmedAt) < this.LATCH_MS) return false;
+      return this._fast404 >= this.DEAD_MIN_COUNT
+          && this._first404At > 0
+          && (Date.now() - this._first404At) >= this.DEAD_MIN_SPAN_MS;
+    },
+    delayFor(attempt) { return this.RETRY_DELAYS[attempt - 1] || 0; },
+    wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  },
+  /* 表示のヒステリシス（出典同じ）。1回の失敗で現場に赤表示を出さない。
+     失敗が2回以上続き、かつ直近の成功から30秒を超えた時だけエラー表示へ切り替える。 */
+  net: { failStreak: 0, lastOkAt: 0 },
+  shouldShowFail() {
+    const n = this.net;
+    return n.failStreak >= 2 && (n.lastOkAt === 0 || (Date.now() - n.lastOkAt) > 30000);
+  },
+  /* 失敗時の状態表示。条件未達なら現在の文字を変えない（成功経路の表示は従来どおり） */
+  updateStatusUIFail(text) {
+    if (this.shouldShowFail()) { this.updateStatusUI(text); return; }
+    /* エラーは出さない。ただし '取得中…' 等を残すと処理中に見えるため直前の定常表示へ戻す */
+    this.updateStatusUI(this._statusBefore || '同期');
+  },
+  /* 同じ接続先へ 404 の裏取りをする。404 が返った時だけ true＝死亡確定。
+     届かない（タイムアウト・断）は一時不良として false（誤切替を作らない）。 */
+  async confirmDeadEndpoint(endpoint, token) {
+    try {
+      const res = await csFetchTimeout_(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'ping', token: token }),
+        redirect: 'follow'
+      }, this.NetPolicy.CONFIRM_TIMEOUT_MS);
+      return res.status === 404;
+    } catch (e) { return false; }
+  },
   async gas(payload) {
     /* 最後の砦。上位（push/pull/poll）は個別に止めてあるが、将来ここを通る経路が増えても
        試算中の書込みだけは通さない。読み取り(get/head)は害がないので通す。 */
     if (SIM_ON && payload && payload.action === 'put') return { ok: false, error: '試算モード中は送信しません' };
     const t = this.target();
     payload.token = t.token;
+    const NP = this.NetPolicy;
+    const action = (payload && payload.action) || '(なし)';
+    const body = JSON.stringify(payload);
     // text/plain で送信し CORS preflight を回避（ワースケと同一）
-    const res = await fetch(t.endpoint, {
+    const opt = () => ({
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
+      body: body,
       redirect: 'follow'
     });
-    /* ★2026-09-08: 404 は例外にせず {error:'deadendpoint'} として返す。
-       404＝そのデプロイがアーカイブ/削除された（＝このURLは二度と復活しない）という確定的な答えで、
-       接続先の自動切替（healStaleTarget）を働かせるべき合図。従来は例外に落ちていたため切替が起きず、
-       古いURLを保存している端末だけが再起動しても永久にオフラインのままだった
-       （接続先は端末ごとの localStorage にあるので、他の端末は正常に見える）。
-       500・429 等は一時的でありうるので従来どおり例外＝通信失敗として扱う（誤切替を作らない）。 */
-    if (res.status === 404) return { ok: false, error: 'deadendpoint' };
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    let lastStatus = 0;
+    for (let attempt = 1; attempt <= NP.MAX_ATTEMPTS; attempt++) {
+      const t0 = Date.now();
+      let status = 0, err = null, json = null;
+      try {
+        const res = await csFetchTimeout_(t.endpoint, opt(), NP.ATTEMPT_TIMEOUT_MS);
+        status = res.status;
+        if (status === 200) {
+          /* 15秒の予算は本文の読み出しまで含める（ヘッダだけ返って本文が来ない停止に付き合わない）。
+             残り時間は最低1秒を確保する＝ヘッダで予算を使い切った時に即タイムアウトさせない。 */
+          const remaining = Math.max(1000, NP.ATTEMPT_TIMEOUT_MS - (Date.now() - t0));
+          /* タイマーは finally で必ず解除する＝本文が先に来た時に15秒ぶんのタイマーを抱え込まない */
+          let jsonTimer = 0;
+          try {
+            json = await Promise.race([
+              res.json(),
+              new Promise((_, rj) => { jsonTimer = setTimeout(() => { rj(new Error('timeout')); }, remaining); })
+            ]);
+          } catch (e) { err = (e && e.message === 'timeout') ? e : new Error('badjson'); }
+          finally { clearTimeout(jsonTimer); }
+        }
+      } catch (e) { err = e || new Error('neterr'); }
+      const ms = Date.now() - t0;
+      const kind = NP.classify(status, err);
+      if (kind === 'ok' && json) {
+        NP.noteOk();
+        this.net.failStreak = 0;
+        this.net.lastOkAt = Date.now();
+        return json;
+      }
+      /* 診断ログ（URL・トークン・データは出さない）。クラスタ状の不良を後から追えるようにする。 */
+      const why = (kind === 'notfound') ? '404'
+                : (err && err.message === 'timeout') ? 'timeout'
+                : (err && err.message === 'badjson') ? 'badjson'
+                : (status > 0) ? ('HTTP ' + status)
+                : 'neterr';
+      this.log(`通信: ${action} ${why} ${ms}ms 試行${attempt}/${NP.MAX_ATTEMPTS}`);
+      /* 本文が壊れている(badjson)・本文が来ない(timeout)は HTTP 200 で起きる。これを最終エラーに
+         採ると「HTTP 200」＝通信成功と読めてしまうため lastStatus には採らない（最後は '通信失敗'）。 */
+      if (status > 0 && !err) lastStatus = status;
+      if (kind === 'notfound') {
+        NP.note404(ms);
+        if (NP.shouldConfirmDead()) {
+          if (await this.confirmDeadEndpoint(t.endpoint, t.token)) {
+            this.log('通信: ' + action + ' 404を確認pingでも再現＝接続先が無効と判定');
+            NP.reset();                      // 判定済み＝次の判定は新しい連続から数える
+            NP.markConfirmed();              // 確定から60秒は確認pingを打ち直さない（連打の抑止）
+            this.net.failStreak++;
+            return { ok: false, error: 'deadendpoint' };   // 既存の healStaleTarget 経路へ
+          }
+          NP.reset();                        // 裏取りできない＝一時不良として扱い、再試行を続ける
+        }
+      }
+      if (attempt < NP.MAX_ATTEMPTS) await NP.wait(NP.delayFor(attempt));
+    }
+    /* 3回失敗＝ここで初めて失敗とする。投げる文言は従来と同じ（上位の catch の扱いを変えない）。 */
+    this.net.failStreak++;
+    this.log('通信: ' + action + ' ' + NP.MAX_ATTEMPTS + '回失敗（一時的な応答エラーの可能性／次の操作・次の巡回で再試行します）');
+    if (lastStatus > 0) throw new Error(`HTTP ${lastStatus}`);
+    throw new Error('通信失敗');
   },
   // リモート(data:DBオブジェクト)をローカルへ採用（事業所情報は欠落時ローカル維持）
   adopt(data, rev) {
@@ -4100,7 +4241,12 @@ const SYNC = {
       return true;
     } catch(e) {
       this.log('❌ 取得失敗: ' + e.message);
-      this.updateStatusUI('エラー');
+      /* 1回の失敗では赤表示にしない（一過性の404/停止はクラスタ状に来る）。
+         失敗2回以上＋直近成功から30秒超で初めて「エラー」へ倒す＝ NetPolicy と同じヒステリシス。
+         ただし接続先の無効が確認pingで裏取りできた時は一時不良ではない＝ヒステリシスを通さず即「エラー」
+         （直し方を案内しているのに表示が「同期」のままでは現場が気づけない）。 */
+      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      else this.updateStatusUIFail('エラー');
       this._busy = false;
       return false;
     }
@@ -4169,7 +4315,9 @@ const SYNC = {
     } catch(e) {
       this._busy = false;
       this.log('❌ 起動時同期の確認に失敗: ' + e.message + '（未送信の編集は端末に保持しています）');
-      this.updateStatusUI('未同期…');
+      /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（下の pull/push と同じ扱い） */
+      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      else this.updateStatusUIFail('未同期…');   // ヒステリシス（未達なら現在の表示を保つ）
       return false;
     }
   },
@@ -4279,7 +4427,9 @@ const SYNC = {
       throw new Error(this.friendlyErr(j.error));
     } catch(e) {
       this.log('❌ 保存失敗: ' + e.message);
-      this.updateStatusUI('エラー');
+      /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（pull と同じ扱い） */
+      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      else this.updateStatusUIFail('エラー');   // ヒステリシス（未送信フラグは従来どおり保持される）
       this._busy = false;
       return false;
     }
@@ -4304,11 +4454,18 @@ const SYNC = {
     if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
   },
   // クラウドの rev を確認し、新しければ自動pull
+  /* 背景巡回が通った＝接続は回復。未送信が無ければ「エラー」表示を戻す（ワースケの ✓同期 復帰と同じ見え方） */
+  _restoreAfterOk() {
+    const stEl = $('#sync-status');
+    if (stEl && stEl.textContent === 'エラー' && !this._dirty) this.updateStatusUI('同期OK');
+  },
   async pollIfNeeded() {
     if (SIM_ON) return;   /* 30秒ごとの取得を止める（試算盤面が突然サーバー版に戻るのを防ぐ） */
     if (this._busy) return;
     if (document.hidden) return; // 非表示タブではスキップ
     if (!this.hasTarget()) return;
+    if (this._polling) return;   /* 前回の照会が未完＝二重に走らせない（応答が遅い時の多重get防止） */
+    this._polling = true;
     try {
       // まず rev だけを軽量照会（action:'head'）し、変わっていなければ全量 get を送らない
       //（30秒ごとの全量転送の解消）。head 未対応の旧GASは 'unknown action' を返すが、
@@ -4316,7 +4473,13 @@ const SYNC = {
       // 従来どおりの get へフォールバックする（heal 誤発火＝正常な接続先の書換えを防ぐ）。
       try {
         const h = await this.gas({ action: 'head', key: 'care_schedule_v2' });
+        /* head の時点で接続先消滅が確定した場合（確認pingでも404）: 切替を試み、切替先が無ければ表示に出す。
+           直後の get はラッチ中＝一時失敗扱いで throw されるため、ここで拾わないと背景巡回では見え方に出ない。 */
+        if (h && !h.ok && h.error === 'deadendpoint' && !(await this.healStaleTarget())) {
+          this.updateStatusUI('エラー'); this.log('❌ ' + this.friendlyErr('deadendpoint')); return;
+        }
         if (h && h.ok) {
+          this._restoreAfterOk();
           const headRev = Number(h.rev) || 0;
           if (headRev === this._rejectedRev) return;   // 拒否済みrevは全量取得もしない
           if (headRev <= this.loadCareRev()) return;   // 変更なし＝ここで終了
@@ -4326,7 +4489,13 @@ const SYNC = {
       if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
-      if (!j.ok) return;
+      if (!j.ok) {
+        /* 確定した接続先消滅（確認pingでも404・切替先なし）は背景巡回でも表示に出す＝ワースケと同じ見え方。
+           一過性の失敗は gas() が throw するためここへは来ない（ヒステリシス側で扱う）。 */
+        if (j.error === 'deadendpoint') { this.updateStatusUI('エラー'); this.log('❌ ' + this.friendlyErr('deadendpoint')); }
+        return;
+      }
+      this._restoreAfterOk();
       const remoteRev = Number(j.rev) || 0;
       if (remoteRev === this._rejectedRev) return;   // サンプルとして拒否済みのrevは再採用しない
       if (remoteRev > this.loadCareRev()) {
@@ -4348,6 +4517,7 @@ const SYNC = {
         }
       }
     } catch(e) { /* 通信エラーは無視 */ }
+    finally { this._polling = false; }
   },
 
   async testConnection() {
@@ -4512,9 +4682,11 @@ function openSyncModal() {
   $('#sync-endpoint').value = SYNC.config.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = SYNC.config.token || '';
   $('#sync-auto').checked   = !!SYNC.config.auto;
-  $('#sync-log').textContent = SYNC.config.lastSync
+  /* ★既存のログを消さない（2026-09-12）。背景で起きた同期失敗の履歴が、モーダルを開いた瞬間に
+     消えてしまうと「何が起きたか」を後から追えない。最終同期は先頭へ1行足すだけにする。 */
+  SYNC.log(SYNC.config.lastSync
     ? `最終同期: ${new Date(SYNC.config.lastSync).toLocaleString('ja-JP')}`
-    : '未同期';
+    : '未同期');
   const ind = $('#sync-save-indicator');
   if (ind) {
     ind.textContent = SYNC.config.endpoint ? '💾 保存済み' : '（未入力）';
