@@ -7615,6 +7615,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return true;
     } catch (e) { return false; }
   }
+  /* ケア内容(チップ配列)の同一判定。saveEditor と reconcile の両方が同じ規則で判定するための純関数。
+   * これが分かれていたため、エディタ側は「変えたかどうか」を見ずに週間計画へ書き戻していた。 */
+  function careContentsSame_(a, b) {
+    a = a || []; b = b || [];
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  /* エディタの保存で週間計画へ書き戻すべきかの判定（純関数・試験で固定）。
+   * 「ケア枠」「週間計画の枠と結びついている」「この保存で支援内容を実際に変えた」の3つが揃った時だけ。
+   * 以前はこの判定が無く、時刻や担当だけ直した保存でも週間計画の記載を置き換えていた。 */
+  function careDetailWriteBackNeeded_(kind, beforeTask, contents) {
+    if (kind !== 'care') return false;
+    if (!beforeTask || !beforeTask.weeklyRef) return false;
+    return !careContentsSame_(beforeTask.contents, contents);
+  }
+  /* 週間計画(care-schedule.html)の著者印に使う指紋。★csAuthorFp_/csFingerprint_ と同じ式にすること。
+   * ズレると週間計画側が「印の後で書き換えられた」と判断し、ここでの正当な書き戻しが弾かれる。
+   * 回帰テスト: tests/care_writeback_policy.test.js（本体の式と文字列比較で固定） */
+  function careAuthorFp_(v) {
+    var t = (v == null ? '' : String(v));
+    var h = 2166136261;
+    for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return t.length + ':' + h.toString(16);
+  }
   /* detail(中点結合文字列) → contents配列 へ復元（join('・')の逆。空要素は捨てる）。
    * これを使わず [detail] と1要素で包むと「掃除・洗濯」が1チップ化し、表示で別内容と混ざって見える(要件4)。 */
   function detailToContents_(d) {
@@ -7663,8 +7688,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ((target.detail || '') === detail) return true; /* 既に一致＝週間計画は同期済み */
     recordCareOp_({ t: 'detail',
                     ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
-                    contents: (contents || []).slice() });
+                    contents: (contents || []).slice(),
+                    base: (target.detail || '') });   /* ★書き換える前の週間計画の値＝再適用の土台（3-way） */
     target.detail = detail;
+    /* ★週間計画の著者印を更新する（2026-09-12）。週間計画は「印の新しい側」を採るため、
+     * ここで押さないと現場の正当な編集が弾かれる。押す＝この書き戻しも人の入力として扱う。 */
+    target.detAt = Math.floor(Date.now() / 1000);
+    target.detFp = careAuthorFp_(detail);
     /* 保存に失敗したら成功扱いにしない。true を返すと呼出側が detailDirty を降ろし、次の照合で
      * 旧値が再投影されて編集が消える。同期未設定の端末では recordCareOp_ も記録しないため、
      * ここで false を返さないと編集の痕跡がどこにも残らない。 */
@@ -7675,35 +7705,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     toast('ケア内容を週間計画へ反映しました');
     return true;
   }
-  /* サービスコード(svcCode)を週間計画(care_schedule_v2 の ev.category)へ書き戻す。detail と対称の双方向同期。
-   * writeBackCareDetail_ と同じ findCareEventByRef_(evId→氏名/曜日/開始時刻フォールバック)で確実に届ける。
-   * 戻り値: 反映できたら true(発見＝書込 or 既に一致)／対象event未発見なら false(呼出側は svcDirty で保護)。 */
-  function writeBackCareSvc_(ref, svcCode) {
-    if (!ref) return false;
-    var db = loadCareDb();
-    if (!db || !db.residents) return false;
-    var cat = (svcCode && M.SVC[svcCode]) ? svcCode : '';   /* 不正値は空へ(importers.js の category 検証と整合) */
-    var target = findCareEventByRef_(db, ref);
-    if (!target) return false;                              /* 週間計画側に該当eventなし＝書戻せず */
-    /* ★正本保護: 既存 category が M.SVC 外(総合事業A2xxx等 ws表現不可コード)なら上書きしない。
-     * 総合事業タスクは ws で svcCode='' となりエディタが既定値'生活３'を注入するため、無条件書込だと
-     * 総合事業の category が'生活３'へ静かに破壊され単位計算を壊す(importersがlabelで温存するのと対称の保護)。 */
-    var existing = target.category || '';
-    if (existing && !M.SVC[existing]) return true;
-    if (!cat) return true;                                 /* ws は空コードを書かない＝既存の有効categoryを消さない(先祖返り/消去防止) */
-    if (existing === cat) return true;                     /* 既に一致＝週間計画は同期済み */
-    recordCareOp_({ t: 'svc',
-                    ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
-                    svcCode: cat });
-    target.category = cat;
-    /* detail 側と同じ理由で、保存失敗を成功扱いにしない（呼出側は svcDirty で ws の編集を保護する）。 */
-    if (!saveCareDb(db)) {
-      toast('週間計画へ保存できませんでした（端末の空き容量不足の可能性）。この編集はワークスケジュール側に残します', true);
-      return false;
-    }
-    toast('サービスコードを週間計画へ反映しました');
-    return true;
-  }
+  /* ★サービス区分(category)の正本は週間計画アプリに一本化した（2026-09-12 本人裁定）。
+   * ワースケからの書き戻し（旧 writeBackCareSvc_）は廃止。区分は提供票の単位数に直結するため、
+   * 当日ボードの保存や自動リトライで黙って変わる経路を残さない。
+   * 実害: ワースケが持っていた6月の支援マスタ由来の区分が週間計画へ戻り、
+   *       生活３→身体１生活１ / 生活２→身体０１ に化けた（2026-09-12 報告）。
+   * ws 側で区分を変えても盤面の表示だけが変わり、次の照合で週間計画の値に揃う。
+   * 回帰テスト: tests/care_writeback_policy.test.js */
   /* ===== 入院フラグ（resident単位・週間計画と共有の care_schedule_v2）要件4 ===== */
   function findCareResidentByName_(care, name) {
     if (!care || !care.residents || !name) return null;
@@ -8149,12 +8157,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       return false;
     }
-    function sameContents_(a, b) {
-      a = a || []; b = b || [];
-      if (a.length !== b.length) return false;
-      for (var s = 0; s < a.length; s++) if (a[s] !== b[s]) return false;
-      return true;
-    }
+    function sameContents_(a, b) { return careContentsSame_(a, b); }   /* 判定は1か所（careContentsSame_）に寄せる */
     function claim(t, hit) {
       matchedEv[hit] = true;
       var ev2 = events[hit];
@@ -8165,7 +8168,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ((t.origin && (t.origin.start !== ev2.start || t.origin.end !== ev2.end)) && !M.isChanged(t)) {
         /* svc追従: svcDirty(ws編集未反映)ならws値保持。追従時も ev2.svcCode が M.SVC 表内のコードの時だけ採用し、
          * 総合事業(A2xxx)等の非M.SVC category を t.svcCode へ取り込まない(取り込むとエディタ保存で''消去を誘発)。 */
-        var svcFollow_ = t.svcDirty ? t.svcCode : (M.SVC[ev2.svcCode] ? ev2.svcCode : t.svcCode);
+        var svcFollow_ = M.SVC[ev2.svcCode] ? ev2.svcCode : t.svcCode;   /* 区分は週間計画が正本＝常に追従 */
         patch.start = ev2.start; patch.end = ev2.end; patch.svcCode = svcFollow_;
         patch.origin = { start: ev2.start, end: ev2.end, staffId: t.staffId, svcCode: svcFollow_ };
         refDirty = true;
@@ -8175,7 +8178,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        *  - !t.svcDirty : ws編集を週間計画へ未反映(svcDirty)の間は追従せず ws値を保持(下の svcDirty 分岐が書戻し担当)。
        *  - M.SVC[ev2.svcCode] : 要介護コード(M.SVC収載)のみ採用＝総合事業(A2xxx)等の非M.SVC category を t.svcCode へ取り込まない。
        * origin は触らない(M.isChanged は start/end のみ比較＝二重罫線に無影響)。care_schedule_v2 へは書き込まず ws local へ投影のみ。 */
-      if (patch.svcCode === undefined && !t.svcDirty && M.SVC[ev2.svcCode] &&
+      if (patch.svcCode === undefined && M.SVC[ev2.svcCode] &&
           (t.svcCode || '') !== ev2.svcCode) {
         patch.svcCode = ev2.svcCode;
       }
@@ -8189,10 +8192,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           patch.detailDirty = false;                 /* 週間計画が追いついた＝保護解除 */
         } else if (ev2.id) {
           /* ws側編集が未反映のまま実eventにbindされた＝ws内容を週間計画へ書き戻して同期を確立し保護解除。
-           * detailDirty が恒久固定化して週間計画→ワースケの正当更新が永久ブロックされるのを防ぐ。 */
-          var wbFixed = false;
-          try { wbFixed = writeBackCareDetail_({ residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id }, t.contents); } catch (eWbC) {}
-          if (wbFixed) patch.detailDirty = false;
+           * detailDirty が恒久固定化して週間計画→ワースケの正当更新が永久ブロックされるのを防ぐ。
+           * ★ただし、ws で編集した後に週間計画側が変わっていたら書き戻さない（3-way・2026-09-12）。
+           *   以前は無条件に押し込んでいたため、週間計画で直した記載が後から ws の値へ戻っていた。 */
+          if (t.detailBase && !careContentsSame_(newContents, t.detailBase)) {
+            patch.detailDirty = false; patch.detailBase = null;
+            patch.contents = newContents;                  /* 週間計画の内容を表示に採る */
+            try { toast('週間計画で支援内容が変わっていたため、ワークスケジュール側の入力は反映しませんでした（週間計画の内容を表示します）', true); } catch (eT2) {}
+          } else {
+            var wbFixed = false;
+            try { wbFixed = writeBackCareDetail_({ residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id }, t.contents); } catch (eWbC) {}
+            if (wbFixed) { patch.detailDirty = false; patch.detailBase = null; }
+          }
         }
       } else if (!sameContents_(t.contents, newContents)) {
         patch.contents = newContents;
@@ -8200,15 +8211,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* サービスコードも detail と対称に保護: svcDirty(ws編集を週間計画へ未反映)の間は claim の svc追従で巻き戻さない。
        * 週間計画が追いついたら(一致)保護解除／未反映のまま実eventにbindされたら書き戻して同期を確立し保護解除
        * (svcDirty の恒久固定化＝週間計画→ワースケの正当更新が永久ブロックされるのを防ぐ)。 */
-      if (t.svcDirty) {
-        if ((t.svcCode || '') === (ev2.svcCode || '')) {
-          patch.svcDirty = false;
-        } else if (ev2.id) {
-          var svcFixed = false;
-          try { svcFixed = writeBackCareSvc_({ residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id }, t.svcCode); } catch (eSvcC) {}
-          if (svcFixed) patch.svcDirty = false;
-        }
-      }
+      /* ★旧版が立てた svcDirty は降ろす（区分は書き戻さなくなった）。残すと dedupCareSlots の
+       * 移譲で古いコードが復活し、盤面が週間計画に追従しなくなる。 */
+      if (t.svcDirty) patch.svcDirty = false;
       if (refDirty) patch.weeklyRef = refPatch;
       var has = false, pk;
       for (pk in patch) if (Object.prototype.hasOwnProperty.call(patch, pk)) { has = true; break; }
@@ -9057,27 +9062,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* ケア内容(支援内容・詳細)のみ 週間計画(care_schedule_v2)へ書き戻す。weeklyRef があれば evId 有無に関わらず
        * (evId→氏名/曜日/開始時刻フォールバック照合で)確実に書き戻す＝evId無しseedタスクの保存が元に戻る不具合を根治。 */
-      var wbOk = false, svcOk = true;
-      if (kind === 'care' && beforeTask && beforeTask.weeklyRef) {
+      var wbOk = false;
+      /* ★書き戻すのは「この保存で支援内容を実際に変えた時」だけ（2026-09-12）。以前は【変えていなくても】
+       * ワースケ側のチップ内容を週間計画へ書き戻していたため、時刻や担当だけ直した保存で
+       * 週間計画の記載が置き換わった（実害:「デイ/返却」→「返却」）。 */
+      var needWb_ = careDetailWriteBackNeeded_(kind, beforeTask, patch.contents);
+      if (kind === 'care' && !needWb_) wbOk = true;   /* 書き戻す必要が無い＝同期済み扱い */
+      if (needWb_) {
         try { wbOk = writeBackCareDetail_(beforeTask.weeklyRef, patch.contents); } catch (eW) {}
-        /* サービスコードは「元がws管理可能なM.SVCコードで、かつユーザーが実際に変更した」時のみ週間計画(ev.category)へ書き戻す。
-         * ★総合事業(A2xxx)/マスタ空コードのタスクは svcCode='' でエディタが既定値'生活３'を注入するため、無条件書込だと
-         * 週間計画の category を'生活３'へ静かに破壊する(単位計算に直撃)。元がM.SVCの枠のコード変更のみ ws→週間計画同期の対象。
-         * 未変更/対象外は svcOk=true(同期済み扱い・svcDirty立てない)。writeBackCareSvc_ 内でも非M.SVC/空を正本保護。 */
-        if (M.SVC[beforeTask.svcCode] && (patch.svcCode || '') !== (beforeTask.svcCode || '')) {
-          svcOk = false;
-          try { svcOk = writeBackCareSvc_(beforeTask.weeklyRef, patch.svcCode); } catch (eS) {}
-        }
       }
-      /* ケア内容/コードの編集が週間計画へ確実反映できていない時は detailDirty/svcDirty で保護＝reconcile/claim の
-       * 旧値再投影による先祖返り(まとめ項目が戻る/コードが戻る)を防ぐ。週間計画が追いつけば claim が解除。 */
-      /* svcDirty は「今回の書戻し失敗(!svcOk)」に加え、「既に svcDirty(過去の書戻し失敗で ws値未反映)で、
-     * 今回の保存で svc を変えていない」時も保持する＝svc未変更の再保存で pending dirty を取りこぼし、
-     * claim の svc追従が ws編集値を週間計画の旧値で巻き戻すのを防ぐ(保持後は claim 解消分岐が正規に書戻し・解除)。 */
+      /* ★サービス区分は週間計画アプリが正本（2026-09-12 本人裁定）＝ここからは書き戻さない。
+       * ws で区分を変えた時は、書き戻す代わりに「区分は週間計画で変えてください」と伝える
+       * （表示は次の照合で週間計画の区分に揃う）。 */
+      if (kind === 'care' && beforeTask && M.SVC[beforeTask.svcCode] &&
+          (patch.svcCode || '') !== (beforeTask.svcCode || '')) {
+        toast('サービス区分は週間計画アプリが正本です。区分の変更は週間計画で行ってください'
+            + '（この画面の表示は次の照合で週間計画の区分に戻ります）', true);
+      }
+      /* ケア内容の編集が週間計画へ確実反映できていない時は detailDirty で保護＝reconcile/claim の
+       * 旧値再投影による先祖返り(まとめ項目が戻る)を防ぐ。週間計画が追いつけば claim が解除。
+       * 区分(svcDirty)の保護は 2026-09-12 に廃止した（区分の正本は週間計画）。 */
     if (kind === 'care') {
       patch.detailDirty = !wbOk;
-      patch.svcDirty = !svcOk || !!(beforeTask && beforeTask.svcDirty &&
-          (patch.svcCode || '') === (beforeTask.svcCode || ''));
+      /* 書き戻せなかった入力は、あとで再挑戦する時の土台（編集前に週間計画から来ていた内容）も持つ。
+       * 土台と週間計画の現在値が食い違ったら、それは人が週間計画で直した＝押し込まない（3-way）。 */
+      patch.detailBase = patch.detailDirty
+        ? ((beforeTask && beforeTask.detailBase) ? beforeTask.detailBase
+           : ((beforeTask && beforeTask.contents) || []).slice())
+        : null;
+      patch.svcDirty = false;   /* ★区分は週間計画が正本＝ws側の保護フラグは立てない（2026-09-12） */
     }
       store.dispatch({ type: 'UPDATE_TASK', id: ui.editingId, patch: patch });
     } else {
@@ -10116,16 +10129,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           ev = findCareEventByRef_(db, op.ref);
           if (ev) {
             detail = (op.contents && op.contents.length) ? op.contents.join('・') : '';
-            if ((ev.detail || '') !== detail) { ev.detail = detail; changed = true; keep = true; }
+            /* ★土台照合（3-way・2026-09-12）: ws で編集した後に週間計画側が変わっていたら
+             * 再適用しない＝人が週間計画で直した記載を、あとから ws の値で塗り潰さない。
+             * base を持たない古い op は従来どおり（挙動不変）。 */
+            var moved_ = (op.base !== undefined) && ((ev.detail || '') !== detail) &&
+                         ((ev.detail || '') !== String(op.base || ''));
+            if (moved_) {
+              /* drop（keepしない）＝週間計画を正とする */
+            } else if ((ev.detail || '') !== detail) {
+              ev.detail = detail;
+              ev.detAt = Math.floor(Date.now() / 1000);   /* 週間計画の著者印を更新（書き戻しと同じ扱い） */
+              ev.detFp = careAuthorFp_(detail);
+              changed = true; keep = true;
+            }
             /* else: サーバー版に既に反映済み＝drop */
           } /* else: 対象イベント消失＝drop */
         } else if (op.t === 'svc') {
-          ev = findCareEventByRef_(db, op.ref);
-          if (ev) {
-            var cat_ = op.svcCode || '';
-            if ((ev.category || '') !== cat_) { ev.category = cat_; changed = true; keep = true; }
-            /* else: サーバー版に既に反映済み＝drop */
-          } /* else: 対象イベント消失＝drop */
+          /* ★区分は週間計画が正本（2026-09-12）。旧版が残した svc op は再適用せず捨てる。
+           * 残すと、アプリを更新した端末でも古い区分が最大12時間ぶん押し戻され続ける。 */
         } else if (op.t === 'hosp') {
           r = findCareResidentByName_(db, op.name);
           if (r && !!r.hospitalized !== !!op.val) { r.hospitalized = !!op.val; changed = true; keep = true; }
