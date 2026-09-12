@@ -39,7 +39,10 @@
  *   SUPrint.clear()                   状態の強制クリア（デバッグ用）
  *
  * ツール側フック: before(state) / after(state) / onShrink(px, diag) / pagesOf(state, 既定枚数)
- *   fit: { mode, cssVar, target, base, min, step, max(数値|関数), apply(px,target,state,isFinal), minFallback:'base' }
+ *   / when() → false なら準備しない（移行途中の同居対策）／ afterMeasure(state, diag)
+ *   / clearDelay … afterprint 未発火時の後始末までの ms（既定 3000）
+ *   fit: { mode, cssVar, target, base, min, step, max(数値|関数), apply(px,target,state,isFinal),
+ *          minFallback:'base', checkWidth, check(state,need,px), measure(state), slack:{w,h} }
  */
 (function (global) {
   'use strict';
@@ -54,11 +57,19 @@
      0.1px 単位で上に出る。フィットの合否と見込み枚数は【同じ許容】で判定すること。
      揃えないと「1枚に収まると判定して刷った帳票を、見込みでは2枚と表示する」ことが起きる。 */
   var FIT_TOL = 0.5;
+  /* afterprint が来ない環境向けの保険タイマー（ms）。★移行元のツールが持っていた値を下回らせない。
+     window.print() が同期的に止まらない環境では、プレビューを開いている最中にこれが発火すると
+     用紙指定と印刷用クラスが外れて紙面が別物になる。spec.clearDelay で上書きできる。 */
+  var CLEAR_DELAY = 3000;
   var PAPERS = {                                  // mm（幅×高さ）
     'A4 portrait': [210, 297], 'A4 landscape': [297, 210],
     'A3 portrait': [297, 420], 'A3 landscape': [420, 297],
-    'B4 portrait': [257, 364], 'B4 landscape': [364, 257],
-    'B5 portrait': [182, 257], 'B5 landscape': [257, 182]
+    /* ★CSS の @page{size:B4|B5} は【ISO】の寸法（B4=250x353・B5=176x250）。
+       JIS（B4=257x364・B5=182x257）を書くと、実際より大きい紙として採寸してしまい、
+       収まると判定したものが紙からはみ出す（2026-09-12 実測: B4縦の実PDFは 250x353mm）。
+       JIS が要る時は size に 'JIS-B4' を使う別エントリを足すこと（値を書き換えないこと）。 */
+    'B4 portrait': [250, 353], 'B4 landscape': [353, 250],
+    'B5 portrait': [176, 250], 'B5 landscape': [250, 176]
   };
   var PAPER_LABEL = { 'A4 portrait': 'A4 縦', 'A4 landscape': 'A4 横', 'A3 portrait': 'A3 縦', 'A3 landscape': 'A3 横',
     'B4 portrait': 'B4 縦', 'B4 landscape': 'B4 横', 'B5 portrait': 'B5 縦', 'B5 landscape': 'B5 横' };
@@ -217,6 +228,16 @@
    *                          データ依存の上限（氏名が1行に収まる最大 等）は関数で渡す。
    *   minFallback: 'base'  … 下限まで縮めても収まらない時、下限ではなく base で刷る
    *                          （読めない紙面で、しかも複数枚になるのを避ける運用判断がある帳票向け）
+   *   check(state, need, px) … 合否に【ツール側の追加条件】を足す（AND）。root の外形寸法には
+   *                          現れない欠け（セルが overflow:hidden で内容を切っている等）は
+   *                          モジュールからは見えないので、見えるツール側が判定する。
+   *   measure(state)       … 探索そのものをツール側で行う（採寸窓の中で1回だけ呼ばれる）。
+   *                          「1行に収まる率が9割以上で、かつページ数が最小の中で最大の文字」の
+   *                          ような、高さ・幅の単純比較で書けない方針を持つ帳票用。
+   *                          {fontPx, need:{w,h}} を返す。返した need がそのまま枚数計算に使われる。
+   *   slack: {w, h}        … 合否判定だけを厳しくする安全余裕(px)。端末ごとの丸めの1px差で
+   *                          最終行が次の紙へ落ちるのを防ぐ。★見込み枚数は実際の紙の高さで
+   *                          数える（ここを一緒に削ると枚数を過大に出す）。
    *   checkWidth: false    … mode:'height' の合否を【高さだけ】で見る。列幅を colgroup の px で
    *                          自前に予算管理している帳票（列幅は文字サイズでほとんど変わらない）では、
    *                          幅を合否に入れると 1px の超過で全候補が不合格になり、下限あるいは既定
@@ -229,10 +250,23 @@
     var target = f.target ? ($(f.target, root) || root) : root;
     var cssVar = f.cssVar, apply = f.apply;
     var base = f.base || 12, min = f.min || 7, step = f.step || 0.25;
-    var availW = m.wPx, availH = m.hPx * pages;
+    /* 安全余裕は【合否だけ】を厳しくする（見込み枚数は実際の紙の高さで数える） */
+    var slackW = (f.slack && f.slack.w) || 0, slackH = (f.slack && f.slack.h) || 0;
+    var availW = m.wPx - slackW, availH = m.hPx * pages - slackH;
     function setFs(v, isFinal) {
       if (apply) apply(v, target, state, !!isFinal);
       else target.style.setProperty(cssVar, v + 'px');
+    }
+    /* ★ツール側が探索そのものを持つ場合は【何より先に】そちらへ委ねる。
+       この判定を「cssVar も apply も無ければ帰る」より後ろに置くと、measure だけを渡した
+       ビューでは一度も呼ばれない（＝用紙を変えても採寸が追従しないのに、描画時の採寸が
+       残っているせいで既定用紙では正しく見えてしまう）。 */
+    if (f.measure) {
+      var mr = f.measure(state) || {};
+      return { fontPx: (mr.fontPx != null ? mr.fontPx : null), need: (mr.need || need(root)),
+               target: target, cssVar: cssVar, apply: apply,
+               /* ★二重にくるまない。ツールが pagesOf 等で読むのは measure が返した中身そのもの */
+               diag: (mr.diag != null ? mr.diag : mr) };
     }
     if (!cssVar && !apply) return { fontPx: null, need: need(root) };
     if (mode === 'none') {
@@ -250,6 +284,8 @@
       : function (n) { return n.w <= availW + FIT_TOL; };
     function ok(v) {
       setFs(v); var n = need(root);
+      /* ツール側の追加条件（AND）。root の外形には出ない欠けを見るためのもの。 */
+      if (f.check) { var c; try { c = f.check(state, n, v); } catch (e) { c = false; } if (!c) return false; }
       if (mode === 'width') return n.w <= availW + FIT_TOL;
       return wideOk(n) && n.h <= availH + FIT_TOL;             // height = 既定では幅も高さも
     }
@@ -308,6 +344,9 @@
     clear();
     var spec = views[name || active];
     if (!spec) { if (!silent) console.warn('[su-print] 未登録のビュー:', name || active); return null; }
+    /* ★そのビューを画面に出していない時は準備しない（移行途中の同居対策・上の beforeprint 参照）。
+       ボタン経路・設定画面・Cmd/Ctrl+P のすべてがここを通るので、門は1つで足りる。 */
+    if (spec.when) { var okView; try { okView = spec.when(spec); } catch (e) { okView = false; } if (!okView) return null; }
     var root = typeof spec.root === 'string' ? $(spec.root) : (spec.root || document.body);
     if (!root) { console.warn('[su-print] root が見つかりません:', spec.root); return null; }
     var p = resolve(spec, overrides);
@@ -347,6 +386,12 @@
       availPx: [m.wPx, m.hPx], needPx: [n.w, n.h], fontPx: state.fitted.fontPx,
       pages: pagesCalc, overflowW: n.w > m.wPx + OVERFLOW_TOL
     };
+    /* 採寸の結果をツールへ返す。★採寸窓の【外】で呼ぶ＝ここで画面に警告を出しても採寸に影響しない。
+       「1枚に収まりません」等の画面内警告は移行前からの機能なので、これで残す（原則1）。
+       Cmd/Ctrl+P（silent）でも呼ぶ＝どの経路でも警告が出る。 */
+    if (spec.afterMeasure) {
+      try { spec.afterMeasure(state, api.last); } catch (e) { console.warn('[su-print] afterMeasure で例外', e); }
+    }
     /* 縮小の通知。★条件に apply を含めること（cssVar を使わず apply フックだけで
        文字サイズを当てるビューがあり、cssVar だけ見ていると通知が1度も出ない）。 */
     if (!silent && spec.fit && (spec.fit.cssVar || spec.fit.apply) && state.fitted.fontPx != null
@@ -367,16 +412,30 @@
     if (!prepare(name, overrides)) return;
     var done = function () { window.removeEventListener('afterprint', done); clear(); };
     window.addEventListener('afterprint', done);
-    timer = setTimeout(done, 3000);                             // afterprint 未発火の保険（iOS/PDF）
+    var sp0 = views[name || active];
+    timer = setTimeout(done, (sp0 && sp0.clearDelay) || CLEAR_DELAY);   // afterprint 未発火の保険（iOS/PDF）
     window.print();
   }
-  // Cmd/Ctrl+P: 準備済みならそのまま。未準備なら active ビューで同じ準備を通す
+  /* Cmd/Ctrl+P: 準備済みならそのまま。未準備なら active ビューで同じ準備を通す。
+     ★spec.when() が false を返す時は【何もしない】。1つのツールの中に su-print へ移した画面と
+       まだ移していない画面が同居していると、移していない画面（個票・様式など）で印刷した時に
+       「最後に見ていた帳票ビュー」の用紙と幅固定が乗ってしまう。when はその横取りを塞ぐ唯一の門。 */
   window.addEventListener('beforeprint', function () {
     if (state || !active || !views[active]) return;
-    if (prepare(active, null, true)) timer = setTimeout(clear, 3000);
+    if (prepare(active, null, true)) timer = setTimeout(clear, (views[active].clearDelay || CLEAR_DELAY));
   });
   window.addEventListener('afterprint', function () { clear(); });
   window.addEventListener('pagehide', function () { clear(); });
+  /* 保険その4: afterprint も pagehide も来ない環境向け（印刷メディアを抜けたのを合図に戻す）。
+     ★プレビューを開いている間は matches:true のままなので、設定を変えただけでは発火しない。 */
+  try {
+    if (window.matchMedia) {
+      var mqPrint = window.matchMedia('print');
+      var onMedia = function (ev) { if (!ev.matches) clear(); };
+      if (mqPrint.addEventListener) mqPrint.addEventListener('change', onMedia);
+      else if (mqPrint.addListener) mqPrint.addListener(onMedia);
+    }
+  } catch (e) { /* 非対応環境は他の3経路に任せる */ }
 
   /* ───────── 設定画面 ───────── */
   function openDialog(name) {
@@ -458,7 +517,13 @@
 
   /* ───────── 公開 ───────── */
   api.define = function (name, spec) { spec = spec || {}; spec.name = name; views[name] = spec; if (!active) active = name; return api; };
-  api.setActive = function (name) { if (views[name]) active = name; return api; };
+  /* 印刷対象のビューを切り替える。★null を渡すと「対象なし」＝Cmd/Ctrl+P で何も準備しない。
+     移行途中のツールが、まだ移していない画面（個票・様式など）へ移った時に必ず呼ぶこと。 */
+  api.setActive = function (name) {
+    if (name == null) { active = null; return api; }
+    if (views[name]) active = name;
+    return api;
+  };
   api.getActive = function () { return active; };
   api.print = function (name, overrides) { doPrint(name || active, overrides); };
   api.openDialog = openDialog;

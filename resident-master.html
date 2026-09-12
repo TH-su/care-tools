@@ -833,7 +833,7 @@ body.meal-on #sc-list{max-width:none}
      ★body.cm-on / body.lvl-on を付けている時だけ効かせる。付けないと他のビュー・他タブの
        紙まで変わる（誕生日一覧A4・個票A4・食形態A3は1pxも変えない）。
      ★用紙（CM表のA4横）は静的に書かない。書くと従来のA4縦印刷まで用紙が変わるため、
-       印刷の直前に msSheetPageOn() が @page を注入し、終わったら必ず外す。 */
+       印刷の直前に su-print が @page を注入し、終わったら必ず外す。 */
   body.cm-on .search-bar,  body.lvl-on .search-bar,
   body.cm-on .view-tabs,   body.lvl-on .view-tabs,
   body.cm-on .filter-row,  body.lvl-on .filter-row,
@@ -1046,6 +1046,11 @@ body.meal-on #sc-list{max-width:none}
   }
 }
 </style>
+<!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
+     ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
+     ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
+       「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
+<link rel="stylesheet" href="su-print.css?v=2026-09-12">
 </head>
 <body>
 
@@ -1105,30 +1110,30 @@ body.meal-on #sc-list{max-width:none}
   <div class="sh-bar" id="cmBar" style="display:none">
     <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
     <button type="button" id="cmReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="cmPrint">🖨️ A4横で印刷</button>
+    <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（既定 A4横）</button>
   </div>
   <!-- 介護度別ビュー専用。印刷には出さない（body.lvl-on の印刷CSSで消える） -->
   <!-- 居室一覧ビュー専用。1階・2階でA4横2枚に刷る -->
   <div class="sh-bar" id="roomBar" style="display:none">
     <span class="st" id="roomStatus" role="status" aria-live="polite"></span>
-    <button type="button" class="btn-print" id="roomPrint">🖨️ A4横で印刷（1階・2階の2枚）</button>
+    <button type="button" class="btn-print" id="roomPrint">🖨️ 印刷（既定 A4横・1階と2階の2枚）</button>
   </div>
   <div class="sh-bar" id="lvlBar" style="display:none">
     <span class="st" id="lvlStatus" role="status" aria-live="polite"></span>
     <button type="button" id="lvlReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="lvlPrint">🖨️ A4縦で印刷</button>
+    <button type="button" class="btn-print" id="lvlPrint">🖨️ 印刷（既定 A4縦）</button>
   </div>
   <!-- 家族情報ビュー専用。印刷には出さない（body.fam-on の印刷CSSで消える） -->
   <div class="sh-bar" id="famBar" style="display:none">
     <span class="st" id="famStatus" role="status" aria-live="polite"></span>
     <button type="button" id="famReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="famPrint">🖨️ A3縦で印刷</button>
+    <button type="button" class="btn-print" id="famPrint">🖨️ 印刷（既定 A3縦）</button>
   </div>
   <!-- 病歴・薬ビュー専用。印刷には出さない（body.hist-on の印刷CSSで消える） -->
   <div class="sh-bar" id="histBar" style="display:none">
     <span class="st" id="histStatus" role="status" aria-live="polite"></span>
     <button type="button" id="histReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="histPrint">🖨️ A3縦で印刷</button>
+    <button type="button" class="btn-print" id="histPrint">🖨️ 印刷（既定 A3縦）</button>
   </div>
   <!-- 薬効辞書ビュー専用。印刷には出さない（body.md-on の印刷CSSで消える） -->
   <div class="sh-bar" id="mdBar" style="display:none">
@@ -1308,6 +1313,7 @@ body.meal-on #sc-list{max-width:none}
 <!-- 薬効辞書（薬剤名 → 効果・効能）。フェイスシートと共有する唯一の正本。
      読み込めなかった時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
 <script src="meds-effect-dict.js?v=2026-08-11"></script>
+<script src="su-print.js?v=2026-09-12"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -2066,6 +2072,7 @@ function setView(v){
      残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
   csvStripViewParam();
   paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); paintShBars(); renderRoster();
+  rmSyncPrintTarget_();   /* ★印刷対象の付け替え。移していない画面では対象なしにする */
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
@@ -2849,9 +2856,11 @@ function lvlHtml(){
 /* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
    実際の高さ・幅を測り、収まる範囲でいちばん大きい文字を二分探索で選ぶ。
    ★行数で決め打ちしない。人数も氏名の長さも変わるため、決め打ちは必ずどこかで破れる。 */
-function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel){
+function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel, m, wSlack){
   if(!sheet||!sheet.offsetParent) return null;   /* 非表示では測らない（高さ0で「収まった」と誤判定） */
-  var H=(hMM-20)*96/25.4, W=(wMM-20)*96/25.4;   /* 用紙 − 上下左右10mm */
+  /* 用紙の印字面。★m（su-print が確定した実際の用紙）が渡された時はそれを使う＝職員が
+     用紙を変えたら採寸も追従する。渡されない時は従来どおり mm の直書き（既定と同値）。 */
+  var H=m?m.hPx:(hMM-20)*96/25.4, W=m?m.wPx:(wMM-20)*96/25.4;
   function tall(){ return sheet.scrollHeight; }
   /* ★測るのは「紙に並ぶもの全部」。表だけを測ると、横に並ぶパネル（介護度別の
      合計・平均介護度・介護4以上割合）の幅が抜け、収まったと誤判定して紙で表が圧縮される
@@ -2861,7 +2870,15 @@ function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel){
     if(!t) t=sheet.querySelector('table');
     return t?Math.max(t.offsetWidth, t.scrollWidth):sheet.scrollWidth;
   }
-  function fits(){ return tall()<=H-8 && wide()<=W-6; }
+  /* 幅の安全余裕。既定は6px（端末ごとの丸めで最終列が欠けるのを防ぐ）。
+     ★CM表のように【紙で表を width:100% にしている】帳票は、紙幅ぴったりになるのが正常なので
+       余裕を引くと常に不合格になり、文字が下限まで潰れる（2026-09-12 実測: 全用紙で6px）。
+       そういう帳票は 0（ぴったりを許す）を渡す。高さの余裕(8px)は共通で引く。 */
+  var WS=(wSlack==null)?6:wSlack;
+  /* 丸めの許容は【安全余裕を捨てた帳票にだけ】足す。既定（余裕6px）の閾値を動かすと、
+     用紙によっては文字が1段階変わる＝既定経路の挙動を黙って変えることになる。 */
+  var WTOL=(WS===0)?0.5:0;
+  function fits(){ return tall()<=H-8 && wide()<=W-WS+WTOL; }
   var STEP=0.25, lo=0, hi=Math.round((maxPx-minPx)/STEP);
   var sizeOf=function(k){ return Math.round((minPx+k*STEP)*100)/100; };
   apply(sizeOf(lo));
@@ -2875,7 +2892,7 @@ function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel){
   apply(sizeOf(lo));
   return {size:sizeOf(lo), fits:fits(), h:tall(), w:wide(), H:Math.round(H), W:Math.round(W)};
 }
-function fitCmSheet(){
+function fitCmSheet(m){
   var sh=$('cmSheet'); if(!sh) return null;
   /* ★余白は文字が十分大きくなってから広げる。先に余白を取ると、その高さのぶんだけ
      文字を小さくすることになる（1行あたり2pxの余白は33行で66px＝文字1.5px分）。 */
@@ -2885,7 +2902,7 @@ function fitCmSheet(){
     sh.style.setProperty('--cmsum', Math.round(px*1.05)+'px');
     sh.style.setProperty('--shd1',  Math.round(px*1.5)+'px');
     var t=sh.querySelector('.cmtbl'); if(t) t.style.fontSize=px+'px';
-  }, 6, 22);
+  }, 6, 22, null, m, 0);   /* ★紙では .cmtbl{width:100%}＝紙幅ぴったりが正常。幅の余裕は引かない */
   shWarn_(sh, r); return r;
 }
 /* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示）。
@@ -2895,10 +2912,11 @@ function fitCmSheet(){
      病歴・薬で同じ罠を踏んで直した（契約 §17）。finally で必ず元へ戻す。
    ★2枚は【同じ文字サイズ】。原本も1階・2階で同じ大きさで、別々に最大化すると
      並べた時に明らかに不揃いになる（実測 21.5px と 15.5px）。 */
-function fitRoomSheets(){
+function fitRoomSheets(m){
   var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
   if(!shs.length||!shs[0].offsetParent) return null;
-  var PW=Math.round((297-20)*96/25.4), PH=(210-20)*96/25.4;   /* A4横 − 上下左右10mm */
+  /* ★m（su-print が確定した実際の用紙）があればそれを使う。無ければ従来どおり A4横10mm */
+  var PW=m?Math.round(m.wPx):Math.round((297-20)*96/25.4), PH=m?m.hPx:(210-20)*96/25.4;
   var saved=shs.map(function(sh){ return [sh.style.width, sh.style.padding]; });
   /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。採寸中は器が紙幅なので px と一致する。
      ★--rpfs は当てない。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、
@@ -2942,14 +2960,14 @@ function fitRoomSheets(){
     return {size:best, fits:true, h:sh.scrollHeight, w:g?g.offsetWidth:0, H:Math.round(PH), W:PW};
   });
 }
-function fitLvlSheet(){
+function fitLvlSheet(m){
   var sh=$('lvlSheet'); if(!sh) return null;
   var r=shFit_(sh, 210, 297, function(px){       /* A4縦 */
     sh.style.setProperty('--lvfs', px+'px');
     sh.style.setProperty('--lvpad', (px>=13?4:px>=10?3:2)+'px');
     sh.style.setProperty('--lvcw', Math.round(px*7.6)+'px');
     sh.style.setProperty('--shd1', Math.round(px*1.8)+'px');
-  }, 6, 20, '.lvlwrap');
+  }, 6, 20, '.lvlwrap', m);
   shWarn_(sh, r); return r;
 }
 /* 収まらない時は黙って溢れさせない。画面にだけ理由を出す（紙には出さない） */
@@ -2960,68 +2978,182 @@ function shWarn_(sheet, r){
     w.textContent='1枚に収まりません（人数か氏名が長すぎます）。紙が複数枚になります。';
   }else if(w&&w.parentNode){ w.parentNode.removeChild(w); }
 }
-/* 用紙の指定は静的に書かず、刷る直前に足して必ず外す（食形態一覧の msMealPageOn と同じ作法） */
-function msSheetPageOn(css){
-  msSheetPageOff();
-  var st=document.createElement('style'); st.id='msSheetPage';
-  st.textContent='@media print{@page{'+css+'}}';
-  document.head.appendChild(st);
-}
-function msSheetPageOff(){ var st=$('msSheetPage'); if(st&&st.parentNode) st.parentNode.removeChild(st); }
+/* ═══════════ 印刷 — 共通モジュール su-print へ委譲（2026-09-12 M2-a）═══════════
+   CM表・居室一覧・介護度別・家族情報・病歴薬・薬効辞書の6帳票を SUPrint.define で宣言する。
+   @page の注入・採寸窓・後始末・用紙/余白/収め方の設定画面はモジュールが受け持つ。
+   ★このファイルには【まだ移していない印刷】が同居している（誕生日一覧・食形態一覧・個票・A4様式）。
+     それらは facesheet.html と逐語同一の資産で、facesheet と同時に移すまで旧方式のまま。
+     同居のあいだ、移していない画面で印刷した時に「最後に見ていた帳票」の用紙が乗らないよう、
+     各ビューに when（＝その帳票を画面に出している時だけ準備する）を必ず付ける。
+   ★採寸そのものは既存の fit 関数をそのまま使う（fit.measure）。用紙1枚に収める考え方・
+     安全余裕・警告の出し方は移行前と同じものを使い続ける（原則1・原則2）。 */
 /* いま帳票を「画面に出している」か。ビューidだけ見ると、詳細画面（個票・A4様式）を刷る時にも
    用紙がA4横／A3横へ化ける（既存の mealViewActive_ が同じ穴を塞いでいる）。 */
 function shViewActive_(kind){
   var sc=$('sc-list');
   return curView===kind && !!sc && sc.classList.contains('on');
 }
-function shPrint_(kind){
-  var on=(kind==='cm')?'cm-on':(kind==='room')?'room-on':'lvl-on';
-  if(!shViewActive_(kind)) return;
-  if(kind==='cm'){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
-  else if(kind==='room'){ fitRoomSheets(); msSheetPageOn('size:A4 landscape;margin:10mm'); }
-  else           { fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm'); }
-  document.body.classList.add(on);
-  var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
-  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
-  /* 保険: afterprint が来ない環境でも印刷メディアを抜けたら必ず外す（残すと次の印刷が別用紙になる） */
-  try{
-    if(window.matchMedia){
-      var mq=window.matchMedia('print');
-      var h=function(ev){ if(!ev.matches){ off();
-        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
-      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
-    }
-  }catch(e){}
-  setTimeout(off,60000);   /* 保険その3 */
-  window.print();
-}
-/* ⌘/Ctrl+P でも同じ用紙・同じ採寸で刷る（ボタンを通らない経路） */
-window.addEventListener('beforeprint',function(){
-  /* ★ビューidだけでなく一覧画面が表示中かも見る（見ないと個票の印刷まで用紙が化ける） */
-  if(shViewActive_('cm')){ fitCmSheet(); msSheetPageOn('size:A4 landscape;margin:10mm');
-    document.body.classList.add('cm-on'); }
-  else if(shViewActive_('lvl')){ fitLvlSheet(); msSheetPageOn('size:A4 portrait;margin:10mm');
-    document.body.classList.add('lvl-on'); }
-  else if(shViewActive_('room')){ fitRoomSheets(); msSheetPageOn('size:A4 landscape;margin:10mm');
-    document.body.classList.add('room-on'); }
-  else if(shViewActive_('fam')||shViewActive_('hist')){
-    var k=shViewActive_('fam')?'fam':'hist';
-    /* ★ボタン経路（shPrintWide_）が直前に採寸済みなら、ここでは測り直さない
-       （print() の直後に beforeprint が来るので、そのままだと1回の印刷で2度走る） */
-    if(k==='hist'){ if(!shHistFitted_) fitHistSheet(); } else wApplyFs($('famSheet'), 12);
-    msSheetPageOn(HIST_PAGE_CSS);
-    document.body.classList.add(k==='fam'?'fam-on':'hist-on');
+/* su-print へ登録する6帳票。並びは画面のタブ順。 */
+var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md'];
+function definePrintViews_(){
+  if(!window.SUPrint){
+    toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください');
+    return;
   }
-  else if(shViewActive_('md')){ msSheetPageOn('size:A4 portrait;margin:10mm');
-    document.body.classList.add('md-on'); }   /* ⌘/Ctrl+P でも同じ用紙にする */
-});
-window.addEventListener('afterprint',function(){
-  msSheetPageOff();
-  document.body.classList.remove('cm-on');  document.body.classList.remove('lvl-on');
-  document.body.classList.remove('fam-on'); document.body.classList.remove('hist-on');
-  document.body.classList.remove('md-on');
-  shHistFitted_=false;
-});
+  function def(kind, spec){
+    /* ★設定画面は開いた時と用紙を変えるたびに試算する（＝before を通って採寸が走り、
+       画面に生きているシートの style と警告文を書き換える）。印刷せずキャンセルしても
+       戻らないと、試算した用紙の文字サイズと「1枚に収まりません」がそのまま画面に残る。
+       採寸を委譲しているビューは su-print 側の復元（apply/cssVar）に乗らないので、
+       ここで style 属性と警告DOMを丸ごと退避・復元する（fitRoomSheets の saved と同じ作法）。 */
+    var snap=null;
+    function takeSnap(){
+      snap=(spec.restoreSel||[]).map(function(sel){
+        var e=$(sel); if(!e) return null;
+        var w=e.querySelector('.sh-warn');
+        return [e, e.getAttribute('style'), w?w.textContent:null];
+      });
+    }
+    function putSnap(){
+      (snap||[]).forEach(function(t){
+        if(!t) return;
+        if(t[1]==null) t[0].removeAttribute('style'); else t[0].setAttribute('style', t[1]);
+        var w=t[0].querySelector('.sh-warn');
+        if(t[2]==null){ if(w&&w.parentNode) w.parentNode.removeChild(w); }
+        else { if(!w){ w=document.createElement('div'); w.className='sh-warn'; t[0].insertBefore(w, t[0].firstChild); }
+               w.textContent=t[2]; }
+      });
+      snap=null;
+    }
+    var base={
+      root:'body', stamp:false, margin:10,
+      /* ★後始末の保険は旧実装と同じ60秒のまま（3秒へ短くしない）。このツールは body 全体へ
+         印刷CSSを当てる作りなので、プレビューを開いている最中に外れると紙面が別物になる。 */
+      clearDelay:60000,
+      when: function(){ return shViewActive_(kind); },
+      /* 紙に何を出すかは既存の @media print（body.<kind>-on）が決める。
+         before/after はそのクラスの付け外しだけを受け持つ（紙面の設計は移行前のまま）。
+         ★ビュー固有の前後処理は onBefore/onAfter で足す（before/after を丸ごと差し替えると
+           クラスの付け外しが抜ける）。 */
+      before: function(){ takeSnap(); document.body.classList.add(kind+'-on'); if(spec.onBefore) spec.onBefore(); },
+      after:  function(){
+        document.body.classList.remove(kind+'-on');
+        if(spec.onAfter) spec.onAfter();
+        putSnap();                 /* ★試算・印刷でいじった画面側を元へ戻す */
+        rmPaintPrintLabels_();     /* 保存した用紙を読み上げラベルへ即反映 */
+      }
+    };
+    for(var k in spec) if(Object.prototype.hasOwnProperty.call(spec,k)
+        &&k!=='onBefore'&&k!=='onAfter'&&k!=='restoreSel') base[k]=spec[k];
+    SUPrint.define(kind, base);
+  }
+  /* 採寸は既存関数へ委ねる（su-print の採寸窓＝@media print を画面へ一時適用し、
+     html/body を紙幅に固定した状態で呼ばれる）。
+     ★need（必要寸法）は必ず数で埋める。fitHistSheet のように w/h を返さない関数があり、
+       空のまま渡すと見込み枚数の計算が NaN になって「常に1枚」と表示される。
+       返り値に無い時はシートの実寸を測って補う。 */
+  function measureWith(fn, sel){
+    return function(st){
+      var r=fn(st.metrics);
+      if(!r) return {};
+      var w=r.w, h=r.h;
+      if(!(w>0)||!(h>0)){
+        var el=sel?$(sel):null;
+        if(el){ w=Math.max(el.scrollWidth, Math.ceil(el.getBoundingClientRect().width));
+                h=Math.max(el.scrollHeight, Math.ceil(el.getBoundingClientRect().height)); }
+      }
+      return {fontPx:r.size, need:{w:w||0, h:h||0}, diag:r};
+    };
+  }
+  def('cm', { label:'現入居者家族CM表', paper:'A4 landscape', restoreSel:['cmSheet'],
+    fit:{ mode:'height', measure: measureWith(fitCmSheet, 'cmSheet') } });
+  def('lvl', { label:'介護度別一覧', paper:'A4 portrait', restoreSel:['lvlSheet'],
+    fit:{ mode:'height', measure: measureWith(fitLvlSheet, 'lvlSheet') } });
+  /* 居室一覧は1回の印刷で1階・2階の2枚。図の縦横比は原本どおりで動かさないので用紙と余白だけ。 */
+  def('room', { label:'入居者居室一覧（1階・2階）', paper:'A4 landscape',
+    allowUser:['paper','margin'], restoreSel:['roomSheet_f1','roomSheet_f2'],
+    fit:{ mode:'height', measure: function(st){
+      var rs=fitRoomSheets(st.metrics);
+      if(!rs||!rs.length) return {};
+      var h=0, w=0;
+      for(var i=0;i<rs.length;i++){ h+=rs[i].h; if(rs[i].w>w) w=rs[i].w; }
+      return {fontPx:rs[0].size, need:{w:w, h:h}, diag:rs};
+    } },
+    pagesOf: function(st, dflt){
+      var n=document.querySelectorAll('#roomSheet_f1,#roomSheet_f2').length;
+      return n||dflt;   /* 1階・2階で必ず2枚（各シートが1枚に収まることは採寸で保証） */
+    } });
+  /* 家族情報は文字サイズ固定（12px）＝収め方の対象外。縮めず複数ページに流すのが設計。 */
+  def('fam', { label:'家族情報一覧', paper:'A3 portrait', margin:10, allowUser:['paper','margin'],
+    restoreSel:['famSheet'],
+    fit:{ mode:'none' },
+    onBefore: function(){ wApplyFs($('famSheet'), 12); },
+    /* ★印刷用に当てた文字サイズは必ず画面から外す。設定画面は用紙を変えるたびに
+       見込み枚数を測り直す＝印刷しなくても before を通るので、戻さないと画面に残る。 */
+    onAfter: function(){
+      var sh=$('famSheet'); if(!sh) return;
+      sh.style.removeProperty('--wfs'); sh.style.removeProperty('--wpad'); sh.style.removeProperty('--shd1');
+    } });
+  /* 病歴・薬は「1行に収まる率が基準以上で、かつページ数が最小の中でいちばん大きい文字」。
+     高さ・幅の単純比較では書けないので、探索ごと既存関数へ委ねる。 */
+  /* ★余白は HIST_PAGE_MM から渡す＝@page と採寸（HIST_PAGE_W/H）の出どころを1つに保つ。
+     別々に書くと、余白を変えた時に紙と採寸が黙ってずれる（data-contracts の不変条件）。 */
+  /* ★余白は職員に開放しない（allowUser に margin を入れない）。理由は2つ:
+       ①@page と採寸（HIST_PAGE_W/H）の出どころを HIST_PAGE_MM の1つに保てる
+       ②実測で A3縦・余白15mm の1条件だけ、見込み枚数が実枚数より1枚少なく出る。原因が
+         特定できていないので、未解明の条件を職員に選ばせない（他11条件は一致・下の pagesOf 参照）。
+     用紙は開放する（A3縦→A4縦・A3横は実測で見込み＝実枚数）。 */
+  def('hist', { label:'病歴・薬一覧', paper:'A3 portrait', margin:HIST_PAGE_MM, allowUser:['paper'],
+    restoreSel:['histSheet'],
+    fit:{ mode:'height', measure: measureWith(fitHistSheet, 'histSheet') },
+    /* 見込み枚数。採寸が数えた枚数（紙の割り方を模したもの）と、必要高さ÷紙高の単純計算の
+       【多い方】を採る＝少なく見せない側へ倒す。
+       ★既知の限界（2026-09-12 実測）: A3縦・余白15mm の1条件だけ、両方の見積りが2枚と出るのに
+         実際は3枚になる（他11条件は一致）。原因は未特定（塊単位の改ページの模写が、この境界でだけ
+         実際と1つずれる）。採寸の模写は【文字サイズの決定にも使っている】ので推測で触らない。
+         代わりに上の allowUser から margin を外し、この条件に到達できないようにしてある。 */
+    pagesOf: function(st, dflt){
+      var d=st.fitted&&st.fitted.diag;
+      var modeled=(d&&d.pages>0)?d.pages:0;
+      return Math.max(modeled, dflt||1) || 1;
+    } });
+  /* 薬効辞書は採寸なし（複数ページにそのまま流す） */
+  def('md', { label:'薬効辞書', paper:'A4 portrait' });
+  rmSyncPrintTarget_();
+}
+/* いま開いているタブを su-print の印刷対象にする。
+   ★移していない画面（標準・階別・五十音・入居日・誕生日・食形態・詳細）では null を渡す。
+     渡さないと、それらの画面で ⌘/Ctrl+P を押した時に最後の帳票の用紙・幅固定が乗る。 */
+function rmSyncPrintTarget_(){
+  if(!window.SUPrint) return;
+  /* ★画面を移る時点で印刷の状態を落とす。afterprint も pagehide も matchMedia も来ない環境では
+     保険タイマー（60秒）まで用紙指定と印刷用クラスが残り、その間に未移行の画面（誕生日一覧など）で
+     印刷すると前の帳票の用紙が乗る。clear は冪等なので毎回呼んでよい。 */
+  try{ SUPrint.clear(); }catch(e){}
+  SUPrint.setActive(RM_PRINT_VIEWS.indexOf(curView)>=0?curView:null);
+  rmPaintPrintLabels_();
+}
+/* 印刷ボタンの読み上げラベル。★可視テキスト（「A4横で印刷」等）を必ず含める
+   （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。6本まとめて付ける。 */
+var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint'};
+function rmPaintPrintLabels_(){
+  if(!window.SUPrint) return;
+  Object.keys(RM_PRINT_BTN).forEach(function(kind){
+    var btn=$(RM_PRINT_BTN[kind]); if(!btn) return;
+    var paper=null;
+    try{ var pf=SUPrint.prefs(kind).get(); if(pf&&pf.paper) paper=pf.paper; }catch(e){}
+    var txt=(btn.textContent||'').replace(/^\s*🖨️\s*/,'').trim();
+    btn.setAttribute('aria-haspopup','dialog');
+    btn.setAttribute('aria-label', txt+' — 用紙と余白の設定を開く'
+      +(paper&&SUPrint.paperLabel?('（現在 '+SUPrint.paperLabel(paper)+'）'):''));
+  });
+}
+/* 印刷ボタン: 用紙・余白・収め方を選ぶ設定画面を開く */
+function rmPrint_(kind){
+  if(!window.SUPrint){ toast('印刷モジュール（su-print.js）を読み込めていません'); return; }
+  if(!shViewActive_(kind)) return;
+  SUPrint.openDialog(kind);
+}
 /* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
    スプレッドシート「入居者情報」の【家族情報一覧】【病歴・薬】と同じ列で一覧にする。
    ★在籍者のみ・五十音順（CM表・介護度別と同じ母集団 shBase）。
@@ -3182,7 +3314,8 @@ var HIST_FS_MIN=8;          /* 下限。これより小さいと紙で読めな�
 /* ★用紙の寸法は1箇所で持つ。余白を変えた時に採寸と @page が黙ってずれないようにする
    （HIST_MED_PCT を列定義から引いているのと同じ理由）。 */
 var HIST_PAGE_MM=10;                                   /* @page の margin と必ず同じ値 */
-var HIST_PAGE_CSS='size:A3 portrait;margin:'+HIST_PAGE_MM+'mm';
+/* ★@page の指定は su-print が spec.paper / spec.margin から作る（HIST_PAGE_CSS は廃止）。
+   ここに残る HIST_PAGE_MM / _W / _H は「用紙が渡されなかった時の既定」＝画面描画時の採寸専用。 */
 var HIST_PAGE_W=(297-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字幅 */
 var HIST_PAGE_H=(420-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字高さ */
 function histDiseases(rec){
@@ -3258,16 +3391,18 @@ function wApplyFs(sheet, px){
      最長81桁に引きずられて全体が読めない大きさになるので、95%を基準にする。
    ★測るのは実データの文字幅（span を作って実測）。桁数の決め打ちだと、半角と全角、
      メーカー名のかっこ書きで簡単に外れる。 */
-function fitHistSheet(){
+function fitHistSheet(m){
   var sh=$('histSheet'); if(!sh||!sh.offsetParent) return null;
+  /* ★用紙。m があれば su-print が確定した実際の用紙、無ければ従来どおり A3縦10mm（同値） */
+  var PGW=m?m.wPx:HIST_PAGE_W, PGH=m?m.hPx:HIST_PAGE_H;
   /* ★2026-09-08 追加: 内服だけでなく【服薬時点も】測る。片方しか測らないと、
      測らなかった列が折り返して行が高くなり、紙が増えたまま「1行に収まっている」と判定する。
      測るのは列ごとに違う幅なので、文字列と幅を組にして持つ。 */
   var cells=sh.querySelectorAll('td.hmed'), tcells=sh.querySelectorAll('td.htime');
   if(!cells.length){ wApplyFs(sh,11); return null; }
   var texts=[], i;
-  var colPx=HIST_PAGE_W*HIST_MED_PCT/100 - 14;    /* 左右の余白ぶんを引く */
-  var colPxT=HIST_PAGE_W*HIST_TIME_PCT/100 - 14;
+  var colPx=PGW*HIST_MED_PCT/100 - 14;    /* 左右の余白ぶんを引く */
+  var colPxT=PGW*HIST_TIME_PCT/100 - 14;
   for(i=0;i<cells.length;i++){ var t=cells[i].textContent.trim(); if(t) texts.push([t,colPx]); }
   for(i=0;i<tcells.length;i++){ var t2=tcells[i].textContent.trim(); if(t2) texts.push([t2,colPxT]); }
   if(!texts.length){ wApplyFs(sh,11); return null; }
@@ -3307,16 +3442,16 @@ function fitHistSheet(){
     var headH=tblEl.tHead?tblEl.tHead.offsetHeight:0;
     var extra=Math.max(0, sh.offsetHeight-tblEl.offsetHeight);   /* 見出し＋注記＋脚注 */
     var gs=tblEl.querySelectorAll('tbody.hgrp');
-    var avail=HIST_PAGE_H-extra-headH, pages=1, y=0;
+    var avail=PGH-extra-headH, pages=1, y=0;
     for(var gi=0;gi<gs.length;gi++){
       var h=gs[gi].offsetHeight;
-      if(y && y+h>avail){ pages++; y=0; avail=HIST_PAGE_H-headH; }
+      if(y && y+h>avail){ pages++; y=0; avail=PGH-headH; }
       y+=h;
     }
     return pages;
   }
   try{
-    sh.style.padding='0'; sh.style.width=Math.round(HIST_PAGE_W)+'px';   /* 印刷CSSと同条件 */
+    sh.style.padding='0'; sh.style.width=Math.round(PGW)+'px';   /* 印刷CSSと同条件 */
     for(var px=HIST_FS_MAX;px>=HIST_FS_MIN;px--){
       var rr=okRatio(px);
       if(rr<HIST_FIT_RATIO) continue;               /* 1行に収まらない大きさは採らない */
@@ -3330,7 +3465,7 @@ function fitHistSheet(){
     /* ★M-2: 1人ぶんに使える高さは【2ページ目以降＝ページ高 − 繰り返す thead】。
        ページ高そのままで見ると、その差の帯域で警告が出ないまま紙が割れる。 */
     var headH2=tblEl&&tblEl.tHead?tblEl.tHead.offsetHeight:0;
-    var limit=HIST_PAGE_H-headH2;
+    var limit=PGH-headH2;
     over=0;
     var gs2=sh.querySelectorAll('tbody.hgrp');
     for(var gj=0;gj<gs2.length;gj++) if(gs2[gj].offsetHeight>limit) over++;
@@ -3353,26 +3488,8 @@ function fitHistSheet(){
   return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length,
           colPx:Math.round(colPx), overPage:over, pages:bestPages};
 }
-var shHistFitted_=false;   /* ボタン経路で採寸済みか（beforeprint の二度打ちを防ぐ） */
-function shPrintWide_(kind){
-  if(!shViewActive_(kind)) return;
-  var on=(kind==='fam')?'fam-on':'hist-on';
-  if(kind==='hist'){ fitHistSheet(); shHistFitted_=true; } else wApplyFs($('famSheet'), 12);
-  msSheetPageOn(HIST_PAGE_CSS);
-  document.body.classList.add(on);
-  var off=function(){ msSheetPageOff(); document.body.classList.remove(on); };
-  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
-  try{
-    if(window.matchMedia){
-      var mq=window.matchMedia('print');
-      var h=function(ev){ if(!ev.matches){ off();
-        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
-      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
-    }
-  }catch(e){}
-  setTimeout(off,60000);
-  window.print();
-}
+/* ★shHistFitted_（ボタン経路と beforeprint の二度打ち防止）は不要になった。
+   su-print は準備済みかを state で見るので、1回の印刷で採寸が2度走ることが構造的に起きない。 */
 /* ═══════════ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══════════
    紙の原本（1階・2階の2枚）を模して、間取りの箱をそのまま並べる。
    ★氏名は【マスタの居室番号から引く】。図に氏名を書き込まない（書くと入退去のたびに
@@ -4265,25 +4382,6 @@ function mdAiFill(){
     mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
     toast('AIに尋ねられませんでした：'+String((e&&e.message)||e),false);
   });
-}
-/* 薬効辞書を刷る（A4縦・複数ページ） */
-function mdPrint(){
-  if(!shViewActive_('md')) return;
-  msSheetPageOn('size:A4 portrait;margin:10mm');
-  document.body.classList.add('md-on');
-  var off=function(){ msSheetPageOff(); document.body.classList.remove('md-on'); };
-  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
-  /* 保険: afterprint が来ない環境でも印刷メディアを抜けたら必ず外す（他の3経路と同じ3重にする） */
-  try{
-    if(window.matchMedia){
-      var mq=window.matchMedia('print');
-      var h=function(ev){ if(!ev.matches){ off();
-        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
-      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
-    }
-  }catch(e){}
-  setTimeout(off,60000);
-  window.print();
 }
 /* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
    Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
@@ -8491,6 +8589,7 @@ function saveBulkGo_(changes,nmv){
 
 /* ═══════════ 初期化 ═══════════ */
 function init(){
+  definePrintViews_();   /* ★最初の描画より前に登録する（setView → rmSyncPrintTarget_ が使うため） */
   // ── 先に全イベントを登録（ブロック中でも「端末設定変更」が機能するように） ──
   $('deviceUnlock').addEventListener('click',function(){$('deviceBlock').classList.remove('on');openSync()});
   $('q').addEventListener('input',renderRoster);
@@ -8520,13 +8619,13 @@ function init(){
   if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
   if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
   /* CM表・介護度別（2026-09-04 追加） */
-  if($('cmPrint'))  $('cmPrint').addEventListener('click',function(){shPrint_('cm')});
-  if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){shPrint_('lvl')});
-  if($('roomPrint')) $('roomPrint').addEventListener('click',function(){shPrint_('room')});
+  if($('cmPrint'))  $('cmPrint').addEventListener('click',function(){rmPrint_('cm')});
+  if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){rmPrint_('lvl')});
+  if($('roomPrint')) $('roomPrint').addEventListener('click',function(){rmPrint_('room')});
   if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
-  if($('famPrint')) $('famPrint').addEventListener('click',function(){shPrintWide_('fam')});
-  if($('histPrint'))$('histPrint').addEventListener('click',function(){shPrintWide_('hist')});
+  if($('famPrint')) $('famPrint').addEventListener('click',function(){rmPrint_('fam')});
+  if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
   if($('famReload'))$('famReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
   if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true); mdEnsure(true)});
   /* 薬効辞書（2026-09-04 追加） */
@@ -8539,7 +8638,7 @@ function init(){
   });
   if($('mdAi'))    $('mdAi').addEventListener('click',mdAiFill);
   if($('mdSave'))  $('mdSave').addEventListener('click',mdSave);
-  if($('mdPrint')) $('mdPrint').addEventListener('click',mdPrint);
+  if($('mdPrint')) $('mdPrint').addEventListener('click',function(){rmPrint_('md')});
   /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
   if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
     if(curView!=='md') return;
