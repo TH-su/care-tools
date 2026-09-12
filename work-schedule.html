@@ -989,6 +989,10 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">①固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
   </div>
+  <div class="fld" style="margin-top:10px"><label>通信診断（直近の失敗のみ・個人情報なし）</label>
+    <textarea class="inp" id="stNetDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
+    <div class="btn-row" style="margin-top:6px"><button class="btn sm" id="stNetPing">接続診断（20回）</button><button class="btn sm" id="stNetCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stNetMsg"></span></div>
+  </div>
   <div class="btn-row"><span class="sp"></span><button class="btn pri" id="stSave">保存して閉じる</button></div>
   <div class="hint" id="stResult"></div>
 </div>
@@ -1019,6 +1023,171 @@ var LZString=function(){var o=String.fromCharCode,n="ABCDEFGHIJKLMNOPQRSTUVWXYZa
 if(typeof window!=='undefined')window.LZString=LZString;
 /* テスト用にCommonJSでも公開（ブラウザ動作には影響しない） */
 if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
+/* ===== src/logic/netpolicy.js ===== */
+/* netpolicy.js — 同期通信の再試行・死活判定ポリシー（純粋関数・2026-09-12）
+ *
+ * 背景（実測）: 統合GASのエンドポイント自体は健全でも、Googleのフロントが
+ *   ・一時的な HTTP 404（3〜14秒後に到着・約1.5%）
+ *   ・25秒超の無応答（約3.5%）
+ * を数分単位のクラスタで返す。2026-09-08 以降 gasCall が「404＝デプロイ消滅(deadendpoint)」と
+ * 即断していたため、正常な端末にも「同期先が見つかりません」の警告と
+ * 「オフライン（自動再試行）」の点滅が毎時5回程度出ていた。
+ *
+ * 方針: 1回の失敗では何も判定しない。
+ *   ・1リクエストにつき最大 MAX_ATTEMPTS 回試行（15秒タイムアウト・1.5s→4.0s待ち）
+ *   ・404 は「速い404(15秒未満)が3回以上・かつ初回から20秒以上」でのみ確認pingを打ち、
+ *     その ping も 404 のときだけ deadendpoint（接続先の自動切替）と確定する
+ *   ・オフライン表示は「連続2回以上失敗」かつ「最後の成功から30秒超」のときだけ出す
+ *   ・一度 deadendpoint を確定したら LATCH_MS（60秒）は再確定しない＝確認pingと警告の連打を止める
+ *
+ * 旧Safari互換のため ?. / ?? / テンプレートリテラル / let / const / アロー関数は使用しない */
+(function () {
+  'use strict';
+
+  var MAX_ATTEMPTS = 3;          /* 1リクエストの試行上限 */
+  var ATTEMPT_TIMEOUT_MS = 15000; /* 1試行のタイムアウト（>25秒停止を待たない） */
+  var FAST_404_MS = 15000;        /* これ未満で返ってきた404だけを死活判定に数える */
+  var DEAD_MIN_COUNT = 3;         /* 確定に必要な速い404の回数 */
+  var DEAD_MIN_SPAN_MS = 20000;   /* 初回404からの最低経過（クラスタ障害を除外） */
+  var CONFIRM_TIMEOUT_MS = 8000;  /* 確認pingのタイムアウト */
+  var OFFLINE_MIN_STREAK = 2;     /* オフライン表示の最低連続失敗回数 */
+  var OFFLINE_MIN_SILENCE_MS = 30000; /* 最後の成功からこれを超えて初めて表示する */
+  var DIAG_MAX = 60;              /* 診断リングバッファの既定長 */
+  var LATCH_MS = 60000;           /* deadendpoint 確定後、この間は再確定しない（確認pingの連打防止） */
+
+  /* 応答の分類。errKind は 'timeout' / 'neterr' / 'badjson' / null。
+   * 返り値 'ok' / 'notfound' / 'transient'。
+   * ・errKind があるときは status を信用しない＝必ず 'transient'（通信層で壊れた応答を
+   *   deadendpoint の材料にしない＝誤った「同期先が見つかりません」を作らない）
+   * ・2xx は 'ok'（GASは常に200だが 204 等で再試行ループに落ちないようにする） */
+  function classify(status, errKind) {
+    var s = (typeof status === 'number' && isFinite(status)) ? status : 0;
+    if (errKind) return 'transient';
+    if (s >= 200 && s < 300) return 'ok';
+    if (s === 404) return 'notfound';
+    return 'transient';
+  }
+
+  /* 次の試行までの待ち時間。attempt は1始まり。null＝これ以上試行しない（打ち切り） */
+  function retryDelayMs(attempt) {
+    if (attempt === 1) return 1500;
+    if (attempt === 2) return 4000;
+    return null;
+  }
+
+  /* 404の連続を数えて「本当にデプロイが消えた」候補かどうかを判定する器。
+   * note の kind: 'notfound'（速い404だけ計上）／'ok'（リセット）／それ以外は無視。
+   * タイムアウトで途切れても404のカウントは消さない（障害クラスタは両者が混ざる）。 */
+  function createDeadDetector() {
+    var count = 0, firstAt = 0, confirmedAt = 0;
+    function note(kind, now, elapsedMs) {
+      if (kind === 'ok') { count = 0; firstAt = 0; confirmedAt = 0; return; }  /* 復旧＝ラッチも解く */
+      if (kind !== 'notfound') return;
+      var el = (typeof elapsedMs === 'number' && isFinite(elapsedMs)) ? elapsedMs : 0;
+      if (el >= FAST_404_MS) return;   /* 遅い404＝フロントの詰まり。死活の材料にしない */
+      count++;
+      if (!firstAt) firstAt = now;
+    }
+    /* 確定直後の LATCH_MS 間は false を返す＝同じ障害で確認pingを何度も打たない。
+     * ラッチ中の404は通常の再試行（transient）として扱われる。 */
+    function shouldConfirm(now) {
+      if (confirmedAt > 0 && (now - confirmedAt) < LATCH_MS) return false;
+      return count >= DEAD_MIN_COUNT && firstAt > 0 && (now - firstAt) >= DEAD_MIN_SPAN_MS;
+    }
+    function markConfirmed(now) {
+      confirmedAt = (typeof now === 'number' && isFinite(now)) ? now : 0;
+    }
+    function reset() { count = 0; firstAt = 0; confirmedAt = 0; }
+    function state() { return { count: count, firstAt: firstAt }; }
+    return { note: note, shouldConfirm: shouldConfirm, markConfirmed: markConfirmed,
+             reset: reset, state: state };
+  }
+
+  /* オフライン表示の可否。単発の失敗で⚠を出さない（点滅の原因だった） */
+  function offlineVisible(failStreak, lastOkAt, now) {
+    if (!(failStreak >= OFFLINE_MIN_STREAK)) return false;
+    if (!lastOkAt) return true;   /* 起動後まだ一度も成功していない */
+    return (now - lastOkAt) > OFFLINE_MIN_SILENCE_MS;
+  }
+
+  /* 自動リトライのバックオフ。初回は5秒（体感の復帰を早く）→15秒→倍々→60秒上限 */
+  function nextBackoffMs(prev) {
+    var p = (typeof prev === 'number' && isFinite(prev)) ? prev : 0;
+    if (p <= 0) return 5000;
+    if (p < 15000) return 15000;
+    return Math.min(p * 2, 60000);
+  }
+
+  /* 診断イベントのリングバッファ（純粋・新しい配列を返す） */
+  function pushDiag(buf, ev, max) {
+    var lim = (typeof max === 'number' && max > 0) ? max : DIAG_MAX;
+    var src = (buf && typeof buf.length === 'number') ? buf : [];
+    var out = [], i;
+    for (i = 0; i < src.length; i++) out.push(src[i]);
+    out.push(ev);
+    if (out.length > lim) out = out.slice(out.length - lim);
+    return out;
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  function hms(ms) {
+    if (!ms) return '—';
+    var d = new Date(ms);
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+  /* 集計開始時刻の表示（時:分）。ms数値でも ISO文字列でも受ける（保存形式は ISO文字列） */
+  function hm(v) {
+    var ms = 0;
+    if (typeof v === 'number' && isFinite(v)) ms = v;
+    else if (typeof v === 'string' && v) { ms = Date.parse(v); if (isNaN(ms)) ms = 0; }
+    if (!ms) return '—';
+    var d = new Date(ms);
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  /* 設定画面の通信診断テキスト。URL・トークン・氏名は一切含めない（失敗の時刻と種類だけ）。
+   * diag: { ok, fail, since, lastOkAt, events:[{t, action, res, ms, attempt, final}] }。新しい順に並べる。
+   * ok/fail は「呼び出し」の数（成功1・失敗1をそれぞれ最終結果で1回だけ数える）。
+   * events は失敗した試行を全種類（404 / HTTP n / timeout / neterr / badjson）すべて残し、
+   * その呼び出しの最後の試行＝打ち切りの行にだけ（打切）を付ける。 */
+  /* nowFn は呼び出し側の時計を差し替える用の予約引数（現行の書式は記録時刻のみを使う） */
+  function formatDiag(diag, nowFn) {
+    var d = diag || {};
+    var evs = (d.events && typeof d.events.length === 'number') ? d.events : [];
+    var lines = [];
+    lines.push('累計（since ' + hm(d.since) + '）成功 ' + (d.ok || 0) + '／失敗 ' + (d.fail || 0) +
+               '／最終成功 ' + hms(d.lastOkAt || 0));
+    var i, e;
+    for (i = evs.length - 1; i >= 0; i--) {
+      e = evs[i] || {};
+      lines.push(hms(e.t || 0) + ' ' + (e.action || '-') + ' ' + (e.res || '-') +
+                 ' ' + (e.ms || 0) + 'ms 試行' + (e.attempt || 1) + (e.final ? '（打切）' : ''));
+    }
+    if (evs.length === 0) lines.push('（失敗の記録はありません）');
+    return lines.join('\n');
+  }
+
+  var api = {
+    MAX_ATTEMPTS: MAX_ATTEMPTS,
+    ATTEMPT_TIMEOUT_MS: ATTEMPT_TIMEOUT_MS,
+    FAST_404_MS: FAST_404_MS,
+    DEAD_MIN_COUNT: DEAD_MIN_COUNT,
+    DEAD_MIN_SPAN_MS: DEAD_MIN_SPAN_MS,
+    CONFIRM_TIMEOUT_MS: CONFIRM_TIMEOUT_MS,
+    DIAG_MAX: DIAG_MAX,
+    LATCH_MS: LATCH_MS,
+    classify: classify,
+    retryDelayMs: retryDelayMs,
+    createDeadDetector: createDeadDetector,
+    offlineVisible: offlineVisible,
+    nextBackoffMs: nextBackoffMs,
+    pushDiag: pushDiag,
+    formatDiag: formatDiag,
+    hms: hms
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.WSNet = api;
+})();
 /* ===== src/logic/facility.js ===== */
 /* facility.js — 共通施設プロファイル（shift-app と共有・厳守）
  * localStorageキー su_facility_profile_v1 に施設名・事業所表示名・定休日を保存する。
@@ -9992,7 +10161,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { return decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { return null; }
   }
 
-  /* --- 自動リトライ（15s→30s→60s上限のバックオフ・タイマー1本） --- */
+  /* --- 自動リトライ（5s→15s→30s→60s上限のバックオフ・タイマー1本） --- */
   var retry_ = { timer: null, delay: 0 };
   function clearRetry_() {
     if (retry_.timer) { clearTimeout(retry_.timer); retry_.timer = null; }
@@ -10001,7 +10170,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function scheduleRetry_() {
     if (!syncOn()) return;
     if (retry_.timer) return;
-    retry_.delay = retry_.delay ? Math.min(retry_.delay * 2, 60000) : 15000;
+    retry_.delay = NP.nextBackoffMs(retry_.delay);   /* 5s→15s→30s→60s上限（初回の復帰を早く） */
     retry_.timer = setTimeout(function () { retry_.timer = null; recoverNow_(); }, retry_.delay);
   }
   function recoverNow_() {
@@ -10149,10 +10318,63 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) r[k] = p[k];
     try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) {}
   }
+  /* ═══ 通信ポリシー（netpolicy.js）と通信診断 ═══════════════════════════════
+     1回の失敗で「同期先が見つかりません」「オフライン」を出さないための状態。
+     net.failStreak＝連続失敗数（成功で0）、net.lastOkAt＝最後に成功した時刻。
+     診断は「失敗した通信の時刻・種類・所要時間」だけを残す＝URL・トークン・氏名は保存しない。 */
+  var NP = window.WSNet;
+  var net = { failStreak: 0, lastOkAt: 0 };
+  var dead = NP.createDeadDetector();
+  var NET_DIAG_KEY = 'ws_net_diag_v1';
+  function loadNetDiag_() {
+    try {
+      var p = JSON.parse(localStorage.getItem(NET_DIAG_KEY) || 'null');
+      if (p && typeof p === 'object') {
+        return { ok: p.ok || 0, fail: p.fail || 0,
+                 since: p.since || new Date().toISOString(),
+                 lastOkAt: p.lastOkAt || 0,
+                 events: (p.events && typeof p.events.length === 'number') ? p.events : [] };
+      }
+    } catch (e) {}
+    return { ok: 0, fail: 0, since: new Date().toISOString(), lastOkAt: 0, events: [] };
+  }
+  function saveNetDiag_(d) { try { localStorage.setItem(NET_DIAG_KEY, JSON.stringify(d)); } catch (e) {} }
+  /* ok/fail は「呼び出し（gasCall 1回）」を数える。成功は1回だけ通るのでここで+1。 */
+  function noteNetOk_(now) {
+    var d = loadNetDiag_();
+    d.ok = (d.ok || 0) + 1;
+    d.lastOkAt = now;
+    saveNetDiag_(d);
+  }
+  /* 失敗した試行を1件記録する。種類（404/HTTP n/timeout/neterr/badjson）を問わず毎回残し、
+     isFinal＝その呼び出しの最終結果になった試行のときだけ fail を+1する（試行数と呼び出し数を混ぜない）。 */
+  function noteNetFail_(action, res, ms, attempt, now, isFinal) {
+    var d = loadNetDiag_();
+    if (isFinal) d.fail = (d.fail || 0) + 1;
+    d.events = NP.pushDiag(d.events, { t: now, action: action, res: res, ms: ms || 0,
+                                       attempt: attempt || 1, final: !!isFinal }, NP.DIAG_MAX);
+    saveNetDiag_(d);
+  }
+  function resLabel_(status, errKind) {
+    if (errKind) return errKind;                 /* timeout / neterr / badjson */
+    if (status === 404) return '404';
+    return 'HTTP ' + (status || 0);
+  }
+  /* オフライン表示は「本当に切れている」ときだけ。単発失敗での⚠点滅を止める。 */
+  function showOfflineIfPersistent_() {
+    try {
+      /* 「⚠ 同期先が見つかりません（設定の確認が必要）」は確定済みの案内＝設定を直すまで消さない。
+         ここで「オフライン（自動再試行）」に書き換えると、待てば直ると誤解される。 */
+      var cur = ($('saveState') && $('saveState').textContent) || '';
+      if (cur.indexOf('⚠ 同期先') === 0) return;
+      if (NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now())) setSyncState('⚠ オフライン（自動再試行）');
+    } catch (e) {}
+  }
   /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
   function friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
     return e || '通信失敗';
   }
   /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
@@ -10186,14 +10408,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function gas(payload, cb) { gasCall(payload, cb, false); }
   function gasCall(payload, cb, retried) {
     payload.token = settings.token;
-    /* cb は必ず1回だけ・15秒で必ず応答（無応答でも固まらないようにする） */
+    /* cb は必ず1回だけ。1試行15秒・最大3試行（1.5s→4.0s待ち）＝最悪でも約50秒で必ず応答する。
+       1回の失敗では何も判定しない（Googleフロントの一時404/停止で同期先を疑わない）。 */
     var called = false;
     function deliver(v) {
       /* 接続先URLが死んでいる(unknown action＝旧世代／deadendpoint＝404で消滅)ときは
          ws_settings の稼働URLへ自動切替して1回だけ再試行 */
       if (!retried && v && (v.error === 'unknown action' || v.error === 'deadendpoint')) {
         healStaleTarget(function (healed) {
-          if (healed) { gasCall(payload, cb, true); }
+          /* 接続先を切り替えた＝旧URLで貯めた404カウントと確定ラッチは捨てる（新URLを疑わない） */
+          if (healed) { dead.reset(); gasCall(payload, cb, true); }
           else {
             /* 切替先も無い＝この端末の接続先が古いまま。原因と直し方を画面に出す
                （「オフライン（自動再試行）」だけでは、待っても直らないことが伝わらない）。 */
@@ -10208,23 +10432,95 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       try { cb(v); } catch (e) {}
     }
-    function once(v) { if (called) return; called = true; if (timer) clearTimeout(timer); deliver(v); }
-    var timer = setTimeout(function () { once(null); }, 15000);
+    function once(v) { if (called) return; called = true; deliver(v); }
+    var action_ = String(payload.action || '-');
+
+    /* 1試行＝fetch＋15秒タイムアウト。結果は finish(status, errKind, json) に1回だけ集約する。 */
+    function attempt_(n) {
+      var settled = false, t0 = Date.now();
+      var tmr = setTimeout(function () { finish(0, 'timeout', null); }, NP.ATTEMPT_TIMEOUT_MS);
+      function finish(status, errKind, j) {
+        if (settled) return;
+        settled = true;
+        if (tmr) { clearTimeout(tmr); tmr = null; }
+        handle_(n, status, errKind, j, Date.now() - t0);
+      }
+      try {
+        fetch(settings.endpoint, { method: 'POST', body: JSON.stringify(payload) })
+          .then(function (r) {
+            var st = r.status || 0;
+            if (!r.ok) { finish(st, null, null); return null; }
+            /* 本文が壊れている(HTMLの障害ページ等)のは一時障害として扱う＝deadendpointにしない */
+            return r.json().then(function (j) { finish(st, null, j || null); },
+                                 function () { finish(st, 'badjson', null); });
+          })
+          .catch(function () { finish(0, 'neterr', null); });
+      } catch (e) { finish(0, 'neterr', null); }
+    }
+
+    /* 一時障害: 試行が残っていれば待って再試行（cbはまだ呼ばない）。打ち切り時だけ結果を返す。
+       失敗した試行は種類を問わず毎回1件記録し、打ち切りの試行にだけ final を立てる＝fail は呼び出し単位。 */
+    function transient_(n, status, errKind, elapsed, logged) {
+      var wait = NP.retryDelayMs(n), isFinal = (wait === null);
+      if (!logged) noteNetFail_(action_, resLabel_(status, errKind), elapsed, n, Date.now(), isFinal);
+      if (!isFinal) { setTimeout(function () { attempt_(n + 1); }, wait); return; }
+      net.failStreak++;
+      if (errKind || !status) { once(null); return; }        /* null＝通信失敗（上位の契約を維持） */
+      once({ error: 'HTTP ' + status });                      /* 未確定の404も 'HTTP 404' で返す */
+    }
+
+    function handle_(n, status, errKind, j, elapsed) {
+      var now = Date.now(), kind = NP.classify(status, errKind);
+      if (kind === 'ok') {
+        net.failStreak = 0;
+        net.lastOkAt = now;
+        dead.note('ok', now, elapsed);
+        noteNetOk_(now);
+        once(j || null);
+        return;
+      }
+      if (kind === 'notfound') {
+        /* ★2026-09-12: 404は即断しない。Googleのフロントは健全なGASにも一時的に404を返す
+         * （実測 約1.5%・3〜14秒後に到着・数分単位のクラスタ）。2026-09-08版は1回の404で
+         * deadendpoint＝「同期先が見つかりません」を出していたため誤警告が毎時5回出ていた。
+         * 速い404が3回・20秒以上続いたときだけ確認pingを打ち、それも404なら確定とする。 */
+        dead.note('notfound', now, elapsed);
+        if (dead.shouldConfirm(now)) {
+          confirmDead_(function (is404) {
+            if (is404) {
+              /* 確定＝ラッチ。以後 LATCH_MS(60秒) は確認pingを打たず、404は通常の再試行に回す
+                 （デプロイ消滅が続く間、確認pingと警告を毎回撃たない）。 */
+              dead.markConfirmed(now);
+              noteNetFail_(action_, '404', elapsed, n, now, false);
+              noteNetFail_(action_, 'deadendpoint確定', 0, n, Date.now(), true);
+              net.failStreak++;
+              once({ error: 'deadendpoint' });   /* 既存の healStaleTarget 経路へ */
+            } else {
+              dead.reset();                      /* 生きていた＝一時障害として扱う */
+              transient_(n, status, errKind, elapsed, false);   /* 記録は通常経路（final判定込み）に任せる */
+            }
+          });
+          return;
+        }
+        noteNetFail_(action_, '404', elapsed, n, now, NP.retryDelayMs(n) === null);
+        transient_(n, status, errKind, elapsed, true);
+        return;
+      }
+      transient_(n, status, errKind, elapsed, false);
+    }
+    attempt_(1);
+  }
+  /* deadendpoint の確認ping（8秒）。gasCall を通さない＝カウンタ・再試行に影響させない。
+     404 が返ったときだけ true＝「本当にそのデプロイは無い」。無応答・他のエラーは false。 */
+  function confirmDead_(cb) {
+    var done = false;
+    function fin(v) { if (done) return; done = true; if (t) { clearTimeout(t); t = null; } try { cb(v); } catch (e) {} }
+    var t = setTimeout(function () { fin(false); }, NP.CONFIRM_TIMEOUT_MS);
     try {
-      fetch(settings.endpoint, { method: 'POST', body: JSON.stringify(payload) })
-        .then(function (r) {
-          /* ★2026-09-08: HTTPステータスを見る。従来は 404 でも r.json() が例外になり null へ落ちて
-           * 「通信失敗」と区別できず、接続先の自動切替が働かなかった。その結果、アーカイブ済みの
-           * 古いデプロイURLを保存している端末だけが、再起動しても永久にオフラインのままだった
-           * （接続先は端末ごとの localStorage にあるため、他の端末は正常に見える）。
-           * 404＝そのデプロイは存在しない、という確定的な答えなので切替の合図にしてよい。
-           * 500・429 等は一時的でありうるので従来どおり通信失敗として扱う（誤切替を作らない）。 */
-          if (!r.ok) return { error: (r.status === 404) ? 'deadendpoint' : ('HTTP ' + r.status) };
-          return r.json();
-        })
-        .then(function (j) { once(j || null); })
-        .catch(function () { once(null); });
-    } catch (e) { once(null); }
+      fetch(settings.endpoint, { method: 'POST', body: JSON.stringify({ action: 'ping', token: settings.token }) })
+        .then(function (r) { fin((r.status || 0) === 404); })
+        .catch(function () { fin(false); });
+    } catch (e) { fin(false); }
   }
   function daySig(day) {
     try {
@@ -10306,7 +10602,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         handleDayConflict_(date);
       } else {
         /* 通信失敗＝オフライン表示。以後はバックオフタイマーが自動再試行する（イベント不要で必ず復帰） */
-        setSyncState('⚠ オフライン（自動再試行）');
+        showOfflineIfPersistent_();
         scheduleRetry_();
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
@@ -10723,6 +11019,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *  - シフトだけ変更  : 盤面の全量getを行わずシフト反映のみ（最速・最軽量）
    *  - 盤面が変更/旧GAS/通信失敗 : 従来どおり pullAll（取り込みロジックは無改変・安全側） */
   var pollHeadOk_ = null;    /* false=head非対応の旧GAS＝以後は従来どおり pullAll */
+  /* head の往復は最悪50秒かかる（15秒×3試行＋待ち）。15秒間隔のtickがそのまま重なると
+     同じhead要求が何本も積み上がり、遅い回線ほど詰まりが悪化する。同時に1本だけ走らせる。 */
+  var pollInFlight_ = false;
   var lastFullPullAt_ = 0;
   var lastHeadProbeAt_ = 0;
   /* 本体を取りに行くべき rev 差か。「前進(h>l)」と「消失(h===0 かつ l>0)」だけを対象にする。
@@ -10732,6 +11031,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * （改修前の > 比較では静かな no-op だった）ため、意図的に対象外にする。 */
   function revNeedsPull_(h, l) { h = h || 0; l = l || 0; return (h > l) || (h === 0 && l > 0); }
   function pollTick_() {
+    if (pollInFlight_) return;                 /* 前回のheadがまだ返っていない＝今回は見送る */
     if (pollHeadOk_ === false) {
       /* head非対応の旧GAS（＝GAS未再デプロイ）では15秒間隔で全量pullすると従来(30秒)の2倍の負荷になる。
        * 再デプロイ前でも負荷が増えないよう、この経路だけ従来と同じ30秒の下限を課す。 */
@@ -10752,7 +11052,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* staff/symbols も head で追跡する（職員のrulesフラグ・勤務記号定義の変更は plan rev を動かさないため、
      * 追跡しないと「タブを開いている限り永久に届かない」＝旧60秒TTLが担っていた保証の喪失になる）。
      * 一括headなので往復数は増えない（4→6キー）。GAS側は SHIFT_HEAD_KEY_RE で既に許可済み＝サーバー変更不要。 */
+    pollInFlight_ = true;
     gas({ action: 'head', keys: [CARE_KEY, MASTER_KEY, dk, pk, sk, yk] }, function (j) {
+      pollInFlight_ = false;                   /* 先頭で必ず解除＝以降どの分岐で抜けても取り残さない */
       if (!j || j.ok === false || !j.revs) {
         /* head非対応の旧GAS(badkey)のみ恒久フォールバックにする。unauthorized 等の一時的失敗で
          * latch すると、以後ずっと全量pullになりリロードまで戻らないため区別する。 */
@@ -11917,7 +12219,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         pullCareNow(true);   /* adoptCare がジャーナル再適用→マージ結果を自動再送 */
       } else {
-        setSyncState('⚠ オフライン（自動再試行）');
+        showOfflineIfPersistent_();
         scheduleRetry_();
       }
       if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
@@ -12615,6 +12917,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ($('stHideNonHeadcount')) $('stHideNonHeadcount').checked = settings.hideNonHeadcount !== false;
       $('stResult').textContent = '';
       try { if ($('stReserveDiag')) $('stReserveDiag').value = buildReserveDiag_(); } catch (eDg) {}
+      try { if ($('stNetDiag')) $('stNetDiag').value = NP.formatDiag(loadNetDiag_()); } catch (eNd) {}
+      if ($('stNetMsg')) $('stNetMsg').textContent = '';
       try { updateStorageUsage_(); } catch (eSu) {}   /* この端末の使用量（読み取り専用・保持日数の直下に表示） */
       if ($('stDiagMsg')) $('stDiagMsg').textContent = '';
       showModal('mSettings');
@@ -12627,6 +12931,55 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var ta = $('stReserveDiag'); if (!ta) return;
       try { ta.focus(); ta.select(); document.execCommand('copy'); if ($('stDiagMsg')) $('stDiagMsg').textContent = 'コピーしました'; }
       catch (e) { if ($('stDiagMsg')) $('stDiagMsg').textContent = '長押しで選択してコピーしてください'; }
+    });
+    if ($('stNetCopy')) $('stNetCopy').addEventListener('click', function () {
+      var ta = $('stNetDiag'); if (!ta) return;
+      try { ta.focus(); ta.select(); document.execCommand('copy'); if ($('stNetMsg')) $('stNetMsg').textContent = 'コピーしました'; }
+      catch (e) { if ($('stNetMsg')) $('stNetMsg').textContent = '長押しで選択してコピーしてください'; }
+    });
+    /* 接続診断: pingを20回続けて打ち、200/404/timeoutの内訳と所要時間を出す。
+       gasCall を通さない＝再試行・死活判定・診断カウンタに影響させない（純粋な計測）。 */
+    if ($('stNetPing')) $('stNetPing').addEventListener('click', function () {
+      var btn = this;
+      if (!settings.endpoint) { if ($('stNetMsg')) $('stNetMsg').textContent = '接続先URLが未設定です'; return; }
+      if (btn.disabled) return;
+      btn.disabled = true;
+      var N = 20, i = 0, nOk = 0, n404 = 0, nTo = 0, nOther = 0, sum = 0, mx = 0, lines = [];
+      function step() {
+        if (i >= N) {
+          var avg = Math.round(sum / N);
+          if ($('stNetMsg')) $('stNetMsg').textContent =
+            '20回: 200×' + nOk + '／404×' + n404 + '／timeout×' + nTo + '／その他×' + nOther +
+            '・平均 ' + avg + 'ms・最大 ' + mx + 'ms';
+          var ta = $('stNetDiag');
+          if (ta) ta.value = ta.value + '\n--- 接続診断 ' + NP.hms(Date.now()) + ' ---\n' + lines.join('\n');
+          btn.disabled = false;
+          return;
+        }
+        i++;
+        var no = i, t0 = Date.now(), settled = false;
+        var tmr = setTimeout(function () { fin(0, 'timeout'); }, NP.ATTEMPT_TIMEOUT_MS);
+        function fin(status, errKind) {
+          if (settled) return;
+          settled = true;
+          if (tmr) { clearTimeout(tmr); tmr = null; }
+          var ms = Date.now() - t0, lab;
+          sum += ms; if (ms > mx) mx = ms;
+          if (errKind === 'timeout') { nTo++; lab = 'timeout'; }
+          else if (status === 404) { n404++; lab = '404'; }
+          else if (status >= 200 && status < 300) { nOk++; lab = String(status); }
+          else { nOther++; lab = errKind ? errKind : ('HTTP ' + (status || 0)); }
+          lines.push(no + '回目 ' + lab + ' ' + ms + 'ms');
+          if ($('stNetMsg')) $('stNetMsg').textContent = '接続診断中… ' + no + '/' + N;
+          step();
+        }
+        try {
+          fetch(settings.endpoint, { method: 'POST', body: JSON.stringify({ action: 'ping', token: settings.token }) })
+            .then(function (r) { fin(r.status || 0, null); })
+            .catch(function () { fin(0, 'neterr'); });
+        } catch (e) { fin(0, 'neterr'); }
+      }
+      step();
     });
     if ($('stDiagFix')) $('stDiagFix').addEventListener('click', function () {
       /* stuck盤面の即時修復: シフトから再反映(fillDay=予約列①/分割勤務も正しく配置する権威経路)→finalizeBoardで整える。
