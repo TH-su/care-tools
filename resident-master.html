@@ -1312,6 +1312,9 @@ body.meal-on #sc-list{max-width:none}
 
 <!-- 薬効辞書（薬剤名 → 効果・効能）。フェイスシートと共有する唯一の正本。
      読み込めなかった時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-09-13"></script>
 <script src="meds-effect-dict.js?v=2026-08-11"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script>

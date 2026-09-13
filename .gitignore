@@ -53,6 +53,7 @@
 # （端末に保存するのも localStorage: su_print_prefs の用紙・余白・収め方のみ）。
 # daycare-roster.html が読み込む。M2 以降（resident-master・shift-app・work-schedule）も同じ1本を共有する。
 !/su-print.js
+!/su-errors.js
 !/su-print.css
 !/training-plan.html
 !/training-plan-form.js

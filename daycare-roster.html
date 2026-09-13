@@ -658,6 +658,9 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      ★?v= は必須。HTMLの no-store はサブリソースには効かないため、付けないと
        「新しいHTML × 古いJS」の組合せが現場端末に残る（meds-effect-dict.js と同じ作法）。
        データ層の契約を変えた日にこの値を更新する。 -->
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
 <script src="su-print.js?v=2026-09-12"></script>

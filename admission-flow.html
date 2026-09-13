@@ -491,6 +491,9 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 <div id="toast" role="status"></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
 <script>

@@ -407,6 +407,9 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-09-13"></script>
 <script>
 'use strict';
 /* ══════════════════════════════════════════════════════════════════
