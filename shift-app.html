@@ -2360,6 +2360,75 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftEditLock = api;
 })();
+/* ===== src/logic/netpolicy.js ===== */
+/* netpolicy.js — 接続先の死活判定ポリシー（純粋関数・2026-09-13）
+ *
+ * 背景（実測・ワースケ src/logic/netpolicy.js 2026-09-12 と同じ観測）:
+ *   統合GASのエンドポイント自体が健全でも、Googleのフロントは
+ *     ・一時的な HTTP 404（3〜14秒後に到着・約1.5%）
+ *   を数分単位のクラスタで返す。
+ *   シフトは 2026-09-08 以降「404＝デプロイ消滅」と即断して接続先の自動切替
+ *   (healStaleTarget) を起動していたため、ws_settings が古い接続先を保持している端末では
+ *   URLも合言葉も勝手に別の値へ書き換わっていた。su_sync_common は同一オリジンの
+ *   全ツール共通のキーなので、巻き添えはシフト1本では済まない。
+ *
+ * 方針: 1回の404では何も判定しない。
+ *   ・速い404（FAST_404_MS 未満で返ったもの）だけを数える。遅い404はフロントの詰まり
+ *   ・DEAD_MIN_COUNT 回以上 かつ 初回から DEAD_MIN_SPAN_MS 以上たって初めて確認pingを打つ
+ *   ・その確認pingも404だった時だけ「消滅」と確定する
+ *   ・成功が1回でも返ったら計数をリセット（クラスタ障害を持ち越さない）
+ *   ・確定後 LATCH_MS は再確定しない＝確認pingと警告の連打を止める
+ *
+ * 旧Safari互換: ?. / ?? / テンプレートリテラル / let / const / アロー関数は使用しない */
+(function () {
+  'use strict';
+
+  var FAST_404_MS = 15000;        /* これ未満で返ってきた404だけを死活判定に数える */
+  var DEAD_MIN_COUNT = 3;         /* 確定に必要な速い404の回数 */
+  var DEAD_MIN_SPAN_MS = 20000;   /* 初回404からの最低経過（クラスタ障害を除外） */
+  var CONFIRM_TIMEOUT_MS = 8000;  /* 確認pingのタイムアウト */
+  var LATCH_MS = 60000;           /* 確定後、この間は再確定しない */
+
+  function isNum_(v) { return typeof v === 'number' && isFinite(v); }
+
+  /* 404の連続を数えて「本当にデプロイが消えた」候補かどうかを判定する器。
+   * note の kind: 'notfound'（速い404だけ計上）／'ok'（リセット）／それ以外は無視。
+   * タイムアウト・通信失敗で途切れても404のカウントは消さない（障害クラスタは両者が混ざる）。 */
+  function createDeadDetector() {
+    var count = 0, firstAt = 0, confirmedAt = 0;
+    function note(kind, now, elapsedMs) {
+      if (kind === 'ok') { count = 0; firstAt = 0; confirmedAt = 0; return; }  /* 復旧＝ラッチも解く */
+      if (kind !== 'notfound') return;
+      var el = isNum_(elapsedMs) ? elapsedMs : 0;
+      if (el >= FAST_404_MS) return;   /* 遅い404＝フロントの詰まり。死活の材料にしない */
+      count++;
+      if (!firstAt) firstAt = isNum_(now) ? now : 0;
+    }
+    /* 確定直後の LATCH_MS 間は false を返す＝同じ障害で確認pingを何度も打たない。
+     * ラッチ中の404は通常の一時失敗として扱われる。 */
+    function shouldConfirm(now) {
+      if (!isNum_(now)) return false;
+      if (confirmedAt > 0 && (now - confirmedAt) < LATCH_MS) return false;
+      return count >= DEAD_MIN_COUNT && firstAt > 0 && (now - firstAt) >= DEAD_MIN_SPAN_MS;
+    }
+    function markConfirmed(now) { confirmedAt = isNum_(now) ? now : 0; }
+    function reset() { count = 0; firstAt = 0; confirmedAt = 0; }
+    function state() { return { count: count, firstAt: firstAt, confirmedAt: confirmedAt }; }
+    return { note: note, shouldConfirm: shouldConfirm, markConfirmed: markConfirmed,
+             reset: reset, state: state };
+  }
+
+  var api = {
+    createDeadDetector: createDeadDetector,
+    FAST_404_MS: FAST_404_MS,
+    DEAD_MIN_COUNT: DEAD_MIN_COUNT,
+    DEAD_MIN_SPAN_MS: DEAD_MIN_SPAN_MS,
+    CONFIRM_TIMEOUT_MS: CONFIRM_TIMEOUT_MS,
+    LATCH_MS: LATCH_MS
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftNetPolicy = api;
+})();
 /* ===== src/logic/holidays.js ===== */
 /* holidays.js — 日本の祝日計算（1980〜2099年対応・振替休日・国民の休日含む） */
 (function () {
@@ -2999,11 +3068,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (e) return e.classifyPushError(msg);
     return (String(msg) === 'unknown action') ? 'unsupported' : 'other';
   }
+  /* 接続先の死活判定ポリシー（netpolicy.js・純関数）。解決は呼び出し時＝読み込み順に依存しない。
+   * 未読込のビルドでは null＝「404では切り替えない（最も安全な側）」へ倒れる。 */
+  var _np = null;
+  function NP_() {
+    if (!_np && typeof window !== 'undefined' && window.ShiftNetPolicy) _np = window.ShiftNetPolicy;
+    return _np;
+  }
 
   /* 接続先が存在しない時の案内（2026-09-08）。この端末の設定が古い世代のデプロイを指している状態で、
    * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
   var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
     '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+
+  /* GAS 同期URLの形式（master.js の手入力検証・ワースケ・週間計画と同一規則）。
+   * 自動切替(healStaleTarget)で採用する時にも当てる＝壊れた値が su_sync_common 経由で
+   * 同一オリジンの全ツールへ伝播するのを防ぐ。 */
+  var GAS_ENDPOINT_RE = /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -3526,6 +3607,67 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.updateStatus();
     },
 
+    /* ---- 接続先の死活判定（2026-09-13） ----
+     * 404は一過性でありうる（健全な接続先にもGoogleのフロントが「速い404」を返す・実測 約1.5%）。
+     * 1回の404で接続先を切り替えると、端末に保存された su_sync_common の URL も合言葉も
+     * 書き換わり、同一オリジンの全ツールが巻き添えになる。切替は確定できた時だけに限る。 */
+    noteEndpoint_: function (kind, elapsedMs) {
+      var np = NP_();
+      if (!np) return;
+      if (!this._dead) this._dead = np.createDeadDetector();
+      this._dead.note(kind, Date.now(), elapsedMs);
+    },
+    resetDeadDetector_: function () { if (this._dead) this._dead.reset(); },
+    /* 現在の接続先へ確認pingを1回だけ打ち、HTTPステータスを返す（届かない時は0）。
+     * gasCall/api を通さない＝再試行・計数・状態表示に影響させない。 */
+    confirmPingStatus_: function (url, token) {
+      var np = NP_();
+      var timeoutMs = np ? np.CONFIRM_TIMEOUT_MS : 8000;
+      return new Promise(function (resolve) {
+        var done = false, timer = null;
+        function once(v) { if (done) return; done = true; if (timer) clearTimeout(timer); resolve(v); }
+        timer = setTimeout(function () { once(0); }, timeoutMs);
+        try {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: token || '' }),
+            redirect: 'follow'
+          }).then(function (r) { once(r.status); }).catch(function () { once(0); });
+        } catch (e) { once(0); }
+      });
+    },
+    /* 接続先を切り替えてよいか。Promise<boolean>。
+     *   unknown action … サーバ本体が答えた確定エラー＝従来どおり即座に合図とする
+     *   HTTP 404       … 速い404が3回以上・初回から20秒以上たった時に確認pingを打ち、
+     *                     それも404だった時だけ true（60秒はラッチして連打しない） */
+    endpointLooksDead_: function (msg) {
+      var self = this;
+      if (String(msg) === 'unknown action') return Promise.resolve(true);
+      if (String(msg) !== 'HTTP 404') return Promise.resolve(false);
+      var np = NP_();
+      if (!np || !this._dead) return Promise.resolve(false);   /* 判定器が無い＝切り替えない */
+      var now = Date.now();
+      if (!this._dead.shouldConfirm(now)) return Promise.resolve(false);
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return Promise.resolve(false);
+      this._dead.markConfirmed(now);
+      return this.confirmPingStatus_(cfg.url, cfg.token).then(function (st) {
+        if (st !== 404) {
+          /* 本体は応答している＝フロントの一時障害。計数を畳んで最初からやり直す */
+          if (st >= 200 && st < 300) self.resetDeadDetector_();
+          return false;
+        }
+        return true;
+      });
+    },
+    /* 一時的な通信失敗を現場の言葉にする（'HTTP 404' とだけ出しても何をすればよいか分からない） */
+    friendlyNetErr_: function (msg) {
+      var m = String(msg);
+      if (m === 'HTTP 404') return '一時的な応答エラーです（自動で再試行します）';
+      return m;
+    },
+
     /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ワースケ設定(ws_settings)の
      * 稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、そこへの ping が
      * 成功(j.ok===true もしくは role/server を返す)のときだけ su_sync_common を上書きする。
@@ -3538,6 +3680,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var cur = this.getSyncConfig();
       var curUrl = (cur && cur.url) ? String(cur.url).trim() : '';
       if (!wsEp || wsEp === curUrl) return Promise.resolve(false); /* 代替先が無い／既に同一 */
+      /* 形式の壊れた値を共通キーへ流し込まない（手入力の誤URLが全ツールへ伝播するのを防ぐ門番と同じ規則） */
+      if (!GAS_ENDPOINT_RE.test(wsEp)) return Promise.resolve(false);
       var wsTok = String(ws.token || '').trim();
       return fetch(wsEp, {
         method: 'POST',
@@ -3550,10 +3694,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }).then(function (j) {
         if (j && !j.error && (j.ok === true || j.role || j.server)) {
           lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
+          self.noteHealed_(curUrl, wsEp);   /* 切替を記録＝「勝手に変わった」を後から追跡できる */
+          self.resetDeadDetector_();        /* 新しい接続先を前の404で疑わない */
           return true;
         }
         return false;
       }).catch(function () { return false; }); /* 通信失敗では上書きしない */
+    },
+
+    /* 接続先を自動で切り替えた事実を端末に残す（直近5件）。原因調査のための足跡で、業務データではない。
+     * 圧縮しない平文キー＝現場のPCで localStorage を開けばそのまま読める。 */
+    noteHealed_: function (fromUrl, toUrl) {
+      try {
+        var k = PREFIX + '_healLog';
+        var log = [];
+        try { log = JSON.parse(localStorage.getItem(k) || '[]'); } catch (e0) { log = []; }
+        if (Object.prototype.toString.call(log) !== '[object Array]') log = [];
+        log.push({ at: new Date().toISOString(), from: String(fromUrl || ''), to: String(toUrl || '') });
+        while (log.length > 5) log.shift();
+        localStorage.setItem(k, JSON.stringify(log));
+      } catch (e) {}
+      try { console.warn('同期先を自動切替しました:', fromUrl, '->', toUrl); } catch (e2) {}
     },
 
     /* オフライン時のバックオフ自動再試行。15s→30s→60s(上限)。
@@ -3634,13 +3795,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return Promise.reject(new Error('同期未設定'));
       }
       payload.token = cfg.token;
+      var self = this;
+      var t0 = Date.now();
       return fetch(cfg.url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
         body: JSON.stringify(payload),
         redirect: 'follow'
       }).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          /* 404だけは死活判定の材料として数える（確定は endpointLooksDead_ の確認pingで行う）。
+           * 500・429・fetch失敗は一時的でありうるので数えない。 */
+          if (r.status === 404) self.noteEndpoint_('notfound', Date.now() - t0);
+          throw new Error('HTTP ' + r.status);
+        }
+        self.noteEndpoint_('ok', 0);   /* 応答が返った＝この接続先は生きている（計数リセット） */
         return r.json();
       }).then(function (json) {
         /* サーバが返した付随情報（was/now＝件数など）を捨てない。
@@ -3766,21 +3935,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!self._serverUnseen) self._serverUnseen = {};
           for (var ui = 0; ui < optKeys.length; ui++) self._serverUnseen[String(optKeys[ui])] = true;
         }
-        /* 接続先URLが死んでいる(unknown action / HTTP 404)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行。
-         * 判定は push 側と同じ classifyPushError_ に寄せる（2箇所で条件がずれないように）。 */
+        /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
+         * 自動切替して1回だけ再試行。判定は push 側と同じ endpointLooksDead_ に寄せる
+         * （2箇所で条件がずれないように）。404は確認pingを通るまで切り替えない。 */
         if (classifyPushError_(msg) === 'unsupported' && !self._healing) {
           self._healing = true;
-          return self.healStaleTarget().then(function (healed) {
-            self._healing = false;
-            if (healed) return self.pullAll();
-            /* 切替先も無い＝この端末の接続先が古いまま。原因も直し方も現場に伝える
-               （'HTTP 404' とだけ出しても何をすればよいか分からない）。 */
-            self.updateStatus('offline', DEAD_ENDPOINT_MSG);
-            self.scheduleRetry();
-            return 'offline';
+          return self.endpointLooksDead_(msg).then(function (isDead) {
+            if (!isDead) {   /* 一過性の404＝接続先はそのまま。再試行で復帰する */
+              self._healing = false;
+              self.updateStatus('offline', self.friendlyNetErr_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            }
+            return self.healStaleTarget().then(function (healed) {
+              self._healing = false;
+              if (healed) return self.pullAll();
+              /* 切替先も無い＝この端末の接続先が古いまま。原因も直し方も現場に伝える
+                 （'HTTP 404' とだけ出しても何をすればよいか分からない）。 */
+              self.updateStatus('offline', DEAD_ENDPOINT_MSG);
+              self.scheduleRetry();
+              return 'offline';
+            });
           });
         }
-        self.updateStatus('offline', msg);
+        self.updateStatus('offline', self.friendlyNetErr_(msg));
         self.scheduleRetry();   /* 一過性失敗(コールドスタートタイムアウト等)から自動復帰 */
         return 'offline';
       });
@@ -4032,18 +4210,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 編集権を失った（他端末が保持・強制引き継ぎ・厳格モードで券なし）: これを通信失敗として
          * 再試行に流すと同じ古い全量を送り続ける。退避→サーバ版採用→閲覧へ降格へ回す。 */
         if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
-        /* 接続先URLが死んでいる(unknown action / HTTP 404)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
+        /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
+         * 自動切替して1回だけ再送。404は確認pingを通るまで切り替えない（pull側と同条件）。 */
         if (kind === 'unsupported' && !self._healing) {
           self._healing = true;
-          return self.healStaleTarget().then(function (healed) {
-            self._healing = false;
-            if (healed) return self.pushQueued();
-            self.updateStatus('offline', DEAD_ENDPOINT_MSG);
-            self.scheduleRetry();
-            return 'offline';
+          return self.endpointLooksDead_(msg).then(function (isDead) {
+            if (!isDead) {   /* 一過性の404＝未送信は保持したまま再試行で復帰する */
+              self._healing = false;
+              self.updateStatus('offline', self.friendlyNetErr_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            }
+            return self.healStaleTarget().then(function (healed) {
+              self._healing = false;
+              if (healed) return self.pushQueued();
+              self.updateStatus('offline', DEAD_ENDPOINT_MSG);
+              self.scheduleRetry();
+              return 'offline';
+            });
           });
         }
-        self.updateStatus('offline', msg);
+        self.updateStatus('offline', self.friendlyNetErr_(msg));
         self.scheduleRetry();
         return 'offline';
       });
