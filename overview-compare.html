@@ -85,6 +85,9 @@ body {
   <div class="pane right"><span class="pane-tag">全支援</span><iframe id="fSupport" title="全支援 週間俯瞰" src="support-overview.html"></iframe></div>
 </div>
 
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-09-13"></script>
 <script>
 'use strict';
 /* 左右iframeの表示連動。各iframeが公開する
