@@ -1525,21 +1525,23 @@ function applyPrintKind(o, kind) {
   return out;
 }
 
-/* ── 報告書に刷る上段の日付（D57'・2026-09-09 本人裁定でD57を差し替え）──
-   報告書は次の期の計画書と同じ日に刷り、ご家族へ一緒に説明する運用のため、
-   【報告日にあたる作成日の1欄だけ】を次の期の計画書の作成日に合わせる。
-   前回作成日・初回作成日はこの期のまま（差し替えない）。
-   次の期がまだ無い・日付の形が違う時は合わせられない＝linked:false を返し、
-   呼び出し側（buildPreview）が報告書を刷らせない（D58'）。
-   ★保存データは触らない（呼び出し側が印刷用の写しにだけ適用する）。 */
-function reportHeaderDates(cur, next) {
+/* ── 報告書に刷る「説明日」（D61〜D63・2026-09-15 本人裁定で D57'・D58' を差し替え）──
+   報告書は次の期の計画書と同じ日に刷り、その場でご家族へ一緒に説明する運用のため、
+   様式右下の【説明日】をその日に合わせる。
+   ・次の期の計画書があれば、その作成日（＝実際に説明する日）
+   ・まだ無ければ、この期の作成日の PLAN_MONTHS か月後（見込み）
+   ★上段（作成日・前回作成日・初回作成日）は差し替えない。2026-09-09 の版は作成日を
+     次の期へずらしていたが、「報告書の作成日は計画書の作成日と同じ日」が本人裁定。
+   ★説明者は変えない（説明日のみ）。★保存データは触らない（写しにだけ適用する）。
+   from: 'next'＝次の期の作成日／'estimate'＝作成日からの見込み／'none'＝作成日が空で出せない */
+function reportExplainedDate(cur, next) {
   var c = isObj_(cur) ? cur : {};
   var n = isObj_(next) ? next : null;
-  var curDate = s_(c.planDate);
-  var prevDate = s_(c.prevPlanDate);
   var nextDate = n ? s_(n.planDate) : '';
-  if (!isYmd(nextDate)) return { planDate: curDate, prevPlanDate: prevDate, linked: false, nextPlanDate: '' };
-  return { planDate: nextDate, prevPlanDate: prevDate, linked: true, nextPlanDate: nextDate };
+  if (isYmd(nextDate)) return { date: nextDate, from: 'next' };
+  var curDate = s_(c.planDate);
+  if (!isYmd(curDate)) return { date: '', from: 'none' };
+  return { date: addMonthsClamp(curDate, PLAN_MONTHS), from: 'estimate' };
 }
 
 /* ── AIの出力の形の判定（aiShapeNotes v2・item C）。文言の組立は呼び出し側が行う ── */
@@ -1574,7 +1576,7 @@ global.TP = {
   prevDateMismatches: prevDateMismatches, expectedPeriods: expectedPeriods, goalRepeats: goalRepeats,
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport,
-  applyPrintKind: applyPrintKind, reportHeaderDates: reportHeaderDates,
+  applyPrintKind: applyPrintKind, reportExplainedDate: reportExplainedDate,
   achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix
 };
 })(typeof window !== 'undefined' ? window : this);
@@ -2406,6 +2408,17 @@ function setPath(obj, path, val) {
 function curPlan() { return (DOC && DOC.plans && curPlanIdx >= 0) ? DOC.plans[curPlanIdx] : null; }
 function prevPlan() { return (DOC && DOC.plans && curPlanIdx > 0) ? DOC.plans[curPlanIdx - 1] : null; }
 function nextPlan() { return (DOC && DOC.plans && curPlanIdx >= 0 && curPlanIdx + 1 < DOC.plans.length) ? DOC.plans[curPlanIdx + 1] : null; }
+/* 渡した計画の【次の期】（作成日の昇順で1つ後ろ）。並び順ではなく planId で探す＝
+   いま開いている期とは限らない相手（前の期へⅢを書く時など）にも使える */
+function nextPlanOf(target) {
+  if (!DOC || !DOC.plans || !target) return null;
+  var pid = s_(target.planId);
+  if (!pid) return null;
+  for (var i = 0; i + 1 < DOC.plans.length; i++) {
+    if (s_(DOC.plans[i].planId) === pid) return DOC.plans[i + 1];
+  }
+  return null;
+}
 function sortPlans() {
   if (!DOC || !DOC.plans) return;
   DOC.plans.sort(function (a, b) { return TP.cmpYmd(a && a.planDate, b && b.planDate); });
@@ -2873,10 +2886,12 @@ function moveEvalToPrev() {
   prev.changes = p.changes;
   prev.issues = p.issues;
   p.shortAchievement = ''; p.longAchievement = ''; p.changes = ''; p.issues = '';
+  var moved = [];
+  fillReportExplainedDate(prev, moved);   /* D63: Ⅲが入った前の期の説明日を空の時だけ補う */
   markDirty();
   renderEdit();
   saveNow(true);
-  toast('前の期（第' + prev.seq + '期）へ移しました');
+  toast('前の期（第' + prev.seq + '期）へ移しました' + (moved.length ? '（説明日も入れました）' : ''));
 }
 
 /* ── 本人の様子（AIへの依頼のもと）── */
@@ -3272,12 +3287,16 @@ function planForSheet(p, opts) {
     o.shortAchievement = pk.shortAchievement; o.longAchievement = pk.longAchievement;
     o.changes = pk.changes; o.issues = pk.issues;
   }
-  /* 報告書は次の期の計画書と同じ日に刷って一緒に説明する運用のため、報告日にあたる
-     作成日の1欄だけを次の期の作成日にする（D57'）。前回作成日・初回作成日はこの期のまま。
-     ★写しにだけ効く＝保存データは変えない */
+  /* 報告書は「次の期の計画書と同じ日に刷って、その場でご家族へ説明する」運用のため、
+     様式右下の【説明日】だけをその日にする（D61）。上段の作成日・前回作成日・初回作成日と
+     説明者は、計画書を刷った時とまったく同じ。★写しにだけ効く＝保存データは変えない。
+     その期に説明日が入力されていても、報告書はこの日付で刷る（D62）。 */
   if (kind === 'report') {
-    var rd = TP.reportHeaderDates(p, opts && opts.nextPlan);
-    o.planDate = rd.planDate;
+    var rd = TP.reportExplainedDate(p, opts && opts.nextPlan);
+    if (rd.date) {
+      o.explained.date = rd.date;    /* 様式が読むのは入れ子の explained.date */
+      o.explainedDate = rd.date;     /* 平たい別名も揃える（食い違いを残さない） */
+    }
   }
   return o;
 }
@@ -5799,6 +5818,24 @@ function putField(target, notes, k, v) {
 function prevEvalEmptyFields(p) {
   return EVAL_KEYS.filter(function (k) { return !s_(p && getPath(p, k)); });
 }
+/* Ⅲ（報告書欄）が入った期の説明日を、【空の時だけ】補う（D63）。
+   報告書はその日にご家族へ説明する運用のため、印刷時と同じ規則（次の期の作成日／無ければ
+   作成日の3か月後）で入れる。★人が入れた説明日は動かさない（原則6）。
+   notes に残すのは「勝手に日付が入った」と見えないようにするため。 */
+function fillReportExplainedDate(target, notes) {
+  if (!target) return false;
+  if (!target.explained) target.explained = { date: '', explainer: '' };
+  if (s_(target.explained.date)) return false;
+  var rd = TP.reportExplainedDate(target, nextPlanOf(target));
+  if (!rd.date) return false;
+  target.explained.date = rd.date;
+  if (notes) {
+    notes.push('説明日が空欄だったため ' + rd.date + ' を入れました（' +
+      (rd.from === 'next' ? '次の期の計画書と同じ日' : 'この期の作成日の' + TP.PLAN_MONTHS + 'か月後の見込み') +
+      '）。違う日に説明したら直してください');
+  }
+  return true;
+}
 /* 1つの期に評価（evalSelf＝達成度＋Ⅲ）を入れる。達成度が空なら「一部」を既定にする（D22）。
    fill_eval（自分の期にAIで埋める）は職員の確認ダイアログ（aiOverwriteOk）を通った後に呼ぶため、常に4欄とも書く */
 function applyEvalToPlan(target, ev, notes) {
@@ -5809,6 +5846,7 @@ function applyEvalToPlan(target, ev, notes) {
   putField(target, notes, 'issues', e.issues);
   if (!s_(target.shortAchievement)) target.shortAchievement = '一部';
   if (!s_(target.longAchievement)) target.longAchievement = '一部';
+  fillReportExplainedDate(target, notes);   /* D63: Ⅲが入った期の説明日を空の時だけ補う */
 }
 /* 前の期（base）へ evalPrev を入れる：欄ごとに「既存が空の欄だけ」入れる（原則6）。
    期首に署名を受け、期末に報告書欄を埋めるのが通常運用のため、base.status が printed／signed でも
@@ -5828,6 +5866,7 @@ function applyEvalPrevToBase(target, ev, notes) {
       notes.push('前の期の' + (FIELDS[kept[j]] ? FIELDS[kept[j]].label : kept[j]) + 'は既に記載があるため残しました');
     }
   }
+  if (empties.length) fillReportExplainedDate(target, notes);   /* D63: 実際に書いた時だけ補う */
   return !!empties.length;
 }
 /* 次の期（対象の期）の計画書欄（PLAN_KEYS + programs[].content）を入れる。
@@ -6796,13 +6835,6 @@ function renderPvKind() {
   $('pvKindReport').classList.toggle('on', k === 'report');
   $('pvKindReport').setAttribute('aria-pressed', k === 'report' ? 'true' : 'false');
 }
-/* 刷らせない状態（次の期がまだ無い報告書・D58'）。押せるボタンも閉じる */
-var PV_BLOCKED = false;
-function setPvBlocked(on) {
-  PV_BLOCKED = !!on;
-  $('btnPrint').disabled = PV_BLOCKED;
-  $('btnMarkPrinted').disabled = PV_BLOCKED;
-}
 function setPvKind(k) {
   if (PRINT_KINDS.indexOf(k) < 0) return;
   lsSet(LS.printKind, k);
@@ -6815,22 +6847,10 @@ function buildPreview() {
   $('pvDateNote').textContent = '';
   host.style.zoom = '';
   renderPvKind();
-  setPvBlocked(false);
   var p = curPlan();
   if (!p) { banner(warn, 'warn', '計画がありません。編集画面で計画を作ってから印刷してください。'); return; }
   if (!FORM_READY) { banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていません。ページを再読み込みしてください。'); return; }
   var np = nextPlan();
-  /* 報告書は次の期の計画書と同じ作成日で刷る決まり。次の期がまだ無い期はその日付が決まらないため、
-     様式そのものを組み立てない＝ブラウザのメニューから印刷しても紙は出ない（D58'） */
-  if (printKind() === 'report' && !TP.reportHeaderDates(p, np).linked) {
-    setPvBlocked(true);
-    lastFit = null;
-    var nb = el('div', 'banner warn no-print',
-      '次の期の計画書がまだありません。報告書は次の期の計画書と同じ作成日で刷る決まりのため、この期の報告書は印刷できません。先に次の期の計画書を作ってから刷ってください。');
-    nb.setAttribute('role', 'status');
-    warn.appendChild(nb);
-    return;
-  }
   renderPvDateNote(p, np);
   try {
     mountSheet(host, TP_FORM.buildSheet(planForSheet(p, { kind: printKind(), nextPlan: np }), { signature: true }));
@@ -6846,16 +6866,23 @@ function buildPreview() {
     applyZoom();
   });
 }
-/* 報告書をどの日付で刷るかを、画面にだけ出す（.no-print＝紙には出ない）。計画書の時は何も出さない */
+/* 報告書の説明日をどの日付で刷るかを、画面にだけ出す（.no-print＝紙には出ない）。
+   計画書の時は何も出さない＝計画書は保存されている説明日をそのまま刷る */
 function renderPvDateNote(p, np) {
   var box = $('pvDateNote');
   box.textContent = '';
   if (printKind() !== 'report') return;
-  var rd = TP.reportHeaderDates(p, np);
+  var rd = TP.reportExplainedDate(p, np);
+  if (rd.from === 'none') {
+    box.textContent = 'この期は作成日が空欄のため、報告書の説明日を出せません。作成日を入れてください。';
+    return;
+  }
   var w = (window.TP_FORM && typeof TP_FORM.toWareki === 'function') ? TP_FORM.toWareki : null;
-  var shown = (w ? s_(w(rd.planDate)) : '') || s_(rd.planDate) || '（作成日が空欄です）';
-  if (!rd.linked) return;   /* 合わせられない期は刷らせない（buildPreview で止まる） */
-  box.textContent = '報告書の作成日は、次の期の計画書と同じ ' + shown + ' で刷ります（前回作成日・初回作成日はこの期のまま）。';
+  var shown = (w ? s_(w(rd.date)) : '') || s_(rd.date);
+  box.textContent = (rd.from === 'next')
+    ? ('報告書の説明日は、次の期の計画書と同じ ' + shown + ' で刷ります（作成日はこの期のままです）。')
+    : ('次の期の計画書がまだないため、報告書の説明日はこの期の作成日の' + TP.PLAN_MONTHS +
+       'か月後 ' + shown + '（見込み）で刷ります。次の期を作ってから刷り直すと、その作成日に揃います。');
 }
 /* 縮んだ欄の警告は【画面だけ】に出す（.tp-warn は @media print で消える＝紙には出ない） */
 function renderPrintWarn(warn, p) {
@@ -6905,7 +6932,6 @@ function pageCss() {
 }
 /* 用紙は印刷の直前にだけ固定する（既存ツールと同じ作法。終わったら必ず外す） */
 function doPrint() {
-  if (PV_BLOCKED) { toast('次の期の計画書がまだないため、この報告書は印刷できません'); return; }
   if (!FORM_READY) { toast('印刷様式を読み込めていないため印刷できません'); return; }
   var host = $('sheetHost');
   if (!host.firstChild) { toast('印刷する内容がありません'); return; }
