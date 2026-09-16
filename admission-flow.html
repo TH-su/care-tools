@@ -228,6 +228,19 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .bnav button .ic { font-size: 1.25rem; line-height: 1; }
 .bnav button.on { color: var(--pri-d); background: var(--pri-l); font-weight: 700; }
 
+/* ── 日付欄（西暦・和暦のどちらでも打てる） ── */
+.drow { display: flex; align-items: center; gap: 4px; position: relative; }
+.drow .dtin { flex: 1; min-width: 0; }
+/* カレンダーを開くためだけの欄。display:none にすると showPicker が効かない端末がある */
+.drow .dpk { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
+             opacity: 0; border: 0; padding: 0; margin: 0; pointer-events: none; }
+.dpick { min-width: 44px; min-height: 44px; border: 1px solid var(--g3); border-radius: 8px;
+         background: #fff; font-size: 1rem; line-height: 1; cursor: pointer; flex: none; }
+.dpick:hover { background: var(--g1); }
+.dnote { display: block; font-size: 0.75rem; color: var(--g6); margin-top: 2px; word-break: break-all; }
+.dnote.bad { color: var(--err); font-weight: 700; }
+.dtin.bad { border-color: var(--err); background: #fdecea; }
+
 /* ── 添付書類 ── */
 .fl { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
       border: 1px solid var(--g3); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
@@ -496,6 +509,8 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
+<!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
+<script src="staff-master-calc.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居調整 / 申込から入居までの多機関連携ボード
@@ -1812,7 +1827,7 @@ function renderView(c) {
     '<div class="fld" style="flex:2"><label for="tkTitle">内容</label><input id="tkTitle" type="text" placeholder="例: 診療情報提供書の依頼"></div>' +
     '<div class="fld"><label for="tkDir">種類</label><select id="tkDir">' +
     DIRS.map(function (p) { return '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
-    '<div class="fld"><label for="tkDue">期限</label><input id="tkDue" type="date"></div>' +
+    '<div class="fld"><label for="tkDue">期限</label>' + dateCellHtml('tkDue', '', '', '期限') + '</div>' +
     '<button class="btn sm pri" id="tkAddGo" type="button">追加</button></div></div>';
   h += '</div>';
 
@@ -1943,6 +1958,7 @@ function bindViewEvents(c) {
   $('tkAddGo').addEventListener('click', function () {
     var title = $('tkTitle').value.trim();
     if (!title) { toast('内容を入力してください'); return; }
+    if (!normalizeDateInput($('tkDue'))) { toast('期限の' + DATE_BAD_MSG); $('tkDue').focus(); return; }
     c.tasks.push({ id: newId('t'), cat: $('tkCat').value, title: title, dir: $('tkDir').value, due: $('tkDue').value || '', st: 'todo', doneAt: '', note: '', updatedAt: nowIso() });
     touch(c); renderView(c); toast('タスクを追加しました');
   });
@@ -2534,6 +2550,164 @@ function removeFileEntry(c, fid) {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   日付欄（西暦・和暦のどちらでも打てる）
+   ---------------------------------------------------------------
+   ・保存する値は今までどおり 'YYYY-MM-DD' だけ。打った形は問わない
+   ・変換は職員マスタと同じ staff-master-calc.js（StaffCalc）を使う。
+     同じ規則を2か所に書くと、片方だけ直した日から静かに食い違う
+   ・type="date" をやめた理由は2つ。①仕様上「昭和15年4月3日」を受け取れない
+     ②読めない値を【黙って空にする】ので、書いたつもりの日付が消える
+   ・📅 は showPicker() が使える端末にだけ出す（押しても何も起きない物を作らない）
+   ═══════════════════════════════════════════════════════════════ */
+var DATE_ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+var DATE_BAD_MSG = '日付を読み取れません。2026-09-16 または S15.4.3 の形で入れてください';
+/* ★和暦の例を先に置く。狭い画面では後ろが切れるので、
+   「和暦でも打てる」という新しい方だけは必ず見えるようにする。 */
+var DATE_PH = 'S15.4.3 / 2026-09-16';
+
+/* 文字列 → 'YYYY-MM-DD'（読めなければ ''）。 */
+function normDateStr(raw) {
+  var s = asStr(raw).trim();
+  if (!s) return '';
+  var SC = window.StaffCalc;
+  if (SC && typeof SC.normDate === 'function') return asStr(SC.normDate(s) || '');
+  /* 計算モジュールを読めていない時は西暦の形だけ通す（和暦は諦めるが画面は動かす） */
+  return DATE_ISO_RE.test(s) ? s : '';
+}
+/* 'YYYY-MM-DD' → '昭和15年4月3日'（確認用。保存はしない） */
+function warekiOf(v) {
+  var SC = window.StaffCalc;
+  if (!SC || typeof SC.toWareki !== 'function') return '';
+  return asStr(SC.toWareki(asStr(v)) || '');
+}
+function datePickerSupported() {
+  try {
+    var i = document.createElement('input');
+    i.type = 'date';
+    return typeof i.showPicker === 'function';
+  } catch (e) { return false; }
+}
+
+/* 日付欄1つぶんの中身（.fld と <label> は呼び手が用意する）。
+   読み下しは組み立て時に埋める＝描き直しのたびに走らせる後処理が要らない。 */
+function dateCellHtml(id, attrs, val, aria) {
+  var v = asStr(val);
+  var w = DATE_ISO_RE.test(v) ? warekiOf(v) : '';
+  return '<span class="drow">' +
+    '<input id="' + esc(id) + '" ' + attrs + ' type="text" class="dtin" inputmode="numeric" ' +
+    'autocomplete="off" placeholder="' + esc(DATE_PH) + '" value="' + esc(v) + '">' +
+    '<input class="dpk" type="date" tabindex="-1" aria-hidden="true" value="' + esc(DATE_ISO_RE.test(v) ? v : '') + '">' +
+    '<button type="button" class="dpick" data-dpick="' + esc(id) + '" aria-label="' +
+    esc(asStr(aria) || 'この日付') + 'をカレンダーから選ぶ">📅</button>' +
+    '</span><span class="dnote"' + (w ? '' : ' hidden') + '>' + esc(w) + '</span>';
+}
+
+/* 読み下し欄は .drow の次の要素。id で引かないのは、同じ画面に同じ id が
+   一瞬だけ2つ出る（描き直しの途中）場合に取り違えないため。 */
+function dateNoteOf(el) {
+  var n = el && el.parentNode ? el.parentNode.nextElementSibling : null;
+  return (n && n.classList && n.classList.contains('dnote')) ? n : null;
+}
+
+/* 欄の値を 'YYYY-MM-DD' へ直す。読めた＝true。
+   ★読めない値は消さずに残す。消すと「打ったのに無くなった」になる（type="date" の挙動）。 */
+function normalizeDateInput(el) {
+  if (!el) return true;
+  var raw = asStr(el.value).trim();
+  var note = dateNoteOf(el);
+  function mark(bad, msg) {
+    if (bad) { el.classList.add('bad'); el.setAttribute('aria-invalid', 'true'); }
+    else { el.classList.remove('bad'); el.removeAttribute('aria-invalid'); }
+    if (!note) return;
+    note.textContent = asStr(msg);
+    note.hidden = !msg;
+    if (bad) note.classList.add('bad'); else note.classList.remove('bad');
+  }
+  if (raw === '') { el.value = ''; mark(false, ''); return true; }
+  var v = normDateStr(raw);
+  if (v) { el.value = v; mark(false, warekiOf(v)); return true; }
+  mark(true, DATE_BAD_MSG);
+  return false;
+}
+
+/* 範囲内の日付欄をすべて直し、読めなかった欄を返す */
+function badDateInputs(box) {
+  var out = [];
+  if (!box) return out;
+  Array.prototype.forEach.call(box.querySelectorAll('.dtin'), function (el) {
+    if (!normalizeDateInput(el)) out.push(el);
+  });
+  return out;
+}
+function dateFieldLabel(el) {
+  var f = (el && el.closest) ? el.closest('.fld') : null;
+  var l = f ? f.querySelector('label') : null;
+  return l ? asStr(l.textContent).trim() : '日付';
+}
+
+/* 元号＋年だけの書き方（「平成20年頃」「H20」）から西暦を読む。発症時期の確認用。
+   ★書き換えはしない。「10年前」のような曖な記載をそのまま残せるようにするため。
+   ★記号1文字の形は【先頭にある時だけ】見る。本文中の R2・S字 などを拾わないため。 */
+var ERA_Y_BASE = { M: 1868, T: 1912, S: 1926, H: 1989, R: 2019 };
+var ERA_Y_JA = { '明治': 'M', '大正': 'T', '昭和': 'S', '平成': 'H', '令和': 'R' };
+function warekiYearHint(raw) {
+  var s = asStr(raw);
+  if (!s) return '';
+  s = s.normalize ? s.normalize('NFKC') : s;
+  var m = s.match(/^\s*([MTSHRmtshr])\s*(\d{1,2}|元)/) ||
+          s.match(/(明治|大正|昭和|平成|令和)\s*(\d{1,2}|元)/);
+  if (!m) return '';
+  var b = ERA_Y_BASE[ERA_Y_JA[m[1]] || String(m[1]).toUpperCase()];
+  if (!b) return '';
+  var n = (m[2] === '元') ? 1 : parseInt(m[2], 10);
+  if (!(n >= 1 && n <= 99)) return '';
+  return '＝' + (b + n - 1) + '年';
+}
+function refreshOnsetHint(el) {
+  var n = el && el.nextElementSibling;
+  if (!n || !n.classList || !n.classList.contains('dnote')) return;
+  var h = warekiYearHint(el.value);
+  n.textContent = h;
+  n.hidden = !h;
+}
+
+/* 画面は何度も innerHTML ごと差し替わるので、欄ごとではなく document へ1回だけ張る */
+function bindDateInputs() {
+  document.addEventListener('focusout', function (e) {
+    var el = e.target;
+    if (el && el.classList && el.classList.contains('dtin')) normalizeDateInput(el);
+  });
+  document.addEventListener('input', function (e) {
+    var el = e.target;
+    if (el && el.classList && el.classList.contains('onsetin')) refreshOnsetHint(el);
+  });
+  document.addEventListener('click', function (e) {
+    var b = (e.target && e.target.closest) ? e.target.closest('.dpick') : null;
+    if (!b) return;
+    var row = b.parentNode;
+    var el = row.querySelector('.dtin'), pk = row.querySelector('.dpk');
+    if (!el || !pk) return;
+    pk.value = normDateStr(el.value) || '';
+    try { pk.showPicker(); } catch (e2) { /* 使えない端末ではボタンを出していない */ }
+  });
+  document.addEventListener('change', function (e) {
+    var pk = e.target;
+    if (!pk || !pk.classList || !pk.classList.contains('dpk')) return;
+    var el = pk.parentNode.querySelector('.dtin');
+    if (!el || !pk.value) return;
+    el.value = pk.value;
+    normalizeDateInput(el);
+    /* 編集中フラグ（editDirty）は input を見ているので、選んだ時も立てる */
+    try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e3) {}
+  });
+  if (!datePickerSupported()) {
+    var st = document.createElement('style');
+    st.textContent = '.dpick{display:none}';
+    document.head.appendChild(st);
+  }
+}
+
 /* ═══════════ 編集 ═══════════ */
 var editing = null;    // 編集中の作業コピー（保存するまで DB に触らない）
 var editBase = null;   // 編集を始めた時点の姿（保存時に「自分が変えた項目」だけを当てるため）
@@ -2556,7 +2730,9 @@ function fld(k, label, val, type, opts) {
   return '<div class="fld' + (type === 'textarea' ? ' wide' : '') + '"><label for="f-' + esc(k) + '">' + esc(label) + '</label>' +
     (type === 'textarea'
       ? '<textarea id="f-' + esc(k) + '" data-k="' + esc(k) + '">' + esc(val || '') + '</textarea>'
-      : '<input id="f-' + esc(k) + '" data-k="' + esc(k) + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">') +
+      : type === 'date'
+        ? dateCellHtml('f-' + k, 'data-k="' + esc(k) + '"', val, label)
+        : '<input id="f-' + esc(k) + '" data-k="' + esc(k) + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">') +
     '</div>';
 }
 /* ご相談シート（ラウレアハレ様式）の入力欄。
@@ -2577,7 +2753,9 @@ function shFld(k, label, type, opts, val) {
       '<textarea id="' + esc(id) + '" data-ak="' + esc(k) + '">' + esc(val) + '</textarea></div>';
   }
   return '<div class="fld"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
-    '<input id="' + esc(id) + '" data-ak="' + esc(k) + '" type="' + (type === 'date' ? 'date' : 'text') + '" value="' + esc(val) + '"></div>';
+    (type === 'date'
+      ? dateCellHtml(id, 'data-ak="' + esc(k) + '"', val, label)
+      : '<input id="' + esc(id) + '" data-ak="' + esc(k) + '" type="text" value="' + esc(val) + '">') + '</div>';
 }
 /* 紙の見出しごとの区切り。[見出し, そこに入るキーの配列] */
 var SHEET_GROUPS = [
@@ -2661,7 +2839,8 @@ function assessEditHtml(a) {
     if (i2 >= 3 && !d2.name && !d2.onset && !d2.hospital) continue;
     h += '<div class="frow" style="margin-bottom:4px">' +
       '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.name" placeholder="病名" value="' + esc(d2.name || '') + '"></div>' +
-      '<div class="fld"><input data-adis="' + i2 + '.onset" placeholder="発症時期" value="' + esc(d2.onset || '') + '"></div>' +
+      '<div class="fld"><input data-adis="' + i2 + '.onset" class="onsetin" placeholder="発症時期" value="' + esc(d2.onset || '') + '">' +
+        (function (h) { return '<span class="dnote"' + (h ? '' : ' hidden') + '>' + esc(h) + '</span>'; })(warekiYearHint(d2.onset)) + '</div>' +
       '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.hospital" placeholder="医療機関" value="' + esc(d2.hospital || '') + '"></div></div>';
   }
   h += '</div></details>';
@@ -2728,7 +2907,7 @@ function renderEdit() {
   h += '<div class="cd"><h3>ステージ日付（自動で入ります。直したい時だけ）</h3><div class="fgrid">';
   STAGES.forEach(function (s) {
     h += '<div class="fld"><label for="sd-' + esc(s[0]) + '">' + esc(s[1]) + '</label>' +
-      '<input id="sd-' + esc(s[0]) + '" data-sd="' + esc(s[0]) + '" type="date" value="' + esc(r.stageDates[s[0]] || '') + '"></div>';
+      dateCellHtml('sd-' + s[0], 'data-sd="' + esc(s[0]) + '"', r.stageDates[s[0]] || '', s[1]) + '</div>';
   });
   h += '</div></div>';
 
@@ -2792,6 +2971,10 @@ function bindEditEvents() {
 /* 再描画・保存の前に、入力値を作業コピーへ回収する */
 function collectEditInputs() {
   var box = $('editBox');
+  /* ★日付欄を先に 'YYYY-MM-DD' へ直す。ここを飛ばすと「昭和15年4月3日」のまま
+     案件データに入り、印刷・入居者マスタへの送信・KPI の日付計算が壊れる。
+     読めなかった欄は値を残したままにして、保存の直前（saveEdit）で止める。 */
+  Array.prototype.forEach.call(box.querySelectorAll('.dtin'), function (el) { normalizeDateInput(el); });
   Array.prototype.forEach.call(box.querySelectorAll('[data-k]'), function (inp) {
     editing[inp.getAttribute('data-k')] = (typeof inp.value === 'string') ? inp.value.trim() : inp.value;
   });
@@ -2881,6 +3064,14 @@ function saveEdit() {
   if (!editing) return;            /* 連打対策（1回目の保存で editing は空になる） */
   collectEditInputs();
   if (!editing.name) { toast('氏名は必須です'); return; }
+  /* ★読めない日付を持ったまま保存させない。案件データの日付は常に 'YYYY-MM-DD' か空、
+     という約束を守るため（印刷・マスタ送信・KPI がこれを前提にしている）。 */
+  var badDates = badDateInputs($('editBox'));
+  if (badDates.length) {
+    toast('「' + dateFieldLabel(badDates[0]) + '」の' + DATE_BAD_MSG);
+    try { badDates[0].focus(); badDates[0].scrollIntoView({ block: 'center' }); } catch (e) {}
+    return;
+  }
   /* ★空行は落とさない。メモだけ書いた連携先・続柄だけ入れた家族も、書いた人には意味がある */
   var isNew = !findCand(editing.id);
   var target = isNew ? null : findCand(editing.id);
@@ -3164,7 +3355,8 @@ function openMasterModal(c) {
   $('msBody').innerHTML =
     '<p style="font-size:0.84375rem">以下の内容で入居者マスタに<b>新規登録</b>します。登録後の変更はマスタ側で行ってください。</p>' +
     '<table>' + rows.join('') + '</table>' +
-    '<div class="fld" style="max-width:16em"><label for="msAdm">入居日（予定）</label><input id="msAdm" type="date" value="' + esc(adm) + '"></div>' +
+    '<div class="fld" style="max-width:16em"><label for="msAdm">入居日（予定）</label>' +
+      dateCellHtml('msAdm', '', adm, '入居日（予定）') + '</div>' +
     '<p class="note warn"><b>登録するとその方は週間計画・デイ利用表に「入居済」として出ます。</b>' +
     '入居者マスタには「入居前」という区別がないためです。入居日より前に登録する場合は、登録後に' +
     '<a href="care-schedule.html">週間計画</a>でその方を開き「入居前」を押してください。</p>' +
@@ -3175,6 +3367,11 @@ function openMasterModal(c) {
 $('msSendBtn').addEventListener('click', function () {
   var c = findCand(curId); if (!c) return;
   if (c.masterId != null && c.masterId !== '') { closeModal('mk-master'); return; }
+  if ($('msAdm') && !normalizeDateInput($('msAdm'))) {
+    toast('入居日（予定）の' + DATE_BAD_MSG);
+    $('msAdm').focus();
+    return;
+  }
   var adm = $('msAdm') ? $('msAdm').value : '';
   $('msSendBtn').disabled = true;
   toast('確認中…');
@@ -3606,6 +3803,7 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
     else if (k === 'help') { openModal('mk-help'); }
   });
 });
+bindDateInputs();
 $('flGo').addEventListener('click', doUploadFile);
 $('flPick').addEventListener('change', function () {
   setChosenFile(this.files && this.files[0]);

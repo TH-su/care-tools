@@ -146,7 +146,9 @@
   var ERA_JA = { '明治': 'M', '大正': 'T', '昭和': 'S', '平成': 'H', '令和': 'R' };
 
   var RE_WEST = /^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/;
-  var RE_WAREKI = /^([MTSHR]|明治|大正|昭和|平成|令和)\s*(\d{1,2}|元)[\.\/\-年](\d{1,2})[\.\/\-月](\d{1,2})日?$/;
+  /* 元号の記号は小文字でも受ける（s15.4.3 / r8.9.16）。人は小文字で打つ。
+     ★照合したあとは必ず大文字へ寄せてから ERA_BASE を引くこと（下の toUpperCase）。 */
+  var RE_WAREKI = /^([MTSHRmtshr]|明治|大正|昭和|平成|令和)\s*(\d{1,2}|元)[\.\/\-年](\d{1,2})[\.\/\-月](\d{1,2})日?$/;
   var RE_SERIAL = /^\d{5}$/;
   var RE_YMD8 = /^(\d{4})(\d{2})(\d{2})$/;
 
@@ -183,7 +185,7 @@
 
     m = RE_WAREKI.exec(s);
     if (m) {
-      var era = ERA_JA[m[1]] || m[1];
+      var era = ERA_JA[m[1]] || String(m[1]).toUpperCase();
       var b = ERA_BASE[era];
       if (!b) return null;
       var n = (m[2] === '元') ? 1 : parseInt(m[2], 10);
