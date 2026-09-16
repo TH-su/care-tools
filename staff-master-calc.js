@@ -152,21 +152,28 @@
   var RE_SERIAL = /^\d{5}$/;
   var RE_YMD8 = /^(\d{4})(\d{2})(\d{2})$/;
 
-  /* 妥当性（月日の実在＋1900〜翌年）。範囲外は null を返し、呼び手が「要確認」で止める */
-  function inRange(y, m, d) {
+  /* 妥当性（月日の実在＋1900〜上限年）。範囲外は null を返し、呼び手が「要確認」で止める。
+     ★既定の上限は「翌年」。職員の生年月日・入社日は先の日付にならないので、
+       3025 のような打ち間違いをここで止める。
+     ★aheadYears で上限を延ばせる（2026-09-16 追加）。介護保険の認定有効期間は
+       更新で最長48か月＝4年先の終了日が実在するため、入居調整アプリはこれを使う。
+       既定値は変えていないので、職員マスタの挙動は1文字も変わらない。 */
+  function inRange(y, m, d, aheadYears) {
     if (m < 1 || m > 12) return false;
     if (d < 1 || d > lastDay(y, m)) return false;
-    var maxY = +today().slice(0, 4) + 1;
+    var ahead = (typeof aheadYears === 'number' && aheadYears >= 0) ? Math.floor(aheadYears) : 1;
+    var maxY = +today().slice(0, 4) + ahead;
     return y >= 1900 && y <= maxY;
   }
 
-  function build(y, m, d) {
-    if (!inRange(y, m, d)) return null;
+  function build(y, m, d, aheadYears) {
+    if (!inRange(y, m, d, aheadYears)) return null;
     return y + '-' + pad2(m) + '-' + pad2(d);
   }
 
   /* '2025/10/27' 'R7.10.27' '令和7年10月27日' '45957'（シリアル）'20251027' 等 → 'YYYY-MM-DD' */
-  function normDate(raw) {
+  function normDate(raw, opts) {
+    var ahead = (opts && typeof opts.aheadYears === 'number') ? opts.aheadYears : undefined;
     var s = normDash(nfkc(raw)).replace(/^[\s　]+|[\s　]+$/g, '');
     if (s === '') return null;
 
@@ -177,11 +184,11 @@
     if (RE_SERIAL.test(s)) {                                    /* Excel/Sheets のシリアル値 */
       var base = daysFromCivil(1899, 12, 30);
       var o = civilFromDays(base + parseInt(s, 10));
-      return build(o.y, o.m, o.d);
+      return build(o.y, o.m, o.d, ahead);
     }
 
     var m = RE_WEST.exec(s);
-    if (m) return build(+m[1], +m[2], +m[3]);
+    if (m) return build(+m[1], +m[2], +m[3], ahead);
 
     m = RE_WAREKI.exec(s);
     if (m) {
@@ -190,11 +197,11 @@
       if (!b) return null;
       var n = (m[2] === '元') ? 1 : parseInt(m[2], 10);
       if (!(n >= 1)) return null;
-      return build(b + n - 1, +m[3], +m[4]);
+      return build(b + n - 1, +m[3], +m[4], ahead);
     }
 
     m = RE_YMD8.exec(s);
-    if (m) return build(+m[1], +m[2], +m[3]);
+    if (m) return build(+m[1], +m[2], +m[3], ahead);
 
     return null;
   }

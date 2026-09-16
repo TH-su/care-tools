@@ -237,9 +237,16 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .dpick { min-width: 44px; min-height: 44px; border: 1px solid var(--g3); border-radius: 8px;
          background: #fff; font-size: 1rem; line-height: 1; cursor: pointer; flex: none; }
 .dpick:hover { background: var(--g1); }
-.dnote { display: block; font-size: 0.75rem; color: var(--g6); margin-top: 2px; word-break: break-all; }
+/* ★色は --g7。打った値を確かめるための文字なので、読めることが要件。
+     --g6 は白背景とのコントラストが 3.68:1 で、小さい文字の基準 4.5:1 に届かない */
+.dnote { display: block; font-size: 0.75rem; color: var(--g7); margin-top: 2px; word-break: break-all; }
 .dnote.bad { color: var(--err); font-weight: 700; }
 .dtin.bad { border-color: var(--err); background: #fdecea; }
+/* 西暦の後ろに薄く添える和暦・年齢（西暦が主。確認のためだけに出す） */
+.sub { color: var(--g7); font-size: 0.8125rem; margin-left: 4px; font-weight: 400; }
+/* 年齢の枠（読み取り専用。入力欄と同じ見た目で、触れないことが分かるよう色を落とす） */
+.ageout { display: block; border: 1px solid var(--g3); border-radius: 8px; background: var(--g1);
+          color: var(--g8); padding: 9px 10px; font: inherit; min-height: 42px; box-sizing: border-box; }
 
 /* ── 添付書類 ── */
 .fl { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
@@ -510,7 +517,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
-<script src="staff-master-calc.js"></script>
+<script src="staff-master-calc.js?v=2026-09-16"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居調整 / 申込から入居までの多機関連携ボード
@@ -1737,7 +1744,7 @@ function renderView(c) {
   h += '<div class="cd"><h3>基本情報</h3><dl class="kv">' +
     '<dt>氏名</dt><dd>' + esc(c.name || '') + (c.kana ? '（' + esc(c.kana) + '）' : '') + '</dd>' +
     (c.gender ? '<dt>性別</dt><dd>' + esc(c.gender) + '</dd>' : '') +
-    (c.birthDate ? '<dt>生年月日</dt><dd>' + esc(c.birthDate) + '</dd>' : '') +
+    (c.birthDate ? '<dt>生年月日</dt><dd>' + esc(c.birthDate) + birthSub(c.birthDate) + '</dd>' : '') +
     (c.careLevel ? '<dt>介護度</dt><dd>' + esc(c.careLevel) + '</dd>' : '') +
     (c.phone ? '<dt>連絡先</dt><dd>' + esc(c.phone) + (telHref(c.phone) ? ' <a class="btn sm" href="' + esc(telHref(c.phone)) + '">📞 発信</a>' : '') + '</dd>' : '') +
     (c.source ? '<dt>経路</dt><dd>' + esc(c.source) + (c.sourceDetail ? '：' + esc(c.sourceDetail) : '') + '</dd>' : '') +
@@ -2566,12 +2573,19 @@ var DATE_BAD_MSG = '日付を読み取れません。2026-09-16 または S15.4.
    「和暦でも打てる」という新しい方だけは必ず見えるようにする。 */
 var DATE_PH = 'S15.4.3 / 2026-09-16';
 
+/* 先の日付をどこまで受けるか。★介護保険の認定有効期間は更新で最長48か月＝
+   4年先の終了日が実在する。既定（翌年まで）のままだと保険証を写せない。
+   10年にしているのは、打ち間違い（3026年など）は止めたままにするため。 */
+var DATE_AHEAD_YEARS = 10;
+
 /* 文字列 → 'YYYY-MM-DD'（読めなければ ''）。 */
 function normDateStr(raw) {
   var s = asStr(raw).trim();
   if (!s) return '';
   var SC = window.StaffCalc;
-  if (SC && typeof SC.normDate === 'function') return asStr(SC.normDate(s) || '');
+  if (SC && typeof SC.normDate === 'function') {
+    return asStr(SC.normDate(s, { aheadYears: DATE_AHEAD_YEARS }) || '');
+  }
   /* 計算モジュールを読めていない時は西暦の形だけ通す（和暦は諦めるが画面は動かす） */
   return DATE_ISO_RE.test(s) ? s : '';
 }
@@ -2581,6 +2595,31 @@ function warekiOf(v) {
   if (!SC || typeof SC.toWareki !== 'function') return '';
   return asStr(SC.toWareki(asStr(v)) || '');
 }
+/* 満年齢（今日を基準）。読めない・未来の生年月日は '—'。
+   計算は職員マスタと同じ StaffCalc.age（誕生日当日に加齢／2月29日生まれは平年2月28日）。 */
+function ageText(v) {
+  var SC = window.StaffCalc;
+  if (!SC || typeof SC.age !== 'function') return '';
+  var n = SC.age(asStr(v));
+  return (n === null || n === undefined) ? '—' : String(n) + '歳';
+}
+/* 西暦の後ろに薄く添える「（昭和15年4月3日・86歳）」。
+   ★入力した和暦をあとから確かめる手段が、これしか無い（欄は西暦に直るため）。 */
+function birthSub(v) {
+  var parts = [];
+  var w = warekiOf(v);
+  if (w) parts.push(w);
+  var a = ageText(v);
+  if (a && a !== '—') parts.push(a);
+  return parts.length ? '<span class="sub">（' + esc(parts.join('・')) + '）</span>' : '';
+}
+/* 生年月日の欄が変わったら、横の年齢の枠を書き直す */
+function refreshAgeBox(el) {
+  if (!el || el.id !== 'f-birthDate') return;
+  var box = $('f-age');
+  if (box) box.textContent = ageText(el.value);
+}
+
 function datePickerSupported() {
   try {
     var i = document.createElement('input');
@@ -2624,10 +2663,11 @@ function normalizeDateInput(el) {
     note.hidden = !msg;
     if (bad) note.classList.add('bad'); else note.classList.remove('bad');
   }
-  if (raw === '') { el.value = ''; mark(false, ''); return true; }
+  if (raw === '') { el.value = ''; mark(false, ''); refreshAgeBox(el); return true; }
   var v = normDateStr(raw);
-  if (v) { el.value = v; mark(false, warekiOf(v)); return true; }
+  if (v) { el.value = v; mark(false, warekiOf(v)); refreshAgeBox(el); return true; }
   mark(true, DATE_BAD_MSG);
+  refreshAgeBox(el);
   return false;
 }
 
@@ -2856,6 +2896,9 @@ function renderEdit() {
     fld('name', '氏名（必須）', r.name) + fld('kana', 'ふりがな', r.kana) +
     fld('gender', '性別', r.gender, 'select', ['女', '男']) +
     fld('birthDate', '生年月日', r.birthDate, 'date') +
+    /* 年齢は生年月日から出すだけで、保存もしない（data-k を付けない＝回収の対象外） */
+    '<div class="fld" style="max-width:7em"><label for="f-age">年齢</label>' +
+      '<output id="f-age" class="ageout">' + esc(ageText(r.birthDate)) + '</output></div>' +
     fld('careLevel', '介護度', r.careLevel, 'select', levels) +
     fld('phone', '連絡先電話', r.phone, 'tel') +
     fld('source', '経路', r.source, 'select', SOURCES) +
