@@ -634,9 +634,12 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cmtbl .cnm,.cmtbl .cof,.cmtbl .ccm{text-align:start}
 /* 居宅別表示の見出し行（2026-09-17 管理者指示）。
    ★列の構成は五十音順表示と同じままで、まとまりの切れ目だけを1行足す。
-     居宅別のときだけ列を減らすと、同じ帳票なのに2つの紙の形が変わる（原則2）。 */
-.cmtbl .cmgrp td{background:var(--g2); font-weight:700; text-align:start;
-  padding-top:0; padding-bottom:0; line-height:1.05}
+     居宅別のときだけ列を減らすと、同じ帳票なのに2つの紙の形が変わる（原則2）。
+   ★セルは th（scope="colgroup"）。理由は2つ:
+     ①読み上げで「次の行たちはこの居宅のもの」と伝わる
+     ②網掛けを紙に出す指定（.cmtbl th の print-color-adjust:exact）にそのまま乗る。
+       td にすると画面ではグレーなのに紙では白のまま出る（列見出しだけ網掛けされて不揃いになる）。 */
+.cmtbl .cmgrp th{text-align:start; padding-top:0; padding-bottom:0; line-height:1.05}
 .cm-sum{display:flex; gap:18px; justify-content:center; margin-bottom:2px;
   font-size:var(--cmsum,13px); font-weight:700; line-height:1.2}
 .cm-sum b{font-variant-numeric:tabular-nums}
@@ -847,6 +850,8 @@ body.meal-on #sc-list{max-width:none}
   .sh-sheet{padding:0; overflow:visible}       /* 紙では横スクロールを作らない＝全幅で刷る */
   .cmtbl{width:100%}                           /* 紙では余った幅も使い切る */
   .cmtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  /* 居宅の見出し行だけがページの末尾に取り残されないようにする（紙が複数枚になった時） */
+  .cmtbl .cmgrp{break-after:avoid; page-break-after:avoid}
   .cmtbl .cno{color:#000}                      /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
   .lvltbl .lvrow{color:#000}
   .sh-ft{color:#000}
@@ -1114,8 +1119,8 @@ body.meal-on #sc-list{max-width:none}
   <!-- CM表ビュー専用。印刷には出さない（body.cm-on の印刷CSSで消える） -->
   <div class="sh-bar" id="cmBar" style="display:none">
     <span class="lb">表示</span>
-    <button type="button" class="achip cmchip" data-m="kana">五十音順</button>
-    <button type="button" class="achip cmchip" data-m="office">居宅別</button>
+    <button type="button" class="cmchip" data-m="kana">五十音順</button>
+    <button type="button" class="cmchip" data-m="office">居宅別</button>
     <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
     <button type="button" id="cmReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（既定 A4横）</button>
@@ -2726,9 +2731,10 @@ function paintShBars(){
   if(h) h.style.display=(curView==='hist')?'flex':'none';
   var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
   if($('cmStatus'))  $('cmStatus').textContent  = (curView==='cm')  ? msg : '';
+  /* 見た目は aria-pressed のCSS（.sh-bar button[aria-pressed="true"]）で出す。
+     .on は .achip 用のクラスで、このバーでは詳細度で負けて効かない（同じバーの mdchip と揃える） */
   if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
-    var on=b.getAttribute('data-m')===cmMode;
-    b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
+    b.setAttribute('aria-pressed', (b.getAttribute('data-m')===cmMode)?'true':'false');
   });
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
   /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
@@ -2816,9 +2822,9 @@ function cmHtml(){
   var body='', no=0;
   if(groups){
     groups.forEach(function(g){
-      body+='<tr class="cmgrp"><td colspan="'+CM_COLS.length+'">'+
+      body+='<tr class="cmgrp"><th colspan="'+CM_COLS.length+'" scope="colgroup">'+
         esc(g.key===CM_NO_OFFICE?'（居宅の登録なし）':g.name)+
-        (g.cms.length?('　'+esc(g.cms.join('・'))):'')+'　'+g.list.length+'名</td></tr>';
+        (g.cms.length?('　'+esc(g.cms.join('・'))):'')+'　'+g.list.length+'名</th></tr>';
       g.list.forEach(function(r){ body+=cmRowHtml_(r,++no); });
     });
   }else{
@@ -2837,9 +2843,16 @@ function cmHtml(){
       CM_COLS.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
     '</tr></thead><tbody>'+body+'</tbody></table>'+
     '<div class="sh-ft">'+rows.length+'名　／　対象 在籍のみ・'+
-      (groups?('居宅別 '+groups.length+'事業所（各居宅の中は五十音順）'):'五十音順')+
+      (groups?cmFootNote_(groups):'五十音順')+
       '　／　印刷日 '+esc(shStamp())+'</div>'+
   '</div>';
+}
+/* 脚注の「N事業所」。★居宅が未登録の組は事業所として数えない（実在の居宅と混ぜると
+   「うちは何か所と付き合っているか」を読み違える）。未登録が居る時は人数を別に添える。 */
+function cmFootNote_(groups){
+  var real=0, none=0;
+  groups.forEach(function(g){ if(g.key===CM_NO_OFFICE) none=g.list.length; else real++; });
+  return '居宅別 '+real+'事業所（各居宅の中は五十音順）'+(none?('・居宅の登録なし '+none+'名'):'');
 }
 /* 1人ぶんの行。No は【表全体の通し番号】＝並べ方を変えても「全員載っている」ことを数で確かめられる */
 function cmRowHtml_(r, no){
@@ -2854,7 +2867,11 @@ function cmRowHtml_(r, no){
   }).join('')+'</tr>';
 }
 /* 担当居宅ごとのまとまり（2026-09-17 管理者指示）。
-   ★並びは担当人数の多い順、同数は居宅名の五十音順。
+   ★並びは担当人数の多い順、同数は【居宅名順】（localeCompare の ja）。
+     ★「五十音順」とは呼ばない。漢字で始まる居宅名は読みではなく部首・画数で並ぶ
+       （careOffice に読み仮名の列が無いため、読み順には並べられない）。
+       決まった順で安定しているので探す用途には足りる。居宅の【中】は shBase() の
+       byKana なので本当に五十音順（脚注の文言もそちら）。
    ★居宅が未登録の方は【落とさず】最後にまとめる。落とすと合計が合わず、しかも誰が漏れたのか
      分からなくなる（介護度別表で同じ判断をしている）。
    ★束ねるキーは空白を除いた居宅名＝表記ゆれ（全角空白の有無）で同じ居宅が2つに割れない。
@@ -6672,18 +6689,17 @@ function growAllSupport(){
    ★並べ替えるのは【描く順】だけ。editing.supportLog の並びは1件も動かさない
      （行の data-si は元の位置のまま＝保存・削除・印刷除外の当たり先がずれない。上の★印と同じ理由）。
    ★新しい順（上が最新）。同じ日付は元の並びを保つ＝描き直すたびに順が揺れない。
-   ★日付が空・読めない記録は末尾。移行時に日付を確定できなかった古い記録がここに来る
-     （migrate.gs の _splitLog は読めない日付を date:'' のまま残す）。 */
-function supDateKey_(s){
-  var p=parseIsoDate(String((s&&s.date)||'').slice(0,10));
-  return p ? (p.y*10000+p.m*100+p.d) : -1;      /* -1＝日付なし。新しい順なので末尾へ落ちる */
-}
+   ★比べ方は【詳細画面・印刷・A4様式と逐語同一】にする（localeCompare の降順）。
+     ここだけ自前の数値化にすると、ISO でない日付（「平成30年4月1日」等）で上下が逆になり、
+     同じ記録が直す画面と刷る紙で別の場所に出る（2026-09-17 レビュー指摘）。
+     ISO と空文字ではどちらの規則でも結果は同じ＝日付が空・読めない記録は末尾に来る
+     （移行時に日付を確定できなかった記録。migrate.gs の _splitLog は date:'' のまま残す）。 */
 function supOrder_(all){
   var idx=[]; for(var i=0;i<all.length;i++) idx.push(i);
   idx.sort(function(a,b){
-    var x=supDateKey_(all[a]), y=supDateKey_(all[b]);
-    if(x!==y) return y-x;      /* 新しい順 */
-    return a-b;                /* 同じ日付は元の並び（安定）*/
+    var x=String((all[a]&&all[a].date)||''), y=String((all[b]&&all[b].date)||'');
+    if(x!==y) return y.localeCompare(x);   /* 新しい順（詳細画面・印刷と同じ式） */
+    return a-b;                            /* 同じ日付は元の並び（安定）*/
   });
   return idx;
 }
@@ -6719,21 +6735,35 @@ function renderSupportRows(){
   });
   Array.prototype.forEach.call(box.querySelectorAll('[data-sdel]'),function(b){b.addEventListener('click',function(){collectSupport();editing.supportLog.splice(parseInt(this.getAttribute('data-sdel')),1);renderSupportRows()})});
   /* 日付を入れ直したら、その場で正しい位置へ移す（＝次に開いた時に順が崩れていない）。
-     ★描き直すのは【並びか顔ぶれが実際に変わる時だけ】。毎回描き直すと、別の行を押そうと
-       した指が「押した瞬間に消えた行」を押すことになる（入力欄の取り違え＝M-046 と同型）。
-     ★change は日付を決めた時（入力欄から離れた時）にだけ起きる。打鍵ごとには走らない。 */
+     ★引き金は focusout（日付欄から離れた時）。★change は使えない。
+       <input type="date"> は【打鍵1つごとに】change を出し、途中の値に空文字や別の日付が混じる。
+       実測（2026-09-17・Chrome 実機／月の欄から 2,0,2,4 と打鍵）:
+         change 4回 → "2026-02-17" → "" → "2026-02-02" → "2026-02-24"／focusout は1回だけ。
+       change で描き直すと、入力欄が打鍵の途中で消えて残りの打鍵が本文欄へ流れ込み、
+       壊れた日付（0002-09-17 等）と混ざった本文がそのまま保存される（M-046 と同型）。
+     ★描き直すのは【並びか顔ぶれが実際に変わる時だけ】。
+     ★描き直したら、職員が向かおうとしていた欄（relatedTarget）へ戻す。戻さないと、
+       別の行を押した指が「押した瞬間に消えた欄」を押したことになる。 */
   Array.prototype.forEach.call(box.querySelectorAll('[data-sk="date"]'),function(inp){
-    inp.addEventListener('change',function(){
+    var was=null;
+    inp.addEventListener('focusin',function(){ was=this.value; });
+    inp.addEventListener('focusout',function(e){
+      if(was!==null&&was===this.value) return;            /* 通り過ぎただけ（値は変わっていない） */
       var row=this.closest?this.closest('.fam-row'):(this.parentNode&&this.parentNode.parentNode);
       var si=row?row.getAttribute('data-si'):null;
+      /* 次に向かった欄。描き直した後、同じ記録の同じ欄へ戻すために控える */
+      var rt=e&&e.relatedTarget, rtRow=(rt&&rt.closest)?rt.closest('.fam-row'):null;
+      var rtSi=rtRow?rtRow.getAttribute('data-si'):null, rtSk=rt?rt.getAttribute('data-sk'):null;
       collectSupport();
       var rec=(si==null)?null:all[parseInt(si,10)];
       if(rec&&supKeep.indexOf(rec)<0) supKeep.push(rec);   /* 1年より前に直しても消さない */
       if(supShownIdx_().join(',')===order.join(',')) return;
       renderSupportRows();
-      /* 動いた行を見失わせない。内容欄へ移る＝日付の次に打つ場所にカーソルが載る */
-      var moved=(si==null)?null:box.querySelector('.fam-row[data-si="'+si+'"] .slog-ta');
-      if(moved){ try{ moved.scrollIntoView({block:'center',behavior:'auto'}); moved.focus(); }catch(e){} }
+      var back=(rtSi!=null&&rtSk)?box.querySelector('.fam-row[data-si="'+rtSi+'"] [data-sk="'+rtSk+'"]'):null;
+      if(back){ try{ back.focus(); }catch(e2){} return; }
+      /* 行き先が分からない時は、動いた行を見える位置に出すだけ（勝手にカーソルを奪わない） */
+      var moved=(si==null)?null:box.querySelector('.fam-row[data-si="'+si+'"]');
+      if(moved){ try{ moved.scrollIntoView({block:'center',behavior:'auto'}); }catch(e2){} }
     });
   });
   renderSupportMore(all.length-order.length);
@@ -6751,28 +6781,38 @@ function renderSupportMore(hiddenCount){
     $('supportMoreBtn').addEventListener('click',function(){collectSupport();supportShowAll=true;renderSupportRows()});
   }else box.innerHTML='';
 }
-/* これまでの記録を通しで読むための一覧（読むだけ・編集は下の入力行で行う） */
+/* これまでの記録を通しで読むための一覧（読むだけ・編集は下の入力行で行う）
+   ★器（<details>）は一度作ったら【作り直さない】。中身だけを入れ替える。理由は2つ:
+     ①作り直して open を戻すと toggle がまた出る。toggle は非同期に飛ぶので、中で描き直す
+       この作りでは【開いた瞬間から描き直しが止まらない輪】になる。
+       2026-08-17 の実装がこれで、開くと 1秒あたり約4.4万回まわっていた（2026-09-17 実測で発見・修正）。
+       止まらないあいだ collectSupport も同じ回数走るため、iPad では入力が重くなる。
+     ②器を残すと、開いたまま日付を直して並べ替えても畳まれない（読みながら直せる）。 */
 function renderSupportRO(){
   var box=$('supportRO'); if(!box)return;
   var all=editing.supportLog.slice();
   if(!all.length){box.innerHTML='';return}
   all.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
-  box.innerHTML='<details class="slog-past"><summary>これまでの記録をまとめて読む（'+all.length+'件・新しい順）</summary>'+
-    '<div class="slog-ro">'+all.map(function(s){
+  var body=all.map(function(s){
       return '<div class="l"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
         '<span class="t">'+(s&&s.hide?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
-    }).join('')+'</div></details>';
-  /* ★開いた時に作り直す。この一覧は renderSupportRows の中でしか作られないので、
-     下の入力欄で直した内容が反映されず「直したのに一覧が古い」と見える。
-     開く操作のたびに入力中の内容を回収してから描き直す（再入を避けるため開いた時だけ） */
-  var d=box.querySelector('details');
-  if(d)d.addEventListener('toggle',function(){
+    }).join('');
+  var cap='これまでの記録をまとめて読む（'+all.length+'件・新しい順）';
+  var det=box.querySelector('details');
+  if(det){
+    var sm=det.querySelector('summary'), ls=det.querySelector('.slog-ro');
+    if(sm) sm.textContent=cap;
+    if(ls) ls.innerHTML=body;
+    return;                                   /* ★器はそのまま＝toggle を出さない */
+  }
+  box.innerHTML='<details class="slog-past"><summary>'+esc(cap)+'</summary>'+
+    '<div class="slog-ro">'+body+'</div></details>';
+  /* ★開いた時に中身を作り直す。下の入力欄で直した内容を取り込んでから出す
+     （取り込まないと「直したのに一覧が古い」と見える） */
+  det=box.querySelector('details');
+  if(det)det.addEventListener('toggle',function(){
     if(!this.open)return;
-    var was=this;
-    collectSupport();
-    renderSupportRO();
-    var again=box.querySelector('details');
-    if(again&&again!==was)again.open=true;
+    collectSupport(); renderSupportRO();
   });
 }
 function collectSupport(){
