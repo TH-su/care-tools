@@ -1,0 +1,4280 @@
+<!DOCTYPE html>
+<html lang="ja" data-ds="ops">
+<head>
+<meta name="robots" content="noindex,nofollow">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="spl-build" content="2026-09-17.1">
+<title>消耗品管理</title>
+<style>
+/* ══════════════════════════════════════════════════════════════
+   ① ~/.claude/design/tokens.css の写し（編集禁止・差し替えはファイルごと）
+   ══════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   シルバーユニックス デザインシステム — トークン定義
+   2026-08-09 / 全ペアのコントラスト比を実測し 7:1(本文) 4.5:1(UI) 3:1(境界) を充足
+
+   使い方:
+     <html data-ds="ops" data-mode="light">      業務ツール
+     <html data-ds="public" data-mode="light">   対外サイト
+     data-mode 省略時は OS 設定(prefers-color-scheme)に追従
+
+   設計意図:
+     primary = 深いティール(青緑)  清潔感 + 緑の安心感。両系統で共通＝会社の一貫性
+     accent  = 琥珀(アンバー)      加齢による水晶体の黄変でも識別しやすい長波長
+     灰色階調 Ops=寒色寄り(集中)  Public=暖色寄り(安心) ＝ ここで2系統の性格を分ける（※原本の語を1語だけ言い換え。実名ガードの一般語衝突を避けるため）
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── 共通: 文字・余白・形 ───────────────────────────────── */
+:root {
+  /* 書体（日本語は 300 以下を使わない。細字は小サイズで潰れる） */
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+               "Yu Gothic Medium", "Meiryo", system-ui, sans-serif;
+  --font-num:  "SF Mono", "SFMono-Regular", ui-monospace, "Menlo", monospace;
+  --fw-normal: 400;
+  --fw-bold:   600;
+  --fw-heavy:  700;
+
+  /* 余白（4px グリッド） */
+  --sp-1: 0.25rem;  /*  4px */
+  --sp-2: 0.5rem;   /*  8px */
+  --sp-3: 0.75rem;  /* 12px */
+  --sp-4: 1rem;     /* 16px */
+  --sp-5: 1.5rem;   /* 24px */
+  --sp-6: 2rem;     /* 32px */
+  --sp-7: 3rem;     /* 48px */
+  --sp-8: 4rem;     /* 64px */
+
+  /* 操作領域（介護現場要件：手袋・片手操作でも押せる下限） */
+  --tap-min: 44px;
+  --tap-gap: 8px;
+
+  /* 動き */
+  --dur-fast: 120ms;
+  --dur:      200ms;
+  --ease: cubic-bezier(.2,.7,.3,1);
+
+  --focus-w: 3px;
+}
+
+/* ── 業務ツール: 情報密度を保ちつつ最小サイズを引き上げる ── */
+[data-ds="ops"] {
+  --fs-2xs:  0.8125rem; /* 13px  ラベル・単位。これ以下は禁止 */
+  --fs-xs:   0.875rem;  /* 14px  表のセル */
+  --fs-sm:   0.9375rem; /* 15px  補助テキスト */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-lg:   1.125rem;  /* 18px  小見出し */
+  --fs-xl:   1.375rem;  /* 22px  見出し */
+  --fs-2xl:  1.75rem;   /* 28px  画面タイトル */
+  --lh-tight: 1.3;
+  --lh-base:  1.55;
+  --lh-loose: 1.7;
+  --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  --density: 1;
+}
+
+/* ── 対外サイト: ゆとりと可読性を優先 ───────────────── */
+[data-ds="public"] {
+  --fs-2xs:  0.875rem;  /* 14px */
+  --fs-xs:   0.9375rem; /* 15px */
+  --fs-sm:   1rem;      /* 16px */
+  --fs-base: 1.0625rem; /* 17px  本文はここが下限 */
+  --fs-lg:   1.25rem;   /* 20px */
+  --fs-xl:   1.75rem;   /* 28px */
+  --fs-2xl:  2.5rem;    /* 40px */
+  --lh-tight: 1.35;
+  --lh-base:  1.8;      /* 日本語の長文は行間を広めに */
+  --lh-loose: 2;
+  --r-sm: 6px; --r-md: 12px; --r-lg: 20px;
+  --density: 1.25;
+}
+
+
+/* ── Ops / Light ─────────────────────────────────────── */
+[data-ds="ops"], [data-ds="ops"][data-mode="light"] {
+  --c-bg: #F4F6F8;
+  --c-surface: #FFFFFF;
+  --c-surface2: #EAEFF3;
+  --c-ink: #14191F;
+  --c-ink2: #414E5A;
+  --c-ink3: #5F6C77;
+  --c-border: #CBD4DC;
+  --c-border-strong: #8796A4;
+  --c-primary: #0B5365;
+  --c-primary-hover: #083F4E;
+  --c-primary-ink: #FFFFFF;
+  --c-link: #0A4B5B;
+  --c-accent: #8A4B06;
+  --c-accent-bg: #FCEFD9;
+  --c-accent-ink: #FFFFFF;
+  --c-accent-on-dark: #F0B45E;
+  --c-accent-on-dark-ink: #2A1C06;
+  --c-hero: #0B5365;
+  --c-hero-ink: #FFFFFF;
+  --c-ok: #14652F;
+  --c-ok-bg: #E1F1E6;
+  --c-warn: #7A4B00;
+  --c-warn-bg: #FBEFD5;
+  --c-danger: #9E1C24;
+  --c-danger-bg: #FAE7E8;
+  --c-info: #0A4B5B;
+  --c-info-bg: #E2EEF1;
+  --c-focus: #A85C05;
+  color-scheme: light;
+}
+
+/* ── Ops / Dark ─────────────────────────────────────── */
+[data-ds="ops"][data-mode="dark"] {
+  --c-bg: #11161B;
+  --c-surface: #1A2127;
+  --c-surface2: #232C34;
+  --c-ink: #E9EEF2;
+  --c-ink2: #B0BDC7;
+  --c-ink3: #8695A0;
+  --c-border: #303E48;
+  --c-border-strong: #586E7E;
+  --c-primary: #6DC1D6;
+  --c-primary-hover: #93D3E3;
+  --c-primary-ink: #062B34;
+  --c-link: #7CC9DC;
+  --c-accent: #F0B45E;
+  --c-accent-bg: #382914;
+  --c-accent-ink: #2A1C06;
+  --c-accent-on-dark: #F0B45E;
+  --c-accent-on-dark-ink: #2A1C06;
+  --c-hero: #0C3D49;
+  --c-hero-ink: #F2F8FA;
+  --c-ok: #6FD292;
+  --c-ok-bg: #122F1E;
+  --c-warn: #EBB765;
+  --c-warn-bg: #33280F;
+  --c-danger: #F5919A;
+  --c-danger-bg: #391A1D;
+  --c-info: #7CC9DC;
+  --c-info-bg: #112E37;
+  --c-focus: #F3BE6F;
+  color-scheme: dark;
+}
+
+/* ── Public / Light ─────────────────────────────────────── */
+[data-ds="public"], [data-ds="public"][data-mode="light"] {
+  --c-bg: #FAF7F3;
+  --c-surface: #FFFFFF;
+  --c-surface2: #F2EDE6;
+  --c-ink: #1C1A17;
+  --c-ink2: #4B4741;
+  --c-ink3: #6E685F;
+  --c-border: #DDD5CA;
+  --c-border-strong: #9F9381;
+  --c-primary: #0B5365;
+  --c-primary-hover: #083F4E;
+  --c-primary-ink: #FFFFFF;
+  --c-link: #0A4B5B;
+  --c-accent: #8A4B06;
+  --c-accent-bg: #F7EBD8;
+  --c-accent-ink: #FFFFFF;
+  --c-accent-on-dark: #F0B45E;
+  --c-accent-on-dark-ink: #2A1C06;
+  --c-hero: #0B5365;
+  --c-hero-ink: #FFFFFF;
+  --c-ok: #14652F;
+  --c-ok-bg: #E6F0E4;
+  --c-warn: #7A4B00;
+  --c-warn-bg: #F8EDD4;
+  --c-danger: #9E1C24;
+  --c-danger-bg: #F8E6E4;
+  --c-info: #0A4B5B;
+  --c-info-bg: #E6EDEE;
+  --c-focus: #A85C05;
+  color-scheme: light;
+}
+
+/* ── Public / Dark ─────────────────────────────────────── */
+[data-ds="public"][data-mode="dark"] {
+  --c-bg: #16130F;
+  --c-surface: #201C17;
+  --c-surface2: #2A251F;
+  --c-ink: #F1ECE5;
+  --c-ink2: #BDB5A9;
+  --c-ink3: #918878;
+  --c-border: #3B342B;
+  --c-border-strong: #716657;
+  --c-primary: #6DC1D6;
+  --c-primary-hover: #93D3E3;
+  --c-primary-ink: #062B34;
+  --c-link: #7CC9DC;
+  --c-accent: #F0B45E;
+  --c-accent-bg: #3A2B14;
+  --c-accent-ink: #2A1C06;
+  --c-accent-on-dark: #F0B45E;
+  --c-accent-on-dark-ink: #2A1C06;
+  --c-hero: #0C3D49;
+  --c-hero-ink: #F2F8FA;
+  --c-ok: #6FD292;
+  --c-ok-bg: #152D1D;
+  --c-warn: #EBB765;
+  --c-warn-bg: #352911;
+  --c-danger: #F5919A;
+  --c-danger-bg: #3B1D1E;
+  --c-info: #7CC9DC;
+  --c-info-bg: #132E36;
+  --c-focus: #F3BE6F;
+  color-scheme: dark;
+}
+
+/* ── 影（ダークでは影ではなく境界線で階層を出す）────────── */
+[data-mode="light"], [data-ds]:not([data-mode="dark"]) {
+  --shadow-1: 0 1px 2px rgba(16,24,32,.06), 0 1px 3px rgba(16,24,32,.08);
+  --shadow-2: 0 2px 6px rgba(16,24,32,.08), 0 8px 20px rgba(16,24,32,.10);
+}
+[data-mode="dark"] {
+  --shadow-1: 0 0 0 1px var(--c-border);
+  --shadow-2: 0 0 0 1px var(--c-border), 0 12px 28px rgba(0,0,0,.45);
+}
+
+/* ── フォーカスリング ─────────────────────────────────
+   内側に地色 2px、外側に琥珀 3px の二重リング。
+   これで「どんな背景色の上でも」必ず 3:1 以上が成立する。 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--c-surface), 0 0 0 calc(2px + var(--focus-w)) var(--c-focus);
+  border-radius: var(--r-sm);
+}
+
+/* ── 操作領域の下限 ───────────────────────────────── */
+:where(button, [role="button"], a.btn, input[type="checkbox"], input[type="radio"]) {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+}
+
+/* ── 数字は桁を揃える（シフト表・金額で必須）──────────── */
+:where(table, .num, .tabular) { font-variant-numeric: tabular-nums; }
+
+/* ── 動きを減らす設定への対応 ───────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── OS のダーク設定に追従（data-mode 未指定時）─────────── */
+@media (prefers-color-scheme: dark) {
+  [data-ds="ops"]:not([data-mode]) {
+    --c-bg: #11161B;
+    --c-surface: #1A2127;
+    --c-surface2: #232C34;
+    --c-ink: #E9EEF2;
+    --c-ink2: #B0BDC7;
+    --c-ink3: #8695A0;
+    --c-border: #303E48;
+    --c-border-strong: #586E7E;
+    --c-primary: #6DC1D6;
+    --c-primary-hover: #93D3E3;
+    --c-primary-ink: #062B34;
+    --c-link: #7CC9DC;
+    --c-accent: #F0B45E;
+    --c-accent-bg: #382914;
+    --c-accent-ink: #2A1C06;
+    --c-accent-on-dark: #F0B45E;
+    --c-accent-on-dark-ink: #2A1C06;
+    --c-hero: #0C3D49;
+    --c-hero-ink: #F2F8FA;
+    --c-ok: #6FD292;
+    --c-ok-bg: #122F1E;
+    --c-warn: #EBB765;
+    --c-warn-bg: #33280F;
+    --c-danger: #F5919A;
+    --c-danger-bg: #391A1D;
+    --c-info: #7CC9DC;
+    --c-info-bg: #112E37;
+    --c-focus: #F3BE6F;
+  }
+  [data-ds="public"]:not([data-mode]) {
+    --c-bg: #16130F;
+    --c-surface: #201C17;
+    --c-surface2: #2A251F;
+    --c-ink: #F1ECE5;
+    --c-ink2: #BDB5A9;
+    --c-ink3: #918878;
+    --c-border: #3B342B;
+    --c-border-strong: #716657;
+    --c-primary: #6DC1D6;
+    --c-primary-hover: #93D3E3;
+    --c-primary-ink: #062B34;
+    --c-link: #7CC9DC;
+    --c-accent: #F0B45E;
+    --c-accent-bg: #3A2B14;
+    --c-accent-ink: #2A1C06;
+    --c-accent-on-dark: #F0B45E;
+    --c-accent-on-dark-ink: #2A1C06;
+    --c-hero: #0C3D49;
+    --c-hero-ink: #F2F8FA;
+    --c-ok: #6FD292;
+    --c-ok-bg: #152D1D;
+    --c-warn: #EBB765;
+    --c-warn-bg: #352911;
+    --c-danger: #F5919A;
+    --c-danger-bg: #3B1D1E;
+    --c-info: #7CC9DC;
+    --c-info-bg: #132E36;
+    --c-focus: #F3BE6F;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   ② 消耗品管理 本体（--c-* / --fs-* / --sp-* / --r-* / --tap-min のみ）
+   ══════════════════════════════════════════════════════════════ */
+:root{ --hdr-h:52px; --bnav-h:62px; }
+
+/* ★トークンの写し①の補い（写し自体は編集しない）。
+   写しは OS のダーク設定に追従する時、色の変数だけを差し替えて color-scheme を宣言しない。
+   そのためチェックボックス・日付入力・スクロールバーといったブラウザ標準の部品が
+   暗い画面の上で明るいまま残る（実測: :root の color-scheme が light のまま）。
+   ここで1行だけ補う。data-mode で明暗を明示した時は写し側の宣言が正しく効く。 */
+@media (prefers-color-scheme: dark) {
+  :root[data-ds="ops"]:not([data-mode]) { color-scheme: dark; }
+}
+
+/* ★文字を大きくした時（ブラウザの文字サイズ 200% など）の備え。
+   見出しとボトムナビは中身が固定幅で並ぶため、そのままだと横へあふれて
+   画面全体が横スクロールになる（実測: 375px 幅・200% で 440px）。
+   折り返しと伸縮を許して縦に伸ばす。通常サイズでは1行に収まるので見え方は変わらない。
+   ボトムナビの高さぶんの余白は init の syncNavHeight が実測して合わせる。 */
+.hdr{flex-wrap:wrap}
+.hdr h1{white-space:normal;min-width:0}
+.bnav{flex-wrap:wrap}
+.bnav button{flex:0 1 auto}
+/* 横並びの入力欄は min-width:0 のせいで、折り返さずに潰れるところまで縮む
+   （実測: 200% で「品目名で検索」のラベルが1文字ずつ縦に並んだ）。
+   文字の大きさに連動する下限を置き、潰れる前に次の行へ送る。
+   下限は em なので通常サイズでは今までどおり1行に収まる。 */
+.row > .fld{min-width:6em}
+#lowBox .btn{text-align:left}
+/* 表の中のボタンは折り返さない。セルの nowrap を .btn が打ち消すと、
+   幅の足りない表で文字セルの代わりにボタン列が潰され「非表示」が3行になる。
+   表自体は .tbl-wrap で横に滑るので、折り返さなくてもあふれない。 */
+.grid .btn,.small-tbl .btn{white-space:nowrap}
+
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--font-sans);background:var(--c-bg);color:var(--c-ink);
+     font-size:var(--fs-base);line-height:var(--lh-base);
+     padding-bottom:var(--bnav-h)}   /* 実寸は syncNavHeight が入れる（safe-area の余白はナビ自身が持つ） */
+button,input,select,textarea{font-family:inherit;color:var(--c-ink)}
+/* hidden 属性を確実に効かせる（.fld や .row の display 指定が UA 既定に勝ってしまうため） */
+[hidden]{display:none !important}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+     clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* 計算モジュール欠落 */
+#calcBlock{display:none;position:fixed;inset:0;z-index:300;background:var(--c-bg);
+     padding:var(--sp-7) var(--sp-4);text-align:center}
+#calcBlock.on{display:block}
+#calcBlock .big{font-size:var(--fs-2xl)}
+#calcBlock p{margin-bottom:var(--sp-3)}
+#calcBlock .sub{font-size:var(--fs-sm);color:var(--c-ink2)}
+
+/* ヘッダ */
+.hdr{position:sticky;top:0;z-index:100;min-height:var(--hdr-h);background:var(--c-hero);
+     color:var(--c-hero-ink);padding:0 var(--sp-4);display:flex;align-items:center;gap:var(--sp-3)}
+.hdr h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);white-space:nowrap}
+.rolechip{font-size:var(--fs-2xs);border:1px solid var(--c-hero-ink);border-radius:9999px;
+     padding:0 var(--sp-2);white-space:nowrap}
+.rolechip[hidden]{display:none}
+.icon-btn{min-width:var(--tap-min);min-height:var(--tap-min);border:0;background:transparent;
+     color:var(--c-hero-ink);border-radius:var(--r-md);cursor:pointer;font-size:var(--fs-lg)}
+
+/* 画面切替・カード */
+main{padding:var(--sp-2) var(--sp-4) var(--sp-6)}
+.scr{display:none}
+.scr.on{display:block}
+.cd{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);
+     padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3)}
+h2.sec{font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2);line-height:var(--lh-tight);
+     border-bottom:1px solid var(--c-border);padding-bottom:0;margin-bottom:var(--sp-1)}
+h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-2)}
+.muted{color:var(--c-ink2);font-size:var(--fs-sm)}
+.row{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
+.grow{flex:1;min-width:0}
+.mt2{margin-top:var(--sp-2)}
+.mt3{margin-top:var(--sp-3)}
+
+/* ボタン */
+.btn{min-height:var(--tap-min);padding:0 var(--sp-4);border:1px solid var(--c-border);
+     background:var(--c-surface);color:var(--c-ink);border-radius:var(--r-md);cursor:pointer;
+     font-size:var(--fs-sm);
+     /* 文字を大きくすると品目名入りのボタンが入れ物より広くなり、ページ全体が横スクロールする
+        （実測 200%: 発注ボタン 60px・「前月の月額出庫を複写」57px）。収まらない時だけ折り返す。
+        通常サイズは1行に収まり、高さも min-height の 44px のままなので見え方は変わらない。 */
+     white-space:normal;max-width:100%}
+.btn{padding-top:var(--sp-1);padding-bottom:var(--sp-1)}   /* 折り返した時に文字が枠へ接しないように */
+.btn.pri{background:var(--c-primary);color:var(--c-primary-ink);border-color:var(--c-primary);
+     font-weight:var(--fw-bold)}
+.btn.pri:hover{background:var(--c-primary-hover)}
+/* 取り消し・削除は塗りつぶさない（枠線だけ・実行前に確認を挟む） */
+.btn.warnb{border-color:var(--c-danger);color:var(--c-danger)}
+.btn:disabled{background:var(--c-surface2);color:var(--c-ink3);border-color:var(--c-border);cursor:not-allowed}
+.btn.sm{min-height:var(--tap-min);padding:0 var(--sp-3);font-size:var(--fs-2xs)}
+
+/* セグメント（ラジオ） */
+.seg{display:flex;gap:var(--sp-2);border:0;padding:0;margin:0;flex-wrap:wrap;position:relative}
+.seg legend{font-size:var(--fs-2xs);color:var(--c-ink2);padding:0}
+.seg input{position:absolute;opacity:0;pointer-events:none;clip-path:inset(50%)}
+.seg label{display:inline-flex;align-items:center;min-height:var(--tap-min);padding:0 var(--sp-4);
+     border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface2);
+     color:var(--c-ink2);cursor:pointer;font-size:var(--fs-sm)}
+.seg input:checked+label{background:var(--c-primary);color:var(--c-primary-ink);
+     border-color:var(--c-primary);font-weight:var(--fw-bold)}
+.seg input:focus-visible+label{box-shadow:0 0 0 2px var(--c-surface),0 0 0 calc(2px + var(--focus-w)) var(--c-focus)}
+.seg label[hidden]{display:none}
+
+/* 3状態（読み込み中・空・エラー） */
+.state{padding:var(--sp-5) var(--sp-4);text-align:center;color:var(--c-ink2);font-size:var(--fs-sm)}
+.state[hidden]{display:none}
+.state.err{text-align:left;color:var(--c-ink);background:var(--c-danger-bg);
+     border:1px solid var(--c-danger);border-radius:var(--r-lg)}
+.state.err b{color:var(--c-danger)}
+.state.ok{text-align:left;background:var(--c-ok-bg);border:1px solid var(--c-ok);border-radius:var(--r-lg)}
+.state.warn{text-align:left;background:var(--c-warn-bg);border:1px solid var(--c-warn);border-radius:var(--r-lg)}
+.state p{margin-top:var(--sp-2)}
+
+/* フォーム */
+.form{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--sp-2);row-gap:var(--sp-1);
+     margin-bottom:var(--sp-2)}
+.fld{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0}
+.fld>label,.fld>.lbl{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight)}
+.fld input,.fld select,.fld textarea{min-height:var(--tap-min);padding:var(--sp-1) var(--sp-3);
+     font-size:var(--fs-base);border:1px solid var(--c-border);border-radius:var(--r-md);
+     background:var(--c-surface);color:var(--c-ink);width:100%}
+.fld textarea{resize:vertical;line-height:var(--lh-base)}
+.fld input[readonly]{background:var(--c-surface2);color:var(--c-ink2)}
+.fld input[aria-invalid="true"],.fld select[aria-invalid="true"]{border-color:var(--c-danger);border-width:2px}
+.ferr{font-size:var(--fs-2xs);color:var(--c-danger);line-height:var(--lh-tight)}
+.ferr[hidden]{display:none}
+.fwarn{font-size:var(--fs-2xs);color:var(--c-warn);line-height:var(--lh-tight)}
+.fwarn[hidden]{display:none}
+.fnote{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight)}
+.fnote[hidden]{display:none}
+.chkwrap{display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)}
+.chkwrap label{font-size:var(--fs-sm)}
+.chkwrap input{width:auto;min-width:var(--tap-min)}
+.s1{grid-column:span 1}.s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}
+.s5{grid-column:span 5}.s6{grid-column:span 6}.s7{grid-column:span 7}.s8{grid-column:span 8}
+.s9{grid-column:span 9}.s10{grid-column:span 10}.s11{grid-column:span 11}.s12{grid-column:1 / -1}
+
+/* 表 */
+.tbl-wrap{overflow:auto;border:1px solid var(--c-border);border-radius:var(--r-lg);
+     background:var(--c-surface);max-height:70vh}
+table.grid{border-collapse:separate;border-spacing:0;width:100%}
+.grid th,.grid td{font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-2);text-align:left;
+     border-bottom:1px solid var(--c-border);min-height:var(--tap-min);height:var(--tap-min);
+     white-space:nowrap;vertical-align:middle}
+.grid thead th{position:sticky;top:0;z-index:3;background:var(--c-surface2);color:var(--c-ink2);
+     font-size:var(--fs-2xs);font-weight:var(--fw-bold)}
+.grid th button.sortb{min-height:var(--tap-min);border:0;background:transparent;color:var(--c-ink2);
+     font-size:var(--fs-2xs);font-weight:var(--fw-bold);cursor:pointer;padding:0 var(--sp-1)}
+.grid .cname{position:sticky;left:0;background:var(--c-surface);z-index:2;min-width:220px}
+.grid .cname .namebtn{max-width:18em;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.grid .cname .btn.sm{vertical-align:middle;margin-left:var(--sp-1)}
+.grid thead .cname{z-index:4;background:var(--c-surface2)}
+.grid tbody tr:hover{background:var(--c-surface2)}
+.grid tbody tr:hover .cname{background:var(--c-surface2)}
+.grid td.num{font-variant-numeric:tabular-nums;text-align:right}
+.grid th.num{text-align:right}
+.grid .namebtn{border:0;background:transparent;color:var(--c-link);font-size:var(--fs-xs);
+     text-align:left;cursor:pointer;min-height:var(--tap-min);padding:0;text-decoration:underline}
+/* セルをタップして直す欄。押せることが色以外にも分かるよう下線（点線）を付ける */
+/* 幅は中身なり（100% にすると、同じセルに置いた印が隣のセルへはみ出す） */
+.cellbtn{min-height:var(--tap-min);max-width:100%;text-align:left;border:0;background:transparent;
+     color:var(--c-ink);font-size:var(--fs-xs);cursor:pointer;padding:0 var(--sp-1);
+     vertical-align:middle;border-bottom:1px dotted var(--c-border-strong)}
+.grid td .badge{vertical-align:middle;margin-left:var(--sp-1)}
+.cellbtn.empty{color:var(--c-ink3)}
+.grid td input,.grid td select{min-height:var(--tap-min);width:100%;font-size:var(--fs-xs);
+     border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface);
+     color:var(--c-ink);padding:0 var(--sp-1)}
+.grid td.cellerr{background:var(--c-danger-bg);box-shadow:inset 3px 0 0 var(--c-danger)}
+.grid td.saved{background:var(--c-ok-bg)}
+.grid tr.rbad td.cname{box-shadow:inset 4px 0 0 var(--c-danger)}
+.grid tr.rcaution td.cname{box-shadow:inset 4px 0 0 var(--c-warn)}
+.grid tr.rnop td{color:var(--c-ink3)}
+.grid td.low{background:var(--c-warn-bg);box-shadow:inset 3px 0 0 var(--c-warn)}
+.grid td.msg{white-space:normal;font-size:var(--fs-2xs);color:var(--c-danger)}
+/* 設定・プロファイルの小さな表も、文字を大きくすると入れ物より広くなる。
+   枠の中だけを横に滑らせる（ページ全体が横スクロールしないように）。 */
+.tbl-wrap.sm{max-height:none;border:0;border-radius:0;background:transparent}
+.small-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-2xs)}
+.small-tbl th,.small-tbl td{border:1px solid var(--c-border);padding:var(--sp-1) var(--sp-2);
+     text-align:left;min-height:var(--tap-min);height:var(--tap-min);vertical-align:middle}
+.small-tbl td.num,.small-tbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+.small-tbl input,.small-tbl select{min-height:var(--tap-min);font-size:var(--fs-2xs);
+     border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface);
+     color:var(--c-ink);width:100%;padding:0 var(--sp-1)}
+.small-tbl input[type="checkbox"]{width:auto;min-width:var(--tap-min)}
+tr.gone td{text-decoration:line-through;color:var(--c-ink3)}
+
+/* 印（色だけに意味を持たせない） */
+.badge{display:inline-block;padding:0 var(--sp-2);border-radius:9999px;font-size:var(--fs-2xs);
+     border:1px solid var(--c-border);background:var(--c-surface2);color:var(--c-ink2)}
+.badge.bad{background:var(--c-danger-bg);border-color:var(--c-danger);color:var(--c-ink)}
+.badge.warn{background:var(--c-warn-bg);border-color:var(--c-warn);color:var(--c-ink)}
+.badge.ok{background:var(--c-ok-bg);border-color:var(--c-ok);color:var(--c-ink)}
+/* 締めた月の印は「月＋解除ボタン」を1つの枠に収める */
+#closedBox .badge{display:inline-flex;align-items:center;gap:var(--sp-1);padding:0 var(--sp-1)}
+
+/* 改定行（一覧の行の直下に開く） */
+tr.prow>td{white-space:normal;background:var(--c-info-bg);padding:var(--sp-3) var(--sp-4)}
+.prow-grid{display:grid;grid-template-columns:minmax(200px,1fr) minmax(260px,2fr);gap:var(--sp-3)}
+.pbox{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-md);
+     padding:var(--sp-2) var(--sp-3)}
+.pbox h4{font-size:var(--fs-2xs);color:var(--c-ink2);font-weight:var(--fw-bold);margin-bottom:var(--sp-1)}
+.pbox dl{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-1) var(--sp-3);font-size:var(--fs-xs)}
+.pbox dt{color:var(--c-ink2)}
+.pbox dd{text-align:right;font-variant-numeric:tabular-nums}
+.unit-ed{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--sp-2);row-gap:var(--sp-1)}
+
+/* 詳細のグラフ */
+.chart{width:100%;height:auto;background:var(--c-surface);border:1px solid var(--c-border);
+     border-radius:var(--r-md)}
+.chart .gl{stroke:var(--c-border);stroke-width:1}
+.chart .l1{stroke:var(--c-primary);stroke-width:2.5;fill:none}
+.chart .l2{stroke:var(--c-accent);stroke-width:2.5;fill:none;stroke-dasharray:6 3}
+.chart .p3{fill:var(--c-ink3)}
+.chart text{font-size:11px;fill:var(--c-ink2)}
+.legend{display:flex;gap:var(--sp-4);flex-wrap:wrap;font-size:var(--fs-2xs);color:var(--c-ink2)}
+.legend .k1::before{content:"──";color:var(--c-primary);margin-right:var(--sp-1)}
+.legend .k2::before{content:"╌╌";color:var(--c-accent);margin-right:var(--sp-1)}
+.legend .k3::before{content:"●";color:var(--c-ink3);margin-right:var(--sp-1)}
+
+/* 詳細の固定バー */
+.subbar{position:sticky;top:var(--hdr-real,var(--hdr-h));z-index:90;display:flex;align-items:center;gap:var(--sp-3);
+     flex-wrap:wrap;background:var(--c-surface);border-bottom:1px solid var(--c-border);
+     padding:var(--sp-1) var(--sp-4);margin:0 calc(-1 * var(--sp-4)) var(--sp-2)}
+.subbar .who{font-weight:var(--fw-bold)}
+.subbar .meta{font-size:var(--fs-2xs);color:var(--c-ink2)}
+
+/* 下部ナビ（位置は全画面で固定） */
+.bnav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:var(--c-surface);
+     border-top:1px solid var(--c-border);display:flex;justify-content:space-around;
+     padding:var(--sp-1) max(var(--sp-1),env(safe-area-inset-right))
+            max(var(--sp-1),env(safe-area-inset-bottom)) max(var(--sp-1),env(safe-area-inset-left))}
+.bnav button{font:inherit;font-size:var(--fs-2xs);background:none;border:0;color:var(--c-ink2);
+     display:flex;flex-direction:column;align-items:center;gap:2px;padding:var(--sp-1) var(--sp-3);
+     cursor:pointer;border-radius:var(--r-md);min-width:64px;min-height:var(--tap-min)}
+.bnav button .ic{font-size:var(--fs-lg);line-height:1}
+.bnav button[aria-current="page"]{color:var(--c-primary);background:var(--c-info-bg);font-weight:var(--fw-bold)}
+
+/* ダイアログ */
+dialog.fdlg{border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);
+     color:var(--c-ink);padding:var(--sp-4);width:min(920px,94vw);max-height:88vh;overflow:auto;
+     box-shadow:var(--shadow-2)}
+dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
+.fdlg .fd-head{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-2)}
+.fdlg .fd-head h2{font-size:var(--fs-lg);font-weight:var(--fw-bold);flex:1;min-width:0}
+
+/* トースト */
+#toast{position:fixed;left:50%;bottom:calc(var(--bnav-h) + var(--sp-3));transform:translateX(-50%);
+     background:var(--c-ink);color:var(--c-bg);border-radius:9999px;padding:var(--sp-2) var(--sp-5);
+     font-size:var(--fs-sm);box-shadow:var(--shadow-2);z-index:200;display:none;max-width:88vw}
+#toast.on{display:block}
+
+/* 職員（staff）には出さない部品。サーバー側の許可表が正で、これは二重の防御 */
+body.staff .adm{display:none !important}
+
+/* 料金表（A4縦・画面では出さない） */
+#priceSheet{display:none}
+#priceSheet h1{font-size:14pt;font-weight:700;margin-bottom:2mm}
+#priceSheet .shd{display:flex;align-items:flex-end;gap:6mm;margin-bottom:3mm}
+#priceSheet .shd .sp{flex:1}
+#priceSheet .sdate{font-size:9pt}
+#priceSheet h2{font-size:10.5pt;font-weight:700;margin:4mm 0 1mm;border-bottom:1px solid #000}
+#priceSheet table{width:100%;border-collapse:collapse;font-size:9pt}
+#priceSheet th,#priceSheet td{border:1px solid #000;padding:1mm 2mm;text-align:left}
+#priceSheet td.num,#priceSheet th.num{text-align:right}
+#priceSheet .foot{margin-top:4mm;font-size:8.5pt}
+
+@media print{
+  .hdr,.bnav,main,#toast,dialog{display:none !important}
+  body{background:#fff;color:#000;padding:0}
+  #priceSheet{display:block !important;color:#000}
+  @page{size:A4 portrait;margin:12mm}
+}
+
+/* 幅の適応 */
+@media (max-width:900px){
+  .form{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .s7,.s8,.s9,.s10,.s11{grid-column:1 / -1}
+  .prow-grid{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .form{grid-template-columns:1fr}
+  .form>*{grid-column:1 / -1}
+  main{padding:var(--sp-2)}
+  .subbar{margin:0 calc(-1 * var(--sp-2)) var(--sp-3)}
+}
+</style>
+</head>
+<body>
+
+<div id="calcBlock">
+  <p class="big" aria-hidden="true">⚠</p>
+  <p><b>計算モジュールを読み込めませんでした</b></p>
+  <p class="sub">supplies-calc.js が同じフォルダにあるか確かめてください。<br>ファイルを置いたあと、この画面を再読み込みしてください。</p>
+</div>
+
+<header class="hdr">
+  <h1>消耗品管理</h1>
+  <span class="rolechip" id="roleChip" hidden>—</span>
+  <span class="grow"></span>
+  <button type="button" class="icon-btn" id="reloadBtn" aria-label="サーバーから読み直す">⟳</button>
+</header>
+
+<main>
+
+<!-- ══ 一覧 ══ -->
+<section id="scr-list" class="scr on" aria-labelledby="hList">
+  <h2 id="hList" class="sr-only">品目の一覧</h2>
+  <div class="cd">
+    <div class="row">
+      <div class="fld"><label for="selCat">種別</label><select id="selCat"></select></div>
+      <div class="fld grow"><label for="q">品目名で検索</label>
+        <input type="search" id="q" autocomplete="off" enterkeyhint="search" placeholder="品目名で検索"></div>
+      <div class="fld"><label for="selSort">並び</label><select id="selSort">
+        <option value="name">名前</option><option value="cat">種別</option>
+        <option value="eff">改定日</option><option value="chg">前回比</option>
+      </select></div>
+      <button type="button" class="btn" id="sortDirBtn" aria-label="並び順を昇順と降順で切り替える">昇順 ↑</button>
+    </div>
+    <div class="row mt2">
+      <div class="chkwrap"><input type="checkbox" id="chkHidden"><label for="chkHidden">非表示の品目も出す</label></div>
+      <span class="muted grow" id="listCount">—</span>
+      <button type="button" class="btn adm" id="printBtn">料金表を印刷</button>
+      <button type="button" class="btn pri adm" id="newBtn" aria-haspopup="dialog">＋ 品目を追加</button>
+    </div>
+  </div>
+
+  <div id="listState" class="state" role="status"></div>
+
+  <div class="tbl-wrap" id="listWrap" hidden>
+    <table class="grid" id="listTbl">
+      <caption class="sr-only">品目の一覧（品目名を押すと詳細、金額のセルを押すと改定の入力欄が開きます）</caption>
+      <thead id="listHead"></thead>
+      <tbody id="listBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══ 在庫 ══ -->
+<section id="scr-stock" class="scr" aria-labelledby="hStock">
+  <h2 id="hStock" class="sr-only">在庫</h2>
+
+  <div class="cd">
+    <h3 class="sub">発注が必要な品目</h3>
+    <div id="lowState" class="state" role="status"></div>
+    <div id="lowBox" class="row"></div>
+  </div>
+
+  <div class="cd">
+    <h3 class="sub">入出庫を記録する</h3>
+    <p class="muted">記録したあとも入力欄は開いたままです。続けて登録できます。棚卸は<b>入出庫を入れ終えてから</b>行ってください（棚卸より前の日付であとから入れた記録は在庫に反映されません）。</p>
+    <div class="form mt2">
+      <div class="fld s6"><label for="mvItem">品目</label><select id="mvItem"></select></div>
+      <div class="fld s6"><span class="lbl">種類</span>
+        <fieldset class="seg" id="segType">
+          <legend class="sr-only">記録の種類</legend>
+          <input type="radio" name="splType" id="mt_in" value="in" checked><label for="mt_in">入庫</label>
+          <input type="radio" name="splType" id="mt_out" value="out"><label for="mt_out">出庫</label>
+          <input type="radio" name="splType" id="mt_count" value="count" class="adm"><label for="mt_count" class="adm">棚卸</label>
+          <input type="radio" name="splType" id="mt_adj" value="adj" class="adm"><label for="mt_adj" class="adm">調整</label>
+        </fieldset>
+      </div>
+      <div class="fld s3"><label for="mvDate">日付</label><input type="date" id="mvDate" aria-describedby="mvErr"></div>
+      <div class="fld s3"><label for="mvQty">数量</label>
+        <input type="number" id="mvQty" inputmode="numeric" step="1" min="0" autocomplete="off" aria-describedby="mvErr"></div>
+      <div class="fld s3"><label for="mvUnit">単位</label><select id="mvUnit"></select></div>
+      <div class="fld s3 adm" id="mvAdjBox"><span class="lbl">調整の向き</span>
+        <fieldset class="seg" id="segAdj">
+          <legend class="sr-only">調整で在庫を増やすか減らすか</legend>
+          <input type="radio" name="splAdj" id="ma_plus" value="plus" checked><label for="ma_plus">増やす</label>
+          <input type="radio" name="splAdj" id="ma_minus" value="minus"><label for="ma_minus">減らす</label>
+        </fieldset>
+      </div>
+      <div class="fld s3" id="mvResidentBox"><label for="mvResident">提供先（任意）</label><select id="mvResident"></select></div>
+      <div class="fld s3 adm" id="mvCostBox"><label for="mvCost">仕入額（税込・任意）</label>
+        <input type="number" id="mvCost" inputmode="numeric" step="1" min="0" autocomplete="off"></div>
+      <div class="fld s3 adm" id="mvProfBox"><label for="mvProfile">プロファイル</label><select id="mvProfile"></select></div>
+      <div class="fld s2 adm" id="mvDoseBox"><label for="mvDose">1回量</label>
+        <input type="text" id="mvDose" inputmode="decimal" autocomplete="off" placeholder="3.0"></div>
+      <div class="fld s2 adm" id="mvTimesBox"><label for="mvTimes">回数/日</label>
+        <input type="number" id="mvTimes" inputmode="numeric" step="1" min="0" autocomplete="off"></div>
+      <div class="fld s2 adm" id="mvDaysBox"><label for="mvDays">日数</label>
+        <input type="number" id="mvDays" inputmode="numeric" step="1" min="1" max="31" autocomplete="off"></div>
+      <div class="fld s12"><label for="mvNote">備考（60字まで・氏名は書かない）</label>
+        <input type="text" id="mvNote" maxlength="60" autocomplete="off" placeholder="提供先は上の欄（利用者No）で選びます"></div>
+    </div>
+    <p class="fnote" id="mvPreview">—</p>
+    <p class="ferr" id="mvErr" hidden></p>
+    <div class="row mt2">
+      <button type="button" class="btn pri" id="mvSubmit">記録する</button>
+      <button type="button" class="btn adm" id="copyBtn">前月の月額出庫を複写</button>
+      <span class="muted grow" id="mvPending"></span>
+    </div>
+    <div id="mvState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd">
+    <h3 class="sub">現在庫</h3>
+    <div id="stockState" class="state" role="status"></div>
+    <div class="tbl-wrap" id="stockWrap" hidden>
+      <table class="grid">
+        <caption class="sr-only">品目ごとの現在庫</caption>
+        <thead><tr><th scope="col" class="cname">品目</th><th scope="col" class="num">現在庫</th>
+          <th scope="col" class="num">発注点</th><th scope="col">状態</th><th scope="col">最終棚卸</th></tr></thead>
+        <tbody id="stockBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cd">
+    <h3 class="sub">最近の入出庫</h3>
+    <div class="row">
+      <div class="fld"><label for="recentFrom">開始日</label><input type="date" id="recentFrom"></div>
+      <div class="fld"><label for="recentTo">終了日</label><input type="date" id="recentTo"></div>
+      <button type="button" class="btn" id="recentBtn">読み込む</button>
+    </div>
+    <div id="recentState" class="state" role="status"></div>
+    <div class="tbl-wrap mt2" id="recentWrap" hidden>
+      <table class="grid">
+        <caption class="sr-only">期間内の入出庫</caption>
+        <thead><tr><th scope="col">日付</th><th scope="col" class="cname">品目</th><th scope="col">種類</th>
+          <th scope="col" class="num">数量</th><th scope="col">提供先</th><th scope="col" class="num adm">金額</th>
+          <th scope="col">備考</th><th scope="col">操作</th></tr></thead>
+        <tbody id="recentBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 集計（管理者）══ -->
+<section id="scr-summary" class="scr" aria-labelledby="hSum">
+  <h2 id="hSum" class="sr-only">月次集計</h2>
+  <div class="cd">
+    <div class="row">
+      <button type="button" class="btn" id="sumPrev" aria-label="前の月へ">‹</button>
+      <div class="fld"><label for="sumMonth">集計する月</label><input type="month" id="sumMonth"></div>
+      <button type="button" class="btn" id="sumNext" aria-label="次の月へ">›</button>
+      <button type="button" class="btn pri" id="sumLoad">読み込む</button>
+      <button type="button" class="btn" id="csvBtn" disabled>CSV を書き出す</button>
+    </div>
+    <p class="muted mt2">CSV には氏名の列が入ります。ファイル名には氏名を入れません。取り込みが終わったら、書き出したファイルは削除してください。</p>
+  </div>
+  <div id="sumState" class="state" role="status"></div>
+  <div class="tbl-wrap" id="sumWrap" hidden>
+    <table class="grid">
+      <caption class="sr-only">月次の実費集計</caption>
+      <thead><tr><th scope="col">利用者No</th><th scope="col" class="cname">氏名</th><th scope="col">品目</th>
+        <th scope="col" class="num">数量</th><th scope="col">単位</th><th scope="col" class="num">金額</th>
+        <th scope="col">方式</th><th scope="col" class="num">税率</th></tr></thead>
+      <tbody id="sumBody"></tbody>
+      <tfoot id="sumFoot"></tfoot>
+    </table>
+  </div>
+  <div class="cd mt3">
+    <h3 class="sub">改定一覧</h3>
+    <p class="muted">選んだ期間に適用日がある価格の改定を並べます。既定は<b>売価が変わった行だけ</b>で、仕入だけの変化は下の切替で出します。この一覧に出るのは各品目の「前回・現在・予定」の改定です。それより前の履歴は品目詳細で見られます。</p>
+    <div class="row mt2">
+      <div class="fld"><label for="chgFrom">開始日</label><input type="date" id="chgFrom"></div>
+      <div class="fld"><label for="chgTo">終了日</label><input type="date" id="chgTo"></div>
+      <div class="chkwrap"><input type="checkbox" id="chgCost"><label for="chgCost">仕入だけの変化も出す</label></div>
+      <button type="button" class="btn pri" id="chgShow">表示する</button>
+    </div>
+    <div id="chgState" class="state" role="status" hidden></div>
+    <div class="tbl-wrap mt2" id="chgWrap" hidden>
+      <table class="grid">
+        <caption class="sr-only">期間内の価格改定</caption>
+        <thead><tr><th scope="col">適用日</th><th scope="col" class="cname">品目</th>
+          <th scope="col" class="num">仕入（前回→今回）</th><th scope="col" class="num">売価（前回→今回）</th>
+          <th scope="col" class="num">値入率</th><th scope="col">理由</th><th scope="col">状態</th></tr></thead>
+        <tbody id="chgBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cd mt3">
+    <h3 class="sub">価格の付け直し</h3>
+    <p class="muted">選んだ月の出庫を、その日付で有効な価格で計算し直します。在庫は変わりません。締めた月は付け直せません。</p>
+    <div class="row mt2">
+      <div class="fld grow"><label for="repItem">品目（未選択＝すべて）</label><select id="repItem"></select></div>
+      <button type="button" class="btn" id="repBtn">この月を付け直す</button>
+    </div>
+    <div id="repState" class="state" role="status" hidden></div>
+  </div>
+</section>
+
+<!-- ══ 品目詳細 ══ -->
+<section id="scr-detail" class="scr" aria-labelledby="hDetail">
+  <h2 id="hDetail" class="sr-only">品目の詳細</h2>
+  <div class="subbar">
+    <button type="button" class="btn" id="dtBack">← 一覧へ戻る</button>
+    <span class="who grow" id="dtName">—</span>
+    <span class="meta" id="dtMeta"></span>
+  </div>
+  <div id="dtState" class="state" role="status" hidden></div>
+
+  <div class="cd">
+    <h3 class="sub">在庫</h3>
+    <p id="dtStock" class="muted">—</p>
+  </div>
+
+  <div class="cd adm" id="dtPriceCd">
+    <h3 class="sub">価格の履歴</h3>
+    <div class="row">
+      <span class="muted grow" id="dtPriceNote">—</span>
+      <button type="button" class="btn warnb" id="dtVoidBtn" disabled>最新の改定を取り消す</button>
+    </div>
+    <div class="tbl-wrap mt2" id="dtPriceWrap" hidden>
+      <table class="grid">
+        <caption class="sr-only">この品目の価格履歴</caption>
+        <thead><tr><th scope="col">適用日</th><th scope="col" class="num">仕入</th>
+          <th scope="col" class="num">最小単位売価</th><th scope="col" class="num">請求単位売価</th>
+          <th scope="col" class="num">値入率（売価基準／原価基準）</th><th scope="col">根拠</th><th scope="col">理由</th>
+          <th scope="col">登録</th><th scope="col">状態</th></tr></thead>
+        <tbody id="dtPriceBody"></tbody>
+      </table>
+    </div>
+    <div class="mt3" id="dtChartBox" hidden>
+      <div class="legend"><span class="k1">仕入（基準単位）</span><span class="k2">売価（請求単位）</span><span class="k3">入庫時の仕入額</span></div>
+      <div id="dtChart"></div>
+    </div>
+  </div>
+
+  <div class="cd adm" id="dtProfCd" hidden>
+    <h3 class="sub">使用量プロファイル</h3>
+    <p class="muted">1回量・回数/日・日数の型です。月額出庫の既定値に使います。</p>
+    <div class="tbl-wrap sm">
+    <table class="small-tbl mt2">
+      <caption class="sr-only">この品目のプロファイル</caption>
+      <thead><tr><th scope="col">名前</th><th scope="col" class="num">1回量</th><th scope="col" class="num">回数/日</th>
+        <th scope="col" class="num">日数</th><th scope="col">既定</th><th scope="col" class="num">月額（税込）</th>
+        <th scope="col">操作</th></tr></thead>
+      <tbody id="dtProfBody"></tbody>
+    </table>
+    </div>
+    <div class="row mt2">
+      <button type="button" class="btn" id="dtProfAdd">＋ 追加</button>
+      <button type="button" class="btn pri" id="dtProfSave">保存</button>
+    </div>
+    <div id="dtProfState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd">
+    <h3 class="sub">直近3か月の入出庫</h3>
+    <div id="dtMovesState" class="state" role="status"></div>
+    <div class="tbl-wrap" id="dtMovesWrap" hidden>
+      <table class="grid">
+        <caption class="sr-only">この品目の入出庫</caption>
+        <thead><tr><th scope="col">日付</th><th scope="col">種類</th><th scope="col" class="num">数量</th>
+          <th scope="col">提供先</th><th scope="col" class="num adm">金額</th><th scope="col">状態</th></tr></thead>
+        <tbody id="dtMovesBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 設定 ══ -->
+<section id="scr-settings" class="scr" aria-labelledby="hSet">
+  <h2 id="hSet" class="sr-only">設定</h2>
+
+  <div class="cd">
+    <h3 class="sub">接続先</h3>
+    <div class="form">
+      <div class="fld s12"><label for="cfgUrl">接続先URL（消耗品管理GASの /exec）</label>
+        <input type="url" id="cfgUrl" autocomplete="off" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="fld s6"><label for="cfgToken">合言葉</label><input type="password" id="cfgToken" autocomplete="off"></div>
+      <div class="fld s6"><label for="cfgBy">この端末の名前（更新元として記録します）</label>
+        <input type="text" id="cfgBy" autocomplete="off" placeholder="事務所PC など。氏名は入れない"></div>
+    </div>
+    <div class="chkwrap"><input type="checkbox" id="cfgShowToken"><label for="cfgShowToken">合言葉を表示する</label></div>
+    <div class="row mt2">
+      <button type="button" class="btn pri" id="saveCfgBtn">保存</button>
+      <button type="button" class="btn" id="testBtn">接続テスト</button>
+    </div>
+    <div id="cfgState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd adm">
+    <h3 class="sub">種別</h3>
+    <p class="muted">並び順の数字が小さいものから出ます。使っている種別は消せません（非表示にできます）。</p>
+    <div class="tbl-wrap sm">
+    <table class="small-tbl mt2">
+      <caption class="sr-only">種別の一覧</caption>
+      <thead><tr><th scope="col">名前</th><th scope="col" class="num">並び</th><th scope="col">非表示</th>
+        <th scope="col">丸め</th><th scope="col" class="num">既定値入率(%)</th><th scope="col">操作</th></tr></thead>
+      <tbody id="catBody"></tbody>
+    </table>
+    </div>
+    <div class="row mt2">
+      <button type="button" class="btn" id="catAdd">＋ 追加</button>
+      <button type="button" class="btn pri" id="catSave">保存</button>
+    </div>
+    <div id="catState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd adm">
+    <h3 class="sub">既定値</h3>
+    <div class="form">
+      <div class="fld s4"><label for="defDays">月額の既定日数</label>
+        <input type="number" id="defDays" inputmode="numeric" step="1" min="1" max="31"></div>
+      <div class="fld s4"><label for="defMode">丸め方式</label><select id="defMode">
+        <option value="round">四捨五入</option><option value="ceil">切り上げ</option><option value="floor">切り捨て</option>
+      </select></div>
+      <div class="fld s4"><label for="defM">既定の値入率（%）</label>
+        <input type="text" id="defM" inputmode="decimal" placeholder="20.0"></div>
+    </div>
+    <div class="row"><button type="button" class="btn pri" id="defSave">保存</button></div>
+    <div id="defState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd adm">
+    <h3 class="sub">月次締め</h3>
+    <p class="muted">締めた月は、入出庫の追加・取り消し・価格の付け直しができなくなります。</p>
+    <div class="row mt2" id="closedBox"></div>
+    <div class="row mt2">
+      <div class="fld"><label for="closedMonth">締める月</label><input type="month" id="closedMonth"></div>
+      <button type="button" class="btn" id="closedAdd">一覧に足す</button>
+      <button type="button" class="btn pri" id="closedSave">保存</button>
+    </div>
+    <div id="closedState" class="state" role="status" hidden></div>
+  </div>
+
+  <div class="cd">
+    <h3 class="sub">この画面について</h3>
+    <p class="muted">版 2026-09-17.1</p>
+    <p class="muted">この端末に残すのは、接続先・合言葉・端末名と、画面の表示状態（開いていた画面・種別・並び・集計月・開いていた品目）だけです。品目・価格・在庫は毎回サーバーから読み直します。氏名は保存しません。</p>
+    <p class="muted" id="aboutPing">接続の確認: 未実施</p>
+  </div>
+</section>
+
+</main>
+
+<nav class="bnav" aria-label="画面の切替">
+  <button type="button" data-scr="list" id="navList"><span class="ic" aria-hidden="true">📋</span>一覧</button>
+  <button type="button" data-scr="stock" id="navStock"><span class="ic" aria-hidden="true">📦</span>在庫</button>
+  <button type="button" data-scr="summary" id="navSummary" class="adm"><span class="ic" aria-hidden="true">📈</span>集計</button>
+  <button type="button" data-scr="settings" id="navSettings"><span class="ic" aria-hidden="true">⚙</span>設定</button>
+</nav>
+
+<!-- ══ 品目を追加 ══ -->
+<dialog id="newDlg" class="fdlg" aria-labelledby="ndTitle">
+  <div class="fd-head">
+    <h2 id="ndTitle">品目を追加</h2>
+    <button type="button" class="btn" id="ndClose">閉じる</button>
+  </div>
+  <p class="muted">単位・請求単位・請求方式は、登録したあとは変えられません（入出庫と価格の履歴が壊れるため）。変えたい時は新しい品目として登録します。</p>
+  <div class="form mt2">
+    <div class="fld s6"><label for="ndName">品目名（必須・60字まで）</label><input type="text" id="ndName" maxlength="60" autocomplete="off" aria-describedby="ndErr"></div>
+    <div class="fld s3"><label for="ndCat">種別</label><select id="ndCat"></select></div>
+    <div class="fld s3"><span class="lbl">段数</span>
+      <fieldset class="seg" id="ndSegSteps">
+        <legend class="sr-only">単位の段数</legend>
+        <input type="radio" name="ndSteps" id="nd_s1" value="1"><label for="nd_s1">1段</label>
+        <input type="radio" name="ndSteps" id="nd_s2" value="2"><label for="nd_s2">2段</label>
+        <input type="radio" name="ndSteps" id="nd_s3" value="3" checked><label for="nd_s3">3段</label>
+      </fieldset>
+    </div>
+    <div class="fld s4"><label for="ndU0">基準単位の名前（仕入の単位・12字まで）</label><input type="text" id="ndU0" maxlength="12" autocomplete="off" placeholder="箱"></div>
+    <div class="fld s4" id="ndU1Box"><label for="ndU1">2段目の名前（12字まで）</label><input type="text" id="ndU1" maxlength="12" autocomplete="off" placeholder="パック"></div>
+    <div class="fld s2" id="ndP1Box"><label for="ndP1">基準1つに入る数</label><input type="number" id="ndP1" inputmode="numeric" step="1" min="1" value="1"></div>
+    <div class="fld s4" id="ndU2Box"><label for="ndU2">3段目の名前（最小単位・12字まで）</label><input type="text" id="ndU2" maxlength="12" autocomplete="off" placeholder="枚"></div>
+    <div class="fld s2" id="ndP2Box"><label for="ndP2">2段目1つに入る数</label><input type="number" id="ndP2" inputmode="numeric" step="1" min="1" value="1"></div>
+    <div class="fld s4"><label for="ndBillType">請求方式</label><select id="ndBillType">
+      <option value="unit">数量で請求（提供数量×売価）</option>
+      <option value="profile">月額で請求（1回量×回数×日数）</option>
+    </select></div>
+    <div class="fld s4" id="ndBillIdxBox"><label for="ndBillIdx">請求単位</label><select id="ndBillIdx"></select></div>
+    <div class="fld s4"><label for="ndStockMode">在庫の追い方</label><select id="ndStockMode">
+      <option value="full">入庫・出庫・棚卸すべてを反映</option>
+      <option value="countOnly">入庫と棚卸だけを反映（出庫は在庫に効かない）</option>
+    </select></div>
+    <div class="fld s3"><label for="ndRound">丸め方式</label><select id="ndRound">
+      <option value="">種別の既定にあわせる</option>
+      <option value="round">四捨五入</option><option value="ceil">切り上げ</option><option value="floor">切り捨て</option>
+    </select></div>
+    <div class="fld s3"><label for="ndTax">税率</label><select id="ndTax">
+      <option value="10">10%</option><option value="8">8%（軽減）</option></select></div>
+    <div class="fld s3"><label for="ndReorder">発注点（請求単位・月額品は基準単位）</label>
+      <input type="number" id="ndReorder" inputmode="numeric" step="1" min="0" value="0"></div>
+    <div class="fld s3"><label for="ndNote">備考（60字まで）</label><input type="text" id="ndNote" maxlength="60" autocomplete="off"></div>
+  </div>
+  <p class="ferr" id="ndErr" hidden></p>
+  <div class="row mt2">
+    <button type="button" class="btn pri" id="ndSave">登録する</button>
+    <span class="muted grow">価格は登録のあと、一覧の金額セルから改定として入れます。</span>
+  </div>
+</dialog>
+
+<!-- ══ 理由の入力（取り消し）══ -->
+<dialog id="askDlg" class="fdlg" aria-labelledby="akTitle">
+  <div class="fd-head">
+    <h2 id="akTitle">取り消しの理由</h2>
+    <button type="button" class="btn" id="akClose">閉じる</button>
+  </div>
+  <p class="muted" id="akWhat">—</p>
+  <div class="form mt2">
+    <div class="fld s12"><label for="akReason">理由（必須・60字まで・氏名は書かない）</label>
+      <input type="text" id="akReason" maxlength="60" autocomplete="off" aria-describedby="akErr"></div>
+  </div>
+  <p class="ferr" id="akErr" hidden></p>
+  <div class="row">
+    <button type="button" class="btn warnb" id="akOk">取り消す</button>
+    <span class="muted grow">取り消しても記録は残ります（取り消し済みとして表示されます）。</span>
+  </div>
+</dialog>
+
+<div id="toast" role="status"></div>
+
+<!-- ══ 料金表（印刷のみ）══ -->
+<section id="priceSheet" aria-hidden="true">
+  <div class="shd">
+    <h1>消耗品 実費料金表</h1>
+    <span class="sp"></span>
+    <span class="sdate" id="sheetDate">—</span>
+  </div>
+  <div id="sheetBody"></div>
+  <p class="foot">金額は税込です。月額の品目は使用量の型ごとの1か月あたりの金額です。</p>
+</section>
+
+<script src="supplies-calc.js?v=2026-09-17"></script>
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════
+   消耗品管理 2026-09-17.1
+   ・計算（単位換算・価格・丸め・集計・CSV）は supplies-calc.js（window.SuppliesCalc）が正本。
+   ・換算・価格解決・在庫の錨・締め判定はサーバーが行う。画面の出し分けは二重の防御。
+   ・端末に残すのは接続設定（spl_cfg）とUI状態（spl_*）だけ。業務データは残さない。
+     例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
+   ════════════════════════════════════════════════════════════════ */
+
+var BUILD = '2026-09-17.1';
+var CFG_KEY = 'spl_cfg';
+var PENDING_KEY = 'spl_pending';
+var ROSTER_KEY = 'su_residents_common';
+var UI_KEYS = {
+  scr: 'spl_scr', cat: 'spl_cat', sort: 'spl_sort', sortDir: 'spl_sortDir',
+  month: 'spl_month', item: 'spl_item'
+};
+/* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIのため */
+var URL_OK_RE = /^(https:\/\/|http:\/\/127\.0\.0\.1[:\/])/;
+var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+var YM_RE = /^\d{4}-\d{2}$/;
+var ITEM_ID_RE = /^it_[0-9A-Za-z_-]{1,24}$/;
+var NOTE_MAX = 60;
+/* サーバー（gas/supplies-api.gs）が持つ上限と同じ値。画面で先に理由を出すために写している */
+var NAME_MAX = 60;
+var UNIT_NAME_MAX = 12;
+var MAX_MOVES = 200;
+var TYPE_LABEL = { in: '入庫', out: '出庫', count: '棚卸', adj: '調整' };
+var MODE_LABEL = { round: '四捨五入', ceil: '切り上げ', floor: '切り捨て' };
+var MODES = ['round', 'ceil', 'floor'];
+var REASONS = ['メーカー値上げ', '仕入先変更', '内容量変更', '価格の見直し', 'その他'];
+var SORT_KEYS = ['name', 'cat', 'eff', 'chg'];
+/* サーバーが返す拒否理由（gas/supplies-api.gs の rej(e, …) と同じ綴り）を、
+   次に何をすればよいかが分かる日本語にする */
+var REJECT_MSG = {
+  closed: 'この月は締め済みです。設定画面で締めを解除してから登録してください。',
+  no_price: 'この日付に使える価格がありません。先に価格の改定を登録してください。',
+  mixed_count: '棚卸と入出庫は同時に送れません。分けて登録してください。',
+  forbidden: 'この操作は管理者の合言葉でのみ行えます。',
+  future_date: '未来の日付は登録できません。日付を今日以前にしてください。',
+  bad_date: '日付の形が違います。カレンダーから選び直してください。',
+  bad_qty: '数量を確かめてください（入庫・出庫・棚卸は0以上の整数、調整は1以上、月額出庫の日数は 1〜31）。',
+  bad_unit: 'この単位では登録できません。単位を選び直してください。',
+  bad_units: 'この品目の単位の設定が壊れています。品目の単位を直してから登録してください。',
+  bad_type: 'この種類の記録は登録できません。',
+  bad_id: '記録の番号が不正です。画面を読み直してから入れ直してください。',
+  no_item: 'この品目が見つかりません。画面を読み直してください。',
+  bad_resident: '提供先は名簿から選び直してください（利用者Noだけを送ります）。',
+  bad_cost: '仕入額は0以上の整数（円）で入れてください（入庫のときだけ入れられます）。',
+  bad_price: 'この日の価格では金額を計算できません。価格の改定を確かめてください。',
+  no_profile: 'プロファイルが選べていません。品目詳細でプロファイルを登録してから月額出庫を入れてください。',
+  unit_range: '出庫は請求単位より小さい単位では登録できません。単位を選び直してください。',
+  units_mismatch: 'この日付の価格は、今と段数の違う単位で登録されています。当日の日付で登録するか、段数を変えた改定を取り消してください。',
+  count_today_only: '棚卸は当日ぶんだけ登録できます。日付を今日にしてください。',
+  busy: 'ほかの人が同時に書き込んでいます。少し待ってからもう一度お試しください。'
+};
+
+/* ── 小道具 ───────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+function txt(v) { return (v === null || v === undefined) ? '' : String(v); }
+
+/* DOM は必ず createElement / textContent で組む（HTML文字列の代入はしない） */
+function h(tag, opt, kids) {
+  var n = document.createElement(tag), k, v;
+  if (opt) {
+    for (k in opt) {
+      if (!Object.prototype.hasOwnProperty.call(opt, k)) continue;
+      v = opt[k];
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'text') { n.textContent = txt(v); }
+      else if (k === 'cls') { n.className = txt(v); }
+      else if (k === 'val') { n.value = txt(v); }
+      else if (k.indexOf('on') === 0 && typeof v === 'function') { n.addEventListener(k.slice(2), v); }
+      else if (v === true) { n.setAttribute(k, ''); }
+      else { n.setAttribute(k, txt(v)); }
+    }
+  }
+  if (kids !== null && kids !== undefined) {
+    (Array.isArray(kids) ? kids : [kids]).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return;
+      n.appendChild(typeof c === 'object' ? c : document.createTextNode(txt(c)));
+    });
+  }
+  return n;
+}
+function clearNode(n) { if (n) n.replaceChildren(); }
+function svgEl(tag, opt) {
+  var n = document.createElementNS('http://www.w3.org/2000/svg', tag), k;
+  if (opt) { for (k in opt) { if (Object.prototype.hasOwnProperty.call(opt, k)) n.setAttribute(k, txt(opt[k])); } }
+  return n;
+}
+
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = txt(msg);
+  t.classList.add('on');
+  if (toast._t) clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.classList.remove('on'); }, 2600);
+}
+
+/* 3状態の表示（読み込み中／空／エラー＋次の一手） */
+function setState(id, kind, title, detail, actionLabel, actionFn) {
+  var box = $(id);
+  if (!box) return;
+  clearNode(box);
+  box.className = 'state' + (kind ? ' ' + kind : '');
+  if (!kind && !title && !detail) { box.hidden = true; return; }
+  box.hidden = false;
+  if (title) box.appendChild(h('b', { text: title }));
+  if (detail) box.appendChild(h('p', { text: detail }));
+  if (actionLabel && actionFn) {
+    box.appendChild(h('p', null, h('button', { type: 'button', cls: 'btn', onclick: actionFn, text: actionLabel })));
+  }
+}
+
+/* ── 二度押しガード ─────────────────────────────────────
+   iPad の二度タップで同じ rev／expect の要求が2回飛ぶと、1回目は成功し
+   2回目がサーバーの照合で conflict になる。成功直後に誤ったエラーが出て
+   下書きが捨てられるので、送信中は同じ操作を受け付けない。 */
+var BUSY = {};
+function busyOn(k) { if (BUSY[k]) return false; BUSY[k] = true; return true; }
+function busyOff(k) { BUSY[k] = false; }
+
+/* ── 計算モジュール ───────────────────────────────────── */
+function SPL() { return window.SuppliesCalc; }
+
+/* ── 数の見せ方（表示だけ。金額の計算は calc の整数演算に任せる）── */
+function fmtInt(v) {
+  var n = Number(v);
+  if (!isFinite(n)) return '—';
+  n = Math.round(n);
+  var neg = n < 0, s = String(Math.abs(n)), out = '', i, c = 0;
+  for (i = s.length - 1; i >= 0; i--) {
+    out = s.charAt(i) + out; c++;
+    if (c % 3 === 0 && i > 0) out = ',' + out;
+  }
+  return (neg ? '-' : '') + out;
+}
+function yen(v) { var n = Number(v); return isFinite(n) ? fmtInt(n) + '円' : '—'; }
+/* 0.1単位の整数 → 「50.0」。割り算を使わずに桁を組むので誤差が出ない */
+function dec1(t) {
+  var n = Number(t);
+  if (!isFinite(n)) return '—';
+  n = Math.round(n);
+  var neg = n < 0; n = Math.abs(n);
+  return (neg ? '-' : '') + fmtInt((n - (n % 10)) / 10) + '.' + String(n % 10);
+}
+function yen1(t) { var n = Number(t); return isFinite(n) ? dec1(n) + '円' : '—'; }
+/* 千分率 → '20.0%'。null・空は「未設定」であって 0% ではない（Number(null)===0 の罠。
+   売価0円の行は m1000 が空で保存される） */
+function pct1(m) {
+  if (m === null || m === undefined || m === '') return '—';
+  var n = Number(m);
+  return isFinite(n) ? dec1(n) + '%' : '—';
+}
+function pctSigned(m) {
+  var n = Number(m);
+  if (!isFinite(n)) return '—';
+  return (n > 0 ? '+' : '') + dec1(n) + '%';
+}
+function num2(v) { var n = Number(v); return isFinite(n) ? n.toFixed(2) : '—'; }
+function parseIntStrict(s) {
+  var t = txt(s).trim().replace(/[,\s]/g, '');
+  if (!/^-?\d+$/.test(t)) return null;
+  var n = parseInt(t, 10);
+  return isFinite(n) ? n : null;
+}
+/* 「50.0」→ 500（0.1単位の整数）。小数は1桁まで。2桁以上は受け取らない */
+function parseDec1(s) {
+  var t = txt(s).trim().replace(/[,\s]/g, '');
+  var m = /^(-?)(\d+)(?:\.(\d))?$/.exec(t);
+  if (!m) return null;
+  var v = parseInt(m[2], 10) * 10 + (m[3] ? parseInt(m[3], 10) : 0);
+  return m[1] === '-' ? -v : v;
+}
+function jpDate(d) { return DATE_RE.test(txt(d)) ? txt(d).replace(/-/g, '/') : txt(d); }
+function ymOf(d) { return DATE_RE.test(txt(d)) ? txt(d).slice(0, 7) : ''; }
+function clip(s, n) { var t = txt(s); return t.length > n ? t.slice(0, n) + '…' : t; }
+
+/* ── 画面の状態（メモリのみ）─────────────────────────── */
+var ST = {
+  role: '', items: [], byId: {}, prices: {}, profiles: [], cats: [], defaults: {},
+  closed: [], stock: {}, settingsAt: '', caps: null,
+  loaded: false, loading: false, booting: true,
+  screen: 'list', wantScr: 'list', cat: 'all', sort: 'name', sortDir: 'asc', q: '',
+  showHidden: false, month: '', item: '',
+  roster: [], rosterOk: false,
+  edit: null,              /* 開いている改定行 */
+  detail: null,            /* 詳細のデータ（価格履歴・入出庫） */
+  profDraft: null,         /* プロファイルの編集中の写し */
+  catDraft: null,          /* 種別の編集中の写し */
+  closedDraft: null,       /* 締め月の編集中の写し */
+  sumRows: null, sumMonth: '', ask: null, busy: false
+};
+function isAdmin() { return ST.role === 'admin'; }
+
+/* ── localStorage（UI状態と接続設定だけ）───────────────── */
+function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, val) { try { localStorage.setItem(key, txt(val)); } catch (e) { /* 保存できなくても動作は続ける */ } }
+function pickAllowed(key, allowed, def) {
+  var v = lsGet(key);
+  return (v !== null && allowed.indexOf(v) >= 0) ? v : def;
+}
+function loadCfg() {
+  var o = null;
+  try { o = JSON.parse(lsGet(CFG_KEY) || '{}'); } catch (e) { o = null; }
+  if (!o || typeof o !== 'object') o = {};
+  return { url: txt(o.url), token: txt(o.token), by: txt(o.by) };
+}
+function saveCfg(patch) {
+  var cur = loadCfg(), k;                     /* read-modify-write（他のキーを消さない） */
+  for (k in patch) { if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) cur[k] = txt(patch[k]); }
+  lsSet(CFG_KEY, JSON.stringify(cur));
+}
+function cfgReady() { var c = loadCfg(); return URL_OK_RE.test(c.url) && !!c.token; }
+
+/* ── 通信 ─────────────────────────────────────────────── */
+function mkErr(msg, hint) {
+  var e = new Error(msg);
+  e.userMsg = msg;
+  e.hint = hint || '';
+  return e;
+}
+function errText(e) { return txt((e && e.userMsg) || (e && e.message) || e); }
+function errHint(e) {
+  return txt(e && e.hint) || '時間をおいてもう一度お試しください。続くときは設定画面で接続先URLと合言葉を確かめてください。';
+}
+function apiPost(action, body, timeoutMs) {
+  var cfg = loadCfg(), payload = { action: action, token: cfg.token, by: cfg.by }, k;
+  if (!URL_OK_RE.test(cfg.url)) {
+    return Promise.reject(mkErr('接続先が設定されていません', '下の「設定」で接続先URLと合言葉を入れて保存してください。'));
+  }
+  if (!cfg.token) {
+    return Promise.reject(mkErr('合言葉が設定されていません', '下の「設定」で合言葉を入れて保存してください。'));
+  }
+  if (body) { for (k in body) { if (Object.prototype.hasOwnProperty.call(body, k)) payload[k] = body[k]; } }
+  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  var ms = Number(timeoutMs);
+  if (!isFinite(ms) || ms <= 0) ms = 45000;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0;
+  var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
+  if (ctl) opt.signal = ctl.signal;
+  return fetch(cfg.url, opt).then(function (res) {
+    if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。');
+    return res.text();
+  }).then(function (t) {
+    var d = null;
+    try { d = JSON.parse(t); } catch (e) { throw mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが消耗品管理GASの /exec になっているか確かめてください。'); }
+    if (!d || typeof d !== 'object') throw mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。');
+    if (d.ok !== true) {
+      var ne = mkErr(serverErrText(d), serverErrHint(d));
+      ne.code = txt(d.error);
+      ne.raw = d;
+      throw ne;
+    }
+    return d;
+  }).catch(function (e) {
+    if (e && e.name === 'AbortError') {
+      var ae = mkErr('応答がないため中断しました', '通信環境を確かめてください。記録の場合はサーバーに入っていることがあるので、読み直して確かめてください。');
+      ae.aborted = true;
+      throw ae;
+    }
+    if (e && e.userMsg) throw e;
+    throw mkErr('通信に失敗しました', '通信環境を確かめ、時間をおいてもう一度お試しください。');
+  }).then(function (d) {
+    if (timer) clearTimeout(timer);
+    return d;
+  }, function (e) {
+    if (timer) clearTimeout(timer);
+    throw e;
+  });
+}
+/* サーバーの error コードを日本語にする（コードだけを出さない） */
+var ERR_TEXT = {
+  unauthorized: '合言葉が違います',
+  forbidden: 'この操作は管理者だけが行えます',
+  conflict: 'ほかの端末が先に更新しました',
+  conflict_item: 'ほかの端末が先に品目を更新しました',
+  conflict_price: 'ほかの端末が先に価格を改定しました',
+  not_latest: '最新の改定ではありません',
+  units_locked: '入出庫がある品目は、段数と請求単位を変えられません',
+  units_today_only: '入数・単位名を変える改定は、適用日を今日にしてください',
+  immutable: '単位・請求単位・請求方式は、登録したあとは変えられません',
+  referenced: 'この価格を使った出庫があります',
+  empty_refused: '中身が空のままでは保存できません',
+  closed: 'この月は締め済みです',
+  in_use: '使っている種別は削除できません',
+  busy: 'ほかの人が同時に書き込んでいます'
+};
+var ERR_HINT = {
+  unauthorized: '設定画面で合言葉を入れ直してください。',
+  forbidden: '管理者の合言葉で開き直してください。',
+  conflict: '画面を読み直してから、もう一度やり直してください。',
+  conflict_item: '画面を読み直してから、もう一度やり直してください。',
+  conflict_price: '画面を読み直すと、最新の価格が出ます。そのうえで改定し直してください。',
+  not_latest: '取り消せるのは最新の改定と、これから適用する予定の行だけです。読み直してください。',
+  units_locked: '段数や請求単位を変えたい時は、新しい品目として登録し、この品目を非表示にしてください。',
+  units_today_only: '適用日を今日に変えてから確定してください。',
+  immutable: '新しい品目として登録し直してください。',
+  referenced: 'もう一度押すと、確認のうえで取り消します。取り消したあとは「価格の付け直し」を行ってください。',
+  empty_refused: '1件以上残すか、削除する場合は確認のうえで実行してください。',
+  closed: '設定画面で締めを解除してから、もう一度お試しください。',
+  in_use: '非表示にすると、新しく選べなくなります。',
+  busy: '少し待ってから、もう一度お試しください。'
+};
+function serverErrText(d) {
+  var c = txt(d && d.error);
+  return ERR_TEXT[c] || (c ? 'サーバーが処理を断りました（' + c + '）' : 'サーバーが処理を断りました');
+}
+function serverErrHint(d) {
+  var c = txt(d && d.error);
+  return txt(d && d.hint) || ERR_HINT[c] || '入力内容を見直すか、設定の合言葉を確かめてください。';
+}
+
+function apiPing() {
+  var cfg = loadCfg();
+  if (!URL_OK_RE.test(cfg.url)) {
+    return Promise.reject(mkErr('接続先が設定されていません', '接続先URLを入れて保存してから、もう一度お試しください。'));
+  }
+  return fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=ping', { method: 'GET', redirect: 'follow' })
+    .then(function (res) {
+      if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', 'URLの末尾が /exec になっているか確かめてください。');
+      return res.text();
+    })
+    .then(function (t) {
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', 'URLが消耗品管理GASの /exec か、公開設定が「全員」になっているか確かめてください。'); }
+      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', 'GAS側の公開設定と接続先URLを確かめてください。');
+      return d;
+    })
+    .catch(function (e) {
+      if (e && e.userMsg) throw e;
+      throw mkErr('接続できませんでした', '通信環境と接続先URLを確かめてください。');
+    });
+}
+function refreshCaps() {
+  if (!URL_OK_RE.test(loadCfg().url)) return;
+  apiPing().then(function (d) {
+    ST.caps = Array.isArray(d.caps) ? d.caps : [];
+    $('aboutPing').textContent = '接続の確認: 版 ' + txt(d.build) + '／使える機能 ' + (ST.caps.length ? ST.caps.join('・') : '—');
+  }).catch(function () { /* ここで画面は止めない。list 側でエラーを出す */ });
+}
+
+/* ── 名簿（読むだけ・書かない）───────────────────────── */
+function loadRoster() {
+  var o = null;
+  ST.roster = []; ST.rosterOk = false;
+  try { o = JSON.parse(lsGet(ROSTER_KEY) || 'null'); } catch (e) { o = null; }
+  var list = (o && Array.isArray(o.residents)) ? o.residents : null;
+  if (!list) return;
+  list.forEach(function (r) {
+    if (!r || r.masterId === null || r.masterId === undefined || txt(r.masterId) === '') return;
+    ST.roster.push({
+      masterId: txt(r.masterId), name: txt(r.name), kana: txt(r.kana),
+      active: r.active !== false, dischargeDate: txt(r.dischargeDate)
+    });
+  });
+  ST.rosterOk = ST.roster.length > 0;
+}
+function nameOf(residentId) {
+  var id = txt(residentId), i;
+  if (!id) return '';
+  for (i = 0; i < ST.roster.length; i++) { if (ST.roster[i].masterId === id) return ST.roster[i].name; }
+  return '';
+}
+function residentLabel(residentId) {
+  var id = txt(residentId);
+  if (!id) return '—';
+  var n = nameOf(id);
+  return n ? (id + ' ' + n) : (id + '（名簿に無し）');
+}
+
+/* ── 品目・種別・価格の小道具 ───────────────────────── */
+function itemById(id) { return ST.byId[txt(id)] || null; }
+function unitsOf(item) { return (item && Array.isArray(item.units)) ? item.units : []; }
+function unitName(item, idx) {
+  var u = unitsOf(item);
+  return (u[idx] && u[idx].name) ? txt(u[idx].name) : '';
+}
+function minIdxOf(item) { var u = unitsOf(item); return u.length ? SPL().minIdx(u) : 0; }
+function billIdxOf(item) { var b = Number(item && item.billIdx); return isFinite(b) ? b : 0; }
+function isProfile(item) { return !!(item && item.billType === 'profile'); }
+function catById(id) {
+  var i, c = txt(id);
+  for (i = 0; i < ST.cats.length; i++) { if (txt(ST.cats[i].id) === c) return ST.cats[i]; }
+  return null;
+}
+function catName(id) { var c = catById(id); return c ? txt(c.name) : (txt(id) || '—'); }
+function modeOf(item) {
+  var c = catById(item && item.category);
+  var m = txt(item && item.roundMode) || (c ? txt(c.mode) : '') || txt(ST.defaults.mode) || 'round';
+  return MODES.indexOf(m) >= 0 ? m : 'round';
+}
+/* 種別の既定値入率。null・空は「未設定（全体の既定に従う）」で、0% とは違う。
+   Number(null)===0 なので isFinite だけで見ると 0% に化ける */
+function catM1000(c) {
+  if (!c || c.m1000 === null || c.m1000 === undefined || c.m1000 === '') return null;
+  var n = Number(c.m1000);
+  return isFinite(n) ? n : null;
+}
+/* 価格行の実効値入率。売価0円の行などは m1000 が空で保存されるので、
+   Number(null)===0 で「0%」に化けさせない（未設定は null） */
+function m1000Of(p) {
+  if (!p || p.m1000 === null || p.m1000 === undefined || p.m1000 === '') return null;
+  var n = Number(p.m1000);
+  return isFinite(n) ? n : null;
+}
+function defMarkupOf(item) {
+  var m = catM1000(catById(item && item.category));
+  if (m === null) m = Number(ST.defaults.m1000);
+  return isFinite(m) ? m : 200;
+}
+function daysDefault() {
+  var d = Number(ST.defaults.daysPerMonth);
+  return (isFinite(d) && d > 0) ? d : 30;
+}
+function priceInfo(itemId) {
+  var p = ST.prices[txt(itemId)];
+  if (!p || typeof p !== 'object') return { current: null, previous: null, scheduled: [], latestPriceId: '' };
+  return {
+    current: p.current || null, previous: p.previous || null,
+    scheduled: Array.isArray(p.scheduled) ? p.scheduled : [],
+    latestPriceId: txt(p.latestPriceId)
+  };
+}
+/* list が返す 直前・現在・予定 を「価格の配列」に戻す（priceAt に渡せる形） */
+function priceRowsOf(itemId) {
+  var p = priceInfo(itemId), a = [];
+  if (p.previous) a.push(p.previous);
+  if (p.current) a.push(p.current);
+  p.scheduled.forEach(function (x) { if (x) a.push(x); });
+  return a;
+}
+function profilesOf(itemId) {
+  var id = txt(itemId);
+  return ST.profiles.filter(function (p) { return txt(p.itemId) === id; });
+}
+function stockOfItem(item) {
+  var s = ST.stock[txt(item && item.id)];
+  return (s && typeof s === 'object') ? s : null;
+}
+/* 発注点との比較。calc が在庫オブジェクトを取る版でも数量だけを取る版でも動くようにする */
+function reorderOf(item) {
+  var st = stockOfItem(item);
+  if (!st) return 'unknown';
+  var r = SPL().reorderState(item, st);
+  if (r === 'unknown' && typeof st.qty === 'number') r = SPL().reorderState(item, st.qty);
+  return (r === 'low' || r === 'ok') ? r : 'unknown';
+}
+function stockText(item) {
+  var st = stockOfItem(item);
+  if (!st || typeof st.qty !== 'number') return '—';
+  var mi = minIdxOf(item), idx = isProfile(item) ? 0 : billIdxOf(item);
+  if (st.qty < 0) return fmtInt(st.qty) + unitName(item, mi);
+  var sp = SPL().splitQty(unitsOf(item), st.qty, idx);
+  if (!sp) return fmtInt(st.qty) + unitName(item, mi);
+  var s = fmtInt(sp.major) + unitName(item, idx);
+  if (sp.rest) s += ' ' + fmtInt(sp.rest) + unitName(item, mi);
+  return s;
+}
+function lastCountText(item) {
+  var st = stockOfItem(item);
+  if (!st || !st.lastCount || !st.lastCount.date) return 'まだ棚卸していません';
+  return jpDate(st.lastCount.date);
+}
+function isClosed(ym) { return ST.closed.indexOf(txt(ym)) >= 0; }
+
+/* ── 画面切替・役割 ───────────────────────────────────── */
+var SCREEN_IDS = { list: 'scr-list', stock: 'scr-stock', summary: 'scr-summary', detail: 'scr-detail', settings: 'scr-settings' };
+var SAVED_SCREENS = ['list', 'stock', 'summary', 'detail', 'settings'];
+var NAV_IDS = ['navList', 'navStock', 'navSummary', 'navSettings'];
+
+function showScreen(key, noSave) {
+  if (!SCREEN_IDS[key]) key = 'list';
+  if (key === 'summary' && !isAdmin()) key = 'list';
+  if (key === 'detail' && !itemById(ST.item)) key = 'list';
+  ST.screen = key;
+  Object.keys(SCREEN_IDS).forEach(function (k) {
+    $(SCREEN_IDS[k]).classList.toggle('on', k === key);
+  });
+  NAV_IDS.forEach(function (id) {
+    var b = $(id), t = b.getAttribute('data-scr');
+    var on = (t === key) || (key === 'detail' && t === 'list');
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  if (!noSave) lsSet(UI_KEYS.scr, key);
+  if (key === 'stock') renderStock();
+  if (key === 'summary') renderSummaryControls();
+  if (key === 'settings') fillSettingsData();
+  window.scrollTo(0, 0);
+}
+function applyRole() {
+  var staff = ST.role === 'staff';
+  document.body.classList.toggle('staff', staff);
+  var chip = $('roleChip');
+  chip.hidden = !ST.role;
+  chip.textContent = staff ? '職員' : (ST.role === 'admin' ? '管理者' : '—');
+  if (staff && ST.screen === 'summary') showScreen('list');
+  /* 職員は unit 品目の入庫・出庫だけ。種類の選び直しもここで戻す */
+  if (staff) {
+    var t = currentType();
+    if (t === 'count' || t === 'adj') $('mt_in').checked = true;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   読み込み（list）
+   ════════════════════════════════════════════════════════════════ */
+function normItem(raw) {
+  var r = raw || {};
+  var u = Array.isArray(r.units) ? r.units : [];
+  return {
+    id: txt(r.id), rev: Number(r.rev) || 0, name: txt(r.name), category: txt(r.category),
+    status: txt(r.status) || 'active',
+    units: u.map(function (x) {
+      var o = { name: txt(x && x.name) };
+      if (x && x.per !== undefined && x.per !== null && x.per !== '') o.per = Number(x.per) || 1;
+      return o;
+    }),
+    billIdx: Number(r.billIdx) || 0,
+    billType: (r.billType === 'profile') ? 'profile' : 'unit',
+    stockMode: (r.stockMode === 'countOnly') ? 'countOnly' : 'full',
+    roundMode: txt(r.roundMode), taxRate: Number(r.taxRate) || 10,
+    reorderPoint: Number(r.reorderPoint) || 0, note: txt(r.note),
+    updatedAt: txt(r.updatedAt), updatedBy: txt(r.updatedBy)
+  };
+}
+function loadList(quiet) {
+  if (ST.loading) return Promise.resolve();
+  if (!cfgReady()) {
+    $('listWrap').hidden = true;
+    setState('listState', 'warn', '接続先がまだ設定されていません',
+      '下の「設定」で、接続先URL（消耗品管理GASの /exec）と合言葉を入れて保存してください。',
+      '設定を開く', function () { showScreen('settings'); });
+    setState('stockState', 'warn', '接続先がまだ設定されていません', '下の「設定」で接続先を入れてください。',
+      '設定を開く', function () { showScreen('settings'); });
+    setState('lowState', '', '', '');
+    return Promise.resolve();
+  }
+  ST.loading = true;
+  var loadedOk = false;                 /* 呼び出し側が「取り直せたか」を見て案内を出し分ける */
+  if (!quiet) setState('listState', '', '読み込み中…', '品目・価格・在庫を取得しています。');
+  return apiPost('list', {}).then(function (d) {
+    var items = Array.isArray(d.items) ? d.items : null;
+    if (items === null) {
+      /* 応答に一覧が無い＝空扱いにしない。既存の表示はそのまま残す（原則4） */
+      setState('listState', 'err', '品目を受け取れませんでした',
+        'サーバーの応答に一覧が含まれていません。画面には前回の内容を残しています。GASの版を確かめ、もう一度読み込んでください。',
+        'もう一度読み込む', function () { loadList(); });
+      return;
+    }
+    ST.role = (d.role === 'admin' || d.role === 'staff') ? d.role : ST.role;
+    ST.items = items.map(normItem);
+    ST.byId = {};
+    ST.items.forEach(function (it) { ST.byId[it.id] = it; });
+    ST.prices = (d.prices && typeof d.prices === 'object') ? d.prices : {};
+    ST.profiles = Array.isArray(d.profiles) ? d.profiles : [];
+    ST.cats = Array.isArray(d.categories) ? d.categories.slice() : [];
+    ST.cats.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
+    ST.defaults = (d.defaults && typeof d.defaults === 'object') ? d.defaults : {};
+    ST.closed = Array.isArray(d.closedMonths) ? d.closedMonths.map(txt) : [];
+    ST.stock = (d.stock && typeof d.stock === 'object') ? d.stock : {};
+    ST.settingsAt = txt(d.settingsAt);
+    ST.loaded = true;
+    applyRole();
+    fillCatSelect();
+    fillItemSelects();
+    buildListHead();
+    renderList();
+    renderStock();
+    if (ST.screen === 'settings') fillSettingsData();
+    if (ST.screen === 'detail') renderDetail();
+    loadedOk = true;
+  }).catch(function (e) {
+    if (!ST.items.length) $('listWrap').hidden = true;
+    setState('listState', 'err', '読み込みに失敗しました（' + errText(e) + '）', errHint(e),
+      'もう一度読み込む', function () { loadList(); });
+  }).then(function () { ST.loading = false; return loadedOk; },
+           function () { ST.loading = false; return false; });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   一覧
+   ════════════════════════════════════════════════════════════════ */
+var LIST_COLS = [
+  { k: 'name', label: '品目名', cls: 'cname', sort: 'name' },
+  { k: 'cat', label: '種別', sort: 'cat' },
+  { k: 'cost', label: '仕入', adm: true, num: true },
+  { k: 'costBill', label: '原価/請求単位', adm: true, num: true },
+  { k: 'sell', label: '売価/請求単位', num: true },
+  { k: 'sellMin', label: '最小単位売価', num: true },
+  { k: 'markup', label: '値入率', adm: true, num: true },
+  { k: 'chg', label: '前回比', sort: 'chg' },
+  { k: 'stock', label: '現在庫', num: true },
+  { k: 'reorder', label: '発注点', num: true },
+  { k: 'eff', label: '改定日', sort: 'eff' },
+  { k: 'note', label: '備考' },
+  { k: 'act', label: '操作' }
+];
+function buildListHead() {
+  var head = $('listHead');
+  clearNode(head);
+  var tr = h('tr');
+  LIST_COLS.forEach(function (c) {
+    var th = h('th', { scope: 'col', cls: (c.cls || '') + (c.adm ? ' adm' : '') + (c.num ? ' num' : '') });
+    if (c.sort) {
+      var mark = (ST.sort === c.sort) ? (ST.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+      th.appendChild(h('button', {
+        type: 'button', cls: 'sortb', text: c.label + mark,
+        'aria-label': c.label + 'で並べ替える',
+        onclick: function () { toggleSort(c.sort); }
+      }));
+    } else {
+      th.textContent = c.label;
+    }
+    tr.appendChild(th);
+  });
+  head.appendChild(tr);
+}
+function toggleSort(key) {
+  if (ST.sort === key) { ST.sortDir = (ST.sortDir === 'asc') ? 'desc' : 'asc'; }
+  else { ST.sort = key; ST.sortDir = 'asc'; }
+  lsSet(UI_KEYS.sort, ST.sort);
+  lsSet(UI_KEYS.sortDir, ST.sortDir);
+  $('selSort').value = ST.sort;
+  syncSortDirBtn();
+  buildListHead();
+  renderList();
+}
+function syncSortDirBtn() {
+  $('sortDirBtn').textContent = (ST.sortDir === 'asc') ? '昇順 ↑' : '降順 ↓';
+}
+function catOrderOf(item) {
+  var c = catById(item.category);
+  return c ? (Number(c.order) || 0) : 9999;
+}
+function effDateOf(item) {
+  var p = priceInfo(item.id);
+  return p.current ? txt(p.current.effDate) : '';
+}
+function chgOf(item) {
+  var p = priceInfo(item.id);
+  if (!p.current || !p.previous) return null;
+  var r = SPL().changeRatio(p.current, p.previous);
+  return r || null;
+}
+function visibleItems() {
+  var q = txt(ST.q).trim().toLowerCase();
+  return ST.items.filter(function (it) {
+    if (!ST.showHidden && it.status !== 'active') return false;
+    if (ST.cat !== 'all' && txt(it.category) !== ST.cat) return false;
+    if (q && it.name.toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+function sortedItems() {
+  var rows = visibleItems().slice(), dir = (ST.sortDir === 'desc') ? -1 : 1;
+  rows.sort(function (a, b) {
+    var x = 0;
+    if (ST.sort === 'cat') { x = catOrderOf(a) - catOrderOf(b); }
+    else if (ST.sort === 'eff') { x = txt(effDateOf(a)).localeCompare(txt(effDateOf(b))); }
+    else if (ST.sort === 'chg') {
+      var ca = chgOf(a), cb = chgOf(b);
+      var va = (ca && isFinite(Number(ca.price))) ? Number(ca.price) : -100000;
+      var vb = (cb && isFinite(Number(cb.price))) ? Number(cb.price) : -100000;
+      x = va - vb;
+    }
+    if (x === 0) x = txt(a.name).localeCompare(txt(b.name), 'ja');
+    return x * dir;
+  });
+  return rows;
+}
+function renderList() {
+  var body = $('listBody'), rows = sortedItems();
+  clearNode(body);
+  if (!ST.loaded) return;
+  $('listCount').textContent = rows.length + '件 / 全' + ST.items.length + '件';
+  if (!ST.items.length) {
+    $('listWrap').hidden = true;
+    setState('listState', '', 'まだ品目がありません',
+      isAdmin() ? '「＋ 品目を追加」から登録してください。' : '管理者が品目を登録すると、ここに出ます。');
+    return;
+  }
+  if (!rows.length) {
+    $('listWrap').hidden = true;
+    setState('listState', '', 'この条件に合う品目はありません', '種別や検索の条件を変えてください。');
+    return;
+  }
+  $('listWrap').hidden = false;
+  setState('listState', '', '', '');
+  rows.forEach(function (it) { body.appendChild(buildRow(it)); });
+  if (ST.edit && itemById(ST.edit.itemId)) openPriceRow(ST.edit.itemId, true);
+}
+function cellBtn(label, aria, fn, empty) {
+  return h('button', {
+    type: 'button', cls: 'cellbtn' + (empty ? ' empty' : ''), text: label,
+    'aria-label': aria, onclick: fn
+  });
+}
+function buildRow(it) {
+  var p = priceInfo(it.id), cur = p.current, prev = p.previous;
+  var mi = minIdxOf(it), bi = billIdxOf(it), units = unitsOf(it), md = modeOf(it);
+  var tr = h('tr', { 'data-id': it.id });
+  var below = false, mkDown = false;
+  /* 原価割れ・値入率の低下は原価から分かる情報なので、職員には出さない（承認事項 B2） */
+  if (cur && isAdmin()) {
+    below = !!SPL().belowCost({
+      cost: Number(cur.cost), units: units, billIdx: bi, billType: it.billType,
+      billPrice: (cur.billPrice === null || cur.billPrice === undefined) ? null : Number(cur.billPrice),
+      unitPrice10: (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? null : Number(cur.unitPrice10)
+    });
+    var cm1 = m1000Of(cur), pm1 = prev ? m1000Of(prev) : null;
+    if (cm1 !== null && pm1 !== null) mkDown = cm1 < pm1;
+  }
+  if (below) tr.classList.add('rbad');
+  else if (mkDown) tr.classList.add('rcaution');
+  if (!cur) tr.classList.add('rnop');
+
+  /* 品目名（詳細を開く）＋ 名前を直す */
+  var tdName = h('td', { cls: 'cname' });
+  tdName.appendChild(h('button', {
+    type: 'button', cls: 'namebtn', text: it.name || '（名前なし）',
+    'aria-label': (it.name || '名前なし') + 'の詳細を開く',
+    onclick: function () { openDetail(it.id); }
+  }));
+  if (it.status !== 'active') tdName.appendChild(h('span', { cls: 'badge', text: ' 非表示' }));
+  if (isProfile(it)) tdName.appendChild(h('span', { cls: 'badge', text: ' 月額' }));
+  if (isAdmin()) {
+    tdName.appendChild(h('button', {
+      type: 'button', cls: 'btn sm adm', text: '✎',
+      'aria-label': (it.name || 'この品目') + 'の名前を直す',
+      onclick: function (ev) { startEdit(ev.target, it, 'name', 'text'); }
+    }));
+  }
+  tr.appendChild(tdName);
+
+  /* 種別 */
+  var tdCat = h('td');
+  if (isAdmin()) {
+    tdCat.appendChild(cellBtn(catName(it.category), '種別を選び直す', function (ev) {
+      startEdit(ev.target, it, 'category', 'cat');
+    }, !it.category));
+  } else { tdCat.textContent = catName(it.category); }
+  tr.appendChild(tdCat);
+
+  /* 仕入（基準単位）＝改定行を開く */
+  var tdCost = h('td', { cls: 'num adm' });
+  tdCost.appendChild(priceCellBtn(it, cur ? (yen(cur.cost) + ' / ' + unitName(it, 0)) : '未設定', '仕入'));
+  tr.appendChild(tdCost);
+
+  /* 原価/請求単位 */
+  var tdCB = h('td', { cls: 'num adm' });
+  if (cur) {
+    var cp = SPL().costPer({ cost: Number(cur.cost), units: units, idx: isProfile(it) ? mi : bi });
+    tdCB.textContent = (cp === null || cp === undefined) ? '—' : num2(cp) + '円 / ' + unitName(it, isProfile(it) ? mi : bi);
+  } else { tdCB.textContent = '—'; }
+  tr.appendChild(tdCB);
+
+  /* 売価/請求単位（月額品はプロファイル既定の月額） */
+  var tdSell = h('td', { cls: 'num' });
+  tdSell.appendChild(priceCellBtn(it, sellText(it, cur), '売価'));
+  if (below) tdSell.appendChild(h('span', { cls: 'badge bad', text: '▲原価割れ' }));
+  else if (mkDown) tdSell.appendChild(h('span', { cls: 'badge warn', text: '▼値入率↓' }));
+  else if (!cur) tdSell.appendChild(h('span', { cls: 'badge', text: '未設定' }));
+  tr.appendChild(tdSell);
+
+  /* 最小単位売価 */
+  var tdMin = h('td', { cls: 'num' });
+  tdMin.appendChild(priceCellBtn(it, minSellText(it, cur), '最小単位売価'));
+  tr.appendChild(tdMin);
+
+  /* 値入率 */
+  tr.appendChild(h('td', { cls: 'num adm', text: cur ? pct1(cur.m1000) : '—' }));
+
+  /* 前回比 */
+  var chg = chgOf(it), ctext = '—';
+  if (chg) {
+    var ps = (chg.price === null || chg.price === undefined) ? '' : '売価 ' + pctSigned(chg.price);
+    var cs = (chg.cost === null || chg.cost === undefined) ? '' : '仕入 ' + pctSigned(chg.cost);
+    ctext = isAdmin() ? [cs, ps].filter(Boolean).join(' / ') : ps;
+    if (!ctext) ctext = '—';
+  }
+  tr.appendChild(h('td', { text: ctext }));
+
+  /* 現在庫 */
+  var ro = reorderOf(it);
+  var tdStock = h('td', { cls: 'num' + (ro === 'low' ? ' low' : '') });
+  tdStock.appendChild(document.createTextNode(stockText(it)));
+  if (ro === 'low') tdStock.appendChild(h('span', { cls: 'badge warn', text: '▲発注' }));
+  tr.appendChild(tdStock);
+
+  /* 発注点 */
+  var tdRe = h('td', { cls: 'num' });
+  var reLabel = fmtInt(it.reorderPoint) + unitName(it, isProfile(it) ? 0 : bi);
+  if (isAdmin()) {
+    tdRe.appendChild(cellBtn(reLabel, '発注点を直す', function (ev) { startEdit(ev.target, it, 'reorderPoint', 'int'); }));
+  } else { tdRe.textContent = reLabel; }
+  tr.appendChild(tdRe);
+
+  /* 改定日（予定があれば併記） */
+  var eff = cur ? jpDate(cur.effDate) : '—';
+  if (p.scheduled.length) eff += '（予定 ' + jpDate(p.scheduled[0].effDate) + '）';
+  tr.appendChild(h('td', { text: eff }));
+
+  /* 備考 */
+  var tdNote = h('td');
+  if (isAdmin()) {
+    tdNote.appendChild(cellBtn(clip(it.note, 14) || '—', '備考を直す', function (ev) {
+      startEdit(ev.target, it, 'note', 'text');
+    }, !it.note));
+  } else { tdNote.textContent = clip(it.note, 14) || '—'; }
+  tr.appendChild(tdNote);
+
+  /* 操作 */
+  var tdAct = h('td');
+  tdAct.appendChild(h('button', {
+    type: 'button', cls: 'btn sm', text: '詳細',
+    'aria-label': (it.name || 'この品目') + 'の詳細を開く',
+    onclick: function () { openDetail(it.id); }
+  }));
+  if (isAdmin()) {
+    tdAct.appendChild(h('button', {
+      type: 'button', cls: 'btn sm adm', text: it.status === 'active' ? '非表示' : '表示',
+      'aria-label': (it.name || 'この品目') + 'を' + (it.status === 'active' ? '非表示にする' : '表示に戻す'),
+      onclick: function () { toggleStatus(it); }
+    }));
+  }
+  tr.appendChild(tdAct);
+  return tr;
+}
+function sellText(it, cur) {
+  if (!cur) return '未設定';
+  var mi = minIdxOf(it), bi = billIdxOf(it);
+  if (isProfile(it)) {
+    var prof = SPL().defaultProfile(profilesOf(it.id));
+    if (!prof) return '月額（型が未登録）';
+    var m = SPL().profileMonthly(prof, cur);
+    return m ? (yen(m.amount) + ' / 月') : '—';
+  }
+  if (bi === mi) {
+    return (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? '—'
+      : yen1(cur.unitPrice10) + ' / ' + unitName(it, mi);
+  }
+  return (cur.billPrice === null || cur.billPrice === undefined) ? '—'
+    : yen(cur.billPrice) + ' / ' + unitName(it, bi);
+}
+function minSellText(it, cur) {
+  if (!cur) return '—';
+  var mi = minIdxOf(it), bi = billIdxOf(it);
+  if (cur.basis === 'bill' && bi !== mi) {
+    var r = SPL().refUnit({ billPrice: Number(cur.billPrice), units: unitsOf(it), billIdx: bi });
+    return (r === null || r === undefined) ? '—' : '≒ ' + num2(r) + '円 / ' + unitName(it, mi);
+  }
+  return (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? '—'
+    : yen1(cur.unitPrice10) + ' / ' + unitName(it, mi);
+}
+function priceCellBtn(it, label, what) {
+  if (!isAdmin()) return document.createTextNode(label);
+  var opened = !!(ST.edit && ST.edit.itemId === it.id);
+  return h('button', {
+    type: 'button', cls: 'cellbtn', text: label,
+    'aria-expanded': opened ? 'true' : 'false',
+    'aria-label': (it.name || 'この品目') + 'の' + what + 'を改定する',
+    /* 開閉は描画時の opened ではなく押した時の ST.edit で決める（描画後に
+       別品目を開くと opened が古くなり、閉じるつもりが開き直る） */
+    onclick: function () {
+      if (ST.edit && ST.edit.itemId === it.id) closePriceRow(); else openPriceRow(it.id);
+    }
+  });
+}
+
+/* ── セルを直す（品目名・種別・発注点・備考）───────────── */
+function startEdit(el, it, field, kind) {
+  var td = el.closest('td');
+  if (!td) return;
+  var old = td.cloneNode(true);
+  var input;
+  if (kind === 'cat') {
+    input = h('select', { 'aria-label': '種別' });
+    ST.cats.forEach(function (c) {
+      if (c.hidden && txt(c.id) !== txt(it.category)) return;
+      input.appendChild(h('option', { value: txt(c.id), text: txt(c.name) }));
+    });
+    input.value = txt(it.category);
+  } else {
+    input = h('input', {
+      type: (kind === 'int') ? 'number' : 'text',
+      'aria-label': (field === 'name') ? '品目名' : (field === 'note' ? '備考' : '発注点'),
+      val: (field === 'reorderPoint') ? String(it.reorderPoint) : txt(it[field])
+    });
+    if (kind === 'int') { input.setAttribute('step', '1'); input.setAttribute('min', '0'); input.setAttribute('inputmode', 'numeric'); }
+    if (field === 'note') input.setAttribute('maxlength', String(NOTE_MAX));
+  }
+  clearNode(td);
+  td.appendChild(input);
+  input.focus();
+  var done = false;
+  function cancel() {
+    if (done) return; done = true;
+    td.replaceWith(old);
+    renderList();
+  }
+  function commit() {
+    if (done) return; done = true;
+    var v = input.value, fields = {};
+    if (kind === 'int') {
+      var n = parseIntStrict(v);
+      if (n === null || n < 0) { done = false; showCellErr(td, '0以上の整数で入れてください'); input.focus(); return; }
+      fields[field] = n;
+    } else if (field === 'name') {
+      if (!txt(v).trim()) { done = false; showCellErr(td, '品目名は空にできません'); input.focus(); return; }
+      fields.name = txt(v).trim();
+    } else if (field === 'note') {
+      fields.note = txt(v).slice(0, NOTE_MAX);
+    } else {
+      fields[field] = txt(v);
+    }
+    if (sameField(it, field, fields[field])) { renderList(); return; }
+    saveItemFields(it, fields, td);
+  }
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', function () { commit(); });
+  if (kind === 'cat') input.addEventListener('change', function () { commit(); });
+}
+function sameField(it, field, v) {
+  if (field === 'reorderPoint') return Number(it.reorderPoint) === Number(v);
+  return txt(it[field]) === txt(v);
+}
+function showCellErr(td, msg) {
+  td.classList.add('cellerr');
+  var p = td.querySelector('.ferr');
+  if (!p) { p = h('p', { cls: 'ferr' }); td.appendChild(p); }
+  p.textContent = msg;
+}
+function saveItemFields(it, fields, td) {
+  apiPost('saveItem', { id: it.id, rev: it.rev, fields: fields }).then(function (d) {
+    var ni = normItem(d.item || {});
+    if (ni.id) { ST.byId[ni.id] = ni; replaceItem(ni); }
+    toast('保存しました');
+    fillItemSelects();
+    renderList();
+  }).catch(function (e) {
+    /* 失敗したら元の値に戻し、理由を出す（黙って消さない） */
+    renderList();
+    if (e && (e.code === 'conflict' || e.code === 'conflict_item')) {
+      /* 行の直下に出すと、直後の取り直し→再描画で理由が数秒で消える。
+         再描画で消えない見出しの帯に出してから取り直す */
+      /* loadList の成功で renderList が走り listState は空に戻される。
+         取り直しが終わってから出し直す（先に出すと1〜3秒で消える） */
+      var wt = 'ほかの端末が先に保存していました';
+      var wd = '「' + txt(it.name) + '」の変更は保存されていません。最新の内容を取り直したので、もう一度入れ直してください。';
+      setState('listState', 'warn', wt, wd);
+      loadList(true).then(function (loadedOk) {
+        /* 取り直しにも失敗した時は、その案内（再読込ボタン付き）を残す */
+        if (loadedOk) setState('listState', 'warn', wt, wd);
+      });
+      return;
+    }
+    var tr = $('listBody').querySelector('tr[data-id="' + cssEsc(it.id) + '"]');
+    if (tr) {
+      /* 改定行（.prow）と間違えられない印を付ける（redrawEditor の探索先と分ける） */
+      var er = h('tr', { cls: 'erow' });
+      er.appendChild(h('td', { colspan: String(LIST_COLS.length), cls: 'msg' },
+        '保存できませんでした: ' + errText(e) + ' ' + errHint(e)));
+      tr.parentNode.insertBefore(er, tr.nextSibling);
+    }
+  });
+}
+function cssEsc(s) { return txt(s).replace(/["\\]/g, '\\$&'); }
+function replaceItem(ni) {
+  var i;
+  for (i = 0; i < ST.items.length; i++) { if (ST.items[i].id === ni.id) { ST.items[i] = ni; return; } }
+  ST.items.push(ni);
+}
+function toggleStatus(it) {
+  var next = (it.status === 'active') ? 'hidden' : 'active';
+  if (next === 'hidden' && !window.confirm('「' + it.name + '」を非表示にします。新しく選べなくなりますが、過去の記録は残ります。よろしいですか？')) return;
+  saveItemFields(it, { status: next }, null);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   改定行（一覧の行の直下に開く）
+   ════════════════════════════════════════════════════════════════ */
+function closePriceRow() {
+  ST.edit = null;
+  renderList();
+}
+function openPriceRow(itemId, keep) {
+  var it = itemById(itemId);
+  if (!it || !isAdmin()) return;
+  var p = priceInfo(itemId), cur = p.current, mi = minIdxOf(it), bi = billIdxOf(it);
+  if (!keep || !ST.edit || ST.edit.itemId !== itemId) {
+    var m0 = m1000Of(cur);
+    if (m0 === null) m0 = defMarkupOf(it);          /* 売価0円などで値入率が無い行は種別の既定から始める */
+    var warn = '';
+    if (m0 < 0) { m0 = 0; warn = '前回の値入率がマイナスでした。0%として案を出しています。'; }
+    ST.edit = {
+      itemId: itemId, lastEdited: '', touchedPrice: false, basis: 'unit',
+      cost: cur ? txt(cur.cost) : '', unitPrice10: cur && cur.unitPrice10 !== null && cur.unitPrice10 !== undefined ? dec1(cur.unitPrice10) : '',
+      billPrice: cur && cur.billPrice !== null && cur.billPrice !== undefined ? txt(cur.billPrice) : '',
+      m1000: dec1(m0), effDate: SPL().today(), reason: REASONS[0], reasonText: '',
+      editUnits: false, units: unitsOf(it).map(function (u) { return { name: txt(u.name), per: u.per }; }),
+      warn: warn, err: '', busy: false
+    };
+    if (cur && cur.basis === 'bill') ST.edit.basis = 'bill';
+  }
+  var tr = $('listBody').querySelector('tr[data-id="' + cssEsc(itemId) + '"]');
+  if (!tr) return;
+  /* ★別品目の改定行が残っていると欄の id が重複し、古い行の「確定する」が
+     ST.edit（新しい品目の値）を読んで別品目へ登録される。どの品目のものでも
+     開いている改定行は全て畳んでから1行だけ建てる（2026-09-17 レビュー高1） */
+  var olds = $('listBody').querySelectorAll('tr.prow'), oi;
+  for (oi = olds.length - 1; oi >= 0; oi--) {
+    if (olds[oi].parentNode) olds[oi].parentNode.removeChild(olds[oi]);
+  }
+  var row = h('tr', { cls: 'prow' });
+  var td = h('td', { colspan: String(LIST_COLS.length) });
+  td.appendChild(buildPriceEditor(it, p));
+  row.appendChild(td);
+  tr.parentNode.insertBefore(row, tr.nextSibling);
+  /* 一覧を描き直さずに差し替えるので、他の行のボタンの aria-expanded が古いまま残る。
+     開いている品目の行だけ true にし直す（読み上げの状態が実際と食い違わないように） */
+  var btns = $('listBody').querySelectorAll('button[aria-expanded]'), bi2;
+  for (bi2 = 0; bi2 < btns.length; bi2++) {
+    var owner = btns[bi2].closest('tr[data-id]');
+    btns[bi2].setAttribute('aria-expanded', (owner && owner.getAttribute('data-id') === itemId) ? 'true' : 'false');
+  }
+  var first = td.querySelector('input');
+  if (first && !keep) first.focus();
+}
+function pv(o, k) { return (o && o[k] !== null && o[k] !== undefined) ? o[k] : null; }
+function buildPriceEditor(it, p) {
+  var E = ST.edit, cur = p.current, mi = minIdxOf(it), bi = billIdxOf(it);
+  var wrap = h('div', { cls: 'prow-grid' });
+
+  /* 左＝前回 */
+  var box1 = h('div', { cls: 'pbox' });
+  box1.appendChild(h('h4', { text: '前回（今の価格）' }));
+  var dl = h('dl');
+  function kv(k, v) { dl.appendChild(h('dt', { text: k })); dl.appendChild(h('dd', { text: v })); }
+  if (cur) {
+    kv('適用日', jpDate(cur.effDate));
+    kv('仕入 / ' + unitName(it, 0), yen(cur.cost));
+    kv('最小単位売価', minSellText(it, cur));
+    if (!isProfile(it) && bi !== mi) kv('請求単位売価 / ' + unitName(it, bi), pv(cur, 'billPrice') === null ? '—' : yen(cur.billPrice));
+    kv('値入率', pct1(cur.m1000));
+  } else {
+    kv('適用日', 'まだ価格がありません');
+    kv('既定の値入率', pct1(defMarkupOf(it)));
+  }
+  box1.appendChild(dl);
+  if (p.scheduled.length) {
+    box1.appendChild(h('p', { cls: 'fnote', text: 'これから適用する予定: ' + p.scheduled.map(function (s) { return jpDate(s.effDate); }).join('・') }));
+  }
+  wrap.appendChild(box1);
+
+  /* 右＝今回 */
+  var box2 = h('div', { cls: 'pbox' });
+  box2.appendChild(h('h4', { text: '今回の改定' }));
+  var f = h('div', { cls: 'form' });
+  f.appendChild(fld('s4', 'pe_cost', '仕入 / ' + unitName(it, 0) + '（円）', E.cost, 'decimal', function (v) {
+    E.cost = v; recalcEdit('cost');
+  }));
+  f.appendChild(fld('s4', 'pe_unit', '最小単位売価 / ' + unitName(it, mi) + '（円・0.1刻み）', E.unitPrice10, 'decimal', function (v) {
+    E.unitPrice10 = v; recalcEdit('unit');
+  }, (E.basis === 'bill' && bi !== mi && !isProfile(it)) ? '≒ 請求単位売価から計算した参考値です。ここに入れ直すと、最小単位売価が正になります。' : ''));
+  if (!isProfile(it) && bi !== mi) {
+    f.appendChild(fld('s4', 'pe_bill', '請求単位売価 / ' + unitName(it, bi) + '（円）', E.billPrice, 'numeric', function (v) {
+      E.billPrice = v; recalcEdit('bill');
+    }));
+  }
+  f.appendChild(fld('s4', 'pe_m', '値入率（%・売価基準）', E.m1000, 'decimal', function (v) {
+    E.m1000 = v; recalcEdit('m');
+  }));
+  var fd = h('div', { cls: 'fld s4' });
+  fd.appendChild(h('label', { for: 'pe_eff', text: '適用日' }));
+  fd.appendChild(h('input', {
+    type: 'date', id: 'pe_eff', val: E.effDate,
+    onchange: function (ev) { E.effDate = txt(ev.target.value); redrawEditor(); }
+  }));
+  f.appendChild(fd);
+  var fr = h('div', { cls: 'fld s4' });
+  fr.appendChild(h('label', { for: 'pe_reason', text: '理由' }));
+  var sel = h('select', { id: 'pe_reason', onchange: function (ev) { E.reason = txt(ev.target.value); } });
+  REASONS.forEach(function (r) { sel.appendChild(h('option', { value: r, text: r, selected: E.reason === r })); });
+  fr.appendChild(sel);
+  f.appendChild(fr);
+  var ft = h('div', { cls: 'fld s8' });
+  ft.appendChild(h('label', { for: 'pe_rtext', text: '理由の補足（任意・60字まで・氏名は書かない）' }));
+  ft.appendChild(h('input', {
+    type: 'text', id: 'pe_rtext', maxlength: String(NOTE_MAX), val: E.reasonText,
+    oninput: function (ev) { E.reasonText = txt(ev.target.value); }
+  }));
+  f.appendChild(ft);
+  box2.appendChild(f);
+
+  /* 入数・単位名も変える */
+  var chk = h('div', { cls: 'chkwrap' });
+  var cb = h('input', {
+    type: 'checkbox', id: 'pe_units', checked: E.editUnits,
+    onchange: function (ev) { E.editUnits = !!ev.target.checked; redrawEditor(); }
+  });
+  chk.appendChild(cb);
+  chk.appendChild(h('label', { for: 'pe_units', text: '入数・単位名も変える（適用日は今日のみ。段数と請求単位は変えられません）' }));
+  box2.appendChild(chk);
+  if (E.editUnits) {
+    var ue = h('div', { cls: 'unit-ed' });
+    E.units.forEach(function (u, i) {
+      ue.appendChild(fld('s4', 'pe_un' + i, (i === 0 ? '基準単位' : (i === minIdxOf(it) ? '最小単位' : (i + 1) + '段目')) + 'の名前', u.name, 'text', function (v) {
+        E.units[i].name = v;
+      }));
+      if (i > 0) {
+        ue.appendChild(fld('s2', 'pe_up' + i, '上の単位1つに入る数', txt(u.per === undefined ? '' : u.per), 'numeric', function (v) {
+          var n = parseIntStrict(v);
+          E.units[i].per = (n === null) ? v : n;
+        }));
+      }
+    });
+    box2.appendChild(ue);
+  }
+
+  if (E.warn) box2.appendChild(h('p', { cls: 'fwarn', text: '注意: ' + E.warn }));
+  if (E.err) box2.appendChild(h('p', { cls: 'ferr', text: E.err }));
+  var preview = previewText(it);
+  if (preview) box2.appendChild(h('p', { cls: 'fnote', text: preview }));
+
+  var br = h('div', { cls: 'row mt2' });
+  br.appendChild(h('button', {
+    type: 'button', id: 'pe_ok', cls: 'btn pri', text: '確定する', disabled: E.busy,
+    onclick: function () { submitPrice(it, false); }
+  }));
+  /* 入数・単位名を変えると請求単位売価が動く（1箱30枚→28枚で 1500円→1400円）。
+     「据え置き」と両立しないので、その間はボタンを押せなくする */
+  br.appendChild(h('button', {
+    type: 'button', id: 'pe_hold', cls: 'btn', text: '売価を据え置いて仕入だけ直す', disabled: E.busy || !cur || E.editUnits,
+    title: E.editUnits ? '入数・単位名を変える時は据え置きにできません' : null,
+    onclick: function () { submitPrice(it, true); }
+  }));
+  br.appendChild(h('button', { type: 'button', id: 'pe_close', cls: 'btn', text: '閉じる', onclick: closePriceRow }));
+  box2.appendChild(br);
+  wrap.appendChild(box2);
+  return wrap;
+}
+function fld(span, id, label, value, mode, oninput, note) {
+  var d = h('div', { cls: 'fld ' + span });
+  d.appendChild(h('label', { for: id, text: label }));
+  d.appendChild(h('input', {
+    type: 'text', id: id, val: value, inputmode: mode, autocomplete: 'off',
+    'aria-describedby': note ? (id + '_n') : null,
+    oninput: function (ev) { oninput(txt(ev.target.value)); }
+  }));
+  if (note) d.appendChild(h('p', { cls: 'fnote', id: id + '_n', text: note }));
+  return d;
+}
+function redrawEditor() {
+  if (!ST.edit) return;
+  var it = itemById(ST.edit.itemId);
+  if (!it) { closePriceRow(); return; }
+  var tr = $('listBody').querySelector('tr[data-id="' + cssEsc(it.id) + '"]');
+  if (!tr) return;
+  var row = tr.nextSibling;
+  if (!row || !row.classList || !row.classList.contains('prow')) { openPriceRow(it.id, true); return; }
+  /* ★入力の最中に組み直すので、どの欄のどこにカーソルがあったかを覚えて戻す。
+     戻さないと1文字打つたびにフォーカスが外れ、続けて打てない（2026-09-17 実測）。 */
+  var act = document.activeElement;
+  var keepId = (act && row.contains(act) && act.id) ? act.id : '';
+  var keepStart = null, keepEnd = null;
+  if (keepId) {
+    try { keepStart = act.selectionStart; keepEnd = act.selectionEnd; } catch (e) { keepStart = null; }
+  }
+  var td = row.firstChild;
+  clearNode(td);
+  td.appendChild(buildPriceEditor(it, priceInfo(it.id)));
+  if (keepId) {
+    var back = document.getElementById(keepId);
+    if (back && typeof back.focus === 'function') {
+      back.focus();
+      if (keepStart !== null && typeof back.setSelectionRange === 'function') {
+        /* type=number などは選択範囲を持たない。戻せなくてもフォーカスは戻っている */
+        try { back.setSelectionRange(keepStart, keepEnd); } catch (e2) { /* 何もしない */ }
+      }
+    }
+  }
+}
+/* 触った欄から他の欄へ一方向に計算する（循環させない） */
+function recalcEdit(from) {
+  var E = ST.edit;
+  if (!E) return;
+  var it = itemById(E.itemId);
+  if (!it) return;
+  /* 改定行は openPriceRow が1行しか建てないので、別の行の欄から呼ばれることはない */
+  var units = unitsOf(it), bi = billIdxOf(it), mi = minIdxOf(it), md = modeOf(it);
+  var cost = parseIntStrict(E.cost);
+  E.err = '';
+  E.lastEdited = from;
+  if (from === 'unit' || from === 'bill' || from === 'm') E.touchedPrice = true;
+
+  if (from === 'm' || (from === 'cost' && !E.touchedPrice)) {
+    var m = parseDec1(E.m1000);
+    if (cost === null || cost <= 0 || m === null) { redrawEditor(); return; }
+    var r = SPL().propose({ cost: cost, units: units, billIdx: bi, billType: it.billType, m1000: m, mode: md });
+    if (!r || r.ok !== true) {
+      E.err = (r && r.error === 'markup_range') ? '値入率は 0% 以上 100% 未満で入れてください。' : '売価を計算できませんでした。仕入と値入率を確かめてください。';
+      redrawEditor(); return;
+    }
+    E.unitPrice10 = dec1(r.unitPrice10);
+    E.billPrice = (r.billPrice === null || r.billPrice === undefined) ? '' : txt(r.billPrice);
+    E.basis = 'unit';
+    /* 打っている欄を書き換えると、「2」が即「2.0」に整形されて続く「.」が「2..0」になり
+       小数の値入率を順に打てなくなる。実際に値が変わった時（負の値を0に丸めた時）だけ直す */
+    if (isFinite(Number(r.m1000Used)) && Number(r.m1000Used) !== m) E.m1000 = dec1(r.m1000Used);
+    if (r.warnings && r.warnings.indexOf('markup_negative') >= 0) E.warn = '値入率がマイナスだったため 0% として計算しました。';
+  } else if (from === 'unit') {
+    var up = parseDec1(E.unitPrice10);
+    E.basis = 'unit';
+    if (up !== null && !isProfile(it) && bi !== mi) {
+      var b = SPL().deriveBill({ unitPrice10: up, units: units, billIdx: bi, mode: md });
+      E.billPrice = (b === null || b === undefined) ? '' : txt(b);
+    }
+    syncMarkup(it);
+  } else if (from === 'bill') {
+    E.basis = 'bill';
+    var bp = parseIntStrict(E.billPrice);
+    if (bp !== null) {
+      var ru = SPL().refUnit({ billPrice: bp, units: units, billIdx: bi });
+      if (ru !== null && ru !== undefined) E.unitPrice10 = num2(ru);
+    }
+    syncMarkup(it);
+  } else if (from === 'cost') {
+    syncMarkup(it);
+  }
+  redrawEditor();
+}
+function syncMarkup(it) {
+  var E = ST.edit, units = unitsOf(it), bi = billIdxOf(it), mi = minIdxOf(it);
+  var cost = parseIntStrict(E.cost);
+  if (cost === null || cost < 0) return;
+  /* ★請求単位売価を持つ品目は basis によらず billPrice 起点で出す（サーバー effMarkup_ と同じ分岐）。
+     unitPrice10 起点で出すと、確定後に一覧で見える値入率とここの表示が食い違う */
+  var bp = (!isProfile(it) && bi !== mi) ? parseIntStrict(E.billPrice) : null;
+  var up = parseDec1(E.unitPrice10);
+  var m = SPL().effMarkup({
+    cost: cost, units: units, billIdx: bi, billType: it.billType,
+    billPrice: bp, unitPrice10: (bp === null) ? up : null
+  });
+  if (m !== null && m !== undefined && isFinite(Number(m))) E.m1000 = dec1(m);
+}
+function previewText(it) {
+  var E = ST.edit, cost = parseIntStrict(E.cost), bi = billIdxOf(it), mi = minIdxOf(it);
+  if (cost === null || cost < 0) return '';
+  var up = parseDec1(E.unitPrice10), bp = parseIntStrict(E.billPrice);
+  var below = SPL().belowCost({
+    cost: cost, units: unitsOf(it), billIdx: bi, billType: it.billType,
+    billPrice: (!isProfile(it) && bi !== mi) ? bp : null,
+    unitPrice10: up
+  });
+  var parts = [];
+  var cp = SPL().costPer({ cost: cost, units: unitsOf(it), idx: isProfile(it) ? mi : bi });
+  if (cp !== null && cp !== undefined) parts.push('原価 ' + num2(cp) + '円 / ' + unitName(it, isProfile(it) ? mi : bi));
+  /* 妥当性は警告どまり（設計 §3-3）。止めるのは値が入っていない時だけ */
+  if (cost === 0) parts.push('▲ 仕入が0円です（保存はできます）');
+  if (below) parts.push('▲ 売価が原価を下回っています（保存はできます）');
+  if (isClosed(ymOf(E.effDate))) parts.push('▲ この月は締め済みです');
+  return parts.join('　');
+}
+function submitPrice(it, keepPrice) {
+  var E = ST.edit;
+  if (!E || E.busy) return;
+  /* 画面に残った別品目の改定行から押された時は何もしない（取り違え防止の二重の備え） */
+  if (E.itemId !== it.id) { closePriceRow(); return; }
+  var bi = billIdxOf(it), mi = minIdxOf(it), cur = priceInfo(it.id).current;
+  var cost = parseIntStrict(E.cost);
+  E.err = '';
+  if (cost === null || cost < 0) { E.err = '仕入は0以上の整数で入れてください。'; redrawEditor(); return; }
+  if (!SPL().isYmd(E.effDate)) { E.err = '適用日をカレンダーから選んでください。'; redrawEditor(); return; }
+  var price = { effDate: E.effDate, cost: cost, unitPrice10: null, billPrice: null, basis: 'unit', reason: reasonOf(E) };
+  if (keepPrice) {
+    if (!cur) { E.err = '据え置く売価がありません。売価を入れて確定してください。'; redrawEditor(); return; }
+    if (E.editUnits) { E.err = '入数・単位名を変える改定では据え置きにできません。今回の売価を入れて「確定する」で登録してください。'; redrawEditor(); return; }
+    price.basis = txt(cur.basis) === 'bill' ? 'bill' : 'unit';
+    price.unitPrice10 = (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? null : Number(cur.unitPrice10);
+    price.billPrice = (cur.billPrice === null || cur.billPrice === undefined) ? null : Number(cur.billPrice);
+    /* basis='unit' の請求単位売価はサーバーが導出し直す（端末の値は使われない）。
+       丸め方式や入数が前回の改定から変わっていると、据え置いたはずの売価が1円動くので止める */
+    if (price.basis === 'unit' && !isProfile(it) && bi !== mi) {
+      var reBill = SPL().deriveBill({ unitPrice10: price.unitPrice10, units: unitsOf(it), billIdx: bi, mode: modeOf(it) });
+      if (reBill === null || (price.billPrice !== null && reBill !== price.billPrice)) {
+        E.err = '売価を据え置けません（丸め方式か入数が前回の改定から変わっています）。'
+          + (reBill === null ? '' : '今のままだと ' + yen(price.billPrice) + ' が ' + yen(reBill) + ' になります。')
+          + '今回の売価を入れて「確定する」で登録してください。';
+        redrawEditor(); return;
+      }
+    }
+  } else if (!isProfile(it) && bi !== mi && E.basis === 'bill') {
+    var bp = parseIntStrict(E.billPrice);
+    if (bp === null || bp < 0) { E.err = '請求単位売価は0以上の整数で入れてください。'; redrawEditor(); return; }
+    price.basis = 'bill';
+    price.billPrice = bp;
+  } else {
+    var up = parseDec1(E.unitPrice10);
+    if (up === null || up < 0) { E.err = '最小単位売価は 0.1 刻みの数で入れてください（例 50.0）。'; redrawEditor(); return; }
+    price.unitPrice10 = up;
+    if (!isProfile(it) && bi !== mi) {
+      var b2 = parseIntStrict(E.billPrice);
+      if (b2 === null) {
+        b2 = SPL().deriveBill({ unitPrice10: up, units: unitsOf(it), billIdx: bi, mode: modeOf(it) });
+      }
+      price.billPrice = (b2 === null || b2 === undefined) ? null : b2;
+    }
+  }
+  var body = { itemId: it.id, expectLatestPriceId: priceInfo(it.id).latestPriceId, price: price };
+  if (E.editUnits) {
+    var us = [], bad = false, longName = false;
+    E.units.forEach(function (u, i) {
+      var o = { name: txt(u.name).trim() };
+      if (i > 0) {
+        var n = parseIntStrict(u.per);
+        if (n === null || n < 1) bad = true;
+        o.per = n;
+      }
+      if (!o.name) bad = true;
+      else if (o.name.length > UNIT_NAME_MAX) longName = true;
+      us.push(o);
+    });
+    if (bad) { E.err = '単位の名前と入数を確かめてください（入数は1以上の整数）。'; redrawEditor(); return; }
+    if (longName) { E.err = '単位の名前は' + UNIT_NAME_MAX + '字までです。'; redrawEditor(); return; }
+    var issues = SPL().validateUnits(us);
+    if (issues && issues.length) {
+      E.err = '単位の設定を見直してください（' + issues.map(function (x) { return txt(x.key) + ':' + txt(x.reason); }).join(' / ') + '）';
+      redrawEditor(); return;
+    }
+    body.units = us;
+    body.rev = it.rev;
+  }
+  E.busy = true;
+  redrawEditor();
+  apiPost('addPrice', body).then(function (d) {
+    E.busy = false;
+    ST.edit = null;
+    toast('改定を登録しました');
+    var after = Number(d.movesAfter) || 0;
+    return loadList(true).then(function () {
+      if (after > 0) offerReprice(it, price.effDate, after);
+    });
+  }).catch(function (e) {
+    E.busy = false;
+    E.err = errText(e) + ' ' + errHint(e);
+    redrawEditor();
+    if (e && (e.code === 'conflict_price' || e.code === 'conflict_item')) loadList(true);
+  });
+}
+function reasonOf(E) {
+  var r = txt(E.reason);
+  var t = txt(E.reasonText).trim();
+  return t ? (r + '：' + t).slice(0, NOTE_MAX) : r;
+}
+/* 遡及改定のあと始末。件数を見せてから「価格の付け直し」を実行する */
+function offerReprice(it, from, count) {
+  var to = SPL().today();
+  if (!window.confirm('この日付以降に ' + count + ' 件の出庫があります。新しい価格で計算し直しますか？\n（' + jpDate(from) + '〜' + jpDate(to) + '・在庫は変わりません）')) return;
+  apiPost('repriceMoves', { itemId: it.id, from: from, to: to }).then(function (d) {
+    toast('付け直しました（' + (Number(d.changed) || 0) + '件）');
+  }).catch(function (e) {
+    window.alert('付け直せませんでした: ' + errText(e) + '\n' + errHint(e));
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   在庫（入出庫・棚卸・調整）
+   ════════════════════════════════════════════════════════════════ */
+function currentType() {
+  var r = document.querySelector('input[name="splType"]:checked');
+  return r ? txt(r.value) : 'in';
+}
+/* 調整の向き（＋1＝増やす／−1＝減らす）。数量そのものは正で入れてもらう */
+function adjSign() {
+  var r = document.querySelector('input[name="splAdj"]:checked');
+  return (r && txt(r.value) === 'minus') ? -1 : 1;
+}
+function stockItems() {
+  /* 職員は unit 品目の入庫・出庫だけ。品目の選択肢もそこに絞る（サーバー側の許可表が正） */
+  return ST.items.filter(function (it) {
+    if (it.status !== 'active') return false;
+    if (!isAdmin() && it.billType !== 'unit') return false;
+    return true;
+  });
+}
+function fillItemSelects() {
+  var keep = txt($('mvItem').value);
+  var sel = $('mvItem');
+  clearNode(sel);
+  sel.appendChild(h('option', { value: '', text: '— 品目を選ぶ —' }));
+  stockItems().forEach(function (it) {
+    sel.appendChild(h('option', { value: it.id, text: it.name + '（' + catName(it.category) + '）' }));
+  });
+  if (keep && itemById(keep)) sel.value = keep;
+  var rep = $('repItem');
+  keep = txt(rep.value);
+  clearNode(rep);
+  rep.appendChild(h('option', { value: '', text: '— すべての品目 —' }));
+  ST.items.forEach(function (it) { rep.appendChild(h('option', { value: it.id, text: it.name })); });
+  if (keep && itemById(keep)) rep.value = keep;
+  syncMoveForm();
+}
+function fillResidentSelect() {
+  var sel = $('mvResident'), keep = txt(sel.value);
+  clearNode(sel);
+  sel.appendChild(h('option', { value: '', text: '— 指定しない —' }));
+  if (!ST.rosterOk) {
+    sel.appendChild(h('option', { value: '', text: '（名簿がありません）', disabled: true }));
+    return;
+  }
+  ST.roster.filter(function (r) { return r.active; }).forEach(function (r) {
+    /* 画面では氏名を出すが、送るのも残すのも利用者Noだけ */
+    sel.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
+  });
+  if (keep) sel.value = keep;
+}
+function fillUnitSelect(it, type) {
+  var sel = $('mvUnit'), keep = txt(sel.value);
+  clearNode(sel);
+  if (!it) return;
+  var mi = minIdxOf(it), bi = billIdxOf(it);
+  var last = (type === 'out' && !isProfile(it)) ? bi : mi;
+  var i;
+  for (i = 0; i <= last; i++) {
+    sel.appendChild(h('option', { value: String(i), text: unitName(it, i) }));
+  }
+  if (keep !== '' && Number(keep) <= last) sel.value = keep;
+  else sel.value = String((type === 'in') ? 0 : last);
+}
+function fillProfileSelect(it) {
+  var sel = $('mvProfile');
+  clearNode(sel);
+  var list = it ? profilesOf(it.id) : [];
+  list.forEach(function (p) {
+    sel.appendChild(h('option', { value: txt(p.id), text: txt(p.name) + (p.isDefault ? '（既定）' : '') }));
+  });
+  var def = SPL().defaultProfile(list);
+  if (def) {
+    sel.value = txt(def.id);
+    $('mvDose').value = dec1(def.dose10);
+    $('mvTimes').value = txt(def.timesPerDay);
+    $('mvDays').value = txt(def.daysPerMonth || daysDefault());
+  }
+}
+function syncMoveForm() {
+  var it = itemById($('mvItem').value), type = currentType();
+  var prof = it && isProfile(it) && type === 'out';
+  $('mvResidentBox').hidden = !(type === 'out');
+  $('mvProfBox').hidden = !prof;
+  $('mvDoseBox').hidden = !prof;
+  $('mvTimesBox').hidden = !prof;
+  $('mvDaysBox').hidden = !prof;
+  $('mvCostBox').hidden = !(type === 'in' && isAdmin());
+  $('mvAdjBox').hidden = !(type === 'adj' && isAdmin());
+  /* 月額出庫は数量ではなく 1回量×回数×日数 で決まる */
+  $('mvQty').disabled = !!prof;
+  $('mvUnit').disabled = !!prof;
+  if (type === 'count') {
+    $('mvDate').value = SPL().today();
+    $('mvDate').readOnly = true;
+  } else {
+    $('mvDate').readOnly = false;
+  }
+  fillUnitSelect(it, type);
+  if (prof) fillProfileSelect(it);
+  /* 品目や種類を変えたら、前の記録の結果表示は消す（残すと取り違える） */
+  setState('mvState', '', '', '');
+  renderPreview();
+}
+function renderPreview() {
+  var it = itemById($('mvItem').value), type = currentType();
+  var out = $('mvPreview');
+  if (!it) { out.textContent = '品目を選んでください。'; return; }
+  var units = unitsOf(it), mi = minIdxOf(it), bi = billIdxOf(it);
+  var date = txt($('mvDate').value);
+  var parts = [];
+  var delta = null;              /* この入力で在庫が動く量（最小単位・符号つき） */
+  if (isProfile(it) && type === 'out') {
+    var dose = parseDec1($('mvDose').value), times = parseIntStrict($('mvTimes').value), days = parseIntStrict($('mvDays').value);
+    var pr = priceAtLocal(it, date);
+    if (dose === null || times === null || days === null) { out.textContent = '1回量・回数/日・日数を入れてください。'; return; }
+    var old1 = !pr && beforeKnownPrices(it, date);
+    if (!pr && !old1) { out.textContent = 'この日付に使える価格がありません。先に価格の改定を登録してください。'; return; }
+    var r = SPL().profileQtyAmount({ dose10: dose, timesPerDay: times, days: days, unitPrice10: pr ? Number(pr.unitPrice10) : 0 });
+    if (r) {
+      parts.push('使用量 ' + fmtInt(r.qty) + unitName(it, mi));
+      parts.push(pr ? ('金額 ' + yen(r.amount)) : SERVER_PRICE_NOTE);
+      delta = -r.qty;
+    }
+  } else {
+    var qe = parseIntStrict($('mvQty').value), ui = parseIntStrict($('mvUnit').value);
+    if (qe === null || ui === null) { out.textContent = '数量と単位を入れてください。'; return; }
+    var q = SPL().convertQty({ units: units, unitIdx: ui, qtyEntered: qe });
+    if (q === null) { out.textContent = '数量は0以上の整数で入れてください。'; return; }
+    var sign = (type === 'out') ? -1 : ((type === 'adj') ? adjSign() : 1);
+    if (type === 'count') parts.push('実棚 ' + fmtInt(q) + unitName(it, mi));
+    else if (type === 'adj') parts.push('調整 ' + (sign < 0 ? '-' : '+') + fmtInt(q) + unitName(it, mi));
+    else parts.push('換算 ' + fmtInt(q) + unitName(it, mi));
+    if (type !== 'count') delta = sign * q;
+    if (type === 'out') {
+      var qb = SPL().qtyBillOf({ units: units, billIdx: bi, unitIdx: ui, qtyEntered: qe });
+      var pr2 = priceAtLocal(it, date);
+      if (qb === null) { out.textContent = '出庫は請求単位（' + unitName(it, bi) + '）以上の単位で入れてください。'; return; }
+      var old2 = !pr2 && beforeKnownPrices(it, date);
+      if (!pr2 && !old2) { out.textContent = 'この日付に使える価格がありません。先に価格の改定を登録してください。'; return; }
+      parts.push('請求 ' + fmtInt(qb) + unitName(it, bi));
+      if (!pr2) parts.push(SERVER_PRICE_NOTE);
+      else {
+        var amt = SPL().unitAmount({
+          units: units, billIdx: bi, qtyBill: qb, qty: q,
+          billPrice: (pr2.billPrice === null || pr2.billPrice === undefined) ? null : Number(pr2.billPrice),
+          unitPrice10: (pr2.unitPrice10 === null || pr2.unitPrice10 === undefined) ? null : Number(pr2.unitPrice10)
+        });
+        if (amt !== null && amt !== undefined) parts.push('金額 ' + yen(amt) + '（確定はサーバーの価格で行います）');
+      }
+    }
+  }
+  var st = stockOfItem(it);
+  if (st && typeof st.qty === 'number') parts.push('今の在庫 ' + stockText(it));
+  if (willGoNegative(it, type, delta)) parts.push('▲ 在庫がマイナスになります（登録はできます）');
+  if (isClosed(ymOf(date))) parts.push('▲ この月は締め済みです');
+  out.textContent = parts.join('　');
+}
+/* 在庫が負になるか（設計 §3-6「在庫マイナスは警告付きで許可」）。止めるためではなく気づかせるため */
+function willGoNegative(it, type, delta) {
+  if (!it || delta === null || delta >= 0) return false;
+  if (type === 'out' && txt(it.stockMode) === 'countOnly') return false;   /* 出庫が在庫に効かない品目 */
+  var st = stockOfItem(it);
+  if (!st || typeof st.qty !== 'number') return false;
+  return (st.qty + delta) < 0;
+}
+function priceAtLocal(it, date) {
+  var rows = priceRowsOf(it.id);
+  if (!rows.length) return null;
+  var d = SPL().isYmd(date) ? date : SPL().today();
+  return SPL().priceAt(rows, d) || null;
+}
+/* list が返すのは「直前・現在・予定」の3種だけ。それより古い日付の価格は端末には無いが、
+   サーバーは全履歴から解決するので「価格が無い」と案内してはいけない（不要な改定を促さない） */
+var SERVER_PRICE_NOTE = '金額は登録時にサーバーが当時の価格で決めます（この端末には当時の価格がありません）';
+function beforeKnownPrices(it, date) {
+  if (!it || !SPL().isYmd(date)) return false;
+  var rows = priceRowsOf(it.id), oldest = '';
+  rows.forEach(function (p) {
+    var d = txt(p && p.effDate);
+    if (d && (!oldest || d < oldest)) oldest = d;
+  });
+  return !!oldest && date < oldest;
+}
+function newMoveId() {
+  var s = '', i, a = '0123456789abcdef';
+  if (window.crypto && window.crypto.getRandomValues) {
+    var buf = new Uint8Array(8);
+    window.crypto.getRandomValues(buf);
+    for (i = 0; i < buf.length; i++) { s += a.charAt(buf[i] >> 4) + a.charAt(buf[i] & 15); }
+  } else {
+    for (i = 0; i < 16; i++) { s += a.charAt(Math.floor(Math.random() * 16)); }
+  }
+  return 'mv_' + s;
+}
+function showMoveErr(msg) {
+  var p = $('mvErr');
+  p.textContent = txt(msg);
+  p.hidden = !msg;
+}
+function submitMove() {
+  var it = itemById($('mvItem').value), type = currentType();
+  showMoveErr('');
+  setState('mvState', '', '', '');
+  if (!it) { showMoveErr('品目を選んでください。'); $('mvItem').focus(); return; }
+  var date = txt($('mvDate').value);
+  if (!SPL().isYmd(date)) { showMoveErr('日付をカレンダーから選んでください。'); $('mvDate').focus(); return; }
+  if (date > SPL().today()) { showMoveErr('未来の日付は登録できません。'); $('mvDate').focus(); return; }
+  if (isClosed(ymOf(date))) { showMoveErr('この月は締め済みです。設定画面で締めを解除してから登録してください。'); return; }
+  if (!isAdmin() && (type === 'count' || type === 'adj')) { showMoveErr('棚卸と調整は管理者のみが行えます。'); return; }
+
+  var mv = { id: newMoveId(), date: date, itemId: it.id, type: type, note: txt($('mvNote').value).slice(0, NOTE_MAX) };
+  var prof = isProfile(it) && type === 'out';
+  var delta = null;              /* 在庫が動く量（最小単位・符号つき）。マイナス在庫の確認に使う */
+  if (prof) {
+    var dose = parseDec1($('mvDose').value), times = parseIntStrict($('mvTimes').value), days = parseIntStrict($('mvDays').value);
+    if (dose === null || dose < 0 || times === null || times < 0 || days === null || days < 1 || days > 31) {
+      showMoveErr('1回量・回数/日・日数を確かめてください（1回量は 0.1 刻み・日数は 1〜31）。'); return;
+    }
+    mv.qtyEntered = 0;
+    mv.unitIdx = minIdxOf(it);
+    mv.profileId = txt($('mvProfile').value);
+    mv.dose10 = dose;
+    mv.timesPerDay = times;
+    mv.days = days;
+    var rp = SPL().profileQtyAmount({ dose10: dose, timesPerDay: times, days: days, unitPrice10: 0 });
+    if (rp) delta = -rp.qty;
+  } else {
+    var qe = parseIntStrict($('mvQty').value), ui = parseIntStrict($('mvUnit').value);
+    if (qe === null || qe < 0) { showMoveErr('数量は0以上の整数で入れてください。'); $('mvQty').focus(); return; }
+    if (type === 'adj' && qe === 0) { showMoveErr('調整の数量は1以上で入れてください（向きは「増やす／減らす」で選びます）。'); $('mvQty').focus(); return; }
+    if (ui === null) { showMoveErr('単位を選んでください。'); return; }
+    /* 調整だけは符号つきで送る（サーバーは qtyEntered の正負で増減を受ける） */
+    mv.qtyEntered = (type === 'adj' && adjSign() < 0) ? -qe : qe;
+    mv.unitIdx = ui;
+    var qd = SPL().convertQty({ units: unitsOf(it), unitIdx: ui, qtyEntered: qe });
+    if (qd !== null && type !== 'count') {
+      delta = (type === 'out') ? -qd : ((type === 'adj') ? adjSign() * qd : qd);
+    }
+  }
+  if (type === 'out') {
+    var rid = txt($('mvResident').value);
+    if (rid) mv.residentId = rid;
+  }
+  if (type === 'in' && isAdmin()) {
+    var ce = parseIntStrict($('mvCost').value);
+    if (ce !== null && ce >= 0) mv.costEntered = ce;
+  }
+  /* 在庫がマイナスになる記録は止めないが、必ず確認を挟む（設計 §3-6） */
+  var neg = willGoNegative(it, type, delta) ? 'この記録で在庫がマイナスになります（登録はできます）。' : '';
+  if (type === 'adj') {
+    if (!window.confirm(neg + '在庫を' + (adjSign() < 0 ? '減らします' : '増やします') + '。よろしいですか？')) return;
+  } else if (neg) {
+    if (!window.confirm(neg + '登録してよろしいですか？')) return;
+  }
+  sendMoves([mv], type === 'out');
+}
+/* 出庫だけは、応答を見るまで sessionStorage に控える（承認事項 F） */
+function readPending() {
+  try {
+    var a = JSON.parse(sessionStorage.getItem(PENDING_KEY) || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch (e) { return []; }
+}
+function writePending(a) {
+  try {
+    if (!a || !a.length) sessionStorage.removeItem(PENDING_KEY);
+    else sessionStorage.setItem(PENDING_KEY, JSON.stringify(a.slice(0, MAX_MOVES)));
+  } catch (e) { /* 保存できなくても送信は行う */ }
+  updatePendingLabel();
+}
+function addPending(moves) {
+  var a = readPending();
+  moves.forEach(function (m) { a.push(m); });
+  writePending(a);
+}
+function dropPending(ids) {
+  writePending(readPending().filter(function (m) { return ids.indexOf(txt(m.id)) < 0; }));
+}
+function updatePendingLabel() {
+  var n = readPending().length;
+  $('mvPending').textContent = n
+    ? ('未送信の出庫 ' + n + '件（この画面を開き直すと送り直します。送れない時は設定画面の「接続テスト」で原因を確かめてください）')
+    : '';
+}
+function flushPending() {
+  var a = readPending();
+  if (!a.length || !cfgReady()) return Promise.resolve();
+  return apiPost('addMoves', { moves: a }).then(function (d) {
+    var res = Array.isArray(d.results) ? d.results : [];
+    dropPending(res.map(function (r) { return txt(r.id); }));
+    if (d.stock) mergeStock(d.stock);
+    /* ★送り直しでも結果を必ず見せる（黙って控えから消さない）。
+       通った件数と、通らなかった理由を分けて出す */
+    var ok = 0, bad = [];
+    res.forEach(function (r) {
+      if (r.status === 'applied' || r.status === 'existing') ok++;
+      else bad.push(rejectText(r));
+    });
+    if (bad.length) {
+      setState('mvState', 'err', '送信待ちだった出庫のうち ' + bad.length + '件は登録できませんでした',
+        bad.join(' / ') + '　この画面から入れ直してください。');
+    }
+    if (ok) toast('未送信だった出庫 ' + ok + '件を送りました');
+    renderList();
+    renderStock();
+  }).catch(function (e) {
+    /* ★送り直せなかったことも必ず見せる（黙って握り潰さない・設計 §3-5）。
+       控えは消さない＝次にこの画面を開いた時にもう一度送る */
+    setState('mvState', 'err', '未送信の出庫 ' + a.length + '件を送り直せませんでした（' + errText(e) + '）',
+      errHint(e) + ' 控えは残してあります。設定画面の「接続テスト」で原因を確かめてから、この画面を開き直してください。');
+  });
+}
+function mergeStock(stock) {
+  var k;
+  for (k in stock) { if (Object.prototype.hasOwnProperty.call(stock, k)) ST.stock[k] = stock[k]; }
+}
+function sendMoves(moves, isOut) {
+  if (ST.busy) return;
+  ST.busy = true;
+  $('mvSubmit').disabled = true;
+  if (isOut) addPending(moves);
+  setState('mvState', '', '送信中…', 'サーバーに記録しています。');
+  apiPost('addMoves', { moves: moves }).then(function (d) {
+    var res = Array.isArray(d.results) ? d.results : [];
+    dropPending(res.map(function (r) { return txt(r.id); }));
+    if (d.stock) mergeStock(d.stock);
+    reportMoveResults(res);
+    renderList();
+    renderStock();
+    /* 続けて入れられるよう、フォームは閉じずに数量と提供先だけ空にする */
+    $('mvQty').value = '';
+    $('mvResident').value = '';
+    $('mvNote').value = '';
+    $('mvCost').value = '';
+    renderPreview();
+    askRepriceAfterIn(moves, res);
+  }).catch(function (e) {
+    setState('mvState', 'err', '記録できませんでした（' + errText(e) + '）', errHint(e));
+  }).then(function () {
+    ST.busy = false;
+    $('mvSubmit').disabled = false;
+  }, function () {
+    ST.busy = false;
+    $('mvSubmit').disabled = false;
+  });
+}
+/* 管理者の入庫で仕入額を入れたとき、今の価格と違えば改定を促す（設計 §3-6。自動では改定しない） */
+function askRepriceAfterIn(moves, res) {
+  if (!isAdmin()) return;
+  var done = {};
+  res.forEach(function (r) { if (r.status === 'applied') done[txt(r.id)] = true; });
+  var i, m, it, p, newest;
+  for (i = 0; i < moves.length; i++) {
+    m = moves[i];
+    if (m.type !== 'in' || m.costEntered === null || m.costEntered === undefined) continue;
+    if (!done[txt(m.id)]) continue;
+    it = itemById(m.itemId);
+    if (!it) continue;
+    p = priceInfo(it.id);
+    /* 予定行があればその末尾が「これから使う仕入」。無ければ現在価格 */
+    newest = p.scheduled.length ? p.scheduled[p.scheduled.length - 1] : p.current;
+    if (!newest || Number(newest.cost) === Number(m.costEntered)) continue;
+    if (!window.confirm('「' + txt(it.name) + '」の今の仕入は ' + yen(newest.cost)
+      + ' ですが、入庫は ' + yen(m.costEntered) + ' でした。価格を改定しますか？')) return;
+    showScreen('list');
+    renderList();
+    openPriceRow(it.id);
+    if (ST.edit && ST.edit.itemId === it.id) {
+      ST.edit.cost = txt(m.costEntered);      /* 入庫で入れた仕入を先に埋めておく */
+      recalcEdit('cost');
+    }
+    if (!$('listBody').querySelector('tr[data-id="' + cssEsc(it.id) + '"]')) {
+      toast('絞り込みを外すと「' + txt(it.name) + '」の改定行が出ます');
+    }
+    return;           /* 改定行は1つずつ開く */
+  }
+}
+/* 通らなかった1件の理由を日本語に（サーバーの reason 名と同じ綴りで引く） */
+function rejectText(r) {
+  if (r && r.status === 'existing_voided') return '取り消し済みの記録と同じ番号でした。番号を変えて送り直してください。';
+  var k = txt(r && r.reason);
+  return REJECT_MSG[k] || ('登録できませんでした（' + (k || '理由不明') + '）');
+}
+function reportMoveResults(res) {
+  var ok = 0, dup = 0, bad = [];
+  res.forEach(function (r) {
+    if (r.status === 'applied') ok++;
+    else if (r.status === 'existing') dup++;
+    else bad.push(rejectText(r));
+  });
+  if (bad.length) {
+    setState('mvState', 'err', '登録できなかった記録があります（' + bad.length + '件）', bad.join(' / '));
+  } else if (ok) {
+    setState('mvState', 'ok', '記録しました（' + ok + '件）', dup ? ('うち ' + dup + '件はすでに登録済みでした。') : '続けて入力できます。');
+    toast('記録しました');
+  } else if (dup) {
+    setState('mvState', 'ok', 'すでに登録済みでした（' + dup + '件）', '同じ記録は二重に登録されません。');
+  }
+}
+function renderStock() {
+  if (!ST.loaded) return;
+  /* 発注が必要 */
+  var low = ST.items.filter(function (it) { return it.status === 'active' && reorderOf(it) === 'low'; });
+  var box = $('lowBox');
+  clearNode(box);
+  if (!low.length) {
+    setState('lowState', '', '発注が必要な品目はありません', '発注点を下回ると、ここに出ます。');
+  } else {
+    setState('lowState', '', '', '');
+    low.forEach(function (it) {
+      box.appendChild(h('button', {
+        type: 'button', cls: 'btn', text: '▲ ' + it.name + '（残 ' + stockText(it) + '）',
+        'aria-label': it.name + 'の詳細を開く。残り ' + stockText(it),
+        onclick: function () { openDetail(it.id); }
+      }));
+    });
+  }
+  /* 現在庫 */
+  var body = $('stockBody');
+  clearNode(body);
+  var rows = ST.items.filter(function (it) { return ST.showHidden || it.status === 'active'; });
+  if (!rows.length) {
+    $('stockWrap').hidden = true;
+    setState('stockState', '', 'まだ品目がありません', '一覧の画面から品目を登録してください。');
+  } else {
+    $('stockWrap').hidden = false;
+    setState('stockState', '', '', '');
+    rows.forEach(function (it) {
+      var ro = reorderOf(it);
+      var tr = h('tr');
+      var td0 = h('td', { cls: 'cname' });
+      td0.appendChild(h('button', {
+        type: 'button', cls: 'namebtn', text: it.name,
+        'aria-label': it.name + 'の詳細を開く', onclick: function () { openDetail(it.id); }
+      }));
+      tr.appendChild(td0);
+      tr.appendChild(h('td', { cls: 'num' + (ro === 'low' ? ' low' : ''), text: stockText(it) }));
+      tr.appendChild(h('td', { cls: 'num', text: fmtInt(it.reorderPoint) + unitName(it, isProfile(it) ? 0 : billIdxOf(it)) }));
+      tr.appendChild(h('td', {
+        text: ro === 'low' ? '▲ 発注' : (ro === 'ok' ? '○ 足りています' : '— 不明')
+      }));
+      tr.appendChild(h('td', { text: lastCountText(it) }));
+      body.appendChild(tr);
+    });
+  }
+  updatePendingLabel();
+}
+
+/* ── 期間の入出庫 ─────────────────────────────────────── */
+function loadRecent() {
+  var from = txt($('recentFrom').value), to = txt($('recentTo').value);
+  if (!SPL().isYmd(from) || !SPL().isYmd(to)) {
+    setState('recentState', 'err', '期間を選んでください', '開始日と終了日をカレンダーから選んでください。');
+    return;
+  }
+  setState('recentState', '', '読み込み中…', '入出庫を取得しています。');
+  apiPost('listMoves', { from: from, to: to }).then(function (d) {
+    var moves = Array.isArray(d.moves) ? d.moves : [];
+    renderMoveTable($('recentBody'), $('recentWrap'), 'recentState', moves, true);
+  }).catch(function (e) {
+    setState('recentState', 'err', '読み込めませんでした（' + errText(e) + '）', errHint(e), 'もう一度読み込む', loadRecent);
+  });
+}
+function renderMoveTable(body, wrap, stateId, moves, withAct) {
+  clearNode(body);
+  if (!moves.length) {
+    wrap.hidden = true;
+    setState(stateId, '', 'この期間の入出庫はありません', '期間を変えて読み直してください。');
+    return;
+  }
+  wrap.hidden = false;
+  setState(stateId, '', '', '');
+  moves.slice().sort(function (a, b) { return txt(b.date).localeCompare(txt(a.date)); }).forEach(function (m) {
+    var it = itemById(m.itemId);
+    var tr = h('tr', { cls: m.voided ? 'gone' : '' });
+    tr.appendChild(h('td', { text: jpDate(m.date) }));
+    tr.appendChild(h('td', { cls: 'cname', text: it ? it.name : txt(m.itemId) }));
+    tr.appendChild(h('td', { text: TYPE_LABEL[txt(m.type)] || txt(m.type) }));
+    tr.appendChild(h('td', { cls: 'num', text: moveQtyText(it, m) }));
+    tr.appendChild(h('td', { text: m.type === 'out' ? residentLabel(m.residentId) : '—' }));
+    tr.appendChild(h('td', { cls: 'num adm', text: (m.amount === null || m.amount === undefined || m.amount === '') ? '—' : yen(m.amount) }));
+    tr.appendChild(h('td', { text: clip(m.note, 16) }));
+    var td = h('td');
+    if (withAct) {
+      if (m.voided) {
+        td.appendChild(h('span', { cls: 'badge', text: '取消済' }));
+      } else if (canVoid(m)) {
+        td.appendChild(h('button', {
+          type: 'button', cls: 'btn sm warnb', text: '取り消す',
+          'aria-label': jpDate(m.date) + 'の' + (TYPE_LABEL[txt(m.type)] || '') + 'を取り消す',
+          onclick: function () { askVoidMove(m); }
+        }));
+      } else {
+        td.appendChild(h('span', { cls: 'badge', text: '—' }));
+      }
+    }
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+}
+function moveQtyText(it, m) {
+  if (!it) return fmtInt(m.qty);
+  var mi = minIdxOf(it);
+  var q = Number(m.qty);
+  if (!isFinite(q)) return '—';
+  var s = fmtInt(q) + unitName(it, mi);
+  if (m.type === 'out' && m.qtyBill !== null && m.qtyBill !== undefined && m.qtyBill !== '') {
+    s += '（' + fmtInt(m.qtyBill) + unitName(it, billIdxOf(it)) + '）';
+  }
+  return s;
+}
+function canVoid(m) {
+  if (m.voided) return false;
+  if (isClosed(ymOf(m.date))) return false;
+  if (isAdmin()) return true;
+  /* 職員が取り消せるのは、当日の unit 品目の入庫・出庫だけ */
+  var it = itemById(m.itemId);
+  return !!(it && it.billType === 'unit' && (m.type === 'in' || m.type === 'out') && txt(m.date) === SPL().today());
+}
+function askVoidMove(m) {
+  openAsk('入出庫の取り消し', jpDate(m.date) + '／' + (TYPE_LABEL[txt(m.type)] || '') + '／' + (itemById(m.itemId) ? itemById(m.itemId).name : txt(m.itemId)), function (reason) {
+    return apiPost('voidMove', { id: txt(m.id), reason: reason }).then(function () {
+      toast('取り消しました');
+      loadList(true);
+      if (ST.screen === 'stock') loadRecent();
+      if (ST.screen === 'detail') loadDetailMoves();
+    });
+  });
+}
+
+/* ── 前月の月額出庫を複写 ─────────────────────────────── */
+/* 取り消した複写を入れ直せるよう、existing_voided は '_2' '_3' の連番 id で送り直す
+   （設計 §3-6・凍結API §1）。上限まで通らなければ、その結果をそのまま報告に載せる */
+var COPY_TRIES = 3;
+function sendCopyBatch(entries, attempt, acc) {
+  var moves = entries.map(function (e) { return e.mv; });
+  return apiPost('addMoves', { moves: moves }).then(function (res) {
+    if (res.stock) mergeStock(res.stock);
+    var byId = {};
+    (Array.isArray(res.results) ? res.results : []).forEach(function (r) { byId[txt(r.id)] = r; });
+    var next = [];
+    entries.forEach(function (e) {
+      var r = byId[txt(e.mv.id)];
+      if (!r) return;
+      if (r.status === 'existing_voided' && attempt < COPY_TRIES) {
+        var mv2 = {}, k;
+        for (k in e.mv) { if (Object.prototype.hasOwnProperty.call(e.mv, k)) mv2[k] = e.mv[k]; }
+        mv2.id = e.base + '_' + (attempt + 1);
+        next.push({ mv: mv2, base: e.base });
+      } else {
+        acc.push(r);
+      }
+    });
+    if (!next.length) return acc;
+    return sendCopyBatch(next, attempt + 1, acc);
+  });
+}
+function copyLastMonth() {
+  if (!isAdmin()) return;
+  if (!ST.rosterOk) {
+    setState('mvState', 'err', '名簿が無いため複写できません',
+      '入居者マスタを一度開いて名簿をこの端末に取り込んでから、もう一度お試しください。');
+    return;
+  }
+  var thisYm = SPL().today().slice(0, 7);
+  var prevYm = SPL().prevMonth(thisYm);
+  if (isClosed(thisYm)) {
+    setState('mvState', 'err', '今月は締め済みです', '設定画面で締めを解除してから複写してください。');
+    return;
+  }
+  var r = SPL().monthRange(prevYm);
+  setState('mvState', '', '前月の月額出庫を調べています…', prevYm + ' の出庫を読み込んでいます。');
+  apiPost('listMoves', { from: r.from, to: r.to }).then(function (d) {
+    var src = (Array.isArray(d.moves) ? d.moves : []).filter(function (m) {
+      if (m.voided || m.type !== 'out') return false;
+      var it = itemById(m.itemId);
+      if (!it || !isProfile(it)) return false;
+      var rid = txt(m.residentId);
+      if (!rid) return true;
+      var i;
+      for (i = 0; i < ST.roster.length; i++) {
+        if (ST.roster[i].masterId === rid) return ST.roster[i].active;
+      }
+      return false;          /* 名簿に無い方は複写しない（退去者を含めない） */
+    });
+    if (!src.length) {
+      setState('mvState', '', '複写するものがありません', prevYm + ' に月額の出庫がありませんでした。');
+      return;
+    }
+    if (!window.confirm(prevYm + ' の月額出庫 ' + src.length + '件を ' + thisYm + '-01 付けで複写します。日数はプロファイルの既定に戻ります。よろしいですか？')) return;
+    var moves = src.slice(0, MAX_MOVES).map(function (m) {
+      var it = itemById(m.itemId);
+      var prof = null, list = profilesOf(it.id), i;
+      for (i = 0; i < list.length; i++) { if (txt(list[i].id) === txt(m.profileId)) prof = list[i]; }
+      if (!prof) prof = SPL().defaultProfile(list);
+      return {
+        id: 'mv_copy_' + txt(m.id) + '_' + thisYm,
+        date: thisYm + '-01', itemId: txt(m.itemId), type: 'out',
+        qtyEntered: 0, unitIdx: minIdxOf(it),
+        profileId: txt(m.profileId || (prof ? prof.id : '')),
+        dose10: Number(m.dose10),
+        timesPerDay: Number(m.timesPerDay),
+        days: prof && isFinite(Number(prof.daysPerMonth)) ? Number(prof.daysPerMonth) : daysDefault(),
+        residentId: txt(m.residentId),
+        note: ''          /* 勝手な文言を保存しない（原則6）。複写であることは id 'mv_copy_…' で判別できる */
+      };
+    });
+    var entries = moves.map(function (mv) { return { mv: mv, base: mv.id }; });
+    return sendCopyBatch(entries, 1, []).then(function (acc) {
+      reportMoveResults(acc);
+      renderList();
+      renderStock();
+    });
+  }).catch(function (e) {
+    setState('mvState', 'err', '複写できませんでした（' + errText(e) + '）', errHint(e));
+  });
+}
+
+/* ── 理由を聞くダイアログ（取り消し共通）───────────────── */
+function openAsk(title, what, run) {
+  ST.ask = { run: run, busy: false };
+  $('akTitle').textContent = title;
+  $('akWhat').textContent = what;
+  $('akReason').value = '';
+  $('akErr').hidden = true;
+  var dlg = $('askDlg');
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  $('akReason').focus();
+}
+function closeAsk() {
+  var dlg = $('askDlg');
+  ST.ask = null;
+  if (typeof dlg.close === 'function' && dlg.open) dlg.close(); else dlg.removeAttribute('open');
+}
+function runAsk() {
+  if (!ST.ask || ST.ask.busy) return;
+  var reason = txt($('akReason').value).trim().slice(0, NOTE_MAX);
+  if (!reason) {
+    $('akErr').textContent = '理由を入れてください（あとから見て分かる言葉で）。';
+    $('akErr').hidden = false;
+    $('akReason').focus();
+    return;
+  }
+  ST.ask.busy = true;
+  $('akOk').disabled = true;
+  var p = ST.ask.run(reason);
+  Promise.resolve(p).then(function () {
+    if ($('akOk')) $('akOk').disabled = false;
+    closeAsk();
+  }).catch(function (e) {
+    if (ST.ask) ST.ask.busy = false;
+    $('akOk').disabled = false;
+    $('akErr').textContent = errText(e) + ' ' + errHint(e);
+    $('akErr').hidden = false;
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   月次集計（管理者）
+   ════════════════════════════════════════════════════════════════ */
+function renderSummaryControls() {
+  if (!ST.month) ST.month = SPL().today().slice(0, 7);
+  $('sumMonth').value = ST.month;
+  /* 改定一覧の期間は、まだ触っていなければ集計月に合わせる */
+  var r = SPL().monthRange(ST.month);
+  if (r) {
+    if (!SPL().isYmd(txt($('chgFrom').value))) $('chgFrom').value = r.from;
+    if (!SPL().isYmd(txt($('chgTo').value))) $('chgTo').value = r.to;
+  }
+}
+function stepMonth(n) {
+  var ym = txt($('sumMonth').value);
+  if (!YM_RE.test(ym)) ym = SPL().today().slice(0, 7);
+  var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  if (n < 0) { ym = SPL().prevMonth(ym); }
+  else {
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+    ym = String(y) + '-' + (m < 10 ? '0' : '') + String(m);
+  }
+  $('sumMonth').value = ym;
+  ST.month = ym;
+  lsSet(UI_KEYS.month, ym);
+}
+function loadSummary() {
+  var ym = txt($('sumMonth').value);
+  if (!YM_RE.test(ym)) {
+    setState('sumState', 'err', '集計する月を選んでください', '月の欄をカレンダーから選んでください。');
+    return;
+  }
+  ST.month = ym;
+  lsSet(UI_KEYS.month, ym);
+  var r = SPL().monthRange(ym);
+  setState('sumState', '', '読み込み中…', ym + ' の出庫を集計しています。');
+  $('csvBtn').disabled = true;
+  apiPost('listMoves', { from: r.from, to: r.to }).then(function (d) {
+    var moves = Array.isArray(d.moves) ? d.moves : [];
+    var rows = SPL().aggregateMonth({ moves: moves, items: ST.items, prices: ST.prices, roster: ST.roster });
+    ST.sumRows = Array.isArray(rows) ? rows : [];
+    ST.sumMonth = ym;
+    renderSummary();
+  }).catch(function (e) {
+    setState('sumState', 'err', '集計できませんでした（' + errText(e) + '）', errHint(e), 'もう一度読み込む', loadSummary);
+  });
+}
+function renderSummary() {
+  var body = $('sumBody'), foot = $('sumFoot'), rows = ST.sumRows || [];
+  clearNode(body);
+  clearNode(foot);
+  if (!rows.length) {
+    $('sumWrap').hidden = true;
+    $('csvBtn').disabled = true;
+    setState('sumState', '', 'この月の出庫はありません', '月を変えて読み込み直してください。');
+    return;
+  }
+  $('sumWrap').hidden = false;
+  $('csvBtn').disabled = false;
+  setState('sumState', '', '', '');
+  var total = 0, noName = 0;
+  rows.forEach(function (r) {
+    var tr = h('tr');
+    tr.appendChild(h('td', { text: txt(r.residentId) || '—' }));
+    var nm = txt(r.name);
+    if (!nm && txt(r.residentId)) { nm = '（名簿に無し）'; noName++; }
+    tr.appendChild(h('td', { cls: 'cname', text: nm || '（提供先なし）' }));
+    tr.appendChild(h('td', { text: txt(r.itemName) }));
+    tr.appendChild(h('td', { cls: 'num', text: fmtInt((r.qtyBill === null || r.qtyBill === undefined) ? r.qty : r.qtyBill) }));
+    tr.appendChild(h('td', { text: txt(r.unitName) }));
+    tr.appendChild(h('td', { cls: 'num', text: yen(r.amount) }));
+    tr.appendChild(h('td', { text: r.billType === 'profile' ? '月額' : '数量' }));
+    tr.appendChild(h('td', { cls: 'num', text: txt(r.taxRate) + '%' }));
+    body.appendChild(tr);
+    total += Number(r.amount) || 0;
+  });
+  var tr2 = h('tr');
+  tr2.appendChild(h('th', { scope: 'row', colspan: '5', text: '合計（' + rows.length + '行）' }));
+  tr2.appendChild(h('td', { cls: 'num', text: yen(total) }));
+  tr2.appendChild(h('td', { colspan: '2', text: '' }));
+  foot.appendChild(tr2);
+  if (noName) {
+    setState('sumState', 'warn', '氏名を出せない行があります（' + noName + '行）',
+      '名簿に無い利用者Noです。入居者マスタを開いて名簿を取り込み直すと出ます。CSV も同じです。');
+  }
+}
+function exportCsv() {
+  var rows = ST.sumRows || [];
+  if (!rows.length) return;
+  var text = SPL().toCsv(rows);
+  if (!text) { toast('CSV を作れませんでした'); return; }
+  var blob = new Blob([text], { type: 'text/csv' });
+  var url = URL.createObjectURL(blob);
+  /* ファイル名に氏名は入れない（個人情報規約） */
+  var a = h('a', { href: url, download: '消耗品実費_' + ST.sumMonth + '.csv' });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  toast('CSV を書き出しました');
+}
+/* ── 改定一覧（設計 §3-8）────────────────────────────────────────
+   期間内に適用日がある改定を、品目をまたいで並べる。既定は「売価が変わった行」だけ。
+   材料は list 応答の 前回・現在・予定（listPrices は品目ごとなので全品目横断には使わない）。
+   それより古い履歴は品目詳細（listPrices）で見る＝この一覧の範囲は画面に明記してある */
+function saleOf(p) {
+  if (!p) return null;
+  if (p.billPrice !== null && p.billPrice !== undefined && p.billPrice !== '' && isFinite(Number(p.billPrice))) {
+    return { kind: 'bill', v: Number(p.billPrice) };
+  }
+  if (p.unitPrice10 !== null && p.unitPrice10 !== undefined && p.unitPrice10 !== '' && isFinite(Number(p.unitPrice10))) {
+    return { kind: 'unit', v: Number(p.unitPrice10) };
+  }
+  return null;
+}
+function saleText(s) { return s === null ? '—' : (s.kind === 'bill' ? yen(s.v) : yen1(s.v)); }
+function saleSame(a, b) { return (a === null && b === null) || (!!a && !!b && a.kind === b.kind && a.v === b.v); }
+function arrowText(before, after) { return before === after ? after : (before + ' → ' + after); }
+function renderPriceChanges() {
+  var from = txt($('chgFrom').value), to = txt($('chgTo').value);
+  if (!SPL().isYmd(from) || !SPL().isYmd(to)) {
+    setState('chgState', 'err', '期間を選んでください', '開始日と終了日をカレンダーから選んでください。');
+    $('chgWrap').hidden = true;
+    return;
+  }
+  if (from > to) {
+    setState('chgState', 'err', '期間が逆です', '開始日が終了日より後になっています。');
+    $('chgWrap').hidden = true;
+    return;
+  }
+  var withCost = !!$('chgCost').checked, today = SPL().today(), rows = [];
+  ST.items.forEach(function (it) {
+    var list = priceRowsOf(it.id).slice().sort(function (a, b) {
+      var ad = txt(a.effDate), bd = txt(b.effDate);
+      if (ad !== bd) return ad < bd ? -1 : 1;
+      return txt(a.createdAt) < txt(b.createdAt) ? -1 : 1;
+    });
+    list.forEach(function (p, i) {
+      var d = txt(p.effDate);
+      if (!SPL().isYmd(d) || d < from || d > to) return;
+      var prev = i > 0 ? list[i - 1] : null;
+      var priceChanged = !prev || !saleSame(saleOf(p), saleOf(prev));
+      var costChanged = !prev || Number(p.cost) !== Number(prev.cost);
+      if (!priceChanged && !(withCost && costChanged)) return;
+      rows.push({ it: it, p: p, prev: prev, priceChanged: priceChanged });
+    });
+  });
+  rows.sort(function (a, b) {
+    var ad = txt(a.p.effDate), bd = txt(b.p.effDate);
+    if (ad !== bd) return ad < bd ? 1 : -1;                 /* 新しい改定を上に */
+    return txt(a.it.name) < txt(b.it.name) ? -1 : 1;
+  });
+
+  var body = $('chgBody');
+  clearNode(body);
+  if (!rows.length) {
+    $('chgWrap').hidden = true;
+    setState('chgState', '', 'この期間に' + (withCost ? '' : '売価が変わった') + '改定はありません',
+      '期間を広げるか、' + (withCost ? '' : '「仕入だけの変化も出す」に印を付けて') + 'もう一度お試しください。');
+    return;
+  }
+  rows.forEach(function (r) {
+    var p = r.p, prev = r.prev;
+    var tr = h('tr');
+    tr.appendChild(h('td', { text: jpDate(p.effDate) }));
+    tr.appendChild(h('td', { cls: 'cname', text: txt(r.it.name) }));
+    tr.appendChild(h('td', { cls: 'num', text: arrowText(prev ? yen(prev.cost) : '（初回）', yen(p.cost)) }));
+    tr.appendChild(h('td', { cls: 'num', text: arrowText(prev ? saleText(saleOf(prev)) : '（初回）', saleText(saleOf(p))) }));
+    tr.appendChild(h('td', { cls: 'num', text: pct1(p.m1000) }));
+    tr.appendChild(h('td', { text: clip(p.reason, 20) }));
+    tr.appendChild(h('td', {
+      text: (txt(p.effDate) > today ? '予定' : '適用済') + (r.priceChanged ? '' : '（仕入のみ）')
+    }));
+    body.appendChild(tr);
+  });
+  $('chgWrap').hidden = false;
+  setState('chgState', '', jpDate(from) + '〜' + jpDate(to) + ' の改定 ' + rows.length + '件',
+    withCost ? '売価が変わった行と、仕入だけ変わった行の両方を出しています。' : '売価が変わった行だけを出しています。');
+}
+
+function repriceMonth() {
+  var ym = txt($('sumMonth').value);
+  if (!YM_RE.test(ym)) {
+    setState('repState', 'err', '月を選んでください', '上の月の欄をカレンダーから選んでください。');
+    return;
+  }
+  if (isClosed(ym)) {
+    setState('repState', 'err', 'この月は締め済みです', '設定画面で締めを解除してから付け直してください。');
+    return;
+  }
+  var itemId = txt($('repItem').value);
+  var it = itemById(itemId);
+  if (!window.confirm(ym + ' の' + (it ? '「' + it.name + '」の' : 'すべての品目の') + '出庫を、その日付の価格で計算し直します。よろしいですか？')) return;
+  var r = SPL().monthRange(ym);
+  var body = { from: r.from, to: r.to };
+  if (itemId) body.itemId = itemId;
+  setState('repState', '', '付け直しています…', 'サーバーで計算し直しています。');
+  apiPost('repriceMoves', body).then(function (d) {
+    setState('repState', 'ok', '付け直しました（' + (Number(d.changed) || 0) + '件）', '集計を読み直すと新しい金額になります。');
+    if (ST.sumMonth === ym) loadSummary();
+  }).catch(function (e) {
+    setState('repState', 'err', '付け直せませんでした（' + errText(e) + '）', errHint(e));
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   品目詳細
+   ════════════════════════════════════════════════════════════════ */
+function openDetail(id, noSave) {
+  var it = itemById(id);
+  if (!it) return;
+  ST.item = it.id;
+  if (!noSave) lsSet(UI_KEYS.item, it.id);
+  ST.detail = { prices: [], inputs: [], moves: [], loaded: false };
+  ST.profDraft = null;
+  showScreen('detail', noSave);
+  renderDetail();
+  if (isAdmin()) loadDetailPrices();
+  loadDetailMoves();
+}
+function renderDetail() {
+  var it = itemById(ST.item);
+  if (!it) { showScreen('list'); return; }
+  $('dtName').textContent = it.name;
+  var mi = minIdxOf(it), bi = billIdxOf(it);
+  $('dtMeta').textContent = [
+    catName(it.category),
+    unitsOf(it).map(function (u, i) { return txt(u.name) + (i ? '（' + txt(u.per) + '入）' : ''); }).join(' → '),
+    isProfile(it) ? '月額で請求' : ('数量で請求（' + unitName(it, bi) + '）'),
+    '税率 ' + txt(it.taxRate) + '%',
+    it.stockMode === 'countOnly' ? '在庫は入庫と棚卸だけ' : '在庫は入出庫と棚卸',
+    it.status === 'active' ? '' : '非表示'
+  ].filter(Boolean).join('／');
+  var ro = reorderOf(it);
+  $('dtStock').textContent = '現在庫 ' + stockText(it)
+    + '／発注点 ' + fmtInt(it.reorderPoint) + unitName(it, isProfile(it) ? 0 : bi)
+    + '／最終棚卸 ' + lastCountText(it)
+    + '／' + (ro === 'low' ? '▲ 発注が必要です' : (ro === 'ok' ? '○ 足りています' : '— 発注点との比較ができません'));
+  $('dtProfCd').hidden = !(isAdmin() && isProfile(it));
+  if (isAdmin() && isProfile(it)) renderProfiles(it);
+  if (isAdmin()) renderPriceHistory(it);
+}
+function loadDetailPrices() {
+  var it = itemById(ST.item);
+  if (!it) return;
+  setState('dtState', '', '読み込み中…', '価格の履歴を取得しています。');
+  apiPost('listPrices', { itemId: it.id }).then(function (d) {
+    ST.detail.prices = Array.isArray(d.prices) ? d.prices : [];
+    ST.detail.inputs = Array.isArray(d.inputs) ? d.inputs : [];
+    ST.detail.loaded = true;
+    setState('dtState', '', '', '');
+    renderPriceHistory(it);
+  }).catch(function (e) {
+    setState('dtState', 'err', '価格の履歴を読み込めませんでした（' + errText(e) + '）', errHint(e), 'もう一度読み込む', loadDetailPrices);
+  });
+}
+/* 原価基準の値入率（千分率整数）＝(売価−原価)÷原価。m1000（売価基準）とは別物・併記用（承認事項 H）。
+   割り算は整数のまま（分子を正に保つため 1000 を後から引く） */
+function costMarkup1000(it, p) {
+  if (!p) return null;
+  var cost = Number(p.cost);
+  if (!isFinite(cost) || cost <= 0) return null;
+  var units = unitsOf(it), bi = billIdxOf(it), mi = minIdxOf(it);
+  var bp = (p.billPrice === null || p.billPrice === undefined) ? null : Number(p.billPrice);
+  if (!isProfile(it) && bi !== mi && bp !== null && isFinite(bp)) {
+    var fb = SPL().factor(units, bi);
+    if (fb === null) return null;
+    var r1 = SPL().roundDiv(bp * fb * 1000, cost, 'round');
+    return (r1 === null) ? null : r1 - 1000;
+  }
+  var up = (p.unitPrice10 === null || p.unitPrice10 === undefined) ? null : Number(p.unitPrice10);
+  if (up === null || !isFinite(up)) return null;
+  var F = SPL().factor(units, mi);
+  if (F === null) return null;
+  var r2 = SPL().roundDiv(up * F * 1000, cost * 10, 'round');
+  return (r2 === null) ? null : r2 - 1000;
+}
+function renderPriceHistory(it) {
+  var body = $('dtPriceBody');
+  clearNode(body);
+  var rows = (ST.detail && ST.detail.prices) ? ST.detail.prices : [];
+  var mi = minIdxOf(it), bi = billIdxOf(it);
+  var cp = SPL().currentPrice(rows, SPL().today());
+  var latest = cp ? txt(cp.latestPriceId) : '';
+  $('dtVoidBtn').disabled = !latest;
+  if (!rows.length) {
+    $('dtPriceWrap').hidden = true;
+    $('dtChartBox').hidden = true;
+    $('dtPriceNote').textContent = ST.detail && ST.detail.loaded ? 'まだ価格がありません。一覧の金額セルから改定を登録してください。' : '—';
+    return;
+  }
+  $('dtPriceWrap').hidden = false;
+  $('dtPriceNote').textContent = '現在の価格 ' + (cp && cp.current ? jpDate(cp.current.effDate) + ' 適用' : 'なし')
+    + (cp && cp.scheduled && cp.scheduled.length ? '／予定 ' + cp.scheduled.map(function (s) { return jpDate(s.effDate); }).join('・') : '');
+  rows.slice().sort(function (a, b) { return txt(b.effDate).localeCompare(txt(a.effDate)); }).forEach(function (p) {
+    var tr = h('tr', { cls: p.voided ? 'gone' : '' });
+    tr.appendChild(h('td', { text: jpDate(p.effDate) }));
+    tr.appendChild(h('td', { cls: 'num', text: yen(p.cost) }));
+    tr.appendChild(h('td', { cls: 'num', text: (p.unitPrice10 === null || p.unitPrice10 === undefined) ? '—' : yen1(p.unitPrice10) }));
+    tr.appendChild(h('td', { cls: 'num', text: (p.billPrice === null || p.billPrice === undefined) ? '—' : yen(p.billPrice) }));
+    var cm = costMarkup1000(it, p);
+    tr.appendChild(h('td', { cls: 'num',
+      text: '売価基準 ' + pct1(p.m1000) + (cm === null ? '' : '／原価基準 ' + pct1(cm)) }));
+    tr.appendChild(h('td', { text: p.basis === 'bill' ? '請求単位売価' : '最小単位売価' }));
+    tr.appendChild(h('td', { text: clip(p.reason, 16) }));
+    tr.appendChild(h('td', { text: jpDate(txt(p.createdAt).slice(0, 10)) + ' ' + clip(p.by, 8) }));
+    var scheduled = !p.voided && txt(p.effDate) > SPL().today();
+    var label = p.voided ? ('取消済' + (p.voidReason ? '：' + clip(p.voidReason, 12) : ''))
+      : (scheduled ? '予定' : (txt(p.id) === latest ? '最新' : '有効'));
+    var stTd = h('td', { text: label });
+    if (!p.voided && (txt(p.id) === latest || scheduled)) {
+      stTd.appendChild(document.createTextNode(' '));
+      stTd.appendChild(h('button', {
+        type: 'button', cls: 'cellbtn', text: '取り消す',
+        'aria-label': jpDate(p.effDate) + ' 適用の改定を取り消す',
+        onclick: function () { askVoidPriceRow(it, p, latest); }
+      }));
+    }
+    tr.appendChild(stTd);
+    body.appendChild(tr);
+  });
+  drawChart(it, rows, (ST.detail && ST.detail.inputs) ? ST.detail.inputs : []);
+}
+/* 仕入と売価の推移＋入庫時の仕入額。数値は上の表が正で、これは形を見るためのもの */
+function drawChart(it, rows, inputs) {
+  var box = $('dtChart');
+  clearNode(box);
+  var live = rows.filter(function (p) { return !p.voided && DATE_RE.test(txt(p.effDate)); });
+  if (live.length < 1) { $('dtChartBox').hidden = true; return; }
+  $('dtChartBox').hidden = false;
+  var bi = billIdxOf(it), mi = minIdxOf(it);
+  var pts = live.map(function (p) {
+    var sell = (p.billPrice !== null && p.billPrice !== undefined) ? Number(p.billPrice)
+      : ((p.unitPrice10 !== null && p.unitPrice10 !== undefined) ? Number(p.unitPrice10) / 10 : null);
+    return { t: dayNum(p.effDate), cost: Number(p.cost), sell: sell };
+  }).sort(function (a, b) { return a.t - b.t; });
+  var ins = (inputs || []).filter(function (x) { return DATE_RE.test(txt(x.date)) && isFinite(Number(x.costEntered)); })
+    .map(function (x) { return { t: dayNum(x.date), v: Number(x.costEntered) }; });
+  var all = pts.map(function (p) { return p.t; }).concat(ins.map(function (p) { return p.t; }));
+  var vals = pts.map(function (p) { return p.cost; })
+    .concat(pts.map(function (p) { return p.sell; }).filter(function (v) { return v !== null; }))
+    .concat(ins.map(function (p) { return p.v; }));
+  var t0 = Math.min.apply(null, all), t1 = Math.max.apply(null, all);
+  var v1 = Math.max.apply(null, vals), v0 = 0;
+  if (!isFinite(t0) || !isFinite(v1) || v1 <= 0) { $('dtChartBox').hidden = true; return; }
+  if (t1 === t0) t1 = t0 + 1;
+  var W = 640, H = 200, L = 56, R = 12, T = 12, B = 26;
+  var svg = svgEl('svg', {
+    viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', cls: 'chart',
+    role: 'img',
+    'aria-label': '仕入と売価の推移。数値は上の価格履歴の表に出ています。'
+  });
+  function X(t) { return Math.round(L + (W - L - R) * (t - t0) / (t1 - t0)); }
+  function Y(v) { return Math.round(H - B - (H - T - B) * (v - v0) / (v1 - v0)); }
+  var i;
+  for (i = 0; i <= 2; i++) {
+    var vv = Math.round(v1 * i / 2);
+    svg.appendChild(svgEl('line', { x1: L, y1: Y(vv), x2: W - R, y2: Y(vv), cls: 'gl' }));
+    var tx = svgEl('text', { x: 4, y: Y(vv) + 4 });
+    tx.textContent = fmtInt(vv);
+    svg.appendChild(tx);
+  }
+  function path(arr, key, cls) {
+    var d = '', n = 0;
+    arr.forEach(function (p) {
+      if (p[key] === null || p[key] === undefined) return;
+      d += (n === 0 ? 'M' : 'L') + X(p.t) + ' ' + Y(p[key]);
+      n++;
+    });
+    if (n === 1) { d += 'L' + (X(arr[0].t) + 4) + ' ' + Y(arr[0][key]); }
+    if (d) svg.appendChild(svgEl('path', { d: d, cls: cls }));
+  }
+  path(pts, 'cost', 'l1');
+  path(pts, 'sell', 'l2');
+  ins.forEach(function (p) {
+    svg.appendChild(svgEl('circle', { cx: X(p.t), cy: Y(p.v), r: 3.5, cls: 'p3' }));
+  });
+  var t0x = svgEl('text', { x: L, y: H - 8 });
+  t0x.textContent = jpDate(dateOfNum(t0));
+  svg.appendChild(t0x);
+  var t1x = svgEl('text', { x: W - R - 60, y: H - 8 });
+  t1x.textContent = jpDate(dateOfNum(t1));
+  svg.appendChild(t1x);
+  box.appendChild(svg);
+}
+function dayNum(d) {
+  var s = txt(d);
+  return Math.round(Date.UTC(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10))) / 86400000);
+}
+function dateOfNum(n) {
+  var dt = new Date(n * 86400000);
+  var m = dt.getUTCMonth() + 1, d = dt.getUTCDate();
+  return dt.getUTCFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+}
+function askVoidPrice() {
+  var it = itemById(ST.item);
+  if (!it || !ST.detail) return;
+  var cp = SPL().currentPrice(ST.detail.prices || [], SPL().today());
+  var latest = cp ? txt(cp.latestPriceId) : '';
+  if (!latest) return;
+  openAsk('価格の改定を取り消す', it.name + '／最新の改定を取り消します', function (reason) {
+    return voidPriceOnce(it, latest, reason, false, latest);
+  });
+}
+/* 履歴の行から取り消す（最新行と、これから適用する予定の行だけ取り消せる）。
+   予定行のあとに当日付の改定を足すと予定行は最新でなくなるため、
+   「最新の改定を取り消す」ボタンだけでは予定行に手が届かない。 */
+function askVoidPriceRow(it, p, latest) {
+  var scheduled = txt(p.effDate) > SPL().today();
+  openAsk('価格の改定を取り消す',
+    it.name + '／' + jpDate(p.effDate) + ' 適用の' + (scheduled ? '予定' : '最新') + 'の改定を取り消します',
+    function (reason) { return voidPriceOnce(it, txt(p.id), reason, false, latest); });
+}
+/* expectLatest は「サーバーが持っているはずの最新id」。予定行を取り消す時は
+   その行自身ではなく、今の最新id を送る（サーバーは両者を別々に見る）。 */
+function voidPriceOnce(it, priceId, reason, confirmed, expectLatest) {
+  var exp = txt(expectLatest) || txt(priceId);
+  return apiPost('voidPrice', {
+    itemId: it.id, priceId: priceId, expectLatestPriceId: exp, reason: reason, confirm: confirmed
+  }).then(function () {
+    toast('取り消しました');
+    return loadList(true).then(function () { loadDetailPrices(); });
+  }).catch(function (e) {
+    if (e && e.code === 'referenced' && !confirmed) {
+      var n = Number(e.raw && e.raw.count) || 0;
+      if (window.confirm('この価格を使った出庫が ' + n + '件あります。取り消しますか？\n（出庫は残ります。取り消したあとは「価格の付け直し」を行ってください）')) {
+        return voidPriceOnce(it, priceId, reason, true, exp);
+      }
+      return;
+    }
+    throw e;
+  });
+}
+function loadDetailMoves() {
+  var it = itemById(ST.item);
+  if (!it) return;
+  var to = SPL().today();
+  var ym = to.slice(0, 7);
+  var from = SPL().monthRange(SPL().prevMonth(SPL().prevMonth(ym))).from;
+  setState('dtMovesState', '', '読み込み中…', '直近3か月の入出庫を取得しています。');
+  apiPost('listMoves', { from: from, to: to, itemId: it.id }).then(function (d) {
+    var moves = (Array.isArray(d.moves) ? d.moves : []).filter(function (m) { return txt(m.itemId) === it.id; });
+    renderDetailMoves(it, moves);
+  }).catch(function (e) {
+    setState('dtMovesState', 'err', '読み込めませんでした（' + errText(e) + '）', errHint(e), 'もう一度読み込む', loadDetailMoves);
+  });
+}
+function renderDetailMoves(it, moves) {
+  var body = $('dtMovesBody');
+  clearNode(body);
+  if (!moves.length) {
+    $('dtMovesWrap').hidden = true;
+    setState('dtMovesState', '', 'この3か月の入出庫はありません', '在庫の画面から記録できます。');
+    return;
+  }
+  $('dtMovesWrap').hidden = false;
+  setState('dtMovesState', '', '', '');
+  moves.slice().sort(function (a, b) { return txt(b.date).localeCompare(txt(a.date)); }).forEach(function (m) {
+    var tr = h('tr', { cls: m.voided ? 'gone' : '' });
+    tr.appendChild(h('td', { text: jpDate(m.date) }));
+    tr.appendChild(h('td', { text: TYPE_LABEL[txt(m.type)] || txt(m.type) }));
+    tr.appendChild(h('td', { cls: 'num', text: moveQtyText(it, m) }));
+    tr.appendChild(h('td', { text: m.type === 'out' ? residentLabel(m.residentId) : '—' }));
+    tr.appendChild(h('td', { cls: 'num adm', text: (m.amount === null || m.amount === undefined || m.amount === '') ? '—' : yen(m.amount) }));
+    tr.appendChild(h('td', { text: m.voided ? '取消済' : '有効' }));
+    body.appendChild(tr);
+  });
+}
+
+/* ── プロファイル（管理者・月額品目）───────────────────── */
+function renderProfiles(it) {
+  if (!ST.profDraft) {
+    ST.profDraft = profilesOf(it.id).map(function (p) {
+      return {
+        id: txt(p.id), name: txt(p.name), dose10: dec1(p.dose10),
+        timesPerDay: txt(p.timesPerDay), daysPerMonth: txt(p.daysPerMonth || daysDefault()),
+        isDefault: !!p.isDefault
+      };
+    });
+  }
+  var body = $('dtProfBody'), cur = priceInfo(it.id).current;
+  clearNode(body);
+  ST.profDraft.forEach(function (p, i) {
+    var tr = h('tr');
+    tr.appendChild(h('td', null, h('input', {
+      type: 'text', val: p.name, 'aria-label': (i + 1) + '行目の名前',
+      oninput: function (ev) { p.name = txt(ev.target.value); }
+    })));
+    tr.appendChild(h('td', { cls: 'num' }, h('input', {
+      type: 'text', val: p.dose10, inputmode: 'decimal', 'aria-label': (i + 1) + '行目の1回量',
+      oninput: function (ev) { p.dose10 = txt(ev.target.value); refreshProfMonthly(it); }
+    })));
+    tr.appendChild(h('td', { cls: 'num' }, h('input', {
+      type: 'number', val: p.timesPerDay, inputmode: 'numeric', min: '0', step: '1', 'aria-label': (i + 1) + '行目の回数',
+      oninput: function (ev) { p.timesPerDay = txt(ev.target.value); refreshProfMonthly(it); }
+    })));
+    tr.appendChild(h('td', { cls: 'num' }, h('input', {
+      type: 'number', val: p.daysPerMonth, inputmode: 'numeric', min: '1', max: '31', step: '1', 'aria-label': (i + 1) + '行目の日数',
+      oninput: function (ev) { p.daysPerMonth = txt(ev.target.value); refreshProfMonthly(it); }
+    })));
+    tr.appendChild(h('td', null, h('input', {
+      type: 'radio', name: 'splProfDef', checked: p.isDefault, 'aria-label': (i + 1) + '行目を既定にする',
+      onchange: function () { ST.profDraft.forEach(function (x) { x.isDefault = false; }); p.isDefault = true; }
+    })));
+    tr.appendChild(h('td', { cls: 'num pmon', text: profMonthlyText(p, cur) }));
+    tr.appendChild(h('td', null, h('button', {
+      type: 'button', cls: 'btn sm warnb', text: '削除',
+      'aria-label': (i + 1) + '行目を削除する',
+      onclick: function () { ST.profDraft.splice(i, 1); renderProfiles(it); }
+    })));
+    body.appendChild(tr);
+  });
+  if (!ST.profDraft.length) {
+    body.appendChild(h('tr', null, h('td', { colspan: '7', text: 'まだ型がありません。「＋ 追加」で登録してください。' })));
+  }
+}
+function profMonthlyText(p, cur) {
+  if (!cur || cur.unitPrice10 === null || cur.unitPrice10 === undefined) return '—';
+  var dose = parseDec1(p.dose10), times = parseIntStrict(p.timesPerDay), days = parseIntStrict(p.daysPerMonth);
+  if (dose === null || times === null || days === null) return '—';
+  var r = SPL().profileQtyAmount({ dose10: dose, timesPerDay: times, days: days, unitPrice10: Number(cur.unitPrice10) });
+  return r ? yen(r.amount) : '—';
+}
+function refreshProfMonthly(it) {
+  var cur = priceInfo(it.id).current;
+  var cells = $('dtProfBody').querySelectorAll('td.pmon');
+  ST.profDraft.forEach(function (p, i) {
+    if (cells[i]) cells[i].textContent = profMonthlyText(p, cur);
+  });
+}
+function saveProfiles() {
+  var it = itemById(ST.item);
+  if (!it || !ST.profDraft) return;
+  var out = [], bad = '';
+  ST.profDraft.forEach(function (p, i) {
+    var dose = parseDec1(p.dose10), times = parseIntStrict(p.timesPerDay), days = parseIntStrict(p.daysPerMonth);
+    if (!txt(p.name).trim()) bad = (i + 1) + '行目の名前を入れてください。';
+    else if (dose === null || dose < 0) bad = (i + 1) + '行目の1回量は 0.1 刻みの数で入れてください。';
+    else if (times === null || times < 0) bad = (i + 1) + '行目の回数は0以上の整数で入れてください。';
+    else if (days === null || days < 1 || days > 31) bad = (i + 1) + '行目の日数は 1〜31 の整数で入れてください。';
+    var o = { name: txt(p.name).trim(), dose10: dose, timesPerDay: times, daysPerMonth: days, isDefault: !!p.isDefault };
+    if (p.id) o.id = p.id;
+    out.push(o);
+  });
+  if (bad) { setState('dtProfState', 'err', '保存できません', bad); return; }
+  if (out.length && !out.some(function (o) { return o.isDefault; })) out[0].isDefault = true;
+  var body = { itemId: it.id, rev: it.rev, profiles: out };
+  if (!out.length) {
+    if (!window.confirm('型をすべて削除します。月額の出庫ができなくなります。よろしいですか？')) return;
+    body.clear = true;
+  }
+  if (!busyOn('prof')) return;
+  setState('dtProfState', '', '保存中…', 'サーバーに送っています。');
+  apiPost('setProfiles', body).then(function (d) {
+    busyOff('prof');
+    ST.profiles = ST.profiles.filter(function (p) { return txt(p.itemId) !== it.id; })
+      .concat(Array.isArray(d.profiles) ? d.profiles : []);
+    if (isFinite(Number(d.rev))) it.rev = Number(d.rev);
+    ST.profDraft = null;
+    setState('dtProfState', 'ok', '保存しました', '');
+    renderProfiles(it);
+    renderList();
+  }).catch(function (e) {
+    busyOff('prof');
+    setState('dtProfState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e));
+    if (e && e.code === 'conflict') loadList(true);
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   設定
+   ════════════════════════════════════════════════════════════════ */
+function fillSettings() {
+  var cfg = loadCfg();
+  $('cfgUrl').value = cfg.url;
+  $('cfgToken').value = cfg.token;
+  $('cfgBy').value = cfg.by;
+}
+function onSaveCfg() {
+  var url = txt($('cfgUrl').value).trim();
+  if (url && !URL_OK_RE.test(url)) {
+    setState('cfgState', 'err', '接続先URLの形が違います', 'https:// で始まる GAS の /exec のURLを貼り付けてください。');
+    $('cfgUrl').focus();
+    return;
+  }
+  saveCfg({ url: url, token: txt($('cfgToken').value).trim(), by: txt($('cfgBy').value).trim() });
+  setState('cfgState', 'ok', '保存しました', '「接続テスト」で通じるか確かめてください。');
+  refreshCaps();
+  loadList();
+  flushPending();
+}
+function onTest() {
+  setState('cfgState', '', '確認中…', 'サーバーに問い合わせています。');
+  apiPing().then(function (d) {
+    ST.caps = Array.isArray(d.caps) ? d.caps : [];
+    var caps = ST.caps.length ? ST.caps.join('・') : '—';
+    $('aboutPing').textContent = '接続の確認: 版 ' + txt(d.build) + '／使える機能 ' + caps;
+    setState('cfgState', 'ok', '接続できました', '版 ' + txt(d.build) + '／使える機能: ' + caps
+      + (d.authRequired === true ? '／合言葉が必要です' : ''));
+  }).catch(function (e) {
+    setState('cfgState', 'err', '接続できませんでした（' + errText(e) + '）', errHint(e));
+  });
+}
+function fillSettingsData() {
+  if (!isAdmin()) return;
+  renderCats();
+  $('defDays').value = txt(daysDefault());
+  $('defMode').value = txt(ST.defaults.mode) || 'round';
+  $('defM').value = dec1(isFinite(Number(ST.defaults.m1000)) ? Number(ST.defaults.m1000) : 200);
+  renderClosed();
+}
+function newCatId() {
+  var s = '', i, a = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  for (i = 0; i < 8; i++) { s += a.charAt(Math.floor(Math.random() * a.length)); }
+  return 'cat_' + s;
+}
+function catUsedCount(id) {
+  var n = 0;
+  ST.items.forEach(function (it) { if (txt(it.category) === txt(id)) n++; });
+  return n;
+}
+function renderCats() {
+  if (!ST.catDraft) {
+    ST.catDraft = ST.cats.map(function (c) {
+      return {
+        id: txt(c.id), name: txt(c.name), order: txt(Number(c.order) || 0),
+        hidden: !!c.hidden, mode: MODES.indexOf(txt(c.mode)) >= 0 ? txt(c.mode) : '',
+        m1000: (catM1000(c) === null) ? '' : dec1(catM1000(c))
+      };
+    });
+  }
+  var body = $('catBody');
+  clearNode(body);
+  ST.catDraft.forEach(function (c, i) {
+    var used = catUsedCount(c.id);
+    var tr = h('tr');
+    tr.appendChild(h('td', null, h('input', {
+      type: 'text', val: c.name, 'aria-label': (i + 1) + '行目の名前',
+      oninput: function (ev) { c.name = txt(ev.target.value); }
+    })));
+    tr.appendChild(h('td', { cls: 'num' }, h('input', {
+      type: 'number', val: c.order, min: '0', step: '1', inputmode: 'numeric', 'aria-label': (i + 1) + '行目の並び順',
+      oninput: function (ev) { c.order = txt(ev.target.value); }
+    })));
+    tr.appendChild(h('td', null, h('input', {
+      type: 'checkbox', checked: c.hidden, 'aria-label': (i + 1) + '行目を非表示にする',
+      onchange: function (ev) { c.hidden = !!ev.target.checked; }
+    })));
+    var sel = h('select', { 'aria-label': (i + 1) + '行目の丸め方式', onchange: function (ev) { c.mode = txt(ev.target.value); } });
+    sel.appendChild(h('option', { value: '', text: '既定にあわせる', selected: !c.mode }));
+    MODES.forEach(function (m) { sel.appendChild(h('option', { value: m, text: MODE_LABEL[m], selected: c.mode === m })); });
+    tr.appendChild(h('td', null, sel));
+    tr.appendChild(h('td', { cls: 'num' }, h('input', {
+      type: 'text', val: c.m1000, inputmode: 'decimal', 'aria-label': (i + 1) + '行目の既定値入率',
+      oninput: function (ev) { c.m1000 = txt(ev.target.value); }
+    })));
+    var td = h('td');
+    if (used) {
+      td.appendChild(h('span', { cls: 'badge', text: used + '品目で使用中' }));
+    } else {
+      td.appendChild(h('button', {
+        type: 'button', cls: 'btn sm warnb', text: '削除',
+        'aria-label': (i + 1) + '行目を削除する',
+        onclick: function () { ST.catDraft.splice(i, 1); renderCats(); }
+      }));
+    }
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+  if (!ST.catDraft.length) {
+    body.appendChild(h('tr', null, h('td', { colspan: '6', text: 'まだ種別がありません。「＋ 追加」で登録してください。' })));
+  }
+}
+function saveCats() {
+  if (!ST.catDraft) return;
+  var out = [], bad = '';
+  ST.catDraft.forEach(function (c, i) {
+    var name = txt(c.name).trim();
+    var order = parseIntStrict(c.order);
+    var m = txt(c.m1000).trim() ? parseDec1(c.m1000) : null;
+    if (!name) bad = (i + 1) + '行目の名前を入れてください。';
+    else if (order === null || order < 0) bad = (i + 1) + '行目の並び順は0以上の整数で入れてください。';
+    else if (txt(c.m1000).trim() && (m === null || m < 0 || m >= 1000)) bad = (i + 1) + '行目の既定値入率は 0 以上 100 未満で入れてください。';
+    var o = { id: c.id || newCatId(), name: name, order: order, hidden: !!c.hidden };
+    if (c.mode) o.mode = c.mode;
+    if (m !== null) o.m1000 = m;
+    out.push(o);
+  });
+  if (bad) { setState('catState', 'err', '保存できません', bad); return; }
+  if (!out.length) { setState('catState', 'err', '保存できません', '種別は1つ以上必要です。'); return; }
+  if (!busyOn('cats')) return;
+  setState('catState', '', '保存中…', 'サーバーに送っています。');
+  apiPost('setCategories', { categories: out, expect: ST.settingsAt }).then(function (d) {
+    busyOff('cats');
+    ST.settingsAt = txt(d.settingsAt) || ST.settingsAt;
+    ST.catDraft = null;
+    setState('catState', 'ok', '保存しました', '');
+    loadList(true);
+  }).catch(function (e) {
+    busyOff('cats');
+    setState('catState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e));
+    if (e && e.code === 'conflict') { ST.catDraft = null; loadList(true); }
+  });
+}
+function saveDefaults() {
+  var days = parseIntStrict($('defDays').value);
+  var mode = txt($('defMode').value);
+  var m = parseDec1($('defM').value);
+  if (days === null || days < 1 || days > 31) {
+    setState('defState', 'err', '保存できません', '月額の既定日数は 1〜31 の整数で入れてください。');
+    return;
+  }
+  if (MODES.indexOf(mode) < 0) { setState('defState', 'err', '保存できません', '丸め方式を選んでください。'); return; }
+  if (m === null || m < 0 || m >= 1000) { setState('defState', 'err', '保存できません', '既定の値入率は 0 以上 100 未満で入れてください。'); return; }
+  if (!busyOn('defs')) return;
+  setState('defState', '', '保存中…', 'サーバーに送っています。');
+  apiPost('setDefaults', { defaults: { daysPerMonth: days, mode: mode, m1000: m }, expect: ST.settingsAt }).then(function (d) {
+    busyOff('defs');
+    ST.settingsAt = txt(d.settingsAt) || ST.settingsAt;
+    setState('defState', 'ok', '保存しました', '');
+    loadList(true);
+  }).catch(function (e) {
+    busyOff('defs');
+    setState('defState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e));
+    /* 取り直さないと settingsAt が古いままで、何度押しても conflict が続く（saveCats と同じ扱い） */
+    if (e && e.code === 'conflict') loadList(true);
+  });
+}
+function renderClosed() {
+  if (!ST.closedDraft) ST.closedDraft = ST.closed.slice();
+  var box = $('closedBox');
+  clearNode(box);
+  if (!ST.closedDraft.length) {
+    box.appendChild(h('span', { cls: 'muted', text: '締めた月はありません。' }));
+    return;
+  }
+  ST.closedDraft.slice().sort().forEach(function (ym, i) {
+    var span = h('span', { cls: 'badge warn', text: '🔒 ' + ym + ' ' });
+    span.appendChild(h('button', {
+      type: 'button', cls: 'btn sm', text: '解除',
+      'aria-label': ym + 'の締めを解除する',
+      onclick: function () {
+        ST.closedDraft = ST.closedDraft.filter(function (x) { return x !== ym; });
+        renderClosed();
+      }
+    }));
+    box.appendChild(span);
+  });
+}
+function addClosed() {
+  var ym = txt($('closedMonth').value);
+  if (!YM_RE.test(ym)) {
+    setState('closedState', 'err', '月を選んでください', '締める月をカレンダーから選んでください。');
+    return;
+  }
+  if (!ST.closedDraft) ST.closedDraft = ST.closed.slice();
+  if (ST.closedDraft.indexOf(ym) < 0) ST.closedDraft.push(ym);
+  setState('closedState', '', '', '');
+  renderClosed();
+}
+function saveClosed() {
+  var list = (ST.closedDraft || ST.closed).slice().sort();
+  var added = list.filter(function (x) { return ST.closed.indexOf(x) < 0; });
+  var removed = ST.closed.filter(function (x) { return list.indexOf(x) < 0; });
+  if (!added.length && !removed.length) {
+    setState('closedState', '', '変更はありません', '');
+    return;
+  }
+  var msg = [];
+  if (added.length) msg.push('締める: ' + added.join('・'));
+  if (removed.length) msg.push('解除する: ' + removed.join('・'));
+  if (!window.confirm(msg.join('\n') + '\nよろしいですか？')) return;
+  if (!busyOn('closed')) return;
+  setState('closedState', '', '保存中…', 'サーバーに送っています。');
+  apiPost('setClosedMonths', { closedMonths: list, expect: ST.settingsAt }).then(function (d) {
+    busyOff('closed');
+    ST.settingsAt = txt(d.settingsAt) || ST.settingsAt;
+    ST.closed = list;
+    ST.closedDraft = null;
+    setState('closedState', 'ok', '保存しました', msg.join('／'));
+    loadList(true);
+  }).catch(function (e) {
+    busyOff('closed');
+    setState('closedState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e));
+    if (e && e.code === 'conflict') { ST.closedDraft = null; loadList(true); }
+  });
+}
+function fillCatSelect() {
+  var sel = $('selCat'), keep = ST.cat;
+  clearNode(sel);
+  sel.appendChild(h('option', { value: 'all', text: 'すべての種別' }));
+  ST.cats.forEach(function (c) {
+    sel.appendChild(h('option', { value: txt(c.id), text: txt(c.name) + (c.hidden ? '（非表示）' : '') }));
+  });
+  sel.value = (keep === 'all' || catById(keep)) ? keep : 'all';
+  ST.cat = sel.value;
+  var nd = $('ndCat');
+  clearNode(nd);
+  ST.cats.forEach(function (c) {
+    if (c.hidden) return;
+    nd.appendChild(h('option', { value: txt(c.id), text: txt(c.name) }));
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   品目を追加
+   ════════════════════════════════════════════════════════════════ */
+function openNew() {
+  if (!isAdmin()) return;
+  $('ndErr').hidden = true;
+  $('ndName').value = '';
+  $('ndU0').value = '';
+  $('ndU1').value = '';
+  $('ndU2').value = '';
+  $('ndP1').value = '1';
+  $('ndP2').value = '1';
+  $('nd_s3').checked = true;
+  $('ndBillType').value = 'unit';
+  $('ndStockMode').value = 'full';
+  $('ndRound').value = '';
+  $('ndTax').value = '10';
+  $('ndReorder').value = '0';
+  $('ndNote').value = '';
+  syncNewDlg();
+  var dlg = $('newDlg');
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  $('ndName').focus();
+}
+function closeNew() {
+  var dlg = $('newDlg');
+  if (typeof dlg.close === 'function' && dlg.open) dlg.close(); else dlg.removeAttribute('open');
+}
+function newSteps() {
+  var r = document.querySelector('input[name="ndSteps"]:checked');
+  return r ? Number(r.value) : 3;
+}
+function syncNewDlg() {
+  var n = newSteps(), prof = $('ndBillType').value === 'profile';
+  $('ndU1Box').hidden = n < 2;
+  $('ndP1Box').hidden = n < 2;
+  $('ndU2Box').hidden = n < 3;
+  $('ndP2Box').hidden = n < 3;
+  $('ndBillIdxBox').hidden = prof;
+  /* ★在庫の追い方の既定は「請求方式を選び直した時」だけ入れる（ndBillType の change）。
+     ここで入れると、単位名を打ち直すたびに利用者の選択が黙って既定へ戻る */
+  var sel = $('ndBillIdx'), keep = txt(sel.value);
+  clearNode(sel);
+  var i, names = [txt($('ndU0').value) || '基準単位', txt($('ndU1').value) || '2段目', txt($('ndU2').value) || '3段目'];
+  for (i = 0; i < n; i++) { sel.appendChild(h('option', { value: String(i), text: names[i] })); }
+  sel.value = (keep !== '' && Number(keep) < n) ? keep : String(n - 1);
+}
+function saveNewItem() {
+  var n = newSteps();
+  var units = [{ name: txt($('ndU0').value).trim() }];
+  if (n >= 2) units.push({ name: txt($('ndU1').value).trim(), per: parseIntStrict($('ndP1').value) });
+  if (n >= 3) units.push({ name: txt($('ndU2').value).trim(), per: parseIntStrict($('ndP2').value) });
+  var name = txt($('ndName').value).trim();
+  var billType = txt($('ndBillType').value) === 'profile' ? 'profile' : 'unit';
+  var billIdx = billType === 'profile' ? (n - 1) : (parseIntStrict($('ndBillIdx').value) || 0);
+  var reorder = parseIntStrict($('ndReorder').value);
+  var err = '';
+  if (!name) err = '品目名を入れてください。';
+  else if (name.length > NAME_MAX) err = '品目名は' + NAME_MAX + '字までです。';
+  else if (units.some(function (u) { return !u.name; })) err = '単位の名前をすべて入れてください。';
+  else if (units.some(function (u) { return u.name.length > UNIT_NAME_MAX; })) err = '単位の名前は' + UNIT_NAME_MAX + '字までです。';
+  else if (units.some(function (u, i) { return i > 0 && (u.per === null || u.per < 1); })) err = '入数は1以上の整数で入れてください。';
+  else if (reorder === null || reorder < 0) err = '発注点は0以上の整数で入れてください。';
+  if (!err) {
+    var issues = SPL().validateUnits(units);
+    if (issues && issues.length) {
+      err = '単位の設定を見直してください（' + issues.map(function (x) { return txt(x.key) + ':' + txt(x.reason); }).join(' / ') + '）';
+    }
+  }
+  if (err) {
+    $('ndErr').textContent = err;
+    $('ndErr').hidden = false;
+    return;
+  }
+  var fields = {
+    name: name, category: txt($('ndCat').value), status: 'active',
+    units: units, billIdx: billIdx, billType: billType,
+    stockMode: txt($('ndStockMode').value) === 'countOnly' ? 'countOnly' : 'full',
+    roundMode: txt($('ndRound').value), taxRate: Number($('ndTax').value) || 10,
+    reorderPoint: reorder, note: txt($('ndNote').value).slice(0, NOTE_MAX)
+  };
+  $('ndSave').disabled = true;
+  apiPost('saveItem', { fields: fields }).then(function (d) {
+    var ni = normItem(d.item || {});
+    if (ni.id) { ST.byId[ni.id] = ni; replaceItem(ni); }
+    closeNew();
+    toast('登録しました');
+    fillItemSelects();
+    renderList();
+    renderStock();
+  }).catch(function (e) {
+    $('ndErr').textContent = errText(e) + ' ' + errHint(e);
+    $('ndErr').hidden = false;
+  }).then(function () { $('ndSave').disabled = false; }, function () { $('ndSave').disabled = false; });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   料金表（A4縦・印刷のみ）
+   ════════════════════════════════════════════════════════════════ */
+function buildPriceSheet() {
+  var box = $('sheetBody');
+  clearNode(box);
+  $('sheetDate').textContent = jpDate(SPL().today()) + ' 現在';
+  var cats = ST.cats.slice();
+  var seen = {};
+  cats.forEach(function (c) { seen[txt(c.id)] = true; });
+  var groups = cats.map(function (c) { return { id: txt(c.id), name: txt(c.name) }; });
+  groups.push({ id: '', name: 'その他' });
+  var any = false;
+  groups.forEach(function (g) {
+    var items = ST.items.filter(function (it) {
+      if (it.status !== 'active') return false;
+      var cid = txt(it.category);
+      if (g.id) return cid === g.id;
+      return !cid || !seen[cid];
+    });
+    if (!items.length) return;
+    any = true;
+    box.appendChild(h('h2', { text: g.name }));
+    var tbl = h('table');
+    var thead = h('thead');
+    thead.appendChild(h('tr', null, [
+      h('th', { scope: 'col', text: '品目' }),
+      h('th', { scope: 'col', text: '単位' }),
+      h('th', { scope: 'col', cls: 'num', text: '料金（税込）' }),
+      h('th', { scope: 'col', cls: 'num', text: '税率' })
+    ]));
+    tbl.appendChild(thead);
+    var tb = h('tbody');
+    items.sort(function (a, b) { return txt(a.name).localeCompare(txt(b.name), 'ja'); }).forEach(function (it) {
+      var cur = priceInfo(it.id).current;
+      var mi = minIdxOf(it), bi = billIdxOf(it);
+      if (isProfile(it)) {
+        var list = profilesOf(it.id);
+        if (!list.length) {
+          tb.appendChild(h('tr', null, [h('td', { text: it.name }), h('td', { text: '月額' }),
+            h('td', { cls: 'num', text: '—' }), h('td', { cls: 'num', text: txt(it.taxRate) + '%' })]));
+          return;
+        }
+        list.forEach(function (p) {
+          var m = cur ? SPL().profileMonthly(p, cur) : null;
+          tb.appendChild(h('tr', null, [
+            h('td', { text: it.name + '（' + txt(p.name) + '）' }),
+            h('td', { text: '1か月' }),
+            h('td', { cls: 'num', text: m ? yen(m.amount) : '—' }),
+            h('td', { cls: 'num', text: txt(it.taxRate) + '%' })
+          ]));
+        });
+        return;
+      }
+      var price = '—';
+      if (cur) {
+        if (bi === mi) price = (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? '—' : yen1(cur.unitPrice10);
+        else price = (cur.billPrice === null || cur.billPrice === undefined) ? '—' : yen(cur.billPrice);
+      }
+      tb.appendChild(h('tr', null, [
+        h('td', { text: it.name }),
+        h('td', { text: '1' + unitName(it, bi) }),
+        h('td', { cls: 'num', text: price }),
+        h('td', { cls: 'num', text: txt(it.taxRate) + '%' })
+      ]));
+    });
+    tbl.appendChild(tb);
+    box.appendChild(tbl);
+  });
+  if (!any) box.appendChild(h('p', { text: '表示できる品目がありません。' }));
+}
+function printSheet() {
+  buildPriceSheet();
+  window.print();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   起動
+   ════════════════════════════════════════════════════════════════ */
+function restoreUi() {
+  ST.wantScr = pickAllowed(UI_KEYS.scr, SAVED_SCREENS, 'list');
+  ST.cat = txt(lsGet(UI_KEYS.cat)) || 'all';
+  ST.sort = pickAllowed(UI_KEYS.sort, SORT_KEYS, 'name');
+  ST.sortDir = pickAllowed(UI_KEYS.sortDir, ['asc', 'desc'], 'asc');
+  var m = txt(lsGet(UI_KEYS.month));
+  ST.month = YM_RE.test(m) ? m : SPL().today().slice(0, 7);
+  var it = txt(lsGet(UI_KEYS.item));
+  ST.item = ITEM_ID_RE.test(it) ? it : '';
+  $('selSort').value = ST.sort;
+  syncSortDirBtn();
+  $('sumMonth').value = ST.month;
+}
+function bindEvents() {
+  NAV_IDS.forEach(function (id) {
+    $(id).addEventListener('click', function () { showScreen($(id).getAttribute('data-scr')); });
+  });
+  $('reloadBtn').addEventListener('click', function () { loadRoster(); fillResidentSelect(); loadList(); });
+
+  /* 一覧 */
+  $('selCat').addEventListener('change', function () {
+    ST.cat = txt($('selCat').value) || 'all';
+    lsSet(UI_KEYS.cat, ST.cat);
+    renderList();
+  });
+  $('q').addEventListener('input', function () { ST.q = txt($('q').value); renderList(); });
+  $('selSort').addEventListener('change', function () {
+    ST.sort = pickIn(txt($('selSort').value), SORT_KEYS, 'name');
+    lsSet(UI_KEYS.sort, ST.sort);
+    buildListHead();
+    renderList();
+  });
+  $('sortDirBtn').addEventListener('click', function () {
+    ST.sortDir = (ST.sortDir === 'asc') ? 'desc' : 'asc';
+    lsSet(UI_KEYS.sortDir, ST.sortDir);
+    syncSortDirBtn();
+    buildListHead();
+    renderList();
+  });
+  $('chkHidden').addEventListener('change', function () {
+    ST.showHidden = !!$('chkHidden').checked;
+    renderList();
+    renderStock();
+  });
+  $('newBtn').addEventListener('click', openNew);
+  $('printBtn').addEventListener('click', printSheet);
+
+  /* 品目を追加（ダイアログ） */
+  $('ndClose').addEventListener('click', closeNew);
+  $('ndSave').addEventListener('click', saveNewItem);
+  $('ndBillType').addEventListener('change', function () {
+    /* 請求方式を選び直した時だけ在庫の追い方を既定へ（月額品は入庫と棚卸だけ・承認事項 J） */
+    $('ndStockMode').value = ($('ndBillType').value === 'profile') ? 'countOnly' : 'full';
+    syncNewDlg();
+  });
+  ['ndU0', 'ndU1', 'ndU2'].forEach(function (id) { $(id).addEventListener('input', syncNewDlg); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="ndSteps"]'), function (r) {
+    r.addEventListener('change', syncNewDlg);
+  });
+
+  /* 在庫 */
+  $('mvItem').addEventListener('change', syncMoveForm);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="splType"]'), function (r) {
+    r.addEventListener('change', syncMoveForm);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="splAdj"]'), function (r) {
+    r.addEventListener('change', renderPreview);
+  });
+  ['mvQty', 'mvUnit', 'mvDate', 'mvDose', 'mvTimes', 'mvDays'].forEach(function (id) {
+    $(id).addEventListener('input', renderPreview);
+    $(id).addEventListener('change', renderPreview);
+  });
+  $('mvProfile').addEventListener('change', function () {
+    var it = itemById($('mvItem').value);
+    if (!it) return;
+    var list = profilesOf(it.id), i, p = null;
+    for (i = 0; i < list.length; i++) { if (txt(list[i].id) === txt($('mvProfile').value)) p = list[i]; }
+    if (p) {
+      $('mvDose').value = dec1(p.dose10);
+      $('mvTimes').value = txt(p.timesPerDay);
+      $('mvDays').value = txt(p.daysPerMonth || daysDefault());
+    }
+    renderPreview();
+  });
+  $('mvSubmit').addEventListener('click', submitMove);
+  $('copyBtn').addEventListener('click', copyLastMonth);
+  $('recentBtn').addEventListener('click', loadRecent);
+
+  /* 集計 */
+  $('sumPrev').addEventListener('click', function () { stepMonth(-1); });
+  $('sumNext').addEventListener('click', function () { stepMonth(1); });
+  $('sumLoad').addEventListener('click', loadSummary);
+  $('csvBtn').addEventListener('click', exportCsv);
+  $('repBtn').addEventListener('click', repriceMonth);
+  $('chgShow').addEventListener('click', renderPriceChanges);
+  $('chgCost').addEventListener('change', function () {
+    if (!$('chgWrap').hidden) renderPriceChanges();     /* 表示中だけ即座に切り替える */
+  });
+
+  /* 詳細 */
+  $('dtBack').addEventListener('click', function () { showScreen('list'); });
+  $('dtVoidBtn').addEventListener('click', askVoidPrice);
+  $('dtProfAdd').addEventListener('click', function () {
+    var it = itemById(ST.item);
+    if (!it) return;
+    if (!ST.profDraft) renderProfiles(it);
+    ST.profDraft.push({
+      id: '', name: '', dose10: '', timesPerDay: '3',
+      daysPerMonth: txt(daysDefault()), isDefault: !ST.profDraft.length
+    });
+    renderProfiles(it);
+  });
+  $('dtProfSave').addEventListener('click', saveProfiles);
+
+  /* 設定 */
+  $('saveCfgBtn').addEventListener('click', onSaveCfg);
+  $('testBtn').addEventListener('click', onTest);
+  $('cfgShowToken').addEventListener('change', function () {
+    $('cfgToken').type = $('cfgShowToken').checked ? 'text' : 'password';
+  });
+  $('catAdd').addEventListener('click', function () {
+    if (!ST.catDraft) renderCats();
+    ST.catDraft.push({ id: '', name: '', order: txt((ST.catDraft.length + 1) * 10), hidden: false, mode: '', m1000: '' });
+    renderCats();
+  });
+  $('catSave').addEventListener('click', saveCats);
+  $('defSave').addEventListener('click', saveDefaults);
+  $('closedAdd').addEventListener('click', addClosed);
+  $('closedSave').addEventListener('click', saveClosed);
+
+  /* 取り消しの理由（ダイアログ） */
+  $('akClose').addEventListener('click', closeAsk);
+  $('akOk').addEventListener('click', runAsk);
+  $('askDlg').addEventListener('cancel', function (ev) {
+    if (ST.ask && ST.ask.busy) ev.preventDefault();
+  });
+  $('newDlg').addEventListener('cancel', function (ev) {
+    if ($('ndSave').disabled) ev.preventDefault();
+  });
+}
+function pickIn(v, allowed, def) { return allowed.indexOf(v) >= 0 ? v : def; }
+
+/* 見出しとボトムナビは、中の文字が大きくなると2行になり既定値（52px／62px）より高くなる。
+   固定値のままだと本文の末尾がナビの下へ潜り、詳細画面の固定バーが見出しの下へ潜る。
+   どちらも実寸を測って変数へ入れる。 */
+function syncNavHeight() {
+  var de = document.documentElement;
+  var bn = document.querySelector('.bnav');
+  if (bn) {
+    var bh = Math.ceil(bn.getBoundingClientRect().height);
+    if (bh > 0) de.style.setProperty('--bnav-h', bh + 'px');
+  }
+  var hd = document.querySelector('.hdr');
+  if (hd) {
+    var hh = Math.ceil(hd.getBoundingClientRect().height);
+    /* ★--hdr-h ではなく別の変数に入れる。--hdr-h は .hdr の min-height に使われており、
+       実寸を書き戻すと「測る→min-height が伸びる→また測る」で高さが戻らなくなる。
+       吸着位置を決める .subbar だけがこの実寸を見る。 */
+    if (hh > 0) de.style.setProperty('--hdr-real', hh + 'px');
+  }
+}
+function watchNavHeight() {
+  var bn = document.querySelector('.bnav'), hd = document.querySelector('.hdr');
+  if (!bn && !hd) return;
+  syncNavHeight();
+  if (typeof ResizeObserver === 'function') {
+    try {
+      var ro = new ResizeObserver(syncNavHeight);
+      if (bn) ro.observe(bn);
+      if (hd) ro.observe(hd);
+      return;
+    } catch (e) { /* 監視できない環境は下の resize で足りる */ }
+  }
+  window.addEventListener('resize', syncNavHeight);
+}
+
+function init() {
+  if (!window.SuppliesCalc || typeof window.SuppliesCalc.today !== 'function') {
+    $('calcBlock').classList.add('on');
+    return;
+  }
+  restoreUi();
+  loadRoster();
+  fillResidentSelect();
+  fillSettings();
+  bindEvents();
+  buildListHead();
+  $('mvDate').value = SPL().today();
+  $('mvDate').setAttribute('max', SPL().today());
+  var r = SPL().monthRange(SPL().today().slice(0, 7));
+  $('recentFrom').value = r.from;
+  $('recentTo').value = SPL().today();
+  setState('recentState', '', '期間を選んで「読み込む」を押してください', '既定は今月です。');
+  $('mvTimes').value = '1';
+  $('mvDays').value = txt(daysDefault());
+  updatePendingLabel();
+  watchNavHeight();
+  /* 起動時は「一覧」で描き、役割が分かってから元の画面へ戻す（原則11） */
+  showScreen(pickIn(ST.wantScr, ['list', 'stock', 'settings'], 'list'), true);
+  if (!ST.rosterOk) {
+    setState('lowState', 'warn', '名簿がこの端末にありません',
+      '提供先の氏名は出ません（利用者Noだけで登録できます）。入居者マスタを一度開くと名簿が入ります。');
+  }
+  refreshCaps();
+  loadList().then(function () {
+    ST.booting = false;
+    if (ST.wantScr === 'detail' && itemById(ST.item)) { openDetail(ST.item, true); }
+    else if (ST.wantScr === 'summary' && isAdmin()) { showScreen('summary', true); }
+    return flushPending();
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
