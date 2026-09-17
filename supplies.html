@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-17.1">
+<meta name="spl-build" content="2026-09-17.2">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1198,6 +1198,14 @@ function dec1(t) {
   return (neg ? '-' : '') + fmtInt((n - (n % 10)) / 10) + '.' + String(n % 10);
 }
 function yen1(t) { var n = Number(t); return isFinite(n) ? dec1(n) + '円' : '—'; }
+/* 料金表用。実費は円単位で請求するので、端数が無ければ「380円」と出す。
+   0.1刻みの端数が本当にある品目（1枚3.8円など）は請求額とずれるので「3.8円」のまま出す */
+function yenSheet(t) {
+  var n = Number(t);
+  if (!isFinite(n)) return '—';
+  n = Math.round(n);
+  return (n % 10 === 0) ? yen(n / 10) : yen1(n);
+}
 /* 千分率 → '20.0%'。null・空は「未設定」であって 0% ではない（Number(null)===0 の罠。
    売価0円の行は m1000 が空で保存される） */
 function pct1(m) {
@@ -4035,7 +4043,7 @@ function buildPriceSheet() {
       }
       var price = '—';
       if (cur) {
-        if (bi === mi) price = (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? '—' : yen1(cur.unitPrice10);
+        if (bi === mi) price = (cur.unitPrice10 === null || cur.unitPrice10 === undefined) ? '—' : yenSheet(cur.unitPrice10);
         else price = (cur.billPrice === null || cur.billPrice === undefined) ? '—' : yen(cur.billPrice);
       }
       tb.appendChild(h('tr', null, [
