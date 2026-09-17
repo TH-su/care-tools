@@ -3287,13 +3287,15 @@ function planForSheet(p, opts) {
     o.shortAchievement = pk.shortAchievement; o.longAchievement = pk.longAchievement;
     o.changes = pk.changes; o.issues = pk.issues;
   }
-  /* 計画書はご家族へ説明する【前】に刷る紙のため、様式右下の説明日・説明者を空欄で出す（D64）。
-     その場で手書きし、後から画面へ控える運用。見出し（「説明日：」「説明者：」）は様式のまま残る。
-     ★写しにだけ効く＝保存データは変えない。画面の「説明日が空欄です」の注意は今までどおり
-     【保存されている値】を見て出す（紙が空欄でも、入力済みなら注意は出ない）。 */
+  /* 計画書は作成したその日にご家族へ説明する運用のため、様式右下の【説明日】を
+     この期の作成日に合わせる（D64'・2026-09-17 本人裁定で D64 を差し替え）。
+     説明者は保存されているもの（設定で選んだ人）をそのまま出す＝空欄にしない。
+     ★写しにだけ効く＝保存データは変えない。作成日が空の期は説明日も空のまま。
+     ★画面の「説明日が空欄です」の注意は今までどおり【保存されている値】を見て出す。 */
   if (kind === 'plan') {
-    o.explained.date = ''; o.explained.explainer = '';
-    o.explainedDate = ''; o.explainer = '';
+    var pd = s_(o.planDate);
+    o.explained.date = pd;
+    o.explainedDate = pd;
   }
   /* 報告書は「次の期の計画書と同じ日に刷って、その場でご家族へ説明する」運用のため、
      様式右下の【説明日】だけをその日にする（D61）。上段の作成日・前回作成日・初回作成日と
@@ -6879,6 +6881,16 @@ function buildPreview() {
 function renderPvDateNote(p, np) {
   var box = $('pvDateNote');
   box.textContent = '';
+  var w0 = (window.TP_FORM && typeof TP_FORM.toWareki === 'function') ? TP_FORM.toWareki : null;
+  /* 計画書は作成したその日に説明する運用のため、説明日に作成日を出す（D64'）。
+     なぜ日付が入るのかがその場で分かるように、画面にだけ1行添える */
+  if (printKind() === 'plan') {
+    var pd = s_(p && p.planDate);
+    if (!pd) { box.textContent = 'この期は作成日が空欄のため、説明日も空欄で刷ります。'; return; }
+    box.textContent = '計画書の説明日は、この期の作成日と同じ ' + ((w0 ? s_(w0(pd)) : '') || pd) +
+      ' で刷ります（説明者は選ばれている方を出します）。';
+    return;
+  }
   if (printKind() !== 'report') return;
   var rd = TP.reportExplainedDate(p, np);
   if (rd.from === 'none') {
@@ -6914,8 +6926,10 @@ function renderPrintWarn(warn, p) {
   if (p && p.audit && p.audit.retro && settings().retroNote) {
     warn.appendChild(el('div', 'tp-warn', '▲ この計画は作成日より後に登録されています。備考に「遡って作成」の注記を入れて印刷します。'));
   }
+  /* 紙には作成日（計画書）・次の期の作成日（報告書）が出るため、この注意は
+     【画面の入力欄】の話だと分かる書き方にする（紙と食い違って見えないように） */
   if (p && !p.explained.date) {
-    warn.appendChild(el('div', 'tp-warn', '▲ 説明日が空欄です。ご本人・ご家族へ説明したら日付を入れてください。'));
+    warn.appendChild(el('div', 'tp-warn', '▲ 画面の「説明日」欄が空欄です。ご本人・ご家族へ説明したら、実際の日付を入れてください（紙には上の日付で刷ります）。'));
   }
 }
 function applyZoom() {
