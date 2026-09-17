@@ -632,6 +632,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cmtbl th{background:var(--g2); font-weight:700}
 .cmtbl .cno,.cmtbl .cnum{font-variant-numeric:tabular-nums}
 .cmtbl .cnm,.cmtbl .cof,.cmtbl .ccm{text-align:start}
+/* 居宅別表示の見出し行（2026-09-17 管理者指示）。
+   ★列の構成は五十音順表示と同じままで、まとまりの切れ目だけを1行足す。
+     居宅別のときだけ列を減らすと、同じ帳票なのに2つの紙の形が変わる（原則2）。 */
+.cmtbl .cmgrp td{background:var(--g2); font-weight:700; text-align:start;
+  padding-top:0; padding-bottom:0; line-height:1.05}
 .cm-sum{display:flex; gap:18px; justify-content:center; margin-bottom:2px;
   font-size:var(--cmsum,13px); font-weight:700; line-height:1.2}
 .cm-sum b{font-variant-numeric:tabular-nums}
@@ -1108,6 +1113,9 @@ body.meal-on #sc-list{max-width:none}
   </div>
   <!-- CM表ビュー専用。印刷には出さない（body.cm-on の印刷CSSで消える） -->
   <div class="sh-bar" id="cmBar" style="display:none">
+    <span class="lb">表示</span>
+    <button type="button" class="achip cmchip" data-m="kana">五十音順</button>
+    <button type="button" class="achip cmchip" data-m="office">居宅別</button>
     <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
     <button type="button" id="cmReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（既定 A4横）</button>
@@ -2718,6 +2726,10 @@ function paintShBars(){
   if(h) h.style.display=(curView==='hist')?'flex':'none';
   var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
   if($('cmStatus'))  $('cmStatus').textContent  = (curView==='cm')  ? msg : '';
+  if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
+    var on=b.getAttribute('data-m')===cmMode;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
+  });
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
   /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
   var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
@@ -2770,6 +2782,21 @@ function daysSince(iso){
 }
 
 /* ═══ 現入居者家族CM表（A4横1枚）═══ */
+/* 見せ方の切替（2026-09-17 管理者指示）。kana＝従来どおり在籍者を五十音順に1本の表、
+   office＝担当居宅ごとにまとめる。
+   ★端末に保存するのは【表示モードという文字ひとつ】だけ（原則11）。氏名・記録は1文字も入れない。
+   ★母集団・列の構成・A4横1枚に収める仕組みは2つの表示で同じ（切替で人数も紙の形も変わらない）。 */
+var CM_MODES=['kana','office'];
+var CM_MODE_KEY='rmaster_cm_mode';
+var cmMode=(function(){
+  try{ var v=localStorage.getItem(CM_MODE_KEY); return CM_MODES.indexOf(v)>=0?v:'kana'; }
+  catch(e){ return 'kana'; }
+})();
+function setCmMode(v){
+  cmMode=CM_MODES.indexOf(v)>=0?v:'kana';
+  try{ localStorage.setItem(CM_MODE_KEY,cmMode); }catch(e){}
+  paintShBars(); renderRoster();
+}
 var CM_COLS=[['no','No',''],['room','居室',''],['name','入居者','cnm'],['adm','入居日',''],
   ['days','日数','cnum'],['age','年齢','cnum'],['lv','介護度',''],
   ['office','居宅','cof'],['cm','CM','ccm'],['tel','CM TEL',''],['fax','CM FAX','']];
@@ -2778,24 +2805,29 @@ function cmHtml(){
   if(!bkRows) return '<div class="sh-sheet" id="cmSheet"><div class="loading">'+
     esc(bkLoading?'居宅・担当ケアマネを取得しています…':(bkErr||'取得していません'))+'</div></div>';
   var rows=base.map(bkOf);
+  /* 平均は【全員】から出す。表示の切替で数字が動かないよう、行を組むのとは別に1回だけ数える */
   var ages=[], lvs=[];
-  var body=rows.map(function(r,i){
-    var ag=ageNow(r.birthDate), dy=daysSince(r.admissionDate), lv=lvNum(r.careLevel);
+  rows.forEach(function(r){
+    var ag=ageNow(r.birthDate), lv=lvNum(r.careLevel);
     if(ag!=null) ages.push(ag);
     if(lv!=null) lvs.push(lv);
-    var v={no:(i+1), room:r.room||'', name:r.name||'',
-           adm:(_ymd(r.admissionDate)?_ymd(r.admissionDate).replace(/-/g,'/'):''),
-           days:(dy==null?'':dy), age:(ag==null?'':ag), lv:(lv==null?(r.careLevel||''):lv),
-           office:r.careOffice||'', cm:r.careManager||'',
-           tel:r.careOfficeTel||'', fax:r.careOfficeFax||''};
-    return '<tr>'+CM_COLS.map(function(c){
-      return '<td class="'+(c[2]||(c[0]==='no'?'cno':''))+'">'+esc(v[c[0]])+'</td>';
-    }).join('')+'</tr>';
-  }).join('');
+  });
+  var groups=(cmMode==='office')?cmGroups_(rows):null;
+  var body='', no=0;
+  if(groups){
+    groups.forEach(function(g){
+      body+='<tr class="cmgrp"><td colspan="'+CM_COLS.length+'">'+
+        esc(g.key===CM_NO_OFFICE?'（居宅の登録なし）':g.name)+
+        (g.cms.length?('　'+esc(g.cms.join('・'))):'')+'　'+g.list.length+'名</td></tr>';
+      g.list.forEach(function(r){ body+=cmRowHtml_(r,++no); });
+    });
+  }else{
+    rows.forEach(function(r){ body+=cmRowHtml_(r,++no); });
+  }
   var avgAge=ages.length?(ages.reduce(function(a,b){return a+b},0)/ages.length):null;
   var avgLv =lvs.length ?(lvs.reduce(function(a,b){return a+b},0)/lvs.length) :null;
   return '<div class="sh-sheet" id="cmSheet">'+
-    '<div class="sh-hd"><div class="st1">現入居者家族CM表</div></div>'+
+    '<div class="sh-hd"><div class="st1">現入居者家族CM表'+(groups?'（居宅別）':'')+'</div></div>'+
     '<div class="cm-sum">'+
       '<span>平均年齢 <b>'+(avgAge==null?'—':avgAge.toFixed(2))+'</b></span>'+
       '<span>平均介護度 <b>'+(avgLv==null?'—':avgLv.toFixed(2))+'</b></span>'+
@@ -2804,8 +2836,47 @@ function cmHtml(){
     '<table class="cmtbl"><thead><tr>'+
       CM_COLS.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
     '</tr></thead><tbody>'+body+'</tbody></table>'+
-    '<div class="sh-ft">'+rows.length+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+    '<div class="sh-ft">'+rows.length+'名　／　対象 在籍のみ・'+
+      (groups?('居宅別 '+groups.length+'事業所（各居宅の中は五十音順）'):'五十音順')+
+      '　／　印刷日 '+esc(shStamp())+'</div>'+
   '</div>';
+}
+/* 1人ぶんの行。No は【表全体の通し番号】＝並べ方を変えても「全員載っている」ことを数で確かめられる */
+function cmRowHtml_(r, no){
+  var ag=ageNow(r.birthDate), dy=daysSince(r.admissionDate), lv=lvNum(r.careLevel);
+  var v={no:no, room:r.room||'', name:r.name||'',
+         adm:(_ymd(r.admissionDate)?_ymd(r.admissionDate).replace(/-/g,'/'):''),
+         days:(dy==null?'':dy), age:(ag==null?'':ag), lv:(lv==null?(r.careLevel||''):lv),
+         office:r.careOffice||'', cm:r.careManager||'',
+         tel:r.careOfficeTel||'', fax:r.careOfficeFax||''};
+  return '<tr>'+CM_COLS.map(function(c){
+    return '<td class="'+(c[2]||(c[0]==='no'?'cno':''))+'">'+esc(v[c[0]])+'</td>';
+  }).join('')+'</tr>';
+}
+/* 担当居宅ごとのまとまり（2026-09-17 管理者指示）。
+   ★並びは担当人数の多い順、同数は居宅名の五十音順。
+   ★居宅が未登録の方は【落とさず】最後にまとめる。落とすと合計が合わず、しかも誰が漏れたのか
+     分からなくなる（介護度別表で同じ判断をしている）。
+   ★束ねるキーは空白を除いた居宅名＝表記ゆれ（全角空白の有無）で同じ居宅が2つに割れない。
+     見出しに出すのは最初に出てきた表記のまま（固有名詞を勝手に直さない＝原則6）。
+   ★渡す rows は五十音順なので、各居宅の中も五十音順のまま並ぶ。 */
+var CM_NO_OFFICE='\u0000';   /* 居宅未登録の置き場。居宅名として実在しない文字なので衝突しない */
+function cmGroups_(rows){
+  var map=Object.create(null), keys=[];
+  rows.forEach(function(r){
+    var nm=String(r.careOffice==null?'':r.careOffice).trim();
+    var k=nm.replace(/[\s\u3000]+/g,'') || CM_NO_OFFICE;
+    if(!map[k]){ map[k]={key:k, name:nm, list:[], cms:[]}; keys.push(k); }
+    map[k].list.push(r);
+    var cm=String(r.careManager==null?'':r.careManager).trim();
+    if(cm&&map[k].cms.indexOf(cm)<0) map[k].cms.push(cm);
+  });
+  return keys.map(function(k){ return map[k]; }).sort(function(a,b){
+    if(a.key===CM_NO_OFFICE) return 1;          /* 未登録はいつでも最後 */
+    if(b.key===CM_NO_OFFICE) return -1;
+    if(a.list.length!==b.list.length) return b.list.length-a.list.length;
+    return String(a.name).localeCompare(String(b.name),'ja');
+  });
 }
 
 /* ═══ 介護度別表（A4縦1枚）═══
@@ -6178,6 +6249,7 @@ function openEdit(rec){
      編集中に他端末が保存していれば GAS が 'conflict' で止める（後勝ちの丸ごと上書き防止）。 */
   editBaseUpdatedAt=(rec&&rec.updatedAt)?String(rec.updatedAt):'';
   supportShowAll=false;      // 別の方を開いたら「直近1年」に戻す（前の方の展開状態を持ち越さない）
+  supKeep=[];                // 同上（前の方で日付を直した記録を持ち越さない）
   if(!Array.isArray(editing.family))editing.family=[];
   if(!editing.rhythm)editing.rhythm={};
   if(!Array.isArray(editing.supportLog))editing.supportLog=[];
@@ -6433,7 +6505,11 @@ function openEdit(rec){
     collectSupport();
     editing.supportLog.unshift({date:todayISO(),text:''});
     renderSupportRows();
-    var t=$('supportList')?$('supportList').querySelector('textarea,input'):null;
+    /* ★足した行は日付順に並べ直した位置へ入る（いちばん上とは限らない）。
+       unshift した直後なので元の位置は 0＝data-si="0" の行を名指しで探す。
+       画面の先頭の行を掴むと、別の日の記録へカーソルが載る。 */
+    var nrow=$('supportList')?$('supportList').querySelector('.fam-row[data-si="0"]'):null;
+    var t=nrow?nrow.querySelector('textarea,input'):null;
     if(t){ try{ t.scrollIntoView({block:'center',behavior:'auto'}); t.focus(); }catch(e){} }
   };
   $('supportAdd').addEventListener('click',supAdd);
@@ -6591,12 +6667,44 @@ function growAllSupport(){
   var box=$('supportList'); if(!box)return;
   Array.prototype.forEach.call(box.querySelectorAll('.slog-ta'),autoGrow);
 }
+/* ── 日付の順に並べて描く（2026-09-17 管理者指示）──
+   過去の日付をあとから足すと、追加した順のまま離れた場所に残り、前後の日付とつながらない。
+   ★並べ替えるのは【描く順】だけ。editing.supportLog の並びは1件も動かさない
+     （行の data-si は元の位置のまま＝保存・削除・印刷除外の当たり先がずれない。上の★印と同じ理由）。
+   ★新しい順（上が最新）。同じ日付は元の並びを保つ＝描き直すたびに順が揺れない。
+   ★日付が空・読めない記録は末尾。移行時に日付を確定できなかった古い記録がここに来る
+     （migrate.gs の _splitLog は読めない日付を date:'' のまま残す）。 */
+function supDateKey_(s){
+  var p=parseIsoDate(String((s&&s.date)||'').slice(0,10));
+  return p ? (p.y*10000+p.m*100+p.d) : -1;      /* -1＝日付なし。新しい順なので末尾へ落ちる */
+}
+function supOrder_(all){
+  var idx=[]; for(var i=0;i<all.length;i++) idx.push(i);
+  idx.sort(function(a,b){
+    var x=supDateKey_(all[a]), y=supDateKey_(all[b]);
+    if(x!==y) return y-x;      /* 新しい順 */
+    return a-b;                /* 同じ日付は元の並び（安定）*/
+  });
+  return idx;
+}
+/* この編集画面で日付を直した記録。1年より前の日付に直しても画面から消さない
+   （消えると「直したら記録が無くなった」と見え、打ち直しを招く）。
+   ★覚えるのは配列の要素そのもの＝参照で見分ける。位置（添字）で覚えると、
+     行の追加・削除でずれて【別の記録】を指す（§6-⑨ と同型）。 */
+var supKeep=[];
+function supShownIdx_(){
+  var all=editing.supportLog, out=[];
+  supOrder_(all).forEach(function(i){
+    var s=all[i];
+    if(supportShowAll||supIsRecent(s)||supKeep.indexOf(s)>=0) out.push(i);
+  });
+  return out;
+}
 function renderSupportRows(){
   var box=$('supportList');if(!box)return;
-  var all=editing.supportLog, h='', shown=0;
-  all.forEach(function(s,i){
-    if(!(supportShowAll||supIsRecent(s)))return;
-    shown++;
+  var all=editing.supportLog, h='', order=supShownIdx_();
+  order.forEach(function(i){
+    var s=all[i];
     h+='<div class="fam-row" data-si="'+i+'" style="grid-template-columns:160px 1fr">'+
       '<div class="fld"><label>日付</label><input data-sk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
       '<div class="fld"><label>内容</label><textarea data-sk="text" class="slog-ta" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
@@ -6610,7 +6718,25 @@ function renderSupportRows(){
     ta.addEventListener('input',function(){autoGrow(this)});
   });
   Array.prototype.forEach.call(box.querySelectorAll('[data-sdel]'),function(b){b.addEventListener('click',function(){collectSupport();editing.supportLog.splice(parseInt(this.getAttribute('data-sdel')),1);renderSupportRows()})});
-  renderSupportMore(all.length-shown);
+  /* 日付を入れ直したら、その場で正しい位置へ移す（＝次に開いた時に順が崩れていない）。
+     ★描き直すのは【並びか顔ぶれが実際に変わる時だけ】。毎回描き直すと、別の行を押そうと
+       した指が「押した瞬間に消えた行」を押すことになる（入力欄の取り違え＝M-046 と同型）。
+     ★change は日付を決めた時（入力欄から離れた時）にだけ起きる。打鍵ごとには走らない。 */
+  Array.prototype.forEach.call(box.querySelectorAll('[data-sk="date"]'),function(inp){
+    inp.addEventListener('change',function(){
+      var row=this.closest?this.closest('.fam-row'):(this.parentNode&&this.parentNode.parentNode);
+      var si=row?row.getAttribute('data-si'):null;
+      collectSupport();
+      var rec=(si==null)?null:all[parseInt(si,10)];
+      if(rec&&supKeep.indexOf(rec)<0) supKeep.push(rec);   /* 1年より前に直しても消さない */
+      if(supShownIdx_().join(',')===order.join(',')) return;
+      renderSupportRows();
+      /* 動いた行を見失わせない。内容欄へ移る＝日付の次に打つ場所にカーソルが載る */
+      var moved=(si==null)?null:box.querySelector('.fam-row[data-si="'+si+'"] .slog-ta');
+      if(moved){ try{ moved.scrollIntoView({block:'center',behavior:'auto'}); moved.focus(); }catch(e){} }
+    });
+  });
+  renderSupportMore(all.length-order.length);
   renderSupportRO();
 }
 /* 「以前の記録も編集する」／「直近1年だけに戻す」。★切り替える前に必ず collectSupport()
@@ -8626,6 +8752,10 @@ function init(){
   if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){rmPrint_('lvl')});
   if($('roomPrint')) $('roomPrint').addEventListener('click',function(){rmPrint_('room')});
   if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
+  /* CM表の見せ方（五十音順／居宅別）2026-09-17 追加 */
+  if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
+    b.addEventListener('click',function(){ setCmMode(this.getAttribute('data-m')) });
+  });
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
   if($('famPrint')) $('famPrint').addEventListener('click',function(){rmPrint_('fam')});
   if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
