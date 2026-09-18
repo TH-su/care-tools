@@ -16,6 +16,7 @@
      convertQty / qtyBillOf / unitAmount / profileQtyAmount / profileMonthly / defaultProfile
      stockOf / reorderState
      aggregateMonth / toCsv
+     billRows / billTotal
      today / monthRange / prevMonth / isYmd
    前提・注意
      ・依存ゼロ。ブラウザ（iPad Safari）と node の両方で動く。ES2018 以下の構文だけ
@@ -35,6 +36,11 @@
      ・validateUnits は units[0] に per が付いていることを issue として報告するが、
        factor/ratioR は units[0].per を無視して換算する（サーバー由来の余分な値で
        画面全体が止まらないようにするため）
+     ・billRows の提供先なし（residentId が空）の name は NO_RESIDENT を使う。M1 凍結仕様 §3-1 は
+       本文で '（共用）' と書きつつ「aggregateMonth の NO_RESIDENT と同じ文字」とも指定しており、
+       既存の公開関数の値を変えない側（＝NO_RESIDENT）を採った
+     ・billRows の qty は mv.qty が数値でなければ 0（aggregateMonth の加算結果と同じ値。NaN を画面に出さない）
+     ・billRows の並びは3キーとも同じ行を渡された順のまま返す（sort の安定性に依存しない実装にした）
    ────────────────────────────────────────────────────────────────── */
 (function (root) {
   'use strict';
@@ -746,6 +752,135 @@
     return buf.join(',') + '\r\n';
   }
 
+  /* ── 請求明細（M1 凍結仕様 `.claude/plans/supplies-M1-bill-detail-freeze.md` §3） ── */
+
+  /* メモ [{ym,residentId,itemId,text}] → 'ym\0residentId\0itemId' → text の索引。
+     メモは ym×residentId×itemId に1つ（同じ品目の行すべてに同じ文が載る）。
+     本文はここで引くだけで、このモジュールが保存・記憶することはない */
+  function noteMap(notes) {
+    var map = {};
+    var list = Array.isArray(notes) ? notes : [];
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      if (!n || typeof n !== 'object') continue;
+      var t = str(n.text);
+      if (t === '') continue;                               /* 空文字＝メモ無し */
+      map[trim(n.ym) + '\u0000' + trim(n.residentId) + '\u0000' + str(n.itemId)] = t;
+    }
+    return map;
+  }
+
+  function cmpStr(a, b) {
+    return a === b ? 0 : (a < b ? -1 : 1);
+  }
+
+  /* 利用者No は数値優先の昇順・共用（residentId 空）は最後（aggregateMonth と同じ裁定） */
+  function cmpResident(a, b) {
+    var ea = (a === ''), eb = (b === '');
+    if (ea !== eb) return ea ? 1 : -1;
+    if (a === b) return 0;
+    var na = Number(a), nb = Number(b);
+    if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+    return a < b ? -1 : 1;
+  }
+
+  var BILL_SORTS = {
+    date: ['date', 'resident', 'itemName'],
+    resident: ['resident', 'date', 'itemName'],
+    item: ['itemName', 'date', 'resident']
+  };
+
+  function cmpBillKey(key, a, b) {
+    if (key === 'resident') return cmpResident(a.residentId, b.residentId);
+    if (key === 'itemName') return cmpStr(a.itemName, b.itemName);
+    return cmpStr(a.date, b.date);
+  }
+
+  /* desc は第1キーだけ反転し、第2・第3キーは昇順のまま。
+     3キーとも同じ行は台帳の並び（渡された順）を保つ＝実行環境の sort の安定性に依存しない */
+  function sortBillRows(rows, sort, dir) {
+    var keys = BILL_SORTS[str(sort)] || BILL_SORTS.date;
+    var desc = (str(dir) === 'desc');
+    var idx = [];
+    for (var i = 0; i < rows.length; i++) idx.push(i);
+    idx.sort(function (x, y) {
+      var a = rows[x], b = rows[y];
+      var c = cmpBillKey(keys[0], a, b);
+      if (c !== 0) return desc ? -c : c;
+      c = cmpBillKey(keys[1], a, b);
+      if (c !== 0) return c;
+      c = cmpBillKey(keys[2], a, b);
+      if (c !== 0) return c;
+      return x - y;
+    });
+    var out = [];
+    for (var j = 0; j < idx.length; j++) out.push(rows[idx[j]]);
+    return out;
+  }
+
+  /* 請求明細: 出庫（voided を除く）を1行ずつ返す。金額の解決は aggregateMonth と同一
+     （＝絞り込み無しなら billTotal(billRows(…)) が aggregateMonth の金額合計と一致する）。
+     residentId: 空＝すべて／'-'＝共用（residentId が空）のみ／それ以外＝その利用者。
+     itemId: 空＝すべて */
+  function billRows(o) {
+    o = o || {};
+    var moves = Array.isArray(o.moves) ? o.moves : [];
+    var itemMap = toMap(o.items, 'id');
+    var names = rosterMap(o.roster);
+    var notes = noteMap(o.notes);
+    var fRes = trim(o.residentId);
+    var fItem = trim(o.itemId);
+    var rows = [];
+
+    for (var i = 0; i < moves.length; i++) {
+      var mv = moves[i];
+      if (!mv || typeof mv !== 'object') continue;
+      if (mv.type !== 'out') continue;
+      if (isVoided(mv)) continue;
+
+      var rid = trim(mv.residentId);
+      if (fRes === '-') {
+        if (rid !== '') continue;
+      } else if (fRes !== '' && rid !== fRes) continue;
+
+      var itemId = str(mv.itemId);
+      if (fItem !== '' && itemId !== fItem) continue;
+
+      var it = itemMap[itemId] || null;
+      var billType = it ? str(it.billType) : '';
+      var date = str(mv.date);
+      var amt = isNum(mv.amount) ? mv.amount : fallbackAmount(mv, it, o.prices);
+
+      rows.push({
+        date: date,
+        residentId: rid,
+        name: rid ? (names[rid] || '') : NO_RESIDENT,
+        itemId: itemId,
+        itemName: it ? trim(it.name) : '',
+        note: notes[date.slice(0, 7) + '\u0000' + rid + '\u0000' + itemId] || '',
+        qty: isNum(mv.qty) ? Math.abs(mv.qty) : 0,
+        qtyBill: (billType === 'unit' && isNum(mv.qtyBill)) ? Math.abs(mv.qtyBill) : null,
+        unitName: unitNameOf(it),
+        amount: isNum(amt) ? amt : null,
+        billType: billType,
+        taxRate: (it && isNum(it.taxRate)) ? it.taxRate : null
+      });
+    }
+
+    return sortBillRows(rows, o.sort, o.dir);
+  }
+
+  /* 明細行の金額合計（整数円）。amount が数値でない行は足さない */
+  function billTotal(rows) {
+    var list = Array.isArray(rows) ? rows : [];
+    var sum = 0;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (r && isNum(r.amount)) sum += r.amount;
+    }
+    return sum;
+  }
+
   /* ── 公開 ──────────────────────────────────────────────────────── */
 
   var SuppliesCalc = {
@@ -781,6 +916,9 @@
     /* 集計・CSV */
     aggregateMonth: aggregateMonth,
     toCsv: toCsv,
+    /* 請求明細 */
+    billRows: billRows,
+    billTotal: billTotal,
     /* 日付 */
     today: today,
     monthRange: monthRange,
