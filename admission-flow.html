@@ -250,6 +250,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 
 /* ── ご相談シート（様式の格子。画面と紙で同じものを使う） ── */
 .shwrap { overflow-x: auto; background: #fff; padding: 6px; border-radius: var(--r); }
+body.sheetwide main { max-width: 1120px; }
 table.shgrid { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; }
 table.shgrid col { width: 10%; }
 table.shgrid td { border: 1px solid #000; padding: 2px 4px; font-size: 0.75rem; line-height: 1.3;
@@ -392,6 +393,9 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 
   <!-- ══ KPI ══ -->
   <section class="sc" id="sc-kpi" aria-label="ファネル集計"><div id="kpiBox"></div></section>
+
+  <!-- ══ ご相談シート（様式どおりの格子。ここで直接書き換えられる） ══ -->
+  <section class="sc" id="sc-sheet" aria-label="ご相談シート"><div id="sheetBox"></div></section>
 </main>
 
 <nav class="bnav" aria-label="画面の切替">
@@ -458,9 +462,6 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
     </div>
   </div>
 </div>
-
-<!-- 添付書類の追加 -->
-<div class="sc" id="sc-sheet"><div id="sheetBox"></div></div>
 
 <div class="mk" id="mk-file" role="dialog" aria-modal="true" aria-labelledby="fl-h">
   <div class="md">
@@ -1533,9 +1534,15 @@ function loadViewState() {
 }
 function showScreen(name) {
   saveViewState(name);
-  ['list', 'view', 'edit', 'kpi'].forEach(function (s) {
-    $('sc-' + s).classList.toggle('on', s === name);
+  /* ★画面の名前をここにべた書きしない。書き忘れた画面は表示が付かず、
+     しかも他の画面の表示が全部外れるのでページが真っ白になる（2026-09-19 に発生）。
+     HTML にある .sc を数え上げて、名前が合うものだけを出す。 */
+  Array.prototype.forEach.call(document.querySelectorAll('.sc'), function (el) {
+    el.classList.toggle('on', el.id === 'sc-' + name);
   });
+  /* ご相談シートは紙と同じ10列なので、本文の幅（760px）では右が見切れる。
+     この画面の時だけ広げる（他の画面の読みやすい幅は変えない）。 */
+  document.body.classList.toggle('sheetwide', name === 'sheet');
   var navKey = (name === 'kpi') ? 'kpi' : (name === 'list' ? 'list' : '');
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function (b) {
     b.classList.toggle('on', b.getAttribute('data-nav') === navKey);
