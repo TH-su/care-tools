@@ -182,7 +182,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .lg .mt .mth { background: var(--g1); border-radius: 6px; padding: 0 6px; margin-left: 5px; }
 
 /* ── フォーム ── */
-.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15em, 1fr)); gap: 8px 10px; }
 .fld { display: flex; flex-direction: column; gap: 3px; }
 .fld.wide { grid-column: 1 / -1; }
 .fld label { font-size: 0.71875rem; color: var(--g7); }
@@ -194,6 +194,8 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .fld input:focus, .fld select:focus, .fld textarea:focus { outline: 2px solid var(--pri); outline-offset: 0; }
 .frow { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .frow .fld { flex: 1; min-width: 8em; }
+/* 発症時期は「平成20年頃」と西暦の注記が入るので、他より広く取る */
+.frow .fld.onsetfld { min-width: 11em; }
 .subrow { border: 1px dashed var(--g3); border-radius: 10px; padding: 8px; margin: 0 0 8px; }
 .subrow .rm { float: right; font: inherit; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; min-width: 44px; min-height: 44px; }
 .chk { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; min-height: 44px; }
@@ -255,16 +257,19 @@ table.shgrid { width: 100%; min-width: 760px; border-collapse: collapse; table-l
 table.shgrid col { width: 10%; }
 table.shgrid td { border: 1px solid #000; padding: 2px 4px; font-size: 0.75rem; line-height: 1.3;
                   vertical-align: middle; word-break: break-all; height: 1.9em; }
+/* 記載事項は枠の上下中央に置く（2026-09-19 指示）。長文の欄も同じ扱いにする */
+table.shgrid td.val { vertical-align: middle; }
 table.shgrid td.lb { text-align: center; font-weight: 700; white-space: nowrap; background: var(--g1); }
 table.shgrid td.lb-l { text-align: left; }
 table.shgrid td.none { border: none; background: none; }
 table.shgrid td.ps-title { font-size: 1rem; font-weight: 700; letter-spacing: .05em; text-align: center; border: none; }
 table.shgrid td.vr { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: .3em;
                      text-align: center; font-weight: 700; background: var(--g1); }
-table.shgrid td.val { font-weight: 400; vertical-align: top; }
+table.shgrid td.val { font-weight: 400; }
 table.shgrid td.val.big { height: 22em; }
 table.shgrid tr.sp td { border: none; height: 5px; padding: 0; }
 table.shgrid td .hd { font-weight: 700; display: block; }
+table.shgrid td .kana { display: block; font-size: 0.625rem; color: var(--g7); line-height: 1.2; }
 table.shgrid td .opt { display: inline-block; padding: 0 2px; }
 table.shgrid td .opt.on { border: 1.4px solid #000; border-radius: 999px; padding: 0 5px; font-weight: 700; }
 /* 押せる値のセル（画面のみ） */
@@ -877,6 +882,17 @@ var ASSESS_TEXT = [
 /* 紙に出さない項目。2026-09-19 に空にした（現物のシートでは消耗品の行も印刷されている）。
    ★ここへ足すと、その項目は画面の様式からも印刷からも消える。足す時は現物と突き合わせること。 */
 var SHEET_HIDDEN_KEYS = {};
+
+/* 1行まるごと使う欄（長い文章を書くところ）。半分の幅だと打ちづらいため。 */
+var SH_WIDE_KEYS = {
+  address: 1, kpAddress: 1, servicesNote: 1, disabilityKinds: 1, disabilityNote: 1,
+  pastHistory: 1, impairment: 1, visitStatus: 1,
+  visionNote: 1, hearingNote: 1, walkNote: 1, bathNote: 1, mealNote: 1, excreteNote: 1,
+  excreteDay: 1, excreteNight: 1, excreteOther: 1, mealOther: 1,
+  dementiaNote: 1, commNotes: 1, currentHospital: 1, placeReason: 1,
+  specialMeds: 1, diseasesNow: 1, allergy: 1, cmChangeNote: 1,
+  wishFamily: 1, wishSelf: 1
+};
 function assessTextKeys() { return ASSESS_TEXT.map(function (p) { return p[0]; }); }
 
 /* ── 連携の提示ルール ──
@@ -2848,7 +2864,9 @@ function shFld(k, label, type, opts, val) {
     return '<div class="fld wide"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
       '<textarea id="' + esc(id) + '" data-ak="' + esc(k) + '">' + esc(val) + '</textarea></div>';
   }
-  return '<div class="fld"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
+  /* 長い文章を書く欄は1行まるごと使う（半分の幅だと書きづらい・2026-09-19 指示） */
+  var wide = SH_WIDE_KEYS[k] ? ' wide' : '';
+  return '<div class="fld' + wide + '"><label for="' + esc(id) + '">' + esc(label) + '</label>' +
     (type === 'date'
       ? dateCellHtml(id, 'data-ak="' + esc(k) + '"', val, label)
       : '<input id="' + esc(id) + '" data-ak="' + esc(k) + '" type="text" value="' + esc(val) + '">') + '</div>';
@@ -2857,26 +2875,32 @@ function shFld(k, label, type, opts, val) {
 var SHEET_GROUPS = [
   ['受付・ご相談者', ['receivedAt', 'consulterName', 'consulterTel']],
   ['ご本人・キーパーソン', ['address', 'kpName', 'kpGender', 'kpRelation', 'kpTel', 'kpAddress']],
-  ['介護保険', ['certified', 'servicesNote', 'cmChange', 'cmChangeNote']],
+  ['介護保険', ['servicesNote', 'cmChange']],
   ['障害福祉・生活保護', ['disabilityKinds', 'disabilityBook', 'disabilityNote', 'welfare', 'welfareAmount', 'guarantor']],
   ['身体状況', ['pastHistory', 'impairment', 'height', 'weight', 'visitStatus', 'medMgmtNeed', 'bloodType',
-    'vision', 'visionNote', 'hearing', 'hearingNote', 'walking', 'walkNote', 'denture', 'adlNote',
+    'vision', 'visionNote', 'hearing', 'hearingNote', 'walking', 'walkNote', 'adlNote',
     'bathLv', 'bathNote', 'mealLv', 'mealNote', 'excreteLv', 'excreteNote',
     'excreteDay', 'excreteNight', 'excreteOther',
     'mealType', 'mealStaple', 'mealSide', 'mealOther', 'dementiaExists', 'dementiaNote', 'commNotes']],
-  ['医療', ['currentPlace', 'currentHospital', 'placeReason', 'doctorNow', 'specialMeds', 'diseasesNow',
+  ['医療', ['currentPlace', 'currentHospital', 'doctorNow', 'specialMeds', 'diseasesNow',
     'doctorChange', 'pharmacyContract', 'allergyExists', 'allergy']],
   ['消耗品', ['supplies', 'beddingRental', 'diaperSize', 'padSize']],
   ['ご意向・結論', ['wishFamily', 'wishSelf', 'meetDate', 'urgent', 'continueConsult', 'referOther']],
-  ['施設内の補足（紙には印刷されません）', ['medicalCare', 'infections', 'medsRegular', 'careHints',
-    'lifeHistory', 'personality', 'hobby', 'foodPref', 'formNote']]
+  ['備考（様式の大きな枠）', ['formNote']],
+  /* ★ここから下は紙の様式に欄が無い。入力しても「ご相談シート」には出ない。
+     入れた情報がどこにも出ない状態を作らないため、見出しではっきり分ける。 */
+  ['施設内の補足（ご相談シートには出ません）', ['certified', 'cmChangeNote', 'placeReason', 'denture',
+    'medicalCare', 'infections', 'medsRegular', 'careHints',
+    'lifeHistory', 'personality', 'hobby', 'foodPref']]
 ];
 function assessEditHtml(a) {
   var byKey = {};
   ASSESS_TEXT.forEach(function (p) { byKey[p[0]] = p; });
   var h = '<div class="cd"><h3>ご相談シート（申込後の聞き取り）</h3>' +
     '<p class="note">紙の「ご相談シート」と同じ並び・同じ選択肢です。分かる範囲で構いません。' +
-    '入居決定時に入居者マスタへ転載され、詳細画面の「🖨 ご相談シートを印刷」でそのままの紙面で印刷できます。</p><div class="asx">';
+    '入居決定時に入居者マスタへ転載されます。詳細画面の「📄 ご相談シート」では、' +
+    '紙とまったく同じ格子で見ながらその場で書き換えられます。' +
+    '<br><b>「施設内の補足」だけは紙の様式に欄が無いため、ご相談シートには出ません。</b></p><div class="asx">';
   SHEET_GROUPS.forEach(function (g) {
     h += '<h4>' + esc(g[0]) + '</h4><div class="fgrid">';
     g[1].forEach(function (k) {
@@ -2937,7 +2961,7 @@ function assessEditHtml(a) {
     if (i2 >= 3 && !d2.name && !d2.onset && !d2.hospital) continue;
     h += '<div class="frow" style="margin-bottom:4px">' +
       '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.name" placeholder="病名" value="' + esc(d2.name || '') + '"></div>' +
-      '<div class="fld"><input data-adis="' + i2 + '.onset" class="onsetin" placeholder="発症時期" value="' + esc(d2.onset || '') + '">' +
+      '<div class="fld onsetfld"><input data-adis="' + i2 + '.onset" class="onsetin" placeholder="発症時期" value="' + esc(d2.onset || '') + '">' +
         (function (h) { return '<span class="dnote"' + (h ? '' : ' hidden') + '>' + esc(h) + '</span>'; })(warekiYearHint(d2.onset)) + '</div>' +
       '<div class="fld" style="flex:2"><input data-adis="' + i2 + '.hospital" placeholder="医療機関" value="' + esc(d2.hospital || '') + '"></div></div>';
   }
@@ -3461,6 +3485,12 @@ function shCellBody(c, cell, edit) {
   if (!edit && kind === 'a' && SHEET_HIDDEN_KEYS[parts[1]]) return '';
   if (kind === 'x') return esc(shCalc(c, parts[1]));
   var v = shGet(c, cell.k);
+  /* 氏名の欄にはふりがなを小さく添える（旧い紙面では出ていた。格子へ移した時に落ちた） */
+  if (cell.k === 'c:name') {
+    var nm = esc(shGet(c, 'c:name'));
+    var kn = asStr(c.kana);
+    return nm + (kn ? '<span class="kana">' + esc(kn) + '</span>' : '');
+  }
   if (cell.arm) {
     var opts = shOpts(cell.o).filter(function (o) { return o !== ''; });
     return opts.map(function (o) {
@@ -3498,6 +3528,12 @@ function shLabelOf(cell) {
 var shEditing = null;      /* いま開いている入力欄のセル */
 
 function shCellOf(el) { return (el && el.closest) ? el.closest('[data-shk]') : null; }
+/* いま画面に出ているセルをキーで引き直す（組み直しのたびに要素が入れ替わるため） */
+function shCellByKey(k) {
+  if (!k) return null;
+  var box = $('sheetBox');
+  return box ? box.querySelector('[data-shk="' + k + '"]') : null;
+}
 
 function shOpenEditor(td) {
   if (!td || shEditing === td) return;
@@ -3617,8 +3653,11 @@ function bindSheetCells() {
       return;
     }
     if (td === shEditing) return;
+    /* ★キーを先に控える。shCommit() は画面を組み直すので、掴んでいた td は
+       そこで捨てられる。古い td を開いても画面には何も出ない（2026-09-19 の不具合）。 */
+    var k = td.getAttribute('data-shk');
     if (!shCommit()) return;
-    shOpenEditor(td);
+    shOpenEditor(shCellByKey(k) || td);
   });
   document.addEventListener('keydown', function (e) {
     if (!shEditing) {
@@ -3626,7 +3665,13 @@ function bindSheetCells() {
       if (td && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); shOpenEditor(td); }
       return;
     }
-    if (e.key === 'Escape') { e.preventDefault(); shCloseEditor(); renderSheetScreen(findCand(curId)); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      shCloseEditor();
+      var c0 = findCand(curId);
+      if (c0) renderSheetScreen(c0);
+      return;
+    }
     /* 複数行の欄では Enter を改行として通す（確定は欄の外を押すか Tab） */
     if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); shCommit(); }
   });
