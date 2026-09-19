@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-18.1">
+<meta name="spl-build" content="2026-09-19.1">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -742,7 +742,9 @@ body.staff .adm{display:none !important}
           <input type="radio" name="splAdj" id="ma_minus" value="minus"><label for="ma_minus">減らす</label>
         </fieldset>
       </div>
-      <div class="fld s3" id="mvResidentBox"><label for="mvResident">提供先（任意）</label><select id="mvResident"></select></div>
+      <div class="fld s3" id="mvResidentBox"><label for="mvResident">提供先（任意）</label><select id="mvResident"></select>
+        <input type="text" id="mvResidentNo" inputmode="numeric" autocomplete="off" maxlength="12"
+               placeholder="利用者No（数字）" aria-label="提供先の利用者No" class="mt2" hidden></div>
       <div class="fld s3 adm" id="mvCostBox"><label for="mvCost">仕入額（税込・任意）</label>
         <input type="number" id="mvCost" inputmode="numeric" step="1" min="0" autocomplete="off"></div>
       <div class="fld s3 adm" id="mvProfBox"><label for="mvProfile">プロファイル</label><select id="mvProfile"></select></div>
@@ -1350,6 +1352,7 @@ var ST = {
   billEdit: null,          /* 開いているメモの編集欄 */
   /* メモに対応していないサーバー（旧版の /exec）と「メモ0件」を取り違えないための印。
      null＝まだ読み込んでいない／false＝応答に notes が無い（未対応）*/
+  billStale: false,        /* true＝読み込み後に台帳が動いた（古い紙を刷らせない）*/
   billNotesCap: null,
   billNotesOk: true        /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
 };
@@ -1414,6 +1417,9 @@ function apiPost(action, body, timeoutMs) {
       ne.raw = d;
       throw ne;
     }
+    /* 台帳（moves）が動く動作は、ここ1か所で明細に「古い」印を付ける。
+       呼び出し側ごとに書くと付け忘れる（前月複写・未送信の送り直し・遡及改定で実際に漏れていた） */
+    if (MOVE_WRITERS.indexOf(action) >= 0) markBillStale();
     return d;
   }).catch(function (e) {
     if (e && e.name === 'AbortError') {
@@ -1630,6 +1636,8 @@ function isClosed(ym) { return ST.closed.indexOf(txt(ym)) >= 0; }
 
 /* ── 画面切替・役割 ───────────────────────────────────── */
 var SCREEN_IDS = { list: 'scr-list', stock: 'scr-stock', bill: 'scr-bill', summary: 'scr-summary', detail: 'scr-detail', settings: 'scr-settings' };
+var MOVE_WRITERS = ['addMoves', 'voidMove', 'repriceMoves'];  /* 成功すると明細が古くなる動作 */
+var RESIDENT_MANUAL = '@no';   /* 提供先の選択肢「番号を直接入れる」の印。利用者Noには使えない文字列 */
 var SAVED_SCREENS = ['list', 'stock', 'bill', 'summary', 'detail', 'settings'];
 var NAV_IDS = ['navList', 'navStock', 'navBill', 'navSummary', 'navSettings'];
 
@@ -2577,15 +2585,30 @@ function fillResidentSelect() {
   var sel = $('mvResident'), keep = txt(sel.value);
   clearNode(sel);
   sel.appendChild(h('option', { value: '', text: '— 指定しない —' }));
-  if (!ST.rosterOk) {
-    sel.appendChild(h('option', { value: '', text: '（名簿がありません）', disabled: true }));
-    return;
-  }
   ST.roster.filter(function (r) { return r.active; }).forEach(function (r) {
     /* 画面では氏名を出すが、送るのも残すのも利用者Noだけ */
     sel.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
   });
+  /* 名簿が無い端末と、名簿に載っていない方（退去直後など）のための逃げ道。
+     これが無いと、その端末から入った出庫は例外なく提供先なしで確定してしまう */
+  sel.appendChild(h('option', { value: RESIDENT_MANUAL, text: ST.rosterOk ? '番号を直接入れる…' : '番号を直接入れる…（この端末に名簿がありません）' }));
   if (keep) sel.value = keep;
+  syncResidentNo();
+}
+/* 「番号を直接入れる」を選んだ時だけ数字欄を出す */
+function syncResidentNo() {
+  var box = $('mvResidentNo');
+  if (!box) return;
+  var on = txt($('mvResident').value) === RESIDENT_MANUAL;
+  box.hidden = !on;
+  if (!on) box.value = '';
+}
+/* 送る提供先。選択式が優先、手入力は数字だけを通す（氏名が入り込む経路を作らない） */
+function residentIdForMove() {
+  var v = txt($('mvResident').value);
+  if (v !== RESIDENT_MANUAL) return v;
+  var n = txt($('mvResidentNo').value).trim();
+  return /^[0-9]{1,12}$/.test(n) ? n : '';
 }
 function fillUnitSelect(it, type) {
   var sel = $('mvUnit'), keep = txt(sel.value);
@@ -2777,7 +2800,11 @@ function submitMove() {
     }
   }
   if (type === 'out') {
-    var rid = txt($('mvResident').value);
+    if (txt($('mvResident').value) === RESIDENT_MANUAL && !residentIdForMove()) {
+      showMoveErr('利用者Noは数字で入れてください（1〜12桁）。共用として記録する時は「指定しない」を選んでください。');
+      return;
+    }
+    var rid = residentIdForMove();
     if (rid) mv.residentId = rid;
   }
   if (type === 'in' && isAdmin()) {
@@ -2869,6 +2896,7 @@ function sendMoves(moves, isOut) {
     /* 続けて入れられるよう、フォームは閉じずに数量と提供先だけ空にする */
     $('mvQty').value = '';
     $('mvResident').value = '';
+    syncResidentNo();
     $('mvNote').value = '';
     $('mvCost').value = '';
     renderPreview();
@@ -3234,6 +3262,20 @@ function renderBillControls() {
   /* 開いたままの編集欄は畳む。並びが変われば idx の指す行が別物になり、
      別の入居者・別の品目のセルに編集欄が出て見える（絞り込みの切替と同じ扱い） */
   ST.billEdit = null;
+  /* 台帳が動いていたら、古い紙をまず引っ込める。印を降ろすのは読み直せた時だけ
+     （降ろしてから読み直すと、通信に失敗した回に古い紙が刷れるまま残る） */
+  if (ST.billStale && ST.billMoves) {
+    hideBillSheet(true);
+    /* 読み直すのは、月の欄が紙面の月と同じ時だけ。違う月を選んでいるなら
+       その選択を黙って巻き戻さない（月は集計画面と共有しているため影響が広い） */
+    if (YM_RE.test(ST.billMonth) && txt($('billMonth').value) === ST.billMonth) {
+      loadBill();
+      return;
+    }
+    setState('billState', 'warn', '記録が変わりました',
+      '出庫の追加・取り消し・付け直しがあったので、いまの紙面は古くなりました。「読み込む」を押してください。');
+    return;
+  }
   if (!ST.month) ST.month = SPL().today().slice(0, 7);
   $('billMonth').value = ST.month;
   $('billSort').value = ST.billSort;
@@ -3283,6 +3325,7 @@ function loadBill() {
       return;
     }
     ST.billMoves = d.moves;
+    ST.billStale = false;            /* 読み直せた時にだけ降ろす */
     /* notes プロパティ自体が無い＝メモに未対応のサーバー。空配列（＝メモ0件）と区別する */
     var hasNotes = Object.prototype.hasOwnProperty.call(d, 'notes');
     ST.billNotesCap = hasNotes;
@@ -3297,11 +3340,14 @@ function loadBill() {
       'もう一度読み込む', loadBill);
   }).then(function () { busyOff('bill'); }, function () { busyOff('bill'); });
 }
+/* 紙に出る条件行の対象者。氏名が引けない時は利用者Noだけにする。
+   「名簿に無し」は施設内部の状態説明で、ご家族に渡る明細に載せる言葉ではない
+   （対象者の列と同じ扱い。理由は画面だけに出る #billRosterWarn に書く） */
 function billResidentLabel() {
   if (ST.billResident === BILL_SHARED) return '共用（提供先なし）';
   if (!ST.billResident) return 'すべて';
   var n = nameOf(ST.billResident);
-  return n ? (ST.billResident + ' ' + n) : (ST.billResident + '（名簿に無し）');
+  return n ? (ST.billResident + ' ' + n) : txt(ST.billResident);
 }
 function billCondText() {
   var ym = ST.billMonth || txt($('billMonth').value);
@@ -3356,6 +3402,15 @@ function billNoteEditor(r) {
    月がずれている間は注意を出し直す（消してよいのは役目の終わった知らせだけ） */
 /* 読み込みに失敗した知らせが出ているか。出ている間は描き直しで潰さない
    （失敗した事実と「もう一度読み込む」ボタンを、無関係な操作で消さないため） */
+/* 出庫の追加・取り消し・付け直しのあと、手元の明細は古くなる。
+   明細は読み込んだ時点の写しで紙にもそう出ないので、印を付けて開いた時に読み直す */
+function markBillStale() { ST.billStale = true; }
+/* 刷るものが無い時は紙面ごと隠し、印刷も押せなくする */
+function hideBillSheet(hide) {
+  var sh = $('billSheet'), bt = $('billPrint');
+  if (sh) sh.hidden = !!hide;
+  if (bt) bt.disabled = !!hide;
+}
 function billStateHasError() {
   var box = $('billState');
   return !!(box && box.className.indexOf('err') >= 0);
@@ -3473,6 +3528,7 @@ function renderBill() {
   $('billNotesCapWarn').hidden = !(ST.billMoves && !billNotesUsable());
   $('billNotesWarn').hidden = !(ST.billMoves && billNotesUsable() && ST.billNotesOk === false);
   if (!ST.billMoves) {
+    hideBillSheet(true);
     if (!billStateHasError()) {
       setState('billState', '', 'まだ読み込んでいません', '対象月を選んで「読み込む」を押してください。');
     }
@@ -3486,11 +3542,14 @@ function renderBill() {
   });
   if (!Array.isArray(rows)) rows = [];
   if (!rows.length) {
+    /* 見出しと空の表だけの白紙同然の紙を刷らせない。理由は画面の状態欄に出す */
+    hideBillSheet(true);
     if (!billStateHasError()) {
       setState('billState', '', 'この条件に合う出庫はありません', '月や絞り込みを変えて、もう一度お試しください。');
     }
     return;
   }
+  hideBillSheet(false);
   billStateAfterRender();
   rows.forEach(function (r, i) {
     var tr = h('tr');
@@ -4555,6 +4614,7 @@ function bindEvents() {
 
   /* 在庫 */
   $('mvItem').addEventListener('change', syncMoveForm);
+  $('mvResident').addEventListener('change', syncResidentNo);
   Array.prototype.forEach.call(document.querySelectorAll('input[name="splType"]'), function (r) {
     r.addEventListener('change', syncMoveForm);
   });
@@ -4722,7 +4782,7 @@ function init() {
   showScreen(pickIn(ST.wantScr, ['list', 'stock', 'settings'], 'list'), true);
   if (!ST.rosterOk) {
     setState('lowState', 'warn', '名簿がこの端末にありません',
-      '提供先の氏名は出ません（利用者Noだけで登録できます）。入居者マスタを一度開くと名簿が入ります。');
+      '提供先の一覧に氏名が出ません。出庫のときは「番号を直接入れる…」を選んで利用者Noを打てば、誰に使ったかは残せます。入居者マスタを一度開くと名簿が入り、氏名から選べるようになります。');
   }
   refreshCaps();
   loadList().then(function () {
