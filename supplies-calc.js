@@ -41,6 +41,8 @@
        既存の公開関数の値を変えない側（＝NO_RESIDENT）を採った
      ・billRows の qty は mv.qty が数値でなければ 0（aggregateMonth の加算結果と同じ値。NaN を画面に出さない）
      ・billRows の並びは3キーとも同じ行を渡された順のまま返す（sort の安定性に依存しない実装にした）
+     ・氏名の並びは名簿の読み（kana）で決める＝五十音順。読みが無い人は最後に利用者No順。
+       名簿に無い利用者Noは名簿のある人の後ろ。提供先なしは常に最後（billRows・aggregateMonth 共通）
    ────────────────────────────────────────────────────────────────── */
 (function (root) {
   'use strict';
@@ -622,6 +624,70 @@
     return map;
   }
 
+  /* ── 氏名の並び（五十音順）──────────────────────────────────────
+     並べる物差しは氏名の【読み】。漢字で並べると音読みと訓読みが混ざって
+     五十音順にならない。読みが無い人は最後にまとめ、利用者Noの小さい順に置く
+     （漢字から読みを推測して並べると、記録に無い順番を作ることになるため）。 */
+  function rosterList(roster) {
+    return Array.isArray(roster) ? roster
+      : (roster && Array.isArray(roster.residents) ? roster.residents : []);
+  }
+  /* 読みを比べる前の下ごしらえ。
+     ・半角カナ・丸数字などは NFKC で普通の文字に寄せる
+     ・全角スペースは半角に（姓と名の区切りが混在しても同じ人の隣に並ぶ）
+     ・カタカナはひらがなに寄せる（同じ読みが2か所に分かれない） */
+  function kanaKey(s) {
+    var t = trim(s);
+    if (!t) return '';
+    if (typeof t.normalize === 'function') {
+      try { t = t.normalize('NFKC'); } catch (e) { /* 揃えられない端末はそのまま比べる */ }
+    }
+    t = t.replace(/\u3000/g, ' ');
+    t = t.replace(/[\u30A1-\u30F6]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+    return t;
+  }
+  function cmpKana(a, b) {
+    if (a === b) return 0;
+    var c = 0;
+    try { c = a.localeCompare(b, 'ja'); } catch (e) { c = 0; }
+    if (c) return c < 0 ? -1 : 1;
+    return a < b ? -1 : 1;                                 /* 日本語の照合が無い端末の保険 */
+  }
+  /* 利用者Noの順。数字として比べ、数字にならないものは文字の順 */
+  function cmpNo(a, b) {
+    if (a === b) return 0;
+    var na = Number(a), nb = Number(b);
+    if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+    return a < b ? -1 : 1;
+  }
+  /* 名簿を五十音順に並べ直した新しい配列を返す（元の配列は書き換えない）。
+     利用者Noの無い行は落とす。同じ読みは利用者Noの小さい順に固定する */
+  function sortRoster(roster) {
+    var list = rosterList(roster), rows = [], out = [], i;
+    for (i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (!r || typeof r !== 'object') continue;
+      var id = str(r.masterId);
+      if (!id) continue;
+      rows.push({ r: r, id: id, key: kanaKey(r.kana), i: rows.length });
+    }
+    rows.sort(function (a, b) {
+      var ea = (a.key === ''), eb = (b.key === '');
+      if (ea !== eb) return ea ? 1 : -1;                   /* 読みが無い人は最後 */
+      if (!ea) { var c = cmpKana(a.key, b.key); if (c) return c; }
+      var d = cmpNo(a.id, b.id);
+      return d ? d : a.i - b.i;
+    });
+    for (i = 0; i < rows.length; i++) out.push(rows[i].r);
+    return out;
+  }
+  /* 上の並びを {利用者No: 0,1,2…} にしたもの。明細の並べ替え・改ページの順に使う */
+  function rosterOrder(roster) {
+    var sorted = sortRoster(roster), map = {}, i;
+    for (i = 0; i < sorted.length; i++) map[str(sorted[i].masterId)] = i;
+    return map;
+  }
+
   function unitNameOf(item) {
     if (!item) return '';
     var mi = minIdx(item.units);
@@ -713,14 +779,11 @@
 
     var rows = [];
     for (var j = 0; j < order.length; j++) rows.push(groups[order[j]]);
+    var order = rosterOrder(o.roster);
     rows.sort(function (a, b) {
-      var ea = (a.residentId === ''), eb = (b.residentId === '');
-      if (ea !== eb) return ea ? 1 : -1;                     /* 提供先なしは最後 */
-      if (a.residentId !== b.residentId) {
-        var na = Number(a.residentId), nb = Number(b.residentId);
-        if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
-        return a.residentId < b.residentId ? -1 : 1;
-      }
+      /* 提供先なしは最後・名簿にある人は五十音順（明細の「入居者順」と同じ並び） */
+      var c = cmpResident(a.residentId, b.residentId, order);
+      if (c !== 0) return c;
       if (a.itemName !== b.itemName) return a.itemName < b.itemName ? -1 : 1;
       if (a.itemId !== b.itemId) return a.itemId < b.itemId ? -1 : 1;
       return 0;
@@ -828,13 +891,19 @@
   }
 
   /* 利用者No は数値優先の昇順・共用（residentId 空）は最後（aggregateMonth と同じ裁定） */
-  function cmpResident(a, b) {
+  /* 提供先なしは最後。名簿にある人は五十音順（order）、
+     名簿に無い利用者Noはその後ろに利用者No順（order が無ければ全員 利用者No順） */
+  function cmpResident(a, b, order) {
     var ea = (a === ''), eb = (b === '');
     if (ea !== eb) return ea ? 1 : -1;
     if (a === b) return 0;
-    var na = Number(a), nb = Number(b);
-    if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
-    return a < b ? -1 : 1;
+    if (order) {
+      var ra = order[a], rb = order[b];
+      var ka = (ra === undefined), kb = (rb === undefined);
+      if (ka !== kb) return ka ? 1 : -1;
+      if (!ka && ra !== rb) return ra - rb;
+    }
+    return cmpNo(a, b);
   }
 
   var BILL_SORTS = {
@@ -843,26 +912,26 @@
     item: ['itemName', 'date', 'resident']
   };
 
-  function cmpBillKey(key, a, b) {
-    if (key === 'resident') return cmpResident(a.residentId, b.residentId);
+  function cmpBillKey(key, a, b, order) {
+    if (key === 'resident') return cmpResident(a.residentId, b.residentId, order);
     if (key === 'itemName') return cmpStr(a.itemName, b.itemName);
     return cmpStr(a.date, b.date);
   }
 
   /* desc は第1キーだけ反転し、第2・第3キーは昇順のまま。
      3キーとも同じ行は台帳の並び（渡された順）を保つ＝実行環境の sort の安定性に依存しない */
-  function sortBillRows(rows, sort, dir) {
+  function sortBillRows(rows, sort, dir, order) {
     var keys = BILL_SORTS[str(sort)] || BILL_SORTS.date;
     var desc = (str(dir) === 'desc');
     var idx = [];
     for (var i = 0; i < rows.length; i++) idx.push(i);
     idx.sort(function (x, y) {
       var a = rows[x], b = rows[y];
-      var c = cmpBillKey(keys[0], a, b);
+      var c = cmpBillKey(keys[0], a, b, order);
       if (c !== 0) return desc ? -c : c;
-      c = cmpBillKey(keys[1], a, b);
+      c = cmpBillKey(keys[1], a, b, order);
       if (c !== 0) return c;
-      c = cmpBillKey(keys[2], a, b);
+      c = cmpBillKey(keys[2], a, b, order);
       if (c !== 0) return c;
       return x - y;
     });
@@ -925,7 +994,7 @@
       });
     }
 
-    return sortBillRows(rows, o.sort, o.dir);
+    return sortBillRows(rows, o.sort, o.dir, rosterOrder(o.roster));
   }
 
   /* 明細行の金額合計（整数円）。amount が数値でない行は足さない */
@@ -971,6 +1040,10 @@
     /* 在庫 */
     stockOf: stockOf,
     reorderState: reorderState,
+    /* 名簿の並び */
+    sortRoster: sortRoster,
+    rosterOrder: rosterOrder,
+    cmpResidentId: cmpResident,
     /* 集計・CSV */
     aggregateMonth: aggregateMonth,
     toCsv: toCsv,

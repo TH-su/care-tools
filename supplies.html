@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-19.4">
+<meta name="spl-build" content="2026-09-19.5">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1164,7 +1164,7 @@ body.staff .adm{display:none !important}
   <p class="foot">金額は税込です。月額の品目は使用量の型ごとの1か月あたりの金額です。</p>
 </section>
 
-<script src="supplies-calc.js?v=2026-09-19"></script>
+<script src="supplies-calc.js?v=2026-09-19.5"></script>
 <script>
 'use strict';
 
@@ -1176,7 +1176,7 @@ body.staff .adm{display:none !important}
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-19.4';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
+var BUILD = '2026-09-19.5';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
 var CFG_KEY = 'spl_cfg';
 var PENDING_KEY = 'spl_pending';
 var ROSTER_KEY = 'su_residents_common';
@@ -1555,6 +1555,13 @@ function loadRoster() {
     });
   });
   ST.rosterOk = ST.roster.length > 0;
+}
+/* 画面に氏名を並べる時は必ずここを通す＝どの画面でも並び順が同じになる。
+   計算モジュールが古い端末では並べ替えずに出す（名簿が出ない方が困るため） */
+function rosterSorted() {
+  var c = SPL();
+  if (c && typeof c.sortRoster === 'function') return c.sortRoster(ST.roster);
+  return ST.roster.slice();
 }
 function nameOf(residentId) {
   var id = txt(residentId), i;
@@ -2619,7 +2626,7 @@ function fillResidentSelect() {
      既定のまま送れると、選び忘れた出庫が黙って共用＝施設負担になり請求から消える */
   sel.appendChild(h('option', { value: '', text: '— 選んでください —' }));
   sel.appendChild(h('option', { value: RESIDENT_SHARED, text: '共用（提供先なし）' }));
-  ST.roster.filter(function (r) { return r.active; }).forEach(function (r) {
+  rosterSorted().filter(function (r) { return r.active; }).forEach(function (r) {
     /* 画面では氏名を出すが、送るのも残すのも利用者Noだけ */
     sel.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
   });
@@ -3314,13 +3321,22 @@ function syncBillClosedNote() {
   $('billClosedNote').hidden = !(YM_RE.test(ym) && isClosed(ym));
 }
 function fillBillSelects() {
-  /* 対象者は退去した人も選べるようにする（過去月の請求を刷り直すことがあるため） */
+  /* 対象者は退去した人も選べるようにする（過去月の請求を刷り直すことがあるため）。
+     人数が多いので入居中と退去済みに分け、それぞれ氏名の読みで五十音順に並べる。
+     読みが無い方はその区分の最後に利用者No順で付く（読みを漢字から作らない） */
   var rs = $('billResident'), keep = ST.billResident;
   clearNode(rs);
   rs.appendChild(h('option', { value: '', text: '— すべての対象者 —' }));
   rs.appendChild(h('option', { value: BILL_SHARED, text: '共用（提供先なし）' }));
-  ST.roster.forEach(function (r) {
-    rs.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
+  var sorted = rosterSorted();
+  [{ live: true, label: '入居中' }, { live: false, label: '退去済み' }].forEach(function (g) {
+    var list = sorted.filter(function (r) { return (r.active !== false) === g.live; });
+    if (!list.length) return;                      /* 空の見出しは出さない */
+    var grp = h('optgroup', { label: g.label });
+    list.forEach(function (r) {
+      grp.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
+    });
+    rs.appendChild(grp);
   });
   rs.value = keep;
   if (txt(rs.value) !== txt(keep)) { rs.value = ''; ST.billResident = ''; }
@@ -3723,9 +3739,21 @@ function renderBillByResident(rows) {
     key = txt(rows[i].residentId);
     if (index[key] === undefined) {
       index[key] = groups.length;
-      groups.push({ who: billWhoText(rows[i]), rows: [] });
+      groups.push({ who: billWhoText(rows[i]), rid: key, rows: [] });
     }
     groups[index[key]].rows.push({ r: rows[i], i: i });
+  }
+  /* 1人1枚で刷る時は、紙の綴じ順を五十音順にそろえる。
+     日付順で画面を見ていても、出てくる紙の順は毎回同じになる。
+     「入居者順の降順」を選んでいる時だけ、その指定どおり逆から並べる */
+  var cx = SPL();
+  if (typeof cx.cmpResidentId === 'function' && typeof cx.rosterOrder === 'function') {
+    var ord = cx.rosterOrder(ST.roster);
+    var rev = (ST.billSort === 'resident' && ST.billDir === 'desc');
+    groups.sort(function (x, y) {
+      var c = cx.cmpResidentId(x.rid, y.rid, ord);
+      return rev ? -c : c;
+    });
   }
   var ym = ST.billMonth;
   var ymText = YM_RE.test(ym) ? (ym.slice(0, 4) + '年' + ym.slice(5, 7) + '月分') : '';
