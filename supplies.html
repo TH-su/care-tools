@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-19.1">
+<meta name="spl-build" content="2026-09-19.2">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -625,6 +625,11 @@ body.staff .adm{display:none !important}
      border:1px solid var(--c-border-strong);border-radius:var(--r-sm);background:#fff;color:#000;
      font-size:var(--fs-2xs);cursor:pointer;white-space:nowrap}
 #billSheet .noteed{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center;margin-top:var(--sp-1)}
+/* 入居者ごとに改ページして刷る時の1人ぶん。2人目からは必ず次の紙から始める */
+#billSheet .bgrp + .bgrp{margin-top:8mm;padding-top:6mm;border-top:1px dashed var(--c-border)}
+#billSheet .ghd{display:flex;align-items:flex-end;gap:6mm;margin-bottom:1mm;flex-wrap:wrap}
+#billSheet .gttl{font-size:12pt;font-weight:700}
+#billSheet .gwho{font-size:11pt;font-weight:700;margin-bottom:2mm}
 #billSheet .noteed input{min-height:var(--tap-min);flex:1 1 100%;min-width:0;width:100%;box-sizing:border-box;font-size:var(--fs-base);
      border:1px solid var(--c-border-strong);border-radius:var(--r-sm);background:#fff;color:#000;
      padding:0 var(--sp-2)}
@@ -637,6 +642,13 @@ body.staff .adm{display:none !important}
   body:not([data-print="bill"]) main{display:none !important}
   body:not([data-print="bill"]) #priceSheet{display:block !important;color:#000}
   body[data-print="bill"] main{padding:0}
+  /* 入居者ごとの紙面。2人目からは改ページし、画面用の区切り線は紙に出さない。
+     1人ぶんが2ページに渡る時は表頭を次の紙にも出す */
+  #billSheet .bgrp + .bgrp{break-before:page;page-break-before:always;
+       margin-top:0;padding-top:0;border-top:0}
+  #billSheet .bgrp{break-inside:auto}
+  #billSheet thead{display:table-header-group}
+  #billSheet tr{break-inside:avoid;page-break-inside:avoid}
   body[data-print="bill"] #scr-bill > :not(#billSheet){display:none !important}
   body[data-print="bill"] #billSheet{max-width:none;padding:0;border:0;border-radius:0;box-shadow:none}
   @page{size:A4 portrait;margin:12mm}
@@ -809,6 +821,7 @@ body.staff .adm{display:none !important}
       <div class="fld"><label for="billMonth">対象月</label><input type="month" id="billMonth"></div>
       <button type="button" class="btn" id="billNext" aria-label="次の月へ">›</button>
       <button type="button" class="btn pri" id="billLoad">読み込む</button>
+      <div class="fld s4"><label for="billPage">刷り方</label><select id="billPage"><option value="flat">1枚続き</option><option value="byResident">入居者ごとに改ページ</option></select></div>
       <button type="button" class="btn" id="billPrint">印刷する</button>
     </div>
     <div class="row mt2">
@@ -843,6 +856,7 @@ body.staff .adm{display:none !important}
       <tbody id="billBody"></tbody>
       <tfoot id="billFoot"></tfoot>
     </table>
+    <div id="billGroups" hidden></div>
   </div>
 </section>
 
@@ -1040,7 +1054,7 @@ body.staff .adm{display:none !important}
 
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-18.1</p>
+    <p class="muted">アプリ 版 <span id="appBuild">—</span></p>
     <p class="muted">この端末に残すのは、接続先・合言葉・端末名と、画面の表示状態（開いていた画面・種別・並び・集計月・開いていた品目・明細の並び）だけです。品目・価格・在庫は毎回サーバーから読み直します。氏名は保存しません。</p>
     <p class="muted" id="aboutPing">接続の確認: 未実施</p>
   </div>
@@ -1148,14 +1162,14 @@ body.staff .adm{display:none !important}
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-18.1';
+var BUILD = '2026-09-19.2';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
 var CFG_KEY = 'spl_cfg';
 var PENDING_KEY = 'spl_pending';
 var ROSTER_KEY = 'su_residents_common';
 var UI_KEYS = {
   scr: 'spl_scr', cat: 'spl_cat', sort: 'spl_sort', sortDir: 'spl_sortDir',
   month: 'spl_month', item: 'spl_item',
-  billSort: 'spl_billSort', billSortDir: 'spl_billSortDir'
+  billSort: 'spl_billSort', billSortDir: 'spl_billSortDir', billPage: 'spl_billPage'
 };
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIのため */
 var URL_OK_RE = /^(https:\/\/|http:\/\/127\.0\.0\.1[:\/])/;
@@ -1171,6 +1185,7 @@ var TYPE_LABEL = { in: '入庫', out: '出庫', count: '棚卸', adj: '調整' }
 var MODE_LABEL = { round: '四捨五入', ceil: '切り上げ', floor: '切り捨て' };
 var MODES = ['round', 'ceil', 'floor'];
 var REASONS = ['メーカー値上げ', '仕入先変更', '内容量変更', '価格の見直し', 'その他'];
+var PAGE_MODES = ['flat', 'byResident'];   /* 刷り方（既知値のみ復元する） */
 var SORT_KEYS = ['name', 'cat', 'eff', 'chg'];
 /* 請求明細の並び（supplies-calc.js の billRows が受ける値と同じ綴り） */
 var BILL_SORTS = ['date', 'resident', 'item'];
@@ -1352,6 +1367,7 @@ var ST = {
   billEdit: null,          /* 開いているメモの編集欄 */
   /* メモに対応していないサーバー（旧版の /exec）と「メモ0件」を取り違えないための印。
      null＝まだ読み込んでいない／false＝応答に notes が無い（未対応）*/
+  billPage: 'flat',        /* flat=1枚続き / byResident=入居者ごとに改ページ */
   billStale: false,        /* true＝読み込み後に台帳が動いた（古い紙を刷らせない）*/
   billNotesCap: null,
   billNotesOk: true        /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
@@ -1637,6 +1653,7 @@ function isClosed(ym) { return ST.closed.indexOf(txt(ym)) >= 0; }
 /* ── 画面切替・役割 ───────────────────────────────────── */
 var SCREEN_IDS = { list: 'scr-list', stock: 'scr-stock', bill: 'scr-bill', summary: 'scr-summary', detail: 'scr-detail', settings: 'scr-settings' };
 var MOVE_WRITERS = ['addMoves', 'voidMove', 'repriceMoves'];  /* 成功すると明細が古くなる動作 */
+var RESIDENT_SHARED = '@share';  /* 提供先の選択肢「共用（提供先なし）」。保存される値は空文字のまま */
 var RESIDENT_MANUAL = '@no';   /* 提供先の選択肢「番号を直接入れる」の印。利用者Noには使えない文字列 */
 var SAVED_SCREENS = ['list', 'stock', 'bill', 'summary', 'detail', 'settings'];
 var NAV_IDS = ['navList', 'navStock', 'navBill', 'navSummary', 'navSettings'];
@@ -2584,7 +2601,10 @@ function fillItemSelects() {
 function fillResidentSelect() {
   var sel = $('mvResident'), keep = txt(sel.value);
   clearNode(sel);
-  sel.appendChild(h('option', { value: '', text: '— 指定しない —' }));
+  /* 既定は空（未選択）。共用は明示して選ばせる。
+     既定のまま送れると、選び忘れた出庫が黙って共用＝施設負担になり請求から消える */
+  sel.appendChild(h('option', { value: '', text: '— 選んでください —' }));
+  sel.appendChild(h('option', { value: RESIDENT_SHARED, text: '共用（提供先なし）' }));
   ST.roster.filter(function (r) { return r.active; }).forEach(function (r) {
     /* 画面では氏名を出すが、送るのも残すのも利用者Noだけ */
     sel.appendChild(h('option', { value: r.masterId, text: r.masterId + ' ' + r.name }));
@@ -2606,6 +2626,7 @@ function syncResidentNo() {
 /* 送る提供先。選択式が優先、手入力は数字だけを通す（氏名が入り込む経路を作らない） */
 function residentIdForMove() {
   var v = txt($('mvResident').value);
+  if (v === RESIDENT_SHARED) return '';          /* 共用＝提供先なしを明示して選んだ時 */
   if (v !== RESIDENT_MANUAL) return v;
   var n = txt($('mvResidentNo').value).trim();
   return /^[0-9]{1,12}$/.test(n) ? n : '';
@@ -2800,8 +2821,15 @@ function submitMove() {
     }
   }
   if (type === 'out') {
-    if (txt($('mvResident').value) === RESIDENT_MANUAL && !residentIdForMove()) {
-      showMoveErr('利用者Noは数字で入れてください（1〜12桁）。共用として記録する時は「指定しない」を選んでください。');
+    var sel = txt($('mvResident').value);
+    if (!sel) {
+      showMoveErr('提供先を選んでください。特定の方でなく施設で共用するぶんは「共用（提供先なし）」を選んでください。');
+      $('mvResident').focus();
+      return;
+    }
+    if (sel === RESIDENT_MANUAL && !residentIdForMove()) {
+      showMoveErr('利用者Noは数字で入れてください（1〜12桁）。');
+      $('mvResidentNo').focus();
       return;
     }
     var rid = residentIdForMove();
@@ -2949,14 +2977,24 @@ function rejectText(r) {
   return REJECT_MSG[k] || ('登録できませんでした（' + (k || '理由不明') + '）');
 }
 function reportMoveResults(res) {
-  var ok = 0, dup = 0, bad = [];
+  var ok = 0, dup = 0, bad = [], why = {}, order = [];
   res.forEach(function (r) {
     if (r.status === 'applied') ok++;
     else if (r.status === 'existing') dup++;
-    else bad.push(rejectText(r));
+    else {
+      var t = rejectText(r);
+      bad.push(t);
+      if (why[t] === undefined) { why[t] = 0; order.push(t); }
+      why[t] += 1;
+    }
   });
   if (bad.length) {
-    setState('mvState', 'err', '登録できなかった記録があります（' + bad.length + '件）', bad.join(' / '));
+    /* 入った件数を必ず併せて出す。失敗件数しか出さないと「1件も入らなかった」と
+       取り違えて入れ直し、二重登録に向かう（複写は最大200件をまとめて送る） */
+    var lines = order.map(function (t) { return why[t] > 1 ? (t + '（' + why[t] + '件）') : t; });
+    setState('mvState', 'err',
+      '入った ' + ok + '件／すでに登録済み ' + dup + '件／登録できなかった ' + bad.length + '件',
+      lines.join(' / '));
   } else if (ok) {
     setState('mvState', 'ok', '記録しました（' + ok + '件）', dup ? ('うち ' + dup + '件はすでに登録済みでした。') : '続けて入力できます。');
     toast('記録しました');
@@ -3122,6 +3160,26 @@ function sendCopyBatch(entries, attempt, acc) {
     return sendCopyBatch(next, attempt + 1, acc);
   });
 }
+/* 複写の記録番号は「元の記録の番号」を根にする。
+   'mv_copy_<前の番号>_<月>' と入れ子にすると毎月16字伸び、24世代目（約2年）で
+   サーバーの上限400字を超えて、以後いくら読み直しても複写できなくなる */
+/* 200件ずつに分けて順に送る（1回の上限 MAX_MOVES を超えると、サーバーは
+   バッチ全体を too_many で断るので、切り捨てでも一括でもなく分割で送る） */
+function sendCopyChunks(entries, from, acc) {
+  if (from >= entries.length) return Promise.resolve(acc);
+  var part = entries.slice(from, from + MAX_MOVES);
+  return sendCopyBatch(part, 1, []).then(function (got) {
+    return sendCopyChunks(entries, from + MAX_MOVES, acc.concat(got));
+  });
+}
+function copyRootId(id) {
+  var s = txt(id), m;
+  for (;;) {
+    m = /^mv_copy_(.+)_\d{4}-\d{2}(?:_\d+)?$/.exec(s);
+    if (!m) return s;
+    s = m[1];
+  }
+}
 function copyLastMonth() {
   if (!isAdmin()) return;
   if (!ST.rosterOk) {
@@ -3155,13 +3213,13 @@ function copyLastMonth() {
       return;
     }
     if (!window.confirm(prevYm + ' の月額出庫 ' + src.length + '件を ' + thisYm + '-01 付けで複写します。日数はプロファイルの既定に戻ります。よろしいですか？')) return;
-    var moves = src.slice(0, MAX_MOVES).map(function (m) {
+    var moves = src.map(function (m) {
       var it = itemById(m.itemId);
       var prof = null, list = profilesOf(it.id), i;
       for (i = 0; i < list.length; i++) { if (txt(list[i].id) === txt(m.profileId)) prof = list[i]; }
       if (!prof) prof = SPL().defaultProfile(list);
       return {
-        id: 'mv_copy_' + txt(m.id) + '_' + thisYm,
+        id: 'mv_copy_' + copyRootId(m.id) + '_' + thisYm,
         date: thisYm + '-01', itemId: txt(m.itemId), type: 'out',
         qtyEntered: 0, unitIdx: minIdxOf(it),
         profileId: txt(m.profileId || (prof ? prof.id : '')),
@@ -3173,7 +3231,9 @@ function copyLastMonth() {
       };
     });
     var entries = moves.map(function (mv) { return { mv: mv, base: mv.id }; });
-    return sendCopyBatch(entries, 1, []).then(function (acc) {
+    /* 1回に送れるのは MAX_MOVES 件まで。超えた分を切り捨てると、その人数ぶんが
+       黙って請求から落ちる。ここで分けて順に送る */
+    return sendCopyChunks(entries, 0, []).then(function (acc) {
       reportMoveResults(acc);
       renderList();
       renderStock();
@@ -3280,6 +3340,7 @@ function renderBillControls() {
   $('billMonth').value = ST.month;
   $('billSort').value = ST.billSort;
   $('billDir').value = ST.billDir;
+  $('billPage').value = ST.billPage;
   fillBillSelects();
   syncBillClosedNote();
   renderBill();
@@ -3551,19 +3612,87 @@ function renderBill() {
   }
   hideBillSheet(false);
   billStateAfterRender();
+  if (ST.billPage === 'byResident') { renderBillByResident(rows); return; }
+  setBillFlat(true);
   rows.forEach(function (r, i) {
-    var tr = h('tr');
-    tr.appendChild(h('td', { cls: 'cdate', text: jpDate(r.date) }));
-    tr.appendChild(h('td', { cls: 'cwho', text: billWhoText(r) }));
-    tr.appendChild(billItemTd(r, i));
-    tr.appendChild(h('td', { cls: 'num cqty', text: billQtyText(r) }));
-    tr.appendChild(h('td', { cls: 'num camt', text: billAmtText(r) }));
-    body.appendChild(tr);
+    body.appendChild(billRowTr(r, i));
   });
   var tf = h('tr');
   tf.appendChild(h('th', { scope: 'row', colspan: '4', text: '合計（' + rows.length + '行）' }));
   tf.appendChild(h('td', { cls: 'num camt', text: yen(SPL().billTotal(rows)) }));
   foot.appendChild(tf);
+}
+/* 明細の1行。1枚続きでも入居者ごとでも同じ形を使う（列がずれない） */
+function billRowTr(r, i) {
+  var tr = h('tr');
+  tr.appendChild(h('td', { cls: 'cdate', text: jpDate(r.date) }));
+  tr.appendChild(h('td', { cls: 'cwho', text: billWhoText(r) }));
+  tr.appendChild(billItemTd(r, i));
+  tr.appendChild(h('td', { cls: 'num cqty', text: billQtyText(r) }));
+  tr.appendChild(h('td', { cls: 'num camt', text: billAmtText(r) }));
+  return tr;
+}
+/* 1枚続きの表と、入居者ごとの紙面は排他。見出しも刷り方で出し分ける */
+function setBillFlat(on) {
+  $('billTbl').hidden = !on;
+  $('billGroups').hidden = !!on;
+  $('billCond').hidden = !on;
+  var shd = document.querySelector('#billSheet .shd');
+  if (shd) shd.hidden = !on;
+}
+/* 入居者ごとに1枚。1枚が1人ぶんの明細として完結するよう、
+   各かたまりの先頭に「対象月＋対象者＋作成日」を置き、末尾にその人の合計を出す。
+   並びは選んだ順のまま。同じ人の行は最初に出てきた位置でひとまとめにする */
+function renderBillByResident(rows) {
+  setBillFlat(false);
+  var box = $('billGroups');
+  clearNode(box);
+  var groups = [], index = {}, i, key;
+  for (i = 0; i < rows.length; i++) {
+    key = txt(rows[i].residentId);
+    if (index[key] === undefined) {
+      index[key] = groups.length;
+      groups.push({ who: billWhoText(rows[i]), rows: [] });
+    }
+    groups[index[key]].rows.push({ r: rows[i], i: i });
+  }
+  var ym = ST.billMonth;
+  var ymText = YM_RE.test(ym) ? (ym.slice(0, 4) + '年' + ym.slice(5, 7) + '月分') : '';
+  groups.forEach(function (g) {
+    var sec = h('div', { cls: 'bgrp' });
+    var head = h('div', { cls: 'ghd' });
+    head.appendChild(h('span', { cls: 'gttl', text: '消耗品 ご利用明細　' + ymText }));
+    head.appendChild(h('span', { cls: 'sp' }));
+    head.appendChild(h('span', { cls: 'sdate', text: jpDate(SPL().today()) + ' 作成' }));
+    sec.appendChild(head);
+    sec.appendChild(h('p', { cls: 'gwho', text: g.who }));
+    var tbl = h('table');
+    tbl.appendChild(h('caption', { cls: 'sr-only', text: g.who + ' の明細（日付・対象者・品目・数量・金額）' }));
+    var th = h('thead');
+    th.appendChild(h('tr', null, [
+      h('th', { scope: 'col', cls: 'cdate', text: '日付' }),
+      h('th', { scope: 'col', cls: 'cwho', text: '対象者' }),
+      h('th', { scope: 'col', text: '品目' }),
+      h('th', { scope: 'col', cls: 'num cqty', text: '数量' }),
+      h('th', { scope: 'col', cls: 'num camt', text: '金額' })
+    ]));
+    tbl.appendChild(th);
+    var tb = h('tbody');
+    var list = [];
+    g.rows.forEach(function (x) { tb.appendChild(billRowTr(x.r, x.i)); list.push(x.r); });
+    tbl.appendChild(tb);
+    var tf = h('tfoot');
+    tf.appendChild(h('tr', null, [
+      h('th', { scope: 'row', colspan: '4', text: '合計（' + list.length + '行）' }),
+      h('td', { cls: 'num camt', text: yen(SPL().billTotal(list)) })
+    ]));
+    tbl.appendChild(tf);
+    sec.appendChild(tbl);
+    box.appendChild(sec);
+  });
+  /* 全体の合計は紙に出さない（1枚＝1人ぶんの明細なので混ぜない）。画面にだけ出す */
+  setState('billState', '', groups.length + '名ぶん・' + rows.length + '行',
+    '全体の合計は ' + yen(SPL().billTotal(rows)) + ' です（紙には各人の合計だけを刷ります）。');
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -4558,6 +4687,7 @@ function restoreUi() {
   /* 請求明細は並びだけを残す（対象者・品目の絞り込みは業務データなので残さない・原則11） */
   ST.billSort = pickAllowed(UI_KEYS.billSort, BILL_SORTS, 'date');
   ST.billDir = pickAllowed(UI_KEYS.billSortDir, ['asc', 'desc'], 'asc');
+  ST.billPage = pickAllowed(UI_KEYS.billPage, PAGE_MODES, 'flat');
   $('selSort').value = ST.sort;
   syncSortDirBtn();
   $('sumMonth').value = ST.month;
@@ -4659,6 +4789,12 @@ function bindEvents() {
   $('billSort').addEventListener('change', function () {
     ST.billSort = pickIn(txt($('billSort').value), BILL_SORTS, 'date');
     lsSet(UI_KEYS.billSort, ST.billSort);
+    ST.billEdit = null;
+    renderBill();
+  });
+  $('billPage').addEventListener('change', function () {
+    ST.billPage = pickIn(txt($('billPage').value), PAGE_MODES, 'flat');
+    lsSet(UI_KEYS.billPage, ST.billPage);
     ST.billEdit = null;
     renderBill();
   });
@@ -4778,6 +4914,7 @@ function init() {
   $('mvDays').value = txt(daysDefault());
   updatePendingLabel();
   watchNavHeight();
+  (function () { var el = $('appBuild'); if (el) el.textContent = BUILD; })();
   /* 起動時は「一覧」で描き、役割が分かってから元の画面へ戻す（原則11） */
   showScreen(pickIn(ST.wantScr, ['list', 'stock', 'settings'], 'list'), true);
   if (!ST.rosterOk) {
