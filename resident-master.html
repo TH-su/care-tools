@@ -5836,12 +5836,32 @@ function renderView(r){
     '<div class="row-cells">'+cell('医療保険',r.medicalInsurance,false,'w-q')+cell('障害者手帳',r.disabilityCert,false,'w-q')+cell('成年後見',r.guardianship,false,'w-h')+'</div>'+
   '</div></div>';
   // 介護度の変更履歴（新しい順）
+  /* ★認定期間の新しい順に並べ、期間を先頭に置く（2026-09-19 指示）。
+     「いつからいつまでが要介護いくつだったか」を縦に読めるようにするため。
+     ★いまの認定内容を必ず【先頭に】出す（表示だけ・1文字も保存しない）。
+       出さないと、更新したことがある方は一覧が過去だけ・まだの方は先頭が現在、と
+       同じ見出しなのに一番上の意味が人によって変わる（2026-09-19 レビュー M-6）。
+       いまと同じ期間の行は現在の行にまとめる（同じ期間が2行に見えるのを防ぐ）。
+     ★期間の記載が無い行（手入力・古い自動記録）は【末尾へ】。落とさないが、
+       期間順の中に混ぜると、どこに出るか読めない（レビュー L-3）。 */
   var chist=Array.isArray(r.careLevelHistory)?r.careLevelHistory.slice():[];
-  chist.sort(function(a,b){return String((b&&b.changedAt)||'').localeCompare(String((a&&a.changedAt)||''))});
   if(chist.length){
+    var chCur=clhOf_(r);
+    if(!clhEmpty_(chCur)) chist=chist.filter(function(s){ return !clhSame_(s,chCur); });
+    chist.sort(function(a,b){
+      var ax=clhNorm_(a&&a.certStart), bx=clhNorm_(b&&b.certStart);
+      if(!ax!==!bx) return ax?-1:1;                 /* 期間のある行が先、無い行は末尾 */
+      if(ax!==bx) return bx.localeCompare(ax);
+      return clhNorm_(b&&b.changedAt).localeCompare(clhNorm_(a&&a.changedAt));
+    });
+    if(!clhEmpty_(chCur)) chist.unshift({value:chCur.value, certStart:chCur.certStart,
+      certEnd:chCur.certEnd, certDate:chCur.certDate, __cur:true});
     var chHtml=chist.map(function(s){
-      var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
-      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1;color:var(--g7)">'+esc([period,s.note].filter(Boolean).join(' / '))+'</span></div>';
+      var period=(fmtJDate(s.certStart)||s.certStart||'')+
+                 (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
+      var tail=s.__cur ? '現在'
+        : [s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex:1 1 150px;min-width:120px;font-weight:700;color:var(--pri-d)">'+esc(period||'（認定期間の記載なし）')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1 1 auto;color:'+(s.__cur?'var(--pri-d);font-weight:700':'var(--g7)')+'">'+esc(tail)+'</span></div>';
     }).join('');
     h+='<div class="sec"><div class="sec-lbl">介護度の変更履歴</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+chHtml+'</div></div></div>';
   }
@@ -6214,6 +6234,49 @@ var editing=null, editBaseUpdatedAt='';
    編集画面を開いて保存しただけで値が空になって消える。同様に type=date は ISO 形式でない値を
    受け付けず空表示になり保存で消える。いずれも警告が出ない無言の消失なので、
    未知値は「（既存値）」付きの option として足す／date は text にフォールバックして必ず保持する。 */
+/* ═══ 介護度・認定期間の履歴（2026-09-19 管理者指示）═══
+   従来は【介護度の値が変わった時だけ】変更前を残していた。介護度が同じまま期間だけ延びる
+   更新認定（要介護3のまま R8.4.1〜R10.3.31 → R10.4.1〜R12.3.31）では前の期間が上書きされ、
+   「いつからいつまでが要介護いくつだったか」が追えなかった。
+   実測（2026-09-19・在籍33名を1人ずつ照会）: 履歴は【0名・0件】だった。
+   ★入居者マスタの GAS（ファイル「コード.gs」＝ gas/master.gs）の _clh* と【同じ規則】にすること。
+     片方だけ直すと、同じ操作でも1人ずつ保存したか一括編集したかで履歴が残ったり残らなかったりする。
+   ★中身が同じかは【介護度・認定期間(開始/終了)・認定日の4つだけ】で見る。記録日・備考は見ない。
+     見てしまうと、同じ内容の行が記録日違いでいくつも積み上がる。 */
+var CLH_KEYS=['value','certStart','certEnd','certDate'];
+function clhNorm_(v){ return String(v==null?'':v).trim(); }
+function clhSame_(a,b){
+  if(!a||!b) return false;
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(a[CLH_KEYS[i]])!==clhNorm_(b[CLH_KEYS[i]])) return false;
+  return true;
+}
+function clhOf_(src){
+  if(!src) return {value:'',certStart:'',certEnd:'',certDate:''};
+  return {value:clhNorm_(src.careLevel), certStart:clhNorm_(src.careCertStart),
+          certEnd:clhNorm_(src.careCertEnd), certDate:clhNorm_(src.certDate)};
+}
+function clhEmpty_(s){
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(s[CLH_KEYS[i]])) return false;
+  return true;
+}
+/* 変更前の一式を1件返す（積む必要が無ければ null）。
+   ★editing.careLevelHistory は【書き換えない】。書き換えると、画面に出ている履歴の行と
+     配列の位置が1つずれ、保存に失敗してもう一度押した時に collectCareHist が
+     別の行の値を書き込む＝自動記録が別の内容に化けて、さらに二重に積まれる
+     （2026-09-19 レビュー M-4。入力欄の取り違え＝M-046 と同型）。
+     保存するものだけに足せば、何度押しても結果は常に1件で同じになる。
+   返さないのは3つの時だけ: 1 何も変わっていない 2 変更前が丸ごと空（残す中身が無い）
+   3 同じ中身が既に履歴の先頭にある（＝1件目を作ってあっても二重にならない）。 */
+function clhEntryFor_(rec){
+  var before=clhOf_(editing), after=clhOf_(rec);
+  if(clhSame_(before,after)) return null;
+  if(clhEmpty_(before)) return null;
+  var hist=Array.isArray(editing.careLevelHistory)?editing.careLevelHistory:[];
+  if(hist.length&&clhSame_(hist[0],before)) return null;
+  return {value:before.value, certStart:before.certStart, certEnd:before.certEnd,
+          certDate:before.certDate, changedAt:todayISO(),
+          note:(before.value!==after.value)?'区分変更（自動記録）':'更新認定（自動記録）'};
+}
 function isISODate(s){return /^\d{4}-\d{2}-\d{2}$/.test(String(s||''))}
 function dtype(v){return (v&&!isISODate(v))?'text':'date'}
 function fld(k,label,val,type,opts){
@@ -7050,13 +7113,13 @@ function collectForm(){
   rec.family=editing.family.filter(function(f){return f.name||f.phone||f.address});
   collectSupport();
   rec.supportLog=editing.supportLog.filter(function(s){return s&&(s.date||s.text)});
-  // 介護度の変更履歴：手動編集を回収し、介護度が変わっていれば変更前の値を自動スナップショット
+  // 介護度の変更履歴：手動編集を回収し、介護度か認定期間が変わっていれば変更前を自動で残す
+  //   ★足すのは【保存する側】だけ（画面の行と配列をずらさない。上の clhEntryFor_ を参照）
+  //   ★認定日だけを入れた手入力行を落とさないよう certDate も残す条件に入れる（2026-09-19 レビュー L-1）
   collectCareHist();
-  var oldLevel=String(editing.careLevel||'').trim();
-  if(oldLevel&&rec.careLevel&&rec.careLevel!==oldLevel){
-    editing.careLevelHistory.unshift({value:oldLevel,certStart:editing.careCertStart||'',certEnd:editing.careCertEnd||'',certDate:editing.certDate||'',changedAt:todayISO(),note:'自動記録（変更前）'});
-  }
-  rec.careLevelHistory=editing.careLevelHistory.filter(function(s){return s&&(s.value||s.changedAt||s.note||s.certStart||s.certEnd)});
+  var clhNew=clhEntryFor_(rec);
+  rec.careLevelHistory=(clhNew?[clhNew]:[]).concat(editing.careLevelHistory)
+    .filter(function(s){return s&&(s.value||s.changedAt||s.note||s.certStart||s.certEnd||s.certDate)});
   // 医療支援経過（訪問診療の受け皿）
   collectMedLog();
   rec.medicalSupportLog=editing.medicalSupportLog.filter(function(s){return s&&(s.date||s.text)});

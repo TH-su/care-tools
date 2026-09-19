@@ -1875,14 +1875,47 @@ function nopOf(html,key){
   if(out===s){ try{ toast('⚠ 印刷除外の紐づけに失敗しました（'+key+'）'); }catch(e){} }
   return out;
 }
-function careHistHtml(arr){
-  var a=Array.isArray(arr)?arr.slice():[];
-  a.sort(function(x,y){return String((y&&y.changedAt)||'').localeCompare(String((x&&x.changedAt)||''))});
+/* ═══ 介護度・認定期間の履歴（2026-09-19 管理者指示）═══
+   ★入居者マスタ（resident-master.html の renderView）と【同じ規則】で見せること。
+     片方だけ直すと、同じ方の同じ記録が、直す画面と外部へ渡す紙で別の順に出る。
+   ・認定期間の新しい順。期間の記載が無い行は末尾（落とさない）
+   ・いまの認定内容を必ず先頭に出す（表示だけ・保存はしない）
+   ・いまと同じ期間の行は「現在」の行にまとめる（同じ期間が2行に見えない） */
+var CLH_KEYS=['value','certStart','certEnd','certDate'];
+function clhNorm_(v){ return String(v==null?'':v).trim(); }
+function clhSame_(a,b){
+  if(!a||!b) return false;
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(a[CLH_KEYS[i]])!==clhNorm_(b[CLH_KEYS[i]])) return false;
+  return true;
+}
+function clhOf_(src){
+  if(!src) return {value:'',certStart:'',certEnd:'',certDate:''};
+  return {value:clhNorm_(src.careLevel), certStart:clhNorm_(src.careCertStart),
+          certEnd:clhNorm_(src.careCertEnd), certDate:clhNorm_(src.certDate)};
+}
+function clhEmpty_(s){
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(s[CLH_KEYS[i]])) return false;
+  return true;
+}
+function careHistHtml(r){
+  var a=Array.isArray(r&&r.careLevelHistory)?r.careLevelHistory.slice():[];
   if(!a.length)return'<div class="cell" style="border-right:none;border-bottom:none"><span style="color:var(--g5)">　</span></div>';
+  var cur=clhOf_(r);
+  if(!clhEmpty_(cur)) a=a.filter(function(s){ return !clhSame_(s,cur); });
+  a.sort(function(x,y){
+    var ax=clhNorm_(x&&x.certStart), bx=clhNorm_(y&&y.certStart);
+    if(!ax!==!bx) return ax?-1:1;                 /* 期間のある行が先、無い行は末尾 */
+    if(ax!==bx) return bx.localeCompare(ax);
+    return clhNorm_(y&&y.changedAt).localeCompare(clhNorm_(x&&x.changedAt));
+  });
+  if(!clhEmpty_(cur)) a.unshift({value:cur.value, certStart:cur.certStart, certEnd:cur.certEnd,
+                                 certDate:cur.certDate, __cur:true});
   return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
-    var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
-    var sub=[period,s.note].filter(Boolean).join(' / ');
-    return'<div class="logline"><span class="d">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
+    var period=(fmtJDate(s.certStart)||s.certStart||'')+
+               (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
+    var sub=s.__cur?'現在'
+      :[s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
+    return'<div class="logline"><span class="d">'+esc(period||'（認定期間の記載なし）')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
   }).join('')+'</div>';
 }
 
@@ -2607,7 +2640,7 @@ function renderOfficeView(r){
     nopOf(full('医療処置',r.medicalCare),'medical')+
     '<div class="cell" data-nop-of="mind" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
   );
-  var chist=careHistHtml(r.careLevelHistory);
+  var chist=careHistHtml(r);
   var wt=weightCells(r);   // 体重・BMI は体重管理アプリの最新値を優先（無ければマスタの静的値）
   /* 基本情報。★在籍状態・入居期間・居室・生活自立度・認知症自立度は 2026-08-15 に
      入居者マスタと同じ所属へ揃えて追加した（生活自立度は ADL タブから移動）。 */
