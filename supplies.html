@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-19.3">
+<meta name="spl-build" content="2026-09-19.4">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -858,6 +858,20 @@ body.staff .adm{display:none !important}
     </table>
     <div id="billGroups" hidden></div>
   </div>
+  <div class="cd mt3 noprint" id="billReconBox" hidden>
+    <h3 class="sub">在庫の動きとの突き合わせ（この月・画面だけ）</h3>
+    <p class="muted">請求に乗るのは出庫だけです。<b>調整と棚卸で動いた分は誰にも請求されません。</b>
+      在庫が思ったより減っている時は、ここで原因の当たりを付けてください。この表は紙には出ません。</p>
+    <div class="tbl-wrap sm mt2">
+      <table class="grid">
+        <caption class="sr-only">この月の在庫の動き（品目ごと）</caption>
+        <thead><tr><th scope="col">品目</th><th scope="col" class="num">入庫</th>
+          <th scope="col" class="num">出庫（請求した分）</th><th scope="col" class="num">調整</th>
+          <th scope="col">棚卸</th></tr></thead>
+        <tbody id="billReconBody"></tbody>
+      </table>
+    </div>
+  </div>
 </section>
 
 <!-- ══ 集計（管理者）══ -->
@@ -1162,7 +1176,7 @@ body.staff .adm{display:none !important}
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-19.3';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
+var BUILD = '2026-09-19.4';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
 var CFG_KEY = 'spl_cfg';
 var PENDING_KEY = 'spl_pending';
 var ROSTER_KEY = 'su_residents_common';
@@ -3609,6 +3623,7 @@ function renderBill() {
   /* メモが使えない時は紙面にも理由を出す（印刷物が黙ってメモ抜きになるのを防ぐ） */
   $('billNotesCapWarn').hidden = !(ST.billMoves && !billNotesUsable());
   $('billNotesWarn').hidden = !(ST.billMoves && billNotesUsable() && ST.billNotesOk === false);
+  renderBillRecon();
   if (!ST.billMoves) {
     hideBillSheet(true);
     if (!billStateHasError()) {
@@ -3642,6 +3657,41 @@ function renderBill() {
   tf.appendChild(h('th', { scope: 'row', colspan: '4', text: '合計（' + rows.length + '行）' }));
   tf.appendChild(h('td', { cls: 'num camt', text: yen(SPL().billTotal(rows)) }));
   foot.appendChild(tf);
+}
+/* 在庫の動きとの突き合わせ（画面だけ）。紙面の外に置いてあるので印刷には関わらない。
+   請求に乗るのは出庫だけなので、調整・棚卸で動いた分がここで見えないと
+   「在庫は減っているのに誰にも請求されていない分」に気づけない */
+function renderBillRecon() {
+  var box = $('billReconBox'), body = $('billReconBody');
+  if (!box || !body) return;
+  clearNode(body);
+  if (!Array.isArray(ST.billMoves) || !ST.billMoves.length) { box.hidden = true; return; }
+  var rows = SPL().stockMoveSummary({ moves: ST.billMoves, items: ST.items });
+  if (!Array.isArray(rows) || !rows.length) { box.hidden = true; return; }
+  box.hidden = false;
+  rows.forEach(function (r) {
+    var u = txt(r.unitName);
+    var tr = h('tr');
+    tr.appendChild(h('td', { cls: 'cname', text: txt(r.itemName) || txt(r.itemId) }));
+    tr.appendChild(h('td', { cls: 'num', text: r.inQty ? ('+' + fmtInt(r.inQty) + u) : '—' }));
+    tr.appendChild(h('td', { cls: 'num', text: r.outQty ? ('-' + fmtInt(r.outQty) + u) : '—' }));
+    /* 調整は0でない時だけ数字を出し、請求と紐づいていないことが分かるようにする */
+    var adj = h('td', { cls: 'num' });
+    if (r.adjQty) {
+      adj.appendChild(h('b', { text: (r.adjQty > 0 ? '+' : '') + fmtInt(r.adjQty) + u }));
+      adj.appendChild(h('div', { cls: 'fnote', text: '請求なし' }));
+    } else { adj.textContent = '—'; }
+    tr.appendChild(adj);
+    var cnt = h('td');
+    if (r.counts.length) {
+      r.counts.forEach(function (c, i) {
+        if (i) cnt.appendChild(h('br'));
+        cnt.appendChild(h('span', { text: jpDate(c.date) + ' 実棚 ' + fmtInt(c.qty) + u }));
+      });
+    } else { cnt.textContent = '—'; }
+    tr.appendChild(cnt);
+    body.appendChild(tr);
+  });
 }
 /* 明細の1行。1枚続きでも入居者ごとでも同じ形を使う（列がずれない） */
 function billRowTr(r, i) {

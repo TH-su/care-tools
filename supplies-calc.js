@@ -728,6 +728,59 @@
     return rows;
   }
 
+  /* その月の在庫の動きを品目ごとにまとめる（画面で「請求と在庫が合うか」を見るため）。
+     出庫は請求に乗る分、入庫は仕入れた分、調整は誰にも請求されずに増減した分、
+     棚卸は実際に数えた数。qty はサーバーが書いた符号のまま入っているので、
+     出庫は絶対値で足す（在庫の減り）。voided は数えない。
+     ★ここは請求書に出すものではない。紙に載せると入居者に紐づかない増減が請求額に混ざる。 */
+  function stockMoveSummary(o) {
+    o = o || {};
+    var moves = Array.isArray(o.moves) ? o.moves : [];
+    var itemMap = toMap(o.items, 'id');
+    var map = {}, order = [], i;
+    for (i = 0; i < moves.length; i++) {
+      var mv = moves[i];
+      if (!mv || typeof mv !== 'object') continue;
+      if (isVoided(mv)) continue;
+      var t = str(mv.type);
+      if (t !== 'in' && t !== 'out' && t !== 'adj' && t !== 'count') continue;
+      var id = str(mv.itemId);
+      if (!id) continue;
+      var it = itemMap[id] || null;
+      var g = map[id];
+      if (!g) {
+        g = { itemId: id, itemName: it ? trim(it.name) : '', unitName: minUnitName(it),
+              inQty: 0, outQty: 0, adjQty: 0, counts: [] };
+        map[id] = g;
+        order.push(id);
+      }
+      var q = isNum(mv.qty) ? mv.qty : 0;
+      if (t === 'in') g.inQty += Math.abs(q);
+      else if (t === 'out') g.outQty += Math.abs(q);
+      else if (t === 'adj') g.adjQty += q;                 /* 符号つき（増やす調整もある） */
+      else g.counts.push({ date: str(mv.date), qty: Math.abs(q) });
+    }
+    var rows = [];
+    for (i = 0; i < order.length; i++) {
+      var r = map[order[i]];
+      r.counts.sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+      rows.push(r);
+    }
+    rows.sort(function (a, b) {
+      if (a.itemName !== b.itemName) return a.itemName < b.itemName ? -1 : 1;
+      return a.itemId < b.itemId ? -1 : 1;
+    });
+    return rows;
+  }
+
+  /* 最小単位の名前（在庫はいつも最小単位で数える） */
+  function minUnitName(item) {
+    if (!item) return '';
+    var mi = minIdx(item.units);
+    if (mi === null) return '';
+    return trim(item.units[mi] ? item.units[mi].name : '');
+  }
+
   /* 集計行 → CSV（BOM＋CRLF・全セル引用符・引用符は二重化）。氏名は行に入っている値だけ */
   function toCsv(rows) {
     var list = Array.isArray(rows) ? rows : [];
@@ -923,6 +976,7 @@
     toCsv: toCsv,
     /* 請求明細 */
     billRows: billRows,
+    stockMoveSummary: stockMoveSummary,
     billTotal: billTotal,
     /* 日付 */
     today: today,
