@@ -248,6 +248,33 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .ageout { display: block; border: 1px solid var(--g3); border-radius: 8px; background: var(--g1);
           color: var(--g8); padding: 9px 10px; font: inherit; min-height: 42px; box-sizing: border-box; }
 
+/* ── ご相談シート（様式の格子。画面と紙で同じものを使う） ── */
+.shwrap { overflow-x: auto; background: #fff; padding: 6px; border-radius: var(--r); }
+table.shgrid { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; }
+table.shgrid col { width: 10%; }
+table.shgrid td { border: 1px solid #000; padding: 2px 4px; font-size: 0.75rem; line-height: 1.3;
+                  vertical-align: middle; word-break: break-all; height: 1.9em; }
+table.shgrid td.lb { text-align: center; font-weight: 700; white-space: nowrap; background: var(--g1); }
+table.shgrid td.lb-l { text-align: left; }
+table.shgrid td.none { border: none; background: none; }
+table.shgrid td.ps-title { font-size: 1rem; font-weight: 700; letter-spacing: .05em; text-align: center; border: none; }
+table.shgrid td.vr { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: .3em;
+                     text-align: center; font-weight: 700; background: var(--g1); }
+table.shgrid td.val { font-weight: 400; vertical-align: top; }
+table.shgrid td.val.big { height: 22em; }
+table.shgrid tr.sp td { border: none; height: 5px; padding: 0; }
+table.shgrid td .hd { font-weight: 700; display: block; }
+table.shgrid td .opt { display: inline-block; padding: 0 2px; }
+table.shgrid td .opt.on { border: 1.4px solid #000; border-radius: 999px; padding: 0 5px; font-weight: 700; }
+/* 押せる値のセル（画面のみ） */
+table.shgrid td[data-shk] { cursor: text; }
+table.shgrid td[data-shk]:hover { background: var(--pri-l); }
+table.shgrid td[data-shk]:focus { outline: 2px solid var(--pri); outline-offset: -2px; }
+table.shgrid td.editing { background: #fff; padding: 0; }
+table.shgrid .shin { width: 100%; box-sizing: border-box; border: 2px solid var(--pri); border-radius: 4px;
+                     font: inherit; font-size: 0.8125rem; padding: 3px 4px; background: #fff; }
+table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
+
 /* ── 添付書類 ── */
 .fl { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
       border: 1px solid var(--g3); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
@@ -321,6 +348,14 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 #printSheet .opt { display: inline-block; padding: 0 2px; }
 #printSheet .opt.on { border: 1.4px solid #000; border-radius: 999px; padding: 0 5px; font-weight: 700; }
 #printSheet .memo { height: 55mm; vertical-align: top; }   /* 紙と同じく備考を大きく取る（A4縦1枚に収まる範囲） */
+/* ★印刷は画面と同じ table.shgrid を使う。紙と画面がずれる余地を残さないため。
+   文字だけ紙の大きさに落とし、背景色は落とす（インク節約・白黒印刷で潰れないように）。 */
+#printSheet table.shgrid { min-width: 0; }
+#printSheet table.shgrid td { font-size: 7.4pt; padding: 1px 3px; height: auto; }
+#printSheet table.shgrid td.lb, #printSheet table.shgrid td.vr { background: #fff; }
+#printSheet table.shgrid td.ps-title { font-size: 12pt; }
+#printSheet table.shgrid td.val.big { height: 40mm; }
+#printSheet table.shgrid tr.sp td { height: 2px; }
 #printSheet .memo div { font-size: 7.6pt; white-space: pre-wrap; line-height: 1.35; }
 #printSheet .hd { display: flex; align-items: flex-end; gap: 8px; margin: 0 0 3px; }
 #printSheet .hd .sp { flex: 1; }
@@ -425,6 +460,8 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 </div>
 
 <!-- 添付書類の追加 -->
+<div class="sc" id="sc-sheet"><div id="sheetBox"></div></div>
+
 <div class="mk" id="mk-file" role="dialog" aria-modal="true" aria-labelledby="fl-h">
   <div class="md">
     <h2 id="fl-h">書類を追加<button class="md-close" type="button" data-close="mk-file" aria-label="閉じる">✕</button></h2>
@@ -765,6 +802,7 @@ var ASSESS_TEXT = [
   /* ── 障害福祉・生活保護 ── */
   ['disabilityKinds', '障害種類（身体・精神・知的）', 'text', null],
   ['disabilityBook', '障害者手帳', 'select', SH_ARIMU],
+  ['disabilityNote', '　障害福祉の備考', 'text', null],
   ['welfare', '生活保護', 'select', SH_ARIMU],
   ['welfareAmount', '　受給費（円）', 'text', null],
   ['guarantor', '連帯保証人', 'select', SH_GUARANTOR],
@@ -777,12 +815,19 @@ var ASSESS_TEXT = [
   ['medMgmtNeed', '服薬管理', 'select', SH_YOUHI],
   ['bloodType', '血液型', 'text', null],
   ['vision', '視力', 'select', SH_VISION],
+  ['visionNote', '　視力の様子', 'text', null],
   ['hearing', '聴力', 'select', SH_HEARING],
+  ['hearingNote', '　聴力の様子', 'text', null],
   ['walking', '歩行', 'select', SH_WALK],
+  ['walkNote', '　歩行の様子', 'text', null],
+  ['adlNote', '　ADLの備考（様式の【備考】欄）', 'textarea', null],
   ['denture', '義歯', 'select', SH_DENTURE],
   ['bathLv', '入浴', 'select', SH_CARE3],
+  ['bathNote', '　入浴の留意点', 'text', null],
   ['mealLv', '食事', 'select', SH_CARE3],
+  ['mealNote', '　食事の留意点', 'text', null],
   ['excreteLv', '排泄', 'select', SH_CARE3],
+  ['excreteNote', '　排泄の留意点', 'text', null],
   ['excreteDay', '排泄 日中', 'text', null],
   ['excreteNight', '排泄 夜間', 'text', null],
   ['excreteOther', '排泄 その他', 'text', null],
@@ -828,7 +873,9 @@ var ASSESS_TEXT = [
   ['formNote', 'その他の備考', 'textarea', null]
 ];
 /* 印刷しない項目（スプレッドシートで行が隠れているもの・2026-08-30 指示） */
-var SHEET_HIDDEN_KEYS = { supplies: 1, beddingRental: 1, diaperSize: 1, padSize: 1 };
+/* 紙に出さない項目。2026-09-19 に空にした（現物のシートでは消耗品の行も印刷されている）。
+   ★ここへ足すと、その項目は画面の様式からも印刷からも消える。足す時は現物と突き合わせること。 */
+var SHEET_HIDDEN_KEYS = {};
 function assessTextKeys() { return ASSESS_TEXT.map(function (p) { return p[0]; }); }
 
 /* ── 連携の提示ルール ──
@@ -1699,6 +1746,7 @@ function renderView(c) {
     '<button class="btn sm" id="vBack" type="button">← 一覧</button><span class="sp"></span>' +
     (canUndo() ? '<button class="btn sm" id="vUndo" type="button">↩ 元に戻す</button>' : '') +
     '<button class="btn sm" id="vEdit" type="button">✏️ 編集</button>' +
+    '<button class="btn sm" id="vSheet" type="button">📄 ご相談シート</button>' +
     '<button class="btn sm" id="vPrint" type="button">🖨 ご相談シートを印刷</button>' +
     (!c.deleted && c.stage !== 'lost' && c.stage !== 'movedin' ? '<button class="btn sm warn" id="vLost" type="button">見送りにする</button>' : '') +
     (!c.deleted && c.stage === 'lost' ? '<button class="btn sm" id="vRevive" type="button">進行中に戻す</button>' : '') +
@@ -1893,6 +1941,7 @@ function bindViewEvents(c) {
   $('vBack').addEventListener('click', function () { showScreen('list'); renderList(); });
   $('vEdit').addEventListener('click', function () { openEdit(c.id); });
   if ($('vUndo')) $('vUndo').addEventListener('click', doUndo);
+  if ($('vSheet')) $('vSheet').addEventListener('click', function () { openSheet(c.id); });
   if ($('vPrint')) $('vPrint').addEventListener('click', function () { printSheet(c); });
   if ($('vLost')) $('vLost').addEventListener('click', function () {
     $('lostReason').value = ''; $('lostNote').value = ''; openModal('mk-lost');
@@ -2802,14 +2851,15 @@ var SHEET_GROUPS = [
   ['受付・ご相談者', ['receivedAt', 'consulterName', 'consulterTel']],
   ['ご本人・キーパーソン', ['address', 'kpName', 'kpGender', 'kpRelation', 'kpTel', 'kpAddress']],
   ['介護保険', ['certified', 'servicesNote', 'cmChange', 'cmChangeNote']],
-  ['障害福祉・生活保護', ['disabilityKinds', 'disabilityBook', 'welfare', 'welfareAmount', 'guarantor']],
+  ['障害福祉・生活保護', ['disabilityKinds', 'disabilityBook', 'disabilityNote', 'welfare', 'welfareAmount', 'guarantor']],
   ['身体状況', ['pastHistory', 'impairment', 'height', 'weight', 'visitStatus', 'medMgmtNeed', 'bloodType',
-    'vision', 'hearing', 'walking', 'denture',
-    'bathLv', 'mealLv', 'excreteLv', 'excreteDay', 'excreteNight', 'excreteOther',
+    'vision', 'visionNote', 'hearing', 'hearingNote', 'walking', 'walkNote', 'denture', 'adlNote',
+    'bathLv', 'bathNote', 'mealLv', 'mealNote', 'excreteLv', 'excreteNote',
+    'excreteDay', 'excreteNight', 'excreteOther',
     'mealType', 'mealStaple', 'mealSide', 'mealOther', 'dementiaExists', 'dementiaNote', 'commNotes']],
   ['医療', ['currentPlace', 'currentHospital', 'placeReason', 'doctorNow', 'specialMeds', 'diseasesNow',
     'doctorChange', 'pharmacyContract', 'allergyExists', 'allergy']],
-  ['消耗品（紙には印刷されません）', ['supplies', 'beddingRental', 'diaperSize', 'padSize']],
+  ['消耗品', ['supplies', 'beddingRental', 'diaperSize', 'padSize']],
   ['ご意向・結論', ['wishFamily', 'wishSelf', 'meetDate', 'urgent', 'continueConsult', 'referOther']],
   ['施設内の補足（紙には印刷されません）', ['medicalCare', 'infections', 'medsRegular', 'careHints',
     'lifeHistory', 'personality', 'hobby', 'foodPref', 'formNote']]
@@ -2863,7 +2913,8 @@ function assessEditHtml(a) {
     shFld('commLevel', '意思疎通（様式の区分）', 'select', BF_COMM_LEVEL, asStr(a.commLevel)) +
     shFld('medLevel', '服薬（介助の程度）', 'select', BF_LEVELS.map(function (l) { return l[0]; }), asStr(a.medLevel)) +
     shFld('thickener', 'とろみ', 'text', null, asStr(a.thickener)) +
-    shFld('mealNote', '食事の留意点', 'textarea', null, asStr(a.mealNote)) +
+    /* ★食事の留意点は様式の並び（入浴・食事・排泄のコメント行）へ移した。
+       ここへ残すと同じ項目の入力欄が1画面に2つ出る（2026-09-19） */
     '</div>';
   h += '<h4>入居前に利用していたサービス</h4>';
   BF_SERVICES.forEach(function (pp) {
@@ -3155,6 +3206,423 @@ function saveEdit() {
   editing = null; editBase = null; editDirty = false;
   toast(n ? '保存しました。次にやること ' + n + '件を追加しました' : '保存しました');
   openView(saved.id);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ご相談シート（ラウレアハレ様式）の格子
+   ---------------------------------------------------------------
+   ★スプレッドシートの現物（10列×48行）を1セルずつ写したもの。2026-09-19 実測。
+   ★画面・印刷・その場編集の3つが、この1つの定義から組み立てられる。
+     定義を1つにしてあるのは、紙と画面がずれる余地を残さないため。
+   ★各行の colspan の合計は必ず10になる（上の行から伸びる rowspan のぶんを含めて）。
+     shGridCheck() が全行で数えていて、崩れるとテストが落ちる。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 見出し・固定文字のセル */
+function shT(text, cs, rs, cls) { return { txt: text, cs: cs || 1, rs: rs || 1, cls: cls || 'lb' }; }
+/* 値のセル。k は値の在りか（a:アセスメント / c:案件 / s:ステージ日付 / k:連携先 / x:計算）*/
+function shV(k, cs, rs, o) {
+  var c = { k: k, cs: cs || 1, rs: rs || 1 };
+  if (o) { for (var x in o) if (Object.prototype.hasOwnProperty.call(o, x)) c[x] = o[x]; }
+  return c;
+}
+var SH_SPACER = { spacer: true };
+
+var SH_GRID = [
+  /*  0 */[shT('【ラウレアハレ　ご相談シート】', 5, 1, 'ps-title'), shT('受付日時 :'), shV('a:receivedAt', 4)],
+  /*  1 */[shT('', 7, 1, 'none'), shT('印刷日 :', 1, 1, 'lb none'), shT('', 1, 1, 'none'), shV('x:printDate', 1, 1, { ro: 1, cls: 'none' })],
+  /*  2 */[shT('相談者'), shV('a:consulterName', 4), shT('電話番号'), shV('a:consulterTel', 4)],
+  /*  3 */SH_SPACER,
+  /*  4 */[shT('氏名', 1, 2), shV('c:name', 3, 2), shV('c:gender', 1, 2, { t: 'sel', o: 'SH_GENDER' }),
+           shT('生年月日'), shV('c:birthDate', 3, 1, { t: 'date' }), shV('x:age', 1, 1, { ro: 1 })],
+  /*  5 */[shT('ご住所'), shV('a:address', 4)],
+  /*  6 */SH_SPACER,
+  /*  7 */[shT('KP', 1, 2), shV('a:kpName', 3, 2), shV('a:kpGender', 1, 1, { t: 'sel', o: 'SH_GENDER' }),
+           shT('電話番号'), shV('a:kpTel', 4)],
+  /*  8 */[shV('a:kpRelation', 1, 1, { pre: '続柄( ', suf: ' )' }), shT('ご住所'), shV('a:kpAddress', 4)],
+  /*  9 */SH_SPACER,
+  /* 10 */[shT('介護・福祉サービス等', 1, 8, 'vr'), shT('介護保険', 1, 5, 'vr'),
+           shT('【利用中のサービス内容】', 2, 1, 'lb-l'), shT('介護'), shV('c:careLevel', 1, 1, { t: 'sel', o: 'SH_LEVELS', fmt: 'care' }),
+           shT('認定期間'), shV('x:period', 3)],
+  /* 11 */[shV('a:servicesNote', 8, 1, { t: 'area' })],
+  /* 12 */[shT('病院・相談員'), shV('k:hospital', 3), shT('連絡先'), shV('k:hospital.tel', 3)],
+  /* 13 */[shT('居宅・ケアマネ', 1, 2), shV('k:caremgr', 3), shT('連絡先'), shV('k:caremgr.tel', 3)],
+  /* 14 */[shV('a:cmChange', 1, 1, { t: 'sel', o: 'SH_SURU', fmt: 'change' }), shT('福祉用具貸与'),
+           shV('k:equip', 2), shT('連絡先', 2), shV('k:equip.tel', 1)],
+  /* 15 */[shT('障害福祉', 1, 2, 'vr'), shT('障害種類'), shV('a:disabilityKinds', 3), shT('', 1, 1, 'none'),
+           shT('手帳', 2), shV('a:disabilityBook', 1, 1, { t: 'sel', o: 'SH_ARIMU', arm: 1 })],
+  /* 16 */[shV('a:disabilityNote', 8, 1, { t: 'area' })],
+  /* 17 */[shT('生活保護'), shV('a:welfare', 1, 1, { t: 'sel', o: 'SH_ARIMU', arm: 1 }), shT('受給費'),
+           shV('a:welfareAmount', 2), shT('円'), shT('連帯保証人', 2),
+           shV('a:guarantor', 1, 1, { t: 'sel', o: 'SH_GUARANTOR', arm: 1 })],
+  /* 18 */SH_SPACER,
+  /* 19 */[shT('身　体　状　況', 1, 13, 'vr'), shT('病歴'), shV('a:pastHistory', 5), shT('身長', 2),
+           shV('a:height', 1, 1, { suf: '　cm' })],
+  /* 20 */[shT('機能障害等'), shV('a:impairment', 5), shT('体重', 2), shV('a:weight', 1, 1, { suf: '　kg' })],
+  /* 21 */[shT('通院状況'), shV('a:visitStatus', 5), shT('血液型', 2), shV('a:bloodType', 1, 1, { suf: '　型' })],
+  /* 22 */[shT('視力'), shV('a:vision', 1, 1, { t: 'sel', o: 'SH_VISION' }), shT('聴力'),
+           shV('a:hearing', 1, 1, { t: 'sel', o: 'SH_HEARING' }), shT('歩行'),
+           shV('a:walking', 1, 1, { t: 'sel', o: 'SH_WALK' }), shT('服薬管理', 2),
+           shV('a:medMgmtNeed', 1, 1, { t: 'sel', o: 'SH_YOUHI' })],
+  /* 23 */[shV('a:visionNote', 2, 3, { t: 'area' }), shV('a:hearingNote', 2, 3, { t: 'area' }),
+           shV('a:walkNote', 2, 3, { t: 'area' }), shV('a:adlNote', 3, 4, { t: 'area', hd: '【備考】' })],
+  /* 24 */[],
+  /* 25 */[],
+  /* 26 */[shT('入浴'), shV('a:bathLv', 1, 1, { t: 'sel', o: 'SH_CARE3' }), shT('食事'),
+           shV('a:mealLv', 1, 1, { t: 'sel', o: 'SH_CARE3' }), shT('排泄'),
+           shV('a:excreteLv', 1, 1, { t: 'sel', o: 'SH_CARE3' })],
+  /* 27 */[shV('a:bathNote', 2, 3, { t: 'area' }), shV('a:mealNote', 2, 3, { t: 'area' }),
+           shV('a:excreteNote', 2, 3, { t: 'area' }), shT('日中'), shV('a:excreteDay', 2)],
+  /* 28 */[shT('夜間'), shV('a:excreteNight', 2)],
+  /* 29 */[shT('その他'), shV('a:excreteOther', 2)],
+  /* 30 */[shT('食事形態'), shV('a:mealType', 1, 1, { t: 'sel', o: 'SH_MEALTYPE' }), shV('x:meal2', 4),
+           shT('その他'), shV('a:mealOther', 2)],
+  /* 31 */[shT('認知症'), shV('a:dementiaExists', 1, 1, { t: 'sel', o: 'SH_ARIMU', arm: 1 }),
+           shV('a:dementiaNote', 3), shT('意思疎通'), shV('a:commNotes', 3)],
+  /* 32 */SH_SPACER,
+  /* 33 */[shT('医療', 1, 4, 'vr'), shT('現在の状況'), shV('a:currentPlace', 1, 1, { t: 'sel', o: 'SH_PLACE' }),
+           shT('備考：'), shV('a:currentHospital', 6)],
+  /* 34 */[shT('現主治医'), shV('a:doctorNow', 3), shT('特殊な薬'), shV('a:specialMeds', 4)],
+  /* 35 */[shT('治療中の病気'), shV('a:diseasesNow', 5), shT('主治医契約', 2),
+           shV('a:doctorChange', 1, 1, { t: 'sel', o: 'SH_SURU' })],
+  /* 36 */[shT('アレルギー'), shV('a:allergyExists', 1, 1, { t: 'sel', o: 'SH_ARIMU', arm: 1 }), shT('（'),
+           shV('a:allergy', 2), shT('）'), shT('薬局契約', 2),
+           shV('a:pharmacyContract', 1, 1, { t: 'sel', o: 'SH_SURU' })],
+  /* 37 */SH_SPACER,
+  /* 38 */[shT('', 1, 1, 'none'), shT('消耗品'), shV('a:supplies', 1), shT('寝具リース'),
+           shV('a:beddingRental', 1), shT('オムツサイズ'), shV('a:diaperSize', 1),
+           shT('パッドサイズ', 2), shV('a:padSize', 1)],
+  /* 39 */SH_SPACER,
+  /* 40 */[shT('備考', 1, 3, 'vr'), shV('a:formNote', 9, 3, { t: 'area', big: 1 })],
+  /* 41 */[],
+  /* 42 */[],
+  /* 43 */[shT('', 1, 1, 'none'), shT('Fa :'), shV('a:wishFamily', 3), shT('S :'), shV('a:wishSelf', 4)],
+  /* 44 */SH_SPACER,
+  /* 45 */[shT('見学日'), shV('s:tour', 2, 1, { t: 'date' }), shT('面談日'),
+           shV('a:meetDate', 2, 1, { t: 'date' }), shT('入居日'), shV('s:movedin', 3, 1, { t: 'date' })],
+  /* 46 */SH_SPACER,
+  /* 47 */[shT('早急な対応'), shV('a:urgent', 2, 1, { t: 'sel', o: 'SH_YOUHI' }), shT('継続相談'),
+           shV('a:continueConsult', 2, 1, { t: 'sel', o: 'SH_SURU' }), shT('他施設への紹介'),
+           shV('a:referOther', 3, 1, { t: 'sel', o: 'SH_REFER' })]
+];
+
+/* 介護度の選択肢（編集画面と同じ並び） */
+var SH_LEVELS = ['', '要支援1', '要支援2', '要介護1', '要介護2', '要介護3', '要介護4', '要介護5', '自立', '申請中'];
+
+/* 名前で選択肢の配列を引く（定義の中では文字列で持ち、組み立て時に解決する） */
+function shOpts(name) {
+  var m = {
+    SH_ARIMU: SH_ARIMU, SH_YOUHI: SH_YOUHI, SH_SURU: SH_SURU, SH_VISION: SH_VISION,
+    SH_HEARING: SH_HEARING, SH_WALK: SH_WALK, SH_CARE3: SH_CARE3, SH_MEALTYPE: SH_MEALTYPE,
+    SH_PLACE: SH_PLACE, SH_GUARANTOR: SH_GUARANTOR, SH_REFER: SH_REFER, SH_GENDER: SH_GENDER,
+    SH_LEVELS: SH_LEVELS
+  };
+  return m[name] || [''];
+}
+
+/* 各行の列数が10で揃っているかを数える（上から伸びる rowspan を勘定に入れる）。
+   戻り値は行ごとの合計。テストが全行 10 であることを確かめる。 */
+function shGridCheck() {
+  var carry = [], out = [], i, j;
+  for (i = 0; i < SH_GRID.length; i++) carry.push(0);
+  for (i = 0; i < SH_GRID.length; i++) {
+    var row = SH_GRID[i];
+    var n = carry[i];
+    if (row && row.spacer) { out.push(10); continue; }
+    for (j = 0; j < (row || []).length; j++) {
+      var cell = row[j];
+      n += cell.cs;
+      for (var r = 1; r < cell.rs; r++) { if (i + r < carry.length) carry[i + r] += cell.cs; }
+    }
+    out.push(n);
+  }
+  return out;
+}
+
+
+/* ── 値の読み書き（格子のセルと案件データをつなぐ唯一の場所） ──
+   k の形: 'a:キー'＝アセスメント ／ 'c:キー'＝案件本体 ／ 's:段階'＝ステージ日付
+           'k:分類[.tel]'＝連携先 ／ 'x:名前'＝計算（読み取り専用・保存しない） */
+function shGet(c, k) {
+  var p = asStr(k).split(':'), kind = p[0], key = p[1] || '';
+  var a = asObj(c.assess);
+  if (kind === 'a') return asStr(a[key]);
+  if (kind === 'c') return asStr(c[key]);
+  if (kind === 's') return asStr(asObj(c.stageDates)[key]);
+  if (kind === 'k') {
+    var q = key.split('.'), ct = shContact(c, q[0]);
+    if (!ct) return '';
+    if (q[1] === 'tel') return asStr(ct.tel);
+    return asStr(ct.org) + (ct.person ? '　' + asStr(ct.person) : '');
+  }
+  return '';
+}
+/* 分類ごとの最初の連携先（無ければ null） */
+function shContact(c, cat) {
+  return asArr(c.contacts).filter(function (x) { return x && x.cat === cat; })[0] || null;
+}
+function shSet(c, k, v) {
+  var p = asStr(k).split(':'), kind = p[0], key = p[1] || '';
+  v = asStr(v);
+  if (kind === 'a') { if (!isObj(c.assess)) c.assess = {}; c.assess[key] = v; c.assess.updatedAt = nowIso(); return; }
+  if (kind === 'c') { c[key] = v; return; }
+  if (kind === 's') {
+    if (!isObj(c.stageDates)) c.stageDates = {};
+    if (v) c.stageDates[key] = v; else delete c.stageDates[key];
+    return;
+  }
+  if (kind === 'k') {
+    var q = key.split('.'), ct = shContact(c, q[0]);
+    if (!ct) {
+      /* ★無ければ作る。様式から入れた連絡先が、連携先の一覧にも出るようにするため */
+      if (!v) return;
+      ct = { id: newId('k'), cat: q[0], org: '', person: '', tel: '', fax: '', note: '' };
+      if (!Array.isArray(c.contacts)) c.contacts = [];
+      c.contacts.push(ct);
+    }
+    if (q[1] === 'tel') ct.tel = v;
+    else {
+      /* 「事業所名　担当者」の形で入っていたら分けて持つ（一覧の表示が崩れないように） */
+      var m = v.split(/[　 ]+/);
+      ct.org = m[0] || '';
+      ct.person = m.slice(1).join(' ');
+    }
+    return;
+  }
+}
+
+/* 表示のための整形（保存する値は変えない） */
+function shFmt(c, cell) {
+  var v = shGet(c, cell.k);
+  if (cell.fmt === 'care') {
+    /* 様式の「介護」の右は数字だけ（要介護2 → 2／要支援1 → 支1） */
+    var m = v.match(/^要介護(\d)$/); if (m) return m[1];
+    m = v.match(/^要支援(\d)$/); if (m) return '支' + m[1];
+    return v;
+  }
+  if (cell.fmt === 'change') return v ? ('変更' + v) : '';
+  if (cell.pre || cell.suf) return v ? (asStr(cell.pre) + v + asStr(cell.suf)) : '';
+  return v;
+}
+/* 計算セル（保存しない） */
+function shCalc(c, key) {
+  if (key === 'printDate') return todayYmd().replace(/-/g, '/');
+  if (key === 'age') { var n = ageText(c.birthDate); return n === '—' ? '' : n.replace('歳', ''); }
+  if (key === 'period') {
+    var a = asObj(c.assess), s = asStr(c.careCertStart), e = asStr(c.careCertEnd);
+    return (s || e) ? (s + ' 〜 ' + e) : '〜';
+  }
+  if (key === 'meal2') {
+    var a2 = asObj(c.assess);
+    return '（主：　' + asStr(a2.mealStaple) + '　副：　' + asStr(a2.mealSide) + '　）';
+  }
+  return '';
+}
+
+/* ── 組み立て ──
+   mode 'edit' … 画面（セルを押すとその場で書き換えられる）
+   mode 'print' … 紙（入力欄を出さず、選択肢は丸で囲む） */
+function renderSheetGrid(c, mode) {
+  var edit = (mode === 'edit');
+  var h = '<table class="shgrid"><colgroup>';
+  for (var ci = 0; ci < 10; ci++) h += '<col>';
+  h += '</colgroup><tbody>';
+  SH_GRID.forEach(function (row, ri) {
+    if (row && row.spacer) { h += '<tr class="sp"><td colspan="10"></td></tr>'; return; }
+    h += '<tr>';
+    (row || []).forEach(function (cell) {
+      var span = (cell.cs > 1 ? ' colspan="' + cell.cs + '"' : '') + (cell.rs > 1 ? ' rowspan="' + cell.rs + '"' : '');
+      if (cell.txt !== undefined) {
+        h += '<td class="' + esc(cell.cls) + '"' + span + '>' + esc(cell.txt) + '</td>';
+        return;
+      }
+      h += '<td class="val' + (cell.big ? ' big' : '') + (cell.cls ? ' ' + esc(cell.cls) : '') + '"' + span +
+        (edit && !cell.ro ? ' data-shk="' + esc(cell.k) + '" tabindex="0" role="button"' +
+          ' aria-label="' + esc(shLabelOf(cell)) + ' を書き換える"' : '') + '>' +
+        (cell.hd ? '<span class="hd">' + esc(cell.hd) + '</span>' : '') +
+        shCellBody(c, cell, edit) + '</td>';
+    });
+    h += '</tr>';
+  });
+  return h + '</tbody></table>';
+}
+
+/* セルの中身。選択肢は紙と同じく「有 ・ 無」を並べて丸で囲む（arm のとき） */
+function shCellBody(c, cell, edit) {
+  var parts = asStr(cell.k).split(':'), kind = parts[0];
+  /* 紙に出さないと宣言した項目は、印刷の時だけ空にする（画面では今までどおり見える） */
+  if (!edit && kind === 'a' && SHEET_HIDDEN_KEYS[parts[1]]) return '';
+  if (kind === 'x') return esc(shCalc(c, parts[1]));
+  var v = shGet(c, cell.k);
+  if (cell.arm) {
+    var opts = shOpts(cell.o).filter(function (o) { return o !== ''; });
+    return opts.map(function (o) {
+      return '<span class="opt' + (o === v ? ' on' : '') + '">' + esc(o) + '</span>';
+    }).join(' ・ ');
+  }
+  var shown = shFmt(c, cell);
+  if (cell.t === 'date' && v) shown = v.replace(/-/g, '/');
+  return esc(shown);
+}
+/* セルの項目名（読み上げと、止めた時の案内に使う）。
+   ★キーをそのまま出さない。「tourの日付を読み取れません」では、人はどの欄か分からない。 */
+var SH_CAND_LABEL = { name: '氏名', kana: 'ふりがな', gender: '性別', birthDate: '生年月日',
+                      careLevel: '介護度', phone: '連絡先電話', room: '予定居室' };
+function shLabelOf(cell) {
+  var p = asStr(cell && cell.k).split(':'), kind = p[0], key = p[1] || '';
+  if (kind === 'a') {
+    var hit = null;
+    ASSESS_TEXT.forEach(function (x) { if (!hit && x[0] === key) hit = x[1]; });
+    return asStr(hit || key).replace(/^　+/, '');
+  }
+  if (kind === 'c') return SH_CAND_LABEL[key] || key;
+  if (kind === 's') return stageLabel(key) + '日';
+  if (kind === 'k') {
+    var q = key.split('.');
+    return catLabel(q[0]) + (q[1] === 'tel' ? ' の連絡先' : '');
+  }
+  return key;
+}
+
+
+/* ── セルをその場で書き換える ──
+   ★押したセルの中に入力欄を出し、離れた時に保存する。
+     画面ごと作り直すのは保存の後だけにする（打っている最中に消えないように）。 */
+var shEditing = null;      /* いま開いている入力欄のセル */
+
+function shCellOf(el) { return (el && el.closest) ? el.closest('[data-shk]') : null; }
+
+function shOpenEditor(td) {
+  if (!td || shEditing === td) return;
+  shCloseEditor();
+  var c = curId && findCand(curId);
+  if (!c) return;
+  var k = td.getAttribute('data-shk');
+  var cell = shFindCell(k);
+  if (!cell) return;
+  var v = shGet(c, k);
+  var box;
+  if (cell.t === 'sel') {
+    box = document.createElement('select');
+    shOpts(cell.o).forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o; op.textContent = o === '' ? '—' : o;
+      if (o === v) op.selected = true;
+      box.appendChild(op);
+    });
+  } else if (cell.t === 'area') {
+    box = document.createElement('textarea');
+    box.value = v;
+    box.rows = Math.max(2, cell.rs);
+  } else {
+    box = document.createElement('input');
+    box.type = 'text';
+    box.value = v;
+    if (cell.t === 'date') {
+      box.className = 'dtin';
+      box.setAttribute('inputmode', 'numeric');
+      box.placeholder = DATE_PH;
+    }
+  }
+  box.className = (box.className ? box.className + ' ' : '') + 'shin';
+  box.setAttribute('aria-label', shLabelOf(cell));
+  td.textContent = '';
+  td.appendChild(box);
+  td.classList.add('editing');
+  shEditing = td;
+  box.focus();
+  if (box.select) { try { box.select(); } catch (e) {} }
+}
+
+/* 入力欄の中身を保存して閉じる。戻り値は「保存できた」か */
+function shCommit() {
+  if (!shEditing) return true;
+  var td = shEditing, box = td.querySelector('.shin');
+  var c = curId && findCand(curId);
+  if (!box || !c) { shEditing = null; return true; }
+  var k = td.getAttribute('data-shk');
+  var cell = shFindCell(k);
+  var v = asStr(box.value).trim();
+  if (cell && cell.t === 'date' && v) {
+    var iso = normDateStr(v);
+    if (!iso) {
+      /* ★読めない日付は保存しない。案件データの日付は常に YYYY-MM-DD か空、という約束を守る */
+      toast(shLabelOf(cell) + 'の' + DATE_BAD_MSG);
+      box.focus();
+      return false;
+    }
+    v = iso;
+  }
+  var before = shGet(c, k);
+  shEditing = null;
+  td.classList.remove('editing');
+  if (v === before) { renderSheetScreen(c); return true; }
+  pushUndoCand(c, 'ご相談シートの編集');
+  shSet(c, k, v);
+  touch(c);
+  renderSheetScreen(c);
+  return true;
+}
+function shCloseEditor() {
+  if (!shEditing) return;
+  var td = shEditing;
+  shEditing = null;
+  td.classList.remove('editing');
+}
+function shFindCell(k) {
+  var hit = null;
+  SH_GRID.forEach(function (row) {
+    if (!row || row.spacer) return;
+    row.forEach(function (cell) { if (!hit && cell.k === k) hit = cell; });
+  });
+  return hit;
+}
+
+/* ── 画面 ── */
+function openSheet(id) {
+  var c = findCand(id);
+  if (!c) { toast('この案件は見つかりません'); showScreen('list'); renderList(); return; }
+  curId = id;
+  renderSheetScreen(c);
+  showScreen('sheet');
+}
+function renderSheetScreen(c) {
+  var box = $('sheetBox');
+  if (!box) return;
+  box.innerHTML =
+    '<div class="viewbar"><button class="btn sm" id="shBack" type="button">← 詳細へ</button><span class="sp"></span>' +
+    (canUndo() ? '<button class="btn sm" id="shUndo" type="button">↩ 元に戻す</button>' : '') +
+    '<button class="btn sm" id="shPrint" type="button">🖨 印刷</button></div>' +
+    '<p class="note">値の欄を押すと、その場で書き換えられます。紙の様式とまったく同じ並びです。</p>' +
+    '<div class="shwrap">' + renderSheetGrid(c, 'edit') + '</div>';
+  $('shBack').addEventListener('click', function () { shCommit(); openView(c.id); });
+  if ($('shUndo')) $('shUndo').addEventListener('click', function () { shCommit(); doUndo(); });
+  $('shPrint').addEventListener('click', function () { shCommit(); printSheet(c); });
+}
+
+/* 画面は何度も作り直されるので、欄ごとではなく document へ1回だけ張る */
+function bindSheetCells() {
+  document.addEventListener('click', function (e) {
+    var td = shCellOf(e.target);
+    if (!td) {
+      /* 入力欄の外を押した＝確定 */
+      if (shEditing && !(e.target.closest && e.target.closest('.editing'))) shCommit();
+      return;
+    }
+    if (td === shEditing) return;
+    if (!shCommit()) return;
+    shOpenEditor(td);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!shEditing) {
+      var td = shCellOf(e.target);
+      if (td && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); shOpenEditor(td); }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); shCloseEditor(); renderSheetScreen(findCand(curId)); return; }
+    /* 複数行の欄では Enter を改行として通す（確定は欄の外を押すか Tab） */
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); shCommit(); }
+  });
 }
 
 /* ═══════════ 入居者マスタへの反映 ═══════════
@@ -3518,114 +3986,11 @@ function psOpts(val, opts) {
   }).join(' ・ ');
 }
 function psCell(label, val, cls) { return '<td class="' + (cls || 'val') + '">' + psEsc(val) + '</td>'; }
+/* 紙に出す中身。★画面（renderSheetGrid）と同じ定義から組む。
+   以前はここに紙面を別に組み立てていたが、画面と紙が別々に育って並びがずれた。
+   2026-09-19 に現物のスプレッドシートを1セルずつ写した SH_GRID へ一本化した。 */
 function renderPrintSheet(c) {
-  var a = asObj(c.assess);
-  var km = (c.family || [])[0] || {};
-  function ct(cat) { return firstContact(c, cat) || {}; }
-  var cm = ct('caremgr'), hp = ct('hospital'), eq = ct('equip');
-  var h = '';
-  h += '<table><colgroup>' +
-    '<col style="width:3%"><col style="width:9%"><col style="width:10%"><col style="width:10%">' +
-    '<col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%">' +
-    '<col style="width:9%"><col style="width:9%"><col style="width:10%">' +
-    '</colgroup>';
-
-  /* ── 見出し（紙と同じく罫線の中に置く） ── */
-  h += '<tr><td class="lb lb-l" colspan="6" style="border:none;padding:2px 0"><span class="ps-title">【ラウレアハレ　ご相談シート】</span></td>' +
-    '<td class="lb">受付日時 :</td><td class="val" colspan="4">' + psEsc(a.receivedAt) + '</td></tr>';
-  h += '<tr><td colspan="7" style="border:none"></td>' +
-    '<td class="pd" colspan="4" style="border:none;text-align:right">印刷日 : ' + psEsc(todayYmd().replace(/-/g, '/')) + '</td></tr>';
-
-  /* ── 相談者・本人・キーパーソン ── */
-  h += '<tr><td class="lb" colspan="2">ご相談者氏名</td>' + '<td class="val" colspan="4">' + psEsc(a.consulterName) + '</td>' +
-    '<td class="lb">電話番号</td><td class="val" colspan="4">' + psEsc(a.consulterTel) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="2" rowspan="2">ご本人氏名</td><td class="val" colspan="3" rowspan="2">' + psEsc(c.name) +
-    (c.kana ? '<br><span style="font-size:6.6pt">' + psEsc(c.kana) + '</span>' : '') + '</td>' +
-    '<td class="lb" rowspan="2">' + psOpts(c.gender, ['男', '女']) + '</td>' +
-    '<td class="lb">生年月日</td><td class="val" colspan="4">' + psEsc(c.birthDate) + '</td></tr>';
-  h += '<tr><td class="lb">ご住所</td><td class="val" colspan="4">' + psEsc(a.address) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="2" rowspan="2">キーパーソン</td><td class="val" colspan="3">' + psEsc(a.kpName || km.name) + '</td>' +
-    '<td class="lb">' + psOpts(a.kpGender, ['男', '女']) + '</td>' +
-    '<td class="lb">電話番号</td><td class="val" colspan="4">' + psEsc(a.kpTel || km.phone) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="3">続柄（' + psEsc(a.kpRelation || km.relation) + '）</td>' +
-    '<td class="lb">ご住所</td><td class="val" colspan="4">' + psEsc(a.kpAddress) + '</td></tr>';
-
-  /* ── 介護・福祉サービス等 ── */
-  h += '<tr><td class="vr" rowspan="8">介護・福祉サービス等</td><td class="lb" rowspan="6">介護保険</td>' +
-    '<td class="lb">要介護認定</td><td class="lb-l lb">' + psOpts(a.certified, ['有', '無']) + '</td>' +
-    '<td class="lb">介護度</td><td class="val">' + psEsc(c.careLevel) + '</td>' +
-    '<td class="lb">認定期間</td><td class="val" colspan="4">' + psEsc(c.careCertStart) + ' 〜 ' + psEsc(c.careCertEnd) + '</td></tr>';
-  h += '<tr><td class="lb lb-l" colspan="9">利用中の介護サービス等</td></tr>';
-  h += '<tr><td class="val tall" colspan="9" style="vertical-align:top">' + psEsc(a.servicesNote) + '</td></tr>';
-  h += '<tr><td class="lb">病院・相談員</td><td class="val" colspan="3">' + psEsc(hp.org) + (hp.person ? '　' + psEsc(hp.person) : '') + '</td>' +
-    '<td class="lb">連絡先</td><td class="val" colspan="4">' + psEsc(hp.tel) + '</td></tr>';
-  h += '<tr><td class="lb">居宅・ケアマネ</td><td class="val" colspan="3">' + psEsc(cm.org) + (cm.person ? '　' + psEsc(cm.person) : '') + '</td>' +
-    '<td class="lb">変更</td><td class="lb lb-l" colspan="4">' + psOpts(a.cmChange, ['する', 'しない']) +
-    '（' + psEsc(a.cmChangeNote) + '）</td></tr>';
-  h += '<tr><td class="lb">福祉用具貸与</td><td class="val" colspan="3">' + psEsc(eq.org) + '</td>' +
-    '<td class="lb">連絡先</td><td class="val" colspan="4">' + psEsc(eq.tel) + '</td></tr>';
-  h += '<tr><td class="lb">障害福祉</td><td class="lb">障害種類</td><td class="lb lb-l" colspan="3">' +
-    psOpts(a.disabilityKinds, ['身体', '精神', '知的']) + '</td>' +
-    '<td class="lb">手帳</td><td class="lb lb-l" colspan="3">' + psOpts(a.disabilityBook, ['有', '無']) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="2">生活保護</td><td class="lb">' + psOpts(a.welfare, ['有', '無']) + '</td>' +
-    '<td class="lb">受給費</td><td class="val">' + psEsc(a.welfareAmount) + ' 円</td>' +
-    '<td class="lb">連帯保証人</td><td class="lb lb-l" colspan="4">' + psOpts(a.guarantor, ['2名', '1名', 'いない']) + '</td></tr>';
-
-  /* ── 身体状況 ── */
-  h += '<tr><td class="vr" rowspan="13">身　体　状　況</td><td class="lb">病歴</td><td class="val" colspan="9">' + psEsc(a.pastHistory) + '</td></tr>';
-  h += '<tr><td class="lb">機能障害等</td><td class="val" colspan="5">' + psEsc(a.impairment) + '</td>' +
-    '<td class="lb">身長・体重</td><td class="val" colspan="3">' + psEsc(a.height) + ' cm　' + psEsc(a.weight) + ' kg</td></tr>';
-  h += '<tr><td class="lb">通院状況</td><td class="val" colspan="5">' + psEsc(a.visitStatus) + '</td>' +
-    '<td class="lb">服薬管理</td><td class="lb lb-l" colspan="3">' + psOpts(a.medMgmtNeed, ['必要', '不要']) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="3">視力</td><td class="lb" colspan="3">聴力</td><td class="lb" colspan="2">歩行</td>' +
-    '<td class="lb lb-l" colspan="2" rowspan="4" style="vertical-align:top">【備考】<br>義歯：' + psEsc(a.denture) + '</td></tr>';
-  var vis = ['1.支障なし', '2.眼鏡', '3.支障あり'], hea = ['1.支障なし', '2.補聴器', '3.支障あり'], wal = ['1.自立', '2.補助具', '3.不可'];
-  for (var i = 0; i < 3; i++) {
-    h += '<tr><td class="lb lb-l" colspan="3">' + psOpts(a.vision, [vis[i]]) + '</td>' +
-      '<td class="lb lb-l" colspan="3">' + psOpts(a.hearing, [hea[i]]) + '</td>' +
-      '<td class="lb lb-l" colspan="2">' + psOpts(a.walking, [wal[i]]) + '</td></tr>';
-  }
-  h += '<tr><td class="lb" colspan="3">入浴</td><td class="lb" colspan="3">食事</td><td class="lb" colspan="2">排泄</td><td class="lb" colspan="2"></td></tr>';
-  var care3 = ['1.自立', '2.見守り', '3.介助'], subs = [['日中', a.excreteDay], ['夜間', a.excreteNight], ['その他', a.excreteOther]];
-  for (var k = 0; k < 3; k++) {
-    h += '<tr><td class="lb lb-l" colspan="3">' + psOpts(a.bathLv, [care3[k]]) + '</td>' +
-      '<td class="lb lb-l" colspan="3">' + psOpts(a.mealLv, [care3[k]]) + '</td>' +
-      '<td class="lb lb-l" colspan="2">' + psOpts(a.excreteLv, [care3[k]]) + '</td>' +
-      '<td class="lb">' + esc(subs[k][0]) + '</td><td class="val">' + psEsc(subs[k][1]) + '</td></tr>';
-  }
-  h += '<tr><td class="lb">食事形態</td><td class="lb lb-l" colspan="9">' +
-    psOpts(a.mealType, ['1.普通食']) + '　' + psOpts(a.mealType, ['2.介護食']) +
-    '（主: ' + psEsc(a.mealStaple) + '　副: ' + psEsc(a.mealSide) + '）　' +
-    psOpts(a.mealType, ['3.他']) + '（' + psEsc(a.mealOther) + '）</td></tr>';
-  h += '<tr><td class="lb">認知症</td><td class="lb lb-l" colspan="5">' +
-    psOpts(a.dementiaExists, ['有']) + '（' + psEsc(a.dementiaNote) + '）・' + psOpts(a.dementiaExists, ['無']) + '</td>' +
-    '<td class="lb">意思疎通</td><td class="val" colspan="3">' + psEsc(a.commNotes) + '</td></tr>';
-
-  /* ── 医療 ── */
-  h += '<tr><td class="vr" rowspan="4">医療</td><td class="lb">現在の状況</td><td class="lb lb-l" colspan="5">' +
-    psOpts(a.currentPlace, ['自宅']) + '・' + psOpts(a.currentPlace, ['入院中']) + '（病院: ' + psEsc(a.currentHospital) + '）</td>' +
-    '<td class="lb">理由</td><td class="val" colspan="3">' + psEsc(a.placeReason) + '</td></tr>';
-  h += '<tr><td class="lb">現主治医</td><td class="val" colspan="3">' + psEsc(a.doctorNow || hp.person) + '</td>' +
-    '<td class="lb">特殊な薬</td><td class="val" colspan="2">' + psEsc(a.specialMeds) + '</td>' +
-    '<td class="lb">主治医変更</td><td class="lb lb-l" colspan="2">' + psOpts(a.doctorChange, ['する', 'しない']) + '</td></tr>';
-  h += '<tr><td class="lb">治療中の病気</td><td class="val" colspan="6">' + psEsc(a.diseasesNow) + '</td>' +
-    '<td class="lb">薬局契約</td><td class="lb lb-l" colspan="2">' + psOpts(a.pharmacyContract, ['する', 'しない']) + '</td></tr>';
-  h += '<tr><td class="lb">アレルギー</td><td class="lb lb-l" colspan="6">' +
-    psOpts(a.allergyExists, ['なし']) + '・' + psOpts(a.allergyExists, ['あり']) + '（' + psEsc(a.allergy) + '）</td>' +
-    '<td class="lb">血液型</td><td class="val" colspan="2">' + psEsc(a.bloodType) + ' 型</td></tr>';
-
-  /* ── 備考・意向・結論 ── */
-  h += '<tr><td class="vr">備考</td><td class="memo" colspan="10"><div>' + psEsc(c.note) + '</div></td></tr>';
-  h += '<tr><td class="lb"></td><td class="lb">Fa :</td><td class="val" colspan="4">' + psEsc(a.wishFamily) + '</td>' +
-    '<td class="lb">S :</td><td class="val" colspan="4">' + psEsc(a.wishSelf) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="2">見学日</td><td class="val" colspan="2">' + psEsc(c.stageDates.tour) + '</td>' +
-    '<td class="lb">面談日</td><td class="val" colspan="2">' + psEsc(a.meetDate) + '</td>' +
-    '<td class="lb">入居日</td><td class="val" colspan="3">' + psEsc(c.stageDates.movedin || c.desiredDate) + '</td></tr>';
-  h += '<tr><td class="lb" colspan="2">早急な対応</td><td class="lb lb-l" colspan="2">' + psOpts(a.urgent, ['必要', '不要']) + '</td>' +
-    '<td class="lb">継続相談</td><td class="lb lb-l" colspan="2">' + psOpts(a.continueConsult, ['する', 'しない']) + '</td>' +
-    '<td class="lb">他施設への紹介</td><td class="lb lb-l" colspan="3">' + psOpts(a.referOther, ['希望する', '希望しない']) + '</td></tr>';
-  h += '</table>';
-  return h;
+  return renderSheetGrid(c, 'print');
 }
 /* 印刷を実行する。印刷面だけを表示し、終わったら必ず元へ戻す（画面が壊れたままにならないように） */
 function printSheet(c) {
@@ -3847,6 +4212,7 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
   });
 });
 bindDateInputs();
+bindSheetCells();
 $('flGo').addEventListener('click', doUploadFile);
 $('flPick').addEventListener('change', function () {
   setChosenFile(this.files && this.files[0]);
