@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-19.2">
+<meta name="spl-build" content="2026-09-19.3">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1150,7 +1150,7 @@ body.staff .adm{display:none !important}
   <p class="foot">金額は税込です。月額の品目は使用量の型ごとの1か月あたりの金額です。</p>
 </section>
 
-<script src="supplies-calc.js?v=2026-09-18"></script>
+<script src="supplies-calc.js?v=2026-09-19"></script>
 <script>
 'use strict';
 
@@ -1162,7 +1162,7 @@ body.staff .adm{display:none !important}
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-19.2';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
+var BUILD = '2026-09-19.3';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
 var CFG_KEY = 'spl_cfg';
 var PENDING_KEY = 'spl_pending';
 var ROSTER_KEY = 'su_residents_common';
@@ -3432,11 +3432,32 @@ function billAmtText(r) {
   if (v === null || v === undefined || v === '') return '—';
   return yen(v);
 }
+/* 日付欄。月額（profile）の行は1か月ぶんを1行で持っているので、
+   登録した日ではなく「2026年9月分」と出す（その日に使ったと読ませない） */
+function billDateText(r) {
+  if (r.billType === 'profile' && DATE_RE.test(txt(r.date))) {
+    var d = txt(r.date);
+    return d.slice(0, 4) + '年' + String(Number(d.slice(5, 7))) + '月分';
+  }
+  return jpDate(r.date);
+}
+/* 数量欄。月額は合計のうしろに内訳（1回量×回数/日×日数）を添える。
+   内訳は記録にある値だけ。欠けている古い記録では合計だけを出す */
 function billQtyText(r) {
   var q = (r.qtyBill === null || r.qtyBill === undefined) ? r.qty : r.qtyBill;
   var n = Number(q);
   if (!isFinite(n)) return '—';
-  return fmtInt(n) + txt(r.unitName);
+  var base = fmtInt(n) + txt(r.unitName);
+  if (r.billType !== 'profile') return base;
+  /* ★Number(null)===0 の罠。null を数に変えてから見ると、内訳の無い古い記録が
+     「1回0.0g × 0回/日 × 0日」という【記録に無い数字】になって紙に出る（原則6） */
+  if (r.dose10 === null || r.dose10 === undefined
+      || r.timesPerDay === null || r.timesPerDay === undefined
+      || r.days === null || r.days === undefined) return base;
+  var d = Number(r.dose10), t = Number(r.timesPerDay), y = Number(r.days);
+  if (!isFinite(d) || !isFinite(t) || !isFinite(y)) return base;
+  if (d <= 0 || t <= 0 || y <= 0) return base;
+  return base + '（1回' + dec1(d) + txt(r.unitName) + ' × ' + fmtInt(t) + '回/日 × ' + fmtInt(y) + '日）';
 }
 /* メモの編集欄（画面のみ。印刷では .noprint ごと消える） */
 function billNoteEditor(r) {
@@ -3625,7 +3646,7 @@ function renderBill() {
 /* 明細の1行。1枚続きでも入居者ごとでも同じ形を使う（列がずれない） */
 function billRowTr(r, i) {
   var tr = h('tr');
-  tr.appendChild(h('td', { cls: 'cdate', text: jpDate(r.date) }));
+  tr.appendChild(h('td', { cls: 'cdate', text: billDateText(r) }));
   tr.appendChild(h('td', { cls: 'cwho', text: billWhoText(r) }));
   tr.appendChild(billItemTd(r, i));
   tr.appendChild(h('td', { cls: 'num cqty', text: billQtyText(r) }));

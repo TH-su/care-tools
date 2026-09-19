@@ -863,6 +863,11 @@
         unitName: unitNameOf(it),
         amount: isNum(amt) ? amt : null,
         billType: billType,
+        /* 月額（profile）の内訳。記録にある値をそのまま渡す（推測で埋めない）。
+           1行が1か月ぶんなので、これが無いと紙の上で「その日に270g使った」と読めてしまう */
+        dose10: (billType === 'profile' && isInt(mv.dose10)) ? mv.dose10 : null,
+        timesPerDay: (billType === 'profile' && isInt(mv.timesPerDay)) ? mv.timesPerDay : null,
+        days: (billType === 'profile' && isInt(mv.days)) ? mv.days : null,
         taxRate: (it && isNum(it.taxRate)) ? it.taxRate : null
       });
     }
