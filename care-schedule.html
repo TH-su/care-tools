@@ -1894,7 +1894,7 @@ const RATE_MASTER_DEFAULT = {
       chiikiKasan:   { selId: 'oi-v-chiiki',        label: '特別地域・中山間地域加算',
         opts: [[0,'なし'],[10,'中山間小規模（+10%）'],[15,'特別地域（+15%）']] },
       nursingKasan:  { selId: 'oi-v-nursing',       label: '介護職員等処遇改善加算',
-        opts: [[0,'なし'],[6.2,'V（+6.2%）'],[8.3,'III（+8.3%）'],[13.3,'II（+13.3%）'],[14.5,'I（+14.5%）']] },
+        opts: [[0,'なし'],[6.2,'V（+6.2%）'],[8.3,'III（+8.3%）'],[13.3,'II（+13.3%）'],[14.5,'I（+14.5%）'],[28.7,'Iロ（+28.7%）R8.6〜']] },
       douitsuGensan: { selId: 'oi-v-douitsu',       label: '同一建物減算（訪問介護）',
         opts: [[0,'なし（対象外）'],[10,'同一建物居住者・月49人以下（−10%）'],[15,'同一建物居住者・月50人以上（−15%）']] },
     },
@@ -1910,7 +1910,7 @@ const RATE_MASTER_DEFAULT = {
       svcStrength:   { selId: 'oi-dc-svc-strength', label: 'サービス提供体制強化加算',
         opts: [[0,'なし'],[6,'III（+6単位/回）'],[18,'II（+18単位/回）'],[22,'I（+22単位/回）']] },
       nursingKasan:  { selId: 'oi-dc-nursing',      label: '介護職員等処遇改善加算',
-        opts: [[0,'なし'],[5.8,'IV（+5.8%）'],[7.7,'III（+7.7%）'],[12.5,'II（+12.5%）'],[13.6,'I（+13.6%）']] },
+        opts: [[0,'なし'],[5.8,'IV（+5.8%）'],[7.7,'III（+7.7%）'],[12.5,'II（+12.5%）'],[13.6,'I（+13.6%）'],[11.8,'IIロ（+11.8%）R8.6〜']] },
       douitsuGensan: { selId: 'oi-dc-douitsu',      label: '同一建物減算（送迎なし減算）',
         opts: [[0,'なし（送迎あり）'],[47,'片道送迎なし（−47単位）'],[94,'往復送迎なし（−94単位）']] },
     },
@@ -2151,7 +2151,18 @@ function normalizeRateMaster_(raw) {
         if (n === null || typeof pair[1] !== 'string') return;
         opts.push([n, pair[1]]);
       });
-      if (opts.length) m.addonOptions[kind][field].opts = opts;
+      if (opts.length) {
+        /* 保存値を優先しつつ、既定にあって保存値に無い値だけを末尾へ足す（2026-09-20）。
+           選択肢を画面から編集する導線が無いため、保存値は既定のコピーでしかありえない。
+           単純に保存値で上書きすると、コード側へ足した新しい率（改定で増える区分）が
+           保存済みの端末にだけ永久に出てこない＝設定したくても選べない状態になる。
+           既定の順序を保ったまま欠落だけを補うので、保存値の独自項目は消えない。 */
+        const has = new Set(opts.map(pair => pair[0]));
+        (m.addonOptions[kind][field].opts || []).forEach(pair => {
+          if (!has.has(pair[0])) opts.push([pair[0], pair[1]]);
+        });
+        m.addonOptions[kind][field].opts = opts;
+      }
       else filled.push('加算選択肢「' + m.addonOptions[kind][field].label + '」（有効な選択肢が無いため既定を使用）');
     }
   });
