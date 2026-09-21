@@ -2143,7 +2143,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function careHumanTouched_(t) {
     if (!t) return false;
-    if (t.done || t.comment || t.groupId || t.bgColor || t.textColor || t.hideTime) return true;
+    if (t.done || t.comment || t.memo || t.groupId || t.bgColor || t.textColor || t.hideTime) return true;
     if (t.detailDirty || t.svcDirty) return true;
     if (careTimeMoved_(t)) return true;
     return careHasChecks_(t);
@@ -2157,10 +2157,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* ★別人ガード（2026-09-21）: residentId が両方に入っていて【違う】なら、氏名の正規化が一致しても
    * （同姓同名・異体字・スペース差）別人の支援なので絶対に畳まない。片方でも residentId が無い札
    * （手動追加・旧データ）は従来どおり畳む対象に残す＝重複解消の効き目は落とさない。 */
+  /* 実在の利用者IDだけを返す。'rn_'+氏名 は【氏名から作った合成ID】（支援マスタ生成・reconcileのADDが付ける）で、
+   * 氏名の表記ゆれ（異体字・スペース差）だけで別IDになるため「別人の証拠」にならない。これを別人と誤判定すると、
+   * 同じ人の重複札が畳めなくなる（実データにも表記ゆれで合成IDが割れている例がある）。 */
+  function realResidentId_(t) {
+    var id = t && t.residentId;
+    if (!id) return null;
+    id = String(id);
+    if (id.indexOf('rn_') === 0) return null;
+    return id;
+  }
   function careSameResident_(a, b) {
-    if (!a || !b) return true;
-    if (!a.residentId || !b.residentId) return true;
-    return a.residentId === b.residentId;
+    var ra = realResidentId_(a), rb = realResidentId_(b);
+    if (!ra || !rb) return true;
+    return ra === rb;
   }
   function careKeyEv_(t) { return (t.weeklyRef && t.weeklyRef.evId) ? ('E|' + t.weeklyRef.evId) : null; }
   /* contents の同一判定用の連結（中点等と衝突しない区切り） */
@@ -2276,6 +2286,77 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else out.push(t);
     }
     return out;
+  }
+
+  /* 内容の署名（区分＋支援内容）。時刻を含めない＝「同じ支援が時刻だけ動いた」を見分けるため。
+   * 区分は両側とも SVC 表に載るコードだけを採る。札側は生成時に同じ正規化が掛かっており
+   * （importers/reconcile の `M.SVC[x] ? x : ''`）、予定側は生値のままなので、揃えないと
+   * 総合事業(A2xxx)等は永久に一致せず必ず「付け替え不可」に落ちる。 */
+  function careContentSig_(svcCode, contents) {
+    var c = SVC[svcCode] ? svcCode : '';
+    return c + '\x1f' + (contents || []).join('\x1f');
+  }
+  /* 付け替えを許す時刻の開き（分）。週間計画の時刻変更は同じ時間帯の中での移動が実態（8:40→12:40 等）。
+   * これを超える開き（夜勤21:00の札を朝8:00の予定へ、等）は「同じ支援が動いた」ではなく別支援なので
+   * 付け替えない＝実施済み・記録が別時刻の実績にすり替わるのを防ぐ。 */
+  var CARE_RELINK_MAX_GAP_ = 300;
+  /* 置き去り札（weeklyRef に evId が無く、開始時刻でも予定に当たらなかった札）を、週間計画の予定へ
+   * 付け替える割当を決める（純関数・2026-09-21）。
+   * 背景: 支援マスタ生成の札は evId を持たないため、週間計画で時刻を変えると突合から外れ、
+   *   古い時刻のまま盤面に残り続けていた（9/23 に 8:40 の支援が 12:40 の札と二重に出た事象）。
+   * 規則:
+   *  - 同じ利用者（正規化氏名）・同じ内容（区分＋支援内容）で、札の本来時刻（origin→weeklyRef→現在）と
+   *    予定の開始時刻の差が CARE_RELINK_MAX_GAP_ 分以内のものだけを候補にする
+   *  - すでに突合済み(taken)・当日削除の墓標(skipped)の予定は候補にしない
+   *  - 差の小さい組から1対1で確定する。同点は 予定の開始→札の本来時刻→札のid の順で決定的に割る
+   *    ＝札の並び順に依存しない（端末ごとに盤面が割れない）
+   * 返り値: { 札のindex: 予定のindex }。付け替え先が無い札は入らない。 */
+  function careRelinkPlan(cards, events, taken, skipped) {
+    var pairs = [], i, j, c, e, gap, anchor, sig, nm;
+    for (i = 0; i < (cards || []).length; i++) {
+      c = cards[i];
+      if (!c) continue;
+      anchor = (c.origin && typeof c.origin.start === 'number') ? c.origin.start
+             : ((c.weeklyRef && typeof c.weeklyRef.start === 'number') ? c.weeklyRef.start : c.start);
+      if (typeof anchor !== 'number') continue;
+      sig = careContentSig_(c.svcCode, c.contents);
+      nm = normName_(c.residentName);
+      for (j = 0; j < (events || []).length; j++) {
+        e = events[j];
+        if (!e || (taken && taken[j]) || (skipped && skipped[j])) continue;
+        if (normName_(e.resName) !== nm) continue;
+        if (careContentSig_(e.svcCode, e.contents) !== sig) continue;
+        gap = e.start > anchor ? (e.start - anchor) : (anchor - e.start);
+        if (gap > CARE_RELINK_MAX_GAP_) continue;
+        pairs.push({ ci: i, ej: j, gap: gap, es: e.start, ca: anchor, cid: String(c.id) });
+      }
+    }
+    pairs.sort(function (a, b) {
+      if (a.gap !== b.gap) return a.gap - b.gap;
+      if (a.es !== b.es) return a.es - b.es;
+      if (a.ca !== b.ca) return a.ca - b.ca;
+      return a.cid < b.cid ? -1 : (a.cid > b.cid ? 1 : 0);
+    });
+    var out = {}, usedC = {}, usedE = {};
+    for (i = 0; i < pairs.length; i++) {
+      if (usedC['.' + pairs[i].ci] || usedE['.' + pairs[i].ej]) continue;
+      usedC['.' + pairs[i].ci] = 1; usedE['.' + pairs[i].ej] = 1;
+      out[pairs[i].ci] = pairs[i].ej;
+    }
+    return out;
+  }
+  /* 週間計画がその利用者のその日を把握しているか（予定が1件でもあるか）。純関数。
+   * 把握している＝どの予定にも当たらない札は「週間計画から消えた／動いた後の残骸」と判断できる。
+   * 把握していない（その日の予定が0件）＝判断材料が無いので従来どおり札を残す＝安全側。
+   * ★これだけでは弱い（その利用者に予定が1件でもあれば真になる）ため、削除の実行側で
+   *   careHumanTouched_（実施済み・チェック・コメント・メモ・配色・グループ・未反映の内容編集・
+   *   人が動かした時刻）を持つ札を必ず除外すること。記録のある札は自動では消さない。 */
+  function planHasResidentDay(events, residentName) {
+    var nm = normName_(residentName), i;
+    for (i = 0; i < (events || []).length; i++) {
+      if (events[i] && normName_(events[i].resName) === nm) return true;
+    }
+    return false;
   }
 
   /* 盤面ケアタスクのスロット de-dup（純粋関数・care本体不変）。
@@ -2908,6 +2989,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     dedupCareSlots: dedupCareSlots,
     careDupCount: careDupCount,
     careHumanTouched: careHumanTouched_,
+    careRelinkPlan: careRelinkPlan,
+    planHasResidentDay: planHasResidentDay,
+    careContentSig: careContentSig_,
     matchSwapRun: matchSwapRun,
     staffFacworkKind: staffFacworkKind,
     stableStringify: stableStringify,
@@ -8481,7 +8565,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var sMin = TS.timeToMin(ev.startTime), eMin = TS.timeToMin(ev.endTime);
         if (sMin === null || eMin === null) continue;
         events.push({ resName: res.name, id: ev.id, start: sMin, end: eMin,
-                      svcCode: ev.category || '', detail: ev.detail || '' });
+                      svcCode: ev.category || '', detail: ev.detail || '',
+                      /* 内容での付け替え照合に使う（M.findMovedCareEvent）。detail は中点結合なので配列へ分解して持つ。 */
+                      contents: detailToContents_(ev.detail || '') });
       }
     }
     /* 重複 event を盤面生成対象から除外。キーは (利用者, 開始時刻)＝同一利用者・同一開始は
@@ -8610,13 +8696,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       return -1;
     }
+    /* ★pass2 は3段に分ける（2026-09-21・レビュー指摘の根治）。
+     * 1つのループで「時刻一致の突合」「内容一致の付け替え」「削除」を同時に回すと、matchedEv の
+     * 埋まり具合＝札の並び順で分岐が変わり、同じデータでも端末ごとに違う盤面になる。
+     * ①全pendingの時刻一致 → ②全pendingの内容一致（順序非依存の一括割当）→ ③残りの削除判定、の順にする。 */
+    /* ①時刻一致（origin→weeklyRef→現在時刻の優先順）。
+     * pass1(evId一致)で当日 event に一致しなかった care は、まず「同一利用者・同一開始時刻の別event」への
+     * re-link を試みる。週間計画側で evId が振り直された、または (利用者,開始)重複で別evIdが採用された
+     * 場合でも、**配置済みの手動配置(staffId)を消さずに evId を張り替えて保持**する。これが土曜デグレ
+     * （evId変化で配置済みケアが削除→別列へ再配置）の根治。
+     * claim は staffId を patch に含めない＝配置維持、時刻/内容は正本へ追従、weeklyRef.evId のみ更新。 */
+    var pend2 = [];
     for (i = 0; i < pending.length; i++) {
       var t2 = pending[i];
-      /* pass1(evId一致)で当日 event に一致しなかった care は、まず「同一利用者・同一開始時刻の別event」への
-       * re-link を試みる（origin→weeklyRef→現在時刻の優先順）。週間計画側で evId が振り直された、または
-       * (利用者,開始)重複で別evIdが採用された場合でも、**配置済みの手動配置(staffId)を消さずに evId を
-       * 張り替えて保持**する。これが土曜デグレ（evId変化で配置済みケアが削除→別列へ再配置）の根治。
-       * claim は staffId を patch に含めない＝配置維持、時刻/内容は正本へ追従、weeklyRef.evId のみ更新。 */
       var hit = findByStart(t2, t2.origin ? t2.origin.start : null);
       if (hit < 0) hit = findByStart(t2, t2.weeklyRef.start);
       /* t.start(現在位置)フォールバックは evId無し(支援マスタseed)のみ＝従来挙動を厳密維持。
@@ -8625,11 +8717,43 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 予定の本来時刻(origin/weeklyRef)一致のみで再リンクする（無ければ下で削除）。 */
       if (hit < 0 && !t2.weeklyRef.evId) hit = findByStart(t2, t2.start);
       if (hit >= 0) { claim(t2, hit); continue; }
-      /* 時刻一致eventが無い＝週間計画から本当に削除された予定。
-       * evId付き(週間計画由来が明確)は配置済みでも削除＝「削除未反映」「重複表示」の根治を維持。
-       * evId無し(支援マスタ seed 由来)は従来どおり未配置のみ削除・配置済みは保護(回帰防止)。 */
-      if (t2.weeklyRef.evId) { store.dispatch({ type: 'DELETE_TASK', id: t2.id }); removed++; }
-      else if (t2.staffId === null) { store.dispatch({ type: 'DELETE_TASK', id: t2.id }); removed++; }
+      pend2.push(t2);
+    }
+    /* ②内容一致での付け替え（evId 無しの置き去り札のみ・2026-09-21 本人裁定）。
+     * 支援マスタ由来の札は evId を持たないため、週間計画で時刻を変えると①で拾えず、盤面に古い時刻の
+     * 札が残り続けていた。同じ利用者・同じ内容で【時刻の開きが一定以内】の未突合予定へ、順序非依存の
+     * 一括割当で付け替える＝配置した列を保ったまま新しい時刻へ追従し、下のADDで二重に増えない。
+     * 墓標(本日のみ削除)の予定は候補から外す＝当日止めた支援が付け替えで復活しない。 */
+    var relinkCards = [], pend3 = [], rk;
+    for (i = 0; i < pend2.length; i++) {
+      if (!pend2[i].weeklyRef.evId) relinkCards.push(pend2[i]); else pend3.push(pend2[i]);
+    }
+    if (relinkCards.length) {
+      var skippedEv = {};
+      for (j = 0; j < events.length; j++) if (isSkipped(events[j])) skippedEv[j] = 1;
+      var plan = M.careRelinkPlan(relinkCards, events, matchedEv, skippedEv);
+      for (i = 0; i < relinkCards.length; i++) {
+        rk = plan[i];
+        if (rk === undefined || matchedEv[rk]) { pend3.push(relinkCards[i]); continue; }
+        claim(relinkCards[i], rk);
+      }
+    }
+    /* ③どの予定にも当たらなかった札の始末。
+     * evId付き(週間計画由来が明確)は配置済みでも削除＝「削除未反映」「重複表示」の根治を維持。
+     * evId無し(支援マスタ seed 由来)は未配置のみ削除＝従来どおり。
+     * 加えて、配置済み×evId無しの残骸も、週間計画がその利用者のその日を把握しているなら削除する
+     * （2026-09-21・本人裁定）。従来はここを無条件に保護していたため、週間計画から消えた・時刻が
+     * 動いたマスタ由来の札が永久に居座り、古い時刻を表示し続けていた。
+     * ★ただし人の入力が入っている札（実施済み・チェック・コメント・メモ・配色・グループ・未反映の
+     *   内容編集・人が動かした時刻）は絶対に自動削除しない＝記録を失わない。判断が付かない札を
+     *   消す側へ倒さないための歯止め（原則4）。 */
+    for (i = 0; i < pend3.length; i++) {
+      var t3 = pend3[i];
+      if (t3.weeklyRef.evId) { store.dispatch({ type: 'DELETE_TASK', id: t3.id }); removed++; }
+      else if (t3.staffId === null) { store.dispatch({ type: 'DELETE_TASK', id: t3.id }); removed++; }
+      else if (!M.careHumanTouched(t3) && M.planHasResidentDay(events, t3.residentName)) {
+        store.dispatch({ type: 'DELETE_TASK', id: t3.id }); removed++;
+      }
     }
     /* 週間計画にあって当日に無い予定 → 未配置で追加（本日のみ削除は除く） */
     for (j = 0; j < events.length; j++) {
