@@ -2127,39 +2127,87 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 同一利用者(正規化氏名)・同一開始時刻のケアタスクを1件へ収束する。R3(同一利用者の同時刻複数配置禁止)
    * より同一(氏名,開始)の複数ケアは重複/ゴーストとみなして安全。weeklyRef の有無に関わらず収束するため、
    * 手動追加・複製由来の weeklyRef 無しゴースト(reconcile が触れない)も確実に解消する。
-   * 残す優先: weeklyRef.evId保持 > weeklyRef保持 > 配置済み > 先頭。
+   * 残す優先: weeklyRef.evId保持 > weeklyRef保持 > 人が時刻を動かした > 人が触った印 > 配置済み > id昇順(先に作られた方)。
    * 配置保護: 残す側が未配置で捨てる側に配置済みがあれば staffId のみ移譲（plan-linked を残しつつ配置維持・churn防止）。
    * 非ケア・ユニークスロットのタスクは素通り（順序保持）。 */
-  function dedupCareSlots(tasks) {
-    if (!tasks || !tasks.length) return tasks || [];
-    var groups = {}, i, t, key;
+  /* 人が触った印。重複を1件へ畳む時「どちらを残すか」の判定に使う（2026-09-21 本人裁定＝人が触った方を残す）。
+   * 実施済み/チェック/コメント/グループ化/配色/時間非表示/編集済みフラグ/原案からの時刻変更 のいずれか。 */
+  function careHasChecks_(t) {
+    var ck;
+    if (!t || !t.checks) return false;
+    for (ck in t.checks) if (Object.prototype.hasOwnProperty.call(t.checks, ck) && t.checks[ck]) return true;
+    return false;
+  }
+  function careTimeMoved_(t) {
+    return !!(t && t.origin && (t.origin.start !== t.start || t.origin.end !== t.end));
+  }
+  function careHumanTouched_(t) {
+    if (!t) return false;
+    if (t.done || t.comment || t.groupId || t.bgColor || t.textColor || t.hideTime) return true;
+    if (t.detailDirty || t.svcDirty) return true;
+    if (careTimeMoved_(t)) return true;
+    return careHasChecks_(t);
+  }
+  /* 同一支援の判定キー（null を返した札は畳まない＝素通り）。
+   * ①開始時刻キー: 従来どおり (氏名, 開始)。weeklyRef の有無に関わらず効く。
+   * ②予定キー: weeklyRef.evId 単独（氏名を含めない）。週間計画の1予定から生まれた札は、時刻がずれても
+   *   氏名の表記が揺れても（異体字・スペース差）同一支援。UIの複製は weeklyRef を必ず null にするため
+   *   （app.js の duplicateSelected / onDuplicateTo）、同じ evId が2枚あるのは常に意図しない重複である。 */
+  function careKeyStart_(t) { return normName_(t.residentName) + '|' + t.start; }
+  /* ★別人ガード（2026-09-21）: residentId が両方に入っていて【違う】なら、氏名の正規化が一致しても
+   * （同姓同名・異体字・スペース差）別人の支援なので絶対に畳まない。片方でも residentId が無い札
+   * （手動追加・旧データ）は従来どおり畳む対象に残す＝重複解消の効き目は落とさない。 */
+  function careSameResident_(a, b) {
+    if (!a || !b) return true;
+    if (!a.residentId || !b.residentId) return true;
+    return a.residentId === b.residentId;
+  }
+  function careKeyEv_(t) { return (t.weeklyRef && t.weeklyRef.evId) ? ('E|' + t.weeklyRef.evId) : null; }
+  /* contents の同一判定用の連結（中点等と衝突しない区切り） */
+  function contentsSig_(t) { return (t && t.contents ? t.contents : []).join('\x1f'); }
+
+  /* 重複の1パス。keyFn で同一支援をまとめ、1件だけ残して残りを落とす（純粋関数）。
+   * 残す札の選定: 予定リンク(evId>weeklyRef) > 人が触った印 > 配置済み、同点は id 昇順＝先に作られた札。
+   * ★id 昇順のタイブレークは決定的＝配列順（端末ごとに違う）に依存しない。これが無いと2端末が別々の札を
+   *   残し、互いの削除を統合し合って畳み合いの往復が起きる。
+   * ★走査・出力は【添字】で行う（id をキーにしない）。同一 id が2枚混入した壊れた日でも確実に1枚へ畳む。 */
+  function dedupCareOnce_(tasks, keyFn, guardResident) {
+    var groups = {}, order = [], i, t, key;
     for (i = 0; i < tasks.length; i++) {
       t = tasks[i];
-      if (t.kind !== 'care') continue;
-      key = normName_(t.residentName) + '|' + t.start;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(t);
+      if (!t || t.kind !== 'care') continue;
+      key = keyFn(t);
+      if (key === null || key === undefined) continue;
+      key = '.' + key;   /* プロトタイプ汚染ガード */
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(i);
     }
-    var keepId = {}, transfer = {}, gk, g, k, sc, bi, bs;
-    for (gk in groups) {
-      if (!Object.prototype.hasOwnProperty.call(groups, gk)) continue;
-      g = groups[gk];
-      if (g.length < 2) { keepId[g[0].id] = true; continue; }
+    var drop = {}, patches = {}, oi, g, k, sc, bi, bs, changed = false;
+    for (oi = 0; oi < order.length; oi++) {
+      g = groups[order[oi]];
+      if (g.length < 2) continue;
       bi = 0; bs = -1;
       for (k = 0; k < g.length; k++) {
-        sc = (g[k].weeklyRef && g[k].weeklyRef.evId ? 4 : 0) + (g[k].weeklyRef ? 2 : 0) + (g[k].staffId !== null ? 1 : 0);
-        if (sc > bs) { bs = sc; bi = k; }
+        t = tasks[g[k]];
+        /* 時刻を人が動かした札は最優先で残す（残す札の start/end を維持するため、負けると人が動かした時刻が
+         * 黙って元へ戻る）。次いで一般の「人が触った印」、最後に配置済み。 */
+        sc = (t.weeklyRef && t.weeklyRef.evId ? 16 : 0) + (t.weeklyRef ? 8 : 0) +
+             (careTimeMoved_(t) ? 4 : 0) + (careHumanTouched_(t) ? 2 : 0) +
+             (t.staffId !== null && t.staffId !== undefined ? 1 : 0);
+        if (sc > bs || (sc === bs && String(t.id) < String(tasks[g[bi]].id))) { bs = sc; bi = k; }
       }
-      keepId[g[bi].id] = true;
       /* 残す札が未設定のプロパティを、捨て札(重複)から片方向OR-merge で移譲するパッチを構築。
        * staffId は従来どおり（未配置の残す札へ配置済み捨て札から移譲）。加えて手動カスタマイズ
        * (groupId/bgColor/textColor/hideTime/comment)も、残す札が未設定のときだけ最初の値を採用。
        * 残す札が既に値を持つ場合は絶対に上書きしない（正本保護）。start/end は残す札を維持。 */
-      var best = g[bi], patch = {}, cand, hasPatch, pk;
+      var best = tasks[g[bi]], patch = {}, cand, hasPatch, pk;
       for (k = 0; k < g.length; k++) {
-        if (k === bi) continue;
-        cand = g[k];
-        if (best.staffId === null && cand.staffId !== null && patch.staffId === undefined) patch.staffId = cand.staffId;
+        if (k === bi) { continue; }
+        cand = tasks[g[k]];
+        if (guardResident && !careSameResident_(best, cand)) continue;   /* 別人（residentId 相違）は畳まない＝取り違えで消さない */
+        drop[g[k]] = 1; changed = true;
+        if ((best.staffId === null || best.staffId === undefined) &&
+            cand.staffId !== null && cand.staffId !== undefined && patch.staffId === undefined) patch.staffId = cand.staffId;
         if (!best.groupId && cand.groupId && patch.groupId === undefined) patch.groupId = cand.groupId;
         if (!best.bgColor && cand.bgColor && patch.bgColor === undefined) patch.bgColor = cand.bgColor;
         if (!best.textColor && cand.textColor && patch.textColor === undefined) patch.textColor = cand.textColor;
@@ -2173,8 +2221,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           patch.contents = cand.contents.slice();
           var cc = {}, ck;
           if (cand.checks) for (ck in cand.checks) if (Object.prototype.hasOwnProperty.call(cand.checks, ck)) cc[ck] = cand.checks[ck];
+          /* ★残す札に付いていたチェックは【項目名】で新しい contents へ付け替える（2026-09-21）。
+           * 以前は捨て札の checks で丸ごと置き換えており、残す札に押してあった印が無言で消えていた。
+           * index でなく項目名で拾い直す＝内容の並びが変わっても別項目に印が付かない。 */
+          var bci, bct, nj;
+          if (best.checks && best.contents) {
+            for (bci = 0; bci < best.contents.length; bci++) {
+              if (!best.checks[bci]) continue;
+              bct = best.contents[bci];
+              for (nj = 0; nj < patch.contents.length; nj++) {
+                if (patch.contents[nj] === bct) { cc[nj] = true; break; }
+              }
+            }
+          }
           patch.checks = cc;
           patch.detailDirty = true;
+          /* detailBase（週間計画の最後の投影値）も一緒に運ぶ。これが欠けると detailDirty の解除弁が
+           * 働かず、以後その札へ週間計画の正当な更新が永久に届かなくなる。 */
+          if (cand.detailBase !== undefined && patch.detailBase === undefined) patch.detailBase = cand.detailBase;
         }
         /* サービスコードの移譲: 捨て札がユーザー編集済み(svcDirty=週間計画へ未反映)で svcCode を持つなら残し札へ移譲。
          * 手動編集コードが weekly由来札(旧category)に負けて消えるのを防ぐ。残し札自身が編集済み(best.svcDirty)なら
@@ -2183,19 +2247,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           patch.svcCode = cand.svcCode;
           patch.svcDirty = true;
         }
+        /* 実施の記録(実施済み・チェック)の移譲（2026-09-21 追加）: 押した記録を重複の消去で失わない。
+         * checks は contents が完全一致する時だけ移す（内容が違うと index がずれて別項目に印が付く）。 */
+        if (!best.done && cand.done && patch.done === undefined) patch.done = true;
+        if (patch.checks === undefined && !careHasChecks_(best) && careHasChecks_(cand) &&
+            contentsSig_(best) === contentsSig_(cand)) {
+          var c3 = {}, ck3;
+          for (ck3 in cand.checks) if (Object.prototype.hasOwnProperty.call(cand.checks, ck3)) c3[ck3] = cand.checks[ck3];
+          patch.checks = c3;
+        }
+        if (!best.memo && cand.memo && patch.memo === undefined) patch.memo = cand.memo;
       }
       hasPatch = false;
       for (pk in patch) if (Object.prototype.hasOwnProperty.call(patch, pk)) { hasPatch = true; break; }
-      if (hasPatch) transfer[g[bi].id] = patch;
+      if (hasPatch) patches[g[bi]] = patch;
     }
+    if (!changed) return tasks;   /* 変化なし＝同一参照（daySig 不変＝余分な push を出さない） */
     var out = [];
     for (i = 0; i < tasks.length; i++) {
+      if (drop[i]) continue;                             /* 重複（捨て札）はドロップ */
       t = tasks[i];
-      if (t.kind !== 'care') { out.push(t); continue; }
-      key = normName_(t.residentName) + '|' + t.start;
-      if (!keepId[t.id]) continue;                       /* 重複（捨て札）はドロップ */
-      if (Object.prototype.hasOwnProperty.call(transfer, t.id)) {
-        var c = {}, kk, pp = transfer[t.id];
+      if (Object.prototype.hasOwnProperty.call(patches, i)) {
+        var c = {}, kk, pp = patches[i];
         for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
         for (kk in pp) if (Object.prototype.hasOwnProperty.call(pp, kk)) c[kk] = pp[kk];  /* パッチ適用: staffId＋手動カスタマイズ移譲（start/end は残す札を維持） */
         if (pp.staffId !== undefined && pp.staffId !== null) { delete c.parked; delete c.bumped; }   /* 配置済みになった札にトレイ印/退避印を残さない */
@@ -2203,6 +2276,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else out.push(t);
     }
     return out;
+  }
+
+  /* 盤面ケアタスクのスロット de-dup（純粋関数・care本体不変）。
+   * ①(氏名, 開始) が同じケア ②週間計画の同じ予定(weeklyRef.evId)から生まれたケア を、それぞれ1件へ収束する。
+   * ②を足した理由（2026-09-21）: 同じ予定の札が2端末で別々に作られると id が違うためクラウド統合が
+   * 両方を残す。その後どちらかの時刻・氏名表記がずれると①だけでは畳めず、盤面に二重の支援が残っていた。 */
+  function dedupCareSlots(tasks) {
+    if (!tasks || !tasks.length) return tasks || [];
+    /* 別人ガードは【(氏名,開始)キーの時だけ】掛ける。このキーは「たまたま同姓同名・同時刻」が起こりうる＝
+     * 取り違えの危険がある。一方 evId キーは週間計画の同一予定＝定義上ひとりの利用者なので、氏名照合の
+     * 揺れで residentId が食い違っていても畳む（畳まないと表記ゆれの二重表示が残る）。 */
+    return dedupCareOnce_(dedupCareOnce_(tasks, careKeyStart_, true), careKeyEv_, false);
+  }
+  /* 畳める重複の件数（純粋関数・通知やログ用）。0 なら重複なし。 */
+  function careDupCount(tasks) {
+    if (!tasks || !tasks.length) return 0;
+    return tasks.length - dedupCareSlots(tasks).length;
   }
 
   /* 複数枠スワップの対象群決定（純粋関数）。pool=対象列のcare枠(start昇順)、anchorId=ドロップ直下枠のid、
@@ -2649,19 +2739,51 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return out;
   }
+  /* 支援の同一性の集合（重複畳みの巻き添えで支援が消えるのを防ぐための照合用・2026-09-21）。 */
+  /* 支援(care)の枚数。全消失ガードの判定用。 */
+  function careCount_(tasks) {
+    var n = 0, i;
+    for (i = 0; i < (tasks || []).length; i++) if (tasks[i] && tasks[i].kind === 'care') n++;
+    return n;
+  }
+  /* 全消失ガードの下限。1〜数件の削除は日常操作なので従来どおり伝播させ、
+   * 「その日の支援が丸ごと消える」異常だけを捕まえる。 */
+  var CARE_WIPE_MIN_ = 5;
+  function careIdentSet_(tasks) {
+    var set = {}, i, t;
+    for (i = 0; i < (tasks || []).length; i++) {
+      t = tasks[i];
+      if (!t || t.kind !== 'care') continue;
+      if (t.weeklyRef && t.weeklyRef.evId) set['.E|' + t.weeklyRef.evId] = 1;
+      set['.S|' + normName_(t.residentName) + '|' + t.start] = 1;
+    }
+    return set;
+  }
+  function careIdentHit_(set, t) {
+    if (!t || t.kind !== 'care') return false;
+    if (t.weeklyRef && t.weeklyRef.evId && set['.E|' + t.weeklyRef.evId]) return true;
+    return !!set['.S|' + normName_(t.residentName) + '|' + t.start];
+  }
   function rebaseDay(ancestor, local, server) {
     var a = ancestor || {}, l = local || {}, s = server || {};
     var aT = indexById_(a.tasks), lT = indexById_(l.tasks), sT = indexById_(s.tasks);
+    /* ★重複畳みは「削除」ではない（2026-09-21）。2端末が同じ重複を別々の札で畳むと、互いの削除追従で
+     * 【同じ支援が両方消える】（ロック日は週間計画からの再生成も走らないため復旧できない）。
+     * 相手側に同一支援の別札が残っているなら、その不在は畳みとみなして削除に追従しない。
+     * 両方を残したうえで出口の dedupCareSlots が決定的に1枚へ収束させる＝端末間で同じ結果になる。 */
+    var sIdent = careIdentSet_(s.tasks), lIdent = careIdentSet_(l.tasks);
     var merged = [], seen = {}, i, id, lt, st, at;
     for (i = 0; i < (l.tasks || []).length; i++) {
       lt = l.tasks[i];
       if (!lt) continue;
       id = '.' + lt.id;
+      if (Object.prototype.hasOwnProperty.call(seen, id)) continue;   /* 同一idが2枚ある壊れた入力でも1枚だけ採る（notesの3-wayと同方針） */
       seen[id] = 1;
       at = aT[id];
       st = sT[id];
       if (!at || taskSig(at) !== taskSig(lt)) merged.push(lt);          /* ローカル変更/新規 → ローカル採用 */
       else if (st) merged.push(st);                                     /* ローカル不変 → サーバー版採用 */
+      else if (careIdentHit_(sIdent, lt)) merged.push(lt);              /* サーバーの不在は「畳み」＝削除に追従しない */
       /* ローカル不変×サーバー無し ＝ 他端末の削除に追従（採用しない） */
     }
     for (i = 0; i < (s.tasks || []).length; i++) {
@@ -2670,7 +2792,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       id = '.' + st.id;
       if (Object.prototype.hasOwnProperty.call(seen, id)) continue;
       at = aT[id];
-      if (at && !Object.prototype.hasOwnProperty.call(lT, id) && taskSig(at) === taskSig(st)) continue; /* ローカル削除×サーバー不変＝削除維持 */
+      if (at && !Object.prototype.hasOwnProperty.call(lT, id) && taskSig(at) === taskSig(st) &&
+          !careIdentHit_(lIdent, st)) continue; /* ローカル削除×サーバー不変＝削除維持（ただしローカルに同一支援が残っていれば畳み＝維持しない） */
       merged.push(st);   /* サーバー新規（またはローカル削除×サーバー変更＝消失回避で保持） */
     }
     /* staff+columns は原子ペア（列とタスクの参照整合を守る） */
@@ -2704,8 +2827,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var remapped = remapTasksToPair_(merged, staff, useLocalPair ? (s.staff || []) : (l.staff || []));
     /* ロック日(＝確定した実績)は repairBoard_ の再配置(列不在ケアをトレイへ/非care破棄)を掛けない＝散らさない。
      * remapTasksToPair_(氏名でstaffIdを採用ペアへ再マップ・配置は保全)は維持。通常日は従来どおり修復する。 */
-    if (meta.locked === true) return { meta: meta, staff: staff, columns: columns, tasks: remapped };
-    return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(remapped, staff, a.tasks || []) };
+    /* ★重複の収束（2026-09-21）: 統合は id をキーにするため、同じ支援が2端末で別々に作られると（id が違う＝
+     * 別物とみなされ）両方が残る。これが「同じ利用者の同じ支援が2つ」の発生源だった。ここで畳む＝
+     * 重複が生まれた瞬間に消える。ロック日も対象にする（本人裁定 2026-09-21: 残す側の配置・内容は変えず
+     * 余分な札を消すだけ＝確定した実績を組み替えない）。 */
+    var deduped = dedupCareSlots(remapped);
+    var dupRemoved = remapped.length - deduped.length;   /* 通知用。呼び出し側が読んだら消す（保存物に残さない） */
+    /* ★全消失ガード（2026-09-21）: 統合の結果、支援が1件も残らないのにローカルには CARE_WIPE_MIN_ 件以上
+     * あるなら、それは人の削除ではなくマージの事故。実例: 重複を畳む版と畳まない版の端末が混在すると、
+     * 片方の「畳み」がもう片方に【削除】として伝わり、互いの削除追従が重なって盤面が白紙になる。
+     * このときローカルの支援を残す＝画面が空にならず、次の送信でクラウドと他端末へも戻る。
+     * 代償: その日の支援(5件以上)を一度に全部消す操作は他端末へ伝播しなくなる。数件ずつ消せば従来どおり
+     * 伝播するため運用上の実害はない（消失より復活を優先＝多端末同期の設計規約）。 */
+    var wipeKept = 0;
+    if (careCount_(deduped) === 0 && careCount_(l.tasks) >= CARE_WIPE_MIN_) {
+      var lcare = [], wi;
+      for (wi = 0; wi < (l.tasks || []).length; wi++) {
+        if (l.tasks[wi] && l.tasks[wi].kind === 'care') lcare.push(l.tasks[wi]);
+      }
+      deduped = dedupCareSlots(deduped.concat(lcare));
+      wipeKept = careCount_(deduped);
+    }
+    if (meta.locked === true) return { meta: meta, staff: staff, columns: columns, tasks: deduped, dupRemoved: dupRemoved, wipeKept: wipeKept };
+    return { meta: meta, staff: staff, columns: columns, tasks: repairBoard_(deduped, staff, a.tasks || []), dupRemoved: dupRemoved, wipeKept: wipeKept };
   }
 
   /* 退去/入院/入居前マスクの適用方針（純関数・2026-08-05 追加）。
@@ -2762,6 +2906,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     migrateNameOnly: migrateNameOnly,
     normalizeTaskContents: normalizeTaskContents,
     dedupCareSlots: dedupCareSlots,
+    careDupCount: careDupCount,
+    careHumanTouched: careHumanTouched_,
     matchSwapRun: matchSwapRun,
     staffFacworkKind: staffFacworkKind,
     stableStringify: stableStringify,
@@ -5227,11 +5373,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ゴースト含む)を1件へ収束。ローカル読込/クラウドpull/日付切替の全初期化が通る単一チョークポイント＝
        * 保存済み/クラウドの二重表示もここで解消。INIT_DAYはundo履歴をクリアするため副作用なし。 */
       var d0 = action.day;
-      /* ロック日は「保存済み配置の凍結」を最優先＝非決定な dedup(配列順タイブレーク)や
-       * ロスター依存整形で組み替えない。退化枠除去(sanitizeTasks)のみ適用(無害)。
+      /* ロック日は「保存済み配置の凍結」を最優先＝ロスター依存の整形や重畳の組み替えはしない。
+       * 退化枠除去(sanitizeTasks)と重複畳み(dedupCareSlots)のみ適用。
+       * ※dedup のタイブレークは id 昇順で決定的（2026-09-21 以降）＝端末ごとに結果が割れない。
        * unlock 日は従来どおり全整形＝回帰なし。 */
       if (d0.meta && d0.meta.locked) {
-        return { meta: d0.meta, staff: d0.staff, columns: d0.columns, tasks: M.sanitizeTasks(d0.tasks) };
+        /* ★ただし【重複の収束(dedupCareSlots)だけは掛ける】（本人裁定 2026-09-21）。同じ予定から生まれた
+         * 余分な札を1枚消すだけで、残す札の担当・時刻・内容は一切変えない＝確定した実績を組み替えない。
+         * 掛けないと、ロック日に届いた重複が永久に残り、画面にも印刷にも同じ支援が2つ出る（9/23 の事象）。 */
+        return { meta: d0.meta, staff: d0.staff, columns: d0.columns, tasks: M.dedupCareSlots(M.sanitizeTasks(d0.tasks)) };
       }
       /* 重畳解消(normalizeOverlap)は reduce 内でなく dispatch 側のチョークポイントで掛ける（prev/frozen 判定が要るため） */
       return { meta: d0.meta, staff: d0.staff, columns: d0.columns,
@@ -7524,6 +7674,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var p = decodeDay_(raw);
       if (p && p.meta && p.staff && p.tasks) {
         p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
+        /* 重複の収束（2026-09-21）: ロック日も、まだ開いていない日も含めて【必ず】通す。
+         * ここに置く理由: INIT_DAY（＝その日を開いた時）だけだと、開かない日に溜まった重複が
+         * pushDayFor_ でそのままクラウドへ送られ、他端末へ広がる。読込の入口で畳めば送信物も常に1件になる。
+         * 残す札の担当・時刻・内容は変えない＝ロック日の実績を組み替えない（本人裁定）。 */
+        var dupB_ = p.tasks.length;
+        p.tasks = M.dedupCareSlots(p.tasks);
+        if (p.tasks.length !== dupB_) {
+          var dupAdd_ = countDupOnce_(date, dupB_ - p.tasks.length);   /* 同じ日の二重計上を防ぐ */
+          if (dupAdd_ > 0) {
+            dupCleaned_ += dupAdd_;
+            overlapRepairs_++;   /* 偽dirty補正を抑止＝畳んだ結果をサーバーへ確実に送る */
+          }
+        }
         /* ロック日は保存配置の凍結が最優先＝現在ロスター基準の列並べ替え・予約席再主張・孤児退避を
          * 一切かけない（開くたびに過去日が今のマスタで組み替わるのを止める）。sanitizeTasks は上で適用済。 */
         if (p.columns && !(p.meta && p.meta.locked)) {
@@ -7955,7 +8118,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function initFrozen_(day) { return !!((day && day.meta && day.meta.locked) || autoLockPast_(day)); }
   /* 重畳解消が起きた回数。switchDate/起動の「偽dirty補正」が修復済み盤面の送信を握りつぶさないための判定に使う。 */
   var overlapRepairs_ = 0;
+  /* 重複を畳んで消した支援の件数（通知用・本人裁定 2026-09-21「無言で消さない」）。renderAll で1回出して0に戻す。 */
+  var dupCleaned_ = 0;
+  /* 日付ごとに「もう数えた重複の件数」。同じ日を何度読み直しても（送信失敗のリトライ・翌週コピーの
+   * 二度読み等）件数が積み上がらないようにする。増えた分だけを新たに数える。 */
+  var dupCountedByDate_ = {};
+  function countDupOnce_(date, removed) {
+    if (!(removed > 0)) return 0;
+    var was = dupCountedByDate_['.' + date] || 0;
+    if (removed <= was) return 0;
+    dupCountedByDate_['.' + date] = removed;
+    return removed - was;
+  }
   /* store が解消した退避/縮小の集計を1回だけ取り出してトーストする（描画の購読で毎回呼ぶ・無ければ何もしない） */
+  /* 重複の収束を画面へ知らせる（1回だけ）。内容・チェックは残す札へ引き継いでいるため消失はしない。 */
+  var dupToastTimer_ = null, dupToastN_ = 0;
+  function reportDupClean_() {
+    if (!dupCleaned_) return;
+    dupToastN_ += dupCleaned_; dupCleaned_ = 0;
+    /* クラウド取込・週間計画同期のトーストが同じ瞬間に出るため、少し遅らせて最後に表示する
+     * ＝「整理しました」の告知が0秒で上書きされない（本人裁定③ 知らせる）。件数は溜めて1回で出す。 */
+    if (dupToastTimer_) return;
+    dupToastTimer_ = setTimeout(function () {
+      var n = dupToastN_; dupToastN_ = 0; dupToastTimer_ = null;
+      try { toast('重複していた支援 ' + n + '件を消して1件にまとめました（担当・内容・チェック・実施済みは残した方へ引き継ぎ済み）'); } catch (e) {}
+    }, 1600);
+  }
+  /* 全消失ガード（M.rebaseDay）が働いた時の告知。支援が丸ごと消える統合結果を差し戻した＝
+   * 旧版の端末が残っている可能性が高いので、リロードを促す文言にする。 */
+  function reportWipeGuard_(mg, date) {
+    try {
+      var n = mg && mg.wipeKept;
+      try { delete mg.wipeKept; } catch (eW0) {}   /* 保存・送信物には残さない */
+      if (!(n > 0)) return;
+      toast('⚠️ ' + date + ' の支援が消える同期を止めました（' + n + '件を復元）。全ての端末でページを再読み込みしてください', true);
+    } catch (eW) {}
+  }
   function reportOverlapRepair_() {
     var rep = null;
     try { rep = store.takeRepair(); } catch (eTR) { rep = null; }
@@ -8481,6 +8679,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * INIT_DAY経路と対称にし、reconcile経路で編集コードが取りこぼされ先祖返りが再発するのを防ぐ。 */
           if (kept_.svcCode !== orig_.svcCode) { upd_.svcCode = kept_.svcCode; hasUpd_ = true; }
           if (kept_.svcDirty !== orig_.svcDirty) { upd_.svcDirty = kept_.svcDirty; hasUpd_ = true; }
+          /* 実施済み・メモ・detailBase の移譲も反映（2026-09-21）。ここが抜けていると、reconcile 経路だけ
+           * 「実施済み」の記録が消える（INIT_DAY・クラウド統合の経路では移譲されるため挙動が非対称だった）。 */
+          if (kept_.done !== orig_.done) { upd_.done = kept_.done; hasUpd_ = true; }
+          if (kept_.memo !== orig_.memo) { upd_.memo = kept_.memo; hasUpd_ = true; }
+          if (kept_.detailBase !== orig_.detailBase) { upd_.detailBase = kept_.detailBase; hasUpd_ = true; }
+          /* 配置済みになった札のトレイ印・退避印の解除も反映（2026-09-21）。ここが抜けていると
+           * INIT_DAY経路（dedupCareSlots が delete する）と札の中身が食い違い、端末ごとに別経路を
+           * 通ると同じ盤面なのに署名が割れて余分な送信が1往復出る。 */
+          if (!kept_.parked && orig_.parked) { upd_.parked = undefined; hasUpd_ = true; }
+          if (!kept_.bumped && orig_.bumped) { upd_.bumped = undefined; hasUpd_ = true; }
           if (hasUpd_) store.dispatch({ type: 'UPDATE_TASK', id: orig_.id, patch: upd_ });
         }
       }
@@ -10681,6 +10889,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* サーバー版盤面の採用（pull/競合 共通）。未送信編集(dirty)があれば3-wayマージで統合し再送する */
   function adoptServerDay_(date, serverDay, serverRev, notify) {
     serverDay.meta = serverDay.meta || {};
+    /* ★サーバー版に重複が含まれていたら、採用する版だけを畳む（2026-09-21）。
+     * 祖先(saveBase_)は【サーバーが実際に持っていた版】のまま残す。祖先まで畳むと、次の3-wayで
+     * 「サーバーには無かった札」と誤認して、畳んだ相手の札を新規として復活させうる。
+     * 以前は件数を数えるだけで、表示していない日は重複入りのまま保存していた＝「整理しました」と
+     * 告知しながら実際には畳んでおらず、読み直すたびに二重計上していた。 */
+    var srvAdopt_ = serverDay;
+    try {
+      var sDupN_ = M.careDupCount(serverDay.tasks || []);
+      if (sDupN_ > 0) {
+        srvAdopt_ = { meta: serverDay.meta, staff: serverDay.staff, columns: serverDay.columns,
+                      tasks: M.dedupCareSlots(M.sanitizeTasks(serverDay.tasks || [])) };
+        dupCleaned_ += countDupOnce_(date, sDupN_);
+      }
+    } catch (eSD) {}
     serverDay.meta.rev = serverRev;
     serverDay.meta.date = date;
     var isCur = (ui.currentDate === date);
@@ -10712,6 +10934,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       srvLk_.meta.locked = true;
       var mergedLk_ = M.rebaseDay(loadBase_(date), localDay, srvLk_);
+      try { if (mergedLk_.dupRemoved > 0) dupCleaned_ += mergedLk_.dupRemoved; } catch (eML) {}
+      try { delete mergedLk_.dupRemoved; } catch (eML2) {}
+      reportWipeGuard_(mergedLk_, date);
       mergedLk_.meta = mergedLk_.meta || {};
       mergedLk_.meta.locked = true;   /* ロック保持端末が正＝解除は明示操作(lockOverride)でのみ行う */
       mergedLk_.meta.date = date;
@@ -10748,15 +10973,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (isCur) lastPushed.day = daySig(serverDay);
       saveBase_(date, serverDay);
       clearDayDirty_(date);
+      /* 畳んだ結果はサーバー版と中身が違う＝送り返さないとクラウドと他端末に重複が残り、
+       * この端末だけ1件になる。祖先(saveBase_)はサーバー版のままなので、次の送信は
+       * 「重複を消した分だけの変更」として正しく伝わる。 */
+      if (srvAdopt_ !== serverDay) markDayDirty_(date);
       if (isCur) {
         reassertBoardFixes_(serverDay);   /* 列固定の自己修復（saveBase_/sig計算後＝差分はpushで伝播） */
-        store.dispatch({ type: 'INIT_DAY', day: serverDay, frozen: initFrozen_(serverDay) });
+        store.dispatch({ type: 'INIT_DAY', day: srvAdopt_, frozen: initFrozen_(srvAdopt_) });
         /* INIT_DAY はクラウド盤面で tasks を全置換するため、置換直後に reconcile を掛け直して
          * 週間計画＝正本へ再追従（careInitDone前はローカルcare未確定のため掛けない）。 */
         if (careInitDone) { try { reconcileWeekly(); } catch (eRD) {} }
         if (notify) toast('他端末の更新を取得しました');
       } else {
-        lsSetDay_(date, serverDay);
+        lsSetDay_(date, srvAdopt_);   /* 表示していない日にも畳み済みを保存＝重複のまま送り返さない */
+        if (srvAdopt_ !== serverDay) scheduleRetry_();   /* 畳んだ差分の送信契機を張る（非当日はpush契機が無い） */
       }
       return;
     }
@@ -10766,6 +10996,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) {}
     }
     var merged = M.rebaseDay(anc, localDay, serverDay);
+    try { if (merged.dupRemoved > 0) dupCleaned_ += merged.dupRemoved; } catch (eMD) {}
+    try { delete merged.dupRemoved; } catch (eMD2) {}   /* 保存・送信物には残さない */
+    reportWipeGuard_(merged, date);
     merged.meta = merged.meta || {};
     merged.meta.date = date;
     merged.meta.rev = serverRev;
@@ -11486,6 +11719,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try {
         var ovlC_ = M.normalizeOverlap(null, tasks, staffOut);
         if (ovlC_.changed) { tasks = ovlC_.tasks; day.tasks = tasks; conflicts += ovlC_.bumped.length + ovlC_.clipped + ovlC_.removed; }
+        /* 重複の収束（2026-09-21）: コピー先は lsSetDay_ で直接書くため INIT_DAY を通らない。
+         * ここで畳んでおかないと、コピー元に重複があると翌週へそのまま運ばれる。 */
+        var dupC_ = tasks.length;
+        tasks = M.dedupCareSlots(tasks);
+        if (tasks.length !== dupC_) { day.tasks = tasks; conflicts += (dupC_ - tasks.length); }
       } catch (eOvC) {}
       if (!lsSetDay_(nd, day)) {
         toast('翌週への保存に失敗したためコピーを中止しました（端末の空き容量をご確認ください）', true);
@@ -13527,6 +13765,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     } catch (eBd) {}
 
+    /* ★基準は loadDayData の【前】で採る（2026-09-21）: 読込時の重複畳み・重畳解消は overlapRepairs_ を
+     * 増やすが、基準を後から採ると増分が見えず「変化なし」と誤判定して偽dirty補正が push を消す
+     * ＝畳んだ結果がこの端末の画面だけで直り、クラウドと他端末は重複したままになる。 */
+    var repBoot0_ = overlapRepairs_;
     var day = null;
     try { day = loadDayData(ui.currentDate); } catch (e) { day = null; }
     if (!day) day = S.emptyDay(ui.currentDate);
@@ -13534,7 +13776,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     store = S.createStore(S.emptyDay(ui.currentDate));
     /* 重畳解消の集計は購読の先頭で取り出す（印刷中は renderAll が早期 return するため、そこでは取りこぼす） */
-    store.subscribe(function () { reportOverlapRepair_(); scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
+    store.subscribe(function () { reportDupClean_(); reportOverlapRepair_(); scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
     /* 初回読込も INIT_DAY reducer を通し、正規化(混入tags除去/ケア重複収束/contents重複+checks再マップ/退化枠一掃)を確実化。
      * 従来は createStore(day) で初期dayをreducer非経由で設定していたため、初回のみ正規化が走らなかった(要件1/2)。 */
     /* 未送信(dirty)でない日はブート時に lastPushed を現内容へ初期化＝無変更ブートの空push(rev空回り)を抑止。
@@ -13543,7 +13785,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 本当にdirtyな日は何もしない＝デバウンス後に自動再送。他日付/careの未送信はリトライtickが回収する。 */
     var wasDirtyBoot = false;
     try { wasDirtyBoot = isDayDirty_(ui.currentDate); } catch (eD0) {}
-    var repBoot0_ = overlapRepairs_;
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
