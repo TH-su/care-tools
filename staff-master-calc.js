@@ -11,7 +11,7 @@
      StaffCalc.belongsTo / siteRatios / ratioTotal / siteStats（事業所別の集計・兼務比率）
      StaffCalc.normName / normKana / parseCsv / toCsv
      StaffCalc.LABELS / ENUMS / setEnums / visibleEnum / mapLegacyRow / diffFields
-     StaffCalc.COMMITTEE_DEFAULTS / COMMITTEE_ROLES / setCommittees / committees / committeeOf / committeesOf / committeeMembers / committeeStats（委員会と構成員）
+     StaffCalc.COMMITTEE_DEFAULTS / COMMITTEE_ROLES / COMMITTEE_KINDS / setCommittees / committees / committeeOf / committeesOf / committeeMembers / committeeStats（委員会と構成員）
    前提・注意
      ・依存ゼロ。ブラウザ（iPad Safari）と node の両方で動く。ES2018 以下の構文だけを使う
      ・console 呼び出しをこのファイルに置かない（個人情報がログに出る経路を作らない）
@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-22.1';
+  var VERSION = '2026-09-22.3';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -683,81 +683,196 @@
     {
       code: 'abuse',
       label: '虐待防止委員会',
+      kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '定期的',
       basis: '居宅基準 第37条の2（訪問）／第104条の2（通所）／熊本市有料老人ホーム設置運営指導指針 第12条',
       penalty: '高齢者虐待防止措置未実施減算（利用者全員1%・発見月から3か月は必ず減算）',
       hasPenalty: true,
+      purpose: '減算を避けるため（高齢者虐待防止措置未実施減算）',
+      /* ★研修が「年2回以上」なのは特別養護老人ホーム等の施設系。当社3事業所は該当しない */
+      training: '訪問介護は年1回以上／通所介護・住宅型は定期的',
       note: '委員会・指針・年1回以上の研修・担当者の設置の4つが揃って要件を満たす',
       inactive: false
     },
     {
       code: 'restraint',
       label: '身体的拘束等適正化委員会',
+      kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '有料は3か月に1回以上／訪問・通所は定期的',
       basis: '居宅基準／同指導指針 第13条',
       penalty: '身体的拘束廃止未実施減算',
       hasPenalty: true,
+      purpose: '減算を避けるため（身体的拘束廃止未実施減算）',
+      training: '定期的',
       note: '担当者は虐待防止委員会の担当者と同一が望ましい（指導指針）',
       inactive: false
     },
     {
       code: 'infection',
       label: '感染対策委員会',
+      kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '概ね6か月に1回以上',
       basis: '居宅基準 第31条2項（訪問）／第104条2項（通所）／同指導指針 第11条',
       penalty: '',
       hasPenalty: false,
+      purpose: '法令上の義務（運営基準）',
+      training: '定期的',
+      drill: '定期的（BCP の研修・訓練と一体実施可）',
       note: 'BCP の研修・訓練と一体的に実施してよい',
       inactive: false
     },
     {
       code: 'safety',
       label: '利用者の安全並びに介護サービスの質の確保及び職員の負担軽減に資する方策を検討するための委員会',
+      alias: '生産性向上委員会',
+      kind: 'committee',
       sites: ['visit', 'day'],
       freq: '定期的',
       basis: '令和6年度介護報酬改定',
       penalty: '令和9年4月1日から義務（経過措置は令和9年3月31日まで）',
       hasPenalty: false,
+      purpose: '法令上の義務（令和9年4月1日から）',
       note: '管理者とケアを行う職種を含む幅広い職種で構成することが望ましい',
       inactive: false
     },
     {
       code: 'kondan',
       label: '運営懇談会',
+      kind: 'committee',
       sites: ['facility'],
       freq: '定期的',
       basis: '同指導指針 第10条',
       penalty: '',
       hasPenalty: false,
+      purpose: '法令上の義務（熊本市有料老人ホーム設置運営指導指針）',
       note: '入居者・家族・設置者・外部の者で構成。定員が少ない等で困難なら代替措置可',
       inactive: false
     },
     {
       code: 'dementia',
       label: '認知症ケアの事例検討・技術的指導会議',
+      kind: 'committee',
       sites: ['day'],
       freq: '定期的',
       basis: '通所介護 認知症加算',
       penalty: '加算を算定する場合に必要（現在は未算定＝既定で対象外）',
       hasPenalty: false,
+      purpose: '加算の要件（通所介護 認知症加算）',
       note: '認知症加算を算定する場合に必要。現在は未算定のため対象外',
       inactive: true                                            /* 認知症加算が未算定のうちは対象外（注意も出さない） */
+    },
+    /* ここから下は委員会ではない体制（spec-committee2.md §2）。同じ一覧で見たいので同居させ、
+       kind で分ける。委員会ではないので「委員長・委員」の注意は出さない（§3・committeeStats） */
+    {
+      code: 'bcp',
+      label: '業務継続計画（BCP）',
+      kind: 'plan',
+      sites: ['facility', 'visit', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '令和3年度改正（令和6年4月1日から義務）／業務継続計画未策定減算',
+      penalty: '業務継続計画未策定減算（利用者全員1%・訪問介護と通所介護は令和7年4月1日から適用）',
+      hasPenalty: true,
+      purpose: '減算を避けるため（業務継続計画未策定減算）',
+      training: '定期的',
+      drill: '定期的（感染症は感染対策と、災害は非常災害対策の訓練と一体実施可）',
+      note: '計画の策定と、計画に従った措置が減算の判定対象。周知・研修・訓練・見直しの有無は減算の要件ではない',
+      inactive: false
+    },
+    {
+      code: 'disaster',
+      label: '非常災害対策',
+      kind: 'plan',
+      sites: ['facility', 'day'],                               /* ★訪問介護には計画策定・訓練の定めがない（visit は入れない） */
+      freq: '委員会の設置義務はなし',
+      basis: '運営基準／消防法施行規則 第3条（消防計画）',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（訪問介護には計画策定・訓練の定めなし）',
+      training: '定期的に従業者へ周知',
+      drill: '避難訓練は年2回以上（消防法施行規則）。実施した内容の記録を残すこと',
+      note: '浸水想定区域・土砂災害警戒区域内で市の地域防災計画に定められた施設は、避難確保計画の作成・避難訓練・訓練結果の報告も必要',
+      inactive: false
+    },
+    {
+      code: 'hygiene',
+      label: '衛生推進者の選任',
+      kind: 'officer',
+      sites: ['facility', 'visit', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '労働安全衛生法（介護保険の集団指導資料には記載なし）',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（労働安全衛生法）',
+      note: '常時10人以上50人未満の事業場に選任義務。事業場をどう数えるか（3事業所を別々に見るか同一敷地で一体と見るか）で結論が変わるため、労働基準監督署または社会保険労務士への確認が要る',
+      todo: true,                                               /* 事業場の数え方で選任義務が変わる＝結論が出るまで「要確認」を出し続ける */
+      inactive: false
     }
   ];
 
   var COMMITTEE_ROLES = [['chair', '委員長'], ['officer', '担当者'], ['member', '委員']];
 
+  /* 一覧の種別（委員会／計画と訓練／選任）。画面の見出しの区切りに使う。
+     'committee' 以外は委員会ではないので、委員長・委員の注意を出さない（committeeStats） */
+  var COMMITTEE_KINDS = [['committee', '委員会'], ['plan', '計画と訓練'], ['officer', '選任']];
+
   /* 役割の並び（委員長 → 担当者 → 委員）。所属の検証にも使う＝この3種以外は落とす */
   var ROLE_ORDER = { chair: 0, officer: 1, member: 2 };
 
-  var COMMITTEES = COMMITTEE_DEFAULTS.slice();
+  /* 知らない種別は 'committee' に寄せる（注意を静かに減らさない安全側。sites の検証と同じ作法） */
+  function normKind(v) {
+    var k = trim(v);
+    for (var i = 0; i < COMMITTEE_KINDS.length; i++) if (COMMITTEE_KINDS[i][0] === k) return k;
+    return 'committee';
+  }
+
+  /* 既定にある委員会（setCommittees で「既定の値を正とする」項目を引く） */
+  function defaultCommittee(code) {
+    for (var i = 0; i < COMMITTEE_DEFAULTS.length; i++) {
+      if (COMMITTEE_DEFAULTS[i].code === code) return COMMITTEE_DEFAULTS[i];
+    }
+    return null;
+  }
+
+  /* 既定の1件を、setCommittees が組み立てる行と同じ形（全項目・空は空文字）で写す。
+     ★sites は必ず複製する。既定の配列をそのまま渡すと、呼び手の並べ替えでマスタが崩れる */
+  function fromDefault(d) {
+    return {
+      code: d.code,
+      label: trim(d.label) || d.code,
+      alias: trim(d.alias),
+      kind: normKind(d.kind),
+      sites: d.sites.slice(),
+      freq: trim(d.freq),
+      basis: trim(d.basis),
+      penalty: trim(d.penalty),
+      hasPenalty: d.hasPenalty === true,
+      purpose: trim(d.purpose),
+      training: trim(d.training),
+      drill: trim(d.drill),
+      note: trim(d.note),
+      todo: d.todo === true,
+      inactive: d.inactive === true
+    };
+  }
+
+  /* いまのマスタの初期値。★必ず fromDefault を通す（2026-09-22.2 レビュー3）。
+     COMMITTEE_DEFAULTS.slice() だと、サーバー応答を受け取る前の committees() が未正規化の実体を
+     そのまま返し、abuse.drill・kondan.alias などが undefined（setCommittees 後は ''）になる＝
+     同じ公開APIが状況で別の形を返す。さらに sites 配列の参照を既定と共有してしまい、
+     fromDefault の「★sites は必ず複製する」と矛盾する。 */
+  var COMMITTEES = COMMITTEE_DEFAULTS.map(function (d) { return fromDefault(d); });
 
   /* サーバーの委員会マスタを反映する。[{code,…}] の配列のときだけ差し替える。
      空配列・壊れた値は無視する＝応答が古くても画面から委員会が消えない（setEnums と同じ安全側）。
-     戻り値: 差し替えた件数（0 なら既定のまま） */
+     ★既定にあって list に無い体制は末尾に足す（2026-09-22.2）。前の版の時代に保存された
+       6件だけのマスタをサーバーから受け取ると、そのままでは BCP・非常災害対策・衛生推進者が
+       画面から消える。制度上の体制は人が保存した覚えが無くても存在するので、足して補う。
+       並びは「list にある分をその順」→「既定にしか無い分を既定の順」。list に在る分の編集
+       （名前・頻度・根拠・対象外の印など）は保存値のままにし、マージで既定へ戻さない。
+     戻り値: 反映後の件数（0 なら既定のまま） */
   function setCommittees(list) {
     if (Object.prototype.toString.call(list) !== '[object Array]' || !list.length) return 0;
     var out = [], seen = {}, i, j;
@@ -775,30 +890,41 @@
         if (SITE_CODES.indexOf(s) < 0 || sites.indexOf(s) >= 0) continue;
         sites.push(s);
       }
+      /* ★減算の有無・種別・要件の表示（何のため・研修・訓練・要確認）は必ず持ち回る
+           （2026-09-22 実測の不具合）。ここで落とすと、サーバーのマスタを読み込んだ瞬間に
+           「担当者が決まっていません（減算の要件です）」が永久に出なくなる。委員会機能で
+           いちばん効く警告なので、文面からの推測で代用しない。
+         ★既定にある委員会は【既定の値】を正とする。減算の有無も、種別も、何の加算・減算の
+           ための体制かも制度上の事実であって、人が画面から変えるものではない。古いサーバーや、
+           これらの項目を持たない保存済みのマスタを読んでも、注意と説明が消えないようにするため。 */
+      var def = defaultCommittee(code);
       out.push({
         code: code,
         label: trim(it.label) || code,                                           /* 名前が無ければコードを出す */
+        alias: def ? trim(def.alias) : trim(it.alias),
+        kind: def ? normKind(def.kind) : normKind(it.kind),
         sites: sites,
         freq: trim(it.freq),
-        basis: trim(it.basis),
-        penalty: trim(it.penalty),
-        /* ★減算の有無は必ず持ち回る（2026-09-22 実測の不具合）。ここで落とすと、サーバーの
-           マスタを読み込んだ瞬間に「担当者が決まっていません（減算の要件です）」が永久に
-           出なくなる。委員会機能でいちばん効く警告なので、文面からの推測で代用しない。
-           ★既定にある委員会は【既定の値】を正とする。減算の有無は制度上の事実で、人が
-             画面から変えるものではない。古いサーバーや、hasPenalty を持たない保存済みの
-             マスタを読んでも注意が消えないようにするため。 */
-        hasPenalty: (function () {
-          for (var di = 0; di < COMMITTEE_DEFAULTS.length; di++) {
-            if (COMMITTEE_DEFAULTS[di].code === code) return COMMITTEE_DEFAULTS[di].hasPenalty === true;
-          }
-          return it.hasPenalty === true;
-        })(),
+        /* ★根拠と減算の文面も既定を正とする（2026-09-22.3 レビュー4・サーバーと対称）。
+           紙に刷られる根拠はサーバーではなく、ここ（committees()）から出ている。第2版の画面が
+           第1版のサーバー（basis を素通しする）に繋がると、書き換えられた根拠がそのまま紙に乗る。 */
+        basis: def ? trim(def.basis) : trim(it.basis),
+        penalty: def ? trim(def.penalty) : trim(it.penalty),
+        hasPenalty: def ? def.hasPenalty === true : it.hasPenalty === true,
+        purpose: def ? trim(def.purpose) : trim(it.purpose),
+        training: def ? trim(def.training) : trim(it.training),
+        drill: def ? trim(def.drill) : trim(it.drill),
         note: trim(it.note),
+        todo: def ? def.todo === true : it.todo === true,
         inactive: it.inactive === true
       });
     }
     if (!out.length) return 0;
+    /* 既定にあって送られてこなかった体制を、既定の順で末尾に足す（既定の値そのまま） */
+    for (i = 0; i < COMMITTEE_DEFAULTS.length; i++) {
+      if (Object.prototype.hasOwnProperty.call(seen, COMMITTEE_DEFAULTS[i].code)) continue;
+      out.push(fromDefault(COMMITTEE_DEFAULTS[i]));
+    }
     COMMITTEES = out;
     return out.length;
   }
@@ -879,24 +1005,48 @@
         if (job !== '' && !Object.prototype.hasOwnProperty.call(jobs, job)) { jobs[job] = 1; jobKinds++; }
       }
       var warn = [];
+      var kind = normKind(c.kind);
       if (!c.inactive) {
         /* ★担当者の注意は「減算のある委員会」だけに出す（2026-09-22 レビュー 中1）。
            penalty の非空で判定すると、減算ではなく令和9年4月からの義務を書いてある
            safety にも「（減算の要件です）」が出る。この文言は紙にも刷られるため、
            実地指導に出す書類へ存在しない減算要件を自分から書くことになる。
-           そもそも safety に担当者の定めは無く、要件は構成員の職種の幅である。 */
+           そもそも safety に担当者の定めは無く、要件は構成員の職種の幅である。
+           ★種別によらず出す。BCP（計画と訓練）にも担当者の定めがあり減算もあるため。 */
         if (c.hasPenalty === true && n.officer === 0) warn.push('担当者が決まっていません（減算の要件です）');
-        if (n.chair === 0) warn.push('委員長が決まっていません');
-        if (mem.length === 0) warn.push('委員が1人もいません');
+        /* ★委員長・委員の注意は委員会だけ（spec-committee2.md §3）。計画と訓練・選任は
+           そもそも委員会ではないので、出すと実在しない要件を紙に刷ることになる。 */
+        if (kind === 'committee') {
+          if (n.chair === 0) warn.push('委員長が決まっていません');
+          if (mem.length === 0) warn.push('委員が1人もいません');
+        }
+        /* ★逆に、委員会でない体制に委員長・委員が入っていたら直してもらう（2026-09-22.3 レビュー2）。
+           サーバーも保存を断るが、第1版の画面（9件すべてに委員長の欄を出す）が先に保存した分は
+           すでに入っているので、画面に出して直せるようにする。
+           ★委員長だけでなく委員も見る。この機能の目的は「実地指導に出す紙に、存在しない役職を
+             刷らせない」ことなので、片方だけ止めても目的の半分しか果たせない。
+           ★数えるだけで、隠しも消しもしない（隠すと画面からその人を外せなくなる）。 */
+        if (kind !== 'committee' && (n.chair > 0 || n.member > 0)) {
+          warn.push('委員会ではないので委員長・委員は置けません（担当者に直してください）');
+        }
         if (c.code === 'safety' && jobKinds <= 1) warn.push('幅広い職種で構成することが望ましい委員会です（いまは1職種）');
+        /* 法令上の扱いが未確定のもの（衛生推進者の選任）。結論が出るまで画面に出し続ける */
+        if (c.todo === true) warn.push('要確認（法令上の扱いを確かめてください）');
       }
       out.push({
         code: c.code,
         label: c.label,
+        alias: trim(c.alias),
+        kind: kind,
         sites: c.sites.slice(),
         freq: c.freq,
         basis: c.basis,
         penalty: c.penalty,
+        hasPenalty: c.hasPenalty === true,        /* 減算の有無（2026-09-22.2 レビュー6）。penalty の文面からは判定しない */
+        purpose: trim(c.purpose),
+        training: trim(c.training),
+        drill: trim(c.drill),
+        todo: c.todo === true,
         inactive: c.inactive === true,
         total: mem.length,
         chair: n.chair,
@@ -1291,6 +1441,7 @@
     visibleEnum: visibleEnum,
     COMMITTEE_DEFAULTS: COMMITTEE_DEFAULTS,
     COMMITTEE_ROLES: COMMITTEE_ROLES,
+    COMMITTEE_KINDS: COMMITTEE_KINDS,
     setCommittees: setCommittees,
     committees: committees,
     committeeOf: committeeOf,

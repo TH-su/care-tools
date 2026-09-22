@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-22.1">
+<meta name="stfm-build" content="2026-09-22.3">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -565,6 +565,12 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
    構成図は SVG ではなく DOM のカードの段組み（拡大・印刷・読み上げに強い）。 */
 .cmt-tbl th,.cmt-tbl td{white-space:normal;vertical-align:top}
 .cmt-tbl tbody tr{cursor:pointer}
+/* 種別の見出し行（委員会／計画と訓練／選任）。文言は算出モジュールの COMMITTEE_KINDS が正本（2026-09-22.2）*/
+.cmt-tbl tbody tr.kind{cursor:default}
+.cmt-tbl tbody tr.kind th{padding-top:var(--sp-2);background:var(--c-surface2);color:var(--c-ink2);
+     font-size:var(--fs-2xs);font-weight:var(--fw-bold);text-align:left;white-space:nowrap}
+/* 法令上の扱いが未確定の行（要確認）。選んだ行の印を消さないよう .sel より前に書く（2026-09-22.2）*/
+.cmt-tbl tbody tr.todo{box-shadow:inset 3px 0 0 var(--c-warn)}
 .cmt-tbl tbody tr.sel{background:var(--c-info-bg);box-shadow:inset 3px 0 0 var(--c-primary)}
 .cmt-tbl tbody tr.off th,.cmt-tbl tbody tr.off td{color:var(--c-ink3)}
 .cmt-tbl .n{white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -575,6 +581,14 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 .cmt-flag{display:block;margin-top:var(--sp-1);padding:0 var(--sp-1);font-size:var(--fs-2xs);
      color:var(--c-warn);background:var(--c-warn-bg);border:1px solid var(--c-warn);border-radius:var(--r-sm)}
 .cmt-note{display:block;margin-top:var(--sp-1);font-size:var(--fs-2xs);color:var(--c-ink3)}
+/* 通称（生産性向上委員会など）。マスタの補足より一段はっきり出す（2026-09-22.2）*/
+.cmt-note.alias{color:var(--c-ink2)}
+/* 「要確認」の印。色だけに頼らず文字でも伝える（2026-09-22.2）*/
+.cmt-badge{display:inline-block;margin-top:var(--sp-1);padding:0 var(--sp-1);border-radius:var(--r-sm);
+     border:1px solid var(--c-warn);background:var(--c-warn-bg);color:var(--c-warn);
+     font-size:var(--fs-2xs);font-weight:var(--fw-bold);line-height:var(--lh-tight)}
+/* 根拠は紙だけ短くする（§5-6）。画面はいつも全文を出す（2026-09-22.2）*/
+.cmt-basis-print{display:none}
 
 /* 構成図（段 = 委員長／担当者／委員／外部委員）*/
 .cmt-org{margin-top:var(--sp-2)}
@@ -602,19 +616,27 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 .cmt-pblk .ttl{font-size:var(--fs-2xs);font-weight:var(--fw-bold)}
 .cmt-pblk .mem{font-size:var(--fs-2xs)}
 
-/* 所属委員会（詳細フォーム）。1行に収めるため .fld ではなく専用の行にする＝段を増やさない */
-.cmts{display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--sp-3);row-gap:var(--sp-1);
+/* 所属委員会（詳細フォーム）。1行に収めるため .fld ではなく専用の行にする＝段を増やさない。
+   2026-09-22.2 で既定が9件になり1行に入らなくなったので、委員会以外の種別（計画と訓練・選任）は
+   畳んでおき、押した時だけ2行目に出す。欄の幅と間隔も、6件が1行に収まるところまで詰めた */
+.cmts{display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--sp-2);row-gap:var(--sp-1);
      min-height:var(--tap-min)}
-.cmts>.lbl{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight);white-space:nowrap}
+.cmts[hidden]{display:none}
+.cmts>.lbl,.cmts>.sub{font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight);white-space:nowrap}
 .cmts .cgrp{display:flex;align-items:center;gap:var(--sp-1);min-width:0}
 /* 委員会名は長いので端を省く（全文は label の title と select の aria-label に残す）*/
 .cmts .cgrp>label{max-width:5.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
      font-size:var(--fs-2xs);color:var(--c-ink2);line-height:var(--lh-tight);cursor:pointer}
 .cmts .cgrp>label.off{color:var(--c-ink3)}
-.cmts select{width:6em;min-height:var(--tap-min);padding:var(--sp-1) var(--sp-1);
+.cmts select{width:5.4em;min-height:var(--tap-min);padding:var(--sp-1) var(--sp-1);
      font-size:var(--fs-sm);border:1px solid var(--c-border);border-radius:var(--r-md);
      background:var(--c-surface);color:var(--c-ink)}
 .cmts select:disabled{background:var(--c-surface2);color:var(--c-ink3)}
+/* 畳んだ種別を開くボタン。中身が入っている時はボタンを出さず、最初から開いておく */
+.cmt-more{min-height:var(--tap-min);padding:0 var(--sp-2);border:1px solid var(--c-border);
+     border-radius:var(--r-md);background:var(--c-surface);color:var(--c-link);
+     font-size:var(--fs-2xs);line-height:var(--lh-tight);white-space:nowrap;cursor:pointer}
+.cmt-more:disabled{background:var(--c-surface2);color:var(--c-ink3);cursor:not-allowed}
 
 /* 所属委員会の1行を足しても 1280×800 で1画面に収めるため、詳細画面だけ節の余白を詰める
    （ほかの画面の .form / h2.sec には触れない。2026-09-22.1）*/
@@ -653,7 +675,9 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 /* ══ 委員会の印刷（2026-09-22.1 追加）══
    この画面の「印刷」を押した時だけ body に .cmt-print が付く。付いていない間は1行も効かないので、
    ほかの画面の印刷（＝ブラウザ既定のまま）には触れない。用紙指定も名前付きページに閉じ込める。 */
-@page cmt{size:A4 portrait;margin:10mm}
+/* A4横（2026-09-22.2 の裁定）。縦だと「対象事業所」「人数」が1〜2文字ずつ折り返して
+   全行の高さを決めてしまうため、横幅を 718px → 約1047px に広げる。余白は据え置き */
+@page cmt{size:A4 landscape;margin:10mm}
 body.cmt-print{page:cmt}
 @media print{
   body.cmt-print .hdr,
@@ -683,24 +707,52 @@ body.cmt-print{page:cmt}
   body.cmt-print #scr-cmt .cmt-tbl .n{white-space:normal}
   /* 注意は紙では枠と地色を外して文字だけにする（白黒印刷でも ⚠ と文で分かる） */
   body.cmt-print #scr-cmt .cmt-flag{margin-top:0;padding:0;border:0;background:transparent}
-  /* マスタの補足は紙では出さない。「現在は対象外」は残す（人数が0の理由が紙で分かるように） */
+  /* 「要確認」の印も同じ扱い。枠だけ残す（2026-09-22.2）*/
+  body.cmt-print #scr-cmt .cmt-badge{margin-top:0;background:transparent}
+  /* マスタの補足は紙では出さない。「現在は対象外」と「通称」は残す
+     （人数が0の理由と、職員が普段呼んでいる名前が紙で分かるように）*/
   body.cmt-print #scr-cmt .cmt-note.mst{display:none}
-  /* 列幅は決め打ちにする。自動だと委員会名の列が細くなりすぎて行が高くなる */
+  /* 根拠は紙だけ短くする（§5-6）。画面の表示は変えない（2026-09-22.2）*/
+  body.cmt-print #scr-cmt .cmt-basis-screen{display:none}
+  body.cmt-print #scr-cmt .cmt-basis-print{display:inline}
+  /* 種別の見出しは紙でも出す。地色は白黒印刷でつぶれるので細い罫線に替える（2026-09-22.2）*/
+  body.cmt-print #scr-cmt .cmt-tbl tbody tr.kind th{padding-top:var(--sp-1);background:transparent;
+       color:var(--c-ink);border-top:1px solid var(--c-ink)}
+  body.cmt-print #scr-cmt .cmt-tbl tbody tr.todo{box-shadow:none}
+  /* 列幅は決め打ちにする。自動だと名称の列が細くなりすぎて行が高くなる。
+     2026-09-22.2 で10列になり、紙を A4横 にしたので配分も横向き用に取り直した
+     （「対象事業所」と「人数」が2行以内に収まる幅を先に確保している）*/
   body.cmt-print #scr-cmt .cmt-tbl{table-layout:fixed}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(1),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(1){width:18%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(1){width:16%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(2),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(2){width:8%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(2){width:6%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(3),
   body.cmt-print #scr-cmt .cmt-tbl td:nth-child(3){width:10%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(4),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(4){width:20%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(4){width:8%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(5),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(5){width:14%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(5){width:8%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(6),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(6){width:10%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(6){width:12%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(7),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(7){width:20%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(7){width:7%}
+  body.cmt-print #scr-cmt .cmt-tbl th:nth-child(8),
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(8){width:14%}
+  body.cmt-print #scr-cmt .cmt-tbl th:nth-child(9),
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(9){width:12%}
+  body.cmt-print #scr-cmt .cmt-tbl th:nth-child(10),
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(10){width:7%}
+  /* 種別の見出しは1列ぶんの幅しか持たないので、上の決め打ちから外す */
+  body.cmt-print #scr-cmt .cmt-tbl tbody tr.kind th:nth-child(1){width:auto}
+  /* 2枚目に続く時の体裁。行を途中で割らず、種別の見出しだけが紙の末尾に残らないようにし、
+     見出し行は次の紙にも繰り返す（2026-09-22.2。1枚に収まる時は1行も効かない）*/
+  body.cmt-print #scr-cmt .cmt-tbl thead{display:table-header-group}
+  body.cmt-print #scr-cmt .cmt-tbl tr{break-inside:avoid;page-break-inside:avoid}
+  body.cmt-print #scr-cmt .cmt-tbl tbody tr.kind{break-after:avoid;page-break-after:avoid}
+  /* 構成員は紙だけ2段組にする。中身は1件も減らさず、縦の高さだけを半分にする（2026-09-22.2）*/
+  body.cmt-print #cmtPrintAll{column-count:3;column-gap:var(--sp-4)}
+  body.cmt-print #cmtPrintAll h3.sub{column-span:all}
   body.cmt-print #cmtPrintAll .cmt-pblk{break-inside:avoid;page-break-inside:avoid}
 }
 </style>
@@ -866,10 +918,15 @@ body.cmt-print{page:cmt}
     </div>
     <div class="fld s2"><span class="lbl">休職</span><div class="chkwrap"><input type="checkbox" id="f_onLeave"><label for="f_onLeave">休職中</label></div></div>
     <!-- 所属委員会（2026-09-22.1 追加）。段を増やさないよう、見出しも欄と同じ行に置く。
-         中身は委員会マスタから組み立てる（buildCmtPicker） -->
+         中身は委員会マスタから組み立てる（buildCmtPicker）。
+         2026-09-22.2: 既定が9件になり1行に入らないので、委員会以外の種別は下の #cmtMore に畳む -->
     <div class="s12 cmts" id="cmtBox" role="group" aria-labelledby="lbl_cmts">
       <span class="lbl" id="lbl_cmts">所属委員会</span>
+      <button type="button" class="cmt-more" id="cmtMoreBtn" aria-expanded="false" aria-controls="cmtMore" hidden></button>
       <span class="fnote" id="cmtDtWhy" hidden></span>
+    </div>
+    <div class="s12 cmts" id="cmtMore" role="group" aria-labelledby="lbl_cmtMore" hidden>
+      <span class="sub" id="lbl_cmtMore"></span>
     </div>
   </div>
 
@@ -968,7 +1025,7 @@ body.cmt-print{page:cmt}
   <div class="cd cmt-noprint">
     <div class="row">
       <p class="muted grow">当事業所に必要な委員会と、その構成員です。3事業所は合同開催を基本にしています。委員会名を押すと、下の構成図が切り替わります。</p>
-      <button type="button" class="btn" id="cmtPrintBtn" disabled>印刷（A4縦）</button>
+      <button type="button" class="btn" id="cmtPrintBtn" disabled>印刷（A4横）</button>
     </div>
     <p class="muted" id="cmtWhy" hidden></p>
   </div>
@@ -982,9 +1039,12 @@ body.cmt-print{page:cmt}
       <caption class="sr-only">委員会の一覧（委員会名を押すと構成図が切り替わります）</caption>
       <thead>
         <tr>
-          <th scope="col">委員会</th>
+          <th scope="col">名称</th>
           <th scope="col">対象事業所</th>
+          <th scope="col">何のため</th>
           <th scope="col">開催頻度</th>
+          <th scope="col">研修</th>
+          <th scope="col">訓練</th>
           <th scope="col">根拠</th>
           <th scope="col">未実施の影響</th>
           <th scope="col">人数</th>
@@ -1039,7 +1099,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-22.1</p>
+    <p class="muted">版 2026-09-22.3</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1192,18 +1252,20 @@ body.cmt-print{page:cmt}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
-<script src="staff-master-calc.js?v=2026-09-16"></script>
+<!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
+     端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
+<script src="staff-master-calc.js?v=2026-09-22.3"></script>
 <script>
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-22.1
+   職員マスタ 2026-09-22.3
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-22.1';
+var BUILD = '2026-09-22.3';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -4233,6 +4295,12 @@ function doneEnumSave() {
    ・算出モジュール・GAS が古い版でも画面は落とさない（案内を出して編集だけ止める）。
    ════════════════════════════════════════════════════════════════ */
 var CMT_ROLES_DEF = [['chair', '委員長'], ['officer', '担当者'], ['member', '委員']];
+/* 種別のコード（2026-09-22.2）。表示する文言は算出モジュールの COMMITTEE_KINDS が正本で、
+   画面には持たない。ここに置くのは「どれが委員会か」「どの役割を許すか」という判定用のコードだけ */
+var CMT_KIND_MAIN = 'committee';  /* これ以外は委員会ではない（委員長・委員を置かない・詳細では畳む） */
+var CMT_ROLE_OFFICER = 'officer'; /* 委員会でない体制に置ける唯一の役割 */
+var CMT_ROLE_MEMBER = 'member';   /* 委員会に追加する時の既定の役割 */
+var CMT_BASIS_PRINT_MAX = 24;     /* 紙だけ根拠を短くする字数（§5-6。画面は全文のまま） */
 var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談会だけ（本人裁定 2026-09-22） */
 var CMT_EXT_NAME_MAX = 40;
 var CMT_EXT_NOTE_MAX = 40;
@@ -4246,6 +4314,8 @@ var CMT_OFF_MSG = '現在は対象外（認知症加算を算定する場合に�
 var CMT_CONFLICT_MSG = '他の端末が先に委員会を変えました。開き直してから、もう一度お願いします';
 var cmtAddOpener = null;
 var cmtExtOpener = null;
+/* 詳細フォームで「計画と訓練・選任」を開いているか。画面を開いている間だけ覚える（端末には残さない） */
+var cmtMoreOpen = false;
 
 /* ── 算出モジュールの窓口（古い版でも落ちないように全部ここを通す） ── */
 function cmtRolePairs() {
@@ -4256,6 +4326,46 @@ function cmtRolePairs() {
   return CMT_ROLES_DEF.map(function (p) { return [p[0], p[1]]; });
 }
 function cmtRoleCodes() { return cmtRolePairs().map(function (p) { return p[0]; }); }
+/* 種別の一覧。文言は算出モジュールが正本。持っていない旧版では空を返し、区切りも畳みも出さない
+   （＝2026-09-22.1 と同じ見え方のまま動く） */
+function cmtKindPairs() {
+  var a = SC() ? SC().COMMITTEE_KINDS : null;
+  if (!Array.isArray(a)) return [];
+  return a.map(function (p) { return [txt(p && p[0]), txt(p && p[1])]; })
+    .filter(function (p) { return !!p[0] && !!p[1]; });
+}
+function cmtKindOf(code) { var d = cmtDefOf(code); return txt(d && d.kind); }
+/* 委員会か。種別を持たないマスタ（旧版）はすべて委員会として扱う＝段も役割も従来どおり */
+function cmtIsCommittee(code) { var k = cmtKindOf(code); return !k || k === CMT_KIND_MAIN; }
+function cmtHasRole(members, role) {
+  var hit = false, r = txt(role);
+  (members || []).forEach(function (m) { if (txt(m && m.role) === r) hit = true; });
+  return hit;
+}
+/* 構成図に出す段。委員会でなければ担当者だけ（§5-3）。
+   ただし、すでに人が入っている段は消さない（消すと画面からその人を外せなくなる） */
+function cmtTierPairs(code, members) {
+  if (cmtIsCommittee(code)) return cmtRolePairs();
+  return cmtRolePairs().filter(function (p) {
+    return p[0] === CMT_ROLE_OFFICER || cmtHasRole(members, p[0]);
+  });
+}
+/* 「＋ 追加」で選べる役割。委員会でなければ担当者だけ（§5-3） */
+function cmtAddRolePairs(code) {
+  if (cmtIsCommittee(code)) return cmtRolePairs();
+  return cmtRolePairs().filter(function (p) { return p[0] === CMT_ROLE_OFFICER; });
+}
+/* 紙だけの根拠の短縮（§5-6）。画面はいつも全文。切れたことが分かるよう「ほか」「…」を残す */
+function cmtBasisShort(v) {
+  var t = txt(v), cut = -1;
+  if (t.length <= CMT_BASIS_PRINT_MAX) return t;
+  ['／', '（'].forEach(function (sep) {
+    var i = t.indexOf(sep);
+    if (i > 0 && i <= CMT_BASIS_PRINT_MAX && (cut < 0 || i < cut)) cut = i;
+  });
+  if (cut > 0) return t.slice(0, cut) + ' ほか';
+  return t.slice(0, CMT_BASIS_PRINT_MAX) + '…';
+}
 function cmtRoleLabel(code) {
   var c = txt(code), out = '';
   cmtRolePairs().forEach(function (p) { if (!out && p[0] === c) out = p[1]; });
@@ -4431,15 +4541,32 @@ function cmtWhyNoEdit() {
 function cmtCanEdit() { return !cmtWhyNoEdit(); }
 
 /* ── 詳細フォームの「所属委員会」欄 ───────────────────────── */
+/* 欄は2つの箱に分かれる（1行目 = 委員会／2行目 = 畳んでいる種別）。読み書きは必ずここを通す */
+function cmtPickerSelects() {
+  var out = [];
+  ['cmtBox', 'cmtMore'].forEach(function (id) {
+    var b = $(id);
+    if (!b) return;
+    Array.prototype.forEach.call(b.querySelectorAll('select[data-cmt]'), function (s) { out.push(s); });
+  });
+  return out;
+}
+/* 畳んでいる種別の見出し（例「計画と訓練・選任」）。文言は COMMITTEE_KINDS が正本 */
+function cmtMoreLabel() {
+  return cmtKindPairs().filter(function (p) { return p[0] !== CMT_KIND_MAIN; })
+    .map(function (p) { return p[1]; }).join('・');
+}
 function buildCmtPicker() {
-  var box = $('cmtBox');
+  var box = $('cmtBox'), more = $('cmtMore');
   if (!box) return;
   var keep = {};
-  Array.prototype.forEach.call(box.querySelectorAll('select[data-cmt]'), function (s) {
-    keep[txt(s.getAttribute('data-cmt'))] = txt(s.value);
+  cmtPickerSelects().forEach(function (s) { keep[txt(s.getAttribute('data-cmt'))] = txt(s.value); });
+  ['cmtBox', 'cmtMore'].forEach(function (id) {
+    var b = $(id);
+    if (b) Array.prototype.forEach.call(b.querySelectorAll('.cgrp'), function (g) { g.remove(); });
   });
-  Array.prototype.forEach.call(box.querySelectorAll('.cgrp'), function (g) { g.remove(); });
-  var why = $('cmtDtWhy');
+  var why = $('cmtDtWhy'), btn = $('cmtMoreBtn');
+  var folds = cmtKindPairs().length > 0;      /* 種別を持たないマスタ（旧版）は畳まない＝従来どおり1行 */
   cmtMaster().forEach(function (d) {
     var code = txt(d && d.code);
     if (!code) return;
@@ -4447,38 +4574,71 @@ function buildCmtPicker() {
     var id = 'f_cmt_' + code;
     var sel = h('select', { id: id, 'data-cmt': code, 'aria-label': '所属委員会 ' + full });
     sel.appendChild(h('option', { value: '' }, 'なし'));
-    cmtRolePairs().forEach(function (p) { sel.appendChild(h('option', { value: p[0] }, p[1])); });
-    sel.value = Object.prototype.hasOwnProperty.call(keep, code) ? keep[code] : '';
+    /* 委員会でない体制に置けるのは担当者だけ（§5-3）。ただし既に入っている役割は選択肢に残す
+       （残さないと select の値が消えて、保存した覚えのない取り消しが起きる） */
+    var cur = Object.prototype.hasOwnProperty.call(keep, code) ? keep[code] : '';
+    cmtRolePairs().forEach(function (p) {
+      if (!cmtIsCommittee(code) && p[0] !== CMT_ROLE_OFFICER && p[0] !== cur) return;
+      sel.appendChild(h('option', { value: p[0] }, p[1]));
+    });
+    sel.value = cur;
     sel.addEventListener('change', onFormInput);
     var grp = h('span', { cls: 'cgrp' }, [
       h('label', { for: id, cls: (d && d.inactive) ? 'off' : '', title: full, text: cmtLabelOf(code) }),
       sel
     ]);
-    if (why && why.parentNode === box) box.insertBefore(grp, why); else box.appendChild(grp);
+    if (folds && !cmtIsCommittee(code) && more) { more.appendChild(grp); return; }
+    if (btn && btn.parentNode === box) box.insertBefore(grp, btn);
+    else if (why && why.parentNode === box) box.insertBefore(grp, why);
+    else box.appendChild(grp);
   });
+  var sub = $('lbl_cmtMore');
+  if (sub) sub.textContent = cmtMoreLabel();
+  syncCmtMore();
   syncCmtPicker();
+}
+/* 畳んだ種別を出すかどうか。中身が入っている時は畳めない（設定済みの値を隠さないため） */
+function cmtMoreForced() {
+  var more = $('cmtMore'), hit = false;
+  if (!more) return false;
+  Array.prototype.forEach.call(more.querySelectorAll('select[data-cmt]'), function (s) { if (txt(s.value)) hit = true; });
+  return hit;
+}
+function syncCmtMore() {
+  var more = $('cmtMore'), btn = $('cmtMoreBtn');
+  if (!more || !btn) return;
+  var n = more.querySelectorAll('select[data-cmt]').length;
+  var forced = cmtMoreForced();
+  var open = forced || (n > 0 && cmtMoreOpen);
+  more.hidden = !(n > 0 && open);
+  btn.hidden = (n === 0) || forced;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.textContent = (open ? '－ ' : '＋ ') + cmtMoreLabel();
+}
+function toggleCmtMore() {
+  cmtMoreOpen = !cmtMoreOpen;
+  syncCmtMore();
 }
 function fillCmtPicker(r) {
   var box = $('cmtBox');
   if (!box) return;
   var cur = {};
   cmtNormList(r ? r.committeesJson : null).forEach(function (it) { cur[it.code] = it.role; });
-  Array.prototype.forEach.call(box.querySelectorAll('select[data-cmt]'), function (s) {
+  cmtPickerSelects().forEach(function (s) {
     var c = txt(s.getAttribute('data-cmt'));
     s.value = Object.prototype.hasOwnProperty.call(cur, c) ? cur[c] : '';
   });
+  syncCmtMore();
   syncCmtPicker();
 }
 /* 欄から所属の配列を作る。マスタに無いコード（画面に欄が無い分）は元の値をそのまま持ち回る */
 function collectCmtPicker() {
-  var box = $('cmtBox'), out = [], shown = {};
-  if (box) {
-    Array.prototype.forEach.call(box.querySelectorAll('select[data-cmt]'), function (s) {
-      var c = txt(s.getAttribute('data-cmt')), r = txt(s.value);
-      shown[c] = true;
-      if (c && r) out.push({ code: c, role: r });
-    });
-  }
+  var out = [], shown = {};
+  cmtPickerSelects().forEach(function (s) {
+    var c = txt(s.getAttribute('data-cmt')), r = txt(s.value);
+    shown[c] = true;
+    if (c && r) out.push({ code: c, role: r });
+  });
   var base = (ST.detail && ST.detail.base) ? ST.detail.base.committeesJson : null;
   cmtNormList(base).forEach(function (it) { if (!shown[it.code]) out.push({ code: it.code, role: it.role }); });
   return cmtNormList(out).slice(0, CMT_MAX_PER_STAFF);
@@ -4488,10 +4648,12 @@ function syncCmtPicker() {
   if (!box) return;
   var why = cmtWhyNoEdit();
   var none = !cmtMaster().length;
-  Array.prototype.forEach.call(box.querySelectorAll('select[data-cmt]'), function (s) {
+  cmtPickerSelects().forEach(function (s) {
     s.disabled = !!why;
     if (why) s.setAttribute('title', why); else s.removeAttribute('title');
   });
+  var btn = $('cmtMoreBtn');
+  if (btn) btn.disabled = false;               /* 開閉は表示だけの操作なので、保存できない時も使える */
   var w = $('cmtDtWhy');
   if (!w) return;
   var msg = why || (none ? '委員会マスタを読み取れていません' : '');
@@ -4557,46 +4719,101 @@ function renderCmt() {
   renderCmtPrint(stats);
 }
 
+/* 種別（委員会／計画と訓練／選任）でまとめる。見出しの文言は算出モジュールの COMMITTEE_KINDS から取り、
+   画面には持たない（§5-2）。種別を持たない旧版のマスタでは見出しを出さず、1つの並びのまま出す */
+function cmtGroupsOf(stats) {
+  var groups = [], used = {};
+  cmtKindPairs().forEach(function (p) {
+    var rows = stats.filter(function (x) { return txt(x && x.kind) === p[0]; });
+    rows.forEach(function (x) { used[txt(x && x.code)] = true; });
+    if (rows.length) groups.push({ label: p[1], rows: rows });
+  });
+  /* 種別の分からない行は落とさず、見出しなしで最後に置く（マスタが増えても行が消えない） */
+  var rest = stats.filter(function (x) { return !used[txt(x && x.code)]; });
+  if (rest.length) groups.push({ label: '', rows: rest });
+  return groups;
+}
+function cmtColCount() {
+  var t = $('cmtTbl');
+  var r = t && t.tHead && t.tHead.rows[0];
+  return (r && r.cells.length) || 1;
+}
 function renderCmtTable(stats) {
   var body = $('cmtBody');
   clearNode(body);
-  stats.forEach(function (x) {
-    var code = txt(x && x.code);
-    var nameCell = h('th', { scope: 'row' }, h('button', {
-      type: 'button', cls: 'cmt-name', text: txt(x.label) || code,
-      'aria-label': (txt(x.label) || code) + ' の構成図を出す',
-      onclick: function (ev) { ev.stopPropagation(); setCmtSelected(code); }
-    }));
-    if (x.inactive) nameCell.appendChild(h('span', { cls: 'cmt-note', text: CMT_OFF_MSG }));
-    /* 補足（研修や担当者の重ね方）は集計に含まれないことがあるので、無ければマスタから取る。
-       紙は1枚に収める約束なので、この補足だけ印刷では出さない（画面には必ず出す） */
-    var nt = txt(x.note) || txt((cmtDefOf(code) || {}).note);
-    if (nt) nameCell.appendChild(h('span', { cls: 'cmt-note mst', text: nt }));
-    var warn = h('td');
-    var ws = Array.isArray(x.warn) ? x.warn : [];
-    if (ws.length) ws.forEach(function (m) { warn.appendChild(h('span', { cls: 'cmt-flag', text: '⚠ ' + txt(m) })); });
-    else warn.textContent = '—';
-    var tr = h('tr', { 'data-cmt': code, cls: x.inactive ? 'off' : '' }, [
-      nameCell,
-      h('td', { text: cmtSitesText(x.sites) }),
-      h('td', { text: txt(x.freq) }),
-      h('td', { text: txt(x.basis) }),
-      h('td', { text: txt(x.penalty) || '—' }),
-      h('td', { cls: 'n', text: cmtCountText(x) }),
-      warn
-    ]);
-    tr.addEventListener('click', function () { setCmtSelected(code); });
-    body.appendChild(tr);
+  cmtGroupsOf(stats).forEach(function (g) {
+    if (g.label) {
+      body.appendChild(h('tr', { cls: 'kind' },
+        h('th', { scope: 'colgroup', colspan: String(cmtColCount()), text: g.label })));
+    }
+    g.rows.forEach(function (x) { body.appendChild(cmtTableRow(x)); });
   });
   markCmtRows();
 }
+function cmtTableRow(x) {
+  var code = txt(x && x.code);
+  var nameCell = h('th', { scope: 'row' }, h('button', {
+    type: 'button', cls: 'cmt-name', text: txt(x.label) || code,
+    'aria-label': (txt(x.label) || code) + ' の構成図を出す',
+    onclick: function (ev) { ev.stopPropagation(); setCmtSelected(code); }
+  }));
+  /* 法令上の扱いが未確定のもの（§5-5）。行の印だけでなく文字でも出す */
+  if (x.todo) nameCell.appendChild(h('span', { cls: 'cmt-badge', text: '要確認' }));
+  /* 通称（§5-4）。職員が普段呼んでいる名前なので紙にも出す */
+  if (txt(x.alias)) nameCell.appendChild(h('span', { cls: 'cmt-note alias', text: '通称: ' + txt(x.alias) }));
+  if (x.inactive) nameCell.appendChild(h('span', { cls: 'cmt-note', text: CMT_OFF_MSG }));
+  /* 補足（研修や担当者の重ね方）は集計に含まれないことがあるので、無ければマスタから取る。
+     紙は1枚に収める約束なので、この補足だけ印刷では出さない（画面には必ず出す） */
+  var nt = txt(x.note) || txt((cmtDefOf(code) || {}).note);
+  if (nt) nameCell.appendChild(h('span', { cls: 'cmt-note mst', text: nt }));
+  var warn = h('td');
+  var ws = Array.isArray(x.warn) ? x.warn : [];
+  if (ws.length) ws.forEach(function (m) { warn.appendChild(h('span', { cls: 'cmt-flag', text: '⚠ ' + txt(m) })); });
+  else warn.textContent = '—';
+  /* 根拠は画面では全文、紙では短縮（§5-6）。出し分けは CSS だけで行い、画面の表示は変えない。
+     短くしても同じ文になる根拠は、二重に持たず1つだけ置く（紙でも画面でも同じものが出る） */
+  var basis = txt(x.basis), shortBasis = cmtBasisShort(basis);
+  var basisCell = h('td');
+  if (shortBasis === basis) {
+    basisCell.appendChild(h('span', { text: basis }));
+  } else {
+    basisCell.appendChild(h('span', { cls: 'cmt-basis-screen', text: basis }));
+    basisCell.appendChild(h('span', { cls: 'cmt-basis-print', text: shortBasis }));
+  }
+  var cls = [];
+  if (x.inactive) cls.push('off');
+  if (x.todo) cls.push('todo');
+  var tr = h('tr', { 'data-cmt': code, cls: cls.join(' ') }, [
+    nameCell,
+    h('td', { text: cmtSitesText(x.sites) }),
+    h('td', { text: txt(x.purpose) || '—' }),
+    h('td', { text: txt(x.freq) }),
+    h('td', { text: txt(x.training) || '—' }),
+    h('td', { text: txt(x.drill) || '—' }),
+    basisCell,
+    h('td', { text: txt(x.penalty) || '—' }),
+    h('td', { cls: 'n', text: cmtCountText(x) }),
+    warn
+  ]);
+  tr.addEventListener('click', function () { setCmtSelected(code); });
+  return tr;
+}
+/* 人数の内訳。委員会でなければ担当者だけを出す（§5-3 と同じ扱い。存在しない役割の0を刷らない）。
+   ただし、すでに人が入っている役割は隠さない（0名と読み違えないため）。役割の文言は算出モジュールが正本 */
 function cmtCountText(x) {
-  return num(Number(x && x.total)) + '名（委員長 ' + num(Number(x && x.chair))
-    + '／担当者 ' + num(Number(x && x.officer)) + '／委員 ' + num(Number(x && x.member)) + '）';
+  var code = txt(x && x.code);
+  var pairs = cmtRolePairs().filter(function (p) {
+    if (cmtIsCommittee(code)) return true;
+    return p[0] === CMT_ROLE_OFFICER || Number(x && x[p[0]]) > 0;
+  });
+  return num(Number(x && x.total)) + '名（' + pairs.map(function (p) {
+    return p[1] + ' ' + num(Number(x && x[p[0]]) || 0);
+  }).join('／') + '）';
 }
 function markCmtRows() {
   var sel = cmtSelected();
   Array.prototype.forEach.call($('cmtBody').children, function (tr) {
+    if (tr.classList.contains('kind')) return;      /* 種別の見出し行は選べない */
     var on = txt(tr.getAttribute('data-cmt')) === sel;
     tr.classList.toggle('sel', on);
     var b = tr.querySelector('.cmt-name');
@@ -4618,7 +4835,7 @@ function renderCmtOrg() {
   $('cmtOrgNote').textContent = notes.join(' ');
   var members = cmtMembersNow(code);
   var canEdit = cmtCanEdit();
-  cmtRolePairs().forEach(function (p) {
+  cmtTierPairs(code, members).forEach(function (p) {
     box.appendChild(cmtTier(p[1], members.filter(function (m) { return txt(m && m.role) === p[0]; })
       .map(function (m) { return cmtStaffCard(code, m.row, canEdit); })));
   });
@@ -4675,7 +4892,7 @@ function renderCmtPrint(stats) {
   stats.forEach(function (x) {
     var code = txt(x && x.code);
     var members = cmtMembersNow(code);
-    var parts = cmtRolePairs().map(function (p) {
+    var parts = cmtTierPairs(code, members).map(function (p) {
       var names = members.filter(function (m) { return txt(m && m.role) === p[0]; })
         .map(function (m) { return txt(m.row && m.row.name) || '（氏名未入力）'; });
       return p[1] + '：' + (names.length ? names.join('・') : '—');
@@ -4858,12 +5075,17 @@ function openCmtAdd() {
 /* 取り直した委員会で中身を作り直す。役割→在職者の順に選ぶ並びは変えない */
 function refillCmtAdd() {
   var code = cmtSelected();
-  $('cmtAddTtl').textContent = '委員を追加 — ' + cmtLabelOf(code);
+  /* 委員会でなければ「担当者を追加」。2語とも算出モジュールの役割名から作る（画面に文言を持たない） */
+  var who = cmtRoleLabel(cmtIsCommittee(code) ? CMT_ROLE_MEMBER : CMT_ROLE_OFFICER);
+  $('cmtAddTtl').textContent = who + 'を追加 — ' + cmtLabelOf(code);
   var rs = $('cmtAddRole');
   var keep = txt(rs.value);
+  var pairs = cmtAddRolePairs(code);                 /* 委員会でなければ担当者だけ（§5-3） */
+  var codes = pairs.map(function (p) { return p[0]; });
   clearNode(rs);
-  cmtRolePairs().forEach(function (p) { rs.appendChild(h('option', { value: p[0] }, p[1])); });
-  rs.value = (keep && cmtRoleCodes().indexOf(keep) >= 0) ? keep : 'member';
+  pairs.forEach(function (p) { rs.appendChild(h('option', { value: p[0] }, p[1])); });
+  if (keep && codes.indexOf(keep) >= 0) rs.value = keep;
+  else rs.value = (codes.indexOf(CMT_ROLE_MEMBER) >= 0) ? CMT_ROLE_MEMBER : txt(codes[0]);
   fillCmtPersonSelect(code);
 }
 function fillCmtPersonSelect(code) {
@@ -4901,8 +5123,10 @@ function doCmtAdd() {
     $('cmtAddPerson').focus();
     return;
   }
-  if (cmtRoleCodes().indexOf(role) < 0) {
-    setState('cmtAddState', 'warn', '役割を選んでください', '委員長・担当者・委員のいずれかを選んでください。');
+  var pairs = cmtAddRolePairs(code);
+  if (pairs.map(function (p) { return p[0]; }).indexOf(role) < 0) {
+    setState('cmtAddState', 'warn', '役割を選んでください',
+      pairs.map(function (p) { return p[1]; }).join('・') + 'のいずれかを選んでください。');
     $('cmtAddRole').focus();
     return;
   }
@@ -5138,6 +5362,7 @@ function bindEvents() {
 
   /* 委員会（構成図の編集と印刷。ダイアログの作法は添付書類・選択肢の管理と同じ） */
   $('cmtPrintBtn').addEventListener('click', printCmt);
+  $('cmtMoreBtn').addEventListener('click', toggleCmtMore);
   $('cmtAddBtn').addEventListener('click', openCmtAdd);
   $('cmtExtBtn').addEventListener('click', openCmtExt);
   $('cmtAddClose').addEventListener('click', closeCmtAdd);
