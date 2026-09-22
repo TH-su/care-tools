@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-22.3';
+  var VERSION = '2026-09-22.6';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -686,13 +686,20 @@
       kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '定期的',
-      basis: '居宅基準 第37条の2（訪問）／第104条の2（通所）／熊本市有料老人ホーム設置運営指導指針 第12条',
+      /* ★2026-09-22.5 訂正（e-Gov 法令検索の条文一覧と本文で1件ずつ確認）。
+         第104条の2 は「地域との連携等」であって虐待防止ではない。通所介護の虐待防止は
+         第105条（準用）が第37条の2 を準用する形。指導指針は条例ではないので「第◯条」という
+         単位を持たない（番号自体も実物と食い違っていた）ため、番号を落として文書名だけにする。
+         どの項かは url から開いて確かめる。 */
+      basis: '居宅基準 第37条の2（訪問）／第105条で準用（通所）／熊本市有料老人ホーム設置運営指導指針',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_37_2',
       penalty: '高齢者虐待防止措置未実施減算（利用者全員1%・発見月から3か月は必ず減算）',
       hasPenalty: true,
       purpose: '減算を避けるため（高齢者虐待防止措置未実施減算）',
       /* ★研修が「年2回以上」なのは特別養護老人ホーム等の施設系。当社3事業所は該当しない */
       training: '訪問介護は年1回以上／通所介護・住宅型は定期的',
       note: '委員会・指針・年1回以上の研修・担当者の設置の4つが揃って要件を満たす',
+      todoNote: '',
       inactive: false
     },
     {
@@ -701,12 +708,16 @@
       kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '有料は3か月に1回以上／訪問・通所は定期的',
-      basis: '居宅基準／同指導指針 第13条',
+      /* ★2026-09-22.5 訂正。指導指針は条例ではないので「第◯条」を持たない（abuse と同じ理由）。
+         url は熊本市の案内ページ。指針PDFの直リンクは改定のたびにファイル名が変わり切れるため。 */
+      basis: '居宅基準／同指導指針',
+      url: 'https://www.city.kumamoto.jp/kiji0032329/index.html',
       penalty: '身体的拘束廃止未実施減算',
       hasPenalty: true,
       purpose: '減算を避けるため（身体的拘束廃止未実施減算）',
       training: '定期的',
       note: '担当者は虐待防止委員会の担当者と同一が望ましい（指導指針）',
+      todoNote: '',
       inactive: false
     },
     {
@@ -715,13 +726,17 @@
       kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '概ね6か月に1回以上',
-      basis: '居宅基準 第31条2項（訪問）／第104条2項（通所）／同指導指針 第11条',
+      /* ★2026-09-22.5 訂正。訪問介護の感染対策委員会は第31条【第3項】（第2項は設備・備品の
+         衛生管理）。通所介護の第104条第2項は正しいのでそのまま。指導指針の項番号は落とす。 */
+      basis: '居宅基準 第31条3項（訪問）／第104条2項（通所）／同指導指針',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_104',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（運営基準）',
       training: '定期的',
       drill: '定期的（BCP の研修・訓練と一体実施可）',
       note: 'BCP の研修・訓練と一体的に実施してよい',
+      todoNote: '',
       inactive: false
     },
     {
@@ -732,10 +747,23 @@
       sites: ['visit', 'day'],
       freq: '定期的',
       basis: '令和6年度介護報酬改定',
+      /* ★対象サービスを確認中のため既定のURLを置かない（下の todo を参照）。 */
+      url: '',
       penalty: '令和9年4月1日から義務（経過措置は令和9年3月31日まで）',
       hasPenalty: false,
       purpose: '法令上の義務（令和9年4月1日から）',
       note: '管理者とケアを行う職種を含む幅広い職種で構成することが望ましい',
+      /* ★2026-09-22.5 で「要確認」を付けた。一次情報を3方向から当たっても、当社3事業所が対象に
+         含まれる根拠が見つからなかったため。
+         ①e-Gov 法令の附則（令和6年1月25日厚労省令第16号 第4条）の準用対象リストに、訪問介護
+           （第4〜42条の2）・通所介護（第92〜109条）の条文番号が1つも含まれていない
+         ②熊本市の集団指導資料は「共通編」でのみ触れ、訪問介護・通所介護・有料老人ホームの各個別
+           資料には記述が無い（有料老人ホーム編の委員会は虐待防止・身体的拘束等適正化・感染対策・
+           運営懇談会の4つだけ）
+         ③ラウレアハレは住宅型で特定施設入居者生活介護の指定を受けていない
+         ただし「対象外」と断定はしない。行は消さず、hygiene と同じ「要確認」にして人の確認を促す。 */
+      todo: true,
+      todoNote: '訪問介護・通所介護・住宅型有料老人ホームが対象に含まれるかを熊本市に確認してください（令和9年度改定で対象が変わる可能性があります）',
       inactive: false
     },
     {
@@ -744,11 +772,14 @@
       kind: 'committee',
       sites: ['facility'],
       freq: '定期的',
-      basis: '同指導指針 第10条',
+      /* ★2026-09-22.5 訂正。指導指針は条例ではないので「第◯条」を持たない（abuse と同じ理由）。 */
+      basis: '同指導指針',
+      url: 'https://www.city.kumamoto.jp/kiji0032329/index.html',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（熊本市有料老人ホーム設置運営指導指針）',
       note: '入居者・家族・設置者・外部の者で構成。定員が少ない等で困難なら代替措置可',
+      todoNote: '',
       inactive: false
     },
     {
@@ -758,10 +789,12 @@
       sites: ['day'],
       freq: '定期的',
       basis: '通所介護 認知症加算',
+      url: 'https://www.mhlw.go.jp/web/t_doc?dataId=82ab4584&dataType=0&pageNo=1',
       penalty: '加算を算定する場合に必要（現在は未算定＝既定で対象外）',
       hasPenalty: false,
       purpose: '加算の要件（通所介護 認知症加算）',
       note: '認知症加算を算定する場合に必要。現在は未算定のため対象外',
+      todoNote: '',
       inactive: true                                            /* 認知症加算が未算定のうちは対象外（注意も出さない） */
     },
     /* ここから下は委員会ではない体制（spec-committee2.md §2）。同じ一覧で見たいので同居させ、
@@ -773,12 +806,14 @@
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
       basis: '令和3年度改正（令和6年4月1日から義務）／業務継続計画未策定減算',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_30_2',
       penalty: '業務継続計画未策定減算（利用者全員1%・訪問介護と通所介護は令和7年4月1日から適用）',
       hasPenalty: true,
       purpose: '減算を避けるため（業務継続計画未策定減算）',
       training: '定期的',
       drill: '定期的（感染症は感染対策と、災害は非常災害対策の訓練と一体実施可）',
       note: '計画の策定と、計画に従った措置が減算の判定対象。周知・研修・訓練・見直しの有無は減算の要件ではない',
+      todoNote: '',
       inactive: false
     },
     {
@@ -788,12 +823,14 @@
       sites: ['facility', 'day'],                               /* ★訪問介護には計画策定・訓練の定めがない（visit は入れない） */
       freq: '委員会の設置義務はなし',
       basis: '運営基準／消防法施行規則 第3条（消防計画）',
+      url: 'https://laws.e-gov.go.jp/law/336M50000008006#Mp-At_3',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（訪問介護には計画策定・訓練の定めなし）',
       training: '定期的に従業者へ周知',
       drill: '避難訓練は年2回以上（消防法施行規則）。実施した内容の記録を残すこと',
       note: '浸水想定区域・土砂災害警戒区域内で市の地域防災計画に定められた施設は、避難確保計画の作成・避難訓練・訓練結果の報告も必要',
+      todoNote: '',
       inactive: false
     },
     {
@@ -803,11 +840,13 @@
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
       basis: '労働安全衛生法（介護保険の集団指導資料には記載なし）',
+      url: 'https://laws.e-gov.go.jp/law/347AC0000000057#Mp-At_12_2',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（労働安全衛生法）',
       note: '常時10人以上50人未満の事業場に選任義務。事業場をどう数えるか（3事業所を別々に見るか同一敷地で一体と見るか）で結論が変わるため、労働基準監督署または社会保険労務士への確認が要る',
       todo: true,                                               /* 事業場の数え方で選任義務が変わる＝結論が出るまで「要確認」を出し続ける */
+      todoNote: '3事業所がそれぞれ別の事業場に当たるかを労働基準監督署に確認してください（同じ場所なら1事業場、場所が分かれていれば原則別事業場）',
       inactive: false
     }
   ];
@@ -820,6 +859,29 @@
 
   /* 役割の並び（委員長 → 担当者 → 委員）。所属の検証にも使う＝この3種以外は落とす */
   var ROLE_ORDER = { chair: 0, officer: 1, member: 2 };
+
+  /* 要件を確認できるページ。空でよい。http:// か https:// で始まる形だけ通す。
+     ★画面がこの値をリンクにするので、javascript: / data: / vbscript: などは落として空にする。
+       サーバー（staff-api.gs の normCommitteeUrl_ / COMMITTEE_URL_RE）と同じ約束。 */
+  var COMMITTEE_URL_MAX = 300;
+  var COMMITTEE_URL_RE = /^https?:\/\//i;
+  function normUrl(v) {
+    var t = trim(v);
+    if (!t || t.length > COMMITTEE_URL_MAX || !COMMITTEE_URL_RE.test(t)) return '';
+    return t;
+  }
+
+  /* 記録から url を取り出す。★「一度も設定されていない」と「人が消した」を分ける（2026-09-22.5 実機）。
+       キーが【無い】＝第4版までに保存された記録＝未設定 → 既定のURLを出す
+       キーがあって空文字＝人が意図して消した → 空のまま（勝手に復活させない）
+     ★normUrl(src.url) だけで書くと undefined が '' に潰れて区別できなくなる。
+       必ず hasOwnProperty でキーの有無を先に見ること。
+     ★画面が第1版のサーバー（url を知らない）に繋がった時にも既定が出るよう、算出モジュール側にも
+       同じ約束を持つ（既定の増分をマージしているのと同じ考え方）。 */
+  function urlFrom(src, def) {
+    if (src && Object.prototype.hasOwnProperty.call(src, 'url')) return normUrl(src.url);
+    return def ? normUrl(def.url) : '';
+  }
 
   /* 知らない種別は 'committee' に寄せる（注意を静かに減らさない安全側。sites の検証と同じ作法） */
   function normKind(v) {
@@ -853,6 +915,9 @@
       training: trim(d.training),
       drill: trim(d.drill),
       note: trim(d.note),
+      /* 要件を確認できるページ（書き換え可）と、要確認の時に何を確かめるか（既定が正）。2026-09-22.5 */
+      url: urlFrom(d, defaultCommittee(d.code)),
+      todoNote: trim(d.todoNote),
       todo: d.todo === true,
       inactive: d.inactive === true
     };
@@ -915,6 +980,14 @@
         training: def ? trim(def.training) : trim(it.training),
         drill: def ? trim(def.drill) : trim(it.drill),
         note: trim(it.note),
+        /* ★url は label・freq・note と同じ「書き換え可」の側。事業所ごとに参照先を変えられる
+           ことが依頼の趣旨なので、書き換えた値は既定から引き直さない（2026-09-22.5）。
+           ただし url のキーごと無い記録（第4版までに保存された committeesJson・第1版のサーバーの
+           応答）は「未設定」なので既定のURLを出す＝既存の事業所でも既定が表示される。 */
+        url: urlFrom(it, def),
+        /* ★todoNote（何を確認すればよいか）は制度の説明なので既定を正とする＝画面から書き換えない。
+           古い保存値を読んでも確認事項が消えない（basis・penalty と同じ扱い）。 */
+        todoNote: def ? trim(def.todoNote) : trim(it.todoNote),
         todo: def ? def.todo === true : it.todo === true,
         inactive: it.inactive === true
       });
@@ -1046,6 +1119,9 @@
         purpose: trim(c.purpose),
         training: trim(c.training),
         drill: trim(c.drill),
+        /* 画面が「開く」リンクと「何を確認するか」を出すのに使う（2026-09-22.5） */
+        url: trim(c.url),
+        todoNote: trim(c.todoNote),
         todo: c.todo === true,
         inactive: c.inactive === true,
         total: mem.length,
