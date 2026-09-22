@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-22.6">
+<meta name="stfm-build" content="2026-09-23.1">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -568,7 +568,17 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 /* 種別の見出し行（委員会／計画と訓練／選任）。文言は算出モジュールの COMMITTEE_KINDS が正本（2026-09-22.2）*/
 .cmt-tbl tbody tr.kind{cursor:default}
 .cmt-tbl tbody tr.kind th{padding-top:var(--sp-2);background:var(--c-surface2);color:var(--c-ink2);
-     font-size:var(--fs-2xs);font-weight:var(--fw-bold);text-align:left;white-space:nowrap}
+     font-size:var(--fs-sm);font-weight:var(--fw-bold);text-align:left;white-space:nowrap}
+/* 種別ごとの色分け（2026-09-23）。淡い地色だけだと明暗差がほとんど無く（実測 1.01〜1.04）
+   一目で見分けられないので、左の太い帯と文字色も種別ごとに変える。
+   ★色は意味の唯一の担い手ではない（帯には必ず「委員会」等の文字が入る）。
+   ★紙は下の印刷用CSSが地色も帯も消すので、A4横2枚の体裁は変わらない。 */
+.cmt-tbl tbody tr.kind-committee th{background:var(--c-info-bg);color:var(--c-primary);
+     box-shadow:inset 6px 0 0 var(--c-primary)}
+.cmt-tbl tbody tr.kind-plan th{background:var(--c-ok-bg);color:var(--c-ok);
+     box-shadow:inset 6px 0 0 var(--c-ok)}
+.cmt-tbl tbody tr.kind-officer th{background:var(--c-accent-bg);color:var(--c-accent);
+     box-shadow:inset 6px 0 0 var(--c-accent)}
 /* 法令上の扱いが未確定の行（要確認）。選んだ行の印を消さないよう .sel より前に書く（2026-09-22.2）*/
 .cmt-tbl tbody tr.todo{box-shadow:inset 3px 0 0 var(--c-warn)}
 .cmt-tbl tbody tr.sel{background:var(--c-info-bg);box-shadow:inset 3px 0 0 var(--c-primary)}
@@ -780,8 +790,10 @@ body.cmt-print{page:cmt}
   body.cmt-print #scr-cmt .cmt-basis-screen{display:none}
   body.cmt-print #scr-cmt .cmt-basis-print{display:inline}
   /* 種別の見出しは紙でも出す。地色は白黒印刷でつぶれるので細い罫線に替える（2026-09-22.2）*/
+  /* ★種別帯を画面で大きく・色分けしたのは画面だけの話（2026-09-23）。
+     紙は font-size も含めて従来どおりに戻す＝A4横2枚の列幅が1ミリも動かない。 */
   body.cmt-print #scr-cmt .cmt-tbl tbody tr.kind th{padding-top:var(--sp-1);background:transparent;
-       color:var(--c-ink);border-top:1px solid var(--c-ink)}
+       color:var(--c-ink);border-top:1px solid var(--c-ink);box-shadow:none;font-size:var(--fs-2xs)}
   body.cmt-print #scr-cmt .cmt-tbl tbody tr.todo{box-shadow:none}
   /* 列幅は決め打ちにする。自動だと名称の列が細くなりすぎて行が高くなる。
      2026-09-22.2 で10列になり、紙を A4横 にしたので配分も横向き用に取り直した
@@ -1217,7 +1229,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-22.6</p>
+    <p class="muted">版 2026-09-23.1</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1377,13 +1389,13 @@ body.cmt-print{page:cmt}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-22.6
+   職員マスタ 2026-09-23.1
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-22.6';
+var BUILD = '2026-09-23.1';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -4475,6 +4487,12 @@ function cmtKindPairs() {
   return a.map(function (p) { return [txt(p && p[0]), txt(p && p[1])]; })
     .filter(function (p) { return !!p[0] && !!p[1]; });
 }
+/* 種別の鍵を色分け用の class にする（2026-09-23）。マスタが増えて知らない鍵が来ても
+   壊れないよう、英小文字・数字・ハイフンだけを通し、外れたら色を付けない（既定の灰色のまま）*/
+function cmtKindCls(key) {
+  var k = txt(key);
+  return /^[a-z0-9-]{1,24}$/.test(k) ? ' kind-' + k : '';
+}
 function cmtKindOf(code) { var d = cmtDefOf(code); return txt(d && d.kind); }
 /* 委員会か。種別を持たないマスタ（旧版）はすべて委員会として扱う＝段も役割も従来どおり */
 function cmtIsCommittee(code) { var k = cmtKindOf(code); return !k || k === CMT_KIND_MAIN; }
@@ -5045,11 +5063,11 @@ function cmtGroupsOf(stats) {
   cmtKindPairs().forEach(function (p) {
     var rows = stats.filter(function (x) { return txt(x && x.kind) === p[0]; });
     rows.forEach(function (x) { used[txt(x && x.code)] = true; });
-    if (rows.length) groups.push({ label: p[1], rows: rows });
+    if (rows.length) groups.push({ key: p[0], label: p[1], rows: rows });
   });
   /* 種別の分からない行は落とさず、見出しなしで最後に置く（マスタが増えても行が消えない） */
   var rest = stats.filter(function (x) { return !used[txt(x && x.code)]; });
-  if (rest.length) groups.push({ label: '', rows: rest });
+  if (rest.length) groups.push({ key: '', label: '', rows: rest });
   return groups;
 }
 function cmtColCount() {
@@ -5103,7 +5121,7 @@ function renderCmtTable(stats) {
   buildCmtHead();                  /* ★行より先に見出しを組む＝cmtColCount() が実際の列数を返す */
   cmtGroupsOf(stats).forEach(function (g) {
     if (g.label) {
-      body.appendChild(h('tr', { cls: 'kind' },
+      body.appendChild(h('tr', { cls: 'kind' + cmtKindCls(g.key) },
         h('th', { scope: 'colgroup', colspan: String(cmtColCount()), text: g.label })));
     }
     g.rows.forEach(function (x) { body.appendChild(cmtTableRow(x)); });
