@@ -11,6 +11,7 @@
      StaffCalc.belongsTo / siteRatios / ratioTotal / siteStats（事業所別の集計・兼務比率）
      StaffCalc.normName / normKana / parseCsv / toCsv
      StaffCalc.LABELS / ENUMS / setEnums / visibleEnum / mapLegacyRow / diffFields
+     StaffCalc.COMMITTEE_DEFAULTS / COMMITTEE_ROLES / setCommittees / committees / committeeOf / committeesOf / committeeMembers / committeeStats（委員会と構成員）
    前提・注意
      ・依存ゼロ。ブラウザ（iPad Safari）と node の両方で動く。ES2018 以下の構文だけを使う
      ・console 呼び出しをこのファイルに置かない（個人情報がログに出る経路を作らない）
@@ -22,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-10.8';
+  var VERSION = '2026-09-22.1';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -668,6 +669,245 @@
     return out;
   }
 
+  /* ── 委員会と構成員（spec-committee.md §1・§4） ─────────────────
+     既定6件は熊本市の集団指導資料から起こした確定値。名称・対象・頻度・根拠・
+     未実施の影響・注記は実地指導でそのまま見せるので、ここで言い換えない。
+     サーバー（meta の committeesJson）が取れたら setCommittees で差し替える。
+     職員の所属は staff の committeesJson 1列だけに持つ（同じ事実を2か所に置かない）。
+     ★未実施の影響が「—」の委員会（感染対策・運営懇談会）は penalty を空文字にする。
+       空でないことを「減算の要件がある」の判定に使うため（§4）。
+     ★6件の値は staff-api.gs の COMMITTEE_DEFAULTS（サーバーのマスタ）と1字一句そろえる。
+       ずれると、サーバーから受け取れた端末と既定で動く端末で画面の文言が変わる。 */
+
+  var COMMITTEE_DEFAULTS = [
+    {
+      code: 'abuse',
+      label: '虐待防止委員会',
+      sites: ['facility', 'visit', 'day'],
+      freq: '定期的',
+      basis: '居宅基準 第37条の2（訪問）／第104条の2（通所）／熊本市有料老人ホーム設置運営指導指針 第12条',
+      penalty: '高齢者虐待防止措置未実施減算（利用者全員1%・発見月から3か月は必ず減算）',
+      hasPenalty: true,
+      note: '委員会・指針・年1回以上の研修・担当者の設置の4つが揃って要件を満たす',
+      inactive: false
+    },
+    {
+      code: 'restraint',
+      label: '身体的拘束等適正化委員会',
+      sites: ['facility', 'visit', 'day'],
+      freq: '有料は3か月に1回以上／訪問・通所は定期的',
+      basis: '居宅基準／同指導指針 第13条',
+      penalty: '身体的拘束廃止未実施減算',
+      hasPenalty: true,
+      note: '担当者は虐待防止委員会の担当者と同一が望ましい（指導指針）',
+      inactive: false
+    },
+    {
+      code: 'infection',
+      label: '感染対策委員会',
+      sites: ['facility', 'visit', 'day'],
+      freq: '概ね6か月に1回以上',
+      basis: '居宅基準 第31条2項（訪問）／第104条2項（通所）／同指導指針 第11条',
+      penalty: '',
+      hasPenalty: false,
+      note: 'BCP の研修・訓練と一体的に実施してよい',
+      inactive: false
+    },
+    {
+      code: 'safety',
+      label: '利用者の安全並びに介護サービスの質の確保及び職員の負担軽減に資する方策を検討するための委員会',
+      sites: ['visit', 'day'],
+      freq: '定期的',
+      basis: '令和6年度介護報酬改定',
+      penalty: '令和9年4月1日から義務（経過措置は令和9年3月31日まで）',
+      hasPenalty: false,
+      note: '管理者とケアを行う職種を含む幅広い職種で構成することが望ましい',
+      inactive: false
+    },
+    {
+      code: 'kondan',
+      label: '運営懇談会',
+      sites: ['facility'],
+      freq: '定期的',
+      basis: '同指導指針 第10条',
+      penalty: '',
+      hasPenalty: false,
+      note: '入居者・家族・設置者・外部の者で構成。定員が少ない等で困難なら代替措置可',
+      inactive: false
+    },
+    {
+      code: 'dementia',
+      label: '認知症ケアの事例検討・技術的指導会議',
+      sites: ['day'],
+      freq: '定期的',
+      basis: '通所介護 認知症加算',
+      penalty: '加算を算定する場合に必要（現在は未算定＝既定で対象外）',
+      hasPenalty: false,
+      note: '認知症加算を算定する場合に必要。現在は未算定のため対象外',
+      inactive: true                                            /* 認知症加算が未算定のうちは対象外（注意も出さない） */
+    }
+  ];
+
+  var COMMITTEE_ROLES = [['chair', '委員長'], ['officer', '担当者'], ['member', '委員']];
+
+  /* 役割の並び（委員長 → 担当者 → 委員）。所属の検証にも使う＝この3種以外は落とす */
+  var ROLE_ORDER = { chair: 0, officer: 1, member: 2 };
+
+  var COMMITTEES = COMMITTEE_DEFAULTS.slice();
+
+  /* サーバーの委員会マスタを反映する。[{code,…}] の配列のときだけ差し替える。
+     空配列・壊れた値は無視する＝応答が古くても画面から委員会が消えない（setEnums と同じ安全側）。
+     戻り値: 差し替えた件数（0 なら既定のまま） */
+  function setCommittees(list) {
+    if (Object.prototype.toString.call(list) !== '[object Array]' || !list.length) return 0;
+    var out = [], seen = {}, i, j;
+    for (i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || typeof it !== 'object') continue;
+      var code = trim(it.code);
+      if (!code || Object.prototype.hasOwnProperty.call(seen, code)) continue;   /* 同じコードは先勝ち */
+      seen[code] = 1;
+      var src = (Object.prototype.toString.call(it.sites) === '[object Array]') ? it.sites : [];
+      var sites = [];
+      for (j = 0; j < src.length; j++) {
+        var s = trim(src[j]);
+        /* 知らない事業所コードは落とす（SITE_CODES と同じ体系でしか集計できない） */
+        if (SITE_CODES.indexOf(s) < 0 || sites.indexOf(s) >= 0) continue;
+        sites.push(s);
+      }
+      out.push({
+        code: code,
+        label: trim(it.label) || code,                                           /* 名前が無ければコードを出す */
+        sites: sites,
+        freq: trim(it.freq),
+        basis: trim(it.basis),
+        penalty: trim(it.penalty),
+        /* ★減算の有無は必ず持ち回る（2026-09-22 実測の不具合）。ここで落とすと、サーバーの
+           マスタを読み込んだ瞬間に「担当者が決まっていません（減算の要件です）」が永久に
+           出なくなる。委員会機能でいちばん効く警告なので、文面からの推測で代用しない。
+           ★既定にある委員会は【既定の値】を正とする。減算の有無は制度上の事実で、人が
+             画面から変えるものではない。古いサーバーや、hasPenalty を持たない保存済みの
+             マスタを読んでも注意が消えないようにするため。 */
+        hasPenalty: (function () {
+          for (var di = 0; di < COMMITTEE_DEFAULTS.length; di++) {
+            if (COMMITTEE_DEFAULTS[di].code === code) return COMMITTEE_DEFAULTS[di].hasPenalty === true;
+          }
+          return it.hasPenalty === true;
+        })(),
+        note: trim(it.note),
+        inactive: it.inactive === true
+      });
+    }
+    if (!out.length) return 0;
+    COMMITTEES = out;
+    return out.length;
+  }
+
+  /* いまのマスタ。写しを返す（呼び手の並べ替えでマスタが崩れない） */
+  function committees() { return COMMITTEES.slice(); }
+
+  function committeeOf(code) {
+    var c = trim(code);
+    if (c === '') return null;
+    for (var i = 0; i < COMMITTEES.length; i++) if (COMMITTEES[i].code === c) return COMMITTEES[i];
+    return null;
+  }
+
+  /* 1人の所属 [{code,role}]。マスタに無い委員会・3種以外の役割は落とし、同じ委員会は先勝ち。
+     配列でなければ空（シートを直接いじった等で壊れた値が来ても画面を止めない） */
+  function committeesOf(row) {
+    var src = row ? row.committeesJson : null;
+    var out = [], seen = {};
+    if (Object.prototype.toString.call(src) !== '[object Array]') return out;
+    for (var i = 0; i < src.length; i++) {
+      var it = src[i];
+      if (!it || typeof it !== 'object') continue;
+      var code = trim(it.code), role = trim(it.role);
+      if (!committeeOf(code)) continue;
+      if (!Object.prototype.hasOwnProperty.call(ROLE_ORDER, role)) continue;
+      if (Object.prototype.hasOwnProperty.call(seen, code)) continue;
+      seen[code] = 1;
+      out.push({ code: code, role: role });
+    }
+    return out;
+  }
+
+  /* 氏名順。一覧の既定の並びと同じ作法（フリガナが無ければ氏名で寄せ、同名は ID で決める） */
+  function byKanaThenId(a, b) {
+    var x = normKana((a && a.kana) || (a && a.name)), y = normKana((b && b.kana) || (b && b.name));
+    if (x === y) return trim(a && a.id) < trim(b && b.id) ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+
+  /* ある委員会の構成員 [{row, role}]。在職者だけ（退職者は名簿に残さない）。
+     並びは 委員長 → 担当者 → 委員、同じ役割の中は氏名順 */
+  function committeeMembers(rows, code, asOf) {
+    var a = asOf || today();
+    var c = committeeOf(code);
+    var out = [], i, j;
+    if (!c) return out;
+    for (i = 0; rows && i < rows.length; i++) {
+      if (!isActiveAt(rows[i], a)) continue;
+      var mine = committeesOf(rows[i]);
+      for (j = 0; j < mine.length; j++) {
+        if (mine[j].code !== c.code) continue;
+        out.push({ row: rows[i], role: mine[j].role });
+        break;                                                  /* 同じ委員会は先勝ちで1件だけ */
+      }
+    }
+    out.sort(function (x, y) {
+      if (ROLE_ORDER[x.role] !== ROLE_ORDER[y.role]) return ROLE_ORDER[x.role] - ROLE_ORDER[y.role];
+      return byKanaThenId(x.row, y.row);
+    });
+    return out;
+  }
+
+  /* 委員会ごとの人数と注意。元の rows は読むだけで書き換えない。
+     warn は減算の要件（担当者・委員長）を先に出す。現在は対象外（inactive）の委員会には出さない */
+  function committeeStats(rows, asOf) {
+    var a = asOf || today();
+    var list = COMMITTEES, out = [], i, j;
+    for (i = 0; i < list.length; i++) {
+      var c = list[i];
+      var mem = committeeMembers(rows, c.code, a);
+      var n = { chair: 0, officer: 0, member: 0 };
+      var jobs = {}, jobKinds = 0;
+      for (j = 0; j < mem.length; j++) {
+        n[mem[j].role]++;
+        var job = trim(mem[j].row && mem[j].row.jobTitle);
+        /* 職種が空の人は「1職種」に数えない（未入力と1職種は別物） */
+        if (job !== '' && !Object.prototype.hasOwnProperty.call(jobs, job)) { jobs[job] = 1; jobKinds++; }
+      }
+      var warn = [];
+      if (!c.inactive) {
+        /* ★担当者の注意は「減算のある委員会」だけに出す（2026-09-22 レビュー 中1）。
+           penalty の非空で判定すると、減算ではなく令和9年4月からの義務を書いてある
+           safety にも「（減算の要件です）」が出る。この文言は紙にも刷られるため、
+           実地指導に出す書類へ存在しない減算要件を自分から書くことになる。
+           そもそも safety に担当者の定めは無く、要件は構成員の職種の幅である。 */
+        if (c.hasPenalty === true && n.officer === 0) warn.push('担当者が決まっていません（減算の要件です）');
+        if (n.chair === 0) warn.push('委員長が決まっていません');
+        if (mem.length === 0) warn.push('委員が1人もいません');
+        if (c.code === 'safety' && jobKinds <= 1) warn.push('幅広い職種で構成することが望ましい委員会です（いまは1職種）');
+      }
+      out.push({
+        code: c.code,
+        label: c.label,
+        sites: c.sites.slice(),
+        freq: c.freq,
+        basis: c.basis,
+        penalty: c.penalty,
+        inactive: c.inactive === true,
+        total: mem.length,
+        chair: n.chair,
+        officer: n.officer,
+        member: n.member,
+        warn: warn
+      });
+    }
+    return out;
+  }
+
   /* ── CSV（RFC4180） ────────────────────────────────────────────── */
 
   /* BOM除去・CRLF/LF/CR・引用符内のカンマと改行に対応。全セルが空の行は落とす */
@@ -1049,6 +1289,14 @@
     ENUMS: ENUMS,
     setEnums: setEnums,
     visibleEnum: visibleEnum,
+    COMMITTEE_DEFAULTS: COMMITTEE_DEFAULTS,
+    COMMITTEE_ROLES: COMMITTEE_ROLES,
+    setCommittees: setCommittees,
+    committees: committees,
+    committeeOf: committeeOf,
+    committeesOf: committeesOf,
+    committeeMembers: committeeMembers,
+    committeeStats: committeeStats,
     mapLegacyRow: mapLegacyRow,
     diffFields: diffFields,
     normQuals: normQuals,
