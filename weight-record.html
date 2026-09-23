@@ -2938,6 +2938,7 @@ function mergeProxyRoster(list){
    10分スロットルだけをバイパスし、戻り値は「取得成功か」（変化0件でも true）を返す
    ＝版数基準を前進させてよいかの判定に使う。通常呼び出し（引数なし）の挙動・
    戻り値（変化があったか）は従来のまま変えない。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。排泄記録GASの doPost は読み取り action（masterRoster）を受ける（gas/README.md）。 */
 async function wrSyncProxyRoster(opts){
   var force = !!(opts && opts.force);
   if(_wrProxyBusy) return false;
@@ -2946,9 +2947,12 @@ async function wrSyncProxyRoster(opts){
   if(!force && wrProxyThrottled()) return false; // 前回成功から10分以内（force は即時）
   _wrProxyBusy = true;
   try{
-    var url = cred.url + (cred.url.indexOf('?') >= 0 ? '&' : '?')
-            + 'action=masterRoster&token=' + encodeURIComponent(cred.token);
-    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    var r = await fetchTO(cred.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'masterRoster', token: cred.token }),
+      cache:'no-store'
+    }, 12000);
     if(!r.ok) return false;
     var j = await r.json();
     // available:false ＝ 排泄記録GAS側でマスタ連携が未設定。静かに見送る
@@ -3006,11 +3010,16 @@ function wrMasterCfg(){
    応答行はホワイトリスト写像で masterId 基準へ寄せる（受信を信じない）。キーの有無で意味が
    変わる項目（active / hospitalized）は、応答が値を持つ時だけ渡す＝旧サーバーでローカル温存。
    戻り値: 取得と取り込みが完了したら true（変化0件でも true）／失敗は false（呼び出し元が代理経路へ）。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。入居者マスタGASの doPost は読み取り action を受ける（gas/README.md）。
+   合言葉の無い stateRev 照会（wrStateRevTick）は GET のまま。 */
 async function wrFetchMasterRoster(cfg){
   try{
-    var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?')
-            + 'action=getRoster&token=' + encodeURIComponent(cfg.token);
-    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    var r = await fetchTO(cfg.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'getRoster', token: cfg.token }),
+      cache:'no-store'
+    }, 12000);
     if(!r.ok) return false;
     var j = await r.json();
     if(!j || j.error || !Array.isArray(j.roster)) return false;

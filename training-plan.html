@@ -1731,12 +1731,20 @@ function docKey(masterId) { return 'training_plan:' + masterId; }
 var IDX_KEY = 'training_plan:index';
 
 /* ── 通信（入居者マスタ・読み取りのみ）──
-   facesheet.html の apiGet / apiGetRetry と同じ形（GET＋クエリ・失敗したら1回だけやり直す）。
-   通信の実体は共通データ層（su-data）を通す。 */
+   facesheet.html の apiGet / apiGetRetry と同じ形（失敗したら1回だけやり直す）。
+   通信の実体は共通データ層（su-data）を通す。
+   ★2026-09-23: 合言葉を URL に載せないため POST 本文へ（su-data の GET 経路は廃止）。GAS の doPost は読み取り action を受ける（gas/README.md）。
+     値は GET の時と同じく文字列にして送る（null・undefined は送らない＝旧クエリと同じ）。 */
 function mGet(params, timeoutMs) {
   if (!MCFG.url) return Promise.reject(new Error('NO_MASTER'));
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.kvRaw(params, { endpoint: MCFG.url, token: MCFG.token, transport: 'GET' }), timeoutMs || 25000)
+  var body = {};
+  for (var k in params) {
+    if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
+    if (params[k] === undefined || params[k] === null) continue;
+    body[k] = String(params[k]);
+  }
+  return withTimeout(SU.data.kvRaw(body, { endpoint: MCFG.url, token: MCFG.token }), timeoutMs || 25000)
     .then(function (d) {
       if (d && d.error) throw new Error(s_(d.error));
       return d;

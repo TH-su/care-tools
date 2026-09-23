@@ -496,10 +496,13 @@ function saveCfg(url, token){
      打ち手が当てずっぽうになる。測定値は応答そのものに貼り付けて持ち回るので、
      同時に別の通信が走っても取り違えない。持つのは【時刻と文字数だけ】で、
      本文・氏名は一切保持しない。 */
-function fetchTO(url, ms){
+/* 第3引数 extra（任意・2026-09-23 追加）は fetch の options に足す（method/headers/body 等）。
+   渡さない既存の呼び出しは従来どおり。 */
+function fetchTO(url, ms, extra){
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var t = setTimeout(function(){ if(ctl) ctl.abort(); }, ms || 20000);
   var opt = { cache:'no-store' };
+  if(extra){ for(var ek in extra){ if(extra.hasOwnProperty(ek)) opt[ek] = extra[ek]; } }
   if(ctl) opt.signal = ctl.signal;
   var t0 = Date.now();
   return fetch(url, opt).then(function(r){
@@ -530,16 +533,22 @@ function parseJson(r){
     return o;
   });
 }
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
+   値は GET の時と同じく文字列にし、null と空文字は従来どおり送らない。 */
 function apiGet(action, params){
   var cfg = loadCfg();
   if(!cfg.url || !cfg.token) return Promise.reject(new Error('NO_CFG'));
-  var qs = 'action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(cfg.token);
+  var body = { action: String(action) };
   for(var k in params){
     if(params.hasOwnProperty(k) && params[k] != null && params[k] !== ''){
-      qs += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+      body[k] = String(params[k]);
     }
   }
-  return fetchTO(cfg.url + '?' + qs, 25000).then(parseJson);
+  body.token = cfg.token;
+  return fetchTO(cfg.url, 25000, {
+    method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+    body: JSON.stringify(body), redirect:'follow'
+  }).then(parseJson);
 }
 function apiErrMsg(e){
   var m = String(e && e.message || e);

@@ -1341,6 +1341,7 @@ body.meal-on #sc-list{max-width:none}
      GET  ?action=getRoster&token=..[&since=ISO]   → 軽量リスト
      GET  ?action=getResident&id=..&token=..        → 個人フル
      GET  ?action=getSection&id=..&section=medical&token=..
+       ↑読み取り3つは POST 本文 {action, ...引数, token} でも受ける（2026-09-23〜・この画面は POST で送る）
      POST {action:'saveResident', token, record}    → upsert
      POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
      GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N,srev:M} 版数のみ（追い読み用・個人情報ゼロ）
@@ -1577,11 +1578,14 @@ var BF_MAX_DISEASES=8;   // 病名表の行数上限（誤操作で無限に増�
    ロック待ち20秒＋処理時間を吸収できる長さにする。GAS の実行上限は6分なので、この程度は許容。
    ★これは症状の緩和であって、GAS の同時実行が詰まること自体は解消しない。
      読み取りだけ自動で1回やり直す（apiGetRetry）と、失敗画面に再試行ボタンを併せて置く。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
+   値は GET の時と同じく文字列にして送る。関数名・待ち時間・判定は従来どおり。 */
 function apiGet(params,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
-  var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
-  qs+='&token='+encodeURIComponent(CFG.token);
-  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET'},timeoutMs||25000).then(parseJson);
+  var body={};
+  Object.keys(params).forEach(function(k){body[k]=String(params[k])});
+  body.token=CFG.token;
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||25000).then(parseJson);
 }
 /* ★投げない版。`{ok:false, error, detail}` を throw せずそのまま返す。
    既存の apiPost は error があれば必ず throw するため、savePartial の
