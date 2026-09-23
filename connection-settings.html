@@ -304,9 +304,12 @@ var SYSTEMS = [
   { id:'msk', title:'申送ビューア',
     apps:'申送ビューア', shape:'obj', key:'msk_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY },
 
+  /* 合言葉は 2026-09-23 に追加（GAS の GENOGRAM_TOKEN と突き合わせる）。それまで同期GASに認証が無かった。
+     tokenOptional にはしない: 合言葉を入れていない端末を「合言葉が未設定」と見せ、
+     GAS 側で GENOGRAM_TOKEN を設定する前に全端末へ入れ終えたかを確かめられるようにする */
   { id:'geno', title:'ジェノグラム',
-    apps:'ジェノグラム（合言葉は使いません）',
-    shape:'obj', key:'genogram:cloudCfg', urlF:'gasUrl', tokenF:null, urlRe:RE_GAS_ANY },
+    apps:'ジェノグラム（家族構成図）',
+    shape:'obj', key:'genogram:cloudCfg', urlF:'gasUrl', tokenF:'gasToken', urlRe:RE_GAS_ANY },
 
   { id:'analyzer', title:'過去シフト分析',
     apps:'過去シフト分析', shape:'obj', key:'shiftanalyzer:v1:cloud', urlF:'url', tokenF:'token',

@@ -697,6 +697,7 @@ textarea.fi{resize:vertical;min-height:60px}
           <li>説明：任意、次のユーザーとして実行：「<strong>自分</strong>」、アクセスできるユーザー：「<strong>全員</strong>」を選択 →「デプロイ」。</li>
           <li>初回はアクセス許可が必要。「アクセスを承認」→ アカウント選択 →「詳細」→「（プロジェクト名）に移動」→「許可」。</li>
           <li>表示された「ウェブアプリ」のURL（<code>https://script.google.com/macros/s/.../exec</code>）をコピーし、下のフォームに貼り付け。</li>
+          <li>合言葉：エディタ左の歯車「プロジェクトの設定」→「スクリプト プロパティ」に <code>GENOGRAM_TOKEN</code> を追加して合言葉を保存し、同じ合言葉を下のフォームの「合言葉」欄に入力。<strong>先に全端末へ合言葉を入れてから</strong>プロパティを保存してください（保存した瞬間から、合言葉の無い端末は同期できなくなります）。</li>
         </ol>
         <button class="hbtn primary setup-copy" id="btnCopyGas">📋 GASコードをコピー</button>
         <textarea class="setup-code" id="gasCodeBox" readonly rows="6">（コピーボタンを押すとここに表示されます）</textarea>
@@ -719,6 +720,10 @@ textarea.fi{resize:vertical;min-height:60px}
         <div class="fg">
           <label class="fl">① GAS Web App URL <span class="req">*</span></label>
           <input type="url" class="fi" id="cfgGasUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+        </div>
+        <div class="fg">
+          <label class="fl" for="cfgGasToken">① 合言葉</label>
+          <input type="password" class="fi" id="cfgGasToken" placeholder="管理者から知らされた合言葉" autocomplete="new-password">
         </div>
         <div class="fg">
           <label class="fl">② GitHub オーナー名（ユーザー名 or 組織名）</label>
@@ -1002,6 +1007,7 @@ const LINE_INK = '#202124';                    // 線の既定色
 const SEL_INK = '#26a69a';                     // 選択中の色
 
 // GAS script that users need to paste into Apps Script
+// ★正本は gas/genogram-sync.gs（git 追跡外）。ここは一字一句同じ写し（gas/tests/genogram_sync_gas_test.js が照合する）
 const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Script editor ========
 // このスクリプトは Google スプレッドシートをデータストアとして使用します。
 // 必要な操作:
@@ -1010,25 +1016,66 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //      - 実行ユーザー: 自分
 //      - アクセス: 全員
 //   3. 発行されたURLをアプリの設定画面に貼り付ける。
+//   4. 合言葉: エディタ左の歯車「プロジェクトの設定」→「スクリプト プロパティ」に
+//      GENOGRAM_TOKEN を追加し、値に合言葉を入れて保存する。同じ合言葉を、
+//      アプリのクラウド設定（または接続設定の画面）の「合言葉」欄に入れる。
+//      ・GENOGRAM_TOKEN が未設定の間は、合言葉なしでも通る（移行モード。従来と同じ動き）。
+//      ・設定した瞬間から、合言葉の無い・違う要求はすべて断る。
+//        先に全端末へ合言葉を入れてから設定すること（入っていない端末は保存が保留に溜まる）。
+//      ・GENOGRAM_TOKEN_VIEW（任意）: 閲覧だけの合言葉。ping・list・get だけ通す。
+//      ・合言葉は POST の本文でだけ受け取る。URL（GET の ?token=）では受け取らない
+//        （URL は履歴・ログに残るため）。合言葉を設定した後の GET はすべて断る。
+//      ・戻す時: GENOGRAM_TOKEN を削除すれば、すぐ移行モードに戻る。
+//   5. この版から合言葉を読む権限（スクリプト プロパティ）を使う。貼り替えたら、デプロイを更新する前に
+//      エディタで関数 authorizeGenogramSync を1回実行して「承認」する。承認しないまま
+//      デプロイを更新すると、全端末の同期が止まる（実行ユーザーが「自分」のため）。
 
 const SHEET_NAME = 'genograms';
+const TOKEN_PROP = 'GENOGRAM_TOKEN';
+const TOKEN_PROP_VIEW = 'GENOGRAM_TOKEN_VIEW';
+const READ_ACTIONS = ['ping', 'list', 'get'];
 
 function doGet(e) {
-  return route(e.parameter.action, e.parameter);
+  // GET では合言葉を受け取らない（URL に載せないため）。合言葉を設定した後は断る
+  return route(e.parameter.action, e.parameter, '');
 }
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
-    return route(body.action, body);
+    return route(body.action, body, body.token);
   } catch (err) {
     return jsonOut({ ok: false, error: 'invalid JSON: ' + err.message });
   }
 }
 
-function route(action, p) {
+// 合言葉から権限を返す: 'grace'（未設定＝移行モード）| 'full' | 'view' | ''（不一致）
+function role(token) {
+  const props = PropertiesService.getScriptProperties();
+  const full = props.getProperty(TOKEN_PROP);
+  if (!full) return 'grace';
+  const got = (token === undefined || token === null) ? '' : String(token);
+  if (!got) return '';
+  if (got === full) return 'full';
+  const view = props.getProperty(TOKEN_PROP_VIEW);
+  if (view && got === view) return 'view';
+  return '';
+}
+
+// エディタで1回実行して権限を承認する（上の 5.）。合言葉の値は出さず、設定済みかどうかだけをログに出す
+function authorizeGenogramSync() {
+  const set = !!PropertiesService.getScriptProperties().getProperty(TOKEN_PROP);
+  Logger.log('GENOGRAM_TOKEN: ' + (set ? '設定済み（合言葉が効いています）' : '未設定（移行モード）'));
+}
+
+function route(action, p, token) {
   try {
-    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString() });
+    // 認証はシートに触れる前に済ませる（断った要求ではシートを作りも読みもしない）
+    const r = role(token);
+    if (!r || (r === 'view' && READ_ACTIONS.indexOf(action) < 0)) {
+      return jsonOut({ ok: false, error: 'unauthorized', code: 403 });
+    }
+    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: r === 'grace' ? 'grace' : 'ok', role: r });
     if (action === 'list')   return jsonOut({ ok: true, items: listAll() });
     if (action === 'get')    return jsonOut({ ok: true, doc: getOne(p.name) });
     if (action === 'save')   return jsonOut({ ok: true, saved: saveOne(p.doc) });
@@ -2711,6 +2758,8 @@ function bindPropertyInputs() {
 
 // ========== Cloud Sync ==========
 const CloudSync = (function() {
+  /* 合言葉を送るのは Google Apps Script の URL だけ（打ち間違えた URL へ合言葉を送らないため） */
+  const GAS_URL_RE = /^https:\/\/script\.google\.com\//;
   function getCfg() {
     try { return JSON.parse(localStorage.getItem(LS_CLOUD_CFG) || '{}'); }
     catch (e) { return {}; }
@@ -2720,7 +2769,7 @@ const CloudSync = (function() {
   }
   function isConfigured() {
     const c = getCfg();
-    return !!(c.gasUrl && /^https:\/\/script\.google\.com\//.test(c.gasUrl));
+    return !!(c.gasUrl && GAS_URL_RE.test(c.gasUrl));
   }
   function hasGithub() {
     const c = getCfg();
@@ -2728,6 +2777,9 @@ const CloudSync = (function() {
   }
 
   // ---- GAS communication (text/plain to avoid CORS preflight) ----
+  /* ★2026-09-23: 合言葉（cfg.gasToken）は POST の本文でだけ送る。GET の URL には載せない
+     （GAS 側も GET の ?token= は受け取らない）。GAS の GENOGRAM_TOKEN と突き合わせる */
+  const AUTH_ERR_MSG = '合言葉が違うか、入っていません（☁ クラウド設定の「合言葉」を確かめてください）';
   async function gasCall(action, params, opts) {
     const cfg = getCfg();
     if (!cfg.gasUrl) throw new Error('GAS URLが未設定です');
@@ -2737,12 +2789,20 @@ const CloudSync = (function() {
       : cfg.gasUrl;
     const init = useGet
       ? { method: 'GET', redirect: 'follow' }
-      : { method: 'POST', body: JSON.stringify({ action, ...(params || {}) }),
+      : { method: 'POST', body: JSON.stringify({ action, ...(params || {}), ...(cfg.gasToken && GAS_URL_RE.test(cfg.gasUrl) ? { token: cfg.gasToken } : {}) }),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' };
     const res = await fetchWithRetry(url, init);
     if (!res.ok) throw new Error('GAS HTTP ' + res.status);
     const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'GASエラー');
+    if (!json.ok) {
+      // 断られた時は理由が分かる文言にする。例外として投げるので、保存・削除は従来どおり保留に残る
+      if (json.error === 'unauthorized') {
+        const err = new Error(AUTH_ERR_MSG);
+        err.auth = true;
+        throw err;
+      }
+      throw new Error(json.error || 'GASエラー');
+    }
     return json;
   }
 
@@ -2878,7 +2938,13 @@ const CloudSync = (function() {
   }
   async function fetchRemoteQuiet(name) {
     try { return await get(name); }
-    catch (e) { return null; }  // 取得できない時は競合なしとして従来どおり保存を試みる
+    catch (e) {
+      /* 合言葉で断られた時は「競合なし」と読み替えない（2026-09-23）。合言葉の不一致は直すまで
+         何日も続き、その間は一覧からクラウドの図が黙って消える。同じ名前で描いた図を「競合なし」で
+         保留に積むと、合言葉を直した後の再送で他端末の図を確認なしに上書きするため、そのまま投げる */
+      if (e && e.auth) throw e;
+      return null;   // 取得できない時は競合なしとして従来どおり保存を試みる
+    }
   }
   async function saveAndMarkBaseline(doc) {
     const saved = await save(doc);
@@ -2893,6 +2959,16 @@ const CloudSync = (function() {
        無確認で上書きする。そのため get を直に呼び、失敗は保存せずそのまま投げる
        （呼び出し側でキューへ回る）。既存版が見つかった場合は従来どおり confirm へ落ちる */
     const remote = needsConfirm ? await get(doc.clientName) : await fetchRemoteQuiet(doc.clientName);
+    /* 未確認の文書で、クラウドに同じ名前の版がある時は、時刻の新旧にかかわらず確認する（2026-09-23）。
+       合言葉で断られている間に描いた図は、読込時に「端末の方が新しい」として端末版が選ばれ、
+       基準時刻がクラウド版の時刻と同じになるため、下の新旧判定では確認が出ない */
+    if (needsConfirm && remote && !isRemoteNewer(doc.clientName, remote)) {
+      if (!confirm('クラウドに同じ名前の図があります（この端末ではまだ開いていない版です）。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
+        const err = new Error('クラウドに同じ名前の図があるため、クラウドへの保存を中止しました');
+        err.conflict = true;
+        throw err;
+      }
+    }
     if (isRemoteNewer(doc.clientName, remote)) {
       if (!confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
         const err = new Error('別端末の新しい版があるため、クラウドへの保存を中止しました');
@@ -3158,6 +3234,32 @@ function pruneWrongMasterGenograms() {
 /* クラウドの既存版を確認できないまま（取得失敗）新規として書き始めた利用者名。
    この状態で積んだ保留分は、後の再送でクラウドの既存版を無確認に上書きしないよう印を付ける */
 const cloudUnverified = new Set();
+/* 合言葉で断られてクラウドへ保存できなかった利用者名（2026-09-23）。再読み込みしても消えないよう端末に残す。
+   断られている間は一覧からクラウドの図が見えないため、同じ名前で別の図を描いていることがある。
+   印がある間は、次にクラウドへ保存する時にクラウドの同じ名前の版と必ず突き合わせて本人に確認する。
+   印を外すのは: 確認を経て保存できた時／読込でクラウド版を採った時・クラウドに版が無いと分かった時／端末から削除した時 */
+const LS_AUTH_UNVERIFIED = 'genogram:authUnverified';
+const authUnverified = {
+  list() {
+    try { const a = JSON.parse(localStorage.getItem(LS_AUTH_UNVERIFIED) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  },
+  has(name) { return this.list().indexOf(name) >= 0; },
+  add(name) {
+    const a = this.list();
+    if (a.indexOf(name) >= 0) return;
+    a.push(name);
+    try { localStorage.setItem(LS_AUTH_UNVERIFIED, JSON.stringify(a)); } catch (e) { /* 書けなくてもこの画面の間は cloudUnverified で守る */ }
+  },
+  delete(name) {
+    const a = this.list(), b = a.filter(x => x !== name);
+    if (b.length === a.length) return;
+    try {
+      if (b.length) localStorage.setItem(LS_AUTH_UNVERIFIED, JSON.stringify(b));
+      else localStorage.removeItem(LS_AUTH_UNVERIFIED);
+    } catch (e) { /* ignore */ }
+  }
+};
 
 async function saveDoc() {
   const name = $('clientName').value.trim();
@@ -3209,8 +3311,9 @@ async function saveDoc() {
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドへ同期中…');
     try {
-      await CloudSync.saveCheckConflict(doc, cloudUnverified.has(name));
+      await CloudSync.saveCheckConflict(doc, cloudUnverified.has(name) || authUnverified.has(name));
       cloudUnverified.delete(name);   // クラウドと突き合わせて保存できた＝未確認状態は解消
+      authUnverified.delete(name);
       flashStatus(`「${name}」を保存・同期しました`);
       setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
@@ -3221,8 +3324,17 @@ async function saveDoc() {
            未反映であることと次の操作をここで言い切る */
         flashStatus(`「${name}」はこの端末に保存（クラウド未反映）`);
         alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\n最新の内容を確認するには、ページを再読み込みしてください。\nもう一度保存すると、クラウドの新しい版を上書きします。');
+      } else if ((err && err.auth) || authUnverified.has(name)) {
+        /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
+           一覧からクラウドの図が見えない。積むと、合言葉を直した後の自動の再送で、同じ名前の
+           他端末の図を確認なしに上書きし得る。図は端末に保存済み。印を残し、次の保存で突き合わせる。
+           印が残っている名前は、通信断で失敗した時も積まない（保留からの再送は確認を出せないため） */
+        cloudUnverified.add(name);
+        authUnverified.add(name);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        flashStatus(`「${name}」はこの端末にだけ保存しました（合言葉・通信を確かめてから、もう一度保存してください）`);
       } else {
-        CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) });
+        CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) || authUnverified.has(name) });
         setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
       }
     }
@@ -3241,23 +3353,32 @@ async function loadDoc(name, opts) {
   }
   let cloudSeenAt = null;   // 読込時に観測したクラウド版の時刻（ローカル版を採用した場合も基準にする）
   let cloudFetchFailed = false;   // 「文書が無い」と「通信失敗で確認できない」は保存時の危険度が違うため区別する
+  let keptUnsynced = false;       // 合言葉で断られてクラウドへ届いていない端末の図を、クラウドの新しい版より優先して残した
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', `クラウドから「${name}」を読込中…`);
     try {
       const remote = await CloudSync.get(name);
       if (remote) {
         cloudSeenAt = remote.updatedAt;
-        if (!localDoc || parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
+        if (localDoc && authUnverified.has(name) && parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
+          /* 合言葉で断られてクラウドへ届いていない図は、端末のこれが唯一の写し（保留にも積んでいない）。
+             クラウドの版が新しくても上書きせず端末の図を出し、印は残す＝次の保存で本人に確認する（2026-09-23） */
+          doc = localDoc;
+          keptUnsynced = true;
+        } else if (!localDoc || parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
           doc = remote;
           // refresh local cache
           localStorage.setItem(LS_DOC_PREFIX + name, JSON.stringify(remote));
+          authUnverified.delete(name);   // クラウド版を採った＝突き合わせる相手が画面に出ている
         } else {
-          doc = localDoc;
+          doc = localDoc;   // 端末の方が新しい。合言葉で断られた間に描いた図なら印は残す（次の保存で確認する）
         }
-      } else if (localDoc) {
-        doc = localDoc;
+      } else {
+        authUnverified.delete(name);     // クラウドに同じ名前の版が無い＝上書きの恐れが無い
+        if (localDoc) doc = localDoc;
       }
-      setSyncStatus('ok', 'クラウド同期済み');
+      if (keptUnsynced) setSyncStatus('err', 'この端末の図を表示中（クラウド未反映・クラウドに別の新しい版あり）');
+      else setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
       cloudFetchFailed = true;
       // 端末データが無い時に「端末データを使用」は実態と違うため、状況で言い分ける
@@ -3286,6 +3407,11 @@ async function loadDoc(name, opts) {
      クラウド未観測（未設定・文書なし・取得失敗）はローカル時刻へフォールバック。 */
   CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
   if (!cloudFetchFailed) cloudUnverified.delete(state.clientName);   // クラウドを確認できた時点で印を外す
+  if (keptUnsynced) {
+    alert('「' + name + '」は、合言葉が違っていた間にこの端末へ保存した図を表示しています（クラウドには未反映）。\n'
+      + 'クラウドには、別の端末で保存された新しい版があります。\n\n'
+      + 'この端末の図で残す場合は「保存」を押してください（上書きしてよいか確認が出ます）。');
+  }
   state.doc = {
     nodes: doc.nodes || [],
     lines: doc.lines || [],
@@ -3336,6 +3462,7 @@ async function deleteCurrentDoc() {
   const idx = listDocs().filter(e => e.name !== name);
   localStorage.setItem(LS_INDEX, JSON.stringify(idx));
   if (localStorage.getItem(LS_LAST) === name) localStorage.removeItem(LS_LAST);
+  authUnverified.delete(name);   // 端末の図が無くなった＝上書きの恐れも無い
   refreshDocList();
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドから削除中…');
@@ -3343,8 +3470,14 @@ async function deleteCurrentDoc() {
       await CloudSync.del(name);
       setSyncStatus('ok', '削除を同期しました');
     } catch (err) {
-      CloudSync.queuePending({ kind: 'delete', name });
-      setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
+      if (err && err.auth) {
+        /* 合言葉で断られた削除は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
+           同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+      } else {
+        CloudSync.queuePending({ kind: 'delete', name });
+        setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
+      }
     }
   }
   flashStatus(`「${name}」を削除しました`);
@@ -3705,6 +3838,7 @@ function bindCloudUI() {
 function openCloudModal() {
   const cfg = CloudSync.getCfg();
   $('cfgGasUrl').value = cfg.gasUrl || '';
+  $('cfgGasToken').value = cfg.gasToken || '';
   $('cfgGhOwner').value = cfg.ghOwner || '';
   $('cfgGhRepo').value = cfg.ghRepo || '';
   $('cfgGhBranch').value = cfg.ghBranch || 'main';
@@ -3724,13 +3858,21 @@ function showCfgResult(kind, msg) {
 async function testCloudConfig() {
   const cfg = readCfgFromForm();
   if (!cfg.gasUrl) { showCfgResult('err', 'GAS Web App URLを入力してください。'); return; }
+  if (!/^https:\/\/script\.google\.com\//.test(cfg.gasUrl)) {
+    showCfgResult('err', 'URL は https://script.google.com/ で始まる Apps Script の URL を貼ってください。');
+    return;
+  }
   CloudSync.setCfg(cfg);
   showCfgResult('info', '接続テスト中…');
   const results = [];
   try {
     const p = await CloudSync.ping();
-    results.push('✓ GAS接続OK (' + p.time + ')');
+    /* auth: 'ok'＝合言葉が効いている／'grace'＝GAS 側で合言葉が未設定（移行モード）／無し＝合言葉に未対応の旧版 */
+    if (p.auth === 'ok') results.push('✓ GAS接続OK・合言葉OK' + (p.role === 'view' ? '（閲覧専用の合言葉です。保存・削除はできません）' : '') + ' (' + p.time + ')');
+    else if (p.auth === 'grace') results.push('✓ GAS接続OK (' + p.time + ')\n⚠ GAS 側で合言葉がまだ設定されていないため、合言葉なしでも通る状態です（合言葉が正しいかは、設定後に確かめられます）');
+    else results.push('✓ GAS接続OK (' + p.time + ')\n⚠ この GAS は合言葉に未対応の版です');
   } catch (e) {
+    if (e.auth) { showCfgResult('err', '✗ ' + e.message); return; }
     showCfgResult('err', '✗ GAS接続失敗: ' + e.message + '\n→ デプロイ設定の「アクセスできるユーザー：全員」を確認してください。');
     return;
   }
@@ -3755,6 +3897,7 @@ async function testCloudConfig() {
 function readCfgFromForm() {
   return {
     gasUrl: $('cfgGasUrl').value.trim(),
+    gasToken: $('cfgGasToken').value.trim(),
     ghOwner: $('cfgGhOwner').value.trim(),
     ghRepo: $('cfgGhRepo').value.trim(),
     ghBranch: $('cfgGhBranch').value.trim() || 'main',
@@ -3782,6 +3925,7 @@ function clearCloudConfig() {
   localStorage.removeItem(LS_CLOUD_CFG);
   localStorage.removeItem(LS_PENDING);
   $('cfgGasUrl').value = '';
+  $('cfgGasToken').value = '';
   $('cfgGhOwner').value = '';
   $('cfgGhRepo').value = '';
   $('cfgGhBranch').value = 'main';
