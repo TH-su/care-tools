@@ -1940,7 +1940,8 @@ function renderView(c) {
       '<p class="note warn"><b>週間計画の確認をお願いします。</b>マスタに登録された方は、週間計画とデイ利用表に「入居済」として出ます。' +
       '入居日より前であれば、<a href="care-schedule.html">週間計画</a>でその方を開き「入居前」を押してください（押すまでデイ利用表にも出続けます）。</p>';
   } else if (c.masterPendingStamp) {
-    h += '<p class="note err">⚠️ 前回の登録結果を確認できていません。もう一度登録する前に、必ず「登録確認」を押してください（二重登録防止）。</p>' +
+    h += '<p class="note err">⚠️ 前回の登録結果を確認できていません。もう一度登録する前に、必ず「登録確認」を押してください（二重登録防止）。' +
+      '送ってから6分たつまでは、マスタに見当たらなくても登録し直せません（サーバーが処理中のことがあるため）。</p>' +
       '<button class="btn sm pri" id="msVerifyBtn" type="button">登録確認</button>';
   } else if (stageIdx(c.stage) >= stageIdx('decided') && c.stage !== 'lost' && !c.deleted) {
     h += '<p style="font-size:0.84375rem">ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・ご家族・入居前アセスメント）を入居者マスタへそのまま登録します。</p>' +
@@ -3963,6 +3964,11 @@ function preflightDuplicate(c) {
 }
 function sendMasterRecord(c, adm) {
   msRec = buildMasterRecord(c, adm);
+  /* ★送る【前】に保留を刻む（端末とサーバーに残る）。送信中にダイアログを閉じる・再読込する・
+     別の端末で開く、のどれでも「登録ボタン」ではなく「登録確認」が出る＝処理中の再登録を防ぐ。
+     送信時刻は共有の msRec から読み直さず、ここで取った値を最後まで渡す（別の案件を開くと msRec が変わるため） */
+  var stamp = msRec.updatedAt;
+  c.masterPendingStamp = stamp; touch(c); renderView(c);
   toast('登録中…');
   return masterPost({ action: 'saveResident', record: msRec }).then(function (d) {
     var saved = (d && d.record) || d || {};
@@ -3972,14 +3978,44 @@ function sendMasterRecord(c, adm) {
       toast('✅ 入居者マスタへ登録しました');
       return;
     }
-    return confirmMasterWrite(c);
+    return confirmMasterWrite(c, stamp);
   }).catch(function () {
     /* 保存が「失敗」と返っても、サーバーには書かれていることがある（GASのリダイレクト・
        タイムアウト時）。ここで安易に再送すると二重登録になるため、必ず取り直して確かめる。 */
-    return confirmMasterWrite(c);
+    return confirmMasterWrite(c, stamp);
   }).then(function () { $('msSendBtn').disabled = false; });
 }
 function normName(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
+/* ★2026-09-23 二重登録よけ: 送信が失敗・時間切れで返っても、GAS はまだ書いている途中のことがある
+   （ロック待ち最大20秒＋書き込み。Apps Script の1回の実行は最長6分）。送ってから6分たつまでは、
+   名簿に見当たらなくても「入っていない」と言い切らず、保留（登録確認待ち）のまま残す。 */
+var MASTER_SETTLE_MS = 6 * 60 * 1000;
+/* 'hit'＝登録済み／'wait'＝まだ言い切れない（登録し直させない）／'absent'＝入っていないと言い切れる */
+function masterWriteVerdict(hit, stamp, nowMs) {
+  if (hit) return 'hit';
+  var sent = Date.parse(stamp || '');
+  if (!isFinite(sent)) return 'absent';   /* 送信時刻の無い古い保留は従来どおり */
+  /* 6分より先の未来の時刻は壊れた値（端末の時計の大きなずれ）。待たせ続けると永久に抜けられない */
+  if (sent - nowMs > MASTER_SETTLE_MS) return 'absent';
+  return (nowMs - sent < MASTER_SETTLE_MS) ? 'wait' : 'absent';
+}
+function masterWaitMinutes(stamp, nowMs) {
+  var sent = Date.parse(stamp || '');
+  if (!isFinite(sent)) return 0;
+  var left = MASTER_SETTLE_MS - (nowMs - sent);
+  return left > 0 ? Math.ceil(left / 60000) : 0;
+}
+/* 名前が同じ行の利用者No。送信時刻が合わなくても（マスタ側で編集されると updatedAt が進む）、
+   同名の方がいる時は「入っていない」と言い切らない */
+function masterSameNameIds(list, c) {
+  return asArr(list).filter(function (r) { return r && normName(r.name) === normName(c.name); })
+    .map(function (r) { return r.id; });
+}
+function masterAbsentMsg(ids, lead) {
+  if (!ids.length) return lead;
+  return '同じお名前の方が入居者マスタにいます（利用者No: ' + ids.join('・') + '）。その方なら登録は済んでいます。' +
+    'マスタで確かめ、別の方の時だけ「入居者マスタへ登録」からやり直してください';
+}
 function findMasterHit(list, c, stamp) {
   var hit = null;
   asArr(list).forEach(function (r) {
@@ -3989,19 +4025,27 @@ function findMasterHit(list, c, stamp) {
   });
   return hit;
 }
-function confirmMasterWrite(c) {
-  var stamp = msRec && msRec.updatedAt;
+function confirmMasterWrite(c, stamp) {
+  stamp = stamp || c.masterPendingStamp;
   return masterGet({ action: 'getRoster' }, 25000).then(function (d) {
     var list = (d && d.roster) || d || [];
     var hit = findMasterHit(list, c, stamp);
-    if (hit) {
+    var verdict = masterWriteVerdict(hit, stamp, Date.now());
+    if (verdict === 'hit') {
       c.masterId = hit.id; c.masterSyncedAt = nowIso(); c.masterPendingStamp = '';
       touch(c); closeModal('mk-master'); renderView(c);
       toast('✅ 登録しました（応答は届きませんでしたが、登録されていることを確認しました）');
+    } else if (verdict === 'wait') {
+      /* 見当たらないが、サーバーがまだ書いている途中かもしれない。ここで登録し直すと二重登録になる */
+      c.masterPendingStamp = stamp || nowIso();
+      touch(c); closeModal('mk-master'); renderView(c);
+      toast('⚠️ まだ登録を確認できません。サーバーが処理中の可能性があるので、登録し直さずに約' +
+        (masterWaitMinutes(stamp, Date.now()) || 1) + '分後に「登録確認」を押してください');
     } else {
       c.masterPendingStamp = '';
       touch(c); closeModal('mk-master'); renderView(c);
-      toast('⚠️ 登録できませんでした（マスタ側にも入っていないことを確認しました）。もう一度お試しください');
+      toast('⚠️ ' + masterAbsentMsg(masterSameNameIds(list, c),
+        '登録できませんでした（マスタ側にも入っていないことを確認しました）。もう一度お試しください'));
     }
   }).catch(function () {
     c.masterPendingStamp = stamp || nowIso();
@@ -4016,12 +4060,19 @@ function verifyMaster(c) {
   masterGet({ action: 'getRoster' }, 25000).then(function (d) {
     var list = (d && d.roster) || d || [];
     var hit = findMasterHit(list, c, stamp);
-    if (hit) {
+    var verdict = masterWriteVerdict(hit, stamp, Date.now());
+    if (verdict === 'hit') {
       c.masterId = hit.id; c.masterSyncedAt = nowIso(); c.masterPendingStamp = '';
       toast('✅ 登録されていました（二重登録はありません）');
+    } else if (verdict === 'wait') {
+      /* 保留は残す（登録ボタンを出さない）。送ってから6分たてば言い切れる */
+      toast('まだマスタに見当たりません。サーバーが処理中の可能性があるので、約' +
+        (masterWaitMinutes(stamp, Date.now()) || 1) + '分後にもう一度「登録確認」を押してください');
+      return;
     } else {
       c.masterPendingStamp = '';
-      toast('マスタには入っていませんでした。もう一度「入居者マスタへ登録」からやり直せます');
+      toast(masterAbsentMsg(masterSameNameIds(list, c),
+        'マスタには入っていませんでした。もう一度「入居者マスタへ登録」からやり直せます'));
     }
     touch(c); renderView(c);
   }).catch(function (e) {
