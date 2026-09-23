@@ -7610,12 +7610,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      OFFにすれば即座に従来動作へ戻る（データは一切変化しない）。詳細は autoLockPast_ のコメント。 */
   /* hideNonHeadcount: シフト側「頭数に入れる」OFF（＝役員等）の職員をワースケへ出さない。
      既定ON。OFFにすると従来どおり全員を反映する（データは変化しない・盤面の再構成のみ）。 */
-  var settings = { breakMinHours: 7, retentionDays: 90, endpoint: '', token: '',
+  /* retentionDays: 新しい端末の既定は30日（同一オリジンの容量を3アプリで分け合うため・2026-09-23）。
+     保存済みの値は loadSettings がそのまま採用する＝既に90日で保存している端末は90日のまま（移行しない）。
+     保存は無いが日データを持つ既存端末の扱いは loadSettings のコメント参照。 */
+  var RETENTION_DEFAULT_KEY = 'ws_retention_default_v1';   /* 「新しい端末として30日既定で始めた」印（loadSettings） */
+  var settings = { breakMinHours: 7, retentionDays: 30, endpoint: '', token: '',
                    urlCare: 'care-schedule.html', urlShift: 'shift-app.html', shiftAuto: true,
                    autoLockPast: true, hideNonHeadcount: true };
   /* シフト取込系の共通オプション（extractAttendance / otherOfficeByName へ同じ値を渡す＝判定の非対称を作らない） */
   function shiftPickOpts_() { return { hideNonHeadcount: settings.hideNonHeadcount !== false }; }
   function loadSettings() {
+    var hasStoredRetention = false;   /* ws_settings に保持日数が明示保存されているか */
     try {
       var raw = localStorage.getItem(SETTINGS_KEY);
       if (raw) {
@@ -7624,9 +7629,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           for (var k in settings) {
             if (Object.prototype.hasOwnProperty.call(p, k)) settings[k] = p[k];
           }
+          hasStoredRetention = Object.prototype.hasOwnProperty.call(p, 'retentionDays');
         }
       }
     } catch (e) { /* 既定値で続行 */ }
+    /* 保持日数の既定30日は「新しい端末」だけに当てる（2026-09-23）。保持日数を保存したことが無いのに
+     * 日データ(wsday_<date>)を既に持っている端末＝既定90日の頃から使っている端末は、その起動中は90日で扱う。
+     * 同期していない端末は日データに未送信の印が付かないため、30日にすると直後の pruneOld が31〜90日前の
+     * 手元にしか無い日を消し、取り戻せない。
+     * 新しい端末（保存も日データも無い）は初回起動で印(RETENTION_DEFAULT_KEY)を立てる。印が無いと、日データが
+     * できた2回目の起動で既存端末と見分けがつかず90日へ戻ってしまう。ws_settings には書かない
+     * （明示保存された値は常にそのまま採用）。boot では loadSettings → pruneOld の順に呼ばれる。 */
+    if (!hasStoredRetention) {
+      try {
+        if (localStorage.getItem(RETENTION_DEFAULT_KEY) === null) {
+          if (listSavedDates().length > 0) settings.retentionDays = 90;          /* 既存端末（印なし・日データあり） */
+          else localStorage.setItem(RETENTION_DEFAULT_KEY, '1');                 /* 新しい端末＝以後ずっと30日既定 */
+        }
+      } catch (eRt) {}
+    }
     /* 共通キーがあれば接続先を優先採用（他アプリで設定した接続先を引き継ぐ） */
     try {
       var craw = localStorage.getItem(COMMON_SYNC_KEY);
@@ -7814,6 +7835,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     out.sort();
     return out;
   }
+  /* 3-way祖先(wsbase_<date>)を保持期限と別に残す日数（今日を含めず過去この日数まで）。理由は pruneOld 内のコメント */
+  var BASE_KEEP_DAYS = 3;
   function pruneOld() {
     try {
       var limit = shiftDate(todayKey(), -Math.max(7, settings.retentionDays));
@@ -7840,11 +7863,77 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var dt = k.replace('wsbase_conflict_', '').replace('wsbase_', '');
         if (dt < limit && !(!isConflict && dirty[dt])) { try { localStorage.removeItem(k); } catch (e2) {} }
       }
+      /* 古い3-way祖先(wsbase_<date>)を保持期限より早く掃除する（容量対策・2026-09-23）。
+       * 祖先はサーバー版を採用するたびに saveBase_ が作り直す（日データと同じ大きさ）ため、閲覧しただけの
+       * 過去日にも溜まり、容量の約半分を占めていた。祖先を読むのは未送信編集がある日だけ
+       * （adoptServerDay_ の3-wayマージ rebaseDay・送信時の氏名空ワイプ判定 staffWipeBlocked_・
+       * ロック拒否時の handleLockedReject_）で、欠けても3-wayマージは退避＋union に、ワイプ判定は
+       * サーバー側 staffwipe ガードに落ちる。祖先は、その日を開いた時に ensureBase_（手元の保存版）か
+       * pullDayNow の同版分岐（サーバーの版）が作り直し、採用・送信成功でも saveBase_ が作り直す。
+       * 次のどれかに当たる祖先は残す:
+       *  ・直近 BASE_KEEP_DAYS 日以内（まだ編集・送信が続く日）
+       *  ・未送信編集がある日（3-wayマージに要る＝上の保持期限掃除と同じ保護）
+       *  ・表示中の日（起動時の pruneOld は表示日の決定より前に走り ui.currentDate はまだ今日のため、
+       *    boot と同じ parseDateHash_ で URL ハッシュの日付も守る＝再読み込みで開き直す日）
+       *  ・祖先がロック済み（meta.locked===true）。handleLockedReject_ は祖先のロックを見て「この端末での
+       *    正当な解除」を見分ける。祖先が無いと、手動ロックした日をこの端末で解除しても解除が捨てられ、
+       *    サーバーのロック版に戻される。
+       *  ・復号できない祖先（中身を確かめられない＝安全側で残す）
+       * 競合退避(wsbase_conflict_)・破損退避・他アプリのキーはこの規則の対象外（上の保持期限掃除のみ）。 */
+      var baseLimit = shiftDate(todayKey(), -BASE_KEEP_DAYS);
+      var curDate = null;
+      try { curDate = (typeof ui !== 'undefined' && ui) ? ui.currentDate : null; } catch (eUi) {}
+      var hashDate = null;
+      try { hashDate = parseDateHash_(location.hash); } catch (eHd) {}
+      var oldBases = [], mBase, bObj;
+      for (i = 0; i < localStorage.length; i++) {
+        k = localStorage.key(i);
+        mBase = k && /^wsbase_(\d{4}-\d{2}-\d{2})$/.exec(k);   /* 日付形式のみ＝wsbase_conflict_ は拾わない */
+        if (!mBase) continue;
+        if (mBase[1] >= baseLimit || dirty[mBase[1]] || mBase[1] === curDate || mBase[1] === hashDate) continue;
+        bObj = null;
+        try { bObj = decodeDay_(localStorage.getItem(k)); } catch (e4) { bObj = null; }
+        if (!bObj) continue;                                          /* 復号不能は残す */
+        if (bObj.meta && bObj.meta.locked === true) continue;         /* ロック済みの祖先は残す */
+        oldBases.push(k);
+      }
+      /* 走査中に消すと添字がずれるため、集めてから消す */
+      for (i = 0; i < oldBases.length; i++) { try { localStorage.removeItem(oldBases[i]); } catch (e5) {} }
     } catch (e) {}
+  }
+  /* localStorage 全キーの使用量を用途別に集計する（読み取り専用・表示用）。
+   * 戻り値: { bytes, dayCount, groups:[{label, bytes}] }。groups は表示順固定で、合計は bytes と一致する。
+   * バイト数の式は従来の使用量表示と同じ (key.length+value.length)*2。読めない時は null。 */
+  function storageBreakdown_(ls) {
+    var labels = ['日別', '同期の控え', '週間計画', '週間マスタ', 'シフト', 'その他'];
+    var sums = [0, 0, 0, 0, 0, 0];
+    var bytes = 0, dayCount = 0, i, k, v, b, g;
+    try {
+      for (i = 0; i < ls.length; i++) {
+        k = ls.key(i);
+        if (!k) continue;
+        v = ls.getItem(k) || '';
+        b = (k.length + v.length) * 2;
+        bytes += b;
+        /* 日数は listSavedDates と同じ日付形式判定に揃える＝破損退避(_corrupt)を日数に混ぜない */
+        if (k.indexOf('wsday_') === 0 && /^\d{4}-\d{2}-\d{2}$/.test(k.substring(6))) dayCount++;
+        if (/^wsday_\d{4}-\d{2}-\d{2}/.test(k)) g = 0;               /* 日別（破損退避 _corrupt を含む） */
+        else if (k.indexOf('wsbase_') === 0) g = 1;                  /* 3-way祖先・競合退避 */
+        else if (k.indexOf('care_schedule') === 0) g = 2;            /* 週間計画本体・退避・世代 */
+        else if (k === 'ws_weekly_master_v1') g = 3;
+        else if (k.indexOf('shiftapp:v1:') === 0) g = 4;
+        else g = 5;
+        sums[g] += b;
+      }
+    } catch (e) { return null; }
+    var groups = [];
+    for (i = 0; i < labels.length; i++) groups.push({ label: labels[i], bytes: sums[i] });
+    return { bytes: bytes, dayCount: dayCount, groups: groups };
   }
   /* 設定モーダルに「この端末の使用量」を表示（読み取り専用・保持日数の直下）。
    * 算出=localStorage全キーの (key.length+value.length)*2 バイト合計、wsday_ 件数を併記。
-   * 表示要素は初回のみ #stRetention の親へ遅延生成し、モーダルを開くたびに再計算する。 */
+   * 表示要素は初回のみ #stRetention の親へ遅延生成し、モーダルを開くたびに再計算する。
+   * 2行目に用途別の内訳を出す（算出は storageBreakdown_。同一オリジンの他アプリ分も含めた全キーの内訳）。 */
   function updateStorageUsage_() {
     var el = $('stStorageUsage');
     if (!el) {
@@ -7856,18 +7945,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       el.style.marginTop = '4px';
       ret.parentNode.appendChild(el);
     }
-    var bytes = 0, dayCount = 0, i, k, v;
-    try {
-      for (i = 0; i < localStorage.length; i++) {
-        k = localStorage.key(i);
-        if (!k) continue;
-        v = localStorage.getItem(k) || '';
-        bytes += (k.length + v.length) * 2;
-        /* 日数は listSavedDates と同じ日付形式判定に揃える＝破損退避(_corrupt)を日数に混ぜない */
-        if (k.indexOf('wsday_') === 0 && /^\d{4}-\d{2}-\d{2}$/.test(k.substring(6))) dayCount++;
-      }
-    } catch (e) { return; }
-    el.textContent = 'この端末の使用量: 約' + Math.round(bytes / 1024) + ' KB（wsday_ ' + dayCount + '日分）';
+    var sb = storageBreakdown_(localStorage);
+    if (!sb) return;
+    el.textContent = 'この端末の使用量: 約' + Math.round(sb.bytes / 1024) + ' KB（wsday_ ' + sb.dayCount + '日分）';
+    /* 内訳（2行目）: 同じ hint 表示の兄弟要素。0 KB の用途は省く（順序は固定）。
+     * 狭い幅でも「日別 約◯KB」の途中で折り返さないよう、用途ごとに inline-block で包む。 */
+    var bd = $('stStorageBreakdown');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'stStorageBreakdown';
+      bd.className = 'hint';
+      if (el.parentNode) el.parentNode.insertBefore(bd, el.nextSibling);
+    }
+    while (bd.firstChild) bd.removeChild(bd.firstChild);
+    var parts = [], gi, span;
+    for (gi = 0; gi < sb.groups.length; gi++) {
+      if (sb.groups[gi].bytes > 0) parts.push(sb.groups[gi].label + ' 約' + Math.round(sb.groups[gi].bytes / 1024) + 'KB');
+    }
+    if (!parts.length) return;
+    bd.appendChild(document.createTextNode('内訳: '));
+    for (gi = 0; gi < parts.length; gi++) {
+      span = document.createElement('span');
+      span.style.display = 'inline-block';
+      span.textContent = parts[gi] + (gi < parts.length - 1 ? '／' : '');
+      bd.appendChild(span);
+    }
   }
   var saveTimer = null;
   function scheduleSave() {
@@ -7944,6 +8046,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (location.hash !== '#' + date) { hashNavigating_ = true; location.hash = '#' + date; }
     } catch (eHash) {}
     var repSw0_ = overlapRepairs_;   /* この切替で重畳解消が起きたか（下の偽dirty補正の抑止判定） */
+    try { ensureBase_(date); } catch (eEb) {}   /* 祖先の作り直しは読込・自動調整より前（ensureBase_ のコメント） */
     var day = loadDayData(date) || S.emptyDay(date);
     day.meta.date = date;
     var wasDirtySw = false;
@@ -10495,6 +10598,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function loadBase_(date) {
     try { return decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { return null; }
   }
+  /* 祖先が無い日に、手元の保存版から祖先を作り直す（2026-09-23・pruneOld の早期掃除とセット）。
+   * 祖先が無いまま未送信編集ができると、3-wayマージ(rebaseDay)は同じidの札を常にローカル側で採る＝
+   * 他端末がその札に加えた変更（時刻の移動など）を黙って巻き戻す。未送信編集が無い日の保存版は
+   * 最後に同期した版なので祖先に使える。呼ぶのは【編集が入る前】と確かめられる所だけ:
+   *   ・日付を開く時（switchDate・boot）… loadDayData／INIT_DAY／自動保存より前＝この起動の自動調整も入らない
+   *   ・翌週コピーの書込み前 … コピー先の保存版を上書きする前
+   * markDayDirty_ には掛けない: 翌週コピーは保存(lsSetDay_)の後に印を付けるため、その時点の保存版は
+   * 既に編集入り。表示中の日も、自動保存(doSave)は印付け(schedulePushDay)の後に遅れて走るが、
+   * 前回の自動保存が偽dirty補正後の自動調整を含んでいることがある。
+   * 作らない条件: 同期OFF（マージが起きない）／未送信編集あり（保存版が編集入り）／祖先が既にある
+   * （復号できない祖先も上書きしない）／保存版が無い・読めない／rev が 0（サーバーが一度も受け取って
+   * いない版＝祖先無しの union が正しい）。 */
+  function ensureBase_(date) {
+    try {
+      if (!date || !syncOn() || isDayDirty_(date)) return false;
+      if (localStorage.getItem(baseKey_(date)) !== null) return false;
+      var cur = decodeDay_(localStorage.getItem(dayKey(date)));
+      if (!cur || !cur.meta || !cur.staff || !cur.tasks) return false;
+      if (!((cur.meta.rev || 0) > 0)) return false;
+      saveBase_(date, cur);
+      return true;
+    } catch (e) { return false; }
+  }
 
   /* --- 自動リトライ（5s→15s→30s→60s上限のバックオフ・タイマー1本） --- */
   var retry_ = { timer: null, delay: 0 };
@@ -11203,6 +11329,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (ui.currentDate === date && store.get().tasks.length) { lastPushed.day = ''; schedulePushDay(); }
         if (report) $('stResult').textContent = 'サーバーにこの日のデータはありません（この端末の内容を送信します）';
       } else {
+        /* 同版で祖先が無ければ、サーバーが今持っている版を祖先にする（2026-09-23）。rev が同じ＝この端末の版は
+         * その版から分かれたもの（rev は採用・送信成功の時にだけ進む）なので、未送信編集の有無にかかわらず
+         * 正しい祖先になる。ローカルの版は使わない＝未送信編集が祖先に混ざらない。既存の祖先は上書きしない。 */
+        if (curRev > 0 && (j.rev || 0) === curRev) {
+          try { if (localStorage.getItem(baseKey_(date)) === null) saveBase_(date, j.data); } catch (eEb) {}
+        }
         /* 同版: 未送信編集が滞留していれば送信（push失敗後にイベントだけpullされた場合の回収） */
         if (ui.currentDate === date && isDayDirty_(date)) {
           if (daySig(store.get()) === lastPushed.day) clearDayDirty_(date);
@@ -11851,6 +11983,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         tasks = M.dedupCareSlots(tasks);
         if (tasks.length !== dupC_) { day.tasks = tasks; conflicts += (dupC_ - tasks.length); }
       } catch (eOvC) {}
+      try { ensureBase_(nd); } catch (eEb) {}   /* 上書き前の保存版から祖先を作る（書込み後は編集入りになる） */
       if (!lsSetDay_(nd, day)) {
         toast('翌週への保存に失敗したためコピーを中止しました（端末の空き容量をご確認ください）', true);
         return;
@@ -13383,7 +13516,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       settings.breakMinHours = parseFloat($('stBreakH').value) || 7;
-      settings.retentionDays = parseInt($('stRetention').value, 10) || 90;
+      settings.retentionDays = parseInt($('stRetention').value, 10) || 30;
       var hadEndpoint = !!settings.endpoint;
       settings.endpoint = epIn;
       settings.token = $('stToken').value.trim();
@@ -13895,6 +14028,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 増やすが、基準を後から採ると増分が見えず「変化なし」と誤判定して偽dirty補正が push を消す
      * ＝畳んだ結果がこの端末の画面だけで直り、クラウドと他端末は重複したままになる。 */
     var repBoot0_ = overlapRepairs_;
+    try { ensureBase_(ui.currentDate); } catch (eEb) {}   /* 祖先の作り直しは読込・自動調整より前（ensureBase_ のコメント） */
     var day = null;
     try { day = loadDayData(ui.currentDate); } catch (e) { day = null; }
     if (!day) day = S.emptyDay(ui.currentDate);
