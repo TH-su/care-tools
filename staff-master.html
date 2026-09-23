@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-23.8">
+<meta name="stfm-build" content="2026-09-23.9">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1260,7 +1260,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.8</p>
+    <p class="muted">版 2026-09-23.9</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1420,13 +1420,13 @@ body.cmt-print{page:cmt}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-23.8
+   職員マスタ 2026-09-23.9
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-23.8';
+var BUILD = '2026-09-23.9';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1703,6 +1703,27 @@ function markNoAnswer(e) { e.noAnswer = true; return e; }
 function mayHaveWritten(e) { return isUnconfirmed(e) || isNoAnswer(e); }
 /* 見出しに添える原因。応答を受け取れなかった時だけ（確定を確かめられなかった時は見出しそのものが原因） */
 function unsureWhy(e) { return isNoAnswer(e) ? '（' + errText(e) + '）' : ''; }
+/* 受付番号（2026-09-23.9。staff-api.gs の reqId・2026-09-23.9〜）。書く action にだけ付ける（サーバーの REQ_ACTIONS と同じ6つ）。
+   ★ブラウザは接続が切れた後に同じ本文を黙って送り直すことがある。本文ごと同じ番号になるので、サーバーは2回目を
+     実行せず1回目の応答を返す（新規登録・CSV取込・書類の追加が二重にならない）。
+   ★人が押し直した時は apiPost がもう一度呼ばれる＝新しい番号になる。前の送信が入っていなかった時にちゃんと送れる。
+   ★番号を知らない古いサーバーは reqId を読み飛ばす（今までどおり動く）。 */
+var REQ_WRITE_ACTIONS = ['bulkSave', 'importRows', 'uploadFile', 'removeFile', 'setEnums', 'setCommittees'];
+/* 16進32文字。crypto が無い・使えない端末は時刻と Math.random から英数字32文字で作る
+   （どちらもサーバーの /^[A-Za-z0-9_-]{16,64}$/ に合う） */
+function newReqId() {
+  try {
+    var c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.getRandomValues === 'function') {
+      var a = c.getRandomValues(new Uint8Array(16)), s = '', i;
+      for (i = 0; i < a.length; i++) s += (a[i] < 16 ? '0' : '') + a[i].toString(16);
+      return s;
+    }
+  } catch (e) { /* 下の代替で作る */ }
+  var out = Date.now().toString(36);
+  while (out.length < 32) out += Math.floor(Math.random() * 4294967296).toString(36);
+  return out.slice(0, 32);
+}
 
 /* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
 function apiPost(action, body, timeoutMs) {
@@ -1714,6 +1735,8 @@ function apiPost(action, body, timeoutMs) {
     return Promise.reject(mkErr('合言葉が設定されていません', '右上の歯車（設定）で合言葉を入れて保存してください。'));
   }
   if (body) { for (k in body) { if (Object.prototype.hasOwnProperty.call(body, k)) payload[k] = body[k]; } }
+  /* 受付番号（REQ_WRITE_ACTIONS）。apiPost を呼ぶたびに新しい番号＝ブラウザの黙った送り直しだけが同じ番号になる */
+  if (REQ_WRITE_ACTIONS.indexOf(action) >= 0) payload.reqId = newReqId();
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var ms = Number(timeoutMs);
   if (!isFinite(ms) || ms <= 0) ms = 45000;
@@ -1743,6 +1766,12 @@ function apiPost(action, body, timeoutMs) {
       if (txt(d.error) === FLUSH_FAIL_MSG) {
         ne.unconfirmed = true;
         ne.hint = 'サーバーに書けていることがあります。最新の状態を取り直して確かめてから、必要ならやり直してください。';
+      }
+      /* 同じ受付番号の送信をサーバーがまだ処理している（2026-09-23.9）。応答を受け取れなかった時と同じく、
+         書けたか分からない＝あきらめた時刻から6分たつまで「入っていない」と言わない（recheckAfter が noAnswer を見る） */
+      if (d.inProgress === true) {
+        markNoAnswer(ne);
+        ne.hint = 'サーバーが前の送信をまだ処理しています。しばらく待ってから一覧を読み直して、保存されているか確かめてください。';
       }
       throw ne;
     }
@@ -3009,7 +3038,8 @@ function saveDetail() {
     if (mayHaveWritten(e)) {
       /* 書けたか分からない（確定を確かめられなかった／応答を受け取れなかった 2026-09-23.8）。
          新規は職員IDを受け取れていないので、送り直すと同じ方が二重に登録され得る（サーバーが版を進める所で
-         落ちると、新規を含んでも partial で返らない）＝送り直しのボタンは出さず、「保存」を止めて、その場で
+         落ちると、新規を含んでも partial で返らない。2026-09-23.7 以前のサーバー。2026-09-23.9 からは職員ID付きの
+         partial で返る）＝送り直しのボタンは出さず、「保存」を止めて、その場で
          一覧を読み直して照合する（本人裁定 2026-09-23「その場で照合」）。
          更新は版（rev）で照合される＝送り直しても二重には書かない */
       if (body.creates) {
