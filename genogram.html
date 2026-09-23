@@ -2831,15 +2831,17 @@ const CloudSync = (function() {
   }
 
   // ---- High-level API ----
+  // ★2026-09-23: 読み取りも POST 本文で送る（利用者名 name を URL のクエリに載せない）。
+  //   GAS の doPost は doGet と同じ route() を通る（本番 GAS を取得して確認済み）。
   async function ping() {
-    return await gasCall('ping', {}, { method: 'GET' });
+    return await gasCall('ping', {});
   }
   async function list() {
-    const r = await gasCall('list', {}, { method: 'GET' });
+    const r = await gasCall('list', {});
     return r.items || [];
   }
   async function get(name) {
-    const r = await gasCall('get', { name }, { method: 'GET' });
+    const r = await gasCall('get', { name });
     return r.doc;
   }
   async function save(doc) {
