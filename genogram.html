@@ -3548,7 +3548,27 @@ const authUnverified = {
    これと違う名前で保存する時（新規・名前欄の書き換え）は、同じ名前の既存の図を黙って置き換えない */
 let loadedFrom = '';
 
+/* ★2026-09-23 現場端末（su_device_role==='field'）は閲覧専用。図の保存・削除は事務所の端末で行う。
+   すでに端末に溜まっている未送信の保存（保留）は、その時点では正当な操作なので送信を止めない。
+   su_device_role は読むだけ・書かない */
+function isFieldDevice() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+var FIELD_READONLY_MSG = 'この端末は閲覧専用です（現場端末）。図の保存・削除は事務所の端末で行ってください。';
+function applyFieldReadonly() {
+  if (!isFieldDevice()) return;
+  ['btnSave', 'btnDelete'].forEach(function (id) {
+    var b = $(id); if (!b) return;
+    b.disabled = true; b.setAttribute('aria-disabled', 'true'); b.title = FIELD_READONLY_MSG;
+  });
+  if (!document.getElementById('fieldReadonlyBar')) {
+    var bar = document.createElement('div');
+    bar.id = 'fieldReadonlyBar'; bar.setAttribute('role', 'status');
+    bar.style.cssText = 'background:#fff3cd;color:#5c4200;border-bottom:1px solid #e0c060;padding:6px 12px;font-size:14px;text-align:center';
+    bar.textContent = FIELD_READONLY_MSG;
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+}
 async function saveDoc() {
+  if (isFieldDevice()) { alert(FIELD_READONLY_MSG); return; }
   abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（他の方の図を保存しない）
   const name = $('clientName').value.trim();
   if (!name) {
@@ -3854,6 +3874,7 @@ function newDoc() {
 }
 
 async function deleteCurrentDoc() {
+  if (isFieldDevice()) { alert(FIELD_READONLY_MSG); return; }
   const name = $('clientName').value.trim();
   if (!name) { alert('削除対象の利用者名を指定してください'); return; }
   const hasLocal = !!localStorage.getItem(LS_DOC_PREFIX + name);
@@ -4180,6 +4201,7 @@ function bindUIEvents() {
   $('btnNew').addEventListener('click', newDoc);
   $('btnSave').addEventListener('click', saveDoc);
   $('btnDelete').addEventListener('click', deleteCurrentDoc);
+  applyFieldReadonly();
   $('btnExportJPG').addEventListener('click', exportJPG);
   $('btnExportPDF').addEventListener('click', exportPDF);
   $('clientName').addEventListener('input', () => { state.clientName = $('clientName').value.trim(); });

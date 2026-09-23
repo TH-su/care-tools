@@ -1386,7 +1386,11 @@ var ST = {
   billNotesCap: null,
   billNotesOk: true        /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
 };
-function isAdmin() { return ST.role === 'admin'; }
+/* ★2026-09-23 現場端末（su_device_role==='field'）では、管理者の合言葉が入っていても職員として扱う。
+   価格改定・締め・取消・棚卸・調整・請求明細・集計は事務所の端末でだけ行う（入出庫の記録は現場でも行う）。
+   su_device_role は読むだけ・書かない */
+function isFieldDevice() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+function isAdmin() { return ST.role === 'admin' && !isFieldDevice(); }
 
 /* ── localStorage（UI状態と接続設定だけ）───────────────── */
 function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
@@ -1707,11 +1711,13 @@ function showScreen(key, noSave) {
   window.scrollTo(0, 0);
 }
 function applyRole() {
-  var staff = ST.role === 'staff';
+  var fieldAdmin = ST.role === 'admin' && isFieldDevice();
+  var staff = ST.role === 'staff' || fieldAdmin;
   document.body.classList.toggle('staff', staff);
   var chip = $('roleChip');
   chip.hidden = !ST.role;
-  chip.textContent = staff ? '職員' : (ST.role === 'admin' ? '管理者' : '—');
+  chip.textContent = fieldAdmin ? '職員（現場端末）' : (staff ? '職員' : (ST.role === 'admin' ? '管理者' : '—'));
+  if (fieldAdmin) chip.title = 'この端末は現場用のため、管理者の操作（価格改定・締め・取消など）は事務所の端末で行ってください';
   if (staff && (ST.screen === 'summary' || ST.screen === 'bill')) showScreen('list');
   /* 職員は unit 品目の入庫・出庫だけ。種類の選び直しもここで戻す */
   if (staff) {
