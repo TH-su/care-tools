@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-23.6">
+<meta name="stfm-build" content="2026-09-23.7">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1260,7 +1260,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.6</p>
+    <p class="muted">版 2026-09-23.7</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1420,13 +1420,13 @@ body.cmt-print{page:cmt}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-23.6
+   職員マスタ 2026-09-23.7
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-23.6';
+var BUILD = '2026-09-23.7';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1681,6 +1681,17 @@ function errDetail(e, n) {
 /* 途中まで書けた応答（ok:false・partial:true）か。保存できた分は画面に反映する */
 function isPartial(e) { return !!(e && e.partial === true); }
 function partialList(e, key) { return (e && Array.isArray(e[key])) ? e[key] : []; }
+/* サーバーが保存を確定できたか確かめられなかった応答（2026-09-23.7。staff-api.gs の FLUSH_FAIL_MSG・2026-09-23.5〜）。
+   書けているかもしれない＝「失敗しました」とも「保存しました」とも言わず、送り直しも促さない。
+   ★文言はサーバーの FLUSH_FAIL_MSG と1文字も違えない（gas/tests/staff_flush_screen_test.js で照合）。
+     ずれると見分けられず、書類の追加で同じ書類が2つ入る。 */
+var FLUSH_FAIL_MSG = '保存を確定できたか確かめられませんでした。画面を開き直して、保存されているか確かめてください';
+function isUnconfirmed(e) { return !!(e && e.unconfirmed === true); }
+/* 新規登録が確定できたか分からず、職員IDも受け取れていない時の案内（詳細の保存の2か所で使う）。
+   ★新規のフォームは未保存扱い＝「← 一覧へ戻る」で破棄の確認が出て入力は消え、確かめた後にこの画面へ戻る道は無い
+     ＝「＋ 新規」から入れ直す手順で書く。
+   ★一覧の読み直しに失敗すると古い一覧に本人がいないので、読み込めたことも確かめてもらう（入れ直すと二重になる） */
+var NEW_UNCONFIRMED_MSG = 'この画面で「保存」を押し直すと、登録されていた時に同じ方が二重に登録されます。「← 一覧へ戻る」を押し（「破棄して移動しますか？」は OK。入力は消えます）、一覧で「再読み込み」を押して、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、この方がいるかを確かめてください。いなければ「＋ 新規」から入れ直して保存してください。';
 
 /* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
 function apiPost(action, body, timeoutMs) {
@@ -1716,6 +1727,11 @@ function apiPost(action, body, timeoutMs) {
         ne.conflicts = Array.isArray(d.conflicts) ? d.conflicts : [];
         ne.warnings = Array.isArray(d.warnings) ? d.warnings : [];
         ne.hint = '保存できた分はこの画面に反映しました。残りは一覧を取り直してから送り直してください。';
+      }
+      /* 確定できたか分からない（partial で来ることもある）。入力や合言葉の誤りではないので案内を差し替える */
+      if (txt(d.error) === FLUSH_FAIL_MSG) {
+        ne.unconfirmed = true;
+        ne.hint = 'サーバーに書けていることがあります。最新の状態を取り直して確かめてから、必要ならやり直してください。';
       }
       throw ne;
     }
@@ -2277,6 +2293,13 @@ function bulkSave() {
       setState('listState', 'warn', okN + '名は保存できました',
         '残りは保存できていません。一覧を取り直してから、もう一度「一括保存」を押して送り直してください。' + errDetail(e),
         '一覧を取り直す', function () { loadList(); });
+      $('listState').hidden = false;
+      return;
+    }
+    if (isUnconfirmed(e)) {
+      /* 書けたか分からない。更新だけの保存は版（rev）で照合される＝送り直しても二重には書かない */
+      setState('listState', 'warn', '保存できたか確かめられませんでした',
+        '入力した内容はこの画面に残しています。もう一度「一括保存」を押すと送り直します。保存できていた方は「他の端末が先に保存」と出て止まる（二重には書きません）ので、その方は「サーバー値を採用」を選んでください。');
       $('listState').hidden = false;
       return;
     }
@@ -2904,6 +2927,19 @@ function saveDetail() {
   }).catch(function (e) {
     /* 途中まで書けている応答（partial）は、書けた分だけ画面に反映してから案内する */
     if (isPartial(e)) { applyDetailResult(e, cur, dropped, e); return; }
+    if (isUnconfirmed(e)) {
+      /* 書けたか分からない。新規は職員IDを受け取れていないので、送り直すと同じ方が二重に登録され得る
+         （サーバーが版を進める所で落ちると、新規を含んでも partial で返らない）＝送り直しのボタンは出さない。
+         更新は版（rev）で照合される＝送り直しても二重には書かない */
+      if (body.creates) {
+        setState('dtState', 'warn', '登録できたか確かめられませんでした', NEW_UNCONFIRMED_MSG);
+        return;
+      }
+      setState('dtState', 'warn', '保存できたか確かめられませんでした',
+        '入力した内容はこの画面に残しています。「保存」をもう一度押すと送り直します。保存できていた時は「他の端末がこの方を先に保存しています」と出て止まる（二重には書きません）ので、「サーバー値を採用」を選んでください。',
+        'もう一度保存する', function () { saveDetail(); });
+      return;
+    }
     setState('dtState', 'err', '保存に失敗しました（' + errText(e) + '）',
       errHint(e) + ' 入力した内容はこの画面に残しています。「保存」をもう一度押すと送り直します。' + errDetail(e),
       'もう一度保存する', function () { saveDetail(); });
@@ -2949,7 +2985,22 @@ function applyDetailResult(d, cur, dropped, partialErr) {
   }
   $('dtName').textContent = txt(cur.name) || '（氏名未入力）';
   var warn = Array.isArray(d.warnings) ? d.warnings : [];
-  if (partialErr) {
+  if (partialErr && isUnconfirmed(partialErr)) {
+    /* 書けたか分からない（サーバーが確定を確かめられなかった）。「保存できました」とは言わない。
+       新規は職員IDを受け取って上で控えた＝この画面で「保存」を押しても新規にはならない（二重登録しない）。
+       ★ただし書き込みが消えていると、採番（nextId）も消えるので、その職員IDと版1が他端末の新規登録に
+         振り直され得る。そのまま「保存」「書類」を使うと別の方の行に書き込む＝確かめるまで使わないよう案内する
+         （確かめるまで止める作りは別タスク「応答が無い時の二重登録の口を塞ぐ」で扱う） */
+    /* ★一覧には上で行を足してあるので、読み直しに失敗してもこの方は一覧に残って見える＝読み込めたことも確かめてもらう */
+    var unsureTitle = (!created.length && !ST.detail.id) ? '登録できたか確かめられませんでした' : '保存できたか確かめられませんでした';
+    setState('dtState', 'warn', unsureTitle,
+      created.length
+        ? '一覧に戻って「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、この方が登録されているかを確かめてください。いなければ「＋ 新規」から入れ直してください。確かめるまでは、この画面で「保存」も「書類」も使わないでください（登録できていなかった時は、この職員IDが別の方に振り直されていることがあります）。'
+        : (!ST.detail.id
+          ? NEW_UNCONFIRMED_MSG          /* 新規の行を書く所で落ちて職員IDを受け取れなかった＝⑨経路と同じ状況 */
+          : '一覧に戻って「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、保存されているかを確かめてください。'));
+    toast(unsureTitle);
+  } else if (partialErr) {
     var okN = created.length + applied.length;
     setState('dtState', 'warn', okN ? 'この方の分は保存できました' : '保存できませんでした',
       (okN ? '同じ送信のほかの行は保存できていません。' : 'サーバーが途中で止まりました。')
@@ -3409,9 +3460,10 @@ function uploadPicked() {
         'サーバーの応答に書類の情報が足りません。いったん閉じて「再読み込み」を押し、一覧に出ているか確かめてください。');
     }
   }).catch(function (e) {
-    if (e && e.aborted) {
-      /* 送れたか送れていないか分からない。ここで「もう一度」と促すと同じ書類が2つ入る */
-      setState('fdState', 'warn', '送信に時間がかかっています',
+    if (e && (e.aborted || isUnconfirmed(e))) {
+      /* 送れたか送れていないか分からない（応答が無い／サーバーが確定を確かめられなかった）。
+         ここで「もう一度」と促すと同じ書類が2つ入る */
+      setState('fdState', 'warn', e.aborted ? '送信に時間がかかっています' : '追加できたか確かめられませんでした',
         '一覧を再読み込みして、書類が入っていないことを確かめてからもう一度お試しください。');
       return;
     }
@@ -3897,16 +3949,28 @@ function runImport() {
     $('impResult').hidden = true;
     loadList(true);
   }).catch(function (e) {
-    if (isPartial(e)) {
-      /* 途中まで書けている。同じ creates を送ると二重登録になるので、試算の控えを捨てて押せなくする */
+    var unsure = isUnconfirmed(e);
+    if (isPartial(e) || unsure) {
+      /* 途中まで書けている、または書けたか分からない。同じ creates を送ると二重登録になるので、試算の控えを捨てて押せなくする。
+         ★確定を確かめられなかった時は partial で返らないこともある（サーバーが版を進める所で落ちると、
+           新規を含んでも ok:false だけで来る）＝partial かどうかで分けず、同じく止める */
       var cN = partialList(e, 'created').length, aN = partialList(e, 'applied').length;
       ST.imp.payloadJson = '';
       ST.imp.plan = null;
       $('impRunBtn').disabled = true;
       $('impResult').hidden = true;
-      setState('impState', 'warn', '途中まで取り込みました（新規 ' + cN + '件／更新 ' + aN + '件）',
-        '残りは取り込めていません。一覧を読み込み直したうえで、もう一度「内容を確認する（試算）」からやり直してください'
-        + '（同じ内容をそのまま送ると、取り込めた分が二重に登録されます）。' + errDetail(e));
+      if (unsure) {
+        /* ★下の loadList は失敗しても取込画面には出ず、試算は「一度読み込めたか」しか見ない。読み直せていない
+           古い一覧で試算すると、取り込めた行が新規に数えられて二重になる＝人の手で再読み込みしてもらう
+           （読み直しが済むまで試算を止める作りは別タスク「応答が無い時の二重登録の口を塞ぐ」で扱う） */
+        setState('impState', 'warn', '取り込めたか確かめられませんでした（新規 ' + payload.creates.length + '件／更新 ' + payload.rows.length + '件を送りました）',
+          '「一覧」を開いて「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、取り込まれているかを確かめてください。やり直す時はそのあとで「内容を確認する（試算）」からお願いします'
+          + (payload.creates.length ? '（読み込み直す前に試算すると、取り込めた分が新規に数えられ、二重に登録されます）' : '') + '。');
+      } else {
+        setState('impState', 'warn', '途中まで取り込みました（新規 ' + cN + '件／更新 ' + aN + '件）',
+          '残りは取り込めていません。一覧を読み込み直したうえで、もう一度「内容を確認する（試算）」からやり直してください'
+          + '（同じ内容をそのまま送ると、取り込めた分が二重に登録されます）。' + errDetail(e));
+      }
       loadList(true);
       return;
     }
