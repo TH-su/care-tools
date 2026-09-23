@@ -47,7 +47,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-17.1';
+  var VERSION = '2026-09-23.1';
 
   /* 単位名の字数上限。サーバー（gas/supplies-api.gs の UNIT_NAME_MAX）と同じ値。
      ここで too_long を報せないと、画面に理由が出ないまま bad_units で断られる */
@@ -860,10 +860,19 @@
     return out;
   }
 
+  /* Excel が数式として実行する先頭文字（= + - @ タブ CR。日本語版の全角 ＝＋－＠ も予防で含める）の文字セルに ' を前置する（CSV インジェクション対策）。
+     数値の列（数量・金額・税率）と、ただの数値の文字列は触らない */
+  function csvSafe(v) {
+    if (typeof v === 'number') return str(v);
+    var s = str(v);
+    if (s === '-' || /^[-+]?\d+(\.\d+)?$/.test(s)) return s;
+    return /^'*[=+\-@\t\r＝＋－＠]/.test(s) ? "'" + s : s;
+  }
+
   function csvLine(cells) {
     var buf = [];
     for (var i = 0; i < cells.length; i++) {
-      buf.push('"' + str(cells[i]).replace(/"/g, '""') + '"');
+      buf.push('"' + csvSafe(cells[i]).replace(/"/g, '""') + '"');
     }
     return buf.join(',') + '\r\n';
   }

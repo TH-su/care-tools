@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-23.7';
+  var VERSION = '2026-09-23.8';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -1252,7 +1252,8 @@
     if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
     var rows = [], row = [], cell = '', inQ = false, i = 0;
 
-    function endCell() { row.push(cell); cell = ''; }
+    /* toCsv が数式よけに前置した ' を1個だけ外す（元から ' で始まる値は toCsv が ' を足しているので往復で消えない） */
+    function endCell() { row.push(/^'+[=+\-@\t\r＝＋－＠]/.test(cell) ? cell.slice(1) : cell); cell = ''; }
     function endRow() {
       endCell();
       var empty = true;
@@ -1284,6 +1285,13 @@
     return rows;
   }
 
+  /* Excel が数式として実行する先頭文字（= + - @ タブ CR。日本語版の全角 ＝＋－＠ も予防で含める）のセルに ' を前置する（CSV インジェクション対策）。
+     ただの数値（-12・0.5・+5）と「-」1文字は数式にならないので触らない。先頭の ' は読み飛ばして判定する＝往復で値が変わらない */
+  function csvSafe(v) {
+    if (v === '-' || /^[-+]?\d+(\.\d+)?$/.test(v)) return v;
+    return /^'*[=+\-@\t\r＝＋－＠]/.test(v) ? "'" + v : v;
+  }
+
   /* Excel で開くための書出し。BOM付き UTF-8・CRLF・全セル引用（日付や 0 始まりを化けさせない） */
   function toCsv(rows2d) {
     var out = '﻿';
@@ -1291,7 +1299,7 @@
       var r = rows2d[i] || [];
       var cells = [];
       for (var j = 0; j < r.length; j++) {
-        var v = (r[j] === null || r[j] === undefined) ? '' : String(r[j]);
+        var v = csvSafe((r[j] === null || r[j] === undefined) ? '' : String(r[j]));
         cells.push('"' + v.replace(/"/g, '""') + '"');
       }
       out += cells.join(',') + '\r\n';
