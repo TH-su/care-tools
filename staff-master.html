@@ -1631,8 +1631,9 @@ var ST = {
   /* 読み直し待ち（2026-09-23.8）。書けたか分からない送信の後は、一覧を読み直すまで同じ送信を止める。
      listOkAt: 最後に成功した一覧の読み込みを【始めた】時刻（ms）。listOkN: 成功した回数（ボタンで読めたかの判定）
      impHold: CSV の試算を止める期限。この時刻以降に始めた読み込みが成功したら外す（0＝止めていない）
-     fileHold: 書類の追加を止めている職員。{ 職員ID: { at: 期限, known: 送る前の書類ID, name, kind, size } } */
-  listOkAt: 0, listOkN: 0, impHold: 0, fileHold: {}
+     fileHold: 書類の追加を止めている職員。{ 職員ID: { at: 期限, known: 送る前の書類ID, name, kind, size } }
+     impBusy: CSV の取り込みを送っている途中（試算を止める） */
+  listOkAt: 0, listOkN: 0, impHold: 0, fileHold: {}, impBusy: false
 };
 
 function asOfDate() { return ST.asOf || SC().today(); }
@@ -1800,6 +1801,12 @@ var TAB_IDS = ['tabList', 'tabDash', 'tabIo', 'tabCmt', 'tabSet'];
 
 function showScreen(key) {
   if (!SCREEN_IDS[key]) key = 'list';
+  /* 保存を送っている間は詳細を離れない（2026-09-23.8）。離れて別の方を開くと、届いた応答（新しい職員ID・
+     確かめ待ち）がその方の画面に書き込まれ、次の「保存」で別の方の行を書き換える */
+  if (ST.screen === 'detail' && key !== 'detail' && ST.detail && ST.detail.saving) {
+    toast('保存中です。終わるまでお待ちください');
+    return;
+  }
   if (ST.screen === 'detail' && key !== 'detail' && !confirmLeaveDetail()) return;
   ST.screen = key;
   Object.keys(SCREEN_IDS).forEach(function (k) {
@@ -1819,7 +1826,17 @@ function showScreen(key) {
 }
 
 function confirmLeaveDetail() {
-  if (!ST.detail || !detailDirty()) return true;
+  if (!ST.detail) return true;
+  /* 登録を確かめている途中（2026-09-23.8）。離れると止めていた印も消える＝確かめる手順を先に伝える
+     （職員IDを受け取った方は入力が未保存に見えないので、ここで聞かないと黙って離れてしまう） */
+  var p = ST.detail.pending;
+  if (p) {
+    return window.confirm('この方が登録されたか、まだ確かめていません。移動すると、この画面の入力は消えます。\n'
+      + '移動した後は、一覧で「再読み込み」を押してこの方がいるか確かめ、いない時だけ「＋ 新規」から入れ直してください'
+      + (p.kind === 'create' && Date.now() < p.at ? '（いないと判断できるのは ' + hhmm(p.at) + ' 以降に読み込んだ時です）' : '')
+      + '。確かめずに入れ直すと、同じ方が二重に登録されることがあります。\n移動しますか？');
+  }
+  if (!detailDirty()) return true;
   return window.confirm('保存していない入力があります。破棄して移動しますか？');
 }
 
@@ -2153,13 +2170,15 @@ function doneLoadList() {
      前の名簿を読んでいることがあるので数えない（読み込み中に loadList を呼んでも素通りするため、回数ではなく
      始めた時刻で見る）。
    ★応答を受け取れなかった時は、画面があきらめた後もサーバーが書き続けることがある（Apps Script の1回の実行は
-     最長6分）。入っていれば読み直した時点で「入っていた」と言えるが、「入っていない」と言えるのは、送ってから
-     6分たった後に始めた読み込みだけ（本人裁定 2026-09-23「6分待ち」）。 */
+     最長6分）。入っていれば読み直した時点で「入っていた」と言えるが、「入っていない」と言えるのは、画面が
+     あきらめてから6分たった後に始めた読み込みだけ（本人裁定 2026-09-23「6分待ち」）。
+     数え始めは送った時刻ではなく、あきらめた時刻。サーバーは送信を受け取り終えてから処理を始めるので、
+     始まるのは送った時刻より遅いことがある（書類は送信だけで最長120秒）。あきらめた時刻より遅くはならない。 */
 var SERVER_MAX_MS = 6 * 60 * 1000;
-/* この時刻以降に始めた読み込みが成功したら確かめられる、という期限 */
-function recheckAfter(e, sentAt) {
+/* この時刻以降に始めた読み込みが成功したら確かめられる、という期限。失敗を受け取ったその場で呼ぶ */
+function recheckAfter(e) {
   var now = Date.now();
-  return isNoAnswer(e) ? Math.max(now, sentAt + SERVER_MAX_MS) : now;
+  return isNoAnswer(e) ? now + SERVER_MAX_MS : now;
 }
 function reloadedSince(t) { return !t || ST.listOkAt >= t; }
 /* 案内に出す時刻（分に切り上げる＝表示の時刻に押せば必ず間に合う） */
@@ -2973,11 +2992,15 @@ function saveDetail() {
   } else {
     body = { creates: [{ tempId: 'new1', fields: cur }], by: cfg.by || '' };
   }
+  var dt = ST.detail;
   ST.busy = true;
+  /* 送っている間はこの画面を離れさせない（showScreen）。離れて別の方を開くと、応答がその方の画面に書き込まれる */
+  dt.saving = true;
   updateDirtyUi();
   setState('dtState', '', '保存中…', 'サーバーに送っています。');
-  /* 送った時刻・送る前にいた職員ID・送った内容を控える（書けたか分からない時に、その場で照合するため） */
-  ST.detail.sent = { at: Date.now(), known: Object.keys(ST.byId), form: cur };
+  /* 送る前にいた職員ID・送った内容を控える（書けたか分からない時に、その場で照合するため）。
+     一覧を一度も読めていない時は、送る前にいた方が分からない＝known を null にして、照合で見分けられないと言う */
+  dt.sent = { known: ST.loaded ? Object.keys(ST.byId) : null, form: cur };
   apiPost('bulkSave', body).then(function (d) {
     applyDetailResult(d, cur, dropped, null);
   }).catch(function (e) {
@@ -3001,7 +3024,8 @@ function saveDetail() {
     setState('dtState', 'err', '保存に失敗しました（' + errText(e) + '）',
       errHint(e) + ' 入力した内容はこの画面に残しています。「保存」をもう一度押すと送り直します。' + errDetail(e),
       'もう一度保存する', function () { saveDetail(); });
-  }).then(function () { ST.busy = false; updateDirtyUi(); }, function () { ST.busy = false; updateDirtyUi(); });
+  }).then(function () { ST.busy = false; dt.saving = false; updateDirtyUi(); },
+          function () { ST.busy = false; dt.saving = false; updateDirtyUi(); });
 }
 
 /* 保存応答を画面へ反映する。partialErr が入っていれば「途中まで保存」の案内にする */
@@ -3103,8 +3127,8 @@ function sameStaff(row, sent, nameOnly) {
 }
 /* 職員IDを受け取れなかった新規の「保存」を止める。e は失敗の応答（期限の決め方に使う） */
 function holdNewDetail(e, title) {
-  var s = ST.detail.sent || { at: Date.now(), known: Object.keys(ST.byId), form: collectForm() };
-  ST.detail.pending = { kind: 'create', at: recheckAfter(e, s.at), known: s.known, form: s.form, sent: sentKey(s.form) };
+  var s = ST.detail.sent || { known: ST.loaded ? Object.keys(ST.byId) : null, form: collectForm() };
+  ST.detail.pending = { kind: 'create', at: recheckAfter(e), known: s.known, form: s.form, sent: sentKey(s.form) };
   updateDirtyUi();
   showDetailPending(title);
 }
@@ -3127,7 +3151,16 @@ function recheckDetail() {
     if (ST.detail !== dt || dt.pending !== p) return;            /* 画面を離れた・もう確かめ済み */
     if (r !== 'ok') { showReloadNg('dtState', r, '一覧を読み込み直して確かめる', recheckDetail); return; }
     if (p.kind === 'id') { settleIdPending(dt, p); return; }
-    var hits = ST.rows.filter(function (row) { return p.known.indexOf(txt(row.id)) < 0 && sameStaff(row, p.sent); });
+    var hits = ST.rows.filter(function (row) { return (!p.known || p.known.indexOf(txt(row.id)) < 0) && sameStaff(row, p.sent); });
+    if (hits.length && !p.known) {
+      /* 送る前に一覧を読めていなかった＝前からいた同姓同名の方と見分けられない。別の方を採ると、
+         「保存」でその方の行を書き換えてしまうので、採らずに止めたままにする */
+      setState('dtState', 'warn', '氏名・入職日が同じ方がいます',
+        '職員ID ' + hits.map(function (x) { return txt(x.id); }).join('・')
+        + ' の方がいます。送る前にこの画面が一覧を読み込めていなかったため、今回登録された方か、前から登録されていた方かを見分けられません。'
+        + '一覧で開いて確かめてください。この画面の「保存」は止めたままにします。');
+      return;
+    }
     if (hits.length === 1) { adoptCreated(dt, p, hits[0]); return; }
     if (hits.length > 1) {
       setState('dtState', 'warn', '同じ方が ' + hits.length + '名 登録されています',
@@ -3412,6 +3445,9 @@ function setFilesBusy(on) {
   $('fdFile').disabled = ST.filesBusy;
   $('fdKind').disabled = ST.filesBusy;
   $('fdTitleIn').disabled = ST.filesBusy;
+  /* 送信中は「閉じる」も止める（Esc と同じ。2026-09-23.8）。閉じて開き直すと送信中の印が外れ、
+     同じ書類をもう一度送れてしまう */
+  $('fdClose').disabled = ST.filesBusy;
   renderFiles();                       /* 送信中は削除も押せなくする（版がずれないように） */
 }
 
@@ -3436,6 +3472,7 @@ function openFiles() {
   if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
 }
 function closeFiles() {
+  if (ST.filesBusy) return;
   var dlg = $('filesDlg');
   bindWinDrop(false);                  /* close が起きない古い端末でも必ず外す */
   if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
@@ -3608,11 +3645,9 @@ function uploadPicked() {
   var cfg = loadCfg();
   /* 書けたか分からなかった時の照合に使う（送る前にあった書類ID・送った名前と種類と大きさ） */
   var known = detailFiles().map(function (x) { return txt(x && x.fid); });
-  var sentAt = 0;
   setFilesBusy(true);
   setState('fdState', '', '送信中…', 'Google ドライブに保存しています。大きいファイルは少し時間がかかります。');
   readAsB64(f).then(function (b64) {
-    sentAt = Date.now();
     return apiPost('uploadFile', {
       id: id, name: txt(f.name).slice(0, 120), mime: fileMime(f), kind: kind,
       title: title, dataB64: b64, by: cfg.by || ''
@@ -3640,7 +3675,7 @@ function uploadPicked() {
     if (mayHaveWritten(e)) {
       /* 送れたか送れていないか分からない（応答を受け取れなかった／サーバーが確定を確かめられなかった）。
          ここで「もう一度」と促すと同じ書類が2つ入る＝この方への追加を止め、書類の一覧を読み直して確かめる（2026-09-23.8） */
-      var hold = ST.fileHold[id] = { at: recheckAfter(e, sentAt || Date.now()), known: known,
+      var hold = ST.fileHold[id] = { at: recheckAfter(e), known: known,
         name: txt(f.name).slice(0, 120), kind: kind, size: Number(f.size) || 0 };
       setState('fdState', 'warn', e.aborted ? '送信に時間がかかっています' : '追加できたか確かめられませんでした' + unsureWhy(e),
         fileHoldText(hold), '書類の一覧を読み込み直す', function () { reloadForFiles(id); });
@@ -4093,7 +4128,7 @@ function matchExisting(fields) {
 }
 
 function runDryRun() {
-  if (!ST.imp) return;
+  if (!ST.imp || ST.impBusy) return;
   if (!ST.loaded) { setState('impState', 'warn', '先に職員データを読み込んでください', '「一覧」を開いて読み込んでから、もう一度試算してください。'); return; }
   /* 取り込みの後は、一覧を読み直すまで試算しない（2026-09-23.8）。古い一覧で試算すると、取り込めた方が
      新規に数えられて二重に登録される（取り込みが成功した直後も、読み直しが済むまでは同じ） */
@@ -4182,7 +4217,9 @@ function runImport() {
   if (!window.confirm('新規 ' + plan.creates.length + '件、更新 ' + plan.updates.length + '件を取り込みます。よろしいですか？')) return;
   setState('impState', '', '取り込み中…', 'サーバーに送っています。');
   $('impRunBtn').disabled = true;
-  var sentAt = Date.now();
+  /* 送っている間は試算も止める。試算は取り込む前の一覧で計画を作り直し、「取り込む」をまた押せるようにする
+     ＝応答を待つ間に同じ新規をもう一度送れてしまう（ST.impHold は応答を受け取ってから立つ） */
+  setImpBusy(true);
   apiPost('bulkSave', payload).then(function (d) {
     var created = Array.isArray(d.created) ? d.created.length : 0;
     var applied = Array.isArray(d.applied) ? d.applied.length : 0;
@@ -4206,7 +4243,7 @@ function runImport() {
       ST.imp.plan = null;
       $('impRunBtn').disabled = true;
       $('impResult').hidden = true;
-      ST.impHold = recheckAfter(e, sentAt);
+      ST.impHold = recheckAfter(e);
       if (unsure) {
         var wait = Date.now() < ST.impHold;
         setState('impState', 'warn', '取り込めたか確かめられませんでした（' + (isNoAnswer(e) ? errText(e) + '。' : '')
@@ -4227,7 +4264,11 @@ function runImport() {
     }
     setState('impState', 'err', '取り込みに失敗しました（' + errText(e) + '）', errHint(e) + ' 試算の内容は残しています。もう一度「取り込む」を押すと送り直します。' + errDetail(e));
     $('impRunBtn').disabled = false;
-  });
+  }).then(function () { setImpBusy(false); }, function () { setImpBusy(false); });
+}
+function setImpBusy(on) {
+  ST.impBusy = !!on;
+  $('impDryBtn').disabled = ST.impBusy;
 }
 /* 試算を止めている理由と、読み直しのボタン（2026-09-23.8） */
 function showImpHold() {
