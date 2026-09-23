@@ -509,7 +509,7 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
       <p><b>2. ステージは上のボタンをタップして進める</b><br>
       問い合わせ → 見学 → 申込 → 入居審査 → 入居決定 → 契約済 → 入居済。日付は自動で刻まれます（編集画面で直せます）。</p>
       <p><b>3. 申込が入ったら「標準タスクを追加」</b><br>
-      ケアマネ・医療機関・薬局・家族・行政・施設現場・いずみ・せせらぎ・厨房の定番のやり取りが一式起票されます。
+      ケアマネ・医療機関・薬局・家族・行政・施設現場・<span data-fac-name="訪問">訪問介護</span>・<span data-fac-name="通所">デイ</span>・厨房の定番のやり取りが一式起票されます。
       タスクの状態は <b>未着手 → 相手待ち → 完了</b> をタップで切替。期限を過ぎた未完了は赤く出ます。</p>
       <p><b>4. 情報が入ったら画面の一番上に「次にやること」が出る</b><br>
       介護度の確定・食事形態・ADL・薬・入居希望日などを入力すると、<b>誰に伝えるべきか</b>が自動で出ます。
@@ -557,6 +557,7 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24.3"></script>
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
@@ -658,6 +659,43 @@ var STAGES = [
    ★読み込み時に一度だけ写す。書き換えないと stageIdx が -1 になり一覧の並びが崩れる。 */
 var STAGE_MIGRATE = { trial: 'applied', coordinating: 'screening' };
 function stageIdx(k) { for (var i = 0; i < STAGES.length; i++) if (STAGES[i][0] === k) return i; return -1; }
+/* ── 事業所名・施設名（2026-09-24）── 分類名・定番タスク・提示・様式の表題に入る名前は、施設情報
+   （facility-profile.json・su-facility.js）から差し込む。定数には {{訪問}}{{通所}}{{施設名}} の形で書き、
+   元の文を控えておいて、施設情報を読めた時点で差し込み直す（定数を使う十数か所はそのまま）。
+   名前が無い時は名前の部分を空にし、残った「（）」と余分な空白を取る＝一般名を重ねない */
+var FAC_TOKEN_RE = /\{\{(施設名|施設|訪問|通所)\}\}/g;
+function facFill(t) {
+  var F = window.SUFacility;
+  FAC_TOKEN_RE.lastIndex = 0;
+  var out = String(t == null ? '' : t).replace(FAC_TOKEN_RE, function (a, k) {
+    return (F && typeof F.nameOf === 'function') ? (F.nameOf(k) || '') : '';
+  });
+  return out.replace(/（）/g, '').replace(/【　/g, '【').replace(/ {2,}/g, ' ').replace(/ +$/g, '');
+}
+var FAC_RAW = null;
+function applyFacilityNames() {
+  if (!FAC_RAW) {
+    FAC_RAW = {
+      cats: CATS.map(function (c) { return c[1]; }),
+      tpl: TEMPLATES.map(function (t) { return t[1]; }),
+      why: NUDGE_RULES.map(function (r) { return r.why; }),
+      grid: []
+    };
+    SH_GRID.forEach(function (row, ri) {
+      if (!row || row.spacer) return;
+      row.forEach(function (cell, ci) { if (cell && typeof cell.txt === 'string') { FAC_TOKEN_RE.lastIndex = 0; if (FAC_TOKEN_RE.test(cell.txt)) FAC_RAW.grid.push([ri, ci, cell.txt]); } });
+    });
+  }
+  CATS.forEach(function (c, i) { c[1] = facFill(FAC_RAW.cats[i]); });
+  TEMPLATES.forEach(function (t, i) { t[1] = facFill(FAC_RAW.tpl[i]); });
+  NUDGE_RULES.forEach(function (r, i) { r.why = facFill(FAC_RAW.why[i]); });
+  FAC_RAW.grid.forEach(function (g) { SH_GRID[g[0]][g[1]].txt = facFill(g[2]); });
+  var els = (typeof document !== 'undefined' && document.querySelectorAll) ? document.querySelectorAll('[data-fac-name]') : [];
+  for (var i = 0; i < els.length; i++) {
+    var n = window.SUFacility && SUFacility.nameOf ? SUFacility.nameOf(els[i].getAttribute('data-fac-name')) : '';
+    if (n) els[i].textContent = n;
+  }
+}
 function stageLabel(k) { var i = stageIdx(k); return i >= 0 ? STAGES[i][1] : (k === 'lost' ? '見送り' : String(k || '')); }
 
 var SOURCES = ['ケアマネ紹介', '病院・連携室', '地域包括', '家族・本人', 'Web', '電話', 'その他'];
@@ -673,8 +711,8 @@ var CATS = [
   ['equip', '福祉用具'],
   ['gov', '行政・保険'],
   ['facility', '施設現場'],
-  ['homecare', '訪問介護 いずみ'],
-  ['daycare', 'デイ せせらぎ'],
+  ['homecare', '訪問介護 {{訪問}}'],
+  ['daycare', 'デイ {{通所}}'],
   ['kitchen', '厨房'],
   ['internal', '施設内（その他）'],
   ['other', 'その他']
@@ -718,9 +756,9 @@ var TEMPLATES = [
   ['facility', '受入当日の担当・時間の共有', 'ask', true, 'contracted'],
   ['kitchen', '食事形態・アレルギー・禁忌の連絡', 'ask', true, 'decided'],
   ['kitchen', '食事開始日・回数の連絡', 'ask', true, 'contracted'],
-  ['homecare', '訪問介護（いずみ）の計画作成依頼', 'ask', true, 'decided'],
+  ['homecare', '訪問介護（{{訪問}}）の計画作成依頼', 'ask', true, 'decided'],
   ['homecare', '訪問の開始日・訪問時間の調整', 'meet', true, 'contracted'],
-  ['daycare', 'デイ（せせらぎ）の利用調整（該当時）', 'ask', false, 'decided'],
+  ['daycare', 'デイ（{{通所}}）の利用調整（該当時）', 'ask', false, 'decided'],
   ['daycare', 'デイの利用開始日・送迎の確認（該当時）', 'meet', false, 'contracted']
 ];
 
@@ -921,9 +959,9 @@ var NUDGE_RULES = [
     cats: ['facility', 'pharmacy'], test: function (p, n) { return assessChanged(p, n, ['medLevel', 'medExists', 'medsRegular', 'medicalCare', 'medMgmtNeed', 'specialMeds']); } },
   { id: 'bpsd', title: '認知症・BPSDの情報が入りました', why: '夜勤帯の見守りと、帰宅願望への対応方針を申し送ります',
     cats: ['facility'], test: function (p, n) { return assessChanged(p, n, ['dementia', 'dementiaExists', 'dementiaNote', 'careHints']) || assessObjChanged(p, n, ['bpsd', 'night']); } },
-  { id: 'svcHome', title: '訪問介護の利用がありました', why: '訪問介護（いずみ）の計画作成と訪問時間の調整を始めます',
+  { id: 'svcHome', title: '訪問介護の利用がありました', why: '訪問介護（{{訪問}}）の計画作成と訪問時間の調整を始めます',
     cats: ['homecare'], test: function (p, n) { return svcOn(n, 'homeCare') && !svcOn(p, 'homeCare'); } },
-  { id: 'svcDay', title: '通所介護の利用がありました', why: 'デイ（せせらぎ）の利用曜日・送迎の調整を始めます',
+  { id: 'svcDay', title: '通所介護の利用がありました', why: 'デイ（{{通所}}）の利用曜日・送迎の調整を始めます',
     cats: ['daycare'], test: function (p, n) { return svcOn(n, 'dayCare') && !svcOn(p, 'dayCare'); } },
   { id: 'stage_decided', title: '入居決定になりました', why: '入居日を全ての連携先へ一斉に伝えます（内部事業所を含む）',
     cats: ['caremgr', 'hospital', 'pharmacy', 'equip', 'gov', 'facility', 'homecare', 'daycare', 'kitchen'],
@@ -3142,7 +3180,7 @@ function renderEdit() {
       '</div></div>';
   });
   h += '</div><div class="frow"><button class="btn sm" id="ctAdd" type="button">＋ 連携先を追加</button>' +
-    '<button class="btn sm" id="ctAddInternal" type="button">＋ 内部事業所（施設現場・いずみ・せせらぎ・厨房）</button></div>' +
+    '<button class="btn sm" id="ctAddInternal" type="button">' + esc(facFill('＋ 内部事業所（施設現場・{{訪問}}・{{通所}}・厨房）')) + '</button></div>' +
     '<p class="note">居宅ケアマネ・医療機関・薬局をここに登録しておくと、入居決定時にそのまま入居者マスタへ引き継がれます。' +
     '内部事業所を登録しておくと、情報が入った時に「誰へ連絡するか」が自動で出ます。</p></div>';
 
@@ -3381,7 +3419,7 @@ function shV(k, cs, rs, o) {
 var SH_SPACER = { spacer: true };
 
 var SH_GRID = [
-  /*  0 */[shT('【ラウレアハレ　ご相談シート】', 5, 1, 'ps-title'), shT('受付日時 :'), shV('a:receivedAt', 4)],
+  /*  0 */[shT('【{{施設名}}　ご相談シート】', 5, 1, 'ps-title'), shT('受付日時 :'), shV('a:receivedAt', 4)],
   /*  1 */[shT('', 7, 1, 'none'), shT('印刷日 :', 1, 1, 'lb none'), shT('', 1, 1, 'none'), shV('x:printDate', 1, 1, { ro: 1, cls: 'none' })],
   /*  2 */[shT('相談者'), shV('a:consulterName', 4), shT('電話番号'), shV('a:consulterTel', 4)],
   /*  3 */SH_SPACER,
@@ -4460,6 +4498,8 @@ $('reloadBtn').addEventListener('click', function () {
 });
 
 (function init() {
+  applyFacilityNames();
+  if (window.SUFacility) SUFacility.onReady(function () { applyFacilityNames(); try { renderAll(); } catch (e) {} });
   if (applyDeviceGuard()) return;
   if (!SU_DATA_READY) {
     toast('データ層を読み込めていません（su-data.js）。同期はできませんが、この端末内では使えます');

@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 実在入居者の氏名を表示する読み取り専用ビュー: キャッシュ残留を防ぐ -->
 <meta http-equiv="Cache-Control" content="no-store">
-<title>通所せせらぎ 利用表</title>
+<title>通所 利用表</title>
 <style>
 /* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
@@ -547,7 +547,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <body>
 
 <header class="hdr">
-  <span class="hdr-title">通所せせらぎ</span>
+  <span class="hdr-title" id="dcrHdrTitle">通所</span>
   <span class="hdr-sub" id="hdrSub">読込中…</span>
   <span class="hdr-sp"></span>
   <span class="sync-state" id="syncState">読込中…</span>
@@ -575,8 +575,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <main class="wrap" id="wrap">
   <!-- 既存タブ（無改変） -->
   <section id="sc-roster" class="scr on" role="tabpanel">
-    <div class="sheet-title">デイサービスせせらぎ 利用登録表（利用時間別）</div>
-    <table class="roster" id="roster" aria-label="通所せせらぎ 利用登録表"></table>
+    <div class="sheet-title" id="dcrSheetTitle">デイサービス 利用登録表（利用時間別）</div>
+    <table class="roster" id="roster" aria-label="通所 利用登録表"></table>
     <div class="hosp-box" id="hospBox" style="display:none">
       <b>〈入院中利用者〉</b> <span class="hosp-names" id="hospNames"></span>
     </div>
@@ -661,6 +661,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24.3"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -940,7 +941,26 @@ let floorSrcCount = { room: 0, plan: 0, none: 0 };   // 階の出典の内訳（
      文字列の途中の数字を拾って【誤った階へ配置】してしまう（2026-07-21 レビュー指摘）。
      アンカーがあれば規約外の表記は 0 に落ち、旧floor→階未設定⚠ の順で安全に退避する。
    ★ラウレアハレは1階/2階のみ。3階以上("301"等)は一致させない＝データ異常として「階未設定」に落とす。 */
+/* ── 事業所名（2026-09-24）── 表題・見出し・合計・注記の事業所名は施設情報（facility-profile.json・su-facility.js）から。
+   名前が無い時は名前の部分を空にする（「通所 利用表」「デイ利用者分は…」）＝一般名を重ねて「通所通所介護」にしない */
+function dcrOfficeName() {
+  return (window.SUFacility && typeof SUFacility.nameOf === 'function') ? SUFacility.nameOf('通所') : '';
+}
+function dcrName(suffix) { const n = dcrOfficeName(); return (n || (suffix === '合計' ? '通所' : '')) + suffix; }
+function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ'); }
+function applyDcrTitles() {
+  const n = dcrOfficeName();
+  document.title = '通所' + n + ' 利用表';
+  const h = document.getElementById('dcrHdrTitle'); if (h) h.textContent = '通所' + n;
+  const st = document.getElementById('dcrSheetTitle'); if (st) st.textContent = 'デイサービス' + n + ' 利用登録表（利用時間別）';
+  const tb = document.getElementById('roster'); if (tb) tb.setAttribute('aria-label', '通所' + n + ' 利用登録表');
+}
+applyDcrTitles();
+if (window.SUFacility) SUFacility.onReady(applyDcrTitles);
+
 function roomToFloor(room) {
+  // ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。既定は１階・２階＝従来どおり
+  if (window.SUFacility && typeof SUFacility.floorOf === 'function') return SUFacility.floorOf(room);
   // 全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる。
   // 寄せないと登録済みなのに「居室未登録」と誤って集計される）
   const s = String(room == null ? '' : room).trim()
@@ -1590,7 +1610,7 @@ function deiCells(tr, p, d, showBath) {
 // 「往診」は誤りのため「訪問診療」に統一。
 const DAYLIST_NOTES = [
   '☆昼食後の薬',
-  '・せせらぎ利用者分は1階へ',
+  '・{{通所名}}利用者分は1階へ',
   'それ以外は2階へ',
   '分けてセットしておきます',
   '☆祝日',
@@ -1667,7 +1687,7 @@ function renderDaylist(ppl) {
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
   // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
   const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
-  const seseSum = sumRow(tbody, 'せせらぎ合計', sese);
+  const seseSum = sumRow(tbody, dcrName('合計'), sese);
   seseSum.classList.add('cut-above');   // ここで表を切る＝上側の締め（太線）
   /* ★2026-08-05 運用指示: せせらぎ合計より下を切り離し、2行ぶんの空間と大見出しを置く。
      1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
@@ -1694,7 +1714,7 @@ function renderDaylist(ppl) {
   note.textContent = '';
   note.style.width = TBL_W.daylist + 'px';
   note.appendChild(el('span', 'nb-h', '備考'));
-  DAYLIST_NOTES.forEach(t => note.appendChild(el('span', 'nb-item', t)));
+  DAYLIST_NOTES.forEach(t => note.appendChild(el('span', 'nb-item', dcrFill(t))));
 }
 
 /* ============================================================================
@@ -1774,7 +1794,7 @@ function renderAllweek(ppl) {
    ★2026-08-20 運用指示: 備考と凡例メッセージは【画面には残す】（.noprint＝紙には出さない）。
      現場が画面で手順を確認できるようにするため。紙面と表の幅は 2026-08-17 の状態のまま。
    ============================================================================ */
-const MED_NOTES = ['☆昼食後の薬', '・せせらぎ利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
+const MED_NOTES = ['☆昼食後の薬', '・{{通所名}}利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
 
 function renderMed(ppl) {
   const table = $('tblMed');
@@ -1796,7 +1816,7 @@ function renderMed(ppl) {
   const note = $('noteMed');
   note.textContent = '';
   note.appendChild(el('div', 'med-list-h', '備考'));
-  MED_NOTES.forEach(t => note.appendChild(el('div', 'note-box', t)));
+  MED_NOTES.forEach(t => note.appendChild(el('div', 'note-box', dcrFill(t))));
 
   // 右側: 昼食薬チェックリスト（このチェック欄自体は印刷されない）。
   // チェック＝その人の lunchMed を全端末へ保存・同期し、表の氏名セルが薄オレンジになる（色は印刷にも出る）。

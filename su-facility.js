@@ -12,7 +12,8 @@
  *   SUFacility.officeName('通所') … 事業所の呼び名（未設定なら「通所介護」などの一般名）
  *   SUFacility.aliases()          … {呼び名: '施設'|'訪問'|'通所'}（名前・正式名・別名）
  *   SUFacility.get()              … 設定全体の写し（書き換えても元は変わらない）
- *   SUFacility.fill(text)         … 文中の {{施設}} {{訪問}} {{通所}} を事業所の呼び名に差し替える（2026-09-24.2）
+ *   SUFacility.fill(text)         … 文中の {{施設}} {{訪問}} {{通所}} を事業所の呼び名に、{{施設名}} を施設名に差し替える（2026-09-24.2・施設名は .3）
+ *   SUFacility.nameOf(kind)       … 事業所の名前そのもの（未設定なら空＝一般名で埋めない）。kind に '施設名' を渡すと施設名
  *   SUFacility.floors()           … [{no, label}]（未設定なら １階・２階 の2階建て＝これまでの並び）
  *   SUFacility.floorOf(room)      … 居室番号の先頭の数字が floors の no ならその階・それ以外は 0（全角数字も読む）
  *   SUFacility.floorLabel(no)     … 階の見出し（１階 など）
@@ -118,9 +119,14 @@
     office: office,
     officeName: function (kind) { return office(kind).name || GENERIC[kind] || ''; },
     fill: function (text) {
-      return String(text == null ? '' : text).replace(/\{\{(施設|訪問|通所)\}\}/g, function (a, k) {
+      return String(text == null ? '' : text).replace(/\{\{(施設名|施設|訪問|通所)\}\}/g, function (a, k) {
+        if (k === '施設名') return (data && data.facilityName) || window.SUFacility.officeName('施設');
         return window.SUFacility.officeName(k);
       });
+    },
+    nameOf: function (kind) {
+      if (kind === '施設名') return (data && data.facilityName) || office('施設').name;
+      return office(kind).name;
     },
     floors: function () {
       return (data && data.floors.length) ? JSON.parse(JSON.stringify(data.floors)) : [{ no: 1, label: '１階' }, { no: 2, label: '２階' }];
