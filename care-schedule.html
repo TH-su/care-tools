@@ -2949,11 +2949,7 @@ function csLooksLikeSampleOnly(residents) {
 const CS_LOCAL_FP_KEY = 'care_schedule_localfp_v1';   // 同期対象外・端末ローカルのみ
 const CS_GENS_KEY     = 'cs_backup_gens_v1';          // 同上（世代バックアップ）
 const CS_GENS_MAX     = 20;                           // 世代数の上限
-/* 世代の合計文字数の上限（UTF-16で約1.2MB＝実データで3世代前後）。2026-09-23 本人裁定で 1,200,000 → 600,000。
-   同じサイトの全アプリが端末の保存容量を分け合っており、実機で容量不足（保存失敗）が起きたため。
-   古い版はサーバーの履歴（care は30世代＋日次30日）から戻す。予算に収まらない時は下の csTrimGens_ の順で
-   古い日の控えから落ちる（最新の日の控えと最新1件は必ず残す）。 */
-const CS_GENS_BUDGET  = 600000;
+const CS_GENS_BUDGET  = 1200000;                      // 世代の合計文字数の上限（UTF-16で約2.4MB）
 /* 「日ごとに1つは必ず残す」保持日数（2026-08-31 本人指示）。この日数の内側にある
    【その日の最初の控え】は、同じ日に何度保存しても最後まで捨てない。容量が本当に足りない時だけ
    古い日から落とす（最新の日の控えと最新1件は必ず残す）。 */
@@ -3676,13 +3672,6 @@ function pruneCareBackups_() {
        （末尾が 'rate_<ts>' で純数値にならない）ため、独立した群として剪定する。
        1件が DB 全体ぶんあり、放置すると localStorage の枠を食い潰して保存自体が落ちる。 */
     pruneTsGroup(LS_KEY + '_backup_rate_');
-    /* 世代の控えも起動時に上限へ詰める（2026-09-23）。詰めるのは保存時と日の最初の控えを積む時だけだったため、
-       上限を下げても、その日の控えが既にある端末は次に保存するまで古い上限のまま容量を占め続けた。 */
-    try {
-      const gens = csReadGens_();
-      const trimmed = csTrimGens_(gens);
-      if (trimmed.length < gens.length) csWriteGens_(trimmed);
-    } catch (_) {}
     /* フィールドの土台（cs_field_base_v1）は全コマの支援内容・区分の写しで、剪定対象が無いと
        容量を押し上げて保存自体を落としかねない（レビュー L-4）。DB より明らかに大きい＝
        壊れているか古い形なので捨てる。土台が無ければ従来動作（自分優先）へ倒れるだけで実害は無い。 */
