@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-23.6';
+  var VERSION = '2026-09-23.7';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -724,7 +724,8 @@
       /* ★2026-09-23.4 条文どおりに訂正。訪問介護（第23条）・通所介護（第98条）は身体的拘束の原則禁止と記録の義務だけで、
          委員会の定めが無い（「委員会」の語が0回）。委員会を求めるのは熊本市有料老人ホーム設置運営指導指針＝施設だけ。 */
       sites: ['facility'],
-      freq: '有料は3か月に1回以上／訪問・通所は定期的',
+      /* ★2026-09-23.7 本人の指示で施設だけの頻度にした。前の文面は RETIRED_DEFAULT_FREQ に控える（サーバーと同じ） */
+      freq: '3か月に1回以上',
       /* ★2026-09-22.5 訂正。指導指針は条例ではないので「第◯条」を持たない（abuse と同じ理由）。
          url は熊本市の案内ページ。指針PDFの直リンクは改定のたびにファイル名が変わり切れるため。 */
       basis: '同指導指針',
@@ -904,6 +905,17 @@
     }
   ];
 
+  /* 既定の開催頻度を直した時の、前の既定の文面（2026-09-23.7）。サーバー（staff-api.gs の
+     RETIRED_DEFAULT_FREQ_）と同じ中身にする（テストで照合）。
+     ★頻度は書き換え可の側だが、画面に入力欄が無く、保存のたびに読み出した文面が書き戻される＝既定を
+       直しても保存済みの本番には前の文面が残る。setCommittees で、送られた頻度がここにある文面と
+       【一字一句同じ】時だけ今の既定へ引き直す（サーバーが前の版のままでも、画面と紙には新しい文面が出る）。
+     ★入れてよいのは前の版の COMMITTEE_DEFAULTS に実際にあった文面だけ（人が書いた頻度を書き換えないため）。 */
+  var RETIRED_DEFAULT_FREQ = {
+    /* 2026-09-23.6 まで。身体的拘束は 2026-09-23.4 から施設だけ＝訪問・通所の頻度は要らなくなった */
+    restraint: ['有料は3か月に1回以上／訪問・通所は定期的']
+  };
+
   var COMMITTEE_ROLES = [['chair', '委員長'], ['officer', '担当者'], ['member', '委員']];
 
   /* 一覧の種別（委員会／計画と訓練／選任）。画面の見出しの区切りに使う。
@@ -949,6 +961,15 @@
   function siteStartedFrom(src, def) {
     if (src && Object.prototype.hasOwnProperty.call(src, 'siteStartedAt')) return normSiteStarted(src.siteStartedAt);
     return def ? normSiteStarted(def.siteStartedAt) : '';
+  }
+
+  /* 記録から開催頻度を取り出す（2026-09-23.7・RETIRED_DEFAULT_FREQ の★）。書き換え可の側なので送られた値を
+     そのまま使うが、既定にある委員会で、前の既定の文面と一字一句同じ時だけ今の既定へ引き直す。 */
+  function freqFrom(src, def) {
+    var f = trim(src && src.freq);
+    if (def && Object.prototype.hasOwnProperty.call(RETIRED_DEFAULT_FREQ, def.code) &&
+        RETIRED_DEFAULT_FREQ[def.code].indexOf(f) >= 0) return trim(def.freq);
+    return f;
   }
 
   /* 知らない種別は 'committee' に寄せる（注意を静かに減らさない安全側。sites の検証と同じ作法） */
@@ -1041,7 +1062,8 @@
         kind: def ? normKind(def.kind) : normKind(it.kind),
         /* ★対象事業所も既定が正（2026-09-23.4）。どの事業所が対象かは条文で決まる。人が足した委員会だけ送られた値 */
         sites: def ? def.sites.slice() : sites,
-        freq: trim(it.freq),
+        /* ★頻度は書き換え可の側。ただし前の既定の文面のままなら今の既定へ引き直す（2026-09-23.7・freqFrom） */
+        freq: freqFrom(it, def),
         /* ★根拠と減算の文面も既定を正とする（2026-09-22.3 レビュー4・サーバーと対称）。
            紙に刷られる根拠はサーバーではなく、ここ（committees()）から出ている。第2版の画面が
            第1版のサーバー（basis を素通しする）に繋がると、書き換えられた根拠がそのまま紙に乗る。 */
@@ -1604,6 +1626,7 @@
     setEnums: setEnums,
     visibleEnum: visibleEnum,
     COMMITTEE_DEFAULTS: COMMITTEE_DEFAULTS,
+    RETIRED_DEFAULT_FREQ: RETIRED_DEFAULT_FREQ,
     COMMITTEE_ROLES: COMMITTEE_ROLES,
     COMMITTEE_KINDS: COMMITTEE_KINDS,
     setCommittees: setCommittees,
