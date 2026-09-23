@@ -165,7 +165,14 @@
     });
     dlg.querySelector('#sur-send').addEventListener('click', function () {
       var msg = dlg.querySelector('#sur-msg');
-      fetch(window.SU_REPORT_ENDPOINT, {
+      var url = endpoint();
+      // https:// 以外（http:・javascript: 等）へは送らない。報告文には端末情報が載るため送信先を絞る
+      if (!/^https:\/\//i.test(url)) {
+        msg.hidden = false;
+        msg.textContent = '送信先が正しく設定されていません。コピーして送ってください。';
+        return;
+      }
+      fetch(url, {
         method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: compose(dlg.querySelector('#sur-sym').value.trim())
       }).then(function (r) {

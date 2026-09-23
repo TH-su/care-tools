@@ -445,13 +445,14 @@
     var dlg = document.getElementById('su-print-dialog');
     if (dlg) dlg.parentNode.removeChild(dlg);
     dlg = document.createElement('dialog'); dlg.id = 'su-print-dialog'; dlg.className = 'su-print-keep';
-    function opts(list, sel, fmt) { return list.map(function (x) { var v = x[0], l = x[1]; return '<option value="' + v + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + l + '</option>'; }).join(''); }
+    function h(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function opts(list, sel, fmt) { return list.map(function (x) { var v = x[0], l = x[1]; return '<option value="' + h(v) + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + h(l) + '</option>'; }).join(''); }
     var papers = (spec.papers || ['A4 portrait', 'A4 landscape', 'A3 portrait', 'A3 landscape']).map(function (k) { return [k, PAPER_LABEL[k] || k]; });
     var mrg = cur.margin.t;
     var canFit = !!(spec.fit && (spec.fit.cssVar || spec.fit.apply));   // apply フックだけのビューも収め方を選べる
     dlg.innerHTML =
       '<form method="dialog" class="su-pd">' +
-      '<h2>印刷の設定 <small>' + (spec.label || name) + '</small></h2>' +
+      '<h2>印刷の設定 <small>' + h(spec.label || name) + '</small></h2>' +
       (allow.indexOf('paper') >= 0 ? '<label>用紙<select name="paper">' + opts(papers, cur.paper) + '</select></label>' : '') +
       (allow.indexOf('margin') >= 0 ? '<label>余白<select name="margin">' + opts(MARGIN_CHOICES, mrg) + '</select></label>' : '') +
       (allow.indexOf('fit') >= 0 && canFit ? '<label>収め方<select name="fit">' + opts(FIT_CHOICES, cur.fit) + '</select></label>' : '') +

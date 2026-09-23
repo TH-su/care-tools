@@ -3652,8 +3652,8 @@ function renderGrid(){
               ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
             </div>
             <div class="gr-btns">
-              <button class="gr-ind" data-rid="${r.id}" title="個別画面を開く">個別</button>
-              <button class="gr-3y"  data-rid="${r.id}" title="過去36ヶ月を表示">3年表示</button>
+              <button class="gr-ind" data-rid="${escapeHtml(r.id)}" title="個別画面を開く">個別</button>
+              <button class="gr-3y"  data-rid="${escapeHtml(r.id)}" title="過去36ヶ月を表示">3年表示</button>
             </div>
           </div>
         </td>`;
@@ -3663,9 +3663,9 @@ function renderGrid(){
         const hlClsArr = (ym===thisYm) ? ['gr-hl'] : [];
         if(rec){
           const diff = diffHtml(r.id, ym, rec.weight);
-          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${rec.id}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
+          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
         } else {
-          cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${r.id}" data-new-ym="${ym}" title="新規入力">—</td>`;
+          cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${escapeHtml(r.id)}" data-new-ym="${ym}" title="新規入力">—</td>`;
         }
       }
       rows += `<tr${evCls}>${nameCell}${cells}</tr>`;
@@ -3812,7 +3812,7 @@ function renderBulkList(){
           ${existBadge}
         </div>
         <div class="bk-act">
-          <button type="button" class="bk-save" data-rid="${r.id}" title="この入居者だけ保存">保存</button>
+          <button type="button" class="bk-save" data-rid="${escapeHtml(r.id)}" title="この入居者だけ保存">保存</button>
         </div>
       </div>`;
   }).join('');
@@ -4549,12 +4549,12 @@ function renderInputExistingList(){
   const rows = list.slice(0, 24).map(r=>{
     const badge = r.measureMode==='chair' ? '<span class="wc-badge">車椅子</span>' : '';
     const editing = r.id===editingRecordId ? ' editing' : '';
-    return `<div class="iex-row${editing}" data-rid="${r.id}">
+    return `<div class="iex-row${editing}" data-rid="${escapeHtml(r.id)}">
       <div class="iex-d"><b>${r.measuredOn || ymFmt(r.yearMonth)}</b> <span class="iex-ym">${ymFmt(r.yearMonth)}</span></div>
       <div class="iex-w"><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b><small>kg</small>${badge}</div>
       <div class="iex-act">
-        <button type="button" class="bn bo bsm" data-iex-edit="${r.id}">編集</button>
-        <button type="button" class="bn br bsm" data-iex-del="${r.id}">削除</button>
+        <button type="button" class="bn bo bsm" data-iex-edit="${escapeHtml(r.id)}">編集</button>
+        <button type="button" class="bn br bsm" data-iex-del="${escapeHtml(r.id)}">削除</button>
       </div>
     </div>`;
   }).join('');
@@ -5210,7 +5210,7 @@ function drawStats(rid){
 
   const bmi = bmiOf(last.weight, resident?.heightCm);
   const bmiCell = bmi!=null
-    ? cell('BMI', bmi.toFixed(1), `${bmiCat(bmi).l} (身長${resident.heightCm}cm)`, '', `color:${bmiCat(bmi).c}`)
+    ? cell('BMI', bmi.toFixed(1), `${bmiCat(bmi).l} (身長${escapeHtml(resident.heightCm)}cm)`, '', `color:${bmiCat(bmi).c}`)
     : cell('BMI', '—', '身長を設定', '', 'color:var(--g5)');
 
   el.innerHTML =
@@ -5356,8 +5356,8 @@ function drawHist(rid){
       <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') || '<span style="color:var(--g5)">—</span>'}</td>
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
-        <button class="bn bo bsm" data-edit-id="${r.id}">編集</button>
-        <button class="bn br bsm" data-del-id="${r.id}">削除</button>
+        <button class="bn bo bsm" data-edit-id="${escapeHtml(r.id)}">編集</button>
+        <button class="bn br bsm" data-del-id="${escapeHtml(r.id)}">削除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -5875,7 +5875,7 @@ function renderCfg(){
     for(const r of arr){
       try{
         const n = DB.records ? DB.records.filter(x => x && x.residentId === r.id).length : 0;
-        const hStr = (r.heightCm ? `身長 ${r.heightCm}cm / ` : '') + (r.wheelchairKg ? `車椅子 ${r.wheelchairKg}kg / ` : '');
+        const hStr = (r.heightCm ? `身長 ${escapeHtml(r.heightCm)}cm / ` : '') + (r.wheelchairKg ? `車椅子 ${escapeHtml(r.wheelchairKg)}kg / ` : '');
         const div = document.createElement('div');
         div.className = r._discharged ? 'rli rli-discharged' : 'rli';
         const dcTag = r._discharged
