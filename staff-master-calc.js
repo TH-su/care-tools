@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-22.6';
+  var VERSION = '2026-09-23.2';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -677,7 +677,16 @@
      ★未実施の影響が「—」の委員会（感染対策・運営懇談会）は penalty を空文字にする。
        空でないことを「減算の要件がある」の判定に使うため（§4）。
      ★6件の値は staff-api.gs の COMMITTEE_DEFAULTS（サーバーのマスタ）と1字一句そろえる。
-       ずれると、サーバーから受け取れた端末と既定で動く端末で画面の文言が変わる。 */
+       ずれると、サーバーから受け取れた端末と既定で動く端末で画面の文言が変わる。
+
+     ── startedAt（制度の対象開始月）について（2026-09-23.2 追加）──
+     ★e-Gov 法令検索の条文・附則を直接読んで確定した正本。1文字も変えない。
+       「確認できず」「定めなし」「規定なし」「要確認」をそれらしい日付で埋めないこと。
+     根拠の条文は staff-api.gs の COMMITTEE_DEFAULTS の頭に書いた注記が正本
+       （居宅基準 第30条の2・第37条の2・第31条3項・第104条2項・第103条・第105条の準用リスト／
+         第139条の2 は短期入所生活介護の条文であること／附則第2条〜第4条の「第91条＝居宅療養管理指導
+         だけが令和9年3月末まで」）。
+     ★sites（対象事業所）は今回1文字も変えていない。 */
 
   var COMMITTEE_DEFAULTS = [
     {
@@ -693,6 +702,10 @@
          どの項かは url から開いて確かめる。 */
       basis: '居宅基準 第37条の2（訪問）／第105条で準用（通所）／熊本市有料老人ホーム設置運営指導指針',
       url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_37_2',
+      /* 令和3年度改正で第37条の2 が新設（令和3年4月1日施行・令和6年3月31日まで経過措置）。
+         減算は令和6年度改定で新設。有料老人ホーム分は熊本市指導指針が根拠で施行日を持たない。 */
+      startedAt: '2024年4月から完全義務・減算／2021年4月（令和3年4月）に義務化・経過措置は2024年3月まで。有料老人ホームは熊本市指針が根拠で時期は確認できず',
+      siteStartedAt: '',
       penalty: '高齢者虐待防止措置未実施減算（利用者全員1%・発見月から3か月は必ず減算）',
       hasPenalty: true,
       purpose: '減算を避けるため（高齢者虐待防止措置未実施減算）',
@@ -712,6 +725,10 @@
          url は熊本市の案内ページ。指針PDFの直リンクは改定のたびにファイル名が変わり切れるため。 */
       basis: '居宅基準／同指導指針',
       url: 'https://www.city.kumamoto.jp/kiji0032329/index.html',
+      /* 居宅基準の訪問介護・通所介護には委員会を置く条文が無い（原則禁止と記録の義務だけ）。
+         3か月に1回以上の開催は熊本市指導指針で、指針は条例ではないため施行日を持たない。 */
+      startedAt: '訪問介護・通所介護は委員会の定めなし（原則禁止と記録の義務のみ）／有料老人ホームは熊本市指針が根拠で時期は確認できず',
+      siteStartedAt: '',
       penalty: '身体的拘束廃止未実施減算',
       hasPenalty: true,
       purpose: '減算を避けるため（身体的拘束廃止未実施減算）',
@@ -730,6 +747,10 @@
          衛生管理）。通所介護の第104条第2項は正しいのでそのまま。指導指針の項番号は落とす。 */
       basis: '居宅基準 第31条3項（訪問）／第104条2項（通所）／同指導指針',
       url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_104',
+      /* 令和3年度改正で第31条3項（訪問）・第104条2項（通所）が新設（令和3年4月1日施行・
+         令和6年3月31日まで経過措置）。感染対策だけを対象にした減算は見つからなかった。 */
+      startedAt: '2024年4月から完全義務／2021年4月（令和3年4月）に義務化・経過措置は2024年3月まで。専用の減算は確認できず',
+      siteStartedAt: '',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（運営基準）',
@@ -749,6 +770,11 @@
       basis: '令和6年度介護報酬改定',
       /* ★対象サービスを確認中のため既定のURLを置かない（下の todo を参照）。 */
       url: '',
+      /* 居宅基準 第139条の2 は【短期入所生活介護】の条文で、訪問介護・通所介護の条文ではない。
+         附則第2条〜第4条の準用対象にも訪問介護（第4〜42条の2）・通所介護（第92〜109条）は無く、
+         経過措置が令和9年3月末まで伸びるのは第91条＝居宅療養管理指導だけ。 */
+      startedAt: '訪問介護・通所介護は規定なし（居宅基準 第139条の2 は短期入所生活介護の条文）／対象となる種別は2024年4月・経過措置は2027年3月まで',
+      siteStartedAt: '',
       penalty: '令和9年4月1日から義務（経過措置は令和9年3月31日まで）',
       hasPenalty: false,
       purpose: '法令上の義務（令和9年4月1日から）',
@@ -775,6 +801,9 @@
       /* ★2026-09-22.5 訂正。指導指針は条例ではないので「第◯条」を持たない（abuse と同じ理由）。 */
       basis: '同指導指針',
       url: 'https://www.city.kumamoto.jp/kiji0032329/index.html',
+      /* 根拠が熊本市有料老人ホーム設置運営指導指針だけで、指針は条例ではないため施行日を持たない。 */
+      startedAt: '確認できず（熊本市有料老人ホーム設置運営指導指針）',
+      siteStartedAt: '',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（熊本市有料老人ホーム設置運営指導指針）',
@@ -790,6 +819,9 @@
       freq: '定期的',
       basis: '通所介護 認知症加算',
       url: 'https://www.mhlw.go.jp/web/t_doc?dataId=82ab4584&dataType=0&pageNo=1',
+      /* 令和6年度改定で通所介護の認知症加算の算定要件に事例検討・技術的指導の会議が加わった。 */
+      startedAt: '2024年4月（令和6年度改定）に通所介護 認知症加算の要件へ加わった',
+      siteStartedAt: '',
       penalty: '加算を算定する場合に必要（現在は未算定＝既定で対象外）',
       hasPenalty: false,
       purpose: '加算の要件（通所介護 認知症加算）',
@@ -807,6 +839,10 @@
       freq: '委員会の設置義務はなし',
       basis: '令和3年度改正（令和6年4月1日から義務）／業務継続計画未策定減算',
       url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_30_2',
+      /* 令和3年度改正で第30条の2 が新設（令和3年4月1日施行・令和6年3月31日まで経過措置）。
+         減算は訪問介護が令和7年4月から。通所介護の減算開始日は一次資料で確定できなかった。 */
+      startedAt: '2024年4月から完全義務／2021年4月（令和3年4月）に策定義務・経過措置は2024年3月まで。減算は訪問介護が2025年4月から。通所介護の減算開始は要確認',
+      siteStartedAt: '',
       penalty: '業務継続計画未策定減算（利用者全員1%・訪問介護と通所介護は令和7年4月1日から適用）',
       hasPenalty: true,
       purpose: '減算を避けるため（業務継続計画未策定減算）',
@@ -824,6 +860,10 @@
       freq: '委員会の設置義務はなし',
       basis: '運営基準／消防法施行規則 第3条（消防計画）',
       url: 'https://laws.e-gov.go.jp/law/336M50000008006#Mp-At_3',
+      /* 通所介護の非常災害対策は居宅基準の制定当初（平成12年4月1日施行）からある。
+         訪問介護には非常災害対策の条文が無い（消防法の防火管理は介護保険の基準とは別の体系）。 */
+      startedAt: '通所介護は2000年4月（基準制定当初）から／訪問介護は居宅基準に条文なし（消防法は別の体系）',
+      siteStartedAt: '',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（訪問介護には計画策定・訓練の定めなし）',
@@ -841,6 +881,9 @@
       freq: '委員会の設置義務はなし',
       basis: '労働安全衛生法（介護保険の集団指導資料には記載なし）',
       url: 'https://laws.e-gov.go.jp/law/347AC0000000057#Mp-At_12_2',
+      /* 労働安全衛生法 第12条の2（衛生推進者等）は平成元年の改正で新設され平成元年4月1日に施行。 */
+      startedAt: '1989年4月（平成元年4月）労働安全衛生法 第12条の2 の新設',
+      siteStartedAt: '',
       penalty: '',
       hasPenalty: false,
       purpose: '法令上の義務（労働安全衛生法）',
@@ -883,6 +926,21 @@
     return def ? normUrl(def.url) : '';
   }
 
+  /* 当事業所が始めた月（2026-09-23.2）。空でよい。書式は縛らない＝現場の書き方
+     （「2024年4月」「R6.4」「令和6年4月ごろ」など）をそのまま通し、長さだけを見る。
+     サーバー（staff-api.gs の normCommitteeSiteStarted_ / COMMITTEE_SITE_STARTED_MAX）と同じ約束。 */
+  var SITE_STARTED_MAX = 40;
+  function normSiteStarted(v) { return trim(v).substring(0, SITE_STARTED_MAX); }
+
+  /* 記録から siteStartedAt を取り出す。★url とまったく同じ作法で「一度も設定されていない」と
+     「人が消した」を分ける（hasOwnProperty でキーの有無を先に見る）。
+     ★ただし siteStartedAt は既定が全件空なので、キーが無い時も結果は空になる。
+       この形で書いておくと、将来どれかに既定を入れた時にそのまま効く。 */
+  function siteStartedFrom(src, def) {
+    if (src && Object.prototype.hasOwnProperty.call(src, 'siteStartedAt')) return normSiteStarted(src.siteStartedAt);
+    return def ? normSiteStarted(def.siteStartedAt) : '';
+  }
+
   /* 知らない種別は 'committee' に寄せる（注意を静かに減らさない安全側。sites の検証と同じ作法） */
   function normKind(v) {
     var k = trim(v);
@@ -917,6 +975,9 @@
       note: trim(d.note),
       /* 要件を確認できるページ（書き換え可）と、要確認の時に何を確かめるか（既定が正）。2026-09-22.5 */
       url: urlFrom(d, defaultCommittee(d.code)),
+      /* 制度の対象開始月（既定が正）と、当事業所が始めた月（書き換え可）。2026-09-23.2 */
+      startedAt: trim(d.startedAt),
+      siteStartedAt: siteStartedFrom(d, defaultCommittee(d.code)),
       todoNote: trim(d.todoNote),
       todo: d.todo === true,
       inactive: d.inactive === true
@@ -985,6 +1046,12 @@
            ただし url のキーごと無い記録（第4版までに保存された committeesJson・第1版のサーバーの
            応答）は「未設定」なので既定のURLを出す＝既存の事業所でも既定が表示される。 */
         url: urlFrom(it, def),
+        /* ★startedAt（制度の対象開始月）は basis・penalty と同じ「既定が正」の側（2026-09-23.2）。
+           いつから義務・減算なのかは制度上の事実なので、画面から書き換えられない。
+           ★siteStartedAt（当事業所が始めた月）は url と同じ「書き換え可」の側。キーごと無い記録
+           （第6版までに保存された committeesJson）は「未設定」として扱う＝上の siteStartedFrom。 */
+        startedAt: def ? trim(def.startedAt) : trim(it.startedAt),
+        siteStartedAt: siteStartedFrom(it, def),
         /* ★todoNote（何を確認すればよいか）は制度の説明なので既定を正とする＝画面から書き換えない。
            古い保存値を読んでも確認事項が消えない（basis・penalty と同じ扱い）。 */
         todoNote: def ? trim(def.todoNote) : trim(it.todoNote),
@@ -1121,6 +1188,9 @@
         drill: trim(c.drill),
         /* 画面が「開く」リンクと「何を確認するか」を出すのに使う（2026-09-22.5） */
         url: trim(c.url),
+        /* 画面と紙の「いつから」（2026-09-23.2）。制度の対象開始月と、当事業所が始めた月 */
+        startedAt: trim(c.startedAt),
+        siteStartedAt: trim(c.siteStartedAt),
         todoNote: trim(c.todoNote),
         todo: c.todo === true,
         inactive: c.inactive === true,

@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-23.1">
+<meta name="stfm-build" content="2026-09-23.2">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -597,8 +597,12 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 .cmt-badge{display:inline-block;margin-top:var(--sp-1);padding:0 var(--sp-1);border-radius:var(--r-sm);
      border:1px solid var(--c-warn);background:var(--c-warn-bg);color:var(--c-warn);
      font-size:var(--fs-2xs);font-weight:var(--fw-bold);line-height:var(--lh-tight)}
-/* 根拠は紙だけ短くする（§5-6）。画面はいつも全文を出す（2026-09-22.2）*/
+/* 根拠は紙だけ短くする（§5-6）。画面はいつも全文を出す（2026-09-22.2）。
+   「いつから」（2026-09-23.2）も同じ class で出し分ける */
 .cmt-basis-print{display:none}
+/* 「いつから」の2段目＝当事業所が始めた月（2026-09-23.2）。制度の時期と読み違えないよう
+   一段落とした字で出す。値が無い行には要素ごと出さない（空欄が並ぶと読みにくいため）*/
+.cmt-sitestarted{display:block;margin-top:var(--sp-1);font-size:var(--fs-2xs);color:var(--c-ink2)}
 /* 「要確認」の時に何を確かめればよいか（2026-09-22.5）。実地指導で説明できるよう紙にも出す
    ＝マスタの補足（.cmt-note.mst）とは別の class にする（あちらは紙で隠している）*/
 .cmt-todonote{display:block;margin-top:var(--sp-1);font-size:var(--fs-2xs);color:var(--c-warn)}
@@ -783,6 +787,9 @@ body.cmt-print{page:cmt}
   body.cmt-print #scr-cmt .cmt-badge{margin-top:0;background:transparent}
   /* 何を確認すればよいか（2026-09-22.5）は紙にも出す。白黒印刷でつぶれないよう文字色は本文と同じに */
   body.cmt-print #scr-cmt .cmt-todonote{margin-top:0;color:var(--c-ink)}
+  /* 「いつから」の2段目＝当事業所が始めた月（2026-09-23.2）も紙に出す。A4横2枚に収めるため、
+     上の注意書きと同じく紙では行間の余白だけ落とす（中身は1文字も減らさない）*/
+  body.cmt-print #scr-cmt .cmt-sitestarted{margin-top:0;color:var(--c-ink)}
   /* マスタの補足は紙では出さない。「現在は対象外」と「通称」は残す
      （人数が0の理由と、職員が普段呼んでいる名前が紙で分かるように）*/
   body.cmt-print #scr-cmt .cmt-note.mst{display:none}
@@ -797,28 +804,36 @@ body.cmt-print{page:cmt}
   body.cmt-print #scr-cmt .cmt-tbl tbody tr.todo{box-shadow:none}
   /* 列幅は決め打ちにする。自動だと名称の列が細くなりすぎて行が高くなる。
      2026-09-22.2 で10列になり、紙を A4横 にしたので配分も横向き用に取り直した
-     （「対象事業所」と「人数」が2行以内に収まる幅を先に確保している）*/
+     （「対象事業所」と「人数」が2行以内に収まる幅を先に確保している）。
+     ★2026-09-23.2 で「いつから」が7列目と8列目の間に入って11列になったので配分を取り直した。
+       A4横2枚を守るのが絶対条件。実測（A4横・余白10mm・当事業所の月を9件すべてに入れた最悪ケース）
+       で配分を決めており、いまの 15% は「当事業所が始めた月」が欄の上限40字でも2枚に収まる幅。
+       「対象事業所」と「人数」は2行以内に収まる幅を今までどおり確保している。合計は100%。
+       ★この列を狭めると当事業所の行が折り返して3枚になる（実測）。触る時は必ず紙で測り直すこと。 */
   body.cmt-print #scr-cmt .cmt-tbl{table-layout:fixed}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(1),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(1){width:16%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(1){width:14%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(2),
   body.cmt-print #scr-cmt .cmt-tbl td:nth-child(2){width:6%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(3),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(3){width:10%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(3){width:8%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(4),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(4){width:8%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(4){width:7%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(5),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(5){width:8%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(5){width:7%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(6),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(6){width:12%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(6){width:9%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(7),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(7){width:7%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(7){width:6%}
+  /* 8列目＝いつから（2026-09-23.2）*/
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(8),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(8){width:14%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(8){width:15%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(9),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(9){width:12%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(9){width:11%}
   body.cmt-print #scr-cmt .cmt-tbl th:nth-child(10),
-  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(10){width:7%}
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(10){width:10%}
+  body.cmt-print #scr-cmt .cmt-tbl th:nth-child(11),
+  body.cmt-print #scr-cmt .cmt-tbl td:nth-child(11){width:7%}
   /* 種別の見出しは1列ぶんの幅しか持たないので、上の決め打ちから外す */
   body.cmt-print #scr-cmt .cmt-tbl tbody tr.kind th:nth-child(1){width:auto}
   /* 2枚目に続く時の体裁。行を途中で割らず、種別の見出しだけが紙の末尾に残らないようにし、
@@ -1124,7 +1139,7 @@ body.cmt-print{page:cmt}
     <!-- 出す列（2026-09-22.6）。狭い画面で横に詰まるので区分ごとに畳める。
          既定は両方オン＝いままでと同じ見え方。紙は切替に関わらず常に10列 -->
     <div class="row cmt-cols" style="margin-top:var(--sp-2)">
-      <span class="chkwrap"><input type="checkbox" id="cmtReqChk" checked><label for="cmtReqChk">要件の列（何のため・開催頻度・研修・訓練・根拠・未実施の影響）</label></span>
+      <span class="chkwrap"><input type="checkbox" id="cmtReqChk" checked><label for="cmtReqChk">要件の列（何のため・開催頻度・研修・訓練・根拠・いつから・未実施の影響）</label></span>
       <span class="chkwrap"><input type="checkbox" id="cmtOrgChk" checked><label for="cmtOrgChk">体制の列（人数・注意）</label></span>
     </div>
     <p class="muted" id="cmtWhy" hidden></p>
@@ -1155,6 +1170,8 @@ body.cmt-print{page:cmt}
           <th scope="col" data-cmtgrp="req">研修</th>
           <th scope="col" data-cmtgrp="req">訓練</th>
           <th scope="col" data-cmtgrp="req">根拠</th>
+          <!-- いつから（2026-09-23.2）。上段＝制度の対象開始月、下段＝当事業所が始めた月 -->
+          <th scope="col" data-cmtgrp="req">いつから</th>
           <th scope="col" data-cmtgrp="req">未実施の影響</th>
           <th scope="col" data-cmtgrp="org">人数</th>
           <th scope="col" data-cmtgrp="org">注意</th>
@@ -1188,6 +1205,20 @@ body.cmt-print{page:cmt}
         </div>
         <p class="ferr" id="cmtUrlErr" hidden></p>
         <p class="fnote" id="cmtUrlNote" hidden></p>
+      </div>
+      <!-- 当事業所が始めた月（2026-09-23.2）。url とまったく同じ作法（書き換え可・空でよい）。
+           保存は既存の cmtSaveState の経路をそのまま使う。紙には出さない（.cmt-noprint）-->
+      <div class="fld cmt-url cmt-noprint">
+        <label for="cmtSiteStarted">当事業所が始めた月</label>
+        <div class="inrow">
+          <input type="text" id="cmtSiteStarted" autocomplete="off" spellcheck="false"
+                 maxlength="40" placeholder="2024年4月 / R6.4 など"
+                 aria-describedby="cmtSiteStartedErr cmtSiteStartedHelp cmtSiteStartedNote">
+          <button type="button" class="btn pri" id="cmtSiteStartedSave" hidden>保存</button>
+        </div>
+        <p class="ferr" id="cmtSiteStartedErr" hidden></p>
+        <p class="fnote" id="cmtSiteStartedHelp">分かる範囲で。空でも構いません</p>
+        <p class="fnote" id="cmtSiteStartedNote" hidden></p>
       </div>
       <div class="cmt-org" id="cmtOrg"></div>
       <div class="row" style="margin-top:var(--sp-2)">
@@ -1229,7 +1260,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.1</p>
+    <p class="muted">版 2026-09-23.2</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1384,18 +1415,18 @@ body.cmt-print{page:cmt}
 <script src="su-errors.js?v=2026-09-13"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
-<script src="staff-master-calc.js?v=2026-09-22.6"></script>
+<script src="staff-master-calc.js?v=2026-09-23.2"></script>
 <script>
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-23.1
+   職員マスタ 2026-09-23.2
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-23.1';
+var BUILD = '2026-09-23.2';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -4441,6 +4472,14 @@ var CMT_KIND_MAIN = 'committee';  /* これ以外は委員会ではない（委�
 var CMT_ROLE_OFFICER = 'officer'; /* 委員会でない体制に置ける唯一の役割 */
 var CMT_ROLE_MEMBER = 'member';   /* 委員会に追加する時の既定の役割 */
 var CMT_BASIS_PRINT_MAX = 24;     /* 紙だけ根拠を短くする字数（§5-6。画面は全文のまま） */
+/* 紙だけ「いつから」を短くする字数（2026-09-23.2）。根拠と同じ作法・別の定数にして個別に詰められる
+   ようにする（A4横2枚を守るため。画面はいつも全文）。
+   ★30 で実測したら3枚になったので 20 まで詰めた（当事業所の月を9件すべてに入れた最悪ケース）。
+     この値を戻す時は必ず紙で Pages を測り直すこと。 */
+var CMT_STARTED_PRINT_MAX = 20;
+var CMT_SITE_STARTED_MAX = 40;    /* 当事業所が始めた月。サーバー（COMMITTEE_SITE_STARTED_MAX）と同じ */
+var CMT_SITE_STARTED_LONG_MSG = '当事業所が始めた月が長すぎます（上限 ' + CMT_SITE_STARTED_MAX + '字）';
+var CMT_SITE_STARTED_LABEL = '当事業所: ';   /* 表と紙の2段目の頭に付ける言い方 */
 var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談会だけ（本人裁定 2026-09-22） */
 /* 要件を確認できるページ（2026-09-22.5）。サーバー（COMMITTEE_URL_RE / COMMITTEE_URL_MAX）・
    算出モジュールと1字一句そろえる。画面はこの値をリンクにするので、通すのは http/https だけ。 */
@@ -4514,17 +4553,22 @@ function cmtAddRolePairs(code) {
   if (cmtIsCommittee(code)) return cmtRolePairs();
   return cmtRolePairs().filter(function (p) { return p[0] === CMT_ROLE_OFFICER; });
 }
-/* 紙だけの根拠の短縮（§5-6）。画面はいつも全文。切れたことが分かるよう「ほか」「…」を残す */
-function cmtBasisShort(v) {
+/* 紙だけの短縮（§5-6）。画面はいつも全文。切れたことが分かるよう「ほか」「…」を残す。
+   ★2026-09-23.2 で字数を引数にした（根拠と「いつから」で別々に詰められるようにするため）。
+     根拠の振る舞いは 1 ミリも変えていない＝cmtBasisShort は今までどおり CMT_BASIS_PRINT_MAX で呼ぶ */
+function cmtTextShort(v, max) {
   var t = txt(v), cut = -1;
-  if (t.length <= CMT_BASIS_PRINT_MAX) return t;
+  if (t.length <= max) return t;
   ['／', '（'].forEach(function (sep) {
     var i = t.indexOf(sep);
-    if (i > 0 && i <= CMT_BASIS_PRINT_MAX && (cut < 0 || i < cut)) cut = i;
+    if (i > 0 && i <= max && (cut < 0 || i < cut)) cut = i;
   });
   if (cut > 0) return t.slice(0, cut) + ' ほか';
-  return t.slice(0, CMT_BASIS_PRINT_MAX) + '…';
+  return t.slice(0, max) + '…';
 }
+function cmtBasisShort(v) { return cmtTextShort(v, CMT_BASIS_PRINT_MAX); }
+/* 制度の対象開始月の短縮（2026-09-23.2）。紙だけ。画面は全文 */
+function cmtStartedShort(v) { return cmtTextShort(v, CMT_STARTED_PRINT_MAX); }
 function cmtRoleLabel(code) {
   var c = txt(code), out = '';
   cmtRolePairs().forEach(function (p) { if (!out && p[0] === c) out = p[1]; });
@@ -5162,6 +5206,24 @@ function cmtTableRow(x) {
     basisCell.appendChild(h('span', { cls: 'cmt-basis-screen', text: basis }));
     basisCell.appendChild(h('span', { cls: 'cmt-basis-print', text: shortBasis }));
   }
+  /* いつから（2026-09-23.2）。上段＝制度の対象開始月（見出し語は付けない）、
+     下段＝当事業所が始めた月。下段は値がある時だけ出す（無い行に「—」を並べない＝読みにくいため）。
+     紙の短縮は根拠と同じ作法で、出し分けは CSS だけで行う（画面の表示は変えない） */
+  var started = txt(x.startedAt), shortStarted = cmtStartedShort(started);
+  var startedCell = h('td');
+  if (started) {
+    if (shortStarted === started) {
+      startedCell.appendChild(h('span', { text: started }));
+    } else {
+      startedCell.appendChild(h('span', { cls: 'cmt-basis-screen', text: started }));
+      startedCell.appendChild(h('span', { cls: 'cmt-basis-print', text: shortStarted }));
+    }
+  } else {
+    startedCell.appendChild(h('span', { text: '—' }));
+  }
+  if (txt(x.siteStartedAt)) {
+    startedCell.appendChild(h('span', { cls: 'cmt-sitestarted', text: CMT_SITE_STARTED_LABEL + txt(x.siteStartedAt) }));
+  }
   var cls = [];
   if (x.inactive) cls.push('off');
   if (x.todo) cls.push('todo');
@@ -5174,6 +5236,7 @@ function cmtTableRow(x) {
     ['req', h('td', { text: txt(x.training) || '—' })],
     ['req', h('td', { text: txt(x.drill) || '—' })],
     ['req', basisCell],
+    ['req', startedCell],
     ['req', h('td', { text: txt(x.penalty) || '—' })],
     ['org', h('td', { cls: 'n', text: cmtCountText(x) })],
     ['org', warn]
@@ -5271,6 +5334,7 @@ function renderCmtOrg() {
   var why = cmtWhyNoEdit();
   if (wy) { wy.textContent = why; wy.hidden = !why; }
   renderCmtUrl();                  /* 要件を確認できるページ（2026-09-22.5）*/
+  renderCmtSiteStarted();          /* 当事業所が始めた月（2026-09-23.2）*/
 }
 /* ── 要件を確認できるページ（2026-09-22.5）──────────────────
    いま開いている委員会の url を出し、書き換えて保存できるようにする。
@@ -5358,6 +5422,66 @@ function cmtMasterWithUrl(code, url) {
   });
 }
 
+/* ── 当事業所が始めた月（2026-09-23.2）────────────────────────
+   制度の対象開始月（startedAt）は既定から引き直す側なので画面から書き換えない。ここで扱うのは
+   「当事業所が実際に始めた月」だけ＝url とまったく同じ扱い（書き換え可・空でよい・書式は縛らない）。
+   保存は既存の cmtSaveState の経路をそのまま使う（新しい保存口を作らない）。 */
+var cmtSsCode = '';         /* いま欄に出している委員会 */
+var cmtSsSaved = '';        /* その委員会のマスタの値（＝保存済み。手つかずかの判定に使う）*/
+function renderCmtSiteStarted() {
+  var inp = $('cmtSiteStarted');
+  if (!inp) return;
+  var code = cmtSelected();
+  var cur = txt((cmtDefOf(code) || {}).siteStartedAt);
+  /* 入力中の値は消さない。委員会が変わった時と、まだ手を付けていない時だけ入れ直す（url と同じ）*/
+  if (code !== cmtSsCode || txt(inp.value) === cmtSsSaved) inp.value = cur;
+  cmtSsCode = code;
+  cmtSsSaved = cur;
+  inp.disabled = !cmtCanEdit() || ST.cmtBusy;
+  inp.setAttribute('aria-label', '当事業所が始めた月 — ' + (cmtLabelOf(code) || txt(code)));
+  syncCmtSiteStarted();
+}
+/* 欄の中身に合わせて「保存」と差し戻し文を出し入れする */
+function syncCmtSiteStarted() {
+  var inp = $('cmtSiteStarted');
+  if (!inp) return;
+  var v = txt(inp.value).trim();
+  var ng = (v.length > CMT_SITE_STARTED_MAX) ? CMT_SITE_STARTED_LONG_MSG : '';
+  var err = $('cmtSiteStartedErr');
+  err.textContent = ng;
+  err.hidden = !ng;
+  if (ng) inp.setAttribute('aria-invalid', 'true'); else inp.removeAttribute('aria-invalid');
+  /* 「保存」は保存済みの値と違う時だけ（空にする操作も「違う」に含まれる）*/
+  var dirty = (v !== cmtSsSaved);
+  var sv = $('cmtSiteStartedSave');
+  sv.hidden = !dirty;
+  sv.disabled = inp.disabled || !!ng;
+  var nt = $('cmtSiteStartedNote');
+  nt.textContent = dirty ? 'まだ保存していません' : '';
+  nt.hidden = !dirty;
+}
+function onCmtSiteStartedSave() {
+  var inp = $('cmtSiteStarted'), b = $('cmtSiteStartedSave');
+  if (!inp || inp.disabled || !b || b.disabled || ST.cmtBusy) return;
+  var v = txt(inp.value).trim();
+  if (v.length > CMT_SITE_STARTED_MAX) { setState('cmtState', 'warn', '保存できません', CMT_SITE_STARTED_LONG_MSG); return; }
+  var code = cmtSsCode;
+  if (!code) return;
+  cmtSaveMaster(cmtMasterWithSiteStarted(code, v),
+    '「' + cmtLabelOf(code) + '」の当事業所が始めた月を保存しました');
+}
+/* いまのマスタの写しに、1件だけ siteStartedAt を差し替えたものを作る（cmtMasterWithUrl と同じ）*/
+function cmtMasterWithSiteStarted(code, v) {
+  var c0 = txt(code);
+  return cmtMaster().map(function (c) {
+    if (txt(c && c.code) !== c0) return c;
+    var o = {}, k;
+    for (k in c) { if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k]; }
+    o.siteStartedAt = txt(v);
+    return o;
+  });
+}
+
 function cmtTier(label, cards) {
   var wrap = h('div', { cls: 'cmt-cards' });
   if (cards.length) cards.forEach(function (c) { wrap.appendChild(c); });
@@ -5417,7 +5541,7 @@ function renderCmtPrint(stats) {
 
 function printCmt() {
   if ($('cmtPrintBtn').disabled) return;
-  /* ★紙は常に10列（2026-09-22.6）。画面で列を畳んでいても、刷る直前に全列へ戻して組み直し、
+  /* ★紙は常に全列（2026-09-22.6。2026-09-23.2 から11列）。画面で列を畳んでいても、刷る直前に全列へ戻して組み直し、
      刷り終わったら画面の設定へ戻す＝列の切替を紙に1ミリも持ち込まない */
   var keepReq = ST.cmtReq, keepOrg = ST.cmtOrg;
   var restoreCols = (!keepReq || !keepOrg);
@@ -5905,6 +6029,9 @@ function bindEvents() {
   $('cmtUrl').addEventListener('input', syncCmtUrl);
   $('cmtUrlReset').addEventListener('click', onCmtUrlReset);
   $('cmtUrlSave').addEventListener('click', onCmtUrlSave);
+  /* 当事業所が始めた月（2026-09-23.2）。打つたびに「保存」を出し入れする（url と同じ作法）*/
+  $('cmtSiteStarted').addEventListener('input', syncCmtSiteStarted);
+  $('cmtSiteStartedSave').addEventListener('click', onCmtSiteStartedSave);
   $('cmtExtBtn').addEventListener('click', openCmtExt);
   $('cmtAddClose').addEventListener('click', closeCmtAdd);
   $('cmtAddDo').addEventListener('click', doCmtAdd);
