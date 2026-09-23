@@ -1021,7 +1021,7 @@ body.cmt-print{page:cmt}
          2026-09-22.2: 既定が9件になり1行に入らないので、委員会以外の種別は下の #cmtMore に畳む -->
     <div class="s12 cmts" id="cmtBox" role="group" aria-labelledby="lbl_cmts">
       <span class="lbl" id="lbl_cmts">所属委員会</span>
-      <button type="button" class="cmt-more" id="cmtMoreBtn" aria-expanded="false" aria-controls="cmtMore" hidden></button>
+      <button type="button" class="cmt-more" id="cmtMoreBtn" aria-expanded="false" aria-controls="cmtMore" hidden>＋ ほかの種別</button>
       <span class="fnote" id="cmtDtWhy" hidden></span>
     </div>
     <div class="s12 cmts" id="cmtMore" role="group" aria-labelledby="lbl_cmtMore" hidden>
@@ -1137,7 +1137,7 @@ body.cmt-print{page:cmt}
       <button type="button" class="btn" id="cmtPrintBtn" disabled>印刷（A4横）</button>
     </div>
     <!-- 出す列（2026-09-22.6）。狭い画面で横に詰まるので区分ごとに畳める。
-         既定は両方オン＝いままでと同じ見え方。紙は切替に関わらず常に10列 -->
+         既定は両方オン＝いままでと同じ見え方。紙は切替に関わらず常に全列（2026-09-23.2 から11列） -->
     <div class="row cmt-cols" style="margin-top:var(--sp-2)">
       <span class="chkwrap"><input type="checkbox" id="cmtReqChk" checked><label for="cmtReqChk">要件の列（何のため・開催頻度・研修・訓練・根拠・いつから・未実施の影響）</label></span>
       <span class="chkwrap"><input type="checkbox" id="cmtOrgChk" checked><label for="cmtOrgChk">体制の列（人数・注意）</label></span>
@@ -4892,7 +4892,9 @@ function syncCmtMore() {
   more.hidden = !(n > 0 && open);
   btn.hidden = (n === 0) || forced;
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  btn.textContent = (open ? '－ ' : '＋ ') + cmtMoreLabel();
+  /* ★名前の無いボタンにしない（2026-09-23 hig-audit critical）。種別名は算出モジュールが正本なので
+     画面には持たないが、取れない時（古いモジュール）でも読み上げ名が空にならないよう既定の語へ落とす */
+  btn.textContent = (open ? '－ ' : '＋ ') + (cmtMoreLabel() || 'ほかの種別');
 }
 function toggleCmtMore() {
   cmtMoreOpen = !cmtMoreOpen;
