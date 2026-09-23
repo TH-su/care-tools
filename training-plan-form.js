@@ -198,7 +198,7 @@
       {a1:"A60", r:59, c:0, rs:2, cs:31, v:"{{changes}}", field:"changes", pt:9, bold:false, h:1, vert:0, wrap:true, indent:0, bL:1, bR:1, bT:0, bB:1},
       {a1:"AF60", r:59, c:31, rs:2, cs:31, v:"{{issues}}", field:"issues", pt:9, bold:false, h:1, vert:0, wrap:true, indent:0, bL:1, bR:1, bT:0, bB:1},
       {a1:"A62", r:61, c:0, rs:1, cs:62, v:"※個別機能訓練の実施結果等をふまえ、個別機能訓練の目標の見直しや訓練項目の変更等を行った場合は、個別機能訓練計画書の再作成又は更新等を行い、個別機能訓練の目標・訓練項目等に係る最新の情報が把握できるようにすること。初回作成時にはⅢについては記載不要である。", pt:8, bold:false, h:1, vert:0, wrap:true, indent:0, bL:0, bR:0, bT:1, bB:0},
-      {a1:"A64", r:63, c:0, rs:2, cs:32, v:"デイサービスセンター　せせらぎ　事業所No.4370112437\n熊本市東区八反田3-23-13　電話096-285-4020　", pt:10, bold:false, h:2, vert:1, wrap:true, indent:0, bL:1, bR:1, bT:1, bB:1},
+      {a1:"A64", r:63, c:0, rs:2, cs:32, v:"{{facility.dayFooter}}", pt:10, bold:false, h:2, vert:1, wrap:true, indent:0, bL:1, bR:1, bT:1, bB:1},
       {a1:"AG64", r:63, c:32, rs:2, cs:30, v:"　　　説明日：　{{explainedDateWareki}}　\n　　　説明者：　{{explainer}}", field:"explained", pt:10, bold:false, h:1, vert:1, wrap:true, indent:0, bL:1, bR:1, bT:1, bB:1}
     ]
   };
@@ -280,6 +280,18 @@
     return (cur == null) ? '' : String(cur);
   }
 
+  /* 施設情報（2026-09-24）: 様式の下端の事業所名・番号・住所・電話は facility-profile.json（su-facility.js）から組む。
+     原本の文字並び（全角空白・改行・末尾の全角空白）は変えない。設定を読めていなければ空（印刷側で止める） */
+  function facilityText(key) {
+    var F = root.SUFacility;
+    if (!F || !F.ready()) return '';
+    if (key === 'dayFooter') {
+      var o = F.office('通所');
+      if (!o.formalName && !o.officeNo) return '';
+      return o.formalName + '　事業所No.' + o.officeNo + '\n' + o.address + '　電話' + o.tel + '　';
+    }
+    return '';
+  }
   function resolvePh(name, plan) {
     if (PH_TEXT[name]) return pick(plan, PH_TEXT[name]);
     if (PH_WAREKI[name]) return toWareki(pick(plan, PH_WAREKI[name]));
@@ -288,6 +300,7 @@
       return parseIso(raw) ? toWareki(raw) : raw;
     }
     if (name === 'birthWarekiYMD') return toWareki(pick(plan, 'basic.birthDate'));
+    if (name.indexOf('facility.') === 0) return facilityText(name.slice(9));
     var m = /^programs\[(\d+)\]\.([A-Za-z]+)$/.exec(name);
     if (m && PROG_KEYS[m[2]]) return pick(plan, 'programs.' + m[1] + '.' + m[2]);
     return '';                                    /* 未知のプレースホルダは空にする（生の {{...}} を紙に出さない） */

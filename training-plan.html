@@ -894,7 +894,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-data.js"></script>
 <script src="su-data-gas.js"></script>
-<script src="training-plan-form.js"></script>
+<script src="su-facility.js?v=2026-09-24"></script>
+<script src="training-plan-form.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    TP_PURE_MODULE — 純関数だけの層（DOM・通信・localStorage に触れない）
@@ -7114,6 +7115,12 @@ function doPrint() {
   if (!FORM_READY) { toast('印刷様式を読み込めていないため印刷できません'); return; }
   var host = $('sheetHost');
   if (!host.firstChild) { toast('印刷する内容がありません'); return; }
+  /* 様式の下端（事業所名・番号・住所・電話）は施設情報から組む。読めていない時に組んだシートを紙に出さない */
+  var dayOffice = (window.SUFacility && SUFacility.ready()) ? SUFacility.office('通所') : null;
+  if (!dayOffice || !dayOffice.officeNo || host.textContent.indexOf(dayOffice.officeNo) < 0) {
+    toast('施設情報（事業所名・事業所番号）を読み込めていないため印刷できません。画面を開き直してから印刷してください');
+    return;
+  }
   var keepZoom = host.style.zoom;
   host.style.zoom = '';
   var st = document.createElement('style');

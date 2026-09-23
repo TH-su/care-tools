@@ -229,6 +229,7 @@ main {
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24"></script>
 <script>
 (function(){
 'use strict';
@@ -275,7 +276,7 @@ var SYSTEMS = [
   /* 個別機能訓練計画書（2026-09-03）: 疾患名・治療経過を含む計画書を、入居調整と同じ理由で
      get/put/ping しか持たない専用GASに分け、合言葉も別にした（所有アプリは training-plan.html・キー tp_cfg）。 */
   { id:'tp', title:'個別機能訓練計画書',
-    apps:'個別機能訓練計画書（せせらぎの計画書。専用の合言葉を使います）',
+    apps:'個別機能訓練計画書（{{通所}}の計画書。専用の合言葉を使います）',
     shape:'obj', key:'tp_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_EXEC },
 
   { id:'master', title:'入居者マスタ・フェイスシート',
@@ -489,6 +490,13 @@ function setRes(node, kind, msg){
   node.textContent=(kind==='ok'?'✓ ':kind==='ng'?'⚠ ':'')+msg;
 }
 
+/* 説明文の {{施設}}{{訪問}}{{通所}} を事業所の呼び名に差し替える（facility-profile.json・su-facility.js）。
+   読めない時は一般名（通所介護 など） */
+function facText(t) {
+  return String(t == null ? '' : t).replace(/\{\{(施設|訪問|通所)\}\}/g, function (a, k) {
+    return (window.SUFacility && SUFacility.officeName) ? SUFacility.officeName(k) : k;
+  });
+}
 function buildCard(sys, onSaved){
   var cur=readCur(sys);
   var cd=el('div','cd');
@@ -496,7 +504,7 @@ function buildCard(sys, onSaved){
   var h=el('h2'); h.appendChild(document.createTextNode(sys.title));
   var badge=el('span','badge'); h.appendChild(badge);
   cd.appendChild(h);
-  cd.appendChild(el('p','apps',sys.apps));
+  cd.appendChild(el('p','apps',facText(sys.apps)));
   if(sys.liveWriteback) cd.appendChild(el('p','wb','⚠ '+sys.liveWriteback+'。先にそのタブを閉じてください。'));
 
   var urlIn=input('u_'+sys.id,'url','https://script.google.com/macros/…/exec');

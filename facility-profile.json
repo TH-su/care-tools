@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "_note": "施設の公開情報だけを置く（利用者・職員の情報は書かない）。画面は su-facility.js から読む。外販の時は配る先ごとにこのファイルだけを差し替える。事業所の kind（施設/訪問/通所）は変えない。",
+  "corpName": "シルバーユニックス株式会社",
+  "facilityName": "ラウレアハレ",
+  "offices": [
+    { "kind": "施設", "type": "住宅型有料老人ホーム", "name": "ラウレアハレ", "formalName": "ラウレアハレ", "officeNo": "", "address": "", "tel": "096-285-4811", "aliases": [] },
+    { "kind": "訪問", "type": "訪問介護", "name": "いずみ", "formalName": "訪問介護 いずみ", "officeNo": "4370111546", "address": "", "tel": "", "aliases": [] },
+    { "kind": "通所", "type": "通所介護", "name": "せせらぎ", "formalName": "デイサービスセンター　せせらぎ", "officeNo": "4370112437", "address": "熊本市東区八反田3-23-13", "tel": "096-285-4020", "aliases": [] }
+  ]
+}

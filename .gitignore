@@ -54,6 +54,9 @@
 # daycare-roster.html が読み込む。M2 以降（resident-master・shift-app・work-schedule）も同じ1本を共有する。
 !/su-print.js
 !/su-errors.js
+# 施設情報（2026-09-24・本人承認の設計＝公開の設定ファイル1つに集める）。載せるのは施設の公開情報だけ
+!/su-facility.js
+!/facility-profile.json
 !/su-print.css
 !/training-plan.html
 !/training-plan-form.js
