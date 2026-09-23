@@ -1563,6 +1563,115 @@ function goalHasPrefix(v, prefix) {
   return !t || t.indexOf(s_(prefix)) === 0;
 }
 
+/* ── 外部AIへ送る前の氏名の伏せ字（2026-09-23） ──
+   AIへ送る入力（前の期の計画・本人の様子）は氏名・生年月日・病名の欄を含まない設計（D5）だが、自由記入の欄
+   （希望・メモ・ADLの様子・備考など）に人の名前が書かれることがある。送る直前に名簿の氏名・かなを記号へ置き換え、
+   返事の記号は【送る時に置き換えた書き方】へ戻す（無ければ名簿の表記）。
+   ・ご本人: フルネーム→〔ご本人〕／姓→〔ご本人・姓〕／名→〔ご本人・名〕／かな→〔ご本人・かな〕／
+             かなの姓・名→〔ご本人・姓かな〕〔ご本人・名かな〕（どれも2文字以上）
+   ・他の利用者: フルネーム→〔利用者N〕／かな→〔利用者N・かな〕。姓だけは伏せない（一般の語を壊さないため）
+   ・異体字（髙→高 など foldName の表）と、かなのカタカナ書きも同じ記号にする
+   ・姓・名だけの置き換えは、直後が 市 町 村 郡 県 区 の時はしない（菊池市・山鹿市のような地名を壊さない）
+   ・1文字の語は伏せない。長い語から先に置き換える（短い語が長い名前の一部を先に食わない）
+   ★置き換えられるのは名簿の氏名・かなだけ。愛称・家族や職員の名前・ローマ字は置き換えられない（確認画面で伝える） */
+var AI_MASK_PART_STOP = '市町村郡県区';
+function aiToKatakana(v) {
+  return s_(v).replace(/[ぁ-ゖ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0x60); });
+}
+function aiMaskTerms(roster, subjectId, subjectExtra) {
+  var list = Object.prototype.toString.call(roster) === '[object Array]' ? roster : [];
+  var out = [], seen = {}, n = 0;
+  var WS = /[\s　]+/;
+  function trim(v) { return s_(v).replace(/^[\s　]+|[\s　]+$/g, ''); }
+  function add(term, token, orig, part) {
+    term = s_(term);
+    if (term.length < 2 || seen[term]) return;
+    seen[term] = 1;
+    out.push({ term: term, token: token, orig: s_(orig), part: !!part });
+  }
+  function joins(parts) { return [parts.join(''), parts.join(' '), parts.join('　')]; }
+  function addRow(row, tok, isSubject) {
+    var nm = trim(row.name), kn = trim(row.kana);
+    var parts = nm ? nm.split(WS) : [], fparts = parts.map(foldName);
+    var kparts = kn ? kn.split(WS) : [], kkparts = kparts.map(aiToKatakana);
+    [parts, fparts].forEach(function (P) { if (P.length) joins(P).forEach(function (v) { add(v, tok, nm); }); });
+    if (nm) add(nm, tok, nm);
+    [kparts, kkparts].forEach(function (P) { if (P.length) joins(P).forEach(function (v) { add(v, tok.replace('〕', '・かな〕'), kn); }); });
+    if (!isSubject) return;
+    if (parts.length >= 2) {
+      [parts[0], fparts[0]].forEach(function (v) { add(v, '〔ご本人・姓〕', parts[0], true); });
+      [parts.slice(1).join(''), fparts.slice(1).join('')].forEach(function (v) { add(v, '〔ご本人・名〕', parts.slice(1).join(''), true); });
+    }
+    if (kparts.length >= 2) {
+      [kparts[0], kkparts[0]].forEach(function (v) { add(v, '〔ご本人・姓かな〕', kparts[0], true); });
+      [kparts.slice(1).join(''), kkparts.slice(1).join('')].forEach(function (v) { add(v, '〔ご本人・名かな〕', kparts.slice(1).join(''), true); });
+    }
+  }
+  var rows = list.filter(function (r) { return r && typeof r === 'object'; });
+  var subj = null, i;
+  for (i = 0; i < rows.length; i++) if (subjectId && s_(rows[i].masterId) === s_(subjectId)) { subj = rows[i]; break; }
+  /* 名簿に無いご本人（退去後・名簿を読めない端末）も、計画書が持つ氏名・かなで伏せる */
+  var extra = subjectExtra && typeof subjectExtra === 'object' ? subjectExtra : null;
+  if (subj) addRow(subj, '〔ご本人〕', true);
+  if (extra && (trim(extra.name) || trim(extra.kana))) addRow(extra, '〔ご本人〕', true);
+  rows.forEach(function (r) {
+    if (r === subj) return;
+    if (!trim(r.name) && !trim(r.kana)) return;
+    n++;
+    addRow(r, '〔利用者' + n + '〕', false);
+  });
+  out.sort(function (a, b) { return b.term.length - a.term.length; });
+  return out;
+}
+function aiHasSubject(terms) {
+  return (Object.prototype.toString.call(terms) === '[object Array]' ? terms : []).some(function (x) { return x.token === '〔ご本人〕'; });
+}
+function aiMapStrings(v, fn) {
+  if (typeof v === 'string') return fn(v);
+  if (Object.prototype.toString.call(v) === '[object Array]') return v.map(function (x) { return aiMapStrings(x, fn); });
+  if (v && typeof v === 'object') {
+    var o = {}, k;
+    for (k in v) if (Object.prototype.hasOwnProperty.call(v, k)) o[k] = aiMapStrings(v[k], fn);
+    return o;
+  }
+  return v;
+}
+function aiReEsc(t) { return s_(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/* used（任意）に「記号 → 送る時に実際に置き換えた書き方」を控える（戻す時に職員の書き方へ戻すため） */
+function aiMaskDeep(obj, terms, used) {
+  var ts = Object.prototype.toString.call(terms) === '[object Array]' ? terms : [];
+  var u = (used && typeof used === 'object') ? used : {};
+  return aiMapStrings(obj, function (str) {
+    for (var i = 0; i < ts.length; i++) {
+      var x = ts[i];
+      if (str.indexOf(x.term) < 0) continue;
+      var hit = false;
+      if (x.part) {
+        str = str.replace(new RegExp(aiReEsc(x.term) + '(?![' + AI_MASK_PART_STOP + '])', 'g'), function () { hit = true; return x.token; });
+      } else {
+        str = str.split(x.term).join(x.token); hit = true;
+      }
+      if (hit && !Object.prototype.hasOwnProperty.call(u, x.token)) u[x.token] = x.term;
+    }
+    return str;
+  });
+}
+function aiUnmaskDeep(obj, terms, used) {
+  var ts = Object.prototype.toString.call(terms) === '[object Array]' ? terms : [];
+  var u = (used && typeof used === 'object') ? used : {};
+  var map = {}, toks = [];
+  ts.forEach(function (x) {
+    if (Object.prototype.hasOwnProperty.call(map, x.token)) return;
+    map[x.token] = Object.prototype.hasOwnProperty.call(u, x.token) ? u[x.token] : x.orig;
+    toks.push(x.token);
+  });
+  toks.sort(function (a, b) { return b.length - a.length; });
+  return aiMapStrings(obj, function (str) {
+    for (var i = 0; i < toks.length; i++) if (str.indexOf(toks[i]) >= 0) str = str.split(toks[i]).join(map[toks[i]]);
+    return str;
+  });
+}
+
 global.TP = {
   ID_RE: ID_RE, YMD_RE: YMD_RE, STATUSES: STATUSES, STATUS_LABEL: STATUS_LABEL,
   DUE_RULES: DUE_RULES, STATE_RANK: STATE_RANK, PLAN_MONTHS: PLAN_MONTHS, PLAN_DAYS: PLAN_DAYS,
@@ -1577,7 +1686,8 @@ global.TP = {
   prevNeighborMap: prevNeighborMap, autoPrevDateFixes: autoPrevDateFixes,
   validateImport: validateImport, mergeImport: mergeImport,
   applyPrintKind: applyPrintKind, reportExplainedDate: reportExplainedDate,
-  achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix
+  achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix,
+  aiMaskTerms: aiMaskTerms, aiMaskDeep: aiMaskDeep, aiUnmaskDeep: aiUnmaskDeep, aiHasSubject: aiHasSubject, aiToKatakana: aiToKatakana
 };
 })(typeof window !== 'undefined' ? window : this);
 </script>
@@ -5214,6 +5324,7 @@ var AI_SYSTEM = [
   '7. 文字数上限は入力の limits に従う（改行は \\n で上限に含める）。要介護度・自立度は公式表記に限る。',
   '8. 出力は JSON のみ（前置き・説明・コードフェンス・コメント・免責なし）。日付・氏名・作成者・職種・要介護度・性別・生年月日は',
   '   出力に含めない。空欄は ""。',
+  '9. 〔ご本人〕〔ご本人・姓〕〔ご本人・名〕〔ご本人・かな〕〔利用者1〕などは、氏名を伏せた記号。記号はそのまま使い、実名を推測して書かない。',
   '',
   '【入力の形】',
   '{ "mode": "next" | "fill_eval" | "backfill" | "adjust",',
@@ -5243,7 +5354,7 @@ var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
 /* `fallbacks`（応答拒否時の自動代替・ベータ）に対応しているモデルだけに付ける。
    sonnet-5 に付けると API が 400「does not support the `fallbacks` parameter」で拒否する（2026-09-03 実測） */
 var AI_FALLBACK_MODELS = ['claude-opus-5'];
-var AI_VER = 'tp-rewrite-v6';
+var AI_VER = 'tp-rewrite-v6m';   /* 2026-09-23: 氏名の伏せ字（規則9）を足した版 */
 var AI_BACKFILL_LINE = 'この期は前回と次期の間の期。次期の評価と矛盾しない範囲で書く。';
 /* 【計画書欄】次の期（plan）に入る欄。達成度・Ⅲ（changes/issues）は含まない（EVAL_KEYS 側・D20） */
 var PLAN_KEYS = ['hopeSelf', 'hopeFamily', 'socialParticipation', 'homeEnvironment',
@@ -5406,10 +5517,36 @@ function aiSchema(mode, fields) {
 /* ★AIへの通信はこの1か所だけ。呼び出し元は body を渡すだけにする（テストでも差し替えやすい）。
    ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
 var AI_TIMEOUT_MS = 90000;
+/* 外部AIへ初めて送る前に、送る先・送るもの・送らないものを職員に示して確かめる（端末ごとに1回）。
+   ★保存するのは「確かめた」という印だけ（UI状態）。氏名・記録は保存しない */
+var AI_NOTICE_KEY = 'tp_ai_notice_v1';
+var AI_NOTICE_TEXT = [
+  '計画書の文案づくりに、外部のAI（Anthropic社・米国）を使います。',
+  '',
+  '■ 送るもの: 前の期（と前々期）の計画書・報告書の文（目標・プログラム・希望・備考・実施による変化・課題など）と、',
+  '　職員が選んだ「本人の様子」の内容',
+  '■ 送らないもの: 氏名・生年月日・要介護度・病名・治療経過・留意事項の【欄】',
+  '■ 文の中に書かれた名簿の氏名・かな（ご本人は姓・名だけの書き方も）は、送る前に〔ご本人〕〔利用者1〕などの記号に',
+  '　置き換え、返ってきた文では元に戻します。',
+  '　ただし愛称・ご家族や職員の名前・名簿と違う書き方・ローマ字は置き換えられません。自由記入の欄には人の名前を書かないでください。',
+  '■ 送った内容がAIの学習に使われることはありません（Anthropic社の API の取り扱い）',
+  '',
+  '利用者・ご家族への説明と同意は、事業所の決めた手順に従ってください。',
+  'この端末で外部AIへの送信を始めてよろしいですか？'
+].join('\n');
+function aiNoticeOk() {
+  var ok = false;
+  try { ok = localStorage.getItem(AI_NOTICE_KEY) === '1'; } catch (e) {}
+  if (ok) return true;
+  if (typeof confirm !== 'function' || !confirm(AI_NOTICE_TEXT)) return false;
+  try { localStorage.setItem(AI_NOTICE_KEY, '1'); } catch (e) {}
+  return true;
+}
 function aiFetch(body) {
   var key = aiKey();
   if (!key) return Promise.reject(new Error('AI_NO_KEY'));
   if (typeof fetch !== 'function') return Promise.reject(new Error('AI_NO_FETCH'));
+  if (!aiNoticeOk()) return Promise.reject(new Error('AI_DECLINED'));
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var headers = {
     'content-type': 'application/json',
@@ -5540,8 +5677,16 @@ function aiModelFor(q) {
   var m = s_(q && q.model);
   return (AI_MODELS.indexOf(m) >= 0) ? m : aiModel();
 }
+/* 外部AIへ送る前に名簿の氏名を伏せる（TP.aiMaskTerms）。対象はいま開いている計画書のご本人 */
+function aiMaskTermsNow() {
+  var sub = (DOC && DOC.subject) ? DOC.subject : {};
+  return TP.aiMaskTerms(ROSTER, sub.masterId || '', { name: sub.nameNorm || '', kana: sub.kana || '' });
+}
 function aiGenerate(req) {
   var q = req || {};
+  var MASK = aiMaskTermsNow(), USED = {};
+  /* ご本人の氏名が分からない＝伏せ字ができないので送らない（名簿も計画書も氏名を持っていない時） */
+  if (!TP.aiHasSubject(MASK)) return Promise.reject(new Error('AI_NO_SUBJECT'));
   if (q.mode === 'adjust') {
     var fields = (Object.prototype.toString.call(q.fields) === '[object Array]')
       ? q.fields.filter(function (f) { return ADJUST_FIELDS.indexOf(f) >= 0; }) : [];
@@ -5553,12 +5698,12 @@ function aiGenerate(req) {
       model: aiModelFor(q),
       max_tokens: 1024,
       system: AI_SYSTEM,
-      messages: [{ role: 'user', content: JSON.stringify(aiInput('adjust', q.prev || null, null, null, smAdj, { fields: fields, cur: q.plan })) }],
+      messages: [{ role: 'user', content: JSON.stringify(TP.aiMaskDeep(aiInput('adjust', q.prev || null, null, null, smAdj, { fields: fields, cur: q.plan }), MASK, USED)) }],
       output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema('adjust', fields) } }
     };
     if (AI_FALLBACK_MODELS.indexOf(bodyAdj.model) >= 0) bodyAdj.fallbacks = 'default';
     return aiFetch(bodyAdj).then(function (j) {
-      var out = aiParse(j);
+      var out = TP.aiUnmaskDeep(aiParse(j), MASK, USED);
       return { out: out, notes: aiShapeNotes(out, 'adjust', fields) };
     });
   }
@@ -5573,12 +5718,12 @@ function aiGenerate(req) {
     max_tokens: 4096,
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: (mode === 'backfill' ? AI_BACKFILL_LINE + '\n' : '') +
-      JSON.stringify(aiInput(mode, base, pp, q.next || null, sm)) }],
+      JSON.stringify(TP.aiMaskDeep(aiInput(mode, base, pp, q.next || null, sm), MASK, USED)) }],
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: aiSchema(mode) } }
   };
   if (AI_FALLBACK_MODELS.indexOf(body.model) >= 0) body.fallbacks = 'default';
   return aiFetch(body).then(function (j) {
-    var out = aiParse(j);
+    var out = TP.aiUnmaskDeep(aiParse(j), MASK, USED);
     return { out: out, notes: aiShapeNotes(out, mode) };
   });
 }
@@ -5589,6 +5734,8 @@ function aiErrText(e) {
   var why = d ? ('　AIの返答: ' + d) : '';
   if (m === 'AI_NO_KEY') return 'AIのキーがこの端末にありません。設定画面の「AI生成」で入れてください';
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
+  if (m === 'AI_NO_SUBJECT') return 'ご本人の氏名が分からないため、氏名を伏せられず送れません（入居者マスタの名簿を読み込んでから、もう一度お試しください）';
+  if (m === 'AI_DECLINED') return '外部AIへの送信を取りやめました（何も送っていません）。使う時はもう一度押して「OK」を選んでください';
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'AIのキーが受け付けられませんでした（' + m.slice(8) + '）。設定画面でキーを入れ直してください' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
@@ -6118,7 +6265,7 @@ var BATCH_STOP_REASON = '';
 var BATCH_FAIL_MAX = 5;          /* 人をまたいで連続5期失敗したら全体を止める */
 var BATCH_FAIL_MAX_ONE = 3;      /* 同じ方で連続3期失敗したら全体を止める */
 /* 再試行しても直らないエラー（鍵・設定の問題）。この時は残りの期を試さずにその場で止める */
-function aiErrFatal(e) { return /AI_NO_KEY|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
+function aiErrFatal(e) { return /AI_NO_KEY|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
 /* 一括の要約はメモリだけに持ち、描き直しのたびに出し直す（一覧の再描画で消えないようにする）。
    ★氏名を含むため localStorage には置かない */
 var BATCH_LAST_SUMMARY = null;
@@ -6329,7 +6476,9 @@ function runBatchAiForOpenResident(opts) {
         failRunOne++; BATCH_FAIL_RUN++;
         if (aiErrFatal(e)) {
           BATCH_STOP = true;
-          BATCH_STOP_REASON = 'AIの設定か鍵に問題があるため止めました（' + aiErrText(e) + '）。設定画面のAPIキーを確かめてください';
+          BATCH_STOP_REASON = /AI_DECLINED|AI_NO_SUBJECT/.test(s_(e && e.message))
+            ? ('止めました（' + aiErrText(e) + '）')
+            : ('AIの設定か鍵に問題があるため止めました（' + aiErrText(e) + '）。設定画面のAPIキーを確かめてください');
         } else if (failRunOne >= BATCH_FAIL_MAX_ONE || BATCH_FAIL_RUN >= BATCH_FAIL_MAX) {
           BATCH_STOP = true;
           BATCH_STOP_REASON = '続けて ' + (failRunOne >= BATCH_FAIL_MAX_ONE ? failRunOne : BATCH_FAIL_RUN) +
