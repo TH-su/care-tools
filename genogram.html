@@ -999,6 +999,8 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //   5. この版から合言葉を読む権限（スクリプト プロパティ）を使う。貼り替えたら、デプロイを更新する前に
 //      エディタで関数 authorizeGenogramSync を1回実行して「承認」する。承認しないまま
 //      デプロイを更新すると、全端末の同期が止まる（実行ユーザーが「自分」のため）。
+//   6. この版から LockService（同時に届いた保存・削除を1本ずつ処理する）を使う。貼り替えたら、デプロイを
+//      更新する前にエディタで authorizeGenogramSync を実行し、承認画面が出たら「承認」する。
 
 const SHEET_NAME = 'genograms';
 const TOKEN_PROP = 'GENOGRAM_TOKEN';
@@ -1048,11 +1050,82 @@ function route(action, p, token) {
     if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: r === 'grace' ? 'grace' : 'ok', role: r });
     if (action === 'list')   return jsonOut({ ok: true, items: listAll() });
     if (action === 'get')    return jsonOut({ ok: true, doc: getOne(p.name) });
-    if (action === 'save')   return jsonOut({ ok: true, saved: saveOne(p.doc) });
-    if (action === 'delete') return jsonOut({ ok: true, deleted: deleteOne(p.name) });
+    if (action === 'save' || action === 'delete') return jsonOut(writeLocked(action, p));
     return jsonOut({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return jsonOut({ ok: false, error: err.message });
+  }
+}
+
+// エディタで1回実行して、シートの重複行を数える（上の 6. の後の点検用）。名前は出さず件数だけをログに出す。シートは書かない
+function inspectGenogramRows() {
+  const s = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
+  const data = s ? s.getDataRange().getValues() : [];
+  const count = Object.create(null);
+  let rows = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    rows++;
+    const k = String(data[i][0]);
+    count[k] = (count[k] || 0) + 1;
+  }
+  let dupNames = 0, extraRows = 0;
+  Object.keys(count).forEach(function (k) {
+    if (count[k] > 1) { dupNames++; extraRows += count[k] - 1; }
+  });
+  Logger.log('データ行数: ' + rows + ' / 重複している名前の数: ' + dupNames + ' / 余分な重複行の数: ' + extraRows);
+}
+
+// 任意の base（端末の編集が出発したサーバー版の updatedAt）。本文に有り null でない時だけ突き合わせる
+function baseOf(p) {
+  return (p && p.base !== undefined && p.base !== null) ? String(p.base) : null;
+}
+
+// 同じ名前の先頭の行の「現在の版」。行が無ければ ''。doc の updatedAt を正とする（2列目は日付に化けることがあるため）
+function currentVersion(name) {
+  const data = sheet().getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === name) {
+      try {
+        const d = JSON.parse(data[i][2]);
+        if (d && d.updatedAt !== undefined && d.updatedAt !== null) return String(d.updatedAt);
+      } catch (e) { /* 読めない行は2列目で代用 */ }
+      return String(data[i][1] || '');
+    }
+  }
+  return '';
+}
+
+/* 保存・削除は1本ずつ処理する（同じ名前の新規が同時に届くと行が2つでき、2つ目は以後見えなくなるため）。
+   ロックが取れない時はシートに触れずに busy を返す（画面は通常の失敗として保留に回す）。
+   base がある時だけ、ロックの中で現在の版と突き合わせ、違えば書かずに conflict を返す。
+   base が無い要求（旧い画面）は従来と1文字も同じ応答 */
+function writeLocked(action, p) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: false, error: 'busy' };
+  try {
+    const base = baseOf(p);
+    let out;
+    if (action === 'save') {
+      if (base !== null) {
+        if (!p.doc || !p.doc.clientName) throw new Error('clientName required');
+        const cur = currentVersion(p.doc.clientName);
+        if (base !== cur) return { ok: false, error: 'conflict', current: cur };
+      }
+      out = { ok: true, saved: saveOne(p.doc) };
+      if (base !== null) out.saved.cas = 1;
+    } else {
+      if (base !== null) {
+        const cur = currentVersion(p.name);
+        if (base !== cur) return { ok: false, error: 'conflict', current: cur };
+      }
+      out = { ok: true, deleted: deleteOne(p.name) };
+      if (base !== null) out.deleted.cas = 1;
+    }
+    SpreadsheetApp.flush();
+    return out;
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -2773,9 +2846,11 @@ const CloudSync = (function() {
       ? { method: 'GET', redirect: 'follow' }
       : { method: 'POST', body: JSON.stringify({ action, ...(params || {}), ...(cfg.gasToken && GAS_URL_RE.test(cfg.gasUrl) ? { token: cfg.gasToken } : {}) }),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' };
-    const res = await fetchWithRetry(url, init);
-    if (!res.ok) throw new Error('GAS HTTP ' + res.status);
-    const json = await res.json();
+    // 応答の読み取りまで打ち切りの時間内に済ませる（本文が届かないまま止まるのも防ぐ）
+    const json = await fetchWithRetry(url, init, undefined, async (res) => {
+      if (!res.ok) throw new Error('GAS HTTP ' + res.status);
+      return await res.json();
+    });
     if (!json.ok) {
       // 断られた時は理由が分かる文言にする。例外として投げるので、保存・削除は従来どおり保留に残る
       if (json.error === 'unauthorized') {
@@ -2783,21 +2858,50 @@ const CloudSync = (function() {
         err.auth = true;
         throw err;
       }
+      /* base 付きの保存・削除で、サーバーの現在の版が出発点と違った（2026-09-23）。書かれていない。
+         呼び出し側が「中止」として扱えるよう err.conflict を立てる（立てないと通常の失敗として保留に積まれる）。
+         'busy'（サーバーが混んでいる）は通常の失敗のまま＝保留に回る */
+      if (json.error === 'conflict') {
+        const err = new Error('別の端末で新しい版が保存されていたため、書き込みませんでした');
+        err.conflict = true;
+        err.current = json.current;
+        throw err;
+      }
       throw new Error(json.error || 'GASエラー');
     }
     return json;
   }
 
-  async function fetchWithRetry(url, init, attempts) {
+  /* ★2026-09-23: 1回ごとに 25 秒で打ち切る。クラウドへの書き込みは1本の列で順に通すため、応答の返らない通信が
+     1本あると以後の保存・削除・再送が全部止まる。打ち切りは再試行しない（保存 POST の二重送信を増やさない）。
+     通常の失敗として投げる＝直接の保存・削除は保留へ、再送は失敗として残る。
+     read … 応答を読む処理。打ち切りの時間に含める。ここで投げた失敗（HTTP エラー等）は再試行しない（以前と同じ） */
+  const FETCH_TIMEOUT_MS = 25000;
+  async function fetchWithRetry(url, init, attempts, read) {
     const max = attempts != null ? attempts : 3;
     let lastErr;
     for (let i = 0; i < max; i++) {
+      const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+      let timedOut = false, reading = false;
+      const timer = ctl ? setTimeout(() => { timedOut = true; ctl.abort(); }, FETCH_TIMEOUT_MS) : null;
       try {
-        const res = await fetch(url, init);
-        return res;
+        const res = await fetch(url, ctl ? { ...init, signal: ctl.signal } : init);
+        if (!read) return res;
+        reading = true;
+        const out = await read(res);
+        if (timedOut) throw new Error('timeout');
+        return out;
       } catch (err) {
+        if (timedOut) {
+          const e = new Error('クラウドの応答がありません（' + (FETCH_TIMEOUT_MS / 1000) + '秒で打ち切りました）');
+          e.timeout = true;
+          throw e;
+        }
+        if (reading) throw err;
         lastErr = err;
         if (i < max - 1) await sleep(400 * Math.pow(2, i));
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     }
     throw lastErr || new Error('fetch failed');
@@ -2818,28 +2922,115 @@ const CloudSync = (function() {
     const r = await gasCall('get', { name });
     return r.doc;
   }
-  async function save(doc) {
-    const r = await gasCall('save', { doc });
+  /* base（この端末の編集が出発したサーバー版の updatedAt）がある時だけ本文に付ける。
+     無い時は従来と同じ本文（旧 GAS・旧画面との互換）。GAS はロックの中で現在の版と突き合わせ、違えば書かない */
+  async function save(doc, base) {
+    const r = await gasCall('save', base == null ? { doc } : { doc, base });
     return r.saved;
   }
-  async function del(name) {
-    const r = await gasCall('delete', { name });
-    return r.deleted;
+  async function del(name, base) {
+    let deleted;
+    try {
+      deleted = (await gasCall('delete', base == null ? { name } : { name, base })).deleted;
+    } catch (e) {
+      /* 食い違いでも、サーバーの現在の版が ''（行がもう無い＝別の端末で削除済み）なら削除の目的は達成している。
+         成功として扱う（扱わないと、削除の保留が「食い違い」のまま外れなくなる）。'' 以外の食い違いはそのまま投げる */
+      if (!(e && e.conflict && e.current === '')) throw e;
+      deleted = { name, notFound: true };
+    }
+    // クラウドから消えた＝この名前のサーバー版は「無い」と確かめた
+    setBaseline(name, '', true);
+    clearDirty(name);
+    clearConfirm(name);
+    return deleted;
   }
-  // ---- 競合判定の基準時刻（設定画面 L725 が宣言する「保存時の上書き確認」の実装） ----
-  /* 「この端末が最後に取り込んだ版」の時刻を利用者名キーで保持する。doc.updatedAt は保存直前に
-     now へ書き換わるため基準に使えず、doc へ埋め込むと保存データの形が変わるのでモジュール内に持つ。 */
-  const baseTs = {};
-  /* クラウドの現物を観測して基準を入れたかどうか。ローカル版だけを読み直した時（オフライン等）も
-     baseTs は埋まるため、「観測できた」の代用に baseTs の有無を使うと未確認保留が解除されてしまう */
-  const cloudObserved = {};
+  // ---- 競合判定の基準（設定画面 L725 が宣言する「保存時の上書き確認」の実装） ----
+  /* ★2026-09-23 根治: 基準を端末に残す（以前はメモリ内だけで、再読み込みで消えて端末時計で代用していた）。
+     名前ごとに { at, seen, dirty, dirtySeq, dirtyAt, confirm }:
+       at      … この端末が最後に確かめたサーバー版の updatedAt（文字列のまま比べる。'' はクラウドに版が無い）
+       seen    … at がクラウドの現物を観測した値か。false は旧来のフォールバック値（時刻で比べる）
+       dirty   … 端末に保存したが、まだサーバーへ届いたと確かめていない
+       dirtySeq… 端末保存のたびに1ずつ増える通し番号。届いた中身の番号がこれと同じ時だけ dirty を下ろす
+                 （保存の連打で、先の分が届いた時に後の分の印を消さない。同じ秒の保存でも区別できる）
+       dirtyAt … dirty を立てた端末保存の updatedAt。番号を持たない保留（旧形式など）が届いた時だけ、これで照合する
+       confirm … この端末の図は、クラウドの同じ名前の版から出発していない（新規・名前の書き換え・既存版を確かめられないまま新規）。
+                 クラウドに版があれば、版の一致にかかわらず本人に確かめる。再読み込みしても消えない
+     localStorage が読めない・書けない時は、この画面の間だけメモリの写しで動く */
+  const LS_SYNC_BASE = 'genogram:syncBase';
+  let baseMem = null, baseMemOnly = false;
+  function readBases() {
+    if (!baseMemOnly) {
+      try {
+        let o = null;
+        try { o = JSON.parse(localStorage.getItem(LS_SYNC_BASE) || '{}'); } catch (e) { o = {}; }   // 壊れた値は空として扱う
+        baseMem = (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+        return baseMem;
+      } catch (e) { baseMemOnly = true; }
+    }
+    return baseMem || (baseMem = {});
+  }
+  function writeBases(all) {
+    baseMem = all;
+    try { localStorage.setItem(LS_SYNC_BASE, JSON.stringify(all)); }
+    catch (e) { baseMemOnly = true; }   // 書けない＝以後はメモリの写しを正とする（古い値を読み戻さない）
+  }
+  function getBase(name) {
+    const all = readBases();
+    const b = Object.prototype.hasOwnProperty.call(all, name) ? all[name] : null;
+    return (b && typeof b === 'object') ? { at: String(b.at == null ? '' : b.at), seen: !!b.seen, dirty: !!b.dirty,
+      dirtySeq: Number(b.dirtySeq) || 0, dirtyAt: String(b.dirtyAt == null ? '' : b.dirtyAt), confirm: !!b.confirm } : null;
+  }
+  function putBase(name, patch) {
+    if (!name) return;
+    const all = readBases();
+    const cur = Object.prototype.hasOwnProperty.call(all, name) && all[name] && typeof all[name] === 'object' ? all[name] : { at: '', seen: false, dirty: false };
+    all[name] = Object.assign({}, cur, patch);
+    writeBases(all);
+  }
+  /* fromCloud=true: クラウドの現物を観測した版（at=iso, seen）。false: 旧来のフォールバック値（seen=false） */
   function setBaseline(name, iso, fromCloud) {
     if (!name) return;
-    baseTs[name] = parseTs(iso);
-    if (fromCloud) cloudObserved[name] = true;
+    putBase(name, { at: iso == null ? '' : String(iso), seen: !!fromCloud });
   }
-  function isRemoteNewer(name, remote) {
-    return !!(remote && parseTs(remote.updatedAt) > (baseTs[name] || 0));
+  // 端末保存のたびに呼ぶ。通し番号を1増やして端末に残し、その番号を返す（クラウド保存・保留の項目に持たせる）
+  function markDirty(name, at) {
+    const b = getBase(name);
+    const seq = ((b && b.dirtySeq) || 0) + 1;
+    putBase(name, { dirty: true, dirtySeq: seq, dirtyAt: at == null ? '' : String(at) });
+    return seq;
+  }
+  /* sent を渡さない時（クラウド版を採った・削除できた）は無条件に下ろす。
+     sent = { seq, at }（届いた中身）を渡した時は、番号があれば番号で、無ければ updatedAt で最後の端末保存と照合し、
+     一致した時だけ下ろす。どちらも無ければ下ろさない（安全側）。番号は下ろしても戻さない（増え続ける） */
+  function clearDirty(name, sent) {
+    const b = getBase(name);
+    if (!(b && b.dirty)) return;
+    if (sent !== undefined) {
+      if (typeof sent.seq === 'number') { if (b.dirtySeq !== sent.seq) return; }
+      else if (sent.at != null && sent.at !== '') { if (b.dirtyAt !== String(sent.at)) return; }
+      else return;
+    }
+    putBase(name, { dirty: false, dirtyAt: '' });
+  }
+  function markConfirm(name) { putBase(name, { confirm: true }); }
+  function clearConfirm(name) {
+    const b = getBase(name);
+    if (b && b.confirm) putBase(name, { confirm: false });
+  }
+  /* クラウドの版が、この端末の基準と違うか。
+     seen の基準は文字列の一致で比べる（端末とサーバーの時計の差に左右されない）。remote 無し＝クラウドに版が無い。
+     seen でない（旧データ）は時刻の新旧で比べる。localAt（端末の図の updatedAt）を渡した時はそれと比べ、
+     クラウドが新しい時だけ真（基準が無いのを 0 として比べると、どのクラウド版も「新しい」になるため） */
+  function remoteDiffers(name, remote, localAt) {
+    const b = getBase(name);
+    if (b && b.seen) return remote ? String(remote.updatedAt) !== b.at : b.at !== '';
+    if (localAt !== undefined) return !!(remote && parseTs(remote.updatedAt) > parseTs(localAt));
+    return !!(remote && parseTs(remote.updatedAt) > parseTs((b && b.at) || 0));
+  }
+  function conflictErr(msg) {
+    const err = new Error(msg);
+    err.conflict = true;
+    return err;
   }
   async function fetchRemoteQuiet(name) {
     try { return await get(name); }
@@ -2851,64 +3042,133 @@ const CloudSync = (function() {
       return null;   // 取得できない時は競合なしとして従来どおり保存を試みる
     }
   }
-  async function saveAndMarkBaseline(doc) {
-    const saved = await save(doc);
+  async function saveAndMarkBaseline(doc, base, dirtySeq) {
+    const saved = await save(doc, base);
     // GAS 側が updatedAt をサーバー時刻で採番するため、応答の値を基準にする
     setBaseline(doc.clientName, (saved && saved.updatedAt) || doc.updatedAt, true);   // 保存が通った＝クラウドと交信できた
+    clearDirty(doc.clientName, { seq: dirtySeq, at: doc.updatedAt });   // 送った中身が最後の端末保存の時だけ「反映済み」
+    clearConfirm(doc.clientName);                // この端末の図がクラウドの版になった
     return saved;
   }
-  async function saveCheckConflict(doc, needsConfirm) {
-    // 取り込み時点より新しい版がクラウドにあれば、上書きの前に本人へ確認する
+  // dirtySeq … この中身を端末に保存した時の通し番号（届いた時の dirty の照合に使う）
+  async function saveCheckConflict(doc, needsConfirm, dirtySeq) {
+    // 取り込み時点と違う版がクラウドにあれば、上書きの前に本人へ確認する
     /* needsConfirm＝クラウドの既存版を一度も確認できていない文書。ここで取得失敗を
        「競合なし」と読み替えると、確認GETだけ失敗して保存POSTが通った場合に既存版を
        無確認で上書きする。そのため get を直に呼び、失敗は保存せずそのまま投げる
        （呼び出し側でキューへ回る）。既存版が見つかった場合は従来どおり confirm へ落ちる */
-    const remote = needsConfirm ? await get(doc.clientName) : await fetchRemoteQuiet(doc.clientName);
-    /* 未確認の文書で、クラウドに同じ名前の版がある時は、時刻の新旧にかかわらず確認する（2026-09-23）。
+    const name = doc.clientName;
+    const b = getBase(name);
+    if (b && b.confirm) needsConfirm = true;   // 端末に残した「確かめる」印（新規・名前の書き換え等。再読み込みしても効く）
+    let remote = null, fetched = true;
+    if (needsConfirm) remote = await get(name);
+    else {
+      try { remote = await get(name); }
+      catch (e) {
+        if (e && e.auth) throw e;   // fetchRemoteQuiet と同じ: 合言葉で断られた取得を「競合なし」と読み替えない
+        fetched = false;            // 取得できない時は競合なしとして従来どおり保存を試みる（「削除済み」とは読まない）
+      }
+    }
+    /* サーバーへ送る base: 既定はこの端末の基準（観測済みの時だけ。未観測は送らない＝従来どおり無条件）。
+       本人が上書きを選んだ時は、確認に使ったクラウドの版を base にする（その後にさらに変わっていれば書かない） */
+    let base = (b && b.seen) ? b.at : undefined;
+    /* 未確認の文書で、クラウドに同じ名前の版がある時は、版の新旧にかかわらず確認する（2026-09-23）。
        合言葉で断られている間に描いた図は、読込時に「端末の方が新しい」として端末版が選ばれ、
        基準時刻がクラウド版の時刻と同じになるため、下の新旧判定では確認が出ない */
-    if (needsConfirm && remote && !isRemoteNewer(doc.clientName, remote)) {
+    /* 送ろうとしている中身がすでにクラウドにある＝前の送信（自動の再試行・打ち切り）が実は書けていた。
+       版が基準と違っても「届いていた」として保存成功と同じに扱う（偽の上書き確認・中止を出さない） */
+    const wasWritten = (r) => sameContent(r, doc);
+    if (remote && remoteDiffers(name, remote) && wasWritten(remote)) return markLanded({ doc, dirtySeq }, remote);
+    if (needsConfirm && remote && !remoteDiffers(name, remote)) {
       if (!confirm('クラウドに同じ名前の図があります（この端末ではまだ開いていない版です）。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
-        const err = new Error('クラウドに同じ名前の図があるため、クラウドへの保存を中止しました');
-        err.conflict = true;
-        throw err;
+        throw conflictErr('クラウドに同じ名前の図があるため、クラウドへの保存を中止しました');
       }
+      base = String(remote.updatedAt);
     }
-    if (isRemoteNewer(doc.clientName, remote)) {
+    if (remote && remoteDiffers(name, remote)) {
       if (!confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
-        const err = new Error('別端末の新しい版があるため、クラウドへの保存を中止しました');
-        err.conflict = true;
+        throw conflictErr('別端末の新しい版があるため、クラウドへの保存を中止しました');
+      }
+      base = String(remote.updatedAt);
+    } else if (!remote && fetched && b && b.seen && b.at !== '') {
+      // この端末が知っている版がクラウドから消えている＝別の端末で削除された
+      if (!confirm('クラウドでは別の端末でこの図が削除されています。この端末の図で作り直しますか？')) {
+        const err = conflictErr('クラウドでは別の端末で削除されているため、クラウドへの保存を中止しました');
+        err.deleted = true;   // 中止の案内を言い分ける（再読み込みしても選ぶ版が無い）
         throw err;
       }
+      base = '';
     }
-    return await saveAndMarkBaseline(doc);
+    try {
+      return await saveAndMarkBaseline(doc, base, dirtySeq);
+    } catch (e) {
+      /* サーバーが食い違いを返した: 通信断の後の自動の再試行で、1回目の POST が書けていたことがある。
+         取り直して中身が同じなら「届いていた」。取り直せない・中身が違う時は今どおり中止 */
+      if (!(e && e.conflict)) throw e;
+      let again = null;
+      try { again = await get(name); } catch (e2) { throw e; }
+      if (again && wasWritten(again)) return markLanded({ doc, dirtySeq }, again);
+      throw e;
+    }
   }
-  async function saveQueued(doc, needsConfirm) {
-    // 再送は無人で走り得るため confirm は出さず、競合していれば送らずキューに残す
-    // 再読込後は基準時刻が消えている（メモリ内のみ）。その場合はキュー文書自身の時刻を基準にする
-    // ＝「積んだ後にリモートが動いたか」の判定になり、基準0による恒久保留を防ぐ
+  /* 保留の再送は無人で走り得るため confirm は出さず、競合していれば送らずキューに残す（2026-09-23 根治）。
+     新しい保留は積んだ時の基準（item.base）を持ち歩く:
+       文字列 … その版から出発した編集。クラウドの版が同じ時だけ、base を付けて送る（サーバーもロックの中で確かめる）。
+                旧 GAS は base を見ないため、送る前の取得で確かめる
+       null   … 基準を観測できていない。クラウドに版があれば送らない（既存版を確認なしに上書きしない）
+     base 欄の無い旧形式の保留は、以前の規則のまま判定する */
+  /* クラウドの版の中身が、送ろうとしている図と同じか（updatedAt 以外の図の中身で比べる）。
+     打ち切った保存が実はサーバーに書けていた時、版が進んでいても「届いていた」と分かる */
+  function sameContent(remote, doc) {
+    const pick = (d) => JSON.stringify({ canvasSize: d.canvasSize, nodes: d.nodes, lines: d.lines, frames: d.frames, texts: d.texts });
+    return !!(remote && doc) && pick(remote) === pick(doc);
+  }
+  // 届いていた保存を、保存が通った時と同じに扱う（基準をその版へ・dirty は番号で照合・確かめる印を下ろす）
+  function markLanded(item, remote) {
+    const name = item.doc.clientName;
+    setBaseline(name, String(remote.updatedAt), true);
+    clearDirty(name, { seq: item.dirtySeq, at: item.doc.updatedAt });
+    clearConfirm(name);
+    return { name, updatedAt: String(remote.updatedAt) };
+  }
+  async function saveQueued(item) {
+    const doc = item.doc, name = doc.clientName;
+    if ('base' in item && typeof item.base === 'string') {
+      /* 送る前の取得の失敗は通常の失敗（保留に残るが食い違いの印は付けない）。合言葉の拒否もそのまま投げる */
+      const remote = await get(name);
+      // 前の送信（応答を打ち切った）が実は届いていた。確かめる印があっても、中身が同じなら成功として外す
+      if (remote && String(remote.updatedAt) !== item.base && sameContent(remote, doc)) return markLanded(item, remote);
+      const b = getBase(name);
+      /* 本人に確かめる必要のある図（新規・名前の書き換え等）は、クラウドに版があれば無人では送らない */
+      if (remote && (item.needsConfirm || (b && b.confirm))) throw conflictErr('クラウドに同じ名前の図があり、確認が必要なため再送を保留しました');
+      const cur = remote ? String(remote.updatedAt) : '';
+      if (cur !== item.base) throw conflictErr('別の端末で新しい版が保存されていたため、再送を保留しました');
+      return await saveAndMarkBaseline(doc, item.base, item.dirtySeq);
+    }
+    if ('base' in item && item.base === null) {
+      /* 未確認文書では取得失敗を「競合なし」と読み替えられない（黙って上書きになる）ため、
+         fetchRemoteQuiet ではなく get を使い、失敗はそのまま再送失敗＝キュー据え置きにする */
+      const remote = await get(name);
+      if (remote && sameContent(remote, doc)) return markLanded(item, remote);   // 前の送信が届いていた
+      if (remote) throw conflictErr('クラウドの既存版を確認できていないため再送を保留しました');
+      return await saveAndMarkBaseline(doc, '', item.dirtySeq);
+    }
+    // ---- 旧形式（base 欄なし）: 以前の規則のまま ----
+    // 基準が無い時はキュー文書自身の時刻を基準にする＝「積んだ後にリモートが動いたか」の判定になり、基準0による恒久保留を防ぐ
     /* ただし needsConfirm＝クラウドの既存版を一度も確認できないまま新規として書き始めた文書は、
        キュー文書の時刻を基準にすると既存版を「古い」と誤判定して確認なしに上書きする。
        この場合は基準を持たせず、リモートに版があれば送らず保留する */
-    const unverified = !!needsConfirm && !cloudObserved[doc.clientName];
-    if (!unverified && !baseTs[doc.clientName]) setBaseline(doc.clientName, doc.updatedAt);
-    /* 未確認文書では取得失敗を「競合なし」と読み替えられない（黙って上書きになる）ため、
-       fetchRemoteQuiet ではなく get を使い、失敗はそのまま再送失敗＝キュー据え置きにする */
-    const remote = unverified ? await get(doc.clientName) : await fetchRemoteQuiet(doc.clientName);
-    if (unverified && remote) {
-      const err = new Error('クラウドの既存版を確認できていないため再送を保留しました');
-      err.conflict = true;
-      throw err;
-    }
-    if (isRemoteNewer(doc.clientName, remote)) {
-      const err = new Error('別端末の新しい版があるため再送を保留しました');
-      err.conflict = true;
-      throw err;
-    }
-    return await saveAndMarkBaseline(doc);
+    const b = getBase(name);
+    const unverified = !!item.needsConfirm && !(b && b.seen);
+    const ts = (b && parseTs(b.at)) || (unverified ? 0 : parseTs(doc.updatedAt));
+    const remote = unverified ? await get(name) : await fetchRemoteQuiet(name);
+    if (unverified && remote) throw conflictErr('クラウドの既存版を確認できていないため再送を保留しました');
+    if (remote && parseTs(remote.updatedAt) > ts) throw conflictErr('別端末の新しい版があるため再送を保留しました');
+    return await saveAndMarkBaseline(doc, undefined, item.dirtySeq);
   }
 
   // ---- Retry queue ----
+  /* ★2026-09-23 根治: 保留は1名前1件（save と delete を並べない）。項目は積んだ時の基準 base を持つ */
   function getPending() {
     try { return JSON.parse(localStorage.getItem(LS_PENDING) || '[]'); }
     catch (e) { return []; }
@@ -2917,49 +3177,143 @@ const CloudSync = (function() {
     localStorage.setItem(LS_PENDING, JSON.stringify(arr || []));
     updatePendingBadge();
   }
+  function pendingName(x) { return x && (x.name || (x.doc && x.doc.clientName)); }
+  /* 再送の後に「処理した項目だけ」を外すための印。秒単位の時刻では同じ秒に積み直した項目と区別できないため、
+     ミリ秒まで持ち、この画面の中では必ず増える値にする */
+  let lastQueuedMs = 0;
+  function nextQueuedAt() {
+    const ms = Math.max(Date.now(), lastQueuedMs + 1);
+    lastQueuedMs = ms;
+    return new Date(ms).toISOString();
+  }
   function queuePending(item) {
     const arr = getPending();
-    // dedupe by kind+name
-    const key = item.kind + ':' + (item.name || (item.doc && item.doc.clientName));
-    const prev = arr.find(x => (x.kind + ':' + (x.name || (x.doc && x.doc.clientName))) === key);
-    const filtered = arr.filter(x => {
-      const k = x.kind + ':' + (x.name || (x.doc && x.doc.clientName));
-      return k !== key;
-    });
+    const name = pendingName(item);
+    const same = arr.filter(x => pendingName(x) === name);
+    const rest = arr.filter(x => pendingName(x) !== name);
     /* 未確認の印は後続の保存で消さない（false で置換すると既存版の無確認上書きに戻る） */
-    const needsConfirm = !!(item.needsConfirm || (prev && prev.needsConfirm));
-    filtered.push({ ...item, needsConfirm, queuedAt: nowISO() });
-    setPending(filtered);
-  }
-  function updatePendingBadge() {
-    const n = getPending().length;
-    const el = $('syncPending');
-    if (!el) return;
-    if (n > 0) { el.textContent = `保留 ${n}件`; el.hidden = false; }
-    else el.hidden = true;
-  }
-  async function flushPending() {
-    let arr = getPending();
-    if (arr.length === 0) return { processed: 0, failed: 0 };
-    let processed = 0, failed = 0;
-    const remaining = [];
-    for (const item of arr) {
-      try {
-        if (item.kind === 'save') await saveQueued(item.doc, item.needsConfirm);
-        else if (item.kind === 'delete') await del(item.name);
-        processed++;
-      } catch (e) {
-        remaining.push(item);
-        failed++;
+    const needsConfirm = !!(item.needsConfirm || same.some(x => x && x.needsConfirm));
+    const out = { ...item, needsConfirm, queuedAt: nextQueuedAt() };
+    delete out.conflict;   // 積み直した＝新しい中身。食い違いの印は外す
+    if (!('base' in item) || item.base === undefined) {
+      /* 同じ名前の保留（base 付き）を置き換える時は、その base を引き継ぐ。新しい中身は古い保留の続きで、
+         出発したサーバー版は同じため。旧形式（base 欄なし）からは引き継がず、今の基準を付ける */
+      const prev = same.find(x => x && 'base' in x);
+      if (prev) out.base = prev.base;
+      else {
+        const b = getBase(name);
+        out.base = (b && b.seen) ? b.at : null;
       }
     }
-    setPending(remaining);
-    return { processed, failed };
+    rest.push(out);
+    setPending(rest);
+  }
+  /* 同じ名前の保留を外す（kind を渡せばその種類だけ）。中身が新しいもので置き換わった時・意味が無くなった時だけ呼ぶ
+     （直接保存が通った・クラウド版を採った・削除が通った／別の端末の新しい版があり削除しないと決まった） */
+  function clearPendingFor(name, kind) {
+    const arr = getPending();
+    const rest = arr.filter(x => !(pendingName(x) === name && (!kind || x.kind === kind)));
+    if (rest.length !== arr.length) setPending(rest);
+  }
+  /* この名前に、まだクラウドへ届いたと確かめていない端末の図があるか（合言葉の印は画面側で足す）。
+     削除の保留は数えない（端末に図が無い＝守る中身が無い。数えると、食い違いで残った削除の保留が偽の2択を出す） */
+  function hasUnsynced(name) {
+    const b = getBase(name);
+    return !!(b && b.dirty) || getPending().some(x => pendingName(x) === name && x.kind === 'save');
+  }
+  function updatePendingBadge() {
+    const arr = getPending();
+    const n = arr.length;
+    const m = arr.filter(x => x && x.conflict).length;
+    const el = $('syncPending');
+    if (!el) return;
+    if (n > 0) { el.textContent = m > 0 ? `保留 ${n}件（食い違い ${m}件）` : `保留 ${n}件`; el.hidden = false; }
+    else el.hidden = true;
+  }
+  /* ★2026-09-23 根治: クラウドへの書き込み（直接の保存・削除・保留の再送）は1本の列で順に通す。
+     2本目は1本目が終わって基準が進んでから基準を読む（並ぶと古い基準で送り、偽の食い違いで中止になる） */
+  let writeChain = Promise.resolve();
+  function serial(task) {
+    const run = writeChain.then(() => task());
+    writeChain = run.catch(() => {});
+    return run;
+  }
+  /* 同時に2本走らせない（online と「↻ 同期」が重なると二重送信になる）。
+     終わった時は保留を読み直し、処理できた項目だけを外す（再送の間に積まれた項目を消さない） */
+  let flushing = false;
+  async function flushPending() {
+    if (flushing) return { processed: 0, failed: 0, running: true };
+    flushing = true;
+    try {
+      return await serial(flushInner);
+    } finally {
+      flushing = false;
+    }
+  }
+  async function flushInner() {
+    const arr = getPending();
+    if (arr.length === 0) return { processed: 0, failed: 0 };
+    {
+      let processed = 0, failed = 0;
+      const done = [], conflicted = [];
+      for (const item of arr) {
+        try {
+          let landed = null;   // 処理後のサーバー版（削除は ''）
+          if (item.kind === 'save') {
+            const saved = await saveQueued(item);
+            landed = (saved && saved.updatedAt) ? String(saved.updatedAt) : null;
+          } else if (item.kind === 'delete') {
+            if ('base' in item && item.base === null) {
+              /* 基準を観測できていない削除（新しい形式）: 無条件には消さない。クラウドに版があれば送らず保留、
+                 無ければ消す物が無い＝成功扱い。旧形式（base 欄なし）は以前どおり無条件に送る */
+              if (await get(item.name)) throw conflictErr('クラウドの版を確認できていないため、削除の再送を保留しました');
+              setBaseline(item.name, '', true);
+              clearDirty(item.name);
+              clearConfirm(item.name);
+            } else {
+              if ('base' in item && typeof item.base === 'string') {
+                /* 旧 GAS は base を見ずに消すため、送る前に確かめる。別の端末の新しい版があれば消さずに保留。
+                   base と同じ版・クラウドに版なしは、以前どおり送る（サーバーが突き合わせる／版なしは成功扱い） */
+                const remote = await get(item.name);
+                if (remote && String(remote.updatedAt) !== item.base) throw conflictErr('別の端末で新しい版が保存されていたため、削除の再送を保留しました');
+              }
+              await del(item.name, ('base' in item) ? item.base : undefined);
+            }
+            landed = '';
+          }
+          processed++;
+          done.push({ item, landed });
+        } catch (e) {
+          failed++;
+          if (e && e.conflict) conflicted.push(item);
+        }
+      }
+      const same = (a, b) => !!a && !!b && a.kind === b.kind && pendingName(a) === pendingName(b) && a.queuedAt === b.queuedAt;
+      const rest = [];
+      for (const x of getPending()) {
+        if (done.some(d => same(d.item, x))) continue;
+        let y = x;
+        if (conflicted.some(c => same(c, x))) y = { ...y, conflict: true };
+        /* 再送の間に同じ名前で積み直された項目は、送った項目の base を引き継いでいる（その続き）。
+           送った項目がサーバーに届いたので、出発点をその版へ進める（進めないと次の再送で食い違いと誤判定する） */
+        const d = done.find(d2 => pendingName(d2.item) === pendingName(x) && 'base' in d2.item && 'base' in x && d2.item.base === x.base && d2.landed !== null);
+        if (d) y = { ...y, base: d.landed };
+        rest.push(y);
+      }
+      setPending(rest);
+      return { processed, failed };
+    }
   }
 
   return {
     getCfg, setCfg, isConfigured, purgeRetiredGithubCfg,
-    ping, list, get, save, del, saveCheckConflict, setBaseline,
+    ping, list, get, save, setBaseline,
+    // クラウドへの書き込みは列を通す（直接の保存・削除・再送が重ならない）
+    del: (name, base) => serial(() => del(name, base)),
+    // 直接の削除: この端末の基準は列の中で読む（前に並んだ再送で基準が進むため。観測していない時は付けない）
+    delCurrent: (name) => serial(() => { const b = getBase(name); return del(name, (b && b.seen) ? b.at : undefined); }),
+    saveCheckConflict: (doc, needsConfirm, dirtySeq) => serial(() => saveCheckConflict(doc, needsConfirm, dirtySeq)),
+    getBase, markDirty, clearDirty, markConfirm, clearConfirm, hasUnsynced, remoteDiffers, clearPendingFor,
     queuePending, getPending, flushPending, updatePendingBadge
   };
 })();
@@ -3046,6 +3400,17 @@ function writeSuGenogram(name, opts) {
    ★他の方の図に、いま開いている masterId を付けないこと（nameKeyOnly）。付けると
      マスタの別人の欄に他人の家族構成図が出る。 */
 var _suBackfillDone = false;
+/* ★2026-09-23: 実行中のまとめ反映（保存・読込・新規で途中打ち切りするための控え）。
+   以前は起動時の読込と重なると、終わった時に読込前の図へ戻していた（名前欄は新しい図のまま） */
+var _suBackfillRun = null;
+var SU_BACKFILL_STEP_MS = 8000;   // 1件のサムネイル作成を待つ上限（画像の読み込みに失敗すると完了の知らせが来ない）
+function abortSuBackfill() {
+  var run = _suBackfillRun;
+  if (!run) return;
+  _suBackfillRun = null;
+  run.aborted = true;
+  run.putBack();   // 退避していた図・選択を同期的に戻す。以後の step・restore は何もしない
+}
 function backfillSuGenograms() {
   if (_suBackfillDone) return;
   _suBackfillDone = true;
@@ -3056,6 +3421,7 @@ function backfillSuGenograms() {
   idx.forEach(function (e) {
     var n = e && e.name;
     if (!n) return;
+    if (String(n).indexOf('（この端末の控え ') >= 0) return;   // 同期の食い違いで残した別名の控えは対象外
     var rec = m[suGenoNameKey(n)];
     if (!(rec && rec.image)) todo.push(n);
   });
@@ -3063,13 +3429,20 @@ function backfillSuGenograms() {
   var savedDoc = state.doc, savedName = state.clientName;
   var savedSel = state.selectedId, savedType = state.selectedType;
   var made = 0;
-  function restore() {
+  var run = { aborted: false, putBack: function () {
     state.doc = savedDoc; state.clientName = savedName;
     state.selectedId = savedSel; state.selectedType = savedType;
     render();
+  } };
+  _suBackfillRun = run;
+  function restore() {
+    if (run.aborted) return;
+    _suBackfillRun = null;
+    run.putBack();
     if (made) flashStatus('家族構成図 ' + made + '件を入居者マスタへ反映しました');
   }
   function step(i) {
+    if (run.aborted) return;
     if (i >= todo.length) { restore(); return; }
     var n = todo[i], doc = null;
     try { doc = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + n) || 'null'); } catch (e) { doc = null; }
@@ -3079,7 +3452,11 @@ function backfillSuGenograms() {
     state.selectedId = null; state.selectedType = null;
     render();
     made++;
-    writeSuGenogram(n, { nameKeyOnly: true, done: function () { step(i + 1); } });
+    // 完了の知らせが来ない時（画像の読み込み失敗など）も、上限を過ぎたら次へ進む（最後に必ず元の図へ戻すため）
+    var moved = false, timer = null;
+    var next = function () { if (moved) return; moved = true; if (timer) clearTimeout(timer); step(i + 1); };
+    timer = setTimeout(next, SU_BACKFILL_STEP_MS);
+    writeSuGenogram(n, { nameKeyOnly: true, done: next });
   }
   step(0);
 }
@@ -3166,12 +3543,22 @@ const authUnverified = {
   }
 };
 
+/* いま画面に出ている図が、どの名前の文書から来たか（2026-09-23 根治）。
+   読込の完了・保存・?resident 起動の新規で名前、新規作成で ''。名前欄の入力やサムネイル作成では変えない。
+   これと違う名前で保存する時（新規・名前欄の書き換え）は、同じ名前の既存の図を黙って置き換えない */
+let loadedFrom = '';
+
 async function saveDoc() {
+  abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（他の方の図を保存しない）
   const name = $('clientName').value.trim();
   if (!name) {
     alert('利用者名を入力してから保存してください');
     $('clientName').focus();
     return;
+  }
+  const renamed = loadedFrom !== name;
+  if (renamed && localStorage.getItem(LS_DOC_PREFIX + name) != null) {
+    if (!confirm('この端末に同じ名前「' + name + '」の図があります。いま表示している図で置き換えますか？（キャンセルで保存を中止します）')) return;
   }
   state.clientName = name;
   const now = nowISO();
@@ -3198,6 +3585,12 @@ async function saveDoc() {
     alert('端末への保存に失敗しました: ' + e.message);
     return;
   }
+  // 端末に書いた。この中身がサーバーへ届いたと確かめるまで「未反映」。番号はクラウド保存と保留の項目に持たせる
+  const dirtySeq = CloudSync.markDirty(name, doc.updatedAt);
+  /* 開いた文書と違う名前で保存した（新規・名前欄の書き換え）: この図はクラウドの同じ名前の版から出発していない。
+     クラウドに同じ名前の版があれば、新旧にかかわらず本人に確かめる印を端末に残す（再読み込み・開き直しでも消えない） */
+  if (renamed) CloudSync.markConfirm(name);
+  loadedFrom = name;           // 画面の図はこの名前の端末の図になった（次の保存で同じ確認を繰り返さない）
   // 入居者マスタ連携：サムネイルを共有キーへ（masterId と氏名の両方をキーにする）
   writeSuGenogram(name);
   /* ★マスタの詳細から開いた（?resident=）のに、保存する文書名がその方の氏名と違う時は、
@@ -3216,9 +3609,11 @@ async function saveDoc() {
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドへ同期中…');
     try {
-      await CloudSync.saveCheckConflict(doc, cloudUnverified.has(name) || authUnverified.has(name));
+      await CloudSync.saveCheckConflict(doc, cloudUnverified.has(name) || authUnverified.has(name), dirtySeq);
       cloudUnverified.delete(name);   // クラウドと突き合わせて保存できた＝未確認状態は解消
       authUnverified.delete(name);
+      CloudSync.clearPendingFor(name);   // 直接保存が通った＝同じ名前の保留は古い中身（残すと後の再送で巻き戻る）
+      loadedFrom = name;
       flashStatus(`「${name}」を保存・同期しました`);
       setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
@@ -3228,7 +3623,11 @@ async function saveDoc() {
         /* 直前に出した「端末に保存しました」だけでは同期済みと誤解するため、
            未反映であることと次の操作をここで言い切る */
         flashStatus(`「${name}」はこの端末に保存（クラウド未反映）`);
-        alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\n最新の内容を確認するには、ページを再読み込みしてください。\nもう一度保存すると、クラウドの新しい版を上書きします。');
+        if (err.deleted) {
+          alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nクラウドでは別の端末でこの図が削除されています。この端末の図で作り直す時は、もう一度保存してください。');
+        } else {
+          alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nページを再読み込みすると、クラウドの版を開くか、この端末の図のままにするかを選べます。\nもう一度保存すると、上書きしてよいかをもう一度確認します。');
+        }
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
            一覧からクラウドの図が見えない。積むと、合言葉を直した後の自動の再送で、同じ名前の
@@ -3236,53 +3635,140 @@ async function saveDoc() {
            印が残っている名前は、通信断で失敗した時も積まない（保留からの再送は確認を出せないため） */
         cloudUnverified.add(name);
         authUnverified.add(name);
+        CloudSync.markConfirm(name);
         setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
         flashStatus(`「${name}」はこの端末にだけ保存しました（合言葉・通信を確かめてから、もう一度保存してください）`);
       } else {
-        CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) || authUnverified.has(name) });
+        CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) || authUnverified.has(name), dirtySeq });
         setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
       }
     }
   }
 }
 
+/* 未反映の端末の図を、クラウドの版に切り替える前に別の名前で端末にだけ残す（2026-09-23 根治）。
+   クラウドへは送らず、保留にも積まない。残せたらその名前、残せなかったら ''（呼び出し側は切り替えない） */
+function localCopyStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+function keepLocalCopy(name, localDoc, stamp) {
+  let copyName = name + '（この端末の控え ' + stamp + '）';
+  // 同じ分に2つ目を残す時は番号を足す（先の控えを上書きしない）
+  for (let i = 2; localStorage.getItem(LS_DOC_PREFIX + copyName) != null; i++) {
+    if (i > 99) return '';
+    copyName = name + '（この端末の控え ' + stamp + ' ' + i + '）';
+  }
+  const copy = { ...localDoc, clientName: copyName };
+  const at = localDoc.updatedAt || nowISO();
+  try {
+    localStorage.setItem(LS_DOC_PREFIX + copyName, JSON.stringify(copy));
+    try {
+      const idx = listDocs().filter(e => e.name !== copyName);
+      idx.push({ name: copyName, updatedAt: at });
+      idx.sort((x, y) => String(y.updatedAt).localeCompare(String(x.updatedAt)));
+      localStorage.setItem(LS_INDEX, JSON.stringify(idx));
+    } catch (e) {
+      try { localStorage.removeItem(LS_DOC_PREFIX + copyName); } catch (e2) { /* ignore */ }   // 一覧に載らない写しは残さない（元の図はそのまま）
+      return '';
+    }
+  } catch (e) {
+    return '';
+  }
+  return copyName;
+}
+
 async function loadDoc(name, opts) {
+  abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻してから読み込む
   // silentIfMissing: 文書が無くても警告せず新規扱いに戻す（?resident 起動の初回用）
   const silentIfMissing = !!(opts && opts.silentIfMissing);
-  // Prefer cloud version if newer than local
   let doc = null;
   const localRaw = localStorage.getItem(LS_DOC_PREFIX + name);
   let localDoc = null;
   if (localRaw) {
     try { localDoc = JSON.parse(localRaw); } catch (e) { /* ignore */ }
   }
-  let cloudSeenAt = null;   // 読込時に観測したクラウド版の時刻（ローカル版を採用した場合も基準にする）
+  let cloudSeenAt = null;   // 読込時に観測したクラウド版の時刻
   let cloudFetchFailed = false;   // 「文書が無い」と「通信失敗で確認できない」は保存時の危険度が違うため区別する
-  let keptUnsynced = false;       // 合言葉で断られてクラウドへ届いていない端末の図を、クラウドの新しい版より優先して残した
+  let keptUnsynced = false;       // クラウドに別の新しい版があるが、クラウドへ未反映の端末の図を出した
+  let keepBase = false;           // 基準を据え置く（端末の図を出した・クラウドに版が無いと確かめた・クラウド版を採った）
+  let copyName = '';              // クラウド版へ切り替える前に端末の図を残した別名
+  let copyFailed = false;
+  let keptDelete = '';            // この端末の削除の保留がまだ届いていない図を開いた（'queued'＝再送で消える／'unverified'＝基準が無く自動では消さない）
+  /* ★2026-09-23 根治: クラウドへ未反映の変更（端末保存後に未確認・保留あり・合言葉の印）がある図は、
+     クラウドの版で黙って置き換えない。クラウドがこの端末の出発点のままなら端末の図を出し、
+     別の端末で動いていたら本人に選ばせる。未反映が無い時は、端末に残した基準（サーバー版）と比べる */
+  function adoptRemote(remote) {
+    doc = remote;
+    // refresh local cache
+    localStorage.setItem(LS_DOC_PREFIX + name, JSON.stringify(remote));
+    authUnverified.delete(name);   // クラウド版を採った＝突き合わせる相手が画面に出ている
+    CloudSync.setBaseline(name, remote.updatedAt, true);
+    CloudSync.clearDirty(name);
+    CloudSync.clearConfirm(name);
+    /* 同じ名前の削除の保留: 出発点（base）が今開いたクラウドの版と違う＝削除が古くなった時だけ外す。
+       同じ版を消しにいく保留（と、基準の無い保留）は残し、読込の後に本人へ知らせる（保存すれば残せる） */
+    const pd = CloudSync.getPending().find(x => x && x.kind === 'delete' && x.name === name);
+    if (pd) {
+      if ('base' in pd && typeof pd.base === 'string' && pd.base !== String(remote.updatedAt)) CloudSync.clearPendingFor(name, 'delete');
+      else keptDelete = ('base' in pd && pd.base === null) ? 'unverified' : 'queued';
+    }
+    keepBase = true;
+  }
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', `クラウドから「${name}」を読込中…`);
     try {
       const remote = await CloudSync.get(name);
       if (remote) {
         cloudSeenAt = remote.updatedAt;
-        if (localDoc && authUnverified.has(name) && parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
-          /* 合言葉で断られてクラウドへ届いていない図は、端末のこれが唯一の写し（保留にも積んでいない）。
-             クラウドの版が新しくても上書きせず端末の図を出し、印は残す＝次の保存で本人に確認する（2026-09-23） */
-          doc = localDoc;
-          keptUnsynced = true;
+        const unsynced = CloudSync.hasUnsynced(name) || authUnverified.has(name);
+        const base = CloudSync.getBase(name);
+        if (localDoc && unsynced) {
+          keepBase = true;   // 端末の図を出す間は基準を据え置く（次の保存で食い違いを確かめる）
+          const stamp = localCopyStamp();
+          /* 確かめる印（新規・名前の書き換え等）がある図は、クラウドの版が基準と同じでも選ばせる
+             （この図はその版から出発していないため、同じでも「続き」ではない） */
+          const differs = CloudSync.remoteDiffers(name, remote, localDoc.updatedAt);
+          const mustAsk = !!(base && base.confirm);
+          if (!differs && !mustAsk) {
+            doc = localDoc;   // クラウドはこの端末の出発点のまま＝端末の図がその続き
+          } else if (confirm('「' + name + '」は、この端末にクラウドへ未反映の図があります。'
+              + (differs ? 'クラウドには別の端末で保存された新しい版があります。'
+                : authUnverified.has(name) ? 'クラウドには同じ名前の図があります（この端末の図は、合言葉が違っていた間に保存したもので、クラウドへ届いていません）。'
+                : 'クラウドには同じ名前の図があります（この端末の図は、その版を開いて描いたものではありません）。') + '\n\n'
+              + 'OK: クラウドの版を開く（この端末の図は「' + name + '（この端末の控え ' + stamp + '）」という別の名前で端末に残します）\n'
+              + 'キャンセル: この端末の図のまま開く（保存すると上書きの確認が出ます）')) {
+            copyName = keepLocalCopy(name, localDoc, stamp);
+            if (copyName) {
+              adoptRemote(remote);
+              CloudSync.clearPendingFor(name);   // 端末の図は控えに残した。古い中身を後で再送しない
+            } else {
+              doc = localDoc;   // 控えを残せなかった＝唯一の写しを消さないため、切り替えない
+              keptUnsynced = true;
+              copyFailed = true;
+            }
+          } else {
+            doc = localDoc;
+            keptUnsynced = true;
+          }
+        } else if (base && base.seen) {
+          if (!localDoc || CloudSync.remoteDiffers(name, remote)) adoptRemote(remote);
+          else { doc = localDoc; keepBase = true; }   // クラウドは基準の版のまま
         } else if (!localDoc || parseTs(remote.updatedAt) > parseTs(localDoc.updatedAt)) {
-          doc = remote;
-          // refresh local cache
-          localStorage.setItem(LS_DOC_PREFIX + name, JSON.stringify(remote));
-          authUnverified.delete(name);   // クラウド版を採った＝突き合わせる相手が画面に出ている
+          adoptRemote(remote);   // 基準を残していない旧データ: 以前どおり時刻で比べる
         } else {
           doc = localDoc;   // 端末の方が新しい。合言葉で断られた間に描いた図なら印は残す（次の保存で確認する）
         }
       } else {
         authUnverified.delete(name);     // クラウドに同じ名前の版が無い＝上書きの恐れが無い
+        CloudSync.setBaseline(name, '', true);   // 版が無いと確かめた（次の保存は新規として base:'' を送る）
+        CloudSync.clearConfirm(name);
+        keepBase = true;
         if (localDoc) doc = localDoc;
       }
       if (keptUnsynced) setSyncStatus('err', 'この端末の図を表示中（クラウド未反映・クラウドに別の新しい版あり）');
+      else if (copyName) setSyncStatus('ok', 'クラウドの版を開きました（この端末の図は「' + copyName + '」として端末に残しました）');
       else setSyncStatus('ok', 'クラウド同期済み');
     } catch (err) {
       cloudFetchFailed = true;
@@ -3299,23 +3785,35 @@ async function loadDoc(name, opts) {
          既存版を上書きしかねないため、印を付けたうえで本人に知らせて新規として続行する */
       if (cloudFetchFailed) {
         cloudUnverified.add(name);
+        CloudSync.markConfirm(name);   // 再読み込みしても、保存の時にクラウドの既存版と突き合わせる
         alert('クラウドの既存データを確認できませんでした。\nこのまま新規として開始しますが、保存するとクラウドの既存版を上書きする恐れがあります。\n\n通信が回復したらページを再読み込みしてください。');
       }
+      loadedFrom = name;
       render(); return;   // 端末にもクラウドにも無い＝新規作成として続行
     }
     alert('データが見つかりません: ' + name);
     return;
   }
   state.clientName = doc.clientName || name;
-  /* 基準は「読込時に観測したクラウド版の時刻」。ローカル版を採用した時に doc.updatedAt（ローカル時刻）を
-     基準にすると、読込後に別端末が保存した版まで「古い」と誤判定し確認なしで上書きするため（レビュー指摘）。
-     クラウド未観測（未設定・文書なし・取得失敗）はローカル時刻へフォールバック。 */
-  CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
+  /* 基準は端末に残した「この端末が最後に確かめたサーバー版」。端末の図を出した時も読込時のクラウド版で
+     上書きしない（上書きすると、未反映の図が別端末の版を確認なしに上書きする＝9/23 の事故）。
+     基準を観測していない旧データだけ、以前どおり「読込時に観測したクラウド版の時刻」を基準にする
+     （クラウド未観測＝未設定・取得失敗はローカル時刻へフォールバック） */
+  if (!keepBase) {
+    const b = CloudSync.getBase(state.clientName);
+    if (!(b && b.seen)) CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
+  }
   if (!cloudFetchFailed) cloudUnverified.delete(state.clientName);   // クラウドを確認できた時点で印を外す
-  if (keptUnsynced) {
-    alert('「' + name + '」は、合言葉が違っていた間にこの端末へ保存した図を表示しています（クラウドには未反映）。\n'
-      + 'クラウドには、別の端末で保存された新しい版があります。\n\n'
-      + 'この端末の図で残す場合は「保存」を押してください（上書きしてよいか確認が出ます）。');
+  // 案内は削除の保留が実際に残った時だけ（2択で OK を選ぶと同じ名前の保留はすべて外れる）
+  if (keptDelete && !CloudSync.getPending().some(x => x && x.kind === 'delete' && x.name === name)) keptDelete = '';
+  if (keptDelete === 'unverified') {
+    // 基準の無い削除の保留は、クラウドに版があれば再送で消さない（F7）。そのとおりに知らせる
+    alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。この端末ではクラウドの版を確かめられていないため、通信が戻っても自動では削除しません。\n削除する場合は、もう一度「削除」を押してください。残す場合は、この図を保存してください。');
+  } else if (keptDelete) {
+    alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。通信が戻ると削除されます。\n残す場合は、この図を保存してください。');
+  }
+  if (copyFailed) {
+    alert('「' + name + '」のこの端末の図を別の名前で残せなかったため、クラウドの版には切り替えず、この端末の図のまま開きます。');
   }
   state.doc = {
     nodes: doc.nodes || [],
@@ -3329,15 +3827,19 @@ async function loadDoc(name, opts) {
   setMode({ type: 'select' });
   $('clientName').value = state.clientName;
   localStorage.setItem(LS_LAST, name);
+  loadedFrom = name;
   fitStageSize(true);
   render();
   showProperties();
+  if (copyName) refreshDocList();   // 残した控えを一覧に出す
   flashStatus(`「${name}」を読み込みました`);
 }
 
 function newDoc() {
+  abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（確認の対象を取り違えない）
   if (hasAnyContent() &&
     !confirm('現在の内容を破棄して新規作成しますか？\n（保存していない変更は失われます）')) return;
+  loadedFrom = '';
   state.clientName = '';
   state.doc = makeEmptyDoc();
   state.selectedId = null;
@@ -3371,14 +3873,21 @@ async function deleteCurrentDoc() {
   refreshDocList();
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドから削除中…');
+    /* この端末が確かめた版を base に付ける（2026-09-23 根治）。サーバーの版が違えば消さない。
+       基準を観測していない時は付けない（従来どおり無条件に消す）。基準は書き込みの列の中で読む */
     try {
-      await CloudSync.del(name);
+      await CloudSync.delCurrent(name);
+      CloudSync.clearPendingFor(name);   // 削除が通った＝同じ名前の保留は不要
       setSyncStatus('ok', '削除を同期しました');
     } catch (err) {
       if (err && err.auth) {
         /* 合言葉で断られた削除は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
         setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+      } else if (err && err.conflict) {
+        // 別の端末で新しい版が保存されていた。消すより残す方を選ぶ（積まない＝後で消しにいかない）
+        CloudSync.clearPendingFor(name);   // 同じ名前の古い保留も、後で送らない
+        setSyncStatus('err', 'クラウドからは削除していません（別の端末で新しい版が保存されていました）');
       } else {
         CloudSync.queuePending({ kind: 'delete', name });
         setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
@@ -3834,6 +4343,10 @@ async function forceSync() {
   setSyncStatus('syncing', '保留中の同期を処理しています…');
   try {
     const r = await CloudSync.flushPending();
+    if (r.running) {
+      setSyncStatus('syncing', '同期処理中です');   // 別の再送（オンライン復帰など）が走っている。二重に送らない
+      return;
+    }
     if (r.failed > 0) {
       setSyncStatus('err', `${r.processed}件成功 / ${r.failed}件失敗`);
     } else if (r.processed > 0) {
@@ -3865,22 +4378,24 @@ function init() {
      書かないための束縛（suGenoMasterIdFor）。文書を切り替えても _suMasterId は消えないため、
      これが無いと別人の欄に他人の家族構成図が出る（2026-08-13 実害） */
   window._suMasterName = suName;
+  let bootLoad = null;   // 起動時の自動読込（まとめ反映はこれが終わってから始める）
   if (suName) {
     $('clientName').value = suName;
     state.clientName = suName;
     if (localStorage.getItem(LS_DOC_PREFIX + suName)) {
-      loadDoc(suName);   // 既存の家系図を読込
+      bootLoad = loadDoc(suName);   // 既存の家系図を読込
     } else if (CloudSync.isConfigured()) {
       /* 端末に無くてもクラウドに既存版がある場合がある。確認せず空キャンバスで始めると
          その後の保存でクラウドの既存版を空データで置き換えてしまうため、先に取得を試みる */
-      loadDoc(suName, { silentIfMissing: true });
+      bootLoad = loadDoc(suName, { silentIfMissing: true });
     } else {
+      loadedFrom = suName;   // この方の新規として開いた
       render();          // 新規（氏名のみプリフィル済み）
     }
   } else {
     const last = localStorage.getItem(LS_LAST);
     if (last && localStorage.getItem(LS_DOC_PREFIX + last)) {
-      loadDoc(last);
+      bootLoad = loadDoc(last);
     } else {
       render();
     }
@@ -3889,11 +4404,12 @@ function init() {
   updateModeStatus();
 
   /* 控えの無い家族構成図をまとめて入居者マスタへ反映する（1回だけ・文書は書き換えない）。
-     ★loadDoc は非同期（クラウド確認が入ることがある）ので、読み込みが落ち着いてから始める。
-       開始時点の文書を控えて最後に必ず戻すので、途中で別の文書に化けることはない。
+     ★loadDoc は非同期（クラウド確認が入ることがある）ので、読み込みが終わってから 1.8 秒後に始める（2026-09-23:
+       以前は起動から 1.8 秒の固定で、クラウドの読込と重なると読込前の図へ戻していた）。
+       開始時点の文書を控えて最後に必ず戻す。途中で保存・読込・新規をしたら、その場で戻して打ち切る。
      ★先に「別人の欄に入ってしまった控え」を始末する（順序はどちらでもよいが、誤りを残したまま
        増やさないため先にする）。どちらも失敗しても本体の編集には影響させない。 */
-  setTimeout(function () {
+  var startBackfill = function () { setTimeout(function () {
     var pruned = 0;
     try { pruned = pruneWrongMasterGenograms(); } catch (e) {}
     /* ★お知らせで転んでも backfill を止めない（コメントの「影響させない」と実装を揃える）。
@@ -3902,7 +4418,9 @@ function init() {
       try { flashStatus('別の方の欄に出ていた家族構成図 ' + pruned + '件を切り離しました（図はお名前で残っています）'); } catch (e) {}
     }
     try { backfillSuGenograms(); } catch (e) {}
-  }, 1800);
+  }, 1800); };
+  if (bootLoad) bootLoad.then(startBackfill, startBackfill);
+  else startBackfill();
 
   let resizeTimer = null;
   window.addEventListener('resize', () => {
@@ -3918,6 +4436,7 @@ function init() {
     if (CloudSync.isConfigured() && CloudSync.getPending().length > 0) {
       setSyncStatus('syncing', 'オンライン復帰: 保留分を同期中…');
       CloudSync.flushPending().then(r => {
+        if (r.running) return;   // 「↻ 同期」の再送が走っている。結果はそちらが出す
         setSyncStatus(r.failed > 0 ? 'err' : 'ok',
           r.failed > 0 ? `${r.processed}件成功 / ${r.failed}件失敗`
                        : `${r.processed}件を再同期しました`);
