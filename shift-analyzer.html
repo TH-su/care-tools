@@ -99,6 +99,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 }
 </style>
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24"></script>
 </head>
 <body>
 <header class="topbar">
@@ -962,13 +963,29 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   var TC  = isNode ? require('./timecalc.js') : window.ShiftTimecalc;
   var AG  = isNode ? require('./aggregate.js') : window.ShiftAggregate;
 
-  /* 区分の正規化（表記ゆれ吸収）。既知区分=訪問/施設/通所のみ集計対象 */
+  /* 区分の正規化（表記ゆれ吸収）。既知区分=訪問/施設/通所のみ集計対象。
+     ★事業所の固有名（2026-09-24〜）はコードに書かず、施設情報（facility-profile.json・su-facility.js）の
+       名前・正式名・別名から足す。読めない時（Node の試験・設定の無い端末）は一般の呼び名だけで照合する */
   var DIV_ALIASES = {
-    '訪問': '訪問', '訪問介護': '訪問', 'いずみ': '訪問',
-    '施設': '施設', 'ラウレアハレ': '施設', '住宅': '施設',
-    '通所': '通所', 'デイ': '通所', 'デイサービス': '通所', 'せせらぎ': '通所'
+    '訪問': '訪問', '訪問介護': '訪問',
+    '施設': '施設', '住宅': '施設',
+    '通所': '通所', 'デイ': '通所', 'デイサービス': '通所'
   };
   var KNOWN_DIVISIONS = ['訪問', '施設', '通所'];
+  function divAliases() {
+    var m = {}, k;
+    for (k in DIV_ALIASES) if (Object.prototype.hasOwnProperty.call(DIV_ALIASES, k)) m[k] = DIV_ALIASES[k];
+    try {
+      var F = (!isNode && typeof window !== 'undefined') ? window.SUFacility : null;
+      if (F && F.ready()) {
+        var ex = F.aliases();
+        for (k in ex) {
+          if (Object.prototype.hasOwnProperty.call(ex, k) && KNOWN_DIVISIONS.indexOf(ex[k]) >= 0 && !m[k]) m[k] = ex[k];
+        }
+      }
+    } catch (e) {}
+    return m;
+  }
 
   /* 資格ヘッダ → 資格名。aggregate.hasQual が参照する文字列に合わせる */
   var QUAL_HEADERS = {
@@ -980,7 +997,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   };
 
   function trim(s) { return (s === null || s === undefined) ? '' : String(s).replace(/^[\s　]+|[\s　]+$/g, ''); }
-  function normDiv(s) { var t = trim(s); return DIV_ALIASES[t] || null; }
+  function normDiv(s) { var t = trim(s); return divAliases()[t] || null; }
 
   /* 「7/1」「12/31」形式(月内日付)判定。カレンダーマスタの完全日付「2026/4/1」は3要素で不一致=除外 */
   var RE_MD = /^(\d{1,2})\/(\d{1,2})$/;
