@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="spl-build" content="2026-09-19.5">
+<meta name="spl-build" content="2026-09-23.1">
 <title>消耗品管理</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1176,7 +1176,7 @@ body.staff .adm{display:none !important}
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-19.5';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
+var BUILD = '2026-09-23.1';   /* アプリの版。meta spl-build と設定画面の表示はここから流す（食い違わせない） */
 var CFG_KEY = 'spl_cfg';
 var PENDING_KEY = 'spl_pending';
 var ROSTER_KEY = 'su_residents_common';
@@ -1442,6 +1442,8 @@ function apiPost(action, body, timeoutMs) {
     try { d = JSON.parse(t); } catch (e) { throw mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが消耗品管理GASの /exec になっているか確かめてください。'); }
     if (!d || typeof d !== 'object') throw mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。');
     if (d.ok !== true) {
+      /* flush_fail は台帳が書けていることがあるので、明細を開いた時に読み直させる（2026-09-23） */
+      if (d.error === 'flush_fail' && MOVE_WRITERS.indexOf(action) >= 0) markBillStale();
       var ne = mkErr(serverErrText(d), serverErrHint(d));
       ne.code = txt(d.error);
       ne.raw = d;
@@ -1483,7 +1485,8 @@ var ERR_TEXT = {
   closed: 'この月は締め済みです',
   in_use: '使っている種別は削除できません',
   unknown_action: 'この操作にサーバーが対応していません',
-  busy: 'ほかの人が同時に書き込んでいます'
+  busy: 'ほかの人が同時に書き込んでいます',
+  flush_fail: '保存できたか確かめられませんでした'
 };
 var ERR_HINT = {
   unauthorized: '設定画面で合言葉を入れ直してください。',
@@ -1500,7 +1503,8 @@ var ERR_HINT = {
   closed: '設定画面で締めを解除してから、もう一度お試しください。',
   in_use: '非表示にすると、新しく選べなくなります。',
   unknown_action: 'GAS が古い版です。エディタで「デプロイを管理」→ 新しいバージョンを公開してください。',
-  busy: '少し待ってから、もう一度お試しください。'
+  busy: '少し待ってから、もう一度お試しください。',
+  flush_fail: '一覧を取り直して、入っているか確かめてから操作してください（新しい品目は、もう一度登録する前に一覧で確かめる）。'
 };
 function serverErrText(d) {
   var c = txt(d && d.error);
