@@ -4909,7 +4909,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm, dayRange);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
         /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
-        h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 11)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 11)) + '" style="background:' + esc(gc.bg) + ';color:' + esc(gc.text) + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm, dayRange, collectRows);
         /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)＝人数確認欄を表示。
          * 画面(!pm)は従来どおり常時。印刷は【A3縦2分割のときだけ】出す＝dayRange 非null が分割の目印
@@ -4992,14 +4992,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var isMain = ln.div === mainDiv;
         var trCls = (L > 0 ? 'subrow' : 'staffline')
           + (ln.hidden ? ' hiddenrow' : '');
-        h += '<tr data-sid="' + st.id + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
+        h += '<tr data-sid="' + esc(st.id) + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
         if (L === 0) {
-          h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + st.id + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
+          h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + esc(st.id) + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
         }
         h += '<td class="divcell sticky2" style="left:100px">' + esc(ln.div) +
           (ln.hidden
-            ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
-            : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
+            ? ' <span class="showbtn" data-sid="' + esc(st.id) + '" data-div="' + esc(ln.div) + '" title="この行を再表示">表示</span>'
+            : ' <span class="hidebtn" data-sid="' + esc(st.id) + '" data-div="' + esc(ln.div) + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
         h += this.dayCells(st, ln.div, isMain, days, dayRange);
         if (L === 0 && !pm) {
@@ -5012,7 +5012,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t && (t.divMin['通所'] || 0) > 0 ? fmtH(t.divMin['通所']) : '') + '</td>';
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t && t.overtimeCount ? t.overtimeCount + '回' : '') + '</td>';
           h += '<td class="notecell noprint" rowspan="' + rowSpan + '" title="' + esc(note) + '">' + esc(note) + '</td>';
-          h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + st.id + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
+          h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + esc(st.id) + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
         }
         h += '</tr>';
         /* 範囲指定(分割印刷)では visibleRows を構築しない＝画面の選択/コピペ/矢印移動の行集合を汚さない */
@@ -5107,9 +5107,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var otLen = Sym.leadingNightOutOvertime(cells[String(d - 1)] || '', disp, ctx.symbols);
           if (otLen > 0) dispHtml = '<span class="ot-hl">' + esc(disp.slice(0, otLen)) + '</span>' + esc(disp.slice(otLen));
         }
-        h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + cDiv +
+        h += '<td class="' + cls + '" data-sid="' + esc(st.id) + '" data-div="' + esc(cDiv) +
           '" data-day="' + d + '" data-main="' + (cMain ? 1 : 0) + '"' +
-          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
+          (style ? ' style="' + esc(style) + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
       }
       return h;
     },
@@ -5240,7 +5240,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var divs = ['施設', '訪問', '通所'];
       for (var i = 0; i < divs.length; i++) {
         var v = m.fteByDivision[divs[i]];
-        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + ctx.settings.fteBaseHours + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
+        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + esc(ctx.settings.fteBaseHours) + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
       }
       var shortage = 0;
       for (var d = 1; d <= ctx.days; d++) {
@@ -5433,7 +5433,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var s = allowed[i];
         if (s.type === 'off' || s.type === 'paidOff' || s.type === 'publicOff') continue;
         h += '<span class="symbtn" data-v="' + esc(s.code) + '" title="' + esc(s.label || '') + '"' +
-          (s.color ? ' style="background:' + s.color + '"' : '') + '>' + esc(s.code) + '</span>';
+          (s.color ? ' style="background:' + esc(s.color) + '"' : '') + '>' + esc(s.code) + '</span>';
       }
       h += '<div class="pal-section">休み</div>';
       for (var j = 0; j < allowed.length; j++) {
@@ -5874,9 +5874,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         var stStatus = st.status || (st.active === false ? '退職' : '在籍');
-        var statusLabel = stStatus + (stStatus === '退職' && st.retireMonth ? '（' + esc(st.retireMonth) + '〜非表示）' : '');
+        var statusLabel = esc(stStatus) + (stStatus === '退職' && st.retireMonth ? '（' + esc(st.retireMonth) + '〜非表示）' : '');
         var dim = (st.active === false || stStatus === '退職');
-        h += '<tr data-sid="' + st.id + '" draggable="true" style="cursor:pointer' + (dim ? ';opacity:.45' : '') + '">' +
+        h += '<tr data-sid="' + esc(st.id) + '" draggable="true" style="cursor:pointer' + (dim ? ';opacity:.45' : '') + '">' +
           '<td title="ドラッグで並べ替え">↕</td>' +
           '<td><b>' + esc(st.name) + '</b></td>' +
           '<td>' + esc(groupLabel(st.group)) + '</td>' +
@@ -5972,7 +5972,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var mcVal = (typeof r.maxConsecutive === 'number' && r.maxConsecutive > 0 && r.maxConsecutive !== 4) ? r.maxConsecutive : '';
       h += '<label>連勤上限</label><input type="number" id="edMaxCons" min="1" max="10" value="' + mcVal + '" style="width:70px" placeholder="既定4">';
       h += '<div class="muted">空欄＝既定4連勤を超えたら画面にオレンジ枠。値を入れるとその職員はオレンジを出しません（自動作成の上限には反映されます）。オレンジ枠は印刷されません。</div>';
-      h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + (r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
+      h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + esc(r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
       h += '<label>遅番回数上限</label><input type="number" id="edLateMax" min="0" max="31" value="' + (r.lateMax || '') + '" style="width:70px" placeholder="なし">';
       h += '<label>固定休曜日</label><div id="edFixedOff">';
       var dows = ['日', '月', '火', '水', '木', '金', '土'];
@@ -6109,8 +6109,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           '<td><input type="text" data-f="start" value="' + esc(s.start || '') + '" style="width:52px"></td>' +
           '<td><input type="text" data-f="end" value="' + esc(s.end || s.pairEnd || '') + '" style="width:52px"></td>' +
           '<td>' + catSelect(s.cat) + '</td>' +
-          '<td><input type="color" data-f="color" value="' + (s.color || '#ffffff') + '"></td>' +
-          '<td><input type="color" data-f="textColor" value="' + (s.textColor || '#2b3138') + '"></td>' +
+          '<td><input type="color" data-f="color" value="' + esc(s.color || '#ffffff') + '"></td>' +
+          '<td><input type="color" data-f="textColor" value="' + esc(s.textColor || '#2b3138') + '"></td>' +
           '<td><input type="checkbox" data-f="bold"' + (s.bold ? ' checked' : '') + '></td>' +
           '<td>' + colorDivSelect(s.colorDiv) + '</td>' +
           '<td class="muted">' + preview(s, app) + '</td>' +
@@ -6415,9 +6415,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<label>休憩控除の閾値</label><select id="setThresh">' +
         '<option value="6"' + (s.breakThresholdH === 6 ? ' selected' : '') + '>拘束6時間以上で1h控除</option>' +
         '<option value="7"' + (s.breakThresholdH === 7 ? ' selected' : '') + '>拘束7時間以上で1h控除</option></select>';
-      h += '<label>夜勤の休憩</label><input type="number" id="setNightBreak" step="0.5" value="' + s.nightBreakH + '" style="width:70px"> ';
+      h += '<label>夜勤の休憩</label><input type="number" id="setNightBreak" step="0.5" value="' + esc(s.nightBreakH) + '" style="width:70px"> ';
       h += '<label>有給の扱い</label><label><input type="checkbox" id="setPaid"' + (s.paidLeaveCountsAsWork ? ' checked' : '') + '> 実働8hとして算入する</label>';
-      h += '<label>常勤換算の分母</label><input type="number" id="setFte" value="' + s.fteBaseHours + '" style="width:70px"> h（4週）';
+      h += '<label>常勤換算の分母</label><input type="number" id="setFte" value="' + esc(s.fteBaseHours) + '" style="width:70px"> h（4週）';
       h += '<label for="setExclude">取込で除外する姓</label><div><input type="text" id="setExclude" value="' +
         esc((s.excludeSurnames || []).join('、')) + '" style="width:220px" placeholder="例）見本、サンプル">' +
         '<div class="muted">希望休フォーム・職員マスタの貼り付け取込で、この姓で始まる氏名を自動除外します（テスト用のダミー回答を弾く用途）。' +
@@ -6436,8 +6436,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var gi = 0; gi < gdefs.length; gi++) {
         var gc = gcs[gdefs[gi][0]] || { bg: '#1a4a80', text: '#ffffff' };
         h += '<tr><td>' + gdefs[gi][1] + '</td>' +
-          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="bg" value="' + gc.bg + '"></td>' +
-          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="text" value="' + gc.text + '"></td></tr>';
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="bg" value="' + esc(gc.bg) + '"></td>' +
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="text" value="' + esc(gc.text) + '"></td></tr>';
       }
       h += '</table><div style="margin-top:10px"><button class="act" id="setSave">設定を保存</button> <span class="muted" id="setMsg"></span></div>';
       document.getElementById('settingsForm').innerHTML = h;
@@ -6749,7 +6749,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var st = staff[i];
         var nm = IM.normalizeName(st.name);
         var row = reqs[nm] || {};
-        h += '<tr data-sid="' + st.id + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
+        h += '<tr data-sid="' + esc(st.id) + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
         for (var d2 = 1; d2 <= days; d2++) {
           var v = row[d2] || row[String(d2)] || '';
           h += '<td style="text-align:center;cursor:pointer" data-nm="' + esc(nm) + '" data-day="' + d2 + '">' +
@@ -6977,7 +6977,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<th>1週</th><th>2週</th><th>3週</th><th>4週</th><th>4週計h</th><th>常勤換算</th></tr>';
       for (var i = 0; i < data.rows.length; i++) {
         var r = data.rows[i];
-        h += '<tr data-sid="' + r.sid + '" draggable="true"><td style="cursor:grab" title="' + esc(r.name) + '／ドラッグで並べ替え（行政提出専用）">' + esc(r.name) + '</td>' +
+        h += '<tr data-sid="' + esc(r.sid) + '" draggable="true"><td style="cursor:grab" title="' + esc(r.name) + '／ドラッグで並べ替え（行政提出専用）">' + esc(r.name) + '</td>' +
           '<td title="サービス提供責任者">' + (r.svcMgr ? 'サービス提供責任者' : '') + '</td>' +
           '<td title="' + esc(r.quals) + '">' + esc(r.quals) + '</td>' +
           '<td title="' + esc(r.employment) + '">' + esc(r.employment) + '</td>';
@@ -6997,7 +6997,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<div class="offstats"><b>行政保管用 指標（' + app.year + '年' + app.month + '月・' + esc(data.division) + '・' + ({plan:'予定',actual:'実績',official:'行政提出用'})[data.layer] + 'レイヤ）</b><table class="plain" style="max-width:520px;margin-top:6px">';
       h += '<tr><th>介護福祉士 割合（実働）</th><td><b>' + data.kaifukuPct + '%</b></td></tr>';
       h += '<tr><th>介護福祉士＋実務者研修 割合（実働）</th><td><b>' + data.kaifukuJitsumuPct + '%</b></td></tr>';
-      h += '<tr><th>常勤換算 合計（1〜28日÷' + app.settings.fteBaseHours + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
+      h += '<tr><th>常勤換算 合計（1〜28日÷' + esc(app.settings.fteBaseHours) + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
       h += '</table></div>';
       h += '<p class="muted">※「従業者の勤務体制及び勤務形態一覧表（様式1）」への転記用。割合は当該事業所区分の実働時間に占める資格保有者の実働時間。</p></div>';
       document.getElementById('officialTable').innerHTML = h;
@@ -8468,10 +8468,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var lay = 'draft:' + d.id;
           var on = (this.layer === lay) ? ' on' : '';
           var auto = d.auto ? ' autopt' : '';
-          h += '<span class="drafttab' + on + auto + '" data-layer="' + lay + '" title="' +
+          h += '<span class="drafttab' + on + auto + '" data-layer="' + escText(lay) + '" title="' +
             escText(d.label) + (d.auto ? '（自動退避・確定前の予定）' : '／クリックで開く・ダブルクリックで名称変更') + '">' +
             '<span class="dlabel">' + escText(d.label) + '</span>' +
-            '<span class="dx" data-del="' + d.id + '" title="この編集用を削除">×</span></span>';
+            '<span class="dx" data-del="' + escText(d.id) + '" title="この編集用を削除">×</span></span>';
         }
         wrap.innerHTML = h;
       }
@@ -8918,7 +8918,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<table class="plain">';
       for (var i = this._undo.length - 1; i >= 0; i--) {
         var e = this._undo[i];
-        h += '<tr><td>' + e.at + '</td><td>' + e.ym + '/' + e.layer + '</td><td>' + escText(e.label) + '</td>' +
+        h += '<tr><td>' + escText(e.at) + '</td><td>' + escText(e.ym) + '/' + escText(e.layer) + '</td><td>' + escText(e.label) + '</td>' +
           '<td><button class="act ghost histjump" data-i="' + i + '">この直前へ戻す</button></td></tr>';
       }
       h += '</table><p class="muted">※職員マスタ・記号・設定の変更は履歴の対象外です。アプリを閉じると履歴は消えます。</p>';
