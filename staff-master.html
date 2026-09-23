@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-23.7">
+<meta name="stfm-build" content="2026-09-23.8">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1260,7 +1260,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.7</p>
+    <p class="muted">版 2026-09-23.8</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1420,13 +1420,13 @@ body.cmt-print{page:cmt}
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-23.7
+   職員マスタ 2026-09-23.8
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-23.7';
+var BUILD = '2026-09-23.8';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1627,7 +1627,12 @@ var ST = {
   cmtSel: '', cmtAt: '', cmtLoaded: false, cmtExternals: {}, cmtBusy: false, cmtCol: false,
   /* 委員会タブの表に出す列（2026-09-22.6）。既定は両方オン＝2026-09-22.5 と同じ見え方で始まる */
   cmtReq: true, cmtOrg: true,
-  cmtOpen: '', cmtAuto: false
+  cmtOpen: '', cmtAuto: false,
+  /* 読み直し待ち（2026-09-23.8）。書けたか分からない送信の後は、一覧を読み直すまで同じ送信を止める。
+     listOkAt: 最後に成功した一覧の読み込みを【始めた】時刻（ms）。listOkN: 成功した回数（ボタンで読めたかの判定）
+     impHold: CSV の試算を止める期限。この時刻以降に始めた読み込みが成功したら外す（0＝止めていない）
+     fileHold: 書類の追加を止めている職員。{ 職員ID: { at: 期限, known: 送る前の書類ID, name, kind, size } } */
+  listOkAt: 0, listOkN: 0, impHold: 0, fileHold: {}
 };
 
 function asOfDate() { return ST.asOf || SC().today(); }
@@ -1687,11 +1692,16 @@ function partialList(e, key) { return (e && Array.isArray(e[key])) ? e[key] : []
      ずれると見分けられず、書類の追加で同じ書類が2つ入る。 */
 var FLUSH_FAIL_MSG = '保存を確定できたか確かめられませんでした。画面を開き直して、保存されているか確かめてください';
 function isUnconfirmed(e) { return !!(e && e.unconfirmed === true); }
-/* 新規登録が確定できたか分からず、職員IDも受け取れていない時の案内（詳細の保存の2か所で使う）。
-   ★新規のフォームは未保存扱い＝「← 一覧へ戻る」で破棄の確認が出て入力は消え、確かめた後にこの画面へ戻る道は無い
-     ＝「＋ 新規」から入れ直す手順で書く。
-   ★一覧の読み直しに失敗すると古い一覧に本人がいないので、読み込めたことも確かめてもらう（入れ直すと二重になる） */
-var NEW_UNCONFIRMED_MSG = 'この画面で「保存」を押し直すと、登録されていた時に同じ方が二重に登録されます。「← 一覧へ戻る」を押し（「破棄して移動しますか？」は OK。入力は消えます）、一覧で「再読み込み」を押して、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、この方がいるかを確かめてください。いなければ「＋ 新規」から入れ直して保存してください。';
+/* 使える応答を受け取れなかった（2026-09-23.8）。①応答が無く打ち切った ②通信に失敗した ③HTTP が成功でない
+   ④応答を読めない・空だった。GAS の Web アプリは POST を処理してから結果を返す作りで、画面があきらめた後も
+   サーバーの処理は続くことがある＝書けたか分からない。送る前に止めた時（接続先・合言葉が未設定）と、
+   サーバーが断った時（ok:false）には付けない。 */
+function isNoAnswer(e) { return !!(e && e.noAnswer === true); }
+function markNoAnswer(e) { e.noAnswer = true; return e; }
+/* 書けたかもしれない（確定を確かめられなかった／応答を受け取れなかった）＝送り直しを促さない */
+function mayHaveWritten(e) { return isUnconfirmed(e) || isNoAnswer(e); }
+/* 見出しに添える原因。応答を受け取れなかった時だけ（確定を確かめられなかった時は見出しそのものが原因） */
+function unsureWhy(e) { return isNoAnswer(e) ? '（' + errText(e) + '）' : ''; }
 
 /* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
 function apiPost(action, body, timeoutMs) {
@@ -1710,12 +1720,12 @@ function apiPost(action, body, timeoutMs) {
   var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
   if (ctl) opt.signal = ctl.signal;
   return fetch(cfg.url, opt).then(function (res) {
-    if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。');
+    if (!res.ok) throw markNoAnswer(mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
     return res.text();
   }).then(function (t) {
     var d = null;
-    try { d = JSON.parse(t); } catch (e) { throw mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが職員マスタGASの /exec になっているか確かめてください。'); }
-    if (!d || typeof d !== 'object') throw mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。');
+    try { d = JSON.parse(t); } catch (e) { throw markNoAnswer(mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが職員マスタGASの /exec になっているか確かめてください。')); }
+    if (!d || typeof d !== 'object') throw markNoAnswer(mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。'));
     if (d.ok !== true) {
       var ne = mkErr(txt(d.error) || 'サーバーが処理を断りました', '入力内容を見直すか、設定の合言葉を確かめてください。');
       if (Array.isArray(d.detail)) ne.detail = d.detail;            /* 検証NGの明細を呼び出し側へ渡す */
@@ -1740,10 +1750,10 @@ function apiPost(action, body, timeoutMs) {
     if (e && e.name === 'AbortError') {
       var ae = mkErr('応答がないため中断しました', '通信環境を確かめ、時間をおいてもう一度お試しください。保存の場合はサーバー側に入っていることがあるので、再読み込みで確かめてください。');
       ae.aborted = true;
-      throw ae;
+      throw markNoAnswer(ae);
     }
     if (e && e.userMsg) throw e;
-    throw mkErr('通信に失敗しました', '通信環境を確かめ、時間をおいてもう一度お試しください。');
+    throw markNoAnswer(mkErr('通信に失敗しました', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
   }).then(function (d) {
     if (timer) clearTimeout(timer);
     return d;
@@ -2092,6 +2102,7 @@ function loadList(quiet) {
     return Promise.resolve();
   }
   ST.loading = true;
+  var startedAt = Date.now();                /* 読み直し待ち（2026-09-23.8）は、始めた時刻で「失敗の後の読み込みか」を見る */
   if (ST.screen === 'cmt') renderCmt();      /* 委員会タブに「読み込んでいます」を出す */
   if (!quiet) setState('listState', '', '読み込み中…', '職員データを取得しています。');
   return apiPost('list', {}).then(function (d) {
@@ -2108,6 +2119,8 @@ function loadList(quiet) {
     ST.byId = {};
     ST.rows.forEach(function (r) { ST.byId[r.id] = r; });
     ST.loaded = true;
+    if (startedAt > ST.listOkAt) ST.listOkAt = startedAt;
+    ST.listOkN++;
     if (!ST.rows.length) {
       $('listWrap').hidden = true;
       setState('listState', '', '職員がまだ登録されていません', '「＋ 新規」で登録するか、「取込・書出」から CSV を取り込んでください。');
@@ -2132,6 +2145,43 @@ function loadList(quiet) {
 function doneLoadList() {
   ST.loading = false;
   if (ST.screen === 'cmt') renderCmt();
+}
+
+/* ── 読み直し待ち（2026-09-23.8）───────────────────────────
+   書けたか分からない送信（新規登録・CSV取込・書類の追加）の後は、一覧を読み直すまで同じ送信を止める。
+   ★数えるのは「失敗の後に【始めた】読み込みが成功したこと」。失敗の前から走っていた読み込みは、書き込みより
+     前の名簿を読んでいることがあるので数えない（読み込み中に loadList を呼んでも素通りするため、回数ではなく
+     始めた時刻で見る）。
+   ★応答を受け取れなかった時は、画面があきらめた後もサーバーが書き続けることがある（Apps Script の1回の実行は
+     最長6分）。入っていれば読み直した時点で「入っていた」と言えるが、「入っていない」と言えるのは、送ってから
+     6分たった後に始めた読み込みだけ（本人裁定 2026-09-23「6分待ち」）。 */
+var SERVER_MAX_MS = 6 * 60 * 1000;
+/* この時刻以降に始めた読み込みが成功したら確かめられる、という期限 */
+function recheckAfter(e, sentAt) {
+  var now = Date.now();
+  return isNoAnswer(e) ? Math.max(now, sentAt + SERVER_MAX_MS) : now;
+}
+function reloadedSince(t) { return !t || ST.listOkAt >= t; }
+/* 案内に出す時刻（分に切り上げる＝表示の時刻に押せば必ず間に合う） */
+function hhmm(ms) {
+  var d = new Date(Math.ceil(ms / 60000) * 60000);
+  return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
+}
+/* 読み直し待ちのボタンから一覧を読み込み直す。done('ok'＝この呼び出しで読めた／'busy'＝ほかの読み込みの途中で
+   今回は読んでいない／'fail'＝読めなかった) */
+function reloadList(done) {
+  if (ST.loading) { done('busy'); return; }
+  var n = ST.listOkN;
+  loadList(true).then(function () { done(ST.listOkN > n ? 'ok' : 'fail'); });
+}
+/* 読み直せなかった時の案内。同じボタンをもう一度出す */
+function showReloadNg(stateId, r, label, fn) {
+  if (r === 'busy') {
+    setState(stateId, 'warn', '一覧を読み込んでいる途中です', '少し待ってから、もう一度「' + label + '」を押してください。', label, fn);
+    return;
+  }
+  setState(stateId, 'err', '一覧を読み込めませんでした',
+    '通信環境と、設定の接続先・合言葉を確かめてから、もう一度「' + label + '」を押してください。', label, fn);
 }
 
 /* ── 一括編集 ─────────────────────────────────────────── */
@@ -2296,9 +2346,10 @@ function bulkSave() {
       $('listState').hidden = false;
       return;
     }
-    if (isUnconfirmed(e)) {
-      /* 書けたか分からない。更新だけの保存は版（rev）で照合される＝送り直しても二重には書かない */
-      setState('listState', 'warn', '保存できたか確かめられませんでした',
+    if (mayHaveWritten(e)) {
+      /* 書けたか分からない（確定を確かめられなかった／応答を受け取れなかった 2026-09-23.8）。
+         更新だけの保存は版（rev）で照合される＝送り直しても二重には書かない */
+      setState('listState', 'warn', '保存できたか確かめられませんでした' + unsureWhy(e),
         '入力した内容はこの画面に残しています。もう一度「一括保存」を押すと送り直します。保存できていた方は「他の端末が先に保存」と出て止まる（二重には書きません）ので、その方は「サーバー値を採用」を選んでください。');
       $('listState').hidden = false;
       return;
@@ -2827,7 +2878,8 @@ function updateDerived() {
 
 function updateDirtyUi() {
   var d = detailDirty();
-  $('dtSave').disabled = !d || ST.busy;
+  /* 登録できたか確かめている間は押せない（理由は dtState に出ている。2026-09-23.8） */
+  $('dtSave').disabled = !d || ST.busy || !!(ST.detail && ST.detail.pending);
   $('dtCancel').disabled = !d;
 }
 function onFormInput() {
@@ -2885,6 +2937,8 @@ function validateDetail() {
 
 function saveDetail() {
   if (!ST.detail || ST.busy) return;
+  /* 登録できたか確かめている間は送らない（2026-09-23.8）。Ctrl+S はボタンを通らないので、ここで止める */
+  if (ST.detail.pending) { showDetailPending(); return; }
   normalizeDateFields();                 /* 打ちかけの和暦も送る前に 'YYYY-MM-DD' へ直す */
   updateDerived();
   var bad = validateDetail();
@@ -2922,20 +2976,24 @@ function saveDetail() {
   ST.busy = true;
   updateDirtyUi();
   setState('dtState', '', '保存中…', 'サーバーに送っています。');
+  /* 送った時刻・送る前にいた職員ID・送った内容を控える（書けたか分からない時に、その場で照合するため） */
+  ST.detail.sent = { at: Date.now(), known: Object.keys(ST.byId), form: cur };
   apiPost('bulkSave', body).then(function (d) {
     applyDetailResult(d, cur, dropped, null);
   }).catch(function (e) {
     /* 途中まで書けている応答（partial）は、書けた分だけ画面に反映してから案内する */
     if (isPartial(e)) { applyDetailResult(e, cur, dropped, e); return; }
-    if (isUnconfirmed(e)) {
-      /* 書けたか分からない。新規は職員IDを受け取れていないので、送り直すと同じ方が二重に登録され得る
-         （サーバーが版を進める所で落ちると、新規を含んでも partial で返らない）＝送り直しのボタンは出さない。
+    if (mayHaveWritten(e)) {
+      /* 書けたか分からない（確定を確かめられなかった／応答を受け取れなかった 2026-09-23.8）。
+         新規は職員IDを受け取れていないので、送り直すと同じ方が二重に登録され得る（サーバーが版を進める所で
+         落ちると、新規を含んでも partial で返らない）＝送り直しのボタンは出さず、「保存」を止めて、その場で
+         一覧を読み直して照合する（本人裁定 2026-09-23「その場で照合」）。
          更新は版（rev）で照合される＝送り直しても二重には書かない */
       if (body.creates) {
-        setState('dtState', 'warn', '登録できたか確かめられませんでした', NEW_UNCONFIRMED_MSG);
+        holdNewDetail(e, '登録できたか確かめられませんでした' + unsureWhy(e));
         return;
       }
-      setState('dtState', 'warn', '保存できたか確かめられませんでした',
+      setState('dtState', 'warn', '保存できたか確かめられませんでした' + unsureWhy(e),
         '入力した内容はこの画面に残しています。「保存」をもう一度押すと送り直します。保存できていた時は「他の端末がこの方を先に保存しています」と出て止まる（二重には書きません）ので、「サーバー値を採用」を選んでください。',
         'もう一度保存する', function () { saveDetail(); });
       return;
@@ -2958,17 +3016,26 @@ function applyDetailResult(d, cur, dropped, partialErr) {
     showDetailConflict();
     return;
   }
+  var unsure = !!(partialErr && isUnconfirmed(partialErr));
   if (created.length) {
     var nid = txt(created[0].id);
     var nrow = normRow(cur);
     nrow.id = nid;
     nrow.rev = Number(created[0].rev) || 1;
-    ST.rows.push(nrow);
-    ST.byId[nid] = nrow;
+    if (unsure) {
+      /* 職員IDは受け取ったが、登録が確定したか分からない（2026-09-23.8・引き継ぎ②）。書き込みが消えていると
+         採番（nextId）も消え、同じIDが他端末の新規登録に振り直され得る＝一覧に仮の行を足さず（開いて使えないように）、
+         その場で一覧を読み直して「そのIDに同じ氏名の方がいる」と確かめるまで「保存」「書類」を止める。
+         newBase は新規のフォームの基準。登録できていなかった時に新規へ戻すために控える */
+      ST.detail.pending = { kind: 'id', id: nid, sent: sentKey(cur), newBase: ST.detail.base };
+    } else {
+      ST.rows.push(nrow);
+      ST.byId[nid] = nrow;
+    }
     ST.detail.id = nid;
     ST.detail.rev = nrow.rev;
     ST.detail.base = normRow(nrow);
-    $('dtMeta').textContent = '職員ID ' + nid + '／版 ' + nrow.rev;
+    $('dtMeta').textContent = '職員ID ' + nid + '／版 ' + nrow.rev + (unsure ? '（確かめ中）' : '');
     buildListHead();
     renderList();
   } else if (applied.length) {
@@ -2985,20 +3052,16 @@ function applyDetailResult(d, cur, dropped, partialErr) {
   }
   $('dtName').textContent = txt(cur.name) || '（氏名未入力）';
   var warn = Array.isArray(d.warnings) ? d.warnings : [];
-  if (partialErr && isUnconfirmed(partialErr)) {
+  if (unsure) {
     /* 書けたか分からない（サーバーが確定を確かめられなかった）。「保存できました」とは言わない。
-       新規は職員IDを受け取って上で控えた＝この画面で「保存」を押しても新規にはならない（二重登録しない）。
-       ★ただし書き込みが消えていると、採番（nextId）も消えるので、その職員IDと版1が他端末の新規登録に
-         振り直され得る。そのまま「保存」「書類」を使うと別の方の行に書き込む＝確かめるまで使わないよう案内する
-         （確かめるまで止める作りは別タスク「応答が無い時の二重登録の口を塞ぐ」で扱う） */
-    /* ★一覧には上で行を足してあるので、読み直しに失敗してもこの方は一覧に残って見える＝読み込めたことも確かめてもらう */
+       ・職員IDを受け取った新規 … 上で pending を立てた。確かめるまで「保存」「書類」を止める
+       ・職員IDを受け取れなかった新規（新規の行を書く所で落ちた）… ⑨経路と同じく、その場で照合する
+       ・更新 … 版（rev）で照合される＝押し直しても二重には書かない。読み直して確かめてもらう */
     var unsureTitle = (!created.length && !ST.detail.id) ? '登録できたか確かめられませんでした' : '保存できたか確かめられませんでした';
-    setState('dtState', 'warn', unsureTitle,
-      created.length
-        ? '一覧に戻って「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、この方が登録されているかを確かめてください。いなければ「＋ 新規」から入れ直してください。確かめるまでは、この画面で「保存」も「書類」も使わないでください（登録できていなかった時は、この職員IDが別の方に振り直されていることがあります）。'
-        : (!ST.detail.id
-          ? NEW_UNCONFIRMED_MSG          /* 新規の行を書く所で落ちて職員IDを受け取れなかった＝⑨経路と同じ状況 */
-          : '一覧に戻って「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、保存されているかを確かめてください。'));
+    if (created.length) showDetailPending(unsureTitle);
+    else if (!ST.detail.id) holdNewDetail(partialErr, unsureTitle);
+    else setState('dtState', 'warn', unsureTitle,
+      '一覧に戻って「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、保存されているかを確かめてください。');
     toast(unsureTitle);
   } else if (partialErr) {
     var okN = created.length + applied.length;
@@ -3018,6 +3081,111 @@ function applyDetailResult(d, cur, dropped, partialErr) {
   }
   updateDirtyUi();
   updateFilesBtn();          /* 新規は登録できた時点で「書類」が押せるようになる */
+}
+
+/* ── 登録できたか確かめる（2026-09-23.8）──────────────────────
+   新規登録が書けたか分からない時は、この画面の「保存」を止め、その場で一覧を読み直して照合する
+   （本人裁定 2026-09-23「その場で照合」。入力を消さずに済む）。止めている間の印が ST.detail.pending:
+     kind 'create' … 職員IDを受け取れていない。送る前に無かった行から、氏名＋入職日（＋生年月日）が同じ方を探す
+     kind 'id'     … 職員IDは受け取ったが確定が分からない。そのIDの行に同じ氏名の方がいるかを見る
+   ★「保存」の入口は saveDetail だけ（ボタン・Ctrl+S・送り直しのボタン）。書類と雇用保険番号の表示も止める。 */
+function sentKey(cur) { return { name: txt(cur.name), hireDate: txt(cur.hireDate), birthDate: txt(cur.birthDate) }; }
+/* 氏名の照合は CSV 取込の名寄せと同じ（算出モジュールの normName。無い版では空白だけ外す） */
+function nameKey(s) {
+  var sc = SC();
+  return (sc && typeof sc.normName === 'function') ? sc.normName(txt(s)) : txt(s).replace(/\s+/g, '');
+}
+function sameStaff(row, sent, nameOnly) {
+  if (!row || !sent.name || nameKey(row.name) !== nameKey(sent.name)) return false;
+  if (nameOnly) return true;
+  if (txt(row.hireDate) !== sent.hireDate) return false;
+  return !sent.birthDate || txt(row.birthDate) === sent.birthDate;
+}
+/* 職員IDを受け取れなかった新規の「保存」を止める。e は失敗の応答（期限の決め方に使う） */
+function holdNewDetail(e, title) {
+  var s = ST.detail.sent || { at: Date.now(), known: Object.keys(ST.byId), form: collectForm() };
+  ST.detail.pending = { kind: 'create', at: recheckAfter(e, s.at), known: s.known, form: s.form, sent: sentKey(s.form) };
+  updateDirtyUi();
+  showDetailPending(title);
+}
+function showDetailPending(title) {
+  var p = ST.detail && ST.detail.pending;
+  if (!p) return;
+  var why = (p.kind === 'id')
+    ? '職員ID ' + p.id + ' を受け取りましたが、登録が確定したかをサーバーが確かめられませんでした。登録できていなかった時は、この職員IDが別の方に振り直されていることがあるため、確かめるまで「保存」と「書類」を止めています。'
+    : 'この画面で「保存」を押し直すと、登録されていた時に同じ方が二重に登録されるため、確かめるまで「保存」を止めています。'
+      + (Date.now() < p.at ? 'サーバーがまだ書き込んでいる途中のことがあるため、「登録されていない」と判断できるのは ' + hhmm(p.at) + ' 以降です（登録されていれば、すぐに分かります）。' : '');
+  setState('dtState', 'warn', title || '登録を確かめるまで保存できません',
+    why + '下の「一覧を読み込み直して確かめる」を押すと、この方が登録されたかを確かめます（入力はこのまま残ります）。',
+    '一覧を読み込み直して確かめる', recheckDetail);
+}
+function recheckDetail() {
+  var dt = ST.detail, p = dt && dt.pending;
+  if (!p) return;
+  setState('dtState', '', '確かめています…', '職員データを取得しています。');
+  reloadList(function (r) {
+    if (ST.detail !== dt || dt.pending !== p) return;            /* 画面を離れた・もう確かめ済み */
+    if (r !== 'ok') { showReloadNg('dtState', r, '一覧を読み込み直して確かめる', recheckDetail); return; }
+    if (p.kind === 'id') { settleIdPending(dt, p); return; }
+    var hits = ST.rows.filter(function (row) { return p.known.indexOf(txt(row.id)) < 0 && sameStaff(row, p.sent); });
+    if (hits.length === 1) { adoptCreated(dt, p, hits[0]); return; }
+    if (hits.length > 1) {
+      setState('dtState', 'warn', '同じ方が ' + hits.length + '名 登録されています',
+        '氏名・入職日が同じ方が新しく ' + hits.length + '名 登録されています（職員ID '
+        + hits.map(function (x) { return txt(x.id); }).join('・') + '）。一覧で確かめてください。この画面の「保存」は止めたままにします。');
+      return;
+    }
+    if (!reloadedSince(p.at)) {
+      setState('dtState', 'warn', 'まだ見当たりません',
+        'サーバーがまだ書き込んでいる途中のことがあるため、' + hhmm(p.at) + ' 以降に、もう一度下のボタンを押してください。「保存」はそれまで止めています（入力はこのまま残ります）。',
+        '一覧を読み込み直して確かめる', recheckDetail);
+      return;
+    }
+    dt.pending = null;
+    updateDirtyUi();
+    setState('dtState', 'ok', '登録されていませんでした', '「保存」を押すと登録します（入力はこのまま残っています）。');
+  });
+}
+/* 登録されていた＝この画面をその方の編集に切り替える（applyDetailResult の新規と同じ控え方） */
+function adoptCreated(dt, p, row) {
+  var nrow = normRow(p.form);
+  nrow.id = txt(row.id);
+  nrow.rev = Number(row.rev) || 1;
+  dt.pending = null;
+  dt.id = nrow.id;
+  dt.rev = nrow.rev;
+  dt.base = normRow(nrow);
+  $('dtMeta').textContent = '職員ID ' + nrow.id + '／版 ' + nrow.rev;
+  $('dtName').textContent = txt(p.form.name) || '（氏名未入力）';
+  updateDirtyUi();
+  updateFilesBtn();
+  setState('dtState', 'ok', '登録されていました',
+    '職員ID ' + nrow.id + ' で登録されていました。この画面はこの方の編集に切り替えました（「保存」を押しても二重には登録されません）。');
+  toast('登録されていました');
+}
+/* 職員IDを受け取った新規。そのIDに同じ氏名の方がいれば確定。いなければ（消えた・別の方に振り直された）新規に戻す。
+   ★サーバーは応答を返している＝その実行は終わっている。読み直しで見えない書き込みが後から入ることはない */
+function settleIdPending(dt, p) {
+  var row = ST.byId[p.id];
+  dt.pending = null;
+  if (row && sameStaff(row, p.sent, true)) {
+    dt.rev = Number(row.rev) || dt.rev;
+    if (dt.base) dt.base.rev = dt.rev;
+    $('dtMeta').textContent = '職員ID ' + p.id + '／版 ' + dt.rev;
+    updateDirtyUi();
+    updateFilesBtn();
+    setState('dtState', 'ok', '登録を確かめました', '職員ID ' + p.id + ' で登録されていました。「保存」と「書類」を使えます。');
+    return;
+  }
+  dt.id = '';
+  dt.rev = 0;
+  dt.base = p.newBase;
+  $('dtMeta').textContent = '未登録';
+  updateDirtyUi();
+  updateFilesBtn();
+  setState('dtState', 'warn', '登録できていませんでした',
+    (row ? '職員ID ' + p.id + ' は別の方に振り直されていました。' : '')
+    + 'この方はまだ登録されていません。入力はこの画面に残しています。「保存」を押すと新規として登録します。');
 }
 
 function showDetailConflict() {
@@ -3051,6 +3219,8 @@ function showDetailConflict() {
 
 function revealIns() {
   if (!ST.detail || !ST.detail.id) { toast('先に保存してから使えます'); return; }
+  /* 確かめ中の職員IDは別の方に振り直されていることがある＝その方の番号を読み出さない（2026-09-23.8） */
+  if (ST.detail.pending) { showDetailPending(); return; }
   showFieldError('f_empIns', 'e_empIns', '');
   $('insShow').disabled = true;
   apiPost('getSecure', { id: ST.detail.id }).then(function (d) {
@@ -3143,6 +3313,7 @@ function updateFilesBtn() {
   b.setAttribute('aria-label', '添付書類 ' + n + '件');
   var why = '';
   if (!id) why = '先に保存してください';
+  else if (ST.detail.pending) why = '登録を確かめるまで使えません（「一覧を読み込み直して確かめる」を押してください）';
   else if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '右上の歯車（設定）で接続先を設定してください';
   else if (ST.caps === null) why = '接続を確かめられていません。設定画面の「接続テスト」で確かめてください';
   else if (!capsHas('files')) why = '職員マスタの GAS を更新してください';
@@ -3422,6 +3593,8 @@ function uploadPicked() {
     setState('fdState', 'warn', '先に職員を保存してください', 'この方はまだ登録されていません。「保存」で登録してから書類を追加してください。');
     return;
   }
+  /* 前の追加が入ったか確かめるまで送らない（2026-09-23.8）。確かめられた時はここで外れて、そのまま送る */
+  if (ST.fileHold[id] && checkFileHold(id)) return;
   var f = pickedFile();
   var msg = checkPicked(f);
   if (msg) { setState('fdState', 'warn', 'このファイルは送れません', msg); return; }
@@ -3433,9 +3606,13 @@ function uploadPicked() {
   }
   var title = txt($('fdTitleIn').value).trim().slice(0, 60);
   var cfg = loadCfg();
+  /* 書けたか分からなかった時の照合に使う（送る前にあった書類ID・送った名前と種類と大きさ） */
+  var known = detailFiles().map(function (x) { return txt(x && x.fid); });
+  var sentAt = 0;
   setFilesBusy(true);
   setState('fdState', '', '送信中…', 'Google ドライブに保存しています。大きいファイルは少し時間がかかります。');
   readAsB64(f).then(function (b64) {
+    sentAt = Date.now();
     return apiPost('uploadFile', {
       id: id, name: txt(f.name).slice(0, 120), mime: fileMime(f), kind: kind,
       title: title, dataB64: b64, by: cfg.by || ''
@@ -3460,16 +3637,76 @@ function uploadPicked() {
         'サーバーの応答に書類の情報が足りません。いったん閉じて「再読み込み」を押し、一覧に出ているか確かめてください。');
     }
   }).catch(function (e) {
-    if (e && (e.aborted || isUnconfirmed(e))) {
-      /* 送れたか送れていないか分からない（応答が無い／サーバーが確定を確かめられなかった）。
-         ここで「もう一度」と促すと同じ書類が2つ入る */
-      setState('fdState', 'warn', e.aborted ? '送信に時間がかかっています' : '追加できたか確かめられませんでした',
-        '一覧を再読み込みして、書類が入っていないことを確かめてからもう一度お試しください。');
+    if (mayHaveWritten(e)) {
+      /* 送れたか送れていないか分からない（応答を受け取れなかった／サーバーが確定を確かめられなかった）。
+         ここで「もう一度」と促すと同じ書類が2つ入る＝この方への追加を止め、書類の一覧を読み直して確かめる（2026-09-23.8） */
+      var hold = ST.fileHold[id] = { at: recheckAfter(e, sentAt || Date.now()), known: known,
+        name: txt(f.name).slice(0, 120), kind: kind, size: Number(f.size) || 0 };
+      setState('fdState', 'warn', e.aborted ? '送信に時間がかかっています' : '追加できたか確かめられませんでした' + unsureWhy(e),
+        fileHoldText(hold), '書類の一覧を読み込み直す', function () { reloadForFiles(id); });
       return;
     }
     setState('fdState', 'err', '追加できませんでした（' + errText(e) + '）',
       errHint(e) + ' 選んだファイルはそのまま残しています。直したうえで、もう一度「アップロード」を押してください。' + errDetail(e, 3));
   }).then(function () { setFilesBusy(false); }, function () { setFilesBusy(false); });
+}
+
+/* ── 書類の追加の読み直し待ち（2026-09-23.8）─────────────────
+   書けたか分からない追加の後は、その方への追加を止め、書類の一覧（＝職員一覧）を読み直して確かめる。
+   送る前に無かった書類IDで、名前・種類・大きさが同じものがあれば「入っていた」（いつ読み直しても言える）。
+   無ければ「入っていない」と言えるのは期限の後に始めた読み込みだけ（上の「読み直し待ち」の★）。 */
+function fileNameKey(s) { return txt(s).replace(/[\r\n\t]/g, ' ').trim(); }   /* サーバーの validateUpload_ と同じ均し方 */
+function landedFile(id, hold) {
+  var row = ST.byId[id];
+  var nm = fileNameKey(hold.name);
+  return toArr(row && row.filesJson).filter(function (x) {
+    var fid = txt(x && x.fid);
+    return !!fid && hold.known.indexOf(fid) < 0 && fileNameKey(x.name) === nm && txt(x.kind) === hold.kind
+      && (!hold.size || !Number(x.size) || Number(x.size) === hold.size);
+  })[0] || null;
+}
+function fileHoldText(hold) {
+  return '同じ書類が2つ入らないよう、この方への書類の追加は止めています。'
+    + (Date.now() < hold.at ? 'サーバーがまだ保存している途中のことがあるため、' + hhmm(hold.at) + ' 以降に' : '')
+    + '下の「書類の一覧を読み込み直す」を押して、書類が入っていないことを確かめてから追加してください（入っていれば、すぐに分かります）。';
+}
+function showFileHold(id) {
+  var hold = ST.fileHold[id];
+  if (!hold) return;
+  setState('fdState', 'warn', '前の書類が入ったか、まだ確かめられていません', fileHoldText(hold),
+    '書類の一覧を読み込み直す', function () { reloadForFiles(id); });
+}
+/* いまの一覧で前の追加を確かめる。true＝送らない（入っていた・まだ確かめられない）／false＝止めを外した */
+function checkFileHold(id) {
+  var hold = ST.fileHold[id];
+  if (!hold) return false;
+  var got = landedFile(id, hold);
+  if (got) {
+    delete ST.fileHold[id];
+    $('fdFile').value = '';
+    ST.dropFile = null;
+    $('fdTitleIn').value = '';
+    $('fdPick').textContent = FD_PICK_HELP;
+    renderFiles();
+    updateFilesBtn();
+    setState('fdState', 'ok', '追加されていました', fileKindLabel(got.kind) + '「' + (txt(got.title) || txt(got.name))
+      + '」は保存されていました。同じ書類が2つ入らないよう、選んだファイルは外しました。');
+    return true;
+  }
+  if (!reloadedSince(hold.at)) { showFileHold(id); return true; }
+  delete ST.fileHold[id];
+  return false;
+}
+function reloadForFiles(id) {
+  setState('fdState', '', '読み込み中…', '書類の一覧を取り直しています。');
+  reloadList(function (r) {
+    renderFiles();
+    updateFilesBtn();
+    if (r !== 'ok') { showReloadNg('fdState', r, '書類の一覧を読み込み直す', function () { reloadForFiles(id); }); return; }
+    if (!ST.fileHold[id]) { setState('fdState', '', '', ''); return; }   /* もう確かめ済み */
+    if (checkFileHold(id)) return;
+    setState('fdState', 'ok', '書類は入っていませんでした', '「アップロード」を押すと追加します。');
+  });
 }
 
 function removeFileEntry(fid, f) {
@@ -3858,6 +4095,12 @@ function matchExisting(fields) {
 function runDryRun() {
   if (!ST.imp) return;
   if (!ST.loaded) { setState('impState', 'warn', '先に職員データを読み込んでください', '「一覧」を開いて読み込んでから、もう一度試算してください。'); return; }
+  /* 取り込みの後は、一覧を読み直すまで試算しない（2026-09-23.8）。古い一覧で試算すると、取り込めた方が
+     新規に数えられて二重に登録される（取り込みが成功した直後も、読み直しが済むまでは同じ） */
+  if (ST.impHold) {
+    if (!reloadedSince(ST.impHold)) { showImpHold(); return; }
+    ST.impHold = 0;
+  }
   setState('impState', '', '試算中…', 'サーバーに内容を確かめています。');
   var plan = buildImportPlan();
   ST.imp.plan = plan;
@@ -3939,6 +4182,7 @@ function runImport() {
   if (!window.confirm('新規 ' + plan.creates.length + '件、更新 ' + plan.updates.length + '件を取り込みます。よろしいですか？')) return;
   setState('impState', '', '取り込み中…', 'サーバーに送っています。');
   $('impRunBtn').disabled = true;
+  var sentAt = Date.now();
   apiPost('bulkSave', payload).then(function (d) {
     var created = Array.isArray(d.created) ? d.created.length : 0;
     var applied = Array.isArray(d.applied) ? d.applied.length : 0;
@@ -3947,25 +4191,32 @@ function runImport() {
       + (conflicts ? '／競合で見送り ' + conflicts + '件（一覧を読み込み直してから、もう一度試算してください）' : '') + '。');
     ST.imp.payloadJson = '';
     $('impResult').hidden = true;
+    ST.impHold = Date.now();             /* 取り込んだ方はまだ一覧に無い＝すぐ下の読み直しが済むまで試算させない */
     loadList(true);
   }).catch(function (e) {
-    var unsure = isUnconfirmed(e);
+    var unsure = mayHaveWritten(e);
     if (isPartial(e) || unsure) {
       /* 途中まで書けている、または書けたか分からない。同じ creates を送ると二重登録になるので、試算の控えを捨てて押せなくする。
          ★確定を確かめられなかった時は partial で返らないこともある（サーバーが版を進める所で落ちると、
-           新規を含んでも ok:false だけで来る）＝partial かどうかで分けず、同じく止める */
+           新規を含んでも ok:false だけで来る）＝partial かどうかで分けず、同じく止める
+         ★一覧を読み直すまで試算も止める（2026-09-23.8）。下の loadList は失敗しても取込画面には出ないので、
+           試算の入口（runDryRun）で「失敗の後に始めた読み込みが成功したか」を見る */
       var cN = partialList(e, 'created').length, aN = partialList(e, 'applied').length;
       ST.imp.payloadJson = '';
       ST.imp.plan = null;
       $('impRunBtn').disabled = true;
       $('impResult').hidden = true;
+      ST.impHold = recheckAfter(e, sentAt);
       if (unsure) {
-        /* ★下の loadList は失敗しても取込画面には出ず、試算は「一度読み込めたか」しか見ない。読み直せていない
-           古い一覧で試算すると、取り込めた行が新規に数えられて二重になる＝人の手で再読み込みしてもらう
-           （読み直しが済むまで試算を止める作りは別タスク「応答が無い時の二重登録の口を塞ぐ」で扱う） */
-        setState('impState', 'warn', '取り込めたか確かめられませんでした（新規 ' + payload.creates.length + '件／更新 ' + payload.rows.length + '件を送りました）',
-          '「一覧」を開いて「再読み込み」を押し、読み込めたこと（「読み込みに失敗しました」と出ていないこと）と、取り込まれているかを確かめてください。やり直す時はそのあとで「内容を確認する（試算）」からお願いします'
-          + (payload.creates.length ? '（読み込み直す前に試算すると、取り込めた分が新規に数えられ、二重に登録されます）' : '') + '。');
+        var wait = Date.now() < ST.impHold;
+        setState('impState', 'warn', '取り込めたか確かめられませんでした（' + (isNoAnswer(e) ? errText(e) + '。' : '')
+          + '新規 ' + payload.creates.length + '件／更新 ' + payload.rows.length + '件を送りました）',
+          (wait ? 'サーバーがまだ書き込んでいる途中のことがあるため、' + hhmm(ST.impHold) + ' 以降に下の「一覧を読み込み直す」を押してください。'
+                : '一覧を読み込み直しています。読み込めなかった時は、下の「一覧を読み込み直す」を押してください。')
+          + '読み込み直すまで試算は止めています'
+          + (payload.creates.length ? '（読み込み直す前に試算すると、取り込めた分が新規に数えられ、二重に登録されます）' : '')
+          + '。読み込み直したら「内容を確認する（試算）」からやり直してください。取り込めていた方は、新規ではなく「変更なし」などとして出ます。',
+          '一覧を読み込み直す', reloadForImport);
       } else {
         setState('impState', 'warn', '途中まで取り込みました（新規 ' + cN + '件／更新 ' + aN + '件）',
           '残りは取り込めていません。一覧を読み込み直したうえで、もう一度「内容を確認する（試算）」からやり直してください'
@@ -3976,6 +4227,27 @@ function runImport() {
     }
     setState('impState', 'err', '取り込みに失敗しました（' + errText(e) + '）', errHint(e) + ' 試算の内容は残しています。もう一度「取り込む」を押すと送り直します。' + errDetail(e));
     $('impRunBtn').disabled = false;
+  });
+}
+/* 試算を止めている理由と、読み直しのボタン（2026-09-23.8） */
+function showImpHold() {
+  var wait = Date.now() < ST.impHold;
+  /* 待っている間は、読み直した後でも同じ案内になる（「まだ読み込めていません」とは言わない） */
+  setState('impState', 'warn', '先に一覧を読み込み直してください',
+    (wait ? 'サーバーがまだ書き込んでいる途中のことがあるため、' + hhmm(ST.impHold) + ' までは試算を止めています。'
+            + hhmm(ST.impHold) + ' 以降に下のボタンで読み込み直してください。'
+          : '前回の取り込みがどこまで入ったかを、この画面はまだ読み込めていません。下のボタンで読み込み直してから、「内容を確認する（試算）」を押してください。')
+    + 'このまま試算すると、取り込めていた方が新規に数えられ、二重に登録されます。',
+    '一覧を読み込み直す', reloadForImport);
+}
+function reloadForImport() {
+  setState('impState', '', '読み込み中…', '職員データを取得しています。');
+  reloadList(function (r) {
+    if (r !== 'ok') { showReloadNg('impState', r, '一覧を読み込み直す', reloadForImport); return; }
+    if (!reloadedSince(ST.impHold)) { showImpHold(); return; }
+    ST.impHold = 0;
+    setState('impState', 'ok', '一覧を読み込み直しました',
+      '「内容を確認する（試算）」からやり直してください。取り込めていた方は、新規ではなく「変更なし」などとして出ます。');
   });
 }
 
