@@ -998,6 +998,14 @@ function normalizeCand(c) {
   if (!Array.isArray(c.nudges)) c.nudges = [];
   if (!isObj(c.stageDates)) c.stageDates = {};
   if (!isObj(c.assess)) c.assess = {};
+  /* 消した印は「文字列の時刻」だけ残す（壊れた値は捨てる＝従来どおりの統合に戻るだけ） */
+  if (c.clearedAt !== undefined) {
+    if (!isObj(c.clearedAt)) delete c.clearedAt;
+    else {
+      Object.keys(c.clearedAt).forEach(function (k) { if (!parseClearMark(c.clearedAt[k])) delete c.clearedAt[k]; });
+      if (!Object.keys(c.clearedAt).length) delete c.clearedAt;
+    }
+  }
   c.contacts.forEach(function (ct) { if (ct && !ct.id) ct.id = newId('k'); });
   c.tasks.forEach(function (t) { if (t && !t.id) t.id = newId('t'); });
   c.log.forEach(function (l) { if (l && !l.id) l.id = newId('l'); });
@@ -1072,7 +1080,8 @@ function restoreFromBackup(slot) {
     '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')) return;
   /* ★置き換えではなく統合。置き換えにすると、バックアップ以降に増えた案件と、
      他端末がサーバーへ入れた新しい内容を、この端末の古い版で潰すことになる。 */
-  DB = mergeDb(DB, n);
+  /* 人が意図して古い値を戻す操作なので、消した印を効かせない（keepFilled） */
+  DB = mergeDb(DB, n, { keepFilled: true });
   DB.updatedAt = nowIso();
   dirty = true; saveCache(); renderAll(); schedulePush();
   toast('バックアップから復元しました');
@@ -1130,7 +1139,114 @@ function mergeShallowPreferFilled(base, other) {
   }
   return out;
 }
-function mergeCand(a, b) {
+/* ── 消した印（2026-09-23）──
+   人が欄を空にした時、c.clearedAt['c:欄名'] ／ ['a:アセスメントの項目名'] に「消した印」＝「時刻#消した値の要約」を残す。
+   統合の既定は今までどおり「空より値」（multi-device-sync 原則5）。ただし古い側の値が【消した値と同じ】で、
+   しかも消した操作より前の版の時だけ、その値を戻さない（原則4「空は明示して伝える」）。
+   印の付いた欄に人が値を入れ直した時（復元・取り込みで値が戻った時も）は「入れ直した印」＝「時刻#r消した印の時刻」
+   に置き換える。入れ直した人が見ていた消した印を名指しするので、端末の時計がずれていても入れ直しが勝つ。
+   ★消した値そのものは残さない（残すと消したはずの個人情報が印の中に残る）。残すのは 16bit の要約だけ＝
+     要約から元の値を1つに絞れない。別の値に変えられていれば要約が合わないので戻さない処理は働かない。
+   ★印を知らない古い版の端末とは従来どおり統合する（戻ることはあっても、消えることはない）。
+   ★案件の更新時刻は印のために動かさない（動かすと、他の端末の新しい編集が統合の土台争いで負ける）。
+   ★連携先・ご家族の一覧の中の欄、ステージ日付は対象外（行の見分け方を変える別の設計が要る）。
+   サーバー（GAS）は台帳を丸ごと保存するだけなので変更不要。 */
+var CLEAR_META = { id: 1, updatedAt: 1, stage: 1, stageDates: 1, deleted: 1, deletedAt: 1,
+  masterId: 1, masterSyncedAt: 1, masterPendingStamp: 1, clearedAt: 1,
+  family: 1, contacts: 1, tasks: 1, log: 1, nudges: 1, assess: 1 };
+var CLEAR_MARK_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)#(?:([0-9a-f]{4})|r(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z))$/;
+function isBlankVal(v) {
+  return v === '' || v === null || v === undefined ||
+    (Array.isArray(v) && !v.length) || (isObj(v) && !Object.keys(v).length);
+}
+/* 値の 16bit 要約（FNV-1a を 16bit に畳む）。同じ値か確かめるためだけに使い、元の値には戻せない */
+function clearHash(v) {
+  var str = (typeof v === 'string') ? v : JSON.stringify(v);
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  var x = ((h >>> 16) ^ (h & 0xffff)) & 0xffff;
+  return ('000' + x.toString(16)).slice(-4);
+}
+/* 印を読む。消した印 {at,h} ／ 入れ直した印 {at,sup}（sup＝入れ直した人が見ていた消した印の時刻）。
+   形が崩れていれば null（受信データを信じない・原則10） */
+function parseClearMark(m) {
+  var r = (typeof m === 'string') ? CLEAR_MARK_RE.exec(m) : null;
+  if (!r) return null;
+  return r[2] ? { at: r[1], h: r[2] } : { at: r[1], sup: r[3] };
+}
+/* 同じ欄の2つの印のどちらを残すか。入れ直した印は、見ていた消した印より新しい消した印にだけ負ける */
+function pickClearMark(x, y) {
+  var px = parseClearMark(x), py = parseClearMark(y);
+  if (!px) return py ? y : null;
+  if (!py) return x;
+  if (px.h && py.h) return (py.at > px.at) ? y : x;
+  if (px.sup && py.sup) return (py.sup > px.sup || (py.sup === px.sup && py.at > px.at)) ? y : x;
+  var cl = px.h ? px : py, rv = px.h ? py : px;
+  var clStr = px.h ? x : y, rvStr = px.h ? y : x;
+  return (rv.sup >= cl.at) ? rvStr : clStr;
+}
+function reviveMark(prevMark, at) {
+  var pm = parseClearMark(prevMark);
+  if (!pm) return null;
+  return (at || nowIso()) + '#r' + (pm.h ? pm.at : pm.sup);
+}
+/* 空にしたら消した印。印のある欄に値を入れ直したら入れ直した印に置き換える。元から空・管理用の欄には付けない */
+function noteCleared(c, kind, key, before, after, at) {
+  if (!c || !key) return;
+  if (kind === 'c' && CLEAR_META[key]) return;
+  if (kind === 'a' && key === 'updatedAt') return;
+  if (kind !== 'c' && kind !== 'a') return;
+  var mk = kind + ':' + key;
+  var cur = isObj(c.clearedAt) ? c.clearedAt[mk] : undefined;
+  if (isBlankVal(after)) {
+    if (isBlankVal(before)) return;
+    if (!isObj(c.clearedAt)) c.clearedAt = {};
+    c.clearedAt[mk] = (at || nowIso()) + '#' + clearHash(before);
+  } else if (cur !== undefined) {
+    var pm = parseClearMark(cur);
+    if (pm && pm.h) c.clearedAt[mk] = reviveMark(cur, at);
+    else if (!pm) delete c.clearedAt[mk];
+  }
+}
+/* mergeCand の結果 out に、両側の印を当てる。土台（base）と古い側の選び方は mergeCand・mergeAssess と同じ。
+   戻さないのは、残った印が「消した印」で、古い側の値の要約が一致し、値を持つ版が消した操作より前の時だけ。
+   keepFilled（復元・取り込み）では戻さない処理をせず、値が戻った欄の印を「入れ直した印」に置き換える。 */
+function applyCleared(out, a, b, opt) {
+  var keepFilled = !!(opt && opt.keepFilled);
+  var cl = {};
+  [a, b].forEach(function (x) {
+    var m = x && x.clearedAt;
+    if (!isObj(m)) return;
+    Object.keys(m).forEach(function (k) {
+      if (!parseClearMark(m[k])) return;
+      cl[k] = (cl[k] === undefined) ? m[k] : pickClearMark(cl[k], m[k]);
+    });
+  });
+  var base = (asStr(a.updatedAt) >= asStr(b.updatedAt)) ? a : b;
+  var other = (base === a) ? b : a;
+  var aa = asObj(a.assess), ba = asObj(b.assess);
+  var newerA = (asStr(aa.updatedAt) >= asStr(ba.updatedAt)) ? aa : ba;
+  var olderA = (newerA === aa) ? ba : aa;
+  if (!isObj(out.assess)) out.assess = {};
+  Object.keys(cl).forEach(function (mk) {
+    var pm = parseClearMark(cl[mk]);
+    var i = mk.indexOf(':'), kind = mk.slice(0, i), key = mk.slice(i + 1);
+    var holder, newer, older, olderAt;
+    if (kind === 'c' && key && !CLEAR_META[key]) { holder = out; newer = base; older = other; olderAt = asStr(other.updatedAt); }
+    else if (kind === 'a' && key && key !== 'updatedAt') { holder = out.assess; newer = newerA; older = olderA; olderAt = asStr(olderA.updatedAt); }
+    else { delete cl[mk]; return; }   /* 知らない種類・管理用の欄の印は持ち越さない */
+    if (pm.h && !keepFilled && isBlankVal(newer[key]) && !isBlankVal(older[key]) &&
+        clearHash(older[key]) === pm.h && pm.at >= olderAt) {
+      if (Object.prototype.hasOwnProperty.call(newer, key)) holder[key] = newer[key]; else delete holder[key];
+    }
+    if (pm.h && !isBlankVal(holder[key])) {
+      /* 値が残った＝消した印は役目を終えた。復元・取り込みで戻した時は入れ直した印にして、他の端末の消した印に勝たせる */
+      if (keepFilled) cl[mk] = reviveMark(cl[mk]); else delete cl[mk];
+    }
+  });
+  if (Object.keys(cl).length) out.clearedAt = cl; else delete out.clearedAt;
+}
+function mergeCand(a, b, opt) {
   /* 新しい方を土台にする（どちらが「今の姿」に近いか） */
   var base = (asStr(a.updatedAt) >= asStr(b.updatedAt)) ? a : b;
   var other = (base === a) ? b : a;
@@ -1155,6 +1271,8 @@ function mergeCand(a, b) {
   /* 削除は「削除された」を優先しない。戻せる状態を保つため、新しい操作の方に従う */
   out.deleted = !!base.deleted;
   out.updatedAt = asStr(base.updatedAt) || nowIso();
+  /* 人が空にした欄を、消す前の古い版の値で戻さない（消した印）。復元で値が戻った時は更新時刻を進めるので最後に置く */
+  applyCleared(out, a, b, opt);
   return out;
 }
 function mergeAssess(a, b) {
@@ -1171,12 +1289,12 @@ function mergeAssess(a, b) {
   }
   return out;
 }
-function mergeDb(local, remote) {
+function mergeDb(local, remote, opt) {
   var by = {}, order = [];
   function put(c) {
     if (!c || !c.id) return;
     if (!by[c.id]) { order.push(c.id); by[c.id] = c; return; }
-    by[c.id] = mergeCand(by[c.id], c);
+    by[c.id] = mergeCand(by[c.id], c, opt);
   }
   asArr(asObj(remote).candidates).forEach(put);
   asArr(asObj(local).candidates).forEach(put);
@@ -3223,11 +3341,13 @@ function saveEdit() {
           /* 画面から消えた項目は消す（人が空にした、を反映する） */
           if (Object.prototype.hasOwnProperty.call(na, x)) target.assess[x] = na[x];
           else delete target.assess[x];
+          noteCleared(target, 'a', x, asObj(prev.assess)[x], target.assess[x]);
         });
         target.assess.updatedAt = nowIso();
         return;
       }
       target[k] = editing[k];
+      noteCleared(target, 'c', k, prev[k], target[k]);
     });
     target.updatedAt = nowIso();
     saved = target;
@@ -3396,8 +3516,14 @@ function shContact(c, cat) {
 function shSet(c, k, v) {
   var p = asStr(k).split(':'), kind = p[0], key = p[1] || '';
   v = asStr(v);
-  if (kind === 'a') { if (!isObj(c.assess)) c.assess = {}; c.assess[key] = v; c.assess.updatedAt = nowIso(); return; }
-  if (kind === 'c') { c[key] = v; return; }
+  if (kind === 'a') {
+    if (!isObj(c.assess)) c.assess = {};
+    var beforeA = c.assess[key];
+    c.assess[key] = v; c.assess.updatedAt = nowIso();
+    noteCleared(c, 'a', key, beforeA, v);
+    return;
+  }
+  if (kind === 'c') { var beforeC = c[key]; c[key] = v; noteCleared(c, 'c', key, beforeC, v); return; }
   if (kind === 's') {
     if (!isObj(c.stageDates)) c.stageDates = {};
     if (v) c.stageDates[key] = v; else delete c.stageDates[key];
@@ -4289,7 +4415,7 @@ $('importFile').addEventListener('change', function () {
     if (!incoming.candidates.length) { toast('案件が入っていないファイルです'); return; }
     if (!confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\n\n' +
       '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？')) return;
-    DB = mergeDb(DB, incoming);
+    DB = mergeDb(DB, incoming, { keepFilled: true });   /* 取り込みも人の意図＝消した印を効かせない */
     markDirty(); renderAll(); closeModal('mk-sync');
     toast('取り込みました（' + DB.candidates.length + '件）');
   };
