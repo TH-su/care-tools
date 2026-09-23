@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-09-23.2">
+<meta name="stfm-build" content="2026-09-23.4">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1260,7 +1260,7 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.2</p>
+    <p class="muted">版 2026-09-23.4</p>
     <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
@@ -1415,18 +1415,18 @@ body.cmt-print{page:cmt}
 <script src="su-errors.js?v=2026-09-13"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
-<script src="staff-master-calc.js?v=2026-09-23.2"></script>
+<script src="staff-master-calc.js?v=2026-09-23.4"></script>
 <script>
 'use strict';
 
 /* ════════════════════════════════════════════════════════════════
-   職員マスタ 2026-09-23.2
+   職員マスタ 2026-09-23.4
    ・算出／日付正規化／CSV は staff-master-calc.js（window.StaffCalc）が正本。
    ・端末に残すのは接続設定とUI状態だけ（stfm_*）。業務データは残さない。
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-09-23.2';
+var BUILD = '2026-09-23.4';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -4687,7 +4687,7 @@ function cmtSitesText(v) {
       var lab = '';
       SITE_UI.forEach(function (s) { if (s.code === txt(c)) lab = s.label; });
       return lab || txt(c);
-    }).filter(Boolean).join('・');
+    }).filter(Boolean).join('・') || '—';   /* ★対象の事業所が無い委員会（2026-09-23.4 生産性向上）は空白でなく「—」 */
   }
   return txt(v);
 }
