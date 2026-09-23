@@ -682,8 +682,8 @@ textarea.fi{resize:vertical;min-height:60px}
     </div>
     <div class="modal-body">
       <div class="setup-intro">
-        本アプリは <strong>Googleスプレッドシート</strong> をメインの保存先、<strong>GitHub</strong> をバックアップとして使用します。
-        利用者ごとのジェノグラムが、複数端末で自動同期され、誤って削除しても履歴から復元できます。
+        本アプリは <strong>Googleスプレッドシート</strong> を保存先として使用します。
+        利用者ごとのジェノグラムが、複数端末で自動同期されます。
       </div>
 
       <details class="setup-step" open>
@@ -703,18 +703,6 @@ textarea.fi{resize:vertical;min-height:60px}
         <textarea class="setup-code" id="gasCodeBox" readonly rows="6">（コピーボタンを押すとここに表示されます）</textarea>
       </details>
 
-      <details class="setup-step">
-        <summary><strong>② GitHub バックアップの準備</strong>（推奨・任意）</summary>
-        <ol class="setup-list">
-          <li><a href="https://github.com/new" target="_blank" rel="noopener">https://github.com/new</a> で新しいリポジトリを作成（例: <code>genogram-data</code>、Privateを推奨）。</li>
-          <li><a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">https://github.com/settings/tokens?type=beta</a> で「Fine-grained personal access tokens」→「Generate new token」。</li>
-          <li>Token name 任意、Expiration（有効期限）90日〜1年、Repository access「Only select repositories」で先程作ったリポジトリを選択。</li>
-          <li>「Repository permissions」→「Contents」を <strong>Read and write</strong> に設定 → 下までスクロールして「Generate token」。</li>
-          <li>表示された <code>github_pat_...</code> をコピー（一度しか表示されません）。</li>
-          <li>下のフォームに「オーナー名 / リポジトリ名 / ブランチ（main） / トークン」を入力。</li>
-        </ol>
-      </details>
-
       <div class="setup-form">
         <h3>設定入力</h3>
         <div class="fg">
@@ -724,24 +712,6 @@ textarea.fi{resize:vertical;min-height:60px}
         <div class="fg">
           <label class="fl" for="cfgGasToken">① 合言葉</label>
           <input type="password" class="fi" id="cfgGasToken" placeholder="管理者から知らされた合言葉" autocomplete="new-password">
-        </div>
-        <div class="fg">
-          <label class="fl">② GitHub オーナー名（ユーザー名 or 組織名）</label>
-          <input type="text" class="fi" id="cfgGhOwner" placeholder="yamada-taro" autocomplete="off">
-        </div>
-        <div class="fr">
-          <div class="fg">
-            <label class="fl">② リポジトリ名</label>
-            <input type="text" class="fi" id="cfgGhRepo" placeholder="genogram-data" autocomplete="off">
-          </div>
-          <div class="fg">
-            <label class="fl">② ブランチ</label>
-            <input type="text" class="fi" id="cfgGhBranch" placeholder="main" autocomplete="off" value="main">
-          </div>
-        </div>
-        <div class="fg">
-          <label class="fl">② GitHub Personal Access Token</label>
-          <input type="password" class="fi" id="cfgGhToken" placeholder="github_pat_..." autocomplete="new-password">
         </div>
         <div class="setup-actions">
           <button class="hbtn" id="btnCfgTest">接続テスト</button>
@@ -753,11 +723,11 @@ textarea.fi{resize:vertical;min-height:60px}
 
       <div class="setup-note">
         <strong>💡 信頼性について</strong><br>
-        ・保存ボタン押下時、まず端末内（localStorage）に即時保存され、その後スプシ・GitHubへ非同期送信されます。<br>
+        ・保存ボタン押下時、まず端末内（localStorage）に即時保存され、その後スプシへ非同期送信されます。<br>
         ・通信が失敗した場合は自動的にリトライキューに入り、次回保存時 / 「↻ 同期」ボタン押下時に再送されます。<br>
         ・端末がオフラインでもアプリは動作し、回線復帰後に自動同期します。<br>
         ・別端末で先に保存されていた場合、保存時にバージョンを比較し上書き確認します。<br>
-        ・トークンは端末のlocalStorageに保存されるため、共用PCでの利用後は「設定をクリア」を実施してください。
+        ・合言葉は端末のlocalStorageに保存されるため、共用PCでの利用後は「設定をクリア」を実施してください。
       </div>
     </div>
   </div>
@@ -2771,9 +2741,21 @@ const CloudSync = (function() {
     const c = getCfg();
     return !!(c.gasUrl && GAS_URL_RE.test(c.gasUrl));
   }
-  function hasGithub() {
-    const c = getCfg();
-    return !!(c.ghToken && c.ghOwner && c.ghRepo);
+  /* ★2026-09-23: GitHub への予備保存は廃止した（一度も成功しておらず、利用者名がコミットに残り、
+     書き込み権のあるトークンが端末に平文で残るため）。以前の版が入れた GitHub の4項目だけを端末から消す。
+     GAS の URL と合言葉には触らない。読めない・壊れた設定は触らずそのまま残す */
+  const RETIRED_GH_KEYS = ['ghOwner', 'ghRepo', 'ghBranch', 'ghToken'];
+  function purgeRetiredGithubCfg() {
+    let cfg;
+    try { cfg = JSON.parse(localStorage.getItem(LS_CLOUD_CFG) || 'null'); }
+    catch (e) { return false; }
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false;
+    const hit = RETIRED_GH_KEYS.filter(k => Object.prototype.hasOwnProperty.call(cfg, k));
+    if (!hit.length) return false;
+    hit.forEach(k => { delete cfg[k]; });
+    try { localStorage.setItem(LS_CLOUD_CFG, JSON.stringify(cfg)); }
+    catch (e) { return false; }
+    return true;
   }
 
   // ---- GAS communication (text/plain to avoid CORS preflight) ----
@@ -2822,74 +2804,6 @@ const CloudSync = (function() {
   }
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ---- GitHub Contents API (backup) ----
-  function ghHeaders() {
-    const c = getCfg();
-    return {
-      'Authorization': 'Bearer ' + c.ghToken,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    };
-  }
-  function ghPath(name) {
-    return 'genograms/' + encodeURIComponent(name) + '.json';
-  }
-  function utf8ToBase64(s) {
-    // Encode Japanese text to base64 for GitHub
-    return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(s)));
-  }
-  async function ghGetSha(name) {
-    const c = getCfg();
-    const url = `https://api.github.com/repos/${c.ghOwner}/${c.ghRepo}/contents/${ghPath(name)}?ref=${encodeURIComponent(c.ghBranch || 'main')}`;
-    try {
-      const res = await fetch(url, { headers: ghHeaders() });
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error('GitHub HTTP ' + res.status);
-      const json = await res.json();
-      return json.sha || null;
-    } catch (err) { return null; }
-  }
-  async function ghSave(doc) {
-    const c = getCfg();
-    if (!hasGithub()) return null;
-    const sha = await ghGetSha(doc.clientName);
-    const body = {
-      message: `Update ${doc.clientName} (${new Date().toISOString()})`,
-      content: utf8ToBase64(JSON.stringify(doc, null, 2)),
-      branch: c.ghBranch || 'main',
-      ...(sha ? { sha } : {})
-    };
-    const url = `https://api.github.com/repos/${c.ghOwner}/${c.ghRepo}/contents/${ghPath(doc.clientName)}`;
-    const res = await fetchWithRetry(url, {
-      method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error('GitHub保存失敗: ' + (err.message || res.status));
-    }
-    return await res.json();
-  }
-  async function ghDelete(name) {
-    const c = getCfg();
-    if (!hasGithub()) return null;
-    const sha = await ghGetSha(name);
-    if (!sha) return null;
-    const url = `https://api.github.com/repos/${c.ghOwner}/${c.ghRepo}/contents/${ghPath(name)}`;
-    const res = await fetchWithRetry(url, {
-      method: 'DELETE', headers: ghHeaders(),
-      body: JSON.stringify({
-        message: `Delete ${name}`,
-        sha,
-        branch: c.ghBranch || 'main'
-      })
-    });
-    if (!res.ok && res.status !== 404) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error('GitHub削除失敗: ' + (err.message || res.status));
-    }
-    return true;
-  }
-
   // ---- High-level API ----
   // ★2026-09-23: 読み取りも POST 本文で送る（利用者名 name を URL のクエリに載せない）。
   //   GAS の doPost は doGet と同じ route() を通る（本番 GAS を取得して確認済み）。
@@ -2906,19 +2820,10 @@ const CloudSync = (function() {
   }
   async function save(doc) {
     const r = await gasCall('save', { doc });
-    // Backup to GitHub (non-fatal if it fails)
-    if (hasGithub()) {
-      try { await ghSave(doc); }
-      catch (e) { console.warn('GitHub backup failed:', e.message); }
-    }
     return r.saved;
   }
   async function del(name) {
     const r = await gasCall('delete', { name });
-    if (hasGithub()) {
-      try { await ghDelete(name); }
-      catch (e) { console.warn('GitHub delete failed:', e.message); }
-    }
     return r.deleted;
   }
   // ---- 競合判定の基準時刻（設定画面 L725 が宣言する「保存時の上書き確認」の実装） ----
@@ -3053,7 +2958,7 @@ const CloudSync = (function() {
   }
 
   return {
-    getCfg, setCfg, isConfigured, hasGithub,
+    getCfg, setCfg, isConfigured, purgeRetiredGithubCfg,
     ping, list, get, save, del, saveCheckConflict, setBaseline,
     queuePending, getPending, flushPending, updatePendingBadge
   };
@@ -3839,10 +3744,6 @@ function openCloudModal() {
   const cfg = CloudSync.getCfg();
   $('cfgGasUrl').value = cfg.gasUrl || '';
   $('cfgGasToken').value = cfg.gasToken || '';
-  $('cfgGhOwner').value = cfg.ghOwner || '';
-  $('cfgGhRepo').value = cfg.ghRepo || '';
-  $('cfgGhBranch').value = cfg.ghBranch || 'main';
-  $('cfgGhToken').value = cfg.ghToken || '';
   $('cloudModal').hidden = false;
   $('cfgResult').hidden = true;
 }
@@ -3876,32 +3777,13 @@ async function testCloudConfig() {
     showCfgResult('err', '✗ GAS接続失敗: ' + e.message + '\n→ デプロイ設定の「アクセスできるユーザー：全員」を確認してください。');
     return;
   }
-  if (cfg.ghOwner && cfg.ghRepo && cfg.ghToken) {
-    try {
-      const url = `https://api.github.com/repos/${cfg.ghOwner}/${cfg.ghRepo}`;
-      const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + cfg.ghToken } });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' (リポジトリ名・トークン権限を確認)');
-      const json = await res.json();
-      results.push('✓ GitHubリポジトリ接続OK (' + json.full_name + ', ' + (json.private ? 'Private' : 'Public') + ')');
-    } catch (e) {
-      results.push('✗ GitHub接続失敗: ' + e.message);
-      showCfgResult('err', results.join('\n'));
-      return;
-    }
-  } else {
-    results.push('○ GitHub未設定（バックアップなし）');
-  }
   showCfgResult('ok', results.join('\n'));
 }
 
 function readCfgFromForm() {
   return {
     gasUrl: $('cfgGasUrl').value.trim(),
-    gasToken: $('cfgGasToken').value.trim(),
-    ghOwner: $('cfgGhOwner').value.trim(),
-    ghRepo: $('cfgGhRepo').value.trim(),
-    ghBranch: $('cfgGhBranch').value.trim() || 'main',
-    ghToken: $('cfgGhToken').value.trim()
+    gasToken: $('cfgGasToken').value.trim()
   };
 }
 
@@ -3926,10 +3808,6 @@ function clearCloudConfig() {
   localStorage.removeItem(LS_PENDING);
   $('cfgGasUrl').value = '';
   $('cfgGasToken').value = '';
-  $('cfgGhOwner').value = '';
-  $('cfgGhRepo').value = '';
-  $('cfgGhBranch').value = 'main';
-  $('cfgGhToken').value = '';
   applyCloudConfigUI();
   refreshDocList();
   showCfgResult('info', '設定をクリアしました。');
@@ -3939,7 +3817,7 @@ function applyCloudConfigUI() {
   const configured = CloudSync.isConfigured();
   $('syncBar').hidden = !configured;
   if (configured) {
-    setSyncStatus('idle', CloudSync.hasGithub() ? 'クラウド設定済み（スプシ+GitHub）' : 'クラウド設定済み（スプシのみ）');
+    setSyncStatus('idle', 'クラウド設定済み');
     CloudSync.updatePendingBadge();
   } else {
     setSyncStatus('idle', '未設定');
@@ -3975,6 +3853,7 @@ async function forceSync() {
 function init() {
   bindUIEvents();
   attachDomTextFallback();
+  CloudSync.purgeRetiredGithubCfg();
   applyCloudConfigUI();
   refreshDocList();
   fitStageSize();
