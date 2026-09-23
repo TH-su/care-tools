@@ -16,6 +16,12 @@
  *   ①そのツールが持つトースト（showToast / toast）があれば使う＝見た目が揃う
  *   ②無ければ、このファイルが最小限の帯を自前で出す（ツールのCSSに依存しない）
  *   いずれも印刷には出さない（帯は @media print で消す）。
+ *
+ * ツール側からの追加（2026-09-24・任意）:
+ *   window.SUErrors.onReport(fn)  … 通知のたびに fn(kind, brief, where) を呼ぶ（例: 同期ログへ残す）。
+ *                                   fn が例外を出しても通知は止めない。間引き（30秒）を通った時だけ呼ぶ。
+ *   window.SUErrors.report(kind, msg, where) … ツールが自分で拾った例外を同じ経路で知らせる。
+ *   使わないツールの動きは今までと同じ。
  */
 (function () {
   'use strict';
@@ -25,6 +31,7 @@
   var THROTTLE_MS = 30000;                  /* 同じ例外が描画のたびに出続けると操作の邪魔になる */
   var lastSig = '', lastAt = 0;
   var MSG = '⚠ 画面でエラーが起きました。入力中の内容を控えて再読み込みしてください';
+  var hooks = [];                           /* ツールが足す記録先（SUErrors.onReport） */
 
   /* ツール側のトーストを借りる。関数名はツールによって違うので両方見る。 */
   function pageToast(msg) {
@@ -82,6 +89,7 @@
       lastSig = sig; lastAt = now;
       /* 開発時に原因へたどり着けるよう、詳細はコンソールへ残す（画面には出さない） */
       try { console.error('[su-errors] ' + kind + '：' + brief + (where ? '（' + where + '）' : '')); } catch (e) {}
+      for (var i = 0; i < hooks.length; i++) { try { hooks[i](kind, brief, where); } catch (e) {} }
       if (!pageToast(MSG)) ownBanner(MSG);
     } catch (e) {}
   }
@@ -100,4 +108,9 @@
   window.addEventListener('unhandledrejection', function (e) {
     report('未処理の失敗', (e && e.reason) || '不明', '');
   });
+
+  window.SUErrors = {
+    report: function (kind, msg, where) { report(String(kind || 'エラー'), msg, String(where || '')); },
+    onReport: function (fn) { if (typeof fn === 'function') hooks.push(fn); }
+  };
 })();
