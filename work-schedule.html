@@ -79,6 +79,8 @@ body {
 }
 .badge.warn { background: var(--warn-bg); color: var(--warn-tx); }
 .badge.ng { background: var(--ng-l); color: var(--ng); }
+.badge.ok { background: var(--ok-l); color: var(--ok); }     /* 同期状態バッジ「✓ 同期済み」 */
+.badge.mute { background: var(--g2); color: var(--g8); }     /* 同期状態バッジ「同期なし」「確認中」 */
 .badge.off { display: none; }
 .save-state { font-size: 0.6875rem; opacity: .85; white-space: nowrap; }
 
@@ -670,6 +672,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="badge ng off" id="badgeOv" title="同じ職員の同時刻に重なった枠・退避した枠">重なり 0</button>
   <button class="hdr-btn" id="btnUndo" disabled aria-label="元に戻す" title="元に戻す (Ctrl/Cmd+Z)">↩</button>
   <button class="hdr-btn" id="btnRedo" disabled aria-label="やり直す" title="やり直す (Ctrl/Cmd+Shift+Z)">↪</button>
+  <!-- 同期状態（常時表示・2026-09-23）。#saveState は保存のたびに上書きされる一時表示のため、
+       再読み込み前の「✓ 同期済み」確認はこちらで行う。状態・文言は app.js の syncBadgeState_ が決める。 -->
+  <button class="badge mute" id="badgeSync" aria-label="⟳ 確認中" title="この起動ではまだ同期先と通信できていません">⟳ 確認中</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   <span class="save-state" id="saveState"></span>
 </div>
@@ -7905,8 +7910,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 戻り値: { bytes, dayCount, groups:[{label, bytes}] }。groups は表示順固定で、合計は bytes と一致する。
    * バイト数の式は従来の使用量表示と同じ (key.length+value.length)*2。読めない時は null。 */
   function storageBreakdown_(ls) {
-    var labels = ['日別', '同期の控え', '週間計画', '週間マスタ', 'シフト', 'その他'];
-    var sums = [0, 0, 0, 0, 0, 0];
+    /* 表示するのは用途名だけ（キー名は出さない＝入居者名を含むキーがありうるため） */
+    var labels = ['日別', '同期の控え', '週間計画', '週間計画の控え', '週間マスタ', 'シフト',
+                  '体重', '入居調整', '構成図', '入居者マスタ', 'その他'];
+    var sums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     var bytes = 0, dayCount = 0, i, k, v, b, g;
     try {
       for (i = 0; i < ls.length; i++) {
@@ -7919,10 +7926,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (k.indexOf('wsday_') === 0 && /^\d{4}-\d{2}-\d{2}$/.test(k.substring(6))) dayCount++;
         if (/^wsday_\d{4}-\d{2}-\d{2}/.test(k)) g = 0;               /* 日別（破損退避 _corrupt を含む） */
         else if (k.indexOf('wsbase_') === 0) g = 1;                  /* 3-way祖先・競合退避 */
-        else if (k.indexOf('care_schedule') === 0) g = 2;            /* 週間計画本体・退避・世代 */
-        else if (k === 'ws_weekly_master_v1') g = 3;
-        else if (k.indexOf('shiftapp:v1:') === 0) g = 4;
-        else g = 5;
+        else if (k === 'cs_backup_gens_v1' || k === 'care_schedule_v2_gens_ws' ||
+                 k.indexOf('care_schedule_v2_backup') === 0) g = 3;  /* 週間計画の世代・退避 */
+        else if (k.indexOf('care_schedule') === 0 || k.indexOf('cs_') === 0) g = 2;   /* 週間計画本体ほか */
+        else if (k === 'ws_weekly_master_v1') g = 4;
+        else if (k.indexOf('shiftapp:v1:') === 0) g = 5;
+        else if (k.indexOf('wtmgr_') === 0) g = 6;                   /* 体重 */
+        else if (k.indexOf('admf_') === 0 || k === 'admission_flow_v1') g = 7;   /* 入居調整 */
+        else if (k.indexOf('genogram:') === 0 || k === 'su_genograms') g = 8;    /* 構成図 */
+        else if (k.indexOf('rmaster_') === 0 || k === 'su_residents_common') g = 9;   /* 入居者マスタ */
+        else g = 10;
         sums[g] += b;
       }
     } catch (e) { return null; }
@@ -10569,7 +10582,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (d && typeof d === 'object') ? d : {};
     } catch (e) { return {}; }
   }
-  function saveDirty_(d) { try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) {} }
+  /* ws_dirty_v1 への書込みはここだけ＝同期状態バッジ(#badgeSync)もここで更新する */
+  function saveDirty_(d) {
+    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) {}
+    try { updateSyncBadge_(); } catch (eB) {}
+  }
   function markDayDirty_(date) {
     if (!date) return;
     var d = loadDirty_();
@@ -10644,6 +10661,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       else { try { pushDayFor_(dates[i]); } catch (e2) {} }
     }
     try { schedulePushCare(); } catch (e3) {}      /* 未送信careがあれば送る（raw比較で自動no-op） */
+    if (masterUnsent_()) { try { pushMasterNow(); } catch (e5) {} }   /* 支援マスタの送信失敗を回収 */
     if (!acted) { try { pullAll(false); } catch (e4) {} }
   }
   /* 表示していない日付の未送信を送る（focus/visibility/online 復帰時の回収。
@@ -10661,7 +10679,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 成功しても未送信(非当日dirty/careジャーナル)が残るなら回収タイマーを張り直す。
      * これをしないと、別リソースの成功が唯一の回収タイマーを消し、非当日dirtyが無期限滞留する。 */
     try {
-      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length)) scheduleRetry_();
+      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
     } catch (eR) {}
     try {
       var el = $('saveState');
@@ -10682,7 +10700,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) {}
     return { seq: 0, ops: [] };
   }
-  function saveCareOps_(p) { try { localStorage.setItem(CARE_OPS_KEY, JSON.stringify(p)); } catch (e) {} }
+  function saveCareOps_(p) {
+    try { localStorage.setItem(CARE_OPS_KEY, JSON.stringify(p)); } catch (e) {}
+    try { updateSyncBadge_(); } catch (eB) {}   /* 週間計画の未送信も同期状態バッジに含める */
+  }
   function careOpKey_(op) {
     if (op.t === 'detail' || op.t === 'svc') {
       var r = op.ref || {};
@@ -10785,6 +10806,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      診断は「失敗した通信の時刻・種類・所要時間」だけを残す＝URL・トークン・氏名は保存しない。 */
   var NP = window.WSNet;
   var net = { failStreak: 0, lastOkAt: 0 };
+  var SYNC_BADGE_REFRESH_MS = 15000, syncBadgeBound_ = false;   /* 同期状態バッジの定期更新（通信なし） */
   var dead = NP.createDeadDetector();
   var NET_DIAG_KEY = 'ws_net_diag_v1';
   function loadNetDiag_() {
@@ -10831,6 +10853,135 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now())) setSyncState('⚠ オフライン（自動再試行）');
     } catch (e) {}
   }
+  /* ═══ 同期状態バッジ（#badgeSync・2026-09-23）═══════════════════════════════
+     #saveState の文言は保存のたびに上書きされる一時表示のため、「✓同期済み」を確かめてから
+     再読み込みする運用に使えなかった。こちらは常時表示で、状態が変わるたびに更新する。
+     優先順: 同期なし → 未送信あり → オフライン → 送信・取得の失敗が最新 → 確認中 → 同期済み。
+     バッジのための通信はしない（未送信の印・通信の成否・最後の成功時刻から決めるだけ）。
+     「同期済み」は【アプリとしての成功】(応答の ok===true)が最後の失敗より新しい時だけ出す。
+     net.failStreak/NP.classify は通信層の判定で、conflict・拒否(ok:false)は数えないため別に持つ。 */
+  var syncStat_ = { seq: 0, okSeq: 0, failSeq: 0, okAt: 0, failAt: 0, clickAt: 0 };
+  /* gas() の全応答をここへ通す: ok===true だけを成功、それ以外（通信失敗 null・HTTP・ok:false）は失敗 */
+  function noteSyncResult_(j) {
+    syncStat_.seq++;
+    if (j && j.ok === true) { syncStat_.okSeq = syncStat_.seq; syncStat_.okAt = Date.now(); }
+    else { syncStat_.failSeq = syncStat_.seq; syncStat_.failAt = Date.now(); }
+    try { updateSyncBadge_(); } catch (e) {}
+  }
+  /* 接続先・トークンを変えたら、前の接続先での成否は持ち越さない（「確認中」から出直す） */
+  function resetSyncStat_() {
+    syncStat_.seq = 0; syncStat_.okSeq = 0; syncStat_.failSeq = 0;
+    syncStat_.okAt = 0; syncStat_.failAt = 0; syncStat_.clickAt = 0;
+  }
+  /* 入力 { syncOn, dirtyDays, carePending, careKnown, careOps, masterPending, offline,
+   *        okAt, okSeq, failSeq } → { cls, text, title }
+   *  carePending … 週間計画(care_schedule_v2)が未送信（送信待ち・送信中・週間計画タブの未送信・
+   *                最後に送信/取得した内容と違う）。careKnown … この起動で比べる基準がまだ無いなら false。
+   *  careOps     … 週間計画の再適用記録(ws_care_ops_v1)の件数。内容が送信済みと一致と分かっている時は
+   *                未送信に数えず title に添えるだけ（記録は消さない）。 */
+  function syncBadgeState_(s) {
+    if (!s.syncOn) {
+      return { cls: 'mute', text: '同期なし', title: 'GAS エンドポイント未設定＝この端末だけに保存' };
+    }
+    var k = unsentKinds_(s);
+    var opsNote = (s.careOps > 0 && !k.opsUnsent) ? '（週間計画の再適用記録 ' + s.careOps + '件あり・内容は送信済みと一致）' : '';
+    if (k.any) {
+      var parts = [], tp = [];
+      if (s.dirtyDays > 0) { parts.push(s.dirtyDays + '日'); tp.push('未送信の日 ' + s.dirtyDays + '日'); }
+      if (k.careUnsent) {
+        parts.push('週間計画');
+        if (!k.tabOnly) tp.push('週間計画の未送信' + (s.careOps > 0 ? '（記録 ' + s.careOps + '件）' : ''));
+      }
+      if (s.masterPending) { parts.push('支援マスタ'); tp.push('支援マスタの未送信'); }
+      var t = '';
+      if (k.sendable) {
+        t = tp.join('・');
+        if (s.offline) t += '（通信できていません）';
+        t += '。押すと今すぐ送信します';
+      }
+      if (k.tabOnly) t += (t ? ' ' : '') + CARE_TAB_UNSENT_NOTE;
+      return { cls: 'warn', text: '● 未送信あり ' + parts.join('・'), title: t };
+    }
+    if (s.offline) {
+      return { cls: 'ng', text: '⚠ オフライン', title: '同期先と通信できていません（自動で再試行します）' + opsNote };
+    }
+    if (s.failSeq > s.okSeq) {
+      return { cls: 'ng', text: '⚠ 送信・取得できていません',
+               title: '最後の送信・取得が失敗しました（自動で再試行します）' + opsNote };
+    }
+    if (!s.okAt || !s.careKnown) {
+      return { cls: 'mute', text: '⟳ 確認中', title: 'この起動ではまだ同期先との送受信を確かめられていません' + opsNote };
+    }
+    var d = new Date(s.okAt);
+    return { cls: 'ok', text: '✓ 同期済み', title: '最終同期 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + opsNote };
+  }
+  /* 未送信の集計（バッジとクリックで共用）。同期OFFでは何も数えない。 */
+  function syncPendingInfo_() {
+    var care = careSyncState_();
+    return { dirtyDays: dirtyDayList_().length, carePending: care.pending, careKnown: care.known,
+             careTabOnly: care.tabOnly, careOps: loadCareOps_().ops.length, masterPending: masterUnsent_() };
+  }
+  /* 未送信の内訳。週間計画アプリ側の未送信フラグ(care_schedule_dirty_v1)だけが立っていて、ワースケには
+   * 送る物が無い場合(tabOnly)も未送信に数える（安全側・フラグは週間計画アプリの物なので降ろさない）。
+   * ただしワースケから送っても解消しないため、押しても「送信します」とは言わず週間計画を開くよう案内する。
+   *  sendable … ワースケが送れる未送信がある（日・週間計画の内容・再適用記録・支援マスタ） */
+  var CARE_TAB_UNSENT_NOTE = '週間計画アプリ側に未送信の印があります。週間計画を開くと送信・解消されます';
+  function unsentKinds_(p) {
+    var careSend = !!(p.carePending && !p.careTabOnly);
+    var opsUnsent = p.careOps > 0 && !(p.careKnown && !careSend);
+    var tabOnly = !!p.careTabOnly && !careSend && !opsUnsent;
+    var sendable = p.dirtyDays > 0 || careSend || opsUnsent || !!p.masterPending;
+    return { sendable: sendable, tabOnly: tabOnly, opsUnsent: opsUnsent,
+             careUnsent: careSend || opsUnsent || tabOnly, any: sendable || tabOnly };
+  }
+  function hasUnsent_(p) { return unsentKinds_(p).any; }
+  function updateSyncBadge_() {
+    var el = $('badgeSync');
+    if (!el) return;
+    var st;
+    try {
+      var on = syncOn();
+      var p = on ? syncPendingInfo_() : { dirtyDays: 0, carePending: false, careKnown: true, careTabOnly: false, careOps: 0, masterPending: false };
+      st = syncBadgeState_({
+        syncOn: on,
+        dirtyDays: p.dirtyDays, carePending: p.carePending, careKnown: p.careKnown, careTabOnly: p.careTabOnly,
+        careOps: p.careOps, masterPending: p.masterPending,
+        offline: on ? !!NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now()) : false,
+        okAt: syncStat_.okAt, okSeq: syncStat_.okSeq, failSeq: syncStat_.failSeq
+      });
+    } catch (e) { return; }
+    var cls = 'badge ' + st.cls;
+    if (el.className !== cls) el.className = cls;
+    if (el.textContent !== st.text) el.textContent = st.text;
+    el.title = st.title;
+    el.setAttribute('aria-label', st.text);
+  }
+  /* バッジを押した時: 未送信があれば既存の回収経路(recoverNow_)で送る。連打・重ね掛けはしない
+   * （押してから SYNC_BADGE_CLICK_GUARD_MS の間は2回目を起こさない）。回線が明確に切れていれば
+   * 送信するとは言わず、つながり次第の自動再試行を案内する（recoverNow_ が再試行を予約する）。 */
+  var SYNC_BADGE_CLICK_GUARD_MS = 15000;
+  function syncBadgeClick_() {
+    try {
+      var uk = syncOn() ? unsentKinds_(syncPendingInfo_()) : null;
+      if (uk && uk.any && !uk.sendable) {
+        toast('週間計画アプリ側に未送信があります。週間計画を開くと送信されます');   /* ワースケから送っても解消しない */
+      } else if (uk && uk.sendable) {
+        var now = Date.now();
+        if (syncStat_.clickAt && now - syncStat_.clickAt < SYNC_BADGE_CLICK_GUARD_MS) {
+          toast('送信中です。しばらくお待ちください');
+        } else {
+          syncStat_.clickAt = now;
+          if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            toast('通信できないため、つながり次第自動で送信します');
+          } else {
+            toast('未送信の変更を送信します');
+          }
+          recoverNow_();
+        }
+      }
+    } catch (e) {}
+    updateSyncBadge_();
+  }
   /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
   function friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
@@ -10866,7 +11017,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         .catch(function () { once(false); });
     } catch (e) { once(false); }
   }
-  function gas(payload, cb) { gasCall(payload, cb, false); }
+  /* 全応答の成否を同期状態バッジ(noteSyncResult_)へ記録する。呼出側の処理(送信済みの記録など)を
+   * 反映した後の状態でバッジを描くため、記録は cb の後。cb の扱い・例外は従来どおり。 */
+  function gas(payload, cb) {
+    gasCall(payload, function (j) {
+      try { cb(j); } finally { try { noteSyncResult_(j); } catch (eN) {} }
+    }, false);
+  }
   function gasCall(payload, cb, retried) {
     payload.token = settings.token;
     /* cb は必ず1回だけ。1試行15秒・最大3試行（1.5s→4.0s待ち）＝最悪でも約50秒で必ず応答する。
@@ -10926,6 +11083,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!logged) noteNetFail_(action_, resLabel_(status, errKind), elapsed, n, Date.now(), isFinal);
       if (!isFinal) { setTimeout(function () { attempt_(n + 1); }, wait); return; }
       net.failStreak++;
+      try { updateSyncBadge_(); } catch (eSb) {}
       if (errKind || !status) { once(null); return; }        /* null＝通信失敗（上位の契約を維持） */
       once({ error: 'HTTP ' + status });                      /* 未確定の404も 'HTTP 404' で返す */
     }
@@ -10935,6 +11093,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (kind === 'ok') {
         net.failStreak = 0;
         net.lastOkAt = now;
+        try { updateSyncBadge_(); } catch (eSb) {}
         dead.note('ok', now, elapsed);
         noteNetOk_(now);
         once(j || null);
@@ -10955,6 +11114,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               noteNetFail_(action_, '404', elapsed, n, now, false);
               noteNetFail_(action_, 'deadendpoint確定', 0, n, Date.now(), true);
               net.failStreak++;
+              try { updateSyncBadge_(); } catch (eSb) {}
               once({ error: 'deadendpoint' });   /* 既存の healStaleTarget 経路へ */
             } else {
               dead.reset();                      /* 生きていた＝一時障害として扱う */
@@ -12682,12 +12842,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!syncOn()) return;
     var raw = '';
     try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
-    if (!raw || raw === lastPushed.care) return;
+    if (!careRawPending_(raw)) return;
     if (pushCareTimer) clearTimeout(pushCareTimer);
     pushCareTimer = setTimeout(pushCareNow, 2000);
+    carePushQueued_ = true;   /* バッジ用。pushCareTimer は発火後も null に戻らないため別に持つ */
+    try { updateSyncBadge_(); } catch (eSb) {}
   }
   var carePushBusy_ = false, carePushAgain_ = false, careWipeNotified_ = false;
+  var carePushQueued_ = false;   /* 同期状態バッジ用: 送信待ち(2秒)の間だけ true。pushCareNow に入った時点で降ろす */
+  /* 週間計画の内容が「最後に送信・取得した版(lastPushed.care)」と違う＝送る物がある。schedulePushCare の判定そのもの */
+  function careRawPending_(raw) { return !!raw && raw !== lastPushed.care; }
+  /* 週間計画の未送信（同期状態バッジ用・送信の挙動には関与しない）。
+   * pending: 送信待ち(2秒の間＝carePushQueued_)・送信中・週間計画タブ自身の未送信(care_schedule_dirty_v1)・内容が最後の送受信と違う。
+   * known: この起動で比べる基準(lastPushed.care)ができているか。起動直後の取得前は内容比較ができないので
+   *        未送信とは言わず、バッジは「確認中」に留める（取得できれば基準ができる）。 */
+  function careSyncState_() {
+    var raw = '';
+    try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
+    var known = !raw || lastPushed.care !== '';
+    var own = carePushQueued_ || carePushBusy_ || (known && careRawPending_(raw));   /* ワースケが送れる物 */
+    var tab = careEditingElsewhere_();
+    return { pending: !!(own || tab), known: known, tabOnly: !!(tab && !own) };
+  }
   function pushCareNow() {
+    carePushQueued_ = false;   /* バッジ用の記録だけ（送信の判定には使わない） */
     if (!syncOn()) return;
     if (carePushBusy_) { carePushAgain_ = true; return; }
     var raw = '';
@@ -12697,6 +12875,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { data = JSON.parse(raw); } catch (e) { return; }
     var opsMax = careOpsMaxSeq_();   /* 送信時点までのcare編集op＝成功でジャーナルから除去 */
     carePushBusy_ = true;
+    try { updateSyncBadge_(); } catch (eSb) {}
     gas({ action: 'put', key: CARE_KEY, rev: loadRevs().care || 0, data: data }, function (j) {
       carePushBusy_ = false;
       if (j && j.ok) {
@@ -12852,16 +13031,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* --- 支援マスタ --- */
+  /* 未送信の印（リロードしても残る）。送信が要ると分かった時に立て、送信成功で送った内容が
+   * 今の内容と同じ時・サーバー版を採用した時・送る物が無いと分かった時だけ降ろす。
+   * 失敗しても従来は何も残らなかった（同期状態バッジが「同期済み」と誤表示しうる）。マージの扱いは不変。 */
+  var MASTER_UNSENT_KEY = 'ws_master_unsent_v1';
+  function masterUnsent_() { try { return localStorage.getItem(MASTER_UNSENT_KEY) === '1'; } catch (e) { return false; } }
+  function setMasterUnsent_(on) {
+    try { if (on) localStorage.setItem(MASTER_UNSENT_KEY, '1'); else localStorage.removeItem(MASTER_UNSENT_KEY); } catch (e) {}
+    try { updateSyncBadge_(); } catch (eB) {}
+  }
   function pushMasterNow() {
     if (!syncOn()) return;
     var raw = '';
     try { raw = localStorage.getItem(MASTER_KEY) || ''; } catch (e) {}
-    if (!raw || raw === lastPushed.master) return;
+    if (!raw || raw === lastPushed.master) { if (masterUnsent_()) setMasterUnsent_(false); return; }
     var data = null;
     try { data = JSON.parse(raw); } catch (e) { return; }
+    setMasterUnsent_(true);
     gas({ action: 'put', key: MASTER_KEY, rev: loadRevs().master || 0, data: data }, function (j) {
-      if (j && j.ok) { saveRevsPatch({ master: j.rev }); lastPushed.master = raw; }
+      if (j && j.ok) {
+        saveRevsPatch({ master: j.rev }); lastPushed.master = raw;
+        var nowRaw_ = '';
+        try { nowRaw_ = localStorage.getItem(MASTER_KEY) || ''; } catch (eR) {}
+        if (nowRaw_ === raw) setMasterUnsent_(false);   /* 送信中に変わっていたら印は残す（次の送信で降ろす） */
+      }
       else if (j && j.conflict) pullMasterNow();
+      else scheduleRetry_();   /* 失敗は回収の予約へ（recoverNow_ が印を見て送り直す） */
     });
   }
   function pullMasterNow() {
@@ -12878,6 +13073,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { localStorage.setItem(MASTER_KEY, after_); } catch (e) { return; }
         saveRevsPatch({ master: j.rev });
         lastPushed.master = (before_ === after_) ? after_ : '';
+        if (before_ === after_ && masterUnsent_()) setMasterUnsent_(false);   /* サーバー版を採用＝送る物は無い */
         toast('支援マスタを同期しました');
         if (before_ !== after_) { try { pushMasterNow(); } catch (e5) {} }   /* サーバーの汚染版を治す */
         syncCareFromMaster();
@@ -13090,6 +13286,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     });
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
+    /* 同期状態バッジ: 未送信があれば既存の回収経路(recoverNow_)で今すぐ送る。それ以外は表示の更新だけ。 */
+    if ($('badgeSync')) $('badgeSync').addEventListener('click', syncBadgeClick_);
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
     if ($('badgeOv')) $('badgeOv').addEventListener('click', openAlerts);
@@ -13518,6 +13716,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       settings.breakMinHours = parseFloat($('stBreakH').value) || 7;
       settings.retentionDays = parseInt($('stRetention').value, 10) || 30;
       var hadEndpoint = !!settings.endpoint;
+      var prevSyncSig_ = settings.endpoint + '|' + settings.token;   /* 接続先の変更検知（同期状態バッジ） */
       settings.endpoint = epIn;
       settings.token = $('stToken').value.trim();
       settings.urlCare = $('stUrlCare').value.trim() || 'care-schedule.html';
@@ -13528,6 +13727,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ($('stHideNonHeadcount')) settings.hideNonHeadcount = $('stHideNonHeadcount').checked;
       var hideNHChanged_ = (settings.hideNonHeadcount !== false) !== prevHideNH_;
       saveSettings();
+      if (prevSyncSig_ !== settings.endpoint + '|' + settings.token) { try { resetSyncStat_(); } catch (eRs) {} }
+      try { updateSyncBadge_(); } catch (eSb) {}   /* 同期の設定・解除をすぐ反映 */
       hideModals();
       renderAll();
       /* 「頭数外を出さない」を切り替えたら、表示中の日へ即座に反映する。
@@ -14063,9 +14264,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         clearDayDirty_(ui.currentDate);
         if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
       }
-      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length)) scheduleRetry_();
+      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
     } catch (eDirty) {}
     try { pullAll(false); } catch (e) {}
+    try { updateSyncBadge_(); } catch (eSb) {}
+    /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛 */
+    if (!syncBadgeBound_) {
+      syncBadgeBound_ = true;
+      setInterval(function () { try { updateSyncBadge_(); } catch (e) {} }, SYNC_BADGE_REFRESH_MS);
+    }
     /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
      * オンライン時は pullAll→pullDayNow 完了後に反映するためここでは行わない。 */
     try { store.auto(migrateDay); } catch (eM) {}   /* migrateDay の自動書換を履歴非汚染に */
