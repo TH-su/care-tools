@@ -12,6 +12,11 @@
  *   SUFacility.officeName('通所') … 事業所の呼び名（未設定なら「通所介護」などの一般名）
  *   SUFacility.aliases()          … {呼び名: '施設'|'訪問'|'通所'}（名前・正式名・別名）
  *   SUFacility.get()              … 設定全体の写し（書き換えても元は変わらない）
+ *   SUFacility.fill(text)         … 文中の {{施設}} {{訪問}} {{通所}} を事業所の呼び名に差し替える（2026-09-24.2）
+ *   SUFacility.floors()           … [{no, label}]（未設定なら １階・２階 の2階建て＝これまでの並び）
+ *   SUFacility.floorOf(room)      … 居室番号の先頭の数字が floors の no ならその階・それ以外は 0（全角数字も読む）
+ *   SUFacility.floorLabel(no)     … 階の見出し（１階 など）
+ *   SUFacility.roomPlan()         … 入居者マスタの間取り図（無ければ null）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -35,7 +40,23 @@
   /* 受け取った設定を信じない（形の崩れた値は捨て、足りない所は空で埋める） */
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
-    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), offices: [] };
+    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), offices: [], floors: [], roomPlan: null };
+    if (Array.isArray(p.floors)) {
+      for (var fl = 0; fl < p.floors.length; fl++) {
+        var F = p.floors[fl];
+        if (F && typeof F.no === 'number' && F.no >= 1 && F.no <= 9 && Math.floor(F.no) === F.no) out.floors.push({ no: F.no, label: str(F.label) || (F.no + '階') });
+      }
+    }
+    /* 間取り図は形だけ確かめて丸ごと持つ（各階に cells の配列があること） */
+    if (p.roomPlan && typeof p.roomPlan === 'object') {
+      var okPlan = true, anyFloor = false;
+      for (var pk in p.roomPlan) {
+        if (!Object.prototype.hasOwnProperty.call(p.roomPlan, pk)) continue;
+        anyFloor = true;
+        if (!p.roomPlan[pk] || !Array.isArray(p.roomPlan[pk].cells)) { okPlan = false; break; }
+      }
+      if (okPlan && anyFloor) out.roomPlan = JSON.parse(JSON.stringify(p.roomPlan));
+    }
     for (var k = 0; k < KINDS.length; k++) {
       var src = null;
       for (var i = 0; i < p.offices.length; i++) {
@@ -96,6 +117,29 @@
     get: function () { return data ? JSON.parse(JSON.stringify(data)) : null; },
     office: office,
     officeName: function (kind) { return office(kind).name || GENERIC[kind] || ''; },
+    fill: function (text) {
+      return String(text == null ? '' : text).replace(/\{\{(施設|訪問|通所)\}\}/g, function (a, k) {
+        return window.SUFacility.officeName(k);
+      });
+    },
+    floors: function () {
+      return (data && data.floors.length) ? JSON.parse(JSON.stringify(data.floors)) : [{ no: 1, label: '１階' }, { no: 2, label: '２階' }];
+    },
+    floorOf: function (room) {
+      var s = String(room == null ? '' : room).trim()
+        .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+      var m = s.match(/^([1-9])/);
+      if (!m) return 0;
+      var n = parseInt(m[1], 10), fs = window.SUFacility.floors();
+      for (var i = 0; i < fs.length; i++) if (fs[i].no === n) return n;
+      return 0;
+    },
+    floorLabel: function (no) {
+      var fs = window.SUFacility.floors();
+      for (var i = 0; i < fs.length; i++) if (fs[i].no === no) return fs[i].label;
+      return no + '階';
+    },
+    roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
     aliases: function () {
       var map = {};
       if (!data) return map;

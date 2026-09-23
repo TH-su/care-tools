@@ -1328,6 +1328,7 @@ body.meal-on #sc-list{max-width:none}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24.2"></script>
 <script src="meds-effect-dict.js?v=2026-08-11"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script>
@@ -1767,13 +1768,13 @@ function srevStart(){
      設定されている時だけ出す＝壊れたリンクを踏ませない。 */
 var APP_LINKS=[
   {href:'care-schedule.html',                     ic:'📅', name:'週間計画',       desc:'週間ケア計画・単位の管理'},
-  {href:'daycare-roster.html',                    ic:'🍵', name:'せせらぎ利用表', desc:'通所の利用予定と帳票'},
+  {href:'daycare-roster.html',                    ic:'🍵', name:'{{通所}}利用表', desc:'通所の利用予定と帳票'},
   {href:'facesheet.html',                         ic:'📄', name:'フェイスシート', desc:'入居者の基本情報を1枚に'},
   {href:'weight-record.html',                     ic:'⚖️', name:'体重管理',       desc:'体重の記録と推移'},
   {href:'../haiben-record/haiben-record.html',    ic:'🚽', name:'排便ケア記録',   desc:'排泄の記録'},
   {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'},
   {href:'moushiokuri-viewer.html',                ic:'📝', name:'申送ビューア',   desc:'申し送り・バイタル・食事量'},
-  {href:'training-plan.html',                     ic:'🏃', name:'機能訓練計画書', desc:'せせらぎ 個別機能訓練計画書'}
+  {href:'training-plan.html',                     ic:'🏃', name:'機能訓練計画書', desc:'{{通所}} 個別機能訓練計画書'}
 ];
 /* ── 入居者単位リンク（この方を各アプリで開く） ──
    ★載せてよいのは「?masterId= を実際に解釈する受け側が実装済みのアプリ」だけ。
@@ -1809,6 +1810,11 @@ function safeHttpUrl(u){
   if(!t) return '';
   return /^https?:\/\//i.test(t) ? t : '';
 }
+/* 表示名の {{施設}}{{訪問}}{{通所}} を事業所の呼び名に（施設情報・su-facility.js）。読めない時は一般名 */
+function facFill(t){
+  if(window.SUFacility && typeof SUFacility.fill==='function') return SUFacility.fill(t);
+  return String(t==null?'':t).replace(/\{\{(施設|訪問|通所)\}\}/g,function(a,k){return {'施設':'施設','訪問':'訪問介護','通所':'通所介護'}[k];});
+}
 function renderAppList(){
   var box=$('appList'); if(!box) return;
   var items=APP_LINKS.slice();
@@ -1817,7 +1823,7 @@ function renderAppList(){
   box.innerHTML=items.map(function(a){
     return '<a href="'+esc(a.href)+'" target="_blank" rel="noopener">'+
       '<span class="ai" aria-hidden="true">'+esc(a.ic)+'</span>'+
-      '<span class="at"><span>'+esc(a.name)+'</span><span class="ad">'+esc(a.desc)+'</span></span></a>';
+      '<span class="at"><span>'+esc(facFill(a.name))+'</span><span class="ad">'+esc(facFill(a.desc))+'</span></span></a>';
   }).join('');
   /* 訪問診療URLが未設定のときだけ、設定場所を案内する（毎回は出さない） */
   if(!vma) box.innerHTML+='<p class="applead" style="margin:4px 0 0">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>';
@@ -2400,10 +2406,17 @@ function bdayHtml(list){
    全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる）。
    0 = 階を判定できない（居室未登録・1/2以外で始まる） */
 function roomToFloor(room){
+  /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。
+     既定は１階・２階＝これまでと同じ「居室番号の先頭が 1 か 2」。読めない時もこの既定で判定する */
+  if(window.SUFacility && typeof SUFacility.floorOf==='function') return SUFacility.floorOf(room);
   var s=String(room==null?'':room).trim()
     .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
   var m=s.match(/^([12])/);
   return m?parseInt(m[1],10):0;
+}
+/* 階の見出し（１階 など）。施設情報の floors から引く */
+function floorLbl(no){
+  return (window.SUFacility && typeof SUFacility.floorLabel==='function') ? SUFacility.floorLabel(no) : (no===1?'１階':no===2?'２階':no+'階');
 }
 /* 居室番号の数値順（"99" より "101" が後ろ。文字列比較だと逆になる） */
 function roomNo(room){
@@ -2505,7 +2518,7 @@ function renderRoster(){
     var f1=[],f2=[],f0=[];
     list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
     f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml('１階入居者',f1), s2=secHtml('２階入居者',f2),
+    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
         s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
     html=(curView==='fl2')
       // 左右に1列ずつ。階未設定はその下に全幅で。
@@ -3601,64 +3614,11 @@ function fitHistSheet(m){
         sides は l/t/r/b の組み合わせ。省略＝四方すべて。
         原本には「厨房の左下がリネンに切り取られている」ようなL字の箱があり、
         4辺すべてを引くと箱が割れて見えるので、辺を選べるようにしてある。 */
-var ROOM_PLAN={
-  f1:{
-    title:'部屋番号割当表（1階）', align:'left',
-    /* 罫線の実測値（原本の写真を2400x1800で解析して得た画素位置）。
-       縦: 118,285,454,625,797,967,1136,1304,1474,1591,1654,1767,1862,1952,2150
-       横: 365,472,526,685,781,830,984,1134,1305,1480
-       列幅・行高はその差そのもの。図の縦横比も実測（2032:1115）。 */
-    ar:[2032,1115],
-    cols:[167,169,171,172,170,169,168,170,117,63,113,95,90,106,92],
-    rows:[107,54,159,96,49,154,150,171,175],
-    cells:[
-      /* 上段の居室（左から 116→102） */
-      {r:2,rs:2,c:1,room:'116'},{r:2,rs:2,c:2,room:'114'},{r:2,rs:2,c:3,room:'112'},
-      {r:2,rs:2,c:4,room:'110'},{r:2,rs:2,c:5,room:'108'},{r:2,rs:2,c:6,room:'106'},
-      {r:2,rs:2,c:7,room:'104'},{r:2,rs:2,c:8,room:'102',note:'応接室'},
-      /* 厨房は左下がリネンに切り取られたL字。先に厨房を描き、あとからリネンを重ねる */
-      {r:1,rs:3,c:9,cs:3,t:'厨房'},
-      {r:3,c:9,t:'リネン'},
-      {r:2,rs:4,c:12,cs:4,t:'機能訓練室'},
-      /* 廊下（居室8列＋リネンの列まで） */
-      {r:4,c:1,cs:9,t:''},
-      /* 下段の居室（左から 115→101） */
-      {r:5,rs:2,c:1,room:'115'},{r:5,rs:2,c:2,room:'113'},{r:5,rs:2,c:3,room:'111'},
-      {r:5,rs:2,c:4,room:'109'},{r:5,rs:2,c:5,room:'107'},{r:5,rs:2,c:6,room:'105',note:'（倉庫）'},
-      {r:5,rs:2,c:7,room:'103',note:'（倉庫）'},{r:5,rs:2,c:8,room:'101',note:'（倉庫）'},
-      {r:5,rs:2,c:9,t:'EV'},{r:7,rs:2,c:9,cs:2,t:'玄関'},
-      {r:6,c:11,t:'トイレ'},{r:7,rs:2,c:11,cs:2,t:'事務室'},{r:9,c:11,cs:2,t:'浴室'},
-      {r:6,c:14,cs:2,t:'静養室'},
-      /* 右の浴室も左上がトイレに切り取られたL字。先に浴室、あとからトイレを重ねる */
-      {r:7,rs:3,c:14,cs:2,t:'浴室'},
-      {r:7,c:14,t:'トイレ'}
-    ]
-  },
-  f2:{
-    title:'部屋番号割当表（2階）', align:'center',
-    /* 縦: 104,278,457,638,820,1001,1179,1357,1538,1658,1722,1843,1943,2040,2260
-       横: 426,650,750,816,972,1157,1339,1520,1709 */
-    ar:[2156,1283],
-    cols:[174,179,181,182,181,178,178,181,120,64,121,100,97,220],
-    rows:[224,100,66,156,185,182,181,189],
-    cells:[
-      {r:1,c:1,room:'216'},{r:1,c:2,room:'214'},{r:1,c:3,room:'212'},{r:1,c:4,room:'210'},
-      {r:1,c:5,room:'208'},{r:1,c:6,room:'206'},{r:1,c:7,room:'204'},{r:1,c:8,room:'202'},
-      {r:1,c:9,t:'キッチン'},{r:1,c:10,cs:4,t:'食堂'},{r:1,c:14,t:'介護職員室'},
-      {r:2,c:1,cs:9,t:''},
-      {r:2,rs:2,c:14,t:'相談室'},
-      {r:3,rs:2,c:1,room:'215'},{r:3,rs:2,c:2,room:'213'},{r:3,rs:2,c:3,room:'211'},
-      {r:3,rs:2,c:4,room:'209'},{r:3,rs:2,c:5,room:'207'},{r:3,rs:2,c:6,room:'205'},
-      {r:3,rs:2,c:7,room:'203'},{r:3,rs:2,c:8,room:'201',note:'（洗濯場）'},
-      {r:3,rs:2,c:9,t:'EV'},
-      {r:4,c:11,t:'リネン'},{r:4,c:12,t:'トイレ'},{r:4,c:14,t:'浴室'},
-      {r:5,c:11,cs:2,room:'218'},{r:5,c:14,room:'217'},
-      {r:6,c:11,cs:2,room:'220'},{r:6,c:14,room:'219'},
-      {r:7,c:11,cs:2,room:'222'},{r:7,c:14,room:'221'},
-      {r:8,c:11,cs:2,room:'224'},{r:8,c:14,room:'223'}
-    ]
-  }
-};
+/* ★2026-09-24: 間取り図のデータは施設情報（facility-profile.json の roomPlan・su-facility.js）へ移した。
+   形（上の説明どおり）は変えていない。無ければ居室一覧は「設定されていません」と出す */
+function roomPlanData(){
+  return (window.SUFacility && typeof SUFacility.roomPlan==='function' && SUFacility.roomPlan()) || {};
+}
 /* 居室番号 → 在籍者。★同じ番号に2名いることが実際にある（実測 2026-09-08: 208 が2名）ので、
    先に見つけた1名で切り捨てず【配列で持つ】。捨てると片方の方が紙から消える。 */
 function roomOccupants(){
@@ -3694,7 +3654,7 @@ function roomCellHtml(cl, occ){
     (cl.t?('<div class="rp-lb">'+esc(cl.t)+'</div>'):'')+'</div>';
 }
 function roomFloorHtml(key){
-  var p=ROOM_PLAN[key], occ=roomOccupants();
+  var p=roomPlanData()[key], occ=roomOccupants();
   /* ★列幅・行高・縦横比はすべて原本の実測値。図の形を計算で作らない
      （2026-09-08 管理者指示「居室のサイズや罫線の位置など、全て全く同じように」）。 */
   var st='grid-template-columns:'+p.cols.map(function(x){return x+'fr'}).join(' ')+';'+
@@ -3711,11 +3671,11 @@ function roomFloorHtml(key){
 /* 脚注。★人数は【この紙に出た方】で数える。名簿の在籍数を出すと、居室番号が図に無い方が
    いた時に「32名」と書いてあるのに紙には31名しか出ていない紙になる。 */
 function roomFtNote(key,occ){
-  var p=ROOM_PLAN[key], n=0, dup=0, rooms=Object.create(null), all=Object.create(null), fk;
+  var RP=roomPlanData(), p=RP[key], n=0, dup=0, rooms=Object.create(null), all=Object.create(null), fk;
   /* ★「図に無い居室番号」は【全階ぶんの図】と突き合わせる。この階だけで見ると、
      もう一方の階の番号が全部「図に無い」と並ぶ（実測で1階の脚注に2階の21室が出た）。 */
-  for(fk in ROOM_PLAN) if(Object.prototype.hasOwnProperty.call(ROOM_PLAN,fk))
-    ROOM_PLAN[fk].cells.forEach(function(c){ if(c.room) all[c.room]=1; });
+  for(fk in RP) if(Object.prototype.hasOwnProperty.call(RP,fk))
+    RP[fk].cells.forEach(function(c){ if(c.room) all[c.room]=1; });
   p.cells.forEach(function(c){ if(c.room){ rooms[c.room]=1; var w=occ[c.room]||[]; n+=w.length; if(w.length>1) dup++; } });
   var out=[], k;
   for(k in occ) if(Object.prototype.hasOwnProperty.call(occ,k) && !all[k]) out.push(k);
@@ -3725,7 +3685,9 @@ function roomFtNote(key,occ){
 }
 function roomHtml(){
   if(!roster||!roster.length) return '<div class="sh-sheet"><div class="loading">名簿を取得しています…</div></div>';
-  return roomFloorHtml('f1')+roomFloorHtml('f2');
+  var keys=Object.keys(roomPlanData());
+  if(!keys.length) return '<div class="sh-sheet"><div class="loading">間取り図が設定されていません（施設情報 facility-profile.json の roomPlan）</div></div>';
+  return keys.map(function(k){ return roomFloorHtml(k); }).join('');
 }
 
 /* ═══════════ 薬効辞書（薬剤名→効能）2026-09-04 管理者指示 ═══════════
@@ -5092,7 +5054,7 @@ function perResidentLinksHtml(r){
   var nm=r.name||'';
   var body=items.map(function(a){
     return '<a class="rlink" target="_blank" rel="noopener" href="'+esc(residentLink(a.href,r.id,nm))+'">'+
-           esc(a.ic)+' '+esc(a.name)+'</a>';
+           esc(a.ic)+' '+esc(facFill(a.name))+'</a>';
   }).join('');
   /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
   /* 2026-08-14 指示: 縦書き見出し（約170pxの高さの原因）をやめ、ボタン高さに圧縮した横並びの帯にする。
@@ -7373,7 +7335,11 @@ window.addEventListener('popstate',function(ev){
    ・支援経過は新しい順に「紙に入るだけ」出す（1枚固定の様式のため。全件は従来の詳細印刷で出る）
    ・文字は --a4fs 基準で、長文の方は a4Fit() が 12.0→7.5px の範囲で自動的に縮めて1枚に収める */
 /* A4様式のヘッダに刷る施設表記。番号が変わったらここ1箇所だけ直す（公開している代表番号） */
-var A4_FACILITY={name:'有料老人ホーム ラウレアハレ', tel:'096-285-4811'};
+/* ★2026-09-24: 帳票右上の施設名・電話は施設情報（facility-profile.json の 施設・su-facility.js）から引く */
+function a4Facility(){
+  var o=(window.SUFacility && SUFacility.ready()) ? SUFacility.office('施設') : null;
+  return { name: o ? (o.formalName||o.name) : '', tel: o ? o.tel : '' };
+}
 function a4Cell(h,v,flex,cls){
   return '<div class="a4-c"'+(flex?' style="flex:'+flex+'"':'')+'>'+
     '<span class="a4-h">'+esc(h)+'</span><span class="a4-v'+(cls?' '+cls:'')+'">'+esc(String(v==null?'':v).trim()||'　')+'</span></div>';
@@ -7861,7 +7827,7 @@ function renderA4(r){
   var h=
   '<div class="a4s">'+
     '<div class="a4-head"><div class="a4-title">■利用者基本情報■</div>'+
-      '<div class="a4-fac">'+esc(A4_FACILITY.name)+'<br>TEL：'+esc(A4_FACILITY.tel)+'</div></div>'+
+      '<div class="a4-fac">'+esc(a4Facility().name)+'<br>TEL：'+esc(a4Facility().tel)+'</div></div>'+
     /* ── 基本事項 ── */
     '<div class="a4-sec"><div class="a4-lbl">基本事項</div><div class="a4-bd">'+
       '<div class="a4-row">'+

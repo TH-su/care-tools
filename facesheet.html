@@ -533,6 +533,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-facility.js?v=2026-09-24.2"></script>
 <script src="meds-effect-dict.js?v=2026-08-11"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -931,10 +932,17 @@ function bdayHtml(list){
 }
 /* 居室 → 階（0 = 判定できない）。全角数字は半角へ寄せる */
 function roomToFloor(room){
+  /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。
+     既定は１階・２階＝これまでと同じ「居室番号の先頭が 1 か 2」。読めない時もこの既定で判定する */
+  if(window.SUFacility && typeof SUFacility.floorOf==='function') return SUFacility.floorOf(room);
   var s=String(room==null?'':room).trim()
     .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
   var m=s.match(/^([12])/);
   return m?parseInt(m[1],10):0;
+}
+/* 階の見出し（１階 など）。施設情報の floors から引く */
+function floorLbl(no){
+  return (window.SUFacility && typeof SUFacility.floorLabel==='function') ? SUFacility.floorLabel(no) : (no===1?'１階':no===2?'２階':no+'階');
 }
 /* 居室番号の数値順（"99" より "101" が後ろ。文字列比較だと逆になる） */
 function roomNo(room){
@@ -1030,7 +1038,7 @@ function renderRoster(){
     var f1=[],f2=[],f0=[];
     list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
     f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml('１階入居者',f1), s2=secHtml('２階入居者',f2),
+    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
         s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
     html=(curView==='fl2')
       /* ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる */
