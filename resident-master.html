@@ -285,10 +285,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
 /* ★2026-09-24 本人決定（Q3）: 効能は med_dict の文言（分類より長いことがある）を出すので、
-   幅の上限を 6em（全角6文字）にし、超えた分はセルの中で折り返す。上限が無いと効能列が広がって
+   幅の上限を 7em（全角7文字）にし、超えた分はセルの中で折り返す。上限が無いと効能列が広がって
    薬剤名の列を押し縮め、紙で薬剤名が折り返す（2026-08-12 に決めた幅の配分が崩れる）。
-   ★em はこの要素の文字サイズ基準＝紙で文字を小さくしても「全角6文字」のまま。 */
-.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:6em; overflow-wrap:anywhere}
+   ★em はこの要素の文字サイズ基準＝紙で文字を小さくしても「全角7文字」のまま。
+   ★6em→7em（2026-09-24 本人決定）: 6em だと全角6文字の未確認効能で＊だけが2行目に回るため。 */
+.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:7em; overflow-wrap:anywhere}
 .meds2-na{color:var(--g5)}
 /* ＊の凡例（表の下の脚注）。＊がある時だけ出る */
 .meds2-ft{font-size:0.6875rem; color:var(--g6); margin-top:2px}
@@ -5586,7 +5587,7 @@ function openOkusuri(q){
      折返しを1件も数えず「0 行 ✅」と誤っていた（レビュー指摘・合成データの実測で再現確認）。
      ※効能列は「—」で必ず1行あるため、現CSSでは観測最小がプローブを下回らず実質 unit=プローブ。
        min は万一プローブより低い行が現れた時に、折返しを多め（保守側）に数える方へ倒すための保険。
-     ※2026-09-24: 効能列は 6em を超えるとセルの中で折り返す（本人決定 Q3）。.meds2-d は行の高さまで
+     ※2026-09-24: 効能列は 7em を超えるとセルの中で折り返す（本人決定 Q3）。.meds2-d は行の高さまで
        伸びるので、効能の折返しで伸びた行も「印刷が伸びる行」として数えに入る（それで正しい）。
    ★2026-08-15: 測定箱は詳細印刷（renderView）の「薬剤情報」sec と同じ
      【sec-lbl＋65:35 の2セル】で組む。以前は1セル（枠 実測714px）で測っており、実物の薬剤セル

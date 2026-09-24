@@ -283,9 +283,10 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
 /* ★2026-09-24 本人決定（Q3）: 効能は med_dict の文言（分類より長いことがある）を出すので、
-   幅の上限を 6em（全角6文字）にし、超えた分はセルの中で折り返す（入居者マスタと同値）。
-   上限が無いと効能列が広がって薬剤名の列を押し縮め、紙で薬剤名が折り返す。 */
-.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:6em; overflow-wrap:anywhere}
+   幅の上限を 7em（全角7文字）にし、超えた分はセルの中で折り返す（入居者マスタと同値）。
+   上限が無いと効能列が広がって薬剤名の列を押し縮め、紙で薬剤名が折り返す。
+   ★6em→7em（2026-09-24 本人決定）: 6em だと全角6文字の未確認効能で＊だけが2行目に回るため。 */
+.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:7em; overflow-wrap:anywhere}
 .meds2-na{color:var(--g5)}
 /* ＊の凡例（表の下の脚注）。＊がある時だけ出る */
 .meds2-ft{font-size:0.6875rem; color:var(--g6); margin-top:2px}
