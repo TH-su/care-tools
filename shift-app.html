@@ -3095,6 +3095,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 自動切替(healStaleTarget)で採用する時にも当てる＝壊れた値が su_sync_common 経由で
    * 同一オリジンの全ツールへ伝播するのを防ぐ。 */
   var GAS_ENDPOINT_RE = /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
+  /* 統合同期GAS（ワークスケジュールアプリ/gas/Code.gs）が ping で名乗る名前（2026-09-24）。
+   * 自動切替(healStaleTarget)はこの名乗りを確かめた時だけ採用する。ok/role だけでは採用しない:
+   * 入居者マスタのGASの ping は { ok:true, role } を返し、旧シフト専用GAS(shiftapp-gas)は別の名を名乗る。
+   * ws_settings に別アプリのURLと合言葉が組で入った端末では、以前の緩い条件だと
+   * su_sync_common（週間計画・ワースケ・シフト共通）ごと別アプリのGASへ書き換わった（2026-09-24 実例）。 */
+  var SYNC_SERVER_ID = 'silverunix-sync';
+  /* 「相手がこのアプリの同期GASではない」とサーバ本体が答えたエラー。
+   * 'unknown action' … 統合GASの旧世代・旧シフト専用GAS（英語）
+   * '不明なaction'   … 入居者マスタ・薬・申送のGAS（日本語）。この接続先へ送り続けても永久に通らない */
+  function isWrongEndpointErr_(msg) {
+    var m = String(msg);
+    return m === 'unknown action' || m === '不明なaction';
+  }
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -3714,12 +3727,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       });
     },
     /* 接続先を切り替えてよいか。Promise<boolean>。
-     *   unknown action … サーバ本体が答えた確定エラー＝従来どおり即座に合図とする
+     *   unknown action／不明なaction … サーバ本体が答えた確定エラー＝即座に合図とする
      *   HTTP 404       … 速い404が3回以上・初回から20秒以上たった時に確認pingを打ち、
      *                     それも404だった時だけ true（60秒はラッチして連打しない） */
     endpointLooksDead_: function (msg) {
       var self = this;
-      if (String(msg) === 'unknown action') return Promise.resolve(true);
+      if (isWrongEndpointErr_(msg)) return Promise.resolve(true);
       if (String(msg) !== 'HTTP 404') return Promise.resolve(false);
       var np = NP_();
       if (!np || !this._dead) return Promise.resolve(false);   /* 判定器が無い＝切り替えない */
@@ -3744,10 +3757,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return m;
     },
 
-    /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ワースケ設定(ws_settings)の
-     * 稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、そこへの ping が
-     * 成功(j.ok===true もしくは role/server を返す)のときだけ su_sync_common を上書きする。
-     * 通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着の防止）。
+    /* 接続先(su_sync_common)が古い死んだGAS・別アプリのGAS(unknown action／不明なaction)のとき、
+     * ワースケ設定(ws_settings)の稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、
+     * そこへの ping が ok:true かつ server==='silverunix-sync'（＝統合同期GASが名乗った）のときだけ
+     * su_sync_common を上書きする。ok/role だけの応答（入居者マスタ等のGAS）・別の server 名
+     * （旧シフト専用GAS）・通信失敗・unauthorized では上書きしない（誤切替・unauthorized固着の防止）。
      * 週間計画(care-schedule)の healStaleTarget と同じ方針を Promise 方式で移植（旧Safari互換）。 */
     healStaleTarget: function () {
       var self = this;
@@ -3768,7 +3782,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!r.ok) return false;
         return r.json();
       }).then(function (j) {
-        if (j && !j.error && (j.ok === true || j.role || j.server)) {
+        if (j && !j.error && j.ok === true && j.server === SYNC_SERVER_ID) {
           lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
           self.noteHealed_(curUrl, wsEp);   /* 切替を記録＝「勝手に変わった」を後から追跡できる */
           self.resetDeadDetector_();        /* 新しい接続先を前の404で疑わない */
@@ -4018,7 +4032,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
          * 自動切替して1回だけ再試行。判定は push 側と同じ endpointLooksDead_ に寄せる
          * （2箇所で条件がずれないように）。404は確認pingを通るまで切り替えない。 */
-        if (classifyPushError_(msg) === 'unsupported' && !self._healing) {
+        if ((classifyPushError_(msg) === 'unsupported' || isWrongEndpointErr_(msg)) && !self._healing) {
           self._healing = true;
           return self.endpointLooksDead_(msg).then(function (isDead) {
             if (!isDead) {   /* 一過性の404＝接続先はそのまま。再試行で復帰する */
@@ -4297,7 +4311,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
         /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
          * 自動切替して1回だけ再送。404は確認pingを通るまで切り替えない（pull側と同条件）。 */
-        if (kind === 'unsupported' && !self._healing) {
+        if ((kind === 'unsupported' || isWrongEndpointErr_(msg)) && !self._healing) {
           self._healing = true;
           return self.endpointLooksDead_(msg).then(function (isDead) {
             if (!isDead) {   /* 一過性の404＝未送信は保持したまま再試行で復帰する */
