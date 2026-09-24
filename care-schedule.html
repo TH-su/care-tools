@@ -4224,9 +4224,21 @@ const SYNC = {
     return true;
   },
 
-  /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
-     ws_settings の endpoint が現在と異なり、そこへの test get が j.ok===true のときだけ su_sync_common を
-     上書き。通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着を防止）。 */
+  /* 「相手がこのアプリの同期GASではない」とサーバ本体が答えたエラー（＝自動切替を試みる合図）。
+     'unknown action' は統合GASの旧世代（英語）、'不明なaction' は入居者マスタ・薬・申送のGAS（日本語）。
+     'deadendpoint' は確認pingでも404＝デプロイ消滅（gas() が NetPolicy で確定させた時だけ返す）。 */
+  isWrongEndpointErr(e) {
+    return e === 'unknown action' || e === '不明なaction' || e === 'deadendpoint';
+  },
+
+  /* 接続先(su_sync_common)が古い死んだGAS・別アプリのGASのとき、ws_settings の稼働中URLへ自動切替する。
+     ws_settings の endpoint が現在と異なり、そこへの ping が ok:true かつ server==='silverunix-sync'
+     （＝統合同期GASが名乗った）のときだけ su_sync_common を上書き。
+     ★ok だけでは採用しない（2026-09-24）: 入居者マスタのGASの ping は { ok:true, role } を返すため、
+       ws_settings に別アプリのURLと合言葉が入った端末では、3アプリ共通の接続先ごと別アプリへ書き換わる。
+       実際に1台がこの状態になり、ワースケの送信が「不明なaction」で拒否され続けた。
+     統合GASは合言葉を action より先に確かめるため、ok:true の名乗りは合言葉が通った証拠でもある。
+     通信失敗/unknown action継続/unauthorized/別の server 名 では上書きしない（誤切替・unauthorized固着を防止）。 */
   async healStaleTarget() {
     const cur = this.target();
     let ws = {};
@@ -4235,9 +4247,9 @@ const SYNC = {
     if (!wsEp || wsEp === cur.endpoint) return false;   // 代替先が無い／既に同一
     try {
       const res = await fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'get', key: 'care_schedule_v2', token: String(ws.token || '').trim() }), redirect: 'follow' });
+        body: JSON.stringify({ action: 'ping', token: String(ws.token || '').trim() }), redirect: 'follow' });
       const j = await res.json();
-      if (j && j.ok === true) {   // 稼働＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
+      if (j && !j.error && j.ok === true && j.server === 'silverunix-sync') {   // 統合同期GAS＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
         localStorage.setItem('su_sync_common', JSON.stringify({ endpoint: wsEp, token: String(ws.token || '').trim(), updatedAt: Date.now() }));
         this.log('🔧 接続先が古かったため、稼働中のURL(ws_settings)へ自動切替しました');
         return true;
@@ -4254,7 +4266,7 @@ const SYNC = {
     this.updateStatusUI('取得中…');
     try {
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
+      if (!j.ok && this.isWrongEndpointErr(j.error) && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });   // 切替後に1回だけ再取得（pull再入はしない）
       }
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
@@ -4292,7 +4304,7 @@ const SYNC = {
     this.updateStatusUI('確認中…');
     try {
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
+      if (!j.ok && this.isWrongEndpointErr(j.error) && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
@@ -4511,7 +4523,7 @@ const SYNC = {
         }
       } catch (e) { /* head 失敗時は従来の get に委ねる */ }
       let j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
-      if (!j.ok && (j.error === 'unknown action' || j.error === 'deadendpoint') && await this.healStaleTarget()) {
+      if (!j.ok && this.isWrongEndpointErr(j.error) && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
       if (!j.ok) {
