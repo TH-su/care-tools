@@ -91,7 +91,8 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .ev.s-daycare{ border-left-color:#26a69a; }
 .ev.k-notice { background:var(--g1); border-left-color:var(--g5); }
 .ev .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; font-size: 0.75rem; color:var(--g6); margin-bottom:2px; }
-.ev .tm { font-weight:700; color:var(--g9); font-variant-numeric:tabular-nums; }
+.ev .tm { font-weight:700; color:var(--g9); font-size: 0.875rem; font-variant-numeric:tabular-nums;
+          letter-spacing:.02em; min-width:3.2em; }
 .ev .body { font-size: 0.875rem; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
 /* ★メタ行の中に置く。独立した行にすると本文より背の高い余白が毎件付き、
      一覧が本文の2倍以上に伸びる（2026-08-21 実測 118px 中 50px がこの行）。 */
@@ -470,6 +471,68 @@ function fmtDate(s){
 }
 var SHIFT_LABEL = { day:'日勤', night:'夜勤', daycare:'デイ' };
 
+/* ── 時刻・日付の正規化（2026-09-24） ─────────────────────
+   ★スプレッドシートで「時刻だけ」を入れたセルは、中身が 1899/12/30 を起点にした日時になる。
+     それが文字列化されて「Sat Dec 30 1899 14:00:00 GMT+0900 (日本標準時)」や
+     「1899-12-30T05:00:00.000Z」の形で届くと、実際の記録日とまったく違う日付に見え、
+     時刻順の並べ替え（sortKeyTime）も効かなくなる。取り込んだ直後に「14:00」の形へそろえ、
+     画面・コピー・印刷・並べ替えのすべてが同じ値を見るようにする。
+     施設の時刻は日本時間なので、UTC 表記は端末の時間帯に関係なく +9 時間で読む。 */
+function z2(n){ return ('0' + n).slice(-2); }
+function toHalf(s){
+  return String(s).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+                  .replace(/：/g, ':');
+}
+function jstParts(ms){
+  var t = new Date(ms + 9 * 3600000);
+  return { y:t.getUTCFullYear(), mo:t.getUTCMonth() + 1, d:t.getUTCDate(), h:t.getUTCHours(), mi:t.getUTCMinutes() };
+}
+var RE_ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+function normTime(v){
+  if(v == null || v === '') return '';
+  if(typeof v === 'number' && isFinite(v)){               // シリアル値（1日＝1）の小数部
+    var mins = Math.round((((v % 1) + 1) % 1) * 1440) % 1440;
+    return z2(Math.floor(mins / 60)) + ':' + z2(mins % 60);
+  }
+  var s = toHalf(v).trim();
+  if(RE_ISO_UTC.test(s)){
+    var ms = Date.parse(s);
+    if(!isNaN(ms)){ var p = jstParts(ms); return z2(p.h) + ':' + z2(p.mi); }
+  }
+  /* 「14:00」「9:05」「14:00:00」「Sat Dec 30 1899 14:00:00 GMT+0900」「14時5分」の最初の時刻を拾う */
+  var m = s.match(/(?:^|[^\d])(\d{1,2})\s*[:時]\s*(\d{1,2})(?!\d)/);
+  if(m){
+    var h = Number(m[1]), mi = Number(m[2]);
+    if(h < 30 && mi < 60) return z2(h) + ':' + z2(mi);
+  }
+  var h1 = s.match(/^(\d{1,2})\s*時$/);                   // 「14時」だけの記入
+  if(h1 && Number(h1[1]) < 30) return z2(Number(h1[1])) + ':00';
+  return s;                                                // 「朝」「夕食後」などの自由記入はそのまま
+}
+function normYmd(v){
+  if(v == null) return '';
+  var s = toHalf(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  var m = s.match(/^(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})$/);
+  if(m) return m[1] + '-' + z2(Number(m[2])) + '-' + z2(Number(m[3]));
+  var ms = Date.parse(s);
+  if(!isNaN(ms)){                                          // ISO／「Thu Sep 24 2026 00:00:00 GMT+0900」の形
+    var p = jstParts(ms); return p.y + '-' + z2(p.mo) + '-' + z2(p.d);
+  }
+  return s;
+}
+/* 申し送り・AI要約の1件ずつに当てる。元の配列は書き換えず、date/time だけ直した写しを返す。 */
+function normRows(rows){
+  return (rows || []).map(function(r){
+    if(!r || typeof r !== 'object') return r;
+    var o = {};
+    for(var k in r){ if(Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k]; }
+    if('date' in o) o.date = normYmd(o.date);
+    if('time' in o) o.time = normTime(o.time);
+    return o;
+  });
+}
+
 /* ── 端末ガード ────────────────────────────────────────
    ★これは誤操作防止であって認証ではない（localStorage は書き換えられる）。
      実質の防御は「現場端末に合言葉を配らない」というサーバ側の運用。 */
@@ -837,7 +900,7 @@ function load(){
   return apiGet('events', { from:r.from, to:r.to }).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
              reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
-             events:(res.events || []), ledger:(res.ledger || []),
+             events:normRows(res.events), ledger:normRows(res.ledger),
              /* undefined（旧デプロイのGAS＝能力を持たない）と [] （1日も取り込めていない）を
                 潰さない。潰すと、ビューアだけ先に配った時に全期間が誤って赤くなる。 */
              ingested:(res.ingestedDates || null),
@@ -1255,7 +1318,7 @@ function renderDateView(force){
   apiGet('events', { from:d, to:d }).then(function(res){
     if(seq !== DV_SEQ) return;              // 後から出した要求がある＝この応答は使わない
     box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
-    var evs = res.events || [], lgs = res.ledger || [];
+    var evs = normRows(res.events), lgs = normRows(res.ledger);
     $('dstatus').textContent = fmtDate(d) + '　' + evs.length + '件';
     renderDateBody(box, d, evs, lgs, false);
   })['catch'](function(e){
