@@ -991,6 +991,15 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
       <button class="btn ng" id="stClearDay">この日をクリア</button>
     </div>
   </div>
+  <div class="fld" style="margin-top:10px"><label>未送信の日（この端末だけに残っている変更）</label>
+    <textarea class="inp" id="stUnsentDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn sm ok" id="stUnsentSend">今すぐ送信する</button>
+      <button class="btn sm ng" id="stUnsentDiscard">この端末の変更を捨ててクラウドから取り直す</button>
+      <span class="sp"></span><span class="hint" id="stUnsentMsg"></span>
+    </div>
+    <div class="hint">「取り直す」を押すと、<b>この端末に残っている未送信の変更だけ</b>を捨て、クラウドの最新に揃えます。クラウド側のデータには一切書き込みません。捨てる前に各日の内容をこの端末へ退避し、何が失われるかを確認画面に出します。</div>
+  </div>
   <div class="fld" style="margin-top:10px"><label>予約列①（自由枠職員）の診断</label>
     <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">①固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
@@ -10960,6 +10969,114 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * （押してから SYNC_BADGE_CLICK_GUARD_MS の間は2回目を起こさない）。回線が明確に切れていれば
    * 送信するとは言わず、つながり次第の自動再試行を案内する（recoverNow_ が再試行を予約する）。 */
   var SYNC_BADGE_CLICK_GUARD_MS = 15000;
+  /* ═══ 未送信の日の診断と、この端末だけの変更の破棄（2026-09-24）═══════════════
+   * 背景: 特定の端末だけ「未送信あり N日」が消えず同期されない事象。原因は3つありうる:
+   *   (a) 氏名入りの枠が0件の日を持っている … staffWipeBlocked_ が【送信を永久に保留】する
+   *       （サーバーの氏名入り盤面を空で潰さないための保護。dirty のまま再試行もしない）
+   *   (b) サーバーが新しいデータ保護ガードで拒否している … pushDayFor_ の else が再試行を続ける
+   *   (c) 通信できていない
+   * (a)(b) は放置しても解消せず、その端末だけ古い内容を抱え続ける。
+   * 現場の要望は「古い情報を上げずに、新しい情報だけ読み込みたい」。
+   * ★この操作はクラウドへ一切書き込まない。捨てるのは【この端末にしか無い未送信の変更】だけ。
+   * ★捨てる前に wsbase_conflict_<日付> へ退避し、失う内容（氏名入りの枠数）を確認画面に出す。 */
+  function unsentDayRows_() {
+    var list = dirtyDayList_().slice().sort(), out = [], i;
+    for (i = 0; i < list.length; i++) {
+      var date = list[i], day = null, named = 0, cnt = 0, reason = '送信待ち';
+      try { day = loadDayData(date); } catch (e) { day = null; }
+      if (!day) { reason = 'この端末にデータが無い（印だけ残っている）'; }
+      else {
+        named = M.countNamedStaff(day.staff);
+        cnt = (day.tasks || []).length;
+        if (staffWipeBlocked_(date, day, true)) reason = '職員名が1人も入っていないため送信を保留中';
+        else if (day.meta && day.meta.locked) reason = 'ロック中の日';
+      }
+      out.push({ date: date, named: named, tasks: cnt, reason: reason });
+    }
+    return out;
+  }
+  function renderUnsentDiag_() {
+    var ta = $('stUnsentDiag');
+    if (!ta) return;
+    if (!syncOn()) { ta.value = '同期先が未設定です（この端末だけに保存しています）。'; return; }
+    var rows = unsentDayRows_();
+    if (!rows.length) { ta.value = '未送信の日はありません。'; return; }
+    var lines = ['未送信 ' + rows.length + '日（この端末にだけ残っている変更）', ''];
+    for (var i = 0; i < rows.length; i++) {
+      lines.push(rows[i].date + '  職員名 ' + rows[i].named + '人 / 枠 ' + rows[i].tasks + '件  … ' + rows[i].reason);
+    }
+    ta.value = lines.join('\n');
+  }
+  /* この端末の未送信をすべて捨て、クラウドの最新を取り直す。
+   * 1日ずつ「取得 → 退避 → 印を落とす → サーバー版を全採用」。取得に失敗した日は何もしない（壊さない）。 */
+  function discardUnsentDays_() {
+    if (!syncOn()) { toast('同期先が未設定です', true); return; }
+    var rows = unsentDayRows_();
+    if (!rows.length) { toast('未送信の日はありません'); renderUnsentDiag_(); return; }
+    var withWork = 0, i;
+    for (i = 0; i < rows.length; i++) if (rows[i].named > 0) withWork++;
+    var msg = 'この端末に残っている未送信 ' + rows.length + '日ぶんの変更を捨てて、クラウドの最新を取り直します。\n\n';
+    for (i = 0; i < rows.length && i < 12; i++) {
+      msg += '　' + rows[i].date + '（職員名 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）\n';
+    }
+    if (rows.length > 12) msg += '　ほか ' + (rows.length - 12) + '日\n';
+    msg += '\nクラウドのデータは書き換えません。';
+    msg += withWork
+      ? ('\n\n⚠ うち ' + withWork + '日は職員名が入っています。この端末でしか編集していない内容があれば失われます。')
+      : '\n\n（職員名の入った日はありません）';
+    msg += '\n\n進めますか？';
+    if (!window.confirm(msg)) { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; return; }
+    var done = 0, failed = 0, adoptErr = 0, gone = 0, total = rows.length, finished = 0;
+    /* ★先に退避してから印を落とす。印を落とすと recoverNow_ の送信対象から外れる＝
+     * 取得を待つ間にこの端末の古い内容がクラウドへ上がることがなくなる（本操作の目的そのもの）。
+     * 取得に失敗した日は手元の内容をそのまま残し、「印は外したが最新はまだ」と正直に報告する。 */
+    for (i = 0; i < rows.length; i++) {
+      try {
+        var rawB_ = localStorage.getItem(dayKey(rows[i].date));
+        if (rawB_) localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
+      } catch (eB0) {}
+      clearDayDirty_(rows[i].date);
+    }
+    try { updateSyncBadge_(); } catch (eB1) {}
+    if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '取り直しています…（0/' + total + '）';
+    function step(idx) {
+      if (idx >= rows.length) return;
+      var date = rows[idx].date;
+      gas({ action: 'get', key: dayKey(date) }, function (g) {
+        finished++;
+        if (!g || !g.ok) { failed++; }
+        else if (!g.data) {
+          /* サーバーに無い日＝この端末だけで作られた日。印を落とし、ローカルも退避して消す
+             （残すと次の編集でまた送信を試み、同じ保留に戻る）。 */
+          /* サーバーに無い日＝この端末だけで作られた日。退避は前段で済んでいるので消す
+             （残すと次の編集でまた送信を試み、同じ保留に戻る）。 */
+          try {
+            localStorage.removeItem(dayKey(date));
+            localStorage.removeItem(baseKey_(date));
+          } catch (eR) {}
+          gone++;
+        } else {
+          /* 印は前段で落としてある＝3-wayマージを通さずサーバー版を全採用する */
+          try { adoptServerDay_(date, g.data, g.rev || 0, false); done++; } catch (eA) { adoptErr++; }
+        }
+        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '取り直しています…（' + finished + '/' + total + '）';
+        if (finished >= total) {
+          var m = 'クラウドの最新に揃えました（' + done + '日）';
+          if (gone) m += '／この端末だけの日を整理 ' + gone + '日';
+          if (failed) m += '／まだ取得できていない日 ' + failed + '日（未送信の印は外しました。通信が戻ってからこの画面をもう一度開くか、日付を開き直すと取得します）';
+          if (adoptErr) m += '／取り込めなかった日 ' + adoptErr + '日';
+          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = m;
+          toast(m, !!failed);
+          renderUnsentDiag_();
+          try { updateSyncBadge_(); } catch (eB) {}
+          try { renderAll(); } catch (eR2) {}
+        }
+        step(idx + 1);
+      });
+    }
+    step(0);
+  }
+
   function syncBadgeClick_() {
     try {
       var uk = syncOn() ? unsentKinds_(syncPendingInfo_()) : null;
@@ -11167,12 +11284,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* Fix4(トランザクション保護): 空staffワイプの伝播をブロック。送信盤面が氏名入り0件で、3-way祖先(wsbase_)に
    * 氏名入りがあれば、サーバーの氏名入り版を空で潰さないよう push を保留し、診断用に退避する＝true(ブロック)。
    * 祖先も名無し(比較対象なし)なら正当な空とみなし通常push。氏名があれば常に通常push。 */
-  function staffWipeBlocked_(date, day) {
+  /* peek=true は「判定だけ」＝退避ファイルを作らない（設定画面の一覧表示から呼ぶため）。
+     判定を2箇所に持つと次の改修でずれるので、実体はこの1本だけにする。 */
+  function staffWipeBlocked_(date, day, peek) {
     if (!day || M.countNamedStaff(day.staff) > 0) return false;
     var base = null;
     try { base = decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { base = null; }
     if (!base || M.countNamedStaff(base.staff) === 0) return false;
-    try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) {}   /* 診断用退避 */
+    if (!peek) {
+      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) {}   /* 診断用退避 */
+    }
     return true;
   }
   function pushDayNow(report) {
@@ -13614,6 +13735,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       $('stResult').textContent = '';
       try { if ($('stReserveDiag')) $('stReserveDiag').value = buildReserveDiag_(); } catch (eDg) {}
       try { if ($('stNetDiag')) $('stNetDiag').value = NP.formatDiag(loadNetDiag_()); } catch (eNd) {}
+      try { renderUnsentDiag_(); } catch (eUd) {}   /* 未送信の日の一覧（この端末だけに残っている変更） */
+      if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '';
       if ($('stNetMsg')) $('stNetMsg').textContent = '';
       try { updateStorageUsage_(); } catch (eSu) {}   /* この端末の使用量（読み取り専用・保持日数の直下に表示） */
       if ($('stDiagMsg')) $('stDiagMsg').textContent = '';
@@ -13621,6 +13744,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
     /* 施設情報の設定（su_facility_profile_v1・shift-app と共有） */
     if ($('stFacility')) $('stFacility').addEventListener('click', function () { openFacilityModal(false); });
+    /* 未送信の日: 送信し直す／この端末の変更を捨ててクラウドから取り直す（2026-09-24） */
+    if ($('stUnsentSend')) $('stUnsentSend').addEventListener('click', function () {
+      if (!syncOn()) { toast('同期先が未設定です', true); return; }
+      if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
+      try { recoverNow_(); } catch (e) {}
+      setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
+        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信を試みました（残りは一覧をご確認ください）'; }, 2500);
+    });
+    if ($('stUnsentDiscard')) $('stUnsentDiscard').addEventListener('click', function () {
+      try { discardUnsentDays_(); } catch (e) { toast('取り直しに失敗しました', true); }
+    });
     if ($('fcSave')) $('fcSave').addEventListener('click', saveFacilityFromModal);
     if ($('fcSkip')) $('fcSkip').addEventListener('click', skipFacilityWizard);
     if ($('stDiagCopy')) $('stDiagCopy').addEventListener('click', function () {
