@@ -284,8 +284,17 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
-.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:nowrap}
+/* ★2026-09-24 本人決定（Q3）: 効能は med_dict の文言（分類より長いことがある）を出すので、
+   幅の上限を 7em（全角7文字）にし、超えた分はセルの中で折り返す。上限が無いと効能列が広がって
+   薬剤名の列を押し縮め、紙で薬剤名が折り返す（2026-08-12 に決めた幅の配分が崩れる）。
+   ★em はこの要素の文字サイズ基準＝紙で文字を小さくしても「全角7文字」のまま。
+   ★6em→7em（2026-09-24 本人決定）: 6em だと全角6文字の未確認効能で＊だけが2行目に回るため。 */
+.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:7em; overflow-wrap:anywhere}
 .meds2-na{color:var(--g5)}
+/* ＊の凡例（表の下の脚注）。＊がある時だけ出る */
+.meds2-ft{font-size:0.6875rem; color:var(--g6); margin-top:2px}
+/* 効能欄を出せない理由（画面だけ。紙には出さない＝下の @media print で消す） */
+.meds-note{margin-top:4px; font-size:0.75rem; color:var(--warn-tx)}
 /* 薬剤名リンク。既存の本文と同じ色のまま、点線の下線でだけ「押せる」と分かるようにする */
 .mlink{color:inherit; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px}
 /* ── 入居者基本情報（外部様式）のチェック表示（2026-08-12 追加） ──
@@ -357,6 +366,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .meds2-h{border-bottom-color:#999}
   .meds2-e{color:#000; font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
   .meds2-na{color:#666}
+  .meds2-ft{color:#000}
+  .meds-note{display:none !important}   /* 理由書きは画面だけ（2026-09-24 本人決定 Q1） */
 }
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
@@ -1248,8 +1259,8 @@ body.meal-on #sc-list{max-width:none}
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--g2)">
       <label style="font-size:0.75rem;color:var(--g6);display:block;margin-bottom:4px">効能辞書の点検</label>
       <p class="muted" style="margin:0 0 8px">
-        「薬剤情報（定期）」の各行に効能を当てられているかを数えます。<b>1文字も書き込みません。</b>
-        辞書に無かった薬剤名をコピーして渡していただければ、次回に追加します。一覧に出すのは<b>薬剤名らしき先頭の語だけ</b>で、注記の行は除いています。</p>
+        「薬剤情報（定期）」の各行に効能を当てられているかを、画面・紙と同じ規則（薬効辞書 med_dict ＋予備辞書）で数えます。<b>1文字も書き込みません。</b>
+        どちらの辞書にも無かった薬剤名をコピーして渡していただければ、次回に追加します。一覧に出すのは<b>薬剤名らしき先頭の語だけ</b>で、注記の行は除いています。</p>
       <button class="btn btn-sec" id="medsAuditRun" type="button">🔎 点検する</button>
       <div id="medsAuditOut" style="margin-top:10px"></div>
     </div>
@@ -1304,6 +1315,17 @@ body.meal-on #sc-list{max-width:none}
   </div>
 </div>
 
+<!-- 印刷の前に薬効辞書（med_dict）の到着を待つ画面（2026-09-24 本人決定 Q2）。
+     ★時間切れで黙って1列に落として刷らない。失敗した時は「効能欄なしで印刷」を人が選ぶ。
+     .modal は印刷CSSで消えるので紙には出ない。中身は mdWaitUi_ が組み立てる。 -->
+<div class="modal" id="mMedWait" role="dialog" aria-modal="true" aria-labelledby="mMedWaitH">
+  <div class="box">
+    <h2 id="mMedWaitH">🖨️ 印刷の準備</h2>
+    <p id="mMedWaitMsg" role="status" aria-live="polite" style="white-space:pre-line;margin:0 0 12px"></p>
+    <div class="detail-actions" id="mMedWaitAct" style="margin-top:14px;margin-bottom:0"></div>
+  </div>
+</div>
+
 <!-- 端末用途ガード（現場タブレットでは入居者マスタを表示しない＝事務所PC専用） -->
 <div class="modal" id="deviceBlock">
   <div class="box" style="text-align:center;max-width:440px">
@@ -1323,13 +1345,14 @@ body.meal-on #sc-list{max-width:none}
      既存の詳細印刷(.sheet)には一切触れない — body.a4-on の時だけこちらが刷られる。 -->
 <div id="a4sheet" aria-hidden="true"></div>
 
-<!-- 薬効辞書（薬剤名 → 効果・効能）。フェイスシートと共有する唯一の正本。
-     読み込めなかった時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
+<!-- 薬効辞書の部品（表示規則 resolveLines・照合キー key/drugName・med_dict に無い薬の予備辞書）。
+     効能の正本は med_dict（薬剤師確認・2026-09-24 本人決定）。フェイスシートと共有する。
+     読み込めなかった・古い版が残っている時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-facility.js?v=2026-09-24.2"></script>
-<script src="meds-effect-dict.js?v=2026-08-11"></script>
+<script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -3260,6 +3283,14 @@ function rmPaintPrintLabels_(){
 function rmPrint_(kind){
   if(!window.SUPrint){ toast('印刷モジュール（su-print.js）を読み込めていません'); return; }
   if(!shViewActive_(kind)) return;
+  /* ★病歴・薬一覧は効能列を持つので、薬効辞書（med_dict）が届くまで待ってから設定画面を開く
+     （2026-09-24 本人決定 Q2。詳細画面の印刷と同じ待ち方） */
+  if(kind==='hist'){
+    mdPrintGate_(function(){ return medsFxOk_()&&!mdMap&&getDeviceRole()!=='field'; },
+      function(){ return shViewActive_('hist'); },
+      function(){ SUPrint.openDialog(kind); });
+    return;
+  }
   SUPrint.openDialog(kind);
 }
 /* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
@@ -3325,8 +3356,9 @@ function wCell(rec, v){
   var t=String(v==null?'':v).trim();
   return t?esc(t):'';
 }
-/* ownBody=true の時、body は <tbody> を自前で含む（1人＝1 tbody の帳票用） */
-function wSheet(id, title, cols, body, n, note, ownBody){
+/* ownBody=true の時、body は <tbody> を自前で含む（1人＝1 tbody の帳票用）。
+   ftNote は脚注の末尾に足す凡例（省略時は従来と完全に同じ出力） */
+function wSheet(id, title, cols, body, n, note, ownBody, ftNote){
   return '<div class="sh-sheet" id="'+id+'">'+
     '<div class="sh-hd"><div class="st1">'+esc(title)+'</div></div>'+
     (note?('<div class="lvl-other">'+esc(note)+'</div>'):'')+
@@ -3334,7 +3366,8 @@ function wSheet(id, title, cols, body, n, note, ownBody){
       return '<col style="width:'+c[2]+'%">'; }).join('')+'</colgroup>'+
     '<thead><tr>'+cols.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+'</tr></thead>'+
     (ownBody?body:('<tbody>'+body+'</tbody>'))+'</table>'+
-    '<div class="sh-ft">'+n+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+'</div>'+
+    '<div class="sh-ft">'+n+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+
+      (ftNote?('　／　'+esc(ftNote)):'')+'</div>'+
   '</div>';
 }
 
@@ -3392,7 +3425,10 @@ function famHtml(){
 
 /* ═══ 病歴・薬一覧（A3縦・複数ページ）═══
    原本の列どおり（過去の臨時薬だけは 2026-09-04 の指示で外した）。
-   効能は薬効辞書（med_dict）から引き、薬剤師未確認のものには ＊ を付ける。 */
+   効能は薬効辞書（med_dict）から引き、薬剤師未確認のものには ＊ を付ける。
+   ★2026-09-24 本人決定（案A・Q4）: 詳細画面・フェイスシートと同じ MedsEffect.resolveLines を通す。
+     med_dict に無い薬は予備辞書（meds-effect-dict.js）で埋めて ＊（未確認）を付ける。
+     med_dict が取れていない時は予備辞書だけで埋めない（効能列は空のまま・理由は注記に出る）。 */
 /* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
    ★内服は「服薬時点まで含めて1行」に収まる幅を最優先で取る（32%）。 */
 /* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
@@ -3454,12 +3490,19 @@ function histHtml(){
   var base=shBase();
   if(!fullMap) return '<div class="sh-sheet" id="histSheet"><div class="loading">'+
     esc(shLoadNote()||'病歴・薬を取得しています…')+'</div></div>';
+  /* ★部品が古い・読めない時は表そのものを出さない（medSplit_ も照合キーも部品の中にある） */
+  var fxOk=medsFxOk_();
+  if(!fxOk) return '<div class="sh-sheet" id="histSheet"><div class="loading">'+esc(MEDS_FX_NG)+'</div></div>';
+  var anyMark=false;
   var body=base.map(function(r0,i){
     var b=bkOf(r0), rec=fullOf(r0);
     var med=rec?String(rec.medsRegular||''):'';
     var lines=med.split(/\r?\n/).map(function(x){ return x.trim(); }).filter(String);
     if(!lines.length) lines=[''];
-    var names=lines.map(mdDrugName);
+    /* ★効能は1本の規則（resolveLines）で引く。行数は入力と必ず同じ＝内服の行と揃う */
+    var effs=(mdMap&&fxOk)?MedsEffect.resolveLines(lines, mdMap):null;
+    if(effs&&effs.length!==lines.length) effs=null;   /* 行数がずれたら効能を出さない（別の薬の効能を並べない） */
+    if(effs) for(var q=0;q<effs.length;q++) if(effs[q].mark) anyMark=true;
     var span=lines.length;
     var head=[
       '<td class="wno" rowspan="'+span+'">'+(i+1)+'</td>',
@@ -3470,10 +3513,9 @@ function histHtml(){
     ].join('');
     var rows='';
     for(var k=0;k<lines.length;k++){
-      var e=(names[k]&&mdMap)?mdMap[names[k]]:null;
-      var eff=(e&&String(e.effect||'').trim())?(esc(String(e.effect).trim())+(e.ok?'':'＊')):'';
+      var eff=effs?esc(effs[k].text+effs[k].mark):'';
       /* ★内服列は「薬剤名＋用量」、服薬時点列は「1錠分1 夕食後」等（2026-09-08 管理者指示）。
-         効能は従来どおり mdDrugName で引く（この分け方とは別経路。上のコメント参照）。 */
+         効能は従来どおり mdDrugName で引く（resolveLines の中で。この分け方とは別経路。上のコメント参照）。 */
       var pt=medSplit_(lines[k]);
       rows+='<tr>'+(k===0?head:'')+
         '<td class="hmed">'+(lines[k]?esc(pt.name):(rec?'':'<span class="w-empty">取得できず</span>'))+'</td>'+
@@ -3482,7 +3524,9 @@ function histHtml(){
     }
     return '<tbody class="hgrp">'+rows+'</tbody>';
   }).join('');
-  return wSheet('histSheet','病歴・薬一覧',HIST_COLS,body,base.length, shLoadNote(), true);
+  /* ＊の凡例は列見出しでなく脚注に置く（2026-09-24 本人決定）。＊が1つも無い紙には出さない */
+  return wSheet('histSheet','病歴・薬一覧',HIST_COLS,body,base.length, shLoadNote(), true,
+    anyMark?MEDS_MARK_NOTE:'');
 }
 
 /* この2つは1枚に収まらない（原本も521行/656行）。文字を無理に縮めず、読める大きさを保ったまま
@@ -3739,8 +3783,21 @@ function setMdOrder(o){
 }
 
 /* 辞書のキー。★サーバーの _mdKey（gas/med-dict.gs）と【同じ規則】にすること。
-   食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。 */
-function mdKey(s){ return String(s==null?'':s).replace(/　/g,' ').replace(/\s+/g,' ').trim(); }
+   食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。
+   ★2026-09-24: 規則の本体は meds-effect-dict.js（MedsEffect.key）へ移した。
+     詳細画面・フェイスシート・A3・この辞書タブの保存キーが【同じ1本】を通るようにするため
+     （ここに写しを残すと、表示のキーと保存のキーがいつか割れる）。 */
+/* 部品が読み込めているか（古い版がキャッシュに残っていると resolveLines が無い）。
+   ★無い時は薬効辞書を使う機能を止める（キーの規則を推測で補わない）。 */
+function medsFxOk_(){
+  return typeof MedsEffect!=='undefined' && typeof MedsEffect.resolveLines==='function'
+    && typeof MedsEffect.key==='function' && typeof MedsEffect.drugName==='function';
+}
+var MEDS_FX_NG='薬効辞書の部品（meds-effect-dict.js）が古いか読み込めていません。ページを再読み込みしてください';
+var MEDS_FX_STALE_NOTE='薬効辞書の部品が古いため効能欄を省略しています（再読み込みしてください）';
+/* ＊の凡例。詳細画面・A3・フェイスシートで同じ文言にする（＊の意味は「未確認」の1つだけ・2026-09-24 本人了承） */
+var MEDS_MARK_NOTE='＊＝薬剤師が未確認の効能';
+function mdKey(s){ return MedsEffect.key(s); }
 
 /* 内服の1行から薬剤名を取り出す。「エゼミチブ錠10mg 1錠分1 朝食後」→「エゼミチブ錠」
    ★用量は落として同じ薬をまとめる（12mg と 24mg で辞書が2行に割れるのを防ぐ）。
@@ -3758,13 +3815,9 @@ function mdKey(s){ return String(s==null?'':s).replace(/　/g,' ').replace(/\s+/
      効能が引ける行が 236→42 に激減した（辞書150件がほぼ用量なしで作られているため）。
      同じ薬の効能は用量が違っても同じなので、割ると薬剤師の確認対象だけが増える
      （148→173種類・22件が用量ちがいで2行以上に分裂）。
-     用量は【内服列の表示】に残す（medSplit_ が薬剤名＋用量を出す）。 */
-function mdDrugName(line){
-  var t=mdKey(String(line==null?'':line).replace(/[「『][^」』]*[」』]/g,'')); if(!t) return '';
-  t=t.split(/[ ：:]/)[0];
-  t=t.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:mg|ｍｇ|g|ｇ|μg|ug|mcg|ml|ｍｌ|mL|%|％|単位|IU)$/i,'');
-  return mdKey(t);
-}
+     用量は【内服列の表示】に残す（medSplit_ が薬剤名＋用量を出す）。
+   ★規則の本体は meds-effect-dict.js の MedsEffect.drugName（2026-09-24 移設・中身は1文字も変えていない）。 */
+function mdDrugName(line){ return MedsEffect.drugName(line); }   /* 本体は meds-effect-dict.js（2026-09-24 移設） */
 /* 用法・服薬時点の始まりを見分ける形。「1錠分1 朝食後」「1日2回」「週に一回」など。
    ★ここに挙げるのは【実データに出てくる形】だけにする。広げすぎると薬剤名の途中で切れる。
      本番実測（在籍32名・内服248行）で 237行が分けられ、残り11行は用法の記載が無いもの
@@ -3786,12 +3839,29 @@ function medSplit_(line){
 function mdNamesOf(medText){
   return String(medText==null?'':medText).split(/\r?\n/).map(mdDrugName);
 }
-function mdEnsure(force){
-  if(mdLoading) return;
-  if(mdDict&&!force) return;
-  if(!CFG.url){ mdErr='同期設定のURLが未設定です'; paintShBars(); return; }
+/* ★2026-09-24: 取得の本体を Promise を返す mdLoad_ に分けた。詳細画面の印刷は辞書の到着を
+   【待ってから】刷る（本人決定 Q2）ので、進行中の取得に相乗りして結果を待てる形が要る。
+   retry=true は読み取りの通常のやり直し（apiGetRetry）を使う＝印刷の待ちから呼ぶ時。
+   ★進行中の取得がやり直し無しで失敗した時、retry=true の呼び出し側はやり直し付きで取り直す
+     （背景の取得が1回落ちただけで「読み込めませんでした」を出さない）。 */
+/* ★mdGen は取得の世代。端末が現場用に切り替わった時（applyDeviceGuard）に進め、それより前に出した
+   取得の応答は【捨てる】。捨てないと、控えを消した後に遅れて届いた応答が mdMap を埋め直す（2026-09-24 レビュー指摘）。 */
+var mdPromise=null, mdPromiseRetry=false, mdGen=0;
+function mdLoad_(force, retry){
+  if(mdPromise){
+    if(!retry||mdPromiseRetry) return mdPromise;
+    return mdPromise.catch(function(){ return mdLoad_(false,true); });
+  }
+  if(mdDict&&!force) return Promise.resolve(mdDict);
+  /* ★現場端末では取りに行かない。薬剤情報は現場に出さない（SAFE_FIELDS に medsRegular が無い） */
+  if(getDeviceRole()==='field') return Promise.reject(new Error('FIELD'));
+  if(!medsFxOk_()){ mdErr=MEDS_FX_NG; paintShBars(); return Promise.reject(new Error(MEDS_FX_NG)); }
+  if(!CFG.url){ mdErr='同期設定のURLが未設定です'; paintShBars(); return Promise.reject(new Error('NO_URL')); }
   mdLoading=true; mdErr=''; paintShBars();
-  apiGet({action:'getMedDict'},30000).then(function(d){
+  mdPromiseRetry=!!retry;
+  var gen=mdGen;
+  var p=(retry?apiGetRetry:apiGet)({action:'getMedDict'},30000).then(function(d){
+    if(gen!==mdGen) return;          /* 世代が変わった後の応答は使わない */
     /* ★0件は正常（まだ1件も登録していない）。空とエラーを混同しない */
     var rows=(d&&d.rows)||[];
     mdDict=rows; mdMap=Object.create(null);
@@ -3800,13 +3870,28 @@ function mdEnsure(force){
     /* ★parseJson は応答の error を【例外】に変える（.then には来ない）。ここで見分ける。
        ★GASが古い版だと「不明なaction」。何度押しても直らないので、原因が分かる文言にする。
          この画面以外は従来どおり動く＝先に画面を配っても壊れない（multi-device-sync 原則7）。 */
+    if(gen!==mdGen) return;
     var m=String((e&&e.message)||e||'');
     mdErr = /不明なaction/.test(m)
       ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
       : ('薬効辞書を取得できませんでした'+(m?('：'+m):''));
   })
-    .then(function(){ mdLoading=false; paintShBars();
-      if(curView==='md'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); } });
+    .then(function(){
+      /* 世代が変わっていたら状態には一切触れない（mdLoading/mdPromise は applyDeviceGuard が戻し済み） */
+      if(gen!==mdGen) throw new Error('STALE');
+      mdLoading=false; mdPromise=null; paintShBars();
+      if(curView==='md'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); }
+      mdPatchView_();
+      if(!mdMap) throw new Error(mdErr||'薬効辞書を取得できませんでした');
+      return mdDict;
+    });
+  mdPromise=p;
+  return p;
+}
+function mdEnsure(force){
+  if(mdLoading) return;
+  if(mdDict&&!force) return;
+  mdLoad_(force,false).catch(function(){ /* 理由は mdErr に入っている（画面に出す） */ });
 }
 /* 一覧に出す薬剤名を集める。
    ★母集団は【辞書の全行】∪【いまの処方に出てくる薬】∪【この画面で手で足した薬】。
@@ -3846,6 +3931,9 @@ function mdCollect(withHidden){
 function mdHtml(){
   if(!fullMap) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+
     esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
+  /* ★照合キーの規則は部品（meds-effect-dict.js）にある。古い版・読めない時は編集させない
+     （キーを推測で作って保存すると、辞書の行が割れる） */
+  if(!medsFxOk_()) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+esc(MEDS_FX_NG)+'</div></div>';
   var drugs=mdCollect();
   var known=0, ai=0, shown=0;
   /* ★通し番号は【紙に出る行】で数える。配列の添字を使うと、非表示や削除予定を
@@ -5007,6 +5095,10 @@ function openResident(id){
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
+  /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
+     ★先に呼ぶ＝本人の描画時点で「読み込み中」と分かる。届いたら mdPatchView_ が薬剤情報の欄だけ差し替える。
+     ★現場端末では取らない（薬剤情報は現場に出さない。そもそもこの画面は現場端末では開けない） */
+  if(getDeviceRole()!=='field') mdEnsure(false);
   apiGetRetry({action:'getResident',id:id}).then(function(d){
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
@@ -5365,10 +5457,14 @@ function bfEditHtml(r){
   return H+'</div></div>';
 }
 /* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
-   効能は薬効辞書（meds-effect-dict.js）から引く【参考表示】で、保存はしない。
+   効能は表示のたびに引き直す【参考表示】で、保存はしない。
+   ★2026-09-24 本人決定（案A）: 効能の正本を med_dict（薬剤師確認）へ一本化した。
+     引き方は MedsEffect.resolveLines の1本だけ（A3・フェイスシートと同じ）。
+     med_dict に無い薬だけ予備辞書（meds-effect-dict.js）で埋め、＊（未確認）を付ける。
    ★保存データは1文字も増えない。表示のたびに引き直すので、辞書を直せば全員に即反映される。
    ★次のどれかに当たる時は、従来どおり1列のまま出す:
-     ①辞書が読み込めていない ②薬剤情報が空 ③1行も引けなかった
+     ①部品が古い・読めない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
+     ⑤med_dict を取れていない（本人決定 Q1: 予備辞書だけで埋めない。画面にだけ理由を出す）
      — 全行が「—」に見えると「効能の無い薬ばかり」と誤読されるため、列そのものを作らない。 */
 /* 1行を「薬剤名＝お薬110番へのリンク」＋残り（用量・用法）に分けて組み立てる。
    薬剤名を取り出せない行（注記・空行）はそのまま文字として出す。 */
@@ -5384,33 +5480,63 @@ function medsLineHtml(line){
     + ' data-q="'+esc(q)+'" title="お薬110番で「'+esc(q)+'」を調べる">'+esc(q)+'</a>'
     + esc(raw.slice(idx + q.length));
 }
-function medsRegularCell(text){
+/* map は省略時に画面の mdMap を使う。null（未取得・取得失敗）なら1列（上の⑤）。 */
+function medsRegularCell(text, map){
+  if(arguments.length<2) map=mdMap;
   var raw = String(text == null ? '' : text);
   var plain = '<span class="lab">■薬剤情報（定期）■</span><div class="fulltext">'+esc(raw||'　')+'</div>';
   if(!raw.trim()) return plain;
-  if(typeof MedsEffect === 'undefined' || typeof MedsEffect.effectsFor !== 'function') return plain;
+  /* ① 部品が古い。★1列で出し、理由は画面だけ（紙には足さない） */
+  if(!medsFxOk_()) return plain+(getDeviceRole()==='field'?'':'<div class="meds-note" role="status">'+esc(MEDS_FX_STALE_NOTE)+'</div>');
+  /* ⑤ 取れていない。★紙には何も足さない（理由は画面だけ・meds-note は印刷で消える）。
+     取得中は「読み込み中」、失敗なら「省略しています」。届いたら mdPatchView_ が差し替える。 */
+  if(!map){
+    var why = mdLoading ? '薬効辞書を読み込み中…'
+      : (getDeviceRole()==='field' ? '' : '薬効辞書を読み込めないため効能欄を省略しています'+(mdErr?('（'+mdErr+'）'):''));
+    return plain+(why?('<div class="meds-note" role="status">'+esc(why)+'</div>'):'');
+  }
   var lines, effs;
   try{
     lines = raw.replace(/\r\n/g,'\n').split('\n');
-    effs  = MedsEffect.effectsFor(raw);
+    effs  = MedsEffect.resolveLines(raw, map);
   }catch(e){ return plain; }
   /* 行数がずれたら【別の薬の効能が並ぶ】ので、その時は必ず1列へ戻す */
   if(!Array.isArray(effs) || effs.length !== lines.length) return plain;
-  var hit = false;
-  for(var k=0;k<effs.length;k++){ if(effs[k]){ hit = true; break; } }
+  var hit = false, mark = false;
+  for(var k=0;k<effs.length;k++){
+    if(effs[k].src==='dict'||effs[k].src==='static') hit = true;
+    if(effs[k].mark) mark = true;
+  }
   if(!hit) return plain;
   var h = '<div class="meds2">'+
     '<div class="meds2-h">■薬剤情報（定期）■</div>'+
     '<div class="meds2-h">効果・効能</div>';
   for(var i=0;i<lines.length;i++){
+    var t = effs[i].text;
     h += '<div class="meds2-d">'+medsLineHtml(lines[i])+'</div>'+
-         '<div class="meds2-e">'+(effs[i] ? esc(effs[i]) : '<span class="meds2-na">—</span>')+'</div>';
+         '<div class="meds2-e">'+((t && t!=='—') ? esc(t+effs[i].mark) : '<span class="meds2-na">—</span>')+'</div>';
   }
-  return h+'</div>';
+  /* ＊の凡例は列見出しに書かず、表の下の脚注に置く（2026-09-24 本人決定）。＊が無ければ出さない */
+  return h+'</div>'+(mark?('<div class="meds2-ft">'+esc(MEDS_MARK_NOTE)+'</div>'):'');
+}
+/* med_dict が届いた後に、詳細画面の薬剤情報セルの【中身だけ】を差し替える。
+   ★画面全体を描き直さない。描き直しは入力中の値を消しうる（mdEdits の教訓・2026-09-04）。
+   ★詳細画面を開いている時・いま開いている方の欄だけ（data-meds-id で持ち主を確かめる。
+     patchDayUse と同じ守り＝待っているあいだに別の方へ移っていても別人の欄へ書かない）。
+     編集画面（sc-edit）を開いている時は何もしない。 */
+function mdPatchView_(){
+  if(!curResident||curResident.id==null) return;
+  var sc=$('sc-view'); if(!sc||!sc.classList.contains('on')) return;
+  var key=String(curResident.id);
+  Array.prototype.forEach.call(document.querySelectorAll('#viewBox .meds-reg'),function(c){
+    if(c.getAttribute('data-meds-id')===key) c.innerHTML=medsRegularCell(curResident.medsRegular);
+  });
 }
 /* ═══════════ 効能辞書の点検（2026-08-11 追加）═══════════
  * 実データに対して次の3つを数える。**読み取りだけで1文字も書かない。**
  *   ① 何行に効能を当てられたか（辞書の的中率）
+ *      ★2026-09-24: 画面・紙と同じ MedsEffect.resolveLines（med_dict ＋予備辞書）で数える。
+ *        予備辞書だけで数えると、画面に出ている効能と点検の数字が食い違う。
  *   ② 辞書に無かった薬剤名（そのまま渡せば次回の辞書に足せる）
  *   ③ A4印刷で【2列にしたせいで折り返す】行がどれだけあるか（原則2 の実測）
  * ★氏名は画面にもログにも出さない。件数と薬剤名だけを扱う。
@@ -5459,8 +5585,10 @@ function openOkusuri(q){
    ★2026-08-15(2): 1行高さは【プローブ行】を上限として取る（unit=min(観測最小, プローブ)）。
      観測最小だけを1行とみなすと、全行が折り返す方では最小自体が2行以上の高さになり、
      折返しを1件も数えず「0 行 ✅」と誤っていた（レビュー指摘・合成データの実測で再現確認）。
-     ※効能列は nowrap＋「—」で必ず1行あるため、現CSSでは観測最小がプローブを下回らず実質 unit=プローブ。
+     ※効能列は「—」で必ず1行あるため、現CSSでは観測最小がプローブを下回らず実質 unit=プローブ。
        min は万一プローブより低い行が現れた時に、折返しを多め（保守側）に数える方へ倒すための保険。
+     ※2026-09-24: 効能列は 7em を超えるとセルの中で折り返す（本人決定 Q3）。.meds2-d は行の高さまで
+       伸びるので、効能の折返しで伸びた行も「印刷が伸びる行」として数えに入る（それで正しい）。
    ★2026-08-15: 測定箱は詳細印刷（renderView）の「薬剤情報」sec と同じ
      【sec-lbl＋65:35 の2セル】で組む。以前は1セル（枠 実測714px）で測っており、実物の薬剤セル
      （同構成・718px幅での画面実測 約441px・紙は print CSS 算術で約448px。いずれも border-box）より
@@ -5473,7 +5601,7 @@ function openOkusuri(q){
 var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
 /* 戻り値: 0以上=折り返す行数／-1=測定できず（例外・高さ不取得）。
    呼び出し側は -1 を件数へ混ぜず「測定できず」として人に見せること（0へ潰すと「0 行 ✅」の誤報になる）。 */
-function medsAuditCountWrap(raw){
+function medsAuditCountWrap(raw, map){
   var box=document.createElement('div');
   box.style.cssText='position:absolute;left:-99999px;top:0;width:'+MEDS_A4_CONTENT_PX+'px';
   box.innerHTML='<div class="sheet"><div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body"><div class="row-cells">'+
@@ -5481,7 +5609,7 @@ function medsAuditCountWrap(raw){
     '<div class="cell" style="flex:35;border-right:none"></div>'+
     '</div></div></div></div>';
   var cellTwo=box.querySelector('[data-two]');
-  cellTwo.innerHTML=medsRegularCell(raw);
+  cellTwo.innerHTML=medsRegularCell(raw, map||null);   /* 画面・紙と同じ辞書で組む（点検の開始時に取得済み） */
   document.body.appendChild(box);
   var n=0;
   try{
@@ -5537,14 +5665,30 @@ function medsAuditHandwritten(notes){
 function runMedsAudit(){
   if(medsAuditBusy) return;
   var out=$('medsAuditOut'); if(!out) return;
-  if(typeof MedsEffect==='undefined'){ out.innerHTML='<p class="muted" style="color:var(--ng)">薬効辞書を読み込めていません（meds-effect-dict.js）。</p>'; return; }
+  if(!medsFxOk_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">'+esc(MEDS_FX_NG)+'</p>'; return; }
   if(!CFG.url){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
   var targets=roster.filter(function(r){ return r && r.active!==false && r.id!=null; });
   if(!targets.length){ out.innerHTML='<p class="muted">名簿が空です。先に一覧を読み込んでください。</p>'; return; }
   if(!confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
       +'数分かかることがあります。始めますか？')) return;
+  /* ★先に薬効辞書（med_dict）を取る。取れないまま数えると、画面と違う規則（予備辞書だけ）で数えることになり、
+     A4の折返しの実測も1列のまま測って「0 行 ✅」の誤報になる（本人決定 Q1 と同じく、取れない時は点検しない） */
+  medsAuditBusy=true;
+  out.innerHTML='<p class="muted">薬効辞書を読み込み中…</p>';
+  mdLoad_(false,true).then(function(){
+    medsAuditBusy=false;
+    runMedsAuditGo_(out,targets);
+  },function(e){
+    medsAuditBusy=false;
+    out.innerHTML='<p class="muted" style="color:var(--ng)">薬効辞書（med_dict）を読み込めないため点検できません'+
+      esc((mdErr||(e&&e.message))?('（'+(mdErr||e.message)+'）'):'')+'。時間をおいてもう一度お試しください。</p>';
+  });
+}
+function runMedsAuditGo_(out,targets){
+  if(medsAuditBusy) return;
   medsAuditBusy=true; medsAuditStop=false;
-  var st={people:0,withMeds:0,lines:0,hit:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0,err:0},err:0};
+  var map=mdMap;   /* 点検の間は同じ辞書で数える（途中の取り直しで数え方が変わらないように） */
+  var st={people:0,withMeds:0,lines:0,hit:0,okN:0,markN:0,fbN:0,emptyN:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0,err:0},err:0};
   var i=0;
   function step(){
     /* 中止ボタン・モーダルを閉じた時はここで止める（閉じても走り続けないこと） */
@@ -5567,12 +5711,16 @@ function runMedsAudit(){
       if(!raw.trim()) return;
       st.withMeds++;
       var lines=raw.replace(/\r\n/g,'\n').split('\n');
-      var effs=MedsEffect.effectsFor(raw);
-      var labels=[];
+      var effs=MedsEffect.resolveLines(raw, map);
       for(var k=0;k<lines.length;k++){
         if(!lines[k].trim()) continue;
         st.lines++;
-        if(effs[k]){ st.hit++; if(labels.indexOf(effs[k])<0) labels.push(effs[k]); }
+        var ef=effs[k]||{src:'none'};
+        if(ef.src==='dict'||ef.src==='static'){
+          st.hit++;
+          if(!ef.mark) st.okN++; else st.markN++;
+          if(ef.src==='static') st.fbN++;
+        }else if(ef.src==='dict-empty'){ st.emptyN++; }   /* 辞書で「効能なし」と決めてある行＝未収録ではない */
         else{
           var key=medsAuditKey(lines[k]);
           if(key) st.unknown[key]=(st.unknown[key]||0)+1;
@@ -5582,7 +5730,7 @@ function runMedsAudit(){
          ★幅や余白を定数で持たない。CSS を変えるたびに数字がずれ、
            「折り返し 0 行 ✅」が嘘になる（column-gap を 8→20 に変えた時に実際そうなった）。
            A4の本文幅で【本物の2列ブロックを組んで測る】ので、CSS を変えても自動で追従する。 */
-      var wrapped=medsAuditCountWrap(raw);
+      var wrapped=medsAuditCountWrap(raw, map);
       if(wrapped<0){ st.wrap.err++; }   /* -1=測定失敗。0行と混ぜない（✅の誤報防止） */
       else if(wrapped){ st.wrap.people++; st.wrap.lines+=wrapped; }
       /* ② 手書きの効能との突き合わせ（行数が一致した方だけ） */
@@ -5593,9 +5741,10 @@ function runMedsAudit(){
         var hand=hw.filter(function(x){return x.trim()!==''});
         if(drug.length!==hand.length){ st.hw.lenNG++; }
         else{
+          var dEff=MedsEffect.resolveLines(drug, map);   /* 画面に出る効能（＊を除いた文言）と比べる */
           for(var n=0;n<drug.length;n++){
             st.hw.cmp++;
-            var auto=MedsEffect.effectOf(drug[n]);
+            var auto=(dEff[n]&&dEff[n].text!=='—')?dEff[n].text:'';
             if(auto && hand[n].trim() && auto===hand[n].trim()) st.hw.same++;
           }
         }
@@ -5609,9 +5758,11 @@ function medsAuditRender(out,st,total){
   var hwPct=st.hw.cmp?Math.round(st.hw.same/st.hw.cmp*1000)/10:null;
   var keys=Object.keys(st.unknown).sort(function(a,b){return st.unknown[b]-st.unknown[a]});
   var h='<div style="font-size:0.8125rem;line-height:1.8">'+
-    '<div class="muted">辞書の版: '+esc(MedsEffect.version||'不明')+' / 収録 '+MedsEffect.size()+' 語</div>'+
+    '<div class="muted">薬効辞書 med_dict: '+(mdDict?mdDict.length:0)+' 件 ／ 予備辞書の版: '+esc(MedsEffect.version||'不明')+' / 収録 '+MedsEffect.size()+' 語</div>'+
     '<div><b>薬剤情報のある方</b>: '+st.withMeds+' 名 / 調べた '+st.people+' 名'+(st.err?'（取得できず '+st.err+' 名）':'')+'</div>'+
-    '<div><b>効能を当てられた行</b>: '+st.hit+' / '+st.lines+' 行（<b>'+pct+'%</b>）</div>'+
+    '<div><b>効能を当てられた行</b>: '+st.hit+' / '+st.lines+' 行（<b>'+pct+'%</b>）'+
+      '<br><span class="muted">うち 確認済み '+st.okN+' 行・未確認（＊）'+st.markN+' 行（予備辞書から '+st.fbN+' 行）'+
+      (st.emptyN?('／辞書で効能なし・非表示 '+st.emptyN+' 行'):'')+'</span></div>'+
     '<div><b>手書きの効能との一致</b>: '+
       (hwPct===null?'比較できる方がいません':(hwPct+'%（'+st.hw.same+' / '+st.hw.cmp+' 行・対象 '+st.hw.people+' 名'+(st.hw.lenNG?'／行数が合わず比較できず '+st.hw.lenNG+' 名':'')+'）'))+'</div>'+
     '<div><b>A4印刷で折り返す行</b>: '+st.wrap.lines+' 行 / '+st.wrap.people+' 名'+
@@ -5620,11 +5771,11 @@ function medsAuditRender(out,st,total){
       (st.wrap.err?' <span style="color:var(--ng)">⚠ ほかに '+st.wrap.err+' 名は折返しを測定できませんでした＝0行とは数えていません。再読み込み後にもう一度点検してください</span>':'')+'</div>';
   if(keys.length){
     var txt=keys.map(function(k){return k+'\t'+st.unknown[k]}).join('\n');
-    h+='<div style="margin-top:8px"><b>辞書に無かった薬剤（'+keys.length+' 種）</b>'+
+    h+='<div style="margin-top:8px"><b>どちらの辞書にも無かった薬剤（'+keys.length+' 種）</b>'+
        '<p class="muted" style="margin:2px 0">下の枠をコピーして渡してください。薬剤名と件数だけになるよう絞っていますが、<b>渡す前に一度目を通してください</b>。</p>'+
        '<textarea readonly style="width:100%;min-height:120px;font-size:12px;font-family:monospace">'+esc(txt)+'</textarea></div>';
   }else{
-    h+='<div style="margin-top:8px">辞書に無かった薬剤: <b>なし</b> ✅</div>';
+    h+='<div style="margin-top:8px">どちらの辞書にも無かった薬剤: <b>なし</b> ✅</div>';
   }
   out.innerHTML=h+'</div>';
 }
@@ -5962,7 +6113,8 @@ function renderView(r){
            これ以上は狭めないこと（実測値は data-contracts の印刷欄に記載）。
          ★この比や sec-lbl を変えたら medsAuditCountWrap の測定箱も同じ構成に変えること
            （揃えないと「効能辞書の点検」の折返し実測が実物とずれる。2026-08-15） */
-      '<div class="cell" style="flex:65">'+medsRegularCell(r.medsRegular)+'</div>'+
+      /* meds-reg / data-meds-id は med_dict の到着後に中身だけ差し替える目印（mdPatchView_） */
+      '<div class="cell meds-reg" style="flex:65" data-meds-id="'+esc(String(r.id==null?'':r.id))+'">'+medsRegularCell(r.medsRegular)+'</div>'+
       '<div class="cell" style="flex:35;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
     '</div>'+
     '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
@@ -7299,6 +7451,8 @@ function navLeave(){
 /* 開いている操作モーダルがあれば「閉じる関数」を返す（閉じたら true を返す関数）。
    一括編集は closeBulk 内の未保存確認に従う（取り消しなら開いたまま false） */
 function navTopModal(){
+  /* 印刷前の薬効辞書待ち（2026-09-24）。戻る＝「キャンセル」と同じ（待っている印刷を取り消す） */
+  if($('mMedWait')&&$('mMedWait').classList.contains('on'))return function(){mdPrintCancel_();return true};
   if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
@@ -7596,6 +7750,84 @@ function duFresh(){
   if(!a4DayMap)return false;
   var age=Date.now()-a4DayMap.at;
   return age>=0&&age<A4_DAY_TTL;
+}
+/* ═══ 印刷の前に薬効辞書（med_dict）を待つ（2026-09-24 本人決定 Q2）═══
+   ★時間切れで黙って1列へ落として刷らない。待っている間は「読み込み中…」とキャンセルを必ず見せる。
+   ★取得が確定的に失敗したら（通常のやり直し apiGetRetry の後）自動では刷らない。
+     「再試行」「効能欄なしで印刷」（人が明示的に選ぶ）「やめる」を出す。
+   ★待っているあいだに別の方・別の画面へ移っていたら刷らない（printWithDayUse と同じ守り）。
+   need()  … 待つ必要があるか（辞書が未取得で、効能欄を出しうる時だけ true）
+   stillOk() … 刷ってよいか（いま開いている方・画面が押した時と同じか）
+   go()    … 実際に刷る（従来の印刷経路をそのまま呼ぶ） */
+var mdPrintSeq=0;
+function mdWaitUi_(msg, acts){
+  var m=$('mMedWait'); if(!m) return;
+  if(msg===null){ m.classList.remove('on'); return; }
+  $('mMedWaitMsg').textContent=msg;
+  var box=$('mMedWaitAct'); box.innerHTML='';
+  acts.forEach(function(a){
+    var b=document.createElement('button');
+    b.type='button'; b.className='btn '+a[1]; b.textContent=a[0];
+    b.addEventListener('click',a[2]);
+    box.appendChild(b);
+  });
+  m.classList.add('on');
+  var f=box.querySelector('button'); if(f){ try{ f.focus(); }catch(e){} }
+}
+/* ⌘/Ctrl+P（OSの印刷）は上の待ちを通らない（2026-09-24 レビュー指摘）。紙は変えない
+   （画面どおり＝効能欄なしの1列で刷られる）が、刷った後に画面へ理由を必ず出す。
+   ★対象は詳細画面の通常印刷だけ。A4様式（body.a4-on）は薬剤情報の欄を刷らないので対象外。
+   ★ボタン経路（mdPrintViaBtn_）は、辞書を待った後か「効能欄なしで印刷」を人が選んだ後なので出さない。 */
+var mdPrintViaBtn_=false, mdPrintWarnPending_=false;
+var MEDS_KEYPRINT_NOTE='薬効辞書の読み込み前に印刷されたため、効能欄なしで印刷されました。画面の印刷ボタンをお使いください';
+window.addEventListener('beforeprint',function(){
+  if(mdPrintViaBtn_) return;
+  var sc=$('sc-view');
+  if(!sc||!sc.classList.contains('on')||document.body.classList.contains('a4-on')) return;
+  if(!curResident||!String(curResident.medsRegular||'').trim()) return;
+  if(document.querySelector('#viewBox .meds-reg .meds-note')) mdPrintWarnPending_=true;
+});
+function mdPrintWarnFlush_(){
+  if(!mdPrintWarnPending_) return;
+  mdPrintWarnPending_=false;
+  toast(MEDS_KEYPRINT_NOTE);
+}
+window.addEventListener('afterprint',mdPrintWarnFlush_);
+/* afterprint が来ない環境向け（印刷メディアを抜けたのを合図にする。他の保険と同じ作法） */
+try{
+  var _mdmq=matchMedia('print');
+  var _mdmqFn=function(e){ if(!e.matches) mdPrintWarnFlush_(); };
+  if(_mdmq.addEventListener)_mdmq.addEventListener('change',_mdmqFn);
+  else if(_mdmq.addListener)_mdmq.addListener(_mdmqFn);
+}catch(e){}
+/* 待っている印刷を取り消す（キャンセル・やめる・ブラウザの「戻る」の3経路で共通） */
+function mdPrintCancel_(){ mdPrintSeq++; mdWaitUi_(null); }
+function mdPrintGate_(need, stillOk, go){
+  if(!need()){ go(); return; }
+  var seq=++mdPrintSeq;
+  function stop(){ mdPrintCancel_(); }
+  function goIfOk(){
+    if(!stillOk()){ toast('別の方の画面へ移ったため、印刷を中止しました。もう一度押してください'); return; }
+    go();
+  }
+  function wait(){
+    mdWaitUi_('薬効辞書を読み込み中…\n効能欄を付けて印刷するため、届くまでお待ちください。',
+      [['キャンセル','btn-gray',stop]]);
+    mdLoad_(false,true).then(function(){
+      if(seq!==mdPrintSeq) return;          /* キャンセル済み＝何もしない */
+      mdWaitUi_(null);
+      goIfOk();
+    },function(e){
+      if(seq!==mdPrintSeq) return;
+      var why=mdErr||String((e&&e.message)||'');
+      mdWaitUi_('薬効辞書を読み込めませんでした'+(why?('（'+why+'）'):'')+'。\n'+
+        '効能欄を付けて印刷するには「再試行」を押してください。',
+        [['再試行','btn-sec',wait],
+         ['効能欄なしで印刷','btn-gray',function(){ mdPrintSeq++; mdWaitUi_(null); goIfOk(); }],
+         ['やめる','btn-gray',stop]]);
+    });
+  }
+  wait();
 }
 /* 印刷の直前に、デイ利用日が「取得中…」のまま紙に載るのを防ぐ。取得を待って画面を
    差し替えてから刷る。★取れなくても必ず刷る（欄が「未確認」になるだけ）。
@@ -8039,6 +8271,8 @@ function applyDeviceGuard(){
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
     /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
     bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
+    /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
+    mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
     mdClearPending_(); mdShowHidden=false; }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
@@ -8910,8 +9144,23 @@ function init(){
   /* ★a4Off は【刷る直前】に呼ぶ。クリック時に呼ぶだけだと、取得を待っているあいだに
      「A4様式」を押された場合に body.a4-on が付いたままとなり、通常の印刷がA4様式の紙を出す
      （「通常の印刷は必ず通常の見た目で刷る」という既存の不変条件を壊さない）。a4Off は冪等 */
+  /* ★薬効辞書（med_dict）が届くまで待ってから刷る（2026-09-24 本人決定 Q2）。待ちの後は従来どおり
+     デイ利用日を待つ printWithDayUse へ渡す（待ちを2段に重ねるだけで、どちらの守りも外さない） */
   $('printBtn').addEventListener('click',function(){
-    printWithDayUse(curResident,a4CurId_,function(){a4Off();window.print()});
+    var who=a4CurId_();
+    /* ★ボタン経路の印刷は mdPrintViaBtn_ を立てて刷る（⌘/Ctrl+P の見張りと見分けるため） */
+    mdPrintGate_(function(){
+      var r=curResident;
+      return !!(r&&String(r.medsRegular||'').trim()&&medsFxOk_()&&!mdMap&&getDeviceRole()!=='field');
+    },function(){
+      var sc=$('sc-view');
+      return who!==null&&who===a4CurId_()&&!!sc&&sc.classList.contains('on');
+    },function(){
+      printWithDayUse(curResident,a4CurId_,function(){
+        a4Off(); mdPrintViaBtn_=true;
+        try{ window.print(); } finally { mdPrintViaBtn_=false; }
+      });
+    });
   });
   $('a4Btn').addEventListener('click',a4Print);
   /* 編集画面のスクロールに合わせて「今いる欄」のタブを光らせる（現在地の明示・HIG）。
