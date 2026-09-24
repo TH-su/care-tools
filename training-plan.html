@@ -697,14 +697,11 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 
   <div class="cd">
     <h2>AI生成（文案の下書き）</h2>
-    <p class="muted">APIキーは<strong>この端末のブラウザにだけ</strong>置きます。計画書のGAS・一覧の索引・取込用JSONには送りません。
-      キーは Anthropic のコンソール（console.anthropic.com）で発行したものを入れてください。1件あたりの費用の目安は20円ほどです。</p>
+    <p class="muted">AIのキー（APIキー）は<strong>サーバー（計画書の専用GAS）</strong>にだけ置き、端末には置きません。
+      AIへの依頼は、計画書の専用GASが代わりに送ります（1日の回数に上限があります）。1件あたりの費用の目安は20円ほどです。</p>
     <p class="muted">次期を作ると、前の期の報告書欄（達成度・Ⅲ）と次の期の計画書欄を1回で作ります。</p>
     <p class="muted">欄ごとの「AIで調整」は、その欄だけを少し整えます（前の期には触れません）。</p>
     <div class="grid2" style="margin-top:var(--sp-3)">
-      <div><label for="aiKey">APIキー</label>
-        <input type="password" id="aiKey" autocomplete="new-password" spellcheck="false"
-               placeholder="入れ直す時だけ入力してください"></div>
       <div><label for="aiModel">モデル</label>
         <select id="aiModel">
           <option value="claude-opus-5">claude-opus-5（既定）</option>
@@ -720,7 +717,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     </div>
     <div class="stack" style="margin-top:var(--sp-3)">
       <button id="btnAiSave" class="btn pri" type="button">AIの設定を保存</button>
-      <button id="btnAiClear" class="btn danger" type="button">キーを消去</button>
+      <button id="btnAiCheck" class="btn" type="button">AIの接続を確かめる</button>
       <span class="muted" id="aiState"></span>
     </div>
     <!-- 外部AIへ送ることの同意（この端末・2026-10-08 監査10月版 #12）。利用者ご本人の同意は事業所の手順で（ここでは扱わない） -->
@@ -3195,7 +3192,7 @@ function renderSample() {
   $('sAdl').value = s_(sm.adlNote);
   $('sRephrase').checked = !!(p && p.generation.rephrase);
   ['sAchShort', 'sAchLong', 'sTrend', 'sNote', 'sEnv', 'sAdl', 'sRephrase', 'btnGenEval', 'btnGenNext'].forEach(function (id) { $(id).disabled = !p; });
-  /* 鍵がある端末では、そのままAIを呼ぶ（無い端末は今までどおり「依頼」として記録する） */
+  /* AIを使える端末では、そのままAIを呼ぶ（使えない端末は今までどおり「依頼」として記録する） */
   var aiOk = aiReady();
   var emptyEval = !!(p && !s_(p.changes) && !s_(p.issues));
   $('btnGenEval').textContent = aiOk ? (emptyEval ? 'AIで埋める' : 'Ⅲを埋める（AI）') : 'Ⅲを埋める（依頼）';
@@ -5436,9 +5433,13 @@ function applyPick() {
   toast(label + 'を変えました');      /* ★閉じる前に控えた欄名を使う（閉じると PICK は空になる） */
 }
 
-/* ═══════════ AI生成（api.anthropic.com を直接呼ぶ・D16） ═══════════
-   ★APIキーは localStorage 'tp_ai_key' にだけ置く。計画書の専用GAS・一覧の索引（settings）・
-     取込用JSON・トースト・エラー文言には1文字も載せない（M2 絶対条件3）。
+/* ═══════════ AI生成（計画書の専用GASが中継する・2026-09-24〜） ═══════════
+   ★APIキーは計画書の専用GASのスクリプトプロパティ ANTHROPIC_API_KEY にだけ置く。端末には置かない。
+     以前（D16）は各端末の localStorage 'tp_ai_key' に置いてブラウザから直接呼んでいたが、
+     同じ住所の頭（th-su.github.io）の別ページに穴が1つあれば鍵を読まれるため、中継に切り替えた。
+     古い端末に残った 'tp_ai_key' は起動時に消す（aiDropLocalKey）。
+   ★依頼は {action:'ai', body} で専用GASへ送る。GASは許可した項目だけで組み立て直して Anthropic へ送り、
+     1日の回数に上限を掛ける（AI_DAILY_LIMIT）。中身は保存しない。
    ★AIへ送るのは「前回の計画のうち ai:false でない欄」と「本人の様子」だけ。
      氏名・生年月日・病名・治療経過・コントロール状態・留意事項は送らない（D5）。 */
 /* システムプロンプト v5（M5計画・D27〜D28。v4（M4計画 付録A）からの差分は規則4と「入力の形」だけ。
@@ -5510,7 +5511,6 @@ var AI_SYSTEM = [
   '                   排泄・入浴・食事など）に即した語へ言い換え・具体化して返す。新しい事実を足さない。目標欄（short/longGoal…）は',
   '                   接頭辞「（機能）」「（活動）」「（参加）」と「〜できる」「〜を続けられる」の形を保つ'
 ].join('\n');
-var AI_URL = 'https://api.anthropic.com/v1/messages';
 var AI_MODELS = ['claude-opus-5', 'claude-sonnet-5'];
 /* `fallbacks`（応答拒否時の自動代替・ベータ）に対応しているモデルだけに付ける。
    sonnet-5 に付けると API が 400「does not support the `fallbacks` parameter」で拒否する（2026-09-03 実測） */
@@ -5544,24 +5544,28 @@ function pushNote(list, msg) {
 var AI_UNDO = {};       /* planId → AIを入れる直前の控え（メモリだけ・保存もエクスポートもしない。前の期の分も含めて複数持てる） */
 var aiBusy = false;
 
-/* ── キーはこの3つの関数だけが触る ── */
-function aiKey() {
-  try { return s_(localStorage.getItem('tp_ai_key')).trim(); } catch (e) { return ''; }
+/* ── 端末に残った古いキーを消す（2026-09-24〜 キーはサーバーだけに置く）── */
+function aiDropLocalKey() {
+  try { localStorage.removeItem('tp_ai_key'); } catch (e) { /* 消せなくても使わない（読む処理が無い） */ }
 }
-function setAiKey(v) {
-  try {
-    if (s_(v)) localStorage.setItem('tp_ai_key', s_(v));
-    else localStorage.removeItem('tp_ai_key');
-    return true;
-  } catch (e) { return false; }
-}
-function maskKey(k) {
-  var t = s_(k);
-  return t ? (t.slice(0, 4) + '●●●●●●●●') : '';
-}
+aiDropLocalKey();
 function aiModel() { return lsGet(LS.aiModel, AI_MODELS, AI_MODELS[0]); }
 function aiEnabled() { return lsGet(LS.aiOn, ['1', '0'], '1') === '1'; }
-function aiReady() { return aiEnabled() && !!aiKey(); }
+/* AIを使える端末＝「この端末でAI生成を使う」がオンで、計画書の専用GASに繋がっていて、
+   サーバーにキーが無い・古い版だと分かっていない端末（分からない間は使える扱い＝押せばサーバーが答える）。
+   キーが無い・古い版と分かったら、今までどおり「依頼」として記録する側へ戻す */
+var AI_SRV = null;      /* ping や中継の応答から分かったサーバーの状態 {key:true|false}（接続先を変えたら null に戻す） */
+function aiReady() { return aiEnabled() && SU_READY && !!CFG.url && !!CFG.token && !(AI_SRV && AI_SRV.key === false); }
+/* AIを使えない理由（案内文に使う）。サーバーにキーが無いと分かっている時はそれを言う */
+function aiUnreadyWhy() {
+  if (AI_SRV && AI_SRV.key === false) return 'サーバー（計画書の専用GAS）にAIのキーが無いか、中継の無い古い版のため、AIを使えません（管理者に連絡してください）。';
+  if (!(CFG.url && CFG.token)) return '計画書の接続先が未設定のため、AIを使えません。';
+  return 'この端末ではAIを使わない設定です（設定画面の「この端末でAI生成を使う」）。';
+}
+function noteAiSrv(j) {
+  if (!j || j.ok !== true) return;
+  AI_SRV = (j.ai && typeof j.ai === 'object') ? { key: !!j.ai.key } : { key: false };   /* ai 欄が無い＝中継の無い古い版 */
+}
 
 /* 欄ごとの文字数の目安（プロンプトの limits）。AIに任せない欄は入れない */
 function aiLimits() {
@@ -5677,7 +5681,9 @@ function aiSchema(mode, fields) {
 }
 /* ★AIへの通信はこの1か所だけ。呼び出し元は body を渡すだけにする（テストでも差し替えやすい）。
    ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
-var AI_TIMEOUT_MS = 90000;
+/* 中継（GASの起動・ロック待ち最大10秒・Anthropic の応答）を待つ時間。GAS 側は画面が諦めても最後まで呼ぶ＝
+   早く諦めてやり直すと同じ依頼が2回実行されて料金も回数も2回分かかるので、長めに待つ（2026-09-24） */
+var AI_TIMEOUT_MS = 150000;
 /* 外部AIへ初めて送る前に、送る先・送るもの・送らないものを職員に示して確かめる（端末ごとに1回）。
    ★保存するのは「確かめた」という印だけ（UI状態）。氏名・記録は保存しない */
 var AI_NOTICE_KEY = 'tp_ai_notice_v1';
@@ -5706,47 +5712,43 @@ function aiNoticeOk() {
   return true;
 }
 function aiFetch(body) {
-  var key = aiKey();
-  if (!key) return Promise.reject(new Error('AI_NO_KEY'));
-  if (typeof fetch !== 'function') return Promise.reject(new Error('AI_NO_FETCH'));
+  if (!SU_READY || !CFG.url || !CFG.token) return Promise.reject(new Error('AI_NO_PROXY'));
   if (!aiNoticeOk()) return Promise.reject(new Error('AI_DECLINED'));
-  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
-  var headers = {
-    'content-type': 'application/json',
-    'x-api-key': key,
-    'anthropic-version': '2023-06-01',
-    'anthropic-dangerous-direct-browser-access': 'true'
-  };
-  if (body && body.fallbacks) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
-  var opt = { method: 'POST', headers: headers, body: JSON.stringify(body) };
-  if (ctl) opt.signal = ctl.signal;
-  var pr = fetch(AI_URL, opt).then(function (res) {
-    var st = Number(res && res.status) || 0;
-    return Promise.resolve(res.text()).then(function (t) {
-      if (st < 200 || st >= 300) {
-        /* API は理由を JSON で返す（{"error":{"message":…}}）。画面に出せるよう detail に添える。キーは含まれない */
-        var detail = '';
-        try { var ej = JSON.parse(String(t)); detail = s_(ej && ej.error && ej.error.message); } catch (e0) { detail = ''; }
-        /* 対応表の取りこぼしで fallbacks が拒否された時は、外して1回だけ送り直す（他の原因は再送しない） */
-        if (st === 400 && body && body.fallbacks && /fallbacks/i.test(detail)) {
-          var b2 = {};
-          for (var k in body) if (Object.prototype.hasOwnProperty.call(body, k) && k !== 'fallbacks') b2[k] = body[k];
-          return aiFetch(b2);
-        }
-        var err = new Error('AI_HTTP_' + st);
-        err.detail = detail.slice(0, 200);
-        throw err;
+  /* 専用GASに中継を頼む（キーはGASにだけある）。GASの応答の形:
+       {ok:false, error:'ai_no_key'|'ai_limit'|'ai_bad_request'|'ai_fetch'|'ai_busy'|'unauthorized'|'unknown action'}
+       {ok:true, status:<Anthropicの状態>, data:<Anthropicの応答>}  … 2xx
+       {ok:true, status:<4xx/5xx>, detail:<理由>}                    … Anthropic が断った */
+  var pr = SU.data.kvRaw({ action: 'ai', body: body }, tpTarget()).then(function (r) {
+    if (!r || typeof r !== 'object') throw new Error('AI_BAD_JSON');
+    if (r.ok !== true) {
+      var ge = s_(r.error);
+      var map = { ai_no_key: 'AI_NO_KEY', ai_limit: 'AI_LIMIT', ai_bad_request: 'AI_BAD_REQUEST',
+                  ai_fetch: 'AI_FETCH', ai_busy: 'AI_BUSY', unauthorized: 'AI_PROXY_AUTH', 'unknown action': 'AI_PROXY_OLD' };
+      /* キーが無い・古い版なら、次からは依頼として記録する側へ回す（ボタンの表示も切り替える） */
+      if (ge === 'ai_no_key' || ge === 'unknown action') {
+        AI_SRV = { key: false };
+        try { renderSample(); syncBatchAiVisibility(); } catch (e0) { /* 表示の更新に失敗しても、エラーは伝える */ }
       }
-      var j = null;
-      try { j = JSON.parse(String(t)); } catch (e) { throw new Error('AI_BAD_JSON'); }
-      return j;
-    });
+      throw new Error(map[ge] || 'AI_PROXY');
+    }
+    var st = Number(r.status) || 0;
+    if (st < 200 || st >= 300) {
+      var detail = s_(r.detail);
+      /* 対応表の取りこぼしで fallbacks が拒否された時は、外して1回だけ送り直す（他の原因は再送しない） */
+      if (st === 400 && body && body.fallbacks && /fallbacks/i.test(detail)) {
+        var b2 = {};
+        for (var k in body) if (Object.prototype.hasOwnProperty.call(body, k) && k !== 'fallbacks') b2[k] = body[k];
+        return aiFetch(b2);
+      }
+      var err = new Error('AI_HTTP_' + st);
+      err.detail = detail.slice(0, 200);
+      throw err;
+    }
+    if (!r.data || typeof r.data !== 'object') throw new Error('AI_BAD_JSON');
+    return r.data;
   }, function () { throw new Error('AI_NETWORK'); });
   return withTimeout(pr, AI_TIMEOUT_MS).catch(function (e) {
-    if (s_(e && e.message) === 'タイムアウト') {
-      if (ctl) { try { ctl.abort(); } catch (e2) {} }   /* 実際の要求も打ち切る */
-      throw new Error('AI_TIMEOUT');
-    }
+    if (s_(e && e.message) === 'タイムアウト') throw new Error('AI_TIMEOUT');
     throw e;
   });
 }
@@ -5895,11 +5897,19 @@ function aiErrText(e) {
   var m = s_(e && e.message ? e.message : e);
   var d = s_(e && e.detail);
   var why = d ? ('　AIの返答: ' + d) : '';
-  if (m === 'AI_NO_KEY') return 'AIのキーがこの端末にありません。設定画面の「AI生成」で入れてください';
+  if (m === 'AI_NO_KEY') return 'サーバー（計画書の専用GAS）にAIのキーが入っていません。管理者がスクリプトプロパティ ANTHROPIC_API_KEY に入れてください';
+  if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
+  if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（上限はサーバーの AI_DAILY_LIMIT で変えられます）';
+  if (m === 'AI_PROXY_OLD') return 'サーバー（計画書の専用GAS）が古い版で、AIの中継が入っていません。管理者に更新を依頼してください';
+  if (m === 'AI_PROXY_AUTH') return '計画書の専用GASの合言葉が通りませんでした（設定画面の「接続」を確かめてください）';
+  if (m === 'AI_BAD_REQUEST') return 'AIへの依頼の形がサーバーで断られました（アプリとサーバーの版が合っていない可能性）。管理者に連絡してください';
+  if (m === 'AI_FETCH') return 'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください';
+  if (m === 'AI_BUSY') return 'サーバーが混み合っています。少し待ってから、もう一度お試しください';
+  if (m === 'AI_PROXY') return '計画書の専用GASから正しい応答がありませんでした。もう一度お試しください';
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
   if (m === 'AI_NO_SUBJECT') return 'ご本人の氏名が分からないため、氏名を伏せられず送れません（入居者マスタの名簿を読み込んでから、もう一度お試しください）';
   if (m === 'AI_DECLINED') return '外部AIへの送信を取りやめました（何も送っていません）。使う時はもう一度押して「OK」を選んでください';
-  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'AIのキーが受け付けられませんでした（' + m.slice(8) + '）。設定画面でキーを入れ直してください' + why;
+  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'サーバーに入っているAIのキーが受け付けられませんでした（' + m.slice(8) + '）。管理者がキーを確かめてください' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
   if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。' + why;
@@ -6076,7 +6086,7 @@ function aiRun(mode, opts) {
 function aiRunAdjust(p, opts) {
   var k = s_(opts.field);
   if (ADJUST_FIELDS.indexOf(k) < 0) return;
-  if (!aiReady()) { toast('この端末にはAIのキーがありません（設定画面の「AI生成」で入れてください）'); return; }
+  if (!aiReady()) { toast(aiUnreadyWhy()); return; }
   if (aiBusy) { toast('いまAIに問い合わせています。少しお待ちください'); return; }
   if (p.status === 'printed' || p.status === 'signed') {
     showAiError('この期は「' + (TP.STATUS_LABEL[p.status] || p.status) +
@@ -6428,7 +6438,7 @@ var BATCH_STOP_REASON = '';
 var BATCH_FAIL_MAX = 5;          /* 人をまたいで連続5期失敗したら全体を止める */
 var BATCH_FAIL_MAX_ONE = 3;      /* 同じ方で連続3期失敗したら全体を止める */
 /* 再試行しても直らないエラー（鍵・設定の問題）。この時は残りの期を試さずにその場で止める */
-function aiErrFatal(e) { return /AI_NO_KEY|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
+function aiErrFatal(e) { return /AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
 /* 一括の要約はメモリだけに持ち、描き直しのたびに出し直す（一覧の再描画で消えないようにする）。
    ★氏名を含むため localStorage には置かない */
 var BATCH_LAST_SUMMARY = null;
@@ -6464,7 +6474,9 @@ function aiGenerateRetry(req, tries) {
   var left = (typeof tries === 'number') ? tries : 2;
   return aiGenerate(req).catch(function (e) {
     var m = s_(e && e.message);
-    var again = /AI_HTTP_(429|500|502|503|529)/.test(m) || /AI_TIMEOUT|タイムアウト/.test(m);
+    /* ★時間切れ（AI_TIMEOUT）はやり直さない。中継の GAS は画面が諦めた後も Anthropic を呼び終えるため、
+       やり直すと同じ期が2回実行され、料金と回数が2回分かかる（2026-09-24 中継化で変更） */
+    var again = /AI_HTTP_(429|500|502|503|529)/.test(m);
     if (!again || left <= 1) throw e;
     return new Promise(function (r) { setTimeout(r, 10000); }).then(function () { return aiGenerateRetry(req, left - 1); });
   });
@@ -6641,7 +6653,7 @@ function runBatchAiForOpenResident(opts) {
           BATCH_STOP = true;
           BATCH_STOP_REASON = /AI_DECLINED|AI_NO_SUBJECT/.test(s_(e && e.message))
             ? ('止めました（' + aiErrText(e) + '）')
-            : ('AIの設定か鍵に問題があるため止めました（' + aiErrText(e) + '）。設定画面のAPIキーを確かめてください');
+            : ('AIの設定か接続に問題があるため止めました（' + aiErrText(e) + '）。設定画面の「AIの接続を確かめる」で状態を確かめてください');
         } else if (failRunOne >= BATCH_FAIL_MAX_ONE || BATCH_FAIL_RUN >= BATCH_FAIL_MAX) {
           BATCH_STOP = true;
           BATCH_STOP_REASON = '続けて ' + (failRunOne >= BATCH_FAIL_MAX_ONE ? failRunOne : BATCH_FAIL_RUN) +
@@ -7087,7 +7099,7 @@ function openSamplePop(mode, opts) {
     ? (POP.mode === 'backfill'
         ? 'この期は前の期と次の期の間の期です。次の期の評価と食い違わない文案をAIに作ってもらいます。氏名・生年月日・病名は送りません。'
         : '選んだ内容と前の期の文だけをAIに渡します（氏名・生年月日・病名は送りません）。')
-    : 'この端末にはAIのキーがありません。押すと「依頼」として記録します（Claude Code で文案を作る経路）。';
+    : aiUnreadyWhy() + '押すと「依頼」として記録します（Claude Code で文案を作る経路）。';
   $('spGo').textContent = ready ? '生成する' : '依頼として記録する';
   $('samplePop').classList.add('on');
   $('spTrend').focus();
@@ -7110,7 +7122,6 @@ function sampleGo() {
   /* 鍵の無い端末では「Ⅲを埋める」依頼として積む（この期は前の期の写しが入っているため） */
   aiRun(mode, { skipConfirm: fresh, queueAs: fresh ? 'fill_eval' : '' });
 }
-/* ── 設定画面のAI欄（この端末だけの設定。キーは画面にそのまま出さない）── */
 function renderAiConsent() {
   var ok = false;
   try { ok = localStorage.getItem(AI_NOTICE_KEY) === '1'; } catch (e) {}
@@ -7134,50 +7145,44 @@ function aiConsentRevoke() {
   $('aiState').textContent = gone ? '取り消しました。次にAIで作る時に、もう一度説明が出ます' : 'この端末の設定を書き換えられませんでした（プライベートブラウズ等）';
   renderAiConsent();
 }
+/* ── 設定画面のAI欄（モデルと「使う・使わない」だけがこの端末の設定。キーはサーバーにだけある）── */
 function renderAiSettings() {
   renderAiConsent();
   $('aiModel').value = aiModel();
   $('aiEnabled').checked = aiEnabled();
-  $('aiKey').value = '';
-  var k = aiKey();
-  $('aiKeyMask').textContent = k
-    ? ('保存済み：' + maskKey(k) + '（この端末のブラウザにだけ入っています）')
-    : 'キーは未設定です（AI生成は使えません）';
+  $('aiKeyMask').textContent = !(CFG.url && CFG.token)
+    ? '計画書の接続先が未設定のため、AIを使えません'
+    : (AI_SRV && AI_SRV.key === false)
+      ? 'サーバーにAIのキーが無いか、中継の無い古い版です（「AIの接続を確かめる」で詳しく分かります）'
+      : 'AIのキーはサーバー（計画書の専用GAS）に置く方式です。入っているかは「AIの接続を確かめる」で確かめられます';
 }
 function saveAiSettings() {
-  var v = s_($('aiKey').value).trim();
   var m = $('aiModel').value;
   var ok1 = lsSave(LS.aiModel, AI_MODELS.indexOf(m) >= 0 ? m : AI_MODELS[0]);
   var ok2 = lsSave(LS.aiOn, $('aiEnabled').checked ? '1' : '0');
-  if (!ok1 || !ok2) {
-    $('aiState').textContent = 'この端末に設定を保存できませんでした（プライベートブラウズ等）';
-    renderAiSettings();
-    renderSample();
-    syncBatchAiVisibility();
-    return;
-  }
-  if (v) {
-    if (!setAiKey(v)) { $('aiState').textContent = 'この端末に保存できませんでした（プライベートブラウズ等）'; return; }
-    $('aiState').textContent = '保存しました（キーはこの端末のブラウザにだけ残ります）';
-  } else {
-    $('aiState').textContent = aiKey()
-      ? 'モデルと使う・使わないを保存しました（キーはそのままです）'
-      : 'モデルを保存しました（キーは未設定のままです）';
-  }
+  $('aiState').textContent = (ok1 && ok2)
+    ? 'モデルと使う・使わないを保存しました'
+    : 'この端末に設定を保存できませんでした（プライベートブラウズ等）';
   renderAiSettings();
   renderSample();
   syncBatchAiVisibility();
 }
-function clearAiKey() {
-  if (!aiKey()) { $('aiState').textContent = 'キーは入っていません'; return; }
-  if (!confirm('この端末に保存しているAIのキーを消します。\n\n※計画書の中身は消えません。AI生成は使えなくなります（前回複写と依頼キューは今までどおり使えます）。\n\n消しますか？')) return;
-  var done = setAiKey('');
-  $('aiState').textContent = (done && !aiKey())
-    ? 'キーを消しました'
-    : 'この端末からキーを消せませんでした（ブラウザの設定をご確認ください）';
-  renderAiSettings();
-  renderSample();
-  syncBatchAiVisibility();
+/* サーバーにキーが入っているか・今日の回数を見る（キーそのものは返ってこない） */
+function checkAiProxy() {
+  if (!SU_READY || !CFG.url || !CFG.token) { $('aiState').textContent = '計画書の接続先が未設定です'; return; }
+  $('aiState').textContent = '確かめています…';
+  tpPing().then(function (r) {
+    var a = r && r.ai;
+    if (!r || r.ok !== true) { $('aiState').textContent = '接続できませんでした（' + s_(r && r.error) + '）'; return; }
+    noteAiSrv(r);
+    try { renderAiSettings(); renderSample(); syncBatchAiVisibility(); } catch (e0) { /* 表示の更新だけ */ }
+    if (!a || typeof a !== 'object') { $('aiState').textContent = 'サーバーが古い版で、AIの中継が入っていません（管理者に更新を依頼してください）'; return; }
+    $('aiState').textContent = a.key
+      ? ('サーバーにキーがあります。今日の利用 ' + (Number(a.usedToday) || 0) + ' 回／上限 ' + (Number(a.limit) || 0) + ' 回')
+      : 'サーバーにキーがありません（管理者がスクリプトプロパティ ANTHROPIC_API_KEY に入れてください）';
+  }, function (e) {
+    $('aiState').textContent = '接続できませんでした（' + s_(e && e.message) + '）';
+  });
 }
 
 /* ═══════════ 印刷プレビューと印刷 ═══════════ */
@@ -7841,11 +7846,13 @@ function saveCfg() {
   catch (e) { $('cfgState').textContent = 'この端末に保存できませんでした（プライベートブラウズ等）'; return; }
   readCfgs();
   SRV_GUARDS = null;            /* 接続先が変わったら、前の接続先の守り一覧を持ち越さない */
+  AI_SRV = null;                /* AI の状態も同じ（新しい接続先で ping し直す） */
   $('cfgState').textContent = '保存しました';
   toast('接続設定を保存しました');
   /* 索引だけでなく名簿・デイ判定まで読み直す（初回セットアップでも一覧が
      「名簿を読み込めていません」のまま止まらない） */
-  refreshAll().then(function () { renderSettings(); });
+  /* 読み直しの後、AI のボタン（一括作成・生成）の出し分けも取り直す（新しい端末の初回設定で出ないままにしない） */
+  refreshAll().then(function () { renderSettings(); try { renderSample(); syncBatchAiVisibility(); } catch (e) {} });
 }
 function testCfg() {
   $('cfgState').textContent = '接続を確かめています…';
@@ -8011,6 +8018,9 @@ function loadServerGuards() {
   if (!CFG.url || !SU_READY) return Promise.resolve(null);
   return tpPing().then(function (j) {
     if (j && j.ok && Object.prototype.toString.call(j.guards) === '[object Array]') SRV_GUARDS = j.guards.map(s_);
+    noteAiSrv(j);
+    /* 起動時・「最新を読み込む」でも、サーバーのキーの有無で AI ボタン（一括作成を含む）の出し分けを取り直す */
+    try { syncBatchAiVisibility(); renderSample(); } catch (e0) { /* 表示の更新だけ */ }
     return SRV_GUARDS;
   }).catch(function () { return null; });
 }
@@ -8250,9 +8260,9 @@ function bindUI() {
   $('pkApply').addEventListener('click', applyPick);
   $('pkCancel').addEventListener('click', closePickPop);
   $('btnAiSave').addEventListener('click', saveAiSettings);
-  $('btnAiClear').addEventListener('click', clearAiKey);
   $('btnAiConsent').addEventListener('click', aiConsentStart);
   $('btnAiConsentRevoke').addEventListener('click', aiConsentRevoke);
+  $('btnAiCheck').addEventListener('click', checkAiProxy);
 
   $('btnPrint').addEventListener('click', doPrint);
   $('pvZoom').addEventListener('change', function () { lsSet(LS.zoom, this.value); applyZoom(); });

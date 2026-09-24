@@ -21,7 +21,7 @@ const src = fs.readFileSync(HTML, 'utf8');
    合流前は「省略」と大きく出して終了コード0で抜ける（毎回赤のままだと、ほかの本物の失敗が埋もれる）。
    ★合流したら MERGED を true にする。true なのに中継の印（action:'ai'）が無ければ失敗にする＝合流後に消えたら気づける。
    TP_HTML・RM_HTML を渡した時（ブランチの版を試す時）は省略しない。ブランチの版では 65件。 */
-const MERGED = false;
+const MERGED = true;
 {
   const RM0 = process.env.RM_HTML || path.join(__dirname, '..', '..', 'resident-master.html');
   const hasRelay = (s) => /action:\s*'ai'/.test(s);
@@ -198,7 +198,7 @@ async function msgOf(sb, body) {
       mdKey: (x) => String(x || '').trim(), MD_AI_MODEL: 'claude-sonnet-5', MD_AI_MAXTOK: 8000, MD_AI_TIMEOUT: 500,
       Promise, JSON, Object, String, Number, Error, setTimeout, clearTimeout };
     vm.createContext(rb);
-    vm.runInContext(cutR('mdAiCfg') + '\n' + cutR('mdAiAsk') + '\n' + cutR('mdAiParse'), rb);
+    vm.runInContext(cutR('mdAiCfg') + '\n' + cutR('mdAiAsk') + '\n' + cutR('mdAiProxy_') + '\n' + cutR('mdAiParse'), rb);
     const o = await rb.mdAiAsk(['アムロジピン']);
     t('中継の応答から薬効を読める', o['アムロジピン'] === '高血圧', o);
     t('★送り先は訓練計画の専用GAS（tp_cfg）', sent[0].url === 'https://script.google.com/macros/s/TEST/exec');
@@ -212,7 +212,22 @@ async function msgOf(sb, body) {
     delete store.tp_cfg;
     em = ''; try { await rb.mdAiAsk(['x']); } catch (e) { em = e.message; }
     t('★接続先の無い端末は AI_NO_PROXY（送らない）', em === 'AI_NO_PROXY' && sent.length === 2, em);
-    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT\)\$\/\.test/.test(rsrc));
+    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|STALE)?\)\$\/\.test/.test(rsrc));
+    /* 薬の変更候補の AI 下書き（mcAiAsk_・10/06 に main で追加）も同じ中継を通る（2026-10-10 合流時に移した） */
+    store.tp_cfg = JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' });
+    reply = { ok: true, status: 200, data: { content: [{ type: 'text', text: '{"isChange":true,"after":["薬A 1錠 朝食後"],"changes":[],"unsure":[],"reason":"r"}' }] } };
+    const before = sent.length;
+    vm.runInContext(cutR('mcAiAsk_') + '\n' + cutR('mcAiParse_') + '\nfunction mcLines_(b){ return String(b||"").split("\\n").filter(Boolean); }\nfunction mcMask_(t){ return t; }', rb);
+    let mo = null, me = '';
+    try { mo = await rb.mcAiAsk_('薬A 1錠 朝食後', '架空の記録'); } catch (e) { me = e.message; }
+    const sm = sent[before];
+    t('★薬の変更候補の下書きも訓練計画の専用GASへ action:"ai" で頼む', !me && !!sm && sm.url === 'https://script.google.com/macros/s/TEST/exec' && JSON.parse(sm.opt.body).action === 'ai', me || (sm && sm.url));
+    t('★薬の変更候補の下書きも端末の鍵を送らない', !!sm && sm.opt.body.indexOf('sk-ant') < 0 && !('x-api-key' in (sm.opt.headers || {})), '');
+    t('薬の変更候補の下書きは中継の応答を読める', !!mo && mo.isChange === true, mo);
+    delete store.tp_cfg;
+    me = ''; try { await rb.mcAiAsk_('a', 'b'); } catch (e) { me = e.message; }
+    t('★接続先の無い端末では薬の変更候補の下書きも送らない（AI_NO_PROXY）', me === 'AI_NO_PROXY' && sent.length === before + 1, me);
+    t('★入居者マスタに端末の鍵で直接呼ぶ所が残っていない', !/x-api-key|dangerous-direct-browser|mdAiKey\(|MD_AI_URL/.test(rsrc), '');
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

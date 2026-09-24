@@ -5857,9 +5857,8 @@ function mcMask_(text){
   rooms.forEach(function(rm){ t=t.replace(new RegExp('(^|[^0-9A-Za-z.])'+esc2(rm)+'(?![0-9A-Za-z.])(?!'+unit+')','g'),'$1○'); });
   return t.replace(/[0-9]{2,4}\s*号室?/g,'○号室');
 }
+/* ★2026-10-10: 効能の下書きと同じく、個別機能訓練計画書の専用GASに中継を頼む（端末の鍵は使わない）。送る前の伏せ字（mcMask_）は従来どおり */
 function mcAiAsk_(before,text){
-  var key=mdAiKey();
-  if(!key) return Promise.reject(new Error('AI_NO_KEY'));
   var cur=mcLines_(before);
   var prompt='あなたは介護施設の薬剤師の補助です。入居者1名の「今の定期薬」（1行1剤）と、申送の記録を渡します。\n'+
     '記録が定期薬の変更（追加・中止・用量や用法の変更）を伝えているなら、変更後の定期薬の全文を作ってください。\n'+
@@ -5874,20 +5873,7 @@ function mcAiAsk_(before,text){
     '{"isChange":true,"after":["行","行"],"changes":[{"type":"追加|中止|変更","from":"前の行（追加は空）","to":"後の行（中止は空）"}],"unsure":["確かめが必要な点"],"reason":"判断の要点（40字以内）"}\n\n'+
     '■今の定期薬\n'+(cur.length?cur.join('\n'):'（記載なし）')+'\n\n■申送の記録\n'+mcMask_(text);
   var body={model:MD_AI_MODEL, max_tokens:4000, messages:[{role:'user', content:prompt}]};
-  var ctl=(typeof AbortController==='function')?new AbortController():null;
-  var opt={method:'POST', headers:{'content-type':'application/json','x-api-key':key,
-    'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}, body:JSON.stringify(body)};
-  if(ctl) opt.signal=ctl.signal;
-  var to=null;
-  return new Promise(function(res,rej){
-    to=setTimeout(function(){ if(ctl){ try{ctl.abort()}catch(e){} } rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
-    fetch(MD_AI_URL,opt).then(function(r){
-      return r.text().then(function(t){
-        if(r.status<200||r.status>=300) throw new Error('AI_HTTP_'+r.status);
-        return JSON.parse(t);
-      });
-    }).then(res,rej);
-  }).then(function(j){ clearTimeout(to); return mcAiParse_(j); }, function(e){ clearTimeout(to); throw e; });
+  return mdAiProxy_(body).then(mcAiParse_);
 }
 function mcAiParse_(j){
   var txt='', c=(j&&Array.isArray(j.content))?j.content:[];
@@ -5921,9 +5907,7 @@ function mcAiRun_(){
   }).catch(function(e){
     if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
     var m=String(e&&e.message||e);
-    cur.ai={err:m==='AI_NO_KEY'?'AI の鍵がこの端末に設定されていません（個別機能訓練計画書の設定と共用）。直し案は手で書けます。'
-      :(m==='AI_TIMEOUT'?'AI の応答が遅いため止めました。もう一度押すか、手で直してください。'
-      :'AI の直し案を作れませんでした（'+m+'）。手で直すこともできます。')};
+    cur.ai={err:'AI の直し案を作れませんでした：'+mdAiWhy_(m)+'。直し案は手で書けます。'};
     cur.msg='';
   }).then(function(){ if(mcCur===cur){ cur.busy=false; mcPaintModal_(); } });
 }
@@ -6093,46 +6077,62 @@ function mcWire_(){
 }
 
 /* ═══ AIで効能の下書きを作る ═══
-   ★訓練計画アプリ（training-plan.html）と同じ「ブラウザから api.anthropic.com を直接呼ぶ」方式。
-     鍵は同一オリジンの localStorage 'tp_ai_key' を共用する（訓練計画で設定済みなら追加設定は不要）。
+   ★2026-09-24〜 訓練計画アプリと同じく、個別機能訓練計画書の専用GASに中継を頼む（キーはGASにだけある）。
+     接続先は同一オリジンの localStorage 'tp_cfg'（訓練計画の接続設定）を読むだけ。書かない。
+     以前は 'tp_ai_key' を共用してブラウザから直接呼んでいた（訓練計画が起動時にそのキーを消す）。
    ★薬効は【下書き】。確認済みには自動で上げない。分からない薬は空のまま返させる（推測で埋めない）。
    ★送るのは薬剤名だけ。入居者の氏名・人数・処方の並びは1文字も送らない。 */
-var MD_AI_URL='https://api.anthropic.com/v1/messages';
 var MD_AI_MODEL='claude-sonnet-5';
 var MD_AI_CHUNK=25;      /* 1回に尋ねる薬剤名の数。★大きくしすぎると応答が上限で切れて丸ごと捨てる
                             （2026-09-04 実測: 40件×max_tokens 2000 で2つ目の塊から AI_BAD_JSON） */
 var MD_AI_MAXTOK=8000;   /* 応答の上限。薬剤名が長い塊でも切れない大きさにする */
-var MD_AI_TIMEOUT=90000;
-function mdAiKey(){ try{ return String(localStorage.getItem('tp_ai_key')||'').trim(); }catch(e){ return ''; } }
+var MD_AI_TIMEOUT=150000;   /* 中継の分だけ長め（GASは画面が諦めても呼び終える＝早く諦めると二重に払う） */
+/* 訓練計画の接続設定（URL と合言葉）を読むだけ。形が違えば空＝使えない */
+function mdAiCfg(){
+  try{
+    var a=JSON.parse(localStorage.getItem('tp_cfg')||'{}');
+    var u=String((a&&a.url)||'').trim(), t=String((a&&a.token)||'').trim();
+    if(!/^https:\/\/script\.google\.com\/.*\/exec(\?|#|$)/.test(u)||!t) return null;
+    return {url:u, token:t};
+  }catch(e){ return null; }
+}
 function mdAiAsk(names){
-  var key=mdAiKey();
-  if(!key) return Promise.reject(new Error('AI_NO_KEY'));
   var body={ model:MD_AI_MODEL, max_tokens:MD_AI_MAXTOK, messages:[{role:'user', content:
     '次の日本の医薬品それぞれについて、主な効能を日本語の短い語（8文字以内）で答えてください。\n'+
     '・一般名でも商品名でも、その薬の代表的な用途を1つだけ書く（例: 高血圧／胃酸抑制／便秘／解熱鎮痛／抗血栓）\n'+
     '・特定できない、または自信が無いものは必ず空文字 "" にする。推測で埋めないこと\n'+
     '・出力はJSON配列のみ。説明文は書かない。形式: [{"name":"（入力そのまま）","effect":"（8文字以内 or 空）"}]\n\n'+
     names.join('\n') }] };
-  var ctl=(typeof AbortController==='function')?new AbortController():null;
-  var opt={method:'POST', headers:{
-    'content-type':'application/json', 'x-api-key':key,
-    'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'
-  }, body:JSON.stringify(body)};
-  if(ctl) opt.signal=ctl.signal;
+  return mdAiProxy_(body).then(function(j){ return mdAiParse(j, names); });
+}
+/* 個別機能訓練計画書の専用GASへ AI を頼む（効能の下書き・薬の変更候補の下書きの共通の出口・2026-10-10 で切り出し）。
+   返すのは Anthropic の応答（content を持つ JSON）。★時間切れは再送しない（GAS は画面が諦めても呼び終える） */
+function mdAiProxy_(body){
+  var cfg=mdAiCfg();
+  if(!cfg) return Promise.reject(new Error('AI_NO_PROXY'));
+  /* text/plain で送る（CORS の事前確認を起こさない・su-data-gas.js と同じ作法）。合言葉は本文にだけ載せる */
+  var opt={method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, redirect:'follow',
+           body:JSON.stringify({action:'ai', token:cfg.token, body:body})};
   var to=null;
   var pr=new Promise(function(res,rej){
-    to=setTimeout(function(){ if(ctl){ try{ctl.abort()}catch(e){} } rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
-    fetch(MD_AI_URL,opt).then(function(r){
-      return r.text().then(function(t){
-        if(r.status<200||r.status>=300){
-          var msg=''; try{ var ej=JSON.parse(t); msg=String((ej&&ej.error&&ej.error.message)||''); }catch(e0){}
-          var err=new Error('AI_HTTP_'+r.status); err.detail=msg.slice(0,200); throw err;
+    to=setTimeout(function(){ rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
+    fetch(cfg.url,opt).then(function(r){
+      if(!r.ok) throw new Error('AI_NETWORK');
+      return r.json().then(function(j){
+        if(!j||typeof j!=='object') throw new Error('AI_BAD_JSON');
+        if(j.ok!==true){
+          var map={ai_no_key:'AI_NO_KEY', ai_limit:'AI_LIMIT', ai_bad_request:'AI_BAD_REQUEST', ai_fetch:'AI_FETCH',
+                   ai_busy:'AI_BUSY', unauthorized:'AI_PROXY_AUTH', 'unknown action':'AI_PROXY_OLD'};
+          throw new Error(map[String(j.error||'')]||'AI_PROXY');
         }
-        return JSON.parse(t);
+        var st=Number(j.status)||0;
+        if(st<200||st>=300){ var err=new Error('AI_HTTP_'+st); err.detail=String(j.detail||'').slice(0,200); throw err; }
+        if(!j.data||typeof j.data!=='object') throw new Error('AI_BAD_JSON');
+        return j.data;
       });
     }).then(res, rej);
   });
-  return pr.then(function(j){ clearTimeout(to); return mdAiParse(j, names); },
+  return pr.then(function(j){ clearTimeout(to); return j; },
                  function(e){ clearTimeout(to); throw e; });
 }
 function mdAiParse(j, names){
@@ -6187,8 +6187,8 @@ function mdAiFill(){
     return x.effect==='' && !mdDels[x.name] && !mdIsHidden(x.name,(mdMap&&mdMap[x.name])||null);
   }).map(function(x){ return x.newName||x.name; });
   if(!todo.length){ toast('未登録の薬はありません'); return; }
-  if(!mdAiKey()){
-    toast('AIのキーが未設定です。個別機能訓練計画書アプリの「AI設定」でキーを入れると、この画面でも使えます',false);
+  if(!mdAiCfg()){
+    toast('この端末には個別機能訓練計画書の接続先が無いため、AIを使えません（訓練計画アプリの設定画面で接続先を入れた端末で使えます）',false);
     return;
   }
   if(!confirm('未登録の '+todo.length+' 種類の効能をAIに下書きさせます。\n\n'+
@@ -6210,7 +6210,11 @@ function mdAiFill(){
       done+=chunks[k].length;
     }).catch(function(e){
       var em=String((e&&e.message)||'');
-      if(em==='AI_NO_KEY'||em==='STALE') throw e;   /* ★世代が変わった時は半分に割って尋ね直さない */
+      /* 設定や版の問題（直すまで何度尋ねても同じ）は、割って尋ね直さずに止める＝回数と料金を無駄にしない */
+      /* ★時間切れ（AI_TIMEOUT）も割り直さない。中継の GAS は画面が諦めた後も Anthropic を呼び終えるため、
+         割ってやり直すと同じ薬剤を2〜3回分払うことになる */
+      /* ★世代が変わった時（STALE）は半分に割って尋ね直さない */
+      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|STALE)$/.test(em)) throw e;
       /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
          それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
       var half=Math.ceil(chunks[k].length/2);
@@ -6249,8 +6253,20 @@ function mdAiFill(){
   }).catch(function(e){
     if(gen!==mdGen) return;   /* ★STALE を含め、世代が変わった後は印・ボタン・案内に触れない */
     mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
-    toast('AIに尋ねられませんでした：'+String((e&&e.message)||e),false);
+    var code=String((e&&e.message)||e);
+    toast('AIに尋ねられませんでした：'+mdAiWhy_(code),false);
   });
+}
+/* 中継の断り・時間切れを、画面の言葉に（効能の下書きと薬の変更候補の下書きで共通） */
+function mdAiWhy_(code){
+    var why={AI_NO_KEY:'サーバー（個別機能訓練計画書の専用GAS）にAIのキーが入っていません。管理者に連絡してください',
+             AI_LIMIT:'今日のAIの利用回数の上限に達しました。明日もう一度お試しください',
+             AI_PROXY_OLD:'サーバーが古い版で、AIの中継が入っていません。管理者に連絡してください',
+             AI_PROXY_AUTH:'訓練計画の接続設定の合言葉が通りませんでした',
+             AI_NO_PROXY:'この端末には個別機能訓練計画書の接続先がありません',
+             AI_BAD_REQUEST:'AIへの依頼の形がサーバーで断られました。管理者に連絡してください',
+             AI_TIMEOUT:'AIの返事が時間内に届きませんでした。少し待ってから、もう一度お試しください（入った分はそのまま残っています）'}[code];
+    return why||code;
 }
 /* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
    Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
