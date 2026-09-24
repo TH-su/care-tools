@@ -22,6 +22,7 @@
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
 <script>
 (function(){
   function apply(){try{
@@ -129,6 +130,9 @@ main {
   padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
   font-size: 0.71875rem; color: var(--g7);
 }
+/* 小さい文字の中のリンクでも指で押せるよう、押せる高さは44pxを確保する（HIG） */
+.foot a { display: inline-flex; align-items: center; min-height: 44px; color: var(--pri); font-size: 0.8125rem; font-weight: 700; }
+.foot a:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   /* 動きは止めるが、押した手応えは残す。既定のタップハイライトを切っているため、
@@ -293,7 +297,9 @@ main {
   </section>
 </main>
 
-<footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。</footer>
+<!-- 動作の速さの記録（統合 Phase 0）: 氏名・記録を持たないので現場端末でも出す（共用タブレットの遅さこそ測りたい） -->
+<footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。<br>
+  <a href="perf-report.html">動作の速さの記録（遅さの調査用）</a></footer>
 
 <script src="su-report.js" data-tool="介護ツール メニュー"></script>
 <!-- 事業所の呼び名は施設情報（facility-profile.json）から差し込む。読めない時は一般名のまま -->
