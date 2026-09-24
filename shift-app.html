@@ -3069,6 +3069,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (e) return e.classifyPushError(msg);
     return (String(msg) === 'unknown action') ? 'unsupported' : 'other';
   }
+  /* 編集リースの「サーバ未対応」判定（2026-09-24）。lockCapable=false へ落とすのは、サーバ本体が
+   * 答えた確定エラー 'unknown action' の時だけにする。classifyPushError は HTTP 404 も 'unsupported' に
+   * 数えるが（接続先の死活判定用＝endpointLooksDead_ が確認pingで裏を取ってから切り替える）、
+   * Google のフロントは一時的な 404 を返すことがあり、1回の 404 で未対応へ落とすと、そのタブは
+   * ずっと「共有ロックなしで編集」になり、厳格モードのサーバで送信が拒否されて編集できなくなる。
+   * ロック系の 404 は通信失敗と同じ扱い（判定据え置き・次の機会に再試行）。 */
+  function lockUnsupported_(msg) {
+    return String(msg) === 'unknown action';
+  }
   /* 接続先の死活判定ポリシー（netpolicy.js・純関数）。解決は呼び出し時＝読み込み順に依存しない。
    * 未読込のビルドでは null＝「404では切り替えない（最も安全な側）」へ倒れる。 */
   var _np = null;
@@ -4333,8 +4342,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        /* 旧サーバ＝機能保留（従来動作のまま）。通信失敗は据え置き（null）＝次の機会に再判定。 */
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        /* 旧サーバ＝機能保留（従来動作のまま）。通信失敗・一時的な404は据え置き（null）＝次の機会に再判定。 */
+        if (lockUnsupported_(msg)) self.lockCapable = false;
         return null;
       });
     },
@@ -4358,7 +4367,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return { ok: true, lease: lease };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        if (lockUnsupported_(msg)) self.lockCapable = false;   /* 404 では落とさない（lockUnsupported_ 参照） */
         return { ok: false, error: msg };
       });
     },
@@ -4387,7 +4396,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return { ok: true, lease: lease };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        if (lockUnsupported_(msg)) self.lockCapable = false;   /* 404 では落とさない（lockUnsupported_ 参照） */
         return { ok: false, error: msg };
       });
     },
@@ -4430,9 +4439,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (r && r.ok) { self._leaseVerified = true; return 'ok'; }
         var err = r ? r.error : '';
         if (err === 'nolease') return 'nolease';
-        var kind = classifyPushError_(err);
-        if (kind === 'unsupported') return 'unsupported';   /* 旧サーバ＝機能保留（編集モード維持） */
-        if (kind !== 'lost') return 'network';
+        if (lockUnsupported_(err)) return 'unsupported';   /* 旧サーバ＝機能保留（編集モード維持） */
+        /* 一時的な HTTP 404 は 'network'（編集モード維持・次の延長で再試行）。未対応とは数えない */
+        if (classifyPushError_(err) !== 'lost') return 'network';
         var rec = self.lease || {};
         var oldEpoch = (typeof rec.epoch === 'number') ? rec.epoch : null;
         return self.acquireLease(self.getLocal('deviceName', ''), false, rec.tabId).then(function (a) {
@@ -10270,11 +10279,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* サーバーの編集リース対応を確認（1回）。保持者情報はバッジに出す。 */
     probeLock_: function () {
       var self = this;
+      this._lockProbeInFlight = true;   /* 60秒 tick の再判定が重ねて撃たないための印（呼び出し元は問わない） */
       return Store.probeLockSupport().then(function (holder) {
+        self._lockProbeInFlight = false;
         self.setLockHolder_(holder);
         self.updateEditToggleEnabled_();
         return holder;
-      });
+      }, function (e) { self._lockProbeInFlight = false; throw e; });
     },
 
     /* 再読み込み後の編集モード復帰（dev-principles 原則11）。
@@ -10333,6 +10344,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             return;
           }
           self.enableEdit_();   /* 判定できたので通常のフローへ入り直す */
+        });
+        return;
+      }
+      /* ①-b 前に「未対応」と判定されていても、劣化モードを勧める前に1回だけ確かめ直す（2026-09-24）。
+       * 判定が古いまま（開いた後にサーバーが更新された等）だと、厳格モードのサーバーで送信が拒否され
+       * 「OK を押しても編集できない」になる。対応していれば通常のフローへ、通信できなければ①-a と同じ案内。 */
+      if (Store.lockCapable === false && !this._lockReprobed) {
+        /* probe は通信失敗で判定を据え置く＝false のままでは「未対応」と「通信失敗」を見分けられない。
+         * 未判定(null)にしてから確かめ、通信失敗で null のままなら元の false に戻す（状態は変えない）。 */
+        Store.lockCapable = null;
+        this.probeLock_().then(function () {
+          if (tog) tog.disabled = false;
+          if (Store.lockCapable === null) {
+            Store.lockCapable = false;
+            self.updateModeBadge();
+            self.updateEditToggleEnabled_();
+            revert();
+            self.confirmInfo('編集モードにできません',
+              'サーバーに接続できないため、編集権を確認できませんでした。\n通信状況を確認して、もう一度お試しください。');
+            return;
+          }
+          self._lockReprobed = true;   /* 入り直した1回では確かめ直さない（未対応のままなら①-b へ進む） */
+          self.enableEdit_();
+          self._lockReprobed = false;
         });
         return;
       }
@@ -10608,6 +10643,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var EL = window.ShiftEditLock;
         if (!EL || !EL.shouldRenew(Store.lease, Date.now())) return;      /* 残りTTLが十分なら通信しない */
         this.renewTick_();
+        return;
+      }
+      /* 起動時の判定が一時的な失敗（404・通信断）で未判定(null)のままだと、pollView_ は動かず
+       * 開きっぱなしの端末の自動更新が止まる（タブを切り替えるまで戻らない）。tick ごとに1回だけ
+       * 判定し直し、判定できたら次の tick から通常の自動更新に戻る。判定済み(true/false)では通信を増やさない。 */
+      if (Store.lockCapable === null) {
+        var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+        if (!cfg || !cfg.url) return;                 /* 同期未設定＝沈黙（従来どおり） */
+        if (this._lockProbeInFlight) return;          /* 前の判定がまだ返っていない＝重ねない */
+        this.probeLock_();
         return;
       }
       this.pollView_();
