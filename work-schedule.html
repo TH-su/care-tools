@@ -1197,7 +1197,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var d = diag || {};
     var evs = (d.events && typeof d.events.length === 'number') ? d.events : [];
     var lines = [];
-    lines.push('累計（since ' + hm(d.since) + '）成功 ' + (d.ok || 0) + '／失敗 ' + (d.fail || 0) +
+    /* 「成功」は HTTP 200 が返った回数。応答が ok:false（拒否）でも 200 なので、
+     * 拒否を別に数えて出す。これを分けないと「成功が伸びているのに同期していない」を読み違える
+     * （2026-09-24 実際に読み違えた。接続先が別アプリのGASで、put が毎回拒否されていた）。 */
+    lines.push('累計（since ' + hm(d.since) + '）応答あり ' + (d.ok || 0) +
+               '／うち拒否 ' + (d.rej || 0) + '／通信失敗 ' + (d.fail || 0) +
                '／最終成功 ' + hms(d.lastOkAt || 0));
     var i, e;
     for (i = evs.length - 1; i >= 0; i--) {
@@ -11072,13 +11076,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var p = JSON.parse(localStorage.getItem(NET_DIAG_KEY) || 'null');
       if (p && typeof p === 'object') {
-        return { ok: p.ok || 0, fail: p.fail || 0,
+        return { ok: p.ok || 0, fail: p.fail || 0, rej: p.rej || 0,
                  since: p.since || new Date().toISOString(),
                  lastOkAt: p.lastOkAt || 0,
                  events: (p.events && typeof p.events.length === 'number') ? p.events : [] };
       }
     } catch (e) {}
-    return { ok: 0, fail: 0, since: new Date().toISOString(), lastOkAt: 0, events: [] };
+    return { ok: 0, fail: 0, rej: 0, since: new Date().toISOString(), lastOkAt: 0, events: [] };
   }
   function saveNetDiag_(d) { try { localStorage.setItem(NET_DIAG_KEY, JSON.stringify(d)); } catch (e) {} }
   /* ok/fail は「呼び出し（gasCall 1回）」を数える。成功は1回だけ通るのでここで+1。 */
@@ -11112,6 +11116,70 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var why = friendlyErr(err), lab = lastNetFailLabel_();
     if (lab && lab !== why && why.indexOf(lab) < 0) why += '・' + lab;
     return why;
+  }
+  /* HTTP は200だが応答が ok:false（サーバが拒否）の記録。失敗一覧に出す＝原因が見える。
+   * 競合(conflict)は正常な自己修復の一部なので数えない（多端末運用で毎日出るため）。 */
+  function noteNetRej_(action, err, ms, now) {
+    var d = loadNetDiag_();
+    d.rej = (d.rej || 0) + 1;
+    d.events = NP.pushDiag(d.events, { t: now, action: action, res: '拒否: ' + String(err || '?'),
+                                       ms: ms || 0, attempt: 1, final: true }, NP.DIAG_MAX);
+    saveNetDiag_(d);
+  }
+  /* 接続先が「このアプリの同期GASではない」ことを示すエラー。
+   * 統合同期GAS(Code.gs)は英語の 'unknown action'、入居者マスタ・薬・申送の各GASは
+   * 日本語の '不明なaction' を返す＝接続先URLに別アプリのGASが入っていると後者になる。
+   * 2026-09-24、実際にこれで1台が送信できない状態になっていた（自動切替が英語だけを見ていて発火せず）。 */
+  /* 起動時に「相手が本当にこのアプリの同期GASか」を1回だけ確かめる（2026-09-24）。
+   * 統合同期GASの ping は { ok:true, server:'silverunix-sync', codeVersion, guards } を返す。
+   * 別アプリのGAS（入居者マスタ・薬・申送など）は ok は返しても server が違う／無い。
+   * 送信(put)を試すまで気づけないと、その日の内容が丸ごと送れないまま何時間も経つ。
+   * gasCall を通さない＝再試行・死活判定・診断カウンタに影響させない（純粋な確認）。 */
+  var SYNC_SERVER_ID = 'silverunix-sync';
+  /* ping の応答から「相手はこのアプリの同期GASではない」と【断定できる】時だけ 'wrong' を返す。
+   * ★統合同期GASは合言葉を action より先に確かめるため、合言葉違いでは server の無い
+   *   { ok:false, error:'unauthorized' } が返る。これを「同期先が違う」と言うと誤案内になる。
+   *   断定できるのは次の2つだけ:
+   *     ・'不明なaction'／'unknown action'（＝ping を知らない＝別アプリのGASか古い版）
+   *     ・ok:true で server が【別の名前】（＝別アプリのGASが自分の名を名乗った）
+   *   それ以外（合言葉違い・server 無しの ok・読めない）は null＝何も言わない。 */
+  function endpointVerdict_(j) {
+    if (!j || typeof j !== 'object') return null;
+    if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
+    if (j.ok === true && typeof j.server === 'string' && j.server) {
+      return (j.server === SYNC_SERVER_ID) ? 'ok' : 'wrong';
+    }
+    return null;
+  }
+  function checkEndpointIdentity_(announceOk) {
+    if (!syncOn()) return;
+    var done = false, t = null;
+    function fin(verdict) {
+      if (done) return; done = true;
+      if (t) { clearTimeout(t); t = null; }
+      /* 設定を保存した直後だけ、正しいことも伝える（貼り直した人がその場で確かめられる） */
+      if (verdict === 'ok' && announceOk) {
+        try { toast('✓ ワークスケジュールの同期先を確認しました'); } catch (eOk) {}
+        return;
+      }
+      if (verdict !== 'wrong') return;             /* 正しい／断定できない＝何も言わない（誤警告を作らない） */
+      try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e1) {}
+      try {
+        toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。'
+            + 'このままでは送信できません。正常な端末の設定からURLをコピーして貼り直してください', true);
+      } catch (e2) {}
+    }
+    t = setTimeout(function () { fin(null); }, 20000);
+    try {
+      fetch(settings.endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                                 body: JSON.stringify({ action: 'ping', token: settings.token }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { fin(endpointVerdict_(j)); })
+        .catch(function () { fin(null); });
+    } catch (e) { fin(null); }
+  }
+  function isWrongEndpointErr_(e) {
+    return e === 'unknown action' || e === '不明なaction' || e === 'deadendpoint';
   }
   function resLabel_(status, errKind) {
     if (errKind) return errKind;                 /* timeout / neterr / badjson */
@@ -11426,7 +11494,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
   function friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
-    if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    if (e === 'unknown action' || e === '不明なaction') return '同期先が違います（別のアプリのGASを指しています）';
     if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
     return e || '通信失敗';
   }
@@ -11448,7 +11516,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                     body: JSON.stringify({ action: 'ping', token: wsTok }), redirect: 'follow' })
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          if (j && !j.error && (j.ok === true || j.role || j.server)) {
+          /* ★切替先が【このアプリの同期GAS】だと確かめられた時だけ採用する（2026-09-24）。
+           * 以前は ok/role/server のどれかがあれば採用していたが、入居者マスタのGASの ping は
+           * { ok:true, role } を返すため、ws_settings に別アプリのURLと合言葉が入っている端末では
+           * 1回の404をきっかけに su_sync_common（週間計画・ワースケ・シフト共通）ごと別アプリへ
+           * 書き換わった。実際に1台がこの状態になり、送信が「不明なaction」で拒否され続けた。 */
+          if (endpointVerdict_(j) === 'ok') {
             settings.endpoint = wsEp; settings.token = wsTok;
             try { localStorage.setItem(COMMON_SYNC_KEY, JSON.stringify(
               { endpoint: wsEp, token: wsTok, updatedAt: Date.now() })); } catch (e2) {}
@@ -11473,7 +11546,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function deliver(v) {
       /* 接続先URLが死んでいる(unknown action＝旧世代／deadendpoint＝404で消滅)ときは
          ws_settings の稼働URLへ自動切替して1回だけ再試行 */
-      if (!retried && v && (v.error === 'unknown action' || v.error === 'deadendpoint')) {
+      if (!retried && v && isWrongEndpointErr_(v.error)) {
         healStaleTarget(function (healed) {
           /* 接続先を切り替えた＝旧URLで貯めた404カウントと確定ラッチは捨てる（新URLを疑わない） */
           if (healed) { dead.reset(); gasCall(payload, cb, true); }
@@ -11483,6 +11556,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             if (v.error === 'deadendpoint') {
               try { setSyncState('⚠ 同期先が見つかりません（設定の確認が必要）'); } catch (e2) {}
               try { toast('この端末の同期先（GASのURL）が見つかりません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e3) {}
+            } else {
+              /* 'unknown action'／'不明なaction'＝応答は返るが、相手がこのアプリの同期GASではない。
+               * 待っても直らないので、待てば直ると誤解される「オフライン」表示にしない。 */
+              try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e4) {}
+              try { toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e5) {}
             }
             try { cb(v); } catch (e) {}
           }
@@ -11538,6 +11616,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { updateSyncBadge_(); } catch (eSb) {}
         dead.note('ok', now, elapsed);
         noteNetOk_(now);
+        /* 200 だが ok:false ＝ サーバが拒否した。競合以外は失敗一覧に残す（原因が見えるように） */
+        if (j && j.ok !== true && j.error && !j.conflict) {
+          try { noteNetRej_(action_, j.error, elapsed, now); } catch (eRj) {}
+        }
         once(j || null);
         return;
       }
@@ -14274,10 +14356,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (hideNHChanged_) {
         try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (eHN) {}
       }
+      var syncChanged_ = (prevSyncSig_ !== settings.endpoint + '|' + settings.token);
       if (settings.endpoint && !hadEndpoint) {
         toast('同期を開始します…');
         pullAll(true);
+      } else if (settings.endpoint && syncChanged_) {
+        /* 接続先・合言葉を直した（2026-09-24 の現場の対処がこれ）。再試行の間隔は最長60秒まで
+         * 伸びているので、それを待たずにすぐ取得・送信する＝直したことがその場で分かる。 */
+        try { clearRetry_(); } catch (eCr) {}
+        try { pullAll(true); } catch (ePa) {}
+        try { recoverNow_(); } catch (eRn) {}
       }
+      /* 保存した接続先が本当にワークスケジュールの同期先かを確かめて伝える */
+      if (settings.endpoint && syncChanged_) { try { checkEndpointIdentity_(true); } catch (eCi) {} }
     });
     $('stPush').addEventListener('click', function () {
       $('stResult').textContent = '送信中…';
@@ -14805,6 +14896,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eDirty) {}
     try { pullAll(false); } catch (e) {}
     try { runRefetch_(); } catch (eRf0) {}   /* 起動時: 取り直し待ちの日を取り直す（前回オフラインで取れなかった分） */
+    try { checkEndpointIdentity_(); } catch (eCe) {}   /* 接続先が本当に同期GASかを1回だけ確認 */
     try { updateSyncBadge_(); } catch (eSb) {}
     /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛 */
     if (!syncBadgeBound_) {
