@@ -12,7 +12,9 @@
 /* アリドネパッチ 貼付部位カレンダー（背中8箇所ローテーション）
    A4縦1枚に「背中8箇所の順番図（上部）」と「当月カレンダー（下部）」を印刷する。
    各日のセルには背中の図を置き、その日に貼る場所を赤枠で囲む。
-   保存するのは開始日・開始番号・前日の場所・表示月だけで、氏名などの個人情報は端末に残さない。 */
+   保存するのは開始日・開始番号・前日の場所・表示月だけで、氏名などの個人情報は端末に残さない。
+   入居者を名簿から選んだ時は、その方の入居者ID（利用者No）ごとに開始日・番号・前日の場所を覚える
+   （2026-09-24 段9-D。氏名は名簿＝入居者マスタが書く su_residents_common から読むだけで、ここには保存しない）。 */
 :root {
   --pri: #0b57d0; --pri-l: #ecf3fe; --pri-d: #0842a0;
   --warn-bg: #fff8e1;
@@ -63,6 +65,10 @@ body {
 }
 .fld input:focus-visible, .fld select:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
 .hint { font-size: 0.71875rem; color: var(--g7); margin: 6px 0 0; }
+.fld input[readonly] { background: var(--g1); color: var(--g9); }
+.adopt { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.adopt[hidden] { display: none; }
+.adopt p { margin: 0; flex: 1 1 260px; font-size: 0.8125rem; color: var(--g9); }
 /* 共通パレットの --warn-tx(#e65100) は --warn-bg 上で 3.6:1 と AA(4.5:1) を割るため濃い色を使う */
 .hint.warn { background: var(--warn-bg); color: #bf360c; padding: 7px 9px; border-radius: 8px; font-weight: 700; }
 
@@ -188,6 +194,10 @@ body {
   <div class="cd">
     <div class="row">
       <div class="fld" style="flex:1 1 210px">
+        <label for="rs">入居者（名簿から選ぶ）</label>
+        <select id="rs"></select>
+      </div>
+      <div class="fld" style="flex:1 1 210px">
         <label for="nm">入居者名（印刷用・端末には保存しません）</label>
         <input id="nm" type="text" maxlength="20" autocomplete="off" placeholder="例）山田 花子">
       </div>
@@ -205,6 +215,10 @@ body {
       </div>
     </div>
     <p class="hint" id="sthint"></p>
+    <div class="adopt" id="adopt" hidden>
+      <p id="adopttx"></p>
+      <button class="btn" id="adoptbtn" type="button">この方の設定にする</button>
+    </div>
     <p class="hint warn">□は<b>印刷して手書きでチェック</b>する欄です。画面上のチェックは記録として保存しません（端末ごとに食い違う投薬記録を作らないため）。</p>
   </div>
 
@@ -309,6 +323,14 @@ var LS_START = 'apc2_start';              /* 開始日 */
 var LS_NO    = 'apc2_no';                 /* 開始日に貼る番号 */
 var LS_PREV  = 'apc2_prev';               /* 前日に貼ってある場所（0=なし） */
 var SS_MONTH = 'apc2_month';              /* sessionStorage: 表示中の月。リロードで現在地を失わない */
+/* 入居者ごとの設定 { v:1, r: { 入居者ID: { start, no, prev } } }。氏名は入れない。
+   名簿から選ばない時（手入力）は、これまでどおり上の apc2_start/no/prev を使う＝従来の設定はそのまま残る。
+   選んでいる入居者は再読み込みで復元しない（原則11: 業務データに紐づく状態は既定で対象外。
+   前に選んだ方のまま別の方の紙を刷る取り違えを作らない）。 */
+var LS_BYRES = 'apc2_res';
+/* 手入力の設定を「この方の設定にする」で移した先の入居者ID（1回だけ移せる。同じ表を何人にも付けない） */
+var LS_MOVED = 'apc2_res_moved';
+var ROSTER_KEY = 'su_residents_common';   /* 入居者マスタが書く共有名簿。ここでは読むだけ */
 var DEFAULT_START = '2026-08-10';
 var DEFAULT_NO = 5;
 var DEFAULT_PREV = 2;
@@ -407,7 +429,9 @@ function isoMonth(y, m) { return y + '-' + pad2(m); }
 function jpDate(o) { return o.y + '年' + o.m + '月' + o.d + '日'; }
 
 /* ── 状態（正本は1つ。表示はここから導出する） ── */
-var state = { start: null, no: DEFAULT_NO, prev: DEFAULT_PREV, y: 0, m: 0, confirmed: false, canSave: true };
+var state = { start: null, no: DEFAULT_NO, prev: DEFAULT_PREV, y: 0, m: 0, confirmed: false, canSave: true,
+              rid: '', storeBad: false }; /* rid: 名簿から選んだ入居者ID（''＝手入力）。storeBad: 入居者ごとの保存が読めない */
+var roster = [];                          /* [{ id, name, room }]（在籍の方だけ・居室順） */
 
 function loadState() {
   var sv = null, sn = null, sp = null;
@@ -437,13 +461,139 @@ function loadState() {
   state.y = mo.y; state.m = mo.m;
 }
 function saveSettings() {
+  var wasConfirmed = state.confirmed;
   state.confirmed = true;                 /* 人が入力し直した時点で確定扱いにする */
   state.canSave = true;
+  if (state.rid) {                        /* 名簿から選んだ方の設定は、その方の欄にだけ書く */
+    var all = readByRes();
+    if (all === null) { state.canSave = false; state.storeBad = true; return; }   /* 読めない保存を空で上書きしない */
+    /* 仮の値を表示していた間に、別のタブでこの方の設定が保存されていたら、仮の値で上書きしない。
+       保存されている設定を表示し直す */
+    if (!wasConfirmed && resSetting(state.rid)) { selectResident(state.rid); return; }
+    all[state.rid] = { start: state.start.iso, no: state.no, prev: state.prev };
+    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); }
+    catch (e) { state.canSave = false; }
+    return;
+  }
   try {
     localStorage.setItem(LS_START, state.start.iso);
     localStorage.setItem(LS_NO, String(state.no));
     localStorage.setItem(LS_PREV, String(state.prev));
   } catch (e) { state.canSave = false; }  /* 表示は続けるが「記憶できない」ことは黙って隠さない */
+}
+
+/* ── 入居者ごとの設定 ── */
+/* 保存の中身を読む。無い時は {}、壊れている・読めない時は null（null の時は書き込まない＝
+   他の方の設定を空で消さない）。1人分の値が壊れていても、その方だけ読まずに他の方は使う。 */
+function readByRes() {
+  var raw;
+  try { raw = localStorage.getItem(LS_BYRES); } catch (e) { return null; }
+  if (raw === null) return {};
+  var o;
+  try { o = JSON.parse(raw); } catch (e) { return null; }
+  if (!o || typeof o !== 'object' || !o.r || typeof o.r !== 'object' || Array.isArray(o.r)) return null;
+  var out = {};
+  Object.keys(o.r).forEach(function (k) { out[k] = o.r[k]; });
+  return out;
+}
+/* 1人分の設定を検証して返す（開始日と番号が正しくなければ null＝未設定扱い） */
+function resSetting(rid) {
+  var all = readByRes(), v = all && Object.prototype.hasOwnProperty.call(all, rid) ? all[rid] : null;
+  if (!v || typeof v !== 'object') return null;
+  var d = parseISODate(v.start), n = parseNo(String(v.no), 1), p = parseNo(String(v.prev), 0);
+  if (!d || n === null) return null;
+  return { start: d, no: n, prev: p !== null ? p : 0 };
+}
+/* 手入力（従来）の設定。確定していなければ null */
+function legacySetting() {
+  var sv = null, sn = null, sp = null;
+  try {
+    sv = localStorage.getItem(LS_START); sn = localStorage.getItem(LS_NO); sp = localStorage.getItem(LS_PREV);
+  } catch (e) { return null; }
+  var d = parseISODate(sv), n = parseNo(sn, 1), p = parseNo(sp, 0);
+  if (!d || n === null) return null;
+  return { start: d, no: n, prev: p !== null ? p : 0 };
+}
+
+/* 名簿（入居者マスタが書く共有キー）を読む。書かない。在籍の方だけを居室順に並べる */
+function loadRoster() {
+  roster = [];
+  var o = null;
+  try { o = JSON.parse(localStorage.getItem(ROSTER_KEY) || 'null'); } catch (e) { o = null; }
+  var list = (o && Object.prototype.toString.call(o.residents) === '[object Array]') ? o.residents : [];
+  var seen = {};
+  list.forEach(function (r) {
+    if (!r || typeof r !== 'object' || r.active === false) return;
+    var id = r.masterId == null ? '' : String(r.masterId).trim();
+    var name = r.name == null ? '' : String(r.name).trim();
+    if (!id || !name || id.length > 40 || seen[id]) return;   /* ID の無い行・重複は選べない */
+    seen[id] = true;
+    roster.push({ id: id, name: name, room: r.room == null ? '' : String(r.room).trim(),
+                  kana: r.kana == null ? '' : String(r.kana) });
+  });
+  roster.sort(function (a, b) {
+    var ra = parseInt(a.room, 10), rb = parseInt(b.room, 10);
+    if (isFinite(ra) && isFinite(rb) && ra !== rb) return ra - rb;
+    if (a.room !== b.room) return a.room < b.room ? -1 : 1;
+    return a.kana < b.kana ? -1 : (a.kana > b.kana ? 1 : 0);
+  });
+}
+function rosterRow(id) {
+  for (var i = 0; i < roster.length; i++) if (roster[i].id === id) return roster[i];
+  return null;
+}
+function fillRoster() {
+  el.rs.textContent = '';
+  var none = document.createElement('option');
+  none.value = '';
+  none.textContent = roster.length ? '（名簿から選ばない・手入力）' : '（この端末に名簿がありません・手入力）';
+  el.rs.appendChild(none);
+  roster.forEach(function (r) {
+    var op = document.createElement('option');
+    op.value = r.id;
+    op.textContent = (r.room ? r.room + '　' : '') + r.name;   /* textContent なので氏名がタグとして解釈されない */
+    el.rs.appendChild(op);
+  });
+  el.rs.disabled = !roster.length;
+  el.rs.value = state.rid;
+}
+/* 入居者を切り替える。rid='' は手入力（従来の設定）へ戻す */
+function selectResident(rid) {
+  var r = rid ? rosterRow(rid) : null;
+  if (rid && !r) rid = '';                /* 名簿に無い値は手入力へ倒す */
+  state.rid = rid;
+  state.storeBad = !!rid && readByRes() === null;
+  var set = rid ? resSetting(rid) : legacySetting();
+  if (set) {
+    state.start = set.start; state.no = set.no; state.prev = set.prev; state.confirmed = true;
+  } else if (rid) {
+    /* この方の設定がまだ無い。前の方の値を引き継がず、今日を開始日・1番・前日なしの仮の値にして、
+       確かめるまで警告を出す（前の方のローテーションのまま刷る取り違えを作らない） */
+    var t = new Date();
+    state.start = parseISODate(t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()));
+    state.no = 1; state.prev = 0; state.confirmed = false;
+  } else {
+    state.start = parseISODate(DEFAULT_START); state.no = DEFAULT_NO; state.prev = DEFAULT_PREV;
+    state.confirmed = false;
+  }
+  state.canSave = true;
+  if (r) { el.nm.value = r.name; el.nm.readOnly = true; }
+  else { if (el.nm.readOnly) el.nm.value = ''; el.nm.readOnly = false; }  /* 名簿の氏名を手入力側へ持ち越さない */
+  el.rs.value = state.rid;
+  render();
+}
+/* 設定がまだ無い方を選んだ時、手入力で使ってきた設定をその方の設定にできるようにする
+   （これまで1人分だけ使ってきた設定を、その方へ移すための入口。手入力側の設定は消さない） */
+function movedTo() {
+  try { return localStorage.getItem(LS_MOVED) || ''; } catch (e) { return 'x'; }   /* 読めない時は移し済み扱い＝出さない */
+}
+function renderAdopt() {
+  var lg = state.rid && !state.storeBad && !movedTo() && !resSetting(state.rid) ? legacySetting() : null;
+  el.adopt.hidden = !lg;
+  if (lg) {
+    el.adopttx.textContent = 'この方の設定はまだありません。これまで手入力で使ってきた設定（開始 '
+      + jpDate(lg.start) + ' ＝ ' + lg.no + '番）がこの方のものなら、そのまま使えます。';
+  }
 }
 function saveMonth() {
   try { sessionStorage.setItem(SS_MONTH, isoMonth(state.y, state.m)); } catch (e) { /* 同上 */ }
@@ -456,7 +606,9 @@ var el = {
   sthint: document.getElementById('sthint'), now: document.getElementById('now'),
   pym: document.getElementById('p-ym'), pnm: document.getElementById('p-nm'),
   pst: document.getElementById('p-st'),
-  guide: document.getElementById('guide'), weeks: document.getElementById('weeks')
+  guide: document.getElementById('guide'), weeks: document.getElementById('weeks'),
+  rs: document.getElementById('rs'), adopt: document.getElementById('adopt'),
+  adopttx: document.getElementById('adopttx'), adoptbtn: document.getElementById('adoptbtn')
 };
 
 function fillSelects() {
@@ -559,7 +711,11 @@ function renderHeaderInfo() {
     + '）を貼り、以降は1日ずつ番号を進めます。'
     + (state.prev > 0 ? '前日は ' + state.prev + '番を「はがす場所」として図に出します。' : '');
   var msg = '';
-  if (!state.confirmed) {
+  if (state.rid && state.storeBad) {
+    msg = '⚠ この端末の入居者ごとの設定が読めません（保存が壊れています）。表示は仮の値で、変えても記憶されません。印刷する前に実際の貼付予定と照らしてください。 ';
+  } else if (!state.confirmed && state.rid) {
+    msg = '⚠ この方の開始日と場所はまだ設定されていません（仮の値です）。実際の貼付予定に合わせて入力してください。 ';
+  } else if (!state.confirmed) {
     msg = '⚠ 開始日と場所は初期値です。印刷する前に、実際の貼付予定と合っているか必ず確認してください。 ';
   } else if (state.canSave === false) {
     msg = '⚠ この端末では設定を記憶できません。開き直すたびに入力し直してください。 ';
@@ -571,7 +727,7 @@ function renderHeaderInfo() {
   el.sthint.textContent = msg + base;
 }
 
-function render() { renderHeaderInfo(); renderCalendar(); }
+function render() { renderHeaderInfo(); renderAdopt(); renderCalendar(); }   /* 設定を直したらボタンの出し入れも取り直す */
 
 function shiftMonth(delta) {
   var d = new Date(utcNoon(state.y, state.m + delta, 1));
@@ -583,8 +739,25 @@ function shiftMonth(delta) {
 /* ── 起動 ── */
 fillSelects();
 loadState();
+loadRoster();
+fillRoster();
 renderGuide();
 render();
+
+el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
+/* 別のタブでこの方の設定が変わったら、表示を取り直す（古いタブの値で上書きしない） */
+window.addEventListener('storage', function (e) {
+  if (state.rid && (e.key === LS_BYRES || e.key === LS_MOVED || e.key === null)) selectResident(state.rid);
+});
+el.adoptbtn.addEventListener('click', function () {
+  var lg = legacySetting();
+  /* 既に設定がある方には使わない（押した時点で取り直して、この方の設定を黙って上書きしない） */
+  if (!state.rid || !lg || state.storeBad || movedTo() || resSetting(state.rid)) { render(); return; }
+  state.start = lg.start; state.no = lg.no; state.prev = lg.prev;
+  saveSettings();
+  if (state.canSave) { try { localStorage.setItem(LS_MOVED, state.rid); } catch (e) { /* 次に出ても押した時に再判定する */ } }
+  render();
+});
 
 document.getElementById('prev').addEventListener('click', function () { shiftMonth(-1); });
 document.getElementById('next').addEventListener('click', function () { shiftMonth(1); });
@@ -601,11 +774,14 @@ document.getElementById('today').addEventListener('click', function () {
 var printAck = null;
 document.getElementById('print').addEventListener('click', function () {
   var nm = el.nm.value.trim();
-  var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev;
+  var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
+    + '|' + (state.confirmed ? 1 : 0);
   if (printAck !== key) {
     var who = nm ? '（' + nm + '）' : '（お名前は未入力）';
+    /* 設定が済んでいない（仮の値・初期値）時は、それを確認の文面にも出す */
+    var prov = state.confirmed ? '' : '\n\n⚠ 開始日と場所はまだ設定されていません（仮の値・初期値です）。';
     if (!window.confirm(state.y + '年' + state.m + '月分／開始 ' + jpDate(state.start)
-        + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか')) return;
+        + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか' + prov)) return;
     printAck = key;
   }
   window.print();
