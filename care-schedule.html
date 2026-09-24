@@ -3944,6 +3944,10 @@ const SYNC = {
     if (e === 'deadendpoint') return 'この端末の同期先（GASのURL）が見つかりません。'
       + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
     if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    /* 入居者マスタ・薬・申送のGASが未知の action に返す文言（2026-09-24）。応答は返っているが相手が違う
+       ＝待っても直らない。自動切替（healStaleTarget）の当てが無かった時にここへ来る。 */
+    if (e === '不明なaction') return 'この端末の同期先（GASのURL）が、週間計画の同期先ではありません（別のアプリのGASを指しています）。'
+      + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
     /* NetPolicy が3回の再試行後に投げる文言（Google側の一過性404/停止）。
        接続先の付け替えを促さない＝現場に無駄な設定変更をさせない。
        （gas() は throw で返すため通常は到達しない・翻訳表の備え） */
@@ -4230,6 +4234,12 @@ const SYNC = {
   isWrongEndpointErr(e) {
     return e === 'unknown action' || e === '不明なaction' || e === 'deadendpoint';
   },
+  /* 待っても直らないと確定した失敗（＝設定の貼り直しが要る）の表示文か。ヒステリシスを通さず即「エラー」にする。
+     一時不良と同じ扱いにすると、直し方を案内しているのに表示が「同期」のままで現場が気づけない。 */
+  isConfirmedEndpointFailMsg(msg) {
+    return msg === this.friendlyErr('deadendpoint') || msg === this.friendlyErr('不明なaction')
+        || msg === this.friendlyErr('unknown action');   // 統合同期GASの古い版＝これも待っても直らない
+  },
 
   /* 接続先(su_sync_common)が古い死んだGAS・別アプリのGASのとき、ws_settings の稼働中URLへ自動切替する。
      ws_settings の endpoint が現在と異なり、そこへの ping が ok:true かつ server==='silverunix-sync'
@@ -4245,16 +4255,24 @@ const SYNC = {
     try { ws = JSON.parse(localStorage.getItem('ws_settings') || '{}'); } catch(e) { return false; }
     const wsEp = String(ws.endpoint || '').trim();
     if (!wsEp || wsEp === cur.endpoint) return false;   // 代替先が無い／既に同一
+    if (this.validateEndpoint(wsEp)) return false;      // 形式の壊れた値を3アプリ共通キーへ流し込まない（シフトと同じ門番）
+    /* 確かめの ping は打ち切り時間つき（2026-09-24・ワースケと同じ8秒）。相手が応答を返さないと _busy が
+       立ったままになり、その間は取得も保存もできない。打ち切った時は切り替えない（遅れて届いた応答も捨てる）。 */
+    let timer = null;
     try {
-      const res = await fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'ping', token: String(ws.token || '').trim() }), redirect: 'follow' });
-      const j = await res.json();
+      const j = await Promise.race([
+        fetch(wsEp, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'ping', token: String(ws.token || '').trim() }), redirect: 'follow' })
+          .then(res => res.json()),
+        new Promise(res => { timer = setTimeout(() => res(null), this.NetPolicy.CONFIRM_TIMEOUT_MS || 8000); })
+      ]);
       if (j && !j.error && j.ok === true && j.server === 'silverunix-sync') {   // 統合同期GAS＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
         localStorage.setItem('su_sync_common', JSON.stringify({ endpoint: wsEp, token: String(ws.token || '').trim(), updatedAt: Date.now() }));
         this.log('🔧 接続先が古かったため、稼働中のURL(ws_settings)へ自動切替しました');
         return true;
       }
     } catch(e) { return false; }   // 通信失敗では上書きしない
+    finally { clearTimeout(timer); }
     return false;
   },
 
@@ -4282,7 +4300,7 @@ const SYNC = {
          失敗2回以上＋直近成功から30秒超で初めて「エラー」へ倒す＝ NetPolicy と同じヒステリシス。
          ただし接続先の無効が確認pingで裏取りできた時は一時不良ではない＝ヒステリシスを通さず即「エラー」
          （直し方を案内しているのに表示が「同期」のままでは現場が気づけない）。 */
-      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      if (this.isConfirmedEndpointFailMsg(e.message)) this.updateStatusUI('エラー');
       else this.updateStatusUIFail('エラー');
       this._busy = false;
       return false;
@@ -4353,7 +4371,7 @@ const SYNC = {
       this._busy = false;
       this.log('❌ 起動時同期の確認に失敗: ' + e.message + '（未送信の編集は端末に保持しています）');
       /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（下の pull/push と同じ扱い） */
-      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      if (this.isConfirmedEndpointFailMsg(e.message)) this.updateStatusUI('エラー');
       else this.updateStatusUIFail('未同期…');   // ヒステリシス（未達なら現在の表示を保つ）
       return false;
     }
@@ -4381,6 +4399,20 @@ const SYNC = {
       try { sentBase = csFieldBaseBuild_(DB); } catch (e) {}
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: baseRev, data: DB, force: !!force });
+      /* 接続先が死んだ／別アプリのGASだった: 取得と同じく ws_settings の統合同期GASへ自動切替して1回だけ送り直す
+         （2026-09-24）。以前は送信では切替を試みず、未送信のまま「保存失敗」を出し続けていた。
+         送り直しは push() の先頭からやり直す＝他タブの取り込み・版数・競合処理は通常の送信と同じ規則を通る。
+         _healPushing で送り直しを1回に限る（切替後も同じ失敗なら通常の失敗表示へ）。
+         ★送り直しは必ず通常の送信（force なし）。「⚠ 強制保存」への同意は、中身を見比べられなかった元の接続先に
+           対するもので、切替先の本物のサーバーとは一度も比べていない。force のまま送ると版数照合と一括消失の拒否を
+           通らず、この端末の古い内容でクラウドを丸ごと上書きしうる。通常送信なら、ずれていれば競合の取り込みに、
+           大きく減る時はサーバーの実数つきの確認に乗る。 */
+      if (!j.ok && this.isWrongEndpointErr(j.error) && !this._healPushing && await this.healStaleTarget()) {
+        this._busy = false;
+        this._healPushing = true;
+        if (force) this.log('ℹ️ 同期先を切り替えたため、強制ではなく通常の保存で送り直します（切替先のクラウドの内容を確かめるため）');
+        try { return await this.push(false); } finally { this._healPushing = false; }
+      }
       if (j.ok && j.rev != null && isFinite(Number(j.rev))) {
         this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
@@ -4465,7 +4497,7 @@ const SYNC = {
     } catch(e) {
       this.log('❌ 保存失敗: ' + e.message);
       /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（pull と同じ扱い） */
-      if (e.message === this.friendlyErr('deadendpoint')) this.updateStatusUI('エラー');
+      if (this.isConfirmedEndpointFailMsg(e.message)) this.updateStatusUI('エラー');
       else this.updateStatusUIFail('エラー');   // ヒステリシス（未送信フラグは従来どおり保持される）
       this._busy = false;
       return false;
@@ -4529,7 +4561,7 @@ const SYNC = {
       if (!j.ok) {
         /* 確定した接続先消滅（確認pingでも404・切替先なし）は背景巡回でも表示に出す＝ワースケと同じ見え方。
            一過性の失敗は gas() が throw するためここへは来ない（ヒステリシス側で扱う）。 */
-        if (j.error === 'deadendpoint') { this.updateStatusUI('エラー'); this.log('❌ ' + this.friendlyErr('deadendpoint')); }
+        if (j.error === 'deadendpoint' || j.error === '不明なaction' || j.error === 'unknown action') { this.updateStatusUI('エラー'); this.log('❌ ' + this.friendlyErr(j.error)); }
         return;
       }
       this._restoreAfterOk();
