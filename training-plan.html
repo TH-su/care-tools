@@ -923,6 +923,28 @@ function s_(v) { return String(v == null ? '' : v); }
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
 function isYmd(v) { return YMD_RE.test(s_(v)) && !!parseYmd(v); }
 
+/* 入居者マスタから来た日付を 'YYYY-MM-DD' にそろえる（2026-09-24）。
+   ★スプレッドシートが日付の文字列を日付型に変えると、「2026-09-23T15:00:00.000Z」や
+     「Thu Sep 24 2026 00:00:00 GMT+0900 (日本標準時)」の形で届く。先頭10文字を切ると
+     日本時間では前日になり、そのままでは英語の日付が画面・計画書に出る。
+     時刻付きの形だけを日本時間の日付に直し、それ以外（「2020年頃」など人の記入）は元のまま返す。 */
+var DT_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+var DT_JS_RE = /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-]\d{4}/;
+function toYmd(v) {
+  var t = s_(v).replace(/^[\s　]+|[\s　]+$/g, '');
+  if (YMD_RE.test(t)) return t;
+  var m = /^(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})$/.exec(t);
+  if (m) return fmtYmd(Number(m[1]), Number(m[2]), Number(m[3]));
+  if (DT_ISO_RE.test(t) || DT_JS_RE.test(t)) {
+    var ms = Date.parse(t);
+    if (!isNaN(ms)) {
+      var j = new Date(ms + 9 * 3600000);   /* 施設は日本時間。端末の時間帯に左右されない */
+      return fmtYmd(j.getUTCFullYear(), j.getUTCMonth() + 1, j.getUTCDate());
+    }
+  }
+  return t;
+}
+
 /* 'YYYY-MM-DD' → {y,m,d}。実在しない日付（2月30日など）は null を返す */
 function parseYmd(v) {
   var m = YMD_RE.exec(s_(v));
@@ -1677,7 +1699,7 @@ global.TP = {
   ID_RE: ID_RE, YMD_RE: YMD_RE, STATUSES: STATUSES, STATUS_LABEL: STATUS_LABEL,
   DUE_RULES: DUE_RULES, STATE_RANK: STATE_RANK, PLAN_MONTHS: PLAN_MONTHS, PLAN_DAYS: PLAN_DAYS,
   DEMENTIA_RANKS: DEMENTIA_RANKS, BEDRIDDEN_RANKS: BEDRIDDEN_RANKS,
-  isYmd: isYmd, parseYmd: parseYmd, daysInMonth: daysInMonth, addMonthsClamp: addMonthsClamp,
+  isYmd: isYmd, toYmd: toYmd, parseYmd: parseYmd, daysInMonth: daysInMonth, addMonthsClamp: addMonthsClamp,
   addDays: addDays, diffDays: diffDays, cmpYmd: cmpYmd,
   nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts,
   normalizeName: normalizeName, foldName: foldName, splitSentences: splitSentences, diffSentences: diffSentences,
@@ -1932,8 +1954,8 @@ function normRosterRow(r) {
   return {
     masterId: s_(r.id != null ? r.id : r.masterId),
     name: s_(r.name), kana: s_(r.kana), room: s_(r.room), gender: s_(r.gender),
-    careLevel: s_(r.careLevel), birthDate: s_(r.birthDate), dischargeDate: s_(r.dischargeDate),
-    admissionDate: s_(r.admissionDate),   /* 一覧に出す入居日（名簿が返さない端末では空） */
+    careLevel: s_(r.careLevel), birthDate: TP.toYmd(r.birthDate), dischargeDate: TP.toYmd(r.dischargeDate),
+    admissionDate: TP.toYmd(r.admissionDate),   /* 一覧に出す入居日（名簿が返さない端末では空） */
     active: r.active !== false
   };
 }
@@ -1991,7 +2013,7 @@ function loadAdmissionDates() {
     for (i = 0; i < rows.length; i++) {
       var x = rows[i];
       if (!x || x.id == null) continue;
-      var v = s_(x.admissionDate).slice(0, 10);
+      var v = TP.toYmd(x.admissionDate);
       if (TP.isYmd(v)) m[s_(x.id)] = v;
     }
     for (i = 0; i < ROSTER.length; i++) ROSTER[i].admissionDate = m[ROSTER[i].masterId] || '';
@@ -3972,7 +3994,7 @@ function applyMaster(p, got) {
   put('basic.name', rec.name || row.name, '氏名');
   put('basic.kana', rec.kana || row.kana, 'ふりがな');
   put('basic.gender', rec.gender || row.gender, '性別');
-  put('basic.birthDate', rec.birthDate || row.birthDate, '生年月日');
+  put('basic.birthDate', TP.toYmd(rec.birthDate || row.birthDate), '生年月日');
   put('basic.careLevel', TP.normCareLevel(rec.careLevel || row.careLevel), '要介護度');
   var dem = TP.normDementiaRank((got.bulk && got.bulk.dementia) || rec.dementia);
   var bed = TP.normBedriddenRank((got.sec && got.sec.bedriddenRank) || rec.bedriddenRank || (got.bulk && got.bulk.adl) || rec.adl);
@@ -3987,7 +4009,7 @@ function applyMaster(p, got) {
     for (var i = 0; i < ds.length; i++) {
       if (!ds[i]) continue;
       if (ds[i].name) names.push(s_(ds[i].name));
-      var o = s_(ds[i].onset);
+      var o = TP.toYmd(ds[i].onset);
       if (o && (!onset || o < onset)) onset = o;
     }
     if (names.length) { p.health.diagnosis = names.join('・'); filled.push('疾患（既往歴の一覧から）'); }
