@@ -1061,6 +1061,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   var MAX_ATTEMPTS = 3;          /* 1リクエストの試行上限 */
   var ATTEMPT_TIMEOUT_MS = 15000; /* 1試行のタイムアウト（>25秒停止を待たない） */
+  /* 書き込み(put)だけ長く待つ（2026-09-24）。現場の通信診断で、統合GASへの1往復が
+   * 8〜11秒かかる回が15%、15秒で返らない回が25%あり、失敗の記録60件中45件がタイムアウト・
+   * そのうち32件が put だった。別回線（開発機）からの実測でも20回に1回は28秒かかる。
+   * 15秒で打ち切ると、その瞬間の put は必ず失敗し、未送信が滞留したまま再送を繰り返す。
+   * put は盤面全体を送る＝一番重いので、ここだけ 45秒 まで待つ。
+   * 取得(get/pull/head/ping)は軽く、待たせると画面が固まるため従来どおり15秒。
+   * 代わりに put の試行回数は2回までにする（45×3＝135秒は長すぎ、以降はリトライtickに委ねる）。 */
+  var ATTEMPT_TIMEOUT_WRITE_MS = 45000;
+  var MAX_ATTEMPTS_WRITE = 2;
   var FAST_404_MS = 15000;        /* これ未満で返ってきた404だけを死活判定に数える */
   var DEAD_MIN_COUNT = 3;         /* 確定に必要な速い404の回数 */
   var DEAD_MIN_SPAN_MS = 20000;   /* 初回404からの最低経過（クラスタ障害を除外） */
@@ -1083,9 +1092,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'transient';
   }
 
-  /* 次の試行までの待ち時間。attempt は1始まり。null＝これ以上試行しない（打ち切り） */
-  function retryDelayMs(attempt) {
+  /* 1試行のタイムアウト。書き込み(put)だけ長い。action 省略時は従来どおり15秒。 */
+  function attemptTimeoutMs(action) {
+    return (action === 'put') ? ATTEMPT_TIMEOUT_WRITE_MS : ATTEMPT_TIMEOUT_MS;
+  }
+  /* 次の試行までの待ち時間。attempt は1始まり。null＝これ以上試行しない（打ち切り）。
+   * put は1試行が最長45秒なので2試行まで（45+1.5+45＝約91秒で打ち切り、以降はリトライtick）。 */
+  function retryDelayMs(attempt, action) {
     if (attempt === 1) return 1500;
+    if (action === 'put') return null;
     if (attempt === 2) return 4000;
     return null;
   }
@@ -1185,6 +1200,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var api = {
     MAX_ATTEMPTS: MAX_ATTEMPTS,
     ATTEMPT_TIMEOUT_MS: ATTEMPT_TIMEOUT_MS,
+    ATTEMPT_TIMEOUT_WRITE_MS: ATTEMPT_TIMEOUT_WRITE_MS,
+    MAX_ATTEMPTS_WRITE: MAX_ATTEMPTS_WRITE,
+    attemptTimeoutMs: attemptTimeoutMs,
     FAST_404_MS: FAST_404_MS,
     DEAD_MIN_COUNT: DEAD_MIN_COUNT,
     DEAD_MIN_SPAN_MS: DEAD_MIN_SPAN_MS,
@@ -10850,12 +10868,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 同期成功の共通処理: リトライ解除＋オフラインバッジからの復帰表示 */
   function noteSyncSuccess_() {
-    clearRetry_();
-    /* 成功しても未送信(非当日dirty/careジャーナル)が残るなら回収タイマーを張り直す。
+    /* ★C（2026-09-24）: 未送信がまだ残っているなら、バックオフを0に戻さない。
+     * 以前は成功のたびに clearRetry_ で 0 に戻していたため、1日が詰まっている端末では
+     * 「5秒後に再試行 → 一部は成功 → また5秒後」が延々と続いた。現場の端末の実測で
+     * 毎分37.6回・約7時間で15,647回の通信が出ており、共有の統合GASをその端末自身が
+     * 混ませていた（遅延 → put がタイムアウト → さらに再試行、の悪循環）。
+     * 残っている間は 5→15→30→60秒 と間隔を伸ばし、全部片付いた時だけ 0 に戻す。
+     * 即時に送りたい時は、画面復帰・回線復帰・バッジのクリックが従来どおり即座に走る。
+     * 成功しても未送信(非当日dirty/careジャーナル)が残るなら回収タイマーを張り直す。
      * これをしないと、別リソースの成功が唯一の回収タイマーを消し、非当日dirtyが無期限滞留する。 */
+    var pending_ = false;
     try {
-      if (syncOn() && (dirtyDayList_().length || refetchList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
-    } catch (eR) {}
+      pending_ = !!(syncOn() && (dirtyDayList_().length || refetchList_().length
+                 || loadCareOps_().ops.length || masterUnsent_()));
+    } catch (eR) { pending_ = false; }
+    if (pending_) {
+      /* タイマーが生きていれば scheduleRetry_ は何もしない＝間隔を縮めない */
+      try { scheduleRetry_(); } catch (eR2) {}
+    } else {
+      clearRetry_();
+    }
     try {
       var el = $('saveState');
       if (el && el.textContent && el.textContent.indexOf('⚠') === 0) {
@@ -10980,7 +11012,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      net.failStreak＝連続失敗数（成功で0）、net.lastOkAt＝最後に成功した時刻。
      診断は「失敗した通信の時刻・種類・所要時間」だけを残す＝URL・トークン・氏名は保存しない。 */
   var NP = window.WSNet;
-  var net = { failStreak: 0, lastOkAt: 0 };
+  var net = { failStreak: 0, lastOkAt: 0, lastFailKind: '' };
   var SYNC_BADGE_REFRESH_MS = 15000, syncBadgeBound_ = false;   /* 同期状態バッジの定期更新（通信なし） */
   var dead = NP.createDeadDetector();
   var NET_DIAG_KEY = 'ws_net_diag_v1';
@@ -11007,6 +11039,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 失敗した試行を1件記録する。種類（404/HTTP n/timeout/neterr/badjson）を問わず毎回残し、
      isFinal＝その呼び出しの最終結果になった試行のときだけ fail を+1する（試行数と呼び出し数を混ぜない）。 */
   function noteNetFail_(action, res, ms, attempt, now, isFinal) {
+    net.lastFailKind = String(res || '');   /* B: 直前の失敗が timeout かどうかを push 側が見る */
     var d = loadNetDiag_();
     if (isFinal) d.fail = (d.fail || 0) + 1;
     d.events = NP.pushDiag(d.events, { t: now, action: action, res: res, ms: ms || 0,
@@ -11401,10 +11434,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function once(v) { if (called) return; called = true; deliver(v); }
     var action_ = String(payload.action || '-');
 
-    /* 1試行＝fetch＋15秒タイムアウト。結果は finish(status, errKind, json) に1回だけ集約する。 */
+    /* 1試行＝fetch＋タイムアウト（取得15秒・書き込み(put)45秒）。
+     * 結果は finish(status, errKind, json) に1回だけ集約する。 */
     function attempt_(n) {
       var settled = false, t0 = Date.now();
-      var tmr = setTimeout(function () { finish(0, 'timeout', null); }, NP.ATTEMPT_TIMEOUT_MS);
+      var tmr = setTimeout(function () { finish(0, 'timeout', null); }, NP.attemptTimeoutMs(action_));
       function finish(status, errKind, j) {
         if (settled) return;
         settled = true;
@@ -11427,7 +11461,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 一時障害: 試行が残っていれば待って再試行（cbはまだ呼ばない）。打ち切り時だけ結果を返す。
        失敗した試行は種類を問わず毎回1件記録し、打ち切りの試行にだけ final を立てる＝fail は呼び出し単位。 */
     function transient_(n, status, errKind, elapsed, logged) {
-      var wait = NP.retryDelayMs(n), isFinal = (wait === null);
+      var wait = NP.retryDelayMs(n, action_), isFinal = (wait === null);
       if (!logged) noteNetFail_(action_, resLabel_(status, errKind), elapsed, n, Date.now(), isFinal);
       if (!isFinal) { setTimeout(function () { attempt_(n + 1); }, wait); return; }
       net.failStreak++;
@@ -11471,7 +11505,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           });
           return;
         }
-        noteNetFail_(action_, '404', elapsed, n, now, NP.retryDelayMs(n) === null);
+        noteNetFail_(action_, '404', elapsed, n, now, NP.retryDelayMs(n, action_) === null);
         transient_(n, status, errKind, elapsed, true);
         return;
       }
@@ -11534,6 +11568,44 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return true;
   }
+  /* ═══ B: タイムアウトした送信の後始末（2026-09-24）══════════════════════════
+   * 1試行45秒でも返らないことがあり、そのとき【サーバーには届いている】場合がある。
+   * 届いているのに「失敗」と決めつけて送り直すと、rev がずれて競合→3-wayマージ→再送を
+   * 延々と繰り返す（現場の端末で put のタイムアウトが1時間に十数回記録された）。
+   * そこでタイムアウトの直後だけサーバーの版を1回読み、【送ろうとした内容と完全に一致】
+   * していたら届いたものとして未送信を解除する。
+   * ★一致しない時は何もしない＝従来どおり再試行に任せる。内容が同じ時しか解除しないので、
+   *   誤判定で未送信の編集を失うことはない（「同じ内容なら送る必要が無い」は常に真）。 */
+  var verifyBusy_ = {};   /* date -> true。確認の多重起動を防ぐ（成功・失敗のどちらでも解除） */
+  function verifyPutLanded_(date, sig) {
+    if (!syncOn() || !date || !sig) return;
+    if (net.lastFailKind !== 'timeout') return;   /* 届いた可能性があるのはタイムアウトだけ */
+    if (verifyBusy_[date]) return;
+    verifyBusy_[date] = true;
+    gas({ action: 'get', key: dayKey(date) }, function (g) {
+      delete verifyBusy_[date];
+      if (!g || !g.ok || !g.data) return;         /* 読めない＝判断しない（再試行に任せる） */
+      var srv = g.data;
+      srv.meta = srv.meta || {};
+      srv.meta.date = date;
+      srv.meta.rev = g.rev || 0;
+      if (daySig(srv) !== sig) return;            /* 内容が違う＝届いていない、または他端末が上書き */
+      /* 届いていた。送信成功と同じ後始末をする */
+      lastPushed.day = sig;
+      conflictN_[date] = 0;
+      saveBase_(date, srv);
+      var cur = null;
+      try { cur = (ui.currentDate === date) ? store.get() : loadDayData(date); } catch (eC) { cur = null; }
+      if (cur && daySig(cur) === sig) clearDayDirty_(date);   /* 送信後に編集が入っていれば印は残す */
+      if (ui.currentDate === date) {
+        try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 } }); } catch (eM) {}
+      } else {
+        try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
+      }
+      noteSyncSuccess_();
+      toast('送信は時間切れになりましたが、クラウドには届いていました（' + date + '）');
+    });
+  }
   function pushDayNow(report) {
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
     if (dayPushBusy_) { dayPushAgain_ = true; return; }   /* 重複putの自己競合を根絶（完了後に再送） */
@@ -11588,6 +11660,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 通信失敗＝オフライン表示。以後はバックオフタイマーが自動再試行する（イベント不要で必ず復帰） */
         showOfflineIfPersistent_();
         scheduleRetry_();
+        if (!j) { try { verifyPutLanded_(date, sig); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
       if (dayPushAgain_) { dayPushAgain_ = false; schedulePushDay(); }
@@ -11824,6 +11897,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       } else {
         scheduleRetry_();
+        if (!j) { try { verifyPutLanded_(date, daySig(day)); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
       }
     });
   }
