@@ -998,7 +998,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
       <button class="btn sm ng" id="stUnsentDiscard">この端末の変更を捨ててクラウドから取り直す</button>
       <span class="sp"></span><span class="hint" id="stUnsentMsg"></span>
     </div>
-    <div class="hint">「取り直す」を押すと、<b>この端末に残っている未送信の変更だけ</b>を捨て、クラウドの最新に揃えます。クラウド側のデータには一切書き込みません。捨てる前に各日の内容をこの端末へ退避し、何が失われるかを確認画面に出します。</div>
+    <div class="hint">「取り直す」を押すと、<b>この端末に残っている未送信の変更だけ</b>を捨て、クラウドの最新に揃えます。クラウド側のデータには一切書き込みません。捨てる前に各日の内容をこの端末へ退避し、何が失われるかを確認画面に出します。<br>通信できなかった日は<b>「取り直し待ち」</b>になります。その間この端末からは送らず、つながり次第クラウドの最新に入れ替わります（この端末で編集し直すか「今すぐ送信する」を押すと、待ちをやめて送ります）。</div>
   </div>
   <div class="fld" style="margin-top:10px"><label>予約列①（自由枠職員）の診断</label>
     <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
@@ -5677,6 +5677,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * - ロック解除遷移(meta.locked true→非true)でも掛ける（ロック中に溜まった重畳を解除時点で解消）
      * 退避/縮小の集計は repair に溜め、takeRepair() で1回だけ取り出す（app がトースト表示）。 */
     var frozen = !!(day.meta && day.meta.locked);
+    /* 本人の編集だけを数える通し番号（2026-09-24）。Undo 履歴に積む dispatch ＝ 本人の操作なので
+     * そこだけ +1 する。自動処理（store.auto・nohist・INIT_DAY）では増えない。
+     * 用途: app 側の「クラウドから取り直し待ち」を、自動処理では解除せず本人の編集でだけ解除する。 */
+    var userSeq = 0;
+    /* 盤面を入れ替えた回数（INIT_DAY＝日付の切替・クラウド版の採用）。userSeq は日付をまたいでも
+     * 増え続けるため、「どの盤面の上での編集回数か」を添えないと、別の日を編集しただけで
+     * 取り直し待ちが解除されてしまう。app 側はこの2つを組にして基準を取り直す。 */
+    var initSeq = 0;
     var autoBase = null, autoInit = false;
     var repair = { bumped: [], clipped: 0, removed: 0 };
 
@@ -5713,7 +5721,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         } else if (next.tasks !== day.tasks) {
           next = enforce_(day.tasks, next);
         }
-        if (action.type === 'INIT_DAY') { past = []; future = []; }
+        if (action.type === 'INIT_DAY') { past = []; future = []; initSeq++; }
         else if (autoDepth > 0 || (action && action.nohist)) {
           /* 自動処理(reconcile/シフト反映/自動配置/マスタseed等)の変更は履歴に積まない。
            * day置換とnotifyは通常どおり＝画面/保存は反映される。 */
@@ -5722,10 +5730,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           past.push(day);
           if (past.length > UNDO_LIMIT) past.shift();
           future = [];
+          userSeq++;   /* 本人の編集（Undo できる操作）だけを数える */
         }
         day = next;
         notify();
       },
+      /* 本人の編集回数（自動処理では増えない）。取り直し待ちの解除判定に使う。
+         initSeq とセットで見る＝別の日を編集しただけで解除しない */
+      userSeq: function () { return userSeq; },
+      initSeq: function () { return initSeq; },
       /* fn 内の全 dispatch を履歴に積まない（自動処理の一括ラップ・ネスト可）。最外周の終了時に重畳を一括解消。 */
       auto: function (fn) {
         if (autoDepth === 0) { autoBase = day; autoInit = false; }
@@ -5753,6 +5766,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!past.length) return false;
         future.push(day);
         day = past.pop();
+        userSeq++;   /* 取り消し・やり直しも本人の操作として数える */
         notify();
         return true;
       },
@@ -5760,6 +5774,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!future.length) return false;
         past.push(day);
         day = future.pop();
+        userSeq++;
         notify();
         return true;
       },
@@ -10598,6 +10613,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function markDayDirty_(date) {
     if (!date) return;
+    if (isRefetchHeld_(date)) return;   /* 取り直し待ち＝この端末からは送らない（下の refetch を参照） */
     var d = loadDirty_();
     if (!d.days) d.days = {};
     if (!d.days[date]) { d.days[date] = 1; saveDirty_(d); }
@@ -10614,6 +10630,122 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var d = loadDirty_(), out = [], k;
     if (d.days) for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) out.push(k);
     return out;
+  }
+
+  /* --- クラウドから取り直す予定の日（ws_refetch_v1・2026-09-24）-----------------------
+   * 背景: 設定の「この端末の変更を捨ててクラウドから取り直す」を押しても、その時に通信できないと
+   *   取得できず、手元の内容がそのまま残る。表示中の日は起動時の自動調整（マスタ反映・週間計画の
+   *   照合・シフト反映）が必ず走るため、印を外しても次の描画で markDayDirty_ が立て直し、
+   *   「未送信あり1日」が何をしても消えない状態になっていた（2026-09-24 実機で発生）。
+   * 対処: 取得できなかった日に【取り直し待ち】の印を持たせ、印がある間は
+   *   ①この端末からは送らない（markDayDirty_ と push の入口で止める）＝古い内容が上がらない
+   *   ②バッジ・一覧に「取り直し待ち」と出す＝押した操作が効いたことが画面で分かる
+   *   ③通信が戻った契機（リトライtick・フォーカス・online・設定を開く）で自動的に取り直す
+   * 解除は3つだけ: 取得に成功して採用した時／この端末で新しく編集した時（送らないままにしない）／
+   *   「今すぐ送信する」を押した時（本人が送ると決めた）。 */
+  var REFETCH_KEY = 'ws_refetch_v1';
+  var refetchSeq_ = {};       /* date -> 印を付けた時点の編集回数（store.userSeq()）。メモリのみ */
+  var refetchBusy_ = false;   /* 取り直しの多重起動防止 */
+  function loadRefetch_() {
+    try {
+      var d = JSON.parse(localStorage.getItem(REFETCH_KEY) || '{}');
+      return (d && typeof d === 'object') ? d : {};
+    } catch (e) { return {}; }
+  }
+  function saveRefetch_(d) {
+    try {
+      if (d && d.days) { var n = 0, k; for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) n++;
+        if (!n) { localStorage.removeItem(REFETCH_KEY); } else { localStorage.setItem(REFETCH_KEY, JSON.stringify(d)); } }
+      else localStorage.removeItem(REFETCH_KEY);
+    } catch (e) {}
+    try { updateSyncBadge_(); } catch (eB) {}
+  }
+  function markRefetch_(date) {
+    if (!date) return;
+    var d = loadRefetch_();
+    if (!d.days) d.days = {};
+    if (!d.days[date]) { d.days[date] = 1; saveRefetch_(d); }
+  }
+  function clearRefetch_(date) {
+    var d = loadRefetch_();
+    if (d.days && d.days[date]) { delete d.days[date]; saveRefetch_(d); }
+    try { delete refetchSeq_[date]; } catch (e) {}
+  }
+  function isRefetchHeld_(date) {
+    var d = loadRefetch_();
+    return !!(d.days && d.days[date]);
+  }
+  function refetchList_() {
+    var d = loadRefetch_(), out = [], k;
+    if (d.days) for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) out.push(k);
+    return out;
+  }
+  /* この端末で新しく編集されたら取り直し待ちを解除する（true＝解除した）。
+   * store.userSeq() は Undo できる操作＝本人の編集だけを数える（マスタ反映・週間計画の照合・
+   * シフト反映・INIT_DAY のような自動処理は数えない）。起動直後は基準が無いので最初の呼び出しで
+   * 基準を取るだけにし、解除しない。 */
+  function releaseRefetchIfEdited_(date) {
+    if (!date || !isRefetchHeld_(date)) return false;
+    var mark = null;
+    try { mark = store.userSeq ? (store.initSeq() + ':' + store.userSeq()) : null; } catch (e) { return false; }
+    if (mark === null) return false;
+    var init = String(mark).split(':')[0];
+    var prev = refetchSeq_[date];
+    /* 盤面が入れ替わった（日付の切替・クラウド版の採用）なら基準を取り直す。
+     * 編集回数(userSeq)は日付をまたいで増え続けるため、これをしないと
+     * 【別の日を編集しただけ】でこの日の取り直し待ちが解除されてしまう。 */
+    if (prev === undefined || String(prev).split(':')[0] !== init) { refetchSeq_[date] = mark; return false; }
+    if (mark === prev) return false;
+    clearRefetch_(date);
+    toast('この日はこの端末で編集されたため、取り直しをやめて通常の送信に戻しました');
+    return true;
+  }
+  /* 取り直し待ちの日をクラウドから取り直す。1日ずつ順に。
+   * 取得できた日だけ印を外してサーバー版を全採用（印を外してから採用＝採用側の markDayDirty_ を殺さない）。
+   * 取得できなかった日は印を残す＝次の契機で再試行し、その間もこの端末からは送らない。 */
+  function runRefetch_(cb) {
+    var list = refetchList_();
+    if (!syncOn() || refetchBusy_ || !list.length) { if (cb) { try { cb(null); } catch (e) {} } return; }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { if (cb) { try { cb(null); } catch (e) {} } return; }
+    refetchBusy_ = true;
+    var i = 0, ok = 0, gone = 0, ng = 0, lastErr = '';
+    function step() {
+      if (i >= list.length) {
+        refetchBusy_ = false;
+        if (ng) scheduleRetry_();
+        try { renderUnsentDiag_(); } catch (eR) {}
+        try { updateSyncBadge_(); } catch (eB) {}
+        if (cb) { try { cb({ ok: ok, gone: gone, ng: ng, err: lastErr }); } catch (eC) {} }
+        return;
+      }
+      var date = list[i++];
+      gas({ action: 'get', key: dayKey(date) }, function (g) {
+        if (!g || !g.ok) { ng++; lastErr = (g && g.error) || ''; }
+        else {
+          clearRefetch_(date);   /* ★採用の前に外す（採用の中の markDayDirty_ を殺さないため） */
+          if (!g.data) {
+            /* サーバーにこの日が無い＝取り直す物が無い。消すと復元できないので消さない。
+             * ただし氏名が1人も入っていない日は staffWipeBlocked_ に永久保留されて詰まる元なので、
+             * 退避（破棄操作の時に wsbase_conflict_ へ取ってある）を残して手元から外す。 */
+            var dNone_ = null;
+            try { dNone_ = (date === ui.currentDate) ? store.get() : loadDayData(date); } catch (eN) { dNone_ = null; }
+            var named_ = 0;
+            try { named_ = dNone_ ? M.countNamedStaff(dNone_.staff) : 0; } catch (eN2) { named_ = 0; }
+            if (!named_ && date !== ui.currentDate) {
+              try { localStorage.removeItem(dayKey(date)); localStorage.removeItem(baseKey_(date)); } catch (eR2) {}
+              gone++;
+            } else {
+              markDayDirty_(date);   /* 唯一の版なので消さず、通常の送信に戻す（クラウドは空＝誰の実績も潰さない） */
+              ok++;
+            }
+          } else {
+            try { adoptServerDay_(date, g.data, g.rev || 0, false); ok++; } catch (eA) { ng++; }
+          }
+        }
+        step();
+      });
+    }
+    step();
   }
 
   /* --- 3-way祖先（最後に同期成功した盤面）。wsday_と同じLZ圧縮で保存 --- */
@@ -10663,6 +10795,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function recoverNow_() {
     if (!syncOn()) return;
     if (navigator.onLine === false) { scheduleRetry_(); return; }  /* 明確な切断中は無駄打ちせず次tickへ */
+    try { runRefetch_(); } catch (eRf) {}   /* 取り直し待ちを先に片付ける（送信より前＝古い内容を上げない） */
     var dates = dirtyDayList_(), i, acted = false;
     for (i = 0; i < dates.length; i++) {
       acted = true;
@@ -10688,7 +10821,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 成功しても未送信(非当日dirty/careジャーナル)が残るなら回収タイマーを張り直す。
      * これをしないと、別リソースの成功が唯一の回収タイマーを消し、非当日dirtyが無期限滞留する。 */
     try {
-      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
+      if (syncOn() && (dirtyDayList_().length || refetchList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
     } catch (eR) {}
     try {
       var el = $('saveState');
@@ -10847,6 +10980,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                                        attempt: attempt || 1, final: !!isFinal }, NP.DIAG_MAX);
     saveNetDiag_(d);
   }
+  /* 直近に記録した通信失敗の種類（404 / timeout / neterr / badjson / HTTP n）。
+     原因の切り分けを、利用者が別の画面を探さなくても読めるようにするための1語。個人情報は含まない。 */
+  function lastNetFailLabel_() {
+    try {
+      var ev = loadNetDiag_().events || [];
+      if (!ev.length) return '';
+      return String(ev[ev.length - 1].res || '');
+    } catch (e) { return ''; }
+  }
   function resLabel_(status, errKind) {
     if (errKind) return errKind;                 /* timeout / neterr / badjson */
     if (status === 404) return '404';
@@ -10909,7 +11051,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         t += '。押すと今すぐ送信します';
       }
       if (k.tabOnly) t += (t ? ' ' : '') + CARE_TAB_UNSENT_NOTE;
+      if (s.refetchDays > 0) t += (t ? ' ' : '') + 'クラウドから取り直し待ち ' + s.refetchDays + '日';
       return { cls: 'warn', text: '● 未送信あり ' + parts.join('・'), title: t };
+    }
+    /* 取り直し待ち＝「この端末の変更を捨ててクラウドから取り直す」を押したが、まだ取得できていない日。
+     * この端末からは送らない状態なので「未送信あり」とは区別して出す（押した操作が効いたことが分かる）。 */
+    if (s.refetchDays > 0) {
+      return { cls: 'warn', text: '⟳ 取り直し待ち ' + s.refetchDays + '日',
+               title: 'クラウドから取り直す設定の日が ' + s.refetchDays + '日あります。この端末からは送りません。'
+                    + '通信が戻り次第、自動でクラウドの最新に入れ替えます（押すと今すぐ試します）' };
     }
     if (s.offline) {
       return { cls: 'ng', text: '⚠ オフライン', title: '同期先と通信できていません（自動で再試行します）' + opsNote };
@@ -10928,7 +11078,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function syncPendingInfo_() {
     var care = careSyncState_();
     return { dirtyDays: dirtyDayList_().length, carePending: care.pending, careKnown: care.known,
-             careTabOnly: care.tabOnly, careOps: loadCareOps_().ops.length, masterPending: masterUnsent_() };
+             careTabOnly: care.tabOnly, careOps: loadCareOps_().ops.length, masterPending: masterUnsent_(),
+             refetchDays: refetchList_().length };
   }
   /* 未送信の内訳。週間計画アプリ側の未送信フラグ(care_schedule_dirty_v1)だけが立っていて、ワースケには
    * 送る物が無い場合(tabOnly)も未送信に数える（安全側・フラグは週間計画アプリの物なので降ろさない）。
@@ -10950,11 +11101,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var st;
     try {
       var on = syncOn();
-      var p = on ? syncPendingInfo_() : { dirtyDays: 0, carePending: false, careKnown: true, careTabOnly: false, careOps: 0, masterPending: false };
+      var p = on ? syncPendingInfo_() : { dirtyDays: 0, carePending: false, careKnown: true, careTabOnly: false, careOps: 0, masterPending: false, refetchDays: 0 };
       st = syncBadgeState_({
         syncOn: on,
         dirtyDays: p.dirtyDays, carePending: p.carePending, careKnown: p.careKnown, careTabOnly: p.careTabOnly,
-        careOps: p.careOps, masterPending: p.masterPending,
+        careOps: p.careOps, masterPending: p.masterPending, refetchDays: p.refetchDays || 0,
         offline: on ? !!NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now()) : false,
         okAt: syncStat_.okAt, okSeq: syncStat_.okSeq, failSeq: syncStat_.failSeq
       });
@@ -10980,18 +11131,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ★この操作はクラウドへ一切書き込まない。捨てるのは【この端末にしか無い未送信の変更】だけ。
    * ★捨てる前に wsbase_conflict_<日付> へ退避し、失う内容（氏名入りの枠数）を確認画面に出す。 */
   function unsentDayRows_() {
-    var list = dirtyDayList_().slice().sort(), out = [], i;
+    var list = dirtyDayList_(), held = refetchList_(), i;
+    for (i = 0; i < held.length; i++) if (list.indexOf(held[i]) < 0) list.push(held[i]);
+    list = list.slice().sort();
+    var out = [];
     for (i = 0; i < list.length; i++) {
-      var date = list[i], day = null, named = 0, cnt = 0, reason = '送信待ち';
+      var date = list[i], day = null, named = 0, cnt = 0, reason = '送信待ち', hold = isRefetchHeld_(date);
       try { day = loadDayData(date); } catch (e) { day = null; }
       if (!day) { reason = 'この端末にデータが無い（印だけ残っている）'; }
       else {
         named = M.countNamedStaff(day.staff);
         cnt = (day.tasks || []).length;
-        if (staffWipeBlocked_(date, day, true)) reason = '職員名が1人も入っていないため送信を保留中';
+        if (hold) reason = 'クラウドから取り直し待ち（この端末からは送りません）';
+        else if (staffWipeBlocked_(date, day, true)) reason = '職員名が1人も入っていないため送信を保留中';
         else if (day.meta && day.meta.locked) reason = 'ロック中の日';
       }
-      out.push({ date: date, named: named, tasks: cnt, reason: reason });
+      out.push({ date: date, named: named, tasks: cnt, reason: reason, hold: hold });
     }
     return out;
   }
@@ -10999,16 +11154,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var ta = $('stUnsentDiag');
     if (!ta) return;
     if (!syncOn()) { ta.value = '同期先が未設定です（この端末だけに保存しています）。'; return; }
-    var rows = unsentDayRows_();
+    var rows = unsentDayRows_(), i, nHold = 0;
+    for (i = 0; i < rows.length; i++) if (rows[i].hold) nHold++;
     if (!rows.length) { ta.value = '未送信の日はありません。'; return; }
-    var lines = ['未送信 ' + rows.length + '日（この端末にだけ残っている変更）', ''];
-    for (var i = 0; i < rows.length; i++) {
-      lines.push(rows[i].date + '  職員名 ' + rows[i].named + '人 / 枠 ' + rows[i].tasks + '件  … ' + rows[i].reason);
+    var head = (nHold === rows.length)
+      ? ('クラウドから取り直し待ち ' + nHold + '日（この端末からは送りません）')
+      : ('未送信 ' + (rows.length - nHold) + '日（この端末にだけ残っている変更）'
+         + (nHold ? '／取り直し待ち ' + nHold + '日' : ''));
+    var lines = [head, ''];
+    for (i = 0; i < rows.length; i++) {
+      /* 「職員名20人」が“20人ぶんの未送信”と読めてしまうため、1日の盤面まるごとであることを明示する */
+      lines.push(rows[i].date + '  この日の盤面（職員 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）'
+               + '  … ' + rows[i].reason);
+    }
+    if (nHold) {
+      var lab = lastNetFailLabel_();
+      lines.push('');
+      lines.push('※ 取り直し待ちの日は、通信が戻り次第クラウドの最新に入れ替わります。');
+      lines.push('　 この端末の内容を送りたい時は［今すぐ送信する］を押すと待ちをやめて送ります。');
+      if (lab) lines.push('　 直近の通信失敗: ' + lab + '（下の「通信診断」も参照）');
     }
     ta.value = lines.join('\n');
   }
   /* この端末の未送信をすべて捨て、クラウドの最新を取り直す。
-   * 1日ずつ「取得 → 退避 → 印を落とす → サーバー版を全採用」。取得に失敗した日は何もしない（壊さない）。 */
+   * 手順は「退避 → 取り直し待ちの印を付ける → 未送信の印を落とす → 取得 → サーバー版を全採用」。
+   * ★取り直し待ちの印を先に付けるのが要点（2026-09-24）。これが無いと、通信できなかった時に
+   *   未送信の印だけが外れ、次の自動調整（マスタ反映・週間計画の照合・シフト反映）が即座に
+   *   印を立て直して「未送信あり」が永久に消えなかった。印がある間はこの端末からは送らない。 */
   function discardUnsentDays_() {
     if (!syncOn()) { toast('同期先が未設定です', true); return; }
     var rows = unsentDayRows_();
@@ -11017,7 +11189,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < rows.length; i++) if (rows[i].named > 0) withWork++;
     var msg = 'この端末に残っている未送信 ' + rows.length + '日ぶんの変更を捨てて、クラウドの最新を取り直します。\n\n';
     for (i = 0; i < rows.length && i < 12; i++) {
-      msg += '　' + rows[i].date + '（職員名 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）\n';
+      msg += '　' + rows[i].date + '（この日の盤面：職員 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）\n';
     }
     if (rows.length > 12) msg += '　ほか ' + (rows.length - 12) + '日\n';
     msg += '\nクラウドのデータは書き換えません。';
@@ -11026,60 +11198,69 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       : '\n\n（職員名の入った日はありません）';
     msg += '\n\n進めますか？';
     if (!window.confirm(msg)) { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; return; }
-    var done = 0, failed = 0, adoptErr = 0, gone = 0, total = rows.length, finished = 0;
-    /* ★先に退避してから印を落とす。印を落とすと recoverNow_ の送信対象から外れる＝
-     * 取得を待つ間にこの端末の古い内容がクラウドへ上がることがなくなる（本操作の目的そのもの）。
-     * 取得に失敗した日は手元の内容をそのまま残し、「印は外したが最新はまだ」と正直に報告する。 */
+    var total = rows.length;
+    /* ★退避 → 取り直し待ちの印 → 未送信の印を落とす、の順。
+     * 取り直し待ちの印がある間は markDayDirty_ も push も入口で止まる＝取得を待つ間も、
+     * 取得できずに次の起動へ持ち越した時も、この端末の古い内容がクラウドへ上がらない。 */
     for (i = 0; i < rows.length; i++) {
       try {
         var rawB_ = localStorage.getItem(dayKey(rows[i].date));
         if (rawB_) localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
       } catch (eB0) {}
+      markRefetch_(rows[i].date);
       clearDayDirty_(rows[i].date);
+      if (rows[i].date === ui.currentDate) {
+        /* 表示中の日は、保留中の送信タイマーも消し lastPushed を現内容に合わせる
+           （タイマーが後から発火して「送ろうとした」跡を残さない） */
+        try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; } } catch (eT) {}
+        try { lastPushed.day = daySig(store.get()); } catch (eL) {}
+        try { if (store.userSeq) refetchSeq_[rows[i].date] = store.initSeq() + ':' + store.userSeq(); } catch (eS) {}
+      }
     }
     try { updateSyncBadge_(); } catch (eB1) {}
     if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '取り直しています…（0/' + total + '）';
-    function step(idx) {
-      if (idx >= rows.length) return;
-      var date = rows[idx].date;
-      gas({ action: 'get', key: dayKey(date) }, function (g) {
-        finished++;
-        if (!g || !g.ok) { failed++; }
-        else if (!g.data) {
-          /* サーバーに無い日＝この端末だけで作られた日。印を落とし、ローカルも退避して消す
-             （残すと次の編集でまた送信を試み、同じ保留に戻る）。 */
-          /* サーバーに無い日＝この端末だけで作られた日。退避は前段で済んでいるので消す
-             （残すと次の編集でまた送信を試み、同じ保留に戻る）。 */
-          try {
-            localStorage.removeItem(dayKey(date));
-            localStorage.removeItem(baseKey_(date));
-          } catch (eR) {}
-          gone++;
-        } else {
-          /* 印は前段で落としてある＝3-wayマージを通さずサーバー版を全採用する */
-          try { adoptServerDay_(date, g.data, g.rev || 0, false); done++; } catch (eA) { adoptErr++; }
+    runRefetch_(function (r) {
+      var m;
+      if (!r) {
+        /* cb(null)＝通信できていない、または取り直しが実行中。どちらかを断定せずに言う */
+        m = 'いま取り直せていません（' + total + '日・通信できないか取り直しの実行中）。'
+          + 'この端末からは送らない状態にしました。つながり次第、自動でクラウドの最新に入れ替えます';
+      } else {
+        m = 'クラウドの最新に揃えました（' + r.ok + '日）';
+        if (r.gone) m += '／この端末だけの日を整理 ' + r.gone + '日';
+        if (r.ng) {
+          var lab_ = lastNetFailLabel_(), why_ = friendlyErr(r.err);
+          if (lab_ && lab_ !== why_ && why_.indexOf(lab_) < 0) why_ += '・' + lab_;
+          m += '／まだ取得できていない日 ' + r.ng + '日（理由: ' + why_ + '）。'
+             + 'この端末からは送りません。つながり次第、自動でクラウドの最新に入れ替えます';
         }
-        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '取り直しています…（' + finished + '/' + total + '）';
-        if (finished >= total) {
-          var m = 'クラウドの最新に揃えました（' + done + '日）';
-          if (gone) m += '／この端末だけの日を整理 ' + gone + '日';
-          if (failed) m += '／まだ取得できていない日 ' + failed + '日（未送信の印は外しました。通信が戻ってからこの画面をもう一度開くか、日付を開き直すと取得します）';
-          if (adoptErr) m += '／取り込めなかった日 ' + adoptErr + '日';
-          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = m;
-          toast(m, !!failed);
-          renderUnsentDiag_();
-          try { updateSyncBadge_(); } catch (eB) {}
-          try { renderAll(); } catch (eR2) {}
-        }
-        step(idx + 1);
-      });
-    }
-    step(0);
+      }
+      if ($('stUnsentMsg')) $('stUnsentMsg').textContent = m;
+      toast(m, !r || !!r.ng);
+      try { renderUnsentDiag_(); } catch (eR3) {}
+      try { updateSyncBadge_(); } catch (eB) {}
+      try { renderAll(); } catch (eR2) {}
+    });
   }
 
   function syncBadgeClick_() {
     try {
       var uk = syncOn() ? unsentKinds_(syncPendingInfo_()) : null;
+      /* 取り直し待ちだけの状態で押されたら、その場で取り直しを試す（待たされている感を残さない） */
+      if (syncOn() && (!uk || !uk.any) && refetchList_().length) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('通信できないため、つながり次第クラウドから取り直します');
+        } else {
+          toast('クラウドから取り直しています…');
+          runRefetch_(function (r) {
+            if (!r) return;
+            if (r.ng) toast('まだ取得できません（' + friendlyErr(r.err) + '）。つながり次第、自動で取り直します', true);
+            else toast('クラウドの最新に入れ替えました');
+          });
+        }
+        updateSyncBadge_();
+        return;
+      }
       if (uk && uk.any && !uk.sendable) {
         toast('週間計画アプリ側に未送信があります。週間計画を開くと送信されます');   /* ワースケから送っても解消しない */
       } else if (uk && uk.sendable) {
@@ -11276,7 +11457,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function schedulePushDay() {
     if (!syncOn()) return;
     var day = store.get();
-    if (!day.meta.date || daySig(day) === lastPushed.day) return;
+    if (!day.meta.date) return;
+    /* 取り直し待ちの日は、この端末で新しく編集された時だけ待ちを解除して通常の送信へ戻す。
+     * 自動処理（マスタ反映・週間計画の照合・シフト反映）では解除しない＝押した「取り直す」が
+     * 次の描画で無効化されない（2026-09-24）。 */
+    releaseRefetchIfEdited_(day.meta.date);
+    if (isRefetchHeld_(day.meta.date)) return;
+    if (daySig(day) === lastPushed.day) return;
     markDayDirty_(day.meta.date);   /* 実変化のみ（sig差）＝pull採用直後には立たない */
     if (pushDayTimer) clearTimeout(pushDayTimer);
     pushDayTimer = setTimeout(function () { pushDayNow(); }, 2500);
@@ -11304,6 +11491,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!report && sig === lastPushed.day) return; /* 採用直後の同内容再pushを抑止 */
     var date = day.meta.date;
     if (!date) return;
+    if (isRefetchHeld_(date)) {   /* 取り直し待ち＝この端末からは送らない（古い内容をクラウドへ上げない） */
+      if (report) $('stResult').textContent = 'この日はクラウドから取り直す設定です（この端末からは送りません）';
+      return;
+    }
     if (staffWipeBlocked_(date, day)) {   /* Fix4: 氏名空ワイプは送信保留＝dirty維持で後日(開き直し=Fix3)に自己修復 */
       markDayDirty_(date);
       if (report) $('stResult').textContent = '⚠ 職員名が空のため送信を保留しました（データ消失防止）。この日付を開き直すとシフトから自動復元されます。';
@@ -11551,6 +11742,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 表示していない日付の未送信データを送信（日付切替・リロードで滞留した編集の回収） */
   function pushDayFor_(date) {
     if (!syncOn() || !date) return;
+    if (isRefetchHeld_(date)) return;   /* 取り直し待ち＝この端末からは送らない */
     if (date === ui.currentDate) { pushDayNow(); return; }
     var day = loadDayData(date);
     if (!day) { clearDayDirty_(date); return; }   /* データ無し＝送るものが無い（容量回収等） */
@@ -13736,6 +13928,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { if ($('stReserveDiag')) $('stReserveDiag').value = buildReserveDiag_(); } catch (eDg) {}
       try { if ($('stNetDiag')) $('stNetDiag').value = NP.formatDiag(loadNetDiag_()); } catch (eNd) {}
       try { renderUnsentDiag_(); } catch (eUd) {}   /* 未送信の日の一覧（この端末だけに残っている変更） */
+      try { runRefetch_(); } catch (eRf3) {}        /* 取り直し待ちがあれば、画面を開いた時にも取り直す */
       if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '';
       if ($('stNetMsg')) $('stNetMsg').textContent = '';
       try { updateStorageUsage_(); } catch (eSu) {}   /* この端末の使用量（読み取り専用・保持日数の直下に表示） */
@@ -13747,6 +13940,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 未送信の日: 送信し直す／この端末の変更を捨ててクラウドから取り直す（2026-09-24） */
     if ($('stUnsentSend')) $('stUnsentSend').addEventListener('click', function () {
       if (!syncOn()) { toast('同期先が未設定です', true); return; }
+      /* 取り直し待ちの日がある＝「この端末からは送らない」状態。ここで送るのは本人の明示操作なので、
+       * 何が起きるかを確認してから待ちを解除する（保護には必ず解除手段を用意する・2026-09-24）。 */
+      var held_ = refetchList_();
+      if (held_.length) {
+        if (!window.confirm('クラウドから取り直す予定の ' + held_.length + '日があります。\n\n'
+          + '［OK］を押すと取り直しをやめ、【この端末に残っている内容をクラウドへ送信】します。\n'
+          + 'クラウド側の同じ日は、この端末の内容で置き換わります。\n\n進めますか？')) {
+          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました';
+          return;
+        }
+        for (var h_ = 0; h_ < held_.length; h_++) { clearRefetch_(held_[h_]); markDayDirty_(held_[h_]); }
+        try { lastPushed.day = ''; } catch (eL2) {}   /* 表示中の日も確実に送信対象へ戻す */
+      }
       if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
       try { recoverNow_(); } catch (e) {}
       setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
@@ -14398,9 +14604,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         clearDayDirty_(ui.currentDate);
         if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
       }
-      if (syncOn() && (dirtyDayList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
+      if (syncOn() && (dirtyDayList_().length || refetchList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
     } catch (eDirty) {}
     try { pullAll(false); } catch (e) {}
+    try { runRefetch_(); } catch (eRf0) {}   /* 起動時: 取り直し待ちの日を取り直す（前回オフラインで取れなかった分） */
     try { updateSyncBadge_(); } catch (eSb) {}
     /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛 */
     if (!syncBadgeBound_) {
@@ -14416,6 +14623,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     window.addEventListener('focus', function () {
       /* 他端末の更新を取り込む（10秒スロットル）＋未送信があれば送る（pullだけだと滞留する） */
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { runRefetch_(); } catch (eRf) {}   /* 取り直し待ちの日を取り直す（送信より前） */
       try { schedulePushDay(); schedulePushCare(); } catch (eP) {}
       try { flushDirtyDays_(); } catch (eFd) {}   /* 非当日の未送信も回収（成功経路でタイマーが張られないため） */
       try { scheduleCareReconcile(); } catch (e) {}  /* 週間計画の更新を盤面へ確実反映（cloud-off/storage取りこぼし保険・冪等） */
@@ -14425,6 +14633,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!syncOn()) return;
       lastPullAt = 0;
       try { pullAll(false); } catch (e) {}
+      try { runRefetch_(); } catch (eRf) {}   /* 回線が戻ったら取り直し待ちを片付ける */
       try { schedulePushDay(); } catch (e2) {}
       try { schedulePushCare(); } catch (e3) {}
       try { flushDirtyDays_(); } catch (e4) {}   /* 非当日の未送信も回収 */
@@ -14434,6 +14643,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) { try { flushAll_(); } catch (e0) {} return; }
       if (syncOn() && Date.now() - lastPullAt > 10000) pullAll(false);
+      try { runRefetch_(); } catch (eRf2) {}   /* 取り直し待ちの日を取り直す（送信より前） */
       try { schedulePushDay(); schedulePushCare(); } catch (eP2) {}  /* 復帰時に未送信も送る */
       try { flushDirtyDays_(); } catch (eFd2) {}   /* 非当日の未送信も回収 */
       try { scheduleCareReconcile(); } catch (e) {}
