@@ -7743,11 +7743,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { if (localStorage.getItem(CARE_KEY + '_backup_ws') !== null) { localStorage.removeItem(CARE_KEY + '_backup_ws'); freed = true; } } catch (e) {}
     try {
       var limit = shiftDate(todayKey(), -Math.max(7, settings.retentionDays));
-      /* 未送信編集がある日(ws_dirty_v1)は、保持期限を過ぎていても解放しない。
+      /* 未送信編集がある日(ws_dirty_v1)と取り直し待ちの日(ws_refetch_v1)は、保持期限を過ぎていても解放しない。
        * quota で空きを作るためであっても、まだサーバへ届いていない編集を消すのは消失そのもの。
        * 直後に clearDayDirty_ が走るため、消すと復旧の手掛かりも残らない。
        * pruneOld と下の wsbase_ 解放は元から同じ保護を持っており、ここだけ抜けていた。 */
-      var dl = dirtyDayList_(), dirty = {}, di;
+      var dl = localEditDays_(), dirty = {}, di;
       for (di = 0; di < dl.length; di++) dirty[dl[di]] = 1;
       var dates = listSavedDates(), i;
       for (i = 0; i < dates.length; i++) {
@@ -7869,8 +7869,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function pruneOld() {
     try {
       var limit = shiftDate(todayKey(), -Math.max(7, settings.retentionDays));
-      /* 未送信編集がある日(ws_dirty_v1)は保持期限を過ぎても掃除しない＝wsday_/wsbase_ とも温存（消失防止） */
-      var dl = dirtyDayList_(), dirty = {}, di;
+      /* 未送信編集がある日(ws_dirty_v1)と取り直し待ちの日(ws_refetch_v1)は保持期限を過ぎても掃除しない
+       * ＝wsday_/wsbase_ とも温存（消失防止・2026-09-24 レビュー指摘） */
+      var dl = localEditDays_(), dirty = {}, di;
       for (di = 0; di < dl.length; di++) dirty[dl[di]] = 1;
       var dates = listSavedDates();
       for (var i = 0; i < dates.length; i++) {
@@ -8041,6 +8042,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     doSave();
     var synced = false;
     try { if (typeof syncOn === 'function' && syncOn()) { pushDayNow(); synced = true; } } catch (e1) {}
+    /* 取り直し待ちの日は push が入口で止まる＝クラウドへは行っていない。「保存しました」と言い切らない */
+    try { if (isRefetchHeld_(store.get().meta.date)) synced = false; } catch (e2) {}
     var btn = $('btnSave');
     if (btn) {
       if (manualSave._t) clearTimeout(manualSave._t);
@@ -10680,6 +10683,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (d.days) for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) out.push(k);
     return out;
   }
+  /* 「この端末にしか無い内容を抱えた日」＝未送信の印 ＋ 取り直し待ちの印。
+   * 掃除(pruneOld)・quota解放・祖先の作り直し(ensureBase_)の保護はこちらで判定する。
+   * 取り直し待ちを外すと、退避(wsbase_conflict_)も祖先(wsbase_)も手元の版(wsday_)も掃除の対象に戻り、
+   * ［今すぐ送信する］が無言の空振りになる（2026-09-24 レビュー指摘）。
+   * 「送るかどうか」には使わない＝送信を止めるのは markDayDirty_ と push の入口だけ、という
+   * 切り分けを崩さない。 */
+  function localEditDays_() {
+    var out = dirtyDayList_(), h = refetchList_(), i;
+    for (i = 0; i < h.length; i++) if (out.indexOf(h[i]) < 0) out.push(h[i]);
+    return out;
+  }
+  /* 本人の操作で作った変更を未送信として記録する。取り直し待ちの日なら先に解除する。
+   * これをしないと、保留中の日へ翌週コピーした内容に印が付かず、次の取り直しで黙って消える
+   * （markDayDirty_ の入口ガードの副作用・2026-09-24 レビュー指摘）。 */
+  function markDayDirtyByUser_(date) {
+    if (!date) return;
+    if (isRefetchHeld_(date)) {
+      clearRefetch_(date);
+      toast('この日（' + date + '）は取り直し待ちでしたが、この端末で変更したため通常の送信に戻します');
+    }
+    markDayDirty_(date);
+  }
   /* この端末で新しく編集されたら取り直し待ちを解除する（true＝解除した）。
    * store.userSeq() は Undo できる操作＝本人の編集だけを数える（マスタ反映・週間計画の照合・
    * シフト反映・INIT_DAY のような自動処理は数えない）。起動直後は基準が無いので最初の呼び出しで
@@ -10705,21 +10730,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 取得できなかった日は印を残す＝次の契機で再試行し、その間もこの端末からは送らない。 */
   function runRefetch_(cb) {
     var list = refetchList_();
-    if (!syncOn() || refetchBusy_ || !list.length) { if (cb) { try { cb(null); } catch (e) {} } return; }
+    if (!syncOn() || !list.length) { if (cb) { try { cb(null); } catch (e) {} } return; }
+    if (refetchBusy_) { if (cb) { try { cb({ busy: true }); } catch (eB0) {} } return; }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) { if (cb) { try { cb(null); } catch (e) {} } return; }
     refetchBusy_ = true;
-    var i = 0, ok = 0, gone = 0, ng = 0, lastErr = '';
+    var i = 0, ok = 0, gone = 0, none = 0, ng = 0, lastErr = '';
     function step() {
       if (i >= list.length) {
         refetchBusy_ = false;
         if (ng) scheduleRetry_();
         try { renderUnsentDiag_(); } catch (eR) {}
         try { updateSyncBadge_(); } catch (eB) {}
-        if (cb) { try { cb({ ok: ok, gone: gone, ng: ng, err: lastErr }); } catch (eC) {} }
+        if (cb) { try { cb({ ok: ok, gone: gone, none: none, ng: ng, err: lastErr }); } catch (eC) {} }
         return;
       }
       var date = list[i++];
       gas({ action: 'get', key: dayKey(date) }, function (g) {
+        /* ★finally で必ず次へ進める。ここで例外が出ると refetchBusy_ が true のまま固着し、
+         * 以後 runRefetch_ が恒久 no-op ＝ 待ちが永久に解けず送信も止まる（袋小路）。 */
+        try {
         if (!g || !g.ok) { ng++; lastErr = (g && g.error) || ''; }
         else {
           clearRefetch_(date);   /* ★採用の前に外す（採用の中の markDayDirty_ を殺さないため） */
@@ -10736,13 +10765,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               gone++;
             } else {
               markDayDirty_(date);   /* 唯一の版なので消さず、通常の送信に戻す（クラウドは空＝誰の実績も潰さない） */
-              ok++;
+              none++;
+              /* 表示中で氏名0人の日は staffWipeBlocked_ が再び永久保留する＝元の詰まりに戻るので告知する */
+              if (!named_ && date === ui.currentDate) {
+                toast('この日はクラウドにデータがありません。職員名が0人のため送信は保留します（日付を開き直すとシフトから復元されます）', true);
+              }
             }
           } else {
             try { adoptServerDay_(date, g.data, g.rev || 0, false); ok++; } catch (eA) { ng++; }
           }
         }
-        step();
+        } finally { step(); }
       });
     }
     step();
@@ -10770,7 +10803,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * いない版＝祖先無しの union が正しい）。 */
   function ensureBase_(date) {
     try {
-      if (!date || !syncOn() || isDayDirty_(date)) return false;
+      if (!date || !syncOn() || isDayDirty_(date) || isRefetchHeld_(date)) return false;
       if (localStorage.getItem(baseKey_(date)) !== null) return false;
       var cur = decodeDay_(localStorage.getItem(dayKey(date)));
       if (!cur || !cur.meta || !cur.staff || !cur.tasks) return false;
@@ -11059,7 +11092,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (s.refetchDays > 0) {
       return { cls: 'warn', text: '⟳ 取り直し待ち ' + s.refetchDays + '日',
                title: 'クラウドから取り直す設定の日が ' + s.refetchDays + '日あります。この端末からは送りません。'
-                    + '通信が戻り次第、自動でクラウドの最新に入れ替えます（押すと今すぐ試します）' };
+                    + '通信が戻り次第、自動でクラウドの最新に入れ替えます（押すと今すぐ試します）'
+                    + (s.offline ? '。いまは通信できていません' : '') };
     }
     if (s.offline) {
       return { cls: 'ng', text: '⚠ オフライン', title: '同期先と通信できていません（自動で再試行します）' + opsNote };
@@ -11192,7 +11226,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       msg += '　' + rows[i].date + '（この日の盤面：職員 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）\n';
     }
     if (rows.length > 12) msg += '　ほか ' + (rows.length - 12) + '日\n';
-    msg += '\nクラウドのデータは書き換えません。';
+    msg += '\nクラウドのデータは書き換えません（クラウドにその日が無かった場合だけ、この端末の版を'
+         + '唯一の版として送ります）。';
     msg += withWork
       ? ('\n\n⚠ うち ' + withWork + '日は職員名が入っています。この端末でしか編集していない内容があれば失われます。')
       : '\n\n（職員名の入った日はありません）';
@@ -11205,9 +11240,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < rows.length; i++) {
       try {
         var rawB_ = localStorage.getItem(dayKey(rows[i].date));
-        if (rawB_) localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
+        /* 既に退避がある日（＝2回目の押下）は上書きしない。保留中も自動調整後の盤面が
+         * wsday_ に書かれ続けるため、上書きすると最初に捨てた版＝復旧資産が失われる。 */
+        if (rawB_ && localStorage.getItem('wsbase_conflict_' + rows[i].date) === null) {
+          localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
+        }
       } catch (eB0) {}
       markRefetch_(rows[i].date);
+      /* ★印を残せたことを確かめてから未送信の印を落とす。容量不足等で印が保存できないと、
+       * 未送信の印だけが外れて自動調整が立て直す＝今回直した事象にそのまま戻る。 */
+      if (!isRefetchHeld_(rows[i].date)) {
+        if ($('stUnsentMsg')) $('stUnsentMsg').textContent =
+          'この端末の保存容量が不足しているため、取り直しを開始できませんでした（未送信のまま変更していません）';
+        toast('保存容量が不足しているため取り直しを開始できません', true);
+        return;
+      }
       clearDayDirty_(rows[i].date);
       if (rows[i].date === ui.currentDate) {
         /* 表示中の日は、保留中の送信タイマーも消し lastPushed を現内容に合わせる
@@ -11222,12 +11269,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     runRefetch_(function (r) {
       var m;
       if (!r) {
-        /* cb(null)＝通信できていない、または取り直しが実行中。どちらかを断定せずに言う */
-        m = 'いま取り直せていません（' + total + '日・通信できないか取り直しの実行中）。'
-          + 'この端末からは送らない状態にしました。つながり次第、自動でクラウドの最新に入れ替えます';
+        m = '通信できないため、まだ取り直せていません（' + total + '日）。この端末からは送らない状態にしました。'
+          + 'つながり次第、自動でクラウドの最新に入れ替えます';
+      } else if (r.busy) {
+        m = '取り直しを実行中です（' + total + '日）。この端末からは送らない状態にしました。'
+          + '終わり次第この画面を開き直すと結果が出ます';
       } else {
         m = 'クラウドの最新に揃えました（' + r.ok + '日）';
         if (r.gone) m += '／この端末だけの日を整理 ' + r.gone + '日';
+        if (r.none) m += '／クラウドに無かった日 ' + r.none + '日（この端末の版を唯一の版として送ります）';
         if (r.ng) {
           var lab_ = lastNetFailLabel_(), why_ = friendlyErr(r.err);
           if (lab_ && lab_ !== why_ && why_.indexOf(lab_) < 0) why_ += '・' + lab_;
@@ -11455,13 +11505,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var conflictN_ = {};   /* date -> 連続競合回数（成功でリセット・上限超は次のリトライへ委譲） */
   var unlockForceDates_ = {};   /* date -> true。ロック解除の put だけは GAS のロック防波堤を force で通す（成功で消費） */
   function schedulePushDay() {
-    if (!syncOn()) return;
     var day = store.get();
     if (!day.meta.date) return;
     /* 取り直し待ちの日は、この端末で新しく編集された時だけ待ちを解除して通常の送信へ戻す。
      * 自動処理（マスタ反映・週間計画の照合・シフト反映）では解除しない＝押した「取り直す」が
      * 次の描画で無効化されない（2026-09-24）。 */
     releaseRefetchIfEdited_(day.meta.date);
+    if (!syncOn()) return;   /* ★解除判定はこの手前で行う: 同期先が外れている間の編集でも待ちを解除しないと、
+                              * 接続先が戻った時にその編集ごとサーバー版へ上書きされる（レビュー指摘） */
     if (isRefetchHeld_(day.meta.date)) return;
     if (daySig(day) === lastPushed.day) return;
     markDayDirty_(day.meta.date);   /* 実変化のみ（sig差）＝pull採用直後には立たない */
@@ -11681,7 +11732,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * まるごと採用する。3-wayマージ(rebaseDay→repairBoard_)を通すと列不在参照のケアがトレイへ落ち非careが破棄され
      * 実績が散る。ローカルの未送信編集は wsbase_conflict_ へ退避してから非dirty経路(サーバー版全採用)へ落とす。 */
     if (serverDay.meta.locked === true && !(localDay && localDay.meta && localDay.meta.locked)) {
-      var hadEdits_ = !!(localDay && isDayDirty_(date) && daySig(localDay) !== daySig(serverDay));
+      var hadEdits_ = !!(localDay && (isDayDirty_(date) || isRefetchHeld_(date)) && daySig(localDay) !== daySig(serverDay));
       if (hadEdits_) {
         try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eLk) {}
       }
@@ -12461,7 +12512,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         toast('翌週への保存に失敗したためコピーを中止しました（端末の空き容量をご確認ください）', true);
         return;
       }
-      markDayDirty_(nd);           /* 未送信としてマーク＝switchDate後の pull で3-wayマージ保護・確実に push */
+      markDayDirtyByUser_(nd);     /* 未送信としてマーク＝switchDate後の pull で3-wayマージ保護・確実に push。
+                                    取り直し待ちの日なら先に解除する＝コピーが次の取り直しで消えない */
       /* 配置=翌週も担当あり／担当未定=元の列に残したが翌週その列は担当空欄（手動割当を促す）／未配置=トレイ。 */
       var copyMsg_ = '翌週 ' + dateLabel(nd) + ' へコピーしました（配置 ' + placed +
                      (reassigned ? '（うち役割再配置 ' + reassigned + '）' : '') +
