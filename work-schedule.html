@@ -1070,6 +1070,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 代わりに put の試行回数は2回までにする（45×3＝135秒は長すぎ、以降はリトライtickに委ねる）。 */
   var ATTEMPT_TIMEOUT_WRITE_MS = 45000;
   var MAX_ATTEMPTS_WRITE = 2;
+  /* 読み取りのうち【日データ・計画データを運ぶもの】も15秒では足りない（2026-09-24 夕・追加）。
+   * 現場の失敗記録96件を数え直すと、get 9／pull 7／head 7 の計23件が15秒で切られていた。
+   * 取り直し(runRefetch_)も着弾確認(verifyPutLanded_)も他端末の更新取得(pullDayNow)も get/pull を使うため、
+   * ここが切れると【復旧手段そのものが時間切れになる】。送信だけ伸ばしても詰まりが解けない。
+   * ping は数バイトの死活確認なので15秒のまま（遅ければ本当に遅い）。head は rev だけだが
+   * 同じ経路で詰まる実測があるため get と揃える。 */
+  var ATTEMPT_TIMEOUT_READ_MS = 30000;
   var FAST_404_MS = 15000;        /* これ未満で返ってきた404だけを死活判定に数える */
   var DEAD_MIN_COUNT = 3;         /* 確定に必要な速い404の回数 */
   var DEAD_MIN_SPAN_MS = 20000;   /* 初回404からの最低経過（クラスタ障害を除外） */
@@ -1092,9 +1099,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'transient';
   }
 
-  /* 1試行のタイムアウト。書き込み(put)だけ長い。action 省略時は従来どおり15秒。 */
+  /* 1試行のタイムアウト。運ぶデータの大きさで決める。action 省略時は従来どおり15秒。
+   *   put ................. 45秒（盤面全体を送る＝一番重い）
+   *   get / pull / head ... 30秒（日データ・計画データを受け取る）
+   *   ping / その他 ....... 15秒（死活確認だけ＝軽い） */
   function attemptTimeoutMs(action) {
-    return (action === 'put') ? ATTEMPT_TIMEOUT_WRITE_MS : ATTEMPT_TIMEOUT_MS;
+    if (action === 'put') return ATTEMPT_TIMEOUT_WRITE_MS;
+    if (action === 'get' || action === 'pull' || action === 'head') return ATTEMPT_TIMEOUT_READ_MS;
+    return ATTEMPT_TIMEOUT_MS;
   }
   /* 次の試行までの待ち時間。attempt は1始まり。null＝これ以上試行しない（打ち切り）。
    * put は1試行が最長45秒なので2試行まで（45+1.5+45＝約91秒で打ち切り、以降はリトライtick）。 */
@@ -1201,6 +1213,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     MAX_ATTEMPTS: MAX_ATTEMPTS,
     ATTEMPT_TIMEOUT_MS: ATTEMPT_TIMEOUT_MS,
     ATTEMPT_TIMEOUT_WRITE_MS: ATTEMPT_TIMEOUT_WRITE_MS,
+    ATTEMPT_TIMEOUT_READ_MS: ATTEMPT_TIMEOUT_READ_MS,
     MAX_ATTEMPTS_WRITE: MAX_ATTEMPTS_WRITE,
     attemptTimeoutMs: attemptTimeoutMs,
     FAST_404_MS: FAST_404_MS,
@@ -10701,6 +10714,45 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (d.days) for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) out.push(k);
     return out;
   }
+  /* --- 送信の記録（ws_pushlog_v1・2026-09-24 夕）------------------------------
+   * 「未送信あり N日」だけでは、送れていないのか・送れたのに印が残っているのかが分からず、
+   * 現場でも開発でも原因を当てられなかった。日ごとに【最後の送信の時刻と結果】を残し、
+   * 設定の一覧に出す。個人情報は入れない（日付・結果の種類・エラーの語・所要ミリ秒だけ）。
+   *   ok      … 送信できて印も消えた
+   *   changed … 送信は成功したが、送信中に盤面が変わったので未送信のまま（次の送信で解消する）
+   *   fail    … 送信できなかった（理由つき）
+   *   blocked … 職員名0人・ロック・取り直し待ちで送っていない
+   *   conflict… 他端末の更新と統合中 */
+  var PUSHLOG_KEY = 'ws_pushlog_v1';
+  function loadPushLog_() {
+    try {
+      var d = JSON.parse(localStorage.getItem(PUSHLOG_KEY) || '{}');
+      return (d && typeof d === 'object') ? d : {};
+    } catch (e) { return {}; }
+  }
+  function notePush_(date, res, err, ms) {
+    if (!date) return;
+    try {
+      var d = loadPushLog_();
+      d[date] = { at: Date.now(), res: String(res || ''), err: String(err || ''), ms: ms || 0 };
+      /* 未送信でも取り直し待ちでもない日の記録は捨てる（溜めない・容量を食わない） */
+      var keep = {}, live = localEditDays_(), i;
+      for (i = 0; i < live.length; i++) if (d[live[i]]) keep[live[i]] = d[live[i]];
+      keep[date] = d[date];
+      localStorage.setItem(PUSHLOG_KEY, JSON.stringify(keep));
+    } catch (e) {}
+  }
+  /* 一覧に出す1行。「いつ・どうだったか」を日本語で返す（記録が無ければ空文字） */
+  function pushLogLabel_(date) {
+    var r = loadPushLog_()[date];
+    if (!r || !r.at) return '';
+    var t = new Date(r.at), hm = pad2(t.getHours()) + ':' + pad2(t.getMinutes());
+    if (r.res === 'ok') return '最後の送信 ' + hm + ' 成功';
+    if (r.res === 'changed') return '最後の送信 ' + hm + ' 成功（送信中に盤面が変わったため未送信のまま・次の送信で解消します）';
+    if (r.res === 'conflict') return '最後の送信 ' + hm + ' 他端末の更新と統合中';
+    if (r.res === 'blocked') return '最後の送信 ' + hm + ' 送らずに保留';
+    return '最後の送信 ' + hm + ' 失敗' + (r.err ? '（' + r.err + '）' : '');
+  }
   /* 「この端末にしか無い内容を抱えた日」＝未送信の印 ＋ 取り直し待ちの印。
    * 掃除(pruneOld)・quota解放・祖先の作り直し(ensureBase_)の保護はこちらで判定する。
    * 取り直し待ちを外すと、退避(wsbase_conflict_)も祖先(wsbase_)も手元の版(wsday_)も掃除の対象に戻り、
@@ -11055,6 +11107,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return String(ev[ev.length - 1].res || '');
     } catch (e) { return ''; }
   }
+  /* 利用者向けの失敗理由。通信層の種類（timeout/404 等）が分かれば添えるが、同じ語は重ねない */
+  function failReason_(err) {
+    var why = friendlyErr(err), lab = lastNetFailLabel_();
+    if (lab && lab !== why && why.indexOf(lab) < 0) why += '・' + lab;
+    return why;
+  }
   function resLabel_(status, errKind) {
     if (errKind) return errKind;                 /* timeout / neterr / badjson */
     if (status === 404) return '404';
@@ -11118,6 +11176,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (k.tabOnly) t += (t ? ' ' : '') + CARE_TAB_UNSENT_NOTE;
       if (s.refetchDays > 0) t += (t ? ' ' : '') + 'クラウドから取り直し待ち ' + s.refetchDays + '日';
+      if (s.sending) t = 'いま送信しています（最長で1分半ほどかかることがあります）。' + t;
       return { cls: 'warn', text: '● 未送信あり ' + parts.join('・'), title: t };
     }
     /* 取り直し待ち＝「この端末の変更を捨ててクラウドから取り直す」を押したが、まだ取得できていない日。
@@ -11173,6 +11232,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         syncOn: on,
         dirtyDays: p.dirtyDays, carePending: p.carePending, careKnown: p.careKnown, careTabOnly: p.careTabOnly,
         careOps: p.careOps, masterPending: p.masterPending, refetchDays: p.refetchDays || 0,
+        sending: !!dayPushBusy_,
         offline: on ? !!NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now()) : false,
         okAt: syncStat_.okAt, okSeq: syncStat_.okSeq, failSeq: syncStat_.failSeq
       });
@@ -11213,7 +11273,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         else if (staffWipeBlocked_(date, day, true)) reason = '職員名が1人も入っていないため送信を保留中';
         else if (day.meta && day.meta.locked) reason = 'ロック中の日';
       }
-      out.push({ date: date, named: named, tasks: cnt, reason: reason, hold: hold });
+      out.push({ date: date, named: named, tasks: cnt, reason: reason, hold: hold,
+                 last: pushLogLabel_(date), sending: (dayPushBusy_ && date === ui.currentDate) });
     }
     return out;
   }
@@ -11232,7 +11293,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < rows.length; i++) {
       /* 「職員名20人」が“20人ぶんの未送信”と読めてしまうため、1日の盤面まるごとであることを明示する */
       lines.push(rows[i].date + '  この日の盤面（職員 ' + rows[i].named + '人・枠 ' + rows[i].tasks + '件）'
-               + '  … ' + rows[i].reason);
+               + '  … ' + (rows[i].sending ? '送信中' : rows[i].reason));
+      if (rows[i].last) lines.push('　　' + rows[i].last);
     }
     if (nHold) {
       var lab = lastNetFailLabel_();
@@ -11312,9 +11374,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (r.gone) m += '／この端末だけの日を整理 ' + r.gone + '日';
         if (r.none) m += '／クラウドに無かった日 ' + r.none + '日（この端末の版を唯一の版として送ります）';
         if (r.ng) {
-          var lab_ = lastNetFailLabel_(), why_ = friendlyErr(r.err);
-          if (lab_ && lab_ !== why_ && why_.indexOf(lab_) < 0) why_ += '・' + lab_;
-          m += '／まだ取得できていない日 ' + r.ng + '日（理由: ' + why_ + '）。'
+          m += '／まだ取得できていない日 ' + r.ng + '日（理由: ' + failReason_(r.err) + '）。'
              + 'この端末からは送りません。つながり次第、自動でクラウドの最新に入れ替えます';
         }
       }
@@ -11602,6 +11662,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else {
         try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
       }
+      notePush_(date, 'ok', '時間切れだったが届いていた');
       noteSyncSuccess_();
       toast('送信は時間切れになりましたが、クラウドには届いていました（' + date + '）');
     });
@@ -11615,17 +11676,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var date = day.meta.date;
     if (!date) return;
     if (isRefetchHeld_(date)) {   /* 取り直し待ち＝この端末からは送らない（古い内容をクラウドへ上げない） */
+      notePush_(date, 'blocked', '取り直し待ち');
       if (report) $('stResult').textContent = 'この日はクラウドから取り直す設定です（この端末からは送りません）';
       return;
     }
     if (staffWipeBlocked_(date, day)) {   /* Fix4: 氏名空ワイプは送信保留＝dirty維持で後日(開き直し=Fix3)に自己修復 */
+      notePush_(date, 'blocked', '職員名が0人');
       markDayDirty_(date);
       if (report) $('stResult').textContent = '⚠ 職員名が空のため送信を保留しました（データ消失防止）。この日付を開き直すとシフトから自動復元されます。';
       else toast('⚠ 職員名が空のため送信を保留（消失防止）', true);
       return;
     }
     dayPushBusy_ = true;
+    var pushT0_ = Date.now();
     markDayDirty_(date);
+    try { updateSyncBadge_(); } catch (eSb0) {}   /* 「送信中」をバッジの説明に出す */
     var reqPut_ = { action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day };
     if (unlockForceDates_[date]) reqPut_.lockOverride = true;   /* 解除putだけロック防波堤を通す(force と違い rev楽観ロック/staffwipe保護は維持) */
     gas(reqPut_, function (j) {
@@ -11637,7 +11702,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         saveBase_(date, day);   /* 3-way祖先＝いま送信して確定した盤面 */
         /* 送信中に入った編集を守る: 現在も同一内容のときだけ未送信フラグを解除 */
         var cur = store.get();
-        if (cur.meta.date === date && daySig(cur) === sig) clearDayDirty_(date);
+        var same_ = (cur.meta.date === date && daySig(cur) === sig);
+        if (same_) clearDayDirty_(date);
+        notePush_(date, same_ ? 'ok' : 'changed', '', Date.now() - pushT0_);
         if (store.get().meta.date === date) {
           store.dispatch({ type: 'SET_META', patch: { rev: j.rev } });
         }
@@ -11648,21 +11715,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else if (j && j.error === 'locked') {
         /* サーバーがロック日への非ロック上書きを拒否＝この端末はロック未受信。ロック中の実績を尊重し、
          * ローカル変更は保存せずサーバーの確定(ロック)版を採用して表示を正す。 */
+        notePush_(date, 'blocked', 'ロック中の日', Date.now() - pushT0_);
         if (report) $('stResult').textContent = 'この日はロックされています。確定版を取得します…';
         handleLockedReject_(date);
       } else if (j && (j.conflict || j.error === 'staffwipe')) {
         /* staffwipe=サーバーがFix5で空staff上書きを拒否(＝サーバーに氏名入りあり)。competing更新と同様に扱い、
          * サーバー版を取得→3-wayマージ(rebaseDayの空ペアガードで氏名を復元)→採用＝ローカルの氏名消失を自己修復。
          * これによりFix5の意味的拒否をオフライン誤判定/無限リトライにせず、確実に復旧させる。 */
+        notePush_(date, 'conflict', '', Date.now() - pushT0_);
         if (report) $('stResult').textContent = '他端末の更新と統合します…';
         handleDayConflict_(date);
       } else {
         /* 通信失敗＝オフライン表示。以後はバックオフタイマーが自動再試行する（イベント不要で必ず復帰） */
         showOfflineIfPersistent_();
         scheduleRetry_();
+        notePush_(date, 'fail', failReason_(j && j.error), Date.now() - pushT0_);
         if (!j) { try { verifyPutLanded_(date, sig); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
+      try { updateSyncBadge_(); } catch (eSb1) {}   /* 「送信中」の表示を降ろす */
       if (dayPushAgain_) { dayPushAgain_ = false; schedulePushDay(); }
     });
   }
