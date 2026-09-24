@@ -57,6 +57,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .tnav{background:#fff;border-bottom:2px solid var(--g2);
   display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tnav::-webkit-scrollbar{display:none}
+/* 現場端末（su_device_role==='field'）では管理用の入口を出さない（関数の入口でも止めている） */
+.wr-field .tnav button[data-go="cfg"],.wr-field #inMealEdit,.wr-field .in-meal-hd small{display:none !important}
+/* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
+.wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:.8125rem;font-weight:700;line-height:1.5}
+.wr-noapi[hidden]{display:none}
 .tnav button{flex:1;min-width:84px;display:flex;align-items:center;justify-content:center;gap:6px;
   padding:12px 10px;border:none;background:none;color:var(--g7);font-size: 0.8125rem;font-weight:700;
   cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;
@@ -629,16 +634,6 @@ select option.is-discharged{color:var(--g6)}
 </head>
 <body>
 
-<!-- 端末用途ガード（事務所PC専用。現場タブレットでは体重管理を開かせない＝誤操作防止） -->
-<div id="suDeviceBlock" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(255,255,255,.97);align-items:center;justify-content:center;padding:20px">
-  <div style="max-width:440px;text-align:center;background:#fff;border:1px solid #e0e0e0;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18);padding:26px">
-    <div style="font-size: 2.75rem">🔒</div>
-    <h2 style="margin:8px 0;font-size: 1.125rem">この端末は現場用に設定されています</h2>
-    <p style="color:#666;font-size: 0.875rem;line-height:1.7">体重管理は<b>事務所PC</b>でご利用ください。</p>
-    <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #0b57d0;background:#fff;color:#0b57d0;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
-  </div>
-</div>
-
 <div class="topbar">
 <header class="hdr">
   <div>
@@ -654,6 +649,7 @@ select option.is-discharged{color:var(--g6)}
     <div class="hdr-r" id="hdrDate"></div>
   </div>
 </header>
+<div class="wr-noapi" id="wrNoApi" role="status" hidden>⚠ この端末はサーバーに接続されていません。記録はこの端末にしか残らず、事務所PCや他の端末には届きません。事務所に連絡してください（接続先は事務所PCとして設定します）。</div>
 
 <!-- loading overlay for sync -->
 <div class="ld-ov" id="ldOv" aria-hidden="true">
@@ -1931,6 +1927,10 @@ function updateAuthNote_(){
 function apiFriendlyError_(raw){
   const s = String(raw == null ? '' : raw);
   if(!/unauthorized/i.test(s)) return s;
+  /* 現場端末では設定画面も共通の接続設定も開けないので、行けない先を案内しない */
+  if(typeof wrIsField === 'function' && wrIsField() && (!apiToken || apiCaps.seen)){
+    return '合言葉が通らず、サーバーと同期できません。この端末（現場用）では直せないので、事務所に連絡してください（事務所PCとして開き直し、合言葉を入れ直します）。記録はこの端末に残っています';
+  }
   if(!apiToken){
     /* ★どの画面かを特定する。「設定画面」とだけ書くと探して詰まる。
        ★案内先は【実在するものだけ】を書く。以前ここに「共通の接続設定には合言葉欄はありません」と
@@ -3080,14 +3080,31 @@ async function wrStateRevTick(){
     try{ wrStateRevTick(); }catch(e){}
   });
 })();
-/* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動時ブロック） */
+/* 端末ガード（2026-09-24 本人承認で変更: 以前は現場端末で起動ごとブロックしていた）。
+   共有キー su_device_role==='field' の端末でも、記録（一覧・入力・個別・集計・アラート）は使える。
+   記録の修正・削除も許す（誤入力をその場で消せないと二重の記録が残るため・本人判断）。
+   「設定」タブ（入居者の管理・検知ルール・入出力・全データ削除・復元・連携）と食事形態の編集は出さず、
+   管理用の操作は関数の入口でも止める（wrFieldDeny）。
+   接続先（URL・合言葉）は、事務所PCとして設定してから現場用に切り替える（接続設定画面も現場端末では開けない）。 */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
-function applyWeightDeviceGuard(){
-  var blocked = (suGetDeviceRole() === 'field');
-  var ov = document.getElementById('suDeviceBlock');
-  if(ov) ov.style.display = blocked ? 'flex' : 'none';
-  return blocked;
+function wrIsField(){ return suGetDeviceRole() === 'field'; }
+function wrFieldDeny(){
+  if(!wrIsField()) return false;
+  try{ toast('この操作は事務所PCで行ってください（この端末は現場用です）', 'err'); }catch(e){}
+  return true;
 }
+function applyWeightDeviceGuard(){
+  var field = wrIsField();
+  document.documentElement.classList.toggle('wr-field', field);
+  if(field && document.querySelector('.scr[data-sc="cfg"].on')) goto('list');
+  var nb = document.getElementById('wrNoApi');
+  if(nb) nb.hidden = !(field && !apiUrl);   /* 現場端末は接続先を直せないので、無い時は帯で知らせ続ける */
+  return field;
+}
+/* 開いたまま別のタブ（入居者マスタ等）で端末の用途が変わった時も、すぐ切り替える */
+window.addEventListener('storage', function(e){
+  if(e.key === SU_DEVICE_KEY || e.key === null){ try{ applyWeightDeviceGuard(); }catch(err){} }
+});
 /* 現在の主要ビューを再描画（トグル/取り込み後の反映用） */
 function wrRefreshViews(){
   try{
@@ -3211,6 +3228,7 @@ function analyze(residentId, ym){
    goto() は画面切替を先に行い、各 render はエラーで止まってもナビゲーションを妨げないよう
    try/catch で隔離する。 */
 function goto(sc){
+  if(sc === 'cfg' && wrIsField()) sc = 'list';   /* 現場端末では設定画面を開かない（復元・直接呼び出しも含む） */
   $$('.tnav button').forEach(b=> b.classList.toggle('on', b.dataset.go===sc));
   $$('.scr').forEach(s=> s.classList.toggle('on', s.dataset.sc===sc));
   try{ saveUI({tab: sc}); }catch(e){}
@@ -5795,6 +5813,7 @@ function renderStorageDiag(){
 }
 $('#sdRefresh')?.addEventListener('click', renderStorageDiag);
 $('#sdRecover')?.addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const bak1 = _readDbFromKey(LS_BAK);
   const bak2 = _readDbFromKey(LS_BAK2);
   const cand = bak1 || bak2;
@@ -5936,6 +5955,7 @@ function renderThrEditor(){
   }).join('');
   $$('[data-thr]', body).forEach(inp=>{
     inp.addEventListener('change', ()=>{
+      if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
       const [k, field] = inp.dataset.thr.split('.');
       const v = Math.max(0, Number(inp.value) || 0);
       THR[k][field] = v;
@@ -5966,6 +5986,7 @@ function renderRuleDesc(){
   el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`;
 }
 $('#thrReset')?.addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!confirm('アラート検知ルールを初期値に戻しますか？')) return;
   THR = cloneThr(DEFAULT_THR);
   saveThr(THR);
@@ -5995,6 +6016,7 @@ function renderHeightSrcNote(id){
 }
 
 function openResident(id){
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   editingId = id;
   const r = id ? residentById(id) : null;
   $('#mdTitle').textContent = id ? '入居者の編集' : '入居者の追加';
@@ -6200,6 +6222,7 @@ function birthSetFromIso(iso){
 })();
 
 $('#mdSave').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const name = $('#mdName').value.trim();
   if(!name){ toast('お名前を入力してください','err'); return; }
   const hv = Number($('#mdHeight').value);
@@ -6247,6 +6270,7 @@ $('#mdSave').addEventListener('click', ()=>{
    - 復帰：dischargedAt をクリアして通常の入居者に戻す。
    - 体重記録は一切削除しない（退去後も履歴アクセス可能）。 */
 $('#mdDischarge').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!editingId) return;
   const r = residentById(editingId);
   if(!r){ toast('入居者が見つかりません','err'); return; }
@@ -6290,6 +6314,7 @@ $('#mdDischarge').addEventListener('click', ()=>{
 });
 
 $('#mdDel').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!editingId) return;
   const r = residentById(editingId);
   const n = DB.records.filter(x=>x.residentId===editingId).length;
@@ -6315,14 +6340,16 @@ $('#mdDel').addEventListener('click', ()=>{
 
 /* export / import */
 $('#cfgExport').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `weight-record-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url);
 });
-$('#cfgImport').addEventListener('click', ()=> $('#cfgFile').click());
+$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; $('#cfgFile').click(); });
 $('#cfgFile').addEventListener('change', async e=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const f = e.target.files[0]; if(!f) return;
   try{
     const text = await f.text();
@@ -6360,6 +6387,7 @@ $('#cfgFile').addEventListener('change', async e=>{
   }finally{ e.target.value=''; }
 });
 $('#cfgCsv').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const header = ['name','room','heightCm','yearMonth','weight','bmi','measureMode','rawWeight','wheelchairKg','staple','stapleAmount','side','soupThick','sauceThick','lowSalt','note','measuredOn'];
   const rows = [header.join(',')];
   DB.records.forEach(r=>{
@@ -6396,6 +6424,7 @@ $('#cfgCsv').addEventListener('click', ()=>{
   a.click(); URL.revokeObjectURL(url);
 });
 $('#cfgClear').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!confirm('全データを削除します。本当によろしいですか？（元に戻せません）')) return;
   // GAS連携URLは「アプリ設定」なので、データ削除では保持する
   const keepUrl = (DB && DB.apiUrl) || apiUrl || '';
@@ -6411,6 +6440,7 @@ $('#cfgClear').addEventListener('click', ()=>{
 
 /* sample data */
 $('#cfgSample').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(DB.residents.length>0 && !confirm('既存データに追加します。続行しますか？')) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
@@ -6542,7 +6572,7 @@ function refreshUrlPersistBadge(){
          他端末の編集を上書きしうる
        待ち時間が二重になるのを避けるため、観測は短めの制限時間で打ち切る。
        観測できなくても従来どおりの送り方で動くので、同期は止まらない。 */
-    if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{
+    setTimeout(async ()=>{   /* 現場端末でも同期する（2026-09-24 以前は現場端末では起動ごと止めていた） */
       await apiProbe();
       updateAuthNote_();
       syncFromAPI(true);
@@ -6566,6 +6596,7 @@ function refreshUrlPersistBadge(){
   }
 
   $('#btnApiSave')?.addEventListener('click', async ()=>{
+    if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
     const url = $('#cfgApi').value.trim();
     if(!url){ toast('URLを入力してください','err'); return; }
     if(!url.startsWith('https://script.google.com/')){
@@ -6656,6 +6687,7 @@ function refreshUrlPersistBadge(){
     refreshUrlPersistBadge();
   });
   $('#btnApiClear')?.addEventListener('click', ()=>{
+    if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
@@ -6691,10 +6723,6 @@ try{
   }
 }catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
-(function(){ var b=document.getElementById('suDeviceUnlock'); if(b) b.addEventListener('click', function(){
-  try{ localStorage.setItem(SU_DEVICE_KEY,'office'); }catch(e){}
-  applyWeightDeviceGuard(); wrRefreshViews(); toast('この端末を事務所PCに設定しました');
-}); })();
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();
 }); })();
