@@ -2567,6 +2567,11 @@ function normalizeResident(r){
   if(!r || typeof r !== 'object') return r;
   if(typeof r.name !== 'string') r.name = _toSafeStr(r.name);
   if(typeof r.room !== 'string') r.room = _toSafeStr(r.room);
+  // 文字列でも "2026-09-23T15:00:00.000Z" や "Thu Sep 24 2026 … GMT+0900" の形（シートが日付型に
+  // 変えた退去日）は 'YYYY-MM-DD' に直す。直せない文字列は退去の印を消さないよう元のまま残す（2026-09-24）
+  if(typeof r.dischargedAt === 'string' && r.dischargedAt && !/^\d{4}-\d{2}-\d{2}$/.test(r.dischargedAt)){
+    r.dischargedAt = _toIsoDate(r.dischargedAt.trim()) || r.dischargedAt;
+  }
   // dischargedAt は string か falsy のみ許容（数値・Date 等が混入しても無視）
   if(r.dischargedAt != null && typeof r.dischargedAt !== 'string'){
     // ISO YYYY-MM-DD への変換を試みる（GAS Date オブジェクトのケース等）
@@ -2725,11 +2730,17 @@ function suParseHeight(v){
    編集モーダルで「マスタから自動取得」の注記を出す判定だけに使う。 */
 var wrMasterHeight = {};
 /* 名簿から受け取った退去日を 'YYYY-MM-DD' に正規化。
-   形式が違う値（Date オブジェクト・空・不正文字列）は '' を返す＝受信データを信じない。 */
+   形式が違う値（Date オブジェクト・空・不正文字列）は '' を返す＝受信データを信じない。
+   ただしシートが日付型に変えた形（"…T15:00:00.000Z"・"Thu Sep 24 2026 … GMT+0900"）は日付に直して使う。
+   直さないと '' 扱いになり、退去日が黙って「本日」に置き換わる（2026-09-24）。 */
 function suNormDischargeDate(v){
   if(typeof v !== 'string') return '';
   var s = v.trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) || /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-]\d{4}/.test(s)){
+    return _toIsoDate(s) || '';
+  }
+  return '';
 }
 /* 在籍（active）・入院（hospitalized）状態を名簿から鏡映する。マスタが正（master 常勝）。
    - active===false → 退去化（退去日は名簿の dischargeDate 優先・無ければ本日）
