@@ -3090,6 +3090,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
   var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
     '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  /* 接続先が「シフトの同期先ではない」と答えた時の案内（2026-09-24）。応答は返っているので「見つかりません」は
+   * 原因の説明として正しくない。相手は別アプリのGAS（入居者マスタ・薬・申送＝「不明なaction」）か、
+   * 統合同期GASの古い版（'unknown action'）。直し方は同じ（正常な端末のURLを貼り直す）。 */
+  var WRONG_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が、シフトの同期先ではありません（別のアプリのGASか古い版を指しています）。' +
+    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  function endpointFailMsg_(msg) { return isWrongEndpointErr_(msg) ? WRONG_ENDPOINT_MSG : DEAD_ENDPOINT_MSG; }
 
   /* GAS 同期URLの形式（master.js の手入力検証・ワースケ・週間計画と同一規則）。
    * 自動切替(healStaleTarget)で採用する時にも当てる＝壊れた値が su_sync_common 経由で
@@ -3773,23 +3779,36 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 形式の壊れた値を共通キーへ流し込まない（手入力の誤URLが全ツールへ伝播するのを防ぐ門番と同じ規則） */
       if (!GAS_ENDPOINT_RE.test(wsEp)) return Promise.resolve(false);
       var wsTok = String(ws.token || '').trim();
-      return fetch(wsEp, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ action: 'ping', token: wsTok }),
-        redirect: 'follow'
-      }).then(function (r) {
-        if (!r.ok) return false;
-        return r.json();
-      }).then(function (j) {
-        if (j && !j.error && j.ok === true && j.server === SYNC_SERVER_ID) {
-          lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
-          self.noteHealed_(curUrl, wsEp);   /* 切替を記録＝「勝手に変わった」を後から追跡できる */
-          self.resetDeadDetector_();        /* 新しい接続先を前の404で疑わない */
-          return true;
-        }
-        return false;
-      }).catch(function () { return false; }); /* 通信失敗では上書きしない */
+      /* 確かめの ping は打ち切り時間つき（2026-09-24）。相手が応答を返さないと _healing が立ったままになり、
+       * その間は同期が止まる。打ち切った後に届いた応答では書き換えない（遅れて届いた応答で勝手に切り替えない）。 */
+      var np = NP_();
+      var timeoutMs = np ? np.CONFIRM_TIMEOUT_MS : 8000;
+      return new Promise(function (resolve) {
+        var done = false, timer = null;
+        function once(v) { if (done) return; done = true; if (timer) clearTimeout(timer); resolve(v); }
+        timer = setTimeout(function () { once(false); }, timeoutMs);
+        try {
+          fetch(wsEp, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: wsTok }),
+            redirect: 'follow'
+          }).then(function (r) {
+            if (!r.ok) return null;
+            return r.json();
+          }).then(function (j) {
+            if (done) return;   /* 打ち切り後の応答＝採用しない */
+            if (j && !j.error && j.ok === true && j.server === SYNC_SERVER_ID) {
+              lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
+              self.noteHealed_(curUrl, wsEp);   /* 切替を記録＝「勝手に変わった」を後から追跡できる */
+              self.resetDeadDetector_();        /* 新しい接続先を前の404で疑わない */
+              once(true);
+              return;
+            }
+            once(false);
+          }).catch(function () { once(false); }); /* 通信失敗では上書きしない */
+        } catch (e) { once(false); }
+      });
     },
 
     /* 接続先を自動で切り替えた事実を端末に残す（直近5件）。原因調査のための足跡で、業務データではない。
@@ -4048,7 +4067,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               if (healed) return self.pullAll(optKeys);
               /* 切替先も無い＝この端末の接続先が古いまま。原因も直し方も現場に伝える
                  （'HTTP 404' とだけ出しても何をすればよいか分からない）。 */
-              self.updateStatus('offline', DEAD_ENDPOINT_MSG);
+              self.updateStatus('offline', endpointFailMsg_(msg));
               self.scheduleRetry();
               return 'offline';
             });
@@ -4323,7 +4342,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             return self.healStaleTarget().then(function (healed) {
               self._healing = false;
               if (healed) return self.pushQueued();
-              self.updateStatus('offline', DEAD_ENDPOINT_MSG);
+              self.updateStatus('offline', endpointFailMsg_(msg));
               self.scheduleRetry();
               return 'offline';
             });
