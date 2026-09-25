@@ -59,6 +59,10 @@
 !/su-facility.js
 !/facility-profile.json
 !/su-print.css
+# 動作の速さの記録（統合 Phase 0・2026-09-24）。ブラウザの計測時刻を端末の IndexedDB に残す部品と集計画面。
+# 残すのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけで、氏名・記録・合言葉は一切含まない
+!/su-perf.js
+!/perf-report.html
 !/training-plan.html
 !/training-plan-form.js
 # 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。

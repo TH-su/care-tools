@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<title>動作の速さの記録</title>
+<!--
+  動作の速さの記録（統合 Phase 0・2026-09-24 新設）
+  ════════════════════════════════════════════════════════════════
+  目的: su-perf.js が端末ごとに残した「開くまで・通信・固まり」の時間を集計して、
+        どこで待たされているかを数字で示す。Supabase へ移す順番と、移した後の効果の比較に使う。
+  ★この端末の記録だけを読む（IndexedDB su_perf）。他の端末の記録は見えないので、
+    タブレット・事務所PCそれぞれで開いて「結果をコピー」する運用。
+  ★個人情報は扱わない。記録にあるのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけ。
+    そのため現場端末でも開ける（計測したいのはまさに共用タブレットの遅さ）。
+  ★このページ自身は su-perf.js を読み込まない（集計画面を開いた記録で数字を汚さない）。
+-->
+<style>
+:root {
+  --pri: #0b57d0; --pri-l: #ecf3fe;
+  --ok: #1e6b24; --ok-l: #e8f5e9;
+  --ng: #b3261e; --ng-l: #ffebee;
+  --warn-tx: #7a4200; --warn-l: #fff8e1;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g0); color: var(--g9); line-height: 1.6; font-size: 17px;
+  padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+}
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff; padding: 12px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh); display: flex; align-items: center; gap: 12px;
+}
+.hdr h1 { margin: 0; font-size: 1.125rem; font-weight: 700; flex: 1; }
+.hdr .back {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; margin: -10px 0 -10px -6px;
+  color: #fff; text-decoration: none; font-size: 0.9375rem; font-weight: 700;
+}
+.hdr .back:focus-visible { outline: 3px solid #fff; outline-offset: -3px; border-radius: 8px; }
+main {
+  max-width: 980px; margin: 0 auto;
+  padding: 14px max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right));
+}
+.cd {
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); padding: 16px; margin: 0 0 14px;
+}
+.cd > h2 { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; }
+.cd p { margin: 0 0 8px; }
+.cd p:last-child { margin-bottom: 0; }
+.muted { color: var(--g7); font-size: 0.9375rem; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
+.btn {
+  min-height: 44px; padding: 10px 16px; font-size: 0.9375rem; font-weight: 700; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9); cursor: pointer;
+}
+.btn:focus-visible, select:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn.ng { color: var(--ng); border-color: #f0b8b3; }
+select {
+  min-height: 44px; padding: 8px 12px; font-size: 0.9375rem; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+}
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi { background: var(--g0); border: 1px solid var(--g2); border-radius: 10px; padding: 10px 12px; }
+.kpi .lb { font-size: 0.8125rem; color: var(--g7); font-weight: 700; }
+.kpi .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .u { font-size: 0.875rem; font-weight: 700; color: var(--g7); margin-left: 2px; }
+.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9375rem; }
+#tApp { min-width: 640px; }   /* 列の多いアプリ表だけ横スクロール。通信先の表は画面幅に収める */
+th, td { padding: 8px 8px; border-bottom: 1px solid var(--g2); text-align: right; white-space: nowrap; }
+th { font-size: 0.8125rem; color: var(--g7); font-weight: 700; vertical-align: bottom; background: #fff; }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+td { font-variant-numeric: tabular-nums; }
+/* 色だけに意味を持たせない: 遅い値には「遅」、気になる値には「注」を文字でも添える */
+.lv-ng { background: var(--ng-l); color: var(--ng); font-weight: 700; }
+.lv-warn { background: var(--warn-l); color: var(--warn-tx); font-weight: 700; }
+.tag { display: inline-block; font-size: 0.75rem; margin-left: 4px; padding: 0 5px; border-radius: 4px; border: 1px solid currentColor; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.875rem; color: var(--g7); margin-top: 8px; }
+.legend span { padding: 2px 8px; border-radius: 6px; }
+.empty { text-align: center; color: var(--g7); padding: 24px 8px; }
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: #202124; color: #fff; padding: 12px 18px; border-radius: 10px;
+  font-size: 0.9375rem; font-weight: 700; display: none; z-index: 20; max-width: calc(100% - 32px);
+}
+.toast.on { display: block; }
+ol.steps { margin: 0; padding-left: 1.4em; }
+ol.steps li { margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ 戻る</a>
+  <h1>動作の速さの記録</h1>
+</header>
+
+<main>
+  <section class="cd">
+    <h2>この画面について</h2>
+    <p>各アプリを開いた時の「画面が出るまで」「データの読み込み（通信）が終わるまで」の時間を、<b>この端末の中だけ</b>に記録しています。氏名や記録の中身は残していません。</p>
+    <ol class="steps muted">
+      <li>いつもどおりアプリを使います（何もしなくても記録されます）。</li>
+      <li>1週間ほどたったら、この画面を開いて「結果をコピー」を押します。</li>
+      <li>コピーした文章を、LINE やメールで事務所（代表）へ送ってください。端末ごとに1回ずつお願いします。</li>
+    </ol>
+  </section>
+
+  <div class="acts">
+    <label for="range" class="muted">期間</label>
+    <select id="range">
+      <option value="7">直近7日</option>
+      <option value="30" selected>直近30日</option>
+      <option value="0">すべて</option>
+    </select>
+    <button class="btn pri" id="copy" type="button">結果をコピー</button>
+    <button class="btn" id="csv" type="button">明細をCSVで保存</button>
+    <button class="btn ng" id="clear" type="button">この端末の記録を消す</button>
+  </div>
+
+  <section class="cd" aria-labelledby="h-sum">
+    <h2 id="h-sum">この端末のまとめ</h2>
+    <div class="kpis" id="kpis"></div>
+    <p class="muted" id="meta" style="margin-top:10px"></p>
+  </section>
+
+  <section class="cd" aria-labelledby="h-app">
+    <h2 id="h-app">アプリごとの待ち時間</h2>
+    <p class="muted">「中央値」はふだんの速さ、「遅い時」は10回に1回ぐらい起きる遅さ（上位10%）です。単位は秒。</p>
+    <div class="tw"><table id="tApp"></table></div>
+    <div class="legend">
+      <span class="lv-warn">注＝やや遅い</span>
+      <span class="lv-ng">遅＝待たされている</span>
+    </div>
+  </section>
+
+  <section class="cd" aria-labelledby="h-ep">
+    <h2 id="h-ep">通信先（GAS）ごとの応答時間</h2>
+    <p class="muted">接続先はURLの末尾4文字で見分けています。1回の通信にかかった秒数です。</p>
+    <div class="tw"><table id="tEp"></table></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var DB = 'su_perf', STORE = 'views';
+  var NAMES = {
+    'index.html': 'メニュー', 'shift-app.html': 'シフト', 'work-schedule.html': 'ワークスケジュール',
+    'shift-analyzer.html': '過去シフト分析', 'staff-master.html': '職員マスタ', 'weight-record.html': '体重管理',
+    'care-schedule.html': '週間計画', 'daycare-roster.html': 'デイ利用表', 'visit-overview.html': '週間計画俯瞰',
+    'support-overview.html': '全支援俯瞰', 'overview-compare.html': '左右比較', 'facesheet.html': 'フェイスシート',
+    'genogram.html': 'ジェノグラム', 'resident-master.html': '入居者マスタ', 'patch-calendar.html': '貼り薬カレンダー',
+    'moushiokuri-viewer.html': '申送ビューア', 'admission-flow.html': '入居調整', 'training-plan.html': '個別機能訓練計画書',
+    'supplies.html': '消耗品管理', 'connection-settings.html': '接続設定'
+  };
+  /* 目安（秒）。画面が出るまで 2秒／通信が終わるまで 3秒を超えると「待たされている」と感じやすい */
+  var TH = { dcl: [1.0, 2.0], done: [1.5, 3.0], one: [1.0, 2.0], tbt: [0.3, 1.0] };
+
+  var all = [];
+  var $ = function (id) { return document.getElementById(id); };
+
+  function toast(msg) {
+    var el = $('toast'); el.textContent = msg; el.classList.add('on');
+    clearTimeout(toast._t); toast._t = setTimeout(function () { el.classList.remove('on'); }, 3000);
+  }
+  function load() {
+    return new Promise(function (resolve) {
+      if (!window.indexedDB) return resolve([]);
+      var req = indexedDB.open(DB, 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+      };
+      req.onerror = function () { resolve([]); };
+      req.onsuccess = function () {
+        try {
+          var g = req.result.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+          g.onsuccess = function () { resolve(g.result || []); };
+          g.onerror = function () { resolve([]); };
+        } catch (e) { resolve([]); }
+      };
+    });
+  }
+  function clearAll() {
+    return new Promise(function (resolve) {
+      var req = indexedDB.open(DB, 1);
+      req.onsuccess = function () {
+        try {
+          var tx = req.result.transaction(STORE, 'readwrite');
+          tx.objectStore(STORE).clear();
+          tx.oncomplete = function () { resolve(); };
+          tx.onerror = function () { resolve(); };
+        } catch (e) { resolve(); }
+      };
+      req.onerror = function () { resolve(); };
+    });
+  }
+
+  function q(arr, p) {                        /* 分位点（p=0.5 中央値, 0.9 遅い時） */
+    var a = arr.filter(function (v) { return typeof v === 'number' && isFinite(v); }).sort(function (x, y) { return x - y; });
+    if (!a.length) return null;
+    var i = (a.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+    return a[lo] + (a[hi] - a[lo]) * (i - lo);
+  }
+  function sec(ms) { return ms == null ? null : ms / 1000; }
+  function fmt(v, d) { return v == null ? '—' : v.toFixed(d == null ? 1 : d); }
+  function level(v, th) { if (v == null || !th) return ''; return v >= th[1] ? 'ng' : (v >= th[0] ? 'warn' : ''); }
+  function cell(v, th, d) {
+    var lv = level(v, th);
+    var tag = lv === 'ng' ? '<span class="tag">遅</span>' : (lv === 'warn' ? '<span class="tag">注</span>' : '');
+    return '<td' + (lv ? ' class="lv-' + lv + '"' : '') + '>' + fmt(v, d) + tag + '</td>';
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+  }
+  function pct(n, d) { return d ? Math.round(n * 100 / d) + '%' : '—'; }
+  function mode(arr) {
+    var c = {}, best = '', n = 0;
+    arr.forEach(function (v) { if (!v) return; c[v] = (c[v] || 0) + 1; if (c[v] > n) { n = c[v]; best = v; } });
+    return best;
+  }
+
+  function filtered() {
+    var days = Number($('range').value);
+    if (!days) return all.slice();
+    var from = Date.now() - days * 86400000;
+    return all.filter(function (r) { return r.t >= from; });
+  }
+
+  function summarize(rows) {
+    var by = {};
+    rows.forEach(function (r) { (by[r.app] = by[r.app] || []).push(r); });
+    var apps = Object.keys(by).map(function (app) {
+      var rs = by[app];
+      var withGas = rs.filter(function (r) { return r.gas && r.gas.length; });
+      var ones = [];
+      rs.forEach(function (r) { (r.gas || []).forEach(function (g) { ones.push(g.d); }); });
+      var xf = rs.filter(function (r) { return r.xfer; });
+      return {
+        app: app, name: NAMES[app] || app, n: rs.length,
+        dcl50: sec(q(rs.map(function (r) { return r.dcl; }), 0.5)),
+        dcl90: sec(q(rs.map(function (r) { return r.dcl; }), 0.9)),
+        gasCnt: q(rs.map(function (r) { return (r.gas || []).length; }), 0.5),
+        done50: sec(q(withGas.map(function (r) { return r.gasDone; }), 0.5)),
+        done90: sec(q(withGas.map(function (r) { return r.gasDone; }), 0.9)),
+        one50: sec(q(ones, 0.5)),
+        tbt50: sec(q(rs.map(function (r) { return r.tbt; }), 0.5)),
+        kb: q(rs.map(function (r) { return r.htmlKB; }), 0.5),
+        full: xf.length ? pct(xf.filter(function (r) { return r.xfer === 'full'; }).length, xf.length) : '—',
+        worst: Math.max(q(withGas.map(function (r) { return r.gasDone; }), 0.5) || 0, q(rs.map(function (r) { return r.dcl; }), 0.5) || 0)
+      };
+    }).sort(function (a, b) { return b.worst - a.worst; });
+
+    var eps = {};
+    rows.forEach(function (r) { (r.gas || []).forEach(function (g) { (eps[g.ep] = eps[g.ep] || []).push(g.d); }); });
+    var epList = Object.keys(eps).map(function (ep) {
+      var d = eps[ep];
+      return { ep: ep, n: d.length, p50: sec(q(d, 0.5)), p90: sec(q(d, 0.9)), max: sec(Math.max.apply(null, d)) };
+    }).sort(function (a, b) { return (b.p50 || 0) - (a.p50 || 0); });
+
+    var allOnes = [];
+    rows.forEach(function (r) { (r.gas || []).forEach(function (g) { allOnes.push(g.d); }); });
+    return {
+      apps: apps, eps: epList, n: rows.length,
+      dcl50: sec(q(rows.map(function (r) { return r.dcl; }), 0.5)),
+      done50: sec(q(rows.filter(function (r) { return r.gas && r.gas.length; }).map(function (r) { return r.gasDone; }), 0.5)),
+      one50: sec(q(allOnes, 0.5)),
+      dev: mode(rows.map(function (r) { return r.dev; })),
+      role: mode(rows.map(function (r) { return r.role; })),
+      conn: mode(rows.map(function (r) { return r.conn; })),
+      from: rows.length ? Math.min.apply(null, rows.map(function (r) { return r.t; })) : null,
+      to: rows.length ? Math.max.apply(null, rows.map(function (r) { return r.t; })) : null
+    };
+  }
+
+  function d8(t) {
+    if (!t) return '';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+  function roleName(r) { return r === 'field' ? '現場用' : (r === 'office' ? '事務所用' : '不明'); }
+
+  function render() {
+    var rows = filtered();
+    var s = summarize(rows);
+    $('kpis').innerHTML =
+      kpi('記録した回数', s.n, '回') +
+      kpi('画面が出るまで（中央値）', fmt(s.dcl50), '秒') +
+      kpi('読み込みが終わるまで（中央値）', fmt(s.done50), '秒') +
+      kpi('通信1回（中央値）', fmt(s.one50), '秒');
+    $('meta').textContent = s.n
+      ? '端末: ' + (s.dev || '不明') + '（' + roleName(s.role) + '）' + (s.conn ? '・回線の目安: ' + s.conn : '') +
+        '　期間: ' + d8(s.from) + '〜' + d8(s.to)
+      : 'まだ記録がありません。アプリを何回か開いてから、もう一度この画面を開いてください。';
+
+    if (!s.apps.length) {
+      $('tApp').innerHTML = '<tr><td class="empty" colspan="11">記録がありません</td></tr>';
+    } else {
+      $('tApp').innerHTML =
+        '<thead><tr><th>アプリ</th><th>回数</th><th>画面が出るまで<br>中央値</th><th>遅い時</th>' +
+        '<th>起動時の<br>通信回数</th><th>読み込み完了<br>中央値</th><th>遅い時</th><th>通信1回<br>中央値</th>' +
+        '<th>固まり<br>中央値</th><th>画面ファイル<br>大きさ(KB)</th><th>丸ごと<br>取り直し</th></tr></thead><tbody>' +
+        s.apps.map(function (a) {
+          return '<tr><td>' + esc(a.name) + '</td><td>' + a.n + '</td>' +
+            cell(a.dcl50, TH.dcl) + cell(a.dcl90, TH.dcl) +
+            '<td>' + (a.gasCnt == null ? '—' : Math.round(a.gasCnt)) + '</td>' +
+            cell(a.done50, TH.done) + cell(a.done90, TH.done) + cell(a.one50, TH.one) +
+            cell(a.tbt50, TH.tbt) +
+            '<td>' + (a.kb == null ? '—' : Math.round(a.kb)) + '</td><td>' + a.full + '</td></tr>';
+        }).join('') + '</tbody>';
+    }
+    $('tEp').innerHTML = s.eps.length
+      ? '<thead><tr><th>接続先</th><th>回数</th><th>中央値</th><th>遅い時</th><th>最長</th></tr></thead><tbody>' +
+        s.eps.map(function (e) {
+          return '<tr><td>' + esc(e.ep) + '</td><td>' + e.n + '</td>' + cell(e.p50, TH.one) + cell(e.p90, TH.one) + cell(e.max, null) + '</tr>';
+        }).join('') + '</tbody>'
+      : '<tr><td class="empty">記録がありません</td></tr>';
+    return s;
+  }
+  function kpi(lb, v, u) {
+    return '<div class="kpi"><div class="lb">' + esc(lb) + '</div><div class="v">' + esc(v) + '<span class="u">' + esc(u) + '</span></div></div>';
+  }
+
+  /* 送ってもらう文章。表計算に貼っても崩れないようタブ区切りにする */
+  function asText(s) {
+    var L = [];
+    L.push('【動作の速さの記録】端末: ' + (s.dev || '不明') + '（' + roleName(s.role) + '）' +
+      (s.conn ? ' 回線:' + s.conn : '') + ' 期間: ' + d8(s.from) + '〜' + d8(s.to) + ' 記録' + s.n + '回');
+    L.push('全体 中央値: 画面' + fmt(s.dcl50) + '秒 / 読込完了' + fmt(s.done50) + '秒 / 通信1回' + fmt(s.one50) + '秒');
+    L.push(['アプリ', '回数', '画面50%', '画面90%', '起動通信数', '読込50%', '読込90%', '通信1回', '固まり', 'KB', '丸ごと'].join('\t'));
+    s.apps.forEach(function (a) {
+      L.push([a.name, a.n, fmt(a.dcl50), fmt(a.dcl90), a.gasCnt == null ? '' : Math.round(a.gasCnt),
+        fmt(a.done50), fmt(a.done90), fmt(a.one50), fmt(a.tbt50), a.kb == null ? '' : Math.round(a.kb), a.full].join('\t'));
+    });
+    L.push(['接続先', '回数', '50%', '90%', '最長'].join('\t'));
+    s.eps.forEach(function (e) { L.push([e.ep, e.n, fmt(e.p50), fmt(e.p90), fmt(e.max)].join('\t')); });
+    return L.join('\n');
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy') ? resolve() : reject(); } catch (e) { reject(e); }
+      document.body.removeChild(ta);
+    });
+  }
+
+  function csv(rows) {
+    var head = ['日時', 'アプリ', '端末', '用途', '回線', '開き方', '画面KB', '取得', '応答開始ms', '画面ms', '読込完了ms',
+      '起動時通信数', '通信合計回数', '通信合計ms', '固まりms', '使えるまでms', '通信明細(開始ms:所要ms:接続先)'];
+    var out = [head.join(',')];
+    rows.slice().sort(function (a, b) { return a.t - b.t; }).forEach(function (r) {
+      var d = new Date(r.t);
+      var ts = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      var det = (r.gas || []).map(function (g) { return g.s + ':' + g.d + ':' + g.ep; }).join(' ');
+      out.push([ts, NAMES[r.app] || r.app, r.dev, roleName(r.role), r.conn || '', r.nav || '', v(r.htmlKB), r.xfer || '',
+        v(r.ttfb), v(r.dcl), v(r.gasDone), (r.gas || []).length, v(r.gasN), v(r.gasMs), v(r.tbt), v(r.ready), det]
+        .map(csvCell).join(','));
+    });
+    return '﻿' + out.join('\r\n');     /* BOM 付き＝Excel で文字化けしない */
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function v(x) { return x == null ? '' : x; }
+  /* 表計算が数式として実行する先頭文字を無害化する（職員マスタ・消耗品の CSV と同じ扱い） */
+  function csvCell(x) {
+    var s = String(x == null ? '' : x);
+    if (/^[=+\-@\t\r＝＋－＠]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  $('range').addEventListener('change', render);
+  $('copy').addEventListener('click', function () {
+    var s = summarize(filtered());
+    if (!s.n) { toast('まだ記録がありません'); return; }
+    copyText(asText(s)).then(function () { toast('コピーしました。LINE やメールに貼り付けて送ってください'); },
+      function () { toast('コピーできませんでした。「明細をCSVで保存」をお使いください'); });
+  });
+  $('csv').addEventListener('click', function () {
+    var rows = filtered();
+    if (!rows.length) { toast('まだ記録がありません'); return; }
+    var blob = new Blob([csv(rows)], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    var d = new Date();
+    a.href = URL.createObjectURL(blob);
+    a.download = '動作の速さ_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  });
+  $('clear').addEventListener('click', function () {
+    if (!confirm('この端末の「動作の速さの記録」を消します。アプリのデータ（記録・名簿など）は消えません。よろしいですか？')) return;
+    clearAll().then(function () { all = []; render(); toast('記録を消しました'); });
+  });
+
+  load().then(function (rows) { all = rows; render(); });
+})();
+</script>
+</body>
+</html>
