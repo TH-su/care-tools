@@ -3114,6 +3114,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var m = String(msg);
     return m === 'unknown action' || m === '不明なaction';
   }
+  /* ═══ 同期先の判定（2026-09-25）══════════════════════════════════════════
+   * 3アプリ共通の接続先（su_sync_common）に書いてよいのは、URL と合言葉の組で ping し、
+   * 統合同期GASと確認できた組だけ。以前の手動保存は URL の【形】しか見ておらず、別アプリの
+   * GASのURLも同じ形なので通っていた。［接続テスト］は【保存してから】確かめ、入居者マスタの
+   * GASにも「✓ 接続OK」と出していた（応答が返れば OK としていた）。
+   * 判定はワークスケジュール netpolicy.js の syncTargetVerdict と同じ物差し（別ファイルのため写し）:
+   *   'ok' … ok:true かつ server==='silverunix-sync'
+   *   'wrong' … 別アプリのGAS（'不明なaction'／'unknown action'／ok:true なのに同期GASと名乗らない）
+   *   'auth' … 合言葉違い（または別アプリの認証エラー）／'offline' … 確かめられなかった */
+  function syncTargetVerdict(j) {
+    if (!j || typeof j !== 'object') return 'offline';
+    if (j.ok === true && j.server === SYNC_SERVER_ID) return 'ok';
+    if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
+    if (j.error === '認証エラー') return 'wrong';   /* 日本語の「認証エラー」は入居者マスタ・申送のGASの合言葉違いの文言（統合同期GASは英語の unauthorized だけ）＝別アプリ */
+    if (j.ok === true) return 'wrong';
+    if (j.error) return 'auth';
+    return 'wrong';
+  }
+  function syncTargetMessage(v) {
+    if (v === 'ok') return 'シフトの同期先を確認しました';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
+    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
+  }
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -3940,6 +3964,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return res;
       });
     },
+
+    /* 入力された URL と合言葉の組を、保存せずに ping して判定する（2026-09-25）。
+     * 保存済みの接続先（api）を使わない＝確かめる前に書かない。解決値は syncTargetVerdict の判定。
+     * 死活判定の計数（noteEndpoint_）にも触れない＝純粋な確認。 */
+    verifySyncTarget: function (url, token, timeoutMs) {
+      return new Promise(function (resolve) {
+        var done = false;
+        function fin(v) { if (done) return; done = true; clearTimeout(t); resolve(v); }
+        var t = setTimeout(function () { fin('offline'); }, timeoutMs || 30000);
+        try {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: token || '' }),
+            redirect: 'follow'
+          }).then(function (r) { return r.json(); })
+            .then(function (j) { fin(syncTargetVerdict(j)); })
+            .catch(function () { fin('offline'); });
+        } catch (e) { fin('offline'); }
+      });
+    },
+    syncTargetMessage: function (v) { return syncTargetMessage(v); },
 
     /* pullで得た per-key エントリ群をローカルへ適用（保護判定・rev前進・競合収集）。
      * pullAll 本体から抽出（挙動は完全不変）＝keyed窓/全量どちらのpullでも同じ適用ロジックを共有する。
@@ -4820,7 +4866,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = { isProtectedKey: isProtectedKey, isEmptyish: isEmptyish,
                        schedHasData: schedHasData, mayApplyServer: mayApplyServer,
-                       staffLooksDegraded: staffLooksDegraded };
+                       staffLooksDegraded: staffLooksDegraded,
+                       syncTargetVerdict: syncTargetVerdict, syncTargetMessage: syncTargetMessage };
   }
 })();
 /* ===== src/ui/grid.js ===== */
@@ -6521,33 +6568,56 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var URL_ERR = '✗ URL は https://script.google.com/macros/s/.../exec の形式である必要があります';
       document.getElementById('syncUrl').value = cfg.url || '';
       document.getElementById('syncToken').value = cfg.token || '';
+      /* ★確かめてから保存（2026-09-25）。接続先か合言葉を変えた保存は、その組で ping して
+       * 【統合同期GASだと確認できた時だけ】保存する。確認できなければ何も保存しない（いまの同期先を残す）。
+       * 空欄（同期オフ）・変更の無い保存は従来どおり確かめずに保存する。 */
+      var syncBusy_ = false;
+      function syncEdited_(u, t) {
+        var cur = Store.getSyncConfig() || {};
+        return u !== String(cur.url || '').trim() || t !== String(cur.token || '').trim();
+      }
       document.getElementById('syncSave').onclick = function () {
+        var msg = document.getElementById('syncMsg');
         var u = document.getElementById('syncUrl').value.trim();
-        if (badSyncUrl_(u)) { document.getElementById('syncMsg').textContent = URL_ERR; return; }
-        Store.setSyncConfig({
-          url: u,
-          token: document.getElementById('syncToken').value.trim()
+        var t = document.getElementById('syncToken').value.trim();
+        if (badSyncUrl_(u)) { msg.textContent = URL_ERR; return; }
+        if (!u) {                                   /* 空欄＝同期オフ（共通キーには触れない・従来どおり） */
+          Store.setSyncConfig({ url: u, token: t });
+          msg.textContent = '✓ 保存しました';
+          return;
+        }
+        /* 接続先を変えない保存では何も書かない（2026-09-25・レビュー指摘 中-2）。以前はここで setSyncConfig を呼び、
+         * 共通キーが無く後方互換キーだけで動く端末では、確かめていない旧キーのURLを3アプリ共通の接続先へ書いていた */
+        if (!syncEdited_(u, t)) {
+          msg.textContent = '✓ 保存しました（接続先は変更なし）';
+          return;
+        }
+        if (syncBusy_) return;
+        syncBusy_ = true;
+        msg.textContent = '同期先を確かめています…（最長30秒）';
+        Store.verifySyncTarget(u, t).then(function (v) {
+          syncBusy_ = false;
+          if (v !== 'ok') {
+            msg.textContent = '✗ 保存していません：' + Store.syncTargetMessage(v) + '（いまの同期先のままです）';
+            return;
+          }
+          Store.setSyncConfig({ url: u, token: t });
+          msg.textContent = '✓ 同期先を確認して保存しました';
         });
-        document.getElementById('syncMsg').textContent = '✓ 保存しました（接続テストを推奨）';
       };
+      /* 接続テストは、入力中の組を【保存せずに】確かめる（以前は保存してから確かめ、
+       * 入居者マスタのGASにも「✓ 接続OK」と出していた）。 */
       document.getElementById('syncTest').onclick = function () {
         var msg = document.getElementById('syncMsg');
         var u = document.getElementById('syncUrl').value.trim();
+        var t = document.getElementById('syncToken').value.trim();
         if (badSyncUrl_(u)) { msg.textContent = URL_ERR; return; }
+        if (!u) { msg.textContent = '✗ URL が空です'; return; }
         msg.textContent = '接続中…';
-        Store.setSyncConfig({
-          url: u,
-          token: document.getElementById('syncToken').value.trim()
-        });
-        Store.ping().then(function (res) {
-          var role = res && res.role === 'ro' ? '（閲覧専用トークン：この端末の編集は共有されません）'
-            : res && res.role === 'rw' ? '（編集可トークン）' : '';
-          msg.textContent = '✓ 接続OK ' + role;
-        }).catch(function (e) {
-          var m = e && e.message ? e.message : String(e);
-          if (m === 'unauthorized') m = 'トークンが一致しません';
-          if (m === 'server-not-configured') m = 'サーバ未設定（SHIFTAPP_TOKEN未設定）';
-          msg.textContent = '✗ 接続失敗: ' + m;
+        var edited = syncEdited_(u, t);
+        Store.verifySyncTarget(u, t).then(function (v) {
+          msg.textContent = (v === 'ok' ? '✓ ' : '✗ ') + Store.syncTargetMessage(v)
+            + (edited ? '（まだ保存していません。［保存］で反映します）' : '');
         });
       };
       document.getElementById('syncNow').onclick = function () {
