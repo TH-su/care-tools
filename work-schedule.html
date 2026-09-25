@@ -1249,7 +1249,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return lines.join('\n');
   }
 
+  /* ── 更新確認（ポーリング）の間隔を失敗に応じて伸ばす（2026-09-25）───────────────
+   * 背景: 統合同期のGASが詰まると、15秒ごとの確認が失敗し続け、失敗のたびに全データの取得へ
+   * 切り替わっていた＝詰まっている時ほど負荷を増やしていた。失敗が続く間は間隔を
+   * 30→60→120秒と伸ばし、成功したら通常の15秒に戻す（戻すのは呼び手）。
+   * failStreak … 続けて失敗した回数（0＝待たない） */
+  var POLL_BASE_MS = 15000, POLL_BACKOFF_MAX_MS = 120000;
+  function pollBackoffMs(failStreak) {
+    var n = Number(failStreak) || 0;
+    if (n <= 0) return 0;
+    return Math.min(POLL_BASE_MS * Math.pow(2, Math.min(n, 8)), POLL_BACKOFF_MAX_MS);
+  }
+  /* 起動直後の補助的な通信（接続先の確認・シフトの見張り）を min〜max ミリ秒の間でばらす。
+   * 全端末を一斉に再読み込みした時に同じ瞬間へ集中させないため。rnd は 0〜1（テスト用に差し替え可）。
+   * 画面に最初に出すデータの取得（pullAll）は遅らせない（読み込みを遅く感じさせない）。 */
+  function startJitterMs(min, max, rnd) {
+    var r = (typeof rnd === 'number' && isFinite(rnd)) ? rnd : Math.random();
+    if (r < 0) r = 0; if (r > 1) r = 1;
+    return Math.round(min + (max - min) * r);
+  }
+
   var api = {
+    POLL_BASE_MS: POLL_BASE_MS,
+    POLL_BACKOFF_MAX_MS: POLL_BACKOFF_MAX_MS,
+    pollBackoffMs: pollBackoffMs,
+    startJitterMs: startJitterMs,
     MAX_ATTEMPTS: MAX_ATTEMPTS,
     ATTEMPT_TIMEOUT_MS: ATTEMPT_TIMEOUT_MS,
     ATTEMPT_TIMEOUT_WRITE_MS: ATTEMPT_TIMEOUT_WRITE_MS,
@@ -10894,7 +10918,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           }
         }
         } finally { step(); }
-      });
+      }, true);
     }
     step();
   }
@@ -11661,9 +11685,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 全応答の成否を同期状態バッジ(noteSyncResult_)へ記録する。呼出側の処理(送信済みの記録など)を
    * 反映した後の状態でバッジを描くため、記録は cb の後。cb の扱い・例外は従来どおり。 */
-  function gas(payload, cb) {
+  /* 同じキーの get が送信中なら、新しく送らず同じ応答を待つ（2026-09-25）。
+   * 実測: 1台の端末が同じ日の get を同じ秒に2〜3本送っていた（pullAll・送信後の確認・取り直しが重なる）。
+   * 同期GASが詰まっている時は1本ごとに30秒×3試行を消費する。相乗りした呼び手には応答の複製を渡す
+   * （呼び手が応答を書き換えても互いに影響しない）。対象は {action:'get', key} だけの要求に限る。
+   * fresh=true … 相乗りせず必ず新しく取りに行く（相乗りもさせない）。競合・拒否の後始末や送信後の確認など、
+   *   【送信より後のサーバー版】が要る呼び手が使う。送信前に出た get に相乗りすると古い版を採用しうる
+   *   （2026-09-25 レビュー指摘）。rev の新旧を確かめて取り込む呼び手（pullDayNow・pullCareNow・pullMasterNow）は相乗りでよい。 */
+  var getInFlight_ = {};
+  function gas(payload, cb, fresh) {
+    var ck = '';
+    if (!fresh && payload && payload.action === 'get' && typeof payload.key === 'string' && payload.key &&
+        Object.keys(payload).length === 2) ck = payload.key;
+    if (ck && getInFlight_[ck]) { getInFlight_[ck].push(cb); return; }
+    if (ck) getInFlight_[ck] = [];
     gasCall(payload, function (j) {
-      try { cb(j); } finally { try { noteSyncResult_(j); } catch (eN) {} }
+      var riders = [];
+      if (ck) { riders = getInFlight_[ck] || []; delete getInFlight_[ck]; }
+      var copies = [];
+      for (var i = 0; i < riders.length; i++) {
+        try { copies.push(j ? JSON.parse(JSON.stringify(j)) : j); } catch (eC) { copies.push(null); }
+      }
+      try { cb(j); } finally {
+        try { noteSyncResult_(j); } catch (eN) {}
+        for (var k = 0; k < riders.length; k++) { try { riders[k](copies[k]); } catch (eR) {} }
+      }
     }, false);
   }
   function gasCall(payload, cb, retried) {
@@ -11875,7 +11921,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       notePush_(date, 'ok', '時間切れだったが届いていた');
       noteSyncSuccess_();
       toast('送信は時間切れになりましたが、クラウドには届いていました（' + date + '）');
-    });
+    }, true);
   }
   function pushDayNow(report) {
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
@@ -11961,7 +12007,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!j || !j.ok) { scheduleRetry_(); return; }
       if (!j.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合。ローカルを正として送り直す */
       adoptServerDay_(date, j.data, j.rev || 0, true);
-    });
+    }, true);
   }
   /* ロック日への上書き拒否(error:'locked')の処理: この端末はロック未受信。ロック中の実績を尊重し、
    * ローカル変更は破棄してサーバーの確定(ロック)版を採用する。clearDayDirty_ で adopt を非dirty(全採用)
@@ -11989,7 +12035,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * サーバーが実は未ロックだった場合も dirty維持のまま3-wayマージへ落ち、安全側に倒れる。 */
       adoptServerDay_(date, g.data, g.rev || 0, false);
       toast('この日(' + date + ')はロックされています。ロック中の変更は保存されません（確定版を表示）', true);
-    });
+    }, true);
   }
   /* put競合なのにサーバーにその日のデータが無い（新規サーバー/データ消失で rev だけ進んでいる状態）＝
    * ローカルの rev は幻。rev を 0 に戻してローカル盤面を送り直す（force不使用＝本当に他端末が居れば
@@ -12175,7 +12221,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!g || !g.ok) { scheduleRetry_(); return; }
           if (!g.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合を修復 */
           adoptServerDay_(date, g.data, g.rev || 0, false);
-        });
+        }, true);
       } else {
         scheduleRetry_();
         if (!j) { try { verifyPutLanded_(date, daySig(day)); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
@@ -12395,6 +12441,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var pollInFlight_ = false;
   var lastFullPullAt_ = 0;
   var lastHeadProbeAt_ = 0;
+  /* 2026-09-25: head が通信失敗・拒否で返った時は全量取得(pullAll)へ切り替えず、次の確認を遅らせる。
+   * 従来は失敗のたびに pullAll（週間計画・日・マスタ・シフトの本体取得）へ格上げしており、
+   * 同期GASが詰まっている時ほど重い要求を増やしていた（2026-09-25 全端末で送受信が止まった一因）。
+   * 間隔は NP.pollBackoffMs（30→60→120秒）。head が成功したら通常の15秒へ戻す。 */
+  var pollFailStreak_ = 0, pollNextAt_ = 0;
+  function pollHeadFailed_() {
+    pollFailStreak_++;
+    pollNextAt_ = Date.now() + NP.pollBackoffMs(pollFailStreak_);
+  }
+  function pollHeadOkReset_() { pollFailStreak_ = 0; pollNextAt_ = 0; }
   /* 本体を取りに行くべき rev 差か。「前進(h>l)」と「消失(h===0 かつ l>0)」だけを対象にする。
    * GAS の rev は writeEntry_ で必ず1以上になるため **head rev 0 ⟺ サーバーにエントリ無し**＝
    * get の !j.data と厳密に一致し、pullAll 側の復旧経路（ローカルを送り返す/rev0へ戻して復元push）を確実に起動できる。
@@ -12429,9 +12485,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!j || j.ok === false || !j.revs) {
         /* head非対応の旧GAS(badkey)のみ恒久フォールバックにする。unauthorized 等の一時的失敗で
          * latch すると、以後ずっと全量pullになりリロードまで戻らないため区別する。 */
-        if (j && j.ok === false && j.error === 'badkey') pollHeadOk_ = false;
-        pullAll(false); return;
+        if (j && j.ok === false && j.error === 'badkey') { pollHeadOk_ = false; pullAll(false); return; }
+        /* 通信失敗・拒否＝全量取得へ格上げしない。次の確認を遅らせるだけ（上の pollHeadFailed_ 参照）。
+         * 接続先違い(unknown action 等)の自動切替は gas() の中で既に試みている。 */
+        pollHeadFailed_();
+        return;
       }
+      pollHeadOkReset_();
       var r = j.revs;
       /* 要求したキーが1つでも応答に無い＝GAS側のキー許可漏れ等で rev0 と区別できない（fail-silent）。
        * head を信頼できないので「head非対応」と同じ扱いにし、30秒下限＋5分ごとの再判定に乗せる
@@ -12500,7 +12560,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           shiftCache.at = Date.now();
           serveCache(); return;
         }
-        fetchShiftBody_(ym, cb);                             /* rev変化 or head失敗 → 本体取得 */
+        /* head が失敗した（rev===null）時は、手元のシフトで答えて本体の取得へ格上げしない（2026-09-25）。
+         * 同期GASが詰まっている時に重い取得を重ねない。変化の検知は次の確認で行う
+         * （shiftCache.at は進めない＝鮮度は「確かめられた時刻」のまま）。 */
+        if (rev === null) { serveCache(); return; }
+        fetchShiftBody_(ym, cb);                             /* rev変化 → 本体取得 */
       });
       return;
     }
@@ -15053,7 +15117,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eDirty) {}
     try { pullAll(false); } catch (e) {}
     try { runRefetch_(); } catch (eRf0) {}   /* 起動時: 取り直し待ちの日を取り直す（前回オフラインで取れなかった分） */
-    try { checkEndpointIdentity_(); } catch (eCe) {}   /* 接続先が本当に同期GASかを1回だけ確認 */
+    /* 接続先が本当に同期GASかを1回だけ確認。全端末の一斉再読み込みで同じ瞬間に集中しないよう3〜10秒ばらす（2026-09-25） */
+    setTimeout(function () { try { checkEndpointIdentity_(); } catch (eCe) {} }, NP.startJitterMs(3000, 10000));
     try { updateSyncBadge_(); } catch (eSb) {}
     /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛 */
     if (!syncBadgeBound_) {
@@ -15128,6 +15193,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!syncOn() || document.hidden) return;
           if (printing_()) return;                       /* 印刷中は従来どおり同期しない（A3フィット保護） */
           if (Date.now() - lastPullAt < POLL_MIN_GAP_MS) return;
+          if (Date.now() < pollNextAt_) return;          /* head の失敗が続く間は間隔を伸ばす（2026-09-25） */
           pollTick_();                                   /* head で変更の有無を確かめてから本体を取る */
         } catch (e) {}
       }, POLL_INTERVAL_MS);
@@ -15145,7 +15211,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 間隔は90秒。fetchShiftData のキャッシュTTLが60秒なので、60秒間隔にすると
        * head 非対応の環境（旧GAS・同期OFF）で毎回フル取得になってしまう。 */
       setInterval(function () { try { watchPendingShift_(); } catch (e) {} }, 90000);
-      setTimeout(function () { try { watchPendingShift_(); } catch (e) {} }, 2500);   /* 起動直後にも1回 */
+      /* 起動直後にも1回。一斉再読み込みで集中しないよう4〜12秒の間でばらす（2026-09-25・従来は2.5秒固定） */
+      setTimeout(function () { try { watchPendingShift_(); } catch (e) {} }, NP.startJitterMs(4000, 12000));
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden) {
           try { wsWatchMasterState_(); } catch (e) {}
