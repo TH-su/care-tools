@@ -1099,6 +1099,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'transient';
   }
 
+  /* ═══ 同期先の判定（2026-09-25）═══════════════════════════════════════════
+   * 原則: 3アプリ共通の接続先（su_sync_common＝週間計画・ワースケ・シフト共通）に書いてよいのは、
+   *       URL と合言葉の組で ping し、「統合同期GAS（silverunix-sync）」と確認できた組だけ。
+   * 2026-09-24、1台の端末に【別アプリ（入居者マスタ等）のURLとそのアプリの合言葉】が組で入り、
+   * 送信が毎回「不明なaction」で拒否された。それまでの対策は URL の【形】しか見ておらず、
+   * 別アプリのGASのURLも同じ形なので素通りしていた。
+   * 判定（ping に合言葉を付けて送った応答 j から）:
+   *   'ok'      … ok:true かつ server が 'silverunix-sync'
+   *   'wrong'   … 別アプリのGAS。'不明なaction'／'unknown action'（ping を知らない）、
+   *               または ok:true なのに同期GASと名乗らない（入居者マスタの ping は {ok:true, role}）
+   *               ※統合GASは ping を持った最初の版（f4f1870）から server を返し、配信先は1つを上書き
+   *                 更新する運用なので、名乗らない同期GASは現存しない
+   *   'auth'    … 合言葉が一致しない（統合GASの 'unauthorized'）か、別アプリのGASの認証エラー
+   *   'offline' … 応答が読めない・届かない（確かめられなかった）
+   * 保存・自動切替・自動復旧は 'ok' の時だけ書く。起動時の警告は 'wrong' の時だけ出す。 */
+  var SYNC_SERVER_ID = 'silverunix-sync';
+  function syncTargetVerdict(j) {
+    if (!j || typeof j !== 'object') return 'offline';
+    if (j.ok === true && j.server === SYNC_SERVER_ID) return 'ok';
+    if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
+    /* 日本語の「認証エラー」は入居者マスタ・申送のGASが合言葉違いに返す文言。統合同期GASは合言葉違いに
+       英語の 'unauthorized' しか返さない（Code.gs に日本語の認証エラーは無い）＝別アプリと断定できる。
+       「入居者マスタのURL＋統合同期の合言葉」の組（URLだけ貼り間違えた時の形）をここで捕まえる（2026-09-25）。 */
+    if (j.error === '認証エラー') return 'wrong';
+    if (j.ok === true) return 'wrong';
+    if (j.error) return 'auth';
+    return 'wrong';
+  }
+  /* 判定を利用者向けの1文にする（保存を断った理由として出す）。 */
+  function syncTargetMessage(v) {
+    if (v === 'ok') return 'ワークスケジュールの同期先を確認しました';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
+    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
+  }
+
   /* 1試行のタイムアウト。運ぶデータの大きさで決める。action 省略時は従来どおり15秒。
    *   put ................. 45秒（盤面全体を送る＝一番重い）
    *   get / pull / head ... 30秒（日データ・計画データを受け取る）
@@ -1220,6 +1256,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     ATTEMPT_TIMEOUT_READ_MS: ATTEMPT_TIMEOUT_READ_MS,
     MAX_ATTEMPTS_WRITE: MAX_ATTEMPTS_WRITE,
     attemptTimeoutMs: attemptTimeoutMs,
+    SYNC_SERVER_ID: SYNC_SERVER_ID,
+    syncTargetVerdict: syncTargetVerdict,
+    syncTargetMessage: syncTargetMessage,
     FAST_404_MS: FAST_404_MS,
     DEAD_MIN_COUNT: DEAD_MIN_COUNT,
     DEAD_MIN_SPAN_MS: DEAD_MIN_SPAN_MS,
@@ -7725,11 +7764,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     settings.token = String(settings.token || '').trim();
   }
   var lastCommonSig_ = null;   /* 直近に共通キーへ書いた接続先の署名。接続先以外の設定変更時に共通キーを汚さない */
-  function saveSettings() {
+  function saveSettings(opts) {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
     /* 接続先を共通キーへ反映＝同一オリジンの週間計画/シフトも同じ接続先を使う。
      * 接続先(endpoint/token)が変わった時だけ更新＝接続先以外の設定変更で su_sync_common の updatedAt を
-     * 無用に進めて他アプリを過剰再同期させない。 */
+     * 無用に進めて他アプリを過剰再同期させない。
+     * ★共通キーへ書くのは、呼び出し側が【同期GASと確かめた組】だと明示した時だけ（opts.writeCommon・2026-09-25）。
+     *   以前は接続先を変えない保存でも、起動時に読んだ（メモリの）接続先を最初の保存で共通キーへ書いていた。
+     *   別アプリの接続先を持ったまま開いていたタブで休憩時間だけ変えて保存すると、他のアプリで直した
+     *   正しい接続先を古い値で上書きしていた（レビュー指摘・中-1）。 */
+    if (!(opts && opts.writeCommon)) return;
     try {
       if (settings.endpoint) {
         var sig = settings.endpoint + '|' + (settings.token || '');
@@ -11144,42 +11188,117 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *     ・ok:true で server が【別の名前】（＝別アプリのGASが自分の名を名乗った）
    *   それ以外（合言葉違い・server 無しの ok・読めない）は null＝何も言わない。 */
   function endpointVerdict_(j) {
-    if (!j || typeof j !== 'object') return null;
-    if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
-    if (j.ok === true && typeof j.server === 'string' && j.server) {
-      return (j.server === SYNC_SERVER_ID) ? 'ok' : 'wrong';
-    }
+    /* 判定の実体は NP.syncTargetVerdict の1本だけ（保存・自動切替・自動復旧と同じ物差し）。
+     * ここでは「警告してよいか」だけを返す: 合言葉違い(auth)・届かない(offline)は断定しない＝null。
+     * 2026-09-25: ok:true なのに server を名乗らない相手（入居者マスタGASの {ok:true, role}）も
+     * 'wrong' に含めた。統合GASは ping を持った最初の版から server を返すため、名乗らない同期GASは無い。 */
+    var v = NP.syncTargetVerdict(j);
+    if (v === 'ok') return 'ok';
+    if (v === 'wrong') return 'wrong';
     return null;
+  }
+  /* ═══ 同期先を確かめる・控える・戻す（2026-09-25）══════════════════════════
+   * 3アプリ共通の接続先に書いてよいのは、ping で同期GASと確認できた URL と合言葉の組だけ。
+   *   pingSyncTarget_ … 組を ping して NP.syncTargetVerdict の判定を返す（gasCall を通さない＝
+   *                     再試行・死活判定・診断カウンタに影響させない純粋な確認）
+   *   su_sync_lkg     … 最後に同期GASと確認できた組の控え（端末ごと・localStorage）。
+   *                     書くのは判定が 'ok' の時だけ。中身は接続先と同じ種類の値（URLと合言葉）。
+   *   tryRestoreLkg_  … いまの接続先が別アプリのGASだと分かった時、控えを【もう一度確かめてから】戻す。
+   *                     どの入口から誤った値が入っても、この端末は自力で正しい同期先へ戻れる。 */
+  var SYNC_LKG_KEY = 'su_sync_lkg';
+  function pingSyncTarget_(url, token, cb, timeoutMs) {
+    var done = false, t = null;
+    function fin(v, j) {
+      if (done) return; done = true;
+      if (t) { clearTimeout(t); t = null; }
+      try { cb(v, j || null); } catch (e) {}
+    }
+    if (!url) { fin('offline'); return; }
+    t = setTimeout(function () { fin('offline'); }, timeoutMs || 30000);
+    try {
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                   body: JSON.stringify({ action: 'ping', token: token || '' }), redirect: 'follow' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { fin(NP.syncTargetVerdict(j), j); })
+        .catch(function () { fin('offline'); });
+    } catch (e) { fin('offline'); }
+  }
+  function loadLkg_() {
+    try {
+      var o = JSON.parse(localStorage.getItem(SYNC_LKG_KEY) || 'null');
+      if (o && typeof o === 'object' && o.endpoint && GAS_ENDPOINT_RE.test(String(o.endpoint))) return o;
+    } catch (e) {}
+    return null;
+  }
+  /* ★呼んでよいのは ping の判定が 'ok' だった組についてだけ */
+  function saveLkg_(ep, tok) {
+    ep = String(ep || '').trim();
+    if (!ep || !GAS_ENDPOINT_RE.test(ep)) return;
+    try { localStorage.setItem(SYNC_LKG_KEY, JSON.stringify({ endpoint: ep, token: String(tok || '').trim(), at: Date.now() })); } catch (e) {}
+  }
+  /* 控えへ戻す。cb(true)＝戻した。控えが無い・いまと同じ・確かめて 'ok' でない時は何もしない（cb(false)）。 */
+  var lkgBusy_ = false;
+  function tryRestoreLkg_(cb) {
+    function done(v) { lkgBusy_ = false; if (cb) { try { cb(v); } catch (e) {} } }
+    if (lkgBusy_) { if (cb) { try { cb(false); } catch (e0) {} } return; }
+    var l = loadLkg_();
+    var cur = String(settings.endpoint || '').trim() + '|' + String(settings.token || '').trim();
+    if (!l || (String(l.endpoint).trim() + '|' + String(l.token || '').trim()) === cur) { if (cb) { try { cb(false); } catch (e1) {} } return; }
+    lkgBusy_ = true;
+    pingSyncTarget_(l.endpoint, l.token || '', function (v) {
+      if (v !== 'ok') { done(false); return; }
+      /* 確かめている間（最長15秒）に利用者が設定画面で直していたら、その値を控えで上書きしない（中-3） */
+      if ((String(settings.endpoint || '').trim() + '|' + String(settings.token || '').trim()) !== cur) { done(false); return; }
+      settings.endpoint = String(l.endpoint).trim();
+      settings.token = String(l.token || '').trim();
+      saveSettings({ writeCommon: true });          /* ws_settings と su_sync_common（3アプリ共通）を両方直す（確かめ済み） */
+      saveLkg_(settings.endpoint, settings.token);  /* 確かめた時刻を更新 */
+      try { resetSyncStat_(); } catch (eR) {}
+      try { dead.reset(); } catch (eD) {}
+      try { setSyncState('✓ 同期先を元に戻しました'); } catch (eS) {}
+      try {
+        toast('同期先が別のアプリのGASに変わっていたため、前回正常に同期できていた同期先へ戻しました'
+            + '（週間計画・シフトも同じ同期先に戻ります）');
+      } catch (eT) {}
+      done(true);
+    }, 15000);
   }
   function checkEndpointIdentity_(announceOk) {
     if (!syncOn()) return;
-    var done = false, t = null;
-    function fin(verdict) {
-      if (done) return; done = true;
-      if (t) { clearTimeout(t); t = null; }
-      /* 設定を保存した直後だけ、正しいことも伝える（貼り直した人がその場で確かめられる） */
-      if (verdict === 'ok' && announceOk) {
-        try { toast('✓ ワークスケジュールの同期先を確認しました'); } catch (eOk) {}
+    var ep = settings.endpoint, tok = settings.token;
+    pingSyncTarget_(ep, tok, function (v, j) {
+      if (ep !== settings.endpoint || tok !== settings.token) return;   /* 確かめている間に設定が変わった */
+      var verdict = endpointVerdict_(j);
+      if (verdict === 'ok') {
+        saveLkg_(ep, tok);                         /* 正しい組＝控えを最新にする */
+        /* 共通キーがまだ無い端末（ワースケだけ設定した端末）は、確かめた組で共通キーも作る＝
+           週間計画・シフトにも行き渡る（以前は最初の保存で確かめずに書いていた動きを、確かめた時だけに残す） */
+        try {
+          var c0 = JSON.parse(localStorage.getItem(COMMON_SYNC_KEY) || 'null');
+          if (!c0 || !c0.endpoint) saveSettings({ writeCommon: true });
+        } catch (eC0) {}
+        /* 設定を保存した直後だけ、正しいことも伝える（貼り直した人がその場で確かめられる） */
+        if (announceOk) { try { toast('✓ ワークスケジュールの同期先を確認しました'); } catch (eOk) {} }
         return;
       }
-      if (verdict !== 'wrong') return;             /* 正しい／断定できない＝何も言わない（誤警告を作らない） */
-      try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e1) {}
-      try {
-        toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。'
-            + 'このままでは送信できません。正常な端末の設定からURLをコピーして貼り直してください', true);
-      } catch (e2) {}
-    }
-    t = setTimeout(function () { fin(null); }, 20000);
-    try {
-      fetch(settings.endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                                 body: JSON.stringify({ action: 'ping', token: settings.token }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) { fin(endpointVerdict_(j)); })
-        .catch(function () { fin(null); });
-    } catch (e) { fin(null); }
+      if (verdict !== 'wrong') return;             /* 断定できない＝何も言わない（誤警告を作らない） */
+      /* 別アプリのGASだと断定できた。控えがあれば確かめ直して自動で戻す（2026-09-25） */
+      tryRestoreLkg_(function (restored) {
+        if (restored) {
+          try { pullAll(false); } catch (eP) {}
+          try { recoverNow_(); } catch (eR) {}
+          return;
+        }
+        try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e1) {}
+        try {
+          toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。'
+              + 'このままでは送信できません。正常な端末の設定からURLをコピーして貼り直してください', true);
+        } catch (e2) {}
+      });
+    }, 20000);
   }
   function isWrongEndpointErr_(e) {
-    return e === 'unknown action' || e === '不明なaction' || e === 'deadendpoint';
+    return e === 'unknown action' || e === '不明なaction' || e === '認証エラー' || e === 'deadendpoint';
   }
   function resLabel_(status, errKind) {
     if (errKind) return errKind;                 /* timeout / neterr / badjson */
@@ -11494,7 +11613,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
   function friendlyErr(e) {
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
-    if (e === 'unknown action' || e === '不明なaction') return '同期先が違います（別のアプリのGASを指しています）';
+    if (e === 'unknown action' || e === '不明なaction' || e === '認証エラー') return '同期先が違います（別のアプリのGASを指しています）';
     if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
     return e || '通信失敗';
   }
@@ -11503,6 +11622,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      su_sync_common と現行 settings を上書き。通信失敗/unknown action継続/unauthorized では上書きしない
      （誤切替・unauthorized固着の防止）。週間計画(care-schedule)の healStaleTarget と同方針。 */
   function healStaleTarget(cb) {
+    /* 1 ws_settings（従来）→ 2 最後に正常だった接続先の控え（2026-09-25）の順に試す。
+     * どちらも「同期GASと確認できた時だけ」切り替える。 */
+    healFromWsSettings_(function (healed) {
+      if (healed) { cb(true); return; }
+      tryRestoreLkg_(cb);
+    });
+  }
+  function healFromWsSettings_(cb) {
     var ws = {};
     try { ws = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) { ws = {}; }
     var wsEp = String((ws && ws.endpoint) || '').trim();
@@ -11525,6 +11652,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             settings.endpoint = wsEp; settings.token = wsTok;
             try { localStorage.setItem(COMMON_SYNC_KEY, JSON.stringify(
               { endpoint: wsEp, token: wsTok, updatedAt: Date.now() })); } catch (e2) {}
+            saveLkg_(wsEp, wsTok);   /* 確かめられた組＝控えも更新 */
             once(true);
           } else { once(false); }
         })
@@ -14324,20 +14452,50 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { applyShiftForDate(ui.currentDate, { fresh: true, report: true }, doneCb); }
       catch (e5) { doneCb(); }   /* 例外時も doneCb 内のロックガードを必ず通す(直接 finalizeBoard しない) */
     });
+    var stSaveBusy_ = false;
     $('stSave').addEventListener('click', function () {
       /* 同期URLの形式検証（誤URLの su_sync_common 経由伝播を防ぐ）。空欄=同期オフは許可。
        * 不正な非空URLは何も保存せず中断＝他設定も巻き込まない。 */
       var epIn = $('stEndpoint').value.trim();
+      var tokIn = $('stToken').value.trim();
       if (epIn && !GAS_ENDPOINT_RE.test(epIn)) {
         toast('同期URLの形式が不正です（https://script.google.com/macros/s/.../exec）', true);
         return;
       }
+      /* ★確かめてから保存（2026-09-25）。形の検査だけでは、別アプリのGASのURLも同じ形なので通ってしまい、
+       * 2026-09-24 に1台の端末の接続先が別アプリへ入れ替わった。接続先か合言葉を変えた時は、
+       * その組で ping して【同期GASだと確認できた時だけ】保存する。確認できなければ何も保存しない
+       * （いま動いている接続先をそのまま残す＝他の設定も巻き込まない・従来の中断と同じ作法）。
+       * 同期をやめる（空欄）・接続先を変えない保存は、確かめずに従来どおり保存する。 */
+      var syncEdited_ = (epIn !== String(settings.endpoint || '').trim()) || (tokIn !== String(settings.token || '').trim());
+      if (!epIn || !syncEdited_) { commitSettings_(epIn, tokIn, false); return; }   /* 接続先は書かない */
+      if (stSaveBusy_) return;
+      stSaveBusy_ = true;
+      var btn_ = this;
+      try { btn_.disabled = true; } catch (eDb) {}
+      $('stResult').textContent = '同期先を確かめています…（最長30秒）';
+      pingSyncTarget_(epIn, tokIn, function (v) {
+        stSaveBusy_ = false;
+        try { btn_.disabled = false; } catch (eDb2) {}
+        if (v !== 'ok') {
+          var why_ = NP.syncTargetMessage(v);
+          $('stResult').textContent = '✗ ' + why_ + '。保存していません（いまの同期先のままです）';
+          toast('保存していません：' + why_, true);
+          return;
+        }
+        saveLkg_(epIn, tokIn);          /* 確かめられた組＝最後に正常だった接続先として控える */
+        commitSettings_(epIn, tokIn, true);
+        toast('✓ ' + NP.syncTargetMessage('ok'));
+      });
+    });
+    /* 設定の反映本体（確かめ終わった後、または確かめる必要が無い時に呼ぶ） */
+    function commitSettings_(epIn, tokIn, verified) {
       settings.breakMinHours = parseFloat($('stBreakH').value) || 7;
       settings.retentionDays = parseInt($('stRetention').value, 10) || 30;
       var hadEndpoint = !!settings.endpoint;
       var prevSyncSig_ = settings.endpoint + '|' + settings.token;   /* 接続先の変更検知（同期状態バッジ） */
       settings.endpoint = epIn;
-      settings.token = $('stToken').value.trim();
+      settings.token = tokIn;
       settings.urlCare = $('stUrlCare').value.trim() || 'care-schedule.html';
       settings.urlShift = $('stUrlShift').value.trim() || 'shift-app.html';
       settings.shiftAuto = $('stShiftAuto').checked;
@@ -14345,7 +14503,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var prevHideNH_ = settings.hideNonHeadcount !== false;
       if ($('stHideNonHeadcount')) settings.hideNonHeadcount = $('stHideNonHeadcount').checked;
       var hideNHChanged_ = (settings.hideNonHeadcount !== false) !== prevHideNH_;
-      saveSettings();
+      saveSettings({ writeCommon: !!verified });   /* 共通キーは確かめた時だけ（空欄＝同期オフも共通キーに触れない） */
       if (prevSyncSig_ !== settings.endpoint + '|' + settings.token) { try { resetSyncStat_(); } catch (eRs) {} }
       try { updateSyncBadge_(); } catch (eSb) {}   /* 同期の設定・解除をすぐ反映 */
       hideModals();
@@ -14367,9 +14525,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { pullAll(true); } catch (ePa) {}
         try { recoverNow_(); } catch (eRn) {}
       }
-      /* 保存した接続先が本当にワークスケジュールの同期先かを確かめて伝える */
-      if (settings.endpoint && syncChanged_) { try { checkEndpointIdentity_(true); } catch (eCi) {} }
-    });
+      /* 接続先を変えた保存は、保存の前に確かめ済み（上の pingSyncTarget_）。ここで重ねて確かめない */
+    }
     $('stPush').addEventListener('click', function () {
       $('stResult').textContent = '送信中…';
       pushDayNow(true); pushCareNow(); pushMasterNow();
