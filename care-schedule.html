@@ -1634,10 +1634,10 @@ select.inp { cursor: pointer; }
       <input class="inp" type="url" id="sync-endpoint"
              placeholder="https://script.google.com/macros/s/.../exec"
              autocomplete="off" spellcheck="false"
-             oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
+             oninput="onSyncInputChange()">
       <div class="hint-box" style="margin-top:6px">
-        入力すると<strong>自動保存</strong>されます（端末を閉じても、次回起動時にURLは保持されます）。<br>
-        ※ ワークスケジュールで同期設定済みの場合は、その接続先が自動的に使われます（ここは空でOK）。
+        ［設定を保存］を押すと、<strong>同期先かどうかを確かめてから</strong>保存します（別のアプリのURLは保存しません）。<br>
+        ※ ワークスケジュールで同期設定済みの場合は、その接続先が自動的に使われます（開くとその接続先が表示されます）。
       </div>
     </div>
 
@@ -1646,7 +1646,7 @@ select.inp { cursor: pointer; }
       <input class="inp" type="password" id="sync-token"
              placeholder="ワークスケジュールと同じトークン"
              autocomplete="off" spellcheck="false"
-             oninput="onSyncInputChange()" onchange="persistSyncInputs()" onblur="persistSyncInputs()">
+             oninput="onSyncInputChange()">
     </div>
 
     <div class="form-row">
@@ -4595,6 +4595,13 @@ const SYNC = {
     try {
       const j = await this.gas({ action: 'ping' });
       if (!j.ok) throw new Error(j.error || '応答エラー');
+      /* ★応答が ok でも、同期GASと名乗らなければ OK にしない（2026-09-25）。入居者マスタのGASの ping は
+         { ok:true, role } を返すため、以前はここで「接続OK」と出て、誤った接続先を正しいと案内していた。 */
+      if (csSyncTargetVerdict(j) !== 'ok') {
+        this.log('❌ 応答はありますが、' + csSyncTargetMessage('wrong')
+          + '。正常に同期できている端末の［設定 → クラウド同期］のURLと同期トークンを貼り直してください');
+        return;
+      }
       this.log('✅ 接続OK：統合GASが正常に応答しました' + (j.server ? '（' + j.server + '）' : ''));
       /* サーバー側の版と防御機能を表示する（2026-08-05）。Apps Script は「保存」だけでは /exec に
          反映されず、デプロイを管理→新バージョン まで進めて初めて切り替わる。その取り違えを
@@ -4710,57 +4717,140 @@ function saveLocalOnly() {
   csBackupResidents();
 }
 
-// 入力欄の内容を即座に SYNC.config へ反映＋localStorageへ保存
-function persistSyncInputs() {
-  const url  = ($('#sync-endpoint').value || '').trim();
+/* ═══ 同期先は「確かめてから保存」（2026-09-25）══════════════════════════════
+ * 3アプリ共通の接続先（su_sync_common＝週間計画・ワースケ・シフト共通）に書いてよいのは、
+ * ping で統合同期GAS（silverunix-sync）と確認できた URL と合言葉の組だけ。
+ * 2026-09-24 まで、この画面は【入力欄に貼る・打つだけで0.2秒後に】3アプリ共通の接続先へ書き込んでおり、
+ * 形の検査も通らなかった（検査していたのは［設定を保存］ボタンだけ）。別アプリ（入居者マスタ等）の
+ * URLと合言葉を貼った端末では、ワースケ・シフトも一斉に別アプリを向く。実際に1台がこの状態になった。
+ * 判定の物差しはワースケ netpolicy.js の syncTargetVerdict と同じ（別ファイルのため写しを置く）:
+ *   'ok' … ok:true かつ server==='silverunix-sync'／'wrong' … 別アプリのGAS（不明なaction・名乗らない ok）
+ *   'auth' … 合言葉違い（または別アプリの認証エラー）／'offline' … 確かめられなかった
+ * 保存するのは 'ok' の時だけ。それ以外は何も書かず、いまの同期先をそのまま残す。 */
+const CS_SYNC_SERVER_ID = 'silverunix-sync';
+function csSyncTargetVerdict(j) {
+  if (!j || typeof j !== 'object') return 'offline';
+  if (j.ok === true && j.server === CS_SYNC_SERVER_ID) return 'ok';
+  if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
+  if (j.error === '認証エラー') return 'wrong';   // 日本語の「認証エラー」は入居者マスタ・申送のGASの合言葉違いの文言（統合同期GASは英語の unauthorized だけ）＝別アプリ
+  if (j.ok === true) return 'wrong';
+  if (j.error) return 'auth';
+  return 'wrong';
+}
+function csSyncTargetMessage(v) {
+  if (v === 'ok') return '週間計画の同期先を確認しました';
+  if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
+  if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+  return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
+}
+/* URL と合言葉の組を ping して判定を返す（SYNC.gas を通さない＝再試行・死活判定に影響させない） */
+async function csPingSyncTarget(url, token, timeoutMs) {
+  let timer = null;
+  try {
+    const j = await Promise.race([
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                   body: JSON.stringify({ action: 'ping', token: token || '' }), redirect: 'follow' })
+        .then(r => r.json()).catch(() => null),
+      new Promise(res => { timer = setTimeout(() => res(null), timeoutMs || 30000); })
+    ]);
+    return csSyncTargetVerdict(j);
+  } catch (e) { return 'offline'; }
+  finally { if (timer) clearTimeout(timer); }
+}
+function syncTypedValues() {
+  const url = ($('#sync-endpoint').value || '').trim();
   const tokEl = $('#sync-token');
-  const tok  = tokEl ? (tokEl.value || '').trim() : (SYNC.config.token || '');
+  const tok = tokEl ? (tokEl.value || '').trim() : '';
+  return { url, tok };
+}
+/* 入力欄が、いま実際に使っている接続先（SYNC.target()）と違う＝未保存の変更がある。
+   ★空欄は「変更なし」とみなす（ワースケの接続先を使う端末はここを空で使ってきた＝操作を止めない） */
+function syncInputsEdited() {
+  const { url, tok } = syncTypedValues();
+  if (!url) return false;
+  const t = SYNC.target();
+  return url !== t.endpoint || tok !== t.token;
+}
+function refreshSyncIndicator(text, color) {
+  const ind = $('#sync-save-indicator');
+  if (!ind) return;
+  if (text) { ind.textContent = text; ind.style.color = color || 'var(--g6)'; return; }
+  const { url } = syncTypedValues();
+  if (!url && !SYNC.hasTarget()) { ind.textContent = '（未入力）'; ind.style.color = 'var(--g6)'; }
+  else if (syncInputsEdited()) { ind.textContent = '● 未保存（［設定を保存］で確かめてから反映）'; ind.style.color = '#e65100'; }
+  else { ind.textContent = '💾 保存済み'; ind.style.color = '#2e7d32'; }
+}
+/* 自動同期のチェックだけを保存する（接続先には触れない） */
+function persistSyncAuto() {
   const auto = !!$('#sync-auto').checked;
-  const changed = (SYNC.config.auto !== auto) || (SYNC.config.endpoint !== url) || (SYNC.config.token !== tok);
+  if (SYNC.config.auto === auto) return;
+  SYNC.config.auto = auto;
+  SYNC.save();
+  if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
+}
+/* 確かめ終わった接続先を書く。★呼んでよいのは saveSyncConfig の判定 'ok' の後と、空欄の保存だけ */
+function commitSyncTarget(url, tok) {
+  const changed = (SYNC.config.endpoint !== url) || (SYNC.config.token !== tok);
   SYNC.config.endpoint = url;
   SYNC.config.token    = tok;
-  SYNC.config.auto     = auto;
   SYNC.save();
-  // 3アプリ共通キーへ反映＝同一オリジンのワースケ/シフトも同じ接続先を使う
+  // 3アプリ共通キーへ反映＝同一オリジンのワースケ/シフトも同じ接続先を使う（空欄は共通キーに触れない＝従来どおり）
   if (url) {
     try {
       localStorage.setItem('su_sync_common', JSON.stringify(
         { endpoint: url, token: tok || '', updatedAt: Date.now() }));
     } catch(e) {}
   }
-  // ポーリング状態を更新（ワースケ設定共有時も対象）
   if (changed) {
     if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
   }
-  // 入力中のフィードバック表示
-  const ind = $('#sync-save-indicator');
-  if (ind) {
-    ind.textContent = url ? '💾 自動保存済み' : '（未入力）';
-    ind.style.color = url ? '#2e7d32' : 'var(--g6)';
-  }
 }
-// debounce 用のタイマー
-let _syncInputTimer = null;
-function onSyncInputChange() {
-  clearTimeout(_syncInputTimer);
-  _syncInputTimer = setTimeout(persistSyncInputs, 200);
+/* 従来の呼び出し元（閉じる・接続テスト・取得・送信・強制保存・自動同期のチェック）が呼ぶ名前。
+   ★2026-09-25 から接続先は書かない。自動同期のチェックだけ保存し、未保存の変更があれば印を出す。 */
+function persistSyncInputs() {
+  persistSyncAuto();
+  refreshSyncIndicator();
+}
+function onSyncInputChange() { refreshSyncIndicator(); }
+/* 画面を開いた時に表示した値。開いたまま他のタブが接続先を変えた時、手を付けていない欄だけ新しい値に入れ直す
+   （入れ直さないと、何も打っていないのに「未保存」扱いで取得・送信が止まる・2026-09-25 レビュー指摘） */
+let _syncShown = null;
+window.addEventListener('storage', function (e) {
+  if (e.key !== 'su_sync_common' && e.key !== 'ws_settings') return;
+  const m = $('#mk-sync');
+  if (!m || !m.classList.contains('open') || !_syncShown) return;
+  const { url, tok } = syncTypedValues();
+  if (url !== _syncShown.url || tok !== _syncShown.tok) { refreshSyncIndicator(); return; }   // 打ちかけは消さない
+  const t = SYNC.target();
+  $('#sync-endpoint').value = t.endpoint || '';
+  if ($('#sync-token')) $('#sync-token').value = t.token || '';
+  _syncShown = { url: t.endpoint || '', tok: t.token || '' };
+  refreshSyncIndicator();
+});
+/* 接続先の変更が未保存のまま同期の操作をしようとしたら止める（今の同期先で動くのに、
+   打った先で動いたと思い込ませない）。止めた時 true。 */
+function syncBlockIfUnsaved() {
+  if (!syncInputsEdited()) return false;
+  showToast('接続先の変更がまだ保存されていません。［設定を保存］で確かめてから使ってください');
+  SYNC.log('⚠ 接続先の変更がまだ保存されていません（いまの同期先のままです。［設定を保存］で確かめてから反映します）');
+  return true;
 }
 
 function openSyncModal() {
   if (SIM_ON) { showToast('試算中はクラウド同期を開けません（試算を終了してからお使いください）'); return; }
-  $('#sync-endpoint').value = SYNC.config.endpoint || '';
-  if ($('#sync-token')) $('#sync-token').value = SYNC.config.token || '';
+  /* 実際に使っている接続先（共通キー → ワースケ設定 → この画面の設定の順）を表示する（2026-09-25）。
+     以前は自前の設定だけを表示しており、実際の同期先と違う値が見えることがあった */
+  const t0 = SYNC.target();
+  $('#sync-endpoint').value = t0.endpoint || '';
+  if ($('#sync-token')) $('#sync-token').value = t0.token || '';
+  _syncShown = { url: t0.endpoint || '', tok: t0.token || '' };
   $('#sync-auto').checked   = !!SYNC.config.auto;
   /* ★既存のログを消さない（2026-09-12）。背景で起きた同期失敗の履歴が、モーダルを開いた瞬間に
      消えてしまうと「何が起きたか」を後から追えない。最終同期は先頭へ1行足すだけにする。 */
   SYNC.log(SYNC.config.lastSync
     ? `最終同期: ${new Date(SYNC.config.lastSync).toLocaleString('ja-JP')}`
     : '未同期');
-  const ind = $('#sync-save-indicator');
-  if (ind) {
-    ind.textContent = SYNC.config.endpoint ? '💾 保存済み' : '（未入力）';
-    ind.style.color = SYNC.config.endpoint ? '#2e7d32' : 'var(--g6)';
-  }
+  refreshSyncIndicator();
   // この端末の localStorage 使用量（全キーの (key.length+value.length)*2 = UTF-16 概算）
   const usageEl = $('#sync-usage');
   if (usageEl) {
@@ -4778,32 +4868,74 @@ function openSyncModal() {
   $('#mk-sync').classList.add('open');
 }
 function closeSyncModal() {
-  // 閉じる前に必ず保存
+  // 自動同期のチェックだけ保存する。接続先の未保存の変更は保存しない（確かめていないため）
+  const edited = syncInputsEdited();
   persistSyncInputs();
+  if (edited) showToast('接続先の変更は保存していません（［設定を保存］で確かめてから反映します）');
   $('#mk-sync').classList.remove('open');
 }
-function saveSyncConfig() {
-  const url = ($('#sync-endpoint').value || '').trim();
-  const err = url ? SYNC.validateEndpoint(url) : null;
+let _syncSaveBusy = false;
+async function saveSyncConfig() {
+  persistSyncAuto();
+  const { url, tok } = syncTypedValues();
+  if (!url) {
+    // 空欄＝この画面の自前設定を空にするだけ（3アプリ共通の接続先には触れない・従来どおり）
+    commitSyncTarget('', tok);
+    SYNC.log('✅ 設定を保存しました（URL: なし）');
+    showToast('同期設定を保存しました');
+    refreshSyncIndicator();
+    return;
+  }
+  const err = SYNC.validateEndpoint(url);
   if (err) {
     SYNC.log('❌ ' + err);
     showToast('URL形式が正しくありません');
     return;
   }
-  persistSyncInputs();
-  SYNC.log('✅ 設定を保存しました（URL: ' + (url ? url.substring(0, 60) + '…' : 'なし') + '）');
-  showToast('同期設定を保存しました');
+  if (!syncInputsEdited()) {
+    SYNC.log('✅ 設定を保存しました（接続先は変更なし）');
+    showToast('同期設定を保存しました');
+    refreshSyncIndicator();
+    return;
+  }
+  if (_syncSaveBusy) return;
+  _syncSaveBusy = true;
+  refreshSyncIndicator('確かめています…');
+  SYNC.log('🔎 同期先を確かめています…（最長30秒）');
+  let v;
+  try { v = await csPingSyncTarget(url, tok); } finally { _syncSaveBusy = false; }
+  if (v !== 'ok') {
+    const m = csSyncTargetMessage(v);
+    SYNC.log('❌ 保存していません：' + m + '（いまの同期先のままです）');
+    showToast('保存していません：' + m);
+    refreshSyncIndicator();
+    return;
+  }
+  commitSyncTarget(url, tok);
+  SYNC.log('✅ ' + csSyncTargetMessage('ok') + '。保存しました（URL: ' + url.substring(0, 60) + '…）');
+  showToast('✓ 同期先を確認して保存しました');
+  refreshSyncIndicator();
 }
-function syncTestConnection() {
-  persistSyncInputs();
-  SYNC.testConnection();
+async function syncTestConnection() {
+  persistSyncAuto();
+  if (!syncInputsEdited()) { SYNC.testConnection(); return; }   // 保存済みの接続先を試す（従来どおり）
+  // 入力中（未保存）の接続先は、保存せずに確かめるだけ
+  const { url, tok } = syncTypedValues();
+  const err = SYNC.validateEndpoint(url);
+  if (err) { SYNC.log('❌ ' + err); return; }
+  SYNC.log('🔌 入力中の接続先を確かめています…（まだ保存していません）');
+  const v = await csPingSyncTarget(url, tok);
+  SYNC.log((v === 'ok' ? '✅ ' : '❌ ') + csSyncTargetMessage(v)
+    + '（まだ保存していません。［設定を保存］で反映します）');
 }
 function syncPullNow() {
   persistSyncInputs();
+  if (syncBlockIfUnsaved()) return;
   SYNC.pull();
 }
 function syncPushNow() {
   persistSyncInputs();
+  if (syncBlockIfUnsaved()) return;
   SYNC.push();
 }
 /* 通所の入浴（加算）の件数を数える。強制保存の前後比較・自己診断用（純関数）。 */
@@ -4822,6 +4954,7 @@ function csCountBathing(db) {
    2026-08-05: 押す前にサーバーの入浴（加算）件数と突き合わせ、減る時だけ件数を出して二重確認する。
    通信できない時は従来どおりの確認だけで通す（現場の復旧手段を塞がない）。 */
 async function syncForcePush() {
+  if (syncBlockIfUnsaved()) return;   // 打った先ではなく今の同期先を上書きしてしまうのを防ぐ
   if (!confirm('クラウドの最新更新を無視して、このローカルのデータで上書きします。よろしいですか？')) return;
   persistSyncInputs();
   try {

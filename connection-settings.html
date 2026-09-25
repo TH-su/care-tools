@@ -262,7 +262,11 @@ var SYSTEMS = [
        未設定だと、その欄が全員「▲ 未確認」と印字される（従来この2つはマスタ系GASしか使わなかった）。 */
     apps:'週間計画／ワークスケジュール／シフト／デイ利用表／週間計画俯瞰／全支援俯瞰／入居者マスタ・フェイスシート（デイ利用日の表示に使います。未設定だとその欄が「未確認」になります）',
     shape:'obj', key:'su_sync_common', urlF:'endpoint', tokenF:'token', stamp:true,
-    urlRe:RE_GAS_EXEC },
+    urlRe:RE_GAS_EXEC,
+    /* ★保存の前に、その組が統合同期GASかを確かめる（2026-09-25・下の verifySyncPair）。
+       この行はURLの形しか見ておらず、すぐ下の「入居者マスタ」の行と貼り間違えても通っていた。
+       別アプリのGASのURLも同じ形なので形の検査では防げない（2026-09-24 に1台で実際に起きた）。 */
+    verifySync:true },
 
   /* 入居調整だけは【専用の接続先】を持つ（2026-08-29 新設）。
      ★統合KVストア（su_sync_common）へ相乗りさせない。あちらはキー指定なしの一括取得と
@@ -410,8 +414,51 @@ function checkUrl(u, re){
   return null;
 }
 
+/* ═══════════ 統合同期の組を確かめる（2026-09-25）═══════════
+   3アプリ共通の接続先（su_sync_common＝週間計画・ワースケ・シフト共通）に書いてよいのは、
+   URL と合言葉の組で ping し、統合同期GAS（server:'silverunix-sync'）と確認できた組だけ。
+   判定はワークスケジュール netpolicy.js の syncTargetVerdict と同じ物差し（別ファイルのため写し）:
+     'ok' … ok:true かつ server==='silverunix-sync'／'wrong' … 別アプリのGAS（不明なaction・名乗らない ok）
+     'auth' … 合言葉違い（または別アプリの認証エラー）／'offline' … 確かめられなかった
+   ★合言葉を送るのは【保存の時だけ】。保存すれば以後その組で通信するので、送る先が増えるわけではない。
+     ［接続を確認］は従来どおり合言葉を送らない（下の probe）。 */
+var SYNC_SERVER_ID='silverunix-sync';
+function syncTargetVerdict(j){
+  if(!j || typeof j!=='object') return 'offline';
+  if(j.ok===true && j.server===SYNC_SERVER_ID) return 'ok';
+  if(j.error==='不明なaction' || j.error==='unknown action') return 'wrong';
+  if(j.error==='認証エラー') return 'wrong';   /* 日本語の「認証エラー」は入居者マスタ・申送のGASの合言葉違いの文言（統合同期GASは英語の unauthorized だけ）＝別アプリ */
+  if(j.ok===true) return 'wrong';
+  if(j.error) return 'auth';
+  return 'wrong';
+}
+function syncTargetMessage(v){
+  if(v==='ok') return '同期先を確認しました';
+  if(v==='wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
+  if(v==='auth') return '合言葉が一致しないか、別のアプリのGASです';
+  return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
+}
+function verifySyncPair(url, token){
+  var ac=(typeof AbortController==='function') ? new AbortController() : null;
+  return new Promise(function(resolve){
+    var done=false;
+    function fin(v){ if(done) return; done=true; clearTimeout(timer); resolve(v); }
+    var timer=setTimeout(function(){ if(ac) ac.abort(); fin('offline'); }, 30000);
+    try{
+      fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'ping', token: token||'' }),
+        signal: ac ? ac.signal : undefined
+      }).then(function(r){ return r.json(); })
+        .then(function(j){ fin(syncTargetVerdict(j)); }, function(){ fin('offline'); });
+    }catch(e){ fin('offline'); }
+  });
+}
+
 /* ═══════════ 接続確認 ═══════════
    ★合言葉は送らない。打ち間違えたURLへ合言葉を送ってしまわないため。
+     （例外は統合同期の行の【保存】だけ＝上の verifySyncPair。保存すれば以後その組で通信するため）
      合言葉が無くてもGASは「JSONのエラー応答」を返すので、URLの到達確認としては十分。
    ★HTMLが返る＝Googleのログイン画面＝デプロイの公開範囲が「全員」でない、という
      セットアップで最も多い失敗をここで名指しできる。 */
@@ -437,8 +484,9 @@ function probe(url){
           return { ok:false, msg:'ページ（HTML）が返りました。同期用のURLではない可能性があります。' };
         return { ok:false, msg:'ログイン画面かエラーページ（HTML）が返りました。①URLが正しいか ②デプロイの「アクセスできるユーザー」が「全員」か、の順にご確認ください。' };
       }
-      try{ JSON.parse(t); }catch(e){ return { ok:false, msg:'想定外の応答が返りました。URLをご確認ください。' }; }
-      return { ok:true, msg:'つながりました（合言葉が正しいかは各アプリで確認してください）。' };
+      var j=null;
+      try{ j=JSON.parse(t); }catch(e){ return { ok:false, msg:'想定外の応答が返りました。URLをご確認ください。' }; }
+      return { ok:true, msg:'つながりました（合言葉が正しいかは各アプリで確認してください）。', json:j };
     });
   }).catch(function(){
     clearTimeout(timer);
@@ -577,6 +625,28 @@ function buildCard(sys, onSaved){
       if(!silent) setRes(res,'inf','入力がないため、何も変更していません。');
       return { saved:0, error:false };
     }
+    /* 統合同期の行: URL か合言葉を変える保存は、書き込む前に確かめる（2026-09-25）。
+       確かめる組＝「入力された値、空欄なら今の値」（この画面は合言葉を表示しない＝空欄は今のまま）。
+       確かめられなければ何も書かない（今の同期先をそのまま残す）。結果は pending（Promise）で返す。 */
+    if(sys.verifySync && ((v.url && v.url!==cur.url) || v.token)){
+      var pu=v.url||cur.url, pt=v.token||cur.token;
+      /* URL がまだ無いのに合言葉だけ入れた時は確かめようがない（空の URL へ合言葉を送らない・レビュー指摘） */
+      if(!pu){ setRes(res,'ng','先に接続先のURLを入力してください（合言葉だけでは保存できません）。'); return { saved:0, error:true }; }
+      bSave.disabled=true; bTest.disabled=true;
+      setRes(res,'inf','同期先を確かめています…（最長30秒）');
+      var pending=verifySyncPair(pu, pt).then(function(verdict){
+        bSave.disabled=false; bTest.disabled=false;
+        if(verdict!=='ok'){
+          setRes(res,'ng','保存していません：'+syncTargetMessage(verdict)+'（今の同期先のままです）');
+          return { saved:0, error:true };
+        }
+        return commit(v, '同期先を確認して保存しました。');
+      });
+      return { saved:0, error:false, pending:pending };
+    }
+    return commit(v, '保存しました。');
+  }
+  function commit(v, okMsg){
     var r=writeSys(sys, v);
     cur=readCur(sys);                /* 次回の「未編集」判定は保存後の値を基準にする */
     urlIn.value=cur.url;
@@ -587,14 +657,17 @@ function buildCard(sys, onSaved){
       setRes(res,'ng','保存できませんでした（'+r.failed.join('・')+'）。端末の保存容量やプライベートモードをご確認ください。');
       return { saved:0, error:true };
     }
-    setRes(res,'ok','保存しました。');
+    setRes(res,'ok',okMsg);
     return { saved:(r.changed>0?1:0), error:false };   /* 件数の単位は「系統」に揃える */
   }
 
   bSave.addEventListener('click', function(){
     var r=save(false);
-    if(onSaved) onSaved();
-    if(r.saved) toast(sys.title+'を保存しました');
+    function after(x){
+      if(onSaved) onSaved();
+      if(x.saved) toast(sys.title+'を保存しました');
+    }
+    if(r.pending) r.pending.then(after); else after(r);
   });
 
   bTest.addEventListener('click', function(){
@@ -605,6 +678,17 @@ function buildCard(sys, onSaved){
     bTest.disabled=true; bSave.disabled=true;
     setRes(res,'inf','確認しています…');
     probe(v.url).then(function(out){
+      /* 統合同期の行（2026-09-25）: 合言葉を送らない応答でも、日本語の「認証エラー」「不明なaction」や
+         別の名乗りは【別アプリのGAS】と断定できる（統合同期GASは合言葉なしだと 'unauthorized' を返す）。
+         断定できない時は「つながった」までにとどめ、同期先かどうかは保存の時に合言葉で確かめると添える。 */
+      if(sys.verifySync && out.ok){
+        var j=out.json||{};
+        var foreign = j.error==='認証エラー' || j.error==='不明なaction' ||
+                      (j.ok===true && j.server!==SYNC_SERVER_ID);
+        if(foreign){ setRes(res,'ng',syncTargetMessage('wrong')+'。'); return; }
+        setRes(res,'ok','つながりました（同期先かどうかは［保存］の時に合言葉で確かめます）。');
+        return;
+      }
       setRes(res, out.ok?'ok':'ng', out.msg);
     }).then(null, function(){
       setRes(res,'ng','確認できませんでした。');
@@ -638,16 +722,25 @@ function init(){
   }
 
   $('saveAll').addEventListener('click', function(){
-    var n=0, ng=0;
+    var n=0, ng=0, waits=[];
     for(var i=0;i<cards.length;i++){
       var r=cards[i].save(true);
+      if(r.pending){ waits.push(r.pending); continue; }   /* 統合同期の行は確かめ終わってから数える */
       n+=r.saved; if(r.error) ng++;
     }
-    /* 一部成功・一部失敗を「失敗」だけで伝えると、どこまで進んだか分からなくなる */
-    if(ng) toast(n ? (n+'件を保存、'+ng+'件は保存できませんでした（各欄をご確認ください）')
-                   : ng+'件が保存できませんでした（各欄をご確認ください）');
-    else if(n) toast(n+'件を保存しました');
-    else toast('入力がないため、何も変更していません');
+    function report(){
+      /* 一部成功・一部失敗を「失敗」だけで伝えると、どこまで進んだか分からなくなる */
+      if(ng) toast(n ? (n+'件を保存、'+ng+'件は保存できませんでした（各欄をご確認ください）')
+                     : ng+'件が保存できませんでした（各欄をご確認ください）');
+      else if(n) toast(n+'件を保存しました');
+      else toast('入力がないため、何も変更していません');
+    }
+    if(!waits.length){ report(); return; }
+    Promise.all(waits).then(function(rs){
+      for(var k=0;k<rs.length;k++){ n+=rs[k].saved; if(rs[k].error) ng++; }
+      remember();                          /* 確かめ終わって書いた値を「自分が書いた値」として覚え直す */
+      report();
+    });
   });
 
   /* ═══ 他アプリのタブによる巻き戻しの見張り ═══
