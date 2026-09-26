@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<!-- Google から戻る時の引換券（?code=）を、よそのサイトへ Referer で渡さない -->
+<meta name="referrer" content="no-referrer">
+<!-- 読み込めるのはこのサイトのファイルと Supabase（care-log のプロジェクト）だけ。画面内に直書きのスクリプトは置かない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>ログイン</title>
+<!--
+  ログイン（統合 Phase 1・2026-09-26 新設）
+  ════════════════════════════════════════════════════════════════
+  目的: Google でログインし、許可リストで「管理者・事務所・現場」のどれとして使えるかを確かめる。
+        管理者は、ここで2段階認証（認証アプリの6桁）を登録・入力する。
+  ★この画面は氏名・記録を一切表示しない。出すのはログイン中のメールアドレスと役割だけ。
+  ★ここでのログインは care-log と共有される（同じ端末なら片方でログインすれば両方で使える）。
+  ★ログアウトは「この端末だけ」。他のタブレットは巻き込まない。
+  ★使えるかどうかを決めるのはデータベース（許可リスト）。この画面の表示は結果を見せているだけ。
+  ★?next=xxx.html を付けて開くと、使える状態になった後その画面へ戻る（このサイト内の .html だけ受け付ける）。
+-->
+<style>
+:root {
+  --pri: #0b57d0; --pri-l: #ecf3fe;
+  --ok: #1e6b24; --ok-l: #e8f5e9;
+  --ng: #b3261e; --ng-l: #ffebee;
+  --warn-tx: #7a4200; --warn-l: #fff8e1;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g0); color: var(--g9); line-height: 1.6; font-size: 17px;
+  padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+}
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff; padding: 12px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh); display: flex; align-items: center; gap: 12px;
+}
+.hdr h1 { margin: 0; font-size: 1.125rem; font-weight: 700; flex: 1; }
+.hdr .back {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; margin: -10px 0 -10px -6px;
+  color: #fff; text-decoration: none; font-size: 0.9375rem; font-weight: 700;
+}
+.hdr .back:focus-visible { outline: 3px solid #fff; outline-offset: -3px; border-radius: 8px; }
+main {
+  max-width: 560px; margin: 0 auto;
+  padding: 20px max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right));
+}
+.cd {
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); padding: 20px; margin: 0 0 14px;
+}
+.cd > h2 { margin: 0 0 10px; font-size: 1.1875rem; font-weight: 700; }
+/* 画面が切り替わった時に読み上げ位置を見出しへ移すための focus。枠は出さない */
+.cd > h2:focus { outline: none; }
+.cd p { margin: 0 0 10px; }
+.cd p:last-child { margin-bottom: 0; }
+.muted { color: var(--g7); font-size: 0.9375rem; }
+.acts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.btn {
+  min-height: 48px; padding: 10px 18px; font-size: 1rem; font-weight: 700; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 10px; background: #fff; color: var(--g9); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none;
+}
+.btn:focus-visible, input:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn.wide { width: 100%; }
+.btn[disabled] { opacity: .55; cursor: default; }
+.gmark {
+  width: 22px; height: 22px; border-radius: 50%; background: #fff; color: var(--pri);
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9375rem;
+}
+.who { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 4px; }
+.who dt { color: var(--g7); font-size: 0.9375rem; font-weight: 700; }
+.who dd { margin: 0; word-break: break-all; }
+.pill { display: inline-block; padding: 2px 12px; border-radius: 999px; font-weight: 700; font-size: 0.9375rem; }
+.pill.admin { background: #f3e8fd; color: #6a1b9a; }
+.pill.office { background: var(--pri-l); color: var(--pri); }
+.pill.field { background: var(--ok-l); color: var(--ok); }
+.msg { border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; font-weight: 700; }
+.msg.ng { background: var(--ng-l); color: var(--ng); }
+.msg.ok { background: var(--ok-l); color: var(--ok); }
+.msg.warn { background: var(--warn-l); color: var(--warn-tx); }
+.msg:empty { display: none; }
+ol.steps { margin: 0 0 12px; padding-left: 1.4em; }
+ol.steps li { margin: 0 0 8px; }
+.qr { display: flex; justify-content: center; margin: 6px 0 10px; }
+.qr img { width: 208px; height: 208px; border: 1px solid var(--g3); border-radius: 8px; background: #fff; padding: 8px; }
+details.secret { margin: 0 0 12px; }
+details.secret summary { cursor: pointer; color: var(--pri); font-weight: 700; min-height: 44px; display: flex; align-items: center; }
+details.secret code {
+  display: block; font-size: 1rem; letter-spacing: .06em; background: var(--g1);
+  border-radius: 8px; padding: 10px 12px; word-break: break-all; user-select: all;
+}
+.code {
+  width: 100%; min-height: 56px; font-size: 1.75rem; letter-spacing: .4em; text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+  border: 2px solid var(--g3); border-radius: 10px; padding: 6px 10px;
+}
+.code:focus { border-color: var(--pri); }
+.spin { display: flex; align-items: center; gap: 12px; color: var(--g7); }
+.spin::before {
+  content: ""; width: 20px; height: 20px; border-radius: 50%;
+  border: 3px solid var(--g2); border-top-color: var(--pri); animation: r 0.8s linear infinite;
+}
+@keyframes r { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin::before { animation: none; } }
+.foot { max-width: 560px; margin: 8px auto 0; padding: 0 16px; color: var(--g7); font-size: 0.875rem; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
+  <h1>ログイン</h1>
+</header>
+
+<main>
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+
+  <!-- 確かめている間 -->
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">ログインの状態を確かめています…</p>
+  </section>
+
+  <!-- ログインしていない -->
+  <section class="cd" id="v-signedout" hidden>
+    <h2>Google でログイン</h2>
+    <p>事業所で登録された Google アカウントでログインします。登録されていないアカウントでは使えません。</p>
+    <p class="muted">共用タブレットでは、施設のアカウントを選んでください。</p>
+    <div class="acts">
+      <button type="button" class="btn pri wide" id="b-google"><span class="gmark" aria-hidden="true">G</span>Google でログイン</button>
+    </div>
+  </section>
+
+  <!-- 許可リストに無い -->
+  <section class="cd" id="v-denied" hidden>
+    <h2>このアカウントでは使えません</h2>
+    <dl class="who"><dt>アカウント</dt><dd data-f="email"></dd></dl>
+    <p>登録されていない、止められている、またはこのログイン方法では使えないアカウントです。
+      別のアカウントでログインし直すか、管理者に確認してください。</p>
+    <div class="acts">
+      <button type="button" class="btn pri" data-act="switch">別のアカウントでログイン</button>
+    </div>
+  </section>
+
+  <!-- 管理者: 2段階認証の登録（初回だけ） -->
+  <section class="cd" id="v-enroll" hidden>
+    <h2>2段階認証の登録（初回だけ）</h2>
+    <p>管理者は Google に加えて、スマートフォンの認証アプリの6桁を入れた時だけ管理者として使えます。</p>
+    <div id="enroll-start">
+      <p class="muted">用意するもの: iPhone の「パスワード」アプリ、または「Google Authenticator」アプリ。</p>
+      <div class="acts"><button type="button" class="btn pri" id="b-enroll">登録を始める</button></div>
+      <p class="muted" style="margin-top:12px">登録しないで進むと、管理者ではなく「事務所」として使えます。</p>
+      <div class="acts"><button type="button" class="btn" data-act="skip">あとで登録する（事務所として進む）</button></div>
+    </div>
+    <div id="enroll-qr" hidden>
+      <ol class="steps">
+        <li>スマートフォンの認証アプリで、下の QR コードを読み取る<br>
+          <span class="muted">iPhone の「パスワード」アプリ: ＋ →「確認コード」→「QR コードをスキャン」</span></li>
+        <li>アプリに出た6桁を、下の欄に入れて「確認」</li>
+      </ol>
+      <div class="qr"><img id="qr" alt="認証アプリで読み取る QR コード"></div>
+      <details class="secret"><summary>読み取れない時（手で入れる文字）</summary><code id="secret"></code></details>
+      <p class="msg warn">この QR コードと文字は、撮影・送信・印刷をしないでください（持っている人が管理者になりすませます）。</p>
+      <label for="code-enroll" class="muted">認証アプリの6桁</label>
+      <input id="code-enroll" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
+      <div class="acts"><button type="button" class="btn pri wide" id="b-enroll-verify">確認</button></div>
+    </div>
+  </section>
+
+  <!-- 管理者: 毎回の6桁 -->
+  <section class="cd" id="v-verify" hidden>
+    <h2>2段階認証</h2>
+    <dl class="who"><dt>アカウント</dt><dd data-f="email"></dd></dl>
+    <p>認証アプリに出ている6桁を入れてください。</p>
+    <label for="code-verify" class="muted">認証アプリの6桁</label>
+    <input id="code-verify" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
+    <div class="acts"><button type="button" class="btn pri wide" id="b-verify">確認</button></div>
+    <p class="muted" style="margin-top:12px">6桁を入れずに進むと、管理者ではなく「事務所」として使えます。</p>
+    <div class="acts"><button type="button" class="btn" data-act="skip">事務所として進む</button></div>
+  </section>
+
+  <!-- 使える -->
+  <section class="cd" id="v-ok" hidden>
+    <h2>ログインしています</h2>
+    <dl class="who">
+      <dt>アカウント</dt><dd data-f="email"></dd>
+      <dt>役割</dt><dd><span class="pill" data-f="role"></span></dd>
+      <dt>方法</dt><dd data-f="how"></dd>
+    </dl>
+    <div class="acts">
+      <a class="btn pri" id="b-next" href="index.html">メニューへ</a>
+    </div>
+  </section>
+
+  <!-- 確かめられない -->
+  <section class="cd" id="v-error" hidden>
+    <h2>確かめられませんでした</h2>
+    <p data-f="message"></p>
+    <div class="acts"><button type="button" class="btn pri" id="b-retry">もう一度</button></div>
+  </section>
+
+  <section class="cd" id="v-signout" hidden>
+    <p class="muted">ログアウトは「この端末だけ」です。同じアカウントを使っている他の端末はそのまま使えます。</p>
+    <div class="acts"><button type="button" class="btn" data-act="signout">この端末でログアウト</button></div>
+  </section>
+</main>
+
+<p class="foot">この画面は氏名や記録を表示しません。ここでのログインは、同じ端末の記録アプリ（care-log）と共通です。</p>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-09-26"></script>
+<script src="login.js?v=2026-09-26"></script>
+</body>
+</html>
