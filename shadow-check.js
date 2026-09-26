@@ -245,7 +245,22 @@
   // ワースケの日データは「1年前〜2か月先」の日付だけを25件ずつ head で問い合わせる（ファイルが無い日は版 0＝数えない）。
   // 勤務表は Google 側の版の索引（_shift_revindex）を1回読む shiftStatus で、名簿・記号・設定と前後の月（12か月前〜3か月先）を問う。
   // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので数えない（確定すると plan に入る）。
-  var WSDAY_BACK = 365, WSDAY_AHEAD = 60, HEAD_BATCH = 25, SHIFT_BACK = 12, SHIFT_AHEAD = 3;
+  var WSDAY_BACK = 365, WSDAY_AHEAD = 60, HEAD_BATCH = 15, SHIFT_BACK = 12, SHIFT_AHEAD = 3;
+  // 自動やり直し（2026-09-27 代表者の指示）: Google はしばらく使われていないと最初の読み出しが遅く、1回目が時間切れになりやすい。
+  // 1回の問い合わせが失敗したら、少し待って同じ問い合わせを最大2回までやり直す（読むだけ・写すだけなので何度やっても害はない）。
+  // 断り（合言葉の違い等）はやり直さない。1回に問い合わせる件数も 25→15 に減らした。
+  var RETRY_WAITS = [3000, 8000];
+  function isRefusal(e) { return /Google が断りました/.test(String(e && e.message || '')); }
+  async function gasPostRetry(tgt, body, ms, onRetry) {
+    for (var n = 0; ; n++) {
+      try { return await gasPost(tgt, body, ms); }
+      catch (e) {
+        if (isRefusal(e) || n >= RETRY_WAITS.length) throw e;
+        if (onRetry) onRetry(n + 1);
+        await new Promise(function (ok) { setTimeout(ok, RETRY_WAITS[n]); });
+      }
+    }
+  }
   function dayStr(d) {
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
@@ -265,13 +280,14 @@
   async function collectGasIndex(tgt, progress) {
     var c = candidateKeys(), revs = {}, asked = {}, i, j, part;
     var total = c.ws.length + c.sh.length, done = 0;
+    var retrying = function (n) { progress(done, total, n); };
     for (i = 0; i < c.ws.length; i += HEAD_BATCH) {
       part = c.ws.slice(i, i + HEAD_BATCH);
-      j = await gasPost(tgt, { action: 'head', keys: part }, 60000);
+      j = await gasPostRetry(tgt, { action: 'head', keys: part }, 60000, retrying);
       part.forEach(function (k) { asked[k] = true; var r = Number(j.revs && j.revs[k]) || 0; if (r > 0) revs[k] = r; });
       done += part.length; progress(done, total);
     }
-    j = await gasPost(tgt, { action: 'shiftStatus', keys: c.sh }, 60000);
+    j = await gasPostRetry(tgt, { action: 'shiftStatus', keys: c.sh }, 60000, retrying);
     c.sh.forEach(function (k) { asked[k] = true; var r = Number(j.revs && j.revs[k]) || 0; if (r > 0) revs[k] = r; });
     progress(total, total);
     return { revs: revs, asked: asked };
@@ -334,7 +350,9 @@
     try {
       var sb = SUAuth.client();
       var res = await Promise.all([
-        collectGasIndex(tgt, function (n, all) { busy(true, '確かめています… Google の版 ' + n + '／' + all + '件'); }),
+        collectGasIndex(tgt, function (n, all, retry) {
+          busy(true, '確かめています… Google の版 ' + n + '／' + all + '件' + (retry ? '（Google の応答が遅いため、やり直しています ' + retry + '回目）' : ''));
+        }),
         Promise.all(FAMS.map(function (f) { return sb.rpc('kv_index', { p_family: f[0] }); })),
         checkHooks()
       ]);
@@ -393,7 +411,9 @@
     try {
       for (var i = 0; i < keys.length; i += FILL_BATCH) {
         var part = keys.slice(i, i + FILL_BATCH);
-        var j = await gasPost(tgt, { action: 'pull', keys: part }, 120000);
+        var j = await gasPostRetry(tgt, { action: 'pull', keys: part }, 120000, function (n) {
+          busy(true, '写しています… ' + done + '／' + keys.length + '（Google の応答が遅いため、やり直しています ' + n + '回目）');
+        });
         var ents = j.entries || {};
         for (var n = 0; n < part.length; n++) {
           var k = part[n], e = ents[k];
