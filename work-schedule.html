@@ -650,7 +650,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-09-26"></script>
+<script src="su-kv.js?v=2026-09-26b"></script>
+<script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
 <div class="hdr">
@@ -11716,9 +11717,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }, false);
   }
   function gasCall(payload, cb, retried) {
-    /* 統合 0005（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2）は su-kv.js が Supabase で読み書きする
-       （応答の形は Google と同じ）。スイッチ（su-backend.json）が入っていなければ下の Google への送信へそのまま戻す。
-       勤務表・ワークスケジュールの日データなど、切り替えていないキーは今までどおり。__raw は su-kv.js からの素通しの印 */
+    /* 統合 0005/0007（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2・週の型 ws_weekly_master_v1・
+       日データ wsday_*）は su-kv.js が Supabase で読み書きする（応答の形は Google と同じ）。スイッチ（su-backend.json）が
+       入っていなければ下の Google への送信へそのまま戻す。勤務表のキー（pull）は今までどおり Google。__raw は su-kv.js からの素通しの印 */
     if (payload && payload.__raw) delete payload.__raw;
     else if (window.SUKv && SUKv.handles(payload)) {
       SUKv.call(payload, function (p) { return new Promise(function (res) { p.__raw = true; gasCall(p, res); }); })
@@ -11806,6 +11807,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (j && j.ok !== true && j.error && !j.conflict) {
           try { noteNetRej_(action_, j.error, elapsed, now); } catch (eRj) {}
         }
+        /* 統合 0007（2026-09-26）: Google が返した版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者のログイン時だけ）。
+           写すのは data だけ（合言葉は送らない）。アプリの動きは変えない（失敗しても何もしない） */
+        if (window.SUKvShadow && j) { try { SUKvShadow.fromSync(payload, j); } catch (eSh) {} }
         once(j || null);
         return;
       }

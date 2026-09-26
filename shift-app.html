@@ -399,6 +399,7 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 </style>
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
 <div id="toolbar">
@@ -3946,6 +3947,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.noteEndpoint_('ok', 0);   /* 応答が返った＝この接続先は生きている（計数リセット） */
         return r.json();
       }).then(function (json) {
+        /* 統合 0007（2026-09-26）: Google が返した勤務表の版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者の
+           ログイン時だけ）。写すのは data だけ（合言葉・編集券は送らない）。アプリの動きは変えない（失敗しても何もしない） */
+        if (window.SUKvShadow && json) { try { SUKvShadow.fromSync(payload, json); } catch (eSh) {} }
         /* サーバが返した付随情報（was/now＝件数など）を捨てない。
          * 捨てると「サーバーには480マス、今回の保存は30マス」の確認文が作れず、
          * 本人が force で通すかどうかを判断できない。 */
