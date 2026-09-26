@@ -677,6 +677,32 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   font-variant-numeric:tabular-nums}
 .lvl-other{margin-top:6px; font-size: 0.75rem; color:var(--ng); font-weight:700}
 
+/* ── 要介護認定 期限一覧（A4縦・2026-09-26 追加）──
+   ★区分の札は色だけで意味を伝えない。必ず文字（期限切れ／今月満了…）を併記し、
+     白黒で刷っても区別できるよう枠線と太さも変える（期限切れ＝太字＋2px枠）。
+   ★文字と地の比はすべて 4.5:1 以上（実測: 赤4.92・橙5.49・黄7.26・薄黄6.70・灰5.44）。
+     既存の --warn-tx は --warn-bg の上で 3.57:1 のため、橙の札は文字だけ濃い橙にしている。 */
+.cert-sub{margin-top:2px; font-size: 0.8125rem; color:var(--g7)}
+.cert-sum{margin-bottom:6px; text-align:center; font-size: 0.875rem; font-weight:700; line-height:1.4}
+.cert-sum b{font-variant-numeric:tabular-nums}
+.certtbl{border-collapse:collapse; margin:0 auto; font-size: 0.9375rem}
+.certtbl th,.certtbl td{border:1px solid #000; padding:3px 8px; line-height:1.35;
+  text-align:center; white-space:nowrap}
+.certtbl th{background:var(--g2); font-weight:700}
+.certtbl .cert-no,.certtbl .cert-dy{font-variant-numeric:tabular-nums}
+.certtbl .cert-nm{text-align:start}
+/* 認定期間は幅が足りない時だけ「開始」と「〜満了」の間で折り返す（日付の途中では切らない） */
+.certtbl .cert-pd{white-space:normal}
+.certtbl .cert-pd span{white-space:nowrap}
+.certtbl .cert-ov{font-weight:700; color:var(--ng)}
+.cert-tag{display:inline-block; padding:0 8px; border:1px solid; border-radius:999px;
+  font-size:.875em; font-weight:700; line-height:1.5}
+.cert-tag.k-over{background:var(--ng-l); color:var(--ng); border:2px solid var(--ng); font-weight:800}
+.cert-tag.k-m0{background:#ffe0b2; color:#a33200; border-color:var(--warn-tx)}
+.cert-tag.k-m1{background:#fff176; color:#5f4b00; border-color:#f9a825}
+.cert-tag.k-m2{background:#fff9c4; color:#6b5500; border-color:#fbc02d; font-weight:400}
+.cert-tag.k-bad,.cert-tag.k-none{background:var(--g1); color:var(--g7); border-color:var(--g5); font-weight:400}
+
 /* ── 家族情報一覧・病歴薬一覧（A3縦・複数ページ）──
    原本（スプレッドシート）と同じ列順・黒1px罫・地色なし。1名の情報量が多いので
    セル内は折り返す（切らない）。切ると処方や連絡先が紙から消えるため。 */
@@ -901,6 +927,18 @@ body.meal-on #sc-list{max-width:none}
   .mdtbl thead{display:table-header-group}
   .mdtbl tr{break-inside:avoid; page-break-inside:avoid}
 
+  /* ── 要介護認定 期限一覧（A4縦・2026-09-26 追加）──
+     ★body.cert-on を付けている時だけ操作部品を消す（他の紙を1pxも変えない）。
+     ★人数が多い時は複数ページに流す。列見出しを各ページの先頭に出し、行は途中で割らない。 */
+  body.cert-on .search-bar, body.cert-on .view-tabs, body.cert-on .filter-row,
+  body.cert-on .roster-count, body.cert-on .sh-bar{display:none !important}
+  .certtbl{width:100%; font-size:12px}
+  .certtbl thead{display:table-header-group}
+  .certtbl tr{break-inside:avoid; page-break-inside:avoid}
+  .certtbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .cert-tag{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .cert-sub{color:#000}
+
   /* ── 食形態一覧（A3縦1枚）──
      ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
        付けない印刷＝従来の詳細印刷・誕生日一覧・A4様式は1pxも変わらない（原則2）。
@@ -1103,6 +1141,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
+    <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">認定期限</button>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -1171,6 +1210,12 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="mdAi">🤖 未登録をAIで下書き</button>
     <button type="button" class="btn-save" id="mdSave" disabled>💾 保存</button>
     <button type="button" class="btn-print" id="mdPrint">🖨️ 印刷</button>
+  </div>
+  <!-- 認定期限ビュー専用。印刷には出さない（body.cert-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="certBar" style="display:none">
+    <span class="st" id="certStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="certReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（既定 A4縦）</button>
   </div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
@@ -2075,7 +2120,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','room','fam','hist','md'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','room','fam','hist','md','cert'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -2130,7 +2175,7 @@ function setView(v){
   rmSyncPrintTarget_();   /* ★印刷対象の付け替え。移していない画面では対象なしにする */
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
-  if(curView==='cm'||curView==='lvl') bkEnsure(false);  /* CM表・介護度別も名簿に無い項目を使う */
+  if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);  /* CM表・介護度別・認定期限も名簿に無い項目を使う */
   if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
   /* ★「最新に取り直す」ボタンは廃止したが、他端末（薬剤師）の更新が永久に見えないのは困る。
      このビューへ入るたびに取り直す。★未保存の変更がある時は取り直さない（入力を捨てないため）。 */
@@ -2527,6 +2572,7 @@ function renderRoster(){
      シート脚注の人数と食い違う。meal と同じく空にする */
   if(cntEl && (curView==='cm'||curView==='lvl'||curView==='fam'||curView==='hist'||curView==='md'))
     cntEl.textContent='';
+  if(cntEl && curView==='cert') cntEl.textContent='';   /* 認定期限も同じ（母集団は shBase＝絞り込み前） */
   if(curView==='meal'){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
@@ -2577,6 +2623,8 @@ function renderRoster(){
     html=histHtml();
   }else if(curView==='md'){
     html=mdHtml();
+  }else if(curView==='cert'){
+    html=certHtml();
   }else{
     html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
   }
@@ -2718,7 +2766,7 @@ function bkEnsure(force){
     bkRows=rows;
   }).catch(function(){ bkErr='取得できませんでした（通信）'; })
     .then(function(){ bkLoading=false; paintShBars();
-      if(curView==='cm'||curView==='lvl') renderRoster(); });
+      if(curView==='cm'||curView==='lvl'||curView==='cert') renderRoster(); });
 }
 /* 名簿の1件に、getBulk 側の項目を重ねた読み取り用の写しを返す（マスタは書き換えない） */
 function bkOf(r){
@@ -2783,6 +2831,9 @@ function paintShBars(){
     b.setAttribute('aria-pressed', (b.getAttribute('data-m')===cmMode)?'true':'false');
   });
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
+  /* 認定期限（2026-09-26 追加）。CM表・介護度別と同じ getBulk の控えを使うので状態も同じ文言 */
+  var ce=$('certBar'); if(ce) ce.style.display=(curView==='cert')?'flex':'none';
+  if($('certStatus')) $('certStatus').textContent = (curView==='cert') ? msg : '';
   /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
   var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
   if($('famStatus'))  $('famStatus').textContent  = (curView==='fam')  ? wmsg : '';
@@ -2990,6 +3041,104 @@ function lvlHtml(){
   '</div>';
 }
 
+/* ═══ 要介護認定 期限一覧（2026-09-26 管理者指示・A4縦）═══
+   在籍者を認定の満了日が近い順に並べ、期限の近さを色＋文字で示す。
+   ★読み取り専用（マスタを1バイトも書かない）。careCertStart/careCertEnd は共有名簿に無いので
+     CM表・介護度別と同じ getBulk の控え（bkRows）から取る。
+   ★母集団は shBase()（在籍者のみ）。絞り込みチップ・検索語には従わない（帳票5種と同じ理由）。 */
+/* 'YYYY-MM-DD' だけを日付として読む（前後の空白は許す）。存在しない日付は null。
+   ★和暦・スラッシュ区切り・時刻付きは推測で読まない。時刻付きの ISO はタイムゾーンで日付が
+     1日ずれうるので、読めるものとして扱わない。 */
+function certYmd_(s){
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s==null?'':s).trim());
+  if(!m) return null;
+  var y=+m[1], mo=+m[2], d=+m[3], t=new Date(y,mo-1,d);
+  if(t.getFullYear()!==y||t.getMonth()!==mo-1||t.getDate()!==d) return null;
+  return {y:y, m:mo, d:d};
+}
+/* 満了日から区分を決める。DOM に触れない純関数。
+   endStr … careCertEnd の値／todayStr … 基準日 'YYYY-MM-DD'（端末のローカル日付。読めない時は今日）
+   戻り値 {key, label, days}
+     key: none＝空／bad＝YYYY-MM-DD として読めない／over＝満了日＜今日／
+          m0＝今月／m1＝来月／m2＝再来月／later＝それ以降（区分表示なし）
+     days: 満了日−今日 の日数（負＝超過）。none・bad は null
+   ★区分は【年月】で比べる（残り日数では比べない）。9/30 満了は 9/1 に見ても 9/29 に見ても「今月満了」。
+   ★満了日の当日は期限内（その日まで有効）＝「今月満了」・days=0。 */
+function certExpiryClass(endStr, todayStr){
+  if(String(endStr==null?'':endStr).trim()==='') return {key:'none', label:'未登録', days:null};
+  var e=certYmd_(endStr);
+  if(!e) return {key:'bad', label:'形式不明', days:null};
+  var t=certYmd_(todayStr);
+  if(!t){ var n=new Date(); t={y:n.getFullYear(), m:n.getMonth()+1, d:n.getDate()}; }
+  var days=Math.round((Date.UTC(e.y,e.m-1,e.d)-Date.UTC(t.y,t.m-1,t.d))/86400000);
+  if(days<0) return {key:'over', label:'期限切れ', days:days};
+  var mm=(e.y*12+e.m)-(t.y*12+t.m);
+  if(mm===0) return {key:'m0', label:'今月満了', days:days};
+  if(mm===1) return {key:'m1', label:'来月満了', days:days};
+  if(mm===2) return {key:'m2', label:'2か月後', days:days};
+  return {key:'later', label:'', days:days};
+}
+/* 並び: 期限切れ（超過の長い順）→ 満了日の近い順（今月・来月・2か月後・それ以降）→ 形式不明 → 未登録。
+   同じ満了日はかな順。a/b は {r:入居者, c:certExpiryClass の結果}。
+   ★区分の順位は配列＋indexOf で引く（オブジェクトだと 'toString' 等が truthy になる＝VIEWS と同じ理由） */
+var CERT_RANK=['over','near','bad','none'];
+function certOrder_(a, b){
+  function rk(k){ return CERT_RANK.indexOf(k==='m0'||k==='m1'||k==='m2'||k==='later'?'near':k); }
+  var ga=rk(a.c.key), gb=rk(b.c.key);
+  if(ga!==gb) return ga-gb;
+  if(a.c.days!=null&&b.c.days!=null&&a.c.days!==b.c.days) return a.c.days-b.c.days;
+  return byKana(a.r,b.r);
+}
+/* 基準日（端末のローカル日付）。作成日の表示と区分の判定で同じ値を使う */
+function certToday_(){
+  var t=new Date();
+  return t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2);
+}
+function certHtml(){
+  var base=shBase();
+  if(!bkRows) return '<div class="sh-sheet" id="certSheet"><div class="loading">'+
+    esc(bkLoading?'認定期間を取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var today=certToday_();
+  var items=base.map(function(r){ var o=bkOf(r); return {r:o, c:certExpiryClass(o.careCertEnd, today)}; });
+  items.sort(certOrder_);
+  var cnt={over:0, m0:0, m1:0, m2:0, later:0, bad:0, none:0};
+  items.forEach(function(it){ cnt[it.c.key]++; });
+  function n(k){ return '<b>'+cnt[k]+'</b>'; }
+  var body=items.map(function(it, i){ return certRowHtml_(it, i+1); }).join('');
+  return '<div class="sh-sheet" id="certSheet">'+
+    '<div class="sh-hd"><div class="st1">要介護認定 期限一覧</div>'+
+      '<div class="cert-sub">作成日 '+esc(fmtJDate(today))+'</div></div>'+
+    '<div class="cert-sum">期限切れ '+n('over')+'・今月満了 '+n('m0')+'・来月満了 '+n('m1')+
+      '・2か月後 '+n('m2')+'・未登録 '+n('none')+'（形式不明 '+n('bad')+'）</div>'+
+    '<table class="certtbl"><thead><tr>'+
+      ['No','居室','入居者','介護度','認定期間','満了まで','区分'].map(function(h){
+        return '<th scope="col">'+esc(h)+'</th>'; }).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">在籍 '+items.length+'名　／　対象 在籍のみ・満了日の近い順　／　区分は作成日の月を基準に判定</div>'+
+  '</div>';
+}
+/* 1人ぶんの行。★形式不明の満了日は生の値を出さない（区分の列で「形式不明」と示す）。
+   開始日も YYYY-MM-DD で読めない時は出さない（読めない値を日付のように見せない）。 */
+function certRowHtml_(it, no){
+  var r=it.r, c=it.c;
+  var sTxt=certYmd_(r.careCertStart)?fmtJDate(String(r.careCertStart).trim()):'';
+  var eOk=(c.key!=='none'&&c.key!=='bad');
+  var pd=eOk
+    ? ((sTxt?'<span>'+esc(sTxt)+'</span>':'')+'<span>〜'+esc(fmtJDate(String(r.careCertEnd).trim()))+'</span>')
+    : (sTxt?'<span>'+esc(sTxt)+'〜</span>':'—');
+  var dy=(c.days==null)?'—':(c.days<0?((-c.days)+'日超過'):('あと '+c.days+'日'));
+  var tag=c.label?('<span class="cert-tag k-'+c.key+'">'+esc(c.label)+'</span>'):'';
+  return '<tr>'+
+    '<td class="cert-no">'+no+'</td>'+
+    '<td>'+esc(r.room||'')+'</td>'+
+    '<td class="cert-nm">'+esc(r.name||'')+'</td>'+
+    '<td>'+esc(r.careLevel||'')+'</td>'+
+    '<td class="cert-pd">'+pd+'</td>'+
+    '<td class="cert-dy'+(c.key==='over'?' cert-ov':'')+'">'+esc(dy)+'</td>'+
+    '<td>'+tag+'</td>'+
+  '</tr>';
+}
+
 /* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
    実際の高さ・幅を測り、収まる範囲でいちばん大きい文字を二分探索で選ぶ。
    ★行数で決め打ちしない。人数も氏名の長さも変わるため、決め打ちは必ずどこかで破れる。 */
@@ -3130,8 +3279,8 @@ function shViewActive_(kind){
   var sc=$('sc-list');
   return curView===kind && !!sc && sc.classList.contains('on');
 }
-/* su-print へ登録する6帳票。並びは画面のタブ順。 */
-var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md'];
+/* su-print へ登録する7帳票。並びは画面のタブ順。 */
+var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md','cert'];
 function definePrintViews_(){
   if(!window.SUPrint){
     toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください');
@@ -3256,6 +3405,9 @@ function definePrintViews_(){
     } });
   /* 薬効辞書は採寸なし（複数ページにそのまま流す） */
   def('md', { label:'薬効辞書', paper:'A4 portrait' });
+  /* 認定期限一覧（2026-09-26 追加）も採寸なし（人数が多い時は複数ページにそのまま流す。
+     列見出しは各ページの先頭に繰り返す＝印刷CSSの .certtbl thead） */
+  def('cert', { label:'要介護認定 期限一覧', paper:'A4 portrait' });
   rmSyncPrintTarget_();
 }
 /* いま開いているタブを su-print の印刷対象にする。
@@ -3271,8 +3423,8 @@ function rmSyncPrintTarget_(){
   rmPaintPrintLabels_();
 }
 /* 印刷ボタンの読み上げラベル。★可視テキスト（「A4横で印刷」等）を必ず含める
-   （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。6本まとめて付ける。 */
-var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint'};
+   （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。7本まとめて付ける。 */
+var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint',cert:'certPrint'};
 function rmPaintPrintLabels_(){
   if(!window.SUPrint) return;
   Object.keys(RM_PRINT_BTN).forEach(function(kind){
@@ -8294,7 +8446,7 @@ function loadData(){
   /* 帳票5種も同じ（名簿とは別のAPIで作るので renderRoster だけでは空のまま。
      バーも出さないと🔄・💾・🖨️のボタンが1つも出ない画面になる） */
   paintShBars();
-  if(curView==='cm'||curView==='lvl') bkEnsure(false);
+  if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);
   if(curView==='fam'||curView==='hist'||curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
   if(CFG.url)refreshRoster();else setSync('未接続');
   srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
@@ -9110,6 +9262,9 @@ function init(){
   if($('mdAi'))    $('mdAi').addEventListener('click',mdAiFill);
   if($('mdSave'))  $('mdSave').addEventListener('click',mdSave);
   if($('mdPrint')) $('mdPrint').addEventListener('click',function(){rmPrint_('md')});
+  /* 認定期限（2026-09-26 追加） */
+  if($('certPrint')) $('certPrint').addEventListener('click',function(){rmPrint_('cert')});
+  if($('certReload'))$('certReload').addEventListener('click',function(){bkEnsure(true)});
   /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
   if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
     if(curView!=='md') return;
