@@ -106,3 +106,5 @@ mailer/.DS_Store
 !/su-master-shadow.js
 !/shadow-check.html
 !/shadow-check.js
+# 同期データ（週間計画など）の写し（統合 0005・写しの期間）。合言葉は Supabase へ送らない
+!/su-kv-shadow.js

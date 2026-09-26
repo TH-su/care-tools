@@ -1733,6 +1733,8 @@ function _handle(e, method) {
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-09-24"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
+<!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
+<script src="su-kv-shadow.js?v=2026-09-26"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -4109,6 +4111,9 @@ const SYNC = {
         NP.noteOk();
         this.net.failStreak = 0;
         this.net.lastOkAt = Date.now();
+        /* 統合 0005（写しの期間・2026-09-26）: Google が返した版／受け付けた版を Supabase へ写す。
+           事務所・管理者として Google でログインしている時だけ・合言葉は送らない・失敗しても同期に影響させない */
+        if (window.SUKvShadow && !SIM_ON) SUKvShadow.fromGas(action, payload.key, json, body);
         return json;
       }
       /* 診断ログ（URL・トークン・データは出さない）。クラスタ状の不良を後から追えるようにする。 */

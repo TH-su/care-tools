@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
-<title>入居者マスタの写し</title>
+<title>写しの見比べ</title>
 <!--
   入居者マスタの写し（統合 0004・段階移行の②・2026-09-26 新設）
   ════════════════════════════════════════════════════════════════
@@ -16,7 +16,9 @@
   ★開けるのは事務所・管理者だけ（Google でログイン）。判定はデータベース（RLS）が最終。
   ★見比べる正本は「この端末の入居者マスタが最後に読んだ一覧」（localStorage の共有名簿）。
     入居者マスタをこの端末で開いた直後が、いちばん正確に見比べられる。
-  ★この画面は読むだけ。写しを書くのは入居者マスタ（su-master-shadow.js）。
+  ★この画面は読むだけ。写しを書くのは入居者マスタ（su-master-shadow.js）と週間計画（su-kv-shadow.js・統合 0005）。
+  ★週間計画は、この端末の週間計画（localStorage care_schedule_v2 と版 ws_sync_revs.care）と Supabase の写しの版・中身を比べ、
+    写しを読む時間も測る（切り替え後にどれだけ速くなるかの目安）。人数・予定件数だけを出し、氏名は出さない。
   ★表示はすべて textContent。氏名はデータベースと端末の中にだけあり、このファイルには含まれない。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
@@ -24,7 +26,7 @@
 <body>
 <header class="hdr">
   <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
-  <h1>入居者マスタの写し</h1>
+  <h1>写しの見比べ</h1>
 </header>
 
 <main class="wide">
@@ -42,7 +44,7 @@
 
   <section id="v-main" hidden>
     <section class="cd">
-      <h2>見比べ（正本 ↔ 写し）</h2>
+      <h2>入居者マスタの写し</h2>
       <p class="muted" id="cmp-src"></p>
       <div class="kpis" id="cmp-kpis"></div>
       <p id="cmp-verdict" class="msg"></p>
@@ -52,7 +54,15 @@
     </section>
 
     <section class="cd">
-      <h2>写しを取った記録</h2>
+      <h2>週間計画の写し（同期データ）</h2>
+      <p class="muted">週間計画を開くたびに、Google の版がそのまま写されます（事務所・管理者のログイン時だけ）。この端末の週間計画と見比べます。</p>
+      <div class="kpis" id="kv-kpis"></div>
+      <p id="kv-verdict" class="msg"></p>
+      <div class="acts"><a class="btn" href="care-schedule.html">週間計画を開く（写しが最新になる）</a></div>
+    </section>
+
+    <section class="cd">
+      <h2>入居者マスタの写しを取った記録</h2>
       <p class="muted">事務所・管理者が入居者マスタを開くたびに1行増えます（同じ内容なら10分に1回まで。件数だけで、氏名は残しません）。</p>
       <ul class="acct" id="runs"></ul>
     </section>
