@@ -74,6 +74,7 @@
   }
   function showOk(st) {
     show('ok', st);
+    $('b-accounts').hidden = st.role !== 'admin';
     var n = nextPage();
     var b = $('b-next');
     if (n) {
