@@ -2176,6 +2176,7 @@ function setView(v){
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);  /* CM表・介護度別・認定期限も名簿に無い項目を使う */
+  if(curView==='cert') certEnsureFresh_();   /* 保存の後に入った時だけ取り直す（印が無ければ何もしない） */
   if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
   /* ★「最新に取り直す」ボタンは廃止したが、他端末（薬剤師）の更新が永久に見えないのは困る。
      このビューへ入るたびに取り直す。★未保存の変更がある時は取り直さない（入力を捨てないため）。 */
@@ -2754,19 +2755,28 @@ function fitBdaySheet(){
    ★居宅・CM・電話・入居日は【共有名簿(getRoster)には無い】項目なので getBulk から取る。
      入居日順タブ(admEnsure)と同じ出どころだが、あちらは入居日しか持たないため別に持つ。 */
 var bkRows=null, bkLoading=false, bkErr='';
+/* 控えが古くなった印（2026-09-26 認定期限タブ用）。1人ずつ・一括編集の保存が通るたびに立てる。
+   ★控え（bkRows）そのものは捨てない＝CM表・介護度別など既存タブの取得回数は変えない。
+   bkStaleSeq_ は印を立てた回数。取得を始めた時の値と比べ、保存【より後】に取れた控えの時だけ印を下ろす。 */
+var bkStale_=false, bkStaleSeq_=0;
 function bkEnsure(force){
   if(bkLoading) return;
   if(bkRows&&!force) return;
   if(!CFG.url){ bkErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  var seq=bkStaleSeq_;
   bkLoading=true; bkErr=''; paintShBars();
   apiGet({action:'getBulk'},30000).then(function(d){
     var rows=(d&&d.rows)||[];
     /* ★空応答を成功として扱わない（全員が空欄の帳票を正しい結果として刷らせない） */
     if(!rows.length){ bkErr='取得できませんでした（0件）'; return; }
     bkRows=rows;
+    if(seq===bkStaleSeq_) bkStale_=false;   /* 保存より後に取れた控え＝最新 */
   }).catch(function(){ bkErr='取得できませんでした（通信）'; })
     .then(function(){ bkLoading=false; paintShBars();
-      if(curView==='cm'||curView==='lvl'||curView==='cert') renderRoster(); });
+      if(curView==='cm'||curView==='lvl'||curView==='cert') renderRoster();
+      /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
+         （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
+      if(seq!==bkStaleSeq_) certEnsureFresh_(); });
 }
 /* 名簿の1件に、getBulk 側の項目を重ねた読み取り用の写しを返す（マスタは書き換えない） */
 function bkOf(r){
@@ -2833,7 +2843,9 @@ function paintShBars(){
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
   /* 認定期限（2026-09-26 追加）。CM表・介護度別と同じ getBulk の控えを使うので状態も同じ文言 */
   var ce=$('certBar'); if(ce) ce.style.display=(curView==='cert')?'flex':'none';
-  if($('certStatus')) $('certStatus').textContent = (curView==='cert') ? msg : '';
+  /* 控えがある状態での取り直し中は、表は前回のまま・状態欄だけで知らせる */
+  if($('certStatus')) $('certStatus').textContent = (curView==='cert')
+    ? ((bkLoading&&bkRows)?'最新を取得しています…':msg) : '';
   /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
   var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
   if($('famStatus'))  $('famStatus').textContent  = (curView==='fam')  ? wmsg : '';
@@ -3138,6 +3150,19 @@ function certRowHtml_(it, no){
     '<td class="cert-dy'+(c.key==='over'?' cert-ov':'')+'">'+esc(dy)+'</td>'+
     '<td>'+tag+'</td>'+
   '</tr>';
+}
+/* 保存が通った時に呼ぶ（詳細画面の保存・一括編集の保存）。印を立てるだけで控えは捨てない。
+   認定期限を表示中ならその場で1回取り直す＝「作成日 今日」の紙に保存前の満了日・介護度を載せない。 */
+function bkMarkStale_(){
+  bkStale_=true; bkStaleSeq_++;
+  certEnsureFresh_();
+}
+/* 認定期限を表示している時だけ、印が立っていれば取り直す。★印が無ければ何もしない
+   （初回の取得は従来どおり setView・loadData の bkEnsure(false) が受け持つ。
+   現場端末では保存できず印も立たないので、ここから要配慮情報を取りに行くことはない） */
+function certEnsureFresh_(){
+  if(curView!=='cert'||!bkStale_) return;
+  bkEnsure(true);
 }
 
 /* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
@@ -7555,6 +7580,7 @@ function afterSaveOk_(rec,saved){
   var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
   if(idx>=0)roster[idx]=row;else roster.push(row);
   saveRosterCache();writeCommonRoster();
+  bkMarkStale_();   /* 帳票の控え（getBulk）が古くなった印。認定期限は次に描く時に取り直す */
   if(!full){ openResident(row.id); return; }        // 応答が不十分な時だけ取り直す
   /* 取り直さずに詳細画面を出す（openResident の描画部分と同じ手順） */
   showScreen('view');
@@ -7576,6 +7602,8 @@ function showScreen(name){
     saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
     /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
     if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
+    /* 保存の後に認定期限へ戻った時（保存直後の取り直しが失敗していた時の再挑戦を含む） */
+    if(curView==='cert') certEnsureFresh_();
     navLeave();
   }
   /* 画面を移ったら body.meal-on を付け直す/外す。mealViewActive_() は一覧が表示中かも見るので、
@@ -9106,6 +9134,7 @@ function saveBulkGo_(changes,nmv){
     /* ★保存中に「閉じる」が押されると bulkRows が null になる。
        サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
     if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster();
+      if(d&&d.ok) bkMarkStale_();   /* 帳票の控えが古くなった印（認定期限は次に描く時に取り直す） */
       if($('bulkClose')) $('bulkClose').disabled=false; return; }
     if(!d||d.ok!==true){
       setSync('保存失敗','err');
@@ -9146,6 +9175,7 @@ function saveBulkGo_(changes,nmv){
     }
     if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
     else setSync('保存できず','err');
+    if(d.saved>0) bkMarkStale_();   /* 帳票の控えが古くなった印（認定期限は次に描く時に取り直す） */
     /* ★書けなかった方の変更は【残す】。ローカルへ焼き付けて未保存マークを消すと、
        画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので
        二度と送れなくなる（無言の消失）。サーバーは失敗した id を warnIds で返す。 */
@@ -9179,6 +9209,7 @@ function saveBulkGo_(changes,nmv){
     apiGet({action:'getBulk'},30000).then(function(d){
       var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
       var aN=v.applied.length,kN=v.kept.length,ap={},x;
+      if(aN>0) bkMarkStale_();   /* 実物で保存を確認できた方がいる＝帳票の控えが古くなった印 */
       for(x=0;x<v.applied.length;x++)ap[v.applied[x]]=1;
       if(bulkRows){
         for(var i2=0;i2<changes.length;i2++){
