@@ -108,3 +108,6 @@ mailer/.DS_Store
 !/shadow-check.js
 # 同期データ（週間計画など）の写し（統合 0005・写しの期間）。合言葉は Supabase へ送らない
 !/su-kv-shadow.js
+# 同期データの保存先の切り替え（統合 0005）。su-backend.json は全端末が読む切り替えスイッチ（キー名と真偽だけ）
+!/su-kv.js
+!/su-backend.json

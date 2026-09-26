@@ -662,6 +662,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
+<!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
+<script src="su-kv.js?v=2026-09-26"></script>
 <script src="su-facility.js?v=2026-09-24.3"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
@@ -763,6 +765,13 @@ function syncTarget() {
      もう一度書き直すことになる（＝Phase 0 の目的が果たせない）。 */
 async function gasCall(payload) {
   var p = payload || {};
+  /* 統合 0005（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2）は su-kv.js が Supabase で読み書きする。
+     スイッチ（su-backend.json）が入っていなければ下の Google への送信へそのまま戻す。写し返し（force 付き）は kvRaw で送る
+     （kvPut は force を運ばないため）。__raw は su-kv.js からの素通しの印 */
+  if (p.__raw) delete p.__raw;
+  else if (window.SUKv && SUKv.handles(p)) {
+    return SUKv.call(p, function (q) { if (q.force) return SU.data.kvRaw(q); q.__raw = true; return gasCall(q); });
+  }
   if (p.action === 'get') return SU.data.kvGet(p.key);
   if (p.action === 'put') return SU.data.kvPut(p.key, p.data, p.rev);
   return SU.data.kvRaw(p);          // それ以外は従来どおりそのまま通す
