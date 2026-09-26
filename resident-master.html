@@ -1141,7 +1141,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
-    <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">認定期限</button>
+    <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">⏳ 認定期限</button>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -3126,7 +3126,8 @@ function certRowHtml_(it, no){
   var pd=eOk
     ? ((sTxt?'<span>'+esc(sTxt)+'</span>':'')+'<span>〜'+esc(fmtJDate(String(r.careCertEnd).trim()))+'</span>')
     : (sTxt?'<span>'+esc(sTxt)+'〜</span>':'—');
-  var dy=(c.days==null)?'—':(c.days<0?((-c.days)+'日超過'):('あと '+c.days+'日'));
+  /* 満了日の当日は「あと 0日」だと切れたように読めるので「本日満了」と書く（区分の札は今月満了のまま） */
+  var dy=(c.days==null)?'—':(c.days<0?((-c.days)+'日超過'):c.days===0?'本日満了':('あと '+c.days+'日'));
   var tag=c.label?('<span class="cert-tag k-'+c.key+'">'+esc(c.label)+'</span>'):'';
   return '<tr>'+
     '<td class="cert-no">'+no+'</td>'+
