@@ -551,6 +551,31 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   padding-top:10px; flex-wrap:wrap}
 .bulk-foot .grow{flex:1; font-size: 0.8125rem; color:var(--g7)}
 .bulk-note{font-size: 0.75rem; color:var(--g7); margin:0 0 8px; line-height:1.6}
+/* ── 与薬チェック（care-log）へ服薬の時間帯を送る小窓（2026-09-27 追加。既存の .modal には触れない） ──
+   ★読み取れない行は【黄色＋⚠と件数の文字】の両方で示す（色だけで伝えない）。差分も「● 変更あり」の文字で出す */
+#mMedSlots .box{max-width:1100px; width:96vw; max-height:92vh; padding:14px; display:flex; flex-direction:column}
+#mMedSlotsH:focus{outline:none}   /* 開いた時に読み上げの起点として見出しへ移すだけ（操作部品ではない） */
+.ms-lead{font-size: 0.8125rem; color:var(--g7); margin:0 0 8px; line-height:1.6}
+.ms-auth{font-size: 0.8125rem; border-radius:8px; padding:8px 12px; margin:0 0 8px; background:var(--g1);
+  color:var(--g9); line-height:1.6}
+.ms-auth.ng{background:var(--warn-bg); border:1px solid var(--warn-tx)}
+.ms-auth a{color:var(--pri-d); font-weight:700; display:inline-flex; align-items:center; min-height:44px}
+.ms-sum{font-size: 0.8125rem; color:var(--g7); margin:0 0 6px}
+.ms-scroll{flex:1 1 auto; overflow:auto; border:1px solid var(--g2); border-radius:8px; min-height:160px}
+.ms-tbl{border-collapse:separate; border-spacing:0; width:100%; font-size: 0.8125rem}
+.ms-tbl th,.ms-tbl td{border-bottom:1px solid var(--g2); padding:4px 8px; text-align:start; vertical-align:top}
+.ms-tbl thead th{position:sticky; top:0; z-index:1; background:var(--g1); font-size: 0.75rem; font-weight:700; white-space:nowrap}
+.ms-tbl td.ms-nm{font-weight:700; white-space:nowrap}
+.ms-ck{display:inline-flex; align-items:center; gap:4px; min-height:44px; min-width:44px; padding:0 8px 0 2px;
+  cursor:pointer; white-space:nowrap}
+.ms-ck input{width:20px; height:20px; margin:0}
+.ms-tbl tr.ms-unk td{background:var(--warn-bg)}
+.ms-unkmark{font-weight:700; white-space:nowrap}
+.ms-unkl{margin:2px 0 0; padding-inline-start:1.2em}
+.ms-df.diff{color:var(--pri-d); font-weight:700}
+.ms-foot{flex:0 0 auto; display:flex; gap:8px; align-items:center; justify-content:flex-end; padding-top:10px; flex-wrap:wrap}
+.ms-foot .grow{flex:1; font-size: 0.8125rem; color:var(--g9); min-width:200px; white-space:pre-line}
+@media print{ #histMedSlots{display:none !important} }
 .applead{font-size: 0.75rem; color:var(--g7); margin:0 0 12px; line-height:1.6}
 .applist{display:grid; gap:8px}
 .applist a{display:flex; align-items:center; gap:10px; min-height:52px; padding:10px 14px;
@@ -1196,6 +1221,8 @@ body.meal-on #sc-list{max-width:none}
   <div class="sh-bar" id="histBar" style="display:none">
     <span class="st" id="histStatus" role="status" aria-live="polite"></span>
     <button type="button" id="histReload">🔄 最新に取り直す</button>
+    <!-- 定期薬の用法から服薬の時間帯を読み取り、care-log の与薬チェックへ送る（2026-09-27 代表指示）。紙には出さない -->
+    <button type="button" id="histMedSlots">💊 与薬チェックへ時間帯を送る</button>
     <button type="button" class="btn-print" id="histPrint">🖨️ 印刷（既定 A3縦）</button>
   </div>
   <!-- 薬効辞書ビュー専用。印刷には出さない（body.md-on の印刷CSSで消える） -->
@@ -1368,6 +1395,26 @@ body.meal-on #sc-list{max-width:none}
     <h2 id="mMedWaitH">🖨️ 印刷の準備</h2>
     <p id="mMedWaitMsg" role="status" aria-live="polite" style="white-space:pre-line;margin:0 0 12px"></p>
     <div class="detail-actions" id="mMedWaitAct" style="margin-top:14px;margin-bottom:0"></div>
+  </div>
+</div>
+
+<!-- 与薬チェック（care-log）へ服薬の時間帯を送る（2026-09-27 代表指示）。
+     .modal は印刷CSSで消えるので紙には出ない。中身は msPaint_ が組み立てる。
+     ★薬剤名は出さない（読み取れない行は用法の部分だけ）。 -->
+<div class="modal" id="mMedSlots" role="dialog" aria-modal="true" aria-labelledby="mMedSlotsH">
+  <div class="box">
+    <h2 id="mMedSlotsH" tabindex="-1">💊 与薬チェックへ服薬の時間帯を送る</h2>
+    <p class="ms-lead">定期薬の用法（朝食後・就寝前など）から時間帯を読み取りました。違っていればチェックを直してから「送る」を押してください。
+      送るのは<b>時間帯だけ</b>です（薬の名前は送りません）。頓服は時間帯に数えません。</p>
+    <div class="ms-auth" id="msAuth" role="status" aria-live="polite"></div>
+    <div class="ms-sum" id="msSum"></div>
+    <div class="ms-scroll" id="msScroll"></div>
+    <div class="ms-foot">
+      <span class="grow" id="msMsg" role="status" aria-live="polite"></span>
+      <button class="btn btn-gray" id="msClose" type="button">閉じる</button>
+      <button class="btn btn-sec" id="msRecheck" type="button">🔄 もう一度確かめる</button>
+      <button class="btn btn-ok" id="msSend" type="button" disabled>📤 送る</button>
+    </div>
   </div>
 </div>
 
@@ -4022,6 +4069,302 @@ function medSplit_(line){
 /* 内服欄（複数行）から薬剤名の配列を返す。順番は原文のまま＝効能列が内服の行と揃う */
 function mdNamesOf(medText){
   return String(medText==null?'':medText).split(/\r?\n/).map(mdDrugName);
+}
+
+/* ═══════════ 与薬チェック（care-log）へ服薬の時間帯を送る（2026-09-27 代表指示）═══════════
+   服薬の時間帯（朝・昼・夕・眠前）は定期薬（medsRegular・1行1剤の自由記述）の用法に書いてある。
+   看護師が care-log で手で設定する代わりに、ここで読み取って care-log の med_slots へ送る。
+   ★読み取るのは【時間帯だけ】。処方の文面は1文字も書き換えない・構造化して保存しない
+     （マスタの定期薬は自由文のまま。care-log へ送るのは slots と定型の note だけ）。
+   ★薬剤名は返さない・送らない・端末に残さない・console に出さない。
+   ★判定できない行は推測で埋めない（'unknown'）。人が小窓で確かめて直す。 */
+var MED_SLOT_KEYS=['morning','noon','evening','bedtime'];
+var MED_SLOT_LBL={morning:'朝',noon:'昼',evening:'夕',bedtime:'眠前'};
+/* 頓用の印。これがある行は時間帯に数えない（「眠前 不眠時」のように時刻が書いてあっても頓用） */
+var MED_PRN_RE=/頓用|頓服|屯用|痛時|痛い時|痛む時|発熱時|熱発時|便秘時|不眠時|不穏時|必要時|発作時|嘔気時|吐き気時|掻痒時|かゆい時|かゆみ時|咳嗽時|咳の時|めまい時|下痢時|興奮時/;
+/* 「なし」等だけの行は薬の行として数えない（読み取れない行にしない） */
+var MED_NONE_RE=/^(?:なし|無し|ナシ|特になし|特に無し|[-－ー―—・])$/;
+/* 用法の文字列 → 時間帯の配列（MED_SLOT_KEYS の順）。「毎食」は朝・昼・夕。
+   「タ食」はカタカナのタで打たれた夕食（見た目が同じで実際に混ざる） */
+function medSlotsOfUse_(u){
+  var t=String(u==null?'':u), s={};
+  if(/毎食/.test(t)){ s.morning=true; s.noon=true; s.evening=true; }
+  if(/朝|起床/.test(t)) s.morning=true;
+  if(/昼/.test(t)) s.noon=true;
+  if(/夕|タ食/.test(t)) s.evening=true;
+  if(/眠前|寝る前|寝前|就寝|就眠/.test(t)) s.bedtime=true;
+  return MED_SLOT_KEYS.filter(function(k){ return !!s[k]; });
+}
+/* 1行ずつの判定。use は【用法の部分だけ】（medSplit_ が切り出した後ろ側）で、画面で読み取れない行を
+   見せる時にだけ使う。薬剤名は持たない。
+   ★判定には medSplit_ の用法に加えて「最初の空白／コロンより後ろ」も見る。MED_USE_RE は
+     「1錠 眠前」のような書き方を拾わず、「1錠 朝食前」は途中の「食前」から切れて「朝」を落とすため。
+     薬剤名の語（先頭）は判定に入れない。表示には使わない（薬剤名の続きが混ざりうる）。 */
+function medSlotRows_(medsRegular){
+  var out=[];
+  String(medsRegular==null?'':medsRegular).split(/\r?\n/).forEach(function(raw){
+    var t=mdKey(String(raw).replace(/[「『][^」』]*[」』]/g,''));
+    if(!t||MED_NONE_RE.test(t)) return;
+    var pt=medSplit_(t);
+    var m=/[ ：:]/.exec(t);                  /* mdKey 済みなので空白は半角1つにそろっている */
+    var hay=pt.use+' '+(m?t.slice(m.index+1):'');
+    var sl=[], st;
+    if(MED_PRN_RE.test(hay)) st='prn';
+    else { sl=medSlotsOfUse_(hay); st=sl.length?'ok':'unknown'; }
+    out.push({slots:sl, status:st, use:pt.use});
+  });
+  return out;
+}
+/* 定期薬の全文 → {slots:[…], lines:[{slots,status}], unknownCount}。DOM に触れない純関数。
+   slots は全行の和集合（MED_SLOT_KEYS の順）。lines は空行と「なし」行を除いた行ごと・薬剤名は含めない。 */
+function medSlotsFromText(medsRegular){
+  var rows=medSlotRows_(medsRegular), u={}, unk=0;
+  var lines=rows.map(function(r){
+    if(r.status==='unknown') unk++;
+    r.slots.forEach(function(k){ u[k]=true; });
+    return {slots:r.slots.slice(), status:r.status};
+  });
+  return {slots:MED_SLOT_KEYS.filter(function(k){ return !!u[k]; }), lines:lines, unknownCount:unk};
+}
+
+/* ── 小窓 ──
+   msRows: 在籍者ごとの {sid, room, name, bad, auto, sel, unk}（メモリだけ。localStorage に置かない）
+   msRemote: care-log の現在 {source_id: {rid, cur:{id,rev,slots}|null}}（null＝未取得）
+   msGen: 取り直しの世代。閉じた・取り直した後に遅れて届いた応答は捨てる */
+var msRows=null, msRemote=null, msAuthSt=null, msGen=0, msBusy=false, msMsg='';
+function msToday_(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function msSelArr_(row){ return MED_SLOT_KEYS.filter(function(k){ return !!row.sel[k]; }); }
+function msCanon_(a){ a=Array.isArray(a)?a:[]; return MED_SLOT_KEYS.filter(function(k){ return a.indexOf(k)>=0; }); }
+function msSlotsLbl_(a){ var x=msCanon_(a); return x.length?x.map(function(k){ return MED_SLOT_LBL[k]; }).join('・'):'なし'; }
+/* 'bad'＝マスタを読めなかった／'na'＝care-log 未取得／'unreg'＝care-log に居ない／'same'／'diff' */
+function msDiff_(row){
+  if(row.bad) return 'bad';
+  if(!msRemote) return 'na';
+  var c=msRemote[row.sid];
+  if(!c||c.rid==null) return 'unreg';
+  var want=msSelArr_(row).join(','), have=c.cur?msCanon_(c.cur.slots).join(','):'';
+  return want===have?'same':'diff';
+}
+/* supabase-js と su-auth.js は押された時に初めて読み込む（入居者マスタの起動を重くしない）。
+   写しの部品（su-master-shadow.js）が読み込み中なら、その完了を待つ（2重に読み込まない） */
+function msAuthLoad_(){
+  if(window.SUAuth) return Promise.resolve();
+  function has(re){ return Array.prototype.some.call(document.scripts,function(s){ return re.test(s.getAttribute('src')||''); }); }
+  function load(src){
+    return new Promise(function(ok,ng){
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); }; s.onerror=function(){ ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready){
+    return new Promise(function(ok,ng){
+      var n=0; (function tick(){ if(ready()) return ok(); if(++n>100) return ng(new Error('timeout')); setTimeout(tick,100); })();
+    });
+  }
+  var p=window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function(){
+    if(window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function msOpen_(){
+  if(getDeviceRole()==='field') return;
+  if(!fullMap){ toast('病歴・薬を取得し終えてから押してください'); return; }
+  if(!medsFxOk_()){ toast(MEDS_FX_NG); return; }
+  msRows=shBase().map(function(r){
+    var rec=fullOf(r), sid=String(r.id==null?'':r.id).trim();
+    var row={sid:sid, room:String(r.room||''), name:String(r.name||''), bad:!rec||!sid, auto:[], sel:{}, unk:[]};
+    if(row.bad) return row;
+    var p=medSlotsFromText(rec.medsRegular);
+    row.auto=p.slots;
+    p.slots.forEach(function(k){ row.sel[k]=true; });
+    row.unk=medSlotRows_(rec.medsRegular).filter(function(x){ return x.status==='unknown'; })
+      .map(function(x){ return x.use; });
+    return row;
+  });
+  msMsg=''; msBusy=false;
+  $('mMedSlots').classList.add('on'); navEnter();
+  msPaint_();
+  try{ $('mMedSlotsH').focus(); }catch(e){}
+  msLoadRemote_();
+}
+function msClose_(){
+  if(msBusy) return false;
+  msGen++; msRows=null; msRemote=null; msAuthSt=null; msMsg='';
+  $('mMedSlots').classList.remove('on');
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if($('histMedSlots')&&$('histMedSlots').offsetParent) $('histMedSlots').focus(); }catch(e){}
+  return true;
+}
+/* care-log の今の設定を読む。ログインしていない・事務所/管理者でない時は読まない・送らない */
+function msLoadRemote_(){
+  var gen=++msGen;
+  msRemote=null; msAuthSt={loading:true, ok:false, msg:'care-log の今の設定を確かめています…'};
+  msPaint_();
+  var st0=null;
+  msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(gen!==msGen) return null;
+    st0=st;
+    var S=window.SUAuth.STATUS;
+    if(!st||st.status!==S.OK){ msAuthSt={ok:false, login:true, msg:msAuthMsg_(st)}; return null; }
+    if(st.role!=='office'&&st.role!=='admin'){
+      msAuthSt={ok:false, login:true, msg:'いまのアカウント（'+(st.roleLabel||st.role||'')+'）では送れません。事務所・管理者の Google アカウントでログインし直してください。'};
+      return null;
+    }
+    var sb=window.SUAuth.client(), ids=[];
+    msRows.forEach(function(r){ if(!r.bad&&ids.indexOf(r.sid)<0) ids.push(r.sid); });
+    if(!ids.length) return {};
+    return sb.from('residents').select('id,source_id').in('source_id', ids).then(function(r){
+      if(r.error) throw r.error;
+      var map={}, byRid={}, rids=[];
+      (r.data||[]).forEach(function(x){
+        var o={rid:x.id, cur:null}; map[String(x.source_id)]=o; byRid[x.id]=o; rids.push(x.id);
+      });
+      if(!rids.length) return map;
+      return sb.from('med_slots').select('id,resident_id,slots,rev').in('resident_id', rids).is('deleted_at', null)
+        .then(function(r2){
+          if(r2.error) throw r2.error;
+          (r2.data||[]).forEach(function(x){
+            var o=byRid[x.resident_id]; if(o) o.cur={id:x.id, rev:x.rev, slots:Array.isArray(x.slots)?x.slots:[]};
+          });
+          return map;
+        });
+    });
+  }).then(function(map){
+    if(gen!==msGen||!map) return;
+    msRemote=map;
+    msAuthSt={ok:true, msg:'care-log に'+((st0&&st0.roleLabel)||'')+'としてログインしています。'};
+  }).catch(function(){
+    if(gen!==msGen) return;
+    msAuthSt={ok:false, msg:'care-log の今の設定を読めませんでした（通信・権限）。「もう一度確かめる」を押してください。'};
+  }).then(function(){ if(gen===msGen) msPaint_(); });
+}
+function msAuthMsg_(st){
+  var S=window.SUAuth.STATUS, s=st&&st.status;
+  if(s===S.SIGNED_OUT) return 'care-log へ送るには、事務所・管理者の Google アカウントでログインしてください。';
+  if(s===S.DENIED) return 'このアカウントは「使える人」に登録されていないか、止められています。管理者に確かめてください。';
+  if(s===S.MFA_ENROLL||s===S.MFA_VERIFY) return '管理者の2段階認証（6桁）がまだです。ログイン画面で済ませてください。';
+  return 'ログインの状態を確かめられませんでした'+(st&&st.message?'（'+st.message+'）':'')+'。';
+}
+function msRowHtml_(row,i){
+  var d=msDiff_(row), c=msRemote?msRemote[row.sid]:null, cur, df;
+  var ck=row.bad ? '<span class="w-empty">取得できず</span>'
+    : MED_SLOT_KEYS.map(function(k){
+        return '<label class="ms-ck"><input type="checkbox" data-k="'+k+'"'+(row.sel[k]?' checked':'')+
+          ' aria-label="'+esc(row.name+' '+MED_SLOT_LBL[k])+'">'+MED_SLOT_LBL[k]+'</label>';
+      }).join('');
+  var unk=row.unk.length
+    ? '<span class="ms-unkmark">⚠ 読み取れない行 '+row.unk.length+'</span><ul class="ms-unkl">'+
+        row.unk.map(function(u){ return '<li>'+(u?esc(u):'（用法の記載なし）')+'</li>'; }).join('')+'</ul>'
+    : '';
+  if(row.bad) cur='—';
+  else if(!msRemote) cur=(msAuthSt&&msAuthSt.loading)?'確かめています…':'—';
+  else if(!c||c.rid==null) cur='care-log に未登録';
+  else if(!c.cur) cur='未設定';
+  else cur=esc(msSlotsLbl_(c.cur.slots));
+  df = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
+  return '<tr data-i="'+i+'"'+(row.unk.length?' class="ms-unk"':'')+'>'+
+    '<td>'+esc(row.room)+'</td><td class="ms-nm">'+esc(row.name)+'</td>'+
+    '<td>'+ck+'</td><td>'+unk+'</td><td class="ms-cur">'+cur+'</td>'+
+    '<td class="ms-df'+(d==='diff'?' diff':'')+'">'+df+'</td></tr>';
+}
+function msSumText_(){
+  if(!msRows) return '';
+  var n=0, diff=0, unk=0, unreg=0, bad=0;
+  msRows.forEach(function(r){
+    var d=msDiff_(r); n++;
+    if(d==='diff') diff++; if(d==='unreg') unreg++; if(d==='bad') bad++;
+    if(r.unk.length) unk++;
+  });
+  return '在籍 '+n+'名　／　変更あり '+(msRemote?diff+'名':'—')+'　／　読み取れない行がある方 '+unk+'名'+
+    (unreg?'　／　care-log に未登録 '+unreg+'名（送れません）':'')+
+    (bad?'　／　定期薬を取得できなかった方 '+bad+'名（送りません）':'');
+}
+function msPaintFoot_(){
+  var diff=msRows&&msRemote ? msRows.filter(function(r){ return msDiff_(r)==='diff'; }).length : 0;
+  $('msSum').textContent=msSumText_();
+  $('msMsg').textContent=msMsg;
+  $('msSend').disabled=msBusy||!(msAuthSt&&msAuthSt.ok)||!diff;
+  $('msSend').textContent='📤 送る'+(diff?'（'+diff+'名）':'');
+  $('msClose').disabled=msBusy;
+  $('msRecheck').disabled=msBusy||!!(msAuthSt&&msAuthSt.loading);
+}
+function msPaint_(){
+  if(!msRows) return;
+  var a=$('msAuth'), st=msAuthSt||{};
+  a.className='ms-auth'+(st.ok||st.loading?'':' ng');
+  a.innerHTML=esc(st.msg||'')+(st.login
+    ? '　<a href="login.html?next=resident-master.html" target="_blank" rel="noopener">ログイン画面を開く（別のタブ）</a>'+
+      '<br>ログインしたら、この小窓の「🔄 もう一度確かめる」を押してください。'
+    : '');
+  $('msScroll').innerHTML='<table class="ms-tbl"><thead><tr><th>居室</th><th>氏名</th><th>時間帯（定期薬から）</th>'+
+    '<th>読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id="msBody">'+
+    msRows.map(msRowHtml_).join('')+'</tbody></table>';
+  msPaintFoot_();
+}
+/* チェックを直した時は、その行の差分だけ描き直す（表ごと描き直すとフォーカスが外れる） */
+function msOnCheck_(ev){
+  var el=ev.target;
+  if(!el||el.type!=='checkbox'||!msRows) return;
+  var tr=el.closest('tr'), i=tr?+tr.getAttribute('data-i'):-1, row=msRows[i];
+  if(!row||row.bad) return;
+  row.sel[el.getAttribute('data-k')]=!!el.checked;
+  var d=msDiff_(row), cell=tr.querySelector('.ms-df');
+  if(cell){
+    cell.textContent = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
+    cell.classList.toggle('diff', d==='diff');
+  }
+  msPaintFoot_();
+}
+/* 送る。差分のある人だけ。無ければ insert（client_key 付き）、あれば読んだ rev と一致する時だけ update。
+   ★rev が合わない（他の端末が先に変えた）・23505（他の端末が先に作った）は上書きせず、取り直して見せる */
+function msSend_(){
+  if(msBusy||!msRows||!msRemote||!msAuthSt||!msAuthSt.ok) return;
+  var tg=msRows.filter(function(r){ return msDiff_(r)==='diff'; });
+  if(!tg.length){ msMsg='送る変更はありません。'; msPaintFoot_(); return; }
+  var sameN=msRows.filter(function(r){ return msDiff_(r)==='same'; }).length;
+  var unk=tg.filter(function(r){ return r.unk.length; }).length;
+  var clr=tg.filter(function(r){ return !msSelArr_(r).length; }).length;
+  var q=tg.length+'名の服薬の時間帯を care-log へ送ります。';
+  if(unk) q+='\n・読み取れない行がある方が '+unk+'名います（時間帯を確かめましたか）。';
+  if(clr) q+='\n・時間帯を「なし」にする方が '+clr+'名います（care-log の今の設定が消えます）。';
+  if(!confirm(q+'\n送りますか？')) return;
+  var sb=window.SUAuth.client(), stamp=String(Date.now()), note='入居者マスタの定期薬から（'+msToday_()+'）';
+  var sent=0, fail=0, conflict=0, done=0, remote=msRemote;
+  msBusy=true; msMsg='送っています… 0 / '+tg.length; msPaintFoot_();
+  var seq=Promise.resolve();
+  tg.forEach(function(row){
+    seq=seq.then(function(){
+      var c=remote[row.sid], slots=msSelArr_(row), p;
+      if(c.cur){
+        p=sb.from('med_slots').update({slots:slots, note:note})
+          .eq('id', c.cur.id).eq('rev', c.cur.rev).is('deleted_at', null).select('id,rev');
+      }else{
+        p=sb.from('med_slots').insert({resident_id:c.rid, slots:slots, note:note,
+          client_key:'rmaster:'+row.sid+':'+stamp}).select('id,rev');
+      }
+      return Promise.resolve(p).then(function(r){
+        if(r&&r.error){ if(r.error.code==='23505') conflict++; else fail++; return; }
+        if(!r||!r.data||!r.data.length){ conflict++; return; }   /* rev 不一致＝0行 */
+        sent++;
+      }, function(){ fail++; }).then(function(){
+        done++; msMsg='送っています… '+done+' / '+tg.length; msPaintFoot_();
+      });
+    });
+  });
+  seq.then(function(){
+    msBusy=false;
+    msMsg='送った '+sent+'名・変更なし '+sameN+'名・失敗 '+(fail+conflict)+'名'+
+      (conflict?'\n※うち '+conflict+'名は他の端末が先に変えていました。最新を取り直して表示しています。確かめてから、もう一度送ってください。':'')+
+      (fail?'\n※送れなかった方は、通信を確かめてからもう一度送ってください。':'');
+    toast('送った '+sent+'名・失敗 '+(fail+conflict)+'名');
+    msLoadRemote_();
+  });
 }
 /* ★2026-09-24: 取得の本体を Promise を返す mdLoad_ に分けた。詳細画面の印刷は辞書の到着を
    【待ってから】刷る（本人決定 Q2）ので、進行中の取得に相乗りして結果を待てる形が要る。
@@ -7640,6 +7983,8 @@ function navLeave(){
 function navTopModal(){
   /* 印刷前の薬効辞書待ち（2026-09-24）。戻る＝「キャンセル」と同じ（待っている印刷を取り消す） */
   if($('mMedWait')&&$('mMedWait').classList.contains('on'))return function(){mdPrintCancel_();return true};
+  /* 与薬チェックへ時間帯を送る小窓（2026-09-27）。送っている間は閉じない（false＝開いたまま） */
+  if($('mMedSlots')&&$('mMedSlots').classList.contains('on'))return function(){return msClose_()};
   if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
@@ -8460,7 +8805,10 @@ function applyDeviceGuard(){
     bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
-    mdClearPending_(); mdShowHidden=false; }
+    mdClearPending_(); mdShowHidden=false;
+    /* 与薬チェックへ送る小窓の控え（氏名・居室）も捨てる（2026-09-27） */
+    msGen++; msRows=null; msRemote=null; msAuthSt=null; msBusy=false;
+    if($('mMedSlots')) $('mMedSlots').classList.remove('on'); }
   $('deviceBlock').classList.toggle('on',blocked);
   return blocked;
 }
@@ -9283,6 +9631,13 @@ function init(){
   if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
   if($('famReload'))$('famReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
   if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true); mdEnsure(true)});
+  /* 与薬チェックへ時間帯を送る（2026-09-27 追加） */
+  if($('histMedSlots'))$('histMedSlots').addEventListener('click',msOpen_);
+  if($('msClose'))  $('msClose').addEventListener('click',function(){msClose_()});
+  if($('msRecheck'))$('msRecheck').addEventListener('click',function(){ if(!msBusy) msLoadRemote_(); });
+  if($('msSend'))   $('msSend').addEventListener('click',msSend_);
+  if($('msScroll')) $('msScroll').addEventListener('change',msOnCheck_);
+  if($('mMedSlots'))$('mMedSlots').addEventListener('keydown',function(e){ if(e.key==='Escape') msClose_(); });
   /* 薬効辞書（2026-09-04 追加） */
   if($('mdAdd'))   $('mdAdd').addEventListener('click',mdAddDrug);
   if($('mdBar'))   Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
