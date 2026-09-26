@@ -16,6 +16,24 @@
       if (n && /^[a-z0-9][a-z0-9-]*\.html$/.test(n)) sessionStorage.setItem(NEXT_KEY, n);
     } catch (e) { /* sessionStorage が使えない端末では戻り先を覚えない */ }
   })();
+  // 別アプリへの戻り先（?return=care-log）。決め打ちの一覧にあるものだけ受け付ける。
+  // care-log は supabase.ts が凍結で Google から戻る受け口を持てないため、ここでログインしてから戻す
+  // （同じ th-su.github.io なので、ログイン状態はそのまま care-log にも効く）
+  var RETURN_KEY = 'su_auth_return';
+  var RETURNS = { 'care-log': '../care-log/' };
+  (function () {
+    var r = new URLSearchParams(location.search).get('return');
+    try {
+      if (r && Object.prototype.hasOwnProperty.call(RETURNS, r)) sessionStorage.setItem(RETURN_KEY, r);
+    } catch (e) { /* sessionStorage が使えない端末では戻り先を覚えない */ }
+  })();
+  function returnTarget() {
+    try {
+      var r = sessionStorage.getItem(RETURN_KEY);
+      return r && Object.prototype.hasOwnProperty.call(RETURNS, r) ? RETURNS[r] : '';
+    } catch (e) { return ''; }
+  }
+
   function nextPage() {
     try {
       var n = sessionStorage.getItem(NEXT_KEY);
@@ -73,6 +91,14 @@
     }
   }
   function showOk(st) {
+    var back = returnTarget();
+    if (back) {
+      // 使える状態になったら、そのまま元のアプリへ戻る（現場で1タップ減らす）
+      try { sessionStorage.removeItem(RETURN_KEY); } catch (e) { /* 何もしない */ }
+      msg('ログインしました。記録アプリへ戻ります…', 'ok');
+      location.replace(back);
+      return;
+    }
     show('ok', st);
     $('b-accounts').hidden = st.role !== 'admin';
     var n = nextPage();
