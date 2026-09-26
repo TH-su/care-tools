@@ -2,9 +2,12 @@
  * su-kv.js — 同期データの保存先の切り替え（統合 0005・切り替え本番用・2026-09-26）
  * ════════════════════════════════════════════════════════════════
  * 決定（代表者 2026-09-26）: 週間計画は塊ごと移す。写しで確かめてから、全端末一斉に切り替える。
+ *   ワークスケジュール（週の型 ws_weekly_master_v1・日ごと wsday_YYYY-MM-DD）も、週間計画と同じ夜に一緒に切り替える（統合 0007）。
+ *   勤務表（シフト系）はこのファイルの対象外（別の通信の形・編集できる端末を1台に絞る仕組みがあるため、後の移行で扱う）。
  *
  * 仕組み:
- *   ・切り替えのスイッチは公開ファイル su-backend.json（{"supabase": {"care_schedule_v2": true}}）。
+ *   ・切り替えのスイッチは公開ファイル su-backend.json（{"supabase": {"care_schedule_v2": true, "ws_weekly_master_v1": true, "wsday": true}}）。
+ *     wsday は日ごとのキー（wsday_YYYY-MM-DD）すべてをまとめた1つのスイッチ。
  *     全端末が起動時と1分ごとに読む＝ PR を1つ取り込むだけで全端末が一斉に切り替わる／戻る。
  *   ・各アプリの通信関数の入口で SUKv.handles(payload) が真なら SUKv.call(payload, rawGas) に任せる。
  *     スイッチが入っていないキーは rawGas（これまでの Google）へそのまま流す＝切り替え前は何も変わらない。
@@ -17,13 +20,19 @@
  *
  * ★スイッチが読めない時（圏外など）は、最後に読めた値を使う（localStorage su_backend_flags）。
  *   一度も読めていない端末は Google のまま＝切り替え前と同じ。
- * ★切り替え当日の順番（割れないように）: ①写しの版が Google と同じことを確かめる ②スイッチを入れる PR を取り込む
- *   （この間の保存は 'shadow' で断られ、入力は端末に残る）③管理者が写しの見比べ画面で「切り替える」（kv_set_mode live）。
+ * ★切り替え当日の順番（割れないように）: ①写しの見比べ画面の「切り替え前の点検」が全部そろっていることを確かめる
+ *   ②スイッチを入れる PR を取り込む（この間の保存は 'shadow' で断られ、入力は端末に残る）
+ *   ③管理者が写しの見比べ画面で「切り替える」（kv_set_family_mode live・週間計画とワークスケジュールをまとめて）。
  *   戻す時は逆順: ①スイッチを切る PR ②「戻す」（shadow）。
  */
 (function () {
   'use strict';
-  var CANDIDATES = { care_schedule_v2: true };   // このファイルが扱えるキー（増やす時は 0005 のキーの範囲内で）
+  // このファイルが扱えるキーと、そのスイッチの名前（増やす時は 0005/0007 のキーの範囲内で。勤務表は入れない）
+  function flagOf(key) {
+    if (key === 'care_schedule_v2' || key === 'ws_weekly_master_v1') return key;
+    if (typeof key === 'string' && /^wsday_\d{4}-\d{2}-\d{2}$/.test(key)) return 'wsday';
+    return '';
+  }
   var FLAGS_URL = 'su-backend.json';
   var FLAGS_LS = 'su_backend_flags';
   var ROUTED_ACTIONS = { get: 1, put: 1, head: 1, history: 1 };
@@ -54,7 +63,7 @@
     // 3秒で見切る（圏外で起動が止まらないように。見切った時は最後に読めた値）
     return Promise.race([fetchFlags(), new Promise(function (ok) { setTimeout(ok, 3000); })]);
   }
-  function routed(key) { return !!(key && CANDIDATES[key] && flags && flags.supabase && flags.supabase[key] === true); }
+  function routed(key) { var f = flagOf(key); return !!(f && flags && flags.supabase && flags.supabase[f] === true); }
 
   // ── ログイン（supabase-js と su-auth.js は使う時にだけ読み込む）──
   function loadScript(src) {
@@ -134,8 +143,8 @@
   /** この通信を SUKv が受け持つか（同期で答える）。キーが候補に入っている時だけ真＝それ以外は今までどおり */
   function handles(payload) {
     if (!payload || !ROUTED_ACTIONS[payload.action]) return false;
-    if (payload.key && CANDIDATES[payload.key]) return true;
-    if (Array.isArray(payload.keys)) return payload.keys.some(function (k) { return !!CANDIDATES[k]; });
+    if (payload.key && flagOf(payload.key)) return true;
+    if (Array.isArray(payload.keys)) return payload.keys.some(function (k) { return !!flagOf(k); });
     return false;
   }
 
@@ -219,5 +228,5 @@
   fetchFlags();
   setInterval(fetchFlags, 60000);
 
-  window.SUKv = { handles: handles, call: call, routed: routed, _flags: function () { return flags; } };
+  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, _flags: function () { return flags; } };
 })();
