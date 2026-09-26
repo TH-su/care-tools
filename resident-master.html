@@ -573,6 +573,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .ms-unkmark{font-weight:700; white-space:nowrap}
 .ms-unkl{margin:2px 0 0; padding-inline-start:1.2em}
 .ms-df.diff{color:var(--pri-d); font-weight:700}
+.ms-drop{color:var(--ng); font-weight:700; white-space:nowrap}
 .ms-foot{flex:0 0 auto; display:flex; gap:8px; align-items:center; justify-content:flex-end; padding-top:10px; flex-wrap:wrap}
 .ms-foot .grow{flex:1; font-size: 0.8125rem; color:var(--g9); min-width:200px; white-space:pre-line}
 @media print{ #histMedSlots{display:none !important} }
@@ -1405,7 +1406,8 @@ body.meal-on #sc-list{max-width:none}
   <div class="box">
     <h2 id="mMedSlotsH" tabindex="-1">💊 与薬チェックへ服薬の時間帯を送る</h2>
     <p class="ms-lead">定期薬の用法（朝食後・就寝前など）から時間帯を読み取りました。違っていればチェックを直してから「送る」を押してください。
-      送るのは<b>時間帯だけ</b>です（薬の名前は送りません）。頓服は時間帯に数えません。</p>
+      送るのは<b>時間帯だけ</b>です（薬の名前は送りません）。頓服は時間帯に数えません。
+      中止・変更・※・括弧などの注記や、週・曜日・時刻つきの行は<b>「確認が必要な行」</b>として時間帯に入れていません。</p>
     <div class="ms-auth" id="msAuth" role="status" aria-live="polite"></div>
     <div class="ms-sum" id="msSum"></div>
     <div class="ms-scroll" id="msScroll"></div>
@@ -4075,15 +4077,35 @@ function mdNamesOf(medText){
    服薬の時間帯（朝・昼・夕・眠前）は定期薬（medsRegular・1行1剤の自由記述）の用法に書いてある。
    看護師が care-log で手で設定する代わりに、ここで読み取って care-log の med_slots へ送る。
    ★読み取るのは【時間帯だけ】。処方の文面は1文字も書き換えない・構造化して保存しない
-     （マスタの定期薬は自由文のまま。care-log へ送るのは slots と定型の note だけ）。
+     （マスタの定期薬は自由文のまま。care-log へ送るのは slots と、新しく作る時だけ定型の note）。
    ★薬剤名は返さない・送らない・端末に残さない・console に出さない。
-   ★判定できない行は推測で埋めない（'unknown'）。人が小窓で確かめて直す。 */
+   ★判定できない行は推測で埋めない（'unknown'）。人が小窓で確かめて直す。
+   ★★care-log は med_slots の時間帯に毎日自動で「済」を入れる（0015）。誤って時間帯を【付ける】方向が最も重い。
+     そのため、時間帯を【付ける】判定は用法の部分だけで行い、時間帯を【付けない】判定（頓用・要確認）は
+     行全体で行う（2026-09-27 チーフのレビューで改めた）。 */
 var MED_SLOT_KEYS=['morning','noon','evening','bedtime'];
 var MED_SLOT_LBL={morning:'朝',noon:'昼',evening:'夕',bedtime:'眠前'};
 /* 頓用の印。これがある行は時間帯に数えない（「眠前 不眠時」のように時刻が書いてあっても頓用） */
 var MED_PRN_RE=/頓用|頓服|屯用|痛時|痛い時|痛む時|発熱時|熱発時|便秘時|不眠時|不穏時|必要時|発作時|嘔気時|吐き気時|掻痒時|かゆい時|かゆみ時|咳嗽時|咳の時|めまい時|下痢時|興奮時/;
+/* 要確認の印（'review'）。毎日の時間帯として黙って通さない。時間帯は初期チェックに入れない（安全側）。
+   中止・変更などの注記／※・括弧の注記／夕方・夜（夕か眠前か決められない）／時刻の数字／「時は」「時に」（条件つき）／
+   毎日ではない飲み方（週・隔日・曜日・日のみ・デイの利用日） */
+var MED_REVIEW_RE=/中止|休薬|変更|予定|注意|調整|翌|※|[()（）\[\]［］【】]|夕方|夜|時は|時に|週|隔日|曜|日のみ|デイ|利用日|[0-9０-９]\s*時(?!間)|[0-9０-９]{1,2}\s*[:：]\s*[0-9０-９]{2}/;
 /* 「なし」等だけの行は薬の行として数えない（読み取れない行にしない） */
 var MED_NONE_RE=/^(?:なし|無し|ナシ|特になし|特に無し|[-－ー―—・])$/;
+/* 「時」「とき」で終わる条件（眠れない時・便秘の時・イライラ時・〜のとき）は頓用。
+   数字の直後の「時」（20時）と、服薬時点の語（起床時・就寝時・食時・食事時・同時）は除く */
+function medPrnWhen_(t){
+  var re=/(時|とき)(?=$|[\s、，,。・\/／)）\]］】])/g, m;
+  while((m=re.exec(t))){
+    var pre=t.slice(0,m.index);
+    if(!pre) continue;
+    if(m[1]==='時'&&/[0-9０-９]\s*$/.test(pre)) continue;
+    if(/(?:起床|就寝|就眠|食|食事|同)$/.test(pre)) continue;
+    return true;
+  }
+  return false;
+}
 /* 用法の文字列 → 時間帯の配列（MED_SLOT_KEYS の順）。「毎食」は朝・昼・夕。
    「タ食」はカタカナのタで打たれた夕食（見た目が同じで実際に混ざる） */
 function medSlotsOfUse_(u){
@@ -4095,40 +4117,48 @@ function medSlotsOfUse_(u){
   if(/眠前|寝る前|寝前|就寝|就眠/.test(t)) s.bedtime=true;
   return MED_SLOT_KEYS.filter(function(k){ return !!s[k]; });
 }
-/* 1行ずつの判定。use は【用法の部分だけ】（medSplit_ が切り出した後ろ側）で、画面で読み取れない行を
-   見せる時にだけ使う。薬剤名は持たない。
-   ★判定には medSplit_ の用法に加えて「最初の空白／コロンより後ろ」も見る。MED_USE_RE は
-     「1錠 眠前」のような書き方を拾わず、「1錠 朝食前」は途中の「食前」から切れて「朝」を落とすため。
-     薬剤名の語（先頭）は判定に入れない。表示には使わない（薬剤名の続きが混ざりうる）。 */
+/* 1行ずつの判定。use は【用法の部分だけ】で、時間帯の判定と、画面で要確認・読み取れない行を見せる時に使う。
+   用法の部分＝ medSplit_ の後ろ側。用法の形（MED_USE_RE）が見つからない行だけ、補助として
+   「最初の空白／コロンより後ろ」を使う（「1錠 眠前」を拾うため。先頭の薬剤名の語は入れない）。
+   ★MED_USE_RE は「1錠 朝食前」を途中の「食前」から切るので、直前の1字（朝・昼・夕）だけ足し戻す。 */
 function medSlotRows_(medsRegular){
   var out=[];
-  String(medsRegular==null?'':medsRegular).split(/\r?\n/).forEach(function(raw){
+  String(medsRegular==null?'':medsRegular).split(/\r\n|\r|\n/).forEach(function(raw){
     var t=mdKey(String(raw).replace(/[「『][^」』]*[」』]/g,''));
     if(!t||MED_NONE_RE.test(t)) return;
-    var pt=medSplit_(t);
-    var m=/[ ：:]/.exec(t);                  /* mdKey 済みなので空白は半角1つにそろっている */
-    var hay=pt.use+' '+(m?t.slice(m.index+1):'');
+    var pt=medSplit_(t), use=pt.use;
+    if(use){
+      var at=t.lastIndexOf(use), pc=at>0?t.charAt(at-1):'';
+      if(/^食/.test(use)&&/[朝昼夕]/.test(pc)) use=pc+use;
+    }else{
+      var m=/[ ：:]/.exec(t);                  /* mdKey 済みなので空白は半角1つにそろっている */
+      use=m?mdKey(t.slice(m.index+1)):'';
+    }
     var sl=[], st;
-    if(MED_PRN_RE.test(hay)) st='prn';
-    else { sl=medSlotsOfUse_(hay); st=sl.length?'ok':'unknown'; }
-    out.push({slots:sl, status:st, use:pt.use});
+    if(MED_REVIEW_RE.test(t)) st='review';
+    else if(MED_PRN_RE.test(t)||medPrnWhen_(t)) st='prn';
+    else { sl=medSlotsOfUse_(use); st=sl.length?'ok':'unknown'; }
+    out.push({slots:sl, status:st, use:use});
   });
   return out;
 }
-/* 定期薬の全文 → {slots:[…], lines:[{slots,status}], unknownCount}。DOM に触れない純関数。
-   slots は全行の和集合（MED_SLOT_KEYS の順）。lines は空行と「なし」行を除いた行ごと・薬剤名は含めない。 */
+/* 定期薬の全文 → {slots:[…], lines:[{slots,status}], unknownCount, reviewCount}。DOM に触れない純関数。
+   slots は 'ok' の行の和集合（MED_SLOT_KEYS の順）。lines は空行と「なし」行を除いた行ごと・薬剤名は含めない。
+   status: 'ok'／'prn'（頓用・数えない）／'unknown'（時刻が読めない）／'review'（要確認・時間帯は入れない） */
 function medSlotsFromText(medsRegular){
-  var rows=medSlotRows_(medsRegular), u={}, unk=0;
+  var rows=medSlotRows_(medsRegular), u={}, unk=0, rev=0;
   var lines=rows.map(function(r){
     if(r.status==='unknown') unk++;
+    if(r.status==='review') rev++;
     r.slots.forEach(function(k){ u[k]=true; });
     return {slots:r.slots.slice(), status:r.status};
   });
-  return {slots:MED_SLOT_KEYS.filter(function(k){ return !!u[k]; }), lines:lines, unknownCount:unk};
+  return {slots:MED_SLOT_KEYS.filter(function(k){ return !!u[k]; }), lines:lines, unknownCount:unk, reviewCount:rev};
 }
 
 /* ── 小窓 ──
-   msRows: 在籍者ごとの {sid, room, name, bad, auto, sel, unk}（メモリだけ。localStorage に置かない）
+   msRows: 在籍者ごとの {sid, room, name, bad, auto, sel, unk, rev}（メモリだけ。localStorage に置かない）
+     unk＝読み取れない行・rev＝要確認の行の【用法の部分】だけ（薬剤名は持たない）
    msRemote: care-log の現在 {source_id: {rid, cur:{id,rev,slots}|null}}（null＝未取得）
    msGen: 取り直しの世代。閉じた・取り直した後に遅れて届いた応答は捨てる */
 var msRows=null, msRemote=null, msAuthSt=null, msGen=0, msBusy=false, msMsg='';
@@ -4148,6 +4178,14 @@ function msDiff_(row){
   var want=msSelArr_(row).join(','), have=c.cur?msCanon_(c.cur.slots).join(','):'';
   return want===have?'same':'diff';
 }
+/* care-log の今の設定から【減る】時間帯（誤って消すと与薬チェックの対象から黙って外れる）。未取得・未設定なら空 */
+function msDrop_(row){
+  if(row.bad||!msRemote) return [];
+  var c=msRemote[row.sid];
+  if(!c||!c.cur) return [];
+  return msCanon_(c.cur.slots).filter(function(k){ return !row.sel[k]; });
+}
+function msWarnN_(row){ return row.unk.length+row.rev.length; }
 /* supabase-js と su-auth.js は押された時に初めて読み込む（入居者マスタの起動を重くしない）。
    写しの部品（su-master-shadow.js）が読み込み中なら、その完了を待つ（2重に読み込まない） */
 function msAuthLoad_(){
@@ -4178,13 +4216,14 @@ function msOpen_(){
   if(!medsFxOk_()){ toast(MEDS_FX_NG); return; }
   msRows=shBase().map(function(r){
     var rec=fullOf(r), sid=String(r.id==null?'':r.id).trim();
-    var row={sid:sid, room:String(r.room||''), name:String(r.name||''), bad:!rec||!sid, auto:[], sel:{}, unk:[]};
+    var row={sid:sid, room:String(r.room||''), name:String(r.name||''), bad:!rec||!sid, auto:[], sel:{}, unk:[], rev:[]};
     if(row.bad) return row;
     var p=medSlotsFromText(rec.medsRegular);
     row.auto=p.slots;
     p.slots.forEach(function(k){ row.sel[k]=true; });
-    row.unk=medSlotRows_(rec.medsRegular).filter(function(x){ return x.status==='unknown'; })
-      .map(function(x){ return x.use; });
+    var lr=medSlotRows_(rec.medsRegular);
+    row.unk=lr.filter(function(x){ return x.status==='unknown'; }).map(function(x){ return x.use; });
+    row.rev=lr.filter(function(x){ return x.status==='review'; }).map(function(x){ return x.use; });
     return row;
   });
   msMsg=''; msBusy=false;
@@ -4258,20 +4297,29 @@ function msRowHtml_(row,i){
         return '<label class="ms-ck"><input type="checkbox" data-k="'+k+'"'+(row.sel[k]?' checked':'')+
           ' aria-label="'+esc(row.name+' '+MED_SLOT_LBL[k])+'">'+MED_SLOT_LBL[k]+'</label>';
       }).join('');
-  var unk=row.unk.length
-    ? '<span class="ms-unkmark">⚠ 読み取れない行 '+row.unk.length+'</span><ul class="ms-unkl">'+
-        row.unk.map(function(u){ return '<li>'+(u?esc(u):'（用法の記載なし）')+'</li>'; }).join('')+'</ul>'
-    : '';
+  /* 用法の部分だけを並べる（薬剤名は出さない）。用法の部分が取れない行は「読み取れません」と書く
+     （「記載なし」と書くと、処方欄に用法が無いと誤って案内する） */
+  function lst(a){ return '<ul class="ms-unkl">'+a.map(function(u){
+    return '<li>'+(u?esc(u):'（用法を読み取れません）')+'</li>'; }).join('')+'</ul>'; }
+  var unk=(row.rev.length?'<span class="ms-unkmark">⚠ 確認が必要な行 '+row.rev.length+'</span>'+lst(row.rev):'')+
+    (row.unk.length?'<span class="ms-unkmark">⚠ 読み取れない行 '+row.unk.length+'</span>'+lst(row.unk):'');
   if(row.bad) cur='—';
   else if(!msRemote) cur=(msAuthSt&&msAuthSt.loading)?'確かめています…':'—';
   else if(!c||c.rid==null) cur='care-log に未登録';
   else if(!c.cur) cur='未設定';
   else cur=esc(msSlotsLbl_(c.cur.slots));
-  df = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
-  return '<tr data-i="'+i+'"'+(row.unk.length?' class="ms-unk"':'')+'>'+
+  df=msDfHtml_(row, d);
+  return '<tr data-i="'+i+'"'+(msWarnN_(row)?' class="ms-unk"':'')+'>'+
     '<td>'+esc(row.room)+'</td><td class="ms-nm">'+esc(row.name)+'</td>'+
     '<td>'+ck+'</td><td>'+unk+'</td><td class="ms-cur">'+cur+'</td>'+
     '<td class="ms-df'+(d==='diff'?' diff':'')+'">'+df+'</td></tr>';
+}
+/* 差分の欄。care-log の今から減る時間帯は赤字の「▲ 減る: 夕」で必ず出す（色だけにしない） */
+function msDfHtml_(row, d){
+  var h = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
+  var dr=d==='diff'?msDrop_(row):[];
+  if(dr.length) h+='<br><span class="ms-drop">▲ 減る: '+esc(dr.map(function(k){ return MED_SLOT_LBL[k]; }).join('・'))+'</span>';
+  return h;
 }
 function msSumText_(){
   if(!msRows) return '';
@@ -4279,9 +4327,9 @@ function msSumText_(){
   msRows.forEach(function(r){
     var d=msDiff_(r); n++;
     if(d==='diff') diff++; if(d==='unreg') unreg++; if(d==='bad') bad++;
-    if(r.unk.length) unk++;
+    if(msWarnN_(r)) unk++;
   });
-  return '在籍 '+n+'名　／　変更あり '+(msRemote?diff+'名':'—')+'　／　読み取れない行がある方 '+unk+'名'+
+  return '在籍 '+n+'名　／　変更あり '+(msRemote?diff+'名':'—')+'　／　確認が必要な行・読み取れない行がある方 '+unk+'名'+
     (unreg?'　／　care-log に未登録 '+unreg+'名（送れません）':'')+
     (bad?'　／　定期薬を取得できなかった方 '+bad+'名（送りません）':'');
 }
@@ -4303,7 +4351,7 @@ function msPaint_(){
       '<br>ログインしたら、この小窓の「🔄 もう一度確かめる」を押してください。'
     : '');
   $('msScroll').innerHTML='<table class="ms-tbl"><thead><tr><th>居室</th><th>氏名</th><th>時間帯（定期薬から）</th>'+
-    '<th>読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id="msBody">'+
+    '<th>確認が必要な行・読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id="msBody">'+
     msRows.map(msRowHtml_).join('')+'</tbody></table>';
   msPaintFoot_();
 }
@@ -4316,23 +4364,26 @@ function msOnCheck_(ev){
   row.sel[el.getAttribute('data-k')]=!!el.checked;
   var d=msDiff_(row), cell=tr.querySelector('.ms-df');
   if(cell){
-    cell.textContent = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
+    cell.innerHTML=msDfHtml_(row, d);
     cell.classList.toggle('diff', d==='diff');
   }
   msPaintFoot_();
 }
-/* 送る。差分のある人だけ。無ければ insert（client_key 付き）、あれば読んだ rev と一致する時だけ update。
-   ★rev が合わない（他の端末が先に変えた）・23505（他の端末が先に作った）は上書きせず、取り直して見せる */
+/* 送る。差分のある人だけ。無ければ insert（client_key・定型 note 付き）、あれば読んだ rev と一致する時だけ update。
+   ★update は slots だけ（note は看護師・事務所のメモなので上書きしない）。edited_by は null を明示
+     （前にこの行を触った職員が、今回の変更の記入者として残らないように）。
+   ★rev が合わない・権限が無い（0行）・23505（他の端末が先に作った）は上書きせず、取り直して見せる */
 function msSend_(){
   if(msBusy||!msRows||!msRemote||!msAuthSt||!msAuthSt.ok) return;
   var tg=msRows.filter(function(r){ return msDiff_(r)==='diff'; });
   if(!tg.length){ msMsg='送る変更はありません。'; msPaintFoot_(); return; }
   var sameN=msRows.filter(function(r){ return msDiff_(r)==='same'; }).length;
-  var unk=tg.filter(function(r){ return r.unk.length; }).length;
-  var clr=tg.filter(function(r){ return !msSelArr_(r).length; }).length;
+  var unk=tg.filter(function(r){ return msWarnN_(r); }).length;
+  var drop=tg.filter(function(r){ return msDrop_(r).length; });
+  var clr=drop.filter(function(r){ return !msSelArr_(r).length; }).length;
   var q=tg.length+'名の服薬の時間帯を care-log へ送ります。';
-  if(unk) q+='\n・読み取れない行がある方が '+unk+'名います（時間帯を確かめましたか）。';
-  if(clr) q+='\n・時間帯を「なし」にする方が '+clr+'名います（care-log の今の設定が消えます）。';
+  if(unk) q+='\n・確認が必要な行・読み取れない行がある方が '+unk+'名います（時間帯を確かめましたか）。';
+  if(drop.length) q+='\n・時間帯が減る方が '+drop.length+'名います（そのうち全部なしになる方 '+clr+'名）。';
   if(!confirm(q+'\n送りますか？')) return;
   var sb=window.SUAuth.client(), stamp=String(Date.now()), note='入居者マスタの定期薬から（'+msToday_()+'）';
   var sent=0, fail=0, conflict=0, done=0, remote=msRemote;
@@ -4342,15 +4393,15 @@ function msSend_(){
     seq=seq.then(function(){
       var c=remote[row.sid], slots=msSelArr_(row), p;
       if(c.cur){
-        p=sb.from('med_slots').update({slots:slots, note:note})
+        p=sb.from('med_slots').update({slots:slots, edited_by:null})
           .eq('id', c.cur.id).eq('rev', c.cur.rev).is('deleted_at', null).select('id,rev');
       }else{
         p=sb.from('med_slots').insert({resident_id:c.rid, slots:slots, note:note,
-          client_key:'rmaster:'+row.sid+':'+stamp}).select('id,rev');
+          client_key:'rmaster:'+row.sid+':'+stamp, edited_by:null}).select('id,rev');
       }
       return Promise.resolve(p).then(function(r){
         if(r&&r.error){ if(r.error.code==='23505') conflict++; else fail++; return; }
-        if(!r||!r.data||!r.data.length){ conflict++; return; }   /* rev 不一致＝0行 */
+        if(!r||!r.data||!r.data.length){ conflict++; return; }   /* 0行＝rev 不一致か権限なし */
         sent++;
       }, function(){ fail++; }).then(function(){
         done++; msMsg='送っています… '+done+' / '+tg.length; msPaintFoot_();
@@ -4360,7 +4411,7 @@ function msSend_(){
   seq.then(function(){
     msBusy=false;
     msMsg='送った '+sent+'名・変更なし '+sameN+'名・失敗 '+(fail+conflict)+'名'+
-      (conflict?'\n※うち '+conflict+'名は他の端末が先に変えていました。最新を取り直して表示しています。確かめてから、もう一度送ってください。':'')+
+      (conflict?'\n※うち '+conflict+'名は反映できませんでした（他の端末で先に変更されたか、権限がありません）。最新を取り直して表示しています。確かめてから、もう一度送ってください。':'')+
       (fail?'\n※送れなかった方は、通信を確かめてからもう一度送ってください。':'');
     toast('送った '+sent+'名・失敗 '+(fail+conflict)+'名');
     msLoadRemote_();
