@@ -649,6 +649,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 </style>
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
+<!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
+<script src="su-kv.js?v=2026-09-26"></script>
 </head>
 <body>
 <div class="hdr">
@@ -11714,6 +11716,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }, false);
   }
   function gasCall(payload, cb, retried) {
+    /* 統合 0005（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2）は su-kv.js が Supabase で読み書きする
+       （応答の形は Google と同じ）。スイッチ（su-backend.json）が入っていなければ下の Google への送信へそのまま戻す。
+       勤務表・ワークスケジュールの日データなど、切り替えていないキーは今までどおり。__raw は su-kv.js からの素通しの印 */
+    if (payload && payload.__raw) delete payload.__raw;
+    else if (window.SUKv && SUKv.handles(payload)) {
+      SUKv.call(payload, function (p) { return new Promise(function (res) { p.__raw = true; gasCall(p, res); }); })
+        .then(function (j) { try { cb(j); } catch (e) {} }, function () { try { cb(null); } catch (e) {} });
+      return;
+    }
     payload.token = settings.token;
     /* cb は必ず1回だけ。1試行15秒・最大3試行（1.5s→4.0s待ち）＝最悪でも約50秒で必ず応答する。
        1回の失敗では何も判定しない（Googleフロントの一時404/停止で同期先を疑わない）。 */

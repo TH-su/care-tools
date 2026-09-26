@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>写しの見比べ</title>
 <!--
   入居者マスタの写し（統合 0004・段階移行の②・2026-09-26 新設）
@@ -59,6 +59,13 @@
       <div class="kpis" id="kv-kpis"></div>
       <p id="kv-verdict" class="msg"></p>
       <div class="acts"><a class="btn" href="care-schedule.html">週間計画を開く（写しが最新になる）</a></div>
+      <div id="kv-admin" hidden>
+        <p class="muted mt">管理者だけの操作です。切り替えの当日に、手順に沿って使います（先に切り替えスイッチの PR を取り込むこと）。</p>
+        <div class="acts">
+          <button type="button" class="btn ng" id="b-live">Supabase を本番にする（切り替える）</button>
+          <button type="button" class="btn" id="b-shadow">写しの期間に戻す</button>
+        </div>
+      </div>
     </section>
 
     <section class="cd">
@@ -74,6 +81,7 @@
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-09-26"></script>
 <script src="su-master-shadow.js?v=2026-09-26"></script>
+<script src="su-kv.js?v=2026-09-26"></script>
 <script src="shadow-check.js?v=2026-09-26"></script>
 </body>
 </html>

@@ -166,6 +166,9 @@
     kk.appendChild(kpi('この端末の版', localRev));
     kk.appendChild(kpi('写しの人数・予定', (rd && rd.residents ? rd.residents.length : 0) + '人・' + countEvents(rd), '件'));
     kk.appendChild(kpi('写しを読む時間', ms, 'ミリ秒'));
+    kk.appendChild(kpi('いまの状態', remote.mode === 'live' ? '本番（Supabase）' : (rd ? '写しの期間' : '—')));
+    var sw = window.SUKv ? SUKv._flags() : null;
+    kk.appendChild(kpi('切り替えスイッチ', sw && sw.supabase && sw.supabase.care_schedule_v2 === true ? '入' : '切'));
     if (!rd) {
       kv.className = 'msg warn';
       kv.textContent = 'まだ写しがありません。事務所・管理者として週間計画を開くと、数秒後に写されます。';
@@ -187,6 +190,19 @@
     }
   }
 
+  /* 管理者だけ: 保存先の切り替え・戻し（kv_set_mode）。確認を2回とる */
+  async function setMode(mode) {
+    var q = mode === 'live'
+      ? '週間計画の保存先を Supabase（本番）に切り替えますか？\n\n先に「切り替えスイッチ」の PR を取り込み、スイッチが「入」になっていることを確かめてください。'
+      : '週間計画を「写しの期間」に戻しますか？\n\n先に「切り替えスイッチ」を切る PR を取り込み、スイッチが「切」になっていることを確かめてください。';
+    if (!confirm(q)) return;
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var r = await SUAuth.client().rpc('kv_set_mode', { p_key: 'care_schedule_v2', p_mode: mode });
+    if (r.error || !r.data || !r.data.ok) { msg('変更できませんでした: ' + String((r.error && r.error.message) || (r.data && r.data.error) || '')); return; }
+    msg(mode === 'live' ? '週間計画の保存先を Supabase（本番）にしました。' : '週間計画を写しの期間に戻しました。', 'ok');
+    await loadKv(SUAuth.client());
+  }
+
   async function load() {
     var sb = SUAuth.client();
     var cols = 'source_id,' + SUMasterShadow.FIELDS.join(',');
@@ -197,6 +213,7 @@
     if (b.error) throw b.error;
     renderCompare(a.data || []);
     renderRuns(b.data || []);
+    $('kv-admin').hidden = !(me && me.role === 'admin');
     try { await loadKv(sb); }
     catch (e) {
       // 週間計画の写しの表（0005）がまだ無い時も、入居者マスタの見比べは使えるようにする
@@ -209,6 +226,7 @@
     view('loading');
     var st;
     try { st = await SUAuth.check(); } catch (e) { st = { status: 'error', message: String(e && e.message || e) }; }
+    me = st;
     if (st.status !== SUAuth.STATUS.OK || (st.role !== 'office' && st.role !== 'admin')) {
       if (st.status === SUAuth.STATUS.OK) $('gate-why').textContent = 'このアカウント（現場）では開けません。事務所または管理者のアカウントでログインしてください。';
       else if (st.status === SUAuth.STATUS.ERROR) $('gate-why').textContent = st.message || '確かめられませんでした。';
@@ -223,6 +241,9 @@
       view('gate');
     }
   }
+  var me = null;
+  $('b-live').addEventListener('click', function () { setMode('live'); });
+  $('b-shadow').addEventListener('click', function () { setMode('shadow'); });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   start();
 })();

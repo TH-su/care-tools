@@ -1,0 +1,6 @@
+{
+  "説明": "同期データの保存先の切り替えスイッチ（統合 0005）。true のキーは Supabase、false・無いキーは Google。全端末が1分ごとに読む。切り替え・戻しの手順は su-kv.js の冒頭を参照",
+  "supabase": {
+    "care_schedule_v2": false
+  }
+}

@@ -1735,6 +1735,8 @@ function _handle(e, method) {
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-kv-shadow.js?v=2026-09-26"></script>
+<!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
+<script src="su-kv.js?v=2026-09-26"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -4071,6 +4073,11 @@ const SYNC = {
     /* 最後の砦。上位（push/pull/poll）は個別に止めてあるが、将来ここを通る経路が増えても
        試算中の書込みだけは通さない。読み取り(get/head)は害がないので通す。 */
     if (SIM_ON && payload && payload.action === 'put') return { ok: false, error: '試算モード中は送信しません' };
+    /* 統合 0005（2026-09-26）: 保存先を切り替えたキーは su-kv.js が Supabase で読み書きする（応答の形は Google と同じ）。
+       スイッチ（su-backend.json）が入っていなければ、su-kv.js が下の Google への送信へそのまま戻す＝切り替え前は何も変わらない。
+       __raw は su-kv.js からの「Google へ送って」の印（写し返し・切り替え前の素通し）。 */
+    if (payload && payload.__raw) delete payload.__raw;
+    else if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
     const t = this.target();
     payload.token = t.token;
     const NP = this.NetPolicy;
@@ -9142,6 +9149,9 @@ function csFlushOnExit_() {
     try { SYNC.log('ℹ️ 別タブの更新が入っていたため、離脱時の送信は見送りました（次回起動で解決します）'); } catch (e) {}
     return;
   }
+  /* 統合 0005: 保存先を Supabase に切り替えた後は、離脱時に Google へ送らない（Google は写し返しの受け皿なので、
+     ここで送ると最新の写しを古い版で上書きしうる）。未送信フラグが残り、次回起動時に Supabase へ送られる */
+  if (window.SUKv && SUKv.routed('care_schedule_v2')) return;
   if (SYNC._dirty && SYNC.hasTarget()) {
     // 離脱時は sendBeacon を使用（非同期 fetch は中断されるため）
     try {
