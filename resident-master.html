@@ -1355,6 +1355,8 @@ body.meal-on #sc-list{max-width:none}
 <script src="su-facility.js?v=2026-09-24.2"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
+<!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
+<script src="su-master-shadow.js?v=2026-09-26"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -1673,6 +1675,9 @@ function refreshRoster(){
         toast('⚠️ サーバーから空の一覧が返されたため、ローカルの一覧を保持しました');
       }else{
         roster=list.map(normRosterRow);saveRosterCache();writeCommonRoster();
+        /* 統合 0004（2026-09-26・段階移行の①）: 基本項目の写しを Supabase へ。事務所・管理者として Google で
+           ログインしている時だけ書く（それ以外・現場端末では何もしない）。失敗しても一覧の動きは変えない */
+        if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster);
       }
     }
     if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}

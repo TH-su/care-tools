@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>入居者マスタの写し</title>
+<!--
+  入居者マスタの写し（統合 0004・段階移行の②・2026-09-26 新設）
+  ════════════════════════════════════════════════════════════════
+  目的: Supabase に作っている基本項目の写し（master_residents）が、正本（入居者マスタ）と
+        一致し続けているかを見比べる。1〜2週間ずっと一致したら、保存先を切り替える（③）。
+  ★開けるのは事務所・管理者だけ（Google でログイン）。判定はデータベース（RLS）が最終。
+  ★見比べる正本は「この端末の入居者マスタが最後に読んだ一覧」（localStorage の共有名簿）。
+    入居者マスタをこの端末で開いた直後が、いちばん正確に見比べられる。
+  ★この画面は読むだけ。写しを書くのは入居者マスタ（su-master-shadow.js）。
+  ★表示はすべて textContent。氏名はデータベースと端末の中にだけあり、このファイルには含まれない。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
+  <h1>入居者マスタの写し</h1>
+</header>
+
+<main class="wide">
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">確かめています…</p>
+  </section>
+
+  <section class="cd" id="v-gate" hidden>
+    <h2>事務所・管理者が使う画面です</h2>
+    <p id="gate-why">事務所または管理者のアカウントで Google ログインしてから開いてください。</p>
+    <div class="acts"><a class="btn pri" href="login.html?next=shadow-check.html">ログインの画面へ</a></div>
+  </section>
+
+  <section id="v-main" hidden>
+    <section class="cd">
+      <h2>見比べ（正本 ↔ 写し）</h2>
+      <p class="muted" id="cmp-src"></p>
+      <div class="kpis" id="cmp-kpis"></div>
+      <p id="cmp-verdict" class="msg"></p>
+      <ul class="acct" id="cmp-list"></ul>
+      <div class="acts"><a class="btn" href="resident-master.html">入居者マスタを開く（写しが最新になる）</a>
+        <button type="button" class="btn" id="b-reload">見比べ直す</button></div>
+    </section>
+
+    <section class="cd">
+      <h2>写しを取った記録</h2>
+      <p class="muted">事務所・管理者が入居者マスタを開くたびに1行増えます（同じ内容なら10分に1回まで。件数だけで、氏名は残しません）。</p>
+      <ul class="acct" id="runs"></ul>
+    </section>
+  </section>
+</main>
+
+<p class="foot">この画面は読むだけです。入居者の情報を直す時は、これまでどおり入居者マスタで直してください。</p>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-09-26"></script>
+<script src="su-master-shadow.js?v=2026-09-26"></script>
+<script src="shadow-check.js?v=2026-09-26"></script>
+</body>
+</html>
