@@ -134,6 +134,59 @@
     });
   }
 
+  /* 並びに左右されない比べ方（オブジェクトのキーを並べ替えてから文字列にする） */
+  function canon(v) {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === 'object') {
+      var o = {};
+      Object.keys(v).sort().forEach(function (k) { o[k] = canon(v[k]); });
+      return o;
+    }
+    return v;
+  }
+  function countEvents(d) {
+    var n = 0;
+    ((d && d.residents) || []).forEach(function (r) { n += (r && Array.isArray(r.events)) ? r.events.length : 0; });
+    return n;
+  }
+  async function loadKv(sb) {
+    var kk = $('kv-kpis'), kv = $('kv-verdict');
+    kk.replaceChildren();
+    var t0 = performance.now();
+    var r = await sb.rpc('kv_get', { p_key: 'care_schedule_v2' });
+    var ms = Math.round(performance.now() - t0);
+    if (r.error) throw r.error;
+    var remote = r.data || {};
+    var local = null, localRev = 0, dirty = false;
+    try { local = JSON.parse(localStorage.getItem('care_schedule_v2') || 'null'); } catch (e) { local = null; }
+    try { localRev = (JSON.parse(localStorage.getItem('ws_sync_revs') || '{}').care) || 0; } catch (e) { localRev = 0; }
+    try { dirty = !!localStorage.getItem('care_schedule_dirty_v1'); } catch (e) { dirty = false; }
+    var rd = remote.data;
+    kk.appendChild(kpi('写しの版', remote.rev || 0));
+    kk.appendChild(kpi('この端末の版', localRev));
+    kk.appendChild(kpi('写しの人数・予定', (rd && rd.residents ? rd.residents.length : 0) + '人・' + countEvents(rd), '件'));
+    kk.appendChild(kpi('写しを読む時間', ms, 'ミリ秒'));
+    if (!rd) {
+      kv.className = 'msg warn';
+      kv.textContent = 'まだ写しがありません。事務所・管理者として週間計画を開くと、数秒後に写されます。';
+    } else if (!local) {
+      kv.className = 'msg warn';
+      kv.textContent = 'この端末には週間計画のデータがありません。この端末で週間計画を開くと見比べられます。';
+    } else if (dirty) {
+      kv.className = 'msg warn';
+      kv.textContent = 'この端末の週間計画に未送信の変更があるため、正しく見比べられません。週間計画で保存してから見比べ直してください。';
+    } else if (localRev === remote.rev && JSON.stringify(canon(local)) === JSON.stringify(canon(rd))) {
+      kv.className = 'msg ok';
+      kv.textContent = '週間計画の写しは、この端末の最新の版と一致しています。';
+    } else if (localRev === remote.rev) {
+      kv.className = 'msg warn';
+      kv.textContent = '版は同じですが中身に違いがあります（この端末だけの表示用の値の可能性があります）。続く場合は管理者に知らせてください。';
+    } else {
+      kv.className = 'msg warn';
+      kv.textContent = '版が違います（写し ' + (remote.rev || 0) + '／この端末 ' + localRev + '）。週間計画を開き直すと、数秒後に写しが最新になります。';
+    }
+  }
+
   async function load() {
     var sb = SUAuth.client();
     var cols = 'source_id,' + SUMasterShadow.FIELDS.join(',');
@@ -144,6 +197,12 @@
     if (b.error) throw b.error;
     renderCompare(a.data || []);
     renderRuns(b.data || []);
+    try { await loadKv(sb); }
+    catch (e) {
+      // 週間計画の写しの表（0005）がまだ無い時も、入居者マスタの見比べは使えるようにする
+      $('kv-verdict').className = 'msg warn';
+      $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
+    }
   }
 
   async function start() {
