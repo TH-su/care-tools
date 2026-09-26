@@ -98,3 +98,7 @@ mailer/.DS_Store
 !/login.js
 !/su-auth.js
 !/supabase-js-2.112.4.js
+# 使える人の管理（許可リスト・管理者だけ）と、ログイン画面と共通の見た目。氏名・メールはデータベースにだけあり、ファイルには含まない
+!/accounts.html
+!/accounts.js
+!/su-auth.css
