@@ -241,6 +241,41 @@
     ['shift-app.html', '勤務表', ['SUKvShadow.fromSync(']]
   ];
   var FILL_BATCH = 8;
+  // Google の版の数え方（2026-09-27 改: 全ファイルを開く list は同期フォルダが大きく90秒で終わらなかった）。
+  // ワースケの日データは「1年前〜2か月先」の日付だけを25件ずつ head で問い合わせる（ファイルが無い日は版 0＝数えない）。
+  // 勤務表は Google 側の版の索引（_shift_revindex）を1回読む shiftStatus で、名簿・記号・設定と前後の月（12か月前〜3か月先）を問う。
+  // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので数えない（確定すると plan に入る）。
+  var WSDAY_BACK = 365, WSDAY_AHEAD = 60, HEAD_BATCH = 25, SHIFT_BACK = 12, SHIFT_AHEAD = 3;
+  function dayStr(d) {
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function candidateKeys() {
+    var t = new Date(); t.setHours(12, 0, 0, 0);
+    var ws = ['care_schedule_v2', 'ws_weekly_master_v1'], sh = ['staff', 'symbols', 'settings', 'freee'], i, d, ym;
+    for (i = -WSDAY_BACK; i <= WSDAY_AHEAD; i++) { d = new Date(t); d.setDate(t.getDate() + i); ws.push('wsday_' + dayStr(d)); }
+    for (i = -SHIFT_BACK; i <= SHIFT_AHEAD; i++) {
+      d = new Date(t.getFullYear(), t.getMonth() + i, 1);
+      ym = dayStr(d).slice(0, 7);
+      sh.push('sched:' + ym + ':plan', 'sched:' + ym + ':actual', 'sched:' + ym + ':official', 'req:' + ym, 'drafts:' + ym);
+    }
+    return { ws: ws, sh: sh };
+  }
+  /* Google の版を集める。返すのは {revs: キー→版（1以上だけ）, asked: 問い合わせたキー} */
+  async function collectGasIndex(tgt, progress) {
+    var c = candidateKeys(), revs = {}, asked = {}, i, j, part;
+    var total = c.ws.length + c.sh.length, done = 0;
+    for (i = 0; i < c.ws.length; i += HEAD_BATCH) {
+      part = c.ws.slice(i, i + HEAD_BATCH);
+      j = await gasPost(tgt, { action: 'head', keys: part }, 60000);
+      part.forEach(function (k) { asked[k] = true; var r = Number(j.revs && j.revs[k]) || 0; if (r > 0) revs[k] = r; });
+      done += part.length; progress(done, total);
+    }
+    j = await gasPost(tgt, { action: 'shiftStatus', keys: c.sh }, 60000);
+    c.sh.forEach(function (k) { asked[k] = true; var r = Number(j.revs && j.revs[k]) || 0; if (r > 0) revs[k] = r; });
+    progress(total, total);
+    return { revs: revs, asked: asked };
+  }
   var plan = [];      // 足りない分のキー
 
   function famOf(k) { return window.SUKvShadow ? SUKvShadow.family(k) : ''; }
@@ -295,30 +330,30 @@
       verdict.textContent = 'この端末には週間計画・ワークスケジュールの接続先（Google）がありません。この端末で週間計画かワークスケジュールを一度開いてから、点検し直してください。';
       return;
     }
-    busy(true, '確かめています…（Google の全部の版を読むため、1分ほどかかることがあります）');
+    busy(true, '確かめています…（Google に少しずつ問い合わせるため、2〜3分かかることがあります）');
     try {
       var sb = SUAuth.client();
       var res = await Promise.all([
-        gasPost(tgt, { action: 'list' }),
+        collectGasIndex(tgt, function (n, all) { busy(true, '確かめています… Google の版 ' + n + '／' + all + '件'); }),
         Promise.all(FAMS.map(function (f) { return sb.rpc('kv_index', { p_family: f[0] }); })),
         checkHooks()
       ]);
-      var gasIdx = res[0].index || {}, idx = res[1], hooks = res[2];
+      var gasRevs = res[0].revs, asked = res[0].asked, idx = res[1], hooks = res[2];
       var idxErr = idx.filter(function (r) { return r.error; })[0];
       if (idxErr) throw new Error(/PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message)) ? 'データベースの準備（0007）がまだです。' : String(idxErr.error.message || idxErr.error.code));
       var ready = true, reasons = [];
       FAMS.forEach(function (f, i) {
         var copy = (idx[i].data && idx[i].data.revs) || {};
         var same = 0, missing = [], diff = [], extra = 0;
-        Object.keys(gasIdx).forEach(function (k) {
+        Object.keys(gasRevs).forEach(function (k) {
           if (famOf(k) !== f[0]) return;
-          var g = Number(gasIdx[k] && gasIdx[k].rev) || 0;
-          if (g < 1) return;
+          var g = gasRevs[k];
           if (!Object.prototype.hasOwnProperty.call(copy, k)) { missing.push(k); plan.push(k); }
           else if (Number(copy[k]) === g) same++;
           else { diff.push(k + '（Google ' + g + '／写し ' + copy[k] + '）'); if (Number(copy[k]) < g) plan.push(k); }
         });
-        Object.keys(copy).forEach(function (k) { if (!Object.prototype.hasOwnProperty.call(gasIdx, k)) extra++; });
+        // 問い合わせた範囲で Google に無いのに写しにある（範囲の外のキーは数えない）
+        Object.keys(copy).forEach(function (k) { if (asked[k] && !Object.prototype.hasOwnProperty.call(gasRevs, k)) extra++; });
         kpis.appendChild(kpi(f[1], same + '／' + (same + missing.length + diff.length), '一致'));
         var bad = missing.length + diff.length;
         if (bad && CUT_FAMS.indexOf(f[0]) >= 0) { ready = false; reasons.push(f[1] + 'の写しが足りない・違う'); }
