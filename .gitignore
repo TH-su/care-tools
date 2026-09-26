@@ -102,3 +102,7 @@ mailer/.DS_Store
 !/accounts.html
 !/accounts.js
 !/su-auth.css
+# 入居者マスタの写し（統合 0004・段階移行）。写す部品と見比べる画面（事務所・管理者だけ）。氏名はデータベースと端末の中だけ
+!/su-master-shadow.js
+!/shadow-check.html
+!/shadow-check.js

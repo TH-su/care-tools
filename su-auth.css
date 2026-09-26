@@ -130,3 +130,8 @@ main.wide { max-width: 860px; }
   .acct li { grid-template-columns: 1fr; }
   .acct .ops { justify-content: flex-start; }
 }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0 0 12px; }
+.kpi { background: var(--g0); border: 1px solid var(--g2); border-radius: 10px; padding: 10px 12px; }
+.kpi .lb { font-size: 0.8125rem; color: var(--g7); font-weight: 700; }
+.kpi .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .u { font-size: 0.875rem; font-weight: 700; color: var(--g7); margin-left: 2px; }
