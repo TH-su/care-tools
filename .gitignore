@@ -111,3 +111,5 @@ mailer/.DS_Store
 # 同期データの保存先の切り替え（統合 0005）。su-backend.json は全端末が読む切り替えスイッチ（キー名と真偽だけ）
 !/su-kv.js
 !/su-backend.json
+# 接続先が空の時の案内（2026-09-27）。表示だけで、localStorage は読むだけ・個人情報なし
+!/su-cfg-hint.js
