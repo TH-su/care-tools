@@ -34,6 +34,16 @@
     現場端末ではこの画面自体をブロックする（メニュー側も data-office-only で隠す）。
 
   ★画面切替を持たないため、リロードで現在地を失う問題は発生しない（dev-principles 原則11）。
+
+  ★設定の控え（2026-09-27 代表者の決定）: iPhone で各アプリの接続先・合言葉がほぼ消えた事象を受けて追加。
+    iPhone はブラウザ（Chrome・Safari）とホーム画面のWebアプリがそれぞれ別の保存場所を持ち、
+    OS やブラウザの更新・閲覧データの削除で「開く場所」が変わると、設定が消えたように見える。
+    ・［控えを作る］この端末の全系統の URL・合言葉を、暗証番号（8文字以上）から作った鍵で暗号化した
+      文字の並び（SUCFG1:…）にする。PBKDF2-SHA256 60万回 → AES-GCM 256。暗証番号も控えも保存しない。
+    ・［控えから戻す］控えと暗証番号から各カードの入力欄を埋め、既存の［入力したものをすべて保存］をそのまま流す
+      ＝URL の検査・統合同期の組の確かめ（ping）・読み戻し確認など、今までの守りを一つも飛ばさない。
+    ・控えは端末の外（サーバー）へ一切送らない。暗号化も復号もこの画面の中だけ（WebCrypto）。
+    ・控えは iPhone の「パスワード」アプリなど鍵のかかる場所に保存する。LINE・メールで送らない。
 -->
 <style>
 :root {
@@ -126,6 +136,13 @@ main {
 .res.inf { color: var(--g7); }
 
 .note-card { background: var(--warn-bg); border-color: #ffe0a3; }
+/* 設定の控え（2026-09-27） */
+.fld textarea {
+  width: 100%; padding: 10px 12px; min-height: 88px; font-size: 0.8125rem; font-family: ui-monospace, Menlo, monospace;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9); word-break: break-all; resize: vertical;
+}
+.fld textarea:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
+.bk-sub { margin: 12px 0 6px; font-size: 0.875rem; font-weight: 700; }
 .note-card p { margin: 0 0 6px; font-size: 0.8125rem; color: var(--warn-tx); }
 .note-card p:last-child { margin-bottom: 0; }
 .note-card b { font-weight: 700; }
@@ -206,6 +223,34 @@ main {
     <p class="res inf on" style="margin-top:10px">
       保存したあとは、各アプリを開いて同期状態をご確認ください。
     </p>
+  </div>
+
+  <!-- 設定の控え（2026-09-27）。接続先と合言葉を、暗証番号で暗号化した「控え」にして、消えた時に一括で戻す -->
+  <div class="cd" id="restore">
+    <h2>設定の控え（消えた時に一括で戻す）</h2>
+    <p class="apps">この端末の接続先と合言葉を、暗証番号で暗号化した「控え」（文字の並び）にします。
+      端末の設定が消えた時は、控えを貼って暗証番号を入れるだけで全部のアプリの設定を戻せます。
+      控えはどこにも送りません（暗号化も戻すのもこの画面の中だけ）。</p>
+    <p class="apps"><b>控えは iPhone の「パスワード」アプリ（メモ欄）など、鍵のかかる場所に保存してください。</b>
+      LINE・メールでは送らないでください。暗証番号は控えと別に覚えておいてください。</p>
+    <div class="fld">
+      <label for="bkPass">暗証番号 <span class="hint">（8文字以上。控えを作る時と戻す時に同じものを使います）</span></label>
+      <input id="bkPass" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <p class="bk-sub">控えを作る（設定が入っている端末で）</p>
+    <div class="acts"><button class="btn sm" id="bkMake" type="button">この端末の設定から控えを作る</button></div>
+    <div class="fld" id="bkOutWrap" hidden style="margin-top:10px">
+      <label for="bkOut">控え <span class="hint">（全部コピーして、安全な場所に保存）</span></label>
+      <textarea id="bkOut" readonly></textarea>
+      <div class="acts" style="margin-top:6px"><button class="btn sm" id="bkCopy" type="button">控えをコピー</button></div>
+    </div>
+    <p class="bk-sub">控えから戻す（設定が消えた端末で）</p>
+    <div class="fld">
+      <label for="bkIn">控えを貼り付け</label>
+      <textarea id="bkIn" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="SUCFG1:…"></textarea>
+    </div>
+    <div class="acts"><button class="btn pri sm" id="bkRestore" type="button">控えから戻す</button></div>
+    <p class="res" id="bkRes" role="status"></p>
   </div>
 </main>
 
@@ -773,6 +818,131 @@ function init(){
       if(cards[i].tokenInput) cards[i].tokenInput.type = shown ? 'text' : 'password';
     }
     this.textContent = shown ? '合言葉を隠す' : '合言葉を表示';
+  });
+
+  setupBackup(cards);
+}
+
+/* ═══════════ 設定の控え（2026-09-27）═══════════
+   形式: 'SUCFG1:' + base64url( salt16 | iv12 | AES-GCM(暗号文＋認証タグ) )
+   中身: {v:1, at:'作った日時', sys:{系統id:{url, token, extra}}}（URL が入っている系統だけ）
+   ★暗証番号・控え・復号した中身は、どこにも保存しない・送らない。戻す時は各カードの入力欄を埋めて
+     既存の保存（saveAll）に任せる＝検査・統合同期の確かめ・読み戻し確認を一つも飛ばさない。 */
+var BK_PREFIX='SUCFG1:', BK_ITER=600000, BK_MIN_PASS=8, BK_MAX_LEN=20000;
+function bkB64(bytes){
+  var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function bkUnB64(str){
+  var s=String(str).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='=';
+  var bin=atob(s), out=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+}
+function bkKey(pass, salt){
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey'])
+    .then(function(k){
+      return crypto.subtle.deriveKey({ name:'PBKDF2', salt:salt, iterations:BK_ITER, hash:'SHA-256' },
+        k, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+    });
+}
+function bkMake(pass){
+  var sys={}, n=0;
+  for(var i=0;i<SYSTEMS.length;i++){
+    var c=readCur(SYSTEMS[i]);
+    if(!c.url) continue;
+    sys[SYSTEMS[i].id]={ url:c.url, token:c.token||'', extra:c.extra||'' }; n++;
+  }
+  if(!n) return Promise.reject(new Error('この端末には控えにする設定がありません（設定が入っている端末で作ってください）。'));
+  var salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+  var plain=new TextEncoder().encode(JSON.stringify({ v:1, at:new Date().toISOString(), sys:sys }));
+  return bkKey(pass, salt).then(function(key){
+    return crypto.subtle.encrypt({ name:'AES-GCM', iv:iv }, key, plain);
+  }).then(function(ct){
+    var c=new Uint8Array(ct), all=new Uint8Array(28+c.length);
+    all.set(salt,0); all.set(iv,16); all.set(c,28);
+    return { code:BK_PREFIX+bkB64(all), count:n };
+  });
+}
+function bkRead(code, pass){
+  code=String(code||'').replace(/\s+/g,'');
+  if(code.indexOf(BK_PREFIX)!==0 || code.length>BK_MAX_LEN) return Promise.reject(new Error('控えの形ではありません（SUCFG1: で始まる文字の並びを、全部貼ってください）。'));
+  var all;
+  try{ all=bkUnB64(code.slice(BK_PREFIX.length)); }catch(e){ return Promise.reject(new Error('控えが途中で切れているか、形が崩れています。全部コピーし直してください。')); }
+  if(all.length<28+16) return Promise.reject(new Error('控えが途中で切れています。全部コピーし直してください。'));
+  return bkKey(pass, all.slice(0,16)).then(function(key){
+    return crypto.subtle.decrypt({ name:'AES-GCM', iv:all.slice(16,28) }, key, all.slice(28));
+  }).then(function(buf){
+    var o=JSON.parse(new TextDecoder().decode(buf));
+    if(!o || o.v!==1 || !o.sys || typeof o.sys!=='object') throw new Error('shape');
+    var out={};
+    for(var i=0;i<SYSTEMS.length;i++){
+      var e=o.sys[SYSTEMS[i].id];
+      if(!e || typeof e!=='object') continue;
+      var u=String(e.url||''), t=String(e.token||''), x=String(e.extra||'');
+      if(!u || u.length>2000 || t.length>2000 || x.length>2000) continue;
+      out[SYSTEMS[i].id]={ url:u, token:t, extra:x };
+    }
+    return { at:String(o.at||''), sys:out };
+  }, function(){
+    throw new Error('暗証番号が違うか、控えが壊れています。');
+  });
+}
+function setupBackup(cards){
+  var res=$('bkRes'), busyNow=false;
+  function say(kind, msg){ setRes(res, kind, msg); }
+  function passOk(){
+    var p=String($('bkPass').value||'');
+    if(p.length<BK_MIN_PASS){ say('ng','暗証番号は '+BK_MIN_PASS+' 文字以上にしてください。'); return null; }
+    return p;
+  }
+  function lock(on){ busyNow=on; $('bkMake').disabled=on; $('bkRestore').disabled=on; }
+  if(!window.crypto || !crypto.subtle || typeof TextEncoder!=='function'){
+    lock(true); say('ng','この端末のブラウザでは控えを扱えません（https で開いているか、ブラウザが新しいかをご確認ください）。');
+    return;
+  }
+  $('bkMake').addEventListener('click', function(){
+    if(busyNow) return;
+    var p=passOk(); if(!p) return;
+    lock(true); say('inf','控えを作っています…');
+    bkMake(p).then(function(r){
+      $('bkOut').value=r.code; $('bkOutWrap').hidden=false;
+      say('ok', r.count+'系統の設定を控えにしました。下の「控えをコピー」で、安全な場所に保存してください。');
+    }, function(e){ say('ng', String(e && e.message || e)); })
+    .then(function(){ $('bkPass').value=''; lock(false); });
+  });
+  $('bkCopy').addEventListener('click', function(){
+    var t=$('bkOut'); t.focus(); t.select();
+    var ok=false;
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t.value); ok=true; } }catch(e){}
+    if(!ok){ try{ ok=document.execCommand('copy'); }catch(e2){} }
+    toast(ok ? '控えをコピーしました' : '選択しました。長押しでコピーしてください');
+  });
+  $('bkRestore').addEventListener('click', function(){
+    if(busyNow) return;
+    var p=passOk(); if(!p) return;
+    lock(true); say('inf','控えを確かめています…');
+    bkRead($('bkIn').value, p).then(function(r){
+      var ids=Object.keys(r.sys);
+      if(!ids.length) throw new Error('控えに戻せる設定が入っていませんでした。');
+      var names=[];
+      for(var i=0;i<SYSTEMS.length;i++) if(r.sys[SYSTEMS[i].id]) names.push(SYSTEMS[i].title);
+      if(!confirm('控え（'+(r.at?r.at.slice(0,10)+' に作成':'作成日不明')+'）から、次の '+names.length+' 系統の設定を戻します。\n今この端末に入っている同じ系統の設定は、控えの内容で上書きされます。\n\n・'+names.join('\n・'))){
+        say('inf','戻すのをやめました。何も変更していません。'); return;
+      }
+      /* 各カードの入力欄を埋めて、既存の［入力したものをすべて保存］をそのまま流す */
+      for(var j=0;j<SYSTEMS.length;j++){
+        var e=r.sys[SYSTEMS[j].id]; if(!e) continue;
+        var u=$('u_'+SYSTEMS[j].id), x=$('x_'+SYSTEMS[j].id);
+        if(u) u.value=e.url;
+        if(cards[j].tokenInput) cards[j].tokenInput.value=e.token;
+        if(x && e.extra) x.value=e.extra;
+      }
+      $('bkIn').value='';
+      say('ok', names.length+'系統を控えから入れて、保存を始めました。各欄の結果（✓／⚠）をご確認ください。「週間計画・ワースケ・シフト」は同期先を確かめてから保存します（最長30秒）。');
+      $('saveAll').click();
+    }).then(null, function(e){ say('ng', String(e && e.message || e)); })
+    .then(function(){ $('bkPass').value=''; lock(false); });
   });
 }
 
