@@ -399,6 +399,7 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
 </style>
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-kv.js?v=2026-09-27b"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
@@ -3929,24 +3930,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!cfg || !cfg.url || !cfg.token) {
         return Promise.reject(new Error('同期未設定'));
       }
-      payload.token = cfg.token;
       var self = this;
       var t0 = Date.now();
-      return fetch(cfg.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
-        body: JSON.stringify(payload),
-        redirect: 'follow'
-      }).then(function (r) {
-        if (!r.ok) {
-          /* 404だけは死活判定の材料として数える（確定は endpointLooksDead_ の確認pingで行う）。
-           * 500・429・fetch失敗は一時的でありうるので数えない。 */
-          if (r.status === 404) self.noteEndpoint_('notfound', Date.now() - t0);
-          throw new Error('HTTP ' + r.status);
-        }
-        self.noteEndpoint_('ok', 0);   /* 応答が返った＝この接続先は生きている（計数リセット） */
-        return r.json();
-      }).then(function (json) {
+      function rawGas(p) {
+        p.token = cfg.token;
+        return fetch(cfg.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
+          body: JSON.stringify(p),
+          redirect: 'follow'
+        }).then(function (r) {
+          if (!r.ok) {
+            /* 404だけは死活判定の材料として数える（確定は endpointLooksDead_ の確認pingで行う）。
+             * 500・429・fetch失敗は一時的でありうるので数えない。 */
+            if (r.status === 404) self.noteEndpoint_('notfound', Date.now() - t0);
+            throw new Error('HTTP ' + r.status);
+          }
+          self.noteEndpoint_('ok', 0);   /* 応答が返った＝この接続先は生きている（計数リセット） */
+          return r.json();
+        });
+      }
+      /* 統合 0009（2026-09-27）: 保存先の切り替えスイッチ（su-backend.json の shift）が入ったら、勤務表の読み書き・編集権は
+         Supabase が受け持つ（応答は Google と同じ形）。スイッチが切・su-kv.js が無い時は今までどおり Google（rawGas）。 */
+      var sent = (window.SUKv && SUKv.handlesShift && SUKv.handlesShift(payload)) ? SUKv.callShift(payload, rawGas) : rawGas(payload);
+      return sent.then(function (json) {
         /* 統合 0007（2026-09-26）: Google が返した勤務表の版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者の
            ログイン時だけ）。写すのは data だけ（合言葉・編集券は送らない）。アプリの動きは変えない（失敗しても何もしない） */
         if (window.SUKvShadow && json) { try { SUKvShadow.fromSync(payload, json); } catch (eSh) {} }

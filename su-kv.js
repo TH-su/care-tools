@@ -3,7 +3,9 @@
  * ════════════════════════════════════════════════════════════════
  * 決定（代表者 2026-09-26）: 週間計画は塊ごと移す。写しで確かめてから、全端末一斉に切り替える。
  *   ワークスケジュール（週の型 ws_weekly_master_v1・日ごと wsday_YYYY-MM-DD）も、週間計画と同じ夜に一緒に切り替える（統合 0007）。
- *   勤務表（シフト系）はこのファイルの対象外（別の通信の形・編集できる端末を1台に絞る仕組みがあるため、後の移行で扱う）。
+ *   勤務表（シフト系）は別の入口 SUKv.handlesShift / SUKv.callShift で扱う（統合 0009・2026-09-27 代表者の決定 B）。
+ *   通信の形（pull / push / 編集権 lock* / shiftStatus）と編集できる端末を1台に絞る仕組みがワークスケジュールと違うため。
+ *   スイッチは su-backend.json の "shift"（切り替えは週間計画・ワークスケジュールとは別の夜に、別に決める）。
  *
  * 仕組み:
  *   ・切り替えのスイッチは公開ファイル su-backend.json（{"supabase": {"care_schedule_v2": true, "ws_weekly_master_v1": true, "wsday": true}}）。
@@ -27,12 +29,17 @@
  */
 (function () {
   'use strict';
-  // このファイルが扱えるキーと、そのスイッチの名前（増やす時は 0005/0007 のキーの範囲内で。勤務表は入れない）
+  // このファイルが扱えるキーと、そのスイッチの名前（増やす時は 0005/0007 のキーの範囲内で）。
+  // 勤務表のキーは 'shift'（0007 の private.kv_family と同じ範囲）。勤務表は handlesShift / callShift だけが扱う
+  var SHIFT_KEY_RE = /^(staff|symbols|settings|freee|sched:\d{4}-\d{2}:[A-Za-z0-9_.:-]{1,80}|req:\d{4}-\d{2}|drafts:\d{4}-\d{2})$/;
   function flagOf(key) {
     if (key === 'care_schedule_v2' || key === 'ws_weekly_master_v1') return key;
     if (typeof key === 'string' && /^wsday_\d{4}-\d{2}-\d{2}$/.test(key)) return 'wsday';
+    if (typeof key === 'string' && SHIFT_KEY_RE.test(key)) return 'shift';
     return '';
   }
+  // 週間計画・ワークスケジュールの入口（handles / call / readRouted）が扱うキー（勤務表は混ぜない）
+  function kvFlagOf(key) { var f = flagOf(key); return f === 'shift' ? '' : f; }
   var FLAGS_URL = 'su-backend.json';
   var FLAGS_LS = 'su_backend_flags';
   var ROUTED_ACTIONS = { get: 1, put: 1, head: 1, history: 1 };
@@ -64,6 +71,7 @@
     return Promise.race([fetchFlags(), new Promise(function (ok) { setTimeout(ok, 3000); })]);
   }
   function routed(key) { var f = flagOf(key); return !!(f && flags && flags.supabase && flags.supabase[f] === true); }
+  function kvRouted(key) { return !!kvFlagOf(key) && routed(key); }
 
   // ── ログイン（supabase-js と su-auth.js は使う時にだけ読み込む）──
   function loadScript(src) {
@@ -143,8 +151,8 @@
   /** この通信を SUKv が受け持つか（同期で答える）。キーが候補に入っている時だけ真＝それ以外は今までどおり */
   function handles(payload) {
     if (!payload || !ROUTED_ACTIONS[payload.action]) return false;
-    if (payload.key && flagOf(payload.key)) return true;
-    if (Array.isArray(payload.keys)) return payload.keys.some(function (k) { return !!flagOf(k); });
+    if (payload.key && kvFlagOf(payload.key)) return true;
+    if (Array.isArray(payload.keys)) return payload.keys.some(function (k) { return !!kvFlagOf(k); });
     return false;
   }
 
@@ -157,7 +165,7 @@
       var action = payload.action;
       // 複数キーの版の問い合わせ（ワークスケジュール・週間計画の巡回）: 切り替えたキーだけ Supabase、残りは Google
       if (action === 'head' && Array.isArray(payload.keys)) {
-        var mine = payload.keys.filter(routed), rest = payload.keys.filter(function (k) { return !routed(k); });
+        var mine = payload.keys.filter(kvRouted), rest = payload.keys.filter(function (k) { return !kvRouted(k); });
         if (!mine.length) return rawGas(payload);
         var restP = rest.length ? rawGas(Object.assign({}, payload, { keys: rest })) : Promise.resolve({ ok: true, revs: {} });
         return Promise.all([viaSupabase({ action: 'head', keys: mine }, rawGas), restP]).then(function (both) {
@@ -167,7 +175,7 @@
           return { ok: true, revs: Object.assign({}, b.revs || {}, a.revs || {}) };
         });
       }
-      if (!routed(payload.key)) return rawGas(payload);
+      if (!kvRouted(payload.key)) return rawGas(payload);
       return viaSupabase(payload, rawGas);
     });
   }
@@ -238,7 +246,7 @@
     return ensureFlags().then(function () {
       if (!payload || !hasSession()) return null;
       var keys = payload.action === 'get' ? [payload.key] : payload.action === 'pull' && Array.isArray(payload.keys) ? payload.keys : null;
-      if (!keys || !keys.length || !keys.every(routed)) return null;
+      if (!keys || !keys.length || !keys.every(kvRouted)) return null;
       return authState().then(function (st) {
         if (st.status !== window.SUAuth.STATUS.OK) return null;
         var sb = window.SUAuth.client();
@@ -258,9 +266,112 @@
     }).catch(function () { return null; });
   }
 
+  /* ── 勤務表（シフト）の保存先の切り替え（統合 0009・2026-09-27 代表者の決定 B）──
+   * 勤務表アプリの通信関数 Store.api の入口で SUKv.handlesShift(payload) が真なら SUKv.callShift(payload, rawGas) に任せる。
+   * スイッチ "shift" が切なら rawGas（これまでの Google）へそのまま流す＝切り替え前は何も変わらない。
+   * スイッチが入ったら Supabase の関数（shift_pull / shift_push / shift_lock_* / shift_status）で読み書きし、
+   * Google と同じ形の応答を返す（conflict・serverRev・editlock・schedwipe 等も同じ名前）＝勤務表アプリの処理は変えない。
+   *   ・編集できる端末を1台に絞る仕組み（編集権・券・epoch・厳格モード）もデータベースが同じ約束で受け持つ。
+   *   ・現場のアカウントは読むだけ（pull の応答に role:'ro'＝勤務表アプリは閲覧モード）。書けるのは事務所・管理者。
+   *   ・保存できたら、少し待って最新版を Google へも写し返す（force）。勤務表を Google から読む画面
+   *     （ワークスケジュールの勤務の取り込み等）が古いままにならないように。写し返しの失敗は本番に影響させない。
+   *   ・合言葉（Google の token）と券の控えは Supabase へは送らない（送るのは関数の引数だけ）。 */
+  var SHIFT_ACTIONS = { pull: 1, push: 1, head: 1, lockStatus: 1, lockAcquire: 1, lockRenew: 1, lockRelease: 1, shiftStatus: 1 };
+  function isShiftKey(k) { return flagOf(k) === 'shift'; }
+  function shiftOn() { return !!(flags && flags.supabase && flags.supabase.shift === true); }
+
+  /** 勤務表アプリの通信のうち、SUKv が受け持てる形か（同期で答える）。受け持っても、スイッチが切なら Google へ流す */
+  function handlesShift(payload) {
+    if (!payload || !SHIFT_ACTIONS[payload.action]) return false;
+    var a = payload.action;
+    if (a === 'push') return isShiftKey(payload.key);
+    if (a === 'head') return Array.isArray(payload.keys) && payload.keys.length > 0 && payload.keys.every(isShiftKey);
+    if (a === 'pull') return !Array.isArray(payload.keys) || !payload.keys.length || payload.keys.every(isShiftKey);
+    return true;   // 編集権・版の確かめ（キーを持たない）
+  }
+
+  function callShift(payload, rawGas) {
+    return ensureFlags().then(function () {
+      if (!shiftOn()) return rawGas(payload);
+      return viaSupabaseShift(payload, rawGas);
+    });
+  }
+
+  var shiftMirrorTimers = {};
+  function scheduleShiftMirror(key, rawGas) {
+    clearTimeout(shiftMirrorTimers[key]);
+    shiftMirrorTimers[key] = setTimeout(function () {
+      var sb = window.SUAuth && window.SUAuth.client();
+      if (!sb) return;
+      sb.rpc('shift_pull', { p_keys: [key] }).then(function (r) {
+        var e = r && !r.error && r.data && r.data.entries && r.data.entries[key];
+        if (!e || e.data == null) return;
+        // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
+        return rawGas({ action: 'push', key: key, baseRev: 0, data: e.data, force: true });
+      }).catch(function () { /* 写し返しの失敗は本番に影響させない（次の保存でまた写す） */ });
+    }, MIRROR_WAIT_MS);
+  }
+
+  function str(v, max) { var s = v == null ? '' : String(v); return s.length > max ? s.substring(0, max) : s; }
+
+  function viaSupabaseShift(payload, rawGas) {
+    return authState().then(function (st) {
+      var S = window.SUAuth.STATUS;
+      if (st.status !== S.OK) {
+        if (st.status === S.SIGNED_OUT || st.status === S.DENIED || st.status === S.MFA_VERIFY || st.status === S.MFA_ENROLL) {
+          showLoginBanner();
+          return { ok: false, error: 'login' };
+        }
+        return { ok: false, error: '通信失敗' };
+      }
+      var writer = st.role === 'office' || st.role === 'admin';
+      var keys = Array.isArray(payload.keys) ? payload.keys.filter(isShiftKey) : null;
+      var pass = function (r) { return r.error ? fail(r) : (r.data || { ok: false, error: '通信失敗' }); };
+      switch (payload.action) {
+        case 'pull':
+          return rpc('shift_pull', { p_keys: keys && keys.length ? keys : null }).then(pass);
+        case 'shiftStatus':
+        case 'head':
+          return rpc('shift_status', { p_keys: keys || [] }).then(function (r) {
+            var d = pass(r);
+            return payload.action === 'head' && d.ok ? { ok: true, revs: d.revs || {} } : d;
+          });
+        case 'lockStatus':
+          return rpc('shift_lock_status', {}).then(pass);
+        case 'push':
+          if (!writer) return { ok: false, error: 'forbidden' };
+          return rpc('shift_push', {
+            p_key: payload.key,
+            p_base_rev: (typeof payload.baseRev === 'number' && isFinite(payload.baseRev)) ? payload.baseRev : 0,
+            p_data: payload.data === undefined ? null : payload.data,
+            p_force: payload.force === true,
+            p_edit_token: payload.editToken ? String(payload.editToken) : null,
+            p_defaults_init: payload.defaultsInit === true,
+            p_restore_backup: payload.restoreFromBackup === true
+          }).then(function (r) {
+            var d = pass(r);
+            if (d.ok === true && rawGas) scheduleShiftMirror(payload.key, rawGas);
+            return d;
+          });
+        case 'lockAcquire':
+          if (!writer) return { ok: false, error: 'forbidden' };
+          return rpc('shift_lock_acquire', { p_device: str(payload.deviceId, 64), p_name: str(payload.name, 40), p_takeover: payload.takeover === true }).then(pass);
+        case 'lockRenew':
+          if (!writer) return { ok: false, error: 'forbidden' };
+          return rpc('shift_lock_renew', { p_device: str(payload.deviceId, 64), p_token: str(payload.editToken, 64) }).then(pass);
+        case 'lockRelease':
+          if (!writer) return { ok: false, error: 'forbidden' };
+          return rpc('shift_lock_release', { p_device: str(payload.deviceId, 64), p_token: str(payload.editToken, 64) }).then(pass);
+        default:
+          return rawGas(payload);
+      }
+    }).catch(function () { return { ok: false, error: '通信失敗' }; });
+  }
+
   // 起動時に一度スイッチを読み、以後1分ごとに読み直す（開いたままの画面も一斉に切り替わる）
   fetchFlags();
   setInterval(fetchFlags, 60000);
 
-  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, _flags: function () { return flags; } };
+  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted,
+                  handlesShift: handlesShift, callShift: callShift, _flags: function () { return flags; } };
 })();
