@@ -77,12 +77,27 @@
         <button type="button" class="btn" id="b-fill" hidden>足りない分を写す</button>
       </div>
       <div id="kv-admin" hidden>
-        <p class="muted mt">管理者だけの操作です。切り替えの当日に、手順に沿って使います（先に切り替えスイッチの PR を取り込み、上の点検がそろっていること）。週間計画とワークスケジュールをまとめて切り替えます（勤務表は今回は切り替えません）。</p>
+        <p class="muted mt">管理者だけの操作です。切り替えの当日に、手順に沿って使います（先に切り替えスイッチの PR を取り込み、上の点検がそろっていること）。週間計画とワークスケジュールをまとめて切り替えます。</p>
         <div class="acts">
           <button type="button" class="btn ng" id="b-live">Supabase を本番にする（切り替える）</button>
           <button type="button" class="btn" id="b-shadow">写しの期間に戻す</button>
         </div>
+        <p class="muted mt">勤務表は別の夜に切り替えます（先に勤務表の切り替えスイッチ shift の PR を取り込み、上の点検で勤務表がそろっていること）。</p>
+        <p id="sh-verdict" class="msg"></p>
+        <div class="acts">
+          <button type="button" class="btn ng" id="b-live-shift">勤務表を Supabase の本番にする</button>
+          <button type="button" class="btn" id="b-shadow-shift">勤務表を写しの期間に戻す</button>
+        </div>
       </div>
+    </section>
+
+    <section class="cd">
+      <h2>体重の写し</h2>
+      <p class="muted">事務所・管理者が体重管理を開くたびに、サーバーの全件がそのまま写されます（同じ中身なら送りません・最短5分おき）。件数と日時だけを出し、氏名・体重は出しません。</p>
+      <div class="kpis" id="wt-kpis"></div>
+      <p id="wt-verdict" class="msg"></p>
+      <ul class="acct" id="wt-runs"></ul>
+      <div class="acts"><a class="btn" href="weight-record.html">体重管理を開く（写しが最新になる）</a></div>
     </section>
 
     <section class="cd">
@@ -98,8 +113,8 @@
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-09-26"></script>
 <script src="su-master-shadow.js?v=2026-09-26"></script>
-<script src="su-kv.js?v=2026-09-26b"></script>
+<script src="su-kv.js?v=2026-09-27b"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
-<script src="shadow-check.js?v=2026-09-27b"></script>
+<script src="shadow-check.js?v=2026-09-27d"></script>
 </body>
 </html>

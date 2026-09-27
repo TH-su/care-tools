@@ -12,6 +12,8 @@
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
+<script src="su-weight-shadow.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -2169,6 +2171,9 @@ async function syncFromAPI(showLoader){
     };
     DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY, pendIds.res);
     DB.records   = mergeById(apiRec, DB.records, null, pendIds.rec);
+    /* 統合 0008（2026-09-27）: サーバーから読んだ全件を Supabase へ写す（写しの期間。事務所・管理者のログイン時だけ・
+       現場の端末では何もしない）。apiRes は上の合わせで入居者マスタの利用者No を補った後の行。体重管理の動きは変えない */
+    try{ if(window.SUWeightShadow) SUWeightShadow.fromGetAll(apiRes, apiRec, apiThr); }catch(eWs){}
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
     try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
     // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
