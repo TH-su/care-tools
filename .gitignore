@@ -113,3 +113,5 @@ mailer/.DS_Store
 !/su-backend.json
 # 接続先が空の時の案内（2026-09-27）。表示だけで、localStorage は読むだけ・個人情報なし
 !/su-cfg-hint.js
+# 体重の写し（統合 0008・2026-09-27）。個人情報なし（中身は画面が読んだものを Supabase へ渡すだけ）
+!/su-weight-shadow.js
