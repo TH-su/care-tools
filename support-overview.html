@@ -327,6 +327,8 @@ body {
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
+<script src="su-kv.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script>
 'use strict';
@@ -427,6 +429,9 @@ let RAW = null, MASKS = null, RAW_N = 0, RAW_MISS = '';   // 直近の集計を�
 let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施設（既定）／'ext'=外部
 
 async function gasCall(payload) {
+  /* 統合（2026-09-27）: 週間計画・ワースケの日データの保存先を Supabase に切り替えた後は、ログインしている端末だけ
+     Supabase から読む（速い）。スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。 */
+  if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) return v; }
   const res = await fetch(TARGET.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },

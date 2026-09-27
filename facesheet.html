@@ -556,6 +556,8 @@ input,select{font-family:inherit; font-size: 0.9375rem}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-09-13"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
+<script src="su-kv.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script src="su-facility.js?v=2026-09-24.2"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
@@ -2420,10 +2422,16 @@ function a4EnsureDayMap(){
   if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
   var t=a4SyncTarget();
   if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
-  a4DayPromise=fetchWithTimeout(t.endpoint,{method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
-    .then(function(r){ return r.text(); })
+  /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
+     スイッチが切・未ログイン・失敗の時は null＝今までどおり Google（写し返しで最新）。読むだけ。 */
+  var viaKv=(window.SUKv&&SUKv.readRouted)?SUKv.readRouted({action:'get', key:'care_schedule_v2'}):Promise.resolve(null);
+  a4DayPromise=viaKv.then(function(v){
+      if(v) return JSON.stringify(v);
+      return fetchWithTimeout(t.endpoint,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
+        .then(function(r){ return r.text(); });
+    })
     .then(function(txt){
       var j=JSON.parse(txt);
       /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる

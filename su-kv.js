@@ -224,9 +224,43 @@
     }).catch(function () { return { ok: false, error: '通信失敗' }; });
   }
 
+  /* ── 見るだけの画面の読み取り（2026-09-27 代表者の決定 A）──
+   * 週間計画俯瞰・支援俯瞰・入居者マスタ／フェイスシートの「デイ利用日」は、書かずに読むだけ。
+   * スイッチが入ったキーは Supabase から読む（速い）。ただし次の時は null を返し、呼び手は今までどおり Google を読む
+   * （切り替え後も Supabase から Google へ写し返しているので、Google の中身も最新に追いつく）:
+   *   スイッチが切・ログインの控えが無い（現場のタブレット等）・ログインが確かめられない・通信の失敗。
+   * ★帯（ログインしてください）は出さない＝見るだけの画面の使い勝手を変えない。
+   * payload: {action:'get', key} → {ok, rev, data, updatedAt}／{action:'pull', keys:[…]} → {ok, entries:{key:{key,rev,data,updatedAt}}}
+   *   pull はキーが全部スイッチ入りの時だけ受け持つ（混ざっていれば null＝全部 Google）。 */
+  var SESSION_LS = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+  function hasSession() { try { return !!localStorage.getItem(SESSION_LS); } catch (e) { return false; } }
+  function readRouted(payload) {
+    return ensureFlags().then(function () {
+      if (!payload || !hasSession()) return null;
+      var keys = payload.action === 'get' ? [payload.key] : payload.action === 'pull' && Array.isArray(payload.keys) ? payload.keys : null;
+      if (!keys || !keys.length || !keys.every(routed)) return null;
+      return authState().then(function (st) {
+        if (st.status !== window.SUAuth.STATUS.OK) return null;
+        var sb = window.SUAuth.client();
+        if (payload.action === 'get') {
+          return rpc('kv_get', { p_key: payload.key }).then(function (r) {
+            if (r.error || !r.data || r.data.ok !== true) return null;
+            return { ok: true, rev: r.data.rev || 0, data: r.data.data == null ? null : r.data.data, updatedAt: r.data.updatedAt || '' };
+          });
+        }
+        return sb.from('kv_entries').select('key,rev,data,updated_at').in('key', keys).then(function (r) {
+          if (r.error || !Array.isArray(r.data)) return null;
+          var entries = {};
+          r.data.forEach(function (e) { if (e && e.data != null) entries[e.key] = { key: e.key, rev: e.rev, data: e.data, updatedAt: e.updated_at }; });
+          return { ok: true, entries: entries };
+        });
+      });
+    }).catch(function () { return null; });
+  }
+
   // 起動時に一度スイッチを読み、以後1分ごとに読み直す（開いたままの画面も一斉に切り替わる）
   fetchFlags();
   setInterval(fetchFlags, 60000);
 
-  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, _flags: function () { return flags; } };
+  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, _flags: function () { return flags; } };
 })();
