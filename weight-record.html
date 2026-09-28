@@ -6308,6 +6308,32 @@ async function wrAdoptOrphans(oldRid, keepId){
   toast(`記録 ${recs.length} 件を付けました`, 'ok');
   return true;
 }
+/* 持ち主のいない記録を消す（2026-09-28 代表者の要望）。誰の記録か分からず付け替えられない時のための「クリア」。
+   消す前にサーバーと同期し、持ち主が本当にいないことを確かめ直す（ほかの端末に持ち主が居れば、同期で戻ってくる）。
+   確認と JSON の控えつき。サーバーからも消す */
+async function wrClearOrphans(oldRid){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、消しませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
+  }
+  if(residentById(oldRid)){ toast('この記録の持ち主が見つかりました。一覧を確かめてください', 'ok'); try{ renderCfg(); }catch(e){} return false; }
+  const recs = (DB.records || []).filter(x => x && String(x.residentId) === String(oldRid));
+  if(!recs.length){ try{ renderCfg(); }catch(e){} return false; }
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  const list = recs.map(x => `${ymFmt(x.yearMonth)} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('、');
+  if(!confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを JSON で保存します）。\nよろしいですか？`)) return false;
+  try{ wrDownloadDbJson('weight-record-before-clear'); }catch(e){}
+  const ids = new Set(recs.map(x => String(x.id)));
+  DB.records = DB.records.filter(x => !(x && ids.has(String(x.id))));
+  save();
+  recs.forEach(x => { if(x.id != null) apiPush('delRecord', { id: x.id }); });
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`持ち主のいない記録 ${recs.length} 件を消しました`, 'ok');
+  return true;
+}
 /* 作るのを見送ったマスタの人を、選んだ行へ紐づける（その行にマスタの番号を付けてサーバーにも書く） */
 async function wrLinkSkippedMaster(masterId, residentId){
   if(wrFieldDeny()) return false;
@@ -6418,12 +6444,21 @@ function wrRenderDupCheck(){
   });
   orphanIds.forEach((oid, oi) => {
     const list = orphans[oid].slice().sort((a, b) => String(a.yearMonth).localeCompare(String(b.yearMonth)));
-    const show = list.slice(-6).map(x => `${escapeHtml(ymFmt(x.yearMonth))} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('・');
+    /* 見分ける手がかり: 測定日・入力した日・メモ（氏名は記録に無い） */
+    const md = v => { const t = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? `${Number(t.slice(5,7))}/${Number(t.slice(8,10))}` : ''; };
+    const show = list.slice(-6).map(x => {
+      const bits = [];
+      if(md(x.measuredOn)) bits.push(`測定 ${md(x.measuredOn)}`);
+      if(String(x.createdAt || '').slice(0, 10) && md(x.createdAt)) bits.push(`入力 ${String(x.createdAt).slice(0,4)}/${md(x.createdAt)}`);
+      if(x.note) bits.push(`メモ「${escapeHtml(String(x.note).slice(0, 30))}」`);
+      return `${escapeHtml(ymFmt(x.yearMonth))} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}${bits.length ? `（${bits.join('・')}）` : ''}`;
+    }).join('<br>');
     html += `<div class="dup-g" role="group" aria-label="持ち主のいない記録"><div class="dup-h">持ち主のいない記録<span class="dup-k">${list.length} 件</span></div>`
       + `<div class="dup-m" style="cursor:default"><span class="dup-s">${show}${list.length > 6 ? '（新しい6件）' : ''}</span></div>`
       + `<div class="dup-a"><label for="dupOr_${oi}" style="font-size:0.8125rem">付ける相手</label>`
       + `<select id="dupOr_${oi}"><option value="">選んでください</option>${opts}</select>`
-      + `<button type="button" class="bn bp bsm" data-dup-orphan="${oi}">この人に付ける</button></div></div>`;
+      + `<button type="button" class="bn bp bsm" data-dup-orphan="${oi}">この人に付ける</button>`
+      + `<button type="button" class="bn br bsm" data-dup-orphan-clear="${oi}">誰の記録か分からないので消す</button></div></div>`;
   });
   if(nameless.length){
     nameless.forEach(r => {
@@ -6457,6 +6492,10 @@ function wrRenderDupCheck(){
     const to = box.querySelector(`#dupOr_${b.dataset.dupOrphan}`);
     if(!oid || !to || !to.value){ toast('付ける相手を選んでください', 'err'); return; }
     await wrAdoptOrphans(oid, to.value);
+  })));
+  box.querySelectorAll('[data-dup-orphan-clear]').forEach(b => b.addEventListener('click', busy(async () => {
+    const oid = orphanIds[Number(b.dataset.dupOrphanClear)];
+    if(oid) await wrClearOrphans(oid);
   })));
   box.querySelectorAll('[data-dup-link]').forEach(b => b.addEventListener('click', busy(async () => {
     const x = skippedM[Number(b.dataset.dupLink)];
