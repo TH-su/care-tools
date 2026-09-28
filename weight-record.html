@@ -286,6 +286,24 @@ textarea{resize:vertical;min-height:60px}
 
 .ex-r{display:flex;gap:9px;flex-wrap:wrap}
 
+/* 重複の点検（2026-09-28） */
+.dup-count{font-size:0.8125rem;font-weight:700;color:var(--g7)}
+.dup-count.has{color:var(--warn-tx)}
+.dup-lead{font-size:0.8125rem;color:var(--g7);line-height:1.6;margin:0 0 10px}
+.dup-g{border:1px solid var(--warn-br);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:var(--warn-bg)}
+.dup-g.is-name{border-style:dashed}
+.dup-h{font-size:0.875rem;font-weight:700;color:var(--g9);margin-bottom:4px}
+.dup-k{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:8px;font-size:0.75rem;font-weight:700;
+  background:#fff;color:var(--warn-tx);border:1px solid var(--warn-br);vertical-align:middle}
+.dup-m{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 8px;margin:6px 0;border-radius:6px;
+  background:#fff;border:1px solid var(--g2);cursor:pointer;font-size:0.8125rem;color:var(--g9);line-height:1.5}
+.dup-m input{width:20px;height:20px;flex:none;margin:0}
+.dup-m .dup-s{color:var(--g7)}
+.dup-a{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.dup-a .bn{min-height:44px}
+.dup-a select{min-height:44px;font-size:0.875rem;max-width:100%}
+.dup-none{font-size:0.8125rem;color:var(--g7);padding:6px 0}
+
 /* buttons */
 .bn{padding:9px 16px;border-radius:8px;border:none;cursor:pointer;
   font-size: 0.8125rem;font-weight:700;font-family:inherit;
@@ -938,7 +956,7 @@ select option.is-discharged{color:var(--g6)}
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
     <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:8px">
-      セルは「体重(kg) <small>(前月比)</small>」。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
+      セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
       <b>氏名セル</b>…今月の入力画面を開く／<b>体重セル</b>…その記録を編集（空白は新規入力）
     </div>
     <div class="gr-wrap">
@@ -994,7 +1012,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
     <div class="mk-body">
       <div id="gr3yBlocks" class="gr-3y-blocks"></div>
-      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
+      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
     </div>
   </div>
 </div>
@@ -1026,6 +1044,13 @@ select option.is-discharged{color:var(--g6)}
       <button class="bn bp bsm" id="cfgAdd">＋ 追加</button>
     </div>
     <div id="cfgList"></div>
+  </div>
+
+  <!-- 重複の点検（2026-09-28）：同じ人の行が2つ以上ある組・氏名の無い行を出し、人が選んでまとめる -->
+  <div class="cd" id="dupCard">
+    <div class="cd-t"><span>重複の点検</span><span id="dupCount" class="dup-count"></span></div>
+    <p class="dup-lead">同じ人が2行以上ある組と、氏名の無い行を出します。残す行を選んで「この組をまとめる」を押すと、記録を残す行へ移してから、ほかの行を消します（記録は消えません）。まとめる前に、今のデータを JSON で保存します。</p>
+    <div id="dupList" aria-live="polite"></div>
   </div>
 
   <div class="cd">
@@ -1884,6 +1909,9 @@ function pushResidentFields_(r, fields){
   if(!r || r.id == null) return;
   if(typeof apiPush !== 'function') return;
   if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r }); return; }
+  /* サーバーにまだ無い人は行ごと送る。項目だけ送ると、サーバーに「番号と車椅子重量だけ」の
+     氏名の無い行ができ、次の同期で端末の氏名まで空になる（2026-09-28 修正） */
+  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r }); return; }
   const part = { id: r.id };
   fields.forEach(k=>{
     // 値が無い項目は null を明示して送る＝「空にせよ」の意思表示（キー省略は温存の意味になる）
@@ -2121,7 +2149,18 @@ async function apiDiagnose(url){
 
 /* Pull server state and merge. Server is authoritative for items
    with matching IDs; local-only items (created offline) are kept. */
-async function syncFromAPI(showLoader){
+/* 同期が重なったら、実行中の同期の結果を待つ（2026-09-28）。後から返った古い応答で、
+   直前にまとめた内容がこの端末で一時的に戻るのを防ぐ */
+let _wrSyncInFlight = null;
+function syncFromAPI(showLoader){
+  if(_wrSyncInFlight) return _wrSyncInFlight;
+  const p = _syncFromAPIImpl(showLoader);
+  _wrSyncInFlight = p;
+  const done = () => { if(_wrSyncInFlight === p) _wrSyncInFlight = null; };
+  p.then(done, done);
+  return p;
+}
+async function _syncFromAPIImpl(showLoader){
   if(!apiUrl) return false;
   if(showLoader) ldShow('サーバーからデータを取得中...');
   apiSetStatus('sy');
@@ -2169,16 +2208,29 @@ async function syncFromAPI(showLoader){
       for(const l of localList){  if(l && l.id!=null && !seen.has(l.id)){ out.push(l); seen.add(l.id); } }
       return out;
     };
+    /* 重複・氏名なし行・削除の伝播の後始末に使う情報は、合わせる前に取る（2026-09-28） */
+    const srvResInfo = wrServerResInfo(apiRes);
+    const prevSrvRes = wrLoadSrvResIds(true);
+    const localResBefore = DB.residents.slice();
     DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY, pendIds.res);
     DB.records   = mergeById(apiRec, DB.records, null, pendIds.rec);
     /* 統合 0008（2026-09-27）: サーバーから読んだ全件を Supabase へ写す（写しの期間。事務所・管理者のログイン時だけ・
        現場の端末では何もしない）。apiRes は上の合わせで入居者マスタの利用者No を補った後の行。体重管理の動きは変えない */
     try{ if(window.SUWeightShadow) SUWeightShadow.fromGetAll(apiRes, apiRec, apiThr); }catch(eWs){}
+    let recon = { push: [], del: [], keep: new Set() };
+    try{ recon = wrReconcileResidents(srvResInfo, localResBefore, prevSrvRes, pendIds.res); }
+    catch(e){ console.warn('[wtmgr] 入居者の後始末に失敗（同期は継続）:', e); }
+    /* サーバーに在る入居者の番号を控える。後始末の送信と、このあとの取り込みの送信が
+       「サーバーが知っている人か」をこの控えで判断する。外すのを見送った人は別に持ち越して次回また判定する */
+    wrSaveSrvResIds(srvResInfo.ids, recon.keep);
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
     try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
     // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
     try{ if(typeof wrSyncProxyRoster === 'function') wrSyncProxyRoster(); }catch(e){}
     save();
+    wrPushReconciled(recon.push);
+    /* 統合で消した行が古い端末の部分送信で「氏名の無い行」として復活していたら、サーバーからも消す */
+    try{ (recon.del || []).forEach(id => apiPush('delResident', { id })); }catch(e){}
 
     if(apiThr){
       // merge into existing THR shape (don't let missing keys wipe defaults)
@@ -2211,11 +2263,17 @@ async function syncFromAPI(showLoader){
         populateResidentSelect($("#ivResident"), {preferId: UI.ivRes, fallbackFirst:true, includeDischarged:true});
       }
     }catch(e){ console.warn('post-sync render:', e); }
+    /* 入居者マスタから本人指定で開かれ、起動時にはまだ居なかった人（同期後の取り込みで作られた人）を開き直す */
+    try{ if(typeof wrMasterPending !== 'undefined' && wrMasterPending) wrApplyMasterIdParam(true); }catch(e){}
     flushPendingQueue();
     return true;
   }catch(e){
     apiSetStatus('er', '接続エラー: '+ e.message);
     toast('⚠️ 同期失敗: '+ e.message, 'err');
+    /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
+       番号はマスタの番号から決まるので、あとで同期してもサーバーで二重にならない */
+    /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
+    try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){}
     return false;
   }finally{ ldHide(); }
 }
@@ -2799,8 +2857,173 @@ function wrMirrorToast(st){
     toast('入居者マスタに合わせて' + m.join('・') + 'を反映しました');
   }catch(e){ /* 通知失敗は運用を止めない */ }
 }
-/* 入居者マスタの共通情報を取り込み（体重記録アプリ用） */
-function mergeCommonWeight(){
+/* ── 入居者を二重に作らないための部品（2026-09-28） ──
+   重複の出どころは「入居者マスタにいて端末に見つからない人を、端末ごとに別の番号で作る」こと。
+   GAS は番号（id）だけで行を突き合わせるので、端末ごとの番号は別人の行としてサーバーに残る。
+   ・マスタから作る人の番号はマスタの番号から決める（どの端末が作っても同じ番号＝サーバーで1行）
+   ・直近の同期でサーバーに在った入居者の番号を控える（番号だけ。氏名は持たない）。
+     「サーバーがまだ知らない人」を部分送信しない（氏名の無い行を作らない）判定と、
+     サーバーで消された人をこの端末からも外す判定に使う。 */
+var WR_SRV_RES_KEY = 'wtmgr_srv_res_ids';
+/* 名簿の取り込みで、同じ氏名の紐づいていない行があって作るのを見送ったマスタの人（表示用・保存しない） */
+var wrSkippedMaster = [];
+/* 控えは「どの接続先の控えか」を添えて持つ。別のシートへ繋ぎ直した時に、前の接続先の控えで
+   「消えた人」を判定しないため（接続先の末尾だけを持つ。合言葉は持たない） */
+function wrSrvResTag(){ try{ return String(apiUrl || '').slice(-16); }catch(e){ return ''; } }
+/* withGone=true: 「消えたが外すのを見送った番号」も含めて返す（消えた人の判定用）。
+   既定はサーバーに在った番号だけ（送り方の判定用。見送った人を「在る」と扱うと部分送信で復活させる） */
+function wrLoadSrvResIds(withGone){
+  try{
+    var s = localStorage.getItem(WR_SRV_RES_KEY);
+    if(!s) return null;
+    var o = JSON.parse(s);
+    if(!o || !Array.isArray(o.ids) || o.u !== wrSrvResTag()) return null;
+    var set = new Set(o.ids.map(String));
+    if(withGone && Array.isArray(o.gone)) o.gone.forEach(function(x){ set.add(String(x)); });
+    return set;
+  }catch(e){ return null; }
+}
+function wrSaveSrvResIds(ids, gone){
+  try{
+    localStorage.setItem(WR_SRV_RES_KEY, JSON.stringify({ u: wrSrvResTag(), ids: Array.from(ids), gone: gone ? Array.from(gone) : [] }));
+  }catch(e){}
+}
+function wrClearSrvResIds(){ try{ localStorage.removeItem(WR_SRV_RES_KEY); }catch(e){} }
+/* true=サーバーに無いと分かっている / false=在る、または控えが無く分からない（従来の送り方のまま） */
+function wrServerLacksResident(id){
+  var s = wrLoadSrvResIds();
+  return !!(s && id != null && !s.has(String(id)));
+}
+function wrMasterResId(mid){
+  return 'wm_' + String(mid).replace(/[^A-Za-z0-9_-]/g, function(c){ return '_' + c.charCodeAt(0).toString(16); });
+}
+function wrHasMid(r){ return !!r && r.masterId != null && r.masterId !== ''; }
+/* 氏名で紐づけてよい相手の表。マスタの番号がまだ無い・在籍中の人だけを、同じ氏名が1人しかいない時だけ載せる
+   （同姓同名・退去した前の入居者・既に別のマスタの人に紐づいた行へ当てない。紐づけた番号はサーバーにも書くため）。
+   unlinkedCnt には、紐づいていない同じ氏名の行の数を返す（2行以上ある氏名で新しく作らないため） */
+function wrUnlinkedByName(residents, unlinkedCnt){
+  var cnt = unlinkedCnt || {}, map = {};
+  (residents || []).forEach(function(r){
+    if(!r || typeof r !== 'object' || wrHasMid(r) || isDischarged(r)) return;
+    var nm = suNormName(r.name); if(!nm) return;
+    cnt[nm] = (cnt[nm] || 0) + 1;
+    map[nm] = r;
+  });
+  Object.keys(map).forEach(function(nm){ if(cnt[nm] !== 1) delete map[nm]; });
+  return map;
+}
+/* 合わせる前のサーバー行から、後始末に要る情報だけを取る（合わせると端末の値で埋まるため先に取る） */
+function wrServerResInfo(apiRes){
+  var info = { ids: new Set(), noName: new Set(), noMid: new Set(), mids: new Set(), names: new Set(), midIds: {} };
+  (apiRes || []).forEach(function(s){
+    if(!s || s.id == null) return;
+    var id = String(s.id);
+    info.ids.add(id);
+    var nm = suNormName(s.name);
+    if(!nm) info.noName.add(id); else info.names.add(nm);
+    if(s.masterId == null || s.masterId === '') info.noMid.add(id);
+    else { var mk = String(s.masterId); info.mids.add(mk); (info.midIds[mk] = info.midIds[mk] || new Set()).add(id); }
+  });
+  return info;
+}
+/* 同期で受けた入居者行を端末の行と合わせたあとの後始末（syncFromAPI から呼ぶ）。
+   DB.residents / DB.records は合わせ終わった状態で呼ぶ。
+   戻り値 { push:[{r, fields}]（fields 無し＝行全体）, del:[id]（サーバーから消す）, keep:Set（次回も判定する番号） }
+   srv: wrServerResInfo の結果 / localBefore: 合わせる前の端末の行 /
+   prevSrv: 前回の同期でサーバーに在った番号（無ければ null）/ pendRes: 未送信が残る入居者の番号 */
+function wrReconcileResidents(srv, localBefore, prevSrv, pendRes){
+  var out = { push: [], del: [], keep: new Set() };
+  var localById = {};
+  (localBefore || []).forEach(function(l){ if(l && l.id != null && !localById[String(l.id)]) localById[String(l.id)] = l; });
+  var isPend = function(id){ return !!(pendRes && (pendRes.has(id) || pendRes.has(String(id)))); };
+  var referenced = function(id){ return (DB.records || []).some(function(x){ return x && String(x.residentId) === String(id); }); };
+  /* サーバーに「同じ人」と分かる別の行が在るか（同じマスタの番号、または同じ氏名） */
+  /* マスタの番号を持つ人は番号だけで見る（同姓同名の別人を片割れと見なさない）。番号の無い人だけ氏名で見る */
+  var hasTwinOnServer = function(r){
+    if(!r) return false;
+    if(wrHasMid(r)) return srv.mids.has(String(r.masterId));
+    var nm = suNormName(r.name);
+    return !!(nm && srv.names.has(nm));
+  };
+  var localNameCnt = {};
+  DB.residents.forEach(function(r){ var nm = r && suNormName(r.name); if(nm) localNameCnt[nm] = (localNameCnt[nm] || 0) + 1; });
+  var remove = new Set();
+  /* 1) サーバー行に氏名が無い（端末だけに居た人へ項目を絞って送った時にできる壊れた行。2026-09-28 までの不具合）。
+        ・サーバーに同じ人の別の行が在る＝統合で消した行が、古い端末の部分送信で復活したもの
+          → 記録が付いていなければ端末から外し、サーバーからも消す
+        ・そうでなければ端末の値で全項目を戻し、行ごと送り直す（氏名以外の項目も null で届いているため）
+     マスタの番号だけが無い行は、番号をサーバーへ補う（同じ氏名が端末に2人以上いる時は送らない＝誤った紐づけを広げない） */
+  DB.residents.forEach(function(r){
+    if(!r || r.id == null) return;
+    var id = String(r.id);
+    if(!srv.ids.has(id) || isPend(r.id)) return;
+    var l = localById[id];
+    if(srv.noName.has(id)){
+      if(!l || !String(l.name == null ? '' : l.name).trim()) return;
+      /* 消すのは「同じマスタの番号を持つ、自分以外のサーバー行」が在る時だけ（氏名だけの一致では消さない。
+         消した行はサーバーからも消え、元に戻せないため。氏名だけが同じ時は戻して「重複の点検」に任せる） */
+      var twinIds = wrHasMid(l) ? srv.midIds[String(l.masterId)] : null;
+      var hasOtherTwin = !!twinIds && Array.from(twinIds).some(function(x){ return x !== id; });
+      if(hasOtherTwin && !referenced(id)){ remove.add(id); out.del.push(r.id); return; }
+      Object.keys(l).forEach(function(k){
+        if((r[k] == null || r[k] === '') && l[k] != null && l[k] !== '') r[k] = l[k];
+      });
+      out.push.push({ r: r });
+      return;
+    }
+    if(srv.noMid.has(id) && wrHasMid(r) && localNameCnt[suNormName(r.name)] === 1) out.push.push({ r: r, fields: ['masterId'] });
+  });
+  /* 2) 前回サーバーに在って今回無い人＝他の端末で削除・統合された人。この端末からも外す。
+        未送信が残る人・記録が付いている人は外さない（記録を持ち主なしにしない）。
+        サーバーに同じ人の別の行が在る人（統合の片割れ）は数に関係なく外す。それ以外は、応答が空・
+        外す数が多すぎる時は壊れた応答とみなして外さず、次の同期でもう一度判定する（控えに残す） */
+  if(prevSrv && srv.ids.size > 0){
+    var goneAll = DB.residents.filter(function(r){
+      return r && r.id != null && prevSrv.has(String(r.id)) && !srv.ids.has(String(r.id));
+    });
+    var gone = goneAll.filter(function(r){ return !isPend(r.id) && !referenced(r.id); });
+    /* 記録あり・未送信ありで今回は外さない人も、次の同期でもう一度判定する（記録が移った後に外せるように） */
+    goneAll.forEach(function(r){ if(gone.indexOf(r) < 0) out.keep.add(String(r.id)); });
+    var twins = gone.filter(hasTwinOnServer);
+    var others = gone.filter(function(r){ return twins.indexOf(r) < 0; });
+    twins.forEach(function(r){ remove.add(String(r.id)); });
+    var cap = Math.max(3, Math.ceil(prevSrv.size * 0.2));
+    if(others.length && others.length <= cap){
+      others.forEach(function(r){ remove.add(String(r.id)); });
+    }else if(others.length){
+      others.forEach(function(r){ out.keep.add(String(r.id)); });
+      console.warn('[wtmgr] サーバーから消えた入居者が多すぎるため、端末からは外しません（次の同期で再判定）:', others.length);
+    }
+  }
+  /* 3) 入居者マスタから端末だけで作られ、サーバーに載っていない人。
+        記録が無ければ端末から外す（このあとの名簿取り込みが、サーバーの行へ紐づけるか、
+        マスタの番号から決まる番号で作り直す）。記録があれば行ごと送って、事務所の
+        「重複の点検」で統合できるようにする（記録を持ち主の見えない状態にしない） */
+  DB.residents.forEach(function(r){
+    if(!r || r.id == null || !r._fromMaster || remove.has(String(r.id))) return;
+    if(srv.ids.has(String(r.id)) || isPend(r.id)) return;
+    if(referenced(r.id)) out.push.push({ r: r });
+    else remove.add(String(r.id));
+  });
+  if(remove.size) DB.residents = DB.residents.filter(function(r){ return !(r && remove.has(String(r.id))); });
+  return out;
+}
+/* 後始末の送信。行全体か、項目だけか。 */
+function wrPushReconciled(list){
+  if(!Array.isArray(list) || !list.length || typeof apiPush !== 'function') return;
+  list.forEach(function(p){
+    try{
+      if(!p || !p.r) return;
+      if(p.fields && p.fields.length) pushResidentFields_(p.r, p.fields);
+      else apiPush('saveResident', { resident: p.r });
+    }catch(e){ /* 送信の失敗は同期を止めない（未送信キューが拾う） */ }
+  });
+}
+/* 入居者マスタの共通情報を取り込み（体重記録アプリ用）
+   opts.noAdd: 新しい入居者を作らない（起動直後・サーバーと合わせる前に使う。
+   合わせる前に作ると、サーバーに居る人を別の番号で二重に作る） */
+function mergeCommonWeight(opts){
+  var noAdd = !!(opts && opts.noAdd);
   /* 先に空へ倒す。共有名簿が読めない/壊れている回では「マスタ由来」の注記を出さない
      （取り込まれていないのに『マスタから自動取得』と表示するのを防ぐ・安全側） */
   wrMasterHeight = {};
@@ -2810,16 +3033,24 @@ function mergeCommonWeight(){
   var list = (data && Array.isArray(data.residents)) ? data.residents : null;
   if(!list || !list.length) return false;
   if(!Array.isArray(DB.residents)) DB.residents = [];
-  var byMid = {}, byName = {};
+  var byMid = {}, byId = {};
   DB.residents.forEach(function(r){
     if(!r || typeof r !== 'object') return;
-    if(r.masterId != null) byMid[String(r.masterId)] = r;
-    var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
+    if(wrHasMid(r)){ var mk = String(r.masterId); if(!byMid[mk] || (wrServerLacksResident(byMid[mk].id) && !wrServerLacksResident(r.id))) byMid[mk] = r; }
+    if(r.id != null) byId[String(r.id)] = r;
   });
+  var unlinkedCnt = {};
+  var byName = wrUnlinkedByName(DB.residents, unlinkedCnt);
+  /* マスタ側に同じ氏名が2人以上いる人は、氏名では紐づけない（別人に当てない） */
+  var mNameCnt = {};
+  list.forEach(function(c){ if(c){ var n = suNormName(c.name); if(n) mNameCnt[n] = (mNameCnt[n] || 0) + 1; } });   // 退去者も数える
   var changed = 0;
   var masterH = {};   // このマージで判明した「マスタ由来の身長」（注記表示用・保存しない）
   var st = { out:0, back:0 };   // 退去/復帰の鏡映件数（トースト用）
   var pushList = [];  // 鏡映で状態が変わった入居者（サーバーへ併送する）
+  var linkList = [];  // 氏名で紐づけた人（マスタの番号をサーバーにも書く）
+  var addList = [];   // 新しく作った人（行ごとサーバーへ送る）
+  var skipped = [];   // 作るのを見送った人（重複の点検に出す）
   list.forEach(function(c){
     if(!c || c.masterId == null) return;
     /* 退去者は取り込み対象外だが、既に masterId で紐づく入居者には退去を鏡映する
@@ -2836,9 +3067,11 @@ function mergeCommonWeight(){
     var tW = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('weight') >= 0) : undefined;
     var mh = suParseHeight(c.height);   // null = マスタ未登録/不正値 → 手入力を温存
     var tgt = byMid[String(c.masterId)];
-    if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
+    /* マスタの番号から決まる番号の人が既に居る（別の端末が作ってサーバー経由で届いた）なら、その人 */
+    if(!tgt){ var did = byId[wrMasterResId(c.masterId)]; if(did && (!wrHasMid(did) || String(did.masterId) === String(c.masterId))) tgt = did; }
+    if(!tgt){ var nm = suNormName(c.name); if(nm && mNameCnt[nm] === 1 && byName[nm]){ tgt = byName[nm]; delete byName[nm]; } }
     if(tgt){
-      if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+      if(!wrHasMid(tgt)){ tgt.masterId = c.masterId; changed++; linkList.push(tgt); byMid[String(c.masterId)] = tgt; }
       if(c.room && _toSafeStr(tgt.room) !== _toSafeStr(c.room)){ tgt.room = _toSafeStr(c.room); changed++; }
       if(tW !== undefined && tgt.targetWeight !== tW){ tgt.targetWeight = tW; changed++; }
       /* 身長はマスタ常勝。マスタが空（mh===null）のときは何もしない＝
@@ -2852,21 +3085,31 @@ function mergeCommonWeight(){
       changed += mch;
       if(mch) pushList.push(tgt);
     }else{
+      if(noAdd) return;          // サーバーと合わせる前は作らない（合わせた後の取り込みで作る）
       if(tW === false) return;   // 体重対象外の master 入居者は取り込まない
       if(!c.room) return;        // 居室なしは取り込まない
-      var nr = { id: uid(), name: _toSafeStr(c.name), room: _toSafeStr(c.room),
+      /* 紐づいていない同じ氏名の行が既に在る（2行以上で決めきれない等）時は作らない。作ると3行目になる。
+         どれが本人かは設定タブの「重複の点検」で人が決める */
+      if(unlinkedCnt[suNormName(c.name)] > 0){ skipped.push({ masterId: c.masterId, name: _toSafeStr(c.name), room: _toSafeStr(c.room) }); return; }
+      /* 番号はマスタの番号から決める。端末ごとに乱数の番号で作ると、同じ人がサーバーで別人の行になる */
+      var nr = { id: wrMasterResId(c.masterId), name: _toSafeStr(c.name), room: _toSafeStr(c.room),
                  masterId: c.masterId, targetWeight: (tW===undefined?true:tW), _fromMaster: true,
                  createdAt: new Date().toISOString() };
       if(mh != null){ nr.heightCm = mh; masterH[nr.id] = mh; }   // 初回取り込みでも BMI が出せるように
       suMirrorState(nr, c, null);   // 入院フラグを初回取り込みでも引き継ぐ（在籍は active===true のみ到達）
       normalizeResident(nr);
       DB.residents.push(nr);
+      byMid[String(c.masterId)] = nr; byId[nr.id] = nr;
+      addList.push(nr);
       changed++;
     }
   });
   wrMasterHeight = masterH;   // マスタで身長が消された人は注記も消える（作り直しにする理由）
+  if(!noAdd) wrSkippedMaster = skipped;
   if(changed){ save(); }
   wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrPushReconciled(addList.map(function(r){ return { r: r }; }));
+  wrPushReconciled(linkList.filter(function(r){ return addList.indexOf(r) < 0; }).map(function(r){ return { r: r, fields: ['masterId'] }; }));
   wrMirrorToast(st);
   return changed > 0;
 }
@@ -2912,15 +3155,20 @@ function wrProxyThrottled(){
 function mergeProxyRoster(list){
   if(!Array.isArray(list) || !list.length) return 0;
   if(!Array.isArray(DB.residents)) DB.residents = [];
-  var byMid = {}, byName = {};
+  var byMid = {};
   DB.residents.forEach(function(r){
     if(!r || typeof r !== 'object') return;
-    if(r.masterId != null) byMid[String(r.masterId)] = r;
-    var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
+    if(wrHasMid(r)){ var mk = String(r.masterId); if(!byMid[mk] || (wrServerLacksResident(byMid[mk].id) && !wrServerLacksResident(r.id))) byMid[mk] = r; }
   });
+  /* 氏名で当てるのは、マスタの番号がまだ無く、氏名が1人に決まる人だけ（mergeCommonWeight と同じ規則） */
+  var unlinkedCnt = {};
+  var byName = wrUnlinkedByName(DB.residents, unlinkedCnt);
+  var mNameCnt = {};
+  list.forEach(function(c){ if(c){ var n = suNormName(c.name); if(n) mNameCnt[n] = (mNameCnt[n] || 0) + 1; } });   // 退去者も数える
   var changed = 0;
   var st = { out:0, back:0 };
   var pushList = [];   // 鏡映で状態が変わった入居者（サーバーへ併送する）
+  var linkList = [];   // 氏名で紐づけた人（マスタの番号をサーバーにも書く）
   list.forEach(function(c){
     if(!c || c.masterId == null) return;
     var tgt = byMid[String(c.masterId)];
@@ -2935,9 +3183,9 @@ function mergeProxyRoster(list){
       }
       return;
     }
-    if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
+    if(!tgt){ var nm = suNormName(c.name); if(nm && mNameCnt[nm] === 1 && byName[nm]){ tgt = byName[nm]; delete byName[nm]; } }
     if(!tgt) return;   // noAdd: 名簿にしか居ない人は追加しない
-    if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+    if(!wrHasMid(tgt)){ tgt.masterId = c.masterId; changed++; linkList.push(tgt); byMid[String(c.masterId)] = tgt; }
     var cn = _toSafeStr(c.name);
     if(cn && tgt.name !== cn){ tgt.name = cn; changed++; }
     var cr = _toSafeStr(c.room);
@@ -2948,6 +3196,7 @@ function mergeProxyRoster(list){
   });
   if(changed){ save(); }
   wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrPushReconciled(linkList.map(function(r){ return { r: r, fields: ['masterId'] }; }));
   wrMirrorToast(st);
   return changed;
 }
@@ -3184,19 +3433,35 @@ function alertDir(a){
   const d = (a?.diff1 ?? a?.diff3 ?? a?.diff6 ?? 0);
   return d < 0 ? 'dn' : 'up';
 }
+/* 比べた相手がちょうどの月でない時だけ「（6月比・2か月）」を返す。ちょうどの月なら ''（表示は以前と同じ） */
+function wrCmpNote(p, nominal, ym){
+  if(!p || !p.span || p.span === nominal || !wrYmOk(p.ym)) return '';
+  const sameYear = wrYmOk(ym) && ym.slice(0,4) === p.ym.slice(0,4);
+  const m = sameYear ? `${Number(p.ym.slice(5))}月` : ymFmt(p.ym);
+  return `（${m}比・${p.span}か月）`;
+}
+function wrCmpLabel(label, p, nominal, ym){ return label + wrCmpNote(p, nominal, ym); }
 // returns {level:'none'|'w'|'ng', diff1, pct1, diff3, pct3, diff6, pct6, reasons:[]}
 function analyze(residentId, ym){
   const cur = getRecord(residentId, ym);
   if(!cur) return null;
   const recs = getRecordsOf(residentId).filter(r => r.yearMonth <= ym);
   if(recs.length < 2) return { level:'none', diff1:null, pct1:null, diff3:null, pct3:null, diff6:null, pct6:null, reasons:[], cur };
-  const idx = recs.findIndex(r => r.yearMonth===ym);
-  const by = k => {
-    if(idx - k < 0) return null;
-    const r = recs[idx-k];
-    return { w:r.weight, ym:r.yearMonth };
+  /* 比べる相手は暦の月で選ぶ（2026-09-28）。以前は「記録のある月」を1件前・3件前・6件前に
+     さかのぼっていたため、測っていない月があると比べる期間が伸び、途中の急な増減を見落とす／
+     何年も前と比べて「6ヶ月比」の警告を出す、の両方が起きていた。
+     前月比＝ちょうど1か月前だけ。3ヶ月比＝3か月前、無ければ2か月前。6ヶ月比＝6か月前、無ければ5→4か月前。
+     期間より前へはさかのぼらない（短い期間の変化に長い期間の閾値を当てる＝速さを小さく見積もらない）。
+     毎月測っている人の結果は以前と同じ。span は実際に比べた月数（表示で「○月比」を添えるのに使う） */
+  const byYm = new Map(recs.map(r => [r.yearMonth, r]));
+  const base = (minBack, maxBack) => {
+    for(let k = maxBack; k >= minBack; k--){
+      const r = byYm.get(ymPrev(ym, k));
+      if(r) return { w:r.weight, ym:r.yearMonth, span:k };
+    }
+    return null;
   };
-  const p1 = by(1), p3 = by(3), p6 = by(6);
+  const p1 = base(1,1), p3 = base(2,3), p6 = base(4,6);
   const reasons = [];
   let level = 'none';
   const bump = L => { if(L==='ng') level='ng'; else if(L==='w' && level!=='ng') level='w'; };
@@ -3225,9 +3490,9 @@ function analyze(residentId, ym){
     return { diff, pct };
   };
 
-  const d1 = check(p1, '前月比',  THR.m1);
-  const d3 = check(p3, '3ヶ月比', THR.m3);
-  const d6 = check(p6, '6ヶ月比', THR.m6);
+  const d1 = check(p1, wrCmpLabel('前月比',  p1, 1, ym), THR.m1);
+  const d3 = check(p3, wrCmpLabel('3ヶ月比', p3, 3, ym), THR.m3);
+  const d6 = check(p6, wrCmpLabel('6ヶ月比', p6, 6, ym), THR.m6);
 
   return {
     level, cur,
@@ -3577,8 +3842,8 @@ function renderList(){
     tr.innerHTML = `
       <td class="nm"><span class="nm-link" data-go-input-rid="${escapeHtml(r.id)}" title="${escapeHtml(r.name)}さんの入力画面を開く">${escapeHtml(r.name)}</span><br><span class="rm">${r.room?`室 ${escapeHtml(r.room)}`:''}</span></td>
       <td>${wtHtml}</td>
-      <td>${a ? diffHtml(a.diff1, a.pct1) : '—'}</td>
-      <td>${a ? diffHtml(a.diff6, a.pct6) : '—'}</td>
+      <td>${a ? diffHtml(a.diff1, a.pct1) + ((a.diff1==null && a.prev3 !== undefined && (a.prev3 || a.prev6)) ? '<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">前月の記録なし</div>' : '') : '—'}</td>
+      <td>${a ? diffHtml(a.diff6, a.pct6) + (a.diff6!=null && wrCmpNote(a.prev6, 6, listMonth) ? `<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">${escapeHtml(wrCmpNote(a.prev6, 6, listMonth))}</div>` : '') : '—'}</td>
       <td>${mfHtml}</td>
       <td>${stateHtml}</td>
     `;
@@ -3652,7 +3917,10 @@ function diffHtml(rid, ym, currentWeight){
   if(d.diff === 0) return `<div class="gr-bmi" style="color:var(--g6)">(±0)</div>`;
   const color = d.diff > 0 ? '#d32f2f' : '#1565c0';
   const sign  = d.diff > 0 ? '+' : '';
-  return `<div class="gr-bmi" style="color:${color};font-weight:700" title="前月比（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
+  /* 前月の記録が無い時は、数か月前の記録との差になる。一覧・アラートの「前月比」（暦の1か月前だけ）と
+     取り違えないよう、説明の名前を分ける（2026-09-28） */
+  const lbl = (d.fromYm === ymPrev(ym, 1)) ? '前月比' : '前回の記録との差';
+  return `<div class="gr-bmi" style="color:${color};font-weight:700" title="${lbl}（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
 }
 
 function renderGrid(){
@@ -5253,9 +5521,9 @@ function drawStats(rid){
     cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size: 0.6875rem;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
     bmiCell +
     cell('前月比', a?.diff1!=null ? `${a.diff1>0?'+':''}${a.diff1.toFixed(1)}` : '—',
-         a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : '', d1Cls) +
+         a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : (recs.length > 1 ? '前月の記録なし' : ''), d1Cls) +
     cell('6ヶ月比', a?.diff6!=null ? `${a.diff6>0?'+':''}${a.diff6.toFixed(1)}` : '—',
-         a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%` : '', d6Cls) +
+         a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%${escapeHtml(wrCmpNote(a.prev6, 6, last.yearMonth))}` : '', d6Cls) +
     cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`,
          `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`);
 }
@@ -5446,9 +5714,9 @@ function collectAlerts(){
 
     // 期間ごとに、実際に閾値を超えた行のみを取り出して 増加/減少 に振り分ける
     const periods = [
-      { label:'前月比',  diff:a.diff1, pct:a.pct1, th:THR.m1 },
-      { label:'3ヶ月比', diff:a.diff3, pct:a.pct3, th:THR.m3 },
-      { label:'6ヶ月比', diff:a.diff6, pct:a.pct6, th:THR.m6 },
+      { label:wrCmpLabel('前月比',  a.prev1, 1, last.yearMonth), diff:a.diff1, pct:a.pct1, th:THR.m1 },
+      { label:wrCmpLabel('3ヶ月比', a.prev3, 3, last.yearMonth), diff:a.diff3, pct:a.pct3, th:THR.m3 },
+      { label:wrCmpLabel('6ヶ月比', a.prev6, 6, last.yearMonth), diff:a.diff6, pct:a.pct6, th:THR.m6 },
     ];
     const inc = { reasons:[], level:'none', maxAbsDiff:0, repDiff:0, repPct:0 };
     const dec = { reasons:[], level:'none', maxAbsDiff:0, repDiff:0, repPct:0 };
@@ -5852,6 +6120,362 @@ $('#sdRecover')?.addEventListener('click', ()=>{
 });
 window.addEventListener('wtmgr-saved', ()=>{ if(document.querySelector('.scr[data-sc="cfg"].on')) renderStorageDiag(); });
 
+/* ============================================================
+   重複の点検（2026-09-28）
+   ------------------------------------------------------------
+   組の作り方:
+     ・入居者マスタの番号が同じ行どうし（確実に同じ人）
+     ・氏名（空白を除く）が同じ行どうし。ただしマスタの番号が別々の人どうしは組にしない
+       （マスタが別人と言っている＝同姓同名）
+   まとめるのは人が選んだ時だけ。自動ではまとめない（同姓同名の別人がいるため）。
+   ============================================================ */
+function wrFindDupGroups(){
+  const res = (DB.residents || []).filter(r => r && typeof r === 'object' && r.id != null);
+  const parent = new Map(res.map(r => [r, r]));
+  const find = r => { while(parent.get(r) !== r){ parent.set(r, parent.get(parent.get(r))); r = parent.get(r); } return r; };
+  const mids = new Map(res.map(r => [r, new Set(wrHasMid(r) ? [String(r.masterId)] : [])]));
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if(ra === rb) return;
+    const m = new Set([...mids.get(ra), ...mids.get(rb)]);
+    if(m.size > 1) return;                         // マスタの番号が違う＝別人
+    parent.set(rb, ra); mids.set(ra, m);
+  };
+  const byMid = {}, byName = {};
+  res.forEach(r => {
+    if(wrHasMid(r)){ const k = String(r.masterId); if(byMid[k]) union(byMid[k], r); else byMid[k] = r; }
+  });
+  res.forEach(r => {
+    const n = suNormName(r.name); if(!n) return;
+    (byName[n] = byName[n] || []).push(r);
+  });
+  Object.values(byName).forEach(list => { for(let i = 1; i < list.length; i++) union(list[0], list[i]); });
+  const groups = new Map();
+  res.forEach(r => { const k = find(r); (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+  const out = [], grouped = new Set();
+  groups.forEach(members => {
+    if(members.length < 2) return;
+    members.forEach(m => grouped.add(m));
+    const allMid = members.every(wrHasMid) && new Set(members.map(m => String(m.masterId))).size === 1;
+    out.push({ kind: allMid ? 'mid' : 'name', members });
+  });
+  const nameless = res.filter(r => !grouped.has(r) && !String(r.name == null ? '' : r.name).trim());
+  return { groups: out, nameless };
+}
+function wrRecCountOf(id){ return (DB.records || []).filter(x => x && String(x.residentId) === String(id)).length; }
+function wrLatestYmOf(id){
+  let best = '';
+  (DB.records || []).forEach(x => { if(x && String(x.residentId) === String(id) && wrYmOk(x.yearMonth) && x.yearMonth > best) best = x.yearMonth; });
+  return best;
+}
+/* 残す行の既定: 記録が多い → サーバーに在る → マスタの番号あり → 作成が古い */
+function wrDefaultKeep(members){
+  const srv = wrLoadSrvResIds();
+  const score = r => [wrRecCountOf(r.id), (srv && srv.has(String(r.id))) ? 1 : 0, wrHasMid(r) ? 1 : 0];
+  return members.slice().sort((a, b) => {
+    const sa = score(a), sb = score(b);
+    for(let i = 0; i < sa.length; i++){ if(sa[i] !== sb[i]) return sb[i] - sa[i]; }
+    return String(a.createdAt || '9').localeCompare(String(b.createdAt || '9'));
+  })[0];
+}
+function wrPendingCount(){
+  let n = 0;
+  try{ n += loadPendingQueue().length; }catch(e){}
+  try{ n += _writeQ.length + (_writeInFlight ? 1 : 0); }catch(e){}
+  return n;
+}
+function wrDownloadDbJson(prefix){
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${prefix}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  a.click(); URL.revokeObjectURL(url);
+}
+/* keepId の行に dropIds の行をまとめる。記録は付け替えるだけで消さない。
+   opts.silent: 確認画面と控えの保存を出さない（試験用） */
+function wrMergeResidents(keepId, dropIds, opts){
+  if(wrFieldDeny()) return false;
+  const silent = !!(opts && opts.silent);
+  const keep = residentById(keepId);
+  if(!keep){ toast('残す行が見つかりません。画面を開き直してください', 'err'); return false; }
+  const drops = (dropIds || []).map(residentById).filter(r => r && r !== keep);
+  if(!drops.length) return false;
+  /* 未送信が残る間はまとめない。送信待ちの記録が古い持ち主のまま後から届くのを避ける */
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  const dropSet = new Set(drops.map(r => String(r.id)));
+  const moving = (DB.records || []).filter(x => x && dropSet.has(String(x.residentId)));
+  if(!silent){
+    const dropTxt = drops.map(d => `「${d.name || '（氏名なし）'}」（居室 ${d.room || '—'}）`).join('、');
+    const msg = `「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）の行に、${dropTxt} をまとめます。\n\n`
+      + `・記録 ${moving.length} 件を残す行へ移します（記録は消えません）\n`
+      + `・まとめた ${drops.length} 行は消します。元には戻せません\n`
+      + `・始める前に、今のデータを JSON で保存します\n\nよろしいですか？`;
+    if(!confirm(msg)) return false;
+    try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
+  }
+  const now = new Date().toISOString();
+  moving.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  /* 残す行に無い項目だけ、まとめる行から補う。在籍・入院は状態なので持ち込まない */
+  const SKIP = { id:1, name:1, createdAt:1, updatedAt:1, _fromMaster:1, dischargedAt:1, hospitalized:1 };
+  const filled = [];
+  const blank = v => v == null || v === '';
+  if(!String(keep.name == null ? '' : keep.name).trim()){
+    const nd = drops.find(d => String(d.name == null ? '' : d.name).trim());
+    if(nd){ keep.name = nd.name; filled.push('name'); }
+  }
+  drops.forEach(d => Object.keys(d).forEach(k => {
+    if(SKIP[k] || filled.indexOf(k) >= 0) return;
+    if(blank(keep[k]) && !blank(d[k])){ keep[k] = d[k]; filled.push(k); }
+  }));
+  if(filled.length) keep.updatedAt = now;
+  DB.residents = DB.residents.filter(r => !(r && dropSet.has(String(r.id))));
+  try{
+    if(dropSet.has(String(UI.inRes))) saveUI({inRes: keep.id});
+    if(dropSet.has(String(UI.ivRes))) saveUI({ivRes: keep.id});
+  }catch(e){}
+  save();
+  /* 送る順: 残す行（サーバーに無ければ行ごと）→ 記録の付け替え → まとめた行の削除 */
+  if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
+  else if(filled.length) pushResidentFields_(keep, filled);
+  moving.forEach(rec => apiPush('saveRecord', { record: rec }));
+  drops.forEach(d => apiPush('delResident', { id: d.id }));
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`まとめました（記録 ${moving.length} 件を移しました）`, 'ok');
+  return true;
+}
+/* まとめる前にサーバーと合わせる（他の端末が後から付けた記録を取り込んでから付け替える）。
+   接続先がある端末では同期に成功した時だけ進める。合わせた結果、行が無くなっていたら止める */
+async function wrMergeAfterSync(keepId, dropIds, opts){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、まとめませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
+    /* 同期で内容が変わっていないか確かめ直す: 残す行とまとめる行が今も同じ組にあること
+       （氏名なし行を選んだ人へまとめる時は、両方の行が在ること） */
+    const drops = (dropIds || []).filter(id => residentById(id));
+    let same = !!residentById(keepId) && drops.length === (dropIds || []).length;
+    /* 氏名の無い行を選んだ人へ寄せる時: 同期で本当の氏名が戻っていたら止める（推測で別人へまとめない） */
+    if(same && opts && opts.pick && drops.some(id => String((residentById(id) || {}).name || '').trim())){
+      toast('氏名の無かった行に、ほかの端末から氏名が戻りました。点検の一覧を確かめてください', 'err');
+      try{ renderCfg(); }catch(e){}
+      return false;
+    }
+    if(same && !(opts && opts.pick)){
+      const g = wrFindDupGroups().groups.find(x => x.members.some(m => String(m.id) === String(keepId)));
+      same = !!g && drops.every(id => g.members.some(m => String(m.id) === String(id)));
+    }
+    if(!same){
+      toast('ほかの端末で内容が変わっていました。点検の一覧を確かめてから、もう一度選んでください', 'err');
+      try{ renderCfg(); }catch(e){}
+      return false;
+    }
+  }
+  return wrMergeResidents(keepId, dropIds);
+}
+/* 持ち主のいない記録（どの入居者にも付いていない記録）を residentId ごとに集める */
+function wrOrphanRecordGroups(){
+  const ids = new Set((DB.residents || []).filter(r => r && r.id != null).map(r => String(r.id)));
+  const g = {};
+  (DB.records || []).forEach(x => {
+    if(!x || x.residentId == null || ids.has(String(x.residentId))) return;
+    (g[String(x.residentId)] = g[String(x.residentId)] || []).push(x);
+  });
+  return g;
+}
+/* 持ち主のいない記録を、選んだ入居者へ付け替える（同期してから） */
+async function wrAdoptOrphans(oldRid, keepId){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、付け替えませんでした', 'err'); return false; }
+  }
+  const keep = residentById(keepId);
+  const recs = (DB.records || []).filter(x => x && String(x.residentId) === String(oldRid));
+  if(!keep || !recs.length || residentById(oldRid)){ try{ renderCfg(); }catch(e){} return false; }
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  if(!confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`)) return false;
+  try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
+  const now = new Date().toISOString();
+  recs.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  save();
+  if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
+  recs.forEach(rec => apiPush('saveRecord', { record: rec }));
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`記録 ${recs.length} 件を付けました`, 'ok');
+  return true;
+}
+/* 作るのを見送ったマスタの人を、選んだ行へ紐づける（その行にマスタの番号を付けてサーバーにも書く） */
+async function wrLinkSkippedMaster(masterId, residentId){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、紐づけませんでした', 'err'); return false; }
+  }
+  const r = residentById(residentId);
+  if(!r || wrHasMid(r)){ toast('選んだ行は、ほかの端末で既に紐づけられていました。一覧を確かめてください', 'err'); try{ renderCfg(); }catch(e){} return false; }
+  if((DB.residents || []).some(x => wrHasMid(x) && String(x.masterId) === String(masterId))){
+    toast('この人は、ほかの端末で既に登録・紐づけされていました。一覧を確かめてください', 'err'); try{ renderCfg(); }catch(e){} return false;
+  }
+  if(!confirm(`「${r.name || '（氏名なし）'}」（居室 ${r.room || '—'}・記録 ${wrRecCountOf(r.id)} 件）を、入居者マスタのこの人として紐づけます。\n別の人（同姓同名・退去した前の入居者）でないか確かめてから進めてください。\nよろしいですか？`)) return false;
+  r.masterId = masterId;
+  save();
+  pushResidentFields_(r, ['masterId']);
+  try{ mergeCommonWeight(); }catch(e){}
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('紐づけました', 'ok');
+  return true;
+}
+/* 作るのを見送ったマスタの人を、新しい入居者として作る（番号はマスタの番号から決まる） */
+async function wrCreateSkippedMaster(entry){
+  if(wrFieldDeny() || !entry) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、作りませんでした', 'err'); return false; }
+  }
+  const id = wrMasterResId(entry.masterId);
+  if(residentById(id) || (DB.residents || []).some(r => wrHasMid(r) && String(r.masterId) === String(entry.masterId))){
+    toast('この人は既に登録されていました', 'ok'); try{ renderCfg(); }catch(e){} return false;
+  }
+  if(!confirm(`「${entry.name}」（居室 ${entry.room || '—'}）を、新しい入居者として登録します。\nよろしいですか？`)) return false;
+  const nr = { id, name: entry.name, room: entry.room, masterId: entry.masterId, targetWeight: true, _fromMaster: true, createdAt: new Date().toISOString() };
+  normalizeResident(nr);
+  DB.residents.push(nr);
+  wrSkippedMaster = wrSkippedMaster.filter(x => String(x.masterId) !== String(entry.masterId));
+  save();
+  apiPush('saveResident', { resident: nr });
+  try{ mergeCommonWeight(); }catch(e){}
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('登録しました', 'ok');
+  return true;
+}
+/* 記録の無い、氏名の無い行を消す */
+function wrDeleteEmptyResident(id){
+  if(wrFieldDeny()) return false;
+  const r = residentById(id);
+  if(!r || wrRecCountOf(id) > 0) return false;
+  if(!confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？')) return false;
+  DB.residents = DB.residents.filter(x => x !== r);
+  save();
+  apiPush('delResident', { id: r.id });
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('氏名の無い行を消しました', 'ok');
+  return true;
+}
+function wrRenderDupCheck(){
+  const box = $('#dupList'), cnt = $('#dupCount');
+  if(!box) return;
+  const { groups, nameless } = wrFindDupGroups();
+  const orphans = wrOrphanRecordGroups();
+  const orphanIds = Object.keys(orphans);
+  const srv = wrLoadSrvResIds();
+  const skippedM = (wrSkippedMaster || []).filter(x => !(DB.residents || []).some(r => wrHasMid(r) && String(r.masterId) === String(x.masterId)));
+  const total = groups.length + nameless.length + orphanIds.length + skippedM.length;
+  if(cnt){ cnt.textContent = total ? `${total} 件` : 'なし'; cnt.classList.toggle('has', total > 0); }
+  if(!total){ box.innerHTML = '<div class="dup-none">重複している入居者・氏名の無い行・持ち主のいない記録・登録を見送った人はいません。</div>'; return; }
+  const info = r => {
+    const n = wrRecCountOf(r.id), ym = wrLatestYmOf(r.id);
+    const bits = [
+      `居室 ${escapeHtml(r.room || '—')}`,
+      `記録 ${n} 件${ym ? `（最新 ${escapeHtml(ymFmt(ym))}）` : ''}`,
+      `マスタ連携 ${wrHasMid(r) ? 'あり' : 'なし'}`,
+      srv ? (srv.has(String(r.id)) ? 'サーバーにあり' : 'この端末だけ') : '',
+      r.createdAt ? `作成 ${escapeHtml(String(r.createdAt).slice(0,10))}` : '',
+      isDischarged(r) ? '退去' : '',
+    ].filter(Boolean);
+    return bits.join('・');
+  };
+  let html = '';
+  groups.forEach((g, gi) => {
+    const keep = wrDefaultKeep(g.members);
+    const nm = (g.members.find(m => String(m.name || '').trim()) || {}).name || '（氏名なし）';
+    const kind = g.kind === 'mid' ? 'マスタの番号が同じ（同じ人）' : '氏名が同じ（別の人でないか確かめてください）';
+    html += `<div class="dup-g${g.kind === 'name' ? ' is-name' : ''}" role="group" aria-label="${escapeHtml(nm)} の重複">`
+      + `<div class="dup-h">${escapeHtml(nm)}<span class="dup-k">${kind}</span></div>`
+      + g.members.map(m => `<label class="dup-m"><input type="radio" name="dupk_${gi}" value="${escapeHtml(m.id)}"${m === keep ? ' checked' : ''}>`
+        + `<span><b>${m === keep ? '残す候補' : 'まとめる候補'}</b>　<span class="dup-s">${info(m)}</span></span></label>`).join('')
+      + `<div class="dup-a"><button type="button" class="bn bp bsm" data-dup-merge="${gi}">この組をまとめる</button></div></div>`;
+  });
+  const named = sortedResidents({ includeDischarged: true, includeNonTargets: true }).filter(r => String(r.name || '').trim());
+  const opts = named.map(r => `<option value="${escapeHtml(r.id)}">${r.room ? `[${escapeHtml(r.room)}] ` : ''}${escapeHtml(r.name)}</option>`).join('');
+  skippedM.forEach((x, si) => {
+    const cands = (DB.residents || []).filter(r => r && !wrHasMid(r) && suNormName(r.name) === suNormName(x.name));
+    const copts = cands.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)}（居室 ${escapeHtml(r.room || '—')}・記録 ${wrRecCountOf(r.id)} 件${isDischarged(r) ? '・退去' : ''}）</option>`).join('');
+    html += `<div class="dup-g is-name" role="group" aria-label="登録を見送った人"><div class="dup-h">${escapeHtml(x.name)}<span class="dup-k">入居者マスタにいて、登録を見送った人</span></div>`
+      + `<div class="dup-m" style="cursor:default"><span class="dup-s">マスタの居室 ${escapeHtml(x.room || '—')}。同じ氏名の行が既にあり、同じ人か決められませんでした。</span></div>`
+      + `<div class="dup-a"><label for="dupSk_${si}" style="font-size:0.8125rem">同じ人の行</label>`
+      + `<select id="dupSk_${si}"><option value="">選んでください</option>${copts}</select>`
+      + `<button type="button" class="bn bp bsm" data-dup-link="${si}">この行に紐づける</button>`
+      + `<button type="button" class="bn bo bsm" data-dup-create="${si}">別の人なので新しく登録</button></div></div>`;
+  });
+  orphanIds.forEach((oid, oi) => {
+    const list = orphans[oid].slice().sort((a, b) => String(a.yearMonth).localeCompare(String(b.yearMonth)));
+    const show = list.slice(-6).map(x => `${escapeHtml(ymFmt(x.yearMonth))} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('・');
+    html += `<div class="dup-g" role="group" aria-label="持ち主のいない記録"><div class="dup-h">持ち主のいない記録<span class="dup-k">${list.length} 件</span></div>`
+      + `<div class="dup-m" style="cursor:default"><span class="dup-s">${show}${list.length > 6 ? '（新しい6件）' : ''}</span></div>`
+      + `<div class="dup-a"><label for="dupOr_${oi}" style="font-size:0.8125rem">付ける相手</label>`
+      + `<select id="dupOr_${oi}"><option value="">選んでください</option>${opts}</select>`
+      + `<button type="button" class="bn bp bsm" data-dup-orphan="${oi}">この人に付ける</button></div></div>`;
+  });
+  if(nameless.length){
+    nameless.forEach(r => {
+      const n = wrRecCountOf(r.id);
+      html += `<div class="dup-g" role="group" aria-label="氏名の無い行"><div class="dup-h">氏名の無い行<span class="dup-k">${n ? '記録あり' : '記録なし'}</span></div>`
+        + `<div class="dup-m" style="cursor:default"><span class="dup-s">${info(r)}</span></div>`
+        + (n
+          ? `<div class="dup-a"><label for="dupTo_${escapeHtml(r.id)}" style="font-size:0.8125rem">まとめる先</label>`
+            + `<select id="dupTo_${escapeHtml(r.id)}"><option value="">選んでください</option>${opts}</select>`
+            + `<button type="button" class="bn bp bsm" data-dup-into="${escapeHtml(r.id)}">この人にまとめる</button></div>`
+          : `<div class="dup-a"><button type="button" class="bn br bsm" data-dup-del="${escapeHtml(r.id)}">この行を消す</button></div>`)
+        + `</div>`;
+    });
+  }
+  box.innerHTML = html;
+  const busy = fn => async (...a) => {
+    if(box.dataset.busy === '1') return;
+    box.dataset.busy = '1';
+    box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try{ await fn(...a); }
+    finally{ box.dataset.busy = ''; box.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+  };
+  box.querySelectorAll('[data-dup-merge]').forEach(b => b.addEventListener('click', busy(async () => {
+    const g = groups[Number(b.dataset.dupMerge)]; if(!g) return;
+    const sel = box.querySelector(`input[name="dupk_${b.dataset.dupMerge}"]:checked`);
+    if(!sel){ toast('残す行を選んでください', 'err'); return; }
+    await wrMergeAfterSync(sel.value, g.members.map(m => m.id).filter(id => String(id) !== sel.value));
+  })));
+  box.querySelectorAll('[data-dup-orphan]').forEach(b => b.addEventListener('click', busy(async () => {
+    const oid = orphanIds[Number(b.dataset.dupOrphan)];
+    const to = box.querySelector(`#dupOr_${b.dataset.dupOrphan}`);
+    if(!oid || !to || !to.value){ toast('付ける相手を選んでください', 'err'); return; }
+    await wrAdoptOrphans(oid, to.value);
+  })));
+  box.querySelectorAll('[data-dup-link]').forEach(b => b.addEventListener('click', busy(async () => {
+    const x = skippedM[Number(b.dataset.dupLink)];
+    const to = box.querySelector(`#dupSk_${b.dataset.dupLink}`);
+    if(!x || !to || !to.value){ toast('同じ人の行を選んでください', 'err'); return; }
+    await wrLinkSkippedMaster(x.masterId, to.value);
+  })));
+  box.querySelectorAll('[data-dup-create]').forEach(b => b.addEventListener('click', busy(async () => {
+    await wrCreateSkippedMaster(skippedM[Number(b.dataset.dupCreate)]);
+  })));
+  box.querySelectorAll('[data-dup-into]').forEach(b => b.addEventListener('click', busy(async () => {
+    const id = b.dataset.dupInto;
+    const to = box.querySelector(`#dupTo_${CSS.escape(id)}`);
+    if(!to || !to.value){ toast('まとめる先を選んでください', 'err'); return; }
+    await wrMergeAfterSync(to.value, [id], { pick: true });
+  })));
+  box.querySelectorAll('[data-dup-del]').forEach(b => b.addEventListener('click', () => wrDeleteEmptyResident(b.dataset.dupDel)));
+}
+
 function renderCfg(){
   // 設定画面の入居者一覧。長期運用で混入し得る欠損データ（name 欠落・id 欠落・null
   // 要素・サーバ由来の不完全行など）を1件たりとも例外で落とさず、必ず描画完了する。
@@ -5859,6 +6483,7 @@ function renderCfg(){
   if(!list) return;  // cfg 画面 DOM が未ロード（保険）
   try{ renderThrEditor(); }catch(e){ console.warn('renderThrEditor:', e); }
   try{ renderStorageDiag(); }catch(e){ console.warn('renderStorageDiag:', e); }
+  try{ wrRenderDupCheck(); }catch(e){ console.warn('wrRenderDupCheck:', e); }
 
   // 1) 不正エントリを除外して妥当な配列を作る（id が文字列であることを必須とする）
   const all = Array.isArray(DB.residents) ? DB.residents : [];
@@ -6001,7 +6626,8 @@ function renderRuleDesc(){
     const parts = [seg('注意', t.wKg, t.wPct), seg('警告', t.ngKg, t.ngPct)].filter(Boolean);
     return parts.length ? `${label} ${parts.join('、')}` : `${label} 判定なし`;
   };
-  el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`;
+  el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`
+    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`;
 }
 $('#thrReset')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
@@ -6709,6 +7335,7 @@ function refreshUrlPersistBadge(){
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
+    wrClearSrvResIds();   /* 前の接続先で控えた入居者の番号も消す（別のシートへ繋ぎ直した時に使わない） */
     /* ★合言葉もここで消す（2026-08-13 レビュー指摘・中2）。保存は「空欄＝変更しない」に
        統一したため、消す入口はここだけになる。連携を解除するのに資格情報だけ端末へ
        残す理由も無い（次に別のサーバーへ繋ぐ時、古い合言葉が黙って送られる）。 */
@@ -6729,7 +7356,11 @@ function refreshUrlPersistBadge(){
    Init
    ============================================================ */
 // 入居者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
-try{ mergeCommonWeight(); }catch(e){ /* 取り込み失敗は運用を止めない */ }
+/* ★サーバーの接続先がある端末では、ここでは新しい入居者を作らない（2026-09-28）。
+   起動直後はまだサーバーと合わせていないので、ここで作ると、サーバーに居る人を
+   別の番号で二重に作る（新しい端末・初めて開く現場端末で全員が2人ずつになっていた）。
+   作るのは同期が成功した後の取り込み（syncFromAPI 内）だけ。居室・退去などの反映は今までどおり行う。 */
+try{ mergeCommonWeight({ noAdd: !!apiUrl }); }catch(e){ /* 取り込み失敗は運用を止めない */ }
 /* 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）。
    ★この経路は氏名一致で masterId を後付けするため、起動時点では紐づいていない。
      マスタから本人指定で来ていて見つからなかった場合に限り、取得完了後に1回だけ再試行する
