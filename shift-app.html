@@ -989,6 +989,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'mid';
   }
 
+  /* 職員ごとの「早番に数える開始時刻の上限」（2026-09-28・staff.rules.earlyStartMax・分）。
+   * 既定（未設定）は従来どおり: 記号の分類・範囲の rangeCat（開始7:30まで＝早番）をそのまま使う。
+   * 設定がある職員は、早番に分類された勤務でも開始がこの時刻より遅ければ日勤(mid)として数える
+   * （例: 420＝7:00開始までを早番。7:30開始は日勤）。早番の人数の数え方だけを変え、
+   * 勤務時間・区分・freee 出力には関わらない。氏名ではなく職員の設定で持つ（個人情報をコードに書かない）。 */
+  var EARLY_START_MAX_CHOICES = [420];   /* 画面で選べる値（7:00まで）。未設定＝従来どおり */
+  function earlyStartMaxOf(st) {
+    var v = (st && st.rules) ? st.rules.earlyStartMax : null;
+    return (typeof v === 'number' && isFinite(v) && v >= 0 && v < 1440) ? v : null;
+  }
+  function effectiveCat(cat, startMin, earlyStartMax) {
+    if (cat !== 'early' || typeof earlyStartMax !== 'number') return cat;
+    if (typeof startMin !== 'number') return cat;
+    return startMin > earlyStartMax ? 'mid' : 'early';
+  }
+
   /* 夜勤上がりの残業判定（表示ハイライト用）。
    * セル先頭の夜勤上がり（例「8)」）の実際の上がり時刻が、前日の夜勤入りの定時上がり(pairEnd)
    * より遅ければ残業。(21=定時7:00→「8)」は残業／(22=定時8:00→「8)」は通常／「7)」は定時。
@@ -1085,6 +1101,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     minToTime: minToTime,
     parseCell: parseCell,
     rangeCat: rangeCat,
+    EARLY_START_MAX_CHOICES: EARLY_START_MAX_CHOICES,
+    earlyStartMaxOf: earlyStartMaxOf,
+    effectiveCat: effectiveCat,
     parseRangeToken: parseRangeToken,
     collectUsedWorkTokens: collectUsedWorkTokens,
     registerRangeSymbols: registerRangeSymbols,
@@ -1214,7 +1233,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var part = cell.parts[i];
           if (part.kind === 'work') {
             perDay[d].attended = true;
-            if (part.cat) perDay[d].cats.push(part.cat);
+            /* 早番の数え方は職員の設定（opts.earlyStartMax）で開始時刻を絞れる（2026-09-28・Sym.effectiveCat） */
+            if (part.cat) perDay[d].cats.push(Sym.effectiveCat(part.cat, part.startMin, opts.earlyStartMax));
             var bound = part.endMin - part.startMin;
             var work = workMinutes(bound, settings);
             if (row.isMain && subIntervals.length) {
@@ -1788,11 +1808,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var w = wd[dow(day)] || wd[String(dow(day))];
       return w && typeof w[cat] === 'number' ? w[cat] : 0;
     }
-    function catOf(value) {
+    /* stf を渡すと、その職員の「早番に数える開始時刻の上限」で早番を数え直す（2026-09-28・Sym.effectiveCat）。
+     * 省略時は従来どおり（遅番の数・遅⇒早の判定は開始時刻の上限と無関係なので渡さない）。 */
+    function catOf(value, stf) {
       var p = Sym.parseCell(value, symbols);
       var cats = [];
+      var esm = stf ? Sym.earlyStartMaxOf(stf) : null;
       for (var x = 0; x < p.parts.length; x++) {
-        if (p.parts[x].kind === 'work') cats.push(p.parts[x].cat || 'mid');
+        if (p.parts[x].kind === 'work') cats.push(Sym.effectiveCat(p.parts[x].cat || 'mid', p.parts[x].startMin, esm));
         if (p.parts[x].kind === 'nightIn') cats.push('night');
       }
       return cats;
@@ -1890,9 +1913,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     function symbolFor(stf, cat) {
       var allow = stf.allowedSymbols && stf.allowedSymbols.length ? stf.allowedSymbols : null;
+      var esm = Sym.earlyStartMaxOf(stf);
       for (var x = 0; x < symbols.length; x++) {
         var s = symbols[x];
         if (s.disabled || s.type !== 'work' || s.cat !== cat) continue;
+        /* 早番を割り当てる時、その職員では早番に数えない記号（開始が上限より遅い）は使わない */
+        if (Sym.effectiveCat(s.cat, Sym.timeToMin(s.start), esm) !== cat) continue;
         if (allow && allow.indexOf(s.code) < 0) continue;
         return s.code;
       }
@@ -1927,7 +1953,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function assignedCount(day, cat) {
       var n = 0;
       for (var x = 0; x < active.length; x++) {
-        if (catOf(cells[active[x].id][String(day)] || '').indexOf(cat) >= 0) n++;
+        if (catOf(cells[active[x].id][String(day)] || '', active[x]).indexOf(cat) >= 0) n++;
       }
       return n;
     }
@@ -3951,7 +3977,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
       /* 統合 0009（2026-09-27）: 保存先の切り替えスイッチ（su-backend.json の shift）が入ったら、勤務表の読み書き・編集権は
-         Supabase が受け持つ（応答は Google と同じ形）。スイッチが切・su-kv.js が無い時は今までどおり Google（rawGas）。 */
+         Supabase が受け持つ（応答は Google と同じ形）。スイッチが切・su-kv.js が無い時は今までどおり Google（rawGas）。
+         ※公開リポ（care-tools ba50e84）へ直接入った変更を正本へ移植（2026-09-28） */
       var sent = (window.SUKv && SUKv.handlesShift && SUKv.handlesShift(payload)) ? SUKv.callShift(payload, rawGas) : rawGas(payload);
       return sent.then(function (json) {
         /* 統合 0007（2026-09-26）: Google が返した勤務表の版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者の
@@ -6085,6 +6112,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         '<option value=""' + (!r.orderRule ? ' selected' : '') + '>制約なし</option>' +
         '<option value="earlyToLate"' + (r.orderRule === 'earlyToLate' ? ' selected' : '') + '>早⇒遅のみ（遅⇒早は不可）</option>' +
         '</select>';
+      /* 早番に数える開始（2026-09-28・rules.earlyStartMax・分）。既定は記号の分類どおり（開始7:30まで＝早番）。
+       * 「7:00まで」にした職員は 7:30 開始などを日勤として数える（早番の人数・不足判定・自動作成の数え方だけ）。
+       * 一覧に無い既存値は option を足して selected＝保存で黙って既定へ戻さない（元値温存）。 */
+      var esmCur = (typeof r.earlyStartMax === 'number' && isFinite(r.earlyStartMax)) ? r.earlyStartMax : null;
+      var esmOpts = '<option value=""' + (esmCur === null ? ' selected' : '') + '>既定（記号の分類どおり・7:30開始まで早番）</option>' +
+        '<option value="420"' + (esmCur === 420 ? ' selected' : '') + '>7:00開始のみ早番（7:30開始などは日勤として数える）</option>';
+      if (esmCur !== null && esmCur !== 420) {
+        esmOpts += '<option value="' + esmCur + '" selected>' + Math.floor(esmCur / 60) + ':' + ('0' + (esmCur % 60)).slice(-2) + '開始まで早番</option>';
+      }
+      h += '<label>早番に数える開始</label><div><select id="edEarlyStartMax">' + esmOpts + '</select>' +
+        '<div class="muted">早番の人数・不足の判定・自動作成の数え方だけに使います。勤務時間・freee出力は変わりません。</div></div>';
       h += '<label>勤務条件メモ</label><textarea id="edNote" style="height:64px">' + esc(r.note || '') + '</textarea>';
       h += '<label>頭数に入れる</label><label><input type="checkbox" id="edCount"' + (st.countInHeadcount !== false ? ' checked' : '') + '> シフト計算・指標に含める（役員は外す）</label>';
       var curStatus = st.status || (st.active === false ? '退職' : '在籍');
@@ -6171,6 +6209,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         st.rules.lateMax = parseInt(document.getElementById('edLateMax').value, 10) || null;
         st.rules.fixedOffWeekdays = checkedValues('#edFixedOff input:checked').map(function (v) { return parseInt(v, 10); });
         st.rules.orderRule = document.getElementById('edOrder').value || null;
+        var esmIn = parseInt(document.getElementById('edEarlyStartMax').value, 10);
+        st.rules.earlyStartMax = (isNaN(esmIn) || esmIn < 0 || esmIn >= 1440) ? null : esmIn;
         st.rules.note = document.getElementById('edNote').value;
         st.countInHeadcount = document.getElementById('edCount').checked;
         st.status = document.getElementById('edStatus').value;
@@ -8811,10 +8851,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         for (var sk in this.settings) settings[sk] = this.settings[sk];
         settings.breakH = 2;
       }
+      /* 早番に数える開始時刻の上限は運用ルール＝マスタ現在値を優先（確定月の凍結名簿でも直せば反映・resolveConsRule と同じ考え方） */
+      var ruleSrc = this.masterStaffById_(st.id) || st;
       return TC.computeStaffMonth({
         days: this.days, rows: rows, symbols: this.symbols,
         settings: settings, nightSplit: st.nightSplit || null,
-        offDayMultiplier: isNight ? 2 : 1
+        offDayMultiplier: isNight ? 2 : 1,
+        earlyStartMax: Sym.earlyStartMaxOf(ruleSrc)
       });
     },
 
