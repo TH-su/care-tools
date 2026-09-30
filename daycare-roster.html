@@ -265,6 +265,12 @@ table.sheet .c-sum-lb {
 }
 .note-below .nb-h { font-weight: 700; background: var(--g1); padding: 1px 8px; border-radius: 3px; }
 .note-below .nb-item { white-space: nowrap; }
+/* 訪問診療の案内（2026-09-30 運用指示）。備考の上に「少し大きめの文字」で置く。幅は備考と同じく JS で表幅に合わせる。
+   ★紙にも出す（備考と同じ扱い）。印刷の文字サイズ調整は body 全体の高さで判定するので、この行の高さも自動で計算に入る。 */
+.visit-note {
+  margin: 8px auto 0; background: #fff; border: 1px solid var(--line); box-shadow: var(--sh);
+  padding: 5px 10px; font-size: 0.9375rem; font-weight: 700; line-height: 1.5; color: var(--g9);
+}
 table.sheet thead th { background: var(--g1); font-weight: 700; }
 /* 表の中盤に再掲する曜日見出し行（tbody 内に置くため thead の指定が効かない＝同じ見た目を明示する）。
    長い表で「今どの曜日の列か」を追いやすくするための再掲（2026-08-03 運用指示）。
@@ -585,6 +591,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   <section id="sc-daylist" class="scr" role="tabpanel">
     <div class="sheet-title" id="dlTitle">デイ利用者一覧表</div>
     <table class="sheet" id="tblDaylist" aria-label="デイ利用者一覧表"></table>
+    <div class="visit-note" id="visitNoteDaylist"><span class="star">☆</span>印の方は２週間に一度の訪問診療がありますので、２階ホールに居ていただいてください。</div>
     <aside class="note-below" id="noteDaylist" aria-label="備考"></aside>
   </section>
 
@@ -1691,6 +1698,35 @@ function sumRow(tbody, label, counts) {
   return tr;
 }
 
+/* 上段（見出し〜せせらぎ合計）と下段（「デイ休み」見出し〜昼食合計）の外枠を、四辺とも太線でそろえる
+   （2026-09-30 運用指示「太線が途中で細くなり見た目が揃っていない」）。
+   実測では、左の外枠が見出し行・合計行・下段の曜日見出しでだけ 1px に細り、表の上端・下端も 1px だった。
+   各行の【1列目を占めるセル】に左、【最終列を占めるセル】に右の太線を付ける。rowSpan・colSpan を
+   格子に展開して判定する＝結合セルの内側の線を誤って太くしない。間の空白行(cut-gap)は枠に含めない。
+   ★付けるのは既存の blk-* だけ（色・太さは区画の太枠と同一）。内側の罫線と列幅は変えない。 */
+function frameDaylist_(table) {
+  const rows = [...table.rows];
+  const grid = [];
+  rows.forEach((tr, ri) => {
+    grid[ri] = grid[ri] || [];
+    let c = 0;
+    [...tr.cells].forEach(td => {
+      while (grid[ri][c]) c++;
+      const rs = td.rowSpan || 1, cs = td.colSpan || 1;
+      for (let a = 0; a < rs; a++) { grid[ri + a] = grid[ri + a] || []; for (let b = 0; b < cs; b++) grid[ri + a][c + b] = td; }
+      c += cs;
+    });
+  });
+  const last = rows.length - 1;
+  rows.forEach((tr, ri) => {
+    if (tr.classList.contains('cut-gap')) return;
+    const g = grid[ri] || [];
+    if (g[0]) g[0].classList.add('blk-left');
+    if (g.length) g[g.length - 1].classList.add('blk-right');
+    if (ri === 0 || ri === last) g.forEach(td => td && td.classList.add(ri === 0 ? 'blk-top' : 'blk-bot'));
+  });
+}
+
 function renderDaylist(ppl) {
   const table = $('tblDaylist');
   $('dlTitle').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
@@ -1726,6 +1762,12 @@ function renderDaylist(ppl) {
   sumRow(tbody, '２階合計', lunch);
   sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
   table.appendChild(tbody);
+
+  frameDaylist_(table);
+
+  // 訪問診療の案内（備考の上）。幅は表と同じにして中央で揃える。
+  const vn = $('visitNoteDaylist');
+  if (vn) vn.style.width = TBL_W.daylist + 'px';
 
   // 備考（表の下・横並びでコンパクトに＝横幅を表に使い切る）。幅は表と同じにして中央で揃える。
   const note = $('noteDaylist');
