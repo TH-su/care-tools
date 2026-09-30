@@ -1006,7 +1006,10 @@ var dcrHospMap = null;                // masterId(string) -> bool ／ null = 未
    入居者マスタの「往診曜日(visitDay)」が入っている＝訪問診療を受けている、なので、
    入院を取りに行くのと同じ応答からそのまま導出する（追加のリクエストは発生しない）。
    ★週間計画側に visitingMed を入力するUIは無い＝現場の入力を潰す心配がない。 */
-var dcrVmedMap = null;                // masterId(string) -> bool ／ null = 未取得
+/* ★2026-09-30 運用指示で判定を改めた: 「往診曜日が入っていれば全曜日に☆」ではなく、
+     【かかりつけが わかばクリニック で、その曜日が往診曜日の方】にだけ☆を付ける（班分けはしない）。
+     そのため値は bool ではなく往診曜日の1文字（'火' 等）。わかば以外・往診曜日が「他」や空欄の方は載せない。 */
+var dcrVmedMap = null;                // masterId(string) -> 往診曜日(1文字) ／ null = 未取得
 /* 居室（room）— 2026-08-27 追加。入居者マスタで居室を入れているのに「階未設定」になる不具合の対処。
    原因: 週間計画アプリはマスタから取り込んだ room を saveLocalOnly()＝端末内にしか保存せず
    （care-schedule.html「取り込みは saveLocalOnly()（ローカルのみ）で永続化」）、サーバー版の
@@ -1067,11 +1070,11 @@ function dcrOverlayMaster(db){
       }
     }
     if (dcrVmedMap){
-      /* ☆訪問診療。往診曜日が入っていれば true。
-         こちらは「キーが無い＝false」で構わない（週間計画側に入力UIが無く、
+      /* ☆訪問診療。わかばクリニックの往診曜日（1文字）。該当しなければ空文字。
+         こちらは「キーが無い＝空」で構わない（週間計画側に入力UIが無く、
          潰す対象の現場入力が存在しないため）。 */
-      var w = !!dcrVmedMap[mid];
-      if (!!r.visitingMed !== w){
+      var w = String(dcrVmedMap[mid] || '');
+      if (String(r.visitingMed == null ? '' : r.visitingMed) !== w){
         if (!nr){ nr = {}; for (k in r) if (Object.prototype.hasOwnProperty.call(r, k)) nr[k] = r[k]; }
         nr.visitingMed = w;
       }
@@ -1116,11 +1119,13 @@ function dcrFetchMasterHosp(force){
         /* hospitalized はキーが実在する時だけ採用（旧GASは項目ごと無い）。
            無い人を false 扱いにすると現場の入院表示を一括で消してしまう。 */
         if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
-        /* ☆訪問診療＝往診曜日が入っているか。旧GAS（visitDay を返さない）では
-           1件も見つからないので、その場合は導出そのものを行わない（全員 ☆無しにしない）。 */
+        /* ☆訪問診療＝かかりつけが わかばクリニック で、往診曜日が曜日1文字の方（2026-09-30）。
+           「他」・空欄・わかば以外は載せない。旧GAS（visitDay を返さない）では
+           1件も見つからないので、その場合は導出そのものを行わない。 */
         if (Object.prototype.hasOwnProperty.call(x, 'visitDay')){
           sawVisitDay = true;
-          if (String(x.visitDay || '').trim() !== '') vm[String(mid)] = true;
+          var vd = String(x.visitDay || '').trim();
+          if (/わかば/.test(String(x.hospital || '')) && /^[月火水木金土日]$/.test(vd)) vm[String(mid)] = vd;
         }
         /* 姓と名の切れ目。氏名そのものは保持せず、空白の位置と文字数（数値2つ）だけを取る。
            空白が複数ある氏名は最初の空白を姓名の区切りとみなす（マスタの入力どおり）。 */
@@ -1231,7 +1236,7 @@ function buildModel(db) {
       floor: floor,                                        // 0=階未設定（居室・週間計画とも不明）
       lunchMed: !!r.lunchMed,
       star: !!r.dcrStar,                 // 同姓の目印（週間名簿だけで氏名の頭に☆を出す・2026-09-01）
-      visitingMed: !!r.visitingMed,      // 訪問診療（☆）— 新フラグ。未入力なら false
+      visitingMed: String(r.visitingMed == null ? '' : r.visitingMed),   // 訪問診療（☆）: わかばクリニックの往診曜日1文字（該当なし＝空）
       hosp: !!r.hospitalized,
       days: days
     });
@@ -1656,7 +1661,8 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
         }
         tr.appendChild(td);
         const st = el('td', 'c-tm');
-        if (p && showStar && p.visitingMed) { st.appendChild(el('span', 'star', '☆')); st.title = '訪問診療'; }
+        // ☆＝その曜日に わかばクリニックの往診がある方（2026-09-30 運用指示・班分けはしない）
+        if (p && showStar && p.visitingMed === DAYS_JA[d]) { st.appendChild(el('span', 'star', '☆')); st.title = 'わかばクリニック 訪問診療'; }
         tr.appendChild(st);
         tr.appendChild(el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : '')));
       }
@@ -2320,7 +2326,7 @@ let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
 let MODEL_SUB  = '';   // 新4タブの指標
 const LEGENDS = {
   'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '利用時間帯ごとに居室階（２階→１階）で分け、氏名は五十音順／下段に日別の入浴合計・利用合計']],
-  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝訪問診療'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
+  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝その曜日にわかばクリニックの訪問診療がある方'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
   /* 薬用の凡例メッセージは 'tn'＝【画面のみ】（2026-08-20 運用指示）。
      2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
