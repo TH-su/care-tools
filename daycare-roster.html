@@ -1725,6 +1725,10 @@ function frameDaylist_(table) {
     if (g.length) g[g.length - 1].classList.add('blk-right');
     if (ri === 0 || ri === last) g.forEach(td => td && td.classList.add(ri === 0 ? 'blk-top' : 'blk-bot'));
   });
+  /* 下段の曜日見出し（1行目）の上の横線も左端から右端まで太線にする（2026-09-30 運用指示）。
+     「デイ休み」見出しとの境目。上段の見出し下の太線と同じ blk-top を、その行の全列に付ける。 */
+  const ri2 = rows.findIndex(tr => tr.classList.contains('rehead'));
+  if (ri2 > 0) (grid[ri2] || []).forEach(td => td && td.classList.add('blk-top'));
 }
 
 function renderDaylist(ppl) {
