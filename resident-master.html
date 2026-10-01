@@ -446,6 +446,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mpk-f{margin-bottom:10px; min-width:0}
 .mpk-lb{display:block; font-size:0.8125rem; color:var(--g7); margin-bottom:4px}
 .mpk-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+/* 1回量・単位は見出しの右に選択肢を並べて上下を詰める（見出しの幅をそろえて左端を合わせる・エラー文は下の行いっぱい・幅が足りない時は選択肢が見出しの下へ回る） */
+.mpk-inline{display:flex; flex-wrap:wrap; align-items:center; column-gap:10px; row-gap:4px}
+.mpk-inline>.mpk-lb{margin:0; flex:0 0 3.5em}
+.mpk-inline>.mpk-row{flex:1 1 12em; min-width:0}
+.mpk-inline>.mpk-err{flex:0 0 100%}
 .mpk input[type=text],.mpk input[type=number],.mpk select{font-size:1rem; min-height:44px; padding:9px 10px;
   border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--g9); max-width:100%}
 .mpk input[type=text],.mpk select{width:100%}
@@ -7973,6 +7978,14 @@ function mpkChips_(attr, vals, lbl, desc){
       (desc?' aria-describedby="'+desc+'"':'')+'>'+esc(lbl?lbl(v):v)+'</button>';
   }).join('');
 }
+/* 「毎」ボタン＝朝・昼・夕の3つをまとめて切り替える。状態は持たず slots から毎回求める
+   （MPK_SLOTS には足さない＝保存する行の組み立ては変えない）。眠前・食後/食前には触らない */
+function mpkAllOn_(slots){ return !!(slots['朝']&&slots['昼']&&slots['夕']); }
+function mpkAllToggle_(slots){
+  var v=!mpkAllOn_(slots);
+  ['朝','昼','夕'].forEach(function(k){ slots[k]=v; });
+  return slots;
+}
 /* 編集画面のパネル（openEdit が「薬剤情報（定期）」の欄のすぐ上に入れる）。中身は固定の文言だけ */
 function mpkPanelHtml_(){
   return '<div class="mpk" id="mpkBox" role="group" aria-labelledby="mpkTitle">'+
@@ -7990,20 +8003,22 @@ function mpkPanelHtml_(){
     '<div class="mpk-f" id="mpkMakerF" hidden>'+
       '<label class="mpk-lb" for="mpkMaker">メーカー（任意）</label><select id="mpkMaker"></select>'+
     '</div>'+
-    '<div class="mpk-f" role="group" aria-labelledby="mpkDoseLb">'+
+    '<div class="mpk-f mpk-inline" role="group" aria-labelledby="mpkDoseLb">'+
       '<span class="mpk-lb" id="mpkDoseLb">1回量</span>'+
       '<div class="mpk-row">'+mpkChips_('data-mpk-dose',MPK_DOSES,null,'mpkErrDose')+
         '<label class="mpk-other">その他<input type="number" id="mpkDoseOther" min="0.5" step="0.5" inputmode="decimal" aria-describedby="mpkErrDose"></label>'+
       '</div>'+
       '<div class="mpk-err" id="mpkErrDose" role="alert"></div>'+
     '</div>'+
-    '<div class="mpk-f" role="group" aria-labelledby="mpkUnitLb">'+
+    '<div class="mpk-f mpk-inline" role="group" aria-labelledby="mpkUnitLb">'+
       '<span class="mpk-lb" id="mpkUnitLb">単位</span>'+
       '<div class="mpk-row">'+mpkChips_('data-mpk-unit',MPK_UNITS)+'</div>'+
     '</div>'+
     '<div class="mpk-f" role="group" aria-labelledby="mpkWhenLb">'+
-      '<span class="mpk-lb" id="mpkWhenLb">いつ飲むか（時間帯は複数選べます）</span>'+
-      '<div class="mpk-row">'+mpkChips_('data-mpk-slot',MPK_SLOTS,null,'mpkErrWhen')+'<span class="mpk-sep" aria-hidden="true"></span>'+mpkChips_('data-mpk-meal',MPK_MEALS)+'</div>'+
+      '<span class="mpk-lb" id="mpkWhenLb">いつ飲むか（時間帯は複数選べます。「毎」は朝・昼・夕）</span>'+
+      '<div class="mpk-row">'+
+        '<button type="button" class="chip" data-mpk-all="1" aria-pressed="false" aria-label="毎（朝・昼・夕の3回）" aria-describedby="mpkErrWhen">毎</button>'+
+        mpkChips_('data-mpk-slot',MPK_SLOTS,null,'mpkErrWhen')+'<span class="mpk-sep" aria-hidden="true"></span>'+mpkChips_('data-mpk-meal',MPK_MEALS)+'</div>'+
       '<div class="mpk-err" id="mpkErrWhen" role="alert"></div>'+
     '</div>'+
     '<div class="mpk-f">'+
@@ -8170,6 +8185,7 @@ function mpkPaint_(){
   set('data-mpk-dose',function(v){ return !otherOn&&mpk.dose!==null&&Number(v)===mpk.dose; });
   set('data-mpk-unit',function(v){ return v===mpk.unit; });
   set('data-mpk-slot',function(v){ return !!mpk.slots[v]; });
+  set('data-mpk-all',function(){ return mpkAllOn_(mpk.slots); });
   set('data-mpk-meal',function(v){ return v===mpk.meal; });
   var pv=$('mpkPreview'), nt=$('mpkPvNote');
   if(pv){
@@ -8399,6 +8415,7 @@ function mpkInit_(){
     if((v=t.getAttribute('data-mpk-cand'))!==null){ mpkPick_(mpk.cands[parseInt(v,10)]); return; }
     if((v=t.getAttribute('data-mpk-dose'))!==null){ mpk.dose=Number(v); $('mpkDoseOther').value=''; mpkErr_('mpkErrDose',''); mpkPaint_(); return; }
     if((v=t.getAttribute('data-mpk-unit'))!==null){ mpk.unit=v; mpkPaint_(); return; }
+    if(t.getAttribute('data-mpk-all')!==null){ mpkAllToggle_(mpk.slots); mpkErr_('mpkErrWhen',''); mpkPaint_(); return; }
     if((v=t.getAttribute('data-mpk-slot'))!==null){ mpk.slots[v]=!mpk.slots[v]; mpkErr_('mpkErrWhen',''); mpkPaint_(); return; }
     if((v=t.getAttribute('data-mpk-meal'))!==null){ mpk.meal=v; mpkPaint_(); return; }
     if((v=t.getAttribute('data-mpk-edit'))!==null){ mpkEditStart_(parseInt(v,10)); return; }
