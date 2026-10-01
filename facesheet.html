@@ -420,6 +420,22 @@ input,select{font-family:inherit; font-size: 0.9375rem}
        付けない従来の「印刷」は上の2行が効いたまま＝紙は1pxも変わらない。 */
   body.fs-all-on .fpanel{display:none !important}
   body.fs-all-on .fpanel[data-panel="all"]{display:block !important}
+  /* ★2026-10-01: 全体タブは1枚の大きな .sheet なので、上の「途中で改ページしない」が効くと、
+     シートごと2枚目へ送られ、1枚目がアレルギー・感染症の表示だけの白紙になっていた（本人確認済み）。
+     全体を刷る時だけシートの途中での改ページを許す。割らないのは「1行の欄（.row-cells）」と「経過の1件（.logline）」
+     だけにする。欄（.sec）まるごとを割らない指定にすると、支援経過など1ページより長い欄の手前に大きな余白が出て、
+     同じ症状が欄の単位で戻る（2026-10-01 レビュー指摘）。従来の「印刷」（fs-all-on なし）には効かない。 */
+  body.fs-all-on .fpanel[data-panel="all"] .sheet{page-break-inside:auto; break-inside:auto}
+  body.fs-all-on .fpanel[data-panel="all"] .row-cells,
+  body.fs-all-on .fpanel[data-panel="all"] .logline{page-break-inside:avoid; break-inside:avoid}
+  /* 左の縦書きの見出し（.sec-lbl）は欄の高さいっぱいに伸びる。縦書きの箱は Chrome の印刷で「割れない塊」になるため、
+     支援経過などの長い欄が丸ごと次のページへ送られ、手前に枠だけの空欄が残っていた（長い経過の架空データで実測）。
+     全体を刷る時だけ、見出しは文字の高さだけにして上に寄せ、灰色の列は欄の背景で、区切りの縦線は本文の左枠で引く
+     （見た目は同じ列のまま。縦線は枠線なので「背景を印刷」の設定に左右されない）。 */
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec{background:linear-gradient(to right, var(--g1) 0 30px, transparent 30px)}
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-lbl{align-self:flex-start; width:30px; min-width:30px; box-sizing:border-box;
+    background:transparent; border-right:none}
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-body{border-left:1px solid #000}
 
   /* ── 食形態一覧（A3縦1枚・2026-08-24）──
      ★body.meal-on を付けている時だけ効かせる。付けないと他のビュー・他タブの紙まで変わる
