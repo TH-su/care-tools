@@ -3590,6 +3590,8 @@ function rmPrint_(kind){
    ★読み取り専用。この2ビューはマスタを1バイトも更新しない。 */
 var fullMap=null, fullLoading=false, fullErr='', fullDone=0, fullTotal=0, fullBad=null, fullGen=0;
 function fullEnsure(force){
+  /* ★現場端末では取りに行かない（薬効辞書の mdLoad_ と同じ。fullMap は処方を持つ） */
+  if(getDeviceRole()==='field') return;
   if(fullLoading) return;
   if(fullMap&&!force) return;
   if(!CFG.url){ fullErr='同期設定のURLが未設定です'; paintShBars(); return; }
@@ -3604,10 +3606,11 @@ function fullEnsure(force){
     if(i>=ids.length) return Promise.resolve();
     var id=ids[i++];
     return apiGet({action:'getResident',id:id},30000).then(function(d){
+      if(gen!==fullGen) return;                            /* 世代が変わった後に届いた応答は控えにも入れない */
       var rec=(d&&d.record)||null;
       if(rec&&rec.id!=null) got[String(id)]=rec; else bad.push(id);
     }).catch(function(){ bad.push(id); })
-      .then(function(){ fullDone++; paintShBars(); return next(); });
+      .then(function(){ if(gen!==fullGen) return; fullDone++; paintShBars(); return next(); });
   }
   var lanes=[]; for(var k=0;k<LANES;k++) lanes.push(next());
   Promise.all(lanes).then(function(){
@@ -9641,6 +9644,10 @@ function applyDeviceGuard(){
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
     /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
     bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
+    /* 取得中の全件データも捨てる。世代を進めないと、切り替えた後に届いた応答で fullMap（処方を含む）が
+       メモリに戻る。取得中の印も下ろす（下ろさないと、事務所PCへ戻した時に「取得中」のまま
+       二度と取りに行かない）（2026-10-01） */
+    fullGen++; fullLoading=false; fullErr=''; fullDone=0; fullTotal=0;
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
     mdClearPending_(); mdShowHidden=false;
