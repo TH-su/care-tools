@@ -742,8 +742,16 @@ select.inp { cursor: pointer; }
   .grid-scroll { overflow: visible; height: auto; }
   .event-block::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body { overflow: auto; }
-  /* 週ボードはA4縦。grid-body の高さは印刷圧縮時に JS(yOf) がインラインで設定する（非圧縮時は24h=1440px相当） */
-  @page { size: A4 portrait; margin: 8mm; }
+  /* ★2026-10-01: 画面用の html, body { height:100%; overflow:hidden } が印刷にも残り、週ボードが1枚に収まらない方
+     （夜の予定がある・デイと訪問が重なる等で時間軸の圧縮が効かない）で、18時台より後の予定が2枚目へ続かずに
+     紙から消えていた（架空データの印刷で再現・本人確認済み）。印刷では高さの固定とはみ出しの隠しを外し、
+     収まらない分は2枚目へ流す（紙から予定を消さないことを優先）。1枚に収まる方の紙面は変わらない。
+     週ボードの印刷中（body.week-print）だけに効かせる＝A3週間予定表・利用者一覧A3の紙は1pxも変えない。 */
+  html:has(> body.week-print), body.week-print { height: auto; overflow: visible; }
+  /* 週ボードはA4横（2026-10-01 本人指示で縦→横）。grid-body の高さは印刷圧縮時に JS(yOf) がインラインで設定する */
+  /* ★2026-10-01 本人指示: 週ボードは A4横1枚。この静的な @page を使うのは週ボードだけ
+     （利用者一覧A3・A3週間予定表は印刷の直前に自分の @page を注入して上書きする）。 */
+  @page { size: A4 landscape; margin: 8mm; }
   /* 参考値の注記を紙にも出す。ヘッダ内のインライン要素なので行を増やさず、
      盤面の高さ（JS が設定する grid-body の height）にも触れない。 */
   .print-rate-note { display: inline; font-size: 8px; font-weight: 600; color: #000;
@@ -6004,6 +6012,9 @@ function renderDayEvents(events, colEl, res, coverage) {
       block.classList.add('dc-short');
     }
     block.dataset.id = ev.id;
+    /* 週ボードの印刷中だけ、箱に開始・終了（分）を持たせる。文字の高さに合わせて時間帯を伸ばす fitPrintToText_ が
+       位置からの逆算（丸めで1〜2分ずれて伸ばし損ねた・2026-10-01 レビュー）でなく、予定の時刻そのもので区間を引く */
+    if (PRINT_MAP) { block.dataset.pa = String(timeToMins(ev.startTime)); block.dataset.pb = String(timeToMins(ev.endTime)); }
     block.style.cssText = `
       top:${top}px; height:${heightPx}px;
       left:calc(${col * 100 / total}% + 2px);
@@ -7301,63 +7312,116 @@ function exportJSON() {
 }
 function printWeek() { clearRlPrintState_(); window.print(); }
 
-/* ===== 週ボード印刷: A4縦最適化（デイ短縮・空き時間の動的圧縮）=====
- * 印刷時のみ時刻→Y を区分線形マップ(PRINT_MAP)へ差し替え、renderAll で全要素を圧縮再配置し、
- * afterprint で PRINT_MAP=null にして renderAll＝画面完全復元。区分線形は単調増加＝後続枠は詰まるだけでズレない。 */
-var PRINT_CFG = { daycareH: 90, gapH: 120, stubH: 24 };   // 圧縮後px（デイ≈1.5h/16-20≈2h/早朝深夜クロップ）
+/* ===== 週ボード印刷: A4横1枚へ収める（2026-10-01 本人指示で作り直し）=====
+ * 指示: 「A4横1枚。全体的に縦に圧縮し、日本語は認識できるように。支援が入っていない時間帯は更に圧縮」。
+ * 印刷時のみ時刻→Y を区分線形マップ(PRINT_MAP)へ差し替え、renderAll で全要素を再配置し、
+ * afterprint で PRINT_MAP=null にして renderAll＝画面完全復元（従来どおり）。区分線形は単調増加＝後続枠はズレない。
+ * 1日を【週内の全予定の開始・終了】で細かい区間に割り、区間ごとに高さを決める:
+ *   ・支援なし（どの曜日にも予定が無い）… 30分以上なら細い帯 freeH に潰し、時刻つきの「支援なし」帯を出す
+ *   ・通所だけ（訪問が重ならない）     … 実時間×dcRatio（下限 dcMinH）。デイの箱は波線で省略を示す
+ *   ・支援あり                       … 実時間×ppm。ppm は盤面が予算 budgetH に収まる値（上限 ppmMax＝画面の2倍・下限 ppmMin）
+ *   ・どの予定の箱も、文字（区分と単位・加算・計・時刻・支援内容）が収まる高さを、実際に描いて測って確保する（fitPrintToText_）
+ * 下限の ppm でも収まらない時だけ、盤面全体を zoom で縮める（下限 zoomMin＝文字が読める大きさを守る）。
+ * それでも収まらない分は2枚目へ流れる（html/body の高さ固定を印刷で外してある＝紙から予定を消さない）。 */
+var PRINT_CFG = { budgetH: 600, pageW: 1062, freeH: 12, freeMinMin: 30, dcRatio: 0.15, dcMinH: 8,
+                  ppmMax: 2.0, ppmMin: 0.4, zoomMin: 0.62, textPad: 6 };
+var PRINT_ZOOM = 1;            // 印刷時の盤面の縮小率（1＝縮小なし）
+var PRINT_PARTS = null;        // 印刷時の区間 [{a,b,h,kind}]（文字の高さに合わせて h を足すために持つ）
 var _printPrevScroll = 0;
 
 function buildPrintMap_(res) {
-  PRINT_MAP = null; PRINT_SEGS = null;
+  PRINT_MAP = null; PRINT_SEGS = null; PRINT_ZOOM = 1; PRINT_PARTS = null;
   var evs = (res && res.events) ? res.events : [];
   var ranges = [];
   for (var i = 0; i < evs.length; i++) {
     var a = timeToMins(evs[i].startTime), b = timeToMins(evs[i].endTime);
-    if (b > a) ranges.push([a, b, evs[i].serviceType]);
+    if (!(b > a)) continue;
+    ranges.push({ a: Math.max(0, a), b: Math.min(1440, b), dc: evs[i].serviceType === 'daycare' });
   }
-  if (!ranges.length) return;   // 予定なし＝等倍
-  var firstStart = Math.min.apply(null, ranges.map(function (r) { return r[0]; }));
-  var lastEnd    = Math.max.apply(null, ranges.map(function (r) { return r[1]; }));
-  function overlapsRange(a, b) { return ranges.some(function (r) { return r[0] < b && a < r[1]; }); }
-
+  // 区切り: 0・24時と、全予定の開始・終了
+  var cuts = [0, 1440];
+  ranges.forEach(function (r) { cuts.push(r.a, r.b); });
+  cuts = cuts.filter(function (v, k, arr) { return arr.indexOf(v) === k; }).sort(function (x, y) { return x - y; });
+  var parts = [];
+  for (var k = 0; k + 1 < cuts.length; k++) {
+    var pa = cuts[k], pb = cuts[k + 1];
+    var cov = ranges.filter(function (r) { return r.a < pb && pa < r.b; });
+    var kind = !cov.length ? 'free' : (cov.every(function (r) { return r.dc; }) ? 'daycare' : 'busy');
+    if (kind === 'free' && (pb - pa) < PRINT_CFG.freeMinMin) kind = 'short';   // 短い空きは比例のまま
+    var last = parts[parts.length - 1];
+    // まとめるのは「支援なし」だけ（予定が無い区間）。予定のある区間は区切りのまま＝どの予定の箱も区間の和で表せる
+    if (last && last.kind === 'free' && kind === 'free' && last.b === pa) last.b = pb;
+    else parts.push({ a: pa, b: pb, kind: kind });
+  }
+  var fixedH = 0, propMin = 0;
+  parts.forEach(function (p) {
+    var d = p.b - p.a;
+    if (p.kind === 'free') { p.h = PRINT_CFG.freeH; fixedH += p.h; }
+    else if (p.kind === 'daycare') { p.h = Math.max(PRINT_CFG.dcMinH, d * PRINT_CFG.dcRatio); fixedH += p.h; }
+    else propMin += d;
+  });
+  var ppm = propMin > 0 ? (PRINT_CFG.budgetH - fixedH) / propMin : PRINT_CFG.ppmMax;
+  ppm = Math.max(PRINT_CFG.ppmMin, Math.min(PRINT_CFG.ppmMax, ppm));
+  parts.forEach(function (p) { if (p.kind === 'busy' || p.kind === 'short') p.h = (p.b - p.a) * ppm; });
+  PRINT_PARTS = parts;
+  applyPrintParts_();
+}
+// 区間の高さから PRINT_MAP・省略マーク用の PRINT_SEGS・縮小率を作る（文字に合わせて伸ばした後にも呼ぶ）
+function applyPrintParts_() {
+  var parts = PRINT_PARTS;
+  if (!parts) return;
+  var total = parts.reduce(function (s, p) { return s + p.h; }, 0);
+  PRINT_ZOOM = total > PRINT_CFG.budgetH ? Math.max(PRINT_CFG.zoomMin, PRINT_CFG.budgetH / total) : 1;
+  // 省略マーク・時刻線の間引きに使うのは「潰した区間」だけ。通所だけの区間は隣り合う分をまとめて扱う
   var segs = [];
-  if (firstStart > 0) segs.push({ a: 0, b: firstStart, h: PRINT_CFG.stubH, kind: 'head' });   // 早朝クロップ
-  // デイ短縮: daycare 和区間（その区間に非デイが重ならない時のみ＝在宅支援を潰さない）
-  var dc = ranges.filter(function (r) { return r[2] === 'daycare'; });
-  if (dc.length) {
-    var dcA = Math.min.apply(null, dc.map(function (r) { return r[0]; }));
-    var dcB = Math.max.apply(null, dc.map(function (r) { return r[1]; }));
-    var nonDcOverlap = ranges.some(function (r) { return r[2] !== 'daycare' && r[0] < dcB && dcA < r[1]; });
-    if (!nonDcOverlap && (dcB - dcA) > PRINT_CFG.daycareH) segs.push({ a: dcA, b: dcB, h: PRINT_CFG.daycareH, kind: 'daycare' });
-  }
-  // 16-20カット: 週内全予定が [16:00,20:00) と重ならず、かつ真の中間空き(夜に予定がある)時のみ
-  if (!overlapsRange(960, 1200) && lastEnd > 1200 && firstStart < 960) {
-    segs.push({ a: 960, b: 1200, h: PRINT_CFG.gapH, kind: 'gap' });
-  }
-  if (lastEnd < 1440) segs.push({ a: lastEnd, b: 1440, h: PRINT_CFG.stubH, kind: 'tail' });   // 深夜クロップ
-
-  segs.sort(function (x, y) { return x.a - y.a; });
-  // 安全クリップ: 前区間と重ならないように（構成上ほぼ不要だが不変条件を強制）
-  var clean = [];
-  for (var s = 0; s < segs.length; s++) {
-    var seg = segs[s], prev = clean[clean.length - 1];
-    if (prev && seg.a < prev.b) seg = { a: prev.b, b: Math.max(prev.b, seg.b), h: seg.h, kind: seg.kind };
-    if (seg.b > seg.a) clean.push(seg);
-  }
-  if (!clean.length) return;   // 圧縮対象なし＝等倍
-  PRINT_SEGS = clean;
-  var ppm = HOUR_PX / 60;
+  parts.forEach(function (p) {
+    if (p.kind !== 'free' && p.kind !== 'daycare') return;
+    var last = segs[segs.length - 1];
+    if (last && last.kind === p.kind && last.b === p.a) { last.b = p.b; last.h += p.h; }
+    else segs.push({ a: p.a, b: p.b, h: p.h, kind: p.kind });
+  });
+  PRINT_SEGS = segs;
   PRINT_MAP = function (min) {
-    var y = 0, cur = 0;
-    for (var k = 0; k < clean.length; k++) {
-      var seg = clean[k];
-      if (min <= seg.a) return y + (min - cur) * ppm;
-      y += (seg.a - cur) * ppm;
-      if (min < seg.b) return y + (min - seg.a) / (seg.b - seg.a) * seg.h;   // 区間内は圧縮線形
-      y += seg.h; cur = seg.b;
+    var y = 0;
+    for (var q = 0; q < parts.length; q++) {
+      var p = parts[q];
+      if (min <= p.a) return y;
+      if (min < p.b) return y + (min - p.a) / (p.b - p.a) * p.h;
+      y += p.h;
     }
-    return y + (min - cur) * ppm;
+    return y;
   };
+}
+/* 文字が箱に収まる高さを、見積りでなく【実際に描いて測って】確保する（本人指示「日本語は認識できるように」）。
+   加算の行・計・支援内容の折り返しは事業所の設定や入力で変わるので、行数の見積りでは足りない（2026-10-01 レビュー指摘）。
+   盤面を A4横の印刷幅で一度描き、各予定の箱の中身（.ev-text）の高さを測って、足りない分をその予定の時間帯の
+   最後の区間に足す（7曜日で共通の時間軸）。通所の箱は印刷で overflow:hidden なので、ここで確保しないと紙から消える。
+   ★予定の各行の文字の大きさは rem 指定で、画面と印刷で同じ。測る幅は A4横の印刷幅（pageW）。
+     縮小（zoom）は測った後に掛けるが、縮めると列幅は広がる側に動くので、足りない側には倒れない。 */
+function fitPrintToText_() {
+  if (!PRINT_PARTS) return;
+  var cw = $('#cal-wrap');
+  var prevW = cw ? cw.style.width : '', prevR = cw ? cw.style.right : '';
+  if (cw) { cw.style.right = 'auto'; cw.style.width = PRINT_CFG.pageW + 'px'; }
+  var need = [];
+  $$('#day-columns .event-block').forEach(function (bl) {
+    var tx = bl.querySelector('.ev-text');
+    var a = Number(bl.dataset.pa), b = Number(bl.dataset.pb);
+    if (!tx || !(b > a)) return;
+    var h = tx.scrollHeight + PRINT_CFG.textPad;
+    if (h > parseFloat(bl.style.height || '0')) need.push({ r: { a: a, b: b }, h: h });
+  });
+  if (cw) { cw.style.width = prevW; cw.style.right = prevR; }
+  if (!need.length) return;
+  need.sort(function (x, y) { return x.r.b - y.r.b; });
+  need.forEach(function (n) {
+    var span = PRINT_PARTS.filter(function (p) { return p.a >= n.r.a && p.b <= n.r.b; });   // 区切り＝予定の開始・終了なので丸めずに一致する
+    if (!span.length) return;
+    var have = span.reduce(function (s, p) { return s + p.h; }, 0);
+    if (have < n.h) span[span.length - 1].h += n.h - have;
+  });
+  applyPrintParts_();
+  renderAll();
 }
 
 // 省略マーク（早朝/深夜/16-20の空き圧縮区間に波線バンド＋ラベル）。デイ箱は .dc-short の波線で表現。
@@ -7374,7 +7438,8 @@ function insertPrintOmitMarks_() {
     band.style.height = seg.h + 'px';
     var lbl = document.createElement('span');
     lbl.className = 'print-omit-label';
-    lbl.textContent = seg.kind === 'gap' ? '16:00–20:00 略' : '略';
+    var hm = function (m) { return Math.floor(m / 60) + ':' + ('0' + (m % 60)).slice(-2); };
+    lbl.textContent = hm(seg.a) + '〜' + hm(seg.b) + ' 支援なし';   /* どの時間を詰めたかを紙に書く（省略を黙らない） */
     band.appendChild(lbl);
     body.insertBefore(band, dayCol);
   }
@@ -7408,13 +7473,17 @@ window.addEventListener('beforeprint', function () {
   buildPrintMap_(currentResident());
   resetScrollSync_();
   renderAll();
+  fitPrintToText_();          /* 描いて測り、文字が収まらない箱の時間帯を伸ばして描き直す */
   insertPrintOmitMarks_();
+  /* 下限の倍率でも予算に収まらない方だけ、盤面全体を縮める（文字が読める下限 zoomMin まで） */
+  var cw = $('#cal-wrap'); if (cw) cw.style.zoom = PRINT_ZOOM < 1 ? String(PRINT_ZOOM) : '';
 });
 // 印刷後の画面復元（冪等）。afterprint 単独に依存せず、matchMedia('print') 終了・操作起点でも呼ぶ
 // ＝afterprint が発火しない環境(一部WebView/PDF)で圧縮座標が残り、クリック/ドラッグが誤時刻で保存する事故を防ぐ。
 function restoreWeekPrint_() {
   if (!PRINT_MAP && !document.body.classList.contains('week-print')) return;   // 既に通常＝no-op
-  PRINT_MAP = null; PRINT_SEGS = null;
+  PRINT_MAP = null; PRINT_SEGS = null; PRINT_ZOOM = 1; PRINT_PARTS = null;
+  var cw = $('#cal-wrap'); if (cw) cw.style.zoom = '';
   removePrintOmitMarks_();
   document.body.classList.remove('week-print');
   renderAll();
@@ -7981,6 +8050,9 @@ function clearRlPrintState_() {
   for (let i = 0; i < wkNodes.length; i++) wkNodes[i].remove();
   const wkBox = document.getElementById('wk-sheet');
   if (wkBox) wkBox.innerHTML = '';        /* 氏名を画面のDOMに残さない */
+  /* ★週ボードの印刷状態（圧縮座標・縮小・week-print）もここで落とす（2026-10-01 レビュー指摘）。
+     残ったまま A3 の2経路を押すと、week-print にだけ効かせた指定（高さ固定の解除）が A3 の紙にも効いてしまう。 */
+  if (document.body.classList.contains('week-print') || PRINT_MAP) restoreWeekPrint_();
 }
 // 利用者一覧のみをA3横で印刷（週ボードのA4印刷経路は無改変・一覧印刷時だけ @page を動的注入）
 /* ══ A3週間予定表（2026-09-01 本人指示）════════════════════════════════════════════
