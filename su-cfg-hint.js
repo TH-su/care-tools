@@ -89,21 +89,28 @@
     liftAboveReportButton(bar);   // 帯の高さは置いた後でないと測れない
     // 画面の回転・大きさの変化でも置き直す（縦で出した後に横へ回すと上端が画面外へ出たため）
     window.addEventListener('resize', function () { if (bar.isConnected) liftAboveReportButton(bar); });
+    /* 「＋」は入居者を選ぶと後から現れる（週間計画）。帯が出ている間は1秒ごとに置き直す（帯を閉じたら止める） */
+    var tick = setInterval(function () { if (!bar.isConnected) { clearInterval(tick); return; } liftAboveReportButton(bar); }, 1000);
   }
 
-  /* ★2026-10-01: 右下の「不具合を報告」ボタン（su-report.js）がある画面では、帯をボタンの上へ上げる。
+  /* ★2026-10-01: 右下の「不具合を報告」ボタン（su-report.js）・週間計画の「＋」がある画面では、帯をボタンの上へ上げる。
      同じ下端に固定していたため、新しい端末のメニューで帯の右側（×・接続設定を開く）とボタンが重なっていた。
      高さはボタンの実寸から取る（文字の大きさで変わるため）。ボタンが無い画面は従来どおり下端から 8px。
      ★上げると帯の上端が画面外へ出る高さの画面（横向き・表示200%など）では上げない＝案内文が切れるより
        ボタンと重なる方がまし（帯は × で閉じられる）。2026-10-01 レビュー指摘 */
   function liftAboveReportButton(bar) {
     try {
-      var fab = document.querySelector('.sur-fab');
-      if (!fab) return;
+      /* ★2026-10-01: 週間計画の「＋」（予定を追加・.fab）も同じく右下に固定されていて、帯に覆われていた（iPhone の撮影で検出）。
+         見えているボタンのうち一番上にあるものの上へ帯を出す。 */
       bar.style.bottom = '8px';   // まず従来の位置に戻してから、上げられるかを判断する（置き直しの時のため）
-      var r = fab.getBoundingClientRect();
-      if (!r.height) return;
-      var fromBottom = Math.round(window.innerHeight - r.top) + 8;   // ボタンの上端から 8px 空ける
+      /* 横方向で帯と重なるボタンだけを見る（PC では帯が中央・ボタンが右端で重ならない＝帯を上げない） */
+      var br = bar.getBoundingClientRect();
+      var fabs = Array.prototype.slice.call(document.querySelectorAll('.sur-fab, .fab')).filter(function (el) {
+        var b = el.getBoundingClientRect(); return b.height > 0 && b.width > 0 && b.left < br.right && b.right > br.left;
+      });
+      if (!fabs.length) return;
+      var top = Math.min.apply(null, fabs.map(function (el) { return el.getBoundingClientRect().top; }));
+      var fromBottom = Math.round(window.innerHeight - top) + 8;   // ボタンの上端から 8px 空ける
       var barH = bar.getBoundingClientRect().height;
       if (fromBottom > 8 && fromBottom + barH <= window.innerHeight - 8) bar.style.bottom = fromBottom + 'px';
     } catch (e) { /* 位置の調整に失敗しても帯は従来の位置で出す */ }

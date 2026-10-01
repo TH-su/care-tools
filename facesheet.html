@@ -39,6 +39,10 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
 .hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
+/* ★2026-10-01: iPhone で見出しが「フェイス／シート」と2行に折れ、表示200%では1文字ずつ縦に並んで右側のボタン・表示が
+   画面の外へはみ出していた（sim-check で検出）。見出しは1行のまま、収まらない時だけ右側を次の行へ送る。 */
+.hdr{flex-wrap:wrap}
+.hdr h1{white-space:nowrap}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35);
   color:#fff; border-radius:6px; padding:6px 12px; font-size: 0.8125rem; cursor:pointer; white-space:nowrap}
@@ -47,7 +51,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* 入居者マスタから開いた時の本人確認バー（誰を開いているかを常に見せる＝取り違え防止）。
    ヘッダ直下に貼り付いてスクロールしても消えない。色は既定の警告トークンを使う
    （白背景でコントラスト比4.5:1以上・本ファイル冒頭の配色方針に従う）。 */
-.frombar{position:sticky; top:48px; z-index:49;
+.frombar{position:sticky; top:var(--fs-hdr-h,48px); z-index:49;   /* 見出しの実際の高さに追従（下の fsSyncHdrH_） */
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 14px;
   background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size: 0.8125rem; color:var(--warn-tx)}
 .frombar b{font-size: 0.9375rem}
@@ -94,6 +98,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* ── 一覧 ── */
 .search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
 .search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
+.search-bar input{min-width:0}   /* ★2026-10-01: 表示200%で入力欄の本来の幅が画面を超えてはみ出していた（レビュー指摘） */
 .filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
 /* タップ領域は最小44px（誤タップ防止・HIG） */
 .chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7)}
@@ -3328,6 +3333,20 @@ document.addEventListener('DOMContentLoaded',function(){
   $('syncTest').addEventListener('click',testSync);
   boot();
 });
+</script>
+<script>
+/* ★2026-10-01: 本人確認の帯（.frombar・取り違え防止）は見出しの直下に貼り付く。見出しの高さを 48px の決め打ちにしていたため、
+   見出しが2段になる iPhone では帯が見出しの下に隠れていた（修正前から一部隠れていた）。見出しの実際の高さを変数に写して追従させる。 */
+(function fsSyncHdrH_() {
+  try {
+    var hdr = document.querySelector('.hdr');
+    if (!hdr) return;
+    var set = function () { document.documentElement.style.setProperty('--fs-hdr-h', hdr.offsetHeight + 'px'); };
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(hdr);
+    else window.addEventListener('resize', set);
+  } catch (e) { /* 失敗しても従来の 48px で表示する */ }
+})();
 </script>
 </body>
 </html>

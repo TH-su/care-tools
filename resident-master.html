@@ -32,6 +32,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:8px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
 .hdr h1{font-size: 1rem; margin:0; font-weight:700; flex:1}
+/* ★2026-10-01: iPhone の表示200%（CSS幅201px）で見出しが「入居者マス／タ」と途中で折れ、検索欄と「一括編集」の行が
+   画面の外へはみ出していた（sim-check で検出）。見出しは1行のまま、収まらない時だけ右側の表示・ボタンを次の行へ送る。
+   1行に収まる幅（事務所PC・通常のiPhone）では今までと同じ並び。 */
+.hdr{flex-wrap:wrap}
+.hdr h1{white-space:nowrap}
 /* 状態バッジは暗い下地で白文字のコントラストを確保する（白の重ねでは逆に下がる・実測8.9:1） */
 .hdr .sync{font-size: 0.75rem; background:rgba(0,0,0,.22); padding:3px 9px; border-radius:14px; white-space:nowrap}
 .hdr .sync.ok{background:rgba(46,125,50,.9)} .hdr .sync.err{background:rgba(198,40,40,.95)}
@@ -46,6 +51,10 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ── 一覧 ── */
 .search-bar{display:flex; gap:8px; margin-bottom:10px; align-items:center}
 .search-bar input{flex:1; padding:8px 11px; border:1px solid var(--g3); border-radius:9px; min-height:44px}
+/* ★2026-10-01: 表示200%で検索欄と「一括編集」の行がはみ出していた。収まらない時だけボタンを次の行へ送る。
+   基本の指定（すぐ上）より後に置く（前に置くと flex:1 に負けて検索欄が潰れる・レビュー指摘） */
+.search-bar{flex-wrap:wrap}
+.search-bar input{min-width:0; flex:1 1 150px}
 .filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
 .chip{padding:4px 11px; border:1px solid var(--g3); border-radius:15px; background:#fff; font-size: 0.8125rem; color:var(--g7);
   min-height:36px; display:inline-flex; align-items:center}   /* 高さは維持する（見た目だけ締める） */
@@ -79,6 +88,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
   .fl-4col .rlist{grid-template-columns:1fr}
 }
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:8px}
+/* ★2026-10-01: 入居者カードの最小幅205pxが、iPhone の表示200%の画面幅（201px）を超えて横にはみ出していた（sim-check で検出）。
+   画面より狭くしかとれない時だけ画面幅に合わせる（205px入る幅では不変）。上の基本の指定より後に置く（前に置くと上書きされる） */
+.rlist{grid-template-columns:repeat(auto-fill,minmax(min(205px,100%),1fr))}
 /* ── 入居日順（2026-09-02 追加）。左に入居年月日・右に既存のカード ── */
 .adm-bar{display:flex; align-items:center; gap:8px; padding:8px 0; flex-wrap:wrap}
 .adm-bar .lb{font-size: 0.8125rem; color:var(--g7)}
