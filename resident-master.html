@@ -2342,10 +2342,14 @@ function admOf(r){
   return _ymd(r.admissionDate);   /* 将来 GAS 側が名簿に載せた時は、そちらも使える */
 }
 function admEnsure(){
+  if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(admMap||admLoading) return;
   if(!CFG.url){ admErr='同期設定のURLが未設定です'; paintAdmBar(); return; }
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
+  var dg=devGen;
   admLoading=true; admErr=''; paintAdmBar();
   apiGet({action:'getBulk'},30000).then(function(d){
+    if(dg!==devGen) return;   // 切り替え後に届いた応答（控えに入れない）
     var rows=(d&&d.rows)||[], m={};
     /* ★空応答を成功として扱わない（全員「未登録」の画面を正しい結果として見せない） */
     if(!rows.length){ admErr='入居日を取得できませんでした'; return; }
@@ -2354,8 +2358,9 @@ function admEnsure(){
       var v=_ymd(x.admissionDate); if(v) m[String(x.id)]=v;
     }
     admMap=m;
-  }).catch(function(){ admErr='入居日を取得できませんでした（通信）'; })
-    .then(function(){ admLoading=false; paintAdmBar(); if(curView==='adm') renderRoster(); });
+  }).catch(function(){ if(dg!==devGen) return; admErr='入居日を取得できませんでした（通信）'; })
+    .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
+      admLoading=false; paintAdmBar(); if(curView==='adm') renderRoster(); });
 }
 var ADM_ORDER_KEY='rmaster_adm_order';
 var ADM_ORDERS=['desc','asc'];
@@ -2906,19 +2911,24 @@ var bkRows=null, bkLoading=false, bkErr='';
    bkStaleSeq_ は印を立てた回数。取得を始めた時の値と比べ、保存【より後】に取れた控えの時だけ印を下ろす。 */
 var bkStale_=false, bkStaleSeq_=0;
 function bkEnsure(force){
+  if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(bkLoading) return;
   if(bkRows&&!force) return;
   if(!CFG.url){ bkErr='同期設定のURLが未設定です'; paintShBars(); return; }
   var seq=bkStaleSeq_;
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
+  var dg=devGen;
   bkLoading=true; bkErr=''; paintShBars();
   apiGet({action:'getBulk'},30000).then(function(d){
+    if(dg!==devGen) return;   // 切り替え後に届いた応答（控えに入れない）
     var rows=(d&&d.rows)||[];
     /* ★空応答を成功として扱わない（全員が空欄の帳票を正しい結果として刷らせない） */
     if(!rows.length){ bkErr='取得できませんでした（0件）'; return; }
     bkRows=rows;
     if(seq===bkStaleSeq_) bkStale_=false;   /* 保存より後に取れた控え＝最新 */
-  }).catch(function(){ bkErr='取得できませんでした（通信）'; })
-    .then(function(){ bkLoading=false; paintShBars();
+  }).catch(function(){ if(dg!==devGen) return; bkErr='取得できませんでした（通信）'; })
+    .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
+      bkLoading=false; paintShBars();
       if(curView==='cm'||curView==='lvl'||curView==='cert') renderRoster();
       /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
          （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
@@ -5336,13 +5346,16 @@ function paintMealBar(){
   if(pr) pr.disabled=mealLoading||mealSaving||!mealRows||!mealRows.length;
 }
 function mealLoad(force){
+  /* ★現場端末では取りに行かない（2026-10-01）。切り替え前に出した応答は世代 devGen で捨てる（applyDeviceGuard が進める） */
+  if(getDeviceRole()==='field') return;
   if(mealLoading||mealSaving) return;
   if(mealRows&&!force) return;
   if(!CFG.url){ mealRows=null; mealSetMsg_('同期設定のURLが未設定です'); paintMealBar(); renderRoster(); return }
   var seq=++mealSeq;
+  var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は捨てる（mealSeq は保存の確認と共用なので進めない）（2026-10-01）
   mealLoading=true; mealSetMsg_('取得中…'); paintMealBar(); renderRoster();
   apiGetRetry({action:'getMealList'},30000).then(function(d){
-    if(seq!==mealSeq) return;                       // 追い越された応答は捨てる
+    if(seq!==mealSeq||dg!==devGen) return;          // 追い越された応答・切り替え後に届いた応答は捨てる
     var rows=(d&&d.rows)||[];
     if(!Array.isArray(rows)) throw new Error('応答が不正です');
     /* ★職員マーカー行（居室 STAFF）は配膳表に載せない（他の一覧と同じ扱い） */
@@ -5354,7 +5367,7 @@ function mealLoad(force){
        画面はそのあと読める大きさへ戻す（紙に合わせるのは印刷の直前）。 */
     try{ fitMealSheet(); mealScreenReset_(); }catch(e2){}
   }).catch(function(e){
-    if(seq!==mealSeq) return;
+    if(seq!==mealSeq||dg!==devGen) return;
     mealLoading=false;
     /* ★未保存の変更がある時は表を消さない（消すと直した内容の行き先が無くなる・原則4） */
     if(!mealDirtyCells()) mealRows=null;
@@ -5809,11 +5822,16 @@ function openResident(id){
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
+  /* ★現場端末では取りに行かない（保険・2026-10-01）。ブロック表示の下で取りに行かない。この画面は現場端末では使えない */
+  if(getDeviceRole()==='field') return;
   /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
      ★先に呼ぶ＝本人の描画時点で「読み込み中」と分かる。届いたら mdPatchView_ が薬剤情報の欄だけ差し替える。
      ★現場端末では取らない（薬剤情報は現場に出さない。そもそもこの画面は現場端末では開けない） */
   if(getDeviceRole()!=='field') mdEnsure(false);
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、記録を入れない・画面を描かない・失敗表示もしない（2026-10-01） */
+  var dg=devGen;
   apiGetRetry({action:'getResident',id:id}).then(function(d){
+    if(dg!==devGen) return;
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
     curResident=rec; setViewActions(true); renderView(rec);
@@ -5825,6 +5843,7 @@ function openResident(id){
       a4EnsureDayMap().then(function(){ patchDayUse(rec); }).catch(function(){});
     }catch(e2){}
   }).catch(function(e){
+    if(dg!==devGen) return;   // 同上（切り替え後の失敗は画面に出さない）
     /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
        忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
     if(e&&e.gone)saveOpenId(null);
@@ -8703,12 +8722,16 @@ function saveResident(){
      解釈できない値は送らない＝GAS側も従来動作。 */
   var body={action:'saveResident',record:rec};
   if(isFinite(Date.parse(editBaseUpdatedAt))) body.baseUpdatedAt=editBaseUpdatedAt;
+  var dg=devGen;   // 出した時の世代（後処理 afterSaveOk_ が、切り替え後に届いた応答か見分ける）（2026-10-01）
+  var ed=editing;  // 保存を出した時の編集対象（切り替え後に届いた時、この編集画面だけを閉じる）（2026-10-01）
   $('saveBtn').disabled=true;setSync('保存中…');
   apiPost(body).then(function(d){
     var saved=(d&&d.record)||d;
     setSync('保存OK','ok');toast('✅ 保存しました');
-    editBaseUpdatedAt=String((saved&&saved.updatedAt)||rec.updatedAt||'');
-    afterSaveOk_(rec,saved);
+    /* ★切り替えをはさんで届いた応答が、その後に開いた別の方の編集画面の照合用の時刻を書き換えないように。
+       事務所PCのままなら常に dg===devGen なので従来どおり（2026-10-01） */
+    if(dg===devGen||editing===ed) editBaseUpdatedAt=String((saved&&saved.updatedAt)||rec.updatedAt||'');
+    afterSaveOk_(rec,saved,dg,ed);
   }).catch(function(e){
     /* ★楽観ロックの競合（GAS §14）。サーバーは1文字も書いていないと確定しているので、
        §13の「実は書けているかも」の取り直し確認はしない（取り直すと他端末の版で
@@ -8742,8 +8765,8 @@ function saveResident(){
       if(got&&saveStampSame_(got.updatedAt,rec.updatedAt)){
         setSync('保存OK','ok');
         toast('✅ 保存しました（通信の応答は届きませんでしたが、保存されていることを確認しました）');
-        editBaseUpdatedAt=String(got.updatedAt||'');
-        afterSaveOk_(rec,got);
+        if(dg===devGen||editing===ed) editBaseUpdatedAt=String(got.updatedAt||'');   // 同上（別の方の編集画面へ書き込まない）
+        afterSaveOk_(rec,got,dg,ed);
         return;
       }
       setSync('保存失敗','err');
@@ -8813,7 +8836,26 @@ function verifyAppliedRows_(changes,rows){
      GAS が返す record は「保全キーを引き継いだ後の確定値」＝取り直したものと同じなので、
      それで画面を組み立てる。
    ★ただし応答に record が無い／id が取れない時は、従来どおり取り直す（安全側）。 */
-function afterSaveOk_(rec,saved){
+function afterSaveOk_(rec,saved,dg,ed){
+  /* dg を渡さない呼び出し・dg が今の devGen と同じ時は従来どおり */
+  if(dg!==undefined&&dg!==devGen){
+    /* ★保存の応答を待つ間に端末が現場用へ切り替わった（2026-10-01）。保存そのものは済んでいて知らせ（トースト）も出ている。
+       名簿の書き換えと詳細画面への切り替え（開いていた方の記録を入れ直して描く）はしない。名簿は次の取り直しで最新になる。
+       ★ただし編集画面は閉じる。開いたままだと、事務所PCへ戻した後にもう一度保存でき、新規登録は別の番号で二重に登録される。
+         閉じるのは「この保存を出した編集画面がまだ開いている時」だけ（その後に開いた別の方の編集画面は閉じない） */
+    bkMarkStale_();   /* 帳票の控えが古くなった印は立てる（事務所PCへ戻した後、認定期限が保存前のまま「最新」に見えないように） */
+    /* ★閉じる時に「戻る」（history.back）を出さない。出すと、管理者がブロック画面から開いた同期設定を popstate が勝手に閉じ、
+       直後の読み込み直しとも競り合う（saveSyncCfg が closeSync を通さないのと同じ理由）。
+       積んだままの履歴の段は、popstate と起動時の処理が消費する */
+    if(ed&&editing===ed&&$('sc-edit')&&$('sc-edit').classList.contains('on')){
+      _navInPop=true;
+      try{ showScreen('list'); }finally{ _navInPop=false; }
+    }
+    /* ブロックだけにしていた理由（未保存）がもう無ければ、読み込み直して起動時のガードに任せる。
+       ★管理者が同期設定を開いている最中は読み込み直さない（事務所PCへ戻す操作の途中で画面を失わせない） */
+    if(getDeviceRole()==='field'&&devBlocked_&&!devDirty_().length&&!($('mSync')&&$('mSync').classList.contains('on'))) devReload_();
+    return;
+  }
   var full=(saved&&saved.id!=null&&saved.name!=null)?saved:null;
   var row=normRosterRow(full||rec);
   var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
@@ -9066,6 +9108,8 @@ function a4EnsureDayMap(){
   /* 直近に失敗したばかりなら押すたびに25秒待たせない（現場を止めない）。覚えるのは30秒だけ＝
      統合GASが復旧すれば自動的に取りに行く */
   if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、届いた応答は控えにも失敗の印にも入れない（2026-10-01） */
+  var dg=devGen;
   var t=a4SyncTarget();
   if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
   /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
@@ -9079,6 +9123,7 @@ function a4EnsureDayMap(){
         .then(function(r){ return r.text(); });
     })
     .then(function(txt){
+      if(dg!==devGen) return '';   // 切り替え後に届いた応答（a4DayMap に入れない）
       var j=JSON.parse(txt);
       /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる
          （名簿取得の emptyGuarded と同じ作法・multi-device-sync 原則4） */
@@ -9087,8 +9132,9 @@ function a4EnsureDayMap(){
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
       return '';
     })
-    .catch(function(){ return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
-    .then(function(msg){ a4DayPromise=null; return msg; });
+    .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    /* ★切り替え後に始まった新しい取得の印（a4DayPromise）を、古い応答が消さないように世代を見る */
+    .then(function(msg){ if(dg===devGen) a4DayPromise=null; return msg; });
   return a4DayPromise;
 }
 function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; }
@@ -9714,6 +9760,12 @@ function applyDeviceGuard(){
     /* 捨てていなかった控えも捨てる: 入居日・食形態一覧（アレルギーを含む）・開いていた方の記録（病名・処方を含む）。
        ★未保存の入力（mealDirty）は捨てない（原則4）。開いていた方を捨てたら、編集・印刷も押せない状態へ戻す */
     admMap=null; mealRows=null;
+    /* 取得中の印も下ろす。応答側は世代（devGen）で捨てるので、ここで下ろさないと
+       事務所PCへ戻した時に「取得中」のまま二度と取りに行かない（fullLoading と同じ）（2026-10-01）。
+       ★mealSeq は進めない。食形態一覧の保存の確認（取り直しで突き合わせる所）が mealSeq を見ているので、
+         進めると確認が捨てられ、保存できた方も未保存の色のまま残る */
+    bkLoading=false; bkErr=''; admLoading=false; admErr='';
+    mealLoading=false; mealMsg='';
     curResident=null; setViewActions(false); paintHospBtn(null);
     if($('viewBox')) $('viewBox').textContent='';
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
@@ -9995,7 +10047,21 @@ function openBulk(){
   bulkLoading=true;
   $('bulkScroll').innerHTML='<div class="loading">読み込み中…</div>';
   /* 138名×40項目を1往復で取る。1人ずつ取ると2分以上かかるため専用アクションを使う */
+  var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は、表に入れず描かない（2026-10-01）
+  /* 切り替えをはさんで届いた応答の後始末（成功側・失敗側で共通）。true＝古い世代の応答なので以降は何もしない */
+  var staleGen=function(){
+    if(dg===devGen) return false;
+    bulkLoading=false;
+    /* 一括編集を開いたまま切り替えをはさんだ時: 事務所PCへ戻っていれば取り直す。現場用のままなら中断を知らせる
+      （「読み込み中…」のまま無言で止めない） */
+    if(!bulkRows&&$('mBulk')&&$('mBulk').classList.contains('on')){
+      if(getDeviceRole()!=='field') openBulk();
+      else $('bulkScroll').textContent='読み込みを中断しました。閉じて開き直してください';
+    }
+    return true;
+  };
   apiGet({action:'getBulk'},30000).then(function(d){
+    if(staleGen()) return;
     bulkLoading=false;
     var rows=(d&&d.rows)||[];
     if(!rows.length){ $('bulkScroll').innerHTML='<div class="empty">対象の方がいません</div>'; return; }
@@ -10007,6 +10073,7 @@ function openBulk(){
     });
     bulkRows=rows; renderBulk();
   }).catch(function(e){
+    if(staleGen()) return;   // 同上（切り替え後の失敗は画面に出さない）
     bulkLoading=false;
     $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
   });
