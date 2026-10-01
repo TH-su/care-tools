@@ -667,6 +667,13 @@ function setSync(txt,cls){var e=$('syncStatus');e.textContent=txt;e.className='s
 function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
 function setDeviceRole(v){try{localStorage.setItem(DEVICE_KEY,v)}catch(e){}}
 function isField(){return getDeviceRole()==='field'}
+/* いまの画面が「どちらの用途として描かれているか」。applyRoleBadge が毎回書く（起動前は null）。
+   事務所PCとして描いた画面のまま用途が現場用に変わった時（同じタブの設定保存・別のタブ・「戻る」での復元）に、
+   ページごと読み込み直すための印（2026-10-01 本人決定・入居者マスタ resident-master.html と同じ直し方）。
+   読み込み直すと、開いていた方の全項目の画面・メモリの記録・進行中の通信がまとめて消え、
+   現場端末としての起動（安全情報だけ）からやり直せる。 */
+var fsRoleApplied_=null;
+function fsReload_(){ try{ location.reload(); }catch(e){} }
 function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
 /* 和暦（2026-08-12 追加・入居者マスタと同じ定義）。生年月日を西暦と並べて出すために使う。
@@ -3108,6 +3115,7 @@ function showScreen(name){
   paintMealBar();
 }
 function applyRoleBadge(){
+  var wasOffice=(fsRoleApplied_==='office');
   var f=isField();var e=$('roleBadge');e.textContent=f?'現場':'事務所';e.className='role'+(f?' field':'');
   /* ★誕生日ビューは現場端末では使えない（生年月日が端末に届かないので空の帳票になる）。
      タブごと隠し、既に選ばれていたら標準へ戻す（「壊れている」と誤解されないように） */
@@ -3130,6 +3138,16 @@ function applyRoleBadge(){
   if(f){ fsMdMap=null; fsMdErr=''; fsMdLoading=false; fsMdGen++; fsMdPromise=null; fsMdPromiseRetry=false; }
   /* 食形態一覧の控え（全入居者の氏名・食事・アレルギーを含む）も同じ理由で捨てる */
   if(f){ mealRows=null; mealVia=''; mealSeq++; mealLoading=false; mealMsg=''; }
+  /* ★事務所PCとして描いた画面のまま現場用へ変わった時は、開いていた方の記録と画面も捨てて一覧へ戻す
+     （病名・処方・家族連絡先を含む全項目の画面が、現場用の表示のまま残らないように）。
+     この後ページを読み込み直すが、読み込み直しが効かなかった時の保険として先に消す。
+     ★現場端末として起動した後（安全情報の画面を開いている時）には触らない */
+  if(f&&wasOffice){
+    curRec=null; openSeq++;
+    $('vName').textContent=''; $('hlBand').textContent=''; $('ftabs').textContent=''; $('viewBox').textContent='';
+    showScreen('list');
+  }
+  fsRoleApplied_=f?'field':'office';
 }
 /* 「🖨️ 全体を印刷」＝全体タブ1枚だけを刷る（2026-08-15 指示）。
    ★押した時だけ body へ印を付け、印刷が終わったら必ず外す。付けっぱなしにすると
@@ -3162,6 +3180,8 @@ function closeSync(){$('mSync').classList.remove('on')}
    進めるカウンタで判定する（care-schedule csPreGen_ と同型）。 */
 var cfgTestGen_=0;
 function saveSync(){
+  /* ★判定は端末に保存された用途ではなく、この画面が事務所PCとして描かれているか（fsRoleApplied_）で見る。別のタブで用途が変わっていて、保存値と画面がずれている時にも正しく倒すため */
+  var toField=($('cfgDeviceRole').value==='field'&&fsRoleApplied_==='office');
   cfgTestGen_++;   /* 飛行中のテストの巻き戻しを無効化する（保存値が正） */
   CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
   /* ★このキーは入居者マスタと共用。丸ごと書き換えると、マスタ側が入れた項目
@@ -3184,6 +3204,14 @@ function saveSync(){
     saved=(String(_b.url==null?'':_b.url)===CFG.url && String(_b.token==null?'':_b.token)===CFG.token);
   }catch(e){saved=false}
   setDeviceRole($('cfgDeviceRole').value==='field'?'field':'office');
+  /* ★現場用へ切り替えた時は、起動し直さずにページごと読み込み直す（2026-10-01）。
+     用途を書けなかった時（プライベートモード等）は isField() が偽のままなので、従来どおり下へ進み失敗を知らせる */
+  if(toField&&isField()){
+    applyRoleBadge(); closeSync();
+    /* ★接続先を書けなかった時は、読み込み直すとトーストが消えるので先に知らせる（文言は下のトーストと同じ） */
+    if(!saved) alert('⚠️ 保存できませんでした（プライベートモード等）');
+    fsReload_(); return;
+  }
   applyRoleBadge();closeSync();boot();
   toast(saved?'✅ 保存しました':'⚠️ 保存できませんでした（プライベートモード等）');
 }
@@ -3287,6 +3315,20 @@ window.addEventListener('storage',function(e){
   loadCommonRoster();
   if(!isField()&&CFG.url) refreshRosterFromGas(); else renderRoster();
 });
+/* 開いたまま別のタブ（入居者マスタ等）で端末の用途が現場用に変わった時も、すぐ従う（2026-10-01 本人決定）。
+   storage イベントは別のタブの書き込みでだけ届く。key が null は別のタブでの localStorage.clear()。
+   ★事務所PCへ戻された時は何もしない（表示は現場用のまま＝安全側。再読み込みで事務所表示になる）
+   ★現場用として描き済みの画面（fsRoleApplied_==='field'）では何もしない＝読み込み直しを繰り返さない */
+function onDeviceRoleChange_(e){
+  if(!e||(e.key!==DEVICE_KEY&&e.key!==null))return;
+  if(!isField()||fsRoleApplied_!=='office')return;
+  applyRoleBadge();
+  fsReload_();
+}
+window.addEventListener('storage',function(e){ try{ onDeviceRoleChange_(e); }catch(err){} });
+/* 同じタブで別のアプリへ移り、そこで用途が変わってから「戻る」で戻ると、ページがそのまま復元されて
+   storage イベントは届かない。復元された時にも同じ判定を通す */
+window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleChange_({key:DEVICE_KEY}); }catch(err){} });
 document.addEventListener('DOMContentLoaded',function(){
   $('q').addEventListener('input',renderRoster);
   /* ビュー切替。矢印キーでも移動できるようにする（role="tab" の期待に合わせる） */
