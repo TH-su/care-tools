@@ -7854,6 +7854,17 @@ function mpkLineCheck(line, slots){
   var want=MED_SLOT_KEYS.filter(function(k){ return (Array.isArray(slots)?slots:[]).some(function(x){ return map[x]===k; }); });
   return r[0].slots.join(',')===want.join(',')?'ok':'mismatch';
 }
+/* 手書きの用法（free）を使う時の確認（2026-10-01 再点検 medium）。'ok'|'mismatch'。
+   名前＋free が 'ok' で読めるのに、名前を無害な X に替えた「X＋free」と読み方が違う（'ok' でない・時間帯が違う）時は、
+   名前の中の語（「：朝」「 朝」など）が用法として読まれている＝ 'mismatch'。それ以外は 'ok'（止めない） */
+function mpkFreeCheck(name, free){
+  var n=mpkOneLine_(name), f=mpkOneLine_(free);
+  var a=medSlotRows_(n+' '+f);
+  if(a.length!==1||a[0].status!=='ok') return 'ok';
+  var b=medSlotRows_('X '+f);
+  if(b.length!==1||b[0].status!=='ok'||b[0].slots.join(',')!==a[0].slots.join(',')) return 'mismatch';
+  return 'ok';
+}
 /* 「直す」で薬剤名欄に入れる名前。施設の候補と同じ切り出し（「メーカー」を残す）で、安全な名前だけ。
    取り出せない行（用法と分けられない・空白やコロンが残る等）は ''＝組み立てに入らず欄で直接直してもらう */
 function mpkEditName(line){ return mpkUsedName_(line); }
@@ -7990,9 +8001,10 @@ function mpkPanelHtml_(){
       '<div class="mpk-pvnote" id="mpkPvNote" aria-live="polite"></div>'+
     '</div>'+
     '<div class="mpk-row">'+
-      '<button type="button" class="btn btn-pri" id="mpkAdd">この行を追加</button>'+
+      '<button type="button" class="btn btn-pri" id="mpkAdd" aria-describedby="mpkErrAdd">この行を追加</button>'+
       '<button type="button" class="btn btn-gray" id="mpkCancel" hidden>やめる</button>'+
     '</div>'+
+    '<div class="mpk-err" id="mpkErrAdd" role="alert"></div>'+
     '<div class="mpk-st"><span class="mpk-msg" id="mpkMsg" role="status" aria-live="polite"></span>'+
       '<button type="button" class="btn btn-sec" id="mpkUndo" hidden>元に戻す</button></div>'+
     '<h4 class="mpk-h" style="margin-top:14px">いまの定期薬</h4>'+
@@ -8023,6 +8035,13 @@ function mpkCheck_(line, slots){
   if(!mpkFxOk_()) return 'nofx';
   try{ return mpkLineCheck(line, slots); }catch(e){ return 'nofx'; }
 }
+/* mpkFreeCheck を例外で止めない形で呼ぶ。部品が読めていない時は 'nofx' */
+function mpkFreeCk_(name, free){
+  if(!mpkFxOk_()) return 'nofx';
+  try{ return mpkFreeCheck(name, free); }catch(e){ return 'nofx'; }
+}
+/* 薬剤名＋「メーカー」（mpkLine が行の先頭に置く形） */
+function mpkHead_(c){ return c.name+(c.maker?'「'+c.maker+'」':''); }
 function mpkUsedList_(){
   if(typeof fullMap==='undefined'||!fullMap||getDeviceRole()==='field'||!mpkFxOk_()) return [];
   try{
@@ -8143,17 +8162,19 @@ function mpkPaint_(){
     pv.textContent=line||'（薬剤名・1回量・いつ飲むか を選ぶと、ここに1行ができます）';
     pv.classList.toggle('none',!line);
     /* 手書きの用法が空の時だけ、読み取りで要確認になる行を先に知らせる（'mismatch' は追加の時に止める） */
+    /* 追加の時と同じ判定で先に知らせる（mismatch は追加の時に止める・部品が無い時は追加できない） */
     var note='';
-    if(line&&!c.free){
-      var ck=mpkCheck_(line, c.slots);
-      if(ck==='review') note='この行は、与薬チェックへ送る時に『要確認』になります';
-      else if(ck==='nofx') note='薬効辞書の部品を読み込めていないため、この行の時間帯を確かめられません（再読み込みすると確かめられます）';
+    if(line){
+      var ck=c.free?mpkFreeCk_(mpkHead_(c), c.free):mpkCheck_(line, c.slots);
+      if(ck==='nofx') note='部品を読み込めていないため、ここからは追加できません。画面を再読み込みするか、下の欄に直接書いてください';
+      else if(ck==='mismatch') note='薬剤名に『朝』『夕』などの言葉や『：』が入っているため、時間帯を正しく読み取れません。薬剤名を直してください';
+      else if(ck==='review') note='この行は、与薬チェックへ送る時に『要確認』になります';
     }
     if(nt&&nt.textContent!==note) nt.textContent=note;
   }
 }
 function mpkErr_(id, text){ var e=$(id); if(e) e.textContent=text||''; }
-function mpkClearErr_(){ ['mpkErrName','mpkErrDose','mpkErrWhen'].forEach(function(id){ mpkErr_(id,''); }); }
+function mpkClearErr_(){ ['mpkErrName','mpkErrDose','mpkErrWhen','mpkErrAdd'].forEach(function(id){ mpkErr_(id,''); }); }
 function mpkMsg_(text, undo){
   var m=$('mpkMsg'), u=$('mpkUndo');
   if(m) m.textContent=text||'';
@@ -8217,7 +8238,8 @@ function mpkEditStart_(i){
   var nm='';
   if(mpkFxOk_()){ try{ nm=mpkEditName(ls[i]); }catch(e){ nm=''; } }
   if(!nm){
-    if(mpk.editIdx>=0) mpkEditEnd_();
+    /* 直し中の状態を終え、薬剤名・メーカーも空に戻す（前に直していた行の名前が残って二重に足されるのを防ぐ） */
+    mpkEditEnd_(); mpkResetName_();
     mpkMsg_('この行は書き方が特殊なため、下の欄で直接直してください');
     var rg=mpkLineRange(ta.value, i);
     try{ ta.focus(); if(rg) ta.setSelectionRange(rg[0], rg[1]); }catch(e){}
@@ -8238,6 +8260,13 @@ function mpkEditStart_(i){
 function mpkCommit_(){
   var ta=mpkTa_(); if(!ta) return;
   mpkClearErr_();
+  /* 薬効辞書の部品（MedsEffect）が読めていない時は、作った行の時間帯を確かめられないので追加・置き換えを止める
+     （2026-10-01 再点検で安全側へ変更。下の欄への手入力は従来どおりできる） */
+  if(!mpkFxOk_()){
+    mpkErr_('mpkErrAdd','部品を読み込めていないため、ここからは追加できません。画面を再読み込みするか、下の欄に直接書いてください');
+    try{ $('mpkAdd').focus(); }catch(e){}
+    return;
+  }
   var c=mpkCur_();
   if(c.name.length<2){ mpkErr_('mpkErrName','薬剤名を2文字以上入れてください（候補に無い薬もそのまま使えます）。'); try{ $('mpkName').focus(); }catch(e){} return; }
   /* 「用法を手で書く」を使う時は1回量を必須にしない（行には手書きの用法だけが入る＝mpkLine のとおり） */
@@ -8259,7 +8288,8 @@ function mpkCommit_(){
   }
   /* ★最終ゲート（2026-10-01 反証レビュー high）: 時間帯をボタンで選んだ行は、既存の読み取りで確かめる。
      'ok' なのに選んだ時間帯と違う＝薬剤名の中の語が用法として読まれている。誤った時間帯のまま保存させない */
-  if(!c.free&&mpkCheck_(line, c.slots)==='mismatch'){
+  /* 手書きの用法の時も、名前の中の語が用法として読まれていないかを確かめる（2026-10-01 再点検 medium） */
+  if(c.free?(mpkFreeCk_(mpkHead_(c), c.free)==='mismatch'):(mpkCheck_(line, c.slots)==='mismatch')){
     mpkErr_('mpkErrName','薬剤名に『朝』『夕』などの言葉や『：』が入っているため、時間帯を正しく読み取れません。薬剤名を直してください');
     try{ $('mpkName').focus(); }catch(e){}
     return;
@@ -8331,13 +8361,14 @@ function mpkInit_(){
     if(mpk.ld!=='ok') mpkLoad_();
     if(mpk.fl===''||mpk.fl==='ng') mpkFullLoad_();
   });
-  /* 変換中（isComposing）の input では描き直さず、確定（compositionend）で描く（2026-10-01 反証レビュー low） */
+  /* 変換中（isComposing）も描く（ひらがな→カタカナの正規化で変換中から候補を出す元の設計）。押しかけたボタンが
+     消えないよう、候補が前回と同じなら mpkRenderCand_ が DOM を作り直さない。確定（compositionend）でも描く */
   var onName=function(){
     if(mpk.pick&&inp.value!==mpk.pick.name){ mpk.pick=null; mpkRenderMaker_(); }
     mpkErr_('mpkErrName','');
     mpkRenderCand_(); mpkPaint_();
   };
-  inp.addEventListener('input',function(e){ if(e&&e.isComposing) return; onName(); });
+  inp.addEventListener('input',onName);
   inp.addEventListener('compositionend',onName);
   $('mpkMaker').addEventListener('change',mpkPaint_);
   $('mpkFree').addEventListener('input',function(){ mpkErr_('mpkErrWhen',''); mpkPaint_(); });
