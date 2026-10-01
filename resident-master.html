@@ -1563,6 +1563,14 @@ function setDeviceRole(v){
     if(v==='field'){ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); roster=[]; }
   }catch(e){}
 }
+/* devGen は「現場用へ切り替わった回数」。applyDeviceGuard がブロックした時にだけ進む
+   （事務所PCのままなら進まない＝これを見る判定は全部いままでどおりに倒れる）。
+   通信を出した時の値を控え、応答が届いた時に違っていたら「切り替えより前に出した通信」として捨てる。
+   devBlocked_ は、いまブロック中か（別タブ経由の切り替えを二重に処理しないため）。
+   rosterPurged_ は、ブロックで名簿（roster）を空にした後、まだサーバーから取り直していない印。
+   立っている間は、空・欠けた名簿から一覧キャッシュと共有名簿を書かない（事務所PCへ戻した直後に、
+   切り替え前の応答が届いて共有名簿が0名・1名に縮むのを止める）。事務所PCのまま使っている間は立たない。 */
+var devGen=0, devBlocked_=false, rosterPurged_=false;
 
 /* ── 家族構成図（ジェノグラム）連携 ──
    ジェノグラムアプリが保存したサムネイルを、同一オリジンの共有キー su_genograms から読んで
@@ -1825,11 +1833,19 @@ function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)
 /* ═══════════ roster（軽量一覧） ═══════════ */
 var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height,hospitalized,dischargeDate}]（後4つは normRosterRow 参照）
 function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roster=JSON.parse(s)||[]}catch(e){roster=[]}}
-function saveRosterCache(){try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
+/* ★現場端末には氏名・生年月日入りの一覧を書かない（2026-10-01）。切り替えた後に遅れて届いた応答
+   （入院トグル・保存の後処理など）からの書き戻しを、呼び出し元ごとではなく出口で止める。
+   ★名簿を捨てた後、取り直すまで（rosterPurged_）も書かない（欠けた名簿でキャッシュを縮めない） */
+function saveRosterCache(){if(getDeviceRole()==='field'||rosterPurged_)return;try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
 function refreshRoster(){
+  /* ★現場端末では取りに行かない（追い読み srevTick や一括保存の後始末から呼ばれうる）（2026-10-01） */
+  if(getDeviceRole()==='field')return Promise.resolve(false);
   if(!CFG.url){setSync('未接続');renderRoster();return Promise.resolve(false)}
   setSync('同期中…');
+  var dg=devGen;   // 出した時の世代。現場へ切り替わると applyDeviceGuard が進める
   return apiGet({action:'getRoster'}).then(function(d){
+    /* ★出した後に現場へ切り替わった応答は、版数の更新も含めて何もしない（一覧キャッシュ・共有名簿を書き戻さない） */
+    if(dg!==devGen||getDeviceRole()==='field')return false;
     if(d)srevSeen(d.stateRev,srevPickMeta(d));               // 同梱の版数2つで追い読みの基準を更新（1往復で最新化）
     var list=(d&&d.roster)||d||[];
     var emptyGuarded=false;
@@ -1840,7 +1856,7 @@ function refreshRoster(){
         emptyGuarded=true;
         toast('⚠️ サーバーから空の一覧が返されたため、ローカルの一覧を保持しました');
       }else{
-        roster=list.map(normRosterRow);saveRosterCache();writeCommonRoster();
+        roster=list.map(normRosterRow);rosterPurged_=false;saveRosterCache();writeCommonRoster();   // サーバーから取り直せたので「名簿を捨てた印」を下ろす（emptyGuarded 側では下ろさない）
         /* 統合 0004（2026-09-26・段階移行の①）: 基本項目の写しを Supabase へ。事務所・管理者として Google で
            ログインしている時だけ書く（それ以外・現場端末では何もしない）。失敗しても一覧の動きは変えない */
         if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster);
@@ -1849,6 +1865,7 @@ function refreshRoster(){
     if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}
     renderRoster();return true;
   }).catch(function(e){
+    if(dg!==devGen||getDeviceRole()==='field')return false;   // 同上（切り替え後の失敗は知らせない）
     setSync('オフライン','err');renderRoster();
     if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗: '+e.message);
     return false;
@@ -2184,6 +2201,11 @@ var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで�
 var COMMON_KEY='su_residents_common';
 var COMMON_FIELDS=['name','kana','room','gender','careLevel','height','hospitalized'];
 function writeCommonRoster(){
+  /* ★現場端末では書かない（2026-10-01）。切り替えで roster を空にした後に届いた応答（入院トグル・保存の後処理）が、
+     共有名簿を0名・1名で上書きするのを止める。ここは共有名簿の唯一の書き手なので、
+     空配信・縮小配信は全消費アプリの名簿を壊す。
+     ★名簿を捨てた後、取り直すまで（rosterPurged_）も書かない（事務所PCへ戻した直後に届いた古い応答で縮めない） */
+  if(getDeviceRole()==='field'||rosterPurged_)return;
   try{
     var residents=roster.map(function(r){
       var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,
@@ -6995,10 +7017,16 @@ function toggleHosp(){
   /* ★取り直しで照合する時のために「誰の・どちらへの変更か」を控える。
      応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
   var sid=curResident.id, want=next;
+  var dg=devGen;   // 出した時の世代（現場用へ切り替わると applyDeviceGuard が進める）（2026-10-01）
   if(b)b.disabled=true;
   setSync('保存中…');
   apiPost({action:'setState',id:curResident.id,hospitalized:next,src:'master'}).then(function(d){
     if(!d||d.ok!==true)throw new Error('更新できませんでした');
+    /* ★応答を待つ間に端末が現場用へ切り替わった。開いていた方の記録は捨ててある（applyDeviceGuard）ので、
+       画面・名簿には触れずに終える（サーバーへの保存は済んでいる。名簿は次の取り直しで最新になる）。
+       これが無いと curResident が null で例外になり、現場端末から取り直しの通信が出て
+       「反映を確認しました」と案内してしまう */
+    if(dg!==devGen){ if(b)b.disabled=false; return; }
     curResident.hospitalized=!!d.hospitalized;
     curResident.hospitalizedAt=d.hospitalizedAt||'';
     // 一覧キャッシュと共有名簿へも即反映（他アプリはネット無しでも共有名簿を読む）
@@ -7010,6 +7038,7 @@ function toggleHosp(){
     toast(curResident.hospitalized?'🏥 入院中にしました':'🏠 入院を解除しました');
     renderView(curResident);renderRoster();
   }).catch(function(e){
+    if(dg!==devGen){ if(b)b.disabled=false; return; }   // 同上（切り替え後は取り直しの確認をしない）
     /* ★§13: 失敗表示でも書けていることがある。値の上書きなので取り直して現物で判定する */
     setSync('確認中…');
     apiGet({action:'getResident',id:sid},25000).then(function(d){
@@ -9667,7 +9696,7 @@ function applyDeviceGuard(){
      次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
   /* 現場端末と判った時点で「開いていた方」の番号も消す（他アプリの設定画面から
      'field' へ切り替えられた端末は setDeviceRole を通らないので、ここでも保険をかける） */
-  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[];
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[]; rosterPurged_=true;
     /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
        元から書いていないが、メモリ上の控えもここで捨てる */
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
@@ -9677,6 +9706,13 @@ function applyDeviceGuard(){
        メモリに戻る。取得中の印も下ろす（下ろさないと、事務所PCへ戻した時に「取得中」のまま
        二度と取りに行かない）（2026-10-01） */
     fullGen++; fullLoading=false; fullErr=''; fullDone=0; fullTotal=0;
+    /* 世代を進める。切り替えより前に出した名簿の取得（refreshRoster）は、応答が届いても捨てる（2026-10-01） */
+    devGen++;
+    /* 捨てていなかった控えも捨てる: 入居日・食形態一覧（アレルギーを含む）・開いていた方の記録（病名・処方を含む）。
+       ★未保存の入力（mealDirty）は捨てない（原則4）。開いていた方を捨てたら、編集・印刷も押せない状態へ戻す */
+    admMap=null; mealRows=null;
+    curResident=null; setViewActions(false); paintHospBtn(null);
+    if($('viewBox')) $('viewBox').textContent='';
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
     mdClearPending_(); mdShowHidden=false;
@@ -9684,8 +9720,25 @@ function applyDeviceGuard(){
     msGen++; msRows=null; msRemote=null; msAuthSt=null; msBusy=false;
     if($('mMedSlots')) $('mMedSlots').classList.remove('on'); }
   $('deviceBlock').classList.toggle('on',blocked);
+  devBlocked_=blocked;
   return blocked;
 }
+/* 開いたまま別のタブ（フェイスシート等）で端末の用途が現場用に変わった時も、すぐ従う
+   （体重管理 weight-record.html と同じ作法・2026-10-01 本人決定）。storage イベントは別タブの書き込みでだけ届く
+   （このタブの saveSyncCfg は自分で読み込み直す）。key が null は別タブでの localStorage.clear()。
+   ★未保存の入力がある時は読み込み直さない（入力を捨てない）。ブロック表示だけにする。
+   ★事務所PCへ戻された時は何もしない（ブロック画面の「管理者の方」から戻す従来の手順のまま） */
+function onDeviceRoleStorage_(e){
+  if(!e||(e.key!==DEVICE_KEY&&e.key!==null))return;
+  if(getDeviceRole()!=='field'||devBlocked_)return;
+  var dirty=devDirty_();
+  applyDeviceGuard();
+  if(!dirty.length)devReload_();
+}
+window.addEventListener('storage',function(e){ try{ onDeviceRoleStorage_(e); }catch(err){} });
+/* 同じタブで別のアプリへ移り、そこで用途が現場用に変わってから「戻る」で戻ると、ページがそのまま復元されて
+   storage イベントは届かない。復元された時にも同じ判定を通す（2026-10-01） */
+window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleStorage_({key:DEVICE_KEY}); }catch(err){} });
 /* キャッシュ即時表示＋（URLがあれば）ネット同期。init と端末解除後で共用 */
 function loadData(){
   paintAdmBar();loadRosterCache();renderRoster();
@@ -9706,7 +9759,31 @@ function loadData(){
 /* ═══════════ 同期設定 ═══════════ */
 function openSync(){$('cfgUrl').value=CFG.url;$('cfgToken').value=CFG.token;if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on');navEnter()}
 function closeSync(){$('mSync').classList.remove('on');if($('sc-list').classList.contains('on'))navLeave()}
+/* 現場用へ切り替えると消えてしまう「メモリにしか無い入力」が残っている場所の名前を返す（無ければ空配列） */
+function devDirty_(){
+  var a=[];
+  try{ if(mealDirtyCells()) a.push('食形態一覧'); }catch(e){}
+  try{ if(typeof mdDirty!=='undefined'&&mdDirty) a.push('薬効辞書'); }catch(e){}
+  try{ if(bulkCellCount()) a.push('一括編集'); }catch(e){}
+  try{ if($('sc-edit')&&$('sc-edit').classList.contains('on')) a.push('編集画面（開いたまま）'); }catch(e){}
+  return a;
+}
+/* 現場用へ切り替わった時はページごと読み込み直す（根治・2026-10-01 本人決定）。
+   進行中の通信・メモリの控え・ブロック表示の下に透けて残る画面を1つずつ捨てる代わりに、
+   毎回通っている「起動時のガード」に任せる。読み込みを足すたびに同じ穴が開いていた
+   （薬効辞書・与薬の小窓・全件データ・今回で4回目）。 */
+function devReload_(){ try{ location.reload(); }catch(e){} }
 function saveSyncCfg(){
+  /* ★現場用への切り替えは読み込み直すので、メモリにしか無い入力が消える。残っていたら止めて、
+     設定も保存しない（半端な状態を作らない） */
+  var _toField=!!($('cfgDeviceRole')&&$('cfgDeviceRole').value==='field'&&getDeviceRole()!=='field');
+  if(_toField){
+    var _dirty=devDirty_();
+    if(_dirty.length){
+      alert('保存していない変更があります（'+_dirty.join('・')+'）。\n先に保存するか取り消してから、現場用に切り替えてください。\n\n設定は保存していません。');
+      return;
+    }
+  }
   CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
   if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
   /* ★このキーはフェイスシートと共用。起動時に読んだ CFG をそのまま書くと、
@@ -9723,6 +9800,9 @@ function saveSyncCfg(){
     localStorage.setItem(CFG_KEY,JSON.stringify(_c));
   }catch(e){}
   if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
+  /* ★closeSync は通さない。一覧画面だと history.back() が走り、読み込み直しと競り合う。
+     残った履歴の段は、起動時の現場端末の処理（init）が消費する */
+  if(_toField){ applyDeviceGuard(); devReload_(); return; }
   closeSync();
   // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。
   if(applyDeviceGuard())return;
