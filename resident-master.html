@@ -9718,7 +9718,11 @@ function applyDeviceGuard(){
     if($('viewBox')) $('viewBox').textContent='';
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
-    mdClearPending_(); mdShowHidden=false;
+    /* ★薬効辞書に保存していない編集がある時は、その編集だけは捨てない（2026-10-01）。別のタブで現場用へ
+       変わった時は、未保存があると読み込み直さずブロックだけにする（onDeviceRoleStorage_）。ここで捨てると、
+       事務所PCへ戻しても編集が戻らない。同期設定からの切り替えは未保存があると先に止めるので、ここへは来ない */
+    if(!(typeof mdDirty!=='undefined'&&mdDirty)) mdClearPending_();
+    mdShowHidden=false;
     /* 与薬チェックへ送る小窓の控え（氏名・居室）も捨てる（2026-09-27） */
     msGen++; msRows=null; msRemote=null; msAuthSt=null; msBusy=false;
     if($('mMedSlots')) $('mMedSlots').classList.remove('on'); }
