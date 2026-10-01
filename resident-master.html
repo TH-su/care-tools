@@ -423,6 +423,51 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .fam-row{display:grid; grid-template-columns:1fr 1fr; gap:6px; border:1px solid var(--g2); border-radius:8px; padding:8px; margin-bottom:8px}
 .fam-row .full{grid-column:1/-1}
 .fam-del{justify-self:end; background:none; border:none; color:var(--ng); font-size: 0.8125rem}
+/* ── 定期薬の入力パネル（2026-10-01 代表承認）──
+   「薬剤情報（定期）」の欄の上に置く。候補とボタンで1行を組み立てて欄へ足すだけで、保存の形
+   （1行1剤の自由文）は変えない。★部品に data-k を付けない（collectForm が保存項目として拾う）。
+   ★選択中のチップは色だけにしない（✓＋太字＋aria-pressed）。タップ領域は44px以上・間隔8px。
+   ★入力欄は16px以上（iPhone で入力時に画面が勝手に拡大しないため）。紙には出さない。 */
+.mpk{border:1px solid var(--g3); border-radius:8px; padding:10px; margin:0 0 10px; background:var(--g0); min-width:0}
+.mpk-h{font-size:0.875rem; color:var(--pri-d); margin:0 0 8px; font-weight:700}
+.mpk-f{margin-bottom:10px; min-width:0}
+.mpk-lb{display:block; font-size:0.8125rem; color:var(--g7); margin-bottom:4px}
+.mpk-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.mpk input[type=text],.mpk input[type=number],.mpk select{font-size:1rem; min-height:44px; padding:9px 10px;
+  border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--g9); max-width:100%}
+.mpk input[type=text],.mpk select{width:100%}
+.mpk input[type=number]{width:7em}
+.mpk .chip{min-height:44px; min-width:44px; justify-content:center; font-size:0.9375rem; padding:6px 14px; border-radius:22px}
+.mpk .chip.on{font-weight:700}
+.mpk .chip.on::before{content:"✓"; margin-right:4px}
+.mpk .chip:focus-visible,.mpk-cand button:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.mpk-other{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%; font-size:0.875rem; color:var(--g7)}
+.mpk-sep{width:1px; align-self:stretch; background:var(--g3)}
+.mpk-cand{display:flex; flex-direction:column; gap:8px; margin-top:8px}
+.mpk-cand:empty{display:none}
+.mpk-cand button{min-height:44px; padding:8px 12px; border:1px solid var(--g3); border-radius:8px; background:#fff;
+  color:var(--g9); font-size:0.9375rem; text-align:left; display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px;
+  overflow-wrap:anywhere; word-break:break-word}
+.mpk-cand .mpk-used{font-size:0.75rem; font-weight:700; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:0 7px; white-space:nowrap}
+.mpk-msg{font-size:0.8125rem; color:var(--g7); margin-top:6px; overflow-wrap:anywhere}
+.mpk-msg:empty{display:none}
+.mpk-err{font-size:0.8125rem; color:var(--ng); font-weight:700; margin-top:6px; overflow-wrap:anywhere}
+.mpk-err:empty{display:none}
+.mpk-err::before{content:"⚠ "}
+.mpk-pv{border:1px dashed var(--g3); border-radius:8px; background:#fff; padding:8px 10px; min-height:44px;
+  font-size:0.9375rem; overflow-wrap:anywhere; word-break:break-word}
+.mpk-pv.none{color:var(--g7); font-size:0.8125rem}
+.mpk-editing{font-size:0.8125rem; color:var(--warn-tx); background:var(--warn-bg); border-radius:6px; padding:6px 8px; margin-bottom:8px; overflow-wrap:anywhere}
+.mpk-editing[hidden]{display:none}
+.mpk-st{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px}
+.mpk-ls{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.mpk-ls li{display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:#fff; border:1px solid var(--g2); border-radius:8px; padding:6px 8px}
+.mpk-ls li.on{border-color:var(--warn-tx)}
+.mpk-ls .tx{flex:1 1 12em; min-width:0; font-size:0.9375rem; overflow-wrap:anywhere; word-break:break-word}
+.mpk-ls .tag-ed{font-size:0.75rem; font-weight:700; color:var(--warn-tx); white-space:nowrap}
+.mpk-ls .bt{display:flex; gap:8px; margin-left:auto}
+.mpk-empty{font-size:0.8125rem; color:var(--g7); margin:0}
+@media print{.mpk{display:none !important}}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
@@ -7220,6 +7265,8 @@ function openEdit(rec){
     fld('medRefusal','服薬拒否',r.medRefusal,'select',['','なし','時々あり','あり'])+
   '</div>'+
     /* 医療情報から移設（2026-08-12 指示）。頓服・外用等のすぐ上に置く */
+    /* 定期薬の入力パネル（2026-10-01）。欄のすぐ上に置く。欄そのもの（ラベル・data-k・並び）は変えない */
+    mpkPanelHtml_()+
     fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
     fld('medsNotes','薬備考',r.medsNotes,'textarea')+
     fld('medsPrn','頓服・外用等（使用条件を含めて記入）',r.medsPrn,'textarea')+
@@ -7321,6 +7368,7 @@ function openEdit(rec){
   renderCareHistRows();
   renderMedLogRows();
   renderMedsPastRows();
+  mpkInit_();
   $('medsPastAdd').addEventListener('click',function(){collectMedsPast();editing.medsPastLog.unshift({date:todayISO(),text:''});renderMedsPastRows()});
   $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false,kp:false});collectFam();renderFamRows()});
   /* 上下2つの「＋ 経過を追加」は同じ動き。★足した行へ移動する＝上のボタンから押した時に
@@ -7656,6 +7704,455 @@ function collectMedsPast(){
       editing.medsPastLog[i][inp.getAttribute('data-pk')]=inp.value.trim?inp.value.trim():inp.value;
     });
   });
+}
+/* ══════════ 定期薬の入力パネル（2026-10-01 代表承認・凍結仕様）══════════
+   「薬剤情報（定期）」（medsRegular・1行1剤の自由文）を手打ちせず、候補とボタンで1行を組み立てて足す。
+   ★保存の形は変えない。パネルは textarea の値を書き換えて input イベントを出すだけで、保存は従来どおり
+     collectForm が textarea（data-k="medsRegular"）から拾う。パネルの部品には data-k を付けない。
+   ★用法の読み取り（medSlotRows_ / medSlotsFromText）は変えない。こちらが作る1行は、時間帯15通り×食後/食前の
+     全30通りで medSlotsFromText が 'ok' と読み、選んだ時間帯と一致する形にしてある（gas/tests/meds_picker_test.js）。
+   ★薬の候補（meds-yakka-naiyo.js・厚労省の薬価基準収載品目リストを加工）は薬剤名欄に初めて触れた時に読み込む。
+   ★薬のデータ・入力途中の値は localStorage に置かない・console に出さない。
+   純関数（mpkNorm〜mpkLines）は DOM に触れない（テストが下の印から印までを抜き出して確かめる）。 */
+/* ══ mpk-pure-begin ══ */
+/* 検索用の正規化: 全角英数→半角・半角カナ→全角カナ（NFKC）／ひらがな→カタカナ／英字は小文字／空白と中黒を除く */
+function mpkNorm(s){
+  var t=String(s==null?'':s);
+  try{ if(t.normalize) t=t.normalize('NFKC'); }catch(e){}
+  t=t.replace(/[ぁ-ゖ]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)+0x60); });
+  return t.toLowerCase().replace(/[\s　・･]/g,'');
+}
+/* 品目ごとの正規化済みの名前（同じ items の配列なら作り直さない） */
+var mpkNormMemo_={src:null, keys:null};
+/* q を正規化して2文字以上の時だけ探す。前方一致→部分一致の順、それぞれの中で isUsed(品名) が真のものが先。
+   items は [品名, 既定の単位, [メーカー…]] の配列。戻り値は items の要素そのもの（最大 limit 件・既定8） */
+function mpkSearch(q, items, isUsed, limit){
+  var n=mpkNorm(q), lim=(limit>0)?Math.floor(limit):8;
+  if(n.length<2||!Array.isArray(items)) return [];
+  if(mpkNormMemo_.src!==items){
+    mpkNormMemo_={src:items, keys:items.map(function(it){ return mpkNorm(it&&it[0]); })};
+  }
+  var keys=mpkNormMemo_.keys, b=[[],[],[],[]];
+  for(var i=0;i<items.length;i++){
+    var p=keys[i].indexOf(n);
+    if(p<0) continue;
+    var used=false;
+    if(typeof isUsed==='function'){ try{ used=!!isUsed(items[i][0]); }catch(e){ used=false; } }
+    b[(p===0?0:2)+(used?0:1)].push(items[i]);
+  }
+  return b[0].concat(b[1],b[2],b[3]).slice(0,lim);
+}
+/* 1行に改行を混ぜない（textarea の1行＝1剤の約束を壊さない） */
+function mpkOneLine_(s){ return String(s==null?'':s).replace(/[\r\n]+/g,' ').trim(); }
+/* 1行を作る。作れない時は ''。
+   free（手で書く用法）があれば「薬剤名「メーカー」 free」。無ければ時間帯が1つ以上要る:
+   「薬剤名 合計量単位分N いつ」（例 アムロジピンOD錠5mg 1錠分1 朝食後／酸化マグネシウム錠330mg 2錠分2 朝夕食後）。
+   合計量＝1回量×N（小数1桁に丸め・整数なら小数点なし）。N＝朝昼夕のうち選んだ数＋（眠前なら1）。
+   いつ＝朝昼夕が3つ→「毎食後」、1〜2つ→「朝夕食後」の形、眠前→「就寝前」。両方なら「・」でつなぐ。 */
+function mpkLine(o){
+  o=o||{};
+  var name=mpkOneLine_(o.name);
+  if(!name) return '';
+  var maker=mpkOneLine_(o.maker);
+  var head=name+(maker?'「'+maker+'」':'');
+  var free=mpkOneLine_(o.free);
+  if(free) return head+' '+free;
+  var sl=Array.isArray(o.slots)?o.slots:[];
+  var m=['朝','昼','夕'].filter(function(k){ return sl.indexOf(k)>=0; });
+  var bed=sl.indexOf('眠前')>=0;
+  var n=m.length+(bed?1:0);
+  if(!n) return '';
+  var dose=Number(o.dose);
+  if(!(isFinite(dose)&&dose>0)) return '';
+  var unit=mpkOneLine_(o.unit);
+  if(!unit) return '';
+  var meal=o.meal;
+  if(m.length&&meal!=='食後'&&meal!=='食前') return '';
+  var when=[];
+  if(m.length===3) when.push('毎'+meal);
+  else if(m.length) when.push(m.join('')+meal);
+  if(bed) when.push('就寝前');
+  var total=Math.round(dose*n*10)/10;
+  return head+' '+String(total)+unit+'分'+n+' '+when.join('・');
+}
+/* textarea の文字列を「行の中身＋行末の改行」の並びに分ける（改行の種類も含めて元へ戻せる形） */
+function mpkSeg_(text){
+  var s=String(text==null?'':text), out=[], re=/([^\r\n]*)(\r\n|\r|\n|$)/g, m;
+  while((m=re.exec(s))){ out.push({b:m[1], e:m[2]}); if(!m[2]) break; }
+  return out;
+}
+function mpkJoin_(segs){ return segs.map(function(x){ return x.b+x.e; }).join(''); }
+/* 空行を除いた idx 番目の行が mpkSeg_ の何番目か（無ければ -1） */
+function mpkPos_(segs, idx){
+  var k=-1;
+  for(var i=0;i<segs.length;i++){ if(segs[i].b.trim()){ k++; if(k===idx) return i; } }
+  return -1;
+}
+/* 空行を除いた行の配列（idx はこの配列の位置） */
+function mpkLines(text){
+  return mpkSeg_(text).filter(function(x){ return !!x.b.trim(); }).map(function(x){ return x.b; });
+}
+/* 末尾に1行足す。text が空、または「なし」等（MED_NONE_RE）だけの時は line で置き換える。他の行は1文字も変えない */
+function mpkAppend(text, line){
+  var s=String(text==null?'':text), l=mpkOneLine_(line);
+  if(!l) return s;
+  var t=s.trim();
+  if(!t||MED_NONE_RE.test(t)) return l;
+  return /(?:\r\n|\r|\n)$/.test(s)?(s+l):(s+'\n'+l);
+}
+/* idx 番目の行を消す（その行の改行ごと）。最後の行を消した時は、前の行の改行も外す（末尾に空行を残さない） */
+function mpkRemoveAt(text, idx){
+  var segs=mpkSeg_(text), k=mpkPos_(segs, idx);
+  if(k<0) return String(text==null?'':text);
+  var last=(segs[k].e==='');
+  segs.splice(k,1);
+  if(last&&k>0) segs[k-1].e='';
+  return mpkJoin_(segs);
+}
+/* idx 番目の行の中身だけを line に置き換える（改行はそのまま） */
+function mpkReplaceAt(text, idx, line){
+  var segs=mpkSeg_(text), k=mpkPos_(segs, idx), l=mpkOneLine_(line);
+  if(k<0||!l) return String(text==null?'':text);
+  segs[k].b=l;
+  return mpkJoin_(segs);
+}
+/* ══ mpk-pure-end ══ */
+
+/* 候補データの置き場所。?v= はデータの適用日（作り直したら一緒に上げる） */
+var MPK_YAKKA_SRC='meds-yakka-naiyo.js?v=2026-10-01';
+var MPK_DOSES=['0.5','1','2','3'], MPK_UNITS=['錠','包','カプセル','g','mL'], MPK_SLOTS=['朝','昼','夕','眠前'], MPK_MEALS=['食後','食前'];
+/* 画面の状態（メモリだけ。編集画面を開くたびに作り直す）
+   ld: 候補データ ''=未読込／'loading'／'ok'／'ng'（読み込めなかった・次に触れた時にもう一度） */
+var mpk={ld:'', pick:null, cands:[], dose:null, unit:'錠', slots:{}, meal:'食後', editIdx:-1, editOrig:'', undo:null};
+function mpkTa_(){ var b=$('editBox'); return b?b.querySelector('textarea[data-k="medsRegular"]'):null; }
+function mpkChips_(attr, vals, lbl){
+  return vals.map(function(v){
+    return '<button type="button" class="chip" '+attr+'="'+esc(v)+'" aria-pressed="false">'+esc(lbl?lbl(v):v)+'</button>';
+  }).join('');
+}
+/* 編集画面のパネル（openEdit が「薬剤情報（定期）」の欄のすぐ上に入れる）。中身は固定の文言だけ */
+function mpkPanelHtml_(){
+  return '<div class="mpk" id="mpkBox" role="group" aria-labelledby="mpkTitle">'+
+    '<h4 class="mpk-h" id="mpkTitle">候補から足す</h4>'+
+    '<div class="mpk-editing" id="mpkEditing" hidden></div>'+
+    '<div class="mpk-f">'+
+      '<label class="mpk-lb" for="mpkName">薬剤名（2文字以上で候補が出ます）</label>'+
+      '<input type="text" id="mpkName" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"'+
+        ' placeholder="例 アムロジピン" aria-describedby="mpkCandMsg mpkErrName">'+
+      '<div class="mpk-msg" id="mpkCandMsg" role="status" aria-live="polite"></div>'+
+      '<div class="mpk-cand" id="mpkCand" aria-label="薬剤名の候補"></div>'+
+      '<div class="mpk-err" id="mpkErrName"></div>'+
+    '</div>'+
+    '<div class="mpk-f" id="mpkMakerF" hidden>'+
+      '<label class="mpk-lb" for="mpkMaker">メーカー（任意）</label><select id="mpkMaker"></select>'+
+    '</div>'+
+    '<div class="mpk-f" role="group" aria-labelledby="mpkDoseLb">'+
+      '<span class="mpk-lb" id="mpkDoseLb">1回量</span>'+
+      '<div class="mpk-row">'+mpkChips_('data-mpk-dose',MPK_DOSES)+
+        '<label class="mpk-other">その他<input type="number" id="mpkDoseOther" min="0.5" step="0.5" inputmode="decimal" aria-describedby="mpkErrDose"></label>'+
+      '</div>'+
+      '<div class="mpk-err" id="mpkErrDose"></div>'+
+    '</div>'+
+    '<div class="mpk-f" role="group" aria-labelledby="mpkUnitLb">'+
+      '<span class="mpk-lb" id="mpkUnitLb">単位</span>'+
+      '<div class="mpk-row">'+mpkChips_('data-mpk-unit',MPK_UNITS)+'</div>'+
+    '</div>'+
+    '<div class="mpk-f" role="group" aria-labelledby="mpkWhenLb">'+
+      '<span class="mpk-lb" id="mpkWhenLb">いつ飲むか（時間帯は複数選べます）</span>'+
+      '<div class="mpk-row">'+mpkChips_('data-mpk-slot',MPK_SLOTS)+'<span class="mpk-sep" aria-hidden="true"></span>'+mpkChips_('data-mpk-meal',MPK_MEALS)+'</div>'+
+      '<div class="mpk-err" id="mpkErrWhen"></div>'+
+    '</div>'+
+    '<div class="mpk-f">'+
+      '<label class="mpk-lb" for="mpkFree">用法を手で書く（週1回・隔日・食間など）</label>'+
+      '<input type="text" id="mpkFree" autocomplete="off" spellcheck="false" placeholder="入れた時はこちらを使います（例 1錠 週1回 起床時）">'+
+    '</div>'+
+    '<div class="mpk-f">'+
+      '<span class="mpk-lb" id="mpkPvLb">できあがる1行</span>'+
+      '<div class="mpk-pv none" id="mpkPreview" aria-live="polite" aria-labelledby="mpkPvLb"></div>'+
+    '</div>'+
+    '<div class="mpk-row">'+
+      '<button type="button" class="btn btn-pri" id="mpkAdd">この行を追加</button>'+
+      '<button type="button" class="btn btn-gray" id="mpkCancel" hidden>やめる</button>'+
+    '</div>'+
+    '<div class="mpk-st"><span class="mpk-msg" id="mpkMsg" role="status" aria-live="polite"></span>'+
+      '<button type="button" class="btn btn-sec" id="mpkUndo" hidden>元に戻す</button></div>'+
+    '<h4 class="mpk-h" style="margin-top:14px">いまの定期薬</h4>'+
+    '<div id="mpkList"></div>'+
+    '<p class="muted" style="margin:8px 0 0">この下の「薬剤情報（定期）」の欄を手で直すこともできます。</p>'+
+  '</div>';
+}
+/* 候補データを読み込む（薬剤名欄に初めて触れた時だけ）。読み込めなくても入力は止めない */
+function mpkLoad_(){
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)){ mpk.ld='ok'; return; }
+  if(mpk.ld==='loading') return;
+  mpk.ld='loading';
+  var s=document.createElement('script');
+  s.src=MPK_YAKKA_SRC; s.async=true;
+  s.onload=function(){ mpk.ld=(window.MedsYakka&&Array.isArray(window.MedsYakka.items))?'ok':'ng'; mpkRenderCand_(); };
+  s.onerror=function(){ mpk.ld='ng'; if(s.parentNode) s.parentNode.removeChild(s); mpkRenderCand_(); };
+  document.head.appendChild(s);
+  mpkRenderCand_();
+}
+/* 施設の薬効辞書（mdMap）に載っている薬か。辞書を読み込んでいない時は印を付けない */
+function mpkUsed_(name){
+  if(typeof mdMap==='undefined'||!mdMap||!window.MedsEffect) return false;
+  var k=MedsEffect.key(MedsEffect.drugName(name));
+  return !!k&&Object.prototype.hasOwnProperty.call(mdMap,k);
+}
+function mpkRenderCand_(){
+  var box=$('mpkCand'), msg=$('mpkCandMsg'), inp=$('mpkName');
+  if(!box||!msg||!inp) return;
+  box.textContent=''; mpk.cands=[];
+  var q=inp.value;
+  if(mpk.pick&&q===mpk.pick[0]){ msg.textContent=''; return; }   /* 候補から選んだ直後は出さない */
+  if(mpkNorm(q).length<2){ msg.textContent=''; return; }
+  if(mpk.ld==='loading'||mpk.ld===''){ msg.textContent='候補を読み込み中…（このまま入力できます）'; return; }
+  if(mpk.ld==='ng'){ msg.textContent='候補を読み込めませんでした（手で書けます）'; return; }
+  mpk.cands=mpkSearch(q, window.MedsYakka.items, mpkUsed_, 8);
+  if(!mpk.cands.length){ msg.textContent='候補なし（このまま使えます）'; return; }
+  msg.textContent='候補 '+mpk.cands.length+'件（押すと薬剤名に入ります）';
+  mpk.cands.forEach(function(it,i){
+    var b=document.createElement('button');
+    b.type='button'; b.setAttribute('data-mpk-cand',String(i));
+    var nm=document.createElement('span'); nm.textContent=it[0]; b.appendChild(nm);
+    if(mpkUsed_(it[0])){ var u=document.createElement('span'); u.className='mpk-used'; u.textContent='施設で使用中'; b.appendChild(u); }
+    box.appendChild(b);
+  });
+}
+/* 候補を選ぶ: 薬剤名を確定し、既定の単位を選ぶ。メーカーがある品だけメーカー欄を出す */
+function mpkPick_(it){
+  var inp=$('mpkName'); if(!inp||!it) return;
+  mpk.pick=it; inp.value=it[0];
+  if(MPK_UNITS.indexOf(it[1])>=0) mpk.unit=it[1];
+  mpkRenderMaker_();
+  mpkRenderCand_();
+  mpkPaint_();
+  try{ inp.focus(); }catch(e){}
+}
+function mpkRenderMaker_(){
+  var f=$('mpkMakerF'), sel=$('mpkMaker');
+  if(!f||!sel) return;
+  sel.textContent='';
+  var mk=(mpk.pick&&Array.isArray(mpk.pick[2]))?mpk.pick[2]:[];
+  f.hidden=!mk.length;
+  if(!mk.length) return;
+  [''].concat(mk).forEach(function(v){
+    var o=document.createElement('option'); o.value=v; o.textContent=v||'付けない'; sel.appendChild(o);
+  });
+  sel.value='';
+}
+function mpkCur_(){
+  var sel=$('mpkMaker'), f=$('mpkMakerF');
+  return {
+    name:($('mpkName')?$('mpkName').value:'').trim(),
+    maker:(f&&!f.hidden&&sel)?sel.value:'',
+    dose:mpk.dose, unit:mpk.unit,
+    slots:MPK_SLOTS.filter(function(k){ return !!mpk.slots[k]; }),
+    meal:mpk.meal,
+    free:($('mpkFree')?$('mpkFree').value:'').trim()
+  };
+}
+/* チップの選択表示とプレビューを描き直す */
+function mpkPaint_(){
+  var box=$('mpkBox'); if(!box) return;
+  function set(attr, on){
+    Array.prototype.forEach.call(box.querySelectorAll('['+attr+']'),function(b){
+      var v=on(b.getAttribute(attr));
+      b.classList.toggle('on',v); b.setAttribute('aria-pressed',v?'true':'false');
+    });
+  }
+  var other=$('mpkDoseOther'), otherOn=!!(other&&other.value!=='');
+  set('data-mpk-dose',function(v){ return !otherOn&&mpk.dose!==null&&Number(v)===mpk.dose; });
+  set('data-mpk-unit',function(v){ return v===mpk.unit; });
+  set('data-mpk-slot',function(v){ return !!mpk.slots[v]; });
+  set('data-mpk-meal',function(v){ return v===mpk.meal; });
+  var pv=$('mpkPreview');
+  if(pv){
+    var c=mpkCur_(), line=c.name.length>=2?mpkLine(c):'';
+    pv.textContent=line||'（薬剤名・1回量・いつ飲むか を選ぶと、ここに1行ができます）';
+    pv.classList.toggle('none',!line);
+  }
+}
+function mpkErr_(id, text){ var e=$(id); if(e) e.textContent=text||''; }
+function mpkClearErr_(){ ['mpkErrName','mpkErrDose','mpkErrWhen'].forEach(function(id){ mpkErr_(id,''); }); }
+function mpkMsg_(text, undo){
+  var m=$('mpkMsg'), u=$('mpkUndo');
+  if(m) m.textContent=text||'';
+  if(u) u.hidden=!undo;
+}
+/* 「いまの定期薬」の行一覧（textarea から作る。中身は textContent で入れる） */
+function mpkRenderList_(){
+  var box=$('mpkList'), ta=mpkTa_();
+  if(!box||!ta) return;
+  var ls=mpkLines(ta.value);
+  box.textContent='';
+  if(!ls.length){
+    var p=document.createElement('p'); p.className='mpk-empty'; p.textContent='まだ入っていません。上で1行ずつ足せます。';
+    box.appendChild(p); return;
+  }
+  var ol=document.createElement('ol'); ol.className='mpk-ls';
+  ls.forEach(function(l,i){
+    var li=document.createElement('li'); if(i===mpk.editIdx) li.className='on';
+    var tx=document.createElement('span'); tx.className='tx'; tx.textContent=l; li.appendChild(tx);
+    if(i===mpk.editIdx){ var tg=document.createElement('span'); tg.className='tag-ed'; tg.textContent='✎ 直しています'; li.appendChild(tg); }
+    var bt=document.createElement('span'); bt.className='bt';
+    var e=document.createElement('button'); e.type='button'; e.className='btn btn-sec'; e.textContent='直す';
+    e.setAttribute('data-mpk-edit',String(i)); e.setAttribute('aria-label',(i+1)+'行目を直す');
+    var s=document.createElement('button'); s.type='button'; s.className='btn btn-ng'; s.textContent='中止';
+    s.setAttribute('data-mpk-stop',String(i)); s.setAttribute('aria-label',(i+1)+'行目を中止（行を消す）');
+    bt.appendChild(e); bt.appendChild(s); li.appendChild(bt);
+    ol.appendChild(li);
+  });
+  box.appendChild(ol);
+}
+/* textarea を書き換えて input を出す（手で書き換えた時と同じ経路に乗せる） */
+function mpkSetTa_(ta, v){
+  ta.value=v;
+  var ev;
+  try{ ev=new Event('input',{bubbles:true}); }catch(e){ ev=document.createEvent('Event'); ev.initEvent('input',true,true); }
+  ta.dispatchEvent(ev);
+}
+/* 薬剤名とメーカーだけ空に戻す（1回量・時間帯は続けて使えるよう残す） */
+function mpkResetName_(){
+  var inp=$('mpkName'); if(inp) inp.value='';
+  mpk.pick=null; mpkRenderMaker_(); mpkRenderCand_(); mpkPaint_();
+}
+function mpkEditEnd_(){
+  mpk.editIdx=-1; mpk.editOrig='';
+  var a=$('mpkAdd'), c=$('mpkCancel'), n=$('mpkEditing');
+  if(a) a.textContent='この行を追加';
+  if(c) c.hidden=true;
+  if(n){ n.hidden=true; n.textContent=''; }
+  mpkRenderList_();
+}
+/* 「直す」: その行の薬剤名部分（medSplit_ の左側。分けられない行は行全体）を薬剤名欄へ入れる。
+   ★置き換えるまで元の行は変えない */
+function mpkEditStart_(i){
+  var ta=mpkTa_(); if(!ta) return;
+  var ls=mpkLines(ta.value);
+  if(!(i>=0&&i<ls.length)) return;
+  mpkClearErr_(); mpkMsg_('');
+  mpk.editIdx=i; mpk.editOrig=ls[i];
+  var sp=medSplit_(ls[i]);
+  var inp=$('mpkName');
+  if(inp) inp.value=(sp.use&&sp.name)?sp.name:ls[i].trim();
+  mpk.pick=null; mpkRenderMaker_();
+  var a=$('mpkAdd'), c=$('mpkCancel'), n=$('mpkEditing');
+  if(a) a.textContent='この行を置き換える';
+  if(c) c.hidden=false;
+  if(n){ n.hidden=false; n.textContent='直している行（'+(i+1)+'行目）：'+ls[i]; }
+  mpkRenderList_(); mpkRenderCand_(); mpkPaint_();
+  if(inp){ try{ inp.focus(); inp.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){} }
+}
+/* 「この行を追加」／「この行を置き換える」。足りない物は欄のそばに理由を出して止める */
+function mpkCommit_(){
+  var ta=mpkTa_(); if(!ta) return;
+  mpkClearErr_();
+  var c=mpkCur_();
+  if(c.name.length<2){ mpkErr_('mpkErrName','薬剤名を2文字以上入れてください（候補に無い薬もそのまま使えます）。'); try{ $('mpkName').focus(); }catch(e){} return; }
+  if(!(c.dose>0)){
+    mpkErr_('mpkErrDose','1回量を選んでください（「その他」は0.5刻みの数）。');
+    var d=$('mpkBox').querySelector('[data-mpk-dose]'); if(d) try{ d.focus(); }catch(e){}
+    return;
+  }
+  if(!c.free&&!c.slots.length){
+    mpkErr_('mpkErrWhen','飲む時間帯（朝・昼・夕・眠前）を選ぶか、「用法を手で書く」に入れてください。');
+    var w=$('mpkBox').querySelector('[data-mpk-slot]'); if(w) try{ w.focus(); }catch(e){}
+    return;
+  }
+  var line=mpkLine(c);
+  if(!line){ mpkErr_('mpkErrWhen','この組み合わせでは1行を作れません。食後か食前を選んでください。'); return; }
+  var msg;
+  if(mpk.editIdx>=0){
+    if(mpkLines(ta.value)[mpk.editIdx]!==mpk.editOrig){
+      mpkEditEnd_(); mpkMsg_('直していた行が書き換わったため、置き換えをやめました。もう一度「直す」を押してください。');
+      return;
+    }
+    var idx=mpk.editIdx;
+    mpk.editIdx=-1; mpk.undo=null;
+    mpkSetTa_(ta, mpkReplaceAt(ta.value, idx, line));
+    msg=(idx+1)+'行目を置き換えました。';
+  }else{
+    mpk.undo=null;
+    mpkSetTa_(ta, mpkAppend(ta.value, line));
+    msg='1行追加しました。';
+  }
+  mpkEditEnd_();
+  mpkResetName_();
+  mpkMsg_(msg);
+  try{ $('mpkName').focus(); }catch(e){}
+}
+/* 「中止」: その行を消す。confirm() は使わず、直後に「元に戻す」を1回分だけ出す */
+function mpkStop_(i){
+  var ta=mpkTa_(); if(!ta) return;
+  var ls=mpkLines(ta.value);
+  if(!(i>=0&&i<ls.length)) return;
+  var before=ta.value, after=mpkRemoveAt(before, i);
+  if(after===before) return;
+  if(mpk.editIdx>=0){ mpkEditEnd_(); mpkResetName_(); }
+  mpk.undo={before:before, after:after};
+  mpkSetTa_(ta, after);
+  mpkMsg_((i+1)+'行目を消しました：'+ls[i], true);
+  var u=$('mpkUndo'); if(u) try{ u.focus(); }catch(e){}
+}
+function mpkUndo_(){
+  var ta=mpkTa_(), u=mpk.undo;
+  mpk.undo=null;
+  if(!ta||!u){ mpkMsg_(''); return; }
+  if(ta.value!==u.after){ mpkMsg_('その後に欄が書き換わったため、元に戻せませんでした。下の欄で直してください。'); return; }
+  mpkSetTa_(ta, u.before);
+  mpkMsg_('元に戻しました。');
+}
+/* textarea を（手でも・パネルからでも）書き換えた時。行一覧を描き直し、古くなった「元に戻す」「直す」を外す */
+function mpkOnTa_(){
+  var ta=mpkTa_(); if(!ta) return;
+  if(mpk.undo&&ta.value!==mpk.undo.after){ mpk.undo=null; mpkMsg_(''); }
+  if(mpk.editIdx>=0&&mpkLines(ta.value)[mpk.editIdx]!==mpk.editOrig){
+    mpkEditEnd_(); mpkResetName_();
+    mpkMsg_('直していた行が書き換わったため、直すのをやめました。');
+  }
+  mpkRenderList_();
+}
+/* openEdit から呼ぶ。編集画面を開くたびに状態を作り直す（前の方の入力途中の値を持ち越さない） */
+function mpkInit_(){
+  var box=$('mpkBox'), ta=mpkTa_();
+  if(!box||!ta) return;
+  mpk.pick=null; mpk.cands=[]; mpk.dose=null; mpk.unit='錠'; mpk.slots={}; mpk.meal='食後';
+  mpk.editIdx=-1; mpk.editOrig=''; mpk.undo=null;
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)) mpk.ld='ok';
+  else if(mpk.ld!=='loading') mpk.ld='';
+  var inp=$('mpkName');
+  inp.addEventListener('focus',function(){ if(mpk.ld!=='ok') mpkLoad_(); });
+  inp.addEventListener('input',function(){
+    if(mpk.pick&&inp.value!==mpk.pick[0]){ mpk.pick=null; mpkRenderMaker_(); }
+    mpkErr_('mpkErrName','');
+    mpkRenderCand_(); mpkPaint_();
+  });
+  $('mpkMaker').addEventListener('change',mpkPaint_);
+  $('mpkFree').addEventListener('input',function(){ mpkErr_('mpkErrWhen',''); mpkPaint_(); });
+  $('mpkDoseOther').addEventListener('input',function(){
+    var v=this.value===''?NaN:Number(this.value);
+    mpk.dose=(isFinite(v)&&v>0&&Math.abs(v*2-Math.round(v*2))<1e-9)?v:null;
+    mpkErr_('mpkErrDose',''); mpkPaint_();
+  });
+  box.addEventListener('click',function(e){
+    var t=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!t||!box.contains(t)) return;
+    var v;
+    if((v=t.getAttribute('data-mpk-cand'))!==null){ mpkPick_(mpk.cands[parseInt(v,10)]); return; }
+    if((v=t.getAttribute('data-mpk-dose'))!==null){ mpk.dose=Number(v); $('mpkDoseOther').value=''; mpkErr_('mpkErrDose',''); mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-unit'))!==null){ mpk.unit=v; mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-slot'))!==null){ mpk.slots[v]=!mpk.slots[v]; mpkErr_('mpkErrWhen',''); mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-meal'))!==null){ mpk.meal=v; mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-edit'))!==null){ mpkEditStart_(parseInt(v,10)); return; }
+    if((v=t.getAttribute('data-mpk-stop'))!==null){ mpkStop_(parseInt(v,10)); return; }
+    if(t.id==='mpkAdd'){ mpkCommit_(); return; }
+    if(t.id==='mpkCancel'){ mpkEditEnd_(); mpkResetName_(); mpkMsg_(''); try{ $('mpkName').focus(); }catch(e2){} return; }
+    if(t.id==='mpkUndo'){ mpkUndo_(); return; }
+  });
+  ta.addEventListener('input',mpkOnTa_);
+  mpkMsg_('');
+  mpkRenderMaker_(); mpkRenderCand_(); mpkRenderList_(); mpkPaint_();
 }
 /* ── 介護度の変更履歴（時系列・後編集可） ── */
 function renderCareHistRows(){
