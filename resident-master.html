@@ -510,6 +510,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* 氏名を直す時の2段階目。一括編集モーダル（z-index:150）の【上】に重ねる */
 #mNameWarn{z-index:160}
 #mNameWarn .box{max-width:640px}
+/* 端末用途のブロック表示は、氏名の確認窓（160）より【上】に出す（2026-10-01）。別のタブで現場用へ
+   切り替わった時に確認窓が開いていても、その上から一括保存を押せないようにする。トースト（200）よりは下 */
+#deviceBlock{z-index:170}
 .nw-body{font-size:0.875rem; line-height:1.75; color:var(--g9); max-height:58vh; overflow:auto}
 .nw-body p{margin:0 0 10px}
 .nw-body ol{margin:6px 0 10px; padding-inline-start:1.4em}
