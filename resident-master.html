@@ -7713,7 +7713,10 @@ function collectMedsPast(){
      全30通りで medSlotsFromText が 'ok' と読み、選んだ時間帯と一致する形にしてある（gas/tests/meds_picker_test.js）。
    ★薬の候補（meds-yakka-naiyo.js・厚労省の薬価基準収載品目リストを加工）は薬剤名欄に初めて触れた時に読み込む。
    ★薬のデータ・入力途中の値は localStorage に置かない・console に出さない。
-   純関数（mpkNorm〜mpkLines）は DOM に触れない（テストが下の印から印までを抜き出して確かめる）。 */
+   純関数（mpkNorm〜mpkSearchAll）は DOM に触れない（テストが下の印から印までを抜き出して確かめる）。
+   ★2026-10-01 追加（検収指示）: 施設で実際に使っている書き方（全件データ fullMap の定期薬）を候補の先頭に出す。
+     厚労省リストは後発品の多くが統一名（「◯◯ベシル酸塩5mg口腔内崩壊錠」等）で、現場の書き方と合わないため。
+     候補に持つのは【薬剤名＋規格と人数だけ】。氏名は受け取らない・持たない（mpkUsedNames は行の配列だけを受け取る）。 */
 /* ══ mpk-pure-begin ══ */
 /* 検索用の正規化: 全角英数→半角・半角カナ→全角カナ（NFKC）／ひらがな→カタカナ／英字は小文字／空白と中黒を除く */
 function mpkNorm(s){
@@ -7722,17 +7725,19 @@ function mpkNorm(s){
   t=t.replace(/[ぁ-ゖ]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)+0x60); });
   return t.toLowerCase().replace(/[\s　・･]/g,'');
 }
-/* 品目ごとの正規化済みの名前（同じ items の配列なら作り直さない） */
-var mpkNormMemo_={src:null, keys:null};
+/* 品目ごとの正規化済みの名前（同じ配列なら作り直さない。配列が捨てられれば控えも消える＝WeakMap） */
+var mpkNormMemo_=(typeof WeakMap==='function')?new WeakMap():null;
+function mpkKeys_(arr, nameOf){
+  var k=mpkNormMemo_&&mpkNormMemo_.get(arr);
+  if(!k){ k=arr.map(function(x){ return mpkNorm(nameOf(x)); }); if(mpkNormMemo_) mpkNormMemo_.set(arr,k); }
+  return k;
+}
 /* q を正規化して2文字以上の時だけ探す。前方一致→部分一致の順、それぞれの中で isUsed(品名) が真のものが先。
    items は [品名, 既定の単位, [メーカー…]] の配列。戻り値は items の要素そのもの（最大 limit 件・既定8） */
 function mpkSearch(q, items, isUsed, limit){
   var n=mpkNorm(q), lim=(limit>0)?Math.floor(limit):8;
   if(n.length<2||!Array.isArray(items)) return [];
-  if(mpkNormMemo_.src!==items){
-    mpkNormMemo_={src:items, keys:items.map(function(it){ return mpkNorm(it&&it[0]); })};
-  }
-  var keys=mpkNormMemo_.keys, b=[[],[],[],[]];
+  var keys=mpkKeys_(items, function(it){ return it&&it[0]; }), b=[[],[],[],[]];
   for(var i=0;i<items.length;i++){
     var p=keys[i].indexOf(n);
     if(p<0) continue;
@@ -7816,6 +7821,77 @@ function mpkReplaceAt(text, idx, line){
   segs[k].b=l;
   return mpkJoin_(segs);
 }
+/* 施設で使っている書き方を1行から取り出す。medSplit_ の左側（薬剤名＋規格）で、「メーカー」付きならそのまま残す。
+   用法の無い行（medSplit_ で分けられない行）・「なし」等は候補にしない（''）。
+   ★左側に空白を含む名前（「◯◯錠5mg 1錠 朝食後」の「1錠」まで入った形・注記つき等）も候補にしない。
+     空白を含む名前で1行を作ると、用法の読み取り（medSlotRows_）が最初の空白から先を用法とみなして 'review' になるため。 */
+function mpkUsedName_(line){
+  var t=mdKey(line);
+  if(!t||MED_NONE_RE.test(t)) return '';
+  var sp=medSplit_(line);
+  if(!sp.use||!sp.name) return '';
+  var name=sp.name, m=MED_USE_RE.exec(t);
+  if(m){
+    var full=mdKey(t.slice(0,m.index).replace(/[ ：:]+$/,''));
+    if(full&&mdKey(full.replace(/[「『][^」』]*[」』]/g,''))===sp.name) name=full;   /* 「メーカー」付きの形を残す */
+  }
+  return /\s/.test(name)?'':name;
+}
+/* 施設で使っている書き方の一覧。引数は【1人ぶんの定期薬の行の配列】の配列（氏名・id は受け取らない）。
+   同じ書き方は1件にまとめ、使っている人数（1人の中の重複は1と数える）を n に持つ。人数の多い順・同数は初出順 */
+function mpkUsedNames(perPerson){
+  var cnt=Object.create(null), order=[];
+  (Array.isArray(perPerson)?perPerson:[]).forEach(function(lines){
+    if(!Array.isArray(lines)) return;
+    var seen=Object.create(null);
+    lines.forEach(function(l){
+      if(typeof l!=='string') return;
+      var nm=mpkUsedName_(l);
+      if(!nm||seen[nm]) return;
+      seen[nm]=1;
+      if(!cnt[nm]){ cnt[nm]=0; order.push(nm); }
+      cnt[nm]++;
+    });
+  });
+  return order.map(function(nm,i){ return {name:nm, n:cnt[nm], i:i}; })
+    .sort(function(a,b){ return (b.n-a.n)||(a.i-b.i); })
+    .map(function(x){ return {name:x.name, n:x.n}; });
+}
+/* 名前から既定の単位を決める（施設で使っている書き方を選んだ時） */
+function mpkUnitOf(name){
+  var s=String(name==null?'':name);
+  if(s.indexOf('カプセル')>=0) return 'カプセル';
+  if(/顆粒|細粒|散/.test(s)) return 'g';
+  if(/シロップ|液/.test(s)) return 'mL';
+  return '錠';
+}
+/* 候補をまとめて返す: ①施設で使用中（前方一致→部分一致、その中は人数の多い順）②厚労省リスト（mpkSearch のまま）。
+   合計の上限は limit（既定8）。同じ文字列が両方にあれば①だけ。
+   戻り値 [{src:'used'|'yakka', name, unit, makers:[…], n}]（n は①の人数・②は0） */
+function mpkSearchAll(q, used, items, limit){
+  var n=mpkNorm(q), lim=(limit>0)?Math.floor(limit):8;
+  if(n.length<2) return [];
+  var u=Array.isArray(used)?used.filter(function(x){ return x&&x.name; }):[];
+  var keys=mpkKeys_(u, function(x){ return x.name; }), pre=[], mid=[], names=Object.create(null);
+  for(var i=0;i<u.length;i++){
+    names[u[i].name]=1;
+    var p=keys[i].indexOf(n);
+    if(p<0) continue;
+    (p===0?pre:mid).push({i:i, x:u[i]});
+  }
+  function byN(a,b){ return ((b.x.n||0)-(a.x.n||0))||(a.i-b.i); }
+  var out=pre.sort(byN).concat(mid.sort(byN)).map(function(o){
+    return {src:'used', name:o.x.name, unit:mpkUnitOf(o.x.name), makers:[], n:o.x.n||0};
+  }).slice(0,lim);
+  if(out.length<lim&&Array.isArray(items)){
+    var y=mpkSearch(q, items, null, items.length);
+    for(var k=0;k<y.length&&out.length<lim;k++){
+      if(names[y[k][0]]) continue;
+      out.push({src:'yakka', name:y[k][0], unit:y[k][1], makers:Array.isArray(y[k][2])?y[k][2]:[], n:0});
+    }
+  }
+  return out;
+}
 /* ══ mpk-pure-end ══ */
 
 /* 候補データの置き場所。?v= はデータの適用日（作り直したら一緒に上げる） */
@@ -7823,7 +7899,8 @@ var MPK_YAKKA_SRC='meds-yakka-naiyo.js?v=2026-10-01';
 var MPK_DOSES=['0.5','1','2','3'], MPK_UNITS=['錠','包','カプセル','g','mL'], MPK_SLOTS=['朝','昼','夕','眠前'], MPK_MEALS=['食後','食前'];
 /* 画面の状態（メモリだけ。編集画面を開くたびに作り直す）
    ld: 候補データ ''=未読込／'loading'／'ok'／'ng'（読み込めなかった・次に触れた時にもう一度） */
-var mpk={ld:'', pick:null, cands:[], dose:null, unit:'錠', slots:{}, meal:'食後', editIdx:-1, editOrig:'', undo:null};
+/* fl: 施設で使っている薬（全件データ fullMap）''=未着手／'loading'／'ok'／'ng'。flTimer は読み込み完了の見張り */
+var mpk={ld:'', fl:'', flTimer:0, pick:null, cands:[], dose:null, unit:'錠', slots:{}, meal:'食後', editIdx:-1, editOrig:'', undo:null};
 function mpkTa_(){ var b=$('editBox'); return b?b.querySelector('textarea[data-k="medsRegular"]'):null; }
 function mpkChips_(attr, vals, lbl){
   return vals.map(function(v){
@@ -7839,6 +7916,7 @@ function mpkPanelHtml_(){
       '<label class="mpk-lb" for="mpkName">薬剤名（2文字以上で候補が出ます）</label>'+
       '<input type="text" id="mpkName" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"'+
         ' placeholder="例 アムロジピン" aria-describedby="mpkCandMsg mpkErrName">'+
+      '<div class="mpk-msg" id="mpkUsedMsg" role="status" aria-live="polite"></div>'+
       '<div class="mpk-msg" id="mpkCandMsg" role="status" aria-live="polite"></div>'+
       '<div class="mpk-cand" id="mpkCand" aria-label="薬剤名の候補"></div>'+
       '<div class="mpk-err" id="mpkErrName"></div>'+
@@ -7893,37 +7971,74 @@ function mpkLoad_(){
   document.head.appendChild(s);
   mpkRenderCand_();
 }
-/* 施設の薬効辞書（mdMap）に載っている薬か。辞書を読み込んでいない時は印を付けない */
-function mpkUsed_(name){
-  if(typeof mdMap==='undefined'||!mdMap||!window.MedsEffect) return false;
-  var k=MedsEffect.key(MedsEffect.drugName(name));
-  return !!k&&Object.prototype.hasOwnProperty.call(mdMap,k);
+/* 施設で使っている薬の一覧（候補の①）。全件データ（fullMap）の在籍者の定期薬から、行の文字だけを渡して作る。
+   ★氏名・id は渡さない。結果（薬剤名＋規格と人数）も控えに残さず、描くたびに作り直す
+     （fullMap への参照を持ち続けると、現場端末へ切り替えた時に fullMap を捨てても要配慮情報がメモリに残る）。 */
+function mpkUsedList_(){
+  if(typeof fullMap==='undefined'||!fullMap||getDeviceRole()==='field') return [];
+  return mpkUsedNames(shBase().map(function(r){
+    var rec=fullOf(r);
+    return rec?String(rec.medsRegular==null?'':rec.medsRegular).split(/\r\n|\r|\n/):null;
+  }).filter(Boolean));
+}
+/* 全件データの読み込み（薬剤名欄に初めて触れた時）。既存の fullEnsure を呼ぶだけ。
+   ★fullEnsure の完了時の処理は一覧画面の状態バーの描き直しと、病歴・家族一覧を開いていた時の一覧の描き直しだけで、
+     画面の切り替え・トースト・編集画面（editBox）への書き込みは無い（2026-10-01 確認）。だから自動で呼ぶ。
+   完了の知らせは無いので、fullLoading が下りるのを見張る（編集画面を閉じたら見張りをやめる） */
+function mpkFullWatch_(){
+  if(mpk.flTimer) return;
+  mpk.flTimer=setInterval(function(){
+    if(!$('mpkBox')){ clearInterval(mpk.flTimer); mpk.flTimer=0; return; }
+    if(typeof fullLoading!=='undefined'&&fullLoading) return;
+    clearInterval(mpk.flTimer); mpk.flTimer=0;
+    mpk.fl=fullMap?'ok':'ng';
+    mpkRenderCand_();
+  },400);
+}
+function mpkFullLoad_(){
+  if(typeof fullMap==='undefined'||typeof fullEnsure!=='function'){ mpk.fl='ng'; mpkRenderCand_(); return; }
+  if(fullMap){ mpk.fl='ok'; mpkRenderCand_(); return; }
+  if(getDeviceRole()==='field'){ mpk.fl='ng'; mpkRenderCand_(); return; }   /* 現場端末では薬剤情報を取りに行かない */
+  if(!fullLoading){ try{ fullEnsure(false); }catch(e){} }
+  if(fullMap) mpk.fl='ok';
+  else if(fullLoading){ mpk.fl='loading'; mpkFullWatch_(); }
+  else mpk.fl='ng';                                                           /* 接続先が無い等ですぐ失敗した */
+  mpkRenderCand_();
 }
 function mpkRenderCand_(){
   var box=$('mpkCand'), msg=$('mpkCandMsg'), inp=$('mpkName');
   if(!box||!msg||!inp) return;
   box.textContent=''; mpk.cands=[];
+  var um=$('mpkUsedMsg');
+  if(um) um.textContent=(mpk.fl==='loading')?'施設で使っている薬を読み込み中…'
+    :(mpk.fl==='ng')?'施設で使っている薬を読み込めませんでした（厚労省の一覧から選べます）':'';
   var q=inp.value;
-  if(mpk.pick&&q===mpk.pick[0]){ msg.textContent=''; return; }   /* 候補から選んだ直後は出さない */
+  if(mpk.pick&&q===mpk.pick.name){ msg.textContent=''; return; }   /* 候補から選んだ直後は出さない */
   if(mpkNorm(q).length<2){ msg.textContent=''; return; }
-  if(mpk.ld==='loading'||mpk.ld===''){ msg.textContent='候補を読み込み中…（このまま入力できます）'; return; }
-  if(mpk.ld==='ng'){ msg.textContent='候補を読み込めませんでした（手で書けます）'; return; }
-  mpk.cands=mpkSearch(q, window.MedsYakka.items, mpkUsed_, 8);
-  if(!mpk.cands.length){ msg.textContent='候補なし（このまま使えます）'; return; }
-  msg.textContent='候補 '+mpk.cands.length+'件（押すと薬剤名に入ります）';
-  mpk.cands.forEach(function(it,i){
+  var yk=(mpk.ld==='ok'&&window.MedsYakka&&Array.isArray(window.MedsYakka.items))?window.MedsYakka.items:null;
+  mpk.cands=mpkSearchAll(q, mpkUsedList_(), yk, 8);
+  /* 厚労省の一覧が読み込み中・失敗の時。候補が1件も無ければ従来の文言、施設の候補だけ出ている時は一言添える */
+  var ykBusy=(mpk.ld==='loading'||mpk.ld===''), ykNg=(mpk.ld==='ng');
+  if(!mpk.cands.length){
+    msg.textContent=ykBusy?'候補を読み込み中…（このまま入力できます）':ykNg?'候補を読み込めませんでした（手で書けます）':'候補なし（このまま使えます）';
+    return;
+  }
+  msg.textContent='候補 '+mpk.cands.length+'件（押すと薬剤名に入ります）'+
+    (ykBusy?'。厚労省の一覧は読み込み中です':ykNg?'。厚労省の一覧は読み込めませんでした':'');
+  mpk.cands.forEach(function(c,i){
     var b=document.createElement('button');
     b.type='button'; b.setAttribute('data-mpk-cand',String(i));
-    var nm=document.createElement('span'); nm.textContent=it[0]; b.appendChild(nm);
-    if(mpkUsed_(it[0])){ var u=document.createElement('span'); u.className='mpk-used'; u.textContent='施設で使用中'; b.appendChild(u); }
+    var nm=document.createElement('span'); nm.textContent=c.name; b.appendChild(nm);
+    if(c.src==='used'){ var u=document.createElement('span'); u.className='mpk-used'; u.textContent='施設で使用中（'+c.n+'名）'; b.appendChild(u); }
     box.appendChild(b);
   });
 }
-/* 候補を選ぶ: 薬剤名を確定し、既定の単位を選ぶ。メーカーがある品だけメーカー欄を出す */
-function mpkPick_(it){
-  var inp=$('mpkName'); if(!inp||!it) return;
-  mpk.pick=it; inp.value=it[0];
-  if(MPK_UNITS.indexOf(it[1])>=0) mpk.unit=it[1];
+/* 候補を選ぶ: 薬剤名を確定し、既定の単位を選ぶ。メーカーがある品（厚労省リスト）だけメーカー欄を出す。
+   施設で使っている書き方は名前をそのまま使う（メーカー欄は出さない・単位は名前から） */
+function mpkPick_(c){
+  var inp=$('mpkName'); if(!inp||!c) return;
+  mpk.pick=c; inp.value=c.name;
+  if(MPK_UNITS.indexOf(c.unit)>=0) mpk.unit=c.unit;
   mpkRenderMaker_();
   mpkRenderCand_();
   mpkPaint_();
@@ -7933,7 +8048,7 @@ function mpkRenderMaker_(){
   var f=$('mpkMakerF'), sel=$('mpkMaker');
   if(!f||!sel) return;
   sel.textContent='';
-  var mk=(mpk.pick&&Array.isArray(mpk.pick[2]))?mpk.pick[2]:[];
+  var mk=(mpk.pick&&mpk.pick.src==='yakka'&&Array.isArray(mpk.pick.makers))?mpk.pick.makers:[];
   f.hidden=!mk.length;
   if(!mk.length) return;
   [''].concat(mk).forEach(function(v){
@@ -8050,8 +8165,9 @@ function mpkCommit_(){
   mpkClearErr_();
   var c=mpkCur_();
   if(c.name.length<2){ mpkErr_('mpkErrName','薬剤名を2文字以上入れてください（候補に無い薬もそのまま使えます）。'); try{ $('mpkName').focus(); }catch(e){} return; }
-  if(!(c.dose>0)){
-    mpkErr_('mpkErrDose','1回量を選んでください（「その他」は0.5刻みの数）。');
+  /* 「用法を手で書く」を使う時は1回量を必須にしない（行には手書きの用法だけが入る＝mpkLine のとおり） */
+  if(!c.free&&!(c.dose>0)){
+    mpkErr_('mpkErrDose','1回量を選んでください（「その他」は0.5刻みの数）。「用法を手で書く」に入れた時は不要です。');
     var d=$('mpkBox').querySelector('[data-mpk-dose]'); if(d) try{ d.focus(); }catch(e){}
     return;
   }
@@ -8121,10 +8237,16 @@ function mpkInit_(){
   mpk.editIdx=-1; mpk.editOrig=''; mpk.undo=null;
   if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)) mpk.ld='ok';
   else if(mpk.ld!=='loading') mpk.ld='';
+  if(mpk.flTimer){ clearInterval(mpk.flTimer); mpk.flTimer=0; }
+  mpk.fl=(typeof fullMap!=='undefined'&&fullMap)?'ok':((typeof fullLoading!=='undefined'&&fullLoading)?'loading':'');
+  if(mpk.fl==='loading') mpkFullWatch_();
   var inp=$('mpkName');
-  inp.addEventListener('focus',function(){ if(mpk.ld!=='ok') mpkLoad_(); });
+  inp.addEventListener('focus',function(){
+    if(mpk.ld!=='ok') mpkLoad_();
+    if(mpk.fl===''||mpk.fl==='ng') mpkFullLoad_();
+  });
   inp.addEventListener('input',function(){
-    if(mpk.pick&&inp.value!==mpk.pick[0]){ mpk.pick=null; mpkRenderMaker_(); }
+    if(mpk.pick&&inp.value!==mpk.pick.name){ mpk.pick=null; mpkRenderMaker_(); }
     mpkErr_('mpkErrName','');
     mpkRenderCand_(); mpkPaint_();
   });
