@@ -8844,12 +8844,17 @@ function afterSaveOk_(rec,saved,dg,ed){
        ★ただし編集画面は閉じる。開いたままだと、事務所PCへ戻した後にもう一度保存でき、新規登録は別の番号で二重に登録される。
          閉じるのは「この保存を出した編集画面がまだ開いている時」だけ（その後に開いた別の方の編集画面は閉じない） */
     bkMarkStale_();   /* 帳票の控えが古くなった印は立てる（事務所PCへ戻した後、認定期限が保存前のまま「最新」に見えないように） */
-    /* ★閉じる時に「戻る」（history.back）を出さない。出すと、管理者がブロック画面から開いた同期設定を popstate が勝手に閉じ、
-       直後の読み込み直しとも競り合う（saveSyncCfg が closeSync を通さないのと同じ理由）。
-       積んだままの履歴の段は、popstate と起動時の処理が消費する */
+    /* ★現場用のまま／ダイアログを開いている時は、閉じる時に「戻る」（history.back）を出さない。出すと、管理者がブロック画面から
+       開いた同期設定を popstate が勝手に閉じ、直後の読み込み直しとも競り合う（saveSyncCfg が closeSync を通さないのと同じ理由）。
+       その時に積んだままの履歴の段は、popstate と起動時の処理が消費する */
     if(ed&&editing===ed&&$('sc-edit')&&$('sc-edit').classList.contains('on')){
-      _navInPop=true;
-      try{ showScreen('list'); }finally{ _navInPop=false; }
+      /* ★「戻る」を出さないのは、現場用のままの時と、何かのダイアログ（同期設定・一括編集など）を開いている最中だけ。
+         事務所PCへ戻った後なら、従来どおり「戻る」で積んだ段を消費する（消費しないと、一覧で「戻る」を
+         1回押しても何も起きない状態が残る）（2026-10-02） */
+      if(getDeviceRole()==='field'||navTopModal()){
+        _navInPop=true;
+        try{ showScreen('list'); }finally{ _navInPop=false; }
+      }else showScreen('list');
     }
     /* ブロックだけにしていた理由（未保存）がもう無ければ、読み込み直して起動時のガードに任せる。
        ★管理者が同期設定を開いている最中は読み込み直さない（事務所PCへ戻す操作の途中で画面を失わせない） */
