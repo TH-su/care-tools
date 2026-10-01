@@ -41,7 +41,9 @@ body {
   box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 100;
 }
 .hdr-title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; }
-.hdr-sub { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
+/* ★2026-10-01: 指標の行は折り返してよい（nowrap だと iPhone で表示200%の時に「デイ母集団…」の行が画面幅を超え、
+   ページ全体が横にはみ出した）。1行に収まる幅では従来どおり1行。ヘッダーは印刷に出ない（@media print で非表示） */
+.hdr-sub { font-size: 0.6875rem; opacity: .9; white-space: normal; min-width: 0; }
 .hdr-sp { flex: 1; }
 .hdr-btn {
   min-height: 40px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
