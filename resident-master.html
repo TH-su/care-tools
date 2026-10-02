@@ -5819,6 +5819,7 @@ function openResident(id){
   saveOpenId(id);   // 再読み込みでこの方の画面に戻れるようにする（番号のみ保存）
   /* 前の方の情報を先に捨てる。取得成功時にだけ入れ直す */
   curResident=null; setViewActions(false);
+  hospPend_={}; hospOpening_=String(id);   // 入院/退院の結果の控えは、この開き直しの間に届いた分だけを使う（2026-10-02）
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
@@ -5834,6 +5835,7 @@ function openResident(id){
     if(dg!==devGen) return;
     var rec=(d&&d.record)||d;
     if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
+    hospApplyPend_(rec);   // 開き直す間に届いた入院/退院の結果が、この記録より新しければ当て直す（2026-10-02）
     curResident=rec; setViewActions(true); renderView(rec);
     /* デイ利用日（週間計画）を取り、届いたら画面のその欄だけ差し替える。
        ★A4様式もこの取得結果を使うので、ボタンを押した時には取得済み＝待ち時間が出ず、
@@ -7032,6 +7034,40 @@ function paintHospBtn(r){
   b.textContent=on?'🏠 退院（在籍へ戻す）':'🏥 入院にする';
   b.setAttribute('aria-pressed',on?'true':'false');
 }
+/* 入院/退院の案内に添える「どなたの」（例「101号室 ○○ 様」）。居室・氏名とも無ければ ''（＝添えない）。
+   氏名は記録の表記のまま使う（前後の空白だけ落とす。中の空白・異体字は直さない）。画面に出すだけで、どこにも保存しない */
+function hospWho_(r){
+  if(!r)return '';
+  var room=String(r.room==null?'':r.room).trim(), name=String(r.name==null?'':r.name).trim();
+  if(!room&&!name)return '';
+  return (room?room+'号室':'')+(room&&name?' ':'')+(name?name+' 様':'の方');
+}
+/* 入院/退院の成功の案内。who が '' の時は従来どおりの文言 */
+function hospDoneMsg_(on,who){
+  return on?('🏥 '+(who?who+'を':'')+'入院中にしました'):('🏠 '+(who?who+'の':'')+'入院を解除しました');
+}
+/* 一覧を見ている時は、詳細で開いていた方の案内でも「どなたの」を添える（一覧では誰の変更か見えないため） */
+function hospOnList_(){ var l=$('sc-list'); return !!(l&&l.classList&&l.classList.contains('on')); }
+/* 入院/退院の結果の控え（番号→{hz:入院か, at:サーバーが付けた時刻}）。2026-10-02
+   結果が届いた時にその方を開き直している最中だと、開き直しの読み取りが書き込みより先に済んでいて、
+   古い入院の状態で詳細が描かれることがある。開き直しの記録が届いた時（openResident）にここを見て、
+   記録の hospitalizedAt が控えより古ければ控えの値を当て直す。同じか新しければ記録のまま（他端末の変更を潰さない）。
+   ★控えるのは「その方をまさに開き直している最中」（curResident が空で、最後に openResident に渡した番号が同じ）の時だけ。
+     openResident は呼ぶたびに古い控えを捨てるので、控えの寿命は開き直しの数秒に限られる。期限なしに残すと、
+     他端末が古い編集画面から保存して hospitalizedAt が過去へ戻った時に、後日開いた時の正しい記録を控えで隠してしまう。
+   持つのは番号・真偽・時刻だけ（氏名は持たない）。どこにも保存しない */
+var hospPend_={}, hospOpening_=null;
+function hospNote_(sid,hz,at){
+  if(sid==null||!at||curResident||hospOpening_!==String(sid))return;
+  hospPend_[String(sid)]={hz:!!hz,at:String(at)};
+}
+function hospApplyPend_(rec){
+  if(!rec||rec.id==null)return;
+  var k=String(rec.id), p=hospPend_[k]; if(!p)return;
+  delete hospPend_[k];
+  if(String(rec.hospitalizedAt||'')>=p.at)return;   // 記録の方が新しいか同じ（ISO 形式どうしの文字列比較）
+  rec.hospitalized=p.hz; rec.hospitalizedAt=p.at;
+}
 function toggleHosp(){
   if(!curResident||curResident.id==null)return;
   if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
@@ -7040,31 +7076,47 @@ function toggleHosp(){
      応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
   var sid=curResident.id, want=next;
   var dg=devGen;   // 出した時の世代（現場用へ切り替わると applyDeviceGuard が進める）（2026-10-01）
+  /* 案内に添える「どなたの変更か」（押した時点の居室・氏名）。応答までに別の方を開いた時だけ添える（2026-10-02 本人指示） */
+  var who=hospWho_(curResident);
   if(b)b.disabled=true;
   setSync('保存中…');
-  apiPost({action:'setState',id:curResident.id,hospitalized:next,src:'master'}).then(function(d){
+  apiPost({action:'setState',id:sid,hospitalized:next,src:'master'}).then(function(d){
     if(!d||d.ok!==true)throw new Error('更新できませんでした');
     /* ★応答を待つ間に端末が現場用へ切り替わった。開いていた方の記録は捨ててある（applyDeviceGuard）ので、
        画面・名簿には触れずに終える（サーバーへの保存は済んでいる。名簿は次の取り直しで最新になる）。
        これが無いと curResident が null で例外になり、現場端末から取り直しの通信が出て
        「反映を確認しました」と案内してしまう */
     if(dg!==devGen){ if(b)b.disabled=false; return; }
-    curResident.hospitalized=!!d.hospitalized;
-    curResident.hospitalizedAt=d.hospitalizedAt||'';
+    /* ★結果は控えた番号（sid）の方にだけ書く。応答を待つ間に別の方を開かれていたら、その方の記録・画面には
+       触らない（失敗側の取り直しと同じ考え方）。直す前は応答が届いた時点の curResident に書いていたため、
+       押していない方に入院の印が付き（退院なら印が消え）、共有名簿にもそのまま配っていた（2026-10-02）。
+       別の方の読み込み中（curResident が null）に届いた時も、例外から取り直しへ回さずここで終える */
+    var hz=!!d.hospitalized;
+    var same=!!(curResident&&String(curResident.id)===String(sid));
     // 一覧キャッシュと共有名簿へも即反映（他アプリはネット無しでも共有名簿を読む）
     for(var i=0;i<roster.length;i++){
-      if(String(roster[i].id)===String(curResident.id)){roster[i].hospitalized=curResident.hospitalized;break}
+      if(String(roster[i].id)===String(sid)){roster[i].hospitalized=hz;break}
     }
     saveRosterCache();writeCommonRoster();
     setSync('保存OK','ok');
-    toast(curResident.hospitalized?'🏥 入院中にしました':'🏠 入院を解除しました');
-    renderView(curResident);renderRoster();
+    toast(hospDoneMsg_(hz,same&&!hospOnList_()?'':who));
+    if(same){
+      curResident.hospitalized=hz;
+      curResident.hospitalizedAt=d.hospitalizedAt||'';
+      renderView(curResident);
+    }else{
+      hospNote_(sid,hz,d.hospitalizedAt);   // その方を開き直している最中なら、届いた記録が古い時に当て直す
+    }
+    renderRoster();
   }).catch(function(e){
     if(dg!==devGen){ if(b)b.disabled=false; return; }   // 同上（切り替え後は取り直しの確認をしない）
     /* ★§13: 失敗表示でも書けていることがある。値の上書きなので取り直して現物で判定する */
     setSync('確認中…');
     apiGet({action:'getResident',id:sid},25000).then(function(d){
+      /* ★確認を待つ間に現場用へ切り替わった（未保存があってブロックだけの場面）。案内には氏名が載りうるので出さない（2026-10-02） */
+      if(dg!==devGen) return;
       var got=(d&&d.record)||null;
+      var same=!!(curResident&&String(curResident.id)===String(sid));
       /* ★成否は現物だけで決める。確認を待つ間に別の方を開かれても「反映できているのに失敗」と
          誤報しない。画面の書き換え（curResident・renderView）だけを、いま開いている方が
          同じ id の時に限る。 */
@@ -7074,18 +7126,22 @@ function toggleHosp(){
         }
         saveRosterCache();writeCommonRoster();
         setSync('保存OK','ok');
-        toast((want?'🏥 入院中にしました':'🏠 入院を解除しました')+'（応答は届きませんでしたが、反映を確認しました）');
-        if(curResident&&String(curResident.id)===String(sid)){
+        toast(hospDoneMsg_(want,same&&!hospOnList_()?'':who)+'（応答は届きませんでしたが、反映を確認しました）');
+        if(same){
           curResident.hospitalized=want;
           curResident.hospitalizedAt=got.hospitalizedAt||'';
           renderView(curResident);
+        }else{
+          hospNote_(sid,want,got.hospitalizedAt);   // 同上
         }
         renderRoster();
         return;
       }
-      setSync('保存失敗','err');toast('⚠️ 変更できていません: '+e.message+'。もう一度お試しください');
+      setSync('保存失敗','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できていません: '+e.message+'。もう一度お試しください');
     }).catch(function(){
-      setSync('確認できず','err');toast('⚠️ 変更できたか確認できませんでした。画面を再読み込みして、入院の表示を確かめてください');
+      if(dg!==devGen) return;   // 同上
+      var same=!!(curResident&&String(curResident.id)===String(sid));
+      setSync('確認できず','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できたか確認できませんでした。画面を再読み込みして、入院の表示を確かめてください');
     }).then(function(){ if(b)b.disabled=false; });
   });
 }
@@ -9773,6 +9829,9 @@ function applyDeviceGuard(){
     mealLoading=false; mealMsg='';
     curResident=null; setViewActions(false); paintHospBtn(null);
     if($('viewBox')) $('viewBox').textContent='';
+    /* 表示中・表示し終えた案内も消す。入院/退院の案内には居室・氏名が載ることがあり、案内はブロック表示より上に出る（2026-10-02）。
+       残ったタイマーは表示を下ろすだけなので止めなくてよい */
+    if($('toast')){ $('toast').textContent=''; $('toast').classList.remove('on'); }
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
     /* ★薬効辞書に保存していない編集がある時は、その編集だけは捨てない（2026-10-01）。別のタブで現場用へ
