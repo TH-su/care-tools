@@ -489,6 +489,26 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mpk-ls .bt{display:flex; gap:8px; margin-left:auto}
 .mpk-empty{font-size:0.8125rem; color:var(--g7); margin:0}
 @media print{.mpk{display:none !important}}
+/* ── 定期薬の変更履歴（2026-10-02 管理者指示）。記録はサーバー（gas/master.gs の _mhPush）だけが書く。
+   ★画面だけ＝印刷しない（同日の管理者指示）。詳細画面の「過去の臨時薬」の下に出す。
+   ★追加・変更・中止は色だけでなく文字の札で区別する（色覚に頼らない） ── */
+.sec-medshist .mh-e{padding:6px 0; border-bottom:1px dotted var(--g3)}
+.sec-medshist .mh-e:last-child{border-bottom:none}
+.mh-hd{display:flex; flex-wrap:wrap; gap:2px 10px; align-items:baseline}
+.mh-at{font-weight:700; color:var(--pri-d)}
+.mh-via{font-size:0.8125rem; color:var(--g7)}
+.mh-ls{list-style:none; margin:4px 0 0; padding:0}
+.mh-ls li{display:flex; gap:8px; align-items:baseline; padding:2px 0; min-width:0}
+.mh-ls li>span:last-child{min-width:0; overflow-wrap:anywhere; word-break:break-word}
+.mh-tag{flex:0 0 auto; font-size:0.75rem; font-weight:700; border:1px solid currentColor; border-radius:999px; padding:0 7px; white-space:nowrap; background:#fff}
+.mh-tag.add{color:var(--ok)}
+.mh-tag.chg{color:#8a3a00}
+.mh-tag.del{color:var(--ng)}
+.mh-from{color:var(--g7)}
+.mh-prev{margin-top:4px}
+.mh-prev summary{cursor:pointer; padding:12px 0; line-height:20px; font-size:0.8125rem; color:var(--g7)}
+.mh-prev summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+@media print{.sec-medshist{display:none !important}}
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
@@ -6546,6 +6566,41 @@ function printHideSet(r){
 }
 /* 描画後の DOM へ除外を反映する。見出し（.sec-lbl）を持つ枠を1欄とみなすので、
    .sec だけでなく事業所／家族構成図の2枠（.biz-geno-row の中）も拾える。 */
+/* ── 定期薬の変更履歴の表示（2026-10-02 管理者指示）──
+   記録はサーバー（gas/master.gs の _mhPush）が、編集画面・一括編集・訪問診療アプリのどこで定期薬を変えても
+   同じ規則で残す。この画面は【表示だけ】（この画面から履歴を書き換える経路は作らない）。
+   1件 = { at:'yyyy-MM-dd HH:mm', via:経路, add:[行], del:[行], chg:[{from,to}], prev?:[行] }（新しい順）
+   ★受信データとして扱う: 配列でない・文字列でない要素は飛ばし、文字は必ず esc する。
+   ★見出し「定期薬の変更履歴」は PRINT_SECS に入れない（印刷しない欄なので、伏せる設定の対象にもしない）。 */
+function mhAt_(s){
+  var t=String(s==null?'':s), m=/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/.exec(t);
+  return m?(fmtJDate(m[1])+(m[2]?' '+m[2]:'')):t;
+}
+function medsHistHtml_(arr){
+  var strs=function(a){return Array.isArray(a)?a.filter(function(x){return typeof x==='string'&&x!==''}):[]};
+  var list=Array.isArray(arr)?arr.filter(function(e){return e&&typeof e==='object'&&!Array.isArray(e)}):[];
+  /* 記録が無い方には欄を出さない（「過去の臨時薬」と同じ）。サーバーの反映前に「自動で残ります」と
+     誤った案内を出さないためでもある（反証レビュー 2026-10-02） */
+  if(!list.length) return '';
+  var body=list.map(function(e){
+      var li=[];
+      strs(e.add).forEach(function(x){li.push('<li><span class="mh-tag add">追加</span><span>'+esc(x)+'</span></li>')});
+      (Array.isArray(e.chg)?e.chg:[]).forEach(function(c){
+        if(!c||typeof c.from!=='string'||typeof c.to!=='string')return;
+        li.push('<li><span class="mh-tag chg">変更</span><span><span class="mh-from">'+esc(c.from)+'</span> → '+esc(c.to)+'</span></li>');
+      });
+      strs(e.del).forEach(function(x){li.push('<li><span class="mh-tag del">中止</span><span>'+esc(x)+'</span></li>')});
+      var pv=strs(e.prev);
+      return '<div class="mh-e"><div class="mh-hd"><span class="mh-at">'+esc(mhAt_(e.at))+'</span>'+
+          (e.via?'<span class="mh-via">'+esc(String(e.via))+'で変更</span>':'')+'</div>'+
+        (li.length?'<ul class="mh-ls">'+li.join('')+'</ul>':'')+
+        (pv.length?'<details class="mh-prev"><summary>この変更の前の処方（'+pv.length+'行）</summary><ul class="mh-ls">'+
+          pv.map(function(x){return '<li><span>'+esc(x)+'</span></li>'}).join('')+'</ul></details>':'')+
+      '</div>';
+    }).join('');
+  return '<div class="sec sec-medshist"><div class="sec-lbl">定期薬の変更履歴</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
+}
 function applyPrintHide(box,r){
   if(!box)return;
   var hid=printHideSet(r), lab2key={};
@@ -6864,6 +6919,8 @@ function renderView(r){
     }).join('');
     h+='<div class="sec"><div class="sec-lbl">過去の臨時薬</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+plogHtml+'</div></div></div>';
   }
+  // 定期薬の変更履歴（自動記録・新しい順・画面だけ）（2026-10-02 管理者指示）
+  h+=medsHistHtml_(r.medsHistory);
   /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
      ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
        （様式に無い＝消してよい、ではない。原則1） */
