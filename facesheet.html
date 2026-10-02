@@ -673,6 +673,10 @@ function isField(){return getDeviceRole()==='field'}
    読み込み直すと、開いていた方の全項目の画面・メモリの記録・進行中の通信がまとめて消え、
    現場端末としての起動（安全情報だけ）からやり直せる。 */
 var fsRoleApplied_=null;
+/* devGen は「現場用で描いた回数」。applyRoleBadge が現場用で描く時に進む（事務所PCのままなら進まない）。
+   デイ利用モジュール（入居者マスタと逐語同一）が、通信を出した時の値と応答が届いた時の値を比べ、違っていたら
+   切り替えより前に出した通信として捨てる。読み込み直しが効かなかった時に、全利用者の氏名を含む一覧がメモリへ戻らないように（2026-10-02） */
+var devGen=0;
 function fsReload_(){ try{ location.reload(); }catch(e){} }
 function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
@@ -2448,6 +2452,8 @@ function a4EnsureDayMap(){
   /* 直近に失敗したばかりなら押すたびに25秒待たせない（現場を止めない）。覚えるのは30秒だけ＝
      統合GASが復旧すれば自動的に取りに行く */
   if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、届いた応答は控えにも失敗の印にも入れない（2026-10-01） */
+  var dg=devGen;
   var t=a4SyncTarget();
   if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
   /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
@@ -2461,6 +2467,7 @@ function a4EnsureDayMap(){
         .then(function(r){ return r.text(); });
     })
     .then(function(txt){
+      if(dg!==devGen) return '';   // 切り替え後に届いた応答（a4DayMap に入れない）
       var j=JSON.parse(txt);
       /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる
          （名簿取得の emptyGuarded と同じ作法・multi-device-sync 原則4） */
@@ -2469,8 +2476,9 @@ function a4EnsureDayMap(){
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
       return '';
     })
-    .catch(function(){ return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
-    .then(function(msg){ a4DayPromise=null; return msg; });
+    .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    /* ★切り替え後に始まった新しい取得の印（a4DayPromise）を、古い応答が消さないように世代を見る */
+    .then(function(msg){ if(dg===devGen) a4DayPromise=null; return msg; });
   return a4DayPromise;
 }
 function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; }
@@ -3134,6 +3142,8 @@ function applyRoleBadge(){
      localStorage には元から書いていないが、メモリに残すと再読み込みまで端末内に居続ける。
      入居者マスタ applyDeviceGuard と同じ守り（片方だけに入れない）。 */
   if(f){ a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg=''; }
+  /* 世代も進める。切り替えより前に出した週間計画の取得の応答で、捨てた控えが戻らないように（入居者マスタ applyDeviceGuard の devGen++ と同じ守り） */
+  if(f) devGen++;
   /* 薬効辞書の控えも捨てる（現場では使わない。入居者マスタ applyDeviceGuard と同じ守り） */
   if(f){ fsMdMap=null; fsMdErr=''; fsMdLoading=false; fsMdGen++; fsMdPromise=null; fsMdPromiseRetry=false; }
   /* 食形態一覧の控え（全入居者の氏名・食事・アレルギーを含む）も同じ理由で捨てる */
