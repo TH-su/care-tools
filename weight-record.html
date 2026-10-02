@@ -642,6 +642,12 @@ select option.is-discharged{color:var(--g6)}
 
 /* header layout shift: allow badge + date side-by-side */
 .hdr-r2{display:flex;align-items:center;gap:10px}
+/* 狭い画面（iPhone・表示200%）で題名が「体重管／理シス／テム」と潰れないよう、見出しは折り返してよい形にし、
+   題名は1行のまま。右側（入居者マスタ・接続・日付）は収まらなければ題名の下の段へ回る。PC 幅では1行に収まるので見た目は変わらない
+   （入居者マスタ・フェイスシートと同じ直し方 2026-10-01） */
+.hdr{flex-wrap:wrap;gap:6px 12px}
+.hdr h1{white-space:nowrap}
+.hdr-r2{flex-wrap:wrap;min-width:0}
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
