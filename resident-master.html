@@ -1731,8 +1731,8 @@ var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updat
   'complaint','wishSelf','wishFamily','goal','acp','dnar','strengths',
   'supportLog','medicalSupportLog','xref',
   // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する。
-  // ★stateLog（状態の変更履歴・最大50件）も許可する。許可していないと、編集フォームから保存した
-  //   だけで履歴が消える（入力欄が無いので collectForm が拾わず、GAS が dataJson を全置換するため）
+  // ★編集画面の保存では collectForm がこの直前で3キーを外すので、ここに載っていても送られない（GAS が保存時点の値を残す・2026-10-02）。
+  //   一覧から消していないのは、外す処理（collectForm の delete）を消した時に入院の値ごと消えないための保険
   'hospitalized','hospitalizedAt','stateLog',
   /* 入居者基本情報（外部様式）の18項目（2026-08-12 追加）。既存キーと併存させ、置き換えない */
   'diseases','services','adlGrid','moveAid','bathPlace','excreteWay',
@@ -8809,18 +8809,18 @@ function collectForm(){
   if(editing.xref&&Object.keys(editing.xref).length)rec.xref=editing.xref;
   // 移行時の退避データは画面に入力欄が無いため、rec に引き継がないと保存のたびに消える
   if(editing.unmappedRaw&&editing.unmappedRaw.length)rec.unmappedRaw=editing.unmappedRaw;
-  /* ★入院の状態（hospitalized / hospitalizedAt / stateLog）も入力欄が無いので引き継ぐ。
-     引き継がないと、入院中の方を編集して保存しただけで入院フラグが消える。
-     消費側（週間計画・体重・排泄）は「キーが無い＝何もしない」と解釈するため、
-     マスタだけ入院表示が消え、他アプリは入院のまま残るという食い違いになる（2026-08-08 修正）。
-     ★false も引き継ぐこと。GAS の getRoster は hasOwnProperty でキーの有無を見るため、
-       キーごと落とすと「復帰済み」の情報まで配信されなくなる。
-     ★残る限界: 編集画面を開いている間に他端末が入院/復帰を切り替えると、
-       開いた時点の値で保存される（この画面の他の項目と同じ last-writer-wins）。
-       恒久対策は入居者マスタGAS側で3キーを保全すること（一括編集の実装時に同梱予定）。 */
-  ['hospitalized','hospitalizedAt','stateLog'].forEach(function(k){
-    if(Object.prototype.hasOwnProperty.call(editing,k)) rec[k]=editing[k];
-  });
+  /* ★入院の状態（hospitalized / hospitalizedAt / stateLog）は【送らない】（2026-10-02 本人指示）。
+     書き手は setState だけ（入院/退院ボタン・週間計画・排泄記録）。入居者マスタGASの saveResident は、
+     送られてこなかったこの3キーを保存の時点の値で残す（SAVE_PRESERVE・2026-08-08〜。本番と正本の一致は 2026-10-02 に照合済み）。
+     直す前は編集画面を開いた時点の値を引き継いで送っていたため、
+       ・入院/退院ボタンの応答を待つ間に「✏️編集」を押して保存すると、押した入院/退院が取り消される
+       ・編集画面を開いている間に他の端末・他のアプリで入院/退院が切り替わると、保存で元に戻る
+     が起きていた。入居者マスタGASの setState（この画面の入院/退院ボタン・週間計画）は保存と同じロックで順に処理されるので、
+     どちらが先に届いても入院の値は残る。★排泄記録GASはマスタの表へ直接書く別のスクリプトで、このロックを通らない。
+     保存がサーバーで読んでから書くまでの1秒未満に排泄記録が入院を書くと、その分は消えうる（直す前は編集画面を開いている間ずっとだった）。
+     ★新規登録は元から3キーを持たない（従来どおり）。保存後に GAS が返す記録には残した値が入る（afterSaveOk_ はそれで描く）。
+     ★入力欄から同じ名前が紛れ込んでも送らないよう、ここで必ず外す */
+  delete rec.hospitalized; delete rec.hospitalizedAt; delete rec.stateLog;
   // ホワイトリスト適用
   var clean={};ALLOWED_KEYS.forEach(function(k){if(rec[k]!==undefined)clean[k]=rec[k]});
   return clean;
@@ -8977,6 +8977,10 @@ function afterSaveOk_(rec,saved,dg,ed){
   var full=(saved&&saved.id!=null&&saved.name!=null)?saved:null;
   var row=normRosterRow(full||rec);
   var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
+  /* ★応答が不十分で送った内容（rec）から行を作った時は、入院の印を名簿の今の値から引き継ぐ。
+     編集画面は入院の3キーを送らない（collectForm・2026-10-02）ので、rec から作ると入院の印が抜け、
+     一覧と共有名簿でその方の入院が一時的に消える */
+  if(!full&&idx>=0&&!('hospitalized' in row)&&('hospitalized' in roster[idx])) row.hospitalized=roster[idx].hospitalized;
   if(idx>=0)roster[idx]=row;else roster.push(row);
   saveRosterCache();writeCommonRoster();
   bkMarkStale_();   /* 帳票の控え（getBulk）が古くなった印。認定期限は次に描く時に取り直す */
