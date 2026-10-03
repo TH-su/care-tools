@@ -102,6 +102,12 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 .tray.closed .tray-items { display: none; }
+/* 狭幅（iPhone）: ボタン列が縦書き状に潰れてページ全体が横にはみ出していたため、ヘッダー(.hdr)と同じく
+ * 1行のまま列ごと横スクロールさせる。PC幅には効かない（盤面・印刷は非接触） */
+@media (max-width: 700px) {
+  .tray-head { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tray-head > * { flex-shrink: 0; white-space: nowrap; }
+}
 .chip {
   flex-shrink: 0; border-radius: 8px; padding: 5px 9px; font-size: 0.75rem;
   border: 1px solid var(--g3); background: var(--g0); cursor: grab;
