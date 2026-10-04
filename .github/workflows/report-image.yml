@@ -1,0 +1,157 @@
+# 配置図の絵（自動）— 「画面の指摘」の Issue に、文字を塗りつぶした配置図の絵をコメントで付ける（2026-10-04 代表者の決定・提案3）
+#
+# ・対象は、受け口（check/gas）が作った Issue だけ＝作成者がリポジトリの所有者で、ラベル「画面の指摘」が付いて作られた時・付いた時
+#   （作る時と付く時の両方で起きても、同じ Issue の描く仕事は後の1本だけが残る）
+#   （公開リポジトリなので Issue は誰でも作れる。それ以外の Issue・それ以外のラベルでは何もしない）
+# ・本文の「SU-LAYOUT-V1 {…}」の1行を check/annot-render.mjs で絵にする。形（数値と色だけ）を確かめてから描くので、文字は描かない
+# ・描く仕事（外部の道具 playwright を入れる）は読むだけの権限で動かし、書く鍵を残さない。
+#   置く仕事（ブランチ report-images に issue-<番号>.png を置き、Issue にコメントで貼る）は外部の道具を入れない
+# ・main・画面のファイルには触らない
+#
+# 絵を取り下げる時（誤って載った時）: report-images から該当の issue-<番号>.png を消すコミットを作り、そのコメントも消す。
+#   古いコミットの URL（SHA 付き）にも残らないようにするには、ブランチを作り直して強制 push したうえで、GitHub のサポートに削除を頼む
+name: 配置図の絵
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions: {}
+
+jobs:
+  draw:
+    if: >-
+      ((github.event.action == 'opened' && contains(github.event.issue.labels.*.name, '画面の指摘')) ||
+       (github.event.action == 'labeled' && github.event.label.name == '画面の指摘')) &&
+      github.event.issue.user.login == github.repository_owner &&
+      github.event.issue.state == 'open'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: report-image-draw-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    outputs:
+      ok: ${{ steps.draw.outputs.ok }}
+    steps:
+      - name: リポジトリを取り出す（書く鍵は残さない）
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 描く道具を入れる
+        working-directory: check
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: 配置図を絵にする
+        id: draw
+        env:
+          ISSUE_NO: ${{ github.event.issue.number }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/img"
+          if node check/annot-render.mjs --event "$GITHUB_EVENT_PATH" --out "$RUNNER_TEMP/img/issue-$ISSUE_NO.png"; then
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "配置図が無いか形が違うため、絵は付けません"
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 絵を次の仕事に渡す
+        if: steps.draw.outputs.ok == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: annot-image
+          path: ${{ runner.temp }}/img/
+          retention-days: 1
+
+  publish:
+    needs: draw
+    if: needs.draw.outputs.ok == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write    # ブランチ report-images に絵を置くため
+      issues: write      # 絵をコメントで貼るため
+    steps:
+      - name: 渡された絵を受け取る
+        uses: actions/download-artifact@v4
+        with:
+          name: annot-image
+          path: ${{ runner.temp }}/img
+
+      - name: 絵の形を確かめる（PNG だけ・1枚だけ）
+        env:
+          ISSUE_NO: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          F="$RUNNER_TEMP/img/issue-$ISSUE_NO.png"
+          test "$(ls -1 "$RUNNER_TEMP/img" | wc -l)" = "1"
+          test -f "$F"
+          test "$(head -c 8 "$F" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a"
+          test "$(stat -c %s "$F")" -lt 5000000
+
+      - name: 絵をブランチ report-images に置く
+        id: pub
+        env:
+          ISSUE_NO: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config --global init.defaultBranch report-images
+          mkdir "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
+          git init -q
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          # 別の Issue の絵と同時に置こうとして先を越されたら、取り込み直してやり直す（同時実行の待ち行列は使わない＝待ちが取り消されないように）
+          for try in 1 2 3 4 5; do
+            if git fetch -q --depth=1 origin report-images 2>/dev/null; then
+              git checkout -q -B report-images FETCH_HEAD
+            else
+              git checkout -q --orphan report-images 2>/dev/null || true
+              printf '%s\n' '# report-images' '' '「画面の指摘」の Issue に貼る配置図の絵（文字を塗りつぶした画面の形）だけを置くブランチです。' \
+                '.github/workflows/report-image.yml が自動で置きます。画面のファイルはありません。取り込み（マージ）しないでください。' > README.md
+            fi
+            cp "$RUNNER_TEMP/img/issue-$ISSUE_NO.png" "issue-$ISSUE_NO.png"
+            git add -A
+            git commit -q -m "配置図の絵：Issue #$ISSUE_NO" || echo "変わりなし"
+            if git push -q origin HEAD:refs/heads/report-images; then
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "置けなかったので取り込み直してやり直します（$try 回目）"
+            sleep $((try * 3))
+          done
+          exit 1
+
+      - name: 絵を Issue にコメントで貼る
+        uses: actions/github-script@v7
+        env:
+          SHA: ${{ steps.pub.outputs.sha }}
+        with:
+          script: |
+            const MARK = '<!-- su-annot-image -->';
+            const { owner, repo } = context.repo;
+            const n = context.payload.issue.number;
+            const url = `https://raw.githubusercontent.com/${owner}/${repo}/${process.env.SHA}/issue-${n}.png`;
+            const body = [
+              MARK,
+              '### 配置図（文字を塗りつぶした画面の形）',
+              '',
+              `![配置図](${url})`,
+              '',
+              '赤い枠と番号が、本文の「指摘 n」の場所です。部品の四角と、文字がある所の帯だけを数値から描いた絵で、文字・入力の値・写真は入っていません。',
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: n, per_page: 100 });
+            const mine = comments.find((c) => c.user && c.user.type === 'Bot' && c.body && c.body.startsWith(MARK));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: n, body });

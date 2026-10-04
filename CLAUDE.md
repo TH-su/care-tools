@@ -57,8 +57,8 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-weight-shadow.js` `su-auth.js` + `supabase-js-*.js` |
-| 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ） |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-weight-shadow.js` `su-auth.js` + `supabase-js-*.js` |
+| 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
@@ -69,6 +69,8 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
   新しい画面を足す時も同じ1行を足す。送信先は接続設定の「不具合の報告先」（URL `su_report_endpoint` と合言葉 `su_report_token`）で、無い端末では「コピー」だけになる。
   `su-errors.js` を読んでいる画面では、エラーが起きた時に送信先がある端末からだけ自動で報告が送られる（エラーの種類・ファイル名・行番号・端末の種類だけ。エラー文の中身は送らない）。
   報告は公開リポジトリの Issue になる。だから報告画面には「氏名・居室番号・病名は書かない」と出ている。
+  管理者（Google＋2段階認証でログイン中）には、報告の枠に「画面の場所を指して報告」（画面の指摘・`su-annot.js`）が出る。画面の部品を指して一言ずつ書き、
+  文字を塗りつぶした配置図と一緒に送る。**配置図には文字・入力の値・画像の中身を入れない**（四角の位置・大きさ・色と、文字がある所の帯だけ）。この決まりを崩す変更はしない。
 - 同じ処理が2ファイルにある「逐語同一の共有モジュール」（例: 週間計画からデイ利用日を取る処理が
   入居者マスタとフェイスシートに同じ文面で入っている）は、**片方を直したら両方を一字一句同じに戻す**。
 

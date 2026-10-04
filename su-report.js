@@ -26,8 +26,14 @@
  *   重なり順は画面のモーダルより下（z-index 30）＝モーダルの「保存」を覆わない。モーダルの中では報告できない（閉じてから押す）。
  *   他の画面の中に枠（iframe）として埋め込まれている時はボタンを出さない（自動報告は効く）。
  *
+ * ★2026-10-04（代表者の決定・提案3）: 画面の指摘（注釈モード）。管理者（Google＋2段階認証でログイン中）にだけ、
+ *   報告の枠に「画面の場所を指して報告」を出す。押すと su-annot.js を読み込み、画面の部品を指して一言ずつ書ける。
+ *   送るのは「【画面の指摘】」で始まる本文（指摘ごとの一言・部品の場所・大きさ）と、文字を塗りつぶした配置図（数値だけ）。
+ *   管理者かどうかは、この端末にログインの記録がある時だけ su-auth.js に聞く（現場端末では聞かない）。
+ *   これは「ボタンを出すかどうか」だけの判定で、受け付けるかどうかは今までどおり受け口の合言葉が決める。
+ *
  * 使い方: 各ツールの </body> の直前で
- *   <script src="su-report.js?v=2026-10-04" data-tool="週間計画"></script>
+ *   <script src="su-report.js?v=2026-10-04.2" data-tool="週間計画"></script>
  */
 (function () {
   'use strict';
@@ -103,16 +109,30 @@
     return L;
   }
 
+  function oneLine(s) { return String(s || '').replace(/\r?\n/g, ' ／ '); }
   function compose(symptom) {
-    var L = [];
-    L.push('【不具合報告】' + new Date().toLocaleString('ja-JP'));
+    var L = [], ann = annot && annot.marks.length ? annot : null;
+    L.push((ann ? '【画面の指摘】' : '【不具合報告】') + new Date().toLocaleString('ja-JP'));
     L.push('ツール: ' + TOOL + '（' + FILE + '）');
-    L.push('症状: ' + (symptom ? symptom.replace(/\r?\n/g, ' ／ ') : '（未記入）'));   // 症状は1行にする（行頭の見出しと紛れないように）
+    L.push('症状: ' + (symptom ? oneLine(symptom) : '（未記入）'));   // 症状は1行にする（行頭の見出しと紛れないように）
+    if (ann) {
+      for (var j = 0; j < ann.marks.length; j++) {
+        var m = ann.marks[j];
+        L.push('指摘 ' + m.n + ': ' + oneLine(m.note) + ' ／ 部品: ' + m.sel + (m.desc ? ' ／ ' + m.desc : ''));
+      }
+    }
     L.push('──── ここから下は自動で付いた情報です ────');
     L = L.concat(facts());
     L.push('画面のエラー: ' + (ERRORS.length ? ERRORS.length + '件（種類と場所だけ）' : 'なし'));
     for (var i = 0; i < ERRORS.length; i++) L.push('  ' + (i + 1) + ') ' + ERRORS[i]);
+    if (ann) L.push('配置図: ' + (ann.layout ? '添付（部品の四角 ' + ann.layout.r.length + '個・文字は含まない）' : '作れなかった'));
     return L.join('\n');
+  }
+  /* 送る本文。配置図は最後の1行に数値だけで付ける（コピーには付けない＝LINE などに貼るには長すぎるため） */
+  function payload(symptom) {
+    var t = compose(symptom);
+    if (annot && annot.marks.length && annot.layout) t += '\nSU-LAYOUT-V1 ' + JSON.stringify(annot.layout);
+    return t;
   }
   // 自動報告の本文。職員が書く欄は無い＝エラーの種類・場所と端末の事実だけ
   function composeAuto(type, where) {
@@ -139,7 +159,7 @@
   function post(url, body) {
     return fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: body, keepalive: true
+      body: body, keepalive: body.length < 20000   // keepalive は 64KB までしか送れない。配置図つきの大きい報告は普通に送る
     }).then(function (r) {
       if (!r.ok) return { ok: false, why: 'HTTP ' + r.status };
       return r.text().then(function (t) {
@@ -147,6 +167,63 @@
         catch (e) { return { ok: false, why: '応答が読めない' }; }
       });
     });
+  }
+
+  // ── 画面の指摘（管理者だけ）──
+  var annot = null;   // { marks: [{ n, note, sel, desc, el }], layout }
+  var ANNOT_SRC = 'su-annot.js?v=2026-10-04';
+  // 管理者かどうかを聞くための部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる）
+  var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-09-26'];
+  var loading = {};
+  /* 画面がすでに同じ部品の札（<script src>）を入れている時は、2本目を入れずに読み終わるのを待つ（su-auth.js を二重に動かさない） */
+  function waitFor(test, ms) {
+    return new Promise(function (ok, ng) {
+      var t0 = Date.now();
+      (function poll() { if (test()) ok(); else if (Date.now() - t0 > ms) ng(new Error('待ちきれない')); else setTimeout(poll, 100); })();
+    });
+  }
+  function hasTag(name) {
+    var ss = document.getElementsByTagName('script');
+    for (var i = 0; i < ss.length; i++) if (String(ss[i].getAttribute('src') || '').split('?')[0].split('/').pop() === name) return true;
+    return false;
+  }
+  function loadAuth() {
+    if (window.SUAuth) return Promise.resolve();
+    if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
+    var lib = window.supabase ? Promise.resolve()
+      : (hasTag(AUTH_SRC[0]) ? waitFor(function () { return !!window.supabase; }, 8000) : loadScript(AUTH_SRC[0]));
+    return lib.then(function () { return window.SUAuth ? null : loadScript(AUTH_SRC[1]); });
+  }
+  function loadScript(src) {
+    if (loading[src]) return loading[src];
+    loading[src] = new Promise(function (ok, ng) {
+      var s = document.createElement('script');
+      s.src = src; s.async = false;
+      s.onload = function () { ok(); };
+      s.onerror = function () { delete loading[src]; try { s.remove(); } catch (e) { /* 何もしない */ } ng(new Error('読み込めない: ' + src)); };   // 失敗した札は残さない（他の部品が「読み込み中」と思って待たないように）
+      document.head.appendChild(s);
+    });
+    return loading[src];
+  }
+  /* この端末にログインの記録があるか（キーの名前だけを見る。中身は読まない） */
+  function hasLogin() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) if (/^sb-[a-z0-9]+-auth-token$/.test(localStorage.key(i) || '')) return true;
+    } catch (e) { /* 読めなければ無いものとする */ }
+    return false;
+  }
+  var adminP = null;
+  function isAdmin() {
+    if (adminP) return adminP;
+    if (role() === '現場端末' || !hasLogin() || typeof Promise === 'undefined') return Promise.resolve(false);
+    adminP = new Promise(function (done) {
+      var t = setTimeout(function () { done(false); }, 10000);
+      loadAuth().then(function () { return window.SUAuth.check(); }).then(function (r) {
+        clearTimeout(t);
+        done(!!(r && r.status === window.SUAuth.STATUS.OK && r.role === 'admin'));
+      }).catch(function () { clearTimeout(t); done(false); });
+    }).then(function (ok) { if (!ok) adminP = null; return ok; });   // 管理者でなかった・聞けなかった時は、次に枠を開いた時にもう一度聞く
+    return adminP;
   }
 
   // ── 自動報告（su-errors.js の通知を受ける）──
@@ -213,6 +290,11 @@
     '.sur-btn.pri{background:var(--pri,#0b57d0);color:#fff;border-color:transparent}',
     '.sur-ok{margin-top:10px;color:#0842a0;font-weight:600}',
     '.sur-note{margin-top:10px;font-size:12px;color:var(--g7,#5f6368)}',
+    '.sur-ann{margin-top:10px}',
+    '.sur-ann ol{margin:4px 0 0;padding-left:1.6em}',
+    '.sur-ann li{margin:2px 0}',
+    '.sur-ann canvas{display:block;max-width:100%;max-height:40vh;margin-top:8px;border:1px solid var(--g3,#dadce0);border-radius:8px}',
+    '.sur-fab.sur-hide{visibility:hidden}',
     '@media (max-width:260px){.sur-fab{padding:8px 10px;font-size:13px}}',   /* 表示200%（CSS幅200px前後）では小さめにして中身を隠しすぎない */
     '@media print{.sur-fab,.sur-dlg{display:none!important}}'
   ].join('');
@@ -236,6 +318,15 @@
     '<p class="sur-warn">この報告は、直す担当が見る公開の場所に載ります。入居者・職員の氏名、居室番号、病名は書かないでください。</p>' +
     '<label for="sur-sym">何が起きましたか</label>' +
     '<textarea id="sur-sym" placeholder="例：印刷すると右端が切れる／保存を押しても戻ってしまう"></textarea>' +
+    '<div class="sur-ann" id="sur-ann" hidden>' +
+    '<button class="sur-btn" id="sur-pick" type="button">画面の場所を指して報告</button>' +
+    '<div id="sur-ann-box" hidden>' +
+    '<label>画面の指摘</label><ol id="sur-ann-list"></ol>' +
+    '<canvas id="sur-ann-cv" role="img" aria-label="一緒に送る配置図（文字は塗りつぶし）"></canvas>' +
+    '<div class="sur-note">この絵（配置図）も一緒に送ります。部品の四角と、文字がある所の帯だけです。文字・入力の値・写真は入っていません。</div>' +
+    '<div class="sur-row"><button class="sur-btn" id="sur-repick" type="button">指し直す</button>' +
+    '<button class="sur-btn" id="sur-unpick" type="button">指摘を消す</button></div>' +
+    '</div></div>' +
     '<label>送る内容（これがそのまま渡ります）</label>' +
     '<div class="sur-pre" id="sur-prev"></div>' +
     '<div class="sur-row">' +
@@ -259,7 +350,43 @@
     dlg.querySelector('#sur-note').hidden = !has;
     openDlg();
     dlg.querySelector('#sur-sym').focus();
+    isAdmin().then(function (ok) { if (ok) dlg.querySelector('#sur-ann').hidden = false; }, function () { /* 出さない */ });
   });
+  function renderAnnot() {
+    var box = dlg.querySelector('#sur-ann-box'), list = dlg.querySelector('#sur-ann-list');
+    var has = !!(annot && annot.marks.length);
+    box.hidden = !has;
+    dlg.querySelector('#sur-pick').hidden = has;
+    list.innerHTML = '';
+    if (!has) return;
+    annot.marks.forEach(function (m) {
+      var li = document.createElement('li');
+      li.textContent = m.note;
+      list.appendChild(li);
+    });
+    var cv = dlg.querySelector('#sur-ann-cv');
+    var drawn = false;
+    try { drawn = !!(annot.layout && window.SUAnnot && window.SUAnnot.draw(cv, annot.layout, 1)); } catch (e) { drawn = false; }
+    cv.hidden = !drawn;
+  }
+  function startPick() {
+    var msg = dlg.querySelector('#sur-msg');
+    closeDlg();
+    fab.classList.add('sur-hide');
+    function back() { fab.classList.remove('sur-hide'); renderAnnot(); refresh(); msg.hidden = true; openDlg(); }
+    loadScript(ANNOT_SRC).then(function () {
+      var ok = window.SUAnnot.start({
+        marks: annot ? annot.marks : null,
+        onDone: function (res) { annot = res && res.marks && res.marks.length ? res : null; back(); },
+        onCancel: back
+      });
+      if (!ok) back();
+    }).catch(function () {
+      back();
+      msg.hidden = false;
+      msg.textContent = '画面の指摘の部品を読み込めませんでした。電波を確かめてから、もう一度押してください。';
+    });
+  }
 
   /* ボタンの置き場所を自分で測る（画面ごとの CSS に手を入れない）。
      ・下端に接する幅広の固定要素（下のナビバー等）があれば、その上へ上げる
@@ -346,12 +473,15 @@
     dlg.addEventListener('cancel', function (e) { e.preventDefault(); closeDlg(); });
     dlg.querySelector('#sur-sym').addEventListener('input', refresh);
     dlg.querySelector('#sur-close').addEventListener('click', closeDlg);
+    dlg.querySelector('#sur-pick').addEventListener('click', startPick);
+    dlg.querySelector('#sur-repick').addEventListener('click', startPick);
+    dlg.querySelector('#sur-unpick').addEventListener('click', function () { annot = null; renderAnnot(); refresh(); });
     dlg.querySelector('#sur-copy').addEventListener('click', function () {
       var txt = compose(dlg.querySelector('#sur-sym').value.trim());
       var msg = dlg.querySelector('#sur-msg');
       function done(ok) {
         msg.hidden = false;
-        msg.textContent = ok ? 'コピーしました。LINEなどに貼って送ってください。'
+        msg.textContent = ok ? 'コピーしました。LINEなどに貼って送ってください。' + (annot && annot.marks.length ? '（配置図の絵はコピーに入りません）' : '')
           : 'コピーできませんでした。上の枠の文字を選んでコピーしてください。';
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -368,8 +498,9 @@
       }
       var btn = dlg.querySelector('#sur-send');
       btn.disabled = true;
-      post(url, compose(dlg.querySelector('#sur-sym').value.trim())).then(function (r) {
+      post(url, payload(dlg.querySelector('#sur-sym').value.trim())).then(function (r) {
         msg.hidden = false;
+        if (r.ok && annot) { annot = null; renderAnnot(); refresh(); }   // 送った指摘は消す（次の報告で同じものをもう一度送らない）
         msg.textContent = r.ok ? '送信しました。ありがとうございます。'
           : '送信先に受け付けられませんでした（合言葉の違いなど）。コピーして送ってください。';
       }).catch(function () {
