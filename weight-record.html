@@ -10,7 +10,7 @@
 <title>体重管理システム</title>
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-09-27"></script>
@@ -7511,5 +7511,7 @@ $('#mdResident').addEventListener('click', e=>{
   if(e.target.id==='mdResident') $('#mdResident').classList.remove('on');
 });
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04" data-tool="体重管理システム"></script>
 </body>
 </html>

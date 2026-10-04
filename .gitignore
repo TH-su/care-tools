@@ -20,6 +20,26 @@
 !/.gitignore
 !/.nojekyll
 !/CLAUDE.md
+# 検証道具・受け口・定期タスクの指示書（2026-10-04・配布物ではない。架空データ専用／実名の一覧と撮影結果は置かない）
+# check/ の中も「明示 opt-in」。新しい道具を足す時は下に1行足す（out/・node_modules/・.names.local は載らない）
+!/check
+/check/*
+!/check/README.md
+!/check/package.json
+!/check/lib.mjs
+!/check/snap.mjs
+!/check/compare.mjs
+!/check/jscheck.mjs
+!/check/name-guard.mjs
+!/check/run.mjs
+!/check/serve.mjs
+!/check/gas
+/check/gas/*
+!/check/gas/README.md
+!/check/gas/report-inbox.gs
+!/check/routine
+/check/routine/*
+!/check/routine/nightly-fix.md
 !/care-schedule.html
 !/facesheet.html
 !/genogram.html

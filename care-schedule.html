@@ -1739,7 +1739,7 @@ function _handle(e, method) {
 <div class="toast" id="toast"></div>
 
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
-<script src="su-errors.js?v=2026-09-24"></script>
+<script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -9238,5 +9238,7 @@ function csFlushOnExit_() {
 window.addEventListener('beforeunload', csFlushOnExit_);
 window.addEventListener('pagehide', csFlushOnExit_);
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04" data-tool="週間計画"></script>
 </body>
 </html>
