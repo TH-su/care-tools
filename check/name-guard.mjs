@@ -52,12 +52,14 @@ if (args.all === 'true') {
 const hits = [], warns = [];
 const guess = /([一-龥々]{1,2}[ 　]?[一-龥々]{1,3})(様|さん)/g;
 for (const r of rows) {
-  for (const n of names) if (n && r.text.includes(n)) hits.push(`${r.file}:${r.line} 「${n}」`);
+  // SU_NAME_GUARD_QUIET=1（PR の自動チェック）では、見つけた語そのものは出さない（公開の記録に実名を書かないため）
+  for (const n of names) if (n && r.text.includes(n)) hits.push(`${r.file}:${r.line}` + (process.env.SU_NAME_GUARD_QUIET === '1' ? '（一覧の語が含まれる）' : ` 「${n}」`));
   if (!names.length) { let m; while ((m = guess.exec(r.text))) warns.push(`${r.file}:${r.line} 「${m[0]}」（当て推量）`); }
 }
 if (hits.length) { console.log(hits.join('\n')); console.log(`実名ガード exit 1（${hits.length}件）`); process.exit(1); }
 if (!names.length) {
-  console.log(`実名ガード: 一覧なし（未実施・${rows.length}行）${warns.length ? '\n' + warns.slice(0, 30).join('\n') : ''}`);
+  const quiet = process.env.SU_NAME_GUARD_QUIET === '1';
+  console.log(`実名ガード: 一覧なし（未実施・${rows.length}行）${!quiet && warns.length ? '\n' + warns.slice(0, 30).join('\n') : (warns.length ? '（当て推量 ' + warns.length + '件・語は出さない）' : '')}`);
   process.exit(2);
 }
 console.log(`実名ガード exit 0（${rows.length}行を確認・一覧 ${names.length}語）`);
