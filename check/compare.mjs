@@ -1,6 +1,6 @@
 /* check/compare.mjs — 直す前（base）と直した後（head）の撮影を画素で見比べる（2026-10-04 新設）
  *
- *   node check/compare.mjs --base check/out/base --head check/out/head [--out check/out/compare] [--allow a.html,b.html]
+ *   node check/compare.mjs --base check/out/base --head check/out/head [--out check/out/compare] [--allow a.html,b.html] [--tol 2]
  *
  * ・同じ名前の PNG を1枚ずつ比べ、違う画素の数を数える。違いがあれば赤で塗った差分画像を out に置く
  * ・印刷ページ数（metrics.json）も見比べる
@@ -9,6 +9,11 @@
  *   iPhone（ph100/ph200）の違いは報告だけ（終了コードに入れない。幅の条件つきの直しで変わるのが普通のため）
  *
  * 比べ方は Node に画像ライブラリを入れず、Chromium の canvas で行う（依存を増やさない）。
+ *
+ * ★色の揺れ（--tol・既定 2）: 1画素の赤・緑・青のどれもが 2 以内しか違わない時は「同じ」とみなす。
+ *   角の丸み・文字のにじみの描き方が撮るたびに 1 だけずれることがある（2026-10-04 実測: 消耗品管理の角で ±1）。
+ *   位置・形・文字が変わると差は数十〜二百になるので、この幅で本当の違いを見落とすことはない。
+ *   結果の文には必ず「色の揺れ±2以内は同じとみなす」と書く（やっていないことを書かないため）。--tol 0 で完全一致だけを見る。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +23,7 @@ const args = parseArgs(process.argv.slice(2));
 const baseDir = path.resolve(args.base || 'check/out/base');
 const headDir = path.resolve(args.head || 'check/out/head');
 const outDir = ensureDir(path.resolve(args.out || 'check/out/compare'));
+const TOL = Math.max(0, Number(args.tol == null ? 2 : args.tol) || 0);
 const allow = new Set((args.allow ? String(args.allow).split(',') : []).map((s) => s.trim().replace(/\.html$/, '')).filter(Boolean));
 
 const { chromium } = loadPlaywright();
@@ -30,7 +36,7 @@ for (const f of files) {
   const a = path.join(baseDir, f), b = path.join(headDir, f);
   const [name, view] = [f.replace(/\.[a-z0-9]+\.png$/, ''), f.match(/\.([a-z0-9]+)\.png$/)[1]];
   if (!fs.existsSync(a)) { results.push({ file: f, name, view, status: 'base無し' }); continue; }
-  const r = await page.evaluate(async ([da, db]) => {
+  const r = await page.evaluate(async ([da, db, tol]) => {
     function load(src) { return new Promise((ok, ng) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ng; im.src = src; }); }
     const [ia, ib] = await Promise.all([load(da), load(db)]);
     if (ia.width !== ib.width || ia.height !== ib.height) return { same: false, size: true, a: [ia.width, ia.height], b: [ib.width, ib.height] };
@@ -43,17 +49,20 @@ for (const f of files) {
     let n = 0, minY = h, maxY = -1, minX = w, maxX = -1;
     const diff = xb.createImageData(w, h); const pd = diff.data;
     for (let i = 0; i < pa.length; i += 4) {
-      const d = Math.abs(pa[i] - pb[i]) + Math.abs(pa[i + 1] - pb[i + 1]) + Math.abs(pa[i + 2] - pb[i + 2]) + Math.abs(pa[i + 3] - pb[i + 3]);
+      const d = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]), Math.abs(pa[i + 3] - pb[i + 3]));
       const px = (i / 4) % w, py = Math.floor((i / 4) / w);
-      if (d > 0) { n++; pd[i] = 255; pd[i + 1] = 0; pd[i + 2] = 0; pd[i + 3] = 255; if (py < minY) minY = py; if (py > maxY) maxY = py; if (px < minX) minX = px; if (px > maxX) maxX = px; }
+      if (d > tol) { n++; pd[i] = 255; pd[i + 1] = 0; pd[i + 2] = 0; pd[i + 3] = 255; if (py < minY) minY = py; if (py > maxY) maxY = py; if (px < minX) minX = px; if (px > maxX) maxX = px; }
       else { const g = Math.round((pb[i] + pb[i + 1] + pb[i + 2]) / 3); pd[i] = g; pd[i + 1] = g; pd[i + 2] = g; pd[i + 3] = 60; }
     }
     if (!n) return { same: true, size: false, w, h };
     xb.putImageData(diff, 0, 0);
     return { same: false, size: false, w, h, n, box: [minX, minY, maxX, maxY], png: cb.toDataURL('image/png') };
-  }, [toDataUrl(a), toDataUrl(b)]);
+  }, [toDataUrl(a), toDataUrl(b), TOL]);
   const row = { file: f, name, view, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null, size: r.size ? { base: r.a, head: r.b } : null };
   if (r.png) { const p = path.join(outDir, f.replace(/\.png$/, '.diff.png')); fs.writeFileSync(p, Buffer.from(r.png.split(',')[1], 'base64')); row.diff = p; }
+  if (!r.same) {   // 違った画面は、前・後の撮影も並べて置く（差分画像だけでは何が変わったか分かりにくいため）
+    try { fs.copyFileSync(a, path.join(outDir, f.replace(/\.png$/, '.before.png'))); fs.copyFileSync(b, path.join(outDir, f.replace(/\.png$/, '.after.png'))); } catch (e) { /* 置けなくても比較は続ける */ }
+  }
   results.push(row);
 }
 
@@ -90,7 +99,7 @@ for (const v of ['pc', 'print', 'ph100', 'ph200']) {
   const rows = byView(v).filter((r) => r.status !== 'base無し');
   const changed = rows.filter((r) => r.status !== '一致');
   const label = { pc: 'PC の画面', print: '印刷の見た目', ph100: 'iPhone 100%', ph200: 'iPhone 200%' }[v];
-  if (!changed.length) lines.push(`${label}: ${rows.length}画面すべて画素一致`);
+  if (!changed.length) lines.push(`${label}: ${rows.length}画面すべて画素一致${TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : ''}`);
   else {
     lines.push(`${label}: ${rows.length - changed.length}画面は画素一致・${changed.length}画面に違い（${changed.map((r) => r.name + (allow.has(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '')).join('、')}）`);
     if (v === 'pc' || v === 'print') fail += changed.filter((r) => !allow.has(r.name)).length;

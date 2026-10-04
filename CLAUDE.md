@@ -58,7 +58,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
 | 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-weight-shadow.js` `su-auth.js` + `supabase-js-*.js` |
-| 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・受け口 GAS・夜の定期タスクの指示書。配布物ではない） |
+| 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
@@ -98,6 +98,8 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 コミット文の末尾に「検証:」として、やったものだけを書く（やっていないことを書かない）。
 **まず `node check/run.mjs --pages <触った画面> --allow <触った画面>` を回す**（`check/README.md`）。`check/out/summary.md` の行がそのまま「検証:」になる。
 人の目で確かめたことは、道具の行の後ろに別に書く。
+PR を出すと同じ比較が GitHub Actions で自動で回り（チェック名「画素の見比べ」）、結果が PR にコメントされる。
+赤い×の時は差分画像を見て直すか、意図した違いなら PR 本文に `画素の違いを許す: 画面.html` と1行書く。
 
 - **JS構文 OK**（`node --check` 相当）
 - **実名ガード exit 0**（実名が混入していない。一覧（`check/.names.local`）がある環境でだけ言える。無い環境では「一覧なし（未実施）」と書く）

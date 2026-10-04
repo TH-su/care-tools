@@ -1,0 +1,140 @@
+# 画素の見比べ（自動）— PR ごとに main と PR の全画面を撮って見比べる（2026-10-04 代表者の決定・提案2）
+#
+# ・撮るのは公開リポジトリの画面をそのまま開いた状態（接続先なし＝架空データ・本番のデータは読まない）
+# ・この PR で中身を変えた画面と、PR 本文の「画素の違いを許す: xxx.html」の画面は違ってよい
+#   それ以外の画面の PC・印刷に違いがあれば、このチェックを失敗（赤い×）にする。取り込みは止めない
+# ・結果は PR に1つのコメントで出し（実行のたびに書き換える）、差分画像は成果物（zip）で配る
+# ・道具の中身は check/（check/README.md）。手元で回す時も同じ道具を使う
+name: 画素の見比べ
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pixel-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pixel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: リポジトリを取り出す
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 日本語の字形を入れる（撮影した画面の文字が読めるように）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: 撮影の道具を入れる
+        working-directory: check
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: 変えてよい画面を決める
+        id: allow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node check/ci-allow.mjs --base "origin/$BASE_REF"
+
+      - name: 実名の一覧を用意する（秘密の設定 SU_NAME_GUARD_LIST がある時だけ）
+        env:
+          NAMES: ${{ secrets.SU_NAME_GUARD_LIST }}
+        run: |
+          if [ -n "$NAMES" ]; then
+            printf '%s\n' "$NAMES" > "$RUNNER_TEMP/names.txt"
+            echo "SU_NAME_GUARD_FILE=$RUNNER_TEMP/names.txt" >> "$GITHUB_ENV"
+            echo "実名の一覧: あり"
+          else
+            echo "実名の一覧: なし（実名ガードは未実施と出ます）"
+          fi
+
+      - name: 直す前と後を撮って見比べる
+        id: run
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          ALLOW: ${{ steps.allow.outputs.allow }}
+          SU_NAME_GUARD_QUIET: '1'
+        run: |
+          set +e
+          node check/run.mjs --base "origin/$BASE_REF" --allow "$ALLOW"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: 差分画像を成果物として残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixel-diff
+          path: |
+            check/out/summary.md
+            check/out/compare/
+            check/out/head/metrics.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: 結果を PR にコメントする
+        if: always()
+        continue-on-error: true   # 別のアカウントから出た PR（fork）では書き込めないため、失敗しても止めない
+        uses: actions/github-script@v7
+        env:
+          ALLOW: ${{ steps.allow.outputs.allow }}
+          CHANGED: ${{ steps.allow.outputs.changed }}
+          FROM_BODY: ${{ steps.allow.outputs.body }}
+          CODE: ${{ steps.run.outputs.code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const MARK = '<!-- su-pixel-check -->';
+            let summary = '';
+            try { summary = fs.readFileSync('check/out/summary.md', 'utf8').trim(); } catch (e) { summary = '・結果のファイルがありません（途中で止まった）'; }
+            const ok = process.env.CODE === '0';
+            const pr = context.payload.pull_request;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const list = (s) => (s ? s.split(',').filter(Boolean).map((f) => '`' + f + '`').join('、') : 'なし');
+            const body = [
+              MARK,
+              `### 画素の見比べ（自動）: ${ok ? '✅ 許していない画面に違いはありません' : '❌ 許していない画面に違いがあります'}`,
+              '',
+              `main（${pr.base.sha.slice(0, 7)}）と この PR（${pr.head.sha.slice(0, 7)}）の全画面を、PC・印刷・iPhone 100%／200% で撮って比べました。接続先なし（架空データ）の画面です。`,
+              '',
+              `- この PR で中身を変えた画面（違ってよい）: ${list(process.env.CHANGED)}`,
+              `- PR 本文で許した画面: ${list(process.env.FROM_BODY)}`,
+              '',
+              summary,
+              '',
+              `差分画像（赤＝違う画素。違った画面は前・後の撮影も入っています）: [この実行の成果物「pixel-diff」](${runUrl})`,
+              '',
+              ok ? '' : '意図した違いなら、PR 本文に `画素の違いを許す: 画面.html` と1行書いてください（保存すると自動でもう一度比べます）。意図しない違いなら、差分画像の赤い所を直してください。',
+            ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+            const { owner, repo } = context.repo;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: pr.number, per_page: 100 });
+            const mine = comments.find((c) => c.user && c.user.type === 'Bot' && c.body && c.body.startsWith(MARK));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+
+      - name: 結果
+        if: always()
+        env:
+          CODE: ${{ steps.run.outputs.code }}
+        run: |
+          cat check/out/summary.md 2>/dev/null || true
+          if [ "$CODE" != "0" ]; then
+            echo "許していない画面に違いがあるか、検証が完了していません（上の結果と PR のコメントを見てください）"
+            exit 1
+          fi

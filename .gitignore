@@ -20,6 +20,12 @@
 !/.gitignore
 !/.nojekyll
 !/CLAUDE.md
+# PR ごとの自動チェック（2026-10-04・画素の見比べ）。.github の中も1ファイルずつ明示 opt-in
+!/.github
+/.github/*
+!/.github/workflows
+/.github/workflows/*
+!/.github/workflows/pixel-check.yml
 # 検証道具・受け口・定期タスクの指示書（2026-10-04・配布物ではない。架空データ専用／実名の一覧と撮影結果は置かない）
 # check/ の中も「明示 opt-in」。新しい道具を足す時は下に1行足す（out/・node_modules/・.names.local は載らない）
 !/check
@@ -33,6 +39,7 @@
 !/check/name-guard.mjs
 !/check/run.mjs
 !/check/serve.mjs
+!/check/ci-allow.mjs
 !/check/gas
 /check/gas/*
 !/check/gas/README.md
