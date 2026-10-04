@@ -34,7 +34,10 @@ const MERGE = args.merge === 'true';
 
 const { chromium } = loadPlaywright();
 const srv = await startServer(repoDir);
-const browser = await chromium.launch();
+/* 文字の位置を画素の格子に揃えて描く（--disable-font-subpixel-positioning）。
+   揃えないと、入力欄・選択欄の文字が撮るたびに1画素未満ずれて描かれることがあり、目に見えない違いで比較が赤くなっていた
+   （2026-10-04 実測: 貼り薬カレンダーの iPhone 幅で 30回中1回、CI では約半分。揃えると 30回とも同じ絵）。直す前・後とも同じ設定で撮る */
+const browser = await chromium.launch({ args: ['--disable-font-subpixel-positioning'] });
 const prev = MERGE ? readJsonSafe(path.join(outDir, 'metrics.json')) : null;
 const metrics = (prev && prev.pages) || {};
 function readJsonSafe(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } }
