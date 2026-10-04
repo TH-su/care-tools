@@ -17,9 +17,10 @@
  *   ②無ければ、このファイルが最小限の帯を自前で出す（ツールのCSSに依存しない）
  *   いずれも印刷には出さない（帯は @media print で消す）。
  *
- * ツール側からの追加（2026-09-24・任意）:
+ * ツール側からの追加（2026-09-24・任意／2026-10-04: 登録より前の通知も渡す）:
  *   window.SUErrors.onReport(fn)  … 通知のたびに fn(kind, brief, where) を呼ぶ（例: 同期ログへ残す）。
  *                                   fn が例外を出しても通知は止めない。間引き（30秒）を通った時だけ呼ぶ。
+ *                                   登録より前に起きた通知（起動時の例外など・直近5件）も、登録した時にその場で渡す。
  *   window.SUErrors.report(kind, msg, where) … ツールが自分で拾った例外を同じ経路で知らせる。
  *   使わないツールの動きは今までと同じ。
  */
@@ -32,6 +33,7 @@
   var lastSig = '', lastAt = 0;
   var MSG = '⚠ 画面でエラーが起きました。入力中の内容を控えて再読み込みしてください';
   var hooks = [];                           /* ツールが足す記録先（SUErrors.onReport） */
+  var recent = [];                          /* 登録より前の通知を渡すための控え（直近5件・画面には出さない） */
 
   /* ツール側のトーストを借りる。関数名はツールによって違うので両方見る。 */
   function pageToast(msg) {
@@ -89,6 +91,7 @@
       lastSig = sig; lastAt = now;
       /* 開発時に原因へたどり着けるよう、詳細はコンソールへ残す（画面には出さない） */
       try { console.error('[su-errors] ' + kind + '：' + brief + (where ? '（' + where + '）' : '')); } catch (e) {}
+      recent.push([kind, brief, where]); if (recent.length > 5) recent.shift();
       for (var i = 0; i < hooks.length; i++) { try { hooks[i](kind, brief, where); } catch (e) {} }
       if (!pageToast(MSG)) ownBanner(MSG);
     } catch (e) {}
@@ -100,7 +103,7 @@
     if (!e || (!e.message && !e.error)) return;
     var where = '';
     try {
-      if (e.filename) where = String(e.filename).split('/').pop() + ':' + (e.lineno || 0);
+      if (e.filename) where = String(e.filename).split('/').pop().split('?')[0].split('#')[0] + ':' + (e.lineno || 0);   /* クエリ（?masterId=… 等）は残さない */
     } catch (e2) {}
     report('スクリプトエラー', e.message || (e.error && e.error.message) || '不明', where);
   });
@@ -111,6 +114,10 @@
 
   window.SUErrors = {
     report: function (kind, msg, where) { report(String(kind || 'エラー'), msg, String(where || '')); },
-    onReport: function (fn) { if (typeof fn === 'function') hooks.push(fn); }
+    onReport: function (fn) {
+      if (typeof fn !== 'function') return;
+      hooks.push(fn);
+      for (var i = 0; i < recent.length; i++) { try { fn(recent[i][0], recent[i][1], recent[i][2]); } catch (e) {} }
+    }
   };
 })();

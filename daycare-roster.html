@@ -669,7 +669,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
        データ層の契約を変えた日にこの値を更新する。 -->
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
@@ -2748,5 +2748,7 @@ function init() {
 }
 init();
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04" data-tool="通所 利用表"></script>
 </body>
 </html>

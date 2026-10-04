@@ -11,7 +11,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 
 - **公開リポジトリ**。`.gitignore` は「既定で全部除外・公開するファイルだけホワイトリスト」。
   新しいファイルを足す時は `.gitignore` に `!/ファイル名` を1行足す（明示 opt-in）。足し忘れると push されない。
-- **素の HTML + JS。ビルドツール・フレームワーク・npm は入れない**（`mailer/` と `universe-sandbox/` は別、§9）。
+- **素の HTML + JS。ビルドツール・フレームワーク・npm は入れない**（`mailer/`・`universe-sandbox/`・検証道具の `check/` は別、§9）。
   共通部品は `<script src="su-xxx.js?v=YYYY-MM-DD">` の1本読みで、中身を変えたら `?v=` の日付も上げる
   （同じ日に2回目なら `.2`）。
 - 1画面 = 1 HTML。大きいものは1万行を超える。**読む時は必要な範囲だけ grep / sed で切り出す**。
@@ -52,18 +52,23 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 
 | 種類 | ファイル |
 |---|---|
-| メニュー | `index.html`（全画面の入口。「不具合を報告」ボタンあり） |
+| メニュー | `index.html`（全画面の入口） |
 | 入居者系 | `resident-master.html` `facesheet.html` `genogram.html` `patch-calendar.html` `moushiokuri-viewer.html` `admission-flow.html` `training-plan.html` `weight-record.html` |
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
 | 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-weight-shadow.js` `su-auth.js` + `supabase-js-*.js` |
+| 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・受け口 GAS・夜の定期タスクの指示書。配布物ではない） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
   画面のコードに施設名を直接書かない（外販時はこのファイルだけ差し替える）。
 - 印刷は `SUPrint`（`su-print.js`）に寄せる。文字サイズ（CSS 変数）で収め、`zoom` / `transform:scale` は使わない。
   画面だけの表示は `@media print` で消す。印刷に出さない部品には `data-k` を付けない。
+- 「不具合を報告」ボタン（`su-report.js`）は、ログイン・使える人の管理・動作記録・写しの見比べを除く全画面の `</body>` 直前に置く。
+  新しい画面を足す時も同じ1行を足す。送信先は接続設定の「不具合の報告先」（URL `su_report_endpoint` と合言葉 `su_report_token`）で、無い端末では「コピー」だけになる。
+  `su-errors.js` を読んでいる画面では、エラーが起きた時に送信先がある端末からだけ自動で報告が送られる（エラーの種類・ファイル名・行番号・端末の種類だけ。エラー文の中身は送らない）。
+  報告は公開リポジトリの Issue になる。だから報告画面には「氏名・居室番号・病名は書かない」と出ている。
 - 同じ処理が2ファイルにある「逐語同一の共有モジュール」（例: 週間計画からデイ利用日を取る処理が
   入居者マスタとフェイスシートに同じ文面で入っている）は、**片方を直したら両方を一字一句同じに戻す**。
 
@@ -91,9 +96,11 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 ## 6. 何をもって「確認した」と言うか
 
 コミット文の末尾に「検証:」として、やったものだけを書く（やっていないことを書かない）。
+**まず `node check/run.mjs --pages <触った画面> --allow <触った画面>` を回す**（`check/README.md`）。`check/out/summary.md` の行がそのまま「検証:」になる。
+人の目で確かめたことは、道具の行の後ろに別に書く。
 
 - **JS構文 OK**（`node --check` 相当）
-- **実名ガード exit 0**（実名が混入していない）
+- **実名ガード exit 0**（実名が混入していない。一覧（`check/.names.local`）がある環境でだけ言える。無い環境では「一覧なし（未実施）」と書く）
 - **架空データ／ダミーN名**で実測（何を測ったか: 罫線の px、はみ出し 0、文字切れ 0 など）
 - **画素比較で不変（印刷Nページ一致）** … 触っていない画面・紙面が変わっていない
 - **sim-check**（iPhone の 100% / 200% と PC で横はみ出し・重なり 0）
@@ -145,7 +152,10 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - PR 本文は §7 の本文と同じ構成。スクリーンショットは**架空データ**のものだけ。
 - 切り替えスイッチ（`su-backend.json`）を触る PR は単独で出し、他の変更と混ぜない。
 - `mailer/`（SilverMail・Node/React・ローカル専用）と `universe-sandbox/`（three.js の実験）は
-  介護ツールとは別物。`npm` を使うのはこの2つの中だけ。`kotowaza-jiten.html` は移転済みの案内のみ。
+  介護ツールとは別物。`npm` を使うのはこの2つと `check/`（検証道具）の中だけ。`kotowaza-jiten.html` は移転済みの案内のみ。
+- **現場からの不具合報告**は GitHub Issue（ラベル「現場報告」）として届く（受け口は `check/gas/`）。
+  毎晩の定期タスク（`check/routine/nightly-fix.md`）が再現→修正→ドラフト PR まで行い、取り込みは代表者が行う。
+  Issue の報告文に実名らしきものがあっても、コミット文・PR・コメントに引用しない。
 - 本番データ（Google シート・Supabase）を読む・書く作業は、指示があった時だけ。試算・検証は架空データで。
 
 ## 10. このファイルの更新

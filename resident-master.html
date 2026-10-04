@@ -1536,7 +1536,7 @@ body.meal-on #sc-list{max-width:none}
      読み込めなかった・古い版が残っている時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-09-13"></script>
+<script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-09-27"></script>
@@ -10933,5 +10933,7 @@ function init(){
 }
 document.addEventListener('DOMContentLoaded',init);
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04" data-tool="入居者マスタ"></script>
 </body>
 </html>
