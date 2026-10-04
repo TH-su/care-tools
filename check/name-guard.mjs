@@ -23,7 +23,7 @@ let names = [];
 const listFile = process.env.SU_NAME_GUARD_FILE || path.join(repoDir, 'check', '.names.local');
 if (fs.existsSync(listFile)) names = fs.readFileSync(listFile, 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
 
-function git(a) { return execFileSync('git', a, { cwd: repoDir, encoding: 'utf8', maxBuffer: 1 << 28 }); }
+function git(a) { return execFileSync('git', ['-c', 'core.quotepath=off', ...a], { cwd: repoDir, encoding: 'utf8', maxBuffer: 1 << 28 }); }   // 日本語のファイル名を引用符で崩さない
 const ALLOW_FILE = /\.(html|js|mjs|json|md|css|gs|txt)$/;
 
 function wholeFile(f, rows) {

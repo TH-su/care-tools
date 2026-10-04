@@ -29,13 +29,15 @@ function run(label, a, opts = {}) {
 }
 function fail(msg) { console.log('\n== 失敗: ' + msg); fs.writeFileSync(path.join(out, 'summary.md'), '・検証は完了していない（' + msg + '）\n'); process.exit(1); }
 
+fs.writeFileSync(path.join(out, 'summary.md'), '・検証は完了していない（途中で止まった）\n');   // 前回の結果が残らないよう、最初に上書きする
 for (const d of ['base', 'head', 'compare']) if (args['skip-base'] !== 'true' || d !== 'base') fs.rmSync(path.join(out, d), { recursive: true, force: true });
 
 /* ① base */
 if (args['skip-base'] !== 'true') {
   const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'care-tools-base-'));
   fs.rmSync(wt, { recursive: true, force: true });
-  execFileSync('git', ['worktree', 'add', '--detach', wt, base], { cwd: repoDir, stdio: 'inherit' });
+  try { execFileSync('git', ['worktree', 'add', '--detach', wt, base], { cwd: repoDir, stdio: 'inherit' }); }
+  catch (e) { fail(`直す前（${base}）を取り出せない: ` + e.message); }
   let st;
   try { st = run(`直す前（${base}）を撮る`, [path.join(repoDir, 'check', 'snap.mjs'), '--dir', wt, '--out', path.join(out, 'base'), ...pass]); }
   finally { execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoDir, stdio: 'inherit' }); }

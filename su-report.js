@@ -23,6 +23,7 @@
  *   送信先が無い端末では何もしない＝今までどおり。
  * ★ボタンの置き場所: 右下が基本。右下に別の固定要素（週間計画の「＋」等）が重なるなら左下へ、
  *   下端のバー（.bnav 等）があればその上へ、自分で測って置く。印刷には出さない。
+ *   重なり順は画面のモーダルより下（z-index 30）＝モーダルの「保存」を覆わない。モーダルの中では報告できない（閉じてから押す）。
  *   他の画面の中に枠（iframe）として埋め込まれている時はボタンを出さない（自動報告は効く）。
  *
  * 使い方: 各ツールの </body> の直前で
@@ -174,7 +175,10 @@
   }
   try {
     if (window.SUErrors && typeof window.SUErrors.onReport === 'function') {
-      window.SUErrors.onReport(function (kind, brief, where) { try { autoSend(kind, brief, where); } catch (e) { /* 何もしない */ } });
+      window.SUErrors.onReport(function (kind, brief, where) {
+        try { pushErr(String(kind || 'エラー') + '：' + errType(brief) + (cleanWhere(where) ? ' @' + cleanWhere(where) : '')); } catch (e) { /* 何もしない */ }
+        try { autoSend(kind, brief, where); } catch (e) { /* 何もしない */ }
+      });
     }
   } catch (e) { /* su-errors.js が無い画面では自動報告は無い */ }
 
@@ -186,7 +190,9 @@
 
   var css = document.createElement('style');
   css.textContent = [
-    '.sur-fab{position:fixed;right:14px;bottom:14px;z-index:2147483000;min-height:44px;min-width:44px;',
+    /* z-index は画面のモーダル（各画面 40〜1000）より下に置く＝モーダルが開いている間はその下に隠れ、「保存」などを覆わない。
+       接続先の案内の帯（su-cfg-hint）はこのボタンの実寸を測って上に乗るので、重ならない */
+    '.sur-fab{position:fixed;right:14px;bottom:14px;z-index:30;min-height:44px;min-width:44px;',
     'padding:10px 16px;border:0;border-radius:999px;background:var(--pri,#0b57d0);color:#fff;font:600 14px/1.2 system-ui,sans-serif;',
     'box-shadow:var(--sh,0 1px 6px rgba(0,0,0,.12));cursor:pointer}',
     '.sur-fab:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}',
@@ -327,6 +333,14 @@
     setTimeout(place, 3000);
     window.addEventListener('resize', place);
     setInterval(place, 2000);   // 後から現れるバー・ボタン（入居者を開いた時など）にも追従する。隠れたタブでは何もしない
+    /* 画面が変わった直後（利用者を選んで「＋」が出た時など）にもすぐ置き直す。2秒待つ間に重なったままにしない */
+    try {
+      var pend = 0;
+      new MutationObserver(function () {
+        if (pend) return;
+        pend = setTimeout(function () { pend = 0; place(); }, 120);
+      }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+    } catch (e) { /* 監視できなければ 2秒ごとの置き直しだけ */ }
     /* 報告の枠の中のキー操作（Esc など）を、裏の画面に伝えない（裏のモーダルまで閉じて入力が消えないように） */
     dlg.addEventListener('keydown', function (e) { e.stopPropagation(); });
     dlg.addEventListener('cancel', function (e) { e.preventDefault(); closeDlg(); });

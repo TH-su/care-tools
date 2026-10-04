@@ -78,6 +78,11 @@ for (const file of Object.keys(mh.pages)) {
 let fail = 0;
 const lines = [];
 if (!results.some((r) => r.status !== 'base無し')) { console.log('比べられる画面が1つもありません（直す前の撮影が無い）'); process.exit(1); }
+/* 撮れているはずの PNG（画面×4表示）が揃っているか。無い分を「一致」に数えない */
+const expected = [];
+for (const file of Object.keys(mh.pages)) for (const v of ['pc', 'print', 'ph100', 'ph200']) expected.push(`${file.replace(/\.html$/, '')}.${v}.png`);
+const missingPng = expected.filter((f) => !fs.existsSync(path.join(headDir, f)));
+if (missingPng.length) { lines.push(`撮れていない画面がある（${missingPng.join('、')}）`); fail++; }
 const byView = (v) => results.filter((r) => r.view === v);
 const missing = results.filter((r) => r.status === 'base無し').map((r) => r.name).filter((v, i, a) => a.indexOf(v) === i);
 if (missing.length) lines.push(`直す前に無い画面（新しい画面＝比べない）: ${missing.join('、')}`);

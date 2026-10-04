@@ -87,3 +87,6 @@ for (const file of pages) {
 writeJson(path.join(outDir, 'metrics.json'), { at: new Date().toISOString(), fixedTime: FIXED_TIME.toISOString(), hideReport, pages: metrics });
 await browser.close();
 await srv.close();
+/* 撮影そのものの失敗（開けない・撮れない・PDF）は終了コード 1。画面の JS エラー（pageerror）は記録だけ（比較側で増減を見る） */
+const shootFail = Object.entries(metrics).filter(([, m]) => Object.values(m.errors).flat().some((e) => /^(開けない|撮影|PDF): /.test(e)));
+if (shootFail.length) { console.log('撮影に失敗: ' + shootFail.map(([f]) => f).join('、')); process.exit(1); }
