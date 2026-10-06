@@ -6946,6 +6946,7 @@ function openResident(id){
   renderHeightSrcNote(id);
   $('#mdChair').value = r?.wheelchairKg ?? '';
   mdChairLog = r ? wcLogOf(r).map(e=> Object.assign({}, e)) : [];
+  mdChairAuto = null;
   mdChairLogOpen = JSON.stringify(r ? wcLogStored_(r) : []);
   renderMdChairLog();
   // 車椅子を使っている方は、欄の値を履歴の「今日の時点の重さ」にそろえる（使っていない方は空のまま）
@@ -7144,6 +7145,7 @@ function birthSetFromIso(iso){
 
 /* 設定→入居者の編集の「車椅子の変更履歴」。編集中の行は mdChairLog に持ち、保存で入居者へ書く */
 let mdChairLog = [];
+let mdChairAuto = null;     // 車椅子重量の欄を打ったことで自動で足した今日の行（手で直した行はここから外す）
 let mdChairLogOpen = '[]';   // 編集画面を開いた時点の保存済みの履歴（開いている間に他の端末が足した行を見分ける）
 function mdChairSyncFromLog_(){
   const cur = wcKgOn_(wcLogClean_(mdChairLog), dNow());
@@ -7163,25 +7165,44 @@ function renderMdChairLog(){
       <span class="wc-log-u">kg</span>
       <button type="button" class="wc-log-del" data-wcl-del="${i}" aria-label="この行を消す">削除</button>
     </div>`).join('');
-  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; mdChairSyncFromLog_(); }));
-  $$('[data-wcl-kg]', box).forEach(el=> el.addEventListener('input', ()=>{ const e = mdChairLog[+el.dataset.wclKg]; e.kg = Number(el.value) || null; delete e.rec; mdChairSyncFromLog_(); }));
-  $$('[data-wcl-del]', box).forEach(el=> el.addEventListener('click', ()=>{ mdChairLog.splice(+el.dataset.wclDel, 1); renderMdChairLog(); mdChairSyncFromLog_(); }));
+  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); }));
+  $$('[data-wcl-kg]', box).forEach(el=> el.addEventListener('input', ()=>{ const e = mdChairLog[+el.dataset.wclKg]; e.kg = Number(el.value) || null; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); }));
+  $$('[data-wcl-del]', box).forEach(el=> el.addEventListener('click', ()=>{ const gone = mdChairLog.splice(+el.dataset.wclDel, 1)[0]; if(gone === mdChairAuto) mdChairAuto = null; renderMdChairLog(); mdChairSyncFromLog_(); }));
 }
 $('#mdChairLogAdd').addEventListener('click', ()=>{
   const v = Number($('#mdChair').value);
   mdChairLog.push({ on: dNow(), kg: v > 0 ? Math.round(v * 10) / 10 : null });
   renderMdChairLog();
 });
-/* 車椅子重量の欄を書き換えたら、今日の日付の行を足す（同じ日の行があれば重さだけ直す）。空にした時は履歴を残す */
-$('#mdChair').addEventListener('change', ()=>{
+/* 車椅子重量の欄を書き換えたら、今日の日付の行を足す（同じ日の行があれば重さだけ直す）。空にした時は履歴を残す。
+   打っている間（input）に足す。以前は欄を離れた時（change）に足していたため、打ち直してすぐ「保存」を押すと、
+   押した瞬間に行が増えて「保存」ボタンが下へずれ、押下が届かずに保存されないことがあった（2026-10-06 本人報告）。
+   保存の時にも同じ突き合わせをする（欄を離れた合図が出ない入れ方でも、履歴に今日の行を入れる） */
+function mdChairReconcile_(){
   const v = Math.round(Number($('#mdChair').value) * 10) / 10;
-  if(!(v > 0)) return;
-  if(wcKgOn_(wcLogClean_(mdChairLog), dNow()) === v) return;
   const today = dNow();
-  const same = mdChairLog.find(e=> e.on === today);
-  if(same){ same.kg = v; delete same.rec; } else mdChairLog.push({ on: today, kg: v });
-  renderMdChairLog();
-});
+  const others = mdChairLog.filter(e=> e !== mdChairAuto);
+  const prev = wcKgOn_(wcLogClean_(others), today);
+  let changed = false;
+  if(v > 0 && v <= 50 && v !== prev){
+    if(mdChairAuto){
+      if(mdChairAuto.kg !== v){ mdChairAuto.kg = v; changed = true; }
+    }else{
+      const same = mdChairLog.find(e=> e.on === today);
+      if(same){ same.kg = v; delete same.rec; }
+      else { mdChairAuto = { on: today, kg: v }; mdChairLog.push(mdChairAuto); }
+      changed = true;
+    }
+  }else if(mdChairAuto){
+    // 元の重さに戻した・空にした時は、自動で足した今日の行を引っ込める
+    mdChairLog = mdChairLog.filter(e=> e !== mdChairAuto);
+    mdChairAuto = null;
+    changed = true;
+  }
+  if(changed) renderMdChairLog();
+}
+$('#mdChair').addEventListener('input', mdChairReconcile_);
+$('#mdChair').addEventListener('change', mdChairReconcile_);
 
 $('#mdSave').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
@@ -7190,6 +7211,7 @@ $('#mdSave').addEventListener('click', ()=>{
   const hv = Number($('#mdHeight').value);
   const cv = Number($('#mdChair').value);
   /* 車椅子の変更履歴：日付か重さの片方だけの行は保存しない（どちらも空の行は捨てる） */
+  mdChairReconcile_();   // 欄の値と履歴を必ず突き合わせてから保存する
   if(mdChairLog.some(e=> (!e.on) !== (!(Number(e.kg) > 0)))){ toast('車椅子の変更履歴に、日付か重さが空の行があります','err'); return; }
   if(mdChairLog.some(e=> e.on && !(Number(e.kg) > 0 && Number(e.kg) <= 50))){ toast('車椅子の変更履歴の重さは 50kg までで入れてください','err'); return; }
   /* 開いている間に他の端末（入力画面）が足した行は、この保存で消さずに残す（同じ日なら、ここで直した行を優先） */
