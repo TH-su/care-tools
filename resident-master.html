@@ -4967,6 +4967,11 @@ function mdRenameGuard_(ren){
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
 function mdSave(){
+  /* ★保存の応答も取得と同じ世代（mdGen）で捨てる。保存の途中で端末が現場用に切り替わると
+     （applyDeviceGuard が mdDict・mdMap を消して世代を進める）、遅れて届いた応答が mdDict・mdMap を
+     埋め直し、表を描き直していた。世代が変わった後の応答では【何もしない】（ボタンも戻さない・案内も出さない。
+     現場用には薬効辞書のタブが無い）。取り直しによる突き合わせも現場では取りに行かない（2026-10-06） */
+  var gen=mdGen;
   /* ★同上。取れていない状態で保存すると、サーバー側の効能と『確認済み』を空の表示で潰す */
   if(!mdDict){ toast('薬効辞書を取得できていないため、保存できません',false); return; }
   /* ★送るのは【実際に変えた行】だけ。表示中の全行を送ると、他端末（薬剤師）が付けた
@@ -5045,6 +5050,7 @@ function mdSave(){
   if($('mdSave')) $('mdSave').disabled=true;
   mdBusy='保存しています…'; paintShBars();
   mdRenameGuard_(ren).then(function(gd){
+  if(gen!==mdGen) return;   /* ★世代が変わった後の応答は使わない（送りもしない） */
   if(gd){
     mdBusy=''; if($('mdSave')) $('mdSave').disabled=false;
     /* 取り直した内容を画面へ反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
@@ -5065,6 +5071,7 @@ function mdSave(){
     if(typeof x.hide==='boolean') return {name:x.name, hide:x.hide};
     return {name:x.name, effect:x.effect, ok:x.ok};
   })},60000).then(function(d){
+    if(gen!==mdGen) return;   /* ★世代が変わった後の応答は使わない（控えの破棄・取り直しもしない） */
     if(d&&d.error) throw new Error(d.error);
     /* ★古い版のGASは hide を知らない。知らないキーは「効能が空」の枝に落ちて【何も書かず】
        {ok:true, added:0, updated:0, deleted:0} を返す。そのまま成功にすると、消えたと信じた行が
@@ -5082,6 +5089,7 @@ function mdSave(){
        ★§13（失敗表示でも書かれていることがある）への備えは下の catch 側。 */
     mdBusy=''; mdEnsure(true);
   }).catch(function(e){
+    if(gen!==mdGen) return;   /* ★世代が変わった後は取り直さない（現場端末で辞書を取りに行かない） */
     mdBusy='';
     /* ★失敗しても「1文字も書かれていない」と決めつけない（契約 §13）。必ず取り直してから
        文言を決める。辞書は同じ内容を送っても同じ結果になる（冪等）ので、取り直して
@@ -5096,6 +5104,7 @@ function mdSave(){
     });
     var want=Object.keys(sent).length+Object.keys(gone).length+Object.keys(hid).length;
     apiGet({action:'getMedDict'},30000).then(function(d){
+      if(gen!==mdGen) return;   /* ★取り直しの間に世代が変わったら、mdDict・mdMap を埋め直さない */
       var rows=(d&&d.rows)||[], n=0, have=Object.create(null), hv=Object.create(null);
       for(var i=0;i<rows.length;i++){
         var k=mdKey(rows[i].name); have[k]=1; hv[k]=!!rows[i].hidden;
@@ -5120,9 +5129,10 @@ function mdSave(){
               '（'+want+'件中 '+n+'件は入っていました）',false);
       }
     }).catch(function(){
+      if(gen!==mdGen) return;
       if($('mdSave')) $('mdSave').disabled=false;
       toast('保存できたか確認できませんでした：'+String((e&&e.message)||e),false);
-    }).then(function(){ paintShBars(); });
+    }).then(function(){ if(gen!==mdGen) return; paintShBars(); });
   });
   });   /* mdRenameGuard_ の then を閉じる */
 }
@@ -9895,6 +9905,9 @@ function applyDeviceGuard(){
     if($('toast')){ $('toast').textContent=''; $('toast').classList.remove('on'); }
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
+    /* ★保存中の印も下ろす。保存の応答は世代で捨てる（mdSave）ので、ここで下ろさないと
+       事務所PCへ戻した時に「保存しています…」が残り続ける（2026-10-06） */
+    mdBusy='';
     /* ★薬効辞書に保存していない編集がある時は、その編集だけは捨てない（2026-10-01）。別のタブで現場用へ
        変わった時は、未保存があると読み込み直さずブロックだけにする（onDeviceRoleStorage_）。ここで捨てると、
        事務所PCへ戻しても編集が戻らない。同期設定からの切り替えは未保存があると先に止めるので、ここへは来ない */
