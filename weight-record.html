@@ -601,6 +601,18 @@ textarea{resize:vertical;min-height:60px}
 /* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
 .md-src-note{margin-top:6px;font-size: 0.6875rem;line-height:1.5;color:var(--g6)}
 
+/* 車椅子の変更履歴（設定→入居者の編集）。変更日から新しい重さで計算する */
+.wc-log{margin-top:8px;padding:8px 10px;border:1px solid var(--g3);border-radius:8px;background:var(--g0)}
+.wc-log-hd{font-size: 0.75rem;font-weight:700;color:var(--g9)}
+.wc-log-hd small{display:block;font-weight:400;color:var(--g7);margin-top:2px}
+.wc-log-row{display:flex;align-items:center;gap:6px;margin-top:6px}
+.wc-log-row input[type=date]{flex:1 1 auto;min-width:0}
+.wc-log-row input[type=number]{flex:0 0 5.5em;width:5.5em}
+.wc-log-row .wc-log-u{font-size: 0.75rem;color:var(--g7)}
+.wc-log-row .wc-log-del{flex:0 0 auto;min-width:44px;min-height:44px;padding:0 8px;border:1px solid var(--g3);border-radius:8px;background:#fff;color:#c62828;cursor:pointer}
+.wc-log-add{margin-top:8px;min-height:44px;width:100%;border:1px dashed var(--pri);border-radius:8px;background:#fff;color:var(--pri);cursor:pointer}
+.wc-log-empty{margin-top:6px;font-size: 0.6875rem;color:var(--g7)}
+
 /* 退去者表示 */
 .md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
   border-radius:8px;color:#e65100;font-size: 0.75rem;font-weight:700;display:flex;align-items:center;gap:8px}
@@ -1223,6 +1235,11 @@ select option.is-discharged{color:var(--g6)}
       <div class="fg">
         <label class="fl">車椅子重量 (kg) <span style="color:var(--g5);font-weight:400">— 車椅子計測時に自動適用</span></label>
         <input type="number" id="mdChair" step="0.1" min="0" max="50" inputmode="decimal" placeholder="例：10.2（未使用なら空欄）">
+        <div class="wc-log" id="mdChairLog">
+          <div class="wc-log-hd">車椅子の変更履歴<small>変更日の計測から新しい重さで計算します。日付は後から直せます。</small></div>
+          <div id="mdChairLogRows"></div>
+          <button type="button" class="wc-log-add" id="mdChairLogAdd">＋ 行を足す</button>
+        </div>
       </div>
 
       <!-- 食事形態（入力画面ではここから編集） -->
@@ -2635,6 +2652,8 @@ function _toSafeStr(v){
    normalizeResident は load() / 同期マージ後 / JSONインポート 等の境界で呼ぶ。 */
 function normalizeResident(r){
   if(!r || typeof r !== 'object') return r;
+  // 車椅子の変更履歴は文字列で持つ（JSON の取り込み等で配列のまま来たら文字列に戻す）
+  if(Array.isArray(r.wheelchairLog)){ const c = wcLogClean_(r.wheelchairLog); r.wheelchairLog = c.length ? JSON.stringify(c) : null; }
   if(typeof r.name !== 'string') r.name = _toSafeStr(r.name);
   if(typeof r.room !== 'string') r.room = _toSafeStr(r.room);
   // 文字列でも "2026-09-23T15:00:00.000Z" や "Thu Sep 24 2026 … GMT+0900" の形（シートが日付型に
@@ -4709,7 +4728,11 @@ function getChairKgAsOf(rid, ym, date, excludeId){
   const resident = rid ? residentById(rid) : null;
   const regKg = (resident && Number(resident.wheelchairKg) > 0) ? Number(resident.wheelchairKg) : null;
   if(!rid) return regKg;
-  const tgt = date ? date : (ym ? ym + '-99' : '9999-99-99');
+  /* 測定日が無い時は「その月の1日」で見る（日付の無い記録・履歴の日付と同じ扱い） */
+  const tgt = date ? date : (ym ? ym + '-01' : '9999-99-99');
+  /* 車椅子の変更履歴があれば、それが正（変更日の当日から新しい重さ）。最初の変更日より前の計測だけ、従来どおり記録から引き継ぐ */
+  const kgByLog = wcKgOn_(wcLogStored_(resident), tgt);
+  if(kgByLog != null) return kgByLog;
   const recs = getAllRecordsOf(rid);
   let last = null, laterExists = false;
   for(let i = recs.length - 1; i >= 0; i--){
@@ -4728,6 +4751,136 @@ function getChairKgAsOf(rid, ym, date, excludeId){
     if(resident.updatedAt && String(resident.updatedAt) > recAt) return regKg;
   }
   return lastKg;
+}
+/* ---- 車椅子の変更履歴（2026-10-06 本人指示） ----
+   入居者の wheelchairLog に JSON の文字列で [{on:'YYYY-MM-DD', kg:12.0}, …] を持つ（変更日の昇順・同じ日は1行）。
+   文字列にするのは、GAS がシートの1セルにそのまま書けるため（配列のままでは書けない）。
+   設定の車椅子重量（wheelchairKg）は「今日の時点で有効な重さ」にそろえる。 */
+function wcLogClean_(a){
+  const byOn = new Map();
+  (Array.isArray(a) ? a : []).forEach(x=>{
+    if(!x) return;
+    const on = String(x.on == null ? '' : x.on).slice(0, 10);
+    const kg = Math.round(Number(x.kg) * 10) / 10;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(on) || !(kg > 0) || kg > 50) return;
+    const o = { on, kg };
+    // rec: その行を作った記録の番号（入力画面から足した行・記録から拾った行）。記録を消す・動かす時に一緒に直すため
+    if(typeof x.rec === 'string' && x.rec) o.rec = x.rec;
+    byOn.set(on, o);
+  });
+  return [...byOn.values()].sort((p, q)=> p.on < q.on ? -1 : p.on > q.on ? 1 : 0);
+}
+function wcLogStored_(r){
+  if(!r || r.wheelchairLog == null || r.wheelchairLog === '') return [];
+  let a = r.wheelchairLog;
+  if(typeof a === 'string'){ try{ a = JSON.parse(a); }catch(e){ return []; } }
+  return wcLogClean_(a);
+}
+/* 履歴がまだ無い方は、保存済みの車椅子記録から重さが変わった日を拾って初期値にする（これだけではシートに書かない）。
+   設定画面で直した車椅子重量が最後の車椅子記録より新しければ、その直した日も1行にする
+   （拾わないと、編集画面を開いて保存しただけで設定の値が古い記録の値に戻る） */
+function wcLogDerived_(rid){
+  const out = []; let prev = null, lastRec = null;
+  getAllRecordsOf(rid).forEach(x=>{
+    if(x.measureMode !== 'chair' || !(Number(x.wheelchairKg) > 0)) return;
+    const on = x.measuredOn || (wrYmOk(x.yearMonth) ? x.yearMonth + '-01' : '');
+    if(!on) return;
+    const kg = Math.round(Number(x.wheelchairKg) * 10) / 10;
+    if(prev === null || kg !== prev){ out.push({ on, kg, rec: String(x.id) }); prev = kg; }
+    lastRec = { on, at: String(x.updatedAt || x.createdAt || '') };
+  });
+  const r = residentById(rid);
+  const regKg = (r && Number(r.wheelchairKg) > 0) ? Math.round(Number(r.wheelchairKg) * 10) / 10 : null;
+  if(lastRec && regKg != null && regKg !== prev && r.updatedAt && String(r.updatedAt) > lastRec.at){
+    const ud = new Date(r.updatedAt);
+    const udOn = isNaN(ud.getTime()) ? '' : (ud.getFullYear() + '-' + String(ud.getMonth() + 1).padStart(2, '0') + '-' + String(ud.getDate()).padStart(2, '0'));
+    if(udOn && udOn > lastRec.on) out.push({ on: udOn, kg: regKg });
+  }
+  return wcLogClean_(out);
+}
+/* ある記録から作った行を外す。外す前に、その行と次の行の間に同じ重さの車椅子記録が残っていれば、
+   行をそちらへ付け替える（後の記録が使っている変更まで消さないため）。skipIds の記録は数えない */
+function wcLogUnlinkRec_(log, rid, recId, skipIds){
+  const out = [];
+  const recs = getAllRecordsOf(rid);
+  (log || []).forEach((e, i)=>{
+    if(e.rec !== recId){ out.push(e); return; }
+    const nextOn = log[i + 1] ? log[i + 1].on : '9999-99-99';
+    const heir = recs.find(x=> x.id !== recId && !(skipIds && skipIds.has(String(x.id)))
+      && x.measureMode === 'chair' && Math.round(Number(x.wheelchairKg) * 10) / 10 === e.kg
+      && (x.measuredOn || (x.yearMonth + '-01')) > e.on && (x.measuredOn || (x.yearMonth + '-01')) < nextOn);
+    if(heir) out.push({ on: heir.measuredOn || (heir.yearMonth + '-01'), kg: e.kg, rec: String(heir.id) });
+  });
+  return wcLogClean_(out);
+}
+/* 履歴を入居者へ書き、設定の車椅子重量を今日の時点の重さにそろえる。変わった時だけ true。
+   続けて同じ重さの行は、先の行だけ残す（重さの変わり目だけが履歴） */
+function wcLogApply_(r, log){
+  const before = r.wheelchairLog == null ? null : String(r.wheelchairLog);
+  const kgBefore = r.wheelchairKg;
+  const merged = [];
+  wcLogClean_(log).forEach(e=>{ if(!merged.length || merged[merged.length - 1].kg !== e.kg) merged.push(e); });
+  log = merged;
+  const c = wcLogWrite_(r, log);
+  const cur = wcKgOn_(c, dNow());
+  if(cur != null && Number(r.wheelchairKg) > 0) r.wheelchairKg = cur;
+  return before !== (r.wheelchairLog == null ? null : String(r.wheelchairLog)) || kgBefore !== r.wheelchairKg;
+}
+function wcLogOf(r){
+  const st = wcLogStored_(r);
+  return st.length ? st : (r ? wcLogDerived_(r.id) : []);
+}
+/* その日（を含む）以前で最後の変更の重さ。最初の変更日より前なら null */
+function wcKgOn_(log, date){
+  let kg = null;
+  for(const e of (log || [])){ if(e.on <= date) kg = e.kg; else break; }
+  return kg;
+}
+function wcLogWrite_(r, log){
+  const c = wcLogClean_(log);
+  r.wheelchairLog = c.length ? JSON.stringify(c) : null;
+  return c;
+}
+/* 履歴に合わせると車椅子重量が変わる保存済みの記録（最初の変更日以降の車椅子記録だけ） */
+function wcAffectedRecs_(rid, log){
+  if(!log || !log.length) return [];
+  return getAllRecordsOf(rid).filter(x=>{
+    if(x.measureMode !== 'chair') return false;
+    const on = x.measuredOn || (wrYmOk(x.yearMonth) ? x.yearMonth + '-01' : '');
+    if(!on || on < log[0].on) return false;
+    const kg = wcKgOn_(log, on);
+    return kg != null && Math.round(Number(x.wheelchairKg) * 10) / 10 !== kg;
+  });
+}
+/* 確認してから、実測値 − 正しい車椅子重量 で体重を計算し直す（キャンセルなら記録には触らない） */
+function wcRecalcAsk_(rid, log){
+  const recs = wcAffectedRecs_(rid, log);
+  if(!recs.length) return;
+  const lbl = x=> x.measuredOn || ymFmt(x.yearMonth);
+  const range = recs.length === 1 ? lbl(recs[0]) : `${lbl(recs[0])}〜${lbl(recs[recs.length - 1])}`;
+  const name = residentById(rid)?.name || '';
+  if(!confirm(`${name}：車椅子の変更日・重さに合わせて、保存済みの記録 ${recs.length}件（${range}）の体重を計算し直しますか？\n\n「キャンセル」なら記録はそのままにします。`)) return;
+  const nowIso = new Date().toISOString();
+  const done = []; let skipped = 0;
+  recs.forEach(x=>{
+    const on = x.measuredOn || (x.yearMonth + '-01');
+    const kg = wcKgOn_(log, on);
+    const raw = Number(x.rawWeight);
+    const w = Math.round((raw - kg) * 10) / 10;
+    if(!(raw > 0) || !(w >= 20 && w <= 150)){ skipped++; return; }
+    x.wheelchairKg = kg; x.weight = w; x.updatedAt = nowIso;
+    normalizeRecord(x);
+    done.push(x);
+  });
+  if(done.length){
+    save();
+    done.forEach(x=> apiPush('saveRecord', { record: x }));
+  }
+  toast(`${done.length}件の体重を計算し直しました${skipped ? `（実測値が無い・範囲外の ${skipped}件はそのまま）` : ''}`, done.length ? 'ok' : 'err');
+  if(typeof renderList === 'function') renderList();
+  if(typeof renderIndiv === 'function') renderIndiv();
+  if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
+  if(typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 /* 「前回の記録の体重」から ±2kg 以上動いた車椅子の記録に「車椅子に変更はありませんでしたか？」を知らせる（2026-10-06 本人指示）。
    知らせるだけで保存は止めない。比べる相手はこの記録より前の最後の記録（計測の方法は問わない・この記録自身は除く） */
@@ -4965,6 +5118,19 @@ $('#inSave').addEventListener('click', ()=>{
       editingRecordId = dup.id;  // 以降の処理で「編集中」として扱う
     }
   }
+  /* 車椅子の変更履歴：保存する前の「その日の時点の重さ」と履歴を控える（記録を書き換える前に取る） */
+  /* 編集中の記録から作った履歴の行（rec が同じ行）は、いったん外して「その記録が無かったら」の重さと比べる。
+     日付を動かした・通常に変えた・重さを直した時に、古い行が残らないようにするため。
+     測定日が無い記録は、判定も履歴の日付も「その月の1日」にそろえる */
+  const chairKey = d || (ym + '-01');
+  const resForLog = residentById(rid);
+  const logFull = resForLog ? wcLogOf(resForLog) : [];
+  const ownRecId = editing ? String(editing.id) : null;
+  const chairLogBefore = ownRecId ? wcLogUnlinkRec_(logFull, rid, ownRecId) : logFull;
+  const ownLogRemoved = JSON.stringify(chairLogBefore) !== JSON.stringify(logFull);
+  const chairBefore = (inMode === 'chair')
+    ? (wcKgOn_(chairLogBefore, chairKey) ?? getChairKgAsOf(rid, ym, chairKey, ownRecId))
+    : null;
   let savedRec;
   if(editing){
     // weight / mode / date / note のみ更新。食事スナップショットは履歴として温存
@@ -4999,16 +5165,20 @@ $('#inSave').addEventListener('click', ()=>{
   }
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
-  /* 登録の車椅子重量（設定画面の値）を、この記録の重さに合わせる。合わせるのは、この記録がその方の
-     いちばん新しい車椅子記録の時だけ。過去の日付の記録を直した時に、今の車椅子重量が昔の値へ戻らないようにする */
-  let chairResUpdated = null;
-  if(mode==='chair' && chair){
-    const roundedChair = Math.round(chair*10)/10;
-    const myKey = savedRec.measuredOn || (ym + '-01');
-    const laterChair = getAllRecordsOf(rid).some(x=> x.id !== savedRec.id && x.measureMode==='chair' && Number(x.wheelchairKg) > 0
-      && (x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '')) > myKey);
+  /* 車椅子重量がその日の時点の重さと違えば「車椅子を替えた」とみなし、測定日を変更日として履歴に1行足す。
+     設定の車椅子重量は、履歴で「今日の時点で有効な重さ」にそろえる（過去の日付の変更でも、後に別の変更があればそちらが残る） */
+  let chairResUpdated = null, chairLogNew = null;
+  {
     const r = residentById(rid);
-    if(r && !laterChair && r.wheelchairKg !== roundedChair){ r.wheelchairKg = roundedChair; chairResUpdated = r; }
+    const roundedChair = (mode==='chair' && chair) ? Math.round(chair*10)/10 : null;
+    let next = null;
+    if(r && roundedChair != null && chairBefore !== roundedChair){
+      next = chairLogBefore.filter(e=> e.on !== chairKey).concat([{ on: chairKey, kg: roundedChair, rec: String(savedRec.id) }]);
+      if(!(Number(r.wheelchairKg) > 0)) r.wheelchairKg = roundedChair;   // 車椅子を使い始めた方は、設定の値も入れる
+    }else if(r && ownLogRemoved){
+      next = chairLogBefore;   // この記録から作った行が要らなくなった（同じ重さ・通常に変えた）
+    }
+    if(next && wcLogApply_(r, next)){ chairLogNew = wcLogStored_(r); chairResUpdated = r; }
   }
   const chairAsk = chairChangeLine_(savedRec);
   save();
@@ -5019,7 +5189,7 @@ $('#inSave').addEventListener('click', ()=>{
   apiPush('saveRecord', { record: savedRec });
   /* 記録保存のついでに動くのは車椅子重量だけ。氏名・居室・食事形態まで送ると、
      他端末がその間に直した内容をこちらの古い値で消してしまう。 */
-  if(chairResUpdated) pushResidentFields_(chairResUpdated, ['wheelchairKg']);
+  if(chairResUpdated) pushResidentFields_(chairResUpdated, ['wheelchairKg', 'wheelchairLog']);
   editingRecordId = null;
   $('#inExistsNote').textContent = '';
   clearInputForm();
@@ -5028,6 +5198,7 @@ $('#inSave').addEventListener('click', ()=>{
   if(typeof renderList === 'function') renderList();
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
+  if(chairLogNew) wcRecalcAsk_(rid, chairLogNew);
   alertChairChange_([chairAsk]);
 });
 
@@ -5039,8 +5210,16 @@ function deleteRecordById(id){
   if(!confirm(`${resident?.name || ''} ${dateLabel} の記録を削除します。よろしいですか？`)) return;
   DB.records = DB.records.filter(r=> r.id !== id);
   if(editingRecordId === id){ editingRecordId = null; clearInputForm(); }
+  /* この記録から作った車椅子の変更履歴の行も消す（打ち間違いの重さがその後の計測に使われ続けないように） */
+  let wcRes = null;
+  if(resident){
+    const st = wcLogStored_(resident);
+    const kept = wcLogUnlinkRec_(st, resident.id, String(id));
+    if(JSON.stringify(kept) !== JSON.stringify(st) && wcLogApply_(resident, kept)) wcRes = resident;
+  }
   save();
   apiPush('delRecord', { id });
+  if(wcRes) pushResidentFields_(wcRes, ['wheelchairKg', 'wheelchairLog']);
   toast('記録を削除しました','ok');
   renderInputExistingList();
   updateAlertBadge();
@@ -6766,6 +6945,11 @@ function openResident(id){
   $('#mdHeight').value = r?.heightCm ?? '';
   renderHeightSrcNote(id);
   $('#mdChair').value = r?.wheelchairKg ?? '';
+  mdChairLog = r ? wcLogOf(r).map(e=> Object.assign({}, e)) : [];
+  mdChairLogOpen = JSON.stringify(r ? wcLogStored_(r) : []);
+  renderMdChairLog();
+  // 車椅子を使っている方は、欄の値を履歴の「今日の時点の重さ」にそろえる（使っていない方は空のまま）
+  if(r && Number(r.wheelchairKg) > 0) mdChairSyncFromLog_();
   $('#mdNote').value = r?.note || '';
   // load meal-form widgets from resident's saved settings
   loadResidentMealIntoMd(r);
@@ -6958,12 +7142,60 @@ function birthSetFromIso(iso){
   }
 })();
 
+/* 設定→入居者の編集の「車椅子の変更履歴」。編集中の行は mdChairLog に持ち、保存で入居者へ書く */
+let mdChairLog = [];
+let mdChairLogOpen = '[]';   // 編集画面を開いた時点の保存済みの履歴（開いている間に他の端末が足した行を見分ける）
+function mdChairSyncFromLog_(){
+  const cur = wcKgOn_(wcLogClean_(mdChairLog), dNow());
+  if(cur != null) $('#mdChair').value = cur.toFixed(1);
+}
+function renderMdChairLog(){
+  const box = $('#mdChairLogRows');
+  if(!box) return;
+  if(!mdChairLog.length){
+    box.innerHTML = '<div class="wc-log-empty">履歴はありません。車椅子重量を入れると、今日の日付で1行足されます。</div>';
+    return;
+  }
+  box.innerHTML = mdChairLog.map((e, i)=> `
+    <div class="wc-log-row">
+      <input type="date" data-wcl-on="${i}" value="${escapeHtml(e.on || '')}" aria-label="変更日">
+      <input type="number" data-wcl-kg="${i}" step="0.1" min="1" max="50" inputmode="decimal" value="${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}" aria-label="車椅子の重さ（kg）">
+      <span class="wc-log-u">kg</span>
+      <button type="button" class="wc-log-del" data-wcl-del="${i}" aria-label="この行を消す">削除</button>
+    </div>`).join('');
+  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; mdChairSyncFromLog_(); }));
+  $$('[data-wcl-kg]', box).forEach(el=> el.addEventListener('input', ()=>{ const e = mdChairLog[+el.dataset.wclKg]; e.kg = Number(el.value) || null; delete e.rec; mdChairSyncFromLog_(); }));
+  $$('[data-wcl-del]', box).forEach(el=> el.addEventListener('click', ()=>{ mdChairLog.splice(+el.dataset.wclDel, 1); renderMdChairLog(); mdChairSyncFromLog_(); }));
+}
+$('#mdChairLogAdd').addEventListener('click', ()=>{
+  const v = Number($('#mdChair').value);
+  mdChairLog.push({ on: dNow(), kg: v > 0 ? Math.round(v * 10) / 10 : null });
+  renderMdChairLog();
+});
+/* 車椅子重量の欄を書き換えたら、今日の日付の行を足す（同じ日の行があれば重さだけ直す）。空にした時は履歴を残す */
+$('#mdChair').addEventListener('change', ()=>{
+  const v = Math.round(Number($('#mdChair').value) * 10) / 10;
+  if(!(v > 0)) return;
+  if(wcKgOn_(wcLogClean_(mdChairLog), dNow()) === v) return;
+  const today = dNow();
+  const same = mdChairLog.find(e=> e.on === today);
+  if(same){ same.kg = v; delete same.rec; } else mdChairLog.push({ on: today, kg: v });
+  renderMdChairLog();
+});
+
 $('#mdSave').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const name = $('#mdName').value.trim();
   if(!name){ toast('お名前を入力してください','err'); return; }
   const hv = Number($('#mdHeight').value);
   const cv = Number($('#mdChair').value);
+  /* 車椅子の変更履歴：日付か重さの片方だけの行は保存しない（どちらも空の行は捨てる） */
+  if(mdChairLog.some(e=> (!e.on) !== (!(Number(e.kg) > 0)))){ toast('車椅子の変更履歴に、日付か重さが空の行があります','err'); return; }
+  if(mdChairLog.some(e=> e.on && !(Number(e.kg) > 0 && Number(e.kg) <= 50))){ toast('車椅子の変更履歴の重さは 50kg までで入れてください','err'); return; }
+  /* 開いている間に他の端末（入力画面）が足した行は、この保存で消さずに残す（同じ日なら、ここで直した行を優先） */
+  const chairLogOpenSet = new Set(wcLogClean_(JSON.parse(mdChairLogOpen || '[]')).map(e=> e.on + '|' + e.kg));
+  const chairLogAdded = editingId ? wcLogStored_(residentById(editingId)).filter(e=> !chairLogOpenSet.has(e.on + '|' + e.kg)) : [];
+  const chairLogSave = wcLogClean_(chairLogAdded.concat(mdChairLog));
   const payload = {
     name,
     room: $('#mdRoom').value.trim(),
@@ -6971,7 +7203,8 @@ $('#mdSave').addEventListener('click', ()=>{
     birthDate: $('#mdBirth').value,
     admitDate: $('#mdAdmit').value,
     heightCm: hv>0 ? Math.round(hv*10)/10 : null,
-    wheelchairKg: cv>0 ? Math.round(cv*10)/10 : null,
+    wheelchairKg: cv>0 ? (chairLogAdded.length ? (wcKgOn_(chairLogSave, dNow()) ?? Math.round(cv*10)/10) : Math.round(cv*10)/10) : null,
+    wheelchairLog: chairLogSave.length ? JSON.stringify(chairLogSave) : null,
     note: $('#mdNote').value.trim(),
     // meal form (master setting): used as the snapshot for new records
     ...mealPayloadFromMd(),
@@ -6990,6 +7223,8 @@ $('#mdSave').addEventListener('click', ()=>{
   save();
   apiPush('saveResident', { resident: savedResident });
   $('#mdResident').classList.remove('on');
+  // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、確認してから計算し直す
+  if(editingId) wcRecalcAsk_(savedResident.id, chairLogSave);
   // すべての画面を再描画：今 cfg にいてもユーザはすぐに他のタブに移るため、
   // 一覧・集計・入居者選択プルダウンも併せて更新しておく。
   renderCfg();
