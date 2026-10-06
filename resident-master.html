@@ -5212,6 +5212,17 @@ function mdAiParse(j, names){
   return out;
 }
 function mdAiFill(){
+  /* ★AIの下書きも保存（mdSave）と同じ世代（mdGen）で捨てる。尋ねている途中で端末が現場用に切り替わると
+     （applyDeviceGuard が世代を進め、「AIに尋ねています…」の印も下ろす）、残りの塊を尋ね続けて印を出し直し、
+     届いた下書きを表の入力欄と編集の控え（mdEdits）へ書き込んで案内を出していた。
+     世代が変わった後は【次の塊を尋ねない・何も書かない】（ボタンも戻さない・案内も出さない。
+     現場用には薬効辞書のタブが無い）（2026-10-06） */
+  var gen=mdGen;
+  /* 尋ねる直前に世代を見る。変わっていたら送らずに止める（STALE は下の catch で黙って捨てる） */
+  function ask(names){
+    if(gen!==mdGen) return Promise.reject(new Error('STALE'));
+    return mdAiAsk(names);
+  }
   if(curView!=='md') return;
   var rows=mdRead();
   /* 削除予定の行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる） */
@@ -5235,29 +5246,32 @@ function mdAiFill(){
   var got={}, done=0, ng=0;
   if($('mdAi')) $('mdAi').disabled=true;
   function step(k){
+    if(gen!==mdGen) return Promise.reject(new Error('STALE'));
     if(k>=chunks.length) return Promise.resolve();
     mdBusy='AIに尋ねています… '+done+' / '+todo.length+'種類';
     paintShBars();
-    return mdAiAsk(chunks[k]).then(function(o){
+    return ask(chunks[k]).then(function(o){
       for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
       done+=chunks[k].length;
     }).catch(function(e){
-      if(String((e&&e.message)||'')==='AI_NO_KEY') throw e;
+      var em=String((e&&e.message)||'');
+      if(em==='AI_NO_KEY'||em==='STALE') throw e;   /* ★世代が変わった時は半分に割って尋ね直さない */
       /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
          それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
       var half=Math.ceil(chunks[k].length/2);
       if(chunks[k].length<=2) { ng++; done+=chunks[k].length; return; }
       var a=chunks[k].slice(0,half), b=chunks[k].slice(half);
-      return mdAiAsk(a).then(function(o){
+      return ask(a).then(function(o){
         for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
       }).catch(function(){ ng++; }).then(function(){
-        return mdAiAsk(b).then(function(o){
+        return ask(b).then(function(o){
           for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
         }).catch(function(){ ng++; });
       }).then(function(){ done+=chunks[k].length; });
     }).then(function(){ return step(k+1); });
   }
   step(0).then(function(){
+    if(gen!==mdGen) return;   /* ★世代が変わった後は入力欄にも控えにも書かない */
     var box=$('mdSheet'), n=0;
     if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
       var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
@@ -5278,6 +5292,7 @@ function mdAiFill(){
     toast(n+'件に下書きを入れました'+(ng?('（'+ng+'回ぶん取得できませんでした）'):'')+
           '。内容を確かめてから「保存」を押してください');
   }).catch(function(e){
+    if(gen!==mdGen) return;   /* ★STALE を含め、世代が変わった後は印・ボタン・案内に触れない */
     mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
     toast('AIに尋ねられませんでした：'+String((e&&e.message)||e),false);
   });
@@ -9905,9 +9920,11 @@ function applyDeviceGuard(){
     if($('toast')){ $('toast').textContent=''; $('toast').classList.remove('on'); }
     /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
     mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
-    /* ★保存中の印も下ろす。保存の応答は世代で捨てる（mdSave）ので、ここで下ろさないと
-       事務所PCへ戻した時に「保存しています…」が残り続ける（2026-10-06） */
-    mdBusy='';
+    /* ★保存中・AIに尋ねている間の印も下ろす。どちらの応答も世代で捨てる（mdSave・mdAiFill）ので、
+       ここで下ろさないと事務所PCへ戻した時に「保存しています…」「AIに尋ねています…」が残り続ける（2026-10-06）。
+       ★AIのボタンも戻す。保存のボタンは paintShBars が未保存の有無で戻すが、AIのボタンは戻す所が尋ね終わりにしか無い。
+         未保存があって読み込み直さずに事務所PCへ戻した時（loadData）に、押せないまま残らないようにする */
+    mdBusy=''; if($('mdAi')) $('mdAi').disabled=false;
     /* ★薬効辞書に保存していない編集がある時は、その編集だけは捨てない（2026-10-01）。別のタブで現場用へ
        変わった時は、未保存があると読み込み直さずブロックだけにする（onDeviceRoleStorage_）。ここで捨てると、
        事務所PCへ戻しても編集が戻らない。同期設定からの切り替えは未保存があると先に止めるので、ここへは来ない */
