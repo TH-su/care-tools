@@ -606,6 +606,10 @@ textarea{resize:vertical;min-height:60px}
 .wc-log-hd{font-size: 0.75rem;font-weight:700;color:var(--g9)}
 .wc-log-hd small{display:block;font-weight:400;color:var(--g7);margin-top:2px}
 .wc-log-row{display:flex;align-items:center;gap:6px;margin-top:6px}
+/* 枠の分だけ外へ広げ、中の行の幅を他の行と同じにする（日付が切れないように） */
+.wc-log-item.latest{margin:6px -8px 0;padding:6px;border:2px solid var(--pri);border-radius:8px;background:#fff}
+.wc-log-item.latest .wc-log-row{margin-top:4px}
+.wc-log-tag{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--pri);color:#fff;font-size: 0.6875rem;font-weight:700}
 .wc-log-row input[type=date]{flex:1 1 auto;min-width:0}
 .wc-log-row input[type=number]{flex:0 0 5.5em;width:5.5em}
 .wc-log-row .wc-log-u{font-size: 0.75rem;color:var(--g7)}
@@ -4574,7 +4578,7 @@ $$('.wm-b').forEach(b=> b.addEventListener('click', ()=>{
   if(b.dataset.wm==='chair' && !$('#inChair').value){
     const rid = $('#inResident').value;
     const ym  = $('#inMonth').value;
-    const carry = (rid && ym) ? getChairKgAsOf(rid, ym, $('#inDate').value) : null;
+    const carry = (rid && ym) ? wcLatestKg_(rid, ym, $('#inDate').value) : null;
     if(carry){
       $('#inChair').value = carry.toFixed(1);
       recalcChair();
@@ -4640,7 +4644,7 @@ function refreshCarryWeight(){
     $('#inRaw').value    = prevAny?.rawWeight != null ? prevAny.rawWeight.toFixed(1) : '';
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     // refresh chair weight in case a chair-mode record exists before the chosen date
-    const chairV = getChairKgAsOf(rid, ym, $('#inDate').value);
+    const chairV = wcLatestKg_(rid, ym, $('#inDate').value);
     if(chairV != null && !$('#inChair').value) $('#inChair').value = chairV.toFixed(1);
   }else{
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
@@ -4882,6 +4886,14 @@ function wcRecalcAsk_(rid, log){
   if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
 }
+/* 入力画面（1件ずつ）に出す車椅子重量＝履歴でいちばん新しい行の重さ（設定画面で「最新」と出る行）。
+   2026-10-06 本人指示: 設定で変えた最新の重さを出す。履歴が無い方は従来どおり測定日の時点の重さ */
+function wcLatestKg_(rid, ym, date){
+  const r = rid ? residentById(rid) : null;
+  const log = r ? wcLogOf(r) : [];
+  if(log.length) return log[log.length - 1].kg;
+  return getChairKgAsOf(rid, ym, date);
+}
 /* 「前回の記録の体重」から ±2kg 以上動いた車椅子の記録に「車椅子に変更はありませんでしたか？」を知らせる（2026-10-06 本人指示）。
    知らせるだけで保存は止めない。比べる相手はこの記録より前の最後の記録（計測の方法は問わない・この記録自身は除く） */
 const CHAIR_CHANGE_ASK = '車椅子に変更はありませんでしたか？';
@@ -4969,7 +4981,7 @@ function clearInputForm(){
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     $('#inRaw').value    = '';
   }
-  const chairV = (rid && ym) ? getChairKgAsOf(rid, ym, $('#inDate').value) : (resident?.wheelchairKg ?? null);
+  const chairV = (rid && ym) ? wcLatestKg_(rid, ym, $('#inDate').value) : (resident?.wheelchairKg ?? null);
   $('#inChair').value = chairV!=null ? chairV.toFixed(1) : '';
   setMode(prevMode);
   // 入力画面の食事フォームは撤去済みのため DOM があるときだけ操作する
@@ -5015,13 +5027,11 @@ function syncInputFromExisting(){
   // The list of existing records is shown below so user can pick one to edit.
   clearInputForm();
   const resident = residentById(rid);
-  // 測定日より前に車椅子記録がある時は「前回」、無ければ登録値（どちらも値は getChairKgAsOf と同じ）
-  const hintDate = $('#inDate').value || (ym + '-99');
-  const hasPrevChair = getAllRecordsOf(rid).some(x=> x.measureMode==='chair' && Number(x.wheelchairKg) > 0
-    && (x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '')) < hintDate);
-  const carryChair = hasPrevChair ? getChairKgAsOf(rid, ym, $('#inDate').value) : null;
+  // 車椅子の変更履歴がある方は「最新」の重さ（設定画面の最新の行と同じ値）、無ければ登録値
+  const latestLog = resident ? wcLogOf(resident) : [];
+  const carryChair = latestLog.length ? latestLog[latestLog.length - 1].kg : null;
   $('#inChairHint').textContent = carryChair
-    ? `前回の車椅子重量：${carryChair.toFixed(1)}kg（変更時のみ編集）`
+    ? `最新の車椅子重量：${carryChair.toFixed(1)}kg（変更時のみ編集）`
     : (resident?.wheelchairKg
         ? `登録車椅子：${resident.wheelchairKg.toFixed(1)}kg（編集可）`
         : (inMode==='chair' ? '車椅子重量を入力してください' : ''));
@@ -7158,14 +7168,28 @@ function renderMdChairLog(){
     box.innerHTML = '<div class="wc-log-empty">履歴はありません。車椅子重量を入れると、今日の日付で1行足されます。</div>';
     return;
   }
-  box.innerHTML = mdChairLog.map((e, i)=> `
-    <div class="wc-log-row">
-      <input type="date" data-wcl-on="${i}" value="${escapeHtml(e.on || '')}" aria-label="変更日">
-      <input type="number" data-wcl-kg="${i}" step="0.1" min="1" max="50" inputmode="decimal" value="${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}" aria-label="車椅子の重さ（kg）">
-      <span class="wc-log-u">kg</span>
-      <button type="button" class="wc-log-del" data-wcl-del="${i}" aria-label="この行を消す">削除</button>
-    </div>`).join('');
-  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); }));
+  /* 新しい日付ほど上に並べる（2026-10-06 本人指示）。日付が空の行は、いちばん上（書きかけ）。
+     いちばん新しい日付の行に「最新」と出す。並べるのは画面だけで、保存の形（日付の古い順）は変えない */
+  const order = mdChairLog.map((e, i)=> i).sort((a, b)=>{
+    const x = mdChairLog[a].on || '9999-99-99', y = mdChairLog[b].on || '9999-99-99';
+    return x < y ? 1 : x > y ? -1 : b - a;
+  });
+  const latestIdx = order.find(i=> mdChairLog[i].on);
+  box.innerHTML = order.map(i=>{
+    const e = mdChairLog[i];
+    const latest = (i === latestIdx);
+    return `
+    <div class="wc-log-item${latest ? ' latest' : ''}">
+      ${latest ? '<span class="wc-log-tag">最新</span>' : ''}
+      <div class="wc-log-row">
+        <input type="date" data-wcl-on="${i}" value="${escapeHtml(e.on || '')}" aria-label="${latest ? '最新の' : ''}変更日">
+        <input type="number" data-wcl-kg="${i}" step="0.1" min="1" max="50" inputmode="decimal" value="${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}" aria-label="車椅子の重さ（kg）">
+        <span class="wc-log-u">kg</span>
+        <button type="button" class="wc-log-del" data-wcl-del="${i}" aria-label="この行を消す">削除</button>
+      </div>
+    </div>`;
+  }).join('');
+  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); renderMdChairLog(); }));
   $$('[data-wcl-kg]', box).forEach(el=> el.addEventListener('input', ()=>{ const e = mdChairLog[+el.dataset.wclKg]; e.kg = Number(el.value) || null; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); }));
   $$('[data-wcl-del]', box).forEach(el=> el.addEventListener('click', ()=>{ const gone = mdChairLog.splice(+el.dataset.wclDel, 1)[0]; if(gone === mdChairAuto) mdChairAuto = null; renderMdChairLog(); mdChairSyncFromLog_(); }));
 }
