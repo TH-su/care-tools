@@ -4114,7 +4114,7 @@ function renderBulkList(){
     const existingRec = getRecordByDate(r.id, date); // exact-date duplicate
     const latestAny   = getLatestRecordAny(r.id);
     const isChair     = (r.wheelchairKg != null && r.wheelchairKg > 0);
-    const chairKg     = isChair ? getChairKgAsOf(r.id, ym, date) : null;
+    const chairKg     = isChair ? wcLatestKg_(r.id, ym, date) : null;   // 最新の重さ（設定の「最新」の行）
     // show previous weight (absolute latest) and its date, if any
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
@@ -4192,6 +4192,7 @@ function bulkSave(){
   const saved = [];
   const chairUpdated = [];
   const chairAsks = [];
+  const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
 
   for(const row of rows){
@@ -4206,8 +4207,8 @@ function bulkSave(){
     let weight, rawWeight=null, wheelchairKg=null, mode='normal';
     if(chair){
       // input = 実測値 (incl. wheelchair). subtract chair weight.
-      // 車椅子重量は測定日の時点の値（前の車椅子記録から引き継ぐ。getChairKgAsOf）
-      const ck = getChairKgAsOf(rid, ym, date);
+      // 車椅子重量は最新の重さ（設定の「最新」の行。wcLatestKg_）。2026-10-06 本人指示で測定日の時点の重さから変更
+      const ck = wcLatestKg_(rid, ym, date);
       if(!ck || ck<=0){ errors++; continue; }
       if(v <= ck){ errors++; continue; }
       rawWeight    = Math.round(v*10)/10;
@@ -4252,6 +4253,7 @@ function bulkSave(){
     normalizeRecord(rec);
     saved.push(rec);
     chairAsks.push(chairChangeLine_(rec));
+    if(wcNoteBulkRec_(rid, rec)) chairResChanged.add(rid);
   }
 
   if(saved.length===0){
@@ -4261,6 +4263,7 @@ function bulkSave(){
   save();
   // cloud sync (fire and forget; retry queue handles failures)
   saved.forEach(rec=> apiPush('saveRecord', { record: rec }));
+  chairResChanged.forEach(rid=> pushResidentFields_(residentById(rid), ['wheelchairKg', 'wheelchairLog']));
 
   toast(`${saved.length}名の記録を保存しました${errors?`（エラー ${errors}件）`:''}`, 'ok');
   closeBulkInput();
@@ -4269,6 +4272,8 @@ function bulkSave(){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function') renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、入居者ごとに確認して計算し直す
+  chairResChanged.forEach(rid=> wcRecalcAsk_(rid, wcLogStored_(residentById(rid))));
   alertChairChange_(chairAsks);
 }
 
@@ -4298,7 +4303,7 @@ function saveSingleBulkRow(row){
   // ── 行単位の計算（bulkSave と同一ルール）──
   let weight, rawWeight=null, wheelchairKg=null, mode='normal';
   if(chair){
-    const ck = getChairKgAsOf(rid, ym, date);
+    const ck = wcLatestKg_(rid, ym, date);   // 最新の重さ（bulkSave と同じ）
     if(!ck || ck<=0){ toast('車椅子重量が未登録です','err'); return; }
     if(v <= ck){ toast('実測値が車椅子重量以下です','err'); return; }
     rawWeight    = Math.round(v*10)/10;
@@ -4342,8 +4347,10 @@ function saveSingleBulkRow(row){
     row.classList.add('existing');
   }
   normalizeRecord(rec);
+  const chairResChanged = wcNoteBulkRec_(rid, rec);   // bulkSave と同じ規則で車椅子の変更履歴に照らす
   save();
   apiPush('saveRecord', { record: rec });
+  if(chairResChanged) pushResidentFields_(resident, ['wheelchairKg', 'wheelchairLog']);
 
   // ── フィードバック ──
   const btn = row.querySelector('.bk-save');
@@ -4360,6 +4367,7 @@ function saveSingleBulkRow(row){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  if(chairResChanged) wcRecalcAsk_(rid, wcLogStored_(resident));
   alertChairChange_([chairChangeLine_(rec)]);
 }
 
@@ -4893,6 +4901,26 @@ function wcLatestKg_(rid, ym, date){
   const log = r ? wcLogOf(r) : [];
   if(log.length) return log[log.length - 1].kg;
   return getChairKgAsOf(rid, ym, date);
+}
+/* 一括入力で保存した記録を、車椅子の変更履歴に照らす（2026-10-06 本人指示: 一括入力も最新の重さで計算する）。
+   1件ずつの入力と同じ規則: 使った重さがその日の時点の重さと違えば、その日を変更日として履歴に入れる
+   （変更日より前の日付で最新の重さを使った＝その日にはもう新しい車椅子だった、とみなす）。
+   この記録から作った行は、いったん外してから比べる（上書き・通常に変えた時に古い行を残さない）。
+   入居者の履歴か車椅子重量が変わった時だけ true */
+function wcNoteBulkRec_(rid, rec){
+  const r = residentById(rid);
+  if(!r || !rec) return false;
+  const full = wcLogOf(r);
+  const base = wcLogUnlinkRec_(full, rid, String(rec.id));
+  let next = null;
+  if(rec.measureMode === 'chair' && Number(rec.wheelchairKg) > 0){
+    const key = rec.measuredOn || (rec.yearMonth + '-01');
+    const kg = Math.round(Number(rec.wheelchairKg) * 10) / 10;
+    const before = wcKgOn_(base, key) ?? getChairKgAsOf(rid, rec.yearMonth, key, String(rec.id));
+    if(before !== kg) next = base.filter(e=> e.on !== key).concat([{ on: key, kg, rec: String(rec.id) }]);
+  }
+  if(!next && JSON.stringify(base) !== JSON.stringify(full)) next = base;
+  return next ? wcLogApply_(r, next) : false;
 }
 /* 「前回の記録の体重」から ±2kg 以上動いた車椅子の記録に「車椅子に変更はありませんでしたか？」を知らせる（2026-10-06 本人指示）。
    知らせるだけで保存は止めない。比べる相手はこの記録より前の最後の記録（計測の方法は問わない・この記録自身は除く） */
