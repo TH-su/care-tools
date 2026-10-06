@@ -4091,18 +4091,19 @@ function renderBulkList(){
     const existingRec = getRecordByDate(r.id, date); // exact-date duplicate
     const latestAny   = getLatestRecordAny(r.id);
     const isChair     = (r.wheelchairKg != null && r.wheelchairKg > 0);
+    const chairKg     = isChair ? getChairKgAsOf(r.id, ym, date) : null;
     // show previous weight (absolute latest) and its date, if any
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
       const dstr = latestAny.measuredOn || ymFmt(latestAny.yearMonth);
       prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size: 0.5625rem">${dstr}</div>`;
     }
-    const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>` : '';
+    const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${chairKg.toFixed(1)}kg</span>` : '';
     const existBadge = existingRec ? `<span class="bk-ex">${date} に既存記録あり（上書き）</span>` : '';
     const chairHint  = isChair ? `<span class="bk-ch">実測</span>` : '';
     const placeholder = latestAny
       ? (isChair
-          ? (latestAny.rawWeight != null ? latestAny.rawWeight.toFixed(1) : (latestAny.weight + (r.wheelchairKg||0)).toFixed(1))
+          ? (latestAny.rawWeight != null ? latestAny.rawWeight.toFixed(1) : (latestAny.weight + (chairKg||0)).toFixed(1))
           : latestAny.weight.toFixed(1))
       : '';
     return `
@@ -4167,6 +4168,7 @@ function bulkSave(){
   const nowIso = new Date().toISOString();
   const saved = [];
   const chairUpdated = [];
+  const chairAsks = [];
   let errors = 0;
 
   for(const row of rows){
@@ -4181,7 +4183,8 @@ function bulkSave(){
     let weight, rawWeight=null, wheelchairKg=null, mode='normal';
     if(chair){
       // input = 実測値 (incl. wheelchair). subtract chair weight.
-      const ck = resident.wheelchairKg;
+      // 車椅子重量は測定日の時点の値（前の車椅子記録から引き継ぐ。getChairKgAsOf）
+      const ck = getChairKgAsOf(rid, ym, date);
       if(!ck || ck<=0){ errors++; continue; }
       if(v <= ck){ errors++; continue; }
       rawWeight    = Math.round(v*10)/10;
@@ -4225,6 +4228,7 @@ function bulkSave(){
     // 一括保存でも各レコードを正規化
     normalizeRecord(rec);
     saved.push(rec);
+    chairAsks.push(chairChangeLine_(rec));
   }
 
   if(saved.length===0){
@@ -4242,6 +4246,7 @@ function bulkSave(){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function') renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  alertChairChange_(chairAsks);
 }
 
 /* ============================================================
@@ -4270,7 +4275,7 @@ function saveSingleBulkRow(row){
   // ── 行単位の計算（bulkSave と同一ルール）──
   let weight, rawWeight=null, wheelchairKg=null, mode='normal';
   if(chair){
-    const ck = resident.wheelchairKg;
+    const ck = getChairKgAsOf(rid, ym, date);
     if(!ck || ck<=0){ toast('車椅子重量が未登録です','err'); return; }
     if(v <= ck){ toast('実測値が車椅子重量以下です','err'); return; }
     rawWeight    = Math.round(v*10)/10;
@@ -4332,6 +4337,7 @@ function saveSingleBulkRow(row){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  alertChairChange_([chairChangeLine_(rec)]);
 }
 
 /* 36-month per-resident modal */
@@ -4549,8 +4555,7 @@ $$('.wm-b').forEach(b=> b.addEventListener('click', ()=>{
   if(b.dataset.wm==='chair' && !$('#inChair').value){
     const rid = $('#inResident').value;
     const ym  = $('#inMonth').value;
-    const r = rid ? residentById(rid) : null;
-    const carry = (rid && ym ? getLastChairKgBefore(rid, ym) : null) ?? r?.wheelchairKg ?? null;
+    const carry = (rid && ym) ? getChairKgAsOf(rid, ym, $('#inDate').value) : null;
     if(carry){
       $('#inChair').value = carry.toFixed(1);
       recalcChair();
@@ -4616,9 +4621,7 @@ function refreshCarryWeight(){
     $('#inRaw').value    = prevAny?.rawWeight != null ? prevAny.rawWeight.toFixed(1) : '';
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     // refresh chair weight in case a chair-mode record exists before the chosen date
-    const carryChair = getLastChairKgBefore(rid, ym);
-    const resident = residentById(rid);
-    const chairV = carryChair ?? resident?.wheelchairKg ?? null;
+    const chairV = getChairKgAsOf(rid, ym, $('#inDate').value);
     if(chairV != null && !$('#inChair').value) $('#inChair').value = chairV.toFixed(1);
   }else{
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
@@ -4696,12 +4699,52 @@ function getLatestRecordAny(rid, excludeId){
   }
   return null;
 }
-/* last wheelchair weight used before the given yearMonth.
-   Returns the wheelchairKg value from the most recent chair-mode record
-   so changes carry forward from the month they were made. */
-function getLastChairKgBefore(rid, ym){
-  const recs = getRecordsOf(rid).filter(r=> r.yearMonth < ym && r.measureMode==='chair' && r.wheelchairKg);
-  return recs.length ? recs[recs.length-1].wheelchairKg : null;
+/* その計測の時点で使う車椅子重量（2026-10-06 本人指示: ある月で車椅子を変えたら、その後の月も変更後の重さで計算する）。
+   ・測定日より前で最後の車椅子記録の重さを引き継ぐ。日単位で見るので、変えた月の2回目の計測にも効く
+     （以前は月の代表1件・前月までしか見ず、同じ月の2回目は前月の古い重さに戻っていた）
+   ・一括入力は登録値（設定画面）しか見ず、記録で変えた重さが次の月に引き継がれなかったため、同じこの関数を使う
+   ・設定画面で車椅子重量を直した時刻がその記録より後なら、設定の値を使う（後ろに車椅子記録がある過去の日付の入力は除く）
+   ・車椅子記録が無ければ設定の値。同じ日の記録は上書きされる側なので数えない */
+function getChairKgAsOf(rid, ym, date, excludeId){
+  const resident = rid ? residentById(rid) : null;
+  const regKg = (resident && Number(resident.wheelchairKg) > 0) ? Number(resident.wheelchairKg) : null;
+  if(!rid) return regKg;
+  const tgt = date ? date : (ym ? ym + '-99' : '9999-99-99');
+  const recs = getAllRecordsOf(rid);
+  let last = null, laterExists = false;
+  for(let i = recs.length - 1; i >= 0; i--){
+    const r = recs[i];
+    if(excludeId && r.id === excludeId) continue;
+    if(r.measureMode !== 'chair' || !(Number(r.wheelchairKg) > 0)) continue;
+    const k = r.measuredOn || (r.yearMonth ? r.yearMonth + '-01' : '');
+    if(!k || k === tgt) continue;
+    if(k > tgt){ laterExists = true; continue; }
+    last = r; break;
+  }
+  if(!last) return regKg;
+  const lastKg = Number(last.wheelchairKg);
+  if(regKg != null && regKg !== lastKg && !laterExists){
+    const recAt = String(last.updatedAt || last.createdAt || '');
+    if(resident.updatedAt && String(resident.updatedAt) > recAt) return regKg;
+  }
+  return lastKg;
+}
+/* 「前回の記録の体重」から ±2kg 以上動いた車椅子の記録に「車椅子に変更はありませんでしたか？」を知らせる（2026-10-06 本人指示）。
+   知らせるだけで保存は止めない。比べる相手はこの記録より前の最後の記録（計測の方法は問わない・この記録自身は除く） */
+const CHAIR_CHANGE_ASK = '車椅子に変更はありませんでしたか？';
+function chairChangeLine_(rec){
+  if(!rec || rec.measureMode !== 'chair' || !wrWeightOk(rec)) return '';
+  const prev = getLatestRecordBefore(rec.residentId, rec.yearMonth, rec.measuredOn, rec.id);
+  if(!wrWeightOk(prev)) return '';
+  const d10 = Math.round(rec.weight * 10) - Math.round(prev.weight * 10);
+  if(Math.abs(d10) < 20) return '';
+  const name = residentById(rec.residentId)?.name || '';
+  const prevLabel = prev.measuredOn || ymFmt(prev.yearMonth);
+  return `${name}：前回（${prevLabel} ${prev.weight.toFixed(1)}kg）から ${d10 > 0 ? '+' : ''}${(d10 / 10).toFixed(1)}kg`;
+}
+function alertChairChange_(lines){
+  const ls = (lines || []).filter(Boolean);
+  if(ls.length) alert(CHAIR_CHANGE_ASK + '\n\n' + ls.join('\n'));
 }
 
 /* Edit mode. When set, Save overwrites this specific record instead of
@@ -4719,11 +4762,11 @@ function loadRecordIntoForm(rec){
   inSide = rec.sideForm || null;
   TOGGLES.forEach(t=> inToggles[t.k] = !!rec[t.k]);
   $('#inNote').value = rec.note || '';
-  const carryChair = getLastChairKgBefore(rec.residentId, rec.yearMonth);
+  const carryChair = getChairKgAsOf(rec.residentId, rec.yearMonth, rec.measuredOn, rec.id);
   if(rec.measureMode === 'chair'){
     $('#inWeight').value = rec.weight.toFixed(1);
     $('#inRaw').value   = rec.rawWeight  != null ? rec.rawWeight.toFixed(1)  : '';
-    const chairV = rec.wheelchairKg ?? carryChair ?? resident?.wheelchairKg ?? null;
+    const chairV = rec.wheelchairKg ?? carryChair ?? null;
     $('#inChair').value = chairV!=null ? chairV.toFixed(1) : '';
     setMode('chair');
   }else{
@@ -4747,7 +4790,6 @@ function clearInputForm(){
   const rid = $('#inResident').value;
   const ym  = $('#inMonth').value || ymNow();
   const resident = rid ? residentById(rid) : null;
-  const carryChair = rid && ym ? getLastChairKgBefore(rid, ym) : null;
   const prev = rid && ym ? getLatestBefore(rid, ym) : null;
   if(prev){
     inStaple = prev.stapleForm || null;
@@ -4774,7 +4816,7 @@ function clearInputForm(){
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     $('#inRaw').value    = '';
   }
-  const chairV = carryChair ?? resident?.wheelchairKg ?? null;
+  const chairV = (rid && ym) ? getChairKgAsOf(rid, ym, $('#inDate').value) : (resident?.wheelchairKg ?? null);
   $('#inChair').value = chairV!=null ? chairV.toFixed(1) : '';
   setMode(prevMode);
   // 入力画面の食事フォームは撤去済みのため DOM があるときだけ操作する
@@ -4820,7 +4862,11 @@ function syncInputFromExisting(){
   // The list of existing records is shown below so user can pick one to edit.
   clearInputForm();
   const resident = residentById(rid);
-  const carryChair = getLastChairKgBefore(rid, ym);
+  // 測定日より前に車椅子記録がある時は「前回」、無ければ登録値（どちらも値は getChairKgAsOf と同じ）
+  const hintDate = $('#inDate').value || (ym + '-99');
+  const hasPrevChair = getAllRecordsOf(rid).some(x=> x.measureMode==='chair' && Number(x.wheelchairKg) > 0
+    && (x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '')) < hintDate);
+  const carryChair = hasPrevChair ? getChairKgAsOf(rid, ym, $('#inDate').value) : null;
   $('#inChairHint').textContent = carryChair
     ? `前回の車椅子重量：${carryChair.toFixed(1)}kg（変更時のみ編集）`
     : (resident?.wheelchairKg
@@ -4953,17 +4999,18 @@ $('#inSave').addEventListener('click', ()=>{
   }
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
-  // update resident's registered wheelchair weight only when the value
-  // actually changed from the prior chair record (an explicit change).
+  /* 登録の車椅子重量（設定画面の値）を、この記録の重さに合わせる。合わせるのは、この記録がその方の
+     いちばん新しい車椅子記録の時だけ。過去の日付の記録を直した時に、今の車椅子重量が昔の値へ戻らないようにする */
   let chairResUpdated = null;
   if(mode==='chair' && chair){
     const roundedChair = Math.round(chair*10)/10;
-    const prevChair = getLastChairKgBefore(rid, ym);
-    if(prevChair == null || prevChair !== roundedChair){
-      const r = residentById(rid);
-      if(r){ r.wheelchairKg = roundedChair; chairResUpdated = r; }
-    }
+    const myKey = savedRec.measuredOn || (ym + '-01');
+    const laterChair = getAllRecordsOf(rid).some(x=> x.id !== savedRec.id && x.measureMode==='chair' && Number(x.wheelchairKg) > 0
+      && (x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '')) > myKey);
+    const r = residentById(rid);
+    if(r && !laterChair && r.wheelchairKg !== roundedChair){ r.wheelchairKg = roundedChair; chairResUpdated = r; }
   }
+  const chairAsk = chairChangeLine_(savedRec);
   save();
   const name = residentById(rid)?.name || '';
   const dateLabel = savedRec.measuredOn || ymFmt(ym);
@@ -4981,6 +5028,7 @@ $('#inSave').addEventListener('click', ()=>{
   if(typeof renderList === 'function') renderList();
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
+  alertChairChange_([chairAsk]);
 });
 
 function deleteRecordById(id){
