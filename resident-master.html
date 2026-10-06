@@ -509,6 +509,51 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mh-prev summary{cursor:pointer; padding:12px 0; line-height:20px; font-size:0.8125rem; color:var(--g7)}
 .mh-prev summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
 @media print{.sec-medshist{display:none !important}}
+/* ── 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ・画面だけ（印刷しない）。既存の .modal には触れない ──
+   ★追加・変更・中止は変更履歴と同じ文字の札（.mh-tag）で示す。注意は黄色＋⚠の文字（色だけで伝えない） */
+.mc-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:0 0 8px}
+.mc-open{min-height:44px; padding:0 16px; border:1px solid var(--warn-tx); border-radius:999px; background:var(--warn-bg);
+  color:#8a3a00; font-weight:700; font-size:0.875rem; cursor:pointer}
+.mc-open:disabled{cursor:default; opacity:.7}
+.mc-open:focus-visible,.mc-item:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.mc-note{font-size:0.8125rem; color:var(--g9)}
+.mc-dmark{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin:6px 0; padding:6px 10px;
+  border:1px solid var(--warn-tx); border-radius:8px; background:var(--warn-bg); color:#8a3a00; font-weight:700; font-size:0.875rem}
+.mc-dmark:empty{display:none}
+#mMedCand .box{max-width:1100px; width:96vw; max-height:92vh; padding:14px; display:flex; flex-direction:column}
+#mMedCandH:focus{outline:none}
+.mc-body{flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(220px,320px) 1fr; gap:12px}
+.mc-listbox,.mc-work{overflow:auto; min-height:0; border:1px solid var(--g2); border-radius:8px; padding:8px}
+.mc-item{display:block; width:100%; text-align:start; border:1px solid var(--g3); border-radius:8px; background:#fff;
+  padding:8px 10px; margin:0 0 6px; cursor:pointer; font:inherit; color:var(--g9); min-height:44px}
+.mc-item.on{border-color:var(--pri); background:var(--pri-l)}
+.mc-ih{display:block; font-weight:700; font-size:0.8125rem; color:var(--pri-d)}
+.mc-it{display:block; font-size:0.8125rem; line-height:1.5; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden}
+.mc-redo{display:block; font-size:0.75rem; color:#8a3a00; font-weight:700}
+.mc-empty,.mc-sub,.mc-filter{font-size:0.8125rem; color:var(--g7); margin:4px 0 8px; line-height:1.6}
+.mc-lbl{display:block; font-size:0.75rem; font-weight:700; color:var(--g7); margin:0 0 4px}
+.mc-src{margin:0 0 10px}
+.mc-txt{white-space:pre-wrap; overflow-wrap:anywhere; font-size:0.875rem; line-height:1.6; background:var(--g0); border-radius:6px; padding:8px}
+.mc-cols{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.mc-pre{margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; font-size:0.8125rem; line-height:1.6;
+  background:var(--g0); border:1px solid var(--g2); border-radius:6px; padding:8px; min-height:160px}
+.mc-ta{width:100%; box-sizing:border-box; min-height:160px; font:inherit; font-size:0.8125rem; line-height:1.6; padding:8px;
+  border:1px solid var(--g3); border-radius:6px; resize:vertical}
+.mc-ai{font-size:0.8125rem; line-height:1.6; margin:10px 0 0; padding:8px 10px; background:var(--pri-l); border-radius:6px}
+.mc-uns{margin:4px 0 0; padding-inline-start:1.2em}
+.mc-diff{margin:10px 0 0; font-size:0.8125rem}
+.mc-warn{background:var(--warn-bg); border:1px solid var(--warn-tx); border-radius:6px; color:#8a3a00; font-weight:700;
+  font-size:0.8125rem; padding:6px 10px; margin:8px 0 0}
+.mc-dec{display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; margin:12px 0 0}
+.mc-dec .mc-lbl{margin:0; flex-basis:100%}
+.mc-dec select,.mc-dec input{min-height:44px; font:inherit; font-size:0.875rem; border:1px solid var(--g3); border-radius:6px; padding:0 8px}
+.mc-dec input{flex:1 1 200px}
+.mc-foot{display:flex; gap:8px; align-items:center; justify-content:flex-end; padding-top:10px; flex-wrap:wrap}
+.mc-foot .grow{flex:1; font-size:0.8125rem; color:var(--g9); min-width:200px}
+.mc-ack{display:flex; margin:6px 0 0; font-weight:700; color:#8a3a00; white-space:normal}
+.mc-head{display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+@media (max-width:700px){ .mc-body{grid-template-columns:1fr} .mc-cols{grid-template-columns:1fr} }
+@media print{ .mc-bar,.mc-dmark,#mMedCand{display:none !important} }
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
@@ -1336,6 +1381,8 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="certReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（既定 A4縦）</button>
   </div>
+  <!-- 薬の変更候補（2026-10-06）。管理者に候補がある時だけ出す（mcPaint_）。印刷しない -->
+  <div class="mc-bar" id="mcBar" style="display:none"></div>
   <div class="filter-row" id="filterRow">
     <button class="chip on" data-f="active">在籍</button>
     <button class="chip" data-f="out">退去</button>
@@ -1508,6 +1555,26 @@ body.meal-on #sc-list{max-width:none}
       <button class="btn btn-gray" id="msClose" type="button">閉じる</button>
       <button class="btn btn-sec" id="msRecheck" type="button">🔄 もう一度確かめる</button>
       <button class="btn btn-ok" id="msSend" type="button" disabled>📤 送る</button>
+    </div>
+  </div>
+</div>
+
+<!-- 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ。中身は mcPaintModal_ が描く -->
+<div class="modal" id="mMedCand" role="dialog" aria-modal="true" aria-labelledby="mMedCandH">
+  <div class="box">
+    <div class="mc-head">
+      <h2 id="mMedCandH" tabindex="-1">💊 薬の変更候補</h2>
+      <span>
+        <button class="btn btn-sec" id="mcReload" type="button">🔄 取り直す</button>
+        <button class="btn btn-gray" id="mcClose" type="button">閉じる</button>
+      </span>
+    </div>
+    <p class="ms-lead">申送の「服薬関連」の記録（直近14日）から、「薬剤情報（定期）」を直す候補を出しています。
+      申送の原文と見比べ、直し案を確かめて<b>「反映する」</b>を押した時だけ書き換えます（変更履歴にも残ります）。
+      AI に送るのは今の定期薬と記録の本文だけで、名簿にある氏名と居室は伏せます（職員・ご家族・医師の名前は伏せきれないことがあります）。</p>
+    <div class="mc-body">
+      <div class="mc-listbox" id="mcListBox"></div>
+      <div class="mc-work" id="mcWork"></div>
     </div>
   </div>
 </div>
@@ -5137,6 +5204,625 @@ function mdSave(){
   });   /* mdRenameGuard_ の then を閉じる */
 }
 
+/* ═══════════ 薬の変更候補（2026-10-06 代表者の決定・案B）═══════════
+   申送の「服薬関連」の記録（直近14日）から「薬剤情報（定期）」を直す候補を出し、管理者が見比べて
+   「反映する／反映しない」を決める。判断と反映はサーバー（入居者マスタGAS の med-cand.gs・action 'medCand'）が受ける。
+   ★管理者（Google＋2段階認証でログイン中・role 'admin'）にだけ出す。現場端末では何もしない（取りにも行かない）。
+     これは「出すかどうか」の判定で、権限の境目ではない。定期薬の書き換えは従来どおり事務所の合言葉で守られ、
+     反映できる中身は編集画面で直せる範囲と同じ。
+   ★申送の本文・定期薬は端末に保存しない（メモリだけ。閉じたら捨てる）。
+   ★判断の材料は申送の【原文】。AI 要約（ledger）は見出しとして並べるだけで、原文が見つからない候補は反映させない（反証レビュー指摘3）。
+   ★AI に送るのは「今の定期薬」と「記録の本文」だけ。名簿にある氏名・居室は伏せる（職員・ご家族・医師の名前は伏せきれないことがある）。
+   ★AI の案は自動では入らない。差分（追加・中止・変更）を画面が自分で数えて見せ、人が「反映する」を押した時だけ書く。
+     AI の説明に無い変更・同じ薬の二重・「（不明）」は ⚠ で知らせ、二重と（不明）は反映させない。
+   ★反映はサーバーが「見比べた時の定期薬（before）」と今の値が同じ時だけ書き、同じ候補の二度目の反映は断る。
+   ★候補の印は「利用者No・記録の日付・本文の指紋」（台帳の並び順は使わない＝台帳が作り直されても判断がずれない）。
+   ★世代は2本: 一覧の読み込み（mcGen）と、開いている候補の作業（mcWorkGen）。閉じても一覧の読み直しは捨てない（2回目の指摘D）。
+     書き込みの応答は devGen だけで捨てる（読み直しで成功が消えないように）。
+   ★同じ方・同じ日に既に反映した記録があれば、⛔ で示し「別の変更だと確かめた」印を付けた時だけ反映できる
+     （申送の要約が作り直されると本文が変わり、候補の印も変わるため・2回目の指摘A）。
+   ★「医師・薬局に確認してから」は「保留」として残し、一覧に出し続ける（2回目の指摘B）。 */
+var MC_DAYS=14, MC_CAT='服薬関連', MC_KIND='申送';
+var MC_MEDRE=/薬|錠|処方|服薬|内服|服用|中止|開始|増量|減量|変更|mg|ｍｇ|カプセル|散|顆粒|頓服|貼付|点眼|吸入|インスリン|注射/;
+var mcGen=0, mcWorkGen=0, mcSt=null;      /* mcSt: {cands, decided:{srcKey:row}, server, msk, unmatched, lag, raw:{日付|名前:[原文]}, by} */
+var mcCur=null;              /* 開いている候補の作業: {c, before, rec, after, ai, busy, writing, msg, loaded, noteSel, noteTxt} */
+var mcOpener=null;
+function mcHasLogin_(){
+  try{ for(var i=0;i<localStorage.length;i++) if(/^sb-[a-z0-9]+-auth-token$/.test(localStorage.key(i)||'')) return true; }catch(e){}
+  return false;
+}
+function mcNfkc_(s){ var t=String(s==null?'':s); try{ t=t.normalize('NFKC'); }catch(e){} return t; }
+function mcNorm_(s){ return mcNfkc_(s).replace(/\s+/g,'').replace(/(様|さん|さま|氏)$/,''); }
+/* 本文の指紋（そろえた本文の FNV-1a 32bit。照合用で、本文を戻すことはできない） */
+function mcHash_(s){
+  var t=mcNfkc_(s).replace(/\s+/g,' ').trim(), h=0x811c9dc5;
+  for(var i=0;i<t.length;i++){ h^=t.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return ('0000000'+h.toString(16)).slice(-8);
+}
+function mcMskCfg_(){
+  try{ var o=JSON.parse(localStorage.getItem('msk_cfg')||'{}'); return {url:String(o.url||''), token:String(o.token||'')}; }
+  catch(e){ return {url:'', token:''}; }
+}
+/* 申送ビューアAPI の events（読み取り）。合言葉は本文で送る（申送ビューアと同じ形） */
+function mcMskEvents_(from,to){
+  var c=mcMskCfg_();
+  if(!c.url||!c.token) return Promise.reject(new Error('MC_NO_MSK'));
+  return fetchWithTimeout(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'events',from:from,to:to,token:c.token}),redirect:'follow'},30000)
+    .then(function(r){ return r.text(); }).then(function(t){
+      var d; try{ d=JSON.parse(t); }catch(e){ throw new Error('MC_MSK_BAD'); }
+      if(!d||d.error||!Array.isArray(d.ledger)) throw new Error('MC_MSK_BAD');
+      return d;
+    });
+}
+function mcYmd_(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+/* 起動時（loadData の後）に1回。管理者でなければ何もしない。★反映を送っている間は始め直さない（指摘11） */
+function mcStart(){
+  if(getDeviceRole()==='field'||!CFG.url||!mcHasLogin_()||typeof Promise==='undefined') return;
+  if(mcCur&&mcCur.busy) return;
+  var gen=++mcGen, dg=devGen;
+  msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(gen!==mcGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')) return;
+    mcSt={cands:[], decided:{}, server:'', msk:'', unmatched:0, lag:false, raw:{}, loading:true, by:String(st.email||'')};
+    mcLoad_();
+  }).catch(function(){ /* 聞けない時は出さない（従来の画面のまま） */ });
+}
+/* 判断の一覧（サーバー）と申送（直近14日）を取り、候補を組み立てる */
+function mcLoad_(){
+  if(!mcSt) return;
+  var gen=++mcGen, dg=devGen;
+  mcSt.loading=true; mcPaint_();
+  var now=new Date(), from=new Date(now.getTime()-(MC_DAYS-1)*86400000), since=mcYmd_(new Date(now.getTime()-40*86400000));
+  var pList=apiPostRaw({action:'medCand',op:'list',since:since},30000).then(function(d){
+    if(!d||d.ok!==true||!Array.isArray(d.rows)) throw new Error('bad');
+    return {ok:'ok', rows:d.rows};
+  }).catch(function(e){ return {ok:/不明なaction/.test(String(e&&e.message))?'old':'ng', rows:[]}; });   /* ★then の中の throw も拾う（2回目の指摘C） */
+  var pEv=mcMskEvents_(mcYmd_(from),mcYmd_(now)).then(function(d){ return {ok:'ok', d:d}; },
+    function(e){ return {ok:(e&&e.message==='MC_NO_MSK')?'none':'ng', d:null}; });
+  Promise.all([pList,pEv]).then(function(r){
+    if(gen!==mcGen||dg!==devGen||getDeviceRole()==='field'||!mcSt) return;
+    var dec={}; r[0].rows.forEach(function(x){ if(x&&x.srcKey) dec[String(x.srcKey)]=x; });
+    mcSt.server=r[0].ok; mcSt.msk=r[1].ok; mcSt.decided=dec;
+    /* ★判断の記録を読めない時は候補を出さない（判断済みが新しい候補に見え、要らない AI 送信や上書きが起きる・指摘10） */
+    mcSt.cands=(r[1].d&&mcSt.server==='ok')?mcBuild_(r[1].d):[];
+    /* 昨日の分の原文が取り込まれていない・AI 要約がまだ1件も無い時は知らせる（「候補0件」と区別できない・指摘19／2回目の指摘I） */
+    var yd=mcYmd_(new Date(now.getTime()-86400000)), dd=r[1].d;
+    mcSt.lag='';
+    if(dd&&Array.isArray(dd.ingestedDates)&&dd.ingestedDates.indexOf(yd)<0) mcSt.lag='申送の取り込みが遅れています（昨日の分が未取込）';
+    else if(dd&&!(dd.ledger||[]).some(function(e){ return e&&String(e.date)===yd; })) mcSt.lag='昨日の分の AI 要約がまだです（候補が出ていない可能性があります）';
+    mcSt.unsure={};
+    mcSt.loading=false;
+    /* 開いている候補が一覧から消えていたら閉じる（ほかの端末で判断された・要約が消えた・2回目の指摘G） */
+    if(mcCur&&!mcCur.busy&&!mcSt.cands.some(function(x){ return x.srcKey===mcCur.c.srcKey; })){
+      mcCur=null; mcWorkGen++; toast('開いていた候補は一覧から消えました（ほかで判断された可能性があります）');
+    }
+    mcPaint_();
+  }).catch(function(){
+    if(gen!==mcGen||!mcSt) return;
+    mcSt.loading=false; mcSt.server='ng'; mcSt.cands=[]; mcPaint_();
+  });
+}
+/* 申送の要約（ledger）から候補を作る。名前が名簿（退去者を含む）の1名にだけ合い、その方が在籍中の記録だけを使う（指摘18） */
+function mcBuild_(d){
+  var by={};
+  roster.forEach(function(r){ var k=mcNorm_(r.name); if(!k) return; (by[k]=by[k]||[]).push(r); });
+  /* 原文（第1層 events）を「日付|名前」で引けるようにする。使うのは候補の方の分だけ（下で絞る） */
+  var raw={};
+  (d.events||[]).forEach(function(e){
+    if(!e) return; var k=String(e.date||'')+'|'+mcNorm_(e.name); (raw[k]=raw[k]||[]).push(e);
+  });
+  /* 同じ方・同じ日に既に反映した候補（印の頭 'S|利用者No|日付|' が同じ） */
+  var doneDay={};
+  Object.keys(mcSt.decided).forEach(function(k){ var x=mcSt.decided[k]; if(x&&x.status==='反映') doneDay[k.slice(0,k.lastIndexOf('|')+1)]=x.decidedAt||'反映済み'; });
+  var out=[], un=0, keep={}, seen={}, perDay={};
+  (d.ledger||[]).forEach(function(e){
+    if(!e||!Array.isArray(e.categories)||e.categories.indexOf(MC_CAT)<0) return;
+    if(/デイ|せせらぎ/.test(String(e.facility||''))) return;   /* デイの利用者は入居者マスタの対象外 */
+    var hit=by[mcNorm_(e.name)];
+    if(!hit||hit.length!==1||hit[0].active===false){ un++; return; }
+    var r0=hit[0], id=String(r0.id), date=String(e.date||''), txt=String(e.summary||'');
+    var head='S|'+id+'|'+date+'|', key=head+mcHash_(txt);
+    if(seen[key]) return; seen[key]=1;                   /* 同じ日・同じ方・同じ本文は1件にまとめる */
+    var dc=mcSt.decided[key];
+    if(dc&&dc.status!=='保留') return;                    /* 判断済みは出さない（保留は出し続ける） */
+    var rk=date+'|'+mcNorm_(e.name);
+    keep[rk]=(raw[rk]||[]).filter(function(x){ return !/デイ|せせらぎ/.test(String(x.facility||'')); });
+    perDay[head]=(perDay[head]||0)+1;
+    out.push({srcKey:key, head:head, srcDate:date, time:String(e.time||''), text:txt, rawKey:rk,
+              id:id, name:String(r0.name||''), room:String(r0.room||''),
+              hold:dc?String(dc.note||'保留'):'', sameDay:doneDay[head]||''});
+  });
+  out.forEach(function(c){ c.many=perDay[c.head]||1; });
+  out.sort(function(a,b){ return (b.srcDate+b.time).localeCompare(a.srcDate+a.time); });
+  mcSt.unmatched=un; mcSt.raw=keep;
+  return out;
+}
+function mcCountFor_(id){
+  if(!mcSt) return 0;
+  return mcSt.cands.filter(function(c){ return c.id===String(id); }).length;
+}
+/* 一覧の上の帯と、開いている詳細画面の印を描き直す */
+function mcPaint_(){
+  var bar=$('mcBar');
+  if(bar){
+    var n=mcSt?mcSt.cands.length:0, note='';
+    if(mcSt&&!mcSt.loading){
+      if(mcSt.server==='old') note='入居者マスタGASの貼り替えがまだのため、使えません';
+      else if(mcSt.server==='ng') note='判断の記録を読めませんでした（通信）。少し待って開き直してください';
+      else if(mcSt.msk==='none') note='申送ビューアの接続が未設定のため、候補を作れません';
+      else if(mcSt.msk==='ng') note='申送を読めませんでした（通信）';
+      else if(mcSt.lag) note=mcSt.lag;
+    }
+    var show=!!(mcSt&&!mcSt.loading&&(n>0||note));
+    bar.style.display=show?'':'none';
+    bar.innerHTML=show?('<button type="button" class="mc-open" id="mcOpen"'+(n?'':' disabled')+'>💊 薬の変更候補（'+n+'件）</button>'+
+      (note?'<span class="mc-note">'+esc(note)+'</span>':'')):'';
+  }
+  var dm=$('mcDMark');
+  if(dm){
+    var id=dm.getAttribute('data-id'), k=mcCountFor_(id);
+    var want=k?'<span>💊 薬の変更候補があります（'+k+'件）</span> <button type="button" class="btn btn-sec mc-dbtn" data-id="'+esc(id)+'">見比べる</button>':'';
+    if(dm.innerHTML!==want) dm.innerHTML=want;
+  }
+  if($('mMedCand')&&$('mMedCand').classList.contains('on')) mcPaintModal_();
+}
+/* 詳細画面の印（renderView が置く。中身は mcPaint_ が入れる。管理者でない・候補が無い時は空＝高さ0） */
+function mcDetailSlot_(r){
+  if(mcSt) setTimeout(function(){ var dm=$('mcDMark'); if(dm&&mcSt) mcPaint_(); },0);   /* 描画の後で印を入れる */
+  return '<div class="mc-dmark" id="mcDMark" data-id="'+esc(String(r&&r.id!=null?r.id:''))+'"></div>';
+}
+/* 現場用へ切り替わった時に、画面に残る中身も消す（applyDeviceGuard から呼ぶ・指摘5） */
+function mcPurge_(){
+  mcSt=null; mcCur=null; mcGen++; mcWorkGen++;
+  try{
+    $('mMedCand').classList.remove('on'); $('mcListBox').innerHTML=''; $('mcWork').innerHTML='';
+    $('mcBar').innerHTML=''; $('mcBar').style.display='none';
+    if($('mcDMark')) $('mcDMark').innerHTML='';
+  }catch(e){}
+}
+
+/* ── 確認画面 ── */
+var mcFilterId='';
+function mcOpen_(id){
+  if(!mcSt||getDeviceRole()==='field') return;
+  if($('mMedCand').classList.contains('on')&&mcCur&&mcCur.busy) return;   /* 送信・読み込み中は開き直さない（2回目の指摘L） */
+  mcOpener=document.activeElement;
+  mcFilterId=id?String(id):''; mcCur=null;
+  $('mMedCand').classList.add('on'); navEnter();
+  mcPaintModal_();
+  try{ $('mMedCandH').focus(); }catch(e){}
+}
+/* ★閉じられないのは書き込みの送信中だけ（AI・読み込みの待ちでは閉じられる・指摘14）。
+   手で直した直し案は、確かめてから捨てる */
+function mcClose_(){
+  if(mcCur&&mcCur.writing) return false;
+  if(mcCur&&mcCur.loaded&&mcCur.edited&&!confirm('直し案の変更は保存されていません。閉じてよいですか？')) return false;
+  mcCur=null; mcFilterId=''; mcWorkGen++;   /* ★一覧の読み直し（mcGen）は捨てない（2回目の指摘D） */
+  $('mMedCand').classList.remove('on');
+  $('mcListBox').innerHTML=''; $('mcWork').innerHTML='';   /* 閉じたら本文・定期薬を画面に残さない */
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if(mcOpener&&mcOpener.focus&&document.contains(mcOpener)) mcOpener.focus(); else if($('mcOpen')) $('mcOpen').focus(); }catch(e){}
+  return true;
+}
+function mcList_(){
+  if(!mcSt) return [];
+  return mcSt.cands.filter(function(c){ return !mcFilterId||c.id===mcFilterId; });
+}
+function mcPaintModal_(){
+  /* 描き直しで「反映しない」の理由が消えないように控える */
+  if(mcCur){ var s0=$('mcNoteSel'), t0=$('mcNote'); if(s0) mcCur.noteSel=s0.value; if(t0) mcCur.noteTxt=t0.value; }
+  var L=mcList_(), lh='';
+  if(mcFilterId) lh+='<p class="mc-filter">この方の候補だけを出しています <button type="button" class="btn btn-gray mc-all">全員の候補を出す</button></p>';
+  if(mcSt&&mcSt.loading) lh+='<p class="mc-empty">読み込んでいます…</p>';
+  else if(!L.length) lh+='<p class="mc-empty">反映を待っている候補はありません。</p>';
+  lh+=L.map(function(c){
+    var on=mcCur&&mcCur.c.srcKey===c.srcKey;
+    return '<button type="button" class="mc-item'+(on?' on':'')+'" data-src="'+esc(c.srcKey)+'" aria-pressed="'+(on?'true':'false')+'">'+
+      '<span class="mc-ih">'+esc(fmtJDate(c.srcDate)||c.srcDate)+(c.time?' '+esc(c.time):'')+'　'+esc(c.room?c.room+' ':'')+esc(c.name)+'</span>'+
+      (c.hold?'<span class="mc-redo">保留中（'+esc(c.hold)+'）</span>':'')+
+      (c.sameDay?'<span class="mc-redo">⛔ この日の記録から反映済みあり</span>':'')+
+      (mcSt.unsure&&mcSt.unsure[c.srcKey]?'<span class="mc-redo">反映できたか確かめ中</span>':'')+
+      '<span class="mc-it">'+esc(c.text)+'</span></button>';
+  }).join('');
+  if(mcSt&&mcSt.unmatched) lh+='<p class="mc-sub">名簿の在籍者1名に名前が合わない記録 '+mcSt.unmatched+'件は出していません（氏名は出しません）。</p>';
+  $('mcListBox').innerHTML=lh;
+  $('mcWork').innerHTML=mcCur?mcWorkHtml_():'<p class="mc-empty">左の一覧から候補を選んでください。</p>';
+  var ta=$('mcAfter'); if(ta&&mcCur&&ta.value!==mcCur.after) ta.value=mcCur.after;
+  if(mcCur){ var s1=$('mcNoteSel'), t1=$('mcNote'); if(s1&&mcCur.noteSel) s1.value=mcCur.noteSel; if(t1&&mcCur.noteTxt) t1.value=mcCur.noteTxt; }
+}
+function mcPick_(key){
+  if(mcCur&&mcCur.busy) return;
+  if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。開き直してよいですか？')) return;
+  if(mcSt&&mcSt.unsure&&mcSt.unsure[key]) return;
+  var c=null; mcList_().forEach(function(x){ if(x.srcKey===key) c=x; });
+  if(!c) return;
+  mcCur={c:c, before:null, after:'', ai:null, busy:true, writing:false, msg:'今の定期薬を読み込んでいます…', loaded:false, edited:false};
+  mcPaintModal_();
+  mcFetchRec_(mcCur,'');
+}
+/* その方の記録（今の定期薬・変更履歴）を読み直して作業を作り直す。候補を選んだ時と、競合の後（2回目の指摘F） */
+function mcFetchRec_(cur,msgAfter){
+  var gen=mcWorkGen, dg=devGen, c=cur.c;
+  cur.busy=true; cur.loaded=false;
+  apiGetRetry({action:'getResident',id:c.id},25000).then(function(d){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    var rec=(d&&d.record)||d;
+    if(!rec||String(rec.id)!==c.id||mcNorm_(rec.name)!==mcNorm_(c.name)) throw new Error('この方の記録を読めませんでした');
+    cur.rec=rec; cur.before=String(rec.medsRegular==null?'':rec.medsRegular).replace(/\r\n?/g,'\n');
+    cur.after=cur.before; cur.ai=null; cur.edited=false; cur.ack=false; cur.loaded=true; cur.msg=msgAfter||'';
+  }).catch(function(e){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    cur.msg='読み込めませんでした: '+String(e&&e.message||e);
+  }).then(function(){ if(mcCur===cur){ cur.busy=false; mcPaintModal_(); } });
+}
+/* 差分（追加・中止・変更）。サーバーの変更履歴（_mhDiff）と同じ数え方 */
+function mcLines_(t){ return String(t==null?'':t).split(/\r\n|\r|\n/).map(function(s){return s.trim()}).filter(function(s){return s!==''}); }
+function mcCmp_(s){ return String(s).replace(/\s+/g,' '); }
+function mcName_(s){
+  var n=String(s).split(/[\s：:]/)[0].replace(/「[^」]*」/g,'').replace(/^【[^】]*】/,'');
+  if(/朝|昼|夕|食|就寝|眠前|寝る前|起床|頓/.test(n)||!/錠|カプセル|散|顆粒|細粒|末|液|シロップ|ゼリー|DS/.test(n)) return '';
+  n=n.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?(?:mg|ｍｇ|μg|µg|mL|ml|ｍＬ|g|ｇ|%|％)/gi,'');
+  return n.length>=3?n:'';
+}
+/* 薬の名前の目安（二重・記録との突き合わせ用）。剤形の語の手前までをそろえて返す。取れなければ '' */
+function mcStem_(s){
+  var t=mcNfkc_(s).replace(/^【[^】]*】/,'').trim().split(/\s/)[0];
+  var m=t.match(/^(.+?)(?:OD)?(?:錠|カプセル|散|顆粒|細粒|末|液|シロップ|ゼリー|DS|テープ|貼付)/);
+  var n=(m?m[1]:t).replace(/[0-9.]+(?:mg|μg|µg|mL|ml|g|%)?$/i,'');
+  return n.length>=2?n:'';
+}
+function mcDiff_(before,after){
+  var b=mcLines_(before), a=mcLines_(after), left={}, del=[], add=[], i;
+  for(i=0;i<a.length;i++){ var ka=mcCmp_(a[i]); left[ka]=(left[ka]||0)+1; }
+  for(i=0;i<b.length;i++){ var kb=mcCmp_(b[i]); if(left[kb]) left[kb]--; else del.push(b[i]); }
+  var right={};
+  for(i=0;i<b.length;i++){ var kc=mcCmp_(b[i]); right[kc]=(right[kc]||0)+1; }
+  for(i=0;i<a.length;i++){ var kd=mcCmp_(a[i]); if(right[kd]) right[kd]--; else add.push(a[i]); }
+  if(!del.length&&!add.length) return null;
+  var cnt=function(arr){ var m={}; arr.forEach(function(s){ var k=mcName_(s); if(k) m[k]=(m[k]||0)+1; }); return m; };
+  var cd=cnt(del), ca=cnt(add), used={}, chg=[], del2=[];
+  del.forEach(function(s){
+    var k=mcName_(s);
+    if(k&&cd[k]===1&&ca[k]===1){
+      for(var j=0;j<add.length;j++){ if(!used[j]&&mcName_(add[j])===k){ used[j]=true; chg.push({from:s,to:add[j]}); return; } }
+    }
+    del2.push(s);
+  });
+  return {add:add.filter(function(s,j){return !used[j]}), del:del2, chg:chg};
+}
+/* 反映できない理由（あれば文字列）と、知らせるだけの注意。差分の欄と「反映する」の押せる・押せないを1か所で決める */
+function mcCheck_(){
+  var cur=mcCur, d=mcDiff_(cur.before,cur.after), stop='', warn=[];
+  if(!d) return {d:null, stop:'直し案は今の定期薬と同じです（反映する変更はありません）', warn:warn};
+  if(!mcLines_(cur.after).length) stop='直し案が空です。全部の薬を止める時は編集画面で直してください';
+  else if(cur.after.length>5000) stop='直し案が長すぎます（5000字まで）';
+  else if(/[（(]不明[）)]/.test(cur.after)) stop='直し案に「（不明）」が残っています。用量・用法を確かめて書き直してください（指摘12）';
+  else if(!(mcRaw_(cur.c).length)) stop='この候補は申送の原文が見つからないため、反映できません（反映しないは選べます）';
+  else if(mcSameDay_(cur)&&!cur.ack) stop='この日のこの方の記録から、既に反映しています。同じ変更でないかを変更履歴と見比べ、別の変更なら下の「確かめました」に印を付けてください';
+  /* 同じ行が2つになる（二重反映・AI の重ね書き）は止める。規格違いの同じ薬（例 1mg と 0.5mg の併用）はあり得るので
+     知らせるだけにする（指摘1） */
+  var seenL={}, dupL=0, stems={}, addSt={}, dupS=0;
+  mcLines_(cur.after).forEach(function(l){ var k=mcCmp_(l); if(seenL[k]) dupL++; seenL[k]=1; });
+  (d.add.concat(d.chg.map(function(x){return x.to}))).forEach(function(l){ var k=mcStem_(l); if(k) addSt[k]=1; });
+  mcLines_(cur.after).forEach(function(l){ var k=mcStem_(l); if(!k) return; if(stems[k]&&addSt[k]) dupS++; stems[k]=1; });
+  if(!stop&&dupL) stop='同じ行が2つあります（'+dupL+'行）。既に反映済みでないか、変更履歴と見比べてください';
+  if(dupS) warn.push('足す・変える薬と同じ名前の薬が、ほかの行にもあります。二重になっていないか確かめてください');
+  /* AI の説明に無い変更（追加・変更・中止のすべて）と、記録の本文に名前が出てこない薬の変更（指摘4） */
+  var told={}, src=mcNfkc_(cur.c.text+'\n'+mcRawMed_(cur.c).map(function(e){return e.body}).join('\n'));
+  if(cur.ai&&cur.ai.ok) cur.ai.changes.forEach(function(x){ told[mcCmp_(x.from)]=1; told[mcCmp_(x.to)]=1; });
+  var nAi=0, nSrc=0;
+  d.add.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!told[mcCmp_(x)]) nAi++; var k=mcStem_(x); if(k&&src.indexOf(k)<0) nSrc++; });
+  d.del.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!told[mcCmp_(x)]) nAi++; var k=mcStem_(x); if(k&&src.indexOf(k)<0) nSrc++; });
+  d.chg.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!(told[mcCmp_(x.from)]&&told[mcCmp_(x.to)])) nAi++; var k=mcStem_(x.to); if(k&&src.indexOf(k)<0) nSrc++; });
+  if(nAi) warn.push('AI の説明に無い変更が '+nAi+'か所あります。取りこぼし・書き換えでないか確かめてください');
+  if(nSrc) warn.push('記録の本文に名前が出てこない薬の変更が '+nSrc+'か所あります');
+  if(cur.c.many>1) warn.push('この方のこの日の服薬関連の記録が '+cur.c.many+'件あります。1件ずつ反映すると重なることがあります');
+  if(d.del.length) warn.push('「中止」が '+d.del.length+'行あります。記録どおりの中止か確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）');
+  return {d:d, stop:stop, warn:warn};
+}
+function mcRaw_(c){ return (mcSt&&mcSt.raw&&mcSt.raw[c.rawKey])||[]; }
+/* 原文のうち薬に関わる行だけ（AI に送る・薬名の突き合わせに使う。要配慮情報を必要以上に送らない・2回目の指摘E） */
+function mcRawMed_(c){ return mcRaw_(c).filter(function(e){ return MC_MEDRE.test(mcNfkc_(e.body)); }); }
+/* 同じ方・同じ日に既に反映した記録があるか（判断の記録・変更履歴の経路のどちらか） */
+function mcSameDay_(cur){
+  if(cur.c.sameDay) return cur.c.sameDay;
+  var md=cur.c.srcDate.slice(5).replace('-','/'), hit='';
+  (cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[]).forEach(function(e){
+    if(!hit&&e&&typeof e==='object'&&String(e.via||'').indexOf('変更候補（申送 '+md+'）')>=0) hit=String(e.at||'反映済み');
+  });
+  return hit;
+}
+function mcWorkHtml_(){
+  var c=mcCur.c, h='', raw=mcRaw_(c);
+  h+='<div class="mc-src"><div class="mc-lbl">申送の原文（'+esc(fmtJDate(c.srcDate)||c.srcDate)+'・'+esc(c.name)+' 様の行）</div>'+
+     (raw.length?raw.map(function(e){ return '<div class="mc-txt">'+(e.shift?'<b>'+esc(e.shift)+'</b> ':'')+(e.time?esc(e.time)+' ':'')+esc(e.body)+'</div>'; }).join('')
+       :'<p class="mc-warn">⚠ 同じ日のこの方の原文が見つかりません（反映はできません）</p>')+
+     '<div class="mc-lbl" style="margin-top:6px">AI 要約（申送から自動作成）</div><div class="mc-txt mc-sum">'+esc(c.text)+'</div></div>';
+  if(!mcCur.loaded) return h+(mcCur.msg?'<p class="mc-msg" role="status">'+esc(mcCur.msg)+'</p>':'');
+  /* この記録の日付より後の変更履歴（先に手で直してあった・既に反映済みに気づけるように・指摘1） */
+  var mh=(mcCur.rec&&Array.isArray(mcCur.rec.medsHistory)?mcCur.rec.medsHistory:[]).filter(function(e){
+    return e&&typeof e==='object'&&String(e.at||'').slice(0,10)>=c.srcDate; });
+  if(mh.length) h+='<div class="mc-warn">⚠ この記録の日付より後に、定期薬の変更が'+mh.length+'件あります: '+
+    mh.slice(0,5).map(function(e){ return esc(mhAt_(e.at))+(e.via?'（'+esc(String(e.via))+'）':''); }).join('／')+'</div>';
+  h+='<div class="mc-cols"><div class="mc-col"><div class="mc-lbl">今の定期薬（'+esc(c.name)+'）</div>'+
+     '<pre class="mc-pre">'+esc(mcCur.before||'（記載なし）')+'</pre></div>'+
+     '<div class="mc-col"><label class="mc-lbl" for="mcAfter">直し案（全文・この欄を直せます）</label>'+
+     '<textarea id="mcAfter" class="mc-ta" spellcheck="false"'+(mcCur.busy?' disabled':'')+'></textarea></div></div>';
+  var ai=mcCur.ai;
+  if(ai&&ai.err) h+='<p class="mc-warn">'+esc(ai.err)+'</p>';
+  if(ai&&ai.ok){
+    h+='<div class="mc-ai"><b>AI の見立て:</b> '+(ai.isChange?'定期薬の変更として直し案を作りました。':'定期薬の変更ではない記録と読みました（直し案は今のままです）。')+
+       (ai.reason?' '+esc(ai.reason):'')+
+       (ai.unsure.length?'<ul class="mc-uns">'+ai.unsure.map(function(u){return '<li>確かめてください: '+esc(u)+'</li>'}).join('')+'</ul>':'')+'</div>';
+  }
+  var sd=mcSameDay_(mcCur);
+  if(sd) h+='<p class="mc-warn">⛔ この日のこの方の記録から、既に反映しています（'+esc(mhAt_(sd))+'）。</p>'+
+    '<label class="ms-ck mc-ack"><input type="checkbox" id="mcAck"'+(mcCur.ack?' checked':'')+(mcCur.busy?' disabled':'')+'>同じ変更ではないことを、変更履歴と見比べて確かめました</label>';
+  h+='<div class="mc-diff" id="mcDiff">'+mcDiffHtml_()+'</div>';
+  h+='<div class="mc-dec"><label class="mc-lbl" for="mcNoteSel">反映しない時の理由</label>'+
+     '<select id="mcNoteSel"><option value="">選んでください</option><option>既に反映済み</option><option>頓服・外用・臨時の薬</option>'+
+     '<option>定期薬の変更ではない</option><option value="保留">医師・薬局に確認してから（保留・一覧に残す）</option><option>その他</option></select>'+
+     '<input id="mcNote" type="text" maxlength="100" placeholder="補足（任意）" aria-label="反映しない理由の補足（任意）" autocomplete="off"></div>';
+  var can=mcCanApply_();
+  h+='<div class="mc-foot"><span class="grow" id="mcMsg" role="status" aria-live="polite">'+esc(mcCur.msg||'')+'</span>'+
+     '<button class="btn btn-sec" type="button" id="mcAi"'+(mcCur.busy?' disabled':'')+'>🤖 AIで直し案を作る</button>'+
+     '<button class="btn btn-gray" type="button" id="mcSkip"'+(mcCur.busy?' disabled':'')+'>反映しない</button>'+
+     '<button class="btn btn-ok" type="button" id="mcApply"'+(can?'':' disabled')+'>✅ 反映する</button></div>';
+  return h;
+}
+function mcCanApply_(){
+  var k=mcCheck_();
+  return !!(k.d&&!k.stop&&!mcCur.busy&&mcSt&&mcSt.server==='ok'&&!mcSt.loading&&
+    mcSt.cands.some(function(x){ return x.srcKey===mcCur.c.srcKey; })&&!(mcSt.unsure&&mcSt.unsure[mcCur.c.srcKey]));
+}
+function mcDiffHtml_(){
+  var k=mcCheck_(), d=k.d, h='';
+  if(d){
+    var li=[];
+    d.add.forEach(function(x){ li.push('<li><span class="mh-tag add">追加</span><span>'+esc(x)+'</span></li>'); });
+    d.chg.forEach(function(x){ li.push('<li><span class="mh-tag chg">変更</span><span><span class="mh-from">'+esc(x.from)+'</span> → '+esc(x.to)+'</span></li>'); });
+    d.del.forEach(function(x){ li.push('<li><span class="mh-tag del">中止</span><span>'+esc(x)+'</span></li>'); });
+    h+='<div class="mc-lbl">反映すると、次のように変わります（変更履歴にもこのとおり残ります）</div><ul class="mh-ls">'+li.join('')+'</ul>';
+  }
+  if(k.stop) h+='<p class="'+(d?'mc-warn':'mc-sub')+'">'+(d?'⛔ ':'')+esc(k.stop)+'</p>';
+  k.warn.forEach(function(w){ h+='<p class="mc-warn">⚠ '+esc(w)+'</p>'; });
+  return h;
+}
+
+/* ── AI の直し案 ── */
+/* 名簿の氏名・居室を伏せる。★本文を NFKC にそろえてから伏せる。姓は敬称が無くても伏せ、名＋敬称も伏せる（指摘7）。
+   職員・ご家族・医師の名前は名簿に無いので伏せきれない（画面の案内にもそう書く） */
+function mcMask_(text){
+  var t=mcNfkc_(text), full=[], part=[], rooms=[];
+  roster.forEach(function(r){
+    [[r.name,true],[r.kana,false]].forEach(function(nk){
+      var s=mcNfkc_(nk[0]).trim(); if(!s) return;
+      var bits=s.split(/\s+/);
+      full.push(s, bits.join(''), bits.join(' '));
+      /* 漢字の姓（2字以上）は敬称が無くても伏せる。1字の姓・読み・名は敬称付きの時だけ伏せる
+         （読みを敬称なしで伏せると「タケキャブ」など薬名を壊す・2回目の指摘K） */
+      if(bits.length>=2){
+        part.push({w:bits[0], any:nk[1]&&bits[0].length>=2});
+        part.push({w:bits[bits.length-1], any:false});
+      }
+    });
+    var rm=mcNfkc_(r.room).trim(); if(/^[0-9A-Za-z-]{2,6}$/.test(rm)) rooms.push(rm);
+  });
+  full.filter(function(v){return v.length>=2}).sort(function(a,b){return b.length-a.length}).forEach(function(v){ t=t.split(v).join('○○'); });
+  var esc2=function(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); };
+  part.sort(function(a,b){return b.w.length-a.w.length}).forEach(function(p){
+    t=t.replace(new RegExp(esc2(p.w)+(p.any?'':'(?=\\s*(様|さま|さん|氏|殿|ちゃん))'),'g'),'○○');
+  });
+  /* 居室番号は、数字の前後が数字・小数点でなく、後ろに単位（mg・錠・日・回…）が続かない時だけ伏せる */
+  var unit='\\s*(mg|μg|µg|g|ml|mL|l|L|錠|カプセル|包|本|枚|滴|単位|日|時|回|%|分|秒|歳|才|kg|cm|mm|月|年|度|℃|週|個|cc)';
+  rooms.forEach(function(rm){ t=t.replace(new RegExp('(^|[^0-9A-Za-z.])'+esc2(rm)+'(?![0-9A-Za-z.])(?!'+unit+')','g'),'$1○'); });
+  return t.replace(/[0-9]{2,4}\s*号室?/g,'○号室');
+}
+function mcAiAsk_(before,text){
+  var key=mdAiKey();
+  if(!key) return Promise.reject(new Error('AI_NO_KEY'));
+  var cur=mcLines_(before);
+  var prompt='あなたは介護施設の薬剤師の補助です。入居者1名の「今の定期薬」（1行1剤）と、申送の記録を渡します。\n'+
+    '記録が定期薬の変更（追加・中止・用量や用法の変更）を伝えているなら、変更後の定期薬の全文を作ってください。\n'+
+    '決まり:\n'+
+    '・変わらない行は、今の定期薬の行を1文字も変えずにそのまま残す（並び順も保つ）\n'+
+    '・記録に書かれていない薬の行は変えない。記録に書かれていないことを補わない\n'+
+    '・追加する行は、今の定期薬の書き方（薬剤名 規格 数量 用法）にそろえる\n'+
+    '・用量・用法が記録から分からない時は、その部分を「（不明）」と書き、unsure に書く\n'+
+    '・頓服・外用・臨時の薬、検査などのための一時的な休薬、飲み忘れ・拒薬の記録は、定期薬の変更ではない。その時は isChange を false にし、after は今の定期薬の行をそのまま返す\n'+
+    '・記録の中の「○○」「○」は伏せ字です\n'+
+    '出力は次の形の JSON だけ。説明文は書かない。\n'+
+    '{"isChange":true,"after":["行","行"],"changes":[{"type":"追加|中止|変更","from":"前の行（追加は空）","to":"後の行（中止は空）"}],"unsure":["確かめが必要な点"],"reason":"判断の要点（40字以内）"}\n\n'+
+    '■今の定期薬\n'+(cur.length?cur.join('\n'):'（記載なし）')+'\n\n■申送の記録\n'+mcMask_(text);
+  var body={model:MD_AI_MODEL, max_tokens:4000, messages:[{role:'user', content:prompt}]};
+  var ctl=(typeof AbortController==='function')?new AbortController():null;
+  var opt={method:'POST', headers:{'content-type':'application/json','x-api-key':key,
+    'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}, body:JSON.stringify(body)};
+  if(ctl) opt.signal=ctl.signal;
+  var to=null;
+  return new Promise(function(res,rej){
+    to=setTimeout(function(){ if(ctl){ try{ctl.abort()}catch(e){} } rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
+    fetch(MD_AI_URL,opt).then(function(r){
+      return r.text().then(function(t){
+        if(r.status<200||r.status>=300) throw new Error('AI_HTTP_'+r.status);
+        return JSON.parse(t);
+      });
+    }).then(res,rej);
+  }).then(function(j){ clearTimeout(to); return mcAiParse_(j); }, function(e){ clearTimeout(to); throw e; });
+}
+function mcAiParse_(j){
+  var txt='', c=(j&&Array.isArray(j.content))?j.content:[];
+  for(var i=0;i<c.length;i++) if(c[i]&&c[i].type==='text') txt+=String(c[i].text||'');
+  var m=txt.match(/\{[\s\S]*\}/), o=null;
+  if(m){ try{ o=JSON.parse(m[0]); }catch(e){ o=null; } }
+  /* ★受信データとして扱う。形が違えば使わない */
+  if(!o||typeof o!=='object'||!Array.isArray(o.after)) throw new Error('AI_BAD_JSON');
+  var after=o.after.filter(function(x){return typeof x==='string'}).map(function(x){return x.replace(/[\r\n]+/g,' ').trim()}).filter(Boolean);
+  var ch=Array.isArray(o.changes)?o.changes.filter(function(x){return x&&typeof x==='object'}).map(function(x){
+    return {type:String(x.type||''), from:String(x.from==null?'':x.from), to:String(x.to==null?'':x.to)}; }):[];
+  var uns=Array.isArray(o.unsure)?o.unsure.filter(function(x){return typeof x==='string'&&x.trim()}).slice(0,10).map(function(x){return x.slice(0,200)}):[];
+  return {ok:true, isChange:o.isChange!==false, after:after, changes:ch, unsure:uns, reason:String(o.reason||'').slice(0,80)};
+}
+/* AI の行が今の行と（空白の違いだけで）同じなら、今の行をそのまま使う（差分に出ない書き方の直しを保存しない・指摘17） */
+function mcKeepLines_(before,lines){
+  var pool={}; String(before).split('\n').forEach(function(l){ var k=mcCmp_(l.trim()); if(k) (pool[k]=pool[k]||[]).push(l); });
+  return lines.map(function(l){ var k=mcCmp_(l), p=pool[k]; return (p&&p.length)?p.shift():l; }).join('\n');
+}
+function mcAiRun_(){
+  if(!mcCur||mcCur.busy||!mcCur.loaded) return;
+  if(mcCur.edited&&!confirm('手で直した直し案を、AI の案で置き換えます。よろしいですか？')) return;
+  var cur=mcCur, gen=mcWorkGen, dg=devGen, rm=mcRawMed_(cur.c);
+  var txt=cur.c.text+(rm.length?'\n（原文のうち薬に関わる行）\n'+rm.map(function(e){return e.body}).join('\n'):'');
+  cur.busy=true; cur.msg='AI に尋ねています…（数十秒かかることがあります。閉じても構いません）'; mcPaintModal_();
+  mcAiAsk_(cur.before,txt).then(function(ai){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    cur.ai=ai; cur.msg='';
+    /* 変更ではないと読んだ時は、直し案を今のままにする（AI の after は使わない） */
+    if(ai.isChange&&ai.after.length){ cur.after=mcKeepLines_(cur.before,ai.after); cur.edited=true; }
+  }).catch(function(e){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    var m=String(e&&e.message||e);
+    cur.ai={err:m==='AI_NO_KEY'?'AI の鍵がこの端末に設定されていません（個別機能訓練計画書の設定と共用）。直し案は手で書けます。'
+      :(m==='AI_TIMEOUT'?'AI の応答が遅いため止めました。もう一度押すか、手で直してください。'
+      :'AI の直し案を作れませんでした（'+m+'）。手で直すこともできます。')};
+    cur.msg='';
+  }).then(function(){ if(mcCur===cur){ cur.busy=false; mcPaintModal_(); } });
+}
+
+/* ── 反映する／反映しない ── */
+function mcBody_(cur,op,extra){
+  var c=cur.c, b={action:'medCand', op:op, id:c.id, name:c.name, srcKey:c.srcKey, srcKind:MC_KIND, srcDate:c.srcDate,
+    srcText:c.text, by:(mcSt&&mcSt.by)||''};
+  if(op==='apply'&&cur.ack) b.ackSameDay=true;
+  for(var k in extra) if(Object.prototype.hasOwnProperty.call(extra,k)) b[k]=extra[k];
+  return b;
+}
+function mcDone_(cur){
+  if(mcSt) mcSt.cands=mcSt.cands.filter(function(x){ return x.srcKey!==cur.c.srcKey; });
+  if(mcCur===cur) mcCur=null;
+  mcPaint_();
+}
+/* 結果が分からない・既に反映済み・競合の時は、判断の一覧を取り直す（二重反映を避ける・指摘1） */
+function mcRecheck_(cur,msg,unsure){
+  if(mcCur===cur){ cur.msg=msg; }
+  if(unsure&&mcSt){ mcSt.unsure=mcSt.unsure||{}; mcSt.unsure[cur.c.srcKey]=1; }
+  mcLoad_();
+}
+/* 確実に書いていない失敗（合言葉・権限・貼り替え前）かどうか（2回目の指摘J） */
+function mcNoWrite_(m){ return /不明なaction|認証エラー|保存できません|参照専用|NO_URL/.test(String(m||'')); }
+function mcApply_(){
+  if(!mcCur||mcCur.busy||!mcCur.loaded||!mcCanApply_()) return;
+  var cur=mcCur, d=mcDiff_(cur.before,cur.after);
+  /* ★この端末で編集画面・一括編集が開いていたら止める（保存すると反映が巻き戻るため・指摘8） */
+  if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
+    cur.msg='編集画面・一括編集を閉じてから反映してください'; mcPaintModal_(); return; }
+  var k=mcCheck_();
+  var lines=['追加 '+d.add.length+'行・変更 '+d.chg.length+'行・中止 '+d.del.length+'行'];
+  k.warn.forEach(function(w){ lines.push('⚠ '+w); });
+  if(!confirm(cur.c.name+' 様の「薬剤情報（定期）」を直し案のとおりに書き換えます。\n'+lines.join('\n')+'\n\n'+
+    'ほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？')) return;
+  if(d.del.length&&!confirm('「中止」が '+d.del.length+'行あります。記録どおりの中止で、飲んでいる薬を消していないことを確かめましたか？')) return;
+  var dg=devGen, sent=cur.after, before=cur.before;    /* ★送る値を固定する（送信中に欄が変わっても控えを間違えない・指摘9） */
+  cur.busy=true; cur.writing=true; cur.msg='反映しています…'; mcPaintModal_();
+  apiPostRaw(mcBody_(cur,'apply',{before:before, after:sent, note:''}),40000).then(function(r){
+    if(dg!==devGen) return;
+    if(r&&r.ok===true){
+      if(fullMap&&fullMap[cur.c.id]) fullMap[cur.c.id].medsRegular=sent;
+      toast('✅ 定期薬を書き換えました（変更履歴にも残りました）');
+      cur.edited=false; mcDone_(cur);
+      if(curResident&&String(curResident.id)===cur.c.id&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(cur.c.id);
+      refreshRoster();
+      return;
+    }
+    if(r&&r.already){ cur.edited=false; mcDone_(cur); toast(r.already==='見送り'?'この候補は「反映しない」と判断済みです':'この候補は既に反映されています'); mcLoad_(); return; }
+    if(r&&r.sameDay){ cur.c.sameDay=String(r.sameDay); cur.msg='同じ日のこの方の記録から既に反映しています（何も書いていません）。変更履歴と見比べてください'; return; }
+    if(r&&r.conflict){
+      /* 競合の後は記録ごと読み直す（変更履歴の ⚠ も新しくする・2回目の指摘F） */
+      mcFetchRec_(cur,'見比べている間に定期薬が変わりました（何も書いていません）。今の定期薬と変更履歴を読み直したので、もう一度見比べてください');
+      mcLoad_();
+      return;
+    }
+    if(r&&r.unknown){ cur.loaded=false; mcRecheck_(cur,'反映できたか確かめられませんでした。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true); return; }
+    cur.msg='反映できませんでした: '+String((r&&r.error)||'不明な応答');
+  }).catch(function(e){
+    if(dg!==devGen) return;
+    var m=String(e&&e.message||e);
+    /* ★書き込みは再試行しない（同じ反映が2回通らないように）。届いたか分からない時は読み直しを促す */
+    if(mcNoWrite_(m)){ cur.msg=(/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'反映できませんでした（'+m+'）')+'（何も書いていません）'; return; }
+    cur.loaded=false;
+    mcRecheck_(cur,'反映できたか確かめられませんでした（'+m+'）。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true);
+  }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
+}
+function mcSkip_(){
+  if(!mcCur||mcCur.busy) return;
+  var cur=mcCur, sel=$('mcNoteSel'), inp=$('mcNote');
+  var why=sel?sel.value:'', more=inp?String(inp.value||'').trim():'';
+  if(!(mcSt&&mcSt.server==='ok')){ cur.msg='判断の記録を読めていないため、残せません'; mcPaintModal_(); return; }
+  if(!why){ cur.msg='反映しない理由を選んでください'; mcPaintModal_(); try{ $('mcNoteSel').focus(); }catch(e){} return; }
+  var dg=devGen;
+  cur.busy=true; cur.writing=true; cur.msg='残しています…'; mcPaintModal_();
+  var hold=(why==='保留');
+  apiPostRaw(mcBody_(cur,'decide',{status:hold?'保留':'見送り', note:((hold?'医師・薬局に確認してから':why)+(more?'：'+more:'')).slice(0,200)}),30000).then(function(r){
+    if(dg!==devGen) return;
+    if(r&&r.ok===true){
+      cur.edited=false;
+      if(hold){ toast('保留にしました（一覧に残ります）'); if(mcCur===cur) mcCur=null; mcLoad_(); return; }
+      toast('「反映しない」を残しました'); mcDone_(cur); return;
+    }
+    if(r&&r.already){ cur.edited=false; mcDone_(cur); toast('この候補は既に反映されています'); return; }
+    cur.msg='残せませんでした: '+String((r&&r.error)||'不明な応答');
+  }).catch(function(e){
+    if(dg!==devGen) return;
+    var m=String(e&&e.message||e);
+    cur.msg=mcNoWrite_(m)?((/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'残せませんでした（'+m+'）')+'（何も書いていません）'):'残せたか確かめられませんでした（'+m+'）';
+  }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
+}
+function mcWire_(){
+  var bar=$('mcBar'), m=$('mMedCand');
+  if(bar) bar.addEventListener('click',function(e){ if(e.target&&e.target.id==='mcOpen') mcOpen_(''); });
+  if($('viewBox')) $('viewBox').addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('.mc-dbtn'):null;
+    if(b) mcOpen_(b.getAttribute('data-id'));
+  });
+  if(!m) return;
+  m.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ mcClose_(); return; }
+    /* 確認画面の外（裏の一覧・帯）へ Tab で出ない（2回目の指摘L） */
+    if(e.key==='Tab'){
+      var f=Array.prototype.filter.call(m.querySelectorAll('button,select,input,textarea,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
+      if(!f.length) return;
+      if(e.shiftKey&&document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+    }
+  });
+  m.addEventListener('change',function(e){
+    if(e.target&&e.target.id==='mcAck'&&mcCur&&!mcCur.busy){
+      mcCur.ack=!!e.target.checked;
+      var dv=$('mcDiff'); if(dv) dv.innerHTML=mcDiffHtml_();
+      var ab=$('mcApply'); if(ab) ab.disabled=!mcCanApply_();
+    }
+  });
+  m.addEventListener('click',function(e){
+    var t=e.target; if(!t||!t.closest) return;
+    var it=t.closest('.mc-item'); if(it){ mcPick_(it.getAttribute('data-src')); return; }
+    if(t.closest('.mc-all')){ mcFilterId=''; mcPaintModal_(); return; }
+    if(t.id==='mcAi') mcAiRun_();
+    else if(t.id==='mcApply') mcApply_();
+    else if(t.id==='mcSkip') mcSkip_();
+    else if(t.id==='mcClose') mcClose_();
+    else if(t.id==='mcReload'&&!(mcCur&&mcCur.writing)){ if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。取り直してよいですか？')) return; mcCur=null; mcLoad_(); }
+  });
+  m.addEventListener('input',function(e){
+    if(!mcCur||mcCur.busy) return;
+    if(e.target&&e.target.id==='mcAfter'){
+      mcCur.after=String(e.target.value).replace(/\r\n?/g,'\n'); mcCur.edited=(mcCur.after!==mcCur.before);
+      var dv=$('mcDiff'); if(dv) dv.innerHTML=mcDiffHtml_();
+      var ab=$('mcApply'); if(ab) ab.disabled=!mcCanApply_();
+    }
+  });
+}
+
 /* ═══ AIで効能の下書きを作る ═══
    ★訓練計画アプリ（training-plan.html）と同じ「ブラウザから api.anthropic.com を直接呼ぶ」方式。
      鍵は同一オリジンの localStorage 'tp_ai_key' を共用する（訓練計画で設定済みなら追加設定は不要）。
@@ -6945,6 +7631,7 @@ function renderView(r){
     h+='<div class="sec"><div class="sec-lbl">過去の臨時薬</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+plogHtml+'</div></div></div>';
   }
   // 定期薬の変更履歴（自動記録・新しい順・画面だけ）（2026-10-02 管理者指示）
+  h+=mcDetailSlot_(r);   // 薬の変更候補の印（管理者に候補がある時だけ中身が入る・印刷しない）（2026-10-06）
   h+=medsHistHtml_(r.medsHistory);
   /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
      ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
@@ -9070,6 +9757,8 @@ function navTopModal(){
   if($('mMedWait')&&$('mMedWait').classList.contains('on'))return function(){mdPrintCancel_();return true};
   /* 与薬チェックへ時間帯を送る小窓（2026-09-27）。送っている間は閉じない（false＝開いたまま） */
   if($('mMedSlots')&&$('mMedSlots').classList.contains('on'))return function(){return msClose_()};
+  /* 薬の変更候補（2026-10-06）。反映・記録の送信中は閉じない（false＝開いたまま） */
+  if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_()};
   if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
@@ -9907,6 +10596,7 @@ function applyDeviceGuard(){
     /* 捨てていなかった控えも捨てる: 入居日・食形態一覧（アレルギーを含む）・開いていた方の記録（病名・処方を含む）。
        ★未保存の入力（mealDirty）は捨てない（原則4）。開いていた方を捨てたら、編集・印刷も押せない状態へ戻す */
     admMap=null; mealRows=null;
+    mcPurge_();   /* 薬の変更候補（申送の本文・定期薬を持つ）も、確認画面・帯の中身ごと捨てる（2026-10-06） */
     /* 取得中の印も下ろす。応答側は世代（devGen）で捨てるので、ここで下ろさないと
        事務所PCへ戻した時に「取得中」のまま二度と取りに行かない（fullLoading と同じ）（2026-10-01）。
        ★mealSeq は進めない。食形態一覧の保存の確認（取り直しで突き合わせる所）が mealSeq を見ているので、
@@ -9968,6 +10658,7 @@ function loadData(){
   if(curView==='fam'||curView==='hist'||curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
   if(CFG.url)refreshRoster();else setSync('未接続');
   srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
+  mcStart();   // 薬の変更候補（管理者だけ・現場端末では何もしない）（2026-10-06）
 }
 
 /* ═══════════ 同期設定 ═══════════ */
@@ -10821,6 +11512,7 @@ function init(){
   if($('msSend'))   $('msSend').addEventListener('click',msSend_);
   if($('msScroll')) $('msScroll').addEventListener('change',msOnCheck_);
   if($('mMedSlots'))$('mMedSlots').addEventListener('keydown',function(e){ if(e.key==='Escape') msClose_(); });
+  mcWire_();   /* 薬の変更候補（2026-10-06 追加） */
   /* 薬効辞書（2026-09-04 追加） */
   if($('mdAdd'))   $('mdAdd').addEventListener('click',mdAddDrug);
   if($('mdBar'))   Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
