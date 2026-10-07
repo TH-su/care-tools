@@ -5297,7 +5297,7 @@ function mcLoad_(){
     mcSt.lag='';
     if(dd&&Array.isArray(dd.ingestedDates)&&dd.ingestedDates.indexOf(yd)<0) mcSt.lag='申送の取り込みが遅れています（昨日の分が未取込）';
     else if(dd&&!(dd.ledger||[]).some(function(e){ return e&&String(e.date)===yd; })) mcSt.lag='昨日の分の AI 要約がまだです（候補が出ていない可能性があります）';
-    mcSt.unsure={};
+    mcSt.unsure=mcKeepUnsure_(mcSt.unsure,dec);
     mcSt.loading=false;
     /* 開いている候補が一覧から消えていたら閉じる（ほかの端末で判断された・要約が消えた・2回目の指摘G） */
     if(mcCur&&!mcCur.busy&&!mcAll_().some(function(x){ return x.srcKey===mcCur.c.srcKey; })){
@@ -5834,6 +5834,22 @@ function mcRecheck_(cur,msg,unsure){
   if(mcCur===cur){ cur.msg=msg; }
   if(unsure&&mcSt){ mcSt.unsure=mcSt.unsure||{}; mcSt.unsure[cur.c.srcKey]=1; }
   mcLoad_();
+}
+/* 読み直しの後も「反映できたか確かめ中」の印を残す（2026-10-07・審査の指摘）。
+   以前は読み直しのたびに印を全部消していたため、結果が分からなかった候補が数秒で「未判断」に見え、
+   開く・反映するの止め（mcPick_・mcCanApply_）も外れていた。
+   サーバーの判断の記録で「反映」か「見送り」と確定した候補の印だけを外す（保留・記録なしは残す）。
+   印はこの画面を開いている間だけのもの（端末には保存しない） */
+function mcKeepUnsure_(prev,dec){
+  var out={}, k;
+  if(!prev||typeof prev!=='object') return out;
+  for(k in prev){
+    if(!Object.prototype.hasOwnProperty.call(prev,k)||!prev[k]) continue;
+    var d=dec&&Object.prototype.hasOwnProperty.call(dec,k)?dec[k]:null;
+    if(d&&(d.status==='反映'||d.status==='見送り')) continue;
+    out[k]=1;
+  }
+  return out;
 }
 /* 確実に書いていない失敗（合言葉・権限・貼り替え前）かどうか（2回目の指摘J） */
 function mcNoWrite_(m){ return /不明なaction|認証エラー|保存できません|参照専用|NO_URL/.test(String(m||'')); }
