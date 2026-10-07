@@ -5555,10 +5555,19 @@ function mcBulkRun_(){
 function mcPick_(key){
   if(mcCur&&mcCur.busy) return;
   if(mcBulk&&mcBulk.busy) return;
+  /* 「反映できたか確かめ中」の候補は、人が確かめたと答えた時だけ開く（2026-10-07 審査の指摘）。
+     黙って止めると画面の中に出口が無かった。反映済みだった場合は、サーバーの二重反映止め（already）が止める。
+     ★まとめて片付けるの取りやめの確認より前に聞く（取りやめた後に止めると、動かない画面が残る） */
+  if(mcSt&&mcSt.unsure&&mcSt.unsure[key]){
+    if(!confirm('この候補は前回「反映できたか分からない」で止まっています。\n\n'+
+                'この方の定期薬と変更履歴を確かめて、まだ反映されていないと分かった時だけ「OK」を押してください。\n'+
+                '（反映されていた時は「キャンセル」を押し、ページを読み込み直してください）')) return;
+    delete mcSt.unsure[key];
+    mcPaint_();
+  }
   if(mcBulk&&Object.keys(mcBulk.sel).length&&!confirm('まとめて片付けるの選択を取りやめて、この候補を開きますか？')) return;
   mcBulk=null;
   if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。開き直してよいですか？')) return;
-  if(mcSt&&mcSt.unsure&&mcSt.unsure[key]) return;
   var c=null; mcAll_().forEach(function(x){ if(x.srcKey===key&&(!mcFilterId||x.id===mcFilterId)) c=x; });
   if(!c) return;
   mcCur={c:c, before:null, after:'', ai:null, busy:true, writing:false, msg:'今の定期薬を読み込んでいます…', loaded:false, edited:false};
