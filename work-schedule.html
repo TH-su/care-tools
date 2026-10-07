@@ -2656,9 +2656,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *  ・重なりが無ければ入力配列を【同一参照】で返す（daySig 不変＝余分な push を出さない・冪等）
    * bumped に時刻(at)を持たせない＝複数端末が同じ盤面を修復しても同一結果（taskSig 一致で競合往復を増やさない）。 */
   var OVL_MIN = 20;
-  /* 自動充填枠（結合可能な施設業務/自由枠/休憩）＝負けたら残余へクリップし、残余ゼロなら削除してよい枠 */
+  /* 人が書き込んだ中身を持つ枠か（2026-10-07）。自動で敷いた自由枠に利用者名を書いて内容(軟膏など)を付け、
+   * 支援と同じように使う運用がある。こうした枠は「消してよい埋め草」ではない。
+   * 対象: 自由枠の名前(label)／内容(contents)／メモ／コメント／実施済み／チェック。施設業務の名前は対象外（既定名のため） */
+  function fillerHasContent_(t) {
+    if (!t) return false;
+    if (t.kind === 'free' && String(t.label || '').trim() !== '') return true;
+    if (t.contents && t.contents.length) return true;
+    if (String(t.memo || '').trim() !== '') return true;
+    if (t.comment && String(t.comment.text || '').trim() !== '') return true;
+    if (t.done) return true;
+    if (t.checks) { for (var ck in t.checks) if (Object.prototype.hasOwnProperty.call(t.checks, ck) && t.checks[ck]) return true; }
+    return false;
+  }
+  /* 中身を書き込んだ自由枠（利用者名など）。施設業務はメモ・実施済みが付いても従来どおりの埋め草として扱う
+   * （支援を落とせば縮小配置になる＝反証レビュー指摘: 施設業務まで含めると縮小配置が拒否に変わっていた） */
+  function namedFree_(t) { return !!t && t.kind === 'free' && fillerHasContent_(t); }
+  /* 自動充填枠（結合可能な施設業務/自由枠/休憩）＝負けたら残余へクリップし、残余ゼロなら削除してよい枠。
+   * 中身を書き込んだ自由枠は除く（namedFree_）＝重なっても消さず、縮めるかトレイへ退避する。
+   * 以前は自動で敷いた自由枠に名前を書いた枠も「消してよい枠」で、グループの移動で施設業務の切れ端と重なると
+   * 番号の並び順しだいで黙って消えていた（10/5 の事象）。 */
   function isAutoFiller_(t) {
     if (!t || t.kind === 'care') return false;
+    if (namedFree_(t)) return false;
     if (t.src === 'facwork') return true;
     return t.kind === 'facility' && t.label === '施設業務';
   }
@@ -2772,7 +2792,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *    同じ元枠を何度分けても既存の id とぶつけない）
    *  ・重なりが無ければ入力配列を同一参照で返す（冪等・余分な push を出さない） */
   function frozenFiller_(t) {
-    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork';
+    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork' && !fillerHasContent_(t);
   }
   function normalizeFrozenFillers(prevTasks, nextTasks, staff) {
     var rep = { tasks: nextTasks, bumped: [], clipped: 0, removed: 0, changed: false };
@@ -3222,7 +3242,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     careMaskPolicy: careMaskPolicy,
     normalizeOverlap: normalizeOverlap,
     normalizeFrozenFillers: normalizeFrozenFillers,
-    isAutoFiller: isAutoFiller_
+    isAutoFiller: isAutoFiller_,
+    fillerHasContent: fillerHasContent_,
+    namedFree: namedFree_
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSModel = api;
@@ -5467,6 +5489,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * free: 自動(src=facwork)のみ。誘導/配膳など別ラベルは候補外＝占有として保護する。 */
   function mergeableFacwork_(tk, KIND) {
     if (tk.kind !== KIND) return false;
+    if (M.namedFree(tk)) return false;   /* 名前・内容を書いた自由枠は結合して作り直さない（占有として残す・2026-10-07） */
     if (tk.src === 'facwork') return true;
     return KIND === 'facility' && tk.label === '施設業務';
   }
@@ -5477,9 +5500,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var vac = [], i;
     for (i = 0; i < ids.length; i++) {
       var t = M.findTask(tasksBefore, ids[i]);
-      if (t && t.kind === 'care' && t.staffId !== null && t.staffId !== undefined) {
+      /* 名前・内容を書いた自由枠は支援と同じに扱う（2026-10-07）＝動かした跡を埋め直す（隙間を残さない） */
+      if (t && (t.kind === 'care' || M.namedFree(t)) && t.staffId !== null && t.staffId !== undefined) {
         vac.push({ staffId: t.staffId, start: t.start, end: t.end,
-                   facBg: (t.facBg !== undefined && t.facBg !== null) ? t.facBg : null });
+                   facBg: (t.kind === 'care' && t.facBg !== undefined && t.facBg !== null) ? t.facBg : null });
       }
     }
     return vac;
@@ -5555,7 +5579,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             if (!fillThis) continue;
             var freeBg = TS.facResidual(lo, hi, occ, 20);
             if (!freeBg.length) continue;
-            var fillLabel = bg ? (bg.label || '') : (KIND === 'facility' ? '施設業務' : '');
+            /* 自由枠は名前を写さない（2026-10-07）: 旧データの背景枠メモリに利用者名が入っていると、名前入り自由枠が2つ並んでいた */
+            var fillLabel = bg ? (KIND === 'free' ? '' : (bg.label || '')) : (KIND === 'facility' ? '施設業務' : '');
             var keptBg = result, fb;
             for (fb = 0; fb < freeBg.length; fb++) {
               var nfb = M.newTask({ kind: KIND, label: fillLabel, src: 'facwork',
@@ -5679,7 +5704,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *  ・消えた枠と組めなかった新しい枠は乱数 id のまま */
   var STABLE_ID_TYPES_ = { ASSIGN: 1, UNASSIGN: 1, MULTI_ASSIGN: 1, SHRINK_PLACE: 1, MULTI_SHRINK_PLACE: 1, PLACE_SWAP: 1 };
   function stabilizableFiller_(t) {
-    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork';
+    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork' && !M.namedFree(t);
   }
   function byStartId_(a, b) {
     if (a.start !== b.start) return a.start - b.start;
@@ -7467,7 +7492,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* 複数選択(drag.multi)の支援移動: 移動先の重なりが「縮小可能な施設業務/自由枠」のみなら配置可とし、
        * 本検証と施設枠の縮小/分割は commit→onMultiAssign に委ねる（care/休憩が残ればNGへフォールスルー）。 */
-      if (drag.multi && task.kind === 'care' && conflicts.length > 0) {
+      /* 名前・内容を書いた自由枠をつかんだ時も支援と同じ（確定側 onMultiAssign はその下の施設業務も縮める・2026-10-07） */
+      if (drag.multi && (task.kind === 'care' || M.namedFree(task)) && conflicts.length > 0) {
         var hardConf = 0;
         for (var ci = 0; ci < conflicts.length; ci++) {
           var cf = conflicts[ci];
@@ -15126,12 +15152,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var byMove = {}, i;
         for (i = 0; i < moves.length; i++) byMove[moves[i].id] = moves[i];
 
-        /* 支援(care)moveごとに、移動先で重なる縮小可能facworkを収集（移動中の枠自身は除外）。 */
+        /* move ごとに、移動先で重なる縮小可能facworkを収集（移動中の枠自身は除外）。
+         * 支援だけでなく、グループに入った自由枠・業務枠が乗る所も縮める（2026-10-07）。以前は支援の所だけ縮めたため、
+         * 名前入りの自由枠の下に施設業務の切れ端が残って重なり、重なりの整理でどちらかが消えていた。 */
         var facMap = {};   /* facId -> { fac:Task, ranges:[[s,e],...] } */
         for (i = 0; i < moves.length; i++) {
           var cm = moves[i];
           var ct = M.findTask(day.tasks, cm.id);
-          if (!ct || ct.kind !== 'care') continue;
+          if (!ct) continue;
           for (var q = 0; q < day.tasks.length; q++) {
             var ft = day.tasks[q];
             if (byMove[ft.id]) continue;                          /* 移動対象の枠は縮小対象にしない */
