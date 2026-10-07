@@ -1765,6 +1765,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     'デイ/返却', 'デイ/シーツ', 'デイ/軟膏', '返却/軟膏', '吸入/軟膏', 'シーツ/軟膏'];
 
   var _seq = 0;
+  /* 種(seed)から決まる id（2026-10-07）。同じ版から同じ操作をした2台の端末が同じ id を作る＝統合で二重にならない。
+   * 乱数を使わない32bit FNV-1a を2本（種と種の逆順）で 't_d…' を作る。既にある id とぶつかれば '~n' を足して避ける。 */
+  function stableId(seed, taken) {
+    var s = String(seed), h1 = 0x811c9dc5, h2 = 0x811c9dc5, i;
+    for (i = 0; i < s.length; i++) {
+      h1 ^= s.charCodeAt(i); h1 = Math.imul(h1, 16777619) >>> 0;
+      h2 ^= s.charCodeAt(s.length - 1 - i); h2 = Math.imul(h2, 16777619) >>> 0;
+    }
+    var id = 't_d' + h1.toString(36) + h2.toString(36), n = 1, base = id;
+    while (taken && taken['.' + id]) id = base + '~' + (n++);
+    return id;
+  }
   function genId(prefix) {
     _seq = (_seq + 1) % 1679616; /* 36^4 */
     var rnd = Math.floor(Math.random() * 1679616).toString(36);
@@ -2749,6 +2761,87 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     rep.tasks = out; rep.changed = true;
     return rep;
   }
+  /* ロック日・過去日（凍結日）用の重なり整理（2026-10-07 本人裁定）。
+   * 凍結日は normalizeOverlap を掛けない（確定した実績を組み替えない）が、2端末の入替が統合されると
+   * 【自動で敷いた施設業務/自由枠】が二重に残り、画面にも印刷にも同じ業務枠が2列出る。
+   * 9/21 に支援の重複だけは凍結日でも畳むと決めたのと同じ扱いで、自動敷きの業務枠だけを整理する。
+   *  ・対象は src==='facwork' の施設業務/自由枠だけ（休憩・支援・手で置いた業務枠は占有として不動）
+   *  ・対象どうしの重なりは 既配置(prev で同位置) > start昇順 > id順 で残す側を決め、負けた方を残余へ縮める
+   *  ・残余は normalizeOverlap と同じ刻み（占有終端を20分へ繰上げ・20分未満は破棄＝削除）
+   *  ・2本目以降の断片の id は元の id と区間から決める（stableId。端末ごとに乱数 id が割れて統合で再び二重にならない・
+   *    同じ元枠を何度分けても既存の id とぶつけない）
+   *  ・重なりが無ければ入力配列を同一参照で返す（冪等・余分な push を出さない） */
+  function frozenFiller_(t) {
+    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork';
+  }
+  function normalizeFrozenFillers(prevTasks, nextTasks, staff) {
+    var rep = { tasks: nextTasks, bumped: [], clipped: 0, removed: 0, changed: false };
+    if (!nextTasks || nextTasks.length < 2) return rep;
+    var staffIds = {}, i, t, k;
+    for (i = 0; i < (staff || []).length; i++) {
+      if (staff[i] && staff[i].id !== undefined && staff[i].id !== null) staffIds['.' + staff[i].id] = 1;
+    }
+    var byStaff = {};
+    for (i = 0; i < nextTasks.length; i++) {
+      t = nextTasks[i];
+      if (!t || t.staffId === null || t.staffId === undefined) continue;
+      k = '.' + t.staffId;
+      if (!staffIds[k] || !(t.end > t.start)) continue;
+      (byStaff[k] || (byStaff[k] = [])).push(t);
+    }
+    var prevIdx = indexById_(prevTasks || []);
+    function incumbent_(x) {
+      var p = prevIdx['.' + x.id];
+      return !!(p && p.staffId === x.staffId && p.start === x.start && p.end === x.end);
+    }
+    var repl = {}, changed = false, taken = {};
+    for (i = 0; i < nextTasks.length; i++) if (nextTasks[i]) taken['.' + nextTasks[i].id] = 1;
+    for (k in byStaff) {
+      if (!Object.prototype.hasOwnProperty.call(byStaff, k)) continue;
+      var arr = byStaff[k], occ = [], fills = [], j;
+      for (i = 0; i < arr.length; i++) {
+        if (frozenFiller_(arr[i])) fills.push(arr[i]);
+        else occ.push([arr[i].start, arr[i].end]);
+      }
+      if (!fills.length) continue;
+      fills.sort(function (a, b) {
+        var ia = incumbent_(a) ? 0 : 1, ib = incumbent_(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
+        return (a.start - b.start) || cmpId_(a, b);
+      });
+      for (i = 0; i < fills.length; i++) {
+        t = fills[i];
+        var hit = false;
+        for (j = 0; j < occ.length; j++) if (t.start < occ[j][1] && occ[j][0] < t.end) { hit = true; break; }
+        if (!hit) { occ.push([t.start, t.end]); continue; }
+        changed = true;
+        var segs = residualGrid_(t.start, t.end, occ);
+        if (!segs.length) { repl['.' + t.id] = []; rep.removed++; continue; }
+        var frags = [];
+        for (j = 0; j < segs.length; j++) {
+          var nt = cloneTask_(t);
+          if (j > 0) { nt.id = stableId(t.id + '|' + segs[j][0] + '|' + segs[j][1], taken); taken['.' + nt.id] = 1; }
+          nt.start = segs[j][0]; nt.end = segs[j][1];
+          nt.facManual = true;
+          occ.push([nt.start, nt.end]);
+          frags.push(nt);
+        }
+        repl['.' + t.id] = frags;
+        rep.clipped++;
+      }
+    }
+    if (!changed) return rep;
+    var out = [];
+    for (i = 0; i < nextTasks.length; i++) {
+      t = nextTasks[i];
+      var key = t ? '.' + t.id : null;
+      if (key !== null && Object.prototype.hasOwnProperty.call(repl, key)) {
+        for (k = 0; k < repl[key].length; k++) out.push(repl[key][k]);
+      } else out.push(t);
+    }
+    rep.tasks = out; rep.changed = true;
+    return rep;
+  }
   /* マージ後の盤面修復: ①列(staff)不在のstaffId→care=トレイへ/非care=破棄
    * ②同一列のcare重畳→後発(start,id順)をトレイへ ③非care(break→facility→その他)の重畳→残余へクリップ(20分未満破棄)。
    * 両端末の編集が同じ時間帯に重なった場合でも、盤面・A3印刷に重畳枠を残さない。 */
@@ -3085,6 +3178,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     FACILITY_PRESETS: FACILITY_PRESETS,
     CONTENT_PRESETS: CONTENT_PRESETS,
     genId: genId,
+    stableId: stableId,
     newTask: newTask,
     normComment: normComment_,
     captureOrigin: captureOrigin,
@@ -3127,6 +3221,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     mergeNotes3_: mergeNotes3_,
     careMaskPolicy: careMaskPolicy,
     normalizeOverlap: normalizeOverlap,
+    normalizeFrozenFillers: normalizeFrozenFillers,
     isAutoFiller: isAutoFiller_
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -5570,8 +5665,83 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksMSout };
   }
 
+  /* ===== 作り直した自動敷きの施設業務/自由枠の id を決まった値にする（2026-10-07）=====
+   * 支援の移動・入替では、上に乗られた施設業務を消し、空いた側へ施設業務を作り直す（expandSurvivingFacwork_ ほか）。
+   * 作り直すたびに新しい乱数 id を振っていたため、2台の端末が同じ版から同じ入替をすると、
+   * 互いに別 id の施設業務を作り、統合（rebaseDay）が「どちらも新しい枠」と判断して両方を残していた
+   * ＝施設業務が2列に重なる（10/5 の事象）。
+   * 新しくできた施設業務の id を「消えた施設業務の id・職員・区間・種類」から決める（M.stableId）。
+   * 同じ版から同じ操作をすれば id も同じになる＝統合で二重にならない。
+   * 消えた枠の id をそのまま使い回すことはしない（反証レビュー指摘）: 使い回すと、別の端末がその枠を同時に
+   * 手直ししていた時に統合でその中身が採られて列が空く・選択が別の列の枠へ付いていく。
+   *  ・対象は自動敷き（src==='facwork'）の施設業務/自由枠だけ。支援・休憩・手で置いた枠の id は触らない
+   *  ・組み合わせ: 同じ職員の枠を先に（開始の早い順）、残りは職員をまたいで開始順・id 順で対応させる
+   *  ・消えた枠と組めなかった新しい枠は乱数 id のまま */
+  var STABLE_ID_TYPES_ = { ASSIGN: 1, UNASSIGN: 1, MULTI_ASSIGN: 1, SHRINK_PLACE: 1, MULTI_SHRINK_PLACE: 1, PLACE_SWAP: 1 };
+  function stabilizableFiller_(t) {
+    return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork';
+  }
+  function byStartId_(a, b) {
+    if (a.start !== b.start) return a.start - b.start;
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  }
+  function stabilizeFillerIds_(beforeTasks, afterTasks) {
+    var inBefore = {}, inAfter = {}, i;
+    for (i = 0; i < beforeTasks.length; i++) inBefore['.' + beforeTasks[i].id] = 1;
+    for (i = 0; i < afterTasks.length; i++) inAfter['.' + afterTasks[i].id] = 1;
+    var gone = [], born = [];
+    for (i = 0; i < beforeTasks.length; i++) {
+      if (!inAfter['.' + beforeTasks[i].id] && stabilizableFiller_(beforeTasks[i])) gone.push(beforeTasks[i]);
+    }
+    if (!gone.length) return afterTasks;
+    for (i = 0; i < afterTasks.length; i++) {
+      if (!inBefore['.' + afterTasks[i].id] && stabilizableFiller_(afterTasks[i])) born.push(afterTasks[i]);
+    }
+    if (!born.length) return afterTasks;
+    gone.sort(byStartId_);
+    born.sort(function (a, b) {
+      var sa = String(a.staffId), sb = String(b.staffId);
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return (a.start - b.start) || (a.end - b.end) || (a.kind < b.kind ? -1 : (a.kind > b.kind ? 1 : 0));   /* 新 id は乱数のため順の決定に使わない */
+    });
+    var used = {}, map = {}, pass, b, g;
+    for (pass = 0; pass < 2; pass++) {             /* 0: 同じ職員どうし／1: 職員をまたぐ */
+      for (b = 0; b < born.length; b++) {
+        if (map['.' + born[b].id]) continue;
+        for (g = 0; g < gone.length; g++) {
+          if (used[g] || gone[g].kind !== born[b].kind) continue;
+          if (pass === 0 && gone[g].staffId !== born[b].staffId) continue;
+          used[g] = 1; map['.' + born[b].id] = gone[g].id; break;
+        }
+      }
+    }
+    var taken = {};
+    for (i = 0; i < beforeTasks.length; i++) taken['.' + beforeTasks[i].id] = 1;
+    for (i = 0; i < afterTasks.length; i++) taken['.' + afterTasks[i].id] = 1;
+    var out = [], changed = false;
+    for (i = 0; i < afterTasks.length; i++) {
+      var src = map['.' + afterTasks[i].id];
+      if (src) {
+        var a = afterTasks[i], c = {}, k;
+        for (k in a) if (Object.prototype.hasOwnProperty.call(a, k)) c[k] = a[k];
+        c.id = M.stableId(src + '|' + a.staffId + '|' + a.start + '|' + a.end + '|' + a.kind, taken);
+        taken['.' + c.id] = 1;
+        out.push(c); changed = true;
+      } else out.push(afterTasks[i]);
+    }
+    return changed ? out : afterTasks;
+  }
+
   /* リデューサ（純粋関数）。day を変更せず新オブジェクトを返す */
   function reduce(day, action) {
+    var next = reduceCore_(day, action);
+    if (next !== day && action && STABLE_ID_TYPES_[action.type] && next.tasks !== day.tasks) {
+      var rt = stabilizeFillerIds_(day.tasks, next.tasks);
+      if (rt !== next.tasks) next = { meta: next.meta, staff: next.staff, columns: next.columns, tasks: rt };
+    }
+    return next;
+  }
+  function reduceCore_(day, action) {
     var type = action.type;
 
     if (type === 'INIT_DAY') {
@@ -5640,6 +5810,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (day.tasks[d].id !== action.id) rest.push(day.tasks[d]);
       }
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: rest };
+    }
+    if (type === 'DELETE_TASKS') {
+      /* 選択した複数枠の一括削除＝1操作（Ctrl+Z 1回で全部戻る・2026-10-07）。
+       * 以前は DELETE_TASK を件数分 dispatch していたため、戻すのに件数分の Ctrl+Z が要った。 */
+      var delSet = {}, dsi;
+      for (dsi = 0; dsi < (action.ids || []).length; dsi++) delSet['.' + action.ids[dsi]] = 1;
+      var restD = [];
+      for (dsi = 0; dsi < day.tasks.length; dsi++) {
+        if (!delSet['.' + day.tasks[dsi].id]) restD.push(day.tasks[dsi]);
+      }
+      var metaD = day.meta;
+      if (action.metaPatch) {   /* 本日のみ削除の墓標(skipRefs)など、削除と一体の meta 変更を同じ1操作に含める */
+        metaD = {};
+        for (var mk in day.meta) if (Object.prototype.hasOwnProperty.call(day.meta, mk)) metaD[mk] = day.meta[mk];
+        for (var mp in action.metaPatch) if (Object.prototype.hasOwnProperty.call(action.metaPatch, mp)) metaD[mp] = action.metaPatch[mp];
+      }
+      if (restD.length === day.tasks.length && metaD === day.meta) return day;
+      return { meta: metaD, staff: day.staff, columns: day.columns, tasks: restD };
     }
     if (type === 'ASSIGN') {
       var vacA = careVacates_(day.tasks, [action.id]);   /* 退去元(旧位置)を移動前に捕捉 */
@@ -5796,14 +5984,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var autoBase = null, autoInit = false;
     var repair = { bumped: [], clipped: 0, removed: 0 };
 
+    /* 取り消し・やり直しで戻すのは盤面の中身だけ。版番号（meta.rev）は同期の控えなので今の値を引き継ぐ
+     * （2026-10-07）。戻すと次の送信が必ず競合し、統合で盤面が置き換わって取り消し履歴が全部消えていた。 */
+    function keepRev_(restored, cur) {
+      if (!restored || !restored.meta || !cur || !cur.meta || restored.meta.rev === cur.meta.rev) return restored;
+      var nm = {}, k;
+      for (k in restored.meta) if (Object.prototype.hasOwnProperty.call(restored.meta, k)) nm[k] = restored.meta[k];
+      nm.rev = cur.meta.rev;
+      return { meta: nm, staff: restored.staff, columns: restored.columns, tasks: restored.tasks };
+    }
     function notify() {
       for (var i = 0; i < subs.length; i++) {
         try { subs[i](day); } catch (e) { /* 購読者の例外は伝播させない */ }
       }
     }
     function enforce_(prevTasks, next) {
-      if (frozen || (next.meta && next.meta.locked)) return next;
-      var r = M.normalizeOverlap(prevTasks, next.tasks, next.staff);
+      /* 凍結日（ロック日・過去日）は組み替えない。ただし自動敷きの施設業務/自由枠の二重だけは整理する
+       * （2026-10-07 本人裁定・normalizeFrozenFillers のコメント参照） */
+      var isFrozen = frozen || (next.meta && next.meta.locked);
+      var r = isFrozen ? M.normalizeFrozenFillers(prevTasks, next.tasks, next.staff)
+                       : M.normalizeOverlap(prevTasks, next.tasks, next.staff);
       if (!r.changed) return next;
       var b;
       for (b = 0; b < r.bumped.length; b++) repair.bumped.push(r.bumped[b]);
@@ -5873,7 +6073,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       undo: function () {
         if (!past.length) return false;
         future.push(day);
-        day = past.pop();
+        day = keepRev_(past.pop(), day);
         userSeq++;   /* 取り消し・やり直しも本人の操作として数える */
         notify();
         return true;
@@ -5881,7 +6081,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       redo: function () {
         if (!future.length) return false;
         past.push(day);
-        day = future.pop();
+        day = keepRev_(future.pop(), day);
         userSeq++;
         notify();
         return true;
@@ -11936,7 +12136,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { cur = (ui.currentDate === date) ? store.get() : loadDayData(date); } catch (eC) { cur = null; }
       if (cur && daySig(cur) === sig) clearDayDirty_(date);   /* 送信後に編集が入っていれば印は残す */
       if (ui.currentDate === date) {
-        try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 } }); } catch (eM) {}
+        try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 }, nohist: true }); } catch (eM) {}
       } else {
         try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
       }
@@ -11984,7 +12184,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (same_) clearDayDirty_(date);
         notePush_(date, same_ ? 'ok' : 'changed', '', Date.now() - pushT0_);
         if (store.get().meta.date === date) {
-          store.dispatch({ type: 'SET_META', patch: { rev: j.rev } });
+          /* 版番号は同期の控え＝取り消し履歴に積まない（2026-10-07）。積むと送信のたびに Ctrl+Z が1回空振りしていた */
+          store.dispatch({ type: 'SET_META', patch: { rev: j.rev }, nohist: true });
         }
         var d = new Date();
         setSyncState('✓同期 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
@@ -12064,7 +12265,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 再び conflict→get で data が返り adopt へ回る）。無限競合は conflictN_ 上限で止まる。 */
   function resetDayRevAndPush_(date) {
     if (ui.currentDate === date) {
-      store.dispatch({ type: 'SET_META', patch: { rev: 0 } });
+      store.dispatch({ type: 'SET_META', patch: { rev: 0 }, nohist: true });
       lastPushed.day = '';
       schedulePushDay();
     } else {
@@ -13912,13 +14113,51 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* ===== 選択ブロックの一括操作（消去・複製） ===== */
   /* 選択中タスク(ui.selectedIds)を一括削除。施設業務/休憩/支援すべて対象。確認ダイアログ付き */
+  /* 消去の確認文に出す内訳（2026-10-07 本人決定）: 「支援9件（⑥）・施設業務1件（⑤）」のように種類ごとの件数と列。
+   * 見えにくい所に選択が残っていても、押す前に気付けるようにする。 */
+  function selKindName_(t) {
+    if (t.kind === 'care') return '支援';
+    if (t.kind === 'break') return '休憩';
+    if (t.kind === 'free') return '自由枠';
+    if (t.kind === 'admin') return '事務';
+    return t.label || '業務枠';
+  }
+  function selBreakdown_(tasks) {
+    var day = store.get(), colOf = {}, i, j, order = [], groups = {};
+    for (i = 0; i < (day.columns || []).length; i++) {
+      var cd = day.columns[i];
+      for (j = 0; j < (cd.staffIds || []).length; j++) colOf[cd.staffIds[j]] = cd.label || '';
+    }
+    for (i = 0; i < (day.staff || []).length; i++) {   /* 列見出しが空なら職員名で補う */
+      var sf = day.staff[i];
+      if (sf && !colOf[sf.id] && sf.name) colOf[sf.id] = sf.name;
+    }
+    for (i = 0; i < tasks.length; i++) {
+      var nm = selKindName_(tasks[i]);
+      if (!groups[nm]) { groups[nm] = { n: 0, cols: [] }; order.push(nm); }
+      groups[nm].n++;
+      var cl = (tasks[i].staffId === null || tasks[i].staffId === undefined) ? '未配置' : (colOf[tasks[i].staffId] || '');
+      if (cl && groups[nm].cols.indexOf(cl) < 0) groups[nm].cols.push(cl);
+    }
+    var parts = [];
+    for (i = 0; i < order.length; i++) {
+      var gr = groups[order[i]];
+      parts.push(order[i] + gr.n + '件' + (gr.cols.length ? '（' + gr.cols.join('・') + '）' : ''));
+    }
+    return parts.join('・');
+  }
   function deleteSelected() {
     if (!ui.selectedIds.length) { toast('ブロックを選択してください'); return; }
-    var ids = ui.selectedIds.slice();
+    var all = store.get().tasks, ids = [], tasks = [], i;
+    for (i = 0; i < ui.selectedIds.length; i++) {
+      var t = M.findTask(all, ui.selectedIds[i]);
+      if (t) { ids.push(t.id); tasks.push(t); }   /* 盤面に無くなった選択は数えない */
+    }
+    if (!ids.length) { ui.selectedIds = []; applySelectionClasses_(); toast('ブロックを選択してください'); return; }
     var n = ids.length;
-    if (!window.confirm(n === 1 ? 'この枠を消去しますか？' : n + '件の枠を消去しますか？')) return;
-    for (var i = 0; i < ids.length; i++) store.dispatch({ type: 'DELETE_TASK', id: ids[i] });
+    if (!window.confirm(selBreakdown_(tasks) + 'を消去しますか？')) return;
     ui.selectedIds = [];
+    store.dispatch({ type: 'DELETE_TASKS', ids: ids });   /* 1操作＝Ctrl+Z 1回で全部戻る */
     toast(n + '件を消去しました');
   }
   /* deleteキー用: 支援枠(kind==='care')は保護し、それ以外（施設業務/休憩/事務/自由枠）のみ削除（要件3）。
@@ -13938,7 +14177,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       toast(careCount ? '支援枠はdeleteキーでは削除できません（施設業務枠などが対象です）' : '削除対象がありません');
       return;
     }
-    for (var j = 0; j < delIds.length; j++) store.dispatch({ type: 'DELETE_TASK', id: delIds[j] });
+    store.dispatch({ type: 'DELETE_TASKS', ids: delIds });   /* 1操作＝Ctrl+Z 1回で全部戻る */
     /* 削除した非支援枠だけ選択解除し、保護された支援枠の選択は維持する */
     var keep = [];
     for (var k = 0; k < ui.selectedIds.length; k++) {
@@ -13975,6 +14214,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     toast(made.length + '件を複製しました（未配置トレイ→ドラッグで配置）');
   }
 
+  /* グループ(groupId を共有する2枠以上)をドラッグで動かし終えたら選択を解除する（2026-10-07 本人決定）。
+   * 選択は移動後も残り続け、別の列へ移った後の「消去」に巻き込まれていた。複数選択(グループ無し)の移動は従来どおり残す。 */
+  function clearSelAfterGroupMove_(moves) {
+    if (!ui.selectedIds.length) return;
+    var tasks = store.get().tasks, cnt = {}, i;
+    for (i = 0; i < moves.length; i++) {
+      var t = M.findTask(tasks, moves[i].id);
+      if (!t || !t.groupId) continue;
+      cnt[t.groupId] = (cnt[t.groupId] || 0) + 1;
+      if (cnt[t.groupId] >= 2) { ui.selectedIds = []; return; }
+    }
+  }
   /* 選択中の枠(2件以上)を1グループに固定する。以後、グループ内の1枠をドラッグすると
    * (getGroupIds 経由で)グループ全体が相対時刻を保って同時移動する＝毎回の複数選択が不要になる。
    * 既にグループ付きの枠を含む選択も、新しい単一 groupId へ束ね直す。 */
@@ -13993,8 +14244,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (unplaced) { toast('配置済みの枠どうしを選択してください（トレイの枠はグループ化できません）', true); return; }
     if (mixed) { toast('同じ職員（同じ列）の枠どうしでグループ化してください', true); return; }
     var gid = M.genId('g');
-    store.dispatch({ type: 'SET_GROUP', ids: ui.selectedIds.slice(), groupId: gid });
-    toast(ui.selectedIds.length + '件をグループ化しました（1枠のドラッグで同時移動）');
+    var gIds = ui.selectedIds.slice();
+    /* グループ化したら選択は解除する（2026-10-07 本人決定）。残すと、別の列へ動かした後も見えにくい選択が残り、
+     * 後の「消去」で別の列の支援まで消える。以後はグループの1枠を動かせば全体が動く */
+    ui.selectedIds = [];
+    store.dispatch({ type: 'SET_GROUP', ids: gIds, groupId: gid });
+    toast(gIds.length + '件をグループ化しました（1枠のドラッグで同時移動）');
   }
   /* 選択中の枠が属するグループを解除（同一 groupId を持つ枠すべてを解除＝個別移動に戻す）。 */
   function ungroupSelected() {
@@ -14230,9 +14485,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * indexOf で拾って skip でき、削除済み予定の盤面再表示（stale配信混在時に恒久化しうる）を防ぐ。 */
         if (skips.indexOf(ref) < 0) skips.push(ref);
         skips.push(entry);
-        store.dispatch({ type: 'SET_META', patch: { skipRefs: skips } });
+        /* 墓標の記録と削除を1操作に（2026-10-07）＝Ctrl+Z 1回で支援も墓標も戻る */
+        store.dispatch({ type: 'DELETE_TASKS', ids: [ui.editingId], metaPatch: { skipRefs: skips } });
+      } else {
+        store.dispatch({ type: 'DELETE_TASK', id: ui.editingId });
       }
-      store.dispatch({ type: 'DELETE_TASK', id: ui.editingId });
       hideModals();
     });
     $('edConfirmOrigin').addEventListener('click', function () {
@@ -14925,6 +15182,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           splits.push({ facId: entry.fac.id,
             fragments: TS.facResidual(entry.fac.start, entry.fac.end, entry.ranges, 20) });
         }
+        clearSelAfterGroupMove_(moves);
         if (splits.length) {
           store.dispatch({ type: 'MULTI_SHRINK_PLACE', moves: moves, splits: splits });
           toast(moves.length + '件を移動し施設業務を縮小しました');
@@ -15015,6 +15273,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (v.warn === 'worktime') ooh = true;
         }
         if (ooh && !window.confirm('勤務時間外を含みますが入れ替えますか？')) return;
+        clearSelAfterGroupMove_(moves);
         store.dispatch({ type: 'MULTI_SWAP', moves: moves });
         toast(moves.length + '件を入れ替えました');
       },
