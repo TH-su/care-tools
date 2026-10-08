@@ -5371,17 +5371,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       postNameSlot[nm] = s.id;
       postNameCount[nm] = (postNameCount[nm] || 0) + 1;
     }
+    /* 主slotごとの勤務枠（主slot＋分割ブロック _bN）。分割勤務（朝・夕）の人は同じ列に2つの勤務枠を持つ（2026-10-08） */
+    var blocksOf = {};
+    for (i = 0; i < postStaff.length; i++) {
+      s = postStaff[i];
+      if (!s || String(s.id).indexOf('slot_') !== 0) continue;
+      (blocksOf[baseSlotId_(s.id)] || (blocksOf[baseSlotId_(s.id)] = [])).push(s);
+    }
+    /* 担当者の勤務枠のうち、枠の時刻をまるごと含むものがちょうど1つならその勤務枠。無い・2つ以上なら主slot（従来どおり）。
+     * 以前は時刻を見ずに主slotへ付けたため、夕方の支援が朝の勤務枠に付き、夕方の勤務枠の施設業務と重なった（10/21） */
+    function fitBlock_(t, base) {
+      var bl = blocksOf[base] || [], hit = null, n = 0, k, own = null;
+      for (k = 0; k < bl.length; k++) if (bl[k].id === base) own = bl[k];
+      var nm0 = own ? normLeaderName_(own.name) : '';
+      for (k = 0; k < bl.length; k++) {
+        var b = bl[k];
+        if (nm0 && normLeaderName_(b.name) !== nm0) continue;   /* 別人の分割ブロックへは付けない */
+        if (typeof b.workStart !== 'number' || typeof b.workEnd !== 'number' || !(b.workEnd > b.workStart)) continue;
+        if (t.start >= b.workStart && t.end <= b.workEnd) { hit = b; n++; }
+      }
+      return n === 1 ? hit.id : base;
+    }
     var moved = 0;
     for (i = 0; i < tasks.length; i++) {
       var t = tasks[i];
       if (!followEligible_(t)) continue;
       var base = baseSlotId_(t.staffId);
+      var dstBase = base;
       var old = preSlotName[base];
-      if (!old) continue;                       /* 旧占有者不明(初回充填・空盤面・非slot)=据置 */
-      if (preNameCount[old] > 1) continue;       /* pre側 同姓同名=曖昧据置 */
-      if (postNameCount[old] !== 1) continue;    /* 不在(0)・post側 同姓同名(>1)=据置 */
-      var dst = postNameSlot[old];
-      if (dst === base) continue;                /* 占有者不変=no-op */
+      /* 旧占有者が分かり、一意に新しい主slotへ移った時だけ主slotを替える（不明・同姓同名・不在は据置＝従来どおり） */
+      if (old && !(preNameCount[old] > 1) && postNameCount[old] === 1 && postNameSlot[old] !== base) dstBase = postNameSlot[old];
+      var dst = (blocksOf[dstBase] && blocksOf[dstBase].length > 1) ? fitBlock_(t, dstBase) : dstBase;
+      if (dstBase === base && dst === base && t.staffId !== base) continue;   /* 時刻の合う勤務枠が決まらない＝今の分割ブロックのまま */
+      if (dst === t.staffId) continue;            /* 変化なし */
       t.staffId = dst; moved++;
     }
     return moved;
@@ -13327,7 +13349,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 重畳解消（2026-09-10）: 役割再配置以外の張替(最右slot・_bN→base)や施設業務のコピーで同一列に重なりが残り得る。
        * 件数検証の後・保存の前に不変条件を通す（退避分は開いた先の未配置トレイと「重なり」バッジで気付ける）。 */
       try {
-        var ovlC_ = M.normalizeOverlap(null, tasks, staffOut);
+        /* 分割勤務の列（2026-10-08）: 前週の夕方の勤務枠(_bN)から主slotへ寄せた枠が、翌週の主slot（朝の勤務枠）の時間外なら、
+         * 同じ列の時間の合う勤務枠へ付け替えてから重なりを解消する（コピー先は INIT_DAY を通らないため、ここで掛ける） */
+        var rhC_ = M.rehomeInColumn(tasks, staffOut, colsOut), preRh_ = null;
+        if (rhC_ !== tasks) { preRh_ = tasks; tasks = rhC_; day.tasks = tasks; }
+        /* 付け替えが起きたら付け替え前を「既に置かれていた枠」の基準にする＝付け替えた側を新参にし、
+         * 夕方の勤務枠に元からある支援（グループ）を優先する（store の enforce_ と同じ扱い・反証レビュー指摘） */
+        var ovlC_ = M.normalizeOverlap(preRh_, tasks, staffOut);
         if (ovlC_.changed) { tasks = ovlC_.tasks; day.tasks = tasks; conflicts += ovlC_.bumped.length + ovlC_.clipped + ovlC_.removed; }
         /* 重複の収束（2026-09-21）: コピー先は lsSetDay_ で直接書くため INIT_DAY を通らない。
          * ここで畳んでおかないと、コピー元に重複があると翌週へそのまま運ばれる。 */
