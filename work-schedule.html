@@ -459,6 +459,7 @@ textarea.inp { min-height: 110px; font-size: 0.75rem; }
   padding: 5px 11px; font-size: 0.75rem; cursor: pointer;
 }
 .chips .pc.on { background: var(--pri-l); border-color: var(--pri); color: var(--pri-d); font-weight: 700; }
+.chips .pc:disabled { opacity: .7; cursor: not-allowed; }   /* 現場の端末では昼食薬を見るだけ（2026-10-08） */
 /* 業務枠の配色パレット（要件2） */
 .color-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
 .color-swatches .sw {
@@ -6171,7 +6172,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* care_schedule_v2 から デイ利用情報を集める
-   * 返値: [{name, floor, lunchMed, hospitalized, days:{dow:[start,end]}}]
+   * 返値: [{name, rid, floor, lunchMed, hospitalized, days:{dow:[start,end]}}]
    * hospFn … 入院状態の実効値を返す関数（省略時は r.hospitalized）。
    *   入居者マスタ由来の入院を重ねるために app.js から渡す。ここに実装を置かないのは、
    *   このファイルが独立IIFEで app.js から見えず、跨いで呼ぶと ReferenceError になるため
@@ -6194,7 +6195,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         has = true;
       }
       if (has) {
-        out.push({ name: r.name, floor: r.floor || 0,
+        out.push({ name: r.name, rid: r.id, floor: r.floor || 0,   /* rid＝昼食薬の切替で同じ氏名の別の方を巻き込まないため（2026-10-08） */
                    lunchMed: !!r.lunchMed,
                    hospitalized: (typeof hospFn === 'function') ? !!hospFn(r) : !!r.hospitalized,
                    days: days });
@@ -10265,7 +10266,73 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
 
-  /* 出力タブ: 昼食後薬チェックリスト（resident.lunchMed・careDB保存→同期） */
+  /* 出力タブ: 昼食後薬チェックリスト（resident.lunchMed・careDB保存→同期）
+   * 2026-10-08（本人裁定）: デイ利用表と同じく、現場の端末（su_device_role==='field'・接続設定が決める同一オリジンのキー）
+   * では見るだけにする。事務所PCで切り替えた時は、その方の変更記録 dcrFlagLog へ1件積む（デイ利用表の「最近の変更」に出る）。
+   * 記録の形・上限・並べ方はデイ利用表（daycare-roster.html の dcrAddLog_）と同じ。誰がは「事務所PC（ワースケ）」。
+   * 切り替える相手は id で引く（以前は氏名が同じ全員を反転していた）。id が無い古いデータだけ氏名で引く。 */
+  var LUNCH_FIELD_MSG = 'この端末（現場用）では変えられません。事務所PCで変えてください';
+  var LUNCH_LOG_MAX = 10;
+  function wsIsFieldDevice_() {
+    try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; }
+  }
+  function lunchLogStamp_(d) {
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+           p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  function lunchLogEntry_(val) {
+    return { id: Date.now().toString(36) + '-ws-' + Math.random().toString(36).slice(2, 6),
+             t: lunchLogStamp_(new Date()), f: 'lunchMed', v: val ? 1 : 0, w: '事務所PC（ワースケ）' };
+  }
+  /* 記録を積む。同じ id は積まない（再適用で重複しない）。新しい順・上限で古い方を落とす。 */
+  function addLunchLog_(r, entry) {
+    if (!r || !entry) return;
+    var cur = [], i, src = (r.dcrFlagLog instanceof Array) ? r.dcrFlagLog : [];
+    for (i = 0; i < src.length; i++) {
+      if (!src[i] || typeof src[i] !== 'object') continue;
+      if (src[i].id === entry.id) return;
+      cur.push(src[i]);
+    }
+    var cp = {}, k;
+    for (k in entry) if (Object.prototype.hasOwnProperty.call(entry, k)) cp[k] = entry[k];
+    cur.unshift(cp);
+    cur.sort(function (a, b) { var x = String(a.t || ''), y = String(b.t || ''); return x < y ? 1 : x > y ? -1 : 0; });
+    r.dcrFlagLog = cur.slice(0, LUNCH_LOG_MAX);
+  }
+  /* 切り替える相手。id が一致する方を優先し、id の無い古いデータは氏名が1人に絞れた時だけ。 */
+  function findLunchTarget_(care, rid, name) {
+    var i, hit = [];
+    if (!care || !care.residents) return null;
+    if (rid !== undefined && rid !== null && rid !== '') {
+      for (i = 0; i < care.residents.length; i++) if (care.residents[i].id === rid) return care.residents[i];
+      return null;
+    }
+    for (i = 0; i < care.residents.length; i++) if (care.residents[i].name === name) hit.push(care.residents[i]);
+    return hit.length === 1 ? hit[0] : null;
+  }
+  /* その方の記録に、entry より後の昼食薬の変更（別の id）があるか */
+  function lunchChangedAfter_(r, entry) {
+    var L = (r && r.dcrFlagLog instanceof Array) ? r.dcrFlagLog : [], i;
+    for (i = 0; i < L.length; i++) {
+      if (L[i] && L[i].f === 'lunchMed' && L[i].id !== entry.id && String(L[i].t || '') > String(entry.t || '')) return true;
+    }
+    return false;
+  }
+  function toggleLunchMed_(u) {
+    if (wsIsFieldDevice_()) { toast(LUNCH_FIELD_MSG, true); renderExportPane(); return; }
+    var care2 = loadCareDb();
+    if (!care2) return;
+    var r = findLunchTarget_(care2, u.rid, u.name);
+    if (!r) { toast('この方を一意に特定できませんでした。デイ利用表で切り替えてください', true); renderExportPane(); return; }
+    var nv = !r.lunchMed;
+    var entry = lunchLogEntry_(nv);
+    r.lunchMed = nv;
+    addLunchLog_(r, entry);
+    recordCareOp_({ t: 'lunch', name: r.name, rid: r.id, val: nv, log: entry });
+    saveCareDb(care2);
+    renderExportPane();
+  }
   function renderExportPane() {
     var wrap = $('exMedList');
     wrap.innerHTML = '';
@@ -10276,7 +10343,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       $('exMedHint').textContent = 'デイ利用者がいません（支援マスタの再取込で曜日・時間が入ります）';
       return;
     }
-    var medCount = 0;
+    var ro = wsIsFieldDevice_();
+    var medCount = 0, nameN = {}, dupN = 0, k;
+    /* 同じ氏名のデイ利用者が2人以上いると、ボタンの文字だけでは見分けられない（審査の指摘 M1）。
+     * その方々はここでは押せなくし、デイ利用表（同姓の目印あり）で切り替えてもらう。 */
+    var nk = function (n) { return String(n || '').replace(/[\s　]/g, ''); };   /* 空白の違いは同じ氏名とみなす（デイ利用表と同じ） */
+    for (k = 0; k < users.length; k++) nameN[nk(users[k].name)] = (nameN[nk(users[k].name)] || 0) + 1;
     for (var i = 0; i < users.length; i++) {
       (function (u) {
         if (u.lunchMed) medCount++;
@@ -10284,24 +10356,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         b.type = 'button';
         b.className = 'pc' + (u.lunchMed ? ' on' : '');
         b.textContent = (u.lunchMed ? '☑ ' : '□ ') + u.name;
-        b.addEventListener('click', function () {
-          var care2 = loadCareDb();
-          if (!care2) return;
-          var nv = null;
-          for (var j = 0; j < care2.residents.length; j++) {
-            if (care2.residents[j].name === u.name) {
-              care2.residents[j].lunchMed = !care2.residents[j].lunchMed;
-              nv = !!care2.residents[j].lunchMed;
-            }
-          }
-          if (nv !== null) recordCareOp_({ t: 'lunch', name: u.name, val: nv });
-          saveCareDb(care2);
-          renderExportPane();
-        });
+        var dup = nameN[nk(u.name)] > 1;
+        if (dup) dupN++;
+        b.disabled = ro || dup;
+        b.setAttribute('aria-describedby', 'exMedHint');   /* 押せない理由をヒント欄で読み上げる */
+        b.addEventListener('click', function () { toggleLunchMed_(u); });
         wrap.appendChild(b);
       })(users[i]);
     }
-    $('exMedHint').textContent = '現在 ' + medCount + '名（タップで切替・自動保存）';
+    $('exMedHint').textContent = '現在 ' + medCount + '名' +
+      (ro ? '（' + LUNCH_FIELD_MSG + '）' : '（タップで切替・自動保存）') +
+      (dupN && !ro ? '　同じ氏名の方（' + dupN + '名）はデイ利用表で切り替えてください' : '');
   }
 
   function updateMasterState() {
@@ -11278,6 +11343,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              (r.dow === undefined || r.dow === null ? '' : r.dow) + ':' +
              (r.start === undefined || r.start === null ? '' : r.start);
     }
+    if (op.t === 'lunch' && op.rid !== undefined && op.rid !== null && op.rid !== '') return 'lunch:#' + op.rid;   /* 同じ氏名の別の方を同じ対象にしない（2026-10-08） */
     return op.t + ':' + String(op.name || '');
   }
   function recordCareOp_(op) {
@@ -11316,6 +11382,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!db || !db.residents) return;
       var now = Date.now();
       var changed = false, i, op, r, ev, detail, keep, kept = [];
+      var lunchDropped = false;   /* ほかの端末の後の変更を優先して、昼食薬の切替を取り下げたか */
       for (i = 0; i < p.ops.length; i++) {
         op = p.ops[i];
         keep = false;
@@ -11347,12 +11414,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           r = findCareResidentByName_(db, op.name);
           if (r && !!r.hospitalized !== !!op.val) { r.hospitalized = !!op.val; changed = true; keep = true; }
         } else if (op.t === 'lunch') {
-          r = findCareResidentByName_(db, op.name);
-          if (r && !!r.lunchMed !== !!op.val) { r.lunchMed = !!op.val; changed = true; keep = true; }
+          /* id を持つ op（2026-10-08 以降）は id で引く。古い op は従来どおり氏名で引く。
+           * 値を当て直す時は、切り替えた時の変更記録も一緒に当て直す（id で重複しない）。 */
+          r = (op.rid !== undefined && op.rid !== null) ? findLunchTarget_(db, op.rid, op.name) : findCareResidentByName_(db, op.name);
+          /* 自分の切替より後に、ほかの端末で昼食薬が変えられていたら当て直さない（審査の指摘 M2）。
+           * 当て直すと、記録の一番上は「ほかの端末の変更」なのに値は自分の古い値、と食い違う。 */
+          if (r && op.log && lunchChangedAfter_(r, op.log)) { r = null; lunchDropped = true; }
+          if (r && !!r.lunchMed !== !!op.val) {
+            r.lunchMed = !!op.val;
+            if (op.log) addLunchLog_(r, op.log);
+            changed = true; keep = true;
+          }
         }
         if (keep) kept.push(op);
       }
       if (kept.length !== p.ops.length) { p.ops = kept; saveCareOps_(p); }   /* 不要opを掃く */
+      if (lunchDropped) { try { toast('ほかの端末で昼食薬が変えられたため、この端末の切替は取り下げました'); } catch (eT) {} }
       if (changed) saveCareDb(db);   /* saveCareDb→schedulePushCare＝マージ結果を自動再送 */
     } finally { careReplay_ = false; }
   }
