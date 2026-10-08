@@ -874,7 +874,7 @@ function dcrIsField_() { try { return localStorage.getItem(DCR_DEVICE_KEY) === '
      同じように残る。実物の csRebaseEdits・masterToCareDb を通す試験: gas/tests/daycare_flaglog_test.js
    ★積むのは画面の操作1回につき1件。送り直し・競合の載せ直しでは id で重複を防ぐ（applyPendingFlag_）。
    ★「誰が」はログイン中ならアカウント（メールの @ より前）、未ログイン・確かめられない時は「事務所PC」。氏名は持たない。
-   ★ワークスケジュールの出力タブにも昼食薬の切替があり、そちらの変更はここに記録されない（未対応）。 */
+   ★ワークスケジュールの出力タブの昼食薬の切替も、同じ形の記録を積む（誰がは「事務所PC（ワースケ）」・現場の端末では押せない・2026-10-08）。 */
 const DCR_LOG_MAX = 10;
 const DCR_LOG_FIELDS = { lunchMed: ['昼食薬', 'あり', 'なし'], dcrHidden: ['非表示', '隠す', '戻す'], dcrStar: ['同姓の目印', '付ける', '外す'] };
 let dcrLogSeq_ = 0;
