@@ -20,7 +20,7 @@
      「curResident を null にする →（取得できたら）その方の記録を入れる」という同じ順で代用する。
 
    実データは含まない。値は全て架空（id・居室番号はテスト用の作り物で、人名は1つも書かない）。
-   ★出力に console を使わない（write-guard が gas/ 配下での追加を禁じているため）。 */
+   ★出力に console を使わない（gas/tests にあった頃からの決まり。個人情報を出力に流さないため）。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');

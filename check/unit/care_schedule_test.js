@@ -16,7 +16,7 @@
    方針:
      DOM も localStorage も無い node で動かすため、対象は【DBに触らない純関数】に限る。
      既存の試験（check/unit・gas/tests）と同じ vm 方式で、HTML から宣言だけを切り出して評価する。
-   ★このファイルは gas/ 配下＝公開リポジトリには載らない。氏名は全て架空。 */
+   ★このファイルは公開リポジトリの check/unit にある（2026-10-08 に gas/tests から移した）。氏名は全て架空にすること。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');

@@ -16,9 +16,10 @@ on:
 permissions:
   contents: read
 
+# PR は新しい版が来たら前の回を止める。main への送信は止めない（止めると、止めた回で足された行が実名ガードに一度も掛からない）
 concurrency:
-  group: unit-tests-${{ github.ref }}
-  cancel-in-progress: true
+  group: unit-tests-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unit:
@@ -52,7 +53,8 @@ jobs:
             exit 0
           fi
           printf '%s\n' "$NAMES" > "$RUNNER_TEMP/names.txt"
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+          # 比べる相手（base）が読めない時は全ファイルを見る（name-guard は base を読めないと空の差分＝偽の合格になるため）
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             SU_NAME_GUARD_FILE="$RUNNER_TEMP/names.txt" node check/name-guard.mjs --all
           else
             SU_NAME_GUARD_FILE="$RUNNER_TEMP/names.txt" node check/name-guard.mjs --base "$BASE"

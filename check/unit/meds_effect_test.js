@@ -5,10 +5,10 @@
      ③行数を絶対に変えない（薬剤情報の行と効能の行がずれたら別の薬の効能が並ぶ）
      ④表記ゆれ（全角・中黒・一般名処方の【般】）を吸収する
 
-   ★出力に console を使わない（write-guard が gas/ 配下での追加を禁じているため）。
+   ★出力に console を使わない（gas/tests にあった頃からの決まり。個人情報を出力に流さないため）。
      薬剤名は一般名・商品名のみで、実在の入居者の処方は1件も含まない。 */
 const fs = require('fs'), path = require('path'), vm = require('vm');
-const THEME = '/Users/Takeshi/Local Sites/localsite/app/public/wp-content/themes/wp-silverunix';
+const THEME = path.join(__dirname, '..', '..');   // リポジトリの根（2026-10-08: 以前は Mac の絶対パスで、CI では読めなかった）
 let pass = 0, fail = 0;
 const say = m => process.stdout.write(m + '\n');
 function t(n, c, e) { if (c) { pass++; say('  ✓ ' + n); } else { fail++; say('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
