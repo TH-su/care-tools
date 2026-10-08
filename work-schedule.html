@@ -2673,6 +2673,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 中身を書き込んだ自由枠（利用者名など）。施設業務はメモ・実施済みが付いても従来どおりの埋め草として扱う
    * （支援を落とせば縮小配置になる＝反証レビュー指摘: 施設業務まで含めると縮小配置が拒否に変わっていた） */
   function namedFree_(t) { return !!t && t.kind === 'free' && fillerHasContent_(t); }
+  /* 「施設業務」以外の名前を持つ業務枠（2階食事支援・誘導支援など、決まった時刻の役目）。埋め草の扱いは従来どおり
+   * （支援を落とせば縮小配置）。重なった埋め草どうしでは、休憩の次に残す（施設業務に負けて消えない・2026-10-08） */
+  function namedFacility_(t) {
+    return !!t && t.kind === 'facility' && String(t.label || '').trim() !== '' && t.label !== '施設業務';
+  }
   /* 自動充填枠（結合可能な施設業務/自由枠/休憩）＝負けたら残余へクリップし、残余ゼロなら削除してよい枠。
    * 中身を書き込んだ自由枠は除く（namedFree_）＝重なっても消さず、縮めるかトレイへ退避する。
    * 以前は自動で敷いた自由枠に名前を書いた枠も「消してよい枠」で、グループの移動で施設業務の切れ端と重なると
@@ -2725,6 +2730,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function rank_(a, b) {
       var ta = overlapTier_(a), tb = overlapTier_(b);
       if (ta !== tb) return ta - tb;
+      /* 休憩以外の埋め草どうしでは、名前付きの業務枠（2階食事支援など）を施設業務より先に残す（既配置かどうかより優先・2026-10-08） */
+      if (a.kind !== 'break' && b.kind !== 'break') {
+        var na = namedFacility_(a) ? 0 : 1, nb = namedFacility_(b) ? 0 : 1;
+        if (na !== nb) return na - nb;
+      }
       var ia = incumbent_(a) ? 0 : 1, ib = incumbent_(b) ? 0 : 1;
       if (ia !== ib) return ia - ib;
       var ka = a.kind === 'break' ? 0 : 1, kb = b.kind === 'break' ? 0 : 1;   /* 同格なら休憩を先に（旧 repairBoard_ の break>facility を保つ） */
@@ -2795,19 +2805,74 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function frozenFiller_(t) {
     return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork' && !fillerHasContent_(t);
   }
-  function normalizeFrozenFillers(prevTasks, nextTasks, staff) {
+  /* 列の束ね方（staffId → 列の鍵）。1列に複数の勤務枠（分割勤務の朝・夕、夜勤の明・入）が並ぶため、
+   * 重なりは「職員の勤務枠ごと」でなく「列ごと」に見ないと、別の勤務枠に付いた枠どうしの重なりを見落とす（10/21 の事象）。 */
+  function colKeyOf_(columns) {
+    var m = {}, i, j;
+    for (i = 0; i < (columns || []).length; i++) {
+      var cd = columns[i];
+      for (j = 0; j < ((cd && cd.staffIds) || []).length; j++) m['.' + cd.staffIds[j]] = 'c' + i;
+    }
+    return function (sid) { return m['.' + sid] || ('s' + sid); };
+  }
+  /* 同じ列の別の勤務枠への付け替え（純関数・2026-10-08）。
+   * 分割勤務の列（朝 7:00-9:00 と夕 17:00-21:00 の2つの勤務枠）で、夕方の支援が朝の勤務枠に付いたまま残ると、
+   * 夕方の勤務枠に施設業務が自動で敷かれ、画面では同じ列に重なって出る。重なりの検出・自動充填は勤務枠ごとなので気付けない。
+   * 付け替える条件（すべて満たす時だけ）: 夜勤以外の列／自分の勤務枠の時間から外れている／同じ列の別の勤務枠のうち、
+   * 枠の時間をまるごと含むものがちょうど1つ。列・時刻・中身は変えない（画面・印刷の見え方は同じ）。
+   * 付け替えが無ければ入力配列を同一参照で返す（冪等）。 */
+  function rehomeInColumn(tasks, staff, columns) {
+    if (!tasks || !tasks.length || !columns || !columns.length) return tasks;
+    var byId = {}, i, j;
+    for (i = 0; i < (staff || []).length; i++) if (staff[i]) byId['.' + staff[i].id] = staff[i];
+    var colMembers = {};
+    for (i = 0; i < columns.length; i++) {
+      var cd = columns[i];
+      if (!cd || cd.zone === 'night' || !cd.staffIds || cd.staffIds.length < 2) continue;
+      for (j = 0; j < cd.staffIds.length; j++) colMembers['.' + cd.staffIds[j]] = cd.staffIds;
+    }
+    var out = null;
+    for (i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      if (!t || t.staffId === null || t.staffId === undefined) continue;
+      var mem = colMembers['.' + t.staffId], own = byId['.' + t.staffId];
+      if (!mem || !own || own.zone === 'night') continue;
+      if (t.start >= own.workStart && t.end <= own.workEnd) continue;   /* 自分の勤務時間内＝そのまま */
+      var ownName = String(own.name || '').replace(/\s+/g, '');
+      if (!ownName) continue;
+      /* 候補は同じ氏名の勤務枠だけ（分割勤務の本人）＝別人が同じ列にいても担当を別人へ移さない */
+      var full = [], part = [];
+      for (j = 0; j < mem.length; j++) {
+        if (mem[j] === t.staffId) continue;
+        var o = byId['.' + mem[j]];
+        if (!o || o.zone === 'night' || !(o.workEnd > o.workStart)) continue;
+        if (String(o.name || '').replace(/\s+/g, '') !== ownName) continue;
+        if (t.start >= o.workStart && t.end <= o.workEnd) full.push(o);
+        else if (t.start < o.workEnd && o.workStart < t.end) part.push(o);
+      }
+      var hit = null;
+      if (full.length === 1) hit = full[0];
+      /* 勤務枠の境目をまたぐ枠: 自分の勤務時間に少しもかからず、かかる勤務枠がちょうど1つならそこへ */
+      else if (!full.length && part.length === 1 && !(t.start < own.workEnd && own.workStart < t.end)) hit = part[0];
+      if (!hit) continue;
+      if (!out) out = tasks.slice();
+      var c = cloneTask_(t); c.staffId = hit.id; out[i] = c;
+    }
+    return out || tasks;
+  }
+  function normalizeFrozenFillers(prevTasks, nextTasks, staff, columns) {
     var rep = { tasks: nextTasks, bumped: [], clipped: 0, removed: 0, changed: false };
     if (!nextTasks || nextTasks.length < 2) return rep;
     var staffIds = {}, i, t, k;
     for (i = 0; i < (staff || []).length; i++) {
       if (staff[i] && staff[i].id !== undefined && staff[i].id !== null) staffIds['.' + staff[i].id] = 1;
     }
-    var byStaff = {};
+    var byStaff = {}, colOf = colKeyOf_(columns);
     for (i = 0; i < nextTasks.length; i++) {
       t = nextTasks[i];
       if (!t || t.staffId === null || t.staffId === undefined) continue;
-      k = '.' + t.staffId;
-      if (!staffIds[k] || !(t.end > t.start)) continue;
+      if (!staffIds['.' + t.staffId] || !(t.end > t.start)) continue;
+      k = colOf(t.staffId);   /* 列ごとに束ねる＝同じ列の別の勤務枠の枠とも重なりを見る（10/21 の事象） */
       (byStaff[k] || (byStaff[k] = [])).push(t);
     }
     var prevIdx = indexById_(prevTasks || []);
@@ -2826,6 +2891,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (!fills.length) continue;
       fills.sort(function (a, b) {
+        var na = namedFacility_(a) ? 0 : 1, nb = namedFacility_(b) ? 0 : 1;   /* 名前付きの業務枠を施設業務より先に残す */
+        if (na !== nb) return na - nb;
         var ia = incumbent_(a) ? 0 : 1, ib = incumbent_(b) ? 0 : 1;
         if (ia !== ib) return ia - ib;
         return (a.start - b.start) || cmpId_(a, b);
@@ -3243,6 +3310,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     careMaskPolicy: careMaskPolicy,
     normalizeOverlap: normalizeOverlap,
     normalizeFrozenFillers: normalizeFrozenFillers,
+    rehomeInColumn: rehomeInColumn,
+    namedFacility: namedFacility_,
     isAutoFiller: isAutoFiller_,
     fillerHasContent: fillerHasContent_,
     namedFree: namedFree_
@@ -5490,7 +5559,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * free: 自動(src=facwork)のみ。誘導/配膳など別ラベルは候補外＝占有として保護する。 */
   function mergeableFacwork_(tk, KIND) {
     if (tk.kind !== KIND) return false;
-    if (M.namedFree(tk)) return false;   /* 名前・内容を書いた自由枠は結合して作り直さない（占有として残す・2026-10-07） */
+    if (M.namedFree(tk)) return false;   /* 名前・内容を書いた自由枠は結合して作り直さない（占有として残す・2026-10-07） */   /* 名前・内容を書いた自由枠は結合して作り直さない（占有として残す・2026-10-07） */
     if (tk.src === 'facwork') return true;
     return KIND === 'facility' && tk.label === '施設業務';
   }
@@ -5515,8 +5584,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
    * （完全消滅した枠は復活させない）。マージ枠は facManual:true で出力し rebuildFacWindowTasks の
    * 自動再生成(非facManualを消去)から保護する。夜勤職員は対象外。純粋関数（tasks を返す）。 */
-  function expandSurvivingFacwork_(tasks, vacates, staffArr) {
+  function expandSurvivingFacwork_(tasks, vacates, staffArr, columns) {
     if (!vacates || !vacates.length) return tasks;
+    /* 退去元が自分の勤務時間外なら、同じ列で時間の合う勤務枠の空きとして埋め直す（2026-10-08・分割勤務の列）。
+     * 夕方の支援が朝の勤務枠に付いたまま列から出ていくと、朝の勤務時間の範囲でしか埋めず夕方が空白になっていた */
+    if (columns) vacates = M.rehomeInColumn(vacates, staffArr, columns);
     var staffById = {}, i;
     for (i = 0; i < staffArr.length; i++) staffById[staffArr[i].id] = staffArr[i];
     var byStaff = {};                                  /* staffId -> {正時hourStart:true} */
@@ -5687,7 +5759,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var keptMS = [];
     for (a = 0; a < tasksMS.length; a++) if (!removeIds[tasksMS[a].id]) keptMS.push(tasksMS[a]);
     var tasksMSout = keptMS.concat(additions);
-    tasksMSout = expandSurvivingFacwork_(tasksMSout, vacMS, day.staff);   /* 退去元の残存施設枠を拡張(同一undo) */
+    tasksMSout = expandSurvivingFacwork_(tasksMSout, vacMS, day.staff, day.columns);   /* 退去元の残存施設枠を拡張(同一undo) */
     return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksMSout };
   }
 
@@ -5859,14 +5931,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var vacA = careVacates_(day.tasks, [action.id]);   /* 退去元(旧位置)を移動前に捕捉 */
       var tasksA = patchTask(day.tasks, action.id,
         { staffId: action.staffId, start: action.start, end: action.end, facBg: null });
-      tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff);   /* 退去先の残存施設枠を拡張(undo1回) */
+      tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff, day.columns);   /* 退去先の残存施設枠を拡張(undo1回) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksA };
     }
     if (type === 'UNASSIGN') {
       var vacU = careVacates_(day.tasks, [action.id]);
       /* parked=手動でトレイへ戻した印。自動配置(placeOrphanCare_)はparkedを再配置しない＝意図を尊重(要件2) */
       var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false, facBg: null, parked: true });
-      tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff);
+      tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff, day.columns);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksU };
     }
     if (type === 'SWAP') {
@@ -5904,7 +5976,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (curM && curM.src === 'facwork') patchM.facManual = true;
         tasksM = patchTask(tasksM, mvm.id, patchM);
       }
-      tasksM = expandSurvivingFacwork_(tasksM, vacM, day.staff);
+      tasksM = expandSurvivingFacwork_(tasksM, vacM, day.staff, day.columns);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksM };
     }
     if (type === 'SHRINK_PLACE') {
@@ -5938,7 +6010,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           tasksP = rest;
         }
       }
-      tasksP = expandSurvivingFacwork_(tasksP, vacSP, day.staff);   /* 退去元の残存施設枠を拡張(同一undo) */
+      tasksP = expandSurvivingFacwork_(tasksP, vacSP, day.staff, day.columns);   /* 退去元の残存施設枠を拡張(同一undo) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksP };
     }
     if (type === 'MULTI_SHRINK_PLACE') {
@@ -6028,8 +6100,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 凍結日（ロック日・過去日）は組み替えない。ただし自動敷きの施設業務/自由枠の二重だけは整理する
        * （2026-10-07 本人裁定・normalizeFrozenFillers のコメント参照） */
       var isFrozen = frozen || (next.meta && next.meta.locked);
-      var r = isFrozen ? M.normalizeFrozenFillers(prevTasks, next.tasks, next.staff)
-                       : M.normalizeOverlap(prevTasks, next.tasks, next.staff);
+      /* 通常日は、同じ列の別の勤務枠に付いた枠を時間の合う勤務枠へ付け替えてから重なりを解消する（2026-10-08）。
+       * 凍結日は付け替えず、列ごとに見て自動敷きの施設業務だけ整理する（確定した実績の担当は変えない） */
+      var tIn = isFrozen ? next.tasks : M.rehomeInColumn(next.tasks, next.staff, next.columns);
+      /* 読み込み時(prev 無し)に付け替えが起きたら、付け替え前の盤面を「既に置かれていた枠」の基準にする
+       * ＝付け替えた側を新参として扱い、夕方の勤務枠に元からあった支援を優先する */
+      var prevN = prevTasks || (tIn !== next.tasks ? next.tasks : null);
+      var r = isFrozen ? M.normalizeFrozenFillers(prevTasks, next.tasks, next.staff, next.columns)
+                       : M.normalizeOverlap(prevN, tIn, next.staff);
+      if (tIn !== next.tasks) {
+        repair.rehomed = (repair.rehomed || 0) + 1;   /* 付け替えも「直した」として数える＝送信を予約させる（通知は出さない） */
+        if (!r.changed) r = { tasks: tIn, bumped: [], clipped: 0, removed: 0, changed: true };
+      }
       if (!r.changed) return next;
       var b;
       for (b = 0; b < r.bumped.length; b++) repair.bumped.push(r.bumped[b]);
@@ -6091,7 +6173,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       },
       /* 直近の重畳解消の集計を1回だけ返す（呼ぶと空になる）。無ければ null */
       takeRepair: function () {
-        if (!repair.bumped.length && !repair.clipped && !repair.removed) return null;
+        if (!repair.bumped.length && !repair.clipped && !repair.removed && !repair.rehomed) return null;
         var r = repair;
         repair = { bumped: [], clipped: 0, removed: 0 };
         return r;
@@ -8730,6 +8812,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (rep.bumped.length) parts.push('同時刻に別の枠があったため ' + rep.bumped.length + '件を未配置へ退避');
     if (rep.clipped) parts.push('重なった業務枠 ' + rep.clipped + '件を縮小');
     if (rep.removed) parts.push('二重の業務枠 ' + rep.removed + '件を整理');
+    if (!parts.length) return;   /* 同じ列の勤務枠の付け替えだけ＝見え方は変わらないので知らせない（送信の予約だけ） */
     toast('⚠ 重なりを解消: ' + parts.join('／') + (rep.bumped.length ? '（未配置トレイと「重なり」バッジをご確認ください）' : ''),
           !!rep.bumped.length);
   }
