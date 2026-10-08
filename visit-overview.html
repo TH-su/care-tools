@@ -256,6 +256,13 @@ body {
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
+<script src="su-kv.js?v=2026-09-27"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
 <script>
 'use strict';
 
@@ -353,6 +360,12 @@ function syncTarget() {
 
 // GAS から get のみ（読み取り専用）。put/rev は絶対に触らない。
 async function fetchRemote() {
+  /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む（速い）。
+     スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。読むだけ。 */
+  if (window.SUKv && SUKv.readRouted) {
+    const v = await SUKv.readRouted({ action: 'get', key: LS_KEY });
+    if (v) return (v.data && Array.isArray(v.data.residents)) ? v.data : null;
+  }
   const t = syncTarget();
   if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
   const res = await fetch(t.endpoint, {
@@ -461,12 +474,14 @@ function voApplyHosp(db){
   });
   return n;
 }
+/* ★2026-09-23: 合言葉を URL に載せないため getRoster は POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
+   合言葉の無い stateRev 照会（voWatchState）は GET のまま。 */
 function voFetchHosp(){
   if(voHospBusy) return Promise.resolve(false);
   var c = voMasterCfg(); if(!c || !c.token) return Promise.resolve(false);
   voHospBusy = true;
-  var u = c.url + (c.url.indexOf('?')>=0?'&':'?') + 'action=getRoster&token=' + encodeURIComponent(c.token);
-  return fetch(u,{method:'GET',cache:'no-store',redirect:'follow'})
+  return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+                      body:JSON.stringify({action:'getRoster',token:c.token}),cache:'no-store',redirect:'follow'})
     .then(function(r){return r.json()})
     .then(function(j){
       if(!j || !Array.isArray(j.roster)) return false;
@@ -904,5 +919,7 @@ init();
   else boot();
 })();
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04.2" data-tool="訪問 週間俯瞰"></script>
 </body>
 </html>

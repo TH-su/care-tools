@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>写しの見比べ</title>
+<!--
+  入居者マスタの写し（統合 0004・段階移行の②・2026-09-26 新設）
+  ════════════════════════════════════════════════════════════════
+  目的: Supabase に作っている基本項目の写し（master_residents）が、正本（入居者マスタ）と
+        一致し続けているかを見比べる。1〜2週間ずっと一致したら、保存先を切り替える（③）。
+  ★開けるのは事務所・管理者だけ（Google でログイン）。判定はデータベース（RLS）が最終。
+  ★見比べる正本は「この端末の入居者マスタが最後に読んだ一覧」（localStorage の共有名簿）。
+    入居者マスタをこの端末で開いた直後が、いちばん正確に見比べられる。
+  ★この画面は読むだけ。写しを書くのは入居者マスタ（su-master-shadow.js）と週間計画（su-kv-shadow.js・統合 0005）。
+  ★週間計画は、この端末の週間計画（localStorage care_schedule_v2 と版 ws_sync_revs.care）と Supabase の写しの版・中身を比べ、
+    写しを読む時間も測る（切り替え後にどれだけ速くなるかの目安）。人数・予定件数だけを出し、氏名は出さない。
+  ★表示はすべて textContent。氏名はデータベースと端末の中にだけあり、このファイルには含まれない。
+  ★切り替え前の点検（統合 0007・2026-09-26 追加）: ボタンを押した時だけ、Google（統合同期バックエンド）の全キーの版と写しの版を見比べ、
+    足りない分を写せる（週間計画・ワークスケジュール・勤務表。一度も開かれていない日も写すため）。Google への合言葉は
+    この端末の共通接続先（su_sync_common）から読み、Google へだけ送る（Supabase へは送らない）。
+    あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
+    connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
+  <h1>写しの見比べ</h1>
+</header>
+
+<main class="wide">
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">確かめています…</p>
+  </section>
+
+  <section class="cd" id="v-gate" hidden>
+    <h2>事務所・管理者が使う画面です</h2>
+    <p id="gate-why">事務所または管理者のアカウントで Google ログインしてから開いてください。</p>
+    <div class="acts"><a class="btn pri" href="login.html?next=shadow-check.html">ログインの画面へ</a></div>
+  </section>
+
+  <section id="v-main" hidden>
+    <section class="cd">
+      <h2>入居者マスタの写し</h2>
+      <p class="muted" id="cmp-src"></p>
+      <div class="kpis" id="cmp-kpis"></div>
+      <p id="cmp-verdict" class="msg"></p>
+      <ul class="acct" id="cmp-list"></ul>
+      <div class="acts"><a class="btn" href="resident-master.html">入居者マスタを開く（写しが最新になる）</a>
+        <button type="button" class="btn" id="b-reload">見比べ直す</button></div>
+    </section>
+
+    <section class="cd">
+      <h2>週間計画の写し（同期データ）</h2>
+      <p class="muted">週間計画を開くたびに、Google の版がそのまま写されます（事務所・管理者のログイン時だけ）。この端末の週間計画と見比べます。</p>
+      <div class="kpis" id="kv-kpis"></div>
+      <p id="kv-verdict" class="msg"></p>
+      <div class="acts"><a class="btn" href="care-schedule.html">週間計画を開く（写しが最新になる）</a></div>
+    </section>
+
+    <section class="cd">
+      <h2>切り替え前の点検（週間計画・ワークスケジュール・勤務表）</h2>
+      <p class="muted">Google にある版（ワークスケジュールは1年前〜2か月先、勤務表は12か月前〜3か月先）と、写しの版を見比べます。一度も開かれていない日も含めて確かめるため、2〜3分かかります。ボタンを押した時だけ行います（事務所のパソコンで、忙しくない時間に）。</p>
+      <div class="kpis" id="pre-kpis"></div>
+      <p id="pre-verdict" class="msg"></p>
+      <ul class="acct" id="pre-list"></ul>
+      <div class="acts">
+        <button type="button" class="btn pri" id="b-check">切り替え前の点検をする</button>
+        <button type="button" class="btn" id="b-fill" hidden>足りない分を写す</button>
+      </div>
+      <div id="kv-admin" hidden>
+        <p class="muted mt">管理者だけの操作です。切り替えの当日に、手順に沿って使います（先に切り替えスイッチの PR を取り込み、上の点検がそろっていること）。週間計画とワークスケジュールをまとめて切り替えます。</p>
+        <div class="acts">
+          <button type="button" class="btn ng" id="b-live">Supabase を本番にする（切り替える）</button>
+          <button type="button" class="btn" id="b-shadow">写しの期間に戻す</button>
+        </div>
+        <p class="muted mt">勤務表は別の夜に切り替えます（先に勤務表の切り替えスイッチ shift の PR を取り込み、上の点検で勤務表がそろっていること）。</p>
+        <p id="sh-verdict" class="msg"></p>
+        <div class="acts">
+          <button type="button" class="btn ng" id="b-live-shift">勤務表を Supabase の本番にする</button>
+          <button type="button" class="btn" id="b-shadow-shift">勤務表を写しの期間に戻す</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="cd">
+      <h2>体重の写し</h2>
+      <p class="muted">事務所・管理者が体重管理を開くたびに、サーバーの全件がそのまま写されます（同じ中身なら送りません・最短5分おき）。件数と日時だけを出し、氏名・体重は出しません。</p>
+      <div class="kpis" id="wt-kpis"></div>
+      <p id="wt-verdict" class="msg"></p>
+      <ul class="acct" id="wt-runs"></ul>
+      <div class="acts"><a class="btn" href="weight-record.html">体重管理を開く（写しが最新になる）</a></div>
+    </section>
+
+    <section class="cd">
+      <h2>入居者マスタの写しを取った記録</h2>
+      <p class="muted">事務所・管理者が入居者マスタを開くたびに1行増えます（同じ内容なら10分に1回まで。件数だけで、氏名は残しません）。</p>
+      <ul class="acct" id="runs"></ul>
+    </section>
+  </section>
+</main>
+
+<p class="foot">この画面は読むだけです。入居者の情報を直す時は、これまでどおり入居者マスタで直してください。</p>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-09-26"></script>
+<script src="su-master-shadow.js?v=2026-09-26"></script>
+<script src="su-kv.js?v=2026-09-27b"></script>
+<script src="su-kv-shadow.js?v=2026-09-26b"></script>
+<script src="shadow-check.js?v=2026-09-27d"></script>
+</body>
+</html>

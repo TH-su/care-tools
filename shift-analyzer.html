@@ -98,6 +98,10 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style>
+<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-facility.js?v=2026-09-24"></script>
 </head>
 <body>
 <header class="topbar">
@@ -370,6 +374,13 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       res.parts.push({ kind: 'nightOut', endMin: endMin,
         pairKnown: !!outSym });
       rest = rest.slice(mo[0].length);
+    } else if (rest.charAt(0) === ')') {
+      /* 上がり時刻を書かない明け「)」「)(希」（2026-08-24 依頼）。時刻不明の夜勤上がりとして扱う。
+       * これまでは解釈できずCSVに1行も出なかった。実働時間は timecalc が前日の夜勤入りの
+       * 定時上がり(pairEnd)で仮計算し「夜勤上がりが未入力」を警告する（従来の未入力時と同じ扱い）。
+       * freee 出力では明けの日＝休み扱いのため、時刻が無くても公休/欠勤を決められる。 */
+      res.parts.push({ kind: 'nightOut', endMin: null, pairKnown: false });
+      rest = rest.slice(1);
     }
     if (rest !== '') {
       var mi = rest.match(RE_NIGHT_IN);
@@ -872,18 +883,24 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   }
 
   /* 日別「デイサービス(通所)の職種別出勤者数」を数える純粋関数。
-   * 返値: 配列 out（out[d] = {care:介護士数, nurse:看護師数, total:合計}）。
+   * 返値: 配列 out（out[d] = {care, nurse, total, careHelp, nurseHelp, totalHelp}）。
+   *   care/nurse/total は従来どおり【デイ所属＋応援の合算】（後方互換）。
+   *   *Help は そのうち応援(他部署からのヘルプ)ぶん。デイ所属のみ＝ care - careHelp。
    * - mainDivision==='通所' の職員: 主セル(cells)が勤務日(isWork)なら計上。
    * - それ以外(施設/訪問メイン)の職員: 従区分 subCells['通所'] に勤務があれば「通所応援」として計上。
+   * - countInHeadcount===false の職員（役員など「頭数に入れない」設定）は数えない。
+   *   他の全集計（computeMetrics/countCats/qualPct 等）と同じ基準。ここだけ見ていなかったため、
+   *   頭数外の勤務入力が介護士数へ +1 されていた（2026-08-14 修正）。
    * - isNurse(st): 看護師/准看護師資格なら true（→看護師、else 介護士）。
    * - isWork(v): セル文字列が勤務(出勤)なら true（休/公/希/有/欠・空欄は false）。
    * - isVisible(st): 当月に表示対象なら true（省略時 active!==false）。 */
   function countDaycareByProfession(staff, cells, subCells, days, isNurse, isWork, isVisible) {
     var out = [], d;
-    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0 };
+    for (d = 1; d <= days; d++) out[d] = { care: 0, nurse: 0, total: 0, careHelp: 0, nurseHelp: 0, totalHelp: 0 };
     for (var i = 0; i < staff.length; i++) {
       var st = staff[i];
       if (isVisible ? !isVisible(st) : st.active === false) continue;
+      if (st.countInHeadcount === false) continue;
       var nurse = !!(isNurse && isNurse(st));
       var isDaycare = (st.mainDivision === '通所');
       var mainCells = (cells && cells[st.id]) || {};
@@ -891,11 +908,15 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       for (d = 1; d <= days; d++) {
         var v = isDaycare ? (mainCells[String(d)] || '') : (tsuusho[String(d)] || '');
         if (v !== '' && isWork && isWork(v)) {
-          if (nurse) out[d].nurse++; else out[d].care++;
+          if (nurse) { out[d].nurse++; if (!isDaycare) out[d].nurseHelp++; }
+          else { out[d].care++; if (!isDaycare) out[d].careHelp++; }
         }
       }
     }
-    for (d = 1; d <= days; d++) out[d].total = out[d].care + out[d].nurse;
+    for (d = 1; d <= days; d++) {
+      out[d].total = out[d].care + out[d].nurse;
+      out[d].totalHelp = out[d].careHelp + out[d].nurseHelp;
+    }
     return out;
   }
 
@@ -944,13 +965,29 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   var TC  = isNode ? require('./timecalc.js') : window.ShiftTimecalc;
   var AG  = isNode ? require('./aggregate.js') : window.ShiftAggregate;
 
-  /* 区分の正規化（表記ゆれ吸収）。既知区分=訪問/施設/通所のみ集計対象 */
+  /* 区分の正規化（表記ゆれ吸収）。既知区分=訪問/施設/通所のみ集計対象。
+     ★事業所の固有名（2026-09-24〜）はコードに書かず、施設情報（facility-profile.json・su-facility.js）の
+       名前・正式名・別名から足す。読めない時（Node の試験・設定の無い端末）は一般の呼び名だけで照合する */
   var DIV_ALIASES = {
-    '訪問': '訪問', '訪問介護': '訪問', 'いずみ': '訪問',
-    '施設': '施設', 'ラウレアハレ': '施設', '住宅': '施設',
-    '通所': '通所', 'デイ': '通所', 'デイサービス': '通所', 'せせらぎ': '通所'
+    '訪問': '訪問', '訪問介護': '訪問',
+    '施設': '施設', '住宅': '施設',
+    '通所': '通所', 'デイ': '通所', 'デイサービス': '通所'
   };
   var KNOWN_DIVISIONS = ['訪問', '施設', '通所'];
+  function divAliases() {
+    var m = {}, k;
+    for (k in DIV_ALIASES) if (Object.prototype.hasOwnProperty.call(DIV_ALIASES, k)) m[k] = DIV_ALIASES[k];
+    try {
+      var F = (!isNode && typeof window !== 'undefined') ? window.SUFacility : null;
+      if (F && F.ready()) {
+        var ex = F.aliases();
+        for (k in ex) {
+          if (Object.prototype.hasOwnProperty.call(ex, k) && KNOWN_DIVISIONS.indexOf(ex[k]) >= 0 && !m[k]) m[k] = ex[k];
+        }
+      }
+    } catch (e) {}
+    return m;
+  }
 
   /* 資格ヘッダ → 資格名。aggregate.hasQual が参照する文字列に合わせる */
   var QUAL_HEADERS = {
@@ -962,7 +999,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   };
 
   function trim(s) { return (s === null || s === undefined) ? '' : String(s).replace(/^[\s　]+|[\s　]+$/g, ''); }
-  function normDiv(s) { var t = trim(s); return DIV_ALIASES[t] || null; }
+  function normDiv(s) { var t = trim(s); return divAliases()[t] || null; }
 
   /* 「7/1」「12/31」形式(月内日付)判定。カレンダーマスタの完全日付「2026/4/1」は3要素で不一致=除外 */
   var RE_MD = /^(\d{1,2})\/(\d{1,2})$/;
@@ -2289,5 +2326,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04.2" data-tool="過去シフト・アナライザ"></script>
 </body>
 </html>

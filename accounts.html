@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>使える人の管理</title>
+<!--
+  使える人の管理（許可リスト・統合 Phase 1・2026-09-26 新設）
+  ════════════════════════════════════════════════════════════════
+  目的: 介護ツールを使える Google アカウントを、管理者がこの画面だけで追加・停止・役割変更する。
+        追加した人は、本人の Google で login.html から初めてログインした時に自動で作られる
+        （誰を作らせるかは門番＝0002 のフックが決める。ここに無い人・Google 以外の方法は作られない）。
+  ★開けるのは管理者（Google ＋ 2段階認証）だけ。判定はデータベース（RLS）で、他の人には1行も返らない。
+  ★削除ボタンは置かない。止める時は「停止」（履歴を残す・後で戻せる）。停止はその場で効く。
+  ★最後の管理者は止められない（データベースで拒否する）。自分の行は画面でも操作させない。
+  ★名前（メモ）はデータベースにだけあり、このファイルには含まれない。表示はすべて textContent。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="login.html" aria-label="ログインの画面へ戻る">‹ 戻る</a>
+  <h1>使える人の管理</h1>
+</header>
+
+<main class="wide">
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">確かめています…</p>
+  </section>
+
+  <!-- 管理者でない・6桁が済んでいない -->
+  <section class="cd" id="v-gate" hidden>
+    <h2>管理者だけが使える画面です</h2>
+    <p id="gate-why">管理者のアカウントで、2段階認証（認証アプリの6桁）まで済ませてから開いてください。</p>
+    <div class="acts"><a class="btn pri" href="login.html?next=accounts.html">ログインの画面へ</a></div>
+  </section>
+
+  <section id="v-admin" hidden>
+    <section class="cd">
+      <h2>使える人を追加</h2>
+      <p class="muted">追加した人は、その人の Google アカウントで「ログイン」の画面から入れます（初めての時に自動で作られます）。</p>
+      <div class="grid2">
+        <div class="fld">
+          <label for="f-email">Google のメールアドレス</label>
+          <input id="f-email" class="inp" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例: xxxx@gmail.com">
+        </div>
+        <div class="fld">
+          <label for="f-label">名前（メモ）</label>
+          <input id="f-label" class="inp" type="text" autocomplete="off" maxlength="40" placeholder="例: 職員A（訪問介護）">
+          <span class="hint">一覧で見分けるためのメモ。記録の記入者には使われません。</span>
+        </div>
+      </div>
+      <div class="fld">
+        <label for="f-role">役割</label>
+        <select id="f-role" class="sel">
+          <option value="field">現場</option>
+          <option value="office">事務所</option>
+          <option value="admin">管理者</option>
+        </select>
+      </div>
+      <ul class="roles">
+        <li><b>現場</b>: 記録の入力と閲覧。</li>
+        <li><b>事務所</b>: 現場に加えて、事務所向けの画面・情報（各画面を順次この役割に切り替えます）。</li>
+        <li><b>管理者</b>: すべて＋この画面。初めてのログインで2段階認証の登録が必要。</li>
+      </ul>
+      <div class="acts"><button type="button" class="btn pri" id="b-add">追加する</button></div>
+    </section>
+
+    <section class="cd">
+      <h2>使える人 <span class="muted" id="count-on"></span></h2>
+      <ul class="acct" id="list-on"></ul>
+    </section>
+
+    <section class="cd" id="sec-off" hidden>
+      <h2>停止中 <span class="muted" id="count-off"></span></h2>
+      <p class="muted">停止中の人はログインしても何も見られません。「再開」で元に戻せます。</p>
+      <ul class="acct" id="list-off"></ul>
+    </section>
+  </section>
+</main>
+
+<p class="foot">停止・役割の変更は、その人が開いている画面にもその場で効きます（次に読み書きした時点で）。</p>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-09-26"></script>
+<script src="accounts.js?v=2026-09-26"></script>
+</body>
+</html>

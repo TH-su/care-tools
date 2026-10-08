@@ -39,6 +39,10 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
   padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
 .hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
+/* ★2026-10-01: iPhone で見出しが「フェイス／シート」と2行に折れ、表示200%では1文字ずつ縦に並んで右側のボタン・表示が
+   画面の外へはみ出していた（sim-check で検出）。見出しは1行のまま、収まらない時だけ右側を次の行へ送る。 */
+.hdr{flex-wrap:wrap}
+.hdr h1{white-space:nowrap}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35);
   color:#fff; border-radius:6px; padding:6px 12px; font-size: 0.8125rem; cursor:pointer; white-space:nowrap}
@@ -47,7 +51,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* 入居者マスタから開いた時の本人確認バー（誰を開いているかを常に見せる＝取り違え防止）。
    ヘッダ直下に貼り付いてスクロールしても消えない。色は既定の警告トークンを使う
    （白背景でコントラスト比4.5:1以上・本ファイル冒頭の配色方針に従う）。 */
-.frombar{position:sticky; top:48px; z-index:49;
+.frombar{position:sticky; top:var(--fs-hdr-h,48px); z-index:49;   /* 見出しの実際の高さに追従（下の fsSyncHdrH_） */
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 14px;
   background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size: 0.8125rem; color:var(--warn-tx)}
 .frombar b{font-size: 0.9375rem}
@@ -94,6 +98,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* ── 一覧 ── */
 .search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
 .search-bar input{flex:1; padding:10px 12px; border:1px solid var(--g3); border-radius:10px}
+.search-bar input{min-width:0}   /* ★2026-10-01: 表示200%で入力欄の本来の幅が画面を超えてはみ出していた（レビュー指摘） */
 .filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
 /* タップ領域は最小44px（誤タップ防止・HIG） */
 .chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7)}
@@ -282,12 +287,22 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   padding-bottom:2px; margin-bottom:2px; border-bottom:1px solid var(--g2)}
 .meds2-d,.meds2-e{font-size:0.875rem; line-height:1.6}
 .meds2-d{word-break:break-word; white-space:pre-wrap}
-.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:nowrap}
+/* ★2026-09-24 本人決定（Q3）: 効能は med_dict の文言（分類より長いことがある）を出すので、
+   幅の上限を 7em（全角7文字）にし、超えた分はセルの中で折り返す（入居者マスタと同値）。
+   上限が無いと効能列が広がって薬剤名の列を押し縮め、紙で薬剤名が折り返す。
+   ★6em→7em（2026-09-24 本人決定）: 6em だと全角6文字の未確認効能で＊だけが2行目に回るため。 */
+.meds2-e{color:var(--g7); text-align:left; align-self:start; white-space:normal; max-width:7em; overflow-wrap:anywhere}
 .meds2-na{color:var(--g5)}
+/* ＊の凡例（表の下の脚注）。＊がある時だけ出る */
+.meds2-ft{font-size:0.6875rem; color:var(--g6); margin-top:2px}
+/* 効能欄を出せない理由（画面だけ。紙には出さない＝下の @media print で消す） */
+.meds-note{margin-top:4px; font-size:0.75rem; color:var(--warn-tx)}
 @media print{
   .meds2-h{border-bottom-color:#999}
   .meds2-e{color:#000; font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
   .meds2-na{color:#666}
+  .meds2-ft{color:#000}
+  .meds-note{display:none !important}   /* 理由書きは画面だけ（2026-09-24 本人決定 Q1） */
 }
 /* ── 入居者基本情報（外部様式）のチェック表示（2026-08-12 追加） ──
    resident-master.html の同名クラスからの移植（表示部分のみ。編集UIの .bfe* は持たない）。
@@ -410,6 +425,22 @@ input,select{font-family:inherit; font-size: 0.9375rem}
        付けない従来の「印刷」は上の2行が効いたまま＝紙は1pxも変わらない。 */
   body.fs-all-on .fpanel{display:none !important}
   body.fs-all-on .fpanel[data-panel="all"]{display:block !important}
+  /* ★2026-10-01: 全体タブは1枚の大きな .sheet なので、上の「途中で改ページしない」が効くと、
+     シートごと2枚目へ送られ、1枚目がアレルギー・感染症の表示だけの白紙になっていた（本人確認済み）。
+     全体を刷る時だけシートの途中での改ページを許す。割らないのは「1行の欄（.row-cells）」と「経過の1件（.logline）」
+     だけにする。欄（.sec）まるごとを割らない指定にすると、支援経過など1ページより長い欄の手前に大きな余白が出て、
+     同じ症状が欄の単位で戻る（2026-10-01 レビュー指摘）。従来の「印刷」（fs-all-on なし）には効かない。 */
+  body.fs-all-on .fpanel[data-panel="all"] .sheet{page-break-inside:auto; break-inside:auto}
+  body.fs-all-on .fpanel[data-panel="all"] .row-cells,
+  body.fs-all-on .fpanel[data-panel="all"] .logline{page-break-inside:avoid; break-inside:avoid}
+  /* 左の縦書きの見出し（.sec-lbl）は欄の高さいっぱいに伸びる。縦書きの箱は Chrome の印刷で「割れない塊」になるため、
+     支援経過などの長い欄が丸ごと次のページへ送られ、手前に枠だけの空欄が残っていた（長い経過の架空データで実測）。
+     全体を刷る時だけ、見出しは文字の高さだけにして上に寄せ、灰色の列は欄の背景で、区切りの縦線は本文の左枠で引く
+     （見た目は同じ列のまま。縦線は枠線なので「背景を印刷」の設定に左右されない）。 */
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec{background:linear-gradient(to right, var(--g1) 0 30px, transparent 30px)}
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-lbl{align-self:flex-start; width:30px; min-width:30px; box-sizing:border-box;
+    background:transparent; border-right:none}
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-body{border-left:1px solid #000}
 
   /* ── 食形態一覧（A3縦1枚・2026-08-24）──
      ★body.meal-on を付けている時だけ効かせる。付けないと他のビュー・他タブの紙まで変わる
@@ -527,10 +558,30 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   </div>
 </div>
 
+<!-- 印刷の前に薬効辞書（med_dict）の到着を待つ画面（2026-09-24 本人決定 Q2・入居者マスタと同じ作り）。
+     ★時間切れで黙って1列に落として刷らない。失敗した時は「効能欄なしで印刷」を人が選ぶ。
+     .modal は印刷CSSで消えるので紙には出ない。中身は fsMdWaitUi_ が組み立てる。 -->
+<div class="modal" id="mMedWait" role="dialog" aria-modal="true" aria-labelledby="mMedWaitH">
+  <div class="box">
+    <h2 id="mMedWaitH">🖨️ 印刷の準備</h2>
+    <p id="mMedWaitMsg" role="status" aria-live="polite" style="white-space:pre-line;margin:0 0 12px"></p>
+    <div class="detail-actions" id="mMedWaitAct" style="margin-top:14px;margin-bottom:0"></div>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
-<!-- 薬効辞書（薬剤名 → 効果・効能）。入居者マスタと共有する唯一の正本 -->
-<script src="meds-effect-dict.js?v=2026-08-11"></script>
+<!-- 薬効辞書の部品（表示規則 resolveLines・照合キー・med_dict に無い薬の予備辞書）。入居者マスタと共有。
+     効能の正本は med_dict（薬剤師確認・2026-09-24 本人決定）。 -->
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
+<script src="su-kv.js?v=2026-09-27"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-facility.js?v=2026-09-24.2"></script>
+<script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    フェイスシート（閲覧・印刷専用ビューア）
@@ -616,6 +667,17 @@ function setSync(txt,cls){var e=$('syncStatus');e.textContent=txt;e.className='s
 function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
 function setDeviceRole(v){try{localStorage.setItem(DEVICE_KEY,v)}catch(e){}}
 function isField(){return getDeviceRole()==='field'}
+/* いまの画面が「どちらの用途として描かれているか」。applyRoleBadge が毎回書く（起動前は null）。
+   事務所PCとして描いた画面のまま用途が現場用に変わった時（同じタブの設定保存・別のタブ・「戻る」での復元）に、
+   ページごと読み込み直すための印（2026-10-01 本人決定・入居者マスタ resident-master.html と同じ直し方）。
+   読み込み直すと、開いていた方の全項目の画面・メモリの記録・進行中の通信がまとめて消え、
+   現場端末としての起動（安全情報だけ）からやり直せる。 */
+var fsRoleApplied_=null;
+/* devGen は「現場用で描いた回数」。applyRoleBadge が現場用で描く時に進む（事務所PCのままなら進まない）。
+   デイ利用モジュール（入居者マスタと逐語同一）が、通信を出した時の値と応答が届いた時の値を比べ、違っていたら
+   切り替えより前に出した通信として捨てる。読み込み直しが効かなかった時に、全利用者の氏名を含む一覧がメモリへ戻らないように（2026-10-02） */
+var devGen=0;
+function fsReload_(){ try{ location.reload(); }catch(e){} }
 function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
 /* 和暦（2026-08-12 追加・入居者マスタと同じ定義）。生年月日を西暦と並べて出すために使う。
@@ -680,11 +742,14 @@ function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
    ロック待ち20秒＋処理時間を吸収できる長さにする。GAS の実行上限は6分なので、この程度は許容。
    ★これは症状の緩和であって、GAS の同時実行が詰まること自体は解消しない。
      読み取りだけ自動で1回やり直す（apiGetRetry）と、失敗画面に再試行ボタンを併せて置く。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
+   値は GET の時と同じく文字列にして送る。text/plain は CORS preflight を起こさないため。 */
 function apiGet(params,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
-  var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k])}).join('&');
-  qs+='&token='+encodeURIComponent(CFG.token);
-  return fetchWithTimeout(CFG.url+'?'+qs,{method:'GET',redirect:'follow'},timeoutMs||25000).then(parseJson);
+  var body={};
+  Object.keys(params).forEach(function(k){body[k]=String(params[k])});
+  body.token=CFG.token;
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'},timeoutMs||25000).then(parseJson);
 }
 /* 読み取りだけ自動でやり直す（入居者マスタ resident-master.html の同名関数と逐語同一）。
    ★2026-08-24 実測: 30名を1人ずつ取ると、混み合う時間帯に1名ぶんが落ちることがある。
@@ -844,6 +909,13 @@ function paintBdayBar(){
 /* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる。
    ★このビューは帳票専用。行をタップしても詳細へは遷移させない（.rcard を作らない）。 */
 function bdayHtml(list){
+  /* ★対象は【在籍者のみ】に固定する（2026-09-04 管理者承認）。
+     絞り込みチップ（在籍／退去／在籍＋退去）には従わない。従っていた頃は、
+     チップが端末ごとに localStorage へ保存されるせいで【同じ表なのに端末で人数が変わり】、
+     「在籍＋退去」のままの端末では143名が並んでA4縦1枚に物理的に入らなかった
+     （Macは1枚・PCは6枚に割れる、という報告の原因）。
+     誕生日を祝うための帳票なので、退去された方を載せる用途がない。 */
+  list = (list || []).filter(function(r){ return r && r.active !== false; });
   /* 除外は「未登録」と「書式が不正」を必ず分ける（欠落に気づけなくなるため） */
   var rows=[],noBd=0,badBd=[];
   list.forEach(function(r){
@@ -896,7 +968,9 @@ function bdayHtml(list){
   var base=fyOfDate(today);
   var fyNote = (bdayFY!==base) ? '　※'+bdayFY+'年度の表示（年齢は'+(bdayFY+1)+'年3月31日時点）' : '';
   /* ★どの絞り込みで出した紙かを必ず残す（残さないと一部だけの表が完全な一覧に見える） */
-  var scope=(curFilter==='active'?'在籍のみ':curFilter==='out'?'退去のみ':'在籍＋退去');
+  /* ★この表は絞り込みに関係なく在籍者のみ（上の filter）。紙にもそう書く。
+     「一部だけの表」が完全な一覧に見えると誕生会の対象者が漏れるため、範囲は必ず紙に残す。 */
+  var scope='在籍のみ';
   var qNow=(($('q')&&$('q').value)||'').trim();
   var scopeNote='　／　対象 '+scope+(qNow?'　／　検索「'+esc(qNow)+'」で絞り込み中':'');
   return '<div class="bday-sheet" id="bdaySheet">'+
@@ -916,10 +990,17 @@ function bdayHtml(list){
 }
 /* 居室 → 階（0 = 判定できない）。全角数字は半角へ寄せる */
 function roomToFloor(room){
+  /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。
+     既定は１階・２階＝これまでと同じ「居室番号の先頭が 1 か 2」。読めない時もこの既定で判定する */
+  if(window.SUFacility && typeof SUFacility.floorOf==='function') return SUFacility.floorOf(room);
   var s=String(room==null?'':room).trim()
     .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
   var m=s.match(/^([12])/);
   return m?parseInt(m[1],10):0;
+}
+/* 階の見出し（１階 など）。施設情報の floors から引く */
+function floorLbl(no){
+  return (window.SUFacility && typeof SUFacility.floorLabel==='function') ? SUFacility.floorLabel(no) : (no===1?'１階':no===2?'２階':no+'階');
 }
 /* 居室番号の数値順（"99" より "101" が後ろ。文字列比較だと逆になる） */
 function roomNo(room){
@@ -1015,7 +1096,7 @@ function renderRoster(){
     var f1=[],f2=[],f0=[];
     list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
     f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml('１階入居者',f1), s2=secHtml('２階入居者',f2),
+    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
         s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
     html=(curView==='fl2')
       /* ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる */
@@ -1044,6 +1125,22 @@ function renderRoster(){
   if(curView==='bday') fitBdaySheet();
 }
 /* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める */
+/* ═══ 誕生日一覧を刷る（2026-09-04 追加）═══
+   ★刷る直前に必ず採寸し直す。描画時の1回だけだと、窓の幅を変えた後・別のタブを見ている間に
+     再描画された後などに【未調整のまま】刷られる（食形態一覧は既に同じ備えをしている）。
+   ★ボタンと ⌘/Ctrl+P の両方を通す。PCでは⌘/Ctrl+Pで刷る人が多い。 */
+function bdayViewActive_(){
+  var s=document.getElementById('bdaySheet');
+  return !!(typeof curView!=='undefined' && curView==='bday' && s && s.offsetParent);
+}
+function bdayPrintGo_(){
+  try{ if(bdayViewActive_()) fitBdaySheet(); }catch(e){}
+  window.print();
+}
+window.addEventListener('beforeprint',function(){
+  if(!bdayViewActive_()) return;
+  try{ fitBdaySheet(); }catch(e){}
+});
 var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
 var BDAY_PRINT_W_PX = 190 * 96 / 25.4;   // A4縦210mm − 左右マージン10mm
 function fitBdaySheet(){
@@ -1077,7 +1174,9 @@ function fitBdaySheet(){
     sheet.style.setProperty('--bhd1',   Math.round(s*2.1)+'px');
     sheet.style.setProperty('--bhd2',   Math.round(s*1.4)+'px');
   }
-  function tooTall(){ return measure()>BDAY_PRINT_H_PX; }
+  /* 高さにも安全余裕を置く（幅と同じ考え方）。境目ぴったりだと、端末の行の丸め方が
+     1px違うだけで最終行が2枚目へ落ちる。8px＝約2mm。 */
+  function tooTall(){ return measure()>BDAY_PRINT_H_PX-8; }
   function tooWide(){ return width()>BDAY_PRINT_W_PX-6; }   /* 幅は6pxの安全余裕（紙では左右が切れる） */
   function fits(){ return !tooTall() && !tooWide(); }
   var MAX=22, MIN=7, STEP=0.25;
@@ -1519,6 +1618,12 @@ function openResident(id){
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">「設定」で接続URLを入力してください</div>';return}
   // 現場タブレットは安全項目のみをサーバから取得（機微情報は端末に届かない）
   var req=isField()?apiGet({action:'getSection',id:id,section:'facesheet_safe'}):apiGet({action:'getResident',id:id});
+  /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
+     ★本人の画面は辞書を待たずに描く（辞書が遅い・止まっている時に画面ごと待たせない＝レビュー指摘）。
+       届くまでは効能欄なしの1列＋画面だけの「読み込み中」、届いたら fsMdPatch_ が欄の中身だけ差し替える。
+     ★取れた辞書はこの画面を開いている間だけ控える（毎回取り直さない）。取れなかった時は次に開いた時に取り直す。
+     ★現場端末では取らない（薬剤情報は現場に出さない） */
+  if(!isField()) fsMdEnsure_(false,false).catch(function(){ /* 理由は fsMdErr（画面に出す） */ });
   req.then(function(d){
     if(seq!==openSeq)return;                    // 旧要求の応答＝別人の内容なので捨てる
     var rec=isField()?((d&&d.section)||d):((d&&d.record)||d);
@@ -1650,33 +1755,115 @@ function full(lab,val){return'<div class="cell" style="border-right:none"><span 
    （full() を並べると縦罫線が消え、入居者マスタと見た目が食い違う。2026-08-15 レビュー指摘） */
 function fcell(lab,val){return'<div class="cell"><span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(val==null||val===''?'　':val)+'</div></div>'}
 /* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
-   効能は薬効辞書（meds-effect-dict.js）から引く【参考表示】で、保存はしない。
+   効能は表示のたびに引き直す【参考表示】で、保存はしない。
+   ★2026-09-24 本人決定（案A）: 効能の正本を med_dict（薬剤師確認）へ一本化した。
+     引き方は MedsEffect.resolveLines の1本だけ（入居者マスタの詳細画面・A3と同じ）。
+     med_dict に無い薬だけ予備辞書（meds-effect-dict.js）で埋め、＊（未確認）を付ける。
    入居者マスタの medsRegularCell と同じ判断で、次のどれかなら従来どおり1列で出す:
-     ①辞書が読み込めていない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
+     ①部品が古い・読めない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
+     ⑤med_dict を取れていない（本人決定 Q1: 予備辞書だけで埋めない。画面にだけ理由を出す）
    ★行数がずれたまま並べると【別の薬の効能が並ぶ】ため、必ず1列へ戻す。 */
+/* med_dict の控え（この画面を開いている間だけメモリに持つ。端末には保存しない＝本人決定 Q1）。
+   ★現場端末では取らない（薬剤情報は SAFE_FIELDS に無い＝現場には出さない）。 */
+var fsMdMap=null, fsMdLoading=false, fsMdErr='';
+var FS_MARK_NOTE='＊＝薬剤師が未確認の効能';   /* 入居者マスタの MEDS_MARK_NOTE と同じ文言 */
+function fsMedsFxOk_(){
+  return typeof MedsEffect!=='undefined' && typeof MedsEffect.resolveLines==='function'
+    && typeof MedsEffect.key==='function';
+}
+/* med_dict を取る。成功なら key(name) → 行 の表を返す。retry=true は通常のやり直し付き（印刷の待ち）。 */
+function fsMdFetch_(retry){
+  if(isField()) return Promise.reject(new Error('FIELD'));
+  if(!fsMedsFxOk_()) return Promise.reject(new Error('薬効辞書の部品（meds-effect-dict.js）が古いか読み込めていません。ページを再読み込みしてください'));
+  return (retry?apiGetRetry:apiGet)({action:'getMedDict'},30000).then(function(d){
+    /* ★0件は正常（まだ1件も登録していない）。空とエラーを混同しない */
+    var rows=(d&&d.rows)||[], map=Object.create(null);
+    for(var i=0;i<rows.length;i++){ var k=MedsEffect.key(rows[i]&&rows[i].name); if(k) map[k]=rows[i]; }
+    return map;
+  }).catch(function(e){
+    /* ★GASが古い版だと「不明なaction」。何度押しても直らないので、原因が分かる文言にする */
+    var m=String((e&&e.message)||e||'');
+    throw new Error(/不明なaction/.test(m)
+      ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
+      : ('薬効辞書を取得できませんでした'+(m?('：'+m):'')));
+  });
+}
+/* 控えを用意する（入居者マスタの mdLoad_ と同じ作り）。取得中なら相乗りする。
+   ★retry=true の呼び出し（印刷の待ち）は、進行中の取得がやり直し無しで落ちた時にやり直し付きで取り直す。
+   ★fsMdGen は取得の世代。現場端末へ切り替わったら進め、それより前の応答は捨てる（控えを埋め直させない）。
+   ★届いたら（成否どちらでも）いま開いている方の欄だけ差し替える（fsMdPatch_ が data-meds-id で確かめる）。 */
+var fsMdPromise=null, fsMdPromiseRetry=false, fsMdGen=0;
+function fsMdEnsure_(force, retry){
+  if(fsMdPromise){
+    if(!retry||fsMdPromiseRetry) return fsMdPromise;
+    return fsMdPromise.catch(function(){ return fsMdEnsure_(false,true); });
+  }
+  if(fsMdMap&&!force) return Promise.resolve(fsMdMap);
+  if(isField()) return Promise.reject(new Error('FIELD'));
+  var gen=fsMdGen;
+  fsMdLoading=true; fsMdErr=''; fsMdPromiseRetry=!!retry;
+  fsMdPatch_();
+  var p=fsMdFetch_(retry).then(function(map){
+    if(gen!==fsMdGen) throw new Error('STALE');
+    fsMdMap=map; fsMdErr='';
+  },function(e){
+    if(gen!==fsMdGen) throw new Error('STALE');
+    fsMdErr=String((e&&e.message)||'');
+  }).then(function(){
+    fsMdLoading=false; fsMdPromise=null;
+    fsMdPatch_();
+    if(!fsMdMap) throw new Error(fsMdErr||'薬効辞書を取得できませんでした');
+    return fsMdMap;
+  });
+  fsMdPromise=p;
+  return p;
+}
 /* セルの【中身だけ】を返す（2026-08-12 分離）。呼び出し側が幅を決めた枠へ入れられるようにする。
    1列へ戻す条件に当たった時は、従来と同じ「見出し＋本文」を返す。 */
 function fullMedsBody(lab,val){
   var plain = '<span class="lab">'+esc(lab)+'</span><div class="fulltext">'+esc(String(val==null?'':val)||'　')+'</div>';
   var raw = String(val == null ? '' : val);
   if(!raw.trim()) return plain;
-  if(typeof MedsEffect === 'undefined' || typeof MedsEffect.effectsFor !== 'function') return plain;
+  /* ① 部品が古い。★1列で出し、理由は画面だけ（紙には足さない） */
+  if(!fsMedsFxOk_()) return plain+(isField()?'':'<div class="meds-note" role="status">'+esc('薬効辞書の部品が古いため効能欄を省略しています（再読み込みしてください）')+'</div>');
+  if(!fsMdMap){
+    /* ⑤ ★紙には何も足さない（理由は画面だけ・meds-note は印刷で消える） */
+    if(isField()) return plain;
+    var why = fsMdLoading ? '薬効辞書を読み込み中…'
+      : ('薬効辞書を読み込めないため効能欄を省略しています'+(fsMdErr?('（'+fsMdErr+'）'):''));
+    return plain+'<div class="meds-note" role="status">'+esc(why)+'</div>';
+  }
   var lines, effs;
   try{
     lines = raw.replace(/\r\n/g,'\n').split('\n');
-    effs  = MedsEffect.effectsFor(raw);
+    effs  = MedsEffect.resolveLines(raw, fsMdMap);
   }catch(e){ return plain; }
   if(!Array.isArray(effs) || effs.length !== lines.length) return plain;
-  var hit = false;
-  for(var k=0;k<effs.length;k++){ if(effs[k]){ hit = true; break; } }
+  var hit = false, mark = false;
+  for(var k=0;k<effs.length;k++){
+    if(effs[k].src==='dict'||effs[k].src==='static') hit = true;
+    if(effs[k].mark) mark = true;
+  }
   if(!hit) return plain;
   var h = '<div class="meds2">'+
     '<div class="meds2-h">'+esc(lab)+'</div><div class="meds2-h">効果・効能</div>';
   for(var i=0;i<lines.length;i++){
+    var t = effs[i].text;
     h += '<div class="meds2-d">'+esc(lines[i]||'　')+'</div>'+
-         '<div class="meds2-e">'+(effs[i] ? esc(effs[i]) : '<span class="meds2-na">—</span>')+'</div>';
+         '<div class="meds2-e">'+((t && t!=='—') ? esc(t+effs[i].mark) : '<span class="meds2-na">—</span>')+'</div>';
   }
-  return h+'</div>';
+  /* ＊の凡例は列見出しに書かず、表の下の脚注に置く（2026-09-24 本人決定）。＊が無ければ出さない */
+  return h+'</div>'+(mark?('<div class="meds2-ft">'+esc(FS_MARK_NOTE)+'</div>'):'');
+}
+/* med_dict が後から届いた時（印刷前の再試行）に、薬剤情報の欄の【中身だけ】を差し替える。
+   ★同じ欄が「医療・服薬」タブと「全体」タブの2箇所に出るので全部を書き換える（patchDayUse と同じ）。
+   ★data-meds-id が一致する欄だけ（別の方の欄へ書かない）。 */
+function fsMdPatch_(){
+  if(!curRec||curRec.id==null) return;
+  var key=String(curRec.id);
+  Array.prototype.forEach.call(document.querySelectorAll('#viewBox .meds-reg'),function(c){
+    if(c.getAttribute('data-meds-id')===key) c.innerHTML=fullMedsBody('薬剤情報（定期）',curRec.medsRegular);
+  });
 }
 function fullMeds(lab,val){
   return '<div class="cell" style="border-right:none">'+fullMedsBody(lab,val)+'</div>';
@@ -1845,14 +2032,47 @@ function nopOf(html,key){
   if(out===s){ try{ toast('⚠ 印刷除外の紐づけに失敗しました（'+key+'）'); }catch(e){} }
   return out;
 }
-function careHistHtml(arr){
-  var a=Array.isArray(arr)?arr.slice():[];
-  a.sort(function(x,y){return String((y&&y.changedAt)||'').localeCompare(String((x&&x.changedAt)||''))});
+/* ═══ 介護度・認定期間の履歴（2026-09-19 管理者指示）═══
+   ★入居者マスタ（resident-master.html の renderView）と【同じ規則】で見せること。
+     片方だけ直すと、同じ方の同じ記録が、直す画面と外部へ渡す紙で別の順に出る。
+   ・認定期間の新しい順。期間の記載が無い行は末尾（落とさない）
+   ・いまの認定内容を必ず先頭に出す（表示だけ・保存はしない）
+   ・いまと同じ期間の行は「現在」の行にまとめる（同じ期間が2行に見えない） */
+var CLH_KEYS=['value','certStart','certEnd','certDate'];
+function clhNorm_(v){ return String(v==null?'':v).trim(); }
+function clhSame_(a,b){
+  if(!a||!b) return false;
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(a[CLH_KEYS[i]])!==clhNorm_(b[CLH_KEYS[i]])) return false;
+  return true;
+}
+function clhOf_(src){
+  if(!src) return {value:'',certStart:'',certEnd:'',certDate:''};
+  return {value:clhNorm_(src.careLevel), certStart:clhNorm_(src.careCertStart),
+          certEnd:clhNorm_(src.careCertEnd), certDate:clhNorm_(src.certDate)};
+}
+function clhEmpty_(s){
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(s[CLH_KEYS[i]])) return false;
+  return true;
+}
+function careHistHtml(r){
+  var a=Array.isArray(r&&r.careLevelHistory)?r.careLevelHistory.slice():[];
   if(!a.length)return'<div class="cell" style="border-right:none;border-bottom:none"><span style="color:var(--g5)">　</span></div>';
+  var cur=clhOf_(r);
+  if(!clhEmpty_(cur)) a=a.filter(function(s){ return !clhSame_(s,cur); });
+  a.sort(function(x,y){
+    var ax=clhNorm_(x&&x.certStart), bx=clhNorm_(y&&y.certStart);
+    if(!ax!==!bx) return ax?-1:1;                 /* 期間のある行が先、無い行は末尾 */
+    if(ax!==bx) return bx.localeCompare(ax);
+    return clhNorm_(y&&y.changedAt).localeCompare(clhNorm_(x&&x.changedAt));
+  });
+  if(!clhEmpty_(cur)) a.unshift({value:cur.value, certStart:cur.certStart, certEnd:cur.certEnd,
+                                 certDate:cur.certDate, __cur:true});
   return'<div class="cell" style="border-right:none;border-bottom:none">'+a.map(function(s){
-    var period=(s.certStart||'')+(s.certEnd?(' 〜 '+s.certEnd):'');
-    var sub=[period,s.note].filter(Boolean).join(' / ');
-    return'<div class="logline"><span class="d">'+esc(fmtJDate(s.changedAt)||s.changedAt||'')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
+    var period=(fmtJDate(s.certStart)||s.certStart||'')+
+               (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
+    var sub=s.__cur?'現在'
+      :[s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
+    return'<div class="logline"><span class="d">'+esc(period||'（認定期間の記載なし）')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
   }).join('')+'</div>';
 }
 
@@ -2173,11 +2393,26 @@ function a4HM(t){
 /* 週間計画のDBから「その方の月〜土の通所時間帯」を引ける形に畳む。氏名は突合にのみ使う。
    ★継承キー（toString 等）に当たらないよう素のオブジェクトにしない。 */
 function a4BuildDayMap(db){
+  /* ★allMid/allName は「週間計画にその方の記録が在るか」だけを見るための索引（2026-09-04 追加）。
+     通所の有無を問わず【全員】を入れる。これが無いと
+       「週間計画にその方の記録が無い」＝確かめられない  と
+       「記録はあるが通所を使っていない」＝本当に利用なし  を区別できず、
+     前者まで空欄で刷ってしまう（§12 が明文で禁じた『デイ利用なし』と読まれる状態）。
+     ★上の byMid/byName（通所索引）には一切足さない・触らない。あちらへ通所の無い行まで入れると
+       重複判定(dupMid/dupName)の対象が広がり、いま ok で引けている方まで unknown へ倒れる。 */
   var out={at:Date.now(), byMid:Object.create(null), byName:Object.create(null),
-           dupMid:Object.create(null), dupName:Object.create(null)};
+           dupMid:Object.create(null), dupName:Object.create(null),
+           allMid:Object.create(null), allName:Object.create(null),
+           dupAllMid:Object.create(null), dupAllName:Object.create(null)};
   var res=(db&&Array.isArray(db.residents))?db.residents:[];
   res.forEach(function(r){
     if(!r)return;
+    /* 在籍確認用の索引は、通所を1件も持たない方も含めて先に作る（下の early return より前） */
+    var mid0=(r.masterId==null||r.masterId==='')?null:String(r.masterId);
+    var nk0=a4NmKey(r.name);
+    var all={name:String(r.name||''), mid:mid0};
+    if(mid0){ if(out.allMid[mid0])out.dupAllMid[mid0]=true; else out.allMid[mid0]=all; }
+    if(nk0){ if(out.allName[nk0])out.dupAllName[nk0]=true; else out.allName[nk0]=all; }
     var days=['','','','','',''], any=false;
     (Array.isArray(r.events)?r.events:[]).forEach(function(ev){
       if(!ev||ev.serviceType!=='daycare')return;
@@ -2217,13 +2452,22 @@ function a4EnsureDayMap(){
   /* 直近に失敗したばかりなら押すたびに25秒待たせない（現場を止めない）。覚えるのは30秒だけ＝
      統合GASが復旧すれば自動的に取りに行く */
   if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、届いた応答は控えにも失敗の印にも入れない（2026-10-01） */
+  var dg=devGen;
   var t=a4SyncTarget();
   if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
-  a4DayPromise=fetchWithTimeout(t.endpoint,{method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
-    .then(function(r){ return r.text(); })
+  /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
+     スイッチが切・未ログイン・失敗の時は null＝今までどおり Google（写し返しで最新）。読むだけ。 */
+  var viaKv=(window.SUKv&&SUKv.readRouted)?SUKv.readRouted({action:'get', key:'care_schedule_v2'}):Promise.resolve(null);
+  a4DayPromise=viaKv.then(function(v){
+      if(v) return JSON.stringify(v);
+      return fetchWithTimeout(t.endpoint,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
+        .then(function(r){ return r.text(); });
+    })
     .then(function(txt){
+      if(dg!==devGen) return '';   // 切り替え後に届いた応答（a4DayMap に入れない）
       var j=JSON.parse(txt);
       /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる
          （名簿取得の emptyGuarded と同じ作法・multi-device-sync 原則4） */
@@ -2232,8 +2476,9 @@ function a4EnsureDayMap(){
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
       return '';
     })
-    .catch(function(){ return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
-    .then(function(msg){ a4DayPromise=null; return msg; });
+    .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    /* ★切り替え後に始まった新しい取得の印（a4DayPromise）を、古い応答が消さないように世代を見る */
+    .then(function(msg){ if(dg===devGen) a4DayPromise=null; return msg; });
   return a4DayPromise;
 }
 function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; }
@@ -2246,23 +2491,46 @@ function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; 
      printHide の「伏せたセルは空欄にせず、セルごと外す（空欄は誤った安心に変わる）」と同じ考え方。
    ★利用者Noで引いた後も氏名を突き合わせる（data-contracts §6-⑨ の不変条件2）。 */
 function a4DaysFor(r){
-  var UNK={state:'unknown', days:null};
-  if(!a4DayMap||!r)return UNK;
+  /* ★why は「なぜ確かめられなかったか」。人が次に取るべき行動が違うので画面で出し分ける
+     （取得し直す／週間計画にその方を作る／氏名を揃える）。 */
+  var UNK=function(why){ return {state:'unknown', days:null, why:why}; };
+  if(!a4DayMap||!r)return UNK('fetch');
   var nk=a4NmKey(r.name);
   if(r.id!=null&&r.id!==''){
     var key=String(r.id);
-    if(a4DayMap.dupMid[key])return UNK;             // 同じ利用者Noの行が2つ＝どちらか分からない
+    if(a4DayMap.dupMid[key])return UNK('name');     // 同じ利用者Noの行が2つ＝どちらか分からない
     var rec=a4DayMap.byMid[key];
-    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK;
+    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK('name');
   }
-  if(!nk)return UNK;                                 // 氏名が無ければ確かめようがない
-  if(a4DayMap.dupName[nk])return UNK;                // 同姓同名は引かない
+  if(!nk)return UNK('name');                         // 氏名が無ければ確かめようがない
+  if(a4DayMap.dupName[nk])return UNK('name');        // 同姓同名は引かない
   var byNm=a4DayMap.byName[nk];
   /* ★利用者Noを持つ記録は氏名では拾わない。その記録は【別の方】に束縛済みで、拾うと
      利用者Noの違う方の紙に他人の通所日が載る（§6-⑨ の「食い違いが確定した」状態）。 */
-  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK;
-  return {state:'none', days:null};                  // 週間計画は取れていて、通所予定が無い方
+  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK('name');
+  /* ═══ ここから下は「通所索引で引けなかった」だけ（2026-09-04 追加）═══
+     空欄（＝デイ利用なし）で刷ってよいのは、週間計画にその方の記録が【確かに在る】と
+     言い切れる時だけ。言い切れないまま空欄にすると、氏名を直した方や利用者Noを持たない
+     記録の方の紙が「デイ利用なし」と読まれる。§15 で氏名の一括編集を解禁したため、
+     これは机上の話ではなくなった（週間計画には masterId を持たない記録が実在する）。
+     ★判定の作法は上の通所索引とまったく同じ＝利用者Noで引いた後も氏名を突き合わせ、
+       重複・食い違い・絞り込めない時は【出さない側】へ倒す（§6-⑨ の不変条件2）。 */
+  if(r.id!=null&&r.id!==''){
+    var akey=String(r.id);
+    if(a4DayMap.dupAllMid[akey])return UNK('name');
+    var arec=a4DayMap.allMid[akey];
+    if(arec)return (a4NmKey(arec.name)===nk)?{state:'none', days:null}:UNK('name');
+  }
+  if(a4DayMap.dupAllName[nk])return UNK('name');
+  var aNm=a4DayMap.allName[nk];
+  if(aNm)return (aNm.mid==null)?{state:'none', days:null}:UNK('name');
+  return UNK('absent');                              // 週間計画にこの方の記録が無い＝確かめられない
 }
+/* 「未確認」の理由の文言。★空欄で刷る誤りを塞いだ以上、なぜ確かめられなかったのかまで
+   人に見せないと、直しようがないまま「未確認」の紙が出続ける。 */
+var A4_UNK_WHY={fetch:'週間計画を取得できませんでした',
+                absent:'週間計画にこの方の記録がありません',
+                name:'週間計画の氏名と一致しません'};
 /* ═══ デイ利用日の表示（詳細画面・フェイスシート・それぞれの印刷で共用）═══
    2026-08-19 の指示で【3枚の紙をすべて週間計画に揃えた】。入居者マスタの dayUse
    （移行時の旧スプレッドシート由来の手書き値）はここでは使わない。
@@ -2276,7 +2544,8 @@ function dayUseHtml(r){
   var info=a4DaysFor(r);
   /* ★記号と文字を併記する（色だけで意味を伝えない・介護現場要件4） */
   if(info.state==='unknown')
-    return '<span class="du-unk">▲ 未確認</span><span class="du-note">週間計画を取得できませんでした</span>';
+    return '<span class="du-unk">▲ 未確認</span><span class="du-note">'+
+           esc(A4_UNK_WHY[info.why]||A4_UNK_WHY.fetch)+'</span>';
   if(!info.days)return '';
   return A4_DOW_JA.map(function(lb,i){
     return info.days[i]?('<span>'+esc(lb)+' <b>'+esc(info.days[i])+'</b></span>'):'';
@@ -2306,6 +2575,86 @@ function duFresh(){
   var age=Date.now()-a4DayMap.at;
   return age>=0&&age<A4_DAY_TTL;
 }
+/* ═══ 印刷の前に薬効辞書（med_dict）を待つ（2026-09-24 本人決定 Q2・入居者マスタ mdPrintGate_ と同じ作り）═══
+   ★時間切れで黙って1列へ落として刷らない。待っている間は「読み込み中…」とキャンセルを必ず見せる。
+   ★取得が確定的に失敗したら（通常のやり直し apiGetRetry の後）自動では刷らない。
+     「再試行」「効能欄なしで印刷」（人が明示的に選ぶ）「やめる」を出す。
+   ★待っているあいだに別の方へ移っていたら刷らない（printWithDayUse と同じ守り）。 */
+var fsMdPrintSeq=0;
+function fsMdWaitUi_(msg, acts){
+  var m=$('mMedWait'); if(!m) return;
+  if(msg===null){ m.classList.remove('on'); return; }
+  $('mMedWaitMsg').textContent=msg;
+  var box=$('mMedWaitAct'); box.innerHTML='';
+  acts.forEach(function(a){
+    var b=document.createElement('button');
+    b.type='button'; b.className='btn '+a[1]; b.textContent=a[0];
+    b.addEventListener('click',a[2]);
+    box.appendChild(b);
+  });
+  m.classList.add('on');
+  var f=box.querySelector('button'); if(f){ try{ f.focus(); }catch(e){} }
+}
+/* 待っている印刷を取り消す（キャンセル・やめる の共通） */
+function fsMdPrintCancel_(){ fsMdPrintSeq++; fsMdWaitUi_(null); }
+function fsMdPrintGate_(go){
+  var r=curRec;
+  var need=!!(r&&String(r.medsRegular||'').trim()&&fsMedsFxOk_()&&!fsMdMap&&!isField());
+  if(!need){ go(); return; }
+  var seq=++fsMdPrintSeq, who=duCurId_(), oseq=openSeq;
+  function stillOk(){ return who!==null&&who===duCurId_()&&oseq===openSeq; }
+  function goIfOk(){
+    if(!stillOk()){ toast('別の方の画面へ移ったため、印刷を中止しました。もう一度押してください'); return; }
+    go();
+  }
+  function wait(){
+    fsMdWaitUi_('薬効辞書を読み込み中…\n効能欄を付けて印刷するため、届くまでお待ちください。',
+      [['キャンセル','btn-gray',fsMdPrintCancel_]]);
+    /* 控えが無い（前回の取得が失敗・取得中）時だけここへ来る＝取り直しが自然な場面。
+       画面の欄は fsMdEnsure_ が（いま開いている方の欄だけ）差し替える */
+    fsMdEnsure_(false,true).then(function(){
+      if(seq!==fsMdPrintSeq) return;            /* キャンセル済み＝画面だけ直して刷らない */
+      fsMdWaitUi_(null);
+      goIfOk();
+    },function(){
+      if(seq!==fsMdPrintSeq) return;
+      if(!stillOk()){ fsMdPrintCancel_(); toast('別の方の画面へ移ったため、印刷を中止しました。もう一度押してください'); return; }
+      fsMdWaitUi_('薬効辞書を読み込めませんでした'+(fsMdErr?('（'+fsMdErr+'）'):'')+'。\n'+
+        '効能欄を付けて印刷するには「再試行」を押してください。',
+        [['再試行','btn-sec',wait],
+         ['効能欄なしで印刷','btn-gray',function(){ fsMdPrintSeq++; fsMdWaitUi_(null); goIfOk(); }],
+         ['やめる','btn-gray',fsMdPrintCancel_]]);
+    });
+  }
+  wait();
+}
+/* ⌘/Ctrl+P（OSの印刷）は上の待ちを通らない（2026-09-24 レビュー指摘）。紙は変えない
+   （画面どおり＝効能欄なしの1列で刷られる）が、刷った後に画面へ理由を必ず出す。
+   ★見るのは【紙に出るパネル】の薬剤情報の欄だけ（全体を印刷中は「全体」、それ以外は開いているタブ）。
+   ★ボタン経路（fsPrintViaBtn_）は、辞書を待った後か「効能欄なしで印刷」を人が選んだ後なので出さない。 */
+var fsPrintViaBtn_=false, fsPrintWarnPending_=false;
+function fsPrintByBtn_(fn){ fsPrintViaBtn_=true; try{ fn(); } finally { fsPrintViaBtn_=false; } }
+window.addEventListener('beforeprint',function(){
+  if(fsPrintViaBtn_) return;
+  var sc=$('sc-view');
+  if(!sc||!sc.classList.contains('on')||isField()) return;
+  if(!curRec||!String(curRec.medsRegular||'').trim()) return;
+  var sel=document.body.classList.contains('fs-all-on')?'#panel-all':'#viewBox .fpanel.on';
+  if(document.querySelector(sel+' .meds-reg .meds-note')) fsPrintWarnPending_=true;
+});
+function fsPrintWarnFlush_(){
+  if(!fsPrintWarnPending_) return;
+  fsPrintWarnPending_=false;
+  toast('薬効辞書の読み込み前に印刷されたため、効能欄なしで印刷されました。画面の印刷ボタンをお使いください');
+}
+window.addEventListener('afterprint',fsPrintWarnFlush_);
+/* afterprint が来ない環境向け（印刷メディアを抜けたのを合図にする） */
+try{
+  var _fsmdmq=matchMedia('print');
+  var _fsmdmqFn=function(e){ if(!e.matches) fsPrintWarnFlush_(); };
+  if(_fsmdmq.addEventListener)_fsmdmq.addEventListener('change',_fsmdmqFn);
+  else if(_fsmdmq.addListener)_fsmdmq.addListener(_fsmdmqFn);
+}catch(e){}
 /* 印刷の直前に、デイ利用日が「取得中…」のまま紙に載るのを防ぐ。取得を待って画面を
    差し替えてから刷る。★取れなくても必ず刷る（欄が「未確認」になるだけ）。
    ★★待っているあいだに別の方の画面へ移っていたら刷らない。A4様式（a4Print）と同じ守りで、
@@ -2464,6 +2813,30 @@ function renderFieldView(r){
 }
 
 /* 事務所PC：全項目をタブで切替（印刷時は全タブ展開） */
+/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
+   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
+   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
+   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
+   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
+     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
+var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
+function famNo(i, n){
+  if(n<2) return '';
+  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
+}
+function famWho(f){
+  if(!f) return '';
+  var nm=String(f.name==null?'':f.name).trim();
+  var rel=String(f.relation==null?'':f.relation).trim();
+  /* ★氏名が空でも空文字を返さない。返すと家族列だけ欠番になり、電話・住所に残った
+     同じ番号が【誰のものか分からなくなる】（番号を2列で一致させるのが今回の要点）。
+     移行データには氏名が空で電話・住所だけある家族が実在しうる（migrate.gs が警告つきで残す）。
+     A4様式の緊急連絡先セルも空欄になり「緊急連絡先なし」と読まれる。 */
+  if(!nm) return rel?('（'+rel+'）'):'（氏名未記載）';
+  return nm+(f.kp?':KP':'')+(rel?('（'+rel+'）'):'');
+}
+
 function renderOfficeView(r){
   var bf=bfView(r);   // 入居者基本情報（外部様式）の表示用データ（2026-08-12 追加）
   var rhythm=(function(src){   /* 食事の時刻は施設共通の既定を重ねる（保存済みが優先） */
@@ -2481,14 +2854,18 @@ function renderOfficeView(r){
   var consents=r.consents||{};
   var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
   var fam=Array.isArray(r.family)?r.family:[];
-  var famName=fam.map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.role?' '+f.role:'')}).join('\n');
+  var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
   /* 住所（2026-08-15 指示で追加・入居者マスタと同じ表示）。事務所ビュー専用＝現場端末には
      family そのものが届かない（SAFE_FIELDS に無い）ので、ここは office のみで評価される。 */
-  var famAddr=fam.map(function(f,i){return f.address?('①②③④⑤'.charAt(i)+f.address):''}).filter(Boolean).join('\n');
-  var famTel=fam.map(function(f,i){return f.phone?('①②③④⑤'.charAt(i)+f.phone):''}).filter(Boolean).join('\n');
+  /* ★番号は famNo で振る（2名以上の時だけ・家族欄と同じ番号）。列ごとに数え直さない */
+  var famAddr=fam.map(function(f,i){return f.address?(famNo(i,fam.length)+f.address):''}).filter(Boolean).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?(famNo(i,fam.length)+f.phone):''}).filter(Boolean).join('\n');
   /* ★緊急連絡先は電話番号も出す（入居者マスタは氏名と続柄だけだが、現場での連絡に要るため
      本アプリでは従来どおり残す。情報を減らす方向へは揃えない） */
-  var emg=fam.filter(function(f){return f.emergency}).map(function(f,i){return '①②③④⑤'.charAt(i)+(f.name||'')+(f.relation?'（'+f.relation+'）':'')+(f.phone?(' '+f.phone):'')}).join('\n');
+  /* ★番号は家族の並び順で振る（緊急だけ数え直すと、家族欄の番号と食い違う） */
+  var emg=fam.map(function(f,i){ return f&&f.emergency
+    ? (famNo(i,fam.length)+famWho(f)+(f.phone?(' '+String(f.phone).trim()):'')) : ''; })
+    .filter(Boolean).join('\n');
 
   /* ══ セクションを1本ずつ組み立てる（2026-08-15 指示）══
      ★同じHTMLを2箇所に書かない。カテゴリタブと「全体」タブは、この S を並べ替えて使う。
@@ -2510,7 +2887,7 @@ function renderOfficeView(r){
     nopOf(full('医療処置',r.medicalCare),'medical')+
     '<div class="cell" data-nop-of="mind" style="border-right:none;border-bottom:none"><span class="lab">対応のコツ</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'
   );
-  var chist=careHistHtml(r.careLevelHistory);
+  var chist=careHistHtml(r);
   var wt=weightCells(r);   // 体重・BMI は体重管理アプリの最新値を優先（無ければマスタの静的値）
   /* 基本情報。★在籍状態・入居期間・居室・生活自立度・認知症自立度は 2026-08-15 に
      入居者マスタと同じ所属へ揃えて追加した（生活自立度は ADL タブから移動）。 */
@@ -2548,7 +2925,7 @@ function renderOfficeView(r){
     sec('医療情報',
       /* 2件ぶんが1つの欄に入っている方は表示だけ行に分ける（入居者マスタと同じ扱い・2026-08-19） */
       '<div class="row-cells">'+cell('かかりつけ病院',mpVal(r.hospital,mfH&&mfH.org))+cell('主治医',mpVal(r.doctor,mfH&&mfH.person))+cell('電話番号',mpVal(r.hospitalTel,mfH&&mfH.tel))+cell('FAX番号',mpVal(r.hospitalFax,mfH&&mfH.fax))+'</div>'+
-      '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
+      '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('診療曜日',r.visitDay)+'</div>'+
       '<div class="row-cells">'+cell('かかりつけ薬局',mpVal(r.pharmacy,mfP&&mfP.org))+cell('電話番号',mpVal(r.pharmacyTel,mfP&&mfP.tel))+cell('FAX番号',mpVal(r.pharmacyFax,mfP&&mfP.fax))+'</div>'+
       /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示・マスタと同表記）。
          ★full() は必ず border-right:none を付けるので、横に並べる時は【最後以外】に使わない
@@ -2566,7 +2943,8 @@ function renderOfficeView(r){
     sec('薬剤情報',
       '<div class="row-cells">'+
         /* 左右の比は 65:35（入居者マスタと同値。2026-08-15 に 3:1 から揃えた） */
-        '<div class="cell" style="flex:65">'+fullMedsBody('薬剤情報（定期）',r.medsRegular)+'</div>'+
+        /* meds-reg / data-meds-id は med_dict の到着後に中身だけ差し替える目印（fsMdPatch_） */
+        '<div class="cell meds-reg" style="flex:65" data-meds-id="'+esc(String(r.id==null?'':r.id))+'">'+fullMedsBody('薬剤情報（定期）',r.medsRegular)+'</div>'+
         '<div class="cell" style="flex:35;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
       '</div>'+
       /* ★服薬管理の4段階はADLの大表へ移した（2026-08-15・マスタと同じ所属）。ここには置かない */
@@ -2719,7 +3097,7 @@ function renderOfficeView(r){
    ★2026-08-13（実害）: masterId のキーに入っている図は、記録側の氏名(rec.name)と必ず突き合わせる。
      ジェノグラムアプリを ?resident=<この方> 付きで開いたまま【別の方の文書】を保存すると、
      その masterId のキーに別人の図が入り、この方の欄に他人の家族構成図が出ていた。
-     ★入居者マスタと【逐語同一】にすること（gas/tests/genogram_key_test.js が文字列で照合する）。 */
+     ★入居者マスタと【逐語同一】にすること（check/unit/genogram_key_test.js が文字列で照合する）。 */
 function getGenogram(id,name){
   try{
     var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;
@@ -2745,6 +3123,7 @@ function showScreen(name){
   paintMealBar();
 }
 function applyRoleBadge(){
+  var wasOffice=(fsRoleApplied_==='office');
   var f=isField();var e=$('roleBadge');e.textContent=f?'現場':'事務所';e.className='role'+(f?' field':'');
   /* ★誕生日ビューは現場端末では使えない（生年月日が端末に届かないので空の帳票になる）。
      タブごと隠し、既に選ばれていたら標準へ戻す（「壊れている」と誤解されないように） */
@@ -2763,8 +3142,22 @@ function applyRoleBadge(){
      localStorage には元から書いていないが、メモリに残すと再読み込みまで端末内に居続ける。
      入居者マスタ applyDeviceGuard と同じ守り（片方だけに入れない）。 */
   if(f){ a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg=''; }
+  /* 世代も進める。切り替えより前に出した週間計画の取得の応答で、捨てた控えが戻らないように（入居者マスタ applyDeviceGuard の devGen++ と同じ守り） */
+  if(f) devGen++;
+  /* 薬効辞書の控えも捨てる（現場では使わない。入居者マスタ applyDeviceGuard と同じ守り） */
+  if(f){ fsMdMap=null; fsMdErr=''; fsMdLoading=false; fsMdGen++; fsMdPromise=null; fsMdPromiseRetry=false; }
   /* 食形態一覧の控え（全入居者の氏名・食事・アレルギーを含む）も同じ理由で捨てる */
   if(f){ mealRows=null; mealVia=''; mealSeq++; mealLoading=false; mealMsg=''; }
+  /* ★事務所PCとして描いた画面のまま現場用へ変わった時は、開いていた方の記録と画面も捨てて一覧へ戻す
+     （病名・処方・家族連絡先を含む全項目の画面が、現場用の表示のまま残らないように）。
+     この後ページを読み込み直すが、読み込み直しが効かなかった時の保険として先に消す。
+     ★現場端末として起動した後（安全情報の画面を開いている時）には触らない */
+  if(f&&wasOffice){
+    curRec=null; openSeq++;
+    $('vName').textContent=''; $('hlBand').textContent=''; $('ftabs').textContent=''; $('viewBox').textContent='';
+    showScreen('list');
+  }
+  fsRoleApplied_=f?'field':'office';
 }
 /* 「🖨️ 全体を印刷」＝全体タブ1枚だけを刷る（2026-08-15 指示）。
    ★押した時だけ body へ印を付け、印刷が終わったら必ず外す。付けっぱなしにすると
@@ -2797,6 +3190,8 @@ function closeSync(){$('mSync').classList.remove('on')}
    進めるカウンタで判定する（care-schedule csPreGen_ と同型）。 */
 var cfgTestGen_=0;
 function saveSync(){
+  /* ★判定は端末に保存された用途ではなく、この画面が事務所PCとして描かれているか（fsRoleApplied_）で見る。別のタブで用途が変わっていて、保存値と画面がずれている時にも正しく倒すため */
+  var toField=($('cfgDeviceRole').value==='field'&&fsRoleApplied_==='office');
   cfgTestGen_++;   /* 飛行中のテストの巻き戻しを無効化する（保存値が正） */
   CFG.url=($('cfgUrl').value||'').trim();CFG.token=($('cfgToken').value||'').trim();
   /* ★このキーは入居者マスタと共用。丸ごと書き換えると、マスタ側が入れた項目
@@ -2819,6 +3214,14 @@ function saveSync(){
     saved=(String(_b.url==null?'':_b.url)===CFG.url && String(_b.token==null?'':_b.token)===CFG.token);
   }catch(e){saved=false}
   setDeviceRole($('cfgDeviceRole').value==='field'?'field':'office');
+  /* ★現場用へ切り替えた時は、起動し直さずにページごと読み込み直す（2026-10-01）。
+     用途を書けなかった時（プライベートモード等）は isField() が偽のままなので、従来どおり下へ進み失敗を知らせる */
+  if(toField&&isField()){
+    applyRoleBadge(); closeSync();
+    /* ★接続先を書けなかった時は、読み込み直すとトーストが消えるので先に知らせる（文言は下のトーストと同じ） */
+    if(!saved) alert('⚠️ 保存できませんでした（プライベートモード等）');
+    fsReload_(); return;
+  }
   applyRoleBadge();closeSync();boot();
   toast(saved?'✅ 保存しました':'⚠️ 保存できませんでした（プライベートモード等）');
 }
@@ -2922,6 +3325,20 @@ window.addEventListener('storage',function(e){
   loadCommonRoster();
   if(!isField()&&CFG.url) refreshRosterFromGas(); else renderRoster();
 });
+/* 開いたまま別のタブ（入居者マスタ等）で端末の用途が現場用に変わった時も、すぐ従う（2026-10-01 本人決定）。
+   storage イベントは別のタブの書き込みでだけ届く。key が null は別のタブでの localStorage.clear()。
+   ★事務所PCへ戻された時は何もしない（表示は現場用のまま＝安全側。再読み込みで事務所表示になる）
+   ★現場用として描き済みの画面（fsRoleApplied_==='field'）では何もしない＝読み込み直しを繰り返さない */
+function onDeviceRoleChange_(e){
+  if(!e||(e.key!==DEVICE_KEY&&e.key!==null))return;
+  if(!isField()||fsRoleApplied_!=='office')return;
+  applyRoleBadge();
+  fsReload_();
+}
+window.addEventListener('storage',function(e){ try{ onDeviceRoleChange_(e); }catch(err){} });
+/* 同じタブで別のアプリへ移り、そこで用途が変わってから「戻る」で戻ると、ページがそのまま復元されて
+   storage イベントは届かない。復元された時にも同じ判定を通す */
+window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleChange_({key:DEVICE_KEY}); }catch(err){} });
 document.addEventListener('DOMContentLoaded',function(){
   $('q').addEventListener('input',renderRoster);
   /* ビュー切替。矢印キーでも移動できるようにする（role="tab" の期待に合わせる） */
@@ -2939,7 +3356,7 @@ document.addEventListener('DOMContentLoaded',function(){
   /* 誕生日ビューの年度送りと印刷。★年度は端末に保存しない（古い年度のまま刷らせない） */
   $('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   $('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
-  $('bdayPrint').addEventListener('click',function(){window.print()});
+  $('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
   /* 食形態一覧の取り直しとA3印刷 */
   if($('mealReload')) $('mealReload').addEventListener('click',function(){mealLoad(true)});
   if($('mealPrint')) $('mealPrint').addEventListener('click',fsPrintMeal);
@@ -2957,8 +3374,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   $('btnMaster').addEventListener('click',function(){window.open('resident-master.html','_blank')});
   $('backBtn').addEventListener('click',function(){curRec=null;showScreen('list')});
-  $('printBtn').addEventListener('click',function(){printWithDayUse(curRec,duCurId_,function(){window.print()})});
-  $('printAllBtn').addEventListener('click',function(){printWithDayUse(curRec,duCurId_,fsPrintAll)});
+  /* ★薬効辞書（med_dict）が届くまで待ってから、従来どおりデイ利用日を待って刷る（2026-09-24 本人決定 Q2） */
+  $('printBtn').addEventListener('click',function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(function(){window.print()})})})});
+  $('printAllBtn').addEventListener('click',function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(fsPrintAll)})})});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
     b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');if(sc==='sync')openSync();else showScreen(sc)});
   });
@@ -2968,5 +3386,21 @@ document.addEventListener('DOMContentLoaded',function(){
   boot();
 });
 </script>
+<script>
+/* ★2026-10-01: 本人確認の帯（.frombar・取り違え防止）は見出しの直下に貼り付く。見出しの高さを 48px の決め打ちにしていたため、
+   見出しが2段になる iPhone では帯が見出しの下に隠れていた（修正前から一部隠れていた）。見出しの実際の高さを変数に写して追従させる。 */
+(function fsSyncHdrH_() {
+  try {
+    var hdr = document.querySelector('.hdr');
+    if (!hdr) return;
+    var set = function () { document.documentElement.style.setProperty('--fs-hdr-h', hdr.offsetHeight + 'px'); };
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(hdr);
+    else window.addEventListener('resize', set);
+  } catch (e) { /* 失敗しても従来の 48px で表示する */ }
+})();
+</script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04.2" data-tool="フェイスシート"></script>
 </body>
 </html>

@@ -397,6 +397,10 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
   }
 }
 </style>
+<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-kv.js?v=2026-09-27b"></script>
+<script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
 <div id="toolbar">
@@ -985,6 +989,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return 'mid';
   }
 
+  /* 職員ごとの「早番に数える開始時刻の上限」（2026-09-28・staff.rules.earlyStartMax・分）。
+   * 既定（未設定）は従来どおり: 記号の分類・範囲の rangeCat（開始7:30まで＝早番）をそのまま使う。
+   * 設定がある職員は、早番に分類された勤務でも開始がこの時刻より遅ければ日勤(mid)として数える
+   * （例: 420＝7:00開始までを早番。7:30開始は日勤）。早番の人数の数え方だけを変え、
+   * 勤務時間・区分・freee 出力には関わらない。氏名ではなく職員の設定で持つ（個人情報をコードに書かない）。 */
+  var EARLY_START_MAX_CHOICES = [420];   /* 画面で選べる値（7:00まで）。未設定＝従来どおり */
+  function earlyStartMaxOf(st) {
+    var v = (st && st.rules) ? st.rules.earlyStartMax : null;
+    return (typeof v === 'number' && isFinite(v) && v >= 0 && v < 1440) ? v : null;
+  }
+  function effectiveCat(cat, startMin, earlyStartMax) {
+    if (cat !== 'early' || typeof earlyStartMax !== 'number') return cat;
+    if (typeof startMin !== 'number') return cat;
+    return startMin > earlyStartMax ? 'mid' : 'early';
+  }
+
   /* 夜勤上がりの残業判定（表示ハイライト用）。
    * セル先頭の夜勤上がり（例「8)」）の実際の上がり時刻が、前日の夜勤入りの定時上がり(pairEnd)
    * より遅ければ残業。(21=定時7:00→「8)」は残業／(22=定時8:00→「8)」は通常／「7)」は定時。
@@ -1081,6 +1101,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     minToTime: minToTime,
     parseCell: parseCell,
     rangeCat: rangeCat,
+    EARLY_START_MAX_CHOICES: EARLY_START_MAX_CHOICES,
+    earlyStartMaxOf: earlyStartMaxOf,
+    effectiveCat: effectiveCat,
     parseRangeToken: parseRangeToken,
     collectUsedWorkTokens: collectUsedWorkTokens,
     registerRangeSymbols: registerRangeSymbols,
@@ -1210,7 +1233,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var part = cell.parts[i];
           if (part.kind === 'work') {
             perDay[d].attended = true;
-            if (part.cat) perDay[d].cats.push(part.cat);
+            /* 早番の数え方は職員の設定（opts.earlyStartMax）で開始時刻を絞れる（2026-09-28・Sym.effectiveCat） */
+            if (part.cat) perDay[d].cats.push(Sym.effectiveCat(part.cat, part.startMin, opts.earlyStartMax));
             var bound = part.endMin - part.startMin;
             var work = workMinutes(bound, settings);
             if (row.isMain && subIntervals.length) {
@@ -1784,11 +1808,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var w = wd[dow(day)] || wd[String(dow(day))];
       return w && typeof w[cat] === 'number' ? w[cat] : 0;
     }
-    function catOf(value) {
+    /* stf を渡すと、その職員の「早番に数える開始時刻の上限」で早番を数え直す（2026-09-28・Sym.effectiveCat）。
+     * 省略時は従来どおり（遅番の数・遅⇒早の判定は開始時刻の上限と無関係なので渡さない）。 */
+    function catOf(value, stf) {
       var p = Sym.parseCell(value, symbols);
       var cats = [];
+      var esm = stf ? Sym.earlyStartMaxOf(stf) : null;
       for (var x = 0; x < p.parts.length; x++) {
-        if (p.parts[x].kind === 'work') cats.push(p.parts[x].cat || 'mid');
+        if (p.parts[x].kind === 'work') cats.push(Sym.effectiveCat(p.parts[x].cat || 'mid', p.parts[x].startMin, esm));
         if (p.parts[x].kind === 'nightIn') cats.push('night');
       }
       return cats;
@@ -1886,9 +1913,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     function symbolFor(stf, cat) {
       var allow = stf.allowedSymbols && stf.allowedSymbols.length ? stf.allowedSymbols : null;
+      var esm = Sym.earlyStartMaxOf(stf);
       for (var x = 0; x < symbols.length; x++) {
         var s = symbols[x];
         if (s.disabled || s.type !== 'work' || s.cat !== cat) continue;
+        /* 早番を割り当てる時、その職員では早番に数えない記号（開始が上限より遅い）は使わない */
+        if (Sym.effectiveCat(s.cat, Sym.timeToMin(s.start), esm) !== cat) continue;
         if (allow && allow.indexOf(s.code) < 0) continue;
         return s.code;
       }
@@ -1923,7 +1953,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function assignedCount(day, cat) {
       var n = 0;
       for (var x = 0; x < active.length; x++) {
-        if (catOf(cells[active[x].id][String(day)] || '').indexOf(cat) >= 0) n++;
+        if (catOf(cells[active[x].id][String(day)] || '', active[x]).indexOf(cat) >= 0) n++;
       }
       return n;
     }
@@ -2319,7 +2349,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 'guard'＝サーバ側のデータ保護で拒否された（一括消失・出荷時リセット・古いバックアップ復元）。
      * 通信失敗と同じ 'other' に落とすと、同じ内容を無言で送り続ける無限リトライになる。 */
     if (m === 'schedwipe' || m === 'staffshrink' || m === 'defaultsoverwrite' || m === 'backupoverwrite') return 'guard';
-    if (m === 'unknown action') return 'unsupported';
+    /* 接続先が「もう存在しない」と確定できるエラー（2026-09-08 に HTTP 404 を追加）。
+     * unknown action … 旧世代のデプロイが生きているが対応アクションが無い
+     * HTTP 404       … デプロイがアーカイブ/削除された＝そのURLは二度と復活しない
+     * どちらもサーバー側の確定的な答えなので、稼働中URLへの自動切替を許す。
+     * 通信失敗（fetchの例外・タイムアウト）は一時的でありうるため 'other' のまま＝勝手に切り替えない。
+     * ★404を入れた理由: 404では自動切替が働かず、その端末だけ永久にオフラインのままだった
+     *   （接続先は端末のlocalStorageにあるため、他の端末は正常に見える／再起動でも直らない）。 */
+    if (m === 'unknown action' || m === 'HTTP 404') return 'unsupported';
     return 'other';
   }
 
@@ -2352,6 +2389,111 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftEditLock = api;
+})();
+/* ===== src/logic/netpolicy.js ===== */
+/* netpolicy.js — 接続先の死活判定ポリシー（純粋関数・2026-09-13）
+ *
+ * 背景（実測・ワースケ src/logic/netpolicy.js 2026-09-12 と同じ観測）:
+ *   統合GASのエンドポイント自体が健全でも、Googleのフロントは
+ *     ・一時的な HTTP 404（3〜14秒後に到着・約1.5%）
+ *   を数分単位のクラスタで返す。
+ *   シフトは 2026-09-08 以降「404＝デプロイ消滅」と即断して接続先の自動切替
+ *   (healStaleTarget) を起動していたため、ws_settings が古い接続先を保持している端末では
+ *   URLも合言葉も勝手に別の値へ書き換わっていた。su_sync_common は同一オリジンの
+ *   全ツール共通のキーなので、巻き添えはシフト1本では済まない。
+ *
+ * 方針: 1回の404では何も判定しない。
+ *   ・速い404（FAST_404_MS 未満で返ったもの）だけを数える。遅い404はフロントの詰まり
+ *   ・DEAD_MIN_COUNT 回以上 かつ 初回から DEAD_MIN_SPAN_MS 以上たって初めて確認pingを打つ
+ *   ・その確認pingも404だった時だけ「消滅」と確定する
+ *   ・成功が1回でも返ったら計数をリセット（クラスタ障害を持ち越さない）
+ *   ・確定後 LATCH_MS は再確定しない＝確認pingと警告の連打を止める
+ *
+ * 旧Safari互換: ?. / ?? / テンプレートリテラル / let / const / アロー関数は使用しない */
+(function () {
+  'use strict';
+
+  var FAST_404_MS = 15000;        /* これ未満で返ってきた404だけを死活判定に数える */
+  var DEAD_MIN_COUNT = 3;         /* 確定に必要な速い404の回数 */
+  var DEAD_MIN_SPAN_MS = 20000;   /* 初回404からの最低経過（クラスタ障害を除外） */
+  var CONFIRM_TIMEOUT_MS = 8000;  /* 確認pingのタイムアウト */
+  var LATCH_MS = 60000;           /* 確定後、この間は再確定しない */
+
+  function isNum_(v) { return typeof v === 'number' && isFinite(v); }
+
+  /* 404の連続を数えて「本当にデプロイが消えた」候補かどうかを判定する器。
+   * note の kind: 'notfound'（速い404だけ計上）／'ok'（リセット）／それ以外は無視。
+   * タイムアウト・通信失敗で途切れても404のカウントは消さない（障害クラスタは両者が混ざる）。 */
+  function createDeadDetector() {
+    var count = 0, firstAt = 0, confirmedAt = 0;
+    function note(kind, now, elapsedMs) {
+      if (kind === 'ok') { count = 0; firstAt = 0; confirmedAt = 0; return; }  /* 復旧＝ラッチも解く */
+      if (kind !== 'notfound') return;
+      var el = isNum_(elapsedMs) ? elapsedMs : 0;
+      if (el >= FAST_404_MS) return;   /* 遅い404＝フロントの詰まり。死活の材料にしない */
+      count++;
+      if (!firstAt) firstAt = isNum_(now) ? now : 0;
+    }
+    /* 確定直後の LATCH_MS 間は false を返す＝同じ障害で確認pingを何度も打たない。
+     * ラッチ中の404は通常の一時失敗として扱われる。 */
+    function shouldConfirm(now) {
+      if (!isNum_(now)) return false;
+      if (confirmedAt > 0 && (now - confirmedAt) < LATCH_MS) return false;
+      return count >= DEAD_MIN_COUNT && firstAt > 0 && (now - firstAt) >= DEAD_MIN_SPAN_MS;
+    }
+    function markConfirmed(now) { confirmedAt = isNum_(now) ? now : 0; }
+    function reset() { count = 0; firstAt = 0; confirmedAt = 0; }
+    function state() { return { count: count, firstAt: firstAt, confirmedAt: confirmedAt }; }
+    return { note: note, shouldConfirm: shouldConfirm, markConfirmed: markConfirmed,
+             reset: reset, state: state };
+  }
+
+  /* ── 読み取りの待ち方（2026-09-28）──────────────────────────────────────────
+   * 背景（実測 2026-09-28 19:45〜19:56）: 統合同期GASの本体は1件1.5〜3秒で完了していたのに、
+   *   Google の受付側で要求が止まり、端末の問い合わせは8〜33秒・失敗が続いた（実行一覧に届いていない）。
+   *   シフトは1回の失敗でその月を「読み込めていません」にし、人が［再取得］を押すまで取り直さなかった。
+   * 方針: 読むだけの要求（何度送っても害が無い）だけを、1回30秒で打ち切って最大3回まで送り直す。
+   *   保存・編集権の要求は送り直さない（時間切れでも届いている場合があり、送り直すと競合・二重反映を作る）。
+   *   ※「GET として届いた＝未実行」とは言えない（doPost 完了後に転送先の GET が doGet に届く実測あり・
+   *     テーマ data-contracts-resident.md §13）。GET 由来の HTML 障害ページは読むだけの要求の送り直しで吸収する。 */
+  var READ_ACTIONS = { pull: 1, head: 1, shiftStatus: 1, lockStatus: 1, ping: 1, list: 1, get: 1 };
+  var READ_TIMEOUT_MS = 30000;
+  var READ_MAX_ATTEMPTS = 3;
+  function isReadAction(action) { return READ_ACTIONS[String(action == null ? '' : action)] === 1; }
+  /* 次の試行までの待ち（attempt は1始まり） */
+  function retryDelayMs(attempt) { return attempt <= 1 ? 1500 : 4000; }
+  /* 送り直してよい失敗か（通信断・時間切れ・受付側の404/429/5xx・本文がJSONでない）。
+   * GAS が JSON で断った（合言葉違い・競合など）ものは含めない＝送り直しても結果は同じ。 */
+  function isTransientErr(err) {
+    var m = String(err && err.message ? err.message : err);
+    if (/^timeout$/.test(m)) return true;
+    if (/^HTTP (404|408|429|5\d\d)$/.test(m)) return true;
+    if (err && err.name === 'SyntaxError') return true;                         /* HTMLの障害ページ */
+    if (err && (err.name === 'TypeError' || err.name === 'AbortError')) return true;   /* fetch の通信失敗 */
+    return false;
+  }
+  /* 月の取得に失敗した後、自動で取り直すまでの待ち（n は続けて失敗した回数・1始まり）。30→60→120秒で頭打ち */
+  function monthRetryDelayMs(n) {
+    var k = Math.max(1, Number(n) || 1);
+    return Math.min(30000 * Math.pow(2, Math.min(k - 1, 4)), 120000);
+  }
+
+  var api = {
+    READ_TIMEOUT_MS: READ_TIMEOUT_MS,
+    READ_MAX_ATTEMPTS: READ_MAX_ATTEMPTS,
+    isReadAction: isReadAction,
+    retryDelayMs: retryDelayMs,
+    isTransientErr: isTransientErr,
+    monthRetryDelayMs: monthRetryDelayMs,
+    createDeadDetector: createDeadDetector,
+    FAST_404_MS: FAST_404_MS,
+    DEAD_MIN_COUNT: DEAD_MIN_COUNT,
+    DEAD_MIN_SPAN_MS: DEAD_MIN_SPAN_MS,
+    CONFIRM_TIMEOUT_MS: CONFIRM_TIMEOUT_MS,
+    LATCH_MS: LATCH_MS
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftNetPolicy = api;
 })();
 /* ===== src/logic/holidays.js ===== */
 /* holidays.js — 日本の祝日計算（1980〜2099年対応・振替休日・国民の休日含む） */
@@ -2992,6 +3134,75 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (e) return e.classifyPushError(msg);
     return (String(msg) === 'unknown action') ? 'unsupported' : 'other';
   }
+  /* 編集リースの「サーバ未対応」判定（2026-09-24）。lockCapable=false へ落とすのは、サーバ本体が
+   * 答えた確定エラー 'unknown action' の時だけにする。classifyPushError は HTTP 404 も 'unsupported' に
+   * 数えるが（接続先の死活判定用＝endpointLooksDead_ が確認pingで裏を取ってから切り替える）、
+   * Google のフロントは一時的な 404 を返すことがあり、1回の 404 で未対応へ落とすと、そのタブは
+   * ずっと「共有ロックなしで編集」になり、厳格モードのサーバで送信が拒否されて編集できなくなる。
+   * ロック系の 404 は通信失敗と同じ扱い（判定据え置き・次の機会に再試行）。 */
+  function lockUnsupported_(msg) {
+    return String(msg) === 'unknown action';
+  }
+  /* 接続先の死活判定ポリシー（netpolicy.js・純関数）。解決は呼び出し時＝読み込み順に依存しない。
+   * 未読込のビルドでは null＝「404では切り替えない（最も安全な側）」へ倒れる。 */
+  var _np = null;
+  function NP_() {
+    if (!_np && typeof window !== 'undefined' && window.ShiftNetPolicy) _np = window.ShiftNetPolicy;
+    return _np;
+  }
+
+  /* 接続先が存在しない時の案内（2026-09-08）。この端末の設定が古い世代のデプロイを指している状態で、
+   * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
+  var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
+    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  /* 接続先が「シフトの同期先ではない」と答えた時の案内（2026-09-24）。応答は返っているので「見つかりません」は
+   * 原因の説明として正しくない。相手は別アプリのGAS（入居者マスタ・薬・申送＝「不明なaction」）か、
+   * 統合同期GASの古い版（'unknown action'）。直し方は同じ（正常な端末のURLを貼り直す）。 */
+  var WRONG_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が、シフトの同期先ではありません（別のアプリのGASか古い版を指しています）。' +
+    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  function endpointFailMsg_(msg) { return isWrongEndpointErr_(msg) ? WRONG_ENDPOINT_MSG : DEAD_ENDPOINT_MSG; }
+
+  /* GAS 同期URLの形式（master.js の手入力検証・ワースケ・週間計画と同一規則）。
+   * 自動切替(healStaleTarget)で採用する時にも当てる＝壊れた値が su_sync_common 経由で
+   * 同一オリジンの全ツールへ伝播するのを防ぐ。 */
+  var GAS_ENDPOINT_RE = /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
+  /* 統合同期GAS（ワークスケジュールアプリ/gas/Code.gs）が ping で名乗る名前（2026-09-24）。
+   * 自動切替(healStaleTarget)はこの名乗りを確かめた時だけ採用する。ok/role だけでは採用しない:
+   * 入居者マスタのGASの ping は { ok:true, role } を返し、旧シフト専用GAS(shiftapp-gas)は別の名を名乗る。
+   * ws_settings に別アプリのURLと合言葉が組で入った端末では、以前の緩い条件だと
+   * su_sync_common（週間計画・ワースケ・シフト共通）ごと別アプリのGASへ書き換わった（2026-09-24 実例）。 */
+  var SYNC_SERVER_ID = 'silverunix-sync';
+  /* 「相手がこのアプリの同期GASではない」とサーバ本体が答えたエラー。
+   * 'unknown action' … 統合GASの旧世代・旧シフト専用GAS（英語）
+   * '不明なaction'   … 入居者マスタ・薬・申送のGAS（日本語）。この接続先へ送り続けても永久に通らない */
+  function isWrongEndpointErr_(msg) {
+    var m = String(msg);
+    return m === 'unknown action' || m === '不明なaction';
+  }
+  /* ═══ 同期先の判定（2026-09-25）══════════════════════════════════════════
+   * 3アプリ共通の接続先（su_sync_common）に書いてよいのは、URL と合言葉の組で ping し、
+   * 統合同期GASと確認できた組だけ。以前の手動保存は URL の【形】しか見ておらず、別アプリの
+   * GASのURLも同じ形なので通っていた。［接続テスト］は【保存してから】確かめ、入居者マスタの
+   * GASにも「✓ 接続OK」と出していた（応答が返れば OK としていた）。
+   * 判定はワークスケジュール netpolicy.js の syncTargetVerdict と同じ物差し（別ファイルのため写し）:
+   *   'ok' … ok:true かつ server==='silverunix-sync'
+   *   'wrong' … 別アプリのGAS（'不明なaction'／'unknown action'／ok:true なのに同期GASと名乗らない）
+   *   'auth' … 合言葉違い（または別アプリの認証エラー）／'offline' … 確かめられなかった */
+  function syncTargetVerdict(j) {
+    if (!j || typeof j !== 'object') return 'offline';
+    if (j.ok === true && j.server === SYNC_SERVER_ID) return 'ok';
+    if (j.error === '不明なaction' || j.error === 'unknown action') return 'wrong';
+    if (j.error === '認証エラー') return 'wrong';   /* 日本語の「認証エラー」は入居者マスタ・申送のGASの合言葉違いの文言（統合同期GASは英語の unauthorized だけ）＝別アプリ */
+    if (j.ok === true) return 'wrong';
+    if (j.error) return 'auth';
+    return 'wrong';
+  }
+  function syncTargetMessage(v) {
+    if (v === 'ok') return 'シフトの同期先を確認しました';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
+    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
+  }
 
   var PREFIX = 'shiftapp:v1:';
   /* 圧縮データの識別子（制御文字）。JSONの先頭文字（{ [ " 数字 t f n -）にも
@@ -3010,6 +3221,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * freee は対応表(patternMap)と休暇名(offNames)を持つ設定で、消えると勤怠CSVの出力が崩れるため
    * 2026-08-22 に追加した（同期・バックアップ取込の対象キーでありながら未保護だった）。 */
   var PROTECTED_KEYS = { staff: 1, symbols: 1, freee: 1 };
+  /* このアプリ自身が同期するキー（2026-09-23）。
+   * ★サーバの SHIFT_LOCK_KEY_RE（ワークスケジュールアプリ/gas/Code.gs）と必ず同じ式にすること。★
+   * 同期先の GAS・Drive フォルダは他アプリ（ワースケの日次ファイル wsday_*・週間計画の care_schedule_v2・
+   * ws_weekly_master_v1・アナライザの months など）と共有しており、keyless 全量pull はそれらも全部返す。
+   * 以前はそれを全部 shiftapp:v1:<key> へ保存していたため、ワースケの約140件・11MB で端末の保存容量を
+   * 使い切り、本物のシフト編集が「端末への保存に失敗しました」で保存できなくなった。
+   * これに当たらないキーは、取り込まない・送らない・起動時に端末から掃除する（purgeForeignKeys_）。
+   * 端末ローカルのキー（_meta・_sync などの _ 始まり、local:*）はこの式の対象外＝掃除側で別に温存する。 */
+  var SHIFT_SYNC_KEY_RE = /^(staff|symbols|settings|freee|sched:.+|req:.+|drafts:.+)$/;
+  function isShiftKey(key) { return SHIFT_SYNC_KEY_RE.test(String(key)); }
   function isProtectedKey(key) {
     var k = String(key);
     return PROTECTED_KEYS[k] === 1 || k.indexOf('sched:') === 0 || k.indexOf('req:') === 0 ||
@@ -3213,6 +3434,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this._guardBlocked = {};
       this._guardRejects = {};
       this._forceTried = {};
+      /* 他アプリのキーの掃除（2026-09-23）。未送信の印付け・saveMeta より先に行う＝容量が満杯の端末でも
+       * 先に空きを作ってから _meta を書き戻せる。同期の書き込みではない（何も送らない）ので
+       * 閲覧モード・閲覧専用トークンでも実行する。 */
+      this.purgeForeignKeys_();
       this.markLegacyOrigins_();
       /* fromJSONが旧形式のデータ複製を落とすため、ここで一度書き戻すと肥大化した既存_metaが
        * 即座にスリム化され、容量を即時回復できる（圧縮も同時に適用される）。 */
@@ -3220,6 +3445,57 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.pruneConflictRescue();
       this.updateStatus();
       this.bindRecovery();
+    },
+    /* このアプリの同期キーか（SHIFT_SYNC_KEY_RE）。テスト・他モジュールからの判定用。 */
+    isShiftKey: function (key) { return isShiftKey(key); },
+    /* 他アプリのキーを端末から掃除する（2026-09-23・keyless 全量pull で溜まった残骸の回収）。
+     * 対象は shiftapp:v1: の下だけ。残すのは ①_ 始まり（_meta・_sync・_healLog）②local:*（端末設定・退避キー・
+     * 端末識別子・編集リース）③シフトの同期キー。それ以外（wsday_*・care_schedule_v2・months など）を消す。
+     * shiftapp:v1: 以外のキー（ワースケ本体の wsday_*・アナライザの shiftanalyzer:v1:* 等）には一切触れない。
+     * _meta の revs/dirty・未送信キュー・メモリ上の印からも同じキーを落とす（残すと送信・競合判定に紛れる）。
+     * 例外は投げない（起動を止めない）。戻り値＝localStorage から消した件数（lastPurgeCount にも残す＝診断用）。 */
+    purgeForeignKeys_: function () {
+      var removed = 0, changed = false, doomed = [], i, k, rest;
+      try {
+        for (i = 0; i < localStorage.length; i++) {
+          k = localStorage.key(i);
+          if (!k || k.indexOf(PREFIX) !== 0) continue;
+          rest = k.slice(PREFIX.length);
+          if (rest.charAt(0) === '_' || rest.indexOf('local:') === 0 || isShiftKey(rest)) continue;
+          doomed.push(k);   /* 走査中に消すと添字がずれるため、先に集めてから消す */
+        }
+      } catch (e) {}
+      for (i = 0; i < doomed.length; i++) {
+        try { localStorage.removeItem(doomed[i]); removed++; } catch (e2) {}
+      }
+      try {
+        var m = this.meta;
+        var maps = m ? [m.revs, m.dirty] : [];
+        for (i = 0; i < maps.length; i++) {
+          if (!maps[i] || typeof maps[i] !== 'object') continue;
+          for (k in maps[i]) {
+            if (Object.prototype.hasOwnProperty.call(maps[i], k) && !isShiftKey(k)) { delete maps[i][k]; changed = true; }
+          }
+        }
+        if (this.queue) {
+          var qk = this.queue.keys();
+          for (i = 0; i < qk.length; i++) {
+            if (!isShiftKey(qk[i])) { this.queue.take(qk[i]); changed = true; }
+          }
+        }
+        /* メモリ上の印（init 済みなら空だが、起動後に呼ばれても取り残さない） */
+        var sets = [this._corruptKeys, this._guardBlocked, this._guardRejects, this._forceTried,
+                    this.heldConflicts, this.serverSeen, this._serverUnseen, this._conflictRetries];
+        for (i = 0; i < sets.length; i++) {
+          if (!sets[i] || typeof sets[i] !== 'object') continue;
+          for (k in sets[i]) {
+            if (Object.prototype.hasOwnProperty.call(sets[i], k) && !isShiftKey(k)) delete sets[i][k];
+          }
+        }
+        if (changed) this.saveMeta();
+      } catch (e3) {}
+      this.lastPurgeCount = removed;
+      return removed;
     },
     /* 旧版（由来の印を持たない版）で積まれた未送信に、内容から印を付け直す。
      * 印が無いまま送ると「工場出荷の記号」「端末内の古い名簿」がサーバのガードを素通りする。
@@ -3470,7 +3746,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this._serverUnseen = {};
       }
       for (k in entries) {
-        if (Object.prototype.hasOwnProperty.call(entries, k)) mark_(this, k);
+        /* 他アプリのキーは取り込んでいない＝確認済みにも数えない（applyPullEntries_ と同じ線引き） */
+        if (Object.prototype.hasOwnProperty.call(entries, k) && isShiftKey(k)) mark_(this, k);
       }
     },
     /* rev突合(shiftStatus)で「サーバの方が新しくない」と分かったキーも確認済みに数える。
@@ -3514,10 +3791,72 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.updateStatus();
     },
 
-    /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ワースケ設定(ws_settings)の
-     * 稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、そこへの ping が
-     * 成功(j.ok===true もしくは role/server を返す)のときだけ su_sync_common を上書きする。
-     * 通信失敗/unknown action継続/unauthorized では上書きしない（誤切替・unauthorized固着の防止）。
+    /* ---- 接続先の死活判定（2026-09-13） ----
+     * 404は一過性でありうる（健全な接続先にもGoogleのフロントが「速い404」を返す・実測 約1.5%）。
+     * 1回の404で接続先を切り替えると、端末に保存された su_sync_common の URL も合言葉も
+     * 書き換わり、同一オリジンの全ツールが巻き添えになる。切替は確定できた時だけに限る。 */
+    noteEndpoint_: function (kind, elapsedMs) {
+      var np = NP_();
+      if (!np) return;
+      if (!this._dead) this._dead = np.createDeadDetector();
+      this._dead.note(kind, Date.now(), elapsedMs);
+    },
+    resetDeadDetector_: function () { if (this._dead) this._dead.reset(); },
+    /* 現在の接続先へ確認pingを1回だけ打ち、HTTPステータスを返す（届かない時は0）。
+     * gasCall/api を通さない＝再試行・計数・状態表示に影響させない。 */
+    confirmPingStatus_: function (url, token) {
+      var np = NP_();
+      var timeoutMs = np ? np.CONFIRM_TIMEOUT_MS : 8000;
+      return new Promise(function (resolve) {
+        var done = false, timer = null;
+        function once(v) { if (done) return; done = true; if (timer) clearTimeout(timer); resolve(v); }
+        timer = setTimeout(function () { once(0); }, timeoutMs);
+        try {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: token || '' }),
+            redirect: 'follow'
+          }).then(function (r) { once(r.status); }).catch(function () { once(0); });
+        } catch (e) { once(0); }
+      });
+    },
+    /* 接続先を切り替えてよいか。Promise<boolean>。
+     *   unknown action／不明なaction … サーバ本体が答えた確定エラー＝即座に合図とする
+     *   HTTP 404       … 速い404が3回以上・初回から20秒以上たった時に確認pingを打ち、
+     *                     それも404だった時だけ true（60秒はラッチして連打しない） */
+    endpointLooksDead_: function (msg) {
+      var self = this;
+      if (isWrongEndpointErr_(msg)) return Promise.resolve(true);
+      if (String(msg) !== 'HTTP 404') return Promise.resolve(false);
+      var np = NP_();
+      if (!np || !this._dead) return Promise.resolve(false);   /* 判定器が無い＝切り替えない */
+      var now = Date.now();
+      if (!this._dead.shouldConfirm(now)) return Promise.resolve(false);
+      var cfg = this.getSyncConfig();
+      if (!cfg || !cfg.url) return Promise.resolve(false);
+      this._dead.markConfirmed(now);
+      return this.confirmPingStatus_(cfg.url, cfg.token).then(function (st) {
+        if (st !== 404) {
+          /* 本体は応答している＝フロントの一時障害。計数を畳んで最初からやり直す */
+          if (st >= 200 && st < 300) self.resetDeadDetector_();
+          return false;
+        }
+        return true;
+      });
+    },
+    /* 一時的な通信失敗を現場の言葉にする（'HTTP 404' とだけ出しても何をすればよいか分からない） */
+    friendlyNetErr_: function (msg) {
+      var m = String(msg);
+      if (m === 'HTTP 404') return '一時的な応答エラーです（自動で再試行します）';
+      return m;
+    },
+
+    /* 接続先(su_sync_common)が古い死んだGAS・別アプリのGAS(unknown action／不明なaction)のとき、
+     * ワースケ設定(ws_settings)の稼働中URLへ自動切替する。ws_settings の endpoint が現在と異なり、
+     * そこへの ping が ok:true かつ server==='silverunix-sync'（＝統合同期GASが名乗った）のときだけ
+     * su_sync_common を上書きする。ok/role だけの応答（入居者マスタ等のGAS）・別の server 名
+     * （旧シフト専用GAS）・通信失敗・unauthorized では上書きしない（誤切替・unauthorized固着の防止）。
      * 週間計画(care-schedule)の healStaleTarget と同じ方針を Promise 方式で移植（旧Safari互換）。 */
     healStaleTarget: function () {
       var self = this;
@@ -3526,22 +3865,54 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var cur = this.getSyncConfig();
       var curUrl = (cur && cur.url) ? String(cur.url).trim() : '';
       if (!wsEp || wsEp === curUrl) return Promise.resolve(false); /* 代替先が無い／既に同一 */
+      /* 形式の壊れた値を共通キーへ流し込まない（手入力の誤URLが全ツールへ伝播するのを防ぐ門番と同じ規則） */
+      if (!GAS_ENDPOINT_RE.test(wsEp)) return Promise.resolve(false);
       var wsTok = String(ws.token || '').trim();
-      return fetch(wsEp, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ action: 'ping', token: wsTok }),
-        redirect: 'follow'
-      }).then(function (r) {
-        if (!r.ok) return false;
-        return r.json();
-      }).then(function (j) {
-        if (j && !j.error && (j.ok === true || j.role || j.server)) {
-          lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
-          return true;
-        }
-        return false;
-      }).catch(function () { return false; }); /* 通信失敗では上書きしない */
+      /* 確かめの ping は打ち切り時間つき（2026-09-24）。相手が応答を返さないと _healing が立ったままになり、
+       * その間は同期が止まる。打ち切った後に届いた応答では書き換えない（遅れて届いた応答で勝手に切り替えない）。 */
+      var np = NP_();
+      var timeoutMs = np ? np.CONFIRM_TIMEOUT_MS : 8000;
+      return new Promise(function (resolve) {
+        var done = false, timer = null;
+        function once(v) { if (done) return; done = true; if (timer) clearTimeout(timer); resolve(v); }
+        timer = setTimeout(function () { once(false); }, timeoutMs);
+        try {
+          fetch(wsEp, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: wsTok }),
+            redirect: 'follow'
+          }).then(function (r) {
+            if (!r.ok) return null;
+            return r.json();
+          }).then(function (j) {
+            if (done) return;   /* 打ち切り後の応答＝採用しない */
+            if (j && !j.error && j.ok === true && j.server === SYNC_SERVER_ID) {
+              lsSet(COMMON_SYNC_KEY, { endpoint: wsEp, token: wsTok, updatedAt: Date.now() });
+              self.noteHealed_(curUrl, wsEp);   /* 切替を記録＝「勝手に変わった」を後から追跡できる */
+              self.resetDeadDetector_();        /* 新しい接続先を前の404で疑わない */
+              once(true);
+              return;
+            }
+            once(false);
+          }).catch(function () { once(false); }); /* 通信失敗では上書きしない */
+        } catch (e) { once(false); }
+      });
+    },
+
+    /* 接続先を自動で切り替えた事実を端末に残す（直近5件）。原因調査のための足跡で、業務データではない。
+     * 圧縮しない平文キー＝現場のPCで localStorage を開けばそのまま読める。 */
+    noteHealed_: function (fromUrl, toUrl) {
+      try {
+        var k = PREFIX + '_healLog';
+        var log = [];
+        try { log = JSON.parse(localStorage.getItem(k) || '[]'); } catch (e0) { log = []; }
+        if (Object.prototype.toString.call(log) !== '[object Array]') log = [];
+        log.push({ at: new Date().toISOString(), from: String(fromUrl || ''), to: String(toUrl || '') });
+        while (log.length > 5) log.shift();
+        localStorage.setItem(k, JSON.stringify(log));
+      } catch (e) {}
+      try { console.warn('同期先を自動切替しました:', fromUrl, '->', toUrl); } catch (e2) {}
     },
 
     /* オフライン時のバックオフ自動再試行。15s→30s→60s(上限)。
@@ -3621,16 +3992,64 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!cfg || !cfg.url || !cfg.token) {
         return Promise.reject(new Error('同期未設定'));
       }
-      payload.token = cfg.token;
-      return fetch(cfg.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
-        body: JSON.stringify(payload),
-        redirect: 'follow'
-      }).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      }).then(function (json) {
+      var self = this;
+      var t0 = Date.now();
+      /* 読むだけの要求は1回30秒で打ち切り、受付側の一時障害なら最大3回まで送り直す（2026-09-28・netpolicy 参照）。
+       * 保存・編集権の要求は従来どおり1回だけ・時間切れなし（失敗に見えても届いていることがあり、送り直すと二重反映になる）。 */
+      var np = NP_();
+      var isRead = !!(np && np.isReadAction && np.isReadAction(payload && payload.action));
+      function wait_(ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); }
+      function once_(p, attempt) {
+        p.token = cfg.token;
+        var ctl = (isRead && typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var req = fetch(cfg.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* プリフライト回避 */
+          body: JSON.stringify(p),
+          redirect: 'follow',
+          signal: ctl ? ctl.signal : undefined
+        }).then(function (r) {
+          if (!r.ok) {
+            /* 404だけは死活判定の材料として数える（確定は endpointLooksDead_ の確認pingで行う）。
+             * 500・429・fetch失敗は一時的でありうるので数えない。
+             * 送り直しの2回目以降は数えない＝1回の要求につき材料は1つ（送り直しで消滅の判定を早めない）。 */
+            if (r.status === 404 && attempt === 1) self.noteEndpoint_('notfound', Date.now() - t0);
+            throw new Error('HTTP ' + r.status);
+          }
+          self.noteEndpoint_('ok', 0);   /* 応答が返った＝この接続先は生きている（計数リセット） */
+          return r.json();
+        });
+        if (!isRead || !np) return req;
+        var timer = null;
+        var limit = new Promise(function (ok, ng) {
+          timer = setTimeout(function () {
+            try { if (ctl) ctl.abort(); } catch (eA) {}
+            ng(new Error('timeout'));
+          }, np.READ_TIMEOUT_MS);
+        });
+        return Promise.race([req, limit]).then(function (v) { clearTimeout(timer); return v; },
+                                              function (e) { clearTimeout(timer); throw e; });
+      }
+      function rawGas(p) {
+        var attempt = 0;
+        var maxAtt = (np && isRead) ? np.READ_MAX_ATTEMPTS : 1;
+        function run_() {
+          attempt++;
+          return once_(p, attempt).then(null, function (err) {
+            if (isRead && attempt < maxAtt && np.isTransientErr(err)) return wait_(np.retryDelayMs(attempt)).then(run_);
+            throw err;
+          });
+        }
+        return run_();
+      }
+      /* 統合 0009（2026-09-27）: 保存先の切り替えスイッチ（su-backend.json の shift）が入ったら、勤務表の読み書き・編集権は
+         Supabase が受け持つ（応答は Google と同じ形）。スイッチが切・su-kv.js が無い時は今までどおり Google（rawGas）。
+         ※公開リポ（care-tools ba50e84）へ直接入った変更を正本へ移植（2026-09-28） */
+      var sent = (window.SUKv && SUKv.handlesShift && SUKv.handlesShift(payload)) ? SUKv.callShift(payload, rawGas) : rawGas(payload);
+      return sent.then(function (json) {
+        /* 統合 0007（2026-09-26）: Google が返した勤務表の版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者の
+           ログイン時だけ）。写すのは data だけ（合言葉・編集券は送らない）。アプリの動きは変えない（失敗しても何もしない） */
+        if (window.SUKvShadow && json) { try { SUKvShadow.fromSync(payload, json); } catch (eSh) {} }
         /* サーバが返した付随情報（was/now＝件数など）を捨てない。
          * 捨てると「サーバーには480マス、今回の保存は30マス」の確認文が作れず、
          * 本人が force で通すかどうかを判断できない。 */
@@ -3651,6 +4070,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       });
     },
 
+    /* 入力された URL と合言葉の組を、保存せずに ping して判定する（2026-09-25）。
+     * 保存済みの接続先（api）を使わない＝確かめる前に書かない。解決値は syncTargetVerdict の判定。
+     * 死活判定の計数（noteEndpoint_）にも触れない＝純粋な確認。 */
+    verifySyncTarget: function (url, token, timeoutMs) {
+      return new Promise(function (resolve) {
+        var done = false;
+        function fin(v) { if (done) return; done = true; clearTimeout(t); resolve(v); }
+        var t = setTimeout(function () { fin('offline'); }, timeoutMs || 30000);
+        try {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({ action: 'ping', token: token || '' }),
+            redirect: 'follow'
+          }).then(function (r) { return r.json(); })
+            .then(function (j) { fin(syncTargetVerdict(j)); })
+            .catch(function () { fin('offline'); });
+        } catch (e) { fin('offline'); }
+      });
+    },
+    syncTargetMessage: function (v) { return syncTargetMessage(v); },
+
     /* pullで得た per-key エントリ群をローカルへ適用（保護判定・rev前進・競合収集）。
      * pullAll 本体から抽出（挙動は完全不変）＝keyed窓/全量どちらのpullでも同じ適用ロジックを共有する。
      * 返り値 {conflicts, corrupt, storeFailed}（いずれもキー名の配列）は呼び出し側が状態通知/競合解決に使う。 */
@@ -3659,6 +4100,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var corrupt = [];
       var storeFailed = [];
       for (var key in entries) {
+        /* 他アプリのキー（共有フォルダの wsday_*・care_schedule_v2 等）は完全に素通りする（2026-09-23）。
+         * 保存も rev 記録も競合・破損・保存失敗の集計も再送もしない＝端末の容量を他アプリに食わせない。 */
+        if (!isShiftKey(key)) continue;
         var server = entries[key];
         var lv = lsGet(PREFIX + key);
         /* サーバが破損(null)、または保護キー(職員/記号)を「空」でローカルの非空に上書きする場合は
@@ -3705,7 +4149,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 起動時プル: サーバの各キーとローカルを突合。
      * optKeys（配列）を渡すと keyed pull＝そのキーだけ取得（全量転送の回避）。
-     * 無指定は従来どおり keyless 全量プル（手動同期＝全量取得のエスケープハッチとして温存）。 */
+     * 無指定は従来どおり keyless 全量プル（全量取得のエスケープハッチとして温存）。
+     * 手動同期（バッジ・［今すぐ同期］）は 2026-09-23 から表示月の窓に絞った keyed pull（App.manualSync_）。 */
     pullAll: function (optKeys) {
       var self = this;
       var cfg = this.getSyncConfig();
@@ -3754,18 +4199,32 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!self._serverUnseen) self._serverUnseen = {};
           for (var ui = 0; ui < optKeys.length; ui++) self._serverUnseen[String(optKeys[ui])] = true;
         }
-        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再試行 */
-        if (msg === 'unknown action' && !self._healing) {
+        /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
+         * 自動切替して1回だけ再試行。判定は push 側と同じ endpointLooksDead_ に寄せる
+         * （2箇所で条件がずれないように）。404は確認pingを通るまで切り替えない。 */
+        if ((classifyPushError_(msg) === 'unsupported' || isWrongEndpointErr_(msg)) && !self._healing) {
           self._healing = true;
-          return self.healStaleTarget().then(function (healed) {
-            self._healing = false;
-            if (healed) return self.pullAll();
-            self.updateStatus('offline', msg);
-            self.scheduleRetry();
-            return 'offline';
+          return self.endpointLooksDead_(msg).then(function (isDead) {
+            if (!isDead) {   /* 一過性の404＝接続先はそのまま。再試行で復帰する */
+              self._healing = false;
+              self.updateStatus('offline', self.friendlyNetErr_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            }
+            return self.healStaleTarget().then(function (healed) {
+              self._healing = false;
+              /* 同じ要求をそのまま出し直す（keyed だった取得を keyless 全量へ広げない。
+               * 全量pull は共有フォルダの他アプリのファイルまで返す＝容量逼迫の原因。無指定なら従来どおり無指定） */
+              if (healed) return self.pullAll(optKeys);
+              /* 切替先も無い＝この端末の接続先が古いまま。原因も直し方も現場に伝える
+                 （'HTTP 404' とだけ出しても何をすればよいか分からない）。 */
+              self.updateStatus('offline', endpointFailMsg_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            });
           });
         }
-        self.updateStatus('offline', msg);
+        self.updateStatus('offline', self.friendlyNetErr_(msg));
         self.scheduleRetry();   /* 一過性失敗(コールドスタートタイムアウト等)から自動復帰 */
         return 'offline';
       });
@@ -3946,6 +4405,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         chain = chain.then(function () {
           var item = self.queue.items[key];
           if (!item) return null;
+          /* 他アプリのキーは送らない（2026-09-23）。旧版の全量pull・古いバックアップの取込で積まれた残骸が
+           * 共有フォルダの他アプリのファイル（ワースケの日次ファイル等）を上書きしないよう、キューから外すだけ。 */
+          if (!isShiftKey(key)) { self.queue.take(key); return null; }
           /* サーバのデータ保護で拒否されたキーは送らない（1.5秒ごとの再送ループを作らない）。
            * 人が実際に編集した時（auto でない set）だけブロックが解ける。 */
           if (self._guardBlocked && self._guardBlocked[key]) return null;
@@ -4017,18 +4479,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 編集権を失った（他端末が保持・強制引き継ぎ・厳格モードで券なし）: これを通信失敗として
          * 再試行に流すと同じ古い全量を送り続ける。退避→サーバ版採用→閲覧へ降格へ回す。 */
         if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
-        /* 接続先URLが古い(unknown action)ときは ws_settings の稼働URLへ自動切替して1回だけ再送 */
-        if (kind === 'unsupported' && !self._healing) {
+        /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
+         * 自動切替して1回だけ再送。404は確認pingを通るまで切り替えない（pull側と同条件）。 */
+        if ((kind === 'unsupported' || isWrongEndpointErr_(msg)) && !self._healing) {
           self._healing = true;
-          return self.healStaleTarget().then(function (healed) {
-            self._healing = false;
-            if (healed) return self.pushQueued();
-            self.updateStatus('offline', msg);
-            self.scheduleRetry();
-            return 'offline';
+          return self.endpointLooksDead_(msg).then(function (isDead) {
+            if (!isDead) {   /* 一過性の404＝未送信は保持したまま再試行で復帰する */
+              self._healing = false;
+              self.updateStatus('offline', self.friendlyNetErr_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            }
+            return self.healStaleTarget().then(function (healed) {
+              self._healing = false;
+              if (healed) return self.pushQueued();
+              self.updateStatus('offline', endpointFailMsg_(msg));
+              self.scheduleRetry();
+              return 'offline';
+            });
           });
         }
-        self.updateStatus('offline', msg);
+        self.updateStatus('offline', self.friendlyNetErr_(msg));
         self.scheduleRetry();
         return 'offline';
       });
@@ -4055,8 +4526,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        /* 旧サーバ＝機能保留（従来動作のまま）。通信失敗は据え置き（null）＝次の機会に再判定。 */
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        /* 旧サーバ＝機能保留（従来動作のまま）。通信失敗・一時的な404は据え置き（null）＝次の機会に再判定。 */
+        if (lockUnsupported_(msg)) self.lockCapable = false;
         return null;
       });
     },
@@ -4080,7 +4551,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return { ok: true, lease: lease };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        if (lockUnsupported_(msg)) self.lockCapable = false;   /* 404 では落とさない（lockUnsupported_ 参照） */
         return { ok: false, error: msg };
       });
     },
@@ -4109,7 +4580,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return { ok: true, lease: lease };
       }).catch(function (err) {
         var msg = String(err && err.message ? err.message : err);
-        if (classifyPushError_(msg) === 'unsupported') self.lockCapable = false;
+        if (lockUnsupported_(msg)) self.lockCapable = false;   /* 404 では落とさない（lockUnsupported_ 参照） */
         return { ok: false, error: msg };
       });
     },
@@ -4152,9 +4623,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (r && r.ok) { self._leaseVerified = true; return 'ok'; }
         var err = r ? r.error : '';
         if (err === 'nolease') return 'nolease';
-        var kind = classifyPushError_(err);
-        if (kind === 'unsupported') return 'unsupported';   /* 旧サーバ＝機能保留（編集モード維持） */
-        if (kind !== 'lost') return 'network';
+        if (lockUnsupported_(err)) return 'unsupported';   /* 旧サーバ＝機能保留（編集モード維持） */
+        /* 一時的な HTTP 404 は 'network'（編集モード維持・次の延長で再試行）。未対応とは数えない */
+        if (classifyPushError_(err) !== 'lost') return 'network';
         var rec = self.lease || {};
         var oldEpoch = (typeof rec.epoch === 'number') ? rec.epoch : null;
         return self.acquireLease(self.getLocal('deviceName', ''), false, rec.tabId).then(function (a) {
@@ -4454,7 +4925,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var out = { exportedAt: new Date().toISOString(), app: 'shiftapp', version: 1, data: {} };
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
-        if (k && k.indexOf(PREFIX) === 0 && k !== META_KEY && k !== SYNC_KEY && k.indexOf(PREFIX + 'local:') !== 0) {
+        /* 他アプリのキー（旧版の全量pullが溜めた wsday_*・care_schedule_v2・months 等）は書き出さない（2026-09-23）。
+         * 保存容量が満杯の時の案内は「JSONエクスポートで保全」なので、残骸があると他アプリのデータ
+         * 約11MBを抱えたファイルになる。書き出すのはシフトの同期キーだけ（_meta・_sync・local:* は従来どおり対象外。
+         * _healLog など _ 始まりの端末記録もシフトの同期キーではないので、これ以降は書き出さない）。 */
+        if (k && k.indexOf(PREFIX) === 0 && k !== META_KEY && k !== SYNC_KEY && k.indexOf(PREFIX + 'local:') !== 0 &&
+            isShiftKey(k.slice(PREFIX.length))) {
           out.data[k.slice(PREFIX.length)] = lsGet(k);
         }
       }
@@ -4462,8 +4938,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
     importAll: function (obj) {
       if (!obj || obj.app !== 'shiftapp' || !obj.data) throw new Error('バックアップ形式が不正です');
-      var n = 0, staffReport = null;
+      var n = 0, staffReport = null, skipped = [];
       for (var key in obj.data) {
+        /* 他アプリのキーは取り込まない（2026-09-23）。残骸入りの古いバックアップを戻しても、端末の容量を
+         * 食わず・未送信にも積まない（積むと共有フォルダの他アプリのファイルを上書きしうる）。
+         * 退避も件数(count)への計上もしない。飛ばしたキー名は戻り値 skipped（配列）で返す。 */
+        if (!isShiftKey(key)) { skipped.push(String(key)); continue; }
         /* 勤務表(sched:*)は取込で全面置換されるため、上書き前に1世代退避する（取込ミスからの復旧材料）。
          * 退避キーは pruneConflictRescue が14日/3世代で掃除する。退避の成否は取込を止めない。 */
         if (String(key).indexOf('sched:') === 0) {
@@ -4482,7 +4962,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         } else this.set(key, obj.data[key]);
         n++;
       }
-      return { count: n, staffReport: staffReport };
+      return { count: n, staffReport: staffReport, skipped: skipped };
     }
   };
 
@@ -4491,7 +4971,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = { isProtectedKey: isProtectedKey, isEmptyish: isEmptyish,
                        schedHasData: schedHasData, mayApplyServer: mayApplyServer,
-                       staffLooksDegraded: staffLooksDegraded };
+                       staffLooksDegraded: staffLooksDegraded,
+                       syncTargetVerdict: syncTargetVerdict, syncTargetMessage: syncTargetMessage };
   }
 })();
 /* ===== src/ui/grid.js ===== */
@@ -4622,7 +5103,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (GROUPS[g].key === 'day' && renderedGroups > 0) h += this.dateHeaderRows(ctx, days, true, pm, dayRange);
         var gc = (ctx.settings.groupColors || {})[GROUPS[g].key] || { bg: '#1a4a80', text: '#ffffff' };
         /* 訪問グループは単一「施設訪問職員」帯で管理(デイ以外＝施設/訪問を分割しない・要件1) */
-        h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 11)) + '" style="background:' + gc.bg + ';color:' + gc.text + '">' + esc(GROUPS[g].label) + '</td></tr>';
+        h += '<tr class="grouphead"><td colspan="' + (pm ? (ndays + 2) : (days + 11)) + '" style="background:' + esc(gc.bg) + ';color:' + esc(gc.text) + '">' + esc(GROUPS[g].label) + '</td></tr>';
         for (var m = 0; m < members.length; m++) h += this.staffRows(members[m], days, pm, dayRange, collectRows);
         /* デイサービス欄の最下部に職種別 出勤者数(介護士/看護師/合計)＝人数確認欄を表示。
          * 画面(!pm)は従来どおり常時。印刷は【A3縦2分割のときだけ】出す＝dayRange 非null が分割の目印
@@ -4705,14 +5186,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var isMain = ln.div === mainDiv;
         var trCls = (L > 0 ? 'subrow' : 'staffline')
           + (ln.hidden ? ' hiddenrow' : '');
-        h += '<tr data-sid="' + st.id + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
+        h += '<tr data-sid="' + esc(st.id) + '"' + (trCls.trim() ? ' class="' + trCls.trim() + '"' : '') + '>';
         if (L === 0) {
-          h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + st.id + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
+          h += '<td class="namecell sticky1" style="left:0" rowspan="' + rowSpan + '" draggable="true" data-sid="' + esc(st.id) + '" title="ドラッグで並べ替え／ダブルクリックで編集">' + esc(st.name) + '</td>';
         }
         h += '<td class="divcell sticky2" style="left:100px">' + esc(ln.div) +
           (ln.hidden
-            ? ' <span class="showbtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を再表示">表示</span>'
-            : ' <span class="hidebtn" data-sid="' + st.id + '" data-div="' + ln.div + '" title="この行を非表示（月をまたいで維持）">×</span>') +
+            ? ' <span class="showbtn" data-sid="' + esc(st.id) + '" data-div="' + esc(ln.div) + '" title="この行を再表示">表示</span>'
+            : ' <span class="hidebtn" data-sid="' + esc(st.id) + '" data-div="' + esc(ln.div) + '" title="この行を非表示（月をまたいで維持）">×</span>') +
           '</td>';
         h += this.dayCells(st, ln.div, isMain, days, dayRange);
         if (L === 0 && !pm) {
@@ -4725,7 +5206,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t && (t.divMin['通所'] || 0) > 0 ? fmtH(t.divMin['通所']) : '') + '</td>';
           h += '<td class="sumcell pcol" rowspan="' + rowSpan + '">' + (t && t.overtimeCount ? t.overtimeCount + '回' : '') + '</td>';
           h += '<td class="notecell noprint" rowspan="' + rowSpan + '" title="' + esc(note) + '">' + esc(note) + '</td>';
-          h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + st.id + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
+          h += '<td class="notecell monthnote noprint" rowspan="' + rowSpan + '" data-sid="' + esc(st.id) + '" title="クリックで今月の連絡事項を編集">' + esc(mnote) + '</td>';
         }
         h += '</tr>';
         /* 範囲指定(分割印刷)では visibleRows を構築しない＝画面の選択/コピペ/矢印移動の行集合を汚さない */
@@ -4820,9 +5301,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var otLen = Sym.leadingNightOutOvertime(cells[String(d - 1)] || '', disp, ctx.symbols);
           if (otLen > 0) dispHtml = '<span class="ot-hl">' + esc(disp.slice(0, otLen)) + '</span>' + esc(disp.slice(otLen));
         }
-        h += '<td class="' + cls + '" data-sid="' + st.id + '" data-div="' + cDiv +
+        h += '<td class="' + cls + '" data-sid="' + esc(st.id) + '" data-div="' + esc(cDiv) +
           '" data-day="' + d + '" data-main="' + (cMain ? 1 : 0) + '"' +
-          (style ? ' style="' + style + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
+          (style ? ' style="' + esc(style) + '"' : '') + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + dispHtml + '</td>';
       }
       return h;
     },
@@ -4953,7 +5434,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var divs = ['施設', '訪問', '通所'];
       for (var i = 0; i < divs.length; i++) {
         var v = m.fteByDivision[divs[i]];
-        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + ctx.settings.fteBaseHours + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
+        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + esc(ctx.settings.fteBaseHours) + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
       }
       var shortage = 0;
       for (var d = 1; d <= ctx.days; d++) {
@@ -5146,7 +5627,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var s = allowed[i];
         if (s.type === 'off' || s.type === 'paidOff' || s.type === 'publicOff') continue;
         h += '<span class="symbtn" data-v="' + esc(s.code) + '" title="' + esc(s.label || '') + '"' +
-          (s.color ? ' style="background:' + s.color + '"' : '') + '>' + esc(s.code) + '</span>';
+          (s.color ? ' style="background:' + esc(s.color) + '"' : '') + '>' + esc(s.code) + '</span>';
       }
       h += '<div class="pal-section">休み</div>';
       for (var j = 0; j < allowed.length; j++) {
@@ -5587,9 +6068,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         var stStatus = st.status || (st.active === false ? '退職' : '在籍');
-        var statusLabel = stStatus + (stStatus === '退職' && st.retireMonth ? '（' + esc(st.retireMonth) + '〜非表示）' : '');
+        var statusLabel = esc(stStatus) + (stStatus === '退職' && st.retireMonth ? '（' + esc(st.retireMonth) + '〜非表示）' : '');
         var dim = (st.active === false || stStatus === '退職');
-        h += '<tr data-sid="' + st.id + '" draggable="true" style="cursor:pointer' + (dim ? ';opacity:.45' : '') + '">' +
+        h += '<tr data-sid="' + esc(st.id) + '" draggable="true" style="cursor:pointer' + (dim ? ';opacity:.45' : '') + '">' +
           '<td title="ドラッグで並べ替え">↕</td>' +
           '<td><b>' + esc(st.name) + '</b></td>' +
           '<td>' + esc(groupLabel(st.group)) + '</td>' +
@@ -5685,7 +6166,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var mcVal = (typeof r.maxConsecutive === 'number' && r.maxConsecutive > 0 && r.maxConsecutive !== 4) ? r.maxConsecutive : '';
       h += '<label>連勤上限</label><input type="number" id="edMaxCons" min="1" max="10" value="' + mcVal + '" style="width:70px" placeholder="既定4">';
       h += '<div class="muted">空欄＝既定4連勤を超えたら画面にオレンジ枠。値を入れるとその職員はオレンジを出しません（自動作成の上限には反映されます）。オレンジ枠は印刷されません。</div>';
-      h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + (r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
+      h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + esc(r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
       h += '<label>遅番回数上限</label><input type="number" id="edLateMax" min="0" max="31" value="' + (r.lateMax || '') + '" style="width:70px" placeholder="なし">';
       h += '<label>固定休曜日</label><div id="edFixedOff">';
       var dows = ['日', '月', '火', '水', '木', '金', '土'];
@@ -5697,6 +6178,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         '<option value=""' + (!r.orderRule ? ' selected' : '') + '>制約なし</option>' +
         '<option value="earlyToLate"' + (r.orderRule === 'earlyToLate' ? ' selected' : '') + '>早⇒遅のみ（遅⇒早は不可）</option>' +
         '</select>';
+      /* 早番に数える開始（2026-09-28・rules.earlyStartMax・分）。既定は記号の分類どおり（開始7:30まで＝早番）。
+       * 「7:00まで」にした職員は 7:30 開始などを日勤として数える（早番の人数・不足判定・自動作成の数え方だけ）。
+       * 一覧に無い既存値は option を足して selected＝保存で黙って既定へ戻さない（元値温存）。 */
+      var esmCur = (typeof r.earlyStartMax === 'number' && isFinite(r.earlyStartMax)) ? r.earlyStartMax : null;
+      var esmOpts = '<option value=""' + (esmCur === null ? ' selected' : '') + '>既定（記号の分類どおり・7:30開始まで早番）</option>' +
+        '<option value="420"' + (esmCur === 420 ? ' selected' : '') + '>7:00開始のみ早番（7:30開始などは日勤として数える）</option>';
+      if (esmCur !== null && esmCur !== 420) {
+        esmOpts += '<option value="' + esmCur + '" selected>' + Math.floor(esmCur / 60) + ':' + ('0' + (esmCur % 60)).slice(-2) + '開始まで早番</option>';
+      }
+      h += '<label>早番に数える開始</label><div><select id="edEarlyStartMax">' + esmOpts + '</select>' +
+        '<div class="muted">早番の人数・不足の判定・自動作成の数え方だけに使います。勤務時間・freee出力は変わりません。</div></div>';
       h += '<label>勤務条件メモ</label><textarea id="edNote" style="height:64px">' + esc(r.note || '') + '</textarea>';
       h += '<label>頭数に入れる</label><label><input type="checkbox" id="edCount"' + (st.countInHeadcount !== false ? ' checked' : '') + '> シフト計算・指標に含める（役員は外す）</label>';
       var curStatus = st.status || (st.active === false ? '退職' : '在籍');
@@ -5783,6 +6275,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         st.rules.lateMax = parseInt(document.getElementById('edLateMax').value, 10) || null;
         st.rules.fixedOffWeekdays = checkedValues('#edFixedOff input:checked').map(function (v) { return parseInt(v, 10); });
         st.rules.orderRule = document.getElementById('edOrder').value || null;
+        var esmIn = parseInt(document.getElementById('edEarlyStartMax').value, 10);
+        st.rules.earlyStartMax = (isNaN(esmIn) || esmIn < 0 || esmIn >= 1440) ? null : esmIn;
         st.rules.note = document.getElementById('edNote').value;
         st.countInHeadcount = document.getElementById('edCount').checked;
         st.status = document.getElementById('edStatus').value;
@@ -5822,8 +6316,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           '<td><input type="text" data-f="start" value="' + esc(s.start || '') + '" style="width:52px"></td>' +
           '<td><input type="text" data-f="end" value="' + esc(s.end || s.pairEnd || '') + '" style="width:52px"></td>' +
           '<td>' + catSelect(s.cat) + '</td>' +
-          '<td><input type="color" data-f="color" value="' + (s.color || '#ffffff') + '"></td>' +
-          '<td><input type="color" data-f="textColor" value="' + (s.textColor || '#2b3138') + '"></td>' +
+          '<td><input type="color" data-f="color" value="' + esc(s.color || '#ffffff') + '"></td>' +
+          '<td><input type="color" data-f="textColor" value="' + esc(s.textColor || '#2b3138') + '"></td>' +
           '<td><input type="checkbox" data-f="bold"' + (s.bold ? ' checked' : '') + '></td>' +
           '<td>' + colorDivSelect(s.colorDiv) + '</td>' +
           '<td class="muted">' + preview(s, app) + '</td>' +
@@ -6128,9 +6622,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<label>休憩控除の閾値</label><select id="setThresh">' +
         '<option value="6"' + (s.breakThresholdH === 6 ? ' selected' : '') + '>拘束6時間以上で1h控除</option>' +
         '<option value="7"' + (s.breakThresholdH === 7 ? ' selected' : '') + '>拘束7時間以上で1h控除</option></select>';
-      h += '<label>夜勤の休憩</label><input type="number" id="setNightBreak" step="0.5" value="' + s.nightBreakH + '" style="width:70px"> ';
+      h += '<label>夜勤の休憩</label><input type="number" id="setNightBreak" step="0.5" value="' + esc(s.nightBreakH) + '" style="width:70px"> ';
       h += '<label>有給の扱い</label><label><input type="checkbox" id="setPaid"' + (s.paidLeaveCountsAsWork ? ' checked' : '') + '> 実働8hとして算入する</label>';
-      h += '<label>常勤換算の分母</label><input type="number" id="setFte" value="' + s.fteBaseHours + '" style="width:70px"> h（4週）';
+      h += '<label>常勤換算の分母</label><input type="number" id="setFte" value="' + esc(s.fteBaseHours) + '" style="width:70px"> h（4週）';
       h += '<label for="setExclude">取込で除外する姓</label><div><input type="text" id="setExclude" value="' +
         esc((s.excludeSurnames || []).join('、')) + '" style="width:220px" placeholder="例）見本、サンプル">' +
         '<div class="muted">希望休フォーム・職員マスタの貼り付け取込で、この姓で始まる氏名を自動除外します（テスト用のダミー回答を弾く用途）。' +
@@ -6149,8 +6643,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var gi = 0; gi < gdefs.length; gi++) {
         var gc = gcs[gdefs[gi][0]] || { bg: '#1a4a80', text: '#ffffff' };
         h += '<tr><td>' + gdefs[gi][1] + '</td>' +
-          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="bg" value="' + gc.bg + '"></td>' +
-          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="text" value="' + gc.text + '"></td></tr>';
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="bg" value="' + esc(gc.bg) + '"></td>' +
+          '<td><input type="color" class="setGc" data-g="' + gdefs[gi][0] + '" data-k="text" value="' + esc(gc.text) + '"></td></tr>';
       }
       h += '</table><div style="margin-top:10px"><button class="act" id="setSave">設定を保存</button> <span class="muted" id="setMsg"></span></div>';
       document.getElementById('settingsForm').innerHTML = h;
@@ -6192,41 +6686,66 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var URL_ERR = '✗ URL は https://script.google.com/macros/s/.../exec の形式である必要があります';
       document.getElementById('syncUrl').value = cfg.url || '';
       document.getElementById('syncToken').value = cfg.token || '';
+      /* ★確かめてから保存（2026-09-25）。接続先か合言葉を変えた保存は、その組で ping して
+       * 【統合同期GASだと確認できた時だけ】保存する。確認できなければ何も保存しない（いまの同期先を残す）。
+       * 空欄（同期オフ）・変更の無い保存は従来どおり確かめずに保存する。 */
+      var syncBusy_ = false;
+      function syncEdited_(u, t) {
+        var cur = Store.getSyncConfig() || {};
+        return u !== String(cur.url || '').trim() || t !== String(cur.token || '').trim();
+      }
       document.getElementById('syncSave').onclick = function () {
+        var msg = document.getElementById('syncMsg');
         var u = document.getElementById('syncUrl').value.trim();
-        if (badSyncUrl_(u)) { document.getElementById('syncMsg').textContent = URL_ERR; return; }
-        Store.setSyncConfig({
-          url: u,
-          token: document.getElementById('syncToken').value.trim()
+        var t = document.getElementById('syncToken').value.trim();
+        if (badSyncUrl_(u)) { msg.textContent = URL_ERR; return; }
+        if (!u) {                                   /* 空欄＝同期オフ（共通キーには触れない・従来どおり） */
+          Store.setSyncConfig({ url: u, token: t });
+          msg.textContent = '✓ 保存しました';
+          return;
+        }
+        /* 接続先を変えない保存では何も書かない（2026-09-25・レビュー指摘 中-2）。以前はここで setSyncConfig を呼び、
+         * 共通キーが無く後方互換キーだけで動く端末では、確かめていない旧キーのURLを3アプリ共通の接続先へ書いていた */
+        if (!syncEdited_(u, t)) {
+          msg.textContent = '✓ 保存しました（接続先は変更なし）';
+          return;
+        }
+        if (syncBusy_) return;
+        syncBusy_ = true;
+        msg.textContent = '同期先を確かめています…（最長30秒）';
+        Store.verifySyncTarget(u, t).then(function (v) {
+          syncBusy_ = false;
+          if (v !== 'ok') {
+            msg.textContent = '✗ 保存していません：' + Store.syncTargetMessage(v) + '（いまの同期先のままです）';
+            return;
+          }
+          Store.setSyncConfig({ url: u, token: t });
+          msg.textContent = '✓ 同期先を確認して保存しました';
         });
-        document.getElementById('syncMsg').textContent = '✓ 保存しました（接続テストを推奨）';
       };
+      /* 接続テストは、入力中の組を【保存せずに】確かめる（以前は保存してから確かめ、
+       * 入居者マスタのGASにも「✓ 接続OK」と出していた）。 */
       document.getElementById('syncTest').onclick = function () {
         var msg = document.getElementById('syncMsg');
         var u = document.getElementById('syncUrl').value.trim();
+        var t = document.getElementById('syncToken').value.trim();
         if (badSyncUrl_(u)) { msg.textContent = URL_ERR; return; }
+        if (!u) { msg.textContent = '✗ URL が空です'; return; }
         msg.textContent = '接続中…';
-        Store.setSyncConfig({
-          url: u,
-          token: document.getElementById('syncToken').value.trim()
-        });
-        Store.ping().then(function (res) {
-          var role = res && res.role === 'ro' ? '（閲覧専用トークン：この端末の編集は共有されません）'
-            : res && res.role === 'rw' ? '（編集可トークン）' : '';
-          msg.textContent = '✓ 接続OK ' + role;
-        }).catch(function (e) {
-          var m = e && e.message ? e.message : String(e);
-          if (m === 'unauthorized') m = 'トークンが一致しません';
-          if (m === 'server-not-configured') m = 'サーバ未設定（SHIFTAPP_TOKEN未設定）';
-          msg.textContent = '✗ 接続失敗: ' + m;
+        var edited = syncEdited_(u, t);
+        Store.verifySyncTarget(u, t).then(function (v) {
+          msg.textContent = (v === 'ok' ? '✓ ' : '✗ ') + Store.syncTargetMessage(v)
+            + (edited ? '（まだ保存していません。［保存］で反映します）' : '');
         });
       };
       document.getElementById('syncNow').onclick = function () {
         var msg = document.getElementById('syncMsg');
         msg.textContent = '同期中…';
-        Store.pullAll().then(function (r) {
+        /* 表示月の窓に絞った keyed pull（2026-09-23・全量pull は他アプリのファイルまで取り込むため）。
+         * 取得できた時の画面反映は manualSync_ が行う＝失敗時だけ従来どおりここで読み直す。 */
+        app.manualSync_().then(function (r) {
           msg.textContent = r === 'ok' ? '✓ 同期完了' : '✗ ' + Store.statusDetail;
-          app.reloadFromStore();
+          if (r !== 'ok') app.reloadFromStore();
         });
       };
       /* 端末名（他端末に「◯◯が編集中」と出る表示名）。初回は編集モードON時の入力欄で聞くが、
@@ -6460,7 +6979,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var st = staff[i];
         var nm = IM.normalizeName(st.name);
         var row = reqs[nm] || {};
-        h += '<tr data-sid="' + st.id + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
+        h += '<tr data-sid="' + esc(st.id) + '" draggable="true"><td style="cursor:grab" title="ドラッグで並べ替え（希望休画面専用の並び順）">' + esc(st.name) + '</td>';
         for (var d2 = 1; d2 <= days; d2++) {
           var v = row[d2] || row[String(d2)] || '';
           h += '<td style="text-align:center;cursor:pointer" data-nm="' + esc(nm) + '" data-day="' + d2 + '">' +
@@ -6688,7 +7207,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<th>1週</th><th>2週</th><th>3週</th><th>4週</th><th>4週計h</th><th>常勤換算</th></tr>';
       for (var i = 0; i < data.rows.length; i++) {
         var r = data.rows[i];
-        h += '<tr data-sid="' + r.sid + '" draggable="true"><td style="cursor:grab" title="' + esc(r.name) + '／ドラッグで並べ替え（行政提出専用）">' + esc(r.name) + '</td>' +
+        h += '<tr data-sid="' + esc(r.sid) + '" draggable="true"><td style="cursor:grab" title="' + esc(r.name) + '／ドラッグで並べ替え（行政提出専用）">' + esc(r.name) + '</td>' +
           '<td title="サービス提供責任者">' + (r.svcMgr ? 'サービス提供責任者' : '') + '</td>' +
           '<td title="' + esc(r.quals) + '">' + esc(r.quals) + '</td>' +
           '<td title="' + esc(r.employment) + '">' + esc(r.employment) + '</td>';
@@ -6708,7 +7227,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<div class="offstats"><b>行政保管用 指標（' + app.year + '年' + app.month + '月・' + esc(data.division) + '・' + ({plan:'予定',actual:'実績',official:'行政提出用'})[data.layer] + 'レイヤ）</b><table class="plain" style="max-width:520px;margin-top:6px">';
       h += '<tr><th>介護福祉士 割合（実働）</th><td><b>' + data.kaifukuPct + '%</b></td></tr>';
       h += '<tr><th>介護福祉士＋実務者研修 割合（実働）</th><td><b>' + data.kaifukuJitsumuPct + '%</b></td></tr>';
-      h += '<tr><th>常勤換算 合計（1〜28日÷' + app.settings.fteBaseHours + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
+      h += '<tr><th>常勤換算 合計（1〜28日÷' + esc(app.settings.fteBaseHours) + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
       h += '</table></div>';
       h += '<p class="muted">※「従業者の勤務体制及び勤務形態一覧表（様式1）」への転記用。割合は当該事業所区分の実働時間に占める資格保有者の実働時間。</p></div>';
       document.getElementById('officialTable').innerHTML = h;
@@ -7483,13 +8002,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.restoreEditMode_();
         self.startLeaseTimers_();
       });
+      /* ★2026-09-08 起動の高速化(第2弾): 窓pullを【当月ぶん】と【前月・翌月ぶん】へ分け、並行に取る。
+       *
+       * 理由: serverSeen はメモリのみ（リロードで毎回リセット）なので、窓pullが終わるまで
+       * monthReady_ が false ＝「まだ読み込めていません。編集できません」の帯が出続ける。
+       * 実測で19キーの窓pullに13秒かかっており、その間ずっと編集できなかった。
+       * 当月ぶん（共通4＋当月5＝9キー）だけ先に確定させれば、その半分ほどで編集を開始できる。
+       *
+       * ★キーは重複させない（同じキーを2本のpullで同時に取り込むと、取り込み順で競合判定が揺れる）。
+       * ★取りに行くキーの集合は分割前と完全に同一＝取得内容・保存内容は変わらない。
+       * ★閲覧モードでは pushQueued が即returnするため、pullが2本になっても送信は増えない。 */
+      var grp_ = this.bootPullGroups_(scope);
+      var curKeys = grp_.cur, restKeys = grp_.rest, restMonths = grp_.restMonths, wi_;
+      if (restKeys.length) {
+        if (!this._pullingYM) this._pullingYM = {};
+        /* 背景取得中の月に切り替えられても maybePullMonth_ が二重に出さないよう印を立てる */
+        for (wi_ = 0; wi_ < restMonths.length; wi_++) this._pullingYM[restMonths[wi_]] = true;
+        var clearRest_ = function () {
+          for (var k_ = 0; k_ < restMonths.length; k_++) self._pullingYM[restMonths[k_]] = false;
+        };
+        Store.pullAll(restKeys).then(function (r) {
+          clearRest_();
+          if (r === 'ok') { self.reloadFromStore(); self.updateMonthReadyUI_(); }
+        }, clearRest_);
+      }
       /* 起動時プルの結果は保持する（編集モードの復元がこの結果を条件にする＝同じ窓を二重に取りに行かない） */
-      this._bootPull = Store.pullAll(scope).then(function (r) {
+      this._bootPull = Store.pullAll(curKeys).then(function (r) {
         self._bootPullPending = false;
         if (r === 'ok') {
           self.reloadFromStore();
-          /* 第2弾: 取り込んだ各 drafts:YM を読み、編集用ドラフト本体(sched:YM:draft:<id>)を追加取得（2段方式） */
-          self.pullWindowDrafts_();
+          /* ★2026-09-08 起動の高速化: 以前はここで【窓内3か月ぶんの編集用ドラフト本体を全部】
+           * 先読みしていた（pullWindowDrafts_）。実測で 12件・307KB・15.4秒かかり、
+           * 起動全体（約27秒）の半分以上をこれ1つが占めていた。
+           * ドラフト本体は「そのドラフトを開いた時」だけ必要で、未取得なら maybePullDraftBody_ が
+           * 1キーだけ取り直す仕組みが既にある（monthReady_ も開いているレイヤしか見ない）。
+           * よって先読みをやめ、表示中のレイヤがドラフトの時だけ1件取る。取得内容・保存内容は不変。 */
+          self.maybePullDraftBody_();
         }
         /* 窓pullで当月が得られなかった場合（オフライン起動・クラウド空等）のみ on-demand 側が拾う（窓内で取得済みなら即return） */
         self.maybePullMonth_(self.ym);
@@ -7746,6 +8294,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.toast('この月はまだ読み込めていません（右上の同期ボタンで再取得できます）');
     },
     /* 起動時プルの全キー: 端末共通(全月共有) staff/symbols/settings/freee ＋ 窓内各月の月別キー。 */
+    /* 起動時プルの2分割（2026-09-08）。cur=画面に必要な当月ぶん、rest=前月・翌月ぶん。
+     * ★不変条件: cur ∪ rest ＝ 窓キー全体（取りこぼし無し）、cur ∩ rest ＝ 空（重複無し）。
+     *   同じキーを2本のpullで同時に取り込むと取り込み順で競合判定が揺れるため、重複は作らない。
+     * 回帰テスト: tests/keyed_pull.test.js ⑦ */
+    bootPullGroups_: function (scope) {
+      var all = scope || this.recentSyncKeys_();
+      var cur = ['staff', 'symbols', 'settings', 'freee'].concat(this.monthSyncKeys_(this.ym));
+      var rest = [], restMonths = [], i;
+      for (i = 0; i < all.length; i++) if (cur.indexOf(all[i]) < 0) rest.push(all[i]);   /* 差集合 */
+      var months = this._syncWindowMonths || this.windowMonths_();
+      for (i = 0; i < months.length; i++) if (months[i] !== this.ym) restMonths.push(months[i]);
+      return { cur: cur, rest: rest, restMonths: restMonths };
+    },
     recentSyncKeys_: function () {
       var keys = ['staff', 'symbols', 'settings', 'freee'];
       var months = this.windowMonths_();
@@ -7768,7 +8329,40 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       return keys;
     },
+    /* 手動同期（同期バッジ・マスタの［今すぐ同期］）で取得するキー（2026-09-23）。
+     * 以前は keyless 全量pull で、共有フォルダにある他アプリのファイル（ワースケの日次ファイル約140件・11MB 等）まで
+     * 端末へ取り込み、保存容量を使い切って本物のシフト編集が保存できなくなった。
+     * 起動時と同じ窓（端末共通4キー＋表示月の前月・当月・翌月）＋表示月の編集用ドラフト本体に絞る。
+     * 窓の外の月は、その月を開いた時に maybePullMonth_ が取りに行く。重複は除き、順序は保つ。 */
+    manualSyncKeys_: function () {
+      var src = this.recentSyncKeys_().concat(this.draftBodyKeys_([this.ym]));
+      var out = [], seen = {}, i;
+      for (i = 0; i < src.length; i++) {
+        if (seen[src[i]] === 1) continue;
+        seen[src[i]] = 1;
+        out.push(src[i]);
+      }
+      return out;
+    },
+    /* 手動同期の本体。戻り値は pullAll の結果文字列（'ok' / 'offline' 等）を返す Promise。
+     * 取得できたら画面へ反映し、開いている編集用ドラフトの本体が今回の要求に入っていなかった時だけ
+     * 1キーを取り直す（通常は manualSyncKeys_ に入っている＝二重に取りに行かない）。 */
+    manualSync_: function () {
+      var self = this;
+      var keys = this.manualSyncKeys_();
+      return Store.pullAll(keys).then(function (r) {
+        if (r === 'ok') {
+          self.reloadFromStore();
+          if (keys.indexOf(self.schedKey(self.layer)) < 0) self.maybePullDraftBody_(true);
+          self.updateMonthReadyUI_();
+        }
+        return r;
+      });
+    },
     /* 窓内の各 drafts:YM を読み、編集用ドラフト本体(sched:YM:draft:<id>)を keyed pull（起動時プルの第2弾）。 */
+    /* ★2026-09-08 以降、どこからも呼んでいない（起動が15秒遅くなるため先読みを廃止した）。
+     * 窓内の全ドラフト本体を一括取得したくなった時のために形だけ残す。復活させる前に
+     * 「起動時に12件・307KB・15.4秒かかった」実測を思い出すこと。 */
     pullWindowDrafts_: function () {
       var self = this;
       var months = this._syncWindowMonths || this.windowMonths_();
@@ -7805,10 +8399,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 失敗を恒久化しない: 印を立てず、次の再試行までの間隔だけ記録する */
           self._pullFailedAt[ym] = Date.now();
           self.updateMonthReadyUI_();
+          self.scheduleMonthRetry_(ym);   /* 人が［再取得］を押さなくても 30→60→120秒で取り直す（2026-09-28） */
           return;
         }
         self._pulledYM[ym] = true;
         delete self._pullFailedAt[ym];
+        if (self._monthRetryN) delete self._monthRetryN[ym];
         self.updateMonthReadyUI_();
         /* 第2弾: この月の編集用ドラフト本体 */
         var dkeys = self.draftBodyKeys_([ym]);
@@ -7821,9 +8417,41 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (self.ym === ym) { self.loadMonth(); self.rerender(); }
       });
     },
+    /* 月の取得に失敗したら自動で取り直す（2026-09-28）。
+     * 背景: Google の受付側が数分止まると月の取得が失敗し、従来は人が［再取得］を押す・月を開き直すまで
+     *   「データをまだ読み込めていません。編集できません」のまま固着していた（2026-09-28 19:45〜 実測）。
+     * 間隔は NP.monthRetryDelayMs（30→60→120秒で頭打ち）。表示中の月が変わった・取得済みになったら何もしない。
+     * タブが隠れている間は撃たずに次へ回す（見えない端末で通信を増やさない）。同じ月の待ちは1本だけ。 */
+    scheduleMonthRetry_: function (ym) {
+      var self = this;
+      var np = window.ShiftNetPolicy;
+      if (!np || !np.monthRetryDelayMs) return;
+      if (!this._monthRetryN) this._monthRetryN = {};
+      if (!this._monthRetryT) this._monthRetryT = {};
+      if (this._monthRetryT[ym]) return;
+      var n = (this._monthRetryN[ym] || 0) + 1;
+      this._monthRetryN[ym] = n;
+      this._monthRetryT[ym] = setTimeout(function () {
+        self._monthRetryT[ym] = null;
+        if (self.ym !== ym) return;                                   /* 別の月へ移った＝その月を開いた時に取りに行く */
+        if (self._pulledYM && self._pulledYM[ym]) return;             /* 既に取得できた */
+        /* 隠れている・起動時の取得がまだ終わっていない・［再取得］などで同じ月を取得中の時は撃たずに次へ回す
+           （ここで止めると自動の取り直しが途切れる・レビュー指摘） */
+        if ((typeof document !== 'undefined' && document.hidden) || self._bootPullPending ||
+            (self._pullingYM && self._pullingYM[ym])) {
+          self._monthRetryN[ym] = Math.max(0, (self._monthRetryN[ym] || 1) - 1);   /* 見送りでは間隔を伸ばさない */
+          self.scheduleMonthRetry_(ym);
+          return;
+        }
+        /* この予約そのものが「次の再試行」＝失敗直後の抑止（PULL_RETRY_MS）に当たって空振りしないよう印を外す
+           （時計のずれ・タイマーの早い発火で抑止に当たると、次の予約もされず取り直しが止まる・レビュー指摘） */
+        if (self._pullFailedAt) delete self._pullFailedAt[ym];
+        self.maybePullMonth_(ym);
+      }, np.monthRetryDelayMs(n));
+    },
     /* 表示中の編集用ドラフト本体（sched:YM:draft:<id>）が未取得なら、その1キーだけ取り直す。
      * 起動時プル/月別プルの第2弾が失敗した端末で、ドラフトが未取得のまま帯が出続けるのを解く。 */
-    maybePullDraftBody_: function () {
+    maybePullDraftBody_: function (force) {
       var self = this;
       if (typeof this.layer !== 'string' || this.layer.indexOf('draft:') !== 0) return;
       var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
@@ -7831,7 +8459,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this._bootPullPending) return;
       if (!this.monthReady_(this.ym)) return;       /* 月そのものが未取得＝先に月を取る */
       var key = this.schedKey(this.layer);
-      if (this.serverSeen_(key)) return;
+      /* force=true: 取得済みでも取り直す。閲覧中のドラフトを他端末が更新した時に使う
+         （ドラフト本体キーは head の照会対象に入っていないため、一覧の変化を合図にする）。 */
+      if (!force && this.serverSeen_(key)) return;
       if (!this._pullingYM) this._pullingYM = {};
       if (!this._pullFailedAt) this._pullFailedAt = {};
       if (this._pullingYM[key]) return;
@@ -8040,6 +8670,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         } else {
           self._pullFailedAt[ym] = Date.now();
           self.toast('まだ取得できません（通信状況を確認してください）');
+          if (!monthOk) self.scheduleMonthRetry_(ym);   /* 押した取得が失敗しても自動の取り直しを続ける（2026-09-28） */
         }
         self.updateMonthReadyUI_();
       }
@@ -8102,10 +8733,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var lay = 'draft:' + d.id;
           var on = (this.layer === lay) ? ' on' : '';
           var auto = d.auto ? ' autopt' : '';
-          h += '<span class="drafttab' + on + auto + '" data-layer="' + lay + '" title="' +
+          h += '<span class="drafttab' + on + auto + '" data-layer="' + escText(lay) + '" title="' +
             escText(d.label) + (d.auto ? '（自動退避・確定前の予定）' : '／クリックで開く・ダブルクリックで名称変更') + '">' +
             '<span class="dlabel">' + escText(d.label) + '</span>' +
-            '<span class="dx" data-del="' + d.id + '" title="この編集用を削除">×</span></span>';
+            '<span class="dx" data-del="' + escText(d.id) + '" title="この編集用を削除">×</span></span>';
         }
         wrap.innerHTML = h;
       }
@@ -8321,10 +8952,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         for (var sk in this.settings) settings[sk] = this.settings[sk];
         settings.breakH = 2;
       }
+      /* 早番に数える開始時刻の上限は運用ルール＝マスタ現在値を優先（確定月の凍結名簿でも直せば反映・resolveConsRule と同じ考え方） */
+      var ruleSrc = this.masterStaffById_(st.id) || st;
       return TC.computeStaffMonth({
         days: this.days, rows: rows, symbols: this.symbols,
         settings: settings, nightSplit: st.nightSplit || null,
-        offDayMultiplier: isNight ? 2 : 1
+        offDayMultiplier: isNight ? 2 : 1,
+        earlyStartMax: Sym.earlyStartMaxOf(ruleSrc)
       });
     },
 
@@ -8552,7 +9186,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<table class="plain">';
       for (var i = this._undo.length - 1; i >= 0; i--) {
         var e = this._undo[i];
-        h += '<tr><td>' + e.at + '</td><td>' + e.ym + '/' + e.layer + '</td><td>' + escText(e.label) + '</td>' +
+        h += '<tr><td>' + escText(e.at) + '</td><td>' + escText(e.ym) + '/' + escText(e.layer) + '</td><td>' + escText(e.label) + '</td>' +
           '<td><button class="act ghost histjump" data-i="' + i + '">この直前へ戻す</button></td></tr>';
       }
       h += '</table><p class="muted">※職員マスタ・記号・設定の変更は履歴の対象外です。アプリを閉じると履歴は消えます。</p>';
@@ -9904,11 +10538,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* サーバーの編集リース対応を確認（1回）。保持者情報はバッジに出す。 */
     probeLock_: function () {
       var self = this;
+      this._lockProbeInFlight = true;   /* 60秒 tick の再判定が重ねて撃たないための印（呼び出し元は問わない） */
       return Store.probeLockSupport().then(function (holder) {
+        self._lockProbeInFlight = false;
         self.setLockHolder_(holder);
         self.updateEditToggleEnabled_();
         return holder;
-      });
+      }, function (e) { self._lockProbeInFlight = false; throw e; });
     },
 
     /* 再読み込み後の編集モード復帰（dev-principles 原則11）。
@@ -9967,6 +10603,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             return;
           }
           self.enableEdit_();   /* 判定できたので通常のフローへ入り直す */
+        });
+        return;
+      }
+      /* ①-b 前に「未対応」と判定されていても、劣化モードを勧める前に1回だけ確かめ直す（2026-09-24）。
+       * 判定が古いまま（開いた後にサーバーが更新された等）だと、厳格モードのサーバーで送信が拒否され
+       * 「OK を押しても編集できない」になる。対応していれば通常のフローへ、通信できなければ①-a と同じ案内。 */
+      if (Store.lockCapable === false && !this._lockReprobed) {
+        /* probe は通信失敗で判定を据え置く＝false のままでは「未対応」と「通信失敗」を見分けられない。
+         * 未判定(null)にしてから確かめ、通信失敗で null のままなら元の false に戻す（状態は変えない）。 */
+        Store.lockCapable = null;
+        this.probeLock_().then(function () {
+          if (tog) tog.disabled = false;
+          if (Store.lockCapable === null) {
+            Store.lockCapable = false;
+            self.updateModeBadge();
+            self.updateEditToggleEnabled_();
+            revert();
+            self.confirmInfo('編集モードにできません',
+              'サーバーに接続できないため、編集権を確認できませんでした。\n通信状況を確認して、もう一度お試しください。');
+            return;
+          }
+          self._lockReprobed = true;   /* 入り直した1回では確かめ直さない（未対応のままなら①-b へ進む） */
+          self.enableEdit_();
+          self._lockReprobed = false;
         });
         return;
       }
@@ -10244,6 +10904,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.renewTick_();
         return;
       }
+      /* 起動時の判定が一時的な失敗（404・通信断）で未判定(null)のままだと、pollView_ は動かず
+       * 開きっぱなしの端末の自動更新が止まる（タブを切り替えるまで戻らない）。tick ごとに1回だけ
+       * 判定し直し、判定できたら次の tick から通常の自動更新に戻る。判定済み(true/false)では通信を増やさない。 */
+      if (Store.lockCapable === null) {
+        var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+        if (!cfg || !cfg.url) return;                 /* 同期未設定＝沈黙（従来どおり） */
+        if (this._lockProbeInFlight) return;          /* 前の判定がまだ返っていない＝重ねない */
+        this.probeLock_();
+        return;
+      }
       this.pollView_();
     },
     renewTick_: function () {
@@ -10336,10 +11006,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              * データの取り込みは済ませ、画面への反映だけ印刷終了後へ回す。 */
             if (self._printing) { self._pendingReload = true; return 'ok'; }
             self.reloadFromStore();      /* 表示中のタブ・月は維持される（rerender は現在地を変えない） */
+            /* 編集用の一覧が動いた時も、まとめ先読みはしない（起動時と同じ理由）。
+             * ただし【表示中のドラフト】だけは取り直す＝他端末の編集が画面に反映されなくならないように。 */
+            var draftsMoved_ = false;
             for (var i = 0; i < changed.length; i++) {
-              /* 編集用の一覧が動いた時はドラフト本体も追加取得（起動時プルと同じ2段方式） */
-              if (changed[i].indexOf('drafts:') === 0) { self.pullWindowDrafts_(); break; }
+              if (changed[i].indexOf('drafts:') === 0) { draftsMoved_ = true; break; }
             }
+            self.maybePullDraftBody_(draftsMoved_);
             self.updatePendingBanner_();
             return 'ok';
           });
@@ -10456,9 +11129,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.updatePendingBanner_();
       });
       badge.addEventListener('click', function () {
-        Store.pullAll().then(function (r) {
-          if (r === 'ok') self.reloadFromStore();
-        });
+        /* 表示月の窓に絞った keyed pull（全量pull は他アプリのファイルまで取り込む・manualSync_ 参照） */
+        self.manualSync_();
       });
       /* 競合が全件解決したらUIを再読込（adoptServerの非同期pull完了後に呼ばれる） */
       /* 競合はモーダルを出さず Store 側で自動解決（編集中のローカルを優先）。
@@ -10529,5 +11201,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (typeof module !== 'undefined' && module.exports) module.exports = { App: App };
 })();
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04.2" data-tool="シフト作成・管理"></script>
 </body>
 </html>

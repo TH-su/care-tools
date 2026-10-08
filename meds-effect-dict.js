@@ -1,13 +1,19 @@
 /* 薬効辞書 — 薬剤名から「効果・効能」の短い分類を引く（2026-08-11 新設）
  *
- * 使う側: resident-master.html（詳細画面・印刷）／facesheet.html（医療・服薬タブ・印刷）
+ * 使う側: resident-master.html（詳細画面・印刷・病歴薬一覧・薬効辞書タブ）／facesheet.html（医療・服薬タブ・印刷）
  *   var eff = MedsEffect.effectOf('アムロジピンOD錠5mg 1錠 朝');   // → '降圧'
  *   var eff = MedsEffect.effectOf('（院外）調剤薬局にて調整中');     // → ''（推測しない）
+ *   var rs  = MedsEffect.resolveLines(medsRegular, mdMap);           // → [{text:'降圧', mark:'＊', src:'static'}, …]
+ *
+ * ★2026-09-24 本人決定（案A）: 効能の表示を med_dict（スプレッドシート・薬剤師確認）へ一本化した。
+ *   どの画面・どの紙でも、同じ薬には同じ効能を出す。表示の規則は resolveLines【1本だけ】に置く
+ *   （画面ごとに書くと、詳細画面とA3とフェイスシートで同じ薬の効能が食い違う＝今回直した不具合そのもの）。
  *
  * ★このファイルの約束
  *  1. 一般的な薬効分類だけを載せる。**入居者の処方内容は1文字も写さない**
  *     （このファイルは公開リポジトリに載る。施設の処方傾向が読み取れる形にしない）
- *  2. 辞書は**ここ1箇所だけ**に置く。HTML 側へ写しを作らない
+ *  2. 効能の正本は med_dict（薬剤師確認）。本ファイルは med_dict に無い薬の予備（＊付き表示）と、
+ *     照合キー規則（key / drugName）の唯一の置き場。HTML 側へ写しを作らない
  *     （SAFE_FIELDS の「3箇所で一致させる契約」が破れて実害が出た教訓）
  *  3. 引けない薬は**必ず空文字**を返す。推測で埋めない（誤った効能は投薬判断を誤らせる）
  *  4. 分類は2〜5文字。用量・用法は見ない（薬剤名だけで引く）
@@ -392,10 +398,70 @@
     return out;
   }
 
+  /* ── med_dict の照合キー（2026-09-24 入居者マスタから移設）──
+     ★サーバーの _mdKey（gas/med-dict.gs）と【同じ規則】にすること。1文字も変えない。
+       食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。
+     ★入居者マスタの薬効辞書タブ（保存キー）もこれを使う。画面ごとに写しを持つと、
+       表示のキーと保存のキーが割れて同じ薬が2行になる。 */
+  function key(s) { return String(s == null ? '' : s).replace(/　/g, ' ').replace(/\s+/g, ' ').trim(); }
+
+  /* 内服の1行から薬剤名を取り出す。「エゼミチブ錠10mg 1錠分1 朝食後」→「エゼミチブ錠」
+     （入居者マスタの mdDrugName をそのまま移した。規則の経緯は入居者マスタ側のコメント参照）
+     ★用量は落として同じ薬をまとめる（落とすのは【末尾の数字＋単位】だけ）。
+     ★区切りは半角スペースと【：（全角・半角コロン）】。
+     ★メーカー名の「」『』は落とす。 */
+  function drugName(line) {
+    var t = key(String(line == null ? '' : line).replace(/[「『][^」』]*[」』]/g, '')); if (!t) return '';
+    t = t.split(/[ ：:]/)[0];
+    t = t.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:mg|ｍｇ|g|ｇ|μg|ug|mcg|ml|ｍｌ|mL|%|％|単位|IU)$/i, '');
+    return key(t);
+  }
+
+  /* ── 効能の表示規則（2026-09-24 本人決定・案A）。どの画面・紙もこの1本を通す ──
+     text は内服欄の文字列（改行区切り）か、行の配列。mdMap は key(name) → {name, effect, ok, hidden}。
+     戻り値は【入力の行数と必ず同じ長さ】の配列。各要素 {text, mark, src}:
+       ① med_dict に行があり効能が入っている → その効能。薬剤師未確認（ok でない）なら mark='＊'
+       ② med_dict に行はあるが非表示／効能が空 → '—'（その薬の答えとして扱い、予備辞書へ【落とさない】）
+       ③ med_dict に行が無い → 本ファイルの予備辞書（effectOf）。引けたら mark='＊'（未確認）
+       ④ どれでも引けない → '—'
+       空行は {text:'', mark:'', src:'blank'}（薬ではないので '—' も付けない。出し方は呼び出し側が決める）
+     src は 'dict' | 'dict-empty' | 'static' | 'none' | 'blank'（点検の集計用）。
+     ★＊の意味は1つだけ＝「未確認」（AIの下書き・予備辞書のどちらも。2026-09-24 本人了承）。
+     ★med_dict との照合は key(drugName(行)) の【完全一致だけ】（2026-09-24 レビュー指摘で緩い照合を外した）。
+       全角半角などを寄せて引くと、詳細画面・A3では効能が出るのに薬効辞書タブでは「未登録」に見え、
+       画面どうしが食い違う（辞書タブは完全一致のキーで並べる）。外れた薬は予備辞書へ回す（＊付き）。
+     ★mdMap が取れていない時にこれを呼んで予備辞書だけで埋めてはいけない（本人決定 Q1）。
+       取れていない時は呼び出し側が1列表示へ戻す。 */
+  function resolveLines(text, mdMap) {
+    var lines = Array.isArray(text) ? text.slice()
+      : String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+    var map = (mdMap && typeof mdMap === 'object') ? mdMap : Object.create(null);
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = String(lines[i] == null ? '' : lines[i]);
+      if (!line.trim()) { out.push({ text: '', mark: '', src: 'blank' }); continue; }
+      var name = drugName(line), row = null;
+      if (name && Object.prototype.hasOwnProperty.call(map, name)) row = map[name];
+      if (row) {
+        var eff = String(row.effect == null ? '' : row.effect).trim();
+        if (!row.hidden && eff) out.push({ text: eff, mark: row.ok ? '' : '＊', src: 'dict' });
+        else out.push({ text: '—', mark: '', src: 'dict-empty' });
+        continue;
+      }
+      var st = effectOf(line);
+      if (st) out.push({ text: st, mark: '＊', src: 'static' });
+      else out.push({ text: '—', mark: '', src: 'none' });
+    }
+    return out;
+  }
+
   global.MedsEffect = {
-    version: '2026-08-11',
+    version: '2026-09-24',
     effectOf: effectOf,
     effectsFor: effectsFor,
+    key: key,
+    drugName: drugName,
+    resolveLines: resolveLines,
     labels: function () { return Object.keys(BY_LABEL); },
     size: function () { return build().length; }
   };

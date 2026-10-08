@@ -6,10 +6,11 @@
 #
 # 既定で全て除外し、公開対象ファイルのみをホワイトリストで許可する。
 # これにより `git add -A` / `git add .` を実行しても、WordPress テーマ本体(PHP)・
-# harness(.claude/)・CLAUDE.md・design/・実在氏名を含む PII 等が
+# harness(.claude/)・design/・実在氏名を含む PII 等が
 # 公開リポジトリへ誤って混入しない（＝丸ごと流出を機械的に防止）。
 #
 # 新しい公開アプリを追加する時だけ、下に `!/新ファイル.html` を1行足す（明示 opt-in）。
+# CLAUDE.md は 2026-10-04 から公開対象（決まりだけを書く。経緯・個人情報・鍵・内部設計は書かない）。
 # ════════════════════════════════════════════════════════════════
 
 # まず全て除外
@@ -18,6 +19,44 @@
 # 公開対象のみ許可（現に origin/main で公開されているファイル）
 !/.gitignore
 !/.nojekyll
+!/CLAUDE.md
+# PR ごとの自動チェック（2026-10-04・画素の見比べ）。.github の中も1ファイルずつ明示 opt-in
+!/.github
+/.github/*
+!/.github/workflows
+/.github/workflows/*
+!/.github/workflows/pixel-check.yml
+!/.github/workflows/unit-tests.yml
+# 画面の指摘の Issue に配置図の絵を付ける（2026-10-04・提案3）
+!/.github/workflows/report-image.yml
+# 検証道具・受け口・定期タスクの指示書（2026-10-04・配布物ではない。架空データ専用／実名の一覧と撮影結果は置かない）
+# check/ の中も「明示 opt-in」。新しい道具を足す時は下に1行足す（out/・node_modules/・.names.local は載らない）
+!/check
+/check/*
+!/check/README.md
+!/check/package.json
+!/check/lib.mjs
+!/check/snap.mjs
+!/check/compare.mjs
+!/check/jscheck.mjs
+!/check/name-guard.mjs
+!/check/run.mjs
+!/check/serve.mjs
+# 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
+!/check/unit
+/check/unit/*
+!/check/unit/*.js
+!/check/unit/package.json
+!/check/unit/run-all.mjs
+!/check/ci-allow.mjs
+!/check/annot-render.mjs
+!/check/gas
+/check/gas/*
+!/check/gas/README.md
+!/check/gas/report-inbox.gs
+!/check/routine
+/check/routine/*
+!/check/routine/nightly-fix.md
 !/care-schedule.html
 !/facesheet.html
 !/genogram.html
@@ -38,13 +77,47 @@
 # 入居調整（申込〜入居の多機関連携ボード・2026-08-27）。コードのみ公開。
 # 相談者の情報は localStorage と GAS 側にあり、リポジトリには一切含まれない
 !/admission-flow.html
-# 薬効辞書（薬剤名 → 効果・効能）。入居者マスタとフェイスシートが共有する唯一の正本。
+# 薬効辞書の部品（入居者マスタとフェイスシートが共有）。効能の正本は med_dict（薬剤師確認・スプレッドシート側）で、
+# このファイルは med_dict に無い薬の予備（＊付き表示）と照合キー規則の唯一の置き場（2026-09-24 本人決定）。
 # 一般的な薬効分類のみで、入居者の処方内容は含まない（2026-08-11 管理者の承認のうえ公開）
 !/meds-effect-dict.js
+# 定期薬の入力パネルの候補（2026-10-01 代表承認）。厚生労働省の薬価基準収載品目リスト（内用薬）を
+# 加工した公的データだけで、入居者の処方内容は含まない（出典はファイル先頭・生成は gas/tools/gen_meds_yakka.py）
+!/meds-yakka-naiyo.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
 # 個人情報は一切含まない（接続先・合言葉もアプリ側の localStorage から渡される）。
 !/su-data.js
 !/su-data-gas.js
+# 不具合報告の共有部品（2026-09-06）。個人情報は集めない設計で、収集するのは端末・ブラウザ・
+# 画面サイズ・JSエラー・接続設定の有無（真偽のみ）だけ。localStorage の値は読まない。
+!/su-report.js
+# 画面の指摘（管理者だけ・su-report.js が必要な時だけ読む。文字を塗りつぶした配置図を作る。2026-10-04・提案3）
+!/su-annot.js
+# 印刷共通モジュール（2026-09-12・管理者承認のうえ公開）。用紙・余白・収め方の設定画面と、
+# 用紙1枚に収める採寸だけを持つ。氏名・接続先・合言葉は一切含まない
+# （端末に保存するのも localStorage: su_print_prefs の用紙・余白・収め方のみ）。
+# daycare-roster.html が読み込む。M2 以降（resident-master・shift-app・work-schedule）も同じ1本を共有する。
+!/su-print.js
+!/su-errors.js
+# 施設情報（2026-09-24・本人承認の設計＝公開の設定ファイル1つに集める）。載せるのは施設の公開情報だけ
+!/su-facility.js
+!/facility-profile.json
+!/su-print.css
+# 動作の速さの記録（統合 Phase 0・2026-09-24）。ブラウザの計測時刻を端末の IndexedDB に残す部品と集計画面。
+# 残すのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけで、氏名・記録・合言葉は一切含まない
+!/su-perf.js
+!/perf-report.html
+!/training-plan.html
+!/training-plan-form.js
+# 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。
+# 職員の情報は専用スプレッドシート＋職員マスタAPI（GAS）側にあり、リポジトリには一切含まれない
+!/staff-master.html
+!/staff-master-calc.js
+# 消耗品管理（2026-09-17・管理者承認のうえ公開）。コードのみ公開。
+# 品目・価格・在庫・提供の記録は専用スプレッドシート＋消耗品管理API（GAS）側にあり、
+# リポジトリには一切含まれない。提供先は利用者No（数字）だけで、氏名はシートにも持たない
+!/supplies.html
+!/supplies-calc.js
 
 # SilverMail — 複数アカウント対応ローカルメーラー（2026-08-15）。
 # コードのみ公開。認証情報は ~/.silvermail/（リポジトリ外）とmacOSキーチェーンに保存され、
@@ -61,3 +134,28 @@ mailer/.DS_Store
 #  demo-data.json / staff-roster.json / shiftapp-backup-*.json → 実職員名を含む
 #  visiting-medical-app/             → 訪問診療（要配慮個人情報）・本番は clinic-app
 #  *.php / .claude/ / CLAUDE.md / design/ / assets/  → テーマ本体・harness・docs
+!/kotowaza-jiten.html
+# 共通ログイン（統合 Phase 1・2026-09-26）。Google ログインと管理者の2段階認証。
+# 載るのは Supabase の接続先と「公開用の鍵（anon）」だけ（ブラウザに配る前提の鍵。単独では何も読めない）。
+# 秘密の鍵（service_role / sb_secret_）・パスワード・氏名は一切含まない。supabase-js は npm の原本を同梱（MIT）
+!/login.html
+!/login.js
+!/su-auth.js
+!/supabase-js-2.112.4.js
+# 使える人の管理（許可リスト・管理者だけ）と、ログイン画面と共通の見た目。氏名・メールはデータベースにだけあり、ファイルには含まない
+!/accounts.html
+!/accounts.js
+!/su-auth.css
+# 入居者マスタの写し（統合 0004・段階移行）。写す部品と見比べる画面（事務所・管理者だけ）。氏名はデータベースと端末の中だけ
+!/su-master-shadow.js
+!/shadow-check.html
+!/shadow-check.js
+# 同期データ（週間計画など）の写し（統合 0005・写しの期間）。合言葉は Supabase へ送らない
+!/su-kv-shadow.js
+# 同期データの保存先の切り替え（統合 0005）。su-backend.json は全端末が読む切り替えスイッチ（キー名と真偽だけ）
+!/su-kv.js
+!/su-backend.json
+# 接続先が空の時の案内（2026-09-27）。表示だけで、localStorage は読むだけ・個人情報なし
+!/su-cfg-hint.js
+# 体重の写し（統合 0008・2026-09-27）。個人情報なし（中身は画面が読んだものを Supabase へ渡すだけ）
+!/su-weight-shadow.js

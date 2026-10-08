@@ -8,6 +8,13 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>体重管理システム</title>
+<!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
+     （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
+<script src="su-weight-shadow.js?v=2026-09-27"></script>
+<script src="su-perf.js?v=2026-09-24"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
@@ -54,6 +61,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .tnav{background:#fff;border-bottom:2px solid var(--g2);
   display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tnav::-webkit-scrollbar{display:none}
+/* 現場端末（su_device_role==='field'）では管理用の入口を出さない（関数の入口でも止めている） */
+.wr-field .tnav button[data-go="cfg"],.wr-field #inMealEdit,.wr-field .in-meal-hd small{display:none !important}
+/* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
+.wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:.8125rem;font-weight:700;line-height:1.5}
+.wr-noapi[hidden]{display:none}
 .tnav button{flex:1;min-width:84px;display:flex;align-items:center;justify-content:center;gap:6px;
   padding:12px 10px;border:none;background:none;color:var(--g7);font-size: 0.8125rem;font-weight:700;
   cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;
@@ -273,6 +285,24 @@ textarea{resize:vertical;min-height:60px}
 .rli-btns{display:flex;gap:6px}
 
 .ex-r{display:flex;gap:9px;flex-wrap:wrap}
+
+/* 重複の点検（2026-09-28） */
+.dup-count{font-size:0.8125rem;font-weight:700;color:var(--g7)}
+.dup-count.has{color:var(--warn-tx)}
+.dup-lead{font-size:0.8125rem;color:var(--g7);line-height:1.6;margin:0 0 10px}
+.dup-g{border:1px solid var(--warn-br);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:var(--warn-bg)}
+.dup-g.is-name{border-style:dashed}
+.dup-h{font-size:0.875rem;font-weight:700;color:var(--g9);margin-bottom:4px}
+.dup-k{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:8px;font-size:0.75rem;font-weight:700;
+  background:#fff;color:var(--warn-tx);border:1px solid var(--warn-br);vertical-align:middle}
+.dup-m{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 8px;margin:6px 0;border-radius:6px;
+  background:#fff;border:1px solid var(--g2);cursor:pointer;font-size:0.8125rem;color:var(--g9);line-height:1.5}
+.dup-m input{width:20px;height:20px;flex:none;margin:0}
+.dup-m .dup-s{color:var(--g7)}
+.dup-a{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.dup-a .bn{min-height:44px}
+.dup-a select{min-height:44px;font-size:0.875rem;max-width:100%}
+.dup-none{font-size:0.8125rem;color:var(--g7);padding:6px 0}
 
 /* buttons */
 .bn{padding:9px 16px;border-radius:8px;border:none;cursor:pointer;
@@ -571,6 +601,22 @@ textarea{resize:vertical;min-height:60px}
 /* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
 .md-src-note{margin-top:6px;font-size: 0.6875rem;line-height:1.5;color:var(--g6)}
 
+/* 車椅子の変更履歴（設定→入居者の編集）。変更日から新しい重さで計算する */
+.wc-log{margin-top:8px;padding:8px 10px;border:1px solid var(--g3);border-radius:8px;background:var(--g0)}
+.wc-log-hd{font-size: 0.75rem;font-weight:700;color:var(--g9)}
+.wc-log-hd small{display:block;font-weight:400;color:var(--g7);margin-top:2px}
+.wc-log-row{display:flex;align-items:center;gap:6px;margin-top:6px}
+/* 枠の分だけ外へ広げ、中の行の幅を他の行と同じにする（日付が切れないように） */
+.wc-log-item.latest{margin:6px -8px 0;padding:6px;border:2px solid var(--pri);border-radius:8px;background:#fff}
+.wc-log-item.latest .wc-log-row{margin-top:4px}
+.wc-log-tag{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--pri);color:#fff;font-size: 0.6875rem;font-weight:700}
+.wc-log-row input[type=date]{flex:1 1 auto;min-width:0}
+.wc-log-row input[type=number]{flex:0 0 5.5em;width:5.5em}
+.wc-log-row .wc-log-u{font-size: 0.75rem;color:var(--g7)}
+.wc-log-row .wc-log-del{flex:0 0 auto;min-width:44px;min-height:44px;padding:0 8px;border:1px solid var(--g3);border-radius:8px;background:#fff;color:#c62828;cursor:pointer}
+.wc-log-add{margin-top:8px;min-height:44px;width:100%;border:1px dashed var(--pri);border-radius:8px;background:#fff;color:var(--pri);cursor:pointer}
+.wc-log-empty{margin-top:6px;font-size: 0.6875rem;color:var(--g7)}
+
 /* 退去者表示 */
 .md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
   border-radius:8px;color:#e65100;font-size: 0.75rem;font-weight:700;display:flex;align-items:center;gap:8px}
@@ -612,6 +658,12 @@ select option.is-discharged{color:var(--g6)}
 
 /* header layout shift: allow badge + date side-by-side */
 .hdr-r2{display:flex;align-items:center;gap:10px}
+/* 狭い画面（iPhone・表示200%）で題名が「体重管／理シス／テム」と潰れないよう、見出しは折り返してよい形にし、
+   題名は1行のまま。右側（入居者マスタ・接続・日付）は収まらなければ題名の下の段へ回る。PC 幅では1行に収まるので見た目は変わらない
+   （入居者マスタ・フェイスシートと同じ直し方 2026-10-01） */
+.hdr{flex-wrap:wrap;gap:6px 12px}
+.hdr h1{white-space:nowrap}
+.hdr-r2{flex-wrap:wrap;min-width:0}
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
@@ -625,16 +677,6 @@ select option.is-discharged{color:var(--g6)}
 </style>
 </head>
 <body>
-
-<!-- 端末用途ガード（事務所PC専用。現場タブレットでは体重管理を開かせない＝誤操作防止） -->
-<div id="suDeviceBlock" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(255,255,255,.97);align-items:center;justify-content:center;padding:20px">
-  <div style="max-width:440px;text-align:center;background:#fff;border:1px solid #e0e0e0;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18);padding:26px">
-    <div style="font-size: 2.75rem">🔒</div>
-    <h2 style="margin:8px 0;font-size: 1.125rem">この端末は現場用に設定されています</h2>
-    <p style="color:#666;font-size: 0.875rem;line-height:1.7">体重管理は<b>事務所PC</b>でご利用ください。</p>
-    <button id="suDeviceUnlock" style="margin-top:14px;padding:10px 16px;border:1px solid #0b57d0;background:#fff;color:#0b57d0;border-radius:10px;font-weight:700;cursor:pointer">管理者：この端末を事務所PCにする</button>
-  </div>
-</div>
 
 <div class="topbar">
 <header class="hdr">
@@ -651,6 +693,7 @@ select option.is-discharged{color:var(--g6)}
     <div class="hdr-r" id="hdrDate"></div>
   </div>
 </header>
+<div class="wr-noapi" id="wrNoApi" role="status" hidden>⚠ この端末はサーバーに接続されていません。記録はこの端末にしか残らず、事務所PCや他の端末には届きません。事務所に連絡してください（接続先は事務所PCとして設定します）。</div>
 
 <!-- loading overlay for sync -->
 <div class="ld-ov" id="ldOv" aria-hidden="true">
@@ -935,7 +978,7 @@ select option.is-discharged{color:var(--g6)}
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
     <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:8px">
-      セルは「体重(kg) <small>(前月比)</small>」。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
+      セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
       <b>氏名セル</b>…今月の入力画面を開く／<b>体重セル</b>…その記録を編集（空白は新規入力）
     </div>
     <div class="gr-wrap">
@@ -991,7 +1034,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
     <div class="mk-body">
       <div id="gr3yBlocks" class="gr-3y-blocks"></div>
-      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
+      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
     </div>
   </div>
 </div>
@@ -1023,6 +1066,13 @@ select option.is-discharged{color:var(--g6)}
       <button class="bn bp bsm" id="cfgAdd">＋ 追加</button>
     </div>
     <div id="cfgList"></div>
+  </div>
+
+  <!-- 重複の点検（2026-09-28）：同じ人の行が2つ以上ある組・氏名の無い行を出し、人が選んでまとめる -->
+  <div class="cd" id="dupCard">
+    <div class="cd-t"><span>重複の点検</span><span id="dupCount" class="dup-count"></span></div>
+    <p class="dup-lead">同じ人が2行以上ある組と、氏名の無い行を出します。残す行を選んで「この組をまとめる」を押すと、記録を残す行へ移してから、ほかの行を消します（記録は消えません）。まとめる前に、今のデータを JSON で保存します。</p>
+    <div id="dupList" aria-live="polite"></div>
   </div>
 
   <div class="cd">
@@ -1189,6 +1239,11 @@ select option.is-discharged{color:var(--g6)}
       <div class="fg">
         <label class="fl">車椅子重量 (kg) <span style="color:var(--g5);font-weight:400">— 車椅子計測時に自動適用</span></label>
         <input type="number" id="mdChair" step="0.1" min="0" max="50" inputmode="decimal" placeholder="例：10.2（未使用なら空欄）">
+        <div class="wc-log" id="mdChairLog">
+          <div class="wc-log-hd">車椅子の変更履歴<small>変更日の計測から新しい重さで計算します。日付は後から直せます。</small></div>
+          <div id="mdChairLogRows"></div>
+          <button type="button" class="wc-log-add" id="mdChairLogAdd">＋ 行を足す</button>
+        </div>
       </div>
 
       <!-- 食事形態（入力画面ではここから編集） -->
@@ -1881,6 +1936,9 @@ function pushResidentFields_(r, fields){
   if(!r || r.id == null) return;
   if(typeof apiPush !== 'function') return;
   if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r }); return; }
+  /* サーバーにまだ無い人は行ごと送る。項目だけ送ると、サーバーに「番号と車椅子重量だけ」の
+     氏名の無い行ができ、次の同期で端末の氏名まで空になる（2026-09-28 修正） */
+  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r }); return; }
   const part = { id: r.id };
   fields.forEach(k=>{
     // 値が無い項目は null を明示して送る＝「空にせよ」の意思表示（キー省略は温存の意味になる）
@@ -1928,6 +1986,10 @@ function updateAuthNote_(){
 function apiFriendlyError_(raw){
   const s = String(raw == null ? '' : raw);
   if(!/unauthorized/i.test(s)) return s;
+  /* 現場端末では設定画面も共通の接続設定も開けないので、行けない先を案内しない */
+  if(typeof wrIsField === 'function' && wrIsField() && (!apiToken || apiCaps.seen)){
+    return '合言葉が通らず、サーバーと同期できません。この端末（現場用）では直せないので、事務所に連絡してください（事務所PCとして開き直し、合言葉を入れ直します）。記録はこの端末に残っています';
+  }
   if(!apiToken){
     /* ★どの画面かを特定する。「設定画面」とだけ書くと探して詰まる。
        ★案内先は【実在するものだけ】を書く。以前ここに「共通の接続設定には合言葉欄はありません」と
@@ -2114,7 +2176,18 @@ async function apiDiagnose(url){
 
 /* Pull server state and merge. Server is authoritative for items
    with matching IDs; local-only items (created offline) are kept. */
-async function syncFromAPI(showLoader){
+/* 同期が重なったら、実行中の同期の結果を待つ（2026-09-28）。後から返った古い応答で、
+   直前にまとめた内容がこの端末で一時的に戻るのを防ぐ */
+let _wrSyncInFlight = null;
+function syncFromAPI(showLoader){
+  if(_wrSyncInFlight) return _wrSyncInFlight;
+  const p = _syncFromAPIImpl(showLoader);
+  _wrSyncInFlight = p;
+  const done = () => { if(_wrSyncInFlight === p) _wrSyncInFlight = null; };
+  p.then(done, done);
+  return p;
+}
+async function _syncFromAPIImpl(showLoader){
   if(!apiUrl) return false;
   if(showLoader) ldShow('サーバーからデータを取得中...');
   apiSetStatus('sy');
@@ -2162,13 +2235,29 @@ async function syncFromAPI(showLoader){
       for(const l of localList){  if(l && l.id!=null && !seen.has(l.id)){ out.push(l); seen.add(l.id); } }
       return out;
     };
+    /* 重複・氏名なし行・削除の伝播の後始末に使う情報は、合わせる前に取る（2026-09-28） */
+    const srvResInfo = wrServerResInfo(apiRes);
+    const prevSrvRes = wrLoadSrvResIds(true);
+    const localResBefore = DB.residents.slice();
     DB.residents = mergeById(apiRes, DB.residents, RES_CLIENT_ONLY, pendIds.res);
     DB.records   = mergeById(apiRec, DB.records, null, pendIds.rec);
+    /* 統合 0008（2026-09-27）: サーバーから読んだ全件を Supabase へ写す（写しの期間。事務所・管理者のログイン時だけ・
+       現場の端末では何もしない）。apiRes は上の合わせで入居者マスタの利用者No を補った後の行。体重管理の動きは変えない */
+    try{ if(window.SUWeightShadow) SUWeightShadow.fromGetAll(apiRes, apiRec, apiThr); }catch(eWs){}
+    let recon = { push: [], del: [], keep: new Set() };
+    try{ recon = wrReconcileResidents(srvResInfo, localResBefore, prevSrvRes, pendIds.res); }
+    catch(e){ console.warn('[wtmgr] 入居者の後始末に失敗（同期は継続）:', e); }
+    /* サーバーに在る入居者の番号を控える。後始末の送信と、このあとの取り込みの送信が
+       「サーバーが知っている人か」をこの控えで判断する。外すのを見送った人は別に持ち越して次回また判定する */
+    wrSaveSrvResIds(srvResInfo.ids, recon.keep);
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
     try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
     // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
     try{ if(typeof wrSyncProxyRoster === 'function') wrSyncProxyRoster(); }catch(e){}
     save();
+    wrPushReconciled(recon.push);
+    /* 統合で消した行が古い端末の部分送信で「氏名の無い行」として復活していたら、サーバーからも消す */
+    try{ (recon.del || []).forEach(id => apiPush('delResident', { id })); }catch(e){}
 
     if(apiThr){
       // merge into existing THR shape (don't let missing keys wipe defaults)
@@ -2201,11 +2290,17 @@ async function syncFromAPI(showLoader){
         populateResidentSelect($("#ivResident"), {preferId: UI.ivRes, fallbackFirst:true, includeDischarged:true});
       }
     }catch(e){ console.warn('post-sync render:', e); }
+    /* 入居者マスタから本人指定で開かれ、起動時にはまだ居なかった人（同期後の取り込みで作られた人）を開き直す */
+    try{ if(typeof wrMasterPending !== 'undefined' && wrMasterPending) wrApplyMasterIdParam(true); }catch(e){}
     flushPendingQueue();
     return true;
   }catch(e){
     apiSetStatus('er', '接続エラー: '+ e.message);
     toast('⚠️ 同期失敗: '+ e.message, 'err');
+    /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
+       番号はマスタの番号から決まるので、あとで同期してもサーバーで二重にならない */
+    /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
+    try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){}
     return false;
   }finally{ ldHide(); }
 }
@@ -2561,8 +2656,15 @@ function _toSafeStr(v){
    normalizeResident は load() / 同期マージ後 / JSONインポート 等の境界で呼ぶ。 */
 function normalizeResident(r){
   if(!r || typeof r !== 'object') return r;
+  // 車椅子の変更履歴は文字列で持つ（JSON の取り込み等で配列のまま来たら文字列に戻す）
+  if(Array.isArray(r.wheelchairLog)){ const c = wcLogClean_(r.wheelchairLog); r.wheelchairLog = c.length ? JSON.stringify(c) : null; }
   if(typeof r.name !== 'string') r.name = _toSafeStr(r.name);
   if(typeof r.room !== 'string') r.room = _toSafeStr(r.room);
+  // 文字列でも "2026-09-23T15:00:00.000Z" や "Thu Sep 24 2026 … GMT+0900" の形（シートが日付型に
+  // 変えた退去日）は 'YYYY-MM-DD' に直す。直せない文字列は退去の印を消さないよう元のまま残す（2026-09-24）
+  if(typeof r.dischargedAt === 'string' && r.dischargedAt && !/^\d{4}-\d{2}-\d{2}$/.test(r.dischargedAt)){
+    r.dischargedAt = _toIsoDate(r.dischargedAt.trim()) || r.dischargedAt;
+  }
   // dischargedAt は string か falsy のみ許容（数値・Date 等が混入しても無視）
   if(r.dischargedAt != null && typeof r.dischargedAt !== 'string'){
     // ISO YYYY-MM-DD への変換を試みる（GAS Date オブジェクトのケース等）
@@ -2721,11 +2823,17 @@ function suParseHeight(v){
    編集モーダルで「マスタから自動取得」の注記を出す判定だけに使う。 */
 var wrMasterHeight = {};
 /* 名簿から受け取った退去日を 'YYYY-MM-DD' に正規化。
-   形式が違う値（Date オブジェクト・空・不正文字列）は '' を返す＝受信データを信じない。 */
+   形式が違う値（Date オブジェクト・空・不正文字列）は '' を返す＝受信データを信じない。
+   ただしシートが日付型に変えた形（"…T15:00:00.000Z"・"Thu Sep 24 2026 … GMT+0900"）は日付に直して使う。
+   直さないと '' 扱いになり、退去日が黙って「本日」に置き換わる（2026-09-24）。 */
 function suNormDischargeDate(v){
   if(typeof v !== 'string') return '';
   var s = v.trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) || /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-]\d{4}/.test(s)){
+    return _toIsoDate(s) || '';
+  }
+  return '';
 }
 /* 在籍（active）・入院（hospitalized）状態を名簿から鏡映する。マスタが正（master 常勝）。
    - active===false → 退去化（退去日は名簿の dischargeDate 優先・無ければ本日）
@@ -2778,8 +2886,173 @@ function wrMirrorToast(st){
     toast('入居者マスタに合わせて' + m.join('・') + 'を反映しました');
   }catch(e){ /* 通知失敗は運用を止めない */ }
 }
-/* 入居者マスタの共通情報を取り込み（体重記録アプリ用） */
-function mergeCommonWeight(){
+/* ── 入居者を二重に作らないための部品（2026-09-28） ──
+   重複の出どころは「入居者マスタにいて端末に見つからない人を、端末ごとに別の番号で作る」こと。
+   GAS は番号（id）だけで行を突き合わせるので、端末ごとの番号は別人の行としてサーバーに残る。
+   ・マスタから作る人の番号はマスタの番号から決める（どの端末が作っても同じ番号＝サーバーで1行）
+   ・直近の同期でサーバーに在った入居者の番号を控える（番号だけ。氏名は持たない）。
+     「サーバーがまだ知らない人」を部分送信しない（氏名の無い行を作らない）判定と、
+     サーバーで消された人をこの端末からも外す判定に使う。 */
+var WR_SRV_RES_KEY = 'wtmgr_srv_res_ids';
+/* 名簿の取り込みで、同じ氏名の紐づいていない行があって作るのを見送ったマスタの人（表示用・保存しない） */
+var wrSkippedMaster = [];
+/* 控えは「どの接続先の控えか」を添えて持つ。別のシートへ繋ぎ直した時に、前の接続先の控えで
+   「消えた人」を判定しないため（接続先の末尾だけを持つ。合言葉は持たない） */
+function wrSrvResTag(){ try{ return String(apiUrl || '').slice(-16); }catch(e){ return ''; } }
+/* withGone=true: 「消えたが外すのを見送った番号」も含めて返す（消えた人の判定用）。
+   既定はサーバーに在った番号だけ（送り方の判定用。見送った人を「在る」と扱うと部分送信で復活させる） */
+function wrLoadSrvResIds(withGone){
+  try{
+    var s = localStorage.getItem(WR_SRV_RES_KEY);
+    if(!s) return null;
+    var o = JSON.parse(s);
+    if(!o || !Array.isArray(o.ids) || o.u !== wrSrvResTag()) return null;
+    var set = new Set(o.ids.map(String));
+    if(withGone && Array.isArray(o.gone)) o.gone.forEach(function(x){ set.add(String(x)); });
+    return set;
+  }catch(e){ return null; }
+}
+function wrSaveSrvResIds(ids, gone){
+  try{
+    localStorage.setItem(WR_SRV_RES_KEY, JSON.stringify({ u: wrSrvResTag(), ids: Array.from(ids), gone: gone ? Array.from(gone) : [] }));
+  }catch(e){}
+}
+function wrClearSrvResIds(){ try{ localStorage.removeItem(WR_SRV_RES_KEY); }catch(e){} }
+/* true=サーバーに無いと分かっている / false=在る、または控えが無く分からない（従来の送り方のまま） */
+function wrServerLacksResident(id){
+  var s = wrLoadSrvResIds();
+  return !!(s && id != null && !s.has(String(id)));
+}
+function wrMasterResId(mid){
+  return 'wm_' + String(mid).replace(/[^A-Za-z0-9_-]/g, function(c){ return '_' + c.charCodeAt(0).toString(16); });
+}
+function wrHasMid(r){ return !!r && r.masterId != null && r.masterId !== ''; }
+/* 氏名で紐づけてよい相手の表。マスタの番号がまだ無い・在籍中の人だけを、同じ氏名が1人しかいない時だけ載せる
+   （同姓同名・退去した前の入居者・既に別のマスタの人に紐づいた行へ当てない。紐づけた番号はサーバーにも書くため）。
+   unlinkedCnt には、紐づいていない同じ氏名の行の数を返す（2行以上ある氏名で新しく作らないため） */
+function wrUnlinkedByName(residents, unlinkedCnt){
+  var cnt = unlinkedCnt || {}, map = {};
+  (residents || []).forEach(function(r){
+    if(!r || typeof r !== 'object' || wrHasMid(r) || isDischarged(r)) return;
+    var nm = suNormName(r.name); if(!nm) return;
+    cnt[nm] = (cnt[nm] || 0) + 1;
+    map[nm] = r;
+  });
+  Object.keys(map).forEach(function(nm){ if(cnt[nm] !== 1) delete map[nm]; });
+  return map;
+}
+/* 合わせる前のサーバー行から、後始末に要る情報だけを取る（合わせると端末の値で埋まるため先に取る） */
+function wrServerResInfo(apiRes){
+  var info = { ids: new Set(), noName: new Set(), noMid: new Set(), mids: new Set(), names: new Set(), midIds: {} };
+  (apiRes || []).forEach(function(s){
+    if(!s || s.id == null) return;
+    var id = String(s.id);
+    info.ids.add(id);
+    var nm = suNormName(s.name);
+    if(!nm) info.noName.add(id); else info.names.add(nm);
+    if(s.masterId == null || s.masterId === '') info.noMid.add(id);
+    else { var mk = String(s.masterId); info.mids.add(mk); (info.midIds[mk] = info.midIds[mk] || new Set()).add(id); }
+  });
+  return info;
+}
+/* 同期で受けた入居者行を端末の行と合わせたあとの後始末（syncFromAPI から呼ぶ）。
+   DB.residents / DB.records は合わせ終わった状態で呼ぶ。
+   戻り値 { push:[{r, fields}]（fields 無し＝行全体）, del:[id]（サーバーから消す）, keep:Set（次回も判定する番号） }
+   srv: wrServerResInfo の結果 / localBefore: 合わせる前の端末の行 /
+   prevSrv: 前回の同期でサーバーに在った番号（無ければ null）/ pendRes: 未送信が残る入居者の番号 */
+function wrReconcileResidents(srv, localBefore, prevSrv, pendRes){
+  var out = { push: [], del: [], keep: new Set() };
+  var localById = {};
+  (localBefore || []).forEach(function(l){ if(l && l.id != null && !localById[String(l.id)]) localById[String(l.id)] = l; });
+  var isPend = function(id){ return !!(pendRes && (pendRes.has(id) || pendRes.has(String(id)))); };
+  var referenced = function(id){ return (DB.records || []).some(function(x){ return x && String(x.residentId) === String(id); }); };
+  /* サーバーに「同じ人」と分かる別の行が在るか（同じマスタの番号、または同じ氏名） */
+  /* マスタの番号を持つ人は番号だけで見る（同姓同名の別人を片割れと見なさない）。番号の無い人だけ氏名で見る */
+  var hasTwinOnServer = function(r){
+    if(!r) return false;
+    if(wrHasMid(r)) return srv.mids.has(String(r.masterId));
+    var nm = suNormName(r.name);
+    return !!(nm && srv.names.has(nm));
+  };
+  var localNameCnt = {};
+  DB.residents.forEach(function(r){ var nm = r && suNormName(r.name); if(nm) localNameCnt[nm] = (localNameCnt[nm] || 0) + 1; });
+  var remove = new Set();
+  /* 1) サーバー行に氏名が無い（端末だけに居た人へ項目を絞って送った時にできる壊れた行。2026-09-28 までの不具合）。
+        ・サーバーに同じ人の別の行が在る＝統合で消した行が、古い端末の部分送信で復活したもの
+          → 記録が付いていなければ端末から外し、サーバーからも消す
+        ・そうでなければ端末の値で全項目を戻し、行ごと送り直す（氏名以外の項目も null で届いているため）
+     マスタの番号だけが無い行は、番号をサーバーへ補う（同じ氏名が端末に2人以上いる時は送らない＝誤った紐づけを広げない） */
+  DB.residents.forEach(function(r){
+    if(!r || r.id == null) return;
+    var id = String(r.id);
+    if(!srv.ids.has(id) || isPend(r.id)) return;
+    var l = localById[id];
+    if(srv.noName.has(id)){
+      if(!l || !String(l.name == null ? '' : l.name).trim()) return;
+      /* 消すのは「同じマスタの番号を持つ、自分以外のサーバー行」が在る時だけ（氏名だけの一致では消さない。
+         消した行はサーバーからも消え、元に戻せないため。氏名だけが同じ時は戻して「重複の点検」に任せる） */
+      var twinIds = wrHasMid(l) ? srv.midIds[String(l.masterId)] : null;
+      var hasOtherTwin = !!twinIds && Array.from(twinIds).some(function(x){ return x !== id; });
+      if(hasOtherTwin && !referenced(id)){ remove.add(id); out.del.push(r.id); return; }
+      Object.keys(l).forEach(function(k){
+        if((r[k] == null || r[k] === '') && l[k] != null && l[k] !== '') r[k] = l[k];
+      });
+      out.push.push({ r: r });
+      return;
+    }
+    if(srv.noMid.has(id) && wrHasMid(r) && localNameCnt[suNormName(r.name)] === 1) out.push.push({ r: r, fields: ['masterId'] });
+  });
+  /* 2) 前回サーバーに在って今回無い人＝他の端末で削除・統合された人。この端末からも外す。
+        未送信が残る人・記録が付いている人は外さない（記録を持ち主なしにしない）。
+        サーバーに同じ人の別の行が在る人（統合の片割れ）は数に関係なく外す。それ以外は、応答が空・
+        外す数が多すぎる時は壊れた応答とみなして外さず、次の同期でもう一度判定する（控えに残す） */
+  if(prevSrv && srv.ids.size > 0){
+    var goneAll = DB.residents.filter(function(r){
+      return r && r.id != null && prevSrv.has(String(r.id)) && !srv.ids.has(String(r.id));
+    });
+    var gone = goneAll.filter(function(r){ return !isPend(r.id) && !referenced(r.id); });
+    /* 記録あり・未送信ありで今回は外さない人も、次の同期でもう一度判定する（記録が移った後に外せるように） */
+    goneAll.forEach(function(r){ if(gone.indexOf(r) < 0) out.keep.add(String(r.id)); });
+    var twins = gone.filter(hasTwinOnServer);
+    var others = gone.filter(function(r){ return twins.indexOf(r) < 0; });
+    twins.forEach(function(r){ remove.add(String(r.id)); });
+    var cap = Math.max(3, Math.ceil(prevSrv.size * 0.2));
+    if(others.length && others.length <= cap){
+      others.forEach(function(r){ remove.add(String(r.id)); });
+    }else if(others.length){
+      others.forEach(function(r){ out.keep.add(String(r.id)); });
+      console.warn('[wtmgr] サーバーから消えた入居者が多すぎるため、端末からは外しません（次の同期で再判定）:', others.length);
+    }
+  }
+  /* 3) 入居者マスタから端末だけで作られ、サーバーに載っていない人。
+        記録が無ければ端末から外す（このあとの名簿取り込みが、サーバーの行へ紐づけるか、
+        マスタの番号から決まる番号で作り直す）。記録があれば行ごと送って、事務所の
+        「重複の点検」で統合できるようにする（記録を持ち主の見えない状態にしない） */
+  DB.residents.forEach(function(r){
+    if(!r || r.id == null || !r._fromMaster || remove.has(String(r.id))) return;
+    if(srv.ids.has(String(r.id)) || isPend(r.id)) return;
+    if(referenced(r.id)) out.push.push({ r: r });
+    else remove.add(String(r.id));
+  });
+  if(remove.size) DB.residents = DB.residents.filter(function(r){ return !(r && remove.has(String(r.id))); });
+  return out;
+}
+/* 後始末の送信。行全体か、項目だけか。 */
+function wrPushReconciled(list){
+  if(!Array.isArray(list) || !list.length || typeof apiPush !== 'function') return;
+  list.forEach(function(p){
+    try{
+      if(!p || !p.r) return;
+      if(p.fields && p.fields.length) pushResidentFields_(p.r, p.fields);
+      else apiPush('saveResident', { resident: p.r });
+    }catch(e){ /* 送信の失敗は同期を止めない（未送信キューが拾う） */ }
+  });
+}
+/* 入居者マスタの共通情報を取り込み（体重記録アプリ用）
+   opts.noAdd: 新しい入居者を作らない（起動直後・サーバーと合わせる前に使う。
+   合わせる前に作ると、サーバーに居る人を別の番号で二重に作る） */
+function mergeCommonWeight(opts){
+  var noAdd = !!(opts && opts.noAdd);
   /* 先に空へ倒す。共有名簿が読めない/壊れている回では「マスタ由来」の注記を出さない
      （取り込まれていないのに『マスタから自動取得』と表示するのを防ぐ・安全側） */
   wrMasterHeight = {};
@@ -2789,16 +3062,24 @@ function mergeCommonWeight(){
   var list = (data && Array.isArray(data.residents)) ? data.residents : null;
   if(!list || !list.length) return false;
   if(!Array.isArray(DB.residents)) DB.residents = [];
-  var byMid = {}, byName = {};
+  var byMid = {}, byId = {};
   DB.residents.forEach(function(r){
     if(!r || typeof r !== 'object') return;
-    if(r.masterId != null) byMid[String(r.masterId)] = r;
-    var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
+    if(wrHasMid(r)){ var mk = String(r.masterId); if(!byMid[mk] || (wrServerLacksResident(byMid[mk].id) && !wrServerLacksResident(r.id))) byMid[mk] = r; }
+    if(r.id != null) byId[String(r.id)] = r;
   });
+  var unlinkedCnt = {};
+  var byName = wrUnlinkedByName(DB.residents, unlinkedCnt);
+  /* マスタ側に同じ氏名が2人以上いる人は、氏名では紐づけない（別人に当てない） */
+  var mNameCnt = {};
+  list.forEach(function(c){ if(c){ var n = suNormName(c.name); if(n) mNameCnt[n] = (mNameCnt[n] || 0) + 1; } });   // 退去者も数える
   var changed = 0;
   var masterH = {};   // このマージで判明した「マスタ由来の身長」（注記表示用・保存しない）
   var st = { out:0, back:0 };   // 退去/復帰の鏡映件数（トースト用）
   var pushList = [];  // 鏡映で状態が変わった入居者（サーバーへ併送する）
+  var linkList = [];  // 氏名で紐づけた人（マスタの番号をサーバーにも書く）
+  var addList = [];   // 新しく作った人（行ごとサーバーへ送る）
+  var skipped = [];   // 作るのを見送った人（重複の点検に出す）
   list.forEach(function(c){
     if(!c || c.masterId == null) return;
     /* 退去者は取り込み対象外だが、既に masterId で紐づく入居者には退去を鏡映する
@@ -2815,9 +3096,11 @@ function mergeCommonWeight(){
     var tW = Array.isArray(c.targetApps) ? (c.targetApps.indexOf('weight') >= 0) : undefined;
     var mh = suParseHeight(c.height);   // null = マスタ未登録/不正値 → 手入力を温存
     var tgt = byMid[String(c.masterId)];
-    if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
+    /* マスタの番号から決まる番号の人が既に居る（別の端末が作ってサーバー経由で届いた）なら、その人 */
+    if(!tgt){ var did = byId[wrMasterResId(c.masterId)]; if(did && (!wrHasMid(did) || String(did.masterId) === String(c.masterId))) tgt = did; }
+    if(!tgt){ var nm = suNormName(c.name); if(nm && mNameCnt[nm] === 1 && byName[nm]){ tgt = byName[nm]; delete byName[nm]; } }
     if(tgt){
-      if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+      if(!wrHasMid(tgt)){ tgt.masterId = c.masterId; changed++; linkList.push(tgt); byMid[String(c.masterId)] = tgt; }
       if(c.room && _toSafeStr(tgt.room) !== _toSafeStr(c.room)){ tgt.room = _toSafeStr(c.room); changed++; }
       if(tW !== undefined && tgt.targetWeight !== tW){ tgt.targetWeight = tW; changed++; }
       /* 身長はマスタ常勝。マスタが空（mh===null）のときは何もしない＝
@@ -2831,21 +3114,31 @@ function mergeCommonWeight(){
       changed += mch;
       if(mch) pushList.push(tgt);
     }else{
+      if(noAdd) return;          // サーバーと合わせる前は作らない（合わせた後の取り込みで作る）
       if(tW === false) return;   // 体重対象外の master 入居者は取り込まない
       if(!c.room) return;        // 居室なしは取り込まない
-      var nr = { id: uid(), name: _toSafeStr(c.name), room: _toSafeStr(c.room),
+      /* 紐づいていない同じ氏名の行が既に在る（2行以上で決めきれない等）時は作らない。作ると3行目になる。
+         どれが本人かは設定タブの「重複の点検」で人が決める */
+      if(unlinkedCnt[suNormName(c.name)] > 0){ skipped.push({ masterId: c.masterId, name: _toSafeStr(c.name), room: _toSafeStr(c.room) }); return; }
+      /* 番号はマスタの番号から決める。端末ごとに乱数の番号で作ると、同じ人がサーバーで別人の行になる */
+      var nr = { id: wrMasterResId(c.masterId), name: _toSafeStr(c.name), room: _toSafeStr(c.room),
                  masterId: c.masterId, targetWeight: (tW===undefined?true:tW), _fromMaster: true,
                  createdAt: new Date().toISOString() };
       if(mh != null){ nr.heightCm = mh; masterH[nr.id] = mh; }   // 初回取り込みでも BMI が出せるように
       suMirrorState(nr, c, null);   // 入院フラグを初回取り込みでも引き継ぐ（在籍は active===true のみ到達）
       normalizeResident(nr);
       DB.residents.push(nr);
+      byMid[String(c.masterId)] = nr; byId[nr.id] = nr;
+      addList.push(nr);
       changed++;
     }
   });
   wrMasterHeight = masterH;   // マスタで身長が消された人は注記も消える（作り直しにする理由）
+  if(!noAdd) wrSkippedMaster = skipped;
   if(changed){ save(); }
   wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrPushReconciled(addList.map(function(r){ return { r: r }; }));
+  wrPushReconciled(linkList.filter(function(r){ return addList.indexOf(r) < 0; }).map(function(r){ return { r: r, fields: ['masterId'] }; }));
   wrMirrorToast(st);
   return changed > 0;
 }
@@ -2891,15 +3184,20 @@ function wrProxyThrottled(){
 function mergeProxyRoster(list){
   if(!Array.isArray(list) || !list.length) return 0;
   if(!Array.isArray(DB.residents)) DB.residents = [];
-  var byMid = {}, byName = {};
+  var byMid = {};
   DB.residents.forEach(function(r){
     if(!r || typeof r !== 'object') return;
-    if(r.masterId != null) byMid[String(r.masterId)] = r;
-    var nm = suNormName(r.name); if(nm && !byName[nm]) byName[nm] = r;
+    if(wrHasMid(r)){ var mk = String(r.masterId); if(!byMid[mk] || (wrServerLacksResident(byMid[mk].id) && !wrServerLacksResident(r.id))) byMid[mk] = r; }
   });
+  /* 氏名で当てるのは、マスタの番号がまだ無く、氏名が1人に決まる人だけ（mergeCommonWeight と同じ規則） */
+  var unlinkedCnt = {};
+  var byName = wrUnlinkedByName(DB.residents, unlinkedCnt);
+  var mNameCnt = {};
+  list.forEach(function(c){ if(c){ var n = suNormName(c.name); if(n) mNameCnt[n] = (mNameCnt[n] || 0) + 1; } });   // 退去者も数える
   var changed = 0;
   var st = { out:0, back:0 };
   var pushList = [];   // 鏡映で状態が変わった入居者（サーバーへ併送する）
+  var linkList = [];   // 氏名で紐づけた人（マスタの番号をサーバーにも書く）
   list.forEach(function(c){
     if(!c || c.masterId == null) return;
     var tgt = byMid[String(c.masterId)];
@@ -2914,9 +3212,9 @@ function mergeProxyRoster(list){
       }
       return;
     }
-    if(!tgt){ var nm = suNormName(c.name); if(nm) tgt = byName[nm]; }
+    if(!tgt){ var nm = suNormName(c.name); if(nm && mNameCnt[nm] === 1 && byName[nm]){ tgt = byName[nm]; delete byName[nm]; } }
     if(!tgt) return;   // noAdd: 名簿にしか居ない人は追加しない
-    if(tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
+    if(!wrHasMid(tgt)){ tgt.masterId = c.masterId; changed++; linkList.push(tgt); byMid[String(c.masterId)] = tgt; }
     var cn = _toSafeStr(c.name);
     if(cn && tgt.name !== cn){ tgt.name = cn; changed++; }
     var cr = _toSafeStr(c.room);
@@ -2927,6 +3225,7 @@ function mergeProxyRoster(list){
   });
   if(changed){ save(); }
   wrPushMirrored(pushList);   // ローカル保存を先に済ませてからサーバーへ併送する
+  wrPushReconciled(linkList.map(function(r){ return { r: r, fields: ['masterId'] }; }));
   wrMirrorToast(st);
   return changed;
 }
@@ -2935,6 +3234,7 @@ function mergeProxyRoster(list){
    10分スロットルだけをバイパスし、戻り値は「取得成功か」（変化0件でも true）を返す
    ＝版数基準を前進させてよいかの判定に使う。通常呼び出し（引数なし）の挙動・
    戻り値（変化があったか）は従来のまま変えない。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。排泄記録GASの doPost は読み取り action（masterRoster）を受ける（gas/README.md）。 */
 async function wrSyncProxyRoster(opts){
   var force = !!(opts && opts.force);
   if(_wrProxyBusy) return false;
@@ -2943,9 +3243,12 @@ async function wrSyncProxyRoster(opts){
   if(!force && wrProxyThrottled()) return false; // 前回成功から10分以内（force は即時）
   _wrProxyBusy = true;
   try{
-    var url = cred.url + (cred.url.indexOf('?') >= 0 ? '&' : '?')
-            + 'action=masterRoster&token=' + encodeURIComponent(cred.token);
-    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    var r = await fetchTO(cred.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'masterRoster', token: cred.token }),
+      cache:'no-store'
+    }, 12000);
     if(!r.ok) return false;
     var j = await r.json();
     // available:false ＝ 排泄記録GAS側でマスタ連携が未設定。静かに見送る
@@ -3003,11 +3306,16 @@ function wrMasterCfg(){
    応答行はホワイトリスト写像で masterId 基準へ寄せる（受信を信じない）。キーの有無で意味が
    変わる項目（active / hospitalized）は、応答が値を持つ時だけ渡す＝旧サーバーでローカル温存。
    戻り値: 取得と取り込みが完了したら true（変化0件でも true）／失敗は false（呼び出し元が代理経路へ）。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。入居者マスタGASの doPost は読み取り action を受ける（gas/README.md）。
+   合言葉の無い stateRev 照会（wrStateRevTick）は GET のまま。 */
 async function wrFetchMasterRoster(cfg){
   try{
-    var url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?')
-            + 'action=getRoster&token=' + encodeURIComponent(cfg.token);
-    var r = await fetchTO(url, { cache:'no-store' }, 12000);
+    var r = await fetchTO(cfg.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'getRoster', token: cfg.token }),
+      cache:'no-store'
+    }, 12000);
     if(!r.ok) return false;
     var j = await r.json();
     if(!j || j.error || !Array.isArray(j.roster)) return false;
@@ -3068,14 +3376,31 @@ async function wrStateRevTick(){
     try{ wrStateRevTick(); }catch(e){}
   });
 })();
-/* 端末ガード（事務所PC専用。共有キー su_device_role==='field' で起動時ブロック） */
+/* 端末ガード（2026-09-24 本人承認で変更: 以前は現場端末で起動ごとブロックしていた）。
+   共有キー su_device_role==='field' の端末でも、記録（一覧・入力・個別・集計・アラート）は使える。
+   記録の修正・削除も許す（誤入力をその場で消せないと二重の記録が残るため・本人判断）。
+   「設定」タブ（入居者の管理・検知ルール・入出力・全データ削除・復元・連携）と食事形態の編集は出さず、
+   管理用の操作は関数の入口でも止める（wrFieldDeny）。
+   接続先（URL・合言葉）は、事務所PCとして設定してから現場用に切り替える（接続設定画面も現場端末では開けない）。 */
 function suGetDeviceRole(){ try{ return localStorage.getItem(SU_DEVICE_KEY) || 'office'; }catch(e){ return 'office'; } }
-function applyWeightDeviceGuard(){
-  var blocked = (suGetDeviceRole() === 'field');
-  var ov = document.getElementById('suDeviceBlock');
-  if(ov) ov.style.display = blocked ? 'flex' : 'none';
-  return blocked;
+function wrIsField(){ return suGetDeviceRole() === 'field'; }
+function wrFieldDeny(){
+  if(!wrIsField()) return false;
+  try{ toast('この操作は事務所PCで行ってください（この端末は現場用です）', 'err'); }catch(e){}
+  return true;
 }
+function applyWeightDeviceGuard(){
+  var field = wrIsField();
+  document.documentElement.classList.toggle('wr-field', field);
+  if(field && document.querySelector('.scr[data-sc="cfg"].on')) goto('list');
+  var nb = document.getElementById('wrNoApi');
+  if(nb) nb.hidden = !(field && !apiUrl);   /* 現場端末は接続先を直せないので、無い時は帯で知らせ続ける */
+  return field;
+}
+/* 開いたまま別のタブ（入居者マスタ等）で端末の用途が変わった時も、すぐ切り替える */
+window.addEventListener('storage', function(e){
+  if(e.key === SU_DEVICE_KEY || e.key === null){ try{ applyWeightDeviceGuard(); }catch(err){} }
+});
 /* 現在の主要ビューを再描画（トグル/取り込み後の反映用） */
 function wrRefreshViews(){
   try{
@@ -3137,19 +3462,35 @@ function alertDir(a){
   const d = (a?.diff1 ?? a?.diff3 ?? a?.diff6 ?? 0);
   return d < 0 ? 'dn' : 'up';
 }
+/* 比べた相手がちょうどの月でない時だけ「（6月比・2か月）」を返す。ちょうどの月なら ''（表示は以前と同じ） */
+function wrCmpNote(p, nominal, ym){
+  if(!p || !p.span || p.span === nominal || !wrYmOk(p.ym)) return '';
+  const sameYear = wrYmOk(ym) && ym.slice(0,4) === p.ym.slice(0,4);
+  const m = sameYear ? `${Number(p.ym.slice(5))}月` : ymFmt(p.ym);
+  return `（${m}比・${p.span}か月）`;
+}
+function wrCmpLabel(label, p, nominal, ym){ return label + wrCmpNote(p, nominal, ym); }
 // returns {level:'none'|'w'|'ng', diff1, pct1, diff3, pct3, diff6, pct6, reasons:[]}
 function analyze(residentId, ym){
   const cur = getRecord(residentId, ym);
   if(!cur) return null;
   const recs = getRecordsOf(residentId).filter(r => r.yearMonth <= ym);
   if(recs.length < 2) return { level:'none', diff1:null, pct1:null, diff3:null, pct3:null, diff6:null, pct6:null, reasons:[], cur };
-  const idx = recs.findIndex(r => r.yearMonth===ym);
-  const by = k => {
-    if(idx - k < 0) return null;
-    const r = recs[idx-k];
-    return { w:r.weight, ym:r.yearMonth };
+  /* 比べる相手は暦の月で選ぶ（2026-09-28）。以前は「記録のある月」を1件前・3件前・6件前に
+     さかのぼっていたため、測っていない月があると比べる期間が伸び、途中の急な増減を見落とす／
+     何年も前と比べて「6ヶ月比」の警告を出す、の両方が起きていた。
+     前月比＝ちょうど1か月前だけ。3ヶ月比＝3か月前、無ければ2か月前。6ヶ月比＝6か月前、無ければ5→4か月前。
+     期間より前へはさかのぼらない（短い期間の変化に長い期間の閾値を当てる＝速さを小さく見積もらない）。
+     毎月測っている人の結果は以前と同じ。span は実際に比べた月数（表示で「○月比」を添えるのに使う） */
+  const byYm = new Map(recs.map(r => [r.yearMonth, r]));
+  const base = (minBack, maxBack) => {
+    for(let k = maxBack; k >= minBack; k--){
+      const r = byYm.get(ymPrev(ym, k));
+      if(r) return { w:r.weight, ym:r.yearMonth, span:k };
+    }
+    return null;
   };
-  const p1 = by(1), p3 = by(3), p6 = by(6);
+  const p1 = base(1,1), p3 = base(2,3), p6 = base(4,6);
   const reasons = [];
   let level = 'none';
   const bump = L => { if(L==='ng') level='ng'; else if(L==='w' && level!=='ng') level='w'; };
@@ -3178,9 +3519,9 @@ function analyze(residentId, ym){
     return { diff, pct };
   };
 
-  const d1 = check(p1, '前月比',  THR.m1);
-  const d3 = check(p3, '3ヶ月比', THR.m3);
-  const d6 = check(p6, '6ヶ月比', THR.m6);
+  const d1 = check(p1, wrCmpLabel('前月比',  p1, 1, ym), THR.m1);
+  const d3 = check(p3, wrCmpLabel('3ヶ月比', p3, 3, ym), THR.m3);
+  const d6 = check(p6, wrCmpLabel('6ヶ月比', p6, 6, ym), THR.m6);
 
   return {
     level, cur,
@@ -3199,6 +3540,7 @@ function analyze(residentId, ym){
    goto() は画面切替を先に行い、各 render はエラーで止まってもナビゲーションを妨げないよう
    try/catch で隔離する。 */
 function goto(sc){
+  if(sc === 'cfg' && wrIsField()) sc = 'list';   /* 現場端末では設定画面を開かない（復元・直接呼び出しも含む） */
   $$('.tnav button').forEach(b=> b.classList.toggle('on', b.dataset.go===sc));
   $$('.scr').forEach(s=> s.classList.toggle('on', s.dataset.sc===sc));
   try{ saveUI({tab: sc}); }catch(e){}
@@ -3529,8 +3871,8 @@ function renderList(){
     tr.innerHTML = `
       <td class="nm"><span class="nm-link" data-go-input-rid="${escapeHtml(r.id)}" title="${escapeHtml(r.name)}さんの入力画面を開く">${escapeHtml(r.name)}</span><br><span class="rm">${r.room?`室 ${escapeHtml(r.room)}`:''}</span></td>
       <td>${wtHtml}</td>
-      <td>${a ? diffHtml(a.diff1, a.pct1) : '—'}</td>
-      <td>${a ? diffHtml(a.diff6, a.pct6) : '—'}</td>
+      <td>${a ? diffHtml(a.diff1, a.pct1) + ((a.diff1==null && a.prev3 !== undefined && (a.prev3 || a.prev6)) ? '<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">前月の記録なし</div>' : '') : '—'}</td>
+      <td>${a ? diffHtml(a.diff6, a.pct6) + (a.diff6!=null && wrCmpNote(a.prev6, 6, listMonth) ? `<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">${escapeHtml(wrCmpNote(a.prev6, 6, listMonth))}</div>` : '') : '—'}</td>
       <td>${mfHtml}</td>
       <td>${stateHtml}</td>
     `;
@@ -3604,7 +3946,10 @@ function diffHtml(rid, ym, currentWeight){
   if(d.diff === 0) return `<div class="gr-bmi" style="color:var(--g6)">(±0)</div>`;
   const color = d.diff > 0 ? '#d32f2f' : '#1565c0';
   const sign  = d.diff > 0 ? '+' : '';
-  return `<div class="gr-bmi" style="color:${color};font-weight:700" title="前月比（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
+  /* 前月の記録が無い時は、数か月前の記録との差になる。一覧・アラートの「前月比」（暦の1か月前だけ）と
+     取り違えないよう、説明の名前を分ける（2026-09-28） */
+  const lbl = (d.fromYm === ymPrev(ym, 1)) ? '前月比' : '前回の記録との差';
+  return `<div class="gr-bmi" style="color:${color};font-weight:700" title="${lbl}（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
 }
 
 function renderGrid(){
@@ -3640,8 +3985,8 @@ function renderGrid(){
               ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
             </div>
             <div class="gr-btns">
-              <button class="gr-ind" data-rid="${r.id}" title="個別画面を開く">個別</button>
-              <button class="gr-3y"  data-rid="${r.id}" title="過去36ヶ月を表示">3年表示</button>
+              <button class="gr-ind" data-rid="${escapeHtml(r.id)}" title="個別画面を開く">個別</button>
+              <button class="gr-3y"  data-rid="${escapeHtml(r.id)}" title="過去36ヶ月を表示">3年表示</button>
             </div>
           </div>
         </td>`;
@@ -3651,9 +3996,9 @@ function renderGrid(){
         const hlClsArr = (ym===thisYm) ? ['gr-hl'] : [];
         if(rec){
           const diff = diffHtml(r.id, ym, rec.weight);
-          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${rec.id}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
+          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
         } else {
-          cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${r.id}" data-new-ym="${ym}" title="新規入力">—</td>`;
+          cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${escapeHtml(r.id)}" data-new-ym="${ym}" title="新規入力">—</td>`;
         }
       }
       rows += `<tr${evCls}>${nameCell}${cells}</tr>`;
@@ -3769,18 +4114,19 @@ function renderBulkList(){
     const existingRec = getRecordByDate(r.id, date); // exact-date duplicate
     const latestAny   = getLatestRecordAny(r.id);
     const isChair     = (r.wheelchairKg != null && r.wheelchairKg > 0);
+    const chairKg     = isChair ? wcLatestKg_(r.id, ym, date) : null;   // 最新の重さ（設定の「最新」の行）
     // show previous weight (absolute latest) and its date, if any
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
       const dstr = latestAny.measuredOn || ymFmt(latestAny.yearMonth);
       prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size: 0.5625rem">${dstr}</div>`;
     }
-    const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>` : '';
+    const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${chairKg.toFixed(1)}kg</span>` : '';
     const existBadge = existingRec ? `<span class="bk-ex">${date} に既存記録あり（上書き）</span>` : '';
     const chairHint  = isChair ? `<span class="bk-ch">実測</span>` : '';
     const placeholder = latestAny
       ? (isChair
-          ? (latestAny.rawWeight != null ? latestAny.rawWeight.toFixed(1) : (latestAny.weight + (r.wheelchairKg||0)).toFixed(1))
+          ? (latestAny.rawWeight != null ? latestAny.rawWeight.toFixed(1) : (latestAny.weight + (chairKg||0)).toFixed(1))
           : latestAny.weight.toFixed(1))
       : '';
     return `
@@ -3800,7 +4146,7 @@ function renderBulkList(){
           ${existBadge}
         </div>
         <div class="bk-act">
-          <button type="button" class="bk-save" data-rid="${r.id}" title="この入居者だけ保存">保存</button>
+          <button type="button" class="bk-save" data-rid="${escapeHtml(r.id)}" title="この入居者だけ保存">保存</button>
         </div>
       </div>`;
   }).join('');
@@ -3845,6 +4191,8 @@ function bulkSave(){
   const nowIso = new Date().toISOString();
   const saved = [];
   const chairUpdated = [];
+  const chairAsks = [];
+  const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
 
   for(const row of rows){
@@ -3859,7 +4207,8 @@ function bulkSave(){
     let weight, rawWeight=null, wheelchairKg=null, mode='normal';
     if(chair){
       // input = 実測値 (incl. wheelchair). subtract chair weight.
-      const ck = resident.wheelchairKg;
+      // 車椅子重量は最新の重さ（設定の「最新」の行。wcLatestKg_）。2026-10-06 本人指示で測定日の時点の重さから変更
+      const ck = wcLatestKg_(rid, ym, date);
       if(!ck || ck<=0){ errors++; continue; }
       if(v <= ck){ errors++; continue; }
       rawWeight    = Math.round(v*10)/10;
@@ -3903,6 +4252,8 @@ function bulkSave(){
     // 一括保存でも各レコードを正規化
     normalizeRecord(rec);
     saved.push(rec);
+    chairAsks.push(chairChangeLine_(rec));
+    if(wcNoteBulkRec_(rid, rec)) chairResChanged.add(rid);
   }
 
   if(saved.length===0){
@@ -3912,6 +4263,7 @@ function bulkSave(){
   save();
   // cloud sync (fire and forget; retry queue handles failures)
   saved.forEach(rec=> apiPush('saveRecord', { record: rec }));
+  chairResChanged.forEach(rid=> pushResidentFields_(residentById(rid), ['wheelchairKg', 'wheelchairLog']));
 
   toast(`${saved.length}名の記録を保存しました${errors?`（エラー ${errors}件）`:''}`, 'ok');
   closeBulkInput();
@@ -3920,6 +4272,9 @@ function bulkSave(){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function') renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、入居者ごとに確認して計算し直す
+  chairResChanged.forEach(rid=> wcRecalcAsk_(rid, wcLogStored_(residentById(rid))));
+  alertChairChange_(chairAsks);
 }
 
 /* ============================================================
@@ -3948,7 +4303,7 @@ function saveSingleBulkRow(row){
   // ── 行単位の計算（bulkSave と同一ルール）──
   let weight, rawWeight=null, wheelchairKg=null, mode='normal';
   if(chair){
-    const ck = resident.wheelchairKg;
+    const ck = wcLatestKg_(rid, ym, date);   // 最新の重さ（bulkSave と同じ）
     if(!ck || ck<=0){ toast('車椅子重量が未登録です','err'); return; }
     if(v <= ck){ toast('実測値が車椅子重量以下です','err'); return; }
     rawWeight    = Math.round(v*10)/10;
@@ -3992,8 +4347,10 @@ function saveSingleBulkRow(row){
     row.classList.add('existing');
   }
   normalizeRecord(rec);
+  const chairResChanged = wcNoteBulkRec_(rid, rec);   // bulkSave と同じ規則で車椅子の変更履歴に照らす
   save();
   apiPush('saveRecord', { record: rec });
+  if(chairResChanged) pushResidentFields_(resident, ['wheelchairKg', 'wheelchairLog']);
 
   // ── フィードバック ──
   const btn = row.querySelector('.bk-save');
@@ -4010,6 +4367,8 @@ function saveSingleBulkRow(row){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
+  if(chairResChanged) wcRecalcAsk_(rid, wcLogStored_(resident));
+  alertChairChange_([chairChangeLine_(rec)]);
 }
 
 /* 36-month per-resident modal */
@@ -4227,8 +4586,7 @@ $$('.wm-b').forEach(b=> b.addEventListener('click', ()=>{
   if(b.dataset.wm==='chair' && !$('#inChair').value){
     const rid = $('#inResident').value;
     const ym  = $('#inMonth').value;
-    const r = rid ? residentById(rid) : null;
-    const carry = (rid && ym ? getLastChairKgBefore(rid, ym) : null) ?? r?.wheelchairKg ?? null;
+    const carry = (rid && ym) ? wcLatestKg_(rid, ym, $('#inDate').value) : null;
     if(carry){
       $('#inChair').value = carry.toFixed(1);
       recalcChair();
@@ -4294,9 +4652,7 @@ function refreshCarryWeight(){
     $('#inRaw').value    = prevAny?.rawWeight != null ? prevAny.rawWeight.toFixed(1) : '';
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     // refresh chair weight in case a chair-mode record exists before the chosen date
-    const carryChair = getLastChairKgBefore(rid, ym);
-    const resident = residentById(rid);
-    const chairV = carryChair ?? resident?.wheelchairKg ?? null;
+    const chairV = wcLatestKg_(rid, ym, $('#inDate').value);
     if(chairV != null && !$('#inChair').value) $('#inChair').value = chairV.toFixed(1);
   }else{
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
@@ -4374,12 +4730,214 @@ function getLatestRecordAny(rid, excludeId){
   }
   return null;
 }
-/* last wheelchair weight used before the given yearMonth.
-   Returns the wheelchairKg value from the most recent chair-mode record
-   so changes carry forward from the month they were made. */
-function getLastChairKgBefore(rid, ym){
-  const recs = getRecordsOf(rid).filter(r=> r.yearMonth < ym && r.measureMode==='chair' && r.wheelchairKg);
-  return recs.length ? recs[recs.length-1].wheelchairKg : null;
+/* その計測の時点で使う車椅子重量（2026-10-06 本人指示: ある月で車椅子を変えたら、その後の月も変更後の重さで計算する）。
+   ・測定日より前で最後の車椅子記録の重さを引き継ぐ。日単位で見るので、変えた月の2回目の計測にも効く
+     （以前は月の代表1件・前月までしか見ず、同じ月の2回目は前月の古い重さに戻っていた）
+   ・一括入力は登録値（設定画面）しか見ず、記録で変えた重さが次の月に引き継がれなかったため、同じこの関数を使う
+   ・設定画面で車椅子重量を直した時刻がその記録より後なら、設定の値を使う（後ろに車椅子記録がある過去の日付の入力は除く）
+   ・車椅子記録が無ければ設定の値。同じ日の記録は上書きされる側なので数えない */
+function getChairKgAsOf(rid, ym, date, excludeId){
+  const resident = rid ? residentById(rid) : null;
+  const regKg = (resident && Number(resident.wheelchairKg) > 0) ? Number(resident.wheelchairKg) : null;
+  if(!rid) return regKg;
+  /* 測定日が無い時は「その月の1日」で見る（日付の無い記録・履歴の日付と同じ扱い） */
+  const tgt = date ? date : (ym ? ym + '-01' : '9999-99-99');
+  /* 車椅子の変更履歴があれば、それが正（変更日の当日から新しい重さ）。最初の変更日より前の計測だけ、従来どおり記録から引き継ぐ */
+  const kgByLog = wcKgOn_(wcLogStored_(resident), tgt);
+  if(kgByLog != null) return kgByLog;
+  const recs = getAllRecordsOf(rid);
+  let last = null, laterExists = false;
+  for(let i = recs.length - 1; i >= 0; i--){
+    const r = recs[i];
+    if(excludeId && r.id === excludeId) continue;
+    if(r.measureMode !== 'chair' || !(Number(r.wheelchairKg) > 0)) continue;
+    const k = r.measuredOn || (r.yearMonth ? r.yearMonth + '-01' : '');
+    if(!k || k === tgt) continue;
+    if(k > tgt){ laterExists = true; continue; }
+    last = r; break;
+  }
+  if(!last) return regKg;
+  const lastKg = Number(last.wheelchairKg);
+  if(regKg != null && regKg !== lastKg && !laterExists){
+    const recAt = String(last.updatedAt || last.createdAt || '');
+    if(resident.updatedAt && String(resident.updatedAt) > recAt) return regKg;
+  }
+  return lastKg;
+}
+/* ---- 車椅子の変更履歴（2026-10-06 本人指示） ----
+   入居者の wheelchairLog に JSON の文字列で [{on:'YYYY-MM-DD', kg:12.0}, …] を持つ（変更日の昇順・同じ日は1行）。
+   文字列にするのは、GAS がシートの1セルにそのまま書けるため（配列のままでは書けない）。
+   設定の車椅子重量（wheelchairKg）は「今日の時点で有効な重さ」にそろえる。 */
+function wcLogClean_(a){
+  const byOn = new Map();
+  (Array.isArray(a) ? a : []).forEach(x=>{
+    if(!x) return;
+    const on = String(x.on == null ? '' : x.on).slice(0, 10);
+    const kg = Math.round(Number(x.kg) * 10) / 10;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(on) || !(kg > 0) || kg > 50) return;
+    const o = { on, kg };
+    // rec: その行を作った記録の番号（入力画面から足した行・記録から拾った行）。記録を消す・動かす時に一緒に直すため
+    if(typeof x.rec === 'string' && x.rec) o.rec = x.rec;
+    byOn.set(on, o);
+  });
+  return [...byOn.values()].sort((p, q)=> p.on < q.on ? -1 : p.on > q.on ? 1 : 0);
+}
+function wcLogStored_(r){
+  if(!r || r.wheelchairLog == null || r.wheelchairLog === '') return [];
+  let a = r.wheelchairLog;
+  if(typeof a === 'string'){ try{ a = JSON.parse(a); }catch(e){ return []; } }
+  return wcLogClean_(a);
+}
+/* 履歴がまだ無い方は、保存済みの車椅子記録から重さが変わった日を拾って初期値にする（これだけではシートに書かない）。
+   設定画面で直した車椅子重量が最後の車椅子記録より新しければ、その直した日も1行にする
+   （拾わないと、編集画面を開いて保存しただけで設定の値が古い記録の値に戻る） */
+function wcLogDerived_(rid){
+  const out = []; let prev = null, lastRec = null;
+  getAllRecordsOf(rid).forEach(x=>{
+    if(x.measureMode !== 'chair' || !(Number(x.wheelchairKg) > 0)) return;
+    const on = x.measuredOn || (wrYmOk(x.yearMonth) ? x.yearMonth + '-01' : '');
+    if(!on) return;
+    const kg = Math.round(Number(x.wheelchairKg) * 10) / 10;
+    if(prev === null || kg !== prev){ out.push({ on, kg, rec: String(x.id) }); prev = kg; }
+    lastRec = { on, at: String(x.updatedAt || x.createdAt || '') };
+  });
+  const r = residentById(rid);
+  const regKg = (r && Number(r.wheelchairKg) > 0) ? Math.round(Number(r.wheelchairKg) * 10) / 10 : null;
+  if(lastRec && regKg != null && regKg !== prev && r.updatedAt && String(r.updatedAt) > lastRec.at){
+    const ud = new Date(r.updatedAt);
+    const udOn = isNaN(ud.getTime()) ? '' : (ud.getFullYear() + '-' + String(ud.getMonth() + 1).padStart(2, '0') + '-' + String(ud.getDate()).padStart(2, '0'));
+    if(udOn && udOn > lastRec.on) out.push({ on: udOn, kg: regKg });
+  }
+  return wcLogClean_(out);
+}
+/* ある記録から作った行を外す。外す前に、その行と次の行の間に同じ重さの車椅子記録が残っていれば、
+   行をそちらへ付け替える（後の記録が使っている変更まで消さないため）。skipIds の記録は数えない */
+function wcLogUnlinkRec_(log, rid, recId, skipIds){
+  const out = [];
+  const recs = getAllRecordsOf(rid);
+  (log || []).forEach((e, i)=>{
+    if(e.rec !== recId){ out.push(e); return; }
+    const nextOn = log[i + 1] ? log[i + 1].on : '9999-99-99';
+    const heir = recs.find(x=> x.id !== recId && !(skipIds && skipIds.has(String(x.id)))
+      && x.measureMode === 'chair' && Math.round(Number(x.wheelchairKg) * 10) / 10 === e.kg
+      && (x.measuredOn || (x.yearMonth + '-01')) > e.on && (x.measuredOn || (x.yearMonth + '-01')) < nextOn);
+    if(heir) out.push({ on: heir.measuredOn || (heir.yearMonth + '-01'), kg: e.kg, rec: String(heir.id) });
+  });
+  return wcLogClean_(out);
+}
+/* 履歴を入居者へ書き、設定の車椅子重量を今日の時点の重さにそろえる。変わった時だけ true。
+   続けて同じ重さの行は、先の行だけ残す（重さの変わり目だけが履歴） */
+function wcLogApply_(r, log){
+  const before = r.wheelchairLog == null ? null : String(r.wheelchairLog);
+  const kgBefore = r.wheelchairKg;
+  const merged = [];
+  wcLogClean_(log).forEach(e=>{ if(!merged.length || merged[merged.length - 1].kg !== e.kg) merged.push(e); });
+  log = merged;
+  const c = wcLogWrite_(r, log);
+  const cur = wcKgOn_(c, dNow());
+  if(cur != null && Number(r.wheelchairKg) > 0) r.wheelchairKg = cur;
+  return before !== (r.wheelchairLog == null ? null : String(r.wheelchairLog)) || kgBefore !== r.wheelchairKg;
+}
+function wcLogOf(r){
+  const st = wcLogStored_(r);
+  return st.length ? st : (r ? wcLogDerived_(r.id) : []);
+}
+/* その日（を含む）以前で最後の変更の重さ。最初の変更日より前なら null */
+function wcKgOn_(log, date){
+  let kg = null;
+  for(const e of (log || [])){ if(e.on <= date) kg = e.kg; else break; }
+  return kg;
+}
+function wcLogWrite_(r, log){
+  const c = wcLogClean_(log);
+  r.wheelchairLog = c.length ? JSON.stringify(c) : null;
+  return c;
+}
+/* 履歴に合わせると車椅子重量が変わる保存済みの記録（最初の変更日以降の車椅子記録だけ） */
+function wcAffectedRecs_(rid, log){
+  if(!log || !log.length) return [];
+  return getAllRecordsOf(rid).filter(x=>{
+    if(x.measureMode !== 'chair') return false;
+    const on = x.measuredOn || (wrYmOk(x.yearMonth) ? x.yearMonth + '-01' : '');
+    if(!on || on < log[0].on) return false;
+    const kg = wcKgOn_(log, on);
+    return kg != null && Math.round(Number(x.wheelchairKg) * 10) / 10 !== kg;
+  });
+}
+/* 確認してから、実測値 − 正しい車椅子重量 で体重を計算し直す（キャンセルなら記録には触らない） */
+function wcRecalcAsk_(rid, log){
+  const recs = wcAffectedRecs_(rid, log);
+  if(!recs.length) return;
+  const lbl = x=> x.measuredOn || ymFmt(x.yearMonth);
+  const range = recs.length === 1 ? lbl(recs[0]) : `${lbl(recs[0])}〜${lbl(recs[recs.length - 1])}`;
+  const name = residentById(rid)?.name || '';
+  if(!confirm(`${name}：車椅子の変更日・重さに合わせて、保存済みの記録 ${recs.length}件（${range}）の体重を計算し直しますか？\n\n「キャンセル」なら記録はそのままにします。`)) return;
+  const nowIso = new Date().toISOString();
+  const done = []; let skipped = 0;
+  recs.forEach(x=>{
+    const on = x.measuredOn || (x.yearMonth + '-01');
+    const kg = wcKgOn_(log, on);
+    const raw = Number(x.rawWeight);
+    const w = Math.round((raw - kg) * 10) / 10;
+    if(!(raw > 0) || !(w >= 20 && w <= 150)){ skipped++; return; }
+    x.wheelchairKg = kg; x.weight = w; x.updatedAt = nowIso;
+    normalizeRecord(x);
+    done.push(x);
+  });
+  if(done.length){
+    save();
+    done.forEach(x=> apiPush('saveRecord', { record: x }));
+  }
+  toast(`${done.length}件の体重を計算し直しました${skipped ? `（実測値が無い・範囲外の ${skipped}件はそのまま）` : ''}`, done.length ? 'ok' : 'err');
+  if(typeof renderList === 'function') renderList();
+  if(typeof renderIndiv === 'function') renderIndiv();
+  if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
+  if(typeof updateAlertBadge === 'function') updateAlertBadge();
+}
+/* 入力画面（1件ずつ）に出す車椅子重量＝履歴でいちばん新しい行の重さ（設定画面で「最新」と出る行）。
+   2026-10-06 本人指示: 設定で変えた最新の重さを出す。履歴が無い方は従来どおり測定日の時点の重さ */
+function wcLatestKg_(rid, ym, date){
+  const r = rid ? residentById(rid) : null;
+  const log = r ? wcLogOf(r) : [];
+  if(log.length) return log[log.length - 1].kg;
+  return getChairKgAsOf(rid, ym, date);
+}
+/* 一括入力で保存した記録を、車椅子の変更履歴に照らす（2026-10-06 本人指示: 一括入力も最新の重さで計算する）。
+   1件ずつの入力と同じ規則: 使った重さがその日の時点の重さと違えば、その日を変更日として履歴に入れる
+   （変更日より前の日付で最新の重さを使った＝その日にはもう新しい車椅子だった、とみなす）。
+   この記録から作った行は、いったん外してから比べる（上書き・通常に変えた時に古い行を残さない）。
+   入居者の履歴か車椅子重量が変わった時だけ true */
+function wcNoteBulkRec_(rid, rec){
+  const r = residentById(rid);
+  if(!r || !rec) return false;
+  const full = wcLogOf(r);
+  const base = wcLogUnlinkRec_(full, rid, String(rec.id));
+  let next = null;
+  if(rec.measureMode === 'chair' && Number(rec.wheelchairKg) > 0){
+    const key = rec.measuredOn || (rec.yearMonth + '-01');
+    const kg = Math.round(Number(rec.wheelchairKg) * 10) / 10;
+    const before = wcKgOn_(base, key) ?? getChairKgAsOf(rid, rec.yearMonth, key, String(rec.id));
+    if(before !== kg) next = base.filter(e=> e.on !== key).concat([{ on: key, kg, rec: String(rec.id) }]);
+  }
+  if(!next && JSON.stringify(base) !== JSON.stringify(full)) next = base;
+  return next ? wcLogApply_(r, next) : false;
+}
+/* 「前回の記録の体重」から ±2kg 以上動いた車椅子の記録に「車椅子に変更はありませんでしたか？」を知らせる（2026-10-06 本人指示）。
+   知らせるだけで保存は止めない。比べる相手はこの記録より前の最後の記録（計測の方法は問わない・この記録自身は除く） */
+const CHAIR_CHANGE_ASK = '車椅子に変更はありませんでしたか？';
+function chairChangeLine_(rec){
+  if(!rec || rec.measureMode !== 'chair' || !wrWeightOk(rec)) return '';
+  const prev = getLatestRecordBefore(rec.residentId, rec.yearMonth, rec.measuredOn, rec.id);
+  if(!wrWeightOk(prev)) return '';
+  const d10 = Math.round(rec.weight * 10) - Math.round(prev.weight * 10);
+  if(Math.abs(d10) < 20) return '';
+  const name = residentById(rec.residentId)?.name || '';
+  const prevLabel = prev.measuredOn || ymFmt(prev.yearMonth);
+  return `${name}：前回（${prevLabel} ${prev.weight.toFixed(1)}kg）から ${d10 > 0 ? '+' : ''}${(d10 / 10).toFixed(1)}kg`;
+}
+function alertChairChange_(lines){
+  const ls = (lines || []).filter(Boolean);
+  if(ls.length) alert(CHAIR_CHANGE_ASK + '\n\n' + ls.join('\n'));
 }
 
 /* Edit mode. When set, Save overwrites this specific record instead of
@@ -4397,11 +4955,11 @@ function loadRecordIntoForm(rec){
   inSide = rec.sideForm || null;
   TOGGLES.forEach(t=> inToggles[t.k] = !!rec[t.k]);
   $('#inNote').value = rec.note || '';
-  const carryChair = getLastChairKgBefore(rec.residentId, rec.yearMonth);
+  const carryChair = getChairKgAsOf(rec.residentId, rec.yearMonth, rec.measuredOn, rec.id);
   if(rec.measureMode === 'chair'){
     $('#inWeight').value = rec.weight.toFixed(1);
     $('#inRaw').value   = rec.rawWeight  != null ? rec.rawWeight.toFixed(1)  : '';
-    const chairV = rec.wheelchairKg ?? carryChair ?? resident?.wheelchairKg ?? null;
+    const chairV = rec.wheelchairKg ?? carryChair ?? null;
     $('#inChair').value = chairV!=null ? chairV.toFixed(1) : '';
     setMode('chair');
   }else{
@@ -4425,7 +4983,6 @@ function clearInputForm(){
   const rid = $('#inResident').value;
   const ym  = $('#inMonth').value || ymNow();
   const resident = rid ? residentById(rid) : null;
-  const carryChair = rid && ym ? getLastChairKgBefore(rid, ym) : null;
   const prev = rid && ym ? getLatestBefore(rid, ym) : null;
   if(prev){
     inStaple = prev.stapleForm || null;
@@ -4452,7 +5009,7 @@ function clearInputForm(){
     $('#inWeight').value = prevAny ? prevAny.weight.toFixed(1) : '';
     $('#inRaw').value    = '';
   }
-  const chairV = carryChair ?? resident?.wheelchairKg ?? null;
+  const chairV = (rid && ym) ? wcLatestKg_(rid, ym, $('#inDate').value) : (resident?.wheelchairKg ?? null);
   $('#inChair').value = chairV!=null ? chairV.toFixed(1) : '';
   setMode(prevMode);
   // 入力画面の食事フォームは撤去済みのため DOM があるときだけ操作する
@@ -4498,9 +5055,11 @@ function syncInputFromExisting(){
   // The list of existing records is shown below so user can pick one to edit.
   clearInputForm();
   const resident = residentById(rid);
-  const carryChair = getLastChairKgBefore(rid, ym);
+  // 車椅子の変更履歴がある方は「最新」の重さ（設定画面の最新の行と同じ値）、無ければ登録値
+  const latestLog = resident ? wcLogOf(resident) : [];
+  const carryChair = latestLog.length ? latestLog[latestLog.length - 1].kg : null;
   $('#inChairHint').textContent = carryChair
-    ? `前回の車椅子重量：${carryChair.toFixed(1)}kg（変更時のみ編集）`
+    ? `最新の車椅子重量：${carryChair.toFixed(1)}kg（変更時のみ編集）`
     : (resident?.wheelchairKg
         ? `登録車椅子：${resident.wheelchairKg.toFixed(1)}kg（編集可）`
         : (inMode==='chair' ? '車椅子重量を入力してください' : ''));
@@ -4537,12 +5096,12 @@ function renderInputExistingList(){
   const rows = list.slice(0, 24).map(r=>{
     const badge = r.measureMode==='chair' ? '<span class="wc-badge">車椅子</span>' : '';
     const editing = r.id===editingRecordId ? ' editing' : '';
-    return `<div class="iex-row${editing}" data-rid="${r.id}">
+    return `<div class="iex-row${editing}" data-rid="${escapeHtml(r.id)}">
       <div class="iex-d"><b>${r.measuredOn || ymFmt(r.yearMonth)}</b> <span class="iex-ym">${ymFmt(r.yearMonth)}</span></div>
       <div class="iex-w"><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b><small>kg</small>${badge}</div>
       <div class="iex-act">
-        <button type="button" class="bn bo bsm" data-iex-edit="${r.id}">編集</button>
-        <button type="button" class="bn br bsm" data-iex-del="${r.id}">削除</button>
+        <button type="button" class="bn bo bsm" data-iex-edit="${escapeHtml(r.id)}">編集</button>
+        <button type="button" class="bn br bsm" data-iex-del="${escapeHtml(r.id)}">削除</button>
       </div>
     </div>`;
   }).join('');
@@ -4597,6 +5156,19 @@ $('#inSave').addEventListener('click', ()=>{
       editingRecordId = dup.id;  // 以降の処理で「編集中」として扱う
     }
   }
+  /* 車椅子の変更履歴：保存する前の「その日の時点の重さ」と履歴を控える（記録を書き換える前に取る） */
+  /* 編集中の記録から作った履歴の行（rec が同じ行）は、いったん外して「その記録が無かったら」の重さと比べる。
+     日付を動かした・通常に変えた・重さを直した時に、古い行が残らないようにするため。
+     測定日が無い記録は、判定も履歴の日付も「その月の1日」にそろえる */
+  const chairKey = d || (ym + '-01');
+  const resForLog = residentById(rid);
+  const logFull = resForLog ? wcLogOf(resForLog) : [];
+  const ownRecId = editing ? String(editing.id) : null;
+  const chairLogBefore = ownRecId ? wcLogUnlinkRec_(logFull, rid, ownRecId) : logFull;
+  const ownLogRemoved = JSON.stringify(chairLogBefore) !== JSON.stringify(logFull);
+  const chairBefore = (inMode === 'chair')
+    ? (wcKgOn_(chairLogBefore, chairKey) ?? getChairKgAsOf(rid, ym, chairKey, ownRecId))
+    : null;
   let savedRec;
   if(editing){
     // weight / mode / date / note のみ更新。食事スナップショットは履歴として温存
@@ -4631,17 +5203,22 @@ $('#inSave').addEventListener('click', ()=>{
   }
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
-  // update resident's registered wheelchair weight only when the value
-  // actually changed from the prior chair record (an explicit change).
-  let chairResUpdated = null;
-  if(mode==='chair' && chair){
-    const roundedChair = Math.round(chair*10)/10;
-    const prevChair = getLastChairKgBefore(rid, ym);
-    if(prevChair == null || prevChair !== roundedChair){
-      const r = residentById(rid);
-      if(r){ r.wheelchairKg = roundedChair; chairResUpdated = r; }
+  /* 車椅子重量がその日の時点の重さと違えば「車椅子を替えた」とみなし、測定日を変更日として履歴に1行足す。
+     設定の車椅子重量は、履歴で「今日の時点で有効な重さ」にそろえる（過去の日付の変更でも、後に別の変更があればそちらが残る） */
+  let chairResUpdated = null, chairLogNew = null;
+  {
+    const r = residentById(rid);
+    const roundedChair = (mode==='chair' && chair) ? Math.round(chair*10)/10 : null;
+    let next = null;
+    if(r && roundedChair != null && chairBefore !== roundedChair){
+      next = chairLogBefore.filter(e=> e.on !== chairKey).concat([{ on: chairKey, kg: roundedChair, rec: String(savedRec.id) }]);
+      if(!(Number(r.wheelchairKg) > 0)) r.wheelchairKg = roundedChair;   // 車椅子を使い始めた方は、設定の値も入れる
+    }else if(r && ownLogRemoved){
+      next = chairLogBefore;   // この記録から作った行が要らなくなった（同じ重さ・通常に変えた）
     }
+    if(next && wcLogApply_(r, next)){ chairLogNew = wcLogStored_(r); chairResUpdated = r; }
   }
+  const chairAsk = chairChangeLine_(savedRec);
   save();
   const name = residentById(rid)?.name || '';
   const dateLabel = savedRec.measuredOn || ymFmt(ym);
@@ -4650,7 +5227,7 @@ $('#inSave').addEventListener('click', ()=>{
   apiPush('saveRecord', { record: savedRec });
   /* 記録保存のついでに動くのは車椅子重量だけ。氏名・居室・食事形態まで送ると、
      他端末がその間に直した内容をこちらの古い値で消してしまう。 */
-  if(chairResUpdated) pushResidentFields_(chairResUpdated, ['wheelchairKg']);
+  if(chairResUpdated) pushResidentFields_(chairResUpdated, ['wheelchairKg', 'wheelchairLog']);
   editingRecordId = null;
   $('#inExistsNote').textContent = '';
   clearInputForm();
@@ -4659,6 +5236,8 @@ $('#inSave').addEventListener('click', ()=>{
   if(typeof renderList === 'function') renderList();
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
+  if(chairLogNew) wcRecalcAsk_(rid, chairLogNew);
+  alertChairChange_([chairAsk]);
 });
 
 function deleteRecordById(id){
@@ -4669,8 +5248,16 @@ function deleteRecordById(id){
   if(!confirm(`${resident?.name || ''} ${dateLabel} の記録を削除します。よろしいですか？`)) return;
   DB.records = DB.records.filter(r=> r.id !== id);
   if(editingRecordId === id){ editingRecordId = null; clearInputForm(); }
+  /* この記録から作った車椅子の変更履歴の行も消す（打ち間違いの重さがその後の計測に使われ続けないように） */
+  let wcRes = null;
+  if(resident){
+    const st = wcLogStored_(resident);
+    const kept = wcLogUnlinkRec_(st, resident.id, String(id));
+    if(JSON.stringify(kept) !== JSON.stringify(st) && wcLogApply_(resident, kept)) wcRes = resident;
+  }
   save();
   apiPush('delRecord', { id });
+  if(wcRes) pushResidentFields_(wcRes, ['wheelchairKg', 'wheelchairLog']);
   toast('記録を削除しました','ok');
   renderInputExistingList();
   updateAlertBadge();
@@ -5198,16 +5785,16 @@ function drawStats(rid){
 
   const bmi = bmiOf(last.weight, resident?.heightCm);
   const bmiCell = bmi!=null
-    ? cell('BMI', bmi.toFixed(1), `${bmiCat(bmi).l} (身長${resident.heightCm}cm)`, '', `color:${bmiCat(bmi).c}`)
+    ? cell('BMI', bmi.toFixed(1), `${bmiCat(bmi).l} (身長${escapeHtml(resident.heightCm)}cm)`, '', `color:${bmiCat(bmi).c}`)
     : cell('BMI', '—', '身長を設定', '', 'color:var(--g5)');
 
   el.innerHTML =
     cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size: 0.6875rem;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
     bmiCell +
     cell('前月比', a?.diff1!=null ? `${a.diff1>0?'+':''}${a.diff1.toFixed(1)}` : '—',
-         a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : '', d1Cls) +
+         a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : (recs.length > 1 ? '前月の記録なし' : ''), d1Cls) +
     cell('6ヶ月比', a?.diff6!=null ? `${a.diff6>0?'+':''}${a.diff6.toFixed(1)}` : '—',
-         a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%` : '', d6Cls) +
+         a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%${escapeHtml(wrCmpNote(a.prev6, 6, last.yearMonth))}` : '', d6Cls) +
     cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`,
          `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`);
 }
@@ -5344,8 +5931,8 @@ function drawHist(rid){
       <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') || '<span style="color:var(--g5)">—</span>'}</td>
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
-        <button class="bn bo bsm" data-edit-id="${r.id}">編集</button>
-        <button class="bn br bsm" data-del-id="${r.id}">削除</button>
+        <button class="bn bo bsm" data-edit-id="${escapeHtml(r.id)}">編集</button>
+        <button class="bn br bsm" data-del-id="${escapeHtml(r.id)}">削除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -5398,9 +5985,9 @@ function collectAlerts(){
 
     // 期間ごとに、実際に閾値を超えた行のみを取り出して 増加/減少 に振り分ける
     const periods = [
-      { label:'前月比',  diff:a.diff1, pct:a.pct1, th:THR.m1 },
-      { label:'3ヶ月比', diff:a.diff3, pct:a.pct3, th:THR.m3 },
-      { label:'6ヶ月比', diff:a.diff6, pct:a.pct6, th:THR.m6 },
+      { label:wrCmpLabel('前月比',  a.prev1, 1, last.yearMonth), diff:a.diff1, pct:a.pct1, th:THR.m1 },
+      { label:wrCmpLabel('3ヶ月比', a.prev3, 3, last.yearMonth), diff:a.diff3, pct:a.pct3, th:THR.m3 },
+      { label:wrCmpLabel('6ヶ月比', a.prev6, 6, last.yearMonth), diff:a.diff6, pct:a.pct6, th:THR.m6 },
     ];
     const inc = { reasons:[], level:'none', maxAbsDiff:0, repDiff:0, repPct:0 };
     const dec = { reasons:[], level:'none', maxAbsDiff:0, repDiff:0, repPct:0 };
@@ -5783,6 +6370,7 @@ function renderStorageDiag(){
 }
 $('#sdRefresh')?.addEventListener('click', renderStorageDiag);
 $('#sdRecover')?.addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const bak1 = _readDbFromKey(LS_BAK);
   const bak2 = _readDbFromKey(LS_BAK2);
   const cand = bak1 || bak2;
@@ -5803,6 +6391,401 @@ $('#sdRecover')?.addEventListener('click', ()=>{
 });
 window.addEventListener('wtmgr-saved', ()=>{ if(document.querySelector('.scr[data-sc="cfg"].on')) renderStorageDiag(); });
 
+/* ============================================================
+   重複の点検（2026-09-28）
+   ------------------------------------------------------------
+   組の作り方:
+     ・入居者マスタの番号が同じ行どうし（確実に同じ人）
+     ・氏名（空白を除く）が同じ行どうし。ただしマスタの番号が別々の人どうしは組にしない
+       （マスタが別人と言っている＝同姓同名）
+   まとめるのは人が選んだ時だけ。自動ではまとめない（同姓同名の別人がいるため）。
+   ============================================================ */
+function wrFindDupGroups(){
+  const res = (DB.residents || []).filter(r => r && typeof r === 'object' && r.id != null);
+  const parent = new Map(res.map(r => [r, r]));
+  const find = r => { while(parent.get(r) !== r){ parent.set(r, parent.get(parent.get(r))); r = parent.get(r); } return r; };
+  const mids = new Map(res.map(r => [r, new Set(wrHasMid(r) ? [String(r.masterId)] : [])]));
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if(ra === rb) return;
+    const m = new Set([...mids.get(ra), ...mids.get(rb)]);
+    if(m.size > 1) return;                         // マスタの番号が違う＝別人
+    parent.set(rb, ra); mids.set(ra, m);
+  };
+  const byMid = {}, byName = {};
+  res.forEach(r => {
+    if(wrHasMid(r)){ const k = String(r.masterId); if(byMid[k]) union(byMid[k], r); else byMid[k] = r; }
+  });
+  res.forEach(r => {
+    const n = suNormName(r.name); if(!n) return;
+    (byName[n] = byName[n] || []).push(r);
+  });
+  Object.values(byName).forEach(list => { for(let i = 1; i < list.length; i++) union(list[0], list[i]); });
+  const groups = new Map();
+  res.forEach(r => { const k = find(r); (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+  const out = [], grouped = new Set();
+  groups.forEach(members => {
+    if(members.length < 2) return;
+    members.forEach(m => grouped.add(m));
+    const allMid = members.every(wrHasMid) && new Set(members.map(m => String(m.masterId))).size === 1;
+    out.push({ kind: allMid ? 'mid' : 'name', members });
+  });
+  const nameless = res.filter(r => !grouped.has(r) && !String(r.name == null ? '' : r.name).trim());
+  return { groups: out, nameless };
+}
+function wrRecCountOf(id){ return (DB.records || []).filter(x => x && String(x.residentId) === String(id)).length; }
+function wrLatestYmOf(id){
+  let best = '';
+  (DB.records || []).forEach(x => { if(x && String(x.residentId) === String(id) && wrYmOk(x.yearMonth) && x.yearMonth > best) best = x.yearMonth; });
+  return best;
+}
+/* 残す行の既定: 記録が多い → サーバーに在る → マスタの番号あり → 作成が古い */
+function wrDefaultKeep(members){
+  const srv = wrLoadSrvResIds();
+  const score = r => [wrRecCountOf(r.id), (srv && srv.has(String(r.id))) ? 1 : 0, wrHasMid(r) ? 1 : 0];
+  return members.slice().sort((a, b) => {
+    const sa = score(a), sb = score(b);
+    for(let i = 0; i < sa.length; i++){ if(sa[i] !== sb[i]) return sb[i] - sa[i]; }
+    return String(a.createdAt || '9').localeCompare(String(b.createdAt || '9'));
+  })[0];
+}
+function wrPendingCount(){
+  let n = 0;
+  try{ n += loadPendingQueue().length; }catch(e){}
+  try{ n += _writeQ.length + (_writeInFlight ? 1 : 0); }catch(e){}
+  return n;
+}
+function wrDownloadDbJson(prefix){
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${prefix}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  a.click(); URL.revokeObjectURL(url);
+}
+/* keepId の行に dropIds の行をまとめる。記録は付け替えるだけで消さない。
+   opts.silent: 確認画面と控えの保存を出さない（試験用） */
+function wrMergeResidents(keepId, dropIds, opts){
+  if(wrFieldDeny()) return false;
+  const silent = !!(opts && opts.silent);
+  const keep = residentById(keepId);
+  if(!keep){ toast('残す行が見つかりません。画面を開き直してください', 'err'); return false; }
+  const drops = (dropIds || []).map(residentById).filter(r => r && r !== keep);
+  if(!drops.length) return false;
+  /* 未送信が残る間はまとめない。送信待ちの記録が古い持ち主のまま後から届くのを避ける */
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  const dropSet = new Set(drops.map(r => String(r.id)));
+  const moving = (DB.records || []).filter(x => x && dropSet.has(String(x.residentId)));
+  if(!silent){
+    const dropTxt = drops.map(d => `「${d.name || '（氏名なし）'}」（居室 ${d.room || '—'}）`).join('、');
+    const msg = `「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）の行に、${dropTxt} をまとめます。\n\n`
+      + `・記録 ${moving.length} 件を残す行へ移します（記録は消えません）\n`
+      + `・まとめた ${drops.length} 行は消します。元には戻せません\n`
+      + `・始める前に、今のデータを JSON で保存します\n\nよろしいですか？`;
+    if(!confirm(msg)) return false;
+    try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
+  }
+  const now = new Date().toISOString();
+  moving.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  /* 残す行に無い項目だけ、まとめる行から補う。在籍・入院は状態なので持ち込まない */
+  const SKIP = { id:1, name:1, createdAt:1, updatedAt:1, _fromMaster:1, dischargedAt:1, hospitalized:1 };
+  const filled = [];
+  const blank = v => v == null || v === '';
+  if(!String(keep.name == null ? '' : keep.name).trim()){
+    const nd = drops.find(d => String(d.name == null ? '' : d.name).trim());
+    if(nd){ keep.name = nd.name; filled.push('name'); }
+  }
+  drops.forEach(d => Object.keys(d).forEach(k => {
+    if(SKIP[k] || filled.indexOf(k) >= 0) return;
+    if(blank(keep[k]) && !blank(d[k])){ keep[k] = d[k]; filled.push(k); }
+  }));
+  if(filled.length) keep.updatedAt = now;
+  DB.residents = DB.residents.filter(r => !(r && dropSet.has(String(r.id))));
+  try{
+    if(dropSet.has(String(UI.inRes))) saveUI({inRes: keep.id});
+    if(dropSet.has(String(UI.ivRes))) saveUI({ivRes: keep.id});
+  }catch(e){}
+  save();
+  /* 送る順: 残す行（サーバーに無ければ行ごと）→ 記録の付け替え → まとめた行の削除 */
+  if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
+  else if(filled.length) pushResidentFields_(keep, filled);
+  moving.forEach(rec => apiPush('saveRecord', { record: rec }));
+  drops.forEach(d => apiPush('delResident', { id: d.id }));
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`まとめました（記録 ${moving.length} 件を移しました）`, 'ok');
+  return true;
+}
+/* まとめる前にサーバーと合わせる（他の端末が後から付けた記録を取り込んでから付け替える）。
+   接続先がある端末では同期に成功した時だけ進める。合わせた結果、行が無くなっていたら止める */
+async function wrMergeAfterSync(keepId, dropIds, opts){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、まとめませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
+    /* 同期で内容が変わっていないか確かめ直す: 残す行とまとめる行が今も同じ組にあること
+       （氏名なし行を選んだ人へまとめる時は、両方の行が在ること） */
+    const drops = (dropIds || []).filter(id => residentById(id));
+    let same = !!residentById(keepId) && drops.length === (dropIds || []).length;
+    /* 氏名の無い行を選んだ人へ寄せる時: 同期で本当の氏名が戻っていたら止める（推測で別人へまとめない） */
+    if(same && opts && opts.pick && drops.some(id => String((residentById(id) || {}).name || '').trim())){
+      toast('氏名の無かった行に、ほかの端末から氏名が戻りました。点検の一覧を確かめてください', 'err');
+      try{ renderCfg(); }catch(e){}
+      return false;
+    }
+    if(same && !(opts && opts.pick)){
+      const g = wrFindDupGroups().groups.find(x => x.members.some(m => String(m.id) === String(keepId)));
+      same = !!g && drops.every(id => g.members.some(m => String(m.id) === String(id)));
+    }
+    if(!same){
+      toast('ほかの端末で内容が変わっていました。点検の一覧を確かめてから、もう一度選んでください', 'err');
+      try{ renderCfg(); }catch(e){}
+      return false;
+    }
+  }
+  return wrMergeResidents(keepId, dropIds);
+}
+/* 持ち主のいない記録（どの入居者にも付いていない記録）を residentId ごとに集める */
+function wrOrphanRecordGroups(){
+  const ids = new Set((DB.residents || []).filter(r => r && r.id != null).map(r => String(r.id)));
+  const g = {};
+  (DB.records || []).forEach(x => {
+    if(!x || x.residentId == null || ids.has(String(x.residentId))) return;
+    (g[String(x.residentId)] = g[String(x.residentId)] || []).push(x);
+  });
+  return g;
+}
+/* 持ち主のいない記録を、選んだ入居者へ付け替える（同期してから） */
+async function wrAdoptOrphans(oldRid, keepId){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、付け替えませんでした', 'err'); return false; }
+  }
+  const keep = residentById(keepId);
+  const recs = (DB.records || []).filter(x => x && String(x.residentId) === String(oldRid));
+  if(!keep || !recs.length || residentById(oldRid)){ try{ renderCfg(); }catch(e){} return false; }
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  if(!confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`)) return false;
+  try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
+  const now = new Date().toISOString();
+  recs.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  save();
+  if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
+  recs.forEach(rec => apiPush('saveRecord', { record: rec }));
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`記録 ${recs.length} 件を付けました`, 'ok');
+  return true;
+}
+/* 持ち主のいない記録を消す（2026-09-28 代表者の要望）。誰の記録か分からず付け替えられない時のための「クリア」。
+   消す前にサーバーと同期し、持ち主が本当にいないことを確かめ直す（ほかの端末に持ち主が居れば、同期で戻ってくる）。
+   確認と JSON の控えつき。サーバーからも消す */
+async function wrClearOrphans(oldRid){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、消しませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
+  }
+  if(residentById(oldRid)){ toast('この記録の持ち主が見つかりました。一覧を確かめてください', 'ok'); try{ renderCfg(); }catch(e){} return false; }
+  const recs = (DB.records || []).filter(x => x && String(x.residentId) === String(oldRid));
+  if(!recs.length){ try{ renderCfg(); }catch(e){} return false; }
+  if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
+  const list = recs.map(x => `${ymFmt(x.yearMonth)} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('、');
+  if(!confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを JSON で保存します）。\nよろしいですか？`)) return false;
+  try{ wrDownloadDbJson('weight-record-before-clear'); }catch(e){}
+  const ids = new Set(recs.map(x => String(x.id)));
+  DB.records = DB.records.filter(x => !(x && ids.has(String(x.id))));
+  save();
+  recs.forEach(x => { if(x.id != null) apiPush('delRecord', { id: x.id }); });
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast(`持ち主のいない記録 ${recs.length} 件を消しました`, 'ok');
+  return true;
+}
+/* 作るのを見送ったマスタの人を、選んだ行へ紐づける（その行にマスタの番号を付けてサーバーにも書く） */
+async function wrLinkSkippedMaster(masterId, residentId){
+  if(wrFieldDeny()) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、紐づけませんでした', 'err'); return false; }
+  }
+  const r = residentById(residentId);
+  if(!r || wrHasMid(r)){ toast('選んだ行は、ほかの端末で既に紐づけられていました。一覧を確かめてください', 'err'); try{ renderCfg(); }catch(e){} return false; }
+  if((DB.residents || []).some(x => wrHasMid(x) && String(x.masterId) === String(masterId))){
+    toast('この人は、ほかの端末で既に登録・紐づけされていました。一覧を確かめてください', 'err'); try{ renderCfg(); }catch(e){} return false;
+  }
+  if(!confirm(`「${r.name || '（氏名なし）'}」（居室 ${r.room || '—'}・記録 ${wrRecCountOf(r.id)} 件）を、入居者マスタのこの人として紐づけます。\n別の人（同姓同名・退去した前の入居者）でないか確かめてから進めてください。\nよろしいですか？`)) return false;
+  r.masterId = masterId;
+  save();
+  pushResidentFields_(r, ['masterId']);
+  try{ mergeCommonWeight(); }catch(e){}
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('紐づけました', 'ok');
+  return true;
+}
+/* 作るのを見送ったマスタの人を、新しい入居者として作る（番号はマスタの番号から決まる） */
+async function wrCreateSkippedMaster(entry){
+  if(wrFieldDeny() || !entry) return false;
+  if(apiUrl){
+    let ok = false;
+    try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
+    if(!ok){ toast('サーバーと合わせられなかったため、作りませんでした', 'err'); return false; }
+  }
+  const id = wrMasterResId(entry.masterId);
+  if(residentById(id) || (DB.residents || []).some(r => wrHasMid(r) && String(r.masterId) === String(entry.masterId))){
+    toast('この人は既に登録されていました', 'ok'); try{ renderCfg(); }catch(e){} return false;
+  }
+  if(!confirm(`「${entry.name}」（居室 ${entry.room || '—'}）を、新しい入居者として登録します。\nよろしいですか？`)) return false;
+  const nr = { id, name: entry.name, room: entry.room, masterId: entry.masterId, targetWeight: true, _fromMaster: true, createdAt: new Date().toISOString() };
+  normalizeResident(nr);
+  DB.residents.push(nr);
+  wrSkippedMaster = wrSkippedMaster.filter(x => String(x.masterId) !== String(entry.masterId));
+  save();
+  apiPush('saveResident', { resident: nr });
+  try{ mergeCommonWeight(); }catch(e){}
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('登録しました', 'ok');
+  return true;
+}
+/* 記録の無い、氏名の無い行を消す */
+function wrDeleteEmptyResident(id){
+  if(wrFieldDeny()) return false;
+  const r = residentById(id);
+  if(!r || wrRecCountOf(id) > 0) return false;
+  if(!confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？')) return false;
+  DB.residents = DB.residents.filter(x => x !== r);
+  save();
+  apiPush('delResident', { id: r.id });
+  try{ renderCfg(); }catch(e){}
+  try{ wrRefreshViews(); }catch(e){}
+  toast('氏名の無い行を消しました', 'ok');
+  return true;
+}
+function wrRenderDupCheck(){
+  const box = $('#dupList'), cnt = $('#dupCount');
+  if(!box) return;
+  const { groups, nameless } = wrFindDupGroups();
+  const orphans = wrOrphanRecordGroups();
+  const orphanIds = Object.keys(orphans);
+  const srv = wrLoadSrvResIds();
+  const skippedM = (wrSkippedMaster || []).filter(x => !(DB.residents || []).some(r => wrHasMid(r) && String(r.masterId) === String(x.masterId)));
+  const total = groups.length + nameless.length + orphanIds.length + skippedM.length;
+  if(cnt){ cnt.textContent = total ? `${total} 件` : 'なし'; cnt.classList.toggle('has', total > 0); }
+  if(!total){ box.innerHTML = '<div class="dup-none">重複している入居者・氏名の無い行・持ち主のいない記録・登録を見送った人はいません。</div>'; return; }
+  const info = r => {
+    const n = wrRecCountOf(r.id), ym = wrLatestYmOf(r.id);
+    const bits = [
+      `居室 ${escapeHtml(r.room || '—')}`,
+      `記録 ${n} 件${ym ? `（最新 ${escapeHtml(ymFmt(ym))}）` : ''}`,
+      `マスタ連携 ${wrHasMid(r) ? 'あり' : 'なし'}`,
+      srv ? (srv.has(String(r.id)) ? 'サーバーにあり' : 'この端末だけ') : '',
+      r.createdAt ? `作成 ${escapeHtml(String(r.createdAt).slice(0,10))}` : '',
+      isDischarged(r) ? '退去' : '',
+    ].filter(Boolean);
+    return bits.join('・');
+  };
+  let html = '';
+  groups.forEach((g, gi) => {
+    const keep = wrDefaultKeep(g.members);
+    const nm = (g.members.find(m => String(m.name || '').trim()) || {}).name || '（氏名なし）';
+    const kind = g.kind === 'mid' ? 'マスタの番号が同じ（同じ人）' : '氏名が同じ（別の人でないか確かめてください）';
+    html += `<div class="dup-g${g.kind === 'name' ? ' is-name' : ''}" role="group" aria-label="${escapeHtml(nm)} の重複">`
+      + `<div class="dup-h">${escapeHtml(nm)}<span class="dup-k">${kind}</span></div>`
+      + g.members.map(m => `<label class="dup-m"><input type="radio" name="dupk_${gi}" value="${escapeHtml(m.id)}"${m === keep ? ' checked' : ''}>`
+        + `<span><b>${m === keep ? '残す候補' : 'まとめる候補'}</b>　<span class="dup-s">${info(m)}</span></span></label>`).join('')
+      + `<div class="dup-a"><button type="button" class="bn bp bsm" data-dup-merge="${gi}">この組をまとめる</button></div></div>`;
+  });
+  const named = sortedResidents({ includeDischarged: true, includeNonTargets: true }).filter(r => String(r.name || '').trim());
+  const opts = named.map(r => `<option value="${escapeHtml(r.id)}">${r.room ? `[${escapeHtml(r.room)}] ` : ''}${escapeHtml(r.name)}</option>`).join('');
+  skippedM.forEach((x, si) => {
+    const cands = (DB.residents || []).filter(r => r && !wrHasMid(r) && suNormName(r.name) === suNormName(x.name));
+    const copts = cands.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)}（居室 ${escapeHtml(r.room || '—')}・記録 ${wrRecCountOf(r.id)} 件${isDischarged(r) ? '・退去' : ''}）</option>`).join('');
+    html += `<div class="dup-g is-name" role="group" aria-label="登録を見送った人"><div class="dup-h">${escapeHtml(x.name)}<span class="dup-k">入居者マスタにいて、登録を見送った人</span></div>`
+      + `<div class="dup-m" style="cursor:default"><span class="dup-s">マスタの居室 ${escapeHtml(x.room || '—')}。同じ氏名の行が既にあり、同じ人か決められませんでした。</span></div>`
+      + `<div class="dup-a"><label for="dupSk_${si}" style="font-size:0.8125rem">同じ人の行</label>`
+      + `<select id="dupSk_${si}"><option value="">選んでください</option>${copts}</select>`
+      + `<button type="button" class="bn bp bsm" data-dup-link="${si}">この行に紐づける</button>`
+      + `<button type="button" class="bn bo bsm" data-dup-create="${si}">別の人なので新しく登録</button></div></div>`;
+  });
+  orphanIds.forEach((oid, oi) => {
+    const list = orphans[oid].slice().sort((a, b) => String(a.yearMonth).localeCompare(String(b.yearMonth)));
+    /* 見分ける手がかり: 測定日・入力した日・メモ（氏名は記録に無い） */
+    const md = v => { const t = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? `${Number(t.slice(5,7))}/${Number(t.slice(8,10))}` : ''; };
+    const show = list.slice(-6).map(x => {
+      const bits = [];
+      if(md(x.measuredOn)) bits.push(`測定 ${md(x.measuredOn)}`);
+      if(String(x.createdAt || '').slice(0, 10) && md(x.createdAt)) bits.push(`入力 ${String(x.createdAt).slice(0,4)}/${md(x.createdAt)}`);
+      if(x.note) bits.push(`メモ「${escapeHtml(String(x.note).slice(0, 30))}」`);
+      return `${escapeHtml(ymFmt(x.yearMonth))} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}${bits.length ? `（${bits.join('・')}）` : ''}`;
+    }).join('<br>');
+    html += `<div class="dup-g" role="group" aria-label="持ち主のいない記録"><div class="dup-h">持ち主のいない記録<span class="dup-k">${list.length} 件</span></div>`
+      + `<div class="dup-m" style="cursor:default"><span class="dup-s">${show}${list.length > 6 ? '（新しい6件）' : ''}</span></div>`
+      + `<div class="dup-a"><label for="dupOr_${oi}" style="font-size:0.8125rem">付ける相手</label>`
+      + `<select id="dupOr_${oi}"><option value="">選んでください</option>${opts}</select>`
+      + `<button type="button" class="bn bp bsm" data-dup-orphan="${oi}">この人に付ける</button>`
+      + `<button type="button" class="bn br bsm" data-dup-orphan-clear="${oi}">誰の記録か分からないので消す</button></div></div>`;
+  });
+  if(nameless.length){
+    nameless.forEach(r => {
+      const n = wrRecCountOf(r.id);
+      html += `<div class="dup-g" role="group" aria-label="氏名の無い行"><div class="dup-h">氏名の無い行<span class="dup-k">${n ? '記録あり' : '記録なし'}</span></div>`
+        + `<div class="dup-m" style="cursor:default"><span class="dup-s">${info(r)}</span></div>`
+        + (n
+          ? `<div class="dup-a"><label for="dupTo_${escapeHtml(r.id)}" style="font-size:0.8125rem">まとめる先</label>`
+            + `<select id="dupTo_${escapeHtml(r.id)}"><option value="">選んでください</option>${opts}</select>`
+            + `<button type="button" class="bn bp bsm" data-dup-into="${escapeHtml(r.id)}">この人にまとめる</button></div>`
+          : `<div class="dup-a"><button type="button" class="bn br bsm" data-dup-del="${escapeHtml(r.id)}">この行を消す</button></div>`)
+        + `</div>`;
+    });
+  }
+  box.innerHTML = html;
+  const busy = fn => async (...a) => {
+    if(box.dataset.busy === '1') return;
+    box.dataset.busy = '1';
+    box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try{ await fn(...a); }
+    finally{ box.dataset.busy = ''; box.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+  };
+  box.querySelectorAll('[data-dup-merge]').forEach(b => b.addEventListener('click', busy(async () => {
+    const g = groups[Number(b.dataset.dupMerge)]; if(!g) return;
+    const sel = box.querySelector(`input[name="dupk_${b.dataset.dupMerge}"]:checked`);
+    if(!sel){ toast('残す行を選んでください', 'err'); return; }
+    await wrMergeAfterSync(sel.value, g.members.map(m => m.id).filter(id => String(id) !== sel.value));
+  })));
+  box.querySelectorAll('[data-dup-orphan]').forEach(b => b.addEventListener('click', busy(async () => {
+    const oid = orphanIds[Number(b.dataset.dupOrphan)];
+    const to = box.querySelector(`#dupOr_${b.dataset.dupOrphan}`);
+    if(!oid || !to || !to.value){ toast('付ける相手を選んでください', 'err'); return; }
+    await wrAdoptOrphans(oid, to.value);
+  })));
+  box.querySelectorAll('[data-dup-orphan-clear]').forEach(b => b.addEventListener('click', busy(async () => {
+    const oid = orphanIds[Number(b.dataset.dupOrphanClear)];
+    if(oid) await wrClearOrphans(oid);
+  })));
+  box.querySelectorAll('[data-dup-link]').forEach(b => b.addEventListener('click', busy(async () => {
+    const x = skippedM[Number(b.dataset.dupLink)];
+    const to = box.querySelector(`#dupSk_${b.dataset.dupLink}`);
+    if(!x || !to || !to.value){ toast('同じ人の行を選んでください', 'err'); return; }
+    await wrLinkSkippedMaster(x.masterId, to.value);
+  })));
+  box.querySelectorAll('[data-dup-create]').forEach(b => b.addEventListener('click', busy(async () => {
+    await wrCreateSkippedMaster(skippedM[Number(b.dataset.dupCreate)]);
+  })));
+  box.querySelectorAll('[data-dup-into]').forEach(b => b.addEventListener('click', busy(async () => {
+    const id = b.dataset.dupInto;
+    const to = box.querySelector(`#dupTo_${CSS.escape(id)}`);
+    if(!to || !to.value){ toast('まとめる先を選んでください', 'err'); return; }
+    await wrMergeAfterSync(to.value, [id], { pick: true });
+  })));
+  box.querySelectorAll('[data-dup-del]').forEach(b => b.addEventListener('click', () => wrDeleteEmptyResident(b.dataset.dupDel)));
+}
+
 function renderCfg(){
   // 設定画面の入居者一覧。長期運用で混入し得る欠損データ（name 欠落・id 欠落・null
   // 要素・サーバ由来の不完全行など）を1件たりとも例外で落とさず、必ず描画完了する。
@@ -5810,6 +6793,7 @@ function renderCfg(){
   if(!list) return;  // cfg 画面 DOM が未ロード（保険）
   try{ renderThrEditor(); }catch(e){ console.warn('renderThrEditor:', e); }
   try{ renderStorageDiag(); }catch(e){ console.warn('renderStorageDiag:', e); }
+  try{ wrRenderDupCheck(); }catch(e){ console.warn('wrRenderDupCheck:', e); }
 
   // 1) 不正エントリを除外して妥当な配列を作る（id が文字列であることを必須とする）
   const all = Array.isArray(DB.residents) ? DB.residents : [];
@@ -5863,7 +6847,7 @@ function renderCfg(){
     for(const r of arr){
       try{
         const n = DB.records ? DB.records.filter(x => x && x.residentId === r.id).length : 0;
-        const hStr = (r.heightCm ? `身長 ${r.heightCm}cm / ` : '') + (r.wheelchairKg ? `車椅子 ${r.wheelchairKg}kg / ` : '');
+        const hStr = (r.heightCm ? `身長 ${escapeHtml(r.heightCm)}cm / ` : '') + (r.wheelchairKg ? `車椅子 ${escapeHtml(r.wheelchairKg)}kg / ` : '');
         const div = document.createElement('div');
         div.className = r._discharged ? 'rli rli-discharged' : 'rli';
         const dcTag = r._discharged
@@ -5924,6 +6908,7 @@ function renderThrEditor(){
   }).join('');
   $$('[data-thr]', body).forEach(inp=>{
     inp.addEventListener('change', ()=>{
+      if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
       const [k, field] = inp.dataset.thr.split('.');
       const v = Math.max(0, Number(inp.value) || 0);
       THR[k][field] = v;
@@ -5951,9 +6936,11 @@ function renderRuleDesc(){
     const parts = [seg('注意', t.wKg, t.wPct), seg('警告', t.ngKg, t.ngPct)].filter(Boolean);
     return parts.length ? `${label} ${parts.join('、')}` : `${label} 判定なし`;
   };
-  el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`;
+  el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`
+    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`;
 }
 $('#thrReset')?.addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!confirm('アラート検知ルールを初期値に戻しますか？')) return;
   THR = cloneThr(DEFAULT_THR);
   saveThr(THR);
@@ -5983,6 +6970,7 @@ function renderHeightSrcNote(id){
 }
 
 function openResident(id){
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   editingId = id;
   const r = id ? residentById(id) : null;
   $('#mdTitle').textContent = id ? '入居者の編集' : '入居者の追加';
@@ -5995,6 +6983,12 @@ function openResident(id){
   $('#mdHeight').value = r?.heightCm ?? '';
   renderHeightSrcNote(id);
   $('#mdChair').value = r?.wheelchairKg ?? '';
+  mdChairLog = r ? wcLogOf(r).map(e=> Object.assign({}, e)) : [];
+  mdChairAuto = null;
+  mdChairLogOpen = JSON.stringify(r ? wcLogStored_(r) : []);
+  renderMdChairLog();
+  // 車椅子を使っている方は、欄の値を履歴の「今日の時点の重さ」にそろえる（使っていない方は空のまま）
+  if(r && Number(r.wheelchairKg) > 0) mdChairSyncFromLog_();
   $('#mdNote').value = r?.note || '';
   // load meal-form widgets from resident's saved settings
   loadResidentMealIntoMd(r);
@@ -6187,11 +7181,95 @@ function birthSetFromIso(iso){
   }
 })();
 
+/* 設定→入居者の編集の「車椅子の変更履歴」。編集中の行は mdChairLog に持ち、保存で入居者へ書く */
+let mdChairLog = [];
+let mdChairAuto = null;     // 車椅子重量の欄を打ったことで自動で足した今日の行（手で直した行はここから外す）
+let mdChairLogOpen = '[]';   // 編集画面を開いた時点の保存済みの履歴（開いている間に他の端末が足した行を見分ける）
+function mdChairSyncFromLog_(){
+  const cur = wcKgOn_(wcLogClean_(mdChairLog), dNow());
+  if(cur != null) $('#mdChair').value = cur.toFixed(1);
+}
+function renderMdChairLog(){
+  const box = $('#mdChairLogRows');
+  if(!box) return;
+  if(!mdChairLog.length){
+    box.innerHTML = '<div class="wc-log-empty">履歴はありません。車椅子重量を入れると、今日の日付で1行足されます。</div>';
+    return;
+  }
+  /* 新しい日付ほど上に並べる（2026-10-06 本人指示）。日付が空の行は、いちばん上（書きかけ）。
+     いちばん新しい日付の行に「最新」と出す。並べるのは画面だけで、保存の形（日付の古い順）は変えない */
+  const order = mdChairLog.map((e, i)=> i).sort((a, b)=>{
+    const x = mdChairLog[a].on || '9999-99-99', y = mdChairLog[b].on || '9999-99-99';
+    return x < y ? 1 : x > y ? -1 : b - a;
+  });
+  const latestIdx = order.find(i=> mdChairLog[i].on);
+  box.innerHTML = order.map(i=>{
+    const e = mdChairLog[i];
+    const latest = (i === latestIdx);
+    return `
+    <div class="wc-log-item${latest ? ' latest' : ''}">
+      ${latest ? '<span class="wc-log-tag">最新</span>' : ''}
+      <div class="wc-log-row">
+        <input type="date" data-wcl-on="${i}" value="${escapeHtml(e.on || '')}" aria-label="${latest ? '最新の' : ''}変更日">
+        <input type="number" data-wcl-kg="${i}" step="0.1" min="1" max="50" inputmode="decimal" value="${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}" aria-label="車椅子の重さ（kg）">
+        <span class="wc-log-u">kg</span>
+        <button type="button" class="wc-log-del" data-wcl-del="${i}" aria-label="この行を消す">削除</button>
+      </div>
+    </div>`;
+  }).join('');
+  $$('[data-wcl-on]', box).forEach(el=> el.addEventListener('change', ()=>{ const e = mdChairLog[+el.dataset.wclOn]; e.on = el.value; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); renderMdChairLog(); }));
+  $$('[data-wcl-kg]', box).forEach(el=> el.addEventListener('input', ()=>{ const e = mdChairLog[+el.dataset.wclKg]; e.kg = Number(el.value) || null; delete e.rec; if(e === mdChairAuto) mdChairAuto = null; mdChairSyncFromLog_(); }));
+  $$('[data-wcl-del]', box).forEach(el=> el.addEventListener('click', ()=>{ const gone = mdChairLog.splice(+el.dataset.wclDel, 1)[0]; if(gone === mdChairAuto) mdChairAuto = null; renderMdChairLog(); mdChairSyncFromLog_(); }));
+}
+$('#mdChairLogAdd').addEventListener('click', ()=>{
+  const v = Number($('#mdChair').value);
+  mdChairLog.push({ on: dNow(), kg: v > 0 ? Math.round(v * 10) / 10 : null });
+  renderMdChairLog();
+});
+/* 車椅子重量の欄を書き換えたら、今日の日付の行を足す（同じ日の行があれば重さだけ直す）。空にした時は履歴を残す。
+   打っている間（input）に足す。以前は欄を離れた時（change）に足していたため、打ち直してすぐ「保存」を押すと、
+   押した瞬間に行が増えて「保存」ボタンが下へずれ、押下が届かずに保存されないことがあった（2026-10-06 本人報告）。
+   保存の時にも同じ突き合わせをする（欄を離れた合図が出ない入れ方でも、履歴に今日の行を入れる） */
+function mdChairReconcile_(){
+  const v = Math.round(Number($('#mdChair').value) * 10) / 10;
+  const today = dNow();
+  const others = mdChairLog.filter(e=> e !== mdChairAuto);
+  const prev = wcKgOn_(wcLogClean_(others), today);
+  let changed = false;
+  if(v > 0 && v <= 50 && v !== prev){
+    if(mdChairAuto){
+      if(mdChairAuto.kg !== v){ mdChairAuto.kg = v; changed = true; }
+    }else{
+      const same = mdChairLog.find(e=> e.on === today);
+      if(same){ same.kg = v; delete same.rec; }
+      else { mdChairAuto = { on: today, kg: v }; mdChairLog.push(mdChairAuto); }
+      changed = true;
+    }
+  }else if(mdChairAuto){
+    // 元の重さに戻した・空にした時は、自動で足した今日の行を引っ込める
+    mdChairLog = mdChairLog.filter(e=> e !== mdChairAuto);
+    mdChairAuto = null;
+    changed = true;
+  }
+  if(changed) renderMdChairLog();
+}
+$('#mdChair').addEventListener('input', mdChairReconcile_);
+$('#mdChair').addEventListener('change', mdChairReconcile_);
+
 $('#mdSave').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const name = $('#mdName').value.trim();
   if(!name){ toast('お名前を入力してください','err'); return; }
   const hv = Number($('#mdHeight').value);
   const cv = Number($('#mdChair').value);
+  /* 車椅子の変更履歴：日付か重さの片方だけの行は保存しない（どちらも空の行は捨てる） */
+  mdChairReconcile_();   // 欄の値と履歴を必ず突き合わせてから保存する
+  if(mdChairLog.some(e=> (!e.on) !== (!(Number(e.kg) > 0)))){ toast('車椅子の変更履歴に、日付か重さが空の行があります','err'); return; }
+  if(mdChairLog.some(e=> e.on && !(Number(e.kg) > 0 && Number(e.kg) <= 50))){ toast('車椅子の変更履歴の重さは 50kg までで入れてください','err'); return; }
+  /* 開いている間に他の端末（入力画面）が足した行は、この保存で消さずに残す（同じ日なら、ここで直した行を優先） */
+  const chairLogOpenSet = new Set(wcLogClean_(JSON.parse(mdChairLogOpen || '[]')).map(e=> e.on + '|' + e.kg));
+  const chairLogAdded = editingId ? wcLogStored_(residentById(editingId)).filter(e=> !chairLogOpenSet.has(e.on + '|' + e.kg)) : [];
+  const chairLogSave = wcLogClean_(chairLogAdded.concat(mdChairLog));
   const payload = {
     name,
     room: $('#mdRoom').value.trim(),
@@ -6199,7 +7277,8 @@ $('#mdSave').addEventListener('click', ()=>{
     birthDate: $('#mdBirth').value,
     admitDate: $('#mdAdmit').value,
     heightCm: hv>0 ? Math.round(hv*10)/10 : null,
-    wheelchairKg: cv>0 ? Math.round(cv*10)/10 : null,
+    wheelchairKg: cv>0 ? (chairLogAdded.length ? (wcKgOn_(chairLogSave, dNow()) ?? Math.round(cv*10)/10) : Math.round(cv*10)/10) : null,
+    wheelchairLog: chairLogSave.length ? JSON.stringify(chairLogSave) : null,
     note: $('#mdNote').value.trim(),
     // meal form (master setting): used as the snapshot for new records
     ...mealPayloadFromMd(),
@@ -6218,6 +7297,8 @@ $('#mdSave').addEventListener('click', ()=>{
   save();
   apiPush('saveResident', { resident: savedResident });
   $('#mdResident').classList.remove('on');
+  // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、確認してから計算し直す
+  if(editingId) wcRecalcAsk_(savedResident.id, chairLogSave);
   // すべての画面を再描画：今 cfg にいてもユーザはすぐに他のタブに移るため、
   // 一覧・集計・入居者選択プルダウンも併せて更新しておく。
   renderCfg();
@@ -6235,6 +7316,7 @@ $('#mdSave').addEventListener('click', ()=>{
    - 復帰：dischargedAt をクリアして通常の入居者に戻す。
    - 体重記録は一切削除しない（退去後も履歴アクセス可能）。 */
 $('#mdDischarge').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!editingId) return;
   const r = residentById(editingId);
   if(!r){ toast('入居者が見つかりません','err'); return; }
@@ -6278,6 +7360,7 @@ $('#mdDischarge').addEventListener('click', ()=>{
 });
 
 $('#mdDel').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!editingId) return;
   const r = residentById(editingId);
   const n = DB.records.filter(x=>x.residentId===editingId).length;
@@ -6303,14 +7386,16 @@ $('#mdDel').addEventListener('click', ()=>{
 
 /* export / import */
 $('#cfgExport').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `weight-record-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url);
 });
-$('#cfgImport').addEventListener('click', ()=> $('#cfgFile').click());
+$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; $('#cfgFile').click(); });
 $('#cfgFile').addEventListener('change', async e=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const f = e.target.files[0]; if(!f) return;
   try{
     const text = await f.text();
@@ -6348,6 +7433,7 @@ $('#cfgFile').addEventListener('change', async e=>{
   }finally{ e.target.value=''; }
 });
 $('#cfgCsv').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   const header = ['name','room','heightCm','yearMonth','weight','bmi','measureMode','rawWeight','wheelchairKg','staple','stapleAmount','side','soupThick','sauceThick','lowSalt','note','measuredOn'];
   const rows = [header.join(',')];
   DB.records.forEach(r=>{
@@ -6384,6 +7470,7 @@ $('#cfgCsv').addEventListener('click', ()=>{
   a.click(); URL.revokeObjectURL(url);
 });
 $('#cfgClear').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(!confirm('全データを削除します。本当によろしいですか？（元に戻せません）')) return;
   // GAS連携URLは「アプリ設定」なので、データ削除では保持する
   const keepUrl = (DB && DB.apiUrl) || apiUrl || '';
@@ -6399,6 +7486,7 @@ $('#cfgClear').addEventListener('click', ()=>{
 
 /* sample data */
 $('#cfgSample').addEventListener('click', ()=>{
+  if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(DB.residents.length>0 && !confirm('既存データに追加します。続行しますか？')) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
@@ -6530,7 +7618,7 @@ function refreshUrlPersistBadge(){
          他端末の編集を上書きしうる
        待ち時間が二重になるのを避けるため、観測は短めの制限時間で打ち切る。
        観測できなくても従来どおりの送り方で動くので、同期は止まらない。 */
-    if(suGetDeviceRole() !== 'field') setTimeout(async ()=>{
+    setTimeout(async ()=>{   /* 現場端末でも同期する（2026-09-24 以前は現場端末では起動ごと止めていた） */
       await apiProbe();
       updateAuthNote_();
       syncFromAPI(true);
@@ -6554,6 +7642,7 @@ function refreshUrlPersistBadge(){
   }
 
   $('#btnApiSave')?.addEventListener('click', async ()=>{
+    if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
     const url = $('#cfgApi').value.trim();
     if(!url){ toast('URLを入力してください','err'); return; }
     if(!url.startsWith('https://script.google.com/')){
@@ -6644,9 +7733,11 @@ function refreshUrlPersistBadge(){
     refreshUrlPersistBadge();
   });
   $('#btnApiClear')?.addEventListener('click', ()=>{
+    if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
+    wrClearSrvResIds();   /* 前の接続先で控えた入居者の番号も消す（別のシートへ繋ぎ直した時に使わない） */
     /* ★合言葉もここで消す（2026-08-13 レビュー指摘・中2）。保存は「空欄＝変更しない」に
        統一したため、消す入口はここだけになる。連携を解除するのに資格情報だけ端末へ
        残す理由も無い（次に別のサーバーへ繋ぐ時、古い合言葉が黙って送られる）。 */
@@ -6667,7 +7758,11 @@ function refreshUrlPersistBadge(){
    Init
    ============================================================ */
 // 入居者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
-try{ mergeCommonWeight(); }catch(e){ /* 取り込み失敗は運用を止めない */ }
+/* ★サーバーの接続先がある端末では、ここでは新しい入居者を作らない（2026-09-28）。
+   起動直後はまだサーバーと合わせていないので、ここで作ると、サーバーに居る人を
+   別の番号で二重に作る（新しい端末・初めて開く現場端末で全員が2人ずつになっていた）。
+   作るのは同期が成功した後の取り込み（syncFromAPI 内）だけ。居室・退去などの反映は今までどおり行う。 */
+try{ mergeCommonWeight({ noAdd: !!apiUrl }); }catch(e){ /* 取り込み失敗は運用を止めない */ }
 /* 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）。
    ★この経路は氏名一致で masterId を後付けするため、起動時点では紐づいていない。
      マスタから本人指定で来ていて見つからなかった場合に限り、取得完了後に1回だけ再試行する
@@ -6679,10 +7774,6 @@ try{
   }
 }catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
-(function(){ var b=document.getElementById('suDeviceUnlock'); if(b) b.addEventListener('click', function(){
-  try{ localStorage.setItem(SU_DEVICE_KEY,'office'); }catch(e){}
-  applyWeightDeviceGuard(); wrRefreshViews(); toast('この端末を事務所PCに設定しました');
-}); })();
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();
 }); })();
@@ -6777,5 +7868,7 @@ $('#mdResident').addEventListener('click', e=>{
   if(e.target.id==='mdResident') $('#mdResident').classList.remove('on');
 });
 </script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-10-04.2" data-tool="体重管理システム"></script>
 </body>
 </html>

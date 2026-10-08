@@ -1,0 +1,14 @@
+{
+  "name": "care-tools-check",
+  "private": true,
+  "type": "module",
+  "description": "介護ツールの検証道具（撮影・画素比較・JS構文・実名ガード）。配布物ではない。",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "_note": "道具はリポジトリの根から node check/xxx.mjs で回す（check/README.md）。ここの scripts は準備だけ",
+    "setup": "npm install && npx playwright install chromium"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}
