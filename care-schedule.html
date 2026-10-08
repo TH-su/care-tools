@@ -1739,7 +1739,13 @@ function _handle(e, method) {
 <div class="toast" id="toast"></div>
 
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
+<script>
+/* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
+   行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
+   ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
+function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'care:' + where); }catch(_){} }
+</script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -2991,7 +2997,7 @@ function csFingerprint_(json) {
   return t.length + ':' + h.toString(16);
 }
 function csRememberLocalFp_(json) {
-  try { localStorage.setItem(CS_LOCAL_FP_KEY, csFingerprint_(json)); } catch (e) {}
+  try { localStorage.setItem(CS_LOCAL_FP_KEY, csFingerprint_(json)); } catch(e){ csNote_('指紋', e); }
 }
 
 /* ── ワースケが書いた入力を消さないための「土台」（2026-08-31 追加・3-wayマージ）──────────
@@ -3043,7 +3049,7 @@ function csFieldBaseSet_(map) {
   if (!map || typeof map !== 'object') return;
   CS_FIELD_BASE = map;
   try { localStorage.setItem(CS_FIELD_BASE_KEY, JSON.stringify(CS_FIELD_BASE)); }
-  catch (e) { /* 容量超過なら土台を持たない＝従来動作へ倒れるだけ（保存は止めない） */ }
+  catch(e){ csNote_('土台の控え', e); }   /* 容量超過なら土台を持たない＝従来動作へ倒れるだけ（保存は止めない）。記録だけ残す */
 }
 function csFieldBaseSnapshot_(db) { csFieldBaseSet_(csFieldBaseBuild_(db || DB)); }
 function csFieldBaseLoad_() {
@@ -3218,7 +3224,7 @@ const CS_STAMP_FRESH_MS = 8000;
    相手が名乗っていれば新しい版＝警告しない。名乗りが無ければ古い版（この版より前のタブ）。 */
 function csStampWriter_() {
   try { localStorage.setItem(CS_WRITER_STAMP_KEY, JSON.stringify({ app: 'care', tab: CS_TAB_ID, at: Date.now() })); }
-  catch (e) {}
+  catch(e){ csNote_('書き手の印', e); }
 }
 /* 直前の書き手が「自分以外の、名乗った新しいタブ」なら false（古くない）。
    自分の名乗りしか無い＝相手は名乗らずに書いた＝古い版、と判定する。 */
@@ -3367,7 +3373,7 @@ function csWriteGens_(gens) {
   for (let i = 0; i < 8; i++) {
     try { localStorage.setItem(CS_GENS_KEY, JSON.stringify(a)); return true; }
     catch (e) {
-      if (a.length <= 1) return false;      // これ以上減らせない＝あきらめる（本体の保存は止めない）
+      if (a.length <= 1) { csNote_('世代の控え', e); return false; }   // これ以上減らせない＝あきらめる（本体の保存は止めない・記録だけ残す）
       /* ★容量不足でも、捨てる順は剪定と同じ（日ごとの控えを最後に回す）。
          ここで機械的に先頭を落とすと、いちばん守りたい古い日の控えから消える。 */
       let v = csGenVictimIndex_(a, true, CS_GENS_DAYS);
@@ -3377,6 +3383,7 @@ function csWriteGens_(gens) {
       a = a.slice(0, v).concat(a.slice(v + 1));
     }
   }
+  csNote_('世代の控え', new Error('減らしても書けない'));
   return false;
 }
 /* 保存のたびに1世代積む。内容が変わっていなければ積まない（同じ姿で埋め尽くさない）。
@@ -3392,7 +3399,7 @@ function csPushBackupGen_(force) {
     gens.push({ at: at, day: csJstDay_(at), res: csRealResidentCount(DB.residents),
                 ev: csCountEventsAll_(DB.residents), json: json });
     csWriteGens_(csTrimGens_(gens));
-  } catch (e) {}
+  } catch(e){ csNote_('世代の控え', e); }
 }
 
 /* その日の控えを【編集より前】に1件作る（起動直後に呼ぶ）。
@@ -3409,7 +3416,7 @@ function csEnsureDayAnchor_() {
       if (gens[i] && gens[i].day === today) return;   // 今日の控えは既にある
     }
     csPushBackupGen_(true);
-  } catch (e) {}
+  } catch(e){ csNote_('日次の控え', e); }
 }
 
 /* 正データを端末ローカルへ退避（同期されないキー）。サンプル/空は退避しない（=「あ」を昇格させない）。 */
@@ -3419,7 +3426,7 @@ function csBackupResidents() {
     if (!csLooksLikeSampleOnly(DB.residents) && csRealResidentCount(DB.residents) > 0) {
       localStorage.setItem(CS_RESIDENT_BACKUP_KEY, JSON.stringify({ at: Date.now(), residents: DB.residents }));
     }
-  } catch(e) {}
+  } catch(e){ csNote_('利用者の控え', e); }
   csPushBackupGen_();   /* 1世代だけの退避は事故に気づく前に上書きされる＝世代も残す（2026-08-31） */
 }
 /* ── 復元（世代バックアップから戻す・2026-08-31）───────────────────────────────
@@ -3555,7 +3562,7 @@ function csApplyRestore_(res, whole, when, d) {
   showToast(whole ? (when + ' の姿に戻しました') : ('予定 ' + diff.add + '件を戻しました'));
   /* 復元はクラウドへも送る。件数が大きく戻る＝サーバーのガードに当たることがあるが、
      その時は既存の確認ダイアログが出て人が判断する（黙って force はしない）。 */
-  if (SYNC.hasTarget()) { try { SYNC.push(); } catch (e) {} }
+  if (SYNC.hasTarget()) { try { SYNC.push(); } catch(e){ csNote_('送信', e); } }
   return true;
 }
 
@@ -3658,12 +3665,12 @@ function csRestoreResidentsIfLost() {
       saveLocalOnly();
       if (suGetDeviceRole() !== 'field' && SYNC.hasTarget()) {
         SYNC.markDirty();
-        setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);   // 通常push(楽観ロック)で修復
+        setTimeout(function(){ try { SYNC.push(); } catch(e){ csNote_('送信（復元後）', e); } }, 800);   // 通常push(楽観ロック)で修復
       }
       try { showToast('利用者データを端末バックアップから復元しました'); } catch(e) {}
       return true;
     }
-  } catch(e) {}
+  } catch(e){ csNote_('端末の控えからの復元', e); }
   return false;
 }
 
@@ -3733,7 +3740,7 @@ function loadDB() {
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (raw) localStorage.setItem(LS_KEY + '_backup_' + Date.now(), raw);
-    } catch(_) {}
+    } catch(_){ csNote_('読込失敗時の控え', _); }
   }
   if (!Array.isArray(DB.residents)) DB.residents = [];
   // 事業所情報マイグレーション: 山田太郎の設定をデフォルトとして取り込む
@@ -3778,7 +3785,7 @@ function migrateClearNotes_() {
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (raw) localStorage.setItem(LS_KEY + '_backup_before_notes_clear', raw);
-    } catch (e) {}
+    } catch(e){ csNote_('一括クリア前の控え', e); }
     let cleared = 0;
     for (let i = 0; i < residents.length; i++) {
       const evs = residents[i].events || [];
@@ -3801,10 +3808,10 @@ function saveDB() {
   /* ★書く前に、他タブが書き換えていないかを見て、あれば取り込んでから書く（2026-08-31）。
      ここを通さずに書くと、自分の保存が相手の書き込みを消したうえに指紋まで自分のものへ
      更新され、送信前マージ（csMergeLocalBeforePush_）も二度と発火しなくなる。 */
-  try { csAbsorbForeignWrite_(); } catch (e) {}
+  try { csAbsorbForeignWrite_(); } catch(e){ csNote_('別タブの取り込み', e); }
   try {
     const json = JSON.stringify(DB);
-    try { csStampWriter_(); } catch (e) {}   // 書く直前に版を名乗る（相手の誤警告を防ぐ・失敗しても保存は止めない）
+    try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   // 書く直前に版を名乗る（相手の誤警告を防ぐ・失敗しても保存は止めない）
     localStorage.setItem(LS_KEY, json);
     // 書込検証：実際に保存されたか確認（クォータ超過などを即検知）
     const verify = localStorage.getItem(LS_KEY);
@@ -3836,7 +3843,7 @@ function manualSave() {
   const synced = SYNC.hasTarget();
   if (synced) {
     if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
-    try { SYNC.push(); } catch (e1) {}
+    try { SYNC.push(); } catch(e1){ csNote_('送信', e1); }
   }
   flashSave(ok ? (synced ? '✓ 保存しました' : '✓ 端末に保存') : '✗ 保存失敗');
 }
@@ -3916,12 +3923,12 @@ const SYNC = {
        （和集合・入浴の和）が働いて「消える」ではなく「両方残る」側へ倒れる。 */
     if (!this._dirty) this._baseRev = this.loadCareRev();
     this._dirty = true;
-    try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e) {}
+    try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e){ csNote_('未送信の印', e); }
   },
   clearDirty() {
     this._dirty = false;
     this._baseRev = null;   // 送信済み＝次の編集で取り直す
-    try { localStorage.removeItem(CS_DIRTY_KEY); } catch(e) {}
+    try { localStorage.removeItem(CS_DIRTY_KEY); } catch(e){ csNote_('未送信の印', e); }
   },
   hasPersistedDirty() {
     try { return localStorage.getItem(CS_DIRTY_KEY) === '1'; } catch(e) { return false; }
@@ -4002,7 +4009,7 @@ const SYNC = {
       const o = JSON.parse(localStorage.getItem('ws_sync_revs') || '{}');
       o.care = r;
       localStorage.setItem('ws_sync_revs', JSON.stringify(o));
-    } catch(e) {}
+    } catch(e){ csNote_('版の控え', e); }
   },
   /* ── 通信の一時不良と「接続先が死んだ」の切り分け ───────────────────────────
      出典: ワークスケジュールアプリ src/logic/netpolicy.js と同じ規則。
@@ -4175,7 +4182,7 @@ const SYNC = {
       if (this._rejectedRev !== rev) {
         this._rejectedRev = rev;
         this.log('⚠️ クラウドが空/サンプルのため上書きを中止しました（ローカルを保持）');
-        if (suGetDeviceRole() !== 'field') setTimeout(function(){ try { SYNC.push(); } catch(e){} }, 800);
+        if (suGetDeviceRole() !== 'field') setTimeout(function(){ try { SYNC.push(); } catch(e){ csNote_('送信（空の上書き防止後）', e); } }, 800);
       }
       return false;   // DB不変・saveCareRev は呼ばない
     }
@@ -4222,20 +4229,20 @@ const SYNC = {
        残っているだけでサーバーからマスタが欠けたままになり、新しい端末が既定値で起動する。
        サンプル上書き拒否パス（上）と同じ作法で、事務所PCからだけ1回押し戻す。 */
     if (preservedRM && suGetDeviceRole() !== 'field') {
-      setTimeout(function () { try { SYNC.markDirty(); SYNC.push(); } catch (e) {} }, 900);
+      setTimeout(function () { try { SYNC.markDirty(); SYNC.push(); } catch(e){ csNote_('送信（単位マスタ）', e); } }, 900);
     }
     saveLocalOnly();
     this.saveCareRev(Number(rev) || 0);   // 数値で保存（文字列revがそのまま次のPUTペイロードへ載るのを防ぐ）
     this.config.lastSync = Date.now();
     /* サーバー版を採用した＝いまの中身がサーバーと一致した瞬間。フィールドの土台を焼き直す。 */
-    try { csFieldBaseSnapshot_(DB); } catch (e) {}
+    try { csFieldBaseSnapshot_(DB); } catch(e){ csNote_('土台の控え', e); }
     this._dirty = false;   // メモリのみ解除。永続フラグ(CS_DIRTY_KEY)は push成功/起動時一致でのみ解除
     /* 土台がサーバー版に変わった＝固定していた版数はもう基準にならない。null に戻すことで、
        競合解消の直後の再 push は「採用したサーバー版の版数」で送る（無限競合を作らない）。 */
     this._baseRev = null;
     this.save();
     recalcAllEventUnits();
-    try { mergeCommonSchedule(); } catch(e) {}
+    try { mergeCommonSchedule(); } catch(e){ csNote_('マスタの取り込み', e); }
     csRestoreResidentsIfLost();   /* 採用結果がサンプル/空なら端末バックアップから復元 */
     csBackupResidents();          /* 実データを退避（次回ロスト時の復元元） */
     /* ★クラウド採用は DB ごと差し替わる＝currentResidentId も他端末の選択に置き換わる。
@@ -4366,7 +4373,7 @@ const SYNC = {
         this.saveCareRev(Number(j.rev) || 0);
         /* 中身がサーバーと一致した＝土台を確定してよい唯一の起動時経路。
            ★DB ではなく【サーバーが返した内容】から作る（判定の後に画面で編集されうるため・レビュー M-2）。 */
-        try { csFieldBaseSet_(csFieldBaseBuild_(j.data)); } catch (e) {}
+        try { csFieldBaseSet_(csFieldBaseBuild_(j.data)); } catch(e){ csNote_('土台の控え', e); }
         this.clearDirty();
         this.config.lastSync = Date.now();
         this.save();
@@ -4439,7 +4446,7 @@ const SYNC = {
         this.saveCareRev(Number(j.rev) || 0);   // 同上（isFinite 確認済みの値を数値で保存）
         this.config.lastSync = Date.now();
         /* 送信が通った＝サーバーの中身は「送った内容」と一致した。その内容で土台を確定する。 */
-        try { csFieldBaseSet_(sentBase); } catch (e) {}
+        try { csFieldBaseSet_(sentBase); } catch(e){ csNote_('土台の控え', e); }
         this.clearDirty();
         this.save();
         this.log(`✅ 保存完了（rev ${j.rev}）`);
@@ -4732,10 +4739,10 @@ function saveLocalOnly() {
   if (SIM_ON) { SIM.persist(); return; }
   try {
     const json = JSON.stringify(DB);
-    try { csStampWriter_(); } catch (e) {}   /* saveDB と同じ＝どちらの経路で書いても版を名乗る */
+    try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   /* saveDB と同じ＝どちらの経路で書いても版を名乗る */
     localStorage.setItem(LS_KEY, json);
     csRememberLocalFp_(json);   /* saveDB と同じ＝どちらの経路で書いても指紋がずれない */
-  } catch(e) {}
+  } catch(e){ csNote_('本体の保存', e); }
   csBackupResidents();
 }
 
@@ -4821,7 +4828,7 @@ function commitSyncTarget(url, tok) {
     try {
       localStorage.setItem('su_sync_common', JSON.stringify(
         { endpoint: url, token: tok || '', updatedAt: Date.now() }));
-    } catch(e) {}
+    } catch(e){ csNote_('接続先の控え', e); }
   }
   if (changed) {
     if (SYNC.hasTarget()) SYNC.startPolling(); else SYNC.stopPolling();
@@ -5155,7 +5162,7 @@ function mergeCommonSchedule(extData){
     }
   });
   // saveDB() は自動pushを誘発するため、取り込みは saveLocalOnly()（ローカルのみ）で永続化
-  if (changed){ try{ saveLocalOnly(); }catch(e){} }
+  if (changed){ try{ saveLocalOnly(); }catch(e){ csNote_('本体の保存（取り込み）', e); } }
   return changed > 0;
 }
 /* ── 入院状態を入居者マスタへ反映（setState 併送） ──
@@ -5296,7 +5303,7 @@ function csStateRevRefresh_(cfg, rev, srev){
     /* トークン無し端末は直取得できない。LS再マージだけ行い版数を採用（変化時のみ動く）。
        LSの鮮度は同一端末の resident-master 次第＝現状動作と同じ */
     var ch0 = false;
-    try{ ch0 = mergeCommonSchedule(); }catch(e0){}
+    try{ ch0 = mergeCommonSchedule(); }catch(e0){ csNote_('マスタの取り込み', e0); }
     applyChanged(ch0);
     csStateRevLast_ = rev;
     if (srev != null) csStateSrevLast_ = srev;
@@ -5312,19 +5319,19 @@ function csStateRevRefresh_(cfg, rev, srev){
     .then(function(d){
       var list = (d && Array.isArray(d.roster)) ? d.roster : null;
       if (!list || !list.length){                      // 空/認証エラー/不正応答: 取り込まない（空上書き保護と同思想）
-        var ch1 = false; try{ ch1 = mergeCommonSchedule(); }catch(e1){}
+        var ch1 = false; try{ ch1 = mergeCommonSchedule(); }catch(e1){ csNote_('マスタの取り込み', e1); }
         applyChanged(ch1);
         csStateRevBusy_ = false; return;               // rev 未採用＝次tickで再取得を試す
       }
       var common = { residents: csRosterToCommon_(list) };
       csStateRevCommon_ = { at: Date.now(), data: common };   // メモリのみ保持（adopt後の再マージの巻き戻し防止に使用）
       var ch2 = false;
-      try{ ch2 = mergeCommonSchedule(common); }catch(e2){}
+      try{ ch2 = mergeCommonSchedule(common); }catch(e2){ csNote_('マスタの取り込み', e2); }
       /* 仕様の順序どおり mergeCommonSchedule() も再実行する。スナップショット上書き（LSが古い時は
          直取得値を土台にする）により古いLSでの巻き戻しは起きない＝通常は冪等な no-op。
          直取得後に同一端末の resident-master がLSをさらに更新していた場合だけ、その最新が効く */
       var ch2b = false;
-      try{ ch2b = mergeCommonSchedule(); }catch(e2b){}
+      try{ ch2b = mergeCommonSchedule(); }catch(e2b){ csNote_('マスタの取り込み', e2b); }
       applyChanged(ch2 || ch2b);
       /* getRoster 応答同梱の stateRev / srev があれば1往復で基準を前進（照会〜取得の間の更新も拾う）。
          未同梱（旧GAS）は照会時の値を基準にする（srev は未観測のまま null を保つ） */
@@ -5335,7 +5342,7 @@ function csStateRevRefresh_(cfg, rev, srev){
       csStateRevBusy_ = false;
     })
     .catch(function(){                                 // 取得失敗: LS再マージのみ・rev未採用＝次tickで自動リトライ
-      var ch3 = false; try{ ch3 = mergeCommonSchedule(); }catch(e3){}
+      var ch3 = false; try{ ch3 = mergeCommonSchedule(); }catch(e3){ csNote_('マスタの取り込み', e3); }
       applyChanged(ch3);
       csStateRevBusy_ = false;
     });
@@ -5637,7 +5644,7 @@ function removeResident(id) {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) localStorage.setItem(LS_KEY + '_backup_' + Date.now(), raw);
-  } catch (e) {}
+  } catch(e){ csNote_('削除前の控え', e); }
   /* 取り消し履歴（1手Undo）。予定の取り消しと違い利用者そのものが消えるため、
      currentResident() に依存しない独立の種類で積む。 */
   pushUndoEntry_({ kind: 'resident', idx: idx, snap: JSON.stringify(res) });
@@ -5677,7 +5684,7 @@ async function csReassertResidentFlag_(id, field, val, label) {
     /* 送れていない（通信失敗等）のに変更は残っている＝再送の口を張り直す
        （push が _busy で false を返した場合も未送信のまま残さない） */
     if (!pushed) SYNC.scheduleAutoPush();
-  } catch (e) { try { SYNC.scheduleAutoPush(); } catch (e2) {} }
+  } catch (e) { try { SYNC.scheduleAutoPush(); } catch(e2){ csNote_('再送の予約', e2); } }
 }
 function moveOutResident(id) {
   const res = DB.residents.find(r => r.id === id);
@@ -8661,7 +8668,7 @@ async function csVerifyBulkUndo_(entry) {
        戻り値を必ず見て、送れていなければ送信予約を張り直したうえで人に知らせる。 */
     const pushed = await SYNC.push();   // 競合時は内部で pull→rebase→再push（DB が差し替わる＝id で引き直す）
     if (!pushed) {
-      try { SYNC.scheduleAutoPush(); } catch (e2) {}
+      try { SYNC.scheduleAutoPush(); } catch(e2){ csNote_('再送の予約', e2); }
       showToast('取り消しをクラウドへ送れていません。💾保存を押してください');
       return;
     }
@@ -9062,7 +9069,7 @@ SYNC.load();
 // 利用者マスタの共通情報を取り込み（連携キーが無ければ no-op）＋端末ガード
 try { mergeCommonSchedule(); } catch(e) { /* 取り込み失敗は運用を止めない */ }
 // 起動時にローカルが既にサンプル/空化していれば端末バックアップから復元、正データなら退避を更新
-try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e) {}
+try { csRestoreResidentsIfLost(); csBackupResidents(); } catch(e){ csNote_('利用者の控え（起動時）', e); }
 /* その日の始まりの姿を必ず1件残す（編集より前に積む＝事故のあとの姿しか残らないのを防ぐ） */
 try { csEnsureDayAnchor_(); } catch(e) {}
 /* 盤面ロックの状態を戻す（再読み込みで解除されない＝置いてある端末はロックのまま） */
@@ -9102,7 +9109,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
       try {
         if (migrateClearNotes_()) {
           if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
-          try { SYNC.push(); } catch (e) {}   // クリア済みを即クラウドへ確定（rev前進）＝全端末へ恒久反映
+          try { SYNC.push(); } catch(e){ csNote_('送信（クリア後）', e); }   // クリア済みを即クラウドへ確定（rev前進）＝全端末へ恒久反映
         }
       } catch (e2) {}
       /* 起動pullはDB全体を差し替えるため currentResidentId も戻りうる。
@@ -9239,6 +9246,6 @@ window.addEventListener('beforeunload', csFlushOnExit_);
 window.addEventListener('pagehide', csFlushOnExit_);
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-04.2" data-tool="週間計画"></script>
+<script src="su-report.js?v=2026-10-08" data-tool="週間計画"></script>
 </body>
 </html>

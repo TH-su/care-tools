@@ -44,10 +44,16 @@
   var FILE = (location.pathname.split('/').pop() || location.pathname).split('?')[0];
   var T0 = Date.now();
   var ERRORS = [];   // 直近のJSエラー（種類と場所だけ・最大5件）
+  var NOTES = [];    // 画面に出さない記録（su-errors.js の note）の控え（種類と場所だけ・最大3件）。ERRORS と分ける＝本物のエラーを押し出さない
   var AUTO_LS = 'su_report_auto_v1';          // 自動報告の間引き（{署名: 送った時刻}）
   var AUTO_GAP_MS = 30 * 60 * 1000;           // 同じエラーは30分に1回
   var AUTO_MAX_PER_LOAD = 10;                 // 1回の画面表示で自動送信する上限（暴走しても止まる）
   var autoSent = 0;
+  /* su-errors.js の note（画面に出さない記録・2026-10-08 監査10月版 #8）から来たものは、1回の画面表示で1件だけ送る。
+     容量いっぱいの端末では間引きの控えも書けず、別々の場所の失敗が一度に来るため、上限の10件を使い切って
+     後から起きた本物のスクリプトエラーが送られなくなる（2026-10-08 審査の指摘）。 */
+  var NOTE_KIND = '保存・同期の失敗';
+  var autoNoteSent = 0;
 
   /* エラー文からは「種類」だけを取り出す（文の中身は送らない）。where は ファイル名:行 だけ（クエリは落とす） */
   function errType(msg) {
@@ -56,15 +62,19 @@
     return m ? m[1] : 'エラー';
   }
   function cleanWhere(where) {
+    /* note の場所は「画面:何の書き込み」の決まった言葉（例 care:未送信の印・weight:未送信の控え）。データは入らないのでそのまま残す */
+    var n = String(where || '').match(/^[a-z]{2,12}:[^\s:/?#<>"'&]{1,40}$/);
+    if (n) return n[0];
     var w = String(where || '').replace(/[?#][^:]*/, '');
     var m = w.match(/([A-Za-z0-9_.-]+\.(?:html|js)):?(\d+)?/);
     return m ? (m[1] + (m[2] ? ':' + m[2] : '')) : '';
   }
-  function pushErr(s) {
+  function pushErr(s, list, max) {
+    list = list || ERRORS; max = max || 5;
     s = String(s || '').replace(/\s+/g, ' ').slice(0, 120);
     if (!s) return;
-    if (ERRORS.indexOf(s) === -1) ERRORS.push(s);
-    if (ERRORS.length > 5) ERRORS.shift();
+    if (list.indexOf(s) === -1) list.push(s);
+    if (list.length > max) list.shift();
   }
   window.addEventListener('error', function (e) {
     if (!e || (!e.message && !e.error)) return;
@@ -125,6 +135,10 @@
     L = L.concat(facts());
     L.push('画面のエラー: ' + (ERRORS.length ? ERRORS.length + '件（種類と場所だけ）' : 'なし'));
     for (var i = 0; i < ERRORS.length; i++) L.push('  ' + (i + 1) + ') ' + ERRORS[i]);
+    if (NOTES.length) {
+      L.push('保存・同期の記録（画面には出していない）: ' + NOTES.length + '件（種類と場所だけ）');
+      for (var k = 0; k < NOTES.length; k++) L.push('  ' + (k + 1) + ') ' + NOTES[k]);
+    }
     if (ann) L.push('配置図: ' + (ann.layout ? '添付（部品の四角 ' + ann.layout.r.length + '個・文字は含まない）' : '作れなかった'));
     return L.join('\n');
   }
@@ -243,17 +257,22 @@
     var url = endpoint();
     if (!url) return;                                      // 送信先が無い端末では何もしない
     if (autoSent >= AUTO_MAX_PER_LOAD) return;
+    if (String(kind) === NOTE_KIND && autoNoteSent >= 1) return;
     var type = String(kind || 'エラー') + '：' + errType(brief);   // 例「スクリプトエラー：TypeError」。文の中身は送らない
     var w = cleanWhere(where);
     var sig = FILE + '|' + type + '|' + w;
     if (autoThrottled(sig)) return;
     autoSent++;
+    if (String(kind) === NOTE_KIND) autoNoteSent++;
     post(url, composeAuto(type, w)).then(null, function () { /* 送れなくても画面には何も出さない */ });
   }
   try {
     if (window.SUErrors && typeof window.SUErrors.onReport === 'function') {
       window.SUErrors.onReport(function (kind, brief, where) {
-        try { pushErr(String(kind || 'エラー') + '：' + errType(brief) + (cleanWhere(where) ? ' @' + cleanWhere(where) : '')); } catch (e) { /* 何もしない */ }
+        try {
+          var line = String(kind || 'エラー') + '：' + errType(brief) + (cleanWhere(where) ? ' @' + cleanWhere(where) : '');
+          if (String(kind) === NOTE_KIND) pushErr(line, NOTES, 3); else pushErr(line);
+        } catch (e) { /* 何もしない */ }
         try { autoSend(kind, brief, where); } catch (e) { /* 何もしない */ }
       });
     }

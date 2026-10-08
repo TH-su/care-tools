@@ -1615,7 +1615,13 @@ body.meal-on #sc-list{max-width:none}
      読み込めなかった・古い版が残っている時は薬剤情報を従来どおり1列で出す（画面は壊れない）。 -->
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
+<script>
+/* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
+   行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
+   ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
+function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'master:' + where); }catch(_){} }
+</script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-09-27"></script>
@@ -1663,7 +1669,7 @@ function setDeviceRole(v){
        端末内に氏名・生年月日が残り続けるため。
        ★「開いていた方」の番号も同じ場所で消す（消す責務を2箇所に割らない）。 */
     if(v==='field'){ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); roster=[]; }
-  }catch(e){}
+  }catch(e){ rmNote_('端末の役割', e); }
 }
 /* devGen は「現場用へ切り替わった回数」。applyDeviceGuard がブロックした時にだけ進む
    （事務所PCのままなら進まない＝これを見る判定は全部いままでどおりに倒れる）。
@@ -1938,7 +1944,7 @@ function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roste
 /* ★現場端末には氏名・生年月日入りの一覧を書かない（2026-10-01）。切り替えた後に遅れて届いた応答
    （入院トグル・保存の後処理など）からの書き戻しを、呼び出し元ごとではなく出口で止める。
    ★名簿を捨てた後、取り直すまで（rosterPurged_）も書かない（欠けた名簿でキャッシュを縮めない） */
-function saveRosterCache(){if(getDeviceRole()==='field'||rosterPurged_)return;try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){}}
+function saveRosterCache(){if(getDeviceRole()==='field'||rosterPurged_)return;try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){ rmNote_('名簿の控え', e); }}
 function refreshRoster(){
   /* ★現場端末では取りに行かない（追い読み srevTick や一括保存の後始末から呼ばれうる）（2026-10-01） */
   if(getDeviceRole()==='field')return Promise.resolve(false);
@@ -2069,9 +2075,9 @@ function srevTick(){
 function srevStart(){
   if(srevBound)return;
   srevBound=true;
-  setInterval(function(){try{srevTick()}catch(e){}},SREV_POLL_MS);
+  setInterval(function(){try{srevTick()}catch(e){ rmNote_('版の確認', e); }},SREV_POLL_MS);
   document.addEventListener('visibilitychange',function(){
-    if(!document.hidden){try{srevTick()}catch(e){}}   // 復帰時に即時1回（10秒スロットルは tick 内蔵）
+    if(!document.hidden){try{srevTick()}catch(e){ rmNote_('版の確認', e); }}   // 復帰時に即時1回（10秒スロットルは tick 内蔵）
   });
 }
 
@@ -10759,7 +10765,7 @@ function applyDeviceGuard(){
      次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
   /* 現場端末と判った時点で「開いていた方」の番号も消す（他アプリの設定画面から
      'field' へ切り替えられた端末は setDeviceRole を通らないので、ここでも保険をかける） */
-  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){} roster=[]; rosterPurged_=true;
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){ rmNote_('名簿の消去（現場端末）', e); } roster=[]; rosterPurged_=true;
     /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
        元から書いていないが、メモリ上の控えもここで捨てる */
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
@@ -10845,9 +10851,9 @@ function closeSync(){$('mSync').classList.remove('on');if($('sc-list').classList
 /* 現場用へ切り替えると消えてしまう「メモリにしか無い入力」が残っている場所の名前を返す（無ければ空配列） */
 function devDirty_(){
   var a=[];
-  try{ if(mealDirtyCells()) a.push('食形態一覧'); }catch(e){}
-  try{ if(typeof mdDirty!=='undefined'&&mdDirty) a.push('薬効辞書'); }catch(e){}
-  try{ if(bulkCellCount()) a.push('一括編集'); }catch(e){}
+  try{ if(mealDirtyCells()) a.push('食形態一覧'); }catch(e){ rmNote_('未保存の確認', e); }
+  try{ if(typeof mdDirty!=='undefined'&&mdDirty) a.push('薬効辞書'); }catch(e){ rmNote_('未保存の確認', e); }
+  try{ if(bulkCellCount()) a.push('一括編集'); }catch(e){ rmNote_('未保存の確認', e); }
   try{ if($('sc-edit')&&$('sc-edit').classList.contains('on')) a.push('編集画面（開いたまま）'); }catch(e){}
   return a;
 }
@@ -10881,7 +10887,7 @@ function saveSyncCfg(){
        欄が無い状態で書くと、別タブが後から設定した値を古い値で潰してしまう。 */
     if($('cfgVmaUrl'))_c.vmaUrl=CFG.vmaUrl||'';
     localStorage.setItem(CFG_KEY,JSON.stringify(_c));
-  }catch(e){}
+  }catch(e){ rmNote_('接続先の控え', e); }
   if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
   /* ★closeSync は通さない。一覧画面だと history.back() が走り、読み込み直しと競り合う。
      残った履歴の段は、起動時の現場端末の処理（init）が消費する */
@@ -11834,6 +11840,6 @@ function init(){
 document.addEventListener('DOMContentLoaded',init);
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-04.2" data-tool="入居者マスタ"></script>
+<script src="su-report.js?v=2026-10-08" data-tool="入居者マスタ"></script>
 </body>
 </html>

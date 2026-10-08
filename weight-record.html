@@ -10,7 +10,13 @@
 <title>体重管理システム</title>
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
+<script>
+/* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
+   行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
+   ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
+function wrNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'weight:' + where); }catch(_){} }
+</script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-09-27"></script>
@@ -1503,9 +1509,9 @@ function save(){
     if(cur && cur.length > 30){       // 微小な値（例: '{}'）はバックアップしない
       const prevBak = localStorage.getItem(LS_BAK);
       if(prevBak && prevBak !== cur){
-        try{ localStorage.setItem(LS_BAK2, prevBak); }catch(e){ /* 二世代目は best-effort */ }
+        try{ localStorage.setItem(LS_BAK2, prevBak); }catch(e){ wrNote_('控えの書き込み（二世代目）', e); }   /* 二世代目は best-effort。記録だけ残す */
       }
-      try{ localStorage.setItem(LS_BAK, cur); }catch(e){ /* バックアップ失敗は続行 */ }
+      try{ localStorage.setItem(LS_BAK, cur); }catch(e){ wrNote_('控えの書き込み', e); }   /* バックアップ失敗は続行。記録だけ残す */
     }
   }catch(e){ /* 履歴側のエラーで本体保存を阻害しない */ }
   // 本体書込み + 検証
@@ -1731,7 +1737,7 @@ let apiUrl = '';  // wireSync IIFE / loadApiUrlOnBoot 経由で初期化（DB �
         const cur = localStorage.getItem(API_KEY) || '';
         if(cur !== apiUrl) localStorage.setItem(API_KEY, apiUrl);
       }
-    }catch(e){}
+    }catch(e){ wrNote_('接続先の控え', e); }
     return r;
   };
 })();
@@ -1743,18 +1749,18 @@ let apiUrl = '';  // wireSync IIFE / loadApiUrlOnBoot 経由で初期化（DB �
     try{
       if(apiUrl){
         // 三層に確実に書き込んでから離脱
-        try{ localStorage.setItem(API_KEY, apiUrl); }catch(e){}
+        try{ localStorage.setItem(API_KEY, apiUrl); }catch(e){ wrNote_('接続先の控え（離脱時）', e); }
         try{
           const uiRaw = JSON.parse(localStorage.getItem(LS_UI) || '{}');
           uiRaw.apiUrl = apiUrl;
           localStorage.setItem(LS_UI, JSON.stringify(uiRaw));
-        }catch(e){}
+        }catch(e){ wrNote_('接続先の控え（離脱時）', e); }
         try{
           if(typeof DB === 'object' && DB){
             DB.apiUrl = apiUrl;
             localStorage.setItem(LS_KEY, JSON.stringify(DB));
           }
-        }catch(e){}
+        }catch(e){ wrNote_('本体の保存（離脱時）', e); }
       }
     }catch(e){}
   }
@@ -2252,13 +2258,13 @@ async function _syncFromAPIImpl(showLoader){
        「サーバーが知っている人か」をこの控えで判断する。外すのを見送った人は別に持ち越して次回また判定する */
     wrSaveSrvResIds(srvResInfo.ids, recon.keep);
     // 入居者マスタの共通情報を同期後にも反映（master を正として居室・対象を更新）
-    try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){}
+    try{ if(typeof mergeCommonWeight === 'function') mergeCommonWeight(); }catch(e){ wrNote_('マスタの取り込み', e); }
     // 共有名簿が無い端末向けに、排泄記録GAS 経由の代理名簿も試す（10分スロットル・非同期）
-    try{ if(typeof wrSyncProxyRoster === 'function') wrSyncProxyRoster(); }catch(e){}
+    try{ if(typeof wrSyncProxyRoster === 'function') wrSyncProxyRoster(); }catch(e){ wrNote_('代理名簿', e); }
     save();
     wrPushReconciled(recon.push);
     /* 統合で消した行が古い端末の部分送信で「氏名の無い行」として復活していたら、サーバーからも消す */
-    try{ (recon.del || []).forEach(id => apiPush('delResident', { id, by: '自動（同期の後始末）' })); }catch(e){}   // 人の操作ではないので、その端末の人の名前で残さない
+    try{ (recon.del || []).forEach(id => apiPush('delResident', { id, by: '自動（同期の後始末）' })); }catch(e){ wrNote_('後始末の削除', e); }   // 人の操作ではないので、その端末の人の名前で残さない
 
     if(apiThr){
       // merge into existing THR shape (don't let missing keys wipe defaults)
@@ -2301,7 +2307,7 @@ async function _syncFromAPIImpl(showLoader){
     /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
        番号はマスタの番号から決まるので、あとで同期してもサーバーで二重にならない */
     /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
-    try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){}
+    try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){ wrNote_('マスタの取り込み（オフライン）', e2); }
     return false;
   }finally{ ldHide(); }
 }
@@ -2311,7 +2317,7 @@ function loadPendingQueue(){
   try{ const s = localStorage.getItem(LS_PQ); return s ? JSON.parse(s) : []; }
   catch(e){ return []; }
 }
-function savePendingQueue(q){ try{ localStorage.setItem(LS_PQ, JSON.stringify(q)); }catch(e){} }
+function savePendingQueue(q){ try{ localStorage.setItem(LS_PQ, JSON.stringify(q)); }catch(e){ wrNote_('未送信の控え', e); } }
 function enqueuePending(action, data){
   const q = loadPendingQueue();
   q.push({ action, data, at: Date.now() });
@@ -2918,9 +2924,9 @@ function wrLoadSrvResIds(withGone){
 function wrSaveSrvResIds(ids, gone){
   try{
     localStorage.setItem(WR_SRV_RES_KEY, JSON.stringify({ u: wrSrvResTag(), ids: Array.from(ids), gone: gone ? Array.from(gone) : [] }));
-  }catch(e){}
+  }catch(e){ wrNote_('サーバー行の控え', e); }
 }
-function wrClearSrvResIds(){ try{ localStorage.removeItem(WR_SRV_RES_KEY); }catch(e){} }
+function wrClearSrvResIds(){ try{ localStorage.removeItem(WR_SRV_RES_KEY); }catch(e){ wrNote_('サーバー行の控え', e); } }
 /* true=サーバーに無いと分かっている / false=在る、または控えが無く分からない（従来の送り方のまま） */
 function wrServerLacksResident(id){
   var s = wrLoadSrvResIds();
@@ -6681,7 +6687,7 @@ async function wrLinkSkippedMaster(masterId, residentId){
   r.masterId = masterId;
   save();
   pushResidentFields_(r, ['masterId']);
-  try{ mergeCommonWeight(); }catch(e){}
+  try{ mergeCommonWeight(); }catch(e){ wrNote_('マスタの取り込み', e); }
   try{ renderCfg(); }catch(e){}
   try{ wrRefreshViews(); }catch(e){}
   toast('紐づけました', 'ok');
@@ -6706,7 +6712,7 @@ async function wrCreateSkippedMaster(entry){
   wrSkippedMaster = wrSkippedMaster.filter(x => String(x.masterId) !== String(entry.masterId));
   save();
   apiPush('saveResident', { resident: nr });
-  try{ mergeCommonWeight(); }catch(e){}
+  try{ mergeCommonWeight(); }catch(e){ wrNote_('マスタの取り込み', e); }
   try{ renderCfg(); }catch(e){}
   try{ wrRefreshViews(); }catch(e){}
   toast('登録しました', 'ok');
@@ -7929,6 +7935,6 @@ $('#mdResident').addEventListener('click', e=>{
 });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-04.2" data-tool="体重管理システム"></script>
+<script src="su-report.js?v=2026-10-08" data-tool="体重管理システム"></script>
 </body>
 </html>

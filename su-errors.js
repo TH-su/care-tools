@@ -22,6 +22,11 @@
  *                                   fn が例外を出しても通知は止めない。間引き（30秒）を通った時だけ呼ぶ。
  *                                   登録より前に起きた通知（起動時の例外など・直近5件）も、登録した時にその場で渡す。
  *   window.SUErrors.report(kind, msg, where) … ツールが自分で拾った例外を同じ経路で知らせる。
+ *   window.SUErrors.note(kind, msg, where)   … 画面には出さずに記録だけ残す（2026-10-08・監査10月版 #8）。
+ *                                   保存・同期の補助（未送信の控え・同期の印・接続先の控えなど）で、黙って捨てると
+ *                                   後で原因が追えない失敗に使う。コンソール（warn）と onReport の記録先にだけ渡し、
+ *                                   トースト・帯は出さない（現場の画面に警告が続けて出ないように）。
+ *                                   同じ組み合わせは30秒に1回（report と違い、組み合わせごとに数える＝交互に起きても止まる）。
  *   使わないツールの動きは今までと同じ。
  */
 (function () {
@@ -97,6 +102,31 @@
     } catch (e) {}
   }
 
+  var noteAt = {}, noteKeys = 0;
+  var recentNotes = [];                     /* note の控えは別に持つ（起動中の note が本物の起動エラーを押し出さないように・直近3件） */
+  /* note の要約。例外の名前（QuotaExceededError 等）を頭に付けて、種類が不具合報告に残るようにする。
+     ★引用符の中は伏せる。JSON の読み込み失敗の文にはデータの断片（氏名など）がそのまま入るため
+       （例: Unexpected token … "{"name":"…"}" is not valid JSON）。週間計画は要約を同期ログに出す。 */
+  function noteBrief(msg) {
+    var s = (msg && typeof msg === 'object' && msg.name && msg.message) ? (msg.name + ': ' + msg.message)
+      : String(msg == null ? '' : (msg.message || msg));
+    /* 二重引用符は最初から最後までをまとめて伏せる（JSON の断片は引用符が入れ子になり、1組ずつでは中の値が残る） */
+    return s.replace(/"[\s\S]*"/, '"…"').replace(/'[^']*'/g, "'…'").replace(/“[\s\S]*”/, '“…”').slice(0, 120);
+  }
+  function note(kind, msg, where) {
+    try {
+      var brief = noteBrief(msg);
+      var sig = kind + '|' + brief + '|' + where;
+      var now = Date.now();
+      if (noteAt[sig] && now - noteAt[sig] < THROTTLE_MS) return;
+      if (++noteKeys > 200) { noteAt = {}; noteKeys = 1; }   /* 組み合わせの控えが増え続けないように */
+      noteAt[sig] = now;
+      try { console.warn('[su-errors] ' + kind + '：' + brief + (where ? '（' + where + '）' : '')); } catch (e) {}
+      recentNotes.push([kind, brief, where]); if (recentNotes.length > 3) recentNotes.shift();
+      for (var i = 0; i < hooks.length; i++) { try { hooks[i](kind, brief, where); } catch (e) {} }
+    } catch (e) {}
+  }
+
   window.addEventListener('error', function (e) {
     /* 画像・スクリプトの読み込み失敗も同じイベントで来るが、あちらは message を持たない。
        通信の一時失敗で毎回警告を出しても現場は対処できないので、例外だけを対象にする。 */
@@ -114,10 +144,12 @@
 
   window.SUErrors = {
     report: function (kind, msg, where) { report(String(kind || 'エラー'), msg, String(where || '')); },
+    note: function (kind, msg, where) { note(String(kind || '記録'), msg, String(where || '')); },
     onReport: function (fn) {
       if (typeof fn !== 'function') return;
       hooks.push(fn);
       for (var i = 0; i < recent.length; i++) { try { fn(recent[i][0], recent[i][1], recent[i][2]); } catch (e) {} }
+      for (var j = 0; j < recentNotes.length; j++) { try { fn(recentNotes[j][0], recentNotes[j][1], recentNotes[j][2]); } catch (e) {} }
     }
   };
 })();
