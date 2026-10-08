@@ -25,6 +25,17 @@
     この端末の共通接続先（su_sync_common）から読み、Google へだけ送る（Supabase へは送らない）。
     あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
     connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
+  ★一覧に出す氏名は伏せる（姓の1字目＋○・2026-10-09 監査10月版 #16）。見分けるのは居室と利用者No。
+
+  ── この画面を外す手順（移行の点検が済んで、保存先を Supabase に切り替え終えたら・監査10月版 #16）──
+  1. 切り替えた全部の画面（入居者マスタ・週間計画・ワークスケジュール・勤務表・体重管理）で、1〜2週間「一致」が続いたことを
+     この画面で最後に確かめ、件数を控える（スクリーンショットで足りる）
+  2. login.html の「写しの見比べ」ボタン（id="b-shadow"）と、それを表示する処理を消す
+  3. shadow-check.html と shadow-check.js を消し、.gitignore の !/shadow-check.html・!/shadow-check.js の2行も消す
+  4. check/unit/cleanup16_test.js の「1. 写しの見比べの氏名」の段を消す（ファイルが無くなると試験が落ちるため）
+  5. 写しを作る部品（su-master-shadow.js・su-kv-shadow.js・su-weight-shadow.js）は、切り替え後は写しではなく本体の経路になるので、
+     ここでは消さない（外すかどうかは切り替えの設計書に従う）
+  ★消す・公開するのは代表者の承認を得てから（画面の削除は元に戻せない操作として扱う）
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
 </head>
@@ -115,6 +126,6 @@
 <script src="su-master-shadow.js?v=2026-09-26"></script>
 <script src="su-kv.js?v=2026-09-27b"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
-<script src="shadow-check.js?v=2026-09-27d"></script>
+<script src="shadow-check.js?v=2026-10-09"></script>
 </body>
 </html>

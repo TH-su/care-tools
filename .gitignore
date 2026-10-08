@@ -107,6 +107,8 @@
 # 残すのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけで、氏名・記録・合言葉は一切含まない
 !/su-perf.js
 !/perf-report.html
+!/perf-report.js
+!/perf-report.css
 !/training-plan.html
 !/training-plan-form.js
 # 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。

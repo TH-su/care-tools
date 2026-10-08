@@ -1,0 +1,84 @@
+/* perf-report.html の見た目（2026-10-09 に HTML から分けた・監査10月版 #16） */
+:root {
+  --pri: #0b57d0; --pri-l: #ecf3fe;
+  --ok: #1e6b24; --ok-l: #e8f5e9;
+  --ng: #b3261e; --ng-l: #ffebee;
+  --warn-tx: #7a4200; --warn-l: #fff8e1;
+  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
+  --g7: #5f6368; --g9: #202124;
+  --r: 12px;
+  --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  background: var(--g0); color: var(--g9); line-height: 1.6; font-size: 17px;
+  padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+}
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pri); color: #fff; padding: 12px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  box-shadow: var(--sh); display: flex; align-items: center; gap: 12px;
+}
+.hdr h1 { margin: 0; font-size: 1.125rem; font-weight: 700; flex: 1; }
+.hdr .back {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; margin: -10px 0 -10px -6px;
+  color: #fff; text-decoration: none; font-size: 0.9375rem; font-weight: 700;
+}
+.hdr .back:focus-visible { outline: 3px solid #fff; outline-offset: -3px; border-radius: 8px; }
+main {
+  max-width: 980px; margin: 0 auto;
+  padding: 14px max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right));
+}
+.cd {
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r);
+  box-shadow: var(--sh); padding: 16px; margin: 0 0 14px;
+}
+.cd > h2 { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; }
+.cd p { margin: 0 0 8px; }
+.cd p:last-child { margin-bottom: 0; }
+.muted { color: var(--g7); font-size: 0.9375rem; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
+.btn {
+  min-height: 44px; padding: 10px 16px; font-size: 0.9375rem; font-weight: 700; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9); cursor: pointer;
+}
+.btn:focus-visible, select:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.btn.pri { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn.ng { color: var(--ng); border-color: #f0b8b3; }
+select {
+  min-height: 44px; padding: 8px 12px; font-size: 0.9375rem; font-family: inherit;
+  border: 1px solid var(--g3); border-radius: 8px; background: #fff; color: var(--g9);
+}
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi { background: var(--g0); border: 1px solid var(--g2); border-radius: 10px; padding: 10px 12px; }
+.kpi .lb { font-size: 0.8125rem; color: var(--g7); font-weight: 700; }
+.kpi .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .u { font-size: 0.875rem; font-weight: 700; color: var(--g7); margin-left: 2px; }
+.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9375rem; }
+#tApp { min-width: 640px; }   /* 列の多いアプリ表だけ横スクロール。通信先の表は画面幅に収める */
+th, td { padding: 8px 8px; border-bottom: 1px solid var(--g2); text-align: right; white-space: nowrap; }
+th { font-size: 0.8125rem; color: var(--g7); font-weight: 700; vertical-align: bottom; background: #fff; }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+td { font-variant-numeric: tabular-nums; }
+/* 色だけに意味を持たせない: 遅い値には「遅」、気になる値には「注」を文字でも添える */
+.lv-ng { background: var(--ng-l); color: var(--ng); font-weight: 700; }
+.lv-warn { background: var(--warn-l); color: var(--warn-tx); font-weight: 700; }
+.tag { display: inline-block; font-size: 0.75rem; margin-left: 4px; padding: 0 5px; border-radius: 4px; border: 1px solid currentColor; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.875rem; color: var(--g7); margin-top: 8px; }
+.legend span { padding: 2px 8px; border-radius: 6px; }
+.empty { text-align: center; color: var(--g7); padding: 24px 8px; }
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: #202124; color: #fff; padding: 12px 18px; border-radius: 10px;
+  font-size: 0.9375rem; font-weight: 700; display: none; z-index: 20; max-width: calc(100% - 32px);
+}
+.toast.on { display: block; }
+ol.steps { margin: 0; padding-left: 1.4em; }
+ol.steps li { margin: 0 0 4px; }
+.cd p.mt10 { margin-top: 10px; }   /* 2026-10-09: style 属性を CSP（style-src 'self'）で使えなくしたため */

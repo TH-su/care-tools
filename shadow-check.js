@@ -112,10 +112,17 @@
     notInCopy.forEach(function (s) { list.appendChild(item(s, '写しにまだありません')); });
     notInSource.forEach(function (c) { list.appendChild(item(c, '正本（この端末の一覧）にいません')); });
   }
+  /* 氏名は伏せて出す（2026-10-09・監査10月版 #16）。見分けるのは居室と利用者No で足り、移行の点検の画面に氏名を出す理由が無い。
+     姓の1字目だけを残し、残りを ○ にする（空白は詰める）。例「架空 太郎」→「架○○○」 */
+  function maskName(n) {
+    var t = String(n || '').replace(/[\s　]+/g, '');
+    if (!t) return '（氏名なし）';
+    return t.charAt(0) + new Array(Math.min(t.length, 6)).join('○');
+  }
   function item(r, note) {
     var li = el('li');
     var left = el('div');
-    left.appendChild(el('div', 'nm', (r.room ? r.room + '　' : '') + (r.name || '（氏名なし）')));
+    left.appendChild(el('div', 'nm', (r.room ? r.room + '　' : '') + maskName(r.name)));
     left.appendChild(el('div', 'em', '利用者No ' + r.source_id + '　' + note));
     li.appendChild(left);
     return li;
