@@ -2048,7 +2048,8 @@ async function apiPost(action, data){
     resident: data.resident,
     record:   data.record,
     id:       data.id,
-    thresholds: data.thresholds
+    thresholds: data.thresholds,
+    by:       data.by                  // 削除した人（delRecord・delResident だけ・GAS が削除の記録へ残す・監査10月版 #7）
   });
   // Use text/plain to avoid the CORS preflight that GAS does not answer.
   const r = await fetchTO(apiUrl, {
@@ -2257,7 +2258,7 @@ async function _syncFromAPIImpl(showLoader){
     save();
     wrPushReconciled(recon.push);
     /* 統合で消した行が古い端末の部分送信で「氏名の無い行」として復活していたら、サーバーからも消す */
-    try{ (recon.del || []).forEach(id => apiPush('delResident', { id })); }catch(e){}
+    try{ (recon.del || []).forEach(id => apiPush('delResident', { id, by: '自動（同期の後始末）' })); }catch(e){}   // 人の操作ではないので、その端末の人の名前で残さない
 
     if(apiThr){
       // merge into existing THR shape (don't let missing keys wipe defaults)
@@ -2467,6 +2468,8 @@ function _writeDrain(){
 }
 function apiPush(action, data){
   if(!apiUrl) return;
+  /* 削除には「誰が」を添える（GAS が「削除の記録」シートへ残す・監査10月版 #7）。添えるのは積んだ時点の人 */
+  if((action === 'delRecord' || action === 'delResident') && data && data.by == null) data = Object.assign({}, data, { by: wrWho_() });
   _writeQ.push({ action, data: data || {}, _at: Date.now() });   // _at＝積んだ時刻。成功時の古い未送信掃除の境界に使う
   _writeDrain();
 }
@@ -3389,6 +3392,56 @@ function wrFieldDeny(){
   try{ toast('この操作は事務所PCで行ってください（この端末は現場用です）', 'err'); }catch(e){}
   return true;
 }
+/* ── 記録した人（2026-10-08・監査10月版 #7・本人決定 1a 2b 3a）──
+   記録を新しく作る時は recordedBy、直す時は updatedBy に「誰が」を入れて、記録と一緒に送る
+   （GAS は知らない項目を列として足すので、古い GAS でも新しい GAS でもそのまま残る）。
+   削除（delRecord・delResident）は apiPush で by を添え、GAS が「削除の記録」シートへ、誰が・いつ・何を消したかを残す。
+   ★誰が＝ログイン中（su-auth で ok）なら「表示名（メールの @ より前）」。表示名が無ければ @ より前だけ。
+     未ログイン・確かめられない時は端末の役割（事務所PC／現場端末）。端末ごとの呼び名は作らない（本人決定 2b）。
+   ★ログインの確認は起動後に裏で1回だけ（表示と保存を待たせない）。確かめ終わる前の保存は役割の名前になる。
+     ログインの控えが無い端末（現場のタブレット等）では部品を読み込まない（su-weight-shadow.js と同じ条件）。
+   ★記録した人は記録の中に持たせる（未送信の再送は記録を DB.records の最新で差し替えるため、キュー側に持つと消える）。
+   ★取込・見本データの記録には入れない（その端末の人が記録したものではないため）。 */
+var WR_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+var wrWhoAcct_ = '';   // var＝起動の途中で呼ばれても参照できるように
+function wrWho_(){ return wrWhoAcct_ || (wrIsField() ? '現場端末' : '事務所PC'); }
+/* 2段階の6桁がまだの管理者（mfa_verify・mfa_enroll）も、Google で本人と分かっているのでアカウントで残す
+   （体重の画面には6桁を入れる場所が無い）。許可リスト外（denied）・エラーは役割の名前に落とす */
+function wrWhoLabel_(st){
+  if(!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
+  const acct = String(st.email).split('@')[0].slice(0, 40);
+  const lab = String(st.label == null ? '' : st.label).trim().slice(0, 40);
+  return (lab && lab !== acct) ? (lab + '（' + acct + '）') : acct;
+}
+function wrAuthLoad_(){
+  if(window.SUAuth) return Promise.resolve();
+  function has(re){ return Array.prototype.some.call(document.scripts, s => re.test(s.getAttribute('src') || '')); }
+  function load(src){
+    return new Promise((ok, ng) => {
+      const s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = () => ok(); s.onerror = () => ng(new Error('load'));
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready){
+    return new Promise((ok, ng) => { let n = 0; (function tick(){ if(ready()) return ok(); if(++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })(); });
+  }
+  const p = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(() => !!window.supabase) : load('supabase-js-2.112.4.js'));
+  return p.then(() => {
+    if(window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function wrResolveWho_(){
+  let has = false;
+  try{ has = !!localStorage.getItem(WR_SESSION_KEY); }catch(e){}
+  if(!has) return;
+  wrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
+    const w = wrWhoLabel_(st);
+    if(w) wrWhoAcct_ = w;
+  }).catch(() => {});   // 読めない・未ログインは役割の名前のまま（記録も保存も止めない）
+}
 function applyWeightDeviceGuard(){
   var field = wrIsField();
   document.documentElement.classList.toggle('wr-field', field);
@@ -4234,6 +4287,7 @@ function bulkSave(){
       existing.rawWeight     = rawWeight;
       existing.wheelchairKg  = wheelchairKg;
       existing.updatedAt     = nowIso;
+      existing.updatedBy     = wrWho_();   // 直した人（監査10月版 #7）
       rec = existing;
     } else {
       // 食事は入居者マスタから現値をスナップショット（毎回の手入力は不要）
@@ -4246,6 +4300,7 @@ function bulkSave(){
         ...mealSnapshotForRecord(rid),
         note: '',
         createdAt: nowIso,
+        recordedBy: wrWho_(),   // 記録した人（監査10月版 #7）
       };
       DB.records.push(rec);
     }
@@ -4329,6 +4384,7 @@ function saveSingleBulkRow(row){
     existing.rawWeight    = rawWeight;
     existing.wheelchairKg = wheelchairKg;
     existing.updatedAt    = nowIso;
+    existing.updatedBy    = wrWho_();   // 直した人（監査10月版 #7）
     rec = existing;
   } else {
     rec = {
@@ -4340,6 +4396,7 @@ function saveSingleBulkRow(row){
       ...mealSnapshotForRecord(rid),
       note: '',
       createdAt: nowIso,
+      recordedBy: wrWho_(),   // 記録した人（監査10月版 #7）
     };
     DB.records.push(rec);
     // 再度押したときに重複作成せず上書きになるよう、この行を「既存」に更新
@@ -4880,7 +4937,7 @@ function wcRecalcAsk_(rid, log){
     const raw = Number(x.rawWeight);
     const w = Math.round((raw - kg) * 10) / 10;
     if(!(raw > 0) || !(w >= 20 && w <= 150)){ skipped++; return; }
-    x.wheelchairKg = kg; x.weight = w; x.updatedAt = nowIso;
+    x.wheelchairKg = kg; x.weight = w; x.updatedAt = nowIso; x.updatedBy = wrWho_();
     normalizeRecord(x);
     done.push(x);
   });
@@ -5182,6 +5239,7 @@ $('#inSave').addEventListener('click', ()=>{
     editing.wheelchairKg = chair!=null ? Math.round(chair*10)/10 : null;
     editing.note         = $('#inNote').value.trim();
     editing.updatedAt    = new Date().toISOString();
+    editing.updatedBy    = wrWho_();   // 直した人（監査10月版 #7）
     savedRec = editing;
   }else{
     const rec = {
@@ -5197,6 +5255,7 @@ $('#inSave').addEventListener('click', ()=>{
       ...mealSnapshotForRecord(rid),
       note: $('#inNote').value.trim(),
       createdAt: new Date().toISOString(),
+      recordedBy: wrWho_(),   // 記録した人（監査10月版 #7）
     };
     DB.records.push(rec);
     savedRec = rec;
@@ -6485,7 +6544,7 @@ function wrMergeResidents(keepId, dropIds, opts){
     try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   }
   const now = new Date().toISOString();
-  moving.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  moving.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); });
   /* 残す行に無い項目だけ、まとめる行から補う。在籍・入院は状態なので持ち込まない */
   const SKIP = { id:1, name:1, createdAt:1, updatedAt:1, _fromMaster:1, dischargedAt:1, hospitalized:1 };
   const filled = [];
@@ -6570,7 +6629,7 @@ async function wrAdoptOrphans(oldRid, keepId){
   if(!confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`)) return false;
   try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   const now = new Date().toISOString();
-  recs.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; });
+  recs.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); });
   save();
   if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
   recs.forEach(rec => apiPush('saveRecord', { record: rec }));
@@ -7774,6 +7833,7 @@ try{
   }
 }catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
+try{ wrResolveWho_(); }catch(e){ /* 記録した人の確認の失敗は運用を止めない */ }
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();
 }); })();
