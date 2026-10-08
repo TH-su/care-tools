@@ -719,6 +719,13 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnAiClear" class="btn danger" type="button">キーを消去</button>
       <span class="muted" id="aiState"></span>
     </div>
+    <!-- 外部AIへ送ることの同意（この端末・2026-10-08 監査10月版 #12）。利用者ご本人の同意は事業所の手順で（ここでは扱わない） -->
+    <h3 style="margin-top:var(--sp-4)">外部AIへ送ることの確認</h3>
+    <p class="muted" id="aiConsentState" role="status" aria-live="polite"></p>
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <button id="btnAiConsent" class="btn" type="button">説明を読んで送信を始める</button>
+      <button id="btnAiConsentRevoke" class="btn" type="button">送信の確認を取り消す</button>
+    </div>
   </div>
 
   <!-- D54〜D56: 担当者をまとめて直す（保守用・めったに使わないので設定画面に置く） -->
@@ -1662,10 +1669,126 @@ function aiMapStrings(v, fn) {
   return v;
 }
 function aiReEsc(t) { return s_(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/* ── 敬称の前の名前の伏せ字（2026-10-08・監査10月版 #12）──
+   名簿に無い名前（ご家族・職員・他事業所の人・愛称）も、敬称（さん・さま・様・氏・殿・くん・君・ちゃん・先生・サン 等）の
+   直前の名前を〔人名1〕〔人名2〕…に置き換える（同じ書き方は同じ記号）。返事では元の書き方へ戻す。
+   ★考え方は「迷ったら伏せる」。伏せすぎた分は返事で元に戻るので害が無く、漏れた名前は取り返せないため。
+   ・名前の形: 漢字（異体字・互換漢字を含む）・カタカナ（半角を含む）の後ろにひらがなの名が続いてよい形と、ひらがなだけ（2〜10字）の形。
+     姓と名の間の区切り（空白・改行なし空白・中黒・＝ 等）1つも含める（「架山 太郎さん」「かやま・たろうさん」）
+   ・前に付いた助詞などのひらがな（「と架山さん」の「と」）は、後ろに漢字・カタカナがある時だけ外す
+   ・続柄・職種・一般の語（AI_HONOR_STOP）は、その語そのものなら伏せない（娘さん・看護師さん・皆様・おばあさん など）。
+     名前の後ろに2字以上の語が付いている時は、名前の部分だけを伏せる（「架山看護師さん」「架山 看護師さん」→「〔人名1〕看護師さん」）。
+     名前の部分が1字のひらがな（助詞）だけになる時は伏せない（「…とおじいさん」）
+   ・様子・様式・様々・氏名 は敬称と見なさない（様・氏の時だけ。「〇〇さん相談」「〇〇さん名義」は伏せる）
+   ・敬称の前の空白（「架山 太郎 様」）・呼びかけの伸ばし（さーん）・せんせい・夫人・女史・嬢・旧字の樣も見る
+   ・番号は、送る文に既に残っている〔人名N〕（崩れた形も含む）より大きい番号から振る（前回戻し損ねた記号と混ざらない）
+   ★機械的な目安なので取りこぼしはある（敬称の付かない名前・名前と敬称の間に読み仮名や記号が入る書き方・英字など）。
+     確認画面で伝え、自由記入に名前を書かないよう促す */
+var AI_HONOR_K = '[一-龥㐀-䶵豈-﫿々〆ヵヶァ-ヴーｦ-ﾟ]';   // 漢字・カタカナ
+var AI_HONOR_H = '(?:(?!さん|さま|くん|ちゃん)[ぁ-ゖ])';   // ひらがな（前の名前の敬称は含めない）
+var AI_HONOR_K0 = '(?![様氏殿君])' + AI_HONOR_K;           // 姓の側の漢字（前の名前の敬称は含めない）
+var AI_HONOR_SEP = '[\\s\u00a0・･·＝=－\\-/／_]';           // 姓と名の区切り（空白・タブ・改行・改行なし空白・中黒・＝・ハイフン・／・＿）
+/* 名前の形（どれか）: ①ひらがなの後ろに漢字・カタカナ（よし子・はる美・架山よし子・はなこ看護師・架山はなこ看護師）
+   ②漢字・カタカナの後ろにひらがなの名が続いてよい ③ひらがなだけ（2〜10字）。前に姓・前の名＋区切り（2つまで・区切りは3字まで）が付いてよい。名前と敬称の間の空白（2字まで）も許す */
+var AI_HONOR_RE = new RegExp(
+  '((?:(?:' + AI_HONOR_K0 + '|' + AI_HONOR_H + '){1,10}' + AI_HONOR_SEP + '{1,3}){0,2}(?:' + AI_HONOR_K + '{0,10}' + AI_HONOR_H + '{1,10}' + AI_HONOR_K + '{1,10}|' + AI_HONOR_K + '{1,10}' + AI_HONOR_H + '{0,8}|' + AI_HONOR_H + '{2,10}))' +
+  '([ 　\u00a0]{0,2})' +
+  '(さー*ん|くー*ん|ちゃー*ん|さま|君|殿|先生|せんせい|センセイ|夫人|女史|嬢|サン|サマ|クン|チャン|ｻﾝ|ｻﾏ|ｸﾝ|ﾁｬﾝ|[様樣](?![子式々相態])|氏(?!名))', 'g');
+/* 1字の続柄（区切りの後ろ・ひらがなの後ろにある時は「〇〇の娘さん」「架山 奥さん」の続柄として扱う） */
+var AI_HONOR_KIN1 = '娘嫁孫奥兄姉弟妹父母婿';
+var AI_HONOR_STOP = ['皆', '奥', '娘', '息子', '嫁', '婿', '孫', '兄', '姉', '弟', '妹', '父', '母', '子', '祖父', '祖母', '叔父', '叔母', '伯父', '伯母',
+  '長男', '長女', '次男', '次女', '三男', '三女', '本人', 'ご本人', '爺', '婆', '旦那', '主人', 'ご主人', '家族', 'ご家族', '親戚', '子供', '友人', '近所', '隣', '同室', '他', '客', 'お客', '神', '仏', '殿',
+  '先生', '看護師', '看護婦', '保健師', '看護', '職員', '患者', '利用者', 'ご利用者', '入居者', '担当', '医師', '主治医', '歯科医', '薬剤師', '介護士', '相談員', '栄養士',
+  '理学療法士', '作業療法士', '言語聴覚士', '管理者', '事務', '社長', '店員', '運転手', '大工', '大家', '御', '各位', '先輩', '後輩', 'お医者', 'お疲れ', 'ご苦労', '医者', '疲れ', '苦労', 'ご馳走', '馳走', '世話', 'お世話',
+  '同', '異', '仕', '多', '模', '有', '左', '右', '各', '諸', '彼', '某',
+  'ヘルパー', 'ケアマネ', 'ケアマネジャー', 'ケアマネージャー', 'マネージャー', 'ドクター', 'スタッフ', 'ナース', 'セラピスト', 'ボランティア', 'パパ', 'ママ', 'オーナー', 'リハ',
+  'おばあ', 'おじい', 'おばあちゃ', 'おじいちゃ', 'おば', 'おじ', 'おねえ', 'おにい', 'みな', 'みなさ', 'おくさ', 'おかあ', 'おとう', 'あかちゃ', 'おこ', 'こども', 'おきゃく', 'おいしゃ', 'かんごし',
+  'ばあ', 'じい', 'ねえ', 'にい', 'かあ', 'とう', 'お子', 'お嬢', '嬢', '赤', 'ワン', '猫', '犬', 'お孫', 'お姉', 'お兄', 'お母', 'お父', 'お爺', 'お婆'];
+/* ひらがなの短い語（とう・おこ・ばあ 等）は、その語そのものの時だけ伏せない。名前の末尾から外すのは3字以上のひらがなの語と、
+   漢字・カタカナを含む2字以上の語だけ（「さとう」「なおこ」を「さ」「な」＋続柄と読まない） */
+function aiHonorStripOk(w) { return w.length >= 3 || (w.length >= 2 && /[^ぁ-ゖ]/.test(w)); }
+var AI_HONOR_SEP_RE = new RegExp(AI_HONOR_SEP + '+', 'g');
+function aiHonorIsStop(w) { for (var i = 0; i < AI_HONOR_STOP.length; i++) if (w === AI_HONOR_STOP[i]) return true; return false; }
+/* 名前の部分を返す（伏せないなら ''）。 */
+function aiHonorName(cap) {
+  var c = s_(cap).replace(new RegExp(AI_HONOR_SEP + '+$'), '');
+  /* 前に付いた助詞などのひらがなは、後ろに漢字・カタカナがある時だけ外す（「と架山」→「架山」） */
+  /* 外すのは、区切りを挟まずに漢字・カタカナ2字以上が続く時だけ（「よし子」「たろう・架山」の名前のひらがなは外さない） */
+  var lead = c.match(/^[ぁ-ゖ]+/);
+  if (lead && lead[0].length < c.length) {
+    var tail = c.slice(lead[0].length);
+    if (!new RegExp('^' + AI_HONOR_SEP).test(tail) && /^[^ぁ-ゖ]{2,}$/.test(tail)) {
+      /* 残りが職種・続柄（「はなこ看護師」の「看護師」）なら、外した側のひらがなが名前（2字以上の時） */
+      if (aiHonorIsStop(tail)) return lead[0].length >= 2 && !aiHonorIsStop(lead[0]) ? lead[0] : '';
+      c = tail;
+    }
+  }
+  /* 漢字の間に助詞1字（は・が・を・に・で・と・も・へ・や）だけが挟まり、後ろが漢字・カタカナ2字以上なら、後ろだけが名前
+     （「今回は架山」→「架山」）。ひらがな＋漢字1字の名前（よし子・はる美）はこの形にならない */
+  var pm = c.match(/^(.*[^ぁ-ゖ\s])([はがをにでともへや])([^ぁ-ゖ\s]{2,})$/);
+  if (pm) c = pm[3];
+  var bare = c.replace(AI_HONOR_SEP_RE, '');
+  if (!bare || aiHonorIsStop(bare)) return '';
+  /* 末尾の「の」は助詞のことがある（「医師の先生」）。外した残りが続柄・職種なら伏せない。そうでなければ「の」ごと名前（「あやの」） */
+  if (/の$/.test(bare) && aiHonorIsStop(bare.slice(0, -1))) return '';
+  /* 区切りの後ろが1字の語: 続柄（奥・娘 など）なら区切りの前が名前（「架山 奥さん」→「架山」）。一般語（「様子・氏名・同様」の「同」）なら名前ではない */
+  var segs = c.split(AI_HONOR_SEP_RE);
+  if (segs.length > 1) {
+    var last = segs[segs.length - 1];
+    if (last.length === 1 && AI_HONOR_KIN1.indexOf(last) >= 0) {
+      var hd = c.slice(0, c.length - 1).replace(new RegExp(AI_HONOR_SEP + '+$'), '');
+      return (hd && !aiHonorIsStop(hd.replace(AI_HONOR_SEP_RE, ''))) ? hd : '';
+    }
+    if (last.length === 1 && aiHonorIsStop(last)) return '';
+  }
+  /* ひらがなの後ろの1字の続柄（「来た娘」「〇〇の娘」）は続柄。名前ではない */
+  if (bare.length >= 2 && AI_HONOR_KIN1.indexOf(bare.slice(-1)) >= 0 && /[ぁ-ゖ]/.test(bare.slice(-2, -1))) return '';
+  /* 末尾の続柄・職種（2字以上）を外す。区切りの後ろの語が丸ごとそうなら、区切りの前を名前にする */
+  var best = c;
+  for (var j = 0; j < AI_HONOR_STOP.length; j++) {
+    var w = AI_HONOR_STOP[j];
+    if (!aiHonorStripOk(w) || c.length <= w.length || c.slice(c.length - w.length) !== w) continue;
+    var head = c.slice(0, c.length - w.length).replace(new RegExp(AI_HONOR_SEP + '+$'), '');
+    if (head.length < best.length) best = head;
+  }
+  if (best !== c) {
+    var hb = best.replace(AI_HONOR_SEP_RE, '');
+    if (!hb || aiHonorIsStop(hb) || /^[ぁ-ゖ]$/.test(hb)) return '';
+  }
+  return best;
+}
+function aiMaskHonor(str, u) {
+  return str.replace(AI_HONOR_RE, function (all, cap, gap, honor) {
+    var name = aiHonorName(cap);
+    if (!name) return all;
+    var at = cap.lastIndexOf(name);
+    var pre = cap.slice(0, at), rest = cap.slice(at + name.length);   // 前の助詞・後ろの職種などはそのまま残す
+    var tok = null, k, n = (typeof u.__honorBase === 'number') ? u.__honorBase : 0;
+    for (k in u) if (Object.prototype.hasOwnProperty.call(u, k) && k.indexOf('〔人名') === 0) { n++; if (u[k] === name) tok = k; }
+    if (!tok) { tok = '〔人名' + (n + 1) + '〕'; u[tok] = name; }
+    return pre + tok + rest + gap + honor;
+  });
+}
+/* 記号〔人名N〕の崩れた形（［］・[]・【】・全角数字・先頭の0）も同じ番号として読む */
+var AI_HONOR_TOKEN_RE = /[〔［\[【]人名([0-9０-９]+)[〕］\]】]/g;
+function aiHonorNum(d) {
+  return String(parseInt(s_(d).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }), 10));
+}
+/* 送る文に既に残っている〔人名N〕の最大の番号（前回戻し損ねた記号。新しい番号はこれより大きくする） */
+function aiHonorBase(obj) {
+  var max = 0;
+  aiMapStrings(obj, function (str) {
+    str.replace(AI_HONOR_TOKEN_RE, function (a, d) { var v = parseInt(aiHonorNum(d), 10); if (v > max) max = v; return a; });
+    return str;
+  });
+  return max;
+}
 /* used（任意）に「記号 → 送る時に実際に置き換えた書き方」を控える（戻す時に職員の書き方へ戻すため） */
 function aiMaskDeep(obj, terms, used) {
   var ts = Object.prototype.toString.call(terms) === '[object Array]' ? terms : [];
   var u = (used && typeof used === 'object') ? used : {};
+  /* 敬称の前の名前の番号の起点（控えに隠して持つ＝戻す時の対応表には入らない） */
+  if (typeof u.__honorBase !== 'number') Object.defineProperty(u, '__honorBase', { value: aiHonorBase(obj), writable: true, enumerable: false });
   return aiMapStrings(obj, function (str) {
     for (var i = 0; i < ts.length; i++) {
       var x = ts[i];
@@ -1678,7 +1801,7 @@ function aiMaskDeep(obj, terms, used) {
       }
       if (hit && !Object.prototype.hasOwnProperty.call(u, x.token)) u[x.token] = x.term;
     }
-    return str;
+    return aiMaskHonor(str, u);   // 名簿で伏せた後に、敬称の前の名前を伏せる（名簿の記号〔…〕は漢字・カタカナではないので二重に伏せない）
   });
 }
 function aiUnmaskDeep(obj, terms, used) {
@@ -1690,9 +1813,17 @@ function aiUnmaskDeep(obj, terms, used) {
     map[x.token] = Object.prototype.hasOwnProperty.call(u, x.token) ? u[x.token] : x.orig;
     toks.push(x.token);
   });
+  /* 敬称の前で伏せた名前（〔人名N〕）も戻す */
+  var honor = {};
+  for (var hk in u) if (Object.prototype.hasOwnProperty.call(u, hk) && hk.indexOf('〔人名') === 0 && !Object.prototype.hasOwnProperty.call(map, hk)) { map[hk] = u[hk]; toks.push(hk); honor[hk.replace(/\D/g, '')] = u[hk]; }
   toks.sort(function (a, b) { return b.length - a.length; });
   return aiMapStrings(obj, function (str) {
     for (var i = 0; i < toks.length; i++) if (str.indexOf(toks[i]) >= 0) str = str.split(toks[i]).join(map[toks[i]]);
+    /* AI が記号の形を少し崩して返した〔人名N〕（［人名1］・〔人名１〕・[人名1]）も、送った番号なら戻す */
+    str = str.replace(AI_HONOR_TOKEN_RE, function (a, d) {
+      var k = aiHonorNum(d);
+      return Object.prototype.hasOwnProperty.call(honor, k) ? honor[k] : a;
+    });
     return str;
   });
 }
@@ -1712,7 +1843,8 @@ global.TP = {
   validateImport: validateImport, mergeImport: mergeImport,
   applyPrintKind: applyPrintKind, reportExplainedDate: reportExplainedDate,
   achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix,
-  aiMaskTerms: aiMaskTerms, aiMaskDeep: aiMaskDeep, aiUnmaskDeep: aiUnmaskDeep, aiHasSubject: aiHasSubject, aiToKatakana: aiToKatakana
+  aiMaskTerms: aiMaskTerms, aiMaskDeep: aiMaskDeep, aiUnmaskDeep: aiUnmaskDeep, aiHasSubject: aiHasSubject, aiToKatakana: aiToKatakana,
+  aiMaskHonor: aiMaskHonor
 };
 })(typeof window !== 'undefined' ? window : this);
 </script>
@@ -5349,7 +5481,7 @@ var AI_SYSTEM = [
   '7. 文字数上限は入力の limits に従う（改行は \\n で上限に含める）。要介護度・自立度は公式表記に限る。',
   '8. 出力は JSON のみ（前置き・説明・コードフェンス・コメント・免責なし）。日付・氏名・作成者・職種・要介護度・性別・生年月日は',
   '   出力に含めない。空欄は ""。',
-  '9. 〔ご本人〕〔ご本人・姓〕〔ご本人・名〕〔ご本人・かな〕〔利用者1〕などは、氏名を伏せた記号。記号はそのまま使い、実名を推測して書かない。',
+  '9. 〔ご本人〕〔ご本人・姓〕〔ご本人・名〕〔ご本人・かな〕〔利用者1〕〔人名1〕などは、氏名を伏せた記号。記号は〔 〕も数字もそのままの形で使い、実名を推測して書かない。',
   '',
   '【入力の形】',
   '{ "mode": "next" | "fill_eval" | "backfill" | "adjust",',
@@ -5553,7 +5685,9 @@ var AI_NOTICE_TEXT = [
   '■ 送らないもの: 氏名・生年月日・要介護度・病名・治療経過・留意事項の【欄】',
   '■ 文の中に書かれた名簿の氏名・かな（ご本人は姓・名だけの書き方も）は、送る前に〔ご本人〕〔利用者1〕などの記号に',
   '　置き換え、返ってきた文では元に戻します。',
-  '　ただし愛称・ご家族や職員の名前・名簿と違う書き方・ローマ字は置き換えられません。自由記入の欄には人の名前を書かないでください。',
+  '■ 名簿に無い名前も、「〜さん・〜様・〜氏」などの直前にあれば〔人名1〕などに置き換えます。',
+  '　ただし機械的な目安なので取りこぼしがあります（敬称の付かない名前・名前と敬称の間に読み仮名や記号が入る書き方・英字など）。',
+  '　自由記入の欄には人の名前を書かないでください。',
   '■ 送った内容がAIの学習に使われることはありません（Anthropic社の API の取り扱い）',
   '',
   '利用者・ご家族への説明と同意は、事業所の決めた手順に従ってください。',
@@ -6973,7 +7107,31 @@ function sampleGo() {
   aiRun(mode, { skipConfirm: fresh, queueAs: fresh ? 'fill_eval' : '' });
 }
 /* ── 設定画面のAI欄（この端末だけの設定。キーは画面にそのまま出さない）── */
+function renderAiConsent() {
+  var ok = false;
+  try { ok = localStorage.getItem(AI_NOTICE_KEY) === '1'; } catch (e) {}
+  $('aiConsentState').textContent = ok
+    ? 'この端末では、外部AIへ送ることを確認済みです。取り消すと、次に送る時にもう一度説明が出ます。'
+    : 'この端末では、まだ確認していません。初めて送る時（または下のボタン）に、送るもの・送らないものの説明が出ます。';
+  $('btnAiConsent').hidden = ok;
+  $('btnAiConsentRevoke').hidden = !ok;
+}
+function aiConsentStart() {
+  var ok = aiNoticeOk(), kept = false;
+  try { kept = localStorage.getItem(AI_NOTICE_KEY) === '1'; } catch (e) {}
+  $('aiState').textContent = !ok ? '送信は始めていません（何も変えていません）'
+    : (kept ? '外部AIへの送信を確認しました（この端末）' : '確認しましたが、この端末に控えを残せませんでした（プライベートブラウズ等）。送る時にもう一度説明が出ます');
+  renderAiConsent();
+}
+function aiConsentRevoke() {
+  if (typeof confirm === 'function' && !confirm('この端末の「外部AIへ送ることの確認」を取り消します。次にAIで作る時に、もう一度説明が出ます。よろしいですか？')) return;
+  var gone = false;
+  try { localStorage.removeItem(AI_NOTICE_KEY); gone = localStorage.getItem(AI_NOTICE_KEY) !== '1'; } catch (e) { gone = false; }
+  $('aiState').textContent = gone ? '取り消しました。次にAIで作る時に、もう一度説明が出ます' : 'この端末の設定を書き換えられませんでした（プライベートブラウズ等）';
+  renderAiConsent();
+}
 function renderAiSettings() {
+  renderAiConsent();
   $('aiModel').value = aiModel();
   $('aiEnabled').checked = aiEnabled();
   $('aiKey').value = '';
@@ -8089,6 +8247,8 @@ function bindUI() {
   $('pkCancel').addEventListener('click', closePickPop);
   $('btnAiSave').addEventListener('click', saveAiSettings);
   $('btnAiClear').addEventListener('click', clearAiKey);
+  $('btnAiConsent').addEventListener('click', aiConsentStart);
+  $('btnAiConsentRevoke').addEventListener('click', aiConsentRevoke);
 
   $('btnPrint').addEventListener('click', doPrint);
   $('pvZoom').addEventListener('change', function () { lsSet(LS.zoom, this.value); applyZoom(); });
