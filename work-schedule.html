@@ -6242,9 +6242,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   var DOW_JA = ['月', '火', '水', '木', '金', '土', '日'];
 
+  /* 引用符も変える（2026-10-08・監査10月版 #9）。今は要素の文字の位置にしか使っていないが、
+     属性（class="…" など）へ流用された時に注入口にならないように */
   function esc(s) {
     return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function minToTime(min) {
     var h = Math.floor(min / 60), m = min % 60;
