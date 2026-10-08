@@ -2925,7 +2925,7 @@ function renderOfficeView(r){
     sec('医療情報',
       /* 2件ぶんが1つの欄に入っている方は表示だけ行に分ける（入居者マスタと同じ扱い・2026-08-19） */
       '<div class="row-cells">'+cell('かかりつけ病院',mpVal(r.hospital,mfH&&mfH.org))+cell('主治医',mpVal(r.doctor,mfH&&mfH.person))+cell('電話番号',mpVal(r.hospitalTel,mfH&&mfH.tel))+cell('FAX番号',mpVal(r.hospitalFax,mfH&&mfH.fax))+'</div>'+
-      '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
+      '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('診療曜日',r.visitDay)+'</div>'+
       '<div class="row-cells">'+cell('かかりつけ薬局',mpVal(r.pharmacy,mfP&&mfP.org))+cell('電話番号',mpVal(r.pharmacyTel,mfP&&mfP.tel))+cell('FAX番号',mpVal(r.pharmacyFax,mfP&&mfP.fax))+'</div>'+
       /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示・マスタと同表記）。
          ★full() は必ず border-right:none を付けるので、横に並べる時は【最後以外】に使わない
