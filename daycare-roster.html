@@ -12,7 +12,8 @@
 /* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
    ★書き込みは利用者フィールドの昼食薬(lunchMed)・非表示(dcrHidden)・同姓の目印(dcrStar)の3点のみ
-     （2026-07-23/27/28・2026-09-01）。
+     （2026-07-23/27/28・2026-09-01）。変えるたびに、その方の変更記録 dcrFlagLog へ1件積む（2026-10-07）。
+     現場の端末（su_device_role==='field'）では3点とも見るだけ（2026-10-07 本人裁定）。
      楽観的UI＋背景保存（queueFlags/runSaver）で全端末共通に同期する。通常はrevキャッシュで1往復PUT、
      版ずれ時のみ最新GET＋自分の未確定フラグを載せ直して再PUT（rev競合ガード維持）。
      予定・時刻・辞書・rev運用や他フィールドには書き込まない＝他端末が編集中の週間計画を壊さない。 */
@@ -341,6 +342,13 @@ table.sheet .star { font-size: var(--sh-fs); }
 }
 .chk-clear:hover { background: var(--g1); }
 .chk-clear:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+.chk-clear:disabled, .modal-btn:disabled { opacity: .5; cursor: not-allowed; }
+.chk-item input:disabled, .modal-item input:disabled { cursor: not-allowed; }
+/* 現場の端末では見るだけ（2026-10-07）。チェックを押せない理由を出す */
+.dcr-ro { color: var(--ng); font-size: 0.6875rem; line-height: 1.4; margin: 4px 0; }
+/* 最近の変更（画面だけ・印刷されない）。誰が・いつ変えたかを全端末で見られる */
+.chk-log { padding: 4px 0; border-top: 1px solid var(--g2); line-height: 1.4; overflow-wrap: anywhere; }
+.chk-log .cl-when { display: block; color: var(--g6); font-size: 0.625rem; }
 
 /* ===== 週間名簿（View4）===== */
 .wk-page { background: #fff; box-shadow: var(--sh); margin: 0 auto 14px; padding: 10px; max-width: 780px; }
@@ -692,7 +700,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      入居者マスタで居室を直せば部屋移動が自動で追従する（旧経路＝ワークスケジュールの
      デイサービスマスタ手書き floor は、room が取れない時のフォールバックとして残す）。
    ★書込みは昼食薬(lunchMed)・非表示(dcrHidden)・同姓の目印(dcrStar)の3利用者フィールドのみ。
-     予定/時刻/辞書/rev運用には書き込まない。
+     予定/時刻/辞書/rev運用には書き込まない。3点を変えた記録は同じ利用者の dcrFlagLog に積む（2026-10-07）。
    5タブは「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」の単一モデルの別表現。
    「２階」は居室の階(floor)ではなく『その日デイに行かない人が2階食堂で昼食を摂る』場所の意味。
    既知の制約: 自費区分（赤/緑）は週間計画に無いため非対応。
@@ -851,6 +859,104 @@ function flushPendingBeacon_() {
     SU.data.kvPutBeacon(LS_KEY, DB, careRev);
   } catch (e) {}
 }
+/* ── 現場の端末では見るだけ（2026-10-07 本人裁定）──
+   端末の用途は接続設定が決める同一オリジンのキー su_device_role（体重管理・週間計画と同じ。未設定は事務所PC扱い）。
+   止める場所は書き込みの唯一の入口 queueFlags。画面のチェックも押せなくして、理由を出す。
+   用途を読むのは押した時点＝別のタブで用途を変えても、次の操作から効く。 */
+const DCR_DEVICE_KEY = 'su_device_role';
+const DCR_FIELD_MSG = 'この端末（現場用）では変えられません。事務所PCで変えてください';
+function dcrIsField_() { try { return localStorage.getItem(DCR_DEVICE_KEY) === 'field'; } catch (e) { return false; } }
+
+/* ── フラグの変更記録 dcrFlagLog（2026-10-07）──
+   昼食薬・非表示・同姓の目印を変えるたびに、その方の利用者項目 dcrFlagLog（新しい順・最大 DCR_LOG_MAX 件）へ
+   { id, t:'YYYY-MM-DD HH:MM:SS', f:項目名, v:1/0, w:誰が } を積み、フラグと同じ put で送る＝全端末で見える。
+   ★週間計画・ワークスケジュールは利用者の項目を丸ごと写す（知らない項目も落とさない）ので、記録は lunchMed と
+     同じように残る。実物の csRebaseEdits・masterToCareDb を通す試験: gas/tests/daycare_flaglog_test.js
+   ★積むのは画面の操作1回につき1件。送り直し・競合の載せ直しでは id で重複を防ぐ（applyPendingFlag_）。
+   ★「誰が」はログイン中ならアカウント（メールの @ より前）、未ログイン・確かめられない時は「事務所PC」。氏名は持たない。
+   ★ワークスケジュールの出力タブにも昼食薬の切替があり、そちらの変更はここに記録されない（未対応）。 */
+const DCR_LOG_MAX = 10;
+const DCR_LOG_FIELDS = { lunchMed: ['昼食薬', 'あり', 'なし'], dcrHidden: ['非表示', '隠す', '戻す'], dcrStar: ['同姓の目印', '付ける', '外す'] };
+let dcrLogSeq_ = 0;
+let dcrWhoAcct_ = '';            // ログイン中のアカウント（メールの @ より前）。分かるまでは空
+function dcrWho_() { return dcrWhoAcct_ || '事務所PC'; }
+function dcrStamp_(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function dcrMakeLog_(field, value) {
+  return { id: Date.now().toString(36) + '-' + (++dcrLogSeq_) + '-' + Math.random().toString(36).slice(2, 6),
+           t: dcrStamp_(new Date()), f: field, v: value ? 1 : 0, w: dcrWho_() };
+}
+// 記録を利用者へ積む。同じ id は積まない（送り直しで重複しない）。新しい順に並べて上限で切る（容量は記録の方を落とす）。
+function dcrAddLog_(r, entry) {
+  if (!r || !entry) return;
+  const cur = Array.isArray(r.dcrFlagLog) ? r.dcrFlagLog.filter(x => x && typeof x === 'object') : [];
+  if (cur.some(x => x.id === entry.id)) return;
+  cur.unshift(Object.assign({}, entry));   // 先頭に入れる＝同じ秒の変更は後から積んだ方が上に来る（並べ替えは同順位を保つ）
+  cur.sort((a, b) => String(b.t || '').localeCompare(String(a.t || '')));
+  r.dcrFlagLog = cur.slice(0, DCR_LOG_MAX);
+}
+function dcrRemoveLogs_(r, logs) {
+  if (!r || !Array.isArray(r.dcrFlagLog) || !logs || !logs.length) return;
+  const ids = logs.map(x => x.id);
+  r.dcrFlagLog = r.dcrFlagLog.filter(x => !(x && ids.indexOf(x.id) >= 0));
+}
+// 未確定の変更1件を利用者へ当てる（値と記録）。queueFlags・runSaver の毎周・競合の載せ直しで共用する。
+function applyPendingFlag_(residents, p) {
+  const r = findServerResident_(residents, p);
+  if (!r) return false;
+  r[p.field] = !!p.value;
+  (p.logs || []).forEach(e => dcrAddLog_(r, e));
+  return true;
+}
+// 全員分の記録を新しい順に n 件（最近の変更の欄に出す）。壊れた記録・知らない項目は飛ばす。
+function dcrRecentLogs_(db, n) {
+  const out = [];
+  if (!db || !Array.isArray(db.residents)) return out;
+  db.residents.forEach(r => {
+    if (!r || !Array.isArray(r.dcrFlagLog)) return;
+    r.dcrFlagLog.forEach(x => {
+      if (x && typeof x.t === 'string' && DCR_LOG_FIELDS[x.f]) out.push({ t: x.t, f: x.f, v: x.v, w: String(x.w || ''), name: String(r.name || '') });
+    });
+  });
+  out.sort((a, b) => b.t.localeCompare(a.t));
+  return out.slice(0, n);
+}
+function dcrLogText_(x) {
+  const lab = DCR_LOG_FIELDS[x.f];
+  return { when: x.t.slice(5, 16).replace('-', '/') + (x.w ? '　' + x.w : ''),
+           what: x.name + '　' + lab[0] + '→' + (x.v ? lab[1] : lab[2]) };
+}
+/* 「誰が」のためのログイン確認。事務所PCでだけ、起動後に裏で読む（表示と保存を待たせない）。
+   読み方は入居者マスタの msAuthLoad_ と同じ（supabase-js → su-auth.js）。読み終わる前に変えた分は「事務所PC」になる。 */
+function dcrAuthLoad_() {
+  if (window.SUAuth) return Promise.resolve();
+  function has(re) { return Array.prototype.some.call(document.scripts, s => re.test(s.getAttribute('src') || '')); }
+  function load(src) {
+    return new Promise((ok, ng) => {
+      const s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = () => ok(); s.onerror = () => ng(new Error('load'));
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready) {
+    return new Promise((ok, ng) => { let n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })(); });
+  }
+  const p = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(() => !!window.supabase) : load('supabase-js-2.112.4.js'));
+  return p.then(() => {
+    if (window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function dcrResolveWho_() {
+  if (dcrIsField_()) return;
+  dcrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
+    if (st && st.status === 'ok' && st.email) dcrWhoAcct_ = String(st.email).split('@')[0].slice(0, 40);
+  }).catch(() => {});   // 読めない・未ログインは「事務所PC」のまま（記録も保存も止めない）
+}
+
 function pendingKey_(item, field) {
   const idp = (item.masterId != null) ? ('m' + item.masterId)
             : (item.rid != null) ? ('i' + item.rid)
@@ -859,6 +965,7 @@ function pendingKey_(item, field) {
 }
 // items の field を DB へ即時反映し、背景保存キューへ積む（楽観的UI）。
 function queueFlags(items, field, value, label) {
+  if (dcrIsField_()) { toast(DCR_FIELD_MSG, true); renderAll(DB); return; }   // 見た目だけ変わったチェックを戻す
   const t = syncTarget();
   if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); renderAll(DB); return; }
   if (!DB || !Array.isArray(DB.residents)) { toast('データがありません', true); return; }
@@ -870,8 +977,12 @@ function queueFlags(items, field, value, label) {
     const key = pendingKey_(it, field);
     const existing = pendingFlags.get(key);
     const prev = existing ? existing.prev : !!r[field];   // 未確定変更を始める前の値（＝直近確定値）を保持＝失敗時の巻き戻し用
-    r[field] = !!value;                  // ★即時反映
-    pendingFlags.set(key, { rid: it.rid, masterId: it.masterId, name: it.name, field: field, value: !!value, prev: prev, seq: ++flagSeq, label: label });
+    // 変更記録: 未確定のうちに積んだ分を引き継ぎ、今回、値が実際に変わる時だけ1件足す
+    const logs = (existing && Array.isArray(existing.logs)) ? existing.logs.slice() : [];
+    if (!!r[field] !== !!value) logs.push(dcrMakeLog_(field, value));
+    const p = { rid: it.rid, masterId: it.masterId, name: it.name, field: field, value: !!value, prev: prev, seq: ++flagSeq, label: label, logs: logs };
+    pendingFlags.set(key, p);
+    applyPendingFlag_(DB.residents, p);  // ★即時反映（値と記録）
     applied++;
   }
   if (applied < items.length) toast('一覧が更新されました。もう一度開き直してください', true);
@@ -894,19 +1005,30 @@ async function runSaver() {
       saveDirty = false;
       notFound = 0;
       // 未確定フラグを現DBへ確実に反映（refresh等でDBが差し替わっていてもPUTに必ず含める）
-      for (const p of pendingFlags.values()) { const r = findServerResident_(DB.residents, p); if (r) r[p.field] = !!p.value; else notFound++; lastLabel = p.label || lastLabel; }
+      for (const p of pendingFlags.values()) { if (!applyPendingFlag_(DB.residents, p)) notFound++; lastLabel = p.label || lastLabel; }   // 値と記録（記録は id で重複しない）
       const snapshot = JSON.parse(JSON.stringify(DB));
       if (!snapshot || !Array.isArray(snapshot.residents) || !snapshot.residents.length) throw new Error('手元データが空のため中止');
-      const sentSeq = new Map(); for (const [k, v] of pendingFlags) sentSeq.set(k, v.seq);   // 送信時の版を控える
+      const sentSeq = new Map(), sentAs = new Map();   // 送信時の版と、送った値・記録を控える
+      for (const [k, v] of pendingFlags) { sentSeq.set(k, v.seq); sentAs.set(k, { value: v.value, ids: (v.logs || []).map(x => x.id) }); }
       const res = await gasCall({ action: 'put', key: LS_KEY, rev: careRev, data: snapshot });
       if (res && res.ok) {
         careRev = Number(res.rev) || careRev;           // 案A: 次回も直接PUTできる
         // 飛行中に再トグルされていない項目だけ確定として削除（seq一致）。再トグル分は残し次周で再送＝無言消失を防ぐ。
-        sentSeq.forEach((sq, k) => { const cur = pendingFlags.get(k); if (cur && cur.seq === sq) pendingFlags.delete(k); });
+        sentSeq.forEach((sq, k) => {
+          const cur = pendingFlags.get(k);
+          if (!cur) return;
+          if (cur.seq === sq) { pendingFlags.delete(k); return; }
+          /* 再トグル分は残すが、いま確定した分はもう未確定ではない（2026-10-07 審査の指摘）。
+             巻き戻し先 prev を確定した値へ進め、確定した記録を未確定の記録から外す。これが無いと、次の送信が
+             失敗して取り直しもできない時に、サーバーに入った値と記録まで手元で消し、次の保存でサーバーからも消える。 */
+          const sa = sentAs.get(k);
+          cur.prev = sa.value;
+          cur.logs = (cur.logs || []).filter(x => sa.ids.indexOf(x.id) < 0);
+        });
       } else if (res && res.conflict) {
         const f = await getRemoteWithRev();             // read-freshフォールバック（他端末の更新を取り込む）
         if (!f.data || !Array.isArray(f.data.residents) || !f.data.residents.length) throw new Error('クラウドが空');
-        for (const p of pendingFlags.values()) { const r = findServerResident_(f.data.residents, p); if (r) r[p.field] = !!p.value; }
+        for (const p of pendingFlags.values()) applyPendingFlag_(f.data.residents, p);   // 他端末の記録は残し、自分の分だけ足す
         DB = f.data; careRev = f.rev; renderAll(DB);    // 併合結果を反映して再PUT
         saveDirty = true;
       } else {
@@ -930,7 +1052,7 @@ async function runSaver() {
     const keys = [...pendingFlags.keys()];
     let restored = false;
     try { const f = await getRemoteWithRev(); if (f && f.data && Array.isArray(f.data.residents) && f.data.residents.length) { DB = f.data; careRev = f.rev; restored = true; } } catch (e2) {}
-    if (!restored) { for (const k of keys) { const p = pendingFlags.get(k); if (!p) continue; const r = findServerResident_(DB.residents, p); if (r) r[p.field] = !!p.prev; } }   // GET不可＝prevで巻き戻し
+    if (!restored) { for (const k of keys) { const p = pendingFlags.get(k); if (!p) continue; const r = findServerResident_(DB.residents, p); if (r) { r[p.field] = !!p.prev; dcrRemoveLogs_(r, p.logs); } } }   // GET不可＝prevで巻き戻し（積んだ記録も外す）
     keys.forEach(k => pendingFlags.delete(k));
     renderAll(DB);
     setSyncState('保存失敗');
@@ -1890,6 +2012,8 @@ function renderMed(ppl) {
   chk.textContent = '';
   chk.appendChild(el('div', 'chk-h', '昼食薬チェック'));
   chk.appendChild(el('div', 'chk-sub', 'チェック＝昼食後に薬がある方。全端末に保存・同期されます（枠の色は印刷にも出ます／このチェック欄自体は印刷されません）'));
+  const ro = dcrIsField_();   // 現場の端末では見るだけ（2026-10-07）
+  if (ro) chk.appendChild(el('div', 'dcr-ro', DCR_FIELD_MSG));
   const addGroup = (list, label) => {
     if (!list.length) return;
     chk.appendChild(el('div', 'chk-flr', label));
@@ -1897,6 +2021,7 @@ function renderMed(ppl) {
       const lb = el('label', 'chk-item');
       const cb = el('input'); cb.type = 'checkbox'; cb.dataset.pid = p.pid;
       cb.checked = !!p.lunchMed;   // ★同期済みの正データから復元（リロード・他端末でも一致）
+      cb.disabled = ro;
       cb.setAttribute('aria-label', p.name + ' の昼食薬（チェックで全端末に保存）');
       lb.appendChild(cb);
       lb.appendChild(document.createTextNode(p.name));   // 氏名は textContent（個人情報・XSS防止）
@@ -1919,6 +2044,7 @@ function renderMed(ppl) {
   // 全解除＝チェック済み全員の lunchMed を false に（全端末へ反映＝破壊的操作のため確認を挟む・HIG）
   const clr = el('button', 'chk-clear', '全解除');
   clr.type = 'button';
+  clr.disabled = ro;
   clr.onclick = () => {
     const checked = [...chk.querySelectorAll('input[type=checkbox]:checked')];
     if (!checked.length) { toast('チェックされている方はいません'); return; }
@@ -1928,6 +2054,17 @@ function renderMed(ppl) {
     writeLunchMed(items, false);
   };
   chk.appendChild(clr);
+  // 最近の変更（昼食薬・非表示・同姓の目印・全員分・新しい順10件・画面だけ）。誰が・いつ変えたかを全端末で追う（2026-10-07）。
+  // 非表示中・入居前の方の変更も出すため、表のビューではなく DB 全体から集める。
+  chk.appendChild(el('div', 'chk-flr', '最近の変更'));
+  const recent = dcrRecentLogs_(DB, 10);
+  if (!recent.length) chk.appendChild(el('div', 'chk-sub', 'まだ記録はありません'));
+  recent.forEach(x => {
+    const tx = dcrLogText_(x), d = el('div', 'chk-log');
+    d.appendChild(el('span', 'cl-when', tx.when));
+    d.appendChild(document.createTextNode(tx.what));   // 氏名は textContent（個人情報・XSS防止）
+    chk.appendChild(d);
+  });
 }
 
 /* ============================================================================
@@ -2576,9 +2713,13 @@ function renderHideList() {
     box.appendChild(el('div', 'modal-empty', 'デイサービスの利用者がいません。'));
     return;
   }
+  const ro = dcrIsField_();   // 現場の端末では見るだけ（2026-10-07）
+  $('hideShowAll').disabled = ro;
+  if (ro) box.appendChild(el('div', 'dcr-ro', DCR_FIELD_MSG));
   HIDE_CANDIDATES.forEach(c => {
     const lb = el('label', 'modal-item');
     const cb = el('input'); cb.type = 'checkbox'; cb.checked = c.hidden;   // サーバ正本(dcrHidden)から復元
+    cb.disabled = ro;
     // ★配列位置でなく安定ID(masterId/内部id)で紐付ける。裏で候補順がずれても別人を書き換えない（非PII）。
     cb.dataset.mid = (c.masterId != null ? String(c.masterId) : '');
     cb.dataset.rid = (c.rid != null ? String(c.rid) : '');
@@ -2630,9 +2771,13 @@ function renderStarList() {
     box.appendChild(el('div', 'modal-empty', 'デイサービスの利用者がいません。'));
     return;
   }
+  const ro = dcrIsField_();   // 現場の端末では見るだけ（2026-10-07）
+  $('starClearAll').disabled = ro;
+  if (ro) box.appendChild(el('div', 'dcr-ro', DCR_FIELD_MSG));
   HIDE_CANDIDATES.forEach(c => {
     const lb = el('label', 'modal-item');
     const cb = el('input'); cb.type = 'checkbox'; cb.checked = c.star;   // サーバ正本(dcrStar)から復元
+    cb.disabled = ro;
     // ★配列位置でなく安定ID(masterId/内部id)で紐付ける。裏で候補順がずれても別人に印を付けない（非PII）。
     cb.dataset.mid = (c.masterId != null ? String(c.masterId) : '');
     cb.dataset.rid = (c.rid != null ? String(c.rid) : '');
@@ -2741,6 +2886,10 @@ function init() {
   /* 入居者マスタの入院状態を重ねる（2026-08-02 追加）。
      接続設定が無い端末では何も起きない＝従来どおりの表示のまま。 */
   dcrFetchMasterHosp(true).then(function(ok){ if (ok && DB) renderAll(DB); });
+  /* 別のタブ（接続設定）で端末の用途を変えたら、チェックの押せる・押せないを描き直す（2026-10-07）。
+     書き込みの止めは queueFlags が押した時点の用途で判定するので、描き直しが遅れても書けてしまうことはない。 */
+  window.addEventListener('storage', function (e) { if (e.key === DCR_DEVICE_KEY) { try { renderAll(DB); } catch (e2) {} } });
+  dcrResolveWho_();   // 変更記録の「誰が」（事務所PCでだけ・裏で）
   setInterval(function(){ try{ dcrWatchMasterState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
     if (!document.hidden) { try{ dcrWatchMasterState(); }catch(e){} }   // 復帰時に即時1回
