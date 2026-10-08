@@ -3097,7 +3097,7 @@ function renderOfficeView(r){
    ★2026-08-13（実害）: masterId のキーに入っている図は、記録側の氏名(rec.name)と必ず突き合わせる。
      ジェノグラムアプリを ?resident=<この方> 付きで開いたまま【別の方の文書】を保存すると、
      その masterId のキーに別人の図が入り、この方の欄に他人の家族構成図が出ていた。
-     ★入居者マスタと【逐語同一】にすること（gas/tests/genogram_key_test.js が文字列で照合する）。 */
+     ★入居者マスタと【逐語同一】にすること（check/unit/genogram_key_test.js が文字列で照合する）。 */
 function getGenogram(id,name){
   try{
     var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;

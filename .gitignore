@@ -26,6 +26,7 @@
 !/.github/workflows
 /.github/workflows/*
 !/.github/workflows/pixel-check.yml
+!/.github/workflows/unit-tests.yml
 # 画面の指摘の Issue に配置図の絵を付ける（2026-10-04・提案3）
 !/.github/workflows/report-image.yml
 # 検証道具・受け口・定期タスクの指示書（2026-10-04・配布物ではない。架空データ専用／実名の一覧と撮影結果は置かない）
@@ -41,6 +42,12 @@
 !/check/name-guard.mjs
 !/check/run.mjs
 !/check/serve.mjs
+# 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
+!/check/unit
+/check/unit/*
+!/check/unit/*.js
+!/check/unit/package.json
+!/check/unit/run-all.mjs
 !/check/ci-allow.mjs
 !/check/annot-render.mjs
 !/check/gas

@@ -8776,7 +8776,7 @@ function collectMedsPast(){
    ★保存の形は変えない。パネルは textarea の値を書き換えて input イベントを出すだけで、保存は従来どおり
      collectForm が textarea（data-k="medsRegular"）から拾う。パネルの部品には data-k を付けない。
    ★用法の読み取り（medSlotRows_ / medSlotsFromText）は変えない。こちらが作る1行は、時間帯15通り×食後/食前の
-     全30通りで medSlotsFromText が 'ok' と読み、選んだ時間帯と一致する形にしてある（gas/tests/meds_picker_test.js）。
+     全30通りで medSlotsFromText が 'ok' と読み、選んだ時間帯と一致する形にしてある（check/unit/meds_picker_test.js）。
    ★薬の候補（meds-yakka-naiyo.js・厚労省の薬価基準収載品目リストを加工）は薬剤名欄に初めて触れた時に読み込む。
    ★薬のデータ・入力途中の値は localStorage に置かない・console に出さない。
    純関数（mpkNorm〜mpkSearchAll）は DOM に触れない（テストが下の印から印までを抜き出して確かめる）。
@@ -9780,7 +9780,7 @@ function saveStampSame_(a,b){
 }
 /* 一括保存の「実物確認」。送った変更(changes)とサーバーの現物(rows)を突き合わせ、
    全項目一致した方だけを「保存済み」と判定する。判定を純関数に切り出すのは
-   gas/tests/master_confirm_test.js で機械検証するため（画面の配線はここを呼ぶだけにする）。
+   check/unit/master_confirm_test.js で機械検証するため（画面の配線はここを呼ぶだけにする）。
    ★真偽値はサーバーが boolean、送信側が文字列のことがあるため String() で寄せて比べる。 */
 /* 家族の配列を、比較できる形に揃える。★サーバーの _famNorm（gas/master.gs）と同じ規則。
    食い違うと「送ったのに一致しない」＝いつまでも未保存の色が残る。 */

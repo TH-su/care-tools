@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "description": "画面・共通部品の純関数の試験。check/ 全体は ES モジュールの決まりのため、ここだけ CommonJS（require）で動かす"
+}

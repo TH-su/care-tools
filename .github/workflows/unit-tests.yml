@@ -1,0 +1,59 @@
+# 試験（自動）— PR ごと・main へ送るたびに、JS の構文・画面の純関数の試験・実名ガードを回す（2026-10-08 代表者の決定・監査10月版 #6）
+#
+# ・JS の構文: check/jscheck.mjs（公開ホワイトリストの .js と HTML の中の <script>）
+# ・画面・共通部品の純関数の試験: check/unit/run-all.mjs（公開されている画面だけを読む。架空データのみ）
+#   GAS の試験は公開しない方針なので、非公開の gas/tests に残し、毎朝の点検（fleet-check）で回す
+# ・実名ガード: 秘密の設定 SU_NAME_GUARD_LIST がある時だけ（無ければ「未実施」と出して止めない。画素の見比べと同じ扱い）
+# ・main の保護（ルールセット）で、このチェック名「構文と純関数の試験」を PR の必須チェックにする
+name: 試験
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: 構文と純関数の試験
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: リポジトリを取り出す
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: JS の構文（check/jscheck.mjs）
+        run: node check/jscheck.mjs
+
+      - name: 画面・共通部品の純関数の試験（check/unit）
+        run: node check/unit/run-all.mjs
+
+      - name: 実名ガード（秘密の設定 SU_NAME_GUARD_LIST がある時だけ）
+        env:
+          NAMES: ${{ secrets.SU_NAME_GUARD_LIST }}
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          if [ -z "$NAMES" ]; then
+            echo "実名の一覧がありません＝実名ガードは未実施です（設定すると、追加された行に実名が無いかを見ます）"
+            exit 0
+          fi
+          printf '%s\n' "$NAMES" > "$RUNNER_TEMP/names.txt"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            SU_NAME_GUARD_FILE="$RUNNER_TEMP/names.txt" node check/name-guard.mjs --all
+          else
+            SU_NAME_GUARD_FILE="$RUNNER_TEMP/names.txt" node check/name-guard.mjs --base "$BASE"
+          fi
