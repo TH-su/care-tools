@@ -1248,7 +1248,13 @@ body.meal-on #sc-list{max-width:none}
 /* 薬剤情報（定期）・薬備考・問題行動の3列 */
 .a4s .a4-meds{display:flex; border-top:1px solid #666; flex:1; min-height:0}
 .a4s .a4-meds>div{flex:1; min-width:0; border-left:1px solid #666; padding:0 3px; overflow:hidden}
-.a4s .a4-meds>div:first-child{border-left:none; flex:1.15}
+/* 薬剤情報は【1剤1行】で出す（2026-10-08 管理者の指示「1薬剤につき2行になっている」）。
+   ★列の幅を「いちばん長い1剤の行の長さ」に合わせる（flex-basis:auto＝中身の最大幅。
+     pre-wrap の最大幅は改行で区切った1行の長さ）。残りを薬備考・問題行動 等で分ける。
+   ★min-width 36% は従来の幅（1.15:1:1＝36.5%）。薬の行が短い方でも従来より狭くしない。
+   ★max-width 70% は右の2列を潰さないための上限。これより長い1剤だけは従来どおり折り返す
+     （枠からはみ出させない・文字は切らない）。 */
+.a4s .a4-meds>div:first-child{border-left:none; flex:0 1 auto; min-width:36%; max-width:70%}
 .a4s .a4-bh{font-weight:700; font-size:calc(var(--a4fs,10.5px)*0.9)}
 /* 支援経過（残りの紙面を全部使う） */
 .a4s .a4-slog{flex:1; min-height:0; display:flex; flex-direction:column}
@@ -10498,7 +10504,11 @@ function renderA4(r){
     ? bf.diseases.map(function(d){
         return bfStr(d.name)+(bfStr(d.onset)?'（'+bfStr(d.onset)+'）':'');
       }).filter(String).join('、')
-    : String(r.currentDiseases||'');
+    /* 旧キー（自由文）は1病名1行で入っている方がいる。紙では「、」で区切って同じ行に続ける
+       （2026-10-08 管理者の指示）。行末の読点は落として「、、」にしない。データは変えない */
+    : String(r.currentDiseases||'').split(/\r?\n/).map(function(x){
+        return x.replace(/[、,，\s　]+$/,'').trim();
+      }).filter(String).join('、');
   var bpsdTxt=BF_BPSD.filter(function(p){return bf.bpsd[p[0]]}).map(function(p){return p[1]}).join('、');
   if(bfStr(bf.bpsd.note))bpsdTxt+=(bpsdTxt?'／':'')+bfStr(bf.bpsd.note);
   if(!bpsdTxt)bpsdTxt=String(r.problemBehavior||'');
@@ -10603,8 +10613,10 @@ function renderA4(r){
           a4Cell('電話番号',mpVal(r.hospitalTel,mpH&&mpH.tel),'1')+a4Cell('FAX番号',mpVal(r.hospitalFax,mpH&&mpH.fax),'1')+'</div>'+
         '<div class="a4-row">'+a4Cell('救急搬送先（希望）',r.emergencyHospital,'1.3')+a4Cell('かかりつけ薬局',mpVal(r.pharmacy,mpP&&mpP.org),'1')+
           a4Cell('電話番号',mpVal(r.pharmacyTel,mpP&&mpP.tel),'1')+a4Cell('FAX番号',mpVal(r.pharmacyFax,mpP&&mpP.fax),'1')+'</div>'+
-        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'1')+a4Cell('治療中の病気',disTxt,'1.6')+'</div>'+
-        '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'1')+a4Cell('既往歴',r.pastHistory,'1.6')+'</div>'+
+        /* アレルギー・副作用 等は従来の7割の幅（2026-10-08 管理者の指示）。合計2.6は変えず、
+           減らしたぶん（0.3）を治療中の病気・既往歴へ回す＝1.0:1.6 → 0.7:1.9 */
+        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'0.7')+a4Cell('治療中の病気',disTxt,'1.9')+'</div>'+
+        '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'0.7')+a4Cell('既往歴',r.pastHistory,'1.9')+'</div>'+
         '<div class="a4-meds">'+
           '<div><span class="a4-bh">■薬剤情報（定期）■</span><div class="a4-free" style="padding:0">'+esc(r.medsRegular||'')+'</div></div>'+
           '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(a4MedsNotes(r.medsNotes))+'</div></div>'+
