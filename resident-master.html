@@ -1626,7 +1626,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
-<script src="su-facility.js?v=2026-09-24.2"></script>
+<script src="su-facility.js?v=2026-10-08"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -5351,6 +5351,17 @@ function mcIsChange_(text){
   if(MC_SOFT.test(t)&&drug) return true;
   return MC_WEAK.test(t)&&drug&&!MC_ONEOFF.test(t)&&!MC_EXT.test(t);
 }
+/* 申送の事業所欄がデイ（通所）か。「デイ」の語か、施設情報の通所の名前・正式名・別名を含めばデイ（2026-10-08・監査10月版 #10）。
+   以前の直書き（「デイ」か通所の事業所名を含む）と同じ判定を、事業所の名前をコードに書かずに行う。
+   ★施設情報が読めない時だけ「通所」の語も見る（名前で見分けられないため） */
+function mcIsDayFacility_(f){
+  var s=String(f==null?'':f); if(!s) return false;
+  if(/デイ/.test(s)) return true;
+  var names=[], ready=false;
+  try{ if(window.SUFacility&&typeof SUFacility.office==='function'&&SUFacility.ready()){ var o=SUFacility.office('通所'); names=[o.name,o.formalName].concat(o.aliases||[]); ready=true; } }catch(e){}
+  for(var i=0;i<names.length;i++){ var n=String(names[i]||'').trim(); if(n&&s.indexOf(n)>=0) return true; }
+  return !ready && /通所/.test(s);
+}
 /* 申送の要約（ledger）から候補を作る。名前が名簿（退去者を含む）の1名にだけ合い、その方が在籍中の記録だけを使う（指摘18） */
 function mcBuild_(d){
   var by={}, sur={};
@@ -5361,7 +5372,7 @@ function mcBuild_(d){
   /* 原文（第1層 events）を「日付|利用者No」で引けるようにする（名前の書き方の違いも結び方で吸収する） */
   var raw={};
   (d.events||[]).forEach(function(e){
-    if(!e||/デイ|せせらぎ/.test(String(e.facility||''))) return;
+    if(!e||mcIsDayFacility_(e.facility)) return;
     var r1=mcResolve_(by,sur,e.name); if(!r1) return;
     var k=String(e.date||'')+'|'+String(r1.id); (raw[k]=raw[k]||[]).push(e);
   });
@@ -5371,7 +5382,7 @@ function mcBuild_(d){
   var out=[], low=[], un=0, keep={}, seen={}, perDay={};
   (d.ledger||[]).forEach(function(e){
     if(!e||!Array.isArray(e.categories)||e.categories.indexOf(MC_CAT)<0) return;
-    if(/デイ|せせらぎ/.test(String(e.facility||''))) return;   /* デイの利用者は入居者マスタの対象外 */
+    if(mcIsDayFacility_(e.facility)) return;   /* デイの利用者は入居者マスタの対象外 */
     var r0=mcResolve_(by,sur,e.name);
     if(!r0||r0.active===false){ un++; return; }
     var id=String(r0.id), date=String(e.date||''), txt=String(e.summary||'');

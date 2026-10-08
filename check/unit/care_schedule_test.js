@@ -104,6 +104,7 @@ vm.runInContext([
   grabFn('rmIsFilledObj_'),
   grabFn('rmSafeKey_'),
   grabFn('rmNormUnitsTable_'),
+  grabFn('csProfileMunicipality_'),   // 「自治体」の既定は施設情報から（2026-10-08・監査10月版 #10）
   grabFn('normalizeRateMaster_')
 ].join('\n'), box);
 

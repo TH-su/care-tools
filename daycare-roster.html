@@ -682,7 +682,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-09-27"></script>
-<script src="su-facility.js?v=2026-09-24.3"></script>
+<script src="su-facility.js?v=2026-10-08"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -708,7 +708,9 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 
 const LS_KEY  = 'care_schedule_v2';
 const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];
-const NDAY    = 6;                       // 月〜土（せせらぎ日曜休）
+/* 曜日の列の数（月〜土の6日）。施設の値ではなく帳票の形＝A3/A4 に収める幅（W）・6枚の一括印刷・凡例の文言が6日で組んである
+   （2026-10-08・監査10月版 #10 で検討。5日・7日にするなら表の組み直しが要るので、施設情報へは移さない） */
+const NDAY    = 6;
 
 const $ = id => document.getElementById(id);
 
@@ -1082,7 +1084,7 @@ let floorSrcCount = { room: 0, plan: 0, none: 0 };   // 階の出典の内訳（
      居室欄（自由テキスト入力）に "B201" や "201→105移動" のような値が入った時、
      文字列の途中の数字を拾って【誤った階へ配置】してしまう（2026-07-21 レビュー指摘）。
      アンカーがあれば規約外の表記は 0 に落ち、旧floor→階未設定⚠ の順で安全に退避する。
-   ★ラウレアハレは1階/2階のみ。3階以上("301"等)は一致させない＝データ異常として「階未設定」に落とす。 */
+   ★どの階があるかは施設情報の floors で決まる（下の dcrFloorOf・既定は１階/２階）。floors に無い階（"301" 等）は一致させない＝データ異常として「階未設定」に落とす。 */
 /* ── 事業所名（2026-09-24）── 表題・見出し・合計・注記の事業所名は施設情報（facility-profile.json・su-facility.js）から。
    名前が無い時は名前の部分を空にする（「通所 利用表」「デイ利用者分は…」）＝一般名を重ねて「通所通所介護」にしない */
 function dcrOfficeName() {

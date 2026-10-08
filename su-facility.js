@@ -18,6 +18,7 @@
  *   SUFacility.floorOf(room)      … 居室番号の先頭の数字が floors の no ならその階・それ以外は 0（全角数字も読む）
  *   SUFacility.floorLabel(no)     … 階の見出し（１階 など）
  *   SUFacility.roomPlan()         … 入居者マスタの間取り図（無ければ null）
+ *   SUFacility.municipality()     … 施設のある市区町村（未設定なら空）（2026-10-08・監査10月版 #10）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -41,7 +42,7 @@
   /* 受け取った設定を信じない（形の崩れた値は捨て、足りない所は空で埋める） */
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
-    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), offices: [], floors: [], roomPlan: null };
+    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null };
     if (Array.isArray(p.floors)) {
       for (var fl = 0; fl < p.floors.length; fl++) {
         var F = p.floors[fl];
@@ -146,6 +147,7 @@
       return no + '階';
     },
     roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
+    municipality: function () { return (data && data.municipality) || ''; },
     aliases: function () {
       var map = {};
       if (!data) return map;

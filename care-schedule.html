@@ -1746,6 +1746,7 @@ function _handle(e, method) {
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'care:' + where); }catch(_){} }
 </script>
+<script src="su-facility.js?v=2026-10-08"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -1825,7 +1826,7 @@ const RATE_MASTER_DEFAULT = {
   v: RATE_MASTER_SCHEMA_V,
   rev: 1,                                  // 内容の改訂番号。編集のたび +1（端末間の巻き戻し防止に使う）
   revisionLabel: '令和6年4月改定',
-  municipality: '熊本市',
+  municipality: '',                        // 既定は施設情報（facility-profile.json の municipality）から入れる（csProfileMunicipality_・2026-10-08 監査10月版 #10）
   facilityType: 'jutaku',                  // jutaku=住宅型有料＋訪問介護併設 / tokutei=介護付(特定施設) / sakoju=サ高住
   feePerUnit: 10,                          // 利用者一覧の報酬額(10割)の単価（円/単位・地域加算は反映しない運用）
   unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）
@@ -2044,13 +2045,26 @@ function rmNormUnitsTable_(raw, defTable, name, filled, min) {
   return out;
 }
 
+/* 施設のある市区町村（施設情報・su-facility.js）。読めない時は空＝設定画面の「自治体」で入れる */
+function csProfileMunicipality_() {
+  try { return (window.SUFacility && typeof SUFacility.municipality === 'function') ? (SUFacility.municipality() || '') : ''; } catch (e) { return ''; }
+}
+/* 施設情報が起動より後に届いた端末（初めて開いた端末）では、起動時の報酬マスタの「自治体」が空のまま。届いた時に空なら入れる
+   （保存済みの値は触らない。端末の中だけ直し、次の保存で一緒に残る） */
+if (window.SUFacility && typeof SUFacility.onReady === 'function') {
+  SUFacility.onReady(function () {
+    try { if (typeof DB === 'object' && DB && DB.rateMaster && !DB.rateMaster.municipality) DB.rateMaster.municipality = csProfileMunicipality_(); } catch (e) {}
+  });
+}
 function normalizeRateMaster_(raw) {
   const d = RATE_MASTER_DEFAULT;
   /* マスタを一度も保存していない端末（初回起動・この改修より前からの端末）は「異常」ではない。
      既定をそのまま使うのが正しい動作なので、警告は出さずに黙って既定を返す。
      警告を出すのは「マスタが入っているのに中身が壊れている」ときだけにする。 */
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { master: rmClone_(d), filled: [] };
+    const m0 = rmClone_(d);
+    if (!m0.municipality) m0.municipality = csProfileMunicipality_();
+    return { master: m0, filled: [] };
   }
   const filled = [];
   const src = raw;
@@ -2059,7 +2073,7 @@ function normalizeRateMaster_(raw) {
     v: RATE_MASTER_SCHEMA_V,
     rev: Math.max(0, Math.floor(rmNum_(src.rev, 0, 1e9) || 0)),
     revisionLabel: typeof src.revisionLabel === 'string' && src.revisionLabel ? src.revisionLabel : d.revisionLabel,
-    municipality:  typeof src.municipality  === 'string' && src.municipality  ? src.municipality  : d.municipality,
+    municipality:  typeof src.municipality  === 'string' && src.municipality  ? src.municipality  : (d.municipality || csProfileMunicipality_()),
     facilityType:  (src.facilityType === 'tokutei' || src.facilityType === 'sakoju' || src.facilityType === 'jutaku')
                      ? src.facilityType : 'jutaku',
     feePerUnit: rmNum_(src.feePerUnit, 0.01, 1000) || d.feePerUnit,
