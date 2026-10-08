@@ -7748,7 +7748,7 @@ function renderView(r){
   h+='<div class="sec"><div class="sec-lbl">医療情報</div><div class="sec-body">'+
     /* 2件ぶんが1つの欄に入っている方は表示だけ行に分ける（A4様式・フェイスシートと同じ扱い） */
     '<div class="row-cells">'+cell('かかりつけ病院',mpVal(r.hospital,mvH&&mvH.org))+cell('主治医',mpVal(r.doctor,mvH&&mvH.person))+cell('電話番号',mpVal(r.hospitalTel,mvH&&mvH.tel))+cell('FAX番号',mpVal(r.hospitalFax,mvH&&mvH.fax))+'</div>'+
-    '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('往診曜日',r.visitDay)+'</div>'+
+    '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('診療曜日',r.visitDay)+'</div>'+
     '<div class="row-cells">'+cell('かかりつけ薬局',mpVal(r.pharmacy,mvP&&mvP.org))+cell('電話番号',mpVal(r.pharmacyTel,mvP&&mvP.tel))+cell('FAX番号',mpVal(r.pharmacyFax,mvP&&mvP.fax))+'</div>'+
     /* 「治療中の病気」の自由文は、上の病名表へ差し替えた（2026-08-12）。
        ★データ（currentDiseases）は消していない。「移行前の記載」に読み取り専用で出す */
@@ -8309,7 +8309,7 @@ function openEdit(rec){
     fld('hospital','かかりつけ病院',r.hospital,'lines')+fld('doctor','主治医',r.doctor,'lines')+
     fld('hospitalTel','電話番号',r.hospitalTel,'lines')+fld('hospitalFax','FAX番号',r.hospitalFax,'lines')+
     fld('emergencyHospital','救急搬送先（希望）',r.emergencyHospital)+fld('emergencyHospitalTel','急変時 連絡先TEL',r.emergencyHospitalTel,'tel')+
-    fld('visitDay','往診曜日',r.visitDay)+
+    fld('visitDay','診療曜日',r.visitDay)+
     fld('pharmacy','かかりつけ薬局',r.pharmacy)+fld('pharmacyTel','電話番号',r.pharmacyTel)+fld('pharmacyFax','FAX番号',r.pharmacyFax)+
     fld('bloodType','血液型',r.bloodType,'select',['','A','B','O','AB','不明'])+
   '</div>'+
@@ -10977,7 +10977,7 @@ var BULK_GROUPS=[
     ['hospital','かかりつけ病院','lines'],['doctor','主治医','lines'],
     ['hospitalTel','病院TEL','lines'],['hospitalFax','病院FAX','lines'],
     ['emergencyHospital','救急搬送先','text'],['emergencyHospitalTel','急変時TEL','text'],
-    ['visitDay','往診曜日','text'],
+    ['visitDay','診療曜日','text'],
     ['pharmacy','かかりつけ薬局','text'],['pharmacyTel','薬局TEL','text'],['pharmacyFax','薬局FAX','text'],
     ['bloodType','血液型','select',['','A','B','O','AB','不明']]]],
   /* ★薬剤情報（2026-09-07 管理者指示）。複数行の項目は 'lines'（1行の textarea）にする。
@@ -11000,7 +11000,7 @@ var BULK_GROUPS=[
 ];
 /* 直すと現場アプリ側の値まで置き換わる項目（data-contracts §5「マスタ非空常勝」）。保存前に必ず知らせる */
 var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
-  dischargeDate:'退去日',doctor:'主治医',visitDay:'往診曜日',hospital:'かかりつけ病院'};
+  dischargeDate:'退去日',doctor:'主治医',visitDay:'診療曜日',hospital:'かかりつけ病院'};
 var bulkRows=null, bulkDirty={}, bulkGroup='basic', bulkLoading=false;
 /* ★氏名の取り直し（refreshBulkNames_）が飛んでいる間に保存が成功したり表を閉じたりすると、
    遅れて届いた古い応答が bulkRows[].name を旧値へ書き戻す。書き戻すと以後サーバーの照合が
