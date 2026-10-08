@@ -991,13 +991,13 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //   4. 合言葉: エディタ左の歯車「プロジェクトの設定」→「スクリプト プロパティ」に
 //      GENOGRAM_TOKEN を追加し、値に合言葉を入れて保存する。同じ合言葉を、
 //      アプリのクラウド設定（または接続設定の画面）の「合言葉」欄に入れる。
-//      ・GENOGRAM_TOKEN が未設定の間は、合言葉なしでも通る（移行モード。従来と同じ動き）。
+//      ・GENOGRAM_TOKEN が未設定なら、すべての要求を断る（403）。2026-10-08 に移行モード（未設定なら素通し）をやめた。
 //      ・設定した瞬間から、合言葉の無い・違う要求はすべて断る。
 //        先に全端末へ合言葉を入れてから設定すること（入っていない端末は保存が保留に溜まる）。
 //      ・GENOGRAM_TOKEN_VIEW（任意）: 閲覧だけの合言葉。ping・list・get だけ通す。
 //      ・合言葉は POST の本文でだけ受け取る。URL（GET の ?token=）では受け取らない
 //        （URL は履歴・ログに残るため）。合言葉を設定した後の GET はすべて断る。
-//      ・戻す時: GENOGRAM_TOKEN を削除すれば、すぐ移行モードに戻る。
+//      ・GENOGRAM_TOKEN を削除すると、合言葉の有無にかかわらず全部断る（素通しには戻らない）。
 //   5. この版から合言葉を読む権限（スクリプト プロパティ）を使う。貼り替えたら、デプロイを更新する前に
 //      エディタで関数 authorizeGenogramSync を1回実行して「承認」する。承認しないまま
 //      デプロイを更新すると、全端末の同期が止まる（実行ユーザーが「自分」のため）。
@@ -1023,11 +1023,11 @@ function doPost(e) {
   }
 }
 
-// 合言葉から権限を返す: 'grace'（未設定＝移行モード）| 'full' | 'view' | ''（不一致）
+// 合言葉から権限を返す: 'full' | 'view' | ''（不一致・または GENOGRAM_TOKEN が未設定＝全部断る）
 function role(token) {
   const props = PropertiesService.getScriptProperties();
   const full = props.getProperty(TOKEN_PROP);
-  if (!full) return 'grace';
+  if (!full) return '';   // 未設定は断る（2026-10-08 まではここで 'grace'＝素通しを返していた）
   const got = (token === undefined || token === null) ? '' : String(token);
   if (!got) return '';
   if (got === full) return 'full';
@@ -1039,7 +1039,7 @@ function role(token) {
 // エディタで1回実行して権限を承認する（上の 5.）。合言葉の値は出さず、設定済みかどうかだけをログに出す
 function authorizeGenogramSync() {
   const set = !!PropertiesService.getScriptProperties().getProperty(TOKEN_PROP);
-  Logger.log('GENOGRAM_TOKEN: ' + (set ? '設定済み（合言葉が効いています）' : '未設定（移行モード）'));
+  Logger.log('GENOGRAM_TOKEN: ' + (set ? '設定済み（合言葉が効いています）' : '未設定（すべての要求を断ります。設定してください）'));
 }
 
 function route(action, p, token) {
@@ -1049,7 +1049,7 @@ function route(action, p, token) {
     if (!r || (r === 'view' && READ_ACTIONS.indexOf(action) < 0)) {
       return jsonOut({ ok: false, error: 'unauthorized', code: 403 });
     }
-    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: r === 'grace' ? 'grace' : 'ok', role: r });
+    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: 'ok', role: r });
     if (action === 'list')   return jsonOut({ ok: true, items: listAll() });
     if (action === 'get')    return jsonOut({ ok: true, doc: getOne(p.name) });
     if (action === 'save' || action === 'delete') return jsonOut(writeLocked(action, p));
