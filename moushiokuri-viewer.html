@@ -58,6 +58,9 @@ select, input[type=text], input[type=password], input[type=date] {
   border-radius:8px; background:#fff; color:var(--g9); min-height:44px; }
 button.btn { font:inherit; font-size: 0.875rem; padding:11px 14px; border:1px solid var(--g3);
              border-radius:8px; background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
+/* ★hidden 属性は UA の display:none に頼るため、上の .bar { display:flex } に負けて隠れない。
+     入居者別・バイタル・検索の「まとめてコピー／印刷」の帯が、読み込む前・選ぶ前から出ていた（2026-10-09 実測）。 */
+.bar[hidden] { display:none; }
 button.btn.pri { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
 button.btn:disabled { opacity:.5; cursor:default; }
 button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--pri); outline-offset:1px; }
@@ -210,6 +213,17 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
 #sqResult .sum .lbl { min-height:30px; }
 #sqResult .sum .body { position:relative; }
 
+/* ── 縦に詰めた表示（2026-10-09 本人指示）──
+   AI要約を外したのに合わせ、記録の行間・枠の余白・日付の間隔を詰めて一画面に多く並べる。
+   文字の大きさは変えない。印刷は従来どおりにするため画面だけに効かせる。 */
+@media screen {
+  .daygrp { margin-bottom:4px; }
+  .dayhd  { padding:2px 2px; }
+  .ev     { padding:3px 8px; margin-top:2px; }
+  .ev .meta { margin-bottom:0; }
+  .ev .body { line-height:1.45; }
+  .who    { padding:4px 10px; margin-bottom:4px; }
+}
 @media print {
   @page { size:A4 portrait; margin:10mm; }
   * { -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
@@ -342,7 +356,7 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
       <h2 style="font-size: 0.9375rem;margin-bottom:8px;">この画面について</h2>
       <p class="hint">
         申し送りスプレッドシートの記録を、入居者ごとにまとめて表示します。<br>
-        「申し送り原文」は当日分まで自動で取り込まれます。「AI要約」は翌朝の抽出が終わった日にだけ付きます。<br>
+        「申し送り原文」は当日分まで自動で取り込まれます。<br>
         表示した内容は端末に保存されません（画面を閉じると消えます）。
       </p>
     </div>
@@ -376,7 +390,7 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
         <button class="btn pri" id="sqGo" type="button">検索</button>
         <button class="btn" id="sqClear" type="button">クリア</button>
       </div>
-      <p class="hint">スペースで区切ると、そのすべてを含む記録を探します。申し送りの原文・AI要約・氏名・カテゴリが対象です。</p>
+      <p class="hint">スペースで区切ると、そのすべてを含む記録を探します。申し送りの原文と氏名が対象です。</p>
       <div class="rlist" id="sqCats" role="group" aria-label="カテゴリで絞り込む"></div>
       <div class="bar" style="margin-top:8px;">
         <label><input type="checkbox" id="sqSyn"> 似た言い方も探す（例: 転倒 → 転落・ころんだ）</label>
@@ -439,6 +453,11 @@ var $ = function(id){ return document.getElementById(id); };
    （サーバーが返す from/to と比べると、サーバー側が丸めた時に永久に不一致になる）。 */
 var DATA = { from:'', to:'', reqFrom:'', reqTo:'', reqMode:'', reqDays:0,
              events:[], ledger:[], loadedAt:0 };
+/* ★AI要約は一旦表示しない（2026-10-09 本人指示）。要約の文に他の入居者の内容が
+     混ざることがあるため。サーバーが返しても受け取った時点で捨て、どのタブにも出さない
+     （入居者別・日付別・検索・まとめコピー・カテゴリの印）。戻す時はここを true にする。 */
+var SHOW_AI_SUMMARY = false;
+function ledgerRows(v){ return SHOW_AI_SUMMARY ? normRows(v) : []; }
 var SEL = '';        // 選択中の入居者（正規化キー）
 var ROSTER = [];     // su_residents_common の写し（読取専用）
 
@@ -902,7 +921,7 @@ function load(){
   return apiGet('events', { from:r.from, to:r.to }).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
              reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
-             events:normRows(res.events), ledger:normRows(res.ledger),
+             events:normRows(res.events), ledger:ledgerRows(res.ledger),
              /* undefined（旧デプロイのGAS＝能力を持たない）と [] （1日も取り込めていない）を
                 潰さない。潰すと、ビューアだけ先に配った時に全期間が誤って赤くなる。 */
              ingested:(res.ingestedDates || null),
@@ -1010,7 +1029,7 @@ function renderBanner(boxId){
   var hasLedger = Object.create(null);
   DATA.ledger.forEach(function(l){ hasLedger[l.date] = true; });
   var noSum = all.filter(function(d){ return got[d] && !hasLedger[d]; });
-  if(noSum.length){
+  if(SHOW_AI_SUMMARY && noSum.length){
     bannerLine('note', 'AI要約が未作成の日: ' + briefDates(noSum)
       + '　（取り込み済みの日なので、申し送りの原文は表示されています）', box);
   }
@@ -1320,7 +1339,7 @@ function renderDateView(force){
   apiGet('events', { from:d, to:d }).then(function(res){
     if(seq !== DV_SEQ) return;              // 後から出した要求がある＝この応答は使わない
     box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
-    var evs = normRows(res.events), lgs = normRows(res.ledger);
+    var evs = normRows(res.events), lgs = ledgerRows(res.ledger);
     $('dstatus').textContent = fmtDate(d) + '　' + evs.length + '件';
     renderDateBody(box, d, evs, lgs, false);
   })['catch'](function(e){
@@ -2300,6 +2319,13 @@ function sqSyncScope(){
       + '取り込み済みの記録だけを探します）';
   }else{
     sc.textContent = '検索対象期間: まだ読み込んでいません';
+  }
+  /* ★カテゴリはAI要約にしか付かない。要約を出さない間はチップごと隠す
+       （押しても必ず0件になる絞り込みを置かない）。 */
+  if(!SHOW_AI_SUMMARY){
+    SQ_SEL = {};
+    $('sqCats').style.display = 'none';   // .rlist の display:flex が hidden 属性に勝つため style で消す
+    return;
   }
   var cnt = {};
   DATA.ledger.forEach(function(l){

@@ -188,7 +188,7 @@ function makeBox(opts) {
     'var SEL = "", VMSEL = "", ROSTER = [], SQ_SEL = {}, SQ_LAST = null, SQ_CATSIG = "";',
     'var LOADING = false, LOAD_ERR = "";',
     grabDecl('LS_CFG'), grabDecl('LS_RANGE'), grabDecl('LS_DAYS'), grabDecl('LS_VMDAYS'),
-    grabDecl('DATA'), grabDecl('VM'),
+    grabDecl('DATA'), grabDecl('SHOW_AI_SUMMARY'), grabDecl('VM'),
     'var VM_LOADING = false, VM_ERR = "";',
     grabFn('lsGet'), grabFn('lsSet'), grabFn('ymd'), grabFn('addDays'), grabFn('fmtDate'),
     grabFn('okYmd'), grabFn('normName'), grabFn('hhmm'), grabFn('loadCfg'),
