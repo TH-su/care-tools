@@ -33,7 +33,7 @@
  *   これは「ボタンを出すかどうか」だけの判定で、受け付けるかどうかは今までどおり受け口の合言葉が決める。
  *
  * 使い方: 各ツールの </body> の直前で
- *   <script src="su-report.js?v=2026-10-04.2" data-tool="週間計画"></script>
+ *   <script src="su-report.js?v=2026-10-09" data-tool="週間計画"></script>
  */
 (function () {
   'use strict';
@@ -313,6 +313,8 @@
     '.sur-ann ol{margin:4px 0 0;padding-left:1.6em}',
     '.sur-ann li{margin:2px 0}',
     '.sur-ann canvas{display:block;max-width:100%;max-height:40vh;margin-top:8px;border:1px solid var(--g3,#dadce0);border-radius:8px}',
+    /* hidden 属性は上の display:block に負けて隠れない。配置図を描けなかった時に空の枠が出ていた（2026-10-09） */
+    '.sur-ann canvas[hidden]{display:none}',
     '.sur-fab.sur-hide{visibility:hidden}',
     '@media (max-width:260px){.sur-fab{padding:8px 10px;font-size:13px}}',   /* 表示200%（CSS幅200px前後）では小さめにして中身を隠しすぎない */
     '@media print{.sur-fab,.sur-dlg{display:none!important}}'
