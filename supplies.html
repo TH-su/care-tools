@@ -608,6 +608,10 @@ body.staff .adm{display:none !important}
 #billSheet .shd .sp{flex:1}
 #billSheet .sdate{font-size:9pt}
 #billSheet .scond{font-size:9pt;margin-bottom:2mm}
+/* 発行者の欄（2026-10-09・監査10月版 #14）。見出しの下の右寄せ。何も入っていない時は出さない＝紙面は以前のまま */
+#billSheet .issuer,#priceSheet .issuer{font-size:9pt;line-height:1.5;text-align:right;margin:-1mm 0 2mm}
+#billSheet .bgrp .issuer{margin:0 0 2mm}
+#billSheet .issuer[hidden],#priceSheet .issuer[hidden]{display:none}
 #billSheet .swarn{font-size:9pt;border:1px solid #000;padding:1mm 2mm;margin-bottom:2mm}
 #billSheet .swarn[hidden]{display:none}
 #billSheet table{width:100%;border-collapse:collapse;font-size:9pt;table-layout:fixed}
@@ -844,10 +848,11 @@ body.staff .adm{display:none !important}
       <span class="sp"></span>
       <span class="sdate" id="billDate">—</span>
     </div>
+    <div class="issuer" id="billIssuer" hidden></div>
     <p class="scond" id="billCond">—</p>
     <p class="swarn noprint" id="billRosterWarn" hidden>この端末に名簿がないため、氏名の代わりに利用者Noを出しています。</p>
-    <p class="swarn noprint" id="billNotesWarn" hidden>メモを読めていません。印刷する前に、GAS の setup を実行してください。</p>
-    <p class="swarn noprint" id="billNotesCapWarn" hidden>このサーバーはメモに未対応です。GAS の新しい版を公開してください。</p>
+    <p class="swarn noprint" id="billNotesWarn" hidden>メモを読めていません。印刷する前に、管理者に「消耗品のサーバーの準備（setup）」を頼んでください。</p>
+    <p class="swarn noprint" id="billNotesCapWarn" hidden>メモの機能がまだサーバーに入っていません。管理者に、消耗品のサーバーを新しい版にするよう頼んでください。</p>
     <table id="billTbl">
       <caption class="sr-only">選んだ月の出庫の明細（日付・対象者・品目・数量・金額）</caption>
       <thead><tr><th scope="col" class="cdate">日付</th><th scope="col" class="cwho">対象者</th>
@@ -1022,6 +1027,18 @@ body.staff .adm{display:none !important}
   </div>
 
   <div class="cd adm">
+    <h3 class="sub">明細・料金表の発行者</h3>
+    <p class="muted">ご利用明細と料金表の右上に、施設名・住所・電話と、ここで入れた担当者を印刷します。
+      施設名・住所・電話は施設情報（facility-profile.json）から入れます（無い項目は印刷しません）。担当者はこの端末にだけ残すので、<b>個人の氏名ではなく役職名</b>（例：事務担当）を入れてください。</p>
+    <div class="form">
+      <div class="fld s6"><label for="issuerStaff">担当者（役職名。空なら印刷しない）</label>
+        <input type="text" id="issuerStaff" autocomplete="off" maxlength="40" placeholder="例：事務担当（個人の氏名は入れない）"></div>
+    </div>
+    <p class="muted mt2" id="issuerPreview" role="status" aria-live="polite"></p>
+    <div class="row mt2"><button type="button" class="btn pri" id="saveIssuerBtn">保存</button></div>
+  </div>
+
+  <div class="cd adm">
     <h3 class="sub">種別</h3>
     <p class="muted">並び順の数字が小さいものから出ます。使っている種別は消せません（非表示にできます）。</p>
     <div class="tbl-wrap sm">
@@ -1160,11 +1177,13 @@ body.staff .adm{display:none !important}
     <span class="sp"></span>
     <span class="sdate" id="sheetDate">—</span>
   </div>
+  <div class="issuer" id="sheetIssuer" hidden></div>
   <div id="sheetBody"></div>
   <p class="foot">金額は税込です。月額の品目は使用量の型ごとの1か月あたりの金額です。</p>
 </section>
 
 <script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-facility.js?v=2026-10-08"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
 <script>
 'use strict';
@@ -1173,7 +1192,7 @@ body.staff .adm{display:none !important}
    消耗品管理 2026-09-18.1
    ・計算（単位換算・価格・丸め・集計・明細・CSV）は supplies-calc.js（window.SuppliesCalc）が正本。
    ・換算・価格解決・在庫の錨・締め判定はサーバーが行う。画面の出し分けは二重の防御。
-   ・端末に残すのは接続設定（spl_cfg）とUI状態（spl_*）だけ。業務データは残さない。
+   ・端末に残すのは接続設定（spl_cfg）・明細の発行者の担当者の役職名（spl_issuer・2026-10-09。個人の氏名は入れない運用＝本人決定）とUI状態（spl_*）だけ。業務データは残さない。
      例外は送信待ちの出庫（sessionStorage spl_pending・利用者Noのみ・応答を見たら消す）。
    ════════════════════════════════════════════════════════════════ */
 
@@ -1412,6 +1431,45 @@ function saveCfg(patch) {
   lsSet(CFG_KEY, JSON.stringify(cur));
 }
 function cfgReady() { var c = loadCfg(); return URL_OK_RE.test(c.url) && !!c.token; }
+
+/* ── 明細・料金表の発行者（2026-10-09・監査10月版 #14・本人決定 2a）──
+   施設名・住所・電話は施設情報（su-facility.js・facility-profile.json の「施設」）から。担当者だけこの端末の設定（spl_issuer）。
+   ★担当者は役職名（例：事務担当）を入れる運用（2026-10-09 本人決定）。個人情報はサーバー経由で保存する規約のため、職員の氏名は端末に残さない。
+   ★無い項目は行ごと出さない。全部無ければ欄ごと出さない＝紙面は以前のまま。文字は textContent で入れる。 */
+var ISSUER_KEY = 'spl_issuer';
+function issuerStaff() { try { return txt((JSON.parse(lsGet(ISSUER_KEY) || '{}') || {}).staff).trim().slice(0, 40); } catch (e) { return ''; } }
+function issuerLines() {
+  var o = (window.SUFacility && typeof SUFacility.office === 'function') ? SUFacility.office('施設') : {};
+  var fac = (window.SUFacility && typeof SUFacility.get === 'function' && SUFacility.get()) || {};
+  var name = txt(o.formalName) || txt(fac.facilityName) || txt(o.name);
+  var lines = [];
+  if (name) lines.push(name);
+  if (txt(o.address)) lines.push(txt(o.address));
+  if (txt(o.tel)) lines.push('TEL ' + txt(o.tel));
+  var st = issuerStaff();
+  if (st) lines.push('担当：' + st);
+  return lines;
+}
+function renderIssuer(id) {
+  var box = $(id);
+  if (!box) return;
+  clearNode(box);
+  var lines = issuerLines();
+  lines.forEach(function (l) { var d = document.createElement('div'); d.textContent = l; box.appendChild(d); });
+  box.hidden = !lines.length;
+}
+function renderIssuerSettings() {
+  if (!$('issuerStaff')) return;
+  $('issuerStaff').value = issuerStaff();
+  var lines = issuerLines();
+  $('issuerPreview').textContent = lines.length ? ('印刷される内容：' + lines.join('／')) : '施設情報を読めていないため、今は何も印刷しません。';
+}
+function onSaveIssuer() {
+  var v = txt($('issuerStaff').value).trim().slice(0, 40);
+  lsSet(ISSUER_KEY, JSON.stringify({ staff: v }));
+  renderIssuerSettings();
+  if (issuerStaff() !== v) $('issuerPreview').textContent = 'この端末に保存できませんでした（プライベートブラウズ等）。';
+}
 
 /* ── 通信 ─────────────────────────────────────────────── */
 function mkErr(msg, hint) {
@@ -3617,12 +3675,12 @@ function saveNote() {
   }
   if (!billNotesUsable()) {
     setState('billState', 'err', 'このサーバーはメモに未対応です',
-      'GAS のエディタで「デプロイを管理」→ 新しいバージョンを公開してから、もう一度お試しください。');
+      '管理者に、消耗品のサーバーを新しい版にするよう頼んでから、もう一度お試しください。');
     return;
   }
   if (!billNoteWritable()) {
     setState('billState', 'err', 'メモを読めていないので保存できません',
-      'GAS のエディタで setup を実行してから、もう一度読み込んでください。');
+      '管理者に「消耗品のサーバーの準備（setup）」を頼んでから、もう一度読み込んでください。');
     return;
   }
   if (!busyOn('note')) return;
@@ -3645,6 +3703,7 @@ function renderBill() {
   clearNode(body);
   clearNode(foot);
   $('billDate').textContent = jpDate(SPL().today()) + ' 作成';
+  renderIssuer('billIssuer');
   $('billCond').textContent = billCondText();
   $('billRosterWarn').hidden = !!ST.rosterOk;
   /* メモが使えない時は紙面にも理由を出す（印刷物が黙ってメモ抜きになるのを防ぐ） */
@@ -3737,6 +3796,8 @@ function setBillFlat(on) {
   $('billCond').hidden = !on;
   var shd = document.querySelector('#billSheet .shd');
   if (shd) shd.hidden = !on;
+  /* 発行者の欄：1枚続きの時は上の1か所、入居者ごとの時は各人の紙に入れる（ここは隠す） */
+  if (!on) $('billIssuer').hidden = true; else renderIssuer('billIssuer');
 }
 /* 入居者ごとに1枚。1枚が1人ぶんの明細として完結するよう、
    各かたまりの先頭に「対象月＋対象者＋作成日」を置き、末尾にその人の合計を出す。
@@ -3775,6 +3836,13 @@ function renderBillByResident(rows) {
     head.appendChild(h('span', { cls: 'sp' }));
     head.appendChild(h('span', { cls: 'sdate', text: jpDate(SPL().today()) + ' 作成' }));
     sec.appendChild(head);
+    /* 発行者の欄（各人の紙に。何も無ければ出さない・監査10月版 #14） */
+    var iss = issuerLines();
+    if (iss.length) {
+      var ib = h('div', { cls: 'issuer' });
+      iss.forEach(function (l) { ib.appendChild(h('div', { text: l })); });
+      sec.appendChild(ib);
+    }
     sec.appendChild(h('p', { cls: 'gwho', text: g.who }));
     var tbl = h('table');
     tbl.appendChild(h('caption', { cls: 'sr-only', text: g.who + ' の明細（日付・対象者・品目・数量・金額）' }));
@@ -4713,6 +4781,7 @@ function buildPriceSheet() {
   var box = $('sheetBody');
   clearNode(box);
   $('sheetDate').textContent = jpDate(SPL().today()) + ' 現在';
+  renderIssuer('sheetIssuer');
   var cats = ST.cats.slice();
   var seen = {};
   cats.forEach(function (c) { seen[txt(c.id)] = true; });
@@ -4943,6 +5012,9 @@ function bindEvents() {
 
   /* 設定 */
   $('saveCfgBtn').addEventListener('click', onSaveCfg);
+  $('saveIssuerBtn').addEventListener('click', onSaveIssuer);
+  renderIssuerSettings();
+  if (window.SUFacility) SUFacility.onReady(function () { try { renderIssuerSettings(); renderIssuer('billIssuer'); renderIssuer('sheetIssuer'); } catch (e) {} });
   $('testBtn').addEventListener('click', onTest);
   $('cfgShowToken').addEventListener('change', function () {
     $('cfgToken').type = $('cfgShowToken').checked ? 'text' : 'password';
