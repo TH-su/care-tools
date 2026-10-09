@@ -134,6 +134,20 @@ main {
 .res.ok  { color: var(--ok); }
 .res.ng  { color: var(--ng); }
 .res.inf { color: var(--g7); }
+/* ── 初回の案内（2026-10-09・監査10月版 #13）── 色だけに頼らず ✓／✕ と文で伝える（HIG） */
+.wiz h2 { margin: 0 0 6px; font-size: 1rem; }
+.wiz ol { margin: 8px 0 0; padding: 0; list-style: none; }
+.wiz li { border: 1px solid var(--g3); border-radius: 10px; padding: 10px 12px; margin: 0 0 8px; }
+.wiz .st { font-weight: 700; margin-right: 6px; }
+.wiz li.ok { border-color: #b7dfb9; background: var(--ok-l); }
+.wiz li.ok .st { color: var(--ok); }
+.wiz li.ng { border-color: #f5c2c2; background: var(--ng-l); }
+.wiz li.ng .st { color: var(--ng); }
+.wiz .stp { font-weight: 700; }
+.wiz .msg { margin: 4px 0 0; font-size: 0.8125rem; line-height: 1.6; }
+.wiz .acts { margin-top: 8px; }
+.wiz-open { margin: -4px 0 12px; font-size: 0.8125rem; }
+.wiz-open button { background: none; border: 0; color: var(--pri); text-decoration: underline; padding: 0; min-height: 44px; font-size: inherit; cursor: pointer; }
 
 .note-card { background: var(--warn-bg); border-color: #ffe0a3; }
 /* 設定の控え（2026-09-27） */
@@ -194,6 +208,9 @@ main {
 
 <main>
   <p class="lead">新しい端末を使い始める時に、各アプリの接続先をここでまとめて設定できます。</p>
+  <!-- 初回の案内（2026-10-09・監査10月版 #13・本人決定 1a）。接続先が1つも無い端末で自動で開く。閉じても下のボタンで開き直せる -->
+  <p class="wiz-open"><button type="button" id="wizOpen">初回の案内を開く</button></p>
+  <div class="cd wiz" id="wiz" hidden></div>
 
   <div class="cd note-card">
     <p><b>他の介護ツールのタブは、すべて閉じてから保存してください。</b>
@@ -516,6 +533,11 @@ function verifySyncPair(url, token){
      合言葉が無くてもGASは「JSONのエラー応答」を返すので、URLの到達確認としては十分。
    ★HTMLが返る＝Googleのログイン画面＝デプロイの公開範囲が「全員」でない、という
      セットアップで最も多い失敗をここで名指しできる。 */
+/* 統合同期の欄で、合言葉なしの応答から【別アプリのGAS】と断定できるか（カードの［接続を確認］と初回の案内で共用） */
+function syncForeign(json){
+  var j=json||{};
+  return j.error==='認証エラー' || j.error==='不明なaction' || (j.ok===true && j.server!==SYNC_SERVER_ID);
+}
 function probe(url){
   /* 応答が返らないURLでボタンが永久に無効化されないよう、必ず打ち切る
      （fetch は放っておいても止まらない。体重管理 fetchTO と同じ考え方） */
@@ -602,6 +624,7 @@ function facText(t) {
 function buildCard(sys, onSaved){
   var cur=readCur(sys);
   var cd=el('div','cd');
+  cd.id='card-'+sys.id;                    /* 初回の案内から「この欄へ」で飛ぶ先 */
 
   var h=el('h2'); h.appendChild(document.createTextNode(sys.title));
   var badge=el('span','badge'); h.appendChild(badge);
@@ -736,10 +759,7 @@ function buildCard(sys, onSaved){
          別の名乗りは【別アプリのGAS】と断定できる（統合同期GASは合言葉なしだと 'unauthorized' を返す）。
          断定できない時は「つながった」までにとどめ、同期先かどうかは保存の時に合言葉で確かめると添える。 */
       if(sys.verifySync && out.ok){
-        var j=out.json||{};
-        var foreign = j.error==='認証エラー' || j.error==='不明なaction' ||
-                      (j.ok===true && j.server!==SYNC_SERVER_ID);
-        if(foreign){ setRes(res,'ng',syncTargetMessage('wrong')+'。'); return; }
+        if(syncForeign(out.json)){ setRes(res,'ng',syncTargetMessage('wrong')+'。'); return; }
         setRes(res,'ok','つながりました（同期先かどうかは［保存］の時に合言葉で確かめます）。');
         return;
       }
@@ -762,6 +782,98 @@ function buildCard(sys, onSaved){
   return { node:cd, save:save, refresh:refresh, tokenInput:tokIn, title:sys.title };
 }
 
+/* ═══════════ 初回の案内（2026-10-09・監査10月版 #13・本人決定 1a）═══════════
+   施設情報 → 統合同期（週間計画・ワースケ・シフト）→ 入居者マスタ → 専用GAS の順に、設定の有無と「確かめる」の結果を ✓／✕ で出す。
+   ★確かめ方は各欄の［接続を確認］と同じ probe（合言葉は送らない）。合言葉の正しさは各アプリで確かめる。
+   ★接続先が1つも無い端末でだけ自動で開く。閉じた印（cs_wiz_hidden）は UI 状態だけ。接続先・合言葉は保存しない。 */
+var WIZ_HIDDEN_KEY = 'cs_wiz_hidden';
+var WIZ_STEPS = [
+  { id:'fac', title:'施設情報', note:'施設の名前と事業所（facility-profile.json）。この画面の説明文にも使います' },
+  { id:'ws', title:'統合同期（週間計画・ワースケ・シフト）', sys:['ws'] },
+  { id:'master', title:'入居者マスタ・フェイスシート', sys:['master'] },
+  { id:'own', title:'専用GAS（その他のアプリ）', sys:['adm','tp','haiben','weight','msk','geno','analyzer','report'],
+    note:'使っているアプリの分だけで足ります。使わないアプリは空欄のままで構いません' }
+];
+var wizRes = {};   // 確かめた結果 {段のid: {ok, msg}}（この画面を開いている間だけ）
+var wizGen = 0;    // 表示を取り直した回数。確かめている間に保存・書き戻しがあれば、古い結果は捨てる
+function sysById(id){ for(var i=0;i<SYSTEMS.length;i++) if(SYSTEMS[i].id===id) return SYSTEMS[i]; return null; }
+function anyConfigured(){ for(var i=0;i<SYSTEMS.length;i++) if(readCur(SYSTEMS[i]).url) return true; return false; }
+function wizState(step){
+  if(step.id==='fac'){
+    var ok = !!(window.SUFacility && SUFacility.ready && SUFacility.ready());
+    var fac = ok && SUFacility.get ? (SUFacility.get()||{}) : {};
+    return ok && fac.facilityName ? { ok:true, msg:'読めました：'+fac.facilityName }
+                                  : { ok:false, msg:'施設情報を読めていません。ネットにつないで開き直してください（直らない時は管理者へ）' };
+  }
+  var set=[], unset=[];
+  step.sys.forEach(function(id){ var s=sysById(id); if(!s) return; (readCur(s).url ? set : unset).push(s.title); });
+  if(wizRes[step.id]) return wizRes[step.id];
+  if(!set.length) return { ok:false, msg:'まだ入っていません。「この欄へ」から接続先のURLと合言葉を入れて保存してください' };
+  return { ok:null, msg:'入っています：'+set.join('・')+'。「確かめる」でつながるかを見られます' };
+}
+function wizCheck(step, btn){
+  var urls=[];
+  step.sys.forEach(function(id){ var s=sysById(id); if(s){ var u=readCur(s).url; if(u) urls.push({ t:s.title, u:u, verify:!!s.verifySync }); } });
+  var gen=wizGen;
+  if(!urls.length){ wizRes[step.id]={ ok:false, msg:'まだ入っていないので、確かめられません' }; wizRender(); return; }
+  btn.disabled=true; btn.textContent='確かめています…';
+  Promise.all(urls.map(function(x){ return probe(x.u).then(function(r){
+    /* 統合同期の欄はカードと同じ判定（別アプリのGASなら ✕） */
+    if(x.verify && r.ok) r = syncForeign(r.json) ? { ok:false, msg:syncTargetMessage('wrong')+'。' }
+                                                 : { ok:true, msg:'つながりました（同期先かどうかは［保存］の時に合言葉で確かめます）。' };
+    return { t:x.t, r:r };
+  }); })).then(function(rs){
+    if(gen!==wizGen) return;   // 確かめている間に設定が変わった＝古い結果は出さない
+    var ng=rs.filter(function(x){ return !x.r.ok; });
+    wizRes[step.id] = ng.length
+      ? { ok:false, msg:ng.map(function(x){ return x.t+'：'+x.r.msg; }).join(' ／ ') }
+      : { ok:true, msg:'つながりました（'+rs.map(function(x){ return x.t; }).join('・')+'）。合言葉が正しいかは各アプリで確かめてください' };
+    wizRender();
+  });
+}
+function wizRender(){
+  var box=$('wiz');
+  if(!box || box.hidden) return;
+  box.replaceChildren();
+  box.appendChild(el('h2',null,'初回の案内（上から順に）'));
+  box.appendChild(el('p','apps','新しい端末では、上から順に入れて「確かめる」を押してください。✓ が並べば準備はできています。'));
+  var ol=el('ol');
+  WIZ_STEPS.forEach(function(step, i){
+    var st=wizState(step);
+    var li=el('li', st.ok===true ? 'ok' : (st.ok===false ? 'ng' : ''));
+    var head=el('div');
+    head.appendChild(el('span','st', st.ok===true ? '✓' : (st.ok===false ? '✕' : '・')));
+    head.appendChild(el('span','stp', (i+1)+'. '+step.title));
+    li.appendChild(head);
+    if(step.note) li.appendChild(el('p','msg',step.note));
+    var m=el('p','msg',st.msg); m.setAttribute('role','status'); li.appendChild(m);
+    if(step.sys){
+      var acts=el('div','acts');
+      var bGo=el('button','btn sm','この欄へ'); bGo.type='button';
+      bGo.addEventListener('click', function(){ var c=$('card-'+step.sys[0]); if(c){ c.scrollIntoView({ block:'start' }); var f=c.querySelector('input'); if(f) f.focus({ preventScroll:true }); } });
+      var bChk=el('button','btn sm','確かめる'); bChk.type='button';
+      bChk.addEventListener('click', function(){ wizCheck(step, bChk); });
+      acts.appendChild(bGo); acts.appendChild(bChk); li.appendChild(acts);
+    }
+    ol.appendChild(li);
+  });
+  box.appendChild(ol);
+  var close=el('div','acts');
+  var bClose=el('button','btn sm','案内を閉じる'); bClose.type='button';
+  bClose.addEventListener('click', function(){ box.hidden=true; try{ localStorage.setItem(WIZ_HIDDEN_KEY,'1'); }catch(e){} $('wizOpen').parentNode.hidden=false; });
+  close.appendChild(bClose); box.appendChild(close);
+}
+function wizRefresh(){ wizGen++; wizRes={}; wizRender(); }
+function wizInit(){
+  var hidden=false; try{ hidden = localStorage.getItem(WIZ_HIDDEN_KEY)==='1'; }catch(e){}
+  var open = !anyConfigured() && !hidden;
+  $('wiz').hidden = !open;
+  $('wizOpen').parentNode.hidden = open;
+  $('wizOpen').addEventListener('click', function(){ $('wiz').hidden=false; $('wizOpen').parentNode.hidden=true; try{ localStorage.removeItem(WIZ_HIDDEN_KEY); }catch(e){} wizRender(); $('wiz').scrollIntoView({ block:'start' }); });
+  wizRender();
+  if(window.SUFacility && SUFacility.onReady) SUFacility.onReady(function(){ try{ wizRender(); }catch(e){} });
+}
+
 /* ═══════════ 初期化 ═══════════ */
 function init(){
   if(getDeviceRole()==='field'){
@@ -771,9 +883,10 @@ function init(){
 
   var cards=[], box=$('cards');
   for(var i=0;i<SYSTEMS.length;i++){
-    var c=buildCard(SYSTEMS[i], function(){ remember(); });
+    var c=buildCard(SYSTEMS[i], function(){ remember(); wizRefresh(); });
     cards.push(c); box.appendChild(c.node);
   }
+  wizInit();
 
   $('saveAll').addEventListener('click', function(){
     var n=0, ng=0, waits=[];
@@ -788,6 +901,7 @@ function init(){
                      : ng+'件が保存できませんでした（各欄をご確認ください）');
       else if(n) toast(n+'件を保存しました');
       else toast('入力がないため、何も変更していません');
+      wizRefresh();                        /* 一括保存・控えからの復元のあとも案内を取り直す */
     }
     if(!waits.length){ report(); return; }
     Promise.all(waits).then(function(rs){
@@ -817,6 +931,7 @@ function init(){
     var w=$('revertWarn');
     w.classList.add('on');
     for(var i=0;i<cards.length;i++) cards[i].refresh();
+    wizRefresh();                          /* 書き戻された設定で案内も取り直す */
   });
 
   var shown=false;
