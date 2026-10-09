@@ -513,6 +513,9 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%}
 .kpi .u{font-size:var(--fs-sm);color:var(--c-ink2);margin-left:var(--sp-1)}
 .kpi .sub2{font-size:var(--fs-2xs);color:var(--c-ink2)}
 .comp{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--sp-3)}
+/* ★hidden 属性は .row/.cards/.comp の display 指定に負けて隠れない。集計の年の切り替えと開始日・終了日が
+     いつも両方出て、読み込み前も空の集計枠が出ていた（2026-10-09 実測）。 */
+.row[hidden],.cards[hidden],.comp[hidden]{display:none}
 .brow{display:grid;grid-template-columns:1fr auto;gap:var(--sp-1);margin-bottom:var(--sp-2)}
 .brow .bl{font-size:var(--fs-2xs);color:var(--c-ink2)}
 .brow .bv{font-size:var(--fs-2xs);color:var(--c-ink);font-variant-numeric:tabular-nums}
