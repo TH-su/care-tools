@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>使い方・困った時</title>
+<!--
+  使い方・困った時（2026-10-09 新設・監査10月版 #15・本人決定 3a）
+  ════════════════════════════════════════════════════════════════
+  メニューの「困った時」のタイルから開く。現場端末でも開ける。
+  ★問い合わせ先は「不具合を報告」の案内だけ（電話番号・個人の連絡先は書かない＝本人決定 3a）。
+  ★施設の名前は書かない（どの施設で使っても同じ文で済むように）。氏名・記録・合言葉は扱わない。
+-->
+<script src="su-errors.js?v=2026-10-08"></script>
+<style>
+:root {
+  --pri: #0b57d0; --pri-l: #ecf3fe;
+  --g0: #f8f9fa; --g2: #e8eaed; --g3: #dadce0; --g7: #5f6368; --g9: #202124;
+  --r: 12px; --sh: 0 1px 6px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--g0); color: var(--g9);
+  font: 17px/1.7 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; }
+.hdr { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--pri); color: #fff; }
+.hdr h1 { margin: 0; font-size: 1.125rem; }
+.back { color: #fff; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 8px; }
+.back:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+main { max-width: 720px; margin: 0 auto; padding: 16px; }
+.cd { background: #fff; border: 1px solid var(--g3); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; margin-bottom: 16px; }
+.cd h2 { margin: 0 0 8px; font-size: 1.0625rem; }
+.cd p, .cd li { margin: 0 0 8px; }
+.cd ol, .cd ul { margin: 0; padding-left: 1.4em; }
+.muted { color: var(--g7); font-size: 0.9375rem; }
+.key { display: inline-block; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
+  <h1>使い方・困った時</h1>
+</header>
+
+<main>
+  <section class="cd" aria-labelledby="h-trouble">
+    <h2 id="h-trouble">困った時は「不具合を報告」から</h2>
+    <p>ほとんどの画面の右下（下に帯がある画面はその上）に <span class="key">不具合を報告</span> のボタンがあります（このページにもあります）。</p>
+    <ol>
+      <li>困った画面のまま、<span class="key">不具合を報告</span> を押します。</li>
+      <li>「何をしようとして」「何が起きたか」を短く書きます。</li>
+      <li>送る前に、送る文の全部が画面に出ます。確かめてから送ってください。</li>
+    </ol>
+    <p>送り先が設定されていない端末では、<span class="key">この内容をコピー</span> だけが出ます。コピーした文を、ふだん使っている連絡の方法で管理者へ渡してください。</p>
+    <p class="muted">端末の種類や画面の状態は、ボタンが自動で添えます。報告は、直す担当が見る公開の場所に載ります。<strong>入居者・職員の氏名、居室番号、病名は書かないでください</strong>。</p>
+  </section>
+
+  <section class="cd" aria-labelledby="h-basic">
+    <h2 id="h-basic">使い方の基本</h2>
+    <ul>
+      <li>画面がおかしい時は、まず再読み込み（画面を下に引く・ブラウザの ↻）をしてください。入力して保存した内容は消えません。</li>
+      <li>再読み込みしても、さっき見ていた画面に戻ります。</li>
+      <li>記録を入れる画面の多くは、端末の中に先に保存して、つながった時にサーバーへ送ります。電波が弱い所でも入力を続けられます。</li>
+    </ul>
+  </section>
+
+  <section class="cd" aria-labelledby="h-device">
+    <h2 id="h-device">事務所PCと現場の端末</h2>
+    <ul>
+      <li>現場の端末では、事務所の仕事の画面（接続設定・職員の情報・入居前の相談など）はメニューに出ません。</li>
+      <li>現場の端末で「この端末は現場用です」と出た操作は、事務所PCで行ってください。</li>
+      <li>新しい端末を使い始める時や、つながらない時の設定は、管理者が事務所PCで行います。</li>
+    </ul>
+  </section>
+</main>
+
+<script src="su-report.js?v=2026-10-08" data-tool="使い方・困った時"></script>
+</body>
+</html>

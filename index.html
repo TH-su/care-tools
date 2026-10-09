@@ -150,153 +150,239 @@ main {
   <p class="sub">使うアプリを選んでください</p>
 </header>
 
-<main>
-  <!-- ══ 職員 ══ -->
-  <section class="sec" aria-labelledby="sec-staff">
-    <h2 id="sec-staff"><span class="mk" aria-hidden="true">👥</span>職員</h2>
-    <div class="grid">
-      <a class="tile" href="shift-app.html">
-        <span class="ic" aria-hidden="true">🗓️</span>
-        <span class="nm">シフト</span>
-        <span class="note">勤務表の作成・管理</span>
-      </a>
-      <a class="tile" href="work-schedule.html">
-        <span class="ic" aria-hidden="true">📋</span>
-        <span class="nm">ワークスケジュール</span>
-        <span class="note">1日の支援割り振り</span>
-      </a>
-      <a class="tile" href="shift-analyzer.html">
-        <span class="ic" aria-hidden="true">📊</span>
-        <span class="nm">過去シフト分析</span>
-        <span class="note">実働・常勤換算の集計</span>
-      </a>
-      <!-- 職員マスタ（2026-09-10 追加）。
-           data-office-only: 職員の連絡先・雇用条件・雇用保険番号を扱う事務所業務のため現場端末では出さない（アプリ側もブロック＝二重） -->
-      <a class="tile" data-office-only href="staff-master.html">
-        <span class="ic" aria-hidden="true">🪪</span>
-        <span class="nm">職員マスタ</span>
-        <span class="note">職員情報・一括編集・離職率</span>
-      </a>
-    </div>
-  </section>
+<main id="menu"></main>
 
-  <!-- ══ 入居者 ══ -->
-  <section class="sec" aria-labelledby="sec-resident">
-    <h2 id="sec-resident"><span class="mk" aria-hidden="true">🏠</span>入居者</h2>
-    <div class="grid">
-      <a class="tile ext" href="https://th-su.github.io/haiben-record/haiben-record.html">
-        <span class="ic" aria-hidden="true">🚻</span>
-        <span class="nm">排泄ケア記録</span>
-        <span class="note">別サイトで開きます</span>
-      </a>
-      <a class="tile" href="weight-record.html">
-        <span class="ic" aria-hidden="true">⚖️</span>
-        <span class="nm">体重管理</span>
-        <span class="note">体重の記録・推移</span>
-      </a>
-      <a class="tile" href="care-schedule.html">
-        <span class="ic" aria-hidden="true">📅</span>
-        <span class="nm">週間計画</span>
-        <span class="note">週間ケア計画の作成</span>
-      </a>
-      <a class="tile" href="daycare-roster.html">
-        <span class="ic" aria-hidden="true">☀️</span>
-        <span class="nm">デイ利用表</span>
-        <span class="note">通所の利用予定</span>
-      </a>
-      <a class="tile" href="visit-overview.html">
-        <span class="ic" aria-hidden="true">🗺️</span>
-        <span class="nm">週間計画俯瞰</span>
-        <span class="note">訪問の週間まとめ</span>
-      </a>
-      <a class="tile newrow" href="facesheet.html">
-        <span class="ic" aria-hidden="true">📄</span>
-        <span class="nm">フェイスシート</span>
-        <span class="note">基本情報シート</span>
-      </a>
-      <a class="tile" href="genogram.html">
-        <span class="ic" aria-hidden="true">🌳</span>
-        <span class="nm">ジェノグラム</span>
-        <span class="note">家族関係図の作成</span>
-      </a>
-      <a class="tile" href="resident-master.html">
-        <span class="ic" aria-hidden="true">🗂️</span>
-        <span class="nm">入居者マスタ</span>
-        <span class="note">入居者情報の管理</span>
-      </a>
-      <a class="tile" href="patch-calendar.html">
-        <span class="ic" aria-hidden="true">🩹</span>
-        <span class="nm">貼り薬カレンダー</span>
-        <span class="note">貼付部位のローテーション</span>
-      </a>
-      <!-- 区分の末尾に足す。途中へ挿すと上の指定ペア（週間計画とデイ利用表 等）の行割りが崩れる -->
-      <a class="tile" href="moushiokuri-viewer.html">
-        <span class="ic" aria-hidden="true">📝</span>
-        <span class="nm">申送ビューア</span>
-        <span class="note">申し送り・バイタル・食事量</span>
-      </a>
-      <!-- 入居者マスタの誕生日タブを直接ひらく（アプリを増やさず画面だけ指定する）。
-           申送ビューアの直後＝2列グリッドのその右隣に出る。
-           data-office-only: 生年月日を含むため現場端末では出さない（入居者マスタ側でブロックされる） -->
-      <a class="tile" data-office-only href="resident-master.html?view=bday">
-        <span class="ic" aria-hidden="true">🎂</span>
-        <span class="nm">誕生日一覧</span>
-        <span class="note">誕生日順・年齢順の表</span>
-      </a>
-      <!-- 区分の末尾に足す（途中へ挿すと上の指定ペアの行割りが崩れる）。
-           data-office-only: 入居前の相談者の連絡先・保険情報を扱う事務所業務のため現場端末では出さない
-           （アプリ側も su_device_role==='field' でブロックする＝二重） -->
-      <a class="tile" data-office-only href="admission-flow.html">
-        <span class="ic" aria-hidden="true">🚪</span>
-        <span class="nm">入居調整</span>
-        <span class="note">申込〜入居の連携管理</span>
-      </a>
-      <!-- 個別機能訓練計画書（通所）: 疾患名・治療経過を含む要配慮情報を扱う事務所業務のため現場端末では出さない
-           （アプリ側も su_device_role==='field' でブロックする＝二重） -->
-      <a class="tile" data-office-only href="training-plan.html">
-        <span class="ic" aria-hidden="true">🏃</span>
-        <span class="nm">個別機能訓練計画書</span>
-        <span class="note"><span data-fac-name="通所">通所介護</span>・3か月ごとの計画と印刷</span>
-      </a>
-      <!-- 消耗品管理（2026-09-17 追加）。区分の末尾に足す。
-           data-office-only を付けない: 職員も現場端末で入出庫（提供の記録）を入れるため
-           （価格・品目・棚卸・締め・集計は管理者の合言葉でしか開かない＝アプリ側で出し分ける）。
-           入居者の氏名はスプレッドシートに持たず、提供先は利用者Noだけを保存する -->
-      <a class="tile" href="supplies.html">
-        <span class="ic" aria-hidden="true">🧻</span>
-        <span class="nm">消耗品管理</span>
-        <span class="note">価格・在庫・提供の記録</span>
-      </a>
-    </div>
-  </section>
-
-  <!-- ══ 厨房 ══ -->
-  <section class="sec" aria-labelledby="sec-kitchen">
-    <h2 id="sec-kitchen"><span class="mk" aria-hidden="true">🍳</span>厨房</h2>
-    <div class="grid">
-      <a class="tile ext" href="https://th-su.github.io/kitchen-app/">
-        <span class="ic" aria-hidden="true">🍽️</span>
-        <span class="nm">厨房メニュー管理</span>
-        <span class="note">別サイトで開きます</span>
-      </a>
-    </div>
-  </section>
-
-  <!-- ══ 設定 ══
-       日常業務では使わないため、区分を分けて最後に置く（上の業務タイルの行割りに影響させない）。
-       data-office-only: 合言葉（トークン）を扱う画面なので現場端末では出さない
-       （接続設定ページ自身も現場端末ではブロックする＝二重）。 -->
-  <section class="sec" aria-labelledby="sec-setup" data-office-only>
-    <h2 id="sec-setup"><span class="mk" aria-hidden="true">⚙️</span>設定</h2>
-    <div class="grid">
-      <a class="tile" href="connection-settings.html">
-        <span class="ic" aria-hidden="true">🔌</span>
-        <span class="nm">接続設定</span>
-        <span class="note">新しい端末のセットアップ</span>
-      </a>
-    </div>
-  </section>
-</main>
+<!-- メニューの定義（JSON）。画面はここから組み立てる（2026-10-09・監査10月版 #15）。読めなかった時は、この下の script が案内を出す -->
+<script type="application/json" id="menuDef">
+{
+ "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明。{{通所}} 等は施設情報の事業所名）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）",
+ "sections": [
+  {
+   "id": "sec-staff",
+   "mk": "👥",
+   "title": "職員",
+   "tiles": [
+    {
+     "href": "shift-app.html",
+     "ic": "🗓️",
+     "nm": "シフト",
+     "note": "勤務表の作成・管理"
+    },
+    {
+     "href": "work-schedule.html",
+     "ic": "📋",
+     "nm": "ワークスケジュール",
+     "note": "1日の支援割り振り"
+    },
+    {
+     "href": "shift-analyzer.html",
+     "ic": "📊",
+     "nm": "過去シフト分析",
+     "note": "実働・常勤換算の集計"
+    },
+    {
+     "href": "staff-master.html",
+     "ic": "🪪",
+     "nm": "職員マスタ",
+     "note": "職員情報・一括編集・離職率",
+     "officeOnly": true,
+     "_why": "職員マスタ（2026-09-10 追加）。officeOnly: 職員の連絡先・雇用条件・雇用保険番号を扱う事務所業務のため現場端末では出さない（アプリ側もブロック＝二重）"
+    }
+   ]
+  },
+  {
+   "id": "sec-resident",
+   "mk": "🏠",
+   "title": "入居者",
+   "tiles": [
+    {
+     "href": "https://th-su.github.io/haiben-record/haiben-record.html",
+     "ic": "🚻",
+     "nm": "排泄ケア記録",
+     "note": "別サイトで開きます",
+     "ext": true
+    },
+    {
+     "href": "weight-record.html",
+     "ic": "⚖️",
+     "nm": "体重管理",
+     "note": "体重の記録・推移"
+    },
+    {
+     "href": "care-schedule.html",
+     "ic": "📅",
+     "nm": "週間計画",
+     "note": "週間ケア計画の作成"
+    },
+    {
+     "href": "daycare-roster.html",
+     "ic": "☀️",
+     "nm": "デイ利用表",
+     "note": "通所の利用予定"
+    },
+    {
+     "href": "visit-overview.html",
+     "ic": "🗺️",
+     "nm": "週間計画俯瞰",
+     "note": "訪問の週間まとめ"
+    },
+    {
+     "href": "facesheet.html",
+     "ic": "📄",
+     "nm": "フェイスシート",
+     "note": "基本情報シート",
+     "newrow": true
+    },
+    {
+     "href": "genogram.html",
+     "ic": "🌳",
+     "nm": "ジェノグラム",
+     "note": "家族関係図の作成"
+    },
+    {
+     "href": "resident-master.html",
+     "ic": "🗂️",
+     "nm": "入居者マスタ",
+     "note": "入居者情報の管理"
+    },
+    {
+     "href": "patch-calendar.html",
+     "ic": "🩹",
+     "nm": "貼り薬カレンダー",
+     "note": "貼付部位のローテーション"
+    },
+    {
+     "href": "moushiokuri-viewer.html",
+     "ic": "📝",
+     "nm": "申送ビューア",
+     "note": "申し送り・バイタル・食事量",
+     "_why": "区分の末尾に足す。途中へ挿すと上の指定ペア（週間計画とデイ利用表 等）の行割りが崩れる"
+    },
+    {
+     "href": "resident-master.html?view=bday",
+     "ic": "🎂",
+     "nm": "誕生日一覧",
+     "note": "誕生日順・年齢順の表",
+     "officeOnly": true,
+     "_why": "入居者マスタの誕生日タブを直接ひらく（アプリを増やさず画面だけ指定する）。申送ビューアの直後＝2列グリッドのその右隣に出る。officeOnly: 生年月日を含むため現場端末では出さない（入居者マスタ側でブロックされる）"
+    },
+    {
+     "href": "admission-flow.html",
+     "ic": "🚪",
+     "nm": "入居調整",
+     "note": "申込〜入居の連携管理",
+     "officeOnly": true,
+     "_why": "区分の末尾に足す（途中へ挿すと上の指定ペアの行割りが崩れる）。officeOnly: 入居前の相談者の連絡先・保険情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
+    },
+    {
+     "href": "training-plan.html",
+     "ic": "🏃",
+     "nm": "個別機能訓練計画書",
+     "note": "{{通所}}・3か月ごとの計画と印刷",
+     "officeOnly": true,
+     "_why": "個別機能訓練計画書（通所）: 疾患名・治療経過を含む要配慮情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
+    },
+    {
+     "href": "supplies.html",
+     "ic": "🧻",
+     "nm": "消耗品管理",
+     "note": "価格・在庫・提供の記録",
+     "_why": "消耗品管理（2026-09-17 追加）。区分の末尾に足す。officeOnly を付けない: 職員も現場端末で入出庫（提供の記録）を入れるため（価格・品目・棚卸・締め・集計は管理者の合言葉でしか開かない＝アプリ側で出し分ける）。入居者の氏名はスプレッドシートに持たず、提供先は利用者Noだけを保存する"
+    }
+   ]
+  },
+  {
+   "id": "sec-kitchen",
+   "mk": "🍳",
+   "title": "厨房",
+   "tiles": [
+    {
+     "href": "https://th-su.github.io/kitchen-app/",
+     "ic": "🍽️",
+     "nm": "厨房メニュー管理",
+     "note": "別サイトで開きます",
+     "ext": true
+    }
+   ]
+  },
+  {
+   "id": "sec-setup",
+   "mk": "⚙️",
+   "title": "設定",
+   "tiles": [
+    {
+     "href": "connection-settings.html",
+     "ic": "🔌",
+     "nm": "接続設定",
+     "note": "新しい端末のセットアップ"
+    }
+   ],
+   "officeOnly": true,
+   "_why": "日常業務では使わないため、区分を分けて最後に置く（上の業務タイルの行割りに影響させない）。officeOnly: 合言葉（トークン）を扱う画面なので現場端末では出さない（接続設定ページ自身も現場端末ではブロックする＝二重）"
+  },
+  {
+   "id": "sec-help",
+   "mk": "💬",
+   "title": "困った時",
+   "_why": "2026-10-09（監査10月版 #15・本人決定 3a）。現場端末でも出す。問い合わせ先は「不具合を報告」の案内だけ（電話番号などは書かない）",
+   "tiles": [
+    {
+     "href": "help.html",
+     "ic": "❓",
+     "nm": "使い方・困った時",
+     "note": "不具合の報告のしかた"
+    }
+   ]
+  }
+ ]
+}
+</script>
+<script>
+/* 定義からタイルを組み立てる（2026-10-09・監査10月版 #15）。組み立てる部品は以前の手書きの HTML と同じ形
+   （section.sec ＞ h2 ＞ span.mk ／ div.grid ＞ a.tile ＞ span.ic・span.nm・span.note）。CSS・行割り・現場端末の出し分けは変えない。
+   ★このページに fetch・トークン・氏名・記録を持ち込まない（定義もページの中に置く）。
+   ★文字はすべて textContent で入れる（定義に HTML を書いても実行されない）。 */
+(function () {
+  var main = document.getElementById('menu');
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function note(t) {
+    var span = el('span', 'note');
+    var m = String(t || '').match(/^\{\{(施設|訪問|通所)\}\}(.*)$/);
+    if (m) {
+      var fac = el('span', null, { '施設': '施設', '訪問': '訪問介護', '通所': '通所介護' }[m[1]]);
+      fac.setAttribute('data-fac-name', m[1]);
+      span.appendChild(fac);
+      span.appendChild(document.createTextNode(m[2]));
+    } else span.textContent = String(t || '');
+    return span;
+  }
+  try {
+    var def = JSON.parse(document.getElementById('menuDef').textContent);
+    (def.sections || []).forEach(function (s) {
+      var sec = el('section', 'sec');
+      sec.setAttribute('aria-labelledby', s.id);
+      if (s.officeOnly) sec.setAttribute('data-office-only', '');
+      var h2 = el('h2'); h2.id = s.id;
+      var mk = el('span', 'mk', s.mk); mk.setAttribute('aria-hidden', 'true');
+      h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
+      var grid = el('div', 'grid');
+      (s.tiles || []).forEach(function (t) {
+        var a = el('a', 'tile' + (t.ext ? ' ext' : '') + (t.newrow ? ' newrow' : ''));
+        if (t.officeOnly) a.setAttribute('data-office-only', '');
+        a.setAttribute('href', t.href);
+        var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
+        a.appendChild(ic); a.appendChild(el('span', 'nm', t.nm)); a.appendChild(note(t.note));
+        grid.appendChild(a);
+      });
+      sec.appendChild(h2); sec.appendChild(grid);
+      main.appendChild(sec);
+    });
+  } catch (e) {
+    main.textContent = 'メニューを組み立てられませんでした。再読み込みしてください。直らない時は右下の「不具合を報告」から知らせてください。';
+    try { if (window.SUErrors) SUErrors.report('メニュー', e, 'index.html'); } catch (e2) {}
+  }
+})();
+</script>
 
 <!-- 動作の速さの記録（統合 Phase 0）: 氏名・記録を持たないので現場端末でも出す（共用タブレットの遅さこそ測りたい） -->
 <footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。<br>

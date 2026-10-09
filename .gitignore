@@ -107,6 +107,7 @@
 # 残すのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけで、氏名・記録・合言葉は一切含まない
 !/su-perf.js
 !/perf-report.html
+!/help.html
 !/perf-report.js
 !/perf-report.css
 !/training-plan.html
