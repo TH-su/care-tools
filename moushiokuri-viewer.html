@@ -58,6 +58,9 @@ select, input[type=text], input[type=password], input[type=date] {
   border-radius:8px; background:#fff; color:var(--g9); min-height:44px; }
 button.btn { font:inherit; font-size: 0.875rem; padding:11px 14px; border:1px solid var(--g3);
              border-radius:8px; background:#fff; color:var(--g9); cursor:pointer; min-height:44px; }
+/* ★hidden 属性は UA の display:none に頼るため、上の .bar { display:flex } に負けて隠れない。
+     入居者別・バイタル・検索の「まとめてコピー／印刷」の帯が、読み込む前・選ぶ前から出ていた（2026-10-09 実測）。 */
+.bar[hidden] { display:none; }
 button.btn.pri { background:var(--pri); border-color:var(--pri); color:#fff; font-weight:600; }
 button.btn:disabled { opacity:.5; cursor:default; }
 button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--pri); outline-offset:1px; }
