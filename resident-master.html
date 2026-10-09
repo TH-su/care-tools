@@ -5240,6 +5240,8 @@ function mdSave(){
    ★同じ方・同じ日に既に反映した記録があれば、⛔ で示し「別の変更だと確かめた」印を付けた時だけ反映できる
      （申送の要約が作り直されると本文が変わり、候補の印も変わるため・2回目の指摘A）。
    ★「医師・薬局に確認してから」は「保留」として残し、一覧に出し続ける（2回目の指摘B）。 */
+/* ==== 薬の変更候補の判定ここから（MC-JUDGE-BEGIN）。朝回診の定期タスクが、この印から下の印までをそのまま取り出して動かす。
+   ★この間には var と function だけを置く。間を変える PR は本文に「朝回診の指示書の更新が必要」と書く（CLAUDE.md §5） ==== */
 var MC_DAYS=14, MC_CAT='服薬関連', MC_KIND='申送';
 var MC_MEDRE=/薬|錠|処方|服薬|内服|服用|中止|開始|増量|減量|変更|mg|ｍｇ|カプセル|散|顆粒|頓服|貼付|点眼|吸入|インスリン|注射/;
 var mcGen=0, mcWorkGen=0, mcSt=null;      /* mcSt: {cands, decided:{srcKey:row}, server, msk, unmatched, lag, raw:{日付|名前:[原文]}, by} */
@@ -5406,6 +5408,7 @@ function mcBuild_(d){
   mcSt.unmatched=un; mcSt.others=low; mcSt.raw=keep;
   return out;
 }
+/* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 /* 開ける候補すべて（変更らしい候補＋畳んだ候補） */
 function mcAll_(){ return mcSt?mcSt.cands.concat(mcSt.others||[]):[]; }
 function mcCountFor_(id){
