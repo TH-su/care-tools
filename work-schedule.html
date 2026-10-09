@@ -8815,7 +8815,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (dupToastTimer_) return;
     dupToastTimer_ = setTimeout(function () {
       var n = dupToastN_; dupToastN_ = 0; dupToastTimer_ = null;
-      try { toast('重複していた支援 ' + n + '件を消して1件にまとめました（担当・内容・チェック・実施済みは残した方へ引き継ぎ済み）'); } catch (e) {}
+      /* 件数は「消した余分の数」（2026-10-09 本人指示で文言を修正: 旧文言は支援がその件数ぶん消えたように読めた） */
+      try { toast('同じ支援が二重になっていた分を整理しました（余分な ' + n + '件を削除。担当・内容・チェック・実施済みは残した方へ引き継ぎ済み）'); } catch (e) {}
     }, 1600);
   }
   /* 全消失ガード（M.rebaseDay）が働いた時の告知。支援が丸ごと消える統合結果を差し戻した＝
