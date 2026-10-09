@@ -858,8 +858,23 @@ function flushPendingBeacon_() {
     /* 送ってよいかの判定（未送信あり・実データあり）はここ＝アプリ側に残す。
        Phase 0: 送信そのものは共通データ層へ。送る本文の形は従来と同一。 */
     if (!pendingFlags.size || !DB || !Array.isArray(DB.residents) || !DB.residents.length) return;
+    /* 統合 0005: 保存先を Supabase に切り替えた後は、閉じる直前に Google へ送らない（2026-10-10・週間計画の
+       csFlushOnExit_ と同じ）。Google は写し返しの受け皿なので、ここで送ると本来の保存先に届かないうえ、
+       版が合えば最新の写しを古い版で上書きしうる。未確定の変更はメモリにしか無いので、離れる前の確認
+       （dcrConfirmLeave_）で止める。 */
+    if (window.SUKv && window.SUKv.routed(LS_KEY)) return;
     SU.data.kvPutBeacon(LS_KEY, DB, careRev);
   } catch (e) {}
+}
+/* 未確定の変更（pendingFlags）が残っている間に離れようとしたら、ブラウザ標準の「このサイトを離れますか」を出す
+   （2026-10-10）。未確定の変更はメモリにしか無く、閉じると次に開いた時に送り直されない。保存が返れば
+   pendingFlags は空になり、確認は出ない。★iPhone の Safari は beforeunload を出さないことがあるので、
+   これは保険であって保証ではない。 */
+function dcrConfirmLeave_(e) {
+  if (!pendingFlags.size) return;
+  e.preventDefault();
+  e.returnValue = '';
+  return '';
 }
 /* ── 現場の端末では見るだけ（2026-10-07 本人裁定）──
    端末の用途は接続設定が決める同一オリジンのキー su_device_role（体重管理・週間計画と同じ。未設定は事務所PC扱い）。
@@ -2814,6 +2829,7 @@ function init() {
   });
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
   window.addEventListener('pagehide', flushPendingBeacon_);
+  window.addEventListener('beforeunload', dcrConfirmLeave_);   // 未確定の変更が残っている時だけ確認を出す
   // アプリ間ジャンプ（既存 shift-app.html と同じく相対パス・別タブ）。
   // 本ツールは読み取り専用のため、遷移前に保存すべき状態は無い。
   $('btnMaster').addEventListener('click', () => window.open('resident-master.html', '_blank'));
