@@ -281,6 +281,10 @@ textarea#fpCur{background:var(--c-surface);resize:none;width:100%}
 /* 1つのセルに3欄が入っている所（病名・発症日・直近の入院日）は、窓の中で欄ごとに縦に並べる */
 .fp-multi{margin-top:var(--sp-3);flex:1;min-height:0;overflow:auto;
   display:flex;flex-direction:column;gap:var(--sp-3)}
+/* ★hidden 属性は .stack/.fp-cols/.fp-multi の display 指定や、要素に直接書いた display:flex に負けて隠れない。
+     「前の期の報告へ移す」が移せない時も出て、欄を直す窓では2列と欄ごとの入力が同時に出ていた（2026-10-09 実測）。
+     直接書いた style に勝つため !important を付ける。 */
+.stack[hidden],.fp-cols[hidden],.fp-multi[hidden],#sRephraseWrap[hidden]{display:none!important}
 .fp-mrow{border:1px solid var(--c-border);border-radius:var(--r-md);
   padding:var(--sp-3);background:var(--c-surface)}
 .fp-mrow h3{margin:0 0 var(--sp-1);font-size:var(--fs-xs);color:var(--c-ink2)}
