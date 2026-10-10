@@ -46,6 +46,8 @@ jobs:
       - name: 実名ガード（秘密の設定 SU_NAME_GUARD_LIST がある時だけ）
         env:
           NAMES: ${{ secrets.SU_NAME_GUARD_LIST }}
+          # 見つけた語そのものをログに出さない（公開リポジトリの Actions のログは誰でも読める・pixel-check.yml と同じ・2026-10-10）
+          SU_NAME_GUARD_QUIET: '1'
           BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: |
           if [ -z "$NAMES" ]; then
