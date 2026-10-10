@@ -3209,7 +3209,12 @@ var cfgTestGen_=0;
 function masterTargetVerdict(j){
   if(!j || typeof j!=='object') return 'offline';
   if(j.ok===true && j.rev!=null && j.rev!=='' && isFinite(Number(j.rev))) return 'ok';
-  return 'wrong';
+  /* 別アプリと断定するのは、他のGASの決まった断り文句（合言葉なしへの拒否・知らない action）と、版数を持たない ok だけ。
+     入居者マスタ自身が一時的な不調でエラーを返すこともある（転送の揺れ・内部の例外）ので、それ以外は「確かめられない」に倒す
+     （正しい入居者マスタの保存を、誤った理由で止めない） */
+  if(j.ok===true) return 'wrong';
+  if(/unauthorized|認証エラー|不明なaction|unknown action/i.test(String(j.error||''))) return 'wrong';
+  return 'offline';
 }
 var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
 function verifyMasterUrl(url){
@@ -3237,14 +3242,22 @@ function saveSync(){
   var _nu=($('cfgUrl').value||'').trim();
   if(!saveSync._checked && _nu && _nu!==String(readSavedCfg_().url||'').trim()){
     /* 確かめている間はボタンを押せなくし、ボタンの文字で知らせる（通知を増やさない＝現場用への切り替えで読み込み直す前に余計な表示を出さない） */
+    /* 確かめている間は入力欄も触れなくする（確かめた URL と、あとで書く URL を食い違わせない） */
     var _sb=$('syncSave'), _st=_sb?_sb.textContent:'';
+    var _ins=['cfgUrl','cfgToken','cfgDeviceRole'].map(function(id){ return $(id); }).filter(Boolean);
+    var _wasOpen=!!($('mSync') && $('mSync').classList.contains('on'));
     if(_sb){ _sb.disabled=true; _sb.textContent='確かめています…'; }
+    _ins.forEach(function(e){ e.disabled=true; });
     verifyMasterUrl(_nu).then(function(v){
       if(_sb){ _sb.disabled=false; _sb.textContent=_st; }
+      _ins.forEach(function(e){ e.disabled=false; });
+      /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
+      if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
       if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
-      if(v==='offline') toast('通信できず、入居者マスタのGASかは確かめられませんでした（設定は保存します）');
       saveSync._checked=true;
       try{ saveSync(); }finally{ saveSync._checked=false; }
+      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
+      if(v==='offline') toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした');
     });
     return;
   }

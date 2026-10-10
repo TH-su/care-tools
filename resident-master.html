@@ -11044,7 +11044,12 @@ function devReload_(){ try{ location.reload(); }catch(e){} }
 function masterTargetVerdict(j){
   if(!j || typeof j!=='object') return 'offline';
   if(j.ok===true && j.rev!=null && j.rev!=='' && isFinite(Number(j.rev))) return 'ok';
-  return 'wrong';
+  /* 別アプリと断定するのは、他のGASの決まった断り文句（合言葉なしへの拒否・知らない action）と、版数を持たない ok だけ。
+     入居者マスタ自身が一時的な不調でエラーを返すこともある（転送の揺れ・内部の例外）ので、それ以外は「確かめられない」に倒す
+     （正しい入居者マスタの保存を、誤った理由で止めない） */
+  if(j.ok===true) return 'wrong';
+  if(/unauthorized|認証エラー|不明なaction|unknown action/i.test(String(j.error||''))) return 'wrong';
+  return 'offline';
 }
 var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
 function verifyMasterUrl(url){
@@ -11073,14 +11078,22 @@ function saveSyncCfg(){
   try{ var _sc=JSON.parse(localStorage.getItem(CFG_KEY)||'{}'); _cu=String((_sc&&_sc.url)||'').trim(); }catch(e){ _cu=''; }
   if(!saveSyncCfg._checked && _nu && _nu!==_cu){
     /* 確かめている間はボタンを押せなくし、ボタンの文字で知らせる（通知を増やさない＝現場用への切り替えで読み込み直す前に余計な表示を出さない） */
+    /* 確かめている間は入力欄も触れなくする（確かめた URL と、あとで書く URL を食い違わせない） */
     var _sb=$('syncSave'), _st=_sb?_sb.textContent:'';
+    var _ins=['cfgUrl','cfgToken','cfgDeviceRole'].map(function(id){ return $(id); }).filter(Boolean);
+    var _wasOpen=!!($('mSync') && $('mSync').classList.contains('on'));
     if(_sb){ _sb.disabled=true; _sb.textContent='確かめています…'; }
+    _ins.forEach(function(e){ e.disabled=true; });
     verifyMasterUrl(_nu).then(function(v){
       if(_sb){ _sb.disabled=false; _sb.textContent=_st; }
+      _ins.forEach(function(e){ e.disabled=false; });
+      /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
+      if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
       if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
-      if(v==='offline') toast('通信できず、入居者マスタのGASかは確かめられませんでした（設定は保存します）');
       saveSyncCfg._checked=true;
       try{ saveSyncCfg(); }finally{ saveSyncCfg._checked=false; }
+      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
+      if(v==='offline') toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした');
     });
     return;
   }
@@ -11123,7 +11136,9 @@ function testSync(){
   var saved={url:CFG.url,token:CFG.token};CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
   var _tu=CFG.url;
   apiGet({action:'ping'},8000).then(function(){
-    /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10） */
+    /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10）。
+       確かめは合言葉も CFG も使わないので、試しの接続先はここで戻す（メモリに残る時間を延ばさない） */
+    CFG.url=saved.url;CFG.token=saved.token;
     return verifyMasterUrl(_tu).then(function(v){
       if(v==='wrong') alert('⚠️ '+MASTER_WRONG_MSG+'。');
       else toast(v==='ok'?'✅ 接続OK（入居者マスタのGASと確認）':'✅ 接続OK');
