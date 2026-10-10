@@ -80,6 +80,9 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 .cloudstat{font-size:12px;color:var(--mut)}
 .cloudstat.ok{color:#2f855a}
 .cloudstat.err{color:var(--err)}
+/* 保存した月が無い間だけ出す導入手順（2026-10-10） */
+.guide{margin:0;padding-left:1.4em;line-height:1.7}
+.guide li+li{margin-top:6px}
 .rostersec{margin:8px 0 4px}
 .rostersec summary{cursor:pointer;font-size:13px;color:var(--accent);padding:2px 0}
 #rosterPaste{min-height:90px;margin-top:8px}
@@ -99,7 +102,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 }
 </style>
 <script src="su-errors.js?v=2026-10-04"></script>
-<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script src="su-facility.js?v=2026-09-24"></script>
 </head>
@@ -110,20 +113,31 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 </header>
 
 <main class="wrap">
+  <!-- ★保存した月が無い間だけ出す導入手順（2026-10-10・監査10月版 第2版 シフト分析 第2手）。
+       出し入れは renderMonths（月を保存・取得・削除した時と起動時）。表示だけで、保存・通信には触れない。 -->
+  <section class="card accent noprint" id="saGuide" aria-labelledby="saGuideH" hidden>
+    <h2 id="saGuideH">はじめて使う時（3ステップ）</h2>
+    <ol class="guide">
+      <li><b>勤務表を貼り付けて「集計」</b><br>スプシ／Excel の勤務表を、氏名の列から介護福祉士の列まで、日付の見出しの行ごとコピーして下の欄に貼り付けます。</li>
+      <li><b>結果を確かめる</b><br>資格が「不明」の職員がいたら、下の「資格マスタ」の「この勤務表から取り込む」で登録します（一度だけ）。</li>
+      <li><b>「この月を保存」</b><br>月ラベル（例 2026-04）を入れて保存すると、あとから見返せて、前3月・前年度の平均も出せます。ほかの端末と共有する時は「クラウド同期」を使います。</li>
+    </ol>
+  </section>
+
   <section class="card noprint">
     <h2>1. 勤務表を貼り付け</h2>
     <p class="note">スプシ／Excelで <b>氏名列〜介護福祉士列</b> を、<b>日付ヘッダ行（7/1 7/2 …）を含めて</b>範囲選択 → コピー → 下に貼り付け。区分（訪問／施設／通所）・資格列・「頭数に入れない」備考は自動判定します。</p>
-    <textarea id="pasteArea" placeholder="ここにコピーした勤務表を貼り付け（タブ区切り）"></textarea>
+    <textarea id="pasteArea" aria-label="勤務表の貼り付け欄" placeholder="ここにコピーした勤務表を貼り付け（タブ区切り）"></textarea>
     <div class="controls">
       <button id="runBtn" class="primary">集計</button>
       <button id="clearBtn">クリア</button>
-      <button id="printBtn">🖨 印刷／PDF</button>
+      <button id="printBtn" aria-label="印刷・PDF">🖨 印刷／PDF</button>
       <label class="opt">常勤換算の分母 <input id="fteBase" type="number" value="160" min="1" step="1"> h/月</label>
       <label class="opt"><input id="paidWork" type="checkbox" checked> 有給を実働に算入</label>
     </div>
   </section>
 
-  <div id="results"></div>
+  <div id="results" aria-live="polite"></div>
 
   <section class="card noprint">
     <h2>2. 保存して見返す・期間平均（前3月・前年度）</h2>
@@ -131,8 +145,8 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       <label class="opt">月ラベル <input id="monthLabel" type="text" placeholder="2026-04" size="10"></label>
       <button id="saveMonthBtn" class="primary">この月を保存</button>
       <span class="spacer"></span>
-      <button id="exportBtn">⬇ 書き出し(.json)</button>
-      <button id="importBtn">⬆ 読み込み</button>
+      <button id="exportBtn" aria-label="書き出し（JSON ファイル）">⬇ 書き出し(.json)</button>
+      <button id="importBtn" aria-label="読み込み（JSON ファイル）">⬆ 読み込み</button>
       <input id="importInput" type="file" accept=".json,application/json" hidden>
     </div>
     <p class="note">「保存」＝この月を貼付原本ごとローカルに保存し、下の一覧の「表示」でいつでも見返せます。「書き出し」＝全保存月を1ファイルにしてバックアップ・別PCへ移行・共有（ローカルファイルのみ・外部へ送信しません）。個人情報を含むため保存先の端末・ファイルの取り扱いにご注意ください。</p>
@@ -148,13 +162,13 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     </div>
     <div class="controls">
       <button id="cloudPingBtn">接続確認</button>
-      <button id="cloudPushBtn">☁ クラウドへ保存</button>
-      <button id="cloudPullBtn">⬇ クラウドから取得</button>
-      <span id="cloudStatus" class="cloudstat"></span>
+      <button id="cloudPushBtn" aria-label="クラウドへ保存">☁ クラウドへ保存</button>
+      <button id="cloudPullBtn" aria-label="クラウドから取得">⬇ クラウドから取得</button>
+      <span id="cloudStatus" class="cloudstat" role="status" aria-live="polite"></span>
     </div>
     <div class="controls">
       <label class="opt"><input id="cloudAuto" type="checkbox"> <b>自動同期</b>（「この月を保存」時に自動でクラウドへ保存＋約60秒ごとに取得/保存＝複数端末で常に最新を共有）</label>
-      <span id="cloudAutoStatus" class="cloudstat"></span>
+      <span id="cloudAutoStatus" class="cloudstat" role="status" aria-live="polite"></span>
     </div>
   </section>
 
@@ -170,10 +184,10 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     <details class="rostersec">
       <summary>職員名簿（スプシ）から資格を一括取り込み</summary>
       <p class="note">職員一覧スプシで <b>「氏名」列と「資格」列を含む範囲を、見出し行ごと</b>選択 → コピー → 下に貼り付け → 「取り込む」。うまくいかない時は<b>氏名と資格の2列だけ</b>コピーでも読めます。資格欄（例「准看護師・介護福祉士」）から 介護福祉士／実務者研修／初任者研修／看護師／准看護師 を自動判定します（薬剤師・ヘルパー等の対象外資格は取り込みません）。退職者も含めて取り込めます。</p>
-      <textarea id="rosterPaste" placeholder="ここに職員名簿（氏名・資格を含む範囲）を貼り付け"></textarea>
+      <textarea id="rosterPaste" aria-label="職員名簿の貼り付け欄" placeholder="ここに職員名簿（氏名・資格を含む範囲）を貼り付け"></textarea>
       <div class="controls">
         <button id="rosterImportBtn" class="primary">職員名簿から取り込む</button>
-        <span id="rosterStatus" class="cloudstat"></span>
+        <span id="rosterStatus" class="cloudstat" role="status" aria-live="polite"></span>
       </div>
     </details>
     <div id="masterBox"></div>
@@ -436,6 +450,22 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     return 'mid';
   }
 
+  /* 職員ごとの「早番に数える開始時刻の上限」（2026-09-28・staff.rules.earlyStartMax・分）。
+   * 既定（未設定）は従来どおり: 記号の分類・範囲の rangeCat（開始7:30まで＝早番）をそのまま使う。
+   * 設定がある職員は、早番に分類された勤務でも開始がこの時刻より遅ければ日勤(mid)として数える
+   * （例: 420＝7:00開始までを早番。7:30開始は日勤）。早番の人数の数え方だけを変え、
+   * 勤務時間・区分・freee 出力には関わらない。氏名ではなく職員の設定で持つ（個人情報をコードに書かない）。 */
+  var EARLY_START_MAX_CHOICES = [420];   /* 画面で選べる値（7:00まで）。未設定＝従来どおり */
+  function earlyStartMaxOf(st) {
+    var v = (st && st.rules) ? st.rules.earlyStartMax : null;
+    return (typeof v === 'number' && isFinite(v) && v >= 0 && v < 1440) ? v : null;
+  }
+  function effectiveCat(cat, startMin, earlyStartMax) {
+    if (cat !== 'early' || typeof earlyStartMax !== 'number') return cat;
+    if (typeof startMin !== 'number') return cat;
+    return startMin > earlyStartMax ? 'mid' : 'early';
+  }
+
   /* 夜勤上がりの残業判定（表示ハイライト用）。
    * セル先頭の夜勤上がり（例「8)」）の実際の上がり時刻が、前日の夜勤入りの定時上がり(pairEnd)
    * より遅ければ残業。(21=定時7:00→「8)」は残業／(22=定時8:00→「8)」は通常／「7)」は定時。
@@ -532,6 +562,9 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     minToTime: minToTime,
     parseCell: parseCell,
     rangeCat: rangeCat,
+    EARLY_START_MAX_CHOICES: EARLY_START_MAX_CHOICES,
+    earlyStartMaxOf: earlyStartMaxOf,
+    effectiveCat: effectiveCat,
     parseRangeToken: parseRangeToken,
     collectUsedWorkTokens: collectUsedWorkTokens,
     registerRangeSymbols: registerRangeSymbols,
@@ -661,7 +694,8 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
           var part = cell.parts[i];
           if (part.kind === 'work') {
             perDay[d].attended = true;
-            if (part.cat) perDay[d].cats.push(part.cat);
+            /* 早番の数え方は職員の設定（opts.earlyStartMax）で開始時刻を絞れる（2026-09-28・Sym.effectiveCat） */
+            if (part.cat) perDay[d].cats.push(Sym.effectiveCat(part.cat, part.startMin, opts.earlyStartMax));
             var bound = part.endMin - part.startMin;
             var work = workMinutes(bound, settings);
             if (row.isMain && subIntervals.length) {
@@ -1903,22 +1937,25 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   function renderMonths() {
     var months = loadMonths();
     var box = $('savedMonths');
+    /* 保存した月が無い間だけ、はじめて使う時の手順を出す（2026-10-10）。読むだけで書かない */
+    var guide = $('saGuide');
+    if (guide) guide.hidden = months.length > 0;
     if (!months.length) { box.innerHTML = '<p class="muted">保存済みの月はありません。各月を集計→「この月を保存」で蓄積すると、いつでも「表示」で見返せます（このツール専用の保存先。ライブのシフトは汚しません）。</p>'; return; }
-    var html = '<div class="tblwrap"><table><thead><tr><th><input type="checkbox" id="chkAll" checked></th><th>月</th><th class="num">訪問総</th><th class="num">介福</th><th class="num">介福＋実務者</th><th class="num">割合</th><th></th></tr></thead><tbody>';
+    var html = '<div class="tblwrap"><table><thead><tr><th><input type="checkbox" id="chkAll" aria-label="すべての月を期間平均に含める" checked></th><th>月</th><th class="num">訪問総</th><th class="num">介福</th><th class="num">介福＋実務者</th><th class="num">割合</th><th></th></tr></thead><tbody>';
     for (var i = 0; i < months.length; i++) {
       var x = months[i];
       var p = x.visitTotalMin > 0 ? (x.visitKaifukuMin / x.visitTotalMin * 100) : 0;
       var hasDetail = !!x.rawText;
       /* 選択の対応付けは配列位置でなく月ラベル（data-view/data-del と同方式）。
        * 位置だと、他タブでの保存/削除や再描画で並びが変わったとき別の月を集計してしまう。 */
-      html += '<tr><td><input type="checkbox" class="mchk" data-label="' + esc(x.label) + '" checked></td>' +
+      html += '<tr><td><input type="checkbox" class="mchk" data-label="' + esc(x.label) + '" aria-label="' + esc(x.label) + ' を期間平均に含める" checked></td>' +
         '<td>' + esc(x.label) + '</td>' +
         '<td class="num">' + h1(x.visitTotalMin) + 'h</td>' +
         '<td class="num">' + h1(x.visitKaifukuMin) + 'h</td>' +
         '<td class="num">' + h1(x.visitKaifukuJitsumuMin) + 'h</td>' +
         '<td class="num">' + pct(p) + '%</td>' +
-        '<td class="nowrap">' + (hasDetail ? '<button class="link" data-view="' + esc(x.label) + '">表示</button> ' : '<span class="muted">明細なし</span> ') +
-        '<button class="link" data-del="' + esc(x.label) + '">削除</button></td></tr>';
+        '<td class="nowrap">' + (hasDetail ? '<button class="link" data-view="' + esc(x.label) + '" aria-label="' + esc(x.label) + ' を表示">表示</button> ' : '<span class="muted">明細なし</span> ') +
+        '<button class="link" data-del="' + esc(x.label) + '" aria-label="' + esc(x.label) + ' を削除">削除</button></td></tr>';
     }
     html += '</tbody></table></div><div id="combined"></div>';
     box.innerHTML = html;
@@ -2217,9 +2254,9 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       html += '<tr><td>' + esc(rec.name || k) + '</td>';
       for (var q2 = 0; q2 < QUAL_LIST.length; q2++) {
         var on = (rec.quals || []).indexOf(QUAL_LIST[q2]) >= 0 ? ' checked' : '';
-        html += '<td class="qh"><input type="checkbox" class="qchk" data-k="' + esc(k) + '" data-q="' + esc(QUAL_LIST[q2]) + '"' + on + '></td>';
+        html += '<td class="qh"><input type="checkbox" class="qchk" data-k="' + esc(k) + '" data-q="' + esc(QUAL_LIST[q2]) + '" aria-label="' + esc((rec.name || k) + ' の' + QUAL_LIST[q2]) + '"' + on + '></td>';
       }
-      html += '<td><button class="link" data-mdel="' + esc(k) + '">削除</button></td></tr>';
+      html += '<td><button class="link" data-mdel="' + esc(k) + '" aria-label="' + esc((rec.name || k) + ' を資格マスタから削除') + '">削除</button></td></tr>';
     }
     html += '</tbody></table></div>';
     box.innerHTML = html;
