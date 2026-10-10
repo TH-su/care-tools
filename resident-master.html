@@ -138,6 +138,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 @media print{.noprint-cell{display:none !important}}
 /* 最後に直した人（2026-10-10）。画面だけ・紙には出さない。#4a4f57 on 白で約 8:1 */
 .rm-edited{margin:4px 0 8px;font-size:0.875rem;line-height:1.5;color:#4a4f57}
+.rm-edited-note{display:block;font-size:0.8125rem}
 @media print{.rm-edited{display:none !important}}
 /* ── 印刷しない欄（2026-08-17 指示）──
    入居者ごとに「この欄は紙に出さない」を選べる（ご家族へお渡しする紙で伏せる用途）。
@@ -1696,12 +1697,14 @@ function rmEditedHtml_(r){
   if(!r) return '';
   var at=rmEditedFmt_(r.updatedAt), byAt=rmEditedFmt_(r.updatedByAt), by=String(r.updatedBy==null?'':r.updatedBy).trim().slice(0,60);
   if(by && byAt){
-    var t='入居者マスタで最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
+    /* ★対象は詳細画面の「保存」だけ。一括編集・食形態一覧・訪問診療からの定期薬の更新は updatedAt も進めないので
+       ここには出ない（審査の指摘・言い切らない）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
+    var t='詳細画面の「保存」で最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
     var a=new Date(r.updatedAt).getTime(), b=new Date(r.updatedByAt).getTime();
-    if(at && isFinite(a) && isFinite(b) && Math.abs(a-b)>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映など別の経路で更新されています';
-    return '<p class="rm-edited">'+t+'</p>';
+    if(at && isFinite(a) && isFinite(b) && a-b>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映など別の経路で更新されています';
+    return '<p class="rm-edited">'+t+'<span class="rm-edited-note">（一括編集・食形態一覧・訪問診療からの定期薬の更新は含みません）</span></p>';
   }
-  if(at) return '<p class="rm-edited">最後の保存：'+esc(at)+'（誰が直したかの記録はありません）</p>';
+  if(at) return '<p class="rm-edited">詳細画面の最後の保存：'+esc(at)+'（誰が直したかの記録はありません）</p>';
   return '';
 }
 function setDeviceRole(v){
