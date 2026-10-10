@@ -150,7 +150,7 @@ console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残
 console.log('\n— 3. 3画面の記録の口と置き換え —');
 const PAGES = [
   ['weight-record.html', 'wrNote_', 'weight', 15],
-  ['care-schedule.html', 'csNote_', 'care', 37],
+  ['care-schedule.html', 'csNote_', 'care', 41],   // 2026-10-10 直した人の印・基準の4か所を足した
   ['resident-master.html', 'rmNote_', 'master', 9]
 ];
 for (const [file, fn, tag, want] of PAGES) {
