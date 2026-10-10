@@ -2130,7 +2130,11 @@ function loadRoster() {
     return true;
   }).catch(function (e) {
     MASTER_OK = false;
-    MASTER_MSG = '入居者マスタから名簿を取得できませんでした（' + errText(e) + '）。引継ぎはできません。';
+    /* 「不明なaction」＝入居者マスタの接続先に、別アプリのGAS（薬学管理・申送ビューア等）の URL と合言葉が
+       組で入っている時の応答（入居者マスタ自身は名簿の取得を必ず受け付ける）。何を直せばよいかを出す（2026-10-10 実発生） */
+    MASTER_MSG = (s_(e && e.message ? e.message : e) === '不明なaction')
+      ? '入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。接続設定の「入居者マスタ・フェイスシート」のURLと合言葉を確かめてください。引継ぎはできません。'
+      : '入居者マスタから名簿を取得できませんでした（' + errText(e) + '）。引継ぎはできません。';
     if (!ROSTER.length) loadRosterFromCommon();
     return false;
   });
