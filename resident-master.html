@@ -1581,7 +1581,7 @@ body.meal-on #sc-list{max-width:none}
         <button class="btn btn-gray" id="mcClose" type="button">閉じる</button>
       </span>
     </div>
-    <p class="ms-lead">申送の「服薬関連」の記録（直近14日）のうち、定期薬の変更らしい記録から、「薬剤情報（定期）」を直す候補を出しています（その日だけの見合わせ・頓服・下剤の追加・塗布などは出しません）。
+    <p class="ms-lead">申送の原文（直近14日）の薬の行から、「薬剤情報（定期）」を直す候補を出しています（定期薬の変更らしい記録を上に、その日だけの見合わせ・頓服・下剤の追加・塗布などは下に畳んで出します）。AI 要約は参考です（他の方の内容が混ざることがあります）。
       申送の原文と見比べ、直し案を確かめて<b>「反映する」</b>を押した時だけ書き換えます（変更履歴にも残ります）。
       AI に送るのは今の定期薬と記録の本文だけで、名簿にある氏名と居室は伏せます（職員・ご家族・医師の名前は伏せきれないことがあります）。</p>
     <div class="mc-body">
@@ -5223,7 +5223,7 @@ function mdSave(){
 }
 
 /* ═══════════ 薬の変更候補（2026-10-06 代表者の決定・案B）═══════════
-   申送の「服薬関連」の記録（直近14日）から「薬剤情報（定期）」を直す候補を出し、管理者が見比べて
+   申送の原文の薬の行（直近14日・2026-10-10 から。それまでは AI 要約の「服薬関連」）から「薬剤情報（定期）」を直す候補を出し、管理者が見比べて
    「反映する／反映しない」を決める。判断と反映はサーバー（入居者マスタGAS の med-cand.gs・action 'medCand'）が受ける。
    ★管理者（Google＋2段階認証でログイン中・role 'admin'）にだけ出す。現場端末では何もしない（取りにも行かない）。
      これは「出すかどうか」の判定で、権限の境目ではない。定期薬の書き換えは従来どおり事務所の合言葉で守られ、
@@ -5310,7 +5310,7 @@ function mcLoad_(){
     var yd=mcYmd_(new Date(now.getTime()-86400000)), dd=r[1].d;
     mcSt.lag='';
     if(dd&&Array.isArray(dd.ingestedDates)&&dd.ingestedDates.indexOf(yd)<0) mcSt.lag='申送の取り込みが遅れています（昨日の分が未取込）';
-    else if(dd&&!(dd.ledger||[]).some(function(e){ return e&&String(e.date)===yd; })) mcSt.lag='昨日の分の AI 要約がまだです（候補が出ていない可能性があります）';
+    else if(dd&&!(dd.ledger||[]).some(function(e){ return e&&String(e.date)===yd; })) mcSt.lag='昨日の分の AI 要約がまだです（候補は原文から出しています。薬の名前と変更の語だけの行は、要約が届くまで候補に出ないことがあります）';
     mcSt.unsure=mcKeepUnsure_(mcSt.unsure,dec);
     mcSt.loading=false;
     /* 開いている候補が一覧から消えていたら閉じる（ほかの端末で判断された・要約が消えた・2回目の指摘G） */
@@ -5342,16 +5342,47 @@ function mcResolve_(by,sur,name){
    ★当たらない記録も消さない。一覧の下に「変更らしくない記録」として畳んで出し、開いて反映もできる（2026-10-07 反証レビュー）
    ★判定には要約に加えて、その日のその方の原文のうち薬に関わる行も使う */
 var MC_STRONG=/処方|中止|開始|減量|増量|減薬|増薬|休薬|休止|切り?替|受診.{0,20}(追加|変更|中止|調整)|[0-9.]+\s*mg.{0,8}追加|[0-9.]+\s*(mg|錠|T|単位|包|C|滴)\s*(→|⇒|から|へ)|指示(により|で|にて|あり)|頓(服|用)から|半錠(に|へ)/;
-var MC_SOFT=/終了|中断|やめ|止め|調整|見直し|変わ|始ま|増え|減ら|のみ(へ|に)/;
+var MC_SOFT=/終了|中断|やめ|止め|調整|見直し|変わ|始ま|増え|減ら|のみ(へ|に)|だけ(へ|に)|終わり|飲まなく|服用しなく|不要(に|と)/;
 var MC_WEAK=/追加|変更|再開|新規/;
-var MC_DRUG=/薬|錠|mg|処方|内服|服用|散|顆粒|カプセル|テープ|ゼリー|[ァ-ヶー]{3,}/;
+var MC_DRUG=/薬|錠|剤|mg|処方|内服|服用|散|湯|丸|顆粒|カプセル|テープ|ゼリー|[ァ-ヶー]{3,}/;
 var MC_EXT=/点眼|塗布|スプレー|座薬|坐薬|外用/;
-var MC_ONEOFF=/抜薬|与薬せず|服用せず|飲まず|服薬せず|頓服|頓用|残少|排便\s*[-−]?\d+日|日目|排尿\d+日/;
+var MC_ONEOFF=/抜薬|与薬せず|服用せず|飲まず|服薬せず|頓服|頓用|残少|排便\s*[-−]?\d+日|日目|排尿\d+日|今日だけ|今日のみ|本日だけ|本日のみ|拒薬|拒否|困って|残薬|在庫|薬局|下剤/;
 function mcIsChange_(text){
   var t=mcNfkc_(text), drug=MC_DRUG.test(t);
   if(MC_STRONG.test(t)) return true;
-  if(MC_SOFT.test(t)&&drug) return true;
+  if(MC_SOFT.test(t)&&drug&&!MC_ONEOFF.test(t)) return true;   /* その日だけ・拒薬・残薬は変更らしくない（2026-10-10 反証レビュー） */
   return MC_WEAK.test(t)&&drug&&!MC_ONEOFF.test(t)&&!MC_EXT.test(t);
+}
+/* 申送の原文の1行が「薬の行」か（2026-10-10・候補は原文から作る）。★取りこぼし（候補に出ない）を最も避ける。拾いすぎは
+   上の一覧（定期薬の変更らしい）と畳んだ一覧の振り分け（mcIsChange_）で受け止め、どちらも消さない。
+   ・薬の語（薬・錠・剤・処方・服薬・内服・服用・頓服・mg・μg・カプセル・顆粒・貼付・点眼・吸入・インスリン・注射・軟膏・湿布・シロップ、
+     漢方の「〜散・〜湯・〜丸」）か、用量の書き方（0.5g・1T・2包・4単位 等）があれば薬の行
+   ・薬の名前らしいカタカナ（介護の場面の言葉を除いた3字以上の語）に「中止・開始・処方」などのはっきりした語があれば薬の行
+   ・AI 要約の「服薬関連」がその日にある時（hinted・人を問わない）は、カタカナの薬名＋弱い変更の語（追加・変更・だけに 等）の行も薬の行。
+     ★手がかりを人ではなく日で取るのは、要約の名前が当てにならない（他の方の内容が混ざる）ため
+   ・決まった服薬の記録（服薬介助・内服済み 等）は、それを除いた残りに変更の語・用量・薬名が無ければ薬の行にしない
+   ★バイタル（T 36.5・P 68）・施錠・入浴剤・介護の場面のカタカナ（シャワー・ナースコール 等の語そのもの）は薬の行にしない
+   ★候補の本文と名前は、必ずその方の原文の行から取る（要約は手がかりと参考の表示だけ） */
+var MC_NOT_MED=/施錠|解錠|開錠|入浴剤|洗剤|消毒剤|漂白剤|芳香剤/g;
+var MC_ROUTINE=/服薬介助|服薬確認|内服確認|与薬済み?|服薬済み?|内服済み?|服用済み?|服薬支援|配薬|服薬完了|内服完了/;
+var MC_ROUTINE_G=new RegExp(MC_ROUTINE.source,'g');
+var MC_DOSE=/[0-9.]+\s*(mg|μg|mcg|g|包|錠|単位|滴|枚|カプセル)(?![a-zA-Z])|[0-9.]+\s*T(?![a-zA-Z]|\s*[0-9])/;
+var MC_RAW_MED=/薬|錠|剤|処方|服薬|内服|服用|頓服|頓用|mg|μg|mcg|カプセル|顆粒|貼付|点眼|点鼻|吸入|インスリン|注射|軟膏|湿布|シロップ|トローチ|[一-龥]{2,}(散(?!歩)|湯|丸)/;
+var MC_CARE_WORDS='|シャワー|トイレ|ベッド|デイサービス|デイケア|ショートステイ|ショート|リハビリ|リハパン|パッド|オムツ|ポータブル|ナースコール|コール|バイタル|ケアマネ|ケア|サービス|ヘルパー|ドクター|クリニック|カンファレンス|レクリエーション|レク|テレビ|ラジオ|メール|カレンダー|クッション|マットレス|マット|センサー|ズボン|パジャマ|タオル|ティッシュ|プリン|ヨーグルト|ジュース|コーヒー|ミルク|スープ|ソファー|テーブル|エレベーター|ホール|フロア|ステーション|スタッフ|ナース|ルーム|ドア|カーテン|エアコン|ペース|スケジュール|キャンセル|ストレッチ|マッサージ|リクライニング|ソフト|ミキサー|ペースト|ムース|トロミ|テープ|ガーゼ|シーツ|フェイス|ライン|ミーティング|モニター|ストレッチャー|ポジショニング|';
+function mcDrugKana_(t){
+  var m=String(t).match(/[ァ-ヶー]{3,}/g)||[];
+  for(var i=0;i<m.length;i++) if(MC_CARE_WORDS.indexOf('|'+m[i]+'|')<0) return true;
+  return false;
+}
+/* 薬の行か・変更らしいかを見る前に、施錠などの紛らわしい語と、決まった服薬の記録の語を外した本文 */
+function mcMedText_(body){ return mcNfkc_(body).replace(MC_NOT_MED,'').replace(MC_ROUTINE_G,' '); }
+function mcIsMedRow_(body,hinted){
+  var raw=mcNfkc_(body).replace(MC_NOT_MED,''), t=mcMedText_(body);
+  var strong=MC_STRONG.test(t), chg=strong||MC_SOFT.test(t)||MC_WEAK.test(t), dose=MC_DOSE.test(t), kana=mcDrugKana_(t);
+  if(MC_ROUTINE.test(raw)&&!chg&&!dose&&!kana) return false;   /* 決まった服薬の記録だけの行 */
+  if(MC_RAW_MED.test(t)||dose) return true;
+  if(kana&&strong) return true;
+  return !!hinted&&kana&&chg;
 }
 /* 申送の事業所欄がデイ（通所）か。「デイ」の語か、施設情報の通所の名前・正式名・別名を含めばデイ（2026-10-08・監査10月版 #10）。
    以前の直書き（「デイ」か通所の事業所名を含む）と同じ判定を、事業所の名前をコードに書かずに行う。
@@ -5364,48 +5395,84 @@ function mcIsDayFacility_(f){
   for(var i=0;i<names.length;i++){ var n=String(names[i]||'').trim(); if(n&&s.indexOf(n)>=0) return true; }
   return !ready && /通所/.test(s);
 }
-/* 申送の要約（ledger）から候補を作る。名前が名簿（退去者を含む）の1名にだけ合い、その方が在籍中の記録だけを使う（指摘18） */
+/* 申送の原文（第1層 events）から候補を作る（2026-10-10）。原文の薬の行1行＝1候補。
+   名前は原文の行の名前を名簿（退去者を含む）の1名にだけ結び、その方が在籍中の記録だけを使う（指摘18）。
+   ★AI 要約（ledger）は名寄せにも判定にも使わない。要約の文には他の方の内容が混ざることがあるため（2026-10-09 申送ビューアでは表示をやめた）。
+     要約は「その方のその日に服薬関連があるか」の手がかり（mcIsMedRow_ の hinted）と、参考の表示（c.sums）にだけ使う。
+   ★候補の印は 'S|利用者No|日付|原文の行の指紋'（サーバーが受け付ける形のまま）。同じ日の判断は印の頭（'S|利用者No|日付|'）で見る。
+     以前の要約の指紋で判断した日は、隠さずに印（反映済み・反映しない・保留）を付けて出す（2026-10-10 代表者の決定） */
 function mcBuild_(d){
   var by={}, sur={};
   roster.forEach(function(r){
     var k=mcNorm_(r.name); if(!k) return; (by[k]=by[k]||[]).push(r);
     var s0=mcNfkc_(r.name).trim().split(/\s+/)[0]; if(s0) sur[s0]=(sur[s0]||0)+1;
   });
-  /* 原文（第1層 events）を「日付|利用者No」で引けるようにする（名前の書き方の違いも結び方で吸収する） */
-  var raw={};
-  (d.events||[]).forEach(function(e){
-    if(!e||mcIsDayFacility_(e.facility)) return;
-    var r1=mcResolve_(by,sur,e.name); if(!r1) return;
-    var k=String(e.date||'')+'|'+String(r1.id); (raw[k]=raw[k]||[]).push(e);
-  });
-  /* 同じ方・同じ日に既に反映した候補（印の頭 'S|利用者No|日付|' が同じ） */
-  var doneDay={};
-  Object.keys(mcSt.decided).forEach(function(k){ var x=mcSt.decided[k]; if(x&&x.status==='反映') doneDay[k.slice(0,k.lastIndexOf('|')+1)]=x.decidedAt||'反映済み'; });
-  var out=[], low=[], un=0, keep={}, seen={}, perDay={};
+  /* AI 要約のうち「服薬関連」: 参考の表示は「日付|利用者No」で、手がかりは日付だけで引く（要約の名前は当てにならないため） */
+  var sums={}, hintDay={};
   (d.ledger||[]).forEach(function(e){
     if(!e||!Array.isArray(e.categories)||e.categories.indexOf(MC_CAT)<0) return;
-    if(mcIsDayFacility_(e.facility)) return;   /* デイの利用者は入居者マスタの対象外 */
-    var r0=mcResolve_(by,sur,e.name);
-    if(!r0||r0.active===false){ un++; return; }
-    var id=String(r0.id), date=String(e.date||''), txt=String(e.summary||'');
-    var head='S|'+id+'|'+date+'|', key=head+mcHash_(txt);
-    if(seen[key]) return; seen[key]=1;                   /* 同じ日・同じ方・同じ本文は1件にまとめる */
-    var dc=mcSt.decided[key];
-    if(dc&&dc.status!=='保留') return;                    /* 判断済みは出さない（保留は出し続ける） */
-    var rk=date+'|'+id;
-    keep[rk]=raw[rk]||[];
-    perDay[head]=(perDay[head]||0)+1;
-    var medRaw=keep[rk].filter(function(x){ return MC_MEDRE.test(mcNfkc_(x.body)); }).map(function(x){ return x.body; }).join('\n');
-    var c={srcKey:key, head:head, srcDate:date, time:String(e.time||''), text:txt, rawKey:rk,
-           id:id, name:String(r0.name||''), room:String(r0.room||''),
-           hold:dc?String(dc.note||'保留'):'', sameDay:doneDay[head]||''};
-    /* ★保留の候補は、言葉の規則に関わらず一覧に出し続ける（2026-10-07 反証レビュー） */
-    if(c.hold||mcIsChange_(txt+'\n'+medRaw)) out.push(c); else { c.low=true; low.push(c); }
+    if(mcIsDayFacility_(e.facility)) return;
+    hintDay[String(e.date||'')]=1;
+    var r0=mcResolve_(by,sur,e.name); if(!r0||r0.active===false) return;
+    var k=String(e.date||'')+'|'+String(r0.id); (sums[k]=sums[k]||[]).push(String(e.summary||''));
   });
+  /* 原文を「日付|利用者No」でまとめる（在籍中の方だけ）。名前が1名に合わない薬の行は数だけ数える */
+  var raw={}, un=0, noName=0;
+  (d.events||[]).forEach(function(e){
+    if(!e||mcIsDayFacility_(e.facility)) return;   /* デイの利用者は入居者マスタの対象外 */
+    var r1=mcResolve_(by,sur,e.name);
+    if(!r1||r1.active===false){
+      if(mcIsMedRow_(e.body,!!hintDay[String(e.date||'')])){ if(String(e.name||'').trim()) un++; else noName++; }   /* 名前の欄が空の行は別に数える */
+      return;
+    }
+    var k=String(e.date||'')+'|'+String(r1.id); (raw[k]=raw[k]||{r:r1, rows:[]}).rows.push(e);
+  });
+  /* 同じ方・同じ日の判断（印の頭が同じ）。反映（日時）はどの印でも、反映しない・保留は「以前の印（その日のどの原文の行にも合わない印）」
+     だけを数える。原文の行の印での判断を、同じ日のほかの行に重ねて見せない（2026-10-10 2回目の反証レビュー） */
+  var rowKey={};
+  Object.keys(raw).forEach(function(rk){
+    var g=raw[rk], hd='S|'+String(g.r.id)+'|'+rk.slice(0,rk.indexOf('|'))+'|';
+    g.rows.forEach(function(e){ rowKey[hd+mcHash_(String(e.body==null?'':e.body))]=1; });
+  });
+  var dayDec={};
+  Object.keys(mcSt.decided).forEach(function(k){
+    var x=mcSt.decided[k]; if(!x) return;
+    var h=k.slice(0,k.lastIndexOf('|')+1), o=dayDec[h]=dayDec[h]||{};
+    if(x.status==='反映') o.done=x.decidedAt||'反映済み';
+    else if(rowKey[k]) return;
+    else if(x.status==='見送り') o.skip=String(x.note||'理由なし'); else if(x.status==='保留') o.hold=String(x.note||'保留');
+  });
+  var out=[], low=[], keep={}, seen={}, perDay={}, chgDay={};
+  Object.keys(raw).forEach(function(rk){
+    var g=raw[rk], r0=g.r, id=String(r0.id), date=rk.slice(0,rk.indexOf('|')), head='S|'+id+'|'+date+'|', hinted=!!hintDay[date];
+    g.rows.forEach(function(e){
+      var txt=String(e.body==null?'':e.body);
+      if(!txt.trim()||!mcIsMedRow_(txt,hinted)) return;
+      var isChg=mcIsChange_(mcMedText_(txt));
+      if(isChg) chgDay[rk]=1;                          /* 判断済みで隠れる行も「変更らしい行がある日」に数える */
+      var key=head+mcHash_(txt);
+      if(seen[key]) return; seen[key]=1;               /* 同じ日・同じ方・同じ本文は1件にまとめる */
+      var dc=mcSt.decided[key];
+      if(dc&&dc.status!=='保留') return;                /* 判断済みは出さない（保留は出し続ける） */
+      keep[rk]=g.rows;
+      perDay[head]=(perDay[head]||0)+1;
+      var dd=dayDec[head]||{};
+      var c={srcKey:key, head:head, srcDate:date, time:String(e.time||''), shift:String(e.shift||''), text:txt, rawKey:rk,
+             id:id, name:String(r0.name||''), room:String(r0.room||''),
+             hold:dc?String(dc.note||'保留'):'', sameDay:dd.done||'',
+             daySkip:(!dc&&dd.skip)||'', dayHold:(!dc&&dd.hold)||'', hinted:hinted, sums:sums[rk]||[]};
+      /* ★保留の候補（同じ日に以前の印で保留した日も）は、言葉の規則に関わらず上の一覧に出し続ける（2026-10-07／10-10 反証レビュー） */
+      if(c.hold||c.dayHold||isChg) out.push(c); else { c.low=true; low.push(c); }
+    });
+  });
+  /* 要約に服薬関連があるのに、その方のその日の原文に定期薬の変更らしい行が無い記録（候補にしない・件数だけ知らせる）。
+     ★「薬の行が1行でもあれば数えない」にすると、内服済みの行1つで要約の分が消える（2026-10-10 反証レビュー） */
+  var sumOnly=0;
+  Object.keys(sums).forEach(function(k){ if(!chgDay[k]) sumOnly+=sums[k].length; });
   var byTime=function(a,b){ return (b.srcDate+b.time).localeCompare(a.srcDate+a.time); };
   out.concat(low).forEach(function(c){ c.many=perDay[c.head]||1; });
   out.sort(byTime); low.sort(byTime);
-  mcSt.unmatched=un; mcSt.others=low; mcSt.raw=keep;
+  mcSt.unmatched=un; mcSt.noName=noName; mcSt.others=low; mcSt.raw=keep; mcSt.sumOnly=sumOnly;
   return out;
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
@@ -5491,6 +5558,8 @@ function mcItemHtml_(c){
     '<span class="mc-ih">'+esc(fmtJDate(c.srcDate)||c.srcDate)+(c.time?' '+esc(c.time):'')+'　'+esc(c.room?c.room+' ':'')+esc(c.name)+'</span>'+
     (c.hold?'<span class="mc-redo">保留中（'+esc(c.hold)+'）</span>':'')+
     (c.sameDay?'<span class="mc-redo">⛔ この日の記録から反映済みあり</span>':'')+
+    (c.daySkip?'<span class="mc-redo">この日のこの方の記録は、以前「反映しない」と判断済み（'+esc(c.daySkip)+'）</span>':'')+
+    (c.dayHold?'<span class="mc-redo">この日のこの方の記録に、保留中の判断あり（'+esc(c.dayHold)+'）</span>':'')+
     (mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]?'<span class="mc-redo">反映できたか確かめ中</span>':'')+
     '<span class="mc-it">'+esc(c.text)+'</span></button>';
 }
@@ -5507,6 +5576,8 @@ function mcPaintModal_(){
   if(LO.length) lh+='<details class="mc-low"'+(mcCur&&mcCur.c.low?' open':'')+'><summary>定期薬の変更ではなさそうな記録 '+LO.length+'件（その日だけの見合わせ・頓服・下剤・塗布など）</summary>'+
     LO.map(mcItemHtml_).join('')+'</details>';
   if(mcSt&&mcSt.unmatched) lh+='<p class="mc-sub">名簿の在籍者1名に名前が合わない記録 '+mcSt.unmatched+'件は出していません（氏名は出しません）。</p>';
+  if(mcSt&&mcSt.noName) lh+='<p class="mc-sub">名前の欄が空の薬の行 '+mcSt.noName+'件は出していません（本文の先頭に名前がある書き方などで名前を読めなかった行です。申送の原文で確かめてください）。</p>';
+  if(mcSt&&mcSt.sumOnly) lh+='<p class="mc-sub">AI 要約に服薬関連があるのに、その方のその日の原文に定期薬の変更らしい行が見つからない記録 '+mcSt.sumOnly+'件は候補にしていません（要約には他の方の内容が混ざることがあるため）。申送の原文を確かめてください。</p>';
   $('mcListBox').innerHTML=lh;
   $('mcWork').innerHTML=mcBulk?mcBulkHtml_():(mcCur?mcWorkHtml_():'<p class="mc-empty">左の一覧から候補を選んでください。</p>');
   var bb=$('mcBulkBtn'); if(bb) bb.disabled=!!(mcBulk||!mcList_().length||(mcCur&&mcCur.busy));
@@ -5517,7 +5588,7 @@ function mcPaintModal_(){
    ★1件ずつ順に送り、失敗したらそこで止める（送れた分は残る）。書き込みは再試行しない。既に反映済みの候補は飛ばす */
 var mcBulk=null;   /* {sel:{srcKey:1}, why, busy, msg} */
 /* まとめて選べる候補（保留中・反映できたか確かめ中は選ばせない＝医師・薬局の確認待ちを閉じない） */
-function mcBulkable_(c){ return !c.hold&&!(mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]); }
+function mcBulkable_(c){ return !c.hold&&!c.dayHold&&!(mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]); }
 function mcBulkOpen_(){
   if(!mcSt||mcSt.server!=='ok'||(mcCur&&mcCur.busy)) return;
   if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。まとめて片付ける画面へ移ってよいですか？')) return;
@@ -5535,7 +5606,8 @@ function mcBulkHtml_(){
     var can=mcBulkable_(c);
     return '<label class="ms-ck mc-bulkit"><input type="checkbox" data-bsrc="'+esc(c.srcKey)+'"'+(can&&mcBulk.sel[c.srcKey]?' checked':'')+(can?dis:' disabled')+'>'+
       '<span><b>'+esc(fmtJDate(c.srcDate)||c.srcDate)+'　'+esc(c.room?c.room+' ':'')+esc(c.name)+'</b>'+
-      (c.hold?'（保留中のため、ここでは選べません）':'')+(can||c.hold?'':'（確かめ中のため選べません）')+'<br>'+esc(c.text)+'</span></label>';
+      (c.hold||c.dayHold?'（保留中のため、ここでは選べません）':'')+(can||c.hold||c.dayHold?'':'（確かめ中のため選べません）')+
+      (c.sameDay?'<br>⛔ この日の記録から反映済みあり':'')+(c.daySkip?'<br>以前「反映しない」と判断済みの日（'+esc(c.daySkip)+'）':'')+'<br>'+esc(c.text)+'</span></label>';
   }).join('');
   h+='</div><div class="mc-dec"><label class="mc-lbl" for="mcBulkWhy">反映しない理由（まとめて同じ理由で残します）</label>'+
     '<select id="mcBulkWhy"'+dis+'><option value="">選んでください</option><option>既に反映済み</option><option>定期薬の変更ではない</option><option>その他</option></select>'+
@@ -5676,13 +5748,13 @@ function mcCheck_(){
   d.chg.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!(told[mcCmp_(x.from)]&&told[mcCmp_(x.to)])) nAi++; var k=mcStem_(x.to); if(k&&src.indexOf(k)<0) nSrc++; });
   if(nAi) warn.push('AI の説明に無い変更が '+nAi+'か所あります。取りこぼし・書き換えでないか確かめてください');
   if(nSrc) warn.push('記録の本文に名前が出てこない薬の変更が '+nSrc+'か所あります');
-  if(cur.c.many>1) warn.push('この方のこの日の服薬関連の記録が '+cur.c.many+'件あります。1件ずつ反映すると重なることがあります');
+  if(cur.c.many>1) warn.push('この方のこの日の薬の行が '+cur.c.many+'件あります。1件ずつ反映すると重なることがあります');
   if(d.del.length) warn.push('「中止」が '+d.del.length+'行あります。記録どおりの中止か確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）');
   return {d:d, stop:stop, warn:warn};
 }
 function mcRaw_(c){ return (mcSt&&mcSt.raw&&mcSt.raw[c.rawKey])||[]; }
 /* 原文のうち薬に関わる行だけ（AI に送る・薬名の突き合わせに使う。要配慮情報を必要以上に送らない・2回目の指摘E） */
-function mcRawMed_(c){ return mcRaw_(c).filter(function(e){ return MC_MEDRE.test(mcNfkc_(e.body)); }); }
+function mcRawMed_(c){ return mcRaw_(c).filter(function(e){ return mcIsMedRow_(e.body,!!c.hinted); }); }   /* 候補と同じ規則（2026-10-10） */
 /* 同じ方・同じ日に既に反映した記録があるか（判断の記録・変更履歴の経路のどちらか） */
 function mcSameDay_(cur){
   if(cur.c.sameDay) return cur.c.sameDay;
@@ -5694,10 +5766,15 @@ function mcSameDay_(cur){
 }
 function mcWorkHtml_(){
   var c=mcCur.c, h='', raw=mcRaw_(c);
-  h+='<div class="mc-src"><div class="mc-lbl">申送の原文（'+esc(fmtJDate(c.srcDate)||c.srcDate)+'・'+esc(c.name)+' 様の行）</div>'+
+  var sums=Array.isArray(c.sums)?c.sums:[];
+  h+='<div class="mc-src"><div class="mc-lbl">この候補の原文（'+esc(fmtJDate(c.srcDate)||c.srcDate)+'・'+esc(c.name)+' 様の行）</div>'+
+     '<div class="mc-txt"><b>'+(c.shift?esc(c.shift)+' ':'')+(c.time?esc(c.time)+' ':'')+'</b>'+esc(c.text)+'</div>'+
+     '<div class="mc-lbl" style="margin-top:6px">同じ日のこの方の原文（全部）</div>'+
      (raw.length?raw.map(function(e){ return '<div class="mc-txt">'+(e.shift?'<b>'+esc(e.shift)+'</b> ':'')+(e.time?esc(e.time)+' ':'')+esc(e.body)+'</div>'; }).join('')
        :'<p class="mc-warn">⚠ 同じ日のこの方の原文が見つかりません（反映はできません）</p>')+
-     '<div class="mc-lbl" style="margin-top:6px">AI 要約（申送から自動作成）</div><div class="mc-txt mc-sum">'+esc(c.text)+'</div></div>';
+     '<div class="mc-lbl" style="margin-top:6px">AI 要約（参考・他の方の内容が混ざることがあります）</div>'+
+     (sums.length?sums.map(function(t){ return '<div class="mc-txt mc-sum">'+esc(t)+'</div>'; }).join('')
+       :'<div class="mc-txt mc-sum">（この日のこの方の服薬関連の要約はありません）</div>')+'</div>';
   if(!mcCur.loaded) return h+(mcCur.msg?'<p class="mc-msg" role="status">'+esc(mcCur.msg)+'</p>':'');
   /* この記録の日付より後の変更履歴（先に手で直してあった・既に反映済みに気づけるように・指摘1） */
   var mh=(mcCur.rec&&Array.isArray(mcCur.rec.medsHistory)?mcCur.rec.medsHistory:[]).filter(function(e){
@@ -5833,8 +5910,8 @@ function mcKeepLines_(before,lines){
 function mcAiRun_(){
   if(!mcCur||mcCur.busy||!mcCur.loaded) return;
   if(mcCur.edited&&!confirm('手で直した直し案を、AI の案で置き換えます。よろしいですか？')) return;
-  var cur=mcCur, gen=mcWorkGen, dg=devGen, rm=mcRawMed_(cur.c);
-  var txt=cur.c.text+(rm.length?'\n（原文のうち薬に関わる行）\n'+rm.map(function(e){return e.body}).join('\n'):'');
+  var cur=mcCur, gen=mcWorkGen, dg=devGen, rm=mcRawMed_(cur.c).filter(function(e){ return String(e.body)!==cur.c.text; });
+  var txt=cur.c.text+(rm.length?'\n（同じ日のこの方の原文のうち、薬に関わるほかの行）\n'+rm.map(function(e){return e.body}).join('\n'):'');
   cur.busy=true; cur.msg='AI に尋ねています…（数十秒かかることがあります。閉じても構いません）'; mcPaintModal_();
   mcAiAsk_(cur.before,txt).then(function(ai){
     if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
