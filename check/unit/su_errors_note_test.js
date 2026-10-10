@@ -167,7 +167,7 @@ console.log('\n— 2d. 不具合報告の合言葉は URL に載せず、本文�
       localStorage: { getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null) },
       fetch: (u, o) => { calls.push([u, o]); return Promise.resolve({ ok: true, text: () => Promise.resolve('{"ok":true}') }); } };
     vm.createContext(box);
-    vm.runInContext([cutF('reportToken'), cutF('endpoint'), cutF('post')].join('\n'), box);
+    vm.runInContext(['var KEY_IN_URL = ' + /var KEY_IN_URL = ([^\n]*);/.exec(RS)[1] + ';', cutF('urlKey_'), cutF('reportToken'), cutF('endpoint'), cutF('post')].join('\n'), box);
     return { box, calls };
   }
   const URL0 = 'https://script.google.com/macros/s/X/exec';
@@ -179,7 +179,16 @@ console.log('\n— 2d. 不具合報告の合言葉は URL に載せず、本文�
   t('合言葉が無い端末は送り先なし（送らない）', mk({ su_report_endpoint: URL0 }).box.endpoint() === '', '');
   t('https 以外へは送らない', mk({ su_report_endpoint: 'http://x/exec', su_report_token: 't' }).box.endpoint() === '', '');
   t('改行の混ざった合言葉は使わない（1行目を壊さない）', mk({ su_report_endpoint: URL0, su_report_token: 'a\nb' }).box.endpoint() === '', '');
-  t('su-report.js に URL へ合言葉を組み立てる所が無い', !/['"]k=['"]\s*\+/.test(RS) && !/[?&]k=/.test(RS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), '');
+  const old = mk({ su_report_endpoint: URL0 + '?k=old%2Bkey' });
+  const ou = old.box.endpoint();
+  old.box.post(ou, '本文');
+  t('9/06 の初期設定（URL に ?k= 入り・合言葉の欄なし）の端末: URL から外し、本文の1行目で送る', ou === URL0 && old.calls[0][1].body === 'SU-KEY-V1 old+key\n本文', [ou, old.calls]);
+  const both = mk({ su_report_endpoint: URL0 + '?a=1&k=x&b=2', su_report_token: 'tok-2' });
+  const bu = both.box.endpoint();
+  both.box.post(bu, 'b');
+  t('URL に k= があっても外し、合言葉の欄の値を優先する（他の引数は残す）', bu === URL0 + '?a=1&b=2' && both.calls[0][1].body === 'SU-KEY-V1 tok-2\nb', [bu, both.calls]);
+  t('200字を超える合言葉は黙って切り詰めず、送らない', mk({ su_report_endpoint: URL0, su_report_token: 'x'.repeat(201) }).box.endpoint() === '', '');
+  t('su-report.js に URL へ合言葉を組み立てる所が無い', !/['"]k=['"]\s*\+/.test(RS) && !/['"][?&]k=/.test(RS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), '');
   t('画面に出す本文・コピー（compose）には合言葉を入れない', cutF('compose').indexOf('SU-KEY') < 0 && cutF('payload').indexOf('SU-KEY') < 0, '');
 }
 

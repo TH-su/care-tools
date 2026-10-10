@@ -168,16 +168,28 @@
   /* ★合言葉は URL に付けず、本文の1行目「SU-KEY-V1 <合言葉>」で送る（2026-10-10・監査10月版 第2版 8）。
      URL の ?k= は Apps Script の実行ログや途中の機器のログに残りうるため。受け口（gas/su-report-api.gs）は
      1行目を照合したら外し、シートには残さない。画面に出す本文・コピーには入らない（送る時だけ付ける）。 */
+  /* ★9/06 の初期設定は送り先 URL の中に合言葉（?k=）を入れる手順だった。その形で保存した端末でも URL に載せないよう、
+     URL から k= を外し、合言葉の欄が空ならその値を合言葉として使う（端末の保存値は書き換えない）。 */
+  var KEY_IN_URL = /([?&])k=([^&#]*)&?/;
+  function urlKey_(url) {
+    var m = KEY_IN_URL.exec(url);
+    if (!m) return { url: url, k: '' };
+    var k = '';
+    try { k = decodeURIComponent(m[2]); } catch (e) { k = ''; }
+    return { url: url.replace(KEY_IN_URL, '$1').replace(/[?&]$/, ''), k: k };
+  }
   function reportToken() {
     try {
       var tok = String(localStorage.getItem('su_report_token') || '').trim();
-      return /[\r\n]/.test(tok) ? '' : tok.slice(0, 200);
+      if (!tok) tok = urlKey_(String(localStorage.getItem('su_report_endpoint') || '').trim()).k.trim();
+      return (/[\r\n]/.test(tok) || tok.length > 200) ? '' : tok;   // 改行・長すぎる合言葉は使わない（黙って切り詰めない）
     } catch (e) { return ''; }
   }
   function endpoint() {
     try {
-      var url = String(localStorage.getItem('su_report_endpoint') || '').trim();
+      var url = urlKey_(String(localStorage.getItem('su_report_endpoint') || '').trim()).url;
       if (!/^https:\/\//i.test(url) || !reportToken()) return '';     // https:// 以外（http:・javascript: 等）へは送らない
+      if (KEY_IN_URL.test(url)) return '';   // k= が2つ以上ある崩れた URL へは送らない
       return url;
     } catch (e) { return ''; }
   }
