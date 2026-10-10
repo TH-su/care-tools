@@ -6214,7 +6214,7 @@ function mdAiFill(){
       /* ★時間切れ（AI_TIMEOUT）も割り直さない。中継の GAS は画面が諦めた後も Anthropic を呼び終えるため、
          割ってやり直すと同じ薬剤を2〜3回分払うことになる */
       /* ★世代が変わった時（STALE）は半分に割って尋ね直さない */
-      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|STALE)$/.test(em)) throw e;
+      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|AI_FETCH|STALE)$/.test(em)) throw e;   /* AI_FETCH＝GAS が回数を数えた後の通信失敗（時間切れの可能性） */
       /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
          それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
       var half=Math.ceil(chunks[k].length/2);
@@ -6229,8 +6229,8 @@ function mdAiFill(){
       }).then(function(){ done+=chunks[k].length; });
     }).then(function(){ return step(k+1); });
   }
-  step(0).then(function(){
-    if(gen!==mdGen) return;   /* ★世代が変わった後は入力欄にも控えにも書かない */
+  /* 取れた分を入力欄へ入れる（全部取れた時も、途中で止めた時も同じ・2026-10-10 審査の指摘）。入れた件数を返す */
+  function writeGot(){
     var box=$('mdSheet'), n=0;
     if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
       var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
@@ -6244,17 +6244,25 @@ function mdAiFill(){
         n++;
       }
     });
-    mdBusy='';
     if(n) mdMarkDirty();
+    return n;
+  }
+  step(0).then(function(){
+    if(gen!==mdGen) return;   /* ★世代が変わった後は入力欄にも控えにも書かない */
+    var n=writeGot();
+    mdBusy='';
     if($('mdAi')) $('mdAi').disabled=false;
     paintShBars();
     toast(n+'件に下書きを入れました'+(ng?('（'+ng+'回ぶん取得できませんでした）'):'')+
           '。内容を確かめてから「保存」を押してください');
   }).catch(function(e){
     if(gen!==mdGen) return;   /* ★STALE を含め、世代が変わった後は印・ボタン・案内に触れない */
+    /* ★止めた時も、料金を払って取れた分は捨てずに入れる（入れた件数を案内に書く） */
+    var n=0; try{ n=writeGot(); }catch(e2){ n=0; }
     mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
     var code=String((e&&e.message)||e);
-    toast('AIに尋ねられませんでした：'+mdAiWhy_(code),false);
+    toast('AIに尋ねられませんでした：'+mdAiWhy_(code)+
+          (n?('（それまでに取れた '+n+'件は入力欄に入れました。内容を確かめてから「保存」を押してください）'):''),false);
   });
 }
 /* 中継の断り・時間切れを、画面の言葉に（効能の下書きと薬の変更候補の下書きで共通） */
@@ -6265,8 +6273,16 @@ function mdAiWhy_(code){
              AI_PROXY_AUTH:'訓練計画の接続設定の合言葉が通りませんでした',
              AI_NO_PROXY:'この端末には個別機能訓練計画書の接続先がありません',
              AI_BAD_REQUEST:'AIへの依頼の形がサーバーで断られました。管理者に連絡してください',
-             AI_TIMEOUT:'AIの返事が時間内に届きませんでした。少し待ってから、もう一度お試しください（入った分はそのまま残っています）'}[code];
-    return why||code;
+             AI_TIMEOUT:'AIの返事が時間内に届きませんでした。少し待ってから、もう一度お試しください',
+             AI_FETCH:'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください',
+             AI_BUSY:'サーバーが混み合っています。少し待ってから、もう一度お試しください',
+             AI_PROXY:'計画書の専用GASから正しい応答がありませんでした。もう一度お試しください',
+             AI_BAD_JSON:'AIの返事を読み取れませんでした。もう一度お試しください',
+             AI_NETWORK:'AIに接続できませんでした。通信を確かめてから、もう一度お試しください'}[code];
+    if(why) return why;
+    if(/^AI_HTTP_\d+$/.test(code)) return 'AIから正しい応答がありませんでした（HTTP '+code.slice(8)+'）。少し待ってから、もう一度お試しください';
+    if(/^AI_[A-Z0-9_]+$/.test(code)) return 'AIに尋ねられませんでした（'+code+'）';
+    return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';   /* fetch の英語の例外文などはそのまま出さない */
 }
 /* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
    Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。

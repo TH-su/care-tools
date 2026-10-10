@@ -212,7 +212,7 @@ async function msgOf(sb, body) {
     delete store.tp_cfg;
     em = ''; try { await rb.mdAiAsk(['x']); } catch (e) { em = e.message; }
     t('★接続先の無い端末は AI_NO_PROXY（送らない）', em === 'AI_NO_PROXY' && sent.length === 2, em);
-    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|STALE)?\)\$\/\.test/.test(rsrc));
+    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|AI_FETCH)?(\|STALE)?\)\$\/\.test/.test(rsrc));
     /* 薬の変更候補の AI 下書き（mcAiAsk_・10/06 に main で追加）も同じ中継を通る（2026-10-10 合流時に移した） */
     store.tp_cfg = JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' });
     reply = { ok: true, status: 200, data: { content: [{ type: 'text', text: '{"isChange":true,"after":["薬A 1錠 朝食後"],"changes":[],"unsure":[],"reason":"r"}' }] } };
@@ -228,6 +228,32 @@ async function msgOf(sb, body) {
     me = ''; try { await rb.mcAiAsk_('a', 'b'); } catch (e) { me = e.message; }
     t('★接続先の無い端末では薬の変更候補の下書きも送らない（AI_NO_PROXY）', me === 'AI_NO_PROXY' && sent.length === before + 1, me);
     t('★入居者マスタに端末の鍵で直接呼ぶ所が残っていない', !/x-api-key|dangerous-direct-browser|mdAiKey\(|MD_AI_URL/.test(rsrc), '');
+    /* 本物の伏せ字（mcMask_）を通して、中継へ送る本文で氏名・居室が伏せられていること（審査の指摘4） */
+    store.tp_cfg = JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' });
+    const mb = { localStorage: rb.localStorage, fetch: rb.fetch, MD_AI_MODEL: 'claude-sonnet-5', MD_AI_TIMEOUT: 500,
+      roster: [{ name: '架空 一郎', kana: 'カクウ イチロウ', room: '203' }],
+      Promise, JSON, Object, String, Number, Error, RegExp, setTimeout, clearTimeout };
+    vm.createContext(mb);
+    vm.runInContext([cutR('mcNfkc_'), cutR('mcMask_'), cutR('mdAiCfg'), cutR('mdAiProxy_'), cutR('mcAiAsk_'), cutR('mcAiParse_'),
+                     'function mcLines_(b){ return String(b||"").split("\\n").filter(Boolean); }'].join('\n'), mb);
+    const mbefore = sent.length;
+    try { await mb.mcAiAsk_('薬A 1錠 朝食後', '架空 一郎様（203号室）の薬Aを中止'); } catch (e) { /* 応答は読めなくてもよい */ }
+    const content = sent[mbefore] ? JSON.parse(sent[mbefore].opt.body).body.messages[0].content : '';
+    t('★薬の変更候補の下書きは、中継へ送る前に氏名と居室を伏せる', !!content && content.indexOf('架空') < 0 && content.indexOf('203') < 0 && content.indexOf('○○') >= 0, content.slice(-60));
+    /* 断りの案内（効能と変更候補で共通） */
+    const wb = { String, RegExp };
+    vm.createContext(wb);
+    vm.runInContext(cutR('mdAiWhy_'), wb);
+    t('★時間切れの案内に「残っています」と書かない（変更候補の画面では何も入っていない）', wb.mdAiWhy_('AI_TIMEOUT').indexOf('残って') < 0, wb.mdAiWhy_('AI_TIMEOUT'));
+    t('中継の失敗のコードも言葉にする（AI_FETCH・AI_BUSY・AI_PROXY・AI_BAD_JSON・AI_NETWORK・AI_HTTP_n）',
+      ['AI_FETCH', 'AI_BUSY', 'AI_PROXY', 'AI_BAD_JSON', 'AI_NETWORK', 'AI_HTTP_500'].every(c => !/AI_[A-Z]/.test(wb.mdAiWhy_(c))), ['AI_FETCH', 'AI_HTTP_500'].map(wb.mdAiWhy_));
+    t('ブラウザの英語の例外文はそのまま出さない', !/Failed/.test(wb.mdAiWhy_('Failed to fetch')), wb.mdAiWhy_('Failed to fetch'));
+    t('★時間切れの可能性がある AI_FETCH も割って尋ね直さない（二重に払わない）', /\|AI_TIMEOUT\|AI_FETCH\|STALE\)\$\/\.test\(em\)\) throw e;/.test(rsrc), '');
+    const fill = cutR('mdAiFill');
+    const tIdx = fill.indexOf("toast('AIに尋ねられませんでした：'");
+    const lastCatch = tIdx > 0 ? fill.slice(fill.lastIndexOf('}).catch(function(e){', tIdx), tIdx + 200) : '';
+    t('★効能の一括下書きは、途中で止めた時も取れた分を入力欄へ入れてから案内する（最後のエラー処理の中で）',
+      /if\(gen!==mdGen\) return;[\s\S]*n=writeGot\(\);[\s\S]*それまでに取れた/.test(lastCatch) && lastCatch.indexOf('var em=') < 0, lastCatch.slice(0, 120));
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
