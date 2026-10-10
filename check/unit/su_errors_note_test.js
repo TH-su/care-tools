@@ -192,11 +192,12 @@ console.log('\n— 2d. 不具合報告の合言葉は URL に載せず、本文�
   t('画面に出す本文・コピー（compose）には合言葉を入れない', cutF('compose').indexOf('SU-KEY') < 0 && cutF('payload').indexOf('SU-KEY') < 0, '');
 }
 
-console.log('\n— 3. 3画面の記録の口と置き換え —');
+console.log('\n— 3. 4画面の記録の口と置き換え —');
 const PAGES = [
   ['weight-record.html', 'wrNote_', 'weight', 15],
   ['care-schedule.html', 'csNote_', 'care', 41],   // 2026-10-10 直した人の印・基準の4か所を足した
-  ['resident-master.html', 'rmNote_', 'master', 9]
+  ['resident-master.html', 'rmNote_', 'master', 9],
+  ['facesheet.html', 'fsNote_', 'facesheet', 1]   // 2026-10-10 入居者マスタの接続設定の読込（デイ利用日の部品は入居者マスタと逐語同一の約束で触らない）
 ];
 for (const [file, fn, tag, want] of PAGES) {
   const html = fs.readFileSync(path.join(ROOT, file), 'utf8');

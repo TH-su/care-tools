@@ -62,6 +62,8 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
+/* 介護度の履歴の「記録した人」は画面だけ（2026-10-10・紙は変えない） */
+@media print{.clh-by{display:none !important}}
 /* ── 印刷しない欄（2026-08-17 指示）──
    入居者ごとの「この欄は紙に出さない」指定。正本は入居者マスタの編集画面で、ここは反映するだけ。
    ★画面には従来どおり全部出す。隠すのは紙だけ。
@@ -575,7 +577,14 @@ input,select{font-family:inherit; font-size: 0.9375rem}
      効能の正本は med_dict（薬剤師確認・2026-09-24 本人決定）。 -->
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
+<script>
+/* 黙ると困る失敗（接続先の設定・取得の補助）を、画面には出さずに記録へ残す（2026-10-10・監査10月版 第2版 フェイスシート 第1手）。
+   行き先は su-errors.js の note＝コンソールと記録先（不具合報告の控えと自動報告）。トーストは出さない。
+   ★どの script より先に定義する。note が無い古いキャッシュでは何もしない。入居者マスタの rmNote_ と同じ作り
+   ★デイ利用日の部品（a4SyncTarget 等）は入居者マスタと一字一句同じ約束なのでここでは触らない（取得に失敗すると欄が「未確認」と出る＝黙らない） */
+function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'facesheet:' + where); }catch(_){} }
+</script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-09-27"></script>
@@ -611,7 +620,7 @@ var GENOGRAM_APP='genogram.html';
 var CFG={url:'',token:''};
 /* 保存済みの接続設定を読む（接続テストの戻り先＝確定値の取得にも使う）。読めない時は空を返す。 */
 function readSavedCfg_(){
-  try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);return{url:o.url||'',token:o.token||''}}}catch(e){}
+  try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);return{url:o.url||'',token:o.token||''}}}catch(e){ fsNote_('接続設定の読込', e); }
   return {url:'',token:''};
 }
 (function loadCfg(){var o=readSavedCfg_();CFG.url=o.url;CFG.token=o.token})();
@@ -2072,7 +2081,9 @@ function careHistHtml(r){
                (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
     var sub=s.__cur?'現在'
       :[s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
-    return'<div class="logline"><span class="d">'+esc(period||'（認定期間の記載なし）')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+'</span></div>';
+    /* 記録した人は画面だけ（紙は変えない・2026-10-10）。sub は丸ごとエスケープされるので外で足す */
+    var by=(!s.__cur&&s.changedBy)?'<span class="clh-by" style="color:var(--g6);font-size: 0.75rem"> / 記録した人 '+esc(String(s.changedBy).slice(0,60))+'</span>':'';
+    return'<div class="logline"><span class="d">'+esc(period||'（認定期間の記載なし）')+'</span><span class="t"><b>'+esc(s.value||'')+'</b>'+(sub?'<span style="color:var(--g6);font-size: 0.75rem"> 　'+esc(sub)+'</span>':'')+by+'</span></div>';
   }).join('')+'</div>';
 }
 

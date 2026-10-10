@@ -140,6 +140,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rm-edited{margin:4px 0 8px;font-size:0.875rem;line-height:1.5;color:#4a4f57}
 .rm-edited-note{display:block;font-size:0.8125rem}
 @media print{.rm-edited{display:none !important}}
+@media print{.clh-by{display:none !important}}
 /* ── 印刷しない欄（2026-08-17 指示）──
    入居者ごとに「この欄は紙に出さない」を選べる（ご家族へお渡しする紙で伏せる用途）。
    ★画面には従来どおり全部出す。隠すのは紙だけ。
@@ -7832,7 +7833,7 @@ function renderView(r){
                  (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
       var tail=s.__cur ? '現在'
         : [s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
-      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex:1 1 150px;min-width:120px;font-weight:700;color:var(--pri-d)">'+esc(period||'（認定期間の記載なし）')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1 1 auto;color:'+(s.__cur?'var(--pri-d);font-weight:700':'var(--g7)')+'">'+esc(tail)+'</span></div>';
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex:1 1 150px;min-width:120px;font-weight:700;color:var(--pri-d)">'+esc(period||'（認定期間の記載なし）')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1 1 auto;color:'+(s.__cur?'var(--pri-d);font-weight:700':'var(--g7)')+'">'+esc(tail)+((!s.__cur&&s.changedBy)?'<span class="clh-by"> / 記録した人 '+esc(String(s.changedBy).slice(0,60))+'</span>':'')+'</span></div>';
     }).join('');
     h+='<div class="sec"><div class="sec-lbl">介護度の変更履歴</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+chHtml+'</div></div></div>';
   }
@@ -8312,6 +8313,7 @@ function clhEntryFor_(rec){
   if(hist.length&&clhSame_(hist[0],before)) return null;
   return {value:before.value, certStart:before.certStart, certEnd:before.certEnd,
           certDate:before.certDate, changedAt:todayISO(),
+          changedBy:(typeof rmWho_==='function')?rmWho_():'',   /* 記録した人（2026-10-10・画面だけに出す） */
           note:(before.value!==after.value)?'区分変更（自動記録）':'更新認定（自動記録）'};
 }
 function isISODate(s){return /^\d{4}-\d{2}-\d{2}$/.test(String(s||''))}
@@ -8634,7 +8636,7 @@ function openEdit(rec){
   };
   $('supportAdd').addEventListener('click',supAdd);
   $('supportAddTop').addEventListener('click',supAdd);
-  $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),note:''});renderCareHistRows()});
+  $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),changedBy:(typeof rmWho_==='function')?rmWho_():'',note:''});renderCareHistRows()});
   $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
   /* 病名の行を1行足す。既に入力された行は触らない（作り直すと入力中の文字が消える）。
      行を消すボタンは作らない＝3つとも空にすれば保存時に落ちる（誤削除の入口を作らない） */
