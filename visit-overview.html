@@ -386,41 +386,57 @@ async function fetchRemote() {
    ★姓の切れ目は推測しない。①氏名に空白があればその前 ②週間計画の共有データに入居者マスタ由来の切れ目
      （nameCut＝姓の文字数・nameCutLen＝空白を除いた文字数。文字数が合う時だけ）。
      ③どちらも無い氏名は、先頭2文字と「…」で出す（姓とは言い切らない・フルネームは出さない）。
-   ★同じ姓の方が画面に2人以上いる時は「姓＋名の1文字目」（まだ重なれば2文字目まで）で見分ける（代表者の決定 A）。
+   ★同じ姓の方が画面に2人以上いる時は「姓＋名の1文字目」（まだ重なれば2文字目まで・名は全部は出さない・それでも重なれば①②）で見分ける（代表者の決定 A）。
+   ★氏名の後ろの敬称・かっこ書きは外してから切る。空白の有無だけ違う同じ人は1人として扱う。
    ★氏名の文字は保持しない（切れ目の数値だけ）。表示・印刷・読み上げ・吹き出しのどれも同じ表記にする。 */
 function ovIsField_() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+/* 氏名の後ろに付いた敬称・かっこ書き（「 様」「（体験）」等）を外す（ワースケの手入力の名前に付くことがある） */
+function ovBareName_(name) {
+  return String(name == null ? '' : name).trim()
+    .replace(/[\s\u3000]*[（(][^（）()]*[)）]$/, '')
+    .replace(/[\s\u3000]*(様|さま|さん|氏|殿|ちゃん)$/, '').trim();
+}
 function ovSplitName_(name, cuts) {
-  const raw = String(name == null ? '' : name).trim();
-  const sp = /[\s　]+/.exec(raw);
-  if (sp && sp.index > 0) return { sur: raw.slice(0, sp.index), given: raw.slice(sp.index + sp[0].length).replace(/[\s　]+/g, ''), known: true };
-  const bare = raw.replace(/[\s　]+/g, '');
+  const raw = ovBareName_(name);
+  const toks = raw.split(/[\s\u3000]+/).filter(Boolean);
+  if (toks.length === 2) return { sur: toks[0], given: toks[1], known: true };
+  const bare = toks.join('');
   const c = cuts && Object.prototype.hasOwnProperty.call(cuts, bare) ? cuts[bare] : null;
   if (c && Number.isInteger(c.cut) && Number.isInteger(c.len) && c.len === bare.length && c.cut > 0 && c.cut < bare.length) {
     return { sur: bare.slice(0, c.cut), given: bare.slice(c.cut), known: true };
   }
-  return { sur: bare.length > 2 ? bare.slice(0, 2) + '…' : bare, given: bare.length > 2 ? bare.slice(2) : '', known: false };
+  /* 切れ目が分からない：4文字以上は先頭2文字、それ未満は先頭1文字＋「…」（姓とは言い切らない・名を出さない） */
+  const n = bare.length >= 4 ? 2 : 1;
+  return { sur: bare.length > 1 ? bare.slice(0, n) + '…' : bare, given: bare.slice(n), known: false };
 }
 /* 氏名 → 画面に出す表記。field でなければそのまま返す関数を返す */
 function ovNameLabeler_(names, cuts) {
   if (!ovIsField_()) return function (n) { return String(n == null ? '' : n); };
-  const uniq = Array.from(new Set((names || []).map(n => String(n == null ? '' : n).trim()).filter(Boolean)));
+  /* 空白・敬称の違いだけの同じ人は1人として扱う（鍵＝空白と敬称を除いた氏名） */
+  const keyOf = n => ovBareName_(n).replace(/[\s\u3000]+/g, '');
   const parts = {}, bySur = {};
-  uniq.forEach(n => { const p = ovSplitName_(n, cuts); parts[n] = p; (bySur[p.sur] = bySur[p.sur] || []).push(n); });
+  (names || []).forEach(n => {
+    const k = keyOf(n); if (!k || parts[k]) return;
+    const p = ovSplitName_(n, cuts); parts[k] = p; (bySur[p.sur] = bySur[p.sur] || []).push(k);
+  });
   const label = {};
   Object.keys(bySur).forEach(sur => {
-    const group = bySur[sur];
+    const group = bySur[sur].sort();
     if (group.length === 1) { label[group[0]] = sur; return; }
-    /* 同じ姓：名の頭を1文字ずつ増やして、重ならなくなるまで（最大で名の全部） */
-    let k = 1;
-    const maxLen = Math.max.apply(null, group.map(n => parts[n].given.length));
-    for (; k <= Math.max(1, maxLen); k++) {
-      const seen = {};
-      const dup = group.some(n => { const v = parts[n].given.slice(0, k); if (seen[v]) return true; seen[v] = 1; return false; });
-      if (!dup) break;
+    /* 同じ姓：名の頭を足して見分ける（代表者の決定 A）。★名は全部は出さない（最大でも名の文字数−1・かつ2文字まで）。
+       それでも重なる人は ①② の番号で見分ける */
+    /* 切れ目の分からない人（known=false）の「名」は推測なので足さない＝番号だけで見分ける */
+    const pick = (k, w) => { if (!parts[k].known) return ''; const g = parts[k].given; return g.slice(0, Math.min(w, Math.max(0, g.length - 1))); };
+    let w = 1, ok = false;
+    for (; w <= 2; w++) {
+      const seen = {}; ok = !group.some(k => { const v = pick(k, w); if (!v || seen[v]) return true; seen[v] = 1; return false; });
+      if (ok) break;
     }
-    group.forEach(n => { const g = parts[n].given.slice(0, k); label[n] = g ? sur + ' ' + g : sur; });
+    if (ok) { group.forEach(k => { label[k] = sur + ' ' + pick(k, w); }); return; }
+    const circ = '①②③④⑤⑥⑦⑧⑨⑩';
+    group.forEach((k, i) => { const g = pick(k, 1); label[k] = sur + (g ? ' ' + g : '') + (circ[i] || '(' + (i + 1) + ')'); });
   });
-  return function (n) { const key = String(n == null ? '' : n).trim(); return Object.prototype.hasOwnProperty.call(label, key) ? label[key] : ovSplitName_(key, cuts).sur; };
+  return function (n) { const k = keyOf(n); return Object.prototype.hasOwnProperty.call(label, k) ? label[k] : ovSplitName_(n, cuts).sur; };
 }
 /* 週間計画の利用者から、氏名（空白なし）→ 切れ目 の対応だけを作る（文字は数値以外持たない） */
 function ovCutsFrom_(residents) {

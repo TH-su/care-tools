@@ -4,7 +4,8 @@
      ①事務所の端末（su_device_role が field 以外）はフルネームのまま
      ②現場の端末は姓だけ。姓の切れ目は「空白」か「週間計画の nameCut（文字数が合う時だけ）」。推測しない
      ③切れ目が分からない氏名は先頭2文字＋「…」（フルネームを出さない）
-     ④同じ姓が2人以上なら「姓＋名の1文字目」、まだ重なれば2文字目まで（代表者の決定 A）
+     ④同じ姓が2人以上なら「姓＋名の1文字目」、まだ重なれば2文字目まで（代表者の決定 A）。★名は全部は出さない。それでも重なれば①②
+     ⑤敬称・かっこ書きは外してから切る・空白の有無だけ違う同じ人は1人・短い氏名も名を出さない
      ⑤カードの氏名・吹き出し（title）・読み上げ（aria-label）がすべて同じ表記
    ★氏名は全て架空。 */
 'use strict';
@@ -24,7 +25,7 @@ function cutF(src, name) {
   let i = src.indexOf('{', h), d = 0;
   for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } }
 }
-const FNS = ['ovIsField_', 'ovSplitName_', 'ovNameLabeler_', 'ovCutsFrom_'];
+const FNS = ['ovIsField_', 'ovBareName_', 'ovSplitName_', 'ovNameLabeler_', 'ovCutsFrom_'];
 
 for (const file of ['support-overview.html', 'visit-overview.html']) {
   const SRC = fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -59,10 +60,23 @@ for (const file of ['support-overview.html', 'visit-overview.html']) {
     t('現場：切れ目（nameCut）で姓だけ', L('架空一郎') === '架空', L('架空一郎'));
     t('現場：氏名に空白があればその前が姓', L('空白 有子') === '空白', L('空白 有子'));
     t('現場：同じ姓が2人なら「姓＋名の1文字目」', L('見本花子') === '見本 花' && L('見本次郎') === '見本 次', [L('見本花子'), L('見本次郎')]);
-    t('現場：名の1文字目まで同じなら2文字目まで', L('試験一子') === '試験 一子' && L('試験一美') === '試験 一美', [L('試験一子'), L('試験一美')]);
-    t('現場：文字数が合わない切れ目は使わず、先頭2文字＋「…」', L('仮名太郎') === '仮名…', L('仮名太郎'));
+    t('現場：名が2文字で1文字目まで同じなら、名を全部は出さず①②で見分ける', L('試験一子') === '試験 一①' && L('試験一美') === '試験 一②', [L('試験一子'), L('試験一美')]);
+    t('現場：文字数が合わない切れ目は使わず、先頭2文字＋「…」（4文字）', L('仮名太郎') === '仮名…', L('仮名太郎'));
     t('現場：切れ目が無い氏名も先頭2文字＋「…」（フルネームを出さない）', L('長谷部三郎') === '長谷…', L('長谷部三郎'));
-    t('現場：どの表記もフルネームと同じにならない（4文字以上の氏名）', names.filter(n => n.replace(/\s/g, '').length >= 4).every(n => L(n) !== n && L(n) !== n.replace(/\s/g, '')), names.map(L));
+    /* ★空白・「…」・番号を除いて比べ、名（2文字以上）を全部含む表記が1つも無いこと（審査の指摘：空白が入っただけのフルネーム） */
+    const strip = x => String(x).replace(/[\s\u3000…①-⑩()（）0-9]/g, '');
+    const leakAll = (nm, cuts) => { const Lx = b.ovNameLabeler_(nm, cuts); return nm.filter(n => { const p = b.ovSplitName_(n, cuts); return p.given.length >= 2 && strip(Lx(n)).indexOf(p.given) >= 0; }).map(n => [n, Lx(n)]); };
+    t('現場：名（2文字以上）を全部出す表記が無い', leakAll(names, b.ovCutsFrom_(residents)).length === 0, leakAll(names, b.ovCutsFrom_(residents)));
+    const hard = ['見本 花子', '見本 花美', '見本 一美子', '見本 一美代', '見本 一丙乙', '見本花絵', '見本花江'];
+    t('現場：同じ姓の名の頭が重なる組でも、名を全部は出さない（' + hard.length + '人）', leakAll(hard, {}).length === 0, hard.map(b.ovNameLabeler_(hard, {})));
+    const L3 = b.ovNameLabeler_(['見本 一美子', '見本 一丙乙'], {});
+    t('現場：名が3文字以上で1文字目が同じなら2文字目まで', L3('見本 一美子') === '見本 一美' && L3('見本 一丙乙') === '見本 一丙', [L3('見本 一美子'), L3('見本 一丙乙')]);
+    const Lh = b.ovNameLabeler_(['架空一郎 様', '見本花子（体験）'], b.ovCutsFrom_(residents));
+    t('現場：氏名の後ろの「 様」・かっこ書きは外してから切る', Lh('架空一郎 様') === '架空' && Lh('見本花子（体験）') === '見本', [Lh('架空一郎 様'), Lh('見本花子（体験）')]);
+    const Ls = b.ovNameLabeler_(['見本 花子', '見本花子'], { '見本花子': { cut: 2, len: 4 } });
+    t('現場：空白の有無だけ違う同じ人は1人として扱う（名を出さない）', Ls('見本 花子') === '見本' && Ls('見本花子') === '見本', [Ls('見本 花子'), Ls('見本花子')]);
+    const Lk = b.ovNameLabeler_(['丙乙', '丙乙丁'], {});
+    t('現場：切れ目の分からない短い氏名（2〜3文字）は先頭1文字＋「…」', Lk('丙乙').indexOf('乙') < 0 && Lk('丙乙丁').indexOf('乙') < 0 && Lk('丙乙') === '丙…①' && Lk('丙乙丁') === '丙…②', [Lk('丙乙'), Lk('丙乙丁')]);
     t('現場：画面に無い氏名を渡されても姓（または先頭2文字…）で返す', L('架空五郎') === '架空…' || L('架空五郎') === '架空', L('架空五郎'));
   }
   {
