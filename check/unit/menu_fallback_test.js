@@ -74,6 +74,14 @@ const goodCount = good.sections.reduce((n, s) => n + s.tiles.length, 0);
   const r = run(GOOD_DEF);
   t('全部のタイルが出る（' + goodCount + '枚）', !r.err && r.tiles.length === goodCount, [r.err, r.tiles.length]);
   t('帯も不具合の知らせも出ない', r.broken === null && r.reports.length === 0, [r.broken, r.reports]);
+  /* 並び順・事務所PC用の印・行替え・施設名の欄まで、定義どおりに出る */
+  const want = [], got = [];
+  good.sections.forEach(s => s.tiles.forEach(x => want.push([x.href, !!(x.officeOnly || s.officeOnly), !!x.newrow, /^\{\{(施設|訪問|通所)\}\}/.test(x.note || '') ? RegExp.$1 : ''])));
+  const facOf = n => { for (const c of n.children || []) { if (c.attrs && c.attrs['data-fac-name']) return c.attrs['data-fac-name']; const v = facOf(c); if (v) return v; } return ''; };
+  r.main.children.forEach(sec => sec.children.filter(c => c.className === 'grid').forEach(g => g.children.forEach(a =>
+    got.push([a.attrs.href, 'data-office-only' in a.attrs || 'data-office-only' in sec.attrs, /\bnewrow\b/.test(a.className), facOf(a)]))));
+  t('並び順・事務所PC用の印・行替え・施設名の欄が定義どおり', JSON.stringify(got) === JSON.stringify(want), { want: want.slice(0, 3), got: got.slice(0, 3) });
+  t('区分の見出しの数が定義どおり', r.main.children.filter(c => c.tagName === 'SECTION').length === good.sections.length, '');
 }
 
 console.log('\n— 2. 壊れた1件だけを飛ばす —');
@@ -87,12 +95,32 @@ console.log('\n— 2. 壊れた1件だけを飛ばす —');
 }
 {
   const d = JSON.parse(GOOD_DEF);
-  const lost = d.sections[1].tiles.length;
-  d.sections[1].tiles = 'x';            // タイルの一覧が配列でない＝その区分はタイル0枚
-  d.sections.splice(0, 0, null);         // 壊れた区分
+  d.sections.splice(0, 0, null);         // 壊れた区分（null）だけ
   const r = run(JSON.stringify(d));
-  t('壊れた区分を飛ばし、他の区分は出す', !r.err && r.tiles.length === goodCount - lost && r.tiles.length > 0, [r.err, r.tiles.length]);
-  t('帯と知らせが出る', !!r.broken && r.reports.length === 1, [r.broken, r.reports]);
+  t('壊れた区分（null）を飛ばし、他の区分は全部出す・帯と知らせ', !r.err && r.tiles.length === goodCount && /（1件）/.test(r.broken || '') && r.reports.length === 1, [r.err, r.tiles.length, r.broken, r.reports]);
+}
+{
+  const d = JSON.parse(GOOD_DEF);
+  const lost = d.sections[1].tiles.length;
+  d.sections[1].tiles = 'x';            // タイルの一覧が配列でない区分だけ
+  const r = run(JSON.stringify(d));
+  const secs = r.main.children.filter(c => c.tagName === 'SECTION').length;
+  t('タイルの一覧が配列でない区分だけでも、壊れた1件として帯と知らせを出し、その区分は出さない',
+    !r.err && r.tiles.length === goodCount - lost && /（1件）/.test(r.broken || '') && r.reports.length === 1 && secs === d.sections.length - 1, [r.err, r.tiles.length, r.broken, r.reports, secs]);
+}
+{
+  const d = JSON.parse(GOOD_DEF);
+  delete d.sections[0].tiles[0].href;    // リンク先の無いタイル
+  const r = run(JSON.stringify(d));
+  t('リンク先の無いタイルは「undefined」のリンクにせず、壊れた1件として飛ばす',
+    !r.err && r.tiles.length === goodCount - 1 && r.tiles.indexOf('undefined') < 0 && /（1件）/.test(r.broken || '') && r.reports.length === 1, [r.err, r.tiles.length, r.broken]);
+}
+{
+  const d = JSON.parse(GOOD_DEF);
+  d.sections[2].tiles = d.sections[2].tiles.map(() => null);   // 区分のタイルが全部壊れた
+  const r = run(JSON.stringify(d));
+  const secs = r.main.children.filter(c => c.tagName === 'SECTION').length;
+  t('タイルが全部壊れた区分は見出しだけで出さない', !r.err && secs === d.sections.length - 1 && !!r.broken, [secs, r.broken]);
 }
 
 console.log('\n— 3. 1枚も出せない時は案内と「使い方・困った時」 —');

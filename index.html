@@ -372,8 +372,10 @@ main {
       var mk = el('span', 'mk', s.mk); mk.setAttribute('aria-hidden', 'true');
       h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
       var grid = el('div', 'grid');
-      (Array.isArray(s.tiles) ? s.tiles : []).forEach(function (t) {
+      if (!Array.isArray(s.tiles)) throw new Error('区分 ' + s.id + ' のタイルの一覧が無い');
+      s.tiles.forEach(function (t) {
         try {
+        if (!t || typeof t.href !== 'string' || !t.href) throw new Error('リンク先の無いタイル');
         var a = el('a', 'tile' + (t.ext ? ' ext' : '') + (t.newrow ? ' newrow' : ''));
         if (t.officeOnly) a.setAttribute('data-office-only', '');
         a.setAttribute('href', t.href);
@@ -382,6 +384,7 @@ main {
         grid.appendChild(a);
         } catch (e) { fail(e); }
       });
+      if (!grid.children.length) return;   // タイルが0枚になった区分は見出しだけで出さない（壊れた分は数えてある）
       sec.appendChild(h2); sec.appendChild(grid);
       main.appendChild(sec);
     } catch (e) { fail(e); }
