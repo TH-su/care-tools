@@ -366,6 +366,8 @@ body.printing .b-note-adjust { display: none !important; }   /* 印刷完全非�
 .ghost.ok { border-color: var(--ok); background: rgba(46,125,50,.12); color: var(--ok); }
 .ghost.ng { border-color: var(--ng); background: rgba(198,40,40,.12); color: var(--ng); }
 .ghost.swap { border-color: #6a1b9a; background: rgba(106,27,154,.14); color: #6a1b9a; }
+/* 複数ドラッグ（グループ/複数選択）から1件だけ入れ替える「⇄1件入替」。色は入替と同じ紫系のまま、点線の太枠と薄い地で区別（2026-10-10） */
+.ghost.swap.one { border-style: dotted; border-width: 3px; background: rgba(106,27,154,.06); }
 .ghost.confirm { border-color: #e8a200; background: rgba(232,162,0,.15); color: #9a6a00; }
 .ghost.shrinkplace { border-color: var(--ok); background: rgba(46,125,50,.12); color: var(--ok); }
 .b-task.swap-target { box-shadow: 0 0 0 3px #6a1b9a; z-index: 21; }
@@ -1900,6 +1902,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return out;
   }
 
+  /* 重なった相手の種類で staffdup の文言を分ける（2026-10-10 本人決定 (f)）。
+   * 支援が1つでもあれば従来の文言のまま。無ければ 休憩 > 業務枠 > 施設業務 > 自由枠 の順で1つ選ぶ。
+   * 枠の名前（label）や利用者名は文言に入れない（名前を書いた自由枠があるため）。 */
+  function staffdupReason_(sc) {
+    var hasBreak = false, hasDuty = false, hasFac = false, hasFree = false, i, c;
+    for (i = 0; i < sc.length; i++) {
+      c = sc[i];
+      if (!c) continue;
+      if (c.kind === 'care') return '同時刻に別の支援が配置済みです';
+      if (c.kind === 'break') hasBreak = true;
+      else if (c.kind === 'facility') { if (c.src === 'facwork') hasFac = true; else hasDuty = true; }
+      else if (c.kind === 'free') hasFree = true;
+    }
+    if (hasBreak) return '休憩と重なります';
+    if (hasDuty) return '業務枠と重なります';
+    if (hasFac) return '施設業務と重なります';
+    if (hasFree) return '自由枠と重なります';
+    return '同時刻に別の支援が配置済みです';   /* 未知の種類は従来の文言 */
+  }
+
   /* 配置検証。task を staffId の (start,end) に置けるか。
    * ルール（2026-06-11承認）:
    *  R1 勤務時間内であること
@@ -1920,7 +1942,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var warn = (start < st.workStart || end > st.workEnd) ? 'worktime' : null;
     var sc = staffConflicts(day.tasks, staffId, start, end, ig);
     if (sc.length) {
-      return { ok: false, code: 'staffdup', reason: '同時刻に別の支援が配置済みです', conflicts: sc };
+      return { ok: false, code: 'staffdup', reason: staffdupReason_(sc), conflicts: sc };
     }
     if (task.kind === 'care' && task.residentId) {
       var rc = residentConflicts(day.tasks, task.residentId, start, end, ig);
@@ -1999,6 +2021,36 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function shrinkableFiller_(t) {
     return !!t && (t.kind === 'facility' || t.kind === 'free') && isAutoFiller_(t);
   }
+  /* 列の鍵（2026-10-10）。グループの印の交換は staffId でなく列で見る＝分割勤務の列（1列に staffId が2つ）の中では交換しない。
+   * col が無い職員（旧データ）は staffId を列の代わりにする。 */
+  function staffColKey_(st) {
+    if (!st) return null;
+    return (typeof st.col === 'number' && isFinite(st.col)) ? 'c' + st.col : 's' + st.id;
+  }
+  /* 入替の新位置 pos（staffId/start/end）の重なりを分類する（planPlaceSwap・planTraySwap 共通）。
+   * 縮小できる施設業務/自由枠は fillers へ区間を積み、それ以外と重なれば理由付きの不可を返す。重なりが無ければ null。 */
+  function classifySwapPos_(day, pos, host, ig, fillers, fillerList) {
+    var sc = staffConflicts(day.tasks, pos.staffId, pos.start, pos.end, ig), k, c;
+    for (k = 0; k < sc.length; k++) {
+      c = sc[k];
+      if (shrinkableFiller_(c)) {
+        if (!fillers['.' + c.id]) { fillers['.' + c.id] = { fac: c, ranges: [] }; fillerList.push(fillers['.' + c.id]); }
+        fillers['.' + c.id].ranges.push([pos.start, pos.end]);
+      } else {
+        var what = c.kind === 'care' ? '別の支援' : (c.kind === 'break' ? '休憩' : '別の枠');
+        return { ok: false, code: 'staffdup', reason: host.name + 'さん側で' + what + 'と重なるため入替できません', conflicts: [c] };
+      }
+    }
+    return null;
+  }
+  function swapSplits_(fillerList) {
+    var splits = [], i;
+    for (i = 0; i < fillerList.length; i++) {
+      var f = fillerList[i].fac;
+      splits.push({ facId: f.id, fragments: residualGrid_(f.start, f.end, fillerList[i].ranges, OVL_MIN) });
+    }
+    return splits;
+  }
   function planPlaceSwap(day, dragId, overId) {
     var a = findTask(day.tasks, dragId);
     var b = findTask(day.tasks, overId);
@@ -2019,9 +2071,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var nB = { id: b.id, staffId: a.staffId, start: a.start, end: a.start + durB };
     if (a.staffId === b.staffId) {
       /* 同一職員で隣接する2枠は「順番の入れ替え」（連続した区間 [先頭.start, 末尾.end] を保ったまま前後を入れ替える）。
-       * 開始時刻の単純交換だと長さ違いで互いに重なり（9:00-9:30 と 9:30-10:30 → 9:30-10:00 と 9:00-10:00）成立しないため。 */
-      if (a.end === b.start) { nB.start = a.start; nB.end = a.start + durB; nA.start = nB.end; nA.end = nA.start + durA; }
-      else if (b.end === a.start) { nA.start = b.start; nA.end = b.start + durA; nB.start = nA.end; nB.end = nB.start + durB; }
+       * 開始時刻の単純交換だと長さ違いで互いに重なり（9:00-9:30 と 9:30-10:30 → 9:30-10:00 と 9:00-10:00）成立しないため。
+       * すき間 0〜1分も隣接とみなし、すき間は保ったまま順番を入れ替える（2026-10-10 (a)）。身体系は 19/29/59 分など
+       * 刻みより1分短く、続けて回る2件の間に1分あくため（例 18:00-18:19 と 18:20-18:49 → 18:00-18:29 と 18:30-18:49）。 */
+      var gapAB = b.start - a.end, gapBA = a.start - b.end;
+      if (gapAB >= 0 && gapAB <= 1) { nB.start = a.start; nB.end = a.start + durB; nA.start = nB.end + gapAB; nA.end = nA.start + durA; }
+      else if (gapBA >= 0 && gapBA <= 1) { nA.start = b.start; nA.end = b.start + durA; nB.start = nA.end + gapBA; nB.end = nB.start + durB; }
       if (overlap(nA.start, nA.end, nB.start, nB.end)) {
         return { ok: false, code: 'staffdup', reason: '長さが違い互いに重なるため入替できません' };
       }
@@ -2033,22 +2088,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (nB.start < stA.workStart || nB.end > stA.workEnd) {
       return { ok: false, code: 'worktime', reason: stA.name + 'さんの勤務時間外になるため入替できません' };
     }
-    var ig = [a.id, b.id], fillers = {}, fillerList = [], i, c;
-    function classify_(pos, host) {
-      var sc = staffConflicts(day.tasks, pos.staffId, pos.start, pos.end, ig);
-      for (var k = 0; k < sc.length; k++) {
-        c = sc[k];
-        if (shrinkableFiller_(c)) {
-          if (!fillers['.' + c.id]) { fillers['.' + c.id] = { fac: c, ranges: [] }; fillerList.push(fillers['.' + c.id]); }
-          fillers['.' + c.id].ranges.push([pos.start, pos.end]);
-        } else {
-          var what = c.kind === 'care' ? '別の支援' : (c.kind === 'break' ? '休憩' : '別の枠');
-          return { ok: false, code: 'staffdup', reason: host.name + 'さん側で' + what + 'と重なるため入替できません', conflicts: [c] };
-        }
-      }
-      return null;
-    }
-    var bad = classify_(nA, stB) || classify_(nB, stA);
+    var ig = [a.id, b.id], fillers = {}, fillerList = [];
+    var bad = classifySwapPos_(day, nA, stB, ig, fillers, fillerList) || classifySwapPos_(day, nB, stA, ig, fillers, fillerList);
     if (bad) return bad;
     /* R3（入替ペア自身）: a と b が同一利用者で、長さ違いにより新位置どうしが重なる＝同一利用者の2職員同時配置。
      * residentConflicts は両idを除外するため、ここで明示的に検査する（検品指摘・2026-09-10）。 */
@@ -2062,12 +2103,47 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (b.kind === 'care' && b.residentId && residentConflicts(day.tasks, b.residentId, nB.start, nB.end, ig).length) {
       return { ok: false, code: 'residentdup', reason: b.residentName + 'さんへの支援が同時刻に配置済みです' };
     }
-    var splits = [];
-    for (i = 0; i < fillerList.length; i++) {
-      var f = fillerList[i].fac;
-      splits.push({ facId: f.id, fragments: residualGrid_(f.start, f.end, fillerList[i].ranges, OVL_MIN) });
+    /* グループの印の交換（2026-10-10 本人決定 Q2）: 列をまたいで入れ替わった2枠は、グループの印も入れ替える
+     * ＝グループ（その職員が続けて回る数件）が2列にまたがらない。単独⇄グループの1枠も同じ。
+     * 同じ列の中（同じ職員・分割勤務の朝と夕）では交換しない。印を動かさない時は moves に groupId を載せない。 */
+    if (staffColKey_(stA) !== staffColKey_(stB) && (a.groupId || b.groupId)) {
+      nA.groupId = b.groupId || null;
+      nB.groupId = a.groupId || null;
     }
-    return { ok: true, moves: [nA, nB], splits: splits, sameStaff: a.staffId === b.staffId };
+    return { ok: true, moves: [nA, nB], splits: swapSplits_(fillerList), sameStaff: a.staffId === b.staffId };
+  }
+
+  /* ===== トレイの支援を配置済みの支援と入れ替える（2026-10-10 (h)）=====
+   * a=トレイの支援（未配置）を、b=配置済みの支援の上へ落とす。a は b の職員・b の開始時刻へ（長さは自分のまま）、
+   * b はトレイへ戻る。グループの印は Q2 と同じく交換する（a に b の印、トレイへ戻る b に a の印）。
+   * 検証: 24:00 超→不可／b の職員の勤務時間外→不可／新位置の重なり（a・b を除く）は縮小できる施設業務/自由枠なら
+   * splits（縮小）、それ以外は不可（planPlaceSwap と同じ文言）／a の利用者の同時刻（a・b を除く）→不可。
+   * 返り値: { ok, moves:[nA], unassignId, unassignGroupId, splits }。純関数（day を変更しない）。 */
+  function planTraySwap(day, trayId, overId) {
+    var a = findTask(day.tasks, trayId);
+    var b = findTask(day.tasks, overId);
+    if (!a || !b) return { ok: false, code: 'notask', reason: 'タスクが見つかりません' };
+    if (a.id === b.id) return { ok: false, code: 'same', reason: '同一タスクです' };
+    if (a.kind !== 'care') return { ok: false, code: 'notcare', reason: '場所の入れ替えは支援枠のみです' };
+    if (a.staffId !== null && a.staffId !== undefined) return { ok: false, code: 'nottray', reason: '未配置の支援ではありません' };
+    if (b.kind !== 'care' || b.staffId === null || b.staffId === undefined) {
+      return { ok: false, code: 'unassigned', reason: '配置済みの支援とのみ入替できます' };
+    }
+    var stB = findStaff(day.staff, b.staffId);
+    if (!stB) return { ok: false, code: 'nostaff', reason: '職員が見つかりません' };
+    var nA = { id: a.id, staffId: b.staffId, start: b.start, end: b.start + (a.end - a.start),
+               groupId: b.groupId || null };
+    if (nA.end > DAY_MIN_) return { ok: false, code: 'range', reason: '入替後の終了が24:00を超えるため入替できません' };
+    if (nA.start < stB.workStart || nA.end > stB.workEnd) {
+      return { ok: false, code: 'worktime', reason: stB.name + 'さんの勤務時間外になるため入替できません' };
+    }
+    var ig = [a.id, b.id], fillers = {}, fillerList = [];
+    var bad = classifySwapPos_(day, nA, stB, ig, fillers, fillerList);
+    if (bad) return bad;
+    if (a.residentId && residentConflicts(day.tasks, a.residentId, nA.start, nA.end, ig).length) {
+      return { ok: false, code: 'residentdup', reason: a.residentName + 'さんへの支援が同時刻に配置済みです' };
+    }
+    return { ok: true, moves: [nA], unassignId: b.id, unassignGroupId: a.groupId || null, splits: swapSplits_(fillerList) };
   }
 
   /* アラート計算（全て派生値）
@@ -2512,16 +2588,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 複数枠スワップの対象群決定（純粋関数）。pool=対象列のcare枠(start昇順)、anchorId=ドロップ直下枠のid、
-   * total=ドラッグ群の合計分。アンカーを含む連続run(隣接が prev.end===next.start)の合計が total なら run全体、
-   * 違えばアンカーから下方累積で合計一致を探す。一致した部分配列を返す。一致しなければ null。 */
+   * total=ドラッグ群の合計分。アンカーを含む連続run(隣接が 0 <= next.start - prev.end <= 1)の合計が total なら run全体、
+   * 違えばアンカーから下方累積で合計一致を探す。一致した部分配列を返す。一致しなければ null。
+   * すき間1分までを一続きとみなす（2026-10-10 (a)）: 身体系 19/29/59 分の枠は刻みより1分短く、続けて回る間に1分あくため。 */
+  function runAdjacent_(prev, next) {
+    var g = next.start - prev.end;
+    return g >= 0 && g <= 1;
+  }
   function matchSwapRun(pool, anchorId, total) {
     if (!pool || !pool.length || !(total > 0)) return null;
     var ai = -1, i;
     for (i = 0; i < pool.length; i++) if (pool[i].id === anchorId) { ai = i; break; }
     if (ai < 0) return null;
     var lo = ai, hi = ai, r;
-    while (lo - 1 >= 0 && pool[lo - 1].end === pool[lo].start) lo--;
-    while (hi + 1 < pool.length && pool[hi].end === pool[hi + 1].start) hi++;
+    while (lo - 1 >= 0 && runAdjacent_(pool[lo - 1], pool[lo])) lo--;
+    while (hi + 1 < pool.length && runAdjacent_(pool[hi], pool[hi + 1])) hi++;
     var runTotal = 0;
     for (r = lo; r <= hi; r++) runTotal += (pool[r].end - pool[r].start);
     if (runTotal === total) {
@@ -2537,6 +2618,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (acc > total) return null;
     }
     return null;
+  }
+
+  /* まとめての入れ替えの相手を決める（純関数・2026-10-10 (c)）。相手のグループを途中で切らず、隣の単独の支援を巻き込まない。
+   *  ・アンカーに groupId がある → 同じ職員・同じ groupId の配置済み枠を全部（excludeIds は除く）。
+   *    1つでも支援以外が入っていれば null（業務枠入りのグループはまとめて入れ替えない）
+   *  ・groupId が無い → アンカーだけ
+   * アンカーが見つからない・未配置・支援でない・excludeIds に入っている時は null。start 昇順（同じなら id 順）で返す。 */
+  function swapTargetGroup(day, anchorId, excludeIds) {
+    var tasks = (day && day.tasks) || [];
+    var ex = excludeIds || [];
+    var anchor = findTask(tasks, anchorId);
+    if (!anchor || anchor.staffId === null || anchor.staffId === undefined) return null;
+    if (anchor.kind !== 'care' || ex.indexOf(anchor.id) >= 0) return null;
+    if (!anchor.groupId) return [anchor];
+    var out = [], i, t;
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (!t || t.staffId !== anchor.staffId || t.groupId !== anchor.groupId) continue;
+      if (ex.indexOf(t.id) >= 0) continue;
+      if (t.kind !== 'care') return null;
+      out.push(t);
+    }
+    out.sort(function (x, y) { return (x.start - y.start) || cmpId_(x, y); });
+    return out;
   }
 
   /* 出勤中の既定業務種別。app.js の fillFacilityWork/fillFreeWorkFrames の対象判定と一致:
@@ -2859,6 +2964,73 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var c = cloneTask_(t); c.staffId = hit.id; out[i] = c;
     }
     return out || tasks;
+  }
+  /* 2列にまたがったグループを整える（純関数・2026-10-10 (i)・本人決定 確認2）。
+   * グループ＝「その職員が続けて回る数件」。入替や複数選択の移動で1つの groupId が2列以上に分かれると、
+   * 次にどちらかの1件をつかんだ時にどの数件が一緒に動くのか分からなくなる。
+   *  ・対象は配置済みで groupId を持つ枠。列は職員の col（職員が見つからない・col の無い枠は対象外）。
+   *    columns は他の整え関数と署名をそろえるために受け取る（列の決定には使わない）
+   *  ・件数の最も多い列に元の groupId を残す（同数なら、その列の最も早い開始が早い方、それも同じなら列番号の小さい方）
+   *  ・残らなかった列: 2件以上ならその列の枠を groupId + '_c' + 列番号 へ付け替える（既に使われていれば末尾に '_2','_3'…）。
+   *    1件だけなら groupId を外す（null）
+   *  ・トレイ（未配置）の枠は触らない（使われている印としてだけ数える）
+   *  ・groupId と列を並べ替えてから処理する＝配列の並び順に依らず同じ結果（2台の端末が同じ結果に収束する）
+   * 変化が無ければ入力配列を同一参照で返す（冪等）。返り値 { tasks, changed } */
+  function normalizeGroupSpan(tasks, staff, columns) {
+    var rep = { tasks: tasks, changed: false };
+    if (!tasks || tasks.length < 2) return rep;
+    var colBy = {}, i, j, t, st;
+    for (i = 0; i < (staff || []).length; i++) {
+      st = staff[i];
+      if (!st || Object.prototype.hasOwnProperty.call(colBy, '.' + st.id)) continue;   /* findStaff と同じく先の職員を採る */
+      colBy['.' + st.id] = (typeof st.col === 'number' && isFinite(st.col)) ? st.col : null;
+    }
+    var groups = {}, gids = [], used = {};
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      if (!t || t.groupId === null || t.groupId === undefined || t.groupId === '') continue;
+      used['.' + t.groupId] = 1;
+      if (t.staffId === null || t.staffId === undefined) continue;
+      var col = Object.prototype.hasOwnProperty.call(colBy, '.' + t.staffId) ? colBy['.' + t.staffId] : null;
+      if (col === null) continue;
+      var g = groups['.' + t.groupId];
+      if (!g) { g = groups['.' + t.groupId] = { id: t.groupId, cols: {}, list: [] }; gids.push(g); }
+      var cc = g.cols['.' + col];
+      if (!cc) { cc = g.cols['.' + col] = { col: col, n: 0, minStart: Infinity }; g.list.push(cc); }
+      cc.n++;
+      if (t.start < cc.minStart) cc.minStart = t.start;
+    }
+    gids.sort(function (x, y) { var a = String(x.id), b = String(y.id); return a < b ? -1 : (a > b ? 1 : 0); });
+    var remap = {}, changed = false;
+    for (i = 0; i < gids.length; i++) {
+      var gr = gids[i];
+      if (gr.list.length < 2) continue;
+      gr.list.sort(function (x, y) { return (y.n - x.n) || (x.minStart - y.minStart) || (x.col - y.col); });
+      var m = {};
+      for (j = 1; j < gr.list.length; j++) {
+        var cl = gr.list[j];
+        if (cl.n >= 2) {
+          var base = gr.id + '_c' + cl.col, nid = base, k = 2;
+          while (used['.' + nid]) nid = base + '_' + (k++);
+          used['.' + nid] = 1;
+          m['.' + cl.col] = nid;
+        } else m['.' + cl.col] = null;
+      }
+      remap['.' + gr.id] = m;
+      changed = true;
+    }
+    if (!changed) return rep;
+    var out = [];
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      var mm = (t && t.groupId !== null && t.groupId !== undefined && t.staffId !== null && t.staffId !== undefined)
+        ? remap['.' + t.groupId] : null;
+      var c2 = (mm && Object.prototype.hasOwnProperty.call(colBy, '.' + t.staffId)) ? colBy['.' + t.staffId] : null;
+      if (mm && c2 !== null && Object.prototype.hasOwnProperty.call(mm, '.' + c2)) {
+        var nt = cloneTask_(t); nt.groupId = mm['.' + c2]; out.push(nt);
+      } else out.push(t);
+    }
+    return { tasks: out, changed: true };
   }
   function normalizeFrozenFillers(prevTasks, nextTasks, staff, columns) {
     var rep = { tasks: nextTasks, bumped: [], clipped: 0, removed: 0, changed: false };
@@ -3280,6 +3452,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     planSwap: planSwap,
     planTimeSwap: planTimeSwap,
     planPlaceSwap: planPlaceSwap,
+    planTraySwap: planTraySwap,
     shrinkableFiller: shrinkableFiller_,
     computeAlerts: computeAlerts,
     fmtRange: fmtRange,
@@ -3297,6 +3470,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     planHasResidentDay: planHasResidentDay,
     careContentSig: careContentSig_,
     matchSwapRun: matchSwapRun,
+    swapTargetGroup: swapTargetGroup,
     staffFacworkKind: staffFacworkKind,
     stableStringify: stableStringify,
     taskSig: taskSig,
@@ -3311,6 +3485,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     normalizeOverlap: normalizeOverlap,
     normalizeFrozenFillers: normalizeFrozenFillers,
     rehomeInColumn: rehomeInColumn,
+    normalizeGroupSpan: normalizeGroupSpan,
     namedFacility: namedFacility_,
     isAutoFiller: isAutoFiller_,
     fillerHasContent: fillerHasContent_,
@@ -5605,7 +5780,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 種別ごと独立に(相互は占有として保護)その正時の空き全体へ再生成して拡張/マージする。自動/手動とも対象。
    * 「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
    * （完全消滅した枠は復活させない）。マージ枠は facManual:true で出力し rebuildFacWindowTasks の
-   * 自動再生成(非facManualを消去)から保護する。夜勤職員は対象外。純粋関数（tasks を返す）。 */
+   * 自動再生成(非facManualを消去)から保護する。夜勤職員は対象外。tasks を返す（入力は変えない）。
+   * 決まった id（M.stableId）を付けた枠の id は decidedIds_ に、種にできない断片の id は looseIds_ に控える
+   * （stabilizeFillerIds_ との受け渡し）。 */
+  /* reduce() 1回の中で、操作前の day.tasks にあった id（'.'+id → 1）。reduce() の冒頭で控え、終わりに null へ戻す。
+   * 決まった id の種にしてよいのはこの id だけ（2026-10-10 反証レビュー: 同じ reduce の中で splits などから生まれた
+   * 乱数 id を種にすると、2台で id が割れていた）。null の時（reduce の外）は何も種にしない */
+  var baseIds_ = null;
+  /* reduce() 1回の中で、expandSurvivingFacwork_ が決まった id を付けた枠の id（'.'+id → 1）。reduce() の冒頭で空にする。
+   * これらは既に2台で同じ id なので、stabilizeFillerIds_ で消えた別の枠と組ませない（2026-10-10 反証レビュー:
+   * 組ませると、本来その消えた枠と組むはずの別の正時の枠が乱数 id のまま残り、2台で id が割れていた） */
+  var decidedIds_ = {};
+  /* reduce() 1回の中で、種にできない候補（同じ reduce の中で生まれた枠）から残した断片の id（'.'+id → 1）。
+   * 改修前は捨てていた断片＝組む相手の数が足りないため、stabilizeFillerIds_ では通常の組み合わせが済んでから、
+   * 消えた枠を使い回して組ませる（2026-10-10 反証レビュー: 縮めて作った断片が正時をまたぐと2台で id が割れていた） */
+  var looseIds_ = {};
+  /* 残す断片の最短の長さ（分）。model.js の FLEX_MIN_MIN（sanitizeTasks が支援以外の枠を捨てる長さ）と同じ値 */
+  var KEEP_PIECE_MIN_ = 20;
   function expandSurvivingFacwork_(tasks, vacates, staffArr, columns) {
     if (!vacates || !vacates.length) return tasks;
     /* 退去元が自分の勤務時間外なら、同じ列で時間の合う勤務枠の空きとして埋め直す（2026-10-08・分割勤務の列）。
@@ -5689,26 +5880,79 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 既存候補枠が勤務時間外(ws前/we後)へはみ出している場合、その現範囲より縮めない＝手動で置いた
            * 7:00-8:00 等が workStart(例7:40)へ切り上げられ潰れる(start改変)のを防ぐ。占有(occ)は従来どおり
            * ＝ケア/休憩/別種facworkとの重なりは避ける。純粋自動枠(勤務時間内のみ)は loK=lo/hiK=hi で挙動不変。 */
-          var loK = lo, hiK = hi, cr_;
+          /* 正時をまたぐ候補（2026-10-10 本人決定）: 作り直すのは [loK,hiK]（正時の内側・勤務時間内＋縮めない分）だけ。
+           * 候補のうち [loK,hiK] の外の部分（正時の外へはみ出した分・正時の内側で勤務時間の外にある分）は残す（id の付け方は下）。
+           * 以前は候補を丸ごと消して [loK,hiK] だけで作り直していたため、はみ出した後ろ（例 620-720 の 660-720）が消えていた。
+           * loK/hiK の規則は従来どおり（元の開始・終了が正時の内側にある時だけ動かす）＝元々空いていた所は埋めない。
+           * 比較は候補を [loK,hiK] に切った範囲で行う（正時の内側に収まる候補は従来と同じ値）。 */
+          var loK = lo, hiK = hi, cr_, inRanges = [];
           for (cr_ = 0; cr_ < candRanges.length; cr_++) {
             var cs_ = candRanges[cr_][0], ce_ = candRanges[cr_][1];
             if (cs_ >= hourStart && cs_ < loK) loK = cs_;   /* 正時内で候補の実開始まで下げる(据置=縮めない) */
             if (ce_ <= hourEnd && ce_ > hiK) hiK = ce_;      /* 正時内で候補の実終了まで上げる */
           }
+          for (cr_ = 0; cr_ < candRanges.length; cr_++) {
+            var ci0_ = Math.max(candRanges[cr_][0], loK), ci1_ = Math.min(candRanges[cr_][1], hiK);
+            if (ci1_ > ci0_) inRanges.push([ci0_, ci1_]);
+          }
           var free = TS.facResidual(loK, hiK, occ, 20);   /* 空き区間（占有の補集合・20分未満破棄） */
-          if (sameRanges_(candRanges, free)) continue;    /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
-          var proto = null, kept = [];
+          if (sameRanges_(inRanges, free)) continue;      /* 変化なし＝据置(無駄なid変更/churn回避＝冪等) */
+          var proto = null, kept = [], taken = {}, anyKept = false, stick = null;
+          for (j = 0; j < result.length; j++) taken['.' + result[j].id] = 1;
           for (j = 0; j < result.length; j++) {
-            if (candIds[result[j].id]) { if (!proto) proto = result[j]; }
-            else kept.push(result[j]);
+            var rt_ = result[j];
+            if (!candIds[rt_.id]) { kept.push(rt_); continue; }
+            if (!proto) proto = rt_;
+            /* 決まった id の種: 操作前の day.tasks にあった候補のうち、開始→id の順で最初のもの（配列の並びに頼らない） */
+            var isBase_ = !!(baseIds_ && baseIds_['.' + rt_.id]);
+            if (isBase_ && (!stick || byStartId_(rt_, stick) < 0)) stick = rt_;
+            if (rt_.start >= loK && rt_.end <= hiK) continue;   /* [loK,hiK] の内側だけの候補＝従来どおり作り直す */
+            /* [loK,hiK] と重ならない候補（例: 正時の中で勤務時間の外にある枠）は、区間が変わらない＝元の枠を id ごとそのまま残す */
+            if (!(rt_.start < hiK && loK < rt_.end)) { kept.push(rt_); anyKept = true; continue; }
+            /* [loK,hiK] の外の部分を残す。ただし 20分未満の断片は落とす（読み込み時の sanitizeTasks が捨てる長さ＝
+             * model.js FLEX_MIN_MIN と同じ基準。残すと操作した端末だけに短い枠が出て、読み込み直すと消える）。
+             * 残す断片は元の id を引き継がない（2026-10-10 反証レビュー: 元の id のまま形を変えると、別の端末がその枠を
+             * 同時に動かしていた時に統合で「双方変更＝こちら勝ち」となり相手の移動が消えていた）。元の枠は消えた扱い＝
+             * 統合は改修前と同じ「こちらの削除×相手の変更＝相手を残す」。断片の id は元の id・区間から決める（2台で同じ値）。
+             * 元の id が操作前に無かった候補（同じ操作で生まれた乱数 id）は種にせず、乱数 id のまま stabilizeFillerIds_ に組ませる */
+            var pieces = [], pc;
+            if (rt_.start < loK) pieces.push([rt_.start, Math.min(rt_.end, loK)]);
+            if (rt_.end > hiK) pieces.push([Math.max(rt_.start, hiK), rt_.end]);
+            var keepPieces = [];
+            for (pc = 0; pc < pieces.length; pc++) if (pieces[pc][1] - pieces[pc][0] >= KEEP_PIECE_MIN_) keepPieces.push(pieces[pc]);
+            if (!keepPieces.length) continue;   /* 残す断片が無い＝従来どおり消える（stabilizeFillerIds_ が消えた枠として組む） */
+            anyKept = true;
+            for (pc = 0; pc < keepPieces.length; pc++) {
+              var op = {}, ok_;
+              for (ok_ in rt_) if (Object.prototype.hasOwnProperty.call(rt_, ok_)) op[ok_] = rt_[ok_];
+              op.start = keepPieces[pc][0]; op.end = keepPieces[pc][1];
+              if (isBase_) {
+                op.id = M.stableId(rt_.id + '|' + sid + '|' + op.start + '|' + op.end + '|' + KIND, taken);
+                decidedIds_['.' + op.id] = 1;   /* 決まった id を付けた＝stabilizeFillerIds_ の組み合わせから外す */
+              } else {
+                op.id = M.genId('t');
+                looseIds_['.' + op.id] = 1;     /* 種にできない断片＝stabilizeFillerIds_ が最後に組ませる */
+              }
+              taken['.' + op.id] = 1;
+              kept.push(op);
+            }
           }
           if (!proto) continue;
+          /* 候補を残した正時では、残した枠の分だけ消えた枠が改修前より少ない＝作り直した内側の枠が stabilizeFillerIds_ で
+           * 組む相手を失う。2台で同じ id になるよう、種（操作前からある候補）の id と区間から決める。
+           * 何も残さなかった正時（正時の内側に収まる盤面）は従来どおり乱数 id のまま stabilizeFillerIds_ に組ませる */
+          var stickId = (anyKept && stick) ? stick.id : null;
           for (var f = 0; f < free.length; f++) {
             var fp = {}, fk;
             for (fk in proto) if (Object.prototype.hasOwnProperty.call(proto, fk)) fp[fk] = proto[fk];
             delete fp.id;
             fp.start = free[f][0]; fp.end = free[f][1];
             fp.src = 'facwork';   /* 結合枠は自動枠として統一＝罫線/連続表示/再充填スキップを正常化(手動src枠を吸収) */
+            if (stickId) {
+              fp.id = M.stableId(stickId + '|' + sid + '|' + fp.start + '|' + fp.end + '|' + KIND, taken);
+              taken['.' + fp.id] = 1;
+              decidedIds_['.' + fp.id] = 1;   /* 決まった id を付けた＝stabilizeFillerIds_ の組み合わせから外す */
+            }
             var nf = M.newTask(fp); nf.facManual = true;   /* 結合枠はfacManualで保護(再生成から守る) */
             kept.push(nf);
           }
@@ -5759,6 +6003,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       var pA = { staffId: mvA.staffId, start: mvA.start, end: mvA.end, facBg: bgMS };
       if (curA && curA.src === 'facwork') pA.facManual = true;
+      /* グループの印の交換（2026-10-10 Q2）: move が groupId を持つ時だけ写す（持たない move は印を変えない） */
+      if (Object.prototype.hasOwnProperty.call(mvA, 'groupId')) pA.groupId = mvA.groupId;
       tasksMS = patchTask(tasksMS, mvA.id, pA);
     }
     var removeIds = {}, additions = [];
@@ -5796,27 +6042,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 手直ししていた時に統合でその中身が採られて列が空く・選択が別の列の枠へ付いていく。
    *  ・対象は自動敷き（src==='facwork'）の施設業務/自由枠だけ。支援・休憩・手で置いた枠の id は触らない
    *  ・組み合わせ: 同じ職員の枠を先に（開始の早い順）、残りは職員をまたいで開始順・id 順で対応させる
-   *  ・消えた枠と組めなかった新しい枠は乱数 id のまま */
-  var STABLE_ID_TYPES_ = { ASSIGN: 1, UNASSIGN: 1, MULTI_ASSIGN: 1, SHRINK_PLACE: 1, MULTI_SHRINK_PLACE: 1, PLACE_SWAP: 1 };
+   *  ・消えた枠と組めなかった新しい枠は乱数 id のまま（loose＝種にできない候補から残した断片だけは、消えた枠を使い回して組む）
+   *  ・例外（2026-10-10 本人決定「切れ端の番号を2台でそろえる」）: loose の断片は手で置いた「施設業務」から残したものも組み、
+   *    消えた枠で組めなければ操作前にその区間を覆っていた枠を種にする。変えるのは id だけ（src・label・facManual はそのまま） */
+  var STABLE_ID_TYPES_ = { ASSIGN: 1, UNASSIGN: 1, MULTI_ASSIGN: 1, SHRINK_PLACE: 1, MULTI_SHRINK_PLACE: 1, PLACE_SWAP: 1,
+                           MULTI_SWAP: 1, TRAY_SWAP: 1 };   /* 2026-10-10: まとめての入れ替え(施設業務の縮小つき)・トレイ発の入れ替えも同じ */
   function stabilizableFiller_(t) {
     return !!t && (t.kind === 'facility' || t.kind === 'free') && t.src === 'facwork' && !M.namedFree(t);
+  }
+  /* loose の断片と、その種にする操作前の枠の条件＝expandSurvivingFacwork_ の候補になる枠（自動枠＋手で置いた「施設業務」） */
+  function looseFiller_(t) {
+    return !!t && (t.kind === 'facility' || t.kind === 'free') && mergeableFacwork_(t, t.kind);
   }
   function byStartId_(a, b) {
     if (a.start !== b.start) return a.start - b.start;
     return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
   }
-  function stabilizeFillerIds_(beforeTasks, afterTasks) {
+  function stabilizeFillerIds_(beforeTasks, afterTasks, decided, loose) {
     var inBefore = {}, inAfter = {}, i;
     for (i = 0; i < beforeTasks.length; i++) inBefore['.' + beforeTasks[i].id] = 1;
     for (i = 0; i < afterTasks.length; i++) inAfter['.' + afterTasks[i].id] = 1;
-    var gone = [], born = [];
+    var gone = [], born = [], hasLoose = false;
     for (i = 0; i < beforeTasks.length; i++) {
       if (!inAfter['.' + beforeTasks[i].id] && stabilizableFiller_(beforeTasks[i])) gone.push(beforeTasks[i]);
     }
-    if (!gone.length) return afterTasks;
     for (i = 0; i < afterTasks.length; i++) {
-      if (!inBefore['.' + afterTasks[i].id] && stabilizableFiller_(afterTasks[i])) born.push(afterTasks[i]);
+      if (decided && decided['.' + afterTasks[i].id]) continue;   /* 既に決まった id を付けた枠は組ませない */
+      if (inBefore['.' + afterTasks[i].id]) continue;
+      /* loose の断片は手で置いた枠（src=manual の施設業務）から残したものも組む（2026-10-10 本人決定「切れ端の番号を2台でそろえる」）。
+       * 断片は元の枠の src・label・facManual をそのまま持つ＝ここで変えるのは id だけ */
+      if (loose && loose['.' + afterTasks[i].id] && looseFiller_(afterTasks[i])) { born.push(afterTasks[i]); hasLoose = true; continue; }
+      if (stabilizableFiller_(afterTasks[i])) born.push(afterTasks[i]);
     }
+    if (!gone.length && !hasLoose) return afterTasks;
     if (!born.length) return afterTasks;
     gone.sort(byStartId_);
     born.sort(function (a, b) {
@@ -5825,13 +6083,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (a.start - b.start) || (a.end - b.end) || (a.kind < b.kind ? -1 : (a.kind > b.kind ? 1 : 0));   /* 新 id は乱数のため順の決定に使わない */
     });
     var used = {}, map = {}, pass, b, g;
-    for (pass = 0; pass < 2; pass++) {             /* 0: 同じ職員どうし／1: 職員をまたぐ */
+    for (pass = 0; pass < 4; pass++) {             /* 0: 同じ職員どうし／1: 職員をまたぐ／2・3: loose の断片（下） */
       for (b = 0; b < born.length; b++) {
         if (map['.' + born[b].id]) continue;
+        /* loose（種にできない候補から残した断片・改修前は捨てていた分）は通常の組み合わせに入れない＝改修前と同じ相手の組み方を保つ。
+         * 済んだ後で、消えた枠を使い回して組ませる（2: 同じ職員／3: 職員をまたぐ）。種に区間が入るので id はぶつからない */
+        var isLoose_ = !!(loose && loose['.' + born[b].id]);
+        if ((pass < 2) === isLoose_) continue;
         for (g = 0; g < gone.length; g++) {
-          if (used[g] || gone[g].kind !== born[b].kind) continue;
-          if (pass === 0 && gone[g].staffId !== born[b].staffId) continue;
+          if (gone[g].kind !== born[b].kind) continue;
+          if (pass < 2 && used[g]) continue;
+          if ((pass === 0 || pass === 2) && gone[g].staffId !== born[b].staffId) continue;
           used[g] = 1; map['.' + born[b].id] = gone[g].id; break;
+        }
+      }
+    }
+    /* 4: まだ組めていない loose の断片は、操作前の盤面でその区間を覆っていた同じ職員・同じ種類の候補枠（src を問わない・
+     * 消えていなくてもよい）を種にする（開始→id の順で最初のもの）。手で置いた枠は消えた枠に数えない（stabilizableFiller_）、
+     * また SHRINK_PLACE は元の枠を同じ id のまま縮める＝消えた枠が無いため、pass 2・3 では組めなかった
+     * （2026-10-10 反証レビュー: ロック日に2台が同じ操作をすると、乱数 id の断片が統合で2本重なって残っていた）。
+     * 見つからなければ従来どおり乱数 id のまま */
+    if (hasLoose) {
+      var cover = [];
+      for (i = 0; i < beforeTasks.length; i++) if (beforeTasks[i] && looseFiller_(beforeTasks[i])) cover.push(beforeTasks[i]);
+      cover.sort(byStartId_);
+      for (b = 0; b < born.length; b++) {
+        if (map['.' + born[b].id] || !(loose && loose['.' + born[b].id])) continue;
+        for (g = 0; g < cover.length; g++) {
+          var cv_ = cover[g];
+          if (cv_.staffId !== born[b].staffId || cv_.kind !== born[b].kind) continue;
+          if (!(cv_.start <= born[b].start && born[b].end <= cv_.end)) continue;
+          map['.' + born[b].id] = cv_.id; break;
         }
       }
     }
@@ -5854,9 +6136,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* リデューサ（純粋関数）。day を変更せず新オブジェクトを返す */
   function reduce(day, action) {
+    decidedIds_ = {}; looseIds_ = {}; baseIds_ = {};
+    var bt_ = (day && day.tasks) || [], bi_;
+    for (bi_ = 0; bi_ < bt_.length; bi_++) if (bt_[bi_]) baseIds_['.' + bt_[bi_].id] = 1;
     var next = reduceCore_(day, action);
+    baseIds_ = null;
     if (next !== day && action && STABLE_ID_TYPES_[action.type] && next.tasks !== day.tasks) {
-      var rt = stabilizeFillerIds_(day.tasks, next.tasks);
+      var rt = stabilizeFillerIds_(day.tasks, next.tasks, decidedIds_, looseIds_);
       if (rt !== next.tasks) next = { meta: next.meta, staff: next.staff, columns: next.columns, tasks: rt };
     }
     return next;
@@ -5971,6 +6257,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasks2 };
     }
     if (type === 'MULTI_SWAP') {
+      /* 施設業務の縮小つき（2026-10-10 (b)）: action.splits が1件以上の配列で来た時だけ、入ってくる枠と重なる施設業務/自由枠を
+       * splits で縮め、退去元の空きを埋め直す（PLACE_SWAP と同じ共通本体）。splits の無い action・空の配列は下の従来の処理のまま
+       * ＝縮小の起きない入れ替え（改修前から成立していたもの）は結果を変えない。共通本体の埋め直しは正時の外へ伸ばした
+       * 施設業務の後ろを落としていたため（2026-10-10 に expandSurvivingFacwork_ で直した）、空の splits で通すと改修前に残っていた施設業務が縮んでいた（反証レビューで判明）。 */
+      if (Object.prototype.toString.call(action.splits) === '[object Array]' && action.splits.length > 0) {
+        return applyMovesWithSplits_(day, action.moves, action.splits, true);
+      }
       /* 合計時間一致による2群の位置スワップ。staffId＋start/end を一括patch（1操作＝undo1回）。
        * 両帯とも相手群で再充填されるため careVacates_/expandSurvivingFacwork_ は不要（freed space無）。
        * facwork(src='facwork')枠のみ facManual を付与（自動再構成から保護）。 */
@@ -6045,6 +6338,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 交換し、重なった自動施設業務/自由枠は splits で縮小/分割、長さ違いで空いた元の場所は自動充填で埋める。1操作＝undo1回。
        * MULTI_SHRINK_PLACE との違いは、退去元の収集を支援だけでなく移動した休憩/業務枠にも広げること（隙間を残さない）。 */
       return applyMovesWithSplits_(day, action.moves, action.splits || [], true);
+    }
+    if (type === 'TRAY_SWAP') {
+      /* トレイの支援を配置済みの支援と入れ替える（2026-10-10 (h)）。M.planTraySwap 検証済みの計画を1操作で適用＝undo1回。
+       * ①相手 b の旧位置を先に控える ②b をトレイへ（UNASSIGN と同じ patch・印は unassignGroupId）
+       * ③トレイの支援を b の場所へ置き、重なった施設業務/自由枠を splits で縮める ④b の旧位置で空いた分を自動充填 */
+      var vacTS = careVacates_(day.tasks, [action.unassignId]);
+      var tasksTS = patchTask(day.tasks, action.unassignId,
+        { staffId: null, done: false, facBg: null, parked: true,
+          groupId: (action.unassignGroupId !== undefined) ? action.unassignGroupId : null });
+      var dayTS = applyMovesWithSplits_({ meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksTS },
+                                        action.moves, action.splits || [], false);
+      var tasksTS2 = expandSurvivingFacwork_(dayTS.tasks, vacTS, day.staff, day.columns);
+      return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksTS2 };
     }
     if (type === 'TOGGLE_DONE') {
       var cur = M.findTask(day.tasks, action.id);
@@ -6134,6 +6440,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         repair.rehomed = (repair.rehomed || 0) + 1;   /* 付け替えも「直した」として数える＝送信を予約させる（通知は出さない） */
         if (!r.changed) r = { tasks: tIn, bumped: [], clipped: 0, removed: 0, changed: true };
       }
+      /* 2列にまたがったグループを整える（2026-10-10 (i)・本人決定 確認2）。凍結日（ロック日・過去日）は触らない。
+       * 重なりを解消した後の盤面に掛ける。変わったら付け替えと同じく「直した」として数える＝送信を予約させる（通知は出さない） */
+      if (!isFrozen) {
+        var gs = M.normalizeGroupSpan(r.changed ? r.tasks : next.tasks, next.staff, next.columns);
+        if (gs.changed) {
+          repair.regrouped = (repair.regrouped || 0) + 1;
+          r = { tasks: gs.tasks, bumped: r.bumped || [], clipped: r.clipped || 0, removed: r.removed || 0, changed: true };
+        }
+      }
       if (!r.changed) return next;
       var b;
       for (b = 0; b < r.bumped.length; b++) repair.bumped.push(r.bumped[b]);
@@ -6195,7 +6510,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       },
       /* 直近の重畳解消の集計を1回だけ返す（呼ぶと空になる）。無ければ null */
       takeRepair: function () {
-        if (!repair.bumped.length && !repair.clipped && !repair.removed && !repair.rehomed) return null;
+        if (!repair.bumped.length && !repair.clipped && !repair.removed && !repair.rehomed && !repair.regrouped) return null;
         var r = repair;
         repair = { bumped: [], clipped: 0, removed: 0 };
         return r;
@@ -7340,8 +7655,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       ghost = null;
       if (dragChip && dragChip.parentNode) dragChip.parentNode.removeChild(dragChip);
       dragChip = null;
-      var sw = board.querySelector('.swap-target');
-      if (sw) sw.classList.remove('swap-target');
+      removeGhostSwapMark();
       clearColDrop();
     }
 
@@ -7379,8 +7693,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 移動中の受入判定 */
     /* 複数選択(care群)を他職員のcare枠へドロップ＝合計時間が一致する相手group全体と位置スワップ。
-     * 同帯(delta0)=staffId/列のみ交換、別帯(delta≠0)=時刻も移動。一致しなければ null。 */
-    function evalMultiSwap(overBlock) {
+     * 同帯(delta0)=staffId/列のみ交換、別帯(delta≠0)=時刻も移動。一致しなければ null。
+     * 相手は M.swapTargetGroup で決める（2026-10-10 (c)）: アンカーにグループの印があればそのグループ全体（途中で切らない）、
+     * 無ければアンカー1件だけ（隣の単独の支援を巻き込まない）。合計時間が一致した時だけ候補にする。
+     * アンカーは id で受ける＝離した時に最新の盤面から同じ計画を作り直して照合できる（commit）。 */
+    function evalMultiSwap(anchorId) {
       var day = opts.getDay();
       /* ドラッグ群: 全て配置済みcare・全て同一staffId(srcStaff) */
       var dragged = [], srcStaff = null, di;
@@ -7393,7 +7710,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (!dragged.length || srcStaff === null) return null;
       /* アンカー: ポインタ直下のcare枠（他職員・選択群外） */
-      var anchor = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
+      var anchor = M.findTask(day.tasks, anchorId);
       if (!anchor || anchor.kind !== 'care' || anchor.staffId === null) return null;
       if (anchor.staffId === srcStaff) return null;
       if (drag.selIds.indexOf(anchor.id) >= 0) return null;
@@ -7401,17 +7718,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var dragTotal = 0, k;
       for (k = 0; k < dragged.length; k++) dragTotal += (dragged[k].end - dragged[k].start);
       if (dragTotal <= 0) return null;
-      /* 対象列のcare枠(選択群idは除外)を start 昇順で */
-      var pool = [], pi;
-      for (pi = 0; pi < day.tasks.length; pi++) {
-        var ptk = day.tasks[pi];
-        if (ptk.staffId !== tgtStaff || ptk.kind !== 'care') continue;
-        if (drag.selIds.indexOf(ptk.id) >= 0) continue;
-        pool.push(ptk);
-      }
-      pool.sort(function (a, b) { return a.start - b.start; });
-      var target = M.matchSwapRun(pool, anchor.id, dragTotal);
+      var target = M.swapTargetGroup(day, anchor.id, drag.selIds);
       if (!target || !target.length) return null;
+      var tgtTotal = 0;
+      for (k = 0; k < target.length; k++) tgtTotal += (target[k].end - target[k].start);
+      if (tgtTotal !== dragTotal) return null;   /* 合計時間が違う＝まとめての入れ替えにしない */
       /* シフト量 = 対象群の最小start − ドラッグ群の最小start */
       var aLo = dragged[0].start, bLo = target[0].start, j;
       for (j = 1; j < dragged.length; j++) if (dragged[j].start < aLo) aLo = dragged[j].start;
@@ -7429,35 +7740,155 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var grabbed = M.findTask(day.tasks, drag.taskId);
       var gStart = (grabbed ? grabbed.start : dragged[0].start) + deltaA;
       var gEnd = (grabbed ? grabbed.end : dragged[0].end) + deltaA;
+      var targetIds = [];
+      for (j = 0; j < target.length; j++) targetIds.push(target[j].id);
       return { moves: moves, ghostStart: gStart, ghostEnd: gEnd,
-               staff: M.findStaff(day.staff, tgtStaff), anchor: anchor };
+               staff: M.findStaff(day.staff, tgtStaff), anchor: anchor,
+               targetIds: targetIds, countA: dragged.length, countB: target.length };
+    }
+
+    /* ドラッグ中に見せた計画と、離した時に最新の盤面から作り直した計画が同じか（2026-10-10 確定直前の作り直し）。
+     * id・staffId・start・end と groupId（キーの有無と値）を順に比べる。1つでも違えば false。 */
+    function sameMoves_(a, b) {
+      if (!a || !b || a.length !== b.length) return false;
+      var hasG = Object.prototype.hasOwnProperty;
+      for (var i = 0; i < a.length; i++) {
+        var x = a[i], y = b[i];
+        if (!x || !y) return false;
+        if (x.id !== y.id || x.staffId !== y.staffId || x.start !== y.start || x.end !== y.end) return false;
+        var gx = hasG.call(x, 'groupId'), gy = hasG.call(y, 'groupId');
+        if (gx !== gy || (gx && x.groupId !== y.groupId)) return false;
+      }
+      return true;
+    }
+    var SWAP_STALE_MSG = '盤面が更新されたため入替を中止しました';
+
+    /* 複数選択/グループの同時移動の moves。ドラッグ対象の new start を基準に、各ブロックの相対オフセットを保って同一職員へ。
+     * commit（確定）とドラッグ中の事前検査（checkMultiAssign）が同じ式を使う＝ゴーストが緑なら離しても成立する。 */
+    function multiAssignMoves_(ev) {
+      var dayM = opts.getDay();
+      var base = M.findTask(dayM.tasks, drag.taskId);
+      if (!base || !ev || !ev.staff) return [];
+      var delta = ev.start - base.start;
+      var moves = [];
+      for (var si = 0; si < drag.selIds.length; si++) {
+        var ts = M.findTask(dayM.tasks, drag.selIds[si]);
+        if (ts && ts.staffId !== null) {
+          moves.push({ id: ts.id, staffId: ev.staff.id, start: ts.start + delta, end: ts.end + delta });
+        }
+      }
+      return moves;
+    }
+
+    /* トレイの支援を配置済みの支援 over の上へ（2026-10-10 (h)）。M.planTraySwap で検証し、表示時間帯も確かめる。
+     * ゴーストは相手の列・相手の開始時刻に自分の長さで出す。不可なら理由付き ng（フォールスルーしない）。 */
+    function evalTraySwap_(over) {
+      var day = opts.getDay();
+      var task = M.findTask(day.tasks, drag.taskId);
+      if (!task || !over) return { status: 'ng', reason: '' };
+      var tgtStaff = M.findStaff(day.staff, over.staffId);
+      var tgtLane = tgtStaff ? board.querySelector('.b-lane[data-col="' + tgtStaff.col + '"]') : null;
+      var plan = M.planTraySwap(day, task.id, over.id);
+      if (!plan.ok) {
+        return { status: 'ng', reason: plan.reason || '入替できません', lane: tgtLane,
+                 start: over.start, end: over.start + (task.end - task.start) };
+      }
+      var mvT = plan.moves[0];
+      if (!tgtStaff || !zoneTimeOk(tgtStaff.zone, mvT.start, mvT.end)) {
+        return { status: 'ng', reason: '表示時間帯外になるため入替できません', lane: tgtLane, start: mvT.start, end: mvT.end };
+      }
+      return { status: 'trayswap', reason: '', lane: tgtLane, start: mvT.start, end: mvT.end,
+               staff: tgtStaff, swapWith: over, plan: plan };
     }
 
     /* 支援(care)を配置済みの枠 over へ重ねた＝場所（職員＋開始時刻）の入れ替え（2026-09-10 F-05改訂）。
      * 検証は M.planPlaceSwap（勤務時間・24時超・R2/R3・自動施設枠の縮小）＋表示帯（zoneTimeOk）。
-     * ゴーストは相手の列・相手の開始時刻に自分の長さで出す。不可なら理由付き ng（フォールスルーしない）。 */
-    function evalPlaceSwap(over) {
+     * ゴーストは相手の列・相手の開始時刻に自分の長さで出す。不可なら理由付き ng（フォールスルーしない）。
+     * o.fromMulti: 複数ドラッグ（グループ/複数選択）から1件だけ入れ替える（2026-10-10 第1段）。o.fromGroup: つかんだ枠がグループ。
+     * 結果に写して、ゴーストの表示（⇄1件入替）・確定時の作り直し・お知らせの文言に使う。 */
+    function evalPlaceSwap(over, o) {
+      var fromMulti = !!(o && o.fromMulti), fromGroup = !!(o && o.fromGroup);
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
-      if (!task || !over) return { status: 'ng', reason: '' };
+      if (!task || !over) return { status: 'ng', reason: '', fromMulti: fromMulti, fromGroup: fromGroup };
       var tgtStaff = M.findStaff(day.staff, over.staffId);
       var ownStaff = M.findStaff(day.staff, task.staffId);
       var tgtLane = tgtStaff ? board.querySelector('.b-lane[data-col="' + tgtStaff.col + '"]') : null;
       var plan = M.planPlaceSwap(day, task.id, over.id);
       if (!plan.ok) {
         return { status: 'ng', reason: plan.reason || '入替できません', lane: tgtLane,
-                 start: over.start, end: over.start + (task.end - task.start) };
+                 start: over.start, end: over.start + (task.end - task.start), fromMulti: fromMulti, fromGroup: fromGroup };
       }
       var mvA = plan.moves[0], mvB = plan.moves[1];
       if (!tgtStaff || !ownStaff ||
           !zoneTimeOk(tgtStaff.zone, mvA.start, mvA.end) || !zoneTimeOk(ownStaff.zone, mvB.start, mvB.end)) {
-        return { status: 'ng', reason: '表示時間帯外になるため入替できません', lane: tgtLane, start: mvA.start, end: mvA.end };
+        return { status: 'ng', reason: '表示時間帯外になるため入替できません', lane: tgtLane, start: mvA.start, end: mvA.end,
+                 fromMulti: fromMulti, fromGroup: fromGroup };
       }
       return { status: 'placeswap', reason: '', lane: tgtLane, start: mvA.start, end: mvA.end,
-               staff: tgtStaff, swapWith: over, plan: plan };
+               staff: tgtStaff, swapWith: over, plan: plan, fromMulti: fromMulti, fromGroup: fromGroup };
     }
 
+    /* ポインタ直下の配置済みの支援（elementFromPoint→closest('.b-task')）。支援でない・未配置なら null */
+    function overCareAt_(pt) {
+      var el = closest(document.elementFromPoint(pt.x, pt.y), '.b-task');
+      if (!el) return null;
+      var t = M.findTask(opts.getDay().tasks, el.getAttribute('data-id'));
+      if (!t || t.kind !== 'care' || t.staffId === null || t.staffId === undefined) return null;
+      return t;
+    }
+
+    /* 移動中の受入判定（2026-10-10 第1段・本人決定 Q1/Q5 (e)(g)）。本体は evalMoveCore_。
+     * 複数ドラッグ（グループ／2件以上の選択）で支援をつかんでいる時だけ、外側で次を足す:
+     *  1. Option 押下中で、ポインタ直下が配置済みの支援 → 1件の入れ替えを先に試す（他職員=(e)／同じ列=(g) 順番入替）。
+     *     成立すれば返す。不成立なら理由を控えて次へ。(g) は同じグループの兄弟（drag.selIds にあり groupId が同じ）の上だけ
+     *     ＝同じ列の別のグループ・単独の支援の上では Option を押していても従来の判定へ流す（2026-10-10 本人決定）
+     *  2.（evalMoveCore_ の中）他職員の支援の上 → まとめての入れ替え（合計時間一致・離した時と同じ検査 checkMultiSwap）
+     *  3.（evalMoveCore_）既存の判定。まとめての移動（ok/confirm）になったら、離した時と同じ moves で checkMultiAssign を掛け、
+     *     不可なら ng（その理由）＝ゴーストが緑なら離しても必ず成立する
+     *  4. 3 が ng で、ポインタ直下が他職員の支援（選択群の外）→ 1件の入れ替え。不成立なら前置き付きの理由で ng
+     *  5. 1 で不成立だった時、最終結果が ng なら 4 と同じ前置き＋1件の理由 */
+    var ONE_SWAP_NG_PREFIX = 'まとめて移動できず、1件の入れ替えもできません：';
     function evalMove(pt) {
+      var day = opts.getDay();
+      var task = M.findTask(day.tasks, drag.taskId);
+      if (!task || !drag.multi || drag.mode !== 'move' || task.kind !== 'care' ||
+          task.staffId === null || task.staffId === undefined) {
+        return evalMoveCore_(pt);
+      }
+      var ov = overCareAt_(pt);
+      if (ov && ov.id === task.id) ov = null;
+      var oneOpt = { fromMulti: true, fromGroup: !!drag.fromGroup };
+      var oneNg = null;
+      var ovSt = ov ? M.findStaff(day.staff, ov.staffId) : null, tkSt = M.findStaff(day.staff, task.staffId);
+      var ovSameCol = !!(ovSt && tkSt && ovSt.col === tkSt.col);
+      var ovSibling = !!(ov && task.groupId && ov.groupId === task.groupId && drag.selIds.indexOf(ov.id) >= 0);
+      if (drag.alt && ov && (!ovSameCol || ovSibling)) {
+        var ev1 = evalPlaceSwap(ov, oneOpt);
+        if (ev1.status === 'placeswap') return ev1;
+        oneNg = ev1;
+      }
+      var ev = evalMoveCore_(pt);
+      if ((ev.status === 'ok' || ev.status === 'confirm') && ev.staff && opts.checkMultiAssign) {
+        var chk = opts.checkMultiAssign(multiAssignMoves_(ev));
+        if (chk && !chk.ok) {
+          ev = { status: 'ng', reason: chk.reason || '', lane: ev.lane, start: ev.start, end: ev.end, staff: ev.staff };
+        }
+      }
+      if (ev.status !== 'ng') return ev;
+      if (!oneNg && ov && ov.staffId !== task.staffId && drag.selIds.indexOf(ov.id) < 0) {
+        var ev4 = evalPlaceSwap(ov, oneOpt);
+        if (ev4.status === 'placeswap') return ev4;
+        oneNg = ev4;
+      }
+      if (oneNg) {
+        return { status: 'ng', reason: ONE_SWAP_NG_PREFIX + (oneNg.reason || '入替できません'),
+                 lane: ev.lane, start: ev.start, end: ev.end };
+      }
+      return ev;
+    }
+
+    function evalMoveCore_(pt) {
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task) return { status: 'ng', reason: '' };
@@ -7484,12 +7915,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ゴーストが隣接ブロックに重なっていても、指している相手と入替える */
       var overEl = document.elementFromPoint(pt.x, pt.y);
       var overBlock = closest(overEl, '.b-task');
+      /* トレイの支援を配置済みの支援（どの職員でも）の上へ＝入れ替え。相手はトレイへ戻る（2026-10-10 (h)）。
+       * 相手が支援以外（施設業務・自由枠・休憩など）なら従来どおり（縮小配置・通常配置）。 */
+      if (drag.source === 'tray' && task.kind === 'care' && overBlock) {
+        var ovT = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
+        if (ovT && ovT.id !== task.id && ovT.kind === 'care' && ovT.staffId !== null && ovT.staffId !== undefined) {
+          return evalTraySwap_(ovT);
+        }
+      }
       /* 複数選択(care群)を他職員のcare枠へ＝合計時間一致なら2群を位置スワップ（単一swap分岐より前に判定）。
-       * 不一致(null)なら素通り＝既存の縮小配置/通常配置へフォールスルー。 */
+       * 不一致(null)なら素通り＝既存の縮小配置/通常配置へフォールスルー。
+       * 候補には離した時と同じ検査（checkMultiSwap＝施設業務の縮小・勤務時間外は不可）をドラッグ中に掛け、
+       * 通らない候補は捨てる（2026-10-10 (b)(d)）＝「⇄」と出たら離しても成立する。 */
       if (drag.multi && overBlock && task.staffId !== null) {
-        var msw = evalMultiSwap(overBlock);
-        if (msw) return { status: 'multiswap', reason: '', lane: lane, staff: msw.staff,
-                 start: msw.ghostStart, end: msw.ghostEnd, moves: msw.moves, swapWith: msw.anchor };
+        var msw = evalMultiSwap(overBlock.getAttribute('data-id'));
+        var mck = msw ? (opts.checkMultiSwap ? opts.checkMultiSwap(msw.moves) : { ok: true, splits: [] }) : null;
+        if (msw && mck && mck.ok) return { status: 'multiswap', reason: '', lane: lane, staff: msw.staff,
+                 start: msw.ghostStart, end: msw.ghostEnd, moves: msw.moves, swapWith: msw.anchor,
+                 anchorId: msw.anchor.id, targetIds: msw.targetIds, countA: msw.countA, countB: msw.countB,
+                 splits: mck.splits || [] };
       }
       if (!altDup && overBlock && task.staffId !== null) {
         var over = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
@@ -7619,9 +8063,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                lane: lane, start: start, end: end, staff: st };
     }
 
+    /* 入替相手の強調を全部外す（まとめての入れ替えは相手の全枠を強調するため・2026-10-10） */
     function removeGhostSwapMark() {
-      var sw = board.querySelector('.swap-target');
-      if (sw) sw.classList.remove('swap-target');
+      var sws = board.querySelectorAll('.swap-target');
+      for (var i = 0; i < sws.length; i++) sws[i].classList.remove('swap-target');
     }
 
     function evalResize(pt) {
@@ -7706,21 +8151,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       var label = '';
-      var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap' || ev.status === 'multiswap' || ev.status === 'placeswap');
+      var isSwapKind = (ev.status === 'swap' || ev.status === 'timeswap' || ev.status === 'multiswap' ||
+                        ev.status === 'placeswap' || ev.status === 'trayswap');
+      /* 複数ドラッグから1件だけ入れ替える時は「⇄1件入替」・class 'ghost swap one'（2026-10-10 第1段・見える化） */
+      var oneSwap = (ev.status === 'placeswap' && !!ev.fromMulti);
       var dupMode = false;
       if (drag.alt && drag.mode === 'move') {
         var tkD = M.findTask(opts.getDay().tasks, drag.taskId);
         if (isFlexSwap(tkD)) dupMode = true;            /* Alt＋休憩/施設業務＝複製配置 */
       }
-      if (isSwapKind) label = '⇄入替';
+      if (ev.status === 'multiswap') label = '⇄入替 ' + ev.countA + '件⇄' + ev.countB + '件';
+      else if (oneSwap) label = '⇄1件入替';
+      else if (isSwapKind) label = '⇄入替';
       else if (ev.status === 'ng') label = '✕';
       else if (ev.status === 'confirm') label = dupMode ? '＋複製(時間外)' : '⚠時間外';
       else if (ev.status === 'shrinkplace') label = '◧縮小配置';
       else if (dupMode) label = '＋複製';
-      showGhost(ev.lane, ev.start, ev.end, isSwapKind ? 'swap' : ev.status, label);
-      if (isSwapKind && ev.swapWith) {
-        var bel = board.querySelector('.b-task[data-id="' + ev.swapWith.id + '"]');
-        if (bel) bel.classList.add('swap-target');
+      showGhost(ev.lane, ev.start, ev.end, isSwapKind ? (oneSwap ? 'swap one' : 'swap') : ev.status, label);
+      if (isSwapKind) {
+        /* まとめての入れ替えは相手側で動く枠を全部強調する。それ以外は相手1件 */
+        var markIds = (ev.status === 'multiswap' && ev.targetIds) ? ev.targetIds : (ev.swapWith ? [ev.swapWith.id] : []);
+        for (var mi = 0; mi < markIds.length; mi++) {
+          var bel = board.querySelector('.b-task[data-id="' + markIds[mi] + '"]');
+          if (bel) bel.classList.add('swap-target');
+        }
       }
       if (dragChip) {
         dragChip.style.left = (pt.x + 8) + 'px';
@@ -7737,26 +8191,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       if (ev.status === 'tray') { opts.onUnassign(taskId); return; }
-      /* 複数枠スワップ（合計時間一致）: moves は evalMultiSwap が算出済み */
-      if (ev.status === 'multiswap' && ev.moves && opts.onMultiSwap) { opts.onMultiSwap(ev.moves); return; }
+      /* 確定直前の作り直し（2026-10-10 第1段）: 入れ替え3種（placeswap・multiswap・trayswap）は、最新の盤面から計画を
+       * 作り直し、ドラッグ中に見せた計画と照合する。作り直しが不成立、または1つでも違えば何もせず中止する
+       * （ドラッグ中に同期などで盤面が変わった時に、見せていない入替を確定させない）。単独の入れ替えにも効く。 */
+      /* 複数枠スワップ（合計時間一致）: アンカーの id から作り直す（ポインタ直下の要素に頼らない） */
+      if (ev.status === 'multiswap' && ev.moves && opts.onMultiSwap) {
+        var reM = ev.anchorId ? evalMultiSwap(ev.anchorId) : null;
+        if (!reM || !sameMoves_(ev.moves, reM.moves)) { opts.onReject(SWAP_STALE_MSG); return; }
+        opts.onMultiSwap(reM.moves); return;
+      }
       /* 複数選択の同時移動: ドラッグ対象の new start を基準に各ブロックの相対オフセットを保って同一職員へ */
       if (drag.multi && (ev.status === 'ok' || ev.status === 'confirm') && ev.staff && opts.onMultiAssign) {
-        var dayM = opts.getDay();
-        var base = M.findTask(dayM.tasks, taskId);
-        if (base) {
-          var delta = ev.start - base.start;
-          var moves = [];
-          for (var si = 0; si < drag.selIds.length; si++) {
-            var ts = M.findTask(dayM.tasks, drag.selIds[si]);
-            if (ts && ts.staffId !== null) {
-              moves.push({ id: ts.id, staffId: ev.staff.id, start: ts.start + delta, end: ts.end + delta });
-            }
-          }
-          if (moves.length) { opts.onMultiAssign(moves, ev.status === 'confirm'); return; }
-        }
+        var moves = multiAssignMoves_(ev);
+        if (moves.length) { opts.onMultiAssign(moves, ev.status === 'confirm'); return; }
       }
       if (ev.status === 'timeswap' && ev.plan && ev.plan.ok) { opts.onTimeSwap(ev.plan.moves, ev.swapWith); return; }
-      if (ev.status === 'placeswap' && ev.plan && ev.plan.ok && opts.onPlaceSwap) { opts.onPlaceSwap(ev.plan.moves, ev.plan.splits, ev.swapWith); return; }
+      if (ev.status === 'placeswap' && ev.plan && ev.plan.ok && opts.onPlaceSwap) {
+        var reP = evalPlaceSwap(ev.swapWith ? M.findTask(opts.getDay().tasks, ev.swapWith.id) : null,
+                                { fromMulti: ev.fromMulti, fromGroup: ev.fromGroup });
+        if (reP.status !== 'placeswap' || !sameMoves_(ev.plan.moves, reP.plan.moves)) { opts.onReject(SWAP_STALE_MSG); return; }
+        opts.onPlaceSwap(reP.plan.moves, reP.plan.splits, reP.swapWith,
+                         { fromMulti: !!ev.fromMulti, fromGroup: !!ev.fromGroup });
+        return;
+      }
+      /* トレイの支援と配置済みの支援の入れ替え（2026-10-10 (h)） */
+      if (ev.status === 'trayswap' && ev.plan && ev.plan.ok && opts.onTraySwap) {
+        var reT = evalTraySwap_(ev.swapWith ? M.findTask(opts.getDay().tasks, ev.swapWith.id) : null);
+        if (reT.status !== 'trayswap' || !sameMoves_(ev.plan.moves, reT.plan.moves) ||
+            reT.plan.unassignId !== ev.plan.unassignId || reT.plan.unassignGroupId !== ev.plan.unassignGroupId) {
+          opts.onReject(SWAP_STALE_MSG); return;
+        }
+        opts.onTraySwap(reT.plan, reT.swapWith); return;
+      }
       if (ev.status === 'swap' && ev.plan && ev.plan.ok) { opts.onSwap(ev.plan.moves, ev.swapWith); return; }
       /* 支援を施設業務枠へ重ねた縮小配置 */
       if (ev.status === 'shrinkplace' && ev.overlapTask && opts.onShrinkPlace) {
@@ -7893,10 +8359,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var isMulti = (mode === 'move' && source === 'board' && taskId !== null &&
                      multiIds.length > 1 && multiIds.indexOf(taskId) >= 0);
 
+      /* fromGroup: つかんだ枠がグループ（印があり、同じ列に2件以上）＝1件入替のお知らせの文言を分ける（2026-10-10）。
+       * 確定時に引き直すと盤面が変わっている場合があるため、つかんだ時点で控える */
       drag = { mode: mode, taskId: taskId, source: source, edge: edge,
                colFrom: colFrom, headText: headText,
                additive: !!(e.ctrlKey || e.metaKey || e.shiftKey),
                alt: !!e.altKey, multi: isMulti, selIds: multiIds.slice(),
+               fromGroup: isMulti && groupIds.length > 1,
                startPt: pt, dragging: false, lastEval: null, longTimer: null, isTouch: isTouch };
 
       /* リサイズも移動と同じ開始条件にする:
@@ -7928,7 +8397,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!drag || !drag.dragging) return;
       if (e.cancelable) e.preventDefault();
       drag.alt = !!e.altKey;                       /* Alt(Option)押下で複製。ドラッグ中の押下変化も反映 */
+      drag.lastPt = pt;                            /* Option の押し離しで判定をやり直す時の位置（onAltKey_） */
       updatePreview(pt);
+    }
+
+    /* ドラッグ中の Option の押し離しを、ポインタを動かさなくても即時に反映する（2026-10-10 本人決定）。
+     * 最後のポインタ位置で判定とゴーストを作り直す。ドラッグしていない時・状態が変わらない時は何もしない */
+    function onAltKey_(e) {
+      if (!drag || !drag.dragging || !drag.lastPt) return;
+      var alt = !!e.altKey;
+      if (alt === drag.alt) return;
+      drag.alt = alt;
+      updatePreview(drag.lastPt);
     }
 
     function onUp(e) {
@@ -7993,6 +8473,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') clearDrag();
     });
+    document.addEventListener('keydown', onAltKey_);
+    document.addEventListener('keyup', onAltKey_);
 
     /* PC(マウス/トラックパッド)向け: ネイティブ dblclick でも編集を開く。
      * 自前2タップ検知(DBL_MS=320ms)は OS のダブルクリック設定(既定~500ms・移動許容量)より厳しく、
@@ -15310,6 +15792,98 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
 
+  /* まとめての移動・まとめての入れ替えの検査（2026-10-10 §5）。onMultiAssign / onMultiSwap と、ドラッグ中の事前検査
+   * （drag.js の checkMultiAssign / checkMultiSwap）が同じ判定を使う＝ゴーストが緑・⇄なら離しても成立する。
+   *  mode 'assign': 従来の onMultiAssign と同じ判定・文言・splits。勤務時間外は ooh=true（確認ダイアログは呼び出し側）
+   *  mode 'swap'  : 入ってくる枠と重なる縮小可能な施設業務/自由枠を外して検証し splits を作る（(b)）。勤務時間外は不可（(d)）
+   * 返り値 { ok, reason, ooh, splits }。お知らせ・確認ダイアログは出さない（pointermove ごとに呼ばれるため）。 */
+  function planMultiMoves_(moves, mode) {
+    var swap = (mode === 'swap');
+    var day = store.get();
+    var byMove = {}, i;
+    for (i = 0; i < moves.length; i++) byMove[moves[i].id] = moves[i];
+
+    /* move ごとに、移動先で重なる縮小可能facworkを収集（移動中の枠自身は除外）。
+     * 支援だけでなく、グループに入った自由枠・業務枠が乗る所も縮める（2026-10-07）。以前は支援の所だけ縮めたため、
+     * 名前入りの自由枠の下に施設業務の切れ端が残って重なり、重なりの整理でどちらかが消えていた。 */
+    var facMap = {};   /* facId -> { fac:Task, ranges:[[s,e],...] } */
+    for (i = 0; i < moves.length; i++) {
+      var cm = moves[i];
+      var ct = M.findTask(day.tasks, cm.id);
+      if (!ct) continue;
+      for (var q = 0; q < day.tasks.length; q++) {
+        var ft = day.tasks[q];
+        if (byMove[ft.id]) continue;                          /* 移動対象の枠は縮小対象にしない */
+        if (ft.staffId !== cm.staffId || !M.shrinkableFiller(ft)) continue;   /* 縮小対象＝drag.js の判定(shrinkableFiller)と同一。休憩は縮小しない */
+        if (cm.start < ft.end && ft.start < cm.end) {          /* 重なり */
+          if (!facMap[ft.id]) facMap[ft.id] = { fac: ft, ranges: [] };
+          facMap[ft.id].ranges.push([cm.start, cm.end]);
+        }
+      }
+    }
+    var affected = {}, fid;
+    for (fid in facMap) if (Object.prototype.hasOwnProperty.call(facMap, fid)) affected[fid] = true;
+
+    /* 移動適用後の状態をシミュレート（縮小される施設枠はsimから除外＝支援を重ねられる）。
+     * care同士の重複・利用者重複・夜勤帯・時間外warnは従来通り検証する。 */
+    var simTasks = [];
+    for (i = 0; i < day.tasks.length; i++) {
+      var t = day.tasks[i];
+      if (affected[t.id]) continue;
+      var mv0 = byMove[t.id];
+      if (!mv0) { simTasks.push(t); continue; }
+      var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
+      c.staffId = mv0.staffId; c.start = mv0.start; c.end = mv0.end; simTasks.push(c);
+    }
+    var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
+    var ooh = false;
+    for (i = 0; i < moves.length; i++) {
+      var mv = moves[i];
+      /* 時間範囲・夜勤表示帯のガード（単一移動と同等の制約を複数移動でも担保） */
+      if (mv.start < 0 || mv.end > TS.DAY_MIN || !(mv.end > mv.start)) {
+        return { ok: false, reason: swap ? '移動先が時間範囲外になるため入替できません' : '移動先が時間範囲外になるため移動できません',
+                 ooh: false, splits: [] };
+      }
+      var mst = M.findStaff(day.staff, mv.staffId);
+      if (mst && mst.zone === 'night' && !nightBand_(mv.start, mv.end)) {
+        return { ok: false, reason: swap ? '夜勤の表示時間帯（0-9時／21-24時）外になるため入替できません'
+                                         : '夜勤の表示時間帯（0-9時／21-24時）外になるため移動できません',
+                 ooh: false, splits: [] };
+      }
+      var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
+      if (!v.ok) {
+        return { ok: false, reason: v.reason || (swap ? '同時刻に別の枠があるため入替できません' : '同時刻に別の枠があるため移動できません'),
+                 ooh: false, splits: [] };
+      }
+      if (v.warn === 'worktime') {
+        /* (d) まとめての入れ替えは勤務時間外を即不可（1件の入れ替えと同じ文言の形。確認ダイアログは出さない） */
+        if (swap) return { ok: false, reason: (mst ? mst.name : '') + 'さんの勤務時間外になるため入替できません', ooh: true, splits: [] };
+        ooh = true;
+      }
+    }
+
+    /* 影響facworkごとに残余区間を算出して splits を作る。 */
+    var splits = [];
+    for (fid in facMap) {
+      if (!Object.prototype.hasOwnProperty.call(facMap, fid)) continue;
+      var entry = facMap[fid];
+      splits.push({ facId: entry.fac.id,
+        fragments: TS.facResidual(entry.fac.start, entry.fac.end, entry.ranges, 20) });
+    }
+    return { ok: true, reason: '', ooh: ooh, splits: splits };
+  }
+  /* ドラッグ中の事前検査の使い回し（pointermove ごとに呼ばれるため）。同じ盤面（同じ day オブジェクト）・同じ moves なら前回の結果を返す。
+   * 確定（onMultiAssign / onMultiSwap）は使い回さず毎回検査する。 */
+  var multiCheckMemo_ = { day: null, key: '', res: null };
+  function checkMultiMemo_(moves, mode) {
+    var day = store.get();
+    var key = mode + '|' + JSON.stringify(moves || []);
+    if (multiCheckMemo_.day === day && multiCheckMemo_.key === key && multiCheckMemo_.res) return multiCheckMemo_.res;
+    var res = planMultiMoves_(moves || [], mode);
+    multiCheckMemo_ = { day: day, key: key, res: res };
+    return res;
+  }
+
   function wireDrag() {
     window.WSDrag.create({
       wrapEl: $('boardWrap'),
@@ -15332,6 +15906,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         return ids;
       },
+      /* ドラッグ中の事前検査（2026-10-10 §5）: 離した時と同じ検査をゴーストの判定に使う */
+      checkMultiAssign: function (moves) { return checkMultiMemo_(moves, 'assign'); },
+      checkMultiSwap: function (moves) { return checkMultiMemo_(moves, 'swap'); },
       onAssign: function (taskId, staffId, start, end) {
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
@@ -15339,69 +15916,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       onMultiAssign: function (moves, needConfirm) {
         /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。
          * 移動先に「縮小可能な施設業務/自由枠」があれば、それを残余区間へ縮小/分割しつつ同時配置する
-         * （休憩は縮小対象外）。全件検証してから一括適用（1操作＝undo1回）。 */
-        var day = store.get();
-        var byMove = {}, i;
-        for (i = 0; i < moves.length; i++) byMove[moves[i].id] = moves[i];
-
-        /* move ごとに、移動先で重なる縮小可能facworkを収集（移動中の枠自身は除外）。
-         * 支援だけでなく、グループに入った自由枠・業務枠が乗る所も縮める（2026-10-07）。以前は支援の所だけ縮めたため、
-         * 名前入りの自由枠の下に施設業務の切れ端が残って重なり、重なりの整理でどちらかが消えていた。 */
-        var facMap = {};   /* facId -> { fac:Task, ranges:[[s,e],...] } */
-        for (i = 0; i < moves.length; i++) {
-          var cm = moves[i];
-          var ct = M.findTask(day.tasks, cm.id);
-          if (!ct) continue;
-          for (var q = 0; q < day.tasks.length; q++) {
-            var ft = day.tasks[q];
-            if (byMove[ft.id]) continue;                          /* 移動対象の枠は縮小対象にしない */
-            if (ft.staffId !== cm.staffId || !M.shrinkableFiller(ft)) continue;   /* 縮小対象＝drag.js の判定(shrinkableFiller)と同一。休憩は縮小しない */
-            if (cm.start < ft.end && ft.start < cm.end) {          /* 重なり */
-              if (!facMap[ft.id]) facMap[ft.id] = { fac: ft, ranges: [] };
-              facMap[ft.id].ranges.push([cm.start, cm.end]);
-            }
-          }
-        }
-        var affected = {}, fid;
-        for (fid in facMap) if (Object.prototype.hasOwnProperty.call(facMap, fid)) affected[fid] = true;
-
-        /* 移動適用後の状態をシミュレート（縮小される施設枠はsimから除外＝支援を重ねられる）。
-         * care同士の重複・利用者重複・夜勤帯・時間外warnは従来通り検証する。 */
-        var simTasks = [];
-        for (i = 0; i < day.tasks.length; i++) {
-          var t = day.tasks[i];
-          if (affected[t.id]) continue;
-          var mv0 = byMove[t.id];
-          if (!mv0) { simTasks.push(t); continue; }
-          var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
-          c.staffId = mv0.staffId; c.start = mv0.start; c.end = mv0.end; simTasks.push(c);
-        }
-        var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
-        var ooh = false;
-        for (i = 0; i < moves.length; i++) {
-          var mv = moves[i];
-          /* 時間範囲・夜勤表示帯のガード（単一移動と同等の制約を複数移動でも担保） */
-          if (mv.start < 0 || mv.end > TS.DAY_MIN || !(mv.end > mv.start)) {
-            toast('移動先が時間範囲外になるため移動できません', true); return;
-          }
-          var mst = M.findStaff(day.staff, mv.staffId);
-          if (mst && mst.zone === 'night' && !nightBand_(mv.start, mv.end)) {
-            toast('夜勤の表示時間帯（0-9時／21-24時）外になるため移動できません', true); return;
-          }
-          var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
-          if (!v.ok) { toast(v.reason || '同時刻に別の枠があるため移動できません', true); return; }
-          if (v.warn === 'worktime') ooh = true;
-        }
-        if (ooh && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
-
-        /* 影響facworkごとに残余区間を算出して splits を作る。 */
-        var splits = [];
-        for (fid in facMap) {
-          if (!Object.prototype.hasOwnProperty.call(facMap, fid)) continue;
-          var entry = facMap[fid];
-          splits.push({ facId: entry.fac.id,
-            fragments: TS.facResidual(entry.fac.start, entry.fac.end, entry.ranges, 20) });
-        }
+         * （休憩は縮小対象外）。全件検証してから一括適用（1操作＝undo1回）。
+         * 検証は planMultiMoves_(…,'assign')（ドラッグ中の事前検査と同じ判定・2026-10-10 に切り出し。判定・文言は従来どおり）。 */
+        var pm = planMultiMoves_(moves, 'assign');
+        if (!pm.ok) { toast(pm.reason, true); return; }
+        if (pm.ooh && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
+        var splits = pm.splits;
         clearSelAfterGroupMove_(moves);
         if (splits.length) {
           store.dispatch({ type: 'MULTI_SHRINK_PLACE', moves: moves, splits: splits });
@@ -15456,46 +15976,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         store.dispatch({ type: 'SWAP', moves: moves });
         toast('支援を入れ替えました');
       },
-      onPlaceSwap: function (moves, splits, withTask) {
-        /* 場所の入れ替え（2026-09-10 F-05改訂）: planPlaceSwap 検証済みの moves/splits を1操作で適用＝undo1回 */
+      onPlaceSwap: function (moves, splits, withTask, info) {
+        /* 場所の入れ替え（2026-09-10 F-05改訂）: planPlaceSwap 検証済みの moves/splits を1操作で適用＝undo1回。
+         * info.fromMulti: 複数ドラッグ（グループ/複数選択）から1件だけ入れ替えた（2026-10-10 第1段）。動いた2枠だけ選択から外し、
+         * 残りの選択は残す（10/07 本人決定）。info.fromGroup: つかんだ枠がグループ＝お知らせを分ける */
+        var fromMulti = !!(info && info.fromMulti), fromGroup = !!(info && info.fromGroup);
+        if (fromMulti && ui.selectedIds.length) {
+          var movedIds = {}, keepSel = [], si;
+          for (si = 0; si < moves.length; si++) movedIds[moves[si].id] = true;
+          for (si = 0; si < ui.selectedIds.length; si++) if (!movedIds[ui.selectedIds[si]]) keepSel.push(ui.selectedIds[si]);
+          ui.selectedIds = keepSel;
+        }
         store.dispatch({ type: 'PLACE_SWAP', moves: moves, splits: splits || [] });
+        if (fromGroup) { toast('グループのうち1件の場所を入れ替えました'); return; }
         var nm = (withTask && withTask.kind === 'care') ? '支援' : ((withTask && withTask.kind === 'break') ? '休憩' : '枠');
         toast((splits && splits.length) ? '支援と' + nm + 'の場所を入れ替え、施設業務を縮小しました' : '支援と' + nm + 'の場所を入れ替えました');
       },
       onMultiSwap: function (moves) {
-        /* 合計時間一致による2群の位置スワップ。全moveidを除外したsimで検証
-         * （移動枠どうしの偽staffdupを避けつつ、非移動枠との重複/利用者重複/範囲を捕捉）。 */
-        var day = store.get();
-        var byId = {}, i;
-        for (i = 0; i < moves.length; i++) byId[moves[i].id] = moves[i];
-        var simTasks = [];
-        for (i = 0; i < day.tasks.length; i++) {
-          var t = day.tasks[i];
-          var mv0 = byId[t.id];
-          if (!mv0) { simTasks.push(t); continue; }
-          var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
-          c.staffId = mv0.staffId; c.start = mv0.start; c.end = mv0.end;
-          simTasks.push(c);
-        }
-        var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
-        var ooh = false;
-        for (i = 0; i < moves.length; i++) {
-          var mv = moves[i];
-          if (mv.start < 0 || mv.end > TS.DAY_MIN || !(mv.end > mv.start)) {
-            toast('移動先が時間範囲外になるため入替できません', true); return;
-          }
-          var mst = M.findStaff(day.staff, mv.staffId);
-          if (mst && mst.zone === 'night' && !nightBand_(mv.start, mv.end)) {
-            toast('夜勤の表示時間帯（0-9時／21-24時）外になるため入替できません', true); return;
-          }
-          var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
-          if (!v.ok) { toast(v.reason || '同時刻に別の枠があるため入替できません', true); return; }
-          if (v.warn === 'worktime') ooh = true;
-        }
-        if (ooh && !window.confirm('勤務時間外を含みますが入れ替えますか？')) return;
+        /* 合計時間一致による2群の位置スワップ。検証は planMultiMoves_(…,'swap')（ドラッグ中の事前検査と同じ判定・2026-10-10）:
+         * 全moveを適用したsimで、非移動枠との重複/利用者重複/範囲を捕捉する。入ってくる枠と重なる縮小可能な施設業務/自由枠は
+         * 縮めて splits にし（(b)）、勤務時間外は確認なしで不可（(d)）。splits が1件以上の時だけ store が退去元の空きを埋め直す
+         * （空の時は従来の入れ替えのまま＝施設業務を作り直さない）。 */
+        var pm = planMultiMoves_(moves, 'swap');
+        if (!pm.ok) { toast(pm.reason, true); return; }
         clearSelAfterGroupMove_(moves);
-        store.dispatch({ type: 'MULTI_SWAP', moves: moves });
-        toast(moves.length + '件を入れ替えました');
+        store.dispatch({ type: 'MULTI_SWAP', moves: moves, splits: pm.splits });
+        toast(pm.splits.length ? moves.length + '件を入れ替え、施設業務を縮小しました' : moves.length + '件を入れ替えました');
+      },
+      onTraySwap: function (plan) {
+        /* トレイの支援を配置済みの支援と入れ替える（2026-10-10 (h)）。M.planTraySwap 検証済みの計画を1操作で適用＝undo1回。
+         * 相手はトレイへ戻り、空いた所は施設業務で埋め直す（store の TRAY_SWAP） */
+        store.dispatch({ type: 'TRAY_SWAP', moves: plan.moves, unassignId: plan.unassignId,
+                         unassignGroupId: plan.unassignGroupId, splits: plan.splits || [] });
+        toast('支援を入れ替え、元の支援をトレイへ戻しました');
       },
       onTimeSwap: function (moves, withTask) {
         /* 休憩↔施設業務の時間枠交換（同一職員）。単一アクションで適用＝undoは1回で完全復元。
