@@ -136,6 +136,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
    画面では従来どおり表示する。.cell は inline の flex 指定を持つため !important が要る */
 @media print{.noprint-cell{display:none !important}}
+/* 最後に直した人（2026-10-10）。画面だけ・紙には出さない。#4a4f57 on 白で約 8:1 */
+.rm-edited{margin:4px 0 8px;font-size:0.875rem;line-height:1.5;color:#4a4f57}
+@media print{.rm-edited{display:none !important}}
 /* ── 印刷しない欄（2026-08-17 指示）──
    入居者ごとに「この欄は紙に出さない」を選べる（ご家族へお渡しする紙で伏せる用途）。
    ★画面には従来どおり全部出す。隠すのは紙だけ。
@@ -1661,6 +1664,46 @@ var CFG={url:'', token:'', vmaUrl:''};
    未設定/'office' は従来どおり全機能。あくまで運用上の誤操作防止であり厳密な認証ではない。 */
 var DEVICE_KEY='su_device_role';
 function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+/* ── 最後に直した人（2026-10-10・監査10月版 第2版 入居者マスタ 第2手）──
+   保存（saveResident）のたびに updatedBy（誰が）と updatedByAt（その保存の updatedAt）を記録に載せる。GAS は記録を丸ごと
+   dataJson に残すので GAS の変更は要らない。★GAS 側の別経路（薬の変更候補の反映など）も updatedAt を進めるため、
+   updatedByAt と updatedAt がずれていたら「その後に別の経路で更新された」と出す（直した人を取り違えない）。
+   ★誰が＝ログイン中（su-auth で ok）なら「表示名（メールの @ より前）」、確かめられない時は端末の役割名（体重管理と同じ作り）。
+   起動時・別タブでのログイン/ログアウト・画面に戻った時に取り直し、世代番号で遅れた結果を捨てる。 */
+var rmWhoAcct_='', rmWhoGen_=0;
+function rmWho_(){ return rmWhoAcct_ || (getDeviceRole()==='field' ? '現場端末' : '事務所PC'); }
+function rmWhoLabel_(st){
+  if(!st || ['ok','mfa_verify','mfa_enroll'].indexOf(st.status)<0 || !st.email) return '';
+  var acct=String(st.email).split('@')[0].slice(0,40);
+  var lab=String(st.label==null?'':st.label).trim().slice(0,40);
+  return (lab && lab!==acct) ? (lab+'（'+acct+'）') : acct;
+}
+function rmResolveWho_(){
+  var gen=++rmWhoGen_;
+  if(typeof mcHasLogin_!=='function' || !mcHasLogin_()){ rmWhoAcct_=''; return; }
+  msAuthLoad_().then(function(){ return window.SUAuth ? window.SUAuth.check() : null; }).then(function(st){
+    if(gen!==rmWhoGen_) return;
+    if(!st || st.status==='error') return;   // 確かめられなかった＝前の値のまま
+    rmWhoAcct_=rmWhoLabel_(st);
+  }).catch(function(){});
+}
+function rmEditedFmt_(iso){
+  var d=new Date(iso); if(isNaN(d.getTime())) return '';
+  function p2(n){ return ('0'+n).slice(-2); }
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+p2(d.getHours())+':'+p2(d.getMinutes());
+}
+function rmEditedHtml_(r){
+  if(!r) return '';
+  var at=rmEditedFmt_(r.updatedAt), byAt=rmEditedFmt_(r.updatedByAt), by=String(r.updatedBy==null?'':r.updatedBy).trim().slice(0,60);
+  if(by && byAt){
+    var t='入居者マスタで最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
+    var a=new Date(r.updatedAt).getTime(), b=new Date(r.updatedByAt).getTime();
+    if(at && isFinite(a) && isFinite(b) && Math.abs(a-b)>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映など別の経路で更新されています';
+    return '<p class="rm-edited">'+t+'</p>';
+  }
+  if(at) return '<p class="rm-edited">最後の保存：'+esc(at)+'（誰が直したかの記録はありません）</p>';
+  return '';
+}
 function setDeviceRole(v){
   try{
     localStorage.setItem(DEVICE_KEY,v);
@@ -7716,6 +7759,7 @@ function renderView(r){
   if(hl.length)h+='<div class="sec"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+hl.join('')+'</div></div>';
   // この方を各アプリで開く（入居者単位リンク・別タブなので今の画面を失わない）
   h+=perResidentLinksHtml(r);
+  h+=rmEditedHtml_(r);   // 最後に直した人（画面だけ・紙には出さない）
   // 利用者基本情報
   h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
@@ -9843,6 +9887,7 @@ function saveResident(){
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
   if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
   rec.updatedAt=new Date().toISOString();
+  if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
   /* ★baseUpdatedAt は record の外に添える（旧GASは未知の項目を無視＝後方互換。
      record 内に入れると旧GASが dataJson へ焼き込んでしまう）。新規(idなし)や
      解釈できない値は送らない＝GAS側も従来動作。 */
@@ -11961,6 +12006,9 @@ function init(){
   if(_hadNavState&&$('sc-list').classList.contains('on')){ _navPushed=false; try{history.back();}catch(e){} }
 }
 document.addEventListener('DOMContentLoaded',init);
+document.addEventListener('DOMContentLoaded',function(){ try{ rmResolveWho_(); }catch(e){} });
+window.addEventListener('storage',function(e){ if(e.key===null || /^sb-[a-z0-9]+-auth-token$/.test(e.key||'')){ try{ rmResolveWho_(); }catch(e2){} } });
+document.addEventListener('visibilitychange',function(){ if(!document.hidden){ try{ rmResolveWho_(); }catch(e){} } });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-10" data-tool="入居者マスタ"></script>
