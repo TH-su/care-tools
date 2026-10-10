@@ -33,7 +33,7 @@
  *   これは「ボタンを出すかどうか」だけの判定で、受け付けるかどうかは今までどおり受け口の合言葉が決める。
  *
  * 使い方: 各ツールの </body> の直前で
- *   <script src="su-report.js?v=2026-10-09" data-tool="週間計画"></script>
+ *   <script src="su-report.js?v=2026-10-10" data-tool="週間計画"></script>
  */
 (function () {
   'use strict';
@@ -54,6 +54,10 @@
      後から起きた本物のスクリプトエラーが送られなくなる（2026-10-08 審査の指摘）。 */
   var NOTE_KIND = '保存・同期の失敗';
   var autoNoteSent = 0;
+  /* ★note は「場所（where）ごとに1件・1回の画面表示で合計3件まで」（2026-10-10・監査10月版 第2版 13）。
+     以前は合計1件だけで、最初の軽い失敗が、後から別の場所で起きた本物の失敗の報告を塞いでいた。 */
+  var AUTO_NOTE_MAX = 3;
+  var autoNoteWhere = {};
 
   /* エラー文からは「種類」だけを取り出す（文の中身は送らない）。where は ファイル名:行 だけ（クエリは落とす） */
   function errType(msg) {
@@ -161,16 +165,27 @@
 
   // 送信先は【端末の localStorage】から読む（他ツールの接続先と同じ流儀＝配信物に URL や合言葉を載せない）。
   // 設定する所: 接続設定の「不具合の報告先」（URL と合言葉）。両方そろって初めて送れる。
+  /* ★合言葉は URL に付けず、本文の1行目「SU-KEY-V1 <合言葉>」で送る（2026-10-10・監査10月版 第2版 8）。
+     URL の ?k= は Apps Script の実行ログや途中の機器のログに残りうるため。受け口（gas/su-report-api.gs）は
+     1行目を照合したら外し、シートには残さない。画面に出す本文・コピーには入らない（送る時だけ付ける）。 */
+  function reportToken() {
+    try {
+      var tok = String(localStorage.getItem('su_report_token') || '').trim();
+      return /[\r\n]/.test(tok) ? '' : tok.slice(0, 200);
+    } catch (e) { return ''; }
+  }
   function endpoint() {
     try {
       var url = String(localStorage.getItem('su_report_endpoint') || '').trim();
-      var tok = String(localStorage.getItem('su_report_token') || '').trim();
-      if (!/^https:\/\//i.test(url) || !tok) return '';     // https:// 以外（http:・javascript: 等）へは送らない
-      return url + (url.indexOf('?') === -1 ? '?' : '&') + 'k=' + encodeURIComponent(tok);
+      if (!/^https:\/\//i.test(url) || !reportToken()) return '';     // https:// 以外（http:・javascript: 等）へは送らない
+      return url;
     } catch (e) { return ''; }
   }
   /* 受け口の応答（JSON の ok）まで見る。HTTP が 200 でも合言葉違い・形式違いは ok:false で返る */
   function post(url, body) {
+    var tok = reportToken();
+    if (!tok) return Promise.resolve({ ok: false, why: '合言葉が無い' });
+    body = 'SU-KEY-V1 ' + tok + '\n' + body;
     return fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: body, keepalive: body.length < 20000   // keepalive は 64KB までしか送れない。配置図つきの大きい報告は普通に送る
@@ -241,29 +256,36 @@
   }
 
   // ── 自動報告（su-errors.js の通知を受ける）──
+  /* ★容量がいっぱいで localStorage に控えを書けない端末では sessionStorage に控える（2026-10-10・第2版 13）。
+     書けないまま送ると、再読み込みのたびに同じ報告を送ってしまう。読む時は両方を合わせて見る。 */
   function autoThrottled(sig) {
-    var now = Date.now(), map = null;
+    var now = Date.now(), map = null, ss = null;
     try { map = JSON.parse(localStorage.getItem(AUTO_LS) || 'null'); } catch (e) { map = null; }
     if (!map || typeof map !== 'object') map = {};
+    try { ss = JSON.parse(sessionStorage.getItem(AUTO_LS) || 'null'); } catch (e) { ss = null; }
+    if (ss && typeof ss === 'object') for (var s in ss) if (Object.prototype.hasOwnProperty.call(ss, s) && !(map[s] >= ss[s])) map[s] = ss[s];
     var last = map[sig] || 0;
     if (now - last < AUTO_GAP_MS) return true;
     var keep = {};   // 古い記録は捨てる（増え続けないように）。保存できなくてもメモリの上限で止まる
     for (var k in map) if (Object.prototype.hasOwnProperty.call(map, k) && now - map[k] < AUTO_GAP_MS) keep[k] = map[k];
     keep[sig] = now;
-    try { localStorage.setItem(AUTO_LS, JSON.stringify(keep)); } catch (e) { /* 書けなくても送る */ }
+    var json = JSON.stringify(keep);
+    try { localStorage.setItem(AUTO_LS, json); }
+    catch (e) { try { sessionStorage.setItem(AUTO_LS, json); } catch (e2) { /* どちらも書けなくても送る（1回の表示の上限で止まる） */ } }
     return false;
   }
   function autoSend(kind, brief, where) {
     var url = endpoint();
     if (!url) return;                                      // 送信先が無い端末では何もしない
     if (autoSent >= AUTO_MAX_PER_LOAD) return;
-    if (String(kind) === NOTE_KIND && autoNoteSent >= 1) return;
     var type = String(kind || 'エラー') + '：' + errType(brief);   // 例「スクリプトエラー：TypeError」。文の中身は送らない
     var w = cleanWhere(where);
+    var isNote = String(kind) === NOTE_KIND;
+    if (isNote && (autoNoteSent >= AUTO_NOTE_MAX || autoNoteWhere[w])) return;
     var sig = FILE + '|' + type + '|' + w;
     if (autoThrottled(sig)) return;
     autoSent++;
-    if (String(kind) === NOTE_KIND) autoNoteSent++;
+    if (isNote) { autoNoteSent++; autoNoteWhere[w] = 1; }
     post(url, composeAuto(type, w)).then(null, function () { /* 送れなくても画面には何も出さない */ });
   }
   try {

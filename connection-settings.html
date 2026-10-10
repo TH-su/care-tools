@@ -385,7 +385,7 @@ var SYSTEMS = [
 
   /* 不具合の報告先（2026-10-04 代表者の決定）: 全画面の「不具合を報告」ボタンと、画面のエラーの自動報告の送り先。
      URL（受け口GASの exec）と合言葉（GAS の SECRET_K）は別の欄。合言葉は他の系統と同じく画面に出さない（プリフィルしない）。
-     送る時は su-report.js が <URL>?k=<合言葉> に組み立てる。控え（SUCFG1:）にも入る。 */
+     送る時は su-report.js が合言葉を本文の1行目（SU-KEY-V1）に入れる＝URL には載せない（2026-10-10）。控え（SUCFG1:）にも入る。 */
   { id:'report', title:'不具合の報告先',
     apps:'全画面の「不具合を報告」ボタン／画面のエラーの自動報告（URL と合言葉の両方がある端末だけ送れます。無い端末では報告は「コピー」だけになります）',
     shape:'str2', key:'su_report_endpoint', tokenKey:'su_report_token', urlRe:RE_GAS_EXEC }
@@ -1075,6 +1075,6 @@ else init();
 </script>
 
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-09" data-tool="接続設定"></script>
+<script src="su-report.js?v=2026-10-10" data-tool="接続設定"></script>
 </body>
 </html>

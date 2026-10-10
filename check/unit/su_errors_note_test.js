@@ -112,7 +112,7 @@ console.log('\n— 2b. 要約は例外の名前つき・引用符の中（デー
   t('登録前の note は直近3件だけ渡る', late.filter(x => /^保存・同期の失敗/.test(x)).length === 3, late);
 }
 
-console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残る・note は1回の表示で1件だけ自動で送る —');
+console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残る・note は場所ごとに1件・合計3件まで自動で送る —');
 {
   const RS = fs.readFileSync(path.join(ROOT, 'su-report.js'), 'utf8');
   const cutF = (name) => { const h = RS.indexOf('function ' + name + '('); let i = RS.indexOf('{', h), d = 0; for (; i < RS.length; i++) { if (RS[i] === '{') d++; else if (RS[i] === '}') { d--; if (d === 0) return RS.slice(h, i + 1); } } };
@@ -126,15 +126,25 @@ console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残
   /* autoSend を実物で動かす（送信は数えるだけ） */
   const sent = [];
   const ab = { String, Date, JSON, Object, FILE: 'care-schedule.html', AUTO_LS: 'k', AUTO_GAP_MS: 1800000, AUTO_MAX_PER_LOAD: 10,
-    autoSent: 0, NOTE_KIND: '保存・同期の失敗', autoNoteSent: 0,
+    autoSent: 0, NOTE_KIND: '保存・同期の失敗', autoNoteSent: 0, AUTO_NOTE_MAX: 3, autoNoteWhere: {},
     localStorage: { getItem() { return null; }, setItem() { throw new Error('quota'); } },
+    sessionStorage: (() => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, _m: m }; })(),
     endpoint: () => 'https://example.invalid/exec', composeAuto: (ty, w) => ty + '|' + w,
     post: (u, b) => { sent.push(b); return { then() {} }; } };
   vm.createContext(ab);
   vm.runInContext([cutF('errType'), cutF('cleanWhere'), cutF('autoThrottled'), cutF('autoSend')].join('\n'), ab);
-  ['本体の保存', '書き手の印', '指紋', '未送信の印'].forEach(w => ab.autoSend('保存・同期の失敗', 'QuotaExceededError: x', 'care:' + w));
+  ab.autoSend('保存・同期の失敗', 'QuotaExceededError: x', 'care:本体の保存');
+  ab.autoSend('保存・同期の失敗', 'TypeError: z', 'care:本体の保存');   // 同じ場所の別の種類＝場所ごとに1件で止まる
+  ['書き手の印', '指紋', '未送信の印', '世代の控え'].forEach(w => ab.autoSend('保存・同期の失敗', 'QuotaExceededError: x', 'care:' + w));
   ab.autoSend('スクリプトエラー', 'TypeError: y', 'care-schedule.html:10');
-  t('容量いっぱいでも note の自動送信は1件だけ', sent.filter(x => /保存・同期の失敗/.test(x)).length === 1, sent);
+  const notes = sent.filter(x => /保存・同期の失敗/.test(x));
+  t('note は場所ごとに1件・1回の表示で合計3件まで（容量いっぱいでも）', notes.length === 3 && notes.filter(x => /care:本体の保存/.test(x)).length === 1, sent);
+  t('容量いっぱいで localStorage に書けない時は sessionStorage に間引きの控えを書く', /care:本体の保存/.test(ab.sessionStorage._m.k || ''), ab.sessionStorage._m);
+  /* 再読み込み（1回の表示の数は戻る・sessionStorage は残る）でも、同じ報告は30分送らない */
+  ab.autoSent = 0; ab.autoNoteSent = 0; ab.autoNoteWhere = {};
+  const before = sent.length;
+  ab.autoSend('保存・同期の失敗', 'QuotaExceededError: x', 'care:本体の保存');
+  t('再読み込みしても sessionStorage の控えで同じ報告を送り直さない', sent.length === before, sent.slice(before));
   t('その後の本物のスクリプトエラーは送られる', sent.some(x => /スクリプトエラー：TypeError\|care-schedule\.html:10/.test(x)), sent);
   /* 手動の報告に載る控え：note は別の控え（3件）に入り、本物のエラー（5件の控え）を押し出さない */
   const pb = { String, ERRORS: [], NOTES: [] };
@@ -145,6 +155,32 @@ console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残
   t('手動の報告の控え：本物のエラーは note に押し出されない・note は3件まで', pb.ERRORS.length === 1 && pb.NOTES.length === 3, [pb.ERRORS, pb.NOTES]);
   t('onReport の受け口は note を NOTES へ、それ以外を ERRORS へ振り分ける', /if \(String\(kind\) === NOTE_KIND\) pushErr\(line, NOTES, 3\); else pushErr\(line\);/.test(RS), '');
   t('送る note には場所と種類が入る', /保存・同期の失敗：QuotaExceededError\|care:本体の保存/.test(sent[0] || ''), sent[0]);
+}
+
+console.log('\n— 2d. 不具合報告の合言葉は URL に載せず、本文の1行目で送る（2026-10-10・第2版 8）—');
+{
+  const RS = fs.readFileSync(path.join(ROOT, 'su-report.js'), 'utf8');
+  const cutF = (name) => { const h = RS.indexOf('function ' + name + '('); let i = RS.indexOf('{', h), d = 0; for (; i < RS.length; i++) { if (RS[i] === '{') d++; else if (RS[i] === '}') { d--; if (d === 0) return RS.slice(h, i + 1); } } };
+  function mk(store) {
+    const calls = [];
+    const box = { String, Promise, JSON,
+      localStorage: { getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null) },
+      fetch: (u, o) => { calls.push([u, o]); return Promise.resolve({ ok: true, text: () => Promise.resolve('{"ok":true}') }); } };
+    vm.createContext(box);
+    vm.runInContext([cutF('reportToken'), cutF('endpoint'), cutF('post')].join('\n'), box);
+    return { box, calls };
+  }
+  const URL0 = 'https://script.google.com/macros/s/X/exec';
+  const a = mk({ su_report_endpoint: URL0, su_report_token: 'tok-1' });
+  const url = a.box.endpoint();
+  t('送り先の URL に合言葉（k=）を付けない', url === URL0 && !/[?&]k=/.test(url), url);
+  a.box.post(url, '本文');
+  t('合言葉は本文の1行目「SU-KEY-V1 合言葉」で送る（本文はその後ろ）', a.calls.length === 1 && a.calls[0][1].body === 'SU-KEY-V1 tok-1\n本文' && a.calls[0][0] === URL0, a.calls);
+  t('合言葉が無い端末は送り先なし（送らない）', mk({ su_report_endpoint: URL0 }).box.endpoint() === '', '');
+  t('https 以外へは送らない', mk({ su_report_endpoint: 'http://x/exec', su_report_token: 't' }).box.endpoint() === '', '');
+  t('改行の混ざった合言葉は使わない（1行目を壊さない）', mk({ su_report_endpoint: URL0, su_report_token: 'a\nb' }).box.endpoint() === '', '');
+  t('su-report.js に URL へ合言葉を組み立てる所が無い', !/['"]k=['"]\s*\+/.test(RS) && !/[?&]k=/.test(RS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), '');
+  t('画面に出す本文・コピー（compose）には合言葉を入れない', cutF('compose').indexOf('SU-KEY') < 0 && cutF('payload').indexOf('SU-KEY') < 0, '');
 }
 
 console.log('\n— 3. 3画面の記録の口と置き換え —');
