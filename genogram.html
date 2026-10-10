@@ -2848,7 +2848,9 @@ const CloudSync = (function() {
   // ---- GAS communication (text/plain to avoid CORS preflight) ----
   /* ★2026-09-23: 合言葉（cfg.gasToken）は POST の本文でだけ送る。GET の URL には載せない
      （GAS 側も GET の ?token= は受け取らない）。GAS の GENOGRAM_TOKEN と突き合わせる */
-  const AUTH_ERR_MSG = '合言葉が違うか、入っていません（☁ クラウド設定の「合言葉」を確かめてください）';
+  /* GAS 側の GENOGRAM_TOKEN が未設定でも同じ unauthorized が返る（2026-10-08 から未設定は全部断る）。
+     新しく GAS を貼った管理者が端末ばかり疑わないよう、GAS 側の設定も文言に入れる（2026-10-10・第2版 16） */
+  const AUTH_ERR_MSG = '合言葉が違うか、入っていません（☁ クラウド設定の「合言葉」を確かめてください。GAS を新しく貼った時は、GAS のスクリプト プロパティに GENOGRAM_TOKEN が設定されているかも確かめてください）';
   async function gasCall(action, params, opts) {
     const cfg = getCfg();
     if (!cfg.gasUrl) throw new Error('GAS URLが未設定です');
@@ -4313,9 +4315,9 @@ async function testCloudConfig() {
   const results = [];
   try {
     const p = await CloudSync.ping();
-    /* auth: 'ok'＝合言葉が効いている／'grace'＝GAS 側で合言葉が未設定（移行モード）／無し＝合言葉に未対応の旧版 */
+    /* auth: 'ok'＝合言葉が効いている／無し＝合言葉に未対応の旧版。
+       以前あった 'grace'（GAS 側で合言葉が未設定＝素通し）は 2026-10-08 に GAS から無くなり、未設定は unauthorized で断る */
     if (p.auth === 'ok') results.push('✓ GAS接続OK・合言葉OK' + (p.role === 'view' ? '（閲覧専用の合言葉です。保存・削除はできません）' : '') + ' (' + p.time + ')');
-    else if (p.auth === 'grace') results.push('✓ GAS接続OK (' + p.time + ')\n⚠ GAS 側で合言葉がまだ設定されていないため、合言葉なしでも通る状態です（合言葉が正しいかは、設定後に確かめられます）');
     else results.push('✓ GAS接続OK (' + p.time + ')\n⚠ この GAS は合言葉に未対応の版です');
   } catch (e) {
     if (e.auth) { showCfgResult('err', '✗ ' + e.message); return; }

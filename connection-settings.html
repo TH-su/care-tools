@@ -146,6 +146,8 @@ main {
 .wiz .stp { font-weight: 700; }
 .wiz .msg { margin: 4px 0 0; font-size: 0.8125rem; line-height: 1.6; }
 .wiz .acts { margin-top: 8px; }
+/* 初回の案内は画面だけ（2026-10-10・監査10月版 第2版 12）。案内を開いた端末で印刷しても紙に刷らない */
+@media print { #wiz, .wiz-open { display: none !important; } }
 .wiz-open { margin: -4px 0 12px; font-size: 0.8125rem; }
 .wiz-open button { background: none; border: 0; color: var(--pri); text-decoration: underline; padding: 0; min-height: 44px; font-size: inherit; cursor: pointer; }
 
@@ -836,7 +838,7 @@ function wizRender(){
   if(!box || box.hidden) return;
   box.replaceChildren();
   box.appendChild(el('h2',null,'初回の案内（上から順に）'));
-  box.appendChild(el('p','apps','新しい端末では、上から順に入れて「確かめる」を押してください。✓ が並べば準備はできています。'));
+  box.appendChild(el('p','apps','新しい端末では、上から順に入れて「確かめる」を押してください。✓ は「URL につながった」という印です。合言葉が正しいか・そのアプリの GAS かは、各アプリの保存や接続テストで確かめてください。'));
   var ol=el('ol');
   WIZ_STEPS.forEach(function(step, i){
     var st=wizState(step);

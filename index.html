@@ -122,6 +122,8 @@ main {
 .tile .nm { font-size: 0.84375rem; font-weight: 700; }
 /* --g6(#80868b) は白地で 3.68:1 と AA(4.5:1) を下回るため --g7(#5f6368)=5.96:1 を使う */
 .tile .note { font-size: 0.6875rem; color: var(--g7); font-weight: 400; }
+/* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
+.menu-broken { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #fff4e5; color: #7a4200; font-size: 0.9375rem; line-height: 1.5; }
 
 /* 別サイトへ移動するタイルの目印。色だけに意味を持たせず「↗」と注記を併用する（HIG） */
 .tile.ext .nm::after { content: " ↗"; color: var(--g7); font-weight: 400; }
@@ -356,9 +358,13 @@ main {
     } else span.textContent = String(t || '');
     return span;
   }
-  try {
-    var def = JSON.parse(document.getElementById('menuDef').textContent);
-    (def.sections || []).forEach(function (s) {
+  /* ★壊れた1件だけを飛ばす（2026-10-10・監査10月版 第2版 15）。区分ごと・タイルごとに try で囲み、出せた分は出す。
+     定義そのものを読めない・1枚も出せない時だけ案内に切り替え、その時も「使い方・困った時」へのリンクは出す。 */
+  var def = null, broken = 0, firstErr = null;
+  function fail(e) { broken++; if (!firstErr) firstErr = e; }
+  try { def = JSON.parse(document.getElementById('menuDef').textContent); } catch (e) { firstErr = e; }
+  if (def && typeof def === 'object') (Array.isArray(def.sections) ? def.sections : []).forEach(function (s) {
+    try {
       var sec = el('section', 'sec');
       sec.setAttribute('aria-labelledby', s.id);
       if (s.officeOnly) sec.setAttribute('data-office-only', '');
@@ -366,20 +372,30 @@ main {
       var mk = el('span', 'mk', s.mk); mk.setAttribute('aria-hidden', 'true');
       h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
       var grid = el('div', 'grid');
-      (s.tiles || []).forEach(function (t) {
+      (Array.isArray(s.tiles) ? s.tiles : []).forEach(function (t) {
+        try {
         var a = el('a', 'tile' + (t.ext ? ' ext' : '') + (t.newrow ? ' newrow' : ''));
         if (t.officeOnly) a.setAttribute('data-office-only', '');
         a.setAttribute('href', t.href);
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(el('span', 'nm', t.nm)); a.appendChild(note(t.note));
         grid.appendChild(a);
+        } catch (e) { fail(e); }
       });
       sec.appendChild(h2); sec.appendChild(grid);
       main.appendChild(sec);
-    });
-  } catch (e) {
+    } catch (e) { fail(e); }
+  });
+  var none = !main.querySelector('a.tile');
+  if (none) {
     main.textContent = 'メニューを組み立てられませんでした。再読み込みしてください。直らない時は右下の「不具合を報告」から知らせてください。';
-    try { if (window.SUErrors) SUErrors.report('メニュー', e, 'index.html'); } catch (e2) {}
+    var hp = el('p'), ha = el('a', null, '使い方・困った時');
+    ha.setAttribute('href', 'help.html'); hp.appendChild(ha); main.appendChild(hp);
+  } else if (broken) {
+    main.insertBefore(el('p', 'menu-broken', '一部の項目（' + broken + '件）を表示できませんでした。右下の「不具合を報告」から知らせてください。'), main.firstChild);
+  }
+  if (firstErr || broken || none) {
+    try { if (window.SUErrors) SUErrors.report('メニュー', firstErr || new Error(none ? 'タイルが0枚' : '壊れた項目 ' + broken + '件'), 'index.html'); } catch (e2) {}
   }
 })();
 </script>
