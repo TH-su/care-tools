@@ -59,6 +59,7 @@ function makeCtx(opt) {
   vm.runInContext([
     lineOf(/var WR_SESSION_KEY = [^\n]*/),
     lineOf(/var wrWhoAcct_ = [^\n]*/),
+    lineOf(/var wrWhoGen_ = [^\n]*/),
     cut('suGetDeviceRole'), cut('wrIsField'), cut('wrWho_'), cut('wrWhoLabel_'),
     cut('wrAuthLoad_'), cut('wrResolveWho_'), cut('apiPush')
   ].join('\n'), ctx, { filename: 'weight-record.html' });

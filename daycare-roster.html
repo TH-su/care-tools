@@ -967,11 +967,20 @@ function dcrAuthLoad_() {
     return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-09-26');
   });
 }
+/* ★起動時だけでなく、別のタブでのログイン・ログアウト（storage）と画面に戻った時（visibilitychange）にも取り直す
+   （2026-10-10・体重管理と同じ）。ログアウトしたら「事務所PC」へ戻す。世代番号で遅れて届いた古い結果を捨てる。 */
+const DCR_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+let dcrWhoGen_ = 0;
 function dcrResolveWho_() {
+  const gen = ++dcrWhoGen_;
   if (dcrIsField_()) return;
+  let has = false;
+  try { has = !!localStorage.getItem(DCR_SESSION_KEY); } catch (e) {}
+  if (!has) { dcrWhoAcct_ = ''; return; }
   dcrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
-    if (st && st.status === 'ok' && st.email) dcrWhoAcct_ = String(st.email).split('@')[0].slice(0, 40);
-  }).catch(() => {});   // 読めない・未ログインは「事務所PC」のまま（記録も保存も止めない）
+    if (gen !== dcrWhoGen_ || !st || st.status === 'error') return;   // 確かめられない時は前の値のまま
+    dcrWhoAcct_ = (st.status === 'ok' && st.email) ? String(st.email).split('@')[0].slice(0, 40) : '';
+  }).catch(() => {});   // 読めない時は前の値のまま（記録も保存も止めない）
 }
 
 function pendingKey_(item, field) {
@@ -2908,9 +2917,10 @@ function init() {
      書き込みの止めは queueFlags が押した時点の用途で判定するので、描き直しが遅れても書けてしまうことはない。 */
   window.addEventListener('storage', function (e) { if (e.key === DCR_DEVICE_KEY) { try { renderAll(DB); } catch (e2) {} } });
   dcrResolveWho_();   // 変更記録の「誰が」（事務所PCでだけ・裏で）
+  window.addEventListener('storage', function (e) { if (e.key === DCR_SESSION_KEY || e.key === null) { try { dcrResolveWho_(); } catch (e2) {} } });
   setInterval(function(){ try{ dcrWatchMasterState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
-    if (!document.hidden) { try{ dcrWatchMasterState(); }catch(e){} }   // 復帰時に即時1回
+    if (!document.hidden) { try{ dcrWatchMasterState(); }catch(e){} try { dcrResolveWho_(); } catch (e3) {} }   // 復帰時に即時1回（誰がの取り直しも）
   });
 }
 init();

@@ -279,6 +279,9 @@ textarea{resize:vertical;min-height:60px}
   box-shadow:inset 0 -1px 0 var(--g2)}
 
 /* 個別画面の記録履歴：測定日から判定した対象月のグループ見出し行 */
+#ivHist .wr-who{color:var(--g6);font-weight:400}
+#ivHist .wr-hist{font-size:0.75rem;color:var(--g6);font-weight:400;margin-top:2px}
+#ivHist .wr-hist summary{cursor:pointer;min-height:24px}
 #ivHist .hist-grp td{background:var(--pri-l);color:var(--pri-d);font-weight:700;
   text-align:start;padding:6px 10px;font-size: 0.8125rem;border-top:2px solid var(--pri)}
 
@@ -3439,14 +3442,69 @@ function wrAuthLoad_(){
     return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-09-26');
   });
 }
+/* ★起動時だけでなく、別のタブでログイン・ログアウトした時（storage）と、画面に戻った時（visibilitychange）にも取り直す
+   （2026-10-10）。取り直さないと、途中で人が替わっても前の人の名前で記録が残る。ログアウトしたら役割の名前へ戻す。
+   世代番号で、遅れて届いた古い確認の結果を捨てる。 */
+var wrWhoGen_ = 0;
 function wrResolveWho_(){
+  const gen = ++wrWhoGen_;
   let has = false;
   try{ has = !!localStorage.getItem(WR_SESSION_KEY); }catch(e){}
-  if(!has) return;
+  if(!has){ wrWhoAcct_ = ''; return; }
   wrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
-    const w = wrWhoLabel_(st);
-    if(w) wrWhoAcct_ = w;
-  }).catch(() => {});   // 読めない・未ログインは役割の名前のまま（記録も保存も止めない）
+    if(gen !== wrWhoGen_) return;
+    if(!st || st.status === 'error') return;   // 確かめられなかった（通信など）＝前の値のまま
+    wrWhoAcct_ = wrWhoLabel_(st);   // 未ログイン・許可リスト外は空＝役割の名前
+  }).catch(() => {});   // 読めない時は前の値のまま（記録も保存も止めない）
+}
+/* 直した記録の変更前の値（2026-10-10・監査10月版 第2版 7・本人決定「直近5件」）。
+   直すたびに「いつ・誰が・どの項目を何から何へ」を、その記録の history に新しい順で5件まで持たせる。
+   ★GAS のシートのセルに入るよう JSON の文字にして持つ（GAS は知らない項目を列として足すので、GAS は変えない）。
+   ★読めない・壊れた値は空として扱う（表示も保存も止めない）。取込・見本データは対象外（直す処理の中だけで積む） */
+var WR_HIST_MAX = 5;
+var WR_HIST_KEYS = ['residentId','yearMonth','measuredOn','weight','measureMode','rawWeight','wheelchairKg','note'];
+var WR_HIST_LABEL = { residentId:'入居者の付け替え', yearMonth:'対象月', measuredOn:'測定日', weight:'体重',
+                      measureMode:'測り方', rawWeight:'実測', wheelchairKg:'車椅子の重さ', note:'メモ' };
+function wrHistOf_(r){
+  try{
+    let h = r && r.history;
+    if(typeof h === 'string') h = h ? JSON.parse(h) : [];
+    return Array.isArray(h) ? h.filter(x => x && typeof x === 'object' && Array.isArray(x.ch)) : [];
+  }catch(e){ return []; }
+}
+function wrSnap_(r){ const o = {}; WR_HIST_KEYS.forEach(k => { o[k] = (r && r[k] != null) ? r[k] : null; }); return o; }
+function wrPushHist_(r, before, at){
+  if(!r || !before) return;
+  const ch = [];
+  WR_HIST_KEYS.forEach(k => {
+    const a = before[k], b = (r[k] != null) ? r[k] : null;
+    if(String(a == null ? '' : a) !== String(b == null ? '' : b)) ch.push({ k, f: a, t: b });
+  });
+  if(!ch.length) return;
+  const h = wrHistOf_(r);
+  h.unshift({ at: at || new Date().toISOString(), by: wrWho_(), ch });
+  r.history = JSON.stringify(h.slice(0, WR_HIST_MAX));
+}
+function wrHistVal_(k, v){
+  if(v == null || v === '') return '（空）';
+  if(k === 'residentId') return '';
+  if(k === 'measureMode') return v === 'chair' ? '車椅子' : '立位';
+  if(k === 'weight' || k === 'rawWeight' || k === 'wheelchairKg'){ const n = Number(v); return isFinite(n) ? n.toFixed(1) + 'kg' : String(v); }
+  return String(v);
+}
+function wrHistHtml_(r){
+  const h = wrHistOf_(r);
+  if(!h.length) return '';
+  const row = x => {
+    let when = '';
+    try{ const d = new Date(x.at); if(!isNaN(d.getTime())) when = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }catch(e){}
+    const what = x.ch.map(c => {
+      const lab = WR_HIST_LABEL[c.k] || String(c.k);
+      return c.k === 'residentId' ? lab : (lab + ' ' + wrHistVal_(c.k, c.f) + '→' + wrHistVal_(c.k, c.t));
+    }).join('、');
+    return '<div>' + escapeHtml(when) + ' ' + escapeHtml(String(x.by || '')) + '：' + escapeHtml(what) + '</div>';
+  };
+  return '<details class="wr-hist"><summary>変更の履歴 ' + h.length + '件</summary>' + h.map(row).join('') + '</details>';
 }
 function applyWeightDeviceGuard(){
   var field = wrIsField();
@@ -4286,6 +4344,7 @@ function bulkSave(){
     if(existing){
       // overwrite only the fields the bulk form controls. Preserve other
       // fields (staple, side, toggles, note) so we don't destroy data.
+      const _hb = wrSnap_(existing);   // 変更前の値（監査10月版 第2版 7）
       existing.yearMonth     = ym;
       existing.weight        = weight;
       existing.measuredOn    = date;
@@ -4294,6 +4353,7 @@ function bulkSave(){
       existing.wheelchairKg  = wheelchairKg;
       existing.updatedAt     = nowIso;
       existing.updatedBy     = wrWho_();   // 直した人（監査10月版 #7）
+      wrPushHist_(existing, _hb, nowIso);
       rec = existing;
     } else {
       // 食事は入居者マスタから現値をスナップショット（毎回の手入力は不要）
@@ -4383,6 +4443,7 @@ function saveSingleBulkRow(row){
   let rec;
   if(existing){
     // 既存記録の上書き（食事・メモ等の他フィールドは温存）
+    const _hb = wrSnap_(existing);   // 変更前の値（監査10月版 第2版 7）
     existing.yearMonth    = ym;
     existing.weight       = weight;
     existing.measuredOn   = date;
@@ -4391,6 +4452,7 @@ function saveSingleBulkRow(row){
     existing.wheelchairKg = wheelchairKg;
     existing.updatedAt    = nowIso;
     existing.updatedBy    = wrWho_();   // 直した人（監査10月版 #7）
+    wrPushHist_(existing, _hb, nowIso);
     rec = existing;
   } else {
     rec = {
@@ -4943,8 +5005,10 @@ function wcRecalcAsk_(rid, log){
     const raw = Number(x.rawWeight);
     const w = Math.round((raw - kg) * 10) / 10;
     if(!(raw > 0) || !(w >= 20 && w <= 150)){ skipped++; return; }
+    const _hb = wrSnap_(x);   // 変更前の値（監査10月版 第2版 7）
     x.wheelchairKg = kg; x.weight = w; x.updatedAt = nowIso; x.updatedBy = wrWho_();
     normalizeRecord(x);
+    wrPushHist_(x, _hb, nowIso);
     done.push(x);
   });
   if(done.length){
@@ -5236,6 +5300,7 @@ $('#inSave').addEventListener('click', ()=>{
   if(editing){
     // weight / mode / date / note のみ更新。食事スナップショットは履歴として温存
     // （食事の変更は設定画面の入居者編集から行われ、新規記録の保存時に反映される）。
+    const _hb = wrSnap_(editing);   // 変更前の値（監査10月版 第2版 7）
     editing.residentId   = rid;        // 念のため最新値で上書き
     editing.yearMonth    = ym;
     editing.weight       = Math.round(w*10)/10;
@@ -5246,6 +5311,7 @@ $('#inSave').addEventListener('click', ()=>{
     editing.note         = $('#inNote').value.trim();
     editing.updatedAt    = new Date().toISOString();
     editing.updatedBy    = wrWho_();   // 直した人（監査10月版 #7）
+    wrPushHist_(editing, _hb, editing.updatedAt);
     savedRec = editing;
   }else{
     const rec = {
@@ -5984,8 +6050,11 @@ function drawHist(rid){
     }else{
       moLabel = `<b style="color:var(--g5)">日付なし</b>`;
     }
+    /* 記録した人・直した人と変更の履歴（監査10月版 第2版 7）。画面だけ（印刷の手書きの「記録者」欄は変えない） */
+    const whoTxt = [r.recordedBy ? ('記録 ' + r.recordedBy) : '', r.updatedBy ? ('直した人 ' + r.updatedBy) : ''].filter(Boolean).join('・');
     const dateLabel = moLabel +
-                      `<br><small style="color:var(--g6);font-weight:400">入力 ${stampLabel}${updatedTag}</small>`;
+                      `<br><small style="color:var(--g6);font-weight:400">入力 ${stampLabel}${updatedTag}</small>` +
+                      (whoTxt ? `<br><small class="wr-who">${escapeHtml(whoTxt)}</small>` : '') + wrHistHtml_(r);
     tr.innerHTML = `
       <td style="text-align:start;padding-left:10px">${dateLabel}</td>
       <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
@@ -6550,7 +6619,7 @@ function wrMergeResidents(keepId, dropIds, opts){
     try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   }
   const now = new Date().toISOString();
-  moving.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); });
+  moving.forEach(rec => { const _hb = wrSnap_(rec); rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); wrPushHist_(rec, _hb, now); });
   /* 残す行に無い項目だけ、まとめる行から補う。在籍・入院は状態なので持ち込まない */
   const SKIP = { id:1, name:1, createdAt:1, updatedAt:1, _fromMaster:1, dischargedAt:1, hospitalized:1 };
   const filled = [];
@@ -6635,7 +6704,7 @@ async function wrAdoptOrphans(oldRid, keepId){
   if(!confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`)) return false;
   try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   const now = new Date().toISOString();
-  recs.forEach(rec => { rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); });
+  recs.forEach(rec => { const _hb = wrSnap_(rec); rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); wrPushHist_(rec, _hb, now); });
   save();
   if(wrServerLacksResident(keep.id)) apiPush('saveResident', { resident: keep });
   recs.forEach(rec => apiPush('saveRecord', { record: rec }));
@@ -7840,6 +7909,9 @@ try{
 }catch(e){ /* 代理取得の失敗は運用を止めない */ }
 applyWeightDeviceGuard();
 try{ wrResolveWho_(); }catch(e){ /* 記録した人の確認の失敗は運用を止めない */ }
+/* 別のタブでのログイン・ログアウトと、画面に戻った時に、記録した人を取り直す（2026-10-10） */
+window.addEventListener('storage', function(e){ if(e.key === WR_SESSION_KEY || e.key === null){ try{ wrResolveWho_(); }catch(e2){} } });
+document.addEventListener('visibilitychange', function(){ if(!document.hidden){ try{ wrResolveWho_(); }catch(e){} } });
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();
 }); })();
