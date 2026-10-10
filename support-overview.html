@@ -548,6 +548,57 @@ function soWatchState(){
     }).catch(function(){});
 }
 
+/* ── 現場の端末では氏名を姓だけで出す（2026-10-10・監査10月版 第2版 全支援俯瞰／週間計画俯瞰 第1手・代表者の決定）──
+   ★現場の端末（共有キー su_device_role==='field'）だけ。事務所の端末は今までどおりフルネーム。
+   ★姓の切れ目は推測しない。①氏名に空白があればその前 ②週間計画の共有データに入居者マスタ由来の切れ目
+     （nameCut＝姓の文字数・nameCutLen＝空白を除いた文字数。文字数が合う時だけ）。
+     ③どちらも無い氏名は、先頭2文字と「…」で出す（姓とは言い切らない・フルネームは出さない）。
+   ★同じ姓の方が画面に2人以上いる時は「姓＋名の1文字目」（まだ重なれば2文字目まで）で見分ける（代表者の決定 A）。
+   ★氏名の文字は保持しない（切れ目の数値だけ）。表示・印刷・読み上げ・吹き出しのどれも同じ表記にする。 */
+function ovIsField_() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+function ovSplitName_(name, cuts) {
+  const raw = String(name == null ? '' : name).trim();
+  const sp = /[\s　]+/.exec(raw);
+  if (sp && sp.index > 0) return { sur: raw.slice(0, sp.index), given: raw.slice(sp.index + sp[0].length).replace(/[\s　]+/g, ''), known: true };
+  const bare = raw.replace(/[\s　]+/g, '');
+  const c = cuts && Object.prototype.hasOwnProperty.call(cuts, bare) ? cuts[bare] : null;
+  if (c && Number.isInteger(c.cut) && Number.isInteger(c.len) && c.len === bare.length && c.cut > 0 && c.cut < bare.length) {
+    return { sur: bare.slice(0, c.cut), given: bare.slice(c.cut), known: true };
+  }
+  return { sur: bare.length > 2 ? bare.slice(0, 2) + '…' : bare, given: bare.length > 2 ? bare.slice(2) : '', known: false };
+}
+/* 氏名 → 画面に出す表記。field でなければそのまま返す関数を返す */
+function ovNameLabeler_(names, cuts) {
+  if (!ovIsField_()) return function (n) { return String(n == null ? '' : n); };
+  const uniq = Array.from(new Set((names || []).map(n => String(n == null ? '' : n).trim()).filter(Boolean)));
+  const parts = {}, bySur = {};
+  uniq.forEach(n => { const p = ovSplitName_(n, cuts); parts[n] = p; (bySur[p.sur] = bySur[p.sur] || []).push(n); });
+  const label = {};
+  Object.keys(bySur).forEach(sur => {
+    const group = bySur[sur];
+    if (group.length === 1) { label[group[0]] = sur; return; }
+    /* 同じ姓：名の頭を1文字ずつ増やして、重ならなくなるまで（最大で名の全部） */
+    let k = 1;
+    const maxLen = Math.max.apply(null, group.map(n => parts[n].given.length));
+    for (; k <= Math.max(1, maxLen); k++) {
+      const seen = {};
+      const dup = group.some(n => { const v = parts[n].given.slice(0, k); if (seen[v]) return true; seen[v] = 1; return false; });
+      if (!dup) break;
+    }
+    group.forEach(n => { const g = parts[n].given.slice(0, k); label[n] = g ? sur + ' ' + g : sur; });
+  });
+  return function (n) { const key = String(n == null ? '' : n).trim(); return Object.prototype.hasOwnProperty.call(label, key) ? label[key] : ovSplitName_(key, cuts).sur; };
+}
+/* 週間計画の利用者から、氏名（空白なし）→ 切れ目 の対応だけを作る（文字は数値以外持たない） */
+function ovCutsFrom_(residents) {
+  const m = {};
+  (Array.isArray(residents) ? residents : []).forEach(r => {
+    if (!r || !r.name) return;
+    if (Number.isInteger(r.nameCut) && Number.isInteger(r.nameCutLen)) m[String(r.name).replace(/[\s　]+/g, '')] = { cut: r.nameCut, len: r.nameCutLen };
+  });
+  return m;
+}
+
 // 入院/退去マスク（ワースケ careNameSets_ と同じ名寄せ）
 function maskFrom(residents) {
   soApplyHosp(residents);   // マスタ由来の入院を重ねる（メモリのみ・保存しない）
@@ -559,14 +610,14 @@ function maskFrom(residents) {
     if (r.movedOut) moved[r.name] = true;
     if (r.external) ext[r.name] = true;                     // 週間計画で「外部」指定の利用者（名寄せ元）
   }
-  return { hosp, moved, ext };
+  return { hosp, moved, ext, cuts: ovCutsFrom_(arr) };   // cuts＝姓の切れ目（数値だけ・現場の端末の表示用）
 }
 function loadMasksLocal() {
   try {
     const p = JSON.parse(localStorage.getItem(CARE_KEY) || 'null');
     if (p && Array.isArray(p.residents)) return maskFrom(p.residents);
   } catch (e) {}
-  return { hosp: {}, moved: {}, ext: {} };
+  return { hosp: {}, moved: {}, ext: {}, cuts: {} };
 }
 // マスクは GAS 最新を優先（退去/入院状態）→ 失敗時ローカル→ どちらも無ければ空（＝除外なし・安全側）。
 // wsday を GAS 最新で取る一方でマスクだけ古い端末ローカルだと、他端末で退去登録された元利用者の
@@ -754,6 +805,10 @@ function assignLayout(evs) {
 // ── 描画 ──
 function render(model, N, view) {
   const { byDow, observed } = model;
+  /* 現場の端末では姓だけ（同じ姓は名の頭で見分ける）。この画面に出る全員で同じ表記にする */
+  const ovNames = [];
+  for (const k in byDow) if (Object.prototype.hasOwnProperty.call(byDow, k) && Array.isArray(byDow[k])) byDow[k].forEach(b => { if (b && b.name) ovNames.push(b.name); });
+  const ovLabel = ovNameLabeler_(ovNames, (typeof MASKS !== 'undefined' && MASKS && MASKS.cuts) || {});
   const viewLabel = view === 'ext' ? '外部' : '施設';
   $('printTitle').textContent = '全支援 週間俯瞰（' + viewLabel + '・月〜日・複数週の標準パターン）';
   const empty = $('boardEmpty');
@@ -853,7 +908,7 @@ function render(model, N, view) {
       // 氏名（常時可視・要配慮個人情報のため textContent）
       const nm = document.createElement('div');
       nm.className = 't-name';
-      nm.textContent = b.name;
+      nm.textContent = ovLabel(b.name);
       card.appendChild(nm);
       // 支援コード（高さ十分なら可視・低ければ sr-only）
       const cd = document.createElement('div');
@@ -867,7 +922,7 @@ function render(model, N, view) {
       card.appendChild(badge);
 
       const zoneJa = b.zone === 'facility' ? '施設' : b.zone === 'night' ? '夜勤' : '訪問';
-      const lbl = b.name + '　' + codeLabel(b.code) + '　' + DAYS_JA[b.dow] + ' '
+      const lbl = ovLabel(b.name) + '　' + codeLabel(b.code) + '　' + DAYS_JA[b.dow] + ' '
                 + minToLabel(b.s) + '〜' + minToLabel(b.e) + '　' + b.n + '/' + b.N + '週'
                 + '　[' + zoneJa + ']' + (b.currentlyHosp ? '（現在入院中・空き）' : '');
       card.title = lbl;

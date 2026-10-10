@@ -381,6 +381,57 @@ async function fetchRemote() {
 }
 
 // ── 支援枠の抽出 ──
+/* ── 現場の端末では氏名を姓だけで出す（2026-10-10・監査10月版 第2版 全支援俯瞰／週間計画俯瞰 第1手・代表者の決定）──
+   ★現場の端末（共有キー su_device_role==='field'）だけ。事務所の端末は今までどおりフルネーム。
+   ★姓の切れ目は推測しない。①氏名に空白があればその前 ②週間計画の共有データに入居者マスタ由来の切れ目
+     （nameCut＝姓の文字数・nameCutLen＝空白を除いた文字数。文字数が合う時だけ）。
+     ③どちらも無い氏名は、先頭2文字と「…」で出す（姓とは言い切らない・フルネームは出さない）。
+   ★同じ姓の方が画面に2人以上いる時は「姓＋名の1文字目」（まだ重なれば2文字目まで）で見分ける（代表者の決定 A）。
+   ★氏名の文字は保持しない（切れ目の数値だけ）。表示・印刷・読み上げ・吹き出しのどれも同じ表記にする。 */
+function ovIsField_() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+function ovSplitName_(name, cuts) {
+  const raw = String(name == null ? '' : name).trim();
+  const sp = /[\s　]+/.exec(raw);
+  if (sp && sp.index > 0) return { sur: raw.slice(0, sp.index), given: raw.slice(sp.index + sp[0].length).replace(/[\s　]+/g, ''), known: true };
+  const bare = raw.replace(/[\s　]+/g, '');
+  const c = cuts && Object.prototype.hasOwnProperty.call(cuts, bare) ? cuts[bare] : null;
+  if (c && Number.isInteger(c.cut) && Number.isInteger(c.len) && c.len === bare.length && c.cut > 0 && c.cut < bare.length) {
+    return { sur: bare.slice(0, c.cut), given: bare.slice(c.cut), known: true };
+  }
+  return { sur: bare.length > 2 ? bare.slice(0, 2) + '…' : bare, given: bare.length > 2 ? bare.slice(2) : '', known: false };
+}
+/* 氏名 → 画面に出す表記。field でなければそのまま返す関数を返す */
+function ovNameLabeler_(names, cuts) {
+  if (!ovIsField_()) return function (n) { return String(n == null ? '' : n); };
+  const uniq = Array.from(new Set((names || []).map(n => String(n == null ? '' : n).trim()).filter(Boolean)));
+  const parts = {}, bySur = {};
+  uniq.forEach(n => { const p = ovSplitName_(n, cuts); parts[n] = p; (bySur[p.sur] = bySur[p.sur] || []).push(n); });
+  const label = {};
+  Object.keys(bySur).forEach(sur => {
+    const group = bySur[sur];
+    if (group.length === 1) { label[group[0]] = sur; return; }
+    /* 同じ姓：名の頭を1文字ずつ増やして、重ならなくなるまで（最大で名の全部） */
+    let k = 1;
+    const maxLen = Math.max.apply(null, group.map(n => parts[n].given.length));
+    for (; k <= Math.max(1, maxLen); k++) {
+      const seen = {};
+      const dup = group.some(n => { const v = parts[n].given.slice(0, k); if (seen[v]) return true; seen[v] = 1; return false; });
+      if (!dup) break;
+    }
+    group.forEach(n => { const g = parts[n].given.slice(0, k); label[n] = g ? sur + ' ' + g : sur; });
+  });
+  return function (n) { const key = String(n == null ? '' : n).trim(); return Object.prototype.hasOwnProperty.call(label, key) ? label[key] : ovSplitName_(key, cuts).sur; };
+}
+/* 週間計画の利用者から、氏名（空白なし）→ 切れ目 の対応だけを作る（文字は数値以外持たない） */
+function ovCutsFrom_(residents) {
+  const m = {};
+  (Array.isArray(residents) ? residents : []).forEach(r => {
+    if (!r || !r.name) return;
+    if (Number.isInteger(r.nameCut) && Number.isInteger(r.nameCutLen)) m[String(r.name).replace(/[\s　]+/g, '')] = { cut: r.nameCut, len: r.nameCutLen };
+  });
+  return m;
+}
+
 // care_schedule_v2 の全 visit イベントを収集（daycare・施設業務・休憩は元々存在しない）。
 function collectVisits(db, view) {
   const out = [];
@@ -516,6 +567,8 @@ function voWatchState(){
 function render(db) {
   voApplyHosp(db);   // マスタ由来の入院を重ねる（メモリのみ・保存しない）
   const visits = collectVisits(db, VIEW);
+  /* 現場の端末では姓だけ（同じ姓は名の頭で見分ける）。この画面に出る全員で同じ表記にする */
+  const ovLabel = ovNameLabeler_(visits.map(v => v.name), ovCutsFrom_(db && db.residents));
   const viewLabel = VIEW === 'ext' ? '外部利用者' : '施設利用者';
   $('printTitle').textContent = '訪問支援 週間俯瞰（' + viewLabel + '・月〜日）';
   const empty = $('boardEmpty');
@@ -599,7 +652,7 @@ function render(db) {
       // 氏名＋支援コード（要配慮個人情報のため textContent で描画）
       const nm = document.createElement('div');
       nm.className = 't-name';
-      nm.textContent = ev.name;
+      nm.textContent = ovLabel(ev.name);
       const cd = document.createElement('div');
       cd.className = 't-code';
       cd.textContent = codeLabel(ev.cat);
@@ -610,7 +663,7 @@ function render(db) {
         cd.className = 't-code sr-only';        // 低い枠: 視覚は氏名優先、コードは支援技術に残す
         card.appendChild(cd);
       }
-      card.title = ev.name + '　' + codeLabel(ev.cat) + '　' + minToLabel(ev.s) + '〜' + minToLabel(ev.e)
+      card.title = ovLabel(ev.name) + '　' + codeLabel(ev.cat) + '　' + minToLabel(ev.s) + '〜' + minToLabel(ev.e)
                  + (ev.hosp ? '（入院中）' : '');
       lane.appendChild(card);
     }
