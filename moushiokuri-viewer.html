@@ -130,6 +130,9 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .field label { display:block; font-size: 0.75rem; color:var(--g7); margin-bottom:4px; }
 .field input { width:100%; }
 .hint { font-size: 0.75rem; color:var(--g6); line-height:1.6; margin-top:4px; }
+/* 未接続の時だけ出す導入手順（2026-10-10） */
+.guide { margin:0; padding-left:1.4em; font-size: 0.8125rem; line-height:1.7; }
+.guide li + li { margin-top:6px; }
 
 #block { position:fixed; inset:0; z-index:500; background:var(--g0); padding:24px;
          display:none; align-items:center; justify-content:center; text-align:center; }
@@ -335,6 +338,16 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
 
   <!-- ── 設定 ── -->
   <section id="scr-cfg" class="scr" role="tabpanel" aria-labelledby="tab-cfg">
+    <!-- ★未接続の初回の案内（2026-10-10・監査10月版 第2版 申送ビューア 第2手）。
+         接続先と合言葉がそろうまでだけ出す（mskGuide_）。表示だけで、保存・通信には触れない。 -->
+    <div class="cd noprint" id="cfgGuide" hidden>
+      <h2 style="font-size: 0.9375rem;margin-bottom:8px;">はじめて使う時（3ステップ）</h2>
+      <ol class="guide">
+        <li><b>事務所の端末か確かめる</b><br>この画面は入居者の医療情報を表示します。現場の端末には設定しません。</li>
+        <li><b>接続先を入れる</b><br><a href="connection-settings.html">接続設定</a>の「控えから戻す」で、ほかのアプリの分もまとめて戻せます。控えが無い時は、下の欄に GAS の URL と合言葉を入れて「保存」を押します。</li>
+        <li><b>つながったか確かめる</b><br>「接続テスト」で「接続できました」と出たら、下の「入居者別」で「読み込み」を押します。</li>
+      </ol>
+    </div>
     <div class="cd">
       <h2 style="font-size: 0.9375rem;margin-bottom:10px;">接続設定</h2>
       <div class="field">
@@ -569,6 +582,13 @@ function loadCfg(){
     var o = JSON.parse(lsGet(LS_CFG) || '{}');
     return { url: String(o.url || ''), token: String(o.token || '') };
   }catch(e){ return { url:'', token:'' }; }
+}
+/* 未接続の初回の案内を、接続先と合言葉がそろうまでだけ出す（2026-10-10）。読むだけで書かない。 */
+function mskGuide_(){
+  var el = $('cfgGuide');
+  if(!el) return;
+  var c = loadCfg();
+  el.hidden = !!(c.url && c.token);
 }
 function saveCfg(url, token){
   /* このキーは本ツール専用（共有キーではない）ので丸ごと書いてよい。 */
@@ -2733,6 +2753,7 @@ function applyMasterIdParam(){
       toast('URL の形式が違います（/exec で終わる必要があります）', true); return;
     }
     saveCfg(u, t);
+    mskGuide_();
     toast('保存しました');
   });
   $('cfgTest').addEventListener('click', function(){
@@ -2797,6 +2818,9 @@ function applyMasterIdParam(){
   /* フォントの読み込みで折り返し行数が変わることがあるため、確定後にもう一度測る */
   window.addEventListener('load', syncBnavH);
 
+  /* 接続設定の画面で「控えから戻す」をした後に戻ってきた時も、案内の出し入れを合わせる */
+  mskGuide_();
+  window.addEventListener('storage', function(e){ if(!e || !e.key || e.key === LS_CFG) mskGuide_(); });
   if(!cfg.url || !cfg.token){
     goto('scr-cfg', false);
     $('cfgInfo').textContent = '最初に接続先と合言葉を登録してください。';
