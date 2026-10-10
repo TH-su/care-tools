@@ -351,6 +351,8 @@ var SYSTEMS = [
   { id:'master', title:'入居者マスタ・フェイスシート',
     apps:'入居者マスタ／フェイスシート（週間計画・体重・デイ利用表もここを参照します。入居調整の「マスタへ登録」もここを使います）',
     shape:'obj', key:'rmaster_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY,
+    /* ★URL を変える保存の前に、入居者マスタのGASかを確かめる（2026-10-10・下の verifyMasterUrl） */
+    verifyMaster:true,
     /* vmaUrl は GAS ではなく訪問診療アプリ（WordPress）のURL。
        所有アプリ側（入居者マスタ safeHttpUrl）が http も許すので、ここでも同じ緩さにする */
     extra:{ field:'vmaUrl', label:'訪問診療アプリのURL', hint:'（使う場合のみ）', lenient:true } },
@@ -525,6 +527,43 @@ function verifySyncPair(url, token){
         signal: ac ? ac.signal : undefined
       }).then(function(r){ return r.json(); })
         .then(function(j){ fin(syncTargetVerdict(j)); }, function(){ fin('offline'); });
+    }catch(e){ fin('offline'); }
+  });
+}
+
+/* ═══════════ 入居者マスタのGASかを確かめる（2026-10-10）═══════════
+   入居者マスタの欄に、薬学管理・申送ビューアなど別アプリのGASの URL と合言葉を組で入れても、
+   今までは黙って保存された。保存後は訓練計画書などが「名簿を取得できませんでした（不明なaction）」になり、
+   原因が画面から分からなかった（2026-10-10 実発生）。
+   確かめ方: 合言葉なしの {action:'stateRev'} を送る。入居者マスタだけが {ok:true, rev:数値} を返す
+   （2026-10-10 本番で実測。薬学管理・申送ビューア・計画書のGASはどれも拒否を返した）。合言葉は送らない。
+     'ok' … 入居者マスタ／'wrong' … 別アプリのGAS（JSON は返るが ok と版数が無い）／'offline' … 確かめられなかった
+   ★判定（masterTargetVerdict）は入居者マスタ画面・フェイスシートの設定保存と一字一句同じにする（gas/tests で突き合わせる）。 */
+function masterTargetVerdict(j){
+  if(!j || typeof j!=='object') return 'offline';
+  if(j.ok===true && j.rev!=null && j.rev!=='' && isFinite(Number(j.rev))) return 'ok';
+  /* 別アプリと断定するのは、他のGASの決まった断り文句（合言葉なしへの拒否・知らない action）と、版数を持たない ok だけ。
+     入居者マスタ自身が一時的な不調でエラーを返すこともある（転送の揺れ・内部の例外）ので、それ以外は「確かめられない」に倒す
+     （正しい入居者マスタの保存を、誤った理由で止めない） */
+  if(j.ok===true) return 'wrong';
+  if(/unauthorized|認証エラー|不明なaction|unknown action/i.test(String(j.error||''))) return 'wrong';
+  return 'offline';
+}
+var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
+function verifyMasterUrl(url){
+  var ac=(typeof AbortController==='function') ? new AbortController() : null;
+  return new Promise(function(resolve){
+    var done=false;
+    function fin(v){ if(done) return; done=true; clearTimeout(timer); resolve(v); }
+    var timer=setTimeout(function(){ if(ac) ac.abort(); fin('offline'); }, 30000);
+    try{
+      fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'stateRev' }),
+        signal: ac ? ac.signal : undefined
+      }).then(function(r){ return r.json(); })
+        .then(function(j){ fin(masterTargetVerdict(j)); }, function(){ fin('offline'); });
     }catch(e){ fin('offline'); }
   });
 }
@@ -723,6 +762,24 @@ function buildCard(sys, onSaved){
       });
       return { saved:0, error:false, pending:pending };
     }
+    /* 入居者マスタの行: URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
+       別アプリのGASと分かった時だけ止める（今の接続先をそのまま残す）。通信できずに確かめられない時は
+       止めない（現場で回線が切れている時に保存できなくなるのを避ける）。保存した上で、確かめられなかったと出す。
+       合言葉だけを入れ直す保存は確かめない（URL は今のまま＝確かめる対象が変わらない）。 */
+    if(sys.verifyMaster && v.url && v.url!==cur.url){
+      bSave.disabled=true; bTest.disabled=true;
+      setRes(res,'inf','入居者マスタのGASか確かめています…（最長30秒）');
+      var mpending=verifyMasterUrl(v.url).then(function(verdict){
+        bSave.disabled=false; bTest.disabled=false;
+        if(verdict==='wrong'){
+          setRes(res,'ng','保存していません：'+MASTER_WRONG_MSG+'。今の接続先のままです。');
+          return { saved:0, error:true };
+        }
+        if(verdict==='offline') return commit(v, '保存しました（通信できず、入居者マスタのGASかは確かめられませんでした。つながる状態で［接続を確認］を押してください）。');
+        return commit(v, '入居者マスタのGASと確認して保存しました。');
+      });
+      return { saved:0, error:false, pending:mpending };
+    }
     return commit(v, '保存しました。');
   }
   function commit(v, okMsg){
@@ -764,6 +821,14 @@ function buildCard(sys, onSaved){
         if(syncForeign(out.json)){ setRes(res,'ng',syncTargetMessage('wrong')+'。'); return; }
         setRes(res,'ok','つながりました（同期先かどうかは［保存］の時に合言葉で確かめます）。');
         return;
+      }
+      /* 入居者マスタの行（2026-10-10）: つながったら、入居者マスタのGASかまで確かめる */
+      if(sys.verifyMaster && out.ok){
+        return verifyMasterUrl(v.url).then(function(verdict){
+          if(verdict==='wrong') setRes(res,'ng',MASTER_WRONG_MSG+'。');
+          else if(verdict==='ok') setRes(res,'ok','つながりました（入居者マスタのGASと確認しました）。');
+          else setRes(res,'ok',out.msg+'（入居者マスタのGASかは確かめられませんでした）');
+        });
       }
       setRes(res, out.ok?'ok':'ng', out.msg);
     }).then(null, function(){

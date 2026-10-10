@@ -195,6 +195,10 @@ function load(src, old){
   lines.push(src.slice(pi + 1, pe + 4));
   const code = vars.map(n => grabVar(src, n)).concat(fns.map(n => grabFn(src, n)), lines).join('\n');
   vm.runInContext(code, box, { filename: 'resident-master.html(deviceguard)' });
+  /* 2026-10-10: 設定の保存は、URL が変わる時に「入居者マスタのGASか」を確かめてから書く（verifyMasterUrl・通信あり）。
+     この試験は端末の用途の切り替えを見るものなので、確かめは「入居者マスタだった」をその場で返す代役に置き換える
+     （確かめそのものの試験は gas/tests/master_target_verdict_test.js）。古い版には確かめが無いので代役は使われない。 */
+  box.verifyMasterUrl = function(){ return { then: function(f){ f('ok'); return this; } }; };
   /* 実物の showScreen を包んで、呼ばれた画面名を数える（中身は実物のまま） */
   box.__countShow = n => cnt.showScreen.push(n);
   vm.runInContext('var __realShowScreen=showScreen; showScreen=function(n){ __countShow(n); return __realShowScreen(n); };', box);

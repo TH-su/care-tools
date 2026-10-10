@@ -124,6 +124,10 @@ function load(src, old, opt){
   });
   const code = vars.map(n => grabVar(src, n)).concat(fns.map(n => grabFn(src, n)), lines).join('\n');
   vm.runInContext(code, box, { filename: 'facesheet.html(deviceguard)' });
+  /* 2026-10-10: 設定の保存は、URL が変わる時に「入居者マスタのGASか」を確かめてから書く（verifyMasterUrl・通信あり）。
+     この試験は端末の用途の切り替えを見るものなので、確かめは「入居者マスタだった」をその場で返す代役に置き換える
+     （確かめそのものの試験は gas/tests/master_target_verdict_test.js）。古い版には確かめが無いので代役は使われない。 */
+  box.verifyMasterUrl = function(){ return { then: function(f){ f('ok'); return this; } }; };
   const v = name => vm.runInContext(name, box);
   const set = js => vm.runInContext(js, box);
   function cfgForm(url, token, role){ fakeEl('cfgUrl').value = url; fakeEl('cfgToken').value = token; fakeEl('cfgDeviceRole').value = role; }

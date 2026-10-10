@@ -3200,7 +3200,67 @@ function closeSync(){$('mSync').classList.remove('on')}
    CFG の値比較では「テスト中に保存されたか」を判別できない。保存・テストのたびに
    進めるカウンタで判定する（care-schedule csPreGen_ と同型）。 */
 var cfgTestGen_=0;
+/* ═══ 入居者マスタのGASかを確かめる（2026-10-10）═══
+   別アプリのGAS（薬学管理・申送ビューア等）の URL と合言葉を組で入れても、今までは保存でき、
+   ［接続テスト］も「接続できました」と出た（その GAS の ping が通るため）。保存後は訓練計画書などが
+   「名簿を取得できませんでした（不明なaction）」になった（2026-10-10 実発生）。
+   合言葉なしの {action:'stateRev'} に {ok:true, rev:数値} を返すのは入居者マスタだけ（本番で実測）。
+   ★判定（masterTargetVerdict）は接続設定・入居者マスタと一字一句同じにする（gas/tests で突き合わせる）。 */
+function masterTargetVerdict(j){
+  if(!j || typeof j!=='object') return 'offline';
+  if(j.ok===true && j.rev!=null && j.rev!=='' && isFinite(Number(j.rev))) return 'ok';
+  /* 別アプリと断定するのは、他のGASの決まった断り文句（合言葉なしへの拒否・知らない action）と、版数を持たない ok だけ。
+     入居者マスタ自身が一時的な不調でエラーを返すこともある（転送の揺れ・内部の例外）ので、それ以外は「確かめられない」に倒す
+     （正しい入居者マスタの保存を、誤った理由で止めない） */
+  if(j.ok===true) return 'wrong';
+  if(/unauthorized|認証エラー|不明なaction|unknown action/i.test(String(j.error||''))) return 'wrong';
+  return 'offline';
+}
+var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
+function verifyMasterUrl(url){
+  var ac=(typeof AbortController==='function') ? new AbortController() : null;
+  return new Promise(function(resolve){
+    var done=false;
+    function fin(v){ if(done) return; done=true; clearTimeout(timer); resolve(v); }
+    var timer=setTimeout(function(){ if(ac) ac.abort(); fin('offline'); }, 30000);
+    try{
+      fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'stateRev' }),
+        signal: ac ? ac.signal : undefined
+      }).then(function(r){ return r.json(); })
+        .then(function(j){ fin(masterTargetVerdict(j)); }, function(){ fin('offline'); });
+    }catch(e){ fin('offline'); }
+  });
+}
 function saveSync(){
+  /* ★URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
+     別アプリのGASと分かった時だけ止め、今の接続先を残す。通信できず確かめられない時は止めない。
+     確かめ終わったら、以下の従来の保存をそのまま通す（_checked の間だけ確かめを飛ばす）。
+     比べる相手は保存済みの値（CFG はテストの間だけ試しの値に置き換わっていることがある）。 */
+  var _nu=($('cfgUrl').value||'').trim();
+  if(!saveSync._checked && _nu && _nu!==String(readSavedCfg_().url||'').trim()){
+    /* 確かめている間はボタンを押せなくし、ボタンの文字で知らせる（通知を増やさない＝現場用への切り替えで読み込み直す前に余計な表示を出さない） */
+    /* 確かめている間は入力欄も触れなくする（確かめた URL と、あとで書く URL を食い違わせない） */
+    var _sb=$('syncSave'), _st=_sb?_sb.textContent:'';
+    var _ins=['cfgUrl','cfgToken','cfgDeviceRole'].map(function(id){ return $(id); }).filter(Boolean);
+    var _wasOpen=!!($('mSync') && $('mSync').classList.contains('on'));
+    if(_sb){ _sb.disabled=true; _sb.textContent='確かめています…'; }
+    _ins.forEach(function(e){ e.disabled=true; });
+    verifyMasterUrl(_nu).then(function(v){
+      if(_sb){ _sb.disabled=false; _sb.textContent=_st; }
+      _ins.forEach(function(e){ e.disabled=false; });
+      /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
+      if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
+      if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      saveSync._checked=true;
+      try{ saveSync(); }finally{ saveSync._checked=false; }
+      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
+      if(v==='offline') toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした');
+    });
+    return;
+  }
   /* ★判定は端末に保存された用途ではなく、この画面が事務所PCとして描かれているか（fsRoleApplied_）で見る。別のタブで用途が変わっていて、保存値と画面がずれている時にも正しく倒すため */
   var toField=($('cfgDeviceRole').value==='field'&&fsRoleApplied_==='office');
   cfgTestGen_++;   /* 飛行中のテストの巻き戻しを無効化する（保存値が正） */
@@ -3249,7 +3309,13 @@ function testSync(){
   CFG.url=tried.url;CFG.token=tried.token;
   if(!CFG.url){CFG.url=saved.url;CFG.token=saved.token;toast('URLを入力してください');return}
   setSync('テスト中…');
-  apiGet({action:'ping'}).then(function(){setSync('接続OK','ok');toast('✅ 接続できました')})
+  apiGet({action:'ping'}).then(function(){
+      /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10） */
+      return verifyMasterUrl(tried.url).then(function(v){
+        if(v==='wrong'){ setSync('別アプリのGAS','err'); alert('⚠️ '+MASTER_WRONG_MSG+'。'); return; }
+        setSync('接続OK','ok'); toast(v==='ok'?'✅ 接続できました（入居者マスタのGASと確認）':'✅ 接続できました');
+      });
+    })
     .catch(function(e){setSync('接続失敗','err');toast('⚠️ '+e.message)})
     /* テスト中に保存・再テストされた場合（世代が進む）は巻き戻さない */
     .then(function(){if(myGen===cfgTestGen_){CFG.url=saved.url;CFG.token=saved.token}});
