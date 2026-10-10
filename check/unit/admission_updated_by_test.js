@@ -84,6 +84,15 @@ console.log('\n— 3. 統合：タスク・連絡記録・アセスメント —
   t('★片方にしかないタスクも残る（直した人つき）', !!t2 && t2.updatedBy === 'staff-b', t2);
   t('★連絡記録は両方残り、記録した人も残る', m.log.length === 2 && m.log.find(x => x.id === 'l1').by === 'staff-a' && m.log.find(x => x.id === 'l2').by === 'staff-b', m.log);
   t('★アセスメントは項目ごとに両方残り、直した人は新しい方の組', m.assess.adl === '一部介助' && m.assess.dementia === '軽度' && m.assess.updatedBy === 'staff-b' && m.assess.updatedByAt === T2, m.assess);
+  /* 古い端末がタスクの時刻だけ進めた後の統合：組がずれて表示が消える（別の人の名前を出さない） */
+  const tOld = { id: 't1', title: '診療情報提供書', st: 'wait', updatedAt: '2026-10-10T04:00:00.000Z', updatedBy: 'staff-a', updatedByAt: T2 };
+  const m4 = b.mergeDb({ candidates: [cand({ updatedAt: T2, tasks: [tA] })] }, { candidates: [cand({ updatedAt: T1, tasks: [tOld] })] }).candidates[0];
+  const t4 = m4.tasks.find(x => x.id === 't1');
+  t('古い端末がタスクの時刻だけ進めた後は、そのタスクの直した人を出さない（組がずれる）', t4.st === 'wait' && b.afEditedBy_(t4) === '', t4);
+  /* 時刻が等しい時も、どちらか一方の組をそのまま使う（混ぜない） */
+  const E1 = cand({ updatedAt: T1, updatedBy: 'staff-a', updatedByAt: T1 }), E2 = cand({ updatedAt: T1, updatedBy: 'staff-b', updatedByAt: T1 });
+  const m5 = b.mergeDb({ candidates: [E1] }, { candidates: [E2] }).candidates[0];
+  t('時刻が等しい時も、どちらか一方の組がそろって残る', (m5.updatedBy === 'staff-a' || m5.updatedBy === 'staff-b') && m5.updatedByAt === T1, m5);
   t('「直した人」の項目に消した印を付けない（管理用の欄）', /updatedBy: 1, updatedByAt: 1/.test(line(/var CLEAR_META = \{[\s\S]*?\};/)), '');
 }
 
@@ -95,6 +104,8 @@ console.log('\n— 4. 書き込む所で組を載せる —');
   t('連絡記録の追加（2か所）に記録した人', (SRC.match(/summary: sum, by: afWho_\(\)/g) || []).length === 2, (SRC.match(/summary: sum, by: afWho_\(\)/g) || []).length);
   t('編集画面の保存（新規・既存・アセスメント）', /editing\.updatedAt = nowIso\(\); afStamp_\(editing\);/.test(SRC) && /target\.updatedAt = nowIso\(\); afStamp_\(target\);/.test(SRC) && /target\.assess\.updatedAt = nowIso\(\); afStamp_\(target\.assess\);/.test(SRC), '');
   t('元に戻す', /cur\.updatedAt = nowIso\(\); afStamp_\(cur\);/.test(SRC), '');
+  t('ご相談シートからアセスメントを直す経路（shSet）', /c\.assess\[key\] = v; c\.assess\.updatedAt = nowIso\(\); afStamp_\(c\.assess\);/.test(cutF('shSet')), '');
+  t('編集画面の入力の取り込み（collectEditInputs）のアセスメント', /a\.updatedAt = nowIso\(\); afStamp_\(a\);/.test(cutF('collectEditInputs')), '');
 }
 
 console.log('\n— 5. 表示 —');
@@ -123,6 +134,20 @@ console.log('\n— 6. 誰が（ログイン・ログアウト・確かめられ�
   t('ログアウト（控えが無い）は「事務所PC」へ戻す', b.afWho_() === '事務所PC', b.afWho_());
   b = await run(true, { status: 'error' }, 'staff-a');
   t('確かめられない時は前の名前のまま', b.afWho_() === 'staff-a', b.afWho_());
+  {
+    const resolvers = [];
+    const bb = box({ 'sb-abc123-auth-token': 'x' });
+    bb.window.SUAuth = { check: () => new Promise(r => resolvers.push(r)) };
+    bb.afAuthLoad_ = () => Promise.resolve();
+    bb.afResolveWho_(); bb.afResolveWho_();
+    for (let i = 0; i < 5; i++) await tick();
+    resolvers[0]({ status: 'ok', email: 'old@example.test' });
+    for (let i = 0; i < 5; i++) await tick();
+    const afterOld = bb.afWho_();
+    resolvers[1]({ status: 'ok', email: 'staff-new@example.test' });
+    for (let i = 0; i < 5; i++) await tick();
+    t('遅れて届いた古い確認の結果は捨て、新しい結果を採る（世代番号）', resolvers.length === 2 && afterOld === '事務所PC' && bb.afWho_() === 'staff-new', [resolvers.length, afterOld, bb.afWho_()]);
+  }
   t('起動時・別タブのログイン/ログアウト・画面に戻った時に取り直す',
     /try \{ afResolveWho_\(\); \} catch \(e\)/.test(SRC) && /addEventListener\('storage', function \(e\) \{ if \(e\.key === null \|\| AF_SESSION_RE\.test\(e\.key \|\| ''\)\)/.test(SRC) && /visibilitychange', function \(\) \{ if \(!document\.hidden\) \{ try \{ afResolveWho_\(\);/.test(SRC), '');
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
