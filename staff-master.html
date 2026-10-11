@@ -5194,19 +5194,23 @@ function failCommittees() {
    施設情報は通信で読むので、読めた時（端末の控えがあれば直ちに）に1回当てる */
 function applyLocality() {
   if (!window.SUFacility || !SC() || typeof SC().setLocality !== 'function') return;
-  window.SUFacility.onReady(function () {
-    var cs = typeof window.SUFacility.corpSettings === 'function' ? window.SUFacility.corpSettings() : {};
-    var changed = false;
-    try {
-      changed = SC().setLocality({ municipality: window.SUFacility.municipality(),
-        homeGuidelineName: cs.homeGuidelineName, homeGuidelineUrl: cs.homeGuidelineUrl });
-    } catch (e) { changed = false; }
-    if (!changed) return;
-    buildCmtPicker();
-    if (ST.detail) fillCmtPicker(mergedDetailRow());
-    if (ST.screen === 'cmt') renderCmt();
-    if (ST.loaded && ST.cmtCol) renderList();
-  });
+  /* 端末の控えで読めていれば、通信を待たずにまず当てる（熊本市以外の施設で、起動直後に熊本市の文言のまま刷られないように）。
+     通信が終わったら（施設情報が変わっていれば）もう一度当てる。同じなら setLocality が false を返し何もしない */
+  if (typeof window.SUFacility.ready === 'function' && window.SUFacility.ready()) applyLocalityNow();
+  window.SUFacility.onReady(applyLocalityNow);
+}
+function applyLocalityNow() {
+  var cs = typeof window.SUFacility.corpSettings === 'function' ? window.SUFacility.corpSettings() : {};
+  var changed = false;
+  try {
+    changed = SC().setLocality({ municipality: window.SUFacility.municipality(),
+      homeGuidelineName: cs.homeGuidelineName, homeGuidelineUrl: cs.homeGuidelineUrl });
+  } catch (e) { changed = false; }
+  if (!changed) return;
+  buildCmtPicker();
+  if (ST.detail) fillCmtPicker(mergedDetailRow());
+  if (ST.screen === 'cmt') renderCmt();
+  if (ST.loaded && ST.cmtCol) renderList();
 }
 function loadCommittees() {
   var cfg = loadCfg();

@@ -103,6 +103,24 @@ console.log('\n— ⑤ サーバーのマスタを受け取った後 —');
   t('人が書き換えた URL は残す', by.kondan.url === 'https://example.invalid/own', by.kondan.url);
   t('既定にしか無い委員会も足される（件数は既定と同じ）', C.committees().length === C.COMMITTEE_DEFAULTS.length);
 }
+{
+  /* サーバーの実際の返し方: 保存が無くても全件に既定の url（熊本市の案内ページ）を付けて返す（staff-api.gs） */
+  const serverShaped = () => JSON.parse(JSON.stringify(fresh().COMMITTEE_DEFAULTS));
+  const C = fresh();
+  C.setCommittees(serverShaped());
+  C.setLocality({ municipality: '福岡市' });
+  const by = {}; C.committees().forEach(c => { by[c.code] = c; });
+  t('サーバーが熊本市の案内ページを付けて返しても、熊本市以外では残さない（空・要確認）',
+    by.restraint.url === '' && by.kondan.url === '' && by.restraint.todo === true, [by.restraint.url, by.kondan.url]);
+  t('その時も一覧のどこにも「熊本」が無い', JSON.stringify(C.committees()).indexOf('熊本') < 0);
+  const D = fresh();
+  D.setLocality({ municipality: '試験市', homeGuidelineName: '見本指針', homeGuidelineUrl: 'https://example.invalid/g' });
+  D.setCommittees(serverShaped());
+  t('先に所在自治体→後からサーバーのマスタでも、法人設定の案内ページになる', D.committees().find(c => c.code === 'kondan').url === 'https://example.invalid/g');
+  const K = fresh();
+  K.setCommittees(serverShaped());
+  t('熊本市・未設定では、サーバーの案内ページをそのまま使う（今と同じ）', K.committees().find(c => c.code === 'kondan').url === KUMA_URL);
+}
 
 console.log('\n— ⑥ 施設情報の読み口 —');
 function loadFacility(profile) {
@@ -138,6 +156,7 @@ console.log('\n— ⑦ 画面のつなぎ —');
   t('施設情報の読み口を計算部品より前に読む', HTML.indexOf('src="su-facility.js') > 0 && HTML.indexOf('src="su-facility.js') < HTML.indexOf('src="staff-master-calc.js'));
   const init = HTML.slice(HTML.indexOf('function init()'));
   t('起動時に所在自治体を当てる（委員会の読み込みの後）', /loadCommittees\(\);[^\n]*\n\s*applyLocality\(\);/.test(init));
+  t('端末の控えで読めていれば、通信を待たずにまず当てる', /SUFacility\.ready\(\)\) applyLocalityNow\(\);/.test(HTML));
   t('変わった時だけ描き直す（熊本市・未設定は描き直さない）', /if \(!changed\) return;/.test(HTML.slice(HTML.indexOf('function applyLocality()'), HTML.indexOf('function loadCommittees()'))));
   t('「既定に戻す」は所在自治体を当てた既定を引く', /SC\(\)\.localDefaults\(\)/.test(HTML.slice(HTML.indexOf('function cmtShippedOf('), HTML.indexOf('function cmtShippedOf(') + 400)));
 }
