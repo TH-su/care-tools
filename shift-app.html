@@ -747,6 +747,57 @@ var LZString=function(){var o=String.fromCharCode,n="ABCDEFGHIJKLMNOPQRSTUVWXYZa
 if(typeof window!=='undefined')window.LZString=LZString;
 /* テスト用にCommonJSでも公開（ブラウザ動作には影響しない） */
 if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
+/* ===== src/logic/ids.js ===== */
+/* ids.js — 職員 ID の作り方と点検・部品探しの安全な書き方（純粋関数・2026-10-11）
+ *
+ * 背景（監査10月版 第2版 シフト作成 第1手）:
+ *   職員 ID を作る関数が master.js（newId）と facility.js（genId）の2か所にあり、同期・バックアップ・名簿の取り込みで
+ *   受け取った ID の形を誰も確かめていなかった。シフト表のマスや下書きのタブを探す querySelector は、ID を
+ *   そのまま "…[data-sid=\"" + id + "\"]" と組み込んでいたので、引用符などが混ざると探し方が壊れていた。
+ *
+ * 方針:
+ *   ・作る ID はここ1か所（newStaffId）。形は今までと同じ（'s'＋時刻36進＋乱数4桁）
+ *   ・決まった形＝英数字・_・- だけ（監査の指定どおり長さの上限は付けない）。外れていても、データは消さずに残す（2026-10-11 本人裁定）。
+ *     見つけた件数を画面と記録で知らせるだけ（ID そのものは記録に残さない＝名前が入っていることがあるため）
+ *   ・部品探しで引用符の中に入れる値は cssAttr で包む（" と \ と改行だけを書き換える。普通の ID は1文字も変わらない）
+ */
+(function () {
+  'use strict';
+  var STAFF_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+  function newStaffId() {
+    return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function isValidStaffId(id) {
+    return typeof id === 'string' && STAFF_ID_RE.test(id);
+  }
+  /* 職員の配列のうち、形の違う ID の数（id の無い行・空の行は数えない＝別の守りが扱う） */
+  function countInvalidStaffIds(list) {
+    if (Object.prototype.toString.call(list) !== '[object Array]') return 0;
+    var n = 0;
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i];
+      if (!s || typeof s !== 'object' || s.id === undefined || s.id === null || s.id === '') continue;
+      if (!isValidStaffId(s.id)) n++;
+    }
+    return n;
+  }
+  /* querySelector の "…" の中に入れる値。CSS の文字列の書き方で " \ 改行 だけを書き換える */
+  function cssAttr(v) {
+    return String(v === undefined || v === null ? '' : v)
+      .replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n|\r/g, '\\a ').replace(/\f/g, '\\c ');   /* 改ページも CSS では改行扱い */
+  }
+
+  var api = {
+    STAFF_ID_RE: STAFF_ID_RE,
+    newStaffId: newStaffId,
+    isValidStaffId: isValidStaffId,
+    countInvalidStaffIds: countInvalidStaffIds,
+    cssAttr: cssAttr
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftIds = api;
+})();
 /* ===== src/logic/symbols.js ===== */
 /* symbols.js — シフト記号の正規化・パース（純粋関数・依存ゼロ）
  * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
@@ -5607,7 +5658,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < tds.length; i++) tds[i].classList.remove('sel');
       for (var j = 0; j < this.sel.length; j++) {
         var c = this.sel[j];
-        var td = document.querySelector('#gridWrap td.daycell[data-sid="' + c.sid + '"][data-div="' + c.div + '"][data-day="' + c.day + '"]');
+        var td = document.querySelector('#gridWrap td.daycell[data-sid="' + ShiftIds.cssAttr(c.sid) + '"][data-div="' + ShiftIds.cssAttr(c.div) + '"][data-day="' + ShiftIds.cssAttr(c.day) + '"]');
         if (td) td.classList.add('sel');
       }
     },
@@ -5619,7 +5670,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (ctx.isLocked) { if (ctx.onLockedEdit) ctx.onLockedEdit(); return; }  /* ロック中は入力パレットを開かない */
       if (this.sel.length === 0) return;
       var last = this.sel[this.sel.length - 1];
-      var td = document.querySelector('#gridWrap td.daycell[data-sid="' + last.sid + '"][data-div="' + last.div + '"][data-day="' + last.day + '"]');
+      var td = document.querySelector('#gridWrap td.daycell[data-sid="' + ShiftIds.cssAttr(last.sid) + '"][data-div="' + ShiftIds.cssAttr(last.div) + '"][data-day="' + ShiftIds.cssAttr(last.day) + '"]');
       if (!td) return;
       var staff = findStaff(ctx.staff, last.sid);
       /* 許可パターンは入力補助＝月凍結スナップショットの古い設定でなく、マスタ(masterStaff)の現在値で解決する。
@@ -6886,7 +6937,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var i = 0; i < GROUPS.length; i++) { if (GROUPS[i].key === g) return GROUPS[i].label; }
     return '訪問介護・施設';
   }
-  function newId() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function newId() { return ShiftIds.newStaffId(); }   /* 職員 ID の作り方は src/logic/ids.js の1か所（2026-10-11） */
   function normName(n) { return String(n).replace(/[\s　]+/g, ''); }
   function guessGroup(p) {
     if (p.note && p.note.indexOf('夜勤専従') >= 0) return 'night';
@@ -7876,7 +7927,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function normName(n) { return String(n == null ? '' : n).replace(/[\s　]/g, ''); }
-  function genId() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function genId() { return ShiftIds.newStaffId(); }   /* 職員 ID の作り方は src/logic/ids.js の1か所（2026-10-11） */
 
   function finishWizard() {
     wiz.setupDone = true;
@@ -8120,6 +8171,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     loadAll: function () {
       this.staff = Store.get('staff', []);
       this.protectStaff();
+      this.checkStaffIds_();
       this.symbols = Store.get('symbols', null);
       if (!this.symbols || !this.symbols.length) {
         this.symbols = JSON.parse(JSON.stringify(Sym.DEFAULT_SYMBOLS));
@@ -8555,6 +8607,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return true; }
       return false;
     },
+    /* ★職員 ID の形の点検（2026-10-11・監査10月版 第2版 シフト作成 第1手）。同期・バックアップ・名簿の取り込みで
+     * 決まった形（英数字・_・-）でない ID が来ても、データは消さずに残し（本人裁定）、件数を画面と記録で知らせるだけ。
+     * 部品探しは ShiftIds.cssAttr で包んであるので、残しても壊れない。ID そのものは記録に残さない（名前が入りうる）。
+     * 同じ件数では、1回の表示につき1回だけ知らせる */
+    checkStaffIds_: function () {
+      if (typeof ShiftIds === 'undefined') return;
+      var n = ShiftIds.countInvalidStaffIds(this.staff);
+      if (!n) { this._badStaffIdN = 0; return; }     /* 直って0件になったら、次に出た時はまた知らせる */
+      if (this._badStaffIdN === n) return;
+      this._badStaffIdN = n;
+      /* 読み込みの直後は「編集モードになりました」等の知らせが同じ枠に続けて出て上書きされるので、少し遅らせて出す */
+      var self = this;
+      setTimeout(function () { self.toast('⚠ 形の違う職員IDが ' + n + ' 件あります（データはそのまま残しています）'); }, 3000);
+      try { if (window.SUErrors) window.SUErrors.note('職員IDの形', '形の違う職員ID ' + n + ' 件', 'loadAll'); } catch (e) { /* 記録できなくても動きは止めない */ }
+    },
+
     reorderGuard: function () {
       if (this.isLockedNow()) { this.toast('🔒 ロック中です。編集するにはロックを外してください'); return true; }
       if (this.usingSnapshot()) { this.toast('この月は確定済みのため並べ替えは固定です'); return true; }
@@ -8808,7 +8876,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       var d = this.findDraft(id);
       if (!d || d.auto) return;
-      var tab = document.querySelector('#draftTabs .drafttab[data-layer="draft:' + id + '"]');
+      var tab = document.querySelector('#draftTabs .drafttab[data-layer="draft:' + ShiftIds.cssAttr(id) + '"]');
       if (!tab) return;
       var label = tab.querySelector('.dlabel');
       if (!label || label.getAttribute('data-editing') === '1') return;
