@@ -93,7 +93,7 @@ function makeKv(o) {
     location: { pathname: '/care-tools/care-schedule.html' },
     document: {
       body, head: { appendChild() {} },
-      createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, textContent: '' })
+      createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, addEventListener() {}, textContent: '' })
     }
   };
   box.window = box;
@@ -139,7 +139,9 @@ function makeKv(o) {
     /* E（0010・2026-10-11）: 現場のアカウントの日データは印だけを kv_put_marks へ */
     const dput = { action: 'put', key: 'wsday_2026-10-10', rev: 5, data: { meta: { date: '2026-10-10' }, staff: [{ name: '架空 職員' }],
       tasks: [{ id: 't1', start: '09:00', contents: ['食事', '服薬'], done: true, checks: { 1: true, x: true, 3: true, 0: 'yes' } }, { id: 't2', done: false, comment: null }, { id: 't1', done: false }, { start: '10:00' }] } };
-    k = makeKv({ role: 'field' });
+    /* サーバーの盤面＝端末と同じ盤面で、印だけ違う（kv_get で比べる） */
+    const sameBoard = clone(dput.data); sameBoard.tasks[0].done = false; sameBoard.tasks[0].checks = {}; sameBoard.meta.rev = 4;
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard } });
     r = await k.kv.call(dput, k.raw);
     const mk = (k.rpcs.filter(x => x.name === 'kv_put_marks')[0] || {}).args;
     t('★E 現場の日データの保存は kv_put_marks（kv_put は呼ばない）', !!mk && !k.rpcs.some(x => x.name === 'kv_put'), k.rpcs.map(x => x.name));
@@ -160,9 +162,18 @@ function makeKv(o) {
     k = makeKv({ role: 'field', db: { rev: 8 } });
     r = await k.kv.call(dput, k.raw);
     t('★E 他の端末が先に書いていた（送った版5・書く前の版8）なら、書けても conflict＝取り直して統合させる', r.ok === false && r.conflict === true && r.rev === 9 && k.timers.length === 1, r);
-    k = makeKv({ role: 'field', marksReply: { ok: true, rev: 5, unchanged: true, marksOnly: true } });
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard }, marksReply: { ok: true, rev: 5, unchanged: true, marksOnly: true } });
     r = await k.kv.call(dput, k.raw);
-    t('★E 変わらなかった・版も同じ → そのまま ok（写し返しもしない）', r.ok === true && r.rev === 5 && k.timers.length === 0, r);
+    t('★E 変わらなかった・版も同じ・盤面も同じ → そのまま ok（写し返しもしない）', r.ok === true && r.rev === 5 && k.timers.length === 0, r);
+    const movedBoard = clone(sameBoard); movedBoard.tasks[0].start = '11:00';   // 事務所の盤面では t1 は 11:00（現場の端末は 09:00 のまま）
+    k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 端末の盤面がサーバーと違う（現場で札を動かした等）→ 1つ前の版を返して、次の取得でサーバーの盤面を取り込ませる', r.ok === true && r.rev === 5 && k.db.rev === 6, r);
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard }, marksReply: { ok: true, rev: 6, baseRev: 5, marksOnly: true, applied: 1, missing: 2 } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 印を付けた札が作り直されていた（missing）→ 画面の下に知らせる（1日に1回）', r.ok === true && k.banners.length === 1);
+    await k.kv.call(dput, k.raw);
+    t('E 同じ日の知らせは重ねない', k.banners.length === 1);
     k = makeKv({ role: 'field', marksReply: { ok: true, rev: 9, unchanged: true, marksOnly: true } });
     r = await k.kv.call(dput, k.raw);
     t('E 変わらなかったがサーバーの方が新しい → conflict（取り直させる）', r.conflict === true && r.rev === 9, r);

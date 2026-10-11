@@ -140,6 +140,8 @@
    * checks は「何番目か」でなく内容の文言で送る（c:<文言>＝真偽を全部・内容の後ろの欄は x:<位置>）。サーバーは端末が
    *   そろえた版（rev）と比べて、端末が変えた所だけを今の版へ差し込む＝2台が同じ札に印を付けても両方残る。
    * ★応答: 端末がそろえた版が今の版だった時は、書いた版（変わらなければ今の版）をそのまま返す。
+   *   ただし端末の盤面（印以外）がサーバーと違う時（現場の端末で札を動かした等。サーバーには書けない）は1つ前の版を返し、
+   *   端末に次の取得でサーバーの盤面を取り込ませる（そうしないと、違う配置のまま「同期済み」になり続ける）。
    *   端末がそろえた版より後に他の端末が書いていた時は、書けても conflict を返す＝端末は今の版を取り直し、
    *   印を欄ごとに混ぜる統合（ワークスケジュールの rebaseDay・2026-10-11）を通してからそろえる。
    *   （書いた版の1つ前を返す前の作りは、次の送信で自分の古い印を「変えた所」として書き戻し、他の端末の直しを消していた）
@@ -174,6 +176,44 @@
     });
     return out;
   }
+  /* 盤面（印以外）の比べ方。staff・columns・印を除いた札・rev を除いた meta を、キーの順に依らない文字列にして比べる */
+  function stable(v) {
+    if (v === null || v === undefined) return 'null';
+    if (typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    return '{' + Object.keys(v).filter(function (k) { return v[k] !== undefined; }).sort()
+      .map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
+  }
+  function boardOf(d) {
+    d = d || {};
+    var meta = {}, k;
+    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k) && k !== 'rev') meta[k] = d.meta[k];
+    var tasks = (Array.isArray(d.tasks) ? d.tasks : []).map(function (t) {
+      var c = {}, kk;
+      for (kk in (t || {})) if (Object.prototype.hasOwnProperty.call(t, kk) && kk !== 'done' && kk !== 'checks' && kk !== 'comment') c[kk] = t[kk];
+      return c;
+    });
+    return stable({ meta: meta, staff: d.staff || null, columns: d.columns === undefined ? null : d.columns, tasks: tasks });
+  }
+  /* 印を付けた札が事務所で作り直されていた（id が変わった）時の知らせ。待っても直らないので画面の下に出す（1日につき1回） */
+  var missingShown = {};
+  function noteMissing(key, n) {
+    if (missingShown[key] || !document.body) return;
+    missingShown[key] = true;
+    var bar = document.createElement('div');
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483000;background:#7a4b00;color:#fff;' +
+      'padding:12px 16px;font:700 15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;' +
+      'display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+    var t = document.createElement('span');
+    t.textContent = '事務所で札が作り直されていたため、' + String(key).slice(6) + ' の印 ' + n + '件を保存できませんでした。画面を開き直して、もう一度付けてください。';
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = '閉じる';
+    b.style.cssText = 'min-height:44px;padding:0 16px;border-radius:8px;border:2px solid #fff;background:transparent;color:#fff;font:inherit;cursor:pointer';
+    b.addEventListener('click', function () { if (bar.parentNode) bar.parentNode.removeChild(bar); });
+    bar.appendChild(t); bar.appendChild(b);
+    document.body.appendChild(bar);
+  }
   function putMarks(payload, rawGas) {
     if (payload.force || payload.lockOverride) return Promise.resolve({ ok: false, error: 'forbidden' });
     var key = payload.key;
@@ -183,9 +223,15 @@
       if (d.ok && d.marksOnly) {
         var sent = Number(payload.rev) || 0, now = Number(d.rev) || 0;
         if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
+        if (Number(d.missing) > 0) { try { noteMissing(key, Number(d.missing)); } catch (e) { /* 知らせを出せなくても保存の結果は返す */ } }
         var base = d.unchanged ? now : (Number(d.baseRev) || 0);
         if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };   // 他の端末が先に書いていた＝取り直して統合
-        return { ok: true, rev: now, marksOnly: true };
+        // 端末の盤面がサーバーと違えば、1つ前の版を返して取り込ませる（確かめられない時は今の版のまま）
+        return rpc('kv_get', { p_key: key }).then(function (g) {
+          var srv = g && !g.error && g.data ? g.data.data : null;
+          var same = !srv || boardOf(srv) === boardOf(payload.data);
+          return { ok: true, rev: same ? now : Math.max(0, now - 1), marksOnly: true };
+        }, function () { return { ok: true, rev: now, marksOnly: true }; });
       }
       if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
       return d;   // conflict（そろえた版が履歴に無い）・locked・shadow はそのまま（端末の今までの扱い）
