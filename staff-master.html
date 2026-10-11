@@ -6840,8 +6840,9 @@ function init() {
     return;
   }
   restoreUi();
-  /* 接続先が空のまま開いた端末は、設定タブを開いて初回の案内を出す（ほかの画面は接続先が無いと空のため） */
-  if (startWizIfNew()) ST.screen = 'settings';
+  /* 接続先が空のまま開いた端末は、設定タブに初回の案内を出す。開く画面は変えない（再読み込みで現在地を保つ・
+     承認した計画の範囲。一覧の「接続先が設定されていません」の案内から設定タブへ進む） */
+  startWizIfNew();
   snapshotDefaultEnumCodes();      /* 既定コード（消せない）を、差し替えの前に控える */
   fillSelect('f_gender', 'gender', '—');
   fillSelect('f_primarySite', 'primarySite', '—');

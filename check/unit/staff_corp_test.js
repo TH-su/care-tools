@@ -174,7 +174,7 @@ console.log('\n— ⑥ つなぎ —');
   t('保存は expect（読み込んだ目印）と端末の名前を付けて送る', /apiPost\('setCorp', \{ corp: o, by: loadCfg\(\)\.by, expect: CORP\.at \}\)/.test(SRC));
   const init = SRC.slice(SRC.indexOf('\nfunction init()'));
   t('起動時に欄を作って法人設定を読む', /buildCorpForm\(\);/.test(init) && /loadCorp\(\);/.test(init));
-  t('接続先が空なら設定タブで始める', /if \(startWizIfNew\(\)\) ST\.screen = 'settings';/.test(init));
+  t('接続先が空なら案内を始める（開く画面は変えない）', /\n\s*startWizIfNew\(\);/.test(init) && !/ST\.screen = 'settings'/.test(init));
   t('接続設定を保存したら読み直す', /loadCommittees\(\);\n\s*loadCorp\(\);\n\s*renderWiz\(\);/.test(grab('onSaveCfg')));
   t('接続の可否が変わる時（選択肢ボタンと同じ時）に欄と案内を取り直す', /updateCorpUi\(\);[^\n]*\n\s*renderWiz\(\);/.test(grab('updateEnumBtn')));
   t('中身が変わった時だけ集計・一覧を描き直す（一括編集中は描き直さない）', /JSON\.stringify\(corpNow\(\)\) !== before/.test(grab('applyCorpResp')) && /!ST\.bulk\) renderList\(\)/.test(grab('applyCorpResp')));
