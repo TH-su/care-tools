@@ -65,6 +65,13 @@ body {
 }
 .fld input:focus-visible, .fld select:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
 .hint { font-size: 0.71875rem; color: var(--g7); margin: 6px 0 0; }
+/* 設定の書き出し・読み込み（2026-10-11）。紙には出さない（.ctl ごと noprint） */
+.io summary { cursor: pointer; font-weight: 700; font-size: 0.875rem; min-height: 44px; display: flex; align-items: center; }
+.io .row { margin-top: 8px; }
+.io input[type=file] { font-size: 0.8125rem; min-height: 44px; }
+.io .msg { font-size: 0.8125rem; margin: 8px 0 0; color: var(--g9); }
+.io .msg.ng { color: #b3261e; font-weight: 700; }
+.io [hidden] { display: none !important; }   /* .row の display:flex が hidden の属性に勝たないように */
 .fld input[readonly] { background: var(--g1); color: var(--g9); }
 .adopt { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .adopt[hidden] { display: none; }
@@ -222,6 +229,25 @@ body {
       <button class="btn" id="adoptbtn" type="button">この方の設定にする</button>
     </div>
     <p class="hint warn">□は<b>印刷して手書きでチェック</b>する欄です。画面上のチェックは記録として保存しません（端末ごとに食い違う投薬記録を作らないため）。</p>
+  </div>
+
+  <!-- 端末を替える時の設定の書き出し・読み込み（2026-10-11・監査10月版 第2版 貼り薬カレンダー）。
+       ファイルに入れるのは開始日・場所・設定した人と時刻と入居者ID だけ（氏名は入れない）。紙には出さない -->
+  <div class="cd io">
+    <details id="ioBox">
+      <summary>端末を替える時（設定の書き出し・読み込み）</summary>
+      <p class="hint">この端末の開始日と場所の設定を1つのファイルに書き出し、新しい端末で読み込めます。ファイルに入るのは入居者のID・開始日・場所・設定した人と時刻だけで、氏名は入りません。</p>
+      <div class="row">
+        <button class="btn" id="ioExport" type="button">設定を書き出す</button>
+        <label class="btn" for="ioFile">設定を読み込む</label>
+        <input id="ioFile" type="file" accept="application/json,.json" hidden>
+      </div>
+      <p class="msg" id="ioMsg" role="status" hidden></p>
+      <div class="row" id="ioConfirm" hidden>
+        <button class="btn pri" id="ioApply" type="button">この内容で読み込む</button>
+        <button class="btn" id="ioCancel" type="button">やめる</button>
+      </div>
+    </details>
   </div>
 
   <div class="cd">
@@ -824,6 +850,147 @@ function shiftMonth(delta) {
   render();
 }
 
+/* ── 端末を替える時の書き出し・読み込み（2026-10-11・監査10月版 第2版 貼り薬カレンダー）──
+   ・書き出し: 入居者ごとの設定（apc2_res）と手入力の設定（apc2_start/no/prev＋apc2_setby）を1つの JSON に。氏名は入れない
+   ・読み込み: 中身を確かめてから「追加・置き換え・この端末の方が新しいので残す」の件数を見せ、押した時だけ書く。
+     同じ方の設定が両方にある時は、設定した時刻（at）が新しい方を採る（この端末の方が新しい設定は上書きしない）。
+     この端末の保存が読めない時は書かない（他の方の設定を空で消さない） */
+var IO_APP = 'patch-calendar', IO_VER = 1, IO_MAX_BYTES = 1024 * 1024;
+function ioEntry(v) {
+  if (!v || typeof v !== 'object') return null;
+  var d = parseISODate(v.start), n = parseNo(String(v.no), 1), p = parseNo(String(v.prev), 0);
+  if (!d || n === null) return null;
+  var sb = pcSetByOf(v), out = { start: d.iso, no: n, prev: p !== null ? p : 0 };
+  if (sb.by && sb.at) { out.by = sb.by; out.at = sb.at; }
+  return out;
+}
+function ioExportObj(all, legacy) {
+  var res = {};
+  Object.keys(all || {}).forEach(function (k) { var e = ioEntry(all[k]); if (e) res[k] = e; });
+  var man = null;
+  if (legacy) {
+    man = { start: legacy.start.iso, no: legacy.no, prev: legacy.prev };
+    if (legacy.by && legacy.at) { man.by = legacy.by; man.at = legacy.at; }
+  }
+  return { app: IO_APP, v: IO_VER, exportedAt: new Date().toISOString(), res: res, manual: man };
+}
+/* 読み込んだファイルの中身を確かめる。{ok, res, manual, bad} か {ok:false, why} */
+function ioParse(o) {
+  if (!o || typeof o !== 'object' || o.app !== IO_APP || o.v !== IO_VER) return { ok: false, why: '貼り薬カレンダーの設定のファイルではありません' };
+  if (!o.res || typeof o.res !== 'object' || Array.isArray(o.res)) return { ok: false, why: 'ファイルの形が違います' };
+  var res = {}, bad = 0;
+  Object.keys(o.res).forEach(function (k) {
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(k)) { bad++; return; }
+    var e = ioEntry(o.res[k]);
+    if (e) res[k] = e; else bad++;
+  });
+  var man = (o.manual === null || o.manual === undefined) ? null : ioEntry(o.manual);
+  if (o.manual && !man) bad++;
+  return { ok: true, res: res, manual: man, bad: bad };
+}
+function ioNewer(a, b) {   /* a の方が新しいか（時刻が無い方は古いとみなす） */
+  var ta = a && a.at ? Date.parse(a.at) : NaN, tb = b && b.at ? Date.parse(b.at) : NaN;
+  if (isNaN(ta)) return false;
+  if (isNaN(tb)) return true;
+  return ta > tb;
+}
+/* この端末の設定と読み込んだ設定を合わせた結果と件数（書かない・純粋関数） */
+function ioPlan(deviceAll, deviceLegacy, imp) {
+  var merged = {}, add = 0, rep = 0, keep = 0, same = 0;
+  Object.keys(deviceAll || {}).forEach(function (k) { merged[k] = deviceAll[k]; });
+  Object.keys(imp.res).forEach(function (k) {
+    var cur = Object.prototype.hasOwnProperty.call(merged, k) ? ioEntry(merged[k]) : null, nw = imp.res[k];
+    if (!cur) { merged[k] = nw; add++; return; }
+    if (cur.start === nw.start && cur.no === nw.no && cur.prev === nw.prev) { same++; return; }
+    if (ioNewer(nw, cur)) { merged[k] = nw; rep++; } else keep++;
+  });
+  var man = null;   /* 'add'・'replace'・'keep'・'same'・null（ファイルに無い） */
+  if (imp.manual) {
+    var lg = deviceLegacy ? { start: deviceLegacy.start.iso, no: deviceLegacy.no, prev: deviceLegacy.prev, at: deviceLegacy.at } : null;
+    if (!lg) man = 'add';
+    else if (lg.start === imp.manual.start && lg.no === imp.manual.no && lg.prev === imp.manual.prev) man = 'same';
+    else man = ioNewer(imp.manual, lg) ? 'replace' : 'keep';
+  }
+  return { merged: merged, add: add, replace: rep, keep: keep, same: same, manual: man };
+}
+var ioPending = null;
+function ioShow(text, ng) {
+  var m = document.getElementById('ioMsg');
+  m.textContent = text; m.className = 'msg' + (ng ? ' ng' : ''); m.hidden = !text;
+}
+function ioReset() {
+  ioPending = null;
+  document.getElementById('ioConfirm').hidden = true;
+  var f = document.getElementById('ioFile'); if (f) f.value = '';
+}
+function ioDoExport() {
+  var all = readByRes();
+  if (all === null) { ioShow('この端末の入居者ごとの設定が読めないため、書き出せません。', true); return; }
+  var obj = ioExportObj(all, legacySetting());
+  var n = Object.keys(obj.res).length;
+  if (!n && !obj.manual) { ioShow('書き出す設定がまだありません。', true); return; }
+  var t = new Date(), p2 = function (x) { return (x < 10 ? '0' : '') + x; };
+  var name = '貼り薬カレンダー設定_' + t.getFullYear() + p2(t.getMonth() + 1) + p2(t.getDate()) + '.json';
+  try {
+    var url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' }));
+    var a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    ioShow('「' + name + '」を書き出しました（入居者ごとの設定 ' + n + '件' + (obj.manual ? '・手入力の設定 1件' : '') + '）。新しい端末のこの欄で読み込んでください。');
+  } catch (e) { ioShow('書き出せませんでした。', true); }
+}
+function ioOnFile(file) {
+  ioReset();
+  if (!file) return;
+  if (file.size > IO_MAX_BYTES) { ioShow('ファイルが大きすぎます（1MB まで）。', true); return; }
+  var rd = new FileReader();
+  rd.onload = function () {
+    var o = null;
+    try { o = JSON.parse(String(rd.result || '')); } catch (e) { o = null; }
+    var imp = ioParse(o);
+    if (!imp.ok) { ioShow(imp.why + '。', true); return; }
+    var all = readByRes();
+    if (all === null) { ioShow('この端末の入居者ごとの設定が読めないため、読み込めません（今の設定を消さないため）。', true); return; }
+    var plan = ioPlan(all, legacySetting(), imp);
+    var rosterIds = {}; roster.forEach(function (r) { rosterIds[r.id] = true; });
+    var notIn = Object.keys(imp.res).filter(function (k) { return !rosterIds[k]; }).length;
+    var parts = ['入居者ごとの設定：追加 ' + plan.add + '件・置き換え ' + plan.replace + '件・この端末の方が新しいので残す ' + plan.keep + '件・同じ ' + plan.same + '件'];
+    if (plan.manual) parts.push('手入力の設定：' + { add: '追加', replace: '置き換え', keep: 'この端末の方が新しいので残す', same: '同じ' }[plan.manual]);
+    if (notIn) parts.push('この端末の名簿に無い方 ' + notIn + '件（読み込んでおき、名簿に載ると使えます）');
+    if (imp.bad) parts.push('読めなかった行 ' + imp.bad + '件（読み込みません）');
+    if (!plan.add && !plan.replace && plan.manual !== 'add' && plan.manual !== 'replace') {
+      ioShow(parts.join('／') + '。この端末に書き込む設定はありません。');
+      return;
+    }
+    ioPending = { imp: imp, plan: plan };
+    ioShow(parts.join('／') + '。よければ「この内容で読み込む」を押してください。');
+    document.getElementById('ioConfirm').hidden = false;
+  };
+  rd.onerror = function () { ioShow('ファイルを読めませんでした。', true); };
+  rd.readAsText(file);
+}
+function ioApply() {
+  if (!ioPending) return;
+  /* 押した時点で取り直す（見せてから押すまでの間に、この端末や別のタブで設定が変わっていても上書きしない） */
+  var all = readByRes();
+  if (all === null) { ioShow('この端末の入居者ごとの設定が読めないため、読み込めません。', true); ioReset(); return; }
+  var plan = ioPlan(all, legacySetting(), ioPending.imp), imp = ioPending.imp;
+  try {
+    if (plan.add || plan.replace) localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: plan.merged }));
+    if (plan.manual === 'add' || plan.manual === 'replace') {
+      try { localStorage.removeItem(LS_SETBY); } catch (e0) { /* 下で上書きを試みる */ }
+      localStorage.setItem(LS_START, imp.manual.start);
+      localStorage.setItem(LS_NO, String(imp.manual.no));
+      localStorage.setItem(LS_PREV, String(imp.manual.prev));
+      if (imp.manual.by && imp.manual.at) localStorage.setItem(LS_SETBY, JSON.stringify({ by: imp.manual.by, at: imp.manual.at }));
+    }
+  } catch (e) { ioShow('この端末に書き込めませんでした（空き容量を確かめてください）。', true); ioReset(); return; }
+  ioShow('読み込みました（追加 ' + plan.add + '件・置き換え ' + plan.replace + '件' + (plan.manual === 'add' || plan.manual === 'replace' ? '・手入力の設定' : '') + '）。');
+  ioReset();
+  if (state.rid) selectResident(state.rid);
+  else { loadState(); render(); }
+}
+
 /* ── 起動 ── */
 fillSelects();
 loadState();
@@ -833,6 +1000,10 @@ renderGuide();
 render();
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
+document.getElementById('ioExport').addEventListener('click', ioDoExport);
+document.getElementById('ioFile').addEventListener('change', function (e) { ioOnFile(e.target.files && e.target.files[0]); });
+document.getElementById('ioApply').addEventListener('click', ioApply);
+document.getElementById('ioCancel').addEventListener('click', function () { ioReset(); ioShow(''); });
 pcResolveWho();
 window.addEventListener('storage', function (e) { if (!e || !e.key || PC_SESSION_RE.test(e.key)) pcResolveWho(); });
 document.addEventListener('visibilitychange', function () { if (!document.hidden) pcResolveWho(); });

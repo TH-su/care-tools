@@ -5,7 +5,8 @@
      A su-kv.js: 未ログイン（login）・現場のアカウントの保存（forbidden）・切り替え前（shadow）・競合（conflict）・通信の失敗を
        そのまま返し、Google へは流さない（流すと、保存先が2つに割れる）。ログインの帯を出す。成功した時だけ Google へ写し返す
      B 週間計画（care-schedule.html の SYNC.push）: 断られても「同期OK」にせず、未送信の印を残す＝入力は端末に残る
-     C ワークスケジュール（work-schedule.html の pushDayNow）: 断られても未送信の印を残し、時間をおいて送り直す
+     C ワークスケジュール（work-schedule.html の pushDayNow）: 断られても未送信の印を残す。送り直すのは待てば直る断り（shadow）だけ
+       （login・forbidden は 2026-10-11 から送り直しを止めて知らせる。どちらの版の画面でも見る）
      D デイ利用表（daycare-roster.html の runSaver）: 断られたら切り替えを元に戻して知らせる（2026-10-10 代表者の決定）。
        偽の「保存しました」を出さない
    ★画面の本物の関数を切り出して動かす。偽物にするのは、ログインの状態・データベースの応答・Google への送信だけ。
@@ -228,6 +229,8 @@ function makeKv(o) {
         noteSyncSuccess_: rec('syncSuccess'), showOfflineIfPersistent_: rec('offline'), scheduleRetry_: rec('retry'),
         failReason_: e => String(e || ''), verifyPutLanded_: rec('verify'), friendlyErr: e => String(e || ''),
         handleLockedReject_: rec('locked'), handleDayConflict_: rec('conflict'), schedulePushDay: rec('again'), $: () => ({}),
+        isAuthBlockErr_: e => e === 'login' || e === 'forbidden', noteAuthBlock_: e => calls.push('authBlock:' + e),
+        authBlockText_: e => String(e),
         gas: (p, cb) => { (k.kv.handles(p) ? k.kv.call(p, k.raw) : k.raw(p)).then(cb); }
       };
       vm.createContext(box);
@@ -236,10 +239,15 @@ function makeKv(o) {
       await settle();
       return { calls, k };
     }
-    for (const [label, opt] of [['未ログイン（login）', { status: STATUS.SIGNED_OUT }], ['現場のアカウント（forbidden）', { role: 'field' }], ['切り替え前（shadow）', { putReply: { ok: false, error: 'shadow', rev: 0 } }]]) {
+    const AUTH_BLOCK = /isAuthBlockErr_\(j\.error\)/.test(FN);   // 2026-10-11 の版（login・forbidden で送り直しを止める）か
+    for (const [label, opt, err] of [['未ログイン（login）', { status: STATUS.SIGNED_OUT }, 'login'], ['現場のアカウント（forbidden）', { role: 'field' }, 'forbidden'], ['切り替え前（shadow）', { putReply: { ok: false, error: 'shadow', rev: 0 } }, '']]) {
       const x = await runDay(opt);
       t('★' + label + ': 未送信の印を付け、降ろさない', x.calls.indexOf('markDayDirty') >= 0 && x.calls.indexOf('clearDayDirty') < 0, x.calls);
-      t('★' + label + ': 時間をおいて送り直す（オフライン表示）', x.calls.indexOf('retry') >= 0 && x.calls.indexOf('offline') >= 0);
+      if (AUTH_BLOCK && err) {
+        t('★' + label + ': 送り直しを止め、オフラインにせず知らせる（2026-10-11 の版）', x.calls.indexOf('retry') < 0 && x.calls.indexOf('offline') < 0 && x.calls.indexOf('authBlock:' + err) >= 0, x.calls);
+      } else {
+        t('★' + label + ': 時間をおいて送り直す（オフライン表示）', x.calls.indexOf('retry') >= 0 && x.calls.indexOf('offline') >= 0, x.calls);
+      }
       t(label + ': 送った盤面を「確定した土台」にしない・「✓同期」にしない', x.calls.indexOf('saveBase') < 0 && !x.calls.some(c => /^state:✓同期/.test(c)));
       t(label + ': Google へ流さない', x.k.raws.length === 0);
     }
