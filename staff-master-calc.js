@@ -9,6 +9,7 @@
      StaffCalc.ymd / normDate / toWareki / today / age / tenure / statusOf / headAt / leavers / turnover
      StaffCalc.period / averageTenureYears / averageAge / composition
      StaffCalc.belongsTo / siteRatios / ratioTotal / siteStats（事業所別の集計・兼務比率）
+     StaffCalc.normCorp / setCorp / corp（法人設定＝使う事業所・厨房の兼務先と比率）
      StaffCalc.normName / normKana / parseCsv / toCsv
      StaffCalc.LABELS / ENUMS / setEnums / visibleEnum / mapLegacyRow / diffFields
      StaffCalc.COMMITTEE_DEFAULTS / COMMITTEE_ROLES / COMMITTEE_KINDS / setCommittees / committees / committeeOf / committeesOf / committeeMembers / committeeStats（委員会と構成員）
@@ -23,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-11.1';
+  var VERSION = '2026-10-11.2';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -419,6 +420,65 @@
   var SITE_COL    = { facility: 'siteFacility', visit: 'siteVisit', day: 'siteDay', cm: 'siteCm' };
   var SITE_LABEL  = { facility: '施設', visit: '訪問', day: '通所', cm: '居宅' };
   var KITCHEN_SITES = { facility: 50, day: 50 };                /* 厨房は施設:通所 = 1:1 の兼務（本人裁定） */
+
+  /* ── 法人設定（2026-10-11・監査10月版 第2版 職員マスタ）────────────────
+     使う事業所（SITE_ACTIVE）と厨房の兼務先・比率（KITCHEN_SITES）を、サーバー（staff-api.gs の meta.corpJson）から
+     差し替えられるようにする。★既定は上の2つの値そのもの＝設定を一度も保存していなければ、画面も紙も今と同じ。
+     ・事業所のコード（SITE_CODES の4つ）とシートの列は変えない。差し替えるのは「どれを使うか」と「厨房の数え方」だけ
+     ・SITE_ACTIVE・KITCHEN_SITES は公開API（StaffCalc.SITE_ACTIVE 等）が同じ実体を指しているので、中身だけを入れ替える
+     ・厨房の兼務先を変えると、過去の期間の事業所別の人数も新しい設定で数え直す（履歴は持たない・本人裁定 2026-10-11）
+     ・規則は staff-api.gs の validateCorp_ と同じ（両方を同じ試験で突き合わせる） */
+  var CORP_DEFAULT = { activeSites: SITE_ACTIVE.slice(), kitchenSites: { facility: 50, day: 50 } };
+  var CORP_KEYS = ['activeSites', 'kitchenSites'];
+
+  /* 形と中身を確かめて整えた写しを返す。1つでも外れれば null（中途半端に差し替えない） */
+  function normCorp(o) {
+    if (!o || typeof o !== 'object' || Object.prototype.toString.call(o) === '[object Array]') return null;
+    var ks = Object.keys(o), i;
+    for (i = 0; i < ks.length; i++) if (CORP_KEYS.indexOf(ks[i]) < 0) return null;
+    var a = o.activeSites, k = o.kitchenSites;
+    if (Object.prototype.toString.call(a) !== '[object Array]' || !a.length || a.length > SITE_CODES.length) return null;
+    var seen = {};
+    for (i = 0; i < a.length; i++) {
+      if (typeof a[i] !== 'string' || SITE_CODES.indexOf(a[i]) < 0 || seen[a[i]]) return null;
+      seen[a[i]] = true;
+    }
+    if (!k || typeof k !== 'object' || Object.prototype.toString.call(k) === '[object Array]') return null;
+    var kk = Object.keys(k), sum = 0;
+    if (!kk.length) return null;
+    for (i = 0; i < kk.length; i++) {
+      var v = k[kk[i]];
+      if (SITE_CODES.indexOf(kk[i]) < 0 || !seen[kk[i]]) return null;       /* 兼務先は使う事業所の中から */
+      if (typeof v !== 'number' || !isFinite(v) || Math.floor(v) !== v || v < 1 || v > 100) return null;
+      sum += v;
+    }
+    if (sum !== 100) return null;
+    var out = { activeSites: [], kitchenSites: {} };
+    for (i = 0; i < SITE_CODES.length; i++) {                                /* 並びは SITE_CODES の順にそろえる */
+      if (seen[SITE_CODES[i]]) out.activeSites.push(SITE_CODES[i]);
+      if (Object.prototype.hasOwnProperty.call(k, SITE_CODES[i])) out.kitchenSites[SITE_CODES[i]] = k[SITE_CODES[i]];
+    }
+    return out;
+  }
+  /* 差し替え。null・undefined は既定へ戻す。形が違えば何もしないで false（今の値のまま動かす） */
+  function setCorp(o) {
+    var c = (o === null || o === undefined) ? normCorp(CORP_DEFAULT) : normCorp(o);
+    if (!c) return false;
+    var i, kk = Object.keys(KITCHEN_SITES);
+    SITE_ACTIVE.length = 0;
+    for (i = 0; i < c.activeSites.length; i++) SITE_ACTIVE.push(c.activeSites[i]);
+    for (i = 0; i < kk.length; i++) delete KITCHEN_SITES[kk[i]];
+    kk = Object.keys(c.kitchenSites);
+    for (i = 0; i < kk.length; i++) KITCHEN_SITES[kk[i]] = c.kitchenSites[kk[i]];
+    return true;
+  }
+  /* いまの値の写し（画面の欄を作る・既定かどうかを見る用） */
+  function corp() {
+    var out = { activeSites: SITE_ACTIVE.slice(), kitchenSites: {} }, kk = Object.keys(KITCHEN_SITES);
+    for (var i = 0; i < kk.length; i++) out.kitchenSites[kk[i]] = KITCHEN_SITES[kk[i]];
+    return out;
+  }
+  function corpDefault() { return normCorp(CORP_DEFAULT); }
 
   /* 真偽列の読み取り。statusOf の onLeave と同じ寛容さ（保存経路で 1 や '1' に化けるため） */
   function isOn(v) {
@@ -1703,6 +1763,10 @@
     SITE_COL: SITE_COL,
     SITE_LABEL: SITE_LABEL,
     KITCHEN_SITES: KITCHEN_SITES,
+    normCorp: normCorp,
+    setCorp: setCorp,
+    corp: corp,
+    corpDefault: corpDefault,
     belongsTo: belongsTo,
     siteRatios: siteRatios,
     ratioTotal: ratioTotal,

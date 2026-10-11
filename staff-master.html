@@ -440,6 +440,13 @@ h3.sub{font-size:var(--fs-lg);font-weight:var(--fw-bold);margin-bottom:var(--sp-
 .chkwrap{display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)}
 .chkwrap label{font-size:var(--fs-sm)}
 .chkwrap input{width:auto;min-width:var(--tap-min)}
+/* 法人設定と初回の案内（2026-10-11）。設定タブの中だけ＝ほかの画面と紙は変わらない */
+.corp-fs{border:0;margin:var(--sp-3) 0 0;padding:0;min-width:0}
+.corp-fs legend{font-size:var(--fs-sm);font-weight:600;padding:0;margin-bottom:var(--sp-1)}
+.wiz-steps{margin:var(--sp-2) 0 0;padding-left:1.5em;display:flex;flex-direction:column;gap:var(--sp-1)}
+.wiz-steps li{font-size:var(--fs-sm);line-height:var(--lh-base)}
+.wiz-mk{display:inline-block;min-width:3.5em;font-weight:700;color:var(--c-ink2)}
+.wiz-steps li.done .wiz-mk{color:var(--c-ok)}
 .s1{grid-column:span 1}.s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}
 .s5{grid-column:span 5}.s6{grid-column:span 6}.s7{grid-column:span 7}.s8{grid-column:span 8}
 .s9{grid-column:span 9}.s10{grid-column:span 10}.s11{grid-column:span 11}.s12{grid-column:1 / -1}
@@ -1243,6 +1250,20 @@ body.cmt-print{page:cmt}
 <!-- ══ 設定 ══ -->
 <section id="scr-settings" class="scr" aria-labelledby="hSet">
   <h2 id="hSet" class="sr-only">設定</h2>
+  <!-- 初回の案内（2026-10-11・監査10月版 第2版 職員マスタ）。接続先が空のまま開いた端末だけに出す。
+       3つが済んだか（✓）はその場の設定と接続テストの結果から決める。端末に残すのは「案内を出している」の印だけ -->
+  <div class="cd" id="wizCard" role="region" aria-labelledby="wizTitle" hidden>
+    <h3 class="sub" id="wizTitle">はじめに：この端末の設定</h3>
+    <ol class="wiz-steps">
+      <li id="wizS1"><span class="wiz-mk"></span>下の「接続先」に、接続先URLと合言葉を入れて「保存」を押す</li>
+      <li id="wizS2"><span class="wiz-mk"></span>「接続テスト」を押して、「接続できました」と出るのを確かめる</li>
+      <li id="wizS3"><span class="wiz-mk"></span>「この端末の名前」（事務所PC など・氏名は入れない）を入れて「保存」を押す＝更新元として記録されます</li>
+    </ol>
+    <p class="muted" style="margin-top:var(--sp-2)">使う事業所と厨房の方の数え方は、管理者が1回だけ「法人設定」の欄で決めます（全端末で共通）。</p>
+    <div class="row" style="margin-top:var(--sp-2)">
+      <button type="button" class="btn" id="wizClose">案内を閉じる</button>
+    </div>
+  </div>
   <div class="cd">
     <h3 class="sub">接続先</h3>
     <div class="form">
@@ -1257,6 +1278,30 @@ body.cmt-print{page:cmt}
     </div>
     <div id="cfgState" class="state" role="status" hidden></div>
   </div>
+  <!-- 法人設定（2026-10-11・監査10月版 第2版 職員マスタ）。正本はサーバー（staff-api.gs の meta.corpJson）で全端末共通。
+       一度も保存していない間は staff-master-calc.js の既定（施設・訪問・通所／厨房は施設50：通所50）のまま＝今と同じ -->
+  <div class="cd" id="corpCard">
+    <h3 class="sub">法人設定</h3>
+    <p class="muted">全端末で共通です（サーバーに保存します）。事業所の種類と、職員の所属・兼務比率の保存値は変えません。</p>
+    <fieldset class="corp-fs">
+      <legend>使う事業所</legend>
+      <p class="muted">職員の詳細で、所属の欄を出す事業所です。外しても、その事業所に所属が付いている方には欄が出ます（外せるように）。</p>
+      <div class="row" id="corpSites"></div>
+    </fieldset>
+    <fieldset class="corp-fs">
+      <legend>厨房の方の兼務先と比率（%）</legend>
+      <p class="muted">事業所の印が1つも無く、主たる事業所が「厨房」の方を、どの事業所の人数に入れるかです。合計を100にします。空欄の事業所には入れません。変えると、過去の期間の事業所別の人数も新しい設定で数え直します。</p>
+      <div class="form" id="corpKitchen"></div>
+      <p class="muted" id="corpSum" role="status"></p>
+    </fieldset>
+    <div class="row" style="margin-top:var(--sp-2)">
+      <button type="button" class="btn pri" id="corpSave" disabled>保存</button>
+      <button type="button" class="btn" id="corpReload" disabled>読み込み直す</button>
+      <span class="muted grow" id="corpWhy" hidden></span>
+    </div>
+    <p class="muted" id="corpMeta" hidden></p>
+    <div id="corpState" class="state" role="status" hidden></div>
+  </div>
   <div class="cd">
     <h3 class="sub">選択肢の管理</h3>
     <p class="muted">雇用区分と資格の選択肢を、追加・並べ替え・非表示・削除できます。コードは配り直しません（既存の職員データはそのままです）。</p>
@@ -1267,8 +1312,8 @@ body.cmt-print{page:cmt}
   </div>
   <div class="cd">
     <h3 class="sub">この画面について</h3>
-    <p class="muted">版 2026-09-23.9</p>
-    <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日）だけです。職員の氏名・記録・検索語は保存しません。</p>
+    <p class="muted">版 2026-10-11.1</p>
+    <p class="muted">この端末に保存するのは接続先・合言葉・端末名と、画面の表示状態（開いていたタブ・絞り込み・並び・集計期間・基準日・初回の案内を出しているか）だけです。職員の氏名・記録・検索語は保存しません。</p>
   </div>
 </section>
 
@@ -1425,7 +1470,7 @@ body.cmt-print{page:cmt}
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
 <script src="su-facility.js?v=2026-10-11"></script>
-<script src="staff-master-calc.js?v=2026-10-11.1"></script>
+<script src="staff-master-calc.js?v=2026-10-11.2"></script>
 <script>
 'use strict';
 
@@ -1448,7 +1493,9 @@ var UI_KEYS = {
   /* 委員会（2026-09-22.1）。残すのは「どの委員会を開いていたか」と「列を出すか」だけ＝画面の状態。
      cmtView は委員会タブの表に出す列の区分（2026-09-22.6）。どれも画面の状態だけで、
      氏名・記録・トークン等の業務データと個人情報は1文字も保存しない */
-  cmtSel: 'stfm_cmtSel', cmtCol: 'stfm_cmtCol', cmtView: 'stfm_cmtView'
+  cmtSel: 'stfm_cmtSel', cmtCol: 'stfm_cmtCol', cmtView: 'stfm_cmtView',
+  /* 初回の案内を出しているか（2026-10-11）。'1' の間だけ出す。画面の状態だけ */
+  wiz: 'stfm_wiz'
 };
 var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 var MAX_ROWS_PER_SAVE = 200;
@@ -1718,7 +1765,7 @@ function unsureWhy(e) { return isNoAnswer(e) ? '（' + errText(e) + '）' : ''; 
      実行せず1回目の応答を返す（新規登録・CSV取込・書類の追加が二重にならない）。
    ★人が押し直した時は apiPost がもう一度呼ばれる＝新しい番号になる。前の送信が入っていなかった時にちゃんと送れる。
    ★番号を知らない古いサーバーは reqId を読み飛ばす（今までどおり動く）。 */
-var REQ_WRITE_ACTIONS = ['bulkSave', 'importRows', 'uploadFile', 'removeFile', 'setEnums', 'setCommittees'];
+var REQ_WRITE_ACTIONS = ['bulkSave', 'importRows', 'uploadFile', 'removeFile', 'setEnums', 'setCommittees', 'setCorp'];
 /* 16進32文字。crypto が無い・使えない端末は時刻と Math.random から英数字32文字で作る
    （どちらもサーバーの /^[A-Za-z0-9_-]{16,64}$/ に合う） */
 function newReqId() {
@@ -4467,6 +4514,8 @@ function onSaveCfg() {
   loadList();
   loadEnums();
   loadCommittees();
+  loadCorp();
+  renderWiz();
 }
 function onTest() {
   setState('cfgState', '', '確認中…', 'サーバーに問い合わせています。');
@@ -4478,6 +4527,202 @@ function onTest() {
   }).catch(function (e) {
     setState('cfgState', 'err', '接続できませんでした（' + errText(e) + '）', errHint(e));
   });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   法人設定（2026-10-11・監査10月版 第2版 職員マスタ）
+   ・使う事業所と、厨房の方（事業所の印が1つも無い方）の兼務先・比率。正本はサーバー（meta.corpJson）。
+   ・規則と既定は staff-master-calc.js（normCorp・setCorp）が正本。画面は表示と編集だけ。
+   ・取れない（古いGAS・未接続）間は calc.js の既定のまま動く＝今と同じ。保存だけ止めて理由を出す。
+   ════════════════════════════════════════════════════════════════ */
+/* 後勝ちを断られた時のサーバーの文面（gas/staff-api.gs の CORP_CONFLICT_MSG と1字一句そろえる） */
+var CORP_CONFLICT_MSG = '他の端末が先に法人設定を変えました。開き直してから、もう一度お願いします';
+var CORP_CODES_DEF = ['facility', 'visit', 'day', 'cm'];
+var CORP = { at: null, by: '', isDefault: true, loaded: false, busy: false };
+
+function corpCodes() { return (SC() && Array.isArray(SC().SITE_CODES)) ? SC().SITE_CODES : CORP_CODES_DEF; }
+function corpLabel(code) { var L = SC() ? SC().SITE_LABEL : null; return (L && L[code]) || code; }
+function corpNow() {
+  if (SC() && typeof SC().corp === 'function') { try { return SC().corp(); } catch (e) { /* 古い版に備える */ } }
+  return { activeSites: ['facility', 'visit', 'day'], kitchenSites: { facility: 50, day: 50 } };
+}
+
+/* 欄は起動時に1回だけ作る（コードの4つは変わらない） */
+function buildCorpForm() {
+  var sw = $('corpSites'), kw = $('corpKitchen');
+  if (!sw || !kw) return;
+  clearNode(sw); clearNode(kw);
+  corpCodes().forEach(function (c) {
+    var w = document.createElement('span'); w.className = 'chkwrap';
+    var cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'corpA_' + c;
+    var lb = document.createElement('label'); lb.htmlFor = cb.id; lb.textContent = corpLabel(c);
+    cb.addEventListener('change', syncCorpForm);
+    w.appendChild(cb); w.appendChild(lb); sw.appendChild(w);
+    var f = document.createElement('div'); f.className = 'fld s3';
+    var kl = document.createElement('label'); kl.htmlFor = 'corpK_' + c; kl.textContent = corpLabel(c) + '（%）';
+    var ki = document.createElement('input'); ki.type = 'number'; ki.id = 'corpK_' + c;
+    ki.min = '1'; ki.max = '100'; ki.step = '1'; ki.inputMode = 'numeric'; ki.autocomplete = 'off';
+    ki.addEventListener('input', syncCorpForm);
+    f.appendChild(kl); f.appendChild(ki); kw.appendChild(f);
+  });
+  fillCorpForm(corpNow());
+}
+function fillCorpForm(c) {
+  corpCodes().forEach(function (code) {
+    var cb = $('corpA_' + code), ki = $('corpK_' + code);
+    if (cb) cb.checked = c.activeSites.indexOf(code) >= 0;
+    if (ki) ki.value = Object.prototype.hasOwnProperty.call(c.kitchenSites, code) ? String(c.kitchenSites[code]) : '';
+  });
+  syncCorpForm();
+}
+/* 使わない事業所の比率欄は押せなくする（値は残す＝チェックを戻せば元どおり。送るのは押せる欄だけ） */
+function syncCorpForm() {
+  var sum = 0, n = 0, locked = !!corpWhy() || CORP.busy;
+  corpCodes().forEach(function (code) {
+    var cb = $('corpA_' + code), ki = $('corpK_' + code);
+    if (!cb || !ki) return;
+    cb.disabled = locked;
+    ki.disabled = locked || !cb.checked;
+    if (!ki.disabled && txt(ki.value).trim() !== '') { sum += Number(ki.value) || 0; n++; }
+  });
+  var el = $('corpSum');
+  if (el) el.textContent = n ? ('合計 ' + sum + '%' + (sum !== 100 ? '（100 にしてください）' : '')) : '兼務先がありません（1つ以上に比率を入れてください）';
+}
+function readCorpForm() {
+  var out = { activeSites: [], kitchenSites: {} };
+  corpCodes().forEach(function (code) {
+    var cb = $('corpA_' + code), ki = $('corpK_' + code);
+    if (cb && cb.checked) out.activeSites.push(code);
+    if (cb && cb.checked && ki && txt(ki.value).trim() !== '') out.kitchenSites[code] = Number(ki.value);
+  });
+  return out;
+}
+/* 保存の前に画面で見る（サーバーも同じ規則で見る）。問題が無ければ '' */
+function corpFormError(o) {
+  var ks = Object.keys(o.kitchenSites), sum = 0, bad = '';
+  if (!o.activeSites.length) return '使う事業所を1つ以上選んでください';
+  if (!ks.length) return '厨房の方の兼務先を1つ以上選び、比率を入れてください';
+  ks.forEach(function (k) {
+    var v = o.kitchenSites[k];
+    if (!isFinite(v) || Math.floor(v) !== v || v < 1 || v > 100) bad = bad || ('比率は 1〜100 の整数で入れてください（' + corpLabel(k) + '）');
+    else sum += v;
+  });
+  if (bad) return bad;
+  if (sum !== 100) return '厨房の比率の合計を 100 にしてください（いま ' + sum + '）';
+  if (SC() && typeof SC().normCorp === 'function' && !SC().normCorp(o)) return '法人設定の形が正しくありません';
+  return '';
+}
+function corpWhy() {
+  var cfg = loadCfg();
+  if (!URL_OK_RE.test(cfg.url) || !cfg.token) return '接続先URLと合言葉を入れて保存してください';
+  if (ST.caps === null) return '接続を確かめられていません。「接続テスト」で確かめてください';
+  if (!capsHas('corp')) return '職員マスタの GAS を更新すると、ここで変えられます（いまは既定のまま動いています）';
+  if (!(SC() && typeof SC().setCorp === 'function')) return 'staff-master-calc.js を新しい版に差し替えてから、この画面を再読み込みしてください';
+  if (!CORP.loaded) return 'いまの法人設定を読み込めていません。「読み込み直す」を押してください';
+  return '';
+}
+function updateCorpUi() {
+  var why = corpWhy(), s = $('corpSave'), r = $('corpReload'), w = $('corpWhy');
+  if (!s) return;
+  s.disabled = !!why || CORP.busy;
+  if (r) r.disabled = CORP.busy || !capsHas('corp');
+  if (w) { w.textContent = why; w.hidden = !why; }
+  var m = $('corpMeta');
+  if (m) {
+    var tx = '';
+    if (CORP.loaded && CORP.isDefault) tx = '既定のままです（まだ一度も保存していません）';
+    else if (CORP.loaded) {
+      var at = fmtUpdatedAt(txt(CORP.at).replace(/#.*$/, ''));   /* 目印は「時刻#版」。時刻だけを出す */
+      tx = at ? ('最終更新 ' + (CORP.by ? CORP.by + '　' : '') + at) : '';
+    }
+    m.textContent = tx; m.hidden = !tx;
+  }
+  syncCorpForm();
+}
+/* サーバーの応答を calc.js に当てる。中身が変わった時だけ、集計・一覧を描き直す */
+function applyCorpResp(d) {
+  var before = JSON.stringify(corpNow());
+  var ok = !!(SC() && typeof SC().setCorp === 'function' && SC().setCorp(d && d.corp));
+  CORP.at = (d && typeof d.corpAt === 'string') ? d.corpAt : null;
+  CORP.by = txt(d && d.corpBy).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
+  CORP.isDefault = !!(d && d.isDefault === true);
+  CORP.loaded = ok && CORP.at !== null;
+  if (ok && JSON.stringify(corpNow()) !== before) {
+    if (ST.screen === 'dash') renderDash();
+    else if (ST.screen === 'list' && !ST.bulk) renderList();
+  }
+  return ok;
+}
+/* 起動時・接続設定の保存時・「読み込み直す」。取れなくても既定のまま動く（旧GASでも止めない） */
+function loadCorp() {
+  var cfg = loadCfg();
+  if (!URL_OK_RE.test(cfg.url) || !cfg.token) { updateCorpUi(); return Promise.resolve(false); }
+  return apiPost('getCorp', {}).then(function (d) {
+    var ok = applyCorpResp(d);
+    if (!CORP.busy) fillCorpForm(corpNow());
+    updateCorpUi();
+    return ok;
+  }).catch(function () { CORP.loaded = false; updateCorpUi(); return false; });
+}
+function onCorpReload() {
+  setState('corpState', '', '読み込み中…', 'いまの法人設定を取り直しています。');
+  loadCorp().then(function (ok) {
+    if (ok) setState('corpState', '', '', '');
+    else setState('corpState', 'err', '読み込めませんでした', '接続先と合言葉、職員マスタの GAS の版を確かめてください。いまは既定のまま動いています。');
+  });
+}
+function setCorpBusy(on) { CORP.busy = !!on; updateCorpUi(); }
+function saveCorp() {
+  if ($('corpSave').disabled) return;
+  var o = readCorpForm(), err = corpFormError(o);
+  if (err) { setState('corpState', 'warn', '保存できません', err); return; }
+  setCorpBusy(true);
+  setState('corpState', '', '保存中…', 'サーバーに送っています。');
+  apiPost('setCorp', { corp: o, by: loadCfg().by, expect: CORP.at }).then(function (d) {
+    applyCorpResp(d);
+    fillCorpForm(corpNow());
+    setState('corpState', 'ok', '保存しました', 'この端末の集計は今から、ほかの端末は次に開いた時から新しい設定になります。');
+    toast('法人設定を保存しました');
+  }).catch(function (e) {
+    if (errText(e) === CORP_CONFLICT_MSG) {
+      setState('corpState', 'err', CORP_CONFLICT_MSG,
+        'この画面の内容は保存していません。「開き直す」で最新の法人設定を取り直してから、もう一度直してください。',
+        '開き直す', function () { CORP.busy = false; onCorpReload(); });
+      return;
+    }
+    setState('corpState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e) + errDetail(e, 3));
+  }).then(function () { setCorpBusy(false); }, function () { setCorpBusy(false); });
+}
+
+/* ── 初回の案内（2026-10-11）。接続先が空のまま開いた端末だけ。閉じるまで（再読み込みしても）出す ── */
+function wizSteps() {
+  var cfg = loadCfg();
+  return [URL_OK_RE.test(cfg.url) && !!cfg.token, Array.isArray(ST.caps), !!cfg.by];
+}
+function startWizIfNew() {
+  var cfg = loadCfg();
+  if (URL_OK_RE.test(cfg.url) && cfg.token) return false;
+  lsSet(UI_KEYS.wiz, '1');
+  return true;
+}
+function renderWiz() {
+  var card = $('wizCard');
+  if (!card) return;
+  var on = lsGet(UI_KEYS.wiz) === '1';
+  card.hidden = !on;
+  if (!on) return;
+  var st = wizSteps(), all = st[0] && st[1] && st[2];
+  ['wizS1', 'wizS2', 'wizS3'].forEach(function (id, i) {
+    var li = $(id); if (!li) return;
+    li.classList.toggle('done', st[i]);
+    li.firstChild.textContent = st[i] ? '✓ 済み' : 'まだ';
+  });
+  $('wizTitle').textContent = all ? 'この端末の設定が済みました' : 'はじめに：この端末の設定';
+}
+function closeWiz() {
+  lsSet(UI_KEYS.wiz, '0');
+  renderWiz();
+  var b = $('cfgUrl'); if (b) b.focus();
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -4651,6 +4896,8 @@ function updateEnumBtn() {
   if (why) b.setAttribute('title', why); else b.removeAttribute('title');
   var wy = $('enumWhy');
   if (wy) { wy.textContent = why; wy.hidden = !why; }
+  updateCorpUi();                  /* 法人設定の欄と初回の案内も、同じ時に可否が変わる（2026-10-11） */
+  renderWiz();
 }
 
 function draftFromCurrent() {
@@ -6473,6 +6720,9 @@ function bindEvents() {
 
   /* 選択肢の管理（ダイアログ。Esc と「閉じる」で閉じ、開いたボタンへ戻る） */
   $('enumBtn').addEventListener('click', openEnums);
+  $('corpSave').addEventListener('click', saveCorp);
+  $('corpReload').addEventListener('click', onCorpReload);
+  $('wizClose').addEventListener('click', closeWiz);
   $('edClose').addEventListener('click', closeEnums);
   $('edSave').addEventListener('click', saveEnums);
   ENUM_GROUPS.forEach(function (x) {
@@ -6564,6 +6814,8 @@ function init() {
     return;
   }
   restoreUi();
+  /* 接続先が空のまま開いた端末は、設定タブを開いて初回の案内を出す（ほかの画面は接続先が無いと空のため） */
+  if (startWizIfNew()) ST.screen = 'settings';
   snapshotDefaultEnumCodes();      /* 既定コード（消せない）を、差し替えの前に控える */
   fillSelect('f_gender', 'gender', '—');
   fillSelect('f_primarySite', 'primarySite', '—');
@@ -6573,6 +6825,7 @@ function init() {
   buildCmtPicker();            /* 所属委員会の欄は委員会マスタから組み立てる */
   fillFileKinds();
   fillSettings();
+  buildCorpForm();             /* 法人設定の欄（中身は calc.js の今の値＝既定。サーバーの値は loadCorp で当てる） */
   bindEvents();
   buildListHead();
   showScreen(ST.screen);
@@ -6582,6 +6835,7 @@ function init() {
   refreshCaps();               /* サーバーが持っている機能を先に確かめる（書類ボタンの可否） */
   loadList();
   loadEnums();                 /* 選択肢はサーバーが正本。取れなければ既定値のまま動く */
+  loadCorp();                  /* 法人設定（使う事業所・厨房の数え方）。取れなければ既定のまま＝今と同じ */
   loadCommittees();            /* 委員会マスタと外部委員。取れなければ既定のマスタで動く */
   applyLocality();             /* 委員会の熊本市基準を施設情報の所在自治体と法人設定から決める（熊本市・未設定は今のまま） */
 }
