@@ -635,6 +635,10 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
      border:1px solid var(--c-border);border-radius:var(--r-md);
      background:var(--c-surface);color:var(--c-ink)}
 .cmt-pwhat>select:disabled{background:var(--c-surface2);color:var(--c-ink3)}
+/* 文字を大きくした iPhone 幅で横にはみ出さないように（2026-10-11）。収まる幅では何も変わらない：
+   折り返すのは欄が画面より広い時だけ、選択欄は画面幅を超えない */
+.cmt-pwhat{flex-wrap:wrap;max-width:100%;min-width:0}
+.cmt-pwhat>select{max-width:100%;min-width:0}
 
 /* 未充足の要約（2026-09-22.5）。表の上に「いま埋まっていない所」を件数で出す。
    判定は算出モジュールの警告（committeeStats の warn）をそのまま数えるだけ */
