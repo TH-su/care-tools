@@ -18,6 +18,8 @@
  *   ・Supabase に保存できたら、少し待って最新版を Google へも写し返す（force）。まだ Google を読んでいる画面
  *     （週間計画俯瞰・支援俯瞰・入居者マスタのデイ利用日・フェイスシート・訓練計画）が古いままにならないように。
  *   ・Supabase へ書けるのは事務所・管理者として Google でログインしている時だけ（最終判定はデータベース）。
+ *     ★例外（0010・2026-10-11 代表者の決定 A）: 現場のアカウントは、ワークスケジュールの日データ（wsday_*）の
+ *       「実施チェック（done・checks）」と「コメント」だけを kv_put_marks で書ける（盤面・職員・時刻は書けない）。
  *     ログインしていなければ、画面下に「ログインしてください」の帯を出し、通信は失敗として返す（入力は端末に残る）。
  *
  * ★スイッチが読めない時（圏外など）は、最後に読めた値を使う（localStorage su_backend_flags）。
@@ -133,6 +135,111 @@
     }, MIRROR_WAIT_MS);
   }
 
+  /* ── 現場のアカウントの日データの保存（0010・2026-10-11）──
+   * 送ってきた盤面から、札ごとの done・checks・comment だけを抜き出して kv_put_marks へ送る。
+   * checks は「何番目か」でなく内容の文言で送る（c:<文言>＝真偽を全部・内容の後ろの欄は x:<位置>）。サーバーは端末が
+   *   そろえた版（rev）と比べて、端末が変えた所だけを今の版へ差し込む＝2台が同じ札に印を付けても両方残る。
+   * ★応答: 端末がそろえた版が今の版だった時は、書いた版（変わらなければ今の版）をそのまま返す。
+   *   ただし端末の盤面（印以外）がサーバーと違う時（現場の端末で札を動かした等。サーバーには書けない）は1つ前の版を返し、
+   *   端末に次の取得でサーバーの盤面を取り込ませる（そうしないと、違う配置のまま「同期済み」になり続ける）。
+   *   端末がそろえた版より後に他の端末が書いていた時は、書けても conflict を返す＝端末は今の版を取り直し、
+   *   印を欄ごとに混ぜる統合（ワークスケジュールの rebaseDay・2026-10-11）を通してからそろえる。
+   *   （書いた版の1つ前を返す前の作りは、次の送信で自分の古い印を「変えた所」として書き戻し、他の端末の直しを消していた）
+   * 確定の解除・強制の保存（lockOverride・force）は現場には許さない。まだ無い日・形の違う印は、待っても直らない
+   * ので 'forbidden' として返す（ワークスケジュールは送り直しを止めて知らせる）。 */
+  var WSDAY_RE = /^wsday_\d{4}-\d{2}-\d{2}$/;
+  var CHECK_KEY_RE = /^\d{1,4}$/;
+  var COMMENT_KEYS = ['text', 'size', 'bold', 'pinned', 'dx', 'dy', 'w', 'h'];
+  function marksOf(data) {
+    var out = { tasks: {} }, tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
+    tasks.forEach(function (t) {
+      if (!t || typeof t.id !== 'string' || !t.id || Object.prototype.hasOwnProperty.call(out.tasks, t.id)) return;
+      var m = { done: !!t.done };
+      var cs = Array.isArray(t.contents) ? t.contents : [], ch = (t.checks && typeof t.checks === 'object' && !Array.isArray(t.checks)) ? t.checks : {};
+      var ck = {};
+      cs.forEach(function (txt, i) {
+        if (typeof txt !== 'string') return;
+        ck['c:' + txt] = !!(ck['c:' + txt] || ch[i] === true || ch[String(i)] === true);   // 同じ文言が2つあれば、どちらかで true
+      });
+      Object.keys(ch).forEach(function (k) {
+        if (!CHECK_KEY_RE.test(k) || ch[k] !== true) return;
+        var i = parseInt(k, 10);
+        if (i >= cs.length && i - cs.length < 1000) ck['x:' + (i - cs.length)] = true;   // 内容の後ろの欄（メモ等）
+      });
+      m.checks = ck;
+      if (t.comment && typeof t.comment === 'object' && typeof t.comment.text === 'string') {
+        var c = {};
+        COMMENT_KEYS.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(t.comment, k)) c[k] = t.comment[k]; });
+        m.comment = c;
+      } else if (Object.prototype.hasOwnProperty.call(t, 'comment')) m.comment = null;
+      out.tasks[t.id] = m;
+    });
+    return out;
+  }
+  /* 盤面（印以外）の比べ方。staff・columns・印を除いた札・rev を除いた meta を、キーの順に依らない文字列にして比べる */
+  function stable(v) {
+    if (v === null || v === undefined) return 'null';
+    if (typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    return '{' + Object.keys(v).filter(function (k) { return v[k] !== undefined; }).sort()
+      .map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
+  }
+  function boardOf(d) {
+    d = d || {};
+    var meta = {}, k;
+    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k) && k !== 'rev') meta[k] = d.meta[k];
+    var tasks = (Array.isArray(d.tasks) ? d.tasks : []).map(function (t) {
+      var c = {}, kk;
+      for (kk in (t || {})) if (Object.prototype.hasOwnProperty.call(t, kk) && kk !== 'done' && kk !== 'checks' && kk !== 'comment') c[kk] = t[kk];
+      return c;
+    });
+    return stable({ meta: meta, staff: d.staff || null, columns: d.columns === undefined ? null : d.columns, tasks: tasks });
+  }
+  /* 印を付けた札が事務所で作り直されていた（id が変わった）時の知らせ。待っても直らないので画面の下に出す（1日につき1回） */
+  var missingShown = {};
+  function noteMissing(key, n) {
+    if (missingShown[key] || !document.body) return;
+    missingShown[key] = true;
+    var bar = document.createElement('div');
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483000;background:#7a4b00;color:#fff;' +
+      'padding:12px 16px;font:700 15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;' +
+      'display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+    var t = document.createElement('span');
+    t.textContent = '事務所で札が作り直されていたため、' + String(key).slice(6) + ' の印 ' + n + '件を保存できませんでした。画面を開き直して、もう一度付けてください。';
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = '閉じる';
+    b.style.cssText = 'min-height:44px;padding:0 16px;border-radius:8px;border:2px solid #fff;background:transparent;color:#fff;font:inherit;cursor:pointer';
+    b.addEventListener('click', function () { if (bar.parentNode) bar.parentNode.removeChild(bar); });
+    bar.appendChild(t); bar.appendChild(b);
+    document.body.appendChild(bar);
+  }
+  function putMarks(payload, rawGas) {
+    if (payload.force || payload.lockOverride) return Promise.resolve({ ok: false, error: 'forbidden' });
+    var key = payload.key;
+    return rpc('kv_put_marks', { p_key: key, p_rev: Number(payload.rev) || 0, p_marks: marksOf(payload.data) }).then(function (r) {
+      if (r.error) return fail(r);
+      var d = r.data || { ok: false, error: '通信失敗' };
+      if (d.ok && d.marksOnly) {
+        var sent = Number(payload.rev) || 0, now = Number(d.rev) || 0;
+        if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
+        if (Number(d.missing) > 0) { try { noteMissing(key, Number(d.missing)); } catch (e) { /* 知らせを出せなくても保存の結果は返す */ } }
+        var base = d.unchanged ? now : (Number(d.baseRev) || 0);
+        if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };   // 他の端末が先に書いていた＝取り直して統合
+        // 書けた時だけ: 端末の盤面がサーバーと違えば、1つ前の版を返して取り込ませる（確かめられない時は今の版のまま）。
+        // 変わらなかった時は比べない＝取り込みの後の自動の手直しで盤面が違っても「取り込み→送信→取り込み」を繰り返さない
+        if (d.unchanged) return { ok: true, rev: now, marksOnly: true };
+        return rpc('kv_get', { p_key: key }).then(function (g) {
+          var srv = g && !g.error && g.data ? g.data.data : null;
+          var same = !srv || boardOf(srv) === boardOf(payload.data);
+          return { ok: true, rev: same ? now : Math.max(0, now - 1), marksOnly: true };
+        }, function () { return { ok: true, rev: now, marksOnly: true }; });
+      }
+      if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
+      return d;   // conflict（そろえた版が履歴に無い）・locked・shadow はそのまま（端末の今までの扱い）
+    });
+  }
+
   function rpc(name, args) {
     var sb = window.SUAuth.client();
     var once = function () { return sb.rpc(name, args); };
@@ -208,6 +315,7 @@
           });
         }
         case 'put':
+          if (st.role === 'field' && WSDAY_RE.test(String(key || ''))) return putMarks(payload, rawGas);   // 現場は印だけ（0010）
           if (st.role !== 'office' && st.role !== 'admin') return { ok: false, error: 'forbidden' };
           return rpc('kv_put', {
             p_key: key, p_rev: Number(payload.rev) || 0, p_data: payload.data,

@@ -8,6 +8,8 @@
        競合（conflict）はサーバーの版に自分の入力を載せ直して1回だけ送り直す（csRebaseEdits・2026-10-11 追加）
      C ワークスケジュール（work-schedule.html の pushDayNow）: 断られても未送信の印を残す。送り直すのは待てば直る断り（shadow）だけ
        （login・forbidden は 2026-10-11 から送り直しを止めて知らせる。どちらの版の画面でも見る）
+     E 現場のアカウントの日データの保存（0010・2026-10-11）: 札の done・checks・comment だけを kv_put_marks へ送り、
+       応答の版は「書いた版の1つ前」＝端末は次の取得でサーバーの盤面を取り込む
      D デイ利用表（daycare-roster.html の runSaver）: 断られたら切り替えを元に戻して知らせる（2026-10-10 代表者の決定）。
        偽の「保存しました」を出さない
    ★画面の本物の関数を切り出して動かす。偽物にするのは、ログインの状態・データベースの応答・Google への送信だけ。
@@ -67,6 +69,11 @@ function makeKv(o) {
       if (o.rpcError) return Promise.resolve({ error: o.rpcError });
       if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x' } });
       if (name === 'kv_head') { const revs = {}; (args.p_keys || []).forEach(k => { revs[k] = db.rev; }); return Promise.resolve({ data: { revs } }); }
+      if (name === 'kv_put_marks') {
+        if (o.marksReply) return Promise.resolve({ data: o.marksReply });
+        db.rev++; db.marks = clone(args.p_marks);   // 本物は、そろえた版が履歴にあれば古くても書く（3方向の差し込み）
+        return Promise.resolve({ data: { ok: true, rev: db.rev, baseRev: db.rev - 1, marksOnly: true, applied: 1, missing: 0 } });
+      }
       if (name === 'kv_put') {
         if (o.putReply) return Promise.resolve({ data: o.putReply });
         if (args.p_rev !== db.rev) return Promise.resolve({ data: { ok: false, conflict: true, rev: db.rev } });
@@ -86,7 +93,7 @@ function makeKv(o) {
     location: { pathname: '/care-tools/care-schedule.html' },
     document: {
       body, head: { appendChild() {} },
-      createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, textContent: '' })
+      createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, addEventListener() {}, textContent: '' })
     }
   };
   box.window = box;
@@ -128,6 +135,54 @@ function makeKv(o) {
     t('★現場のアカウントの保存は forbidden で断る（データベースへ送らない）', r.error === 'forbidden' && !k.rpcs.some(x => x.name === 'kv_put') && k.raws.length === 0, r);
     r = await k.kv.call({ action: 'get', key: 'care_schedule_v2' }, k.raw);
     t('現場のアカウントでも読み込みはできる', r.ok === true && r.rev === 5);
+
+    /* E（0010・2026-10-11）: 現場のアカウントの日データは印だけを kv_put_marks へ */
+    const dput = { action: 'put', key: 'wsday_2026-10-10', rev: 5, data: { meta: { date: '2026-10-10' }, staff: [{ name: '架空 職員' }],
+      tasks: [{ id: 't1', start: '09:00', contents: ['食事', '服薬'], done: true, checks: { 1: true, x: true, 3: true, 0: 'yes' } }, { id: 't2', done: false, comment: null }, { id: 't1', done: false }, { start: '10:00' }] } };
+    /* サーバーの盤面＝端末と同じ盤面で、印だけ違う（kv_get で比べる） */
+    const sameBoard = clone(dput.data); sameBoard.tasks[0].done = false; sameBoard.tasks[0].checks = {}; sameBoard.meta.rev = 4;
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard } });
+    r = await k.kv.call(dput, k.raw);
+    const mk = (k.rpcs.filter(x => x.name === 'kv_put_marks')[0] || {}).args;
+    t('★E 現場の日データの保存は kv_put_marks（kv_put は呼ばない）', !!mk && !k.rpcs.some(x => x.name === 'kv_put'), k.rpcs.map(x => x.name));
+    t('★E 印だけを送る（checks は内容の文言で全部・後ろの欄は x:・id の無い札と同じ id の2枚目は送らない・comment:null は消す印）',
+      !!mk && JSON.stringify(mk.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 'c:食事': false, 'c:服薬': true, 'x:1': true } }, t2: { done: false, checks: {}, comment: null } } }) && mk.p_rev === 5, mk);
+    t('★E そろえた版が今の版なら、書いた版をそのまま返す', r.ok === true && r.rev === 6 && k.db.rev === 6, r);
+    t('E 書けたら Google への写し返しを予約する', k.timers.length === 1);
+    k = makeKv({ role: 'field' });
+    r = await k.kv.call(Object.assign({}, dput, { force: true }), k.raw);
+    t('★E 現場の強制の保存（force）は送らずに forbidden', r.error === 'forbidden' && k.rpcs.length === 0, r);
+    r = await k.kv.call(Object.assign({}, dput, { lockOverride: true }), k.raw);
+    t('★E 現場の確定の解除（lockOverride）も送らずに forbidden', r.error === 'forbidden' && k.rpcs.length === 0, r);
+    for (const e of ['noday', 'badmarks']) {
+      k = makeKv({ role: 'field', marksReply: { ok: false, error: e, rev: 0 } });
+      r = await k.kv.call(dput, k.raw);
+      t('E 待っても直らない断り（' + e + '）は forbidden として返す', r.error === 'forbidden' && k.timers.length === 0, r);
+    }
+    k = makeKv({ role: 'field', db: { rev: 8 } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 他の端末が先に書いていた（送った版5・書く前の版8）なら、書けても conflict＝取り直して統合させる', r.ok === false && r.conflict === true && r.rev === 9 && k.timers.length === 1, r);
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard }, marksReply: { ok: true, rev: 5, unchanged: true, marksOnly: true } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 変わらなかった・版も同じ・盤面も同じ → そのまま ok（写し返しもしない）', r.ok === true && r.rev === 5 && k.timers.length === 0, r);
+    const movedBoard = clone(sameBoard); movedBoard.tasks[0].start = '11:00';   // 事務所の盤面では t1 は 11:00（現場の端末は 09:00 のまま）
+    k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard }, marksReply: { ok: true, rev: 5, unchanged: true, marksOnly: true } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 変わらなかった時は盤面が違っても今の版を返す（取り込み→送信の繰り返しを起こさない）', r.ok === true && r.rev === 5 && !k.rpcs.some(x => x.name === 'kv_get'), r);
+    k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 端末の盤面がサーバーと違う（現場で札を動かした等）→ 1つ前の版を返して、次の取得でサーバーの盤面を取り込ませる', r.ok === true && r.rev === 5 && k.db.rev === 6, r);
+    k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard }, marksReply: { ok: true, rev: 6, baseRev: 5, marksOnly: true, applied: 1, missing: 2 } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 印を付けた札が作り直されていた（missing）→ 画面の下に知らせる（1日に1回）', r.ok === true && k.banners.length === 1);
+    await k.kv.call(dput, k.raw);
+    t('E 同じ日の知らせは重ねない', k.banners.length === 1);
+    k = makeKv({ role: 'field', marksReply: { ok: true, rev: 9, unchanged: true, marksOnly: true } });
+    r = await k.kv.call(dput, k.raw);
+    t('E 変わらなかったがサーバーの方が新しい → conflict（取り直させる）', r.conflict === true && r.rev === 9, r);
+    k = makeKv({ role: 'field', marksReply: { ok: false, error: 'locked', rev: 3 } });
+    r = await k.kv.call(dput, k.raw);
+    t('E 確定した日は locked をそのまま返す', r.error === 'locked', r);
 
     k = makeKv({ putReply: { ok: false, error: 'shadow', rev: 0 } });
     r = await k.kv.call(put, k.raw);
@@ -269,7 +324,8 @@ function makeKv(o) {
       const k = makeKv(kvOpt);
       const calls = [];
       const rec = name => function () { calls.push(name); };
-      const day = { meta: { date: '2026-10-10', rev: 5 }, staff: [{ name: '架空 職員' }] };
+      const day = { meta: { date: '2026-10-10', rev: 5 }, staff: [{ name: '架空 職員' }],
+                    tasks: [{ id: 't1', staffId: 's1', start: '09:00', contents: ['食事'], done: true, checks: { 0: true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } }] };
       const box = {
         console, JSON, Math, Date, Number, String, Array, Object, Promise, Error,
         syncOn: () => true, dayPushBusy_: false, dayPushAgain_: false, lastPushed: {}, unlockForceDates_: {}, conflictN_: {},
@@ -295,7 +351,7 @@ function makeKv(o) {
       return { calls, k };
     }
     const AUTH_BLOCK = /isAuthBlockErr_\(j\.error\)/.test(FN);   // 2026-10-11 の版（login・forbidden で送り直しを止める）か
-    for (const [label, opt, err] of [['未ログイン（login）', { status: STATUS.SIGNED_OUT }, 'login'], ['現場のアカウント（forbidden）', { role: 'field' }, 'forbidden'], ['切り替え前（shadow）', { putReply: { ok: false, error: 'shadow', rev: 0 } }, '']]) {
+    for (const [label, opt, err] of [['未ログイン（login）', { status: STATUS.SIGNED_OUT }, 'login'], ['現場のアカウントで書けない日（forbidden）', { role: 'field', marksReply: { ok: false, error: 'noday', rev: 0 } }, 'forbidden'], ['切り替え前（shadow）', { putReply: { ok: false, error: 'shadow', rev: 0 } }, '']]) {
       const x = await runDay(opt);
       t('★' + label + ': 未送信の印を付け、降ろさない', x.calls.indexOf('markDayDirty') >= 0 && x.calls.indexOf('clearDayDirty') < 0, x.calls);
       if (AUTH_BLOCK && err) {
@@ -313,6 +369,13 @@ function makeKv(o) {
     }
     const c = await runDay({ db: { rev: 7 } });
     t('★版が古い時は競合の取り込み（3方向のマージ）へ進む', c.calls.indexOf('conflict') >= 0 && c.calls.indexOf('clearDayDirty') < 0, c.calls);
+    const fm = await runDay({ role: 'field' });
+    const sent = fm.k.rpcs.filter(r => r.name === 'kv_put_marks')[0];
+    t('★E 現場のアカウントの日データの保存は kv_put_marks へ（kv_put は呼ばない・Google へ流さない）', !!sent && !fm.k.rpcs.some(r => r.name === 'kv_put') && fm.k.raws.length === 0, fm.k.rpcs);
+    t('★E 送るのは札の done・checks・comment だけ（担当・時刻・職員・メタは送らない）',
+      !!sent && JSON.stringify(sent.args.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 'c:食事': true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } } } }), sent && sent.args);
+    t('★E 書けたら未送信の印を降ろし、土台を確定する（版は書いた版）',
+      fm.calls.indexOf('clearDayDirty') >= 0 && fm.calls.indexOf('saveBase') >= 0 && fm.k.db.rev === 6, fm.calls);
     const ok = await runDay({});
     t('（対照）ログイン済みなら保存でき、未送信の印が降り、土台を確定する', ok.calls.indexOf('clearDayDirty') >= 0 && ok.calls.indexOf('saveBase') >= 0 && ok.calls.some(x => /^state:✓同期/.test(x)), ok.calls);
   }
