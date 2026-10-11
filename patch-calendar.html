@@ -239,7 +239,7 @@ body {
       <p class="hint">この端末の開始日と場所の設定を1つのファイルに書き出し、新しい端末で読み込めます。ファイルに入るのは入居者のID・開始日・場所・設定した人と時刻だけで、氏名は入りません。</p>
       <div class="row">
         <button class="btn" id="ioExport" type="button">設定を書き出す</button>
-        <label class="btn" for="ioFile">設定を読み込む</label>
+        <button class="btn" id="ioPick" type="button">設定を読み込む</button>
         <input id="ioFile" type="file" accept="application/json,.json" hidden>
       </div>
       <p class="msg" id="ioMsg" role="status" hidden></p>
@@ -864,7 +864,7 @@ function ioEntry(v) {
   if (sb.by && sb.at) { out.by = sb.by; out.at = sb.at; }
   return out;
 }
-function ioExportObj(all, legacy) {
+function ioExportObj(all, legacy, moved) {
   var res = {};
   Object.keys(all || {}).forEach(function (k) { var e = ioEntry(all[k]); if (e) res[k] = e; });
   var man = null;
@@ -872,7 +872,10 @@ function ioExportObj(all, legacy) {
     man = { start: legacy.start.iso, no: legacy.no, prev: legacy.prev };
     if (legacy.by && legacy.at) { man.by = legacy.by; man.at = legacy.at; }
   }
-  return { app: IO_APP, v: IO_VER, exportedAt: new Date().toISOString(), res: res, manual: man };
+  /* 移し済みの印（手入力の設定を「この方の設定にする」で移した方の ID）も持っていく。持っていかないと新しい端末で
+     同じ表をもう一度別の方へ移せてしまう（1回だけ移せる守りが外れる） */
+  var mv = (typeof moved === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(moved)) ? moved : '';
+  return { app: IO_APP, v: IO_VER, exportedAt: new Date().toISOString(), res: res, manual: man, moved: mv };
 }
 /* 読み込んだファイルの中身を確かめる。{ok, res, manual, bad} か {ok:false, why} */
 function ioParse(o) {
@@ -886,7 +889,8 @@ function ioParse(o) {
   });
   var man = (o.manual === null || o.manual === undefined) ? null : ioEntry(o.manual);
   if (o.manual && !man) bad++;
-  return { ok: true, res: res, manual: man, bad: bad };
+  var mv = (typeof o.moved === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(o.moved)) ? o.moved : '';
+  return { ok: true, res: res, manual: man, bad: bad, moved: mv };
 }
 function ioNewer(a, b) {   /* a の方が新しいか（時刻が無い方は古いとみなす） */
   var ta = a && a.at ? Date.parse(a.at) : NaN, tb = b && b.at ? Date.parse(b.at) : NaN;
@@ -926,7 +930,7 @@ function ioReset() {
 function ioDoExport() {
   var all = readByRes();
   if (all === null) { ioShow('この端末の入居者ごとの設定が読めないため、書き出せません。', true); return; }
-  var obj = ioExportObj(all, legacySetting());
+  var obj = ioExportObj(all, legacySetting(), movedTo());
   var n = Object.keys(obj.res).length;
   if (!n && !obj.manual) { ioShow('書き出す設定がまだありません。', true); return; }
   var t = new Date(), p2 = function (x) { return (x < 10 ? '0' : '') + x; };
@@ -984,6 +988,8 @@ function ioApply() {
       localStorage.setItem(LS_PREV, String(imp.manual.prev));
       if (imp.manual.by && imp.manual.at) localStorage.setItem(LS_SETBY, JSON.stringify({ by: imp.manual.by, at: imp.manual.at }));
     }
+    /* 移し済みの印: この端末にまだ無ければファイルの印を入れる（ある時はこの端末の印のまま） */
+    if (imp.moved && !movedTo()) localStorage.setItem(LS_MOVED, imp.moved);
   } catch (e) { ioShow('この端末に書き込めませんでした（空き容量を確かめてください）。', true); ioReset(); return; }
   ioShow('読み込みました（追加 ' + plan.add + '件・置き換え ' + plan.replace + '件' + (plan.manual === 'add' || plan.manual === 'replace' ? '・手入力の設定' : '') + '）。');
   ioReset();
@@ -1001,6 +1007,7 @@ render();
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
 document.getElementById('ioExport').addEventListener('click', ioDoExport);
+document.getElementById('ioPick').addEventListener('click', function () { document.getElementById('ioFile').click(); });
 document.getElementById('ioFile').addEventListener('change', function (e) { ioOnFile(e.target.files && e.target.files[0]); });
 document.getElementById('ioApply').addEventListener('click', ioApply);
 document.getElementById('ioCancel').addEventListener('click', function () { ioReset(); ioShow(''); });

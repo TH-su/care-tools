@@ -229,7 +229,11 @@ function makeKv(o) {
         noteSyncSuccess_: rec('syncSuccess'), showOfflineIfPersistent_: rec('offline'), scheduleRetry_: rec('retry'),
         failReason_: e => String(e || ''), verifyPutLanded_: rec('verify'), friendlyErr: e => String(e || ''),
         handleLockedReject_: rec('locked'), handleDayConflict_: rec('conflict'), schedulePushDay: rec('again'), $: () => ({}),
-        isAuthBlockErr_: e => e === 'login' || e === 'forbidden', noteAuthBlock_: e => calls.push('authBlock:' + e),
+        isAuthBlockErr_: (function () {   /* 新しい版の画面は本物の判定を使う（同じ式の偽物にしない） */
+          const m = WS.match(/function isAuthBlockErr_\(e\) \{[^}]*\}/);
+          return m ? new Function('return ' + m[0])() : (e => e === 'login' || e === 'forbidden');
+        })(),
+        noteAuthBlock_: e => calls.push('authBlock:' + e),
         authBlockText_: e => String(e),
         gas: (p, cb) => { (k.kv.handles(p) ? k.kv.call(p, k.raw) : k.raw(p)).then(cb); }
       };
@@ -245,6 +249,11 @@ function makeKv(o) {
       t('★' + label + ': 未送信の印を付け、降ろさない', x.calls.indexOf('markDayDirty') >= 0 && x.calls.indexOf('clearDayDirty') < 0, x.calls);
       if (AUTH_BLOCK && err) {
         t('★' + label + ': 送り直しを止め、オフラインにせず知らせる（2026-10-11 の版）', x.calls.indexOf('retry') < 0 && x.calls.indexOf('offline') < 0 && x.calls.indexOf('authBlock:' + err) >= 0, x.calls);
+        /* 止めた後に必ず送り直す道（止めを外すと recoverNow_ が未送信の日を送る）が画面にあること */
+        const cab = (WS.match(/function clearAuthBlock_\(retryNow\) \{[\s\S]*?\n  \}/) || [''])[0];
+        t('★' + label + ': 止めを外すと未送信の日を送り直す（clearAuthBlock_ → recoverNow_）・ログインの控えの変化・設定の保存・同期の表示を押した時に外す',
+          /if \(retryNow\) \{ try \{ recoverNow_\(\); \}/.test(cab) && /AUTH_SESSION_RE\.test\(ev\.key\)\) \{ try \{ clearAuthBlock_\(true\);/.test(WS)
+          && /if \(clearAuthBlock_\(true\)\) \{ toast\('もう一度送ってみます'\); return; \}/.test(WS), cab.slice(0, 80));
       } else {
         t('★' + label + ': 時間をおいて送り直す（オフライン表示）', x.calls.indexOf('retry') >= 0 && x.calls.indexOf('offline') >= 0, x.calls);
       }

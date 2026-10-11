@@ -59,12 +59,13 @@ console.log('\n— ① 書き出し —');
     r3: { start: '2026-09-15', no: 1, prev: 0 }
   };
   const legacy = { start: PD('2026-08-01'), no: 3, prev: 2, by: '現場の端末', at: '2026-08-01T00:00:00.000Z' };
-  const o = box.ioExportObj(all, legacy);
+  const o = box.ioExportObj(all, legacy, 'r1');
   t('画面の名前と版を付ける', o.app === 'patch-calendar' && o.v === 1 && !isNaN(Date.parse(o.exportedAt)));
   t('形の正しい設定だけ書き出す（壊れた r2 は入れない）', J(Object.keys(o.res).sort()) === J(['r1', 'r3']));
   t('中身は開始日・場所・前日の場所・設定した人と時刻だけ', J(o.res.r1) === J({ start: '2026-10-01', no: 2, prev: 1, by: '事務所PC', at: '2026-10-01T09:00:00.000Z' }) && J(o.res.r3) === J({ start: '2026-09-15', no: 1, prev: 0 }));
   t('手入力の設定も入る', J(o.manual) === J({ start: '2026-08-01', no: 3, prev: 2, by: '現場の端末', at: '2026-08-01T00:00:00.000Z' }));
   t('手入力の設定が無ければ null', box.ioExportObj(all, null).manual === null);
+  t('★移し済みの印（手入力の設定を移した方の ID）も持っていく・形の違う印は空', o.moved === 'r1' && box.ioExportObj(all, null, '<x>').moved === '' && box.ioExportObj(all, null, '').moved === '');
   t('★氏名の欄は無い（混ざっていても書き出さない）', !/name|氏名|"nm"|見本/.test(J(o)));
 }
 
@@ -73,6 +74,7 @@ console.log('\n— ② 読み込む中身の確認 —');
   t('別の画面のファイルは読まない', box.ioParse({ app: 'other', v: 1, res: {} }).ok === false && box.ioParse(null).ok === false && box.ioParse({ app: 'patch-calendar', v: 2, res: {} }).ok === false);
   t('res が無い・配列は読まない', box.ioParse({ app: 'patch-calendar', v: 1 }).ok === false && box.ioParse({ app: 'patch-calendar', v: 1, res: [] }).ok === false);
   const p = box.ioParse({ app: 'patch-calendar', v: 1, res: { r1: { start: '2026-10-01', no: 2, prev: 0 }, r2: { start: 'x', no: 1 }, 'bad id<>': { start: '2026-10-01', no: 1, prev: 0 }, r4: { start: '2026-10-01', no: 99, prev: 0 } }, manual: { start: 'x' } });
+  t('移し済みの印を読む（形が違えば空）', box.ioParse({ app: 'patch-calendar', v: 1, res: {}, moved: 'r9' }).moved === 'r9' && box.ioParse({ app: 'patch-calendar', v: 1, res: {}, moved: 'x y' }).moved === '' && box.ioParse({ app: 'patch-calendar', v: 1, res: {} }).moved === '');
   t('形の違う行（日付・場所の番号・ID・手入力）は読まずに数える', p.ok && J(Object.keys(p.res)) === J(['r1']) && p.bad === 4 && p.manual === null, p);
 }
 
@@ -115,6 +117,8 @@ console.log('\n— ④⑤ 書く時の守り（形を見る）—');
   t('大きすぎるファイルは読まない', /file\.size > IO_MAX_BYTES/.test(onFile));
   t('手入力の設定を書く時は、先に前の「設定した人」を消す（新しい値と前の人の組み合わせを残さない）', apply.indexOf("localStorage.removeItem(LS_SETBY)") < apply.indexOf('localStorage.setItem(LS_START'));
   t('書き込めなかった時は知らせて止める', /catch \(e\) \{ ioShow\('この端末に書き込めませんでした/.test(apply));
+  t('★移し済みの印は、この端末にまだ無い時だけ入れる（ある時はこの端末の印のまま）', /if \(imp\.moved && !movedTo\(\)\) localStorage\.setItem\(LS_MOVED, imp\.moved\);/.test(apply));
+  t('書き出しに移し済みの印を渡す', /ioExportObj\(all, legacySetting\(\), movedTo\(\)\)/.test(exp));
   t('読み込んだ後は表示を取り直す', /if \(state\.rid\) selectResident\(state\.rid\);\s*else \{ loadState\(\); render\(\); \}/.test(apply));
 }
 
@@ -122,6 +126,7 @@ console.log('\n— ⑥ 画面のつなぎ —');
 {
   const ctl = SRC.slice(SRC.indexOf('<div class="ctl noprint">'), SRC.indexOf('<div class="wrap">'));
   t('★欄は紙に出さない（.ctl noprint の中）', ctl.indexOf('id="ioBox"') > 0 && ctl.indexOf('id="ioExport"') > 0 && ctl.indexOf('id="ioFile"') > 0);
+  t('「設定を読み込む」は本物のボタン（キーボードで押せる）でファイル選択を開く', /<button class="btn" id="ioPick" type="button">設定を読み込む<\/button>/.test(SRC) && /getElementById\('ioPick'\)\.addEventListener\('click', function \(\) \{ document\.getElementById\('ioFile'\)\.click\(\); \}\)/.test(SRC) && !/<label class="btn" for="ioFile">/.test(SRC));
   t('ボタンをつないでいる', /getElementById\('ioExport'\)\.addEventListener\('click', ioDoExport\)/.test(SRC) && /getElementById\('ioApply'\)\.addEventListener\('click', ioApply\)/.test(SRC));
   t('隠した欄は本当に隠れる（.row の display:flex に負けない）', /\.io \[hidden\] \{ display: none !important; \}/.test(SRC));
   t('知らせは読み上げられる（role=status）', /<p class="msg" id="ioMsg" role="status" hidden><\/p>/.test(SRC));
