@@ -2741,6 +2741,30 @@ function syncCwDate() {
   if (!on) { $('f_cwDate').value = ''; setDateNote('f_cwDate', ''); }
 }
 
+/* 詳細画面の見出しの下の行（2026-10-11・監査10月版 第2版 職員マスタ）。最終更新の更新元と日時を足す。
+   更新元はサーバーが保存のたびに書く updatedBy（設定の「この端末の名前」）、日時は updatedAt。
+   更新元が空の保存は日時だけ。どちらも無い古い行は今までどおり「職員ID／版」だけ。textContent で出す */
+function fmtUpdatedAt(v) {
+  var t = txt(v), d = new Date(t);
+  if (!t || isNaN(d.getTime())) return '';
+  var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+function dtMetaText(row, extra) {
+  if (!row) return '未登録';
+  var s = '職員ID ' + row.id + '／版 ' + row.rev + (extra || '');
+  var at = fmtUpdatedAt(row.updatedAt), by = txt(row.updatedBy).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
+  if (at) s += '／最終更新 ' + (by ? by + '　' : '') + at;
+  return s;
+}
+/* 保存に成功した行に、手元で最終更新を入れる（サーバーの応答には更新元・日時が無いため）。
+   次に一覧を読み直すとサーバーが書いた値に置き換わる。更新元はサーバーと同じく設定の「この端末の名前」 */
+function stampSavedRow(row) {
+  if (!row) return;
+  row.updatedAt = new Date().toISOString();
+  row.updatedBy = txt(loadCfg().by).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
+}
+
 function openDetail(id) {
   var row = id ? ST.byId[id] : null;
   if (id && !row) { toast('この職員が見つかりません。再読み込みしてください'); return; }
@@ -2770,7 +2794,7 @@ function openDetail(id) {
   rebuildDetailChoices();
   fillForm(base);
   $('dtName').textContent = row ? (txt(row.name) || '（氏名未入力）') : '（新規の職員）';
-  $('dtMeta').textContent = row ? ('職員ID ' + row.id + '／版 ' + row.rev) : '未登録';
+  $('dtMeta').textContent = dtMetaText(row);
   setState('dtState', '', '', '');
   updateDerived();
   updateDirtyUi();
@@ -3099,7 +3123,8 @@ function applyDetailResult(d, cur, dropped, partialErr) {
     ST.detail.id = nid;
     ST.detail.rev = nrow.rev;
     ST.detail.base = normRow(nrow);
-    $('dtMeta').textContent = '職員ID ' + nid + '／版 ' + nrow.rev + (unsure ? '（確かめ中）' : '');
+    if (!unsure) stampSavedRow(nrow);       /* 届いたか確かめ中の時は、まだ最終更新を入れない */
+    $('dtMeta').textContent = dtMetaText(nrow, unsure ? '（確かめ中）' : '');
     buildListHead();
     renderList();
   } else if (applied.length) {
@@ -3110,7 +3135,8 @@ function applyDetailResult(d, cur, dropped, partialErr) {
       ST.detail.rev = row.rev;
       ST.detail.base = normRow(row);
       if (ST.detail.insShown) ST.detail.insBase = txt(cur.empInsNo);
-      $('dtMeta').textContent = '職員ID ' + row.id + '／版 ' + row.rev;
+      stampSavedRow(row);
+      $('dtMeta').textContent = dtMetaText(row);
       refreshRow(row.id);
     }
   }
@@ -3228,7 +3254,8 @@ function adoptCreated(dt, p, row) {
   dt.id = nrow.id;
   dt.rev = nrow.rev;
   dt.base = normRow(nrow);
-  $('dtMeta').textContent = '職員ID ' + nrow.id + '／版 ' + nrow.rev;
+  stampSavedRow(nrow);
+  $('dtMeta').textContent = dtMetaText(nrow);
   $('dtName').textContent = txt(p.form.name) || '（氏名未入力）';
   updateDirtyUi();
   updateFilesBtn();
@@ -3244,7 +3271,7 @@ function settleIdPending(dt, p) {
   if (row && sameStaff(row, p.sent, true)) {
     dt.rev = Number(row.rev) || dt.rev;
     if (dt.base) dt.base.rev = dt.rev;
-    $('dtMeta').textContent = '職員ID ' + p.id + '／版 ' + dt.rev;
+    $('dtMeta').textContent = dtMetaText({ id: p.id, rev: dt.rev, updatedAt: row.updatedAt, updatedBy: row.updatedBy });
     updateDirtyUi();
     updateFilesBtn();
     setState('dtState', 'ok', '登録を確かめました', '職員ID ' + p.id + ' で登録されていました。「保存」と「書類」を使えます。');
@@ -3428,7 +3455,8 @@ function applyFilesRev(row, rev) {
   if (ST.detail && txt(ST.detail.id) === txt(row.id)) {
     ST.detail.rev = row.rev;
     if (ST.detail.base) ST.detail.base.filesJson = toArr(row.filesJson);
-    $('dtMeta').textContent = '職員ID ' + row.id + '／版 ' + row.rev;
+    stampSavedRow(row);                    /* 書類の追加・削除もサーバーは更新元・日時を書く */
+    $('dtMeta').textContent = dtMetaText(row);
   }
 }
 
