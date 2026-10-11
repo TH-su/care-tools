@@ -153,6 +153,9 @@ body.edit-mode #syncBadge.nosync { background: rgba(43,16,0,.75); }
 #emptyGuide ol { margin: 8px 0; padding-left: 22px; }
 #emptyGuide li { margin: 6px 0; line-height: 1.5; }
 #emptyGuide code { background: #fff; border: 1px solid var(--g3); border-radius: 4px; padding: 1px 5px; }
+/* 作成の流れ（2026-10-11）。職員が空の時の箱の中だけ */
+#emptyGuide .egflow { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--warn); }
+#emptyGuide h3 { margin: 0 0 4px; font-size: 0.875rem; color: #9a3412; }
 
 main { padding: 0 10px 60px; }
 .view { display: none; } .view.on { display: block; }
@@ -424,18 +427,18 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
   <button id="btnRedo" title="やり直す (Ctrl+Y / Cmd+Shift+Z)" aria-label="やり直す">↪</button>
   <button id="btnHistory" title="変更履歴">履歴</button>
   <button id="btnSave" class="savebtn" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl+S / Cmd+S)">💾 保存</button>
-  <button id="btnAuto" class="primary">⚡ 自動作成</button>
-  <button id="btnActual" title="実績レイヤに切り替えて実際の勤務を記録（予定があれば複製して開始）">📝 実績</button>
+  <button id="btnAuto" class="primary" aria-label="自動作成">⚡ 自動作成</button>
+  <button id="btnActual" title="実績レイヤに切り替えて実際の勤務を記録（予定があれば複製して開始）" aria-label="実績">📝 実績</button>
   <button id="btnFreee" title="freee勤怠スケジュールCSVを出力">freee出力</button>
   <button id="btnFit" title="シフト表全体を1画面に収めて俯瞰／通常表示に戻す">🔍 全体表示</button>
-  <button id="btnPrint">🖨 印刷</button>
+  <button id="btnPrint" aria-label="印刷">🖨 印刷</button>
   <span class="tabs" id="printLayout" title="印刷レイアウト（A3横＝従来1枚／A3縦2分割＝氏名+1〜15日・16〜末日の2枚）">
     <button data-pl="landscape" class="on" title="A3横1枚（全日数）">A3横</button>
     <button data-pl="split" title="A3縦2分割（前半1〜15日／後半16〜末日）">A3縦2分割</button>
   </span>
-  <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く">📋 ワースケ</button>
-  <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く">📅 週間計画</button>
-  <button onclick="window.open('shift-analyzer.html','_blank')" title="過去シフト・アナライザを開く">📊 過去シフト分析</button>
+  <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く" aria-label="ワースケを開く">📋 ワースケ</button>
+  <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く" aria-label="週間計画を開く">📅 週間計画</button>
+  <button onclick="window.open('shift-analyzer.html','_blank')" title="過去シフト・アナライザを開く" aria-label="過去シフト分析を開く">📊 過去シフト分析</button>
   <!-- 編集モード（サーバー発行の編集権を1台だけが持つ）。閲覧中は編集操作を受け付けない。
        .reveal-toggle は付けない（#toolbar .reveal-toggle の margin-left:auto と隣接セレクタを壊さないため）。 -->
   <label id="editToggle" class="noprint" title="編集モードに切り替えます（同時に編集できるのは1台だけ・他端末は閲覧のまま自動更新されます）">
@@ -486,8 +489,8 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
   <div id="printTitle"></div>
 
   <div id="view-grid" class="view on">
-    <div id="emptyGuide" class="noprint" style="display:none">
-      <h2>⚠ この画面に職員データがありません</h2>
+    <div id="emptyGuide" class="noprint" style="display:none" role="region" aria-labelledby="egTitle">
+      <h2 id="egTitle">⚠ この画面に職員データがありません</h2>
       <p>データは<b>端末ごと・URLごとに別々</b>に保存されます。複数端末・別URLでは自動では現れません。下記のいずれかで開始してください。</p>
       <ol>
         <li><b>クラウド同期を設定（推奨・複数端末で共有＆消失防止）</b><br>
@@ -498,6 +501,17 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
       <div class="flexrow">
         <button id="egSync" class="act">① 同期設定を開く</button>
         <button id="egImport" class="act ghost">② 名簿インポートを開く</button>
+      </div>
+      <!-- 作成の流れ（2026-10-11・監査10月版 第2版 シフト作成 第2手）。職員が空の時だけ出る箱の中なので、
+           職員がいる画面・印刷は変わらない -->
+      <div class="egflow">
+        <h3>職員が入ったら（シフトを作る流れ）</h3>
+        <ol>
+          <li><b>職員を登録する</b>　「マスタ」→「職員」で追加するか、「職員一括取込」で取り込みます。</li>
+          <li><b>必要数を決める</b>　シフト表の下部の「必要数」の行で、早番・遅番の人数を入れます（「前提」欄＝その月の既定、各日のマス＝その日だけ）。</li>
+          <li><b>⚡ 自動作成</b>　上の「⚡ 自動作成」で下書きを作り、確かめて直します。</li>
+          <li><b>🖨 印刷</b>　「🖨 印刷」で刷ります（A3横1枚／A3縦2分割）。</li>
+        </ol>
       </div>
     </div>
     <div id="gridWrap"></div>
@@ -636,7 +650,7 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
       <div class="panel">
         <h2>🏢 施設情報の設定</h2>
         <p class="muted">施設名・事業所（施設／訪問／通所）の表示名・定休日・初期職員をまとめて設定します。work-scheduleアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映）。</p>
-        <button id="setFacility" class="act">🏢 施設情報の設定</button>
+        <button id="setFacility" class="act" aria-label="施設情報の設定">🏢 施設情報の設定</button>
       </div>
       <div class="panel">
         <h2>freee勤務パターンマスタ</h2>
