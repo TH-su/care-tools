@@ -166,6 +166,9 @@ function makeKv(o) {
     r = await k.kv.call(dput, k.raw);
     t('★E 変わらなかった・版も同じ・盤面も同じ → そのまま ok（写し返しもしない）', r.ok === true && r.rev === 5 && k.timers.length === 0, r);
     const movedBoard = clone(sameBoard); movedBoard.tasks[0].start = '11:00';   // 事務所の盤面では t1 は 11:00（現場の端末は 09:00 のまま）
+    k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard }, marksReply: { ok: true, rev: 5, unchanged: true, marksOnly: true } });
+    r = await k.kv.call(dput, k.raw);
+    t('★E 変わらなかった時は盤面が違っても今の版を返す（取り込み→送信の繰り返しを起こさない）', r.ok === true && r.rev === 5 && !k.rpcs.some(x => x.name === 'kv_get'), r);
     k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard } });
     r = await k.kv.call(dput, k.raw);
     t('★E 端末の盤面がサーバーと違う（現場で札を動かした等）→ 1つ前の版を返して、次の取得でサーバーの盤面を取り込ませる', r.ok === true && r.rev === 5 && k.db.rev === 6, r);

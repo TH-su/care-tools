@@ -226,7 +226,9 @@
         if (Number(d.missing) > 0) { try { noteMissing(key, Number(d.missing)); } catch (e) { /* 知らせを出せなくても保存の結果は返す */ } }
         var base = d.unchanged ? now : (Number(d.baseRev) || 0);
         if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };   // 他の端末が先に書いていた＝取り直して統合
-        // 端末の盤面がサーバーと違えば、1つ前の版を返して取り込ませる（確かめられない時は今の版のまま）
+        // 書けた時だけ: 端末の盤面がサーバーと違えば、1つ前の版を返して取り込ませる（確かめられない時は今の版のまま）。
+        // 変わらなかった時は比べない＝取り込みの後の自動の手直しで盤面が違っても「取り込み→送信→取り込み」を繰り返さない
+        if (d.unchanged) return { ok: true, rev: now, marksOnly: true };
         return rpc('kv_get', { p_key: key }).then(function (g) {
           var srv = g && !g.error && g.data ? g.data.data : null;
           var same = !srv || boardOf(srv) === boardOf(payload.data);
