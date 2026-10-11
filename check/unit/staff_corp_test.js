@@ -138,12 +138,32 @@ console.log('\n— ⑤ 初回の案内 —');
   sb.renderWiz();
   t('①だけ済み', els.wizS1.classList.on && !els.wizS2.classList.on && !els.wizS3.classList.on);
   sb.ST.caps = ['enums'];
+  sb.renderWiz();
+  t('疎通確認（合言葉を見ない）だけでは2段目を ✓ にしない', !els.wizS2.classList.on);
+  sb.ST.authOk = true;
   sb.cfg.by = '事務所PC';
   sb.renderWiz();
   t('3つ済めば「済みました」（閉じるまで出したまま）', els.wizCard.hidden === false && /済みました/.test(els.wizTitle.textContent) && /済み/.test(els.wizS3.firstChild.textContent));
   sb.lsSet('stfm_wiz', '0');
   sb.renderWiz();
   t('閉じたら出さない', els.wizCard.hidden === true);
+  sb.cfg = { url: '', token: '', by: '' };
+  t('閉じた端末は、接続先が空のままでも出し直さない', sb.startWizIfNew() === false && sb.lsGet('stfm_wiz') === '0');
+}
+
+console.log('\n— ⑦ レビューの指摘（2026-10-11）—');
+{
+  t('使う事業所に入れた事業所は所属の欄を出す（使わない事業所は印のある方だけ）', /if \(grp\) grp\.hidden = !siteIsActive\(s\.code\) && !on;/.test(grab('fillSites')));
+  const sd = grab('saveDetail');
+  t('厨房の導出で開いた方は、法人設定を読み込めていない間・開いた後で変わった時は保存しない',
+    /if \(ST\.detail\.kitchenDerived && \(ST\.detail\.corpStale \|\| \(capsHas\('corp'\) && !CORP\.loaded\)\)\) \{/.test(sd)
+    && sd.indexOf('ST.detail.corpStale ||') < sd.indexOf("apiPost("));
+  t('法人設定が変わったら、開いている厨房の方に印を付ける', /if \(ST\.detail && ST\.detail\.kitchenDerived\) ST\.detail\.corpStale = true;/.test(grab('applyCorpResp')));
+  const lc = grab('loadCorp');
+  t('遅れて届いた読み込みの応答は当てない（世代）', /var gen = \+\+CORP\.gen;/.test(lc) && (lc.match(/if \(gen !== CORP\.gen\) return CORP\.loaded;/g) || []).length === 2);
+  t('保存を始めたら読み込み中の応答を捨てる', /CORP\.gen\+\+;/.test(grab('saveCorp')) && grab('saveCorp').indexOf('CORP.gen++') < grab('saveCorp').indexOf("apiPost('setCorp'"));
+  t('合言葉が通った時だけ2段目（getEnums・getCorp の成功）／接続設定を保存したら取り消す',
+    /ST\.authOk = true;/.test(grab('loadEnums')) && /ST\.authOk = true;/.test(lc) && /ST\.authOk = false;/.test(grab('onSaveCfg')) && /loadEnums\(\);/.test(grab('onTest')));
 }
 
 console.log('\n— ⑥ つなぎ —');

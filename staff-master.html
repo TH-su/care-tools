@@ -1256,7 +1256,7 @@ body.cmt-print{page:cmt}
     <h3 class="sub" id="wizTitle">はじめに：この端末の設定</h3>
     <ol class="wiz-steps">
       <li id="wizS1"><span class="wiz-mk"></span>下の「接続先」に、接続先URLと合言葉を入れて「保存」を押す</li>
-      <li id="wizS2"><span class="wiz-mk"></span>「接続テスト」を押して、「接続できました」と出るのを確かめる</li>
+      <li id="wizS2"><span class="wiz-mk"></span>「接続テスト」を押して、「接続できました」と出るのを確かめる（合言葉が通ると ✓ になります）</li>
       <li id="wizS3"><span class="wiz-mk"></span>「この端末の名前」（事務所PC など・氏名は入れない）を入れて「保存」を押す＝更新元として記録されます</li>
     </ol>
     <p class="muted" style="margin-top:var(--sp-2)">使う事業所と厨房の方の数え方は、管理者が1回だけ「法人設定」の欄で決めます（全端末で共通）。</p>
@@ -1667,6 +1667,8 @@ var ST = {
   detail: null, imp: null, busy: false,
   /* caps: ping が返す「サーバーが持っている機能」。null＝まだ確かめられていない */
   caps: null, capsRetried: false, filesBusy: false,
+  /* authOk: 合言葉が通ったか（初回の案内の2段目・2026-10-11）。疎通確認（ping）は合言葉を見ないので別に持つ */
+  authOk: false,
   /* enums: サーバー（meta.enumsJson）の選択肢。null＝まだ取れていない＝calc.js の既定値で動く
      enumsAt: 選択肢を最後に保存した時刻（サーバーの目印）。null＝受け取れていない＝突き合わせを求めない */
   enums: {}, enumUsage: {}, enumsAt: null, enumDraft: null, enumBusy: false,
@@ -2858,7 +2860,8 @@ function fillSites(r) {
     var on = belongsToSite(r, s.code);
     if (chk) chk.checked = on;
     if (ri) ri.value = Object.prototype.hasOwnProperty.call(ratios, s.code) ? String(ratios[s.code]) : '';
-    if (grp && !siteIsActive(s.code)) grp.hidden = !on;
+    /* 使う事業所は出す・使わない事業所は印のある方だけ出す（2026-10-11 から法人設定で入れ替わるので、出す側も書く） */
+    if (grp) grp.hidden = !siteIsActive(s.code) && !on;
   });
   syncSiteRatios();
 }
@@ -3068,6 +3071,15 @@ function saveDetail() {
   if (!ST.detail || ST.busy) return;
   /* 登録できたか確かめている間は送らない（2026-09-23.8）。Ctrl+S はボタンを通らないので、ここで止める */
   if (ST.detail.pending) { showDetailPending(); return; }
+  /* 厨房の導出で開いた方は、保存で所属と比率を実データに確定させる（下の kitchenDerived）。法人設定を読み込めていない間・
+     開いた後で法人設定が変わった時に送ると、古い（既定の）比率がその方の行に書き込まれ、後で兼務先を変えても数え直しに
+     入らなくなる（2026-10-11 レビュー 中）。送らずに止めて、取り直してから開き直してもらう */
+  if (ST.detail.kitchenDerived && (ST.detail.corpStale || (capsHas('corp') && !CORP.loaded))) {
+    setState('dtState', 'warn', '保存していません',
+      ST.detail.corpStale ? '開いた後で法人設定（厨房の方の数え方）が変わりました。一覧に戻ってこの方を開き直してから保存してください。'
+        : '法人設定（厨房の方の数え方）をまだ読み込めていません。設定タブの「法人設定」で「読み込み直す」を押し、この方を開き直してから保存してください。');
+    return;
+  }
   normalizeDateFields();                 /* 打ちかけの和暦も送る前に 'YYYY-MM-DD' へ直す */
   updateDerived();
   var bad = validateDetail();
@@ -4509,6 +4521,7 @@ function onSaveCfg() {
     return;
   }
   saveCfg({ url: url, token: txt($('cfgToken').value).trim(), by: txt($('cfgBy').value).trim() });
+  ST.authOk = false;                    /* 接続先・合言葉が変わったかもしれない＝通るか確かめ直す（初回の案内） */
   setState('cfgState', 'ok', '保存しました', '「接続テスト」で通じるか確かめてください。');
   refreshCaps();
   loadList();
@@ -4524,6 +4537,7 @@ function onTest() {
     var caps = Array.isArray(d.caps) ? d.caps.join('・') : '—';
     setState('cfgState', 'ok', '接続できました', '版 ' + txt(d.build || d.ver) + '／使える機能: ' + caps
       + (d.authRequired === true ? '／合言葉が必要です' : ''));
+    loadEnums();                      /* 合言葉が通るかも確かめる（初回の案内の2段目。疎通確認は合言葉を見ないため） */
   }).catch(function (e) {
     setState('cfgState', 'err', '接続できませんでした（' + errText(e) + '）', errHint(e));
   });
@@ -4538,7 +4552,8 @@ function onTest() {
 /* 後勝ちを断られた時のサーバーの文面（gas/staff-api.gs の CORP_CONFLICT_MSG と1字一句そろえる） */
 var CORP_CONFLICT_MSG = '他の端末が先に法人設定を変えました。開き直してから、もう一度お願いします';
 var CORP_CODES_DEF = ['facility', 'visit', 'day', 'cm'];
-var CORP = { at: null, by: '', isDefault: true, loaded: false, busy: false };
+/* gen: 読み込みと保存の世代。遅れて届いた古い読み込みの応答は捨てる（保存の後に保存前の値へ戻さない） */
+var CORP = { at: null, by: '', isDefault: true, loaded: false, busy: false, gen: 0 };
 
 function corpCodes() { return (SC() && Array.isArray(SC().SITE_CODES)) ? SC().SITE_CODES : CORP_CODES_DEF; }
 function corpLabel(code) { var L = SC() ? SC().SITE_LABEL : null; return (L && L[code]) || code; }
@@ -4648,6 +4663,7 @@ function applyCorpResp(d) {
   CORP.isDefault = !!(d && d.isDefault === true);
   CORP.loaded = ok && CORP.at !== null;
   if (ok && JSON.stringify(corpNow()) !== before) {
+    if (ST.detail && ST.detail.kitchenDerived) ST.detail.corpStale = true;   /* 開いている厨房の方は開き直してから保存 */
     if (ST.screen === 'dash') renderDash();
     else if (ST.screen === 'list' && !ST.bulk) renderList();
   }
@@ -4657,12 +4673,18 @@ function applyCorpResp(d) {
 function loadCorp() {
   var cfg = loadCfg();
   if (!URL_OK_RE.test(cfg.url) || !cfg.token) { updateCorpUi(); return Promise.resolve(false); }
+  var gen = ++CORP.gen;
   return apiPost('getCorp', {}).then(function (d) {
+    if (gen !== CORP.gen) return CORP.loaded;          /* 後から保存か読み込みが始まった＝古い応答は当てない */
+    ST.authOk = true;                                  /* 合言葉が通った（初回の案内の2段目） */
     var ok = applyCorpResp(d);
     if (!CORP.busy) fillCorpForm(corpNow());
     updateCorpUi();
     return ok;
-  }).catch(function () { CORP.loaded = false; updateCorpUi(); return false; });
+  }).catch(function () {
+    if (gen !== CORP.gen) return CORP.loaded;
+    CORP.loaded = false; updateCorpUi(); return false;
+  });
 }
 function onCorpReload() {
   setState('corpState', '', '読み込み中…', 'いまの法人設定を取り直しています。');
@@ -4677,6 +4699,7 @@ function saveCorp() {
   var o = readCorpForm(), err = corpFormError(o);
   if (err) { setState('corpState', 'warn', '保存できません', err); return; }
   setCorpBusy(true);
+  CORP.gen++;                                          /* 読み込み中の応答は捨てる（保存の結果を正にする） */
   setState('corpState', '', '保存中…', 'サーバーに送っています。');
   apiPost('setCorp', { corp: o, by: loadCfg().by, expect: CORP.at }).then(function (d) {
     applyCorpResp(d);
@@ -4697,11 +4720,12 @@ function saveCorp() {
 /* ── 初回の案内（2026-10-11）。接続先が空のまま開いた端末だけ。閉じるまで（再読み込みしても）出す ── */
 function wizSteps() {
   var cfg = loadCfg();
-  return [URL_OK_RE.test(cfg.url) && !!cfg.token, Array.isArray(ST.caps), !!cfg.by];
+  return [URL_OK_RE.test(cfg.url) && !!cfg.token, ST.authOk === true, !!cfg.by];
 }
 function startWizIfNew() {
   var cfg = loadCfg();
   if (URL_OK_RE.test(cfg.url) && cfg.token) return false;
+  if (lsGet(UI_KEYS.wiz) === '0') return false;        /* 一度閉じた端末には出し直さない */
   lsSet(UI_KEYS.wiz, '1');
   return true;
 }
@@ -4877,6 +4901,8 @@ function loadEnums() {
   var cfg = loadCfg();
   if (!URL_OK_RE.test(cfg.url) || !cfg.token) return Promise.resolve(false);
   return apiPost('getEnums', {}).then(function (d) {
+    ST.authOk = true;                    /* 合言葉が通った（初回の案内の2段目。2026-10-11） */
+    renderWiz();
     ST.enumUsage = normUsage(d.usage);
     noteEnumsAt(d);
     if (!applyEnums(d.enums)) return false;
