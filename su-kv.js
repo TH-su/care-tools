@@ -18,6 +18,8 @@
  *   ・Supabase に保存できたら、少し待って最新版を Google へも写し返す（force）。まだ Google を読んでいる画面
  *     （週間計画俯瞰・支援俯瞰・入居者マスタのデイ利用日・フェイスシート・訓練計画）が古いままにならないように。
  *   ・Supabase へ書けるのは事務所・管理者として Google でログインしている時だけ（最終判定はデータベース）。
+ *     ★例外（0010・2026-10-11 代表者の決定 A）: 現場のアカウントは、ワークスケジュールの日データ（wsday_*）の
+ *       「実施チェック（done・checks）」と「コメント」だけを kv_put_marks で書ける（盤面・職員・時刻は書けない）。
  *     ログインしていなければ、画面下に「ログインしてください」の帯を出し、通信は失敗として返す（入力は端末に残る）。
  *
  * ★スイッチが読めない時（圏外など）は、最後に読めた値を使う（localStorage su_backend_flags）。
@@ -133,6 +135,50 @@
     }, MIRROR_WAIT_MS);
   }
 
+  /* ── 現場のアカウントの日データの保存（0010・2026-10-11）──
+   * 送ってきた盤面から、札ごとの done・checks・comment だけを抜き出して kv_put_marks へ送る。
+   * ★応答の版は「書いた版の1つ前」を返す。端末は自分の版がサーバーより古いと見て、次の取得でサーバーの盤面を
+   *   取り込む（現場の端末で動かした配置・時刻など、書けなかった部分はサーバーの盤面に戻る）。書いた版をそのまま
+   *   返すと、端末は書けなかった部分を持ったまま「同期済み」になり、サーバーとずれ続ける。
+   * 確定の解除・強制の保存（lockOverride・force）は現場には許さない。まだ無い日・形の違う印は、待っても直らない
+   * ので 'forbidden' として返す（ワークスケジュールは送り直しを止めて知らせる）。 */
+  var WSDAY_RE = /^wsday_\d{4}-\d{2}-\d{2}$/;
+  var CHECK_KEY_RE = /^\d{1,3}$/;
+  var COMMENT_KEYS = ['text', 'size', 'bold', 'pinned', 'dx', 'dy', 'w', 'h'];
+  function marksOf(data) {
+    var out = { tasks: {} }, tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
+    tasks.forEach(function (t) {
+      if (!t || typeof t.id !== 'string' || !t.id || Object.prototype.hasOwnProperty.call(out.tasks, t.id)) return;
+      var m = { done: !!t.done };
+      if (t.checks && typeof t.checks === 'object' && !Array.isArray(t.checks)) {
+        var ck = {};
+        Object.keys(t.checks).forEach(function (k) { if (CHECK_KEY_RE.test(k) && typeof t.checks[k] === 'boolean') ck[k] = t.checks[k]; });
+        m.checks = ck;
+      } else if (t.checks === null) m.checks = null;
+      if (t.comment && typeof t.comment === 'object' && typeof t.comment.text === 'string') {
+        var c = {};
+        COMMENT_KEYS.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(t.comment, k)) c[k] = t.comment[k]; });
+        m.comment = c;
+      } else if (Object.prototype.hasOwnProperty.call(t, 'comment')) m.comment = null;
+      out.tasks[t.id] = m;
+    });
+    return out;
+  }
+  function putMarks(payload, rawGas) {
+    if (payload.force || payload.lockOverride) return Promise.resolve({ ok: false, error: 'forbidden' });
+    var key = payload.key;
+    return rpc('kv_put_marks', { p_key: key, p_rev: Number(payload.rev) || 0, p_marks: marksOf(payload.data) }).then(function (r) {
+      if (r.error) return fail(r);
+      var d = r.data || { ok: false, error: '通信失敗' };
+      if (d.ok && d.marksOnly) {
+        if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
+        return { ok: true, rev: Math.max(0, (Number(d.rev) || 0) - 1), marksOnly: true };
+      }
+      if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
+      return d;   // conflict・locked・shadow はそのまま（端末の今までの扱い）
+    });
+  }
+
   function rpc(name, args) {
     var sb = window.SUAuth.client();
     var once = function () { return sb.rpc(name, args); };
@@ -208,6 +254,7 @@
           });
         }
         case 'put':
+          if (st.role === 'field' && WSDAY_RE.test(String(key || ''))) return putMarks(payload, rawGas);   // 現場は印だけ（0010）
           if (st.role !== 'office' && st.role !== 'admin') return { ok: false, error: 'forbidden' };
           return rpc('kv_put', {
             p_key: key, p_rev: Number(payload.rev) || 0, p_data: payload.data,
