@@ -13009,7 +13009,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * これによりFix5の意味的拒否をオフライン誤判定/無限リトライにせず、確実に復旧させる。 */
         notePush_(date, 'conflict', '', Date.now() - pushT0_);
         if (report) $('stResult').textContent = '他端末の更新と統合します…';
-        handleDayConflict_(date);
+        /* 現場の印だけの保存（marksOnly・2026-10-11）は、書けた上で「先に他の端末が書いていた」ことを知らせる conflict。
+         * 印は消えないので、統合のお知らせは出さない（数台で並行してチェックする時間帯に、送るたびに出ないように） */
+        handleDayConflict_(date, !!j.marksOnly);
       } else if (j && isAuthBlockErr_(j.error)) {
         /* ログイン・権限で断られた＝待っても直らない。オフラインにせず、再試行も止める（2026-10-11） */
         notePush_(date, 'blocked', j.error === 'login' ? 'ログインが必要' : '保存の権限なし', Date.now() - pushT0_);
@@ -13029,7 +13031,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 競合: サーバー版を取得して3-wayマージ→採用→マージ結果を再送。
    * 従来の「サーバー丸ごと採用＋再push抑止」＝ローカル編集の完全消失を廃止する。 */
-  function handleDayConflict_(date) {
+  function handleDayConflict_(date, quiet) {
     conflictN_[date] = (conflictN_[date] || 0) + 1;
     if (conflictN_[date] > 4) {
       conflictN_[date] = 0;
@@ -13040,7 +13042,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) { scheduleRetry_(); return; }
       if (!j.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合。ローカルを正として送り直す */
-      adoptServerDay_(date, j.data, j.rev || 0, true);
+      adoptServerDay_(date, j.data, j.rev || 0, !quiet);
     }, true);
   }
   /* ロック日への上書き拒否(error:'locked')の処理: この端末はロック未受信。ロック中の実績を尊重し、
