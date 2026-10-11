@@ -659,7 +659,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-09-26b"></script>
+<script src="su-kv.js?v=2026-10-11"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
@@ -11853,8 +11853,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (retry_.timer) { clearTimeout(retry_.timer); retry_.timer = null; }
     retry_.delay = 0;
   }
+  /* ═══ ログイン・権限で断られた時（2026-10-11）═══════════════════════════════
+   * 保存先を Supabase に切り替えたキーは、su-kv.js が「ログインしていない端末」に 'login'、
+   * 「書けないアカウント（現場など）」に 'forbidden' を返す。待っても直らないので、通信失敗（オフライン）と
+   * 分けて出し、自動の再試行（バックオフ）を止める。★入力と未送信の印は端末に残す（何も捨てない）。
+   * 再開する時: 別のタブでログインした（ログインの控えが変わった）・設定を保存した・同期の表示を押した。
+   * 画面に戻った時・回線が戻った時の1回きりの送信は今までどおり（また断られたら同じ表示に戻るだけ）。 */
+  var authBlock_ = '';   /* '' ／ 'login' ／ 'forbidden' */
+  var AUTH_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+  function isAuthBlockErr_(e) { return e === 'login' || e === 'forbidden'; }
+  function authBlockText_(e) {
+    return e === 'login' ? '⚠ ログインが必要です（入力はこの端末に残っています）'
+                         : '⚠ このアカウントでは保存できません（入力はこの端末に残っています）';
+  }
+  function noteAuthBlock_(e) {
+    var first = authBlock_ !== e;
+    authBlock_ = e;
+    clearRetry_();                       /* 自動の再試行を止める（断られ続けるだけのため） */
+    try { setSyncState(authBlockText_(e)); } catch (eS) {}
+    if (first) {
+      try {
+        toast(e === 'login' ? 'ログインしていないため保存できません。ログインすると自動で送ります（入力はこの端末に残っています）'
+                            : 'このアカウントでは保存できません。事務所・管理者のアカウントでログインするか、管理者に相談してください（入力はこの端末に残っています）', true);
+      } catch (eT) {}
+    }
+    try { updateSyncBadge_(); } catch (eB) {}
+  }
+  function clearAuthBlock_(retryNow) {
+    if (!authBlock_) return false;
+    authBlock_ = '';
+    try { updateSyncBadge_(); } catch (eB) {}
+    if (retryNow) { try { recoverNow_(); } catch (eR) {} }
+    return true;
+  }
   function scheduleRetry_() {
     if (!syncOn()) return;
+    if (authBlock_) return;              /* ログイン・権限で断られている間は再試行しない（2026-10-11） */
     if (retry_.timer) return;
     retry_.delay = NP.nextBackoffMs(retry_.delay);   /* 5s→15s→30s→60s上限（初回の復帰を早く） */
     retry_.timer = setTimeout(function () { retry_.timer = null; recoverNow_(); }, retry_.delay);
@@ -12273,6 +12307,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!s.syncOn) {
       return { cls: 'mute', text: '同期なし', title: 'GAS エンドポイント未設定＝この端末だけに保存' };
     }
+    /* ログイン・権限で断られている（2026-10-11）。待っても直らないので「未送信あり」「オフライン」より先に出す */
+    if (s.authBlock === 'login' || s.authBlock === 'forbidden') {
+      var held = s.dirtyDays > 0 ? '未送信の日 ' + s.dirtyDays + '日を含め、' : '';
+      return s.authBlock === 'login'
+        ? { cls: 'ng', text: '⚠ ログインが必要',
+            title: 'ログインしていないため保存できません。' + held + '入力はこの端末に残っています。ログインすると自動で送ります（押すともう一度試します）' }
+        : { cls: 'ng', text: '⚠ 保存の権限なし',
+            title: 'このアカウントでは保存できません。' + held + '入力はこの端末に残っています。事務所・管理者のアカウントでログインするか、管理者に相談してください（押すともう一度試します）' };
+    }
     var k = unsentKinds_(s);
     var opsNote = (s.careOps > 0 && !k.opsUnsent) ? '（週間計画の再適用記録 ' + s.careOps + '件あり・内容は送信済みと一致）' : '';
     if (k.any) {
@@ -12349,7 +12392,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         careOps: p.careOps, masterPending: p.masterPending, refetchDays: p.refetchDays || 0,
         sending: !!dayPushBusy_,
         offline: on ? !!NP.offlineVisible(net.failStreak, net.lastOkAt, Date.now()) : false,
-        okAt: syncStat_.okAt, okSeq: syncStat_.okSeq, failSeq: syncStat_.failSeq
+        okAt: syncStat_.okAt, okSeq: syncStat_.okSeq, failSeq: syncStat_.failSeq,
+        authBlock: on ? authBlock_ : ''
       });
     } catch (e) { return; }
     var cls = 'badge ' + st.cls;
@@ -12502,6 +12546,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function syncBadgeClick_() {
+    /* ログイン・権限で止めている時は、止めを外してもう一度だけ試す（また断られたら同じ表示に戻る） */
+    if (clearAuthBlock_(true)) { toast('もう一度送ってみます'); return; }
     try {
       var uk = syncOn() ? unsentKinds_(syncPendingInfo_()) : null;
       /* 取り直し待ちだけの状態で押されたら、その場で取り直しを試す（待たされている感を残さない） */
@@ -12898,6 +12944,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         notePush_(date, 'conflict', '', Date.now() - pushT0_);
         if (report) $('stResult').textContent = '他端末の更新と統合します…';
         handleDayConflict_(date);
+      } else if (j && isAuthBlockErr_(j.error)) {
+        /* ログイン・権限で断られた＝待っても直らない。オフラインにせず、再試行も止める（2026-10-11） */
+        notePush_(date, 'blocked', j.error === 'login' ? 'ログインが必要' : '保存の権限なし', Date.now() - pushT0_);
+        noteAuthBlock_(j.error);
+        if (report) $('stResult').textContent = '送信できません: ' + authBlockText_(j.error);
       } else {
         /* 通信失敗＝オフライン表示。以後はバックオフタイマーが自動再試行する（イベント不要で必ず復帰） */
         showOfflineIfPersistent_();
@@ -13139,6 +13190,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!g.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合を修復 */
           adoptServerDay_(date, g.data, g.rev || 0, false);
         }, true);
+      } else if (j && isAuthBlockErr_(j.error)) {
+        noteAuthBlock_(j.error);   /* ログイン・権限で断られた＝再試行しない（2026-10-11） */
       } else {
         scheduleRetry_();
         if (!j) { try { verifyPutLanded_(date, daySig(day)); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
@@ -13157,7 +13210,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) {
-        scheduleRetry_();
+        if (j && isAuthBlockErr_(j.error)) noteAuthBlock_(j.error);   /* 再試行しない（2026-10-11） */
+        else scheduleRetry_();
         if (report) $('stResult').textContent = '取得エラー: ' + friendlyErr(j && j.error);
         fin(); return;
       }
@@ -14602,6 +14656,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           toast('この端末の週間計画が古いためクラウドが保存を拒否しました。最新を取得します');
         }
         pullCareNow(true);   /* adoptCare がジャーナル再適用→マージ結果を自動再送 */
+      } else if (j && isAuthBlockErr_(j.error)) {
+        noteAuthBlock_(j.error);   /* ログイン・権限で断られた＝再試行しない（2026-10-11） */
       } else {
         showOfflineIfPersistent_();
         scheduleRetry_();
@@ -14763,6 +14819,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (nowRaw_ === raw) setMasterUnsent_(false);   /* 送信中に変わっていたら印は残す（次の送信で降ろす） */
       }
       else if (j && j.conflict) pullMasterNow();
+      else if (j && isAuthBlockErr_(j.error)) noteAuthBlock_(j.error);   /* 再試行しない（2026-10-11） */
       else scheduleRetry_();   /* 失敗は回収の予約へ（recoverNow_ が印を見て送り直す） */
     });
   }
@@ -15549,6 +15606,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       saveSettings({ writeCommon: !!verified });   /* 共通キーは確かめた時だけ（空欄＝同期オフも共通キーに触れない） */
       if (prevSyncSig_ !== settings.endpoint + '|' + settings.token) { try { resetSyncStat_(); } catch (eRs) {} }
       try { updateSyncBadge_(); } catch (eSb) {}   /* 同期の設定・解除をすぐ反映 */
+      try { clearAuthBlock_(true); } catch (eAb) {}   /* 設定を変えた＝ログイン・権限の止めを外して試し直す（2026-10-11） */
       hideModals();
       renderAll();
       /* 「頭数外を出さない」を切り替えたら、表示中の日へ即座に反映する。
@@ -16186,6 +16244,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     window.addEventListener('storage', function (ev) {
       if (!ev || !ev.key) return;
       if (ev.key === CARE_KEY) { schedulePushCare(); scheduleCareReconcile(); return; }
+      /* 別のタブでログイン・ログアウトした（Supabase のログインの控えが変わった）＝止めを外して試し直す（2026-10-11） */
+      if (AUTH_SESSION_RE.test(ev.key)) { try { clearAuthBlock_(true); } catch (eAb) {} return; }
       /* シフトアプリ（同一オリジンの別タブ）の更新＝GAS往復ゼロで即時反映する。
        * 対象は出勤構成に効く3種のみ（内部キー _meta 等では反応しない）。予定レイヤ(:plan)限定＝
        * ワースケが読むのは plan のため、実績/下書きの編集で無駄な再反映を走らせない。
