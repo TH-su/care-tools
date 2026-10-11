@@ -537,16 +537,19 @@ function saveSettings() {
   state.canSave = true;
   if (state.rid) {                        /* 名簿から選んだ方の設定は、その方の欄にだけ書く */
     var all = readByRes();
-    if (all === null) { state.canSave = false; state.storeBad = true; return; }   /* 読めない保存を空で上書きしない */
+    if (all === null) { state.canSave = false; state.storeBad = true; state.setBy = ''; state.setAt = ''; return; }   /* 読めない保存を空で上書きしない。前の人の記録も出さない */
     /* 仮の値を表示していた間に、別のタブでこの方の設定が保存されていたら、仮の値で上書きしない。
        保存されている設定を表示し直す */
     if (!wasConfirmed && resSetting(state.rid)) { selectResident(state.rid); return; }
     var by = pcWho(), at = new Date().toISOString();
     all[state.rid] = { start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at };
     try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; }
-    catch (e) { state.canSave = false; }
+    catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }   /* 保存できなかった値に前の人の名前を付けない */
     return;
   }
+  /* ★先に前の記録を消す（値だけ書けて記録が書けなかった時に、新しい値と前の人の組み合わせを端末に残さない） */
+  try { localStorage.removeItem(LS_SETBY); } catch (e) { /* 消せなくても下で上書きを試みる */ }
+  state.setBy = ''; state.setAt = '';
   try {
     localStorage.setItem(LS_START, state.start.iso);
     localStorage.setItem(LS_NO, String(state.no));

@@ -77,8 +77,14 @@ console.log('\n— 保存・読み出し・表示のつなぎ —');
   t('入居者ごとの設定に by・at を残す', /all\[state\.rid\] = \{ start: state\.start\.iso, no: state\.no, prev: state\.prev, by: by, at: at \}/.test(save));
   t('手入力の設定も apc2_setby に by・at を残す', /localStorage\.setItem\(LS_SETBY, JSON\.stringify\(\{ by: by2, at: at2 \}\)\)/.test(save));
   t('by は pcWho()（入居者の氏名ではない）', (save.match(/pcWho\(\)/g) || []).length === 2 && save.indexOf('el.nm') < 0);
-  t('保存できた時だけ表示中の記録を更新する（失敗時は前のまま）',
-    /setItem\(LS_BYRES[^;]*;\s*state\.setBy = by; state\.setAt = at;/.test(save) && /state\.setBy = by2; state\.setAt = at2;\s*\} catch/.test(save));
+  t('保存できた時だけ記録を付ける（入居者ごと）', /setItem\(LS_BYRES[^;]*;\s*state\.setBy = by; state\.setAt = at;/.test(save));
+  t('保存に失敗したら前の人の記録を消す（入居者ごと・読めない保存も）',
+    /catch \(e\) \{ state\.canSave = false; state\.setBy = ''; state\.setAt = ''; \}/.test(save)
+    && /if \(all === null\) \{ state\.canSave = false; state\.storeBad = true; state\.setBy = ''; state\.setAt = ''; return; \}/.test(save));
+  const iRm = save.indexOf('localStorage.removeItem(LS_SETBY)'), iStart = save.indexOf('localStorage.setItem(LS_START');
+  t('手入力は値を書く前に前の記録を消し、表示中の記録も空にしてから書く',
+    iRm > 0 && iRm < iStart && /removeItem\(LS_SETBY\)[^\n]*\n\s*state\.setBy = ''; state\.setAt = '';/.test(save)
+    && /state\.setBy = by2; state\.setAt = at2;\s*\} catch/.test(save));
   t('入居者ごとの読み出しで by・at を返す', /by: sb\.by, at: sb\.at/.test(body('resSetting')));
   t('手入力の読み出しで by・at を返す', /by: sb\.by, at: sb\.at/.test(body('legacySetting')));
   t('入居者を選び直したら、その方の記録に入れ替える（無ければ空）', /state\.setBy = set \? set\.by : ''; state\.setAt = set \? set\.at : '';/.test(body('selectResident')));
