@@ -63,6 +63,8 @@ function group(name){ process.stdout.write('\n■ ' + name + '\n'); }
 const TEXT = '保存できたか確かめられませんでした';
 const HINT = '一覧を取り直して、入っているか確かめてから操作してください（新しい品目は、もう一度登録する前に一覧で確かめる）。';
 const ERR_PARTS = [grabFn('txt'), grabFn('mkErr'), grabFn('errText'), grabFn('errHint'),
+  /* ヒントの表は管理者に頼む一文（ADMIN_GAS_ASK・2026-10-12）を使う。古い版の画面には無いので、ある時だけ読む */
+  ...(src.indexOf('\nvar ADMIN_GAS_ASK = ') >= 0 ? [grabVar('ADMIN_GAS_ASK')] : []),
   grabVar('ERR_TEXT'), grabVar('ERR_HINT'), grabFn('serverErrText'), grabFn('serverErrHint')];
 
 const sb = {};
