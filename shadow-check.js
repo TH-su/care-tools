@@ -269,6 +269,79 @@
                         : '勤務表を写しの期間に戻しました。', 'ok');
   }
 
+  /* ── ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定・現場のアカウントが日ごとを書けないため）──
+   * ★順番: ①日ごとを止める（kv_set_family_mode wsday→shadow。Supabase が日ごとの保存を断る＝入力は端末に残る）
+   *        ②Google へ写し返す（Supabase の最新と Google の中身を比べ、違う日だけ Google へ force で書く）
+   *        ③日ごとのスイッチ wsday を false にする PR（端末が Google へ送る）。
+   *   Supabase→Google の写し返しは保存の20秒後に画面の中で行うだけなので、取りこぼした日があり得る。写し返す前に
+   *   スイッチを切ると、端末の統合が Google の古い中身を「他端末の変更」として取り込み、新しい入力を巻き戻す。
+   *   止めてから写し返すので、写し返した後に Supabase 側だけが進むことは無い。 */
+  function canon(v) {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+  }
+  function sameData(a, b) { return canon(a) === canon(b); }
+  function wbMsg(text, kind) { var e = $('wb-verdict'); e.className = 'msg' + (kind ? ' ' + kind : ''); e.textContent = text; }
+  function wbBusy(on) { $('b-wsday-stop').disabled = on; $('b-wsday-back').disabled = on; }
+  async function wsdayMode(sb) {
+    var r = await sb.from('kv_families').select('family,mode').eq('family', 'wsday');
+    if (r.error) throw new Error(String(r.error.message || r.error.code));
+    return (r.data && r.data[0] && r.data[0].mode) || 'shadow';
+  }
+  async function stopWsday() {
+    if (!confirm('ワークスケジュールの日ごとの保存先（Supabase）を止めますか？\n\n止めている間、日ごとの保存は各端末に残り、日ごとのスイッチを切った後に Google へ届きます。')) return;
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    wbBusy(true);
+    try {
+      var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['wsday'], p_mode: 'shadow' });
+      if (r.error || !r.data || !r.data.ok) {
+        var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
+        wbMsg('止められませんでした: ' + why, 'ng');
+        return;
+      }
+      wbMsg('日ごとを止めました。続けて「②日ごとを Google へ写し返す」を押してください。', 'ok');
+    } finally { wbBusy(false); }
+  }
+  async function writeBackWsday() {
+    var tgt = gasTarget(), sb = SUAuth.client();
+    if (!tgt) { wbMsg('この端末に Google の同期先（接続先と合言葉）がありません。週間計画かワークスケジュールを一度開いてから、もう一度押してください。', 'warn'); return; }
+    wbBusy(true);
+    var done = 0, same = 0, wrote = 0, failed = [], keys = [];
+    try {
+      if (await wsdayMode(sb) !== 'shadow') { wbMsg('先に「①日ごとを止める」を押してください（止めずに写すと、写した後に Supabase 側だけが進むことがあります）。', 'warn'); return; }
+      var idx = await sb.rpc('kv_index', { p_family: 'wsday' });
+      if (idx.error) throw new Error(String(idx.error.message || idx.error.code));
+      keys = Object.keys((idx.data && idx.data.revs) || {}).sort();
+      wbMsg('比べています… 0／' + keys.length, 'warn');
+      for (var i = 0; i < keys.length; i += FILL_BATCH) {
+        var part = keys.slice(i, i + FILL_BATCH);
+        var j = await gasPostRetry(tgt, { action: 'pull', keys: part }, 120000, function (n) {
+          wbMsg('比べています… ' + done + '／' + keys.length + '（Google の応答が遅いため、やり直しています ' + n + '回目）', 'warn');
+        });
+        var ents = j.entries || {};
+        for (var n = 0; n < part.length; n++) {
+          var k = part[n];
+          var r = await sb.rpc('kv_get', { p_key: k });
+          var sd = r.data && r.data.data;
+          if (r.error || sd == null || typeof sd !== 'object') { failed.push(k); done++; continue; }
+          var g = ents[k];
+          if (g && g.data != null && sameData(g.data, sd)) { same++; done++; continue; }
+          try {
+            await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+            wrote++;
+          } catch (e) { failed.push(k); }
+          done++;
+        }
+        wbMsg('比べています… ' + done + '／' + keys.length + '（写した ' + wrote + '件）', 'warn');
+      }
+      if (failed.length) wbMsg('途中まで写しました（同じ ' + same + '件・写した ' + wrote + '件・写せなかった ' + failed.length + '件　例: ' + failed.slice(0, 4).join('、') + '）。もう一度押すと、まだ違う日だけを写します。', 'warn');
+      else wbMsg('全部そろいました（' + keys.length + '日のうち、同じ ' + same + '件・写した ' + wrote + '件）。日ごとのスイッチを切る PR を取り込んでかまいません。', 'ok');
+    } catch (e) {
+      wbMsg('途中で止まりました（' + done + '／' + keys.length + '件まで）: ' + String(e && e.message || e) + '。もう一度押すと、まだ違う日だけを写します。', 'warn');
+    } finally { wbBusy(false); }
+  }
+
   /* ── 切り替え前の点検（統合 0007）── */
   var GAS_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
   var FAMS = [['care', '週間計画'], ['ws_master', 'ワークスケジュール（週の型）'], ['wsday', 'ワークスケジュール（日ごと）'], ['shift', '勤務表']];
@@ -568,5 +641,7 @@
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-fill').addEventListener('click', function () { msg(''); fillMissing(); });
+  $('b-wsday-stop').addEventListener('click', function () { stopWsday(); });
+  $('b-wsday-back').addEventListener('click', function () { writeBackWsday(); });
   start();
 })();

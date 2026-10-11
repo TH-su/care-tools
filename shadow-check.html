@@ -99,6 +99,15 @@
           <button type="button" class="btn ng" id="b-live-shift">勤務表を Supabase の本番にする</button>
           <button type="button" class="btn" id="b-shadow-shift">勤務表を写しの期間に戻す</button>
         </div>
+        <!-- ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定）。順番を守るためボタンを分ける:
+             ①日ごとを止める（Supabase への保存を断る＝入力は端末に残る）②Google へ写し返す（中身を比べて違う日だけ）
+             ③日ごとのスイッチ wsday を false にする PR を取り込む -->
+        <p class="muted mt">ワークスケジュールの日ごとだけを Google に戻す時の手順です。①「日ごとを止める」→②「日ごとを Google へ写し返す」（全部そろうまで）→③日ごとのスイッチを切る PR を取り込む、の順に進めます。①から③の間、日ごとの保存は端末に残り、③の後に Google へ届きます。</p>
+        <p id="wb-verdict" class="msg"></p>
+        <div class="acts">
+          <button type="button" class="btn" id="b-wsday-stop">①日ごとを止める（写しの期間に戻す）</button>
+          <button type="button" class="btn" id="b-wsday-back">②日ごとを Google へ写し返す</button>
+        </div>
       </div>
     </section>
 
@@ -126,6 +135,6 @@
 <script src="su-master-shadow.js?v=2026-09-26"></script>
 <script src="su-kv.js?v=2026-09-27b"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
-<script src="shadow-check.js?v=2026-10-09"></script>
+<script src="shadow-check.js?v=2026-10-11"></script>
 </body>
 </html>
