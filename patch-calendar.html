@@ -118,6 +118,8 @@ body {
 .sh-meta .nm { font-weight: 700; }
 .sh-meta .nm u { text-decoration: none; border-bottom: .3mm solid #000; padding: 0 4mm; display: inline-block; min-width: 44mm; }
 .sh-meta .st { margin-left: auto; font-weight: 700; }
+/* 設定した職員と時刻（2026-10-11・監査10月版 第2版 貼り薬カレンダー 第1手）。記録が無い時は hidden で出さない */
+.sh-meta .by { font-size: 2.6mm; font-weight: 400; color: #333; white-space: nowrap; }
 
 .sh-body { display: flex; gap: 4mm; margin-top: 2mm; align-items: stretch; }
 .gbox { flex: 0 0 50mm; border: .4mm solid #000; padding: 1mm; display: flex; flex-direction: column; }
@@ -247,6 +249,7 @@ body {
       <div class="sh-meta">
         <span class="nm">入居者名：<u id="p-nm"></u></span>
         <span class="st" id="p-st"></span>
+        <span class="by" id="p-by" hidden></span>
       </div>
 
       <div class="sh-body">
@@ -332,6 +335,70 @@ var LS_BYRES = 'apc2_res';
 /* 手入力の設定を「この方の設定にする」で移した先の入居者ID（1回だけ移せる。同じ表を何人にも付けない） */
 var LS_MOVED = 'apc2_res_moved';
 var ROSTER_KEY = 'su_residents_common';   /* 入居者マスタが書く共有名簿。ここでは読むだけ */
+/* ★設定した職員と時刻（2026-10-11・監査10月版 第2版 貼り薬カレンダー 第1手）。
+   入居者ごとの設定は apc2_res の各人の欄に by・at を足す。手入力の設定は apc2_setby に {by, at}。
+   by はログイン中なら職員名（ログインの表示名とアカウント）、ログインしていなければ端末の用途（現場の端末／事務所PC）。
+   氏名（入居者）は入れない。紙の見出しの行の右端に小さく出す（記録の無い古い設定では出さない＝今の紙のまま） */
+var LS_SETBY = 'apc2_setby';
+var PC_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+var pcWhoAcct = '', pcWhoGen = 0;
+function pcDeviceLabel() {
+  var r = '';
+  try { r = localStorage.getItem('su_device_role') || ''; } catch (e) { r = ''; }
+  return r === 'field' ? '現場の端末' : '事務所PC';
+}
+function pcWho() { return pcWhoAcct || pcDeviceLabel(); }
+function pcWhoLabel(st) {
+  if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
+  var acct = String(st.email).split('@')[0].slice(0, 40);
+  var lab = String(st.label == null ? '' : st.label).trim().slice(0, 40);
+  return (lab && lab !== acct) ? (lab + '（' + acct + '）') : acct;
+}
+function pcHasLogin() {
+  try { for (var i = 0; i < localStorage.length; i++) if (PC_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
+  return false;
+}
+function pcAuthLoad() {
+  if (window.SUAuth) return Promise.resolve();
+  function has(re) { return Array.prototype.some.call(document.scripts, function (sc) { return re.test(sc.getAttribute('src') || ''); }); }
+  function load(src) {
+    return new Promise(function (ok, ng) {
+      var sc = document.createElement('script'); sc.src = src; sc.async = true;
+      sc.onload = function () { ok(); }; sc.onerror = function () { ng(new Error('load')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function wait(ready) {
+    return new Promise(function (ok, ng) { var n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })(); });
+  }
+  var pr = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return pr.then(function () {
+    if (window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+  });
+}
+/* ログインしていれば職員名を取り直す。遅れて返った古い結果は捨てる（世代番号）。確かめられなかった時は前の値のまま */
+function pcResolveWho() {
+  var gen = ++pcWhoGen;
+  if (!pcHasLogin()) { pcWhoAcct = ''; return; }
+  pcAuthLoad().then(function () { return window.SUAuth ? window.SUAuth.check() : null; }).then(function (st) {
+    if (gen !== pcWhoGen) return;
+    if (!st || st.status === 'error') return;
+    pcWhoAcct = pcWhoLabel(st);
+  }).catch(function () {});
+}
+/* 保存されていた by・at を検証して返す（形が違えば空＝出さない） */
+function pcSetByOf(v) {
+  if (!v || typeof v !== 'object') return { by: '', at: '' };
+  var by = typeof v.by === 'string' ? v.by.trim().slice(0, 60) : '';
+  var at = typeof v.at === 'string' && !isNaN(Date.parse(v.at)) ? v.at : '';
+  return (by && at) ? { by: by, at: at } : { by: '', at: '' };
+}
+function pcFmtAt(iso) {
+  var d = new Date(iso); if (isNaN(d)) return '';
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
 var DEFAULT_START = '2026-08-10';
 var DEFAULT_NO = 5;
 var DEFAULT_PREV = 2;
@@ -431,7 +498,7 @@ function jpDate(o) { return o.y + '年' + o.m + '月' + o.d + '日'; }
 
 /* ── 状態（正本は1つ。表示はここから導出する） ── */
 var state = { start: null, no: DEFAULT_NO, prev: DEFAULT_PREV, y: 0, m: 0, confirmed: false, canSave: true,
-              rid: '', storeBad: false }; /* rid: 名簿から選んだ入居者ID（''＝手入力）。storeBad: 入居者ごとの保存が読めない */
+              rid: '', storeBad: false, setBy: '', setAt: '' };   /* setBy・setAt: いま表示中の設定を保存した人と時刻（無ければ空） */ /* rid: 名簿から選んだ入居者ID（''＝手入力）。storeBad: 入居者ごとの保存が読めない */
 var roster = [];                          /* [{ id, name, room }]（在籍の方だけ・居室順） */
 
 function loadState() {
@@ -445,6 +512,9 @@ function loadState() {
   /* この端末で設定を確定していない（初期値のまま／保存が消えた／別端末）状態を覚えておき、
      そのまま印刷されないよう警告を出す。開始日や番号が1つずれると貼付箇所が全部ずれる。 */
   state.confirmed = !!(okD && okN !== null);
+  var sb0 = { by: '', at: '' };
+  if (state.confirmed) { try { sb0 = pcSetByOf(JSON.parse(localStorage.getItem(LS_SETBY) || 'null')); } catch (e) { sb0 = { by: '', at: '' }; } }
+  state.setBy = sb0.by; state.setAt = sb0.at;
   state.start = okD || parseISODate(DEFAULT_START);
   state.no    = okN !== null ? okN : DEFAULT_NO;
   state.prev  = okP !== null ? okP : DEFAULT_PREV;
@@ -471,8 +541,9 @@ function saveSettings() {
     /* 仮の値を表示していた間に、別のタブでこの方の設定が保存されていたら、仮の値で上書きしない。
        保存されている設定を表示し直す */
     if (!wasConfirmed && resSetting(state.rid)) { selectResident(state.rid); return; }
-    all[state.rid] = { start: state.start.iso, no: state.no, prev: state.prev };
-    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); }
+    var by = pcWho(), at = new Date().toISOString();
+    all[state.rid] = { start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at };
+    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; }
     catch (e) { state.canSave = false; }
     return;
   }
@@ -480,6 +551,9 @@ function saveSettings() {
     localStorage.setItem(LS_START, state.start.iso);
     localStorage.setItem(LS_NO, String(state.no));
     localStorage.setItem(LS_PREV, String(state.prev));
+    var by2 = pcWho(), at2 = new Date().toISOString();
+    localStorage.setItem(LS_SETBY, JSON.stringify({ by: by2, at: at2 }));
+    state.setBy = by2; state.setAt = at2;
   } catch (e) { state.canSave = false; }  /* 表示は続けるが「記憶できない」ことは黙って隠さない */
 }
 
@@ -503,7 +577,8 @@ function resSetting(rid) {
   if (!v || typeof v !== 'object') return null;
   var d = parseISODate(v.start), n = parseNo(String(v.no), 1), p = parseNo(String(v.prev), 0);
   if (!d || n === null) return null;
-  return { start: d, no: n, prev: p !== null ? p : 0 };
+  var sb = pcSetByOf(v);
+  return { start: d, no: n, prev: p !== null ? p : 0, by: sb.by, at: sb.at };
 }
 /* 手入力（従来）の設定。確定していなければ null */
 function legacySetting() {
@@ -513,7 +588,9 @@ function legacySetting() {
   } catch (e) { return null; }
   var d = parseISODate(sv), n = parseNo(sn, 1), p = parseNo(sp, 0);
   if (!d || n === null) return null;
-  return { start: d, no: n, prev: p !== null ? p : 0 };
+  var sb = { by: '', at: '' };
+  try { sb = pcSetByOf(JSON.parse(localStorage.getItem(LS_SETBY) || 'null')); } catch (e) { sb = { by: '', at: '' }; }
+  return { start: d, no: n, prev: p !== null ? p : 0, by: sb.by, at: sb.at };
 }
 
 /* 名簿（入居者マスタが書く共有キー）を読む。書かない。在籍の方だけを居室順に並べる */
@@ -565,6 +642,7 @@ function selectResident(rid) {
   state.rid = rid;
   state.storeBad = !!rid && readByRes() === null;
   var set = rid ? resSetting(rid) : legacySetting();
+  state.setBy = set ? set.by : ''; state.setAt = set ? set.at : '';
   if (set) {
     state.start = set.start; state.no = set.no; state.prev = set.prev; state.confirmed = true;
   } else if (rid) {
@@ -606,7 +684,7 @@ var el = {
   no: document.getElementById('no'), pv: document.getElementById('pv'),
   sthint: document.getElementById('sthint'), now: document.getElementById('now'),
   pym: document.getElementById('p-ym'), pnm: document.getElementById('p-nm'),
-  pst: document.getElementById('p-st'),
+  pst: document.getElementById('p-st'), pby: document.getElementById('p-by'),
   guide: document.getElementById('guide'), weeks: document.getElementById('weeks'),
   rs: document.getElementById('rs'), adopt: document.getElementById('adopt'),
   adopttx: document.getElementById('adopttx'), adoptbtn: document.getElementById('adoptbtn')
@@ -702,6 +780,10 @@ function renderHeaderInfo() {
   el.now.textContent = ym;
   el.pnm.textContent = el.nm.value.trim();       /* textContent なので氏名がタグとして解釈されない */
   el.pst.textContent = '開始：' + jpDate(state.start) + ' ＝ ' + state.no + '番（' + SITES[state.no - 1].full + '）';
+  /* 設定した人と時刻。記録の無い古い設定・仮の値（未確定）では出さない（hidden＝紙の見出しの行は今のまま） */
+  var byTx = (state.confirmed && state.setBy && state.setAt) ? ('設定：' + state.setBy + '　' + pcFmtAt(state.setAt)) : '';
+  el.pby.textContent = byTx;                     /* textContent なので名前がタグとして解釈されない */
+  el.pby.hidden = !byTx;
   el.st.value = state.start.iso;
   el.no.value = String(state.no);
   el.pv.value = String(state.prev);
@@ -746,6 +828,9 @@ renderGuide();
 render();
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
+pcResolveWho();
+window.addEventListener('storage', function (e) { if (!e || !e.key || PC_SESSION_RE.test(e.key)) pcResolveWho(); });
+document.addEventListener('visibilitychange', function () { if (!document.hidden) pcResolveWho(); });
 /* 別のタブでこの方の設定が変わったら、表示を取り直す（古いタブの値で上書きしない） */
 window.addEventListener('storage', function (e) {
   if (state.rid && (e.key === LS_BYRES || e.key === LS_MOVED || e.key === null)) selectResident(state.rid);
