@@ -48,6 +48,17 @@ body {
 .link-single:focus-visible { outline: 2px solid #5f3300; outline-offset: 1px; }
 .hdr-note { font-size: 0.6875rem; color: #5f3300; font-weight: 600; white-space: nowrap; text-shadow: 0 1px 1px rgba(255,255,255,.55); }
 
+/* 目的の1行と連動の凡例（2026-10-11・監査10月版 v2）。見出しの下の細い帯。盤面・印刷には触れない */
+.purpose {
+  flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px;
+  padding: 4px 12px; background: #fff; border-bottom: 1px solid var(--g3);
+  font-size: 0.75rem; line-height: 1.5; color: var(--g9);
+}
+.purpose b { font-weight: 700; }
+.purpose .pv { color: var(--pri-d); }
+.purpose .ps { color: var(--orange); }
+.purpose-legend { color: var(--g7); }
+
 .panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; position: relative; }
 .pane.left { border-right: 2px solid var(--g7); }
@@ -79,6 +90,11 @@ body {
   <a class="link-single" href="visit-overview.html" aria-label="訪問 週間俯瞰を単独で開く">訪問だけ</a>
   <a class="link-single" href="support-overview.html" aria-label="全支援 週間俯瞰を単独で開く">全支援だけ</a>
 </header>
+
+<p class="purpose" id="cmpPurpose">
+  <span><b class="pv">左＝訪問の予定</b>（週間計画）と <b class="ps">右＝ワークスケジュールの実配置</b>（直近の週を重ねたもの）を、同じ時刻で並べて見比べます。</span>
+  <span class="purpose-legend" id="cmpLegend" aria-live="polite">連動中：縦に動かすと同じ時刻、横に動かすと同じ曜日、拡大・縮小すると同じ倍率に、もう片方がそろいます。</span>
+</p>
 
 <div class="panes">
   <div class="pane left"><span class="pane-tag">訪問</span><iframe id="fVisit" title="訪問 週間俯瞰" src="visit-overview.html"></iframe></div>
@@ -244,6 +260,14 @@ body {
   }
   A.addEventListener('load', function () { onLoad(A, 'v'); });
   B.addEventListener('load', function () { onLoad(B, 's'); });
+
+  // 凡例は連動スイッチの状態に合わせて言い換える（表示だけ。状態は保存しない）
+  var legend = document.getElementById('cmpLegend');
+  var LEGEND_ON = '連動中：縦に動かすと同じ時刻、横に動かすと同じ曜日、拡大・縮小すると同じ倍率に、もう片方がそろいます。';
+  var LEGEND_OFF = '連動を切っています：左右は別々に動きます。「時刻・曜日・倍率を連動」を入れると、次に動かした時からまたそろいます。';
+  function showLegend() { if (legend) legend.textContent = syncOn.checked ? LEGEND_ON : LEGEND_OFF; }
+  syncOn.addEventListener('change', showLegend);
+  showLegend();
   tick();
 })();
 </script>
