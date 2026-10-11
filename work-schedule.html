@@ -2696,6 +2696,67 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function taskSig(t) { return stableStringify(t); }
 
+  /* ═══ 札の「印」（実施・項目のチェック・コメント）の欄ごとの3方向マージ（2026-10-11）═══
+   * 以前は、ローカルで札が少しでも変わっていれば札を丸ごとローカル採用していた。2台が同じ札に別々の印を付けると
+   * （A が「食事」、B が「服薬」）、後から統合した側の札が丸ごと勝ち、先の端末の印が消えていた。
+   * 札を「盤面の部分」（配置・時刻・内容など印以外の全部）と「印の部分」に分け、盤面は今までどおり札単位
+   * （ローカルが変えていればローカル・そうでなければサーバー）、印は欄ごと（項目のチェックは内容の文言ごと）に
+   * 「ローカルが祖先から変えていればローカル・そうでなければサーバー」で決める。
+   * 項目のチェックは内容の何番目かでなく文言で合わせる（片方が内容を並べ替えても、別の項目に付かない）。 */
+  var MARK_KEYS_ = ['done', 'checks', 'comment'];
+  function boardSig_(t) {
+    if (!t || typeof t !== 'object') return stableStringify(t);
+    var c = {}, k;
+    for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && MARK_KEYS_.indexOf(k) < 0) c[k] = t[k];
+    return stableStringify(c);
+  }
+  /* 札のチェックを文言の形に {"c:<文言>": true, "x:<内容の後ろからの位置>": true}（同じ文言はどちらかに印があれば true） */
+  function checkTextMap_(t) {
+    var out = {}, cs = (t && Object.prototype.toString.call(t.contents) === '[object Array]') ? t.contents : [],
+        ch = (t && t.checks && typeof t.checks === 'object') ? t.checks : {}, k, i;
+    for (k in ch) {
+      if (!Object.prototype.hasOwnProperty.call(ch, k) || ch[k] !== true || !/^\d{1,4}$/.test(k)) continue;
+      i = parseInt(k, 10);
+      if (i < cs.length) { if (typeof cs[i] === 'string') out['c:' + cs[i]] = true; }
+      else out['x:' + (i - cs.length)] = true;
+    }
+    return out;
+  }
+  /* base（盤面の部分を採った札）に、印を欄ごとに3方向で決めて載せた複製を返す */
+  function mergeMarks_(base, a, l, s) {
+    var out = cloneTask_(base);
+    /* ★決めた値が base と同じ欄は書き換えない（欄が無い札に done:false・comment:null を足すと、署名が変わって余分な送信になる） */
+    function put_(k, v) { if (stableStringify(v) !== stableStringify(base[k])) out[k] = v; }
+    /* 実施 */
+    var ad = !!(a && a.done), ld = !!(l && l.done), sd = !!(s && s.done);
+    var dv = (ld !== ad) ? ld : sd;
+    if (dv !== !!base.done) out.done = dv;   /* 欄が無い札（＝実施していない）に done:false を足さない */
+    /* コメント */
+    var ac = stableStringify(a ? (a.comment || null) : null), lc = stableStringify(l ? (l.comment || null) : null);
+    put_('comment', (lc !== ac) ? ((l && l.comment) || null) : ((s && s.comment) || null));
+    /* 項目のチェック（文言ごと） */
+    var am = checkTextMap_(a), lm = checkTextMap_(l), sm = checkTextMap_(s), keys = {}, k, res = {};
+    for (k in am) keys[k] = 1;
+    for (k in lm) keys[k] = 1;
+    for (k in sm) keys[k] = 1;
+    for (k in keys) {
+      if (!Object.prototype.hasOwnProperty.call(keys, k)) continue;
+      var av = !!am[k], lv = !!lm[k], sv = !!sm[k];
+      if ((lv !== av) ? lv : sv) res[k] = true;
+    }
+    var cs = Object.prototype.toString.call(out.contents) === '[object Array]' ? out.contents : [], checks = {}, i;
+    for (k in res) {
+      if (!Object.prototype.hasOwnProperty.call(res, k)) continue;
+      if (k.indexOf('c:') === 0) {
+        for (i = 0; i < cs.length; i++) if (cs[i] === k.substring(2)) checks[i] = true;   /* 内容から消えた文言は付けない */
+      } else {
+        checks[cs.length + parseInt(k.substring(2), 10)] = true;
+      }
+    }
+    if (stableStringify(checkTextMap_({ contents: cs, checks: checks })) !== stableStringify(checkTextMap_(base))) out.checks = checks;
+    return out;
+  }
+
   function indexById_(tasks) {
     var m = {}, i, t;
     for (i = 0; i < (tasks || []).length; i++) {
@@ -3337,7 +3398,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       seen[id] = 1;
       at = aT[id];
       st = sT[id];
-      if (!at || taskSig(at) !== taskSig(lt)) merged.push(lt);          /* ローカル変更/新規 → ローカル採用 */
+      if (at && st && taskSig(at) !== taskSig(lt)) {
+        /* ローカル変更×サーバーにもある → 盤面は札単位（ローカルが変えていればローカル）・印は欄ごと（2026-10-11）。
+         * 印しか違わない時もここに来る＝2台が同じ札に別々の印を付けても両方残る */
+        merged.push(mergeMarks_(boardSig_(at) !== boardSig_(lt) ? lt : st, at, lt, st));
+      }
+      else if (!at || taskSig(at) !== taskSig(lt)) merged.push(lt);     /* ローカル新規（またはサーバーに無いローカル変更）→ ローカル採用 */
       else if (st) merged.push(st);                                     /* ローカル不変 → サーバー版採用 */
       else if (careIdentHit_(sIdent, lt)) merged.push(lt);              /* サーバーの不在は「畳み」＝削除に追従しない */
       /* ローカル不変×サーバー無し ＝ 他端末の削除に追従（採用しない） */
