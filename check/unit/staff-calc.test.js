@@ -865,7 +865,7 @@ test('setEnums のあとも既定の18資格・5区分は引ける（既定コ�
   assert.equal(S.visibleEnum('employmentType').length, 5);
   assert.equal(S.ENUMS.employmentType.officer, '役員兼使用人');
   assert.equal(S.ENUMS.qualCodes.cw, '介護福祉士');
-  assert.equal(S.VERSION, '2026-09-23.8');
+  assert.equal(S.VERSION, '2026-10-11.1');
 });
 
 /* ── 委員会と構成員（spec-committee.md §1・§4）────────────────────

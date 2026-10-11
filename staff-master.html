@@ -1419,7 +1419,9 @@ body.cmt-print{page:cmt}
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
-<script src="staff-master-calc.js?v=2026-09-23.8"></script>
+<!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
+<script src="su-facility.js?v=2026-10-11"></script>
+<script src="staff-master-calc.js?v=2026-10-11.1"></script>
 <script>
 'use strict';
 
@@ -5069,7 +5071,8 @@ function resetCmtPrintWhat() {
 /* 出荷時の既定（COMMITTEE_DEFAULTS）。いまのマスタ（cmtDefOf）とは別物で、
    「既定に戻す」を出すかどうかの判定にだけ使う。持っていない旧版では null */
 function cmtShippedOf(code) {
-  var a = SC() ? SC().COMMITTEE_DEFAULTS : null, c = txt(code), out = null;
+  /* 所在自治体を当てた後の既定（2026-10-11）。熊本市・未設定では COMMITTEE_DEFAULTS と同じ値 */
+  var a = SC() ? (typeof SC().localDefaults === 'function' ? SC().localDefaults() : SC().COMMITTEE_DEFAULTS) : null, c = txt(code), out = null;
   if (!Array.isArray(a)) return null;
   a.forEach(function (d) { if (!out && txt(d && d.code) === c) out = d; });
   return out;
@@ -5186,6 +5189,25 @@ function failCommittees() {
   if (ST.screen === 'cmt') renderCmt();
 }
 /* ── 起動時に1回。取れなくても既定のマスタで「閲覧だけ」できる ── */
+/* 施設情報の所在自治体と法人設定を委員会の既定に当てる（2026-10-11・#10）。
+   熊本市・未設定は今と1字も変わらない（setLocality が false を返し、描き直しもしない）。
+   施設情報は通信で読むので、読めた時（端末の控えがあれば直ちに）に1回当てる */
+function applyLocality() {
+  if (!window.SUFacility || !SC() || typeof SC().setLocality !== 'function') return;
+  window.SUFacility.onReady(function () {
+    var cs = typeof window.SUFacility.corpSettings === 'function' ? window.SUFacility.corpSettings() : {};
+    var changed = false;
+    try {
+      changed = SC().setLocality({ municipality: window.SUFacility.municipality(),
+        homeGuidelineName: cs.homeGuidelineName, homeGuidelineUrl: cs.homeGuidelineUrl });
+    } catch (e) { changed = false; }
+    if (!changed) return;
+    buildCmtPicker();
+    if (ST.detail) fillCmtPicker(mergedDetailRow());
+    if (ST.screen === 'cmt') renderCmt();
+    if (ST.loaded && ST.cmtCol) renderList();
+  });
+}
 function loadCommittees() {
   var cfg = loadCfg();
   if (!URL_OK_RE.test(cfg.url) || !cfg.token) { failCommittees(); return Promise.resolve(false); }
@@ -6525,6 +6547,7 @@ function init() {
   loadList();
   loadEnums();                 /* 選択肢はサーバーが正本。取れなければ既定値のまま動く */
   loadCommittees();            /* 委員会マスタと外部委員。取れなければ既定のマスタで動く */
+  applyLocality();             /* 委員会の熊本市基準を施設情報の所在自治体と法人設定から決める（熊本市・未設定は今のまま） */
 }
 
 if (document.readyState === 'loading') {

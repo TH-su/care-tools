@@ -19,6 +19,7 @@
  *   SUFacility.floorLabel(no)     … 階の見出し（１階 など）
  *   SUFacility.roomPlan()         … 入居者マスタの間取り図（無ければ null）
  *   SUFacility.municipality()     … 施設のある市区町村（未設定なら空）（2026-10-08・監査10月版 #10）
+ *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -42,7 +43,14 @@
   /* 受け取った設定を信じない（形の崩れた値は捨て、足りない所は空で埋める） */
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
-    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null };
+    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
+                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' } };
+    /* 法人設定（2026-10-11）。名前は文字列だけ、URL は https:// で始まる形だけ持つ（紙と画面のリンクに出すため） */
+    if (p.corpSettings && typeof p.corpSettings === 'object') {
+      out.corpSettings.homeGuidelineName = str(p.corpSettings.homeGuidelineName).trim().slice(0, 80);
+      var gu = str(p.corpSettings.homeGuidelineUrl).trim();
+      out.corpSettings.homeGuidelineUrl = /^https:\/\/[^\s"<>]+$/.test(gu) ? gu.slice(0, 300) : '';
+    }
     if (Array.isArray(p.floors)) {
       for (var fl = 0; fl < p.floors.length; fl++) {
         var F = p.floors[fl];
@@ -148,6 +156,10 @@
     },
     roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
     municipality: function () { return (data && data.municipality) || ''; },
+    corpSettings: function () {
+      var c = data && data.corpSettings;
+      return { homeGuidelineName: (c && c.homeGuidelineName) || '', homeGuidelineUrl: (c && c.homeGuidelineUrl) || '' };
+    },
     aliases: function () {
       var map = {};
       if (!data) return map;

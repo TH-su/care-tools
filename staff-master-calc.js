@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-09-23.8';
+  var VERSION = '2026-10-11.1';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -905,6 +905,85 @@
     }
   ];
 
+  /* ── 所在自治体（2026-10-11・監査10月版 第2版 10）───────────────
+     上の COMMITTEE_DEFAULTS は熊本市の資料から起こした確定値のまま変えない（staff-api.gs と1字一句そろえる約束・
+     gas/tests の staff_committee_gas_test がそれを照合する）。施設情報（facility-profile.json）の municipality と
+     法人設定（corpSettings）が熊本市以外を指す時だけ、画面と紙に出す既定（LOCAL_DEFAULTS）の文言を置き換える。
+       ・未設定（施設情報が読めない・municipality が空）と熊本市は、今と1字も変えない（LOCAL_DEFAULTS は COMMITTEE_DEFAULTS そのもの）
+       ・熊本市以外で法人設定が空 → 一般名「所在自治体の有料老人ホーム設置運営指導指針」で出し、案内ページは空・要確認を付ける
+         （実在しない文書名を実地指導の紙に刷らないため。2026-10-11 本人裁定）
+       ・法人設定に名称・URL があればそれを使う
+     置き換えるのは熊本市の指針の名前・略称・案内ページ・「熊本市に確認」だけ。条文（居宅基準）の部分は触らない。
+     ★サーバー（staff-api.gs）の既定は熊本市の文言のまま。画面は basis・purpose・startedAt・todoNote を既定から引き直す
+       （setCommittees）ので、紙に出るのはここで置き換えた文言になる。 */
+  var LOC_KUMAMOTO = {
+    municipality: '熊本市',
+    name: '熊本市有料老人ホーム設置運営指導指針',
+    short: '熊本市指針',
+    url: 'https://www.city.kumamoto.jp/kiji0032329/index.html'
+  };
+  var LOC_GENERIC_NAME = '所在自治体の有料老人ホーム設置運営指導指針';
+  var LOC_TODO_NOTE = '有料老人ホームの指導指針の名称と案内ページ（URL）を、施設情報の法人設定に入れてください';   /* 紙に出るのでファイル名は書かない（置き場は facility-profile.json の corpSettings） */
+  var LOCALITY = LOC_KUMAMOTO;
+  var LOCAL_DEFAULTS = COMMITTEE_DEFAULTS;
+
+  function localizeText(s, loc) {
+    s = trim(s);
+    if (loc === LOC_KUMAMOTO) return s;
+    return s.split(LOC_KUMAMOTO.name).join(loc.name)
+            .split(LOC_KUMAMOTO.short).join(loc.short)
+            .split(LOC_KUMAMOTO.municipality + 'に確認').join(loc.municipality + 'に確認');
+  }
+  function localizeDefault(d, loc) {
+    if (loc === LOC_KUMAMOTO) return d;
+    var o = {}, k;
+    for (k in d) if (Object.prototype.hasOwnProperty.call(d, k)) o[k] = d[k];
+    if (Object.prototype.toString.call(d.sites) === '[object Array]') o.sites = d.sites.slice();
+    o.basis = localizeText(d.basis, loc);
+    o.purpose = localizeText(d.purpose, loc);
+    o.startedAt = localizeText(d.startedAt, loc);
+    o.todoNote = localizeText(d.todoNote, loc);
+    if (trim(d.url) === LOC_KUMAMOTO.url) {
+      o.url = loc.url;
+      /* 案内ページが分からない＝人に確かめてもらう（既に要確認なら、その確認事項を残す） */
+      if (!loc.url && d.todo !== true) { o.todo = true; o.todoNote = LOC_TODO_NOTE; }
+    }
+    return o;
+  }
+
+  /* 施設情報から所在自治体を決める。opt = {municipality, homeGuidelineName, homeGuidelineUrl}（どれも省略可） */
+  function localityFrom(opt) {
+    var mun = trim(opt && opt.municipality), name = trim(opt && opt.homeGuidelineName), url = trim(opt && opt.homeGuidelineUrl);
+    if (!/^https:\/\/[^\s"<>]+$/.test(url)) url = '';
+    var isKuma = (mun === '' || mun === LOC_KUMAMOTO.municipality);
+    if (isKuma && !name && !url) return LOC_KUMAMOTO;
+    return {
+      municipality: mun || '所在自治体',
+      name: name || (isKuma ? LOC_KUMAMOTO.name : LOC_GENERIC_NAME),
+      short: name || (isKuma ? LOC_KUMAMOTO.short : '所在自治体の指針'),
+      url: url || (isKuma && !name ? LOC_KUMAMOTO.url : '')
+    };
+  }
+
+  /* 所在自治体を反映する。変わらなければ false（画面は描き直さなくてよい）。
+     変われば既定を引き直し、受け取り済みのサーバーのマスタにも同じ規則（setCommittees）を当て直す */
+  var LAST_SERVER_LIST = null;
+  function setLocality(opt) {
+    var loc = localityFrom(opt);
+    var same = (loc === LOCALITY) || (loc !== LOC_KUMAMOTO && LOCALITY !== LOC_KUMAMOTO &&
+      loc.municipality === LOCALITY.municipality && loc.name === LOCALITY.name && loc.short === LOCALITY.short && loc.url === LOCALITY.url);
+    if (same) return false;
+    LOCALITY = loc;
+    LOCAL_DEFAULTS = COMMITTEE_DEFAULTS.map(function (d) { return localizeDefault(d, loc); });
+    if (!(LAST_SERVER_LIST && setCommittees(LAST_SERVER_LIST))) COMMITTEES = LOCAL_DEFAULTS.map(function (d) { return fromDefault(d); });
+    return true;
+  }
+  function locality() {
+    return { municipality: LOCALITY.municipality, name: LOCALITY.name, short: LOCALITY.short, url: LOCALITY.url, isDefault: LOCALITY === LOC_KUMAMOTO };
+  }
+  /* 画面の「既定に戻す」が引く出荷時の既定（所在自治体を当てた後）。写しを返す */
+  function localDefaults() { return LOCAL_DEFAULTS.map(function (d) { return fromDefault(d); }); }
+
   /* 既定の開催頻度を直した時の、前の既定の文面（2026-09-23.7）。サーバー（staff-api.gs の
      RETIRED_DEFAULT_FREQ_）と同じ中身にする（テストで照合）。
      ★頻度は書き換え可の側だが、画面に入力欄が無く、保存のたびに読み出した文面が書き戻される＝既定を
@@ -981,8 +1060,8 @@
 
   /* 既定にある委員会（setCommittees で「既定の値を正とする」項目を引く） */
   function defaultCommittee(code) {
-    for (var i = 0; i < COMMITTEE_DEFAULTS.length; i++) {
-      if (COMMITTEE_DEFAULTS[i].code === code) return COMMITTEE_DEFAULTS[i];
+    for (var i = 0; i < LOCAL_DEFAULTS.length; i++) {
+      if (LOCAL_DEFAULTS[i].code === code) return LOCAL_DEFAULTS[i];
     }
     return null;
   }
@@ -1020,7 +1099,7 @@
      そのまま返し、abuse.drill・kondan.alias などが undefined（setCommittees 後は ''）になる＝
      同じ公開APIが状況で別の形を返す。さらに sites 配列の参照を既定と共有してしまい、
      fromDefault の「★sites は必ず複製する」と矛盾する。 */
-  var COMMITTEES = COMMITTEE_DEFAULTS.map(function (d) { return fromDefault(d); });
+  var COMMITTEES = LOCAL_DEFAULTS.map(function (d) { return fromDefault(d); });
 
   /* サーバーの委員会マスタを反映する。[{code,…}] の配列のときだけ差し替える。
      空配列・壊れた値は無視する＝応答が古くても画面から委員会が消えない（setEnums と同じ安全側）。
@@ -1094,11 +1173,12 @@
     }
     if (!out.length) return 0;
     /* 既定にあって送られてこなかった体制を、既定の順で末尾に足す（既定の値そのまま） */
-    for (i = 0; i < COMMITTEE_DEFAULTS.length; i++) {
-      if (Object.prototype.hasOwnProperty.call(seen, COMMITTEE_DEFAULTS[i].code)) continue;
-      out.push(fromDefault(COMMITTEE_DEFAULTS[i]));
+    for (i = 0; i < LOCAL_DEFAULTS.length; i++) {
+      if (Object.prototype.hasOwnProperty.call(seen, LOCAL_DEFAULTS[i].code)) continue;
+      out.push(fromDefault(LOCAL_DEFAULTS[i]));
     }
     COMMITTEES = out;
+    LAST_SERVER_LIST = list;          /* 所在自治体が後から分かった時に、同じ規則で当て直すため（setLocality） */
     return out.length;
   }
 
@@ -1638,6 +1718,9 @@
     COMMITTEE_ROLES: COMMITTEE_ROLES,
     COMMITTEE_KINDS: COMMITTEE_KINDS,
     setCommittees: setCommittees,
+    setLocality: setLocality,
+    locality: locality,
+    localDefaults: localDefaults,
     committees: committees,
     committeeOf: committeeOf,
     committeesOf: committeesOf,
