@@ -137,24 +137,34 @@
 
   /* ── 現場のアカウントの日データの保存（0010・2026-10-11）──
    * 送ってきた盤面から、札ごとの done・checks・comment だけを抜き出して kv_put_marks へ送る。
-   * ★応答の版は「書いた版の1つ前」を返す。端末は自分の版がサーバーより古いと見て、次の取得でサーバーの盤面を
-   *   取り込む（現場の端末で動かした配置・時刻など、書けなかった部分はサーバーの盤面に戻る）。書いた版をそのまま
-   *   返すと、端末は書けなかった部分を持ったまま「同期済み」になり、サーバーとずれ続ける。
+   * checks は「何番目か」でなく内容の文言で送る（c:<文言>＝真偽を全部・内容の後ろの欄は x:<位置>）。サーバーは端末が
+   *   そろえた版（rev）と比べて、端末が変えた所だけを今の版へ差し込む＝2台が同じ札に印を付けても両方残る。
+   * ★応答の版: 書けた時は「書いた版の1つ前」、変わらなかった時は「端末が送ってきた版」を返す。どちらも、サーバーの方が
+   *   新しければ端末は次の取得でサーバーの盤面を取り込む（他の端末の印や、現場で動かせない配置・時刻はサーバーの盤面になる）。
+   *   書いた版をそのまま返すと、端末は書けなかった部分を持ったまま「同期済み」になり、サーバーとずれ続ける。
+   *   変わらなかった時に1つ前を返すと、取り込みの後の自動の手直しで「取り込み→送信→取り込み」が止まらない。
    * 確定の解除・強制の保存（lockOverride・force）は現場には許さない。まだ無い日・形の違う印は、待っても直らない
    * ので 'forbidden' として返す（ワークスケジュールは送り直しを止めて知らせる）。 */
   var WSDAY_RE = /^wsday_\d{4}-\d{2}-\d{2}$/;
-  var CHECK_KEY_RE = /^\d{1,3}$/;
+  var CHECK_KEY_RE = /^\d{1,4}$/;
   var COMMENT_KEYS = ['text', 'size', 'bold', 'pinned', 'dx', 'dy', 'w', 'h'];
   function marksOf(data) {
     var out = { tasks: {} }, tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
     tasks.forEach(function (t) {
       if (!t || typeof t.id !== 'string' || !t.id || Object.prototype.hasOwnProperty.call(out.tasks, t.id)) return;
       var m = { done: !!t.done };
-      if (t.checks && typeof t.checks === 'object' && !Array.isArray(t.checks)) {
-        var ck = {};
-        Object.keys(t.checks).forEach(function (k) { if (CHECK_KEY_RE.test(k) && typeof t.checks[k] === 'boolean') ck[k] = t.checks[k]; });
-        m.checks = ck;
-      } else if (t.checks === null) m.checks = null;
+      var cs = Array.isArray(t.contents) ? t.contents : [], ch = (t.checks && typeof t.checks === 'object' && !Array.isArray(t.checks)) ? t.checks : {};
+      var ck = {};
+      cs.forEach(function (txt, i) {
+        if (typeof txt !== 'string') return;
+        ck['c:' + txt] = !!(ck['c:' + txt] || ch[i] === true || ch[String(i)] === true);   // 同じ文言が2つあれば、どちらかで true
+      });
+      Object.keys(ch).forEach(function (k) {
+        if (!CHECK_KEY_RE.test(k) || ch[k] !== true) return;
+        var i = parseInt(k, 10);
+        if (i >= cs.length && i - cs.length < 1000) ck['x:' + (i - cs.length)] = true;   // 内容の後ろの欄（メモ等）
+      });
+      m.checks = ck;
       if (t.comment && typeof t.comment === 'object' && typeof t.comment.text === 'string') {
         var c = {};
         COMMENT_KEYS.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(t.comment, k)) c[k] = t.comment[k]; });
@@ -171,11 +181,12 @@
       if (r.error) return fail(r);
       var d = r.data || { ok: false, error: '通信失敗' };
       if (d.ok && d.marksOnly) {
-        if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
+        if (d.unchanged) return { ok: true, rev: Math.min(Number(payload.rev) || 0, Number(d.rev) || 0), marksOnly: true, unchanged: true };
+        if (rawGas) scheduleMirror(key, rawGas);
         return { ok: true, rev: Math.max(0, (Number(d.rev) || 0) - 1), marksOnly: true };
       }
       if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
-      return d;   // conflict・locked・shadow はそのまま（端末の今までの扱い）
+      return d;   // locked・shadow はそのまま（端末の今までの扱い）。kv_put_marks は版が古くても conflict を返さない
     });
   }
 

@@ -71,8 +71,7 @@ function makeKv(o) {
       if (name === 'kv_head') { const revs = {}; (args.p_keys || []).forEach(k => { revs[k] = db.rev; }); return Promise.resolve({ data: { revs } }); }
       if (name === 'kv_put_marks') {
         if (o.marksReply) return Promise.resolve({ data: o.marksReply });
-        if (args.p_rev !== db.rev) return Promise.resolve({ data: { ok: false, conflict: true, rev: db.rev } });
-        db.rev++; db.marks = clone(args.p_marks);
+        db.rev++; db.marks = clone(args.p_marks);   // 本物は版が古くても conflict にしない（3方向の差し込み）
         return Promise.resolve({ data: { ok: true, rev: db.rev, baseRev: db.rev - 1, marksOnly: true, applied: 1, missing: 0 } });
       }
       if (name === 'kv_put') {
@@ -139,13 +138,13 @@ function makeKv(o) {
 
     /* E（0010・2026-10-11）: 現場のアカウントの日データは印だけを kv_put_marks へ */
     const dput = { action: 'put', key: 'wsday_2026-10-10', rev: 5, data: { meta: { date: '2026-10-10' }, staff: [{ name: '架空 職員' }],
-      tasks: [{ id: 't1', start: '09:00', done: true, checks: { 1: true, x: true, 2: 'yes' } }, { id: 't2', done: false, comment: null }, { id: 't1', done: false }, { start: '10:00' }] } };
+      tasks: [{ id: 't1', start: '09:00', contents: ['食事', '服薬'], done: true, checks: { 1: true, x: true, 3: true, 0: 'yes' } }, { id: 't2', done: false, comment: null }, { id: 't1', done: false }, { start: '10:00' }] } };
     k = makeKv({ role: 'field' });
     r = await k.kv.call(dput, k.raw);
     const mk = (k.rpcs.filter(x => x.name === 'kv_put_marks')[0] || {}).args;
     t('★E 現場の日データの保存は kv_put_marks（kv_put は呼ばない）', !!mk && !k.rpcs.some(x => x.name === 'kv_put'), k.rpcs.map(x => x.name));
-    t('★E 印だけを送る（checks は数の鍵と真偽だけ・id の無い札と同じ id の2枚目は送らない・comment:null は消す印）',
-      !!mk && JSON.stringify(mk.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 1: true } }, t2: { done: false, comment: null } } }) && mk.p_rev === 5, mk);
+    t('★E 印だけを送る（checks は内容の文言で全部・後ろの欄は x:・id の無い札と同じ id の2枚目は送らない・comment:null は消す印）',
+      !!mk && JSON.stringify(mk.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 'c:食事': false, 'c:服薬': true, 'x:1': true } }, t2: { done: false, checks: {}, comment: null } } }) && mk.p_rev === 5, mk);
     t('★E 応答の版は書いた版の1つ前（端末は次の取得でサーバーの盤面を取り込む）', r.ok === true && r.rev === 5 && k.db.rev === 6, r);
     t('E 書けたら Google への写し返しを予約する', k.timers.length === 1);
     k = makeKv({ role: 'field' });
@@ -158,9 +157,9 @@ function makeKv(o) {
       r = await k.kv.call(dput, k.raw);
       t('E 待っても直らない断り（' + e + '）は forbidden として返す', r.error === 'forbidden' && k.timers.length === 0, r);
     }
-    k = makeKv({ role: 'field', db: { rev: 9 } });
+    k = makeKv({ role: 'field', marksReply: { ok: true, rev: 9, unchanged: true, marksOnly: true } });
     r = await k.kv.call(dput, k.raw);
-    t('E 版が古ければ conflict をそのまま返す（端末が取り直して統合する）', r.conflict === true && r.rev === 9, r);
+    t('★E 変わらなかった時は端末が送ってきた版を返す（取り込み→送信の繰り返しを起こさない・サーバーが新しければ取り込む）', r.ok === true && r.rev === 5 && k.timers.length === 0, r);
     k = makeKv({ role: 'field', marksReply: { ok: false, error: 'locked', rev: 3 } });
     r = await k.kv.call(dput, k.raw);
     t('E 確定した日は locked をそのまま返す', r.error === 'locked', r);
@@ -306,7 +305,7 @@ function makeKv(o) {
       const calls = [];
       const rec = name => function () { calls.push(name); };
       const day = { meta: { date: '2026-10-10', rev: 5 }, staff: [{ name: '架空 職員' }],
-                    tasks: [{ id: 't1', staffId: 's1', start: '09:00', done: true, checks: { 0: true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } }] };
+                    tasks: [{ id: 't1', staffId: 's1', start: '09:00', contents: ['食事'], done: true, checks: { 0: true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } }] };
       const box = {
         console, JSON, Math, Date, Number, String, Array, Object, Promise, Error,
         syncOn: () => true, dayPushBusy_: false, dayPushAgain_: false, lastPushed: {}, unlockForceDates_: {}, conflictN_: {},
@@ -354,7 +353,7 @@ function makeKv(o) {
     const sent = fm.k.rpcs.filter(r => r.name === 'kv_put_marks')[0];
     t('★E 現場のアカウントの日データの保存は kv_put_marks へ（kv_put は呼ばない・Google へ流さない）', !!sent && !fm.k.rpcs.some(r => r.name === 'kv_put') && fm.k.raws.length === 0, fm.k.rpcs);
     t('★E 送るのは札の done・checks・comment だけ（担当・時刻・職員・メタは送らない）',
-      !!sent && JSON.stringify(sent.args.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 0: true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } } } }), sent && sent.args);
+      !!sent && JSON.stringify(sent.args.p_marks) === JSON.stringify({ tasks: { t1: { done: true, checks: { 'c:食事': true }, comment: { text: '済', size: '中', bold: false, pinned: false, dx: null, dy: null, w: null, h: null } } } }), sent && sent.args);
     t('★E 書けたら未送信の印を降ろし、版は書いた版の1つ前（次の取得でサーバーの盤面を取り込む）',
       fm.calls.indexOf('clearDayDirty') >= 0 && fm.calls.indexOf('dispatch') >= 0 && fm.k.db.rev === 6, fm.calls);
     const ok = await runDay({});
