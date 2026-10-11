@@ -5335,6 +5335,19 @@ function mcStart(){
     mcLoad_();
   }).catch(function(){ /* 聞けない時は出さない（従来の画面のまま） */ });
 }
+/* 施設情報（su-facility.js）が読めた・読めないと分かった時に進む（2026-10-11・監査10月版 v2 入居者マスタ 第4手）。
+   デイの見分け（mcIsDayFacility_）は通所の名前・別名で行うため、読む前に候補を作ると、事業所欄が通所の名前だけの行を
+   デイとして外せない（端末の控えが無い初回・控えを消した後）。★読み込みが止まっても候補を出せなくしないよう、10秒で待つのをやめて従来の判定で進む */
+var MC_FAC_WAIT_MS=10000;
+function mcFacReady_(){
+  return new Promise(function(res){
+    var done=false; function go(){ if(!done){ done=true; res(); } }
+    try{
+      if(window.SUFacility&&typeof SUFacility.onReady==='function'){ SUFacility.onReady(go); setTimeout(go,MC_FAC_WAIT_MS); }
+      else go();
+    }catch(e){ go(); }
+  });
+}
 /* 判断の一覧（サーバー）と申送（直近14日）を取り、候補を組み立てる */
 function mcLoad_(){
   if(!mcSt) return;
@@ -5347,7 +5360,7 @@ function mcLoad_(){
   }).catch(function(e){ return {ok:/不明なaction/.test(String(e&&e.message))?'old':'ng', rows:[]}; });   /* ★then の中の throw も拾う（2回目の指摘C） */
   var pEv=mcMskEvents_(mcYmd_(from),mcYmd_(now)).then(function(d){ return {ok:'ok', d:d}; },
     function(e){ return {ok:(e&&e.message==='MC_NO_MSK')?'none':'ng', d:null}; });
-  Promise.all([pList,pEv]).then(function(r){
+  Promise.all([pList,pEv,mcFacReady_()]).then(function(r){
     if(gen!==mcGen||dg!==devGen||getDeviceRole()==='field'||!mcSt) return;
     var dec={}; r[0].rows.forEach(function(x){ if(x&&x.srcKey) dec[String(x.srcKey)]=x; });
     mcSt.server=r[0].ok; mcSt.msk=r[1].ok; mcSt.decided=dec;
