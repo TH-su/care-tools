@@ -59,6 +59,9 @@ body {
 .hdr-btn.savebtn.saving { background: #66bb6a; border-color: #66bb6a; }
 .hdr-btn.app-link { font-size: 0.75rem; padding: 6px 8px; white-space: nowrap; }
 .hdr-btn.wk { font-size: 0.75rem; padding: 5px 7px; white-space: nowrap; }
+/* 現場の端末の表示（2026-10-11）。見出しの中＝印刷では .hdr ごと隠れる */
+.hdr-field { font-size: 12px; font-weight: 700; color: #7a4b00; background: #fff4e0; border: 1px solid #e0a040; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.hdr-field[hidden] { display: none; }
 /* 日単位ロックのチェックボックス（ヘッダー内・.hdrごと@media printで非表示＝印刷非干渉・盤面レイアウト非接触） */
 .hdr-lock {
   display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
@@ -672,6 +675,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="hdr-btn wk" id="btnNextWeek" title="来週(+7日)">来週</button>
   <label class="hdr-lock" id="lockLabel" title="この日の盤面を自動更新から保護（シフト反映・週間計画同期・自動配置を停止／手動編集は可能）"><input type="checkbox" id="chkLock">🔒ロック</label>
   <span class="hdr-title">ワークスケジュール</span>
+  <!-- 現場の端末の表示（2026-10-11）。盤面は見るだけ・印は付けられる。見出しの中なので印刷には出ない -->
+  <span class="hdr-field" id="fieldBanner" role="note" hidden>📱 現場の端末：盤面は見るだけ（実施・チェック・コメントは付けられます）</span>
   <button class="hdr-btn app-link" id="btnOpenCare" title="利用者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
   <span class="hdr-sp"></span>
@@ -6575,6 +6580,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       },
       /* 直近の重畳解消の集計を1回だけ返す（呼ぶと空になる）。無ければ null */
+      /* いま自動処理（auto の中）か。現場の端末の盤面ガード（app.js）が、本人の操作だけを止めるのに使う（2026-10-11） */
+      inAuto: function () { return autoDepth > 0; },
       takeRepair: function () {
         if (!repair.bumped.length && !repair.clipped && !repair.removed && !repair.rehomed && !repair.regrouped) return null;
         var r = repair;
@@ -8612,7 +8619,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* ===== トースト ===== */
   var toastTimer = null;
+  var fieldBlockedAt_ = 0;   /* 現場の端末の盤面ガードで止めた時刻（2026-10-11）。直後の成功の知らせで止めの知らせを消さない */
   function toast(msg, isNg) {
+    if (!isNg && Date.now() - fieldBlockedAt_ < 2000) return;
     var t = $('toast');
     t.textContent = msg;
     t.className = isNg ? 'ng on' : 'on';
@@ -10608,6 +10617,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function saveEditor() {
+    /* 現場の端末（2026-10-11）: 盤面の欄・週間計画への書き戻し・入院の切り替えはせず、実施とコメントだけを保存する。
+     * 新しい札は作らない（盤面の操作） */
+    if (wsIsFieldDevice_()) {
+      var ft_ = ui.editingId ? M.findTask(store.get().tasks, ui.editingId) : null;
+      if (!ft_) { fieldBlock_(); hideModals(); return; }
+      var fpc_ = ft_.comment || null;
+      store.dispatch({ type: 'UPDATE_TASK', id: ui.editingId, patch: {
+        done: $('edDone').checked,
+        comment: M.normComment({ text: $('edComment').value.trim(), size: $('edCommentSize').value,
+                                 bold: $('edCommentBold').checked, pinned: $('edCommentPin').checked,
+                                 dx: fpc_ ? fpc_.dx : null, dy: fpc_ ? fpc_.dy : null,
+                                 w: fpc_ ? fpc_.w : null, h: fpc_ ? fpc_.h : null })
+      } });
+      hideModals();
+      return;
+    }
     var day = store.get();
     var kind = ui.editKind;
     var start = inputToMin($('edStart').value);
@@ -10800,6 +10825,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function applyShiftText(text) {
+    if (fieldBlock_()) return;   /* 現場の端末ではシフトを取り込まない（2026-10-11） */
     /* 日単位ロック: 手動TSV貼付も finalizeBoard で自動配置/施設業務・休憩充填が走るため、
      * クラウド経路(applyShiftForDate)と対称にロック中はスキップ＝ロックの約束(シフト反映停止)を全経路で守る。 */
     if (dayLocked_()) {
@@ -10847,6 +10873,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function applyWeeklyJson(text) {
+    if (fieldBlock_()) return;   /* 現場の端末では週間計画を取り込まない（2026-10-11） */
     var db = null;
     try { db = JSON.parse(text); } catch (e) {
       $('imResult').textContent = 'JSONを解釈できません'; return;
@@ -10932,6 +10959,65 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var LUNCH_LOG_MAX = 10;
   function wsIsFieldDevice_() {
     try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; }
+  }
+  /* ═══ 現場の端末の盤面ガード（2026-10-11・監査10月版 第2版 ワークスケジュール 第2手）═══
+   * 現場の端末（su_device_role==='field'）では、本人の操作で盤面（配置・時刻・内容・職員・ロック等）を変えさせない。
+   * 通すのは札の印だけ＝実施（TOGGLE_DONE）と、patch が done・checks・comment だけの UPDATE_TASK（代表者の決定 A）。
+   * 編集画面の保存は、現場の端末では実施とコメントだけを入れる（saveEditor の先頭）。
+   * 本人の操作から始まる作り直し（シフトの取込・再取込・再反映・未反映の反映、列の削除、翌週コピー）は入口で止める。
+   * 自動処理（store.auto の中・日付を開いた時の照合やシフト反映）は表示のため止めない。送り方は今までどおり
+   * （保存先を Supabase に戻した後は、su-kv.js が現場のアカウントの送信を印だけにする＝0010）。 */
+  var FIELD_BOARD_MSG = 'この端末（現場用）では盤面は変えられません。実施・チェック・コメントは付けられます。盤面は事務所PCで変えてください';
+  var FIELD_MARK_KEYS_ = { done: 1, checks: 1, comment: 1 };
+  function fieldAllows_(action) {
+    var t = action && action.type, k, p;
+    if (t === 'INIT_DAY' || t === 'TOGGLE_DONE') return true;
+    if (t === 'SET_META') {   /* 同期の版（rev）の控えだけ通す。ロック・全体コメントなどは盤面の操作 */
+      p = action.patch || {};
+      for (k in p) if (Object.prototype.hasOwnProperty.call(p, k) && k !== 'rev') return false;
+      return true;
+    }
+    if (t === 'UPDATE_TASK') {
+      p = action.patch || {};
+      var any = false;
+      for (k in p) {
+        if (!Object.prototype.hasOwnProperty.call(p, k)) continue;
+        if (!FIELD_MARK_KEYS_[k]) return false;
+        any = true;
+      }
+      return any;
+    }
+    return false;
+  }
+  var fieldToastAt_ = 0;
+  function fieldToast_() {
+    var now = Date.now();
+    fieldBlockedAt_ = now;   /* 止めた操作の呼び手が続けて出す「〜しました」を抑える（toast） */
+    if (now - fieldToastAt_ > 4000) { fieldToastAt_ = now; try { toast(FIELD_BOARD_MSG, true); } catch (e) {} }
+  }
+  /* 本人の操作から始まる作り直しの入口で呼ぶ。現場の端末なら知らせて true（呼び手はそこで止める） */
+  function fieldBlock_() {
+    if (!wsIsFieldDevice_()) return false;
+    fieldToastAt_ = 0;
+    fieldToast_();
+    return true;
+  }
+  function guardFieldDispatch_(st) {
+    var raw = st.dispatch;
+    st.dispatch = function (action) {
+      if (wsIsFieldDevice_() && !(st.inAuto && st.inAuto()) && !fieldAllows_(action)) {
+        fieldToast_();
+        try { renderAll(); } catch (eR) {}   /* ドラッグ中の見た目を元に戻す */
+        return;
+      }
+      return raw.call(st, action);
+    };
+    return st;
+  }
+  function renderFieldBanner_() {
+    var b = $('fieldBanner'), f = wsIsFieldDevice_(), lk = $('chkLock');
+    if (b) b.hidden = !f;
+    if (lk) { lk.disabled = f; if (f) lk.title = '現場の端末ではロックを変えられません（事務所PCで変えてください）'; }
   }
   function lunchLogStamp_(d) {
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
@@ -11425,7 +11511,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function ne_(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; }
   function getNotes_() { var d = store.get(); if (!d.meta.notes) d.meta.notes = []; return d.meta.notes; }
   function findNote_(id) { var ns = getNotes_(); for (var i = 0; i < ns.length; i++) if (ns[i].id === id) return ns[i]; return null; }
+  /* 現場の端末（2026-10-11）: 全体コメントは盤面の一部＝変えさせない。描いた時の中身を控え、変えられたら控えに戻す（保存も送信もしない） */
+  var notesSnap_ = null;
   function persistNotes_() {
+    if (wsIsFieldDevice_()) {
+      var d_ = store.get();
+      d_.meta.notes = notesSnap_ ? JSON.parse(notesSnap_) : (d_.meta.notes || []);
+      fieldBlock_();
+      try { renderNotes(); } catch (eRn) {}
+      return;
+    }
     /* 既存の日次保存(saveTimer)へ相乗り＝switchDate が saveTimer をflushするのでノートも取りこぼさない */
     try { scheduleSave(); } catch (e) {}
     try { schedulePushDay(); } catch (e) {}
@@ -11454,6 +11549,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return box;
   }
   function renderNotes() {
+    if (wsIsFieldDevice_()) { try { notesSnap_ = JSON.stringify(getNotes_()); } catch (eSn) { notesSnap_ = null; } }
     if (printing_()) return;   /* 印刷中は編集中ノートのDOM作り直しをしない（§10保護・複製ノートも守る） */
     var layer = $('noteLayer'); if (!layer) return;
     var ns = getNotes_(), byId = {}, i;
@@ -11471,6 +11567,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
   function addNote(kind) {
+    if (fieldBlock_()) return;   /* 現場の端末では全体コメントを足さない（2026-10-11） */
     var wrap = $('boardWrap'), ns = getNotes_();
     /* x はボタン左に揃える。y は職員名ヘッダ(.b-heads=7:00の行)より下に出す
      * ＝ヘッダは sticky(z-index40) で吹き出し(z31)の上に被るため、ヘッダに重なるとD&Dできないので必ず下へ。 */
@@ -11490,6 +11587,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (box) { var body = box.querySelector('.b-note-body'); if (body) body.focus(); }
   }
   function deleteNote_(id) {
+    if (fieldBlock_()) return;   /* 現場の端末では全体コメントを消さない（2026-10-11） */
     var ns = getNotes_(), i;
     for (i = 0; i < ns.length; i++) if (ns[i].id === id) { ns.splice(i, 1); break; }
     var box = $('noteLayer').querySelector('.b-note[data-id="' + id + '"]'); if (box && box.parentNode) box.parentNode.removeChild(box);
@@ -13803,6 +13901,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * - 列(スロットID)が日付をまたいで安定しているため、前週の並び順がそのまま維持される。
    * - 翌週の既存「支援」は破棄して差し替え。施設業務/休憩/自由枠は翌週オープン時に自動再生成。 */
   function copyCareToNextWeek() {
+    if (fieldBlock_()) return;   /* 現場の端末では翌週の盤面を作らない（2026-10-11） */
     var src = store.get();
     if (!src.tasks.length) { toast('コピーする内容がありません'); return; }
     var careCount = 0;
@@ -14096,6 +14195,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     hideModals();
   }
   function deleteColEdit_() {
+    if (fieldBlock_()) return;   /* 現場の端末では列を消さない（2026-10-11） */
     var day = store.get();
     var colDef = colByIndex_(day, editingCol_);
     var chk_ = canDeleteColumn_(day, colDef);
@@ -15121,6 +15221,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('btnRedo').addEventListener('click', function () { store.redo(); });
     /* 日単位ロックの切替（通常dispatch=Undo可・daySigに含まれpushで全端末へ伝播）。 */
     if ($('chkLock')) $('chkLock').addEventListener('change', function () {
+      /* 現場の端末ではロックも盤面の操作＝変えさせない（2026-10-11）。止めた時に「ロック中」と言わないよう先に返す */
+      if (wsIsFieldDevice_()) {
+        $('chkLock').checked = !!(store.get().meta && store.get().meta.locked);
+        toast(FIELD_BOARD_MSG, true);
+        return;
+      }
       var on = $('chkLock').checked;
       /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
       store.dispatch({ type: 'SET_META', patch: { locked: on }, frozen: !on && autoLockPast_(store.get()) });
@@ -15181,6 +15287,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('badgeShiftChg')) $('badgeShiftChg').addEventListener('click', function () {
       var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
       if (!n) { toast('未反映のシフト変更はありません'); return; }
+      if (fieldBlock_()) return;   /* 現場の端末ではシフトを盤面へ反映しない（2026-10-11） */
       var why = shiftHeldReason_();
       if (why === 'locked') {
         /* ロックは「勝手に反映しない」約束。解除はユーザーの明示操作に委ね、導線だけ示す
@@ -15354,11 +15461,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('imShiftApply').addEventListener('click', function () { applyShiftText($('imShiftText').value); });
     /* クラウドのシフトから当日出勤者を取得して反映（手動編集は保護） */
     $('imShiftCloud').addEventListener('click', function () {
+      if (fieldBlock_()) return;   /* 現場の端末ではシフトを取り込まない（2026-10-11） */
       $('imResult').textContent = 'シフトを取得中…';
       applyShiftForDate(ui.currentDate, { fresh: true, report: true });
     });
     /* 再取込（全上書き）: 手動編集も無視してシフトで埋め直す */
     $('imShiftRecloud').addEventListener('click', function () {
+      if (fieldBlock_()) return;
       if (!window.confirm('手動で編集した職員枠も含めて、シフトの内容で全て上書きします。よろしいですか？')) return;
       $('imResult').textContent = 'シフトを取得中…';
       applyShiftForDate(ui.currentDate, { fresh: true, force: true, report: true });
@@ -15382,6 +15491,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       rd.readAsText(f);
     });
     $('imMasterApply').addEventListener('click', function () {
+      if (fieldBlock_()) return;   /* 現場の端末では支援マスタを取り込まない（全端末の盤面が作り直されるため・2026-10-11） */
       var p = null;
       try { p = JSON.parse($('imMasterText').value); } catch (e) {}
       if (!p || !p.weekdays) {
@@ -15401,6 +15511,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { pushMasterNow(); } catch (e3) {}
     });
     $('imMasterSeed').addEventListener('click', function () {
+      if (fieldBlock_()) return;   /* 現場の端末ではマスタから盤面を作らない（2026-10-11） */
       /* 日単位ロック: マスタからの生成＝一括再構成（seedFromMaster/ADD_TASKS）なのでロック中は全分岐を停止。
        * seedFromMaster がゲートで無処理化するのに『生成しました』と誤表示する誤爆も同時に防ぐ。 */
       if (dayLocked_()) {
@@ -15598,6 +15709,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ★ロック日ガード: applyShiftForDate はロックで skip するが、その完了コールバックが素通りして
        *   finalizeBoard(trimEmptyCols＋reassert＋autoPlaceCare＋fillFacilityWork＝配置の作り直し)＋flushAll_ を
        *   実行し、ロック済みの実績を散らして保存/pushしていた。ロック中は一切の再構成を行わない。 */
+      if (fieldBlock_()) return;   /* 現場の端末では再反映しない（2026-10-11） */
       if (dayLocked_()) {
         if ($('stDiagMsg')) $('stDiagMsg').textContent = '🔒 ロック中のため再反映しません。解除してから実行してください。';
         try { renderAll(); } catch (eL1) {}
@@ -15715,6 +15827,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.body.removeChild(a);
     });
     $('stCopyDay').addEventListener('click', function () {
+      if (fieldBlock_()) return;   /* 現場の端末では盤面を置き換えない（2026-10-11） */
       var dates = listSavedDates().filter(function (d) { return d !== ui.currentDate; });
       if (!dates.length) { $('stResult').textContent = '複製元の保存データがありません'; return; }
       var src = window.prompt('複製元の日付を入力してください:\n' + dates.join('  '), dates[dates.length - 1]);
@@ -15733,6 +15846,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       toast(src + ' から複製しました（曜日テンプレート運用）');
     });
     $('stClearDay').addEventListener('click', function () {
+      if (fieldBlock_()) return;   /* 現場の端末では盤面を消さない（2026-10-11） */
       if (!window.confirm(ui.currentDate + ' のデータをクリアしますか？')) return;
       store.dispatch({ type: 'INIT_DAY', day: S.emptyDay(ui.currentDate) });
       scheduleSave();
@@ -16224,7 +16338,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!day) day = S.emptyDay(ui.currentDate);
     day.meta.date = ui.currentDate;
 
-    store = S.createStore(S.emptyDay(ui.currentDate));
+    store = guardFieldDispatch_(S.createStore(S.emptyDay(ui.currentDate)));   /* 現場の端末は盤面を変えさせない（2026-10-11） */
+    renderFieldBanner_();
     /* 重畳解消の集計は購読の先頭で取り出す（印刷中は renderAll が早期 return するため、そこでは取りこぼす） */
     store.subscribe(function () { reportDupClean_(); reportOverlapRepair_(); scheduleSave(); schedulePushDay(); renderAll(); try { renderNotes(); } catch (e) {} });
     /* 初回読込も INIT_DAY reducer を通し、正規化(混入tags除去/ケア重複収束/contents重複+checks再マップ/退化枠一掃)を確実化。
