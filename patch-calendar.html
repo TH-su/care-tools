@@ -338,7 +338,8 @@ var ROSTER_KEY = 'su_residents_common';   /* 入居者マスタが書く共有�
 /* ★設定した職員と時刻（2026-10-11・監査10月版 第2版 貼り薬カレンダー 第1手）。
    入居者ごとの設定は apc2_res の各人の欄に by・at を足す。手入力の設定は apc2_setby に {by, at}。
    by はログイン中なら職員名（ログインの表示名とアカウント）、ログインしていなければ端末の用途（現場の端末／事務所PC）。
-   氏名（入居者）は入れない。紙の見出しの行の右端に小さく出す（記録の無い古い設定では出さない＝今の紙のまま） */
+   氏名（入居者）は入れない。紙の見出しの行の右端には日時だけを小さく出す（職員は出さない・2026-10-11 本人指示。
+   記録の無い古い設定では出さない＝今の紙のまま） */
 var LS_SETBY = 'apc2_setby';
 var PC_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
 var pcWhoAcct = '', pcWhoGen = 0;
@@ -783,8 +784,9 @@ function renderHeaderInfo() {
   el.now.textContent = ym;
   el.pnm.textContent = el.nm.value.trim();       /* textContent なので氏名がタグとして解釈されない */
   el.pst.textContent = '開始：' + jpDate(state.start) + ' ＝ ' + state.no + '番（' + SITES[state.no - 1].full + '）';
-  /* 設定した人と時刻。記録の無い古い設定・仮の値（未確定）では出さない（hidden＝紙の見出しの行は今のまま） */
-  var byTx = (state.confirmed && state.setBy && state.setAt) ? ('設定：' + state.setBy + '　' + pcFmtAt(state.setAt)) : '';
+  /* 設定した日時。紙には日時だけを出す（職員は記録には残すが紙には出さない・2026-10-11 本人指示）。
+     記録の無い古い設定・仮の値（未確定）では出さない（hidden＝紙の見出しの行は今のまま） */
+  var byTx = (state.confirmed && state.setBy && state.setAt) ? ('設定：' + pcFmtAt(state.setAt)) : '';
   el.pby.textContent = byTx;                     /* textContent なので名前がタグとして解釈されない */
   el.pby.hidden = !byTx;
   el.st.value = state.start.iso;

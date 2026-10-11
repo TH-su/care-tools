@@ -5,7 +5,7 @@
    守ること:
      ①保存した時に、入居者ごとの設定（apc2_res）にも手入力の設定（apc2_setby）にも by・at を残す
      ②by はログイン中なら職員名、していなければ端末の用途（現場の端末／事務所PC）。入居者の氏名は入れない
-     ③紙の見出しの行に出すのは、記録がそろい、設定が確定している時だけ（無い時は hidden＝今の紙のまま）
+     ③紙の見出しの行に出すのは日時だけ（職員名は出さない）。記録がそろい、設定が確定している時だけ（無い時は hidden＝今の紙のまま）
      ④保存された by・at の形が違えば出さない・名前は textContent で出す（タグとして解釈させない）
      ⑤入居者を選び直した時・起動時に、その設定の by・at を読み直す（別の方の記録を持ち越さない）
    ★このファイルは公開リポジトリの check/unit にある。氏名は使わない。 */
@@ -91,6 +91,7 @@ console.log('\n— 保存・読み出し・表示のつなぎ —');
   t('起動時（手入力）は確定している時だけ記録を読む', /if \(state\.confirmed\) \{ try \{ sb0 = pcSetByOf/.test(body('loadState')));
   const hdr = body('renderHeaderInfo');
   t('紙には、確定済み・記録がそろう時だけ出す', /var byTx = \(state\.confirmed && state\.setBy && state\.setAt\)/.test(hdr));
+  t('紙には日時だけを出す（職員名は出さない・本人指示）', /\('設定：' \+ pcFmtAt\(state\.setAt\)\)/.test(hdr) && !/'設定：' \+ state\.setBy/.test(hdr));
   t('名前は textContent で出す', /el\.pby\.textContent = byTx;/.test(hdr) && !/pby\.innerHTML/.test(SRC));
   t('無い時は hidden（紙の見出しの行は今のまま）', /el\.pby\.hidden = !byTx;/.test(hdr));
   t('紙の欄は既定で hidden', /<span class="by" id="p-by" hidden><\/span>/.test(SRC));
