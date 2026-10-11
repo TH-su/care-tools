@@ -139,10 +139,10 @@
    * 送ってきた盤面から、札ごとの done・checks・comment だけを抜き出して kv_put_marks へ送る。
    * checks は「何番目か」でなく内容の文言で送る（c:<文言>＝真偽を全部・内容の後ろの欄は x:<位置>）。サーバーは端末が
    *   そろえた版（rev）と比べて、端末が変えた所だけを今の版へ差し込む＝2台が同じ札に印を付けても両方残る。
-   * ★応答の版: 書けた時は「書いた版の1つ前」、変わらなかった時は「端末が送ってきた版」を返す。どちらも、サーバーの方が
-   *   新しければ端末は次の取得でサーバーの盤面を取り込む（他の端末の印や、現場で動かせない配置・時刻はサーバーの盤面になる）。
-   *   書いた版をそのまま返すと、端末は書けなかった部分を持ったまま「同期済み」になり、サーバーとずれ続ける。
-   *   変わらなかった時に1つ前を返すと、取り込みの後の自動の手直しで「取り込み→送信→取り込み」が止まらない。
+   * ★応答: 端末がそろえた版が今の版だった時は、書いた版（変わらなければ今の版）をそのまま返す。
+   *   端末がそろえた版より後に他の端末が書いていた時は、書けても conflict を返す＝端末は今の版を取り直し、
+   *   印を欄ごとに混ぜる統合（ワークスケジュールの rebaseDay・2026-10-11）を通してからそろえる。
+   *   （書いた版の1つ前を返す前の作りは、次の送信で自分の古い印を「変えた所」として書き戻し、他の端末の直しを消していた）
    * 確定の解除・強制の保存（lockOverride・force）は現場には許さない。まだ無い日・形の違う印は、待っても直らない
    * ので 'forbidden' として返す（ワークスケジュールは送り直しを止めて知らせる）。 */
   var WSDAY_RE = /^wsday_\d{4}-\d{2}-\d{2}$/;
@@ -181,12 +181,14 @@
       if (r.error) return fail(r);
       var d = r.data || { ok: false, error: '通信失敗' };
       if (d.ok && d.marksOnly) {
-        if (d.unchanged) return { ok: true, rev: Math.min(Number(payload.rev) || 0, Number(d.rev) || 0), marksOnly: true, unchanged: true };
-        if (rawGas) scheduleMirror(key, rawGas);
-        return { ok: true, rev: Math.max(0, (Number(d.rev) || 0) - 1), marksOnly: true };
+        var sent = Number(payload.rev) || 0, now = Number(d.rev) || 0;
+        if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
+        var base = d.unchanged ? now : (Number(d.baseRev) || 0);
+        if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };   // 他の端末が先に書いていた＝取り直して統合
+        return { ok: true, rev: now, marksOnly: true };
       }
       if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
-      return d;   // locked・shadow はそのまま（端末の今までの扱い）。kv_put_marks は版が古くても conflict を返さない
+      return d;   // conflict（そろえた版が履歴に無い）・locked・shadow はそのまま（端末の今までの扱い）
     });
   }
 
