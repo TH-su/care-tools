@@ -5,6 +5,7 @@
      A su-kv.js: 未ログイン（login）・現場のアカウントの保存（forbidden）・切り替え前（shadow）・競合（conflict）・通信の失敗を
        そのまま返し、Google へは流さない（流すと、保存先が2つに割れる）。ログインの帯を出す。成功した時だけ Google へ写し返す
      B 週間計画（care-schedule.html の SYNC.push）: 断られても「同期OK」にせず、未送信の印を残す＝入力は端末に残る
+       競合（conflict）はサーバーの版に自分の入力を載せ直して1回だけ送り直す（csRebaseEdits・2026-10-11 追加）
      C ワークスケジュール（work-schedule.html の pushDayNow）: 断られても未送信の印を残す。送り直すのは待てば直る断り（shadow）だけ
        （login・forbidden は 2026-10-11 から送り直しを止めて知らせる。どちらの版の画面でも見る）
      D デイ利用表（daycare-roster.html の runSaver）: 断られたら切り替えを元に戻して知らせる（2026-10-10 代表者の決定）。
@@ -208,6 +209,56 @@ function makeKv(o) {
     }
     const ok = await runPush({});
     t('（対照）ログイン済みなら保存でき、未送信の印が降りる', ok.ok === true && ok.S._dirty === false && !ok.ls.has('care_schedule_dirty_v1') && ok.states.indexOf('同期OK') >= 0, ok.states);
+
+    /* 競合（2026-10-11 追加）: 版が古い保存は conflict → サーバーの版を取り直し、本物の csRebaseEdits で自分の入力を載せ直して1回だけ送り直す。
+       偽物にするのは pull（get でデータベースの版を読み、DB と版を差し替え、本物と同じく固定した版 _baseRev とメモリの未送信の印を戻す）と画面の描き直しだけ */
+    const SERVER_DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [{ id: 'e_other', dayOfWeek: 2, startTime: '10:00' }] }] };
+    const MINE_DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [{ id: 'e_mine', dayOfWeek: 1, startTime: '09:00' }] }] };
+    async function runConflict(kvOpt) {
+      const k = makeKv(Object.assign({ db: { rev: 6, data: clone(SERVER_DB) } }, kvOpt));
+      const ls = new Map(); ls.set('ws_sync_revs', JSON.stringify({ care: 5 }));
+      const logs = [], states = [], sent = [];
+      const box = {
+        console, JSON, Math, Date, Number, String, Array, Object, Promise, Error, isFinite,
+        SIM_ON: false, CS_DIRTY_KEY: 'care_schedule_dirty_v1', csFieldsKept_: 0, csFieldChanges_: [],
+        DB: clone(MINE_DB),
+        localStorage: { getItem: x => (ls.has(x) ? ls.get(x) : null), setItem: (x, v) => ls.set(x, String(v)), removeItem: x => ls.delete(x) },
+        csMergeLocalBeforePush_() {}, ensureServiceDict_() {}, csFieldBaseBuild_: () => ({}), csFieldBaseSet_() {}, csNote_() {},
+        csApplyDeviceSelection_() {}, csFieldChangeText_: () => '', saveLocalOnly() {}, recalcAllEventUnits() {}, renderAll() {}, alert() {},
+        SUKV: k.kv, RAW: k.raw, SENT: sent
+      };
+      vm.createContext(box);
+      vm.runInContext(grab(CS, 'function csRebaseEdits('), box, { filename: 'care-schedule(csRebaseEdits)' });
+      vm.runInContext('var SYNC = {\n _dirty:false, _baseRev:null, _busy:false, _healPushing:false, _rebasing:false, _statusBefore:"同期", config:{},\n'
+        + [method('push'), method('markDirty'), method('clearDirty'), method('loadCareRev'), method('friendlyErr'),
+           method('isWrongEndpointErr'), method('isConfirmedEndpointFailMsg')].join(',\n')
+        + ',\n saveCareRev(r){ var o=JSON.parse(localStorage.getItem("ws_sync_revs")||"{}"); o.care=r; localStorage.setItem("ws_sync_revs", JSON.stringify(o)); },'
+        + '\n save(){}, log(m){ LOGS.push(m); }, updateStatusUI(s){ STATES.push(s); }, updateStatusUIFail(s){ STATES.push("fail:"+s); },'
+        + '\n hasTarget(){ return true; }, async healStaleTarget(){ return false; },'
+        + '\n async pull(){ var j = await this.gas({ action: "get", key: "care_schedule_v2" }); if (j && j.ok) { DB = j.data; this.saveCareRev(j.rev); this._dirty = false; this._baseRev = null; } },'
+        + '\n gas(p){ if (p.action === "put") SENT.push(JSON.parse(JSON.stringify(p))); return SUKV.handles(p) ? SUKV.call(p, RAW) : RAW(p); }\n};', Object.assign(box, { LOGS: logs, STATES: states }));
+      const S = box.SYNC;
+      S.markDirty();
+      const ok = await S.push();
+      return { ok, S, box, ls, logs, states, sent, k };
+    }
+    const evIds = d => ((d && d.residents && d.residents[0] && d.residents[0].events) || []).map(e => e.id).sort().join(',');
+    {
+      const x = await runConflict({});
+      t('★競合（conflict）: 取り直したサーバーの版に、自分の入力を載せ直して送り直す（データベースに両方が残る）', evIds(x.k.db.data) === 'e_mine,e_other', x.k.db.data);
+      t('★競合: 画面のデータも自分の入力を残したまま（巻き戻らない）', evIds(x.box.DB) === 'e_mine,e_other', x.box.DB);
+      t('競合: 送り直しは取り直した版（6）で送る・送るのは2回だけ', x.sent.length === 2 && x.sent[0].rev === 5 && x.sent[1].rev === 6, x.sent.map(p => p.rev));
+      t('競合: 送り直しが通れば未送信の印が降り、「同期OK」になる', x.S._dirty === false && !x.ls.has('care_schedule_dirty_v1') && x.states.indexOf('競合') >= 0 && x.states.indexOf('同期OK') >= 0, x.states);
+      t('競合: Google へ流さない', x.k.raws.length === 0);
+    }
+    {
+      /* 送り直しも競合（別の端末が続けて保存した）＝2回目は送らず、入力を端末に残して未送信のまま待つ */
+      const x = await runConflict({ putReply: { ok: false, conflict: true, rev: 6 } });
+      t('★2回続けて競合: 送り直しは1回だけ（何度も送らない）', x.sent.length === 2, x.sent.length);
+      t('★2回続けて競合: 自分の入力を画面に残す（巻き戻らない）', evIds(x.box.DB) === 'e_mine,e_other', x.box.DB);
+      t('★2回続けて競合: 未送信の印（端末に保存する印も）を残し、「同期OK」にしない', x.S._dirty === true && x.ls.get('care_schedule_dirty_v1') === '1' && x.states.indexOf('同期OK') < 0, x.states);
+      t('2回続けて競合: Google へ流さない', x.k.raws.length === 0);
+    }
   }
 
   console.log('\n— C. ワークスケジュール（pushDayNow）: 断られても未送信の印を残し、送り直す —');
