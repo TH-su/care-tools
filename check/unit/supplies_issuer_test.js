@@ -1,7 +1,8 @@
 /* 消耗品管理（supplies.html）の明細・料金表の発行者と、事務所向けの案内の言い換え（2026-10-09・監査10月版 #14・本人決定 2a）。
    1. 施設名・住所・電話は施設情報（SUFacility.office('施設')）から、担当者はこの端末の設定（spl_issuer）から。無い項目は行ごと出さない
    2. 何も無ければ欄ごと出さない（紙面は以前のまま）。文字は textContent
-   3. 画面の案内に「GAS の setup」「GAS のエディタ」のような技術用語を出さない */
+   3. 画面の案内に「GAS の setup」「GAS のエディタ」のような技術用語を出さない
+   4. 版が古い時の案内は管理者に頼む言い方・施設情報が読めた時の描き直しは刷り方に合わせる（2026-10-12・監査10月版 v2 第2・3手） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -78,6 +79,35 @@ t('担当者の欄は役職名を入れる運用と分かる（個人の氏名�
 t('施設情報の部品を読み込む', /<script src="su-facility\.js\?v=[^"]+"><\/script>/.test(src), '');
 const visible = src.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 t('画面の案内に「GAS の setup」「GAS のエディタ」「GAS の新しい版」を出さない', !/GAS の setup|GAS のエディタ|GAS の新しい版/.test(visible), (visible.match(/GAS の[^。'"]{0,20}/g) || []).slice(0, 5));
+
+/* 2026-10-12・監査10月版 v2 消耗品 第2手: 版が古い時の案内は「管理者に頼む」言い方にそろえる（手順は画面に出さない） */
+const ask = (/var ADMIN_GAS_ASK = '([^']+)';/.exec(src) || [])[1] || '';
+t('★管理者に頼む一文が1か所で決めてある', /管理者に/.test(ask) && /新しい版で公開し直して/.test(ask), ask);
+t('★「GASの版を確かめ」の言い方は残っていない', !/GASの版を確かめ/.test(visible), (visible.match(/GASの版[^'"]{0,20}/g) || []));
+t('サーバーが対応していない操作（unknown_action）の案内は、管理者に頼む一文を使う', /unknown_action: '[^'\n]*' \+ ADMIN_GAS_ASK,/.test(src));
+t('一覧・出庫が応答に無い時の案内も、読み直しても直らなければ管理者に頼む', (src.match(/もう一度読み込んでも直らない時は、' \+ ADMIN_GAS_ASK/g) || []).length === 2);
+
+/* 2026-10-12・監査10月版 v2 消耗品 第3手: 施設情報が読めた時、入居者ごとの刷り方では上の1か所を出さず、明細を描き直す */
+{
+  const h0 = src.indexOf('SUFacility.onReady(function () {');
+  let i = src.indexOf('{', h0), d = 0;
+  for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) break; } }
+  const body = src.slice(src.indexOf('{', h0) + 1, i);
+  const run = (page, moves) => {
+    const calls = [];
+    const box = { ST: { billPage: page, billMoves: moves }, renderIssuerSettings: () => calls.push('settings'),
+      renderBill: () => calls.push('bill'), renderIssuer: id => calls.push('issuer:' + id) };
+    vm.createContext(box); vm.runInContext('(function(){' + body + '})()', box);
+    return calls;
+  };
+  const a1 = run('byResident', [{ id: 'm1' }]);
+  t('★入居者ごと・明細あり: 上の欄は出さず、明細ごと描き直す（各人の紙に住所などが入る）', a1.indexOf('issuer:billIssuer') < 0 && a1.indexOf('bill') >= 0, a1);
+  const a2 = run('byResident', null);
+  t('★入居者ごと・明細なし: 上の欄を出さない・描き直しもしない（読み込み中の表示を消さない）', a2.indexOf('issuer:billIssuer') < 0 && a2.indexOf('bill') < 0, a2);
+  const a3 = run('flat', [{ id: 'm1' }]);
+  t('1枚続き: 今までどおり上の1か所に発行者の欄を入れる', a3.indexOf('issuer:billIssuer') >= 0 && a3.indexOf('bill') < 0, a3);
+  t('どの刷り方でも、設定のプレビューと料金表の欄は描き直す', [a1, a2, a3].every(c => c.indexOf('settings') >= 0 && c.indexOf('issuer:sheetIssuer') >= 0));
+}
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

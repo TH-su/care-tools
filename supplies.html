@@ -1293,6 +1293,10 @@ function toast(msg) {
 }
 
 /* 3状態の表示（読み込み中／空／エラー＋次の一手） */
+/* サーバー（GAS）の版が古い時に、現場の人へ出す頼み方（2026-10-12・監査10月版 v2 消耗品 第2手）。
+   ★操作の手順（エディタ・デプロイの操作）は画面に出さない（2026-10-09 本人決定「画面の案内に技術用語を出さない」・
+     check/unit/supplies_issuer_test.js）。手順は管理者の手順書（gas/DEPLOY-消耗品管理GAS.md）の側に置く */
+var ADMIN_GAS_ASK = '管理者に「消耗品管理のサーバーを新しい版で公開し直してください」と頼んでください。';
 function setState(id, kind, title, detail, actionLabel, actionFn) {
   var box = $(id);
   if (!box) return;
@@ -1565,7 +1569,7 @@ var ERR_HINT = {
   empty_refused: '1件以上残すか、削除する場合は確認のうえで実行してください。',
   closed: '設定画面で締めを解除してから、もう一度お試しください。',
   in_use: '非表示にすると、新しく選べなくなります。',
-  unknown_action: 'GAS が古い版です。エディタで「デプロイを管理」→ 新しいバージョンを公開してください。',
+  unknown_action: 'サーバーが古い版のままです。' + ADMIN_GAS_ASK,
   busy: '少し待ってから、もう一度お試しください。',
   flush_fail: '一覧を取り直して、入っているか確かめてから操作してください（新しい品目は、もう一度登録する前に一覧で確かめる）。'
 };
@@ -1827,7 +1831,7 @@ function loadList(quiet) {
     if (items === null) {
       /* 応答に一覧が無い＝空扱いにしない。既存の表示はそのまま残す（原則4） */
       setState('listState', 'err', '品目を受け取れませんでした',
-        'サーバーの応答に一覧が含まれていません。画面には前回の内容を残しています。GASの版を確かめ、もう一度読み込んでください。',
+        'サーバーの応答に一覧が含まれていません。画面には前回の内容を残しています。もう一度読み込んでも直らない時は、' + ADMIN_GAS_ASK,
         'もう一度読み込む', function () { loadList(); });
       return;
     }
@@ -3480,7 +3484,7 @@ function loadBill() {
     /* 応答に moves が無い時は今の紙面を残す（空で上書きしない・原則4） */
     if (!Array.isArray(d.moves)) {
       setState('billState', 'err', '出庫を受け取れませんでした',
-        'サーバーの応答に出庫が含まれていません。紙面には前回の内容を残しています。GASの版を確かめ、もう一度読み込んでください。',
+        'サーバーの応答に出庫が含まれていません。紙面には前回の内容を残しています。もう一度読み込んでも直らない時は、' + ADMIN_GAS_ASK,
         'もう一度読み込む', loadBill);
       return;
     }
@@ -5014,7 +5018,16 @@ function bindEvents() {
   $('saveCfgBtn').addEventListener('click', onSaveCfg);
   $('saveIssuerBtn').addEventListener('click', onSaveIssuer);
   renderIssuerSettings();
-  if (window.SUFacility) SUFacility.onReady(function () { try { renderIssuerSettings(); renderIssuer('billIssuer'); renderIssuer('sheetIssuer'); } catch (e) {} });
+  /* 施設情報が読めたら発行者の欄を描き直す。入居者ごとの刷り方では上の1か所は出さず（各人の紙に入る）、
+     読み込んだ明細があれば renderBill() で各人の紙ごと描き直す（2026-10-12・監査10月版 v2 消耗品 第3手） */
+  if (window.SUFacility) SUFacility.onReady(function () {
+    try {
+      renderIssuerSettings();
+      if (ST.billPage === 'byResident') { if (ST.billMoves) renderBill(); }
+      else renderIssuer('billIssuer');
+      renderIssuer('sheetIssuer');
+    } catch (e) {}
+  });
   $('testBtn').addEventListener('click', onTest);
   $('cfgShowToken').addEventListener('change', function () {
     $('cfgToken').type = $('cfgShowToken').checked ? 'text' : 'password';
