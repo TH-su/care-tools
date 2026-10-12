@@ -13,7 +13,11 @@ let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
 const DEPLOY_BUILT = ['shift-app.html', 'shift-analyzer.html', 'work-schedule.html'];
-const pages = fs.readdirSync(ROOT).filter(f => /\.html$/.test(f) && DEPLOY_BUILT.indexOf(f) < 0);
+/* 数えるのは git の管理下の画面だけ（2026-10-13）。.gitignore で公開から外した手元だけの画面（この Mac の
+   cockpit.html など）まで数えると、CI では通るのに毎朝の点検（run-tests.sh）でだけ落ちる。git が使えない時は従来どおり全部数える */
+let tracked = null;
+try { tracked = require('child_process').execFileSync('git', ['-C', ROOT, 'ls-files', '*.html'], { encoding: 'utf8' }).split('\n').filter(Boolean); } catch (e) { tracked = null; }
+const pages = fs.readdirSync(ROOT).filter(f => /\.html$/.test(f) && DEPLOY_BUILT.indexOf(f) < 0 && (!tracked || tracked.indexOf(f) >= 0));
 for (const part of ['su-facility.js', 'su-kv.js', 'su-kv-shadow.js', 'su-errors.js']) {
   const re = new RegExp('<script src="' + part.replace(/\./g, '\\.') + '\\?v=([0-9A-Za-z._-]+)"', 'g');
   const seen = {};
