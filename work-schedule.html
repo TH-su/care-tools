@@ -662,7 +662,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-12.2"></script>
+<script src="su-kv.js?v=2026-10-12.3"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
@@ -3386,6 +3386,117 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (t.weeklyRef && t.weeklyRef.evId && set['.E|' + t.weeklyRef.evId]) return true;
     return !!set['.S|' + normName_(t.residentName) + '|' + t.start];
   }
+  /* 現場の端末（印だけを書くアカウント）の取り込み（純粋関数・2026-10-12）。
+   * 現場は札を作れない・動かせないので、盤面の形（職員・列・札・メタ）はサーバーの版をそのまま使い、
+   * この端末が祖先から変えた印（実施 done・チェック checks・コメント comment）だけをサーバーの札へ移す。
+   * rebaseDay を使うと、事務所が同じ予定の札を新しい id で作り直した時に古い id の札が残り（重複の畳みは id の小さい方を残す）、
+   * その札の印はサーバーに届かず、送るたびに「保存できませんでした」が出続けた。
+   * 移す先: 同じ id → 同じ予定（weeklyRef.evId）→ 同じ利用者・同じ開始の支援。見つからない札は残さず、変えた印があれば lost に数える。
+   * チェックは内容の文言で合わせる（内容の後ろの欄は内容の数からの位置）。祖先が無い時は、付けた印（真・コメントあり）だけを移す。
+   * 返り値: { day, carried: 印を移した札の数, lost: 移せなかった札の数 }。 */
+  function overlayFieldMarks(ancestor, local, server) {
+    var s = JSON.parse(JSON.stringify(server || {}));
+    var sTasks = Array.isArray(s.tasks) ? s.tasks : [];
+    var lTasks = (local && Array.isArray(local.tasks)) ? local.tasks : [];
+    var aById = {}, i, t;
+    var aTasks = (ancestor && Array.isArray(ancestor.tasks)) ? ancestor.tasks : null;
+    if (aTasks) for (i = 0; i < aTasks.length; i++) { t = aTasks[i]; if (t && t.id != null && !aById['.' + t.id]) aById['.' + t.id] = t; }
+    function chkMap(task) {
+      var out = {}, cs = (task && Array.isArray(task.contents)) ? task.contents : [];
+      var ch = (task && task.checks && typeof task.checks === 'object') ? task.checks : {};
+      var j, k;
+      for (j = 0; j < cs.length; j++) if (typeof cs[j] === 'string') out['c:' + cs[j]] = !!(out['c:' + cs[j]] || ch[j] === true || ch[String(j)] === true);
+      for (k in ch) {
+        if (!Object.prototype.hasOwnProperty.call(ch, k) || ch[k] !== true || !/^\d+$/.test(k)) continue;
+        if (Number(k) >= cs.length) out['x:' + (Number(k) - cs.length)] = true;
+      }
+      return out;
+    }
+    function cmtSig(c) { return (c && typeof c === 'object') ? JSON.stringify(canonObj_(c)) : 'null'; }
+    var byId = {}, byEv = {}, bySt = {}, used = {};
+    for (i = 0; i < sTasks.length; i++) {
+      t = sTasks[i];
+      if (!t) continue;
+      if (t.id != null && byId['.' + t.id] === undefined) byId['.' + t.id] = i;
+      if (t.kind === 'care' && t.weeklyRef && t.weeklyRef.evId) (byEv['.' + t.weeklyRef.evId] = byEv['.' + t.weeklyRef.evId] || []).push(i);
+      if (t.kind === 'care') (bySt['.' + normName_(t.residentName) + '|' + t.start] = bySt['.' + normName_(t.residentName) + '|' + t.start] || []).push(i);
+    }
+    function firstFree(list) {
+      if (!list) return -1;
+      for (var q = 0; q < list.length; q++) if (!used[list[q]]) return list[q];
+      return -1;
+    }
+    /* この端末が変えた印を先に全部集める（並び順で行き先が変わらないように） */
+    var changes = [], seenL = {};
+    for (i = 0; i < lTasks.length; i++) {
+      var lt = lTasks[i];
+      if (!lt || lt.id == null || seenL['.' + lt.id]) continue;
+      seenL['.' + lt.id] = 1;
+      var at = aById['.' + lt.id] || null;
+      var noAnc = !aTasks;
+      var dDone = noAnc ? (lt.done === true) : (!!lt.done !== !!(at && at.done));
+      var lc = chkMap(lt), ac = at ? chkMap(at) : {}, dChk = {}, nChk = 0, k2;
+      for (k2 in lc) if (Object.prototype.hasOwnProperty.call(lc, k2) && (noAnc ? lc[k2] === true : lc[k2] !== !!ac[k2])) { dChk[k2] = lc[k2]; nChk++; }
+      if (!noAnc) for (k2 in ac) if (Object.prototype.hasOwnProperty.call(ac, k2) && ac[k2] && !Object.prototype.hasOwnProperty.call(lc, k2) && /^x:/.test(k2)) { dChk[k2] = false; nChk++; }
+      var lCm = cmtSig(lt.comment), dCmt = noAnc ? (lCm !== 'null') : (lCm !== cmtSig(at && at.comment));
+      if (!dDone && !nChk && !dCmt) continue;
+      changes.push({ lt: lt, dDone: dDone, dChk: dChk, nChk: nChk, dCmt: dCmt, ti: -1 });
+    }
+    var c, n;
+    /* 1) 同じ id（サーバーに残っている札）を先に全部決める */
+    for (n = 0; n < changes.length; n++) {
+      c = changes[n];
+      var ti0 = byId['.' + c.lt.id];
+      if (ti0 !== undefined && !used[ti0]) { c.ti = ti0; used[ti0] = 1; }
+    }
+    /* 2) 同じ予定（weeklyRef.evId）の札 */
+    for (n = 0; n < changes.length; n++) {
+      c = changes[n];
+      if (c.ti >= 0 || c.lt.kind !== 'care' || !(c.lt.weeklyRef && c.lt.weeklyRef.evId)) continue;
+      var ti1 = firstFree(byEv['.' + c.lt.weeklyRef.evId]);
+      if (ti1 >= 0) { c.ti = ti1; used[ti1] = 1; }
+    }
+    /* 3) 同じ利用者・同じ開始の支援。別人（利用者の id が両方あって違う）と、予定が両方あって違う札には移さない */
+    for (n = 0; n < changes.length; n++) {
+      c = changes[n];
+      if (c.ti >= 0 || c.lt.kind !== 'care') continue;
+      var cand = bySt['.' + normName_(c.lt.residentName) + '|' + c.lt.start] || [], lEv = c.lt.weeklyRef && c.lt.weeklyRef.evId;
+      for (var q2 = 0; q2 < cand.length; q2++) {
+        var sc2 = sTasks[cand[q2]], sEv = sc2.weeklyRef && sc2.weeklyRef.evId;
+        if (used[cand[q2]] || !careSameResident_(c.lt, sc2) || (lEv && sEv && lEv !== sEv)) continue;
+        c.ti = cand[q2]; used[cand[q2]] = 1; break;
+      }
+    }
+    var carried = 0, lost = 0;
+    for (n = 0; n < changes.length; n++) {
+      c = changes[n];
+      if (c.ti < 0) { lost++; continue; }
+      var st = sTasks[c.ti], lt2 = c.lt;
+      if (c.dDone) st.done = !!lt2.done;
+      if (c.nChk) {
+        var cs2 = Array.isArray(st.contents) ? st.contents : [], nc = {}, kk;
+        if (st.checks && typeof st.checks === 'object') for (kk in st.checks) if (Object.prototype.hasOwnProperty.call(st.checks, kk)) nc[kk] = st.checks[kk];
+        for (kk in c.dChk) {
+          if (!Object.prototype.hasOwnProperty.call(c.dChk, kk)) continue;
+          var idx = [];
+          if (kk.indexOf('c:') === 0) { for (var z = 0; z < cs2.length; z++) if (cs2[z] === kk.slice(2)) idx.push(z); }
+          else idx.push(cs2.length + Number(kk.slice(2)));
+          for (var y = 0; y < idx.length; y++) { if (c.dChk[kk]) nc[idx[y]] = true; else delete nc[idx[y]]; }
+        }
+        st.checks = nc;
+      }
+      if (c.dCmt) st.comment = (lt2.comment && typeof lt2.comment === 'object') ? JSON.parse(JSON.stringify(lt2.comment)) : null;
+      carried++;
+    }
+    return { day: s, carried: carried, lost: lost };
+  }
+  function canonObj_(v) {
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(canonObj_);
+    var ks = Object.keys(v).sort(), o = {}, i;
+    for (i = 0; i < ks.length; i++) o[ks[i]] = canonObj_(v[ks[i]]);
+    return o;
+  }
   function rebaseDay(ancestor, local, server) {
     var a = ancestor || {}, l = local || {}, s = server || {};
     var aT = indexById_(a.tasks), lT = indexById_(l.tasks), sT = indexById_(s.tasks);
@@ -3546,6 +3657,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     stableStringify: stableStringify,
     taskSig: taskSig,
     rebaseDay: rebaseDay,
+    overlayFieldMarks: overlayFieldMarks,
     countNamedStaff: countNamedStaff_,
     skipMatch: skipMatch_,
     skipRefMatches: skipRefMatches_,
@@ -10960,6 +11072,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function wsIsFieldDevice_() {
     try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; }
   }
+  /* この日の保存が「印だけ」（現場のアカウント・su-kv.js の kv_put_marks）か（2026-10-12）。
+   * 端末の用途の設定（su_device_role）が事務所のままでも、アカウントが現場なら盤面の形はサーバーに合わせる。
+   * 手がかりの順: ①端末の用途が現場 ②su-kv.js が最後に確かめたアカウント（5分ごとに確かめ直す＝事務所に替わればすぐ偽）
+   * ③su-kv.js がまだアカウントを確かめていない・古い版の時だけ、最後に受けた保存の応答（成功の応答で毎回上書き） */
+  var marksOnlySeen_ = false;
+  function fieldMarksOnly_(date) {
+    if (wsIsFieldDevice_()) return true;
+    try {
+      if (window.SUKv && typeof window.SUKv.marksOnlyFor === 'function') {
+        var v = window.SUKv.marksOnlyFor(dayKey(date || ui.currentDate));
+        if (v === true || v === false) return v;
+      }
+    } catch (e) {}
+    return marksOnlySeen_;
+  }
   /* ═══ 現場の端末の盤面ガード（2026-10-11・監査10月版 第2版 ワークスケジュール 第2手）═══
    * 現場の端末（su_device_role==='field'）では、本人の操作で盤面（配置・時刻・内容・職員・ロック等）を変えさせない。
    * 通すのは札の印だけ＝実施（TOGGLE_DONE）と、patch が done・checks・comment だけの UPDATE_TASK（代表者の決定 A）。
@@ -13094,6 +13221,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (unlockForceDates_[date]) reqPut_.lockOverride = true;   /* 解除putだけロック防波堤を通す(force と違い rev楽観ロック/staffwipe保護は維持) */
     gas(reqPut_, function (j) {
       dayPushBusy_ = false;
+      if (j && (j.ok || j.marksOnly)) marksOnlySeen_ = !!j.marksOnly;
       if (j && j.ok) {
         if (reqPut_.lockOverride) delete unlockForceDates_[date];   /* このputが実際に解除を積んだ時のみ消費＝飛行中の非解除put成功でフラグを取りこぼさない(再ロック防止) */
         lastPushed.day = sig;
@@ -13321,15 +13449,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!anc) {
       try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) {}
     }
-    var merged = M.rebaseDay(anc, localDay, serverDay);
-    try { if (merged.dupRemoved > 0) dupCleaned_ += merged.dupRemoved; } catch (eMD) {}
-    try { delete merged.dupRemoved; } catch (eMD2) {}   /* 保存・送信物には残さない */
+    var merged, fieldLost_ = 0;
+    if (fieldMarksOnly_(date)) {
+      /* 現場（印だけを書くアカウント）: 盤面の形はサーバーの版、この端末が変えた印だけをサーバーの札へ移す（2026-10-12）。
+       * 3-wayマージだと、事務所が作り直した札の古い id が残り、その札の印は届かずに送るたびに知らせが出続けた */
+      var ov_ = M.overlayFieldMarks(anc, localDay, serverDay);
+      merged = ov_.day;
+      fieldLost_ = ov_.lost;
+    } else {
+      merged = M.rebaseDay(anc, localDay, serverDay);
+      try { if (merged.dupRemoved > 0) dupCleaned_ += merged.dupRemoved; } catch (eMD) {}
+      try { delete merged.dupRemoved; } catch (eMD2) {}   /* 保存・送信物には残さない */
+    }
+    if (fieldLost_ > 0) toast('事務所で札が作り直されていたため、' + date + ' の印 ' + fieldLost_ + '件を保存できませんでした。作り直された札に、もう一度付けてください。', true);
     reportWipeGuard_(merged, date);
     merged.meta = merged.meta || {};
     merged.meta.date = date;
     merged.meta.rev = serverRev;
     saveBase_(date, serverDay);   /* 祖先＝いま取り込んだサーバー版（マージ結果のpush成功で更新） */
-    if (isCur) lastPushed.day = '';   /* マージ結果の再送を抑止しない(単一スロット＝非当日はグローバルを触らない) */
+    /* 現場で移す印が無かった＝サーバー版そのもの。送らない（送っても変わらない保存を繰り返さない） */
+    var fieldNoop_ = fieldMarksOnly_(date) && daySig(merged) === daySig(serverDay);
+    if (fieldNoop_) clearDayDirty_(date);
+    if (isCur) lastPushed.day = fieldNoop_ ? daySig(merged) : '';   /* マージ結果の再送を抑止しない(単一スロット＝非当日はグローバルを触らない) */
     if (isCur) {
       reassertBoardFixes_(merged);   /* 列固定の自己修復（マージ結果にも適用） */
       store.dispatch({ type: 'INIT_DAY', day: merged, frozen: initFrozen_(merged) });
@@ -13353,6 +13494,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var reqPutF_ = { action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day };
     if (unlockForceDates_[date]) reqPutF_.lockOverride = true;   /* 解除putだけロック防波堤を通す(rev/staffwipe保護は維持) */
     gas(reqPutF_, function (j) {
+      if (j && (j.ok || j.marksOnly)) marksOnlySeen_ = !!j.marksOnly;
       if (j && j.ok) {
         if (reqPutF_.lockOverride) delete unlockForceDates_[date];
         /* 飛行中(最長15秒)にこの日付が表示中へ切替わっていたら、送信前スナップショットで
