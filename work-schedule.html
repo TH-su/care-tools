@@ -945,13 +945,13 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <div class="fld">
       <label>デイサービス表のExcel出力（週間計画のデイ予定から生成）</label>
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn pri" id="exWeekXls">デイ週間予定表（階別・黄=昼食後薬）</button>
+        <button class="btn pri" id="exWeekXls">デイ週間予定表（階別・<span class="exMedColorName">黄</span>=昼食後薬）</button>
         <button class="btn pri" id="exUsersXls">デイ利用者／非利用者一覧</button>
       </div>
       <div class="hint">Excel互換の .xls 形式でダウンロードします（開く際に形式の確認が出たら「はい」）。</div>
     </div>
     <div class="fld">
-      <label>昼食後に薬がある方（チェック → 出力で黄色表示・全端末に同期）</label>
+      <label>昼食後に薬がある方（チェック → 出力で<span class="exMedColorName">黄色</span>表示・全端末に同期）</label>
       <div class="chips" id="exMedList"></div>
       <div class="hint" id="exMedHint"></div>
     </div>
@@ -991,6 +991,10 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <div class="hint">手動編集は今までどおりできます。空の日は対象外です。🔒ロックのチェックは付きません（保存データは変わりません）。</div>
     <label><input type="checkbox" id="stHideNonHeadcount"> 「頭数に入れる」を外した職員はワースケに出さない（役員など）</label>
     <div class="hint">シフトアプリの職員マスタで「頭数に入れる」のチェックを外した方が対象です（退職者は対象外）。シフト表には今までどおり載り、ワースケの列だけに出なくなります。<br><b>この設定は端末ごとに保存されます。全端末で同じ設定にしてください</b>（設定が違う端末があると、その職員の列が端末間で交互に書き換わります）。</div>
+  </div>
+  <div class="fld"><label for="stMedColor">昼食後薬の目印の色（デイの Excel 出力）</label>
+    <select class="inp" id="stMedColor"></select>
+    <div class="hint">「取込 → 出力」で出すデイの表で、昼食後に薬がある方の名前に付ける色です。この端末の設定です（Excel を出す端末で選んでください）。</div>
   </div>
   <div class="fld" style="margin-top:10px"><label>施設情報</label>
     <div class="btn-row" style="margin-top:0">
@@ -6822,8 +6826,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     'padding:2px 4px;vertical-align:middle;white-space:nowrap}' +
     'th{background:#e8e8e8;font-weight:bold;text-align:center}' +
     '.sec{background:#d9d9d9;font-weight:bold;text-align:center}' +
-    '.med{background:#FFFF00}' + /* 昼食後薬=黄色 */
+    '.med{background:#FFFF00}' + /* 昼食後薬=黄色（既定。設定で選んだ色に差し替える＝xlsHead_） */
     '.hosp{color:#999}.tm{font-size:9pt;color:#333}</style></head><body>';
+  /* 昼食後薬の目印の色（2026-10-12・監査10月版 第3版 6・管理者の承認）。既定は今までどおり黄色。
+   * 選べるのは印刷で文字が読める薄い色だけ（白黒印刷でも名前が潰れない明るさ）。知らない値は黄色に戻す。 */
+  var MED_COLORS = [
+    { key: 'yellow', hex: '#FFFF00', name: '黄色' },
+    { key: 'aqua',   hex: '#9CE4FF', name: '水色' },
+    { key: 'green',  hex: '#C6EFCE', name: '薄緑' },
+    { key: 'pink',   hex: '#FFC7CE', name: '桃色' }
+  ];
+  function medColor(key) {
+    for (var i = 0; i < MED_COLORS.length; i++) if (MED_COLORS[i].key === key) return MED_COLORS[i];
+    return MED_COLORS[0];
+  }
+  function xlsHead_(c) { return XLS_HEAD.replace('.med{background:#FFFF00}', '.med{background:' + c.hex + '}'); }
   var XLS_FOOT = '</body></html>';
 
   function nameCell(u) {
@@ -6835,11 +6852,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 出力1: デイ週間予定表（曜日×階・名前＋時間・昼食後薬=黄色） */
-  function buildDaycareWeekXls(careDb, title, hospFn) {
+  function buildDaycareWeekXls(careDb, title, hospFn, opts) {
+    var mc = medColor(opts && opts.medColor);
     var users = collectDaycare(careDb, hospFn);   /* 入院の実効値は呼び出し側から受け取る（上の注記参照） */
     var dows = daycareDows_(); /* 通所の定休日を除いた曜日（既定＝日曜休の月〜土） */
-    var html = XLS_HEAD + '<h3>' + esc(title || 'デイサービス週間予定表') + '</h3>' +
-      '<p>黄色＝昼食後に薬がある方</p><table>';
+    var html = xlsHead_(mc) + '<h3>' + esc(title || 'デイサービス週間予定表') + '</h3>' +
+      '<p>' + mc.name + '＝昼食後に薬がある方</p><table>';
     html += '<tr><th></th>';
     for (var d = 0; d < dows.length; d++) html += '<th colspan="2">' + DOW_JA[dows[d]] + '</th>';
     html += '</tr>';
@@ -6884,15 +6902,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 出力2: デイ利用者一覧（曜日◯と時間）＋ デイ以外の利用者一覧 */
-  function buildDaycareUsersXls(careDb, title, hospFn) {
+  function buildDaycareUsersXls(careDb, title, hospFn, opts) {
+    var mc = medColor(opts && opts.medColor);
     var users = collectDaycare(careDb, hospFn);   /* 同上 */
     var userNames = {};
     var i, d;
     var dows = daycareDows_(); /* 通所の定休日を除いた曜日（既定＝日曜休の月〜土） */
     for (i = 0; i < users.length; i++) userNames[users[i].name] = true;
-    var html = XLS_HEAD + '<h3>' + esc(title || 'デイサービス利用者・非利用者一覧') + '</h3>';
+    var html = xlsHead_(mc) + '<h3>' + esc(title || 'デイサービス利用者・非利用者一覧') + '</h3>';
 
-    html += '<h4>デイサービス利用者（' + users.length + '名）　黄色＝昼食後に薬がある方</h4><table>';
+    html += '<h4>デイサービス利用者（' + users.length + '名）　' + mc.name + '＝昼食後に薬がある方</h4><table>';
     html += '<tr><th>階</th><th>氏名</th>';
     for (d = 0; d < dows.length; d++) html += '<th>' + DOW_JA[dows[d]] + '</th>';
     html += '</tr>';
@@ -6933,7 +6952,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var api = {
     collectDaycare: collectDaycare,
     buildDaycareWeekXls: buildDaycareWeekXls,
-    buildDaycareUsersXls: buildDaycareUsersXls
+    buildDaycareUsersXls: buildDaycareUsersXls,
+    MED_COLORS: MED_COLORS,
+    medColor: medColor
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSExport = api;
@@ -8756,7 +8777,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var RETENTION_DEFAULT_KEY = 'ws_retention_default_v1';   /* 「新しい端末として30日既定で始めた」印（loadSettings） */
   var settings = { breakMinHours: 7, retentionDays: 30, endpoint: '', token: '',
                    urlCare: 'care-schedule.html', urlShift: 'shift-app.html', shiftAuto: true,
-                   autoLockPast: true, hideNonHeadcount: true };
+                   autoLockPast: true, hideNonHeadcount: true,
+                   medColor: 'yellow' };   /* 昼食後薬の目印の色（デイの Excel 出力・WSExport.MED_COLORS の key。知らない値は黄色） */
   /* シフト取込系の共通オプション（extractAttendance / otherOfficeByName へ同じ値を渡す＝判定の非対称を作らない） */
   function shiftPickOpts_() { return { hideNonHeadcount: settings.hideNonHeadcount !== false }; }
   function loadSettings() {
@@ -11212,7 +11234,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     saveCareDb(care2);
     renderExportPane();
   }
+  /* 昼食後薬の目印の色（2026-10-12・監査10月版 第3版 6）。色の一覧と既定は exports.js（WSExport.MED_COLORS）が正本。
+   * 設定に知らない値が入っていても黄色に戻す＝壊れた値で出力を止めない。 */
+  function medColorOf_(key) {
+    try { return window.WSExport.medColor(key); } catch (e) { return { key: 'yellow', hex: '#FFFF00', name: '黄色' }; }
+  }
+  function fillMedColorSelect_() {
+    var sel = $('stMedColor');
+    if (!sel) return;
+    var list = (window.WSExport && window.WSExport.MED_COLORS) || [], cur = medColorOf_(settings.medColor).key, i;
+    sel.innerHTML = '';
+    for (i = 0; i < list.length; i++) {
+      var o = document.createElement('option');
+      o.value = list[i].key; o.textContent = list[i].name + (list[i].key === 'yellow' ? '（既定）' : '');
+      sel.appendChild(o);
+    }
+    sel.value = cur;
+  }
+  /* 出力タブの「黄=昼食後薬」「黄色表示」の言葉を、選んだ色の名前にそろえる */
+  function renderMedColorName_() {
+    var name = medColorOf_(settings.medColor).name, els = document.querySelectorAll('.exMedColorName'), i;
+    for (i = 0; i < els.length; i++) {
+      var inBtn = !!(els[i].closest && els[i].closest('#exWeekXls'));
+      els[i].textContent = (inBtn && name === '黄色') ? '黄' : name;   /* 黄色の時はボタンの文字を今のまま（黄=昼食後薬） */
+    }
+  }
   function renderExportPane() {
+    try { renderMedColorName_(); } catch (eMc) {}
     var wrap = $('exMedList');
     wrap.innerHTML = '';
     var care = loadCareDb();
@@ -15727,13 +15775,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!care) { $('imResult').textContent = '週間計画データがありません'; return; }
       var ttl = 'デイサービス週間予定表（' + ui.currentDate.split('-').join('/') + ' 出力）';
       downloadFile('デイ週間予定_' + ui.currentDate + '.xls',
-        window.WSExport.buildDaycareWeekXls(care, ttl, wsHospEffective_), 'application/vnd.ms-excel');
+        window.WSExport.buildDaycareWeekXls(care, ttl, wsHospEffective_, { medColor: medColorOf_(settings.medColor).key }), 'application/vnd.ms-excel');
     });
     $('exUsersXls').addEventListener('click', function () {
       var care = loadCareDb();
       if (!care) { $('imResult').textContent = '週間計画データがありません'; return; }
       downloadFile('デイ利用者一覧_' + ui.currentDate + '.xls',
-        window.WSExport.buildDaycareUsersXls(care, null, wsHospEffective_), 'application/vnd.ms-excel');
+        window.WSExport.buildDaycareUsersXls(care, null, wsHospEffective_, { medColor: medColorOf_(settings.medColor).key }), 'application/vnd.ms-excel');
     });
 
     /* 相互起動 */
@@ -15778,6 +15826,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       $('stShiftAuto').checked = settings.shiftAuto !== false;
       if ($('stAutoLockPast')) $('stAutoLockPast').checked = settings.autoLockPast !== false;
       if ($('stHideNonHeadcount')) $('stHideNonHeadcount').checked = settings.hideNonHeadcount !== false;
+      fillMedColorSelect_();
       $('stResult').textContent = '';
       try { if ($('stReserveDiag')) $('stReserveDiag').value = buildReserveDiag_(); } catch (eDg) {}
       try { if ($('stNetDiag')) $('stNetDiag').value = NP.formatDiag(loadNetDiag_()); } catch (eNd) {}
@@ -15950,6 +15999,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if ($('stAutoLockPast')) settings.autoLockPast = $('stAutoLockPast').checked;
       var prevHideNH_ = settings.hideNonHeadcount !== false;
       if ($('stHideNonHeadcount')) settings.hideNonHeadcount = $('stHideNonHeadcount').checked;
+      if ($('stMedColor')) settings.medColor = medColorOf_($('stMedColor').value).key;
+      try { renderMedColorName_(); } catch (eMc) {}
       var hideNHChanged_ = (settings.hideNonHeadcount !== false) !== prevHideNH_;
       saveSettings({ writeCommon: !!verified });   /* 共通キーは確かめた時だけ（空欄＝同期オフも共通キーに触れない） */
       if (prevSyncSig_ !== settings.endpoint + '|' + settings.token) { try { resetSyncStat_(); } catch (eRs) {} }
