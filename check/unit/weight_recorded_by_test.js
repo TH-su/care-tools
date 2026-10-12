@@ -42,7 +42,7 @@ function makeCtx(opt) {
     console,
     setTimeout,
     Promise,
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, key: i => Object.keys(store)[i] || null, get length() { return Object.keys(store).length; } },
     document: {
       scripts: [],
       createElement: () => ({}),
@@ -57,7 +57,7 @@ function makeCtx(opt) {
   if (opt.SUAuth) ctx.SUAuth = opt.SUAuth;
   vm.createContext(ctx);
   vm.runInContext([
-    lineOf(/var WR_SESSION_KEY = [^\n]*/),
+    lineOf(/var WR_SESSION_RE = [^\n]*/), cut('wrHasSession_'),
     lineOf(/var wrWhoAcct_ = [^\n]*/),
     lineOf(/var wrWhoGen_ = [^\n]*/),
     cut('suGetDeviceRole'), cut('wrIsField'), cut('wrWho_'), cut('wrWhoLabel_'),

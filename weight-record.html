@@ -3412,7 +3412,12 @@ function wrFieldDeny(){
      ログインの控えが無い端末（現場のタブレット等）では部品を読み込まない（su-weight-shadow.js と同じ条件）。
    ★記録した人は記録の中に持たせる（未送信の再送は記録を DB.records の最新で差し替えるため、キュー側に持つと消える）。
    ★取込・見本データの記録には入れない（その端末の人が記録したものではないため）。 */
-var WR_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+/* ★控えのキーは Supabase のプロジェクトごとに名前が変わる（sb-<プロジェクト>-auth-token）。固定の文字列で持つと、プロジェクトを替えた時に全員が役割の名前で記録される。貼り薬カレンダーと同じ正規表現で探す（2026-10-12・監査10月版 第3版 5） */
+var WR_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function wrHasSession_(){
+  try{ for(var i = 0; i < localStorage.length; i++) if(WR_SESSION_RE.test(localStorage.key(i) || '')) return true; }catch(e){}
+  return false;
+}
 var wrWhoAcct_ = '';   // var＝起動の途中で呼ばれても参照できるように
 function wrWho_(){ return wrWhoAcct_ || (wrIsField() ? '現場端末' : '事務所PC'); }
 /* 2段階の6桁がまだの管理者（mfa_verify・mfa_enroll）も、Google で本人と分かっているのでアカウントで残す
@@ -3450,7 +3455,7 @@ var wrWhoGen_ = 0;
 function wrResolveWho_(){
   const gen = ++wrWhoGen_;
   let has = false;
-  try{ has = !!localStorage.getItem(WR_SESSION_KEY); }catch(e){}
+  has = wrHasSession_();
   if(!has){ wrWhoAcct_ = ''; return; }
   wrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
     if(gen !== wrWhoGen_) return;
@@ -7911,7 +7916,7 @@ try{
 applyWeightDeviceGuard();
 try{ wrResolveWho_(); }catch(e){ /* 記録した人の確認の失敗は運用を止めない */ }
 /* 別のタブでのログイン・ログアウトと、画面に戻った時に、記録した人を取り直す（2026-10-10） */
-window.addEventListener('storage', function(e){ if(e.key === WR_SESSION_KEY || e.key === null){ try{ wrResolveWho_(); }catch(e2){} } });
+window.addEventListener('storage', function(e){ if(e.key === null || WR_SESSION_RE.test(e.key)){ try{ wrResolveWho_(); }catch(e2){} } });
 document.addEventListener('visibilitychange', function(){ if(!document.hidden){ try{ wrResolveWho_(); }catch(e){} } });
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();

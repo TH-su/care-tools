@@ -682,7 +682,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-12.3"></script>
-<script src="su-facility.js?v=2026-10-08"></script>
+<script src="su-facility.js?v=2026-10-12"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -969,13 +969,18 @@ function dcrAuthLoad_() {
 }
 /* ★起動時だけでなく、別のタブでのログイン・ログアウト（storage）と画面に戻った時（visibilitychange）にも取り直す
    （2026-10-10・体重管理と同じ）。ログアウトしたら「事務所PC」へ戻す。世代番号で遅れて届いた古い結果を捨てる。 */
-const DCR_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+/* ★控えのキーは Supabase のプロジェクトごとに名前が変わる（sb-<プロジェクト>-auth-token）。固定の文字列で持つと、プロジェクトを替えた時に全員が役割の名前で記録される。貼り薬カレンダーと同じ正規表現で探す（2026-10-12・監査10月版 第3版 5） */
+const DCR_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function dcrHasSession_() {
+  try { for (let i = 0; i < localStorage.length; i++) if (DCR_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
+  return false;
+}
 let dcrWhoGen_ = 0;
 function dcrResolveWho_() {
   const gen = ++dcrWhoGen_;
   if (dcrIsField_()) return;
   let has = false;
-  try { has = !!localStorage.getItem(DCR_SESSION_KEY); } catch (e) {}
+  has = dcrHasSession_();
   if (!has) { dcrWhoAcct_ = ''; return; }
   dcrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
     if (gen !== dcrWhoGen_ || !st || st.status === 'error') return;   // 確かめられない時は前の値のまま
@@ -2928,7 +2933,7 @@ function init() {
      書き込みの止めは queueFlags が押した時点の用途で判定するので、描き直しが遅れても書けてしまうことはない。 */
   window.addEventListener('storage', function (e) { if (e.key === DCR_DEVICE_KEY) { try { renderAll(DB); } catch (e2) {} } });
   dcrResolveWho_();   // 変更記録の「誰が」（事務所PCでだけ・裏で）
-  window.addEventListener('storage', function (e) { if (e.key === DCR_SESSION_KEY || e.key === null) { try { dcrResolveWho_(); } catch (e2) {} } });
+  window.addEventListener('storage', function (e) { if (e.key === null || DCR_SESSION_RE.test(e.key)) { try { dcrResolveWho_(); } catch (e2) {} } });
   setInterval(function(){ try{ dcrWatchMasterState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
     if (!document.hidden) { try{ dcrWatchMasterState(); }catch(e){} try { dcrResolveWho_(); } catch (e3) {} }   // 復帰時に即時1回（誰がの取り直しも）

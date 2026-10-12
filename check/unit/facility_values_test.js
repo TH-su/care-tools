@@ -74,7 +74,7 @@ console.log('\n— 3. 週間計画の報酬マスタの「自治体」—');
   t('保存済みの値を優先し、無い・空の時だけ施設情報を使う', /src\.municipality\s*\?\s*src\.municipality\s*:\s*\(d\.municipality \|\| csProfileMunicipality_\(\)\)/.test(norm)
     && /if \(!m0\.municipality\) m0\.municipality = csProfileMunicipality_\(\);/.test(norm), '');
   t('施設情報が後から届いた端末でも、空のままにしない（届いた時に空なら入れる）', /SUFacility\.onReady\(function \(\) \{\s*try \{ if \(typeof DB === 'object' && DB && DB\.rateMaster && !DB\.rateMaster\.municipality\) DB\.rateMaster\.municipality = csProfileMunicipality_\(\);/.test(src), '');
-  t('su-facility.js を読み込む（記録の口より後）', src.indexOf('<script src="su-facility.js?v=2026-10-08"></script>') > src.indexOf('function csNote_('), '');
+  t('su-facility.js を読み込む（記録の口より後）', src.search(/<script src="su-facility\.js\?v=[0-9A-Za-z._-]+"><\/script>/) > src.indexOf('function csNote_('), '');
 }
 
 console.log('\n— 4. 入居者マスタのデイの判定 —');

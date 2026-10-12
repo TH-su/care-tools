@@ -89,35 +89,42 @@ console.log('\n— D. 記録した人の取り直し（体重）—');
   {
     const ls = new Map();
     let reply = { status: 'ok', email: 'staff-a@example.jp', label: '' };
-    const wb = { JSON, Promise, console, WR_SESSION_KEY: 'sb-jhbernqawjrzqwrmqrih-auth-token',
-      localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null) },
+    /* 控えのキーはプロジェクトごとに名前が変わる（2026-10-12〜正規表現で探す）。試験では本番と違う名前で確かめる */
+    const wb = { JSON, Promise, console, SK: 'sb-testproject1-auth-token',
+      localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null), key: i => [...ls.keys()][i] || null, get length() { return ls.size; } },
       wrAuthLoad_: () => Promise.resolve(), wrIsField: () => false, window: {} };
     wb.SUAuth = { check: () => Promise.resolve(reply) }; wb.window.SUAuth = wb.SUAuth;
     vm.createContext(wb);
-    vm.runInContext(['var wrWhoAcct_ = "";', 'var wrWhoGen_ = 0;', cut(SRC, 'wrWho_'), cut(SRC, 'wrWhoLabel_'), cut(SRC, 'wrResolveWho_')].join('\n'), wb);
+    vm.runInContext([(SRC.match(/var WR_SESSION_RE = [^\n]*/) || [''])[0], cut(SRC, 'wrHasSession_'), 'var wrWhoAcct_ = "";', 'var wrWhoGen_ = 0;', cut(SRC, 'wrWho_'), cut(SRC, 'wrWhoLabel_'), cut(SRC, 'wrResolveWho_')].join('\n'), wb);
     wb.wrResolveWho_(); await tick(); await tick();
     t('ログインの控えが無ければ役割の名前', wb.wrWho_() === '事務所PC');
-    ls.set(wb.WR_SESSION_KEY, '{}'); wb.wrResolveWho_(); await tick(); await tick();
+    ls.set(wb.SK, '{}'); wb.wrResolveWho_(); await tick(); await tick();
     t('ログインするとアカウントの名前', wb.wrWho_() === 'staff-a', wb.wrWho_());
     reply = { status: 'ok', email: 'staff-b@example.jp', label: '' }; wb.wrResolveWho_(); await tick(); await tick();
     t('★人が替わったら取り直す', wb.wrWho_() === 'staff-b', wb.wrWho_());
-    ls.delete(wb.WR_SESSION_KEY); wb.wrResolveWho_(); await tick(); await tick();
+    ls.delete(wb.SK); wb.wrResolveWho_(); await tick(); await tick();
     t('★ログインの控えが消えたら（別のタブでログアウト）、アカウントの名前を捨てて役割の名前', wb.wrWho_() === '事務所PC', wb.wrWho_());
-    ls.set(wb.WR_SESSION_KEY, '{}'); wb.wrResolveWho_(); await tick(); await tick();
+    ls.set(wb.SK, '{}'); wb.wrResolveWho_(); await tick(); await tick();
     reply = { status: 'error' }; wb.wrResolveWho_(); await tick(); await tick();
     t('★確かめられない時（通信など）は前の値のまま', wb.wrWho_() === 'staff-b', wb.wrWho_());
     reply = { status: 'signed_out' }; wb.wrResolveWho_(); await tick(); await tick();
     t('★ログアウトしたら役割の名前へ戻す', wb.wrWho_() === '事務所PC', wb.wrWho_());
     /* 遅れて届いた古い結果を捨てる */
-    ls.set(wb.WR_SESSION_KEY, '{}');
+    ls.set(wb.SK, '{}');
     let release; wb.SUAuth.check = () => new Promise(r => { release = r; });
     wb.wrResolveWho_(); await tick(); await tick(); const oldRelease = release;
     wb.SUAuth.check = () => Promise.resolve({ status: 'ok', email: 'new-user@example.jp' });
     wb.wrResolveWho_(); await tick(); await tick();
     oldRelease({ status: 'ok', email: 'old-user@example.jp' }); await tick(); await tick();
     t('★遅れて届いた古い確認の結果で上書きしない', wb.wrWho_() === 'new-user', wb.wrWho_());
+    /* 関係のないキーだけではログインと数えない・本番のプロジェクト名でも数える */
+    ls.clear(); ls.set('sb-testproject1-other', '{}'); ls.set('su_device_role', 'office');
+    t('★控えのキーの形でないもの（sb-…-other 等）はログインと数えない', wb.wrHasSession_() === false);
+    ls.set('sb-jhbernqawjrzqwrmqrih-auth-token', '{}');
+    t('本番のプロジェクト名の控えもログインと数える', wb.wrHasSession_() === true);
+    t('★固定の文字列のキー（WR_SESSION_KEY）はもう無い', !/WR_SESSION_KEY|sb-jhbernqawjrzqwrmqrih/.test(SRC));
     t('★別のタブでのログイン・ログアウトと、画面に戻った時に取り直す（結線）',
-      /addEventListener\('storage', function\(e\)\{ if\(e\.key === WR_SESSION_KEY \|\| e\.key === null\)\{ try\{ wrResolveWho_\(\);/.test(SRC) &&
+      /addEventListener\('storage', function\(e\)\{ if\(e\.key === null \|\| WR_SESSION_RE\.test\(e\.key\)\)\{ try\{ wrResolveWho_\(\);/.test(SRC) &&
       /addEventListener\('visibilitychange', function\(\)\{ if\(!document\.hidden\)\{ try\{ wrResolveWho_\(\);/.test(SRC));
   }
 
@@ -125,19 +132,19 @@ console.log('\n— D. 記録した人の取り直し（体重）—');
   {
     const ls = new Map();
     let reply = { status: 'ok', email: 'staff-a@example.jp' };
-    const db = { JSON, Promise, console, localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null) },
+    const db = { JSON, Promise, console, SK: 'sb-testproject2-auth-token', localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null), key: i => [...ls.keys()][i] || null, get length() { return ls.size; } },
       dcrAuthLoad_: () => Promise.resolve(), dcrIsField_: () => false, window: {} };
     db.SUAuth = { check: () => Promise.resolve(reply) }; db.window.SUAuth = db.SUAuth;
     vm.createContext(db);
-    vm.runInContext([decl(DCR, 'DCR_SESSION_KEY'), 'var dcrWhoAcct_ = "", dcrWhoGen_ = 0;', cut(DCR, 'dcrWho_'), cut(DCR, 'dcrResolveWho_')].join('\n'), db);
-    ls.set(db.DCR_SESSION_KEY, '{}'); db.dcrResolveWho_(); await tick(); await tick();
+    vm.runInContext([decl(DCR, 'DCR_SESSION_RE'), cut(DCR, 'dcrHasSession_'), 'var dcrWhoAcct_ = "", dcrWhoGen_ = 0;', cut(DCR, 'dcrWho_'), cut(DCR, 'dcrResolveWho_')].join('\n'), db);
+    ls.set(db.SK, '{}'); db.dcrResolveWho_(); await tick(); await tick();
     t('ログインするとアカウントの名前', db.dcrWho_() === 'staff-a', db.dcrWho_());
     reply = { status: 'error' }; db.dcrResolveWho_(); await tick(); await tick();
     t('確かめられない時は前の値のまま', db.dcrWho_() === 'staff-a');
     reply = { status: 'signed_out' }; db.dcrResolveWho_(); await tick(); await tick();
     t('★ログアウトしたら「事務所PC」へ戻す', db.dcrWho_() === '事務所PC', db.dcrWho_());
     t('★別のタブでのログイン・ログアウトと、画面に戻った時に取り直す（結線）',
-      /addEventListener\('storage', function \(e\) \{ if \(e\.key === DCR_SESSION_KEY/.test(DCR) && /try \{ dcrResolveWho_\(\); \} catch \(e3\) \{\}/.test(DCR));
+      /addEventListener\('storage', function \(e\) \{ if \(e\.key === null \|\| DCR_SESSION_RE\.test\(e\.key\)\)/.test(DCR) && !/DCR_SESSION_KEY|sb-jhbernqawjrzqwrmqrih/.test(DCR) && /try \{ dcrResolveWho_\(\); \} catch \(e3\) \{\}/.test(DCR));
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
