@@ -604,6 +604,9 @@ textarea.fi{resize:vertical;min-height:60px}
 .setup-step[open]>summary::before{transform:rotate(90deg)}
 .setup-step>summary:hover{background:var(--g0)}
 .setup-step[open]>summary{border-bottom:1px solid var(--g2);background:var(--g0)}
+.setup-first{border:1px solid var(--g2);border-radius:8px;padding:12px 14px 4px;margin-bottom:14px;background:#fff;font-size: 0.8125rem;color:var(--g9)}
+.setup-first .setup-list{padding:6px 0 0 22px}
+.setup-first .setup-sub{margin:0 0 8px;font-size: 0.75rem;color:var(--g7)}
 .setup-list{padding:14px 14px 14px 36px;font-size: 0.8125rem;line-height:1.8;color:var(--g7)}
 .setup-list li{margin-bottom:6px}
 .setup-list code{background:var(--g1);padding:1px 6px;border-radius:3px;font-family:Menlo,Consolas,monospace;font-size: 0.75rem;color:var(--g9)}
@@ -688,8 +691,20 @@ textarea.fi{resize:vertical;min-height:60px}
         利用者ごとのジェノグラムが、複数端末で自動同期されます。
       </div>
 
-      <details class="setup-step" open>
-        <summary><strong>① Googleスプレッドシート ＋ Apps Script の準備</strong>（必須）</summary>
+      <!-- 初回の案内（2026-10-12・監査10月版 v2 家族構成図 第2手）。職員が端末ごとにすることを先に出し、
+           GAS を作る手順は「管理者が施設で最初に1回だけ」と分ける。設定済みの端末では下の ① を閉じて開く（openCloudModal） -->
+      <div class="setup-first" id="cfgFirstGuide">
+        <strong>この端末で使い始める（職員の方）</strong>
+        <ol class="setup-list">
+          <li>管理者から「GAS の URL」と「合言葉」を受け取ります（接続設定の画面でまとめて設定した端末には、もう入っています）。</li>
+          <li>下の「設定入力」に2つとも貼り付けます。</li>
+          <li>「接続テスト」で成功と出たら「保存して閉じる」を押します。合言葉の誤りと出た時は、管理者に GAS 側の合言葉（<code>GENOGRAM_TOKEN</code>）も確かめてもらいます。</li>
+        </ol>
+        <p class="setup-sub">下の ① は、施設で最初に1回だけ管理者が行う準備です。職員の方は読み飛ばしてかまいません。</p>
+      </div>
+
+      <details class="setup-step" id="cfgAdminSetup" open>
+        <summary><strong>① Googleスプレッドシート ＋ Apps Script の準備</strong>（管理者が施設で最初に1回だけ）</summary>
         <ol class="setup-list">
           <li>Googleアカウントにログイン → <a href="https://sheets.new" target="_blank" rel="noopener">https://sheets.new</a> で新規スプレッドシートを作成。シート名を「<code>genograms</code>」に変更。</li>
           <li>メニュー「拡張機能」→「Apps Script」を開く。</li>
@@ -4291,6 +4306,9 @@ function openCloudModal() {
   const cfg = CloudSync.getCfg();
   $('cfgGasUrl').value = cfg.gasUrl || '';
   $('cfgGasToken').value = cfg.gasToken || '';
+  /* 設定済みの端末では、管理者向けの GAS の準備（①）を閉じて開く＝職員が手順の長さに迷わない（2026-10-12）。
+     未設定なら今までどおり開いておく（初めての管理者が手順を探さなくてよいように） */
+  try { $('cfgAdminSetup').open = !CloudSync.isConfigured(); } catch (e) {}
   $('cloudModal').hidden = false;
   $('cfgResult').hidden = true;
 }
