@@ -19,6 +19,7 @@
  *   SUFacility.floorLabel(no)     … 階の見出し（１階 など）
  *   SUFacility.roomPlan()         … 入居者マスタの間取り図（無ければ null）
  *   SUFacility.municipality()     … 施設のある市区町村（未設定なら空）（2026-10-08・監査10月版 #10）
+ *   SUFacility.apps()             … この施設で使うアプリの id の配列（facility-profile.json の apps）。書いていなければ null＝全部使う（2026-10-12・監査10月版 v2）
  *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
  *
  * 端末の控え:
@@ -44,7 +45,13 @@
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
     var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
-                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' } };
+                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null };
+    /* 使うアプリ（2026-10-12）。英小文字の id だけを持つ。書いていない・空の配列は null＝全部使う
+       （空の配列を「何も使わない」と読むと、書き損じ1つで接続設定の欄が全部消えるため） */
+    if (Array.isArray(p.apps)) {
+      var ap = p.apps.filter(function (x) { return typeof x === 'string' && /^[a-z]{2,16}$/.test(x); }).slice(0, 40);
+      out.apps = ap.length ? ap : null;
+    }
     /* 法人設定（2026-10-11）。名前は文字列だけ、URL は https:// で始まる形だけ持つ（紙と画面のリンクに出すため） */
     if (p.corpSettings && typeof p.corpSettings === 'object') {
       out.corpSettings.homeGuidelineName = str(p.corpSettings.homeGuidelineName).trim().slice(0, 80);
@@ -156,6 +163,7 @@
     },
     roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
     municipality: function () { return (data && data.municipality) || ''; },
+    apps: function () { return (data && data.apps) ? data.apps.slice() : null; },
     corpSettings: function () {
       var c = data && data.corpSettings;
       return { homeGuidelineName: (c && c.homeGuidelineName) || '', homeGuidelineUrl: (c && c.homeGuidelineUrl) || '' };

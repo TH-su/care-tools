@@ -152,6 +152,8 @@ main {
 .wiz-open button { background: none; border: 0; color: var(--pri); text-decoration: underline; padding: 0; min-height: 44px; font-size: inherit; cursor: pointer; }
 
 .note-card { background: var(--warn-bg); border-color: #ffe0a3; }
+.role-note { background: var(--warn-bg); border-color: #ffe0a3; }
+.role-note p { margin: 0; font-size: 0.8125rem; color: var(--warn-tx); }
 /* 設定の控え（2026-09-27） */
 .fld textarea {
   width: 100%; padding: 10px 12px; min-height: 88px; font-size: 0.8125rem; font-family: ui-monospace, Menlo, monospace;
@@ -232,6 +234,13 @@ main {
        他の介護ツールのタブが開いています。そのタブを閉じてから、もう一度保存してください。</p>
   </div>
 
+  <!-- 端末の用途が未設定の時だけ出す（2026-10-12・監査10月版 v2 接続設定 第3手・本人決定「注意の帯だけ」）。
+       ★切り替えのボタンは置かない（端末用途の切替UIは入居者マスタの1か所に限る・下の deviceBlock の注記と同じ理由） -->
+  <div class="cd role-note" id="roleNote" role="note" hidden>
+    <p><b>この端末の用途（事務所の端末／現場の端末）がまだ決まっていません。</b>今は事務所の端末として扱い、合言葉の欄を出しています。
+       現場の端末なら、入居者マスタを開いて「管理者の方（端末設定を変更）」で現場用にしてください。</p>
+  </div>
+
   <div id="cards"></div>
 
   <div class="cd">
@@ -294,7 +303,7 @@ main {
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
-<script src="su-facility.js?v=2026-09-24"></script>
+<script src="su-facility.js?v=2026-10-12"></script>
 <script>
 (function(){
 'use strict';
@@ -861,6 +870,26 @@ var WIZ_STEPS = [
   { id:'own', title:'専用GAS（その他のアプリ）', sys:['adm','tp','haiben','weight','msk','geno','analyzer','report'],
     note:'使っているアプリの分だけで足ります。使わないアプリは空欄のままで構いません' }
 ];
+/* 施設で使うアプリか（2026-10-12・監査10月版 v2 接続設定 第3手）。facility-profile.json の apps に載っている id だけ。
+   apps を書いていない（null）・施設情報を読めていない時は全部使う。不具合の報告先は常に使う。
+   ★絞るのは画面の表示（欄と初回の案内）だけ。SYSTEMS そのものは絞らない＝控えの作成・控えからの復元・巻き戻しの見張りは全アプリのまま */
+function csAppUsed_(id){
+  if(id==='report') return true;
+  var a=null; try{ a=(window.SUFacility && SUFacility.apps) ? SUFacility.apps() : null; }catch(e){ a=null; }
+  return !a || a.indexOf(id)>=0;
+}
+/* 初回の案内に出す段（使うアプリの分だけ。使うアプリが1つも無い段は出さない） */
+function wizSteps_(){
+  var out=[];
+  WIZ_STEPS.forEach(function(step){
+    if(!step.sys){ out.push(step); return; }
+    var sys=step.sys.filter(csAppUsed_);
+    if(!sys.length) return;
+    var c={}; for(var k in step) if(Object.prototype.hasOwnProperty.call(step,k)) c[k]=step[k];
+    c.sys=sys; out.push(c);
+  });
+  return out;
+}
 var wizRes = {};   // 確かめた結果 {段のid: {ok, msg}}（この画面を開いている間だけ）
 var wizGen = 0;    // 表示を取り直した回数。確かめている間に保存・書き戻しがあれば、古い結果は捨てる
 function sysById(id){ for(var i=0;i<SYSTEMS.length;i++) if(SYSTEMS[i].id===id) return SYSTEMS[i]; return null; }
@@ -905,7 +934,7 @@ function wizRender(){
   box.appendChild(el('h2',null,'初回の案内（上から順に）'));
   box.appendChild(el('p','apps','新しい端末では、上から順に入れて「確かめる」を押してください。✓ は「URL につながった」という印です。合言葉が正しいか・そのアプリの GAS かは、各アプリの保存や接続テストで確かめてください。'));
   var ol=el('ol');
-  WIZ_STEPS.forEach(function(step, i){
+  wizSteps_().forEach(function(step, i){
     var st=wizState(step);
     var li=el('li', st.ok===true ? 'ok' : (st.ok===false ? 'ng' : ''));
     var head=el('div');
@@ -951,8 +980,18 @@ function init(){
   var cards=[], box=$('cards');
   for(var i=0;i<SYSTEMS.length;i++){
     var c=buildCard(SYSTEMS[i], function(){ remember(); wizRefresh(); });
+    c.sys=SYSTEMS[i];
     cards.push(c); box.appendChild(c.node);
   }
+  /* 施設で使わないアプリの欄は隠す。★すでに URL が入っている欄は隠さない（入っている設定を見えなくしない）。
+     隠した欄は空欄のまま＝一括保存でも何も変えない。施設情報が後から読めた時にもう一度当てる */
+  var applyUsedApps=function(){
+    for(var j=0;j<cards.length;j++){ var sy=cards[j].sys; cards[j].node.hidden = !(csAppUsed_(sy.id) || !!readCur(sy).url); }
+  };
+  applyUsedApps();
+  if(window.SUFacility && SUFacility.onReady) SUFacility.onReady(function(){ try{ applyUsedApps(); }catch(e){} });
+  /* 端末の用途が未設定の時の注意の帯（getDeviceRole は未設定を事務所として返すので、元の値を直接見る） */
+  try{ var rawRole=localStorage.getItem('su_device_role'); $('roleNote').hidden = !!rawRole; }catch(e){}
   wizInit();
 
   $('saveAll').addEventListener('click', function(){
