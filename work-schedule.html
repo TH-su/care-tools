@@ -12967,11 +12967,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         .catch(function () { fin(false); });
     } catch (e) { fin(false); }
   }
+  /* 盤面の署名は項目の並び順に左右されない形で作る（2026-10-12）。
+   * Supabase は保存した項目を並べ替えて返す。並び順のまま比べると、取り込んだ直後に作り直す部分
+   * （職員の特例の印 flags など）だけ並びが変わって「盤面が変わった」と誤判定し、同じ中身を送り返していた
+   * （2台が同じ日を開いていると交互に保存し続けた）。署名は比べるためだけに使う＝保存・送信する中身は変えない。 */
   function daySig(day) {
+    function canon(v) {
+      if (v === null || typeof v !== 'object') return v;
+      var i, out;
+      if (Array.isArray(v)) {
+        out = [];
+        for (i = 0; i < v.length; i++) out.push(canon(v[i]));
+        return out;
+      }
+      var ks = Object.keys(v).sort();
+      out = {};
+      for (i = 0; i < ks.length; i++) out[ks[i]] = canon(v[ks[i]]);
+      return out;
+    }
     try {
-      return JSON.stringify({ s: day.staff, c: day.columns, t: day.tasks,
-                              k: day.meta.skipRefs || null, n: day.meta.notes || null,
-                              l: day.meta.locked || false });   /* ロック状態を署名に含める＝切替がpushされ全端末へ伝播 */
+      return JSON.stringify(canon({ s: day.staff, c: day.columns, t: day.tasks,
+                                    k: day.meta.skipRefs || null, n: day.meta.notes || null,
+                                    l: day.meta.locked || false }));   /* ロック状態を署名に含める＝切替がpushされ全端末へ伝播 */
     } catch (e) { return ''; }
   }
   function setSyncState(txt) { $('saveState').textContent = txt; }
