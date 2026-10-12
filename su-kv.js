@@ -184,10 +184,13 @@
     return '{' + Object.keys(v).filter(function (k) { return v[k] !== undefined; }).sort()
       .map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
   }
+  // 盤面の比べ方: meta.rev（そろえた版）と meta.updatedAt（端末が保存した時刻）は盤面の中身ではないので外す（2026-10-12）。
+  // updatedAt を残すと、現場で印を付けるたびに端末の時刻だけで「違う」となり、1つ前の版を返して毎回取り直させていた。
+  // データベースの「今と同じなら保存しない」（care-backend 0011）と同じ範囲にそろえる
   function boardOf(d) {
     d = d || {};
     var meta = {}, k;
-    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k) && k !== 'rev') meta[k] = d.meta[k];
+    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k) && k !== 'rev' && k !== 'updatedAt') meta[k] = d.meta[k];
     var tasks = (Array.isArray(d.tasks) ? d.tasks : []).map(function (t) {
       var c = {}, kk;
       for (kk in (t || {})) if (Object.prototype.hasOwnProperty.call(t, kk) && kk !== 'done' && kk !== 'checks' && kk !== 'comment') c[kk] = t[kk];
