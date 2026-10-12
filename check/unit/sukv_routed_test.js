@@ -172,6 +172,15 @@ function makeKv(o) {
     k = makeKv({ role: 'field', db: { rev: 5, data: movedBoard } });
     r = await k.kv.call(dput, k.raw);
     t('★E 端末の盤面がサーバーと違う（現場で札を動かした等）→ 1つ前の版を返して、次の取得でサーバーの盤面を取り込ませる', r.ok === true && r.rev === 5 && k.db.rev === 6, r);
+    const stampedBoard = clone(sameBoard); stampedBoard.meta.updatedAt = '2000-01-01T00:00:00.000Z';   // 事務所が最後に送った時刻
+    const stampedPut = clone(dput); stampedPut.data.meta.updatedAt = '2000-01-01T09:30:00.000Z';      // 現場の端末が印を付けた時刻
+    k = makeKv({ role: 'field', db: { rev: 5, data: stampedBoard } });
+    r = await k.kv.call(stampedPut, k.raw);
+    t('★E 保存時刻（meta.updatedAt）だけが違う盤面は同じとみなし、書いた版をそのまま返す（印を付けるたびの取り直しをしない）', r.ok === true && r.rev === 6 && k.db.rev === 6, r);
+    const lockedBoard = clone(stampedBoard); lockedBoard.meta.locked = true;
+    k = makeKv({ role: 'field', db: { rev: 5, data: lockedBoard } });
+    r = await k.kv.call(stampedPut, k.raw);
+    t('E 保存時刻以外のメタ（確定など）が違えば今までどおり1つ前の版を返す', r.ok === true && r.rev === 5 && k.db.rev === 6, r);
     k = makeKv({ role: 'field', db: { rev: 5, data: sameBoard }, marksReply: { ok: true, rev: 6, baseRev: 5, marksOnly: true, applied: 1, missing: 2 } });
     r = await k.kv.call(dput, k.raw);
     t('★E 印を付けた札が作り直されていた（missing）→ 画面の下に知らせる（1日に1回）', r.ok === true && k.banners.length === 1);
