@@ -427,7 +427,8 @@ function makeKv(o) {
         dDecl('DCR_DEVICE_KEY'), dDecl('DCR_FIELD_MSG'), dDecl('DCR_LOG_MAX'), dDecl('DCR_LOG_FIELDS'),
         'var dcrLogSeq_ = 0, dcrWhoAcct_ = "";',
         ...['suNormName_', 'findServerResident_', 'pendingKey_', 'dcrIsField_', 'dcrWho_', 'dcrStamp_', 'dcrMakeLog_',
-            'dcrAddLog_', 'dcrRemoveLogs_', 'applyPendingFlag_', 'getRemoteWithRev', 'queueFlags', 'runSaver', 'writeResidentFlag', 'writeLunchMed'].map(dFn)
+            'dcrAddLog_', 'dcrRemoveLogs_', 'applyPendingFlag_', 'getRemoteWithRev', 'queueFlags', 'runSaver', 'writeResidentFlag', 'writeLunchMed']
+            .concat(DCR.indexOf('\nfunction dcrSaveErrText_(') >= 0 ? ['dcrSaveErrText_'] : []).map(dFn)   /* 断りの言い換え（2026-10-12〜） */
       ].join('\n'), box, { filename: 'daycare-roster(切り出し)' });
       box.DB = clone(k.db.data); box.careRev = 5;
       box.writeLunchMed([{ rid: 'r1', masterId: 101, name: '架空 一郎' }], true);
@@ -439,6 +440,18 @@ function makeKv(o) {
       t('★' + label + ': 偽の「保存しました」を出さない', !x.toasts.some(o => /保存しました/.test(o.m)), x.toasts);
       t('★' + label + ': 「変更を取り消しました」と知らせ、昼食薬を元に戻す', x.toasts.some(o => /取り消しました/.test(o.m) && o.ng) && x.box.DB.residents[0].lunchMed === false, x.toasts);
       t(label + ': 未確定の変更は残さない（画面とサーバーが食い違わない）・Google へ流さない', x.box.pendingFlags.size === 0 && x.k.raws.length === 0 && x.k.db.data.residents[0].lunchMed === false);
+    }
+    /* 2026-10-12: 断りのコード（login 等）をそのまま出さず、職員に分かる文にする（本人指示）。言い換えの無い古い画面では飛ばす */
+    if (DCR.indexOf('\nfunction dcrSaveErrText_(') >= 0) {
+      const lg = await runDcr({ status: STATUS.SIGNED_OUT });
+      t('★未ログイン: 「Google のログインが切れています。ログインしてから、もう一度押してください」と知らせる（「login」をそのまま出さない）',
+        lg.toasts.some(o => o.ng && /Google のログインが切れています。ログインしてから、もう一度押してください。変更を取り消しました/.test(o.m) && !/login/.test(o.m)), lg.toasts);
+      const fb = await runDcr({ role: 'field' });
+      t('現場のアカウント: 事務所の端末・アカウントで操作するよう知らせる（「forbidden」を出さない）', fb.toasts.some(o => o.ng && /事務所の端末・事務所のアカウントで操作してください/.test(o.m) && !/forbidden/.test(o.m)), fb.toasts);
+      const sh = await runDcr({ putReply: { ok: false, error: 'shadow', rev: 0 } });
+      t('切り替え前: 切り替えが終わっていないと知らせる（「shadow」を出さない）', sh.toasts.some(o => o.ng && /保存先の切り替えがまだ終わっていません/.test(o.m) && !/shadow/.test(o.m)), sh.toasts);
+      const nt = await runDcr({ rpcError: { message: 'x' } });
+      t('知らない理由は今までどおり括弧で添える（何が起きたかを消さない）', nt.toasts.some(o => o.ng && /を保存できませんでした（[^）]+）。変更を取り消しました/.test(o.m)), nt.toasts);
     }
     const ok = await runDcr({});
     t('（対照）ログイン済みなら保存でき、サーバーの昼食薬が変わる', ok.k.db.data.residents[0].lunchMed === true && ok.toasts.some(o => /保存しました/.test(o.m)), ok.toasts);

@@ -1017,6 +1017,15 @@ function queueFlags(items, field, value, label) {
   saveDirty = true;
   runSaver();                            // 背景保存（待たない）
 }
+/* 保存を断られた時の理由を、職員に分かる文にする（2026-10-12 本人指示）。以前は「（login）」のように断りのコードがそのまま出ていた。
+   知っているコードだけ言い換え、それ以外は今までどおり括弧で添える（何が起きたかを消さない） */
+function dcrSaveErrText_(raw) {
+  var m = String(raw == null ? '' : raw);
+  if (m === 'login') return 'Google のログインが切れています。ログインしてから、もう一度押してください';
+  if (m === 'forbidden') return 'このアカウントでは保存できません。事務所の端末・事務所のアカウントで操作してください';
+  if (m === 'shadow') return '保存先の切り替えがまだ終わっていません。少し待ってから、もう一度押してください';
+  return '';
+}
 async function runSaver() {
   if (saverRunning) return;
   saverRunning = true;
@@ -1082,7 +1091,9 @@ async function runSaver() {
     keys.forEach(k => pendingFlags.delete(k));
     renderAll(DB);
     setSyncState('保存失敗');
-    toast((lastLabel || '設定') + 'を保存できませんでした（' + (e && e.message ? e.message : '') + '）。変更を取り消しました', true);
+    var why = dcrSaveErrText_(e && e.message);
+    toast((lastLabel || '設定') + (why ? ('を保存できませんでした。' + why + '。変更を取り消しました')
+                                     : ('を保存できませんでした（' + (e && e.message ? e.message : '') + '）。変更を取り消しました')), true);
     if (pendingFlags.size) scheduleSaverRetry_();   // 回復GET中に積まれた新規があれば再送
   } finally {
     saverRunning = false;
