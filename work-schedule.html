@@ -659,7 +659,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   white-space: nowrap; overflow: hidden; padding: 0 4px;
 }
 </style>
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-12.3"></script>
@@ -8802,7 +8802,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   var lastCommonSig_ = null;   /* 直近に共通キーへ書いた接続先の署名。接続先以外の設定変更時に共通キーを汚さない */
   function saveSettings(opts) {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { wsNote_('設定の保存', e); }
     /* 接続先を共通キーへ反映＝同一オリジンの週間計画/シフトも同じ接続先を使う。
      * 接続先(endpoint/token)が変わった時だけ更新＝接続先以外の設定変更で su_sync_common の updatedAt を
      * 無用に進めて他アプリを過剰再同期させない。
@@ -8889,13 +8889,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return freed;
   }
   /* wsday_ 書込（圧縮）。quota時は reclaim して1回だけ再試行。成功true/失敗false。 */
+  /* 保存・同期の失敗を、画面には出さずに記録だけ残す（2026-10-12・監査10月版 第3版 2・週間計画の csNote_ と同じ形）。
+   * 端末の控え（未送信の印・版の控え・3-way の土台・競合の退避・接続先の控えなど）は、書けない・読めないまま黙ると
+   * 「同期済み」に見えて原因が追えない。su-errors.js の note へ渡す＝コンソールと不具合報告（su-report）にだけ届く。
+   * 渡すのは例外だけ（中身のデータは渡さない＝su-errors が引用符の中を伏せる）。where は固定の文字（日付・キーを入れない）。
+   * 動き（戻り値・保存の可否・トースト）は変えない。su-errors.js が古い・無い端末では何もしない。 */
+  function wsNote_(where, e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'ws:' + where); } catch (_) {}
+  }
   function lsSetDay_(date, obj) {
     var enc = encodeDay_(obj);
     try { localStorage.setItem(dayKey(date), enc); return true; }
     catch (e) {
       if (reclaimSpaceWs_(date)) {
-        try { localStorage.setItem(dayKey(date), enc); return true; } catch (e2) {}
+        try { localStorage.setItem(dayKey(date), enc); return true; } catch (e2) { wsNote_('日の保存（空けた後）', e2); return false; }
       }
+      wsNote_('日の保存', e);
       return false;
     }
   }
@@ -8906,7 +8915,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var corruptNotified_ = {};   /* 同一日で通知を繰り返さない（loadDayData は1画面で複数回呼ばれる） */
   function stashCorruptDay_(date, raw) {
     var okStash = false;
-    try { localStorage.setItem(dayKey(date) + '_corrupt', raw); okStash = true; } catch (e) {}
+    try { localStorage.setItem(dayKey(date) + '_corrupt', raw); okStash = true; } catch (e) { wsNote_('読めない日の退避', e); }
     if (corruptNotified_[date]) return;
     corruptNotified_[date] = true;
     /* 無言で新規盤面にすると「データが消えた」ようにしか見えないため、必ず見える形で知らせる。 */
@@ -9265,7 +9274,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var p = JSON.parse(raw);
         if (p && p.residents) { applySvcDict_(p); return p; }
       }
-    } catch (e) {}
+    } catch (e) { wsNote_('週間計画の読み込み', e); }
     return null;
   }
   /* care_schedule_v2 ルートの serviceDict(サービスコード辞書)を WS へ取り込み、M.SVC/M.SVC_CODES を
@@ -11893,11 +11902,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = JSON.parse(localStorage.getItem(DIRTY_KEY) || '{}');
       return (d && typeof d === 'object') ? d : {};
-    } catch (e) { return {}; }
+    } catch (e) { wsNote_('未送信の印の読み込み', e); return {}; }
   }
   /* ws_dirty_v1 への書込みはここだけ＝同期状態バッジ(#badgeSync)もここで更新する */
   function saveDirty_(d) {
-    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) {}
+    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) { wsNote_('未送信の印', e); }
     try { updateSyncBadge_(); } catch (eB) {}
   }
   function markDayDirty_(date) {
@@ -11939,14 +11948,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = JSON.parse(localStorage.getItem(REFETCH_KEY) || '{}');
       return (d && typeof d === 'object') ? d : {};
-    } catch (e) { return {}; }
+    } catch (e) { wsNote_('取り直し待ちの読み込み', e); return {}; }
   }
   function saveRefetch_(d) {
     try {
       if (d && d.days) { var n = 0, k; for (k in d.days) if (Object.prototype.hasOwnProperty.call(d.days, k)) n++;
         if (!n) { localStorage.removeItem(REFETCH_KEY); } else { localStorage.setItem(REFETCH_KEY, JSON.stringify(d)); } }
       else localStorage.removeItem(REFETCH_KEY);
-    } catch (e) {}
+    } catch (e) { wsNote_('取り直し待ちの印', e); }
     try { updateSyncBadge_(); } catch (eB) {}
   }
   function markRefetch_(date) {
@@ -11983,7 +11992,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = JSON.parse(localStorage.getItem(PUSHLOG_KEY) || '{}');
       return (d && typeof d === 'object') ? d : {};
-    } catch (e) { return {}; }
+    } catch (e) { wsNote_('送信の記録の読み込み', e); return {}; }
   }
   function notePush_(date, res, err, ms) {
     if (!date) return;
@@ -11995,7 +12004,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (i = 0; i < live.length; i++) if (d[live[i]]) keep[live[i]] = d[live[i]];
       keep[date] = d[date];
       localStorage.setItem(PUSHLOG_KEY, JSON.stringify(keep));
-    } catch (e) {}
+    } catch (e) { wsNote_('送信の記録', e); }
   }
   /* 一覧に出す1行。「いつ・どうだったか」を日本語で返す（記録が無ければ空文字） */
   function pushLogLabel_(date) {
@@ -12109,10 +12118,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* --- 3-way祖先（最後に同期成功した盤面）。wsday_と同じLZ圧縮で保存 --- */
   function baseKey_(date) { return 'wsbase_' + date; }
   function saveBase_(date, dayObj) {
-    try { localStorage.setItem(baseKey_(date), encodeDay_(dayObj)); } catch (e) {}
+    try { localStorage.setItem(baseKey_(date), encodeDay_(dayObj)); } catch (e) { wsNote_('土台の控え', e); }
   }
   function loadBase_(date) {
-    try { return decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { return null; }
+    try { return decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { wsNote_('土台の控えの読み込み', e); return null; }
   }
   /* 祖先が無い日に、手元の保存版から祖先を作り直す（2026-09-23・pruneOld の早期掃除とセット）。
    * 祖先が無いまま未送信編集ができると、3-wayマージ(rebaseDay)は同じidの札を常にローカル側で採る＝
@@ -12245,11 +12254,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var p = JSON.parse(localStorage.getItem(CARE_OPS_KEY) || 'null');
       if (p && typeof p === 'object' && p.ops && typeof p.ops.length === 'number') return p;
-    } catch (e) {}
+    } catch (e) { wsNote_('週間計画の未送信の読み込み', e); }
     return { seq: 0, ops: [] };
   }
   function saveCareOps_(p) {
-    try { localStorage.setItem(CARE_OPS_KEY, JSON.stringify(p)); } catch (e) {}
+    try { localStorage.setItem(CARE_OPS_KEY, JSON.stringify(p)); } catch (e) { wsNote_('週間計画の未送信', e); }
     try { updateSyncBadge_(); } catch (eB) {}   /* 週間計画の未送信も同期状態バッジに含める */
   }
   function careOpKey_(op) {
@@ -12353,12 +12362,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var r = JSON.parse(localStorage.getItem(REVS_KEY) || '{}');
       return (r && typeof r === 'object') ? r : {};
-    } catch (e) { return {}; }
+    } catch (e) { wsNote_('版の控えの読み込み', e); return {}; }
   }
   function saveRevsPatch(p) {
     var r = loadRevs();
     for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) r[k] = p[k];
-    try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) {}
+    try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) { wsNote_('版の控え', e); }
   }
   /* ═══ 通信ポリシー（netpolicy.js）と通信診断 ═══════════════════════════════
      1回の失敗で「同期先が見つかりません」「オフライン」を出さないための状態。
@@ -12480,14 +12489,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var o = JSON.parse(localStorage.getItem(SYNC_LKG_KEY) || 'null');
       if (o && typeof o === 'object' && o.endpoint && GAS_ENDPOINT_RE.test(String(o.endpoint))) return o;
-    } catch (e) {}
+    } catch (e) { wsNote_('接続先の控えの読み込み', e); }
     return null;
   }
   /* ★呼んでよいのは ping の判定が 'ok' だった組についてだけ */
   function saveLkg_(ep, tok) {
     ep = String(ep || '').trim();
     if (!ep || !GAS_ENDPOINT_RE.test(ep)) return;
-    try { localStorage.setItem(SYNC_LKG_KEY, JSON.stringify({ endpoint: ep, token: String(tok || '').trim(), at: Date.now() })); } catch (e) {}
+    try { localStorage.setItem(SYNC_LKG_KEY, JSON.stringify({ endpoint: ep, token: String(tok || '').trim(), at: Date.now() })); } catch (e) { wsNote_('接続先の控え', e); }
   }
   /* 控えへ戻す。cb(true)＝戻した。控えが無い・いまと同じ・確かめて 'ok' でない時は何もしない（cb(false)）。 */
   var lkgBusy_ = false;
@@ -12529,7 +12538,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try {
           var c0 = JSON.parse(localStorage.getItem(COMMON_SYNC_KEY) || 'null');
           if (!c0 || !c0.endpoint) saveSettings({ writeCommon: true });
-        } catch (eC0) {}
+        } catch (eC0) { wsNote_('共通の接続先の確認', eC0); }
         /* 設定を保存した直後だけ、正しいことも伝える（貼り直した人がその場で確かめられる） */
         if (announceOk) { try { toast('✓ ワークスケジュールの同期先を確認しました'); } catch (eOk) {} }
         return;
@@ -12790,7 +12799,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (rawB_ && localStorage.getItem('wsbase_conflict_' + rows[i].date) === null) {
           localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
         }
-      } catch (eB0) {}
+      } catch (eB0) { wsNote_('破棄前の退避', eB0); }
       markRefetch_(rows[i].date);
       /* ★印を残せたことを確かめてから未送信の印を落とす。容量不足等で印が保存できないと、
        * 未送信の印だけが外れて自動調整が立て直す＝今回直した事象にそのまま戻る。 */
@@ -12916,7 +12925,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (endpointVerdict_(j) === 'ok') {
             settings.endpoint = wsEp; settings.token = wsTok;
             try { localStorage.setItem(COMMON_SYNC_KEY, JSON.stringify(
-              { endpoint: wsEp, token: wsTok, updatedAt: Date.now() })); } catch (e2) {}
+              { endpoint: wsEp, token: wsTok, updatedAt: Date.now() })); } catch (e2) { wsNote_('共通の接続先', e2); }
             saveLkg_(wsEp, wsTok);   /* 確かめられた組＝控えも更新 */
             once(true);
           } else { once(false); }
@@ -13046,7 +13055,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         /* 統合 0007（2026-09-26）: Google が返した版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者のログイン時だけ）。
            写すのは data だけ（合言葉は送らない）。アプリの動きは変えない（失敗しても何もしない） */
-        if (window.SUKvShadow && j) { try { SUKvShadow.fromSync(payload, j); } catch (eSh) {} }
+        if (window.SUKvShadow && j) { try { SUKvShadow.fromSync(payload, j); } catch (eSh) { wsNote_('写し', eSh); } }
         once(j || null);
         return;
       }
@@ -13150,7 +13159,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { base = decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { base = null; }
     if (!base || M.countNamedStaff(base.staff) === 0) return false;
     if (!peek) {
-      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) {}   /* 診断用退避 */
+      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) { wsNote_('競合の退避（職員の空上書き）', eB); }   /* 診断用退避 */
     }
     return true;
   }
@@ -13413,7 +13422,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (serverDay.meta.locked === true && !(localDay && localDay.meta && localDay.meta.locked)) {
       var hadEdits_ = !!(localDay && (isDayDirty_(date) || isRefetchHeld_(date)) && daySig(localDay) !== daySig(serverDay));
       if (hadEdits_) {
-        try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eLk) {}
+        try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eLk) { wsNote_('競合の退避（取り込み前）', eLk); }
       }
       clearDayDirty_(date);   /* 以降 dirty=false ＝ rebase/repairBoard_ を通さずサーバーの凍結版を採用 */
       /* 未送信編集が確定版へ置き換わることを必ず告知する(無告知で消えたように見えるのを防ぐ)。退避先は wsbase_conflict_。 */
@@ -13447,7 +13456,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 未送信編集あり → 3-wayマージ（祖先欠損時はローカルを退避してunion＝消失させない） */
     var anc = loadBase_(date);
     if (!anc) {
-      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) {}
+      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) { wsNote_('競合の退避（土台なし）', eB); }
     }
     var merged, fieldLost_ = 0;
     if (fieldMarksOnly_(date)) {
@@ -13554,7 +13563,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * その版から分かれたもの（rev は採用・送信成功の時にだけ進む）なので、未送信編集の有無にかかわらず
          * 正しい祖先になる。ローカルの版は使わない＝未送信編集が祖先に混ざらない。既存の祖先は上書きしない。 */
         if (curRev > 0 && (j.rev || 0) === curRev) {
-          try { if (localStorage.getItem(baseKey_(date)) === null) saveBase_(date, j.data); } catch (eEb) {}
+          try { if (localStorage.getItem(baseKey_(date)) === null) saveBase_(date, j.data); } catch (eEb) { wsNote_('土台の控え（取得後）', eEb); }
         }
         /* 同版: 未送信編集が滞留していれば送信（push失敗後にイベントだけpullされた場合の回収） */
         if (ui.currentDate === date && isDayDirty_(date)) {
@@ -13590,7 +13599,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!st || !st.length) return;
     var sig = st.length + ':' + (st[0] && st[0].id) + ':' + (st[st.length - 1] && st[st.length - 1].id);
     if (sig === rosterSnapSig_) return;
-    try { localStorage.setItem(WS_ROSTER_SNAP_KEY, JSON.stringify(st)); rosterSnapSig_ = sig; } catch (e) {}
+    try { localStorage.setItem(WS_ROSTER_SNAP_KEY, JSON.stringify(st)); rosterSnapSig_ = sig; } catch (e) { wsNote_('職員名簿の控え', e); }
   }
   function rememberRoster_(staffList) {
     if (!staffList || !staffList.length) return;
@@ -15025,8 +15034,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (i = 0; i < arr.length; i++) total += arr[i].json.length;
       while (arr.length > 1 && total > CARE_GENS_BUDGET) { total -= arr[0].json.length; arr.shift(); }
       try { localStorage.setItem(CARE_GENS_KEY, JSON.stringify(arr)); }
-      catch (e1) { try { localStorage.setItem(CARE_GENS_KEY, JSON.stringify(arr.slice(-1))); } catch (e2) {} }
-    } catch (e) {}
+      catch (e1) { try { localStorage.setItem(CARE_GENS_KEY, JSON.stringify(arr.slice(-1))); } catch (e2) { wsNote_('週間計画の世代の控え', e2); } }
+    } catch (e) { wsNote_('週間計画の世代の控え', e); }
   }
   function careFlushPendingAdopt_() {
     if (!carePendingAdopt_) {
@@ -15127,7 +15136,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var MASTER_UNSENT_KEY = 'ws_master_unsent_v1';
   function masterUnsent_() { try { return localStorage.getItem(MASTER_UNSENT_KEY) === '1'; } catch (e) { return false; } }
   function setMasterUnsent_(on) {
-    try { if (on) localStorage.setItem(MASTER_UNSENT_KEY, '1'); else localStorage.removeItem(MASTER_UNSENT_KEY); } catch (e) {}
+    try { if (on) localStorage.setItem(MASTER_UNSENT_KEY, '1'); else localStorage.removeItem(MASTER_UNSENT_KEY); } catch (e) { wsNote_('支援マスタの未送信の印', e); }
     try { updateSyncBadge_(); } catch (eB) {}
   }
   function pushMasterNow() {
