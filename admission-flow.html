@@ -556,7 +556,7 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-10-04"></script>
+<script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script src="su-facility.js?v=2026-10-12"></script>
@@ -1128,24 +1128,32 @@ function normalizeDb(db) {
    体重管理（weight-record.html）と同じ作法。①文字列化できるか ②読み直せるか を
    確かめてから書き、書いた後に読み戻して一致を確認する。
    ★失敗を握りつぶさない。保存できていないのに「保存しました」と出すのが最悪の事故。 */
+/* 保存・同期の失敗を、画面とは別に記録へ残す（2026-10-12・監査10月版 第3版 8・週間計画の csNote_ と同じ形）。
+   su-errors.js の note へ渡す＝コンソールと不具合報告（su-report）にだけ届く。画面の知らせ（toast）は今までどおり別に出す。
+   渡すのは例外だけ（相談者の氏名などのデータは渡さない＝su-errors が引用符の中を伏せる）。where は固定の文字。
+   動き（戻り値・保存の可否・再送）は変えない。su-errors.js が古い・無い端末では何もしない。 */
+function afNote_(where, e) {
+  try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'admission:' + where); } catch (_) {}
+}
 function cachePayload() { return JSON.stringify({ db: DB, rev: kvRev, dirty: dirty, at: nowIso() }); }
 function saveCache() {
   var body;
-  try { body = cachePayload(); } catch (e) { toast('⚠️ 端末への保存に失敗しました（データの形が壊れています）'); return false; }
-  try { JSON.parse(body); } catch (e) { toast('⚠️ 端末への保存に失敗しました（検証に失敗）'); return false; }
+  try { body = cachePayload(); } catch (e) { afNote_('端末の保存（形）', e); toast('⚠️ 端末への保存に失敗しました（データの形が壊れています）'); return false; }
+  try { JSON.parse(body); } catch (e) { afNote_('端末の保存（検証）', e); toast('⚠️ 端末への保存に失敗しました（検証に失敗）'); return false; }
   try {
     /* ローテーションは「今ある正データ」が十分な大きさの時だけ。壊れた小さな値で
        バックアップを潰さないため（weight-record の cur.length 判定と同じ考え方）。 */
     var cur = localStorage.getItem(CACHE_KEY);
     if (cur && cur.length > 40) {
       var b1 = localStorage.getItem(CACHE_BAK);
-      if (b1 && b1.length > 40) { try { localStorage.setItem(CACHE_BAK2, b1); } catch (e2) {} }
+      if (b1 && b1.length > 40) { try { localStorage.setItem(CACHE_BAK2, b1); } catch (e2) { afNote_('2世代前の控え', e2); } }
       localStorage.setItem(CACHE_BAK, cur);
     }
     localStorage.setItem(CACHE_KEY, body);
     if (localStorage.getItem(CACHE_KEY) !== body) throw new Error('verify');
     return true;
   } catch (e) {
+    afNote_('端末の保存', e);
     toast('⚠️ 端末に保存できませんでした（容量不足の可能性）。同期はできています。不要なタブを閉じて再度お試しください');
     return false;
   }
@@ -1156,7 +1164,7 @@ function readCacheSlot(key) {
     if (!s) return null;
     var o = JSON.parse(s);
     if (o && o.db && Array.isArray(o.db.candidates)) return o;
-  } catch (e) {}
+  } catch (e) { afNote_('端末の控えの読み込み', e); }
   return null;
 }
 function loadCache() {
@@ -1190,7 +1198,7 @@ function syncTarget() {
   try {
     var c = JSON.parse(localStorage.getItem('adm_cfg') || '{}');
     if (c && c.url) return { endpoint: String(c.url).trim(), token: String(c.token || '').trim() };
-  } catch (e) {}
+  } catch (e) { afNote_('接続先の読み込み', e); }
   return { endpoint: '', token: '' };
 }
 var SU_DATA_READY = !!(window.SU && window.SU.data);
@@ -1563,7 +1571,7 @@ function push(force) {
             if (dirty) schedulePush();
           } else { setSync('未送信あり', 'err'); schedulePushRetry(); }
         });
-      }).catch(function () { setSync('未送信あり', 'err'); schedulePushRetry(); });
+      }).catch(function (e2) { afNote_('送信（統合後）', e2); setSync('未送信あり', 'err'); schedulePushRetry(); });
     }
     throw new Error((j && j.error) || '応答エラー');
   }).catch(function (e) {
@@ -1572,6 +1580,7 @@ function push(force) {
        決めつけず取り直して確かめ、入っていれば未送信を解消する。 */
     verifyPushed().then(function (done) {
       if (done) { setSync('同期OK'); return; }
+      afNote_('送信', e);   /* 取り直しても入っていなかった時だけ（書けていた時は失敗ではない） */
       setSync('オフライン（自動再送）', 'err');
       schedulePushRetry();
     });
@@ -1596,7 +1605,7 @@ function verifyPushed() {
    ★iOS Safari は beforeunload が発火しないことが多いので pagehide にも結線する。
    ★beacon は成否を読めないので、これを唯一の保存手段にしない（次回起動の startupPull が検証する）。 */
 function flushOnExit() {
-  if (dirty && SU_DATA_READY) { try { SU.data.kvPutBeacon(KV_KEY, DB, kvRev); } catch (e) {} }
+  if (dirty && SU_DATA_READY) { try { SU.data.kvPutBeacon(KV_KEY, DB, kvRev); } catch (e) { afNote_('離脱時の送信', e); } }
 }
 window.addEventListener('pagehide', flushOnExit);
 window.addEventListener('beforeunload', function (ev) {
@@ -3916,7 +3925,7 @@ function masterCfg() {
   try {
     var o = JSON.parse(localStorage.getItem('rmaster_cfg') || '{}');
     return { url: String(o.url || ''), token: String(o.token || '') };
-  } catch (e) { return { url: '', token: '' }; }
+  } catch (e) { afNote_('入居者マスタの接続先の読み込み', e); return { url: '', token: '' }; }
 }
 function firstContact(c, cat) {
   return (c.contacts || []).filter(function (ct) { return ct.cat === cat; })[0] || null;
