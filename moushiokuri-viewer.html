@@ -437,6 +437,10 @@ mark { background:#fff3b0; color:inherit; padding:0 1px; border-radius:2px; }
 
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
+<!-- 印刷の共通部品（2026-10-12・監査10月版 v2 申送ビューア 第1手）。入居者別は A4 縦・バイタル・食事は A4 横。
+     読めない時は従来どおりの印刷（下の @media print の @page）に倒れる -->
+<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<script src="su-print.js?v=2026-09-12"></script>
 <script src="su-errors.js?v=2026-10-04"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
@@ -2618,9 +2622,28 @@ function sqQueue(){
    配列＋indexOf にする。オブジェクトのホワイトリストだと 'toString' 等が truthy になり、
    不正値がそのまま採用されてしまう。 */
 var SCREENS = ['scr-resident','scr-date','scr-vm','scr-cfg','scr-search'];
+/* ── 印刷（2026-10-12・監査10月版 v2 申送ビューア 第1手）──
+   入居者別は A4 縦・バイタル・食事は A4 横を既定にする（余白は従来の 10mm）。印刷ボタンと Cmd/Ctrl+P の
+   どちらも同じ準備を通る（su-print.js）。日付別・検索・設定は対象なし＝従来どおりの印刷（下の @page の A4 縦）。
+   ★when で「その画面を出している時だけ」準備する（別のタブにいる時に前のタブの用紙が乗らないように） */
+var MS_PRINT_VIEW = { 'scr-resident': 'resident', 'scr-vm': 'vm' };
+var msPrintReady_ = false;
+function msPrintSetup_(){
+  if(msPrintReady_ || !window.SUPrint) return msPrintReady_;
+  var shown = function(id){ return function(){ var el = $(id); return !!(el && el.classList.contains('on')); }; };
+  SUPrint.define('resident', { label: '入居者別の申送', paper: 'A4 portrait', margin: 10, root: '#scr-resident', when: shown('scr-resident') });
+  SUPrint.define('vm', { label: 'バイタル・食事', paper: 'A4 landscape', margin: 10, root: '#scr-vm', when: shown('scr-vm') });
+  msPrintReady_ = true;
+  return true;
+}
+function msPrint_(view){
+  if(msPrintSetup_()){ SUPrint.print(view); return; }
+  window.print();   /* 共通部品を読めなかった時は従来どおり */
+}
 function goto(id, remember){
   if(SCREENS.indexOf(id) < 0) id = SCREENS[0];
   SCREENS.forEach(function(s){ $(s).classList.toggle('on', s === id); });
+  if(msPrintSetup_()) SUPrint.setActive(MS_PRINT_VIEW[id] || null);
   document.querySelectorAll('.bnav button').forEach(function(b){
     b.setAttribute('aria-selected', String(b.dataset.scr === id));
   });
@@ -2698,7 +2721,7 @@ function applyMasterIdParam(){
     b.addEventListener('click', function(){ rgReadUI(p); rgReload(); });
   });
 
-  $('printBtn').addEventListener('click', function(){ window.print(); });
+  $('printBtn').addEventListener('click', function(){ msPrint_('resident'); });
   $('copyDate').addEventListener('change', function(){ lsSet(LS_CPDT, $('copyDate').checked ? '1' : '0'); });
   $('copyAll').addEventListener('click', function(){
     if(!SEL){ toast('入居者を選んでください', true); return; }
@@ -2738,7 +2761,7 @@ function applyMasterIdParam(){
   /* ── バイタル・食事（2026-08-04 追加）──
      ★期間は3タブ共有（上の期間バー）に一本化した。選択中の入居者は保存しない
        （復元すると、別の職員が開いた時に前の方の画面が「その人の記録」として出るため）。 */
-  $('vmPrint').addEventListener('click', function(){ window.print(); });
+  $('vmPrint').addEventListener('click', function(){ msPrint_('vm'); });
   $('vmCopy').addEventListener('click', function(){
     if(!VMSEL){ toast('入居者を選んでください', true); return; }
     var t = vmCopyText();
