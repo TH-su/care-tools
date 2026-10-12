@@ -198,7 +198,8 @@
     });
     return stable({ meta: meta, staff: d.staff || null, columns: d.columns === undefined ? null : d.columns, tasks: tasks });
   }
-  /* 印を付けた札が事務所で作り直されていた（id が変わった）時の知らせ。待っても直らないので画面の下に出す（1日につき1回） */
+  /* 印を付けた札が事務所で作り直されていた（id が変わった）時の知らせ。待っても直らないので画面の下に出す（1日につき1回）。
+   * 数えるのは印が付いていた札だけ（care-backend 0012）。開き直しても古い札には付かないので、作り直された札に付け直してもらう（2026-10-12） */
   var missingShown = {};
   function noteMissing(key, n) {
     if (missingShown[key] || !document.body) return;
@@ -209,7 +210,7 @@
       'padding:12px 16px;font:700 15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;' +
       'display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
     var t = document.createElement('span');
-    t.textContent = '事務所で札が作り直されていたため、' + String(key).slice(6) + ' の印 ' + n + '件を保存できませんでした。画面を開き直して、もう一度付けてください。';
+    t.textContent = '事務所で札が作り直されていたため、' + String(key).slice(6) + ' の印 ' + n + '件を保存できませんでした。作り直された札に、もう一度付けてください。';
     var b = document.createElement('button');
     b.type = 'button'; b.textContent = '閉じる';
     b.style.cssText = 'min-height:44px;padding:0 16px;border-radius:8px;border:2px solid #fff;background:transparent;color:#fff;font:inherit;cursor:pointer';
@@ -226,9 +227,11 @@
       if (d.ok && d.marksOnly) {
         var sent = Number(payload.rev) || 0, now = Number(d.rev) || 0;
         if (!d.unchanged && rawGas) scheduleMirror(key, rawGas);
-        if (Number(d.missing) > 0) { try { noteMissing(key, Number(d.missing)); } catch (e) { /* 知らせを出せなくても保存の結果は返す */ } }
         var base = d.unchanged ? now : (Number(d.baseRev) || 0);
-        if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };   // 他の端末が先に書いていた＝取り直して統合
+        // 他の端末が先に書いていた＝取り直して統合。知らせはまだ出さない（取り込みで作り直された札へ印を移せることがある。
+        // 移せなかった印は画面の側が知らせる）。先に出すと、案内どおり押し直した時に移った印を外してしまう（反証レビュー 2026-10-12）
+        if (sent !== base) return { ok: false, conflict: true, rev: now, marksOnly: true };
+        if (Number(d.missing) > 0) { try { noteMissing(key, Number(d.missing)); } catch (e) { /* 知らせを出せなくても保存の結果は返す */ } }
         // 書けた時だけ: 端末の盤面がサーバーと違えば、1つ前の版を返して取り込ませる（確かめられない時は今の版のまま）。
         // 変わらなかった時は比べない＝取り込みの後の自動の手直しで盤面が違っても「取り込み→送信→取り込み」を繰り返さない
         if (d.unchanged) return { ok: true, rev: now, marksOnly: true };
@@ -239,7 +242,9 @@
         }, function () { return { ok: true, rev: now, marksOnly: true }; });
       }
       if (d.error === 'noday' || d.error === 'badmarks' || d.error === 'badkey') return { ok: false, error: 'forbidden', why: d.error };
-      return d;   // conflict（そろえた版が履歴に無い）・locked・shadow はそのまま（端末の今までの扱い）
+      // conflict（そろえた版が履歴に無い）・locked・shadow はそのまま（端末の今までの扱い）。
+      // conflict には印だけの保存の目印を付ける＝画面が現場の取り込み（盤面の形はサーバーの版）を使う
+      return d && d.conflict ? Object.assign({}, d, { marksOnly: true }) : d;
     });
   }
 
@@ -483,6 +488,13 @@
   fetchFlags();
   setInterval(fetchFlags, 60000);
 
-  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted,
+  /** このキーの保存が「印だけ」（現場のアカウント・kv_put_marks）になるか。最後に確かめたアカウントで同期で答える。
+   *  true / false、まだアカウントを確かめていなければ null（画面は別の手がかりを使う）。画面が取り込み方を選ぶのに使う（2026-10-12） */
+  function marksOnlyFor(key) {
+    if (!WSDAY_RE.test(String(key || '')) || !kvRouted(key)) return false;
+    if (!authCache) return null;
+    return authCache.role === 'field';
+  }
+  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, marksOnlyFor: marksOnlyFor,
                   handlesShift: handlesShift, callShift: callShift, _flags: function () { return flags; } };
 })();
