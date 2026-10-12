@@ -374,8 +374,9 @@ function main(){
 
   /* ── T4. 受け口 ── */
   group('T4. 受け口（storage・pageshow）');
-  t('storage の受け口の行がソースにある', /\nwindow\.addEventListener\('storage',function\(e\)\{ try\{ onDeviceRoleChange_\(e\); \}catch\(err\)\{\} \}\);\n/.test(SRC));
-  t('pageshow の受け口の行がソースにある', /\nwindow\.addEventListener\('pageshow',function\(e\)\{ try\{ if\(e&&e\.persisted\) onDeviceRoleChange_\(\{key:DEVICE_KEY\}\); \}catch\(err\)\{\} \}\);\n/.test(SRC));
+  /* 2026-10-12: 受け口の catch は、失敗を「端末の用途」として記録する形になった（facesheet_note_test）。空の catch の旧版も受ける */
+  t('storage の受け口の行がソースにある', /\nwindow\.addEventListener\('storage',function\(e\)\{ try\{ onDeviceRoleChange_\(e\); \}catch\(err\)\{( fsNoteAs_\('端末の用途', '[^']+', err\); )?\} \}\);\n/.test(SRC));
+  t('pageshow の受け口の行がソースにある', /\nwindow\.addEventListener\('pageshow',function\(e\)\{ try\{ if\(e&&e\.persisted\) onDeviceRoleChange_\(\{key:DEVICE_KEY\}\); \}catch\(err\)\{( fsNoteAs_\('端末の用途', '[^']+', err\); )?\} \}\);\n/.test(SRC));
   t('既存の storage の受け口（COMMON_KEY で名簿を読み直す）が残っている',
     /\nwindow\.addEventListener\('storage',function\(e\)\{\n  if\(e\.key!==COMMON_KEY\)return;\n  loadCommonRoster\(\);\n  if\(!isField\(\)&&CFG\.url\) refreshRosterFromGas\(\); else renderRoster\(\);\n\}\);\n/.test(SRC));
   {

@@ -584,6 +584,13 @@ input,select{font-family:inherit; font-size: 0.9375rem}
    ★どの script より先に定義する。note が無い古いキャッシュでは何もしない。入居者マスタの rmNote_ と同じ作り
    ★デイ利用日の部品（a4SyncTarget 等）は入居者マスタと一字一句同じ約束なのでここでは触らない（取得に失敗すると欄が「未確認」と出る＝黙らない） */
 function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'facesheet:' + where); }catch(_){} }
+/* 保存・同期以外の「黙ると困る」失敗の記録口（2026-10-12・監査10月版 v2 フェイスシート 第1手）。見出しを分けるだけで行き先は同じ。
+   kind: '印刷の準備' … 食形態一覧・誕生日表を1枚に収める処理（失敗すると紙が黙って崩れる）
+         '端末の用途' … 現場用へ変わった時の切り替え（失敗すると現場の端末に事務所の表示が残る）
+         'デイ利用日' … 週間計画からデイ利用日を取りに行く呼び出し
+   ★空の catch のまま残すのは、失敗しても業務に響かないものだけ（表示の状態の保存・カーソル・履歴の書き換え・
+     古いブラウザ向けの印刷の保険の登録・トーストの失敗）。同じ失敗の連続は su-errors が間引く */
+function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note(kind, e, 'facesheet:' + where); }catch(_){} }
 </script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
@@ -686,7 +693,7 @@ var fsRoleApplied_=null;
    デイ利用モジュール（入居者マスタと逐語同一）が、通信を出した時の値と応答が届いた時の値を比べ、違っていたら
    切り替えより前に出した通信として捨てる。読み込み直しが効かなかった時に、全利用者の氏名を含む一覧がメモリへ戻らないように（2026-10-02） */
 var devGen=0;
-function fsReload_(){ try{ location.reload(); }catch(e){} }
+function fsReload_(){ try{ location.reload(); }catch(e){ fsNoteAs_('端末の用途', '読み込み直し', e); } }
 function suNormName(s){return String(s||'').replace(/\s+/g,'').trim()}
 function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
 /* 和暦（2026-08-12 追加・入居者マスタと同じ定義）。生年月日を西暦と並べて出すために使う。
@@ -1095,7 +1102,7 @@ function renderRoster(){
        検索窓の入力が引っかかる（2026-08-24 レビュー指摘 M-4）。150ms 待って最後の1回だけ掛ける。
        ★印刷経路（ボタン・Cmd+P）は直前に必ず自前で掛け直すので、紙の結果はこの遅延に左右されない。 */
     clearTimeout(fitMealSheet._t);
-    fitMealSheet._t=setTimeout(function(){ try{ fitMealSheet(); }catch(e){} },150);
+    fitMealSheet._t=setTimeout(function(){ try{ fitMealSheet(); }catch(e){ fsNoteAs_('印刷の準備', '食形態一覧の用紙フィット', e); } },150);
     return;
   }
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。入居者マスタで登録するか「設定」で接続してください')+'</div>';return}
@@ -1143,12 +1150,12 @@ function bdayViewActive_(){
   return !!(typeof curView!=='undefined' && curView==='bday' && s && s.offsetParent);
 }
 function bdayPrintGo_(){
-  try{ if(bdayViewActive_()) fitBdaySheet(); }catch(e){}
+  try{ if(bdayViewActive_()) fitBdaySheet(); }catch(e){ fsNoteAs_('印刷の準備', '誕生日表の用紙フィット', e); }
   window.print();
 }
 window.addEventListener('beforeprint',function(){
   if(!bdayViewActive_()) return;
-  try{ fitBdaySheet(); }catch(e){}
+  try{ fitBdaySheet(); }catch(e){ fsNoteAs_('印刷の準備', '誕生日表の用紙フィット（Cmd/Ctrl+P）', e); }
 });
 var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
 var BDAY_PRINT_W_PX = 190 * 96 / 25.4;   // A4縦210mm − 左右マージン10mm
@@ -3075,7 +3082,7 @@ function renderOfficeView(r){
        （そもそも現場向けの表示には事業所欄が無いので画面には出ない）。 */
   try{
     a4EnsureDayMap().then(function(){ patchDayUse(r); }).catch(function(){});
-  }catch(e){}
+  }catch(e){ fsNoteAs_('デイ利用日', '取得の呼び出し', e); }
 
   Array.prototype.forEach.call($('ftabs').querySelectorAll('.ftab'),function(b){
     b.addEventListener('click',function(){
@@ -3412,10 +3419,10 @@ function onDeviceRoleChange_(e){
   applyRoleBadge();
   fsReload_();
 }
-window.addEventListener('storage',function(e){ try{ onDeviceRoleChange_(e); }catch(err){} });
+window.addEventListener('storage',function(e){ try{ onDeviceRoleChange_(e); }catch(err){ fsNoteAs_('端末の用途', '別のタブでの切り替え', err); } });
 /* 同じタブで別のアプリへ移り、そこで用途が変わってから「戻る」で戻ると、ページがそのまま復元されて
    storage イベントは届かない。復元された時にも同じ判定を通す */
-window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleChange_({key:DEVICE_KEY}); }catch(err){} });
+window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleChange_({key:DEVICE_KEY}); }catch(err){ fsNoteAs_('端末の用途', '戻るで復元した時の切り替え', err); } });
 document.addEventListener('DOMContentLoaded',function(){
   $('q').addEventListener('input',renderRoster);
   /* ビュー切替。矢印キーでも移動できるようにする（role="tab" の期待に合わせる） */
