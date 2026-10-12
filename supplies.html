@@ -1012,7 +1012,7 @@ body.staff .adm{display:none !important}
   <div class="cd">
     <h3 class="sub">接続先</h3>
     <div class="form">
-      <div class="fld s12"><label for="cfgUrl">接続先URL（消耗品管理GASの /exec）</label>
+      <div class="fld s12"><label for="cfgUrl">接続先URL（管理者から受け取ったURL）</label>
         <input type="url" id="cfgUrl" autocomplete="off" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></div>
       <div class="fld s6"><label for="cfgToken">合言葉</label><input type="password" id="cfgToken" autocomplete="off"></div>
       <div class="fld s6"><label for="cfgBy">この端末の名前（更新元として記録します）</label>
@@ -1297,6 +1297,10 @@ function toast(msg) {
    ★操作の手順（エディタ・デプロイの操作）は画面に出さない（2026-10-09 本人決定「画面の案内に技術用語を出さない」・
      check/unit/supplies_issuer_test.js）。手順は管理者の手順書（gas/DEPLOY-消耗品管理GAS.md）の側に置く */
 var ADMIN_GAS_ASK = '管理者に「消耗品管理のサーバーを新しい版で公開し直してください」と頼んでください。';
+/* 接続先URLの確かめ方も、技術用語（GAS・/exec・公開設定）を使わずに言う（2026-10-12・監査10月版 第3版 10）。
+   見比べる相手は「管理者から受け取ったURL」。サーバー側の公開の範囲は管理者に頼む一文にする */
+var CFG_URL_CHECK = '設定の接続先URLが、管理者から受け取ったURLと同じか（途中で切れていないか）確かめてください。';
+var ADMIN_ACCESS_ASK = '同じなら、管理者に「消耗品管理のサーバーを、この端末から使えるように公開してください」と頼んでください。';
 function setState(id, kind, title, detail, actionLabel, actionFn) {
   var box = $(id);
   if (!box) return;
@@ -1506,7 +1510,7 @@ function apiPost(action, body, timeoutMs) {
     return res.text();
   }).then(function (t) {
     var d = null;
-    try { d = JSON.parse(t); } catch (e) { throw mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが消耗品管理GASの /exec になっているか確かめてください。'); }
+    try { d = JSON.parse(t); } catch (e) { throw mkErr('サーバーの応答を読み取れませんでした', CFG_URL_CHECK); }
     if (!d || typeof d !== 'object') throw mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。');
     if (d.ok !== true) {
       /* flush_fail は台帳が書けていることがあるので、明細を開いた時に読み直させる（2026-09-23） */
@@ -1589,13 +1593,13 @@ function apiPing() {
   }
   return fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=ping', { method: 'GET', redirect: 'follow' })
     .then(function (res) {
-      if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', 'URLの末尾が /exec になっているか確かめてください。');
+      if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', CFG_URL_CHECK);
       return res.text();
     })
     .then(function (t) {
       var d = null;
-      try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', 'URLが消耗品管理GASの /exec か、公開設定が「全員」になっているか確かめてください。'); }
-      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', 'GAS側の公開設定と接続先URLを確かめてください。');
+      try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', CFG_URL_CHECK + ADMIN_ACCESS_ASK); }
+      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', '設定の接続先URLと合言葉が、管理者から受け取ったものと同じか確かめてください。');
       return d;
     })
     .catch(function (e) {
@@ -1816,7 +1820,7 @@ function loadList(quiet) {
   if (!cfgReady()) {
     $('listWrap').hidden = true;
     setState('listState', 'warn', '接続先がまだ設定されていません',
-      '下の「設定」で、接続先URL（消耗品管理GASの /exec）と合言葉を入れて保存してください。',
+      '下の「設定」で、管理者から受け取った接続先URLと合言葉を入れて保存してください。',
       '設定を開く', function () { showScreen('settings'); });
     setState('stockState', 'warn', '接続先がまだ設定されていません', '下の「設定」で接続先を入れてください。',
       '設定を開く', function () { showScreen('settings'); });
@@ -4459,7 +4463,7 @@ function fillSettings() {
 function onSaveCfg() {
   var url = txt($('cfgUrl').value).trim();
   if (url && !URL_OK_RE.test(url)) {
-    setState('cfgState', 'err', '接続先URLの形が違います', 'https:// で始まる GAS の /exec のURLを貼り付けてください。');
+    setState('cfgState', 'err', '接続先URLの形が違います', '管理者から受け取った、https:// で始まるURLをそのまま貼り付けてください。');
     $('cfgUrl').focus();
     return;
   }

@@ -87,6 +87,16 @@ t('★「GASの版を確かめ」の言い方は残っていない', !/GASの版
 t('サーバーが対応していない操作（unknown_action）の案内は、管理者に頼む一文を使う', /unknown_action: '[^'\n]*' \+ ADMIN_GAS_ASK,/.test(src));
 t('一覧・出庫が応答に無い時の案内も、読み直しても直らなければ管理者に頼む', (src.match(/もう一度読み込んでも直らない時は、' \+ ADMIN_GAS_ASK/g) || []).length === 2);
 
+/* 2026-10-12・監査10月版 第3版 10: 接続先の案内・欄の名前にも技術用語（GAS・/exec・公開設定）を出さない。
+   入力欄の見本（placeholder の URL の形）は受け取る URL そのものの形なので対象外 */
+{
+  const shown = visible.replace(/placeholder="[^"]*"/g, '');
+  const jargon = shown.match(/GAS側|消耗品管理GAS|GAS の \/exec|の \/exec|末尾が \/exec|公開設定/g) || [];
+  t('★接続先の案内・欄の名前に「GAS側」「消耗品管理GAS」「/exec」「公開設定」を出さない', jargon.length === 0, jargon);
+  t('★接続先URLは「管理者から受け取ったURL」と見比べる言い方にそろえる', /var CFG_URL_CHECK = '[^']*管理者から受け取ったURL[^']*';/.test(src) && (src.match(/CFG_URL_CHECK\)/g) || []).length + (src.match(/CFG_URL_CHECK \+ ADMIN_ACCESS_ASK\)/g) || []).length >= 3, '');
+  t('★欄の名前は「接続先URL（管理者から受け取ったURL）」', /<label for="cfgUrl">接続先URL（管理者から受け取ったURL）<\/label>/.test(src), '');
+}
+
 /* 2026-10-12・監査10月版 v2 消耗品 第3手: 施設情報が読めた時、入居者ごとの刷り方では上の1か所を出さず、明細を描き直す */
 {
   const h0 = src.indexOf('SUFacility.onReady(function () {');
