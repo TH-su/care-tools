@@ -147,8 +147,9 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
    注記の段は overflow-x:auto・white-space:nowrap なので、増えても上2段の高さは動かない
    ＝--sum-h と、それを参照する3箇所の calc() に影響しない。
    コントラスト比は #b71c1c on #fff8e1 で約 7.8:1（目標の7:1以上）。 */
-/* 週間計画で最後に直した人（2026-10-10）。#4e342e on #fff8e1 で約 11:1。空なら出さない */
-.cs-edited-note { font-size: 0.9375rem; line-height: 1.3; color: #4e342e; font-weight: 600; white-space: nowrap; margin-left: auto; padding-left: 16px; flex: 0 0 auto; }
+/* 週間計画で最後に直した人（2026-10-10）。1段目の右端に右寄せ。空なら出さない。
+   2026-10-13 本人指示「もっと小さめに、控えめに」: 同じ段の「単位」と同じ灰色（var(--g7) #5f6368 on #fff で約 6.3:1）・普通の太さ・12px */
+.cs-edited-note { font-size: 0.75rem; line-height: 1.3; color: var(--g7); font-weight: 400; white-space: nowrap; margin-left: auto; padding-left: 16px; flex: 0 0 auto; }
 .cs-edited-note:empty { display: none; }
 .sum-limit-warn {
   font-size: 0.9375rem; line-height: 1.3; color: #b71c1c; font-weight: 700;
