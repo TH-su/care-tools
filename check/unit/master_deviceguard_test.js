@@ -146,6 +146,7 @@ function load(src, old){
     location: { reload(){ cnt.reload++; } },
     apiGet(args, timeout){ return deferred('apiGet:' + (args && args.action), args, timeout); },
     apiPost(body, timeout){ return deferred('apiPost:' + (body && body.action), body, timeout); },
+    rmAccessToken_(){ return Promise.resolve(''); },   /* 2026-10-13: 保存の前にログインの証明を取り出す（この試験ではログインしていない） */
     /* applyDeviceGuard が触る他機能の控え（このテストでは偽物で足りる。a4・bk・adm・meal の var は実物を切り出す） */
     fullMap: null, fullBad: null, fullGen: 0, fullLoading: false, fullErr: '', fullDone: 0, fullTotal: 0,
     mdDict: null, mdMap: null, mdGen: 0, mdPromise: null, mdPromiseRetry: false, mdLoading: false, mdErr: '', mdShowHidden: false,

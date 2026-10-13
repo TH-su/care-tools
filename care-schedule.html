@@ -3254,7 +3254,10 @@ function csStampWriter_() {
    ★競合の解消（csRebaseEdits・csMergeEventsFrom_）では、2つの項目を組で「新しい方」を採る（直した記録なので新しい方が正）。
    ★ワークスケジュール・デイ利用表は利用者の項目を丸ごと写して書くので消えない。ただし両画面での変更では印は動かない
      ＝表示は「週間計画で」直した人に限る。
-   ★誰が＝ログイン中（su-auth で ok）なら「表示名（メールの @ より前）」、確かめられない時は「事務所PC」（体重と同じ作り）。 */
+   ★誰が＝ログイン中（su-auth で ok）ならメール全体（小文字）、確かめられない時は「未確認」（2026-10-13 代表者の依頼）。
+     正本はサーバー: Supabase の kv_put がトリガー（care-backend 0013）で、この保存で直した入居者の editedBy を
+     JWT から確かめたメールで書き直す（画面が送った名前は使わない）。画面も同じ値を付けておくのは、端末に残る姿と
+     サーバーの姿をそろえ、次の保存で食い違いを生まないため。 */
 var csEditBase_ = null;   // 利用者id → 指紋（この端末が最後に保存・読込した姿）
 function csEditFp_(r) {
   if (!r || typeof r !== 'object') return '';
@@ -3303,12 +3306,10 @@ function csEditedText_(r) {
 var CS_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
 var csWhoAcct_ = '';
 var csWhoGen_ = 0;
-function csWho_() { return csWhoAcct_ || '事務所PC'; }
+function csWho_() { return csWhoAcct_ || '未確認'; }
 function csWhoLabel_(st) {
   if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
-  const acct = String(st.email).split('@')[0].slice(0, 40);
-  const lab = String(st.label == null ? '' : st.label).trim().slice(0, 40);
-  return (lab && lab !== acct) ? (lab + '（' + acct + '）') : acct;
+  return String(st.email).trim().toLowerCase().slice(0, 120);   // 表示名（画面側の名前）は使わない
 }
 function csAuthLoad_() {
   if (window.SUAuth) return Promise.resolve();
@@ -3331,7 +3332,7 @@ function csAuthLoad_() {
   });
 }
 /* 起動時・別タブでのログイン/ログアウト（storage）・画面に戻った時（visibilitychange）に取り直す。
-   ログアウト＝「事務所PC」へ戻す。通信で確かめられない時は前の値のまま。世代番号で遅れた結果を捨てる。 */
+   ログアウト＝「未確認」へ戻す。通信で確かめられない時は前の値のまま。世代番号で遅れた結果を捨てる。 */
 function csResolveWho_() {
   const gen = ++csWhoGen_;
   let has = false;

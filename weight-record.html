@@ -2052,14 +2052,17 @@ async function apiGet(){
 async function apiPost(action, data){
   if(!apiUrl) return null;
   data = data || {};
+  /* 書き込み（記録の保存・削除）にはログインの証明を添える（2026-10-13）。GAS が確かめて「誰が」を決める */
+  const accessToken = (action === 'saveRecord' || action === 'delRecord' || action === 'delResident') ? await wrAccessToken_() : '';
   const body = JSON.stringify({
     action,
     token:    apiToken || undefined,   // 未設定なら送らない（移行中のサーバーは素通しする）
+    accessToken: accessToken || undefined,
     resident: data.resident,
     record:   data.record,
     id:       data.id,
     thresholds: data.thresholds,
-    by:       data.by                  // 削除した人（delRecord・delResident だけ・GAS が削除の記録へ残す・監査10月版 #7）
+    by:       data.by                  // 削除した人（2026-10-13 からの GAS は使わず、証明を確かめた値を残す。古い GAS のために残す）
   });
   // Use text/plain to avoid the CORS preflight that GAS does not answer.
   const r = await fetchTO(apiUrl, {
@@ -3419,14 +3422,22 @@ function wrHasSession_(){
   return false;
 }
 var wrWhoAcct_ = '';   // var＝起動の途中で呼ばれても参照できるように
-function wrWho_(){ return wrWhoAcct_ || (wrIsField() ? '現場端末' : '事務所PC'); }
+function wrWho_(){ return wrWhoAcct_ || '未確認'; }   // 2026-10-13: ログイン中はメール全体・それ以外は「未確認」（正本は GAS が確かめた値）
 /* 2段階の6桁がまだの管理者（mfa_verify・mfa_enroll）も、Google で本人と分かっているのでアカウントで残す
    （体重の画面には6桁を入れる場所が無い）。許可リスト外（denied）・エラーは役割の名前に落とす */
 function wrWhoLabel_(st){
   if(!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
-  const acct = String(st.email).split('@')[0].slice(0, 40);
-  const lab = String(st.label == null ? '' : st.label).trim().slice(0, 40);
-  return (lab && lab !== acct) ? (lab + '（' + acct + '）') : acct;
+  return String(st.email).trim().toLowerCase().slice(0, 120);   // 表示名（画面側の名前）は使わない
+}
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-13・代表者の依頼）。GAS がこれを Supabase の my_account で
+   確かめ、記録した人・直した人・削除した人を決める（画面が送った名前は使わない）。
+   ログインしていない・取り出せない・3秒で返らない時は ''（GAS は「未確認」と記録する）。証明は端末に控えない。
+   ★送る直前に取る（端末に積んだ未送信を後で送る時も、その時の証明＝積んだ時の古い証明を残さない） */
+function wrAccessToken_(){
+  if(!wrHasSession_()) return Promise.resolve('');
+  const get = wrAuthLoad_().then(() => (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client().auth.getSession() : null)
+    .then(r => (r && r.data && r.data.session && r.data.session.access_token) || '').catch(() => '');
+  return Promise.race([get, new Promise(ok => setTimeout(() => ok(''), 3000))]);
 }
 function wrAuthLoad_(){
   if(window.SUAuth) return Promise.resolve();
@@ -3449,7 +3460,7 @@ function wrAuthLoad_(){
   });
 }
 /* ★起動時だけでなく、別のタブでログイン・ログアウトした時（storage）と、画面に戻った時（visibilitychange）にも取り直す
-   （2026-10-10）。取り直さないと、途中で人が替わっても前の人の名前で記録が残る。ログアウトしたら役割の名前へ戻す。
+   （2026-10-10）。取り直さないと、途中で人が替わっても前の人の名前で記録が残る。ログアウトしたら「未確認」へ戻す（2026-10-13）。
    世代番号で、遅れて届いた古い確認の結果を捨てる。 */
 var wrWhoGen_ = 0;
 function wrResolveWho_(){

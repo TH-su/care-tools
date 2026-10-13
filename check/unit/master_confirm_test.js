@@ -320,6 +320,8 @@ async function runSave(opt){
     alert: m => { log.alert.push(m); },
     afterSaveOk_: (r, s, dg, ed) => { log.okCalls++; log.okArgs.push({dg, edSame: ed === ED}); },
     apiPost: body => { log.post.push(copy(body)); return opt.post(body); },
+    /* 2026-10-13: 保存の前にログインの証明を取り出す（rmAccessToken_）。この試験ではログインしていない＝'' */
+    rmAccessToken_: () => Promise.resolve(opt.accessToken || ''),
     apiGet: (p, ms) => { log.get.push({p: copy(p), ms}); return opt.get ? opt.get(p, log) : Promise.reject(new Error('照会は呼ばれない想定')); }
   };
   vm.createContext(sb);

@@ -1675,15 +1675,22 @@ function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}c
    保存（saveResident）のたびに updatedBy（誰が）と updatedByAt（その保存の updatedAt）を記録に載せる。GAS は記録を丸ごと
    dataJson に残すので GAS の変更は要らない。★GAS 側の別経路（薬の変更候補の反映など）も updatedAt を進めるため、
    updatedByAt と updatedAt がずれていたら「その後に別の経路で更新された」と出す（直した人を取り違えない）。
-   ★誰が＝ログイン中（su-auth で ok）なら「表示名（メールの @ より前）」、確かめられない時は端末の役割名（体重管理と同じ作り）。
+   ★誰が＝ログイン中（su-auth で ok）ならメール全体、確かめられない時は「未確認」（2026-10-13）。正本は GAS が証明を確かめた値（master.gs の stampMasterEditor_）。
    起動時・別タブでのログイン/ログアウト・画面に戻った時に取り直し、世代番号で遅れた結果を捨てる。 */
 var rmWhoAcct_='', rmWhoGen_=0;
-function rmWho_(){ return rmWhoAcct_ || (getDeviceRole()==='field' ? '現場端末' : '事務所PC'); }
+function rmWho_(){ return rmWhoAcct_ || '未確認'; }   // 2026-10-13: ログイン中はメール全体・それ以外は「未確認」（正本は GAS が確かめた値）
 function rmWhoLabel_(st){
   if(!st || ['ok','mfa_verify','mfa_enroll'].indexOf(st.status)<0 || !st.email) return '';
-  var acct=String(st.email).split('@')[0].slice(0,40);
-  var lab=String(st.label==null?'':st.label).trim().slice(0,40);
-  return (lab && lab!==acct) ? (lab+'（'+acct+'）') : acct;
+  return String(st.email).trim().toLowerCase().slice(0,120);   // 表示名（画面側の名前）は使わない
+}
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-13・代表者の依頼）。GAS（master.gs の stampMasterEditor_）が
+   Supabase の my_account で確かめ、詳細画面の保存の「最後に直した人」を決める（画面が送った名前は使わない）。
+   ログインしていない・取り出せない・3秒で返らない時は ''（GAS は「未確認」と記録する）。証明は端末に控えない */
+function rmAccessToken_(){
+  if(typeof mcHasLogin_!=='function' || !mcHasLogin_()) return Promise.resolve('');
+  var get=msAuthLoad_().then(function(){ return (window.SUAuth && typeof window.SUAuth.client==='function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function(r){ return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function(){ return ''; });
+  return Promise.race([get, new Promise(function(ok){ setTimeout(function(){ ok(''); }, 3000); })]);
 }
 function rmResolveWho_(){
   var gen=++rmWhoGen_;
@@ -9919,7 +9926,7 @@ function saveResident(){
   var dg=devGen;   // 出した時の世代（後処理 afterSaveOk_ が、切り替え後に届いた応答か見分ける）（2026-10-01）
   var ed=editing;  // 保存を出した時の編集対象（切り替え後に届いた時、この編集画面だけを閉じる）（2026-10-01）
   $('saveBtn').disabled=true;setSync('保存中…');
-  apiPost(body).then(function(d){
+  rmAccessToken_().then(function(at){ if(at) body.accessToken=at; return apiPost(body); }).then(function(d){   /* 証明を添える（2026-10-13） */
     var saved=(d&&d.record)||d;
     setSync('保存OK','ok');toast('✅ 保存しました');
     /* ★切り替えをはさんで届いた応答が、その後に開いた別の方の編集画面の照合用の時刻を書き換えないように。

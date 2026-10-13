@@ -36,6 +36,8 @@ function box(role, extra) {
 console.log('\n— 1. 保存で記録に載せる —');
 {
   const sv = cutF('saveResident');
+  t('★保存の前にログインの証明を取り出して要求に添える（GAS が確かめて直した人を決める・2026-10-13）',
+    /rmAccessToken_\(\)\.then\(function\(at\)\{ if\(at\) body\.accessToken=at; return apiPost\(body\); \}\)/.test(SRC), '');
   t('updatedAt を決めた直後に updatedBy と updatedByAt（＝同じ updatedAt）を載せる', /rec\.updatedAt=new Date\(\)\.toISOString\(\);\s*if\(typeof rmWho_==='function'\)\{ rec\.updatedBy=rmWho_\(\); rec\.updatedByAt=rec\.updatedAt; \}/.test(sv), '');
   t('載せるのは送る record の中（GAS が dataJson に丸ごと残す）', sv.indexOf("var body={action:'saveResident',record:rec};") > sv.indexOf('rec.updatedBy='), '');
 }
@@ -76,17 +78,17 @@ console.log('\n— 3. 誰が —');
     return b;
   }
   let b = await run('office', true, { status: 'ok', email: 'staff-a@example.test', label: '' });
-  t('ログイン中はアカウント（@ より前）', b.rmWho_() === 'staff-a', b.rmWho_());
-  b = await run('office', true, { status: 'ok', email: 'staff-a@example.test', label: '架空 管理' });
-  t('表示名があれば「表示名（アカウント）」', b.rmWho_() === '架空 管理（staff-a）', b.rmWho_());
+  t('ログイン中はメール全体（2026-10-13）', b.rmWho_() === 'staff-a@example.test', b.rmWho_());
+  b = await run('office', true, { status: 'ok', email: 'Staff-A@Example.test', label: '架空 管理' });
+  t('表示名（画面側の名前）は使わない・メールは小文字', b.rmWho_() === 'staff-a@example.test', b.rmWho_());
   b = await run('office', false, null, 'staff-a');
-  t('ログアウト（控えが無い）は役割名「事務所PC」へ戻す', b.rmWho_() === '事務所PC', b.rmWho_());
+  t('ログアウト（控えが無い）は「未確認」へ戻す', b.rmWho_() === '未確認', b.rmWho_());
   b = await run('field', false, null);
-  t('現場の端末の役割名は「現場端末」', b.rmWho_() === '現場端末', b.rmWho_());
+  t('現場の端末でもログインしていなければ「未確認」（役割名は使わない）', b.rmWho_() === '未確認', b.rmWho_());
   b = await run('office', true, { status: 'error' }, 'staff-a');
   t('確かめられない時は前の名前のまま', b.rmWho_() === 'staff-a', b.rmWho_());
   b = await run('office', true, { status: 'denied', email: 'x@example.test' }, 'staff-a');
-  t('許可リスト外は役割名', b.rmWho_() === '事務所PC', b.rmWho_());
+  t('許可リスト外は「未確認」', b.rmWho_() === '未確認', b.rmWho_());
   t('起動時・別タブのログイン/ログアウト・画面に戻った時に取り直す',
     /addEventListener\('DOMContentLoaded',function\(\)\{ try\{ rmResolveWho_\(\); \}/.test(SRC) && /addEventListener\('storage',function\(e\)\{ if\(e\.key===null \|\| \/\^sb-\[a-z0-9\]\+-auth-token\$\/\.test\(e\.key\|\|''\)\)\{ try\{ rmResolveWho_\(\);/.test(SRC) && /visibilitychange',function\(\)\{ if\(!document\.hidden\)\{ try\{ rmResolveWho_\(\);/.test(SRC), '');
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

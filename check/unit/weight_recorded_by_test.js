@@ -2,8 +2,9 @@
    HTML から対象関数だけを切り出して vm で動かす（写経しない＝実物を試す）。
 
    守りたいこと:
-   1. 誰が＝ログイン中なら「表示名（メールの @ より前）」、表示名が無ければ @ より前だけ。
-      未ログイン・確かめられない時は端末の役割（事務所PC／現場端末）。端末ごとの呼び名は作らない
+   1. 誰が＝ログイン中ならメール全体（小文字）。未ログイン・確かめられない時は「未確認」（2026-10-13 代表者の依頼）。
+      表示名・端末の役割（事務所PC／現場端末）は使わない。端末ごとの呼び名は作らない。
+      正本は GAS（weight-api.gs の verifyEditor_）が、要求に添えたログインの証明を確かめた値
    2. 削除（delRecord・delResident）は送る時に by を添える。保存（saveRecord 等）には添えない。渡された data は書き換えない
    3. 新しく作る記録には recordedBy、直す記録には updatedBy を入れる（作る3か所・直す6か所）。取込・見本データには入れない
    4. ログインの控えが無い端末では部品を読み込まない。ログイン中なら起動後に1回だけ確かめる
@@ -73,27 +74,25 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   {
     const c = makeCtx();
     const L = st => c.wrWhoLabel_(st);
-    t('表示名とメール → 「表示名（@ より前）」', L({ status: 'ok', email: 'staff1@example.jp', label: '事務 太郎' }) === '事務 太郎（staff1）', L({ status: 'ok', email: 'staff1@example.jp', label: '事務 太郎' }));
-    t('表示名が無い → @ より前だけ', L({ status: 'ok', email: 'staff1@example.jp', label: '' }) === 'staff1' && L({ status: 'ok', email: 'staff1@example.jp' }) === 'staff1', '');
-    t('表示名が @ より前と同じ → 重ねない', L({ status: 'ok', email: 'staff1@example.jp', label: 'staff1' }) === 'staff1', '');
-    t('表示名の前後の空白は落とす', L({ status: 'ok', email: 'a@b.jp', label: '  事務  ' }) === '事務（a）', L({ status: 'ok', email: 'a@b.jp', label: '  事務  ' }));
-    t('ログインしていない・許可外・エラー → 空（役割の名前に落ちる）',
+    t('ログイン中 → メール全体・表示名は使わない', L({ status: 'ok', email: 'staff1@example.jp', label: '事務 太郎' }) === 'staff1@example.jp', L({ status: 'ok', email: 'staff1@example.jp', label: '事務 太郎' }));
+    t('メールは小文字・前後の空白は落とす', L({ status: 'ok', email: '  Staff1@Example.JP ', label: '' }) === 'staff1@example.jp', L({ status: 'ok', email: '  Staff1@Example.JP ' }));
+    t('ログインしていない・許可外・エラー → 空（「未確認」に落ちる）',
       ['signed_out', 'denied', 'error'].every(s => L({ status: s, email: 'a@b.jp', label: 'x' }) === ''), '');
-    t('2段階の6桁がまだの管理者（mfa_verify・mfa_enroll）は、Google で本人と分かるのでアカウントで残す',
-      ['mfa_verify', 'mfa_enroll'].every(s => L({ status: s, email: 'adm@b.jp', label: '管理' }) === '管理（adm）'), '');
+    t('2段階の6桁がまだの管理者（mfa_verify・mfa_enroll）は、Google で本人と分かるのでメールで残す',
+      ['mfa_verify', 'mfa_enroll'].every(s => L({ status: s, email: 'adm@b.jp', label: '管理' }) === 'adm@b.jp'), '');
     t('メールが無い・結果が無い → 空', L({ status: 'ok', email: '' }) === '' && L(null) === '' && L(undefined) === '', '');
-    const long = L({ status: 'ok', email: 'a'.repeat(60) + '@b.jp', label: 'あ'.repeat(60) });
-    t('長すぎる値は 40 文字ずつに切る', long === 'あ'.repeat(40) + '（' + 'a'.repeat(40) + '）', long.length);
+    const long = L({ status: 'ok', email: 'a'.repeat(200) + '@b.jp', label: 'あ'.repeat(60) });
+    t('長すぎる値は 120 文字に切る', long.length === 120, long.length);
   }
 
-  console.log('\n— 2. ログインしていない時は端末の役割（本人決定 2b）—');
+  console.log('\n— 2. ログインしていない時は「未確認」（2026-10-13・端末の役割は使わない）—');
   {
-    t('役割が未設定 → 事務所PC', makeCtx().wrWho_() === '事務所PC', makeCtx().wrWho_());
-    t('事務所PC → 事務所PC', makeCtx({ ls: { su_device_role: 'office' } }).wrWho_() === '事務所PC', '');
-    t('現場端末 → 現場端末', makeCtx({ ls: { su_device_role: 'field' } }).wrWho_() === '現場端末', '');
+    t('役割が未設定 → 未確認', makeCtx().wrWho_() === '未確認', makeCtx().wrWho_());
+    t('事務所PC → 未確認', makeCtx({ ls: { su_device_role: 'office' } }).wrWho_() === '未確認', '');
+    t('現場端末 → 未確認', makeCtx({ ls: { su_device_role: 'field' } }).wrWho_() === '未確認', '');
     const c = makeCtx({ ls: { su_device_role: 'field' } });
-    c.wrWhoAcct_ = 'staff1';
-    t('ログインが確かめられた後は、現場端末でもアカウント', c.wrWho_() === 'staff1', c.wrWho_());
+    c.wrWhoAcct_ = 'staff1@example.jp';
+    t('ログインが確かめられた後は、現場端末でもメール', c.wrWho_() === 'staff1@example.jp', c.wrWho_());
     t('端末ごとの呼び名のキー（su_device_name 等）は作らない', !/su_device_name|deviceName/.test(cut('wrWho_') + cut('wrResolveWho_')), '');
   }
 
@@ -106,8 +105,8 @@ const tick = () => new Promise(r => setTimeout(r, 20));
     c.apiPush('delRecord', { id: 'w2', by: '先に決めた人' });
     c.apiPush('saveRecord', { record: { id: 'w3' } });
     const q = c._writeQ;
-    t('delRecord に by（この端末の役割）', q[0].action === 'delRecord' && q[0].data.id === 'w1' && q[0].data.by === '現場端末', q[0]);
-    t('delResident にも by', q[1].data.by === '現場端末', q[1]);
+    t('delRecord に by（ログインしていない＝未確認・古い GAS のために残す）', q[0].action === 'delRecord' && q[0].data.id === 'w1' && q[0].data.by === '未確認', q[0]);
+    t('delResident にも by', q[1].data.by === '未確認', q[1]);
     t('既に by があれば上書きしない', q[2].data.by === '先に決めた人', q[2]);
     t('saveRecord には by を足さない', !('by' in q[3].data), q[3]);
     t('渡した data そのものは書き換えない（呼び出し元の控えを汚さない）', !('by' in d1), d1);
@@ -121,13 +120,20 @@ const tick = () => new Promise(r => setTimeout(r, 20));
     const sent = [];
     const ctx = { apiUrl: 'https://script.google.com/macros/s/TEST/exec', apiToken: 'tok',
       fetchTO: (u, o) => { sent.push(JSON.parse(o.body)); return Promise.resolve({}); },
-      _parseApiResponse: () => Promise.resolve({ ok: true }), JSON, Promise };
+      _parseApiResponse: () => Promise.resolve({ ok: true }), JSON, Promise,
+      wrAccessToken_: () => Promise.resolve('tok-access') };   /* 2026-10-13: 書き込みにはログインの証明を添える */
     vm.createContext(ctx);
     vm.runInContext('async ' + cut('apiPost'), ctx);   // 本体は async function（cut は async を含まない）
     await ctx.apiPost('delRecord', { id: 'w1', by: '事務 太郎（staff1）' });
     await ctx.apiPost('saveRecord', { record: { id: 'w2', recordedBy: '現場端末' } });
     t('delRecord の本文に by と id', sent[0].action === 'delRecord' && sent[0].id === 'w1' && sent[0].by === '事務 太郎（staff1）', sent[0]);
     t('saveRecord の本文の記録に recordedBy がそのまま載り、by は載らない', sent[1].record.recordedBy === '現場端末' && !('by' in sent[1]), sent[1]);
+    t('書き込み（delRecord・saveRecord）の本文にログインの証明（accessToken）が載る', sent[0].accessToken === 'tok-access' && sent[1].accessToken === 'tok-access', [sent[0].accessToken, sent[1].accessToken]);
+    await ctx.apiPost('saveThr', { thresholds: [] });
+    t('書き込み以外（閾値）には証明を載せない', !('accessToken' in sent[2]), sent[2]);
+    ctx.wrAccessToken_ = () => Promise.resolve('');
+    await ctx.apiPost('saveRecord', { record: { id: 'w4' } });
+    t('証明が取れない時は accessToken を載せない（GAS は「未確認」）', !('accessToken' in sent[3]), sent[3]);
     t('同期の後始末が自動で消す入居者は「自動（同期の後始末）」で残す（その端末の人の名前にしない）',
       /apiPush\('delResident', \{ id, by: '自動（同期の後始末）' \}\)/.test(src), '');
   }
@@ -142,15 +148,15 @@ const tick = () => new Promise(r => setTimeout(r, 20));
     const c2 = makeCtx({ ls: { 'sb-jhbernqawjrzqwrmqrih-auth-token': '{}' }, SUAuth });
     c2.supabase = {};
     c2.wrResolveWho_(); await tick();
-    t('控えがある → 確かめて「表示名（@ より前）」を覚える', c2.wrWho_() === '介護 花子（staff2）' && n === 1, [c2.wrWho_(), n]);
+    t('控えがある → 確かめてメール全体を覚える（表示名は使わない）', c2.wrWho_() === 'staff2@example.jp' && n === 1, [c2.wrWho_(), n]);
     const c3 = makeCtx({ ls: { 'sb-jhbernqawjrzqwrmqrih-auth-token': '{}' }, SUAuth: { check: () => Promise.resolve({ status: 'signed_out' }) } });
     c3.supabase = {};
     c3.wrResolveWho_(); await tick();
-    t('確かめた結果が未ログイン → 役割の名前のまま', c3.wrWho_() === '事務所PC', c3.wrWho_());
+    t('確かめた結果が未ログイン → 未確認のまま', c3.wrWho_() === '未確認', c3.wrWho_());
     const c4 = makeCtx({ ls: { 'sb-jhbernqawjrzqwrmqrih-auth-token': '{}' } });
     let threw = false;
     try { c4.wrResolveWho_(); await tick(); await tick(); } catch (e) { threw = true; }
-    t('部品が読めない → 例外を出さず役割の名前のまま', !threw && c4.wrWho_() === '事務所PC' && c4._loaded[0] === 'supabase-js-2.112.4.js', [threw, c4._loaded]);
+    t('部品が読めない → 例外を出さず未確認のまま', !threw && c4.wrWho_() === '未確認' && c4._loaded[0] === 'supabase-js-2.112.4.js', [threw, c4._loaded]);
     t('起動時に1回呼ぶ（端末ガードの直後・失敗しても止めない）', /\napplyWeightDeviceGuard\(\);\ntry\{ wrResolveWho_\(\); \}catch\(e\)\{/.test(src), '');
   }
 

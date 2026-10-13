@@ -7,7 +7,7 @@
      ③保存の出口では、別タブの取り込みより前に見る（相手の変更を自分が直したことにしない）。
        取得・取り込み（saveLocalOnly）と読込（loadDB）は基準を取り直すだけで印を付けない
      ④競合の解消（csRebaseEdits・csMergeEventsFrom_）では、2項目を組で新しい方を採る
-     ⑤誰が＝ログイン中ならアカウント、ログアウト・未ログインは「事務所PC」、確かめられない時は前のまま
+     ⑤誰が＝ログイン中ならメール全体（小文字）、ログアウト・未ログインは「未確認」、確かめられない時は前のまま（2026-10-13）
      ⑥ワークスケジュール（masterToCareDb）・デイ利用表（dcrOverlayMaster・applyPendingFlag_）が書いても項目が消えない
    ★氏名は全て架空。 */
 'use strict';
@@ -92,7 +92,7 @@ console.log('\n— 1. 保存の時に、変わった利用者だけに印を付�
   b.DB.residents[0].events[0].detail = '入浴介助（シャワー浴）';
   n = b.csStampEdits_();
   const r1 = b.DB.residents[0], r2 = b.DB.residents[1];
-  t('予定の中身を直した利用者だけに印が付く', n === 1 && r1.editedBy === '事務所PC' && ISO.test(r1.editedAt) && !r2.editedAt, [n, r1.editedBy, r1.editedAt, r2.editedAt]);
+  t('予定の中身を直した利用者だけに印が付く', n === 1 && r1.editedBy === '未確認' && ISO.test(r1.editedAt) && !r2.editedAt, [n, r1.editedBy, r1.editedAt, r2.editedAt]);
   b.csEditBaseline_();
   b.DB.residents[1].careLevel = '要介護3';
   b.csStampEdits_();
@@ -181,14 +181,14 @@ console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられ�
     for (let i = 0; i < 5; i++) await tick();
     return { b, resolvers };
   }
-  let r = await run('tok', { status: 'ok', email: 'staff-a@example.test', label: '' });
-  t('ログイン中＝アカウント（@ より前）', r.b.csWho_() === 'staff-a', r.b.csWho_());
+  let r = await run('tok', { status: 'ok', email: 'Staff-A@Example.test', label: '見本 表示名' });
+  t('ログイン中＝メール全体（小文字）・表示名は使わない', r.b.csWho_() === 'staff-a@example.test', r.b.csWho_());
   r = await run(null, null, 'staff-a');
-  t('ログアウト（控えが無い）＝「事務所PC」へ戻す', r.b.csWho_() === '事務所PC', r.b.csWho_());
+  t('ログアウト（控えが無い）＝「未確認」へ戻す', r.b.csWho_() === '未確認', r.b.csWho_());
   r = await run('tok', { status: 'error' }, 'staff-a');
   t('通信で確かめられない時は前の名前のまま', r.b.csWho_() === 'staff-a', r.b.csWho_());
   r = await run('tok', { status: 'denied', email: 'x@example.test' }, 'staff-a');
-  t('許可リスト外は「事務所PC」', r.b.csWho_() === '事務所PC', r.b.csWho_());
+  t('許可リスト外は「未確認」', r.b.csWho_() === '未確認', r.b.csWho_());
   r = await run('tok', 'pending');
   r.b.csResolveWho_();   // もう一度呼ぶ＝世代が進む
   for (let i = 0; i < 5; i++) await tick();
@@ -197,7 +197,7 @@ console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられ�
   const afterOld = r.b.csWho_();
   r.resolvers[1]({ status: 'ok', email: 'staff-new@example.test' });
   for (let i = 0; i < 5; i++) await tick();
-  t('遅れて届いた古い確認の結果は捨て、新しい確認の結果を採る（世代番号）', r.resolvers.length === 2 && afterOld === '事務所PC' && r.b.csWho_() === 'staff-new', [r.resolvers.length, afterOld, r.b.csWho_()]);
+  t('遅れて届いた古い確認の結果は捨て、新しい確認の結果を採る（世代番号）', r.resolvers.length === 2 && afterOld === '未確認' && r.b.csWho_() === 'staff-new@example.test', [r.resolvers.length, afterOld, r.b.csWho_()]);
   t('起動時と storage・visibilitychange で取り直す', /csResolveWho_\(\);[\s\S]{0,40}\n[^\n]*addEventListener\('storage'[^\n]*CS_SESSION_KEY[^\n]*csResolveWho_\(\)[^\n]*\n[^\n]*visibilitychange[^\n]*csResolveWho_\(\)/.test(SRC), '');
 
   console.log('\n— 6. ほかの書き手が項目を消さない —');

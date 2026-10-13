@@ -3,7 +3,7 @@
      A 直すたびに、いつ・誰が・どの項目を何から何へ、をその記録の history（JSON の文字）に新しい順で5件まで残す。変わっていなければ残さない
      B 記録を直す6か所（まとめ入力・個別入力・編集・車椅子の重さの再計算・入居者の統合2か所）のすべてで残す
      C 個別画面の一覧に、記録した人・直した人・変更の履歴を出す（文字はすべてエスケープ）。壊れた履歴でも止まらない
-     D 記録した人は、ログイン・ログアウト・画面に戻った時に取り直す。ログアウトしたら役割の名前へ戻す。確かめられない時は前の値のまま
+     D 記録した人は、ログイン・ログアウト・画面に戻った時に取り直す。ログアウトしたら「未確認」へ戻す（2026-10-13・メール全体）。確かめられない時は前の値のまま
      E デイ利用表の「誰が」も同じく取り直す
    実行: node check/unit/weight_history_test.js（WEIGHT_HTML・DCR_HTML で別のファイルを当てられる）
    架空データのみ。 */
@@ -97,18 +97,18 @@ console.log('\n— D. 記録した人の取り直し（体重）—');
     vm.createContext(wb);
     vm.runInContext([(SRC.match(/var WR_SESSION_RE = [^\n]*/) || [''])[0], cut(SRC, 'wrHasSession_'), 'var wrWhoAcct_ = "";', 'var wrWhoGen_ = 0;', cut(SRC, 'wrWho_'), cut(SRC, 'wrWhoLabel_'), cut(SRC, 'wrResolveWho_')].join('\n'), wb);
     wb.wrResolveWho_(); await tick(); await tick();
-    t('ログインの控えが無ければ役割の名前', wb.wrWho_() === '事務所PC');
+    t('ログインの控えが無ければ「未確認」', wb.wrWho_() === '未確認');
     ls.set(wb.SK, '{}'); wb.wrResolveWho_(); await tick(); await tick();
-    t('ログインするとアカウントの名前', wb.wrWho_() === 'staff-a', wb.wrWho_());
+    t('ログインするとメール全体', wb.wrWho_() === 'staff-a@example.jp', wb.wrWho_());
     reply = { status: 'ok', email: 'staff-b@example.jp', label: '' }; wb.wrResolveWho_(); await tick(); await tick();
-    t('★人が替わったら取り直す', wb.wrWho_() === 'staff-b', wb.wrWho_());
+    t('★人が替わったら取り直す', wb.wrWho_() === 'staff-b@example.jp', wb.wrWho_());
     ls.delete(wb.SK); wb.wrResolveWho_(); await tick(); await tick();
-    t('★ログインの控えが消えたら（別のタブでログアウト）、アカウントの名前を捨てて役割の名前', wb.wrWho_() === '事務所PC', wb.wrWho_());
+    t('★ログインの控えが消えたら（別のタブでログアウト）、メールを捨てて「未確認」', wb.wrWho_() === '未確認', wb.wrWho_());
     ls.set(wb.SK, '{}'); wb.wrResolveWho_(); await tick(); await tick();
     reply = { status: 'error' }; wb.wrResolveWho_(); await tick(); await tick();
-    t('★確かめられない時（通信など）は前の値のまま', wb.wrWho_() === 'staff-b', wb.wrWho_());
+    t('★確かめられない時（通信など）は前の値のまま', wb.wrWho_() === 'staff-b@example.jp', wb.wrWho_());
     reply = { status: 'signed_out' }; wb.wrResolveWho_(); await tick(); await tick();
-    t('★ログアウトしたら役割の名前へ戻す', wb.wrWho_() === '事務所PC', wb.wrWho_());
+    t('★ログアウトしたら「未確認」へ戻す', wb.wrWho_() === '未確認', wb.wrWho_());
     /* 遅れて届いた古い結果を捨てる */
     ls.set(wb.SK, '{}');
     let release; wb.SUAuth.check = () => new Promise(r => { release = r; });
@@ -116,7 +116,7 @@ console.log('\n— D. 記録した人の取り直し（体重）—');
     wb.SUAuth.check = () => Promise.resolve({ status: 'ok', email: 'new-user@example.jp' });
     wb.wrResolveWho_(); await tick(); await tick();
     oldRelease({ status: 'ok', email: 'old-user@example.jp' }); await tick(); await tick();
-    t('★遅れて届いた古い確認の結果で上書きしない', wb.wrWho_() === 'new-user', wb.wrWho_());
+    t('★遅れて届いた古い確認の結果で上書きしない', wb.wrWho_() === 'new-user@example.jp', wb.wrWho_());
     /* 関係のないキーだけではログインと数えない・本番のプロジェクト名でも数える */
     ls.clear(); ls.set('sb-testproject1-other', '{}'); ls.set('su_device_role', 'office');
     t('★控えのキーの形でないもの（sb-…-other 等）はログインと数えない', wb.wrHasSession_() === false);
