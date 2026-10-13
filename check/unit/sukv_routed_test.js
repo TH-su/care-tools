@@ -355,6 +355,7 @@ function makeKv(o) {
         store: { get: () => day, dispatch: rec('dispatch') }, daySig: () => 'SIG', dayKey: d => 'wsday_' + d,
         isRefetchHeld_: () => false, staffWipeBlocked_: () => false,
         notePush_: function (d, kind) { calls.push('notePush:' + kind); }, markDayDirty_: rec('markDayDirty'), clearDayDirty_: rec('clearDayDirty'),
+        clearSeeded_: rec('clearSeeded'),   /* 仮の盤面の印を消す（work-schedule 2026-10-13〜）。呼ばれたことだけ控える */
         updateSyncBadge_() {}, saveBase_: rec('saveBase'), setSyncState: s => calls.push('state:' + s), pad2: n => ('0' + n).slice(-2),
         noteSyncSuccess_: rec('syncSuccess'), showOfflineIfPersistent_: rec('offline'), scheduleRetry_: rec('retry'),
         failReason_: e => String(e || ''), verifyPutLanded_: rec('verify'), friendlyErr: e => String(e || ''),
