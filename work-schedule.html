@@ -1022,9 +1022,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     </div>
     <div class="hint">「取り直す」を押すと、<b>この端末に残っている未送信の変更だけ</b>を捨て、クラウドの最新に揃えます。クラウド側のデータには一切書き込みません。捨てる前に各日の内容をこの端末へ退避し、何が失われるかを確認画面に出します。<br>通信できなかった日は<b>「取り直し待ち」</b>になります。その間この端末からは送らず、つながり次第クラウドの最新に入れ替わります（この端末で編集し直すか「今すぐ送信する」を押すと、待ちをやめて送ります）。</div>
   </div>
-  <div class="fld" style="margin-top:10px"><label>予約列①（自由枠職員）の診断</label>
+  <div class="fld" style="margin-top:10px"><label>予約列「訪問1」（自由枠職員）の診断</label>
     <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
-    <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">①固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
+    <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">訪問1固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
   </div>
   <div class="fld" style="margin-top:10px"><label>通信診断（直近の失敗のみ・個人情報なし）</label>
     <textarea class="inp" id="stNetDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
@@ -3554,8 +3554,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return out;
   }
-  function rebaseDay(ancestor, local, server) {
+  /* 職員の欄（id ごと）で、端末とサーバーの両方が祖先から変えた id があるか。祖先が無い時は両方にある id を「両方が変えた」とみなす */
+  function staffOverlap_(aS, lS, sS) {
+    function idx(list) { var o = {}, i; for (i = 0; i < (list || []).length; i++) if (list[i] && list[i].id != null) o['.' + list[i].id] = stableStringify(list[i]); return o; }
+    var A = idx(aS), L = idx(lS), S = idx(sS), k, noA = !aS;
+    var ch = function (X, key) { return noA ? Object.prototype.hasOwnProperty.call(X, key) : X[key] !== A[key]; };
+    var keys = {};
+    for (k in L) keys[k] = 1;
+    for (k in S) keys[k] = 1;
+    for (k in A) keys[k] = 1;
+    for (k in keys) if (ch(L, k) && ch(S, k) && L[k] !== S[k]) return true;
+    return false;
+  }
+  /* opts.serverWinsBoard（2026-10-13・サーバーの版がロック中＝確定の時）: 端末とサーバーの両方が同じ札の盤面（列・時刻など）を
+   * 変えていたらサーバーを採る（印は今までどおり欄ごと）。職員の並び（staff+columns）も両方が変えていたらサーバーを採る */
+  function rebaseDay(ancestor, local, server, opts) {
     var a = ancestor || {}, l = local || {}, s = server || {};
+    var serverWins = !!(opts && opts.serverWinsBoard);
     var aT = indexById_(a.tasks), lT = indexById_(l.tasks), sT = indexById_(s.tasks);
     /* ★重複畳みは「削除」ではない（2026-09-21）。2端末が同じ重複を別々の札で畳むと、互いの削除追従で
      * 【同じ支援が両方消える】（ロック日は週間計画からの再生成も走らないため復旧できない）。
@@ -3571,10 +3586,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       seen[id] = 1;
       at = aT[id];
       st = sT[id];
+      if (serverWins && !at && st) {
+        /* 確定の版・土台なし: 端末が変えたかどうか分からないので盤面はサーバー。印は端末とサーバーで違う所だけ端末から（指摘3） */
+        merged.push(mergeMarks_(st, st, lt, st));
+        continue;
+      }
+      if (serverWins && at && !st && !careIdentHit_(sIdent, lt)) continue;   /* 確定の版で消した札は、端末が変えていても戻さない（指摘1） */
       if (at && st && taskSig(at) !== taskSig(lt)) {
         /* ローカル変更×サーバーにもある → 盤面は札単位（ローカルが変えていればローカル）・印は欄ごと（2026-10-11）。
          * 印しか違わない時もここに来る＝2台が同じ札に別々の印を付けても両方残る */
-        merged.push(mergeMarks_(boardSig_(at) !== boardSig_(lt) ? lt : st, at, lt, st));
+        var lBoard = boardSig_(at) !== boardSig_(lt), sBoard = boardSig_(at) !== boardSig_(st);
+        merged.push(mergeMarks_(lBoard && !(serverWins && sBoard) ? lt : st, at, lt, st));
       }
       else if (!at || taskSig(at) !== taskSig(lt)) merged.push(lt);     /* ローカル新規（またはサーバーに無いローカル変更）→ ローカル採用 */
       else if (st) merged.push(st);                                     /* ローカル不変 → サーバー版採用 */
@@ -3595,6 +3617,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var pairChanged = stableStringify([l.staff || null, l.columns || null]) !==
                       stableStringify([a.staff || null, a.columns || null]);
     var useLocalPair = pairChanged || !s.staff;
+    /* 確定の版: 端末とサーバーが同じ列（職員の欄）を変えていた時だけサーバーの並びを採る。端末だけが足した列や、
+     * 別々の列の変更なら今までどおり端末の並び（足した列が消えて支援がトレイに落ちないように・指摘2） */
+    if (serverWins && useLocalPair && s.staff && staffOverlap_(a.staff, l.staff, s.staff)) useLocalPair = false;
     /* 空ペアガード(データ消失防止・重大バグ根治): 祖先(wsbase_)欠損時は pairChanged が常にtrueになり
      * ローカルペアが無条件に勝つ。ローカルの staff が氏名入り0件(seed直後の名無しスロット等)で、サーバー側に
      * 氏名入りがある場合は、名無しローカルで氏名/配置を潰さないためサーバーペアを採用する。スロットid
@@ -4391,10 +4416,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { staff: staff, errors: errors, skipped: skipped };
   }
 
-  /* 丸数字（①〜⑳、以降は (n)） */
+  /* 訪問の列の見出し（2026-10-13 代表者の決定 G 案1）。以前は丸数字（①〜⑳、以降は (n)）で、小さくて読めなかった。
+   * 施設の列（施設1〜）と揃えて「訪問1」「訪問2」…にする */
   function circled(n) {
-    if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
-    return '(' + n + ')';
+    return '訪問' + n;
+  }
+  /* 表示用の見出し: 保存済みの盤面に残っている丸数字（①〜⑳）・(n) の見出しを読み替える。ほかの見出しはそのまま。
+   * 訪問の列は「訪問n」。夜勤の列（区分の無い古い形）は番号を出さず「夜勤」（以前は訪問と通しの番号で、そのままでは意味が無い） */
+  function colLabelText(label, zone) {
+    var s = String(label == null ? '' : label), n = 0;
+    if (s.length === 1) {
+      var c = s.charCodeAt(0);
+      if (c >= 0x2460 && c <= 0x2473) n = c - 0x2460 + 1;
+    }
+    var m = /^\((\d+)\)$/.exec(s);
+    if (m) n = Number(m[1]);
+    if (!n) return s;
+    return zone === 'night' ? '夜勤' : '訪問' + n;
   }
 
   /* 既定列数（職員が少ない場合は空列でこの数まで確保。多ければ増える） */
@@ -4455,6 +4493,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       columns[i].col = i;
       if (columns[i].zone === 'facility') { fac++; columns[i].label = '施設' + fac; }
       else if (columns[i].zone === 'night' && columns[i].division) { columns[i].label = '夜' + columns[i].division; }
+      else if (columns[i].zone === 'night') { columns[i].label = '夜勤'; }   /* 区分の無い古い夜勤の列（以前は訪問と通しの丸数字）。表示の読み替えと同じ「夜勤」 */
       else { num++; columns[i].label = circled(num); }
     }
     return columns;
@@ -5908,6 +5947,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   var api = {
+    colLabelText: colLabelText,
     normalizeCell: normalizeCell,
     SYMBOLS: SYMBOLS,
     DOW_KEYS: DOW_KEYS,
@@ -7131,10 +7171,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* 列ヘッダー1つ分（data-col: 列入替ドラッグの対象識別） */
-  function buildHead(colDef, staffById, prevZone) {
+  function buildHead(colDef, staffById, prevZone, narrow) {
     var h = el('div', 'b-head z-' + colDef.zone + (prevZone !== null && prevZone !== colDef.zone ? ' zone-div' : ''));
     h.setAttribute('data-col', String(colDef.col));
-    h.appendChild(txt('div', 'h-no', colDef.label));
+    /* 丸数字の見出しは「訪問n」で出す（2026-10-13）。印刷で細くする空の訪問列は番号だけ（「訪問12」が3行に折れて見出しの行が高くなるため） */
+    var hno = (window.WSImport && WSImport.colLabelText) ? WSImport.colLabelText(colDef.label, colDef.zone) : colDef.label;
+    if (narrow && colDef.zone === 'visit') hno = String(hno).replace(/^訪問/, '');
+    h.appendChild(txt('div', 'h-no', hno));
     var named = 0;
     for (var i = 0; i < colDef.staffIds.length; i++) {
       var st = staffById[colDef.staffIds[i]];
@@ -7635,7 +7678,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     heads.appendChild(txt('div', 'b-head', '時刻'));
     var prevZone = null;
     for (var c = 0; c < day.columns.length; c++) {
-      heads.appendChild(buildHead(day.columns[c], staffById, prevZone));
+      heads.appendChild(buildHead(day.columns[c], staffById, prevZone, !!(usedCols && !usedCols[day.columns[c].col])));
       prevZone = day.columns[c].zone;
     }
     heads.appendChild(txt('div', 'b-head', '夜勤時刻'));
@@ -11224,9 +11267,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function unlockIntentSet_(date, on) {
     try {
       var o = unlockIntentGet_();
-      if (on) o[date] = 1; else delete o[date];
+      if (on) o[date] = Date.now(); else delete o[date];
       localStorage.setItem(UNLOCK_LS, JSON.stringify(o));
     } catch (e) {}
+  }
+  /* 人が確かめて外してから60分以内か（代表者の決定 2026-10-13 F・オフラインで外して少し後に届く場合も考えて60分）。それより古い「外した」状態は、眠っていた端末が
+   * 後から送り直して全端末のロックを外すことがあったので使わない（10/14 16:41） */
+  var UNLOCK_FRESH_MS = 60 * 60 * 1000;
+  function unlockFresh_(date) {
+    var t = Number(unlockIntentGet_()[date]) || 0;
+    return t > 0 && Date.now() - t >= 0 && Date.now() - t < UNLOCK_FRESH_MS;
+  }
+  /* 外したばかりでも、その後に別の端末で人がロックを掛け直していたら（サーバーの版の「ロックした時刻 lockedAt」が外した時刻より後）、
+   * 外した扱いは取り消す。人が掛け直したロックを、こちらの古い解除で外し返さないため（反証レビュー 2026-10-13）。
+   * ふつうの保存の時刻（updatedAt）では比べない＝ロック中の盤面を保存しただけで掛け直しとみなさない */
+  function unlockStillMine_(date, serverDay) {
+    if (!unlockFresh_(date)) return false;
+    var ts = Number(unlockIntentGet_()[date]) || 0;
+    var lk = Date.parse((serverDay && serverDay.meta && serverDay.meta.lockedAt) || '') || 0;
+    if (serverDay && serverDay.meta && serverDay.meta.locked === true && lk > ts) {
+      unlockIntentSet_(date, false);
+      delete unlockForceDates_[date];
+      return false;
+    }
+    return true;
   }
   var LOCK_OFF_CONFIRM = 'この日のロックを外しますか？　外すと、勤務表の反映・週間計画の同期・自動配置が動き、職員の列や支援の位置が変わることがあります。';
   var marksOnlySeen_ = false;
@@ -13402,6 +13466,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     markDayDirty_(date);
     try { updateSyncBadge_(); } catch (eSb0) {}   /* 「送信中」をバッジの説明に出す */
     var reqPut_ = { action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day };
+    if (unlockForceDates_[date] && !unlockFresh_(date)) delete unlockForceDates_[date];   /* 外してから60分を過ぎた解除は送らない（F） */
     if (unlockForceDates_[date]) reqPut_.lockOverride = true;   /* 解除putだけロック防波堤を通す(force と違い rev楽観ロック/staffwipe保護は維持) */
     gas(reqPut_, function (j) {
       dayPushBusy_ = false;
@@ -13488,11 +13553,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var base = loadBase_(date);
     /* (A) は、この画面で人が確認して外した日だけ（2026-10-13）。土台がロック・盤面がロックなし、の形だけで解除を送り直すと、
      * 人が外していないのに全端末のロックが外れうる。人の解除が無ければ (B) としてサーバーのロックされた版を採る */
-    var genuineUnlock = !!unlockIntentGet_()[date] && base && base.meta && base.meta.locked === true && local && local.meta && local.meta.locked !== true;
+    var genuineUnlock = unlockFresh_(date) && base && base.meta && base.meta.locked === true && local && local.meta && local.meta.locked !== true;
     if (genuineUnlock) {
-      unlockForceDates_[date] = true;
-      markDayDirty_(date);
-      if (date === ui.currentDate) { schedulePushDay(); } else { scheduleRetry_(); }
+      /* サーバーの今の版を見てから送り直す。外した後に別の端末がロックした版を保存していれば、外し返さない（unlockStillMine_） */
+      gas({ action: 'get', key: dayKey(date) }, function (g0) {
+        if (!g0 || !g0.ok || !g0.data) { scheduleRetry_(); return; }
+        if (unlockStillMine_(date, g0.data)) {
+          unlockForceDates_[date] = true;
+          markDayDirty_(date);
+          if (date === ui.currentDate) { schedulePushDay(); } else { scheduleRetry_(); }
+          return;
+        }
+        adoptServerDay_(date, g0.data, g0.rev || 0, false);
+        toast('この日(' + date + ')はロックされています。ロック中の変更は保存されません（確定版を表示）', true);
+      }, true);
       return;
     }
     gas({ action: 'get', key: dayKey(date) }, function (g) {
@@ -13601,7 +13675,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* ★ロック受信: サーバーが「ロック済み(＝確定した実績)」でローカルがまだ未ロックなら、サーバーの凍結版を正本として
      * まるごと採用する。3-wayマージ(rebaseDay→repairBoard_)を通すと列不在参照のケアがトレイへ落ち非careが破棄され
      * 実績が散る。ローカルの未送信編集は wsbase_conflict_ へ退避してから非dirty経路(サーバー版全採用)へ落とす。 */
-    if (serverDay.meta.locked === true && !(localDay && localDay.meta && localDay.meta.locked)) {
+    /* この端末で人が確かめて外したばかり（F）なら、ロック受信として捨てない＝統合して解除を送り直す（版の競合で外したことが取り消されないように） */
+    if (serverDay.meta.locked === true && !(localDay && localDay.meta && localDay.meta.locked) && !unlockStillMine_(date, serverDay)) {
       var hadEdits_ = !!(localDay && (isDayDirty_(date) || isRefetchHeld_(date)) && daySig(localDay) !== daySig(serverDay));
       if (hadEdits_) {
         try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eLk) { wsNote_('競合の退避（取り込み前）', eLk); }
@@ -13648,7 +13723,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       merged = ov_.day;
       fieldLost_ = ov_.lost;
     } else {
-      merged = M.rebaseDay(anc, localDay, serverDay);
+      /* E（2026-10-13）: サーバーの版がロック中（確定）なら、端末とサーバーの両方が変えた札・職員の並びはサーバーを採る。
+       * 前日の調整中に開いていた端末が古い位置を送り直し、最後に動かした支援を戻した（10/14 13:29）。片方だけの変更・印・全体コメントは今までどおり */
+      merged = M.rebaseDay(anc, localDay, serverDay, { serverWinsBoard: serverDay.meta.locked === true });
       try { if (merged.dupRemoved > 0) dupCleaned_ += merged.dupRemoved; } catch (eMD) {}
       try { delete merged.dupRemoved; } catch (eMD2) {}   /* 保存・送信物には残さない */
       /* 列の番号は同じでも人が違う札を、元の版の職員の列へ付け直す（2026-10-13・M.reKeyByOccupant） */
@@ -13657,6 +13734,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (fieldLost_ > 0) toast('事務所で札が作り直されていたため、' + date + ' の印 ' + fieldLost_ + '件を保存できませんでした。作り直された札に、もう一度付けてください。', true);
     reportWipeGuard_(merged, date);
     merged.meta = merged.meta || {};
+    /* F（2026-10-13）: サーバーがロック中なら、統合の結果でロックを外さない（人が確かめて外して60分以内の時だけ外す） */
+    if (serverDay.meta.locked === true) {
+      if (!unlockStillMine_(date, serverDay)) { if (merged.meta.locked !== true) merged.meta.locked = true; }
+      else if (localDay && localDay.meta && localDay.meta.locked !== true) merged.meta.locked = false;   /* 人が外したばかり＝外したまま送り直す */
+    }
     merged.meta.date = date;
     merged.meta.rev = serverRev;
     saveBase_(date, serverDay);   /* 祖先＝いま取り込んだサーバー版（マージ結果のpush成功で更新） */
@@ -13685,6 +13767,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     day.meta.date = date;
     if (staffWipeBlocked_(date, day)) return;   /* Fix4: 氏名空ワイプは背景pushでも保留(dirty維持・server保護)。開き直し(Fix3)で自己修復 */
     var reqPutF_ = { action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: day };
+    if (unlockForceDates_[date] && !unlockFresh_(date)) delete unlockForceDates_[date];   /* 外してから60分を過ぎた解除は送らない（F） */
     if (unlockForceDates_[date]) reqPutF_.lockOverride = true;   /* 解除putだけロック防波堤を通す(rev/staffwipe保護は維持) */
     gas(reqPutF_, function (j) {
       if (j && (j.ok || j.marksOnly)) marksOnlySeen_ = !!j.marksOnly;
@@ -13857,8 +13940,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (owner) { var ob = IM.baseSlotId(owner.id); for (i = 0; i < day.staff.length; i++) { if (day.staff[i].id !== owner.id && IM.baseSlotId(day.staff[i].id) === ob) ownerBlocks++; } }
     L.push('日付: ' + ui.currentDate);
-    L.push('①スロット: ' + (slot1 ? (slot1.name ? ('氏名『' + slot1.name + '』') : '空') : '★盤面に無い') + (slot1 && slot1.manual ? ' /手動保護' : ''));
-    L.push('①オーナー: ' + (owner ? (owner.name + ' @' + owner.id + (ownerBlocks ? (' /分割' + ownerBlocks + '個') : '')) : '解決できず'));
+    L.push('訪問1スロット: ' + (slot1 ? (slot1.name ? ('氏名『' + slot1.name + '』') : '空') : '★盤面に無い') + (slot1 && slot1.manual ? ' /手動保護' : ''));
+    L.push('訪問1オーナー: ' + (owner ? (owner.name + ' @' + owner.id + (ownerBlocks ? (' /分割' + ownerBlocks + '個') : '')) : '解決できず'));
     /* reassert シミュレーション（clone上・盤面は変えない。columnsもブロック移設で変更され得るためclone） */
     var simS = [], simT = [], simC = [], simN = 0;
     for (i = 0; i < day.staff.length; i++) { var c = {}; for (k in day.staff[i]) c[k] = day.staff[i][k]; simS.push(c); }
@@ -13867,16 +13950,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { simN = IM.reassertReservedSlots(simS, simC, simT, resolveReservedFlags_); } catch (eSim) {}
     var reason = '';
     if (simN <= 0 && owner) {
-      if (!slot1) reason = '（①スロットが盤面に無い）';
-      else if (slot1.manual) reason = '（①が手動保護）';
-      else if (ownerBlocks > 0) reason = '（移設不可: ①側に別人名混在/手動保護ブロック等）';
-      else if (IM.baseSlotId(owner.id) === 'slot_visit_1') reason = '（既に①）';
+      if (!slot1) reason = '（訪問1スロットが盤面に無い）';
+      else if (slot1.manual) reason = '（訪問1が手動保護）';
+      else if (ownerBlocks > 0) reason = '（移設不可: 訪問1側に別人名混在/手動保護ブロック等）';
+      else if (IM.baseSlotId(owner.id) === 'slot_visit_1') reason = '（既に訪問1）';
       else reason = '（要調査）';
     }
-    L.push('自己修復シミュ: ' + (simN > 0 ? '①へ戻せる（再適用/再読込で解決）' : ('戻せない' + reason)));
+    L.push('自己修復シミュ: ' + (simN > 0 ? '訪問1へ戻せる（再適用/再読込で解決）' : ('戻せない' + reason)));
     L.push('版: ' + (typeof BOARD_LOGIC_VER !== 'undefined' ? BOARD_LOGIC_VER : '?') + ' reassert=ON');
     var d = localStorage.getItem('ws_reserve_diag');
-    L.push('直近①空記録: ' + (d || 'なし'));
+    L.push('直近訪問1空記録: ' + (d || 'なし'));
     return L.join('\n');
   }
   /* store の現盤面へ reassertReservedSlots を適用し、変化があれば SET_STAFF＋SET_TASKS で確定（finalizeBoardから呼ぶ）。
@@ -14467,7 +14550,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var ids = colDef.staffIds || [], i, colBase = {};
     for (i = 0; i < ids.length; i++) {
       colBase[IM.baseSlotId(ids[i])] = true;
-      if (IM.RESERVED_EXCLUSIVE_SLOTS.indexOf(IM.baseSlotId(ids[i])) >= 0) return { ok: false, reason: '予約列（自由枠①）は削除できません。', manualCount: 0 };
+      if (IM.RESERVED_EXCLUSIVE_SLOTS.indexOf(IM.baseSlotId(ids[i])) >= 0) return { ok: false, reason: '予約列（自由枠・訪問1）は削除できません。', manualCount: 0 };
       var s = M.findStaff(day.staff, ids[i]);
       if (s && s.flags && (s.flags.reservedSlot || s.flags.reservedExclusive)) return { ok: false, reason: '固定列（予約席）は削除できません。', manualCount: 0 };
     }
@@ -14489,7 +14572,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var slots = colSlots_(day, colDef);
     if (!slots.length) return;
     editingCol_ = col;
-    $('mColTitle').textContent = (colDef.label || '列') + ' の編集';
+    $('mColTitle').textContent = (IM.colLabelText(colDef.label, colDef.zone) || '列') + ' の編集';
     var host = $('mColRows');
     host.textContent = '';
     for (var i = 0; i < slots.length; i++) {
@@ -15404,7 +15487,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var day = store.get(), colOf = {}, i, j, order = [], groups = {};
     for (i = 0; i < (day.columns || []).length; i++) {
       var cd = day.columns[i];
-      for (j = 0; j < (cd.staffIds || []).length; j++) colOf[cd.staffIds[j]] = cd.label || '';
+      for (j = 0; j < (cd.staffIds || []).length; j++) colOf[cd.staffIds[j]] = IM.colLabelText(cd.label || '', cd.zone);   /* 見出しと同じ書き方（2026-10-13） */
     }
     for (i = 0; i < (day.staff || []).length; i++) {   /* 列見出しが空なら職員名で補う */
       var sf = day.staff[i];
@@ -15588,7 +15671,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
-      store.dispatch({ type: 'SET_META', patch: { locked: on }, frozen: !on && autoLockPast_(store.get()) });
+      /* ロックを掛けた時刻を残す（掛け直しの見分けに使う・2026-10-13）。外す時は残したまま */
+      store.dispatch({ type: 'SET_META', patch: on ? { locked: true, lockedAt: new Date().toISOString() } : { locked: false }, frozen: !on && autoLockPast_(store.get()) });
       /* 解除は、GAS のロック防波堤（既存ロック日への非ロック上書き拒否）を通すため当該日付の次回putを force に。 */
       if (!on) { var ud_ = store.get().meta.date; if (ud_) { unlockForceDates_[ud_] = true; unlockIntentSet_(ud_, true); } }
       else { var ld_ = store.get().meta.date; if (ld_) { delete unlockForceDates_[ld_]; unlockIntentSet_(ld_, false); } }   /* ロックし直した＝外す意図は終わり */
@@ -16088,7 +16172,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { renderAll(); } catch (e2) {}
         try { flushAll_(); } catch (e3) {}
         try { if ($('stReserveDiag')) $('stReserveDiag').value = buildReserveDiag_(); } catch (e4) {}
-        if ($('stDiagMsg')) $('stDiagMsg').textContent = '再反映しました（列①をご確認ください）';
+        if ($('stDiagMsg')) $('stDiagMsg').textContent = '再反映しました（列「訪問1」をご確認ください）';
       };
       try { applyShiftForDate(ui.currentDate, { fresh: true, report: true }, doneCb); }
       catch (e5) { doneCb(); }   /* 例外時も doneCb 内のロックガードを必ず通す(直接 finalizeBoard しない) */
