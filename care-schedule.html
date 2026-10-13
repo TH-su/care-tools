@@ -148,7 +148,7 @@ body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
    ＝--sum-h と、それを参照する3箇所の calc() に影響しない。
    コントラスト比は #b71c1c on #fff8e1 で約 7.8:1（目標の7:1以上）。 */
 /* 週間計画で最後に直した人（2026-10-10）。#4e342e on #fff8e1 で約 11:1。空なら出さない */
-.cs-edited-note { font-size: 0.9375rem; line-height: 1.3; color: #4e342e; font-weight: 600; white-space: nowrap; margin-left: 12px; }
+.cs-edited-note { font-size: 0.9375rem; line-height: 1.3; color: #4e342e; font-weight: 600; white-space: nowrap; margin-left: auto; padding-left: 16px; flex: 0 0 auto; }
 .cs-edited-note:empty { display: none; }
 .sum-limit-warn {
   font-size: 0.9375rem; line-height: 1.3; color: #b71c1c; font-weight: 700;
@@ -985,6 +985,8 @@ select.inp { cursor: pointer; }
       <span class="sum-val" id="sum-total">0</span>
       <span class="sum-unit">単位</span>
     </div>
+    <!-- 週間計画で最後に直した人（2026-10-13 本人指示: 1段目の月総合計の右へ右寄せ。注記の段だと参考値の注記の後ろで右へ押し出されて見えなかった） -->
+    <span class="cs-edited-note" id="cs-edited-note"></span>
   </div>
   <!-- 2段目: 集計・操作 -->
   <div class="sum-row">
@@ -1009,7 +1011,7 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" onclick="this.style.display='none'" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span><span class="cs-edited-note" id="cs-edited-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" onclick="this.style.display='none'" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
