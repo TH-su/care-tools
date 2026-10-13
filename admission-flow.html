@@ -600,16 +600,24 @@ function nowIso() { return new Date().toISOString(); }
    案件・タスク・アセスメントは updatedAt を進める所で updatedBy（誰が）と updatedByAt（その時の updatedAt）を組で載せる。
    連絡記録は追記専用なので by（記録した人）を載せる。GAS は台帳を丸ごと保存するだけなので変更不要。
    ★表示は updatedByAt と updatedAt がそろう時だけ（この機能を持たない古い端末の更新を、別の人の名前で取り違えない）。
-   ★誰が＝ログイン中（su-auth で ok）なら「表示名（メールの @ より前）」、確かめられない時は「事務所PC」（この画面は事務所PC専用）。
+   ★誰が＝ログイン中（su-auth で ok）ならメール全体、確かめられない時は「未確認」（2026-10-13 代表者の依頼）。
+     正本は GAS（admission-api.gs の admStampEditors_）: 保存の要求に添えたログインの証明を Supabase の my_account で確かめ、
+     この保存で直した項目・足した連絡記録の誰がを書く（画面が送った名前は使わない）。画面が同じ値を付けるのは表示をそろえるため。
      起動時・別タブでのログイン/ログアウト・画面に戻った時に取り直し、世代番号で遅れた結果を捨てる（体重管理と同じ作り）。 */
 var AF_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
 var afWhoAcct_ = '', afWhoGen_ = 0;
-function afWho_() { return afWhoAcct_ || '事務所PC'; }
+function afWho_() { return afWhoAcct_ || '未確認'; }
 function afWhoLabel_(st) {
   if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
-  var acct = String(st.email).split('@')[0].slice(0, 40);
-  var lab = String(st.label == null ? '' : st.label).trim().slice(0, 40);
-  return (lab && lab !== acct) ? (lab + '（' + acct + '）') : acct;
+  return String(st.email).trim().toLowerCase().slice(0, 120);   // 表示名（画面側の名前）は使わない
+}
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-13）。ログインしていない・取り出せない・3秒で返らない時は ''
+   （GAS は「未確認」と記録する）。証明は端末に控えない。 */
+function afAccessToken_() {
+  if (!afHasLogin_()) return Promise.resolve('');
+  var get = afAuthLoad_().then(function () { return (window.SUAuth && typeof window.SUAuth.client === 'function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
+  return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
 }
 function afHasLogin_() {
   try { for (var i = 0; i < localStorage.length; i++) if (AF_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
@@ -1588,8 +1596,15 @@ function push(force) {
 }
 /* su-data の kvPut は opts を素通しする。force はサーバーのガードを人の承認で越えるためだけに使う */
 function kvPutWithOpts(data, rev, opts) {
-  if (opts && opts.force) return SU.data.kvRaw({ action: 'put', key: KV_KEY, data: data, rev: rev, force: true });
-  return SU.data.kvPut(KV_KEY, data, rev);
+  /* 2026-10-13: 保存の要求にログインの証明を添える（GAS が確かめて「誰が」を決める）。kvRaw は要求の中身をそのまま GAS へ送る
+     （合言葉は su-data-gas の post が接続先の値で入れる）。★証明を待つ間に台帳が変わっても、呼んだ時の姿を送る（今までと同じ） */
+  var snap = JSON.parse(JSON.stringify(data));
+  return afAccessToken_().then(function (at) {
+    var p = { action: 'put', key: KV_KEY, data: snap, rev: rev };
+    if (opts && opts.force) p.force = true;
+    if (at) p.accessToken = at;
+    return SU.data.kvRaw(p);
+  });
 }
 function verifyPushed() {
   if (!SU_DATA_READY) return Promise.resolve(false);

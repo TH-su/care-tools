@@ -51,7 +51,7 @@ console.log('\n— 1. 組で載せる・組がそろう時だけ出す —');
   t('その後に古い端末が updatedAt だけ進めた（組がずれた）時は出さない', b.afEditedBy_({ updatedAt: T1, updatedBy: 'staff-a', updatedByAt: T0 }) === '', '');
   t('記録が無ければ出さない', b.afEditedBy_({ updatedAt: T0 }) === '' && b.afEditedBy_(null) === '', '');
   b.afWhoAcct_ = '';
-  t('ログインしていなければ「事務所PC」', b.afWho_() === '事務所PC', b.afWho_());
+  t('ログインしていなければ「未確認」（2026-10-13）', b.afWho_() === '未確認', b.afWho_());
 }
 
 console.log('\n— 2. 統合：直した人は新しい方の組（相手の名前を混ぜない）—');
@@ -129,9 +129,9 @@ console.log('\n— 6. 誰が（ログイン・ログアウト・確かめられ�
     return b;
   }
   let b = await run(true, { status: 'ok', email: 'staff-a@example.test', label: '' });
-  t('ログイン中はアカウント（@ より前）', b.afWho_() === 'staff-a', b.afWho_());
+  t('ログイン中はメール全体（表示名は使わない）', b.afWho_() === 'staff-a@example.test', b.afWho_());
   b = await run(false, null, 'staff-a');
-  t('ログアウト（控えが無い）は「事務所PC」へ戻す', b.afWho_() === '事務所PC', b.afWho_());
+  t('ログアウト（控えが無い）は「未確認」へ戻す', b.afWho_() === '未確認', b.afWho_());
   b = await run(true, { status: 'error' }, 'staff-a');
   t('確かめられない時は前の名前のまま', b.afWho_() === 'staff-a', b.afWho_());
   {
@@ -146,10 +146,12 @@ console.log('\n— 6. 誰が（ログイン・ログアウト・確かめられ�
     const afterOld = bb.afWho_();
     resolvers[1]({ status: 'ok', email: 'staff-new@example.test' });
     for (let i = 0; i < 5; i++) await tick();
-    t('遅れて届いた古い確認の結果は捨て、新しい結果を採る（世代番号）', resolvers.length === 2 && afterOld === '事務所PC' && bb.afWho_() === 'staff-new', [resolvers.length, afterOld, bb.afWho_()]);
+    t('遅れて届いた古い確認の結果は捨て、新しい結果を採る（世代番号）', resolvers.length === 2 && afterOld === '未確認' && bb.afWho_() === 'staff-new@example.test', [resolvers.length, afterOld, bb.afWho_()]);
   }
   t('起動時・別タブのログイン/ログアウト・画面に戻った時に取り直す',
     /try \{ afResolveWho_\(\); \} catch \(e\)/.test(SRC) && /addEventListener\('storage', function \(e\) \{ if \(e\.key === null \|\| AF_SESSION_RE\.test\(e\.key \|\| ''\)\)/.test(SRC) && /visibilitychange', function \(\) \{ if \(!document\.hidden\) \{ try \{ afResolveWho_\(\);/.test(SRC), '');
-  console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
+  t('★保存の要求にログインの証明を添える（kvRaw・呼んだ時の姿を送る・GAS が確かめる・2026-10-13）',
+  /var snap = JSON\.parse\(JSON\.stringify\(data\)\);\s*return afAccessToken_\(\)\.then\(function \(at\) \{\s*var p = \{ action: 'put', key: KV_KEY, data: snap, rev: rev \};\s*if \(opts && opts\.force\) p\.force = true;\s*if \(at\) p\.accessToken = at;\s*return SU\.data\.kvRaw\(p\);/.test(SRC), '');
+console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })();
