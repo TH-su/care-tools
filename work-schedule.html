@@ -3501,6 +3501,59 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < ks.length; i++) o[ks[i]] = canonObj_(v[ks[i]]);
     return o;
   }
+  /* 統合の後の「列の番号は同じでも人が違う」を直す（純粋関数・2026-10-13）。
+   * 札は職員ではなく列の番号（slot_*）に付いている。統合で職員の並びが片方の版・札がもう片方の版になると、
+   * 番号が振り直された時に札が黙って別の職員の列へ移る（10/14: 元の⑩の支援が固定の支援だけを持つ職員の列へ移った）。
+   * 札ごとに「列の番号をどちらの版から持ってきたか」を見て（片方の版とだけ一致する札だけ）、その版でのその列の職員と
+   * 統合後の職員が違えば、統合後の盤面で同じ職員の列へ付け直す。その職員が盤面にいなければ未配置にする（別人に付けたままにしない）。
+   * 自動で敷き直す施設業務・休憩（facwork・手置きでない）は対象外。merged.tasks をその場で書き換え、{ moved, parked } を返す。 */
+  function reKeyByOccupant(merged, local, server) {
+    var out = { moved: 0, parked: 0 };
+    if (!merged || !Array.isArray(merged.tasks) || !Array.isArray(merged.staff)) return out;
+    function baseId(id) { return String(id == null ? '' : id).replace(/_b\d+$/, ''); }
+    /* 列の職員を勤務帯（訪問・施設・夜勤の明け/入り）ごとに数える。氏名だけで突き合わせると、日中の支援を
+     * 同じ職員の夜勤の列へ移してしまう（remapTasksToPair_ と同じ理由で、同じ勤務帯の列だけを移し先にする） */
+    function band(x) { return String(x.zone || '') + '|' + String(x.nightRole || ''); }
+    function occ(day) {
+      var o = { name: {}, band: {}, cnt: {}, slot: {} }, st = (day && Array.isArray(day.staff)) ? day.staff : [], i, nm, k;
+      for (i = 0; i < st.length; i++) {
+        var x = st[i];
+        if (!x || String(x.id).indexOf('slot_') !== 0 || String(x.id) !== baseId(x.id)) continue;
+        nm = normName_(x.name);
+        if (!nm) continue;
+        o.name[x.id] = nm;
+        o.band[x.id] = band(x);
+        k = band(x) + '|' + nm;
+        o.cnt[k] = (o.cnt[k] || 0) + 1;
+        o.slot[k] = x.id;
+      }
+      return o;
+    }
+    function byId(day) {
+      var m = {}, ts = (day && Array.isArray(day.tasks)) ? day.tasks : [], i;
+      for (i = 0; i < ts.length; i++) if (ts[i] && ts[i].id != null && m['.' + ts[i].id] === undefined) m['.' + ts[i].id] = ts[i];
+      return m;
+    }
+    var oM = occ(merged), oL = occ(local), oS = occ(server), tL = byId(local), tS = byId(server), i;
+    for (i = 0; i < merged.tasks.length; i++) {
+      var t = merged.tasks[i];
+      if (!t || t.staffId === null || t.staffId === undefined) continue;
+      if (t.kind !== 'care' && t.src === 'facwork' && !t.facManual) continue;
+      var s = tS['.' + t.id], l = tL['.' + t.id];
+      var fromS = !!(s && s.staffId === t.staffId), fromL = !!(l && l.staffId === t.staffId);
+      if (fromS === fromL) continue;   /* 両方の版と同じ・どちらとも違う＝どの職員の札か決められない */
+      var src = fromS ? oS : oL, b = baseId(t.staffId), want = src.name[b], wk = src.band[b] + '|' + want;
+      if (!want || src.cnt[wk] > 1) continue;
+      if (oM.name[b] === want) continue;   /* 統合後も同じ職員 */
+      /* 札は複製してから書き換える。rebaseDay はサーバー側の札をそのまま入れるので、書き換えるとサーバーの版
+       * （この後 saveBase_ で土台になる）まで変わり、次の統合で消した札が生き返る */
+      var nt = {}, kk;
+      for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) nt[kk] = t[kk];
+      if (oM.cnt[wk] === 1) { nt.staffId = oM.slot[wk]; merged.tasks[i] = nt; out.moved++; }
+      else if (!oM.cnt[wk]) { nt.staffId = null; merged.tasks[i] = nt; out.parked++; }
+    }
+    return out;
+  }
   function rebaseDay(ancestor, local, server) {
     var a = ancestor || {}, l = local || {}, s = server || {};
     var aT = indexById_(a.tasks), lT = indexById_(l.tasks), sT = indexById_(s.tasks);
@@ -3662,6 +3715,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     taskSig: taskSig,
     rebaseDay: rebaseDay,
     overlayFieldMarks: overlayFieldMarks,
+    reKeyByOccupant: reKeyByOccupant,
     countNamedStaff: countNamedStaff_,
     skipMatch: skipMatch_,
     skipRefMatches: skipRefMatches_,
@@ -9220,6 +9274,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return s;
   }
   function switchDate(date) {
+    /* 離れる日: 人の編集があれば「仮の盤面」の印を消す。メモリの印は捨てる（戻った時に古い入れ替え回数と比べて
+     * 端末の印まで消さないように。戻った時は rearmSeeded_ が数え直す・反証レビュー 2026-10-13） */
+    try { seededUntouched_(ui.currentDate); delete seedMark_[ui.currentDate]; } catch (eSd) {}
     if (saveTimer) { clearTimeout(saveTimer); doSave(); }
     /* 切替前の未送信pushを確実に送る。残タイマーを放置すると
      * ①直前2.5秒以内の編集が未送信のまま滞留 ②切替後に発火して新日付を旧revで送る自己競合、の両方が起きる */
@@ -9239,6 +9296,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var wasDirtySw = false;
     try { wasDirtySw = isDayDirty_(date); } catch (eDs) {}
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
+    try { rearmSeeded_(day.meta.date || ui.currentDate); } catch (eRs) {}
     try { store.auto(seedFromMaster); } catch (e) {}   /* 自動生成は履歴非汚染(手動imMasterSeedは非ラップ=Undo可) */
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     /* 偽dirty補正（seed/reconcile の後で行う）：INIT_DAY→subscribe→schedulePushDay は
@@ -9730,6 +9788,54 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* seedFromMaster は「自動生成(switchDate/boot/マスタ自動取込)」と「手動生成(imMasterSeedボタン)」の両方から
    * 呼ばれる。手動生成は Undo 可能にすべきなので、本体は履歴ラップせず、自動呼出側で store.auto(seedFromMaster)
    * とラップする（手動クリックだけ履歴に積む）。 */
+  /* 支援マスタから端末で作った仮の盤面（2026-10-13）。
+   * 端末にその日の控えが無い時に作る盤面は、人が手を加えるまでは「サーバーに版が無い時の代わり」でしかない。
+   * これが未送信のまま残ってサーバーの版と統合されると、職員の並びが仮の盤面・支援がサーバーの版になり、
+   * 列の番号が振り直されて支援が別の職員の列へ移った（10/14・ロックの外れた日を控えの無い端末で開いた）。
+   * 作った時の「盤面の入れ替え回数:本人の編集回数」を控え、変わっていない間はサーバーの版を丸ごと採る。 */
+  var seedMark_ = {};
+  /* 仮の盤面のまま、の印は端末にも残す（日付の切替・読み込み直し・表示していない日の再送でも効くように）。
+   * 中身は日付だけ（業務データ・個人情報は入れない） */
+  var SEED_LS = 'ws_seeded_v1';
+  function seedLs_() {
+    try { var o = JSON.parse(localStorage.getItem(SEED_LS) || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; }
+  }
+  function seedLsSet_(date, on) {
+    try {
+      var o = seedLs_();
+      if (on) o[date] = 1; else delete o[date];
+      localStorage.setItem(SEED_LS, JSON.stringify(o));
+    } catch (e) {}
+  }
+  function seedMarkNow_() {
+    try { return store.userSeq ? (store.initSeq() + ':' + store.userSeq()) : null; } catch (e) { return null; }
+  }
+  function noteSeeded_(date) {
+    var m = seedMarkNow_();
+    if (!date || m === null) return;
+    seedMark_[date] = m;
+    seedLsSet_(date, true);
+  }
+  function clearSeeded_(date) { delete seedMark_[date]; seedLsSet_(date, false); }
+  /* 仮の盤面のまま残っている日を開き直した時（INIT_DAY の直後）: 今の時点から人の編集を数え直す */
+  function rearmSeeded_(date) {
+    if (!date || !seedLs_()[date]) return;
+    var m = seedMarkNow_();
+    if (m !== null) seedMark_[date] = m;
+  }
+  /* その日がまだ「端末で作った仮の盤面のまま（人の編集なし）」か。
+   * 表示中の日は入れ替え回数・編集回数で確かめ、変わっていれば印を消す。表示していない日は端末の印で答える
+   * （日付を離れる時に switchDate が確かめて、編集があれば消している） */
+  function seededUntouched_(date) {
+    if (!date) return false;
+    if (date === ui.currentDate) {
+      if (!seedMark_[date]) return false;
+      var m = seedMarkNow_();
+      if (m === null || m !== seedMark_[date]) { clearSeeded_(date); return false; }
+      return true;
+    }
+    return !!seedLs_()[date];
+  }
   function seedFromMaster() {
     if (dayLocked_()) return;   /* ロック中は自動生成しない */
     var day = store.get();
@@ -9745,6 +9851,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!placed.length) return;
       store.dispatch({ type: 'SET_STAFF', staff: sd.staff, columns: sd.columns });
       store.dispatch({ type: 'ADD_TASKS', tasks: placed });
+      noteSeeded_(ui.currentDate);
       var goneN = sd.tasks.length - placed.length;
       toast('支援マスタから ' + placed.length + '件を既定の列へ配置しました' +
             (goneN ? '（退去者の' + goneN + '件は除外）' : '') + '（シフト取込で職員名が入ります）');
@@ -9754,6 +9861,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var tasks = IM.masterDayTasks(master, dow).filter(active);
     if (!tasks.length) return;
     store.dispatch({ type: 'ADD_TASKS', tasks: tasks });
+    /* 職員のいる日へ足した分は「仮の盤面」の印を付けない（それより前の人の編集まで捨てうるため・反証レビュー 2026-10-13） */
     toast('支援マスタから ' + tasks.length + '件を生成しました（未配置トレイ）');
   }
 
@@ -11107,6 +11215,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 端末の用途の設定（su_device_role）が事務所のままでも、アカウントが現場なら盤面の形はサーバーに合わせる。
    * 手がかりの順: ①端末の用途が現場 ②su-kv.js が最後に確かめたアカウント（5分ごとに確かめ直す＝事務所に替わればすぐ偽）
    * ③su-kv.js がまだアカウントを確かめていない・古い版の時だけ、最後に受けた保存の応答（成功の応答で毎回上書き） */
+  /* ロックを外す時の確認の文言（代表者の決定 2026-10-13・文言は本人指示） */
+  /* 人が確認してロックを外した日（解除がサーバーに届いたら消す）。読み込み直しても残るよう端末にも置く（中身は日付だけ） */
+  var UNLOCK_LS = 'ws_unlock_intent_v1';
+  function unlockIntentGet_() {
+    try { var o = JSON.parse(localStorage.getItem(UNLOCK_LS) || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; }
+  }
+  function unlockIntentSet_(date, on) {
+    try {
+      var o = unlockIntentGet_();
+      if (on) o[date] = 1; else delete o[date];
+      localStorage.setItem(UNLOCK_LS, JSON.stringify(o));
+    } catch (e) {}
+  }
+  var LOCK_OFF_CONFIRM = 'この日のロックを外しますか？　外すと、勤務表の反映・週間計画の同期・自動配置が動き、職員の列や支援の位置が変わることがあります。';
   var marksOnlySeen_ = false;
   function fieldMarksOnly_(date) {
     if (wsIsFieldDevice_()) return true;
@@ -12081,6 +12203,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * （markDayDirty_ の入口ガードの副作用・2026-09-24 レビュー指摘）。 */
   function markDayDirtyByUser_(date) {
     if (!date) return;
+    try { clearSeeded_(date); } catch (eCs) {}   /* 人が変えた日（翌週コピー等）は、もう仮の盤面ではない */
     if (isRefetchHeld_(date)) {
       clearRefetch_(date);
       toast('この日（' + date + '）は取り直し待ちでしたが、この端末で変更したため通常の送信に戻します');
@@ -13184,6 +13307,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function schedulePushDay() {
     var day = store.get();
     if (!day.meta.date) return;
+    try { seededUntouched_(day.meta.date); } catch (eSu) {}   /* 人の編集が入ったら「仮の盤面」の印をすぐ消す（読み込み直しに残さない） */
     /* 取り直し待ちの日は、この端末で新しく編集された時だけ待ちを解除して通常の送信へ戻す。
      * 自動処理（マスタ反映・週間計画の照合・シフト反映）では解除しない＝押した「取り直す」が
      * 次の描画で無効化されない（2026-09-24）。 */
@@ -13245,6 +13369,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else {
         try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
       }
+      /* 届いた＝送信の成功と同じ後始末。解除の印は、届いた版が実際にロックを外していた時だけ消す
+       * （ロックありの内容が届いただけなら、外す意図はまだ残っている・反証レビュー 2026-10-13） */
+      try { clearSeeded_(date); if (!(srv.meta && srv.meta.locked === true)) unlockIntentSet_(date, false); } catch (eVc) {}
       notePush_(date, 'ok', '時間切れだったが届いていた');
       noteSyncSuccess_();
       toast('送信は時間切れになりましたが、クラウドには届いていました（' + date + '）');
@@ -13280,7 +13407,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       dayPushBusy_ = false;
       if (j && (j.ok || j.marksOnly)) marksOnlySeen_ = !!j.marksOnly;
       if (j && j.ok) {
-        if (reqPut_.lockOverride) delete unlockForceDates_[date];   /* このputが実際に解除を積んだ時のみ消費＝飛行中の非解除put成功でフラグを取りこぼさない(再ロック防止) */
+        clearSeeded_(date);   /* サーバーが受け取った＝もう仮の盤面ではない（サーバーにその日が無かった） */
+        if (reqPut_.lockOverride) { delete unlockForceDates_[date]; unlockIntentSet_(date, false); }   /* このputが実際に解除を積んだ時のみ消費＝飛行中の非解除put成功でフラグを取りこぼさない(再ロック防止) */
         lastPushed.day = sig;
         conflictN_[date] = 0;
         saveBase_(date, day);   /* 3-way祖先＝いま送信して確定した盤面 */
@@ -13350,13 +13478,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 経路へ落とし、3-wayマージでローカル変更を混ぜない。採用後は G2/G3 でこの端末も凍結する。 */
   function handleLockedReject_(date) {
     /* 'locked'拒否の2態様を区別する:
-     *  (A)正当な解除: 祖先(base)=locked かつ ローカル=unlocked＝この端末が解除したのに lockOverride 未付与
-     *     (フラグ揮発/Undo経由の解除等)で拒否された→解除intentを復元し次put(lockOverride)で確定させる
+     *  (A)正当な解除: この端末で人が確認してロックを外した（unlockIntent・端末に残る）のに lockOverride 未付与
+     *     (読み込み直しでフラグが揮発等)で拒否された→解除intentを復元し次put(lockOverride)で確定させる
      *     (実績は保持したままロック状態だけ解除＝解除がサイレントに巻き戻るのを防ぐ)。
+     *     ★2026-10-13: 「祖先=locked・ローカル=unlocked」の形だけでは (A) にしない。人が外していないのに全端末のロックが
+     *       外れうるため。Undo でロックを取り消した場合も確認を通っていないので (B) になる（外すならチェックで外し直す）。
      *  (B)ロック未受信端末: ローカル変更を破棄しサーバーの確定(ロック)版を採用(実績の凍結を尊重)。 */
     var local = (ui.currentDate === date) ? store.get() : loadDayData(date);
     var base = loadBase_(date);
-    var genuineUnlock = base && base.meta && base.meta.locked === true && local && local.meta && local.meta.locked !== true;
+    /* (A) は、この画面で人が確認して外した日だけ（2026-10-13）。土台がロック・盤面がロックなし、の形だけで解除を送り直すと、
+     * 人が外していないのに全端末のロックが外れうる。人の解除が無ければ (B) としてサーバーのロックされた版を採る */
+    var genuineUnlock = !!unlockIntentGet_()[date] && base && base.meta && base.meta.locked === true && local && local.meta && local.meta.locked !== true;
     if (genuineUnlock) {
       unlockForceDates_[date] = true;
       markDayDirty_(date);
@@ -13417,6 +13549,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     serverDay.meta.rev = serverRev;
     serverDay.meta.date = date;
     var isCur = (ui.currentDate === date);
+    /* 端末で作った仮の盤面のまま（人の編集なし）なら、統合せずにサーバーの版を丸ごと採る（2026-10-13・seedMark_ の説明） */
+    if (seededUntouched_(date)) { clearSeeded_(date); clearDayDirty_(date); }
     var localDay = isCur ? store.get() : loadDayData(date);
     /* ★ロック日も端末間で共有する(2026-07-10)。以前はローカルがロック済みなら取込を一律凍結していたが、
      * それだと「両端末ともロック済み」のとき互いの版を永久に取り込まず、各端末が自分の版に凍りつく
@@ -13517,6 +13651,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       merged = M.rebaseDay(anc, localDay, serverDay);
       try { if (merged.dupRemoved > 0) dupCleaned_ += merged.dupRemoved; } catch (eMD) {}
       try { delete merged.dupRemoved; } catch (eMD2) {}   /* 保存・送信物には残さない */
+      /* 列の番号は同じでも人が違う札を、元の版の職員の列へ付け直す（2026-10-13・M.reKeyByOccupant） */
+      try { M.reKeyByOccupant(merged, localDay, serverDay); } catch (eRk) {}
     }
     if (fieldLost_ > 0) toast('事務所で札が作り直されていたため、' + date + ' の印 ' + fieldLost_ + '件を保存できませんでした。作り直された札に、もう一度付けてください。', true);
     reportWipeGuard_(merged, date);
@@ -13553,7 +13689,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     gas(reqPutF_, function (j) {
       if (j && (j.ok || j.marksOnly)) marksOnlySeen_ = !!j.marksOnly;
       if (j && j.ok) {
-        if (reqPutF_.lockOverride) delete unlockForceDates_[date];
+        if (reqPutF_.lockOverride) { delete unlockForceDates_[date]; unlockIntentSet_(date, false); }
+        clearSeeded_(date);
         /* 飛行中(最長15秒)にこの日付が表示中へ切替わっていたら、送信前スナップショットで
          * localStorage/盤面を巻き戻さない（現在の編集を消さない）。表示中の内容は store 側が管理し、
          * rev据置のまま次の pushDayNow が送る（古rev→競合→3-wayマージで安全に収束）。 */
@@ -15444,10 +15581,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       var on = $('chkLock').checked;
+      /* 外す時は必ず確かめる（代表者の決定 2026-10-13）。1回押すだけで全端末のロックが外れ、外れた日を開いた端末の
+       * 自動処理（勤務表の反映・週間計画の同期・自動配置）が職員の列を組み直して、調整済みの支援が別の列へ移ったため */
+      if (!on && !window.confirm(LOCK_OFF_CONFIRM)) {
+        $('chkLock').checked = true;
+        return;
+      }
       /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
       store.dispatch({ type: 'SET_META', patch: { locked: on }, frozen: !on && autoLockPast_(store.get()) });
       /* 解除は、GAS のロック防波堤（既存ロック日への非ロック上書き拒否）を通すため当該日付の次回putを force に。 */
-      if (!on) { var ud_ = store.get().meta.date; if (ud_) unlockForceDates_[ud_] = true; }
+      if (!on) { var ud_ = store.get().meta.date; if (ud_) { unlockForceDates_[ud_] = true; unlockIntentSet_(ud_, true); } }
+      else { var ld_ = store.get().meta.date; if (ld_) { delete unlockForceDates_[ld_]; unlockIntentSet_(ld_, false); } }   /* ロックし直した＝外す意図は終わり */
       /* 即時反映: dispatch直後の subscribe が張った 400ms デバウンス保存を待たず flushAll_ で
        * 同期localStorage確定＋即push。ロック直後にリロードしても wsday_ に必ず残る（消失根治）。 */
       try { flushAll_(); } catch (eFl) {}
@@ -16570,6 +16714,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var wasDirtyBoot = false;
     try { wasDirtyBoot = isDayDirty_(ui.currentDate); } catch (eD0) {}
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
+    try { rearmSeeded_(day.meta.date || ui.currentDate); } catch (eRs) {}
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
