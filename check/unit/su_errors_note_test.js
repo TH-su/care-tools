@@ -129,8 +129,8 @@ console.log('\n— 2c. 不具合報告（su-report.js）に場所と種類が残
     autoSent: 0, NOTE_KIND: '保存・同期の失敗', autoNoteSent: 0, AUTO_NOTE_MAX: 3, autoNoteWhere: {},
     localStorage: { getItem() { return null; }, setItem() { throw new Error('quota'); } },
     sessionStorage: (() => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, _m: m }; })(),
-    endpoint: () => 'https://example.invalid/exec', composeAuto: (ty, w) => ty + '|' + w,
-    post: (u, b) => { sent.push(b); return { then() {} }; } };
+    canSend: () => true, composeAuto: (ty, w) => ty + '|' + w,   /* 2026-10-14: 送り先の判定は canSend・送るのは send（ログインの受け口が先） */
+    send: (b) => { sent.push(b); return { then() {} }; } };
   vm.createContext(ab);
   vm.runInContext([cutF('errType'), cutF('cleanWhere'), cutF('autoThrottled'), cutF('autoSend')].join('\n'), ab);
   ab.autoSend('保存・同期の失敗', 'QuotaExceededError: x', 'care:本体の保存');

@@ -18,7 +18,7 @@ const DEPLOY_BUILT = ['shift-app.html', 'shift-analyzer.html', 'work-schedule.ht
 let tracked = null;
 try { tracked = require('child_process').execFileSync('git', ['-C', ROOT, 'ls-files', '*.html'], { encoding: 'utf8' }).split('\n').filter(Boolean); } catch (e) { tracked = null; }
 const pages = fs.readdirSync(ROOT).filter(f => /\.html$/.test(f) && DEPLOY_BUILT.indexOf(f) < 0 && (!tracked || tracked.indexOf(f) >= 0));
-for (const part of ['su-facility.js', 'su-kv.js', 'su-kv-shadow.js', 'su-errors.js']) {
+for (const part of ['su-facility.js', 'su-kv.js', 'su-kv-shadow.js', 'su-errors.js', 'su-report.js']) {
   const re = new RegExp('<script src="' + part.replace(/\./g, '\\.') + '\\?v=([0-9A-Za-z._-]+)"', 'g');
   const seen = {};
   for (const p of pages) {

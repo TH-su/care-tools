@@ -8,7 +8,7 @@
  *   ・集めるのは下の allowlist だけ。localStorage の【値】は一切読まない。
  *     接続設定は「設定あり/なし」の真偽だけを見る（宛先も合言葉も読まない・書かない）。
  *   ・入居者名・記録・処方は自動収集しない。自由記述に書くかどうかは職員の判断。
- *     報告は公開の場所（GitHub の Issue）に載るため、画面にその旨と「氏名・居室番号・病名は書かない」を出す。
+ *     報告は直す担当が見る場所（非公開の GitHub の Issue）に載るため、画面にその旨と「氏名・居室番号・病名は書かない」を出す。
  *   ・送る前に【全文を画面に出す】。本人が見ていない文字は外に出ない。
  *   ・エラーの文（メッセージ）は送らない。V8 のエラー文はデータの中身（氏名など）を含むことがあるため、
  *     送るのは「エラーの種類（TypeError 等）とファイル名:行番号」だけ。
@@ -31,6 +31,11 @@
  *   送るのは「【画面の指摘】」で始まる本文（指摘ごとの一言・部品の場所・大きさ）と、文字を塗りつぶした配置図（数値だけ）。
  *   管理者かどうかは、この端末にログインの記録がある時だけ su-auth.js に聞く（現場端末では聞かない）。
  *   これは「ボタンを出すかどうか」だけの判定で、受け付けるかどうかは今までどおり受け口の合言葉が決める。
+ *
+ * ★2026-10-14（代表者の依頼）: ログインしている端末は、Supabase の受け口（Edge Function su-report）へ送る。
+ *   受け口が送った人のログイン（JWT）を確かめ、報告者（auth.uid()）を残し、名簿（入居者・職員・許可リスト）で伏せてから
+ *   非公開のリポジトリに Issue を作る（care-backend の 0015・supabase/functions/su-report）。合言葉は要らない。
+ *   ログインしていない端末・新しい受け口に届かない・断られた時だけ、移行の間は今までの合言葉の受け口へ送る（代表者の選択）。
  *
  * 使い方: 各ツールの </body> の直前で
  *   <script src="su-report.js?v=2026-10-10" data-tool="週間計画"></script>
@@ -267,6 +272,30 @@
     return adminP;
   }
 
+  // ── 送る（ログインの受け口が先・合言葉の受け口は移行の間だけ）──
+  var FN_NAME = 'su-report';
+  /* ログインしている端末だけ。届いて ok が返った時だけ { ok: true }。それ以外（ログインが切れている・受け口が無い・断られた）は null
+     ＝呼ぶ側が合言葉の受け口へ回す。送る本文に合言葉は付けない（ログインが本人の証明） */
+  function viaLogin(body) {
+    if (!hasLogin() || typeof Promise === 'undefined') return Promise.resolve(null);
+    return loadAuth().then(function () { return window.SUAuth.check(); }).then(function (st) {
+      if (!st || st.status !== window.SUAuth.STATUS.OK) return null;
+      return window.SUAuth.client().functions.invoke(FN_NAME, { body: body }).then(function (r) {
+        return (r && !r.error && r.data && r.data.ok === true) ? { ok: true, via: 'login' } : null;
+      });
+    }).then(null, function () { return null; });
+  }
+  /* 送れる見込みがあるか（ログインの記録がある・合言葉の受け口が設定されている）。ボタンを出す・自動で送るかの判定 */
+  function canSend() { return hasLogin() || !!endpoint(); }
+  function send(body) {
+    return viaLogin(body).then(function (r) {
+      if (r) return r;
+      var url = endpoint();
+      if (!url) return { ok: false, why: 'ログインの受け口に届かない' };
+      return post(url, body);
+    });
+  }
+
   // ── 自動報告（su-errors.js の通知を受ける）──
   /* ★容量がいっぱいで localStorage に控えを書けない端末では sessionStorage に控える（2026-10-10・第2版 13）。
      書けないまま送ると、再読み込みのたびに同じ報告を送ってしまう。読む時は両方を合わせて見る。 */
@@ -287,8 +316,7 @@
     return false;
   }
   function autoSend(kind, brief, where) {
-    var url = endpoint();
-    if (!url) return;                                      // 送信先が無い端末では何もしない
+    if (!canSend()) return;                                // ログインも送信先も無い端末では何もしない
     if (autoSent >= AUTO_MAX_PER_LOAD) return;
     var type = String(kind || 'エラー') + '：' + errType(brief);   // 例「スクリプトエラー：TypeError」。文の中身は送らない
     var w = cleanWhere(where);
@@ -298,7 +326,7 @@
     if (autoThrottled(sig)) return;
     autoSent++;
     if (isNote) { autoNoteSent++; autoNoteWhere[w] = 1; }
-    post(url, composeAuto(type, w)).then(null, function () { /* 送れなくても画面には何も出さない */ });
+    send(composeAuto(type, w)).then(null, function () { /* 送れなくても画面には何も出さない */ });
   }
   try {
     if (window.SUErrors && typeof window.SUErrors.onReport === 'function') {
@@ -370,7 +398,7 @@
     '<div class="sur-in">' +
     '<h2>不具合を報告する</h2>' +
     '<p>何が起きたかを書いてください。端末やエラーの情報は自動で付きます。</p>' +
-    '<p class="sur-warn">この報告は、直す担当が見る公開の場所に載ります。入居者・職員の氏名、居室番号、病名は書かないでください。</p>' +
+    '<p class="sur-warn">この報告は、直す担当が見る場所に載ります。入居者・職員の氏名、居室番号、病名は書かないでください。</p>' +
     '<label for="sur-sym">何が起きましたか</label>' +
     '<textarea id="sur-sym" placeholder="例：印刷すると右端が切れる／保存を押しても戻ってしまう"></textarea>' +
     '<div class="sur-ann" id="sur-ann" hidden>' +
@@ -389,7 +417,7 @@
     '<button class="sur-btn" id="sur-send" type="button" hidden>そのまま送信</button>' +
     '<button class="sur-btn" id="sur-close" type="button">とじる</button>' +
     '</div><div class="sur-ok" id="sur-msg" hidden></div>' +
-    '<div class="sur-note" id="sur-note" hidden>この端末は送信先が設定されているため、画面でエラーが起きた時は、エラーの種類・ファイル名・行番号・端末の種類だけが自動で送られます（エラーの文の中身、氏名、記録、合言葉は送りません）。</div>' +
+    '<div class="sur-note" id="sur-note" hidden>この端末はログインしているか送信先が設定されているため、画面でエラーが起きた時は、エラーの種類・ファイル名・行番号・端末の種類だけが自動で送られます（エラーの文の中身、氏名、記録、合言葉は送りません。ログインしている時は、送った人のアカウントが記録に残ります）。</div>' +
     '</div>';
 
   function openDlg() { if (canModal) dlg.showModal(); else dlg.classList.add('sur-open'); }
@@ -400,7 +428,7 @@
   fab.addEventListener('click', function () {
     refresh();
     dlg.querySelector('#sur-msg').hidden = true;
-    var has = !!endpoint();
+    var has = canSend();
     dlg.querySelector('#sur-send').hidden = !has;
     dlg.querySelector('#sur-note').hidden = !has;
     openDlg();
@@ -545,19 +573,18 @@
     });
     dlg.querySelector('#sur-send').addEventListener('click', function () {
       var msg = dlg.querySelector('#sur-msg');
-      var url = endpoint();
-      if (!url) {
+      if (!canSend()) {
         msg.hidden = false;
         msg.textContent = '送信先が正しく設定されていません。コピーして送ってください。';
         return;
       }
       var btn = dlg.querySelector('#sur-send');
       btn.disabled = true;
-      post(url, payload(dlg.querySelector('#sur-sym').value.trim())).then(function (r) {
+      send(payload(dlg.querySelector('#sur-sym').value.trim())).then(function (r) {
         msg.hidden = false;
         if (r.ok && annot) { annot = null; renderAnnot(); refresh(); }   // 送った指摘は消す（次の報告で同じものをもう一度送らない）
         msg.textContent = r.ok ? '送信しました。ありがとうございます。'
-          : '送信先に受け付けられませんでした（合言葉の違いなど）。コピーして送ってください。';
+          : '受け付けられませんでした（ログインが切れている・合言葉の違いなど）。コピーして送ってください。';
       }).catch(function () {
         msg.hidden = false;
         msg.textContent = '送信できませんでした。コピーして送ってください。';
