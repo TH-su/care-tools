@@ -5,10 +5,17 @@
 #   ここで Secret FACILITY_PROFILE_JSON から置いて配る
 # ・Secret が無い・壊れている・見本のままの時は配らずに止める（前に配った版がそのまま公開され続ける）
 #   ＝施設情報の無い版・架空の施設名の版を公開しない
+# ・配るのは main の「試験」（unit-tests.yml）が成功した後だけ（2026-10-14 監査10月版 第4版 4）。
+#   以前は main に入った時点で試験の結果を待たずに配っていた。手動の配信（workflow_dispatch）は残す＝今の main をそのまま配る
+# ・試験の終わる順が入れ替わった時（続けて2本取り込んだ時、前の版の試験が後に終わる）に古い版で上書きしないよう、
+#   試験した版が今の main の先頭でなければ配らない（実行は成功のまま・後の版の試験の成功で配られる）。
+#   その間 care-publish-pr.sh は「公開中の中身が main と違う」と出す（後の版の配信を待てば一致する）
 name: 公開
 
 on:
-  push:
+  workflow_run:
+    workflows: ["試験"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -23,16 +30,39 @@ concurrency:
 
 jobs:
   deploy:
+    # 試験が main への送信（push）で成功した時だけ。PR の試験・失敗・中止では配らない
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: リポジトリを取り出す
+      - name: リポジトリを取り出す（試験に合格した版）
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: 試験した版が今の main の先頭かを確かめる（古い版で上書きしない）
+        id: head
+        run: |
+          now=$(git ls-remote origin refs/heads/main | cut -f1)
+          got=$(git rev-parse HEAD)
+          if [ -n "$now" ] && [ "$now" != "$got" ]; then
+            echo "::notice::試験した版 ${got:0:7} は今の main の先頭 ${now:0:7} ではないので配りません（後の版の試験が成功した時に配られます）"
+            echo "試験した版 ${got:0:7} は main の先頭 ${now:0:7} ではないので配っていません" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=1" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: 本番の施設情報を置く（Secret FACILITY_PROFILE_JSON）
+        if: steps.head.outputs.go == '1'
         env:
           FP: ${{ secrets.FACILITY_PROFILE_JSON }}
         run: |
@@ -57,6 +87,7 @@ jobs:
           PY
 
       - name: 配る中身をそろえる（git で管理しているファイル＋本番の施設情報）
+        if: steps.head.outputs.go == '1'
         run: |
           mkdir -p "$RUNNER_TEMP/site"
           git ls-files -z | xargs -0 cp --parents -t "$RUNNER_TEMP/site"
@@ -64,13 +95,16 @@ jobs:
           echo "配るファイル: $(find "$RUNNER_TEMP/site" -type f | wc -l) 件"
 
       - name: Pages の設定を読む
+        if: steps.head.outputs.go == '1'
         uses: actions/configure-pages@v5
 
       - name: 配る中身を渡す
+        if: steps.head.outputs.go == '1'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ runner.temp }}/site
 
       - name: 配る
+        if: steps.head.outputs.go == '1'
         id: deploy
         uses: actions/deploy-pages@v4
