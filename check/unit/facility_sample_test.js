@@ -89,7 +89,16 @@ function facility(profile) {
   console.log('\n— E. 配信（pages.yml）—');
   const Y = read('.github/workflows/pages.yml');
   t('配信の手順は公開リポジトリに入る（.gitignore の許可にある）', /^!\/\.github\/workflows\/pages\.yml$/m.test(GI));
-  t('main に入った時に配る', /on:\n  push:\n    branches: \[main\]/.test(Y));
+  /* 2026-10-14 監査10月版 第4版 4: main に入った時ではなく、main の「試験」が成功した後に配る（手動の配信は残す） */
+  t('main の「試験」が終わった時に動く（main への送信では直接動かない）', /on:\n  workflow_run:\n    workflows: \["試験"\]\n    types: \[completed\]\n    branches: \[main\]\n/.test(Y) && !/\n  push:/.test(Y));
+  t('手動の配信（workflow_dispatch）は残す', /\n  workflow_dispatch:\n/.test(Y));
+  t('配るのは試験が main への送信で成功した時だけ（PR の試験・失敗・別のリポジトリでは配らない）',
+    /workflow_run\.conclusion == 'success'/.test(Y) && /workflow_run\.event == 'push'/.test(Y) && /workflow_run\.head_branch == 'main'/.test(Y) && /head_repository\.full_name == github\.repository/.test(Y));
+  t('取り出すのは試験に合格した版', /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/.test(Y));
+  const steps = Y.split('\n      - name: ').slice(1);
+  const after = steps.slice(steps.findIndex(x => /^試験した版が今の main の先頭か/.test(x)) + 1);
+  t('試験した版が main の先頭でなければ、その後の手順を全部飛ばす（古い版で上書きしない）',
+    /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'\n/.test(x)), after.length);
   t('本番の施設情報は Secret FACILITY_PROFILE_JSON から置く', /FP: \$\{\{ secrets\.FACILITY_PROFILE_JSON \}\}/.test(Y) && /printf '%s' "\$FP" > facility-profile\.json/.test(Y));
   t('Secret が無ければ止める（前の版を残す）', /if \[ -z "\$FP" \]; then[\s\S]{0,200}exit 1/.test(Y));
   t('壊れた JSON・事業所のそろわない設定・見本のままの設定では止める', /施設情報の JSON を読めません/.test(Y) && /施設・訪問・通所 がそろっていません/.test(Y) && /見本（架空の施設）のままです/.test(Y));

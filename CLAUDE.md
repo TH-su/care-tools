@@ -161,6 +161,7 @@ PR を出すと同じ比較が GitHub Actions で自動で回り（チェック�
 - ブランチを切り、**ドラフト PR** を出す。main へ直接 push しない。取り込みは代表者が行う。
 - main はルールセットで守られている（2026-10-14〜）: 変更は PR だけ・「構文と純関数の試験」の合格が必須・所有者の迂回は PR 経由で緊急時だけ。
   ワースケ・シフトの配信（deploy.sh）も PR を作り、試験の合格で自動で取り込む。
+- 取り込む前に PR を最新の main にそろえる（strict）。PR が古くなった（BEHIND）ら `gh pr update-branch <番号>`（または PR 画面の「Update branch」）で main を取り込み、試験のやり直しを待つ。公開（pages.yml）は main の「試験」が成功した後に走る（2026-10-14 監査10月版 第4版 4）。
 - PR 本文は §7 の本文と同じ構成。スクリーンショットは**架空データ**のものだけ。
 - 切り替えスイッチ（`su-backend.json`）を触る PR は単独で出し、他の変更と混ぜない。
 - `mailer/`（SilverMail・Node/React・ローカル専用）と `universe-sandbox/`（three.js の実験）は
