@@ -1140,6 +1140,19 @@ function dcrClinicLabel_() {
   const cs = (window.SUFacility && typeof SUFacility.visitingClinics === 'function') ? SUFacility.visitingClinics() : [];
   return cs.length ? cs.map(c => c.name).join('・') : '訪問診療の医療機関';
 }
+function dcrClinicSig_() {
+  return JSON.stringify((window.SUFacility && typeof SUFacility.visitingClinics === 'function') ? SUFacility.visitingClinics() : []);
+}
+/* ☆を計算した後に施設情報の医療機関が変わっていたら、名簿を取り直して描き直す。取り直しの最中なら少し待ってやり直す（最大5回） */
+function dcrRefreshStarsIfStale_(tries) {
+  if (dcrClinicSigUsed === null || dcrClinicSig_() === dcrClinicSigUsed) return Promise.resolve(false);
+  if (dcrHospBusy) {
+    tries = (tries || 0) + 1;
+    if (tries > 5) return Promise.resolve(false);
+    return new Promise(r => setTimeout(r, 1500)).then(() => dcrRefreshStarsIfStale_(tries));
+  }
+  return dcrFetchMasterHosp(true).then(ok => { if (ok && typeof DB !== 'undefined' && DB) renderAll(DB); return ok; });
+}
 function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()); }
 /* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
    帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
@@ -1176,6 +1189,7 @@ function applyDcrTitles() {
 }
 applyDcrTitles();
 if (window.SUFacility) SUFacility.onReady(applyDcrTitles);
+if (window.SUFacility) SUFacility.onReady(function () { try { dcrRefreshStarsIfStale_(); } catch (e) { /* ☆の描き直しに失敗しても画面は止めない（次の名簿の取り直しで直る） */ } });
 
 function roomToFloor(room) {
   // ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。既定は１階・２階＝従来どおり
@@ -1244,6 +1258,10 @@ var dcrNameCutMap = null;
 var dcrHospAt  = 0;
 var dcrHospRev = null;                // 前回見た {rev, srev}
 var dcrHospBusy = false;
+/* ☆を計算した時に使った訪問診療の医療機関（施設情報の visitingClinics・2026-10-14 監査10月版 第4版 3）。null＝まだ計算していない。
+   端末の控えが古い（10/14 より前の控えには visitingClinics が無い）と、待ちがすぐ終わって☆が0件で決まる。施設情報を取り直して
+   中身が変わったら名簿を取り直して描き直す（dcrRefreshStarsIfStale_）。以前は表題だけを替え、☆は開き直すまで出なかった */
+var dcrClinicSigUsed = null;
 
 function dcrGetMasterCfg(){
   try{
@@ -1321,6 +1339,7 @@ function dcrFetchMasterHosp(force){
     .then(function(rs){
       var j = rs[0];
       if (!j || !Array.isArray(j.roster)) return false;
+      dcrClinicSigUsed = dcrClinicSig_();   /* この計算で使う医療機関（下の dcrClinicOf_ と同じ時点の施設情報） */
       var m = {}, vm = {}, rm = {}, nc = {}, sawVisitDay = false, sawRoom = false, sawName = false;
       j.roster.forEach(function(x){
         if (!x || x.masterId == null) { if (x && x.id != null) x.masterId = x.id; }
@@ -2892,8 +2911,8 @@ function init() {
     const tab = activeTab();
     suFacReady_().then(ok => {
       if (!ok) { toast(SU_FAC_NG_MSG, true); return; }
-      applyDcrTitles();   /* 待っている間に読めた時、表題を刷る前に施設の名前へ替えておく */
-      SUPrint.openDialog(tab);
+      /* 待っている間に読めた時、表題を施設の名前へ替え、☆の医療機関が変わっていれば描き直してから刷る */
+      dcrRefreshStarsIfStale_().then(() => { applyDcrTitles(); SUPrint.openDialog(tab); });
     });
   });
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。

@@ -175,15 +175,16 @@ console.log('\n— B. suFacReady_（待ち方）—');
 
   console.log('\n— D. デイ利用表の印刷ボタン —');
   async function runDay(facOk) {
-    const out = { toasts: [], opened: [], titles: 0 };
+    const out = { toasts: [], opened: [], titles: 0, order: [] };
     const handlers = {};
     const box = {
       Promise, console,
       $: id => ({ addEventListener: (ev, fn) => { handlers[id] = fn; } }),
-      window: { SUPrint: { openDialog: tab => out.opened.push(tab) } },
+      window: { SUPrint: { openDialog: tab => { out.opened.push(tab); out.order.push('open'); } } },
       activeTab: () => 'sc-roster',
       toast: (m, ng) => out.toasts.push([m, ng]),
       applyDcrTitles: () => { out.titles++; },
+      dcrRefreshStarsIfStale_: () => { out.order.push('stars'); return Promise.resolve(false); },
       suFacReady_: () => Promise.resolve(facOk),
       SU_FAC_NG_MSG: '⚠️ 施設情報が読めません。'
     };
@@ -198,6 +199,7 @@ console.log('\n— B. suFacReady_（待ち方）—');
   t('施設情報が読めない → 印刷の画面を開かず、「施設情報が読めません」を赤で出す', o.opened.length === 0 && o.toasts.length === 1 && /施設情報が読めません/.test(o.toasts[0][0]) && o.toasts[0][1] === true, o);
   o = await runDay(true);
   t('読めた → 表題を施設の名前にしてから、押した時のタブで印刷の画面を開く', o.opened.length === 1 && o.opened[0] === 'sc-roster' && o.titles === 1, o);
+  t('印刷の画面を開く前に、☆の医療機関が変わっていないかを確かめる（2026-10-14 第4版 3）', o.order.join() === 'stars,open', o.order);
 
   console.log('\n— E. フェイスシートの4つの印刷ボタン —');
   {
