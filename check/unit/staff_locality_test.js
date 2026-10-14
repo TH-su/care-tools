@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const CALC_PATH = process.env.STAFF_CALC || path.join(ROOT, 'staff-master-calc.js');
 const FAC_PATH = process.env.SU_FACILITY || path.join(ROOT, 'su-facility.js');
 const HTML = fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8');
-const PROFILE = JSON.parse(fs.readFileSync(path.join(ROOT, 'facility-profile.json'), 'utf8'));
+const PROFILE = JSON.parse(fs.readFileSync(path.join(ROOT, 'facility-profile.sample.json'), 'utf8'));
 
 let pass = 0, fail = 0;
 function t(name, ok, info) {
@@ -137,8 +137,8 @@ function loadFacility(profile) {
 {
   const base = JSON.parse(JSON.stringify(PROFILE));
   const F0 = loadFacility(base);
-  t('今の facility-profile.json: 法人設定は空・所在地は熊本市',
-    F0.corpSettings().homeGuidelineName === '' && F0.corpSettings().homeGuidelineUrl === '' && F0.municipality() === '熊本市');
+  t('公開している見本（facility-profile.sample.json）: 法人設定は空・所在地は見本市',
+    F0.corpSettings().homeGuidelineName === '' && F0.corpSettings().homeGuidelineUrl === '' && F0.municipality() === '見本市');
   base.corpSettings = { homeGuidelineName: '見本指針', homeGuidelineUrl: 'https://example.invalid/g' };
   const F1 = loadFacility(base);
   t('名称と https の URL を読む', F1.corpSettings().homeGuidelineName === '見本指針' && F1.corpSettings().homeGuidelineUrl === 'https://example.invalid/g');

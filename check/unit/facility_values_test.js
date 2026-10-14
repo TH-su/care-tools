@@ -15,7 +15,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
-const PROFILE = JSON.parse(read('facility-profile.json'));
+const PROFILE = JSON.parse(read('facility-profile.sample.json'));
 
 let pass = 0, fail = 0;
 function t(label, ok, detail) {

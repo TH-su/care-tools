@@ -682,7 +682,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-perf.js?v=2026-09-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-12.3"></script>
-<script src="su-facility.js?v=2026-10-12"></script>
+<script src="su-facility.js?v=2026-10-14"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -1131,7 +1131,16 @@ function dcrOfficeName() {
   return (window.SUFacility && typeof SUFacility.nameOf === 'function') ? SUFacility.nameOf('通所') : '';
 }
 function dcrName(suffix) { const n = dcrOfficeName(); return (n || (suffix === '合計' ? '通所' : '')) + suffix; }
-function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ'); }
+/* ── 訪問診療の医療機関（2026-10-14 代表者の依頼）── ☆の判定と凡例の名前は、施設情報（facility-profile.json の visitingClinics・
+   su-facility.js）から引く。コードに医療機関の名前を書かない。施設情報が読めない・書いていない時は☆を付けない（見本の値は使わない） */
+function dcrClinicOf_(hospital) {
+  return (window.SUFacility && typeof SUFacility.clinicOf === 'function') ? SUFacility.clinicOf(hospital) : '';
+}
+function dcrClinicLabel_() {
+  const cs = (window.SUFacility && typeof SUFacility.visitingClinics === 'function') ? SUFacility.visitingClinics() : [];
+  return cs.length ? cs.map(c => c.name).join('・') : '訪問診療の医療機関';
+}
+function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()); }
 /* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
    帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
    読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
@@ -1206,8 +1215,8 @@ var dcrHospMap = null;                // masterId(string) -> bool ／ null = 未
    入院を取りに行くのと同じ応答からそのまま導出する（追加のリクエストは発生しない）。
    ★週間計画側に visitingMed を入力するUIは無い＝現場の入力を潰す心配がない。 */
 /* ★2026-09-30 運用指示で判定を改めた: 「往診曜日が入っていれば全曜日に☆」ではなく、
-     【かかりつけが わかばクリニック で、その曜日が往診曜日の方】にだけ☆を付ける（班分けはしない）。
-     そのため値は bool ではなく往診曜日の1文字（'火' 等）。わかば以外・往診曜日が「他」や空欄の方は載せない。 */
+     【かかりつけが訪問診療の医療機関（施設情報の visitingClinics）で、その曜日が往診曜日の方】にだけ☆を付ける（班分けはしない）。
+     そのため値は bool ではなく往診曜日の1文字（'火' 等）。ほかの医療機関・往診曜日が「他」や空欄の方は載せない。 */
 var dcrVmedMap = null;                // masterId(string) -> 往診曜日(1文字) ／ null = 未取得
 /* 居室（room）— 2026-08-27 追加。入居者マスタで居室を入れているのに「階未設定」になる不具合の対処。
    原因: 週間計画アプリはマスタから取り込んだ room を saveLocalOnly()＝端末内にしか保存せず
@@ -1269,7 +1278,7 @@ function dcrOverlayMaster(db){
       }
     }
     if (dcrVmedMap){
-      /* ☆訪問診療。わかばクリニックの往診曜日（1文字）。該当しなければ空文字。
+      /* ☆訪問診療。訪問診療の医療機関（visitingClinics）の往診曜日（1文字）。該当しなければ空文字。
          こちらは「キーが無い＝空」で構わない（週間計画側に入力UIが無く、
          潰す対象の現場入力が存在しないため）。 */
       var w = String(dcrVmedMap[mid] || '');
@@ -1307,8 +1316,10 @@ function dcrFetchMasterHosp(force){
   dcrHospBusy = true;
   /* Phase 0: 入居者マスタからの名簿取得を共通データ層へ移した。
      ★2026-09-23: 合言葉を URL に載せないため GET＋クエリをやめ POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。 */
-  return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token })
-    .then(function(j){
+  /* ☆の医療機関は施設情報から引くので、名簿と一緒に施設情報も待つ（最大3秒・読めなければ☆を付けない＝2026-10-14） */
+  return Promise.all([SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }), suFacReady_()])
+    .then(function(rs){
+      var j = rs[0];
       if (!j || !Array.isArray(j.roster)) return false;
       var m = {}, vm = {}, rm = {}, nc = {}, sawVisitDay = false, sawRoom = false, sawName = false;
       j.roster.forEach(function(x){
@@ -1318,13 +1329,14 @@ function dcrFetchMasterHosp(force){
         /* hospitalized はキーが実在する時だけ採用（旧GASは項目ごと無い）。
            無い人を false 扱いにすると現場の入院表示を一括で消してしまう。 */
         if (Object.prototype.hasOwnProperty.call(x, 'hospitalized')) m[String(mid)] = !!x.hospitalized;
-        /* ☆訪問診療＝かかりつけが わかばクリニック で、往診曜日が曜日1文字の方（2026-09-30）。
-           「他」・空欄・わかば以外は載せない。旧GAS（visitDay を返さない）では
+        /* ☆訪問診療＝かかりつけが訪問診療の医療機関（施設情報の visitingClinics の name か aliases を含む）で、
+           往診曜日が曜日1文字の方（2026-09-30・医療機関を設定から読むのは 2026-10-14）。
+           「他」・空欄・ほかの医療機関は載せない。旧GAS（visitDay を返さない）では
            1件も見つからないので、その場合は導出そのものを行わない。 */
         if (Object.prototype.hasOwnProperty.call(x, 'visitDay')){
           sawVisitDay = true;
           var vd = String(x.visitDay || '').trim();
-          if (/わかば/.test(String(x.hospital || '')) && /^[月火水木金土日]$/.test(vd)) vm[String(mid)] = vd;
+          if (dcrClinicOf_(x.hospital) && /^[月火水木金土日]$/.test(vd)) vm[String(mid)] = vd;
         }
         /* 姓と名の切れ目。氏名そのものは保持せず、空白の位置と文字数（数値2つ）だけを取る。
            空白が複数ある氏名は最初の空白を姓名の区切りとみなす（マスタの入力どおり）。 */
@@ -1435,7 +1447,7 @@ function buildModel(db) {
       floor: floor,                                        // 0=階未設定（居室・週間計画とも不明）
       lunchMed: !!r.lunchMed,
       star: !!r.dcrStar,                 // 同姓の目印（週間名簿だけで氏名の頭に☆を出す・2026-09-01）
-      visitingMed: String(r.visitingMed == null ? '' : r.visitingMed),   // 訪問診療（☆）: わかばクリニックの往診曜日1文字（該当なし＝空）
+      visitingMed: String(r.visitingMed == null ? '' : r.visitingMed),   // 訪問診療（☆）: 訪問診療の医療機関（visitingClinics）の往診曜日1文字（該当なし＝空）
       hosp: !!r.hospitalized,
       days: days
     });
@@ -1823,7 +1835,7 @@ function deiCells(tr, p, d, showBath) {
    ============================================================================ */
 // 元表の備考。「☆往診対象者は13:05までの…」は削除（13:05はシート内に実体が無い口頭ルールのため）。
 // 「往診」は誤りのため「訪問診療」に統一。
-// 見出しの印は★（2026-09-30 運用指示）。表の☆＝わかばクリニックの訪問診療と紛らわしいため。
+// 見出しの印は★（2026-09-30 運用指示）。表の☆＝訪問診療の医療機関の訪問診療と紛らわしいため。
 const DAYLIST_NOTES = [
   '★昼食後の薬',
   '・{{通所名}}利用者分は1階へ',
@@ -1861,8 +1873,8 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
         }
         tr.appendChild(td);
         const st = el('td', 'c-tm');
-        // ☆＝その曜日に わかばクリニックの往診がある方（2026-09-30 運用指示・班分けはしない）
-        if (p && showStar && p.visitingMed === DAYS_JA[d]) { st.appendChild(el('span', 'star', '☆')); st.title = 'わかばクリニック 訪問診療'; }
+        // ☆＝その曜日に訪問診療の医療機関の往診がある方（2026-09-30 運用指示・班分けはしない）。名前は施設情報から（2026-10-14）
+        if (p && showStar && p.visitingMed === DAYS_JA[d]) { st.appendChild(el('span', 'star', '☆')); st.title = dcrClinicLabel_() + ' 訪問診療'; }
         tr.appendChild(st);
         tr.appendChild(el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : '')));
       }
@@ -2580,7 +2592,7 @@ let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
 let MODEL_SUB  = '';   // 新4タブの指標
 const LEGENDS = {
   'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '利用時間帯ごとに居室階（２階→１階）で分け、氏名は五十音順／下段に日別の入浴合計・利用合計']],
-  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝その曜日にわかばクリニックの訪問診療がある方'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
+  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝その曜日に{{訪問診療}}の訪問診療がある方'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
   /* 薬用の凡例メッセージは 'tn'＝【画面のみ】（2026-08-20 運用指示）。
      2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
@@ -2598,7 +2610,7 @@ function renderLegend(sc) {
   (LEGENDS[sc] || []).forEach(([k, t]) => {
     if (k === 'sw') { const s = el('span', 'lg'); s.appendChild(el('span', 'lg-sw')); s.appendChild(document.createTextNode(t)); box.appendChild(s); }
     else if (k === 'hosp') { const s = el('span', 'lg'); s.appendChild(el('span', 'hosp-tag', '（入院）')); s.appendChild(document.createTextNode(t.replace('（入院）', ''))); box.appendChild(s); }
-    else if (k === 'star') { const s = el('span', 'lg'); s.appendChild(el('span', 'star', '☆')); s.appendChild(document.createTextNode(t.replace('☆', ''))); box.appendChild(s); }
+    else if (k === 'star') { const s = el('span', 'lg'); s.appendChild(el('span', 'star', '☆')); s.appendChild(document.createTextNode(dcrFill(t).replace('☆', ''))); box.appendChild(s); }
     else if (k === 'tn') box.appendChild(el('span', 'noprint', t));   // 画面のみ（紙には出さない）
     else box.appendChild(el('span', null, t));
   });

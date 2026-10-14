@@ -1,0 +1,76 @@
+# 公開（GitHub Pages）— main に入った中身を配る（2026-10-14 代表者の決定）
+#
+# ・配るのは git で管理している全ファイル（これまでの「main をそのまま配る」と同じ中身）＋本番の施設情報
+# ・本番の施設情報 facility-profile.json は公開リポジトリに置かない（見本 facility-profile.sample.json だけを置く）。
+#   ここで Secret FACILITY_PROFILE_JSON から置いて配る
+# ・Secret が無い・壊れている・見本のままの時は配らずに止める（前に配った版がそのまま公開され続ける）
+#   ＝施設情報の無い版・架空の施設名の版を公開しない
+name: 公開
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: リポジトリを取り出す
+        uses: actions/checkout@v4
+
+      - name: 本番の施設情報を置く（Secret FACILITY_PROFILE_JSON）
+        env:
+          FP: ${{ secrets.FACILITY_PROFILE_JSON }}
+        run: |
+          if [ -z "$FP" ]; then
+            echo "::error::Secret FACILITY_PROFILE_JSON がありません。配信を止めます（前に配った版がそのまま公開されます）"
+            exit 1
+          fi
+          printf '%s' "$FP" > facility-profile.json
+          python3 - <<'PY'
+          import json, sys
+          try:
+              p = json.load(open('facility-profile.json', encoding='utf-8'))
+              s = json.load(open('facility-profile.sample.json', encoding='utf-8'))
+          except Exception as e:
+              print('::error::施設情報の JSON を読めません: ' + type(e).__name__); sys.exit(1)
+          kinds = sorted(o.get('kind') for o in p.get('offices', []) if isinstance(o, dict))
+          if kinds != ['施設', '訪問', '通所']:
+              print('::error::施設情報の offices に 施設・訪問・通所 がそろっていません'); sys.exit(1)
+          if p.get('facilityName') == s.get('facilityName') or p.get('corpName') == s.get('corpName'):
+              print('::error::施設情報が見本（架空の施設）のままです'); sys.exit(1)
+          print('施設情報: 形よし（事業所3つ・見本ではない）')
+          PY
+
+      - name: 配る中身をそろえる（git で管理しているファイル＋本番の施設情報）
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          git ls-files -z | xargs -0 cp --parents -t "$RUNNER_TEMP/site"
+          cp facility-profile.json "$RUNNER_TEMP/site/facility-profile.json"
+          echo "配るファイル: $(find "$RUNNER_TEMP/site" -type f | wc -l) 件"
+
+      - name: Pages の設定を読む
+        uses: actions/configure-pages@v5
+
+      - name: 配る中身を渡す
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+
+      - name: 配る
+        id: deploy
+        uses: actions/deploy-pages@v4

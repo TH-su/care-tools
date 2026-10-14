@@ -20,6 +20,8 @@
  *   SUFacility.roomPlan()         … 入居者マスタの間取り図（無ければ null）
  *   SUFacility.municipality()     … 施設のある市区町村（未設定なら空）（2026-10-08・監査10月版 #10）
  *   SUFacility.apps()             … この施設で使うアプリの id の配列（facility-profile.json の apps）。書いていなければ null＝全部使う（2026-10-12・監査10月版 v2）
+ *   SUFacility.visitingClinics()  … 訪問診療の医療機関 [{name, aliases[]}]（facility-profile.json の visitingClinics）。書いていなければ空の配列（2026-10-14）
+ *   SUFacility.clinicOf(text)     … かかりつけ欄の文字が当たる医療機関の name（name か aliases のどれかを含む）。当たらなければ空
  *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
  *
  * 端末の控え:
@@ -45,7 +47,16 @@
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
     var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
-                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null };
+                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null, visitingClinics: [] };
+    /* 訪問診療の医療機関（2026-10-14）。name は1〜40字、aliases は1〜40字の文字列だけ（空の名前・空の別名は捨てる＝空文字は何にでも当たるため） */
+    if (Array.isArray(p.visitingClinics)) {
+      for (var vc = 0; vc < p.visitingClinics.length && out.visitingClinics.length < 20; vc++) {
+        var C = p.visitingClinics[vc], cn = C && str(C.name).trim();
+        if (!cn || cn.length > 40) continue;
+        var al = Array.isArray(C.aliases) ? C.aliases.filter(function (x) { return typeof x === 'string' && x.trim() && x.trim().length <= 40; }).map(function (x) { return x.trim(); }).slice(0, 10) : [];
+        out.visitingClinics.push({ name: cn, aliases: al });
+      }
+    }
     /* 使うアプリ（2026-10-12）。英小文字の id だけを持つ。書いていない・空の配列は null＝全部使う
        （空の配列を「何も使わない」と読むと、書き損じ1つで接続設定の欄が全部消えるため） */
     if (Array.isArray(p.apps)) {
@@ -164,6 +175,18 @@
     roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
     municipality: function () { return (data && data.municipality) || ''; },
     apps: function () { return (data && data.apps) ? data.apps.slice() : null; },
+    visitingClinics: function () {
+      return (data && data.visitingClinics) ? data.visitingClinics.map(function (c) { return { name: c.name, aliases: c.aliases.slice() }; }) : [];
+    },
+    clinicOf: function (text) {
+      var t = String(text == null ? '' : text), list = (data && data.visitingClinics) || [];
+      if (!t) return '';
+      for (var i = 0; i < list.length; i++) {
+        var keys = [list[i].name].concat(list[i].aliases);
+        for (var j = 0; j < keys.length; j++) if (keys[j] && t.indexOf(keys[j]) >= 0) return list[i].name;
+      }
+      return '';
+    },
     corpSettings: function () {
       var c = data && data.corpSettings;
       return { homeGuidelineName: (c && c.homeGuidelineName) || '', homeGuidelineUrl: (c && c.homeGuidelineUrl) || '' };

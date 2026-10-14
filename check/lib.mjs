@@ -53,7 +53,10 @@ export function startServer(dir, port = 0) {
     try {
       let p = decodeURIComponent((req.url || '/').split('?')[0]);
       if (p.endsWith('/')) p += 'index.html';
-      const file = path.normalize(path.join(root, p));
+      let file = path.normalize(path.join(root, p));
+      /* 本番の施設情報（facility-profile.json）は公開リポジトリに無い（2026-10-14〜・配信の時だけ置く）。
+         撮影・手元の確かめの道具に限り、無ければ架空の見本を返す＝CI でも毎回同じ見本で撮れる。本番の画面は見本を読まない */
+      if (p === '/facility-profile.json' && !fs.existsSync(file)) file = path.join(root, 'facility-profile.sample.json');
       if (!(file === root || file.startsWith(root + path.sep)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end('not found'); return; }
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
       fs.createReadStream(file).pipe(res);

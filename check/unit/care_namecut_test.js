@@ -211,7 +211,7 @@ const dcr = grabber(DCR_SRC);
 const B = { JSON, Math, Date, Number, String, Array, Object, isFinite, parseInt, console };
 /* ★2026-09-24（段8-3・テーマ bb6cf78）: roomToFloor は window.SUFacility.floorOf（施設情報の floors）を先に見る。
    画面と同じく window を置き、実物の su-facility.js に facility-profile.json を読ませてから切り出す */
-const FP_SRC = fs.readFileSync(path.join(ROOT, 'facility-profile.json'), 'utf8');
+const FP_SRC = fs.readFileSync(path.join(ROOT, 'facility-profile.sample.json'), 'utf8');
 B.localStorage = { getItem: k => (k === 'su_facility_json_v1' ? FP_SRC : null), setItem() {} };
 B.window = B;
 vm.createContext(B);

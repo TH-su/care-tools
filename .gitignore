@@ -29,6 +29,7 @@
 !/.github/workflows/unit-tests.yml
 # 画面の指摘の Issue に配置図の絵を付ける（2026-10-04・提案3）
 !/.github/workflows/report-image.yml
+!/.github/workflows/pages.yml
 # 検証道具・受け口・定期タスクの指示書（2026-10-04・配布物ではない。架空データ専用／実名の一覧と撮影結果は置かない）
 # check/ の中も「明示 opt-in」。新しい道具を足す時は下に1行足す（out/・node_modules/・.names.local は載らない）
 !/check
@@ -101,7 +102,9 @@
 !/su-errors.js
 # 施設情報（2026-09-24・本人承認の設計＝公開の設定ファイル1つに集める）。載せるのは施設の公開情報だけ
 !/su-facility.js
-!/facility-profile.json
+# 施設情報（2026-10-14）: 公開するのは架空の見本だけ。本番の facility-profile.json は公開から外し、
+# 配信の時に GitHub Actions（.github/workflows/pages.yml）が Secret FACILITY_PROFILE_JSON から置く
+!/facility-profile.sample.json
 !/su-print.css
 # 動作の速さの記録（統合 Phase 0・2026-09-24）。ブラウザの計測時刻を端末の IndexedDB に残す部品と集計画面。
 # 残すのはアプリ名・時間・回数・端末の種類・接続先URLの末尾4文字だけで、氏名・記録・合言葉は一切含まない
