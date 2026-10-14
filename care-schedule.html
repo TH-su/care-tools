@@ -3306,7 +3306,13 @@ function csEditedText_(r) {
   return '週間計画で最後に直した人：' + String(r.editedBy || '不明').slice(0, 60)
        + '（' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + '）';
 }
-var CS_SESSION_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+/* ★ログインの控えのキーは Supabase のプロジェクトごとに名前が変わる（sb-<プロジェクト>-auth-token）。固定の文字列で持つと、
+   プロジェクトを替えた時に全員「未確認」になる。デイ利用表・体重管理・貼り薬カレンダーと同じ正規表現で見る（2026-10-14・監査10月版 第3版 5） */
+var CS_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function csHasSession_() {
+  try { for (let i = 0; i < localStorage.length; i++) if (CS_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
+  return false;
+}
 var csWhoAcct_ = '';
 var csWhoGen_ = 0;
 function csWho_() { return csWhoAcct_ || '未確認'; }
@@ -3339,7 +3345,7 @@ function csAuthLoad_() {
 function csResolveWho_() {
   const gen = ++csWhoGen_;
   let has = false;
-  try { has = !!localStorage.getItem(CS_SESSION_KEY); } catch (e) {}
+  has = csHasSession_();
   if (!has) { csWhoAcct_ = ''; return; }
   csAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
     if (gen !== csWhoGen_) return;
@@ -9191,7 +9197,7 @@ const SIM = {
 // ── Init ──
 loadDB();
 try { csResolveWho_(); } catch(e) { /* 直した人の確認の失敗は運用を止めない */ }
-window.addEventListener('storage', function(e){ if (e.key === CS_SESSION_KEY || e.key === null) { try { csResolveWho_(); } catch(e2) {} } });
+window.addEventListener('storage', function(e){ if (e.key === null || CS_SESSION_RE.test(e.key || '')) { try { csResolveWho_(); } catch(e2) {} } });
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) { try { csResolveWho_(); } catch(e) {} } });
 /* 報酬マスタに連動する選択肢（総合事業の区分・事業所情報の加算プルダウン）を作る。
    予定モーダルを開く前に済ませておく必要があるため、ここで一度だけ呼ぶ。 */

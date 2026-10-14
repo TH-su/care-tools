@@ -59,20 +59,22 @@ function makeBox(extra) {
     localStorage: {
       getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
       setItem: (k, v) => { store[k] = String(v); },
-      removeItem: k => { delete store[k]; }
+      removeItem: k => { delete store[k]; },
+      get length() { return Object.keys(store).length; },
+      key: i => Object.keys(store)[i] ?? null
     },
     window: {}, document: { scripts: [] }, console, setTimeout, Promise, Date, JSON, Object, String, Array, isNaN
   }, extra || {});
   vm.createContext(box);
   const code = [
     lineOf(SRC, /var csEditBase_ = [^\n]*/),
-    lineOf(SRC, /var CS_SESSION_KEY = [^\n]*/),
+    lineOf(SRC, /var CS_SESSION_RE = [^\n]*/),
     lineOf(SRC, /var csWhoAcct_ = [^\n]*/),
     lineOf(SRC, /var csWhoGen_ = [^\n]*/),
     lineOf(SRC, /var csBathRestored_ = [^\n]*/),
     'var csFieldsKept_ = 0; var csFieldChanges_ = [];',
     ['csEditFp_', 'csEditBaseline_', 'csStampEdits_', 'csTakeNewerEdit_', 'csEditedText_',
-     'csWho_', 'csWhoLabel_', 'csAuthLoad_', 'csResolveWho_', 'csRebaseEdits', 'csMergeEventsFrom_'].map(n => grabFn(SRC, n)).join('\n')
+     'csWho_', 'csWhoLabel_', 'csAuthLoad_', 'csHasSession_', 'csResolveWho_', 'csRebaseEdits', 'csMergeEventsFrom_'].map(n => grabFn(SRC, n)).join('\n')
   ].join('\n');
   vm.runInContext(code, box);
   return box;
@@ -170,12 +172,12 @@ console.log('\n— 4. 表示の文 —');
 console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられない時）—');
 (async () => {
   const tick = () => new Promise(r => setTimeout(r, 0));
-  async function run(sessionVal, check, pre) {
+  async function run(sessionVal, check, pre, keyName) {
     const resolvers = [];
     const b = makeBox();
     b.window.SUAuth = { check: () => (check === 'pending' ? new Promise(r => { resolvers.push(r); }) : Promise.resolve(check)) };
     b.SUAuth = b.window.SUAuth;
-    if (sessionVal) b.localStorage.setItem(b.CS_SESSION_KEY, sessionVal);
+    if (sessionVal) b.localStorage.setItem(keyName || 'sb-jhbernqawjrzqwrmqrih-auth-token', sessionVal);
     if (pre) b.csWhoAcct_ = pre;
     b.csResolveWho_();
     for (let i = 0; i < 5; i++) await tick();
@@ -198,7 +200,12 @@ console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられ�
   r.resolvers[1]({ status: 'ok', email: 'staff-new@example.test' });
   for (let i = 0; i < 5; i++) await tick();
   t('遅れて届いた古い確認の結果は捨て、新しい確認の結果を採る（世代番号）', r.resolvers.length === 2 && afterOld === '未確認' && r.b.csWho_() === 'staff-new@example.test', [r.resolvers.length, afterOld, r.b.csWho_()]);
-  t('起動時と storage・visibilitychange で取り直す', /csResolveWho_\(\);[\s\S]{0,40}\n[^\n]*addEventListener\('storage'[^\n]*CS_SESSION_KEY[^\n]*csResolveWho_\(\)[^\n]*\n[^\n]*visibilitychange[^\n]*csResolveWho_\(\)/.test(SRC), '');
+  r = await run('tok', { status: 'ok', email: 'staff-b@example.test' }, null, 'sb-otherproject123-auth-token');
+  t('プロジェクトが替わっても（別の名前の控えでも）ログイン中と分かる', r.b.csWho_() === 'staff-b@example.test', r.b.csWho_());
+  r = await run('tok', { status: 'ok', email: 'staff-c@example.test' }, null, 'sb-x-auth-token-backup');
+  t('似た名前の別のキーはログインの控えとみなさない', r.b.csWho_() === '未確認', r.b.csWho_());
+  t('控えのキーを固定の文字列で持たない（プロジェクト名の直書きが無い）', !/sb-jhbern/.test(SRC) && /var CS_SESSION_RE = \/\^sb-\[a-z0-9\]\+-auth-token\$\/;/.test(SRC), '');
+  t('起動時と storage・visibilitychange で取り直す', /csResolveWho_\(\);[\s\S]{0,40}\n[^\n]*addEventListener\('storage'[^\n]*CS_SESSION_RE\.test\(e\.key[^\n]*csResolveWho_\(\)[^\n]*\n[^\n]*visibilitychange[^\n]*csResolveWho_\(\)/.test(SRC), '');
 
   console.log('\n— 6. ほかの書き手が項目を消さない —');
   {
