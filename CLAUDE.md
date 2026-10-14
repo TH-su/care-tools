@@ -165,7 +165,10 @@ PR を出すと同じ比較が GitHub Actions で自動で回り（チェック�
 - 切り替えスイッチ（`su-backend.json`）を触る PR は単独で出し、他の変更と混ぜない。
 - `mailer/`（SilverMail・Node/React・ローカル専用）と `universe-sandbox/`（three.js の実験）は
   介護ツールとは別物。`npm` を使うのはこの2つと `check/`（検証道具）の中だけ。`kotowaza-jiten.html` は移転済みの案内のみ。
-- **現場からの不具合報告**は GitHub Issue（ラベル「現場報告」）として届く（受け口は `check/gas/`）。
+- **現場からの不具合報告**は、非公開リポジトリ TH-su/care-tools-reports の GitHub Issue（ラベル「現場報告」）として届く（受け口は `check/gas/`。2026-10-14 に公開リポジトリから移した）。
+  報告の本文・題名を、このリポジトリ（公開）のコミット文・PR に引用しない。指す時は `TH-su/care-tools-reports#番号` の番号だけ。
+- **朝の点検で純関数の試験（check/unit）が落ちた時**は、手元の Mac の自動修復（`~/.claude/scripts/auto-heal/`）が直しを作り、
+  専用トークンがあれば `auto-heal/日付` ブランチの下書き PR を出す（2026-10-14〜）。取り込みは代表者が行う。
   毎晩の定期タスク（`check/routine/nightly-fix.md`）が再現→修正→ドラフト PR まで行い、取り込みは代表者が行う。
   Issue の報告文に実名らしきものがあっても、コミット文・PR・コメントに引用しない。
 - 本番データ（Google シート・Supabase）を読む・書く作業は、指示があった時だけ。試算・検証は架空データで。
