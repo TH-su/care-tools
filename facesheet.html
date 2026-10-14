@@ -1031,7 +1031,14 @@ function suFacReady_(ms) {
   });
 }
 /* 施設情報を待ってから刷る（読めなければ刷らずに知らせる）。ボタンの4つの入口（印刷・まとめて印刷・誕生日一覧・食形態一覧）が通る */
-function fsFacGate_(go){ suFacReady_().then(function(ok){ if(!ok){ toast(SU_FAC_NG_MSG); return; } go(); }); }
+/* ★施設情報を待つ数秒の間の二重押しを無視する（2回押すと印刷の画面が2回開いていた・2026-10-14 監査10月版 第4版 7）。
+   suFacReady_ は必ず終わる（最大3秒）ので、印は必ず外れる */
+var fsFacWaiting_=false;
+function fsFacGate_(go){
+  if(fsFacWaiting_)return;
+  fsFacWaiting_=true;
+  suFacReady_().then(function(ok){ fsFacWaiting_=false; if(!ok){ toast(SU_FAC_NG_MSG); return; } go(); });
+}
 /* 居室 → 階（0 = 判定できない）。全角数字は半角へ寄せる */
 function roomToFloor(room){
   /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。

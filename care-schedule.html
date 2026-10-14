@@ -3290,8 +3290,43 @@ function csStampEdits_() {
     if (!r || r.id === undefined) return;
     if (csEditBase_[r.id] === csEditFp_(r)) return;
     r.editedBy = who; r.editedAt = at; n++;
+    if (who === '未確認') csUnconfirmed_[r.id] = at;
   });
   return n;
+}
+/* ★保存の後に「未確認」をサーバーの値へそろえる（2026-10-14・監査10月版 第4版 8）。
+   起動直後などログインの確認（csResolveWho_）が済む前に保存すると、画面は「未確認」を付けるが、サーバー（kv_put・care-backend 0013）は
+   この保存の JWT から確かめたメールで書き直す。応答に名前は無いので、その端末だけ再読み込みまで「未確認」と出ていた。
+   ・「未確認」を付けた入居者を id → editedAt で控える（csUnconfirmed_）
+   ・送る直前に、送る中身に入っている控えだけを取り出し（csUnconfirmedSent_）、Supabase の kv_put が版を進めて成功した後
+     （中身が同じで書かれなかった時・Google へ送った時は除く）に、送った時と同じログイン（SUAuth.check）のメールで書き直す
+   ・書き直すのは、その後に誰も印を付け直していない入居者だけ（editedBy が「未確認」のまま・editedAt が控えと同じ）
+   ・端末に書くだけで、未送信の印は付けない（サーバーはもう同じ値）。確かめられない時は何もしない（再読み込みでサーバーの値が来る） */
+var csUnconfirmed_ = Object.create(null);   // 利用者id → 「未確認」を付けた editedAt
+function csUnconfirmedSent_(db) {
+  const out = [];
+  (Array.isArray(db && db.residents) ? db.residents : []).forEach(r => {
+    if (r && r.id !== undefined && r.editedBy === '未確認' && csUnconfirmed_[r.id] === r.editedAt) out.push([r.id, r.editedAt]);
+  });
+  return out;
+}
+function csSettleUnconfirmed_(sent) {
+  if (!sent || !sent.length || !window.SUAuth || typeof SUAuth.check !== 'function') return Promise.resolve(0);
+  return Promise.resolve().then(() => SUAuth.check()).then(st => {
+    const who = csWhoLabel_(st);
+    if (!who) return 0;
+    let n = 0;
+    sent.forEach(([id, at]) => {
+      const r = (Array.isArray(DB.residents) ? DB.residents : []).find(x => x && x.id === id);
+      if (r && r.editedBy === '未確認' && r.editedAt === at) { r.editedBy = who; n++; }
+      if (csUnconfirmed_[id] === at) delete csUnconfirmed_[id];
+    });
+    if (n) {
+      saveLocalOnly();
+      try { const edEl = $('#cs-edited-note'); if (edEl) edEl.textContent = csEditedText_(currentResident()); } catch (e) {}
+    }
+    return n;
+  }).catch(() => 0);
 }
 /* 2つの項目を組で、新しい方（editedAt が後）を dst へ写す */
 function csTakeNewerEdit_(dst, src) {
@@ -4556,6 +4591,10 @@ const SYNC = {
          （レビュー M-2）。 */
       let sentBase = null;
       try { sentBase = csFieldBaseBuild_(DB); } catch (e) {}
+      /* 「未確認」の印のうち、この送信に入るもの（成功の後にサーバーと同じメールへそろえる・監査10月版 第4版 8） */
+      let unconfSent = [], viaSb = false;
+      try { unconfSent = csUnconfirmedSent_(DB); } catch (e) {}
+      try { viaSb = !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed('care_schedule_v2')); } catch (e) {}
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: baseRev, data: DB, force: !!force });
       /* 接続先が死んだ／別アプリのGASだった: 取得と同じく ws_settings の統合同期GASへ自動切替して1回だけ送り直す
@@ -4582,6 +4621,7 @@ const SYNC = {
         this.log(`✅ 保存完了（rev ${j.rev}）`);
         this.updateStatusUI('同期OK');
         this._busy = false;
+        if (viaSb && !j.unchanged && unconfSent.length) csSettleUnconfirmed_(unconfSent);
         return true;
       }
       if (j.ok) {

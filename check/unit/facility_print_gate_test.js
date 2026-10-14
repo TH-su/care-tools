@@ -6,6 +6,7 @@
      C 入居者マスタの A4様式（a4Print）: 読めなければ「施設情報が読めません」と出して刷らない。読めれば1回だけ刷る
      D デイ利用表の印刷ボタン: 読めなければ刷らずに知らせる。読めたら表題を施設の名前にしてから印刷の画面を開く
      E フェイスシート: 印刷・まとめて印刷・誕生日一覧・食形態一覧の4つのボタンが同じ関門（fsFacGate_）を通る
+     F 待つ間の二重押しを無視し、待った後のデイ利用表は本文も描き直す（2026-10-14 監査10月版 第4版 7）
    ★画面の本物の関数を切り出して動かす。偽物にするのは SUFacility・タイマー・印刷・知らせだけ。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -174,32 +175,38 @@ console.log('\n— B. suFacReady_（待ち方）—');
   t('帳票の施設名・電話（a4Facility）は今までどおり施設情報から引く', /function a4Facility\(\)\{\n  var o=\(window\.SUFacility && SUFacility\.ready\(\)\) \? SUFacility\.office\('施設'\)/.test(PAGES.master));
 
   console.log('\n— D. デイ利用表の印刷ボタン —');
-  async function runDay(facOk) {
-    const out = { toasts: [], opened: [], titles: 0, order: [] };
+  /* opts: ready＝押した時に読めていたか／redrawn＝☆の確かめで描き直したか／gate＝待ちの結果を外から決める（二重押しの試験） */
+  function mkDay(facOk, opts) {
+    opts = opts || {};
+    const out = { toasts: [], opened: [], titles: 0, order: [], renders: 0 };
     const handlers = {};
     const box = {
       Promise, console,
       $: id => ({ addEventListener: (ev, fn) => { handlers[id] = fn; } }),
-      window: { SUPrint: { openDialog: tab => { out.opened.push(tab); out.order.push('open'); } } },
+      window: { SUPrint: { openDialog: tab => { out.opened.push(tab); out.order.push('open'); } },
+                SUFacility: { ready: () => opts.ready !== false } },
       activeTab: () => 'sc-roster',
       toast: (m, ng) => out.toasts.push([m, ng]),
-      applyDcrTitles: () => { out.titles++; },
-      dcrRefreshStarsIfStale_: () => { out.order.push('stars'); return Promise.resolve(false); },
-      suFacReady_: () => Promise.resolve(facOk),
+      applyDcrTitles: () => { out.titles++; out.order.push('titles'); },
+      renderAll: () => { out.renders++; out.order.push('render'); },
+      DB: { residents: [] },
+      dcrPrintWaiting: false,
+      dcrRefreshStarsIfStale_: () => { out.order.push('stars'); return Promise.resolve(!!opts.redrawn); },
+      suFacReady_: () => opts.gate ? opts.gate() : Promise.resolve(facOk),
       SU_FAC_NG_MSG: '⚠️ 施設情報が読めません。'
     };
-    box.SUPrint = box.window.SUPrint;
+    box.SUPrint = box.window.SUPrint; box.SUFacility = box.window.SUFacility;
     vm.createContext(box);
     const src = grab(PAGES.day, "  $('btnPrint').addEventListener('click', () => {");
     vm.runInContext(src + ');', box);
-    handlers.btnPrint(); await settle();
-    return out;
+    return { box, out, press: () => handlers.btnPrint() };
   }
+  async function runDay(facOk, opts) { const d = mkDay(facOk, opts); d.press(); await settle(); d.out.waiting = d.box.dcrPrintWaiting; return d.out; }
   o = await runDay(false);
   t('施設情報が読めない → 印刷の画面を開かず、「施設情報が読めません」を赤で出す', o.opened.length === 0 && o.toasts.length === 1 && /施設情報が読めません/.test(o.toasts[0][0]) && o.toasts[0][1] === true, o);
   o = await runDay(true);
   t('読めた → 表題を施設の名前にしてから、押した時のタブで印刷の画面を開く', o.opened.length === 1 && o.opened[0] === 'sc-roster' && o.titles === 1, o);
-  t('印刷の画面を開く前に、☆の医療機関が変わっていないかを確かめる（2026-10-14 第4版 3）', o.order.join() === 'stars,open', o.order);
+  t('印刷の画面を開く前に、☆の医療機関が変わっていないかを確かめる（2026-10-14 第4版 3）', o.order.join() === 'stars,titles,open', o.order);
 
   console.log('\n— E. フェイスシートの4つの印刷ボタン —');
   {
@@ -207,7 +214,7 @@ console.log('\n— B. suFacReady_（待ち方）—');
     const mk = ok => {
       const box = { Promise, toast: m => out.toasts.push(m), suFacReady_: () => Promise.resolve(ok), SU_FAC_NG_MSG: '⚠️ 施設情報が読めません。' };
       vm.createContext(box);
-      vm.runInContext(grab(PAGES.face, 'function fsFacGate_(go){'), box);
+      vm.runInContext('var fsFacWaiting_=false;\n' + grab(PAGES.face, 'function fsFacGate_(go){'), box);
       return box;
     };
     mk(false).fsFacGate_(() => { out.went++; }); await settle();
@@ -222,6 +229,50 @@ console.log('\n— B. suFacReady_（待ち方）—');
   t('まとめて印刷ボタンが関門を通る（その後は今までどおり）', /\$\('printAllBtn'\)\.addEventListener\('click',function\(\)\{fsFacGate_\(function\(\)\{fsMdPrintGate_\(/.test(F));
   t('関門を通らずに刷るボタンが残っていない（click から直接 print 系を呼ばない）',
     !/addEventListener\('click',\s*(function\(\)\{)?\s*(bdayPrintGo_|fsPrintMeal|fsMdPrintGate_|window\.print)/.test(F));
+
+  console.log('\n— F. 待つ間の二重押し・待った後の描き直し（第4版 7）—');
+  {
+    let rel = [];
+    const d = mkDay(true, { ready: false, gate: () => new Promise(r => rel.push(r)) });
+    d.press(); d.press(); d.press();
+    t('デイ利用表: 待っている間に3回押しても、待ちは1本だけ', rel.length === 1, rel.length);
+    rel[0](true); await settle();
+    t('デイ利用表: 待ちが終わると、印刷の画面は1回だけ開く', d.out.opened.length === 1, d.out.opened);
+    t('デイ利用表: 終わったら二重押しの止めを外す（次は押せる）', d.box.dcrPrintWaiting === false);
+    d.press(); rel[1](true); await settle();
+    t('デイ利用表: 止めを外した後の押下は、もう一度印刷の画面を開く', d.out.opened.length === 2, d.out.opened);
+  }
+  o = await runDay(true, { ready: false });
+  t('デイ利用表: 押した時に施設情報がまだで、待っている間に読めた → 本文を描き直してから印刷の画面を開く', o.order.join() === 'stars,render,titles,open' && o.renders === 1, o.order);
+  o = await runDay(true, { ready: true });
+  t('デイ利用表: 押した時に読めていた → 描き直さずに開く（今までどおり）', o.renders === 0 && o.opened.length === 1, o.order);
+  o = await runDay(true, { ready: false, redrawn: true });
+  t('デイ利用表: ☆の確かめで描き直した時は、重ねて描き直さない', o.renders === 0 && o.opened.length === 1, o.order);
+  o = await runDay(false, { ready: false });
+  t('デイ利用表: 読めなかった時も止めを外す（次に押せる）', o.waiting === false && o.opened.length === 0, o);
+  {
+    const d = mkDay(true, { ready: false });
+    d.box.dcrRefreshStarsIfStale_ = () => Promise.reject(new Error('x'));
+    d.press(); await settle();
+    t('デイ利用表: ☆の確かめが失敗しても、描き直して印刷の画面を開く（止めも外す）', d.out.opened.length === 1 && d.out.renders === 1 && d.box.dcrPrintWaiting === false, d.out);
+  }
+  {
+    const out = { toasts: [], went: 0 };
+    let rel = [];
+    const box = { Promise, toast: m => out.toasts.push(m), suFacReady_: () => new Promise(r => rel.push(r)), SU_FAC_NG_MSG: '⚠️ 施設情報が読めません。' };
+    vm.createContext(box);
+    vm.runInContext(lineOfFace() + '\n' + grab(PAGES.face, 'function fsFacGate_(go){'), box);
+    box.fsFacGate_(() => { out.went++; }); box.fsFacGate_(() => { out.went++; });
+    t('フェイスシート: 待っている間の2回目の押下は無視する（待ちは1本）', rel.length === 1, rel.length);
+    rel[0](true); await settle();
+    t('フェイスシート: 待ちが終わると1回だけ進む', out.went === 1, out);
+    box.fsFacGate_(() => { out.went++; }); rel[1](false); await settle();
+    t('フェイスシート: 読めなかった時も止めを外す（その次は押せる）', out.went === 1 && box.fsFacWaiting_ === false && rel.length === 2, out);
+    box.fsFacGate_(() => { out.went++; });
+    t('フェイスシート: 止めを外した後は、また待ちを始める', rel.length === 3);
+  }
+  function lineOfFace() { const m = /var fsFacWaiting_=false;/.exec(PAGES.face); if (!m) throw new Error('fsFacWaiting_ が見つかりません'); return m[0]; }
+  t('入居者マスタの A4様式は、今までどおり待つ間の連打を無視する（a4Printing）', /if\(a4Printing\)return;\n  a4Printing=true;/.test(PAGES.master));
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);

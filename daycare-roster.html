@@ -1144,6 +1144,7 @@ function dcrClinicSig_() {
   return JSON.stringify((window.SUFacility && typeof SUFacility.visitingClinics === 'function') ? SUFacility.visitingClinics() : []);
 }
 /* ☆を計算した後に施設情報の医療機関が変わっていたら、名簿を取り直して描き直す。取り直しの最中なら少し待ってやり直す（最大5回） */
+var dcrPrintWaiting = false;   // 印刷の前に施設情報を待っている間（二重押しを無視する）
 function dcrRefreshStarsIfStale_(tries) {
   if (dcrClinicSigUsed === null || dcrClinicSig_() === dcrClinicSigUsed) return Promise.resolve(false);
   if (dcrHospBusy) {
@@ -2908,12 +2909,23 @@ function init() {
   $('btnPrint').addEventListener('click', () => {
     if (!window.SUPrint) { toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true); return; }
     /* ★表題の事業所名・階の分け方は施設情報から引く。読めていなければ最大3秒待ち、読めなければ刷らない（2026-10-14） */
+    /* ★待つ数秒の間の二重押しを無視する（2回押すと印刷の画面が2回開いていた）。待った後は本文（階の分け方・凡例の医療機関名）も
+       施設情報で描き直してから刷る（以前は表題だけ替えていた）。2026-10-14 監査10月版 第4版 7 */
+    if (dcrPrintWaiting) return;
     const tab = activeTab();
+    let wasReady = false;
+    try { wasReady = !!(window.SUFacility && SUFacility.ready()); } catch (e) {}
+    dcrPrintWaiting = true;
     suFacReady_().then(ok => {
       if (!ok) { toast(SU_FAC_NG_MSG, true); return; }
-      /* 待っている間に読めた時、表題を施設の名前へ替え、☆の医療機関が変わっていれば描き直してから刷る */
-      dcrRefreshStarsIfStale_().then(() => { applyDcrTitles(); SUPrint.openDialog(tab); });
-    });
+      /* ☆の医療機関が変わっていれば名簿を取り直して描き直す。取り直さなかった時も、待っている間に読めたのなら描き直す */
+      return dcrRefreshStarsIfStale_().catch(() => false).then(redrawn => {
+        if (!wasReady && !redrawn && typeof DB !== 'undefined' && DB) renderAll(DB);
+        applyDcrTitles();
+        SUPrint.openDialog(tab);
+      });
+    }).catch(() => { toast('⚠️ 印刷の準備に失敗しました。もう一度押してください', true); })
+      .then(() => { dcrPrintWaiting = false; });
   });
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
   window.addEventListener('pagehide', flushPendingBeacon_);

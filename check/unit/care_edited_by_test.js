@@ -8,6 +8,7 @@
        取得・取り込み（saveLocalOnly）と読込（loadDB）は基準を取り直すだけで印を付けない
      ④競合の解消（csRebaseEdits・csMergeEventsFrom_）では、2項目を組で新しい方を採る
      ⑤誰が＝ログイン中ならメール全体（小文字）、ログアウト・未ログインは「未確認」、確かめられない時は前のまま（2026-10-13）
+     ⑦「未確認」で付けた印は、Supabase への保存が通った後に、送った時と同じログインのメールへそろえる（2026-10-14 監査10月版 第4版 8）
      ⑥ワークスケジュール（masterToCareDb）・デイ利用表（dcrOverlayMaster・applyPendingFlag_）が書いても項目が消えない
    ★氏名は全て架空。 */
 'use strict';
@@ -71,10 +72,12 @@ function makeBox(extra) {
     lineOf(SRC, /var CS_SESSION_RE = [^\n]*/),
     lineOf(SRC, /var csWhoAcct_ = [^\n]*/),
     lineOf(SRC, /var csWhoGen_ = [^\n]*/),
+    lineOf(SRC, /var csUnconfirmed_ = [^\n]*/),
     lineOf(SRC, /var csBathRestored_ = [^\n]*/),
     'var csFieldsKept_ = 0; var csFieldChanges_ = [];',
     ['csEditFp_', 'csEditBaseline_', 'csStampEdits_', 'csTakeNewerEdit_', 'csEditedText_',
-     'csWho_', 'csWhoLabel_', 'csAuthLoad_', 'csHasSession_', 'csResolveWho_', 'csRebaseEdits', 'csMergeEventsFrom_'].map(n => grabFn(SRC, n)).join('\n')
+     'csWho_', 'csWhoLabel_', 'csAuthLoad_', 'csHasSession_', 'csResolveWho_', 'csRebaseEdits', 'csMergeEventsFrom_',
+     'csUnconfirmedSent_', 'csSettleUnconfirmed_'].map(n => grabFn(SRC, n)).join('\n')
   ].join('\n');
   vm.runInContext(code, box);
   return box;
@@ -237,6 +240,53 @@ console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられ�
     box.applyPendingFlag_(residents, { id: 'r1', field: 'dcrBathOff', value: true, logs: [] });
     const snap = JSON.parse(JSON.stringify({ residents }));
     t('デイ利用表（applyPendingFlag_ → 送る写し）: 直した人・日時が残る', snap.residents[0].editedBy === 'staff-a' && snap.residents[0].dcrBathOff === true, snap.residents[0]);
+  }
+
+  console.log('\n— 7. 「未確認」の印を、保存の後にサーバーと同じメールへそろえる（第4版 8）—');
+  {
+    const note = { textContent: '' };
+    let saved = 0;
+    const b = makeBox({ $: () => note, saveLocalOnly: () => { saved++; }, currentResident: () => null });
+    b.currentResident = () => b.DB.residents[0];
+    b.DB.residents = [res('r1', '架空 一郎', [ev('e1')]), res('r2', '架空 花子', [ev('e2')]), res('r3', '架空 次郎', [ev('e3')])];
+    b.csEditBaseline_();
+    b.DB.residents[0].room = '101'; b.DB.residents[1].room = '102';
+    b.csStampEdits_();
+    const sent = b.csUnconfirmedSent_(b.DB);
+    t('ログインの確認の前に付けた「未確認」を、送る中身から取り出す（直していない入居者は入らない）', sent.length === 2 && sent.every(x => x[0] === 'r1' || x[0] === 'r2'), sent);
+    /* 送った後・そろえる前に、r2 をもう一度直した（その時はログインの確認が済んでいた） */
+    b.csWhoAcct_ = 'after@example.invalid';
+    b.csEditBaseline_(); b.DB.residents[1].room = '103';
+    await new Promise(r => setTimeout(r, 2));
+    b.csStampEdits_();
+    b.window.SUAuth = { check: () => Promise.resolve({ status: 'ok', email: 'Staff@Example.invalid' }) };
+    b.SUAuth = b.window.SUAuth;
+    const n = await b.csSettleUnconfirmed_(sent);
+    const [r1, r2, r3] = b.DB.residents;
+    t('送った時の「未確認」は、ログインのメール（小文字）にそろえる', n === 1 && r1.editedBy === 'staff@example.invalid', [n, r1.editedBy]);
+    t('送った後に付け直した入居者は書き換えない', r2.editedBy === 'after@example.invalid', r2.editedBy);
+    t('直していない入居者には印を付けない', !r3.editedBy && !r3.editedAt, r3);
+    t('そろえたら端末に書き（未送信の印は付けない）、注記を出し直す', saved === 1 && /staff@example\.invalid/.test(note.textContent), [saved, note.textContent]);
+    t('そろえた控えは消える（2回目は何もしない）', b.csUnconfirmedSent_(b.DB).length === 0, Object.keys(b.csUnconfirmed_));
+  }
+  {
+    const b = makeBox({ $: () => null, saveLocalOnly: () => {}, currentResident: () => null });
+    b.DB.residents = [res('r1', '架空 一郎', [ev('e1')])];
+    b.csEditBaseline_(); b.DB.residents[0].room = '101'; b.csStampEdits_();
+    const sent = b.csUnconfirmedSent_(b.DB);
+    b.window.SUAuth = { check: () => Promise.resolve({ status: 'signed_out' }) }; b.SUAuth = b.window.SUAuth;
+    const n1 = await b.csSettleUnconfirmed_(sent);
+    b.window.SUAuth = { check: () => Promise.reject(new Error('x')) }; b.SUAuth = b.window.SUAuth;
+    const n2 = await b.csSettleUnconfirmed_(sent);
+    t('ログインを確かめられない時は書き換えない（再読み込みでサーバーの値が来る）', n1 === 0 && n2 === 0 && b.DB.residents[0].editedBy === '未確認', [n1, n2]);
+  }
+  {
+    const push = grabFn(SRC.replace(/\n  async push\(/, '\nfunction push('), 'push');
+    const iSent = push.indexOf('csUnconfirmedSent_(DB)'), iPut = push.indexOf("this.gas({ action: 'put', key: 'care_schedule_v2'");
+    t('送信: 送る直前に控えを取り出す', iSent > 0 && iPut > iSent, [iSent, iPut]);
+    t('送信: Supabase に送り、版が進んで成功し、中身が同じで書かれなかったのではない時だけそろえる',
+      /try \{ viaSb = !!\(window\.SUKv && typeof SUKv\.routed === 'function' && SUKv\.routed\('care_schedule_v2'\)\); \} catch \(e\) \{\}/.test(push) &&
+      /this\._busy = false;\n        if \(viaSb && !j\.unchanged && unconfSent\.length\) csSettleUnconfirmed_\(unconfSent\);\n        return true;/.test(push), '');
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
