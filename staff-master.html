@@ -1471,6 +1471,8 @@ body.cmt-print{page:cmt}
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
+<!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
+<script src="su-staff-names.js?v=2026-10-14"></script>
 <script>
 'use strict';
 
@@ -2236,6 +2238,12 @@ function loadList(quiet) {
     }
     buildListHead();
     renderList();
+    /* 不具合報告の伏せ字の名簿へ、氏名・フリガナ・在籍だけを写す（2026-10-14・su-staff-names.js。現場の端末・未ログインでは何もしない） */
+    try {
+      if (window.SUStaffNames) SUStaffNames.push(ST.rows.map(function (r) {
+        return { id: r.id, name: r.name, kana: r.kana, active: statusInfo(r).k !== 'retired' };
+      }));
+    } catch (e) { /* 写しの失敗で一覧を止めない */ }
     updateFilesBtn();                 /* 行が入れ替わるので書類の件数を取り直す */
     /* 起動直後の ping だけ落ちていると「書類」が押せないままになる。読み込めた時に1回だけ取り直す */
     if (ST.caps === null && !ST.capsRetried) { ST.capsRetried = true; refreshCaps(); }
@@ -6874,6 +6882,6 @@ if (document.readyState === 'loading') {
 }
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-10" data-tool="職員マスタ"></script>
+<script src="su-report.js?v=2026-10-14" data-tool="職員マスタ"></script>
 </body>
 </html>
