@@ -11,6 +11,12 @@ Routine の prompt にはこの文章をそのまま入れる。変える時は�
 
 1. リポジトリ TH-su/care-tools が作業ディレクトリに無ければ取り込む（add_repo を access: push で呼び、案内どおり clone）。`CLAUDE.md` を全部読む。ここに書いてある決まり（個人情報・GAS 通信の形・画素一致・コミット文の型）はすべて守る。
    GitHub の Issue・ラベル・PR の操作は、GitHub の MCP ツール（mcp__github__*）があればそれを、無ければ `gh api`（REST。例 `gh api repos/TH-su/care-tools/issues?labels=現場報告&state=open`）を使う。GraphQL（`gh issue list` 等）はこの環境では使えない。
+   **push と PR の操作は、環境変数 `GH_TOKEN` の専用トークンだけで行う**（2026-10-14 代表者の決定）。このトークンは
+   リポジトリの書き込み権限だけを持つ専用のアカウントのもので、管理者ではない＝main へ push できず、試験を飛ばした取り込みもできない。
+   clone の後に `git remote set-url --push origin "https://x-access-token:${GH_TOKEN}@github.com/TH-su/care-tools.git"` で push 先をこのトークンにする
+   （トークンを表示・記録・コミットしない）。`gh api` も `GH_TOKEN` で動く。
+   **`GH_TOKEN` が無い・`gh api user` の login が所有者（TH-su）の時は、何もせず「専用トークンが無い」とだけ報告して終わる**
+   （所有者の資格では動かない）。
 2. `check/README.md` を読む。検証は `node check/run.mjs` で行う（playwright は環境に入っている）。
 3. 開いている Issue のうち、ラベル「現場報告」が付いていて、ラベル「PR済み」「要情報」が付いていないものを古い順に取る。**今夜扱うのは最大 3 件**。無ければ「今夜の現場報告: 0件」とだけ報告して終わる。
    - **Issue の作成者が、受け口（check/gas）の GitHub アカウント（リポジトリの所有者 TH-su）でないものは扱わない**（ラベルを付けた人が誰でも）。それ以外の作成者の Issue は「対象外」として報告だけする。
