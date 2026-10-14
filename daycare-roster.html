@@ -1132,6 +1132,32 @@ function dcrOfficeName() {
 }
 function dcrName(suffix) { const n = dcrOfficeName(); return (n || (suffix === '合計' ? '通所' : '')) + suffix; }
 function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ'); }
+/* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
+   帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
+   読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
+   ・読めていれば（端末の控えでも）すぐ true
+   ・まだなら SUFacility.onReady を最大 SU_FAC_WAIT_MS（3秒）待ち、読めたかどうかを返す（読めないと分かればその時点で false）
+   ・su-facility.js が無い・応答しない時は false
+   入居者マスタ・デイ利用表・フェイスシートで同じ中身（試験 facility_print_gate が一字一句同じかを見る） */
+var SU_FAC_WAIT_MS = 3000;
+var SU_FAC_NG_MSG = '⚠️ 施設情報が読めません。施設名や階を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
 function applyDcrTitles() {
   const n = dcrOfficeName();
   document.title = '通所' + n + ' 利用表';
@@ -2849,8 +2875,14 @@ function init() {
   $('btnRefresh').addEventListener('click', () => refresh(false));
   $('btnRefresh2').addEventListener('click', () => refresh(false));
   $('btnPrint').addEventListener('click', () => {
-    if (window.SUPrint) SUPrint.openDialog(activeTab());
-    else toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true);
+    if (!window.SUPrint) { toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true); return; }
+    /* ★表題の事業所名・階の分け方は施設情報から引く。読めていなければ最大3秒待ち、読めなければ刷らない（2026-10-14） */
+    const tab = activeTab();
+    suFacReady_().then(ok => {
+      if (!ok) { toast(SU_FAC_NG_MSG, true); return; }
+      applyDcrTitles();   /* 待っている間に読めた時、表題を刷る前に施設の名前へ替えておく */
+      SUPrint.openDialog(tab);
+    });
   });
   // タブ/アプリを閉じる直前、未送信の変更をベストエフォートで送る（楽観的UIで即消えるため閉じられやすい・原則6）。
   window.addEventListener('pagehide', flushPendingBeacon_);

@@ -1004,6 +1004,34 @@ function bdayHtml(list){
       '　／　印刷日 '+stamp+'</div>'+
   '</div>';
 }
+/* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
+   帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
+   読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
+   ・読めていれば（端末の控えでも）すぐ true
+   ・まだなら SUFacility.onReady を最大 SU_FAC_WAIT_MS（3秒）待ち、読めたかどうかを返す（読めないと分かればその時点で false）
+   ・su-facility.js が無い・応答しない時は false
+   入居者マスタ・デイ利用表・フェイスシートで同じ中身（試験 facility_print_gate が一字一句同じかを見る） */
+var SU_FAC_WAIT_MS = 3000;
+var SU_FAC_NG_MSG = '⚠️ 施設情報が読めません。施設名や階を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
+/* 施設情報を待ってから刷る（読めなければ刷らずに知らせる）。ボタンの4つの入口（印刷・まとめて印刷・誕生日一覧・食形態一覧）が通る */
+function fsFacGate_(go){ suFacReady_().then(function(ok){ if(!ok){ toast(SU_FAC_NG_MSG); return; } go(); }); }
 /* 居室 → 階（0 = 判定できない）。全角数字は半角へ寄せる */
 function roomToFloor(room){
   /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。
@@ -3440,10 +3468,10 @@ document.addEventListener('DOMContentLoaded',function(){
   /* 誕生日ビューの年度送りと印刷。★年度は端末に保存しない（古い年度のまま刷らせない） */
   $('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
   $('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
-  $('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
+  $('bdayPrint').addEventListener('click',function(){fsFacGate_(bdayPrintGo_)});
   /* 食形態一覧の取り直しとA3印刷 */
   if($('mealReload')) $('mealReload').addEventListener('click',function(){mealLoad(true)});
-  if($('mealPrint')) $('mealPrint').addEventListener('click',fsPrintMeal);
+  if($('mealPrint')) $('mealPrint').addEventListener('click',function(){fsFacGate_(fsPrintMeal)});
   Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
     c.addEventListener('click',function(){
       curFilter=this.getAttribute('data-f');
@@ -3459,8 +3487,8 @@ document.addEventListener('DOMContentLoaded',function(){
   $('btnMaster').addEventListener('click',function(){window.open('resident-master.html','_blank')});
   $('backBtn').addEventListener('click',function(){curRec=null;showScreen('list')});
   /* ★薬効辞書（med_dict）が届くまで待ってから、従来どおりデイ利用日を待って刷る（2026-09-24 本人決定 Q2） */
-  $('printBtn').addEventListener('click',function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(function(){window.print()})})})});
-  $('printAllBtn').addEventListener('click',function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(fsPrintAll)})})});
+  $('printBtn').addEventListener('click',function(){fsFacGate_(function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(function(){window.print()})})})})});
+  $('printAllBtn').addEventListener('click',function(){fsFacGate_(function(){fsMdPrintGate_(function(){printWithDayUse(curRec,duCurId_,function(){fsPrintByBtn_(fsPrintAll)})})})});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
     b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');if(sc==='sync')openSync();else showScreen(sc)});
   });

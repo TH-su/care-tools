@@ -10172,6 +10172,32 @@ window.addEventListener('popstate',function(ev){
    ・文字は --a4fs 基準で、長文の方は a4Fit() が 12.0→7.5px の範囲で自動的に縮めて1枚に収める */
 /* A4様式のヘッダに刷る施設表記。番号が変わったらここ1箇所だけ直す（公開している代表番号） */
 /* ★2026-09-24: 帳票右上の施設名・電話は施設情報（facility-profile.json の 施設・su-facility.js）から引く */
+/* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
+   帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
+   読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
+   ・読めていれば（端末の控えでも）すぐ true
+   ・まだなら SUFacility.onReady を最大 SU_FAC_WAIT_MS（3秒）待ち、読めたかどうかを返す（読めないと分かればその時点で false）
+   ・su-facility.js が無い・応答しない時は false
+   入居者マスタ・デイ利用表・フェイスシートで同じ中身（試験 facility_print_gate が一字一句同じかを見る） */
+var SU_FAC_WAIT_MS = 3000;
+var SU_FAC_NG_MSG = '⚠️ 施設情報が読めません。施設名や階を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
 function a4Facility(){
   var o=(window.SUFacility && SUFacility.ready()) ? SUFacility.office('施設') : null;
   return { name: o ? (o.formalName||o.name) : '', tel: o ? o.tel : '' };
@@ -10921,8 +10947,11 @@ function a4Print(){
   var whoId=a4CurId_();
   /* ★取得中は必ず知らせる。TTL切れの再取得でも無言で待たせない（判定は duFresh に一本化） */
   if(!duFresh())toast('デイ利用（週間計画）を取得しています…');
-  a4EnsureDayMap().then(function(warn){
+  /* ★帳票右上の施設名・電話（a4Facility）は施設情報から引く。読めていなければ最大3秒待ち、読めなければ刷らない（2026-10-14） */
+  Promise.all([suFacReady_(), a4EnsureDayMap()]).then(function(rs){
+    var facOk=rs[0], warn=rs[1];
     a4Printing=false;
+    if(!facOk){ toast(SU_FAC_NG_MSG); return; }
     /* 待っているあいだに別の方の画面へ移っていたら刷らない（別人の帳票を出さない）。
        ★黙って終わらせない。押したのに何も起きないと、操作者は壊れたと判断する */
     if(whoId!==a4CurId_()){
