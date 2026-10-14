@@ -399,6 +399,21 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
     scroll-behavior: auto !important;
   }
 }
+
+/* 端末ガード（2026-10-14 代表者の依頼）: 現場端末（共有キー su_device_role==='field'）では、確定（月のロック・編集用の確定）・
+   まとめて消す操作（編集用の ×・職員/記号の削除）・同期先の変更を隠す。関数の入口でも止めている（app.js fieldGuard）。
+   複数マスの消去はボタンが無い（Delete キー）ので入口だけで止める */
+.field-only { display: none; }
+html.su-field .field-only { display: block; }
+html.su-field #lockToggle,
+html.su-field #btnConfirmDraft,
+html.su-field #draftTabs .drafttab .dx,
+html.su-field #edDelete,
+html.su-field button[data-act="delete"],
+html.su-field #syncTargetForm,
+html.su-field #syncSave,
+html.su-field #syncTest,
+html.su-field #egSync { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
@@ -661,7 +676,8 @@ body.printsim td.daycell.consviol { box-shadow: none !important; }    /* @media 
       <div class="panel">
         <h2>同期設定（複数端末共有）</h2>
         <p class="muted">設定方法は docs/gas-setup.md 参照。URLとトークンは他人に共有しないでください。</p>
-        <div class="formgrid">
+        <p class="muted field-only">📱 この端末は現場用のため、同期先は変えられません（事務所のパソコンで設定してください）。［今すぐ同期］は使えます。</p>
+        <div class="formgrid" id="syncTargetForm">
           <label>GAS WebアプリURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
           <label>トークン</label><input type="password" id="syncToken" placeholder="64桁の英数字">
         </div>
@@ -747,6 +763,67 @@ var LZString=function(){var o=String.fromCharCode,n="ABCDEFGHIJKLMNOPQRSTUVWXYZa
 if(typeof window!=='undefined')window.LZString=LZString;
 /* テスト用にCommonJSでも公開（ブラウザ動作には影響しない） */
 if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
+/* ===== src/logic/esc.js ===== */
+/* esc.js — 画面へ文字を差し込む時のエスケープ（純粋関数・2026-10-14）
+ *
+ * 背景（代表者の依頼）:
+ *   同じ中身の esc() が grid・master・requests・official・freee_ui・facility の6か所と、app.js の escText の計7か所にあり、
+ *   ' を書き換えるのは escText だけだった。ここ1か所にまとめ、各画面は呼ぶだけにする（ids.js の newStaffId と同じ作法）。
+ *
+ * 書き換える文字: & < > " ' の5つ。属性値（"…"）にもテキストにも使える。表示時には元の文字に戻るので見た目は変わらない。
+ * null・undefined は空文字にする（今までの7か所と同じ）。
+ */
+(function () {
+  'use strict';
+  var MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) { return MAP[c]; });
+  }
+  var api = { esc: esc };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftEsc = api;
+})();
+/* ===== src/logic/devicerole.js ===== */
+/* devicerole.js — 端末の役割（事務所PC／現場端末）で止める操作を決める（純粋関数・2026-10-14 代表者の依頼）
+ *
+ * 役割は週間計画（care-schedule.html）・入居者マスタなどと同じ共有キー su_device_role を【読むだけ】（書かない＝設定は接続設定の画面）。
+ *   'field' の時だけ現場端末。無い・読めない・ほかの値は事務所PC（既知の値だけを信じる）。
+ * 週間計画は現場端末で起動ごと止めるが、シフト作成は現場でも見る・書くので、起動は止めず次の操作だけを止める（画面からも隠す）:
+ *   lock          月のロック（🔒 この月を確定）
+ *   confirm       編集用シフトの確定（✓ この編集用を確定＝予定（確定版）を書き換える）
+ *   cells         複数のマスをまとめて消す（1マスずつは消せる）
+ *   draftDelete   編集用シフトの削除（タブの ×）
+ *   staffDelete   職員の削除（マスタ）
+ *   symbolDelete  記号の削除（マスタ）
+ *   sync          同期先（GAS の URL・合言葉）の変更
+ */
+(function () {
+  'use strict';
+  var DEVICE_KEY = 'su_device_role';
+  var MSG = {
+    lock: '現場の端末では、月のロック（確定）は変えられません。事務所のパソコンで操作してください',
+    confirm: '現場の端末では、編集用シフトを確定できません。事務所のパソコンで操作してください',
+    cells: '現場の端末では、複数のマスをまとめて消せません。1マスずつ消してください',
+    draftDelete: '現場の端末では、編集用シフトを削除できません。事務所のパソコンで操作してください',
+    staffDelete: '現場の端末では、職員を削除できません。事務所のパソコンで操作してください',
+    symbolDelete: '現場の端末では、記号を削除できません。事務所のパソコンで操作してください',
+    sync: '現場の端末では、同期先を変えられません。事務所のパソコンで設定してください'
+  };
+  function readRole(ls) {
+    try { return (ls && ls.getItem(DEVICE_KEY)) === 'field' ? 'field' : 'office'; } catch (e) { return 'office'; }
+  }
+  /* role の端末で action を止めるか。cells は消すマスの数（2つ以上で止める） */
+  function blocks(role, action, n) {
+    if (role !== 'field') return false;
+    if (action === 'cells') return Number(n) > 1;
+    return Object.prototype.hasOwnProperty.call(MSG, action);
+  }
+  function message(action) { return Object.prototype.hasOwnProperty.call(MSG, action) ? MSG[action] : ''; }
+
+  var api = { DEVICE_KEY: DEVICE_KEY, readRole: readRole, blocks: blocks, message: message };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftDevice = api;
+})();
 /* ===== src/logic/ids.js ===== */
 /* ids.js — 職員 ID の作り方と点検・部品探しの安全な書き方（純粋関数・2026-10-11）
  *
@@ -5880,10 +5957,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var i = 0; i < s.length; i++) n += s.charCodeAt(i) > 255 ? 2 : 1;
     return n;
   }
-  function esc(s) {
-    return String(s === undefined || s === null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
   function hasAny(obj) { for (var k in obj) { if (obj[k] !== '') return true; } return false; }
   function fmtH(min) { return Math.round(min / 60 * 100) / 100; }
   function divTitle(t) {
@@ -6360,6 +6434,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var del = document.getElementById('edDelete');
       if (del) del.onclick = function () {
         if (app.leaseGuard()) return;
+        if (app.fieldGuard('staffDelete')) return;   /* 確かめの画面を出す前に止める（2026-10-14） */
         app.confirm('職員の削除', st.name + ' を削除しますか？\n（過去のシフトデータは残りますが表示されなくなります。\n退職の場合は削除せず、ステータスを「退職」にして退職月を入力する方を推奨します。退職月以前のシフト・様式1はそのまま残ります）', function () {
           app.removeStaff(st.id);
           closeDrawer();
@@ -6421,6 +6496,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var act = e.target.getAttribute('data-act');
         if (act !== 'toggle' && act !== 'delete') return;
         if (app.leaseGuard()) return;
+        if (act === 'delete' && app.fieldGuard('symbolDelete')) return;   /* 現場端末は記号を消さない（2026-10-14） */
         var tr = closestTag(e.target, 'tr');
         if (!tr) return;
         var idx = parseInt(tr.getAttribute('data-idx'), 10);
@@ -6760,6 +6836,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return u !== String(cur.url || '').trim() || t !== String(cur.token || '').trim();
       }
       document.getElementById('syncSave').onclick = function () {
+        if (app.fieldGuard('sync')) return;   /* 現場端末は同期先を変えない（2026-10-14） */
         var msg = document.getElementById('syncMsg');
         var u = document.getElementById('syncUrl').value.trim();
         var t = document.getElementById('syncToken').value.trim();
@@ -6892,10 +6969,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   };
 
   /* helpers */
-  function esc(s) {
-    return String(s === undefined || s === null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
   /* 退避データの「内容の目安」。中身を開かずに、どれを取り出すか選べる程度の情報だけ出す
    * （氏名・勤務内容は一覧に並べない＝肩越しの覗き見を想定）。 */
   function rescueHint_(data) {
@@ -7154,10 +7228,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   };
 
-  function esc(s) {
-    return String(s === undefined || s === null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
   window.ShiftRequests = Requests;
 })();
@@ -7357,10 +7428,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     s = String(s === undefined || s === null ? '' : s);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
-  function esc(s) {
-    return String(s === undefined || s === null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
   window.ShiftOfficial = Official;
 })();
@@ -7374,11 +7442,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var Sym = window.ShiftSymbols;
   var Store = window.ShiftStore;
 
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
   var FreeeUI = {
     app: null,
@@ -7697,10 +7761,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var wiz = null;   /* 作業中プロファイル */
   var wizStep = 1;
 
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
   function defaultProfile() {
     return {
@@ -8018,6 +8079,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* ── 起動 ── */
     boot: function () {
+      this.applyDeviceRole();          /* 現場端末なら確定・まとめて消す・同期先の変更を隠す（2026-10-14） */
+      var selfDev = this;
+      try {
+        window.addEventListener('storage', function (e) {
+          if (!e || e.key === null || (typeof ShiftDevice !== 'undefined' && e.key === ShiftDevice.DEVICE_KEY)) selfDev.applyDeviceRole();
+        });
+      } catch (e) {}
       Store.init();
       Store.ensureDeviceId();          /* 編集権の保持者判定に使う端末ID（乱数・個人情報なし） */
       this._tabId = this.tabId_();     /* 同一端末2タブの二重編集ゲート用 */
@@ -8628,6 +8696,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.usingSnapshot()) { this.toast('この月は確定済みのため並べ替えは固定です'); return true; }
       return false;
     },
+    /* ── 端末ガード（2026-10-14 代表者の依頼・src/logic/devicerole.js）──
+     * 週間計画と同じ共有キー su_device_role を読むだけ（書かない）。'field' の時だけ現場端末。
+     * 現場端末では確定（月のロック・編集用の確定）・まとめて消す操作（複数マスの消去・編集用の削除・職員/記号の削除）・
+     * 同期先の変更を、画面から隠し（html.su-field・styles.css）、関数の入口でも止める（隠した部品を別の道から呼ばれても効く）。
+     * 毎回読み直す＝別のタブで役割を変えても次の操作から効く。 */
+    deviceRole: function () {
+      if (typeof ShiftDevice === 'undefined') return 'office';
+      var ls = null;
+      try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (e) { ls = null; }
+      return ShiftDevice.readRole(ls);
+    },
+    fieldGuard: function (action, n) {
+      if (typeof ShiftDevice === 'undefined' || !ShiftDevice.blocks(this.deviceRole(), action, n)) return false;
+      this.toast('📱 ' + ShiftDevice.message(action));
+      return true;
+    },
+    applyDeviceRole: function () {
+      try { document.documentElement.classList.toggle('su-field', this.deviceRole() === 'field'); } catch (e) {}
+    },
     toast: function (msg) {
       var el = document.getElementById('appToast');
       if (!el) {
@@ -8646,6 +8733,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     toggleLock: function (on) {
       /* 閲覧モードでは月ロックを触らせない（チェック状態は実データへ戻す） */
       if (this.leaseGuard()) { this.syncLockUI(); return; }
+      if (this.fieldGuard('lock')) { this.syncLockUI(); return; }   /* 現場端末は確定を変えない（2026-10-14） */
       var p = this.planSched();
       if (!p.meta) p.meta = {};
       if (on) {
@@ -8916,6 +9004,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     },
 
     deleteDraft: function (id) {
+      if (this.fieldGuard('draftDelete')) return;   /* 現場端末は編集用を消さない（2026-10-14） */
       if (this.leaseGuard()) return;
       var self = this;
       var d = this.findDraft(id);
@@ -8950,6 +9039,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     confirmDraft: function (id) {
       var self = this;
+      if (this.fieldGuard('confirm')) return;   /* 現場端末は確定しない（2026-10-14） */
       if (this.leaseGuard()) return;
       if (this.lockGuard()) return;   /* ロック中の確定は予定（確定版）を書き換えるため不可 */
       var draft = this.findDraft(id);
@@ -9127,9 +9217,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         onToggleDivision: function (sid, div, hide) { if (self.leaseGuard()) return; self.toggleHiddenDivision(sid, div, hide); },
         onCellsColor: function (cells, color) { if (self.leaseGuard()) return; self.colorCells(cells, color); },
         onCellsBold: function (cells) { if (self.leaseGuard()) return; self.boldCells(cells); },
-        onCellsChange: function (cells, value) { if (self.leaseGuard()) return; self.changeCells(cells, value); },
+        onCellsChange: function (cells, value) {
+          if (self.leaseGuard()) return;
+          /* 現場端末は複数のマスをまとめて消さない（1マスずつは消せる・2026-10-14） */
+          if (value === '' && cells && self.fieldGuard('cells', cells.length)) return;
+          self.changeCells(cells, value);
+        },
         onDirectPattern: function (sids, value) { if (self.leaseGuard()) return; self.applyDirectPattern(sids, value); },
-        onPaste: function (changes) { if (self.leaseGuard()) return; self.pasteCells(changes); },
+        onPaste: function (changes) {
+          if (self.leaseGuard()) return;
+          /* 貼り付けで空のマスを2つ以上作る＝まとめて消す。現場端末では止める（2026-10-14） */
+          var blanks = 0;
+          for (var bi = 0; bi < (changes || []).length; bi++) if (String(changes[bi] && changes[bi].value == null ? '' : changes[bi].value).trim() === '') blanks++;
+          if (self.fieldGuard('cells', blanks)) return;
+          self.pasteCells(changes);
+        },
         onNeedChange: function (day, cat, val) {
           if (self.leaseGuard()) return;
           if (self.lockGuard()) return;
@@ -9478,6 +9580,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     },
     removeStaff: function (sid) {
+      if (this.fieldGuard('staffDelete')) return;   /* 現場端末は職員を消さない（2026-10-14） */
       for (var i = 0; i < this.staff.length; i++) {
         if (this.staff[i].id === sid) { this.staff.splice(i, 1); break; }
       }
@@ -11227,11 +11330,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      " を素通しすると、編集用シフトの名称（prompt の自由入力）に " を含めるだけで
      属性が閉じて任意のイベントハンドラを注入できてしまう。
      テキストノードで使う場合も &quot; / &#39; は表示時に復号されるため見た目は変わらない。 */
-  function escText(t) {
-    return String(t === undefined || t === null ? '' : t)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
+  function escText(t) { return ShiftEsc.esc(t); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
   function fmtDateTime(iso) {
     if (!iso) return '';
     try {
