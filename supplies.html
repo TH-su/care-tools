@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-6sswt6H/bkGgAhcKN2jiP4+KBtwzF8LzzUKVREA+QpI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sq3EcZgiMs+4iNPPukRAl+L0Rc70S+uFiQNTZT4Bya8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1491,6 +1491,46 @@ function errText(e) { return txt((e && e.userMsg) || (e && e.message) || e); }
 function errHint(e) {
   return txt(e && e.hint) || '時間をおいてもう一度お試しください。続くときは設定画面で接続先URLと合言葉を確かめてください。';
 }
+/* 書く action（消耗品管理GAS の WRITE_ACTIONS と同じ11個）。ログインの証明はこれらの要求にだけ添える（2026-10-15） */
+var SPL_WRITE_ACTIONS = ['saveItem', 'addPrice', 'voidPrice', 'setProfiles', 'addMoves', 'voidMove', 'repriceMoves', 'setNote', 'setCategories', 'setDefaults', 'setClosedMonths'];
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-15・入居者マスタの rmAccessToken_ と同じ考え方）。
+   消耗品管理GAS（supplies-api.gs の verifyEditor_）が確かめ、記録の「誰が」（品目・価格・入出庫・メモ）を決める
+   （画面が送る by は記録に使われない）。ログインの控えが端末に無ければ問い合わせずに ''。取り出せない・3秒で返らない時も ''
+   （GAS は「未確認」と記録し、保存は止めない）。証明は書く要求の本文にだけ添え、端末・URL・記録には残さない */
+var SPL_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function splHasLogin_() {
+  try { for (var i = 0; i < localStorage.length; i++) if (SPL_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) { /* 読めない端末はログインなし */ }
+  return false;
+}
+/* supabase-js と su-auth.js は使う時にだけ読み込む（消耗品管理の起動を重くしない・入居者マスタの msAuthLoad_ と同じ形） */
+function splAuthLoad_() {
+  if (window.SUAuth) return Promise.resolve();
+  function has(re) { return Array.prototype.some.call(document.scripts, function (s) { return re.test(s.getAttribute('src') || ''); }); }
+  function load(src) {
+    return new Promise(function (ok, ng) {
+      var s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = function () { ok(); }; s.onerror = function () { ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready) {
+    return new Promise(function (ok, ng) {
+      var n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })();
+    });
+  }
+  var p = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function () {
+    if (window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function splAccessToken_() {
+  if (!splHasLogin_()) return Promise.resolve('');
+  var get = splAuthLoad_().then(function () { return (window.SUAuth && typeof window.SUAuth.client === 'function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
+  return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
+}
 function apiPost(action, body, timeoutMs) {
   var cfg = loadCfg(), payload = { action: action, token: cfg.token, by: cfg.by }, k;
   if (!URL_OK_RE.test(cfg.url)) {
@@ -1504,9 +1544,16 @@ function apiPost(action, body, timeoutMs) {
   var ms = Number(timeoutMs);
   if (!isFinite(ms) || ms <= 0) ms = 45000;
   var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0;
-  var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
-  if (ctl) opt.signal = ctl.signal;
-  return fetch(cfg.url, opt).then(function (res) {
+  function send() {
+    var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
+    if (ctl) opt.signal = ctl.signal;
+    return fetch(cfg.url, opt);
+  }
+  /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る */
+  var sent = (SPL_WRITE_ACTIONS.indexOf(action) >= 0 && splHasLogin_())
+    ? splAccessToken_().then(function (at) { if (at) payload.accessToken = at; return send(); })
+    : send();
+  return sent.then(function (res) {
     if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。');
     return res.text();
   }).then(function (t) {
