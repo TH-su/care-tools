@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-AE/wcBzKEp54Mej2oTxidKtUG/fXuKg4qh+7g3EACBk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-5akVYuRFViSI1JYi6+RXv96EgDnEFM4gEQ6iPU5vYAU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1166,12 +1166,18 @@ function sheet() {
   return s;
 }
 
-// updatedBy … 最後に直した人（4列目・2026-10-15）。記録の無い行（この版より前に保存した図）は ''
+// updatedBy … 最後に直した人（2026-10-15）。列は見出し名 updatedBy で探す（決め打ちにしない＝手で足した列を読まない・書かない）。
+// 見出しが無い時・記録の無い行（この版より前に保存した図）は ''
+function byCol_(head) {
+  for (let c = 0; c < head.length; c++) if (String(head[c]) === 'updatedBy') return c;
+  return -1;
+}
 function listAll() {
   const data = sheet().getDataRange().getValues();
+  const bc = data.length ? byCol_(data[0]) : -1;
   return data.slice(1)
     .filter(r => r[0])
-    .map(r => ({ name: String(r[0]), updatedAt: String(r[1] || ''), updatedBy: String(r[3] || '') }));
+    .map(r => ({ name: String(r[0]), updatedAt: String(r[1] || ''), updatedBy: bc >= 0 ? String(r[bc] || '') : '' }));
 }
 
 function getOne(name) {
@@ -1184,22 +1190,30 @@ function getOne(name) {
   return null;
 }
 
-// who … 最後に直した人（確かめたメール／「未確認」）。4列目 updatedBy に書く（doc には入れない）。
-// 列は末尾に足すだけ＝既存の3列の並びは変えない。見出しの無い古いシートには見出しを書き足す
+// who … 最後に直した人（確かめたメール／「未確認」）。見出し updatedBy の列に書く（doc には入れない）。
+// その列が無い古いシートでは、いちばん右の列の次に見出しを足して作る（既存の列の並び・手で足した列の中身は変えない）
 function saveOne(doc, who) {
   if (!doc || !doc.clientName) throw new Error('clientName required');
   const s = sheet();
   const data = s.getDataRange().getValues();
   const now = new Date().toISOString();
   doc.updatedAt = now;
-  const row = [doc.clientName, now, JSON.stringify(doc), who == null ? EDITOR_UNVERIFIED : String(who)];
-  if (data.length && String(data[0][3] == null ? '' : data[0][3]) === '') s.getRange(1, 4, 1, 1).setValues([['updatedBy']]);
+  const by = who == null ? EDITOR_UNVERIFIED : String(who);
+  let bc = data.length ? byCol_(data[0]) : -1;
+  if (bc < 0) {
+    bc = Math.max(3, data.length ? data[0].length : 0);
+    s.getRange(1, bc + 1, 1, 1).setValues([['updatedBy']]);
+  }
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === doc.clientName) {
-      s.getRange(i + 1, 1, 1, 4).setValues([row]);
+      s.getRange(i + 1, 1, 1, 3).setValues([[doc.clientName, now, JSON.stringify(doc)]]);
+      s.getRange(i + 1, bc + 1, 1, 1).setValues([[by]]);
       return { name: doc.clientName, updatedAt: now };
     }
   }
+  const row = [doc.clientName, now, JSON.stringify(doc)];
+  while (row.length < bc) row.push('');
+  row[bc] = by;
   s.appendRow(row);
   return { name: doc.clientName, updatedAt: now };
 }
