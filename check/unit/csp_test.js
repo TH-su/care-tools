@@ -68,6 +68,14 @@ function t(label, ok, detail) {
     t(p + ': CSP の指紋が中身と合う', why === '', why);
   }
 
+  console.log('\n— 6. 読み込みの順番で表示が変わらない（2026-10-15 の画素の見比べで見つけた）—');
+  {
+    const cs = fs.readFileSync(path.join(ROOT, 'connection-settings.html'), 'utf8');
+    t('接続設定: 説明文の {{通所}} などは、施設情報が後から届いた時にも作り直す（CSP で順番が変わっても同じ表示）',
+      /appsP\.setAttribute\('data-fac-tpl', sys\.apps\)/.test(cs) &&
+      /SUFacility\.onReady\(function\(\)\{\n    try\{ Array\.prototype\.forEach\.call\(document\.querySelectorAll\('\[data-fac-tpl\]'\), function\(p\)\{ p\.textContent = facText\(p\.getAttribute\('data-fac-tpl'\)\); \}\); \}catch\(e\)\{\}/.test(cs));
+  }
+
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })();

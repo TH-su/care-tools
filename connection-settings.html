@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-68fm5bNuTMC/c/9R6hHs8ytriGXDacx1/e7VsUBpn+c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Otq9/7jnb3dC9rXEM/WBLpbIs5S7iAsMSD2+c4oAjYk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -680,7 +680,7 @@ function buildCard(sys, onSaved){
   var h=el('h2'); h.appendChild(document.createTextNode(sys.title));
   var badge=el('span','badge'); h.appendChild(badge);
   cd.appendChild(h);
-  cd.appendChild(el('p','apps',facText(sys.apps)));
+  var appsP=el('p','apps',facText(sys.apps)); appsP.setAttribute('data-fac-tpl', sys.apps); cd.appendChild(appsP);   /* 施設情報が後から届いた時に作り直す（下の onReady） */
   if(sys.liveWriteback) cd.appendChild(el('p','wb','⚠ '+sys.liveWriteback+'。先にそのタブを閉じてください。'));
 
   var urlIn=input('u_'+sys.id,'url','https://script.google.com/macros/…/exec');
@@ -991,6 +991,11 @@ function init(){
   };
   applyUsedApps();
   if(window.SUFacility && SUFacility.onReady) SUFacility.onReady(function(){ try{ applyUsedApps(); }catch(e){} });
+  /* 説明文の {{通所}} などは、施設情報が後から届いた時にも事業所の呼び名へ作り直す（2026-10-15）。
+     以前は最初に1回作るだけで、施設情報が間に合わない端末では一般名（通所介護 など）のまま残っていた */
+  if(window.SUFacility && SUFacility.onReady) SUFacility.onReady(function(){
+    try{ Array.prototype.forEach.call(document.querySelectorAll('[data-fac-tpl]'), function(p){ p.textContent = facText(p.getAttribute('data-fac-tpl')); }); }catch(e){}
+  });
   /* 端末の用途が未設定の時の注意の帯（getDeviceRole は未設定を事務所として返すので、元の値を直接見る） */
   try{ var rawRole=localStorage.getItem('su_device_role'); $('roleNote').hidden = !!rawRole; }catch(e){}
   wizInit();
