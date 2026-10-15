@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YBQj7X7K8ki7VGeZhEz+2JTmY9b21Oxh0YYSJzWHOYI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cCkXW+zJGBn6WYVYsId/TKh5QTTlxNuP2AQTClPCwLw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -15435,6 +15435,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var res = M.collectRoutines(store.get());
     if (!res.chains.length) { toast('この日に、起床（7:00〜8:40）・就寝（18:00〜21:00）のグループがありません', true); return; }
     var R = { v: 1, savedAt: new Date().toISOString(), from: ui.currentDate, chains: res.chains };
+    /* 押し間違いで登録が入れ替わらないよう、固定した並びがある時は確かめる（2026-10-15 本人指示・文言どおり） */
+    var cur = routinesNow_();
+    if (cur) {
+      var fp = String(cur.from || '').split('-');
+      var fromTxt = fp.length === 3 ? (parseInt(fp[1], 10) + '/' + parseInt(fp[2], 10)) : '';
+      if (!window.confirm('今の並びで固定し直しますか？ これまでの並び（' + (fromTxt ? fromTxt + '・' : '') + cur.chains.length + '組）と入れ替わります')) return;
+    }
     var okMsg = '起床（7:00〜8:40）と就寝（18:00〜21:00）の並びを固定しました（' + res.chains.length + '組）';
     function keepLocal(base, rev) {
       base.routines = R;
