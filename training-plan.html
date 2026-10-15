@@ -1144,7 +1144,7 @@ function buildAlerts(rows, opts) {
       /* 通知を止めた理由（指定日を過ぎた時だけ）と、先の日付で止める予定（前日まで） */
       stopReason: stopShown ? stop.reason : '',
       stopFrom: stop ? stop.from : '',
-      stopPlanned: (stop && !stopEnded && !ended) ? stop.reason : ''
+      stopPlanned: (stop && !stopEnded && !ended && !inactive) ? stop.reason : ''
     });
   }
   list.sort(function (a, b) {
@@ -2439,9 +2439,10 @@ function rebuildIndex() {
     var id = ids[i++];
     setSync('索引を再構築中… ' + i + '/' + ids.length);
     tpGet(docKey(id)).then(function (j) {
-      /* 計画が1件も無くても、通知を止める指定がある方は索引に残す（作成不要の方は計画を持たないことが多い・2026-10-15） */
+      /* 計画が1件も無くても、通知を止める指定がある方は索引に残す（作成不要の方は計画を持たないことが多い・2026-10-15）。
+         今の索引の行が指定を持っている方も書き直す（計画0件の方の取り消しで索引だけ更新できなかった時に、ここで直すため） */
       if (j && j.ok && j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]' &&
-          (j.data.plans.length || TP.normalizeStop(j.data.stop))) {
+          (j.data.plans.length || TP.normalizeStop(j.data.stop) || (IDX && IDX.rows && isObj(IDX.rows[id]) && IDX.rows[id].stop))) {
         rows[id] = indexRowOf(j.data);
       }
     }).catch(function () { fails++; }).then(function () { setTimeout(step, 120); });
@@ -2804,6 +2805,7 @@ function openResident(masterId, wantScr, opts) {
      （読み込み中の計画書を古い内容で上書きしてしまう）。一括自身の呼び出しだけ opts.internal で通す */
   if (batchBusy() && !(opts && opts.internal)) { toast('一括作成の実行中です。終わるまでお待ちください'); return Promise.resolve(false); }
   if (dirty && !confirm('保存していない変更があります。別の方を開くと、この端末の入力は失われます。よろしいですか？')) return Promise.resolve(false);
+  stopFormFor = ''; noTouchOnce = false;   /* 通知を止める欄: 開き直したら保存値から描き直す（2026-10-15） */
   if (!CFG.url) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
   setSync('読み込み中…');
   clearTimeout(saveTimer);
@@ -3748,7 +3750,6 @@ function saveNow(explicit) {
   /* 通知を止める指定だけを変えた保存では、開いている期の「最終更新者」を書き換えない。
      その期の中身も変わっていたら（送った時点の基準と違えば）従来どおり書く */
   var skipTouch = noTouchOnce && !curPlanChangedFromBase();
-  noTouchOnce = false;
   if (!skipTouch) touchAudit();
   pushing = true;
   setSync('保存中…');
@@ -3765,6 +3766,7 @@ function saveNow(explicit) {
     }
     if (j && j.ok) {
       pushing = false;
+      noTouchOnce = false;   /* 通知を止める指定だけの保存の印は、通った時に下ろす（競合の後の再保存でも効かせる） */
       DOC_REV = Number(j.rev) || (DOC_REV + 1);
       DOC_COUNT = docTotal(DOC);
       try { DOC_BASE = JSON.parse(snapshot); } catch (e2) { DOC_BASE = null; }   /* 送れた内容＝サーバーの中身 */
@@ -3883,19 +3885,21 @@ function mergeGaps(doc, incoming) {
 }
 /* 通知を止める指定（2026-10-15）の3者突き合わせ。戻り: 相手の指定を採ったら true。
    ・手元が基準のまま（触っていない）＝相手を採る／相手が基準のまま＝手元を残す
-   ・両方が変えた（または基準が無い）＝後から指定した方（at が新しい方）を採る。取り消し（null）は at を持たないので、指定した側が残る
-   ★どちらの場合も相手の変更を黙って消さない（上書きで消えるのは「両方が変えた」時の古い方だけ） */
+   ・両方が指定した（または基準が無い）＝後から指定した方（at が新しい方）を採る
+   ・両方が変えて片方が取り消し（null は時刻を持たないので前後が決められない）＝手元を残す
+   戻り: 'took'（相手を採った）／'kept'（両方が変えていて手元を残した）／''（突き合わせ不要・相手は変えていない）
+   ★'took' も 'kept' も呼び出し側が画面に知らせる（相手の変更を黙って消さない） */
 function mergeStop(doc, theirs, base) {
   var mine = TP.normalizeStop(doc.stop), th = TP.normalizeStop(theirs);
   var a = JSON.stringify(mine), b = JSON.stringify(th);
-  if (a === b) return false;
+  if (a === b) return '';
   if (base !== undefined) {
     var c = JSON.stringify(base);
-    if (a === c) { doc.stop = th; return true; }
-    if (b === c) return false;
+    if (a === c) { doc.stop = th; return 'took'; }
+    if (b === c) return '';
   }
-  if (s_(th && th.at) > s_(mine && mine.at)) { doc.stop = th; return true; }
-  return false;
+  if (mine && th && s_(th.at) > s_(mine.at)) { doc.stop = th; return 'took'; }
+  return 'kept';
 }
 /* 状態の記録（いつ・誰が状態を変えたか）の和集合。同じ日時＋状態は1つにする */
 function unionStatusLog(mine, theirs) {
@@ -4020,11 +4024,15 @@ function handleConflict(mid) {
       if (gapAdded) msg.push('欠落台帳 ' + gapAdded + '件');
       if (tagAdded) msg.push('本人の様子のタグ ' + tagAdded + '件');
       if (trashAdded) msg.push('取り消した期 ' + trashAdded + '件');
-      if (stopTook) msg.push('通知を止める指定');
+      if (stopTook === 'took') msg.push('通知を止める指定');
+      if (stopTook === 'kept') toast('他の端末でも「通知を止める」が変えられていました。この端末の内容で保存します。内容を確かめてください');
       toast(msg.length ? ('他の端末の変更を取り込みました（' + msg.join('・') + '）') : '最新版を取り直しました');
       saveNow(true);
       return;
     }
+    /* 欄の選び直しへ進む時も、通知を止める指定の取り込み・食い違いは知らせる（選び直しの画面はこの欄を扱わない） */
+    if (stopTook === 'took') toast('他の端末の「通知を止める」の指定を取り込みました');
+    else if (stopTook === 'kept') toast('他の端末でも「通知を止める」が変えられていました。この端末の内容で保存します。内容を確かめてください');
     openConflictModal(diffs, added, took, gapAdded, srvRev, srv.plans.length + srv.trash.length, tagAdded, trashAdded);
   }).catch(function (e) {
     if (id !== curMasterId) {
@@ -4279,7 +4287,10 @@ var GRACE_DAYS = 45;   /* 未作成と見なすまでの猶予（D18）。翌月
 function timelineOf(plans, stop) {
   var td = todayYmd(), lim = TP.stopLimitYmd(stop);
   if (lim && TP.cmpYmd(lim, td) < 0) td = lim;
-  return TP.expectedPeriods(plans, td, settings().dueRule, GRACE_DAYS);
+  var tl = TP.expectedPeriods(plans, td, settings().dueRule, GRACE_DAYS);
+  /* 指定日より後に作った計画が残っていると、その手前の抜けは expectedPeriods が今日の上限と関係なく出す。指定日以降の抜けはここで落とす */
+  if (!lim) return tl;
+  return tl.filter(function (x) { return x.kind !== 'missing' || TP.cmpYmd(x.date, lim) <= 0; });
 }
 function missingCountOf(plans, stop) {
   var tl = timelineOf(plans, stop), n = 0;
@@ -6720,7 +6731,7 @@ function batchAiLimitFor(masterId) {
   var d = s_(r.dischargeDate);
   var base = null;
   if (TP.isYmd(d) && TP.cmpYmd(d, today) <= 0) base = { ok: true, limit: d, ended: true };
-  else if (r.active === false && !sLim) return { ok: false, reason: '利用終了ですが退去日が無いため飛ばしました（いつまでの期か決められません）' };
+  else if (r.active === false && !(sLim && TP.cmpYmd(sLim, today) < 0)) return { ok: false, reason: '利用終了ですが退去日が無いため飛ばしました（いつまでの期か決められません）' };
   else base = { ok: true, limit: today, ended: false };
   if (sLim && TP.cmpYmd(sLim, base.limit) < 0) {
     return { ok: true, limit: sLim, ended: true,
@@ -6968,7 +6979,7 @@ function runBatchAiAllResidents() {
     lim = batchAiLimitFor(all[i].masterId);
     if (!lim.ok) { skipped.push({ name: all[i].name, reason: lim.reason }); continue; }
     if (lim.ended) endedCount++;
-    rows.push({ row: all[i], limit: lim.limit, ended: !!lim.ended });
+    rows.push({ row: all[i], limit: lim.limit, ended: !!lim.ended, note: lim.note || '' });
   }
   if (!rows.length) {
     BATCH_STOP_REASON = '';
@@ -6980,7 +6991,7 @@ function runBatchAiAllResidents() {
   var maxTotal = 0;
   for (i = 0; i < rows.length; i++) maxTotal += Number(rows[i].row.missingCount) || 0;
   if (!confirm('対象 ' + rows.length + '人・未作成 ' + maxTotal + '期を、AIでまとめて作ります（未作成の期がある方すべてが対象です）。\n\n' +
-      (endedCount ? ('うち退去・利用終了の方 ' + endedCount + '人：退去日までの抜けだけを作ります（退去日より後の期は作りません）。\n') : '') +
+      (endedCount ? ('うち退去・利用終了・通知を止めた方 ' + endedCount + '人：退去日（通知を止めた方は指定日の前日）までの抜けだけを作ります（それより後の期は作りません）。\n') : '') +
       (skipped.length ? ('名簿に無い方など ' + skipped.length + '人は飛ばします（理由は終わった後に一覧へ出します）。\n') : '') +
       '各期の計画の内容は外部のAI（Anthropic）へ送ります。\n' +
       '本人の様子は未入力のため「維持・一部」で作ります。全部が下書きになります。\n' +
@@ -7006,10 +7017,15 @@ function runBatchAiAllResidents() {
         results.push({ name: row.name, created: 0, failed: 0, reason: '計画が1件もないため飛ばしました（1期目は人が作ってください）', prevWrites: 0, prevLocked: 0 });
         return step();
       }
+      /* 通知を止める指定（2026-10-15）は索引の写しが古いことがある（他の端末が指定した直後など）。
+         開いた後の計画データで上限日を取り直し、指定日以降の期を作らない */
+      var lim2 = batchAiLimitFor(row.masterId);
+      if (!lim2.ok) { results.push({ name: row.name, created: 0, failed: 0, reason: lim2.reason, prevWrites: 0, prevLocked: 0 }); return step(); }
+      if (TP.cmpYmd(lim2.limit, it.limit) < 0) { it.limit = lim2.limit; it.ended = true; it.note = lim2.note || ''; }
       return runBatchAiForOpenResident({ confirm: false, limitYmd: it.limit }).then(function (r) {
         /* 中: 途中で止まった方を「終わった」と読み違えないよう、中断の理由も必ず残す */
         var parts = [];
-        if (r.noTarget) parts.push(it.ended ? '作る期はありません（退去日より後の期は作りません）' : '未作成の期はありませんでした');
+        if (r.noTarget) parts.push(it.ended ? (it.note ? '作る期はありません（通知を止めた指定日以降の期は作りません）' : '作る期はありません（退去日より後の期は作りません）') : '未作成の期はありませんでした');
         if (r.saveFailed) parts.push('保存に失敗したため途中で止めました');
         else if (r.switched) parts.push('途中で別の方の画面に切り替わったため止めました（残りの期は作っていません）');
         else if (r.aborted) parts.push(r.stopReason || 'ここで中止しました（残りの期は作っていません）');

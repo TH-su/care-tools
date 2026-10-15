@@ -120,5 +120,50 @@ t('2台で同時に変えた時は3者で突き合わせる', /var stopTook = me
 t('バッジ: 理由つきの終了', /'— ' \+ \(TP\.STOP_SHORT\[row\.stopReason\] \|\| '終了'\)/.test(S));
 t('バッジ: 中止予定の添え書き', /' で' \+ \(TP\.STOP_SHORT\[row\.stopPlanned\] \|\| '中止'\) \+ '予定）'/.test(S));
 
+
+console.log('\n【7】審査の指摘への対応（2026-10-15）');
+L = TP.buildAlerts([row('A', { active: false, stop: { reason: 'stopped', from: '2026-11-30' } })], { today: TODAY, scope: 'all' });
+t('利用終了の方には「中止予定」を添えない（「— 終了」だけ）', L[0].state === 'ended' && L[0].stopPlanned === '', L[0]);
+t('全員の一括AI作成: 開いた後の計画データで上限日を取り直す', /var lim2 = batchAiLimitFor\(row\.masterId\);[\s\S]{0,400}runBatchAiForOpenResident\(\{ confirm: false, limitYmd: it\.limit \}\)/.test(S));
+t('利用終了・退去日なしの方は、指定日が今日以前の時だけ作る', /r\.active === false && !\(sLim && TP\.cmpYmd\(sLim, today\) < 0\)/.test(S));
+t('索引の再構築: 今の行が指定を持つ方も書き直す', /IDX\.rows\[id\]\.stop\)\)\) \{\s*rows\[id\] = indexRowOf\(j\.data\);/.test(S));
+t('指定日より後に計画があっても、指定日以降の抜けは数えない', /return tl\.filter\(function \(x\) \{ return x\.kind !== 'missing' \|\| TP\.cmpYmd\(x\.date, lim\) <= 0; \}\);/.test(S));
+t('「指定だけの保存」の印は保存が通った時に下ろす', /pushing = false;\s*noTouchOnce = false;/.test(S) && /stopFormFor = ''; noTouchOnce = false;/.test(S));
+/* mergeStop を実際に動かす */
+{
+  const m = S.match(/function mergeStop\(doc, theirs, base\) \{[\s\S]*?\n\}/);
+  t('mergeStop を切り出せた', !!m);
+  if (m) {
+    const box = { TP: TP, s_: (v) => (v == null ? '' : String(v)) };
+    vm.createContext(box); vm.runInContext(m[0], box);
+    const M = (mine, theirs, base) => { const d = { stop: mine }; const r = box.mergeStop(d, theirs, base); return [r, d.stop && d.stop.from || null]; };
+    const S0 = { reason: 'stopped', from: '2026-10-01', at: '2026-10-01T00:00:00Z' };
+    const S1 = { reason: 'stopped', from: '2026-11-01', at: '2026-10-10T00:00:00Z' };
+    const S2 = { reason: 'notNeeded', from: '2026-12-01', at: '2026-10-12T00:00:00Z' };
+    t('手元は触っていない→相手を採る', J(M(S0, S1, TP.normalizeStop(S0))) === J(['took', '2026-11-01']));
+    t('相手は触っていない→手元を残す（知らせない）', J(M(S1, S0, TP.normalizeStop(S0))) === J(['', '2026-11-01']));
+    t('両方が指定→後から指定した方', J(M(S1, S2, TP.normalizeStop(S0))) === J(['took', '2026-12-01']) &&
+      J(M(S2, S1, TP.normalizeStop(S0))) === J(['kept', '2026-12-01']));
+    t('相手が取り消し・手元も変えた→手元を残して知らせる', J(M(S1, null, TP.normalizeStop(S0))) === J(['kept', '2026-11-01']));
+    t('相手だけが取り消した→取り消しを採る', J(M(S0, null, TP.normalizeStop(S0))) === J(['took', null]));
+    t('同じなら何もしない', J(M(S1, S1, TP.normalizeStop(S0))) === J(['', '2026-11-01']));
+  }
+}
+/* timelineOf を実際に動かす（今日・設定は架空の固定値に差し替える） */
+{
+  const m = S.match(/function timelineOf\(plans, stop\) \{[\s\S]*?\n\}/);
+  t('timelineOf を切り出せた', !!m);
+  if (m) {
+    const box = { TP: TP, todayYmd: () => TODAY, settings: () => ({ dueRule: 'calendar' }), GRACE_DAYS: 45 };
+    vm.createContext(box); vm.runInContext(m[0], box);
+    const miss = (plans, stop) => box.timelineOf(plans, stop).filter((x) => x.kind === 'missing').map((x) => x.date);
+    const P2 = [{ planId: 'a', planDate: '2026-01-01' }, { planId: 'b', planDate: '2026-12-01' }];
+    t('（前提）止めなければ間の抜けは 4/1・7/1・10/1', J(miss(P2, null)) === J(['2026-04-01', '2026-07-01', '2026-10-01']));
+    t('7/1 から止めると、後ろに計画があっても 4/1 だけ', J(miss(P2, { reason: 'stopped', from: '2026-07-01' })) === J(['2026-04-01']));
+  }
+}
+t('取り込み・食い違いを画面に知らせる（欄の選び直しへ進む時も）', (S.match(/他の端末でも「通知を止める」が変えられていました/g) || []).length === 2 &&
+  /他の端末の「通知を止める」の指定を取り込みました/.test(S));
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
