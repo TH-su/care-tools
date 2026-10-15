@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QabD/8/JIkbONnymmifAH17aKK6xqM8/KPksmVizGIk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hOZLjGzwop9iyxIZNwijWI7segZSyzmPIobpr9AVS4k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -3712,7 +3712,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ・自動のグループと作る枠の id は並びの番号から決まる（gr_am1・rt_am1_3 等）＝2台が同じ日を同時に作っても同じ盤面になる
    * ・翌日へ反映（opts.replace・2026-10-15 代表者の決定「翌日だけ・置き換える・自由枠は作らない」）: 押した日の翌日は、
    *   人が並べたグループがあっても押した日の並びに組み替える。触らないのは実施・チェックのある支援を含む並びだけ。
-   *   自由枠・施設業務は翌日にある枠だけを使い、無い枠は作らない（曜日で違う方の枠を足さない）。
+   *   82a90e7 から: 押した日の並び・並びの外の枠をそのまま写す（無い自由枠・施設業務は作る・押した日と同じ勤務の同じ順番の列へ）。
+   *   3回目（同日）: 押した日の列が「押した日に無かった札」だけでふさがっていれば、その札を外して入れる（支援は未配置へ・
+   *   枠は空いた列かトレイへ）。外せない札でふさがっている並びは、ほかの並びの列を取らずに空いた列へ（玉突きにしない）。
+   *   同じ名前・開始の枠は終わりも同じ物を先に使い、長さ違いしか無ければ押した日の長さにそろえる。
    *   入れられない並びが1組でもあれば、その日は何も変えない（failed を返す・中途半端に組み替えない） */
   var ROUTINE_BANDS = { am: [420, 520], pm: [1080, 1260] };
   var ROUTINE_MAX_SPAN = 240;   /* 1つの並びの長さの上限（分）。これより長いグループは並びとみなさない */
@@ -3849,10 +3852,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return !(so && so.facWork && so.facWork.length);
     }
     var tasks = day.tasks.map(function (t) { var c = {}; for (var key in t) if (Object.prototype.hasOwnProperty.call(t, key)) c[key] = t[key]; return c; });
-    var byEv = {}, byRidS = {}, byFrame = {}, byAutoFrame = {}, byLabel = {}, ids = {}, used = {};
+    var byEv = {}, byRidS = {}, byFrame = {}, byAutoFrame = {}, byLabel = {}, ids = {}, used = {}, gsize = {};
     /* 同じ種類・名前・開始の枠が複数ある時は、まだ使っていない物を順に使う（並びと並びの外に同じ枠がある日・反証レビュー） */
     function pickFrame(it, ok) {
       var l = byFrame['.' + it.k + '|' + (it.label || '') + '|' + it.s] || [], q;
+      /* 同じ名前・開始の枠が長さ違いで複数ある時は、終わりも同じ枠を先に使う（8:00〜8:40 と 8:00〜9:00 の取り違え・2026-10-15 実データ） */
+      for (q = 0; q < l.length; q++) if (!used['.' + l[q].id] && l[q].end === it.e && (!ok || ok(l[q]))) return l[q];
       for (q = 0; q < l.length; q++) if (!used['.' + l[q].id] && (!ok || ok(l[q]))) return l[q];
       /* 翌日へ反映: 名前のある自由枠を人が数分ずらしていたら、同じ名前の近い時刻（30分以内）の枠を使う（作って二重にしない）。
        * 施設業務など同じ名前が何枚もある枠では、別の枠を取り違えるので使わない */
@@ -3867,9 +3872,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       return null;
     }
+    /* 翌日へ反映: 使う枠の開始が同じで終わりだけ違う時は、押した日の長さにそろえる（1時間に伸びた枠を押した日の長さへ） */
+    function fitEnd(x, it) {
+      if (!replace || !x || x.start !== it.s || x.end === it.e || typeof it.e !== 'number' || it.e <= x.start) return;
+      x.end = it.e;
+      if (x.src === 'facwork' && !x.facManual) x.facManual = true;
+    }
     for (i = 0; i < tasks.length; i++) {
       var t = tasks[i];
       ids['.' + t.id] = 1;
+      if (t.groupId) gsize['.' + t.groupId] = (gsize['.' + t.groupId] || 0) + 1;
       if (t.kind === 'care') {
         if (t.weeklyRef && t.weeklyRef.evId && !byEv['.' + t.weeklyRef.evId]) byEv['.' + t.weeklyRef.evId] = t;
         if (t.residentId && !byRidS['.' + t.residentId + '|' + t.start]) byRidS['.' + t.residentId + '|' + t.start] = t;
@@ -3923,11 +3935,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         frames.push({ item: fi, idx: frameItems[k].idx, task: fh });
       }
       if (touched) { kept++; newDone.push(ch.id); continue; }
+      for (k = 0; k < frames.length; k++) fitEnd(frames[k].task, frames[k].item);
       todo.push({ ch: ch, care: care, frames: frames, wasParked: allParked });
     }
     if (!matched) return null;   /* 週間計画の支援がまだ盤面に無い＝印を付けずに後で当てはめる */
     var before = {};
-    for (i = 0; i < tasks.length; i++) before['.' + tasks[i].id] = [tasks[i].staffId, tasks[i].groupId, !!tasks[i].parked].join('|');
+    for (i = 0; i < tasks.length; i++) before['.' + tasks[i].id] = [tasks[i].staffId, tasks[i].groupId, !!tasks[i].parked, tasks[i].start, tasks[i].end].join('|');
     /* 並びの全部の枠の時間（支援＋自由枠・施設業務）。列が収まるかはこれで判定する */
     for (i = 0; i < todo.length; i++) {
       var span = [];
@@ -3959,10 +3972,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (tk && used['.' + tk.id]) continue;   /* 並びに使った札は動かさない */
       if (tk && (tk.done || careHasChecks_(tk))) continue;
-      if (tk && tk.groupId && !oldGroups['.' + tk.groupId] && !isAutoGroupId(tk.groupId)) continue;   /* 並びにならなかった人のグループの一員は動かさない */
+      /* 並びにならなかった人のグループ（2件以上）の一員は動かさない（割らない）。1件だけのグループは
+       * 古い写しの名残でまとまりが無いので動かす（2026-10-15 実データ: トレイへ退避した支援が1件だけのグループに入っていた） */
+      if (tk && tk.groupId && !oldGroups['.' + tk.groupId] && !isAutoGroupId(tk.groupId) &&
+          (gsize['.' + tk.groupId] || 0) >= 2) continue;
       if (!tk && !sg.k) continue;              /* 支援は作らない（週間計画が作る） */
       if (!tk && !sg.slot) continue;
       if (tk) used['.' + tk.id] = 1;
+      if (tk && sg.k) fitEnd(tk, sg);
       var orig = tk ? (tk.staffId === undefined ? null : tk.staffId) : null;
       if (tk && orig) { refillPre['.' + orig] = 1; tk.staffId = null; }
       plan.push({ sg: sg, tk: tk, orig: orig, idx: i });
@@ -3977,25 +3994,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         mt.staffId = null;
       }
     }
-    var occ = {};
-    for (i = 0; i < tasks.length; i++) {
-      var o = tasks[i];
-      if (o.staffId === null || o.staffId === undefined || freeFac(o)) continue;
-      (occ['.' + o.staffId] = occ['.' + o.staffId] || []).push([o.start, o.end]);
-    }
-    var cmap = staffColMap_(staff, day.columns);
-    function fits(st, span) {
-      if (!st || !st.name || !(typeof st.workStart === 'number') || !(typeof st.workEnd === 'number')) return false;
-      var list = occ['.' + st.id] || [], a, b;
-      for (a = 0; a < span.length; a++) {
-        if (!(st.workStart <= span[a].start && span[a].end <= st.workEnd)) return false;
-        for (b = 0; b < list.length; b++) if (span[a].start < list[b][1] && list[b][0] < span[a].end) return false;
-      }
-      return true;
-    }
-    /* 並びごとの候補の職員（好ましい順）: 1. 今その並びの支援を一番多く持っている職員（動かす量を最小に）
-     * 2. 登録した列の種類 → 訪問 → 施設 の順に、列の並びどおり */
-    var cols = day.columns || [], cands = [];
+    var cols = day.columns || [];
     /* 同じ勤務（列の種類・勤務時間が同じ）の職員を、列の並びどおりに返す */
     function roleCols(zone, ws, we) {
       var r = [], c2, m2;
@@ -4015,6 +4014,76 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (typeof ord === 'number' && ord >= 0 && ord < r.length) { var f = r.splice(ord, 1)[0]; r.unshift(f); }
       return r;
     }
+    /* 押した日と同じ勤務・同じ順番の列（その日に無ければ null） */
+    function roleTop(zone, ws, we, ord) {
+      if (typeof ws !== 'number' || typeof ord !== 'number' || ord < 0) return null;
+      var r = roleCols(zone, ws, we);
+      return ord < r.length ? r[ord] : null;
+    }
+    /* 翌日へ反映で、押した日の列を空けるために外してよい札: 押した日に無かった支援・人が置いた枠
+     * （並びにも並びの外にも出てこない物）。実施・チェックのある支援、人がまとめた2件以上のグループ、
+     * 自動の施設業務（施設業務窓の枠）は外さない（2026-10-15 実データ: 翌日にだけある支援が
+     * 押した日の列をふさぎ、並び3組が玉突きで別の列へずれた） */
+    function softT(t) {
+      if (!replace || !t || used['.' + t.id] || t.staffId === null || t.staffId === undefined) return false;
+      if (t.done || careHasChecks_(t)) return false;
+      if (t.kind === 'free' || t.kind === 'facility') { if (t.src === 'facwork' && !t.facManual) return false; }
+      else if (t.kind !== 'care') return false;
+      var g = t.groupId;
+      if (g && !isAutoGroupId(g) && !oldGroups['.' + g] && (gsize['.' + g] || 0) >= 2) return false;
+      return true;
+    }
+    var displaced = [];
+    function evictOn(sid, list) {
+      for (var a = 0; a < list.length; a++) { displaced.push({ t: list[a], from: sid }); list[a].staffId = null; }
+    }
+    /* 列 st に span を入れるのに外す札（外してよい札だけがふさいでいる時）。勤務の外・外せない札がある時は null */
+    function softBlock(st, span, entries) {
+      if (!st || !st.name || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return null;
+      var ev = [], a, b;
+      for (a = 0; a < span.length; a++) if (!(st.workStart <= span[a].start && span[a].end <= st.workEnd)) return null;
+      for (b = 0; b < entries.length; b++) {
+        var ob = entries[b], hit = false;
+        for (a = 0; a < span.length && !hit; a++) if (span[a].start < ob[1] && ob[0] < span[a].end) hit = true;
+        if (!hit) continue;
+        if (!ob[2] || !softT(ob[2])) return null;
+        if (ev.indexOf(ob[2]) < 0) ev.push(ob[2]);
+      }
+      return ev;
+    }
+    function occOf(list) {
+      var m = {};
+      for (var a = 0; a < list.length; a++) {
+        var o = list[a];
+        if (o.staffId === null || o.staffId === undefined || freeFac(o)) continue;
+        (m['.' + o.staffId] = m['.' + o.staffId] || []).push([o.start, o.end, o]);
+      }
+      return m;
+    }
+    var occ = occOf(tasks), tops = {};
+    if (replace) {
+      /* 並びごとに、押した日と同じ勤務・同じ順番の列をふさいでいる「押した日に無かった札」だけを先に外す */
+      for (i = 0; i < todo.length; i++) {
+        var tp = roleTop(todo[i].ch.zone, todo[i].ch.ws, todo[i].ch.we, todo[i].ch.ord);
+        if (!tp) continue;
+        (tops['.' + tp] = tops['.' + tp] || []).push(i);   /* 同じ列に朝と夕など2組以上ある日もある */
+        var evc = softBlock(byId['.' + tp], todo[i].span, occ['.' + tp] || []);
+        if (evc && evc.length) { evictOn(tp, evc); occ = occOf(tasks); }
+      }
+    }
+    var cmap = staffColMap_(staff, day.columns);
+    function fits(st, span) {
+      if (!st || !st.name || !(typeof st.workStart === 'number') || !(typeof st.workEnd === 'number')) return false;
+      var list = occ['.' + st.id] || [], a, b;
+      for (a = 0; a < span.length; a++) {
+        if (!(st.workStart <= span[a].start && span[a].end <= st.workEnd)) return false;
+        for (b = 0; b < list.length; b++) if (span[a].start < list[b][1] && list[b][0] < span[a].end) return false;
+      }
+      return true;
+    }
+    /* 並びごとの候補の職員（好ましい順）: 1. 今その並びの支援を一番多く持っている職員（動かす量を最小に）
+     * 2. 登録した列の種類 → 訪問 → 施設 の順に、列の並びどおり */
+    var cands = [];
     for (i = 0; i < todo.length; i++) {
       var cand = [], seen = {}, cnt = {};
       for (k = 0; k < todo[i].care.length; k++) { var p0 = prev['.' + todo[i].care[k].id]; if (p0 !== undefined) cnt['.' + p0] = (cnt['.' + p0] || 0) + 1; }
@@ -4038,7 +4107,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           for (var m = 0; m < sids.length; m++) if (!seen['.' + sids[m]]) { seen['.' + sids[m]] = 1; cand.push(sids[m]); }
         }
       }
-      cands.push(cand);
+      /* ほかの並びの「押した日と同じ列」は最後に回す（入れない列の代わりに、ほかの並びの列を取って玉突きにしない） */
+      var mine = [], others = [];
+      for (k = 0; k < cand.length; k++) {
+        var ti = tops['.' + cand[k]];
+        if (ti && ti.indexOf(i) < 0) others.push(cand[k]); else mine.push(cand[k]);
+      }
+      cands.push(mine.concat(others));
     }
     /* 入れる列の組み合わせを探す: 入れられる並びの数が最も多い組み合わせのうち、好ましい順で最初に見つかったもの。
      * 先着だけだと、前の並びが後の並びの唯一の列を取ってしまう（実データの日曜で1組がトレイに落ちた）。
@@ -4086,7 +4161,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (fr.task) { fr.task.staffId = tid; fr.task.groupId = gid; continue; }
           var nid = 'rt_' + td.ch.id + '_' + fr.idx, n2 = 2;
           while (ids['.' + nid]) nid = 'rt_' + td.ch.id + '_' + fr.idx + '~' + (n2++);
-          ids['.' + nid] = 1;
+          ids['.' + nid] = 1; used['.' + nid] = 1;
           var props = { id: nid, kind: fr.item.k, src: 'manual', start: fr.item.s, end: fr.item.e, staffId: tid, groupId: gid };
           for (var q2 = 0; q2 < ROUTINE_FRAME_KEYS.length; q2++) {
             var key2 = ROUTINE_FRAME_KEYS[q2];
@@ -4110,13 +4185,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 押した日にトレイだった支援はトレイ（parked）へ。列だった枠は、同じ番号の列があって勤務と空きが合う時だけ動かす・
      * 無い自由枠・施設業務は作る。合わない時はそのまま（無理に置かない） */
     /* 2. 外した後の空きで置く: 押した日にトレイ→トレイ。列→同じ勤務の列 → 同じ番号の列 → 元の列 → トレイ */
-    var occ2 = {};
-    var all0 = tasks.concat(add);
-    for (i = 0; i < all0.length; i++) {
-      var o2 = all0[i];
-      if (o2.staffId === null || o2.staffId === undefined || freeFac(o2)) continue;
-      (occ2['.' + o2.staffId] = occ2['.' + o2.staffId] || []).push([o2.start, o2.end]);
-    }
+    var occ2 = occOf(tasks.concat(add));
     function fits2(st, sp) {
       if (!st || !st.name || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return false;
       if (!(st.workStart <= sp.start && sp.end <= st.workEnd)) return false;
@@ -4130,6 +4199,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (sg2.slot) {
         var cs = typeof sg2.ws === 'number' ? roleColsOrd(sg2.zone, sg2.ws, sg2.we, sg2.ord) : [];
         if (cs.indexOf(sg2.slot) < 0) cs.push(sg2.slot);
+        /* 押した日と同じ勤務・同じ順番の列が「押した日に無かった札」だけでふさがっていれば、その札を外して置く */
+        var tp2 = roleTop(sg2.zone, sg2.ws, sg2.we, sg2.ord);
+        if (tp2 && !fits2(byId['.' + tp2], span2)) {
+          var evs = softBlock(byId['.' + tp2], [span2], occ2['.' + tp2] || []);
+          if (evs && evs.length) {
+            evictOn(tp2, evs);
+            occ2['.' + tp2] = (occ2['.' + tp2] || []).filter(function (en) { return !en[2] || evs.indexOf(en[2]) < 0; });
+          }
+        }
         for (k = 0; k < cs.length && !dest; k++) if (fits2(byId['.' + cs[k]], span2)) dest = cs[k];
       }
       /* 元の列へ戻す時は勤務時間を問わない（元々そこにあった枠＝重ならなければそのまま残す） */
@@ -4142,7 +4220,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!dest) continue;
         var sid0 = 'rs_' + pl.idx, sn = 2;
         while (ids['.' + sid0]) sid0 = 'rs_' + pl.idx + '~' + (sn++);
-        ids['.' + sid0] = 1;
+        ids['.' + sid0] = 1; used['.' + sid0] = 1;
         var spp = { id: sid0, kind: sg2.k, src: 'manual', start: sg2.s, end: sg2.e, staffId: dest };
         for (var q3 = 0; q3 < ROUTINE_FRAME_KEYS.length; q3++) {
           if (sg2[ROUTINE_FRAME_KEYS[q3]] !== undefined) spp[ROUTINE_FRAME_KEYS[q3]] = JSON.parse(JSON.stringify(sg2[ROUTINE_FRAME_KEYS[q3]]));
@@ -4161,6 +4239,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (tk2 && tk2.groupId && !oldGroups['.' + tk2.groupId]) tk2.groupId = null;
       if (dest) { (occ2['.' + dest] = occ2['.' + dest] || []).push([span2.start, span2.end]); refill['.' + dest] = 1; }
       if (!tk2 || dest !== pl.orig || (tk2.kind === 'care' && !sg2.slot)) movedSingles++;
+    }
+    /* 3. 外した札の置き場所: 外した列が結局空いていれば元へ。支援は未配置へ（盤面の仕上げの自動配置が空いている列へ置く）。
+     *    枠は元の列と同じ種類の列の空きへ、無ければトレイへ */
+    var nDisplaced = 0;
+    for (i = 0; i < displaced.length; i++) {
+      var dt = displaced[i].t;
+      if (dt.staffId) continue;
+      if (fits2(byId['.' + displaced[i].from], { start: dt.start, end: dt.end })) {   /* 結局その列を使わなかった＝元へ戻す */
+        dt.staffId = displaced[i].from; (occ2['.' + dt.staffId] = occ2['.' + dt.staffId] || []).push([dt.start, dt.end]); continue;
+      }
+      nDisplaced++;
+      if (dt.groupId && (isAutoGroupId(dt.groupId) || oldGroups['.' + dt.groupId] || (gsize['.' + dt.groupId] || 0) < 2)) dt.groupId = null;
+      if (dt.kind === 'care') continue;
+      var fz = (byId['.' + displaced[i].from] || {}).zone, dd = null;
+      for (var c3 = 0; c3 < cols.length && !dd; c3++) {
+        if (cols[c3].zone !== fz) continue;
+        var sids3 = cols[c3].staffIds || [];
+        for (var m3 = 0; m3 < sids3.length && !dd; m3++) if (fits2(byId['.' + sids3[m3]], { start: dt.start, end: dt.end })) dd = sids3[m3];
+      }
+      if (dd) { dt.staffId = dd; (occ2['.' + dd] = occ2['.' + dd] || []).push([dt.start, dt.end]); refill['.' + dd] = 1; }
     }
     /* 並びを入れた列・抜けた列の自動の施設業務は作り直す（盤面の仕上げ fillFacilityWork が空いた時間へ敷き直す）。
      * 人が動かした施設業務が残る列は、並びと重なる枠だけ外す（敷き直しが走らないため・抜けた時間は空いたまま） */
@@ -4186,13 +4284,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var changed = out.length !== day.tasks.length || newDone.length > 0;
     for (i = 0; i < out.length && !changed; i++) {
       var bk = before['.' + out[i].id];
-      if (bk === undefined || bk !== [out[i].staffId, out[i].groupId, !!out[i].parked].join('|')) changed = true;
+      if (bk === undefined || bk !== [out[i].staffId, out[i].groupId, !!out[i].parked, out[i].start, out[i].end].join('|')) changed = true;
     }
     if (!changed) return null;
     var doneOut = doneIds.slice();
     for (i = 0; i < newDone.length; i++) if (!doneSet['.' + newDone[i]]) doneOut.push(newDone[i]);
     if (replace) for (i = 0; i < chains.length; i++) if (chains[i] && chains[i].id && doneOut.indexOf(chains[i].id) < 0) doneOut.push(chains[i].id);
-    return { tasks: out, done: doneOut, placed: placed, trayed: trayed, kept: kept, made: made, singles: movedSingles };
+    return { tasks: out, done: doneOut, placed: placed, trayed: trayed, kept: kept, made: made, singles: movedSingles, displaced: nDisplaced };
   }
 
   var api = {
@@ -9354,13 +9452,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* ===== トースト ===== */
   var toastTimer = null;
   var fieldBlockedAt_ = 0;   /* 現場の端末の盤面ガードで止めた時刻（2026-10-11）。直後の成功の知らせで止めの知らせを消さない */
-  function toast(msg, isNg) {
+  function toast(msg, isNg, ms) {
     if (!isNg && Date.now() - fieldBlockedAt_ < 2000) return;
     var t = $('toast');
     t.textContent = msg;
     t.className = isNg ? 'ng on' : 'on';
     if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.className = ''; }, 2600);
+    toastTimer = setTimeout(function () { t.className = ''; }, ms || 2600);
   }
 
   /* ===== 設定 ===== */
@@ -15614,7 +15712,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 押した日の翌日へ反映（2026-10-15 代表者の決定「翌日だけ・置き換える・自由枠は作らない」）。
    * 登録に next {date, savedAt} があり、表示中の日がその日で、まだその登録で組み替えていない（meta.routineNextAt）時 */
   function routineNextDue_(R, day) {
-    return !!(R && R.next && R.next.date === ui.currentDate && day && day.meta && day.meta.routineNextAt !== R.next.savedAt);
+    return !!(R && R.next && R.next.date === ui.currentDate && day && day.meta && day.meta.routineNextAt !== R.next.savedAt &&
+              day.meta.routineNextAt !== R.next.savedAt + ROUTINE_FAILED_MARK);
   }
   function routineDue_() {
     if (!routineAllowed_()) return false;
@@ -15632,14 +15731,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var rn = M.applyRoutines(day0, R, { today: todayKey(), replace: true, singles: R.next.singles });
       if (rn && rn.failed) {
         /* 入れられない並びがある＝この日は変えない。印を付けて、開くたびに同じ知らせを出さない */
-        store.dispatch({ type: 'SET_META', patch: { routineNextAt: R.next.savedAt } });
-        toast('前の日の並びのうち ' + rn.failed + '組は入れられる列が無いため、この日の並びは組み替えませんでした', true);
+        /* 組み替えなかった印は済んだ印と分ける（ほかの PC で「組み替え済み」と出さない） */
+        store.dispatch({ type: 'SET_META', patch: { routineNextAt: R.next.savedAt + ROUTINE_FAILED_MARK } });
+        routineNoticed_[ui.currentDate + '|' + R.next.savedAt] = 1;
+        toast('前の日の並びのうち ' + rn.failed + '組は入れられる列が無いため、この日の並びは組み替えませんでした', true, ROUTINE_TOAST_MS);
         return;
       }
       if (rn) {
         store.dispatch({ type: 'SET_TASKS', tasks: rn.tasks });
         store.dispatch({ type: 'SET_META', patch: { routineDone: rn.done, routineNextAt: R.next.savedAt } });
-        if (rn.placed) toast('前の日に固定した起床・就寝の並びに組み替えました（' + rn.placed + '組）');
+        routineNoticed_[ui.currentDate + '|' + R.next.savedAt] = 1;
+        if (rn.placed) toast('前の日に固定した起床・就寝の並びに組み替えました（' + rn.placed + '組）', false, ROUTINE_TOAST_MS);
         return;
       }
     }
@@ -15654,6 +15756,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function routineAfterPull_(date) {
     if (date !== ui.currentDate) return;
     try { if (routineDue_()) finalizeBoard(); } catch (e) {}
+    try { routineNotice_(date); } catch (e2) {}
+  }
+  /* 翌日へ反映が済んだ日を開いた時の知らせ（2026-10-15 本人の指摘「組み替えましたと出ない」）。
+   * 組み替えは最初に開いた1台だけが行い（印 routineNextAt）、ほかの PC・後から開いた時は何も出なかった。
+   * 済んでいる日を開いたら、どの PC でも1回だけ「組み替え済み」と出す（同じ登録・同じ日には繰り返さない） */
+  var ROUTINE_TOAST_MS = 8000;
+  var ROUTINE_FAILED_MARK = '|failed';
+  var routineNoticed_ = {};
+  function routineNotice_(date) {
+    if (fieldMarksOnly_(date)) return;
+    var R = routinesNow_(), d = store.get();
+    if (!R || !R.next || R.next.date !== date || !d || !d.meta || d.meta.routineNextAt !== R.next.savedAt) return;
+    var nk = date + '|' + R.next.savedAt;
+    if (routineNoticed_[nk]) return;
+    routineNoticed_[nk] = 1;
+    toast('この日は、前の日に固定した起床・就寝の並びに組み替え済みです', false, ROUTINE_TOAST_MS);
   }
   /* 「並びを固定」: 表示中の日の起床・就寝のグループを登録する（押し直すまで変わらない・決定 1A） */
   function registerRoutines_() {
