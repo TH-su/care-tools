@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-R58N9r/hvkBYtnqfBbxJdEZOQDpogQfnzMrii4r1PKc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0TK6GI2T6v0SGpN0P+x4Y1olNNMYL0UAv5nHXpRHJVM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -712,7 +712,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <button class="tray-btn" id="btnSelDel" title="選択した枠を消去（Delete）">🗑 消去</button>
     <button class="tray-btn" id="btnSelGroup" title="選択した枠（2件以上）をグループ化して固定。以後グループ内の1枠をドラッグすると全体が同時移動します">🔗 グループ化固定</button>
     <button class="tray-btn" id="btnSelUngroup" title="選択した枠のグループ化を解除（個別移動に戻す）">✂ グループ化解除</button>
-    <button class="tray-btn" id="btnRoutineFix" title="この日の起床（7:00〜8:40）と就寝（18:00〜21:00）のグループを、明日以降の日へ自動で入れる並びとして固定します。押し直すと固定する並びが変わり、まだその並びを入れていない日から新しい並びになります">📌 並びを固定</button>
+    <button class="tray-btn" id="btnRoutineFix" title="この日の起床（7:00〜8:40）と就寝（18:00〜21:00）のグループを並びとして固定します。翌日を開くと、翌日の並びがこの並びに組み替わります（ロック中の日・実施やチェックのある並びは除く）。まだ並べていない先の日にも、この並びが入ります">📌 並びを固定</button>
     <button class="tray-btn" id="btnCopyNext" title="この日の支援を翌週の同曜日へコピー（上書き）">📅 翌週へコピー</button>
     <button class="tray-btn" id="trayToggle">折畳</button>
   </div>
@@ -3709,7 +3709,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ・人がグループにした・実施やチェックがある・時刻を動かした支援を含む並びには触らない
    * ・入れられる列が無い並びは、崩さず支援をまとめて未配置トレイに残す（parked・決定 5A）。自由枠・施設業務は作らない。
    *   この並びには印を付けない＝勤務が入った後に開けば、トレイの並びをまとめて列へ入れる（勤務が入りかけの日に固定しない）
-   * ・自動のグループと作る枠の id は並びの番号から決まる（gr_am1・rt_am1_3 等）＝2台が同じ日を同時に作っても同じ盤面になる */
+   * ・自動のグループと作る枠の id は並びの番号から決まる（gr_am1・rt_am1_3 等）＝2台が同じ日を同時に作っても同じ盤面になる
+   * ・翌日へ反映（opts.replace・2026-10-15 代表者の決定「翌日だけ・置き換える・自由枠は作らない」）: 押した日の翌日は、
+   *   人が並べたグループがあっても押した日の並びに組み替える。触らないのは実施・チェックのある支援を含む並びだけ。
+   *   自由枠・施設業務は翌日にある枠だけを使い、無い枠は作らない（曜日で違う方の枠を足さない）。
+   *   入れられない並びが1組でもあれば、その日は何も変えない（failed を返す・中途半端に組み替えない） */
   var ROUTINE_BANDS = { am: [420, 520], pm: [1080, 1260] };
   var ROUTINE_MAX_SPAN = 240;   /* 1つの並びの長さの上限（分）。これより長いグループは並びとみなさない */
   var AUTO_GROUP_PREFIX = 'gr_';
@@ -3791,6 +3795,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var chains = routines && Array.isArray(routines.chains) ? routines.chains : null;
     if (!chains || !chains.length || !day || !day.meta || !Array.isArray(day.tasks)) return null;
     if (day.meta.locked === true) return null;
+    var replace = !!(opts && opts.replace);
     var doneIds = Array.isArray(day.meta.routineDone) ? day.meta.routineDone.slice() : [], doneSet = {}, i0;
     for (i0 = 0; i0 < doneIds.length; i0++) doneSet['.' + doneIds[i0]] = 1;
     var today = (opts && opts.today) || '';
@@ -3824,7 +3829,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var matched = false, todo = [], kept = 0, newDone = [];
     for (i = 0; i < chains.length; i++) {
       var ch = chains[i], care = [], frameItems = [];
-      if (!ch || !Array.isArray(ch.items) || !ch.id || doneSet['.' + ch.id]) continue;
+      if (!ch || !Array.isArray(ch.items) || !ch.id || (!replace && doneSet['.' + ch.id])) continue;
       for (k = 0; k < ch.items.length; k++) {
         var it = ch.items[k] || {}, hit = null;
         if (it.k) { frameItems.push({ item: it, idx: k }); continue; }
@@ -3842,15 +3847,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!care.length || care.length + frameItems.length < 2) continue;
       matched = true;
       var touched = false;
-      for (k = 0; k < care.length; k++) if (routineTouched_(care[k])) touched = true;
-      /* 自由枠・施設業務: 同じ種類・名前・開始の枠が、トレイか並びの支援がいる列にあれば使う。ほかの列の枠は取らない（作る） */
+      for (k = 0; k < care.length; k++) {
+        if (replace ? (care[k].done || careHasChecks_(care[k])) : routineTouched_(care[k])) touched = true;
+      }
+      /* 自由枠・施設業務: 同じ種類・名前・開始の枠が、トレイか並びの支援がいる列にあれば使う。ほかの列の枠は取らない（作る）。
+       * 翌日へ反映では、翌日の枠はその日の前の並びの一部なので列を問わず使い、無い枠は作らない */
       var holders = {}, frames = [];
       for (k = 0; k < care.length; k++) if (care[k].staffId) holders['.' + care[k].staffId] = 1;
       for (k = 0; k < frameItems.length; k++) {
         var fi = frameItems[k].item, fh = byFrame['.' + fi.k + '|' + (fi.label || '') + '|' + fi.s] || null;
-        if (fh && (used['.' + fh.id] || !(fh.staffId === null || fh.staffId === undefined || holders['.' + fh.staffId]))) fh = null;
-        if (fh) { used['.' + fh.id] = 1; if (fh.groupId || fh.done) touched = true; }
-        frames.push({ item: fi, idx: frameItems[k].idx, task: fh });
+        if (fh && (used['.' + fh.id] || (!replace && !(fh.staffId === null || fh.staffId === undefined || holders['.' + fh.staffId])))) fh = null;
+        if (fh) { used['.' + fh.id] = 1; if (fh.done || (!replace && fh.groupId)) touched = true; }
+        if (fh || !replace) frames.push({ item: fi, idx: frameItems[k].idx, task: fh });
       }
       if (touched) { kept++; newDone.push(ch.id); continue; }
       todo.push({ ch: ch, care: care, frames: frames, wasParked: allParked });
@@ -3864,6 +3872,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (k = 0; k < todo[i].care.length; k++) span.push(todo[i].care[k]);
       for (k = 0; k < todo[i].frames.length; k++) span.push(todo[i].frames[k].task || { start: todo[i].frames[k].item.s, end: todo[i].frames[k].item.e });
       todo[i].span = span;
+    }
+    /* 翌日へ反映: 動かす支援・枠が入っていた前のグループと、同じ番号の自動のグループは解く（残った札が別の列と同じグループにならないように） */
+    var oldGroups = {};
+    if (replace) {
+      for (i = 0; i < todo.length; i++) {
+        for (k = 0; k < todo[i].care.length; k++) if (todo[i].care[k].groupId) oldGroups['.' + todo[i].care[k].groupId] = 1;
+        for (k = 0; k < todo[i].frames.length; k++) if (todo[i].frames[k].task && todo[i].frames[k].task.groupId) oldGroups['.' + todo[i].frames[k].task.groupId] = 1;
+      }
     }
     var prev = {}, prevAll = {}, refill = {};
     for (i = 0; i < todo.length; i++) {
@@ -3937,6 +3953,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       search(at + 1, n);
     }
     search(0, 0);
+    if (replace && bestN < todo.length) return { failed: todo.length - Math.max(bestN, 0) };   /* 中途半端に組み替えない */
+    if (replace) {
+      for (i = 0; i < todo.length; i++) oldGroups['.' + AUTO_GROUP_PREFIX + todo[i].ch.id] = 1;   /* これから付ける番号の古い自動グループ */
+      for (i = 0; i < tasks.length; i++) {
+        var gq = tasks[i].groupId;
+        if (gq && oldGroups['.' + gq]) tasks[i].groupId = null;
+      }
+    }
     var placed = 0, trayed = 0, made = 0, add = [];
     for (i = 0; i < todo.length; i++) {
       var td = todo[i], tid = best ? best[i] : null, gid = AUTO_GROUP_PREFIX + td.ch.id;
@@ -3999,7 +4023,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (bk === undefined || bk !== [out[i].staffId, out[i].groupId, !!out[i].parked].join('|')) changed = true;
     }
     if (!changed) return null;
-    return { tasks: out, done: doneIds.concat(newDone), placed: placed, trayed: trayed, kept: kept, made: made };
+    var doneOut = doneIds.slice();
+    for (i = 0; i < newDone.length; i++) if (!doneSet['.' + newDone[i]]) doneOut.push(newDone[i]);
+    if (replace) for (i = 0; i < chains.length; i++) if (chains[i] && chains[i].id && doneOut.indexOf(chains[i].id) < 0) doneOut.push(chains[i].id);
+    return { tasks: out, done: doneOut, placed: placed, trayed: trayed, kept: kept, made: made };
   }
 
   var api = {
@@ -13692,6 +13719,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 並びを当てはめた印（2026-10-15）。ある日だけ入れる＝印の無い日の署名は今までと同じ（配った後に送り直しを起こさない）。
        * 入れないと、盤面が変わらず印だけ付いた日（人の手が入った並びばかりの日）は送られず、印が端末に閉じる */
       if (day.meta.routineDone && day.meta.routineDone.length) sigO.r = day.meta.routineDone;
+      if (day.meta.routineNextAt) sigO.x = day.meta.routineNextAt;
       return JSON.stringify(canon(sigO));   /* ロック状態を署名に含める＝切替がpushされ全端末へ伝播 */
     } catch (e) { return ''; }
   }
@@ -15414,15 +15442,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (syncOn() && !dayPullOk_[ui.currentDate]) return false;
     return true;
   }
+  /* 押した日の翌日へ反映（2026-10-15 代表者の決定「翌日だけ・置き換える・自由枠は作らない」）。
+   * 登録に next {date, savedAt} があり、表示中の日がその日で、まだその登録で組み替えていない（meta.routineNextAt）時 */
+  function routineNextDue_(R, day) {
+    return !!(R && R.next && R.next.date === ui.currentDate && day && day.meta && day.meta.routineNextAt !== R.next.savedAt);
+  }
   function routineDue_() {
     if (!routineAllowed_()) return false;
-    var R = routinesNow_();
-    return !!(R && M.applyRoutines(store.get(), R, { today: todayKey() }));
+    var R = routinesNow_(), day = store.get();
+    if (!R) return false;
+    if (routineNextDue_(R, day)) return !!M.applyRoutines(day, R, { today: todayKey(), replace: true });
+    return !!M.applyRoutines(day, R, { today: todayKey() });
   }
   function routineStep_() {
     if (!routineAllowed_()) return;
     var R = routinesNow_();
     if (!R) return;
+    var day0 = store.get();
+    if (routineNextDue_(R, day0)) {
+      var rn = M.applyRoutines(day0, R, { today: todayKey(), replace: true });
+      if (rn && rn.failed) {
+        /* 入れられない並びがある＝この日は変えない。印を付けて、開くたびに同じ知らせを出さない */
+        store.dispatch({ type: 'SET_META', patch: { routineNextAt: R.next.savedAt } });
+        toast('前の日の並びのうち ' + rn.failed + '組は入れられる列が無いため、この日の並びは組み替えませんでした', true);
+        return;
+      }
+      if (rn) {
+        store.dispatch({ type: 'SET_TASKS', tasks: rn.tasks });
+        store.dispatch({ type: 'SET_META', patch: { routineDone: rn.done, routineNextAt: R.next.savedAt } });
+        if (rn.placed) toast('前の日に固定した起床・就寝の並びに組み替えました（' + rn.placed + '組）');
+        return;
+      }
+    }
     var r = M.applyRoutines(store.get(), R, { today: todayKey() });
     if (!r) return;
     store.dispatch({ type: 'SET_TASKS', tasks: r.tasks });
@@ -15441,6 +15492,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var res = M.collectRoutines(store.get());
     if (!res.chains.length) { toast('この日に、起床（7:00〜8:40）・就寝（18:00〜21:00）のグループがありません', true); return; }
     var R = { v: 1, savedAt: new Date().toISOString(), from: ui.currentDate, chains: res.chains };
+    /* 押した日の翌日へも反映する（翌日が明日以降の時だけ・その日を開いた時に1度組み替える） */
+    var nextD = shiftDate(ui.currentDate, 1);
+    if (nextD > todayKey()) R.next = { date: nextD, savedAt: R.savedAt };
     /* 押し間違いで登録が入れ替わらないよう、固定した並びがある時は確かめる（2026-10-15 本人指示・文言どおり） */
     var cur = routinesNow_();
     if (cur) {
