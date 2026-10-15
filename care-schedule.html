@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-hNxL/boM6FniJUAP4DOiRfHWvBR1nrhyAcSBpmOn6NM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -926,7 +927,7 @@ select.inp { cursor: pointer; }
        行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->
   <span class="print-rate-note" id="print-rate-note"></span>
   <div class="resident-selector">
-    <select class="resident-select" id="resident-select" onchange="onResidentChange()">
+    <select class="resident-select" id="resident-select" data-on-change="onResidentChange">
       <option value="">-- 利用者を選択 --</option>
     </select>
   </div>
@@ -938,18 +939,18 @@ select.inp { cursor: pointer; }
          .hdr-btns は overflow-x:auto にしてあるので、増やしても右端が画面外へ出ない。 -->
     <!-- 取り消しの入口。Cmd/Ctrl+Z と同じ undo() を呼ぶだけ（一括取込の確認・空履歴のトースト・
          試算モードの履歴分離は undo() 側の既存実装がそのまま効く）。キーボードの無い iPad のための入口。 -->
-    <button class="hdr-btn undobtn" id="btnUndo" onclick="undo()" title="直前の操作を取り消す（一括取込の取り消しは確認あり・Ctrl/Cmd+Zと同じ）">↩ 元に戻す</button>
-    <button class="hdr-btn simbtn" id="btnSimStart" onclick="SIM.enter()" title="試算モード：この盤面を自由に試せます。ワークスケジュール・デイ利用表・クラウドには一切反映されません">🧪 試算</button>
-    <button class="hdr-btn applybtn" id="btnSimApply" style="display:none" onclick="SIM.openApply()" title="試算の内容を実データへ反映する">✅ 実装</button>
-    <button class="hdr-btn simbtn" id="btnSimExit" style="display:none" onclick="SIM.exit()" title="試算を破棄して通常モードへ戻る">✕ 試算終了</button>
-    <button class="hdr-btn" onclick="window.open('resident-master.html','_blank')" title="入居者マスタを開く（入居者情報の源泉）">👤 入居者マスタ</button>
-    <button class="hdr-btn" onclick="window.open('work-schedule.html','_blank')" title="ワークスケジュールを開く">📋 ワースケ</button>
-    <button class="hdr-btn" onclick="window.open('shift-app.html','_blank')" title="シフト作成アプリを開く">👥 シフト</button>
-    <button class="hdr-btn" onclick="openResidentModal()">👤 利用者</button>
-    <button class="hdr-btn" onclick="openBulkImport()" title="予定を貼り付けで一括登録">📋 一括取込</button>
-    <button class="hdr-btn" onclick="printWeek()" aria-label="週ボードを印刷" title="週ボードを印刷">🖨</button>
-    <button class="hdr-btn" onclick="exportJSON()" aria-label="JSONを書き出す" title="JSONを書き出す">⬇</button>
-    <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" onclick="manualSave()" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
+    <button class="hdr-btn undobtn" id="btnUndo" data-on-click="undo" title="直前の操作を取り消す（一括取込の取り消しは確認あり・Ctrl/Cmd+Zと同じ）">↩ 元に戻す</button>
+    <button class="hdr-btn simbtn" id="btnSimStart" data-on-click="SIM.enter" title="試算モード：この盤面を自由に試せます。ワークスケジュール・デイ利用表・クラウドには一切反映されません">🧪 試算</button>
+    <button class="hdr-btn applybtn" id="btnSimApply" style="display:none" data-on-click="SIM.openApply" title="試算の内容を実データへ反映する">✅ 実装</button>
+    <button class="hdr-btn simbtn" id="btnSimExit" style="display:none" data-on-click="SIM.exit" title="試算を破棄して通常モードへ戻る">✕ 試算終了</button>
+    <button class="hdr-btn" data-on-click="csOpenTab_" data-args="[&quot;resident-master.html&quot;]" title="入居者マスタを開く（入居者情報の源泉）">👤 入居者マスタ</button>
+    <button class="hdr-btn" data-on-click="csOpenTab_" data-args="[&quot;work-schedule.html&quot;]" title="ワークスケジュールを開く">📋 ワースケ</button>
+    <button class="hdr-btn" data-on-click="csOpenTab_" data-args="[&quot;shift-app.html&quot;]" title="シフト作成アプリを開く">👥 シフト</button>
+    <button class="hdr-btn" data-on-click="openResidentModal">👤 利用者</button>
+    <button class="hdr-btn" data-on-click="openBulkImport" title="予定を貼り付けで一括登録">📋 一括取込</button>
+    <button class="hdr-btn" data-on-click="printWeek" aria-label="週ボードを印刷" title="週ボードを印刷">🖨</button>
+    <button class="hdr-btn" data-on-click="exportJSON" aria-label="JSONを書き出す" title="JSONを書き出す">⬇</button>
+    <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" data-on-click="manualSave" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   </div>
 </header>
 
@@ -1002,22 +1003,22 @@ select.inp { cursor: pointer; }
     </div>
     <!-- 特定施設のときだけ出す。限度額の欄を空欄にするのではなく、出ない理由を書く -->
     <span class="sum-tokutei-note" id="sum-tokutei-note" style="display:none"></span>
-    <button class="sum-edit-btn sum-lock-btn" id="board-lock-btn" onclick="toggleBoardLock()"
+    <button class="sum-edit-btn sum-lock-btn" id="board-lock-btn" data-on-click="toggleBoardLock"
             aria-pressed="false" title="押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）">🔓 移動ロック</button>
-    <button class="sum-edit-btn" onclick="printWeeklySheet()" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
-    <button class="sum-edit-btn" onclick="openEventListModal()" title="予定一覧">📋 一覧</button>
-    <button class="sum-edit-btn" id="sync-btn" onclick="openSyncModal()" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
-    <button class="sum-edit-btn" onclick="openOfficeInfoModal()">🏢 事業所情報</button>
-    <button class="sum-edit-btn" onclick="openCareInfoModal()">⚙ 介護情報</button>
-    <button class="sum-edit-btn" onclick="openResidentListModal()" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
+    <button class="sum-edit-btn" data-on-click="printWeeklySheet" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
+    <button class="sum-edit-btn" data-on-click="openEventListModal" title="予定一覧">📋 一覧</button>
+    <button class="sum-edit-btn" id="sync-btn" data-on-click="openSyncModal" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
+    <button class="sum-edit-btn" data-on-click="openOfficeInfoModal">🏢 事業所情報</button>
+    <button class="sum-edit-btn" data-on-click="openCareInfoModal">⚙ 介護情報</button>
+    <button class="sum-edit-btn" data-on-click="openResidentListModal" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" onclick="this.style.display='none'" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" data-on-click="csHideSelf_" data-this="1" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
   <p>利用者が登録されていません</p>
-  <button class="add-first-btn" onclick="openResidentModal()">利用者を追加する</button>
+  <button class="add-first-btn" data-on-click="openResidentModal">利用者を追加する</button>
 </div>
 
 <div class="cal-wrap" id="cal-wrap">
@@ -1039,14 +1040,14 @@ select.inp { cursor: pointer; }
   </div>
 </div>
 
-<button class="fab" id="fab" onclick="openAddModal()" title="予定を追加" aria-label="予定を追加">＋</button>
+<button class="fab" id="fab" data-on-click="openAddModal" title="予定を追加" aria-label="予定を追加">＋</button>
 
 <!-- Event form modal -->
 <div class="mk" id="mk-event">
   <div class="md">
     <div class="md-hd">
       <h2 id="modal-title">予定を追加</h2>
-      <button class="md-close" onclick="closeEventModal()" aria-label="予定の入力を閉じる" title="予定の入力を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeEventModal" aria-label="予定の入力を閉じる" title="予定の入力を閉じる">✕</button>
     </div>
 
     <div class="form-row">
@@ -1064,17 +1065,17 @@ select.inp { cursor: pointer; }
       <label>サービス種別 <span style="color:var(--ng)">*</span></label>
       <div class="radio-group">
         <label class="radio-label">
-          <input type="radio" name="serviceType" value="visit" onchange="onServiceTypeChange()"> 訪問介護
+          <input type="radio" name="serviceType" value="visit" data-on-change="onServiceTypeChange"> 訪問介護
         </label>
         <label class="radio-label">
-          <input type="radio" name="serviceType" value="daycare" onchange="onServiceTypeChange()"> 通所介護
+          <input type="radio" name="serviceType" value="daycare" data-on-change="onServiceTypeChange"> 通所介護
         </label>
       </div>
     </div>
 
     <div class="form-row" id="category-row" style="display:none">
       <label for="f-category">サービス区分 <span style="color:var(--ng)">*</span></label>
-      <select class="inp" id="f-category" onchange="onCategoryChange()">
+      <select class="inp" id="f-category" data-on-change="onCategoryChange">
         <option value="">選択してください</option>
         <optgroup label="■ 身体介護系">
           <option value="身体０１">身体０１　20分未満</option>
@@ -1102,7 +1103,7 @@ select.inp { cursor: pointer; }
     <div class="form-row form-row-2col" id="time-row-visit">
       <div>
         <label for="f-start">開始時刻 <span style="color:var(--ng)">*</span></label>
-        <input class="inp" type="time" id="f-start" step="60" onchange="autoFillEndTime()">
+        <input class="inp" type="time" id="f-start" step="60" data-on-change="autoFillEndTime">
       </div>
       <div>
         <label for="f-end">終了時刻 <span style="color:var(--ng)">*</span></label>
@@ -1117,7 +1118,7 @@ select.inp { cursor: pointer; }
     <div class="form-row form-row-2col" id="time-row-daycare" style="display:none">
       <div>
         <label for="f-dc-start">開始時刻 <span style="color:var(--ng)">*</span></label>
-        <select class="inp" id="f-dc-start" onchange="autoCalcUnits()">
+        <select class="inp" id="f-dc-start" data-on-change="autoCalcUnits">
           <option value="09:00">09:00</option>
           <option value="09:30">09:30</option>
           <option value="10:00">10:00</option>
@@ -1125,7 +1126,7 @@ select.inp { cursor: pointer; }
       </div>
       <div>
         <label for="f-dc-end">終了時刻 <span style="color:var(--ng)">*</span></label>
-        <select class="inp" id="f-dc-end" onchange="autoCalcUnits()">
+        <select class="inp" id="f-dc-end" data-on-change="autoCalcUnits">
           <option value="12:00">12:00</option>
           <option value="12:30">12:30</option>
           <option value="13:00">13:00</option>
@@ -1135,7 +1136,7 @@ select.inp { cursor: pointer; }
     </div>
     <div class="form-row" id="bathing-row" style="display:none">
       <label class="check-label">
-        <input type="checkbox" id="f-bathing" onchange="autoCalcUnits()">
+        <input type="checkbox" id="f-bathing" data-on-change="autoCalcUnits">
         入浴実施（入浴介助加算を適用）
       </label>
     </div>
@@ -1178,15 +1179,15 @@ select.inp { cursor: pointer; }
           <option value="4">金曜日</option><option value="5">土曜日</option>
           <option value="6">日曜日</option>
         </select>
-        <button class="btn btn-sec" onclick="duplicateEvent()" style="white-space:nowrap;flex-shrink:0">複製</button>
-        <button class="btn btn-sec" onclick="duplicateEventEveryday()" style="white-space:nowrap;flex-shrink:0" title="この予定を月〜日の全曜日に複製（毎日設定）">毎日</button>
+        <button class="btn btn-sec" data-on-click="duplicateEvent" style="white-space:nowrap;flex-shrink:0">複製</button>
+        <button class="btn btn-sec" data-on-click="duplicateEventEveryday" style="white-space:nowrap;flex-shrink:0" title="この予定を月〜日の全曜日に複製（毎日設定）">毎日</button>
       </div>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-pri" onclick="saveEvent()">保存</button>
-      <button class="btn btn-sec" onclick="closeEventModal()">キャンセル</button>
-      <button class="btn btn-ng" id="delete-btn" onclick="deleteCurrentEvent()" style="display:none">削除</button>
+      <button class="btn btn-pri" data-on-click="saveEvent">保存</button>
+      <button class="btn btn-sec" data-on-click="closeEventModal">キャンセル</button>
+      <button class="btn btn-ng" id="delete-btn" data-on-click="deleteCurrentEvent" style="display:none">削除</button>
     </div>
   </div>
 </div>
@@ -1197,17 +1198,17 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>試算を実データへ反映</h2>
-      <button class="md-close" onclick="SIM.closeApply()" aria-label="反映せずに閉じる" title="反映せずに閉じる">✕</button>
+      <button class="md-close" data-on-click="SIM.closeApply" aria-label="反映せずに閉じる" title="反映せずに閉じる">✕</button>
     </div>
     <div id="sim-diff" style="font-size:13px;line-height:1.7;max-height:38vh;overflow:auto;border:1px solid var(--g3);border-radius:6px;padding:8px 10px;margin-bottom:10px"></div>
     <div class="form-row">
       <label>反映先</label>
       <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer">
-        <input type="radio" name="sim-target" value="over" checked onchange="SIM.onTargetChange()">
+        <input type="radio" name="sim-target" value="over" checked data-on-change="SIM.onTargetChange">
         <span id="sim-over-label">この利用者の予定を置き換える</span>
       </label>
       <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer">
-        <input type="radio" name="sim-target" value="new" onchange="SIM.onTargetChange()">
+        <input type="radio" name="sim-target" value="new" data-on-change="SIM.onTargetChange">
         <span>新規利用者として登録する</span>
       </label>
       <div id="sim-new-row" style="display:none;margin:6px 0 0 22px">
@@ -1223,8 +1224,8 @@ select.inp { cursor: pointer; }
       （新規利用者として登録する場合のみ、介護度・負担割合・福祉用具も一緒に登録します）。
     </div>
     <div class="btn-row">
-      <button class="btn" onclick="SIM.closeApply()">キャンセル</button>
-      <button class="btn btn-pri" id="sim-apply-go" onclick="SIM.applyGo()">反映する</button>
+      <button class="btn" data-on-click="SIM.closeApply">キャンセル</button>
+      <button class="btn btn-pri" id="sim-apply-go" data-on-click="SIM.applyGo">反映する</button>
     </div>
   </div>
 </div>
@@ -1233,7 +1234,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>利用者管理</h2>
-      <button class="md-close" onclick="closeResidentModal()" aria-label="利用者管理を閉じる" title="利用者管理を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeResidentModal" aria-label="利用者管理を閉じる" title="利用者管理を閉じる">✕</button>
     </div>
     <div class="form-row">
       <label for="f-new-res">利用者を追加</label>
@@ -1241,13 +1242,13 @@ select.inp { cursor: pointer; }
         <input class="inp" id="f-new-res" placeholder="氏名（例：田中一郎）" style="flex:1;min-width:120px">
         <input class="inp" id="f-new-kana" placeholder="ふりがな（任意）" style="flex:1;min-width:120px">
         <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="f-new-external">外部</label>
-        <button class="btn btn-pri" onclick="addResident()" style="white-space:nowrap">追加</button>
+        <button class="btn btn-pri" data-on-click="addResident" style="white-space:nowrap">追加</button>
       </div>
     </div>
-    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--g6);margin:4px 0;cursor:pointer"><input type="checkbox" id="cs-show-nontarget" onchange="onCsShowNonTargetChange()">退去者・対象外も表示</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--g6);margin:4px 0;cursor:pointer"><input type="checkbox" id="cs-show-nontarget" data-on-change="onCsShowNonTargetChange">退去者・対象外も表示</label>
     <ul class="res-list" id="res-list"></ul>
     <div class="btn-row">
-      <button class="btn btn-sec" onclick="closeResidentModal()">閉じる</button>
+      <button class="btn btn-sec" data-on-click="closeResidentModal">閉じる</button>
     </div>
   </div>
 </div>
@@ -1257,7 +1258,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>予定の貼り付け一括登録</h2>
-      <button class="md-close" onclick="closeBulkImport()" aria-label="予定の一括登録を閉じる" title="予定の一括登録を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeBulkImport" aria-label="予定の一括登録を閉じる" title="予定の一括登録を閉じる">✕</button>
     </div>
     <div class="form-row">
       <label>1行＝1予定。<b>タブ区切り</b>で貼り付けてください（Excel/スプレッドシートからコピー可）：</label>
@@ -1266,8 +1267,8 @@ select.inp { cursor: pointer; }
     </div>
     <div class="form-row" id="f-bulk-result" style="font-size:13px;white-space:pre-wrap;color:var(--g7)"></div>
     <div class="btn-row">
-      <button class="btn btn-sec" onclick="closeBulkImport()">閉じる</button>
-      <button class="btn btn-pri" onclick="applyBulkImport()">登録する</button>
+      <button class="btn btn-sec" data-on-click="closeBulkImport">閉じる</button>
+      <button class="btn btn-pri" data-on-click="applyBulkImport">登録する</button>
     </div>
   </div>
 </div>
@@ -1277,13 +1278,13 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:400px">
     <div class="md-hd">
       <h2>介護情報</h2>
-      <button class="md-close" onclick="closeCareInfoModal()" aria-label="介護情報を閉じる" title="介護情報を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeCareInfoModal" aria-label="介護情報を閉じる" title="介護情報を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:14px" id="care-info-name"></p>
 
     <div class="form-row">
       <label for="ci-level">介護度</label>
-      <select class="inp" id="ci-level" onchange="onCareLevelChange()">
+      <select class="inp" id="ci-level" data-on-change="onCareLevelChange">
         <option value="">選択してください</option>
         <option value="要支援1">要支援1</option>
         <option value="要支援2">要支援2</option>
@@ -1319,8 +1320,8 @@ select.inp { cursor: pointer; }
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-pri" onclick="saveCareInfo()">保存</button>
-      <button class="btn btn-sec" onclick="closeCareInfoModal()">キャンセル</button>
+      <button class="btn btn-pri" data-on-click="saveCareInfo">保存</button>
+      <button class="btn btn-sec" data-on-click="closeCareInfoModal">キャンセル</button>
     </div>
   </div>
 </div>
@@ -1330,7 +1331,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:480px">
     <div class="md-hd">
       <h2>事業所情報</h2>
-      <button class="md-close" onclick="closeOfficeInfoModal()" aria-label="事業所情報を閉じる" title="事業所情報を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeOfficeInfoModal" aria-label="事業所情報を閉じる" title="事業所情報を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:14px">
       全利用者に共通する事業所単位の設定です（単位単価・加算・減算）
@@ -1345,7 +1346,7 @@ select.inp { cursor: pointer; }
 
     <!-- 訪問介護 加算設定 -->
     <div class="ci-section">
-      <div class="ci-section-hd" onclick="toggleCiSection('oi-visit-body')">
+      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-visit-body&quot;]">
         <span>▸ 訪問介護 加算設定</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
       </div>
@@ -1380,7 +1381,7 @@ select.inp { cursor: pointer; }
 
     <!-- 通所介護 加算設定 -->
     <div class="ci-section">
-      <div class="ci-section-hd" onclick="toggleCiSection('oi-dc-body')">
+      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-dc-body&quot;]">
         <span>▸ 通所介護 加算設定</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
       </div>
@@ -1424,7 +1425,7 @@ select.inp { cursor: pointer; }
     <!-- ── 報酬マスタ（サービスコード・単位数・限度額）──
          単位数はここでしか変えられない。適用は必ず「影響を確認して適用」を通す（差分プレビュー→確認→Undo可）。 -->
     <div class="ci-section">
-      <div class="ci-section-hd" onclick="toggleCiSection('oi-rm-body')">
+      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-rm-body&quot;]">
         <span>▸ 報酬マスタ（サービスコード・単位数）</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">改定・自治体差はここ</span>
       </div>
@@ -1460,18 +1461,18 @@ select.inp { cursor: pointer; }
         <div id="rm-tables"></div>
 
         <div class="btn-row" style="margin-top:14px">
-          <button class="btn btn-pri" onclick="rmReviewAndApply()">影響を確認して適用</button>
-          <button class="btn btn-sec" onclick="rmExportJSON()">JSONを書き出す</button>
-          <button class="btn btn-sec" onclick="$('#rm-import-file').click()">JSONを読み込む</button>
-          <button class="btn btn-undo" id="rm-undo-btn" onclick="rmUndo()" style="display:none">直前の内容へ戻す</button>
-          <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" onchange="rmImportJSON(this)">
+          <button class="btn btn-pri" data-on-click="rmReviewAndApply">影響を確認して適用</button>
+          <button class="btn btn-sec" data-on-click="rmExportJSON">JSONを書き出す</button>
+          <button class="btn btn-sec" data-on-click="csPickRmImport_">JSONを読み込む</button>
+          <button class="btn btn-undo" id="rm-undo-btn" data-on-click="rmUndo" style="display:none">直前の内容へ戻す</button>
+          <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" data-on-change="rmImportJSON" data-this="1">
         </div>
       </div>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-pri" onclick="saveOfficeInfo()">保存</button>
-      <button class="btn btn-sec" onclick="closeOfficeInfoModal()">キャンセル</button>
+      <button class="btn btn-pri" data-on-click="saveOfficeInfo">保存</button>
+      <button class="btn btn-sec" data-on-click="closeOfficeInfoModal">キャンセル</button>
     </div>
   </div>
 </div>
@@ -1481,13 +1482,13 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:560px">
     <div class="md-hd">
       <h2>報酬マスタの変更を適用します</h2>
-      <button class="md-close" onclick="closeRmPreview()" aria-label="適用せずに閉じる" title="適用せずに閉じる">✕</button>
+      <button class="md-close" data-on-click="closeRmPreview" aria-label="適用せずに閉じる" title="適用せずに閉じる">✕</button>
     </div>
     <div id="rm-preview-body"></div>
     <div class="btn-row">
       <!-- 数字が動く操作なので、実行側は塗りつぶしにせず枠線ボタンにする -->
-      <button class="btn btn-danger-outline" onclick="rmApplyConfirmed()">この内容で適用する</button>
-      <button class="btn btn-sec" onclick="closeRmPreview()">やめる</button>
+      <button class="btn btn-danger-outline" data-on-click="rmApplyConfirmed">この内容で適用する</button>
+      <button class="btn btn-sec" data-on-click="closeRmPreview">やめる</button>
     </div>
   </div>
 </div>
@@ -1507,19 +1508,19 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:720px">
     <div class="md-hd">
       <h2>📋 予定一覧</h2>
-      <button class="md-close" onclick="closeEventListModal()" aria-label="予定一覧を閉じる" title="予定一覧を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeEventListModal" aria-label="予定一覧を閉じる" title="予定一覧を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:10px">
       <span id="event-list-resident">—</span> の予定。テキスト形式で全件コピー可能です。
     </p>
     <div class="evlist-tabs">
-      <button class="evlist-tab active" id="evlist-tab-day" onclick="setEventListView('day')">📅 曜日別</button>
-      <button class="evlist-tab"        id="evlist-tab-svc" onclick="setEventListView('svc')">🏥 サービス種別別（訪問・通所）</button>
-      <button class="evlist-tab"        id="evlist-tab-simple" onclick="setEventListView('simple')">📝 簡易表示</button>
+      <button class="evlist-tab active" id="evlist-tab-day" data-on-click="setEventListView" data-args="[&quot;day&quot;]">📅 曜日別</button>
+      <button class="evlist-tab"        id="evlist-tab-svc" data-on-click="setEventListView" data-args="[&quot;svc&quot;]">🏥 サービス種別別（訪問・通所）</button>
+      <button class="evlist-tab"        id="evlist-tab-simple" data-on-click="setEventListView" data-args="[&quot;simple&quot;]">📝 簡易表示</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn btn-pri" onclick="copyEventListText()">📋 全件コピー（テキスト）</button>
-      <button class="btn" onclick="copyEventListTSV()">📊 タブ区切り（Excel貼付用）</button>
+      <button class="btn btn-pri" data-on-click="copyEventListText">📋 全件コピー（テキスト）</button>
+      <button class="btn" data-on-click="copyEventListTSV">📊 タブ区切り（Excel貼付用）</button>
     </div>
     <div id="event-list-body" style="border:1px solid var(--g3);border-radius:8px;max-height:60vh;overflow:auto"></div>
     <textarea id="event-list-textarea" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px"></textarea>
@@ -1531,7 +1532,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:760px">
     <div class="md-hd">
       <h2>🛟 復元（この端末に残っている過去の姿）</h2>
-      <button class="md-close" onclick="closeRestoreModal()" aria-label="復元を閉じる" title="復元を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeRestoreModal" aria-label="復元を閉じる" title="復元を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:6px">
       保存のたびに、この端末だけに過去の姿を残しています（クラウドには送っていません）。<br>
@@ -1542,7 +1543,7 @@ select.inp { cursor: pointer; }
     <div id="restore-body" style="border:1px solid var(--g3);border-radius:8px;max-height:44vh;overflow:auto"></div>
     <!-- クラウドの履歴（読み取り専用の history を呼ぶ。押すまで何も変えない） -->
     <div style="display:flex;gap:8px;align-items:center;margin:10px 0 6px">
-      <button class="btn" id="btn-cloud-hist" onclick="loadCloudHistory_()">☁️ クラウドの履歴を読む</button>
+      <button class="btn" id="btn-cloud-hist" data-on-click="loadCloudHistory_">☁️ クラウドの履歴を読む</button>
       <span style="font-size:12px;color:var(--g6)">この端末の控えが流れてしまった日でも、サーバーに残っている過去の姿から戻せます</span>
     </div>
     <div id="restore-cloud" style="border:1px solid var(--g3);border-radius:8px;max-height:32vh;overflow:auto;display:none"></div>
@@ -1554,7 +1555,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>👥 利用者一覧</h2>
-      <button class="md-close" onclick="closeResidentListModal()" aria-label="利用者一覧を閉じる" title="利用者一覧を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeResidentListModal" aria-label="利用者一覧を閉じる" title="利用者一覧を閉じる">✕</button>
     </div>
     <div id="rl-total"></div>
     <!-- 説明文の単価は報酬マスタ feePerUnit から入れる（renderResidentListTable） -->
@@ -1587,9 +1588,9 @@ select.inp { cursor: pointer; }
       </table>
     </div>
     <div class="btn-row">
-      <button class="btn btn-pri" onclick="openResidentBulkModal()">✎ 一括編集</button>
-      <button class="btn btn-sec" onclick="printResidentList()">🖨 A3で印刷</button>
-      <button class="btn btn-sec" onclick="closeResidentListModal()">閉じる</button>
+      <button class="btn btn-pri" data-on-click="openResidentBulkModal">✎ 一括編集</button>
+      <button class="btn btn-sec" data-on-click="printResidentList">🖨 A3で印刷</button>
+      <button class="btn btn-sec" data-on-click="closeResidentListModal">閉じる</button>
     </div>
   </div>
 </div>
@@ -1599,7 +1600,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2>✎ 利用者 一括編集</h2>
-      <button class="md-close" onclick="closeResidentBulkModal()" aria-label="利用者の一括編集を閉じる" title="利用者の一括編集を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeResidentBulkModal" aria-label="利用者の一括編集を閉じる" title="利用者の一括編集を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:8px">介護度・負担割合・福祉用具単位数・週間計画対象を一括編集し、「一括保存」で全件まとめて保存＋即時クラウド反映します（編集中は自動同期を停止します）。</p>
     <!-- 使用単位%（プレビュー）を出すので参考値の注記を添える -->
@@ -1622,8 +1623,8 @@ select.inp { cursor: pointer; }
       </table>
     </div>
     <div class="btn-row">
-      <button class="btn btn-pri" onclick="saveResidentBulk_()">💾 一括保存</button>
-      <button class="btn btn-sec" onclick="closeResidentBulkModal()">キャンセル</button>
+      <button class="btn btn-pri" data-on-click="saveResidentBulk_">💾 一括保存</button>
+      <button class="btn btn-sec" data-on-click="closeResidentBulkModal">キャンセル</button>
     </div>
   </div>
 </div>
@@ -1633,7 +1634,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:560px">
     <div class="md-hd">
       <h2>☁️ クラウド同期（Google スプレッドシート）</h2>
-      <button class="md-close" onclick="closeSyncModal()" aria-label="クラウド同期設定を閉じる" title="クラウド同期設定を閉じる">✕</button>
+      <button class="md-close" data-on-click="closeSyncModal" aria-label="クラウド同期設定を閉じる" title="クラウド同期設定を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:12px">
       Google スプレッドシートにデータを保存し、複数端末で共有できます。
@@ -1648,7 +1649,7 @@ select.inp { cursor: pointer; }
       <input class="inp" type="url" id="sync-endpoint"
              placeholder="https://script.google.com/macros/s/.../exec"
              autocomplete="off" spellcheck="false"
-             oninput="onSyncInputChange()">
+             data-on-input="onSyncInputChange">
       <div class="hint-box" style="margin-top:6px">
         ［設定を保存］を押すと、<strong>同期先かどうかを確かめてから</strong>保存します（別のアプリのURLは保存しません）。<br>
         ※ ワークスケジュールで同期設定済みの場合は、その接続先が自動的に使われます（開くとその接続先が表示されます）。
@@ -1660,12 +1661,12 @@ select.inp { cursor: pointer; }
       <input class="inp" type="password" id="sync-token"
              placeholder="ワークスケジュールと同じトークン"
              autocomplete="off" spellcheck="false"
-             oninput="onSyncInputChange()">
+             data-on-input="onSyncInputChange">
     </div>
 
     <div class="form-row">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="sync-auto" onchange="persistSyncInputs()">
+        <input type="checkbox" id="sync-auto" data-on-change="persistSyncInputs">
         自動同期を有効化（保存のたびに自動アップロード）
       </label>
     </div>
@@ -1673,12 +1674,12 @@ select.inp { cursor: pointer; }
     <div id="sync-usage" style="font-size:12px;color:var(--g6);margin-bottom:8px"></div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
-      <button class="btn btn-pri" onclick="saveSyncConfig()">設定を保存</button>
-      <button class="btn" onclick="syncTestConnection()">接続テスト</button>
-      <button class="btn" onclick="syncPullNow()">⬇️ クラウドから取得</button>
-      <button class="btn" onclick="syncPushNow()">⬆️ クラウドへ保存</button>
-      <button class="btn" onclick="syncForcePush()" style="background:#fff3e0;color:#e65100" title="クラウド側のデータを上書きします">⚠ 強制保存</button>
-      <button class="btn" onclick="openRestoreModal()" style="background:#e8f5e9;color:#2e7d32" title="この端末に残っている過去の姿から、消えた予定を戻します">🛟 復元</button>
+      <button class="btn btn-pri" data-on-click="saveSyncConfig">設定を保存</button>
+      <button class="btn" data-on-click="syncTestConnection">接続テスト</button>
+      <button class="btn" data-on-click="syncPullNow">⬇️ クラウドから取得</button>
+      <button class="btn" data-on-click="syncPushNow">⬆️ クラウドへ保存</button>
+      <button class="btn" data-on-click="syncForcePush" style="background:#fff3e0;color:#e65100" title="クラウド側のデータを上書きします">⚠ 強制保存</button>
+      <button class="btn" data-on-click="openRestoreModal" style="background:#e8f5e9;color:#2e7d32" title="この端末に残っている過去の姿から、消えた予定を戻します">🛟 復元</button>
     </div>
 
     <div id="sync-log" style="font-size:12px;color:var(--g7);background:var(--g1);padding:8px;border-radius:6px;min-height:36px;margin-bottom:14px;white-space:pre-wrap;font-family:monospace"></div>
@@ -1704,7 +1705,7 @@ select.inp { cursor: pointer; }
 
     <details style="border:1px solid var(--g3);border-radius:8px;padding:10px">
       <summary style="font-weight:700;cursor:pointer">📜 Apps Script コード（コピーして貼り付け）</summary>
-      <button class="btn" style="margin:10px 0" onclick="copyGasCode()">📋 コードをコピー</button>
+      <button class="btn" style="margin:10px 0" data-on-click="copyGasCode">📋 コードをコピー</button>
       <pre id="gas-code" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:11px;overflow:auto;max-height:300px;line-height:1.4">function doGet(e) {
   return _handle(e, 'GET');
 }
@@ -3646,8 +3647,8 @@ function openRestoreModal(note) {
           '<div class="evlist-cat">利用者' + (g.res || 0) + '名・予定' + (g.ev || 0) + '件</div>' +
           '<div class="evlist-detail">' + diff + '</div>' +
           '<div style="display:flex;gap:6px">' +
-            '<button class="btn" onclick="restoreFromGen_(' + i + ',false)">足す</button>' +
-            '<button class="btn" onclick="restoreFromGen_(' + i + ',true)" style="background:#fff3e0;color:#e65100">丸ごと戻す</button>' +
+            '<button class="btn" data-on-click="restoreFromGen_" data-args="[' + i + ',false]">足す</button>' +
+            '<button class="btn" data-on-click="restoreFromGen_" data-args="[' + i + ',true]" style="background:#fff3e0;color:#e65100">丸ごと戻す</button>' +
           '</div>' +
         '</div>';
     }
@@ -3764,13 +3765,13 @@ async function loadCloudHistory_() {
        日付は形を検証してからにし、外れたものは版数扱いにする。 */
     const dayOk = isDay && /^\d{4}-\d{2}-\d{2}$/.test(String(g.day));
     if (isDay && !dayOk) continue;
-    const arg = dayOk ? ("'" + String(g.day) + "', null") : ("null, " + (Number(g.rev) || 0));
+    const argJ = JSON.stringify(dayOk ? [String(g.day), null] : [null, Number(g.rev) || 0]);   /* data-args（JSON）で渡す（CSP・2026-10-15） */
     html +=
       '<div class="evlist-row" style="grid-template-columns:170px 110px 1fr auto;gap:10px">' +
         '<div class="evlist-time">' + escHtml(when) + '</div>' +
         '<div class="evlist-cat">' + escHtml(label) + '</div>' +
         '<div class="evlist-detail">' + Math.round((Number(g.bytes) || 0) / 1024) + ' KB</div>' +
-        '<div><button class="btn" onclick="restoreFromCloud_(' + arg + ')">この版から戻す</button></div>' +
+        '<div><button class="btn" data-on-click="restoreFromCloud_" data-args="' + escHtml(argJ) + '">この版から戻す</button></div>' +
       '</div>';
   }
   box.innerHTML = html;
@@ -5630,11 +5631,11 @@ function renderResidentList() {
     `<li class="res-item ${r.id === DB.currentResidentId ? 'active' : ''}">
       <span>${escHtml(r.name)}${r.external ? ' <span style="font-size: 0.6875rem;color:#1565c0">（外部）</span>' : ''}${(r.targetSchedule === false) ? ' <span style="font-size: 0.6875rem;color:var(--g6)">（対象外）</span>' : ''}${r.movedOut ? ' <span style="font-size: 0.6875rem;color:var(--ng)">（退去）</span>' : ''}${r.preAdmitted ? ' <span style="font-size: 0.6875rem;color:var(--pre)">（入居前）</span>' : ''}${r.hospitalized ? ' <span style="font-size: 0.6875rem;color:#e65100">（入院中）</span>' : ''}</span>
       ${r.movedOut
-        ? `<button class="del-res" ${csOutStyle(r, 'var(--pri)')}${csOutAttr(r)} onclick="restoreResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">復帰</button>`
-        : `<button class="del-res" style="color:#e65100" onclick="toggleHospitalized('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.hospitalized ? '退院' : '入院'}</button>
-           <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} onclick="moveOutResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">退去</button>
-           <button class="del-res" style="color:var(--pre)" onclick="togglePreAdmission('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')">${r.preAdmitted ? '入居済' : '入居前'}</button>`}
-      <button class="del-res res-del-x" ${csOutStyle(r, 'var(--ng)')}${csOutAttr(r)} onclick="removeResident('${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}')" aria-label="この利用者を削除"${csMasterOwned(r) ? '' : ' title="この利用者を削除"'}>✕</button>
+        ? `<button class="del-res" ${csOutStyle(r, 'var(--pri)')}${csOutAttr(r)} data-on-click="restoreResident" data-args='["${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}"]'>復帰</button>`
+        : `<button class="del-res" style="color:#e65100" data-on-click="toggleHospitalized" data-args='["${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}"]'>${r.hospitalized ? '退院' : '入院'}</button>
+           <button class="del-res" ${csOutStyle(r, 'var(--g7)')}${csOutAttr(r)} data-on-click="moveOutResident" data-args='["${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}"]'>退去</button>
+           <button class="del-res" style="color:var(--pre)" data-on-click="togglePreAdmission" data-args='["${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}"]'>${r.preAdmitted ? '入居済' : '入居前'}</button>`}
+      <button class="del-res res-del-x" ${csOutStyle(r, 'var(--ng)')}${csOutAttr(r)} data-on-click="removeResident" data-args='["${String(r.id).replace(/[^A-Za-z0-9_-]/g,'')}"]' aria-label="この利用者を削除"${csMasterOwned(r) ? '' : ' title="この利用者を削除"'}>✕</button>
     </li>`
   ).join('');
 }
@@ -8131,9 +8132,9 @@ function renderResidentBulkRows_() {
     h += `<tr data-rid="${escHtml(String(res.id))}">`
       + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
       + `<td><input class="inp rb-kana" type="text" value="${escHtml(res.kana || '')}" placeholder="ふりがな" style="min-width:96px;text-align:start"></td>`
-      + `<td><select class="inp rb-level" onchange="rbPreview_(this)">${levelOpt(res.careLevel)}</select></td>`
+      + `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1">${levelOpt(res.careLevel)}</select></td>`
       + `<td><select class="inp rb-copay">${copayOpt(res.copayRate)}</select></td>`
-      + `<td><input class="inp rb-welfare" type="number" min="0" step="1" value="${welfare}" onchange="rbPreview_(this)"></td>`
+      + `<td><input class="inp rb-welfare" type="number" min="0" step="1" value="${welfare}" data-on-change="rbPreview_" data-this="1"></td>`
       + `<td><input type="checkbox" class="rb-target"${res.targetSchedule === false ? '' : ' checked'}></td>`
       + `<td><input type="checkbox" class="rb-external"${res.external ? ' checked' : ''}></td>`
       + `<td class="rb-pct">${pctTxt}</td>`
@@ -9421,6 +9422,114 @@ function csFlushOnExit_() {
 }
 window.addEventListener('beforeunload', csFlushOnExit_);
 window.addEventListener('pagehide', csFlushOnExit_);
+
+/* ── 画面の操作の受け口（2026-10-15・CSP の導入）──────────────────────────
+   ボタン・入力欄に直接書いていた onclick / onchange / oninput は、CSP（読み込み元を自サイトに絞る・インラインの
+   イベント属性を許さない）では動かない。代わりに data-on-click / data-on-change / data-on-input に関数の名前を書き、
+   ここで1か所に受ける。引数は data-args（JSON の配列）、要素そのものを渡すものは data-this="1"（先頭の引数）。
+   ★呼べるのは下の表にある関数だけ（名前から好きな関数を呼ばない）。表に無い名前は何もしない（記録に残す）。
+   ★新しいボタンを足す時は、onclick を書かずに data-on-click と、この表の1行を足す（試験 cs_csp_actions が見る） */
+function csOpenTab_(page) { window.open(page, '_blank'); }
+function csHideSelf_(el) { el.style.display = 'none'; }
+function csPickRmImport_() { const f = $('#rm-import-file'); if (f) f.click(); }
+const CS_ACTIONS = {
+  'SIM.applyGo': (a) => SIM.applyGo(...a),
+  'SIM.closeApply': (a) => SIM.closeApply(...a),
+  'SIM.enter': (a) => SIM.enter(...a),
+  'SIM.exit': (a) => SIM.exit(...a),
+  'SIM.onTargetChange': (a) => SIM.onTargetChange(...a),
+  'SIM.openApply': (a) => SIM.openApply(...a),
+  'addResident': (a) => addResident(...a),
+  'applyBulkImport': (a) => applyBulkImport(...a),
+  'autoCalcUnits': (a) => autoCalcUnits(...a),
+  'autoFillEndTime': (a) => autoFillEndTime(...a),
+  'closeBulkImport': (a) => closeBulkImport(...a),
+  'closeCareInfoModal': (a) => closeCareInfoModal(...a),
+  'closeEventListModal': (a) => closeEventListModal(...a),
+  'closeEventModal': (a) => closeEventModal(...a),
+  'closeOfficeInfoModal': (a) => closeOfficeInfoModal(...a),
+  'closeResidentBulkModal': (a) => closeResidentBulkModal(...a),
+  'closeResidentListModal': (a) => closeResidentListModal(...a),
+  'closeResidentModal': (a) => closeResidentModal(...a),
+  'closeRestoreModal': (a) => closeRestoreModal(...a),
+  'closeRmPreview': (a) => closeRmPreview(...a),
+  'closeSyncModal': (a) => closeSyncModal(...a),
+  'copyEventListTSV': (a) => copyEventListTSV(...a),
+  'copyEventListText': (a) => copyEventListText(...a),
+  'copyGasCode': (a) => copyGasCode(...a),
+  'deleteCurrentEvent': (a) => deleteCurrentEvent(...a),
+  'duplicateEvent': (a) => duplicateEvent(...a),
+  'duplicateEventEveryday': (a) => duplicateEventEveryday(...a),
+  'exportJSON': (a) => exportJSON(...a),
+  'loadCloudHistory_': (a) => loadCloudHistory_(...a),
+  'manualSave': (a) => manualSave(...a),
+  'moveOutResident': (a) => moveOutResident(...a),
+  'onCareLevelChange': (a) => onCareLevelChange(...a),
+  'onCategoryChange': (a) => onCategoryChange(...a),
+  'onCsShowNonTargetChange': (a) => onCsShowNonTargetChange(...a),
+  'onResidentChange': (a) => onResidentChange(...a),
+  'onServiceTypeChange': (a) => onServiceTypeChange(...a),
+  'onSyncInputChange': (a) => onSyncInputChange(...a),
+  'openAddModal': (a) => openAddModal(...a),
+  'openBulkImport': (a) => openBulkImport(...a),
+  'openCareInfoModal': (a) => openCareInfoModal(...a),
+  'openEventListModal': (a) => openEventListModal(...a),
+  'openOfficeInfoModal': (a) => openOfficeInfoModal(...a),
+  'openResidentBulkModal': (a) => openResidentBulkModal(...a),
+  'openResidentListModal': (a) => openResidentListModal(...a),
+  'openResidentModal': (a) => openResidentModal(...a),
+  'openRestoreModal': (a) => openRestoreModal(...a),
+  'openSyncModal': (a) => openSyncModal(...a),
+  'persistSyncInputs': (a) => persistSyncInputs(...a),
+  'printResidentList': (a) => printResidentList(...a),
+  'printWeek': (a) => printWeek(...a),
+  'printWeeklySheet': (a) => printWeeklySheet(...a),
+  'rbPreview_': (a) => rbPreview_(...a),
+  'removeResident': (a) => removeResident(...a),
+  'restoreFromCloud_': (a) => restoreFromCloud_(...a),
+  'restoreFromGen_': (a) => restoreFromGen_(...a),
+  'restoreResident': (a) => restoreResident(...a),
+  'rmApplyConfirmed': (a) => rmApplyConfirmed(...a),
+  'rmExportJSON': (a) => rmExportJSON(...a),
+  'rmImportJSON': (a) => rmImportJSON(...a),
+  'rmReviewAndApply': (a) => rmReviewAndApply(...a),
+  'rmUndo': (a) => rmUndo(...a),
+  'saveCareInfo': (a) => saveCareInfo(...a),
+  'saveEvent': (a) => saveEvent(...a),
+  'saveOfficeInfo': (a) => saveOfficeInfo(...a),
+  'saveResidentBulk_': (a) => saveResidentBulk_(...a),
+  'saveSyncConfig': (a) => saveSyncConfig(...a),
+  'setEventListView': (a) => setEventListView(...a),
+  'syncForcePush': (a) => syncForcePush(...a),
+  'syncPullNow': (a) => syncPullNow(...a),
+  'syncPushNow': (a) => syncPushNow(...a),
+  'syncTestConnection': (a) => syncTestConnection(...a),
+  'toggleBoardLock': (a) => toggleBoardLock(...a),
+  'toggleCiSection': (a) => toggleCiSection(...a),
+  'toggleHospitalized': (a) => toggleHospitalized(...a),
+  'togglePreAdmission': (a) => togglePreAdmission(...a),
+  'undo': (a) => undo(...a),
+  'csOpenTab_': (a) => csOpenTab_(...a),
+  'csHideSelf_': (a) => csHideSelf_(...a),
+  'csPickRmImport_': (a) => csPickRmImport_(...a),
+};
+function csRunAction_(el, type, e) {
+  const name = el.getAttribute('data-on-' + type);
+  const fn = Object.prototype.hasOwnProperty.call(CS_ACTIONS, name) ? CS_ACTIONS[name] : null;
+  if (!fn) { csNote_('画面の操作（' + type + '）', new Error('表に無い操作')); return; }
+  let args = [];
+  const raw = el.getAttribute('data-args');
+  if (raw) { try { args = JSON.parse(raw); } catch (err) { csNote_('画面の操作の引数', err); return; } }
+  if (!Array.isArray(args)) args = [args];
+  if (el.getAttribute('data-this') === '1') args = [el].concat(args);
+  fn(args, e);
+}
+['click', 'change', 'input'].forEach(function (type) {
+  document.addEventListener(type, function (e) {
+    const t = e.target && e.target.closest ? e.target.closest('[data-on-' + type + ']') : null;
+    if (t) csRunAction_(t, type, e);
+  });
+});
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-14" data-tool="週間計画"></script>
