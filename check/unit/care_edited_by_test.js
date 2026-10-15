@@ -77,7 +77,7 @@ function makeBox(extra) {
     'var csFieldsKept_ = 0; var csFieldChanges_ = [];',
     ['csEditFp_', 'csEditBaseline_', 'csStampEdits_', 'csTakeNewerEdit_', 'csEditedText_',
      'csWho_', 'csWhoLabel_', 'csAuthLoad_', 'csHasSession_', 'csResolveWho_', 'csRebaseEdits', 'csMergeEventsFrom_',
-     'csUnconfirmedSent_', 'csSettleUnconfirmed_'].map(n => grabFn(SRC, n)).join('\n')
+     'csUnconfirmedSent_', 'csEditorOk_', 'csSettleUnconfirmed_', 'csAccessToken_'].map(n => grabFn(SRC, n)).join('\n')
   ].join('\n');
   vm.runInContext(code, box);
   return box;
@@ -286,7 +286,53 @@ console.log('\n— 5. 誰が（ログイン・ログアウト・確かめられ�
     t('送信: 送る直前に控えを取り出す', iSent > 0 && iPut > iSent, [iSent, iPut]);
     t('送信: Supabase に送り、版が進んで成功し、中身が同じで書かれなかったのではない時だけそろえる',
       /try \{ viaSb = !!\(window\.SUKv && typeof SUKv\.routed === 'function' && SUKv\.routed\('care_schedule_v2'\)\); \} catch \(e\) \{\}/.test(push) &&
-      /this\._busy = false;\n        if \(viaSb && !j\.unchanged && unconfSent\.length\) csSettleUnconfirmed_\(unconfSent\);\n        return true;/.test(push), '');
+      /this\._busy = false;\n        if \(viaSb && !j\.unchanged && unconfSent\.length\) csSettleUnconfirmed_\(unconfSent\);\n/.test(push), '');
+    t('送信: Google の GAS へ送った時は、GAS が確かめた値（editor）がメールの時だけ、その値でそろえる',
+      /\n        else if \(!viaSb && !j\.unchanged && unconfSent\.length && csEditorOk_\(j\.editor\)\) csSettleUnconfirmed_\(unconfSent, j\.editor\);\n        return true;/.test(push), '');
+  }
+
+  console.log('\n— 8. Google の GAS へ送る保存にログインの証明を添え、GAS が確かめた値でそろえる（2026-10-15 editorverify）—');
+  {
+    const b = makeBox({ $: () => null, saveLocalOnly: () => {}, currentResident: () => null });
+    b.DB.residents = [res('r1', '架空 一郎', [ev('e1')]), res('r2', '架空 花子', [ev('e2')])];
+    b.csEditBaseline_(); b.DB.residents[0].room = '101'; b.DB.residents[1].room = '102'; b.csStampEdits_();
+    const sent = b.csUnconfirmedSent_(b.DB);
+    /* SUAuth が無い端末でも、GAS が確かめて返した値ならそろえる */
+    const n = await b.csSettleUnconfirmed_(sent, 'Gas.Verified@Example.invalid');
+    t('GAS が確かめた値（小文字）でそろえる・ログインの部品が無くても動く', n === 2 && b.DB.residents.every(r => r.editedBy === 'gas.verified@example.invalid'), [n, b.DB.residents.map(r => r.editedBy)]);
+  }
+  {
+    const b = makeBox({ $: () => null, saveLocalOnly: () => {}, currentResident: () => null });
+    b.DB.residents = [res('r1', '架空 一郎', [ev('e1')])];
+    b.csEditBaseline_(); b.DB.residents[0].room = '101'; b.csStampEdits_();
+    const sent = b.csUnconfirmedSent_(b.DB);
+    const n1 = await b.csSettleUnconfirmed_(sent, '未確認');
+    const n2 = await b.csSettleUnconfirmed_(sent, 'not-an-email');
+    t('GAS が「未確認」・メールでない値を返した時は書き換えない', n1 === 0 && n2 === 0 && b.DB.residents[0].editedBy === '未確認', [n1, n2]);
+    t('csEditorOk_: メールの形だけ通す', b.csEditorOk_('a@b.c') && !b.csEditorOk_('未確認') && !b.csEditorOk_('') && !b.csEditorOk_(null) && !b.csEditorOk_('a@b.c'.repeat(30)), '');
+  }
+  {
+    const b = makeBox();
+    const at = await b.csAccessToken_();
+    t('ログインの控えが無い端末は問い合わせずに空（GAS は「未確認」と記録する）', at === '', at);
+    const b2 = makeBox();
+    b2.localStorage.setItem('sb-abc123-auth-token', '{}');
+    b2.window.SUAuth = { client: () => ({ auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 'h.p.s' } } }) } }) };
+    b2.SUAuth = b2.window.SUAuth;
+    t('ログイン中は証明（access_token）を返す', (await b2.csAccessToken_()) === 'h.p.s', '');
+    const b3 = makeBox();
+    b3.localStorage.setItem('sb-abc123-auth-token', '{}');
+    b3.window.SUAuth = { client: () => ({ auth: { getSession: () => Promise.reject(new Error('x')) } }) };
+    b3.SUAuth = b3.window.SUAuth;
+    t('証明を取れない時は空（保存は止めない）', (await b3.csAccessToken_()) === '', '');
+  }
+  {
+    const gas = grabFn(SRC.replace(/\n  async gas\(/, '\nfunction gas('), 'gas');
+    const iSb = gas.indexOf('SUKv.handles(payload)'), iAt = gas.indexOf('payload.accessToken = at_'), iBody = gas.indexOf('const body = JSON.stringify(payload);'),
+          iDel = gas.indexOf('delete payload.accessToken');
+    t('送信: 証明は Supabase へ回す判定の後（Google へ送る時だけ）に添える', iSb > 0 && iAt > iSb, [iSb, iAt]);
+    t('送信: 週間計画の put／push だけに添える', /if \(payload && \(payload\.action === 'put' \|\| payload\.action === 'push'\) && payload\.key === 'care_schedule_v2'\)/.test(gas), '');
+    t('送信: 本文を作った直後に外す（呼び出し元の要求に証明を残さない）', iBody > iAt && iDel > iBody && iDel - iBody < 80, [iBody, iDel]);
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
