@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-bj+6JrO/acTeFq+2mnOb/KJzzJlE9nfROtDVKUT+6/I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hYbqfspAKn/pDN4hgyRub9PcMYCLsY3YS8Vi9lM4VB8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1868,6 +1868,7 @@ function apiPost(action, body, timeoutMs) {
         ne.created = Array.isArray(d.created) ? d.created : [];
         ne.conflicts = Array.isArray(d.conflicts) ? d.conflicts : [];
         ne.warnings = Array.isArray(d.warnings) ? d.warnings : [];
+        ne.by = txt(d.by);                                          /* 記録した「誰が」（2026-10-15・無ければ ''） */
         ne.hint = '保存できた分はこの画面に反映しました。残りは一覧を取り直してから送り直してください。';
       }
       /* 確定できたか分からない（partial で来ることもある）。入力や合言葉の誤りではないので案内を差し替える */
@@ -2846,7 +2847,7 @@ function syncCwDate() {
 }
 
 /* 詳細画面の見出しの下の行（2026-10-11・監査10月版 第2版 職員マスタ）。最終更新の更新元と日時を足す。
-   更新元はサーバーが保存のたびに書く updatedBy（設定の「この端末の名前」）、日時は updatedAt。
+   更新元はサーバーが保存のたびに書く updatedBy（2026-10-15 からはログインを確かめたメール／「未確認」。旧い GAS は設定の「この端末の名前」）、日時は updatedAt。
    更新元が空の保存は日時だけ。どちらも無い古い行は今までどおり「職員ID／版」だけ。textContent で出す */
 function fmtUpdatedAt(v) {
   var t = txt(v), d = new Date(t);
@@ -2863,10 +2864,13 @@ function dtMetaText(row, extra) {
 }
 /* 保存に成功した行に、手元で最終更新を入れる（サーバーの応答には更新元・日時が無いため）。
    次に一覧を読み直すとサーバーが書いた値に置き換わる。更新元はサーバーと同じく設定の「この端末の名前」 */
-function stampSavedRow(row) {
+/* by（2026-10-15）: サーバーがこの保存で記録した「誰が」（応答の by・確かめたメール／「未確認」）。
+   応答に無い（旧い GAS）時だけ、今までどおり設定の「この端末の名前」で書き戻す */
+function stampSavedRow(row, by) {
   if (!row) return;
   row.updatedAt = new Date().toISOString();
-  row.updatedBy = txt(loadCfg().by).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
+  var sv = txt(by).replace(/[\r\n\t]/g, ' ').trim();
+  row.updatedBy = sv || txt(loadCfg().by).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
 }
 
 function openDetail(id) {
@@ -3237,7 +3241,7 @@ function applyDetailResult(d, cur, dropped, partialErr) {
     ST.detail.id = nid;
     ST.detail.rev = nrow.rev;
     ST.detail.base = normRow(nrow);
-    if (!unsure) stampSavedRow(nrow);       /* 届いたか確かめ中の時は、まだ最終更新を入れない */
+    if (!unsure) stampSavedRow(nrow, d.by);  /* 届いたか確かめ中の時は、まだ最終更新を入れない */
     $('dtMeta').textContent = dtMetaText(nrow, unsure ? '（確かめ中）' : '');
     buildListHead();
     renderList();
@@ -3249,7 +3253,7 @@ function applyDetailResult(d, cur, dropped, partialErr) {
       ST.detail.rev = row.rev;
       ST.detail.base = normRow(row);
       if (ST.detail.insShown) ST.detail.insBase = txt(cur.empInsNo);
-      stampSavedRow(row);
+      stampSavedRow(row, d.by);
       $('dtMeta').textContent = dtMetaText(row);
       refreshRow(row.id);
     }
@@ -3368,7 +3372,7 @@ function adoptCreated(dt, p, row) {
   dt.id = nrow.id;
   dt.rev = nrow.rev;
   dt.base = normRow(nrow);
-  stampSavedRow(nrow);
+  stampSavedRow(nrow, row && row.updatedBy);   /* 読み直した一覧の行＝サーバーが記録した値 */
   $('dtMeta').textContent = dtMetaText(nrow);
   $('dtName').textContent = txt(p.form.name) || '（氏名未入力）';
   updateDirtyUi();
@@ -3563,13 +3567,13 @@ function setCaps(d) {
 }
 
 /* 保存された行の版を書き戻す（詳細フォームの楽観ロックが古い版で競合しないように） */
-function applyFilesRev(row, rev) {
+function applyFilesRev(row, rev, by) {
   var n = Number(rev);
   if (isFinite(n) && n > 0) row.rev = n;
   if (ST.detail && txt(ST.detail.id) === txt(row.id)) {
     ST.detail.rev = row.rev;
     if (ST.detail.base) ST.detail.base.filesJson = toArr(row.filesJson);
-    stampSavedRow(row);                    /* 書類の追加・削除もサーバーは更新元・日時を書く */
+    stampSavedRow(row, by);                /* 書類の追加・削除もサーバーは更新元・日時を書く（by は応答の記録した値） */
     $('dtMeta').textContent = dtMetaText(row);
   }
 }
@@ -3839,7 +3843,7 @@ function uploadPicked() {
     var nf = normFile(d && d.file);
     ST.ver = Number(d && d.ver) || ST.ver;
     if (row && nf.fid) row.filesJson = toArr(row.filesJson).concat([nf]);
-    if (row) applyFilesRev(row, d && d.rev);
+    if (row) applyFilesRev(row, d && d.rev, d && d.file && d.file.by);
     $('fdFile').value = '';
     ST.dropFile = null;
     $('fdTitleIn').value = '';
@@ -3940,7 +3944,7 @@ function removeFileEntry(fid, f) {
     ST.ver = Number(d && d.ver) || ST.ver;
     if (row) {
       row.filesJson = toArr(row.filesJson).filter(function (x) { return txt(x && x.fid) !== txt(fid); });
-      applyFilesRev(row, d && d.rev);
+      applyFilesRev(row, d && d.rev, d && d.by);
     }
     renderFiles();
     updateFilesBtn();
