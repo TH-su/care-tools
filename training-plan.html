@@ -2385,6 +2385,9 @@ function updateIndexFor(masterId, doc) {
   return saveIndex(function (idx) { idx.rows[masterId] = row; }).then(function () {
     delete IDX_PENDING[masterId];
     renderIndexChip();
+    /* 保存中に一覧へ戻っていた時は、索引が届いた今の状態で描き直す（一括作成・まとめて取込の間は最後にまとめて描く）。
+       描き直しは表示の更新だけ＝失敗しても索引の保存は済んでいるので、保存失敗の扱いにしない */
+    try { if ($('scr-list').classList.contains('on') && !batchBusy() && !(BULK && BULK.running)) renderList(); } catch (e0) { /* 表示の更新だけ */ }
     return true;
   }).catch(function (e) {
     IDX_PENDING[masterId] = true;
@@ -8257,7 +8260,10 @@ function bindUI() {
     nav[i].addEventListener('click', function () {
       /* 高: 一括作成の実行中は画面を移らない（作成中の期が別画面で描き直されるのを避ける） */
       if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
-      showScreen(this.getAttribute('data-scr'));
+      var to = this.getAttribute('data-scr');
+      showScreen(to);
+      /* 「一覧へ戻る」と同じく、一覧に移った時は描き直す（編集画面で変えた内容を出す） */
+      if (to === 'scr-list') renderList();
     });
   }
   $('btnBack').addEventListener('click', function () {
