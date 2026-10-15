@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-hNxL/boM6FniJUAP4DOiRfHWvBR1nrhyAcSBpmOn6NM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-MdH4F0y0+mvqVH8wCHyyo9bWrFzbceh8+FATiBBjYtU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3300,7 +3300,8 @@ function csStampEdits_() {
    この保存の JWT から確かめたメールで書き直す。応答に名前は無いので、その端末だけ再読み込みまで「未確認」と出ていた。
    ・「未確認」を付けた入居者を id → editedAt で控える（csUnconfirmed_）
    ・送る直前に、送る中身に入っている控えだけを取り出し（csUnconfirmedSent_）、Supabase の kv_put が版を進めて成功した後
-     （中身が同じで書かれなかった時・Google へ送った時は除く）に、送った時と同じログイン（SUAuth.check）のメールで書き直す
+     （中身が同じで書かれなかった時は除く）に、送った時と同じログイン（SUAuth.check）のメールで書き直す
+   ・Google の GAS へ送った時（2026-10-15 editorverify）は、GAS が証明を確かめて返した値（応答の editor）がメールの時だけ、その値で書き直す
    ・書き直すのは、その後に誰も印を付け直していない入居者だけ（editedBy が「未確認」のまま・editedAt が控えと同じ）
    ・端末に書くだけで、未送信の印は付けない（サーバーはもう同じ値）。確かめられない時は何もしない（再読み込みでサーバーの値が来る） */
 var csUnconfirmed_ = Object.create(null);   // 利用者id → 「未確認」を付けた editedAt
@@ -3311,10 +3312,15 @@ function csUnconfirmedSent_(db) {
   });
   return out;
 }
-function csSettleUnconfirmed_(sent) {
-  if (!sent || !sent.length || !window.SUAuth || typeof SUAuth.check !== 'function') return Promise.resolve(0);
-  return Promise.resolve().then(() => SUAuth.check()).then(st => {
-    const who = csWhoLabel_(st);
+function csEditorOk_(v) {
+  return typeof v === 'string' && v.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+/* known … GAS が確かめて返した値（Google へ送った時）。無い時は送った時と同じログイン（SUAuth.check）のメール */
+function csSettleUnconfirmed_(sent, known) {
+  if (!sent || !sent.length) return Promise.resolve(0);
+  if (!csEditorOk_(known) && (!window.SUAuth || typeof SUAuth.check !== 'function')) return Promise.resolve(0);
+  return Promise.resolve().then(() => csEditorOk_(known) ? null : SUAuth.check()).then(st => {
+    const who = csEditorOk_(known) ? String(known).toLowerCase() : csWhoLabel_(st);
     if (!who) return 0;
     let n = 0;
     sent.forEach(([id, at]) => {
@@ -3388,6 +3394,16 @@ function csResolveWho_() {
     if (!st || st.status === 'error') return;
     csWhoAcct_ = csWhoLabel_(st);
   }).catch(() => {});
+}
+/* ★Google の GAS へ送る保存に、ログインの証明（Supabase の access_token）を添える（2026-10-15・代表者の依頼）。
+   GAS（統合同期 editorverify）がこれを Supabase に問い合わせて確かめ、確かめられたメールだけを editedBy に入れる（確かめられない時は「未確認」）。
+   ログインの控えが無い端末は問い合わせずに ''（＝GAS は「未確認」）。3秒で返らなければ ''（保存を待たせない）。
+   証明は要求の本文（POST）にだけ載せる。URL・端末の保存・記録には残さない */
+function csAccessToken_() {
+  if (!csHasSession_()) return Promise.resolve('');
+  const get = csAuthLoad_().then(() => (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client().auth.getSession() : null)
+    .then(r => (r && r.data && r.data.session && r.data.session.access_token) || '').catch(() => '');
+  return Promise.race([get, new Promise(ok => setTimeout(() => ok(''), 3000))]);
 }
 /* 直前の書き手が「自分以外の、名乗った新しいタブ」なら false（古くない）。
    自分の名乗りしか無い＝相手は名乗らずに書いた＝古い版、と判定する。 */
@@ -4262,9 +4278,17 @@ const SYNC = {
     else if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
     const t = this.target();
     payload.token = t.token;
+    /* 週間計画の保存だけ、ログインの証明を添える（GAS が確かめて editedBy を決める・2026-10-15 editorverify）。
+       payload は呼び出し元の物なので、送る直前に足して送った後に外す（記録や再送の材料に証明を残さない） */
+    if (payload && (payload.action === 'put' || payload.action === 'push') && payload.key === 'care_schedule_v2') {
+      let at_ = '';
+      try { at_ = await csAccessToken_(); } catch (e) { at_ = ''; }
+      if (at_) payload.accessToken = at_;
+    }
     const NP = this.NetPolicy;
     const action = (payload && payload.action) || '(なし)';
     const body = JSON.stringify(payload);
+    if (payload) delete payload.accessToken;
     // text/plain で送信し CORS preflight を回避（ワースケと同一）
     const opt = () => ({
       method: 'POST',
@@ -4623,6 +4647,8 @@ const SYNC = {
         this.updateStatusUI('同期OK');
         this._busy = false;
         if (viaSb && !j.unchanged && unconfSent.length) csSettleUnconfirmed_(unconfSent);
+        /* Google の GAS へ送った時は、GAS が確かめた値（editor）がメールの時だけ「未確認」をそろえる（2026-10-15 editorverify。旧い GAS は editor を返さない＝何もしない） */
+        else if (!viaSb && !j.unchanged && unconfSent.length && csEditorOk_(j.editor)) csSettleUnconfirmed_(unconfSent, j.editor);
         return true;
       }
       if (j.ok) {
