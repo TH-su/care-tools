@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cCkXW+zJGBn6WYVYsId/TKh5QTTlxNuP2AQTClPCwLw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-R58N9r/hvkBYtnqfBbxJdEZOQDpogQfnzMrii4r1PKc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -3833,10 +3833,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (hit && !used['.' + hit.id]) { used['.' + hit.id] = 1; care.push(hit); }
       }
       /* トレイに戻した印（parked）の支援: 並びの支援が全部トレイにある時だけ（＝前に列が無くてまとめてトレイへ残した並び）
-       * もう一度入れる対象にする。一部だけトレイにあるのは人が戻したもの＝その支援は外す */
+       * もう一度入れる対象にする。一部だけトレイにあるのは人が戻したもの＝その支援は外す。
+       * ただし重なりで自動に退避した支援（bumped 付き）は人が戻したものではないので入れる（2026-10-15 実データ:
+       * 勤務の入っていない先の日で、支援マスタの既定の列に2件重なって片方が退避していた） */
       var allParked = care.length > 0;
       for (k = 0; k < care.length; k++) if (!(care[k].parked && (care[k].staffId === null || care[k].staffId === undefined))) allParked = false;
-      if (!allParked) care = care.filter(function (x) { return !x.parked; });
+      if (!allParked) care = care.filter(function (x) { return !x.parked || x.bumped; });
       if (!care.length || care.length + frameItems.length < 2) continue;
       matched = true;
       var touched = false;
@@ -3939,7 +3941,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < todo.length; i++) {
       var td = todo[i], tid = best ? best[i] : null, gid = AUTO_GROUP_PREFIX + td.ch.id;
       if (tid) {
-        for (k = 0; k < td.care.length; k++) { td.care[k].staffId = tid; td.care[k].groupId = gid; if (td.care[k].parked) delete td.care[k].parked; }
+        for (k = 0; k < td.care.length; k++) {
+          td.care[k].staffId = tid; td.care[k].groupId = gid;
+          if (td.care[k].parked) delete td.care[k].parked;
+          if (td.care[k].bumped) delete td.care[k].bumped;   /* 列に入った札に退避の印を残さない（store の配置と同じ） */
+        }
         newDone.push(td.ch.id);
         for (k = 0; k < td.frames.length; k++) {
           var fr = td.frames[k];
