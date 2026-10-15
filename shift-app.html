@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-liRR92lWcRjAs5hA0LJf4gnSHkgInJx197A7AZSmt/o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -451,9 +452,9 @@ html.su-field #egSync { display: none !important; }
     <button data-pl="landscape" class="on" title="A3横1枚（全日数）">A3横</button>
     <button data-pl="split" title="A3縦2分割（前半1〜15日／後半16〜末日）">A3縦2分割</button>
   </span>
-  <button onclick="window.open('work-schedule.html','_blank')" title="業務行動計画（ワースケ）を開く" aria-label="ワースケを開く">📋 ワースケ</button>
-  <button onclick="window.open('care-schedule.html','_blank')" title="週間計画アプリを開く" aria-label="週間計画を開く">📅 週間計画</button>
-  <button onclick="window.open('shift-analyzer.html','_blank')" title="過去シフト・アナライザを開く" aria-label="過去シフト分析を開く">📊 過去シフト分析</button>
+  <button data-open-tab="work-schedule.html" title="業務行動計画（ワースケ）を開く" aria-label="ワースケを開く">📋 ワースケ</button>
+  <button data-open-tab="care-schedule.html" title="週間計画アプリを開く" aria-label="週間計画を開く">📅 週間計画</button>
+  <button data-open-tab="shift-analyzer.html" title="過去シフト・アナライザを開く" aria-label="過去シフト分析を開く">📊 過去シフト分析</button>
   <!-- 編集モード（サーバー発行の編集権を1台だけが持つ）。閲覧中は編集操作を受け付けない。
        .reveal-toggle は付けない（#toolbar .reveal-toggle の margin-left:auto と隣接セレクタを壊さないため）。 -->
   <label id="editToggle" class="noprint" title="編集モードに切り替えます（同時に編集できるのは1台だけ・他端末は閲覧のまま自動更新されます）">
@@ -9795,6 +9796,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (egSync) egSync.addEventListener('click', function () { self.gotoMasterSettings('sync'); });
       var egImport = document.getElementById('egImport');
       if (egImport) egImport.addEventListener('click', function () { self.gotoMasterSettings('backup'); });
+      /* ほかのアプリを別のタブで開く（2026-10-15・CSP の導入で onclick をやめた）。開く先は data-open-tab に書いた同じサイトの画面だけ */
+      Array.prototype.forEach.call(document.querySelectorAll('[data-open-tab]'), function (b) {
+        b.addEventListener('click', function () {
+          var page = b.getAttribute('data-open-tab');
+          if (/^[a-z0-9-]+\.html$/.test(page)) window.open(page, '_blank');
+        });
+      });
       document.getElementById('btnAddDraft').addEventListener('click', function () { self.createDraft(); });
       document.getElementById('btnConfirmDraft').addEventListener('click', function () {
         if (self.layer.indexOf('draft:') === 0) self.confirmDraft(self.layer.slice(6));
@@ -11383,6 +11391,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-10" data-tool="シフト作成・管理"></script>
+<script src="su-report.js?v=2026-10-14" data-tool="シフト作成・管理"></script>
 </body>
 </html>
