@@ -114,7 +114,10 @@ function makeApi(resp){
     fetch: () => Promise.resolve({ok:true, status:200, text: () => Promise.resolve(JSON.stringify(resp))})
   };
   vm.createContext(box);
+  /* 2026-10-15 意図的な更新: apiPost が書く action にログインの証明を添えるようになったため、その判定に使う
+     SPL_WRITE_ACTIONS・SPL_SESSION_RE・splHasLogin_ も一緒に読む（この箱には localStorage が無い＝ログインなし＝今までどおり送る） */
   vm.runInContext(ERR_PARTS.concat([grabVar('URL_OK_RE'), grabVar('MOVE_WRITERS'),
+    grabVar('SPL_WRITE_ACTIONS'), grabVar('SPL_SESSION_RE'), grabFn('splHasLogin_'),
     grabFn('markBillStale'), grabFn('apiPost')]).join('\n'), box);
   return box;
 }
