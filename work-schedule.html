@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0TK6GI2T6v0SGpN0P+x4Y1olNNMYL0UAv5nHXpRHJVM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7/iZ4QjqA7nv7kaRaaUtxiW2z5UuIyNDFQ7i4NvY0zM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -14397,6 +14397,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function revNeedsPull_(h, l) { h = h || 0; l = l || 0; return (h > l) || (h === 0 && l > 0); }
   function pollTick_() {
     if (pollInFlight_) return;                 /* 前回のheadがまだ返っていない＝今回は見送る */
+    /* 並びの固定（2026-10-15）: 表示中の日のサーバーの盤面をまだ取れていない（日付を移った時に前の日の送信と重なって
+     * 取り損ねた等）なら、版が変わっていなくても取り直す＝取れた後に並びを当てはめる。取れた後は通常の確認に戻る */
+    if (routinesNow_() && !dayPullOk_[ui.currentDate] && !fieldMarksOnly_(ui.currentDate)) { pullAll(false); return; }
     if (pollHeadOk_ === false) {
       /* head非対応の旧GAS（＝GAS未再デプロイ）では15秒間隔で全量pullすると従来(30秒)の2倍の負荷になる。
        * 再デプロイ前でも負荷が増えないよう、この経路だけ従来と同じ30秒の下限を課す。 */
@@ -15933,6 +15936,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (before_ !== after_) { try { pushMasterNow(); } catch (e5) {} }   /* サーバーの汚染版を治す */
         syncCareFromMaster();
         try { store.auto(seedFromMaster); } catch (e3) {}   /* マスタ同期＝履歴非汚染 */
+        /* 並びの固定（2026-10-15）: 盤面より後に届いた登録（別の PC で押した・翌日へ反映）も、表示中の日へ当てはめる */
+        routineAfterPull_(ui.currentDate);
         renderAll();
       } else if (!j.data) {
         /* サーバーに無いのにローカル rev>0 ＝rev不整合。rev を 0 に戻して送り直す（無限競合の防止） */
