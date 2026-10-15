@@ -177,6 +177,9 @@ textarea{resize:vertical;min-height:5.5rem}
 .badge.ok{background:var(--c-ok-bg);color:var(--c-ok)}
 .badge.none{background:var(--c-surface2);color:var(--c-ink2)}
 .badge.ended{background:var(--c-surface2);color:var(--c-ink3)}
+/* 通知を止める（2026-10-15）: 予定は控えめ・止めている時は見出しの下に強めに。色だけに頼らず文言で区別する */
+.stop-plan{display:block;font-size:var(--fs-sm,.85em)}
+#stopNow.stop-on{font-weight:700}
 
 /* ── 通知・警告（画面のみ。紙には出さない）── */
 .banner{border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-3);
@@ -423,6 +426,27 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <h3>取り消した期（<span id="trashCount">0</span>件）</h3>
     <p class="muted" id="trashHint">「元に戻す」でいつでも戻せます。「完全に削除」は元に戻せません</p>
     <div id="trashList" class="tl"></div>
+  </div>
+  <!-- 通知を止める（退去・機能訓練中止・作成不要）2026-10-15 本人指示。利用者を開いている間だけ出す -->
+  <div class="cd" id="stopCard" hidden>
+    <h3>通知を止める（退去・機能訓練中止・作成不要）</h3>
+    <p id="stopNow" role="status" aria-live="polite"></p>
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <div><label for="stopReason">理由</label>
+        <select id="stopReason">
+          <option value="">選んでください</option>
+          <option value="discharge">退去</option>
+          <option value="stopped">機能訓練中止</option>
+          <option value="notNeeded">作成不要</option>
+        </select></div>
+      <div><label for="stopFrom">この日から止める</label><input type="date" id="stopFrom"></div>
+    </div>
+    <div style="margin-top:var(--sp-2)"><label for="stopNote">ひとこと（任意・100字まで）</label><input type="text" id="stopNote" maxlength="100"></div>
+    <div class="stack" style="margin-top:var(--sp-2)">
+      <button id="btnStopSet" class="btn" type="button">この内容で止める</button>
+      <button id="btnStopClear" class="btn danger" type="button">止めるのをやめる</button>
+    </div>
+    <p class="muted">指定日の前日までは今までどおり期限をお知らせします。指定日からは一覧（在籍デイ利用者）・件数・起動時のお知らせから外れ、指定日以降の期は未作成に数えず、AIの一括作成でも作りません。これまでの計画は消えません。日付はあとから変えられます。</p>
   </div>
   <!-- 名簿の氏名と計画書に写した氏名が食い違った時だけ出る直しバー（本人確認バーの直下） -->
   <div id="nameFixBar"></div>
@@ -1044,6 +1068,34 @@ function foldName(v) {
   return out;
 }
 
+/* ── 通知を止める（退去・機能訓練中止・作成不要）2026-10-15 本人指示 ──
+   各人の計画データに stop:{reason, from, note, by, at} を持つ。from（指定日）から期限の通知・件数・起動時の知らせを止める。
+   ・指定日は過去でも先の日付でもよい（後日あらためて指定・変更・取り消しができる）
+   ・指定日の前日までは今までどおり通知し、一覧に「○/○で中止予定」と添える
+   ・入居者マスタの退去日とは【早い方】から止める（マスタの退去日は従来どおり「— 終了」）
+   ・指定日以降の期は「未作成」に数えず、AI一括作成でも作らない（前日までの期だけ）
+   ★未知の理由・壊れた日付は読み込みの時に捨てる（null）＝画面を止めない */
+var STOP_REASONS = ['discharge', 'stopped', 'notNeeded'];
+var STOP_LABEL = { discharge: '退去', stopped: '機能訓練中止', notNeeded: '作成不要' };
+var STOP_SHORT = { discharge: '退去', stopped: '中止', notNeeded: '作成不要' };
+var STOP_NOTE_MAX = 100;
+function normalizeStop(v) {
+  if (!v || typeof v !== 'object') return null;
+  var r = s_(v.reason), f = s_(v.from);
+  if (STOP_REASONS.indexOf(r) < 0 || !isYmd(f)) return null;
+  return { reason: r, from: f, note: s_(v.note).slice(0, STOP_NOTE_MAX), by: s_(v.by).slice(0, 40), at: s_(v.at).slice(0, 40) };
+}
+/* 期を数える・作る上限日（指定日の前日）。止めていない・壊れている時は '' */
+function stopLimitYmd(stop) {
+  var st = normalizeStop(stop);
+  return st ? addDays(st.from, -1) : '';
+}
+/* 今日の時点で止まっているか（指定日が今日以前） */
+function stopActiveOn(stop, today) {
+  var st = normalizeStop(stop);
+  return !!(st && isYmd(today) && cmpYmd(st.from, today) <= 0);
+}
+
 /* 一覧の行を作る。退去者（退去日が今日以前）はアラートの対象外にし「終了」で残す。
    rows: [{masterId,name,kana,careLevel,dischargeDate,active,isDaycare,
            latestPlanDate,nextDue,status,count,gapCount}] */
@@ -1059,7 +1111,13 @@ function buildAlerts(rows, opts) {
   var src = Object.prototype.toString.call(rows) === '[object Array]' ? rows : [];
   for (var i = 0; i < src.length; i++) {
     var r = src[i] || {};
-    var ended = !!(isYmd(r.dischargeDate) && today && cmpYmd(r.dischargeDate, today) <= 0);
+    var dischEnded = !!(isYmd(r.dischargeDate) && today && cmpYmd(r.dischargeDate, today) <= 0);
+    /* 通知を止める指定（2026-10-15）。マスタの退去日と早い方から止める */
+    var stop = normalizeStop(r.stop);
+    var stopEnded = stopActiveOn(stop, today);
+    var ended = dischEnded || stopEnded;
+    /* 止めた理由の表示は、指定日がマスタの退去日より早い（または同じ）時だけ。マスタの退去が先なら従来どおり「終了」 */
+    var stopShown = stopEnded && !(dischEnded && cmpYmd(r.dischargeDate, stop.from) < 0);
     var inactive = (r.active === false);
     if (scope === 'day' && (ended || inactive || !r.isDaycare)) continue;
     /* AI下書きあり（絞込・D47〜D50拡張）: 状態が draft_ai の期がある人だけ。在籍・退去は問わない */
@@ -1082,7 +1140,11 @@ function buildAlerts(rows, opts) {
       prevMismatch: Number(r.prevMismatch) || 0,
       missingCount: Number(r.missingCount) || 0,
       /* 状態が draft_ai（AI生成のまま＝未確認）の期の数（一括AI作成の目印。D47〜D50拡張） */
-      aiDraftCount: Number(r.aiDraftCount) || 0
+      aiDraftCount: Number(r.aiDraftCount) || 0,
+      /* 通知を止めた理由（指定日を過ぎた時だけ）と、先の日付で止める予定（前日まで） */
+      stopReason: stopShown ? stop.reason : '',
+      stopFrom: stop ? stop.from : '',
+      stopPlanned: (stop && !stopEnded && !ended) ? stop.reason : ''
     });
   }
   list.sort(function (a, b) {
@@ -1845,7 +1907,9 @@ global.TP = {
   applyPrintKind: applyPrintKind, reportExplainedDate: reportExplainedDate,
   achievementValid: achievementValid, changesHasPrefixes: changesHasPrefixes, goalHasPrefix: goalHasPrefix,
   aiMaskTerms: aiMaskTerms, aiMaskDeep: aiMaskDeep, aiUnmaskDeep: aiUnmaskDeep, aiHasSubject: aiHasSubject, aiToKatakana: aiToKatakana,
-  aiMaskHonor: aiMaskHonor
+  aiMaskHonor: aiMaskHonor,
+  STOP_REASONS: STOP_REASONS, STOP_LABEL: STOP_LABEL, STOP_SHORT: STOP_SHORT, STOP_NOTE_MAX: STOP_NOTE_MAX,
+  normalizeStop: normalizeStop, stopLimitYmd: stopLimitYmd, stopActiveOn: stopActiveOn
 };
 })(typeof window !== 'undefined' ? window : this);
 </script>
@@ -2298,9 +2362,11 @@ function indexRowOf(doc) {
     /* 前回作成日が直前の期と食い違う期の数（一覧に出すだけ。値そのものは直さない） */
     prevMismatch: TP.prevDateMismatches(plans).length,
     /* 3か月ごとの期のうち計画が残っていない期の数（M2 §1・保存が通った時に入れ直す） */
-    missingCount: missingCountOf(plans),
+    missingCount: missingCountOf(plans, doc && doc.stop),
     /* 状態が draft_ai（一括AI作成などでAIの文案のまま・未確認）の期の数（D47〜D50拡張） */
-    aiDraftCount: aiDraftCountOf(plans)
+    aiDraftCount: aiDraftCountOf(plans),
+    /* 通知を止める指定（理由と指定日だけ。ひとこと・誰がは各人の計画データにだけ残す）。無ければ null */
+    stop: (function (st) { return st ? { reason: st.reason, from: st.from } : null; })(TP.normalizeStop(doc && doc.stop))
   };
 }
 /* 状態が draft_ai の期の数（一覧の「AI下書き」バッジ・絞込用） */
@@ -2373,7 +2439,9 @@ function rebuildIndex() {
     var id = ids[i++];
     setSync('索引を再構築中… ' + i + '/' + ids.length);
     tpGet(docKey(id)).then(function (j) {
-      if (j && j.ok && j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]' && j.data.plans.length) {
+      /* 計画が1件も無くても、通知を止める指定がある方は索引に残す（作成不要の方は計画を持たないことが多い・2026-10-15） */
+      if (j && j.ok && j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]' &&
+          (j.data.plans.length || TP.normalizeStop(j.data.stop))) {
         rows[id] = indexRowOf(j.data);
       }
     }).catch(function () { fails++; }).then(function () { setTimeout(step, 120); });
@@ -2405,7 +2473,8 @@ function healIndexOnBoot() {
       var id = ids[i++];
       tpGet(docKey(id)).then(function (j) {
         if (!j || !j.ok) { failIds.push(id); return; }   /* 読めなかった分は数えて後で断る（黙って落とさない） */
-        if (j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]' && j.data.plans.length) {
+        if (j.data && Object.prototype.toString.call(j.data.plans) === '[object Array]' &&
+            (j.data.plans.length || TP.normalizeStop(j.data.stop))) {
           var want = indexRowOf(j.data);
           if (JSON.stringify(want) !== JSON.stringify(IDX.rows[id])) fixed[id] = want;
         }
@@ -2462,7 +2531,8 @@ function listRows() {
       count: Number(idxRow.count) || 0, gapCount: Number(idxRow.gapCount) || 0,
       prevMismatch: Number(idxRow.prevMismatch) || 0,
       missingCount: Number(idxRow.missingCount) || 0,
-      aiDraftCount: Number(idxRow.aiDraftCount) || 0
+      aiDraftCount: Number(idxRow.aiDraftCount) || 0,
+      stop: idxRow.stop || null
     });
   }
   /* 名簿に無いのに計画が残っている方（過去の退去者など）も「全員」表示では出す */
@@ -2479,6 +2549,7 @@ function listRows() {
         count: Number(x.count) || 0, gapCount: Number(x.gapCount) || 0,
         prevMismatch: Number(x.prevMismatch) || 0, missingCount: Number(x.missingCount) || 0,
         aiDraftCount: Number(x.aiDraftCount) || 0,
+        stop: x.stop || null,
         offRoster: true
       });
     });
@@ -2500,7 +2571,8 @@ function stateBadge(row) {
   if (row.state === 'overdue') txt = '⚠ 超過 ' + Math.abs(row.days) + '日';
   else if (row.state === 'warn') txt = '▲ あと' + row.days + '日';
   else if (row.state === 'ok') txt = '✓ あと' + row.days + '日';
-  else if (row.state === 'ended') txt = OFF_ROSTER[row.masterId] ? '— 名簿外' : '— 終了';
+  else if (row.state === 'ended') txt = OFF_ROSTER[row.masterId] ? '— 名簿外' :
+    (row.stopReason ? '— ' + (TP.STOP_SHORT[row.stopReason] || '終了') : '— 終了');
   else txt = '✕ 計画なし';
   b.textContent = txt;
   return b;
@@ -2548,6 +2620,10 @@ function renderList() {
     var td = el('div');
     td.setAttribute('data-label', '期限まで');
     td.appendChild(stateBadge(row));
+    /* 先の日付で通知を止める予定（前日までは今までどおり通知する）＝一覧で分かるように添える */
+    if (row.stopPlanned && row.stopFrom) {
+      td.appendChild(el('span', 'muted stop-plan', '（' + row.stopFrom + ' で' + (TP.STOP_SHORT[row.stopPlanned] || '中止') + '予定）'));
+    }
     tr.appendChild(td);
     var stc = el('div');
     stc.setAttribute('data-label', '状態');
@@ -2712,7 +2788,7 @@ function emptyDoc(masterId, row) {
   return {
     v: 1,
     subject: { masterId: s_(masterId), nameNorm: TP.normalizeName(row && row.name), kana: s_(row && row.kana) },
-    plans: [], trash: [], gaps: []
+    plans: [], trash: [], gaps: [], stop: null
   };
 }
 /* 保存・件数判定の単位（D30）。取り消し置き場（trash）も合計に数える＝取り消しは保存の件数を減らさない */
@@ -2752,7 +2828,9 @@ function openResident(masterId, wantScr, opts) {
         trash: TP.normalizeTrash(j.data.trash),
         gaps: (Object.prototype.toString.call(j.data.gaps) === '[object Array]' ? j.data.gaps : []).map(function (g) {
           return { from: s_(g && g.from), to: s_(g && g.to), note: s_(g && g.note) };
-        })
+        }),
+        /* 通知を止める指定（2026-10-15）。★ここで落とすと、次の保存で指定が消える */
+        stop: TP.normalizeStop(j.data.stop)
       };
     } else {
       DOC = emptyDoc(id, row);
@@ -2844,6 +2922,7 @@ function renderEdit() {
   renderPlanSelect();
   renderTimeline();
   renderTrashCard();
+  renderStopCard();
   renderStaffSelects();
   renderMeta();
   renderMoveEvalBox();
@@ -3666,7 +3745,11 @@ function saveNow(explicit) {
     showSaveError('計画と取り消し置き場の合計件数がサーバー（' + DOC_COUNT + '件）より減っています（' + docTotal(DOC) + '件）。取り違えの恐れがあるため保存しませんでした。画面を開き直してください。');
     return;
   }
-  touchAudit();
+  /* 通知を止める指定だけを変えた保存では、開いている期の「最終更新者」を書き換えない。
+     その期の中身も変わっていたら（送った時点の基準と違えば）従来どおり書く */
+  var skipTouch = noTouchOnce && !curPlanChangedFromBase();
+  noTouchOnce = false;
+  if (!skipTouch) touchAudit();
   pushing = true;
   setSync('保存中…');
   updateSaveState();
@@ -3777,7 +3860,9 @@ function normServerDoc(data, id) {
     trash: TP.normalizeTrash(data && data.trash),
     gaps: (Object.prototype.toString.call(data && data.gaps) === '[object Array]' ? data.gaps : []).map(function (g) {
       return { from: s_(g && g.from), to: s_(g && g.to), note: s_(g && g.note) };
-    })
+    }),
+    /* 通知を止める指定（2026-10-15）。未知の理由・壊れた日付は null に倒す */
+    stop: TP.normalizeStop(data && data.stop)
   };
 }
 /* 欠落台帳の和集合（同じ期間は入れない）。取込（applyImport）と同じ作法。戻り: 増えた件数 */
@@ -3795,6 +3880,22 @@ function mergeGaps(doc, incoming) {
     n++;
   }
   return n;
+}
+/* 通知を止める指定（2026-10-15）の3者突き合わせ。戻り: 相手の指定を採ったら true。
+   ・手元が基準のまま（触っていない）＝相手を採る／相手が基準のまま＝手元を残す
+   ・両方が変えた（または基準が無い）＝後から指定した方（at が新しい方）を採る。取り消し（null）は at を持たないので、指定した側が残る
+   ★どちらの場合も相手の変更を黙って消さない（上書きで消えるのは「両方が変えた」時の古い方だけ） */
+function mergeStop(doc, theirs, base) {
+  var mine = TP.normalizeStop(doc.stop), th = TP.normalizeStop(theirs);
+  var a = JSON.stringify(mine), b = JSON.stringify(th);
+  if (a === b) return false;
+  if (base !== undefined) {
+    var c = JSON.stringify(base);
+    if (a === c) { doc.stop = th; return true; }
+    if (b === c) return false;
+  }
+  if (s_(th && th.at) > s_(mine && mine.at)) { doc.stop = th; return true; }
+  return false;
 }
 /* 状態の記録（いつ・誰が状態を変えたか）の和集合。同じ日時＋状態は1つにする */
 function unionStatusLog(mine, theirs) {
@@ -3888,6 +3989,7 @@ function handleConflict(mid) {
       }
     }
     var gapAdded = mergeGaps(DOC, srv.gaps);
+    var stopTook = mergeStop(DOC, srv.stop, DOC_BASE ? TP.normalizeStop(DOC_BASE.stop) : undefined);
     var diffs = [], took = 0, tagAdded = 0;
     for (i = 0; i < srv.plans.length; i++) {
       var sp = srv.plans[i], mp = byId[sp.planId];
@@ -3918,6 +4020,7 @@ function handleConflict(mid) {
       if (gapAdded) msg.push('欠落台帳 ' + gapAdded + '件');
       if (tagAdded) msg.push('本人の様子のタグ ' + tagAdded + '件');
       if (trashAdded) msg.push('取り消した期 ' + trashAdded + '件');
+      if (stopTook) msg.push('通知を止める指定');
       toast(msg.length ? ('他の端末の変更を取り込みました（' + msg.join('・') + '）') : '最新版を取り直しました');
       saveNow(true);
       return;
@@ -4172,11 +4275,14 @@ function applyMaster(p, got) {
 var GRACE_DAYS = 45;   /* 未作成と見なすまでの猶予（D18）。翌月1日運用の数日ずれで誤検知しない幅 */
 
 /* 3か月ごとの期の並び（作成済＝plan／未作成＝missing）。計算は純関数に閉じている */
-function timelineOf(plans) {
-  return TP.expectedPeriods(plans, todayYmd(), settings().dueRule, GRACE_DAYS);
+/* stop（通知を止める指定・2026-10-15）があれば、指定日の前日までの期だけを数える（指定日以降は「未作成」にしない） */
+function timelineOf(plans, stop) {
+  var td = todayYmd(), lim = TP.stopLimitYmd(stop);
+  if (lim && TP.cmpYmd(lim, td) < 0) td = lim;
+  return TP.expectedPeriods(plans, td, settings().dueRule, GRACE_DAYS);
 }
-function missingCountOf(plans) {
-  var tl = timelineOf(plans), n = 0;
+function missingCountOf(plans, stop) {
+  var tl = timelineOf(plans, stop), n = 0;
   for (var i = 0; i < tl.length; i++) if (tl[i].kind === 'missing') n++;
   return n;
 }
@@ -4248,7 +4354,7 @@ function renderTimeline() {
     host.appendChild(el('p', 'muted', '計画がまだありません。「今回の計画を追加」で作るか、一覧の「JSON取込」で原本を取り込んでください。'));
     return;
   }
-  var tl = timelineOf(DOC.plans), miss = 0, i;
+  var tl = timelineOf(DOC.plans, DOC.stop), miss = 0, i;
   for (i = 0; i < tl.length; i++) {
     var it = tl[i];
     var row = el('div', 'tl-row' + (it.kind === 'missing' ? ' miss' : ''));
@@ -4406,6 +4512,72 @@ function clearEvalOriginFields(idxStr) {
   renderEdit();
   saveNow(true);
   toast('AIが入れた欄を消しました');
+}
+
+/* ═══════════ 通知を止める（退去・機能訓練中止・作成不要）2026-10-15 本人指示 ═══════════
+   DOC.stop = {reason, from, note, by, at}（無ければ null）。保存はいつもの自動保存（markDirty）に乗せる。
+   ★入力欄は、職員が触っている間は描き直しで上書きしない（stopFormDirty）。開いている方が変わったら保存値に戻す。
+   ★この指定だけを変えた保存では、開いている期の「最終更新者」を書き換えない（noTouchOnce）。 */
+var stopFormDirty = false, stopFormFor = '', noTouchOnce = false;
+function renderStopCard() {
+  var card = $('stopCard');
+  if (!card) return;
+  if (!DOC) { card.hidden = true; return; }
+  card.hidden = false;
+  if (stopFormFor !== curMasterId) { stopFormDirty = false; stopFormFor = curMasterId; }
+  var st = TP.normalizeStop(DOC.stop);
+  var now = $('stopNow');
+  if (st) {
+    var active = TP.stopActiveOn(st, todayYmd());
+    now.textContent = (active ? '止めています：' : '止める予定です：') + st.from + ' から（' + TP.STOP_LABEL[st.reason] + '）' +
+      (st.note ? '　' + st.note : '') + '　指定 ' + (st.by || '職員未選択') + (st.at ? ' ' + fmtDateTime(st.at) : '');
+    now.className = active ? 'stop-on' : 'stop-plan';
+  } else {
+    now.textContent = '止めていません（期限が近づくとお知らせします）';
+    now.className = 'muted';
+  }
+  if (!stopFormDirty) {
+    $('stopReason').value = st ? st.reason : '';
+    $('stopFrom').value = st ? st.from : '';
+    $('stopNote').value = st ? st.note : '';
+  }
+  $('btnStopClear').disabled = !st;
+}
+/* 開いている期が、最後に送れた内容（DOC_BASE）から変わっているか。基準が無い時は「変わった」に倒す */
+function curPlanChangedFromBase() {
+  var p = curPlan();
+  if (!p) return false;
+  var bp = (DOC_BASE && Object.prototype.toString.call(DOC_BASE.plans) === '[object Array]') ? DOC_BASE.plans : null;
+  if (!bp) return true;
+  for (var i = 0; i < bp.length; i++) if (bp[i] && s_(bp[i].planId) === s_(p.planId)) return JSON.stringify(bp[i]) !== JSON.stringify(p);
+  return true;
+}
+function setStop() {
+  if (!DOC) return;
+  var r = s_($('stopReason').value), f = s_($('stopFrom').value);
+  var n = s_($('stopNote').value).trim().slice(0, TP.STOP_NOTE_MAX);
+  if (TP.STOP_REASONS.indexOf(r) < 0) { toast('止める理由を選んでください'); $('stopReason').focus(); return; }
+  if (!TP.isYmd(f)) { toast('止める日付を入れてください'); $('stopFrom').focus(); return; }
+  var when = (TP.cmpYmd(f, todayYmd()) <= 0) ? '今日の時点で止まります' : '前日まではお知らせします';
+  if (!confirm(TP.STOP_LABEL[r] + '：' + f + ' から期限のお知らせを止めます（' + when + '）。よろしいですか？')) return;
+  if (!dirty) noTouchOnce = true;
+  DOC.stop = { reason: r, from: f, note: n, by: currentStaffName(), at: nowIso() };
+  stopFormDirty = false;
+  markDirty();
+  renderStopCard();
+  renderTimeline();
+  toast('通知を止める指定を入れました（自動で保存します）');
+}
+function clearStop() {
+  if (!DOC || !TP.normalizeStop(DOC.stop)) return;
+  if (!confirm('通知を止める指定を取り消し、期限のお知らせを再開します。よろしいですか？')) return;
+  if (!dirty) noTouchOnce = true;
+  DOC.stop = null;
+  stopFormDirty = false;
+  markDirty();
+  renderStopCard();
+  renderTimeline();
+  toast('通知を止める指定を取り消しました（自動で保存します）');
 }
 
 /* ═══════════ 取り消した期（trash）── 元に戻す／完全に削除 ═══════════ */
@@ -6542,10 +6714,19 @@ function batchAiPreviewList(doc, dates) {
 function batchAiLimitFor(masterId) {
   var today = todayYmd(), r = rosterOf(masterId);
   if (!r) return { ok: false, reason: '名簿に無いため飛ばしました（氏名を照合できず、いつまでの期かも決められません）' };
+  /* 通知を止める指定（2026-10-15）: 指定日の前日までの期だけを作る。開いている方は手元の計画データ、ほかの方は索引から読む */
+  var stop = TP.normalizeStop((s_(masterId) === curMasterId && DOC) ? DOC.stop : (IDX && IDX.rows[s_(masterId)] && IDX.rows[s_(masterId)].stop));
+  var sLim = stop ? TP.stopLimitYmd(stop) : '';
   var d = s_(r.dischargeDate);
-  if (TP.isYmd(d) && TP.cmpYmd(d, today) <= 0) return { ok: true, limit: d, ended: true };
-  if (r.active === false) return { ok: false, reason: '利用終了ですが退去日が無いため飛ばしました（いつまでの期か決められません）' };
-  return { ok: true, limit: today, ended: false };
+  var base = null;
+  if (TP.isYmd(d) && TP.cmpYmd(d, today) <= 0) base = { ok: true, limit: d, ended: true };
+  else if (r.active === false && !sLim) return { ok: false, reason: '利用終了ですが退去日が無いため飛ばしました（いつまでの期か決められません）' };
+  else base = { ok: true, limit: today, ended: false };
+  if (sLim && TP.cmpYmd(sLim, base.limit) < 0) {
+    return { ok: true, limit: sLim, ended: true,
+      note: 'この方は ' + stop.from + ' から通知を止めている（' + TP.STOP_LABEL[stop.reason] + '）ため、その前日までの抜けだけを作ります。' };
+  }
+  return base;
 }
 /* いま開いている利用者の「未作成の期をまとめてAIで作る」本体。全員分（一覧）からも同じ関数を呼ぶ
    （opts.confirm=false で確認ダイアログを省く＝先に一覧側で1回だけ確認済みのため）。
@@ -8142,6 +8323,13 @@ function bindUI() {
   });
   $('btnNewPlan').addEventListener('click', addPlan);
   $('addAtDate').max = todayYmd();   /* 未来日は入力段階で止める（addPlanAt 側の断りも残る） */
+  /* 通知を止める（2026-10-15） */
+  $('btnStopSet').addEventListener('click', setStop);
+  $('btnStopClear').addEventListener('click', clearStop);
+  ['stopReason', 'stopFrom', 'stopNote'].forEach(function (id) {
+    $(id).addEventListener('input', function () { stopFormDirty = true; });
+    $(id).addEventListener('change', function () { stopFormDirty = true; });
+  });
   $('btnAddAt').addEventListener('click', function () {
     if (!DOC) { toast('計画書をまだ読み込めていません。一覧から利用者を開いてください'); return; }
     var d = s_($('addAtDate').value);
@@ -8169,7 +8357,7 @@ function bindUI() {
     BATCH_LAST_SUMMARY = null;   /* 低: 前回の要約を今回の結果と読み違えないよう、始める時に消す */
     renderEdit();
     runBatchAiForOpenResident({ confirm: true, limitYmd: lim.limit,
-      endedNote: lim.ended ? ('この方は退去日 ' + lim.limit + ' で終了しているため、退去日までの抜けだけを作ります。') : '' }).then(function (r) {
+      endedNote: lim.note ? lim.note : (lim.ended ? ('この方は退去日 ' + lim.limit + ' で終了しているため、退去日までの抜けだけを作ります。') : '') }).then(function (r) {
       if (r.canceled) return;
       if (r.switched) { toast('先ほど開いていた方の一括作成は途中で止めました'); return; }   /* 中4 */
       if (r.noTarget) { toast('未作成の期はありません'); return; }
