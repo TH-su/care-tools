@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-EMVU/uniWqApz7D2t4IVBPZBUQytota9BXn2XiDgJHg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hYbqfspAKn/pDN4hgyRub9PcMYCLsY3YS8Vi9lM4VB8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1787,6 +1787,45 @@ function newReqId() {
   return out.slice(0, 32);
 }
 
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-15・入居者マスタの rmAccessToken_ と同じ考え方）。
+   職員マスタGAS（staff-api.gs の verifyEditor_）が確かめ、書いた人（職員の updatedBy・staff_bak・選択肢などの *By）を決める
+   （画面が送る by は記録に使われない）。ログインの控えが端末に無ければ問い合わせずに ''。取り出せない・3秒で返らない時も ''
+   （GAS は「未確認」と記録し、保存は止めない）。証明は書く要求の本文にだけ添え、端末・URL・記録には残さない */
+var STFM_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function stfmHasLogin_() {
+  try { for (var i = 0; i < localStorage.length; i++) if (STFM_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) { /* 読めない端末はログインなし */ }
+  return false;
+}
+/* supabase-js と su-auth.js は使う時にだけ読み込む（職員マスタの起動を重くしない・入居者マスタの msAuthLoad_ と同じ形） */
+function stfmAuthLoad_() {
+  if (window.SUAuth) return Promise.resolve();
+  function has(re) { return Array.prototype.some.call(document.scripts, function (s) { return re.test(s.getAttribute('src') || ''); }); }
+  function load(src) {
+    return new Promise(function (ok, ng) {
+      var s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = function () { ok(); }; s.onerror = function () { ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready) {
+    return new Promise(function (ok, ng) {
+      var n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })();
+    });
+  }
+  var p = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function () {
+    if (window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function stfmAccessToken_() {
+  if (!stfmHasLogin_()) return Promise.resolve('');
+  var get = stfmAuthLoad_().then(function () { return (window.SUAuth && typeof window.SUAuth.client === 'function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
+  return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
+}
+
 /* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
 function apiPost(action, body, timeoutMs) {
   var cfg = loadCfg(), payload = { action: action, token: cfg.token }, k;
@@ -1803,9 +1842,16 @@ function apiPost(action, body, timeoutMs) {
   var ms = Number(timeoutMs);
   if (!isFinite(ms) || ms <= 0) ms = 45000;
   var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0;
-  var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
-  if (ctl) opt.signal = ctl.signal;
-  return fetch(cfg.url, opt).then(function (res) {
+  function send() {
+    var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
+    if (ctl) opt.signal = ctl.signal;
+    return fetch(cfg.url, opt);
+  }
+  /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る */
+  var sent = (REQ_WRITE_ACTIONS.indexOf(action) >= 0 && stfmHasLogin_())
+    ? stfmAccessToken_().then(function (at) { if (at) payload.accessToken = at; return send(); })
+    : send();
+  return sent.then(function (res) {
     if (!res.ok) throw markNoAnswer(mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
     return res.text();
   }).then(function (t) {
@@ -1822,6 +1868,7 @@ function apiPost(action, body, timeoutMs) {
         ne.created = Array.isArray(d.created) ? d.created : [];
         ne.conflicts = Array.isArray(d.conflicts) ? d.conflicts : [];
         ne.warnings = Array.isArray(d.warnings) ? d.warnings : [];
+        ne.by = txt(d.by);                                          /* 記録した「誰が」（2026-10-15・無ければ ''） */
         ne.hint = '保存できた分はこの画面に反映しました。残りは一覧を取り直してから送り直してください。';
       }
       /* 確定できたか分からない（partial で来ることもある）。入力や合言葉の誤りではないので案内を差し替える */
@@ -2800,7 +2847,7 @@ function syncCwDate() {
 }
 
 /* 詳細画面の見出しの下の行（2026-10-11・監査10月版 第2版 職員マスタ）。最終更新の更新元と日時を足す。
-   更新元はサーバーが保存のたびに書く updatedBy（設定の「この端末の名前」）、日時は updatedAt。
+   更新元はサーバーが保存のたびに書く updatedBy（2026-10-15 からはログインを確かめたメール／「未確認」。旧い GAS は設定の「この端末の名前」）、日時は updatedAt。
    更新元が空の保存は日時だけ。どちらも無い古い行は今までどおり「職員ID／版」だけ。textContent で出す */
 function fmtUpdatedAt(v) {
   var t = txt(v), d = new Date(t);
@@ -2817,10 +2864,13 @@ function dtMetaText(row, extra) {
 }
 /* 保存に成功した行に、手元で最終更新を入れる（サーバーの応答には更新元・日時が無いため）。
    次に一覧を読み直すとサーバーが書いた値に置き換わる。更新元はサーバーと同じく設定の「この端末の名前」 */
-function stampSavedRow(row) {
+/* by（2026-10-15）: サーバーがこの保存で記録した「誰が」（応答の by・確かめたメール／「未確認」）。
+   応答に無い（旧い GAS）時だけ、今までどおり設定の「この端末の名前」で書き戻す */
+function stampSavedRow(row, by) {
   if (!row) return;
   row.updatedAt = new Date().toISOString();
-  row.updatedBy = txt(loadCfg().by).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
+  var sv = txt(by).replace(/[\r\n\t]/g, ' ').trim();
+  row.updatedBy = sv || txt(loadCfg().by).replace(/[\r\n\t]/g, ' ').trim().slice(0, 40);
 }
 
 function openDetail(id) {
@@ -3191,7 +3241,7 @@ function applyDetailResult(d, cur, dropped, partialErr) {
     ST.detail.id = nid;
     ST.detail.rev = nrow.rev;
     ST.detail.base = normRow(nrow);
-    if (!unsure) stampSavedRow(nrow);       /* 届いたか確かめ中の時は、まだ最終更新を入れない */
+    if (!unsure) stampSavedRow(nrow, d.by);  /* 届いたか確かめ中の時は、まだ最終更新を入れない */
     $('dtMeta').textContent = dtMetaText(nrow, unsure ? '（確かめ中）' : '');
     buildListHead();
     renderList();
@@ -3203,7 +3253,7 @@ function applyDetailResult(d, cur, dropped, partialErr) {
       ST.detail.rev = row.rev;
       ST.detail.base = normRow(row);
       if (ST.detail.insShown) ST.detail.insBase = txt(cur.empInsNo);
-      stampSavedRow(row);
+      stampSavedRow(row, d.by);
       $('dtMeta').textContent = dtMetaText(row);
       refreshRow(row.id);
     }
@@ -3322,7 +3372,7 @@ function adoptCreated(dt, p, row) {
   dt.id = nrow.id;
   dt.rev = nrow.rev;
   dt.base = normRow(nrow);
-  stampSavedRow(nrow);
+  stampSavedRow(nrow, row && row.updatedBy);   /* 読み直した一覧の行＝サーバーが記録した値 */
   $('dtMeta').textContent = dtMetaText(nrow);
   $('dtName').textContent = txt(p.form.name) || '（氏名未入力）';
   updateDirtyUi();
@@ -3517,13 +3567,13 @@ function setCaps(d) {
 }
 
 /* 保存された行の版を書き戻す（詳細フォームの楽観ロックが古い版で競合しないように） */
-function applyFilesRev(row, rev) {
+function applyFilesRev(row, rev, by) {
   var n = Number(rev);
   if (isFinite(n) && n > 0) row.rev = n;
   if (ST.detail && txt(ST.detail.id) === txt(row.id)) {
     ST.detail.rev = row.rev;
     if (ST.detail.base) ST.detail.base.filesJson = toArr(row.filesJson);
-    stampSavedRow(row);                    /* 書類の追加・削除もサーバーは更新元・日時を書く */
+    stampSavedRow(row, by);                /* 書類の追加・削除もサーバーは更新元・日時を書く（by は応答の記録した値） */
     $('dtMeta').textContent = dtMetaText(row);
   }
 }
@@ -3793,7 +3843,7 @@ function uploadPicked() {
     var nf = normFile(d && d.file);
     ST.ver = Number(d && d.ver) || ST.ver;
     if (row && nf.fid) row.filesJson = toArr(row.filesJson).concat([nf]);
-    if (row) applyFilesRev(row, d && d.rev);
+    if (row) applyFilesRev(row, d && d.rev, d && d.file && d.file.by);
     $('fdFile').value = '';
     ST.dropFile = null;
     $('fdTitleIn').value = '';
@@ -3894,7 +3944,7 @@ function removeFileEntry(fid, f) {
     ST.ver = Number(d && d.ver) || ST.ver;
     if (row) {
       row.filesJson = toArr(row.filesJson).filter(function (x) { return txt(x && x.fid) !== txt(fid); });
-      applyFilesRev(row, d && d.rev);
+      applyFilesRev(row, d && d.rev, d && d.by);
     }
     renderFiles();
     updateFilesBtn();

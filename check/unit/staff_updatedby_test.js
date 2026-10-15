@@ -5,6 +5,7 @@
      ①サーバーが書く updatedBy（設定の「この端末の名前」）と updatedAt を「最終更新 端末名　YYYY/M/D HH:MM」で出す
      ②更新元が空なら日時だけ・どちらも無い古い行は今までどおり「職員ID／版」だけ・壊れた日時は出さない
      ③保存に成功した時は手元で更新元と日時を入れて出す（確かめ中は入れない）。書類の追加・削除も同じ
+       2026-10-15: 更新元は応答の by（サーバーが記録した値）があればそれ、無ければ（旧い GAS）端末の名前
      ④見出しの下の行は全部 dtMetaText を通す（textContent で出す）
    ★このファイルは公開リポジトリの check/unit にある。氏名は使わない。 */
 'use strict';
@@ -49,15 +50,31 @@ console.log('\n— 保存した時 —');
   sb.stampSavedRow(row);
   t('端末の名前が空なら更新元も空（日時だけ出る）', row.updatedBy === '');
 }
+/* 2026-10-15: サーバーが記録した「誰が」（応答の by）があればそれで書き戻す。無い（旧い GAS）時だけ端末の名前 */
+{
+  sb.cfgBy = '事務所PC';
+  const row = { id: 'S1', rev: 2, updatedBy: '古い端末', updatedAt: '2026-01-01T00:00:00Z' };
+  sb.stampSavedRow(row, 'office1@example.com');
+  t('応答に記録した値があればそれ（確かめたメール）で書き戻す', row.updatedBy === 'office1@example.com', row.updatedBy);
+  sb.stampSavedRow(row, '未確認');
+  t('記録した値が「未確認」ならそのまま「未確認」（端末の名前に戻さない）', row.updatedBy === '未確認', row.updatedBy);
+  sb.stampSavedRow(row, undefined);
+  t('応答に無い（旧い GAS）時は今までどおり端末の名前', row.updatedBy === '事務所PC', row.updatedBy);
+  sb.stampSavedRow(row, '');
+  t('空の値も「無い」扱い（今までどおり）', row.updatedBy === '事務所PC', row.updatedBy);
+}
 
 console.log('\n— つなぎ —');
 t('見出しの下の行を書くのは全部 dtMetaText（未登録の1か所を除く）',
   (SRC.match(/\$\('dtMeta'\)\.textContent = /g) || []).length === (SRC.match(/\$\('dtMeta'\)\.textContent = dtMetaText\(/g) || []).length + 1
   && /\$\('dtMeta'\)\.textContent = '未登録';/.test(SRC));
-t('保存に成功した3つの経路で手元の最終更新を入れる（確かめ中は入れない）',
-  /if \(!unsure\) stampSavedRow\(nrow\);/.test(SRC) && /stampSavedRow\(row\);\n\s*\$\('dtMeta'\)\.textContent = dtMetaText\(row\);/.test(SRC)
-  && /dt\.base = normRow\(nrow\);\n\s*stampSavedRow\(nrow\);/.test(SRC));
-t('書類の追加・削除でも入れる', /filesJson = toArr\(row\.filesJson\);\n\s*stampSavedRow\(row\);/.test(SRC));
+/* 2026-10-15 意図的な更新: 書き戻しに応答の記録した値（by）を渡すようになった */
+t('保存に成功した3つの経路で手元の最終更新を入れる（確かめ中は入れない・応答の by を渡す）',
+  /if \(!unsure\) stampSavedRow\(nrow, d\.by\);/.test(SRC) && /stampSavedRow\(row, d\.by\);\n\s*\$\('dtMeta'\)\.textContent = dtMetaText\(row\);/.test(SRC)
+  && /dt\.base = normRow\(nrow\);\n\s*stampSavedRow\(nrow, row && row\.updatedBy\);/.test(SRC));
+t('書類の追加・削除でも入れる（応答の記録した値を渡す）', /filesJson = toArr\(row\.filesJson\);\n\s*stampSavedRow\(row, by\);/.test(SRC)
+  && /applyFilesRev\(row, d && d\.rev, d && d\.file && d\.file\.by\);/.test(SRC) && /applyFilesRev\(row, d && d\.rev, d && d\.by\);/.test(SRC));
+t('途中まで保存（partial）の時も応答の by を受け渡す', /ne\.by = txt\(d\.by\);/.test(SRC));
 t('詳細を開いた時は保存されている値を出す', /\$\('dtMeta'\)\.textContent = dtMetaText\(row\);\n\s*setState\('dtState'/.test(SRC));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

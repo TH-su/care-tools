@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-GElRC5Tbg7Vk0fW2sedoefyXcmKvRdVYeQcGum332J4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-5akVYuRFViSI1JYi6+RXv96EgDnEFM4gEQ6iPU5vYAU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -996,6 +996,8 @@ const SEL_INK = '#26a69a';                     // 選択中の色
 
 // GAS script that users need to paste into Apps Script
 // ★正本は gas/genogram-sync.gs（git 追跡外）。ここは一字一句同じ写し（gas/tests/genogram_sync_gas_test.js が照合する）
+// ★2026-10-15: 正本に \ が入った（直した人の確かめ verifyEditor_ の正規表現）。テンプレート文字列の中では \ が1つ落ちるため、
+//   ここでは \ を二重にして写す＝評価した後の文字列（コピーボタンで貼られる中身）が正本と一字一句同じ
 const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Script editor ========
 // このスクリプトは Google スプレッドシートをデータストアとして使用します。
 // 必要な操作:
@@ -1019,6 +1021,7 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //      デプロイを更新すると、全端末の同期が止まる（実行ユーザーが「自分」のため）。
 //   6. この版から LockService（同時に届いた保存・削除を1本ずつ処理する）を使う。貼り替えたら、デプロイを
 //      更新する前にエディタで authorizeGenogramSync を実行し、承認画面が出たら「承認」する。
+//   7. この版（2026-10-15）から外部への接続（直した人の確かめ）を使う。配信前に authorizeGenogramSync と checkSupabaseConnection をエディタで実行して承認する（しないと全端末の同期が止まる）。
 
 const SHEET_NAME = 'genograms';
 const TOKEN_PROP = 'GENOGRAM_TOKEN';
@@ -1068,7 +1071,12 @@ function route(action, p, token) {
     if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: 'ok', role: r });
     if (action === 'list')   return jsonOut({ ok: true, items: listAll() });
     if (action === 'get')    return jsonOut({ ok: true, doc: getOne(p.name) });
-    if (action === 'save' || action === 'delete') return jsonOut(writeLocked(action, p));
+    if (action === 'save' || action === 'delete') {
+      /* 最後に直した人（2026-10-15）。保存の時だけ、要求に添えたログインの証明を確かめたメール／「未確認」。
+         画面が送った名前は使わない。問い合わせ（通信）は合言葉の確認の後・シートに触れる前・ロックの前に1回だけ */
+      const who = action === 'save' ? verifyEditor_(p && p.accessToken) : null;
+      return jsonOut(writeLocked(action, p, who));
+    }
     return jsonOut({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return jsonOut({ ok: false, error: err.message });
@@ -1118,7 +1126,7 @@ function currentVersion(name) {
    ロックが取れない時はシートに触れずに busy を返す（画面は通常の失敗として保留に回す）。
    base がある時だけ、ロックの中で現在の版と突き合わせ、違えば書かずに conflict を返す。
    base が無い要求（旧い画面）は従来と1文字も同じ応答 */
-function writeLocked(action, p) {
+function writeLocked(action, p, who) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return { ok: false, error: 'busy' };
   try {
@@ -1130,7 +1138,7 @@ function writeLocked(action, p) {
         const cur = currentVersion(p.doc.clientName);
         if (base !== cur) return { ok: false, error: 'conflict', current: cur };
       }
-      out = { ok: true, saved: saveOne(p.doc) };
+      out = { ok: true, saved: saveOne(p.doc, who) };
       if (base !== null) out.saved.cas = 1;
     } else {
       if (base !== null) {
@@ -1152,17 +1160,24 @@ function sheet() {
   let s = ss.getSheetByName(SHEET_NAME);
   if (!s) {
     s = ss.insertSheet(SHEET_NAME);
-    s.appendRow(['name', 'updatedAt', 'doc']);
+    s.appendRow(['name', 'updatedAt', 'doc', 'updatedBy']);
     s.setFrozenRows(1);
   }
   return s;
 }
 
+// updatedBy … 最後に直した人（2026-10-15）。列は見出し名 updatedBy で探す（決め打ちにしない＝手で足した列を読まない・書かない）。
+// 見出しが無い時・記録の無い行（この版より前に保存した図）は ''
+function byCol_(head) {
+  for (let c = 0; c < head.length; c++) if (String(head[c]) === 'updatedBy') return c;
+  return -1;
+}
 function listAll() {
   const data = sheet().getDataRange().getValues();
+  const bc = data.length ? byCol_(data[0]) : -1;
   return data.slice(1)
     .filter(r => r[0])
-    .map(r => ({ name: String(r[0]), updatedAt: String(r[1] || '') }));
+    .map(r => ({ name: String(r[0]), updatedAt: String(r[1] || ''), updatedBy: bc >= 0 ? String(r[bc] || '') : '' }));
 }
 
 function getOne(name) {
@@ -1175,19 +1190,30 @@ function getOne(name) {
   return null;
 }
 
-function saveOne(doc) {
+// who … 最後に直した人（確かめたメール／「未確認」）。見出し updatedBy の列に書く（doc には入れない）。
+// その列が無い古いシートでは、いちばん右の列の次に見出しを足して作る（既存の列の並び・手で足した列の中身は変えない）
+function saveOne(doc, who) {
   if (!doc || !doc.clientName) throw new Error('clientName required');
   const s = sheet();
   const data = s.getDataRange().getValues();
   const now = new Date().toISOString();
   doc.updatedAt = now;
-  const row = [doc.clientName, now, JSON.stringify(doc)];
+  const by = who == null ? EDITOR_UNVERIFIED : String(who);
+  let bc = data.length ? byCol_(data[0]) : -1;
+  if (bc < 0) {
+    bc = Math.max(3, data.length ? data[0].length : 0);
+    s.getRange(1, bc + 1, 1, 1).setValues([['updatedBy']]);
+  }
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === doc.clientName) {
-      s.getRange(i + 1, 1, 1, 3).setValues([row]);
+      s.getRange(i + 1, 1, 1, 3).setValues([[doc.clientName, now, JSON.stringify(doc)]]);
+      s.getRange(i + 1, bc + 1, 1, 1).setValues([[by]]);
       return { name: doc.clientName, updatedAt: now };
     }
   }
+  const row = [doc.clientName, now, JSON.stringify(doc)];
+  while (row.length < bc) row.push('');
+  row[bc] = by;
   s.appendRow(row);
   return { name: doc.clientName, updatedAt: now };
 }
@@ -1202,6 +1228,74 @@ function deleteOne(name) {
     }
   }
   return { name: name, notFound: true };
+}
+
+/* ── 直した人をサーバーで確かめる（2026-10-13・代表者の依頼「画面から送られた名前は使わず、要求のアクセストークンを
+ *    サーバ側で検証したメールを入れる。未ログインの保存は『未確認』」）──
+ * 画面は保存の要求に Supabase のログインの証明（accessToken）を添える。ここでは Supabase の my_account に問い合わせ、
+ * 許可リストで有効な人ならそのメール（小文字）を返す。証明が無い・形が違う・確かめられない時は「未確認」。
+ * ★問い合わせ先と公開用の鍵はスクリプトプロパティ SUPABASE_URL・SUPABASE_ANON_KEY（公開用の鍵はブラウザに配る前提の鍵）。
+ *   無い時は問い合わせずに「未確認」＝保存は止めない。
+ * ★同じ証明は、証明の期限（exp）を越えない範囲で最大10分、キャッシュの控えを使う（保存のたびに問い合わせない）。
+ *   控えのキーは証明そのものではなく、その SHA-256（証明をキャッシュに残さない）。
+ * ★証明は記録・ログ・応答のどこにも残さない。 */
+/* Supabase への接続を確かめ、「外部への接続」（script.external_request）の許可を取る（2026-10-14）。
+ * verifyEditor_ は名前が _ で終わるのでエディタの実行の一覧に出ない。許可が無いと verifyEditor_ の問い合わせが
+ * 「UrlFetchApp.fetch を呼び出す権限がありません」で止まり、直した人が全部「未確認」になる（10/14 EDITOR_DIAG で判明）。
+ * エディタでこの関数を選んで ▷ 実行 → 許可の画面で許可する。問い合わせ先は接続確認の窓口（auth/v1/health）だけで、データは読まない・書かない */
+function checkSupabaseConnection(){
+  var p = PropertiesService.getScriptProperties();
+  var url = String(p.getProperty('SUPABASE_URL') || '').trim().replace(/\\/+$/, '');
+  var key = String(p.getProperty('SUPABASE_ANON_KEY') || '').trim();
+  if(!/^https:\\/\\/[a-z0-9]+\\.supabase\\.co$/.test(url) || !key){ Logger.log('❌ スクリプトプロパティ SUPABASE_URL・SUPABASE_ANON_KEY を確かめてください'); return; }
+  var res = UrlFetchApp.fetch(url + '/auth/v1/health', { method: 'get', headers: { apikey: key }, muteHttpExceptions: true, followRedirects: false });
+  var code = res.getResponseCode();
+  Logger.log(code === 200 ? '✅ Supabase へつながりました（200）。直した人の確かめが動きます' : '❌ Supabase の応答が ' + code + ' でした');
+}
+var EDITOR_UNVERIFIED = '未確認';
+function verifyEditor_(accessToken){
+  /* 確かめた結果の段階を、スクリプトプロパティ EDITOR_DIAG に1件だけ上書きで残す（2026-10-13・「未確認」の原因を本人が
+     設定画面で見られるように）。残すのは段階・時刻・応答の番号・応答の頭だけ。証明・メールは残さない。書けなくても止めない */
+  function diag(stage, x){
+    try{ PropertiesService.getScriptProperties().setProperty('EDITOR_DIAG', JSON.stringify({ at: new Date().toISOString(), stage: stage, x: String(x == null ? '' : x).slice(0, 160) })); }catch(de){}
+  }
+  var t = String(accessToken == null ? '' : accessToken).trim();
+  if(!t){ diag('no-token'); return EDITOR_UNVERIFIED; }
+  if(t.length > 8192 || !/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(t)){ diag('bad-shape', 'len=' + t.length); return EDITOR_UNVERIFIED; }
+  var p = PropertiesService.getScriptProperties();
+  var url = String(p.getProperty('SUPABASE_URL') || '').trim().replace(/\\/+$/, '');
+  var key = String(p.getProperty('SUPABASE_ANON_KEY') || '').trim();
+  if(!/^https:\\/\\/[a-z0-9]+\\.supabase\\.co$/.test(url) || !key){ diag('no-config', 'url=' + (url ? 'set' : 'empty') + ' key=' + (key ? 'set' : 'empty')); return EDITOR_UNVERIFIED; }
+  var ttl = 600, exp = 0;
+  try{
+    var seg = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    while(seg.length % 4) seg += '=';
+    exp = Number(JSON.parse(Utilities.newBlob(Utilities.base64Decode(seg)).getDataAsString()).exp) || 0;
+  }catch(e){ exp = 0; }
+  var nowSec = Math.floor(Date.now() / 1000);
+  if(exp && exp <= nowSec){ diag('expired', 'exp-now=' + (exp - nowSec)); return EDITOR_UNVERIFIED; }                       // 期限切れ（問い合わせるまでもない）
+  if(exp) ttl = Math.max(0, Math.min(ttl, exp - nowSec - 5));
+  var ck = 'edv:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8));
+  var cache = null;
+  try{ cache = CacheService.getScriptCache(); var hit = cache.get(ck); if(hit) return hit; }catch(e){ cache = null; }
+  var who = EDITOR_UNVERIFIED;
+  try{
+    var res = UrlFetchApp.fetch(url + '/rest/v1/rpc/my_account', {
+      method: 'post', contentType: 'application/json', payload: '{}', muteHttpExceptions: true, followRedirects: false,
+      headers: { apikey: key, Authorization: 'Bearer ' + t }
+    });
+    var code = res.getResponseCode();
+    if(code === 200){
+      var j = JSON.parse(res.getContentText() || 'null');
+      var em = (j && typeof j.email === 'string') ? j.email.trim().toLowerCase() : '';
+      if(em.length <= 120 && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(em)){ who = em; diag('ok'); }
+      else diag('no-email', j === null ? 'null' : 'keys=' + (j && typeof j === 'object' ? Object.keys(j).join(',') : typeof j));
+    } else {
+      diag('http-' + code, res.getContentText());
+    }
+  }catch(e){ who = EDITOR_UNVERIFIED; diag('exception', (e && e.message) || e); }
+  if(who !== EDITOR_UNVERIFIED && cache && ttl >= 30){ try{ cache.put(ck, who, ttl); }catch(e){} }
+  return who;
 }
 
 function jsonOut(obj) {
@@ -2867,16 +2961,57 @@ const CloudSync = (function() {
   /* GAS 側の GENOGRAM_TOKEN が未設定でも同じ unauthorized が返る（2026-10-08 から未設定は全部断る）。
      新しく GAS を貼った管理者が端末ばかり疑わないよう、GAS 側の設定も文言に入れる（2026-10-10・第2版 16） */
   const AUTH_ERR_MSG = '合言葉が違うか、入っていません（☁ クラウド設定の「合言葉」を確かめてください。GAS を新しく貼った時は、GAS のスクリプト プロパティに GENOGRAM_TOKEN が設定されているかも確かめてください）';
+  /* ログインの証明（Supabase の access_token）を取り出す（2026-10-15・入居者マスタの rmAccessToken_ と同じ考え方）。
+     同期GAS（genogram-sync.gs の verifyEditor_）が確かめ、図ごとの「最後に直した人」を決める（画面の名前は使わない）。
+     ログインの控えが端末に無ければ問い合わせずに ''。取り出せない・3秒で返らない時も ''（GAS は「未確認」と記録し、保存は止めない）。
+     証明は書く要求（save・delete）の本文にだけ添え、保留の控え・端末・URL・記録には残さない */
+  const GENO_WRITE_ACTIONS = ['save', 'delete'];
+  const GENO_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+  function genoHasLogin_() {
+    try { for (let i = 0; i < localStorage.length; i++) if (GENO_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) { /* 読めない端末はログインなし */ }
+    return false;
+  }
+  /* supabase-js と su-auth.js は使う時にだけ読み込む（家族構成図の起動を重くしない・入居者マスタの msAuthLoad_ と同じ形） */
+  function genoAuthLoad_() {
+    if (window.SUAuth) return Promise.resolve();
+    function has(re) { return Array.prototype.some.call(document.scripts, function (s) { return re.test(s.getAttribute('src') || ''); }); }
+    function load(src) {
+      return new Promise(function (ok, ng) {
+        const s = document.createElement('script'); s.src = src; s.async = true;
+        s.onload = function () { ok(); }; s.onerror = function () { ng(new Error('load')); };
+        document.head.appendChild(s);
+      });
+    }
+    function wait(ready) {
+      return new Promise(function (ok, ng) {
+        let n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })();
+      });
+    }
+    const p = window.supabase ? Promise.resolve()
+      : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+    return p.then(function () {
+      if (window.SUAuth) return null;
+      return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+    });
+  }
+  function genoAccessToken_() {
+    if (!genoHasLogin_()) return Promise.resolve('');
+    const get = genoAuthLoad_().then(function () { return (window.SUAuth && typeof window.SUAuth.client === 'function') ? window.SUAuth.client().auth.getSession() : null; })
+      .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
+    return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
+  }
   async function gasCall(action, params, opts) {
     const cfg = getCfg();
     if (!cfg.gasUrl) throw new Error('GAS URLが未設定です');
     const useGet = opts && opts.method === 'GET';
+    /* 書く要求にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は待たずに今までどおり送る */
+    const at = (!useGet && GENO_WRITE_ACTIONS.indexOf(action) >= 0 && genoHasLogin_()) ? await genoAccessToken_() : '';
     const url = useGet
       ? cfg.gasUrl + '?' + new URLSearchParams({ action, ...(params || {}) }).toString()
       : cfg.gasUrl;
     const init = useGet
       ? { method: 'GET', redirect: 'follow' }
-      : { method: 'POST', body: JSON.stringify({ action, ...(params || {}), ...(cfg.gasToken && GAS_URL_RE.test(cfg.gasUrl) ? { token: cfg.gasToken } : {}) }),
+      : { method: 'POST', body: JSON.stringify({ action, ...(params || {}), ...(cfg.gasToken && GAS_URL_RE.test(cfg.gasUrl) ? { token: cfg.gasToken } : {}), ...(at ? { accessToken: at } : {}) }),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' };
     // 応答の読み取りまで打ち切りの時間内に済ませる（本文が届かないまま止まるのも防ぐ）
     const json = await fetchWithRetry(url, init, undefined, async (res) => {
@@ -3959,10 +4094,12 @@ async function refreshDocList() {
       const remoteList = await CloudSync.list();
       remoteList.forEach(e => {
         const existing = merged.get(e.name);
+        /* 最後に直した人（2026-10-15）。クラウドの版を直した人と、その版の時刻（記録の無い古い図は出さない） */
+        const by = { by: String(e.updatedBy || ''), byAt: e.updatedAt };
         if (!existing || parseTs(e.updatedAt) > parseTs(existing.updatedAt)) {
-          merged.set(e.name, { name: e.name, updatedAt: e.updatedAt, src: existing ? 'both' : 'cloud' });
+          merged.set(e.name, { name: e.name, updatedAt: e.updatedAt, src: existing ? 'both' : 'cloud', ...by });
         } else {
-          merged.set(e.name, { ...existing, src: 'both' });
+          merged.set(e.name, { ...existing, src: 'both', ...by });
         }
       });
     } catch (err) {
@@ -3976,7 +4113,8 @@ async function refreshDocList() {
     opt.value = e.name;
     const d = fmtTsLabel(e.updatedAt);
     const tag = e.src === 'both' ? '☁' : e.src === 'cloud' ? '☁only' : '📱only';
-    opt.textContent = `${tag} ${e.name}  (${d})`;
+    const who = e.by ? `　最後に直した人: ${e.by}（${fmtTsLabel(e.byAt)}）` : '';
+    opt.textContent = `${tag} ${e.name}  (${d})${who}`;
     sel.appendChild(opt);
   });
 }
