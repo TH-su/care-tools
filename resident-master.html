@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Z3tlUG4FEODfWhev3JzcKdRWzHAIX7sBctnGRszAeJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JhO/P5lW7cMuhzodDmeC2uUGFqipsrDvo3LPy6yETiQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -849,6 +849,29 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .lvl-side .v{font-style:italic; font-weight:700; font-size:calc(var(--lvfs,13px) * 1.6);
   font-variant-numeric:tabular-nums}
 .lvl-other{margin-top:6px; font-size: 0.75rem; color:var(--ng); font-weight:700}
+/* ── 食形態一覧表（配布用・A4縦1枚・2026-10-15 管理者指示）──
+   紙の原本「[食形態一覧表]」を写したもの。画面でも紙と同じ幅（A4の印字面）で組み、
+   文字の大きさは fitMfSheet() が紙1枚に収まる最大にする（--mffs）。
+   ★氏名は1人ずつ折り返さない（nowrap）。行の折り返しは氏名と氏名のあいだだけで起きる＝原本と同じ。 */
+.mf-page{width:var(--mfw,718px); margin:0 auto; background:#fff; color:#000;
+  font-size:var(--mffs,16px); line-height:1.75; display:flex; flex-direction:column;
+  font-family:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif}
+.mf-title{text-align:center; font-size:1.25em; letter-spacing:.05em; margin:0 0 .5em}
+.mf-sec{padding:.35em 0 .45em}
+.mf-sec+.mf-sec{border-top:1px solid #000}
+.mf-cat{font-size:1.3em; margin:0 0 .15em .1em}
+.mf-row{display:flex; align-items:baseline; padding-left:.6em}
+.mf-fl{flex:0 0 auto; color:#333; margin-right:.4em; white-space:nowrap}
+.mf-nms{flex:1; min-width:0}
+.mf-nm{white-space:nowrap; display:inline-block}
+.mf-raw{font-size:.75em}
+.mf-ft{margin-top:auto; padding-top:.6em; display:flex; align-items:baseline; justify-content:center; gap:2.5em}
+.mf-upd{font-size:1.05em}
+.mf-tot{font-size:2.2em; letter-spacing:.06em}
+.mf-note{max-width:718px; margin:6px auto 0; font-size:0.75rem; color:var(--g7)}
+.mf-bad{color:var(--ng); font-weight:700}
+.sh-bar .mfdate{display:inline-flex; align-items:center; gap:6px; font-size:0.8125rem; color:var(--g7)}
+.sh-bar .mfdate input{min-height:44px; padding:4px 8px; border:1px solid var(--g3); border-radius:8px; font-size:1rem}
 
 /* ── 要介護認定 期限一覧（A4縦・2026-09-26 追加）──
    ★区分の札は色だけで意味を伝えない。必ず文字（期限切れ／今月満了…）を併記し、
@@ -1112,6 +1135,14 @@ body.meal-on #sc-list{max-width:none}
   .cert-tag{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   .cert-sub{color:#000}
 
+  /* ── 食形態一覧表（配布用・A4縦1枚・2026-10-15 追加）──
+     ★body.mf-on を付けている時だけ効かせる（他の紙を1pxも変えない）。画面だけの注記は紙に出さない。 */
+  body.mf-on .search-bar, body.mf-on .view-tabs, body.mf-on .filter-row,
+  body.mf-on .roster-count, body.mf-on .sh-bar, body.mf-on .mf-note,
+  body.mf-on .mc-bar{display:none !important}
+  body.mf-on .mf-page{margin:0}
+  .mf-fl{color:#000}
+
   /* ── 食形態一覧（A3縦1枚）──
      ★body.meal-on を付けている時だけ効かせる（bday-on と同じ作法）。
        付けない印刷＝従来の詳細印刷・誕生日一覧・A4様式は1pxも変わらない（原則2）。
@@ -1319,6 +1350,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
+    <button class="vtab"    data-v="mf"    role="tab" aria-selected="false">🍽️ 食形態（配布用）</button>
     <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 CM表</button>
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
     <button class="vtab"    data-v="room"  role="tab" aria-selected="false">🗺️ 居室一覧</button>
@@ -1402,6 +1434,13 @@ body.meal-on #sc-list{max-width:none}
     <span class="st" id="certStatus" role="status" aria-live="polite"></span>
     <button type="button" id="certReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（既定 A4縦）</button>
+  </div>
+  <!-- 食形態一覧表（配布用）ビュー専用。印刷には出さない（body.mf-on の印刷CSSで消える） -->
+  <div class="sh-bar" id="mfBar" style="display:none">
+    <span class="st" id="mfStatus" role="status" aria-live="polite"></span>
+    <label class="mfdate">更新日 <input type="date" id="mfDate"></label>
+    <button type="button" id="mfReload">🔄 最新に取り直す</button>
+    <button type="button" class="btn-print" id="mfPrint">🖨️ 印刷（既定 A4縦）</button>
   </div>
   <!-- 薬の変更候補（2026-10-06）。管理者に候補がある時だけ出す（mcPaint_）。印刷しない -->
   <div class="mc-bar" id="mcBar" style="display:none"></div>
@@ -2431,7 +2470,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','cm','lvl','room','fam','hist','md','cert'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -2485,6 +2524,7 @@ function setView(v){
   paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); paintShBars(); renderRoster();
   rmSyncPrintTarget_();   /* ★印刷対象の付け替え。移していない画面では対象なしにする */
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
+  if(curView==='mf')   mealLoad(false);   /* 配布用も食形態一覧と同じデータ（getMealList）で作る */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);  /* CM表・介護度別・認定期限も名簿に無い項目を使う */
   if(curView==='cert') certEnsureFresh_();   /* 保存の後に入った時だけ取り直す（印が無ければ何もしない） */
@@ -2902,6 +2942,15 @@ function renderRoster(){
     paintMealBar();
     return;
   }
+  /* 食形態一覧表（配布用）も自前のデータ（getMealList）で描く。★検索窓は効かせない
+     （配る紙が一部の方だけになるのを防ぐ。母集団は在籍の全員） */
+  if(curView==='mf'){
+    if(cntEl) cntEl.textContent='';
+    box.innerHTML=mfHtml();
+    fitMfSheet();
+    paintShBars();
+    return;
+  }
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';return}
   var html;
   if(curView==='fl2'||curView==='fl4'){
@@ -3164,6 +3213,13 @@ function paintShBars(){
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
   /* 認定期限（2026-09-26 追加）。CM表・介護度別と同じ getBulk の控えを使うので状態も同じ文言 */
   var ce=$('certBar'); if(ce) ce.style.display=(curView==='cert')?'flex':'none';
+  /* 食形態一覧表（配布用・2026-10-15）。状態は食形態一覧と同じ取得（mealLoad）のもの */
+  var mfb=$('mfBar'); if(mfb) mfb.style.display=(curView==='mf')?'flex':'none';
+  if($('mfStatus')) $('mfStatus').textContent=(curView==='mf')
+    ? (mealLoading?'取得しています…':(mealMsg||(mealRows?'':'未取得'))) : '';
+  if($('mfReload')) $('mfReload').disabled=mealLoading||mealSaving;
+  if($('mfPrint'))  $('mfPrint').disabled=mealLoading||!mealRows||!mealRows.length;
+  if($('mfDate')&&$('mfDate').value!==mfDate) $('mfDate').value=mfDate;
   /* 控えがある状態での取り直し中は、表は前回のまま・状態欄だけで知らせる */
   if($('certStatus')) $('certStatus').textContent = (curView==='cert')
     ? ((bkLoading&&bkRows)?'最新を取得しています…':msg) : '';
@@ -3324,6 +3380,120 @@ function cmGroups_(rows){
     if(a.list.length!==b.list.length) return b.list.length-a.list.length;
     return String(a.name).localeCompare(String(b.name),'ja');
   });
+}
+
+/* ═══ 食形態一覧表（配布用・A4縦1枚・2026-10-15 管理者指示）═══
+   紙の原本「[食形態一覧表]」（スキャン 2026/10/15）を、入居者マスタの【副食】から作り直したもの。
+   ・区分は 常食／1口大／刻み／ミキサー の4つ（原本の順）。副食の文字に含まれる語で決める
+     （「刻み ハーフ食」→刻み、「軟菜 一口大」→1口大）。見る順はミキサー→刻み→一口大→常食
+     ＝形態の強い方を先に当てる（両方の語を含む書き方でも、手のかかる方へ寄せる）
+   ・副食が空欄の方は「未設定」として最後に出す（2026-10-15 本人決定。配る紙から黙って抜けないように）
+   ・4区分のどれの語も含まない方（現在0名）は「その他」とし、副食の文字を添えて出す（同じ理由）
+   ・各区分の中は ２階→１階→階未設定 の順、階の中は五十音順（原本と同じ）
+   ・入院中の方も載せる（2026-10-15 本人決定）。退去の方は getMealList が返さない
+   ・更新日は画面の欄で決める（既定は今日・2026-10-15 本人決定）。端末には保存しない
+   ★読み取り専用。マスタを1バイトも書かない。データは食形態一覧と同じ mealRows（getMealList）を使い、
+     未保存の変更（mealDirty）は使わない＝紙に載るのは保存済みの内容だけ。 */
+var MF_CATS=[['jo','常食'],['hito','1口大'],['kizami','刻み'],['mix','ミキサー']];
+var mfDate=todayISO();
+function mfViewActive_(){ return shViewActive_('mf'); }
+function mfCat_(side){
+  var s=String(side==null?'':side).replace(/[\s　]+/g,'')
+    .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  if(!s) return 'none';
+  if(/ミキサー|ﾐｷｻｰ/.test(s)) return 'mix';
+  if(/刻|きざみ|キザミ/.test(s)) return 'kizami';
+  if(/一口|1口|ひと口|ひとくち/.test(s)) return 'hito';
+  if(/常食/.test(s)) return 'jo';
+  return 'other';
+}
+/* 令和の略記（R8.9.15）。令和より前の日付は西暦のまま（2018.4.1）出す */
+function mfWareki_(iso){
+  var p=parseIsoDate(iso); if(!p) return '';
+  var y=p.y, m=p.m, d=p.d;
+  var reiwa=(y>2019)||(y===2019&&m>=5);
+  return (reiwa?('R'+(y-2018)):String(y))+'.'+m+'.'+d;
+}
+function mfHtml(){
+  if(!mealRows){
+    return '<div class="sh-sheet" id="mfSheet">'+((mealLoading||!mealMsg)
+      ? '<div class="loading">'+esc(mealMsg||'読み込み中…')+'</div>'
+      : '<div class="empty">'+esc(mealMsg)+'<br>上の「🔄 最新に取り直す」を押すか、「同期設定」で接続をご確認ください</div>')+'</div>';
+  }
+  var buckets={jo:[],hito:[],kizami:[],mix:[],none:[],other:[]};
+  var nBroken=0;
+  mealRows.forEach(function(r){
+    if(r.broken===true) nBroken++;
+    buckets[mfCat_(r.mealSide)].push(r);
+  });
+  var cats=MF_CATS.slice();
+  if(buckets.other.length) cats.push(['other','その他']);
+  if(buckets.none.length)  cats.push(['none','未設定']);
+  var fl2=floorLbl(2), fl1=floorLbl(1);
+  var secs=cats.map(function(c){
+    var a=buckets[c[0]];
+    var by={2:[],1:[],0:[]};
+    a.forEach(function(r){ var f=roomToFloor(r.room); (f===2?by[2]:f===1?by[1]:by[0]).push(r); });
+    var rows=[[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']].map(function(fp){
+      var list=by[fp[0]].sort(byKana);
+      if(!list.length) return '';
+      return '<div class="mf-row"><span class="mf-fl">'+esc(fp[1])+'</span><span class="mf-nms">'+
+        list.map(function(r,i){
+          var raw=(c[0]==='other')?'<span class="mf-raw">（'+esc(r.mealSide)+'）</span>':'';
+          return '<span class="mf-nm">'+esc(r.name)+raw+(i<list.length-1?'／':'')+'</span>';
+        }).join('')+'</span></div>';
+    }).join('');
+    return '<div class="mf-sec"><div class="mf-cat">'+esc(c[1])+'（'+a.length+'名）</div>'+rows+'</div>';
+  }).join('');
+  var notes=[];
+  if(buckets.none.length) notes.push('副食が空欄の方 '+buckets.none.length+'名は「未設定」に出しています');
+  if(buckets.other.length) notes.push('副食が4区分のどれにも当たらない方 '+buckets.other.length+'名は「その他」に出しています');
+  if(mealDirtyCells()) notes.push('食形態一覧に未保存の変更があります（この表は保存済みの内容で作っています）');
+  notes.push('区分は副食の欄から決めています。入院中の方も載せています');
+  return '<div class="sh-sheet" id="mfSheet">'+
+    '<div class="mf-page">'+
+      '<div class="mf-title">[食形態一覧表]</div>'+secs+
+      '<div class="mf-ft"><span class="mf-upd">'+esc(mfWareki_(mfDate))+' 更新</span>'+
+        '<span class="mf-tot">計 '+mealRows.length+' 名</span></div>'+
+    '</div>'+
+    (nBroken?'<div class="mf-note mf-bad">⚠ '+nBroken+'名は保存データが壊れていて、副食を読めませんでした（「未設定」に出ています）</div>':'')+
+    '<div class="mf-note">'+esc(notes.join('　／　'))+'</div>'+
+  '</div>';
+}
+/* A4縦1枚に収まる最大の文字にする。★紙の幅でページを組んでから測る（画面の窓の広さで紙の文字が変わらない）。
+   収まったかの見方: (1) ページの中身が紙の高さに入る (2) どの行も横にはみ出さない。
+   ★測る間はページの最小の高さ（下端に「計」を寄せる指定）を外す。外さないと常に紙の高さ以上と測られる。 */
+function fitMfSheet(m){
+  var sh=$('mfSheet'); if(!sh) return null;
+  var pg=sh.querySelector('.mf-page'); if(!pg||!sh.offsetParent) return null;
+  var W=m?Math.round(m.wPx):Math.round((210-20)*96/25.4), H=m?m.hPx:(297-20)*96/25.4;
+  pg.style.setProperty('--mfw', W+'px');
+  pg.style.minHeight='';
+  function fits(){
+    if(pg.scrollHeight>H-8) return false;
+    var ns=pg.querySelectorAll('.mf-row');
+    for(var i=0;i<ns.length;i++) if(ns[i].scrollWidth>ns[i].clientWidth+1) return false;
+    return true;
+  }
+  var MIN=8, MAX=40, STEP=0.25, lo=0, hi=Math.round((MAX-MIN)/STEP);
+  var sizeOf=function(k){ return Math.round((MIN+k*STEP)*100)/100; };
+  var apply=function(px){ pg.style.setProperty('--mffs', px+'px'); };
+  apply(sizeOf(lo));
+  var ok=fits();
+  if(ok){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  apply(sizeOf(lo));
+  var h=pg.scrollHeight;
+  ok=fits();
+  /* 「計」をページの下端へ寄せる（原本の配置）。紙の高さを超えない値にする */
+  pg.style.minHeight=Math.floor(H-8)+'px';
+  var r={size:sizeOf(lo), fits:ok, h:h, w:W, H:Math.round(H), W:W};
+  shWarn_(sh, r); return r;
 }
 
 /* ═══ 介護度別表（A4縦1枚）═══
@@ -3627,7 +3797,7 @@ function shViewActive_(kind){
   return curView===kind && !!sc && sc.classList.contains('on');
 }
 /* su-print へ登録する7帳票。並びは画面のタブ順。 */
-var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md','cert'];
+var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md','cert','mf'];
 function definePrintViews_(){
   if(!window.SUPrint){
     toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください');
@@ -3755,6 +3925,9 @@ function definePrintViews_(){
   /* 認定期限一覧（2026-09-26 追加）も採寸なし（人数が多い時は複数ページにそのまま流す。
      列見出しは各ページの先頭に繰り返す＝印刷CSSの .certtbl thead） */
   def('cert', { label:'要介護認定 期限一覧', paper:'A4 portrait' });
+  /* 食形態一覧表（配布用・2026-10-15）。A4縦1枚に、文字をできるだけ大きく収める */
+  def('mf', { label:'食形態一覧表（配布用）', paper:'A4 portrait', restoreSel:['mfSheet'],
+    fit:{ mode:'height', measure: measureWith(fitMfSheet, 'mfSheet') } });
   rmSyncPrintTarget_();
 }
 /* いま開いているタブを su-print の印刷対象にする。
@@ -3771,7 +3944,7 @@ function rmSyncPrintTarget_(){
 }
 /* 印刷ボタンの読み上げラベル。★可視テキスト（「A4横で印刷」等）を必ず含める
    （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。7本まとめて付ける。 */
-var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint',cert:'certPrint'};
+var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint',cert:'certPrint',mf:'mfPrint'};
 function rmPaintPrintLabels_(){
   if(!window.SUPrint) return;
   Object.keys(RM_PRINT_BTN).forEach(function(kind){
@@ -6440,7 +6613,8 @@ function paintMealBar(){
   document.body.classList.toggle('meal-on',on);   // 印刷CSSをこのビュー限定にするため
   /* ★この表は在籍固定（配膳表のため）。押しても表が変わらない在籍/退去チップは画面から外す。
      他のビューへ戻ったら必ず出し直す（既存の絞り込みは1つも変えていない） */
-  var fr=$('filterRow'); if(fr) fr.style.display=on?'none':'';
+  /* 配布用（mf）も在籍固定なので同じく外す（2026-10-15） */
+  var fr=$('filterRow'); if(fr) fr.style.display=(on||mfViewActive_())?'none':'';
   var st=$('mealStatus');
   if(st) st.textContent = on ? (mealMsg || (mealRows?(mealRows.length+'名'):'')) : '';
   var dm=$('mealDirtyMsg');
@@ -11062,7 +11236,7 @@ function loadData(){
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
   /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
      （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
-  if(curView==='meal') mealLoad(false);
+  if(curView==='meal'||curView==='mf') mealLoad(false);
   /* 帳票5種も同じ（名簿とは別のAPIで作るので renderRoster だけでは空のまま。
      バーも出さないと🔄・💾・🖨️のボタンが1つも出ない画面になる） */
   paintShBars();
@@ -12009,6 +12183,18 @@ function init(){
   /* 認定期限（2026-09-26 追加） */
   if($('certPrint')) $('certPrint').addEventListener('click',function(){rmPrint_('cert')});
   if($('certReload'))$('certReload').addEventListener('click',function(){bkEnsure(true)});
+  /* 食形態一覧表（配布用・2026-10-15） */
+  if($('mfPrint'))  $('mfPrint').addEventListener('click',function(){rmPrint_('mf')});
+  if($('mfReload')) $('mfReload').addEventListener('click',function(){
+    /* 食形態一覧の未保存の変更は、取り直すと消える（同じデータを共有しているため） */
+    if(!mealLeaveOk('サーバーから取り直す')) return;
+    mealDirty={}; mealLoad(true);
+  });
+  if($('mfDate')) $('mfDate').addEventListener('change',function(){
+    var v=String(this.value||'');
+    mfDate=/^\d{4}-\d{2}-\d{2}$/.test(v)?v:todayISO();   /* 空・不正は今日へ戻す */
+    if(curView==='mf') renderRoster();
+  });
   /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
   if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
     if(curView!=='md') return;
