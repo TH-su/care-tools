@@ -85,10 +85,29 @@
       document.head.appendChild(s);
     });
   }
+  /* 画面やほかの部品（su-report.js）がすでに同じ部品の札（<script src>）を入れている時は、2本目を入れずに読み終わるのを待つ
+   * （2026-10-16: 2本目を入れていて、ログインの窓口が2つできていた。su-report.js の loadAuth と同じ考え方） */
+  function hasTag(name) {
+    var ss = document.getElementsByTagName('script');
+    for (var i = 0; i < ss.length; i++) if (String(ss[i].getAttribute('src') || '').split('?')[0].split('/').pop() === name) return true;
+    return false;
+  }
+  function waitFor(test, ms) {
+    return new Promise(function (ok, ng) {
+      var t0 = Date.now();
+      (function poll() { if (test()) ok(); else if (Date.now() - t0 > ms) ng(new Error('load')); else setTimeout(poll, 100); })();
+    });
+  }
   function ensureAuth() {
     if (window.SUAuth) return Promise.resolve();
-    var p = window.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-09-26'); });
+    if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
+    var p = window.supabase ? Promise.resolve()
+      : (hasTag('supabase-js-2.112.4.js') ? waitFor(function () { return !!window.supabase; }, 8000) : loadScript('supabase-js-2.112.4.js'));
+    return p.then(function () {
+      if (window.SUAuth) return null;
+      if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
+      return loadScript('su-auth.js?v=2026-09-26');
+    });
   }
   var authCache = null, authAt = 0;
   function authState() {
