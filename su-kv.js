@@ -139,6 +139,7 @@
   function mirrorMark(key) { var o = mirrorPending(); o[key] = Date.now(); mirrorPendingSave(o); }
   // started より後に予定し直された控えは消さない（写している間に新しく保存された分は、まだ届いていない）
   function mirrorDone(key, started) { var o = mirrorPending(); if (o[key] && Number(o[key]) <= started) { delete o[key]; mirrorPendingSave(o); } }
+  function mirrorDrop(key, started) { mirrorDone(key, started); }   // 写さずに控えだけ消す（本番でなくなった種類）
   var mirrorTimers = {}, mirrorRaw = {}, mirrorBusy = {};
   function runMirror(key) {
     clearTimeout(mirrorTimers[key]); delete mirrorTimers[key];
@@ -150,16 +151,21 @@
     var started = Date.now();
     mirrorBusy[key] = true;
     sb.rpc('kv_get', { p_key: key }).then(function (r) {
-      if (r.error || !r.data || !r.data.data) return;
+      if (r.error || !r.data) return;
+      // 本番（スイッチが入っていて、データベースの mode が live）の時だけ写す。写しの期間・Google へ戻した後に写すと、
+      // Google の新しい中身を Supabase の止まった中身で上書きする（force は版を見ない）＝控えを捨てる（反証レビュー 2026-10-16 高）
+      if (!kvRouted(key) || r.data.mode !== 'live') { mirrorDrop(key, started); return; }
+      var d = r.data.data;
+      if (d == null || typeof d !== 'object') return;   // 受け取った中身が壊れていれば写さない（多端末同期規約10）
       // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
-      return Promise.resolve(rawGas({ action: 'put', key: key, rev: 0, data: r.data.data, force: true })).then(function (g) {
+      return Promise.resolve(rawGas({ action: 'put', key: key, rev: 0, data: d, force: true })).then(function (g) {
         if (g && g.ok) mirrorDone(key, started);
       });
     }).catch(function () { /* 写し返しの失敗は本番に影響させない（控えが残る＝次の機会にまた写す） */ })
       .then(function () { mirrorBusy[key] = false; });
   }
   function scheduleMirror(key, rawGas) {
-    resumeMirrors(rawGas);
+    resumeMirrors(rawGas, key);
     mirrorRaw[key] = rawGas;
     mirrorMark(key);
     clearTimeout(mirrorTimers[key]);
@@ -167,12 +173,16 @@
   }
   function flushMirrors() { Object.keys(mirrorTimers).forEach(runMirror); }
   var mirrorResumed = false;
-  function resumeMirrors(rawGas) {
+  // savedKey＝いま保存できたキー。週間計画（care_schedule_v2）の残りは、週間計画を保存した時だけ写す。
+  //   週間計画の画面だけがログインの証明を添えて送るため、ほかの画面の送り方で写すと Google 側の「最後に直した人」が
+  //   「未確認」に変わる（反証レビュー 2026-10-16 低）。ワースケのキーは同じ統合 GAS へ同じ形で送るので、どの保存でも写す
+  function resumeMirrors(rawGas, savedKey) {
     if (mirrorResumed || !rawGas) return;
     mirrorResumed = true;
     var o = mirrorPending(), now = Date.now(), changed = false;
     Object.keys(o).forEach(function (k) {
-      if (!kvFlagOf(k) || !(now - Number(o[k]) < MIRROR_KEEP_MS)) { delete o[k]; changed = true; return; }
+      if (!kvRouted(k) || !(now - Number(o[k]) < MIRROR_KEEP_MS)) { delete o[k]; changed = true; return; }
+      if (k === 'care_schedule_v2' && savedKey !== 'care_schedule_v2') { mirrorResumed = false; return; }
       if (mirrorTimers[k]) return;
       mirrorRaw[k] = rawGas;
       mirrorTimers[k] = setTimeout(function () { runMirror(k); }, MIRROR_RESUME_MS);

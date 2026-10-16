@@ -8,6 +8,9 @@
      D 次にその端末で保存できた時、控えに残っている他のキーも写し返す（7日より古い控え・扱わないキーは捨てる）
      E 写している間に新しく保存された分の控えは消さない（まだ届いていない）
      F 読み込みだけでは、控えの残りを写し返さない（読むだけの画面の送り方で Google へ書かない）
+     G 本番でなくなった種類（スイッチが切・データベースの mode が live でない）は写さず、控えを捨てる（反証レビュー 2026-10-16 高）
+     H 週間計画の残りは、週間計画を保存した時だけ写す（ほかの画面の送り方だと Google 側の「最後に直した人」が未確認になる）
+     I 現場のアカウントの印の保存（kv_put_marks）でも控えが付き、写せたら消える
    ★本物の su-kv.js を砂場で動かす。偽物にするのは、ログインの状態・データベース・Google への送信・時計だけ。
    実行: node check/unit/sukv_mirror_test.js
    架空データのみ。 */
@@ -24,14 +27,16 @@ const LS_KEY = 'su_kv_mirror_pending';
 function make(o) {
   o = o || {};
   const ls = new Map(o.ls || []);
-  ls.set('su_backend_flags', JSON.stringify({ supabase: { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: true, shift: false } }));
+  const FL = o.flags || { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: true, shift: false };
+  ls.set('su_backend_flags', JSON.stringify({ supabase: FL }));
   let now = o.now || Date.parse('2026-10-16T12:00:00Z');
   const timers = [], listeners = {}, raws = [], rpcs = [];
   const db = { rev: 5, data: { 'care_schedule_v2': { v: 'care' }, 'ws_weekly_master_v1': { v: 'master' }, 'wsday_2026-10-19': { v: 'd19' } } };
   const sb = {
     rpc(name, args) {
       rpcs.push(name);
-      if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data[args.p_key] || { v: 'x' }), updatedAt: 'x' } });
+      if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data[args.p_key] || { v: 'x' }), updatedAt: 'x', mode: (o.modes && o.modes[args.p_key]) || 'live' } });
+      if (name === 'kv_put_marks') { db.rev++; return Promise.resolve({ data: { ok: true, marksOnly: true, rev: db.rev, baseRev: args.p_rev } }); }
       if (name === 'kv_put') { db.rev++; db.data[args.p_key] = clone(args.p_data); return Promise.resolve({ data: { ok: true, rev: db.rev } }); }
       return Promise.resolve({ data: null });
     }
@@ -40,7 +45,7 @@ function make(o) {
   const box = {
     console, JSON, Math, Number, String, Array, Object, Promise, Error, Date: FakeDate,
     localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k), key: () => null, length: 0 },
-    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ supabase: { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: true, shift: false } }) }),
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ supabase: FL }) }),
     setTimeout: (f, ms) => { timers.push({ f, ms, live: true }); return timers.length; },
     clearTimeout: id => { if (id && timers[id - 1]) timers[id - 1].live = false; },
     setInterval: () => 0, clearInterval: () => {},
@@ -55,7 +60,7 @@ function make(o) {
   };
   box.window = box;
   box.SUAuth = { STATUS: { OK: 'ok', SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_VERIFY: 'mfa_verify', MFA_ENROLL: 'mfa_enroll' },
-    check: () => Promise.resolve({ status: 'ok', role: 'office' }), client: () => sb };
+    check: () => Promise.resolve({ status: 'ok', role: o.role || 'office' }), client: () => sb };
   vm.createContext(box);
   vm.runInContext(SRC, box, { filename: 'su-kv.js' });
   const gasReply = { ok: o.gasOk !== false };
@@ -121,6 +126,41 @@ const put = (key, rev) => ({ action: 'put', key, rev: rev == null ? 5 : rev, dat
     t('D 残りの10/19を Supabase の最新で Google へ写し、控えを消す', k.raws.length === 1 && k.raws[0].key === 'wsday_2026-10-19' && k.raws[0].data.v === 'd19' && !('wsday_2026-10-19' in k.pending()), k.raws);
     await k.kv.call(put('wsday_2026-10-19'), k.raw);
     t('D 残りを写すのは1つの画面で1回だけ', k.liveTimers(5000) === 0);
+  }
+  console.log('\n— G・H・I —');
+  {
+    const old = Date.parse('2026-10-16T11:00:00Z');
+    const k = make({ modes: { 'wsday_2026-10-19': 'shadow' }, ls: [[LS_KEY, JSON.stringify({ 'wsday_2026-10-19': old })]] });
+    await k.kv.call(put('ws_weekly_master_v1'), k.raw);
+    await k.fire(5000);
+    t('★G 日ごとを写しの期間へ戻した後（mode が shadow）は、控えの日を Google へ写さない', !k.raws.some(p => p.key === 'wsday_2026-10-19'), k.raws);
+    t('★G その控えは捨てる（何度も試さない）', !('wsday_2026-10-19' in k.pending()), k.pending());
+    const k2 = make({ flags: { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: false, shift: false }, ls: [[LS_KEY, JSON.stringify({ 'wsday_2026-10-19': old })]] });
+    await k2.kv.call(put('ws_weekly_master_v1'), k2.raw);
+    await k2.fire(5000);
+    t('★G 日ごとのスイッチを切った後は、控えの日を写さず捨てる', k2.liveTimers(5000) === 0 && !k2.raws.some(p => p.key === 'wsday_2026-10-19') && !('wsday_2026-10-19' in k2.pending()), k2.pending());
+    const k3 = make({ modes: { 'ws_weekly_master_v1': 'shadow' } });
+    await k3.kv.call(put('ws_weekly_master_v1'), k3.raw);
+    await k3.hide();
+    t('G 保存の直後でも、写す時に本番でなくなっていれば写さない', k3.raws.length === 0 && !('ws_weekly_master_v1' in k3.pending()));
+  }
+  {
+    const old = Date.parse('2026-10-16T11:00:00Z');
+    const k = make({ ls: [[LS_KEY, JSON.stringify({ 'care_schedule_v2': old, 'wsday_2026-10-19': old })]] });
+    await k.kv.call(put('ws_weekly_master_v1'), k.raw);
+    t('★H ワースケの保存では、週間計画の残りは写さない（控えは残す）', k.liveTimers(5000) === 1 && 'care_schedule_v2' in k.pending(), k.pending());
+    await k.kv.call(put('care_schedule_v2'), k.raw);
+    t('★H 週間計画を保存した時は、週間計画の残りも写す対象になる（20秒の予約）', k.liveTimers(20000) >= 1 && k.timers.some(x => x.live));
+    await k.fire(20000);
+    t('H 写せたら週間計画の控えも消える', !('care_schedule_v2' in k.pending()), k.pending());
+  }
+  {
+    const k = make({ role: 'field' });
+    const r = await k.kv.call({ action: 'put', key: 'wsday_2026-10-19', rev: 5, data: { tasks: [{ id: 'a', done: true }] } }, k.raw);
+    t('I 現場の印の保存は通る（前提）', r && r.ok === true, r);
+    t('★I 現場の印の保存でも控えが付く', 'wsday_2026-10-19' in k.pending(), k.pending());
+    await k.hide();
+    t('I 写せたら消える', k.raws.length === 1 && !('wsday_2026-10-19' in k.pending()), k.raws);
   }
   console.log('\n— E 写している間の保存 —');
   {
