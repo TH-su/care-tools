@@ -3,7 +3,9 @@
      A 日ごとは今日の30日前〜60日先だけを比べる（範囲の外・形の違うキーは数えない）
      B 中身の比べ方: 同じ（キーの順番が違っても同じ）・Google が古い・Google に無い・Supabase から読めない を分ける
      C 砂場で動かす（Google・データベースの応答だけ偽物）: 本番の種類だけ比べる・写しの期間の種類は比べない・
-       Google が古い時は件数と「古い中身が出ているおそれ」を出す・全部同じなら「届いています」・どちらにも書かない
+       Google が古い時は件数と「古い中身が出ているおそれ」を出す・全部同じなら「届いています」・比べる時はどちらにも書かない
+     D 違う分を Google へ写す（2026-10-16 代表者の決定）: 違いがある時だけボタンを出す・管理者だけ・確認を断れば書かない・
+       写す直前にまだ本番かを確かめ直す（本番でなくなった種類は写さない）・Supabase の最新を force で Google へ・Supabase には書かない・写した後に比べ直す
    ★画面の本物の関数を切り出して動かす。
    実行: node check/unit/shadow_check_mirror_test.js
    架空データのみ。 */
@@ -50,8 +52,9 @@ console.log('\n— C 砂場で動かす —');
 async function sandbox(o) {
   const els = {}, writes = [], rpcs = [];
   function E(id) { return els[id] || (els[id] = { id, className: '', textContent: '', disabled: false, children: [], replaceChildren() { this.children = []; }, appendChild(x) { this.children.push(x); } }); }
+  const gasPuts = [];
   const sb = {
-    from: () => ({ select: () => Promise.resolve({ data: o.fams, error: null }) }),
+    from: () => ({ select: () => Promise.resolve({ data: (o.famsSeq && o.famsSeq.length ? o.famsSeq.shift() : o.fams), error: null }) }),
     rpc: (name, args) => {
       rpcs.push(name);
       if (name === 'kv_index') return Promise.resolve({ data: { revs: o.sbIndex }, error: null });
@@ -63,13 +66,20 @@ async function sandbox(o) {
     $: E, SUAuth: { client: () => sb }, gasTarget: () => ({ url: 'x', token: 'y' }), Date, Promise, String, Object, Number, JSON,
     gasPullAll: (tgt, keys) => { const out = {}; keys.forEach(k => { if (o.gas[k] !== undefined) out[k] = { rev: 1, data: o.gas[k] }; }); return Promise.resolve(out); },
     preItem: (title, note, bad) => ({ title, note, bad }), kpi: (l, v) => ({ l, v }),
+    famOf: k => (k === 'care_schedule_v2' ? 'care' : k === 'ws_weekly_master_v1' ? 'ws_master' : /^wsday_/.test(k) ? 'wsday' : 'shift'),
+    gasPostRetry: (tgt, body) => { gasPuts.push(body); if (body.action === 'put') o.gas[body.key] = body.data; return Promise.resolve({ ok: true }); },
+    confirm: () => o.confirm !== false,
+    me: o.me === undefined ? { role: 'admin', status: 'ok' } : o.me,
     mcToday: () => '2026-10-16'
   });
+  box.SUAuth.STATUS = { OK: 'ok' };
   vm.createContext(box);
-  vm.runInContext(PURE + '\nvar mcOn = false;\n' + fn('runMirrorCheck').replace(/^  /, '') + '\nthis.__run = runMirrorCheck;', box);
-  box.mcToday = () => '2026-10-16';
+  vm.runInContext(PURE + '\nvar mcOn = false, mcFix = [];\n' + fn('mcShowFix') + '\n' + fn('runMirrorCheck') + '\n' + fn('runMirrorFix')
+    + '\nthis.__run = runMirrorCheck; this.__fix = runMirrorFix; this.__fixList = function () { return mcFix; };', box);
   await box.__run();
-  return { v: E('mc-verdict'), list: E('mc-list').children, kpis: E('mc-kpis').children, writes, rpcs, btn: E('b-mirror-check') };
+  const R = { v: E('mc-verdict'), list: E('mc-list').children, kpis: E('mc-kpis').children, writes, rpcs, btn: E('b-mirror-check'), fixBtn: E('b-mirror-fix'), gasPuts, box, o };
+  if (o.doFix) { await box.__fix(); R.after = { v: E('mc-verdict').textContent, fix: box.__fixList().slice() }; }
+  return R;
 }
 (async () => {
   const live = [{ family: 'care', mode: 'live' }, { family: 'ws_master', mode: 'live' }, { family: 'wsday', mode: 'live' }, { family: 'shift', mode: 'live' }];
@@ -88,7 +98,25 @@ async function sandbox(o) {
   t('C 週間計画は「Google が古い 1件」・日ごとは「Google に無い 1件」', r.list.some(x => x.title === '週間計画' && /Google が古い 1件/.test(x.note) && x.bad) && r.list.some(x => /日ごと/.test(x.title) && /Google に無い 1件/.test(x.note)), r.list);
   r = await sandbox({ fams: [{ family: 'care', mode: 'shadow' }], sbIndex: {}, sb: {}, gas: {} });
   t('C 写しの期間の種類は比べず、本番が無いと知らせる', /本番になっている種類がありません/.test(r.v.textContent) && r.list.every(x => /まだ本番ではありません/.test(x.note)) && r.rpcs.length === 0, r.v.textContent);
-  t('C 画面に見比べの欄とボタンがある', /id="mc-verdict"/.test(HTML) && /id="b-mirror-check"[^>]*>本番の中身を Google と比べる</.test(HTML) && /\$\('b-mirror-check'\)\.addEventListener\('click'/.test(SRC));
+  console.log('\n— D 違う分を Google へ写す —');
+  const staleCase = () => ({ fams: live, sbIndex: { 'wsday_2026-10-16': 8, 'wsday_2026-10-19': 2 },
+    sb: { care_schedule_v2: { p: [1] }, ws_weekly_master_v1: { w: 2 }, 'wsday_2026-10-16': { d: 2 }, 'wsday_2026-10-19': { d: 9 } },
+    gas: { care_schedule_v2: { p: [1] }, ws_weekly_master_v1: { w: 1 }, 'wsday_2026-10-16': { d: 2 }, 'wsday_2026-10-19': { d: 1 } } });
+  r = await sandbox(staleCase());
+  t('★D 違いがある時だけボタンを出し、件数を書く', r.fixBtn.hidden === false && /（2件）/.test(r.fixBtn.textContent), r.fixBtn);
+  r = await sandbox(Object.assign(staleCase(), { doFix: true }));
+  t('★D 写すのは違う2件だけ・Supabase の最新を force・版0 で Google へ', JSON.stringify(r.gasPuts.map(p => [p.key, p.force, p.rev, JSON.stringify(p.data)])) === JSON.stringify([['ws_weekly_master_v1', true, 0, '{"w":2}'], ['wsday_2026-10-19', true, 0, '{"d":9}']]), r.gasPuts);
+  t('★D Supabase には書かない（kv_index・kv_get だけ）', r.writes.length === 0, r.rpcs);
+  t('★D 写した後に比べ直し、全部そろったと出す・ボタンを隠す', /写した 2件/.test(r.after.v) && /全部届いています/.test(r.after.v) && r.after.fix.length === 0 && r.fixBtn.hidden === true, r.after);
+  r = await sandbox(Object.assign(staleCase(), { doFix: true, confirm: false }));
+  t('D 確認を断れば Google へ書かない', r.gasPuts.length === 0);
+  r = await sandbox(Object.assign(staleCase(), { doFix: true, me: { role: 'office', status: 'ok' } }));
+  t('★D 管理者でなければ書かない', r.gasPuts.length === 0 && /管理者/.test(r.after.v), r.after.v);
+  const c2 = staleCase(); c2.famsSeq = [live, [{ family: 'care', mode: 'live' }, { family: 'ws_master', mode: 'shadow' }, { family: 'wsday', mode: 'live' }]]; c2.doFix = true;
+  r = await sandbox(c2);
+  t('★D 写す直前に本番でなくなった種類（週の型）は写さず、写せなかったと出す', r.gasPuts.length === 1 && r.gasPuts[0].key === 'wsday_2026-10-19' && /写せなかった 1件/.test(r.after.v) && /本番ではない/.test(r.after.v), r.after.v);
+  t('C 画面に見比べの欄とボタンがある', /id="mc-verdict"/.test(HTML) && /id="b-mirror-check"[^>]*>本番の中身を Google と比べる</.test(HTML) && /\$\('b-mirror-check'\)\.addEventListener\('click'/.test(SRC)
+    && /id="b-mirror-fix" hidden>/.test(HTML) && /\$\('b-mirror-fix'\)\.addEventListener\('click'/.test(SRC));
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(2); });

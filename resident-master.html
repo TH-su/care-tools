@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-33DdKOQpM7rNnrhug4WOUABIrtPYRv6n8dYMhuwwgJ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Dd/k3WE30AaR1mWw7Co7dIxO/P7JUW87FJIdINL+yjo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -67,6 +67,14 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .vtab.on{color:var(--pri); border-bottom-color:var(--pri)}
 .vtab:hover{color:var(--pri)}
 .vtab:focus-visible{outline:2px solid var(--pri); outline-offset:-2px; border-radius:6px}
+/* 2026-10-16 第2弾: タブを「見る」「帳票」の2段に分ける。段ごとに見出しを付ける */
+.view-tabs{display:block}
+.vt-row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.vt-row+.vt-row{border-top:1px dashed var(--g3)}
+.vt-lbl{flex:0 0 auto; min-width:3.2em; padding:0 6px 0 2px; font-size:0.8125rem; font-weight:700; color:var(--g7)}
+/* 認定期限タブの人数（60日以内・期限切れ）。数字だけでなく読み上げのラベルでも伝える */
+.vt-badge{display:inline-block; min-width:1.6em; margin-left:6px; padding:0 6px; border-radius:999px;
+  background:var(--ng); color:#fff; font-size:0.8125rem; line-height:1.6; text-align:center}
 /* 区画（1階/2階/五十音の各行）の見出しと中身 */
 .rsec{margin-bottom:14px}
 .rsec>h3{font-size: 0.875rem; font-weight:700; color:var(--g7); margin:0 0 6px;
@@ -1327,6 +1335,39 @@ body.meal-on #sc-list{max-width:none}
   .fld label, .mh-tag, .mc-redo, .mc-lbl, .bnav button, .bulk-note,
   .applead, .applist .ad, .muted, .mdbadge, .mf-note{font-size:0.875rem}
 }
+/* ── 詳細画面のひと目カード・目次・欄をたたむ（2026-10-16 第2弾・管理者指示）──
+   ★3つとも画面だけ。紙（全項目の印刷・1枚にまとめた印刷）には出さず、たたんだ欄も紙では全部開いて刷る。 */
+.glance{border:2px solid var(--pri); border-radius:10px; background:#fff; padding:10px 12px; margin:0 0 10px}
+.glance-hd{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 12px; margin-bottom:6px}
+.glance-hd .gname{font-size:1.125rem; font-weight:700; color:var(--g9)}
+.glance-hd .groom{font-size:0.875rem; color:var(--g7)}
+.glance-hd .ghosp{background:var(--warn-bg); color:var(--warn-tx); border-radius:999px; padding:2px 10px; font-weight:700; font-size:0.875rem}
+.glance-g{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px 16px}
+.glance .gk{display:block; font-size:0.8125rem; color:var(--g7)}
+.glance .gv{display:block; font-size:1rem; font-weight:700; color:var(--g9); white-space:pre-wrap; word-break:break-word}
+.glance .gv.warn{color:var(--ng)}
+.glance .gv.gnone{color:var(--g6); font-weight:400}
+.vtoc{position:sticky; top:var(--hdr-h,52px); z-index:20; background:var(--g0); display:flex; gap:6px;
+  overflow-x:auto; padding:6px 0; margin:0 0 8px; -webkit-overflow-scrolling:touch}
+.vtoc[hidden]{display:none !important}
+.vtoc button{flex:0 0 auto; min-height:44px; padding:6px 12px; border:1px solid var(--g3); border-radius:999px;
+  background:#fff; font-size:0.875rem; color:var(--g9); white-space:nowrap; cursor:pointer}
+.vtoc button.all{color:var(--pri-d); border-color:var(--pri)}
+.vtoc button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+@media screen{
+  #viewBox .sec{scroll-margin-top:calc(var(--hdr-h,52px) + 64px)}
+  #viewBox .sec>.sec-lbl[role="button"]{cursor:pointer}
+  #viewBox .sec>.sec-lbl[role="button"]:hover{background:var(--pri-l)}
+  #viewBox .sec>.sec-lbl[role="button"]:focus-visible{outline:2px solid var(--pri); outline-offset:-2px}
+  /* たたんだ欄は「横書きの見出しの帯＋一言」だけにする。縦書きのままだと見出しの長さで高さが決まり、
+     短い欄はたたんでも縮まない（2026-10-16 実測: 144px のまま） */
+  #viewBox .sec.folded{flex-direction:column}
+  #viewBox .sec.folded>.sec-lbl{writing-mode:horizontal-tb; text-orientation:mixed; letter-spacing:.04em;
+    padding:6px 10px; text-align:start}
+  #viewBox .sec.folded>.sec-lbl::after{content:'　▸ 押すと開きます'; font-weight:400; color:var(--g6); font-size:0.8125rem}
+  #viewBox .sec.folded>.sec-body{display:none}
+}
+@media print{ .glance, .vtoc{display:none !important} }
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1359,13 +1400,18 @@ body.meal-on #sc-list{max-width:none}
          ここに chip を1つ足すと在籍フィルタが壊れる（curFilter が null になる） -->
     <button class="bulk-open" id="bulkOpen" type="button">📊 一括編集</button>
   </div>
+  <!-- 2026-10-16 第2弾: 「見る」（並べ方）と「帳票」（印刷する表）の2段に分けた。押せば1回で開くのは従来どおり。
+       ★段と見出しは見た目のまとまりだけ（role="presentation"）。←→の移動は2段をまたいで14個を順に回る -->
   <div class="view-tabs" id="viewTabs" role="tablist" aria-label="表示パターン">
+   <div class="vt-row" role="presentation"><span class="vt-lbl" aria-hidden="true">見る</span>
     <button class="vtab on" data-v="std"   role="tab" aria-selected="true">標準</button>
     <button class="vtab"    data-v="fl2"   role="tab" aria-selected="false">階別（左右）</button>
     <button class="vtab"    data-v="fl4"   role="tab" aria-selected="false">階別（4列）</button>
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
     <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
+   </div>
+   <div class="vt-row" role="presentation"><span class="vt-lbl" aria-hidden="true">帳票</span>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態</button>
     <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 ケアマネ一覧</button>
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
@@ -1374,6 +1420,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
     <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">⏳ 認定期限</button>
+   </div>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
        ★どちらが要るかは人によるので、推測で片方に決めず1クリックで替えられるようにする -->
@@ -1489,6 +1536,8 @@ body.meal-on #sc-list{max-width:none}
     <!-- 入院/復帰は編集フォームを通さず setState で状態だけを更新する（多端末で同時に触るため） -->
     <button class="btn btn-sec" id="hospBtn" hidden>🏥 入院にする</button>
   </div>
+  <!-- 欄へ飛ぶ目次（2026-10-16 第2弾）。中身は viewNavPaint_() が詳細の見出しから作る。画面だけ（紙には出さない） -->
+  <nav class="vtoc" id="viewToc" aria-label="この方の欄へ移動" hidden></nav>
   <div id="viewBox"><div class="loading">読み込み中…</div></div>
 </section>
 
@@ -1698,7 +1747,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 </script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
-<script src="su-kv.js?v=2026-10-12.3"></script>
+<script src="su-kv.js?v=2026-10-16"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
@@ -3028,6 +3077,7 @@ function renderRoster(){
     el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
   });
   if(curView==='bday') fitBdaySheet();
+  try{ certBadgePaint_(); }catch(e){}   /* 名簿が変わったら数え直す（2026-10-16 第2弾） */
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
   if(curView==='room') fitRoomSheets();
@@ -3273,6 +3323,28 @@ function paintShBars(){
     hb.textContent=(mdShowHidden?'👁 非表示を隠す':'👁 非表示も表示')+(hn?('（'+hn+'）'):'');
     /* 見た目は aria-pressed のCSSで出す（.on は .mdchip 用で、このボタンには効かない） */
     hb.setAttribute('aria-pressed',mdShowHidden?'true':'false');
+  }
+  try{ certBadgePaint_(); }catch(e){}   /* 認定期限タブの人数（2026-10-16 第2弾） */
+}
+/* 認定期限タブの人数（期限切れ＋60日以内・2026-10-16 第2弾）。在籍者だけを数える（認定期限一覧と同じ母集団） */
+function certBadgePaint_(){
+  var b=document.querySelector('.vtab[data-v="cert"]'); if(!b) return;
+  var n=0;
+  if(bkRows){
+    var today=certToday_();
+    shBase().forEach(function(r){
+      var c=certExpiryClass(bkOf(r).careCertEnd, today);
+      if(c.days!=null&&c.days<=CERT_NEAR_DAYS) n++;
+    });
+  }
+  var sp=b.querySelector('.vt-badge');
+  if(n>0){
+    if(!sp){ sp=document.createElement('span'); sp.className='vt-badge'; sp.setAttribute('aria-hidden','true'); b.appendChild(sp); }
+    sp.textContent=String(n);
+    b.setAttribute('aria-label','認定期限（期限切れと'+CERT_NEAR_DAYS+'日以内 '+n+'名）');
+  }else{
+    if(sp&&sp.parentNode) sp.parentNode.removeChild(sp);
+    b.removeAttribute('aria-label');
   }
 }
 /* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
@@ -7164,6 +7236,7 @@ function openResident(id){
   curResident=null; setViewActions(false);
   hospPend_={}; hospOpening_=String(id);   // 入院/退院の結果の控えは、この開き直しの間に届いた分だけを使う（2026-10-02）
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
+  if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
   if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
   /* ★現場端末では取りに行かない（保険・2026-10-01）。ブロック表示の下で取りに行かない。この画面は現場端末では使えない */
@@ -7993,6 +8066,104 @@ function applyPrintHide(box,r){
     }
   });
 }
+/* ═══ 詳細画面のひと目カード・目次・欄をたたむ（2026-10-16 管理者指示・使いやすさ改善の第2弾）═══
+   ★どれも画面だけ。紙の様式（.sheet）の中身・並び・寸法には触れない（原則2）。
+   ★値は詳細画面と同じ記録（r）から出すだけ。新しく取りに行かない・書き込まない。
+   ★たたんだ欄は「欄の見出しの文字」だけを端末に覚える（rmaster_fold）。氏名・記録は保存しない（原則11）。 */
+var FOLD_KEY='rmaster_fold';
+var CERT_NEAR_DAYS=60;   /* 認定期限の「近い」の範囲（2026-10-16 代表者の決定）。タブの人数とひと目カードで共用 */
+function glanceVal_(v, cls){
+  var t=String(v==null?'':v).trim();
+  return t ? '<span class="gv'+(cls?' '+cls:'')+'">'+esc(t)+'</span>' : '<span class="gv gnone">未登録</span>';
+}
+function glanceItem_(k, valHtml){ return '<div><span class="gk">'+esc(k)+'</span>'+valHtml+'</div>'; }
+/* 認定の残り。期限切れ・60日以内は赤字にする。読めない日付は推測しない（certExpiryClass と同じ判定） */
+function glanceCert_(r){
+  var lv=String(r.careLevel||'').trim();
+  var c=certExpiryClass(r.careCertEnd, certToday_());
+  var end=certYmd_(r.careCertEnd);
+  var endTx=end?(end.y+'/'+end.m+'/'+end.d):'';
+  var tail, warn=false;
+  if(c.key==='none'){ tail='認定期間は未登録'; }
+  else if(c.key==='bad'){ tail='認定期間の書き方を確認してください'; warn=true; }
+  else if(c.days<0){ tail='認定期限切れ（'+(-c.days)+'日超過・'+endTx+'まで）'; warn=true; }
+  else { tail=endTx+'まで（あと'+c.days+'日）'; warn=(c.days<=CERT_NEAR_DAYS); }
+  /* 赤字にするのは期限の行だけ（介護度そのものは注意の対象ではない） */
+  return '<span class="gv'+(lv?'':' gnone')+'">'+esc(lv||'介護度 未登録')+'</span>'+
+         '<span class="gv'+(warn?' warn':(c.key==='none'?' gnone':''))+'">'+esc(tail)+'</span>';
+}
+function glanceHtml_(r){
+  var fam=Array.isArray(r.family)?r.family:[];
+  var kp=fam.filter(function(f){ return f&&f.kp; });
+  var kpTx=kp.map(function(f){
+    var nm=String(f.name==null?'':f.name).trim()||'（氏名未記載）';
+    var rel=String(f.relation==null?'':f.relation).trim();
+    var ph=String(f.phone==null?'':f.phone).trim();
+    return nm+(rel?'（'+rel+'）':'')+(ph?'\n'+ph:'');
+  }).join('\n');
+  var doc=[String(r.hospital||'').trim().replace(/\n+/g,'・'), String(r.doctor||'').trim().replace(/\n+/g,'・')]
+    .filter(Boolean).join('　');
+  var tel=String(r.hospitalTel||'').trim().replace(/\n+/g,'・');
+  var docTx=doc+(tel?'\n'+tel:'');
+  var alg=[r.allergy?('アレルギー：'+String(r.allergy).trim()):'', r.sideEffects?('禁忌等：'+String(r.sideEffects).trim()):'']
+    .filter(Boolean).join('\n');
+  var meal=[r.mealSide?('副食：'+String(r.mealSide).trim()):'', r.mealStaple?('主食：'+String(r.mealStaple).trim()):'',
+            r.thickener?('とろみ：'+String(r.thickener).trim()):''].filter(Boolean).join('\n');
+  return '<div class="glance" aria-label="ひと目で確認">'+
+    '<div class="glance-hd"><span class="gname">'+esc(r.name||'')+'</span>'+
+      (r.room?'<span class="groom">居室 '+esc(r.room)+'</span>':'')+
+      (r.hospitalized?'<span class="ghosp">🏥 入院中</span>':'')+'</div>'+
+    '<div class="glance-g">'+
+      glanceItem_('介護度・認定', glanceCert_(r))+
+      glanceItem_('キーパーソン', glanceVal_(kpTx))+
+      glanceItem_('主治医', glanceVal_(docTx))+
+      glanceItem_('アレルギー・禁忌', alg?glanceVal_(alg,'warn'):'<span class="gv gnone">記載なし</span>')+
+      glanceItem_('食形態', glanceVal_(meal))+
+    '</div></div>';
+}
+function foldLoad_(){
+  try{
+    var a=JSON.parse(localStorage.getItem(FOLD_KEY)||'[]');
+    return Array.isArray(a) ? a.filter(function(x){ return typeof x==='string'&&x.length>0&&x.length<=40; }).slice(0,80) : [];
+  }catch(e){ return []; }
+}
+function foldSave_(a){ try{ localStorage.setItem(FOLD_KEY, JSON.stringify(a)); }catch(e){} }
+/* 見出し（縦書きの欄名）を持つ欄だけを返す。見出しの無い帯（安全ハイライト等）は対象外 */
+function viewSecs_(){
+  return Array.prototype.filter.call(document.querySelectorAll('#viewBox .sec'),function(s){
+    var l=s.firstElementChild; return !!(l&&l.classList.contains('sec-lbl'));
+  });
+}
+function viewSecName_(s){ return String(s.firstElementChild.textContent||'').trim(); }
+function viewFoldSet_(s, folded){
+  s.classList.toggle('folded', !!folded);
+  s.firstElementChild.setAttribute('aria-expanded', folded?'false':'true');
+}
+function viewFoldToggle_(s){
+  var name=viewSecName_(s), list=foldLoad_(), on=!s.classList.contains('folded');
+  viewFoldSet_(s, on);
+  list=list.filter(function(x){ return x!==name; });
+  if(on) list.push(name);
+  foldSave_(list);
+}
+function viewNavPaint_(){
+  var nav=$('viewToc'); if(!nav) return;
+  var secs=viewSecs_(), folded=foldLoad_();
+  if(!secs.length){ nav.hidden=true; nav.innerHTML=''; return; }
+  secs.forEach(function(s,i){
+    var l=s.firstElementChild;
+    l.setAttribute('role','button'); l.setAttribute('tabindex','0');
+    l.setAttribute('title','押すと、この欄をたたむ／開く');
+    s.setAttribute('data-vsec', String(i));
+    viewFoldSet_(s, folded.indexOf(viewSecName_(s))>=0);
+  });
+  nav.innerHTML=secs.map(function(s,i){
+    return '<button type="button" data-vgo="'+i+'">'+esc(viewSecName_(s))+'</button>';
+  }).join('')+
+    '<button type="button" class="all" data-vall="open">すべて開く</button>'+
+    '<button type="button" class="all" data-vall="fold">すべてたたむ</button>';
+  nav.hidden=false;
+}
 function renderView(r){
   var fam=Array.isArray(r.family)?r.family:[];
   var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
@@ -8394,7 +8565,8 @@ function renderView(r){
     '</div></div>';
   }
   h+='</div>';
-  $('viewBox').innerHTML=h;
+  /* ひと目カード（画面だけ・2026-10-16 第2弾）。紙の様式（.sheet）の外、先頭に置く */
+  $('viewBox').innerHTML=glanceHtml_(r)+h;
   /* 「印刷しない」に指定された欄を紙から外す（画面には帯を付けて残す）。
      ★描画のいちばん最後に掛ける。renderView 本体には手を入れない（既存レイアウトの保護） */
   applyPrintHide($('viewBox'),r);
@@ -8402,6 +8574,7 @@ function renderView(r){
   // ジェノグラム欄クリック → 家系図アプリで作成/編集
   var gb=$('viewBox').querySelector('.geno-box');
   if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+  viewNavPaint_();   /* 目次と、欄をたたむ見出し（画面だけ・2026-10-16 第2弾） */
 }
 
 /* ═══════════ 入院/復帰トグル（状態だけの部分更新） ═══════════
@@ -10329,6 +10502,7 @@ function showScreen(name){
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
   /* 見出しタブは編集画面のものなので、他の画面へ移ったら隠す（sticky が一覧に貼り付いて残らないように） */
   if($('editTabs')&&name!=='edit')$('editTabs').hidden=true;
+  if($('viewToc')&&name!=='view')$('viewToc').hidden=true;   /* 詳細の目次も同じ（2026-10-16 第2弾） */
   if(name==='list'){
     window.scrollTo(0,0);
     saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
@@ -11303,6 +11477,9 @@ window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDevice
 /* キャッシュ即時表示＋（URLがあれば）ネット同期。init と端末解除後で共用 */
 function loadData(){
   paintAdmBar();loadRosterCache();renderRoster();
+  /* 認定期限タブの人数のため、認定期間（getBulk）を裏で1回取る（2026-10-16 第2弾）。
+     ★現場端末では取りに行かない（bkEnsure 側でも止める）。取れなければ人数を出さないだけ */
+  if(getDeviceRole()!=='field') bkEnsure(false);
   if(curView==='adm') admEnsure();   /* 再読込でこのタブに戻った時も取りに行く（原則11） */
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
   /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
@@ -12311,6 +12488,30 @@ function init(){
       if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
   });
   $('backBtn').addEventListener('click',function(){showScreen('list')});
+  /* 詳細の目次・欄をたたむ（2026-10-16 第2弾）。描き直しても効くよう、親でまとめて受ける */
+  if($('viewToc')) $('viewToc').addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button'):null; if(!b) return;
+    var all=b.getAttribute('data-vall');
+    if(all){
+      var secs=viewSecs_(), names=[];
+      secs.forEach(function(s){ viewFoldSet_(s, all==='fold'); if(all==='fold') names.push(viewSecName_(s)); });
+      foldSave_(names);
+      return;
+    }
+    var s=document.querySelector('#viewBox .sec[data-vsec="'+b.getAttribute('data-vgo')+'"]'); if(!s) return;
+    if(s.classList.contains('folded')) viewFoldToggle_(s);   /* たたんだ欄へ飛んだ時は開く */
+    try{ s.scrollIntoView({behavior:'smooth', block:'start'}); }catch(err){ s.scrollIntoView(); }
+  });
+  if($('viewBox')){
+    var vlbl=function(e){ var l=e.target&&e.target.closest?e.target.closest('.sec-lbl[role="button"]'):null;
+      return (l&&l.parentNode&&$('viewBox').contains(l))?l.parentNode:null; };
+    $('viewBox').addEventListener('click',function(e){ var s=vlbl(e); if(s) viewFoldToggle_(s); });
+    $('viewBox').addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ') return;
+      var s=vlbl(e); if(!s) return;
+      e.preventDefault(); viewFoldToggle_(s);
+    });
+  }
   $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
   /* ★通常の印刷は必ず通常の見た目で刷る（a4-on の残留を構造的に封じる） */
   /* ★a4Off は【刷る直前】に呼ぶ。クリック時に呼ぶだけだと、取得を待っているあいだに
