@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Vak8otToeJsCTSOKGL2JZg8ReGcPtJmRRjA6Hqxm7FU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cDgOVHsP/x5MJfI9St+dNeGaQydecIGiefjwxGL6ayM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -686,6 +686,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
        気づけないまま支援が漏れるのを防ぐ。トーストは数秒で消えるため常時表示のこちらを主役にする。
        位置は「👥シフト」と「未配置」の間＝原因(シフト)と結果(盤面)の並びに合わせる（運用要件）。 -->
   <button class="badge ng off" id="badgeShiftChg" title="シフトの未反映はありません">シフト未反映 0</button>
+  <!-- 週間計画の変更が自動では入らない日（ロック中・一度ロックした日）に、変更がある間だけ点灯する（2026-10-16）。0件の時は出さない -->
+  <button class="badge ng off" id="badgeWeeklyChg" title="週間計画の未反映はありません">週間計画 未反映 0</button>
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
   <button class="badge ng off" id="badgeOv" title="同じ職員の同時刻に重なった枠・退避した枠">重なり 0</button>
@@ -9731,6 +9733,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var toastTimer = null;
   var fieldBlockedAt_ = 0;   /* 現場の端末の盤面ガードで止めた時刻（2026-10-11）。直後の成功の知らせで止めの知らせを消さない */
   function toast(msg, isNg, ms) {
+    if (weeklyDry_) return;   /* 週間計画の未反映を試しに数えている間は知らせない（countWeeklyPending_） */
     if (!isNg && Date.now() - fieldBlockedAt_ < 2000) return;
     var t = $('toast');
     t.textContent = msg;
@@ -9947,7 +9950,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         /* ロック日は保存配置の凍結が最優先＝現在ロスター基準の列並べ替え・予約席再主張・孤児退避を
          * 一切かけない（開くたびに過去日が今のマスタで組み替わるのを止める）。sanitizeTasks は上で適用済。 */
-        if (p.columns && !(p.meta && p.meta.locked)) {
+        if (p.columns && !onceLockedMeta_(p)) {   /* 一度ロックした日も列を並べ直さない（2026-10-16） */
           IM.normalizeNightOrder(p.columns, p.staff);           /* 夜勤列を施設→訪問順へ（既存保存日も即反映） */
           IM.normalizeFacilityOrder(p.columns, p.staff);        /* 施設列を出勤時間順へ（早番=左・既存保存日も即反映） */
           IM.normalizeNightCareDivision(p.columns, p.staff, p.tasks);  /* 深夜2:00以降の夜勤支援を夜訪問列へ */
@@ -10220,6 +10223,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { wasDirtySw = isDayDirty_(date); } catch (eDs) {}
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
     try { rearmSeeded_(day.meta.date || ui.currentDate); } catch (eRs) {}
+    try { noteLoadMark_(date, wasDirtySw); } catch (eLm) {}
     try { store.auto(seedFromMaster); } catch (e) {}   /* 自動生成は履歴非汚染(手動imMasterSeedは非ラップ=Undo可) */
     try { reconcileWeekly(); } catch (e) {}   /* ラッパ内で autoPlaceCareInStore_ も走る(要件2) */
     /* 偽dirty補正（seed/reconcile の後で行う）：INIT_DAY→subscribe→schedulePushDay は
@@ -10374,7 +10378,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 戻り値: 週間計画へ確実に反映できたら true（対象event発見＝書込 or 既に一致）／
    * 対象event未発見で書き戻せなかったら false（呼出側は detailDirty で ws編集を保護する）。 */
   function writeBackCareDetail_(ref, contents) {
-    if (!ref) return false;
+    if (!ref || weeklyDry_) return false;   /* 試しに数えている間は週間計画へ書かない */
     var db = loadCareDb();
     if (!db || !db.residents) return false;
     var detail = (contents && contents.length) ? contents.join('・') : '';
@@ -10475,6 +10479,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var d = store.get();
     if (d && d.meta && d.meta.locked) return true;
     return autoLockPast_(d);
+  }
+  /* 一度ロックした日（2026-10-16 本人指示「解除しても盤面の配置が勝手に動くことがないように」）。
+   * ロックを外すと meta.locked は false で残る（外す操作だけが false を書く）。この印は daySig に載って全端末へ届くため、
+   * 外した日をほかの PC で開いても自動の組み直し（週間計画の同期・自動配置・勤務表の自動反映・並びの固定・列の並べ直し）をしない。
+   * 手で押す取込・再反映・生成は通す（manualDepth_）。解除した瞬間の重なりの整理（store.js）は残す（本人裁定 2026-10-16）。 */
+  function onceLockedMeta_(d) { return !!(d && d.meta && (d.meta.locked === true || d.meta.locked === false)); }
+  var manualDepth_ = 0;   /* >0 の間は本人が押した取込・再反映の中＝一度ロックした日でも組み直してよい */
+  function runManual_(fn) { manualDepth_++; try { return fn(); } finally { manualDepth_--; } }
+  /* 自動の組み直しを止める日か。ロック中・過去日の自動保護に加え、一度ロックした日（本人の操作の中を除く） */
+  function autoHeld_() {
+    if (dayLocked_()) return true;
+    return manualDepth_ === 0 && onceLockedMeta_(store.get());
   }
   /* INIT_DAY へ渡す凍結フラグ（2026-09-10）: 手動ロック(meta.locked)または過去日の自動保護(autoLockPast_)の日は
    * store の重畳解消チョークポイントを掛けない＝確定した実績を端末側で組み替えない（表示側の並列表示・警告のみ）。 */
@@ -10660,6 +10676,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = day || store.get();
       if (d && d.meta && d.meta.locked) return true;              /* ① 手動ロック */
+      /* ③ 一度ロックした日（2026-10-16）… 外しても自動では反映しない。②と同じく当日以降だけ */
+      if (onceLockedMeta_(d) && !((date || ui.currentDate) < todayKey())) return true;
       if (!settings.shiftAuto) {                                   /* ② 自動反映OFF（当日以降のみ・他の判定と真偽を揃える） */
         var dt = date || ui.currentDate;
         return !(dt < todayKey());
@@ -10672,6 +10690,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = store.get();
       if (d && d.meta && d.meta.locked) return 'locked';
+      if (onceLockedMeta_(d)) return 'held';
     } catch (e) {}
     return (!settings.shiftAuto) ? 'autooff' : '';
   }
@@ -10714,7 +10733,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     b.title = !n ? 'シフトの未反映はありません'
       : (why === 'locked'
           ? '🔒 この日はロック中のため反映していません（' + n + '件）。クリックで対処を選べます'
-          : 'シフト自動反映がOFFのため反映していません（' + n + '件）。クリックで今すぐ反映できます');
+          : (why === 'held'
+              ? '一度ロックした日のため、自動では反映していません（' + n + '件）。クリックで今すぐ反映できます'
+              : 'シフト自動反映がOFFのため反映していません（' + n + '件）。クリックで今すぐ反映できます'));
   }
   /* seedFromMaster は「自動生成(switchDate/boot/マスタ自動取込)」と「手動生成(imMasterSeedボタン)」の両方から
    * 呼ばれる。手動生成は Undo 可能にすべきなので、本体は履歴ラップせず、自動呼出側で store.auto(seedFromMaster)
@@ -10757,6 +10778,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* その日がまだ「端末で作った仮の盤面のまま（人の編集なし）」か。
    * 表示中の日は入れ替え回数・編集回数で確かめ、変わっていれば印を消す。表示していない日は端末の印で答える
    * （日付を離れる時に switchDate が確かめて、編集があれば消している） */
+  /* 控えから開いた時点の印（2026-10-16・反証レビュー指摘1）。開いた時に未送信が無く、その後に人の編集が無ければ、
+   * 盤面の違いは自動の組み直し（週間計画の同期・自動配置など）だけ。サーバーが「一度ロックして外した日」を返したら、
+   * 統合せずにサーバーの版を丸ごと採る＝古い控えの上で動いた自動処理を、外した日へ持ち込まない（adoptServerDay_）。
+   * 中身は日付と回数だけ（業務データ・個人情報は入れない） */
+  var loadMark_ = { date: '', m: null, dirty: true };
+  function noteLoadMark_(date, wasDirty) { loadMark_ = { date: date, m: seedMarkNow_(), dirty: !!wasDirty }; }
+  function autoOnlySinceLoad_(date) {
+    if (!date || loadMark_.date !== date || loadMark_.dirty || loadMark_.m === null) return false;
+    var m = seedMarkNow_();
+    return m !== null && m === loadMark_.m;
+  }
   function seededUntouched_(date) {
     if (!date) return false;
     if (date === ui.currentDate) {
@@ -10800,11 +10832,68 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 週間計画↔当日盤面の同期。実体は Core_。全呼出後に必ず autoPlaceCareInStore_ を走らせるラッパで包み、
    * Core_ の早期return(イベント無し等)に依らず未配置ケアの自動配置を保証する(要件2)。 */
   function reconcileWeekly() {
-    if (dayLocked_()) return;   /* ロック中は週間計画同期・自動配置をしない */
+    /* ロック中・一度ロックした日は週間計画同期・自動配置をしない。変更があるかだけ数えて印で知らせる（2026-10-16） */
+    if (autoHeld_()) { try { countWeeklyPending_(); } catch (eWp) {} return; }
+    /* この端末にまだ無い日（空の盤面）で、サーバーの盤面をまだ取れていない間は同期しない（2026-10-16）。
+     * 取る前に空の盤面へ作った支援が、届いた盤面と合わせる時に「この端末で足した支援」として残り、
+     * 一度ロックした日にも週間計画の支援が入っていた（実画面の確かめで判明）。取れた後の同期（adoptServerDay_ の後）で入る */
+    var d0_ = store.get();
+    if (syncOn() && !dayPullOk_[ui.currentDate] && d0_ && !(d0_.tasks && d0_.tasks.length) && !(d0_.staff && d0_.staff.length)) {
+      weeklyAfterPull_[ui.currentDate] = 1;   /* 取れた後に必ず掛け直す（サーバーに盤面が無い日・同じ版の日も・反証レビュー指摘4） */
+      return;
+    }
+    weeklyChg_ = { date: '', n: 0 }; paintWeeklyChgBadge_();
     store.auto(function () {   /* 自動同期の全dispatchを履歴非汚染に＝Ctrl+Zはユーザー操作だけ戻す */
       try { reconcileWeeklyCore_(); } catch (e) {}
       try { autoPlaceCareInStore_(); } catch (eAP) {}
     });
+  }
+  /* ── 週間計画の未反映の数え（2026-10-16）──
+   * 自動の同期を止めた日（ロック中・一度ロックした日）でも、週間計画で増えた・なくなった・変わった支援に気づけるようにする。
+   * 盤面の写しの上で同期の本体を試しに走らせ、支援の札の違いを数えるだけ＝本物の盤面・週間計画・保存・送信には触れない
+   * （試し中は weeklyDry_ で、週間計画への書き戻しと知らせを止める）。過去の日は数えない（週間計画は今後の予定のため）。 */
+  var weeklyChg_ = { date: '', n: 0 };
+  var weeklyAfterPull_ = {};   /* date -> 1。サーバーの盤面を取る前だったので同期を見送った日（pullDayNow の後で掛け直す） */
+  var weeklyDry_ = false;
+  function countWeeklyPending_() {
+    var real = store, d0 = store.get(), date = ui.currentDate;
+    if (!d0 || !d0.meta || !onceLockedMeta_(d0) || date < todayKey() || !careInitDone) {
+      if (weeklyChg_.n || weeklyChg_.date) { weeklyChg_ = { date: '', n: 0 }; paintWeeklyChgBadge_(); }
+      return;
+    }
+    var copy = JSON.parse(JSON.stringify(d0));
+    copy.meta.locked = true;   /* 写しは凍結扱い＝重なりの整理を掛けず、同期の本体の違いだけを見る */
+    var sc = S.createStore(copy), out = null;
+    weeklyDry_ = true; store = sc;
+    try { reconcileWeeklyCore_(); out = sc.get(); } catch (e) { out = null; }
+    finally { store = real; weeklyDry_ = false; }
+    if (!out) return;
+    function careSig_(t) {
+      return [t.staffId, t.start, t.end, t.svcCode || '', (t.contents || []).join('・'), t.parked ? 1 : 0].join('|');
+    }
+    var before = {}, n = 0, i, seen = {};
+    for (i = 0; i < copy.tasks.length; i++) if (copy.tasks[i].kind === 'care') before['.' + copy.tasks[i].id] = careSig_(copy.tasks[i]);
+    for (i = 0; i < out.tasks.length; i++) {
+      var t = out.tasks[i];
+      if (t.kind !== 'care') continue;
+      seen['.' + t.id] = 1;
+      if (!(('.' + t.id) in before) || before['.' + t.id] !== careSig_(t)) n++;   /* 増えた・変わった */
+    }
+    for (var k in before) if (Object.prototype.hasOwnProperty.call(before, k) && !seen[k]) n++;   /* なくなった */
+    if (weeklyChg_.date === date && weeklyChg_.n === n) return;
+    weeklyChg_ = { date: date, n: n };
+    paintWeeklyChgBadge_();
+  }
+  function paintWeeklyChgBadge_() {
+    var b = $('badgeWeeklyChg');
+    if (!b) return;
+    var n = (weeklyChg_.date === ui.currentDate) ? weeklyChg_.n : 0;
+    b.textContent = '週間計画 未反映 ' + n;
+    b.className = 'badge ng' + (n ? '' : ' off');
+    b.title = !n ? '週間計画の未反映はありません'
+      : (store.get().meta.locked
+          ? '🔒 この日はロック中のため、週間計画の変更を反映していません（' + n + '件）。クリックで対処を選べます'
+          : '一度ロックした日のため、週間計画の変更を自動では反映していません（' + n + '件）。クリックで今すぐ反映できます');
   }
   /* 週間計画(care_schedule_v2)変更時に盤面を確実に再同期する（storage/可視復帰トリガから呼ぶ）。
    * デバウンスで連続更新をまとめ、reconcileWeekly→renderAll を実行（不規則な反映漏れの根治）。 */
@@ -11413,6 +11502,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     B.markHeadAlerts($('board'), day, alerts.noBreak);
 
     paintShiftChgBadge_();   /* ロック中のシフト変化バッジ（日付切替・再描画でも消えないよう毎回塗り直す） */
+    paintWeeklyChgBadge_();   /* 週間計画の未反映（日付が変われば 0 として消える・2026-10-16） */
     var bu = $('badgeUn'), bb = $('badgeBr');
     bu.textContent = '未配置 ' + alerts.unassigned.length;
     bu.className = 'badge warn' + (alerts.unassigned.length ? '' : ' off');
@@ -12049,7 +12139,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } catch (eRmT) {}
       store.dispatch({ type: 'SET_STAFF', staff: fillRes.staff, columns: fillRes.columns });
       try { store.dispatch({ type: 'SET_META', patch: { shiftStamp: SH.attendanceStamp(r.staff) } }); } catch (e) {}
-      try { finalizeBoard(); } catch (eF) {}
+      try { runManual_(finalizeBoard); } catch (eF) {}   /* 本人の貼り付け＝一度ロックした日でも仕上げを通す（2026-10-16） */
       msg = '出勤者 ' + fillRes.filled + '名を列へ反映しました（支援の配置は維持）';
       if (fillRes.added) msg += '／列を ' + fillRes.added + '追加';
     } else {
@@ -12118,7 +12208,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     store.dispatch({ type: 'ADD_TASKS', tasks: r.tasks });
     /* 取込直後に reconcile を一回走らせ、既に盤面にある同一eventタスクとの二重を即収束させる
      * （置換チェック未時に同一evIdが並ぶのを根治。reconcileはevId冪等で既存挙動を壊さない）。 */
-    try { reconcileWeekly(); } catch (eRW) {}
+    try { runManual_(reconcileWeekly); } catch (eRW) {}   /* 本人の取込＝一度ロックした日でも二重の収束を通す（2026-10-16） */
     var msg = 'タスク ' + r.tasks.length + '件を生成' +
       (preset ? '（前回実績から ' + preset + '件を自動配置）' : '') +
       (r.errors.length ? '／スキップ ' + r.errors.length + '件' : '');
@@ -12190,7 +12280,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return true;
   }
-  var LOCK_OFF_CONFIRM = 'この日のロックを外しますか？　外すと、勤務表の反映・週間計画の同期・自動配置が動き、職員の列や支援の位置が変わることがあります。';
+  /* 外しても自動の組み直しはしない（2026-10-16 本人指示）。文はその動きに合わせて直した（本人選択「動きに合わせて直す」） */
+  var LOCK_OFF_CONFIRM = 'この日のロックを外しますか？\n\n外しても、勤務表の反映・週間計画の同期・自動配置は止めたままなので、支援の位置や職員の列は自動では動きません' +
+    '（同じ職員で時間が重なっている枠だけは、外す時に重ならないよう整えます）。\n' +
+    '勤務表や週間計画の変更は、上の「シフト未反映」「週間計画 未反映」の印から、手で反映できます。';
   var marksOnlySeen_ = false;
   function fieldMarksOnly_(date) {
     if (wsIsFieldDevice_()) return true;
@@ -14624,7 +14717,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 祖先はサーバー実体のまま・再主張分は通常の差分としてpushされクラウドにも伝播する。 */
   function reassertBoardFixes_(day) {
     if (!day || !day.staff || !day.columns) return;
-    if (day.meta && day.meta.locked) return;   /* ロック日は列固定の自己修復も凍結（保存配置を保持） */
+    if (onceLockedMeta_(day)) return;   /* ロック日・一度ロックした日は列固定の自己修復も凍結（保存配置を保持・2026-10-16） */
     try { SH.applyFlagsFromRoster(day.staff, getRosterStaff_()); } catch (eFl) {}
     try { IM.reassertReservedSlots(day.staff, day.columns, day.tasks, resolveReservedFlags_); } catch (eRs) {}
     try { recordReserveDiag_(day.staff, 'cloud', day.meta && day.meta.date); } catch (eD) {}
@@ -14710,6 +14803,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       clearDayDirty_(date);   /* 以降 dirty=false ＝ rebase/repairBoard_ を通さずサーバーの凍結版を採用 */
       /* 未送信編集が確定版へ置き換わることを必ず告知する(無告知で消えたように見えるのを防ぐ)。退避先は wsbase_conflict_。 */
       if (hadEdits_ && isCur) toast('🔒 この日は確定(ロック)されています。未送信の変更は保存されません（確定版を表示）', true);
+    }
+    /* 一度ロックして外した日を、ロックを知らない古い控えで開いていた時（2026-10-16・反証レビュー指摘1）:
+     * 開いた後に人の編集が無ければ、この端末の違いは自動の組み直しだけ＝統合せずサーバーの版を丸ごと採る */
+    if (isCur && serverDay.meta.locked === false && localDay && !onceLockedMeta_(localDay) && autoOnlySinceLoad_(date)) {
+      clearDayDirty_(date);
     }
     var dirty = isDayDirty_(date) && localDay && daySig(localDay) !== daySig(serverDay);
     if (!dirty) {
@@ -14870,6 +14968,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         if (report) $('stResult').textContent = 'この端末が最新です（rev ' + curRev + '）';
       }
+      /* 取る前で見送った同期を掛け直す（採用の後は adoptServerDay_ が掛けるので、残っていれば一度だけ） */
+      if (weeklyAfterPull_[date]) {
+        delete weeklyAfterPull_[date];
+        if (ui.currentDate === date && careInitDone) { try { reconcileWeekly(); renderAll(); } catch (eWa) {} }
+      }
       fin();
     });
   }
@@ -14910,7 +15013,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 2026-08-03: 未反映バッジの定期検知が本体取得を始めたことで、自動反映OFFの端末でも
      * ここへ到達しうるようになった。OFFの端末が勝手に盤面を書き換えて全端末へ push するのは
      * 設定の趣旨に反する（従来はOFF端末が本体を取りに行かないため構造的に起きなかった）。 */
-    if (wasEmpty && store && store.get && !(store.get().meta && store.get().meta.locked) && !shiftHeldBack_()) {
+    if (wasEmpty && store && store.get && !onceLockedMeta_(store.get()) && !shiftHeldBack_()) {   /* 一度ロックした日も（2026-10-16） */
       /* ロック日は表示中でも予約列の再主張をかけない（保存配置を凍結） */
       try { store.auto(function () { reassertOnStore_('roster-arrived'); }); renderAll(); } catch (e) {}
     }
@@ -15249,7 +15352,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * ここへ入り、store書換＋push が印刷中に走る。A3フィットを守るため入口で止める（復帰後に取り直す）。 */
     if (printing_()) { done(null); return; }
     var ym = shiftMonth(date);
+    /* 本人が押した反映（自動でない・解除の確認で「はい」＝opts.ask）の中では、一度ロックした日でも仕上げ（並びの固定を含む）を通す（2026-10-16） */
     fetchShiftData(ym, !!opts.fresh, function (data) {
+      if (!opts.auto || opts.ask) runManual_(function () { shiftBody_(data); }); else shiftBody_(data);
+    });
+    function shiftBody_(data) {
       /* 画面が他日へ移った: 「取得中」表示を残さず終了（フリーズ防止） */
       if (ui.currentDate !== date) { if (opts.report) $('imResult').textContent = ''; done(null); return; }
       /* 日単位ロック: ロック中はシフト反映しない（自動=サイレントskip・手動ボタン/再取込=案内表示）。
@@ -15267,6 +15374,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         else if (opts.force) toast('🔒 ロック中のためシフト反映をスキップしました（ロックを外してください）', true);
         else if (chgN_) toast('🔒 ロック中：シフトに未反映の変更が ' + chgN_ + '件あります（🔒解除で反映）', true);
         done({ skipped: true, reason: 'locked', shiftChanged: chgN_ }); return;
+      }
+      /* 一度ロックした日（2026-10-16 本人指示）: 自動では反映しない。変更の数だけ「シフト未反映」の印に出す（盤面は書き換えない）。
+       * 手で押した反映はここを通らない（runManual_ の中＝autoHeld_ が偽） */
+      if (opts.auto && autoHeld_()) {
+        var chgH_ = lockedShiftDiff_(date, data);
+        lockedShiftChg_ = { date: date, n: chgH_ };
+        paintShiftChgBadge_();
+        done({ skipped: true, reason: 'held', shiftChanged: chgH_ }); return;
       }
       lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();   /* 非ロック＝これから反映するのでバッジは消す */
       if (!data || !data.plan) {
@@ -15350,7 +15465,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (opts.report || opts.toast) { $('imResult').textContent = msg; toast(msg); }
       else setSyncState('シフト反映 ' + res.filled + '名');
       done(res);
-    });
+    }
   }
 
   /* 任意日の直接 put が必要になったら pushDayFor_ を使う（dirty管理・staffwipe抑止・ロック日の扱いを含む）。
@@ -16112,7 +16227,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 当てはめてよい時だけ true: 現場の端末・現場のアカウント（盤面を送れない）・ロック中・過去の日・
    * サーバーの盤面をまだ取れていない日（同期中のみ）では組み替えない */
   function routineAllowed_() {
-    if (fieldMarksOnly_(ui.currentDate) || dayLocked_()) return false;
+    if (fieldMarksOnly_(ui.currentDate) || autoHeld_()) return false;   /* 一度ロックした日も当てはめない（2026-10-16） */
     if (syncOn() && !dayPullOk_[ui.currentDate]) return false;
     return true;
   }
@@ -16327,7 +16442,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function migrateDay() {
-    if (dayLocked_()) return;   /* ロック中は盤面マイグレーションを保留(解除後に走る) */
+    if (autoHeld_()) return;   /* ロック中・一度ロックした日は盤面マイグレーションを保留（2026-10-16: 外しても組み直さない） */
     var day = store.get();
     if (!day || !day.columns || !day.columns.length) return;
     if ((day.meta.boardVer || 0) >= BOARD_LOGIC_VER) return;
@@ -16880,8 +16995,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
             '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
           lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
-          try { applyShiftForDate(ui.currentDate, { auto: true }); } catch (eUL) {}
+          try { applyShiftForDate(ui.currentDate, { auto: true, ask: true }); } catch (eUL) {}   /* 本人が「はい」を選んだ反映＝一度ロックした日でも通す */
         }
+        try { countWeeklyPending_(); } catch (eWc) {}   /* 外した直後に週間計画の未反映を数えて印に出す（反映はしない） */
       }
     });
     document.addEventListener('keydown', function (e) {
@@ -16936,6 +17052,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * ロック解除時の同じ確認ダイアログも {auto:true} で反映している＝挙動を揃える。 */
         try { applyShiftForDate(ui.currentDate, { fresh: true }); } catch (eB) {}
       }
+    });
+
+    /* 週間計画の未反映（2026-10-16）。ロック中は外す導線だけ示し、一度ロックした日は尋ねてから反映する */
+    if ($('badgeWeeklyChg')) $('badgeWeeklyChg').addEventListener('click', function () {
+      var n = (weeklyChg_.date === ui.currentDate) ? weeklyChg_.n : 0;
+      if (!n) { toast('未反映の週間計画の変更はありません'); return; }
+      if (fieldBlock_()) return;   /* 現場の端末では盤面へ反映しない */
+      if (store.get().meta.locked) {
+        toast('🔒 この日はロック中です（週間計画の未反映 ' + n + '件）。上部の🔒を外してから、この印を押すと反映できます', true);
+        try { var lb2 = $('lockLabel'); if (lb2 && lb2.scrollIntoView) lb2.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        return;
+      }
+      if (!window.confirm('週間計画に未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+          '※ 反映すると、週間計画で増えた支援は空いている列へ自動で置かれ、なくなった支援は盤面から消えます。\n' +
+          '※ 「いいえ」を選んでも、後からこの印を押せばいつでも反映できます。')) return;
+      try { runManual_(reconcileWeekly); } catch (eRw) {}
+      try { renderAll(); } catch (eRa) {}
     });
 
     $('trayToggle').addEventListener('click', function () {
@@ -17469,6 +17602,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!d) { $('stResult').textContent = 'その日付の保存データがありません'; return; }
       d.meta.date = ui.currentDate;
       d.meta.rev = 0;
+      /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
+       * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
+      if (d.meta.locked === false) delete d.meta.locked;
       for (var i = 0; i < d.tasks.length; i++) {
         d.tasks[i].done = false;
         d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
@@ -17999,6 +18135,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { wasDirtyBoot = isDayDirty_(ui.currentDate); } catch (eD0) {}
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
     try { rearmSeeded_(day.meta.date || ui.currentDate); } catch (eRs) {}
+    try { noteLoadMark_(ui.currentDate, wasDirtyBoot); } catch (eLm) {}
 
     try { wire(); } catch (e) { if (window.console) console.error('wire失敗', e); }
     try { wireDrag(); } catch (e) { if (window.console) console.error('drag初期化失敗', e); }
