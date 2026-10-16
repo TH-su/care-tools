@@ -5,6 +5,8 @@
        中＝どれかで3%以上の減少か BMI 18.5 未満。6か月で3〜5%減っても3kgに届かない人（今の注意・警告では出ない）を中として拾う
      C 測り直しは、前回の測定から 5%以上か 2.5kg以上 変わった時だけ促す。比べる相手は測定日より前の最新の記録（直している記録は除く）
      D 保存の3か所（1人ずつ・まとめて入力の1行・まとめて保存）、アラート（高リスクだけ）、一覧の絞り込みにつながっている
+     E アラートの「確認した」：月と向きごとに残す。新しい月・注意から警告に上がったら確認済みにしない。壊れた値でも止まらない。
+       タブの数字は未確認だけ。グラフに食事形態の変わり目の印をつなぐ
    実行: node check/unit/weight_risk_recheck_test.js（WEIGHT_HTML で別のファイルを当てられる）
    架空データのみ（氏名は使わない）。 */
 'use strict';
@@ -47,7 +49,7 @@ vm.runInContext([cutConst(SRC, 'ymPrev'), cutConst(SRC, 'ymFmt'), cutConst(SRC, 
   'function residentById(id){ return DB.residents.find(r => r.id === id); }',
   /^const WR_RECHECK_PCT = .*$/m.exec(SRC)[0].replace('const ', 'var '),
   ...['bmiOf', 'wrWeightOk', 'wrYmOk', 'recDateKey', 'getRecord', 'getRecordsOf', 'wrCmpNote', 'wrCmpLabel', 'analyze',
-    'computeYRange', 'wrRefLinesFor', 'wrNutritionRisk', 'wrPrevWeightRec', 'wrRecheckInfo', 'wrRecheckDesc'].map(n => cut(SRC, n))].join('\n'),
+    'computeYRange', 'wrRefLinesFor', 'wrNutritionRisk', 'wrPrevWeightRec', 'wrRecheckInfo', 'wrRecheckDesc', 'wrAckMap', 'wrAckOf', 'wrAckText'].map(n => cut(SRC, n))].join('\n'),
   box, { filename: 'weight-record(切り出し)' });
 
 const rec = (ym, w, d) => ({ id: 'r-' + ym + (d || ''), residentId: 'p1', yearMonth: ym, measuredOn: ym + '-' + (d || '10'), weight: w, createdAt: 'c' });
@@ -128,6 +130,20 @@ console.log('\n— D. つなぎ込み —');
   t('注意・警告の基準を変えていても高リスクは拾う', /a\.level==='none' && !\(rkAl && rkAl\.level === 'high'\)/.test(body('collectAlerts')));
   t('一覧に「低栄養リスク」の絞り込みがある', /data-f="risk"/.test(SRC) && /listFilter==='risk'/.test(SRC));
   t('履歴に「測り直し済み」の印を出す', /r\.recheck === 'confirmed'/.test(body('drawHist')));
+}
+
+console.log('\n— E. アラートの確認・食事形態の印 —');
+{
+  const r = { alertAck: JSON.stringify({ '2026-10|dn': { lv: 'w', by: 'staff-a', at: '2026-10-17T01:00:00Z', act: '医師・看護師へ連絡', note: '' } }) };
+  t('★同じ月・同じ向き・注意のまま → 確認済み', !!box.wrAckOf(r, '2026-10', 'dn', 'w'));
+  t('★注意で確認した後に警告へ上がった → 確認済みにしない', box.wrAckOf(r, '2026-10', 'dn', 'ng') === null);
+  t('新しい月 → 確認済みにしない', box.wrAckOf(r, '2026-11', 'dn', 'w') === null);
+  t('逆の向き（増加）→ 確認済みにしない', box.wrAckOf(r, '2026-10', 'up', 'w') === null);
+  t('壊れた値・空でも止まらない', box.wrAckOf({ alertAck: '{壊れ' }, '2026-10', 'dn', 'w') === null && box.wrAckOf({}, '2026-10', 'dn', 'w') === null);
+  t('確認の文に誰が・何をしたかが出る', /staff-a：医師・看護師へ連絡/.test(box.wrAckText(box.wrAckOf(r, '2026-10', 'dn', 'w'))));
+  t('タブの数字は未確認だけを数える', /filter\(x=> !wrAckOf\(/.test(cut(SRC, 'updateAlertBadge')));
+  t('確認は alertAck だけを部分送信する', /pushResidentFields_\(r, \['alertAck'\]\)/.test(cut(SRC, 'wrSetAck')));
+  t('グラフに食事形態の変わり目の印をつなぐ', /plugins:\[wrRefLinePlugin, wrMealMarkPlugin\]/.test(SRC) && /wrMealMarks: mealMarks/.test(SRC));
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

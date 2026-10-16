@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-uF/D4sNY7XM1W+2S97C/fYbPfdNOlOfsBameuhk4eRU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-o5VBsk2MlNq2tgDIorT28dAYM3FRf3A4FmfNvNu6guQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -751,6 +751,16 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
 .mp-w input[type="month"],.thr-tb input[type="number"],.in-meal-edit,.iv-yrange-i{min-height:44px}
 /* 検知ルールの表（5列）は、狭い画面ではカードの中で横にずらして見る（ページ全体を横に広げない） */
 @media(max-width:600px){ #thrTb{display:block;overflow-x:auto;max-width:100%} }
+/* ── 第4弾：アラートの「確認した」とグラフの食事形態の変わり目（2026-10-17） ── */
+.al-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.al-ack-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;padding:8px;border:1px solid var(--g3);border-radius:8px;background:#fff}
+.al-ack-f select{width:auto;min-width:200px;min-height:44px}
+.al-ack-f input[type="text"]{flex:1 1 200px;min-height:44px}
+.al-ack-info{margin-top:6px;font-size:0.9375rem;color:var(--g7)}
+.al-done{margin-top:12px}
+.al-done>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:1rem;font-weight:700;color:var(--g7)}
+.al-done .al-i{opacity:.8}
+.iv-note .nt-meal{display:inline-block;width:14px;border-top:2px dashed #7e57c2;vertical-align:middle;margin-right:4px}
 /* 一覧の操作（対象月・検索・絞り込み）は広い画面では1列にまとめる。一覧と集計は 1200px まで広げる */
 .scr[data-sc="list"],.scr[data-sc="grid"]{max-width:1200px}
 @media(min-width:900px){
@@ -1068,6 +1078,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <div class="iv-note">
       <span class="nt"><i class="dot big c-ng-up"></i><i class="dot big c-ng-dn"></i><b>警告</b>＝月次しきい値の警告（増加は赤／減少は青）</span>
       <span class="nt"><i class="dot big c-w-up"></i><i class="dot big c-w-dn"></i><b>注意</b>＝月次しきい値の注意、または前回比 ±2.0kg 以上（増加はオレンジ／減少は水色）</span>
+      <span class="nt"><i class="nt-meal"></i><b>紫の点線</b>＝食事形態（主食・副食）が変わった月</span>
       <span class="nt"><i class="dot sm c-plain"></i>黒＝どちらにも当たらない測定</span>
       <span class="nt">丸をタップすると数値が出ます。比べる相手は<b>表示中の期間の中で1つ前の測定</b>です。</span>
     </div>
@@ -6028,6 +6039,32 @@ function wrRefLinesFor(rid){
     ];
   }catch(e){ return []; }
 }
+/* 食事形態が変わった月に、縦の点線と札を描く Chart.js の部品（2026-10-17・代表者承認） */
+const wrMealMarkPlugin = {
+  id: 'wrMealMarks',
+  afterDatasetsDraw(chart){
+    try{
+      const marks = (chart.options && chart.options.wrMealMarks) || [];
+      const x = chart.scales && chart.scales.x, area = chart.chartArea;
+      if(!x || !area || !marks.length) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = '600 13px "Hiragino Sans","Yu Gothic UI",sans-serif';
+      marks.forEach((m, i)=>{
+        const px = x.getPixelForValue(m.x);
+        if(!(px >= area.left && px <= area.right)) return;
+        ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(126,87,194,.8)';
+        ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke(); ctx.setLineDash([]);
+        const tw = ctx.measureText(m.text).width;
+        const tx = Math.min(Math.max(px + 4, area.left + 2), area.right - tw - 4);
+        const ty = area.top + 14 + (i % 2) * 18;   // 隣どうしの札が重ならないよう段をずらす
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(tx - 2, ty - 13, tw + 4, 17);
+        ctx.fillStyle = '#4527a0'; ctx.textBaseline = 'alphabetic'; ctx.fillText(m.text, tx, ty);
+      });
+      ctx.restore();
+    }catch(e){ /* 札が描けなくてもグラフ本体は止めない */ }
+  }
+};
 /* グラフの文字も 15px 以上に（介護現場要件） */
 try{ if(window.Chart && Chart.defaults && Chart.defaults.font) Chart.defaults.font.size = 15; }catch(e){}
 /* 目安の線を描く Chart.js の部品（外部の注釈部品は増やさない） */
@@ -6240,6 +6277,18 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
     }
   }
 
+  /* 食事形態（主食・副食）が前の点から変わった月に印を付ける（記録が持つ食事の写しで判定） */
+  const mealMarks = [];
+  try{
+    let prevSig = null;
+    recs.forEach((r, i)=>{
+      if(!r || !(r.stapleForm || r.sideForm)) return;
+      const sig = `${r.stapleForm || ''}|${r.sideForm || ''}`;
+      const xv = dated ? (data[i] && data[i].x) : i;
+      if(prevSig != null && sig !== prevSig && xv != null) mealMarks.push({ x: xv, text: `${mainLabel(r.stapleForm)}/${sideLabel(r.sideForm)}へ` });
+      prevSig = sig;
+    });
+  }catch(e){}
   ivCharts[key] = new Chart(ctx, {
     type:'line',
     data:{
@@ -6260,10 +6309,11 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         spanGaps:true,                       // connect across unmeasured days
       }]
     },
-    plugins:[wrRefLinePlugin],
+    plugins:[wrRefLinePlugin, wrMealMarkPlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
       wrRefLines: ivRefLines,   /* 目安の線（6か月前の体重・−3%・−10%） */
+      wrMealMarks: mealMarks,   /* 食事形態が変わった月の縦の点線 */
       interaction:{mode:'nearest', intersect:false},
       plugins:{
         legend:{display:false},
@@ -6613,6 +6663,40 @@ function collectAlerts(){
   return out;
 }
 
+/* ── アラートの「確認した」（2026-10-17・代表者承認） ──
+   入居者の行の alertAck（JSON の文字）に「月｜向き」ごとの確認を残す：{lv, by, at, act, note}。
+   新しい月のアラート、注意で確認した後に警告へ上がったアラートは、確認済みにしない（もう一度上に出す）。
+   部分送信で alertAck だけを送る（他の項目に触れない）。新しい順に12件まで持つ */
+const WR_ACK_ACTIONS = ['食事形態・量を見直す', '医師・看護師へ連絡', 'ご家族へ連絡', 'ケアマネージャーへ連絡', '測り直し・様子を見る', 'その他'];
+function wrAckMap(r){
+  try{
+    const v = r && r.alertAck;
+    if(!v) return {};
+    const o = (typeof v === 'string') ? JSON.parse(v) : v;
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  }catch(e){ return {}; }
+}
+function wrAckOf(r, ym, dir, level){
+  const e = wrAckMap(r)[`${ym}|${dir}`];
+  if(!e || typeof e !== 'object') return null;
+  if(level === 'ng' && e.lv !== 'ng') return null;   // 注意で確認した後に警告へ上がった
+  return e;
+}
+function wrSetAck(r, ym, dir, entry){
+  const m = wrAckMap(r);
+  if(entry) m[`${ym}|${dir}`] = entry; else delete m[`${ym}|${dir}`];
+  const keys = Object.keys(m).sort().reverse().slice(0, 12);
+  const o = {}; keys.forEach(k=>{ o[k] = m[k]; });
+  r.alertAck = keys.length ? JSON.stringify(o) : '';
+  save();
+  pushResidentFields_(r, ['alertAck']);
+}
+function wrAckText(e){
+  if(!e) return '';
+  const d = new Date(e.at || '');
+  const when = isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()} `;
+  return `確認 ${when}${e.by || ''}：${e.act || ''}${e.note ? `「${e.note}」` : ''}`;
+}
 function renderAlerts(){
   renderRuleDesc();
   const all = collectAlerts();
@@ -6624,6 +6708,11 @@ function renderAlerts(){
 
   const list = $('#alList');
   list.innerHTML = '';
+  /* 確認済みは下へ畳む */
+  const openItems = [], doneItems = [];
+  items.forEach(it=>{ (wrAckOf(it.resident, it.ym, alertDir(it.a), it.a.level) ? doneItems : openItems).push(it); });
+  items = openItems.concat(doneItems);
+  let doneBox = null;
   if(items.length===0){
     list.innerHTML = `<div class="empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
@@ -6632,6 +6721,7 @@ function renderAlerts(){
   }else{
     items.forEach(({resident, ym, a})=>{
       const dir = alertDir(a);
+      const ack = wrAckOf(resident, ym, dir, a.level);
       const div = document.createElement('div');
       div.className = `al-i dir-${dir} sev-${a.level}`;
       div.innerHTML = `
@@ -6640,6 +6730,7 @@ function renderAlerts(){
           <div class="al-nm">${escapeHtml(resident.name)}<span class="rm">${resident.room?'室 '+escapeHtml(resident.room):''}</span><span class="eb ${a.level==='ng'?'eb-ng':'eb-w'}">${a.level==='ng'?'警告':'注意'}</span></div>
           <div class="al-ms">
             ${a.reasons.map(x=>`<div>${x}</div>`).join('')}
+            ${ack ? `<div class="al-ack-info">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''}
             <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${a.cur.stapleAmount}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
           </div>
         </div>
@@ -6649,15 +6740,61 @@ function renderAlerts(){
       // so we MUST set the select value explicitly here — otherwise
       // populateResidentSelect keeps the previous resident and the wrong person
       // is shown.
-      div.addEventListener('click', ()=>{
+      div.addEventListener('click', e=>{
+        if(e.target.closest('.al-act,.al-ack-f')) return;   // 確認のボタン・欄はカードを開かない
         saveUI({ivRes: resident.id});
         $('#ivResident').value = resident.id;
         goto('indiv');
       });
-      list.appendChild(div);
+      /* 確認した／確認を取り消す */
+      const act = document.createElement('div');
+      act.className = 'al-act';
+      act.innerHTML = ack
+        ? `<button type="button" class="bn bs bsm" data-al-undo>確認を取り消す</button>`
+        : `<button type="button" class="bn bo bsm" data-al-ack>確認した（対応を残す）</button>`;
+      div.querySelector('.al-body').appendChild(act);
+      act.addEventListener('click', e=>{
+        e.stopPropagation();
+        if(e.target.closest('[data-al-undo]')){ wrSetAck(resident, ym, dir, null); renderAlerts(); return; }
+        if(!e.target.closest('[data-al-ack]') || div.querySelector('.al-ack-f')) return;
+        const f = document.createElement('div');
+        f.className = 'al-ack-f';
+        f.innerHTML = `<label class="sr-only" for="alAct_${escapeHtml(resident.id)}_${dir}">対応</label>`
+          + `<select id="alAct_${escapeHtml(resident.id)}_${dir}">${WR_ACK_ACTIONS.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select>`
+          + `<input type="text" maxlength="200" placeholder="ひとこと（任意）" aria-label="ひとこと（任意）">`
+          + `<button type="button" class="bn bp bsm" data-al-save>保存</button><button type="button" class="bn bs bsm" data-al-cancel>やめる</button>`;
+        div.querySelector('.al-body').appendChild(f);
+        f.addEventListener('click', ev=>{
+          ev.stopPropagation();
+          if(ev.target.closest('[data-al-cancel]')){ f.remove(); return; }
+          if(ev.target.closest('[data-al-save]')){
+            wrSetAck(resident, ym, dir, { lv: a.level, by: wrWho_(), at: new Date().toISOString(), act: f.querySelector('select').value, note: f.querySelector('input').value.trim().slice(0, 200) });
+            toast('確認を残しました', 'ok');
+            renderAlerts();
+          }
+        });
+        try{ f.querySelector('select').focus(); }catch(_){}
+      });
+      if(ack){
+        if(!doneBox){
+          doneBox = document.createElement('details');
+          doneBox.className = 'al-done';
+          doneBox.innerHTML = `<summary>確認済み（${doneItems.length}件）</summary>`;
+          list.appendChild(doneBox);
+        }
+        doneBox.appendChild(div);
+      }else{
+        list.appendChild(div);
+      }
     });
+    if(!openItems.length && doneItems.length){
+      const msg = document.createElement('div');
+      msg.className = 'empty';
+      msg.textContent = 'まだ確認していないアラートはありません';
+      list.insertBefore(msg, list.firstChild);
+    }
   }
-  $('#alMeta').textContent = `${items.length} 件 / 警告 ${all.filter(x=>x.a.level==='ng').length} 件`;
+  $('#alMeta').textContent = `未確認 ${openItems.length} 件${doneItems.length ? `（確認済み ${doneItems.length} 件）` : ''} / 警告 ${openItems.filter(x=>x.a.level==='ng').length} 件`;
   // スクリーンリーダー通知は要約のみ（#alList を live にすると同期・フィルタのたびに
   // 全カードを読み上げるため不可）。フィルタ名を含めるのは件数が同じフィルタ切替でも
   // 通知するため（同期再描画はフィルタも件数も不変＝同文になり鳴らない）。変化時だけ書く。
@@ -6672,7 +6809,8 @@ function renderAlerts(){
 }
 
 function updateAlertBadge(cache){
-  const all = cache || collectAlerts();
+  /* タブの数字は、まだ確認していないアラートだけを数える（2026-10-17） */
+  const all = (cache || collectAlerts()).filter(x=> !wrAckOf(x.resident, x.ym, alertDir(x.a), x.a.level));
   const ng = all.filter(x=> x.a.level==='ng').length;
   const total = all.length;
   const bg = ng>0 ? 'var(--ng)' : 'var(--warn-br)';
