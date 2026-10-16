@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Dd/k3WE30AaR1mWw7Co7dIxO/P7JUW87FJIdINL+yjo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-HmnET4dJ74on92mOFHcRwdpfwXaGIQrmpkmP6MkTK7o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1186,6 +1186,12 @@ body.meal-on #sc-list{max-width:none}
   body.a4-on .bnav,
   body.a4-on #toast{display:none !important}
   body.a4-on #a4sheet{display:block; position:static; left:auto; z-index:auto}
+  /* その方らしさの紙（2026-10-17 第3弾）。ボタンを押した時だけ body.wi-on を付ける（a4-on と同じ作法） */
+  body.wi-on .scr,
+  body.wi-on .hdr,
+  body.wi-on .bnav,
+  body.wi-on #toast{display:none !important}
+  body.wi-on #wisheet{display:block; position:static; left:auto; z-index:auto}
 }
 .loading{text-align:center; color:var(--g5); padding:30px}
 
@@ -1368,6 +1374,37 @@ body.meal-on #sc-list{max-width:none}
   #viewBox .sec.folded>.sec-body{display:none}
 }
 @media print{ .glance, .vtoc{display:none !important} }
+/* ── 第3弾（2026-10-17）: 副食の入力の手助け・未入力の一覧・その方らしさの紙 ── */
+.mside-aid{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
+.mside-aid .msa-l{font-size:0.875rem; color:var(--g7)}
+.mside-aid .msa-b{min-height:44px; padding:6px 14px; border:1px solid var(--pri); border-radius:999px;
+  background:#fff; color:var(--pri-d); font-size:0.9375rem; cursor:pointer}
+.mside-aid .msa-b:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
+.mside-aid .msa-warn{flex-basis:100%; font-size:0.875rem; color:var(--warn-tx)}
+.miss-sum{margin:4px 0 8px; font-size:0.9375rem}
+.misstbl{width:100%; border-collapse:collapse; background:#fff}
+.misstbl th,.misstbl td{border:1px solid var(--g3); padding:8px 10px; text-align:start; vertical-align:top; font-size:0.9375rem}
+.misstbl th{background:var(--g1); font-weight:700}
+.misstbl .mno{width:3em; text-align:center; color:var(--g7)}
+.misstbl .mroom{width:4.5em}
+.misstbl button.mname{min-height:44px; padding:4px 0; border:0; background:none; color:var(--pri-d); font-weight:700;
+  font-size:0.9375rem; cursor:pointer; text-align:start; text-decoration:underline}
+.misstbl .mlist{color:var(--ng)}
+#wisheet{display:none}
+#wisheet.wi-measure{display:block; position:fixed; left:-9999px; top:0; z-index:-1}
+.wis{width:190mm; height:276mm; display:flex; flex-direction:column; gap:.45em; background:#fff; color:#000;
+  font-size:var(--wifs,13px); line-height:1.45; overflow:hidden}
+.wis *{box-sizing:border-box}
+.wis-hd{display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #000; padding-bottom:.2em}
+.wis-t{font-size:1.45em; font-weight:700}
+.wis-who{font-size:1.25em; font-weight:700}
+.wis-who .wr{font-size:.75em; font-weight:400; margin-left:.6em}
+.wis-g{display:grid; grid-template-columns:1fr 1fr; gap:.45em}
+.wis-b{border:1.5px solid #000; border-radius:6px; padding:.25em .5em .35em; min-height:3em}
+.wis-b.full{grid-column:1 / -1}
+.wis-k{display:block; font-size:.8em; font-weight:700; color:#333}
+.wis-v{display:block; white-space:pre-wrap; word-break:break-word}
+.wis-ft{margin-top:auto; font-size:.75em; color:#333; text-align:end}
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1420,6 +1457,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
     <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">⏳ 認定期限</button>
+    <button class="vtab"    data-v="miss"  role="tab" aria-selected="false">📝 未入力</button>
    </div>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
@@ -1502,6 +1540,11 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="certReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（A4縦）</button>
   </div>
+  <!-- 未入力の一覧（2026-10-17 第3弾）。画面だけの一覧で、印刷のボタンは置かない -->
+  <div class="sh-bar" id="missBar" style="display:none">
+    <span class="st" id="missStatus" role="status" aria-live="polite"></span>
+    <button type="button" id="missReload">🔄 最新に取り直す</button>
+  </div>
   <!-- 食形態一覧表（配布用）ビュー専用。印刷には出さない（body.mf-on の印刷CSSで消える） -->
   <div class="sh-bar" id="mfBar" style="display:none">
     <span class="mfseg" role="group" aria-label="食形態の表示">
@@ -1533,6 +1576,7 @@ body.meal-on #sc-list{max-width:none}
     <button class="btn btn-pri" id="editBtn">✏️ 編集</button>
     <button class="btn btn-sec" id="printBtn">🖨️ 全項目を印刷</button>
     <button class="btn btn-sec" id="a4Btn" title="以前から使用しているA4たて1枚の様式で印刷">🖨️ 1枚にまとめて印刷</button>
+    <button class="btn btn-sec" id="wiBtn" title="人柄と関わり方をA4たて1枚で印刷（新しく関わる職員向け）">🖨️ その方らしさを印刷</button>
     <!-- 入院/復帰は編集フォームを通さず setState で状態だけを更新する（多端末で同時に触るため） -->
     <button class="btn btn-sec" id="hospBtn" hidden>🏥 入院にする</button>
   </div>
@@ -1732,6 +1776,8 @@ body.meal-on #sc-list{max-width:none}
      画面には出さない（印刷専用）。中身は a4Print() が印刷の直前に組み立てる。
      既存の詳細印刷(.sheet)には一切触れない — body.a4-on の時だけこちらが刷られる。 -->
 <div id="a4sheet" aria-hidden="true"></div>
+<!-- その方らしさの紙（2026-10-17 第3弾）。画面には出さない（印刷専用）。中身は wiPrint() が刷る直前に組み立てる -->
+<div id="wisheet" aria-hidden="true"></div>
 
 <!-- 薬効辞書の部品（表示規則 resolveLines・照合キー key/drugName・med_dict に無い薬の予備辞書）。
      効能の正本は med_dict（薬剤師確認・2026-09-24 本人決定）。フェイスシートと共有する。
@@ -2543,7 +2589,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert','miss'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -2603,6 +2649,7 @@ function setView(v){
   rmSyncPrintTarget_();   /* ★印刷対象の付け替え。移していない画面では対象なしにする */
   if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
   if(curView==='mf')   mealLoad(false);   /* 配布用も食形態一覧と同じデータ（getMealList）で作る */
+  if(curView==='miss'){ bkEnsure(false); mealLoad(false); }   /* 未入力は getBulk＋副食（getMealList）で作る（2026-10-17） */
   if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
   if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);  /* CM表・介護度別・認定期限も名簿に無い項目を使う */
   if(curView==='cert') certEnsureFresh_();   /* 保存の後に入った時だけ取り直す（印が無ければ何もしない） */
@@ -3008,6 +3055,7 @@ function renderRoster(){
   if(cntEl && (curView==='cm'||curView==='lvl'||curView==='fam'||curView==='hist'||curView==='md'))
     cntEl.textContent='';
   if(cntEl && curView==='cert') cntEl.textContent='';   /* 認定期限も同じ（母集団は shBase＝絞り込み前） */
+  if(cntEl && curView==='miss') cntEl.textContent='';   /* 未入力も同じ（2026-10-17） */
   if(curView==='meal'){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
@@ -3067,6 +3115,8 @@ function renderRoster(){
     html=histHtml();
   }else if(curView==='md'){
     html=mdHtml();
+  }else if(curView==='miss'){
+    html=missHtml();
   }else if(curView==='cert'){
     html=certHtml();
   }else{
@@ -3222,7 +3272,7 @@ function bkEnsure(force){
   }).catch(function(){ if(dg!==devGen) return; bkErr='取得できませんでした（通信）'; })
     .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
       bkLoading=false; paintShBars();
-      if(curView==='cm'||curView==='lvl'||curView==='cert') renderRoster();
+      if(curView==='cm'||curView==='lvl'||curView==='cert'||curView==='miss') renderRoster();
       /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
          （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
       if(seq!==bkStaleSeq_) certEnsureFresh_(); });
@@ -3292,6 +3342,10 @@ function paintShBars(){
   if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
   /* 認定期限（2026-09-26 追加）。CM表・介護度別と同じ getBulk の控えを使うので状態も同じ文言 */
   var ce=$('certBar'); if(ce) ce.style.display=(curView==='cert')?'flex':'none';
+  /* 未入力の一覧（2026-10-17 第3弾） */
+  var msb=$('missBar'); if(msb) msb.style.display=(curView==='miss')?'flex':'none';
+  if($('missStatus')) $('missStatus').textContent=(curView==='miss')
+    ? ((bkLoading||mealLoading)?'取得しています…':(bkErr||(bkRows?'':'未取得'))) : '';
   /* 食形態一覧表（配布用・2026-10-15）。状態は食形態一覧と同じ取得（mealLoad）のもの */
   var mfb=$('mfBar'); if(mfb) mfb.style.display=(curView==='mf')?'flex':'none';
   if($('mfStatus')) $('mfStatus').textContent=(curView==='mf')
@@ -7224,10 +7278,11 @@ var curResident=null;
    curResident に前の方が残ったままだと、読み込み中や取得失敗の画面から
    ✏️編集を押して【別人の編集フォーム】が開く（＝別人への上書き事故）。 */
 function setViewActions(on){
-  var e=$('editBtn'), p=$('printBtn'), a=$('a4Btn');
+  var e=$('editBtn'), p=$('printBtn'), a=$('a4Btn'), w=$('wiBtn');
   if(e)e.disabled=!on;
   if(p)p.disabled=!on;   // 印刷も同様。読み込み中・失敗の画面を帳票として出さない
   if(a)a.disabled=!on;   // A4様式も同様（前の方の様式を刷らせない）
+  if(w)w.disabled=!on;   // その方らしさの紙も同様（2026-10-17）
 }
 function openResident(id){
   showScreen('view');
@@ -8092,6 +8147,173 @@ function glanceCert_(r){
   return '<span class="gv'+(lv?'':' gnone')+'">'+esc(lv||'介護度 未登録')+'</span>'+
          '<span class="gv'+(warn?' warn':(c.key==='none'?' gnone':''))+'">'+esc(tail)+'</span>';
 }
+/* ── 未入力の判定（2026-10-17 第3弾）──
+   新しく入居した方の押さえ漏れを見つけるための目安。保存・印刷には使わない。
+   mealSide は getBulk に無いので、一覧では食形態一覧の取得（mealRows）から渡す。渡せない時（undefined）は判定しない。
+   ★「自立」の方は認定・居宅を求めない */
+function missingOf_(r, mealSide){
+  var out=[], fam=Array.isArray(r.family)?r.family:[], lv=String(r.careLevel||'').trim();
+  var has=function(v){ return String(v==null?'':v).trim()!==''; };
+  if(!has(r.birthDate)) out.push('生年月日');
+  if(!lv) out.push('介護度');
+  if(lv!=='自立'&&!has(r.careCertEnd)) out.push('認定期間');
+  if(!fam.some(function(f){ return f&&f.kp; })) out.push('キーパーソン');
+  if(!fam.some(function(f){ return f&&f.emergency; })) out.push('緊急連絡先');
+  if(!has(r.hospital)) out.push('主治医');
+  if(mealSide!==undefined&&!has(mealSide)) out.push('副食');
+  if(lv!=='自立'&&(!has(r.careOffice)||!has(r.careManager))) out.push('居宅・ケアマネ');
+  return out;
+}
+function missHtml(){
+  var base=shBase();
+  if(!bkRows) return '<div class="sh-sheet" id="missSheet"><div class="loading">'+
+    esc(bkLoading?'記録を取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var sideOf={};
+  if(mealRows) mealRows.forEach(function(m){ if(m&&m.id!=null) sideOf[String(m.id)]=(m.mealSide==null?'':m.mealSide); });
+  var items=base.map(function(r){
+    var o=bkOf(r), side=mealRows?(Object.prototype.hasOwnProperty.call(sideOf,String(r.id))?sideOf[String(r.id)]:''):undefined;
+    return {r:o, miss:missingOf_(o, side)};
+  }).filter(function(it){ return it.miss.length; });
+  items.sort(function(a,b){ return (b.miss.length-a.miss.length) || byKana(a.r,b.r); });
+  var body=items.map(function(it,i){
+    return '<tr><td class="mno">'+(i+1)+'</td><td class="mroom">'+esc(it.r.room||'')+'</td>'+
+      '<td><button type="button" class="mname" data-miss-id="'+esc(it.r.id)+'">'+esc(it.r.name||'')+'</button></td>'+
+      '<td class="mlist">'+esc(it.miss.join('・'))+'</td></tr>';
+  }).join('');
+  return '<div class="sh-sheet" id="missSheet">'+
+    '<div class="sh-hd"><div class="st1">未入力の一覧</div></div>'+
+    '<div class="miss-sum">在籍 <b>'+base.length+'</b>名のうち、未入力のある方 <b>'+items.length+'</b>名'+
+      (mealRows?'':'（副食はまだ取得していないので、数えていません）')+'</div>'+
+    (items.length
+      ? '<table class="misstbl"><thead><tr><th class="mno" scope="col">No</th><th class="mroom" scope="col">居室</th>'+
+        '<th scope="col">入居者（押すと詳細を開く）</th><th scope="col">未入力の欄</th></tr></thead><tbody>'+body+'</tbody></table>'
+      : '<div class="empty">未入力の欄がある方はいません</div>')+
+    '<div class="sh-ft">調べる欄：生年月日・介護度・認定期間・キーパーソン・緊急連絡先・主治医・副食・居宅とケアマネ（自立の方は認定と居宅を除く）</div>'+
+  '</div>';
+}
+/* ── 体重の減り（2026-10-17 第3弾）──
+   体重管理アプリの記録（この端末の localStorage・読むだけ）から、最新と 1・3・6か月前を比べる。
+   赤字の基準は低栄養の高リスクの目安（1か月5%・3か月7.5%・6か月10%以上の減少・2026-10-17 代表者の決定）。
+   ★名寄せは一覧の最新体重（buildWeightIndex）と同じ順序：masterId の一致 → マスタで1人だけの氏名の一致 */
+var WT_LOSS_RULE=[[1,5],[3,7.5],[6,10]];
+var _wtHistRaw=null,_wtHistDb=null;
+function wtRecDate_(rec){ var s=String(rec.measuredOn||(rec.yearMonth?rec.yearMonth+'-01':'')); return certYmd_(s.slice(0,10)); }
+function weightTrendOf(masterId, name){
+  var raw=null;
+  try{ raw=localStorage.getItem(WTMGR_KEY); }catch(e){ return null; }
+  if(!raw) return null;
+  if(raw!==_wtHistRaw){ _wtHistRaw=raw; try{ _wtHistDb=JSON.parse(raw); }catch(e){ _wtHistDb=null; } }
+  var db=_wtHistDb;
+  if(!db||!Array.isArray(db.residents)||!Array.isArray(db.records)) return null;
+  var uids=db.residents.filter(function(p){ return p&&p.id!=null&&p.masterId!=null&&String(p.masterId)===String(masterId); })
+    .map(function(p){ return String(p.id); });
+  if(!uids.length){
+    var n=wtNormName(name), dup=0;
+    roster.forEach(function(r){ if(wtNormName(r.name)===n) dup++; });
+    var hit=db.residents.filter(function(p){ return p&&p.id!=null&&n&&wtNormName(p.name)===n; });
+    if(n&&dup<=1&&hit.length===1) uids=[String(hit[0].id)];
+  }
+  if(!uids.length) return null;
+  var recs=db.records.filter(function(rec){
+    if(!rec||uids.indexOf(String(rec.residentId))<0) return false;
+    var w=Number(rec.weight); return isFinite(w)&&w>=20&&w<=150&&!!wtRecDate_(rec);
+  }).sort(function(a,b){ return wtRecKey(a)<wtRecKey(b)?-1:wtRecKey(a)>wtRecKey(b)?1:0; });
+  if(!recs.length) return null;
+  var last=recs[recs.length-1], ld=wtRecDate_(last), lw=Number(last.weight);
+  var out={weight:lw, on:ld, diffs:[], high:false};
+  WT_LOSS_RULE.forEach(function(rule){
+    var t=new Date(ld.y, ld.m-1-rule[0], ld.d), past=null;
+    recs.forEach(function(rec){
+      var d=wtRecDate_(rec); if(!d) return;
+      if(new Date(d.y,d.m-1,d.d)<=t) past=rec;   /* その日より前で一番新しい記録 */
+    });
+    if(!past) return;
+    var pw=Number(past.weight), kg=Math.round((lw-pw)*10)/10, pct=Math.round((pw-lw)/pw*1000)/10;
+    var hi=pct>=rule[1];
+    if(hi) out.high=true;
+    out.diffs.push({months:rule[0], kg:kg, pct:pct, high:hi});
+  });
+  return out;
+}
+function glanceWeight_(r){
+  var t=null; try{ t=weightTrendOf(r.id, r.name); }catch(e){ t=null; }
+  if(!t) return '';
+  var lines=[t.weight.toFixed(1)+'kg（'+t.on.y+'/'+t.on.m+'/'+t.on.d+'）'];
+  t.diffs.forEach(function(d){
+    lines.push(d.months+'か月で '+(d.kg>0?'+':(d.kg<0?'−':'±'))+Math.abs(d.kg).toFixed(1)+'kg'+
+      (d.pct>0?'（−'+d.pct.toFixed(1)+'%）':'')+(d.high?'　⚠ 低栄養の目安を超える減り':''));
+  });
+  if(!t.diffs.length) lines.push('比べる前の記録がありません');
+  return glanceItem_('体重の変化', '<span class="gv'+(t.high?' warn':'')+'">'+esc(lines.join('\n'))+'</span>');
+}
+/* ── その方らしさの紙（A4縦1枚・2026-10-17 第3弾・管理者指示）──
+   人柄と関わり方だけを載せる（病名・処方・連絡先は載せない＝代表者の決定 2026-10-17）。
+   ★「印刷しない」に指定された欄は、枠を残して中身を空にする（A4様式と同じ作法）。
+   ★文字は紙1枚に収まる最大（9〜20px）。収まらない時は小さい側で刷り、画面に知らせる */
+function wiOff(){
+  document.body.classList.remove('wi-on');
+  var b=$('wisheet'); if(b){ b.innerHTML=''; b.classList.remove('wi-measure'); }
+}
+function wiHtml_(r){
+  var nop=printHideSet(r);
+  var v=function(sec, val){ return nop[sec]?'':String(val==null?'':val); };
+  var rh=nop.biz?{}:rhythmOf(r);
+  var rhy=RHYTHM_KEYS.map(function(p){ return rh[p[0]]?(p[1]+' '+String(rh[p[0]]).replace(/^0(\d:)/,'$1')):''; }).filter(Boolean).join('　');
+  var B=function(k, val, full){
+    return '<div class="wis-b'+(full?' full':'')+'"><span class="wis-k">'+esc(k)+'</span><span class="wis-v">'+esc(String(val||'').trim())+'</span></div>';
+  };
+  var t=new Date();
+  return '<div class="wis">'+
+    '<div class="wis-hd"><div class="wis-t">その方らしさ（人柄と関わり方）</div>'+
+      '<div class="wis-who">'+esc(r.name||'')+(r.room?'<span class="wr">居室 '+esc(r.room)+'</span>':'')+'</div></div>'+
+    '<div class="wis-g">'+
+      B('呼ばれたい呼び名', v('mind',r.preferredName))+B('意思疎通の方法', v('mind',r.commMethod))+
+      B('対応のコツ・なだめ方', v('mind',r.careHints), true)+
+      B('性格・気質', v('person',r.personality))+B('趣味・特技', v('person',r.hobby))+
+      B('好きな／嫌いな食べ物', v('person',r.foodPref))+B('こだわり・大切な習慣', v('person',r.lifePrefs))+
+      B('生育歴・職歴・暮らしぶり', v('history',r.lifeHistory), true)+
+      B('価値観・大切にしてきたこと・誇り', v('history',r.values), true)+
+      B('本人の希望', v('wishes',r.wishSelf))+B('家族の希望', v('wishes',r.wishFamily))+
+      B('本人の強み', v('wishes',r.strengths), true)+
+      B('生活リズム', rhy, true)+
+    '</div>'+
+    '<div class="wis-ft">新しく関わる職員向け　／　作成日 '+t.getFullYear()+'年'+(t.getMonth()+1)+'月'+t.getDate()+'日</div>'+
+  '</div>';
+}
+function wiFit_(){
+  var box=$('wisheet'), sh=box&&box.querySelector('.wis'); if(!sh) return true;
+  var H=276*96/25.4, fit=false;
+  box.classList.add('wi-measure');
+  try{
+    var lo=0, hi=Math.round((20-9)/0.5), sizeOf=function(k){ return 9+k*0.5; };
+    var fits=function(px){ sh.style.setProperty('--wifs',px+'px'); sh.style.height='auto'; return sh.scrollHeight<=H-4; };
+    if(fits(sizeOf(lo))){
+      fit=true;
+      while(lo<hi){ var mid=Math.ceil((lo+hi)/2); if(fits(sizeOf(mid))) lo=mid; else hi=mid-1; }
+    }
+    sh.style.setProperty('--wifs',sizeOf(lo)+'px');
+  }finally{ sh.style.height=''; box.classList.remove('wi-measure'); }
+  return fit;
+}
+function wiPrint(){
+  if(!curResident) return;
+  wiOff();
+  try{
+    $('wisheet').innerHTML=wiHtml_(curResident);
+    if(!wiFit_()) toast('記載量が多く、1枚に入りきらない部分があります');
+  }catch(e){ wiOff(); toast('⚠️ その方らしさの紙を組み立てられませんでした'); return; }
+  document.body.classList.add('wi-on');
+  var undo=function(){ wiOff(); window.removeEventListener('afterprint',undo); };
+  window.addEventListener('afterprint',undo);
+  try{ window.print(); }catch(e){ wiOff(); }
+}
+/* afterprint が来ない環境向け（印刷メディアの離脱を合図に戻す。A4様式と同じ保険） */
+try{
+  var _wimq=matchMedia('print');
+  var _wimqFn=function(e){ if(!e.matches) wiOff(); };
+  if(_wimq.addEventListener)_wimq.addEventListener('change',_wimqFn);
+  else if(_wimq.addListener)_wimq.addListener(_wimqFn);
+}catch(e){}
 function glanceHtml_(r){
   var fam=Array.isArray(r.family)?r.family:[];
   var kp=fam.filter(function(f){ return f&&f.kp; });
@@ -8119,6 +8341,9 @@ function glanceHtml_(r){
       glanceItem_('主治医', glanceVal_(docTx))+
       glanceItem_('アレルギー・禁忌', alg?glanceVal_(alg,'warn'):'<span class="gv gnone">記載なし</span>')+
       glanceItem_('食形態', glanceVal_(meal))+
+      glanceWeight_(r)+   /* 体重の変化（体重管理アプリの記録がある端末だけ・2026-10-17） */
+      (function(){ var m=missingOf_(r, r.mealSide);   /* 未入力の欄（2026-10-17） */
+        return m.length?glanceItem_('未入力', '<span class="gv warn">'+esc(m.join('・'))+'</span>'):''; })()+
     '</div></div>';
 }
 function foldLoad_(){
@@ -8991,6 +9216,11 @@ function openEdit(rec){
   // 食事（食事形態・義歯）
   h+='<div class="cd"><div class="fgroup"><h3>食事</h3><div class="fgrid">'+
     fld('mealStaple','主食',r.mealStaple)+fld('mealSide','副食',r.mealSide)+
+    /* 副食の入力の手助け（2026-10-17 第3弾）。押すと先頭の形態の語だけを入れ替える＝後ろの備考はそのまま。
+       保存の形（自由文1つ）は変えない。4区分のどれにも当たらない時・空欄の時は、配布用の一覧でどう出るかを知らせる */
+    '<div class="fld full mside-aid"><span class="msa-l">副食の形態：</span>'+
+      ['常食','一口大','刻み','ミキサー'].map(function(w){ return '<button type="button" class="msa-b" data-mside="'+w+'">'+w+'</button>'; }).join('')+
+      '<span class="msa-warn" id="msaWarn" role="status" aria-live="polite"></span></div>'+
     fld('mealForm','食形態',r.mealForm,'select',['','常食','軟菜','きざみ','極きざみ','ミキサー','ペースト','ゼリー'])+
     fld('thickener','とろみ',r.thickener,'select',['','なし','薄め','中間','濃いめ'])+
   /* 義歯（denture）は様式の「口腔清潔」へ移した（2026-08-12）。同じキーの入力欄を2つ作らない */
@@ -9097,6 +9327,26 @@ function openEdit(rec){
       }
     });
     d.addEventListener('change',paint);
+    paint();
+  })();
+  (function(){   /* 副食の入力の手助け（2026-10-17 第3弾） */
+    var inp=$('editBox').querySelector('[data-k="mealSide"]'), warn=$('msaWarn');
+    if(!inp) return;
+    var paint=function(){
+      if(!warn) return;
+      var c=mfCat_(inp.value);
+      warn.textContent = c==='none' ? '空欄です（配布用の食形態一覧では「未設定」に出ます）'
+        : c==='other' ? '常食・一口大・刻み・ミキサーのどれの語も入っていません（配布用の一覧では「その他」に出ます）' : '';
+    };
+    Array.prototype.forEach.call($('editBox').querySelectorAll('.msa-b'),function(b){
+      b.addEventListener('click',function(){
+        var rest=String(inp.value||'').replace(/^[\s　]*(常食|一口大|1口大|１口大|刻み食|刻み|きざみ|ミキサー食|ミキサー)[\s　、,，]*/,'');
+        inp.value=this.getAttribute('data-mside')+(rest?'　'+rest:'');
+        try{ inp.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){}
+        paint();
+      });
+    });
+    inp.addEventListener('input',paint);
     paint();
   })();
   $('bfDisAdd').addEventListener('click',function(){
@@ -10497,6 +10747,7 @@ function afterSaveOk_(rec,saved,dg,ed){
 /* ═══════════ 画面遷移 ═══════════ */
 function showScreen(name){
   try{a4Off();}catch(e){}   // 画面が動いたらA4様式モードは無効（a4-on 残留の保険）
+  try{wiOff();}catch(e){}   // その方らしさの紙も同じ（2026-10-17）
   if(name!=='edit') editSnap_=null;   /* 編集画面を離れたら控えを捨てる（保存後・取消後に聞かない） */
   ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
@@ -11484,7 +11735,7 @@ function loadData(){
   if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
   /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
      （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
-  if(curView==='meal'||curView==='mf') mealLoad(false);
+  if(curView==='meal'||curView==='mf'||curView==='miss') mealLoad(false);
   /* 帳票5種も同じ（名簿とは別のAPIで作るので renderRoster だけでは空のまま。
      バーも出さないと🔄・💾・🖨️のボタンが1つも出ない画面になる） */
   paintShBars();
@@ -12439,6 +12690,16 @@ function init(){
   Array.prototype.forEach.call(document.querySelectorAll('.mfseg button'),function(b){
     b.addEventListener('click',function(){ setView(this.getAttribute('data-mfv')); });
   });
+  /* 未入力の一覧（2026-10-17 第3弾）。氏名を押すとその方の詳細を開く */
+  if($('missReload')) $('missReload').addEventListener('click',function(){
+    bkEnsure(true);
+    if(!mealDirtyCells()) mealLoad(true);   /* 食形態一覧の未保存の変更がある時は取り直さない（消さない） */
+  });
+  if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
+    if(curView!=='miss') return;
+    var b=e.target&&e.target.closest?e.target.closest('[data-miss-id]'):null;
+    if(b) openResident(b.getAttribute('data-miss-id'));
+  });
   /* 食形態一覧表（配布用・2026-10-15） */
   if($('mfPrint'))  $('mfPrint').addEventListener('click',function(){rmPrint_('mf')});
   if($('mfReload')) $('mfReload').addEventListener('click',function(){
@@ -12536,6 +12797,7 @@ function init(){
     });
   });
   $('a4Btn').addEventListener('click',a4Print);
+  if($('wiBtn')) $('wiBtn').addEventListener('click',wiPrint);   /* その方らしさの紙（2026-10-17 第3弾） */
   /* 編集画面のスクロールに合わせて「今いる欄」のタブを光らせる（現在地の明示・HIG）。
      passive でスクロール性能を落とさず、1フレーム1回に間引く。
      タブが無い画面では markEditTab が即座に戻るので他画面には影響しない */
@@ -12599,8 +12861,18 @@ function init(){
   var _hadNavState=false;
   try{ if(history.state&&history.state.rmScr){ _hadNavState=true; _navPushed=true; } }catch(e){}
   var _urlView=(function(){try{return new URLSearchParams(location.search).get('view')}catch(e){return null}})();
+  /* ★?id=番号 で、その方の詳細画面を直接開く（2026-10-17 第3弾・管理者指示）。他のアプリやメモから1回で開くための口。
+     ・受けるのは数字だけ。開いたら URL から id を外す（次の再読み込みは下の sessionStorage の控えで戻る＝従来どおり）
+     ・名簿の控えに居なくても開く（初めての端末でも開けるように）。番号の確かめはサーバーが行い、無ければ詳細画面に失敗が出る
+     ・現場端末はこの手前で止まっている（上の applyDeviceGuard）＝ここまで来ない */
+  var _urlId=(function(){try{var v=new URLSearchParams(location.search).get('id');return (v&&/^\d{1,9}$/.test(v))?v:null}catch(e){return null}})();
+  if(_urlId!==null){
+    try{ var _p=new URLSearchParams(location.search); _p.delete('id'); var _q=_p.toString();
+         history.replaceState(history.state,'',location.pathname+(_q?'?'+_q:'')+location.hash); }catch(e){}
+  }
   var _openId=readOpenId();
-  if(!_urlView && CFG.url && _openId!=null &&
+  if(_urlId!==null && !_urlView && CFG.url) openResident(_urlId);
+  else if(!_urlView && CFG.url && _openId!=null &&
      roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
   /* 個人画面を復元しなかったのに段が残っている場合は消費する（一覧からの戻るを1回で出られるように） */
   if(_hadNavState&&$('sc-list').classList.contains('on')){ _navPushed=false; try{history.back();}catch(e){} }
