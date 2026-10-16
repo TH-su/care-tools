@@ -17,7 +17,23 @@
     ['target_apps', '対象アプリ']
   ];
 
-  function msg(text, kind) { var m = $('msg'); m.className = 'msg ' + (kind || 'ng'); m.textContent = text || ''; }
+  /* 結果の文は、ページ最上部の欄（読み上げ用 role=alert）に加えて、押したボタンの並びのすぐ下にも出す
+   * （2026-10-16 代表者の指摘: 勤務表の切り替えの夜、下の方のボタンを押すと断りの文が最上部にだけ出て、
+   *   「押しても何も起きない」ように見えた）。近くの写し（msg-near）は読み上げない＝二重に読まない。
+   * 最上部の「見比べ直す」など、ページの上の方（v-main の外）のボタンは最上部の欄だけで足りる。 */
+  var msgAnchor = null;
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button') : null;
+    msgAnchor = b && b.closest ? b.closest('.acts') : null;
+  }, true);
+  function msg(text, kind) {
+    var m = $('msg'); m.className = 'msg ' + (kind || 'ng'); m.textContent = text || '';
+    var n = $('msg-near'); if (!n) return;
+    var a = msgAnchor;
+    if (!text || !a || !a.parentNode || !a.closest || !a.closest('#v-main')) { n.textContent = ''; return; }
+    if (n.previousElementSibling !== a) a.parentNode.insertBefore(n, a.nextSibling);
+    n.className = m.className; n.textContent = text;
+  }
   function view(name) {
     $('v-loading').hidden = name !== 'loading';
     $('v-gate').hidden = name !== 'gate';
@@ -418,9 +434,9 @@
   }
 
   /* ── ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定・現場のアカウントが日ごとを書けないため）──
-   * ★順番: ①日ごとを止める（kv_set_family_mode wsday→shadow。Supabase が日ごとの保存を断る＝入力は端末に残る）
-   *        ②Google へ写し返す（Supabase の最新と Google の中身を比べ、違う日だけ Google へ force で書く）
-   *        ③日ごとのスイッチ wsday を false にする PR（端末が Google へ送る）。
+   * ★順番: 手順1 日ごとを止める（kv_set_family_mode wsday→shadow。Supabase が日ごとの保存を断る＝入力は端末に残る）
+   *        手順2 Google へ写し返す（Supabase の最新と Google の中身を比べ、違う日だけ Google へ force で書く）
+   *        手順3 日ごとのスイッチ wsday を false にする PR（端末が Google へ送る）。
    *   Supabase→Google の写し返しは保存の20秒後に画面の中で行うだけなので、取りこぼした日があり得る。写し返す前に
    *   スイッチを切ると、端末の統合が Google の古い中身を「他端末の変更」として取り込み、新しい入力を巻き戻す。
    *   止めてから写し返すので、写し返した後に Supabase 側だけが進むことは無い。 */
@@ -448,7 +464,7 @@
         wbMsg('止められませんでした: ' + why, 'ng');
         return;
       }
-      wbMsg('日ごとを止めました。続けて「②日ごとを Google へ写し返す」を押してください。', 'ok');
+      wbMsg('日ごとを止めました。続けて「手順2 日ごとを Google へ写し返す」を押してください。', 'ok');
     } finally { wbBusy(false); }
   }
   async function writeBackWsday() {
@@ -457,7 +473,7 @@
     wbBusy(true);
     var done = 0, same = 0, wrote = 0, failed = [], keys = [];
     try {
-      if (await wsdayMode(sb) !== 'shadow') { wbMsg('先に「①日ごとを止める」を押してください（止めずに写すと、写した後に Supabase 側だけが進むことがあります）。', 'warn'); return; }
+      if (await wsdayMode(sb) !== 'shadow') { wbMsg('先に「手順1 日ごとを止める」を押してください（止めずに写すと、写した後に Supabase 側だけが進むことがあります）。', 'warn'); return; }
       var idx = await sb.rpc('kv_index', { p_family: 'wsday' });
       if (idx.error) throw new Error(String(idx.error.message || idx.error.code));
       keys = Object.keys((idx.data && idx.data.revs) || {}).sort();
