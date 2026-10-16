@@ -121,19 +121,68 @@
   }
 
   // ── Google への写し返し（読むだけの画面のため）──
-  var mirrorTimers = {};
-  function scheduleMirror(key, rawGas) {
-    clearTimeout(mirrorTimers[key]);
-    mirrorTimers[key] = setTimeout(function () {
-      var sb = window.SUAuth && window.SUAuth.client();
-      if (!sb) return;
-      sb.rpc('kv_get', { p_key: key }).then(function (r) {
-        if (r.error || !r.data || !r.data.data) return;
-        // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
-        return rawGas({ action: 'put', key: key, rev: 0, data: r.data.data, force: true });
-      }).catch(function () { /* 写し返しの失敗は本番に影響させない（次の保存でまた写す） */ });
-    }, MIRROR_WAIT_MS);
+  // 2026-10-16 改: 20秒の待ちの間に画面を閉じると写し返しが届かず、Google が古いまま残っていた
+  //   （写しの見比べの「本番の中身の見比べ」で、週の型1件・日ごと2件）。そこで:
+  //   1 写し返しの予定を端末に控える（su_kv_mirror_pending・キーと時刻だけ。中身は持たない）。
+  //     Google が受け取った（ok）と分かった時だけ、その時より前の控えを消す（観測してから完了・多端末同期規約6）
+  //   2 画面を隠した時（別のアプリ・タブへ移る・閉じる）は、20秒を待たずにその場で写し返す
+  //   3 同じ端末で次に週間計画・ワースケ・デイ利用表が Supabase へ保存できた時、控えに残っている他のキーも写し返す（7日より古い控えは捨てる）。
+  //     保存の時の Google への送り方（rawGas）だけを使う＝読むだけの画面（俯瞰・フェイスシート等）の送り方で Google へ書かない
+  //   写すのは毎回 Supabase の最新（kv_get）を force で＝何度写しても同じ（冪等）。勤務表は対象外（scheduleShiftMirror・Google が厳格モードで断る）
+  var MIRROR_LS = 'su_kv_mirror_pending', MIRROR_KEEP_MS = 7 * 24 * 3600 * 1000, MIRROR_RESUME_MS = 5000, MIRROR_RETRY_MS = 5000;
+  function mirrorPending() {
+    try { var o = JSON.parse(localStorage.getItem(MIRROR_LS) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
   }
+  function mirrorPendingSave(o) {
+    try { if (Object.keys(o).length) localStorage.setItem(MIRROR_LS, JSON.stringify(o)); else localStorage.removeItem(MIRROR_LS); } catch (e) { /* 控えを残せなくても写し返しは行う */ }
+  }
+  function mirrorMark(key) { var o = mirrorPending(); o[key] = Date.now(); mirrorPendingSave(o); }
+  // started より後に予定し直された控えは消さない（写している間に新しく保存された分は、まだ届いていない）
+  function mirrorDone(key, started) { var o = mirrorPending(); if (o[key] && Number(o[key]) <= started) { delete o[key]; mirrorPendingSave(o); } }
+  var mirrorTimers = {}, mirrorRaw = {}, mirrorBusy = {};
+  function runMirror(key) {
+    clearTimeout(mirrorTimers[key]); delete mirrorTimers[key];
+    var rawGas = mirrorRaw[key];
+    if (!rawGas) return;
+    if (mirrorBusy[key]) { mirrorTimers[key] = setTimeout(function () { runMirror(key); }, MIRROR_RETRY_MS); return; }
+    var sb = window.SUAuth && window.SUAuth.client();
+    if (!sb) return;
+    var started = Date.now();
+    mirrorBusy[key] = true;
+    sb.rpc('kv_get', { p_key: key }).then(function (r) {
+      if (r.error || !r.data || !r.data.data) return;
+      // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
+      return Promise.resolve(rawGas({ action: 'put', key: key, rev: 0, data: r.data.data, force: true })).then(function (g) {
+        if (g && g.ok) mirrorDone(key, started);
+      });
+    }).catch(function () { /* 写し返しの失敗は本番に影響させない（控えが残る＝次の機会にまた写す） */ })
+      .then(function () { mirrorBusy[key] = false; });
+  }
+  function scheduleMirror(key, rawGas) {
+    resumeMirrors(rawGas);
+    mirrorRaw[key] = rawGas;
+    mirrorMark(key);
+    clearTimeout(mirrorTimers[key]);
+    mirrorTimers[key] = setTimeout(function () { runMirror(key); }, MIRROR_WAIT_MS);
+  }
+  function flushMirrors() { Object.keys(mirrorTimers).forEach(runMirror); }
+  var mirrorResumed = false;
+  function resumeMirrors(rawGas) {
+    if (mirrorResumed || !rawGas) return;
+    mirrorResumed = true;
+    var o = mirrorPending(), now = Date.now(), changed = false;
+    Object.keys(o).forEach(function (k) {
+      if (!kvFlagOf(k) || !(now - Number(o[k]) < MIRROR_KEEP_MS)) { delete o[k]; changed = true; return; }
+      if (mirrorTimers[k]) return;
+      mirrorRaw[k] = rawGas;
+      mirrorTimers[k] = setTimeout(function () { runMirror(k); }, MIRROR_RESUME_MS);
+    });
+    if (changed) mirrorPendingSave(o);
+  }
+  try {
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushMirrors(); });
+    window.addEventListener('pagehide', flushMirrors);
+  } catch (e) { /* 聞けない環境では従来どおり20秒後だけ */ }
 
   /* ── 現場のアカウントの日データの保存（0010・2026-10-11）──
    * 送ってきた盤面から、札ごとの done・checks・comment だけを抜き出して kv_put_marks へ送る。
