@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-QFCqhqK+GM2yiobx0zriy8w1yWPlkBv297/NRa5q0Rg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-33DdKOQpM7rNnrhug4WOUABIrtPYRv6n8dYMhuwwgJ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -58,7 +58,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .search-bar input{min-width:0; flex:1 1 150px}
 .filter-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
 .chip{padding:4px 11px; border:1px solid var(--g3); border-radius:15px; background:#fff; font-size: 0.8125rem; color:var(--g7);
-  min-height:36px; display:inline-flex; align-items:center}   /* 高さは維持する（見た目だけ締める） */
+  min-height:44px; display:inline-flex; align-items:center}   /* 押せる大きさは44px（2026-10-16 第1弾・従来36px） */
 .chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
 /* ── 表示パターンのタブ（並べ方だけを変える。検索・在籍フィルタは全タブで有効） ── */
 .view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
@@ -988,6 +988,13 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
      ★このファイルだけの追加は「一覧のセルを直接直せる（.med）」ことと、そのための画面用の
        文字サイズ（--mfs は画面では読める大きさ・印刷の直前だけ用紙に合わせて縮める）。 */
 .meal-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
+/* 食形態の「配膳・編集用（A3）／配布用（A4）」の切り替え（2026-10-16 第1弾・2つのタブを1つにまとめた） */
+.mfseg{display:inline-flex; border:1px solid var(--pri); border-radius:10px; overflow:hidden}
+.mfseg button{min-height:44px; padding:6px 12px; border:0 !important; border-radius:0 !important;
+  background:#fff; color:var(--pri); font-size:0.875rem; cursor:pointer}
+.mfseg button+button{border-left:1px solid var(--pri) !important}
+.mfseg button[aria-pressed="true"]{background:var(--pri) !important; color:#fff !important}
+.mfseg button:focus-visible{outline:2px solid var(--pri-d); outline-offset:-3px}
 .meal-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
   border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
 .meal-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
@@ -1310,6 +1317,16 @@ body.meal-on #sc-list{max-width:none}
 /* フィット計測時に画面外へ一時表示するためのクラス（a4Fit が付け外しする） */
 #a4sheet.a4-measure{display:block; position:fixed; left:-9999px; top:0; z-index:-1}
 
+/* ── 画面の小さい文字を14pxへ上げる（2026-10-16 管理者指示・使いやすさ改善の第1弾）──
+   ★@media screen に閉じる＝印刷の紙面は1pxも変わらない（原則2）。
+   ★帳票の脚注（.sh-ft・.bday-ft 等）と、紙に合わせて採寸する表の中の文字は対象にしない。
+     印刷前の採寸（su-print の採寸窓）は画面の上で測るので、ここに入れると紙の文字サイズが変わる。 */
+@media screen{
+  .hdr .sync, .rsec>h3 .cnt, .roster-count, .adm-bar .nt, .adm-d .yr,
+  .rcard .kn, .tag, .nop-tag, .cell .lab, .wt-on, .bd-w, .meds-note,
+  .fld label, .mh-tag, .mc-redo, .mc-lbl, .bnav button, .bulk-note,
+  .applead, .applist .ad, .muted, .mdbadge, .mf-note{font-size:0.875rem}
+}
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1349,9 +1366,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
     <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
-    <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態一覧</button>
-    <button class="vtab"    data-v="mf"    role="tab" aria-selected="false">🍽️ 食形態（配布用）</button>
-    <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 CM表</button>
+    <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態</button>
+    <button class="vtab"    data-v="cm"    role="tab" aria-selected="false">📋 ケアマネ一覧</button>
     <button class="vtab"    data-v="lvl"   role="tab" aria-selected="false">📊 介護度別</button>
     <button class="vtab"    data-v="room"  role="tab" aria-selected="false">🗺️ 居室一覧</button>
     <button class="vtab"    data-v="fam"   role="tab" aria-selected="false">👪 家族情報</button>
@@ -1372,15 +1388,19 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="bdayPrev" aria-label="前の年度">◀</button>
     <span id="bdayFY" aria-live="polite"></span>
     <button type="button" id="bdayNext" aria-label="次の年度">▶</button>
-    <button type="button" class="btn-print" id="bdayPrint">🖨️ 印刷</button>
+    <button type="button" class="btn-print" id="bdayPrint">🖨️ 印刷（A4縦）</button>
   </div>
   <!-- 食形態一覧ビュー専用。印刷には出さない（body.meal-on の印刷CSSで消える） -->
   <div class="meal-bar" id="mealBar" style="display:none">
+    <span class="mfseg" role="group" aria-label="食形態の表示">
+      <button type="button" data-mfv="meal">配膳・編集用（A3）</button>
+      <button type="button" data-mfv="mf">配布用（A4）</button>
+    </span>
     <span class="st" id="mealStatus" role="status" aria-live="polite"></span>
     <span class="dirtymsg" id="mealDirtyMsg"></span>
     <button type="button" id="mealReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-save" id="mealSave" disabled>💾 保存</button>
-    <button type="button" class="btn-print" id="mealPrint">🖨️ A3縦で印刷</button>
+    <button type="button" class="btn-print" id="mealPrint">🖨️ 印刷（A3縦）</button>
   </div>
   <!-- CM表ビュー専用。印刷には出さない（body.cm-on の印刷CSSで消える） -->
   <div class="sh-bar" id="cmBar" style="display:none">
@@ -1389,24 +1409,24 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" class="cmchip" data-m="office">居宅別</button>
     <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
     <button type="button" id="cmReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（既定 A4横）</button>
+    <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（A4横）</button>
   </div>
   <!-- 介護度別ビュー専用。印刷には出さない（body.lvl-on の印刷CSSで消える） -->
   <!-- 居室一覧ビュー専用。1階・2階でA4横2枚に刷る -->
   <div class="sh-bar" id="roomBar" style="display:none">
     <span class="st" id="roomStatus" role="status" aria-live="polite"></span>
-    <button type="button" class="btn-print" id="roomPrint">🖨️ 印刷（既定 A4横・1階と2階の2枚）</button>
+    <button type="button" class="btn-print" id="roomPrint">🖨️ 印刷（A4横・1階と2階の2枚）</button>
   </div>
   <div class="sh-bar" id="lvlBar" style="display:none">
     <span class="st" id="lvlStatus" role="status" aria-live="polite"></span>
     <button type="button" id="lvlReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="lvlPrint">🖨️ 印刷（既定 A4縦）</button>
+    <button type="button" class="btn-print" id="lvlPrint">🖨️ 印刷（A4縦）</button>
   </div>
   <!-- 家族情報ビュー専用。印刷には出さない（body.fam-on の印刷CSSで消える） -->
   <div class="sh-bar" id="famBar" style="display:none">
     <span class="st" id="famStatus" role="status" aria-live="polite"></span>
     <button type="button" id="famReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="famPrint">🖨️ 印刷（既定 A3縦）</button>
+    <button type="button" class="btn-print" id="famPrint">🖨️ 印刷（A3縦）</button>
   </div>
   <!-- 病歴・薬ビュー専用。印刷には出さない（body.hist-on の印刷CSSで消える） -->
   <div class="sh-bar" id="histBar" style="display:none">
@@ -1414,7 +1434,7 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="histReload">🔄 最新に取り直す</button>
     <!-- 定期薬の用法から服薬の時間帯を読み取り、care-log の与薬チェックへ送る（2026-09-27 代表指示）。紙には出さない -->
     <button type="button" id="histMedSlots">💊 与薬チェックへ時間帯を送る</button>
-    <button type="button" class="btn-print" id="histPrint">🖨️ 印刷（既定 A3縦）</button>
+    <button type="button" class="btn-print" id="histPrint">🖨️ 印刷（A3縦）</button>
   </div>
   <!-- 薬効辞書ビュー専用。印刷には出さない（body.md-on の印刷CSSで消える） -->
   <div class="sh-bar" id="mdBar" style="display:none">
@@ -1427,20 +1447,24 @@ body.meal-on #sc-list{max-width:none}
     <button type="button" id="mdAdd">＋ 薬を足す</button>
     <button type="button" id="mdAi">🤖 未登録をAIで下書き</button>
     <button type="button" class="btn-save" id="mdSave" disabled>💾 保存</button>
-    <button type="button" class="btn-print" id="mdPrint">🖨️ 印刷</button>
+    <button type="button" class="btn-print" id="mdPrint">🖨️ 印刷（A4縦）</button>
   </div>
   <!-- 認定期限ビュー専用。印刷には出さない（body.cert-on の印刷CSSで消える） -->
   <div class="sh-bar" id="certBar" style="display:none">
     <span class="st" id="certStatus" role="status" aria-live="polite"></span>
     <button type="button" id="certReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（既定 A4縦）</button>
+    <button type="button" class="btn-print" id="certPrint">🖨️ 印刷（A4縦）</button>
   </div>
   <!-- 食形態一覧表（配布用）ビュー専用。印刷には出さない（body.mf-on の印刷CSSで消える） -->
   <div class="sh-bar" id="mfBar" style="display:none">
+    <span class="mfseg" role="group" aria-label="食形態の表示">
+      <button type="button" data-mfv="meal">配膳・編集用（A3）</button>
+      <button type="button" data-mfv="mf">配布用（A4）</button>
+    </span>
     <span class="st" id="mfStatus" role="status" aria-live="polite"></span>
     <label class="mfdate">更新日 <input type="date" id="mfDate"></label>
     <button type="button" id="mfReload">🔄 最新に取り直す</button>
-    <button type="button" class="btn-print" id="mfPrint">🖨️ 印刷（既定 A4縦）</button>
+    <button type="button" class="btn-print" id="mfPrint">🖨️ 印刷（A4縦）</button>
   </div>
   <!-- 薬の変更候補（2026-10-06）。管理者に候補がある時だけ出す（mcPaint_）。印刷しない -->
   <div class="mc-bar" id="mcBar" style="display:none"></div>
@@ -1460,8 +1484,8 @@ body.meal-on #sc-list{max-width:none}
   <div class="detail-actions">
     <button class="btn btn-gray" id="backBtn">← 一覧</button>
     <button class="btn btn-pri" id="editBtn">✏️ 編集</button>
-    <button class="btn btn-sec" id="printBtn">🖨️ 印刷</button>
-    <button class="btn btn-sec" id="a4Btn" title="以前から使用しているA4たて1枚の様式で印刷">🖨️ A4様式</button>
+    <button class="btn btn-sec" id="printBtn">🖨️ 全項目を印刷</button>
+    <button class="btn btn-sec" id="a4Btn" title="以前から使用しているA4たて1枚の様式で印刷">🖨️ 1枚にまとめて印刷</button>
     <!-- 入院/復帰は編集フォームを通さず setState で状態だけを更新する（多端末で同時に触るため） -->
     <button class="btn btn-sec" id="hospBtn" hidden>🏥 入院にする</button>
   </div>
@@ -2501,8 +2525,13 @@ var curView=(function(){
 })();
 function paintTabs(){
   Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
-    var on=b.getAttribute('data-v')===curView;
+    /* 食形態のタブは「配膳・編集用（meal）」と「配布用（mf）」の両方で点灯する（2026-10-16 第1弾） */
+    var dv=b.getAttribute('data-v');
+    var on=dv===curView||(dv==='meal'&&curView==='mf');
     b.classList.toggle('on',on); b.setAttribute('aria-selected',on?'true':'false');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.mfseg button'),function(b){
+    b.setAttribute('aria-pressed', b.getAttribute('data-mfv')===curView?'true':'false');
   });
 }
 function setView(v){
@@ -3945,16 +3974,24 @@ function rmSyncPrintTarget_(){
 /* 印刷ボタンの読み上げラベル。★可視テキスト（「A4横で印刷」等）を必ず含める
    （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。7本まとめて付ける。 */
 var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint',cert:'certPrint',mf:'mfPrint'};
+/* 各帳票の既定の用紙（definePrintViews_ の paper と同じ値。片方だけ変えない） */
+var RM_PRINT_PAPER={cm:'A4 landscape',room:'A4 landscape',lvl:'A4 portrait',fam:'A3 portrait',
+  hist:'A3 portrait',md:'A4 portrait',cert:'A4 portrait',mf:'A4 portrait'};
+/* ★ボタンの文字は「🖨️ 印刷（A4横）」の形にそろえ、かっこの中はその帳票で【いま使う用紙】を出す
+   （2026-10-16 代表者の決定）。設定画面で用紙を変えたら、ボタンの文字も変わる＝文字と紙がずれない */
 function rmPaintPrintLabels_(){
   if(!window.SUPrint) return;
   Object.keys(RM_PRINT_BTN).forEach(function(kind){
     var btn=$(RM_PRINT_BTN[kind]); if(!btn) return;
-    var paper=null;
+    var paper=RM_PRINT_PAPER[kind]||null;
     try{ var pf=SUPrint.prefs(kind).get(); if(pf&&pf.paper) paper=pf.paper; }catch(e){}
+    if(paper&&SUPrint.paperLabel){
+      var pl=String(SUPrint.paperLabel(paper)).replace(/\s+/g,'');
+      btn.textContent='🖨️ 印刷（'+pl+(kind==='room'?'・1階と2階の2枚':'')+'）';
+    }
     var txt=(btn.textContent||'').replace(/^\s*🖨️\s*/,'').trim();
     btn.setAttribute('aria-haspopup','dialog');
-    btn.setAttribute('aria-label', txt+' — 用紙と余白の設定を開く'
-      +(paper&&SUPrint.paperLabel?('（現在 '+SUPrint.paperLabel(paper)+'）'):''));
+    btn.setAttribute('aria-label', txt+' — 用紙と余白の設定を開く');
   });
 }
 /* 印刷ボタン: 用紙・余白・収め方を選ぶ設定画面を開く */
@@ -7078,11 +7115,35 @@ window.addEventListener('afterprint',msMealAfterPrint_);
     if(mq.addEventListener) mq.addEventListener('change',h); else if(mq.addListener) mq.addListener(h);
   }catch(e){}
 })();
+/* ── 編集画面の未保存の変更（2026-10-16 管理者指示・使いやすさ改善の第1弾）──
+   従来は、入力の途中で「← 取消」・下のメニュー・ブラウザの戻る・再読み込みをすると、確かめずに消えていた。
+   判定は「開いた時点の入力欄の中身」と「いまの中身」の比較だけ（保存の仕組み・collectForm には触れない）。
+   ★行を足した・消した（家族・既往歴など）も、入力欄の数が変わるので変更として拾う。 */
+var editSnap_=null;
+function editSerial_(){
+  var box=$('editBox'); if(!box) return '';
+  return Array.prototype.map.call(box.querySelectorAll('input,select,textarea'),function(e){
+    var v=(e.type==='checkbox'||e.type==='radio')?(e.checked?'1':'0'):String(e.value==null?'':e.value);
+    return (e.getAttribute('data-k')||e.name||e.id||'')+'='+v;
+  }).join('\u0001');
+}
+function editSnapTake_(){ try{ editSnap_=editSerial_(); }catch(e){ editSnap_=null; } }
+function editDirty_(){
+  var sc=$('sc-edit');
+  if(!sc||!sc.classList.contains('on')||editSnap_===null) return false;
+  try{ return editSerial_()!==editSnap_; }catch(e){ return false; }
+}
+/* 離れてよければ true。変更が無ければ何も聞かない */
+function editLeaveOk_(){
+  if(!editDirty_()) return true;
+  return confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
+}
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
   /* ★薬効辞書の未保存も対象。AIの下書きはメモリにしか無く、再読込・タブを閉じると消える
      （2026-09-04 に再描画で155件消えた件と同じ損失がリロード経路に残っていた） */
-  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty)) return;
+  /* ★編集画面の未保存も対象（2026-10-16） */
+  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty) && !editDirty_()) return;
   e.preventDefault(); e.returnValue='';
 });
 
@@ -7814,7 +7875,7 @@ var PRINT_SECS=[
   ['basicItems','基本事項'],['family','家族情報'],['biz','事業所'],['geno','家族構成図'],
   ['disease','既往歴・サービス'],['meal','食事'],['mind','認知・意思疎通'],
   ['medical','医療情報'],['meds','薬剤情報'],['pastMeds','過去の臨時薬'],['adl','ADL・状態'],
-  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・ACP'],
+  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・人生会議（ACP）'],
   ['support','支援経過'],['medSupport','医療支援経過'],['targetApps','対象']
 ];
 /* 除外指定を {キー:true} に正規化する。壊れた値・知らないキーは無視する（原則10 受信データを信じない）。
@@ -8257,7 +8318,7 @@ function renderView(r){
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">価値観・大切にしてきたこと・誇り</span><div class="fulltext">'+esc(r.values||'　')+'</div></div>'+
   '</div></div>';
   // 意向・ACP
-  h+='<div class="sec"><div class="sec-lbl">意向・ACP</div><div class="sec-body">'+
+  h+='<div class="sec"><div class="sec-lbl">意向・人生会議（ACP）</div><div class="sec-body">'+
     '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
     '<div class="row-cells">'+
       '<div class="cell"><span class="lab">本人の意向</span><div class="fulltext">'+esc(r.wishSelf||'　')+'</div></div>'+
@@ -8778,7 +8839,7 @@ function openEdit(rec){
     fld('values','価値観・人生で大切にしてきたこと・誇り',r.values,'textarea')+'</div></div>';
 
   // 意向・ACP
-  h+='<div class="cd"><div class="fgroup"><h3>意向・ACP</h3>'+
+  h+='<div class="cd"><div class="fgroup"><h3>意向・人生会議（ACP）</h3>'+
     fld('complaint','主訴（困りごと）',r.complaint,'textarea')+
     fld('wishSelf','本人の意向・希望',r.wishSelf,'textarea')+
     fld('wishFamily','家族の意向・希望',r.wishFamily,'textarea')+
@@ -8875,6 +8936,7 @@ function openEdit(rec){
      支援経過の入力欄を中身に合わせて伸ばせない（見た目は56pxのままになる） */
   buildEditTabs();
   growAllSupport();
+  editSnapTake_();   /* 開いた時点の入力欄の中身を控える（未保存の変更の判定に使う・2026-10-16） */
   /* ★fitLines も画面に出してから呼ぶ（growAllSupport と同じ理由・2026-08-20 レビュー指摘で移動）。
      非表示のうちは scrollHeight が 0 に近く、最小の44pxで止まって2件目が隠れる。
      関数の中に setTimeout の保険も残してあるが、作法をこちらへ揃える。 */
@@ -10262,6 +10324,7 @@ function afterSaveOk_(rec,saved,dg,ed){
 /* ═══════════ 画面遷移 ═══════════ */
 function showScreen(name){
   try{a4Off();}catch(e){}   // 画面が動いたらA4様式モードは無効（a4-on 残留の保険）
+  if(name!=='edit') editSnap_=null;   /* 編集画面を離れたら控えを捨てる（保存後・取消後に聞かない） */
   ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
   /* 見出しタブは編集画面のものなので、他の画面へ移ったら隠す（sticky が一覧に貼り付いて残らないように） */
@@ -10337,6 +10400,11 @@ window.addEventListener('popstate',function(ev){
     return;
   }
   if($('sc-list').classList.contains('on'))return;   // UI操作の消費分・一覧での戻る＝何もしない
+  /* ★編集画面で未保存の変更がある時は確かめる。やめたら段を積み直して画面は変えない（2026-10-16） */
+  if(!editLeaveOk_()){
+    try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+    return;
+  }
   _navInPop=true;
   try{showScreen('list');}finally{_navInPop=false;}
 });
@@ -11051,7 +11119,7 @@ function renderA4(r){
     /* ── 支援経過（残りの紙面を全部使う）── */
     /* ★件数を必ずタイトル側に出す（枠の末尾に置くと、切れた時に注記ごと消える） */
     '<div class="a4-slog"><div class="a4-slog-t">【支援経過】'+
-      (slog.length?('（全'+slog.length+'件・入りきらない分は「🖨️ 印刷」で出力できます）'):'')+
+      (slog.length?('（全'+slog.length+'件・入りきらない分は「🖨️ 全項目を印刷」で出力できます）'):'')+
     '</div><div class="a4-slog-bx">'+slogRows+'</div></div>'+
   '</div>';
   $('a4sheet').innerHTML=h;
@@ -11133,7 +11201,7 @@ function a4Print(){
     /* 待っているあいだに別の方の画面へ移っていたら刷らない（別人の帳票を出さない）。
        ★黙って終わらせない。押したのに何も起きないと、操作者は壊れたと判断する */
     if(whoId!==a4CurId_()){
-      toast('別の方の画面へ移ったため、A4様式の印刷を中止しました。もう一度押してください');
+      toast('別の方の画面へ移ったため、1枚にまとめた印刷を中止しました。もう一度押してください');
       return;
     }
     if(warn)toast(warn);
@@ -11147,8 +11215,8 @@ function a4PrintNow(){
   a4Off();   // 前回分が残っていても必ず作り直す
   try{
     renderA4(curResident);
-    if(!a4Fit())toast('記載量が多く、A4様式1枚には一部が入りません。全件は🖨️ 印刷をお使いください');
-  }catch(e){ a4Off(); toast('⚠️ A4様式を組み立てられませんでした'); return; }
+    if(!a4Fit())toast('記載量が多く、1枚には一部が入りません。全件は「🖨️ 全項目を印刷」をお使いください');
+  }catch(e){ a4Off(); toast('⚠️ 1枚にまとめた印刷を組み立てられませんでした'); return; }
   document.body.classList.add('a4-on');
   var undo=function(){a4Off();window.removeEventListener('afterprint',undo)};
   window.addEventListener('afterprint',undo);
@@ -12128,7 +12196,11 @@ function init(){
   // 表示パターンのタブ（リロードしても選んだタブが維持される）
   var vtabs=Array.prototype.slice.call($('viewTabs').querySelectorAll('.vtab'));
   vtabs.forEach(function(b,i){
-    b.addEventListener('click',function(){setView(this.getAttribute('data-v'))});
+    b.addEventListener('click',function(){
+      var v=this.getAttribute('data-v');
+      if(v==='meal'&&curView==='mf') return;   /* 食形態の中で配布用を見ている時は、そのまま */
+      setView(v);
+    });
     /* role="tab" を名乗る以上、←→で移動できないと支援技術の期待と食い違う */
     b.addEventListener('keydown',function(e){
       var d=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:(e.key==='ArrowLeft'||e.key==='ArrowUp')?-1:0;
@@ -12186,6 +12258,10 @@ function init(){
   /* 認定期限（2026-09-26 追加） */
   if($('certPrint')) $('certPrint').addEventListener('click',function(){rmPrint_('cert')});
   if($('certReload'))$('certReload').addEventListener('click',function(){bkEnsure(true)});
+  /* 食形態の「配膳・編集用（A3）／配布用（A4）」の切り替え（2026-10-16 第1弾） */
+  Array.prototype.forEach.call(document.querySelectorAll('.mfseg button'),function(b){
+    b.addEventListener('click',function(){ setView(this.getAttribute('data-mfv')); });
+  });
   /* 食形態一覧表（配布用・2026-10-15） */
   if($('mfPrint'))  $('mfPrint').addEventListener('click',function(){rmPrint_('mf')});
   if($('mfReload')) $('mfReload').addEventListener('click',function(){
@@ -12230,6 +12306,8 @@ function init(){
     x.classList.toggle('on',x.getAttribute('data-f')===curFilter)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
     b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');
+      /* ★編集画面から一覧・新規へ移る時は、未保存の変更を確かめる（同期設定・アプリは上に重なるだけなので聞かない） */
+      if((sc==='new'||sc==='list')&&!editLeaveOk_()) return;
       if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
   });
   $('backBtn').addEventListener('click',function(){showScreen('list')});
@@ -12266,7 +12344,9 @@ function init(){
     requestAnimationFrame(function(){ tabTick=false; try{markEditTab()}catch(e){} });
   },{passive:true});
   $('hospBtn').addEventListener('click',toggleHosp);
-  $('editCancel').addEventListener('click',function(){if(curResident)openResident(curResident.id);else showScreen('list')});
+  $('editCancel').addEventListener('click',function(){
+    if(!editLeaveOk_()) return;   /* 未保存の変更があれば確かめる（2026-10-16） */
+    if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);
   /* ── 一括編集（2026-08-08 追加）。既存のリスナーには一切触れない ── */
   $('bulkOpen').addEventListener('click',openBulk);
