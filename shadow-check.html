@@ -26,6 +26,8 @@
     あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
     connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
   ★一覧に出す氏名は伏せる（姓の1字目＋○・2026-10-09 監査10月版 #16）。見分けるのは居室と利用者No。
+  ★勤務表の戻し用（2026-10-16・管理者だけ）: 「勤務表を Google へ写し返す」（写しの期間の時だけ・Supabase を正として中身が違う
+    勤務表を Google へ force で書く）と、Supabase 側の厳格モードの表示・入切（今の状態は操作記録 audit_log から出す）。
 
   ── この画面を外す手順（移行の点検が済んで、保存先を Supabase に切り替え終えたら・監査10月版 #16）──
   1. 切り替えた全部の画面（入居者マスタ・週間計画・ワークスケジュール・勤務表・体重管理）で、1〜2週間「一致」が続いたことを
@@ -98,6 +100,20 @@
         <div class="acts">
           <button type="button" class="btn ng" id="b-live-shift">勤務表を Supabase の本番にする</button>
           <button type="button" class="btn" id="b-shadow-shift">勤務表を写しの期間に戻す</button>
+        </div>
+        <!-- 勤務表を Google に戻す手順（2026-10-16 代表者の決定・ワークスケジュールの日ごとと同じ順番）:
+             1. 勤務表を写しの期間に戻す（Supabase が保存を断る＝入力は端末に残る）2. Google へ写し返す（中身が違う勤務表だけ）
+             3. 勤務表のスイッチ shift を切る PR を取り込む。スイッチを切るのは最後 -->
+        <p class="muted mt">勤務表を Google に戻す時の手順です。手順1「勤務表を写しの期間に戻す」→手順2「勤務表を Google へ写し返す」（全部そろうまで）→手順3 勤務表のスイッチを切る PR を取り込む、の順に進めます（スイッチを切るのは最後）。手順1から手順3の間、勤務表の保存は端末に残り、手順3の後に Google へ届きます。Google の厳格モードに止められた時は、画面の案内に従ってください。</p>
+        <p id="shb-verdict" class="msg"></p>
+        <div class="acts">
+          <button type="button" class="btn" id="b-shift-back">勤務表を Google へ写し返す</button>
+        </div>
+        <p id="lk-state" class="msg"></p>
+        <p class="muted">SQL エディタで直接変えた分はここに出ません。</p>
+        <div class="acts">
+          <button type="button" class="btn" id="b-lock-on">Supabase 側の厳格モードを入れる</button>
+          <button type="button" class="btn" id="b-lock-off">Supabase 側の厳格モードを外す</button>
         </div>
         <!-- ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定）。順番を守るためボタンを分ける:
              ①日ごとを止める（Supabase への保存を断る＝入力は端末に残る）②Google へ写し返す（中身を比べて違う日だけ）
