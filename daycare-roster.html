@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pQHun7MqZtk67CU7I1jfnM7Y0y+UylPewEfFsPqlP68='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SUP/v/D1EH/aUj7EduDyNshHOwb5jOc6gprtbT6GxRw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -10,7 +10,7 @@
 <meta http-equiv="Cache-Control" content="no-store">
 <title>通所 利用表</title>
 <style>
-/* 通所（せせらぎ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
+/* 通所（デイ）— 週間計画(care_schedule_v2)を参照し、現場のExcel帳票5種をタブで表示する。
    5タブは全て「デイ母集団 × 月〜土 × {デイ利用 or 2階食堂で昼食}」という単一データモデルの別表現。
    ★書き込みは利用者フィールドの昼食薬(lunchMed)・非表示(dcrHidden)・同姓の目印(dcrStar)の3点のみ
      （2026-07-23/27/28・2026-09-01）。変えるたびに、その方の変更記録 dcrFlagLog へ1件積む（2026-10-07）。
@@ -21,12 +21,12 @@
 :root {
   --pri: #0b57d0; --pri-l: #ecf3fe; --pri-d: #0842a0;
   --ok: #2e7d32; --ng: #c62828;
-  --bath-bg: #ffff00; --bath-b: #d4b800;   /* 入浴あり=ビビッドな黄（元のせせらぎ表と同じ） */
+  --bath-bg: #ffff00; --bath-b: #d4b800;   /* 入浴あり=ビビッドな黄（元の通所の表と同じ） */
   --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
   --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g8: #3c4043; --g9: #202124;
   --r: 12px; --sh: 0 1px 6px rgba(0,0,0,.12);
   --line: #b7bcc2;   /* 表罫線（スプレッドシート風に濃いめ） */
-  --sese: #99cc00;   /* 「せせらぎ」ラベルの識別色（元表を継承） */
+  --sese: #99cc00;   /* 通所の事業所ラベルの識別色（元表を継承） */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; }
@@ -300,7 +300,7 @@ table.sheet td.med-hl { background: #ffe0b2; }
 table.sheet td.nm.bath { background: var(--bath-bg); }
 table.sheet tr.sum th, table.sheet tr.sum td { background: var(--g1); font-weight: 700; }
 /* ── デイ利用者一覧表の「切断」（2026-08-05 運用指示）─────────────────────────
-   「せせらぎ合計」の下で表を切り、2行ぶんの空白を挟んでから下段（デイ休み）を始める。
+   「通所合計」の下で表を切り、2行ぶんの空白を挟んでから下段（デイ休み）を始める。
    ★1つの table のまま実現する。表を2つに割ると table-layout:fixed の列幅が上下でずれるため。
    ★切り口の罫線は階の区画（blk-*）と同じ太線（2px var(--g9)）で締める。
    ★空白の高さは文字サイズ連動。印刷フィットで文字が縮めば空白も一緒に縮む＝1枚に収まる。 */
@@ -692,7 +692,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 'use strict';
 
 /* ============================================================================
-   通所せせらぎ（5タブ）— 参照中心（書込みは lunchMed / dcrHidden / dcrStar の3フィールドのみ・全端末共通）
+   通所（5タブ）— 参照中心（書込みは lunchMed / dcrHidden / dcrStar の3フィールドのみ・全端末共通）
    データ源: care_schedule_v2（daycare イベント＋ residents の room / floor / lunchMed /
              visitingMed / hospitalized / kana / movedOut / preAdmitted）。
    ★表に出さない人: 退去(movedOut)と入居前(preAdmitted)。どちらも週間計画が正本で本ツールは読むだけ。
@@ -1851,7 +1851,7 @@ function deiCells(tr, p, d, showBath) {
 
 /* ============================================================================
    View 1 — デイ利用者一覧表（A3縦・備考は表の下・表は全幅）
-   上段=デイ利用者(せせらぎ・2階/1階) → せせらぎ合計
+   上段=デイ利用者(通所・2階/1階) → 通所合計
    下段=昼食(2階食堂)=その日デイに行かない人(2階/1階・☆訪問診療) → ２階合計・昼食合計
    ============================================================================ */
 // 元表の備考。「☆往診対象者は13:05までの…」は削除（13:05はシート内に実体が無い口頭ルールのため）。
@@ -1923,7 +1923,7 @@ function sumRow(tbody, label, counts) {
   return tr;
 }
 
-/* 上段（見出し〜せせらぎ合計）と下段（「デイ休み」見出し〜昼食合計）の外枠を、四辺とも太線でそろえる
+/* 上段（見出し〜通所合計）と下段（「デイ休み」見出し〜昼食合計）の外枠を、四辺とも太線でそろえる
    （2026-09-30 運用指示「太線が途中で細くなり見た目が揃っていない」）。
    実測では、左の外枠が見出し行・合計行・下段の曜日見出しでだけ 1px に細り、表の上端・下端も 1px だった。
    各行の【1列目を占めるセル】に左、【最終列を占めるセル】に右の太線を付ける。rowSpan・colSpan を
@@ -1964,7 +1964,7 @@ function renderDaylist(ppl) {
   const tbody = el('tbody');
 
   const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
-  // ── デイ利用者（せせらぎ） ──
+  // ── デイ利用者（通所） ──
   sectionRows(tbody, f2, '２階入居者', true, true, false, 2);
   sectionRows(tbody, f1, '１階入居者', true, true, false, 1);
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
@@ -1972,7 +1972,7 @@ function renderDaylist(ppl) {
   const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
   const seseSum = sumRow(tbody, dcrName('合計'), sese);
   seseSum.classList.add('cut-above');   // ここで表を切る＝上側の締め（太線）
-  /* ★2026-08-05 運用指示: せせらぎ合計より下を切り離し、2行ぶんの空間と大見出しを置く。
+  /* ★2026-08-05 運用指示: 通所合計より下を切り離し、2行ぶんの空間と大見出しを置く。
      1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
      表を2つに割ると列がずれる。 */
   const gap = el('tr', 'cut-gap');
@@ -2340,7 +2340,7 @@ function nameFitMaxFs_(sc, capMax) {
   let maxW = 0;
   const seen = Object.create(null);
   for (let i = 0; i < cells.length; i++) {
-    // 合計行のラベル（「せせらぎ合計」等）は氏名列に置いているだけで氏名ではない。
+    // 合計行のラベル（「〇〇合計」等）は氏名列に置いているだけで氏名ではない。
     // 従来から2行で運用しており、これを1行に収めようとすると氏名の上限が不当に下がる。
     const row = cells[i].parentElement;
     if (row && row.classList.contains('sum')) continue;

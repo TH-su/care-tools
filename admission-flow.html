@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lZ1oCoIvDh32ff2JohjnX6uiyE/vnjTJ/Skqh9lw9G4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ggAQ21AQYdJ2NhCy+iFy9vpANdOoG5iMV8N7COyQ46I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -340,7 +340,7 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* ══ ご相談シートの印刷（ラウレアハレ様式の紙面をそのまま再現） ══
+/* ══ ご相談シートの印刷（施設の様式の紙面をそのまま再現） ══
    画面では隠し、印刷の時だけ出す。A4縦1枚に収める（2026-08-30 指示）。
    ★罫線・項目の並び・選択肢の文言は紙と1対1。直す時は紙の現物と突き合わせること。 */
 #printSheet { display: none; }
@@ -767,7 +767,7 @@ function stageLabel(k) { var i = stageIdx(k); return i >= 0 ? STAGES[i][1] : (k 
 var SOURCES = ['ケアマネ紹介', '病院・連携室', '地域包括', '家族・本人', 'Web', '電話', 'その他'];
 
 /* 連携先の区分。★内部事業所を独立させる（2026-08-29 指示）。
-   入居後に関わる先（施設現場・いずみ・せせらぎ・厨房）へ連絡漏れが起きないようにするため、
+   入居後に関わる先（施設現場・訪問・通所・厨房）へ連絡漏れが起きないようにするため、
    「施設内」ひとまとめではなく事業所ごとに分ける。旧データの 'internal' はそのまま表示できる。 */
 var CATS = [
   ['family', '家族・本人'],
@@ -860,7 +860,7 @@ var BF_MAX_DISEASES = 8;
 /* 帰宅願望は様式の BPSD 表に無いが、入居前に必ず押さえる項目なので自由記載欄として持つ
    （マスタでは careHints＝介助のヒントへ入れる。様式の値域を勝手に増やさないため） */
 
-/* ══ ご相談シート（ラウレアハレ様式）の選択肢 ══
+/* ══ ご相談シート（施設の様式）の選択肢 ══
    ★2026-08-30 指示: 申込後の聞き取りは【ご相談シートを入力の正】とする。
      現場が使っている紙と画面の並び・選択肢を同じにして、聞きながらそのまま埋められるようにする。
      入居者マスタへ送る時だけ、マスタ様式の値へ機械的に変換する（変換表は toMasterLevel_ 等）。 */
@@ -3096,7 +3096,7 @@ function fld(k, label, val, type, opts) {
         : '<input id="f-' + esc(k) + '" data-k="' + esc(k) + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">') +
     '</div>';
 }
-/* ご相談シート（ラウレアハレ様式）の入力欄。
+/* ご相談シート（施設の様式）の入力欄。
    ★並び・選択肢は紙のとおり。聞きながらそのまま埋められるようにするため。
      マスタ様式でしか持っていない項目（口腔清潔・BPSD・夜間・自立度など）は
      下の「マスタ様式の追加項目（任意）」にまとめ、二重入力にならないようにしてある。 */
@@ -3491,7 +3491,7 @@ function saveEdit() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   ご相談シート（ラウレアハレ様式）の格子
+   ご相談シート（施設の様式）の格子
    ---------------------------------------------------------------
    ★スプレッドシートの現物（10列×48行）を1セルずつ写したもの。2026-09-19 実測。
    ★画面・印刷・その場編集の3つが、この1つの定義から組み立てられる。
@@ -4336,7 +4336,7 @@ function verifyMaster(c) {
   });
 }
 
-/* ═══════════ ご相談シートの印刷（ラウレアハレ様式の再現） ═══════════
+/* ═══════════ ご相談シートの印刷（施設の様式の再現） ═══════════
    紙面（スプレッドシート「相談シート」）と同じ並び・同じ選択肢・同じ罫線で組み立てる。
    ★選択式は「全部の選択肢を出し、選んだものに○を付ける」＝紙に手で丸を付けた状態と同じ見え方。
    ★スプレッドシートで行が隠れている項目（消耗品・寝具リース・オムツ／パッドサイズ）は

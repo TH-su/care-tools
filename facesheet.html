@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-Cns22K3n1xlSU1s+bgEaWLQ9mPM/m3Q6XlH5rx5Ul8M=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-4j0IaPwGe0UDbdO+7Mh4na5rXKp7GAHoJa49AF3QVyc=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -2405,7 +2405,7 @@ function renderHlBand(r){
    ★通所（デイ）の予定の正本は care_schedule_v2 のみ（§5・§6-⑧）。マスタ側の dayUse は
      移行時の旧スプレッドシート由来の手書き値で、実測で現在値と食い違う。ここでは使わない。
    ★取得できない時は【空欄のまま刷る】。古い値で埋めない。空欄になったことは画面に出して知らせる。 */
-var A4_DOW_JA=['月','火','水','木','金','土'];       // dayOfWeek 0..5（週間計画・せせらぎと同じ並び）
+var A4_DOW_JA=['月','火','水','木','金','土'];       // dayOfWeek 0..5（週間計画・デイ利用表と同じ並び）
 /* 取得結果を使い回す時間。★2026-08-19 に 120秒→10分へ延ばした。週間計画（通所の予定）は
    週単位の予定表で頻繁には変わらないのに、詳細画面を開くたびに取りに行くと
    通信が積み上がる（同じ script.google.com へマスタGASと並ぶため、ブラウザの
@@ -2416,8 +2416,8 @@ var a4DayMap=null;                                  // {at, byMid, byName, dupMi
 var a4DayPromise=null;                              // 取得中の重複起動を防ぐ
 var a4DayFailAt=0, a4DayFailMsg='';                 // 直近の失敗（短時間だけ覚える）
 function a4NmKey(s){ return String(s==null?'':s).replace(/\s+/g,''); }
-/* 統合GASの接続先。せせらぎ・全支援俯瞰と同じ解決順（su_sync_common → ws_settings）。
-   ★読む側でもURLの形を確かめる（せせらぎ等には無い上乗せ）。ワースケ・シフトが【書く時】に
+/* 統合GASの接続先。デイ利用表・全支援俯瞰と同じ解決順（su_sync_common → ws_settings）。
+   ★読む側でもURLの形を確かめる（デイ利用表等には無い上乗せ）。ワースケ・シフトが【書く時】に
      使っている門番と同じ正規表現。この関数は接続先へ合言葉を送るので、localStorage が壊れた・
      別の値が入った時に見ず知らずの URL へ合言葉を渡さないため（所有アプリの門番を迂回しない）。 */
 var A4_GAS_RE=/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
@@ -2475,7 +2475,7 @@ function a4BuildDayMap(db){
       var a=a4HM(ev.startTime), b=a4HM(ev.endTime);
       if(!a||!b)return;
       /* 同じ曜日に複数の通所予定がある方は【両方出す】。1枠しか持たない形にして後勝ちで
-         落とすと、紙だけが実際より少ない利用日数に見える（せせらぎは件数を数えて警告している） */
+         落とすと、紙だけが実際より少ない利用日数に見える（デイ利用表は件数を数えて警告している） */
       var lab=a+'-'+b;
       days[d]=days[d]?(days[d]+'／'+lab):lab;
       any=true;
