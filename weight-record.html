@@ -818,6 +818,14 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   .tnav .badge{position:absolute;top:4px;left:calc(50% + 6px);margin-left:0}
   .scr{padding-bottom:150px}
 }
+/* とても狭い時（360px以下・文字を大きくした iPhone など）：1人を4段に組み替え、タブはバーの中だけ横にずらす */
+@media(max-width:360px){
+  .lt tbody tr.clk{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"nm nm" "wt st" "d1 d6" "sp sp"}
+  .lt tbody tr.clk td.c-wt{text-align:start}
+  .lt tbody tr.clk td.c-st{text-align:end}
+  .tnav{overflow-x:auto}
+  .tnav button{flex:0 0 auto;min-width:64px;padding-left:6px;padding-right:6px}
+}
 @media print{.tnav{display:none !important}}
 </style>
 </head>
