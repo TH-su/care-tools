@@ -15,7 +15,7 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'shadow-check.js'),
 const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'shadow-check.html'), 'utf8');
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
-/* 同じ名前の関数が2つある時は、実行時に効く後の方（関数の宣言は後が勝つ）を切り出す（canon は 164 行と 443 行にある） */
+/* 同じ名前の関数が2つある時は、実行時に効く後の方（関数の宣言は後が勝つ）を切り出す（canon の重複は 2026-10-17 に片付けた） */
 function fn(name) {
   const i = SRC.lastIndexOf('function ' + name + '(');
   if (i < 0) throw new Error('no ' + name);
@@ -33,6 +33,7 @@ const PURE = ['var MC_FAMS = ' + /var MC_FAMS = (\[[^;]*\]);/.exec(SRC)[1] + ';'
   fn('canon'), fn('sameData'), fn('mcDayKeys'), fn('mcCompare')].join('\n');
 const env = {}; vm.createContext(env); vm.runInContext(PURE, env);
 
+t('比べ方（canon）の定義は1つだけ（同じ名前が2つあると後の方だけが効き、読み違える・2026-10-17）', (SRC.match(/function canon\(/g) || []).length === 1);
 console.log('— A 日ごとの範囲 —');
 {
   const k = env.mcDayKeys(['wsday_2026-09-15', 'wsday_2026-09-16', 'wsday_2026-10-16', 'wsday_2026-12-15', 'wsday_2026-12-16', 'care_schedule_v2', 'wsday_bad'], '2026-10-16');
