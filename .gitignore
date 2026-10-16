@@ -50,6 +50,7 @@
 !/check/unit/*.js
 !/check/unit/package.json
 !/check/unit/run-all.mjs
+!/check/unit/*.src.txt
 !/check/ci-allow.mjs
 !/check/annot-render.mjs
 !/check/gas
