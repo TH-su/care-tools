@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-liRR92lWcRjAs5hA0LJf4gnSHkgInJx197A7AZSmt/o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-H0zjpvWnK//Lz2Yl8qZT0632dSmGBqCc33jFjcxZRgc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -2485,13 +2485,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* push のエラー文字列の分類。'lost'＝編集権を失った（退避して降格する）、
-   * 'unsupported'＝旧サーバ（従来動作へ）、'other'＝通信/一過性（従来の再試行へ）。 */
+   * 'unsupported'＝旧サーバ（従来動作へ）、'rejected'＝そのキーだけ受け付けられない（キー単位で止める）、
+   * 'account'＝この端末のアカウントでは保存できない（その回の送信を止め、自動では送り直さない）、
+   * 'other'＝通信/一過性（従来の再試行へ）。 */
   function classifyPushError(msg) {
     var m = String(msg === null || msg === undefined ? '' : msg);
     if (m === 'editlock' || m === 'editlock-required' || m === 'locklost' || m === 'lockheld') return 'lost';
     /* 'guard'＝サーバ側のデータ保護で拒否された（一括消失・出荷時リセット・古いバックアップ復元）。
      * 通信失敗と同じ 'other' に落とすと、同じ内容を無言で送り続ける無限リトライになる。 */
     if (m === 'schedwipe' || m === 'staffshrink' || m === 'defaultsoverwrite' || m === 'backupoverwrite') return 'guard';
+    /* 'rejected'＝保存先がそのキーを受け付けない（2026-10-16）。badkey＝キーの形が保存先の判定と合わない。
+     * 待っても直らないので、通信失敗（'other'）に落とすと先頭のそのキーで送信が毎回止まり、
+     * 後ろの正常なキーまで送られなくなる。キー単位で止める側へ回す。 */
+    if (m === 'badkey') return 'rejected';
+    /* 'account'＝この端末のアカウント（役割）では保存できない（forbidden・2026-10-16）。保存先は役割が
+     * 書けない側ならキーを見ずに全部断るので、キー単位ではなくその回の送信ごと止める。待っても戻らない
+     * ＝閲覧専用トークンと同じく自動では送り直さない。 */
+    if (m === 'forbidden') return 'account';
     /* 接続先が「もう存在しない」と確定できるエラー（2026-09-08 に HTTP 404 を追加）。
      * unknown action … 旧世代のデプロイが生きているが対応アクションが無い
      * HTTP 404       … デプロイがアーカイブ/削除された＝そのURLは二度と復活しない
@@ -3552,6 +3562,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     onLockLostFail: null,  // 退避に失敗して中断（引数=キー配列・ローカルは温存）
     onLeaseReacquired: null, // 失効後に同じ端末で取り直した時（引数=世代差。UIが最新取得を行う）
     onServerGuard: null,     // サーバのデータ保護で書き込みが拒否された（引数=キー, エラー種別）
+    onKeyReject: null,       // 保存先がそのキーを受け付けない（badkey）。キーは端末に残したまま（引数=キー, エラー種別）
+    onAccountReject: null,   // この端末のアカウント（役割）では保存できない（forbidden）。送れるようになるまでに1回だけ（引数=エラー種別）
     lastReacquireGap: 0,   // 直近の取り直しでの世代差（1=自分だけ／1超=不在中に別の端末が編集した可能性）
     /* ── サーバ状態の確認済み印（2026-08-23・巻き戻り防止の第2層） ──
      * serverSeen[key]=true は「そのキーについてサーバの状態を確認できた」の意味。
@@ -3577,6 +3589,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this._guardBlocked = {};
       this._guardRejects = {};
       this._forceTried = {};
+      this._rejectKind = {};
+      this._accountRejected = null;
       /* 他アプリのキーの掃除（2026-09-23）。未送信の印付け・saveMeta より先に行う＝容量が満杯の端末でも
        * 先に空きを作ってから _meta を書き戻せる。同期の書き込みではない（何も送らない）ので
        * 閲覧モード・閲覧専用トークンでも実行する。 */
@@ -3627,7 +3641,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           }
         }
         /* メモリ上の印（init 済みなら空だが、起動後に呼ばれても取り残さない） */
-        var sets = [this._corruptKeys, this._guardBlocked, this._guardRejects, this._forceTried,
+        var sets = [this._corruptKeys, this._guardBlocked, this._guardRejects, this._forceTried, this._rejectKind,
                     this.heldConflicts, this.serverSeen, this._serverUnseen, this._conflictRetries];
         for (i = 0; i < sets.length; i++) {
           if (!sets[i] || typeof sets[i] !== 'object') continue;
@@ -3790,6 +3804,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (ok && !(opts && opts.auto) && this._guardBlocked) {
         delete this._guardBlocked[key];
         if (this._guardRejects) this._guardRejects[key] = 0;
+        if (this._rejectKind) delete this._rejectKind[key];
         /* 次に大きく減る保存をしたら、もう一度きちんと本人に確認する */
         if (this._forceTried) delete this._forceTried[key];
       }
@@ -3835,6 +3850,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.queue) this.queue.take(key);
       if (this._corruptKeys) delete this._corruptKeys[key];
       if (this._guardBlocked) delete this._guardBlocked[key];
+      if (this._rejectKind) delete this._rejectKind[key];
       this.saveMeta();
     },
 
@@ -4116,7 +4132,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.status = 'readonly';
         this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
       } else if (this.queue.size() > 0) {
-        this.status = 'dirty'; this.statusDetail = '';
+        this.status = 'dirty'; this.statusDetail = this.rejectDetail_();
       } else if (this.dataFresh === false) {
         /* 取得に失敗している間は「✓ 同期済み」と言わない（画面は端末内の内容にすぎない）。
          * 新しい状態は作らず既存の offline へ倒す＝バッジ辞書もCSSも無改変。
@@ -4576,6 +4592,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                 self.meta.revs[key] = r.rev;
                 delete self.meta.dirty[key];
                 if (self._conflictRetries) self._conflictRetries[key] = 0;
+                self._accountRejected = null;   /* 送れた＝このアカウントで保存できる（役割が戻った） */
                 /* 送信できた＝保留していた競合は解消済み（移行バナーに残骸を残さない） */
                 if (self.heldConflicts) delete self.heldConflicts[key];
                 self.saveMeta();
@@ -4590,7 +4607,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                * それ以外は必ず投げ直す＝既存の外側 catch（編集権喪失・旧サーバ切替・再試行）を変えない。 */
               var m2 = String(err && err.message ? err.message : err);
               if (m2 === '__READONLY__') throw err;
-              if (classifyPushError_(m2) !== 'guard') throw err;
+              var k2 = classifyPushError_(m2);
+              /* 保存先がこのキーを受け付けない（badkey）: このキーだけ止めて、後ろのキーは同じ回に送る。
+               * forbidden（アカウント単位）はここでは受けず、外側の catch でその回の送信ごと止める。 */
+              if (k2 === 'rejected') return self.handleKeyReject_(key, m2);
+              if (k2 !== 'guard') throw err;
               return self.handleGuardReject_(key, m2, err && err.detail ? err.detail : null);
             });
         });
@@ -4622,6 +4643,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 編集権を失った（他端末が保持・強制引き継ぎ・厳格モードで券なし）: これを通信失敗として
          * 再試行に流すと同じ古い全量を送り続ける。退避→サーバ版採用→閲覧へ降格へ回す。 */
         if (kind === 'lost') { self.handleLockLost(); return 'locklost'; }
+        /* この端末のアカウント（役割）では保存できない: 送り直しを予約しない（待っても戻らない）。
+         * キューと端末の内容はそのまま残す（閲覧専用トークンの扱いと同型）。 */
+        if (kind === 'account') return self.handleAccountReject_(msg);
         /* 接続先URLが死んでいる(unknown action / 確定した404)ときは ws_settings の稼働URLへ
          * 自動切替して1回だけ再送。404は確認pingを通るまで切り替えない（pull側と同条件）。 */
         if ((kind === 'unsupported' || isWrongEndpointErr_(msg)) && !self._healing) {
@@ -4828,6 +4852,55 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       }
       return this.finishGuardReject_(key, err, n);
+    },
+
+    /* 保存先がそのキーを受け付けない時（badkey＝キーの形が合わない）の受け止め。
+     * 待っても直らないので、データ保護の拒否と同じくキー単位で送信を止める（_guardBlocked を共用＝
+     * 鎖でスキップ・自動の再武装から除外・人が編集した set() と remove() で解除・起動し直すと送り直す）。
+     * データ保護の拒否と違い、退避もサーバ版の取り込みもしない＝キューと端末の内容はそのまま残す。 */
+    handleKeyReject_: function (key, err) {
+      if (!this._guardBlocked) this._guardBlocked = {};
+      if (!this._rejectKind) this._rejectKind = {};
+      this._guardBlocked[key] = true;
+      this._rejectKind[key] = String(err);
+      try { console.warn('同期スキップ: 保存先がこのキーを受け付けません（' + String(err) + '）:', key); } catch (eW) {}
+      this.updateStatus('dirty', this.rejectDetail_());
+      if (this.onKeyReject) { try { this.onKeyReject(key, String(err)); } catch (eK) {} }
+      return 'rejected';
+    },
+    /* この端末のアカウント（役割）では保存できない時（forbidden）の受け止め。保存先は役割が書けない側なら
+     * キーを見ずに全部断るので、キー単位では止めずにその回の送信を止める。送り直しは予約しない
+     * （予約済みの送り直しも解く）。次に送るのは、本人の保存・編集・編集モードON後の復帰など人の操作が
+     * きっかけの送信だけ。キューと端末の内容はそのまま残す。知らせは、送れるようになるまでに1回だけ。 */
+    handleAccountReject_: function (err) {
+      var first = !this._accountRejected;
+      this._accountRejected = String(err);
+      this.clearRetry();
+      if (first) { try { console.warn('同期停止: この端末のアカウントでは保存できません（' + String(err) + '）'); } catch (eW) {} }
+      this.updateStatus('dirty', this.rejectDetail_());
+      if (first && this.onAccountReject) { try { this.onAccountReject(String(err)); } catch (eA) {} }
+      return 'forbidden';
+    },
+    /* 保存先がキーを受け付けずに止めているキーのうち、まだキューに残っているもの（データ保護で止めたキーは含めない）。 */
+    rejectedQueuedKeys: function () {
+      var ks = [], k;
+      if (!this._rejectKind || !this.queue) return ks;
+      for (k in this._rejectKind) {
+        if (Object.prototype.hasOwnProperty.call(this._rejectKind, k) && this.queue.items[k] &&
+            this._guardBlocked && this._guardBlocked[k]) ks.push(k);
+      }
+      return ks;
+    },
+    /* 受け付けられずに止めている時の説明。無ければ空文字＝従来の表示のまま。 */
+    rejectDetail_: function () {
+      if (!this.queue) return '';
+      var out = [];
+      if (this._accountRejected && this.queue.size() > 0) {
+        out.push('この端末のアカウントでは勤務表を保存できません（役割）。変更は端末に残しています。管理者に知らせてください');
+      }
+      var ks = this.rejectedQueuedKeys();
+      if (ks.length) out.push('このキーは保存先が受け付けない形です（' + ks.join(', ') + '）。端末に残しています。管理者に知らせてください');
+      return out.join('／');
     },
 
     /* push 1件分の payload を組む（通常送信と強制送信で同じ形にする）。 */
@@ -10460,9 +10533,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (r === 'nosync' || r === 'readonly') return true;
         if (r !== 'ok' && r !== 'empty') return false;
         if (!Store.queue) return true;
-        /* サーバのデータ保護でブロックされたキーは、この端末からは二度と送れない（内容は退避済み）。
-         * これを「未送信」として数えると自動解除が永久に完了せず、編集権が返らないまま他端末が
-         * 強制引継しか選べなくなる。 */
+        /* 止めたキーは2種類ある（どちらも _guardBlocked）。
+         * データ保護で止めたキーは内容を退避済み＝この端末から送るものは無い。これを「未送信」として数えると
+         * 自動解除が永久に完了せず、編集権が返らないまま他端末が強制引継しか選べなくなるので数えない。
+         * 保存先が受け付けずに止めたキー（badkey・rejectedQueuedKeys）は退避しておらず、内容はこの端末にしか無い
+         * ＝未送信として数え、残っている間は編集権を返さない（本人が編集モードを切る時に退避の確認へ進む）。 */
+        var rej = Store.rejectedQueuedKeys ? Store.rejectedQueuedKeys() : [];
+        if (rej.length) return false;
         var ks = Store.queue.keys(), qi;
         for (qi = 0; qi < ks.length; qi++) {
           if (Store._guardBlocked && Store._guardBlocked[ks[qi]]) continue;
@@ -10477,7 +10554,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (hasQueued ? Store.pushQueued() : Promise.resolve('empty')).then(function (r) {
         if (r === 'leasecheck' || r === 'busy') { pending(); return null; }
         if (r === 'locklost') { detach(); return null; }
-        if (!sentAll_(r)) { keep('未送信があるため編集モードを維持しています（通信状況を確認してください）'); return null; }
+        if (!sentAll_(r)) {
+          var rejK = Store.rejectedQueuedKeys ? Store.rejectedQueuedKeys() : [];
+          keep(rejK.length ? '保存先が受け付けない変更が端末に残っているため編集モードを維持しています（管理者に知らせてください）'
+            : (r === 'forbidden' ? 'この端末のアカウントでは保存できない変更が残っているため編集モードを維持しています（管理者に知らせてください）'
+              : '未送信があるため編集モードを維持しています（通信状況を確認してください）'));
+          return null;
+        }
         if (Store.lockCapable !== true || !Store.lease) { finish(); return null; }   /* 劣化モード＝返すリースが無い */
         return Store.releaseLease().then(function (rr) {
           if (rr && !rr.ok && String(rr.error) === 'locklost') {
@@ -10568,6 +10651,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         self._guardAlerted[key] = true;
         self.confirmInfo('この端末の変更を保留しました（' + self.keyLabel_(key) + '）', body);
+      };
+      /* 保存先がそのキーを受け付けない時（badkey）の案内。データ保護の案内と同じく
+       * キーごとセッション1回だけダイアログ・以後はトースト。内容は退避もサーバ版の取り込みもせず端末に残っている。
+       * 管理者が原因を追えるよう、キーの名前（氏名は含まない）も添える。 */
+      Store.onKeyReject = function (key, err) {
+        var name = self.keyLabel_(key) + '・' + key;
+        if (!self._rejectAlerted) self._rejectAlerted = {};
+        if (self._rejectAlerted[key]) {
+          self.toast('このキーは保存先が受け付けない形です（' + name + '）。端末に残しています');
+          return;
+        }
+        self._rejectAlerted[key] = true;
+        self.confirmInfo('この端末の変更を送信できません（' + self.keyLabel_(key) + '）',
+          'このキーは保存先が受け付けない形です（' + name + '）。\n' +
+          '内容はこの端末に残しています。' + (String(err) === 'badkey' ? 'ほかの変更は通常どおり送信しています。' : '') + '\n' +
+          '管理者に知らせてください。');
+      };
+      /* この端末のアカウント（役割）では保存できない時（forbidden）の案内。Store が送れるようになるまでに1回だけ呼ぶ。
+       * 送り直しは自動ではしない（役割は待っても戻らない）。変更はキューごと端末に残っている。 */
+      Store.onAccountReject = function () {
+        self.confirmInfo('この端末のアカウントでは勤務表を保存できません',
+          'この端末のアカウントでは勤務表を保存できません（役割）。\n' +
+          '変更はこの端末に残しています。管理者に知らせてください。');
       };
       /* 件数ガード（勤務表の一括減少・名簿の大幅減）で拒否された時だけ、件数を示して本人に選ばせる。
        * 承認されたら Store が1回だけ force を付けて送り直す＝サーバが用意した唯一の迂回路を使う。
@@ -11046,13 +11152,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       }
       Store.pushQueued().then(function (r) {
-        if (r === 'ok' || r === 'empty' || r === 'nosync' || r === 'readonly') {
+        /* 保存先が受け付けずに止めたキー（badkey）は送り終わっても端末にだけ残る＝送れていないので確認へ回す。
+         * データ保護で止めたキー（退避済み）は従来どおり数えない（rejectedQueuedKeys に入らない）。 */
+        var rej = (Store.rejectedQueuedKeys ? Store.rejectedQueuedKeys() : []);
+        if ((r === 'ok' || r === 'empty' || r === 'nosync' || r === 'readonly') && !rej.length) {
           return release_().then(function () { finish(); return null; });
         }
         /* 送信できていない: 編集権を放すと、この端末の内容だけ取り残される。本人に選ばせる。 */
         if (tog) { tog.disabled = false; tog.checked = true; }
         self.confirm('未送信の編集が残っています',
-          'サーバへ送信できていない編集が ' + Store.queue.size() + '件あります（通信状況を確認してください）。\n' +
+          'サーバへ送信できていない編集が ' + Store.queue.size() + '件あります（' +
+          (rej.length ? '保存先が受け付けない形のキー: ' + rej.join(', ')
+            : (r === 'forbidden' ? 'この端末のアカウントでは保存できません' : '通信状況を確認してください')) + '）。\n' +
           '［OK］この端末内に退避して閲覧モードにする（サーバの最新版を表示します）\n' +
           '［キャンセル］編集モードのままにして送信を待つ',
           function () {
