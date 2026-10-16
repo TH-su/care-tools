@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-4j0IaPwGe0UDbdO+7Mh4na5rXKp7GAHoJa49AF3QVyc=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-cn+WeUy9kue9FMCgiSMqvKkz0F8UIj6y4KD7t531mY8=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -1994,7 +1994,7 @@ var PRINT_SECS=[
   ['basicItems','基本事項'],['family','家族情報'],['biz','事業所'],['geno','家族構成図'],
   ['disease','既往歴・サービス'],['meal','食事'],['mind','認知・意思疎通'],
   ['medical','医療情報'],['meds','薬剤情報'],['pastMeds','過去の臨時薬'],['adl','ADL・状態'],
-  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・ACP'],
+  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・人生会議（ACP）'],
   ['support','支援経過'],['medSupport','医療支援経過'],['targetApps','対象']
 ];
 function printHideSet(r){
@@ -3068,7 +3068,7 @@ function renderOfficeView(r){
     full('生育歴・職歴・暮らしぶり',r.lifeHistory)+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">価値観・大切にしてきたこと・誇り</span><div class="fulltext">'+esc(r.values||'　')+'</div></div>'
   );
-  S.wishes=sec('意向・ACP',
+  S.wishes=sec('意向・人生会議（ACP）',
     '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
     '<div class="row-cells">'+fcell('本人の意向',r.wishSelf)+full('家族の意向',r.wishFamily)+'</div>'+
     full('生活目標・ニーズ',r.goal)+
@@ -3097,7 +3097,7 @@ function renderOfficeView(r){
   };
 
   var TABS=[['summary','サマリ'],['basic','基本・制度'],['medical','医療・服薬'],['adl','ADL・食事'],
-    ['mind','認知・コミュ'],['family','家族・事業所'],['person','嗜好・生活歴'],['wishes','意向・ACP'],['log','経過'],
+    ['mind','認知・コミュ'],['family','家族・事業所'],['person','嗜好・生活歴'],['wishes','意向・人生会議（ACP）'],['log','経過'],
     ['all','全体']];
   // 保存済みタブ（既知のタブidのみ採用。未保存・不正値・localStorage不可はサマリ）
   var actTab=(function(){try{var v=localStorage.getItem(TAB_KEY);return TABS.map(function(t){return t[0]}).indexOf(v)>=0?v:'summary'}catch(e){return'summary'}})();
