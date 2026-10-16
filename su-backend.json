@@ -4,6 +4,6 @@
     "care_schedule_v2": true,
     "ws_weekly_master_v1": true,
     "wsday": true,
-    "shift": false
+    "shift": true
   }
 }
