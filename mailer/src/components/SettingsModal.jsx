@@ -136,7 +136,7 @@ export function SettingsModal({
 
         <div className="settings-section">情報</div>
         <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.8 }}>
-          SilverMail 1.0 — シルバーユニックス株式会社のためのローカルメールクライアント。<br />
+          SilverMail 1.0 — ローカルメールクライアント。<br />
           パスワードはmacOSキーチェーン（または <code>~/.silvermail/</code>）にのみ保存され、外部に送信されることはありません。
         </p>
       </div>
