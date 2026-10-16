@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JhO/P5lW7cMuhzodDmeC2uUGFqipsrDvo3LPy6yETiQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-zgTIrboxVhE5Vg3q46O1m1vwsIRBURzgDnKK/iGTFk8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -4363,8 +4363,11 @@ function roomSideCls(sides){
   ['l','t','r','b'].forEach(function(x){ if(String(sides).indexOf(x)>=0) out+=' rp-'+x; });
   return out;
 }
+/* 間取り図の数（列幅・行高・縦横比・マスの位置）は数に直してから style に入れる（2026-10-16・設定の値が属性を抜けないように）。
+   正しい設定では今までと同じ文字列になる（1.5→'1.5'・'12'→'12'） */
+function rpNum_(x, d){ var n=Number(x); return (isFinite(n) && n>0) ? n : d; }
 function roomCellHtml(cl, occ){
-  var st='grid-row:'+cl.r+' / span '+(cl.rs||1)+';grid-column:'+cl.c+' / span '+(cl.cs||1)+';';
+  var st='grid-row:'+rpNum_(cl.r,1)+' / span '+rpNum_(cl.rs,1)+';grid-column:'+rpNum_(cl.c,1)+' / span '+rpNum_(cl.cs,1)+';';
   if(cl.room){
     var who=occ[cl.room]||[];
     var body = who.length
@@ -4382,10 +4385,10 @@ function roomFloorHtml(key){
   var p=roomPlanData()[key], occ=roomOccupants();
   /* ★列幅・行高・縦横比はすべて原本の実測値。図の形を計算で作らない
      （2026-09-08 管理者指示「居室のサイズや罫線の位置など、全て全く同じように」）。 */
-  var st='grid-template-columns:'+p.cols.map(function(x){return x+'fr'}).join(' ')+';'+
-         'grid-template-rows:'+p.rows.map(function(x){return x+'fr'}).join(' ')+';'+
-         'aspect-ratio:'+p.ar[0]+' / '+p.ar[1]+';';
-  return '<div class="sh-sheet rp-sheet" id="roomSheet_'+key+'">'+
+  var st='grid-template-columns:'+p.cols.map(function(x){return rpNum_(x,1)+'fr'}).join(' ')+';'+
+         'grid-template-rows:'+p.rows.map(function(x){return rpNum_(x,1)+'fr'}).join(' ')+';'+
+         'aspect-ratio:'+rpNum_(p.ar[0],1)+' / '+rpNum_(p.ar[1],1)+';';
+  return '<div class="sh-sheet rp-sheet" id="roomSheet_'+esc(key)+'">'+
     '<div class="rp-hd'+(p.align==='left'?' rp-hd-l':'')+'">'+esc(p.title)+'</div>'+
     '<div class="rp-body">'+
       '<div class="rp-grid" style="'+st+'">'+p.cells.map(function(c){return roomCellHtml(c,occ)}).join('')+'</div>'+
@@ -4405,7 +4408,7 @@ function roomFtNote(key,occ){
   var out=[], k;
   for(k in occ) if(Object.prototype.hasOwnProperty.call(occ,k) && !all[k]) out.push(k);
   return n+'名'+(dup?('　／　★同じ居室に2名以上 '+dup+'室'):'')+
-         (out.length?('　／　★図に無い居室番号 '+out.join('・')):'')+
+         (out.length?('　／　★図に無い居室番号 '+out.map(esc).join('・')):'')+   /* 居室番号は名簿の入力＝esc を通す（2026-10-16 全数点検） */
          '　／　対象 在籍のみ';
 }
 function roomHtml(){
