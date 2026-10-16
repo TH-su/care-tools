@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MBs5y1ugNw5G2wbzr1bLGSa0+WLXQ8KCzdyv1+Q+Lag='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-UENpF2NgmVhfFWfDw+FxkeV3Kd6i+rd5USoDhyxLfGI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1013,13 +1013,13 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <div class="hint">施設名・各事業所の表示名・通所の定休日を設定します（シフトアプリと共有）。</div>
   </div>
   <!-- 同一建物減算の割合（2026-10-16 本人指示・本人選択「集計の画面に、押した時だけ」）。押した時だけサーバーから読む・書き換えない・事務所PCだけ -->
-  <div class="fld" style="margin-top:10px"><label>同一建物減算の割合（訪問介護・盤面からの見込み）</label>
+  <div class="fld" style="margin-top:10px"><label>同一建物減算の割合（訪問介護・総合事業・盤面からの見込み）</label>
     <div class="btn-row" style="margin-top:0">
       <button class="btn sm" id="stSameBld">前6月を盤面から数える</button>
       <span class="sp"></span><span class="hint" id="stSameBldMsg"></span>
     </div>
     <div id="stSameBldOut"></div>
-    <div class="hint">盤面に置いた支援を1回として、入居者（同一建物）と外部の利用者への訪問を数えます（外部かどうかは週間計画の「外部」の印）。前6月の割合が90%以上だと、同一建物の利用者への減算が10%から12%になります（正当な理由がある場合を除く）。請求の回数や熊本市の数え方とは違うことがあるので、届出の前に請求で確かめてください。サーバーから読むだけで、何も書き換えません。</div>
+    <div class="hint">盤面に置いた支援から、判定の期間に訪問した利用者の実人数を、入居者（同一建物）と外部の利用者に分けて数えます（外部かどうかは週間計画の「外部」の印・要支援の方は総合事業として別に数える）。割合が90%以上だと、同一建物の利用者への減算が10%から12%になります（正当な理由がある場合を除く）。訪問の回数は参考です。請求の実績や熊本市の数え方とは違うことがあるので、届出の前に請求で確かめてください。サーバーから読むだけで、何も書き換えません。</div>
   </div>
   <div class="btn-row">
     <button class="btn" id="stPull">サーバーから取得</button>
@@ -4521,6 +4521,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     sameBuildingStats: sameBuildingStats,
     sameBuildingPct: sameBuildingPct,
     sameBuildingExtMap: sameBuildingExtMap,
+    sameBuildingKindMap: sameBuildingKindMap,
+    sameBuildingPeople: sameBuildingPeople,
     sameBuildingPeriods: sameBuildingPeriods
   };
 
@@ -4576,6 +4578,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var v = map['.' + normName_(name)];
       return (v === true || v === false) ? v : undefined;
     };
+  }
+  /* 判定の割合は利用者の実人数で数える（札幌市・堺市の計算式「同一敷地内建物等に居住する利用者数（利用実人数）÷ 利用者数（利用実人数）」・2026-10-16）。
+   * 訪問介護と第1号訪問事業（総合事業）は別々に計算する（計算書も別様式）。要支援の利用者を総合事業として分ける（週間計画の careLevel）。
+   * kindOf(name): 'sogo'=総合事業 / 'kaigo'=訪問介護 / それ以外=見分けられない。期間の中で1回でも提供した人を1人と数える */
+  function sameBuildingKindMap(residents) {
+    var map = {}, i;
+    for (i = 0; i < (residents || []).length; i++) {
+      var r = residents[i];
+      if (!r || !r.name) continue;
+      var k = '.' + normName_(r.name), v = /支援/.test(String(r.careLevel || '')) ? 'sogo' : 'kaigo';
+      if (!(k in map)) map[k] = v;
+      else if (map[k] !== v) map[k] = null;
+    }
+    return function (name) { var v = map['.' + normName_(name)]; return (v === 'sogo' || v === 'kaigo') ? v : undefined; };
+  }
+  function sameBuildingPeople(days, extOf, kindOf, from, to) {
+    var sets = { kaigo: { inB: {}, ext: {} }, sogo: { inB: {}, ext: {} } }, unk = {}, nDays = 0, i, k;
+    for (i = 0; i < (days || []).length; i++) {
+      var d = days[i];
+      if (!d || typeof d.date !== 'string' || !d.tasks || d.date < from || d.date > to) continue;
+      nDays++;
+      for (k = 0; k < d.tasks.length; k++) {
+        var t = d.tasks[k];
+        if (!t || t.kind !== 'care' || t.staffId === null || t.staffId === undefined || t.parked) continue;
+        var nm = normName_(t.residentName), e = extOf(nm), kd = kindOf(nm);
+        if ((e !== true && e !== false) || !sets[kd]) { unk['.' + nm] = 1; continue; }
+        sets[kd][e ? 'ext' : 'inB']['.' + nm] = 1;
+      }
+    }
+    function n(o) { return Object.keys(o).length; }
+    return { days: nDays, unk: n(unk),
+             kaigo: { inB: n(sets.kaigo.inB), ext: n(sets.kaigo.ext) },
+             sogo: { inB: n(sets.sogo.inB), ext: n(sets.sogo.ext) } };
   }
   /* 割合（%・小数1桁）。分母0は null */
   function sameBuildingPct(a, b) { return (a + b) > 0 ? Math.round(a / (a + b) * 1000) / 10 : null; }
@@ -17073,50 +17108,51 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (viaSb) sbNext_(); else googleFill_();
   }
-  /* 表の HTML（数字・日付・固定の文字だけ＝利用者名は入れない）と知らせの文。読めなかった日がある期間は「参考」として赤にしない */
-  function sameBldRender_(r, extOf, periods, to) {
-    var rows = M.sameBuildingStats(r.days, extOf);
+  /* 表の HTML（数字・日付・固定の文字だけ＝利用者名は入れない）と知らせの文。
+   * 判定の割合は利用者の実人数（訪問介護と総合事業は別々）で出し、90%以上を赤にする。訪問の回数は参考として並べる。
+   * 読めなかった日がある月・期間は「参考」として赤にしない */
+  function sameBldRender_(r, extOf, kindOf, periods, to) {
     var failedDates = {};
     if (r.failedKeys) for (var f = 0; f < r.missing.length; f++) failedDates[r.missing[f]] = 1;
-    function pctCell_(a, b, partial) {
+    function failedIn_(from, upto) { for (var d in failedDates) if (d >= from && d <= upto) return true; return false; }
+    function pctCell_(a, b, partial, red) {
       var p = M.sameBuildingPct(a, b);
       if (p === null) return '<td>—</td>';
       if (partial) return '<td>参考 ' + p + '%</td>';
-      return '<td' + (p >= 90 ? ' style="color:#c62828;font-weight:700"' : '') + '>' + p + '%</td>';
+      return '<td' + (red && p >= 90 ? ' style="color:#c62828;font-weight:700"' : '') + '>' + p + '%</td>';
     }
-    function calDays_(ym) {
-      var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
-      var n = new Date(y, m, 0).getDate();
-      if (to.slice(0, 7) === ym) n = Number(to.slice(8, 10));
-      return n;
+    function lastDay_(ym) { var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)); var dd = new Date(y, m, 0).getDate(); return ym + '-' + (dd < 10 ? '0' : '') + dd; }
+    function calDays_(from, upto) { return Math.round((Date.parse(upto + 'T00:00:00') - Date.parse(from + 'T00:00:00')) / 86400000) + 1; }
+    var visits = M.sameBuildingStats(r.days, extOf), vByYm = {}, i, unkVisits = 0;
+    for (i = 0; i < visits.length; i++) { vByYm[visits[i].ym] = visits[i]; unkVisits += visits[i].unk; }
+    var head = '<tr><th rowspan="2">{L}</th><th rowspan="2">盤面の日数</th><th colspan="3">訪問介護（実人数）</th><th colspan="3">総合事業（実人数）</th><th colspan="2">参考: 訪問介護と総合事業の訪問の回数</th>{X}</tr>' +
+               '<tr><th>入居者</th><th>外部</th><th>割合</th><th>入居者</th><th>外部</th><th>割合</th><th>入居者</th><th>外部</th>{Y}</tr>';
+    function row_(label, from, upto, extra) {
+      var p = M.sameBuildingPeople(r.days, extOf, kindOf, from, upto), part = failedIn_(from, upto), a = 0, b = 0, k;
+      for (k in vByYm) if (k >= from.slice(0, 7) && k <= upto.slice(0, 7)) { a += vByYm[k].inB; b += vByYm[k].ext; }
+      return '<tr><td>' + label + '</td><td>' + p.days + '／' + calDays_(from, upto) + '</td>' +
+        '<td>' + p.kaigo.inB + '</td><td>' + p.kaigo.ext + '</td>' + pctCell_(p.kaigo.inB, p.kaigo.ext, part, true) +
+        '<td>' + p.sogo.inB + '</td><td>' + p.sogo.ext + '</td>' + pctCell_(p.sogo.inB, p.sogo.ext, part, true) +
+        '<td>' + a + '</td><td>' + b + '</td>' + (extra || '') + '</tr>';
     }
-    function failedIn_(from, upto) { for (var d in failedDates) if (d >= from && d <= upto) return true; return false; }
-    var h = '<table style="font-size:0.75rem;margin-top:6px"><tr><th>月</th><th>盤面の日数</th><th>入居者への訪問</th><th>外部の利用者への訪問</th><th>割合（回数）</th><th>入居者の人数</th><th>外部の人数</th><th>割合（人数）</th><th>見分けられない札</th></tr>';
-    var i, unk = 0;
-    for (i = 0; i < rows.length; i++) {
-      var x = rows[i]; unk += x.unk;
-      var part = failedIn_(x.ym + '-01', x.ym + '-31');
-      h += '<tr><td>' + x.ym + '</td><td>' + x.days + '／' + calDays_(x.ym) + '</td><td>' + x.inB + '</td><td>' + x.ext + '</td>' + pctCell_(x.inB, x.ext, part) +
-           '<td>' + x.inBPeople + '</td><td>' + x.extPeople + '</td>' + pctCell_(x.inBPeople, x.extPeople, part) + '<td>' + x.unk + '</td></tr>';
-    }
-    h += '</table>';
-    h += '<table style="font-size:0.75rem;margin-top:6px"><tr><th>判定の期間</th><th>盤面の日数</th><th>入居者</th><th>外部</th><th>割合（回数）</th><th>適用</th><th>届出</th></tr>';
+    var h = '<table style="font-size:0.75rem;margin-top:6px">' + head.replace('{L}', '判定の期間').replace('{X}', '<th rowspan="2">適用</th><th rowspan="2">届出</th>').replace('{Y}', '');
     for (i = 0; i < periods.length; i++) {
-      var pd = periods[i], a = 0, b = 0, nd = 0, k, upto = to < pd.to ? to : pd.to;
-      for (k = 0; k < r.days.length; k++) if (r.days[k].date >= pd.from && r.days[k].date <= pd.to) nd++;
-      for (k = 0; k < rows.length; k++) {
-        if (rows[k].ym < pd.from.slice(0, 7) || rows[k].ym > pd.to.slice(0, 7)) continue;
-        a += rows[k].inB; b += rows[k].ext;
-      }
-      var cal = Math.round((Date.parse(upto + 'T00:00:00') - Date.parse(pd.from + 'T00:00:00')) / 86400000) + 1;
-      h += '<tr><td>' + pd.label + '（' + pd.from.slice(5).replace('-', '/') + '〜' + pd.to.slice(5).replace('-', '/') + (to < pd.to ? '・今日まで' : '') + '）</td><td>' + nd + '／' + cal + '</td><td>' + a + '</td><td>' + b + '</td>' +
-           pctCell_(a, b, failedIn_(pd.from, upto)) + '<td>' + pd.apply + '</td><td>' + pd.due + '</td></tr>';
+      var pd = periods[i], upto = to < pd.to ? to : pd.to;
+      h += row_(pd.label + '（' + pd.from.slice(5).replace('-', '/') + '〜' + pd.to.slice(5).replace('-', '/') + (to < pd.to ? '・今日まで' : '') + '）', pd.from, upto,
+                '<td>' + pd.apply + '</td><td>' + pd.due + '</td>');
     }
     h += '</table>';
-    var m = '盤面 ' + r.days.length + '日分を数えました';
-    if (r.fromGoogle) m += '（うち ' + r.fromGoogle + '日分は Google の写しから）';
+    h += '<table style="font-size:0.75rem;margin-top:6px">' + head.replace('{L}', '月').replace('{X}', '').replace('{Y}', '');
+    for (i = 0; i < visits.length; i++) {
+      var ym = visits[i].ym, last = lastDay_(ym);
+      h += row_(ym, ym + '-01', to < last ? to : last);
+    }
+    h += '</table>';
+    var all = M.sameBuildingPeople(r.days, extOf, kindOf, periods[0].from, to);
+    var m = '盤面 ' + r.days.length + '日分を数えました（割合は利用者の実人数・回数は参考）';
+    if (r.fromGoogle) m += '・うち ' + r.fromGoogle + '日分は Google の写しから';
     if (r.failedKeys) m += '・読めなかった日 ' + r.failedKeys + '日（その月と期間の割合は「参考」）';
-    if (unk) m += '・週間計画で見分けられない札 ' + unk + '件は割合から外しています';
+    if (all.unk) m += '・週間計画で見分けられない利用者 ' + all.unk + '名（札 ' + unkVisits + '件）は割合から外しています';
     return { html: h, msg: m };
   }
 
@@ -17625,7 +17661,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (btn.disabled) return;
       var db = loadCareDb();
       if (!db || !db.residents || !db.residents.length) { if (msg) msg.textContent = '週間計画の利用者がまだ読み込まれていません'; return; }
-      var extOf = M.sameBuildingExtMap(db.residents);
+      var extOf = M.sameBuildingExtMap(db.residents), kindOf = M.sameBuildingKindMap(db.residents);
       var periods = M.sameBuildingPeriods(todayKey());
       var to = todayKey(), dates = [], dt = periods[0].from;
       while (dt <= to && dates.length < 400) { dates.push(dt); dt = shiftDate(dt, 1); }
@@ -17633,7 +17669,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (outEl) outEl.innerHTML = '';
       sameBldRead_(dates, function (p) { if (msg) msg.textContent = 'サーバーから読んでいます…（' + p + '）'; }, function (r) {
         btn.disabled = false;
-        var res = sameBldRender_(r, extOf, periods, to);
+        var res = sameBldRender_(r, extOf, kindOf, periods, to);
         if (outEl) outEl.innerHTML = res.html;
         if (msg) msg.textContent = res.msg;
       });
