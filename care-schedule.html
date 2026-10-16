@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-MdH4F0y0+mvqVH8wCHyyo9bWrFzbceh8+FATiBBjYtU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-06gvRfgvlM3X3Shs4ZWcmeksKIHPRWxvVBOUE4YE5gs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -2845,8 +2845,9 @@ const COLORS = {
 // ── Helpers ──
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+/* ' も置き換える（2026-10-16 全数点検・入居者マスタの esc と同じ5記号）。' で囲んだ属性に値を入れても抜けないように */
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function uid()  { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function ruid() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -3660,7 +3661,7 @@ function openRestoreModal(note) {
       html +=
         '<div class="evlist-row" style="grid-template-columns:190px 150px 1fr auto;gap:10px">' +
           '<div class="evlist-time">' + escHtml(when) + '</div>' +
-          '<div class="evlist-cat">利用者' + (g.res || 0) + '名・予定' + (g.ev || 0) + '件</div>' +
+          '<div class="evlist-cat">利用者' + (Number(g.res) || 0) + '名・予定' + (Number(g.ev) || 0) + '件</div>' +   /* 端末の控えから読む値は数に直す（2026-10-16 全数点検） */
           '<div class="evlist-detail">' + diff + '</div>' +
           '<div style="display:flex;gap:6px">' +
             '<button class="btn" data-on-click="restoreFromGen_" data-args="[' + i + ',false]">足す</button>' +
