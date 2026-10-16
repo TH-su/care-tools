@@ -238,7 +238,11 @@
     if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
     var lib = window.supabase ? Promise.resolve()
       : (hasTag(AUTH_SRC[0]) ? waitFor(function () { return !!window.supabase; }, 8000) : loadScript(AUTH_SRC[0]));
-    return lib.then(function () { return window.SUAuth ? null : loadScript(AUTH_SRC[1]); });
+    return lib.then(function () {
+      if (window.SUAuth) return null;
+      if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);   // 待っている間にほかの部品が入れた（2026-10-16）
+      return loadScript(AUTH_SRC[1]);
+    });
   }
   function loadScript(src) {
     if (loading[src]) return loading[src];

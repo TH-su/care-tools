@@ -506,6 +506,134 @@
     } finally { wbBusy(false); }
   }
 
+  /* ── 本番の中身を Google と比べる（2026-10-16 代表者の依頼「Google 側の版の遅れを調べて」）──
+   * 本番（live）になった週間計画・週の型・日ごとは、保存の20秒後に最新の中身を Google へ写し返す（su-kv.js scheduleMirror・force）。
+   * Google の版の番号は Google 側で独自に進み、20秒の間の保存は1回の写し返しにまとまる＝版の番号の差は遅れの証拠にならない。
+   * そこで中身そのものを比べ、Google が古い・無いキーを数える。読むだけ（どちらにも書かない）。
+   * 写し返しは画面の中の20秒の待ちなので、保存してすぐ閉じると届かない（次の保存まで Google は古いまま）。
+   * 勤務表は対象外: Google は厳格モードで写し返しを断るため、切り替えの時点で止まる（想定どおり）。
+   * 日ごとは、Google を読む画面（俯瞰など）が使う範囲として、今日の30日前〜60日先だけを比べる。 */
+  var MC_FAMS = [['care', '週間計画'], ['ws_master', 'ワークスケジュール（週の型）'], ['wsday', 'ワークスケジュール（日ごと）']];
+  var MC_BACK = 30, MC_AHEAD = 60;
+  function mcDayKeys(keys, today) {
+    var t = Date.parse(today + 'T00:00:00Z'), lo = t - MC_BACK * 864e5, hi = t + MC_AHEAD * 864e5;
+    return keys.filter(function (k) {
+      var m = /^wsday_(\d{4}-\d{2}-\d{2})$/.exec(k); if (!m) return false;
+      var d = Date.parse(m[1] + 'T00:00:00Z'); return d >= lo && d <= hi;
+    }).sort();
+  }
+  /* sbData＝Supabase の キー→中身・gasEnts＝Google の キー→{rev, data}。返すのは {same, stale:[キー], missing:[キー], unread:[キー]} */
+  function mcCompare(keys, sbData, gasEnts) {
+    var out = { same: 0, stale: [], missing: [], unread: [] };
+    keys.forEach(function (k) {
+      var s = sbData[k];
+      if (s == null || typeof s !== 'object') { out.unread.push(k); return; }
+      var g = gasEnts[k];
+      if (!g || g.data == null) out.missing.push(k);
+      else if (sameData(g.data, s)) out.same++;
+      else out.stale.push(k);
+    });
+    return out;
+  }
+  function mcToday() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  var mcOn = false, mcFix = [];
+  function mcShowFix() {
+    var b = $('b-mirror-fix');
+    b.hidden = !mcFix.length;
+    if (mcFix.length) b.textContent = '違う分を Google へ写す（' + mcFix.length + '件）';
+  }
+  async function runMirrorCheck() {
+    if (mcOn) return;
+    var verdict = $('mc-verdict'), list = $('mc-list'), kpis = $('mc-kpis');
+    kpis.replaceChildren(); list.replaceChildren(); mcFix = []; mcShowFix();
+    function say(t, kind) { verdict.className = 'msg ' + (kind || 'warn'); verdict.textContent = t; }
+    var tgt = gasTarget(), sb = SUAuth.client();
+    if (!tgt) { say('この端末には週間計画・ワークスケジュールの接続先（Google）がありません。この端末で週間計画かワークスケジュールを一度開いてから、もう一度押してください。'); return; }
+    mcOn = true; $('b-mirror-check').disabled = true;
+    try {
+      say('比べています… 本番になっている種類を確かめています');
+      var fm = await sb.from('kv_families').select('family,mode');
+      if (fm.error) throw new Error(String(fm.error.message || fm.error.code));
+      var live = {};
+      (fm.data || []).forEach(function (r) { if (r.mode === 'live') live[r.family] = true; });
+      var total = 0, badAll = 0, unreadAll = 0;
+      for (var i = 0; i < MC_FAMS.length; i++) {
+        var f = MC_FAMS[i], keys;
+        if (!live[f[0]]) { list.appendChild(preItem(f[1], 'まだ本番ではありません（写しの期間）。上の「切り替え前の点検」で見比べます。', false)); continue; }
+        if (f[0] === 'care') keys = ['care_schedule_v2'];
+        else if (f[0] === 'ws_master') keys = ['ws_weekly_master_v1'];
+        else {
+          var ix = await sb.rpc('kv_index', { p_family: 'wsday' });
+          if (ix.error) throw new Error(String(ix.error.message || ix.error.code));
+          keys = mcDayKeys(Object.keys((ix.data && ix.data.revs) || {}), mcToday());
+        }
+        say('比べています… ' + f[1] + '（' + keys.length + '件）');
+        var gasEnts = await gasPullAll(tgt, keys, function (n) { say('比べています… ' + f[1] + '（Google の応答が遅いため、やり直しています ' + n + '回目）'); });
+        var sbData = {};
+        for (var j = 0; j < keys.length; j++) {
+          var r = await sb.rpc('kv_get', { p_key: keys[j] });
+          if (!r.error && r.data) sbData[keys[j]] = r.data.data;
+        }
+        var c = mcCompare(keys, sbData, gasEnts), bad = c.stale.length + c.missing.length;
+        total += keys.length; badAll += bad; unreadAll += c.unread.length;
+        mcFix = mcFix.concat(c.stale, c.missing);
+        kpis.appendChild(kpi(f[1], c.same + '／' + keys.length, '同じ'));
+        var note = bad
+          ? 'Google が古い ' + c.stale.length + '件' + (c.missing.length ? '・Google に無い ' + c.missing.length + '件' : '') + '　例: ' + c.stale.concat(c.missing).slice(0, 6).join('、')
+          : 'Google と中身が全部同じです' + (f[0] === 'wsday' ? '（今日の' + MC_BACK + '日前〜' + MC_AHEAD + '日先）' : '');
+        if (c.unread.length) note += '（Supabase から読めなかった ' + c.unread.length + '件）';
+        list.appendChild(preItem(f[1], note, bad > 0 || c.unread.length > 0));
+      }
+      if (!total) say('本番になっている種類がありません。', 'warn');
+      else if (badAll) say('Google が古い・無いものが ' + badAll + '件あります。Google を読む画面（週間計画の俯瞰・支援の俯瞰・デイ利用日・フェイスシート・訓練計画）に古い中身が出ているおそれがあります。', 'warn');
+      else if (unreadAll) say('比べられた分は全部同じですが、Supabase から読めなかったものが ' + unreadAll + '件あります。もう一度押してください。', 'warn');
+      else say('本番の中身は、Google にも全部届いています（写し返しは遅れていません）。', 'ok');
+    } catch (e) {
+      say('比べられませんでした: ' + String(e && e.message || e), 'ng');
+    } finally { mcOn = false; $('b-mirror-check').disabled = false; mcShowFix(); }
+  }
+  /* 違う分を Google へ写す（2026-10-16 代表者の決定）。本番の間は Supabase が正しい中身＝Google をそれに合わせて force で上書きするだけ
+   * （保存の20秒後の写し返し su-kv.js scheduleMirror と同じ動き）。写す直前に、その種類がまだ本番かを確かめ直す
+   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ */
+  async function runMirrorFix() {
+    if (mcOn || !mcFix.length) return;
+    var verdict = $('mc-verdict');
+    function say(t, kind) { verdict.className = 'msg ' + (kind || 'warn'); verdict.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。'); return; }
+    var tgt = gasTarget(), sb = SUAuth.client();
+    if (!tgt) { say('この端末には Google の接続先がありません。'); return; }
+    var keys = mcFix.slice();
+    if (!confirm('Google の古い ' + keys.length + '件を、Supabase（本番）の中身で上書きしますか？\n\nGoogle を読む画面（俯瞰など）の表示が新しくなります。本番の中身（Supabase）は変わりません。')) return;
+    mcOn = true; $('b-mirror-check').disabled = true; $('b-mirror-fix').disabled = true;
+    var wrote = 0, failed = [];
+    try {
+      var fm = await sb.from('kv_families').select('family,mode');
+      if (fm.error) throw new Error(String(fm.error.message || fm.error.code));
+      var live = {};
+      (fm.data || []).forEach(function (r) { if (r.mode === 'live') live[r.family] = true; });
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        say('写しています… ' + i + '／' + keys.length);
+        if (!live[famOf(k)]) { failed.push(k + '（本番ではない）'); continue; }
+        var r = await sb.rpc('kv_get', { p_key: k });
+        var sd = r.data && r.data.data;
+        if (r.error || sd == null || typeof sd !== 'object') { failed.push(k); continue; }
+        try {
+          var g = await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+          if (g && g.ok) wrote++; else failed.push(k);
+        } catch (e) { failed.push(k); }
+      }
+    } catch (e) {
+      say('写せませんでした: ' + String(e && e.message || e), 'ng');
+      mcOn = false; $('b-mirror-check').disabled = false; $('b-mirror-fix').disabled = false;
+      return;
+    }
+    mcOn = false; $('b-mirror-check').disabled = false; $('b-mirror-fix').disabled = false;
+    await runMirrorCheck();
+    var head = '写した ' + wrote + '件' + (failed.length ? '・写せなかった ' + failed.length + '件（例: ' + failed.slice(0, 4).join('、') + '）' : '') + '。比べ直しました: ';
+    verdict.textContent = head + verdict.textContent;
+  }
+
   /* ── 切り替え前の点検（統合 0007）── */
   var GAS_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
   var FAMS = [['care', '週間計画'], ['ws_master', 'ワークスケジュール（週の型）'], ['wsday', 'ワークスケジュール（日ごと）'], ['shift', '勤務表']];
@@ -911,6 +1039,8 @@
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
+  $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
+  $('b-mirror-fix').addEventListener('click', function () { msg(''); runMirrorFix(); });
   $('b-fill').addEventListener('click', function () { msg(''); fillMissing(); });
   $('b-wsday-stop').addEventListener('click', function () { stopWsday(); });
   $('b-wsday-back').addEventListener('click', function () { writeBackWsday(); });

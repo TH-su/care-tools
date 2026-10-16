@@ -130,6 +130,18 @@
     </section>
 
     <section class="cd">
+      <h2>本番の中身の見比べ（Google への写し返し）</h2>
+      <p class="muted">本番になった週間計画・ワークスケジュールは、保存の20秒後に Google へも写し返します（Google を読む画面のため）。版の番号は Google 側で別に数えるので、上の点検で「版が違う」と出ても遅れとは限りません。ここでは中身そのものを比べます。比べるのは読むだけです（日ごとは今日の30日前〜60日先）。違いがあった時だけ「違う分を Google へ写す」が出ます（管理者だけ・Google を Supabase の中身に合わせる）。勤務表は、Google が厳格モードで写し返しを断るため、切り替えの時点で止まります（想定どおり・ここでは比べません）。</p>
+      <div class="kpis" id="mc-kpis"></div>
+      <p id="mc-verdict" class="msg"></p>
+      <ul class="acct" id="mc-list"></ul>
+      <div class="acts">
+        <button type="button" class="btn" id="b-mirror-check">本番の中身を Google と比べる</button>
+        <button type="button" class="btn" id="b-mirror-fix" hidden>違う分を Google へ写す</button>
+      </div>
+    </section>
+
+    <section class="cd">
       <h2>体重の写し</h2>
       <p class="muted">事務所・管理者が体重管理を開くたびに、サーバーの全件がそのまま写されます（同じ中身なら送りません・最短5分おき）。件数と日時だけを出し、氏名・体重は出しません。</p>
       <div class="kpis" id="wt-kpis"></div>
@@ -151,8 +163,8 @@
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-09-26"></script>
 <script src="su-master-shadow.js?v=2026-09-26"></script>
-<script src="su-kv.js?v=2026-10-12.3"></script>
+<script src="su-kv.js?v=2026-10-16"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
-<script src="shadow-check.js?v=2026-10-17"></script>
+<script src="shadow-check.js?v=2026-10-18"></script>
 </body>
 </html>

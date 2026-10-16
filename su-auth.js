@@ -22,6 +22,9 @@
  */
 (function () {
   'use strict';
+  // 二度目に読み込まれた時は何もしない（2026-10-16: ワークスケジュールで su-kv.js と su-report.js が別々にこの部品を読み込み、
+  // ログインの窓口（GoTrueClient）が2つできていた＝同じ保存場所の鍵の更新を取り合い、ログインが外れることがある）。最初の1つを使い続ける
+  if (window.SUAuth) return;
 
   var URL_ = 'https://jhbernqawjrzqwrmqrih.supabase.co';
   var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpoYmVybnFhd2pyenF3cm1xcmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NjU5NjksImV4cCI6MjEwMzQ0MTk2OX0.gJaPf6S-WuovoOajqMOodmNiqNp48tXRT-LW6h9W3N4';
