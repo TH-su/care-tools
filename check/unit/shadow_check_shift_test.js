@@ -8,7 +8,9 @@
        戻す順番の前提条件（写しの期間に戻すのはスイッチが入ったままでよい＝スイッチを切るのは最後）
      C Supabase 側の厳格モードの入口: 操作記録から今の状態を出す・記録が無ければ既定（通常モード）
      D 写し返しの流れを砂場で動かす（Google・データベースの応答だけ偽物）: 本番のままなら書かない・確認を断れば書かない・
-       厳格モードに止められたら件数と案内を出して止まる（成功の文言を出さない）・書けたら件数を出す
+       厳格モードに止められたら件数と案内を出して止まる（成功の文言を出さない）・書けたら件数を出す・
+       写し返しの最中はほかのボタンを押せない・確認の後と最後にもう一度種類の状態を確かめる（2026-10-16 差分審査 中2・低6）
+     F 本番から写しの期間へ戻している間の点検（砂場）: 勤務表のキーを「足りない分を写す」に入れず、写し返しを先にと案内する
    ★画面の本物の関数を切り出して動かす（DOM・通信には触れない）。
    実行: node check/unit/shadow_check_shift_test.js
    架空データのみ。 */
@@ -185,15 +187,15 @@ console.log('\n— C. Supabase 側の厳格モードの入口 —');
 
 console.log('\n— D. 写し返しの流れ（砂場） —');
 (async () => {
-  const BODY = [grab(SRC, 'function shbMsg('), grab(SRC, 'function shbBusy('), grab(SRC, 'async function shiftFamMode('),
+  const BODY = [line(SRC, /var SHB_MODE_LOST = .*;/), line(SRC, /var shbOn = .*;/), line(SRC, /var SHB_LOCKS = .*;/), grab(SRC, 'function shbMsg('), grab(SRC, 'function shbBusy('), grab(SRC, 'async function shiftFamMode('),
     grab(SRC, 'async function gasPullAll('), grab(SRC, 'async function sbShiftPull('), grab(SRC, 'async function writeBackShift(')].join('\n');
   async function run(o) {
-    const els = {}, pushes = [], asks = [];
+    const els = {}, pushes = [], asks = [], modes = (o.modes || [o.mode]).slice(), during = [];
     const $ = id => (els[id] = els[id] || { id, className: '', textContent: '', disabled: false });
     const sbEnts = { 'staff': { key: 'staff', rev: 9, data: [{ id: 's1' }] }, 'sched:2026-10:plan': { key: 'sched:2026-10:plan', rev: 3, data: { cells: { s1: { 1: 'A' } } } }, 'req:2026-10': { key: 'req:2026-10', rev: 1, data: { s1: [1] } } };
     const gasEnts = { 'staff': { rev: 4, data: [{ id: 's1' }] }, 'sched:2026-10:plan': { rev: 3, data: { cells: { s1: { 1: 'B' } } } } };
     const sb = {
-      from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [{ family: 'shift', mode: o.mode }] }) }) }),
+      from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [{ family: 'shift', mode: modes.length > 1 ? modes.shift() : modes[0] }] }) }) }),
       rpc: (name, args) => Promise.resolve(name === 'shift_pull' && args.p_keys === null ? { data: { ok: true, entries: sbEnts } } : { data: null })
     };
     const env = Object.assign(Object.create(box), {
@@ -203,6 +205,7 @@ console.log('\n— D. 写し返しの流れ（砂場） —');
       gasPostRetry: (tgt, body) => {
         if (body.action === 'pull') { const e = {}; body.keys.forEach(k => { if (gasEnts[k]) e[k] = gasEnts[k]; }); return Promise.resolve({ ok: true, entries: e }); }
         pushes.push(body);
+        during.push(['b-shift-back', 'b-shadow-shift', 'b-live-shift', 'b-check', 'b-fill', 'b-lock-on', 'b-lock-off'].filter(id => !$(id).disabled));
         if (o.refuse && pushes.length >= (o.refuseAt || 1)) return Promise.reject(new Error('Google が断りました（' + o.refuse + '）'));
         return Promise.resolve({ ok: true, rev: 1 });
       }
@@ -210,7 +213,7 @@ console.log('\n— D. 写し返しの流れ（砂場） —');
     vm.createContext(env);
     vm.runInContext(BODY + '\nthis.__wb = writeBackShift;', env);
     await env.__wb();
-    return { v: $('shb-verdict'), pushes, asks, busy: $('b-shift-back').disabled };
+    return { v: $('shb-verdict'), pushes, asks, during, busy: $('b-shift-back').disabled, els };
   }
   let r = await run({ mode: 'live' });
   t('★D 本番（live）のままなら比べも書きもせず、写しの期間に戻すよう案内', r.pushes.length === 0 && /先に「勤務表を写しの期間に戻す」/.test(r.v.textContent), r.v.textContent);
@@ -227,7 +230,63 @@ console.log('\n— D. 写し返しの流れ（砂場） —');
   t('★D 全部書けたら件数を出す（中身が違う2件だけを版0・force・券なしで）',
     r.pushes.length === 2 && r.pushes.every(p => p.action === 'push' && p.baseRev === 0 && p.force === true && !('editToken' in p)) &&
     JSON.stringify(r.pushes.map(p => p.key)) === '["req:2026-10","sched:2026-10:plan"]' && r.v.className === 'msg ok' && /同じ 1件・写した 2件/.test(r.v.textContent), r.v.textContent);
-  t('D 終わったらボタンを押せる状態に戻す', r.busy === false);
+  t('D 終わったらボタンを押せる状態に戻す', r.busy === false && ['b-fill', 'b-live-shift', 'b-lock-on', 'b-lock-off', 'b-check'].every(id => r.els[id].disabled === false));
+  t('★D 写し返しの最中は、点検・足りない分を写す・勤務表を本番にする・戻す・厳格モードの入切も押せない（中2）',
+    r.during.length === 2 && r.during.every(x => x.length === 0), r.during);
+  r = await run({ modes: ['shadow', 'live'] });
+  t('★D 確認の後にもう一度確かめ、本番に切り替えられていたら1件も書かずに止めて知らせる（低6）',
+    r.pushes.length === 0 && r.v.className === 'msg ng' && /写しの期間でなくなりました/.test(r.v.textContent) && /まだ1件も写していません/.test(r.v.textContent), r.v.textContent);
+  r = await run({ modes: ['shadow', 'shadow', 'live'] });
+  t('★D 書き終えた後にもう一度確かめ、本番に切り替えられていたら「そろいました」と出さずに知らせる（低6）',
+    r.pushes.length === 2 && r.v.className === 'msg ng' && /写しの期間でなくなりました/.test(r.v.textContent) && /写した 2件/.test(r.v.textContent) && !/そろいました|かまいません/.test(r.v.textContent), r.v.textContent);
+  r = await run({ modes: ['shadow', 'shadow', 'shadow'] });
+  t('D 3回とも写しの期間なら「そろいました」', r.v.className === 'msg ok' && /全部そろいました/.test(r.v.textContent), r.v.textContent);
+
+  console.log('\n— F. 戻している間の点検（砂場・中2） —');
+  {
+    const BODY2 = [line(SRC, /var SHIFT_RETURNING_NOTE = .*;/), line(SRC, /var FAMS = .*;/), line(SRC, /var CUT_FAMS = .*;/), line(SRC, /var DRAFT_WHY = .*;/),
+      grab(SRC, 'function el('), grab(SRC, 'function kpi('), grab(SRC, 'function preItem('), grab(SRC, 'function busy('),
+      grab(SRC, 'function shiftReturning('), grab(SRC, 'async function runCheck(')].join('\n');
+    async function check(o) {
+      const els = {};
+      const mk = (tag) => ({ tag, children: [], className: '', textContent: '', hidden: false, disabled: false,
+        appendChild(c) { this.children.push(c); return c; }, replaceChildren() { this.children = []; } });
+      const $ = id => (els[id] = els[id] || mk(id));
+      // Google: 勤務表の staff は写しより新しい・req は写しに無い。週間計画の care_schedule_v2 は写しに無い
+      const gasRevs = { 'staff': 5, 'req:2026-10': 2, 'care_schedule_v2': 7 };
+      const copies = { care: {}, ws_master: {}, wsday: {}, shift: { 'staff': 3 } };
+      const sb = {
+        rpc: (name, args) => Promise.resolve({ data: { ok: true, revs: copies[args.p_family] || {} } }),
+        from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: o.famRow ? [o.famRow] : [] }) }) })
+      };
+      const env = Object.assign(Object.create(box), {
+        $, document: { createElement: mk }, Promise, Error,
+        SUAuth: { client: () => sb }, gasTarget: () => ({ url: 'u', token: 't' }),
+        collectGasIndex: () => Promise.resolve({ revs: gasRevs, asked: { 'staff': true, 'req:2026-10': true, 'care_schedule_v2': true, 'drafts:2026-10': true } }),
+        checkHooks: () => Promise.resolve([]),
+        checkDrafts: () => Promise.resolve({ total: 1, same: 0, bad: [{ key: 'sched:2026-10:draft:d1', why: 'missing', g: 1, s: 0 }], fix: ['sched:2026-10:draft:d1'] }),
+        famOf: k => (k === 'care_schedule_v2' ? 'care' : /^wsday_/.test(k) ? 'wsday' : k === 'ws_weekly_master_v1' ? 'ws_master' : 'shift'),
+        switchLabel: () => '入', shiftSwitch: () => o.sw
+      });
+      vm.createContext(env);
+      vm.runInContext('var plan = []; var shiftReady = false; var shbOn = false;\n' + BODY2 + '\nthis.__run = runCheck; this.__plan = function () { return plan; };', env);
+      await env.__run();
+      const texts = JSON.stringify(els['pre-list'].children);
+      return { plan: env.__plan().slice().sort(), sh: els['sh-verdict'].textContent, list: texts, fill: els['b-fill'] };
+    }
+    let c = await check({ famRow: { family: 'shift', mode: 'shadow' }, sw: true });
+    t('★F 戻している間（勤務表の行が写しの期間・スイッチは入）は、勤務表のキーも作りかけの案も「足りない分を写す」に入れない',
+      JSON.stringify(c.plan) === '["care_schedule_v2"]', c.plan);
+    t('★F 戻している間は「Supabase が正・写し返しを先に」と案内する', /戻している間は Supabase が正/.test(c.sh) && /先に「勤務表を Google へ写し返す」を押してください/.test(c.sh) && /戻している間/.test(c.list), c.sh);
+    t('F 戻している間でも、週間計画などほかの種類の足りない分は写せる', c.plan.indexOf('care_schedule_v2') >= 0 && /（1件）/.test(c.fill.textContent));
+    c = await check({ famRow: null, sw: true });
+    t('（対照）一度も切り替えていない（行が無い）切り替えの夜は、勤務表の足りない分・古い分・案を写す',
+      JSON.stringify(c.plan) === JSON.stringify(['care_schedule_v2', 'req:2026-10', 'sched:2026-10:draft:d1', 'staff']) && !/戻している間/.test(c.sh), c.plan);
+    c = await check({ famRow: { family: 'shift', mode: 'shadow' }, sw: false });
+    t('（対照）スイッチを切った後（手順3の後＝Google が正に戻った）は、勤務表も写す', c.plan.indexOf('staff') >= 0 && c.plan.indexOf('req:2026-10') >= 0 && !/戻している間/.test(c.sh), c.plan);
+    c = await check({ famRow: { family: 'shift', mode: 'live' }, sw: true });
+    t('（対照）本番の間は戻している間とみなさない（従来どおり）', c.plan.indexOf('staff') >= 0 && !/戻している間/.test(c.sh), c.plan);
+  }
   {
     const i = SRC.indexOf('async function runCheck()'), seg = SRC.slice(i, i + 400);
     t('E 点検を始める時に、前回の「勤務表はそろっている」を消す（途中で失敗しても本番にするボタンを押せない）', i >= 0 && /\n\s*shiftReady = false;/.test(seg) && seg.search(/\n\s*shiftReady = false;/) < seg.indexOf('gasTarget()'), seg.slice(0, 200));
