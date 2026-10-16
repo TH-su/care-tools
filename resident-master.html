@@ -1447,6 +1447,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="kana"  role="tab" aria-selected="false">五十音</button>
     <button class="vtab"    data-v="adm"   role="tab" aria-selected="false">入居日順</button>
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
+    <!-- 未入力は印刷しない一覧なので「見る」の段に置く（2026-10-17 代表者の決定。帳票の段だと PC 幅で2行に折り返していた） -->
+    <button class="vtab"    data-v="miss"  role="tab" aria-selected="false">📝 未入力</button>
    </div>
    <div class="vt-row" role="presentation"><span class="vt-lbl" aria-hidden="true">帳票</span>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態</button>
@@ -1457,7 +1459,6 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="hist"  role="tab" aria-selected="false">💊 病歴・薬</button>
     <button class="vtab"    data-v="md"    role="tab" aria-selected="false">🔎 薬効辞書</button>
     <button class="vtab"    data-v="cert"  role="tab" aria-selected="false">⏳ 認定期限</button>
-    <button class="vtab"    data-v="miss"  role="tab" aria-selected="false">📝 未入力</button>
    </div>
   </div>
   <!-- 入居日順ビュー専用。並び順だけを切り替える（既定＝新しい順）。
