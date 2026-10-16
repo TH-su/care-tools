@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-EL1rJ8hDGWKncHLuE7tViqpADFiYSgd8O+1GbmF8pFo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FZZHf3+J76KcyqwAUOYhxbnWIR8YWjjjPF3AjQaCbRE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -458,6 +458,11 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .exst { font-weight:700; margin:0 2px 8px; }
 .exst.lv-w { color:var(--warn-tx); }
 .exst.lv-ng { color:var(--ng); }
+/* 判定できない（直近の日を読めていない）: 危険・注意と別の中立の色＋太い枠。文字でも「判定できません」と出す */
+.exrow.lv-unk { background:var(--g1); border:2px solid var(--g7); border-left:6px solid var(--g7); }
+.exrow.lv-unk .st { color:var(--g9); font-weight:700; }
+.exst.lv-unk { color:var(--g9); border:2px solid var(--g7); border-radius:6px; padding:4px 8px; }
+.exretry { margin-top:6px; }
 .exfuture { display:block; font-size:0.8125rem; color:var(--warn-tx); }
 .sc-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; margin-top:6px; }
 .sc-wd { font-size:0.8125rem; font-weight:700; text-align:center; color:var(--g7); }
@@ -473,6 +478,30 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .sc-dot { display:inline-block; width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.25); }
 .sc-leg { font-size:0.8125rem; color:var(--g7); margin-top:6px; line-height:1.6; }
 .sc-leg .sc-dot { vertical-align:-1px; margin-right:2px; }
+/* ── 排泄の一覧の行（第2弾・2026-10-17）: 1段目＝氏名・判定／2段目＝直近14日の帯／3段目＝最新の便・下剤・排尿。
+   375px でも横に崩さない（帯は横スクロールさせず14マスを1列に収める・文字は折り返す） */
+.exrow { flex-direction:column; align-items:stretch; flex-wrap:nowrap; gap:6px; }
+.exl1 { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; }
+.exl3 { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:0.8125rem; color:var(--g7); line-height:1.5; }
+.exl3 .u-w { color:var(--warn-tx); font-weight:700; }
+.exl3 .u-ng { color:var(--ng); font-weight:700; }
+.exband { display:grid; grid-template-columns:repeat(14, minmax(0, 1fr)); gap:2px; }
+.exb { min-width:0; height:26px; border:1px solid var(--g2); border-radius:4px; background:var(--surf); overflow:hidden;
+       display:flex; align-items:center; justify-content:center; font-size:0.8125rem; line-height:1; }
+.exb .sc-dots { flex-wrap:nowrap; justify-content:center; gap:1px; }
+.exb .sc-dot { width:9px; height:9px; }
+.exb.sc-w { background:var(--warn-bg); }
+.exb.sc-ng { background:var(--ng-l); }
+.exb.exb-out { background:var(--g1); color:var(--g6); }
+.exb.exb-blank { border:none; background:none; }
+.exb.sc-abn, .sc-day.sc-abn { box-shadow:inset 0 0 0 2px var(--ng); }
+.sc-dot.abn { box-shadow:0 0 0 2px var(--ng); }
+.exabn { color:var(--ng); font-weight:700; font-size:0.8125rem; }
+.exbar { margin-bottom:6px; }
+.exbar .exsort[aria-pressed="true"] { background:var(--pri); border-color:var(--pri); color:var(--pri-ink); font-weight:600; }
+.exsum { font-weight:700; margin:2px 0 6px; }
+.exlx { padding:3px 0; border-top:1px solid var(--g2); }
+.exline { line-height:1.6; }
 @media screen and (prefers-color-scheme: dark) { .sc-dot { border-color:rgba(255,255,255,.4); } }
 /* 日ごとの表は文が長いので折り返す（バイタルの表は数字だけなので折り返さないまま） */
 .vmtbl.extbl th, .vmtbl.extbl td { white-space:normal; text-align:start; vertical-align:top; }
@@ -1278,7 +1307,7 @@ function rgApply(){
 /* 「読み込み」ボタン。いま見ているタブのデータを、この期間で取り直す。 */
 function rgReload(){
   if(currentScreen() === 'scr-vm'){ if(!VM_LOADING) vmLoad(); }
-  else if(currentScreen() === 'scr-exc'){ if(!EXC_LOADING) excLoad(); }
+  else if(currentScreen() === 'scr-exc'){ if(!EXC_LOADING) excLoad({ force:true }); }   // 「読み込み」は全部取り直す（明示の最新化）
   else if(!LOADING) load();
 }
 /* 申し送りの状態表示は入居者別と検索の2箇所にある（同じ部品を3タブに置いた帰結）。
@@ -1312,7 +1341,9 @@ function ensureBaseData(){
   if(!c.url || !c.token){ if(stale) rgClearBase(); return; }
   load();
 }
-function load(){
+/* opts.quiet＝先読み（2026-10-17 第2弾）。失敗しても申し送りを使う画面を見ていなければ赤帯・設定画面への移動を出さない */
+function load(opts){
+  opts = opts || {};
   var r = sharedRange();
   if(r.invalid){ rgSetStatus('開始日と終了日を入れてください'); return Promise.resolve(); }
   var t0 = Date.now();
@@ -1354,6 +1385,7 @@ function load(){
       + tick + '／読込 ' + sec + '秒' + brk);
   })['catch'](function(e){
     rgSetStatus('');
+    if(opts.quiet && RG_BASE_SCREENS.indexOf(currentScreen()) < 0) return;   // 先読みの失敗は黙って捨てる（開いた時に読み直す）
     LOAD_ERR = apiErrMsg(e);
     showError(LOAD_ERR);
     if(String(e && e.message) === 'NO_CFG') goto('scr-cfg', false);
@@ -1956,9 +1988,13 @@ function ensureVmData(){
   if(!loadCfg().url){ if(stale) rgClearVm(); return; }
   vmLoad();
 }
-function vmLoad(){
+/* opts.quiet＝先読み（2026-10-17 第2弾）。失敗してもこの画面を見ていなければ赤帯・設定画面への移動を出さず、開いた時に読み直す。
+   ★平熱（A1）の30日分を本体と1回にまとめる（第2弾）: 期間が30日に満たない時は from＝min(期間の開始, 終了日−29) で1回だけ読み、
+     平熱を数えた後、表・グラフ・数値コピー・印刷に使う行は期間で切る（期間外の日を出さない）。 */
+function vmLoad(opts){
+  opts = opts || {};
   var r = sharedRange();
-  if(r.invalid){ $('vmStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
+  if(r.invalid){ if(!opts.quiet) $('vmStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
   VM_LOADING = true;
   VM_ERR = '';
   rgBusyVm(true);
@@ -1966,19 +2002,25 @@ function vmLoad(){
        状態表示を書くのは【下ろした後】（rgClearVm が状態欄も空にするため）。 */
   if(vmStale()) rgClearVm();
   $('vmStatus').textContent = '読み込み中…';
-  return apiGet('measures', { from:r.from, to:r.to }).then(function(res){
-    VM = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
+  var wf = vmUsualFrom(r.to), qFrom = (r.from < wf) ? r.from : wf;
+  return apiGet('measures', { from:qFrom, to:r.to }).then(function(res){
+    var inDay = function(d){ return okYmd(d) && d >= r.from && d <= r.to; };
+    var inRow = function(x){ return !!x && inDay(x.date); };
+    var to0 = okYmd(res.to) ? res.to : r.to;
+    VM = { from:r.from, to:to0,
            reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
-           vitals:(res.vitals || []), meals:(res.meals || []),
-           vitalDates:(res.vitalDates || []), mealDates:(res.mealDates || []),
+           vitals:(res.vitals || []).filter(inRow), meals:(res.meals || []).filter(inRow),
+           vitalDates:(res.vitalDates || []).filter(inDay), mealDates:(res.mealDates || []).filter(inDay),
            notes:String(res.thresholdNotes || ''),
            fails:String(res.lastFails || '') };
+    /* 平熱は切る前の30日分から（1日1行・5回未満は出さない） */
+    VM_USUAL = { forVm:VM, state:'ok', by:vmUsualByName(res.vitals || [], wf, r.to) };
     $('vmStatus').textContent = VM.from + ' 〜 ' + VM.to
       + '（バイタル' + VM.vitals.length + '件・食事' + VM.meals.length + '件）';
-    vmLoadUsual();
     vmRenderBanner(); vmRenderList(); vmRenderBody();
   })['catch'](function(e){
     $('vmStatus').textContent = '';
+    if(opts.quiet && currentScreen() !== 'scr-vm') return;   // 先読みの失敗は黙って捨てる（開いた時に読み直す）
     $('vmBanner').textContent = '';
     VM_ERR = apiErrMsg(e);
     var d = document.createElement('div'); d.className = 'err'; d.textContent = VM_ERR;
@@ -1994,30 +2036,6 @@ function vmLoad(){
     }
     /* ★load() と同じ理由。通信中に変わった期間を追いかける（失敗時は追いかけない） */
     else if(vmStale() && currentScreen() === 'scr-vm') vmLoad();
-  });
-}
-
-/* 平熱（A1）を出すための直近30日の体温。読み込んだ期間が終了日の30日前より前から始まっていればそれを使い、
-   足りなければ measures をもう1回だけ読む（メモリだけ・端末に保存しない）。
-   ★失敗しても本体の表示は止めない（平熱なし扱い＋見出しに小さく「平熱を読めませんでした」）。
-   ★読み込み中に期間が変わったら（VM が差し替わったら）結果を捨てる。 */
-function vmLoadUsual(){
-  var vmRef = VM;
-  if(!okYmd(vmRef.to)){ VM_USUAL = { forVm:vmRef, state:'none', by:null }; return; }
-  var wf = vmUsualFrom(vmRef.to);
-  if(okYmd(vmRef.from) && vmRef.from <= wf){
-    VM_USUAL = { forVm:vmRef, state:'ok', by:vmUsualByName(vmRef.vitals, wf, vmRef.to) };
-    return;
-  }
-  VM_USUAL = { forVm:vmRef, state:'loading', by:null };
-  apiGet('measures', { from:wf, to:vmRef.to }).then(function(res){
-    if(VM !== vmRef) return;
-    VM_USUAL = { forVm:vmRef, state:'ok', by:vmUsualByName((res && res.vitals) || [], wf, vmRef.to) };
-  }, function(){
-    if(VM !== vmRef) return;
-    VM_USUAL = { forVm:vmRef, state:'err', by:null };
-  }).then(function(){
-    if(VM === vmRef && !vmStale()) vmRenderBody();
   });
 }
 
@@ -3210,7 +3228,11 @@ var EXC_RECENT_DAYS = 14;      // GAS の RECENT_DAYS（今日−14日以降の�
 var EXC_GETDAYS_MAX = 7;       // GAS の GETDAYS_MAX（getDays 1回に7日まで）
 var EXC_MARGIN_DAYS = 2;       // 判定の余白（少量の数え方が期間の縁でずれないよう開始日の2日前から読む）
 var EXC_DEFAULT_STOOL = { stoolWarnD:2, stoolDangerD:3 };   // 排便記録アプリの D.cfg の初期値
+var EXC_DEFAULT_URINE = { urineWarnH:6, urineDangerH:8 };   // 同じく排尿（時間）の初期値
+function excDefaultCfg(){ return { stoolWarnD:EXC_DEFAULT_STOOL.stoolWarnD, stoolDangerD:EXC_DEFAULT_STOOL.stoolDangerD,
+                                   urineWarnH:EXC_DEFAULT_URINE.urineWarnH, urineDangerH:EXC_DEFAULT_URINE.urineDangerH }; }
 var EXC_MSG_UNCONFIGURED = 'この端末には排便記録の接続設定がありません';
+var EXC_MSG_NODAYS = '指定した期間に、読み込める日（今日まで）がありません';
 var EXC_SC_COLOR = {'水様便':'#f9a825','下痢便':'#ff8f00','柔らかめ':'#8bc34a','普通':'#4caf50','硬め':'#8d6e63','硬便':'#5d4037'};   // 排便カレンダーの点の色（写し元 SC_COLOR）
 var EXC_BRISTOL = { 1:'硬球状', 2:'硬塊状', 3:'ひび割れ', 4:'普通便', 5:'軟便', 6:'泥状便', 7:'水様便' };
 
@@ -3243,18 +3265,6 @@ function excAddDays(day, n){
 }
 function excDayMs(day){ return Date.parse(day + 'T00:00:00+09:00'); }   // その日の0時（日本時間）
 
-/* 読み方の計画。期間（余白込み）が直近14日に収まる時は getAll（since＝余白込み開始日の0時）1回、
-   長い時は getDays を7日ずつ。★getAll の since は「書いた時刻」での絞り込みで、日付で全部返る保証は
-   直近14日の窓（RECENT_DAYS）のほう。収まる時だけ getAll にするのはそのため。 */
-function excPlan(fetchFrom, to, nowMs){
-  var recentFrom = excAddDays(excJstDay(nowMs), -EXC_RECENT_DAYS);
-  if(fetchFrom >= recentFrom) return { mode:'getAll', since:excDayMs(fetchFrom), chunks:[] };
-  var days = [], d = fetchFrom;
-  while(d <= to && days.length < 400){ days.push(d); d = excAddDays(d, 1); }
-  var chunks = [];
-  for(var i = 0; i < days.length; i += EXC_GETDAYS_MAX) chunks.push(days.slice(i, i + EXC_GETDAYS_MAX));
-  return { mode:'getDays', since:0, chunks:chunks };
-}
 /* 「最後の排便から◯日」を数える時点。終了日が今日以降なら今、過去なら終了日の翌日0時（日本時間）
    （親の決定 2026-10-17。過去の期間を今で数えると、読んでいない終了日より後の分だけ日数が大きく出るため） */
 function excRefNow(to, nowMs){
@@ -3309,7 +3319,8 @@ function excParseRecord(raw){
   if(o.type === '_sys_staffs_' || id === 'sys_staffs_v1' || id === 'sys_staffs_snapshot_v1') return null;
   if(o.type === 'laxative' && o.medicine === '_SYS_STAFFS_SNAPSHOT_') return null;
   var type = o.type;
-  if(type !== 'urine' && type !== 'stool' && type !== 'both' && type !== 'laxative') return null;
+  /* 'none'＝誘導・排泄なし（トイレの成功率の分母に要る・2026-10-17 第2弾） */
+  if(type !== 'urine' && type !== 'stool' && type !== 'both' && type !== 'laxative' && type !== 'none') return null;
   var date = excNormDate(o.date), datetime = '', time = '';
   if(typeof o.datetime === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(o.datetime.trim())){
     var ds = o.datetime.trim();
@@ -3330,6 +3341,16 @@ function excParseRecord(raw){
               medicine:(type === 'laxative' && typeof o.medicine === 'string') ? o.medicine.trim() : '',
               tablets:(type !== 'laxative') ? '' : (typeof o.tablets === 'number' ? (isFinite(o.tablets) ? String(o.tablets) : '')
                        : (typeof o.tablets === 'string' ? o.tablets.trim() : '')) };
+  /* 第2弾（2026-10-17）で足した項目。メモ（notes）・記入者（staff）は持たないまま */
+  var str = function(v){ return typeof v === 'string' ? v.trim() : ''; };
+  if(o.urineAmt != null && o.urineAmt !== ''){
+    var ua = (typeof o.urineAmt === 'number') ? o.urineAmt : Number(o.urineAmt);   // 写し元 cleanData: 数に読めれば数・読めなければ文字のまま
+    rec.urineAmt = (typeof ua === 'number' && !isNaN(ua)) ? ua : String(o.urineAmt).trim();
+  }else rec.urineAmt = '';
+  rec.urineColor = str(o.urineColor); rec.urineSrc = str(o.urineSrc);
+  rec.stoolColor = str(o.stoolColor); rec.stoolSrc = str(o.stoolSrc);
+  if(o.bristol != null && o.bristol !== '') rec.bristol = o.bristol;
+  if(o.pads != null && o.pads !== '') rec.pads = (typeof o.pads === 'object') ? JSON.parse(JSON.stringify(o.pads)) : String(o.pads);
   /* tsUTC: 数で届いた時だけそのまま。それ以外は日時から（写し元 cleanData と同じ） */
   if(typeof o.tsUTC === 'number' && !isNaN(o.tsUTC)) rec.tsUTC = o.tsUTC;
   else if(datetime){ var t = new Date(datetime).getTime(); if(!isNaN(t)) rec.tsUTC = t; }
@@ -3353,6 +3374,9 @@ function excParseResident(raw){
     var w = excFiniteNum(c.stoolWarnD), dg = excFiniteNum(c.stoolDangerD);
     if(w !== undefined) cfg.stoolWarnD = w;
     if(dg !== undefined) cfg.stoolDangerD = dg;
+    var uw = excFiniteNum(c.urineWarnH), ud = excFiniteNum(c.urineDangerH);
+    if(uw !== undefined) cfg.urineWarnH = uw;
+    if(ud !== undefined) cfg.urineDangerH = ud;
   }
   var hosp = [];
   if(Array.isArray(o.hospitalizations)){
@@ -3364,11 +3388,11 @@ function excParseResident(raw){
   return { id:id, name:name, key:key, room:excNormRoom(roomRaw), roomLabel:roomRaw,
            active:(a === undefined || a === null || a === true || a === 'TRUE'),
            hidden:(h === true || (typeof h === 'string' && /^(TRUE|1|YES)$/i.test(h))),
-           cfg:cfg, hospitalizations:hosp };
+           cfg:cfg, hospitalizations:hosp, laxNote:(typeof o.laxNote === 'string' ? o.laxNote.trim() : '') };
 }
 /* 応答（getAll／getDays を束ねたもの）を照合と判定に要る形にする。keepFrom〜keepTo の外の日付の記録は捨てる */
 function excParsePayload(payload, keepFrom, keepTo){
-  var snap = { residents:[], recs:Object.create(null), cfg:{ stoolWarnD:EXC_DEFAULT_STOOL.stoolWarnD, stoolDangerD:EXC_DEFAULT_STOOL.stoolDangerD } };
+  var snap = { residents:[], recs:Object.create(null), cfg:excDefaultCfg() };
   if(!payload || typeof payload !== 'object') return snap;
   (Array.isArray(payload.residents) ? payload.residents : []).forEach(function(r){
     var x = excParseResident(r); if(x) snap.residents.push(x);
@@ -3377,6 +3401,9 @@ function excParsePayload(payload, keepFrom, keepTo){
     var w = excFiniteNum(payload.cfg.stoolWarnD), d = excFiniteNum(payload.cfg.stoolDangerD);
     if(w !== undefined) snap.cfg.stoolWarnD = w;
     if(d !== undefined) snap.cfg.stoolDangerD = d;
+    var uw = excFiniteNum(payload.cfg.urineWarnH), ud = excFiniteNum(payload.cfg.urineDangerH);
+    if(uw !== undefined) snap.cfg.urineWarnH = uw;
+    if(ud !== undefined) snap.cfg.urineDangerH = ud;
   }
   var seen = Object.create(null);
   (Array.isArray(payload.records) ? payload.records : []).forEach(function(r){
@@ -3478,9 +3505,8 @@ function excStoolLevel(h, cfg){
    下限なので「少なめに出る」ことはあっても「多く出る」ことは無い（check/unit/msk_excretion_test.js が写し元の全件と比べる）。
    ★基準時より後の時刻の記録（時刻の書き間違いなど）で経過が負になる時は 0日・判定 ok に丸め、future で知らせる（写し元に無い扱い） */
 function excRecMs(r){ return (r && r.datetime) ? new Date(r.datetime).getTime() : NaN; }
-function excStatusOf(pool, res, globalCfg, refNow, fetchFrom, failedDays){
-  var cfg = excStoolCfgOf(res, globalCfg);
-  var hosp = res ? res.hospitalizations : undefined;
+/* 確定点と、そこから後の排便1回分の列（一覧の判定・カレンダー・期間のまとめ・平均間隔が同じものを使う） */
+function excConfirmed(pool, fetchFrom, failedDays){
   var failed = (failedDays || []).slice().sort();
   var lastFailed = failed.length ? failed[failed.length - 1] : '';
   var hEnd = lastFailed ? excDayMs(excAddDays(lastFailed, 1)) : excDayMs(fetchFrom);
@@ -3497,29 +3523,254 @@ function excStatusOf(pool, res, globalCfg, refNow, fetchFrom, failedDays){
     if(i > 0 && !(t - excRecMs(arr[i - 1]) > winMs)) continue;     // 直前の記録から48時間以内（読めない時も）
     if(t - hEnd > winMs){ k = i; break; }                          // (b)
   }
+  return { arr:arr, k:k, series:(k >= 0 ? excStoolResetSeries(arr.slice(k)) : []), hEnd:hEnd, lastFailed:lastFailed,
+           from:(k >= 0 ? arr[k].date : '') };
+}
+function excStatusOf(pool, res, globalCfg, refNow, fetchFrom, failedDays){
+  var cfg = excStoolCfgOf(res, globalCfg);
+  var hosp = res ? res.hospitalizations : undefined;
+  var c = excConfirmed(pool, fetchFrom, failedDays);
+  var arr = c.arr, k = c.k, hEnd = c.hEnd, lastFailed = c.lastFailed;
   var last = null, startMs;
   if(k >= 0){
-    var ser = excStoolResetSeries(arr.slice(k));
-    if(ser.length) last = ser[ser.length - 1];
+    if(c.series.length) last = c.series[c.series.length - 1];
     else startMs = excRecMs(arr[k]);
   }else if(arr.length){
     startMs = excRecMs(arr[arr.length - 1]);
     if(isNaN(startMs)) startMs = hEnd;
   }else startMs = hEnd;
+  /* ★直近の日（基準時の日）を読めていない＝下限の起点が基準時以降。0日と言わず「判定できない」（2026-10-17 反証レビュー）。
+     0 に丸めるのは、記録の時刻が基準時より後の時（時刻の書き間違いなど）だけ */
+  if(!last && startMs === hEnd && lastFailed && hEnd >= refNow){
+    return { level:'unknown', days:null, atLeast:true, failedAfter:true, lastHidden:lastFailed, future:false, lastAt:null,
+             warnD:cfg.stoolWarnD, dangerD:cfg.stoolDangerD };
+  }
   var h = last ? excElapsedH(last, refNow, hosp) : (excFreezeIfHosp(hosp, refNow) - startMs) / 36e5;
   var future = (h !== null && h < 0);
   if(future) h = 0;
   return { level:excStoolLevel(h, cfg), days:(h === null ? null : Math.floor(h / 24)), atLeast:!last,
-           failedAfter:(!last && !!lastFailed), future:future, lastAt:(last ? (last.datetime || null) : null),
+           failedAfter:(!last && !!lastFailed), lastHidden:lastFailed, future:future, lastAt:(last ? (last.datetime || null) : null),
            warnD:cfg.stoolWarnD, dangerD:cfg.stoolDangerD };
 }
+/* 最後の排尿から◯時間（写し元 lastR(rid,'u')・elH・badgeCls(h,'u') の写し＋読めていない区間の下限）。
+   最後に読めていない日より後に排尿があれば写し元と同じ。無ければ、その翌日0時（無ければ余白込み開始日の0時）からの下限 */
+function excUrineCfgOf(res, global){
+  var c = (res && res.cfg) ? res.cfg : {};
+  return { urineWarnH:(c.urineWarnH != null ? c.urineWarnH : global.urineWarnH),
+           urineDangerH:(c.urineDangerH != null ? c.urineDangerH : global.urineDangerH) };
+}
+function excUrineLevel(h, cfg){
+  if(h === null) return 'danger';
+  if(h >= cfg.urineDangerH) return 'danger';
+  if(h >= cfg.urineWarnH) return 'warn';
+  return 'ok';
+}
+function excUrineStatusOf(pool, res, globalCfg, refNow, fetchFrom, failedDays){
+  var cfg = excUrineCfgOf(res, globalCfg);
+  var hosp = res ? res.hospitalizations : undefined;
+  var failed = (failedDays || []).slice().sort();
+  var lastFailed = failed.length ? failed[failed.length - 1] : '';
+  var hEnd = lastFailed ? excDayMs(excAddDays(lastFailed, 1)) : excDayMs(fetchFrom);
+  var last = null;
+  (pool || []).forEach(function(r){
+    if((r.type === 'urine' || r.type === 'both') && (!lastFailed || r.date > lastFailed)) last = r;   // datetime 昇順の最後
+  });
+  if(!last && lastFailed && hEnd >= refNow){   // 直近の日を読めていない（上と同じ）
+    return { level:'unknown', hours:null, atLeast:true, lastHidden:lastFailed, future:false, warnH:cfg.urineWarnH, dangerH:cfg.urineDangerH };
+  }
+  var h = last ? excElapsedH(last, refNow, hosp) : (excFreezeIfHosp(hosp, refNow) - hEnd) / 36e5;
+  var future = (h !== null && h < 0);
+  if(future) h = 0;
+  return { level:excUrineLevel(h, cfg), hours:(h === null ? null : Math.floor(h)), atLeast:!last, lastHidden:lastFailed,
+           future:future, warnH:cfg.urineWarnH, dangerH:cfg.urineDangerH };
+}
+function excUrineText(u){
+  if(u.level === 'unknown') return '排尿: ' + EXC_MSG_UNKNOWN;
+  var lv = u.level === 'danger' ? '（危険）' : (u.level === 'warn' ? '（注意）' : '');
+  if(u.hours === null) return '最後の排尿の日時が読めません' + lv;
+  if(u.atLeast) return '排尿 ' + u.hours + '時間以上なし' + lv;
+  return '最後の排尿から' + u.hours + '時間' + lv;
+}
 /* 画面の文（色に頼らない: 注意／危険を文字でも出す） */
+var EXC_MSG_UNKNOWN = '直近の日を読めなかったため判定できません';
 function excStatusText(s){
+  if(s.level === 'unknown') return '排便: ' + EXC_MSG_UNKNOWN;
   var lv = s.level === 'danger' ? '（危険）' : (s.level === 'warn' ? '（注意）' : '');
   if(s.atLeast && s.failedAfter) return '最後の排便1回分から' + s.days + '日以上（読めなかった日があります）' + lv;
   if(s.atLeast) return '期間内に排便1回分の記録がありません（' + s.days + '日以上）' + lv;
   if(s.days === null) return '最後の排便の日時が読めません' + lv;
   return '最後の排便から' + s.days + '日' + lv;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   排泄の情報を増やす（第2弾・2026-10-17 本人指示）— 写し元の計算の写し
+   写し元: /Users/Takeshi/Claude/Repos/haiben-record/haiben-record.html コミット ce3653404aac62e658be7b57404a4a9f7d52fea9
+     ・parsePads / padsTotal        1824〜1833 行
+     ・BL                           1909 行（ここでは EXC_BRISTOL）
+     ・fmtCons / fmtUA / toNum      2962〜2964 行（fmtCons は excConsOf）
+     ・LAX_REACT_H / _evMs / laxReaction  4187〜4205 行
+     ・hospOverlaps                 4421〜4435 行
+     ・STATS_GAP_H / intervalStats / fmtDur  4521〜4605 行
+     ・guideStats                   6358〜6377 行
+     ・CONS_BS / rpConsTxt          8309・8318 行
+   check/unit/msk_haiben_stats.src.txt に写し元を一字一句置き、check/unit/msk_excretion_test.js が同じ入力で一致を確かめる。
+   写し元と違うのは入口だけ: 記録の一覧（recsByRes）・今の時刻（Date.now）・期間（today()・端末保持日数）を引数で受ける。
+   ★写し元に無い扱い（このビューアは期間の外・読めていない日を持たないため）:
+     ・下剤の反応: 反応が見つからず、24時間の窓に読めていない日（読み込み中・読めず）が重なる時は 'unknown'（不明）
+     ・平均間隔: 読めていない日にまたがる間隔は数えない（写し元の「記録の空白」と同じ扱い）
+   ══════════════════════════════════════════════════════════ */
+var EXC_LAX_REACT_H = 24;     // 写し元 LAX_REACT_H
+var EXC_STATS_GAP_H = 48;     // 写し元 STATS_GAP_H
+var EXC_CONS_BS = {'水様便':'7','下痢便':'6','柔らかめ':'5','普通':'4','硬め':'3','硬便':'1〜2'};   // 写し元 CONS_BS
+/* parsePads の写し（受け取った値を信じない） */
+function excParsePads(v){
+  var o = {};
+  if(v == null || v === '') return o;
+  if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ return o; } }
+  if(!v || typeof v !== 'object' || Array.isArray(v)) return o;
+  Object.keys(v).forEach(function(k){ var n = parseInt(v[k], 10), kk = String(k).trim().slice(0, 20); if(kk && n > 0 && n < 100) o[kk] = n; });
+  return o;
+}
+function excPadsTotal(v){ var o = excParsePads(v), n = 0; for(var k in o) n += o[k]; return n; }
+/* fmtUA の写し（数なら ml を付ける・文字はそのまま） */
+function excFmtUA(v){ if(v == null || v === '') return ''; return typeof v === 'number' ? v + 'ml' : v; }
+/* rpConsTxt の写し（性状にブリストル番号を添える） */
+function excConsBs(r){ var c = excConsOf(r); if(!c) return ''; var b = EXC_CONS_BS[r.consistency]; return b ? c + '（ブリストル' + b + '）' : c; }
+/* _evMs の写し */
+function excEvMs(r){
+  if(!r) return NaN;
+  if(typeof r.tsUTC === 'number' && !isNaN(r.tsUTC)) return r.tsUTC;
+  return new Date(r.datetime || ((r.date || '') + 'T' + (r.time || '00:00'))).getTime();
+}
+/* laxReaction の写し（pool＝その方の記録・datetime 昇順、now＝基準時）。hiddenDays は写し元に無い扱い（上の注記） */
+function excLaxReaction(lx, pool, now, hiddenDays){
+  var t0 = excEvMs(lx); if(isNaN(t0)) return null;
+  var t1 = t0 + EXC_LAX_REACT_H * 36e5;
+  for(var i = 0; i < (pool || []).length; i++){
+    var r = pool[i]; if(!r || (r.type !== 'stool' && r.type !== 'both')) continue;
+    var t = excEvMs(r);
+    if(t > t0 && t <= t1) return { st:'ok', h:(t - t0) / 36e5, rec:r };
+  }
+  var hid = (hiddenDays || []).some(function(d){ return excDayMs(excAddDays(d, 1)) > t0 && excDayMs(d) < Math.min(t1, now); });
+  if(hid) return { st:'unknown' };
+  if(now < t1) return { st:'wait', h:Math.max(0, (now - t0) / 36e5) };
+  return { st:'none' };
+}
+/* 反応の文（写し元 laxReactHtml の文言） */
+function excLaxReactText(x){
+  if(!x) return '';
+  if(x.st === 'ok') return '→ ' + excFmtDur(x.h) + '後に排便';
+  if(x.st === 'wait') return '（待機中 ' + excFmtDur(x.h) + '）';
+  if(x.st === 'unknown') return '→ 反応は不明（読めていない日があります）';
+  return '→ ' + EXC_LAX_REACT_H + '時間 反応なし';
+}
+/* hospOverlaps の写し */
+function excHospOverlaps(res, t1, t2){
+  if(!res || !Array.isArray(res.hospitalizations)) return false;
+  if(t1 == null || t2 == null || isNaN(t1) || isNaN(t2)) return false;
+  for(var i = 0; i < res.hospitalizations.length; i++){
+    var h = res.hospitalizations[i];
+    if(!h || !h.admissionAt) continue;
+    var ad = new Date(h.admissionAt).getTime(); if(isNaN(ad)) continue;
+    var dc = h.dischargeAt ? new Date(h.dischargeAt).getTime() : Infinity;
+    if(isNaN(dc)) dc = Infinity;
+    if(t1 < dc && t2 > ad) return true;
+  }
+  return false;
+}
+/* intervalStats の写し。窓は期間（from〜to）。sAll は排便1回分の列（このビューアでは確定点からの列＝excConfirmed）。
+   hiddenDays（読めていない日）にまたがる間隔は数えない（写し元に無い扱い） */
+function excIntervalStats(pool, res, sAll, from, to, hiddenDays){
+  var uAll = [], lAll = [];
+  for(var i = 0; i < (pool || []).length; i++){
+    var r = pool[i]; if(!r) continue;
+    if(r.type === 'urine' || r.type === 'both') uAll.push(r);
+    if(r.type === 'laxative') lAll.push(r);
+  }
+  function inWin(r){ var d = r.date || String(r.datetime || '').slice(0, 10); return d >= from && d <= to; }
+  function recT(r){
+    if(typeof r.tsUTC === 'number' && !isNaN(r.tsUTC)) return r.tsUTC;
+    var dt = r.datetime || (r.date && r.time ? (r.date + 'T' + r.time) : '');
+    if(!dt) return null;
+    var t = new Date(dt).getTime();
+    return isNaN(t) ? null : t;
+  }
+  function timesIn(list){
+    var out = [];
+    for(var k = 0; k < list.length; k++){
+      if(!inWin(list[k])) continue;
+      var t = recT(list[k]);
+      if(t !== null) out.push(t);
+    }
+    return out;
+  }
+  var uT = timesIn(uAll), gaps = [], gapMs = EXC_STATS_GAP_H * 36e5;
+  for(var g = 1; g < uT.length; g++){
+    if(uT[g] - uT[g - 1] >= gapMs) gaps.push({ a:uT[g - 1], b:uT[g] });
+  }
+  (hiddenDays || []).forEach(function(d){ gaps.push({ a:excDayMs(d), b:excDayMs(excAddDays(d, 1)) }); });
+  function inGap(t1, t2){
+    for(var q = 0; q < gaps.length; q++){ if(t1 < gaps[q].b && t2 > gaps[q].a) return true; }
+    return false;
+  }
+  function avgOf(list){
+    var sum = 0, n = 0, prev = null;
+    for(var k = 0; k < list.length; k++){
+      if(!inWin(list[k])) continue;
+      var t = recT(list[k]);
+      if(t === null) continue;
+      if(prev !== null){
+        var d = t - prev;
+        if(d > 0 && !excHospOverlaps(res, prev, t) && !inGap(prev, t)){ sum += d; n++; }
+      }
+      prev = t;
+    }
+    return { avgH:n ? (sum / n) / 36e5 : null, n:n };
+  }
+  return { urine:avgOf(uAll), stool:avgOf(sAll || []), lax:avgOf(lAll), from:from, to:to };
+}
+/* fmtDur の写し（「3時間20分」「2日4時間」） */
+function excFmtDur(h){
+  if(h === null || h === undefined || isNaN(h) || h < 0) return '—';
+  var tm = Math.round(h * 60);
+  var d = Math.floor(tm / 1440), hr = Math.floor((tm % 1440) / 60), mn = tm % 60;
+  if(d > 0) return d + '日' + (hr > 0 ? hr + '時間' : '');
+  if(hr > 0) return hr + '時間' + (mn > 0 ? mn + '分' : '');
+  return mn + '分';
+}
+/* guideStats の写し（トイレの成功率・失禁率・交換の枚数） */
+function excGuideStats(recs){
+  var o = { toilet:0, miss:0, uN:0, uPad:0, sN:0, sPad:0, pads:0 };
+  (recs || []).forEach(function(r){
+    if(!r) return;
+    o.pads += excPadsTotal(r.pads);
+    var t = r.type;
+    if(t === 'none'){ if(!excPadsTotal(r.pads)) o.miss++; return; }
+    var isU = (t === 'urine' || t === 'both'), isS = (t === 'stool' || t === 'both');
+    if(!isU && !isS) return;
+    var us = isU ? (r.urineSrc || 'self') : '', ss = isS ? (r.stoolSrc || 'toilet') : '';
+    if(us === 'self' || us === 'both' || ss === 'toilet' || ss === 'both') o.toilet++;
+    if(isU){ o.uN++; if(us === 'pad' || us === 'both') o.uPad++; }
+    if(isS){ o.sN++; if(ss === 'pad' || ss === 'both') o.sPad++; }
+  });
+  o.succ = (o.toilet + o.miss) ? o.toilet / (o.toilet + o.miss) : null;
+  o.uInc = o.uN ? o.uPad / o.uN : null;
+  o.sInc = o.sN ? o.sPad / o.sN : null;
+  return o;
+}
+/* gsPct の写し */
+function excGsPct(v, a, b){ return v == null ? '—' : Math.round(v * 100) + '%（' + a + '/' + b + '）'; }
+
+/* 異常の印（色だけに頼らず文字でも出す）。血便・黒色便（便色）・血尿（尿色）・水様便・下痢便（性状） */
+function excAbn(r){
+  var out = [];
+  if(!r) return out;
+  if(r.stoolColor === '血便') out.push('血便');
+  if(r.stoolColor === '黒色') out.push('黒色便');
+  if(r.urineColor === '血尿') out.push('血尿');
+  if(r.consistency === '水様便' || r.consistency === '下痢便') out.push(r.consistency);
+  return out;
 }
 
 /* ── 照合: 排便記録の入居者を、ビューアの名簿（ROSTER＝入居者マスタの写し）と
@@ -3544,75 +3795,85 @@ function excMatchMsg(m){
   return '入居者マスタの名簿と照合できません（' + (why[m.reason] || '') + '）';
 }
 
-/* 一覧（母集団は排便記録の在籍かつ非表示でない方）。並びは 危険→注意→その他、同じ中は五十音（byKana） */
-function excRows(snap, roster, refNow, fetchFrom, failedDays){
-  var rows = [];
-  snap.residents.forEach(function(r){
-    if(!r.active || r.hidden) return;
-    rows.push({ id:r.id, name:r.name, roomLabel:r.roomLabel, res:r,
-                status:excStatusOf(snap.recs[r.id] || [], r, snap.cfg, refNow, fetchFrom, failedDays),
-                match:excMatch(r, roster, snap.residents) });
-  });
-  var rank = function(x){ return x.status.level === 'danger' ? 0 : (x.status.level === 'warn' ? 1 : 2); };
-  rows.sort(function(a, b){ return (rank(a) - rank(b)) || byKana(a.name, b.name); });
-  return rows;
+/* ══════════════════════════════════════════════════════════
+   一覧（全員）・詳細・読み込み（第2弾・2026-10-17 本人指示: 速度と情報を増やす）
+   ══════════════════════════════════════════════════════════ */
+var LS_EXC_SORT = 'msk_excSort';   // 一覧の並べ方（UI 状態だけ）: 'risk'＝危険順（既定）／'room'＝居室順
+var LS_EXC_ATTN = 'msk_excAttn';   // 「要注意だけ」（UI 状態だけ）: '1'／'0'（既定）
+var EXC_SORTS = ['risk','room'];
+var EXC_BAND_DAYS = 14;            // 一覧の行の帯の日数（基準時の日を含む直近14日）
+/* 既知値だけ受ける（原則11。不正値・未知値は既定へ） */
+function excUiState(get){
+  get = get || lsGet;
+  var s = String(get(LS_EXC_SORT) || ''), a = String(get(LS_EXC_ATTN) || '');
+  return { sort:(EXC_SORTS.indexOf(s) >= 0 ? s : 'risk'), attn:(a === '1') };
 }
-
-/* 日ごとの表（新しい日が上）。dates は古い順の期間の日。読めなかった日は failed。
-   基準時（refNow）より後の時刻の排便には future を付ける（「時刻が基準時より後です」と出す） */
-function excDays(pool, dates, failedDays, refNow){
-  var failed = Object.create(null); (failedDays || []).forEach(function(d){ failed[d] = true; });
-  var by = Object.create(null), out = [];
-  (dates || []).forEach(function(d){
-    var x = { day:d, failed:!!failed[d], urine:0, stools:[], laxatives:[] };
-    by[d] = x; out.push(x);
-  });
-  (pool || []).forEach(function(r){
-    var x = by[r.date]; if(!x) return;
-    if(r.type === 'urine' || r.type === 'both') x.urine++;
-    if(r.type === 'stool' || r.type === 'both'){
-      var ms = excRecMs(r);
-      x.stools.push({ time:r.time, amount:(r.stoolAmt || ''), cons:r.cons, future:!!(refNow && ms > refNow) });
-    }
-    if(r.type === 'laxative') x.laxatives.push({ time:r.time, medicine:r.medicine, tablets:r.tablets });
-  });
-  out.forEach(function(x){
-    var byTime = function(a, b){ return String(a.time || '').localeCompare(String(b.time || '')); };
-    x.stools.sort(byTime); x.laxatives.sort(byTime);
-  });
-  return out.reverse();
+/* 居室の並べ替えの鍵（先頭の数字で比べ、無ければ文字で） */
+function excRoomCmp(a, b){
+  var ra = excNormRoom(a || ''), rb = excNormRoom(b || '');
+  var na = /^\d+/.exec(ra), nb = /^\d+/.exec(rb);
+  if(na && nb && Number(na[0]) !== Number(nb[0])) return Number(na[0]) - Number(nb[0]);
+  if(na && !nb) return -1;
+  if(!na && nb) return 1;
+  return ra.localeCompare(rb, 'ja');
 }
+/* 並びの段: 判定できない（読めていない・読み込み中）→ 危険 → 注意 → その他（安全側に、分からない方を一番上に） */
+function excLvRank(lv){ return lv === 'unknown' ? -1 : (lv === 'danger' ? 0 : (lv === 'warn' ? 1 : 2)); }
 
-/* 排便のカレンダー（写し元の stoolCalHtml の見せ方）。日曜始まりで期間の週を並べる。
-   点の色＝便の性状・少＝少量・💊＝下剤。地の色は、その日の終わり（基準時の日は基準時）の時点の経過で決める。
-   ★一覧と同じ excStatusOf を、その日までの記録・読めなかった日で呼ぶ（同じ起点・同じ下限）。
-     期間の始まり・読めなかった日の後は下限なので、少なめに出ることはあっても多く出ることは無い。
-   ★読めなかった日は「読めず」の灰色（地の色は付けない） */
-function excCalendar(pool, res, globalCfg, from, to, fetchFrom, failedDays, refNow){
-  var failed = Object.create(null); (failedDays || []).forEach(function(d){ failed[d] = true; });
+/* カレンダー・帯の1マス（同じ関数・同じ起点）。hidden＝読めていない日（読み込み中＋読めず）、pending＝そのうち読み込み中 */
+function excCalCell(d, byDay, pool, res, globalCfg, fetchFrom, hidden, refNow, pending){
+  var hid = (hidden || []).indexOf(d) >= 0;
+  var c = { day:d, blank:false, failed:hid, pending:!!(hid && pending && pending[d]), cls:'', items:[], abn:[] };
+  if(hid) return c;
+  c.items = (byDay[d] || []).slice().sort(function(a, b){ return (a.time || '').localeCompare(b.time || ''); }).map(function(r){
+    var ab = excAbn(r);
+    ab.forEach(function(x){ if(c.abn.indexOf(x) < 0) c.abn.push(x); });
+    if(r.type === 'urineAbn') return { urineAbn:true };
+    return r.type === 'laxative' ? { lax:true, time:r.time, medicine:r.medicine }
+      : { lax:false, time:r.time, color:(EXC_SC_COLOR[r.consistency] || '#9e9e9e'), cons:r.cons, small:(r.stoolAmt === '少量'), amount:(r.stoolAmt || ''), abn:ab };
+  });
+  c.cls = excDayLevel(pool, res, globalCfg, d, fetchFrom, hidden, refNow);
+  return c;
+}
+function excByDay(pool){
   var byDay = Object.create(null);
   (pool || []).forEach(function(r){
     if(r.type === 'stool' || r.type === 'both' || r.type === 'laxative') (byDay[r.date] = byDay[r.date] || []).push(r);
   });
+  /* 血尿は排尿の記録にある（カレンダー・帯には印だけ出す） */
+  (pool || []).forEach(function(r){
+    if(r.type === 'urine' && excAbn(r).length) (byDay[r.date] = byDay[r.date] || []).push({ type:'urineAbn', date:r.date, time:r.time, urineColor:r.urineColor });
+  });
+  return byDay;
+}
+/* 排便のカレンダー（日曜始まり・期間の週）。地の色はその日の終わり（基準時の日は基準時）の時点の経過で決める */
+function excCalendar(pool, res, globalCfg, from, to, fetchFrom, failedDays, refNow, pending){
+  var byDay = excByDay(pool);
   var refDay = excJstDay(refNow);
   var wd = new Date(from + 'T00:00:00Z').getUTCDay();
   var d = excAddDays(from, -wd), cells = [], guard = 0;
   while(guard++ < 400){
     if(d > to && new Date(d + 'T00:00:00Z').getUTCDay() === 0) break;
     if(d < from || d > to || d > refDay){ cells.push({ day:d, blank:true }); d = excAddDays(d, 1); continue; }
-    var c = { day:d, blank:false, failed:false, cls:'', items:[] };
-    if(failed[d]){ c.failed = true; }
-    else{
-      c.items = (byDay[d] || []).slice().sort(function(a, b){ return (a.time || '').localeCompare(b.time || ''); }).map(function(r){
-        return r.type === 'laxative' ? { lax:true, time:r.time, medicine:r.medicine }
-          : { lax:false, time:r.time, color:(EXC_SC_COLOR[r.consistency] || '#9e9e9e'), cons:r.cons, small:(r.stoolAmt === '少量'), amount:(r.stoolAmt || '') };
-      });
-      c.cls = excDayLevel(pool, res, globalCfg, d, fetchFrom, failedDays, refNow);
-    }
-    cells.push(c);
+    cells.push(excCalCellFix(excCalCell(d, byDay, pool, res, globalCfg, fetchFrom, failedDays, refNow, pending)));
     d = excAddDays(d, 1);
   }
   return cells;
+}
+/* 排尿の異常（血尿）の印はマスの印にだけ使い、点には出さない */
+function excCalCellFix(c){
+  if(c.items) c.items = c.items.filter(function(it){ return !it.urineAbn; });
+  return c;
+}
+/* 一覧の行の帯（基準時の日を含む直近14日・横1列） */
+function excBand(pool, res, globalCfg, to, fetchFrom, failedDays, refNow, pending){
+  var byDay = excByDay(pool), refDay = excJstDay(refNow), out = [];
+  for(var i = EXC_BAND_DAYS - 1; i >= 0; i--){
+    var d = excAddDays(to, -i);
+    if(d > refDay){ out.push({ day:d, blank:true }); continue; }
+    out.push(excCalCellFix(excCalCell(d, byDay, pool, res, globalCfg, fetchFrom, failedDays, refNow, pending)));
+  }
+  return out;
 }
 /* その日の終わり（基準時の日は基準時）の時点の判定を地の色の名前で（'ng'＝危険・'w'＝注意・''） */
 function excDayLevel(pool, res, globalCfg, day, fetchFrom, failedDays, refNow){
@@ -3623,8 +3884,302 @@ function excDayLevel(pool, res, globalCfg, day, fetchFrom, failedDays, refNow){
   return s.level === 'danger' ? 'ng' : (s.level === 'warn' ? 'w' : '');
 }
 
+/* 1日の排尿（回数・ml の合計・文字の量）。文字の量（「多い」など）は ml に足さずそのまま並べる */
+function excUrineDay(pool, day){
+  var n = 0, ml = 0, hasMl = false, texts = [], colors = [];
+  (pool || []).forEach(function(r){
+    if(r.date !== day || (r.type !== 'urine' && r.type !== 'both')) return;
+    n++;
+    if(typeof r.urineAmt === 'number'){ ml += r.urineAmt; hasMl = true; }
+    else if(r.urineAmt){ texts.push(r.urineAmt); }
+    if(r.urineColor && colors.indexOf(r.urineColor) < 0) colors.push(r.urineColor);
+  });
+  return { n:n, ml:(hasMl ? ml : null), texts:texts, colors:colors };
+}
+function excUrineDayText(u){
+  if(!u.n) return '0回';
+  var parts = [u.n + '回'];
+  if(u.ml !== null) parts.push(u.ml + 'ml');
+  if(u.texts.length) parts.push(u.texts.join('・'));
+  return parts.join('・');
+}
+
+/* その日より後に読めていない日があれば、その中で一番新しい日の状態（'pending'＝読み込み中／'failed'＝読めず）。無ければ '' */
+function excHidAfter(hiddenDays, pending, day){
+  var latest = '';
+  (hiddenDays || []).forEach(function(d){ if(d > (day || '') && d > latest) latest = d; });
+  if(!latest) return '';
+  return (pending && pending[latest]) ? 'pending' : 'failed';
+}
+function excHidText(st){ return st === 'pending' ? '読み込み中…' : '読めず'; }
+/* 一覧の行（母集団は排便記録の在籍かつ非表示でない方）。
+   opt: { from, to, pending, sort:'risk'|'room', attn:bool }。並びは既定で 危険→注意→その他（便・尿の重い方）、同じ中は五十音 */
+function excRows(snap, roster, refNow, fetchFrom, failedDays, opt){
+  opt = opt || {};
+  var pending = opt.pending || {};
+  var rows = [];
+  snap.residents.forEach(function(r){
+    if(!r.active || r.hidden) return;
+    var pool = snap.recs[r.id] || [];
+    var st = excStatusOf(pool, r, snap.cfg, refNow, fetchFrom, failedDays);
+    var ur = excUrineStatusOf(pool, r, snap.cfg, refNow, fetchFrom, failedDays);
+    /* まだ届いていない日が判定の起点になっている間は、数を出さず「読み込み中」 */
+    var sLoading = st.atLeast && !!(st.lastHidden && pending[st.lastHidden]);
+    var uLoading = ur.atLeast && !!(ur.lastHidden && pending[ur.lastHidden]);
+    var lastStool = null, lastLax = null, abn = [];
+    pool.forEach(function(x){
+      if(x.type === 'stool' || x.type === 'both') lastStool = x;
+      if(x.type === 'laxative') lastLax = x;
+      if(opt.from && x.date >= opt.from && x.date <= (opt.to || x.date)){
+        excAbn(x).forEach(function(a){ if(abn.indexOf(a) < 0) abn.push(a); });
+      }
+    });
+    var uDay = opt.to ? (opt.to < excJstDay(refNow) ? opt.to : excJstDay(refNow)) : excJstDay(refNow);
+    rows.push({ id:r.id, name:r.name, roomLabel:r.roomLabel, res:r, status:st, urine:ur, sLoading:sLoading, uLoading:uLoading,
+                lastStool:lastStool, lastLax:lastLax,
+                /* 読めていない日がその記録より後にある（＝もっと新しい記録があるかもしれない）時は「読めず」「読み込み中」 */
+                stoolHid:excHidAfter(failedDays, pending, lastStool ? lastStool.date : ''),
+                laxHid:excHidAfter(failedDays, pending, lastLax ? lastLax.date : ''),
+                urineDayHid:((failedDays || []).indexOf(uDay) >= 0 ? (pending[uDay] ? 'pending' : 'failed') : ''),
+                laxReact:(lastLax ? excLaxReaction(lastLax, pool, refNow, failedDays) : null),
+                urineDay:excUrineDay(pool, uDay),
+                band:(opt.to ? excBand(pool, r, snap.cfg, opt.to, fetchFrom, failedDays, refNow, pending) : []),
+                abn:abn, match:excMatch(r, roster, snap.residents) });
+  });
+  var rank = function(x){
+    var a = x.sLoading ? -1 : excLvRank(x.status.level), b = x.uLoading ? -1 : excLvRank(x.urine.level);
+    return Math.min(a, b);
+  };
+  if(opt.attn) rows = rows.filter(function(x){ return rank(x) < 2; });
+  if(opt.sort === 'room') rows.sort(function(a, b){ return excRoomCmp(a.roomLabel, b.roomLabel) || byKana(a.name, b.name); });
+  else rows.sort(function(a, b){ return (rank(a) - rank(b)) || byKana(a.name, b.name); });
+  return rows;
+}
+
+/* 日ごとの表（新しい日が上）。hidden（読めていない日）は failed、そのうち pending は「読み込み中」。
+   基準時（refNow）より後の時刻の排便には future を付ける（「時刻が基準時より後です」と出す） */
+function excDays(pool, dates, failedDays, refNow, pending){
+  var failed = Object.create(null); (failedDays || []).forEach(function(d){ failed[d] = true; });
+  var by = Object.create(null), out = [];
+  (dates || []).forEach(function(d){
+    var x = { day:d, failed:!!failed[d], pending:!!(failed[d] && pending && pending[d]), urine:0, stools:[], laxatives:[] };
+    by[d] = x; out.push(x);
+  });
+  (dates || []).forEach(function(d){ by[d].urineDay = excUrineDay(pool, d); });
+  (pool || []).forEach(function(r){
+    var x = by[r.date]; if(!x) return;
+    if(r.type === 'urine' || r.type === 'both') x.urine++;
+    if(r.type === 'stool' || r.type === 'both'){
+      var ms = excRecMs(r);
+      x.stools.push({ time:r.time, amount:(r.stoolAmt || ''), cons:excConsBs(r), color:r.stoolColor || '',
+                      abn:excAbn({ stoolColor:r.stoolColor, consistency:r.consistency }), future:!!(refNow && ms > refNow) });
+    }
+    if(r.type === 'laxative') x.laxatives.push({ time:r.time, medicine:r.medicine, tablets:r.tablets });
+  });
+  out.forEach(function(x){
+    var byTime = function(a, b){ return String(a.time || '').localeCompare(String(b.time || '')); };
+    x.stools.sort(byTime); x.laxatives.sort(byTime);
+    x.urineAbn = x.urineDay.colors.indexOf('血尿') >= 0;
+  });
+  return out.reverse();
+}
+
+/* isFullHospDay の写し（入院日の翌日〜退院日の前日が「完全入院日」） */
+function excIsFullHospDay(resident, dateStr){
+  if(!resident || !Array.isArray(resident.hospitalizations)) return false;
+  var dayStart = new Date(dateStr + 'T00:00:00').getTime();
+  if(isNaN(dayStart)) return false;
+  for(var i = 0; i < resident.hospitalizations.length; i++){
+    var h = resident.hospitalizations[i];
+    if(!h || !h.admissionAt) continue;
+    var ad = new Date(h.admissionAt).getTime(); if(isNaN(ad)) continue;
+    var adDay = new Date(String(h.admissionAt).slice(0, 10) + 'T00:00:00').getTime();
+    var dc = h.dischargeAt ? new Date(h.dischargeAt).getTime() : Infinity;
+    var dcDay = h.dischargeAt ? new Date(String(h.dischargeAt).slice(0, 10) + 'T00:00:00').getTime() : Infinity;
+    if(dayStart > adDay && dayStart < dcDay) return true;
+  }
+  return false;
+}
+/* dayDiff の写し */
+function excDayDiffSrc(recDate, viewDate){
+  if(!recDate || !viewDate) return 0;
+  var d1 = new Date(recDate + 'T00:00:00'); var d2 = new Date(viewDate + 'T00:00:00');
+  return Math.round((d1.getTime() - d2.getTime()) / 86400000);
+}
+/* 期間のまとめ（写し元 rpBowelOne の集計部分の写し・8319 行〜）。
+   写し元との違いは入口だけ: 排便1回分の列は確定点からの列（excConfirmed）、today() は基準時の日、
+   ★写し元に無い扱い: 読めていない日でも「最長の排便1回分なし」を止める（入院の日と同じ扱い）・下剤の反応の「不明」。
+   注記: 期間の途中に読めなかった日がある時はその日付（それより前は数えていない）、
+        読めなかった日が無くても確定点より前に期間内の排便の記録が実際にある時だけ「数え切れていないことがある」 */
+function excPeriodSummary(pool, res, globalCfg, from, to, fetchFrom, failedDays, refNow){
+  var dates = [];
+  for(var dd = from; dd <= to && dates.length < 400; dd = excAddDays(dd, 1)) dates.push(dd);
+  var c = excConfirmed(pool, fetchFrom, failedDays);
+  var st = (pool || []).filter(function(r){ return r.type === 'stool' || r.type === 'both'; });
+  var ser = c.series, resetDays = {}, resetSet = new Set(ser);
+  ser.forEach(function(r){ resetDays[String(r.date).slice(0, 10)] = 1; });
+  function inP(r){ var k = String(r.date || '').slice(0, 10); return k >= from && k <= to; }
+  var sP = st.filter(inP), lP = (pool || []).filter(function(r){ return r.type === 'laxative' && inP(r); });
+  var nSmall = sP.filter(function(r){ return r.stoolAmt === '少量'; }).length;
+  var nReset = sP.filter(function(r){ return resetSet.has(r); }).length;
+  var hid = Object.create(null); (failedDays || []).forEach(function(d){ hid[d] = 1; });
+  var lastReset = null;
+  Object.keys(resetDays).forEach(function(k){ if(k < from && (!lastReset || k > lastReset)) lastReset = k; });
+  if(lastReset){
+    var cd = new Date(lastReset + 'T00:00:00'); cd.setDate(cd.getDate() + 1);
+    for(var gi = 0; gi < 400; gi++){ var ck = ymd(cd); if(ck >= from) break; if(excIsFullHospDay(res, ck) || hid[ck]){ lastReset = null; break; } cd.setDate(cd.getDate() + 1); }
+  }
+  var maxG = 0, maxAfter = null, refDay = excJstDay(refNow);
+  dates.forEach(function(k){
+    if(excIsFullHospDay(res, k) || hid[k]){ lastReset = null; return; }
+    if(resetDays[k]){ lastReset = k; return; }
+    if(lastReset && k <= refDay){ var g = excDayDiffSrc(k, lastReset); if(g > maxG){ maxG = g; maxAfter = lastReset; } }
+  });
+  var lxOk = 0, lxNone = 0, lxWait = 0, lxUnk = 0, lxSum = 0;
+  lP.forEach(function(r){
+    var x = excLaxReaction(r, pool, refNow, failedDays); if(!x) return;
+    if(x.st === 'ok'){ lxOk++; lxSum += x.h; } else if(x.st === 'none') lxNone++; else if(x.st === 'unknown') lxUnk++; else lxWait++;
+  });
+  var iv = excIntervalStats(pool, res, ser, from, to, failedDays);
+  var counted = new Set(c.k >= 0 ? c.arr.slice(c.k) : []);
+  var uncounted = sP.filter(function(r){ return !counted.has(r); }).length;
+  var fIn = (failedDays || []).filter(function(d){ return d >= from && d <= to; }).sort();
+  return { nStool:sP.length, nSmall:nSmall, nReset:nReset, maxG:(maxAfter ? maxG : null), maxAfter:maxAfter,
+           nLax:lP.length, lxOk:lxOk, lxNone:lxNone, lxWait:lxWait, lxUnk:lxUnk, lxAvgH:(lxOk ? lxSum / lxOk : null),
+           avgStoolH:iv.stool.avgH, uncertain:(uncounted > 0), uncounted:uncounted, failedNote:(fIn.length ? fIn[fIn.length - 1] : ''),
+           laxNote:(res && res.laxNote) || '' };
+}
+/* 下剤と反応の一覧（写し元 laxHistHtml の集計）。期間内の全部・新しい順。薬ごとに「n回中m回反応（平均◯後）」 */
+function excLaxList(pool, from, to, refNow, failedDays){
+  var lx = (pool || []).filter(function(r){ return r.type === 'laxative' && r.date >= from && r.date <= to; }).slice().reverse();
+  var by = {}, order = [];
+  var rows = lx.map(function(r){
+    var x = excLaxReaction(r, pool, refNow, failedDays), m = r.medicine || '（薬名なし）';
+    if(!by[m]){ by[m] = { n:0, ok:0, sumH:0, none:0 }; order.push(m); }
+    var b = by[m];
+    if(x && x.st !== 'wait' && x.st !== 'unknown'){ b.n++; if(x.st === 'ok'){ b.ok++; b.sumH += x.h; } else b.none++; }
+    return { date:r.date, time:r.time, medicine:m, tablets:r.tablets, react:x,
+             detail:(x && x.st === 'ok' && x.rec) ? ([excConsOf(x.rec), x.rec.stoolAmt].filter(Boolean).join('・') || '性状未記入') : '' };
+  });
+  var sum = order.filter(function(m){ return by[m].n > 0; }).map(function(m){
+    var b = by[m];
+    return m + '：' + b.n + '回中' + b.ok + '回反応' + (b.ok ? '（平均 ' + excFmtDur(b.sumH / b.ok) + '後）' : '');
+  });
+  return { rows:rows, sum:sum };
+}
+/* トイレの成功率・失禁率（週ごと・月曜始まり・期間で切る）と、交換したものの枚数（品目ごと） */
+function excGuideWeeks(pool, from, to, failedDays){
+  var out = [], hid = failedDays || [];
+  var f = new Date(from + 'T00:00:00Z'), wd = (f.getUTCDay() + 6) % 7;
+  for(var a = excAddDays(from, -wd), guard = 0; a <= to && guard < 60; a = excAddDays(a, 7), guard++){
+    var b = excAddDays(a, 6), s = a < from ? from : a, e = b > to ? to : b;
+    var g = excGuideStats((pool || []).filter(function(r){ return r.date >= s && r.date <= e; }));
+    out.push({ from:s, to:e, g:g, hidden:hid.some(function(d){ return d >= s && d <= e; }) });
+  }
+  return out;
+}
+function excPadTotals(pool, from, to){
+  var o = {}, n = 0, any = false;
+  (pool || []).forEach(function(r){
+    if(r.pads != null && r.pads !== '') any = true;
+    if(r.date < from || r.date > to) return;
+    var p = excParsePads(r.pads);
+    for(var k in p){ o[k] = (o[k] || 0) + p[k]; n += p[k]; }
+  });
+  return { any:any, o:o, n:n };
+}
+
+/* ── 読み込み（同時化・段階表示・日単位の再利用）──
+   ★期間（余白込み）の中で「今日−13日以降（GAS の直近14日の窓の1日内側）」は getAll 1本で読む。
+     since を今より少し未来にし、heal（自己修復窓）は既定のまま＝サーバーは窓の日付の記録だけを返す
+     （getAllResponse_: since より後に書かれた記録＝無し＋窓の記録は無条件）。窓の端の1日は時計のずれで落ちうるので getDays で読む。
+   ★窓より前の日は getDays を7日ずつ・新しい塊から・同時3本まで（getAll も1本に数える）。
+   ★読み終えた日の記録は日単位でメモリに持ち（EXC_CACHE・5分で古いとみなす・端末に保存しない）、期間を広げた時は足りない日だけ読む。
+     窓の日は毎回取り直す。「読み込み」ボタンは全部取り直す。
+   ★削除の印（deleted）は全部の応答を合わせ、その id の記録を除く（写し元の扱い）。getAll は since が未来だと
+     サーバーが印を返さない（readDeletedIds_(since)）が、窓の記録は消えたものが返らないので足りる。
+   ★塊が届くたびに一覧を描き直す。まだ届いていない日は「読み込み中」、読めなかった日は「読めず」（判定はどちらも読めていない日として下限） */
+var EXC_CACHE_MS = 5 * 60 * 1000;
+var EXC_PARALLEL = 3;
+var EXC_CACHE = null;   // { url, days:{日:{at, recs}}, residents, cfg, deleted:{id:true} }
+function excCacheFor(url){
+  if(!EXC_CACHE || EXC_CACHE.url !== url) EXC_CACHE = { url:url, days:Object.create(null), residents:null, cfg:null, deleted:Object.create(null) };
+  return EXC_CACHE;
+}
+function excPlan(fetchFrom, to, nowMs, cachedDays, force){
+  var today = excJstDay(nowMs);
+  var winFrom = excAddDays(today, -(EXC_RECENT_DAYS - 1));
+  var days = [];
+  for(var d = fetchFrom; d <= to && d <= today && days.length < 400; d = excAddDays(d, 1)) days.push(d);
+  var winDays = days.filter(function(x){ return x >= winFrom; });
+  var older = days.filter(function(x){
+    if(x >= winFrom) return false;
+    var e = cachedDays && cachedDays[x];
+    return force || !(e && e.at <= nowMs && nowMs - e.at < EXC_CACHE_MS);
+  }).reverse();   // 新しい日から
+  var chunks = [];
+  for(var i = 0; i < older.length; i += EXC_GETDAYS_MAX) chunks.push(older.slice(i, i + EXC_GETDAYS_MAX).reverse());
+  var allDays = [];
+  for(var w = winFrom; w <= today; w = excAddDays(w, 1)) allDays.push(w);
+  return { getAll:winDays.length > 0, since:nowMs + 60000, winDays:winDays, allDays:allDays, chunks:chunks };
+}
+/* 1回の応答を日単位の器へ入れる。coverDays＝この応答が全部を返したはずの日（その日の記録が0件でも「なし」と分かる） */
+function excCacheStore(cache, resp, coverDays, at){
+  var head = excParsePayload({ residents:resp.residents, cfg:resp.cfg, records:[] });
+  if(Array.isArray(resp.residents)) cache.residents = head.residents;
+  if(resp.cfg && typeof resp.cfg === 'object') cache.cfg = head.cfg;
+  (Array.isArray(resp.deleted) ? resp.deleted : []).forEach(function(id){ var k = excToKey(id); if(k !== null) cache.deleted[k] = true; });
+  var by = Object.create(null);
+  (coverDays || []).forEach(function(d){ by[d] = []; });
+  (Array.isArray(resp.records) ? resp.records : []).forEach(function(raw){
+    var x = excParseRecord(raw);
+    if(x && by[x.date]) by[x.date].push(x);
+  });
+  (coverDays || []).forEach(function(d){ cache.days[d] = { at:at, recs:by[d] }; });
+}
+/* 器から期間ぶんの記録を組み立てる（同じ id は新しく読んだ方・削除の印は除く・datetime 昇順） */
+function excBuildSnap(cache, fromDay, toDay){
+  var snap = { residents:(cache && cache.residents) || [], recs:Object.create(null), cfg:(cache && cache.cfg) || excDefaultCfg() };
+  if(!cache) return snap;
+  var best = Object.create(null), keys = [];
+  Object.keys(cache.days).forEach(function(d){
+    if(d < fromDay || d > toDay) return;
+    var e = cache.days[d];
+    e.recs.forEach(function(x){
+      if(cache.deleted[x.id]) return;
+      var k = x.residentId + '|' + x.id;
+      if(!best[k]){ keys.push(k); best[k] = { rec:x, at:e.at }; }
+      else if(e.at >= best[k].at) best[k] = { rec:x, at:e.at };
+    });
+  });
+  keys.forEach(function(k){
+    var x = best[k].rec;
+    (snap.recs[x.residentId] = snap.recs[x.residentId] || []).push(x);
+  });
+  Object.keys(snap.recs).forEach(function(k){
+    snap.recs[k].sort(function(a, b){ return (a.datetime || '').localeCompare(b.datetime || ''); });
+  });
+  return snap;
+}
+/* 同時 n 本まで。stop() が真になったら新しく始めない */
+function excPool(items, n, fn, stop){
+  return new Promise(function(resolve){
+    var i = 0, active = 0;
+    function start(it){
+      active++;
+      Promise.resolve().then(function(){ return fn(it); }).then(function(){ active--; next(); }, function(){ active--; next(); });
+    }
+    function next(){
+      while(active < n && i < items.length && !(stop && stop())) start(items[i++]);
+      if(active === 0) resolve();
+    }
+    next();
+  });
+}
+
 /* ── 状態（メモリだけ） ── */
-var EXC = { from:'', to:'', reqFrom:'', reqTo:'', reqMode:'', reqDays:0, fetchFrom:'', snap:null, failed:[], refNow:0, refPast:false };
+var EXC = { from:'', to:'', reqFrom:'', reqTo:'', reqMode:'', reqDays:0, fetchFrom:'', refNow:0, refPast:false,
+            pending:{}, failed:{}, total:0, done:0 };
 var EXC_LOADING = false;
 var EXC_ERR = '';
 var EXC_SEL = '';      // 選択中の方（排便記録の id。保存しない）
@@ -3642,8 +4197,16 @@ function ensureExcData(){
   var stale = excStale();
   if(!stale && excLoaded()) return;
   if(EXC_LOADING) return;
-  excLoad();
+  return excLoad();
 }
+/* 読めていない日（読み込み中＋読めず・古い順） */
+function excHidden(){
+  var o = Object.create(null);
+  Object.keys(EXC.pending || {}).forEach(function(d){ o[d] = 1; });
+  Object.keys(EXC.failed || {}).forEach(function(d){ o[d] = 1; });
+  return Object.keys(o).sort();
+}
+function excSnapNow(){ return excBuildSnap(EXC_CACHE, EXC.fetchFrom, EXC.to); }
 /* 1回の読み取り。本文は text/plain（CORS の preflight を起こさない）・合言葉は本文だけ・30秒で打ち切る */
 function excPost(cfg, body){
   var b = {}; for(var k in body){ if(Object.prototype.hasOwnProperty.call(body, k)) b[k] = body[k]; }
@@ -3659,7 +4222,7 @@ function excPost(cfg, body){
     try{ o = JSON.parse(String(txt || '').trim()); }catch(e){ o = null; }
     if(!o || typeof o !== 'object') throw new Error('EXC_FORMAT');
     if(o.ok !== true) throw new Error((o.code === 403 || o.code === '403') ? 'EXC_AUTH' : 'EXC_REFUSED');
-    if(!(Array.isArray(o.residents))) throw new Error('EXC_FORMAT');
+    if(!Array.isArray(o.residents)) throw new Error('EXC_FORMAT');
     return o;
   });
 }
@@ -3683,64 +4246,136 @@ function excCfgNotice(cfg){
   d.appendChild(a);
   b.appendChild(d);
 }
-function excLoad(){
+function excStatusLine(){
+  var el = $('excStatus'); if(!el) return;
+  el.textContent = (EXC.done < EXC.total) ? '読み込み中 ' + EXC.done + '/' + EXC.total : (EXC.from + ' 〜 ' + EXC.to);
+}
+/* 塊を同時3本まで読み、届くたびに器へ入れて描き直す（excLoad と「もう一度読む」の共通）。
+   ★窓の getAll は失敗したら1回だけ自動で読み直す（同じ枠の中で＝4本目を開けない）。合言葉違いは読み直さない */
+function excRunTasks(mine, cfg, cache, tasks){
+  var st = { anyOk:false, authErr:null, lastErr:null };
+  function post(t){
+    return excPost(cfg, t.body)['catch'](function(e){
+      if(t.body.action === 'getAll' && !t.retried && String(e && e.message) !== 'EXC_AUTH'){ t.retried = true; return excPost(cfg, t.body); }
+      throw e;
+    });
+  }
+  function runOne(t){
+    return post(t).then(function(o){
+      st.anyOk = true;
+      excCacheStore(cache, o, t.days, Date.now());
+      t.days.forEach(function(d){ delete mine.pending[d]; delete mine.failed[d]; });
+    }, function(e){
+      st.lastErr = e;
+      if(String(e && e.message) === 'EXC_AUTH') st.authErr = e;
+      t.days.forEach(function(d){ if(mine.pending[d]){ delete mine.pending[d]; mine.failed[d] = true; } });
+    }).then(function(){
+      mine.done++;
+      if(EXC === mine && !excStale()){ excStatusLine(); excRenderBanner(); excRenderList(); excRenderBody(); }
+    });
+  }
+  return excPool(tasks, EXC_PARALLEL, runOne, function(){ return !!st.authErr; }).then(function(){
+    /* 打ち切った塊（合言葉違い）の日も読めなかった日に */
+    Object.keys(mine.pending).forEach(function(d){ delete mine.pending[d]; mine.failed[d] = true; });
+    mine.done = mine.total;
+    return st;
+  });
+}
+/* 「もう一度読む」: 読めなかった日だけを読み直す（窓の日は getAll・それより前は getDays を7日ずつ） */
+function excRetryFailed(){
+  if(EXC_LOADING || !excLoaded() || excStale()) return Promise.resolve();
+  var cfg = excReadCfg();
+  if(cfg === null || cfg === 'invalid') return Promise.resolve();
+  var mine = EXC, cache = excCacheFor(cfg.url);
+  var days = Object.keys(mine.failed).sort();
+  if(!days.length) return Promise.resolve();
+  var now = Date.now(), today = excJstDay(now), winFrom = excAddDays(today, -(EXC_RECENT_DAYS - 1));
+  var win = days.filter(function(d){ return d >= winFrom && d <= today; });
+  var old = days.filter(function(d){ return d < winFrom; }).reverse();
+  var tasks = [];
+  if(win.length){
+    var all = [];
+    for(var w = winFrom; w <= today; w = excAddDays(w, 1)) all.push(w);
+    tasks.push({ body:{ action:'getAll', since:now + 60000 }, days:all });
+  }
+  for(var i = 0; i < old.length; i += EXC_GETDAYS_MAX) { var ch = old.slice(i, i + EXC_GETDAYS_MAX).reverse(); tasks.push({ body:{ action:'getDays', days:ch }, days:ch }); }
+  win.concat(old).forEach(function(d){ delete mine.failed[d]; mine.pending[d] = true; });
+  mine.total += tasks.length;
+  EXC_LOADING = true;
+  rgBusyExc(true);
+  excStatusLine(); excRenderBanner(); excRenderList(); excRenderBody();
+  return excRunTasks(mine, cfg, cache, tasks).then(function(){
+    EXC_LOADING = false;
+    rgBusyExc(false);
+    if(EXC === mine && !excStale()){ excStatusLine(); excRenderBanner(); excRenderList(); excRenderBody(); }
+  });
+}
+/* opts: force＝全部取り直す（「読み込み」ボタン）／quiet＝先読み（失敗しても赤帯を出さない） */
+function excLoad(opts){
+  opts = opts || {};
   var r = sharedRange();
-  if(r.invalid){ $('excStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
+  if(r.invalid){ if(!opts.quiet) $('excStatus').textContent = '開始日と終了日を入れてください'; return Promise.resolve(); }
   var cfg = excReadCfg();
   if(cfg === null || cfg === 'invalid'){
-    excCfgNotice(cfg); $('excList').textContent = ''; $('excWho').textContent = ''; $('excBody').textContent = '';
-    $('excActions').hidden = true;
+    if(!opts.quiet){
+      excCfgNotice(cfg); $('excList').textContent = ''; $('excWho').textContent = ''; $('excBody').textContent = '';
+      $('excActions').hidden = true;
+    }
     return Promise.resolve();
   }
   EXC_LOADING = true;
   EXC_ERR = '';
+  $('excBanner').textContent = '';   // 前回の失敗の赤帯を残さない
   rgBusyExc(true);
   if(excStale()) rgClearExc();
   var now = Date.now();
-  var fetchFrom = excAddDays(r.from, -EXC_MARGIN_DAYS);
-  var plan = excPlan(fetchFrom, r.to, now);
-  var raw = { residents:null, cfg:null, records:[] }, failed = [];
-  var p;
-  $('excStatus').textContent = '読み込み中…';
-  if(plan.mode === 'getAll'){
-    p = excPost(cfg, { action:'getAll', since:plan.since }).then(function(o){
-      raw.residents = o.residents; raw.cfg = o.cfg; raw.records = (Array.isArray(o.records)) ? o.records : [];
-    });
-  }else{
-    /* 7日ずつ順番に（同時に投げない）。途中で失敗した日は控えて、空白を「排便なし」と見せない */
-    var n = plan.chunks.length, lastErr = null;
-    p = plan.chunks.reduce(function(pr, ch, i){
-      return pr.then(function(){
-        $('excStatus').textContent = '読み込み中 ' + (i + 1) + '/' + n;
-        return excPost(cfg, { action:'getDays', days:ch }).then(function(o){
-          raw.residents = o.residents; raw.cfg = o.cfg;
-          if(Array.isArray(o.records)) raw.records = raw.records.concat(o.records);
-        }, function(e){
-          lastErr = e;
-          if(String(e && e.message) === 'EXC_AUTH') throw e;   // 合言葉違いは全部同じなので打ち切る
-          failed = failed.concat(ch);
-        });
-      });
-    }, Promise.resolve()).then(function(){
-      if(raw.residents === null) throw (lastErr || new Error('EXC_FORMAT'));   // 1回も読めなかった
-    });
+  var ref = excRefNow(r.to, now);
+  /* 期間がすべて先の日（今日より後）＝読める日が無い。通信せず、その旨を出す（いつまでも「読み込み中」にしない） */
+  if(r.from > excJstDay(now)){
+    EXC = { from:r.from, to:r.to, reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(), fetchFrom:r.from, refNow:ref.ms, refPast:ref.past,
+            pending:Object.create(null), failed:Object.create(null), total:0, done:0, noDays:true };
+    EXC_LOADING = false;
+    rgBusyExc(false);
+    excStatusLine(); excRenderBanner(); excRenderList(); excRenderBody();
+    return Promise.resolve();
   }
-  return p.then(function(){
-    var ref = excRefNow(r.to, now);
-    EXC = { from:r.from, to:r.to, reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
-            fetchFrom:fetchFrom, snap:excParsePayload(raw, fetchFrom, r.to),
-            failed:failed.filter(function(d){ return d <= r.to; }).sort(), refNow:ref.ms, refPast:ref.past };
-    $('excStatus').textContent = EXC.from + ' 〜 ' + EXC.to;
-    excRenderBanner(); excRenderList(); excRenderBody();
+  var bandFrom = excAddDays(r.to, -(EXC_BAND_DAYS - 1));   // 一覧の帯（終了日までの14日）のため、期間が短くてもここまで読む
+  var fetchFrom = excAddDays(r.from < bandFrom ? r.from : bandFrom, -EXC_MARGIN_DAYS);
+  var cache = excCacheFor(cfg.url);
+  if(opts.force) cache.days = Object.create(null);
+  var plan = excPlan(fetchFrom, r.to, now, cache.days, !!opts.force);
+  var tasks = [];
+  if(plan.getAll) tasks.push({ body:{ action:'getAll', since:plan.since }, days:plan.allDays });
+  plan.chunks.forEach(function(ch){ tasks.push({ body:{ action:'getDays', days:ch }, days:ch }); });
+  var mine = { from:r.from, to:r.to, reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
+               fetchFrom:fetchFrom, refNow:ref.ms, refPast:ref.past,
+               pending:Object.create(null), failed:Object.create(null), total:tasks.length, done:0 };
+  plan.winDays.forEach(function(d){ mine.pending[d] = true; });
+  plan.chunks.forEach(function(ch){ ch.forEach(function(d){ mine.pending[d] = true; }); });
+  /* 窓より前で、器にも無く今回も読まない日は無い（plan が全部拾う）。器の日はそのまま使う */
+  EXC = mine;
+  excStatusLine();
+  excRenderBanner(); excRenderList(); excRenderBody();
+  return excRunTasks(mine, cfg, cache, tasks).then(function(st){
+    if(st.authErr) throw st.authErr;
+    if(tasks.length && !st.anyOk) throw (st.lastErr || new Error('EXC_FORMAT'));   // 1本も読めなかった＝失敗（器の古い日だけで出さない）
   })['catch'](function(e){
-    $('excStatus').textContent = '';
-    EXC_ERR = excErrMsg(e);
-    var b = $('excBanner'); b.textContent = '';
-    var d = document.createElement('div'); d.className = 'err'; d.textContent = EXC_ERR;
-    b.appendChild(d);
+    /* 何も読めなかった（または合言葉違い）。先読み（quiet）で、その画面を見ていない時は赤帯を出さず、開いた時に読み直す */
+    var showIt = !opts.quiet || currentScreen() === 'scr-exc';
+    if(EXC === mine) EXC = { from:'', to:'', reqFrom:'', reqTo:'', reqMode:'', reqDays:0, fetchFrom:'', refNow:0, refPast:false,
+                             pending:{}, failed:{}, total:0, done:0 };
+    if(showIt){
+      $('excStatus').textContent = '';
+      EXC_ERR = excErrMsg(e);
+      excRenderList(); excRenderBody();
+      var b = $('excBanner'); b.textContent = '';
+      var d = document.createElement('div'); d.className = 'err'; d.textContent = EXC_ERR;
+      b.appendChild(d);
+    }
   }).then(function(){
     EXC_LOADING = false;
     rgBusyExc(false);
+    if(EXC === mine && !excStale()){ excStatusLine(); excRenderBanner(); excRenderList(); excRenderBody(); }
     if(EXC_ERR){
       if(excStale()){ excRenderList(); excRenderBody(); }
     }
@@ -3750,41 +4385,135 @@ function excLoad(){
 }
 
 function excRenderBanner(){
-  var b = $('excBanner'); b.textContent = '';
+  var b = $('excBanner');
+  if(EXC_ERR && !excLoaded()) return;   // 失敗の理由（excLoad が出した）を消さない
+  b.textContent = '';
   if(excStale() || !excLoaded()) return;
-  if(EXC.failed.length){
+  var failed = Object.keys(EXC.failed || {}).sort();
+  if(failed.length){
     var e = document.createElement('div'); e.className = 'err';
-    var head = EXC.failed.slice(0, 6).map(fmtDate).join('・');
-    e.textContent = '⚠️ 一部の日を読めませんでした（' + head + (EXC.failed.length > 6 ? ' ほか' + (EXC.failed.length - 6) + '日' : '')
-      + '）。この日の空白は「排便なし」ではありません。「読み込み」をもう一度押してください。';
+    var head = failed.slice(0, 6).map(fmtDate).join('・');
+    var refDay = EXC.refPast ? EXC.to : excJstDay(EXC.refNow);
+    e.appendChild(document.createTextNode((failed.indexOf(refDay) >= 0 ? '⚠️ 直近の日を読めませんでした。直近の判定は出せません（' : '⚠️ 一部の日を読めませんでした（')
+      + head + (failed.length > 6 ? ' ほか' + (failed.length - 6) + '日' : '')
+      + '）。この日の空白は「排便なし」ではありません。'));
+    var rb = document.createElement('button'); rb.type = 'button'; rb.className = 'btn exretry'; rb.textContent = 'もう一度読む（読めなかった日だけ）';
+    rb.disabled = EXC_LOADING;
+    rb.addEventListener('click', function(){ excRetryFailed(); });
+    e.appendChild(document.createElement('br')); e.appendChild(rb);
     b.appendChild(e);
+  }
+  if(EXC.noDays){
+    var nd = document.createElement('div'); nd.className = 'note'; nd.textContent = EXC_MSG_NODAYS; b.appendChild(nd);
   }
   var n = document.createElement('p'); n.className = 'hint';
   n.textContent = (EXC.refPast ? '「最後の排便から◯日」は ' + fmtDate(EXC.to) + ' 時点（終了日の終わり）で数えています。' : '')
     + '数え方は排便記録アプリと同じです（少量は48時間以内の3回目で1回分）。期間内に排便1回分が無い方・読めなかった日の後は「◯日以上」と下限で出します。';
   b.appendChild(n);
 }
+/* 一覧の上の切替（並べ方・要注意だけ）。UI 状態として端末に覚える */
+function excToolbar(ui){
+  var bar = document.createElement('div'); bar.className = 'bar exbar';
+  var lb = document.createElement('span'); lb.className = 'muted'; lb.textContent = '並べ方'; bar.appendChild(lb);
+  [['risk','危険順'],['room','居室順']].forEach(function(p){
+    var bt = document.createElement('button'); bt.type = 'button'; bt.className = 'btn exsort';
+    bt.textContent = p[1]; bt.setAttribute('aria-pressed', String(ui.sort === p[0]));
+    bt.addEventListener('click', function(){ lsSet(LS_EXC_SORT, p[0]); excRenderList(); });
+    bar.appendChild(bt);
+  });
+  var lab = document.createElement('label'); lab.className = 'rgchk';
+  var ck = document.createElement('input'); ck.type = 'checkbox'; ck.checked = ui.attn;
+  ck.addEventListener('change', function(){ lsSet(LS_EXC_ATTN, ck.checked ? '1' : '0'); excRenderList(); });
+  lab.appendChild(ck); lab.appendChild(document.createTextNode(' 要注意だけ（尿か便が注意・危険）'));
+  bar.appendChild(lab);
+  return bar;
+}
+/* 帯・カレンダーのマスの中身（点・少・💊・異常の文字） */
+function excCellInto(cell, c, compact){
+  if(c.failed){
+    var f = document.createElement('span'); f.className = 'sc-tx'; f.textContent = c.pending ? (compact ? '…' : '読み込み中') : (compact ? '?' : '読めず');
+    cell.appendChild(f); return;
+  }
+  var dots = document.createElement('span'); dots.className = 'sc-dots';
+  c.items.forEach(function(it){
+    if(it.lax){ var l = document.createElement('span'); l.textContent = '💊'; l.title = '下剤 ' + it.time + ' ' + it.medicine; dots.appendChild(l); return; }
+    var dot = document.createElement('span'); dot.className = 'sc-dot' + (it.abn && it.abn.length ? ' abn' : ''); dot.style.background = it.color;
+    dot.title = it.time + ' ' + (it.cons || '性状未記入') + ' ' + it.amount + (it.abn && it.abn.length ? ' ' + it.abn.join('・') : '');
+    dots.appendChild(dot);
+    if(it.small) dots.appendChild(document.createTextNode('少'));
+  });
+  if(c.items.length) cell.appendChild(dots);
+  if(c.abn.length && !compact){ var ab = document.createElement('span'); ab.className = 'exabn'; ab.textContent = c.abn.join('・'); cell.appendChild(ab); }
+  if(c.abn.length) cell.classList.add('sc-abn');
+}
+function excCellLabel(c){
+  if(c.failed) return fmtDate(c.day) + ' ' + (c.pending ? '読み込み中' : '読めませんでした');
+  var desc = c.items.map(function(it){ return it.lax ? '下剤 ' + it.time : '排便 ' + it.time + ' ' + (it.amount || ''); });
+  return fmtDate(c.day) + ' ' + (desc.length ? desc.join('・') : '記録なし') + (c.abn.length ? '・' + c.abn.join('・') : '')
+    + (c.cls === 'ng' ? '（危険）' : (c.cls === 'w' ? '（注意）' : ''));
+}
 function excRenderList(){
   var box = $('excList'); box.textContent = '';
   if(excStale()){ rgStaleInto(box, EXC_LOADING, EXC_ERR); return; }
-  if(!excLoaded() || !EXC.snap) return;
-  var rows = excRows(EXC.snap, ROSTER, EXC.refNow, EXC.fetchFrom, EXC.failed);
+  if(!excLoaded()) return;
+  if(EXC.noDays || !EXC_CACHE || !EXC_CACHE.residents){
+    var pl = document.createElement('p'); pl.className = 'muted';
+    pl.textContent = (EXC.noDays || !EXC_LOADING) ? EXC_MSG_NODAYS : '読み込み中…';
+    box.appendChild(pl); return;
+  }
+  var ui = excUiState();
+  box.appendChild(excToolbar(ui));
+  var snap = excSnapNow();
+  var rows = excRows(snap, ROSTER, EXC.refNow, EXC.fetchFrom, excHidden(),
+                     { from:EXC.from, to:EXC.to, pending:EXC.pending, sort:ui.sort, attn:ui.attn });
   if(!rows.length){
     var p = document.createElement('p'); p.className = 'muted';
-    p.textContent = '排便記録に表示できる入居者がいません';
+    p.textContent = ui.attn ? '要注意の方はいません（「要注意だけ」を外すと全員を出します）' : '排便記録に表示できる入居者がいません';
     box.appendChild(p); return;
   }
   var ul = document.createElement('div'); ul.className = 'exlist';
   rows.forEach(function(r){
+    var lv = r.sLoading ? 'ok' : r.status.level;
+    var unk = (r.status.level === 'unknown' || r.urine.level === 'unknown');
     var bt = document.createElement('button');
     bt.type = 'button';
-    bt.className = 'exrow' + (r.status.level === 'danger' ? ' lv-ng' : (r.status.level === 'warn' ? ' lv-w' : ''));
+    bt.className = 'exrow' + (unk ? ' lv-unk' : (lv === 'danger' ? ' lv-ng' : (lv === 'warn' ? ' lv-w' : '')));
     bt.setAttribute('aria-pressed', String(r.id === EXC_SEL));
-    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = r.name;
-    bt.appendChild(nm);
-    if(r.roomLabel){ var rm = document.createElement('span'); rm.className = 'rm'; rm.textContent = r.roomLabel; bt.appendChild(rm); }
-    var st = document.createElement('span'); st.className = 'st'; st.textContent = excStatusText(r.status);
-    bt.appendChild(st);
+    /* 1段目: 氏名・居室・異常の印・便の判定 */
+    var l1 = document.createElement('span'); l1.className = 'exl1';
+    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = r.name; l1.appendChild(nm);
+    if(r.roomLabel){ var rm = document.createElement('span'); rm.className = 'rm'; rm.textContent = r.roomLabel; l1.appendChild(rm); }
+    if(r.abn.length){ var ab = document.createElement('span'); ab.className = 'exabn'; ab.textContent = '⚠' + r.abn.join('・'); l1.appendChild(ab); }
+    var st = document.createElement('span'); st.className = 'st'; st.textContent = r.sLoading ? '排便: 読み込み中…' : excStatusText(r.status);
+    l1.appendChild(st);
+    bt.appendChild(l1);
+    /* 2段目: 直近14日の帯 */
+    var band = document.createElement('span'); band.className = 'exband';
+    r.band.forEach(function(c){
+      var cell = document.createElement('span');
+      if(c.blank){ cell.className = 'exb exb-blank'; band.appendChild(cell); return; }
+      cell.className = 'exb' + (c.failed ? ' exb-out' : (c.cls === 'ng' ? ' sc-ng' : (c.cls === 'w' ? ' sc-w' : '')));
+      excCellInto(cell, c, true);
+      cell.title = excCellLabel(c);
+      band.appendChild(cell);
+    });
+    band.setAttribute('aria-label', '直近' + EXC_BAND_DAYS + '日: ' + r.band.filter(function(c){ return !c.blank; }).map(excCellLabel).join('、'));
+    bt.appendChild(band);
+    /* 3段目: 最新の便・直近の下剤と反応・排尿 */
+    var l3 = document.createElement('span'); l3.className = 'exl3';
+    var t1 = document.createElement('span');
+    t1.textContent = '最新の便: ' + (r.stoolHid ? excHidText(r.stoolHid) : r.lastStool ? ([excConsBs(r.lastStool), r.lastStool.stoolAmt].filter(Boolean).join('・') || '性状未記入') : '—');
+    l3.appendChild(t1);
+    var t2 = document.createElement('span');
+    t2.textContent = '下剤: ' + (r.laxHid ? excHidText(r.laxHid) : r.lastLax ? [fmtDate(r.lastLax.date) + ' ' + (r.lastLax.time || ''), r.lastLax.medicine || '（薬名なし）', r.lastLax.tablets ? r.lastLax.tablets + '錠' : ''].filter(Boolean).join(' ') + ' ' + excLaxReactText(r.laxReact) : '—');
+    l3.appendChild(t2);
+    var t3 = document.createElement('span');
+    t3.className = (!r.uLoading && r.urine.level === 'danger') ? 'u-ng' : ((!r.uLoading && r.urine.level === 'warn') ? 'u-w' : '');
+    var dayLbl = (EXC.refPast ? fmtDate(EXC.to) : '今日');
+    t3.textContent = '排尿: ' + (r.uLoading ? '読み込み中…' : excUrineText(r.urine).replace(/^排尿: /, '')) + '・' + dayLbl + ' '
+      + (r.urineDayHid ? excHidText(r.urineDayHid) : excUrineDayText(r.urineDay));
+    l3.appendChild(t3);
+    bt.appendChild(l3);
     bt.addEventListener('click', function(){
       EXC_SEL = (EXC_SEL === r.id) ? '' : r.id;   // 選択は保存しない
       excRenderList(); excRenderBody();
@@ -3792,6 +4521,9 @@ function excRenderList(){
     ul.appendChild(bt);
   });
   box.appendChild(ul);
+  var lg = document.createElement('p'); lg.className = 'hint';
+  lg.textContent = '帯＝終了日までの直近' + EXC_BAND_DAYS + '日（左が古い日）。点の色＝便の性状・少＝少量・💊＝下剤・赤い枠＝血便などの異常・…＝読み込み中・?＝読めず。地の色はカレンダーと同じです。';
+  box.appendChild(lg);
 }
 /* 期間内の全日付（古い順） */
 function excAllDates(){
@@ -3800,22 +4532,31 @@ function excAllDates(){
   while(d <= EXC.to && out.length < VM_MAX_DAYS + 31){ out.push(d); d = excAddDays(d, 1); }
   return out;
 }
+function excSec(title){
+  var sec = document.createElement('div'); sec.className = 'vmsec';
+  var h = document.createElement('h3'); h.textContent = title; sec.appendChild(h);
+  return sec;
+}
+function excLine(parent, text, cls){ var p = document.createElement('div'); p.className = 'exline' + (cls ? ' ' + cls : ''); p.textContent = text; parent.appendChild(p); return p; }
 function excRenderBody(){
   var box = $('excBody'); box.textContent = '';
   $('excWho').textContent = ''; $('excActions').hidden = true;
   if(excStale()){ rgStaleInto(box, EXC_LOADING, EXC_ERR); return; }
-  if(!excLoaded() || !EXC.snap) return;
+  if(!excLoaded() || EXC.noDays || !EXC_CACHE || !EXC_CACHE.residents) return;
   if(!EXC_SEL){
     var p0 = document.createElement('p'); p0.className = 'muted';
-    p0.textContent = '上の一覧から入居者を選ぶと、日ごとの記録と排便のカレンダーが出ます。';
+    p0.textContent = '上の一覧から入居者を選ぶと、期間のまとめ・下剤と反応・排便のカレンダー・日ごとの記録が出ます。';
     box.appendChild(p0); return;
   }
+  var snap = excSnapNow(), hidden = excHidden();
   var res = null;
-  EXC.snap.residents.forEach(function(r){ if(r.id === EXC_SEL && r.active && !r.hidden) res = r; });
+  snap.residents.forEach(function(r){ if(r.id === EXC_SEL && r.active && !r.hidden) res = r; });
   if(!res){ EXC_SEL = ''; return; }
-  var pool = EXC.snap.recs[res.id] || [];
-  var st = excStatusOf(pool, res, EXC.snap.cfg, EXC.refNow, EXC.fetchFrom, EXC.failed);
-  var cfg = excStoolCfgOf(res, EXC.snap.cfg);
+  var pool = snap.recs[res.id] || [];
+  var st = excStatusOf(pool, res, snap.cfg, EXC.refNow, EXC.fetchFrom, hidden);
+  var ur = excUrineStatusOf(pool, res, snap.cfg, EXC.refNow, EXC.fetchFrom, hidden);
+  var cfg = excStoolCfgOf(res, snap.cfg), ucfg = excUrineCfgOf(res, snap.cfg);
+  var sLoading = st.atLeast && !!(st.lastHidden && EXC.pending[st.lastHidden]);
 
   var who = document.createElement('div'); who.className = 'who';
   who.appendChild(document.createTextNode(res.name + ' 様'));
@@ -3825,21 +4566,86 @@ function excRenderBody(){
   $('excActions').hidden = false;
 
   var s0 = document.createElement('p');
-  s0.className = 'exst' + (st.level === 'danger' ? ' lv-ng' : (st.level === 'warn' ? ' lv-w' : ''));
-  s0.textContent = excStatusText(st) + (EXC.refPast ? '（' + fmtDate(EXC.to) + ' 時点）' : '')
+  s0.className = 'exst' + (sLoading ? '' : (st.level === 'unknown' ? ' lv-unk' : (st.level === 'danger' ? ' lv-ng' : (st.level === 'warn' ? ' lv-w' : ''))));
+  s0.textContent = (sLoading ? '排便: 読み込み中…' : excStatusText(st)) + (EXC.refPast ? '（' + fmtDate(EXC.to) + ' 時点）' : '')
     + '　注意 ' + cfg.stoolWarnD + '日・危険 ' + cfg.stoolDangerD + '日';
   box.appendChild(s0);
-  var m = excMatch(res, ROSTER, EXC.snap.residents);
+  var s1 = document.createElement('p');
+  var uLoad = ur.atLeast && !!(ur.lastHidden && EXC.pending[ur.lastHidden]);
+  s1.className = 'exst' + (uLoad ? '' : (ur.level === 'unknown' ? ' lv-unk' : (ur.level === 'danger' ? ' lv-ng' : (ur.level === 'warn' ? ' lv-w' : ''))));
+  s1.textContent = (uLoad ? '排尿: 読み込み中…' : excUrineText(ur)) + '　注意 ' + ucfg.urineWarnH + '時間・危険 ' + ucfg.urineDangerH + '時間';
+  box.appendChild(s1);
+  var m = excMatch(res, ROSTER, snap.residents);
   if(!m.ok){ var mm = document.createElement('p'); mm.className = 'hint'; mm.textContent = excMatchMsg(m); box.appendChild(mm); }
+  if(hidden.length){ var hp = document.createElement('p'); hp.className = 'hint'; hp.textContent = EXC.done < EXC.total ? '読み込み中の日があります。届いたものから順に表示しています。' : '読めなかった日があります（上の帯をご覧ください）。'; box.appendChild(hp); }
 
   var dates = excAllDates();
 
+  /* ── 期間のまとめ ── */
+  var sm = excPeriodSummary(pool, res, snap.cfg, EXC.from, EXC.to, EXC.fetchFrom, hidden, EXC.refNow);
+  var sec0 = excSec('期間のまとめ（' + fmtDate(EXC.from) + '〜' + fmtDate(EXC.to) + '）');
+  excLine(sec0, '期間中の排便 ' + sm.nStool + '回（うち少量 ' + sm.nSmall + '回）・排便1回分として数えた回数 ' + sm.nReset + '回'
+    + (sm.failedNote ? '（読めなかった日（' + fmtDate(sm.failedNote) + '）より前は数えていません）'
+       : (sm.uncertain ? '（期間の初めは数え切れていないことがあります）' : '')));
+  excLine(sec0, '排便1回分の無かった最長の日数 ' + (sm.maxAfter ? sm.maxG + '日（' + fmtDate(sm.maxAfter) + ' の排便のあと）' : '—'));
+  excLine(sec0, '平均の排便間隔（この期間） ' + excFmtDur(sm.avgStoolH));
+  excLine(sec0, '下剤 ' + sm.nLax + '回' + (sm.nLax ? '（' + EXC_LAX_REACT_H + '時間以内に排便あり ' + sm.lxOk + '回'
+    + (sm.lxOk ? '・平均 ' + excFmtDur(sm.lxAvgH) + '後' : '') + '／なし ' + sm.lxNone + '回' + (sm.lxWait ? '／判定待ち ' + sm.lxWait + '回' : '')
+    + (sm.lxUnk ? '／不明 ' + sm.lxUnk + '回' : '') + '）' : ''));
+  if(sm.laxNote) excLine(sec0, '下剤メモ: ' + sm.laxNote.replace(/\n/g, ' '));
+  box.appendChild(sec0);
+
+  /* ── 下剤と反応 ── */
+  var lx = excLaxList(pool, EXC.from, EXC.to, EXC.refNow, hidden);
+  if(lx.rows.length){
+    var secL = excSec('下剤と反応（' + EXC_LAX_REACT_H + '時間以内の排便を反応とする）');
+    if(lx.sum.length) excLine(secL, lx.sum.join('　／　'), 'exsum');
+    lx.rows.forEach(function(x){
+      excLine(secL, fmtDate(x.date) + ' ' + (x.time || '') + '　💊 ' + x.medicine + (x.tablets ? ' ' + x.tablets + '錠' : '') + '　'
+        + excLaxReactText(x.react) + (x.detail ? '（' + x.detail + '）' : ''), 'exlx');
+    });
+    box.appendChild(secL);
+  }
+
+  /* ── トイレの成功率・失禁率（週ごと）と交換 ── */
+  var gw = excGuideWeeks(pool, EXC.from, EXC.to, hidden);
+  var pads = excPadTotals(pool, EXC.from, EXC.to);
+  if(gw.some(function(w){ var g = w.g; return g.toilet + g.miss + g.uN + g.sN > 0 || g.pads; })){
+    var secG = excSec('トイレの成功率・失禁率（週ごと）');
+    var wrapG = document.createElement('div'); wrapG.className = 'vmwrap';
+    var tg = document.createElement('table'); tg.className = 'vmtbl extbl';
+    var hr = document.createElement('tr');
+    ['週','トイレ成功率','排尿の失禁率','排便の失禁率'].concat(pads.any ? ['交換'] : []).forEach(function(x){
+      var th = document.createElement('th'); th.textContent = x; th.setAttribute('scope', 'col'); hr.appendChild(th);
+    });
+    var thd = document.createElement('thead'); thd.appendChild(hr); tg.appendChild(thd);
+    var tbg = document.createElement('tbody');
+    gw.forEach(function(w){
+      var g = w.g, tr = document.createElement('tr');
+      var th = document.createElement('th'); th.setAttribute('scope', 'row');
+      th.textContent = fmtDate(w.from) + '〜' + fmtDate(w.to) + (w.hidden ? '（読めていない日あり）' : '');
+      tr.appendChild(th);
+      if(g.toilet + g.miss + g.uN + g.sN === 0 && !g.pads){
+        var td0 = document.createElement('td'); td0.colSpan = pads.any ? 4 : 3; td0.className = 'na'; td0.textContent = '記録なし'; tr.appendChild(td0);
+      }else{
+        [excGsPct(g.succ, g.toilet, g.toilet + g.miss), excGsPct(g.uInc, g.uPad, g.uN), excGsPct(g.sInc, g.sPad, g.sN)]
+          .concat(pads.any ? [g.pads ? g.pads + '枚' : '—'] : []).forEach(function(v){ var td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+      }
+      tbg.appendChild(tr);
+    });
+    tg.appendChild(tbg); wrapG.appendChild(tg); secG.appendChild(wrapG);
+    excLine(secG, '成功率＝トイレで出た記録 ÷（トイレで出た記録＋誘導・排泄なし）。自発のトイレも含みます。失禁率＝パッド内を含む記録の割合。', 'sc-leg');
+    if(pads.any){
+      excLine(secG, '交換したもの（この期間）: ' + (pads.n ? Object.keys(pads.o).map(function(k){ return k + ' ' + pads.o[k] + '枚'; }).join('・') + '　計 ' + pads.n + '枚' : '記録なし'));
+    }
+    box.appendChild(secG);
+  }
+
   /* ── 排便のカレンダー ── */
-  var sec1 = document.createElement('div'); sec1.className = 'vmsec';
-  var h1 = document.createElement('h3'); h1.textContent = '排便のカレンダー'; sec1.appendChild(h1);
+  var sec1 = excSec('排便のカレンダー');
   var grid = document.createElement('div'); grid.className = 'sc-grid';
   WD.forEach(function(w){ var x = document.createElement('div'); x.className = 'sc-wd'; x.textContent = w; grid.appendChild(x); });
-  excCalendar(pool, res, EXC.snap.cfg, EXC.from, EXC.to, EXC.fetchFrom, EXC.failed, EXC.refNow).forEach(function(c, i){
+  excCalendar(pool, res, snap.cfg, EXC.from, EXC.to, EXC.fetchFrom, hidden, EXC.refNow, EXC.pending).forEach(function(c, i){
     var cell = document.createElement('div');
     if(c.blank){ cell.className = 'sc-day sc-blank'; grid.appendChild(cell); return; }
     cell.className = 'sc-day' + (c.failed ? ' sc-out' : (c.cls === 'ng' ? ' sc-ng' : (c.cls === 'w' ? ' sc-w' : '')));
@@ -3847,24 +4653,9 @@ function excRenderBody(){
     var p = c.day.split('-');
     dn.textContent = (Number(p[2]) === 1 || i < 7 ? Number(p[1]) + '/' : '') + Number(p[2]);
     cell.appendChild(dn);
-    if(c.failed){ var f = document.createElement('span'); f.className = 'sc-tx'; f.textContent = '読めず'; cell.appendChild(f); }
-    var dots = document.createElement('span'); dots.className = 'sc-dots';
-    var desc = [];
-    c.items.forEach(function(it){
-      if(it.lax){
-        var l = document.createElement('span'); l.textContent = '💊'; l.title = '下剤 ' + it.time + ' ' + it.medicine; dots.appendChild(l);
-        desc.push('下剤 ' + it.time);
-        return;
-      }
-      var dot = document.createElement('span'); dot.className = 'sc-dot'; dot.style.background = it.color;
-      dot.title = it.time + ' ' + (it.cons || '性状未記入') + ' ' + it.amount;
-      dots.appendChild(dot);
-      if(it.small) dots.appendChild(document.createTextNode('少'));
-      desc.push('排便 ' + it.time + ' ' + (it.amount || ''));
-    });
-    if(c.items.length) cell.appendChild(dots);
+    excCellInto(cell, c, false);
     if(c.cls){ var sr = document.createElement('span'); sr.className = 'sr-only'; sr.textContent = c.cls === 'ng' ? '（危険）' : '（注意）'; cell.appendChild(sr); }
-    cell.setAttribute('aria-label', fmtDate(c.day) + ' ' + (c.failed ? '読めませんでした' : (desc.length ? desc.join('・') : '記録なし')));
+    cell.setAttribute('aria-label', excCellLabel(c));
     grid.appendChild(cell);
   });
   sec1.appendChild(grid);
@@ -3874,35 +4665,36 @@ function excRenderBody(){
     var dot = document.createElement('span'); dot.className = 'sc-dot'; dot.style.background = EXC_SC_COLOR[k];
     lg.appendChild(dot); lg.appendChild(document.createTextNode(k + (i < Object.keys(EXC_SC_COLOR).length - 1 ? '　' : '')));
   });
-  lg.appendChild(document.createTextNode('）／少＝少量／💊＝下剤。黄の地＝排便1回分が' + cfg.stoolWarnD + '日以上なし・赤の地＝'
-    + cfg.stoolDangerD + '日以上なし（少量は48時間以内の3回目で1回分・その日の終わりの時点）。灰色の「読めず」＝読み込めなかった日。'
+  lg.appendChild(document.createTextNode('）／少＝少量／💊＝下剤／赤い枠と文字＝血便・黒色便・血尿・水様便・下痢便。黄の地＝排便1回分が' + cfg.stoolWarnD + '日以上なし・赤の地＝'
+    + cfg.stoolDangerD + '日以上なし（少量は48時間以内の3回目で1回分・その日の終わりの時点）。灰色の「読み込み中」「読めず」＝まだ届いていない・読み込めなかった日。'
     + '期間の始まり・読めなかった日の後は少なめに数えます（実際はそれ以上のことがあります）'));
   sec1.appendChild(lg);
   box.appendChild(sec1);
 
   /* ── 日ごとの記録 ── */
-  var sec2 = document.createElement('div'); sec2.className = 'vmsec';
-  var h2 = document.createElement('h3'); h2.textContent = '日ごとの記録'; sec2.appendChild(h2);
+  var sec2 = excSec('日ごとの記録');
   var wrap = document.createElement('div'); wrap.className = 'vmwrap';
   var t = document.createElement('table'); t.className = 'vmtbl extbl';
   var thead = document.createElement('thead'), htr = document.createElement('tr');
-  ['日付','排便（時刻・量・性状）','下剤（薬名・錠数）','排尿'].forEach(function(x){
+  ['日付','排便（時刻・量・性状・便色）','下剤（薬名・錠数）','排尿（回数・量・尿色）'].forEach(function(x){
     var th = document.createElement('th'); th.textContent = x; th.setAttribute('scope', 'col'); htr.appendChild(th);
   });
   thead.appendChild(htr); t.appendChild(thead);
   var tb = document.createElement('tbody');
-  excDays(pool, dates, EXC.failed, EXC.refNow).forEach(function(x){
+  excDays(pool, dates, hidden, EXC.refNow, EXC.pending).forEach(function(x){
     var tr = document.createElement('tr');
     var th = document.createElement('th'); th.textContent = fmtDate(x.day); th.setAttribute('scope', 'row'); tr.appendChild(th);
     if(x.failed){
-      var tf = document.createElement('td'); tf.colSpan = 3; tf.className = 'bad'; tf.textContent = '読めませんでした（「なし」ではありません）';
+      var tf = document.createElement('td'); tf.colSpan = 3; tf.className = x.pending ? 'na' : 'bad';
+      tf.textContent = x.pending ? '読み込み中…' : '読めませんでした（「なし」ではありません）';
       tr.appendChild(tf); tb.appendChild(tr); return;
     }
     var t1 = document.createElement('td');
     if(!x.stools.length) t1.textContent = 'なし';
     x.stools.forEach(function(s){
       var dv = document.createElement('div');
-      dv.textContent = [s.time, s.amount, s.cons].filter(function(v){ return v; }).join(' ') || '（記入なし）';
+      dv.appendChild(document.createTextNode([s.time, s.amount, s.cons, s.color].filter(function(v){ return v; }).join(' ') || '（記入なし）'));
+      if(s.abn.length){ var ab = document.createElement('strong'); ab.className = 'exabn'; ab.textContent = ' ' + s.abn.join('・'); dv.appendChild(ab); }
       if(s.future){ var fu = document.createElement('span'); fu.className = 'exfuture'; fu.textContent = '時刻が基準時より後です'; dv.appendChild(fu); }
       t1.appendChild(dv);
     });
@@ -3913,13 +4705,16 @@ function excRenderBody(){
       dv.textContent = [l.time, l.medicine, (l.tablets ? l.tablets + '錠' : '')].filter(function(v){ return v; }).join(' ');
       t2.appendChild(dv);
     });
-    var t3 = document.createElement('td'); t3.textContent = x.urine + '回';
+    var t3 = document.createElement('td');
+    t3.appendChild(document.createTextNode(excUrineDayText(x.urineDay) + (x.urineDay.colors.length ? '（' + x.urineDay.colors.join('・') + '）' : '')));
+    if(x.urineAbn){ var ua = document.createElement('strong'); ua.className = 'exabn'; ua.textContent = ' 血尿'; t3.appendChild(ua); }
     tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3);
     tb.appendChild(tr);
   });
   t.appendChild(tb); wrap.appendChild(t); sec2.appendChild(wrap);
   box.appendChild(sec2);
 }
+
 /* 排泄の印刷（その方の詳細）。入居者別・バイタルと同じく共通部品（su-print.js）を通す。
    ★登録は印刷ボタンを押した時に一度だけ（msPrintSetup_ と goto は触らない＝親の決定 2026-10-17） */
 var excPrintReady_ = false;
@@ -3928,6 +4723,41 @@ function excPrintSetup_(){
   SUPrint.define('exc', { label: '排泄', paper: 'A4 portrait', margin: 10, root: '#scr-exc',
     when: function(){ var el = $('scr-exc'); return !!(el && el.classList.contains('on')); } });
   excPrintReady_ = true;
+}
+
+/* ── 先読み（2026-10-17 第2弾・代表者の選択「裏で先に読む」）──
+   起動して最初に開いたタブを読み終えたら、裏でほかのタブ（入居者別・日付別・検索が共有する申し送り、バイタルの measures、排泄）を
+   順に読んでおく（同時には投げない＝画面の読み込みを邪魔しない）。タブを切り替えた時に読み終えていれば待ちなし。
+   ★先読み中に期間を変えたら、その結果は今の stale の仕組みで「古い期間」として扱われ、タブを開いた時に読み直す（捨てる）。
+   ★先読みの失敗は赤帯を出さない（quiet）。接続設定が無いもの（排便記録の設定が無い端末など）は先読みしない。 */
+var PF_STARTED = false;
+function pfBusy(){ return LOADING || VM_LOADING || EXC_LOADING; }
+function pfSteps(){
+  var c = loadCfg(), have = !!(c.url && c.token), steps = [];
+  if(have){
+    steps.push(function(){ return ((dataLoaded() && !baseStale()) || LOADING) ? null : load({ quiet:true }); });
+    steps.push(function(){ return ((vmLoaded() && !vmStale()) || VM_LOADING) ? null : vmLoad({ quiet:true }); });
+  }
+  var ec = excReadCfg();
+  if(ec && ec !== 'invalid'){
+    steps.push(function(){ return ((excLoaded() && !excStale()) || EXC_LOADING) ? null : excLoad({ quiet:true }); });
+  }
+  return steps;
+}
+function pfRun(){
+  if(PF_STARTED) return;
+  PF_STARTED = true;
+  var steps = pfSteps(), i = 0;
+  (function next(){
+    if(i >= steps.length) return;
+    if(pfBusy()){ setTimeout(next, 300); return; }   // 画面の読み込み（利用者の操作）を先に
+    var p = steps[i++]();
+    Promise.resolve(p).then(next, next);
+  })();
+}
+/* 最初に開いたタブの読み込みが終わるのを待ってから先読みを始める */
+function pfAfterFirst(){
+  (function wait(){ if(pfBusy()){ setTimeout(wait, 300); return; } pfRun(); })();
 }
 
 /* ── 画面切替（リロードで現在地を失わない）───────────────
@@ -4177,6 +5007,8 @@ function applyMasterIdParam(){
     ensureBaseData();
     if(opened === 'scr-search') renderSearch();
   }
+  /* 最初のタブを読み終えたら、裏でほかのタブを読んでおく（先読み・2026-10-17 第2弾） */
+  pfAfterFirst();
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->

@@ -1,0 +1,340 @@
+//@ 写し元: haiben-record/haiben-record.html（排便記録アプリ）
+//@ コミット: ce3653404aac62e658be7b57404a4a9f7d52fea9
+//@ 用途: check/unit/msk_excretion_test.js が vm で評価し、（2026-10-17 第2弾の直し: isFullHospDay・fmtMD・dayDiff・laxReactHtml・laxHistHtml・rpBowelOne を追加＝excPeriodSummary・excLaxList と比べる）moushiokuri-viewer.html の写し（excParsePads・excConsOf・excFmtUA・excLaxReaction・excHospOverlaps・excIntervalStats・excFmtDur・excGuideStats・excGsPct・excConsBs）と同じ入力で比べる
+//@ 各区切り（＝＝＝＝ の見出しの行・始まりと終わりの文字）の中は写し元の一字一句。写し元が手元にある時は同じ範囲と一致するかも確かめる
+//@==== parsePads・padsStr・padsTotal 行: 1824〜1833
+//@始: function parsePads(v){
+//@終: function padsText(v){
+//@----
+function parsePads(v){
+  var o={};
+  if(v==null||v==='')return o;
+  if(typeof v==='string'){try{v=JSON.parse(v)}catch(e){return o}}
+  if(!v||typeof v!=='object'||Array.isArray(v))return o;
+  Object.keys(v).forEach(function(k){var n=parseInt(v[k],10),kk=String(k).trim().slice(0,20);if(kk&&n>0&&n<100)o[kk]=n});
+  return o;
+}
+function padsStr(v){var o=parsePads(v);return Object.keys(o).length?JSON.stringify(o):''}
+function padsTotal(v){var o=parsePads(v),n=0;for(var k in o)n+=o[k];return n}
+//@==== BL（ブリストルの名前） 行: 1909〜1909
+//@始: const BL={
+//@終: （行末）
+//@----
+const BL={1:'硬球状',2:'硬塊状',3:'ひび割れ',4:'普通便',5:'軟便',6:'泥状便',7:'水様便'};
+//@==== fmtCons・fmtUA・toNum 行: 2962〜2964
+//@始: function fmtCons(r){
+//@終: function isValidRes(r){
+//@----
+function fmtCons(r){if(r.consistency)return r.consistency;if(r.bristol)return'タイプ'+r.bristol+'('+( BL[r.bristol]||'')+')';return''}
+function fmtUA(v){if(v==null||v==='')return'';return typeof v==='number'?v+'ml':v}
+function toNum(v){if(typeof v==='number'&&!isNaN(v))return v;var n=Number(v);return isNaN(n)?null:n}
+//@==== LAX_REACT_H・_evMs・laxReaction 行: 4187〜4205
+//@始: var LAX_REACT_H=24;
+//@終: function laxReactHtml(lx){
+//@----
+var LAX_REACT_H=24;
+function _evMs(r){
+  if(!r)return NaN;
+  if(typeof r.tsUTC==='number'&&!isNaN(r.tsUTC))return r.tsUTC;
+  return new Date(r.datetime||((r.date||'')+'T'+(r.time||'00:00'))).getTime();
+}
+function laxReaction(lx){
+  var t0=_evMs(lx);if(isNaN(t0))return null;
+  var t1=t0+LAX_REACT_H*36e5;
+  var pool=recsByRes(toNum(lx.residentId));
+  for(var i=0;i<pool.length;i++){
+    var r=pool[i];if(!r||(r.type!=='stool'&&r.type!=='both'))continue;
+    var t=_evMs(r);
+    if(t>t0&&t<=t1)return{st:'ok',h:(t-t0)/36e5,rec:r};
+  }
+  var now=Date.now();
+  if(now<t1)return{st:'wait',h:Math.max(0,(now-t0)/36e5)};
+  return{st:'none'};
+}
+//@==== hospOverlaps 行: 4421〜4435
+//@始: function hospOverlaps(res,t1,t2){
+//@終: function elH(dt,rid){
+//@----
+function hospOverlaps(res,t1,t2){
+  if(!res||!Array.isArray(res.hospitalizations))return false;
+  if(t1==null||t2==null||isNaN(t1)||isNaN(t2))return false;
+  for(var i=0;i<res.hospitalizations.length;i++){
+    var h=res.hospitalizations[i];
+    if(!h||!h.admissionAt)continue;
+    var ad=new Date(h.admissionAt).getTime();if(isNaN(ad))continue;
+    var dc=h.dischargeAt?new Date(h.dischargeAt).getTime():Infinity;
+    if(isNaN(dc))dc=Infinity;
+    // 開区間で判定（入院日時ちょうど・退院日時ちょうどの記録は重なりとしない）
+    if(t1<dc&&t2>ad)return true;
+  }
+  return false;
+}
+//@==== STATS_GAP_H・intervalStats・fmtDur 行: 4520〜4606
+//@始: var STATS_GAP_H=48;
+//@終: function dayR(rid,d,t){
+//@----
+var STATS_GAP_H=48;
+/* 過去3ヶ月の平均間隔（排尿／排便／下剤）。読み取り専用・保存しない。
+   返り値 {urine:{avgH,n},stool:{avgH,n},lax:{avgH,n},from,to,hospUnknown,gaps:{n,days}}
+   n＝平均に使った「間隔」の本数（記録件数ではない）。avgH は間隔が1本も無ければ null。
+   算出順序は固定：①母集団 ②全期間で系列 ③窓で絞る ④記録の空白を検出
+   ⑤隣接差 ⑥入院またぎ・空白またぎ・Δ≤0 を除外。 */
+function intervalStats(rid){
+  var res=D.residents.find(function(x){return x.id===rid})||null;
+  var pool=recsByRes(rid); // isUserRec 適用済み・datetime 昇順
+  // ② 全期間で系列を作る（窓で先に切ると、窓の直前に少量2回・直後に3回目という並びで
+  //    未排便アラート（lastR）と判定がズレるため）
+  var uAll=[],sSrc=[],lAll=[];
+  for(var i=0;i<pool.length;i++){
+    var r=pool[i];if(!r)continue;
+    if(r.type==='urine'||r.type==='both')uAll.push(r);
+    if(r.type==='stool'||r.type==='both')sSrc.push(r);
+    if(r.type==='laxative')lAll.push(r);
+  }
+  var sAll=stoolResetSeries(sSrc);
+  // ③ 窓：setMonth の月末繰り上がり事故を避けて日数で固定する（端末保持期間を超えては遡れない）
+  var keep=_localKeepDays();
+  var span=Math.min(92,keep>0?keep:180);
+  var from=dateOff(-span),to=today();
+  function inWin(r){var d=r.date||String(r.datetime||'').slice(0,10);return d>=from&&d<=to}
+  // 時刻は elH と同じ優先順位で読む（tsUTC → datetime）。どちらも読めなければ null
+  function recT(r){
+    if(typeof r.tsUTC==='number'&&!isNaN(r.tsUTC))return r.tsUTC;
+    var dt=r.datetime||(r.date&&r.time?(r.date+'T'+r.time):'');
+    if(!dt)return null;
+    var t=new Date(dt).getTime();
+    return isNaN(t)?null:t;
+  }
+  // 窓内の記録の時刻列（読めないものは除く）
+  function timesIn(list){
+    var out=[];
+    for(var k=0;k<list.length;k++){
+      if(!inWin(list[k]))continue;
+      var t=recT(list[k]);
+      if(t!==null)out.push(t);
+    }
+    return out;
+  }
+  /* ④ 記録の空白を検出する。排尿が STATS_GAP_H 以上空いた区間は、その間の実態が
+     記録されていない（入院履歴の登録漏れ・外泊・記録漏れ）とみなす。
+     排尿だけでなく排便・下剤の集計からも同じ区間を外す — 入院中に排便や下剤の記録が
+     無いのは当然で、その空白を「間隔」として数えると平均が実態より長くなるため。 */
+  var uT=timesIn(uAll),gaps=[],gapMs=STATS_GAP_H*36e5;
+  for(var g=1;g<uT.length;g++){
+    if(uT[g]-uT[g-1]>=gapMs)gaps.push({a:uT[g-1],b:uT[g]});
+  }
+  function inGap(t1,t2){
+    for(var q=0;q<gaps.length;q++){if(t1<gaps[q].b&&t2>gaps[q].a)return true}
+    return false;
+  }
+  // ⑤⑥ 窓内の記録同士の隣接差を平均（窓外→窓内をまたぐ最初の区間は自動的に落ちる）
+  function avgOf(list){
+    var sum=0,n=0,prev=null;
+    for(var k=0;k<list.length;k++){
+      if(!inWin(list[k]))continue;
+      var t=recT(list[k]);
+      if(t===null)continue; // 時刻が読めない記録はスキップ
+      if(prev!==null){
+        var d=t-prev;
+        // Δ≤0（同分の二重打ち・順序逆転）・入院区間またぎ・記録の空白またぎは捨て、n にも数えない
+        if(d>0&&!hospOverlaps(res,prev,t)&&!inGap(prev,t)){sum+=d;n++}
+      }
+      prev=t;
+    }
+    return{avgH:n?(sum/n)/36e5:null,n:n};
+  }
+  // 入居者マスタでは入院中だが、ローカルに入院履歴が無い＝区間を除外できない状態
+  // （空白が STATS_GAP_H 未満の短期入院はここでしか捕まらない）
+  var hospUnknown=!!(res&&res.masterHosp===true&&(!Array.isArray(res.hospitalizations)||!res.hospitalizations.length));
+  var gapMsSum=0;for(var w=0;w<gaps.length;w++)gapMsSum+=(gaps[w].b-gaps[w].a);
+  return{urine:avgOf(uAll),stool:avgOf(sAll),lax:avgOf(lAll),from:from,to:to,hospUnknown:hospUnknown,
+    gaps:{n:gaps.length,days:Math.round(gapMsSum/864e5)}};
+}
+/* 間隔の整形（「3時間20分」「2日4時間」）。総分に丸めてから日・時・分に分解する
+   （先に時で丸める fmtEl は h=1.999 で「1時間60分」になるため、そこは踏襲しない）。 */
+function fmtDur(h){
+  if(h===null||h===undefined||isNaN(h)||h<0)return'—';
+  var tm=Math.round(h*60);
+  var d=Math.floor(tm/1440),hr=Math.floor((tm%1440)/60),mn=tm%60;
+  if(d>0)return d+'日'+(hr>0?hr+'時間':'');
+  if(hr>0)return hr+'時間'+(mn>0?mn+'分':'');
+  return mn+'分';
+}
+//@==== guideStats・gsPct 行: 6358〜6377
+//@始: function guideStats(recs){
+//@終: function _ymdL(d){
+//@----
+function guideStats(recs){
+  var o={toilet:0,miss:0,uN:0,uPad:0,sN:0,sPad:0,pads:0};
+  (recs||[]).forEach(function(r){
+    if(!r)return;
+    o.pads+=padsTotal(r.pads);
+    var t=r.type;
+    if(t==='none'){if(!padsTotal(r.pads))o.miss++;return}
+    var isU=(t==='urine'||t==='both'),isS=(t==='stool'||t==='both');
+    if(!isU&&!isS)return;
+    var us=isU?(r.urineSrc||'self'):'',ss=isS?(r.stoolSrc||'toilet'):'';
+    if(us==='self'||us==='both'||ss==='toilet'||ss==='both')o.toilet++;
+    if(isU){o.uN++;if(us==='pad'||us==='both')o.uPad++}
+    if(isS){o.sN++;if(ss==='pad'||ss==='both')o.sPad++}
+  });
+  o.succ=(o.toilet+o.miss)?o.toilet/(o.toilet+o.miss):null;
+  o.uInc=o.uN?o.uPad/o.uN:null;
+  o.sInc=o.sN?o.sPad/o.sN:null;
+  return o;
+}
+function gsPct(v,a,b){return v==null?'—':Math.round(v*100)+'%（'+a+'/'+b+'）'}
+//@==== CONS_BS 行: 8309〜8309
+//@始: var CONS_BS=
+//@終: （行末）
+//@----
+var CONS_BS={'水様便':'7','下痢便':'6','柔らかめ':'5','普通':'4','硬め':'3','硬便':'1〜2'};
+//@==== rpConsTxt 行: 8318〜8318
+//@始: function rpConsTxt(r){
+//@終: （行末）
+//@----
+function rpConsTxt(r){var c=fmtCons(r);if(!c)return'';var b=CONS_BS[r.consistency];return b?c+'（ブリストル'+b+'）':c}
+//@==== isFullHospDay 行: 4385〜4400
+//@始: function isFullHospDay(resident,dateStr){
+//@終: /* タイムラインのスロットが入院期間中か
+//@----
+function isFullHospDay(resident,dateStr){
+  if(!resident||!Array.isArray(resident.hospitalizations))return false;
+  var dayStart=new Date(dateStr+'T00:00:00').getTime();
+  if(isNaN(dayStart))return false;
+  for(var i=0;i<resident.hospitalizations.length;i++){
+    var h=resident.hospitalizations[i];
+    if(!h||!h.admissionAt)continue;
+    var ad=new Date(h.admissionAt).getTime();if(isNaN(ad))continue;
+    var adDay=new Date(String(h.admissionAt).slice(0,10)+'T00:00:00').getTime();
+    var dc=h.dischargeAt?new Date(h.dischargeAt).getTime():Infinity;
+    var dcDay=h.dischargeAt?new Date(String(h.dischargeAt).slice(0,10)+'T00:00:00').getTime():Infinity;
+    // 「入院日翌日 〜 退院日前日」が完全入院日
+    if(dayStart>adDay&&dayStart<dcDay)return true;
+  }
+  return false;
+}
+//@==== fmtMD 行: 4266〜4266
+//@始: function fmtMD(dateStr){
+//@終: （行末）
+//@----
+function fmtMD(dateStr){if(!dateStr)return'';var p=dateStr.split('-');if(p.length<3)return dateStr;return parseInt(p[1],10)+'/'+parseInt(p[2],10)}
+//@==== dayDiff 行: 4272〜4274
+//@始: function dayDiff(recDate,viewDate){
+//@終: function fmtDayOff(diff){
+//@----
+function dayDiff(recDate,viewDate){if(!recDate||!viewDate)return 0;
+  var d1=new Date(recDate+'T00:00:00');var d2=new Date(viewDate+'T00:00:00');
+  return Math.round((d1.getTime()-d2.getTime())/86400000)}
+//@==== laxReactHtml 行: 4206〜4211
+//@始: function laxReactHtml(lx){
+//@終: /* 「要注意だけ」（2026-10-16）。
+//@----
+function laxReactHtml(lx){
+  var x=laxReaction(lx);if(!x)return'';
+  if(x.st==='ok')return'<span class="lx-ok">→ '+escapeHtmlText(fmtDur(x.h))+'後に排便</span>';
+  if(x.st==='wait')return'<span class="lx-wait">（待機中 '+escapeHtmlText(fmtDur(x.h))+'）</span>';
+  return'<span class="lx-none">→ '+LAX_REACT_H+'時間 反応なし</span>';
+}
+//@==== laxHistHtml 行: 6333〜6349
+//@始: function laxHistHtml(rid){
+//@終: /* ═══════════ トイレの成功率
+//@----
+function laxHistHtml(rid){
+  var lx=recsByRes(rid).filter(function(r){return r.type==='laxative'}).slice(-10).reverse();
+  if(!lx.length)return'';
+  var by={};
+  var rows=lx.map(function(r){
+    var x=laxReaction(r),m=r.medicine||'（薬名なし）';
+    var b=by[m]=by[m]||{n:0,ok:0,sumH:0,none:0};
+    if(x&&x.st!=='wait'){b.n++;if(x.st==='ok'){b.ok++;b.sumH+=x.h}else b.none++}
+    var detail=(x&&x.st==='ok'&&x.rec)?'（'+escapeHtmlText([fmtCons(x.rec),x.rec.stoolAmt].filter(Boolean).join('・')||'性状未記入')+'）':'';
+    return'<div class="lx-row"><span>'+escapeHtmlText(fmtMD(r.date)+' '+(r.time||''))+'</span><span>💊 '+escapeHtmlText(m)+(r.tablets?' '+escapeHtmlText(r.tablets)+'錠':'')+'</span>'+laxReactHtml(r)+detail+'</div>';
+  }).join('');
+  var sum=Object.keys(by).filter(function(m){return by[m].n>0}).map(function(m){var b=by[m];
+    return escapeHtmlText(m)+'：'+b.n+'回中'+b.ok+'回反応'+(b.ok?'（平均 '+escapeHtmlText(fmtDur(b.sumH/b.ok))+'後）':'');
+  }).join('　／　');
+  return'<details class="hx-sec"><summary>💊 下剤と反応（直近'+lx.length+'回・'+LAX_REACT_H+'時間以内の排便を反応とする）</summary>'+
+    (sum?'<div style="font-size: 0.8125rem;font-weight:700;margin:4px 0">'+sum+'</div>':'')+rows+'</details>';
+}
+//@==== rpBowelOne 行: 8319〜8396
+//@始: function rpBowelOne(){
+//@終: /* ── 様式(5) 交換したもの
+//@----
+function rpBowelOne(){
+  var dates=rpSpanDates();
+  if(!dates.length)return '<div class="rp-empty">終わりの日を選んでください。</div>';
+  var from=dates[0],to=dates[dates.length-1];
+  var sel=$('rpRes')?$('rpRes').value:'all';
+  var list=rpResidents().filter(function(r){return sel==='all'||String(r.id)===String(sel)});
+  if(!list.length)return '<div class="rp-empty">対象の入居者がいません。</div>';
+  return list.map(function(re){
+    var pool=recsByRes(re.id);
+    var st=pool.filter(function(r){return r.type==='stool'||r.type==='both'});
+    var ser=stoolResetSeries(st),resetDays={},resetSet=new Set(ser);
+    ser.forEach(function(r){resetDays[String(r.date).slice(0,10)]=1});
+    function inP(r){var k=String(r.date||'').slice(0,10);return k>=from&&k<=to}
+    var sP=st.filter(inP),lP=pool.filter(function(r){return r.type==='laxative'&&inP(r)});
+    var nSmall=sP.filter(function(r){return r.stoolAmt==='少量'}).length;
+    var nReset=sP.filter(function(r){return resetSet.has(r)}).length;
+    /* 最長の「排便1回分なし」（日数）。入院の日をまたぐ所は数えない（その間は分からない） */
+    var lastReset=null;
+    Object.keys(resetDays).forEach(function(k){if(k<from&&(!lastReset||k>lastReset))lastReset=k});
+    /* 期間の前の1回分から期間の始まりまでに入院の日があれば、その間は分からないので数えない */
+    if(lastReset){
+      var cd=new Date(lastReset+'T00:00:00');cd.setDate(cd.getDate()+1);
+      for(var gi=0;gi<400;gi++){var ck=rpYMD(cd);if(ck>=from)break;if(isFullHospDay(re,ck)){lastReset=null;break}cd.setDate(cd.getDate()+1)}
+    }
+    var maxG=0,maxAfter=null;
+    dates.forEach(function(k){
+      if(isFullHospDay(re,k)){lastReset=null;return}
+      if(resetDays[k]){lastReset=k;return}
+      if(lastReset&&k<=today()){var g=dayDiff(k,lastReset);if(g>maxG){maxG=g;maxAfter=lastReset}}
+    });
+    var lxOk=0,lxNone=0,lxWait=0,lxSum=0;
+    lP.forEach(function(r){var x=laxReaction(r);if(!x)return;if(x.st==='ok'){lxOk++;lxSum+=x.h}else if(x.st==='none')lxNone++;else lxWait++});
+    var iv=intervalStats(re.id);
+    var rows='';
+    dates.forEach(function(k){
+      var dd=new Date(k+'T00:00:00');
+      var recs=recsByResDate(re.id,k).filter(isUserRec).slice().sort(function(a,b){return(a.time||'').localeCompare(b.time||'')});
+      var hosp=isFullHospDay(re,k);
+      var ss=recs.filter(function(r){return r.type==='stool'||r.type==='both'});
+      var ls=recs.filter(function(r){return r.type==='laxative'});
+      var water=recs.reduce(function(a,r){return a+(Number(r.waterCC)>0?Number(r.waterCC):0)},0);
+      var un=recs.filter(function(r){return r.type==='urine'||r.type==='both'}).length;
+      var sTxt=ss.map(function(r){
+        var src=(r.stoolSrc==='pad'||r.stoolSrc==='both')?'パッド内':'';
+        return [r.time||'',rpConsTxt(r),r.stoolAmt||'',src].filter(Boolean).join(' ');
+      }).join('<br>');
+      var lTxt=ls.map(function(r){
+        var x=laxReaction(r),rx=!x?'':x.st==='ok'?'→ '+fmtDur(x.h)+'後に排便':x.st==='none'?'→ 反応なし（'+LAX_REACT_H+'時間）':'→ 判定待ち';
+        return escapeHtmlText([r.time||'',r.medicine||'下剤',r.tablets?r.tablets+'錠':''].filter(Boolean).join(' ')+' '+rx);
+      }).join('<br>');
+      var notes=ss.concat(ls).map(function(r){return(r.notes||'').trim()}).filter(Boolean).join(' / ');
+      rows+='<tr class="'+rpWdCls(k)+'">'+
+        '<td>'+(dd.getMonth()+1)+'/'+dd.getDate()+'</td><td>'+RP_WD[dd.getDay()]+'</td>'+
+        '<td class="l">'+(hosp?'入院':sTxt.split('<br>').map(escapeHtmlText).join('<br>'))+'</td>'+
+        '<td class="l">'+lTxt+'</td>'+
+        '<td>'+(water>0?water:'')+'</td>'+
+        '<td>'+(un||'')+'</td>'+
+        '<td class="l">'+escapeHtmlText(notes)+'</td></tr>';
+    });
+    var sum=
+      '<div>期間中の排便 <b>'+sP.length+'回</b>（うち少量 '+nSmall+'回）　排便1回分として数えた回数 <b>'+nReset+'回</b>'+
+        '<small>（少量は、最初の少量から'+STOOL_SMALL_WIN_H+'時間以内の'+STOOL_SMALL_N+'回目で1回分）</small></div>'+
+      '<div>排便1回分の無かった最長の日数 <b>'+(maxAfter?maxG+'日':'—')+'</b>'+(maxAfter?'（'+escapeHtmlText(fmtMD(maxAfter))+' の排便のあと）':'')+'</div>'+
+      '<div>下剤 <b>'+lP.length+'回</b>'+(lP.length?'（'+LAX_REACT_H+'時間以内に排便あり '+lxOk+'回'+(lxOk?'・平均 '+escapeHtmlText(fmtDur(lxSum/lxOk))+'後':'')+'／なし '+lxNone+'回'+(lxWait?'／判定待ち '+lxWait+'回':'')+'）':'')+'</div>'+
+      '<div>平均の排便間隔（直近3か月・画面の履歴と同じ算出） <b>'+escapeHtmlText(fmtDur(iv.stool.avgH))+'</b></div>'+
+      (re.laxNote?'<div>下剤メモ: '+escapeHtmlText(String(re.laxNote).replace(/\n/g,' '))+'</div>':'');
+    return '<div class="rp-pg">'+
+      rpHead('排便の経過（主治医・訪問看護への情報提供）',
+             re.room+'号室　'+re.name,
+             '対象期間: '+from+' 〜 '+to+'（'+dates.length+'日）')+
+      '<div class="rp-sum">'+sum+'</div>'+
+      '<table class="rp-t rp-t-bo"><thead><tr>'+
+        '<th>日</th><th>曜</th><th>排便（時刻・性状・量）</th><th>下剤と反応</th><th>水分<br>(cc)</th><th>排尿<br>(回)</th><th>備考（排便・下剤）</th>'+
+      '</tr></thead><tbody>'+rows+'</tbody></table>'+
+      rpFoot('')+'</div>';
+  }).join('');
+}
