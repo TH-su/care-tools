@@ -230,7 +230,7 @@ console.log('\n— D. 写し返しの流れ（砂場） —');
   t('D 終わったらボタンを押せる状態に戻す', r.busy === false);
   {
     const i = SRC.indexOf('async function runCheck()'), seg = SRC.slice(i, i + 400);
-    t('E 点検を始める時に、前回の「勤務表はそろっている」を消す（途中で失敗しても本番にするボタンを押せない）', i >= 0 && /shiftReady = false;/.test(seg) && seg.indexOf('shiftReady = false;') < seg.indexOf('gasTarget()'), seg.slice(0, 200));
+    t('E 点検を始める時に、前回の「勤務表はそろっている」を消す（途中で失敗しても本番にするボタンを押せない）', i >= 0 && /\n\s*shiftReady = false;/.test(seg) && seg.search(/\n\s*shiftReady = false;/) < seg.indexOf('gasTarget()'), seg.slice(0, 200));
   }
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
