@@ -664,6 +664,7 @@
   async function runCheck() {
     var kpis = $('pre-kpis'), list = $('pre-list'), verdict = $('pre-verdict');
     kpis.replaceChildren(); list.replaceChildren(); $('b-fill').hidden = true; plan = [];
+    shiftReady = false;   /* 点検の途中で失敗した時に、前回の「勤務表はそろっている」を残さない（2026-10-16） */
     var tgt = gasTarget();
     if (!tgt) {
       verdict.className = 'msg warn';
