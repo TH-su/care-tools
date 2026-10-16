@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LA/WF1kcOj4d3bix/GMAPgmVsY+6gnE+2Qlm/NoTE1c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pKaU/Srs6r0LXOP3NjRzIR8GX4WcAiQ2s7/EATMJfnE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -414,7 +414,9 @@ html.su-field button[data-act="delete"],
 html.su-field #syncTargetForm,
 html.su-field #syncSave,
 html.su-field #syncTest,
-html.su-field #egSync { display: none !important; }
+html.su-field #egSync,
+html.su-field #offTokutei,
+html.su-field #offTokuteiOut { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-09-24"></script>
@@ -577,9 +579,11 @@ html.su-field #egSync { display: none !important; }
         <button id="offFromActual" class="act ghost" title="実績レイヤを行政提出用レイヤに複製します">実績から取込</button>
         <button id="offCSV" class="act">CSVダウンロード（Excel用）</button>
         <button id="offPrint" class="act ghost">印刷</button>
+        <button id="offTokutei" class="act ghost" title="訪問介護の特定事業所加算（Ⅰ）の人の要件（介護福祉士等の割合・サービス提供責任者）を、過去の月の勤務表から数えます">特定事業所加算の人の要件</button>
       </div>
     </div>
     <div id="officialTable"></div>
+    <div id="offTokuteiOut" class="noprint" aria-live="polite"></div>
 
     <div class="panel noprint" id="freeePanel">
       <h2>freee勤怠 スケジュールCSV出力</h2>
@@ -797,6 +801,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *   staffDelete   職員の削除（マスタ）
  *   symbolDelete  記号の削除（マスタ）
  *   sync          同期先（GAS の URL・合言葉）の変更
+ *   tokutei       特定事業所加算の人の要件（過去の月の勤務表をまとめて読み、氏名つきの表を出す・2026-10-16）
  */
 (function () {
   'use strict';
@@ -808,7 +813,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     draftDelete: '現場の端末では、編集用シフトを削除できません。事務所のパソコンで操作してください',
     staffDelete: '現場の端末では、職員を削除できません。事務所のパソコンで操作してください',
     symbolDelete: '現場の端末では、記号を削除できません。事務所のパソコンで操作してください',
-    sync: '現場の端末では、同期先を変えられません。事務所のパソコンで設定してください'
+    sync: '現場の端末では、同期先を変えられません。事務所のパソコンで設定してください',
+    tokutei: '現場の端末では、特定事業所加算の人の要件は数えません。事務所のパソコンで操作してください'
   };
   function readRole(ls) {
     try { return (ls && ls.getItem(DEVICE_KEY)) === 'field' ? 'field' : 'office'; } catch (e) { return 'office'; }
@@ -1434,6 +1440,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           } else if (part.kind === 'paidOff') {
             perDay[d].paid = true;
             perDay[d].paidMin = (perDay[d].paidMin || 0) + part.fixedWork * 60;   /* 常勤の確かめ（有休を勤務とみなす）用・設定に関わらず数える */
+            /* 有休を入れた行の区分ごと（特定事業所加算の人の要件で、非常勤の休暇を区分ごとに外すため・2026-10-16）。設定に関わらず数える */
+            if (!perDay[d].paidDivMin) perDay[d].paidDivMin = {};
+            perDay[d].paidDivMin[division] = (perDay[d].paidDivMin[division] || 0) + part.fixedWork * 60;
             if (settings.paidLeaveCountsAsWork) {
               addDiv(d, division, part.fixedWork * 60, false);
             }
@@ -1445,7 +1454,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
 
     /* 集計 */
-    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {}, paidMin28: 0 };
+    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {}, paidMin28: 0, paidDivMin28: {} };
     for (var d3 = 1; d3 <= days; d3++) {
       var pd = perDay[d3];
       totals.workMin += pd.workMin;
@@ -1464,6 +1473,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (d3 <= 28) totals.workMin28 += pd.workMin;
       if (d3 <= 28 && pd.paidMin) totals.paidMin28 += pd.paidMin;
+      if (d3 <= 28 && pd.paidDivMin) { for (var pdv in pd.paidDivMin) totals.paidDivMin28[pdv] = (totals.paidDivMin28[pdv] || 0) + pd.paidDivMin[pdv]; }
     }
     /* 夜勤専従: 出勤カウントが特殊なため「月の日数 − 休日数」を出勤として扱う
      * （未入力の月に適用すると全日出勤になるため、何らかの入力がある場合のみ） */
@@ -1729,7 +1739,147 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     };
   }
 
-  var api = { computeMetrics: computeMetrics, fteStdByDivision: fteStdByDivision, workFormOf: workFormOf, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession, resolveConsRule: resolveConsRule, CONS_DEFAULT: CONS_DEFAULT };
+  /* ── 特定事業所加算の人の要件（訪問介護・告示95号 第三号イ(5)(6)・2026-10-16 本人選択「(5)と(6)だけ」）──
+   * (5) 介護福祉士等の割合: 訪問介護員等の総数（サービス提供責任者を含む＝運営基準 第5条第2項の読み）のうち
+   *     介護福祉士 30%以上、または 介護福祉士・実務者研修修了者等 50%以上。常勤換算で、前年度（3月を除く）か前3月の1月あたりの平均。
+   *     看護師は1級課程修了者に含めてよい（老企36号 第2の2(12)②）。准看護師は県の計算様式の注記だけが根拠＝参考の行に分ける。
+   *     初任者研修は数えない（告示の列挙に無い）。資格は「各月の前月の末日時点」だが、マスタに取得日が無いため今の資格で数える。
+   * 月ごとの常勤換算（宮崎県の計算様式の形・国の文書には端数処理の定めが見当たらない）:
+   *   常勤で専従（A）が主区分の訪問なら1人。ほかは訪問の時間 ÷ 常勤の時間（1人あたり常勤の時間が上限・勤務形態が未設定でも上限あり＝
+   *   様式1 の数え方 fteStdByDivision とはここが違う）。時間は様式1と同じ 1〜28日・fteBaseHours。
+   *   端数: 分子（資格者）の換算分は小数点第2位以下切り捨て。分母（総数）は切り捨てない（小数点第3位で切り上げ）。
+   *   県の様式は両方を切り捨てるが、分母を切り捨てると割合が上に振れ、届いていないのに「満たす」と出るため（反証レビュー指摘）。
+   *   休暇: 常勤（A・B）は勤務とみなす（暦月1月以内）。非常勤（C・D・未設定）は含めない（平成14年3月28日の事務連絡）。
+   *   有休は入れた行の区分で見る（timecalc の paidDivMin28。応援の行の有休を主区分のものと取り違えない）。
+   * (6) サービス提供責任者: 全員が 実務経験3年以上の介護福祉士、または5年以上の実務者研修修了者等（看護師を含む）。
+   *     経験は職員マスタの「介護の実務経験の起算日」（careExpSince・手で入れる）から、その月の前月の末日時点で数える。 */
+  var TOKUTEI_DIV = '訪問';
+  var Q_KF = ['介護福祉士'];
+  var Q_50 = ['介護福祉士', '実務者研修', '看護師'];
+  var Q_50J = ['介護福祉士', '実務者研修', '看護師', '准看護師'];
+  function hasAnyQual(st, qs) { for (var i = 0; i < qs.length; i++) if (hasQual(st, qs[i])) return true; return false; }
+  function tkGroup() { return { full: 0, convMin: 0, fte: 0 }; }
+  function tkFinish(g, baseMin) { g.fte = Math.round((g.full + (baseMin > 0 ? floor1(g.convMin / baseMin) : 0)) * 10) / 10; return g; }
+  /* 分母（総数）用: 切り捨てない。小数点第3位で切り上げ（割合を甘く見せない向き） */
+  function tkFinishDen(g, baseMin) { var x = g.full + (baseMin > 0 ? g.convMin / baseMin : 0); g.fte = Math.ceil(x * 100 - 1e-9) / 100; return g; }
+
+  /* 前月の末日（'YYYY-MM-DD'）。ym は 'YYYY-MM' */
+  function prevMonthEnd(ym) {
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    var d = new Date(y, m - 1, 0);
+    return d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
+  }
+  /* since（起算日＝1日目）から asOf（その日まで）に勤めた満年数（どちらも 'YYYY-MM-DD'）。
+   * 起算日を1日目に数える＝ 2023-04-01〜2026-03-31 は満3年（反証レビュー指摘: 誕生日の数え方だと1日厳しくなる）。
+   * 不正な日付は -1。起算日が asOf より後は -2 */
+  function fullYears(since, asOf) {
+    var re = /^(\d{4})-(\d{2})-(\d{2})$/;
+    var a = re.exec(String(since || '')), b = re.exec(String(asOf || ''));
+    if (!a || !b) return -1;
+    var nx = new Date(+b[1], +b[2] - 1, +b[3] + 1);   /* asOf の翌日と比べる */
+    var by = nx.getFullYear(), bm = nx.getMonth() + 1, bd = nx.getDate();
+    var ay = +a[1], am = +a[2], ad = +a[3];
+    if (ay > by || (ay === by && (am > bm || (am === bm && ad >= bd)))) return -2;   /* 起算日が asOf の翌日以降＝asOf より後 */
+    var n = by - ay;
+    if (bm < am || (bm === am && bd < ad)) n--;
+    return n;
+  }
+  /* サービス提供責任者1人の判定。expSince は起算日（マスタの値を優先して呼び出し側で渡す） */
+  function svcMgrCheck(st, expSince, asOf) {
+    var yrs = expSince ? fullYears(expSince, asOf) : -1;
+    var kf = hasQual(st, '介護福祉士');
+    var other = hasAnyQual(st, ['実務者研修', '看護師']);
+    var need = kf ? 3 : (other ? 5 : 0);
+    var r = { sid: st.id, kf: kf, need: need, years: yrs, ok: false, reason: '' };
+    if (!need) { r.reason = '資格が要件に当たりません（介護福祉士・実務者研修・看護師のどれも無い）'; return r; }
+    if (!expSince || yrs === -1) { r.reason = expSince ? '介護の実務経験の起算日の形が読めません（' + expSince + '）' : '介護の実務経験の起算日が未入力です'; return r; }
+    if (yrs < 0) { r.reason = '介護の実務経験の起算日（' + expSince + '）が ' + asOf + ' より後です'; return r; }
+    if (yrs >= need) { r.ok = true; return r; }
+    r.reason = '実務経験が' + need + '年に届いていません（' + asOf + ' 時点で満' + yrs + '年）';
+    return r;
+  }
+
+  /* 1か月分。staffList はその月の名簿、monthResults はその月の computeStaffMonth の結果。
+   * expOf(st) はその職員の起算日を返す関数（省略時は st.careExpSince）。ym は 'YYYY-MM' */
+  function tokuteiMonth(staffList, monthResults, settings, ym, expOf) {
+    var s = TC.fillSettings(settings);
+    var baseMin = (s && s.fteBaseHours > 0) ? s.fteBaseHours * 60 : 0;
+    var den = tkGroup(), kf = tkGroup(), g50 = tkGroup(), g50j = tkGroup();
+    var persons = 0, svc = [], asOf = prevMonthEnd(ym);
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false || st.countInHeadcount === false) continue;
+      var form = workFormOf(st);
+      var main = (st.mainDivision || '施設') === TOKUTEI_DIV;
+      var min = (res.totals.divMin28 || {})[TOKUTEI_DIV] || 0;
+      var paid = (res.totals.paidDivMin28 || {})[TOKUTEI_DIV] || 0;   /* 訪問の行に入れた有休だけ */
+      if (paid > 0) {
+        if ((form === 'A' || form === 'B') && !s.paidLeaveCountsAsWork) min += paid;          /* 常勤の休暇は勤務とみなす */
+        else if (form !== 'A' && form !== 'B' && s.paidLeaveCountsAsWork) min = Math.max(0, min - paid);   /* 非常勤の休暇は含めない */
+      }
+      var isFull = form === 'A' && main && (min > 0 || paid > 0);
+      if (!isFull && min <= 0) {
+        /* 訪問の勤務が無い月のサービス提供責任者も表から消さない（反証レビュー指摘: 黙って抜けると残りの人だけで「満たす」と並ぶ） */
+        if (st.serviceManager) {
+          var c0 = svcMgrCheck(st, expOf ? expOf(st) : st.careExpSince, asOf);
+          c0.fullTime = form === 'A' || form === 'B';
+          c0.noWork = true;
+          svc.push(c0);
+        }
+        continue;
+      }
+      persons++;
+      var conv = isFull ? 0 : (baseMin > 0 ? Math.min(min, baseMin) : min);
+      var add = function (g) { if (isFull) g.full += 1; else g.convMin += conv; };
+      add(den);
+      if (hasAnyQual(st, Q_KF)) add(kf);
+      if (hasAnyQual(st, Q_50)) add(g50);
+      if (hasAnyQual(st, Q_50J)) add(g50j);
+      if (st.serviceManager) {
+        var c = svcMgrCheck(st, expOf ? expOf(st) : st.careExpSince, asOf);
+        c.fullTime = form === 'A' || form === 'B';
+        svc.push(c);
+      }
+    }
+    tkFinishDen(den, baseMin); tkFinish(kf, baseMin); tkFinish(g50, baseMin); tkFinish(g50j, baseMin);
+    var svcOk = 0, svcFull = 0;
+    for (var k = 0; k < svc.length; k++) { if (svc[k].ok) svcOk++; if (svc[k].fullTime) svcFull++; }
+    return { ym: ym, persons: persons, den: den, kf: kf, g50: g50, g50j: g50j, asOf: asOf,
+      svc: svc, svcOk: svcOk, svcFull: svcFull, svcAllOk: svc.length > 0 && svcOk === svc.length };
+  }
+
+  /* 割合（%）。小数点第2位以下切り捨て（基準に届いたかを甘く見せない） */
+  function tkPct(num, den) { return den > 0 ? floor1(num / den * 100) : null; }
+  /* 期間の平均。months は tokuteiMonth の結果（データの無い月は渡さない）。 */
+  function tokuteiPeriod(months) {
+    var n = months.length, s = { den: 0, kf: 0, g50: 0, g50j: 0 };
+    for (var i = 0; i < n; i++) { s.den += months[i].den.fte; s.kf += months[i].kf.fte; s.g50 += months[i].g50.fte; s.g50j += months[i].g50j.fte; }
+    var avg = function (v) { return n ? Math.round(v / n * 100) / 100 : 0; };
+    var r = { n: n, den: avg(s.den), kf: avg(s.kf), g50: avg(s.g50), g50j: avg(s.g50j) };
+    /* 割合は合計どうしで割る（平均の丸めを割合へ持ち込まない） */
+    r.kfPct = tkPct(s.kf, s.den); r.g50Pct = tkPct(s.g50, s.den); r.g50jPct = tkPct(s.g50j, s.den);
+    r.ok5 = (r.kfPct !== null && r.kfPct >= 30) || (r.g50Pct !== null && r.g50Pct >= 50);
+    return r;
+  }
+  /* 年度と期間の月の並び。ym（表示中の月）を基準に、前年度の4〜2月・今年度の4月〜ym（3月を除く）・ym の前3月 */
+  function tokuteiWindows(ym) {
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    var fy = m >= 4 ? y : y - 1;
+    function key(yy, mm) { while (mm > 12) { mm -= 12; yy++; } while (mm < 1) { mm += 12; yy--; } return yy + '-' + (mm < 10 ? '0' : '') + mm; }
+    var prevFy = [], curFy = [], last3 = [];
+    for (var i = 0; i < 11; i++) prevFy.push(key(fy - 1, 4 + i));
+    for (var j = 0; j < 12; j++) { var k = key(fy, 4 + j); if (k > ym) break; if (+k.slice(5, 7) !== 3) curFy.push(k); }
+    for (var t = 3; t >= 1; t--) last3.push(key(y, m - t));
+    /* 読む月（重ならない・昇順）。表示中の月は (6) のために必ず入れる（3月は今年度の並びに入らない・反証レビュー指摘） */
+    var seen = {}, months = [];
+    prevFy.concat(curFy, last3, [ym]).forEach(function (x) { if (!seen[x]) { seen[x] = 1; months.push(x); } });
+    months.sort();
+    return { fy: fy, prevFy: prevFy, curFy: curFy, last3: last3, months: months };
+  }
+
+  var api = { computeMetrics: computeMetrics, fteStdByDivision: fteStdByDivision, workFormOf: workFormOf,
+    tokuteiMonth: tokuteiMonth, tokuteiPeriod: tokuteiPeriod, tokuteiWindows: tokuteiWindows, svcMgrCheck: svcMgrCheck, fullYears: fullYears, prevMonthEnd: prevMonthEnd, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession, resolveConsRule: resolveConsRule, CONS_DEFAULT: CONS_DEFAULT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftAggregate = api;
 })();
@@ -6425,6 +6575,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<div class="muted">※休み記号はチェックに関わらず常に入力できます</div>';
       h += '<div style="margin-top:6px"><button type="button" id="edSymFromShift" class="act" title="この職員がシフトで実際に使っている勤務パターンを検出し、未登録は記号マスタに追加してチェックします">🔎 シフトの使用パターンを取込</button></div></div>';
       h += '<label>サービス提供責任者</label><label><input type="checkbox" id="edSvcMgr"' + (st.serviceManager ? ' checked' : '') + '> 行政提出の職務欄に「サービス提供責任者」と表示</label>';
+      /* 特定事業所加算のサービス提供責任者の要件（実務経験3年／5年）に使う（2026-10-16 本人選択「起算日を手で入れる」）。
+       * 空欄で保存すると項目を消す（未入力＝要件は「起算日が未入力」と出す） */
+      var ceVal = (typeof st.careExpSince === 'string') ? st.careExpSince : '';
+      h += '<label for="edCareExpSince">介護の実務経験の起算日</label><div><input type="date" id="edCareExpSince" value="' + esc(ceVal) + '">' +
+        '<div class="muted">施設・在宅を問わず、介護の仕事を始めた日（ほかの事業所や資格を取る前の期間も含む）。特定事業所加算のサービス提供責任者の要件（介護福祉士は3年・実務者研修等は5年）の確かめに使います。</div></div>';
       h += '<label>雇用形態</label><select id="edEmploy">';
       var emps = ['役員', '正社員', '契約社員', 'パート', '派遣'];
       /* 一覧に無い既存値(旧形態等)は option として先頭に足し selected＝保存で「役員」へ黙って書き換わる事故を防ぐ(元値温存) */
@@ -6555,6 +6710,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (document.getElementById('edShortTime').checked) st.shortTime = true; else delete st.shortTime;
         st.empCode = document.getElementById('edEmpCode').value.trim();
         st.serviceManager = document.getElementById('edSvcMgr').checked;
+        var ceIn = document.getElementById('edCareExpSince').value;
+        if (ceIn) st.careExpSince = ceIn; else delete st.careExpSince;
         st.qualifications = checkedValues('#edQuals input:checked');
         if (document.getElementById('edSymAll').checked) {
           st.allowedSymbols = null;
@@ -7396,6 +7553,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   'use strict';
   var TC = window.ShiftTimecalc;
   var AG = window.ShiftAggregate;
+  var Store = window.ShiftStore;
 
   var Official = {
     app: null,
@@ -7407,6 +7565,142 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('offCSV').addEventListener('click', function () { self.downloadCSV(); });
       document.getElementById('offPrint').addEventListener('click', function () { self.app.print(); });
       document.getElementById('offFromActual').addEventListener('click', function () { self.seedFromActual(); });
+      var tk = document.getElementById('offTokutei');
+      if (tk) tk.addEventListener('click', function () { self.tokuteiCheck(); });
+    },
+
+    /* ── 特定事業所加算（Ⅰ）の人の要件（訪問介護・2026-10-16 本人選択）──
+     * 押した時だけ、前年度の4月から表示中の月までの勤務表を読んで数える（AG.tokuteiMonth / tokuteiPeriod）。
+     * 読むだけ: サーバーの応答は端末に保存せず、版の印（rev）も進めない（Store.api を直接呼ぶ・pullAll は通らない）。
+     * 起動時に取る窓（前月・当月・翌月）の月は端末の内容（未送信の編集を含む）を使う。
+     * 版は「実績があれば実績、無ければ予定」（本人選択）。名簿はその月の確定した名簿、無ければ今のマスタ（monthRoster と同じ決まり）。
+     * 画面だけに出す（氏名を含むため印刷しない）。 */
+    _tkGen: 0,
+    tokuteiCheck: function () {
+      var app = this.app, self = this;
+      var out = document.getElementById('offTokuteiOut');
+      var btn = document.getElementById('offTokutei');
+      if (!out) return;
+      var gen = ++this._tkGen, ym = app.ym;
+      if (app.fieldGuard && app.fieldGuard('tokutei')) return;   /* 現場端末では過去の月をまとめて読まない */
+      var W = AG.tokuteiWindows(ym);
+      var months = W.months;
+      var need = [];
+      months.forEach(function (m) { if (!app.inSyncWindow_(m)) need.push('sched:' + m + ':plan', 'sched:' + m + ':actual'); });
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (btn) btn.disabled = true;
+      out.innerHTML = '<div class="panel"><p class="muted">勤務表を読んでいます（' + months.length + 'か月分）…</p></div>';
+      var got = (need.length && cfg && cfg.url)
+        ? Store.api({ action: 'pull', keys: need }).then(function (res) { return { entries: (res && res.entries) || {} }; },
+                                                        function (e) { return { failed: String(e && e.message ? e.message : e) }; })
+        : Promise.resolve({ entries: null, nosync: !(cfg && cfg.url) });
+      got.then(function (r) {
+        if (gen !== self._tkGen || ym !== app.ym) return;   /* 待つ間に月を変えた・押し直した＝古い結果は捨てる */
+        if (btn) btn.disabled = false;
+        try { out.innerHTML = self.tokuteiHtml_(ym, W, months, r); }
+        catch (e) { out.innerHTML = '<div class="panel"><p class="muted">数えられませんでした（' + esc(String(e && e.message || e)) + '）。</p></div>'; }
+      });
+    },
+    tokuteiSched_: function (m, layer, r) {
+      var key = 'sched:' + m + ':' + layer, src = '', v = null;
+      if (this.app.inSyncWindow_(m)) { v = Store.get(key, null); src = '端末'; }
+      else if (r.entries && r.entries[key] && r.entries[key].data) { v = r.entries[key].data; src = 'サーバー'; }
+      else if (!r.entries) { v = Store.get(key, null); src = v ? '端末（参考）' : ''; }   /* 読めなかった時は端末に残る分だけ */
+      if (!v || typeof v !== 'object') return null;
+      var cells = v.cells || {}, n = 0;
+      for (var sid in cells) { for (var d in cells[sid]) { if (cells[sid][d]) { n++; break; } } if (n) break; }
+      var subs = v.subCells || {};
+      if (!n) { for (var s2 in subs) { for (var dv in subs[s2]) { for (var d2 in subs[s2][dv]) { if (subs[s2][dv][d2]) { n++; break; } } } if (n) break; } }
+      return { sched: { cells: cells, subCells: subs, meta: v.meta || {} }, has: n > 0, src: src };
+    },
+    tokuteiMonth_: function (m, r) {
+      var app = this.app;
+      var plan = this.tokuteiSched_(m, 'plan', r), act = this.tokuteiSched_(m, 'actual', r);
+      var use = (act && act.has) ? act : ((plan && plan.has) ? plan : null);
+      if (!use) return null;
+      var snap = plan && plan.sched.meta && plan.sched.meta.staffSnap;
+      var roster = (snap && snap.length) ? snap : app.staff;
+      var y = +m.slice(0, 4), mo = +m.slice(5, 7), days = new Date(y, mo, 0).getDate();
+      var list = [], results = {};
+      for (var i = 0; i < roster.length; i++) {
+        var st = roster[i];
+        if (!app.isVisibleInMonth(st, m)) continue;
+        list.push(st);
+        results[st.id] = app.computeFor(st, use.sched, days);
+      }
+      /* 起算日は昔からの事実＝確定した名簿に無くても今のマスタの値を使う */
+      var tm = AG.tokuteiMonth(list, results, app.settings, m, function (st) {
+        var ms = app.masterStaffById_(st.id);
+        return (ms && ms.careExpSince) || st.careExpSince || '';
+      });
+      tm.layer = (use === act) ? '実績' : '予定';
+      tm.src = use.src;
+      tm.nameOf = {};
+      for (var j = 0; j < list.length; j++) tm.nameOf[list[j].id] = { name: list[j].name, quals: (list[j].qualifications || []).join('・'), exp: (app.masterStaffById_(list[j].id) || {}).careExpSince || list[j].careExpSince || '' };
+      return tm;
+    },
+    tokuteiHtml_: function (ym, W, months, r) {
+      var self = this, byM = {};
+      months.forEach(function (m) { byM[m] = self.tokuteiMonth_(m, r); });
+      var label = function (m) { return +m.slice(0, 4) + '年' + (+m.slice(5, 7)) + '月'; };
+      var pick = function (list) { return list.map(function (m) { return byM[m]; }).filter(Boolean); };
+      var pctTd = function (p, base) {
+        if (p === null) return '<td>—</td>';
+        return '<td' + (p < base ? ' style="color:#b00020;font-weight:bold"' : '') + '>' + p + '%</td>';
+      };
+      var h = '<div class="panel"><h2>特定事業所加算（Ⅰ）の人の要件（訪問介護・' + label(ym) + ' 時点）</h2>';
+      if (r.failed) h += '<p style="color:#b00020">サーバーから過去の月を読めませんでした（' + esc(r.failed === 'login' ? 'ログインが切れています。ログインし直してから、もう一度押してください' : r.failed) + '）。この端末に残っている月だけで数えています（参考）。</p>';
+      else if (r.nosync) h += '<p class="muted">同期が設定されていないため、この端末に残っている月だけで数えています（参考）。</p>';
+      /* 期間の表 */
+      var periods = [
+        ['前年度（' + label(W.prevFy[0]) + '〜' + label(W.prevFy[W.prevFy.length - 1]) + '）', W.prevFy],
+        ['今年度（' + label(W.curFy[0] || ym) + '〜' + label(ym) + '・3月を除く）', W.curFy],
+        ['直近3月（' + label(W.last3[0]) + '〜' + label(W.last3[2]) + '）', W.last3]
+      ];
+      h += '<h3>(5) 介護福祉士等の割合（常勤換算・1月あたりの平均）</h3>';
+      h += '<table class="plain" style="max-width:980px"><tr><th>期間</th><th>勤務表のある月</th><th>訪問介護員等</th><th>介護福祉士</th><th>割合（30%以上）</th>' +
+        '<th>介護福祉士・実務者研修・看護師</th><th>割合（50%以上）</th><th>参考: 准看護師も含めた割合</th><th>判定</th></tr>';
+      periods.forEach(function (pr) {
+        var ms = pick(pr[1]), P = AG.tokuteiPeriod(ms);
+        var judge = !P.n ? '勤務表なし' : (P.ok5 ? '満たす' : '<b style="color:#b00020">届いていません</b>');
+        /* 期間の月が欠けている・サーバーを読めなかった時は、判定を参考に落とす（欠けた月のある数字で言い切らない） */
+        if (P.n && (P.n < pr[1].length || r.failed || r.nosync)) judge += '（参考: ' + P.n + '/' + pr[1].length + 'か月' + (r.failed || r.nosync ? '・端末の分だけ' : '') + '）';
+        h += '<tr><th>' + esc(pr[0]) + '</th><td>' + P.n + ' / ' + pr[1].length + 'か月</td><td>' + (P.n ? P.den : '—') + '</td><td>' + (P.n ? P.kf : '—') + '</td>' +
+          pctTd(P.kfPct, 30) + '<td>' + (P.n ? P.g50 : '—') + '</td>' + pctTd(P.g50Pct, 50) + '<td>' + (P.g50jPct === null ? '—' : P.g50jPct + '%') + '</td><td>' + judge + '</td></tr>';
+      });
+      h += '</table>';
+      var prevN = pick(W.prevFy).length;
+      if (prevN < 6) h += '<p class="muted">前年度の勤務表がこのアプリに ' + prevN + 'か月分しかありません。前年度の実績が6月に満たない時は前年度の実績では届出できず、届出の月の前3月の平均で確かめ、その後も直近3月の割合を毎月記録して維持します。</p>';
+      /* 月ごとの表 */
+      h += '<details><summary>月ごとの数字</summary><table class="plain" style="max-width:980px"><tr><th>月</th><th>数えた版</th><th>読んだ先</th><th>人数</th><th>訪問介護員等</th><th>介護福祉士</th><th>割合</th><th>介福・実務者・看護師</th><th>割合</th><th>サービス提供責任者 要件を満たす人</th></tr>';
+      months.forEach(function (m) {
+        var t = byM[m];
+        if (!t) { h += '<tr><th>' + label(m) + '</th><td colspan="9" class="muted">勤務表なし</td></tr>'; return; }
+        h += '<tr><th>' + label(m) + '</th><td>' + t.layer + '</td><td>' + esc(t.src) + '</td><td>' + t.persons + '人</td><td>' + t.den.fte + '</td><td>' + t.kf.fte + '</td>' +
+          pctTd(AG.tokuteiPeriod([t]).kfPct, 30) + '<td>' + t.g50.fte + '</td>' + pctTd(AG.tokuteiPeriod([t]).g50Pct, 50) +
+          '<td>' + (t.svc.length ? t.svcOk + ' / ' + t.svc.length + '人' : '登録なし') + '</td></tr>';
+      });
+      h += '</table></details>';
+      /* (6) サービス提供責任者（表示中の月） */
+      var cur = byM[ym];
+      h += '<h3>(6) サービス提供責任者（' + label(ym) + '・' + (cur ? esc(cur.asOf) : '') + ' 時点の実務経験）</h3>';
+      if (!cur) h += '<p class="muted">この月の勤務表がありません。</p>';
+      else if (!cur.svc.length) h += '<p style="color:#b00020">この月に訪問の勤務があるサービス提供責任者がいません（職員マスタの「サービス提供責任者」の印を確かめてください）。</p>';
+      else {
+        h += '<table class="plain" style="max-width:980px"><tr><th>氏名</th><th>資格</th><th>実務経験の起算日</th><th>満年数</th><th>必要な年数</th><th>常勤（A・B）</th><th>判定</th></tr>';
+        cur.svc.forEach(function (c) {
+          var nm = cur.nameOf[c.sid] || { name: c.sid, quals: '', exp: '' };
+          h += '<tr><td>' + esc(nm.name) + '</td><td>' + esc(nm.quals) + '</td><td>' + esc(nm.exp || '未入力') + '</td><td>' + (c.years >= 0 ? c.years + '年' : '—') + '</td><td>' + (c.need ? c.need + '年' : '—') + '</td>' +
+            '<td>' + (c.fullTime ? 'はい' : 'いいえ') + '</td><td>' + (c.ok ? '満たす' : '<b style="color:#b00020">' + esc(c.reason) + '</b>') + (c.noWork ? '<br><span class="muted">この月は訪問の勤務がありません</span>' : '') + '</td></tr>';
+        });
+        h += '</table>';
+        h += '<p class="muted">常勤のサービス提供責任者は ' + cur.svcFull + '人です。利用者の数（前3月の平均）が40人を超えてサービス提供責任者を2人以上置く事業所は、常勤のサービス提供責任者が2人以上必要です。利用者の数はこの画面では数えていません。</p>';
+      }
+      h += '<p class="muted">※数え方: 訪問の勤務（1〜28日）を常勤の時間（4週 ' + esc(this.app.settings.fteBaseHours) + 'h）で割った常勤換算（勤務形態 A で主区分が訪問の職員は1人、ほかは1人あたり常勤の時間が上限）。資格者の換算は小数点第2位以下切り捨て、総数は割合を甘く見せないよう切り捨てません（県の様式は両方を切り捨てるため、境目では様式の値と少し違うことがあります）。' +
+        '常勤（A・B）の休暇は勤務とみなし、非常勤の休暇は含めません。分母はサービス提供責任者を含む訪問介護員等の全員。看護師は1級課程修了者として50%の側に数えます。准看護師は県の計算様式の注記だけが根拠のため参考の列に分けました。' +
+        '資格は今の職員マスタ（確定した月はその時点の名簿）で数えています（決まりは各月の前月の末日時点）。勤務形態が未設定の職員は非常勤として数えています。介護職員基礎研修・1級課程は資格の選択肢に無いため数えていません（少なく出ます）。今の職員マスタで休職中の職員は、確定した名簿の無い月では数えていません。表示中の月も今年度の平均に入ります。重度者等の割合（要件の(7)）はこの画面では数えていません。</p>';
+      h += '</div>';
+      return h;
     },
 
     /* 実績レイヤを行政提出用レイヤに複製（行政提出は実績に紐づく） */
@@ -7508,6 +7802,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     render: function () {
       var app = this.app;
+      var tkOut = document.getElementById('offTokuteiOut');
+      if (tkOut && this._tkYm !== app.ym) { tkOut.innerHTML = ''; this._tkGen++; var tkb = document.getElementById('offTokutei'); if (tkb) tkb.disabled = false; }
+      this._tkYm = app.ym;
       var data = this.buildData();
       var h = '<div class="panel"><h2>' + app.year + '年' + app.month + '月 勤務形態一覧（' + esc(data.division) + '）</h2>';
       var colW = 90 + 96 + 130 + 64 + data.days * 46 + 4 * 44 + 52 + 56;
@@ -9304,7 +9601,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.warnCount = warn;
     },
 
-    computeFor: function (st, sched) {
+    /* optDays: 表示中でない月を数える時のその月の日数（特定事業所加算の人の要件・2026-10-16）。省略時は表示中の月 */
+    computeFor: function (st, sched, optDays) {
       var rows = [{ division: st.mainDivision || '施設', cells: sched.cells[st.id] || {}, isMain: true }];
       var subs = sched.subCells[st.id] || {};
       for (var dv in subs) {
@@ -9322,7 +9620,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 早番に数える開始時刻の上限は運用ルール＝マスタ現在値を優先（確定月の凍結名簿でも直せば反映・resolveConsRule と同じ考え方） */
       var ruleSrc = this.masterStaffById_(st.id) || st;
       return TC.computeStaffMonth({
-        days: this.days, rows: rows, symbols: this.symbols,
+        days: optDays || this.days, rows: rows, symbols: this.symbols,
         settings: settings, nightSplit: st.nightSplit || null,
         offDayMultiplier: isNight ? 2 : 1,
         earlyStartMax: Sym.earlyStartMaxOf(ruleSrc)
