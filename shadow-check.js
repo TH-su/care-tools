@@ -358,7 +358,8 @@
   // Google の版の数え方（2026-09-27 改: 全ファイルを開く list は同期フォルダが大きく90秒で終わらなかった）。
   // ワースケの日データは「1年前〜2か月先」の日付だけを25件ずつ head で問い合わせる（ファイルが無い日は版 0＝数えない）。
   // 勤務表は Google 側の版の索引（_shift_revindex）を1回読む shiftStatus で、名簿・記号・設定と前後の月（12か月前〜3か月先）を問う。
-  // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので数えない（確定すると plan に入る）。
+  // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので、ここでは数えない。
+  // 代わりに drafts:YYYY-MM の一覧に載っている案 id ごとに、版と中身を別に比べる（checkDrafts・2026-10-16）。
   var WSDAY_BACK = 365, WSDAY_AHEAD = 60, HEAD_BATCH = 15, SHIFT_BACK = 12, SHIFT_AHEAD = 3;
   // 自動やり直し（2026-09-27 代表者の指示）: Google はしばらく使われていないと最初の読み出しが遅く、1回目が時間切れになりやすい。
   // 1回の問い合わせが失敗したら、少し待って同じ問い合わせを最大2回までやり直す（読むだけ・写すだけなので何度やっても害はない）。
@@ -407,6 +408,81 @@
     return { revs: revs, asked: asked };
   }
   var plan = [];      // 足りない分のキー
+
+  /* ── 作りかけの案の中身の点検（2026-10-16 代表者の決定）──
+   * drafts:YYYY-MM（案の一覧）に載っている id ごとに sched:YYYY-MM:draft:<id> の Google の版・中身と写しの版・中身を比べる。
+   * 一覧は Google と写しの両方から集める（片方にだけ載っている案も見落とさない）。画面に出すのはキー名と版と件数だけ。 */
+  var DRAFTS_RE = /^drafts:(\d{4}-\d{2})$/;
+  var DRAFT_ID_RE = /^[A-Za-z0-9_.-]{1,60}$/;
+  /* 案の一覧（キー→中身）から、案の本体のキーを並べる（id の形が違うものは数えない） */
+  function draftKeysOf(lists) {
+    var out = {};
+    Object.keys(lists || {}).forEach(function (lk) {
+      var m = DRAFTS_RE.exec(lk), list = lists[lk];
+      if (!m || !Array.isArray(list)) return;
+      list.forEach(function (d) {
+        var id = d && d.id != null ? String(d.id) : '';
+        if (DRAFT_ID_RE.test(id)) out['sched:' + m[1] + ':draft:' + id] = true;
+      });
+    });
+    return Object.keys(out).sort();
+  }
+  /* 1つの案の見比べ。g＝Google の {rev, data}（無ければ null）、s＝写しの {rev, data}（無ければ null）。
+   * 返す値: same（一致）／missing（写しに無い）／gasonly（Google に無い）／older（写しの版が古い）／newer（写しの版が新しい）／
+   *         content（版は同じで中身が違う）。missing・older・content は「足りない分を写す」で直せる（kv_import は同じ版でも中身が違えば書く） */
+  function draftCompare(g, s) {
+    var gr = g && Number(g.rev) > 0 && g.data != null ? Number(g.rev) : 0;
+    var sr = s && Number(s.rev) > 0 && s.data != null ? Number(s.rev) : 0;
+    if (!gr && !sr) return 'same';
+    if (!sr) return 'missing';
+    if (!gr) return 'gasonly';
+    if (sr < gr) return 'older';
+    if (sr > gr) return 'newer';
+    return sameData(g.data, s.data) ? 'same' : 'content';
+  }
+  /* Google の pull を少しずつ（FILL_BATCH 件ずつ）。返すのは キー→{rev, data} */
+  async function gasPullAll(tgt, keys, onRetry) {
+    var out = {};
+    for (var i = 0; i < keys.length; i += FILL_BATCH) {
+      var part = keys.slice(i, i + FILL_BATCH);
+      var j = await gasPostRetry(tgt, { action: 'pull', keys: part }, 120000, onRetry);
+      var ents = j.entries || {};
+      part.forEach(function (k) { if (ents[k]) out[k] = { rev: Number(ents[k].rev) || 0, data: ents[k].data }; });
+    }
+    return out;
+  }
+  /* 写し（Supabase）の中身。shift_pull は写しの期間でも読める。返すのは キー→{rev, data} */
+  async function sbShiftPull(sb, keys) {
+    if (!keys.length) return {};
+    var r = await sb.rpc('shift_pull', { p_keys: keys });
+    if (r.error) throw new Error(/PGRST202|42883/.test(String(r.error.code || r.error.message)) ? 'データベースの準備（0009）がまだです。' : String(r.error.message || r.error.code));
+    var ents = (r.data && r.data.entries) || {}, out = {};
+    Object.keys(ents).forEach(function (k) { out[k] = { rev: Number(ents[k].rev) || 0, data: ents[k].data }; });
+    return out;
+  }
+  /* listKeys＝点検した範囲の drafts:YYYY-MM（Google か写しのどちらかにあるもの）。返すのは {total, same, bad:[{key, why}], fix:[キー]} */
+  async function checkDrafts(tgt, sb, listKeys, onRetry) {
+    var res = { total: 0, same: 0, bad: [], fix: [] };
+    if (!listKeys.length) return res;
+    var gl = await gasPullAll(tgt, listKeys, onRetry), sl = await sbShiftPull(sb, listKeys), lists = {};
+    // 一覧は Google と写しの両方の id を合わせる
+    listKeys.forEach(function (lk) {
+      var a = gl[lk] && Array.isArray(gl[lk].data) ? gl[lk].data : [], b = sl[lk] && Array.isArray(sl[lk].data) ? sl[lk].data : [];
+      lists[lk] = a.concat(b);
+    });
+    var keys = draftKeysOf(lists);
+    res.total = keys.length;
+    if (!keys.length) return res;
+    var gd = await gasPullAll(tgt, keys, onRetry), sd = await sbShiftPull(sb, keys);
+    keys.forEach(function (k) {
+      var why = draftCompare(gd[k] || null, sd[k] || null);
+      if (why === 'same') { res.same++; return; }
+      res.bad.push({ key: k, why: why, g: gd[k] ? gd[k].rev : 0, s: sd[k] ? sd[k].rev : 0 });
+      if (why === 'missing' || why === 'older' || why === 'content') res.fix.push(k);
+    });
+    return res;
+  }
+  var DRAFT_WHY = { missing: '写しに無い', gasonly: 'Google に無い', older: '写しの版が古い', newer: '写しの版が新しい', content: '版は同じで中身が違う' };
 
   function famOf(k) { return window.SUKvShadow ? SUKvShadow.family(k) : ''; }
   function gasTarget() {
@@ -498,6 +574,25 @@
           list.appendChild(preItem(f[1] + (CUT_FAMS.indexOf(f[0]) < 0 ? '（切り替えは別の夜・写しの確認）' : ''), note + (ex ? '　例: ' + ex : ''), bad > 0));
         }
       });
+      // 作りかけの案の中身（2026-10-16）。違う案は勤務表の「そろっていない」に数え、直せるものは「足りない分を写す」に入れる
+      var shCopy = (idx[FAMS.map(function (f) { return f[0]; }).indexOf('shift')].data || {}).revs || {};
+      var dListKeys = Object.keys(asked).filter(function (k) {
+        return DRAFTS_RE.test(k) && (Object.prototype.hasOwnProperty.call(gasRevs, k) || Object.prototype.hasOwnProperty.call(shCopy, k));
+      }).sort();
+      busy(true, '確かめています… 勤務表の作りかけの案');
+      var dr = await checkDrafts(tgt, sb, dListKeys, function (n) {
+        busy(true, '確かめています… 勤務表の作りかけの案（Google の応答が遅いため、やり直しています ' + n + '回目）');
+      });
+      kpis.appendChild(kpi('勤務表の作りかけの案', dr.same + '／' + dr.total, '一致'));
+      dr.fix.forEach(function (k) { if (plan.indexOf(k) < 0) plan.push(k); });
+      shiftBad += dr.bad.length;
+      if (dr.bad.length) {
+        var cnt = {};
+        dr.bad.forEach(function (b) { cnt[b.why] = (cnt[b.why] || 0) + 1; });
+        list.appendChild(preItem('勤務表（作りかけの案）（切り替えは別の夜・写しの確認）',
+          Object.keys(cnt).map(function (w) { return DRAFT_WHY[w] + ' ' + cnt[w] + '件'; }).join('・') + '　例: ' +
+          dr.bad.slice(0, 6).map(function (b) { return b.key + '（Google ' + b.g + '／写し ' + b.s + '）'; }).join('、'), true));
+      }
       var shiftHooks = true;
       hooks.forEach(function (h) {
         if (h.only === 'shift' || h.name === '勤務表') shiftHooks = shiftHooks && h.ok;

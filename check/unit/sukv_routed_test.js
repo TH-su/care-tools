@@ -12,6 +12,9 @@
        応答の版は「書いた版の1つ前」＝端末は次の取得でサーバーの盤面を取り込む
      D デイ利用表（daycare-roster.html の runSaver）: 断られたら切り替えを元に戻して知らせる（2026-10-10 代表者の決定）。
        偽の「保存しました」を出さない
+     F 勤務表の振り分け（handlesShift / callShift・統合 0009・2026-10-16 追加）: 受け持つ形の判定・関数へ渡す引数の写し・
+       応答の素通し（conflict・editlock・schedwipe）・現場の書き込みの forbidden・成功の時だけ写し返す・スイッチ切で Google へ。
+       su-kv.js は変えずに、今の振る舞いを固定する
    ★画面の本物の関数を切り出して動かす。偽物にするのは、ログインの状態・データベースの応答・Google への送信だけ。
    実行: node check/unit/sukv_routed_test.js
    架空データのみ。 */
@@ -67,6 +70,7 @@ function makeKv(o) {
       rpcs.push({ name, args: clone(args) });
       if (o.rpcThrowOnce && !sb._thrown) { sb._thrown = true; return Promise.resolve({ error: { message: 'Failed to fetch' } }); }
       if (o.rpcError) return Promise.resolve({ error: o.rpcError });
+      if (o.shiftRpc && /^shift_/.test(name)) return Promise.resolve(o.shiftRpc(name, args));   // F 節（勤務表）の偽のデータベース
       if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x' } });
       if (name === 'kv_head') { const revs = {}; (args.p_keys || []).forEach(k => { revs[k] = db.rev; }); return Promise.resolve({ data: { revs } }); }
       if (name === 'kv_put_marks') {
@@ -463,6 +467,147 @@ function makeKv(o) {
     const idx = read('index.html'), help = read('help.html');
     t('メニューのログインの表記から「試験中」を外した（10/09 から事務所PCの保存に必須）', /<a href="login\.html">ログイン（Google）<\/a>/.test(idx) && !/ログイン（Google・試験中）/.test(idx));
     t('ヘルプに「ログインが必要です」の帯が出た時の節がある（帯のボタンの文言と同じ「ログインする」）', /id="h-login"/.test(help) && /<span class="key">ログインする<\/span>/.test(help) && /ログインする/.test(SUKV_SRC));
+  }
+
+  console.log('\n— F. 勤務表の振り分け（handlesShift / callShift）: 今の振る舞いを固定する —');
+  {
+    const ON = { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: true, shift: true };
+    const OFF = { care_schedule_v2: true, ws_weekly_master_v1: true, wsday: true, shift: false };
+    /* 偽のデータベース（勤務表の関数）。reply があればそれを返し、無ければ ok と版を返す */
+    const shiftDb = (reply) => (name, args) => {
+      if (reply && reply[name] !== undefined) return reply[name];
+      if (name === 'shift_pull') { const e = {}; (args.p_keys || ['staff']).forEach(k => { e[k] = { key: k, rev: 4, data: { v: 'db:' + k }, updatedAt: 'x' }; }); return { data: { ok: true, entries: e } }; }
+      if (name === 'shift_status') { const r = {}; (args.p_keys || []).forEach(k => { r[k] = 4; }); return { data: { ok: true, revs: r, lock: null } }; }
+      if (name === 'shift_push') return { data: { ok: true, rev: 5 } };
+      return { data: { ok: true } };
+    };
+    let k = makeKv({ flags: ON, shiftRpc: shiftDb() });
+    const hs = k.kv.handlesShift;
+
+    /* F-1 受け持つ形の判定 */
+    t('F push は勤務表のキーだけ受け持つ（staff・sched:YM:plan・案・req:・drafts:）',
+      ['staff', 'symbols', 'settings', 'freee', 'sched:2026-10:plan', 'sched:2026-10:draft:dabc123', 'req:2026-10', 'drafts:2026-10'].every(x => hs({ action: 'push', key: x }) === true));
+    t('F push は勤務表以外のキー（週間計画・日ごと・他のアプリ・形の違う月）を受け持たない',
+      ['care_schedule_v2', 'wsday_2026-10-10', 'genogram_x', 'sched:2026-1:plan', 'staff; drop', '_shift_editlock', ''].every(x => hs({ action: 'push', key: x }) === false));
+    t('F head は全部が勤務表のキーの時だけ受け持つ（混ざる・空・keys 無しは受け持たない）',
+      hs({ action: 'head', keys: ['staff', 'req:2026-10'] }) === true && hs({ action: 'head', keys: ['staff', 'care_schedule_v2'] }) === false &&
+      hs({ action: 'head', keys: [] }) === false && hs({ action: 'head' }) === false);
+    t('F pull は keys が無い・空・全部勤務表の時だけ受け持つ（混ざれば受け持たない）',
+      hs({ action: 'pull' }) === true && hs({ action: 'pull', keys: [] }) === true && hs({ action: 'pull', keys: ['staff', 'drafts:2026-10'] }) === true &&
+      hs({ action: 'pull', keys: ['staff', 'wsday_2026-10-10'] }) === false);
+    t('F 編集権・版の確かめ（lockStatus / lockAcquire / lockRenew / lockRelease / shiftStatus）は常に受け持つ',
+      ['lockStatus', 'lockAcquire', 'lockRenew', 'lockRelease', 'shiftStatus'].every(a => hs({ action: a }) === true && hs({ action: a, key: 'genogram_x', keys: ['x'] }) === true));
+    t('F 知らない動作（get・put・list）・空の通信は受け持たない',
+      hs({ action: 'get', key: 'staff' }) === false && hs({ action: 'put', key: 'staff' }) === false && hs({ action: 'list' }) === false && hs(null) === false && hs(undefined) === false);
+    t('F 週間計画の入口（handles）は勤務表のキーを受け持たない（入口が混ざらない）',
+      k.kv.handles({ action: 'put', key: 'sched:2026-10:plan' }) === false && k.kv.handles({ action: 'head', keys: ['staff', 'req:2026-10'] }) === false);
+
+    /* F-2 関数へ渡す引数の写し */
+    const lastArgs = (kk, name) => ((kk.rpcs.filter(x => x.name === name).pop()) || {}).args;
+    const push = (o) => Object.assign({ action: 'push', key: 'sched:2026-10:plan', baseRev: 3, data: { cells: {} } }, o || {});
+    k = makeKv({ flags: ON, shiftRpc: shiftDb() });
+    await k.kv.callShift(push({ editToken: 'tok-1' }), k.raw);
+    let a = lastArgs(k, 'shift_push');
+    t('F push は shift_push へ キー・版・中身・券をそのまま渡す（force 等は既定で偽）',
+      !!a && a.p_key === 'sched:2026-10:plan' && a.p_base_rev === 3 && JSON.stringify(a.p_data) === '{"cells":{}}' && a.p_edit_token === 'tok-1' &&
+      a.p_force === false && a.p_defaults_init === false && a.p_restore_backup === false, a);
+    const baseOf = async (v) => { const kk = makeKv({ flags: ON, shiftRpc: shiftDb() }); await kk.kv.callShift(push({ baseRev: v }), kk.raw); return lastArgs(kk, 'shift_push').p_base_rev; };
+    const bases = [await baseOf('3'), await baseOf(NaN), await baseOf(Infinity), await baseOf(null), await baseOf(undefined), await baseOf(0), await baseOf(7)];
+    t('★F 版（baseRev）が数でない値（文字の "3"・NaN・Infinity・null・無し）は 0 として渡す', JSON.stringify(bases) === '[0,0,0,0,0,0,7]', bases);
+    const tokOf = async (v) => { const kk = makeKv({ flags: ON, shiftRpc: shiftDb() }); await kk.kv.callShift(push({ editToken: v }), kk.raw); return lastArgs(kk, 'shift_push').p_edit_token; };
+    const toks = [await tokOf(12345), await tokOf(''), await tokOf(undefined), await tokOf(null), await tokOf('abc')];
+    t('★F 券（editToken）は文字にして渡す・空や無しは null', JSON.stringify(toks) === '["12345",null,null,null,"abc"]', toks);
+    k = makeKv({ flags: ON, shiftRpc: shiftDb() });
+    await k.kv.callShift(push({ force: true, defaultsInit: true, restoreFromBackup: true }), k.raw);
+    a = lastArgs(k, 'shift_push');
+    t('F force・defaultsInit（既定値の初期化）・restoreFromBackup（端末の退避からの戻し）は真の時だけ真で渡す',
+      a.p_force === true && a.p_defaults_init === true && a.p_restore_backup === true, a);
+    k = makeKv({ flags: ON, shiftRpc: shiftDb() });
+    await k.kv.callShift(push({ force: 'true', defaultsInit: 1, restoreFromBackup: 'yes', data: undefined }), k.raw);
+    a = lastArgs(k, 'shift_push');
+    t('★F 真でない値（文字の "true"・1・"yes"）は偽で渡す・中身が無ければ null（データベースが nodata で断る）',
+      a.p_force === false && a.p_defaults_init === false && a.p_restore_backup === false && a.p_data === null, a);
+    k = makeKv({ flags: ON, shiftRpc: shiftDb() });
+    await k.kv.callShift({ action: 'lockAcquire', deviceId: 'D'.repeat(80), name: 'N'.repeat(50), takeover: 'yes' }, k.raw);
+    a = lastArgs(k, 'shift_lock_acquire');
+    t('F 編集権の取得は 端末ID 64字・名前 40字に切り、横取りは真の時だけ', a.p_device.length === 64 && a.p_name.length === 40 && a.p_takeover === false, a);
+    await k.kv.callShift({ action: 'lockRenew', deviceId: 'dev', editToken: 999 }, k.raw);
+    a = lastArgs(k, 'shift_lock_renew');
+    t('F 編集権の延長は 端末ID と券を文字で渡す', a.p_device === 'dev' && a.p_token === '999', a);
+    await k.kv.callShift({ action: 'pull' }, k.raw);
+    await k.kv.callShift({ action: 'pull', keys: [] }, k.raw);
+    const pulls = k.rpcs.filter(x => x.name === 'shift_pull').map(x => x.args.p_keys);
+    t('F pull は keys が無い・空なら全部（p_keys: null）', pulls.length === 2 && pulls[0] === null && pulls[1] === null, pulls);
+    let r = await k.kv.callShift({ action: 'head', keys: ['staff', 'req:2026-10'] }, k.raw);
+    t('F head は shift_status に聞き、{ok, revs} だけを返す（編集権の情報は混ぜない）',
+      JSON.stringify(lastArgs(k, 'shift_status').p_keys) === '["staff","req:2026-10"]' && r.ok === true && r.revs.staff === 4 && !('lock' in r), r);
+    r = await k.kv.callShift({ action: 'shiftStatus', keys: ['staff'] }, k.raw);
+    t('F shiftStatus は shift_status の応答をそのまま返す（編集権の情報つき）', r.ok === true && 'lock' in r, r);
+    t('F 勤務表の通信は Google へ流さない（スイッチ入り）', k.raws.length === 0, k.raws);
+
+    /* F-3 応答の素通し・写し返しの予約 */
+    const replies = [
+      ['conflict', { conflict: true, serverRev: 9 }],
+      ['editlock', { ok: false, error: 'editlock', name: '架空 職員', expiresAt: 1 }],
+      ['editlock-required', { ok: false, error: 'editlock-required' }],
+      ['schedwipe', { ok: false, error: 'schedwipe', was: 40, now: 3, serverRev: 9 }],
+      ['shadow', { ok: false, error: 'shadow', serverRev: 2 }]
+    ];
+    for (const [nm, rep] of replies) {
+      k = makeKv({ flags: ON, shiftRpc: shiftDb({ shift_push: { data: rep } }) });
+      r = await k.kv.callShift(push(), k.raw);
+      t('★F ' + nm + ' はそのまま返し、写し返しを予約しない・Google へ流さない',
+        JSON.stringify(r) === JSON.stringify(rep) && k.timers.length === 0 && k.raws.length === 0, { r, timers: k.timers.length });
+    }
+    k = makeKv({ flags: ON, shiftRpc: shiftDb({ shift_push: { error: { code: '42501', message: 'not allowed' } } }) });
+    r = await k.kv.callShift(push(), k.raw);
+    t('F データベースの権限の断り（42501）は forbidden', r.ok === false && r.error === 'forbidden' && k.timers.length === 0, r);
+    k = makeKv({ flags: ON, shiftRpc: shiftDb({ shift_push: { data: null } }) });
+    r = await k.kv.callShift(push(), k.raw);
+    t('F 応答が空なら「通信失敗」', r.ok === false && r.error === '通信失敗' && k.timers.length === 0, r);
+
+    for (const role of ['field', 'viewer']) {
+      k = makeKv({ flags: ON, role, shiftRpc: shiftDb() });
+      r = await k.kv.callShift(push(), k.raw);
+      const r2 = await k.kv.callShift({ action: 'lockAcquire', deviceId: 'd', name: 'n' }, k.raw);
+      const r3 = await k.kv.callShift({ action: 'lockRenew', deviceId: 'd', editToken: 't' }, k.raw);
+      const r4 = await k.kv.callShift({ action: 'lockRelease', deviceId: 'd', editToken: 't' }, k.raw);
+      t('★F 書き手でない（' + role + '）の push・編集権の取得/延長/返却は forbidden（データベースへ送らない）',
+        [r, r2, r3, r4].every(x => x.ok === false && x.error === 'forbidden') && !k.rpcs.some(x => /^shift_(push|lock_acquire|lock_renew|lock_release)$/.test(x.name)) && k.timers.length === 0,
+        { r, rpcs: k.rpcs.map(x => x.name) });
+      r = await k.kv.callShift({ action: 'pull', keys: ['staff'] }, k.raw);
+      t('F 書き手でない（' + role + '）でも読む（pull）はデータベースへ聞く', r.ok === true && k.rpcs.some(x => x.name === 'shift_pull'), r);
+    }
+    for (const role of ['office', 'admin']) {
+      k = makeKv({ flags: ON, role, shiftRpc: shiftDb() });
+      r = await k.kv.callShift(push(), k.raw);
+      t('F ' + role + ' の push は通り、写し返しを1つ予約する（すぐには Google へ送らない）', r.ok === true && r.rev === 5 && k.timers.length === 1 && k.raws.length === 0, r);
+    }
+    k.timers[0](); await settle();
+    t('★F 写し返しは、データベースの最新（shift_pull）を版0・force で Google へ push する',
+      k.raws.length === 1 && k.raws[0].action === 'push' && k.raws[0].key === 'sched:2026-10:plan' && k.raws[0].baseRev === 0 && k.raws[0].force === true &&
+      JSON.stringify(k.raws[0].data) === '{"v":"db:sched:2026-10:plan"}' && !('editToken' in k.raws[0]), k.raws);
+    t('F 写し返しの読み出しは、そのキー1つだけ', JSON.stringify(lastArgs(k, 'shift_pull').p_keys) === '["sched:2026-10:plan"]');
+    k = makeKv({ flags: ON, shiftRpc: shiftDb({ shift_pull: { data: { ok: true, entries: {} } } }) });
+    await k.kv.callShift(push(), k.raw);
+    k.timers[0](); await settle();
+    t('F データベースに中身が無ければ写し返さない（Google を空で潰さない）', k.raws.length === 0, k.raws);
+
+    k = makeKv({ flags: ON, status: STATUS.SIGNED_OUT, shiftRpc: shiftDb() });
+    r = await k.kv.callShift(push(), k.raw);
+    t('F 未ログインは login で断り、帯を出し、Google へ流さない', r.error === 'login' && k.banners.length === 1 && k.raws.length === 0 && k.rpcs.length === 0, r);
+    k = makeKv({ flags: ON, checkThrows: true, shiftRpc: shiftDb() });
+    r = await k.kv.callShift(push(), k.raw);
+    t('F ログインの確認が通信で失敗したら「通信失敗」（Google へ流さない）', r.error === '通信失敗' && k.raws.length === 0, r);
+
+    /* F-4 スイッチ切 */
+    k = makeKv({ flags: OFF, status: STATUS.SIGNED_OUT, shiftRpc: shiftDb() });
+    const p0 = push({ editToken: 'tok-1' });
+    r = await k.kv.callShift(p0, k.raw);
+    const r5 = await k.kv.callShift({ action: 'lockAcquire', deviceId: 'd', name: 'n' }, k.raw);
+    t('★F スイッチ（shift）が切なら、受け取った通信をそのまま Google（rawGas）へ流す（データベース・ログインに触れない）',
+      k.raws.length === 2 && JSON.stringify(k.raws[0]) === JSON.stringify(p0) && k.raws[1].action === 'lockAcquire' && k.rpcs.length === 0 && k.banners.length === 0 && r.ok === true && r5.ok === true,
+      { raws: k.raws, rpcs: k.rpcs });
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
