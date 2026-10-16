@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ggAQ21AQYdJ2NhCy+iFy9vpANdOoG5iMV8N7COyQ46I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LAxVIW4CBe8IkONeS4l1/8UgjE5Tg2hA0NaEyZNPFQU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -12,14 +12,19 @@
 <meta name="robots" content="noindex,nofollow">
 <title>入居調整</title>
 <style>
-/* care-tools 共通の CSS 変数体系（index.html・入居者マスタと同じ見た目に揃える） */
+/* ── 配色（2026-10-16 代表者の指示で cal 系の見た目へ）──
+   ★変数の名前と段数は care-tools 共通のまま。値だけ入れ替えてあるので、
+     この1ファイルの中で完結し、ほかのツールには影響しない。
+     ただし他の11本は従来の Google 系の青のままなので、このツールだけ見た目が異なる。
+   ★薄い色をそのまま持ち込むと小さい文字が読めなくなるため、
+     文字に使う ok/warn/err だけは白地で 4.5:1 を満たす濃さに落としてある。 */
 :root {
-  --pri: #0b57d0; --pri-l: #ecf3fe; --pri-d: #0842a0;
-  --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
-  --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g8: #3c4043; --g9: #202124;
-  --ok: #2e7d32; --warn: #e65100; --err: #c62828;
+  --pri: #111111; --pri-l: #f3f4f6; --pri-d: #000000;
+  --g0: #f7f7f8; --g1: #f8f9fa; --g2: #f3f4f6; --g3: #e5e7eb;
+  --g5: #9ca3af; --g6: #6b7280; --g7: #4b5563; --g8: #374151; --g9: #111111;
+  --ok: #047857; --warn: #b45309; --err: #b91c1c;
   --r: 12px;
-  --sh: 0 1px 6px rgba(0,0,0,.12);
+  --sh: 0 1px 2px rgba(17,17,17,.06), 0 1px 3px rgba(17,17,17,.08);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
@@ -170,7 +175,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .tk.st-done .ti { color: var(--g6); text-decoration: line-through; }
 .tk .mt { font-size: 0.71875rem; color: var(--g6); display: flex; gap: 8px; flex-wrap: wrap; }
 .tk .mt .over { color: var(--err); font-weight: 700; }
-.tk .del { font: inherit; flex: none; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; padding: 4px 6px; min-width: 44px; min-height: 44px; }
+.tk .del { font: inherit; flex: none; background: none; border: none; color: var(--g7); cursor: pointer; font-size: 0.9375rem; padding: 4px 6px; min-width: 44px; min-height: 44px; }
 .tkgrp { margin: 6px 0 2px; font-size: 0.75rem; font-weight: 700; color: var(--g7); }
 .tkgrp .n { font-weight: 400; color: var(--g6); }
 .prog-line { height: 6px; background: var(--g2); border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
@@ -198,7 +203,7 @@ main { max-width: 760px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 /* 発症時期は「平成20年頃」と西暦の注記が入るので、他より広く取る */
 .frow .fld.onsetfld { min-width: 11em; }
 .subrow { border: 1px dashed var(--g3); border-radius: 10px; padding: 8px; margin: 0 0 8px; }
-.subrow .rm { float: right; font: inherit; background: none; border: none; color: var(--g5); cursor: pointer; font-size: 0.9375rem; min-width: 44px; min-height: 44px; }
+.subrow .rm { float: right; font: inherit; background: none; border: none; color: var(--g7); cursor: pointer; font-size: 0.9375rem; min-width: 44px; min-height: 44px; }
 .chk { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; min-height: 44px; }
 .chk input { width: 18px; height: 18px; }
 
@@ -340,6 +345,110 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
+/* ══ 一覧の道具立て（検索・しぼりこみ・並べ替え・表示の切替）2026-10-16 ══ */
+.ltool { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 2px 0 10px; }
+.ltool .sbox { flex: 1 1 14em; min-width: 12em; position: relative; display: flex; }
+.ltool input[type="search"] {
+  width: 100%; font: inherit; font-size: 0.875rem; padding: 10px 12px; min-height: 44px;
+  border: 1px solid var(--g3); border-radius: var(--r); background: #fff; color: var(--g9);
+}
+.ltool input[type="search"]:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+.ltool select {
+  font: inherit; font-size: 0.84375rem; padding: 9px 10px; min-height: 44px;
+  border: 1px solid var(--g3); border-radius: var(--r); background: #fff; color: var(--g9);
+}
+.ltool .modebtn {
+  font: inherit; font-size: 0.84375rem; font-weight: 700; min-height: 44px; padding: 9px 14px;
+  border: 1px solid var(--g3); border-radius: var(--r); background: #fff; color: var(--g8); cursor: pointer;
+}
+.ltool .modebtn.on { background: var(--pri-l); border-color: var(--pri); color: var(--pri-d); }
+.sumbar .pill.f { cursor: pointer; }
+.sumbar .pill.f.on { background: var(--pri); border-color: var(--pri); color: #fff; }
+.sumbar .pill.f.on b { color: #fff; }
+.lhit { font-size: 0.78125rem; color: var(--g7); margin: 0 2px 8px; }
+
+/* ── 段階ボード（横に並べる表示） ── */
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: 15.5em; gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+.board .bcol { background: var(--g1); border: 1px solid var(--g2); border-radius: var(--r); padding: 8px; min-height: 6em; }
+.board .bh { font-size: 0.8125rem; font-weight: 700; color: var(--g7); margin: 0 2px 8px; display: flex; gap: 6px; align-items: center; }
+.board .bh .n { font-weight: 400; color: var(--g6); font-size: 0.71875rem; }
+.board .cand { margin-bottom: 8px; }
+.board .cand:last-child { margin-bottom: 0; }
+.board .bempty { color: var(--g6); font-size: 0.75rem; text-align: center; padding: 10px 0; }
+
+/* ── 今日やること ── */
+.todo-sec { margin: 0 0 12px; }
+.todo-sec > h3 { margin: 0 0 8px; font-size: 0.9375rem; color: var(--g7); border-bottom: 2px solid var(--g2); padding-bottom: 5px; }
+.todo-row {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: #fff; border: 1px solid var(--g3); border-radius: var(--r); box-shadow: var(--sh);
+  padding: 10px 12px; margin: 0 0 8px; cursor: pointer; min-height: 44px;
+}
+.todo-row:active { background: var(--pri-l); }
+.todo-row .bd { display: block; flex: 1; min-width: 0; }
+.todo-row .who { display: block; font-weight: 700; font-size: 0.875rem; }
+.todo-row .what { display: block; font-size: 0.84375rem; color: var(--g8); margin-top: 2px; }
+.todo-row .when { display: block; font-size: 0.71875rem; color: var(--g7); margin-top: 2px; }
+.todo-row .when.over { color: var(--err); font-weight: 700; }
+.todo-done { text-align: center; color: var(--ok); font-size: 0.9375rem; padding: 30px 8px; font-weight: 700; }
+
+/* ── 詳細の要約（冗長さの解消。たたんでも要点は出したまま）2026-10-16 ── */
+.vsum { background: #fff; border: 1px solid var(--g3); border-radius: var(--r); box-shadow: var(--sh); padding: 12px 14px; margin: 0 0 12px; }
+.vsum .nm { font-size: 1.125rem; font-weight: 700; }
+.vsum .kn { font-size: 0.78125rem; color: var(--g7); margin-left: 8px; font-weight: 400; }
+.vsum .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5em, 1fr)); gap: 8px 12px; margin-top: 10px; }
+.vsum .facts div { font-size: 0.84375rem; }
+.vsum .facts dt { font-size: 0.6875rem; color: var(--g7); }
+.vsum .facts dd { margin: 1px 0 0; font-weight: 700; }
+details.dcd { background: #fff; border: 1px solid var(--g3); border-radius: var(--r); box-shadow: var(--sh); margin: 0 0 12px; }
+details.dcd > summary {
+  list-style: none; cursor: pointer; padding: 12px 14px; min-height: 44px;
+  display: flex; align-items: center; gap: 8px; font-size: 0.9375rem; font-weight: 700; color: var(--g8);
+}
+details.dcd > summary::-webkit-details-marker { display: none; }
+details.dcd > summary::after { content: "▾"; margin-left: auto; color: var(--g7); font-size: 0.875rem; transition: transform .15s; }
+details.dcd[open] > summary::after { transform: rotate(180deg); }
+details.dcd > summary:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; border-radius: var(--r); }
+details.dcd > summary .sm { font-weight: 400; font-size: 0.78125rem; color: var(--g7); }
+details.dcd > .dbody { padding: 0 14px 14px; border-top: 1px solid var(--g2); margin-top: 0; padding-top: 12px; }
+details.dcd > .dbody > .cd { border: none; box-shadow: none; padding: 0; margin: 0; }
+details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に出ているので二重にしない */
+
+/* ── 経過（連絡・段階・書類を1本の時系列に） ── */
+.tl { margin: 4px 0 0; }
+.tl .ti { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--g2); }
+.tl .ti:first-child { border-top: none; }
+.tl .ti .ic { flex: none; width: 1.6em; text-align: center; }
+.tl .ti .bd { display: block; flex: 1; min-width: 0; }
+.tl .ti .hd { display: block; font-size: 0.71875rem; color: var(--g7); }
+.tl .ti .tx { display: block; font-size: 0.84375rem; color: var(--g9); word-break: break-word; }
+
+/* 丸ボタンが最後のカードに重ならないよう、一覧と今日やることの下に余白を足す
+   （body ではなくこの2画面だけ。印刷の指定に触れないため） */
+#sc-list, #sc-today { padding-bottom: 64px; }
+
+/* ── 新規の丸ボタン（下のナビから「新規」を外した代わり） ── */
+.fab {
+  position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 25; width: 56px; height: 56px; border-radius: 28px; border: none;
+  background: var(--pri); color: #fff; font-size: 1.75rem; line-height: 1; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.28);
+}
+.fab:active { background: var(--pri-d); }
+
+/* ── 広い画面では一覧と詳細を左右に並べる（事務所PC） ── */
+@media (min-width: 1100px) {
+  main { max-width: 1180px; }
+  main.split { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+  main.split > #sc-list { display: block; position: sticky; top: 60px; max-height: calc(100vh - 80px); overflow-y: auto; }
+  main.split > #sc-list .ltool { display: none; }
+  main.split > #sc-list .mini-steps, main.split > #sc-list .mini-lbl { display: none; }
+  main.split > #sc-view { display: block; }
+  .cand.cur { border-color: var(--pri); background: var(--pri-l); }
+  .fab { right: calc((100vw - 1180px) / 2 + 16px); }
+}
+@media (min-width: 1100px) and (max-width: 1212px) { .fab { right: 16px; } }
+
 /* ══ ご相談シートの印刷（施設の様式の紙面をそのまま再現） ══
    画面では隠し、印刷の時だけ出す。A4縦1枚に収める（2026-08-30 指示）。
    ★罫線・項目の並び・選択肢の文言は紙と1対1。直す時は紙の現物と突き合わせること。 */
@@ -387,9 +496,22 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
 <main>
   <!-- ══ 一覧 ══ -->
   <section class="sc on" id="sc-list" aria-label="調整中の一覧">
+    <div class="ltool">
+      <span class="sbox"><input id="listQ" type="search" placeholder="氏名・ふりがな・紹介元で検索" aria-label="案件を検索" autocomplete="off"></span>
+      <select id="listSort" aria-label="並べ替え">
+        <option value="stage">並び: 段階順</option>
+        <option value="desired">並び: 希望入居日が近い順</option>
+        <option value="updated">並び: 最近動いた順</option>
+        <option value="name">並び: ふりがな順</option>
+      </select>
+      <button class="modebtn" id="listMode" type="button" aria-pressed="false">▦ ボード表示</button>
+    </div>
     <div class="sumbar" id="sumbar"></div>
     <div id="listBox"></div>
   </section>
+
+  <!-- ══ 今日やること ══ -->
+  <section class="sc" id="sc-today" aria-label="今日やること"><div id="todayBox"></div></section>
 
   <!-- ══ 詳細 ══ -->
   <section class="sc" id="sc-view" aria-label="案件の詳細"><div id="viewBox"></div></section>
@@ -404,9 +526,11 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
   <section class="sc" id="sc-sheet" aria-label="ご相談シート"><div id="sheetBox"></div></section>
 </main>
 
+<button class="fab" id="fabNew" type="button" aria-label="新しい案件を起票する">＋</button>
+
 <nav class="bnav" aria-label="画面の切替">
+  <button data-nav="today" type="button"><span class="ic" aria-hidden="true">🔔</span>今日</button>
   <button data-nav="list" class="on" type="button"><span class="ic" aria-hidden="true">📋</span>一覧</button>
-  <button data-nav="new" type="button"><span class="ic" aria-hidden="true">➕</span>新規</button>
   <button data-nav="kpi" type="button"><span class="ic" aria-hidden="true">📈</span>集計</button>
   <button data-nav="help" type="button"><span class="ic" aria-hidden="true">❓</span>使い方</button>
 </nav>
@@ -505,14 +629,25 @@ table.shgrid textarea.shin { resize: vertical; min-height: 3em; }
   <div class="md">
     <h2 id="help-h">使い方 — 入居までの標準フロー<button class="md-close" type="button" data-close="mk-help" aria-label="閉じる">✕</button></h2>
     <div style="font-size:0.84375rem">
-      <p><b>1. 問い合わせが来たら「新規」で1件起票</b><br>
-      経路（ケアマネ紹介・病院連携室・家族・本人等）と紹介元を必ず記録します。当日中の返信が原則です。</p>
+      <p><b>1. 問い合わせが来たら右下の「＋」で1件起票</b><br>
+      経路（ケアマネ紹介・病院連携室・家族・本人等）と紹介元を必ず記録します。当日中の返信が原則です。
+      経路と紹介元は「集計」の<b>経路ごとの成績</b>に積み上がります。</p>
+      <p><b>1-2. 朝いちばんは「🔔 今日」を開く</b><br>
+      期限が過ぎたタスク・連絡が要る案件・<b>見学から3日たってまだ記録が無い案件</b>・14日以上動いていない案件が、
+      一覧の件数ではなく<b>行</b>で出ます。押せばその案件へ飛びます。</p>
       <p><b>2. ステージは上のボタンをタップして進める</b><br>
       問い合わせ → 見学 → 申込 → 入居審査 → 入居決定 → 契約済 → 入居済。日付は自動で刻まれます（編集画面で直せます）。</p>
       <p><b>3. 申込が入ったら「標準タスクを追加」</b><br>
       ケアマネ・医療機関・薬局・家族・行政・施設現場・<span data-fac-name="訪問">訪問介護</span>・<span data-fac-name="通所">デイ</span>・厨房の定番のやり取りが一式起票されます。
       タスクの状態は <b>未着手 → 相手待ち → 完了</b> をタップで切替。期限を過ぎた未完了は赤く出ます。</p>
-      <p><b>4. 情報が入ったら画面の一番上に「次にやること」が出る</b><br>
+      <p><b>3-2. 一覧は検索・しぼりこみ・並べ替えができる</b><br>
+      上の検索欄は<b>氏名・ふりがな・紹介元</b>に当たります。件数のバッジ（期限超過など）は<b>押すとその案件だけ</b>に絞れます
+      （もう一度押すと解除）。「▦ ボード表示」で段階を横に並べる形にも切り替えられます。
+      事務所のPCなど画面が広い端末では、案件を開くと<b>左に一覧・右に詳細</b>が並びます。</p>
+      <p><b>3-3. 詳細は要点を上にまとめ、中身はたたんである</b><br>
+      一番上の枠に<b>段階・介護度・年齢・希望入居・経路・連絡先・タスクの進み</b>をまとめてあります。
+      基本情報・アセスメント・添付書類・連携先・経過は見出しを押すと開きます。開け閉めはこの端末に覚えます。</p>
+      <p><b>4. 情報が入ったら画面の上に「次にやること」が出る</b><br>
       介護度の確定・食事形態・ADL・薬・入居希望日などを入力すると、<b>誰に伝えるべきか</b>が自動で出ます。
       電話番号をタップして発信し、「記録して連絡済みにする」を押すと連絡記録に1行残ります。</p>
       <p><b>5. 申込後の聞き取りは「ご相談シート」に入れる</b><br>
@@ -1659,6 +1794,26 @@ function busyEditing() {
 
 /* ── 案件の取得・変更 ── */
 var showDeleted = false;
+/* ── 一覧の見え方（2026-10-16）。検索語としぼりこみはその場限り、
+      並べ替えと表示の形だけ端末に残す（業務データは残さない） ── */
+var LIST_KEY = 'admf_list';
+var LIST_SORTS = { stage: 1, desired: 1, updated: 1, name: 1 };
+var LIST_MODES = { rows: 1, board: 1 };
+var listQ = '';
+var listFilter = '';
+var listSort = 'stage';
+var listMode = 'rows';
+function loadListPref() {
+  try {
+    var o = JSON.parse(localStorage.getItem(LIST_KEY) || '{}');
+    /* ★既知の値だけを通す。壊れた値で起動できなくならないようにする */
+    if (o && LIST_SORTS[o.sort]) listSort = o.sort;
+    if (o && LIST_MODES[o.mode]) listMode = o.mode;
+  } catch (e) {}
+}
+function saveListPref() {
+  try { localStorage.setItem(LIST_KEY, JSON.stringify({ sort: listSort, mode: listMode })); } catch (e) {}
+}
 function activeCands() { return DB.candidates.filter(function (c) { return showDeleted ? true : !c.deleted; }); }
 function findCand(id) {
   for (var i = 0; i < DB.candidates.length; i++) if (DB.candidates[i].id === id) return DB.candidates[i];
@@ -1786,12 +1941,14 @@ var curId = null;      // 詳細・編集で開いている案件
    保存するのは画面idだけ。氏名・記録・選択中の案件のような業務データは保存しない
    （取り違えの危険があるためスコープ外）。未知の値はホワイトリストで既定へ落とす。 */
 var VIEW_KEY = 'admf_view';
+var VIEW_KEEP = { list: 1, kpi: 1, today: 1 };   /* 案件に紐づかない画面だけ記憶する */
 function saveViewState(name) {
-  if (name !== 'list' && name !== 'kpi') return;   /* 案件に紐づく画面は保存しない */
+  if (!VIEW_KEEP[name]) return;
   try { localStorage.setItem(VIEW_KEY, name); } catch (e) {}
 }
 function loadViewState() {
-  try { return (localStorage.getItem(VIEW_KEY) === 'kpi') ? 'kpi' : 'list'; } catch (e) { return 'list'; }
+  /* ★既知の値だけを通す。知らない値・壊れた値は一覧へ落とす */
+  try { var v = localStorage.getItem(VIEW_KEY); return VIEW_KEEP[v] ? v : 'list'; } catch (e) { return 'list'; }
 }
 function showScreen(name) {
   saveViewState(name);
@@ -1804,7 +1961,11 @@ function showScreen(name) {
   /* ご相談シートは紙と同じ10列なので、本文の幅（760px）では右が見切れる。
      この画面の時だけ広げる（他の画面の読みやすい幅は変えない）。 */
   document.body.classList.toggle('sheetwide', name === 'sheet');
-  var navKey = (name === 'kpi') ? 'kpi' : (name === 'list' ? 'list' : '');
+  /* 広い画面（1100px〜）では詳細を開いた時に一覧を左へ残す。
+     狭い画面では CSS の指定が効かないので、今までどおり1画面ずつ出る。 */
+  var mainEl = document.querySelector('main');
+  if (mainEl) mainEl.classList.toggle('split', name === 'view');
+  var navKey = (name === 'kpi' || name === 'list' || name === 'today') ? name : '';
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function (b) {
     b.classList.toggle('on', b.getAttribute('data-nav') === navKey);
   });
@@ -1824,7 +1985,7 @@ document.addEventListener('keydown', function (ev) {
 
 /* ═══════════ 一覧 ═══════════ */
 function renderList() {
-  var cands = activeCands();
+  var cands = listCands();
   var box = $('listBox');
 
   var ym = todayYmd().slice(0, 7);
@@ -1840,23 +2001,84 @@ function renderList() {
     var mv = c.stageDates.movedin || c.desiredDate;
     if (c.stage !== 'lost' && c.stage !== 'movedin' && (mv || '').slice(0, 7) === ym) moveThisMonth++;
   });
+  /* ★バッジは押すとその条件だけに絞れる（押す場所が無く数を見るだけ、を直した） */
+  function fpill(key, label, n, style) {
+    if (!n) return '';
+    var on = (listFilter === key);
+    return '<button class="pill f' + (on ? ' on' : '') + '" type="button" data-f="' + key + '"' +
+      (style && !on ? ' style="' + style + '"' : '') + ' aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      esc(label) + ' <b>' + n + '</b></button>';
+  }
   $('sumbar').innerHTML =
-    '<span class="pill">今月の問い合わせ <b>' + inThisMonth + '</b>件</span>' +
-    '<span class="pill">進行中 <b>' + working + '</b>件</span>' +
-    '<span class="pill">今月入居予定 <b>' + moveThisMonth + '</b>件</span>' +
-    (nudgeAll ? '<span class="pill" style="border-color:#ffcc80"><span style="color:var(--warn);font-weight:700">連絡待ち ' + nudgeAll + '</span></span>' : '') +
-    (overAll ? '<span class="pill" style="border-color:#f5c6c0"><span style="color:var(--err);font-weight:700">期限超過 ' + overAll + '</span></span>' : '') +
+    fpill('month', '今月の問い合わせ', inThisMonth) +
+    fpill('working', '進行中', working) +
+    fpill('movein', '今月入居予定', moveThisMonth) +
+    fpill('nudge', '連絡待ち', nudgeAll, 'border-color:#ffcc80') +
+    fpill('over', '期限超過', overAll, 'border-color:#f5c6c0') +
+    (listFilter ? '<button class="pill f" id="clearF" type="button">✕ しぼりこみを解除</button>' : '') +
     (delCount ? '<button class="pill" id="toggleDel" type="button" style="cursor:pointer">' +
       (showDeleted ? '削除済みを隠す' : '削除済みも表示 (' + delCount + ')') + '</button>' : '') +
     (canUndo() ? '<button class="pill" id="undoBtn" type="button" style="cursor:pointer">↩ 元に戻す</button>' : '');
 
   if (!cands.length) {
-    box.innerHTML = '<div class="empty">まだ案件がありません。<br>問い合わせが来たら下の「➕新規」で起票してください。</div>';
+    box.innerHTML = (listQ || listFilter)
+      ? '<div class="empty">条件に合う案件がありません。<br>検索語を消すか、しぼりこみを解除してください。</div>'
+      : '<div class="empty">まだ案件がありません。<br>問い合わせが来たら右下の「＋」で起票してください。</div>';
     bindSumbar();
     return;
   }
 
   var h = '';
+  if (listQ || listFilter) h += '<p class="lhit">' + cands.length + '件を表示しています</p>';
+  h += (listMode === 'board') ? listBoardHtml(cands) : listRowsHtml(cands);
+  box.innerHTML = h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function (b) {
+    b.addEventListener('click', function () { openView(b.getAttribute('data-open')); });
+  });
+  bindSumbar();
+}
+
+/* 1件が検索語としぼりこみに当たるか。★画面の状態を読まない純粋な判定にしてある（検査できる形） */
+function listMatch(c, q, filter, ym) {
+  if (q) {
+    var hay = [c.name, c.kana, c.source, c.sourceDetail, c.room, c.careLevel]
+      .map(function (x) { return asStr(x); }).join(' ').toLowerCase();
+    if (hay.indexOf(q) < 0) return false;
+  }
+  if (!filter) return true;
+  if (c.deleted) return false;
+  var sd = c.stageDates || {};
+  if (filter === 'working') return c.stage !== 'movedin' && c.stage !== 'lost';
+  if (filter === 'month') return asStr(sd.inquiry).slice(0, 7) === ym;
+  if (filter === 'movein') {
+    if (c.stage === 'lost' || c.stage === 'movedin') return false;
+    return asStr(sd.movedin || c.desiredDate).slice(0, 7) === ym;
+  }
+  if (filter === 'nudge') return c.stage !== 'lost' && c.stage !== 'movedin' && openNudges(c).length > 0;
+  if (filter === 'over') return c.stage !== 'lost' && taskStats(c).over > 0;
+  return true;   /* 知らないしぼりこみは「全部出す」側へ倒す（何も出ない事故を作らない） */
+}
+function listCmpBy(sort) {
+  return function (a, b) {
+    if (sort === 'desired') return String(a.desiredDate || '9999-99-99').localeCompare(String(b.desiredDate || '9999-99-99'));
+    if (sort === 'updated') return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+    if (sort === 'name') return String(a.kana || a.name || '').localeCompare(String(b.kana || b.name || ''), 'ja');
+    return String(a.desiredDate || '9999').localeCompare(String(b.desiredDate || '9999'));
+  };
+}
+function listCands() {
+  var q = asStr(listQ).trim().toLowerCase();
+  var ym = todayYmd().slice(0, 7);
+  return activeCands().filter(function (c) { return listMatch(c, q, listFilter, ym); });
+}
+function listCmp(a, b) { return listCmpBy(listSort)(a, b); }
+/* 縦に並べる表示（既定）。段階順の時だけ段階ごとの見出しを立てる */
+function listRowsHtml(cands) {
+  var h = '';
+  if (listSort !== 'stage') {
+    cands.slice().sort(listCmp).forEach(function (c) { h += candCard(c); });
+    return h;
+  }
   var groups = STAGES.map(function (s) { return { key: s[0], label: s[1], items: [] }; });
   var lost = { key: 'lost', label: '見送り・離脱', items: [] };
   var del = { key: 'del', label: '削除済み', items: [] };
@@ -1866,30 +2088,52 @@ function renderList() {
     var i = stageIdx(c.stage); if (i < 0) i = 0;
     groups[i].items.push(c);
   });
-  /* 動いている案件が上に来る並び */
-  var order = ['screening', 'decided', 'contracted', 'applied', 'tour', 'inquiry', 'movedin'];
-  order.forEach(function (key) {
+  /* 動いている案件が上に来る並び（業務上の既定。ここは変えない） */
+  LIST_STAGE_ORDER.forEach(function (key) {
     var g = null;
     for (var i = 0; i < groups.length; i++) if (groups[i].key === key) g = groups[i];
     if (!g || !g.items.length) return;
     h += '<div class="stage-h">' + esc(g.label) + '<span class="n">' + g.items.length + '件</span></div>';
-    g.items.sort(function (a, b) { return String(a.desiredDate || '9999').localeCompare(String(b.desiredDate || '9999')); });
+    g.items.sort(listCmp);
     g.items.forEach(function (c) { h += candCard(c); });
   });
   [lost, del].forEach(function (g) {
     if (!g.items.length) return;
     h += '<div class="stage-h">' + esc(g.label) + '<span class="n">' + g.items.length + '件</span></div>';
+    g.items.sort(listCmp);
     g.items.forEach(function (c) { h += candCard(c); });
   });
-  box.innerHTML = h;
-  Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function (b) {
-    b.addEventListener('click', function () { openView(b.getAttribute('data-open')); });
-  });
-  bindSumbar();
+  return h;
 }
+/* 段階を横に並べる表示（切替。既定の縦並びは置き換えない） */
+function listBoardHtml(cands) {
+  var cols = STAGES.map(function (s) { return { key: s[0], label: s[1], items: [] }; });
+  var extra = [{ key: 'lost', label: '見送り・離脱', items: [] }, { key: 'del', label: '削除済み', items: [] }];
+  cands.forEach(function (c) {
+    if (c.deleted) { extra[1].items.push(c); return; }
+    if (c.stage === 'lost') { extra[0].items.push(c); return; }
+    var i = stageIdx(c.stage); if (i < 0) i = 0;
+    cols[i].items.push(c);
+  });
+  var all = cols.concat(extra.filter(function (g) { return g.items.length; }));
+  return '<div class="board">' + all.map(function (g) {
+    g.items.sort(listCmp);
+    return '<div class="bcol"><div class="bh">' + esc(g.label) + '<span class="n">' + g.items.length + '</span></div>' +
+      (g.items.length ? g.items.map(candCard).join('') : '<div class="bempty">—</div>') + '</div>';
+  }).join('') + '</div>';
+}
+var LIST_STAGE_ORDER = ['screening', 'decided', 'contracted', 'applied', 'tour', 'inquiry', 'movedin'];
 function bindSumbar() {
   if ($('toggleDel')) $('toggleDel').addEventListener('click', function () { showDeleted = !showDeleted; renderList(); });
   if ($('undoBtn')) $('undoBtn').addEventListener('click', doUndo);
+  if ($('clearF')) $('clearF').addEventListener('click', function () { listFilter = ''; renderList(); });
+  Array.prototype.forEach.call(document.querySelectorAll('#sumbar [data-f]'), function (b) {
+    b.addEventListener('click', function () {
+      var k = b.getAttribute('data-f');
+      listFilter = (listFilter === k) ? '' : k;   /* 同じものをもう一度押したら解除 */
+      renderList();
+    });
+  });
 }
 function candCard(c) {
   var st = taskStats(c);
@@ -1926,10 +2170,102 @@ function candCard(c) {
       STAGES.map(function (s, i) { return '<i class="' + (i < cur ? 'on' : (i === cur ? 'on cur' : '')) + '"></i>'; }).join('') +
       '</span><span class="mini-lbl">' + esc(stageLabel(c.stage)) + '（' + (cur + 1) + '/' + STAGES.length + '）</span>';
   }
-  return '<button class="cand' + (c.deleted ? ' del' : '') + '" type="button" data-open="' + esc(c.id) + '">' +
+  /* 左右2分割の時に「いま開いている案件」が分かるようにする */
+  return '<button class="cand' + (c.deleted ? ' del' : '') + (c.id === curId ? ' cur' : '') + '" type="button" data-open="' + esc(c.id) + '">' +
     '<span class="nm">' + esc(c.name || '（氏名未入力）') + '</span>' +
     (c.kana ? '<span class="kn">' + esc(c.kana) + '</span>' : '') +
     '<span class="tags">' + tags + '</span>' + steps + '</button>';
+}
+
+/* ═══════════ 今日やること（2026-10-16）═══════════
+   バッジの数を見てから案件を1件ずつ開く、をやめるための画面。
+   「誰に・何を・いつまでに」を行で出し、押せばその案件へ飛ぶ。
+   ★ここは数えるだけ。データは一切書き換えない。 */
+function daysBetween(a, b) { return Math.round((Date.parse(b + 'T00:00:00') - Date.parse(a + 'T00:00:00')) / 86400000); }
+function todayBuckets() { return todayBucketsOf(DB.candidates, todayYmd()); }
+function todayBucketsOf(cands, today) {
+  var over = [], soon = [], nudges = [], tourFu = [], stale = [];
+  asArr(cands).forEach(function (c) {
+    if (c.deleted || c.stage === 'lost') return;
+    asArr(c.tasks).forEach(function (t) {
+      if (!t || t.st === 'done' || !t.due) return;
+      if (t.due < today) over.push({ c: c, t: t });
+      else if (daysBetween(today, t.due) <= 1) soon.push({ c: c, t: t });
+    });
+    if (c.stage !== 'movedin') {
+      openNudges(c).forEach(function (g) { nudges.push({ c: c, g: g }); });
+      /* 見学から3日たって、見学の日より後の連絡記録が1件も無い案件 */
+      var tv = c.stageDates && c.stageDates.tour;
+      if (tv && daysBetween(tv, today) >= 3) {
+        var followed = asArr(c.log).some(function (l) { return String(l.at || '').slice(0, 10) >= tv; });
+        if (!followed) tourFu.push({ c: c, at: tv });
+      }
+      var u = asStr(c.updatedAt).slice(0, 10);
+      if (u && daysBetween(u, today) >= 14) stale.push({ c: c });
+    }
+  });
+  over.sort(function (a, b) { return String(a.t.due).localeCompare(String(b.t.due)); });
+  soon.sort(function (a, b) { return String(a.t.due).localeCompare(String(b.t.due)); });
+  tourFu.sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
+  return { over: over, soon: soon, nudges: nudges, tourFu: tourFu, stale: stale };
+}
+function todayRow(c, what, when, overdue) {
+  return '<button class="todo-row" type="button" data-open="' + esc(c.id) + '">' +
+    '<span class="bd"><span class="who">' + esc(c.name || '（氏名未入力）') + '</span>' +
+    '<span class="what">' + what + '</span>' +
+    (when ? '<span class="when' + (overdue ? ' over' : '') + '">' + esc(when) + '</span>' : '') +
+    '</span></button>';
+}
+function renderToday() {
+  var b = todayBuckets();
+  var today = todayYmd();
+  var h = '';
+  var n = b.over.length + b.soon.length + b.nudges.length + b.tourFu.length;
+  h += '<p class="lhit">' + (n ? '手を動かすことが <b>' + n + '件</b> あります' : '期限と連絡の抜けはありません') + '</p>';
+
+  if (b.over.length) {
+    h += '<div class="todo-sec"><h3>期限が過ぎています（' + b.over.length + '）</h3>';
+    b.over.forEach(function (x) {
+      h += todayRow(x.c, esc(x.t.title) + '<span class="tag" style="margin-left:6px">' + esc(catLabel(x.t.cat)) + '</span>',
+        '期限 ' + fmtD(x.t.due) + '（' + daysBetween(x.t.due, today) + '日超過）', true);
+    });
+    h += '</div>';
+  }
+  if (b.nudges.length) {
+    h += '<div class="todo-sec"><h3>連絡が要ります（' + b.nudges.length + '）</h3>';
+    b.nudges.forEach(function (x) {
+      h += todayRow(x.c, esc(x.g.title) + '　' + asArr(x.g.cats).map(function (k) {
+        return '<span class="tag">' + esc(catLabel(k)) + '</span>';
+      }).join(''), x.g.why ? String(x.g.why).slice(0, 60) : '');
+    });
+    h += '</div>';
+  }
+  if (b.tourFu.length) {
+    h += '<div class="todo-sec"><h3>見学のあと連絡が残っています（' + b.tourFu.length + '）</h3>';
+    b.tourFu.forEach(function (x) {
+      h += todayRow(x.c, '見学から ' + daysBetween(x.at, today) + '日。まだ記録がありません',
+        '見学 ' + fmtD(x.at), daysBetween(x.at, today) >= 7);
+    });
+    h += '</div>';
+  }
+  if (b.soon.length) {
+    h += '<div class="todo-sec"><h3>今日・明日が期限（' + b.soon.length + '）</h3>';
+    b.soon.forEach(function (x) {
+      h += todayRow(x.c, esc(x.t.title) + '<span class="tag" style="margin-left:6px">' + esc(catLabel(x.t.cat)) + '</span>', '期限 ' + fmtD(x.t.due));
+    });
+    h += '</div>';
+  }
+  if (b.stale.length) {
+    h += '<div class="todo-sec"><h3>14日以上動いていません（' + b.stale.length + '）</h3>';
+    b.stale.forEach(function (x) { h += todayRow(x.c, '最後に動いたのは ' + fmtDt(x.c.updatedAt), ''); });
+    h += '</div>';
+  }
+  if (!n && !b.stale.length) h += '<div class="todo-done">今日やることはありません</div>';
+
+  $('todayBox').innerHTML = h;
+  Array.prototype.forEach.call($('todayBox').querySelectorAll('[data-open]'), function (x) {
+    x.addEventListener('click', function () { openView(x.getAttribute('data-open')); });
+  });
 }
 
 /* ═══════════ 連携の提示（次にやること） ═══════════ */
@@ -1999,12 +2335,110 @@ function nudgeCardHtml(c) {
 }
 
 /* ═══════════ 詳細 ═══════════ */
+/* ═══════════ 詳細を短くする道具（2026-10-16）═══════════
+   10枚以上のカードが全部開いた状態で縦に並び、要点を拾うのに画面を何度も送る必要があった。
+   要点は上の1枚（vsum）に出し、中身はたたむ。開け閉めは端末に覚える（UIの状態だけ・原則11）。 */
+var DSEC_KEY = 'admf_dsec';
+var DSEC_KEYS = { bs: 1, as: 1, fl: 1, ct: 1, tk: 1, lg: 1, ms: 1 };
+/* ★その都度読む（覚え込まない）。別のタブで開け閉めした結果とずれないため */
+function loadDsec() {
+  var out = {};
+  try {
+    var o = JSON.parse(localStorage.getItem(DSEC_KEY) || '{}');
+    /* ★既知の区画だけ通す。知らないキーは捨てる */
+    for (var k in o) if (DSEC_KEYS[k] && Object.prototype.hasOwnProperty.call(o, k)) out[k] = !!o[k];
+  } catch (e) {}
+  return out;
+}
+function setDsec(k, v) {
+  if (!DSEC_KEYS[k]) return;
+  var o = loadDsec(); o[k] = !!v;
+  try { localStorage.setItem(DSEC_KEY, JSON.stringify(o)); } catch (e) {}
+}
+function dsecIsOpen(k, def) {
+  var o = loadDsec();
+  return Object.prototype.hasOwnProperty.call(o, k) ? o[k] : !!def;
+}
+function dsec(key, title, sub, body, openDefault) {
+  return '<details class="dcd" data-ds="' + esc(key) + '"' + (dsecIsOpen(key, openDefault) ? ' open' : '') + '>' +
+    '<summary>' + esc(title) + (sub ? ' <span class="sm">' + esc(sub) + '</span>' : '') + '</summary>' +
+    '<div class="dbody">' + body + '</div></details>';
+}
+/* たたんだ時に出す一行の要約。開かなくても中身の見当がつくようにする */
+function bsSub(c) {
+  var v = [];
+  if (c.gender) v.push(asStr(c.gender));
+  var a = ageText(c.birthDate); if (a && a !== '—') v.push(a);
+  if (c.phone) v.push(asStr(c.phone));
+  if (asArr(c.family).length) v.push('ご家族' + asArr(c.family).length + '名');
+  return v.join('・');
+}
+function ctSub(c) {
+  var n = asArr(c.contacts).length;
+  if (!n) return '未登録';
+  return n + '件：' + asArr(c.contacts).slice(0, 3).map(function (x) { return catLabel(x.cat); }).join('・') + (n > 3 ? ' ほか' : '');
+}
+function assessSub(c) {
+  var a = asObj(c.assess);
+  var n = 0;
+  for (var k in a) if (Object.prototype.hasOwnProperty.call(a, k) && notEmptyVal(a[k])) n++;
+  return n ? n + '項目を記入ずみ' : 'まだ記入がありません';
+}
+/* 連絡・段階の移り・書類の追加を1本の時系列にまとめる。
+   ★ここは読むだけ。並べ替えのために書き換えない */
+function timelineHtml(c) {
+  var ev = [];
+  asArr(c.log).forEach(function (l) {
+    ev.push({ at: asStr(l.at), ic: '📝',
+      hd: [fmtDt(l.at), l.partner, l.method, l.by ? '記録 ' + String(l.by).slice(0, 60) : ''].filter(Boolean).map(esc).join('　'),
+      tx: esc(asStr(l.summary)) });
+  });
+  var sd = asObj(c.stageDates);
+  STAGES.forEach(function (st) {
+    if (sd[st[0]]) ev.push({ at: asStr(sd[st[0]]), ic: '➡️', hd: esc(fmtD(sd[st[0]])), tx: esc(st[1] + 'になりました') });
+  });
+  if (sd.lost) ev.push({ at: asStr(sd.lost), ic: '⏹', hd: esc(fmtD(sd.lost)), tx: esc('見送り・離脱（' + (c.lostReason || '理由未記入') + '）') });
+  candFiles(c.id).forEach(function (f) {
+    ev.push({ at: asStr(f.at || f.uploadedAt), ic: '📎', hd: esc(fmtDt(f.at || f.uploadedAt)), tx: esc('書類を追加：' + (f.title || f.name || '')) });
+  });
+  asArr(c.tasks).forEach(function (t) {
+    if (t && t.st === 'done' && t.doneAt) ev.push({ at: asStr(t.doneAt), ic: '✅', hd: esc(fmtD(t.doneAt)), tx: esc(t.title + '（' + catLabel(t.cat) + '）が完了') });
+  });
+  if (!ev.length) return '<p class="empty" style="padding:8px 0">まだ経過がありません。電話・FAXのやり取りを1行ずつ残してください。</p>';
+  ev.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  return '<div class="tl">' + ev.map(function (e) {
+    return '<div class="ti"><span class="ic" aria-hidden="true">' + e.ic + '</span>' +
+      '<span class="bd"><span class="hd">' + e.hd + '</span><span class="tx">' + e.tx + '</span></span></div>';
+  }).join('') + '</div>';
+}
+/* 画面の一番上に置く要約。ここだけ見れば電話をかけられる */
+function vsumHtml(c) {
+  var st = taskStats(c);
+  var f = [];
+  function add(label, html) { if (html) f.push('<div><dt>' + esc(label) + '</dt><dd>' + html + '</dd></div>'); }
+  add('段階', esc(stageLabel(c.stage)));
+  add('介護度', esc(asStr(c.careLevel)));
+  var a = ageText(c.birthDate);
+  add('年齢', (a && a !== '—') ? esc(a) : '');
+  add('希望入居', c.desiredDate ? esc(fmtD(c.desiredDate)) : '');
+  add('経路', esc(asStr(c.source)));
+  add('予定居室', c.room ? esc(c.room) + '号室' : '');
+  add('連絡先', c.phone ? (telHref(c.phone) ? '<a href="' + esc(telHref(c.phone)) + '">' + esc(c.phone) + '</a>' : esc(c.phone)) : '');
+  add('タスク', st.total ? (st.done + '/' + st.total + (st.over ? ' <span style="color:var(--err)">超過' + st.over + '</span>' : '')) : '');
+  return '<div class="vsum"><div><span class="nm">' + esc(c.name || '（氏名未入力）') + '</span>' +
+    (c.kana ? '<span class="kn">' + esc(c.kana) + '</span>' : '') + '</div>' +
+    (f.length ? '<dl class="facts">' + f.join('') + '</dl>' : '') +
+    (afEditedBy_(c) ? '<p class="note" style="margin:8px 0 0">最後に直した人: ' + esc(afEditedBy_(c)) + '（' + esc(fmtDt(c.updatedAt)) + '）</p>' : '') +
+    '</div>';
+}
+
 function openView(id) {
   var c = findCand(id);
   if (!c) { toast('この案件は見つかりません'); showScreen('list'); renderList(); return; }
   curId = id;
   renderView(c);
   showScreen('view');
+  renderList();   /* 左右2分割の時、左の一覧の「いま開いている案件」の印を付け替える */
 }
 function renderView(c) {
   var st = taskStats(c);
@@ -2026,7 +2460,10 @@ function renderView(c) {
       '<button class="btn pri" id="vRestore" type="button">↩ 削除を取り消す</button></div>';
   }
 
-  /* 次にやること（連携の提示）は一番上に置く。見落とすと連絡漏れになるため */
+  /* 要点の1枚。ここだけで「誰の・どの段階の・次いつ」が分かるようにする */
+  h += vsumHtml(c);
+
+  /* 次にやること（連携の提示）は上に置く。見落とすと連絡漏れになるため */
   h += nudgeCardHtml(c);
 
   /* ステージ */
@@ -2056,8 +2493,8 @@ function renderView(c) {
   }
   h += '</div>';
 
-  /* 基本情報 */
-  h += '<div class="cd"><h3>基本情報</h3><dl class="kv">' +
+  /* 基本情報（要点は上の要約に出してあるので、ここは既定でたたむ） */
+  var hBs = '<div class="cd"><h3>基本情報</h3><dl class="kv">' +
     (afEditedBy_(c) ? '<dt>最後に直した人</dt><dd>' + esc(afEditedBy_(c)) + '（' + esc(fmtDt(c.updatedAt)) + '）</dd>' : '') +
     '<dt>氏名</dt><dd>' + esc(c.name || '') + (c.kana ? '（' + esc(c.kana) + '）' : '') + '</dd>' +
     (c.gender ? '<dt>性別</dt><dd>' + esc(c.gender) + '</dd>' : '') +
@@ -2074,26 +2511,27 @@ function renderView(c) {
     (c.note ? '<dt>メモ</dt><dd>' + esc(c.note) + '</dd>' : '') +
     '</dl>';
   if (c.family && c.family.length) {
-    h += '<div style="margin-top:8px;font-size:0.84375rem"><span style="color:var(--g6)">ご家族:</span> ' +
+    hBs += '<div style="margin-top:8px;font-size:0.84375rem"><span style="color:var(--g6)">ご家族:</span> ' +
       c.family.map(function (f) {
         return esc(f.name || '') + (f.relation ? '（' + esc(f.relation) + '）' : '') +
           (f.phone ? ' ' + esc(f.phone) : '') + (f.emergency ? ' ★緊急' : '');
       }).join('　／　') + '</div>';
   }
-  h += '</div>';
+  hBs += '</div>';
+  h += dsec('bs', '基本情報', bsSub(c), hBs, false);
 
   /* 入居前アセスメント（入居者マスタの様式と同じ項目） */
-  h += assessViewHtml(c);
+  h += dsec('as', '入居前アセスメント', assessSub(c), assessViewHtml(c), false);
 
   /* 添付書類（PDF・写真。本体は Google ドライブ） */
-  h += filesCardHtml(c);
+  h += dsec('fl', '添付書類', (candFiles(c.id).length || 0) + '件', filesCardHtml(c), false);
 
   /* 連携先 */
-  h += '<div class="cd"><h3>連携先</h3>';
+  var hCt = '<div class="cd"><h3>連携先</h3>';
   if (c.contacts && c.contacts.length) {
     c.contacts.forEach(function (ct) {
       var href = telHref(ct.tel);
-      h += '<div class="ct"><span class="cat">' + esc(catLabel(ct.cat)) + '</span><b>' + esc(ct.org || '') + '</b>' +
+      hCt += '<div class="ct"><span class="cat">' + esc(catLabel(ct.cat)) + '</span><b>' + esc(ct.org || '') + '</b>' +
         (ct.person ? '　' + esc(ct.person) + ' 様' : '') +
         ((ct.tel || ct.fax) ? '<div class="tel">' + (ct.tel ? 'TEL ' + esc(ct.tel) : '') + (ct.fax ? '　FAX ' + esc(ct.fax) : '') + '</div>' : '') +
         (ct.note ? '<div class="tel">' + esc(ct.note) + '</div>' : '') +
@@ -2104,19 +2542,21 @@ function renderView(c) {
         '</div></div>';
     });
   } else {
-    h += '<p class="empty" style="padding:8px 0">未登録（「編集」から追加できます）</p>';
+    hCt += '<p class="empty" style="padding:8px 0">未登録（「編集」から追加できます）</p>';
   }
   var missingInternal = INTERNAL_CATS.filter(function (k) { return !hasCat(c, k); });
   if (missingInternal.length) {
-    h += '<p class="note">入居後に関わる先が未登録です: ' + esc(missingInternal.map(catLabel).join('・')) +
+    hCt += '<p class="note">入居後に関わる先が未登録です: ' + esc(missingInternal.map(catLabel).join('・')) +
       '。<button class="btn sm" type="button" id="addInternalBtn" style="margin-left:6px">まとめて追加</button></p>';
   }
-  h += '</div>';
+  hCt += '</div>';
+
+  h += dsec('ct', '連携先', ctSub(c), hCt, false);
 
   /* タスク */
-  h += '<div class="cd"><h3>連携タスク</h3>';
+  var hTk = '<div class="cd"><h3>連携タスク</h3>';
   if (st.total) {
-    h += '<div style="font-size:0.78125rem;color:var(--g7)">' + st.done + ' / ' + st.total + ' 完了' +
+    hTk += '<div style="font-size:0.78125rem;color:var(--g7)">' + st.done + ' / ' + st.total + ' 完了' +
       (st.wait ? '　・　<span style="color:#b26a00">相手待ち ' + st.wait + '</span>' : '') +
       (st.over ? '　・　<span style="color:var(--err);font-weight:700">期限超過 ' + st.over + '</span>' : '') + '</div>' +
       '<div class="prog-line"><div style="width:' + Math.round(st.done / st.total * 100) + '%"></div></div>';
@@ -2126,12 +2566,12 @@ function renderView(c) {
     var items = (c.tasks || []).filter(function (t) { return t.cat === cat[0]; });
     if (!items.length) return;
     var dn = items.filter(function (t) { return t.st === 'done'; }).length;
-    h += '<div class="tkgrp">' + esc(cat[1]) + ' <span class="n">' + dn + '/' + items.length + '</span></div>';
+    hTk += '<div class="tkgrp">' + esc(cat[1]) + ' <span class="n">' + dn + '/' + items.length + '</span></div>';
     items.forEach(function (t) {
       var stCls = t.st === 'done' ? 'st-done' : (t.st === 'wait' ? 'st-wait' : 'st-todo');
       var stTxt = t.st === 'done' ? '完了' : (t.st === 'wait' ? '相手待ち' : '未着手');
       var over = t.st !== 'done' && t.due && t.due < today;
-      h += '<div class="tk ' + stCls + '">' +
+      hTk += '<div class="tk ' + stCls + '">' +
         '<button class="st" type="button" data-tk="' + esc(t.id) + '" aria-label="' + esc(t.title) + ' の状態を切替（未着手→相手待ち→完了）">' + stTxt + '</button>' +
         '<div class="bd"><div class="ti">' + esc(t.title) + '</div>' +
         '<div class="mt">' + (dirLabel(t.dir) ? '<span>' + esc(dirLabel(t.dir)) + '</span>' : '') +
@@ -2142,11 +2582,11 @@ function renderView(c) {
         '<button class="del" type="button" data-tkdel="' + esc(t.id) + '" aria-label="' + esc(t.title) + ' を削除">✕</button></div>';
     });
   });
-  if (!st.total) h += '<p class="empty" style="padding:8px 0">タスクがありません。申込が入ったら「標準タスクを追加」を押してください。</p>';
-  h += '<div class="btn-row" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+  if (!st.total) hTk += '<p class="empty" style="padding:8px 0">タスクがありません。申込が入ったら「標準タスクを追加」を押してください。</p>';
+  hTk += '<div class="btn-row" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
     '<button class="btn sm pri" id="tkTplBtn" type="button">📋 標準タスクを追加</button>' +
     '<button class="btn sm" id="tkAddBtn" type="button">＋ 個別に追加</button></div>';
-  h += '<div id="tkAddForm" hidden style="margin-top:10px" class="subrow"><div class="frow">' +
+  hTk += '<div id="tkAddForm" hidden style="margin-top:10px" class="subrow"><div class="frow">' +
     '<div class="fld"><label for="tkCat">相手</label><select id="tkCat">' +
     CATS.map(function (p) { return '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
     '<div class="fld" style="flex:2"><label for="tkTitle">内容</label><input id="tkTitle" type="text" placeholder="例: 診療情報提供書の依頼"></div>' +
@@ -2154,10 +2594,13 @@ function renderView(c) {
     DIRS.map(function (p) { return '<option value="' + esc(p[0]) + '">' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
     '<div class="fld"><label for="tkDue">期限</label>' + dateCellHtml('tkDue', '', '', '期限') + '</div>' +
     '<button class="btn sm pri" id="tkAddGo" type="button">追加</button></div></div>';
-  h += '</div>';
+  hTk += '</div>';
 
-  /* 連絡記録 */
-  h += '<div class="cd"><h3>連絡記録</h3>' +
+  h += dsec('tk', '連携タスク', st.total ? (st.done + '/' + st.total + ' 完了'
+      + (st.wait ? '・相手待ち ' + st.wait : '') + (st.over ? '・期限超過 ' + st.over : '')) : 'まだありません', hTk, !!st.over);
+
+  /* 経過（連絡記録＋段階・書類の動き） */
+  var hLg = '<div class="cd"><h3>経過</h3>' +
     '<div class="subrow"><div class="frow">' +
     '<div class="fld"><label for="lgAt">日時</label><input id="lgAt" type="datetime-local"></div>' +
     '<div class="fld"><label for="lgPartner">相手</label><input id="lgPartner" type="text" list="lgPartnerList" placeholder="例: ○○居宅 △△様">' +
@@ -2169,35 +2612,30 @@ function renderView(c) {
     '</div><div class="frow" style="margin-top:6px">' +
     '<div class="fld" style="flex:3"><label for="lgSummary">内容（1行）</label><input id="lgSummary" type="text" placeholder="例: 診療情報提供書を依頼。来週水曜までに郵送いただける"></div>' +
     '<button class="btn sm pri" id="lgAddGo" type="button">記録</button></div></div>';
-  var logs = (c.log || []).slice().sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
-  if (logs.length) {
-    logs.forEach(function (l) {
-      h += '<div class="lg"><div class="mt">' + esc(fmtDt(l.at)) + (l.partner ? '　' + esc(l.partner) : '') +
-        (l.method ? '<span class="mth">' + esc(l.method) + '</span>' : '') +
-        (l.by ? '<span class="mth">記録 ' + esc(String(l.by).slice(0, 60)) + '</span>' : '') + '</div>' + esc(l.summary || '') + '</div>';
-    });
-  } else {
-    h += '<p class="empty" style="padding:8px 0">記録がありません。電話・FAXのやり取りを1行ずつ残してください。</p>';
-  }
-  h += '</div>';
+  hLg += timelineHtml(c);
+  hLg += '</div>';
+
+  h += dsec('lg', '経過（連絡・段階・書類）', asArr(c.log).length + '件の連絡記録', hLg, false);
 
   /* 入居者マスタ連携 */
-  h += '<div class="cd"><h3>入居者マスタへの反映</h3>';
+  var hMs = '<div class="cd"><h3>入居者マスタへの反映</h3>';
   if (c.masterId != null && c.masterId !== '') {
-    h += '<p class="note ok">✅ 登録済み（' + esc(fmtDt(c.masterSyncedAt)) + '）。以後の情報の変更は<b>入居者マスタ側</b>で行ってください（<a href="resident-master.html">入居者マスタを開く</a>）。</p>' +
+    hMs += '<p class="note ok">✅ 登録済み（' + esc(fmtDt(c.masterSyncedAt)) + '）。以後の情報の変更は<b>入居者マスタ側</b>で行ってください（<a href="resident-master.html">入居者マスタを開く</a>）。</p>' +
       '<p class="note warn"><b>週間計画の確認をお願いします。</b>マスタに登録された方は、週間計画とデイ利用表に「入居済」として出ます。' +
       '入居日より前であれば、<a href="care-schedule.html">週間計画</a>でその方を開き「入居前」を押してください（押すまでデイ利用表にも出続けます）。</p>';
   } else if (c.masterPendingStamp) {
-    h += '<p class="note err">⚠️ 前回の登録結果を確認できていません。もう一度登録する前に、必ず「登録確認」を押してください（二重登録防止）。' +
+    hMs += '<p class="note err">⚠️ 前回の登録結果を確認できていません。もう一度登録する前に、必ず「登録確認」を押してください（二重登録防止）。' +
       '送ってから6分たつまでは、マスタに見当たらなくても登録し直せません（サーバーが処理中のことがあるため）。</p>' +
       '<button class="btn sm pri" id="msVerifyBtn" type="button">登録確認</button>';
   } else if (stageIdx(c.stage) >= stageIdx('decided') && c.stage !== 'lost' && !c.deleted) {
-    h += '<p style="font-size:0.84375rem">ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・ご家族・入居前アセスメント）を入居者マスタへそのまま登録します。</p>' +
+    hMs += '<p style="font-size:0.84375rem">ここまでに集めた情報（氏名・介護度・保険・ケアマネ・主治医・薬局・ご家族・入居前アセスメント）を入居者マスタへそのまま登録します。</p>' +
       '<button class="btn pri" id="msOpenBtn" type="button">🗂️ 入居者マスタへ登録</button>';
   } else {
-    h += '<p class="note">「入居決定」まで進むと、ここから入居者マスタへ登録できます。</p>';
+    hMs += '<p class="note">「入居決定」まで進むと、ここから入居者マスタへ登録できます。</p>';
   }
-  h += '</div>';
+  hMs += '</div>';
+
+  h += dsec('ms', '入居者マスタへの反映', (c.masterId != null && c.masterId !== '') ? '登録済み' : '未登録', hMs, false);
 
   if (!c.deleted) {
     h += '<div style="text-align:center;margin:18px 0"><button class="btn sm danger" id="vDel" type="button">この案件を削除</button>' +
@@ -2210,6 +2648,9 @@ function renderView(c) {
 
 /* 詳細画面のイベント配線（renderView が innerHTML を差し替えるたびに張り直す） */
 function bindViewEvents(c) {
+  Array.prototype.forEach.call($('viewBox').querySelectorAll('details.dcd[data-ds]'), function (d) {
+    d.addEventListener('toggle', function () { setDsec(d.getAttribute('data-ds'), d.open); });
+  });
   $('vBack').addEventListener('click', function () { showScreen('list'); renderList(); });
   $('vEdit').addEventListener('click', function () { openEdit(c.id); });
   if ($('vUndo')) $('vUndo').addEventListener('click', doUndo);
@@ -4371,6 +4812,34 @@ function printSheet(c) {
 }
 
 /* ═══════════ KPI ═══════════ */
+/* 経路ごとの件数・入居・見送り。★渡された案件だけを数える純粋な関数 */
+function sourceStats(cands) {
+  var by = {};
+  asArr(cands).forEach(function (c) {
+    if (!c || c.deleted) return;
+    var k = asStr(c.source).trim() || '（未記入）';
+    if (!by[k]) by[k] = { key: k, n: 0, won: 0, lost: 0 };
+    by[k].n++;
+    if (c.stage === 'movedin') by[k].won++;
+    if (c.stage === 'lost') by[k].lost++;
+  });
+  return Object.keys(by).map(function (k) { return by[k]; })
+    .sort(function (a, b) { return b.n - a.n || String(a.key).localeCompare(String(b.key), 'ja'); });
+}
+/* 紹介元（事業所・病院名）ごとの実績。自由記入なので表記ゆれはそのまま別扱いにする */
+function referrerStats(cands) {
+  var by = {};
+  asArr(cands).forEach(function (c) {
+    if (!c || c.deleted) return;
+    var k = asStr(c.sourceDetail).trim();
+    if (!k) return;
+    if (!by[k]) by[k] = { key: k, n: 0, won: 0 };
+    by[k].n++;
+    if (c.stage === 'movedin') by[k].won++;
+  });
+  return Object.keys(by).map(function (k) { return by[k]; })
+    .sort(function (a, b) { return b.won - a.won || b.n - a.n || String(a.key).localeCompare(String(b.key), 'ja'); });
+}
 function renderKpi() {
   var cands = DB.candidates.filter(function (c) { return !c.deleted; });
   var months = [];
@@ -4421,6 +4890,30 @@ function renderKpi() {
     h += '<p class="note">問い合わせから入居までの日数（中央値）: <b>' + mid + '日</b>（' + days.length + '件の実績）</p>';
   }
   h += '<p class="note">数字は「その月にその段階へ進んだ件数」。転換率が落ちている段階が、次に手を入れる場所です。</p></div>';
+
+  /* 経路・紹介元ごとの成績（2026-10-16）。どの集客が効いているかを見る */
+  h += '<div class="cd"><h3>経路ごとの成績</h3>';
+  var srows = sourceStats(cands);
+  if (srows.length) {
+    h += '<div style="overflow-x:auto"><table class="kpi-tbl"><tr><th>経路</th><th>件数</th><th>入居</th><th>成約率</th><th>見送り</th></tr>' +
+      srows.map(function (r) {
+        return '<tr><td class="l">' + esc(r.key) + '</td><td>' + r.n + '</td><td>' + r.won + '</td><td>' +
+          (r.n ? Math.round(r.won / r.n * 100) + '%' : '—') + '</td><td>' + r.lost + '</td></tr>';
+      }).join('') + '</table></div>' +
+      '<p class="note">成約率が高い経路に営業の時間を寄せます。件数が少ない経路の率は当てになりません。</p>';
+  } else {
+    h += '<p class="empty" style="padding:8px 0">経路の記録がありません。編集画面の「経路」を入れると集計されます。</p>';
+  }
+  var drows = referrerStats(cands);
+  if (drows.length) {
+    h += '<h3 style="margin-top:14px">紹介元ごとの実績</h3><div style="overflow-x:auto"><table class="kpi-tbl">' +
+      '<tr><th>紹介元</th><th>紹介</th><th>入居</th></tr>' +
+      drows.map(function (r) {
+        return '<tr><td class="l">' + esc(r.key) + '</td><td>' + r.n + '</td><td>' + r.won + '</td></tr>';
+      }).join('') + '</table></div>' +
+      '<p class="note">表記がそろっていないと別の先として数えます（「○○居宅」と「○○居宅介護支援事業所」は別扱い）。</p>';
+  }
+  h += '</div>';
 
   var lost = cands.filter(function (c) { return c.stage === 'lost'; });
   h += '<div class="cd"><h3>見送り・離脱の理由</h3>';
@@ -4555,6 +5048,7 @@ $('importFile').addEventListener('change', function () {
 /* ═══════════ 描画まとめ・起動 ═══════════ */
 function renderAll() {
   renderList();
+  if ($('sc-today').classList.contains('on')) renderToday();
   if ($('sc-view').classList.contains('on')) {
     var c = curId && findCand(curId);
     if (c) renderView(c); else { showScreen('list'); }
@@ -4571,11 +5065,34 @@ Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function
       editing = null; editBase = null; editDirty = false;
     }
     if (k === 'list') { showScreen('list'); renderList(); }
-    else if (k === 'new') { curId = null; openEdit(null); }
+    else if (k === 'today') { renderToday(); showScreen('today'); }
     else if (k === 'kpi') { renderKpi(); showScreen('kpi'); }
     else if (k === 'help') { openModal('mk-help'); }
   });
 });
+/* 新規は下のナビから丸ボタンへ移した（よく見る画面を1つ増やすため） */
+$('fabNew').addEventListener('click', function () {
+  if (editing && editDirty) {
+    if (!confirm('保存していない入力があります。破棄して移動しますか？')) return;
+    editing = null; editBase = null; editDirty = false;
+  }
+  curId = null; openEdit(null);
+});
+/* 検索・並べ替え・表示の切替。入力欄は描き直さない場所に置いてあるので文字を打っても焦点が飛ばない */
+$('listQ').addEventListener('input', function () { listQ = this.value; renderList(); });
+$('listSort').addEventListener('change', function () {
+  listSort = LIST_SORTS[this.value] ? this.value : 'stage'; saveListPref(); renderList();
+});
+$('listMode').addEventListener('click', function () {
+  listMode = (listMode === 'board') ? 'rows' : 'board'; saveListPref(); syncListTool(); renderList();
+});
+function syncListTool() {
+  var b = $('listMode');
+  b.classList.toggle('on', listMode === 'board');
+  b.setAttribute('aria-pressed', listMode === 'board' ? 'true' : 'false');
+  b.textContent = (listMode === 'board') ? '▤ 一覧表示' : '▦ ボード表示';
+  $('listSort').value = listSort;
+}
 bindDateInputs();
 bindSheetCells();
 $('flGo').addEventListener('click', doUploadFile);
@@ -4597,8 +5114,13 @@ $('reloadBtn').addEventListener('click', function () {
     toast('データ層を読み込めていません（su-data.js）。同期はできませんが、この端末内では使えます');
   }
   loadCache();
+  loadListPref();
+  syncListTool();
   renderList();
-  if (loadViewState() === 'kpi') { renderKpi(); showScreen('kpi'); }
+  /* 再読み込みで直前の画面に戻す（原則11）。知らない値は一覧へ落ちる */
+  var v0 = loadViewState();
+  if (v0 === 'kpi') { renderKpi(); showScreen('kpi'); }
+  else if (v0 === 'today') { renderToday(); showScreen('today'); }
   if (cacheRecovered) {
     setTimeout(function () {
       alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\n\n' +
