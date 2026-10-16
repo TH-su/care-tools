@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-pTbkZSM0v18ZK8MgA2EuuVJ971q/Fo786GZfwyq98uQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-EHHl47l0Ay2aXvxucpCme5b4akXiHCPXWwKT8WH13KU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -124,6 +124,15 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .gr-al-mk{display:block;font-size:0.75rem;font-weight:700;color:var(--g9)}
 /* 入力：編集中の帯の削除ボタン */
 #inEditBanner .eb-del{margin-left:auto}
+/* 低栄養リスク（厚労省の区切り・体重とBMIだけで判定）の札 */
+.rk{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:700;white-space:nowrap}
+.rk-mid{background:#fff3e0;color:#b23c00;border:1px solid #f9a825}
+.rk-high{background:#ffebee;color:#b71c1c;border:1px solid #ef5350}
+.st-v.rk-v-high{color:#b71c1c}.st-v.rk-v-mid{color:#b23c00}
+/* 測り直し：まとめて入力の行の注意と、履歴の「測り直し済み」の印 */
+.bk-row.bk-recheck{background:#fff3e0 !important;box-shadow:inset 4px 0 0 #f9a825}
+.bk-rc{display:block;padding:2px 6px;border-radius:8px;background:#fff;border:1px solid #f9a825;color:#b23c00;font-weight:700;font-size:0.75rem}
+.rc-badge{display:inline-block;margin-top:2px;padding:1px 6px;border-radius:8px;background:var(--g1);color:var(--g7);font-size:0.75rem;font-weight:700}
 /* 一覧：今月まだ測っていない人 */
 .fc button .fc-n{margin-left:4px;font-weight:700}
 .fc button.is-late{border-color:var(--warn-br);background:var(--warn-bg);color:var(--warn-tx)}
@@ -278,7 +287,7 @@ textarea{resize:vertical;min-height:60px}
 .iv-note .dot{background:var(--g3)}
 .iv-note .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
   border:1px solid var(--g5);background:#fff8e1;flex:none}
-.st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+.st-g{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:720px){.st-g{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.st-g{grid-template-columns:repeat(2,1fr)}}
 .st-i{background:#fff;border-radius:10px;padding:10px 8px;box-shadow:var(--sh);text-align:center}
@@ -801,6 +810,7 @@ select option.is-discharged{color:var(--g6)}
       <button class="on" data-f="all">全員</button>
       <button data-f="alert">アラートあり</button>
       <button data-f="missing">未入力</button>
+      <button data-f="risk">低栄養リスク</button>
     </div>
     <div class="lt-w">
       <table class="lt">
@@ -3968,6 +3978,77 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.body.classList.contains('ps-active')) closePrintSheet();
 });
 
+/* ── 低栄養リスク（2026-10-17・代表者承認） ──
+   厚労省「低栄養状態のリスク」（介護保険最新情報 Vol.1217 令和6年3月15日・施設／通所居宅の様式例の判定表）の区切りで、
+   体重減少率と BMI から 低／中／高 を出す。血清アルブミン・食事摂取量・栄養補給法・褥瘡はこのアプリに無いので含めない
+   （＝体重とBMIだけで見た目安。様式の判定そのものではない）。
+     高：1か月に5%以上／3か月に7.5%以上／6か月に10%以上 の減少
+     中：1か月・3か月・6か月のどれかで3%以上の減少、または BMI 18.5 未満
+     低：上のどれにも当たらない（比べる記録かBMIのどちらかがある時だけ）
+   比べる相手は analyze と同じ暦の月（3か月は3→2か月前、6か月は6→5→4か月前で代用）。
+   今の「注意／警告」はそのまま残し、低・中・高は一覧と個別の札に出す。アラートに上げるのは高だけ。 */
+function wrNutritionRisk(rid, ym){
+  try{
+    const a = analyze(rid, ym);
+    if(!a || !a.cur || !wrWeightOk(a.cur)) return null;
+    const resident = residentById(rid);
+    const bmi = bmiOf(a.cur.weight, resident && resident.heightCm);
+    const loss = v => (typeof v === 'number' && isFinite(v)) ? -v : null;   // pct は (今−前)/前。減少を正にする
+    const l1 = loss(a.pct1), l3 = loss(a.pct3), l6 = loss(a.pct6);
+    const hi = [], mid = [];
+    const lbl3 = wrCmpLabel('3か月', a.prev3, 3, ym), lbl6 = wrCmpLabel('6か月', a.prev6, 6, ym);
+    if(l1 != null && l1 >= 5)   hi.push(`1か月で${l1.toFixed(1)}%減少`);
+    if(l3 != null && l3 >= 7.5) hi.push(`${lbl3}で${l3.toFixed(1)}%減少`);
+    if(l6 != null && l6 >= 10)  hi.push(`${lbl6}で${l6.toFixed(1)}%減少`);
+    if(!hi.length){
+      if(l1 != null && l1 >= 3) mid.push(`1か月で${l1.toFixed(1)}%減少`);
+      if(l3 != null && l3 >= 3) mid.push(`${lbl3}で${l3.toFixed(1)}%減少`);
+      if(l6 != null && l6 >= 3) mid.push(`${lbl6}で${l6.toFixed(1)}%減少`);
+    }
+    if(bmi != null && bmi < 18.5) (hi.length ? hi : mid).push(`BMI ${bmi.toFixed(1)}（18.5未満）`);
+    const known = (l1 != null || l3 != null || l6 != null || bmi != null);
+    if(hi.length) return { level:'high', label:'高リスク', reasons: hi, bmi };
+    if(mid.length) return { level:'mid', label:'中リスク', reasons: mid, bmi };
+    return known ? { level:'low', label:'低リスク', reasons: [], bmi } : { level:null, label:'判定できない', reasons: [], bmi };
+  }catch(e){ return null; }
+}
+function wrRiskChip(rk){
+  if(!rk || (rk.level !== 'mid' && rk.level !== 'high')) return '';
+  return `<span class="rk rk-${rk.level}" title="${escapeHtml('低栄養リスク（体重とBMIで判定）：' + rk.reasons.join('・'))}">${rk.label}</span>`;
+}
+/* ── 測り直しの促し（2026-10-17・代表者承認） ──
+   前回の測定より 5%以上か 2.5kg以上 変わった値は、保存する前に「測り直しましたか」と確かめる。
+   体重計の置き方・服装・車椅子の重さの取り違えによる偽の増減で、警告が信用されなくなるのを防ぐ。
+   確かめて保存した記録には recheck='confirmed' を残し、履歴に「測り直し済み」と出す。 */
+const WR_RECHECK_PCT = 5, WR_RECHECK_KG = 2.5;
+function wrPrevWeightRec(rid, date, ym, excludeId){
+  const key = date || (ym ? ym + '-01' : '');
+  if(!key) return null;
+  let best = null, bk = '';
+  (DB.records || []).forEach(x=>{
+    if(!x || x.residentId !== rid || (excludeId && x.id === excludeId) || !wrWeightOk(x)) return;
+    const k = x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '');
+    if(k && k < key && k > bk){ best = x; bk = k; }
+  });
+  return best;
+}
+function wrRecheckInfo(rid, date, ym, w, excludeId){
+  if(!(w > 0)) return null;
+  const p = wrPrevWeightRec(rid, date, ym, excludeId);
+  if(!p) return null;
+  const df = +(w - p.weight).toFixed(1);
+  const pc = +((w - p.weight) / p.weight * 100).toFixed(1);
+  if(Math.abs(df) >= WR_RECHECK_KG || Math.abs(pc) >= WR_RECHECK_PCT) return { prev: p, df, pc };
+  return null;
+}
+function wrRecheckDesc(info){
+  const p = info.prev, s = info.df > 0 ? '+' : '';
+  const when = (p.measuredOn && /^\d{4}-\d{2}-\d{2}$/.test(p.measuredOn)) ? `${Number(p.measuredOn.slice(5,7))}/${Number(p.measuredOn.slice(8,10))}` : ymFmt(p.yearMonth);
+  return `前回（${when}・${p.weight.toFixed(1)}kg）から ${s}${info.df.toFixed(1)}kg（${s}${info.pc.toFixed(1)}%）`;
+}
+function wrRecheckConfirm(lines){
+  return confirm(`前回の測定から大きく変わっています。\n${lines.join('\n')}\n\n体重計の置き方・服装・車椅子の重さを確かめ、測り直しても同じ値でしたか？\n\nOK＝この値で保存する（「測り直し済み」の印を付けます）\nキャンセル＝保存せずに戻る（測り直してから入れ直してください）`);
+}
 /* ── 今月まだ測っていない人（2026-10-17・代表者承認） ──
    厚労省の栄養ケア・マネジメントは「体重は一月毎に測定する」。月の測り漏れを、一覧の
    「未入力」ボタンの件数で見せる。今月を見ている時は、20日を過ぎたら色を強める。 */
@@ -4017,6 +4098,8 @@ function renderList(){
 
     if(listFilter==='alert' && (!a || a.level==='none')) continue;
     if(listFilter==='missing' && cur) continue;
+    const rk = cur ? wrNutritionRisk(r.id, listMonth) : null;
+    if(listFilter==='risk' && !(rk && (rk.level === 'mid' || rk.level === 'high'))) continue;
 
     const tr = document.createElement('tr');
     tr.className = 'clk ' + (shown%2 ? 'ev' : '') + (a && a.level==='ng' ? ' alert-ng' : a && a.level==='w' ? ' alert-w' : '');
@@ -4060,10 +4143,12 @@ function renderList(){
       ? `<span class="mf"><b>${mainLabel(cur.stapleForm)}</b>${amtChip} / ${sideLabel(cur.sideForm)}</span>${togHtml?`<div class="tg-row">${togHtml}</div>`:''}`
       : `<span class="mf" style="color:var(--g5)">—</span>`;
 
-    const stateHtml = a && a.level==='ng' ? '<span class="eb eb-ng">警告</span>'
+    /* 低栄養リスクが中・高の時は「良好」と並べない（矛盾して見えるため）。注意・警告の札はそのまま残す */
+    const rkChip = wrRiskChip(rk);
+    const stateHtml = (a && a.level==='ng' ? '<span class="eb eb-ng">警告</span>'
                     : a && a.level==='w'  ? '<span class="eb eb-w">注意</span>'
-                    : cur                ? '<span class="eb eb-ok">良好</span>'
-                                          : '<span class="eb eb-m">—</span>';
+                    : cur                ? (rkChip ? '' : '<span class="eb eb-ok">良好</span>')
+                                          : '<span class="eb eb-m">—</span>') + (rkChip ? `${a && a.level !== 'none' ? '<br>' : ''}${rkChip}` : '');
 
     tr.innerHTML = `
       <td class="nm"><span class="nm-link" data-go-input-rid="${escapeHtml(r.id)}" title="${escapeHtml(r.name)}さんの入力画面を開く">${escapeHtml(r.name)}</span><br><span class="rm">${r.room?`室 ${escapeHtml(r.room)}`:''}</span></td>
@@ -4401,6 +4486,20 @@ function renderBulkList(){
       const v = Number(inp.value);
       if(inp.value && v>=20 && v<=200) row.classList.add('filled');
       else row.classList.remove('filled');
+      /* 前回から大きく変わった値は、打った時点で行を目立たせる（保存の時にも確かめる・2026-10-17） */
+      try{
+        const date = $('#bulkDate').value || dNow(), ym = $('#bulkMonth').value || date.slice(0,7);
+        let w = (inp.value && v >= 20 && v <= 200) ? v : null;
+        if(w != null && row.dataset.chair === '1'){ const ck = wcLatestKg_(row.dataset.rid, ym, date); w = (ck > 0 && v > ck) ? +(v - ck).toFixed(1) : null; }
+        const info = (w != null) ? wrRecheckInfo(row.dataset.rid, date, ym, Math.round(w*10)/10, row.dataset.existing || null) : null;
+        row.classList.toggle('bk-recheck', !!info);
+        let hint = row.querySelector('.bk-rc');
+        if(info){
+          if(!hint){ hint = document.createElement('span'); hint.className = 'bk-rc'; row.querySelector('.bk-badge').appendChild(hint); }
+          const sg = info.df > 0 ? '+' : '';
+          hint.textContent = `前回比 ${sg}${info.df.toFixed(1)}kg（${sg}${info.pc.toFixed(1)}%）測り直しを`;
+        }else if(hint){ hint.remove(); }
+      }catch(e){}
       // 保存後に値を変更したら、ボタンを通常状態に戻す
       const btn = row.querySelector('.bk-save');
       if(btn && btn.classList.contains('is-saved')){
@@ -4438,6 +4537,18 @@ function bulkSave(){
   const chairAsks = [];
   const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
+
+  /* 測り直しの促し（2026-10-17）：大きく変わった行をまとめて1回だけ確かめる。キャンセルなら何も保存しない */
+  const recheckRows = new Set(), rcLines = [];
+  for(const row of rows){
+    const rid = row.dataset.rid, v = Number(row.querySelector('input').value);
+    if(!rid || !v) continue;
+    let w = v;
+    if(row.dataset.chair === '1'){ const ck = wcLatestKg_(rid, ym, date); if(!ck || ck <= 0 || v <= ck) continue; w = +(v - ck).toFixed(1); }
+    const info = wrRecheckInfo(rid, date, ym, Math.round(w*10)/10, row.dataset.existing || null);
+    if(info){ recheckRows.add(row); rcLines.push(`${residentById(rid)?.name || ''}：${wrRecheckDesc(info)}`); }
+  }
+  if(rcLines.length && !wrRecheckConfirm(rcLines)) return;
 
   for(const row of rows){
     const rid   = row.dataset.rid;
@@ -4497,6 +4608,7 @@ function bulkSave(){
       };
       DB.records.push(rec);
     }
+    if(recheckRows.has(row)) rec.recheck = 'confirmed';   // 測り直して同じ値だった印
     // 一括保存でも各レコードを正規化
     normalizeRecord(rec);
     saved.push(rec);
@@ -4565,6 +4677,12 @@ function saveSingleBulkRow(row){
   }
 
   const nowIso = new Date().toISOString();
+  /* 測り直しの促し（2026-10-17）：この行だけ確かめる */
+  let recheckOk = false;
+  {
+    const info = wrRecheckInfo(rid, date, ym, weight, row.dataset.existing || null);
+    if(info){ if(!wrRecheckConfirm([`${resident.name || ''}：${wrRecheckDesc(info)}`])) return; recheckOk = true; }
+  }
   const existingId = row.dataset.existing;
   const existing   = existingId ? getRecordById(existingId) : null;
   let rec;
@@ -4598,6 +4716,7 @@ function saveSingleBulkRow(row){
     row.dataset.existing = rec.id;
     row.classList.add('existing');
   }
+  if(recheckOk) rec.recheck = 'confirmed';
   normalizeRecord(rec);
   const chairResChanged = wcNoteBulkRec_(rid, rec);   // bulkSave と同じ規則で車椅子の変更履歴に照らす
   save();
@@ -5401,6 +5520,12 @@ $('#inSave').addEventListener('click', ()=>{
     if(!w || w < 20 || w > 150){ toast('体重を正しく入力してください','err'); return; }
   }
 
+  /* 測り直しの促し（2026-10-17）：前回の測定から 5%以上か 2.5kg以上 変わっていたら、保存の前に確かめる */
+  let recheckOk = false;
+  {
+    const info = wrRecheckInfo(rid, d, ym, Math.round(w*10)/10, editingRecordId);
+    if(info){ if(!wrRecheckConfirm([wrRecheckDesc(info)])) return; recheckOk = true; }
+  }
   const mode = inMode;
   // 第一優先：明示的な編集モード（編集ボタンから入った状態）
   let editing = editingRecordId ? getRecordById(editingRecordId) : null;
@@ -5465,6 +5590,7 @@ $('#inSave').addEventListener('click', ()=>{
     DB.records.push(rec);
     savedRec = rec;
   }
+  if(recheckOk) savedRec.recheck = 'confirmed';   // 測り直して同じ値だった印
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
   /* 車椅子重量がその日の時点の重さと違えば「車椅子を替えた」とみなし、測定日を変更日として履歴に1行足す。
@@ -6118,6 +6244,11 @@ function drawStats(rid){
          a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : (recs.length > 1 ? '前月の記録なし' : ''), d1Cls) +
     cell('6ヶ月比', a?.diff6!=null ? `${a.diff6>0?'+':''}${a.diff6.toFixed(1)}` : '—',
          a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%${escapeHtml(wrCmpNote(a.prev6, 6, last.yearMonth))}` : '', d6Cls) +
+    (()=>{ const rk = wrNutritionRisk(rid, last.yearMonth);
+           if(!rk || !rk.level) return cell('低栄養リスク', '—', '比べる記録・身長が無い', '', 'color:var(--g5)');
+           const cls = rk.level === 'high' ? 'rk-v-high' : rk.level === 'mid' ? 'rk-v-mid' : '';
+           const sub = rk.reasons.length ? escapeHtml(rk.reasons.join('・')) : '3%以上の減少なし';
+           return `<div class="st-i" title="体重とBMIだけで判定（血清アルブミン・食事摂取量は含みません）"><div class="st-l">低栄養リスク</div><div class="st-v ${cls}">${rk.label}</div><div class="st-s">${sub}</div></div>`; })() +
     cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`,
          `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`);
 }
@@ -6238,7 +6369,7 @@ function drawHist(rid){
                       (whoTxt ? `<br><small class="wr-who">${escapeHtml(whoTxt)}</small>` : '') + wrHistHtml_(r);
     tr.innerHTML = `
       <td style="text-align:start;padding-left:10px">${dateLabel}</td>
-      <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
+      <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class="rc-badge" title="前回から大きく変わったため、測り直して同じ値だったことを確かめた記録">測り直し済み</span>' : ''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
       <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${r.stapleAmount}g</span>`:''}</td>
@@ -6292,7 +6423,8 @@ function collectAlerts(){
     if(recs.length===0) continue;
     const last = recs[recs.length-1];
     const a = analyze(r.id, last.yearMonth);
-    if(!a || a.level==='none') continue;
+    const rkAl = wrNutritionRisk(r.id, last.yearMonth);   // 高リスクは注意・警告の基準を変えていても拾う
+    if(!a || (a.level==='none' && !(rkAl && rkAl.level === 'high'))) continue;
 
     // 期間ごとに、実際に閾値を超えた行のみを取り出して 増加/減少 に振り分ける
     const periods = [
@@ -6332,6 +6464,15 @@ function collectAlerts(){
              _diff: inc.repDiff, _pct: inc.repPct, _absDiff: inc.maxAbsDiff }
       });
     }
+    /* 低栄養リスクが「高」なら、減少のアラートに理由を足す（無ければ減少のアラートを作る）。中は上げない
+       （警告が増えすぎると見落とされるため・2026-10-17 代表者の決定） */
+    try{
+      const rk = rkAl;
+      if(rk && rk.level === 'high'){
+        dec.reasons.push(`【高リスク】低栄養（厚労省の区切り）：${rk.reasons.join('・')}`);
+        dec.level = 'ng';
+      }
+    }catch(e){}
     // 減少エントリ
     if(dec.reasons.length){
       out.push({
@@ -7248,7 +7389,9 @@ function renderRuleDesc(){
     return parts.length ? `${label} ${parts.join('、')}` : `${label} 判定なし`;
   };
   el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`
-    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`;
+    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`
+    + `<br><span style="color:var(--g6)">低栄養リスク（厚労省の区切り・体重とBMIだけで判定）：高＝1か月5%・3か月7.5%・6か月10%以上の減少／中＝どれかの期間で3%以上の減少かBMI 18.5未満。一覧と個別に札を出し、アラートには高リスクだけを上げます。</span>`
+    + `<br><span style="color:var(--g6)">前回の測定から5%以上か2.5kg以上変わった値は、保存の前に「測り直しましたか」と確かめます。</span>`;
 }
 $('#thrReset')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
