@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-H0zjpvWnK//Lz2Yl8qZT0632dSmGBqCc33jFjcxZRgc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LA/WF1kcOj4d3bix/GMAPgmVsY+6gnE+2Qlm/NoTE1c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1433,6 +1433,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             }
           } else if (part.kind === 'paidOff') {
             perDay[d].paid = true;
+            perDay[d].paidMin = (perDay[d].paidMin || 0) + part.fixedWork * 60;   /* 常勤の確かめ（有休を勤務とみなす）用・設定に関わらず数える */
             if (settings.paidLeaveCountsAsWork) {
               addDiv(d, division, part.fixedWork * 60, false);
             }
@@ -1444,7 +1445,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
 
     /* 集計 */
-    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {} };
+    var totals = { workMin: 0, divMin: {}, attendDays: 0, offDays: 0, paidDays: 0, overtimeMin: 0, overtimeCount: 0, workMin28: 0, divMin28: {}, paidMin28: 0 };
     for (var d3 = 1; d3 <= days; d3++) {
       var pd = perDay[d3];
       totals.workMin += pd.workMin;
@@ -1462,6 +1463,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (d3 <= 28) totals.divMin28[dv2] = (totals.divMin28[dv2] || 0) + pd.divMin[dv2];
       }
       if (d3 <= 28) totals.workMin28 += pd.workMin;
+      if (d3 <= 28 && pd.paidMin) totals.paidMin28 += pd.paidMin;
     }
     /* 夜勤専従: 出勤カウントが特殊なため「月の日数 − 休日数」を出勤として扱う
      * （未入力の月に適用すると全日出勤になるため、何らかの入力がある場合のみ） */
@@ -1519,6 +1521,72 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return r.den > 0 ? Math.round(r.num / r.den * 1000) / 10 : 0;
   }
 
+  /* 常勤換算（標準様式1 の数え方・2026-10-16 本人選択）。
+   * 様式の記入方法: 常勤換算方法は非常勤の従業者についての方法＝常勤の従業者は実人数で数える。
+   * 常勤換算後の人数は「常勤換算の対象時間数（週平均）÷ 常勤が週に勤務すべき時間数」で小数点第2位以下切り捨て。
+   * 1人の入力時間は常勤の勤務すべき時間数が上限。
+   * 勤務形態（職員マスタで手で入れる・st.workForm）:
+   *   A 常勤で専従 … 実人数で1人（換算しない）
+   *   B 常勤で兼務 … その区分で働いた時間で換算（本人選択「その事業所の時間で換算」）
+   *   C・D 非常勤 … その区分の時間で換算（上限あり）
+   *   未設定 … 今までの数え方のまま（時間で換算・上限なし）
+   * 常勤の確かめ（A・B）: 4週の勤務（有休は勤務とみなす・本人選択）が常勤の時間に届かなければ知らせる。
+   *   短時間勤務制度（st.shortTime）の職員は週30時間以上なら届いたものとする（様式の注記）。
+   * 戻り値は区分ごとに { full, convMin, weekAvgH, conv, total, rows, warns }。total は full + conv。 */
+  var WORK_FORMS = { A: 1, B: 1, C: 1, D: 1 };
+  function workFormOf(st) { var f = st && st.workForm; return (typeof f === 'string' && WORK_FORMS[f]) ? f : ''; }
+  function floor1(x) { return Math.floor(x * 10 + 1e-9) / 10; }
+  function fteStdByDivision(staffList, monthResults, settings) {
+    var s = TC.fillSettings(settings);
+    var base = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 0;
+    var baseMin = base * 60;
+    var out = {};
+    function slot(dv) {
+      if (!out[dv]) out[dv] = { full: 0, convMin: 0, weekAvgH: 0, conv: 0, total: 0, rows: {}, warns: [] };
+      return out[dv];
+    }
+    for (var i = 0; i < staffList.length; i++) {
+      var st = staffList[i];
+      var res = monthResults[st.id];
+      if (!res || st.active === false || st.countInHeadcount === false) continue;
+      var form = workFormOf(st);
+      var d28 = res.totals.divMin28 || {};
+      var allMin = 0, nDiv = 0, dv;
+      for (dv in d28) { if (d28[dv] > 0) { allMin += d28[dv]; nDiv++; } }
+      /* 常勤の確かめに使う4週の勤務（有休を勤務とみなす）。有休を実働に入れない設定の時だけ有休の時間を足す */
+      var fullMin = allMin + (s.paidLeaveCountsAsWork ? 0 : (res.totals.paidMin28 || 0));
+      var shortOk = !!st.shortTime && fullMin >= 30 * 4 * 60;
+      var fullShort = (form === 'A' || form === 'B') && baseMin > 0 && fullMin < baseMin && !shortOk;
+      for (dv in d28) {
+        var min = d28[dv] || 0;
+        if (min <= 0) continue;
+        var o = slot(dv), row = { form: form, kind: 'conv', min: min, convMin: 0 };
+        /* A を1人と数えるのは主区分だけ（反証レビュー指摘: 応援・夜勤折半で区分ごとに1人ずつ数えていた）。
+         * ほかの区分の勤務は時間で換算し（上限あり）、知らせる */
+        if (form === 'A' && dv === (st.mainDivision || '施設')) {
+          row.kind = 'full'; o.full += 1;
+          if (nDiv > 1) o.warns.push({ sid: st.id, msg: '常勤で専従（A）ですが、ほかの区分にも勤務があります（ほかの区分の分は時間で換算しています）' });
+        } else if (form === 'A') {
+          row.convMin = baseMin > 0 ? Math.min(min, baseMin) : min;
+          o.convMin += row.convMin;
+          o.warns.push({ sid: st.id, msg: '常勤で専従（A）の職員の、主区分（' + (st.mainDivision || '施設') + '）以外の勤務です（時間で換算しています）' });
+        } else {
+          row.convMin = (form === '' || baseMin <= 0) ? min : Math.min(min, baseMin);   /* 未設定は今までどおり上限なし */
+          o.convMin += row.convMin;
+        }
+        if (fullShort) o.warns.push({ sid: st.id, msg: '常勤（' + form + '）ですが、4週の勤務が常勤の時間（' + base + 'h）に届いていません' });
+        o.rows[st.id] = row;
+      }
+    }
+    for (var k in out) {
+      var x = out[k];
+      x.weekAvgH = Math.round(x.convMin / 60 / 4 * 100) / 100;
+      x.conv = base ? floor1(x.convMin / 60 / base) : 0;
+      x.total = Math.round((x.full + x.conv) * 10) / 10;
+    }
+    return out;
+  }
+
   /* 職員配列 + 各人の computeStaffMonth 結果 → 月間指標
    * 介護福祉士割合は訪問介護（特定事業所加算の人材要件）の実働ベースで算出 */
   function computeMetrics(staffList, monthResults, settings) {
@@ -1535,11 +1603,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         divMin28[dv] = (divMin28[dv] || 0) + res.totals.divMin28[dv];
       }
     }
+    /* 常勤換算は標準様式1 の数え方（fteStdByDivision・2026-10-16）。0/不正値の分母は 0（Infinity/NaN を出さない） */
+    var fteStd = fteStdByDivision(staffList, monthResults, settings);
     var fte = {};
-    var fteBase = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 0; /* 0/不正値でのInfinity/NaNを防ぐ */
-    for (var dv2 in divMin28) {
-      fte[dv2] = fteBase ? Math.round(divMin28[dv2] / 60 / fteBase * 100) / 100 : 0;
-    }
+    for (var dv2 in divMin28) fte[dv2] = fteStd[dv2] ? fteStd[dv2].total : 0;
     /* 行政報告用 訪問資格別 実働分(①訪問総/②うち介福/③うち介福+実務者)。分母denは①、②③はnum */
     var visitKaifuku = qualMinByDivision(staffList, monthResults, '訪問', ['介護福祉士']);
     var visitKaifukuJitsumu = qualMinByDivision(staffList, monthResults, '訪問', ['介護福祉士', '実務者研修']);
@@ -1550,7 +1617,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       visitKaifukuMin: visitKaifuku.num,             /* ② うち介護福祉士(分) */
       visitKaifukuJitsumuMin: visitKaifukuJitsumu.num, /* ③ うち介護福祉士＋実務者研修(分) */
       totalHours: Math.round(totalMin / 60 * 100) / 100,
-      fteByDivision: fte
+      fteByDivision: fte,
+      fteStd: fteStd
     };
   }
 
@@ -1661,7 +1729,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     };
   }
 
-  var api = { computeMetrics: computeMetrics, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession, resolveConsRule: resolveConsRule, CONS_DEFAULT: CONS_DEFAULT };
+  var api = { computeMetrics: computeMetrics, fteStdByDivision: fteStdByDivision, workFormOf: workFormOf, countCats: countCats, hasQual: hasQual, qualPctByDivision: qualPctByDivision, qualMinByDivision: qualMinByDivision, countVisitOffDays: countVisitOffDays, countDaycareByProfession: countDaycareByProfession, resolveConsRule: resolveConsRule, CONS_DEFAULT: CONS_DEFAULT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftAggregate = api;
 })();
@@ -5650,7 +5718,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var divs = ['施設', '訪問', '通所'];
       for (var i = 0; i < divs.length; i++) {
         var v = m.fteByDivision[divs[i]];
-        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（1〜28日÷' + esc(ctx.settings.fteBaseHours) + 'h）</div><div class="v">' + (v === undefined ? '0' : v) + '</div></div>';
+        /* 様式1の数え方（2026-10-16）: 常勤（勤務形態 A）は実人数、ほかは1〜28日の時間で換算 */
+        var fs = (m.fteStd && m.fteStd[divs[i]]) || null;
+        h += '<div class="sumbox"><div class="k">常勤換算 ' + divs[i] + '（様式1・1〜28日）</div><div class="v">' + (v === undefined ? '0' : v) + '</div>' +
+          (fs && fs.full ? '<div class="v"><small>常勤 ' + fs.full + '人＋換算 ' + fs.conv + '</small></div>' : '') + '</div>';
       }
       var shortage = 0;
       for (var d = 1; d <= ctx.days; d++) {
@@ -6363,6 +6434,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         h += '<option' + (curEmp === emps[em] ? ' selected' : '') + '>' + emps[em] + '</option>';
       }
       h += '</select>';
+      /* 勤務形態（標準様式1 の A〜D・2026-10-16 本人選択「職員マスタで手で入れる」）。常勤換算の数え方に使う。未設定は今までの数え方のまま */
+      var wfCur = (typeof st.workForm === 'string') ? st.workForm : '';
+      var wfOpts = [['', '未設定（今までの数え方：時間で換算）'], ['A', 'A 常勤で専従（1人と数える）'], ['B', 'B 常勤で兼務（その区分の時間で換算）'],
+                    ['C', 'C 非常勤で専従（時間で換算）'], ['D', 'D 非常勤で兼務（時間で換算）']];
+      h += '<label>勤務形態（様式1）</label><div><select id="edWorkForm">';
+      var wfKnown = false;
+      for (var wf = 0; wf < wfOpts.length; wf++) { if (wfOpts[wf][0] === wfCur) wfKnown = true; h += '<option value="' + wfOpts[wf][0] + '"' + (wfOpts[wf][0] === wfCur ? ' selected' : '') + '>' + wfOpts[wf][1] + '</option>'; }
+      if (!wfKnown) h += '<option value="' + esc(wfCur) + '" selected>' + esc(wfCur) + '</option>';   /* 一覧に無い値は残す（保存で黙って消さない） */
+      h += '</select><div class="muted">常勤・非常勤は雇用の形態ではなく、この事業所での勤務時間が常勤の時間（4週 ' + esc(app.settings.fteBaseHours) + 'h）に達しているかで決まります（様式1の注）。</div>' +
+        '<label><input type="checkbox" id="edShortTime"' + (st.shortTime ? ' checked' : '') + '> 短時間勤務制度（育児・介護休業法）を利用（週30時間以上なら常勤の時間に届いたものとする）</label></div>';
       h += '<label>freee従業員コード</label><div><input type="text" id="edEmpCode" value="' + esc(st.empCode || '') + '" placeholder="A000" style="width:130px" autocomplete="off">' +
         '<div class="muted">freee勤怠CSVの突合キー（freeeの従業員番号）。1人ずつ個別に設定。空欄の職員はfreee出力の対象外になります。</div></div>';
       h += '<label>区分行の表示</label><div id="edRowVis">';
@@ -6469,6 +6550,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         st.group = document.getElementById('edGroup').value;
         st.mainDivision = document.getElementById('edDiv').value;
         st.employment = document.getElementById('edEmploy').value;
+        var wfVal = document.getElementById('edWorkForm').value;
+        if (wfVal) st.workForm = wfVal; else delete st.workForm;
+        if (document.getElementById('edShortTime').checked) st.shortTime = true; else delete st.shortTime;
         st.empCode = document.getElementById('edEmpCode').value.trim();
         st.serviceManager = document.getElementById('edSvcMgr').checked;
         st.qualifications = checkedValues('#edQuals input:checked');
@@ -7389,18 +7473,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           name: st.name,
           svcMgr: !!st.serviceManager,
           quals: (st.qualifications || []).join('・'),
-          employment: st.employment || (st.rules && st.rules.monthlyTarget ? '非常勤' : '常勤'),
+          /* 勤務形態は職員マスタの A〜D（様式1）を優先。未設定の職員は今までの表示のまま（2026-10-16） */
+          employment: AG.workFormOf(st) || st.employment || (st.rules && st.rules.monthlyTarget ? '非常勤' : '常勤'),
           cells: cells,
           weekMin: weekMin,
           min28: res.totals.divMin28[division] || 0,
-          fte: Math.round((res.totals.divMin28[division] || 0) / 60 / app.settings.fteBaseHours * 100) / 100
+          fte: 0
         });
+      }
+      /* 常勤換算は標準様式1 の数え方（AG.fteStdByDivision・2026-10-16）。A は実人数で1人、ほかは時間で換算（行の値は参考の2桁） */
+      var std = AG.fteStdByDivision(app.monthRoster(), resultsMap, app.settings)[division] || { full: 0, convMin: 0, weekAvgH: 0, conv: 0, total: 0, rows: {}, warns: [] };
+      var baseH = app.settings.fteBaseHours > 0 ? app.settings.fteBaseHours : 0;
+      for (var ri = 0; ri < rows.length; ri++) {
+        var sr = std.rows[rows[ri].sid];
+        rows[ri].fte = !sr ? 0 : (sr.kind === 'full' ? 1 : (baseH ? Math.round(sr.convMin / 60 / baseH * 100) / 100 : 0));
       }
       /* 行政保管用の指標（選択区分の実働ベース） */
       var kaifukuPct = AG.qualPctByDivision(app.monthRoster(), resultsMap, division, ['介護福祉士']);
       var kaifukuJitsumuPct = AG.qualPctByDivision(app.monthRoster(), resultsMap, division, ['介護福祉士', '実務者研修']);
+      var nameOf = {};
+      for (var ni = 0; ni < rows.length; ni++) nameOf[rows[ni].sid] = rows[ni].name;
+      /* 確定（ロック）した月は、その時点の名簿で数える（過去の月はマスタの変更に追従しない）。
+       * マスタの勤務形態・短時間勤務制度がこの月の名簿と違う職員の数を知らせる（反証レビュー指摘・2026-10-16） */
+      var snapDiff = 0;
+      for (var mi = 0; mi < rows.length; mi++) {
+        var ms = app.findStaff ? app.findStaff(rows[mi].sid) : null, rs = staff.filter(function (x) { return x.id === rows[mi].sid; })[0];
+        if (ms && rs && ms !== rs && (((ms.workForm || '') !== (rs.workForm || '')) || (!!ms.shortTime !== !!rs.shortTime))) snapDiff++;
+      }
+      var warns = [];
+      for (var wi = 0; wi < std.warns.length; wi++) if (nameOf[std.warns[wi].sid] !== undefined) warns.push(nameOf[std.warns[wi].sid] + '：' + std.warns[wi].msg);
       return { rows: rows, days: days, division: division, layer: layer,
-        kaifukuPct: kaifukuPct, kaifukuJitsumuPct: kaifukuJitsumuPct };
+        kaifukuPct: kaifukuPct, kaifukuJitsumuPct: kaifukuJitsumuPct, std: std, warns: warns, snapDiff: snapDiff };
     },
 
     render: function () {
@@ -7428,18 +7531,30 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         for (var w = 1; w <= 4; w++) h += '<td>' + fmtH(r.weekMin[w] || 0) + '</td>';
         h += '<td><b>' + fmtH(r.min28) + '</b></td><td><b>' + r.fte + '</b></td></tr>';
       }
-      var totalFte = 0, total28 = 0;
-      for (var j = 0; j < data.rows.length; j++) { totalFte += data.rows[j].fte; total28 += data.rows[j].min28; }
+      var total28 = 0;
+      for (var j = 0; j < data.rows.length; j++) total28 += data.rows[j].min28;
       h += '<tr><td colspan="' + (data.days + 4) + '" style="text-align:right"><b>合計</b></td>' +
-        '<td colspan="4"></td><td><b>' + fmtH(total28) + '</b></td><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
+        '<td colspan="4"></td><td><b>' + fmtH(total28) + '</b></td><td><b>' + data.std.total + '</b></td></tr>';
       h += '</table>';
       /* 行政保管用 指標（印刷に含まれる） */
       h += '<div class="offstats"><b>行政保管用 指標（' + app.year + '年' + app.month + '月・' + esc(data.division) + '・' + ({plan:'予定',actual:'実績',official:'行政提出用'})[data.layer] + 'レイヤ）</b><table class="plain" style="max-width:520px;margin-top:6px">';
       h += '<tr><th>介護福祉士 割合（実働）</th><td><b>' + data.kaifukuPct + '%</b></td></tr>';
       h += '<tr><th>介護福祉士＋実務者研修 割合（実働）</th><td><b>' + data.kaifukuJitsumuPct + '%</b></td></tr>';
-      h += '<tr><th>常勤換算 合計（1〜28日÷' + esc(app.settings.fteBaseHours) + 'h）</th><td><b>' + Math.round(totalFte * 100) / 100 + '</b></td></tr>';
-      h += '</table></div>';
-      h += '<p class="muted">※「従業者の勤務体制及び勤務形態一覧表（様式1）」への転記用。割合は当該事業所区分の実働時間に占める資格保有者の実働時間。</p></div>';
+      var wkBase = Math.round(app.settings.fteBaseHours / 4 * 100) / 100;
+      h += '<tr><th>常勤（A・実人数）</th><td><b>' + data.std.full + '人</b></td></tr>';
+      h += '<tr><th>常勤換算の対象時間数（週平均）</th><td><b>' + data.std.weekAvgH + 'h</b> ÷ 常勤が週に勤務すべき時間数 ' + esc(wkBase) + 'h ＝ <b>' + data.std.conv + '</b>（小数点第2位以下切り捨て）</td></tr>';
+      h += '<tr><th>常勤換算 合計（常勤＋換算）</th><td><b>' + data.std.total + '</b></td></tr>';
+      h += '</table>';
+      /* 知らせは画面だけ（氏名を含むので行政保管用の印刷に出さない・反証レビュー指摘） */
+      if (data.warns.length) {
+        h += '<div class="muted noprint" style="margin-top:6px"><b>確かめてください（' + data.warns.length + '件）</b><br>' + data.warns.map(esc).join('<br>') + '</div>';
+      }
+      if (data.snapDiff) {
+        h += '<div class="muted noprint" style="margin-top:6px">この月は確定した時点の名簿で数えています。職員マスタの勤務形態・短時間勤務制度（' + data.snapDiff + '名）は、この月には入っていません（過去の月はマスタの変更に追従しません）。</div>';
+      }
+      h += '</div>';
+      h += '<p class="muted">※「従業者の勤務体制及び勤務形態一覧表（様式1）」への転記用。割合は当該事業所区分の実働時間に占める資格保有者の実働時間。' +
+        '常勤換算は様式1の数え方（常勤＝職員マスタの勤務形態 A は実人数、ほかは時間で換算・1人あたり常勤の時間が上限・勤務形態が未設定の職員は今までどおり時間で換算）。</p></div>';
       document.getElementById('officialTable').innerHTML = h;
       /* 行のドラッグ&ドロップ（行政提出専用の並び順 officialOrder） */
       var self = this;
@@ -7479,6 +7594,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         row.push(fmtH(r.min28), r.fte);
         lines.push(row.join(','));
       }
+      /* 合計の行（様式1の数え方・画面の合計と同じ値）。行の常勤換算は参考の値で、足しても合計とは一致しないことがある（切り捨ての前のため） */
+      var pad = function (label, val) { var a = [csv(label)]; for (var q = 1; q < head.length - 1; q++) a.push(''); a.push(val); return a.join(','); };
+      lines.push(pad('常勤（A・実人数）', data.std.full));
+      lines.push(pad('常勤換算の対象時間数（週平均・h）', data.std.weekAvgH));
+      lines.push(pad('常勤換算後の人数（小数点第2位以下切り捨て）', data.std.conv));
+      lines.push(pad('常勤換算 合計（常勤＋換算）', data.std.total));
       var bom = '\uFEFF';
       var blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv' });
       var a = document.createElement('a');
