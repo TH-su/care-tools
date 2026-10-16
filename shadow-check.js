@@ -160,16 +160,15 @@
     });
   }
 
-  /* 並びに左右されない比べ方（オブジェクトのキーを並べ替えてから文字列にする） */
+  /* 並びに左右されない比べ方（オブジェクトのキーを並べ替えてから文字列にする）。
+   * 2026-10-17: 同じ名前の canon が2つあり、関数の宣言は後の方が勝つため、前の方（キーを並べ替えたオブジェクトを返す版）は
+   * 使われていなかった。実際に動いていた後の方（文字列を返す版）だけをここに残す＝動きは変わらない */
   function canon(v) {
-    if (Array.isArray(v)) return v.map(canon);
-    if (v && typeof v === 'object') {
-      var o = {};
-      Object.keys(v).sort().forEach(function (k) { o[k] = canon(v[k]); });
-      return o;
-    }
-    return v;
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
   }
+  function sameData(a, b) { return canon(a) === canon(b); }
   function countEvents(d) {
     var n = 0;
     ((d && d.residents) || []).forEach(function (r) { n += (r && Array.isArray(r.events)) ? r.events.length : 0; });
@@ -203,7 +202,7 @@
     } else if (dirty) {
       kv.className = 'msg warn';
       kv.textContent = 'この端末の週間計画に未送信の変更があるため、正しく見比べられません。週間計画で保存してから見比べ直してください。';
-    } else if (localRev === remote.rev && JSON.stringify(canon(local)) === JSON.stringify(canon(rd))) {
+    } else if (localRev === remote.rev && sameData(local, rd)) {
       kv.className = 'msg ok';
       kv.textContent = '週間計画の写しは、この端末の最新の版と一致しています。';
     } else if (localRev === remote.rev) {
@@ -440,12 +439,6 @@
    *   Supabase→Google の写し返しは保存の20秒後に画面の中で行うだけなので、取りこぼした日があり得る。写し返す前に
    *   スイッチを切ると、端末の統合が Google の古い中身を「他端末の変更」として取り込み、新しい入力を巻き戻す。
    *   止めてから写し返すので、写し返した後に Supabase 側だけが進むことは無い。 */
-  function canon(v) {
-    if (v === null || typeof v !== 'object') return JSON.stringify(v);
-    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
-    return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
-  }
-  function sameData(a, b) { return canon(a) === canon(b); }
   function wbMsg(text, kind) { var e = $('wb-verdict'); e.className = 'msg' + (kind ? ' ' + kind : ''); e.textContent = text; }
   function wbBusy(on) { $('b-wsday-stop').disabled = on; $('b-wsday-back').disabled = on; }
   async function wsdayMode(sb) {
