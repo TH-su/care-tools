@@ -452,7 +452,10 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 /* ══ ご相談シートの印刷（施設の様式の紙面をそのまま再現） ══
    画面では隠し、印刷の時だけ出す。A4縦1枚に収める（2026-08-30 指示）。
    ★罫線・項目の並び・選択肢の文言は紙と1対1。直す時は紙の現物と突き合わせること。 */
-#printSheet { display: none; }
+/* ★紙の色は配色の入れ替えに引きずらせない。本文の色（--g9）を継いでいたため、
+   2026-10-16 の見た目の入れ替えで刷り色がわずかに濃くなっていた（版ごとの画素差 3,962px・
+   並びとページ数は一致）。紙の様式は突き合わせ済みなので、入れ替え前の値に固定する。 */
+#printSheet { display: none; color: #202124; }
 #printSheet .ps-title { font-size: 12pt; font-weight: 700; letter-spacing: .05em; }
 #printSheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 #printSheet td { border: 1px solid #000; padding: 1px 3px; font-size: 7.6pt; line-height: 1.25; vertical-align: middle; word-break: break-all; }
