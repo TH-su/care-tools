@@ -113,7 +113,13 @@ console.log('\n— 5. 表示 —');
   const rv = cutF('renderView');
   t('基本情報に「最後に直した人」（組がそろう時だけ・エスケープ）', /\(afEditedBy_\(c\) \? '<dt>最後に直した人<\/dt><dd>' \+ esc\(afEditedBy_\(c\)\)/.test(rv), '');
   t('タスクに「直した人」', /\(afEditedBy_\(t\) \? '<span>直した人 ' \+ esc\(afEditedBy_\(t\)\)/.test(rv), '');
-  t('連絡記録に「記録 …」', /\(l\.by \? '<span class="mth">記録 ' \+ esc\(String\(l\.by\)\.slice\(0, 60\)\)/.test(rv), '');
+  /* 2026-10-16: 連絡記録の表示は詳細画面から「経過の時系列（timelineHtml）」へ移した。
+     守る中身は同じ＝記録した人を出す・60字で切る・HTMLとして逃がす。 */
+  const tl = cutF('timelineHtml');
+  t('経過に「記録 …」（記録した人を出し、60字で切る）',
+    /l\.by \? '記録 ' \+ String\(l\.by\)\.slice\(0, 60\)/.test(tl), '');
+  t('★経過の見出しは逃がしてから並べる（氏名に < があっても壊れない）',
+    /\.map\(esc\)/.test(tl), '');
 }
 
 console.log('\n— 6. 誰が（ログイン・ログアウト・確かめられない時）—');
