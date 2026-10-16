@@ -138,16 +138,17 @@ function makeDom() {
   ['banner', 'status', 'sqStatus', 'rlist', 'timeline', 'who', 'ractions', 'dtimeline', 'dstatus',
     'theDate', 'dateGo', 'dateFresh', 'copyDate', 'vmBanner', 'vmStatus', 'vmList',
     'vmWho', 'vmActions', 'vmBody', 'sqBanner', 'sqScope', 'sqCats', 'sqText', 'sqSyn',
-    'sqActions', 'sqStat', 'sqResult', 'toast', 'block', 'cfgUrl', 'cfgToken', 'cfgInfo'
+    'sqActions', 'sqStat', 'sqResult', 'toast', 'block', 'cfgUrl', 'cfgToken', 'cfgInfo',
+    'excBanner', 'excStatus', 'excList', 'excWho', 'excActions', 'excBody'
   ].forEach(id => put(id, node('div')));
-  ['scr-resident', 'scr-date', 'scr-vm', 'scr-cfg', 'scr-search'].forEach(id => put(id, node('section')));
+  ['scr-resident', 'scr-date', 'scr-vm', 'scr-cfg', 'scr-search', 'scr-exc'].forEach(id => put(id, node('section')));
   els['scr-resident'].classList.add('on');
   return { document, els };
 }
 
 /* 画面を切り替える（.on は1つだけ） */
 function showScreen(box, id) {
-  ['scr-resident', 'scr-date', 'scr-vm', 'scr-cfg', 'scr-search'].forEach(s => {
+  ['scr-resident', 'scr-date', 'scr-vm', 'scr-cfg', 'scr-search', 'scr-exc'].forEach(s => {
     box.document.getElementById(s).classList.toggle('on', s === id);
   });
 }
@@ -221,6 +222,15 @@ function makeBox(opts) {
     'function vmFocusDate(){}',
     'function vmMarkDate(){}',
     'var VMFOCUS = "";',
+    /* 平熱・摂取低下（2026-10-17 追加）。vmRenderBody が見出しと表の材料に使う */
+    grabDecl('VM_USUAL_RISE'), grabDecl('VM_USUAL_MIN'), grabDecl('VM_MEAL_HALF'), grabDecl('VM_USUAL'),
+    grabFn('vmTenths'), grabFn('vmFmtTenths'), grabFn('vmNum'), grabFn('vmFmtUsual'), grabFn('vmJudgeUsual'),
+    grabFn('vmMealDayLow'), grabFn('vmMealLowStreaks'), grabFn('vmMealLowLabel'),
+    /* 排泄（2026-10-17 追加・期間を共有する4つ目のタブ）。読み込みと描画は数えるだけの偽物 */
+    grabDecl('EXC'), 'var EXC_LOADING = false, EXC_ERR = "";',
+    grabFn('excLoaded'), grabFn('excStale'), grabFn('ensureExcData'), grabFn('rgBusyExc'),
+    'function excLoad(){ _calls.excLoad = (_calls.excLoad || 0) + 1; return null; }',
+    'function rgClearExc(){ _calls.clearExc = (_calls.clearExc || 0) + 1; }',
     /* 読み込みは数えるだけの偽物に差し替える（ここで見たいのは「読み直すと決めたか」） */
     'function load(){ _calls.load++; return null; }',
     'function vmLoad(){ _calls.vmLoad++; return null; }',
@@ -761,14 +771,14 @@ group('⑧ 状態表示（2箇所同時・下ろす時は消す・読み込み�
    ══════════════════════════════════════════════════════════ */
 group('⑨ 配線（HTML・呼び出し側）');
 {
-  /* 3タブぶんの部品がそろっている */
-  ['r', 'v', 's'].forEach(p => {
+  /* 4タブぶんの部品がそろっている（2026-10-17 排泄を追加） */
+  ['r', 'v', 's', 'e'].forEach(p => {
     ['rgDays-', 'rgSpan-', 'rgFrom-', 'rgTo-', 'rgLoad-'].forEach(k => {
       eq('id ' + k + p + ' がある', new RegExp('id="' + k + p + '"').test(SRC), true);
     });
   });
-  eq('日数の選択肢は6つ×3タブ', (SRC.match(/<option value="150">直近150日<\/option>/g) || []).length, 3);
-  eq('期間バーは印刷しない', (SRC.match(/class="bar rgbar noprint"/g) || []).length, 3);
+  eq('日数の選択肢は6つ×4タブ', (SRC.match(/<option value="150">直近150日<\/option>/g) || []).length, 4);
+  eq('期間バーは印刷しない', (SRC.match(/class="bar rgbar noprint"/g) || []).length, 4);
   eq('チェックの当たり判定44px', /\.rgbar label\.rgchk\s*\{[^}]*min-height:44px/.test(SRC), true);
 
   /* 旧部品・旧関数が残っていない */
@@ -846,6 +856,50 @@ group('⑨ 配線（HTML・呼び出し側）');
     /mode:RANGE\.mode, days:RANGE\.days, from:RANGE\.from, to:RANGE\.to/.test(rgSave), true);
   ['name', 'events', 'ledger', 'SEL', 'VMSEL'].forEach(k =>
     eq('rgSave に ' + k + ' を入れない', rgSave.indexOf(k) >= 0, false));
+}
+
+/* ══════════════════════════════════════════════════════════
+   ⑩ 排泄タブ（2026-10-17 追加）: 期間を共有する4つ目のタブとして、実関数で動作を確かめる
+   ══════════════════════════════════════════════════════════ */
+group('⑩ 排泄タブ（rgApply / rgReload / ensureExcData の動作）');
+{
+  const CFG = { msk_cfg: '{"url":"https://script.google.com/macros/s/x/exec","token":"t"}' };
+  function ready(b) {
+    const r = b.sharedRange();
+    const spec = { reqFrom: r.from, reqTo: r.to, reqMode: b.RANGE.mode, reqDays: b.rgDays() };
+    b.DATA = Object.assign({ from: r.from, to: r.to, events: [], ledger: [], ingested: [], loadedAt: NOW }, spec);
+    b.VM = Object.assign({ from: r.from, to: r.to, vitals: [], meals: [], vitalDates: [], mealDates: [], notes: '' }, spec);
+    b.EXC = Object.assign({ from: r.from, to: r.to, fetchFrom: '', snap: null, failed: [], refNow: NOW, refPast: false }, spec);
+  }
+  let b = makeBox({ storage: CFG });
+  showScreen(b, 'scr-exc');
+  b.rgReload();
+  eq('排泄タブの「読み込み」は排便記録だけを読む', [b._calls.excLoad || 0, b._calls.load, b._calls.vmLoad], [1, 0, 0]);
+  b.EXC_LOADING = true; b.rgReload();
+  eq('通信中は「読み込み」を重ねない', b._calls.excLoad, 1);
+
+  b = makeBox({ storage: CFG });
+  ready(b);
+  showScreen(b, 'scr-exc');
+  b.ensureExcData();
+  eq('読み込み済み・期間が同じなら読まない', b._calls.excLoad || 0, 0);
+  b.RANGE.days = 7;
+  eq('期間を変えると古くなる', [b.excStale(), b.baseStale(), b.vmStale()], [true, true, true]);
+  b.rgApply();
+  eq('排泄タブで期間を変えると排便記録を読み直し、申し送り・バイタルは読まない', [b._calls.excLoad || 0, b._calls.load, b._calls.vmLoad], [1, 0, 0]);
+  eq('他のタブの古い表示は下ろす（申し送りの状態表示が空）', b.document.getElementById('status').textContent, '');
+
+  b = makeBox({ storage: CFG });
+  ready(b);
+  showScreen(b, 'scr-resident');
+  b.RANGE.days = 30;
+  b.rgApply();
+  eq('入居者別で期間を変えると、排泄の古い表示を下ろすだけで読まない', [b._calls.clearExc || 0, b._calls.excLoad || 0, b._calls.load], [1, 0, 1]);
+  showScreen(b, 'scr-exc');
+  b.EXC_LOADING = true; b.ensureExcData();
+  eq('通信中は ensureExcData でも読まない（終わった時に excLoad が追いかける）', b._calls.excLoad || 0, 0);
+  b.EXC_LOADING = false; b.ensureExcData();
+  eq('排泄タブを開いた時に古ければ読む', b._calls.excLoad, 1);
 }
 
 /* ── 結果 ── */

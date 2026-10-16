@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-Ftl+ZNFEH6SC0C3CB1qeyMoE5zvqmu0bS251SljQ18k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-cVQFDPbfmB2xrmuAl1Lm3K10ZnBE6IRhzM35aHs+VyY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -141,6 +141,9 @@ textarea{resize:vertical;min-height:5.5rem}
 
 /* ── 一覧 ── */
 #listBox{overflow-x:auto}   /* 列が増えた分の逃げ。ページ全体を横スクロールさせない */
+#scr-list{padding-bottom:64px}   /* 右下の「不具合を報告」ボタン（共通部品）に最後の行が隠れないように */
+#listBox .lrow{cursor:pointer}
+#listBox .lrow:hover{background:var(--c-surface2)}
 .lrow{display:grid;grid-template-columns:minmax(8rem,1.6fr) 5.5rem 5rem 7rem 8rem 7rem 6rem 8rem auto;
   gap:var(--sp-2);align-items:center;padding:var(--sp-2) var(--sp-2);
   border-bottom:1px solid var(--c-border);font-size:var(--fs-xs)}
@@ -371,9 +374,6 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         </select>
       </div>
       <button id="btnReload" class="btn" type="button">最新を読み込む</button>
-      <button id="btnRebuildIdx" class="btn" type="button">索引を再構築</button>
-      <button id="btnImport" class="btn" type="button">JSON取込</button>
-      <button id="btnBulk" class="btn" type="button">まとめて取込</button>
       <button id="btnBatchAll" class="btn" type="button" hidden>未作成の期を全員分まとめてAIで作る</button>
       <button id="btnBatchAllStop" class="btn danger" type="button" hidden>中止</button>
     </div>
@@ -383,7 +383,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <div class="cd" style="padding:var(--sp-2)">
     <div class="lrow head" aria-hidden="true">
       <div>氏名</div><div>入居日</div><div>要介護度</div><div>次回期限</div><div>期限まで</div>
-      <div>状態</div><div>未作成</div><div>欠落・前回日</div><div></div>
+      <div>状態</div><div>未作成</div><div>抜け・ずれ</div><div></div>
     </div>
     <div id="listBox"></div>
   </div>
@@ -401,7 +401,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
         <label for="planSel">計画（期）</label>
         <select id="planSel"></select>
       </div>
-      <button id="btnNewPlan" class="btn" type="button">今回の計画を追加</button>
+      <!-- D33: 作成日は期の選択のすぐ横（欄は1つのまま・二重に置かない）。新しい期の日付と取り違えないよう名前を分ける -->
+      <div><label for="fPlanDate">選んでいる期の作成日（変更できます）</label><input type="date" id="fPlanDate"></div>
       <button id="btnPullMaster" class="btn" type="button">マスタから基本情報を取り込む</button>
     </div>
     <!-- D47〜D50: 未作成の期をまとめてAIで作る（1人分＝いま開いている方・凍結仕様） -->
@@ -410,14 +411,11 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
       <button id="btnBatchStop" class="btn danger" type="button" hidden>中止</button>
     </div>
     <p class="muted" id="batchAiState" role="status" aria-live="polite"></p>
-    <!-- D46: 作成できていなかった過去の期を、日付を指定して作る（期の番号・前回作成日は自動で振り直す） -->
+    <!-- 計画を追加する入口はここ1つ（2026-10-16・旧「今回の計画を追加」と統合）。日付は今日が入っている。
+         過去の日付にすると、作成できていなかった期を作る（D46・期の番号・前回作成日は自動で振り直す） -->
     <div class="stack" style="margin-top:var(--sp-2)">
-      <div><label for="addAtDate">日付を指定して期を追加</label><input type="date" id="addAtDate"></div>
-      <button id="btnAddAt" class="btn" type="button">この日付で期を追加</button>
-    </div>
-    <!-- D33: 作成日は期の選択のすぐ下（欄は1つのまま・二重に置かない） -->
-    <div class="stack" style="margin-top:var(--sp-2)">
-      <div><label for="fPlanDate">作成日（この期の日付・変更できます）</label><input type="date" id="fPlanDate"></div>
+      <div><label for="addAtDate">新しい期の作成日（今日が入っています）</label><input type="date" id="addAtDate"></div>
+      <button id="btnAddAt" class="btn" type="button">この日付で計画を追加</button>
     </div>
     <!-- 3か月ごとの期の並び。作成済＝✓／未作成＝✕（予定日つき・その場で作れる） -->
     <div id="planTimeline" class="tl"></div>
@@ -558,9 +556,9 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <div class="stack" style="margin-top:var(--sp-3)">
       <label id="sRephraseWrap" style="margin:0;display:flex;align-items:center;gap:var(--sp-2);min-height:var(--tap-min)">
         <input type="checkbox" id="sRephrase" style="width:auto;min-height:auto">
-        言い回しも更新する（rephrase）
+        言い回しも新しくする
       </label>
-      <p class="muted" id="sRephraseNote" hidden>v4では毎回、目標・社会参加・環境を更新します</p>
+      <p class="muted" id="sRephraseNote" hidden>目標・社会参加・環境は毎回新しくします</p>
     </div>
     <!-- 編集画面のAI操作は1か所にまとめる（D29）。主要動作ではないため見た目はすべてアウトライン -->
     <div class="stack" style="margin-top:var(--sp-2)">
@@ -779,6 +777,17 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
     <div id="fixResult"></div>
     <p class="muted" id="fixState" role="status" aria-live="polite"></p>
   </div>
+
+  <!-- 2026-10-16 使いやすさ第1段: 一覧から移した管理者向けの操作（動きは変えない・ID もそのまま） -->
+  <div class="cd">
+    <h2>データの管理（管理者向け）</h2>
+    <p class="muted">ふだんの作成では使いません。一覧の期限が正しく出ない時や、過去の計画書のファイルを取り込む時に使います。</p>
+    <div class="stack" style="margin-top:var(--sp-3)">
+      <button id="btnRebuildIdx" class="btn" type="button">一覧を作り直す</button>
+      <button id="btnImport" class="btn" type="button">ファイルから取り込む</button>
+      <button id="btnBulk" class="btn" type="button">ファイルからまとめて取り込む</button>
+    </div>
+  </div>
 </section>
 
 </main>
@@ -822,8 +831,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <!-- まとめて取込（過去の計画書JSONを複数まとめて取り込む。D38〜D41・書き込む前に照合表で確認） -->
 <div id="bulkModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
   <div class="box">
-    <h2 id="bkTitle">まとめて取込</h2>
-    <label for="bulkFiles">JSONファイルを選ぶ（複数可）</label>
+    <h2 id="bkTitle">ファイルからまとめて取り込む</h2>
+    <label for="bulkFiles">計画書のファイル（.json）を選ぶ（複数可）</label>
     <input type="file" id="bulkFiles" multiple accept="application/json,.json">
     <div id="bkBody"></div>
     <p class="muted" id="bkProgress" aria-live="polite"></p>
@@ -1963,7 +1972,7 @@ function errText(e) {
   if (m === 'badkey') return 'この利用者番号ではサーバーが受け付けません';
   if (m === 'toolarge') return 'データが大きすぎて保存できません';
   if (m === 'nodata') return '送る中身が空のためサーバーが保存を拒否しました';
-  if (m === 'countdrop') return '件数が減るためサーバーが保存を拒否しました（計画も一覧の索引も、減る保存は受け付けません）';
+  if (m === 'countdrop') return '件数が減るためサーバーが保存を受け付けませんでした（計画を消してしまう保存は受け付けません）';
   return m || '不明なエラー';
 }
 function banner(host, kind, text) {
@@ -2104,6 +2113,15 @@ var DAY_OK = false;
 var DAY_MSG = '';
 var IDX = null, IDX_REV = 0, IDX_OK = false;
 var IDX_PENDING = {};     /* 索引の更新に失敗した利用者番号（メモリだけ・端末に残さない） */
+/* 新しい期の作成日の欄（addAtDate）を人が直したか。直していなければ、押した時・別の方を開いた時・画面に戻った時に
+   その時点の今日へ入れ直す（翌日まで開いたままでも前日の日付で作らない・2026-10-16 審査 高1）。max も同じ時に入れ直す */
+var addAtTouched = false;
+function refreshAddAtDate() {
+  var e = $('addAtDate');
+  if (!e) return;
+  e.max = todayYmd();
+  if (!addAtTouched) e.value = todayYmd();
+}
 var DOC = null, DOC_REV = 0, DOC_COUNT = 0;   /* DOC_COUNT = サーバーが持っている「計画＋取り消し置き場」の合計件数 */
 var DOC_BASE = null;      /* 読み込めた／保存できた時点のサーバーの写し（競合の3点比較の基準） */
 var curMasterId = '', curPlanIdx = -1;
@@ -2174,7 +2192,7 @@ function loadRosterFromCommon() {
 function loadRoster() {
   if (!MCFG.url) {
     MASTER_OK = false;
-    MASTER_MSG = '入居者マスタの接続先（rmaster_cfg）が未設定です。氏名・生年月日・要介護度・自立度の引継ぎはできません（欄は空のままです）。';
+    MASTER_MSG = '入居者マスタの接続先が未設定です。氏名・生年月日・要介護度・自立度の引継ぎはできません（欄は空のままです）。';
     loadRosterFromCommon();
     return Promise.resolve(false);
   }
@@ -2259,7 +2277,7 @@ function loadDaySet() {
   if (!SU_READY) { DAY_OK = false; DAY_MSG = 'データ層を読み込めていません。'; return Promise.resolve(false); }
   if (!SCFG.endpoint) {
     DAY_OK = false;
-    DAY_MSG = '週間計画の接続先（su_sync_common）が未設定のため、デイ利用者を絞り込めません。「全員」で表示しています。';
+    DAY_MSG = '週間計画の接続先が未設定のため、デイ利用者を絞り込めません。「全員」で表示しています。';
     return Promise.resolve(false);
   }
   return withTimeout(SU.data.kvGet('care_schedule_v2', { endpoint: SCFG.endpoint, token: SCFG.token }), 30000)
@@ -2314,7 +2332,7 @@ function loadIndex() {
     IDX = IDX || normIndex(null);
     IDX_OK = false;
     setSync('未接続', 'err');
-    toast('索引を読み込めませんでした: ' + errText(e));
+    toast('一覧の情報を読み込めませんでした: ' + errText(e));
     return false;
   });
 }
@@ -2392,14 +2410,19 @@ function updateIndexFor(masterId, doc) {
   }).catch(function (e) {
     IDX_PENDING[masterId] = true;
     renderIndexChip();
-    toast('計画は保存できましたが、一覧の索引だけ更新できませんでした（' + errText(e) + '）。一覧の「索引を再構築」で直せます');
+    toast('計画は保存できましたが、一覧の情報だけ更新できませんでした（' + errText(e) + '）。設定の「一覧を作り直す」で直せます');
     return false;
   });
 }
+var BANNER_PEND = 0;   /* 一覧の帯に出した未更新の件数（変わった時だけ帯を描き直す） */
 function renderIndexChip() {
   var n = Object.keys(IDX_PENDING).length;
+  /* 一覧を出している時に件数が変わったら帯を描き直す（起動時の自己修復の失敗・保存後の索引の失敗でも一覧で分かるように・2026-10-16 審査 中2） */
+  try {
+    if (n !== BANNER_PEND && $('scr-list').classList.contains('on') && !batchBusy() && !(BULK && BULK.running)) renderBanners();
+  } catch (e0) { /* 表示の更新だけ */ }
   var b = $('btnRebuildIdx');
-  b.textContent = n ? ('索引を再構築（未更新' + n + '件）') : '索引を再構築';
+  b.textContent = n ? ('一覧を作り直す（未更新' + n + '件）') : '一覧を作り直す';
   b.classList.toggle('pri', n > 0);
 }
 /* 名簿と索引に載っている利用者番号を1件ずつ get して索引を直す（全件ダンプの経路はサーバーに無い）。
@@ -2416,13 +2439,13 @@ function rebuildIndex() {
   }
   for (var r = 0; r < ROSTER.length; r++) addId(ROSTER[r].masterId);
   if (IDX && IDX.rows) Object.keys(IDX.rows).forEach(addId);   /* 名簿に無い行も読み直す */
-  if (!ids.length) { toast('名簿も索引も空のため再構築できません'); return; }
-  if (!confirm(ids.length + '名分を1件ずつ読み直して索引を作り直します。\n\n' +
+  if (!ids.length) { toast('名簿も一覧の情報も空のため、作り直せません'); return; }
+  if (!confirm(ids.length + '名分を1件ずつ読み直して一覧の情報を作り直します。\n\n' +
     '数十秒かかることがあります。読み取れなかった方の行は、今の内容のまま残します。よろしいですか？')) return;
   var rows = {}, i = 0, fails = 0;
   var btn = $('btnRebuildIdx');
   btn.disabled = true;
-  setSync('索引を再構築中…');
+  setSync('一覧を作り直し中…');
   (function step() {
     if (i >= ids.length) {
       var n = Object.keys(rows).length;
@@ -2432,16 +2455,16 @@ function rebuildIndex() {
         Object.keys(rows).forEach(function (id) { delete IDX_PENDING[id]; });
         btn.disabled = false; renderIndexChip(); renderList();
         setSync('同期OK', 'ok');
-        toast('索引を作り直しました（' + n + '件を書き直し' +
+        toast('一覧の情報を作り直しました（' + n + '件を書き直し' +
           (fails ? '・読み取れず ' + fails + '件はそのまま残しました' : '') + '）');
       }).catch(function (e) {
         btn.disabled = false; setSync('未接続', 'err');
-        toast('索引を保存できませんでした: ' + errText(e));
+        toast('一覧の情報を保存できませんでした: ' + errText(e));
       });
       return;
     }
     var id = ids[i++];
-    setSync('索引を再構築中… ' + i + '/' + ids.length);
+    setSync('一覧を作り直し中… ' + i + '/' + ids.length);
     tpGet(docKey(id)).then(function (j) {
       /* 計画が1件も無くても、通知を止める指定がある方は索引に残す（作成不要の方は計画を持たないことが多い・2026-10-15）。
          今の索引の行が指定を持っている方も書き直す（計画0件の方の取り消しで索引だけ更新できなかった時に、ここで直すため） */
@@ -2512,7 +2535,7 @@ function reportHealTrouble(failIds, unsavedIds) {
   if (failIds.length) parts.push('読めなかった ' + failIds.length + '件');
   if (!parts.length) return;
   renderIndexChip();
-  toast('索引を直せませんでした（' + parts.join('・') + '）。設定の「索引を再構築」で直せます');
+  toast('一覧の情報を直せませんでした（' + parts.join('・') + '）。設定の「一覧を作り直す」で直せます');
 }
 
 /* ═══════════ 一覧 ═══════════ */
@@ -2587,10 +2610,14 @@ function renderBanners() {
   clear(host);
   if (!SU_READY) banner(host, 'err', 'データ層（su-data.js）を読み込めていません。ページを再読み込みしてください。直らない場合は管理者へ連絡してください。');
   if (!FORM_READY) banner(host, 'err', '印刷様式（training-plan-form.js）を読み込めていません。印刷とプレビューはできません。');
-  if (!CFG.url) banner(host, 'warn', '計画書の接続先が未設定です。下の「設定」で、計画書【専用】GASのURLと合言葉を入れてください。');
+  if (!CFG.url) banner(host, 'warn', '計画書の接続先が未設定です。下の「設定」で接続先を入れてください（管理者の作業です）。');
   if (MASTER_MSG) banner(host, 'warn', MASTER_MSG);
   if (ROSTER_SRC === 'common') banner(host, 'info', '入居者マスタへ繋がらないため、端末に配られている共有名簿で表示しています（古い可能性があります）。');
   if (DAY_MSG) banner(host, 'info', DAY_MSG);
+  /* 一覧の情報の更新に失敗した方がいる時は、ここで知らせる（直す操作は設定の「データの管理」へ移した・2026-10-16） */
+  var pend = Object.keys(IDX_PENDING).length;
+  BANNER_PEND = pend;
+  if (pend) banner(host, 'warn', '一覧の情報が ' + pend + '件、最新になっていません。設定の「データの管理」にある「一覧を作り直す」で直せます。');
   renderBatchAllSummary(host);   /* 中7: 一括AI作成（全員分）の結果は描き直しても残す */
 }
 function renderList() {
@@ -2602,7 +2629,7 @@ function renderList() {
   var c = TP.alertCounts(rows);
   $('listSummary').textContent = '対象 ' + rows.length + '名（超過 ' + c.overdue + '・要注意 ' + c.warn +
     '・計画なし ' + c.none + '・期限内 ' + c.ok + (c.ended ? '・終了 ' + c.ended : '') + '）' +
-    (IDX_OK ? '' : '  ※索引を読めていないため、期限は表示できていません') +
+    (IDX_OK ? '' : '  ※一覧の情報を読めていないため、期限は表示できていません') +
     (ADM_MSG ? '  ※' + ADM_MSG : '');
   if (!rows.length) {
     var empty = el('p', 'muted', ROSTER.length
@@ -2653,9 +2680,9 @@ function renderList() {
     tr.appendChild(mc);
     /* 欠落（原本の無い期）と、前回作成日が直前の期と食い違う期を同じ欄に出す */
     var notes = [];
-    if (row.gapCount) notes.push('欠落' + row.gapCount + '件');
-    if (row.prevMismatch) notes.push('前回日不一致' + row.prevMismatch + '件');
-    tr.appendChild(cell('欠落・前回日', notes.length ? notes.join('　') : 'なし'));
+    if (row.gapCount) notes.push('原本の抜け' + row.gapCount + '件');
+    if (row.prevMismatch) notes.push('前回作成日のずれ' + row.prevMismatch + '件');
+    tr.appendChild(cell('抜け・ずれ', notes.length ? notes.join('　') : 'なし'));
     var act = el('div', 'act');
     var b = el('button', 'btn sm', '開く');
     b.type = 'button';
@@ -2665,6 +2692,14 @@ function renderList() {
     b.addEventListener('click', function () { openResident(this.getAttribute('data-id')); });
     act.appendChild(b);
     tr.appendChild(act);
+    /* 行のどこを押しても開く（キーボードでは「開く」ボタンを使う）。ボタン自体の押下は二重に開かない */
+    tr.setAttribute('data-id', row.masterId);
+    tr.addEventListener('click', function (ev) {
+      if (ev.target && ev.target.closest && ev.target.closest('button,a,input,select,textarea')) return;
+      try { if (window.getSelection && String(window.getSelection()).length) return; } catch (e0) { /* 選択を調べられない時は開く */ }
+      if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); return; }
+      openResident(this.getAttribute('data-id'));
+    });
     box.appendChild(tr);
   }
 }
@@ -2810,6 +2845,7 @@ function openResident(masterId, wantScr, opts) {
   if (batchBusy() && !(opts && opts.internal)) { toast('一括作成の実行中です。終わるまでお待ちください'); return Promise.resolve(false); }
   if (dirty && !confirm('保存していない変更があります。別の方を開くと、この端末の入力は失われます。よろしいですか？')) return Promise.resolve(false);
   stopFormFor = ''; noTouchOnce = false;   /* 通知を止める欄: 開き直したら保存値から描き直す（2026-10-15） */
+  addAtTouched = false; refreshAddAtDate();   /* 前の方で入れた過去の日付を持ち越さない（2026-10-16 審査 低3） */
   if (!CFG.url) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
   setSync('読み込み中…');
   clearTimeout(saveTimer);
@@ -2907,7 +2943,7 @@ function renderEdit() {
   if (!row) banner(host, 'warn', 'この利用者番号が名簿にありません。氏名の照合ができないため、保存は計画書側の氏名で行います。');
   if (!MASTER_OK) banner(host, 'warn', '引継ぎ不可：' + (MASTER_MSG || '入居者マスタを参照できません') + '（欄は空のままにし、勝手に埋めません）');
   if (DOC && DOC.gaps && DOC.gaps.length) {
-    banner(host, 'info', '原本の無い期が ' + DOC.gaps.length + ' 件あります（欠落として台帳に残しています）。');
+    banner(host, 'info', '原本の無い期が ' + DOC.gaps.length + ' 件あります（原本の抜けとして記録しています）。');
   }
   if (DOC && DOC.plans && DOC.plans.length > 1) {
     var mism = TP.prevDateMismatches(DOC.plans);
@@ -3308,9 +3344,9 @@ function renderSample() {
   }
   var g = p ? p.generation : null;
   if (g && g.requestedAt && !g.doneAt) {
-    $('genState').textContent = '依頼済み（Claude Code で処理）　依頼 ' + g.requestedAt.slice(0, 16).replace('T', ' ') +
+    $('genState').textContent = '依頼として記録済み（管理者がまとめて作ります）　依頼 ' + g.requestedAt.slice(0, 16).replace('T', ' ') +
       '　' + (g.requestedBy || '職員未選択') + '　' + (g.mode === 'next' ? '次期を生成' : 'Ⅲを埋める') +
-      (g.rephrase ? '（言い回しも更新）' : '');
+      (g.rephrase ? '（言い回しも新しくする）' : '');
   } else if (g && g.doneAt) {
     $('genState').textContent = '生成の結果を取り込み済み（' + g.doneAt.slice(0, 10) + '）';
   } else {
@@ -3350,7 +3386,7 @@ function requestGeneration(mode) {
   markDirty();
   saveNow(true);
   renderSample();
-  toast(mode === 'next' ? '次期の生成を依頼しました（Claude Code で処理します）' : 'Ⅲの記入を依頼しました（Claude Code で処理します）');
+  toast(mode === 'next' ? '次期の作成を依頼として記録しました（管理者がまとめて作ります）' : 'Ⅲの記入を依頼として記録しました（管理者がまとめて作ります）');
 }
 
 /* ── 2カラム（欄ごとに前回と今回を同じ行へ）── */
@@ -3365,7 +3401,7 @@ function renderFields() {
   var plan = curPlan();
   if (!plan) {
     var c = el('div', 'cd');
-    c.appendChild(el('p', 'muted', 'この方の計画はまだありません。上の「今回の計画を追加」で新しく作るか、一覧の「JSON取込」で原本を取り込んでください。'));
+    c.appendChild(el('p', 'muted', 'この方の計画はまだありません。上の「この日付で計画を追加」で新しく作るか、設定の「ファイルから取り込む」で原本を取り込んでください。'));
     box.appendChild(c);
     return;
   }
@@ -3849,7 +3885,7 @@ function pathLabel(path) {
     'generation.sample.trend': '本人の様子（傾向）', 'generation.sample.note': '本人の様子（ひとこと）',
     'generation.sample.envChange': '本人の様子（環境・福祉用具の変化）',
     'generation.sample.adlNote': '本人の様子（基本動作・ADLの様子）',
-    'generation.mode': '生成の依頼内容', 'generation.rephrase': '言い回しも更新する',
+    'generation.mode': '生成の依頼内容', 'generation.rephrase': '言い回しも新しくする',
     'generation.requestedBy': '生成を依頼した職員'
   };
   return m[path] || path;
@@ -4025,7 +4061,7 @@ function handleConflict(mid) {
       var msg = [];
       if (added) msg.push('計画 ' + added + '件');
       if (took) msg.push('欄 ' + took + '件');
-      if (gapAdded) msg.push('欠落台帳 ' + gapAdded + '件');
+      if (gapAdded) msg.push('原本の抜けの記録 ' + gapAdded + '件');
       if (tagAdded) msg.push('本人の様子のタグ ' + tagAdded + '件');
       if (trashAdded) msg.push('取り消した期 ' + trashAdded + '件');
       if (stopTook === 'took') msg.push('通知を止める指定');
@@ -4052,7 +4088,7 @@ function openConflictModal(diffs, added, took, gapAdded, srvRev, srvCount, tagAd
   clear(box);
   if (added) box.appendChild(el('p', 'muted', 'このほかに、サーバーにだけあった計画 ' + added + '件はそのまま取り込みました。'));
   if (took) box.appendChild(el('p', 'muted', 'この端末で触っていない欄 ' + took + '件は、他の端末の内容をそのまま取り込みました。'));
-  if (gapAdded) box.appendChild(el('p', 'muted', '欠落台帳の ' + gapAdded + '件も取り込みました。'));
+  if (gapAdded) box.appendChild(el('p', 'muted', '原本の抜けの記録 ' + gapAdded + '件も取り込みました。'));
   if (tagAdded) box.appendChild(el('p', 'muted', '「本人の様子」のタグ ' + tagAdded + '件は、他の端末で付けた分も残しました。'));
   if (trashAdded) box.appendChild(el('p', 'muted', '取り消した期 ' + trashAdded + '件も取り込みました。'));
   for (var i = 0; i < diffs.length; i++) {
@@ -4366,7 +4402,7 @@ function renderTimeline() {
   clear(host);
   if (!DOC) return;
   if (!DOC.plans.length) {
-    host.appendChild(el('p', 'muted', '計画がまだありません。「今回の計画を追加」で作るか、一覧の「JSON取込」で原本を取り込んでください。'));
+    host.appendChild(el('p', 'muted', '計画がまだありません。上の「この日付で計画を追加」で作るか、設定の「ファイルから取り込む」で原本を取り込んでください。'));
     return;
   }
   var tl = timelineOf(DOC.plans, DOC.stop), miss = 0, i;
@@ -4422,7 +4458,7 @@ function deletePlan(idxStr) {
   var p = DOC.plans[idx];
   if (!p) return;
   if (!trashReady()) {
-    toast('この端末が繋がっている計画書GASは古い版のため、期の取り消しを保存できません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+    toast('サーバーが古い版のため、期の取り消しはできません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
     return;
   }
   var stateLabel = TP.STATUS_LABEL[p.status] || '未作成';
@@ -5016,7 +5052,7 @@ function renderCompare() {
   $('cmpZoom').value = lsGet(LS.zoom, ZOOMS, 'fit');
   var p = curPlan();
   if (!p) {
-    L.appendChild(el('p', 'muted', 'この方の計画はまだありません。上の「今回の計画を追加」で作るか、一覧の「JSON取込」で原本を取り込んでください。'));
+    L.appendChild(el('p', 'muted', 'この方の計画はまだありません。上の「この日付で計画を追加」で作るか、設定の「ファイルから取り込む」で原本を取り込んでください。'));
     return;
   }
   if (!FORM_READY) {
@@ -5749,7 +5785,7 @@ var AI_SRV = null;      /* ping や中継の応答から分かったサーバー
 function aiReady() { return aiEnabled() && SU_READY && !!CFG.url && !!CFG.token && !(AI_SRV && AI_SRV.key === false); }
 /* AIを使えない理由（案内文に使う）。サーバーにキーが無いと分かっている時はそれを言う */
 function aiUnreadyWhy() {
-  if (AI_SRV && AI_SRV.key === false) return 'サーバー（計画書の専用GAS）にAIのキーが無いか、中継の無い古い版のため、AIを使えません（管理者に連絡してください）。';
+  if (AI_SRV && AI_SRV.key === false) return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーにAIのキーが無いか、中継の無い古い版です。設定の「AIの接続を確かめる」で詳しく分かります）。';
   if (!(CFG.url && CFG.token)) return '計画書の接続先が未設定のため、AIを使えません。';
   return 'この端末ではAIを使わない設定です（設定画面の「この端末でAI生成を使う」）。';
 }
@@ -6088,19 +6124,19 @@ function aiErrText(e) {
   var m = s_(e && e.message ? e.message : e);
   var d = s_(e && e.detail);
   var why = d ? ('　AIの返答: ' + d) : '';
-  if (m === 'AI_NO_KEY') return 'サーバー（計画書の専用GAS）にAIのキーが入っていません。管理者がスクリプトプロパティ ANTHROPIC_API_KEY に入れてください';
+  if (m === 'AI_NO_KEY') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのスクリプトプロパティ ANTHROPIC_API_KEY が空です）';
   if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
-  if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（上限はサーバーの AI_DAILY_LIMIT で変えられます）';
-  if (m === 'AI_PROXY_OLD') return 'サーバー（計画書の専用GAS）が古い版で、AIの中継が入っていません。管理者に更新を依頼してください';
-  if (m === 'AI_PROXY_AUTH') return '計画書の専用GASの合言葉が通りませんでした（設定画面の「接続」を確かめてください）';
+  if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）';
+  if (m === 'AI_PROXY_OLD') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーが古い版で、AIの中継が入っていません）';
+  if (m === 'AI_PROXY_AUTH') return 'サーバーの合言葉が通りませんでした。管理者に伝えてください（管理者向け：設定画面の「接続」を確かめる）';
   if (m === 'AI_BAD_REQUEST') return 'AIへの依頼の形がサーバーで断られました（アプリとサーバーの版が合っていない可能性）。管理者に連絡してください';
   if (m === 'AI_FETCH') return 'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください';
   if (m === 'AI_BUSY') return 'サーバーが混み合っています。少し待ってから、もう一度お試しください';
-  if (m === 'AI_PROXY') return '計画書の専用GASから正しい応答がありませんでした。もう一度お試しください';
+  if (m === 'AI_PROXY') return 'サーバーから正しい応答がありませんでした。もう一度お試しください';
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
   if (m === 'AI_NO_SUBJECT') return 'ご本人の氏名が分からないため、氏名を伏せられず送れません（入居者マスタの名簿を読み込んでから、もう一度お試しください）';
   if (m === 'AI_DECLINED') return '外部AIへの送信を取りやめました（何も送っていません）。使う時はもう一度押して「OK」を選んでください';
-  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'サーバーに入っているAIのキーが受け付けられませんでした（' + m.slice(8) + '）。管理者がキーを確かめてください' + why;
+  if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
   if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。' + why;
@@ -6844,7 +6880,7 @@ function runBatchAiForOpenResident(opts) {
            取り消し置き場へ移して✕（未作成）に戻し、要約に理由を出す */
         var moved = (mid === curMasterId) ? batchDiscardPlan(pid, wasPrevAfterAdd) : false;
         failedGen.push({ date: date, reason: 'AI生成に失敗（' + (moved ? '作りかけの期は取り消し置き場へ戻しました'
-          : (trashReady() ? '期は残っています' : 'この端末が繋がっているGASは古い版のため取り消せませんでした。手で取り消してください')) +
+          : (trashReady() ? '期は残っています' : 'サーバーが古い版のため取り消せませんでした。手で取り消してください')) +
           '）：' + aiErrText(e) });
         /* 高: 恒久的な失敗（鍵・設定）と、連続失敗はその場で全体を止める。
            97期を空回りさせて取り消し置き場をゴミで埋めないため */
@@ -6973,7 +7009,7 @@ function runBatchAiAllResidents() {
   if (dirty) { toast('保存していない編集が残っています。保存してから実行してください'); return; }
   /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
   if (!trashReady()) {
-    toast('この端末が繋がっている計画書GASは古い版のため、一括では作れません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+    toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
     return;
   }
   /* D47（2026-09-04 変更）: 在籍デイ利用者だけでなく、未作成の期がある方すべてを対象にする */
@@ -7304,7 +7340,7 @@ function openSamplePop(mode, opts) {
     ? (POP.mode === 'backfill'
         ? 'この期は前の期と次の期の間の期です。次の期の評価と食い違わない文案をAIに作ってもらいます。氏名・生年月日・病名は送りません。'
         : '選んだ内容と前の期の文だけをAIに渡します（氏名・生年月日・病名は送りません）。')
-    : aiUnreadyWhy() + '押すと「依頼」として記録します（Claude Code で文案を作る経路）。';
+    : aiUnreadyWhy() + '押すと「依頼」として記録し、あとで管理者がまとめて文案を作ります。';
   $('spGo').textContent = ready ? '生成する' : '依頼として記録する';
   $('samplePop').classList.add('on');
   $('spTrend').focus();
@@ -7973,7 +8009,7 @@ function bkRunAll() {
       $('bulkGo').disabled = false;
       $('bulkFiles').disabled = false;
       $('bkProgress').textContent = '完了：成功 ' + okCount + '人・失敗 ' + ngCount + '人・追加した期の合計 ' + addedTotal + '期' +
-        (idxFailCount ? '・索引未更新 ' + idxFailCount + '件（一覧の「索引を再構築」で直せます）' : '');   /* 低8 */
+        (idxFailCount ? '・一覧の情報の未更新 ' + idxFailCount + '件（設定の「一覧を作り直す」で直せます）' : '');   /* 低8 */
       renderList();
       /* 中3: 開いている利用者へ実際に書いていたら在庫を取り直す（applyImportと同じ作法） */
       if (curMasterId && successIds[curMasterId]) openResident(curMasterId);
@@ -8012,7 +8048,7 @@ function renderSettings() {
   var box = $('staffBox');
   clear(box);
   if (!IDX_OK) {
-    banner(box, 'warn', '索引（職員の一覧）を読めていません。接続先を確かめてから開き直してください。');
+    banner(box, 'warn', '職員の一覧を読めていません。接続先を確かめてから開き直してください。');
     return;
   }
   if (!st.staff.length) {
@@ -8126,7 +8162,7 @@ function staffErrText(e) {
   var m = s_(e && e.message);
   if (/countdrop/.test(m)) return '一覧の件数が減る保存になるため、サーバーが受け付けませんでした（画面を開き直してからやり直してください）';
   if (/conflict|重なりました/.test(m)) return '他の端末（または別のタブ）が同時に保存しました。この画面を開き直してから、もう一度お試しください';
-  if (/sizelimit/.test(m)) return '一覧の大きさが上限を超えています（設定の「索引を再構築」を試してください）';
+  if (/sizelimit/.test(m)) return '一覧の大きさが上限を超えています（設定の「一覧を作り直す」を試してください）';
   if (/badtoken/.test(m)) return '合言葉が合っていません（設定の接続先を確かめてください）';
   if (/未設定/.test(m)) return '接続先が未設定です（設定の接続先を入れてください）';
   return m || '原因不明';
@@ -8344,8 +8380,11 @@ function bindUI() {
     if (batchBusy()) { toast('一括作成の実行中です。終わるまでお待ちください'); renderEdit(); return; }
     switchPlan(this.value);
   });
-  $('btnNewPlan').addEventListener('click', addPlan);
-  $('addAtDate').max = todayYmd();   /* 未来日は入力段階で止める（addPlanAt 側の断りも残る） */
+  /* 未来日は入力段階で止める（addPlanAt 側の断りも残る）。今日の分はボタン1回で作れる（旧「今回の計画を追加」と同じ） */
+  refreshAddAtDate();
+  $('addAtDate').addEventListener('input', function () { addAtTouched = true; });
+  $('addAtDate').addEventListener('change', function () { addAtTouched = true; });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshAddAtDate(); });
   /* 通知を止める（2026-10-15） */
   $('btnStopSet').addEventListener('click', setStop);
   $('btnStopClear').addEventListener('click', clearStop);
@@ -8355,9 +8394,10 @@ function bindUI() {
   });
   $('btnAddAt').addEventListener('click', function () {
     if (!DOC) { toast('計画書をまだ読み込めていません。一覧から利用者を開いてください'); return; }
+    refreshAddAtDate();   /* 触っていなければ押した時点の今日で作る */
     var d = s_($('addAtDate').value);
     if (!d) { toast('日付を入れてください'); $('addAtDate').focus(); return; }
-    if (addPlanAt(d)) $('addAtDate').value = '';   /* 作れた時だけ欄を空にする（失敗時は入力を残す） */
+    if (addPlanAt(d)) { addAtTouched = false; refreshAddAtDate(); }   /* 作れた時だけ今日に戻す（失敗時は入力を残す） */
   });
   $('btnPullMaster').addEventListener('click', pullMaster);
   /* D47〜D50: 未作成の期をまとめてAIで作る（1人分＝いま開いている方） */
@@ -8366,7 +8406,7 @@ function bindUI() {
     if (batchStartBlocked()) { toast('いまAIの処理を実行しています。終わるまでお待ちください'); return; }
     /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
     if (!trashReady()) {
-      toast('この端末が繋がっている計画書GASは古い版のため、一括では作れません（版 2026-09-04.1 以降が必要です）。設定画面の「接続テスト」で版を確かめてください');
+      toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
       return;
     }
     /* 高1: 計画が1件も無い方は「前の期」が無いため一括では作れない（1期目は人が作る） */
@@ -8610,7 +8650,7 @@ function boot() {
     if (mid) announceOverdue();
     return healIndexOnBoot();      /* 索引の更新に失敗したまま閉じた分を、起動時に差分だけ直す */
   }).then(function (n) {
-    if (n) toast('一覧の索引を ' + n + '件 直しました');
+    if (n) toast('一覧の情報を ' + n + '件 直しました');
   });
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
