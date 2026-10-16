@@ -536,11 +536,16 @@
     return out;
   }
   function mcToday() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-  var mcOn = false;
+  var mcOn = false, mcFix = [];
+  function mcShowFix() {
+    var b = $('b-mirror-fix');
+    b.hidden = !mcFix.length;
+    if (mcFix.length) b.textContent = '違う分を Google へ写す（' + mcFix.length + '件）';
+  }
   async function runMirrorCheck() {
     if (mcOn) return;
     var verdict = $('mc-verdict'), list = $('mc-list'), kpis = $('mc-kpis');
-    kpis.replaceChildren(); list.replaceChildren();
+    kpis.replaceChildren(); list.replaceChildren(); mcFix = []; mcShowFix();
     function say(t, kind) { verdict.className = 'msg ' + (kind || 'warn'); verdict.textContent = t; }
     var tgt = gasTarget(), sb = SUAuth.client();
     if (!tgt) { say('この端末には週間計画・ワークスケジュールの接続先（Google）がありません。この端末で週間計画かワークスケジュールを一度開いてから、もう一度押してください。'); return; }
@@ -571,6 +576,7 @@
         }
         var c = mcCompare(keys, sbData, gasEnts), bad = c.stale.length + c.missing.length;
         total += keys.length; badAll += bad; unreadAll += c.unread.length;
+        mcFix = mcFix.concat(c.stale, c.missing);
         kpis.appendChild(kpi(f[1], c.same + '／' + keys.length, '同じ'));
         var note = bad
           ? 'Google が古い ' + c.stale.length + '件' + (c.missing.length ? '・Google に無い ' + c.missing.length + '件' : '') + '　例: ' + c.stale.concat(c.missing).slice(0, 6).join('、')
@@ -584,7 +590,48 @@
       else say('本番の中身は、Google にも全部届いています（写し返しは遅れていません）。', 'ok');
     } catch (e) {
       say('比べられませんでした: ' + String(e && e.message || e), 'ng');
-    } finally { mcOn = false; $('b-mirror-check').disabled = false; }
+    } finally { mcOn = false; $('b-mirror-check').disabled = false; mcShowFix(); }
+  }
+  /* 違う分を Google へ写す（2026-10-16 代表者の決定）。本番の間は Supabase が正しい中身＝Google をそれに合わせて force で上書きするだけ
+   * （保存の20秒後の写し返し su-kv.js scheduleMirror と同じ動き）。写す直前に、その種類がまだ本番かを確かめ直す
+   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ */
+  async function runMirrorFix() {
+    if (mcOn || !mcFix.length) return;
+    var verdict = $('mc-verdict');
+    function say(t, kind) { verdict.className = 'msg ' + (kind || 'warn'); verdict.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。'); return; }
+    var tgt = gasTarget(), sb = SUAuth.client();
+    if (!tgt) { say('この端末には Google の接続先がありません。'); return; }
+    var keys = mcFix.slice();
+    if (!confirm('Google の古い ' + keys.length + '件を、Supabase（本番）の中身で上書きしますか？\n\nGoogle を読む画面（俯瞰など）の表示が新しくなります。本番の中身（Supabase）は変わりません。')) return;
+    mcOn = true; $('b-mirror-check').disabled = true; $('b-mirror-fix').disabled = true;
+    var wrote = 0, failed = [];
+    try {
+      var fm = await sb.from('kv_families').select('family,mode');
+      if (fm.error) throw new Error(String(fm.error.message || fm.error.code));
+      var live = {};
+      (fm.data || []).forEach(function (r) { if (r.mode === 'live') live[r.family] = true; });
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        say('写しています… ' + i + '／' + keys.length);
+        if (!live[famOf(k)]) { failed.push(k + '（本番ではない）'); continue; }
+        var r = await sb.rpc('kv_get', { p_key: k });
+        var sd = r.data && r.data.data;
+        if (r.error || sd == null || typeof sd !== 'object') { failed.push(k); continue; }
+        try {
+          var g = await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+          if (g && g.ok) wrote++; else failed.push(k);
+        } catch (e) { failed.push(k); }
+      }
+    } catch (e) {
+      say('写せませんでした: ' + String(e && e.message || e), 'ng');
+      mcOn = false; $('b-mirror-check').disabled = false; $('b-mirror-fix').disabled = false;
+      return;
+    }
+    mcOn = false; $('b-mirror-check').disabled = false; $('b-mirror-fix').disabled = false;
+    await runMirrorCheck();
+    var head = '写した ' + wrote + '件' + (failed.length ? '・写せなかった ' + failed.length + '件（例: ' + failed.slice(0, 4).join('、') + '）' : '') + '。比べ直しました: ';
+    verdict.textContent = head + verdict.textContent;
   }
 
   /* ── 切り替え前の点検（統合 0007）── */
@@ -993,6 +1040,7 @@
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
+  $('b-mirror-fix').addEventListener('click', function () { msg(''); runMirrorFix(); });
   $('b-fill').addEventListener('click', function () { msg(''); fillMissing(); });
   $('b-wsday-stop').addEventListener('click', function () { stopWsday(); });
   $('b-wsday-back').addEventListener('click', function () { writeBackWsday(); });
