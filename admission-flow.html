@@ -452,9 +452,11 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 /* ══ ご相談シートの印刷（施設の様式の紙面をそのまま再現） ══
    画面では隠し、印刷の時だけ出す。A4縦1枚に収める（2026-08-30 指示）。
    ★罫線・項目の並び・選択肢の文言は紙と1対1。直す時は紙の現物と突き合わせること。 */
-/* ★紙の色は配色の入れ替えに引きずらせない。本文の色（--g9）を継いでいたため、
-   2026-10-16 の見た目の入れ替えで刷り色がわずかに濃くなっていた（版ごとの画素差 3,962px・
-   並びとページ数は一致）。紙の様式は突き合わせ済みなので、入れ替え前の値に固定する。 */
+/* ★紙の色は配色の入れ替えに引きずらせない。本文の色（--g9）を継いでいるため、
+   見た目を入れ替えると刷り色も動く。紙の様式は現物と突き合わせて確定済みなので、
+   入れ替え前の値（#202124）に固定する。
+   ※2026-10-16 の印刷の画素差 3,962px はこれが原因ではなく、新しく足した丸ボタン（.fab）が
+     印刷で隠れていなかったこと。丸ボタンは @media print の非表示に加えた。 */
 #printSheet { display: none; color: #202124; }
 #printSheet .ps-title { font-size: 12pt; font-weight: 700; letter-spacing: .05em; }
 #printSheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -481,7 +483,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 #printSheet .hd .pd { font-size: 7.6pt; }
 
 @media print {
-  .hdr, .bnav, #toast, .mk, main { display: none !important; }
+  .hdr, .bnav, #toast, .mk, main, .fab { display: none !important; }
   body { padding: 0; background: #fff; }
   #printSheet.on { display: block !important; }
   @page { size: A4 portrait; margin: 7mm; }
