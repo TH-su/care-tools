@@ -238,25 +238,26 @@
   }
 
   /* 管理者だけ: 勤務表の保存先の切り替え・戻し（統合 0009）。週間計画・ワークスケジュールとは別の夜に行う。
-   * 切り替えは、この画面で点検して勤務表がそろっている時だけ（shiftReady）。戻すのはいつでも（スイッチを切ってから）。 */
+   * 切り替えは、この画面で点検して勤務表がそろっている時だけ（shiftReady）。
+   * 戻す順番（2026-10-16 代表者の決定・ワークスケジュールの日ごとと同じ）:
+   *   1.「勤務表を写しの期間に戻す」（Supabase が勤務表の保存を断る＝入力は端末に残る。スイッチは入ったままでよい）
+   *   2.「勤務表を Google へ写し返す」（Supabase を正として、中身が違うキーだけ Google へ force で書く。全部そろうまで）
+   *   3. 勤務表のスイッチ shift を切る PR を取り込む（端末が Google へ送る）。
+   *   先にスイッチを切ると、端末が Google の古い中身を読み書きし、Supabase にだけある新しい入力を巻き戻すため、戻すのはスイッチを切る前。 */
   var shiftReady = false;
   function shiftSwitch() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.shift === true); }
+  /* 切り替え・戻しを止める理由（押してよい時は ''）。mode＝押したボタン（live／shadow）・sw＝スイッチ shift が入か・ready＝点検がそろったか */
+  function shiftModeBlock(mode, sw, ready) {
+    if (mode === 'live' && !sw) return '勤務表の切り替えスイッチ（shift）がまだ「入」になっていません。先にスイッチを入れる PR を取り込み、1分ほど待ってから画面を開き直してください。';
+    if (mode === 'live' && !ready) return '先に「切り替え前の点検をする」を押して、勤務表がそろっていることを確かめてください。';
+    return '';   // 戻す（shadow）はいつでも（スイッチを切る前に行う）
+  }
   async function setShiftMode(mode) {
-    if (mode === 'live' && !shiftSwitch()) {
-      msg('勤務表の切り替えスイッチ（shift）がまだ「入」になっていません。先にスイッチを入れる PR を取り込み、1分ほど待ってから画面を開き直してください。', 'warn');
-      return;
-    }
-    if (mode === 'shadow' && shiftSwitch()) {
-      msg('勤務表の切り替えスイッチ（shift）がまだ「切」になっていません。先にスイッチを切る PR を取り込み、1分ほど待ってから画面を開き直してください。', 'warn');
-      return;
-    }
-    if (mode === 'live' && !shiftReady) {
-      msg('先に「切り替え前の点検をする」を押して、勤務表がそろっていることを確かめてください。', 'warn');
-      return;
-    }
+    var why0 = shiftModeBlock(mode, shiftSwitch(), shiftReady);
+    if (why0) { msg(why0, 'warn'); return; }
     var q = mode === 'live'
       ? '勤務表の保存先を Supabase（本番）に切り替えますか？\n\n編集中の端末は、いったん閲覧モードに戻ります（入力は端末に退避されます）。'
-      : '勤務表を「写しの期間」に戻しますか？';
+      : '勤務表を「写しの期間」に戻しますか？\n\n戻している間、勤務表の保存は各端末に残ります。続けて「勤務表を Google へ写し返す」を押し、全部そろってから勤務表のスイッチを切る PR を取り込んでください（スイッチを切るのは最後）。';
     if (!confirm(q)) return;
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['shift'], p_mode: mode });
@@ -266,7 +267,154 @@
       return;
     }
     msg(mode === 'live' ? '勤務表の保存先を Supabase（本番）にしました。明日の朝、勤務表を使う全部の端末で画面を開き直してください。'
-                        : '勤務表を写しの期間に戻しました。', 'ok');
+                        : '勤務表を写しの期間に戻しました。続けて「勤務表を Google へ写し返す」を押してください（全部そろってから、勤務表のスイッチを切る PR を取り込みます）。', 'ok');
+  }
+
+  /* ── 勤務表を Google へ写し返す（戻し用・管理者だけ・2026-10-16 代表者の決定）──
+   * 勤務表が写しの期間（shadow）の時だけ押せる（本番のままだと、写した後に Supabase 側だけが進む）。
+   * Supabase の勤務表の全キー（shift_pull）と Google の中身（pull）を比べ、中身が違うキーだけを Google へ push（版0・force・券なし）。
+   * Google の編集の権利（editlock・editlock-required）に止められたら、そこで止めて件数と案内を出す（成功扱いにしない）。
+   * 本番の GAS は厳格モード（SHIFT_LOCK_REQUIRED=1）＝券の無い書き込みは止められる前提。 */
+  var SHIFT_WB_RE = /^(staff|symbols|settings|freee|sched:\d{4}-\d{2}:[A-Za-z0-9_.:-]{1,80}|req:\d{4}-\d{2}|drafts:\d{4}-\d{2})$/;
+  /* 写し返しを止める理由（押してよい時は ''）。mode＝勤務表の種類の状態・hasTarget＝Google の接続先があるか */
+  function shiftWbBlock(mode, hasTarget) {
+    if (!hasTarget) return 'この端末に Google の同期先（接続先と合言葉）がありません。週間計画かワークスケジュールを一度開いてから、もう一度押してください。';
+    if (mode !== 'shadow') return '先に「勤務表を写しの期間に戻す」を押してください（本番のまま写すと、写した後に Supabase 側だけが進むことがあります）。';
+    return '';
+  }
+  /* 写すキーの選び方。sbEnts＝Supabase の キー→{rev, data}、gasEnts＝Google の キー→{rev, data}。
+   * 勤務表のキーで中身のあるものだけを見て、Google と中身が同じなら飛ばす。返すのは {write:[キー], same:件数}（キーは決まった順） */
+  function shiftWbPlan(sbEnts, gasEnts) {
+    var out = { write: [], same: 0 };
+    Object.keys(sbEnts || {}).sort().forEach(function (k) {
+      var s = sbEnts[k];
+      if (!SHIFT_WB_RE.test(k) || !s || s.data == null || typeof s.data !== 'object') return;
+      var g = gasEnts && gasEnts[k];
+      if (g && g.data != null && sameData(g.data, s.data)) out.same++; else out.write.push(k);
+    });
+    return out;
+  }
+  /* Google の断りが編集の権利によるものか。'editlock-required'（厳格モード）／'editlock'（誰かが編集中）／''（それ以外） */
+  function shiftWbRefusal(err) {
+    var m = String(err && err.message || err || '');
+    if (/Google が断りました（editlock-required）/.test(m)) return 'editlock-required';
+    if (/Google が断りました（editlock）/.test(m)) return 'editlock';
+    return '';
+  }
+  /* 編集の権利に止められた時の案内。n＝写せなかった件数（止められたキーと、その後の未着手のキー） */
+  function shiftWbGuide(kind, n, wrote, same) {
+    var head = 'Google の編集の権利に止められたため、' + n + '件を写せませんでした（写した ' + wrote + '件・同じ ' + same + '件）。';
+    var how = kind === 'editlock-required'
+      ? 'Google の勤務表が厳格モード（スクリプトプロパティ SHIFT_LOCK_REQUIRED=1 が本番の値）のため、券の無い書き込みを断っています。Google の厳格モードを一時的に外して（SHIFT_LOCK_REQUIRED を消す）から、もう一度押してください。写し終えたら 1 に戻してください。'
+      : '勤務表を編集中の端末があります（Google の編集の権利が有効）。編集中の端末の勤務表を閉じてから（または編集の権利が切れる30分後に）、もう一度押してください。';
+    return head + how + 'まだ勤務表のスイッチを切る PR は取り込まないでください。';
+  }
+  var SHB_MODE_LOST = '勤務表が写しの期間でなくなりました（本番に切り替えられた可能性があります）。写し返しを止めました。Supabase 側が進むため、Google がそろったとは言えません。勤務表のスイッチを切る PR は取り込まず、状態を確かめてから、もう一度「勤務表を写しの期間に戻す」から進めてください';
+  function shbMsg(text, kind) { var e = $('shb-verdict'); e.className = 'msg' + (kind ? ' ' + kind : ''); e.textContent = text; }
+  /* 写し返しの最中は、点検・足りない分を写す・勤務表を本番にする・戻す・厳格モードの入切も押させない（2026-10-16 差分審査 中2）。
+   * 点検の終わり（busy(false)）や厳格モードの入切の終わりが、写し返しの最中にボタンを戻さないよう shbOn を見る */
+  var shbOn = false;
+  var SHB_LOCKS = ['b-shift-back', 'b-shadow-shift', 'b-live-shift', 'b-check', 'b-fill', 'b-lock-on', 'b-lock-off'];
+  function shbBusy(on) { shbOn = !!on; SHB_LOCKS.forEach(function (id) { $(id).disabled = !!on; }); }
+  /* 勤務表を本番から写しの期間へ戻している間か（＝写し返しの前・2026-10-16 差分審査 中2）。
+   * famRow＝kv_families の勤務表の行（無ければ null）・sw＝勤務表のスイッチ shift が入か。
+   * 行がある＝管理者が一度でも切り替え・戻しを押した。行が写しの期間で、スイッチがまだ入（手順3の前）なら戻している間とみなす。
+   * この間は Supabase が正（Google は古いことがある）＝点検の「足りない分を写す」（Google を正とする kv_import）に勤務表を入れない。 */
+  function shiftReturning(famRow, sw) { return !!(famRow && famRow.mode === 'shadow' && sw === true); }
+  async function shiftFamMode(sb) {
+    var r = await sb.from('kv_families').select('family,mode').eq('family', 'shift');
+    if (r.error) throw new Error(String(r.error.message || r.error.code));
+    return (r.data && r.data[0] && r.data[0].mode) || 'shadow';
+  }
+  async function writeBackShift() {
+    var tgt = gasTarget(), sb = SUAuth.client();
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { shbMsg('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    if (!tgt) { shbMsg(shiftWbBlock('shadow', false), 'warn'); return; }
+    shbBusy(true);
+    var done = 0, wrote = 0, failed = [], todo = [], same = 0;
+    try {
+      var why0 = shiftWbBlock(await shiftFamMode(sb), true);
+      if (why0) { shbMsg(why0, 'warn'); return; }
+      shbMsg('比べています…（Supabase の勤務表を読んでいます）', 'warn');
+      var sbEnts = await sbShiftPull(sb, null);
+      var keys = Object.keys(sbEnts).filter(function (k) { return SHIFT_WB_RE.test(k); }).sort();
+      var gasEnts = await gasPullAll(tgt, keys, function (n) {
+        shbMsg('比べています…（Google の応答が遅いため、やり直しています ' + n + '回目）', 'warn');
+      });
+      var p = shiftWbPlan(sbEnts, gasEnts);
+      todo = p.write; same = p.same;
+      if (!todo.length) { shbMsg('全部そろっています（勤務表 ' + keys.length + '件とも Google と同じ中身）。勤務表のスイッチを切る PR を取り込んでかまいません。', 'ok'); return; }
+      shbMsg('Google と中身が違う勤務表が ' + todo.length + '件あります（同じ ' + same + '件）。例: ' + todo.slice(0, 6).join('、'), 'warn');
+      if (!confirm('勤務表の ' + todo.length + '件を、Supabase の中身で Google へ上書きします（中身が同じ ' + same + '件は飛ばします）。\n\nよろしいですか？')) return;
+      // 確認の間に本番へ切り替えられていないか、もう一度確かめる（2026-10-16 差分審査 低6）
+      if (await shiftFamMode(sb) !== 'shadow') { shbMsg(SHB_MODE_LOST + '（まだ1件も写していません）', 'ng'); return; }
+      for (var i = 0; i < todo.length; i++) {
+        var k = todo[i];
+        try {
+          await gasPostRetry(tgt, { action: 'push', key: k, baseRev: 0, data: sbEnts[k].data, force: true }, 120000);
+          wrote++;
+        } catch (e) {
+          var kind = shiftWbRefusal(e);
+          if (kind) { shbMsg(shiftWbGuide(kind, todo.length - wrote - failed.length, wrote, same), 'ng'); return; }
+          failed.push(k);
+        }
+        done++;
+        shbMsg('写しています… ' + done + '／' + todo.length + '（写した ' + wrote + '件）', 'warn');
+      }
+      // 写している間に本番へ切り替えられていたら、そろったとは言えない（2026-10-16 差分審査 低6）
+      if (await shiftFamMode(sb) !== 'shadow') { shbMsg(SHB_MODE_LOST + '（写した ' + wrote + '件・同じ ' + same + '件）', 'ng'); return; }
+      if (failed.length) shbMsg('途中まで写しました（同じ ' + same + '件・写した ' + wrote + '件・写せなかった ' + failed.length + '件　例: ' + failed.slice(0, 4).join('、') + '）。もう一度押すと、まだ違う勤務表だけを写します。', 'warn');
+      else shbMsg('全部そろいました（同じ ' + same + '件・写した ' + wrote + '件）。勤務表のスイッチを切る PR を取り込んでかまいません。', 'ok');
+    } catch (e) {
+      shbMsg('途中で止まりました（' + done + '／' + todo.length + '件まで）: ' + String(e && e.message || e) + '。もう一度押すと、まだ違う勤務表だけを写します。', 'warn');
+    } finally { shbBusy(false); }
+  }
+
+  /* ── Supabase 側の厳格モード（shift_settings.lock_required・2026-10-16 代表者の決定）──
+   * 今の値を読む関数が無いため、操作記録（audit_log・管理者だけ読める）の entity='shift_settings' の最新行から出す。
+   * 記録が無ければ既定（通常モード）。SQL エディタで表を直接変えた分は記録に残らないので、画面にその旨を添える。 */
+  /* 操作記録の行（新しい順）→ true（厳格）／false（通常）／null（記録なし＝既定） */
+  function lockStateFromAudit(rows) {
+    for (var i = 0; i < (rows || []).length; i++) {
+      var f = rows[i] && Array.isArray(rows[i].fields) ? rows[i].fields : [];
+      for (var j = 0; j < f.length; j++) {
+        if (f[j] === 'lock_required:true') return true;
+        if (f[j] === 'lock_required:false') return false;
+      }
+    }
+    return null;
+  }
+  function lockLabel(v) { return v === true ? '入（厳格モード）' : v === false ? '切（通常モード）' : '既定（通常モード）'; }
+  function showLock(v, at) {
+    var e = $('lk-state');
+    e.className = 'msg ' + (v === true ? 'ok' : 'warn');
+    e.textContent = 'Supabase 側の厳格モード（編集の権利が無い保存を断る）: ' + lockLabel(v) + (at ? '　' + fmtTime(at) + ' の操作' : '');
+  }
+  async function loadLock(sb) {
+    var r = await sb.from('audit_log').select('at,fields').eq('entity', 'shift_settings').order('at', { ascending: false }).limit(10);
+    if (r.error) throw new Error(String(r.error.message || r.error.code));
+    var rows = r.data || [], v = lockStateFromAudit(rows), at = '';
+    for (var i = 0; i < rows.length && v !== null; i++) { if ((rows[i].fields || []).indexOf('lock_required:' + v) >= 0) { at = rows[i].at; break; } }
+    showLock(v, at);
+  }
+  async function setLock(on) {
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { msg('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var q = on
+      ? 'Supabase 側の勤務表を厳格モードにしますか？\n\n編集の権利（券）を持たない端末の保存を、すべて断るようになります。'
+      : 'Supabase 側の勤務表の厳格モードを外しますか？\n\n誰も編集中でない間は、編集の権利（券）を持たない端末の保存も通るようになります。';
+    if (!confirm(q)) return;
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    $('b-lock-on').disabled = true; $('b-lock-off').disabled = true;
+    try {
+      var r = await SUAuth.client().rpc('shift_set_lock_required', { p_on: !!on });
+      if (r.error || !r.data || !r.data.ok) {
+        var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
+        msg('変更できませんでした: ' + (/PGRST202|42883/.test(why) ? 'データベースの準備（0009）がまだです。' : why === '42501' ? '管理者だけが変えられます。' : why));
+        return;
+      }
+      showLock(r.data.lockRequired === true, new Date().toISOString());
+      msg(r.data.lockRequired === true ? 'Supabase 側の勤務表を厳格モードにしました。' : 'Supabase 側の勤務表の厳格モードを外しました。', 'ok');
+    } finally { $('b-lock-on').disabled = shbOn; $('b-lock-off').disabled = shbOn; }
   }
 
   /* ── ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定・現場のアカウントが日ごとを書けないため）──
@@ -358,7 +506,8 @@
   // Google の版の数え方（2026-09-27 改: 全ファイルを開く list は同期フォルダが大きく90秒で終わらなかった）。
   // ワースケの日データは「1年前〜2か月先」の日付だけを25件ずつ head で問い合わせる（ファイルが無い日は版 0＝数えない）。
   // 勤務表は Google 側の版の索引（_shift_revindex）を1回読む shiftStatus で、名簿・記号・設定と前後の月（12か月前〜3か月先）を問う。
-  // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので数えない（確定すると plan に入る）。
+  // 勤務表の作りかけの案（sched:YYYY-MM:draft:*）は名前が決まっていないので、ここでは数えない。
+  // 代わりに drafts:YYYY-MM の一覧に載っている案 id ごとに、版と中身を別に比べる（checkDrafts・2026-10-16）。
   var WSDAY_BACK = 365, WSDAY_AHEAD = 60, HEAD_BATCH = 15, SHIFT_BACK = 12, SHIFT_AHEAD = 3;
   // 自動やり直し（2026-09-27 代表者の指示）: Google はしばらく使われていないと最初の読み出しが遅く、1回目が時間切れになりやすい。
   // 1回の問い合わせが失敗したら、少し待って同じ問い合わせを最大2回までやり直す（読むだけ・写すだけなので何度やっても害はない）。
@@ -407,6 +556,82 @@
     return { revs: revs, asked: asked };
   }
   var plan = [];      // 足りない分のキー
+  var SHIFT_RETURNING_NOTE = '勤務表は本番から写しの期間へ戻している間です。戻している間は Supabase が正のため、勤務表は「足りない分を写す」（Google から写し直す）の対象に入れていません。先に「勤務表を Google へ写し返す」を押してください（全部そろってから、勤務表のスイッチを切る PR を取り込みます）。';
+
+  /* ── 作りかけの案の中身の点検（2026-10-16 代表者の決定）──
+   * drafts:YYYY-MM（案の一覧）に載っている id ごとに sched:YYYY-MM:draft:<id> の Google の版・中身と写しの版・中身を比べる。
+   * 一覧は Google と写しの両方から集める（片方にだけ載っている案も見落とさない）。画面に出すのはキー名と版と件数だけ。 */
+  var DRAFTS_RE = /^drafts:(\d{4}-\d{2})$/;
+  var DRAFT_ID_RE = /^[A-Za-z0-9_.-]{1,60}$/;
+  /* 案の一覧（キー→中身）から、案の本体のキーを並べる（id の形が違うものは数えない） */
+  function draftKeysOf(lists) {
+    var out = {};
+    Object.keys(lists || {}).forEach(function (lk) {
+      var m = DRAFTS_RE.exec(lk), list = lists[lk];
+      if (!m || !Array.isArray(list)) return;
+      list.forEach(function (d) {
+        var id = d && d.id != null ? String(d.id) : '';
+        if (DRAFT_ID_RE.test(id)) out['sched:' + m[1] + ':draft:' + id] = true;
+      });
+    });
+    return Object.keys(out).sort();
+  }
+  /* 1つの案の見比べ。g＝Google の {rev, data}（無ければ null）、s＝写しの {rev, data}（無ければ null）。
+   * 返す値: same（一致）／missing（写しに無い）／gasonly（Google に無い）／older（写しの版が古い）／newer（写しの版が新しい）／
+   *         content（版は同じで中身が違う）。missing・older・content は「足りない分を写す」で直せる（kv_import は同じ版でも中身が違えば書く） */
+  function draftCompare(g, s) {
+    var gr = g && Number(g.rev) > 0 && g.data != null ? Number(g.rev) : 0;
+    var sr = s && Number(s.rev) > 0 && s.data != null ? Number(s.rev) : 0;
+    if (!gr && !sr) return 'same';
+    if (!sr) return 'missing';
+    if (!gr) return 'gasonly';
+    if (sr < gr) return 'older';
+    if (sr > gr) return 'newer';
+    return sameData(g.data, s.data) ? 'same' : 'content';
+  }
+  /* Google の pull を少しずつ（FILL_BATCH 件ずつ）。返すのは キー→{rev, data} */
+  async function gasPullAll(tgt, keys, onRetry) {
+    var out = {};
+    for (var i = 0; i < keys.length; i += FILL_BATCH) {
+      var part = keys.slice(i, i + FILL_BATCH);
+      var j = await gasPostRetry(tgt, { action: 'pull', keys: part }, 120000, onRetry);
+      var ents = j.entries || {};
+      part.forEach(function (k) { if (ents[k]) out[k] = { rev: Number(ents[k].rev) || 0, data: ents[k].data }; });
+    }
+    return out;
+  }
+  /* 写し（Supabase）の中身。shift_pull は写しの期間でも読める。返すのは キー→{rev, data} */
+  async function sbShiftPull(sb, keys) {
+    if (keys && !keys.length) return {};   // null は勤務表の全キー
+    var r = await sb.rpc('shift_pull', { p_keys: keys });
+    if (r.error) throw new Error(/PGRST202|42883/.test(String(r.error.code || r.error.message)) ? 'データベースの準備（0009）がまだです。' : String(r.error.message || r.error.code));
+    var ents = (r.data && r.data.entries) || {}, out = {};
+    Object.keys(ents).forEach(function (k) { out[k] = { rev: Number(ents[k].rev) || 0, data: ents[k].data }; });
+    return out;
+  }
+  /* listKeys＝点検した範囲の drafts:YYYY-MM（Google か写しのどちらかにあるもの）。返すのは {total, same, bad:[{key, why}], fix:[キー]} */
+  async function checkDrafts(tgt, sb, listKeys, onRetry) {
+    var res = { total: 0, same: 0, bad: [], fix: [] };
+    if (!listKeys.length) return res;
+    var gl = await gasPullAll(tgt, listKeys, onRetry), sl = await sbShiftPull(sb, listKeys), lists = {};
+    // 一覧は Google と写しの両方の id を合わせる
+    listKeys.forEach(function (lk) {
+      var a = gl[lk] && Array.isArray(gl[lk].data) ? gl[lk].data : [], b = sl[lk] && Array.isArray(sl[lk].data) ? sl[lk].data : [];
+      lists[lk] = a.concat(b);
+    });
+    var keys = draftKeysOf(lists);
+    res.total = keys.length;
+    if (!keys.length) return res;
+    var gd = await gasPullAll(tgt, keys, onRetry), sd = await sbShiftPull(sb, keys);
+    keys.forEach(function (k) {
+      var why = draftCompare(gd[k] || null, sd[k] || null);
+      if (why === 'same') { res.same++; return; }
+      res.bad.push({ key: k, why: why, g: gd[k] ? gd[k].rev : 0, s: sd[k] ? sd[k].rev : 0 });
+      if (why === 'missing' || why === 'older' || why === 'content') res.fix.push(k);
+    });
+    return res;
+  }
+  var DRAFT_WHY = { missing: '写しに無い', gasonly: 'Google に無い', older: '写しの版が古い', newer: '写しの版が新しい', content: '版は同じで中身が違う' };
 
   function famOf(k) { return window.SUKvShadow ? SUKvShadow.family(k) : ''; }
   function gasTarget() {
@@ -447,13 +672,14 @@
     return li;
   }
   function busy(on, text) {
-    $('b-check').disabled = on; $('b-fill').disabled = on;
+    $('b-check').disabled = on || shbOn; $('b-fill').disabled = on || shbOn;
     if (text != null) { $('pre-verdict').className = 'msg warn'; $('pre-verdict').textContent = text; }
   }
 
   async function runCheck() {
     var kpis = $('pre-kpis'), list = $('pre-list'), verdict = $('pre-verdict');
     kpis.replaceChildren(); list.replaceChildren(); $('b-fill').hidden = true; plan = [];
+    shiftReady = false;   /* 点検の途中で失敗した時に、前回の「勤務表はそろっている」を残さない（2026-10-16） */
     var tgt = gasTarget();
     if (!tgt) {
       verdict.className = 'msg warn';
@@ -468,21 +694,25 @@
           busy(true, '確かめています… Google の版 ' + n + '／' + all + '件' + (retry ? '（Google の応答が遅いため、やり直しています ' + retry + '回目）' : ''));
         }),
         Promise.all(FAMS.map(function (f) { return sb.rpc('kv_index', { p_family: f[0] }); })),
-        checkHooks()
+        checkHooks(),
+        sb.from('kv_families').select('family,mode').eq('family', 'shift')
       ]);
       var gasRevs = res[0].revs, asked = res[0].asked, idx = res[1], hooks = res[2];
+      if (res[3].error) throw new Error(String(res[3].error.message || res[3].error.code));
+      var returning = shiftReturning((res[3].data || [])[0] || null, shiftSwitch());
       var idxErr = idx.filter(function (r) { return r.error; })[0];
       if (idxErr) throw new Error(/PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message)) ? 'データベースの準備（0007）がまだです。' : String(idxErr.error.message || idxErr.error.code));
       var ready = true, reasons = [], shiftBad = 0;
       FAMS.forEach(function (f, i) {
         var copy = (idx[i].data && idx[i].data.revs) || {};
         var same = 0, missing = [], diff = [], extra = 0;
+        var noFill = f[0] === 'shift' && returning;   // 戻している間の勤務表は Google から写し直さない
         Object.keys(gasRevs).forEach(function (k) {
           if (famOf(k) !== f[0]) return;
           var g = gasRevs[k];
-          if (!Object.prototype.hasOwnProperty.call(copy, k)) { missing.push(k); plan.push(k); }
+          if (!Object.prototype.hasOwnProperty.call(copy, k)) { missing.push(k); if (!noFill) plan.push(k); }
           else if (Number(copy[k]) === g) same++;
-          else { diff.push(k + '（Google ' + g + '／写し ' + copy[k] + '）'); if (Number(copy[k]) < g) plan.push(k); }
+          else { diff.push(k + '（Google ' + g + '／写し ' + copy[k] + '）'); if (Number(copy[k]) < g && !noFill) plan.push(k); }
         });
         // 問い合わせた範囲で Google に無いのに写しにある（範囲の外のキーは数えない）
         Object.keys(copy).forEach(function (k) { if (asked[k] && !Object.prototype.hasOwnProperty.call(gasRevs, k)) extra++; });
@@ -498,6 +728,26 @@
           list.appendChild(preItem(f[1] + (CUT_FAMS.indexOf(f[0]) < 0 ? '（切り替えは別の夜・写しの確認）' : ''), note + (ex ? '　例: ' + ex : ''), bad > 0));
         }
       });
+      // 作りかけの案の中身（2026-10-16）。違う案は勤務表の「そろっていない」に数え、直せるものは「足りない分を写す」に入れる
+      var shCopy = (idx[FAMS.map(function (f) { return f[0]; }).indexOf('shift')].data || {}).revs || {};
+      var dListKeys = Object.keys(asked).filter(function (k) {
+        return DRAFTS_RE.test(k) && (Object.prototype.hasOwnProperty.call(gasRevs, k) || Object.prototype.hasOwnProperty.call(shCopy, k));
+      }).sort();
+      busy(true, '確かめています… 勤務表の作りかけの案');
+      var dr = await checkDrafts(tgt, sb, dListKeys, function (n) {
+        busy(true, '確かめています… 勤務表の作りかけの案（Google の応答が遅いため、やり直しています ' + n + '回目）');
+      });
+      kpis.appendChild(kpi('勤務表の作りかけの案', dr.same + '／' + dr.total, '一致'));
+      if (!returning) dr.fix.forEach(function (k) { if (plan.indexOf(k) < 0) plan.push(k); });
+      if (returning) list.appendChild(preItem('勤務表（本番から写しの期間へ戻している間）', SHIFT_RETURNING_NOTE, true));
+      shiftBad += dr.bad.length;
+      if (dr.bad.length) {
+        var cnt = {};
+        dr.bad.forEach(function (b) { cnt[b.why] = (cnt[b.why] || 0) + 1; });
+        list.appendChild(preItem('勤務表（作りかけの案）（切り替えは別の夜・写しの確認）',
+          Object.keys(cnt).map(function (w) { return DRAFT_WHY[w] + ' ' + cnt[w] + '件'; }).join('・') + '　例: ' +
+          dr.bad.slice(0, 6).map(function (b) { return b.key + '（Google ' + b.g + '／写し ' + b.s + '）'; }).join('、'), true));
+      }
       var shiftHooks = true;
       hooks.forEach(function (h) {
         if (h.only === 'shift' || h.name === '勤務表') shiftHooks = shiftHooks && h.ok;
@@ -510,6 +760,7 @@
       $('sh-verdict').textContent = shiftReady
         ? '勤務表も、Google と写しが全部そろっていて、勤務表の画面に切り替えの部品が入っています（勤務表を切り替えてよい状態です）。'
         : '勤務表はまだ切り替えられません: ' + (shiftBad ? '勤務表の写しが足りない・違う' : '') + (shiftBad && !shiftHooks ? '／' : '') + (shiftHooks ? '' : '勤務表の画面に切り替えの部品が無い') + '。';
+      if (returning) $('sh-verdict').textContent += SHIFT_RETURNING_NOTE;
       $('b-fill').hidden = plan.length === 0;
       if (plan.length) $('b-fill').textContent = '足りない分を写す（' + plan.length + '件）';
       verdict.className = 'msg ' + (ready ? 'ok' : 'warn');
@@ -566,6 +817,10 @@
     renderCompare(a.data || []);
     renderRuns(b.data || []);
     $('kv-admin').hidden = !(me && me.role === 'admin');
+    if (me && me.role === 'admin') {
+      try { await loadLock(sb); }
+      catch (e) { $('lk-state').className = 'msg warn'; $('lk-state').textContent = 'Supabase 側の厳格モードの状態を読めませんでした: ' + String(e && e.message || e); }
+    }
     try { await loadWeight(sb); }
     catch (e) {
       $('wt-verdict').className = 'msg warn';
@@ -643,5 +898,8 @@
   $('b-fill').addEventListener('click', function () { msg(''); fillMissing(); });
   $('b-wsday-stop').addEventListener('click', function () { stopWsday(); });
   $('b-wsday-back').addEventListener('click', function () { writeBackWsday(); });
+  $('b-shift-back').addEventListener('click', function () { msg(''); writeBackShift(); });
+  $('b-lock-on').addEventListener('click', function () { setLock(true); });
+  $('b-lock-off').addEventListener('click', function () { setLock(false); });
   start();
 })();
