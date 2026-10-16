@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/SshGxRDOrbzudz0pDPsAOEOAhDko7EgXyvnXbwCNqg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ri9bI6LqfBtDKFH2zaxH4+j0u+Rb/tcC2V3pn767hXg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -2165,16 +2165,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ・自動で敷いた施設業務・自由枠（空きを埋める枠）は、単位の端で合計に合わせて切ってよい（決定「切って合わせる」）。
    *   切った残りはその場に残す（20分未満の切れ端は作らない＝縮小配置と同じ）。支援と名前つきの枠は切らない。
    *   重ねた相手 b が自動の施設業務なら、離した時刻 opts.atMin から切り出す（従来の縮小配置と同じ所に入る）
-   * ・単位に休憩は入れない（他の職員の休憩とは入れ替えない・決定）。前にも後ろにも伸ばす（決定）。1単位8枚・4時間まで
+   * ・単位に休憩は入れない（他の職員の休憩とは入れ替えない・決定）。前にも後ろにも伸ばす（決定）。1単位12枚・4時間まで
+   * ・グループ・複数選択の札をつかんだ時（opts.coreIds）は、つかんだ札を全部含む単位だけを探す（グループを途中で切らない。
+   *   2026-10-16 本人の指摘「入れ替えができず『同時刻に別の支援が配置済みです』と出る」: グループの札は単位の入れ替えを通っていなかった）
    * ・候補が複数ある時は、動く札が少ない → 切る数が少ない → 前へ伸ばす数が少ない → 後ろへ伸ばす数が少ない 順に試し、
    *   入れ替え後の検査が通った最初の組を使う
    * ・入れ替え後の検査: 24時超・各職員の勤務時間外・同じ列の重なり・同じ利用者の同時刻は不可
-   * ・グループの印: 相手の列へ入る札は、相手の単位の札がそろって持っていた印に替える（そろっていなければ印なし）。
-   *   列をまたいで入れ替わった2枠の印の交換（2026-10-10 Q2）を単位へ広げたもの
+   * ・グループの印: グループの全員が同じ単位に入っていれば、印ごと相手の列へ移る（グループが丸ごと動く）。
+   *   一部だけ動く札と印の無い札は、相手の単位が持っていた印のうち相手の列に残るものに替える（無ければ印なし）。
+   *   列をまたいで入れ替わった2枠の印の交換（2026-10-10 Q2）を単位へ広げたもの＝グループが2列にまたがらない
    * 同じ列（同じ職員・分割勤務）の中・休憩・未配置は対象外（code を返し、呼び手は従来の入れ替えへ流す）。
    * 返り値: { ok, moves:[{id,staffId,start,end,groupId}], rests:[{fromId,staffId,start,end}], idsA, idsB, unitA:[s,e], unitB:[s,e], cut }
    * 純関数（day を変更しない）。 */
-  var UNIT_MAX_ITEMS_ = 8, UNIT_MAX_SPAN_ = 240, UNIT_MIN_PIECE_ = 20, UNIT_REST_MIN_ = 20;   /* 切った枠は動く側も残す側も20分以上（縮小配置と同じ） */
+  var UNIT_MAX_ITEMS_ = 12, UNIT_MAX_SPAN_ = 240, UNIT_MIN_PIECE_ = 20, UNIT_REST_MIN_ = 20;   /* 切った枠は動く側も残す側も20分以上（縮小配置と同じ） */
   function unitKind_(t) { return !!t && (t.kind === 'care' || t.kind === 'facility' || t.kind === 'free'); }
   function unitCuttable_(t) { return shrinkableFiller_(t) && !t.done && !careHasChecks_(t); }
   function unitLane_(tasks, sid) {
@@ -2199,10 +2202,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return runs;
   }
   /* 並び r の取りうる長さ。自動の枠は後ろの端（重ねた札でもよい）と前の端（基点の札は除く。ただし atMin のある相手の札は可）で切れる */
-  function unitRange_(lane, r, k, frontOk) {
+  function unitRange_(lane, r, k, frontOk, coreLo, coreHi) {
     var s = lane[r.lo].start, e = lane[r.hi].end, maxL = e - s;
-    var cutE = unitCuttable_(lane[r.hi]);
-    var cutS = unitCuttable_(lane[r.lo]) && (r.lo !== k || frontOk);
+    var hasCore = typeof coreLo === 'number';
+    var cutE = unitCuttable_(lane[r.hi]) && !(hasCore && r.hi <= coreHi);   /* つかんだ札（グループ・選択）は切らない */
+    var cutS = unitCuttable_(lane[r.lo]) && (r.lo !== k || frontOk) && !(hasCore && r.lo >= coreLo);
     var minL = maxL;
     if (r.lo === r.hi) { if (cutE || cutS) minL = UNIT_MIN_PIECE_; }
     else {
@@ -2241,9 +2245,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var laneA = unitLane_(day.tasks, a.staffId), laneB = unitLane_(day.tasks, b.staffId);
     var kA = laneA.indexOf(a), kB = laneB.indexOf(b);
     if (kA < 0 || kB < 0) return { ok: false, code: 'notask', reason: 'タスクが見つかりません' };
+    var coreLo, coreHi, ci;
+    if (opts && opts.coreIds && opts.coreIds.length > 1) {
+      for (ci = 0; ci < opts.coreIds.length; ci++) {
+        var cx = -1;
+        for (var li = 0; li < laneA.length; li++) if (laneA[li].id === opts.coreIds[ci]) cx = li;
+        if (cx < 0 || !unitKind_(laneA[cx])) return { ok: false, code: 'core', reason: 'つかんだ札が1つの列にそろっていません' };
+        coreLo = coreLo === undefined ? cx : Math.min(coreLo, cx);
+        coreHi = coreHi === undefined ? cx : Math.max(coreHi, cx);
+      }
+    }
     var runsA = unitRuns_(laneA, kA), runsB = unitRuns_(laneB, kB), cands = [], i, j;
+    if (coreLo !== undefined) runsA = runsA.filter(function (r) { return r.lo <= coreLo && r.hi >= coreHi; });
     for (i = 0; i < runsA.length; i++) {
-      var rA = runsA[i], gA = unitRange_(laneA, rA, kA, false);
+      var rA = runsA[i], gA = unitRange_(laneA, rA, kA, false, coreLo, coreHi);
       for (j = 0; j < runsB.length; j++) {
         var rB = runsB[j], gB = unitRange_(laneB, rB, kB, atMin !== null && shrinkableFiller_(b));
         var L = Math.min(gA.maxL, gB.maxL);
@@ -2269,13 +2284,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var wB = unitWindow_(laneB, best.rB, best.gB, best.L, atMin);
     var d = wB[0] - wA[0];
     var itemsA = laneA.slice(best.rA.lo, best.rA.hi + 1), itemsB = laneB.slice(best.rB.lo, best.rB.hi + 1);
-    var grpA = unitCommonGroup_(itemsA), grpB = unitCommonGroup_(itemsB);
+    var gsize = {}, gk;
+    for (gk = 0; gk < day.tasks.length; gk++) if (day.tasks[gk].groupId) gsize['.' + day.tasks[gk].groupId] = (gsize['.' + day.tasks[gk].groupId] || 0) + 1;
+    function cnt(items) { var c = {}; for (var q = 0; q < items.length; q++) if (items[q].groupId) c['.' + items[q].groupId] = (c['.' + items[q].groupId] || 0) + 1; return c; }
+    var cntA = cnt(itemsA), cntB = cnt(itemsB);
+    /* 相手の列に残るグループ（単位の札がそろって持ち、全員は単位に入っていない印）。入ってくる札はこの印に入る */
+    function remain(items, c) { var g = unitCommonGroup_(items); return (g && c['.' + g] < (gsize['.' + g] || 0)) ? g : null; }
+    var remA = remain(itemsA, cntA), remB = remain(itemsB, cntB);
     var moves = [], rests = [], idsA = [], idsB = [], cut = false, k;
-    function piece(items, w, toStaff, shift, grp, fromStaff, ids) {
+    function piece(items, w, toStaff, shift, rem, fromStaff, ids, c) {
       for (var q = 0; q < items.length; q++) {
         var t = items[q], ps = Math.max(t.start, w[0]), pe = Math.min(t.end, w[1]);
+        var whole = !!(t.groupId && c['.' + t.groupId] === gsize['.' + t.groupId]);   /* グループの全員が同じ単位＝印ごと移る */
         ids.push(t.id);
-        moves.push({ id: t.id, staffId: toStaff, start: ps + shift, end: pe + shift, groupId: grp });
+        moves.push({ id: t.id, staffId: toStaff, start: ps + shift, end: pe + shift, groupId: whole ? t.groupId : rem });
         if (ps > t.start || pe < t.end) {
           cut = true;
           if (ps - t.start >= UNIT_REST_MIN_) rests.push({ fromId: t.id, staffId: fromStaff, start: t.start, end: ps });
@@ -2283,8 +2305,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       }
     }
-    piece(itemsA, wA, b.staffId, d, grpB, a.staffId, idsA);
-    piece(itemsB, wB, a.staffId, -d, grpA, b.staffId, idsB);
+    piece(itemsA, wA, b.staffId, d, remB, a.staffId, idsA, cntA);
+    piece(itemsB, wB, a.staffId, -d, remA, b.staffId, idsB, cntB);
     /* 入れ替え後の盤面で検査する（動く札の新しい位置と、残す切れ端を置いた形） */
     var moved = {}, hyp = [], m;
     for (m = 0; m < moves.length; m++) moved['.' + moves[m].id] = moves[m];
@@ -8934,17 +8956,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 合計時間がそろう単位での入れ替え（2026-10-16 本人決定）。札（支援・施設業務・業務枠・自由枠）を他の職員の列の札 over へ
      * 重ねた時に M.planUnitSwap で単位を探す。見つからない・対象外（同じ列・休憩）なら null＝従来の判定へ流す。
      * 自動の施設業務の上では離した時刻 atMin から切り出す（従来の縮小配置と同じ所）。ゴーストは相手の単位の位置に出す */
-    function evalUnitSwap_(over, pt, lane) {
+    function evalUnitSwap_(over, pt, lane, coreIds) {
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task || !over || over.id === task.id) return null;
+      if (coreIds && coreIds.indexOf(over.id) >= 0) return null;   /* つかんだ群の中の札の上は入れ替えではない */
       var atMin = null;
       if (lane && M.shrinkableFiller(over)) {
         var pm = minAt(pt.y, laneIsNight(lane));
         if (pm !== null) atMin = TS.snapMin(pm - drag.grabOffsetMin, MOVE_SNAP);
       }
-      var plan = M.planUnitSwap(day, task.id, over.id, { atMin: atMin });
-      if (!plan.ok) return null;
+      var plan = M.planUnitSwap(day, task.id, over.id, { atMin: atMin, coreIds: coreIds || null });
+      if (!plan.ok) {
+        /* 入れ替えの対象だったが成り立たなかった理由を控える。従来の判定でも不可になった時は、こちらの理由を出す
+         * （2026-10-16 本人の指摘: 「同時刻に別の支援が配置済みです」だけでは入れ替えできない理由が分からない） */
+        if (/^(nounit|worktime|staffdup|residentdup|range)$/.test(plan.code || '')) drag.unitNg = plan.reason;
+        return null;
+      }
       var tgtStaff = M.findStaff(day.staff, over.staffId), ownStaff = M.findStaff(day.staff, task.staffId);
       if (!tgtStaff || !ownStaff) return null;
       for (var i = 0; i < plan.moves.length; i++) {
@@ -8953,7 +8981,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       var tgtLane = board.querySelector('.b-lane[data-col="' + tgtStaff.col + '"]');
       return { status: 'unitswap', reason: '', lane: tgtLane || lane, start: plan.unitB[0], end: plan.unitB[1],
-               staff: tgtStaff, swapWith: over, plan: plan, atMin: atMin,
+               staff: tgtStaff, swapWith: over, plan: plan, atMin: atMin, coreIds: coreIds || null,
                targetIds: plan.idsB, countA: plan.idsA.length, countB: plan.idsB.length };
     }
 
@@ -8978,6 +9006,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      *  5. 1 で不成立だった時、最終結果が ng なら 4 と同じ前置き＋1件の理由 */
     var ONE_SWAP_NG_PREFIX = 'まとめて移動できず、1件の入れ替えもできません：';
     function evalMove(pt) {
+      if (drag) drag.unitNg = null;
+      var ev0 = evalMove0_(pt);
+      if (ev0 && ev0.status === 'ng' && drag && drag.unitNg) {
+        return { status: 'ng', reason: drag.unitNg, lane: ev0.lane, start: ev0.start, end: ev0.end };
+      }
+      return ev0;
+    }
+    function evalMove0_(pt) {
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
       if (!task || !drag.multi || drag.mode !== 'move' || task.kind !== 'care' ||
@@ -9062,6 +9098,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                  start: msw.ghostStart, end: msw.ghostEnd, moves: msw.moves, swapWith: msw.anchor,
                  anchorId: msw.anchor.id, targetIds: msw.targetIds, countA: msw.countA, countB: msw.countB,
                  splits: mck.splits || [] };
+        /* グループ・複数選択の札を他の職員の列の札に重ねた＝つかんだ札を全部含む、合計時間がそろう単位で入れ替える（2026-10-16） */
+        var evUM = evalUnitSwap_(M.findTask(day.tasks, overBlock.getAttribute('data-id')), pt, lane, drag.selIds.slice());
+        if (evUM) return evUM;
       }
       if (!altDup && overBlock && task.staffId !== null) {
         var over = M.findTask(day.tasks, overBlock.getAttribute('data-id'));
@@ -9348,7 +9387,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 合計時間がそろう単位での入れ替え（2026-10-16）: 最新の盤面から作り直し、見せた計画と同じ時だけ確定する */
       if (ev.status === 'unitswap' && ev.plan && ev.plan.ok && opts.onUnitSwap) {
         var dayU = opts.getDay();
-        var reU = ev.swapWith ? M.planUnitSwap(dayU, taskId, ev.swapWith.id, { atMin: ev.atMin }) : null;
+        var reU = ev.swapWith ? M.planUnitSwap(dayU, taskId, ev.swapWith.id, { atMin: ev.atMin, coreIds: ev.coreIds }) : null;
         if (!reU || !reU.ok || !sameMoves_(ev.plan.moves, reU.moves) || JSON.stringify(ev.plan.rests) !== JSON.stringify(reU.rests)) {
           opts.onReject(SWAP_STALE_MSG); return;
         }
@@ -17706,6 +17745,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       },
       onUnitSwap: function (plan) {
         /* 合計時間がそろう単位での入れ替え（2026-10-16 本人決定）。M.planUnitSwap 検証済みの計画を1操作で適用＝undo1回 */
+        if (ui.selectedIds.length) {   /* 動いた札は選択から外す（グループ・複数選択から入れ替えた時） */
+          var movedU = {}, keepU = [], su;
+          for (su = 0; su < plan.moves.length; su++) movedU[plan.moves[su].id] = true;
+          for (su = 0; su < ui.selectedIds.length; su++) if (!movedU[ui.selectedIds[su]]) keepU.push(ui.selectedIds[su]);
+          ui.selectedIds = keepU;
+        }
         store.dispatch({ type: 'UNIT_SWAP', moves: plan.moves, rests: plan.rests || [] });
         var nA = plan.idsA.length, nB = plan.idsB.length;
         toast((nA === 1 && nB === 1 ? '場所を入れ替えました' : nA + '件と' + nB + '件を、合計時間をそろえて入れ替えました') +
