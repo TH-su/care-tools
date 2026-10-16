@@ -71,7 +71,7 @@ function makeKv(o) {
       if (o.rpcThrowOnce && !sb._thrown) { sb._thrown = true; return Promise.resolve({ error: { message: 'Failed to fetch' } }); }
       if (o.rpcError) return Promise.resolve({ error: o.rpcError });
       if (o.shiftRpc && /^shift_/.test(name)) return Promise.resolve(o.shiftRpc(name, args));   // F 節（勤務表）の偽のデータベース
-      if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x' } });
+      if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x', mode: db.mode || 'live' } });
       if (name === 'kv_head') { const revs = {}; (args.p_keys || []).forEach(k => { revs[k] = db.rev; }); return Promise.resolve({ data: { revs } }); }
       if (name === 'kv_put_marks') {
         if (o.marksReply) return Promise.resolve({ data: o.marksReply });
