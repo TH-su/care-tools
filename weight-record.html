@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-4fVEPqAhf1Ourtywpsch4ump4BPUWh6wN7htNt6aWc0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-pTbkZSM0v18ZK8MgA2EuuVJ971q/Fo786GZfwyq98uQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -101,6 +101,33 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* screens */
 .scr{display:none;padding:14px;max-width:960px;margin:0 auto}
 .scr.on{display:block}
+/* ── 使いやすさの改善 第1弾（2026-10-17・代表者承認） ── */
+/* 右下の「不具合を報告」ボタンが一覧・表の最後の行を隠さないよう、画面の下に余白を取る */
+.scr{padding-bottom:88px}
+/* 入力画面の保存ボタンは画面の下に貼り付けて、スクロールせずに押せるようにする */
+#inSave{position:sticky;bottom:12px;z-index:6;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+/* 個別：縦軸の範囲の指定は畳んでおく（普段は自動で足りる） */
+.iv-yrange-d{margin:6px 0 12px}
+.iv-yrange-d>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:0.9375rem;color:var(--g7);font-weight:700;list-style:none}
+.iv-yrange-d>summary::-webkit-details-marker{display:none}
+.iv-yrange-d>summary::before{content:'▸';margin-right:6px}
+.iv-yrange-d[open]>summary::before{content:'▾'}
+.iv-yrange-d .iv-yrange{margin-top:4px}
+/* 集計：氏名を押した時のメニュー（個別・3年表示・今月の入力） */
+.gr-menu{position:fixed;z-index:60;background:#fff;border:1px solid var(--g3);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;min-width:220px}
+.gr-menu .gr-menu-h{font-size:0.9375rem;font-weight:700;color:var(--g9);padding:6px 12px 4px}
+.gr-menu button{min-height:44px;text-align:start;padding:8px 12px;border:none;background:none;font-size:0.9375rem;border-radius:8px;cursor:pointer;color:var(--g9)}
+.gr-menu button:hover,.gr-menu button:focus-visible{background:var(--pri-l)}
+/* 集計：注意・警告の月のセル（色だけに頼らず、▼▲と文字も付ける） */
+.gr-t tbody tr td.gr-al-w{background:#fff3e0}
+.gr-t tbody tr td.gr-al-ng{background:#ffebee}
+.gr-al-mk{display:block;font-size:0.75rem;font-weight:700;color:var(--g9)}
+/* 入力：編集中の帯の削除ボタン */
+#inEditBanner .eb-del{margin-left:auto}
+/* 一覧：今月まだ測っていない人 */
+.fc button .fc-n{margin-left:4px;font-weight:700}
+.fc button.is-late{border-color:var(--warn-br);background:var(--warn-bg);color:var(--warn-tx)}
+.miss-ago{display:block;font-size:0.8125rem;color:var(--g7);margin-top:2px}
 
 /* card */
 .cd{background:#fff;border-radius:var(--r);padding:15px;margin-bottom:14px;box-shadow:var(--sh)}
@@ -807,6 +834,7 @@ select option.is-discharged{color:var(--g6)}
       <span class="eb-ic">✎</span>
       <span class="eb-msg"></span>
       <button type="button" class="bn bo bsm" id="inEditCancel">新規入力に戻す</button>
+      <button type="button" class="bn br bsm eb-del" id="inEditDelete">この記録を削除</button>
     </div>
 
     <div class="fg">
@@ -918,15 +946,17 @@ select option.is-discharged{color:var(--g6)}
       <select id="ivResident"></select>
     </div>
     <div class="st-g" id="ivStats"></div>
-    <!-- Y軸範囲オーバーライド：空欄=自動、数値=固定 -->
+    <!-- Y軸範囲オーバーライド：空欄=自動、数値=固定。普段は自動で足りるので畳む（2026-10-17） -->
+    <details class="iv-yrange-d" id="ivYRangeD"><summary>縦軸の範囲を指定する</summary>
     <div class="iv-yrange" id="ivYRange">
       <span class="iv-yrange-l">Y軸表示範囲</span>
-      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="0">
+      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
       <span class="iv-yrange-sep">〜</span>
       <input type="number" id="ivYMax" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
       <span class="iv-yrange-u">kg</span>
       <button type="button" class="iv-yrange-rst" id="ivYRangeReset" title="自動範囲に戻す">リセット</button>
     </div>
+    </details>
     <div id="ivChartWrapY1" class="iv-chart-wrap">
       <div class="iv-chart-ttl" id="ivChartTtl">過去1年の推移</div>
       <div class="ch-w"><canvas id="ivChartY1"></canvas></div>
@@ -990,7 +1020,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
     <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:8px">
       セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
-      <b>氏名セル</b>…今月の入力画面を開く／<b>体重セル</b>…その記録を編集（空白は新規入力）
+      <b>氏名セル</b>…入力・個別のグラフ・3年分の表を選ぶ／<b>体重セル</b>…その記録を編集（空白は新規入力）／<b>▼▲注意・警告</b>…その月の前月比・3ヶ月比・6ヶ月比で注意か警告
     </div>
     <div class="gr-wrap">
       <table class="gr-t" id="gridTable"></table>
@@ -3938,6 +3968,38 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.body.classList.contains('ps-active')) closePrintSheet();
 });
 
+/* ── 今月まだ測っていない人（2026-10-17・代表者承認） ──
+   厚労省の栄養ケア・マネジメントは「体重は一月毎に測定する」。月の測り漏れを、一覧の
+   「未入力」ボタンの件数で見せる。今月を見ている時は、20日を過ぎたら色を強める。 */
+function wrMissingCount(residents, ym){
+  return (residents || []).filter(r => r && !getRecord(r.id, ym)).length;
+}
+function wrPaintMissingCount(residents){
+  const btn = document.querySelector('#listFilter [data-f="missing"]');
+  if(!btn) return;
+  const n = wrMissingCount(residents, listMonth);
+  let span = btn.querySelector('.fc-n');
+  if(!span){ span = document.createElement('span'); span.className = 'fc-n'; btn.appendChild(span); }
+  span.textContent = n ? `${n}名` : '';
+  const late = n > 0 && listMonth === ymNow() && new Date().getDate() >= 20;
+  btn.classList.toggle('is-late', late);
+  btn.setAttribute('aria-label', n ? `未入力 ${n}名${late ? '（月の後半です）' : ''}` : '未入力 0名');
+}
+/* 未入力の行に「前回 8/12（66日前）」を添える。日数は今月を見ている時だけ出す */
+function wrMissAgoHtml(rid, ym){
+  try{
+    const prev = getRecordsOf(rid).filter(x => wrWeightOk(x) && x.yearMonth < ym);
+    if(!prev.length) return '';
+    const p = prev[prev.length - 1];
+    const d = p.measuredOn || '';
+    let txt = /^\d{4}-\d{2}-\d{2}$/.test(d) ? `前回 ${Number(d.slice(5,7))}/${Number(d.slice(8,10))}` : `前回 ${ymFmt(p.yearMonth)}`;
+    if(ym === ymNow() && /^\d{4}-\d{2}-\d{2}$/.test(d)){
+      const days = Math.round((new Date(dNow() + 'T00:00:00') - new Date(d + 'T00:00:00')) / 86400000);
+      if(days >= 0) txt += `（${days}日前）`;
+    }
+    return `<span class="miss-ago">${escapeHtml(txt)}</span>`;
+  }catch(e){ return ''; }
+}
 function renderList(){
   const body = $('#listBody');
   // 退去者は一覧から除外（履歴は個別画面・設定画面から参照可能）
@@ -3983,7 +4045,7 @@ function renderList(){
       : '';
     const wtHtml = cur
       ? `<span class="wt-cell">${cur.weight.toFixed(1)}</span>${dateSub}${bmiHtml}`
-      : `<span class="eb eb-m">未入力</span>`;
+      : `<span class="eb eb-m">未入力</span>${wrMissAgoHtml(r.id, listMonth)}`;
 
     const diffHtml = (d, p) => {
       if(d===null || d===undefined) return '<span style="color:var(--g5);font-size: 0.6875rem">—</span>';
@@ -4019,6 +4081,7 @@ function renderList(){
     body.innerHTML = `<tr><td colspan="6" class="empty">該当する入居者がいません</td></tr>`;
   }
   $('#listCount').textContent = `${ymFmt(listMonth)} / 表示 ${shown} 名 / 登録 ${DB.residents.length} 名`;
+  try{ wrPaintMissingCount(residents); }catch(e){ /* 件数の表示に失敗しても一覧は止めない */ }
 
   updateAlertBadge();
 }
@@ -4112,17 +4175,13 @@ function renderGrid(){
         ? `<span class="gr-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>`
         : '';
       const roomHtml = r.room ? `<span class="gr-rm">室 ${escapeHtml(r.room)}</span>` : '';
+      /* 氏名の欄にあった「個別」「3年表示」の小さなボタン2つは、氏名を押した時のメニューへまとめた
+         （2026-10-17・欄が細くなり12か月が1画面に入る。押し間違いも減る） */
       const nameCell = `
-        <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="この入居者の入力画面を開く">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-            <div style="min-width:0;flex:1">
-              <div style="font-size: 0.8125rem;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
-              ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
-            </div>
-            <div class="gr-btns">
-              <button class="gr-ind" data-rid="${escapeHtml(r.id)}" title="個別画面を開く">個別</button>
-              <button class="gr-3y"  data-rid="${escapeHtml(r.id)}" title="過去36ヶ月を表示">3年表示</button>
-            </div>
+        <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="押すと、入力・個別・3年表示を選べます" role="button" tabindex="0" aria-haspopup="menu">
+          <div style="min-width:0">
+            <div style="font-size: 0.8125rem;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
+            ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
           </div>
         </td>`;
       let cells = '';
@@ -4131,7 +4190,17 @@ function renderGrid(){
         const hlClsArr = (ym===thisYm) ? ['gr-hl'] : [];
         if(rec){
           const diff = diffHtml(r.id, ym, rec.weight);
-          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
+          /* 注意・警告の月はセルの地を塗り、▼▲と文字も付ける（色だけに頼らない・2026-10-17） */
+          let alCls = '', alMk = '';
+          try{
+            const a = analyze(r.id, ym);
+            if(a && (a.level === 'ng' || a.level === 'w')){
+              const dn = alertDir(a) === 'dn';
+              alCls = a.level === 'ng' ? ' gr-al-ng' : ' gr-al-w';
+              alMk = `<span class="gr-al-mk">${dn ? '▼' : '▲'}${a.level === 'ng' ? '警告' : '注意'}</span>`;
+            }
+          }catch(e){}
+          cells += `<td class="gr-clk ${hlClsArr.join(' ')}${alCls}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}${alMk}</td>`;
         } else {
           cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${escapeHtml(r.id)}" data-new-ym="${ym}" title="新規入力">—</td>`;
         }
@@ -4166,13 +4235,53 @@ $('#gridTable').addEventListener('click', e=>{
     openInputForNew(newCell.dataset.newRid, newCell.dataset.newYm);
     return;
   }
-  // name cell (but not the 3y button, handled above) → new record for this resident (this month)
+  // name cell → メニュー（今月の入力・個別のグラフ・3年表示）。2026-10-17 まではすぐ入力画面を開いていた
   const nameCell = e.target.closest('[data-go-rid]');
   if(nameCell){
-    openInputForNew(nameCell.dataset.goRid, gridMonth);
+    wrOpenGridMenu(nameCell, e);
     return;
   }
 });
+$('#gridTable').addEventListener('keydown', e=>{
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  const nameCell = e.target.closest && e.target.closest('[data-go-rid]');
+  if(nameCell){ e.preventDefault(); wrOpenGridMenu(nameCell, null); }
+});
+/* 集計の氏名のメニュー。表の外（body）に固定位置で出す（表は横に流れるので、表の中に置くと切れる） */
+function wrCloseGridMenu(){ const m = document.getElementById('grMenu'); if(m) m.remove(); }
+window.addEventListener('scroll', wrCloseGridMenu, true);
+function wrOpenGridMenu(cell, ev){
+  wrCloseGridMenu();
+  const rid = cell.dataset.goRid;
+  const r = residentById(rid);
+  const m = document.createElement('div');
+  m.id = 'grMenu'; m.className = 'gr-menu'; m.setAttribute('role', 'menu');
+  m.innerHTML = `<div class="gr-menu-h">${escapeHtml(r ? r.name : '')}</div>`
+    + `<button type="button" role="menuitem" data-gm="input">${escapeHtml(ymGridLabel(gridMonth))}の体重を入力</button>`
+    + `<button type="button" role="menuitem" data-gm="indiv">個別のグラフを見る</button>`
+    + `<button type="button" role="menuitem" data-gm="3y">3年分の表を見る</button>`;
+  document.body.appendChild(m);
+  const rc = cell.getBoundingClientRect();
+  const mw = m.offsetWidth, mh = m.offsetHeight;
+  let x = rc.right + 6, y = rc.top;
+  if(x + mw > innerWidth - 8) x = Math.max(8, innerWidth - mw - 8);
+  if(y + mh > innerHeight - 8) y = Math.max(8, innerHeight - mh - 8);
+  m.style.left = x + 'px'; m.style.top = y + 'px';
+  m.addEventListener('click', e=>{
+    const b = e.target.closest('[data-gm]'); if(!b) return;
+    wrCloseGridMenu();
+    if(b.dataset.gm === 'input') openInputForNew(rid, gridMonth);
+    else if(b.dataset.gm === 'indiv') openIndivFor(rid);
+    else openGrid3y(rid);
+  });
+  const first = m.querySelector('button'); if(first) first.focus();
+  setTimeout(()=>{
+    const off = e=>{ if(!m.contains(e.target)){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); } };
+    const esc = e=>{ if(e.key === 'Escape'){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); try{ cell.focus(); }catch(_){} } };
+    document.addEventListener('pointerdown', off, true);
+    document.addEventListener('keydown', esc, true);
+  }, 0);
+}
 
 /* Helper: switch to input tab and load the record for editing.
    populateResidentSelect keeps the existing select value, so we set it
@@ -5214,6 +5323,12 @@ $('#inEditCancel')?.addEventListener('click', ()=>{
   editingRecordId = null;
   clearInputForm();
 });
+/* 編集中の記録を消す（2026-10-17：個別画面の履歴の各行から移した入口。確認は deleteRecordById が出す） */
+$('#inEditDelete')?.addEventListener('click', ()=>{
+  if(!editingRecordId) return;
+  deleteRecordById(editingRecordId);
+  try{ updateEditBanner(); }catch(e){}
+});
 
 function updateEditBanner(){
   const banner = $('#inEditBanner');
@@ -5498,6 +5613,9 @@ function syncYRangeBadge(){
   const wrap = $('#ivYRange');
   if(!wrap) return;
   wrap.classList.toggle('is-overridden', ivYMin != null || ivYMax != null);
+  /* 範囲を指定している時は、畳んだ欄を開いておく（指定に気づかず「グラフがおかしい」とならないように） */
+  const d = $('#ivYRangeD');
+  if(d && (ivYMin != null || ivYMax != null)) d.open = true;
 }
 
 function syncChartVisibility(){
@@ -5602,10 +5720,12 @@ function renderIndiv(){
   const primaryWeights = primary.recs
     .filter(r => r && typeof r.weight === 'number')
     .map(r => r.weight);
-  // 全推移グラフ（1週間 / 1ヶ月 / 1年 / 全期間）で 0kg 起点の同一スケールを使う。
-  // 全期間が ON のときは両グラフを共通の最大値で揃え、見比べやすくする。
-  const allWeights = [...allMonthly.map(r=>r.weight), ...primaryWeights];
-  const auto = allWeights.length ? computeYRange(allWeights) : null;
+  // 縦軸はその方の体重の範囲に合わせる（2026-10-17・代表者承認）。以前は 0kg 起点で、
+  // 12か月で 5kg 減っても線がほぼ平らに見えた。全期間が ON のときは両グラフを同じ範囲にそろえる。
+  // 6か月前の体重と、そこから −3%（厚労省の低栄養リスクで「中」の入口）の目安線も範囲に含める。
+  const allWeights = [...allMonthly.map(r=>r.weight), ...primaryWeights].filter(w=> typeof w === 'number' && isFinite(w) && w > 0);
+  ivRefLines = wrRefLinesFor(rid);
+  const auto = allWeights.length ? computeYRange(allWeights, ivRefLines.map(l=> l.y)) : null;
   // ユーザが Y軸範囲を指定していたらそれで上書き。片端のみ指定も可。
   let yRange = auto;
   if(ivYMin != null || ivYMax != null){
@@ -5629,14 +5749,66 @@ function renderIndiv(){
    - min は常に 0kg（体重ゼロ起点で全グラフを統一）
    - max は最大記録値 + 約10%（最低 +2kg）を 5kg 単位で切り上げ
    見やすい目盛になり、複数グラフ間でも見比べやすくなる。 */
-function computeYRange(weights){
-  if(!weights.length) return null;
-  const max = Math.max(...weights);
-  if(!isFinite(max) || max <= 0) return { min:0, max:10 };
-  const padded  = max + Math.max(2, max * 0.10);
-  const rounded = Math.ceil(padded / 5) * 5;
-  return { min: 0, max: rounded };
+function computeYRange(weights, refs){
+  const vals = (weights || []).concat((refs || []).filter(v=> typeof v === 'number' && isFinite(v) && v > 0));
+  if(!vals.length) return null;
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if(!isFinite(hi) || hi <= 0) return { min:0, max:10 };
+  const pad = Math.max(1, (hi - lo) * 0.15);
+  lo -= pad; hi += pad;
+  /* 幅は最低 6kg。0.2kg の揺れを画面いっぱいに振って、急な増減に見せないため */
+  const MIN_SPAN = 6;
+  if(hi - lo < MIN_SPAN){ const c = (hi + lo) / 2; lo = c - MIN_SPAN / 2; hi = c + MIN_SPAN / 2; }
+  return { min: Math.max(0, Math.floor(lo)), max: Math.ceil(hi) };
 }
+/* 個別のグラフに引く目安の線。6か月比で比べる相手（暦の6か月前、無ければ5→4か月前）の体重と、
+   その −3%（中リスクの入口）・−10%（6か月で高リスクの入口）。範囲の外に出る −10% は描かない */
+let ivRefLines = [];
+function wrRefLinesFor(rid){
+  try{
+    if(!rid) return [];
+    const recs = getRecordsOf(rid).filter(wrWeightOk);
+    if(!recs.length) return [];
+    const last = recs[recs.length - 1];
+    const a = analyze(rid, last.yearMonth);
+    const base = a && a.prev6;
+    if(!base || !(base.w > 0)) return [];
+    const lbl = wrYmOk(base.ym) ? `${Number(base.ym.slice(5))}月` : '6か月前';
+    return [
+      { y: base.w, text: `${lbl}の体重 ${base.w.toFixed(1)}kg`, kind: 'base' },
+      { y: +(base.w * 0.97).toFixed(1), text: `−3%（中リスクの目安）${(base.w * 0.97).toFixed(1)}kg`, kind: 'mid' },
+      { y: +(base.w * 0.90).toFixed(1), text: `−10%（高リスクの目安）${(base.w * 0.90).toFixed(1)}kg`, kind: 'high', optional: true },
+    ];
+  }catch(e){ return []; }
+}
+/* 目安の線を描く Chart.js の部品（外部の注釈部品は増やさない） */
+const wrRefLinePlugin = {
+  id: 'wrRefLines',
+  afterDatasetsDraw(chart){
+    try{
+      const lines = (chart.options && chart.options.wrRefLines) || [];
+      const y = chart.scales && chart.scales.y, area = chart.chartArea;
+      if(!y || !area || !lines.length) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      lines.forEach(l=>{
+        if(l.y < y.min || l.y > y.max) return;   // 範囲の外は描かない（−10% など）
+        const py = y.getPixelForValue(l.y);
+        ctx.beginPath();
+        ctx.setLineDash(l.kind === 'base' ? [] : [6, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = l.kind === 'base' ? 'rgba(95,99,104,.55)' : (l.kind === 'mid' ? 'rgba(230,81,0,.75)' : 'rgba(198,40,40,.75)');
+        ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 13px "Hiragino Sans","Yu Gothic UI",sans-serif';
+        ctx.fillStyle = l.kind === 'base' ? '#5f6368' : (l.kind === 'mid' ? '#b23c00' : '#b71c1c');
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(l.text, area.left + 6, py - 2);
+      });
+      ctx.restore();
+    }catch(e){ /* 目安の線が描けなくてもグラフ本体は止めない */ }
+  }
+};
 
 function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
@@ -5839,8 +6011,10 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         spanGaps:true,                       // connect across unmeasured days
       }]
     },
+    plugins:[wrRefLinePlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
+      wrRefLines: ivRefLines,   /* 目安の線（6か月前の体重・−3%・−10%） */
       interaction:{mode:'nearest', intersect:false},
       plugins:{
         legend:{display:false},
@@ -5985,20 +6159,9 @@ function drawHist(rid){
   // 行の警告色（ed）は従来どおり月次しきい値で決める。前回比の列とは別の指標なので
   // ここは変えない（analyze は「月ごとに1件へ丸めた系列」で注意/警告を判定する）。
   const monthlyLatestIds = new Set(getRecordsOf(rid).map(r=> r.id));
-  // 測定日から対象月（YYYY-MM）を判定し、月が変わるたびに見出し行を挿入する
-  let lastGroup = '';
+  /* 月の見出し行は 2026-10-17 にやめた（1件ごとに見出しが入り、縦に倍の長さになっていた）。
+     月は「測定日」の列に年月日で出す */
   recs.forEach((r, i)=>{
-    const gm = (r.measuredOn && r.measuredOn.slice(0,7)) || r.yearMonth || '0000-00';
-    if(gm !== lastGroup){
-      lastGroup = gm;
-      const gtr = document.createElement('tr');
-      gtr.className = 'hist-grp';
-      const gtd = document.createElement('td');
-      gtd.colSpan = 9;                       // 既存9列に合わせる
-      gtd.textContent = (gm === '0000-00') ? '日付なし' : ymFmt(gm);
-      gtr.appendChild(gtd);
-      body.appendChild(gtr);
-    }
     const isMonthly = monthlyLatestIds.has(r.id);
     const a = isMonthly ? analyze(rid, r.yearMonth) : null;
     const tr = document.createElement('tr');
@@ -6064,7 +6227,7 @@ function drawHist(rid){
     let moLabel;
     if(r.measuredOn){
       const _p = r.measuredOn.split('-');
-      moLabel = `<b>${Number(_p[1])}/${Number(_p[2])}</b>`;
+      moLabel = `<b>${Number(_p[0])}/${Number(_p[1])}/${Number(_p[2])}</b>`;
     }else{
       moLabel = `<b style="color:var(--g5)">日付なし</b>`;
     }
@@ -6084,7 +6247,6 @@ function drawHist(rid){
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
         <button class="bn bo bsm" data-edit-id="${escapeHtml(r.id)}">編集</button>
-        <button class="bn br bsm" data-del-id="${escapeHtml(r.id)}">削除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -6098,11 +6260,8 @@ function drawHist(rid){
       loadRecordIntoForm(rec);
     });
   });
-  $$('#ivHistBody [data-del-id]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      deleteRecordById(b.dataset.delId);
-    });
-  });
+  /* 削除は 2026-10-17 に行から外し、「編集」で開いた入力画面の「この記録を削除」へ移した
+     （取り消せない操作を、一覧の各行に赤いボタンで常に出さない） */
 }
 
 /* ★null/undefined は空文字にする。そうしないと画面に「null」「undefined」と表示される
