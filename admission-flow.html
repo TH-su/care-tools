@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gwk6vZ2GRvkmXjLC07PvrY8NvKPz2W9y+dO2F5lqqTM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-PyUtLWb5qx8xze6jHsyESksuc43EDOEnMWjDZszy3rY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -2261,7 +2261,8 @@ function renderToday() {
   }
   if (b.stale.length) {
     h += '<div class="todo-sec"><h3>14日以上動いていません（' + b.stale.length + '）</h3>';
-    b.stale.forEach(function (x) { h += todayRow(x.c, '最後に動いたのは ' + fmtDt(x.c.updatedAt), ''); });
+    /* ★todayRow の2つ目（what）はエスケープされない。fmtDt は日付として読めない値をそのまま返すので esc を通す（2026-10-17） */
+    b.stale.forEach(function (x) { h += todayRow(x.c, '最後に動いたのは ' + esc(fmtDt(x.c.updatedAt)), ''); });
     h += '</div>';
   }
   if (!n && !b.stale.length) h += '<div class="todo-done">今日やることはありません</div>';
