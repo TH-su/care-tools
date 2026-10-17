@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-5akVYuRFViSI1JYi6+RXv96EgDnEFM4gEQ6iPU5vYAU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-AWNWN8tXOWa7/wWDVx1ox6QwYTvIEabQCqOgcrWgEhc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1022,6 +1022,7 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //   6. この版から LockService（同時に届いた保存・削除を1本ずつ処理する）を使う。貼り替えたら、デプロイを
 //      更新する前にエディタで authorizeGenogramSync を実行し、承認画面が出たら「承認」する。
 //   7. この版（2026-10-15）から外部への接続（直した人の確かめ）を使う。配信前に authorizeGenogramSync と checkSupabaseConnection をエディタで実行して承認する（しないと全端末の同期が止まる）。
+//   8. この版（2026-10-17）から、削除した図の中身をタブ deleted（無ければ作る）に残してから行を消す。新しい権限は要らない。
 
 const SHEET_NAME = 'genograms';
 const TOKEN_PROP = 'GENOGRAM_TOKEN';
@@ -1218,11 +1219,28 @@ function saveOne(doc, who) {
   return { name: doc.clientName, updatedAt: now };
 }
 
+// 削除の控え（2026-10-17）。行を消す前に、同じスプレッドシートのタブ deleted へ中身と削除日時を足す。
+// 控えを書けなかった時は例外のまま上へ返し、行は消さない（一覧・読込・保存は deleted を見ない）
+const DELETED_SHEET = 'deleted';
+function deletedSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  let s = ss.getSheetByName(DELETED_SHEET);
+  if (!s) {
+    s = ss.insertSheet(DELETED_SHEET);
+    s.appendRow(['name', 'updatedAt', 'doc', 'updatedBy', 'deletedAt']);
+    s.setFrozenRows(1);
+  }
+  return s;
+}
+
 function deleteOne(name) {
   const s = sheet();
   const data = s.getDataRange().getValues();
+  const bc = data.length ? byCol_(data[0]) : -1;
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === name) {
+      const r = data[i];
+      deletedSheet_().appendRow([r[0], r[1], r[2], bc >= 0 ? String(r[bc] || '') : '', new Date().toISOString()]);
       s.deleteRow(i + 1);
       return { name: name };
     }
@@ -3600,7 +3618,9 @@ function backfillSuGenograms() {
     state.doc = savedDoc; state.clientName = savedName;
     state.selectedId = savedSel; state.selectedType = savedType;
     render();
-  } };
+  },
+    // 退避中の本人の図（読むだけ）。未保存の判定・下書きが、差し替え中の他の方の図を見ないため（2026-10-17）
+    real: function () { return { doc: savedDoc, name: savedName }; } };
   _suBackfillRun = run;
   function restore() {
     if (run.aborted) return;
@@ -3734,6 +3754,133 @@ function applyFieldReadonly() {
     document.body.insertBefore(bar, document.body.firstChild);
   }
 }
+
+/* ── 保存していない変更の確認と下書き（2026-10-17 代表者承認）──
+   図の中身（nodes・lines・frames・texts）と利用者名の指紋を、読込・端末への保存・新規の時点で控え（unsavedBase）、
+   今の指紋と比べて「保存していない変更」を判定する。計算は必要な時（一覧の選択・閉じる時・下書きの書き込み）だけ。
+   下書きは変更がある間だけ、この端末の localStorage の LS_DRAFT に1つだけ控える（{v:1, clientName, loadedFrom, at, doc}）。
+   書けない時（容量いっぱい等）は黙ってあきらめる。現場の端末（閲覧専用）では控えず・確かめず・下書きにも触れない。
+   まとめ反映の間は state が他の方の図に差し替わるので、退避中の本人の図（run.real）で判定する */
+const LS_DRAFT = 'genogram:draft';
+const DRAFT_DELAY_MS = 1000;
+let unsavedBase = null;   // null＝まだ控えていない（起動の途中）＝変更なしとして扱う
+let draftTimer = null;
+function docPrint(doc, name) {
+  const d = doc || {};
+  return JSON.stringify([String(name == null ? '' : name), d.nodes || [], d.lines || [], d.frames || [], d.texts || []]);
+}
+function viewNow() {
+  const run = _suBackfillRun;
+  if (run && run.real) return run.real();
+  return { doc: state.doc, name: state.clientName };
+}
+function hasUnsavedChanges() {
+  if (isFieldDevice() || unsavedBase === null) return false;
+  const v = viewNow();
+  return docPrint(v.doc, v.name) !== unsavedBase;
+}
+function clearDraft() {
+  if (isFieldDevice()) return;
+  try { localStorage.removeItem(LS_DRAFT); } catch (e) { /* ignore */ }
+}
+// 今の図を「保存済み」として控え直す（読込・端末への保存・新規の後）。待っている下書きの書き込みは取り消し、下書きを消す
+function markClean() {
+  if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+  const v = viewNow();
+  unsavedBase = docPrint(v.doc, v.name);
+  clearDraft();
+}
+function writeDraftNow() {
+  if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+  if (isFieldDevice() || unsavedBase === null) return;
+  if (!hasUnsavedChanges()) { clearDraft(); return; }   // 元に戻した＝控える物が無い
+  const v = viewNow(), d = v.doc || {};
+  try {
+    localStorage.setItem(LS_DRAFT, JSON.stringify({
+      v: 1, clientName: String(v.name == null ? '' : v.name), loadedFrom: String(loadedFrom || ''), at: nowISO(),
+      doc: { nodes: d.nodes || [], lines: d.lines || [], frames: d.frames || [], texts: d.texts || [] }
+    }));
+  } catch (e) { /* 保存領域がいっぱい等: 黙って下書きをあきらめる（画面は止めない） */ }
+}
+// 編集の後に間を置いてまとめて書く（操作のたびに呼ばれてよい）
+function scheduleDraft() {
+  if (isFieldDevice()) return;
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(writeDraftNow, DRAFT_DELAY_MS);
+}
+// 残っている下書きを読む。形が違う（壊れた）下書きは黙って消して null
+function readDraft() {
+  let raw = null;
+  try { raw = localStorage.getItem(LS_DRAFT); } catch (e) { return null; }
+  if (raw == null) return null;
+  let d = null;
+  try { d = JSON.parse(raw); } catch (e) { d = null; }
+  const arr = Array.isArray;
+  const ok = !!(d && typeof d === 'object' && d.v === 1 && typeof d.clientName === 'string' &&
+    typeof d.loadedFrom === 'string' && typeof d.at === 'string' && d.doc && typeof d.doc === 'object' &&
+    arr(d.doc.nodes) && arr(d.doc.lines) && arr(d.doc.frames) && arr(d.doc.texts));
+  if (!ok) { clearDraft(); return null; }
+  return d;
+}
+/* 起動時（自動の読込の前）: 下書きが残っていて、端末に保存済みの同じ名前の図と中身が違う時だけ戻すかを確かめる。
+   戻したら true（起動の自動読込はしない・変更ありのまま）。同じ中身・戻さない・壊れた下書きは消して false */
+function offerDraftRestore() {
+  if (isFieldDevice()) return false;
+  const d = readDraft();
+  if (!d) return false;
+  let saved = null;
+  if (d.clientName) {
+    try { saved = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + d.clientName) || 'null'); } catch (e) { saved = null; }
+  }
+  if (saved && typeof saved === 'object' && docPrint(saved, d.clientName) === docPrint(d.doc, d.clientName)) {
+    clearDraft();   // 保存済みと同じ＝戻す物が無い
+    return false;
+  }
+  const when = fmtTsLabel(d.at);
+  if (!confirm('保存していない編集が残っています（' + (d.clientName || '利用者名なし') + (when ? '・' + when : '') + '）。戻しますか？')) {
+    clearDraft();
+    return false;
+  }
+  // 比べる相手（保存済み）は、下書きの出発点の図。無ければ空の新規
+  let base = null;
+  if (d.loadedFrom) {
+    try { base = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + d.loadedFrom) || 'null'); } catch (e) { base = null; }
+  }
+  loadedFrom = d.loadedFrom;
+  state.clientName = d.clientName;
+  state.doc = { nodes: d.doc.nodes, lines: d.doc.lines, frames: d.doc.frames, texts: d.doc.texts };
+  state.selectedId = null;
+  state.selectedType = null;
+  state.history = [];
+  $('clientName').value = d.clientName;
+  unsavedBase = (base && typeof base === 'object') ? docPrint(base, d.loadedFrom) : docPrint(makeEmptyDoc(), '');
+  if (unsavedBase === docPrint(state.doc, state.clientName)) unsavedBase = '';   // 戻した図は必ず「変更あり」
+  fitStageSize(true);
+  render();
+  flashStatus('保存していない編集を戻しました。保存してください');
+  return true;
+}
+// 一覧から別の図を選んだ時: 保存していない変更があれば確かめる（キャンセルなら開かない）
+function onDocListChange(e) {
+  const name = e.target.value;
+  e.target.value = '';
+  if (!name) return;
+  abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻してから判定する（差し替え中の図で判定しない）
+  if (hasUnsavedChanges()) {
+    if (!confirm('保存していない変更があります。破棄して「' + name + '」を開きますか？')) return;
+    clearDraft();
+  }
+  loadDoc(name);
+}
+// ページを閉じる・再読み込み: 保存していない変更があればブラウザの確認を出す（下書きはその場で書いておく）
+function onBeforeUnload(e) {
+  if (!hasUnsavedChanges()) return;
+  writeDraftNow();
+  e.preventDefault();
+  e.returnValue = '';
+  return '';
+}
+
 async function saveDoc() {
   if (isFieldDevice()) { alert(FIELD_READONLY_MSG); return; }
   abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（他の方の図を保存しない）
@@ -3772,6 +3919,7 @@ async function saveDoc() {
     alert('端末への保存に失敗しました: ' + e.message);
     return;
   }
+  markClean();   // 端末に保存できた＝保存していない変更は無い（下書きも消す）
   // 端末に書いた。この中身がサーバーへ届いたと確かめるまで「未反映」。番号はクラウド保存と保留の項目に持たせる
   const dirtySeq = CloudSync.markDirty(name, doc.updatedAt);
   /* 開いた文書と違う名前で保存した（新規・名前欄の書き換え）: この図はクラウドの同じ名前の版から出発していない。
@@ -3976,7 +4124,9 @@ async function loadDoc(name, opts) {
         alert('クラウドの既存データを確認できませんでした。\nこのまま新規として開始しますが、保存するとクラウドの既存版を上書きする恐れがあります。\n\n通信が回復したらページを再読み込みしてください。');
       }
       loadedFrom = name;
-      render(); return;   // 端末にもクラウドにも無い＝新規作成として続行
+      render();
+      markClean();   // 名前だけの新規として開いた（まだ変更なし）
+      return;   // 端末にもクラウドにも無い＝新規作成として続行
     }
     alert('データが見つかりません: ' + name);
     return;
@@ -4018,6 +4168,7 @@ async function loadDoc(name, opts) {
   fitStageSize(true);
   render();
   showProperties();
+  markClean();   // 読み込んだ図が「保存済み」の基準（下書きも消す）
   if (copyName) refreshDocList();   // 残した控えを一覧に出す
   flashStatus(`「${name}」を読み込みました`);
 }
@@ -4038,6 +4189,7 @@ function newDoc() {
   fitStageSize();
   render();
   showProperties();
+  markClean();   // 空の新規が基準（破棄を選んだ＝下書きも消す）
 }
 
 async function deleteCurrentDoc() {
@@ -4053,12 +4205,17 @@ async function deleteCurrentDoc() {
     ? `保存済みデータ「${name}」を端末＋クラウドから削除しますか？\n（この操作は取り消せません）`
     : `保存済みデータ「${name}」を削除しますか？\n（この操作は取り消せません）`;
   if (!confirm(scope)) return;
-  localStorage.removeItem(LS_DOC_PREFIX + name);
-  const idx = listDocs().filter(e => e.name !== name);
-  localStorage.setItem(LS_INDEX, JSON.stringify(idx));
-  if (localStorage.getItem(LS_LAST) === name) localStorage.removeItem(LS_LAST);
-  authUnverified.delete(name);   // 端末の図が無くなった＝上書きの恐れも無い
-  refreshDocList();
+  /* ★2026-10-17 削除の順番: クラウドが設定されている時は、クラウドの削除が通ってから端末の図と一覧を消す。
+     断られた（合言葉）・別の端末の新しい版があった（食い違い）時は端末の図を残して知らせる。
+     通信の失敗は従来どおり保留に積み、端末からは消す（通信が戻ると削除される・読込で残す道もある） */
+  const removeLocal = () => {
+    localStorage.removeItem(LS_DOC_PREFIX + name);
+    const idx = listDocs().filter(e => e.name !== name);
+    localStorage.setItem(LS_INDEX, JSON.stringify(idx));
+    if (localStorage.getItem(LS_LAST) === name) localStorage.removeItem(LS_LAST);
+    authUnverified.delete(name);   // 端末の図が無くなった＝上書きの恐れも無い
+    refreshDocList();
+  };
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', 'クラウドから削除中…');
     /* この端末が確かめた版を base に付ける（2026-09-23 根治）。サーバーの版が違えば消さない。
@@ -4066,21 +4223,29 @@ async function deleteCurrentDoc() {
     try {
       await CloudSync.delCurrent(name);
       CloudSync.clearPendingFor(name);   // 削除が通った＝同じ名前の保留は不要
+      removeLocal();
       setSyncStatus('ok', '削除を同期しました');
     } catch (err) {
       if (err && err.auth) {
         /* 合言葉で断られた削除は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
         setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
+        return;
       } else if (err && err.conflict) {
         // 別の端末で新しい版が保存されていた。消すより残す方を選ぶ（積まない＝後で消しにいかない）
         CloudSync.clearPendingFor(name);   // 同じ名前の古い保留も、後で送らない
         setSyncStatus('err', 'クラウドからは削除していません（別の端末で新しい版が保存されていました）');
+        flashStatus(`「${name}」は削除していません（別の端末で新しい版が保存されていました。端末の図も残しています）`);
+        return;
       } else {
+        removeLocal();
         CloudSync.queuePending({ kind: 'delete', name });
         setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
       }
     }
+  } else {
+    removeLocal();
   }
   flashStatus(`「${name}」を削除しました`);
 }
@@ -4375,10 +4540,10 @@ function bindUIEvents() {
   $('btnExportJPG').addEventListener('click', exportJPG);
   $('btnExportPDF').addEventListener('click', exportPDF);
   $('clientName').addEventListener('input', () => { state.clientName = $('clientName').value.trim(); });
-  $('docList').addEventListener('change', (e) => {
-    if (e.target.value) loadDoc(e.target.value);
-    e.target.value = '';
-  });
+  $('docList').addEventListener('change', onDocListChange);   // 保存していない変更があれば確かめてから開く
+  /* 編集の後に下書きを控える（1秒まとめ）。描画の毎フレームには掛けず、操作の区切り（指・キー・入力）で予約する */
+  ['pointerup', 'touchend', 'keyup', 'input', 'change'].forEach(function (t) { window.addEventListener(t, scheduleDraft, true); });
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -4574,7 +4739,11 @@ function init() {
      これが無いと別人の欄に他人の家族構成図が出る（2026-08-13 実害） */
   window._suMasterName = suName;
   let bootLoad = null;   // 起動時の自動読込（まとめ反映はこれが終わってから始める）
-  if (suName) {
+  /* 下書きが残っていれば、起動の自動読込より前に戻すかを確かめる。保存済みの基準（unsavedBase）は
+     読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える */
+  if (offerDraftRestore()) {
+    /* 保存していない編集を戻した。起動の自動読込はしない（戻した図を上書きしないため） */
+  } else if (suName) {
     $('clientName').value = suName;
     state.clientName = suName;
     if (localStorage.getItem(LS_DOC_PREFIX + suName)) {
@@ -4586,6 +4755,7 @@ function init() {
     } else {
       loadedFrom = suName;   // この方の新規として開いた
       render();          // 新規（氏名のみプリフィル済み）
+      markClean();       // 氏名だけの新規が基準（まだ変更なし）
     }
   } else {
     const last = localStorage.getItem(LS_LAST);
@@ -4593,6 +4763,7 @@ function init() {
       bootLoad = loadDoc(last);
     } else {
       render();
+      markClean();       // 空の新規が基準
     }
   }
   showProperties();
