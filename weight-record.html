@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-4fVEPqAhf1Ourtywpsch4ump4BPUWh6wN7htNt6aWc0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-leTFHU5xbj+wj04r1yYDGjg4LgXDDJUV1TvPKhR2i0U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -49,19 +49,19 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .hdr{background:linear-gradient(135deg,#0842a0,#0b57d0);color:#fff;padding:14px 18px;
   display:flex;align-items:center;justify-content:space-between}
 .hdr h1{font-size: 1.0625rem;font-weight:700}
-.hdr-sub{font-size: 0.75rem;opacity:.85;margin-top:2px}
+.hdr-sub{font-size:0.9375rem;opacity:.85;margin-top:2px}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
-  color:#fff;border-radius:6px;padding:6px 12px;font-size: 0.8125rem;cursor:pointer;white-space:nowrap}
+  color:#fff;border-radius:6px;padding:6px 12px;font-size:0.9375rem;cursor:pointer;white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}
-.hdr-r{font-size: 0.75rem;opacity:.9}
+.hdr-r{font-size:0.9375rem;opacity:.9}
 /* 入居者マスタから本人単位で開いた時の確認バー（誰を開いているかを常に見せる＝取り違え防止） */
 .frombar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;
-  background:var(--warn-bg);border-top:1px solid var(--warn-br);font-size: 0.8125rem;color:var(--warn-tx)}
+  background:var(--warn-bg);border-top:1px solid var(--warn-br);font-size:0.9375rem;color:var(--warn-tx)}
 .frombar b{font-size: 0.9375rem}
 .frombar button{min-height:44px;padding:6px 14px;border:1px solid var(--warn-br);border-radius:6px;
-  background:#fff;color:var(--warn-tx);font-size: 0.8125rem;cursor:pointer}
+  background:#fff;color:var(--warn-tx);font-size:0.9375rem;cursor:pointer}
 .frombar button:focus-visible{outline:2px solid var(--warn-tx);outline-offset:1px}
 @media print{.frombar{display:none !important}}
 
@@ -72,23 +72,23 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* 現場端末（su_device_role==='field'）では管理用の入口を出さない（関数の入口でも止めている） */
 .wr-field .tnav button[data-go="cfg"],.wr-field #inMealEdit,.wr-field .in-meal-hd small{display:none !important}
 /* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
-.wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:.8125rem;font-weight:700;line-height:1.5}
+.wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
 .wr-noapi[hidden]{display:none}
 .tnav button{flex:1;min-width:84px;display:flex;align-items:center;justify-content:center;gap:6px;
-  padding:12px 10px;border:none;background:none;color:var(--g7);font-size: 0.8125rem;font-weight:700;
+  padding:12px 10px;border:none;background:none;color:var(--g7);font-size:0.9375rem;font-weight:700;
   cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;
   transition:color .15s,background .15s,border-color .15s;white-space:nowrap;position:relative}
 .tnav button:hover{background:var(--g1)}
 .tnav button.on{color:var(--pri);border-bottom-color:var(--pri);background:var(--pri-l)}
-.tnav button.sub{flex:0 0 auto;min-width:60px;color:var(--g5);font-size: 0.75rem;font-weight:400;opacity:.8}
+.tnav button.sub{flex:0 0 auto;min-width:60px;color:var(--g5);font-size:0.9375rem;font-weight:400;opacity:.8}
 .tnav button.sub.on{color:var(--pri-d);opacity:1;font-weight:700}
 .tnav svg{width:18px;height:18px;flex-shrink:0}
 .tnav button.sub svg{width:15px;height:15px}
-.tnav .badge{background:var(--ng);color:#fff;font-size: 0.625rem;font-weight:700;
+.tnav .badge{background:var(--ng);color:#fff;font-size:0.9375rem;font-weight:700;
   border-radius:10px;min-width:18px;padding:1px 5px;line-height:1.4;margin-left:2px}
 @media(max-width:480px){
-  .tnav button{font-size: 0.75rem;padding:10px 6px;min-width:68px}
-  .tnav button.sub{min-width:52px;font-size: 0.6875rem}
+  .tnav button{font-size:0.9375rem;padding:10px 6px;min-width:68px}
+  .tnav button.sub{min-width:52px;font-size:0.9375rem}
   .tnav svg{width:16px;height:16px}
   .tnav button.sub svg{width:13px;height:13px}
 }
@@ -101,15 +101,51 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* screens */
 .scr{display:none;padding:14px;max-width:960px;margin:0 auto}
 .scr.on{display:block}
+/* ── 使いやすさの改善 第1弾（2026-10-17・代表者承認） ── */
+/* 右下の「不具合を報告」ボタンが一覧・表の最後の行を隠さないよう、画面の下に余白を取る */
+.scr{padding-bottom:88px}
+/* 入力画面の保存ボタンは画面の下に貼り付けて、スクロールせずに押せるようにする */
+#inSave{position:sticky;bottom:12px;z-index:6;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+/* 個別：縦軸の範囲の指定は畳んでおく（普段は自動で足りる） */
+.iv-yrange-d{margin:6px 0 12px}
+.iv-yrange-d>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:0.9375rem;color:var(--g7);font-weight:700;list-style:none}
+.iv-yrange-d>summary::-webkit-details-marker{display:none}
+.iv-yrange-d>summary::before{content:'▸';margin-right:6px}
+.iv-yrange-d[open]>summary::before{content:'▾'}
+.iv-yrange-d .iv-yrange{margin-top:4px}
+/* 集計：氏名を押した時のメニュー（個別・3年表示・今月の入力） */
+.gr-menu{position:fixed;z-index:60;background:#fff;border:1px solid var(--g3);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;min-width:220px}
+.gr-menu .gr-menu-h{font-size:0.9375rem;font-weight:700;color:var(--g9);padding:6px 12px 4px}
+.gr-menu button{min-height:44px;text-align:start;padding:8px 12px;border:none;background:none;font-size:0.9375rem;border-radius:8px;cursor:pointer;color:var(--g9)}
+.gr-menu button:hover,.gr-menu button:focus-visible{background:var(--pri-l)}
+/* 集計：注意・警告の月のセル（色だけに頼らず、▼▲と文字も付ける） */
+.gr-t tbody tr td.gr-al-w{background:#fff3e0}
+.gr-t tbody tr td.gr-al-ng{background:#ffebee}
+.gr-al-mk{display:block;font-size:0.9375rem;font-weight:700;color:var(--g9)}
+/* 入力：編集中の帯の削除ボタン */
+#inEditBanner .eb-del{margin-left:auto}
+/* 低栄養リスク（厚労省の区切り・体重とBMIだけで判定）の札 */
+.rk{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:0.9375rem;font-weight:700;white-space:nowrap}
+.rk-mid{background:#fff3e0;color:#b23c00;border:1px solid #f9a825}
+.rk-high{background:#ffebee;color:#b71c1c;border:1px solid #ef5350}
+.st-v.rk-v-high{color:#b71c1c}.st-v.rk-v-mid{color:#b23c00}
+/* 測り直し：まとめて入力の行の注意と、履歴の「測り直し済み」の印 */
+.bk-row.bk-recheck{background:#fff3e0 !important;box-shadow:inset 4px 0 0 #f9a825}
+.bk-rc{display:block;padding:2px 6px;border-radius:8px;background:#fff;border:1px solid #f9a825;color:#b23c00;font-weight:700;font-size:0.9375rem}
+.rc-badge{display:inline-block;margin-top:2px;padding:1px 6px;border-radius:8px;background:var(--g1);color:var(--g7);font-size:0.9375rem;font-weight:700}
+/* 一覧：今月まだ測っていない人 */
+.fc button .fc-n{margin-left:4px;font-weight:700}
+.fc button.is-late{border-color:var(--warn-br);background:var(--warn-bg);color:var(--warn-tx)}
+.miss-ago{display:block;font-size:0.9375rem;color:var(--g7);margin-top:2px}
 
 /* card */
 .cd{background:#fff;border-radius:var(--r);padding:15px;margin-bottom:14px;box-shadow:var(--sh)}
-.cd-t{font-size: 0.8125rem;font-weight:700;color:var(--g7);margin-bottom:12px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
-.cd-t .cd-t-r{font-size: 0.6875rem;font-weight:400;color:var(--g6)}
+.cd-t{font-size:0.9375rem;font-weight:700;color:var(--g7);margin-bottom:12px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
+.cd-t .cd-t-r{font-size:0.9375rem;font-weight:400;color:var(--g6)}
 
 /* form */
 .fg{margin-bottom:14px}
-.fl{display:block;font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:7px}
+.fl{display:block;font-size:0.9375rem;font-weight:700;color:var(--g7);margin-bottom:7px}
 .fl .req{color:var(--ng);margin-left:3px}
 input[type="text"],input[type="number"],input[type="month"],input[type="date"],input[type="password"],textarea{
   width:100%;padding:11px 12px;border:2px solid var(--g2);border-radius:8px;
@@ -130,16 +166,16 @@ textarea{resize:vertical;min-height:60px}
   font-size: 1rem;font-weight:700;color:var(--g6)}
 .wt-step{display:flex;gap:8px;margin-top:8px;justify-content:center;flex-wrap:wrap}
 .wt-step button{padding:7px 14px;border:2px solid var(--g2);border-radius:18px;cursor:pointer;
-  background:#fff;font-size: 0.8125rem;font-weight:700;font-family:inherit;min-width:62px}
+  background:#fff;font-size:0.9375rem;font-weight:700;font-family:inherit;min-width:62px}
 .wt-step button:active{background:var(--pri-l);border-color:var(--pri)}
 
 /* form picker (meal forms) */
 .mf-g{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 @media(max-width:480px){.mf-g{grid-template-columns:repeat(2,1fr)}}
 .mf-b{padding:11px 6px;border:2px solid var(--g2);border-radius:9px;cursor:pointer;
-  background:#fff;font-size: 0.8125rem;font-weight:700;text-align:center;font-family:inherit;
+  background:#fff;font-size:0.9375rem;font-weight:700;text-align:center;font-family:inherit;
   transition:all .15s;line-height:1.3}
-.mf-b small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
+.mf-b small{display:block;font-size:0.9375rem;font-weight:400;color:var(--g6);margin-top:2px}
 .mf-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .mf-b[data-g="s"].on{background:#fff3e0;border-color:#ef6c00;color:#bf360c}
 
@@ -153,8 +189,8 @@ textarea{resize:vertical;min-height:60px}
 /* list table */
 .lt-w{overflow-x:auto;border-radius:var(--r);box-shadow:var(--sh)}
 .lt{width:100%;border-collapse:collapse;background:#fff;min-width:640px}
-.lt th{background:var(--pri);color:#fff;padding:10px 8px;text-align:center;font-size: 0.6875rem;font-weight:700;white-space:nowrap;position:sticky;top:0}
-.lt td{padding:10px 8px;border-bottom:1px solid var(--g1);font-size: 0.8125rem;text-align:center;vertical-align:middle}
+.lt th{background:var(--pri);color:#fff;padding:10px 8px;text-align:center;font-size:0.9375rem;font-weight:700;white-space:nowrap;position:sticky;top:0}
+.lt td{padding:10px 8px;border-bottom:1px solid var(--g1);font-size:0.9375rem;text-align:center;vertical-align:middle}
 .lt tr:last-child td{border-bottom:none}
 .lt tr.ev td{background:#fafafa}
 .lt tr.clk{cursor:pointer;transition:background .15s}
@@ -162,17 +198,17 @@ textarea{resize:vertical;min-height:60px}
 .lt tr.alert-ng td:first-child{border-left:4px solid var(--ng)}
 .lt tr.alert-w td:first-child{border-left:4px solid var(--warn-br)}
 .lt .nm{font-weight:700;text-align:start;padding-left:12px;min-width:110px}
-.lt .rm{color:var(--g6);font-size: 0.6875rem;font-weight:400}
+.lt .rm{color:var(--g6);font-size:0.9375rem;font-weight:400}
 .lt .nm-link{cursor:pointer;color:var(--pri-d);text-decoration:underline;text-decoration-color:rgba(8,66,160,.35);text-underline-offset:2px;padding:2px 1px;border-radius:3px;transition:background .12s,color .12s}
 .lt .nm-link:hover{background:var(--pri-l);color:var(--pri-d);text-decoration-color:var(--pri-d)}
 .lt .wt-cell{font-size: 0.9375rem;font-weight:700;font-variant-numeric:tabular-nums}
-.lt .df{font-size: 0.75rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lt .df{font-size:0.9375rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .df.pos{color:var(--up)}.df.neg{color:var(--dn)}.df.zero{color:var(--g6)}
-.lt .mf{font-size: 0.6875rem;color:var(--g7);white-space:nowrap}
+.lt .mf{font-size:0.9375rem;color:var(--g7);white-space:nowrap}
 .lt .mf b{color:var(--g9)}
 
 /* badge */
-.eb{display:inline-block;padding:2px 8px;border-radius:12px;font-size: 0.6875rem;font-weight:700;white-space:nowrap}
+.eb{display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.9375rem;font-weight:700;white-space:nowrap}
 .eb-ok{background:var(--ok-l);color:var(--ok)}
 .eb-w{background:var(--warn-bg);color:var(--warn-tx)}
 .eb-ng{background:var(--ng-l);color:var(--ng)}
@@ -191,13 +227,13 @@ textarea{resize:vertical;min-height:60px}
 .al-i.dir-dn .al-ic{background:var(--pri);color:#fff}
 .al-i.dir-up .al-ic{background:var(--ng);color:#fff}
 .al-body{flex:1;min-width:0}
-.al-nm{font-size: 0.875rem;font-weight:700;color:var(--g9);margin-bottom:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.al-nm .rm{font-size: 0.6875rem;font-weight:400;color:var(--g6)}
-.al-ms{font-size: 0.75rem;color:var(--g7);line-height:1.45}
+.al-nm{font-size:0.9375rem;font-weight:700;color:var(--g9);margin-bottom:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.al-nm .rm{font-size:0.9375rem;font-weight:400;color:var(--g6)}
+.al-ms{font-size:0.9375rem;color:var(--g7);line-height:1.45}
 .al-ms b{color:var(--g9)}
 
 /* empty */
-.empty{text-align:center;padding:32px 14px;color:var(--g6);font-size: 0.8125rem}
+.empty{text-align:center;padding:32px 14px;color:var(--g6);font-size:0.9375rem}
 .empty svg{width:48px;height:48px;opacity:.35;margin-bottom:8px}
 /* スクリーンリーダー専用（視覚・印刷レイアウトに影響しない） */
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -206,40 +242,40 @@ textarea{resize:vertical;min-height:60px}
 .ch-w{position:relative;height:280px;margin-top:4px}
 .rg-tabs{display:inline-flex;gap:6px}
 .rg-b{padding:5px 11px;border:1.5px solid var(--g2);background:#fff;border-radius:14px;
-  font-family:inherit;font-size: 0.6875rem;font-weight:700;color:var(--g7);cursor:pointer;
+  font-family:inherit;font-size:0.9375rem;font-weight:700;color:var(--g7);cursor:pointer;
   transition:all .15s}
 .rg-b:hover{border-color:var(--g3)}
 .rg-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
-.thr-tb{width:100%;border-collapse:collapse;font-size: 0.75rem}
-.thr-tb th{background:var(--g1);color:var(--g7);padding:8px 6px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--g2);font-size: 0.6875rem}
+.thr-tb{width:100%;border-collapse:collapse;font-size:0.9375rem}
+.thr-tb th{background:var(--g1);color:var(--g7);padding:8px 6px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--g2);font-size:0.9375rem}
 .thr-tb td{padding:6px 4px;border-bottom:1px solid var(--g1);vertical-align:middle}
 .thr-tb td:first-child{font-weight:700;color:var(--g7);white-space:nowrap;padding-left:8px}
-.thr-tb input[type="number"]{width:100%;min-width:60px;padding:6px 7px;font-size: 0.8125rem;border:1.5px solid var(--g2);border-radius:6px;text-align:center;font-family:inherit}
+.thr-tb input[type="number"]{width:100%;min-width:60px;padding:6px 7px;font-size:0.9375rem;border:1.5px solid var(--g2);border-radius:6px;text-align:center;font-family:inherit}
 .thr-tb input[type="number"]:focus{outline:none;border-color:var(--pri)}
 .thr-tb .th-w th:nth-child(-n+3),.thr-tb td.th-w{background:#fff8e1}
 .thr-tb .th-ng th:nth-child(n+4),.thr-tb td.th-ng{background:#ffebee}
 /* Y軸範囲オーバーライド：未入力なら自動、数値で固定範囲 */
 .iv-yrange{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:6px 0 12px;padding:8px 10px;
-  background:var(--g0);border:1px solid var(--g2);border-radius:8px;font-size: 0.6875rem}
+  background:var(--g0);border:1px solid var(--g2);border-radius:8px;font-size:0.9375rem}
 .iv-yrange-l{color:var(--g7);font-weight:700;margin-right:4px}
-.iv-yrange-i{width:64px;padding:4px 6px;border:1px solid var(--g3);border-radius:6px;font-size: 0.75rem;
+.iv-yrange-i{width:64px;padding:4px 6px;border:1px solid var(--g3);border-radius:6px;font-size:0.9375rem;
   font-variant-numeric:tabular-nums;text-align:end;font-family:inherit;background:#fff}
 .iv-yrange-i:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-l)}
 .iv-yrange-sep{color:var(--g6)}
 .iv-yrange-u{color:var(--g6);margin-right:4px}
 .iv-yrange-rst{margin-left:auto;padding:4px 10px;border:1px solid var(--g3);background:#fff;color:var(--g7);
-  border-radius:6px;font-size: 0.625rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+  border-radius:6px;font-size:0.9375rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
 .iv-yrange-rst:hover{background:var(--g1);color:var(--g9)}
 .iv-yrange.is-overridden{background:#fff8e1;border-color:#ffe082}
 .iv-yrange.is-overridden .iv-yrange-l::before{content:'⚠ ';color:#ef6c00}
 .iv-chart-wrap{margin-top:14px;padding-top:12px;border-top:1px dashed var(--g2)}
 .iv-chart-wrap:first-of-type{border-top:none;padding-top:0;margin-top:0}
 .iv-chart-wrap.off{display:none}
-.iv-chart-ttl{font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.iv-chart-ttl{font-size:0.9375rem;font-weight:700;color:var(--g7);margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .iv-chart-ttl::before{content:'';width:10px;height:10px;border-radius:2px;background:var(--pri)}
 /* グラフの丸・表の色が何を意味するかの説明。丸の色と大きさだけに意味を持たせない
    （ツールチップはタップしないと出ないので、一覧視の職員には届かないため）。 */
-.iv-note{font-size: 0.8125rem;line-height:1.6;color:var(--g7);margin-top:8px;
+.iv-note{font-size:0.9375rem;line-height:1.6;color:var(--g7);margin-top:8px;
   display:flex;flex-wrap:wrap;gap:4px 14px}
 .iv-note .nt{display:inline-flex;align-items:center;gap:5px}
 .iv-note .dot{display:inline-block;border-radius:50%;border:2px solid #fff;
@@ -251,18 +287,18 @@ textarea{resize:vertical;min-height:60px}
 .iv-note .dot{background:var(--g3)}
 .iv-note .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
   border:1px solid var(--g5);background:#fff8e1;flex:none}
-.st-g{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+.st-g{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:720px){.st-g{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.st-g{grid-template-columns:repeat(2,1fr)}}
 .st-i{background:#fff;border-radius:10px;padding:10px 8px;box-shadow:var(--sh);text-align:center}
-.st-l{font-size: 0.625rem;color:var(--g6);font-weight:700;margin-bottom:3px}
+.st-l{font-size:0.9375rem;color:var(--g6);font-weight:700;margin-bottom:3px}
 .st-v{font-size: 1.125rem;font-weight:700;color:var(--g9);font-variant-numeric:tabular-nums}
 .st-v.pos{color:var(--up)}.st-v.neg{color:var(--dn)}
-.st-s{font-size: 0.625rem;color:var(--g6);margin-top:1px}
+.st-s{font-size:0.9375rem;color:var(--g6);margin-top:1px}
 
 /* history table for individual */
-.ht{width:100%;border-collapse:separate;border-spacing:0;background:#fff;font-size: 0.75rem}
-.ht th{background:var(--g1);color:var(--g7);padding:8px 6px;text-align:center;font-weight:700;font-size: 0.6875rem;white-space:nowrap;
+.ht{width:100%;border-collapse:separate;border-spacing:0;background:#fff;font-size:0.9375rem}
+.ht th{background:var(--g1);color:var(--g7);padding:8px 6px;text-align:center;font-weight:700;font-size:0.9375rem;white-space:nowrap;
   border-bottom:1px solid var(--g2)}
 .ht td{padding:8px 6px;border-bottom:1px solid var(--g1);text-align:center;vertical-align:middle}
 .ht td:first-child{text-align:start;padding-left:10px;white-space:nowrap;font-weight:700}
@@ -282,42 +318,42 @@ textarea{resize:vertical;min-height:60px}
 
 /* 個別画面の記録履歴：測定日から判定した対象月のグループ見出し行 */
 #ivHist .wr-who{color:var(--g6);font-weight:400}
-#ivHist .wr-hist{font-size:0.75rem;color:var(--g6);font-weight:400;margin-top:2px}
+#ivHist .wr-hist{font-size:0.9375rem;color:var(--g6);font-weight:400;margin-top:2px}
 #ivHist .wr-hist summary{cursor:pointer;min-height:24px}
 #ivHist .hist-grp td{background:var(--pri-l);color:var(--pri-d);font-weight:700;
-  text-align:start;padding:6px 10px;font-size: 0.8125rem;border-top:2px solid var(--pri)}
+  text-align:start;padding:6px 10px;font-size:0.9375rem;border-top:2px solid var(--pri)}
 
 /* settings */
 .rli{display:flex;align-items:center;justify-content:space-between;
   padding:11px 12px;border:1px solid var(--g2);border-radius:8px;margin-bottom:7px;background:#fff;gap:8px}
 .rli-l{flex:1;min-width:0}
-.rli-n{font-size: 0.875rem;font-weight:700;color:var(--g9)}
-.rli-s{font-size: 0.6875rem;color:var(--g6);margin-top:2px}
+.rli-n{font-size:0.9375rem;font-weight:700;color:var(--g9)}
+.rli-s{font-size:0.9375rem;color:var(--g6);margin-top:2px}
 .rli-btns{display:flex;gap:6px}
 
 .ex-r{display:flex;gap:9px;flex-wrap:wrap}
 
 /* 重複の点検（2026-09-28） */
-.dup-count{font-size:0.8125rem;font-weight:700;color:var(--g7)}
+.dup-count{font-size:0.9375rem;font-weight:700;color:var(--g7)}
 .dup-count.has{color:var(--warn-tx)}
-.dup-lead{font-size:0.8125rem;color:var(--g7);line-height:1.6;margin:0 0 10px}
+.dup-lead{font-size:0.9375rem;color:var(--g7);line-height:1.6;margin:0 0 10px}
 .dup-g{border:1px solid var(--warn-br);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:var(--warn-bg)}
 .dup-g.is-name{border-style:dashed}
-.dup-h{font-size:0.875rem;font-weight:700;color:var(--g9);margin-bottom:4px}
-.dup-k{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:8px;font-size:0.75rem;font-weight:700;
+.dup-h{font-size:0.9375rem;font-weight:700;color:var(--g9);margin-bottom:4px}
+.dup-k{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:8px;font-size:0.9375rem;font-weight:700;
   background:#fff;color:var(--warn-tx);border:1px solid var(--warn-br);vertical-align:middle}
 .dup-m{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 8px;margin:6px 0;border-radius:6px;
-  background:#fff;border:1px solid var(--g2);cursor:pointer;font-size:0.8125rem;color:var(--g9);line-height:1.5}
+  background:#fff;border:1px solid var(--g2);cursor:pointer;font-size:0.9375rem;color:var(--g9);line-height:1.5}
 .dup-m input{width:20px;height:20px;flex:none;margin:0}
 .dup-m .dup-s{color:var(--g7)}
 .dup-a{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .dup-a .bn{min-height:44px}
-.dup-a select{min-height:44px;font-size:0.875rem;max-width:100%}
-.dup-none{font-size:0.8125rem;color:var(--g7);padding:6px 0}
+.dup-a select{min-height:44px;font-size:0.9375rem;max-width:100%}
+.dup-none{font-size:0.9375rem;color:var(--g7);padding:6px 0}
 
 /* buttons */
 .bn{padding:9px 16px;border-radius:8px;border:none;cursor:pointer;
-  font-size: 0.8125rem;font-weight:700;font-family:inherit;
+  font-size:0.9375rem;font-weight:700;font-family:inherit;
   touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,0,0,0.08);
   user-select:none;-webkit-user-select:none}
 .bp{background:var(--pri);color:#fff}.bp:active{opacity:.85}
@@ -325,7 +361,7 @@ textarea{resize:vertical;min-height:60px}
 .bs{background:var(--g1);color:var(--g7)}.bs:active{background:var(--g2)}
 .br{background:var(--ng);color:#fff}.br:active{opacity:.8}
 .bo{background:#fff;color:var(--pri);border:2px solid var(--pri)}
-.bsm{padding:6px 11px;font-size: 0.75rem}
+.bsm{padding:6px 11px;font-size:0.9375rem}
 
 /* modal */
 .mk{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
@@ -341,7 +377,7 @@ textarea{resize:vertical;min-height:60px}
 
 /* toast */
 .ts{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-20px);
-  background:var(--g9);color:#fff;padding:11px 22px;border-radius:22px;font-size: 0.8125rem;font-weight:700;
+  background:var(--g9);color:#fff;padding:11px 22px;border-radius:22px;font-size:0.9375rem;font-weight:700;
   z-index:300;opacity:0;transition:all .3s;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25)}
 .ts.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .ts.err{background:var(--ng)}
@@ -349,13 +385,13 @@ textarea{resize:vertical;min-height:60px}
 
 /* month picker chip */
 .mp-w{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.mp-w button{padding:7px 11px;border:1px solid var(--g2);background:#fff;border-radius:6px;font-family:inherit;cursor:pointer;font-size: 0.8125rem}
+.mp-w button{padding:7px 11px;border:1px solid var(--g2);background:#fff;border-radius:6px;font-family:inherit;cursor:pointer;font-size:0.9375rem}
 .mp-w button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
-.mp-w input[type="month"]{width:auto;padding:7px 10px;font-size: 0.8125rem;border:2px solid var(--g2);border-radius:6px}
+.mp-w input[type="month"]{width:auto;padding:7px 10px;font-size:0.9375rem;border:2px solid var(--g2);border-radius:6px}
 
 /* filter chips */
 .fc{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-.fc button{padding:6px 12px;border:1px solid var(--g2);background:#fff;border-radius:16px;font-family:inherit;cursor:pointer;font-size: 0.75rem;font-weight:700;color:var(--g7)}
+.fc button{padding:6px 12px;border:1px solid var(--g2);background:#fff;border-radius:16px;font-family:inherit;cursor:pointer;font-size:0.9375rem;font-weight:700;color:var(--g7)}
 .fc button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
 
 /* search */
@@ -364,63 +400,63 @@ textarea{resize:vertical;min-height:60px}
 .srch svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--g5)}
 
 /* meal summary chips in cards */
-.ms-c{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;background:var(--g1);border-radius:10px;font-size: 0.6875rem}
+.ms-c{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;background:var(--g1);border-radius:10px;font-size:0.9375rem}
 .ms-c b{color:var(--g9)}
 
 /* meal option toggle chips */
-.tg-chip{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:10px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap}
+.tg-chip{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:10px;font-size:0.9375rem;font-weight:700;line-height:1.6;white-space:nowrap}
 .tg-row{margin-top:3px}
 .tg-toggles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media(max-width:480px){.tg-toggles{grid-template-columns:repeat(3,1fr)}}
 .tg-btn{padding:12px 6px;border:2px solid var(--g2);border-radius:9px;cursor:pointer;background:#fff;
-  font-size: 0.8125rem;font-weight:700;font-family:inherit;text-align:center;transition:all .15s;color:var(--g7);line-height:1.35}
-.tg-btn small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
+  font-size:0.9375rem;font-weight:700;font-family:inherit;text-align:center;transition:all .15s;color:var(--g7);line-height:1.35}
+.tg-btn small{display:block;font-size:0.9375rem;font-weight:400;color:var(--g6);margin-top:2px}
 .tg-btn.on{background:#ede7f6;border-color:#7e57c2;color:#4527a0}
 .tg-btn.on small{color:#6a4a9f}
 
 /* BMI inline badge */
-.bmi-b{display:inline-block;padding:2px 10px;border-radius:14px;font-size: 0.75rem;font-weight:700;background:var(--g1);color:var(--g7);margin-left:6px}
+.bmi-b{display:inline-block;padding:2px 10px;border-radius:14px;font-size:0.9375rem;font-weight:700;background:var(--g1);color:var(--g7);margin-left:6px}
 
 /* measurement mode selector */
 .wm-sel{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .wm-b{padding:12px 8px;border:2px solid var(--g2);border-radius:10px;cursor:pointer;background:#fff;
-  font-size: 0.875rem;font-weight:700;font-family:inherit;text-align:center;color:var(--g7);transition:all .15s;line-height:1.35}
-.wm-b small{display:block;font-size: 0.625rem;font-weight:400;color:var(--g6);margin-top:2px}
+  font-size:0.9375rem;font-weight:700;font-family:inherit;text-align:center;color:var(--g7);transition:all .15s;line-height:1.35}
+.wm-b small{display:block;font-size:0.9375rem;font-weight:400;color:var(--g6);margin-top:2px}
 .wm-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .wm-b.on small{color:var(--pri-d)}
 
 /* wheelchair calc display */
 .wc-calc{margin-top:10px;padding:12px;background:#e3f2fd;border:1px solid #64b5f6;border-radius:10px;text-align:center}
-.wc-calc .wc-eq{font-size: 0.75rem;color:var(--g7);margin-bottom:4px;font-variant-numeric:tabular-nums}
+.wc-calc .wc-eq{font-size:0.9375rem;color:var(--g7);margin-bottom:4px;font-variant-numeric:tabular-nums}
 .wc-calc .wc-net{font-size: 1.5rem;font-weight:700;color:var(--dn);font-variant-numeric:tabular-nums;letter-spacing:1px}
-.wc-calc .wc-net small{font-size: 0.75rem;font-weight:400;color:var(--g7);margin-left:4px}
+.wc-calc .wc-net small{font-size:0.9375rem;font-weight:400;color:var(--g7);margin-left:4px}
 .wc-calc.err{background:var(--ng-l);border-color:var(--ng-br)}
 .wc-calc.err .wc-net{color:var(--ng)}
 
 /* wheelchair badge */
-.wc-badge{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#e0f7fa;color:#006064;border:1px solid #80deea;border-radius:10px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap}
+.wc-badge{display:inline-block;padding:1px 7px;margin:1px 2px 0 0;background:#e0f7fa;color:#006064;border:1px solid #80deea;border-radius:10px;font-size:0.9375rem;font-weight:700;line-height:1.6;white-space:nowrap}
 
 /* edit-mode banner (input screen) */
 .edit-banner{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:14px;
-  background:#fff8e1;border:1px solid #ffd54f;border-radius:10px;font-size: 0.75rem;color:#6d4c00}
+  background:#fff8e1;border:1px solid #ffd54f;border-radius:10px;font-size:0.9375rem;color:#6d4c00}
 .edit-banner .eb-ic{font-size: 1rem;line-height:1}
 .edit-banner .eb-msg{flex:1;font-weight:700;line-height:1.4}
 
 /* existing-records panel (input screen) */
 .iex-wrap{margin-top:18px;border-top:1px dashed var(--g2);padding-top:14px}
-.iex-hd{font-size: 0.75rem;font-weight:700;color:var(--g7);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.iex-hd{font-size:0.9375rem;font-weight:700;color:var(--g7);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .iex-hd small{font-weight:400;color:var(--g6)}
-.iex-empty{padding:16px 12px;text-align:center;font-size: 0.75rem;color:var(--g6);background:var(--g0);border-radius:8px}
+.iex-empty{padding:16px 12px;text-align:center;font-size:0.9375rem;color:var(--g6);background:var(--g0);border-radius:8px}
 .iex-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
-  padding:8px 10px;margin-bottom:6px;background:#fff;border:1px solid var(--g1);border-radius:8px;font-size: 0.75rem}
+  padding:8px 10px;margin-bottom:6px;background:#fff;border:1px solid var(--g1);border-radius:8px;font-size:0.9375rem}
 .iex-row.editing{background:#fff8e1;border-color:#ffd54f}
 .iex-row .iex-d b{font-variant-numeric:tabular-nums}
-.iex-row .iex-ym{font-size: 0.625rem;color:var(--g6);margin-left:6px}
+.iex-row .iex-ym{font-size:0.9375rem;color:var(--g6);margin-left:6px}
 .iex-row .iex-w{font-variant-numeric:tabular-nums;text-align:end;white-space:nowrap}
 .iex-row .iex-w b{font-size: 0.9375rem;color:var(--g9)}
-.iex-row .iex-w small{font-size: 0.625rem;color:var(--g6);margin-left:2px;margin-right:6px}
+.iex-row .iex-w small{font-size:0.9375rem;color:var(--g6);margin-left:2px;margin-right:6px}
 .iex-row .iex-act{display:flex;gap:4px}
-.iex-more{padding:6px;text-align:center;font-size: 0.6875rem;color:var(--g6)}
+.iex-more{padding:6px;text-align:center;font-size:0.9375rem;color:var(--g6)}
 
 /* individual screen history actions */
 .ht .hist-act{white-space:nowrap;min-width:92px}
@@ -428,63 +464,63 @@ textarea{resize:vertical;min-height:60px}
 
 /* meal section (resident modal) */
 .md-meal-sec{margin:14px 0 4px;padding:12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0)}
-.md-meal-sec .md-meal-hd{font-size: 0.75rem;font-weight:700;color:var(--g8);margin:-4px 0 10px;display:flex;align-items:baseline;gap:8px}
-.md-meal-sec .md-meal-hd small{font-size: 0.625rem;font-weight:400;color:var(--g6)}
+.md-meal-sec .md-meal-hd{font-size:0.9375rem;font-weight:700;color:var(--g8);margin:-4px 0 10px;display:flex;align-items:baseline;gap:8px}
+.md-meal-sec .md-meal-hd small{font-size:0.9375rem;font-weight:400;color:var(--g6)}
 /* read-only meal display on input screen */
-.in-meal{margin:6px 0 14px;padding:10px 12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0);font-size: 0.75rem}
-.in-meal-hd{display:flex;align-items:center;justify-content:space-between;font-size: 0.6875rem;font-weight:700;color:var(--g7);margin-bottom:6px}
-.in-meal-hd small{font-size: 0.625rem;font-weight:400;color:var(--g6)}
-.in-meal-hd .in-meal-edit{font-size: 0.625rem;color:var(--pri-d);text-decoration:none;border:1px solid var(--pri);padding:2px 8px;border-radius:10px;background:#fff;cursor:pointer;font-weight:700;font-family:inherit}
+.in-meal{margin:6px 0 14px;padding:10px 12px;border:1px solid var(--g2);border-radius:8px;background:var(--g0);font-size:0.9375rem}
+.in-meal-hd{display:flex;align-items:center;justify-content:space-between;font-size:0.9375rem;font-weight:700;color:var(--g7);margin-bottom:6px}
+.in-meal-hd small{font-size:0.9375rem;font-weight:400;color:var(--g6)}
+.in-meal-hd .in-meal-edit{font-size:0.9375rem;color:var(--pri-d);text-decoration:none;border:1px solid var(--pri);padding:2px 8px;border-radius:10px;background:#fff;cursor:pointer;font-weight:700;font-family:inherit}
 .in-meal-hd .in-meal-edit:hover{background:var(--pri-l)}
 .in-meal-tbl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:baseline}
-.in-meal-tbl dt{color:var(--g6);font-size: 0.6875rem;margin:0;padding:0}
+.in-meal-tbl dt{color:var(--g6);font-size:0.9375rem;margin:0;padding:0}
 .in-meal-tbl dd{margin:0;padding:0;color:var(--g9);font-weight:700}
-.in-meal-tbl dd .sa-chip{margin-left:6px;font-size: 0.625rem;background:var(--pri-l);color:var(--pri-d);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle}
-.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size: 0.625rem;background:#e8f5e9;color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
+.in-meal-tbl dd .sa-chip{margin-left:6px;font-size:0.9375rem;background:var(--pri-l);color:var(--pri-d);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle}
+.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size:0.9375rem;background:#e8f5e9;color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
 .in-meal-tbl dd.empty{color:var(--g5);font-weight:400}
 /* staple amount (主食g) input */
 .sa-wrap{margin-top:10px;padding:12px 12px 10px;background:var(--g0);border:1px solid var(--g2);border-radius:10px}
-.sa-hd{display:flex;justify-content:space-between;align-items:center;font-size: 0.6875rem;color:var(--g7);font-weight:700;margin-bottom:8px}
-.sa-hd .sa-rg{color:var(--g6);font-weight:400;font-size: 0.625rem}
+.sa-hd{display:flex;justify-content:space-between;align-items:center;font-size:0.9375rem;color:var(--g7);font-weight:700;margin-bottom:8px}
+.sa-hd .sa-rg{color:var(--g6);font-weight:400;font-size:0.9375rem}
 .sa-ctrl{display:flex;gap:8px;align-items:center;justify-content:center}
 .sa-step{padding:10px 14px;border:1px solid var(--g2);background:#fff;border-radius:8px;font-weight:700;
-  font-size: 0.8125rem;cursor:pointer;font-family:inherit;color:var(--g7);min-width:56px}
+  font-size:0.9375rem;cursor:pointer;font-family:inherit;color:var(--g7);min-width:56px}
 .sa-step:active{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
 .sa-inp{position:relative;flex:1;max-width:140px}
 .sa-inp input{width:100%;text-align:center;padding:11px 28px 11px 10px;font-size: 1.125rem;font-weight:700;
   font-variant-numeric:tabular-nums;border:2px solid var(--g2);border-radius:8px;color:var(--g9)}
-.sa-inp .unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size: 0.75rem;color:var(--g6);font-weight:400}
+.sa-inp .unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:0.9375rem;color:var(--g6);font-weight:400}
 .sa-slider{width:100%;margin-top:10px;accent-color:var(--pri)}
 
 /* staple-amount chip shown in lists/history */
 .sa-chip{display:inline-block;padding:0 6px;margin-left:4px;background:var(--pri-l);color:var(--pri-d);
-  border-radius:8px;font-size: 0.625rem;font-weight:700;line-height:1.6;white-space:nowrap;vertical-align:middle}
+  border-radius:8px;font-size:0.9375rem;font-weight:700;line-height:1.6;white-space:nowrap;vertical-align:middle}
 
 /* 集計 grid table: full-width scroll wrapper, sticky first column & header */
 .gr-wrap{overflow:auto;max-height:calc(100vh - 260px);border:1px solid var(--g2);border-radius:8px;background:#fff}
-.gr-t{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size: 0.75rem;
+.gr-t{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:0.9375rem;
   font-variant-numeric:tabular-nums}
 .gr-t th,.gr-t td{padding:8px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);
   text-align:center;white-space:nowrap;background:#fff}
-.gr-t thead th{background:var(--pri);color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:3}
+.gr-t thead th{background:var(--pri);color:#fff;font-weight:700;font-size:0.9375rem;position:sticky;top:0;z-index:3}
 .gr-t th.gr-nm,.gr-t td.gr-nm{position:sticky;left:0;z-index:2;text-align:start;background:#fff;
   min-width:160px;max-width:220px;border-right:2px solid var(--g2);font-weight:700;padding:8px 10px}
 .gr-t thead th.gr-nm{z-index:4;background:var(--pri);color:#fff}
 .gr-t tr.ev td{background:#fafafa}
 .gr-t tr.ev td.gr-nm{background:#fafafa}
-.gr-t .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
-.gr-t .gr-bmi{font-size: 0.625rem;color:var(--g6);line-height:1.2;margin-top:1px}
+.gr-t .gr-wt{font-weight:700;color:var(--g9);font-size:0.9375rem;line-height:1.25}
+.gr-t .gr-bmi{font-size:0.9375rem;color:var(--g6);line-height:1.2;margin-top:1px}
 .gr-t .gr-em{color:var(--g5)}
-.gr-t .gr-rm{color:var(--g6);font-size: 0.625rem;font-weight:400;margin-left:2px}
+.gr-t .gr-rm{color:var(--g6);font-size:0.9375rem;font-weight:400;margin-left:2px}
 .gr-t .gr-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);
-  border-radius:8px;font-size: 0.5625rem;font-weight:700;margin-left:4px;line-height:1.7;vertical-align:middle}
+  border-radius:8px;font-size:0.9375rem;font-weight:700;margin-left:4px;line-height:1.7;vertical-align:middle}
 .gr-t .gr-3y{display:inline-block;padding:2px 8px;border:1px solid var(--pri);color:var(--pri-d);
-  background:#fff;border-radius:12px;font-size: 0.625rem;font-weight:700;cursor:pointer;
+  background:#fff;border-radius:12px;font-size:0.9375rem;font-weight:700;cursor:pointer;
   font-family:inherit;transition:all .15s}
 .gr-t .gr-3y:hover{background:var(--pri-l)}
 /* 個別 button: shown above the 3年 button. Distinct green tint to separate the action. */
 .gr-t .gr-ind{display:inline-block;padding:2px 8px;border:1px solid #2e7d32;color:#1b5e20;
-  background:#fff;border-radius:12px;font-size: 0.625rem;font-weight:700;cursor:pointer;
+  background:#fff;border-radius:12px;font-size:0.9375rem;font-weight:700;cursor:pointer;
   font-family:inherit;transition:all .15s}
 .gr-t .gr-ind:hover{background:#e8f5e9}
 /* vertical stack for the two action buttons in name cell */
@@ -505,21 +541,21 @@ textarea{resize:vertical;min-height:60px}
 .bk-row:last-child{border-bottom:none}
 .bk-row.filled{background:#e8f5e9}
 .bk-row.existing{background:#fff3e0}
-.bk-row .bk-nm{font-size: 0.8125rem;font-weight:700;color:var(--g9);min-width:0;overflow-wrap:anywhere}
-.bk-row .bk-nm .bk-rm{font-size: 0.625rem;color:var(--g6);font-weight:400;margin-left:4px}
-.bk-row .bk-nm .bk-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size: 0.5625rem;font-weight:700;margin-left:4px;vertical-align:middle}
-.bk-row .bk-prev{font-size: 0.625rem;color:var(--g6);line-height:1.3}
-.bk-row .bk-prev b{font-size: 0.75rem;color:var(--g9);font-variant-numeric:tabular-nums}
+.bk-row .bk-nm{font-size:0.9375rem;font-weight:700;color:var(--g9);min-width:0;overflow-wrap:anywhere}
+.bk-row .bk-nm .bk-rm{font-size:0.9375rem;color:var(--g6);font-weight:400;margin-left:4px}
+.bk-row .bk-nm .bk-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size:0.9375rem;font-weight:700;margin-left:4px;vertical-align:middle}
+.bk-row .bk-prev{font-size:0.9375rem;color:var(--g6);line-height:1.3}
+.bk-row .bk-prev b{font-size:0.9375rem;color:var(--g9);font-variant-numeric:tabular-nums}
 .bk-row .bk-in{display:flex;align-items:center;gap:4px}
-.bk-row .bk-in input{width:80px;padding:6px 8px;font-size: 0.8125rem;font-variant-numeric:tabular-nums;text-align:end;border:1px solid var(--g3);border-radius:6px}
+.bk-row .bk-in input{width:80px;padding:6px 8px;font-size:0.9375rem;font-variant-numeric:tabular-nums;text-align:end;border:1px solid var(--g3);border-radius:6px}
 .bk-row .bk-in input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-l)}
-.bk-row .bk-in .bk-unit{font-size: 0.6875rem;color:var(--g6)}
-.bk-row .bk-badge{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:flex-end;font-size: 0.625rem}
-.bk-row .bk-badge .bk-ex{padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-weight:700;font-size: 0.5625rem}
-.bk-row .bk-badge .bk-ch{padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700;font-size: 0.5625rem}
+.bk-row .bk-in .bk-unit{font-size:0.9375rem;color:var(--g6)}
+.bk-row .bk-badge{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:flex-end;font-size:0.9375rem}
+.bk-row .bk-badge .bk-ex{padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-weight:700;font-size:0.9375rem}
+.bk-row .bk-badge .bk-ch{padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700;font-size:0.9375rem}
 /* 個別保存ボタン（各行右端の作業用 UI・印刷時は非表示） */
 .bk-row .bk-act{display:flex;justify-content:flex-end}
-.bk-row .bk-save{padding:6px 10px;font-size: 0.75rem;font-weight:700;white-space:nowrap;
+.bk-row .bk-save{padding:6px 10px;font-size:0.9375rem;font-weight:700;white-space:nowrap;
   border:1px solid var(--pri);background:var(--pri);color:#fff;border-radius:6px;cursor:pointer;transition:all .12s}
 .bk-row .bk-save:hover{background:var(--pri-d);border-color:var(--pri-d)}
 .bk-row .bk-save:active{transform:scale(.96)}
@@ -536,21 +572,21 @@ textarea{resize:vertical;min-height:60px}
 /* 3-year modal: 3 stacked 12-month blocks */
 .gr-3y-blocks{display:flex;flex-direction:column;gap:12px}
 .gr-3y-block{border:1px solid var(--g2);border-radius:8px;background:#fff;overflow:auto}
-.gr-3y-block .gr-3y-ttl{padding:6px 12px;background:var(--g0);border-bottom:1px solid var(--g1);font-size: 0.6875rem;font-weight:700;color:var(--g7);position:sticky;left:0;display:flex;align-items:center;gap:8px}
-.gr-3y-block .gr-3y-ttl small{font-size: 0.625rem;color:var(--g6);font-weight:400}
-.gr-3y-block table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size: 0.75rem;font-variant-numeric:tabular-nums}
+.gr-3y-block .gr-3y-ttl{padding:6px 12px;background:var(--g0);border-bottom:1px solid var(--g1);font-size:0.9375rem;font-weight:700;color:var(--g7);position:sticky;left:0;display:flex;align-items:center;gap:8px}
+.gr-3y-block .gr-3y-ttl small{font-size:0.9375rem;color:var(--g6);font-weight:400}
+.gr-3y-block table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:0.9375rem;font-variant-numeric:tabular-nums}
 .gr-3y-block th,.gr-3y-block td{padding:7px 10px;border-bottom:1px solid var(--g1);border-right:1px solid var(--g1);text-align:center;white-space:nowrap;background:#fff}
-.gr-3y-block thead th{background:var(--pri);color:#fff;font-weight:700;font-size: 0.6875rem;position:sticky;top:0;z-index:2}
+.gr-3y-block thead th{background:var(--pri);color:#fff;font-weight:700;font-size:0.9375rem;position:sticky;top:0;z-index:2}
 .gr-3y-block th.gr-nm,.gr-3y-block td.gr-nm{position:sticky;left:0;z-index:1;text-align:start;background:#fff;min-width:120px;max-width:180px;border-right:2px solid var(--g2);font-weight:700;padding:7px 10px}
 .gr-3y-block thead th.gr-nm{z-index:3;background:var(--pri);color:#fff}
-.gr-3y-block .gr-wt{font-weight:700;color:var(--g9);font-size: 0.8125rem;line-height:1.25}
-.gr-3y-block .gr-bmi{font-size: 0.625rem;color:var(--g6);line-height:1.2;margin-top:1px}
+.gr-3y-block .gr-wt{font-weight:700;color:var(--g9);font-size:0.9375rem;line-height:1.25}
+.gr-3y-block .gr-bmi{font-size:0.9375rem;color:var(--g6);line-height:1.2;margin-top:1px}
 .gr-3y-block .gr-em{color:var(--g5)}
-.gr-3y-block .gr-rm{color:var(--g6);font-size: 0.625rem;font-weight:400}
+.gr-3y-block .gr-rm{color:var(--g6);font-size:0.9375rem;font-weight:400}
 .gr-3y-block .gr-hl{background:#fff59d !important}
 
 /* API sync status badge (in header) */
-.api-bd{display:flex;align-items:center;gap:4px;font-size: 0.625rem;padding:3px 8px;border-radius:10px;
+.api-bd{display:flex;align-items:center;gap:4px;font-size:0.9375rem;padding:3px 8px;border-radius:10px;
   font-weight:700;transition:all .3s;white-space:nowrap}
 .api-ok{background:rgba(46,125,50,.28);color:#c8e6c9}
 .api-er{background:rgba(198,40,40,.30);color:#ffcdd2}
@@ -560,77 +596,77 @@ textarea{resize:vertical;min-height:60px}
 .spin{display:inline-block;animation:spin .8s linear infinite;line-height:1}
 /* 接続診断パネル：🩺 ボタンの結果 / 接続失敗時の詳細情報 */
 .api-diag{margin-top:10px;padding:10px 12px;background:#0d2031;color:#e1f1ff;border:1px solid #1e3a52;
-  border-radius:8px;font-size: 0.6875rem;font-family:ui-monospace,Menlo,Consolas,monospace;
+  border-radius:8px;font-size:0.9375rem;font-family:ui-monospace,Menlo,Consolas,monospace;
   white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;line-height:1.55}
 .api-diag.is-ok{border-color:#2e7d32;background:#0d2820}
 .api-diag.is-err{border-color:#c62828;background:#2a0d0d}
 .api-help{margin-top:12px;padding:10px 12px;background:var(--g0);border:1px solid var(--g2);
-  border-radius:8px;font-size: 0.6875rem;color:var(--g7);line-height:1.7}
+  border-radius:8px;font-size:0.9375rem;color:var(--g7);line-height:1.7}
 .api-help summary{cursor:pointer;font-weight:700;color:var(--g8);padding:2px 0}
 .api-help summary:hover{color:var(--pri-d)}
 .api-help ol{margin:8px 0 4px 18px;padding:0}
 .api-help li{margin-bottom:8px}
-.api-help code{background:var(--g1);padding:1px 5px;border-radius:4px;font-size: 0.625rem;
+.api-help code{background:var(--g1);padding:1px 5px;border-radius:4px;font-size:0.9375rem;
   font-family:ui-monospace,Menlo,Consolas,monospace}
 /* URL 保存済み ステータス表示（永続化されている事を視覚的に明示） */
-.api-persist-badge{display:inline-block;margin-left:8px;padding:2px 9px;font-size: 0.625rem;font-weight:700;
+.api-persist-badge{display:inline-block;margin-left:8px;padding:2px 9px;font-size:0.9375rem;font-weight:700;
   background:#e8f5e9;color:#1b5e20;border:1px solid #66bb6a;border-radius:10px;vertical-align:middle;
   letter-spacing:.5px}
 .api-persist-badge.is-partial{background:#fff8e1;color:#e65100;border-color:#ffb74d}
-.api-persist-detail{margin-top:6px;padding:6px 10px;font-size: 0.6875rem;line-height:1.55;
+.api-persist-detail{margin-top:6px;padding:6px 10px;font-size:0.9375rem;line-height:1.55;
   background:#f1f8e9;border:1px solid #c5e1a5;border-radius:6px;color:#33691e;
   font-family:ui-monospace,Menlo,Consolas,monospace}
 .api-persist-detail.is-partial{background:#fff3e0;border-color:#ffb74d;color:#e65100}
 
 /* 生年月日 三分割入力 + 和暦ヘルパー */
 .bd-trio{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.bd-trio input{font-family:inherit;font-size: 0.875rem;font-weight:700;text-align:center;
+.bd-trio input{font-family:inherit;font-size:0.9375rem;font-weight:700;text-align:center;
   padding:6px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:border-color .12s,box-shadow .12s;min-width:0}
 .bd-trio input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(11,87,208,.15)}
 .bd-trio input.bd-err{border-color:var(--ng);box-shadow:0 0 0 3px rgba(198,40,40,.15)}
 .bd-trio #mdBirthY{width:64px}
 .bd-trio #mdBirthM,.bd-trio #mdBirthD{width:42px}
-.bd-trio .bd-sep{font-size: 0.75rem;color:var(--g6);font-weight:400}
-.bd-age{display:inline-block;margin-left:6px;font-size: 0.6875rem;font-weight:700;color:var(--pri-d);
+.bd-trio .bd-sep{font-size:0.9375rem;color:var(--g6);font-weight:400}
+.bd-age{display:inline-block;margin-left:6px;font-size:0.9375rem;font-weight:700;color:var(--pri-d);
   background:var(--pri-l);padding:1px 8px;border-radius:8px;vertical-align:baseline}
 .bd-age:empty{display:none}
-.bd-eras{margin-top:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size: 0.6875rem}
-.bd-era-lbl{color:var(--g6);font-size: 0.625rem;font-weight:700;margin-right:2px}
-.bd-era-b{font-family:inherit;font-size: 0.6875rem;font-weight:700;padding:3px 9px;
+.bd-eras{margin-top:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:0.9375rem}
+.bd-era-lbl{color:var(--g6);font-size:0.9375rem;font-weight:700;margin-right:2px}
+.bd-era-b{font-family:inherit;font-size:0.9375rem;font-weight:700;padding:3px 9px;
   border:1px solid var(--g3);border-radius:11px;background:#fff;color:var(--g8);
   cursor:pointer;transition:all .12s}
 .bd-era-b:hover{border-color:var(--pri);color:var(--pri-d);background:var(--pri-l)}
 .bd-era-b.on{background:var(--pri);color:#fff;border-color:var(--pri)}
-.bd-era-y{font-family:inherit;font-size: 0.8125rem;font-weight:700;text-align:center;width:54px;
+.bd-era-y{font-family:inherit;font-size:0.9375rem;font-weight:700;text-align:center;width:54px;
   padding:3px 4px;border:1px solid var(--g3);border-radius:6px;background:#fff;
   font-variant-numeric:tabular-nums;transition:all .12s}
 .bd-era-y:disabled{background:var(--g1);color:var(--g5);cursor:not-allowed}
 .bd-era-y:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(11,87,208,.15)}
-.bd-era-hint{font-size: 0.625rem;color:var(--g6);margin-left:4px}
+.bd-era-hint{font-size:0.9375rem;color:var(--g6);margin-left:4px}
 
 /* 入居者マスタ由来の値であることの注記（身長欄）。入力は妨げないので枠は付けない */
-.md-src-note{margin-top:6px;font-size: 0.6875rem;line-height:1.5;color:var(--g6)}
+.md-src-note{margin-top:6px;font-size:0.9375rem;line-height:1.5;color:var(--g6)}
 
 /* 車椅子の変更履歴（設定→入居者の編集）。変更日から新しい重さで計算する */
 .wc-log{margin-top:8px;padding:8px 10px;border:1px solid var(--g3);border-radius:8px;background:var(--g0)}
-.wc-log-hd{font-size: 0.75rem;font-weight:700;color:var(--g9)}
+.wc-log-hd{font-size:0.9375rem;font-weight:700;color:var(--g9)}
 .wc-log-hd small{display:block;font-weight:400;color:var(--g7);margin-top:2px}
 .wc-log-row{display:flex;align-items:center;gap:6px;margin-top:6px}
 /* 枠の分だけ外へ広げ、中の行の幅を他の行と同じにする（日付が切れないように） */
 .wc-log-item.latest{margin:6px -8px 0;padding:6px;border:2px solid var(--pri);border-radius:8px;background:#fff}
 .wc-log-item.latest .wc-log-row{margin-top:4px}
-.wc-log-tag{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--pri);color:#fff;font-size: 0.6875rem;font-weight:700}
+.wc-log-tag{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--pri);color:#fff;font-size:0.9375rem;font-weight:700}
 .wc-log-row input[type=date]{flex:1 1 auto;min-width:0}
 .wc-log-row input[type=number]{flex:0 0 5.5em;width:5.5em}
-.wc-log-row .wc-log-u{font-size: 0.75rem;color:var(--g7)}
+.wc-log-row .wc-log-u{font-size:0.9375rem;color:var(--g7)}
 .wc-log-row .wc-log-del{flex:0 0 auto;min-width:44px;min-height:44px;padding:0 8px;border:1px solid var(--g3);border-radius:8px;background:#fff;color:#c62828;cursor:pointer}
 .wc-log-add{margin-top:8px;min-height:44px;width:100%;border:1px dashed var(--pri);border-radius:8px;background:#fff;color:var(--pri);cursor:pointer}
-.wc-log-empty{margin-top:6px;font-size: 0.6875rem;color:var(--g7)}
+.wc-log-empty{margin-top:6px;font-size:0.9375rem;color:var(--g7)}
 
 /* 退去者表示 */
 .md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
-  border-radius:8px;color:#e65100;font-size: 0.75rem;font-weight:700;display:flex;align-items:center;gap:8px}
+  border-radius:8px;color:#e65100;font-size:0.9375rem;font-weight:700;display:flex;align-items:center;gap:8px}
 .md-discharge-banner .dc-ic{font-size: 1rem}
 .md-discharge-banner .dc-msg{flex:1}
 /* mdDischarge ボタンは bn bo (orange) を継承 */
@@ -641,16 +677,16 @@ textarea{resize:vertical;min-height:60px}
 .rli.rli-discharged{opacity:.62;background:#fafafa}
 .rli.rli-discharged .rli-n{color:var(--g7)}
 .rli .rli-tag-discharged{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:8px;
-  font-size: 0.625rem;font-weight:700;background:#fff3e0;color:#e65100;vertical-align:middle}
+  font-size:0.9375rem;font-weight:700;background:#fff3e0;color:#e65100;vertical-align:middle}
 .rli-section-divider{margin:12px 0 6px;padding:6px 10px;border-top:1px dashed var(--g3);
-  font-size: 0.6875rem;font-weight:700;color:var(--g6);background:transparent}
+  font-size:0.9375rem;font-weight:700;color:var(--g6);background:transparent}
 
 /* dropdown の退去者表記 */
 select option.is-discharged{color:var(--g6)}
 
 /* ストレージ診断パネル */
 .storage-diag{margin-top:12px;padding:10px 12px;background:var(--g0);border:1px solid var(--g2);
-  border-radius:8px;font-size: 0.6875rem;line-height:1.55}
+  border-radius:8px;font-size:0.9375rem;line-height:1.55}
 .storage-diag .sd-row{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
 .storage-diag .sd-l{color:var(--g6);min-width:96px}
 .storage-diag .sd-v{color:var(--g9);font-weight:700;font-variant-numeric:tabular-nums}
@@ -664,8 +700,8 @@ select option.is-discharged{color:var(--g6)}
 .ld-ov.on{display:flex}
 .ld-ring{width:44px;height:44px;border:4px solid rgba(255,255,255,.3);
   border-top-color:#fff;border-radius:50%;animation:spin .75s linear infinite}
-.ld-msg{color:#fff;font-size: 0.875rem;font-weight:700}
-.ld-hint{color:rgba(255,255,255,.6);font-size: 0.6875rem;margin-top:4px}
+.ld-msg{color:#fff;font-size:0.9375rem;font-weight:700}
+.ld-hint{color:rgba(255,255,255,.6);font-size:0.9375rem;margin-top:4px}
 
 /* header layout shift: allow badge + date side-by-side */
 .hdr-r2{display:flex;align-items:center;gap:10px}
@@ -685,6 +721,113 @@ select option.is-discharged{color:var(--g6)}
     scroll-behavior: auto !important;
   }
 }
+
+/* ── 使いやすさの改善 第3弾（2026-10-17・代表者承認）。元の指定より後に置く（同じ強さの指定は後が勝つ） ──
+   文字は介護現場要件（本文17px・補助15px以上）。印刷用の測定用紙（#printOverlay）は pt 指定のまま触らない */
+.lt .nm-link{font-size:1.0625rem}
+.lt .wt-cell{font-size:1.125rem}
+.lt .df{font-size:1.0625rem}
+.lt td{line-height:1.3}
+.ls-sub{font-size:0.9375rem;color:var(--g7);margin-top:2px;line-height:1.35;font-weight:400}
+.lt .ls-sub .mf b{color:var(--g9)}
+.lt td{padding:6px 8px}
+.lt th{font-size:0.9375rem;padding:9px 8px}
+.lt .c-sp{width:124px}
+.spark{display:block;margin:0 auto}
+.sp-none{color:var(--g5)}
+.cd-t{font-size:1.0625rem}
+input[type="text"],input[type="number"],input[type="month"],input[type="date"],input[type="password"],textarea,select{font-size:1.0625rem}
+.btn-go{font-size:1.0625rem}
+.st-v{font-size:1.375rem}
+.tnav button{font-size:0.9375rem}
+@media(max-width:480px){.tnav button{font-size:0.9375rem}}
+/* <small> はブラウザが一回り小さくする（12.5px）ので、画面と小窓の中では 15px にそろえる。印刷の用紙は対象外 */
+.scr small,.mk small{font-size:0.9375rem}
+/* 設定の説明の長いコード（GAS の文など）は折り返す（スマホで横にはみ出さない） */
+.scr code{overflow-wrap:anywhere;word-break:break-all}
+/* 押す場所は最低 44px（介護現場要件：誤タップは記録ミスに直結）。表の中の小さな文字のボタンも含める */
+.scr .bn,.mk .bn,.mp-w button,.rg-b,.iv-yrange-rst,.fc button,.bk-row .bk-save,button[data-st]{min-height:44px}
+.mp-w button,.rg-b{min-width:44px}
+.mp-w input[type="month"],.thr-tb input[type="number"],.in-meal-edit,.iv-yrange-i{min-height:44px}
+/* 検知ルールの表（5列）は、狭い画面ではカードの中で横にずらして見る（ページ全体を横に広げない） */
+@media(max-width:600px){ #thrTb{display:block;overflow-x:auto;max-width:100%} }
+/* ── 第4弾：アラートの「確認した」とグラフの食事形態の変わり目（2026-10-17） ── */
+.al-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.al-ack-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;padding:8px;border:1px solid var(--g3);border-radius:8px;background:#fff}
+.al-ack-f select{width:auto;min-width:200px;min-height:44px}
+.al-ack-f input[type="text"]{flex:1 1 200px;min-height:44px}
+.al-ack-info{margin-top:6px;font-size:0.9375rem;color:var(--g7)}
+.al-done{margin-top:12px}
+.al-done>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:1rem;font-weight:700;color:var(--g7)}
+.al-done .al-i{opacity:.8}
+.iv-note .nt-meal{display:inline-block;width:14px;border-top:2px dashed #7e57c2;vertical-align:middle;margin-right:4px}
+/* 一覧の操作（対象月・検索・絞り込み）は広い画面では1列にまとめる。一覧と集計は 1200px まで広げる */
+.scr[data-sc="list"],.scr[data-sc="grid"]{max-width:1200px}
+@media(min-width:900px){
+  .lc-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:10px}
+  .lc-bar>.mp-w,.lc-bar>.srch,.lc-bar>.fc{margin-bottom:0}
+  .lc-bar>.srch{flex:1 1 160px;min-width:160px}
+}
+.lt .c-wt .ls-sub{white-space:nowrap}
+/* スマホ（600px以下）：表の見出しを隠し、1人を3段のまとまりで見せる（横にスクロールしない） */
+@media(max-width:600px){
+  .scr[data-sc="list"]{padding-left:8px;padding-right:8px}
+  .scr[data-sc="list"] .cd{padding:12px 10px}
+  .lt{min-width:0}
+  .lt,.lt tbody{display:block;width:100%}
+  .lt thead{display:none}
+  .lt-w{overflow-x:visible}
+  .lt tbody tr.clk{display:grid;grid-template-columns:minmax(96px,1fr) auto 132px;grid-template-areas:"nm st wt" "sp d1 d6";
+    column-gap:10px;row-gap:6px;padding:10px 10px;border-bottom:1px solid var(--g2);align-items:start}
+  .lt tbody tr.clk td{min-width:0}
+  .lt tbody tr.clk td.c-nm .ls-sub{white-space:normal}   /* 食事形態ととろみ・減塩の札は省かず折り返す（レビュー指摘） */
+  .lt tbody tr.clk td.c-st{text-align:center}
+  .lt tbody tr.clk td.c-wt .ls-sub{white-space:normal}
+  .lt tbody tr.clk td.c-wt .ls-multi{display:none}   /* 同じ月の件数はスマホでは省く（個別の画面で見られる） */
+  .lt tbody tr.clk td.c-sp .spark{width:100%;max-width:112px;height:auto}
+  /* 一覧の操作も詰める：対象月の文字を省き、絞り込みは横1列（はみ出す分は横にずらして見る） */
+  .lc-bar .mp-w>span:first-child{display:none}
+  .fc{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .fc::-webkit-scrollbar{display:none}
+  .fc button{flex:0 0 auto;min-height:44px}
+  .lt tbody tr.clk td{border:none;padding:0;text-align:start}
+  .lt tbody tr.clk td.c-nm{grid-area:nm;padding-left:0}
+  .lt tbody tr.clk td.c-wt{grid-area:wt;text-align:end}
+  .lt tbody tr.clk td.c-sp{grid-area:sp;width:auto}
+  .lt tbody tr.clk td.c-sp .spark{margin:0}
+  .lt tbody tr.clk td.c-d1{grid-area:d1}
+  .lt tbody tr.clk td.c-d6{grid-area:d6;text-align:end}
+  .lt tbody tr.clk td.c-st{grid-area:st}
+  .lt tbody tr.clk td.c-d1::before,.lt tbody tr.clk td.c-d6::before{content:attr(data-l);display:block;font-size:0.9375rem;color:var(--g6)}
+  .lt tr.alert-ng td:first-child,.lt tr.alert-w td:first-child{border-left:none}
+  .lt tr.alert-ng{box-shadow:inset 4px 0 0 var(--ng)}
+  .lt tr.alert-w{box-shadow:inset 4px 0 0 var(--warn-br)}
+}
+/* スマホ・小さい画面（720px以下）：タブを画面の下に固定し、見出しを詰める（親指で届く位置へ） */
+@media(max-width:720px){
+  .hdr{padding:8px 14px}
+  .hdr-sub{display:none}
+  .hdr-btn{min-height:44px}
+  .tnav{position:fixed;left:0;right:0;bottom:0;z-index:150;border-bottom:none;border-top:1px solid var(--g2);
+    box-shadow:0 -3px 12px rgba(0,0,0,.12);padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden}
+  .tnav button{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;padding:6px 0 7px;min-height:58px;
+    border-bottom:none;border-top:3px solid transparent;font-size:0.9375rem;letter-spacing:-0.02em}
+  .tnav button.on{border-top-color:var(--pri)}
+  .tnav svg{width:20px;height:20px}
+  .tnav .badge{position:absolute;top:4px;left:calc(50% + 6px);margin-left:0}
+  .scr{padding-bottom:150px}
+  /* 下に固定したタブ（58px）の上に保存ボタンを出す（タブに隠れて押せない・レビュー指摘） */
+  #inSave{bottom:calc(70px + env(safe-area-inset-bottom, 0px))}
+}
+/* とても狭い時（360px以下・文字を大きくした iPhone など）：1人を4段に組み替え、タブはバーの中だけ横にずらす */
+@media(max-width:360px){
+  .lt tbody tr.clk{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"nm nm" "wt st" "d1 d6" "sp sp"}
+  .lt tbody tr.clk td.c-wt{text-align:start}
+  .lt tbody tr.clk td.c-st{text-align:end}
+  .tnav{overflow-x:auto}
+  .tnav button{flex:0 0 auto;min-width:64px;padding-left:6px;padding-right:6px}
+}
+@media print{.tnav{display:none !important}}
 </style>
 </head>
 <body>
@@ -758,13 +901,14 @@ select option.is-discharged{color:var(--g6)}
         <span id="listCount">—</span>
       </span>
     </div>
+    <div class="lc-bar">
     <div class="mp-w">
-      <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">対象月</span>
+      <span style="font-size:0.9375rem;color:var(--g7);font-weight:700;margin-right:4px">対象月</span>
       <input type="month" id="listMonth">
       <button id="listMonthPrev" aria-label="対象月を前の月へ" title="対象月を前の月へ">◀</button>
       <button id="listMonthNext" aria-label="対象月を次の月へ" title="対象月を次の月へ">▶</button>
       <button id="listMonthNow" style="margin-left:6px">今月</button>
-      <label style="display:inline-flex;align-items:center;gap:5px;font-size: 0.75rem;color:var(--g7);margin-left:12px;cursor:pointer"><input type="checkbox" id="wrShowNonTarget">対象外も表示</label>
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:0.9375rem;color:var(--g7);margin-left:12px;cursor:pointer"><input type="checkbox" id="wrShowNonTarget">対象外も表示</label>
     </div>
     <div class="srch">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -774,16 +918,18 @@ select option.is-discharged{color:var(--g6)}
       <button class="on" data-f="all">全員</button>
       <button data-f="alert">アラートあり</button>
       <button data-f="missing">未入力</button>
+      <button data-f="risk">低栄養リスク</button>
+    </div>
     </div>
     <div class="lt-w">
       <table class="lt">
         <thead>
           <tr>
             <th class="nm" style="text-align:start;padding-left:12px">入居者</th>
+            <th>12か月の動き</th>
             <th>今月(kg)</th>
             <th>前月比</th>
             <th>6ヶ月比</th>
-            <th>食事形態</th>
             <th>状態</th>
           </tr>
         </thead>
@@ -807,6 +953,7 @@ select option.is-discharged{color:var(--g6)}
       <span class="eb-ic">✎</span>
       <span class="eb-msg"></span>
       <button type="button" class="bn bo bsm" id="inEditCancel">新規入力に戻す</button>
+      <button type="button" class="bn br bsm eb-del" id="inEditDelete">この記録を削除</button>
     </div>
 
     <div class="fg">
@@ -848,7 +995,7 @@ select option.is-discharged{color:var(--g6)}
         <button type="button" data-st="0.5">+0.5</button>
         <button type="button" data-st="1">+1.0</button>
       </div>
-      <div id="inWeightHint" style="font-size: 0.6875rem;color:var(--g6);margin-top:6px;text-align:center"></div>
+      <div id="inWeightHint" style="font-size:0.9375rem;color:var(--g6);margin-top:6px;text-align:center"></div>
     </div>
 
     <!-- 車椅子モード -->
@@ -867,14 +1014,14 @@ select option.is-discharged{color:var(--g6)}
             <input type="number" id="inChair" step="0.1" min="1" max="50" inputmode="decimal" placeholder="0.0">
             <span class="unit">kg</span>
           </div>
-          <div style="font-size: 0.625rem;color:var(--g6);margin-top:4px;text-align:center" id="inChairHint"></div>
+          <div style="font-size:0.9375rem;color:var(--g6);margin-top:4px;text-align:center" id="inChairHint"></div>
         </div>
       </div>
       <div class="wc-calc" id="wcCalc">
         <div class="wc-eq">実測 — 車椅子 = 体重</div>
         <div class="wc-net"><span id="wcNet">—</span> <small>kg</small></div>
       </div>
-      <div id="inChairWeightHint" style="font-size: 0.6875rem;color:var(--g6);margin-top:6px;text-align:center"></div>
+      <div id="inChairWeightHint" style="font-size:0.9375rem;color:var(--g6);margin-top:6px;text-align:center"></div>
     </div>
 
     <!-- 食事形態（読み取り専用） — 編集は設定画面の入居者編集から -->
@@ -896,7 +1043,7 @@ select option.is-discharged{color:var(--g6)}
     </div>
 
     <button class="btn-go" id="inSave">記録を保存</button>
-    <div id="inExistsNote" style="text-align:center;margin-top:10px;font-size: 0.75rem;color:var(--warn-tx);font-weight:700"></div>
+    <div id="inExistsNote" style="text-align:center;margin-top:10px;font-size:0.9375rem;color:var(--warn-tx);font-weight:700"></div>
 
     <div class="iex-wrap" id="inExistingList"></div>
   </div>
@@ -918,15 +1065,17 @@ select option.is-discharged{color:var(--g6)}
       <select id="ivResident"></select>
     </div>
     <div class="st-g" id="ivStats"></div>
-    <!-- Y軸範囲オーバーライド：空欄=自動、数値=固定 -->
+    <!-- Y軸範囲オーバーライド：空欄=自動、数値=固定。普段は自動で足りるので畳む（2026-10-17） -->
+    <details class="iv-yrange-d" id="ivYRangeD"><summary>縦軸の範囲を指定する</summary>
     <div class="iv-yrange" id="ivYRange">
       <span class="iv-yrange-l">Y軸表示範囲</span>
-      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="0">
+      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
       <span class="iv-yrange-sep">〜</span>
       <input type="number" id="ivYMax" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
       <span class="iv-yrange-u">kg</span>
       <button type="button" class="iv-yrange-rst" id="ivYRangeReset" title="自動範囲に戻す">リセット</button>
     </div>
+    </details>
     <div id="ivChartWrapY1" class="iv-chart-wrap">
       <div class="iv-chart-ttl" id="ivChartTtl">過去1年の推移</div>
       <div class="ch-w"><canvas id="ivChartY1"></canvas></div>
@@ -938,6 +1087,7 @@ select option.is-discharged{color:var(--g6)}
     <div class="iv-note">
       <span class="nt"><i class="dot big c-ng-up"></i><i class="dot big c-ng-dn"></i><b>警告</b>＝月次しきい値の警告（増加は赤／減少は青）</span>
       <span class="nt"><i class="dot big c-w-up"></i><i class="dot big c-w-dn"></i><b>注意</b>＝月次しきい値の注意、または前回比 ±2.0kg 以上（増加はオレンジ／減少は水色）</span>
+      <span class="nt"><i class="nt-meal"></i><b>紫の点線</b>＝食事形態（主食・副食）が変わった月</span>
       <span class="nt"><i class="dot sm c-plain"></i>黒＝どちらにも当たらない測定</span>
       <span class="nt">丸をタップすると数値が出ます。比べる相手は<b>表示中の期間の中で1つ前の測定</b>です。</span>
     </div>
@@ -981,16 +1131,16 @@ select option.is-discharged{color:var(--g6)}
       <span class="cd-t-r" id="gridMeta">—</span>
     </div>
     <div class="mp-w" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <span style="font-size: 0.75rem;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
+      <span style="font-size:0.9375rem;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
       <input type="month" id="gridMonth">
       <button id="gridMonthPrev" aria-label="基準月を前の月へ" title="基準月を前の月へ">◀</button>
       <button id="gridMonthNext" aria-label="基準月を次の月へ" title="基準月を次の月へ">▶</button>
       <button id="gridMonthNow" style="margin-left:6px">今月</button>
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
-    <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:8px">
+    <div style="font-size:0.9375rem;color:var(--g6);margin-bottom:8px">
       セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
-      <b>氏名セル</b>…今月の入力画面を開く／<b>体重セル</b>…その記録を編集（空白は新規入力）
+      <b>氏名セル</b>…入力・個別のグラフ・3年分の表を選ぶ／<b>体重セル</b>…その記録を編集（空白は新規入力）／<b>▼▲注意・警告</b>…その月の前月比・3ヶ月比・6ヶ月比で注意か警告
     </div>
     <div class="gr-wrap">
       <table class="gr-t" id="gridTable"></table>
@@ -1004,7 +1154,7 @@ select option.is-discharged{color:var(--g6)}
     <div class="mk-h" style="align-items:flex-start;gap:12px">
       <div style="flex:1;min-width:0">
         <h3 style="font-size: 0.9375rem;line-height:1.3">全入居者 一括入力</h3>
-        <div style="font-size: 0.6875rem;color:var(--g6);margin-top:3px" id="bulkSub">—</div>
+        <div style="font-size:0.9375rem;color:var(--g6);margin-top:3px" id="bulkSub">—</div>
       </div>
       <button class="mk-c" id="bulkClose" aria-label="閉じる">×</button>
     </div>
@@ -1018,13 +1168,13 @@ select option.is-discharged{color:var(--g6)}
           <label class="fl">対象月</label>
           <input type="month" id="bulkMonth">
         </div>
-        <div style="font-size: 0.6875rem;color:var(--g6);padding-bottom:10px">
+        <div style="font-size:0.9375rem;color:var(--g6);padding-bottom:10px">
           <div>空欄の行はスキップされます</div>
           <div>車椅子利用者は<b>実測値</b>（車椅子込み）を入力</div>
         </div>
       </div>
       <div class="bk-wrap" id="bulkList"></div>
-      <div id="bulkSummary" style="font-size: 0.6875rem;color:var(--g7);margin-top:10px">入力済み: 0 名</div>
+      <div id="bulkSummary" style="font-size:0.9375rem;color:var(--g7);margin-top:10px">入力済み: 0 名</div>
     </div>
     <div class="mk-f">
       <button class="bn bs" id="bulkCancel">キャンセル</button>
@@ -1039,13 +1189,13 @@ select option.is-discharged{color:var(--g6)}
     <div class="mk-h" style="align-items:flex-start;gap:12px">
       <div style="flex:1;min-width:0">
         <h3 id="gr3yName" style="font-size: 0.9375rem;line-height:1.3">—</h3>
-        <div style="font-size: 0.6875rem;color:var(--g6);margin-top:3px" id="gr3yInfo">—</div>
+        <div style="font-size:0.9375rem;color:var(--g6);margin-top:3px" id="gr3yInfo">—</div>
       </div>
       <button class="mk-c" id="gr3yClose" aria-label="閉じる">×</button>
     </div>
     <div class="mk-body">
       <div id="gr3yBlocks" class="gr-3y-blocks"></div>
-      <div style="font-size: 0.625rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
+      <div style="font-size:0.9375rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
     </div>
   </div>
 </div>
@@ -1057,7 +1207,7 @@ select option.is-discharged{color:var(--g6)}
       <span>体重変動アラート</span>
       <span class="cd-t-r" id="alMeta">—</span>
     </div>
-    <div id="alRuleDesc" style="font-size: 0.6875rem;color:var(--g7);background:var(--g0);padding:9px 11px;border-radius:8px;margin-bottom:12px;line-height:1.55"></div>
+    <div id="alRuleDesc" style="font-size:0.9375rem;color:var(--g7);background:var(--g0);padding:9px 11px;border-radius:8px;margin-bottom:12px;line-height:1.55"></div>
     <div class="fc" id="alFilter">
       <button class="on" data-f="all">すべて</button>
       <button data-f="ng">警告のみ</button>
@@ -1091,7 +1241,7 @@ select option.is-discharged{color:var(--g6)}
       <span>アラート検知ルール</span>
       <button class="bn bs bsm" id="thrReset" title="初期値に戻す">初期値に戻す</button>
     </div>
-    <div style="font-size: 0.6875rem;color:var(--g6);margin-bottom:10px;line-height:1.5">
+    <div style="font-size:0.9375rem;color:var(--g6);margin-bottom:10px;line-height:1.5">
       対象期間比で <b>kg または %</b> のいずれかが基準値以上のとき、該当レベルのアラートを出します。<br>
       項目を <b>0</b> にすると、その条件は無効になります（もう一方のみで判定）。
     </div>
@@ -1135,7 +1285,7 @@ select option.is-discharged{color:var(--g6)}
   <!-- Google Sheets (GAS Web App) 連携 -->
   <div class="cd">
     <div class="cd-t"><span>🌐 複数端末で共有（Google Sheets 連携）</span></div>
-    <div style="font-size: 0.75rem;color:var(--g7);line-height:1.6;margin-bottom:12px">
+    <div style="font-size:0.9375rem;color:var(--g7);line-height:1.6;margin-bottom:12px">
       Google Apps Script (GAS) で公開した Web App URL を登録すると、入居者・体重記録・検知ルールが<br>
       クラウド（Google Sheets）経由で他の端末と自動同期されます。
     </div>
@@ -1147,7 +1297,7 @@ select option.is-discharged{color:var(--g6)}
     <div class="fg">
       <label class="fl" for="cfgApiToken">合言葉（サーバー側で設定している場合のみ）</label>
       <input type="password" id="cfgApiToken" autocomplete="off" placeholder="未設定なら空のままで構いません">
-      <div id="apiAuthNote" style="margin-top:6px;font-size:0.75rem;color:var(--g6);line-height:1.55"></div>
+      <div id="apiAuthNote" style="margin-top:6px;font-size:0.9375rem;color:var(--g6);line-height:1.55"></div>
     </div>
     <div class="ex-r">
       <button class="bn bp bsm" id="btnApiSave">💾 URLを保存・接続</button>
@@ -1155,7 +1305,7 @@ select option.is-discharged{color:var(--g6)}
       <button class="bn bs bsm" id="btnApiSync">🔄 手動同期</button>
       <button class="bn br bsm" id="btnApiClear">🔌 連携解除</button>
     </div>
-    <div id="apiStatus" style="margin-top:10px;font-size: 0.75rem;color:var(--g6);line-height:1.55">
+    <div id="apiStatus" style="margin-top:10px;font-size:0.9375rem;color:var(--g6);line-height:1.55">
       GASをデプロイして取得したURLを入力して「URLを保存・接続」を押してください。
     </div>
     <!-- 診断結果パネル：🩺 ボタンや接続失敗時に表示される -->
@@ -1179,7 +1329,7 @@ select option.is-discharged{color:var(--g6)}
 
   <div class="cd">
     <div class="cd-t"><span>このアプリについて</span></div>
-    <div style="font-size: 0.75rem;color:var(--g7);line-height:1.7">
+    <div style="font-size:0.9375rem;color:var(--g7);line-height:1.7">
       データはお使いの端末（ブラウザ）に保存されます。別の端末で共有するには上記 Google Sheets 連携、<br>
       もしくはエクスポート/インポートを使用してください。<br>
       <span style="color:var(--g5)">version 1.1</span>
@@ -1946,10 +2096,11 @@ async function apiProbe(){
 function pushResidentFields_(r, fields){
   if(!r || r.id == null) return;
   if(typeof apiPush !== 'function') return;
-  if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r }); return; }
+  const withAck = fields.indexOf('alertAck') >= 0;   // アラートの確認を送る時だけ alertAck を載せる（apiPost が外す・2026-10-17）
+  if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r, _withAck: withAck }); return; }
   /* サーバーにまだ無い人は行ごと送る。項目だけ送ると、サーバーに「番号と車椅子重量だけ」の
      氏名の無い行ができ、次の同期で端末の氏名まで空になる（2026-09-28 修正） */
-  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r }); return; }
+  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r, _withAck: withAck }); return; }
   const part = { id: r.id };
   fields.forEach(k=>{
     // 値が無い項目は null を明示して送る＝「空にせよ」の意思表示（キー省略は温存の意味になる）
@@ -1958,7 +2109,7 @@ function pushResidentFields_(r, fields){
   if(r.updatedAt != null) part.updatedAt = r.updatedAt;
   /* _partial は送信されない（apiPost は resident/record/id/thresholds しか body に載せない）。
      未送信キューに残った時、再送直前の引き直しへ「この項目だけを送る意図だった」と伝えるための印。 */
-  apiPush('saveResident', { resident: part, _partial: true });
+  apiPush('saveResident', { resident: part, _partial: true, _withAck: withAck });
 }
 /* 応答に載っている版から、いま繋がっているサーバーの能力を見直す。
    画面を開いたままサーバーを前の版へ戻された場合、起動時の観測だけでは気づけず、
@@ -2050,6 +2201,16 @@ async function apiGet(){
   const r = await fetchTO(apiUrl + '?action=getAll', { cache:'no-store' });
   return _parseApiResponse(r);
 }
+/* 入居者の行を送る前に、アラートの確認（alertAck）を外す（2026-10-17・レビュー指摘）。
+   alertAck は各端末が別々に付ける記録なので、入居者情報の保存などで行全体を送ると、古い端末の値で
+   他の端末の確認を消してしまう（後勝ちの上書き）。送るのは確認そのものを送る時（_withAck）と、
+   サーバーにまだ無い新しい行の時だけ。キーが無ければ GAS は既存の値を残す */
+function wrResForSend_(data){
+  const r = data && data.resident;
+  if(!r || typeof r !== 'object' || !Object.prototype.hasOwnProperty.call(r, 'alertAck')) return r;
+  if(data._withAck === true || wrServerLacksResident(r.id)) return r;
+  const o = Object.assign({}, r); delete o.alertAck; return o;
+}
 async function apiPost(action, data){
   if(!apiUrl) return null;
   data = data || {};
@@ -2059,7 +2220,7 @@ async function apiPost(action, data){
     action,
     token:    apiToken || undefined,   // 未設定なら送らない（移行中のサーバーは素通しする）
     accessToken: accessToken || undefined,
-    resident: data.resident,
+    resident: wrResForSend_(data),
     record:   data.record,
     id:       data.id,
     thresholds: data.thresholds,
@@ -3938,6 +4099,151 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.body.classList.contains('ps-active')) closePrintSheet();
 });
 
+/* analyze の結果から、閾値を超えた期間を増加・減少に振り分ける（collectAlerts と同じ判定）。{up:'ng'|'w'|null, dn:...} */
+function wrAlertDirs(a){
+  const out = { up: null, dn: null };
+  if(!a) return out;
+  [[a.diff1, a.pct1, THR.m1], [a.diff3, a.pct3, THR.m3], [a.diff6, a.pct6, THR.m6]].forEach(([d, p, th])=>{
+    if(d == null || !th || d === 0) return;
+    const absD = Math.abs(d), absP = Math.abs(p || 0);
+    const lv = ((th.ngKg > 0 && absD >= th.ngKg) || (th.ngPct > 0 && absP >= th.ngPct)) ? 'ng'
+             : ((th.wKg > 0 && absD >= th.wKg) || (th.wPct > 0 && absP >= th.wPct)) ? 'w' : null;
+    if(!lv) return;
+    const k = d > 0 ? 'up' : 'dn';
+    if(out[k] !== 'ng') out[k] = lv;
+  });
+  return out;
+}
+/* ── 低栄養リスク（2026-10-17・代表者承認） ──
+   厚労省「低栄養状態のリスク」（介護保険最新情報 Vol.1217 令和6年3月15日・施設／通所居宅の様式例の判定表）の区切りで、
+   体重減少率と BMI から 低／中／高 を出す。血清アルブミン・食事摂取量・栄養補給法・褥瘡はこのアプリに無いので含めない
+   （＝体重とBMIだけで見た目安。様式の判定そのものではない）。
+     高：1か月に5%以上／3か月に7.5%以上／6か月に10%以上 の減少
+     中：1か月・3か月・6か月のどれかで3%以上の減少、または BMI 18.5 未満
+     低：上のどれにも当たらない（比べる記録かBMIのどちらかがある時だけ）
+   比べる相手は analyze と同じ暦の月（3か月は3→2か月前、6か月は6→5→4か月前で代用）。
+   今の「注意／警告」はそのまま残し、低・中・高は一覧と個別の札に出す。アラートに上げるのは高だけ。 */
+function wrNutritionRisk(rid, ym){
+  try{
+    const a = analyze(rid, ym);
+    if(!a || !a.cur || !wrWeightOk(a.cur)) return null;
+    const resident = residentById(rid);
+    const bmi = bmiOf(a.cur.weight, resident && resident.heightCm);
+    const loss = v => (typeof v === 'number' && isFinite(v)) ? -v : null;   // pct は (今−前)/前。減少を正にする
+    const l1 = loss(a.pct1), l3 = loss(a.pct3), l6 = loss(a.pct6);
+    const hi = [], mid = [];
+    const lbl3 = wrCmpLabel('3か月', a.prev3, 3, ym), lbl6 = wrCmpLabel('6か月', a.prev6, 6, ym);
+    if(l1 != null && l1 >= 5)   hi.push(`1か月で${l1.toFixed(1)}%減少`);
+    if(l3 != null && l3 >= 7.5) hi.push(`${lbl3}で${l3.toFixed(1)}%減少`);
+    if(l6 != null && l6 >= 10)  hi.push(`${lbl6}で${l6.toFixed(1)}%減少`);
+    if(!hi.length){
+      if(l1 != null && l1 >= 3) mid.push(`1か月で${l1.toFixed(1)}%減少`);
+      if(l3 != null && l3 >= 3) mid.push(`${lbl3}で${l3.toFixed(1)}%減少`);
+      if(l6 != null && l6 >= 3) mid.push(`${lbl6}で${l6.toFixed(1)}%減少`);
+    }
+    if(bmi != null && bmi < 18.5) (hi.length ? hi : mid).push(`BMI ${bmi.toFixed(1)}（18.5未満）`);
+    const known = (l1 != null || l3 != null || l6 != null || bmi != null);
+    const compared = (l1 != null || l3 != null || l6 != null);
+    if(hi.length) return { level:'high', label:'高リスク', reasons: hi, bmi, compared };
+    if(mid.length) return { level:'mid', label:'中リスク', reasons: mid, bmi, compared };
+    return known ? { level:'low', label:'低リスク', reasons: [], bmi, compared } : { level:null, label:'判定できない', reasons: [], bmi, compared };
+  }catch(e){ return null; }
+}
+function wrRiskChip(rk){
+  if(!rk || (rk.level !== 'mid' && rk.level !== 'high')) return '';
+  return `<span class="rk rk-${rk.level}" title="${escapeHtml('低栄養リスク（体重とBMIで判定）：' + rk.reasons.join('・'))}">${rk.label}</span>`;
+}
+/* ── 測り直しの促し（2026-10-17・代表者承認） ──
+   前回の測定より 5%以上か 2.5kg以上 変わった値は、保存する前に「測り直しましたか」と確かめる。
+   体重計の置き方・服装・車椅子の重さの取り違えによる偽の増減で、警告が信用されなくなるのを防ぐ。
+   確かめて保存した記録には recheck='confirmed' を残し、履歴に「測り直し済み」と出す。 */
+const WR_RECHECK_PCT = 5, WR_RECHECK_KG = 2.5;
+function wrPrevWeightRec(rid, date, ym, excludeId){
+  const key = date || (ym ? ym + '-01' : '');
+  if(!key) return null;
+  let best = null, bk = '';
+  (DB.records || []).forEach(x=>{
+    if(!x || x.residentId !== rid || (excludeId && x.id === excludeId) || !wrWeightOk(x)) return;
+    const k = x.measuredOn || (x.yearMonth ? x.yearMonth + '-01' : '');
+    if(k && k < key && k > bk){ best = x; bk = k; }
+  });
+  return best;
+}
+function wrRecheckInfo(rid, date, ym, w, excludeId){
+  if(!(w > 0)) return null;
+  const p = wrPrevWeightRec(rid, date, ym, excludeId);
+  if(!p) return null;
+  const df = +(w - p.weight).toFixed(1);
+  const pc = +((w - p.weight) / p.weight * 100).toFixed(1);
+  if(Math.abs(df) >= WR_RECHECK_KG || Math.abs(pc) >= WR_RECHECK_PCT) return { prev: p, df, pc };
+  return null;
+}
+function wrRecheckDesc(info){
+  const p = info.prev, s = info.df > 0 ? '+' : '';
+  const when = (p.measuredOn && /^\d{4}-\d{2}-\d{2}$/.test(p.measuredOn)) ? `${Number(p.measuredOn.slice(5,7))}/${Number(p.measuredOn.slice(8,10))}` : ymFmt(p.yearMonth);
+  return `前回（${when}・${p.weight.toFixed(1)}kg）から ${s}${info.df.toFixed(1)}kg（${s}${info.pc.toFixed(1)}%）`;
+}
+function wrRecheckConfirm(lines){
+  return confirm(`前回の測定から大きく変わっています。\n${lines.join('\n')}\n\n体重計の置き方・服装・車椅子の重さを確かめ、測り直しても同じ値でしたか？\n\nOK＝この値で保存する（「測り直し済み」の印を付けます）\nキャンセル＝保存せずに戻る（測り直してから入れ直してください）`);
+}
+/* ── 一覧の12か月の小さな折れ線（2026-10-17・代表者承認） ──
+   縦軸は全員そろえる：その方の12か月の中で最初の記録を基準に ±10%（はみ出しは端に寄せる）。
+   全員同じ尺度なので、傾きの大きさを人どうしで比べられる。3%以上減った人は最後の点を青で強める */
+function wrSparkSvg(rid, endYm){
+  try{
+    if(!wrYmOk(endYm)) return '';
+    const months = []; for(let k = 11; k >= 0; k--) months.push(ymPrev(endYm, k));
+    const pts = months.map(m=>{ const r = getRecord(rid, m); return (r && wrWeightOk(r)) ? r.weight : null; });
+    const vals = pts.filter(v=> v != null);
+    if(vals.length < 2) return '<span class="sp-none" aria-label="12か月の記録が足りません">—</span>';
+    const base = vals[0];
+    const W = 112, H = 32, P = 4;
+    const y = v=>{ const pc = Math.max(-10, Math.min(10, (v - base) / base * 100)); return P + (H - 2*P) * (1 - (pc + 10) / 20); };
+    const x = i=> P + (W - 2*P) * i / 11;
+    let d = '', pen = false, lastI = -1;
+    pts.forEach((v, i)=>{ if(v == null){ pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' '; pen = true; lastI = i; });
+    const lastV = pts[lastI];
+    const pct = (lastV - base) / base * 100;
+    const down = pct <= -3;
+    const label = `12か月の動き ${base.toFixed(1)}kg から ${lastV.toFixed(1)}kg（${pct > 0 ? '+' : ''}${pct.toFixed(1)}%）`;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>`
+      + `<line x1="${P}" x2="${W-P}" y1="${y(base).toFixed(1)}" y2="${y(base).toFixed(1)}" stroke="#dadce0" stroke-width="1" stroke-dasharray="3 3"/>`
+      + `<path d="${d.trim()}" fill="none" stroke="#5f6368" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`
+      + `<circle cx="${x(lastI).toFixed(1)}" cy="${y(lastV).toFixed(1)}" r="${down ? 3.6 : 2.6}" fill="${down ? '#1565c0' : '#5f6368'}"/></svg>`;
+  }catch(e){ return ''; }
+}
+/* ── 今月まだ測っていない人（2026-10-17・代表者承認） ──
+   厚労省の栄養ケア・マネジメントは「体重は一月毎に測定する」。月の測り漏れを、一覧の
+   「未入力」ボタンの件数で見せる。今月を見ている時は、20日を過ぎたら色を強める。 */
+function wrMissingCount(residents, ym){
+  return (residents || []).filter(r => r && !getRecord(r.id, ym)).length;
+}
+function wrPaintMissingCount(residents){
+  const btn = document.querySelector('#listFilter [data-f="missing"]');
+  if(!btn) return;
+  const n = wrMissingCount(residents, listMonth);
+  let span = btn.querySelector('.fc-n');
+  if(!span){ span = document.createElement('span'); span.className = 'fc-n'; btn.appendChild(span); }
+  span.textContent = n ? `${n}名` : '';
+  const late = n > 0 && listMonth === ymNow() && new Date().getDate() >= 20;
+  btn.classList.toggle('is-late', late);
+  btn.setAttribute('aria-label', n ? `未入力 ${n}名${late ? '（月の後半です）' : ''}` : '未入力 0名');
+}
+/* 未入力の行に「前回 8/12（66日前）」を添える。日数は今月を見ている時だけ出す */
+function wrMissAgoHtml(rid, ym){
+  try{
+    const prev = getRecordsOf(rid).filter(x => wrWeightOk(x) && x.yearMonth < ym);
+    if(!prev.length) return '';
+    const p = prev[prev.length - 1];
+    const d = p.measuredOn || '';
+    let txt = /^\d{4}-\d{2}-\d{2}$/.test(d) ? `前回 ${Number(d.slice(5,7))}/${Number(d.slice(8,10))}` : `前回 ${ymFmt(p.yearMonth)}`;
+    if(ym === ymNow() && /^\d{4}-\d{2}-\d{2}$/.test(d)){
+      const days = Math.round((new Date(dNow() + 'T00:00:00') - new Date(d + 'T00:00:00')) / 86400000);
+      if(days >= 0) txt += `（${days}日前）`;
+    }
+    return `<span class="miss-ago">${escapeHtml(txt)}</span>`;
+  }catch(e){ return ''; }
+}
 function renderList(){
   const body = $('#listBody');
   // 退去者は一覧から除外（履歴は個別画面・設定画面から参照可能）
@@ -3953,11 +4259,14 @@ function renderList(){
     const cur = getRecord(r.id, listMonth);
     const a   = analyze(r.id, listMonth);
 
-    if(listFilter==='alert' && (!a || a.level==='none')) continue;
+    const rk = cur ? wrNutritionRisk(r.id, listMonth) : null;
+    const rkHigh = !!(rk && rk.level === 'high');   // 高リスクはアラートにも上げるので、一覧の「アラートあり」と行の色も合わせる
+    if(listFilter==='alert' && (!a || a.level==='none') && !rkHigh) continue;
     if(listFilter==='missing' && cur) continue;
+    if(listFilter==='risk' && !(rk && (rk.level === 'mid' || rk.level === 'high'))) continue;
 
     const tr = document.createElement('tr');
-    tr.className = 'clk ' + (shown%2 ? 'ev' : '') + (a && a.level==='ng' ? ' alert-ng' : a && a.level==='w' ? ' alert-w' : '');
+    tr.className = 'clk ' + (shown%2 ? 'ev' : '') + ((a && a.level==='ng') || rkHigh ? ' alert-ng' : a && a.level==='w' ? ' alert-w' : '');
     // Row click → individual screen for THIS resident.
     // populateResidentSelect keeps the existing select value, so we MUST set
     // it explicitly here (otherwise it falls back to whatever value the select
@@ -3969,47 +4278,52 @@ function renderList(){
     });
 
     const bmi = cur ? bmiOf(cur.weight, r.heightCm) : null;
+    /* 2026-10-17 第3弾：1行を2段に（大きな値＋下の段に補助）。BMI は測定日と同じ下の段へ */
     const bmiHtml = bmi!=null
-      ? `<div style="font-size: 0.625rem;color:${bmiCat(bmi).c};margin-top:2px">BMI ${bmi.toFixed(1)}</div>`
+      ? ` · <span style="color:${bmiCat(bmi).c}">BMI ${bmi.toFixed(1)}</span>`
       : '';
     // show the measurement date under the weight so users can see that the
     // value shown is the latest in the selected month (useful when a resident
     // has multiple measurements in the same month).
     const monthRecCount = cur ? DB.records.filter(x=> x.residentId===r.id && x.yearMonth===listMonth).length : 0;
     const dateSub = cur
-      ? `<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">${
+      ? `<div class="ls-sub">${
           cur.measuredOn ? cur.measuredOn.slice(5).replace('-','/') : ymFmt(cur.yearMonth)
-        }${monthRecCount>1 ? `<span style="margin-left:3px;padding:0 4px;background:var(--g1);color:var(--g7);border-radius:4px;font-weight:700">最新/${monthRecCount}件</span>` : ''}</div>`
+        }${monthRecCount>1 ? `<span class="ls-multi" style="margin-left:3px;padding:0 4px;background:var(--g1);color:var(--g7);border-radius:4px;font-weight:700">最新/${monthRecCount}件</span>` : ''}${bmiHtml}</div>`
       : '';
     const wtHtml = cur
-      ? `<span class="wt-cell">${cur.weight.toFixed(1)}</span>${dateSub}${bmiHtml}`
-      : `<span class="eb eb-m">未入力</span>`;
+      ? `<span class="wt-cell">${cur.weight.toFixed(1)}</span>${dateSub}`
+      : `<span class="eb eb-m">未入力</span>${wrMissAgoHtml(r.id, listMonth)}`;
 
     const diffHtml = (d, p) => {
-      if(d===null || d===undefined) return '<span style="color:var(--g5);font-size: 0.6875rem">—</span>';
+      if(d===null || d===undefined) return '<span style="color:var(--g5);font-size:0.9375rem">—</span>';
       const cls = d>0 ? 'pos' : d<0 ? 'neg' : 'zero';
       const sign = d>0 ? '+' : '';
-      return `<span class="df ${cls}">${sign}${d.toFixed(1)}kg<br>(${sign}${p.toFixed(1)}%)</span>`;
+      return `<span class="df ${cls}">${sign}${d.toFixed(1)}kg</span><div class="ls-sub">(${sign}${p.toFixed(1)}%)</div>`;
     };
 
-    const togHtml = cur ? TOGGLES.filter(t=>cur[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') : '';
-    const amtChip = (cur && cur.stapleAmount!=null) ? `<span class="sa-chip">${cur.stapleAmount}g</span>` : '';
-    const mfHtml = cur
-      ? `<span class="mf"><b>${mainLabel(cur.stapleForm)}</b>${amtChip} / ${sideLabel(cur.sideForm)}</span>${togHtml?`<div class="tg-row">${togHtml}</div>`:''}`
-      : `<span class="mf" style="color:var(--g5)">—</span>`;
+    /* 食事形態は氏名の下の段へ（2026-10-17 代表者の決定）。今月の記録が無い時は入居者の今の形態 */
+    const mfSrc = cur || r;
+    const togHtml = TOGGLES.filter(t=>mfSrc[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('');
+    const hasMf = !!(mfSrc.stapleForm || mfSrc.sideForm);
+    const mfHtml = hasMf
+      ? `<span class="mf"><b>${mainLabel(mfSrc.stapleForm)}</b>${(mfSrc.stapleAmount!=null && isFinite(Number(mfSrc.stapleAmount)))?` ${Number(mfSrc.stapleAmount)}g`:''}/${sideLabel(mfSrc.sideForm)}</span>${togHtml?` ${togHtml}`:''}`
+      : '';
 
-    const stateHtml = a && a.level==='ng' ? '<span class="eb eb-ng">警告</span>'
+    /* 低栄養リスクが中・高の時は「良好」と並べない（矛盾して見えるため）。注意・警告の札はそのまま残す */
+    const rkChip = wrRiskChip(rk);
+    const stateHtml = (a && a.level==='ng' ? '<span class="eb eb-ng">警告</span>'
                     : a && a.level==='w'  ? '<span class="eb eb-w">注意</span>'
-                    : cur                ? '<span class="eb eb-ok">良好</span>'
-                                          : '<span class="eb eb-m">—</span>';
+                    : cur                ? (rkChip ? '' : '<span class="eb eb-ok">良好</span>')
+                                          : '<span class="eb eb-m">—</span>') + (rkChip ? `${a && a.level !== 'none' ? '<br>' : ''}${rkChip}` : '');
 
     tr.innerHTML = `
-      <td class="nm"><span class="nm-link" data-go-input-rid="${escapeHtml(r.id)}" title="${escapeHtml(r.name)}さんの入力画面を開く">${escapeHtml(r.name)}</span><br><span class="rm">${r.room?`室 ${escapeHtml(r.room)}`:''}</span></td>
-      <td>${wtHtml}</td>
-      <td>${a ? diffHtml(a.diff1, a.pct1) + ((a.diff1==null && a.prev3 !== undefined && (a.prev3 || a.prev6)) ? '<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">前月の記録なし</div>' : '') : '—'}</td>
-      <td>${a ? diffHtml(a.diff6, a.pct6) + (a.diff6!=null && wrCmpNote(a.prev6, 6, listMonth) ? `<div style="font-size: 0.625rem;color:var(--g6);margin-top:1px">${escapeHtml(wrCmpNote(a.prev6, 6, listMonth))}</div>` : '') : '—'}</td>
-      <td>${mfHtml}</td>
-      <td>${stateHtml}</td>
+      <td class="nm c-nm"><span class="nm-link" data-go-input-rid="${escapeHtml(r.id)}" title="${escapeHtml(r.name)}さんの入力画面を開く">${escapeHtml(r.name)}</span><div class="ls-sub"><span class="rm">${r.room?`室 ${escapeHtml(r.room)}`:''}</span>${hasMf ? `${r.room ? ' · ' : ''}${mfHtml}` : ''}</div></td>
+      <td class="c-sp">${wrSparkSvg(r.id, listMonth)}</td>
+      <td class="c-wt">${wtHtml}</td>
+      <td class="c-d1" data-l="前月比">${a ? diffHtml(a.diff1, a.pct1) + ((a.diff1==null && a.prev3 !== undefined && (a.prev3 || a.prev6)) ? '<div class="ls-sub">前月の記録なし</div>' : '') : '—'}</td>
+      <td class="c-d6" data-l="6ヶ月比">${a ? diffHtml(a.diff6, a.pct6) + (a.diff6!=null && wrCmpNote(a.prev6, 6, listMonth) ? `<div class="ls-sub">${escapeHtml(wrCmpNote(a.prev6, 6, listMonth))}</div>` : '') : '—'}</td>
+      <td class="c-st">${stateHtml}</td>
     `;
     body.appendChild(tr);
     shown++;
@@ -4019,6 +4333,7 @@ function renderList(){
     body.innerHTML = `<tr><td colspan="6" class="empty">該当する入居者がいません</td></tr>`;
   }
   $('#listCount').textContent = `${ymFmt(listMonth)} / 表示 ${shown} 名 / 登録 ${DB.residents.length} 名`;
+  try{ wrPaintMissingCount(residents); }catch(e){ /* 件数の表示に失敗しても一覧は止めない */ }
 
   updateAlertBadge();
 }
@@ -4087,6 +4402,8 @@ function diffHtml(rid, ym, currentWeight){
   return `<div class="gr-bmi" style="color:${color};font-weight:700" title="${lbl}（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
 }
 
+/* 集計の表を右端へ送るのは、初めて描いた時と基準月を変えた時だけ（描き直すたびに見ている位置を戻さない・レビュー指摘） */
+let wrGridScrolledFor = null;
 function renderGrid(){
   const tbl = $('#gridTable');
   const residents = sortedResidents();
@@ -4112,17 +4429,13 @@ function renderGrid(){
         ? `<span class="gr-wc">車椅子 ${r.wheelchairKg.toFixed(1)}kg</span>`
         : '';
       const roomHtml = r.room ? `<span class="gr-rm">室 ${escapeHtml(r.room)}</span>` : '';
+      /* 氏名の欄にあった「個別」「3年表示」の小さなボタン2つは、氏名を押した時のメニューへまとめた
+         （2026-10-17・欄が細くなり12か月が1画面に入る。押し間違いも減る） */
       const nameCell = `
-        <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="この入居者の入力画面を開く">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-            <div style="min-width:0;flex:1">
-              <div style="font-size: 0.8125rem;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
-              ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
-            </div>
-            <div class="gr-btns">
-              <button class="gr-ind" data-rid="${escapeHtml(r.id)}" title="個別画面を開く">個別</button>
-              <button class="gr-3y"  data-rid="${escapeHtml(r.id)}" title="過去36ヶ月を表示">3年表示</button>
-            </div>
+        <td class="gr-nm gr-clk" data-go-rid="${escapeHtml(r.id)}" title="押すと、入力・個別・3年表示を選べます" role="button" tabindex="0" aria-haspopup="menu">
+          <div style="min-width:0">
+            <div style="font-size:0.9375rem;line-height:1.3">${escapeHtml(r.name)} ${roomHtml}</div>
+            ${chairChip ? `<div style="margin-top:2px">${chairChip}</div>` : ''}
           </div>
         </td>`;
       let cells = '';
@@ -4131,7 +4444,19 @@ function renderGrid(){
         const hlClsArr = (ym===thisYm) ? ['gr-hl'] : [];
         if(rec){
           const diff = diffHtml(r.id, ym, rec.weight);
-          cells += `<td class="gr-clk ${hlClsArr.join(' ')}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}</td>`;
+          /* 注意・警告の月はセルの地を塗り、▼▲と文字も付ける（色だけに頼らない・2026-10-17） */
+          let alCls = '', alMk = '';
+          try{
+            const a = analyze(r.id, ym);
+            if(a && (a.level === 'ng' || a.level === 'w')){
+              /* 向きは期間ごとに閾値を超えた差の符号で決める（アラート一覧と同じ振り分け。最初の期間の符号で決めると、
+                 6か月で減って直近だけ増えた人が「▲」になる・レビュー指摘） */
+              const dirs = wrAlertDirs(a);
+              alCls = a.level === 'ng' ? ' gr-al-ng' : ' gr-al-w';
+              alMk = ['dn', 'up'].filter(k=> dirs[k]).map(k=> `<span class="gr-al-mk">${k === 'dn' ? '▼' : '▲'}${dirs[k] === 'ng' ? '警告' : '注意'}</span>`).join('');
+            }
+          }catch(e){}
+          cells += `<td class="gr-clk ${hlClsArr.join(' ')}${alCls}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}${alMk}</td>`;
         } else {
           cells += `<td class="gr-em gr-clk ${hlClsArr.join(' ')}" data-new-rid="${escapeHtml(r.id)}" data-new-ym="${ym}" title="新規入力">—</td>`;
         }
@@ -4142,6 +4467,8 @@ function renderGrid(){
 
   tbl.innerHTML = head + '<tbody>' + rows + '</tbody>';
   $('#gridMeta').textContent = `${ymGridLabel(months[0])}〜${ymGridLabel(months[months.length-1])} / ${residents.length}名`;
+  /* 表は古い月から並ぶので、開いた時は新しい月（右端）まで送っておく（スマホで今月が見えないのを防ぐ・2026-10-17） */
+  try{ const wrap = tbl.closest('.gr-wrap'); if(wrap && wrGridScrolledFor !== gridMonth){ wrap.scrollLeft = wrap.scrollWidth; wrGridScrolledFor = gridMonth; } }catch(e){}
 }
 
 /* delegation: 個別 / 3年表示 buttons + cell-click to edit */
@@ -4166,13 +4493,59 @@ $('#gridTable').addEventListener('click', e=>{
     openInputForNew(newCell.dataset.newRid, newCell.dataset.newYm);
     return;
   }
-  // name cell (but not the 3y button, handled above) → new record for this resident (this month)
+  // name cell → メニュー（今月の入力・個別のグラフ・3年表示）。2026-10-17 まではすぐ入力画面を開いていた
   const nameCell = e.target.closest('[data-go-rid]');
   if(nameCell){
-    openInputForNew(nameCell.dataset.goRid, gridMonth);
+    wrOpenGridMenu(nameCell, e);
     return;
   }
 });
+$('#gridTable').addEventListener('keydown', e=>{
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  const nameCell = e.target.closest && e.target.closest('[data-go-rid]');
+  if(nameCell){ e.preventDefault(); wrOpenGridMenu(nameCell, null); }
+});
+/* 集計の氏名のメニュー。表の外（body）に固定位置で出す（表は横に流れるので、表の中に置くと切れる） */
+function wrCloseGridMenu(){ const m = document.getElementById('grMenu'); if(m) m.remove(); }
+let wrGridMenuAt = 0;
+/* スクロールしたら閉じる（位置がずれたまま残さない）。開いた直後 0.4 秒の動きでは閉じない（慣性やフォーカスで閉じてしまわないように） */
+window.addEventListener('scroll', ()=>{ if(Date.now() - wrGridMenuAt > 400) wrCloseGridMenu(); }, true);
+function wrOpenGridMenu(cell, ev){
+  wrCloseGridMenu();
+  const rid = cell.dataset.goRid;
+  const r = residentById(rid);
+  const m = document.createElement('div');
+  m.id = 'grMenu'; m.className = 'gr-menu'; m.setAttribute('role', 'menu');
+  m.innerHTML = `<div class="gr-menu-h">${escapeHtml(r ? r.name : '')}</div>`
+    + `<button type="button" role="menuitem" data-gm="input">${escapeHtml(ymGridLabel(gridMonth))}の体重を入力</button>`
+    + `<button type="button" role="menuitem" data-gm="indiv">個別のグラフを見る</button>`
+    + `<button type="button" role="menuitem" data-gm="3y">3年分の表を見る</button>`;
+  document.body.appendChild(m);
+  const rc = cell.getBoundingClientRect();
+  const mw = m.offsetWidth, mh = m.offsetHeight;
+  let x = rc.right + 6, y = rc.top;
+  if(x + mw > innerWidth - 8) x = Math.max(8, innerWidth - mw - 8);
+  /* 下にタブが固定されている時（720px以下）は、その高さも避ける */
+  const navEl = document.querySelector('.tnav');
+  const navTop = (navEl && getComputedStyle(navEl).position === 'fixed') ? navEl.getBoundingClientRect().top : innerHeight;
+  if(y + mh > navTop - 8) y = Math.max(8, navTop - mh - 8);
+  m.style.left = x + 'px'; m.style.top = y + 'px';
+  m.addEventListener('click', e=>{
+    const b = e.target.closest('[data-gm]'); if(!b) return;
+    wrCloseGridMenu();
+    if(b.dataset.gm === 'input') openInputForNew(rid, gridMonth);
+    else if(b.dataset.gm === 'indiv') openIndivFor(rid);
+    else openGrid3y(rid);
+  });
+  const first = m.querySelector('button'); if(first) try{ first.focus({ preventScroll: true }); }catch(_){ first.focus(); }
+  wrGridMenuAt = Date.now();
+  setTimeout(()=>{
+    const off = e=>{ if(!m.contains(e.target)){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); } };
+    const esc = e=>{ if(e.key === 'Escape'){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); try{ cell.focus(); }catch(_){} } };
+    document.addEventListener('pointerdown', off, true);
+    document.addEventListener('keydown', esc, true);
+  }, 0);
+}
 
 /* Helper: switch to input tab and load the record for editing.
    populateResidentSelect keeps the existing select value, so we set it
@@ -4241,7 +4614,7 @@ function renderBulkList(){
   const residents = sortedResidents();
   $('#bulkSub').textContent = `測定日 ${date} / 対象月 ${ymFmt(ym)} / 登録 ${residents.length}名`;
   if(residents.length===0){
-    box.innerHTML = `<div style="padding:20px;text-align:center;color:var(--g6);font-size: 0.75rem">入居者が登録されていません</div>`;
+    box.innerHTML = `<div style="padding:20px;text-align:center;color:var(--g6);font-size:0.9375rem">入居者が登録されていません</div>`;
     updateBulkSummary();
     return;
   }
@@ -4254,7 +4627,7 @@ function renderBulkList(){
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
       const dstr = latestAny.measuredOn || ymFmt(latestAny.yearMonth);
-      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size: 0.5625rem">${dstr}</div>`;
+      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size:0.9375rem">${dstr}</div>`;
     }
     const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${chairKg.toFixed(1)}kg</span>` : '';
     const existBadge = existingRec ? `<span class="bk-ex">${date} に既存記録あり（上書き）</span>` : '';
@@ -4292,6 +4665,20 @@ function renderBulkList(){
       const v = Number(inp.value);
       if(inp.value && v>=20 && v<=200) row.classList.add('filled');
       else row.classList.remove('filled');
+      /* 前回から大きく変わった値は、打った時点で行を目立たせる（保存の時にも確かめる・2026-10-17） */
+      try{
+        const date = $('#bulkDate').value || dNow(), ym = $('#bulkMonth').value || date.slice(0,7);
+        let w = (inp.value && v >= 20 && v <= 200) ? v : null;
+        if(w != null && row.dataset.chair === '1'){ const ck = wcLatestKg_(row.dataset.rid, ym, date); w = (ck > 0 && v > ck) ? +(v - ck).toFixed(1) : null; }
+        const info = (w != null) ? wrRecheckInfo(row.dataset.rid, date, ym, Math.round(w*10)/10, row.dataset.existing || null) : null;
+        row.classList.toggle('bk-recheck', !!info);
+        let hint = row.querySelector('.bk-rc');
+        if(info){
+          if(!hint){ hint = document.createElement('span'); hint.className = 'bk-rc'; row.querySelector('.bk-badge').appendChild(hint); }
+          const sg = info.df > 0 ? '+' : '';
+          hint.textContent = `前回比 ${sg}${info.df.toFixed(1)}kg（${sg}${info.pc.toFixed(1)}%）測り直しを`;
+        }else if(hint){ hint.remove(); }
+      }catch(e){}
       // 保存後に値を変更したら、ボタンを通常状態に戻す
       const btn = row.querySelector('.bk-save');
       if(btn && btn.classList.contains('is-saved')){
@@ -4330,6 +4717,18 @@ function bulkSave(){
   const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
 
+  /* 測り直しの促し（2026-10-17）：大きく変わった行をまとめて1回だけ確かめる。キャンセルなら何も保存しない */
+  const recheckRows = new Set(), rcLines = [];
+  for(const row of rows){
+    const rid = row.dataset.rid, v = Number(row.querySelector('input').value);
+    if(!rid || !v) continue;
+    let w = v;
+    if(row.dataset.chair === '1'){ const ck = wcLatestKg_(rid, ym, date); if(!ck || ck <= 0 || v <= ck) continue; w = +(v - ck).toFixed(1); }
+    const info = wrRecheckInfo(rid, date, ym, Math.round(w*10)/10, row.dataset.existing || null);
+    if(info){ recheckRows.add(row); rcLines.push(`${residentById(rid)?.name || ''}：${wrRecheckDesc(info)}`); }
+  }
+  if(rcLines.length && !wrRecheckConfirm(rcLines)) return;
+
   for(const row of rows){
     const rid   = row.dataset.rid;
     const chair = row.dataset.chair === '1';
@@ -4358,6 +4757,7 @@ function bulkSave(){
 
     const existingId = row.dataset.existing;
     const existing   = existingId ? getRecordById(existingId) : null;
+    const prevWRc    = existing ? existing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
     let rec;
     if(existing){
       // overwrite only the fields the bulk form controls. Preserve other
@@ -4388,6 +4788,8 @@ function bulkSave(){
       };
       DB.records.push(rec);
     }
+    if(recheckRows.has(row)) rec.recheck = 'confirmed';   // 測り直して同じ値だった印
+    else if(rec.recheck && prevWRc != null && prevWRc !== rec.weight) rec.recheck = null;   // 値を直したら前の印は外す
     // 一括保存でも各レコードを正規化
     normalizeRecord(rec);
     saved.push(rec);
@@ -4456,8 +4858,15 @@ function saveSingleBulkRow(row){
   }
 
   const nowIso = new Date().toISOString();
+  /* 測り直しの促し（2026-10-17）：この行だけ確かめる */
+  let recheckOk = false;
+  {
+    const info = wrRecheckInfo(rid, date, ym, weight, row.dataset.existing || null);
+    if(info){ if(!wrRecheckConfirm([`${resident.name || ''}：${wrRecheckDesc(info)}`])) return; recheckOk = true; }
+  }
   const existingId = row.dataset.existing;
   const existing   = existingId ? getRecordById(existingId) : null;
+  const prevWRc    = existing ? existing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
   let rec;
   if(existing){
     // 既存記録の上書き（食事・メモ等の他フィールドは温存）
@@ -4489,6 +4898,8 @@ function saveSingleBulkRow(row){
     row.dataset.existing = rec.id;
     row.classList.add('existing');
   }
+  if(recheckOk) rec.recheck = 'confirmed';
+  else if(rec.recheck && prevWRc != null && prevWRc !== rec.weight) rec.recheck = null;   // 値を直したら前の印は外す
   normalizeRecord(rec);
   const chairResChanged = wcNoteBulkRec_(rid, rec);   // bulkSave と同じ規則で車椅子の変更履歴に照らす
   save();
@@ -4560,10 +4971,10 @@ function renderGrid3y(rid){
     const rowLabel = `<td class="gr-nm">体重(kg)<br><span class="gr-rm">(前月比)</span></td>`;
     const isLatest = (ci === chunks.length - 1);
     const badge = isLatest
-      ? `<span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size: 0.625rem;font-weight:700">直近12ヶ月</span>`
+      ? `<span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size:0.9375rem;font-weight:700">直近12ヶ月</span>`
       : (ci === 0
-          ? `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size: 0.625rem;font-weight:700">2〜3年前</span>`
-          : `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size: 0.625rem;font-weight:700">1〜2年前</span>`);
+          ? `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size:0.9375rem;font-weight:700">2〜3年前</span>`
+          : `<span style="padding:1px 6px;background:var(--g1);color:var(--g7);border-radius:8px;font-size:0.9375rem;font-weight:700">1〜2年前</span>`);
     html += `
       <div class="gr-3y-block">
         <div class="gr-3y-ttl">${badge}<span>${yearLabel}</span><small>（記録 ${blockFilled}件）</small></div>
@@ -4828,7 +5239,7 @@ function updateWeightHint(){
   const bmi = bmiOf(w, resident?.heightCm);
   const bmiPart = bmi!=null
     ? `<span class="bmi-b" style="background:#e3f2fd;color:var(--dn)">BMI ${bmi.toFixed(1)} <small style="font-weight:400">(${bmiCat(bmi).l})</small></span>`
-    : (w && rid && !resident?.heightCm ? `<span style="color:var(--g5);font-size: 0.625rem">（BMI算出には設定で身長登録が必要）</span>` : '');
+    : (w && rid && !resident?.heightCm ? `<span style="color:var(--g5);font-size:0.9375rem">（BMI算出には設定で身長登録が必要）</span>` : '');
   if(!rid || !ym || !w){ hint.innerHTML = bmiPart; return; }
   // Use the most recent INDIVIDUAL measurement (day-level) so daily/weekly
   // measurement users see the actual previous value, not last month's aggregate.
@@ -5214,6 +5625,12 @@ $('#inEditCancel')?.addEventListener('click', ()=>{
   editingRecordId = null;
   clearInputForm();
 });
+/* 編集中の記録を消す（2026-10-17：個別画面の履歴の各行から移した入口。確認は deleteRecordById が出す） */
+$('#inEditDelete')?.addEventListener('click', ()=>{
+  if(!editingRecordId) return;
+  deleteRecordById(editingRecordId);
+  try{ updateEditBanner(); }catch(e){}
+});
 
 function updateEditBanner(){
   const banner = $('#inEditBanner');
@@ -5286,6 +5703,12 @@ $('#inSave').addEventListener('click', ()=>{
     if(!w || w < 20 || w > 150){ toast('体重を正しく入力してください','err'); return; }
   }
 
+  /* 測り直しの促し（2026-10-17）：前回の測定から 5%以上か 2.5kg以上 変わっていたら、保存の前に確かめる */
+  let recheckOk = false;
+  {
+    const info = wrRecheckInfo(rid, d, ym, Math.round(w*10)/10, editingRecordId);
+    if(info){ if(!wrRecheckConfirm([wrRecheckDesc(info)])) return; recheckOk = true; }
+  }
   const mode = inMode;
   // 第一優先：明示的な編集モード（編集ボタンから入った状態）
   let editing = editingRecordId ? getRecordById(editingRecordId) : null;
@@ -5315,6 +5738,7 @@ $('#inSave').addEventListener('click', ()=>{
     ? (wcKgOn_(chairLogBefore, chairKey) ?? getChairKgAsOf(rid, ym, chairKey, ownRecId))
     : null;
   let savedRec;
+  const prevWRc = editing ? editing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
   if(editing){
     // weight / mode / date / note のみ更新。食事スナップショットは履歴として温存
     // （食事の変更は設定画面の入居者編集から行われ、新規記録の保存時に反映される）。
@@ -5350,6 +5774,8 @@ $('#inSave').addEventListener('click', ()=>{
     DB.records.push(rec);
     savedRec = rec;
   }
+  if(recheckOk) savedRec.recheck = 'confirmed';   // 測り直して同じ値だった印
+  else if(savedRec.recheck && prevWRc != null && prevWRc !== savedRec.weight) savedRec.recheck = null;   // 値を直したら前の印は外す
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
   /* 車椅子重量がその日の時点の重さと違えば「車椅子を替えた」とみなし、測定日を変更日として履歴に1行足す。
@@ -5498,6 +5924,9 @@ function syncYRangeBadge(){
   const wrap = $('#ivYRange');
   if(!wrap) return;
   wrap.classList.toggle('is-overridden', ivYMin != null || ivYMax != null);
+  /* 範囲を指定している時は、畳んだ欄を開いておく（指定に気づかず「グラフがおかしい」とならないように） */
+  const d = $('#ivYRangeD');
+  if(d && (ivYMin != null || ivYMax != null)) d.open = true;
 }
 
 function syncChartVisibility(){
@@ -5602,10 +6031,12 @@ function renderIndiv(){
   const primaryWeights = primary.recs
     .filter(r => r && typeof r.weight === 'number')
     .map(r => r.weight);
-  // 全推移グラフ（1週間 / 1ヶ月 / 1年 / 全期間）で 0kg 起点の同一スケールを使う。
-  // 全期間が ON のときは両グラフを共通の最大値で揃え、見比べやすくする。
-  const allWeights = [...allMonthly.map(r=>r.weight), ...primaryWeights];
-  const auto = allWeights.length ? computeYRange(allWeights) : null;
+  // 縦軸はその方の体重の範囲に合わせる（2026-10-17・代表者承認）。以前は 0kg 起点で、
+  // 12か月で 5kg 減っても線がほぼ平らに見えた。全期間が ON のときは両グラフを同じ範囲にそろえる。
+  // 6か月前の体重と、そこから −3%（厚労省の低栄養リスクで「中」の入口）の目安線も範囲に含める。
+  const allWeights = [...allMonthly.map(r=>r.weight), ...primaryWeights].filter(w=> typeof w === 'number' && isFinite(w) && w > 0);
+  ivRefLines = wrRefLinesFor(rid);
+  const auto = allWeights.length ? computeYRange(allWeights, ivRefLines.filter(l=> !l.optional).map(l=> l.y)) : null;
   // ユーザが Y軸範囲を指定していたらそれで上書き。片端のみ指定も可。
   let yRange = auto;
   if(ivYMin != null || ivYMax != null){
@@ -5629,14 +6060,94 @@ function renderIndiv(){
    - min は常に 0kg（体重ゼロ起点で全グラフを統一）
    - max は最大記録値 + 約10%（最低 +2kg）を 5kg 単位で切り上げ
    見やすい目盛になり、複数グラフ間でも見比べやすくなる。 */
-function computeYRange(weights){
-  if(!weights.length) return null;
-  const max = Math.max(...weights);
-  if(!isFinite(max) || max <= 0) return { min:0, max:10 };
-  const padded  = max + Math.max(2, max * 0.10);
-  const rounded = Math.ceil(padded / 5) * 5;
-  return { min: 0, max: rounded };
+function computeYRange(weights, refs){
+  const vals = (weights || []).concat((refs || []).filter(v=> typeof v === 'number' && isFinite(v) && v > 0));
+  if(!vals.length) return null;
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if(!isFinite(hi) || hi <= 0) return { min:0, max:10 };
+  const pad = Math.max(1, (hi - lo) * 0.15);
+  lo -= pad; hi += pad;
+  /* 幅は最低 6kg。0.2kg の揺れを画面いっぱいに振って、急な増減に見せないため */
+  const MIN_SPAN = 6;
+  if(hi - lo < MIN_SPAN){ const c = (hi + lo) / 2; lo = c - MIN_SPAN / 2; hi = c + MIN_SPAN / 2; }
+  return { min: Math.max(0, Math.floor(lo)), max: Math.ceil(hi) };
 }
+/* 個別のグラフに引く目安の線。6か月比で比べる相手（暦の6か月前、無ければ5→4か月前）の体重と、
+   その −3%（中リスクの入口）・−10%（6か月で高リスクの入口）。範囲の外に出る −10% は描かない */
+let ivRefLines = [];
+function wrRefLinesFor(rid){
+  try{
+    if(!rid) return [];
+    const recs = getRecordsOf(rid).filter(wrWeightOk);
+    if(!recs.length) return [];
+    const last = recs[recs.length - 1];
+    const a = analyze(rid, last.yearMonth);
+    const base = a && a.prev6;
+    if(!base || !(base.w > 0)) return [];
+    const lbl = wrYmOk(base.ym) ? `${Number(base.ym.slice(5))}月` : '6か月前';
+    return [
+      { y: base.w, text: `${lbl}の体重 ${base.w.toFixed(1)}kg`, kind: 'base' },
+      { y: +(base.w * 0.97).toFixed(1), text: `−3%（中リスクの目安）${(base.w * 0.97).toFixed(1)}kg`, kind: 'mid' },
+      { y: +(base.w * 0.90).toFixed(1), text: `−10%（高リスクの目安）${(base.w * 0.90).toFixed(1)}kg`, kind: 'high', optional: true },
+    ];
+  }catch(e){ return []; }
+}
+/* 食事形態が変わった月に、縦の点線と札を描く Chart.js の部品（2026-10-17・代表者承認） */
+const wrMealMarkPlugin = {
+  id: 'wrMealMarks',
+  afterDatasetsDraw(chart){
+    try{
+      const marks = (chart.options && chart.options.wrMealMarks) || [];
+      const x = chart.scales && chart.scales.x, area = chart.chartArea;
+      if(!x || !area || !marks.length) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = '600 15px "Hiragino Sans","Yu Gothic UI",sans-serif';
+      marks.forEach((m, i)=>{
+        const px = x.getPixelForValue(m.x);
+        if(!(px >= area.left && px <= area.right)) return;
+        ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(126,87,194,.8)';
+        ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke(); ctx.setLineDash([]);
+        const tw = ctx.measureText(m.text).width;
+        const tx = Math.min(Math.max(px + 4, area.left + 2), area.right - tw - 4);
+        const ty = area.top + 16 + (i % 2) * 20;   // 隣どうしの札が重ならないよう段をずらす
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(tx - 2, ty - 15, tw + 4, 19);
+        ctx.fillStyle = '#4527a0'; ctx.textBaseline = 'alphabetic'; ctx.fillText(m.text, tx, ty);
+      });
+      ctx.restore();
+    }catch(e){ /* 札が描けなくてもグラフ本体は止めない */ }
+  }
+};
+/* グラフの文字も 15px 以上に（介護現場要件） */
+try{ if(window.Chart && Chart.defaults && Chart.defaults.font) Chart.defaults.font.size = 15; }catch(e){}
+/* 目安の線を描く Chart.js の部品（外部の注釈部品は増やさない） */
+const wrRefLinePlugin = {
+  id: 'wrRefLines',
+  afterDatasetsDraw(chart){
+    try{
+      const lines = (chart.options && chart.options.wrRefLines) || [];
+      const y = chart.scales && chart.scales.y, area = chart.chartArea;
+      if(!y || !area || !lines.length) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      lines.forEach(l=>{
+        if(l.y < y.min || l.y > y.max) return;   // 範囲の外は描かない（−10% など）
+        const py = y.getPixelForValue(l.y);
+        ctx.beginPath();
+        ctx.setLineDash(l.kind === 'base' ? [] : [6, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = l.kind === 'base' ? 'rgba(95,99,104,.55)' : (l.kind === 'mid' ? 'rgba(230,81,0,.75)' : 'rgba(198,40,40,.75)');
+        ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 15px "Hiragino Sans","Yu Gothic UI",sans-serif';
+        ctx.fillStyle = l.kind === 'base' ? '#5f6368' : (l.kind === 'mid' ? '#b23c00' : '#b71c1c');
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(l.text, area.left + 6, py - 2);
+      });
+      ctx.restore();
+    }catch(e){ /* 目安の線が描けなくてもグラフ本体は止めない */ }
+  }
+};
 
 function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
@@ -5819,6 +6330,18 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
     }
   }
 
+  /* 食事形態（主食・副食）が前の点から変わった月に印を付ける（記録が持つ食事の写しで判定） */
+  const mealMarks = [];
+  try{
+    let prevSig = null;
+    recs.forEach((r, i)=>{
+      if(!r || !(r.stapleForm || r.sideForm)) return;
+      const sig = `${r.stapleForm || ''}|${r.sideForm || ''}`;
+      const xv = dated ? (data[i] && data[i].x) : i;
+      if(prevSig != null && sig !== prevSig && xv != null) mealMarks.push({ x: xv, text: `${mainLabel(r.stapleForm)}/${sideLabel(r.sideForm)}へ` });
+      prevSig = sig;
+    });
+  }catch(e){}
   ivCharts[key] = new Chart(ctx, {
     type:'line',
     data:{
@@ -5839,8 +6362,11 @@ function drawChart(rid, key, canvas, recs, daily, yRange, labelsIn, dateKeysIn, 
         spanGaps:true,                       // connect across unmeasured days
       }]
     },
+    plugins:[wrRefLinePlugin, wrMealMarkPlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
+      wrRefLines: ivRefLines,   /* 目安の線（6か月前の体重・−3%・−10%） */
+      wrMealMarks: mealMarks,   /* 食事形態が変わった月の縦の点線 */
       interaction:{mode:'nearest', intersect:false},
       plugins:{
         legend:{display:false},
@@ -5938,12 +6464,17 @@ function drawStats(rid){
     : cell('BMI', '—', '身長を設定', '', 'color:var(--g5)');
 
   el.innerHTML =
-    cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size: 0.6875rem;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
+    cell('最新体重', `${last.weight.toFixed(1)} <small style="font-size:0.9375rem;color:var(--g6)">kg</small>`, ymFmt(last.yearMonth)) +
     bmiCell +
     cell('前月比', a?.diff1!=null ? `${a.diff1>0?'+':''}${a.diff1.toFixed(1)}` : '—',
          a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : (recs.length > 1 ? '前月の記録なし' : ''), d1Cls) +
     cell('6ヶ月比', a?.diff6!=null ? `${a.diff6>0?'+':''}${a.diff6.toFixed(1)}` : '—',
          a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%${escapeHtml(wrCmpNote(a.prev6, 6, last.yearMonth))}` : '', d6Cls) +
+    (()=>{ const rk = wrNutritionRisk(rid, last.yearMonth);
+           if(!rk || !rk.level) return cell('低栄養リスク', '—', '比べる記録・身長が無い', '', 'color:var(--g5)');
+           const cls = rk.level === 'high' ? 'rk-v-high' : rk.level === 'mid' ? 'rk-v-mid' : '';
+           const sub = rk.reasons.length ? escapeHtml(rk.reasons.join('・')) : (rk.compared ? '3%以上の減少なし' : 'BMIのみ（比べる記録なし）');
+           return `<div class="st-i" title="体重とBMIだけで判定（血清アルブミン・食事摂取量は含みません）"><div class="st-l">低栄養リスク</div><div class="st-v ${cls}">${rk.label}</div><div class="st-s">${sub}</div></div>`; })() +
     cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`,
          `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`);
 }
@@ -5985,20 +6516,9 @@ function drawHist(rid){
   // 行の警告色（ed）は従来どおり月次しきい値で決める。前回比の列とは別の指標なので
   // ここは変えない（analyze は「月ごとに1件へ丸めた系列」で注意/警告を判定する）。
   const monthlyLatestIds = new Set(getRecordsOf(rid).map(r=> r.id));
-  // 測定日から対象月（YYYY-MM）を判定し、月が変わるたびに見出し行を挿入する
-  let lastGroup = '';
+  /* 月の見出し行は 2026-10-17 にやめた（1件ごとに見出しが入り、縦に倍の長さになっていた）。
+     月は「測定日」の列に年月日で出す */
   recs.forEach((r, i)=>{
-    const gm = (r.measuredOn && r.measuredOn.slice(0,7)) || r.yearMonth || '0000-00';
-    if(gm !== lastGroup){
-      lastGroup = gm;
-      const gtr = document.createElement('tr');
-      gtr.className = 'hist-grp';
-      const gtd = document.createElement('td');
-      gtd.colSpan = 9;                       // 既存9列に合わせる
-      gtd.textContent = (gm === '0000-00') ? '日付なし' : ymFmt(gm);
-      gtr.appendChild(gtd);
-      body.appendChild(gtr);
-    }
     const isMonthly = monthlyLatestIds.has(r.id);
     const a = isMonthly ? analyze(rid, r.yearMonth) : null;
     const tr = document.createElement('tr');
@@ -6064,7 +6584,7 @@ function drawHist(rid){
     let moLabel;
     if(r.measuredOn){
       const _p = r.measuredOn.split('-');
-      moLabel = `<b>${Number(_p[1])}/${Number(_p[2])}</b>`;
+      moLabel = `<b>${Number(_p[0])}/${Number(_p[1])}/${Number(_p[2])}</b>`;
     }else{
       moLabel = `<b style="color:var(--g5)">日付なし</b>`;
     }
@@ -6075,7 +6595,7 @@ function drawHist(rid){
                       (whoTxt ? `<br><small class="wr-who">${escapeHtml(whoTxt)}</small>` : '') + wrHistHtml_(r);
     tr.innerHTML = `
       <td style="text-align:start;padding-left:10px">${dateLabel}</td>
-      <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}</td>
+      <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class="rc-badge" title="前回から大きく変わったため、測り直して同じ値だったことを確かめた記録">測り直し済み</span>' : ''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
       <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${r.stapleAmount}g</span>`:''}</td>
@@ -6084,7 +6604,6 @@ function drawHist(rid){
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
         <button class="bn bo bsm" data-edit-id="${escapeHtml(r.id)}">編集</button>
-        <button class="bn br bsm" data-del-id="${escapeHtml(r.id)}">削除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -6098,11 +6617,8 @@ function drawHist(rid){
       loadRecordIntoForm(rec);
     });
   });
-  $$('#ivHistBody [data-del-id]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      deleteRecordById(b.dataset.delId);
-    });
-  });
+  /* 削除は 2026-10-17 に行から外し、「編集」で開いた入力画面の「この記録を削除」へ移した
+     （取り消せない操作を、一覧の各行に赤いボタンで常に出さない） */
 }
 
 /* ★null/undefined は空文字にする。そうしないと画面に「null」「undefined」と表示される
@@ -6133,7 +6649,8 @@ function collectAlerts(){
     if(recs.length===0) continue;
     const last = recs[recs.length-1];
     const a = analyze(r.id, last.yearMonth);
-    if(!a || a.level==='none') continue;
+    const rkAl = wrNutritionRisk(r.id, last.yearMonth);   // 高リスクは注意・警告の基準を変えていても拾う
+    if(!a || (a.level==='none' && !(rkAl && rkAl.level === 'high'))) continue;
 
     // 期間ごとに、実際に閾値を超えた行のみを取り出して 増加/減少 に振り分ける
     const periods = [
@@ -6173,6 +6690,15 @@ function collectAlerts(){
              _diff: inc.repDiff, _pct: inc.repPct, _absDiff: inc.maxAbsDiff }
       });
     }
+    /* 低栄養リスクが「高」なら、減少のアラートに理由を足す（無ければ減少のアラートを作る）。中は上げない
+       （警告が増えすぎると見落とされるため・2026-10-17 代表者の決定） */
+    try{
+      const rk = rkAl;
+      if(rk && rk.level === 'high'){
+        dec.reasons.push(`【高リスク】低栄養（厚労省の区切り）：${rk.reasons.join('・')}`);
+        dec.level = 'ng';
+      }
+    }catch(e){}
     // 減少エントリ
     if(dec.reasons.length){
       out.push({
@@ -6190,6 +6716,40 @@ function collectAlerts(){
   return out;
 }
 
+/* ── アラートの「確認した」（2026-10-17・代表者承認） ──
+   入居者の行の alertAck（JSON の文字）に「月｜向き」ごとの確認を残す：{lv, by, at, act, note}。
+   新しい月のアラート、注意で確認した後に警告へ上がったアラートは、確認済みにしない（もう一度上に出す）。
+   部分送信で alertAck だけを送る（他の項目に触れない）。新しい順に12件まで持つ */
+const WR_ACK_ACTIONS = ['食事形態・量を見直す', '医師・看護師へ連絡', 'ご家族へ連絡', 'ケアマネージャーへ連絡', '測り直し・様子を見る', 'その他'];
+function wrAckMap(r){
+  try{
+    const v = r && r.alertAck;
+    if(!v) return {};
+    const o = (typeof v === 'string') ? JSON.parse(v) : v;
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  }catch(e){ return {}; }
+}
+function wrAckOf(r, ym, dir, level){
+  const e = wrAckMap(r)[`${ym}|${dir}`];
+  if(!e || typeof e !== 'object') return null;
+  if(level === 'ng' && e.lv !== 'ng') return null;   // 注意で確認した後に警告へ上がった
+  return e;
+}
+function wrSetAck(r, ym, dir, entry){
+  const m = wrAckMap(r);
+  if(entry) m[`${ym}|${dir}`] = entry; else delete m[`${ym}|${dir}`];
+  const keys = Object.keys(m).sort().reverse().slice(0, 12);
+  const o = {}; keys.forEach(k=>{ o[k] = m[k]; });
+  r.alertAck = keys.length ? JSON.stringify(o) : '';
+  save();
+  pushResidentFields_(r, ['alertAck']);
+}
+function wrAckText(e){
+  if(!e) return '';
+  const d = new Date(e.at || '');
+  const when = isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()} `;
+  return `確認 ${when}${e.by || ''}：${e.act || ''}${e.note ? `「${e.note}」` : ''}`;
+}
 function renderAlerts(){
   renderRuleDesc();
   const all = collectAlerts();
@@ -6201,6 +6761,11 @@ function renderAlerts(){
 
   const list = $('#alList');
   list.innerHTML = '';
+  /* 確認済みは下へ畳む */
+  const openItems = [], doneItems = [];
+  items.forEach(it=>{ (wrAckOf(it.resident, it.ym, alertDir(it.a), it.a.level) ? doneItems : openItems).push(it); });
+  items = openItems.concat(doneItems);
+  let doneBox = null;
   if(items.length===0){
     list.innerHTML = `<div class="empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
@@ -6209,6 +6774,7 @@ function renderAlerts(){
   }else{
     items.forEach(({resident, ym, a})=>{
       const dir = alertDir(a);
+      const ack = wrAckOf(resident, ym, dir, a.level);
       const div = document.createElement('div');
       div.className = `al-i dir-${dir} sev-${a.level}`;
       div.innerHTML = `
@@ -6217,6 +6783,7 @@ function renderAlerts(){
           <div class="al-nm">${escapeHtml(resident.name)}<span class="rm">${resident.room?'室 '+escapeHtml(resident.room):''}</span><span class="eb ${a.level==='ng'?'eb-ng':'eb-w'}">${a.level==='ng'?'警告':'注意'}</span></div>
           <div class="al-ms">
             ${a.reasons.map(x=>`<div>${x}</div>`).join('')}
+            ${ack ? `<div class="al-ack-info">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''}
             <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${a.cur.stapleAmount}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
           </div>
         </div>
@@ -6226,15 +6793,61 @@ function renderAlerts(){
       // so we MUST set the select value explicitly here — otherwise
       // populateResidentSelect keeps the previous resident and the wrong person
       // is shown.
-      div.addEventListener('click', ()=>{
+      div.addEventListener('click', e=>{
+        if(e.target.closest('.al-act,.al-ack-f')) return;   // 確認のボタン・欄はカードを開かない
         saveUI({ivRes: resident.id});
         $('#ivResident').value = resident.id;
         goto('indiv');
       });
-      list.appendChild(div);
+      /* 確認した／確認を取り消す */
+      const act = document.createElement('div');
+      act.className = 'al-act';
+      act.innerHTML = ack
+        ? `<button type="button" class="bn bs bsm" data-al-undo>確認を取り消す</button>`
+        : `<button type="button" class="bn bo bsm" data-al-ack>確認した（対応を残す）</button>`;
+      div.querySelector('.al-body').appendChild(act);
+      act.addEventListener('click', e=>{
+        e.stopPropagation();
+        if(e.target.closest('[data-al-undo]')){ wrSetAck(resident, ym, dir, null); renderAlerts(); return; }
+        if(!e.target.closest('[data-al-ack]') || div.querySelector('.al-ack-f')) return;
+        const f = document.createElement('div');
+        f.className = 'al-ack-f';
+        f.innerHTML = `<label class="sr-only" for="alAct_${escapeHtml(resident.id)}_${dir}">対応</label>`
+          + `<select id="alAct_${escapeHtml(resident.id)}_${dir}">${WR_ACK_ACTIONS.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select>`
+          + `<input type="text" maxlength="200" placeholder="ひとこと（任意）" aria-label="ひとこと（任意）">`
+          + `<button type="button" class="bn bp bsm" data-al-save>保存</button><button type="button" class="bn bs bsm" data-al-cancel>やめる</button>`;
+        div.querySelector('.al-body').appendChild(f);
+        f.addEventListener('click', ev=>{
+          ev.stopPropagation();
+          if(ev.target.closest('[data-al-cancel]')){ f.remove(); return; }
+          if(ev.target.closest('[data-al-save]')){
+            wrSetAck(resident, ym, dir, { lv: a.level, by: wrWho_(), at: new Date().toISOString(), act: f.querySelector('select').value, note: f.querySelector('input').value.trim().slice(0, 200) });
+            toast('確認を残しました', 'ok');
+            renderAlerts();
+          }
+        });
+        try{ f.querySelector('select').focus(); }catch(_){}
+      });
+      if(ack){
+        if(!doneBox){
+          doneBox = document.createElement('details');
+          doneBox.className = 'al-done';
+          doneBox.innerHTML = `<summary>確認済み（${doneItems.length}件）</summary>`;
+          list.appendChild(doneBox);
+        }
+        doneBox.appendChild(div);
+      }else{
+        list.appendChild(div);
+      }
     });
+    if(!openItems.length && doneItems.length){
+      const msg = document.createElement('div');
+      msg.className = 'empty';
+      msg.textContent = 'まだ確認していないアラートはありません';
+      list.insertBefore(msg, list.firstChild);
+    }
   }
-  $('#alMeta').textContent = `${items.length} 件 / 警告 ${all.filter(x=>x.a.level==='ng').length} 件`;
+  $('#alMeta').textContent = `未確認 ${openItems.length} 件${doneItems.length ? `（確認済み ${doneItems.length} 件）` : ''} / 警告 ${openItems.filter(x=>x.a.level==='ng').length} 件`;
   // スクリーンリーダー通知は要約のみ（#alList を live にすると同期・フィルタのたびに
   // 全カードを読み上げるため不可）。フィルタ名を含めるのは件数が同じフィルタ切替でも
   // 通知するため（同期再描画はフィルタも件数も不変＝同文になり鳴らない）。変化時だけ書く。
@@ -6249,7 +6862,8 @@ function renderAlerts(){
 }
 
 function updateAlertBadge(cache){
-  const all = cache || collectAlerts();
+  /* タブの数字は、まだ確認していないアラートだけを数える（2026-10-17） */
+  const all = (cache || collectAlerts()).filter(x=> !wrAckOf(x.resident, x.ym, alertDir(x.a), x.a.level));
   const ng = all.filter(x=> x.a.level==='ng').length;
   const total = all.length;
   const bg = ng>0 ? 'var(--ng)' : 'var(--warn-br)';
@@ -6860,7 +7474,7 @@ function wrRenderDupCheck(){
     const copts = cands.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)}（居室 ${escapeHtml(r.room || '—')}・記録 ${wrRecCountOf(r.id)} 件${isDischarged(r) ? '・退去' : ''}）</option>`).join('');
     html += `<div class="dup-g is-name" role="group" aria-label="登録を見送った人"><div class="dup-h">${escapeHtml(x.name)}<span class="dup-k">入居者マスタにいて、登録を見送った人</span></div>`
       + `<div class="dup-m" style="cursor:default"><span class="dup-s">マスタの居室 ${escapeHtml(x.room || '—')}。同じ氏名の行が既にあり、同じ人か決められませんでした。</span></div>`
-      + `<div class="dup-a"><label for="dupSk_${si}" style="font-size:0.8125rem">同じ人の行</label>`
+      + `<div class="dup-a"><label for="dupSk_${si}" style="font-size:0.9375rem">同じ人の行</label>`
       + `<select id="dupSk_${si}"><option value="">選んでください</option>${copts}</select>`
       + `<button type="button" class="bn bp bsm" data-dup-link="${si}">この行に紐づける</button>`
       + `<button type="button" class="bn bo bsm" data-dup-create="${si}">別の人なので新しく登録</button></div></div>`;
@@ -6878,7 +7492,7 @@ function wrRenderDupCheck(){
     }).join('<br>');
     html += `<div class="dup-g" role="group" aria-label="持ち主のいない記録"><div class="dup-h">持ち主のいない記録<span class="dup-k">${list.length} 件</span></div>`
       + `<div class="dup-m" style="cursor:default"><span class="dup-s">${show}${list.length > 6 ? '（新しい6件）' : ''}</span></div>`
-      + `<div class="dup-a"><label for="dupOr_${oi}" style="font-size:0.8125rem">付ける相手</label>`
+      + `<div class="dup-a"><label for="dupOr_${oi}" style="font-size:0.9375rem">付ける相手</label>`
       + `<select id="dupOr_${oi}"><option value="">選んでください</option>${opts}</select>`
       + `<button type="button" class="bn bp bsm" data-dup-orphan="${oi}">この人に付ける</button>`
       + `<button type="button" class="bn br bsm" data-dup-orphan-clear="${oi}">誰の記録か分からないので消す</button></div></div>`;
@@ -6889,7 +7503,7 @@ function wrRenderDupCheck(){
       html += `<div class="dup-g" role="group" aria-label="氏名の無い行"><div class="dup-h">氏名の無い行<span class="dup-k">${n ? '記録あり' : '記録なし'}</span></div>`
         + `<div class="dup-m" style="cursor:default"><span class="dup-s">${info(r)}</span></div>`
         + (n
-          ? `<div class="dup-a"><label for="dupTo_${escapeHtml(r.id)}" style="font-size:0.8125rem">まとめる先</label>`
+          ? `<div class="dup-a"><label for="dupTo_${escapeHtml(r.id)}" style="font-size:0.9375rem">まとめる先</label>`
             + `<select id="dupTo_${escapeHtml(r.id)}"><option value="">選んでください</option>${opts}</select>`
             + `<button type="button" class="bn bp bsm" data-dup-into="${escapeHtml(r.id)}">この人にまとめる</button></div>`
           : `<div class="dup-a"><button type="button" class="bn br bsm" data-dup-del="${escapeHtml(r.id)}">この行を消す</button></div>`)
@@ -7089,7 +7703,9 @@ function renderRuleDesc(){
     return parts.length ? `${label} ${parts.join('、')}` : `${label} 判定なし`;
   };
   el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}`
-    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`;
+    + `<br><span style="color:var(--g6)">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>`
+    + `<br><span style="color:var(--g6)">低栄養リスク（厚労省の区切り・体重とBMIだけで判定）：高＝1か月5%・3か月7.5%・6か月10%以上の減少／中＝どれかの期間で3%以上の減少かBMI 18.5未満。一覧と個別に札を出し、アラートには高リスクだけを上げます。</span>`
+    + `<br><span style="color:var(--g6)">前回の測定から5%以上か2.5kg以上変わった値は、保存の前に「測り直しましたか」と確かめます。</span>`;
 }
 $('#thrReset')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */

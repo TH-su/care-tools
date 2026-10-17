@@ -123,6 +123,8 @@ const tick = () => new Promise(r => setTimeout(r, 20));
       _parseApiResponse: () => Promise.resolve({ ok: true }), JSON, Promise,
       wrAccessToken_: () => Promise.resolve('tok-access') };   /* 2026-10-13: 書き込みにはログインの証明を添える */
     vm.createContext(ctx);
+    /* 2026-10-17: apiPost は入居者の行から alertAck を外す部品（wrResForSend_）を通す。部品が無い古い版でも動くように */
+    if (src.indexOf('function wrResForSend_(') >= 0) vm.runInContext('function wrServerLacksResident(){ return false; }\n' + cut('wrResForSend_'), ctx);
     vm.runInContext('async ' + cut('apiPost'), ctx);   // 本体は async function（cut は async を含まない）
     await ctx.apiPost('delRecord', { id: 'w1', by: '事務 太郎（staff1）' });
     await ctx.apiPost('saveRecord', { record: { id: 'w2', recordedBy: '現場端末' } });
