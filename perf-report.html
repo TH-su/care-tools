@@ -19,6 +19,7 @@
     そのため現場端末でも開ける（計測したいのはまさに共用タブレットの遅さ）。
   ★このページ自身は su-perf.js を読み込まない（集計画面を開いた記録で数字を汚さない）。
   ★2026-10-09（監査10月版 #16）: スクリプトと見た目を perf-report.js・perf-report.css に分け、CSP で自分のファイル以外を読まない・送らないようにした。
+  ★2026-10-17: Supabase と JSON の通信も数えるようにした（以前の記録は内訳が空）
 -->
 <link rel="stylesheet" href="perf-report.css?v=2026-10-09">
 </head>
@@ -76,6 +77,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="perf-report.js?v=2026-10-09"></script>
+<script src="perf-report.js?v=2026-10-17"></script>
 </body>
 </html>

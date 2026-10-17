@@ -62,7 +62,8 @@ console.log('\n— 3. 本当に失敗した時に記録される —');
 
 console.log('\n— 4. 空の catch の数 —');
 const empties = (src.match(/catch *(\([a-z_]*\))? *\{ *\}/g) || []).length;
-t('空の catch は 18 か所以下（業務に響かないもの17＋記録の口の中の1）', empties <= 18, empties);
+/* 2026-10-17: 動作の速さの記録（SUPerf.ready）の1か所を足した。計測だけで業務に響かない */
+t('空の catch は 19 か所以下（業務に響かないもの17＋動作の速さの記録の1＋記録の口の中の1）', empties <= 19, empties);
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

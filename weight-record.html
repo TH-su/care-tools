@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-leTFHU5xbj+wj04r1yYDGjg4LgXDDJUV1TvPKhR2i0U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-IWoNk4lSfTh9syNwTQuYi88XL8iddmTO+V3ozpULNx0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -21,7 +21,7 @@ function wrNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-09-27"></script>
-<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-perf.js?v=2026-10-17"></script>
 <!-- グラフの部品は npm の原本をテーマに同梱して自前で配る（2026-10-10・第三者の配信元から読まない） -->
 <script src="chart-js-4.4.1.umd.js"></script>
 <style>
@@ -2478,7 +2478,7 @@ async function _syncFromAPIImpl(showLoader){
     /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
     try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){ wrNote_('マスタの取り込み（オフライン）', e2); }
     return false;
-  }finally{ ldHide(); }
+  }finally{ ldHide(); try { if (window.SUPerf) SUPerf.ready(); } catch (e) {} }
 }
 
 /* Pending-queue: writes that failed are persisted and retried. */

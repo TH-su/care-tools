@@ -13,6 +13,8 @@
  *   残すのはアプリのファイル名・時間・回数・端末の種類（iPad/Android/Windows 等）と、
  *   GAS の接続先を見分けるための URL 末尾4文字だけ。氏名・記録・合言葉・URL の全体・
  *   クエリ文字列は一切残さない（通信の中身はそもそも読めない）。
+ *   Supabase は呼んだ関数の名前（kv_get・token 等の URL の最後の区切り）だけ、同じサイトの通信は
+ *   JSON のファイル名（su-backend.json 等）だけを残す（2026-10-17。どちらもクエリと鍵は残さない）。
  *
  * 残す場所:
  *   IndexedDB（su_perf）。localStorage は容量の上限に近いツールがあり（週間計画の世代の控え等）、
@@ -21,8 +23,10 @@
  * 見る場所: perf-report.html（端末ごとに集計・コピー・CSV）。
  * 止める: localStorage に su_perf_off = '1' を入れる（その端末だけ記録しない）。
  *
- * ツール側からの追加（任意・今は誰も呼ばない）:
- *   window.SUPerf.ready() … 「画面が使えるようになった」時に呼ぶと、開いてからの時間を残す。
+ * ツール側からの追加（任意）:
+ *   window.SUPerf.ready() … 「画面が使えるようになった」時に呼ぶと、開いてからの時間を残す（最初の1回だけ）。
+ *   2026-10-17 から8画面（週間計画・入居者マスタ・フェイスシート・申送ビューア・体重・通所利用表・
+ *   ワークスケジュール・シフト作成）が呼ぶ。
  */
 (function () {
   'use strict';
@@ -50,7 +54,10 @@
     conn: conn(),
     ready: null,
     tbt: null,
+    v: 2,                                         /* 記録の版（2＝Supabase・JSON も数える・2026-10-17） */
     gasN: 0, gasMs: 0, gas: [],                   /* GAS: 起動時の分だけ明細、合計は画面を閉じるまで */
+    sbN: 0, sbMs: 0, sb: [],                      /* Supabase: 同上 */
+    jsonN: 0, jsonMs: 0, json: [],                /* 同じサイトの JSON（su-backend.json 等）: 同上 */
     ext: []                                       /* CDN 等の外部ファイル（起動時のみ） */
   };
   var seen = {};                                  /* 同じ entry を二重に数えない */
@@ -95,6 +102,24 @@
     return '?';
   }
   function isGas(url) { return /^https:\/\/script\.(google|googleusercontent)\.com\//.test(url); }
+  function isSupabase(url) { return /^https:\/\/[a-z0-9-]+\.supabase\.co\//.test(url); }
+  /* クエリ（? 以降）と # 以降を落とした URL */
+  function noQuery(url) { return String(url).split('#')[0].split('?')[0]; }
+  function isSameOriginJson(url) {
+    try { return url.indexOf(location.origin) === 0 && /\.json$/i.test(noQuery(url)); } catch (e) { return false; }
+  }
+  /* Supabase の呼び先の印＝パスの最後の空でない区切り（例 kv_get・token・user）。URL 全体・クエリ・鍵は残さない */
+  function sbLabel(url) {
+    try {
+      var parts = new URL(url).pathname.split('/');
+      for (var i = parts.length - 1; i >= 0; i--) if (parts[i]) return parts[i].slice(0, 24);
+    } catch (e) {}
+    return '?';
+  }
+  /* 同じサイトの JSON の印＝ファイル名だけ（フォルダとクエリは残さない） */
+  function jsonLabel(url) {
+    try { return noQuery(url).split('/').pop().slice(0, 40) || '?'; } catch (e) { return '?'; }
+  }
 
   function takeResource(e) {
     try {
@@ -102,12 +127,28 @@
       if (seen[key]) return;
       seen[key] = 1;
       var cross = e.name.indexOf(location.origin) !== 0;
-      if (!cross) return;                         /* 同じサイトのファイルは navigation 側で見る */
+      if (!cross) {                               /* 同じサイトのファイルは navigation 側で見る。JSON の読み込みだけ数える */
+        if (!isSameOriginJson(e.name)) return;
+        rec.jsonN++;
+        rec.jsonMs += r(e.duration) || 0;
+        if (e.startTime <= STARTUP_MS && rec.json.length < MAX_LIST) {
+          rec.json.push({ s: r(e.startTime), d: r(e.duration), f: jsonLabel(e.name) });
+          saveSoon();
+        }
+        return;
+      }
       if (isGas(e.name)) {
         rec.gasN++;
         rec.gasMs += r(e.duration) || 0;
         if (e.startTime <= STARTUP_MS && rec.gas.length < MAX_LIST) {
           rec.gas.push({ s: r(e.startTime), d: r(e.duration), ep: gasLabel(e.name) });
+          saveSoon();
+        }
+      } else if (isSupabase(e.name)) {
+        rec.sbN++;
+        rec.sbMs += r(e.duration) || 0;
+        if (e.startTime <= STARTUP_MS && rec.sb.length < MAX_LIST) {
+          rec.sb.push({ s: r(e.startTime), d: r(e.duration), ep: sbLabel(e.name) });
           saveSoon();
         }
       } else if (e.startTime <= STARTUP_MS && rec.ext.length < 10) {
@@ -136,14 +177,20 @@
   }
 
   /* 起動時の同期が終わった時刻＝起動時に始まった GAS 通信の最後の終わり */
+  function lastEnd(list) {
+    var last = 0;
+    for (var i = 0; i < list.length; i++) {
+      var end = list[i].s + list[i].d;
+      if (end > last) last = end;
+    }
+    return last;
+  }
   function finishStats() {
     try {
-      var last = 0;
-      for (var i = 0; i < rec.gas.length; i++) {
-        var end = rec.gas[i].s + rec.gas[i].d;
-        if (end > last) last = end;
-      }
-      rec.gasDone = rec.gas.length ? last : null;
+      rec.gasDone = rec.gas.length ? lastEnd(rec.gas) : null;
+      /* 起動時の通信（GAS・Supabase・JSON）すべての最後の終わり（2026-10-17） */
+      rec.netDone = (rec.gas.length || rec.sb.length || rec.json.length)
+        ? Math.max(lastEnd(rec.gas), lastEnd(rec.sb), lastEnd(rec.json)) : null;
       rec.tbt = hasLongTask ? r(tbt) : null;
     } catch (e) {}
   }

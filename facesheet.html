@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-cn+WeUy9kue9FMCgiSMqvKkz0F8UIj6y4KD7t531mY8=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-dUNTjy+tLLgN+L98HSNfqAiXZ0hmNCgqdYrO9nCmIQ8=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -596,7 +596,7 @@ function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUE
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-16"></script>
-<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-perf.js?v=2026-10-17"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
@@ -3408,6 +3408,7 @@ function boot(){
   var has=loadCommonRoster();
   paintTabs(); paintBdayBar(); paintMealBar();
   renderRoster();
+  try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   /* 食形態一覧を開いたまま再読み込みした時も、そのビューのまま中身を取りに行く（原則11）。
      ★名簿が届いてから呼ぶ。1人ずつ取得へ落ちる経路は名簿を土台にするため、
        空の名簿のまま呼ぶと「0名の表」ができてしまう（それを紙にすると全員が消えて見える）。 */
