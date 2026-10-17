@@ -25,6 +25,8 @@
     この端末の共通接続先（su_sync_common）から読み、Google へだけ送る（Supabase へは送らない）。
     あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
     connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
+  ★貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数（patch_get）と、この端末の控え（apc2_res）との差を入居者IDだけで出す。
+    読むだけ（この画面からは送らない）。su-patch-sync.js は比べ方（diff）と控えの読み方だけを使う。
   ★一覧に出す氏名は伏せる（姓の1字目＋○・2026-10-09 監査10月版 #16）。見分けるのは居室と利用者No。
   ★勤務表の戻し用（2026-10-16・管理者だけ）: 「勤務表を Google へ写し返す」（写しの期間の時だけ・Supabase を正として中身が違う
     勤務表を Google へ force で書く）と、Supabase 側の厳格モードの表示・入切（今の状態は操作記録 audit_log から出す）。
@@ -151,6 +153,15 @@
     </section>
 
     <section class="cd">
+      <h2>貼り薬の写し（送るだけの期間）</h2>
+      <p class="muted">貼り薬カレンダーで設定を保存した時と開いた時に、入居者ごとの設定をサーバーへ送っています（表示と印刷は今までどおり端末の控えから）。サーバーの行数と、この端末の控えとの差を入居者IDで出します。氏名は出しません。日時の無い古い設定は送らないので、差には数えません。</p>
+      <div class="kpis" id="pt-kpis"></div>
+      <p id="pt-verdict" class="msg"></p>
+      <ul class="acct" id="pt-list"></ul>
+      <div class="acts"><a class="btn" id="pt-open" href="patch-calendar.html">貼り薬カレンダーを開く</a></div>
+    </section>
+
+    <section class="cd">
       <h2>入居者マスタの写しを取った記録</h2>
       <p class="muted">事務所・管理者が入居者マスタを開くたびに1行増えます（同じ内容なら10分に1回まで。件数だけで、氏名は残しません）。</p>
       <ul class="acct" id="runs"></ul>
@@ -165,6 +176,7 @@
 <script src="su-master-shadow.js?v=2026-09-26"></script>
 <script src="su-kv.js?v=2026-10-16"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
-<script src="shadow-check.js?v=2026-10-19"></script>
+<script src="su-patch-sync.js?v=2026-10-20"></script>
+<script src="shadow-check.js?v=2026-10-20"></script>
 </body>
 </html>
