@@ -474,8 +474,8 @@
    * Google と同じ形の応答を返す（conflict・serverRev・editlock・schedwipe 等も同じ名前）＝勤務表アプリの処理は変えない。
    *   ・編集できる端末を1台に絞る仕組み（編集権・券・epoch・厳格モード）もデータベースが同じ約束で受け持つ。
    *   ・現場のアカウントは読むだけ（pull の応答に role:'ro'＝勤務表アプリは閲覧モード）。書けるのは事務所・管理者。
-   *   ・保存できたら、少し待って最新版を Google へも写し返す（force）。勤務表を Google から読む画面
-   *     （ワークスケジュールの勤務の取り込み等）が古いままにならないように。写し返しの失敗は本番に影響させない。
+   *   ・Google へは写し返さない（2026-10-17 に外した。Google は厳格モードで写し返しを断っていた）。
+   *     ワークスケジュールが Supabase を読めずに Google の勤務表を読んだ時は、画面に「写しから表示中」と出る。
    *   ・合言葉（Google の token）と券の控えは Supabase へは送らない（送るのは関数の引数だけ）。 */
   var SHIFT_ACTIONS = { pull: 1, push: 1, head: 1, lockStatus: 1, lockAcquire: 1, lockRenew: 1, lockRelease: 1, shiftStatus: 1 };
   function isShiftKey(k) { return flagOf(k) === 'shift'; }

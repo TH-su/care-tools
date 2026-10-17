@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/+pqyy0rn9JyAu/OQ+4ZrvcoIw/2NuPm/MLcaNxrkbY=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0074Z8AGQ3OcmW/FoT+9FaMLPxaQ8QLR6kQYwb5cp48=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -438,12 +438,16 @@ let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施�
 /* 写しから表示中の帯（2026-10-17 改善プロンプト第2弾の8・代表者の決定）。保存先が Supabase に切り替わっているキー（SUKv.routed）を
    Supabase から読めず（未ログイン・失敗）、Google の写しから表示した時だけ出す。Supabase から読めたら消す。
    スイッチが切のキー（Google が本番）では出さない */
+/* ★全支援俯瞰は1回の表示で週間計画と何週分もの日データを順に読む。どれか1つでも写しから読んだら、その表示が終わるまで出したまま
+   （最後に読んだ1つで消さない・反証レビュー 2026-10-17）。表示の取り直し（refresh の始め）で copyUsed_ を戻す */
+var copyUsed_ = false;
 function showCopyBand_(keys, fromCopy) {
   var el = document.getElementById('copyBand');
   if (!el) return;
   var routed = false;
   try { routed = !!(window.SUKv && SUKv.routed && (keys || []).some(function (k) { return SUKv.routed(k); })); } catch (e) { routed = false; }
-  el.hidden = !(fromCopy && routed);
+  if (fromCopy && routed) copyUsed_ = true;
+  el.hidden = !copyUsed_;
 }
 async function gasCall(payload) {
   /* 統合（2026-09-27）: 週間計画・ワースケの日データの保存先を Supabase に切り替えた後は、ログインしている端末だけ
@@ -1024,6 +1028,7 @@ async function refresh() {
   if (busy) { refreshPending = true; return; }   // 破棄せず、完了後に1回だけ最新の条件で取り直す
   busy = true;
   refreshPending = false;
+  copyUsed_ = false;                               // 写しから表示中の帯は、この表示で読んだ分だけで決める
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {

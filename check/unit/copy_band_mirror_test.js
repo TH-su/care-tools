@@ -28,15 +28,20 @@ function cutF(src, name) {
 for (const [file, label] of [['support-overview.html', '全支援俯瞰'], ['visit-overview.html', '週間計画俯瞰']]) {
   console.log('\n— ' + label + ' —');
   const src = read(file);
-  function run(routedKeys, keys, fromCopy, noSukv) {
+  function box(routedKeys, noSukv) {
     const el = { hidden: true };
     const b = { document: { getElementById: id => (id === 'copyBand' ? el : null) },
                 window: noSukv ? {} : { SUKv: { routed: k => routedKeys.indexOf(k) >= 0 } } };
     b.SUKv = b.window.SUKv;
     vm.createContext(b);
-    vm.runInContext(cutF(src, 'showCopyBand_'), b);
-    b.showCopyBand_(keys, fromCopy);
-    return el.hidden;
+    const pre = /\nvar copyUsed_ = false;\n/.test(src) ? 'var copyUsed_ = false;\n' : '';
+    vm.runInContext(pre + cutF(src, 'showCopyBand_'), b);
+    return { b, el };
+  }
+  function run(routedKeys, keys, fromCopy, noSukv) {
+    const x = box(routedKeys, noSukv);
+    x.b.showCopyBand_(keys, fromCopy);
+    return x.el.hidden;
   }
   t('切り替え済みのキーを写しから表示 → 帯を出す', run(['care_schedule_v2'], ['care_schedule_v2'], true) === false);
   t('Supabase から読めた → 帯を消す', run(['care_schedule_v2'], ['care_schedule_v2'], false) === true);
@@ -45,6 +50,13 @@ for (const [file, label] of [['support-overview.html', '全支援俯瞰'], ['vis
   t('帯の部品は最初は隠れていて、読み上げの対象（role=status）', /<div id="copyBand" class="copy-band" role="status" aria-live="polite" hidden>/.test(src));
   t('印刷には出さない', /@media print \{ \.copy-band \{ display: none !important; \} \}/.test(src));
   t('隠れている時は場所を取らない（:not([hidden]) にだけ形を付ける）', /\.copy-band:not\(\[hidden\]\) \{/.test(src) && !/\.copy-band \{ *display: *block/.test(src));
+  if (file === 'support-overview.html') {
+    const x = box(['care_schedule_v2', 'wsday_2026-10-12']);
+    x.b.showCopyBand_(['care_schedule_v2'], true);
+    x.b.showCopyBand_(['wsday_2026-10-12'], false);
+    t('★1回の表示の中で一度でも写しから読んだら、後で Supabase から読めても出したまま（最後の1回で消さない）', x.el.hidden === false);
+    t('表示の取り直し（refresh の始め）で戻す', /async function refresh\(\) \{[\s\S]{0,240}copyUsed_ = false;/.test(src));
+  }
   t('Supabase から読めた時に消し、Google の応答を使う直前に出す（結線）',
     (src.match(/showCopyBand_\([^)]*, false\)/g) || []).length === 1 && (src.match(/showCopyBand_\([^)]*, true\)/g) || []).length === 1);
 }
@@ -53,9 +65,10 @@ console.log('\n— 写しの見比べ（shadow-check.js）—');
 {
   const s = read('shadow-check.js');
   const fix = cutF(s, 'runMirrorFix'), wb = cutF(s, 'writeBackWsday'), sh = cutF(s, 'writeBackShift');
-  t('違う分を写す: mirror の印つきで送る', /var body = \{ action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true \};/.test(fix));
-  t('違う分を写す: 週間計画だけ証明を添える', /if \(k === 'care_schedule_v2' && at\) body\.accessToken = at;/.test(fix) && (fix.match(/accessToken/g) || []).length === 1);
-  t('違う分を写す: 証明は押した管理者のログインの控えから取る（画面・端末に残さない）', /sb\.auth\.getSession\(\)/.test(fix) && !/localStorage\.setItem/.test(fix));
+  t('違う分を写す: mirror の印つきで送る', /\{ action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true \}/.test(fix));
+  t('違う分を写す: 証明は添えない（統合 GAS は印のある写し返しの「最後に直した人」を書き換えない・反証レビュー）', !/accessToken/.test(fix));
+  t('戻す手順に、統合 GAS のプロパティから外す注意がある（画面の文言と確認の2か所）',
+    /KV_SWITCHED_FAMILIES/.test(read('shadow-check.html')) && (s.match(/KV_SWITCHED_FAMILIES/g) || []).length >= 2);
   t('日ごとを写し返す: mirror の印つきで送る', /\{ action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true \}/.test(wb));
   t('勤務表の写し返しは今までどおり（統合 GAS の断りは勤務表に掛からない）', /\{ action: 'push', key: k, baseRev: 0, data: sbEnts\[k\]\.data, force: true \}/.test(sh));
 }
