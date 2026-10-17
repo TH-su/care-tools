@@ -485,7 +485,8 @@
           var g = ents[k];
           if (g && g.data != null && sameData(g.data, sd)) { same++; done++; continue; }
           try {
-            await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+            // mirror の印＝写し返し。統合 GAS が切り替え済みの種類への書き込みを断っていても、写し返しは通す（2026-10-17）
+            await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true }, 120000);
             wrote++;
           } catch (e) { failed.push(k); }
           done++;
@@ -587,7 +588,10 @@
   }
   /* 違う分を Google へ写す（2026-10-16 代表者の決定）。本番の間は Supabase が正しい中身＝Google をそれに合わせて force で上書きするだけ
    * （保存の20秒後の写し返し su-kv.js scheduleMirror と同じ動き）。写す直前に、その種類がまだ本番かを確かめ直す
-   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ */
+   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ
+   * 2026-10-17（改善プロンプト第2弾の8・代表者の決定）: mirror の印を付ける（統合 GAS の切り替え済みの断りを通る）。
+   *   週間計画には押した管理者のログインの証明を添える＝Google 側の「最後に直した人」が「未確認」ではなく管理者のメールになる。
+   *   証明は送る本文にだけ入れ、画面・端末・記録には残さない */
   async function runMirrorFix() {
     if (mcOn || !mcFix.length) return;
     var verdict = $('mc-verdict');
@@ -598,8 +602,9 @@
     var keys = mcFix.slice();
     if (!confirm('Google の古い ' + keys.length + '件を、Supabase（本番）の中身で上書きしますか？\n\nGoogle を読む画面（俯瞰など）の表示が新しくなります。本番の中身（Supabase）は変わりません。')) return;
     mcOn = true; $('b-mirror-check').disabled = true; $('b-mirror-fix').disabled = true;
-    var wrote = 0, failed = [];
+    var wrote = 0, failed = [], at = '';
     try {
+      try { var ss = await sb.auth.getSession(); at = (ss && ss.data && ss.data.session && ss.data.session.access_token) || ''; } catch (e2) { at = ''; }
       var fm = await sb.from('kv_families').select('family,mode');
       if (fm.error) throw new Error(String(fm.error.message || fm.error.code));
       var live = {};
@@ -612,7 +617,9 @@
         var sd = r.data && r.data.data;
         if (r.error || sd == null || typeof sd !== 'object') { failed.push(k); continue; }
         try {
-          var g = await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+          var body = { action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true };
+          if (k === 'care_schedule_v2' && at) body.accessToken = at;   // 週間計画だけ GAS が確かめて「最後に直した人」を決める
+          var g = await gasPostRetry(tgt, body, 120000);
           if (g && g.ok) wrote++; else failed.push(k);
         } catch (e) { failed.push(k); }
       }
