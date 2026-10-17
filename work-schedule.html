@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CUFHV9q7eQ9vUzBXff7qP+GbYcJCItyKTiHCKg2QNvE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wl9Zys7h60nXt79VXcfbXElOSo6SQ9abaVl2vzMnEuE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -63,6 +63,8 @@ body {
 /* 現場の端末の表示（2026-10-11）。見出しの中＝印刷では .hdr ごと隠れる */
 .hdr-field { font-size: 12px; font-weight: 700; color: #7a4b00; background: #fff4e0; border: 1px solid #e0a040; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .hdr-field[hidden] { display: none; }
+/* 勤務表を写しから表示中の知らせは文言が長いので折り返す（狭い幅で見出しからあふれない・2026-10-17） */
+#shiftFallbackBanner { white-space: normal; }
 /* 日単位ロックのチェックボックス（ヘッダー内・.hdrごと@media printで非表示＝印刷非干渉・盤面レイアウト非接触） */
 .hdr-lock {
   display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
@@ -669,7 +671,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-12.3"></script>
+<script src="su-kv.js?v=2026-10-17"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
@@ -684,6 +686,9 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <span class="hdr-title">ワークスケジュール</span>
   <!-- 現場の端末の表示（2026-10-11）。盤面は見るだけ・印は付けられる。見出しの中なので印刷には出ない -->
   <span class="hdr-field" id="fieldBanner" role="note" hidden>📱 現場の端末：盤面は見るだけ（実施・チェック・コメントは付けられます）</span>
+  <!-- 勤務表を Supabase から読めず Google の写しへ戻した間だけ出す（2026-10-17・改善プロンプト第2弾の8）。
+       次に Supabase から読めたら消える。出し入れは app.js の shiftFallbackBanner_。見出しの中なので印刷には出ない -->
+  <span class="hdr-field" id="shiftFallbackBanner" role="status" aria-live="polite" hidden>勤務表を Supabase から読めず、Google の写しから表示しています（古い可能性があります）</span>
   <button class="hdr-btn app-link" id="btnOpenCare" title="利用者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
   <span class="hdr-sp"></span>
@@ -14317,6 +14322,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
     if (e === 'unknown action' || e === '不明なaction' || e === '認証エラー') return '同期先が違います（別のアプリのGASを指しています）';
     if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
+    if (e === 'switched') return 'この保存先は Supabase へ切り替え済みです。画面を読み込み直してください';   /* 統合 GAS の switchedrefuse（2026-10-17） */
     return e || '通信失敗';
   }
   /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
@@ -14414,6 +14420,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 戻り値: 受け持った＝true（cb はこちらで必ず1回だけ呼ぶ）／受け持たない＝false */
   var shiftReadNoted_ = {};
   var SHIFT_READ_TIMEOUT_MS = 20000;
+  /* 勤務表を Supabase から読めず Google の写しへ戻した間の知らせ（2026-10-17・改善プロンプト第2弾の8）。
+   * スイッチ入りで pull を Google へ戻して Google から読めた時に出し、次に Supabase から読めた時・スイッチが切と分かった時に消す。
+   * head の失敗は出さない（Google の版を混ぜず通信失敗として返すだけ＝表示中の勤務表の出どころは変わらない）。
+   * 置き場所は見出しの中（#shiftFallbackBanner・@media print で見出しごと消える）。出ていない時は hidden＝場所を取らない。
+   * 出した時は文字を入れ直して読み上げに知らせる（hidden から出した直後の変化を拾わない読み上げがあるため） */
+  var shiftFbShown_ = false, shiftFbMsg_ = '';
+  function shiftFallbackBanner_(on) {
+    on = !!on;
+    if (shiftFbShown_ === on) return;
+    shiftFbShown_ = on;
+    var b = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shiftFallbackBanner') : null;
+    if (!b) return;
+    if (!shiftFbMsg_) shiftFbMsg_ = b.textContent;   /* 文言の正本は body.html（最初に読んだ値を控える） */
+    b.hidden = !on;
+    if (on) {
+      b.textContent = '';
+      setTimeout(function () { if (shiftFbShown_) b.textContent = shiftFbMsg_; }, 100);
+    } else {
+      b.textContent = shiftFbMsg_;
+    }
+  }
   function shiftReadViaSupabase_(payload, cb) {
     var K = window.SUKv;
     if (!K || typeof K.handlesShift !== 'function' || typeof K.callShift !== 'function') return false;
@@ -14421,7 +14448,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* スイッチが読めていて、明らかに切＝今までどおり（callShift のスイッチの読み込み待ちを足さない） */
     try {
       var fl = (typeof K._flags === 'function') ? K._flags() : null;
-      if (fl && fl.supabase && fl.supabase.shift !== true) return false;
+      if (fl && fl.supabase && fl.supabase.shift !== true) { try { shiftFallbackBanner_(false); } catch (eB) {} return false; }
     } catch (eF) {}
     function isShiftKey(k) { return typeof k === 'string' && !!k && K.handlesShift({ action: 'head', keys: [k] }); }
     var single = false, shiftKeys = [], rest = [];
@@ -14455,6 +14482,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try {
           if (g && g.entries) Object.keys(g.entries).forEach(function (k) { if (g.entries[k]) g.entries[k].rev = null; });
         } catch (eR) {}
+        /* Google の写しから読めた時だけ知らせる（Google も読めない時は表示中の勤務表が変わらないので出し入れしない） */
+        try { if (g && g.ok !== false && g.entries) shiftFallbackBanner_(true); } catch (eB) {}
         out(g);
       });
     }
@@ -14478,7 +14507,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eC) { settle(function () { failed('例外'); }); return true; }
     Promise.resolve(p).then(function (j) {
       settle(function () {
-        if (off) { asBefore(); return; }                    /* スイッチ切＝何も変えない */
+        if (off) { try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); return; }   /* スイッチ切＝何も変えない（Google が正本＝知らせは消す） */
         if (payload.action === 'pull') {
           if (!(j && j.ok === true && j.entries && typeof j.entries === 'object')) { failed(j && j.error); return; }
           /* 成功なのに勤務表のキーが1つも無い＝手順違い（読む範囲・権限の取り違え）。空の勤務表を取り込まない */
@@ -14486,6 +14515,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             note('empty', 'empty');
             pullFromGoogle(); return;
           }
+          try { shiftFallbackBanner_(false); } catch (eB) {}   /* Supabase から読めた＝知らせを消す */
           out(j); return;
         }
         var okRevs = !!(j && j.ok === true && j.revs && shiftKeys.every(function (k) { return typeof j.revs[k] === 'number'; }));
@@ -14506,7 +14536,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       });
     }, function () {
-      settle(function () { if (off) asBefore(); else failed('例外'); });
+      settle(function () { if (off) { try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); } else failed('例外'); });
     });
     return true;
   }
@@ -18522,7 +18552,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261017195413';
+  var WS_BUILD = '20261018062811';
   var WS_APP_VER = 2026101702;   /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
