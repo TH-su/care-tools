@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-UENpF2NgmVhfFWfDw+FxkeV3Kd6i+rd5USoDhyxLfGI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2LupZoyIC72+5xk6AILJtgoGyuuedcDgGSQIOdJdCrk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -667,7 +667,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 #stSameBldOut td:first-child { text-align: left; }
 </style>
 <script src="su-errors.js?v=2026-10-08"></script>
-<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-12.3"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
@@ -18492,6 +18492,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }, POLL_INTERVAL_MS);
     }
     renderAll();
+    try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
     /* 施設プロファイル未設定なら初回セットアップ・ウィザードを表示（shift-app 完了済みなら非表示） */
     try { maybeShowFacilityWizard(); } catch (eWz) {}
 
