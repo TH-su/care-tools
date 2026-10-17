@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-orUAqA5DBNyE3WQlP0nSRGfdcPN5IJlyYPUOGjv8si0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x/94Nwtlo6G4Q00vPhB54VDE7E4CciNo93f28Yj8mjc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1137,7 +1137,6 @@ var SH_WIDE_KEYS = {
   specialMeds: 1, diseasesNow: 1, allergy: 1, cmChangeNote: 1,
   wishFamily: 1, wishSelf: 1
 };
-function assessTextKeys() { return ASSESS_TEXT.map(function (p) { return p[0]; }); }
 
 /* ── 連携の提示ルール ──
    「どの情報が入ったら誰に連絡すべきか」。保存のたびに前後を比べ、当てはまったものを
@@ -2262,7 +2261,8 @@ function renderToday() {
   }
   if (b.stale.length) {
     h += '<div class="todo-sec"><h3>14日以上動いていません（' + b.stale.length + '）</h3>';
-    b.stale.forEach(function (x) { h += todayRow(x.c, '最後に動いたのは ' + fmtDt(x.c.updatedAt), ''); });
+    /* ★todayRow の2つ目（what）はエスケープされない。fmtDt は日付として読めない値をそのまま返すので esc を通す（2026-10-17） */
+    b.stale.forEach(function (x) { h += todayRow(x.c, '最後に動いたのは ' + esc(fmtDt(x.c.updatedAt)), ''); });
     h += '</div>';
   }
   if (!n && !b.stale.length) h += '<div class="todo-done">今日やることはありません</div>';
@@ -4789,16 +4789,6 @@ function verifyMaster(c) {
    ★選択式は「全部の選択肢を出し、選んだものに○を付ける」＝紙に手で丸を付けた状態と同じ見え方。
    ★スプレッドシートで行が隠れている項目（消耗品・寝具リース・オムツ／パッドサイズ）は
      紙に出ないので、ここでも出さない（SHEET_HIDDEN_KEYS）。 */
-function psEsc(v) { return esc(asStr(v)); }
-/* 選択肢を並べ、選ばれたものに○を付ける。値は「1.自立」のように番号付きでも一致させる */
-function psOpts(val, opts) {
-  var v = asStr(val);
-  return opts.map(function (o) {
-    var hit = v && (v === o || v.indexOf(o) >= 0 || o.indexOf(v) >= 0);
-    return '<span class="opt' + (hit ? ' on' : '') + '">' + esc(o) + '</span>';
-  }).join(' ・ ');
-}
-function psCell(label, val, cls) { return '<td class="' + (cls || 'val') + '">' + psEsc(val) + '</td>'; }
 /* 紙に出す中身。★画面（renderSheetGrid）と同じ定義から組む。
    以前はここに紙面を別に組み立てていたが、画面と紙が別々に育って並びがずれた。
    2026-09-19 に現物のスプレッドシートを1セルずつ写した SH_GRID へ一本化した。 */

@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hYbqfspAKn/pDN4hgyRub9PcMYCLsY3YS8Vi9lM4VB8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-55WaOTEdClF1EzRFvHOHdfdrgGG/sG6drB5QqpeATps='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -5750,15 +5750,6 @@ function cmtSelected() {
   if (!list.length) return '';
   for (i = 0; i < list.length; i++) { if (txt(list[i].code) === txt(ST.cmtSel)) return txt(ST.cmtSel); }
   return txt(list[0].code);
-}
-/* 選ぶ＝その委員会の構成図を開く。画面は動かさない（人の操作は cmtPick を通す）*/
-function setCmtSelected(code) {
-  ST.cmtSel = txt(code);
-  lsSet(UI_KEYS.cmtSel, ST.cmtSel);
-  ST.cmtOpen = ST.cmtSel;
-  renderCmtOrg();
-  placeCmtOrg(false);
-  markCmtRows();
 }
 /* 人が押した時の入口。toggle=true（委員会名のボタン）は、開いているものをもう一度押すと閉じる。
    行そのものを押した時は閉じない（読もうとして畳んでしまうのを防ぐ）*/

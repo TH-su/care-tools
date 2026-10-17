@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-lLEEIM81W2dqC++eiBg5InUWgzzjgX8l0sq4Poscxnw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-sFWteby5w2jB75UChCOcWab+aGZqXUxg4i/FNbuY4e4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1809,10 +1809,10 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
    - 一覧/検索用の roster（id/氏名/ふりがな/居室/介護度）のみ端末キャッシュ
    - 描画は全て esc() でエスケープ（XSS防止）。保存はホワイトリスト方式
    ─ 他アプリ連携用 API（GAS）─
-     GET  ?action=getRoster&token=..[&since=ISO]   → 軽量リスト
-     GET  ?action=getResident&id=..&token=..        → 個人フル
-     GET  ?action=getSection&id=..&section=medical&token=..
-       ↑読み取り3つは POST 本文 {action, ...引数, token} でも受ける（2026-09-23〜・この画面は POST で送る）
+     POST {action:'getRoster', token[, since]}       → 軽量リスト
+     POST {action:'getResident', token, id}          → 個人フル
+     POST {action:'getSection', token, id, section:'medical'}
+       ↑読み取り3つは POST 本文で受ける（合言葉を URL に載せない。GET の読み取りは閉じた・2026-10-17 コメントを実態に合わせた）
      POST {action:'saveResident', token, record}    → upsert
      POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
      GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N,srev:M} 版数のみ（追い読み用・個人情報ゼロ）
@@ -10397,21 +10397,6 @@ function collectMedLog(){
     });
     if(!editing.medicalSupportLog[i].source)editing.medicalSupportLog[i].source='manual';
   });
-}
-/* 将来の自動取込用: 診察結果を srcId で冪等マージ（同一srcId=更新・無ければ追加・date降順）。
-   手動入力分(source='manual'・srcId空)は対象外で温存。今回は呼び出し口のみ用意。 */
-function importMedicalLog(list,entries){
-  list=Array.isArray(list)?list.slice():[];
-  (entries||[]).forEach(function(e){
-    if(!e)return;
-    var sid=e.srcId!=null?String(e.srcId):'';
-    var idx=-1;
-    if(sid){for(var i=0;i<list.length;i++){if(list[i]&&String(list[i].srcId)===sid){idx=i;break}}}
-    var item={date:e.date||'',text:e.text||'',source:e.source||'vma',srcId:sid,doctor:e.doctor||'',clinic:e.clinic||'',importedAt:new Date().toISOString()};
-    if(idx>=0)list[idx]=item;else list.push(item);
-  });
-  list.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
-  return list;
 }
 function renderFamRows(){
   var box=$('famList');var h='';
