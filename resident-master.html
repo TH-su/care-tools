@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-pMvalpplYXzuWSg2Wv4vdRooMF6Cs8c9R/imKXtvQ3E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-lLEEIM81W2dqC++eiBg5InUWgzzjgX8l0sq4Poscxnw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -10602,6 +10602,14 @@ function saveResident(){
        §13の「実は書けているかも」の取り直し確認はしない（取り直すと他端末の版で
        「サーバー側にも入っていない」と誤案内してしまう）。入力は画面に残す。 */
     var m0=String((e&&e.message)||e);
+    /* ★サーバーが中身を見て断った保存（2026-10-17・GAS の入口の守り：氏名が空・項目が少なすぎる・控えを残せない）。
+       1文字も書いていないと確定しているので、取り直しの確認には進まず、断った理由をそのまま見せる。入力は画面に残す */
+    var rf=m0.indexOf('refused:');
+    if(rf>=0){
+      setSync('保存を止めました','err');
+      alert('⚠️ 保存を止めました（1文字も書き込んでいません。この画面の内容は残っています）。\n\n'+m0.slice(rf+8).trim());
+      return;
+    }
     if(m0.indexOf('conflict')>=0){
       setSync('競合','err');
       alert('⚠️ 他の端末がこの方を先に保存しています。\nこの画面の内容は保存されていません（1文字も書き込んでいません）。\n\n次の手順で直し直してください：\n1) いま直した箇所を控える（メモ・スクリーンショット）\n2) 一覧に戻って開き直し、最新の内容を確かめる\n3) 必要な箇所をもう一度直して保存する\n\n※開き直さずにもう一度保存しても、同じ理由で保存できません。');
