@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-cVQFDPbfmB2xrmuAl1Lm3K10ZnBE6IRhzM35aHs+VyY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-+2esPT6lL5ZW3RyTIw5fVKUqtEvw4ig8JUl70ndM9bQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2055,9 +2055,55 @@ function tpGet(key) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
   return withTimeout(SU.data.kvGet(key, tpTarget()), 30000);
 }
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-17・入居者マスタの rmAccessToken_ と同じ考え方・改善プロンプト第2弾の6）。
+   計画書GAS（training-plan-api.gs の verifyEditor_）が確かめ、この保存で直した計画の「直した人」（audit.updatedBy）を決める
+   （画面が入れる職員名は使われない）。ログインの控えが端末に無ければ問い合わせずに ''。取り出せない・3秒で返らない時も ''
+   （GAS は「未確認」と記録し、保存は止めない）。証明は保存の要求の本文にだけ添え、端末・URL・記録には残さない。
+   ★ページを閉じる直前の最終送信（kvPutBeacon）は待てないので添えない＝その保存で直した計画は「未確認」になる */
+var TP_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function tpHasLogin_() {
+  try { for (var i = 0; i < localStorage.length; i++) if (TP_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) { /* 読めない端末はログインなし */ }
+  return false;
+}
+/* supabase-js と su-auth.js は使う時にだけ読み込む（計画書の起動を重くしない・入居者マスタの msAuthLoad_ と同じ形） */
+function tpAuthLoad_() {
+  if (window.SUAuth) return Promise.resolve();
+  function has(re) { return Array.prototype.some.call(document.scripts, function (s) { return re.test(s.getAttribute('src') || ''); }); }
+  function load(src) {
+    return new Promise(function (ok, ng) {
+      var s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = function () { ok(); }; s.onerror = function () { ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready) {
+    return new Promise(function (ok, ng) {
+      var n = 0; (function tick() { if (ready()) return ok(); if (++n > 100) return ng(new Error('timeout')); setTimeout(tick, 100); })();
+    });
+  }
+  var p = window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function () {
+    if (window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+  });
+}
+function tpAccessToken_() {
+  if (!tpHasLogin_()) return Promise.resolve('');
+  var get = tpAuthLoad_().then(function () { return (window.SUAuth && typeof window.SUAuth.client === 'function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
+  return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
+}
+/* 保存の本文は kvPut と同じ形（action・key・data・rev）に、証明がある時だけ accessToken を足す（kvRaw は本文をそのまま送る） */
+function tpPutBody_(body) {
+  return tpAccessToken_().then(function (at) {
+    if (at) body.accessToken = at;
+    return withTimeout(SU.data.kvRaw(body, tpTarget()), 30000);
+  });
+}
 function tpPut(key, data, rev) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.kvPut(key, data, rev, tpTarget()), 30000);
+  return tpPutBody_({ action: 'put', key: key, data: data, rev: rev });
 }
 function tpPing() {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
@@ -2067,7 +2113,7 @@ function tpPing() {
    force は使わない（D32・専用GAS側は 2026-09-04 から allowDrop:true を件数-1の保存だけ通す）。 */
 function tpPutAllowDrop(key, data, rev) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.kvRaw({ action: 'put', key: key, data: data, rev: rev, allowDrop: true }, tpTarget()), 30000);
+  return tpPutBody_({ action: 'put', key: key, data: data, rev: rev, allowDrop: true });
 }
 function docKey(masterId) { return 'training_plan:' + masterId; }
 var IDX_KEY = 'training_plan:index';
