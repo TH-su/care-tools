@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tv8WG341kJXjycvH2jNT+7VR67mQUKVzUbNn8jiRkYk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-bzfRyR+DwIFqNPNI7uRU8oMzR1ChkkpLVIV6USsxHdI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -15852,6 +15852,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                           updatedAt: new Date().toISOString(), template: '',
                           boardVer: BOARD_LOGIC_VER, shiftStamp: stamp, notes: notesOut },
                   staff: staffOut, columns: colsOut, tasks: tasks };
+      /* コピー先が「一度ロックして外した日」（locked:false）なら、その印を引き継ぐ（2026-10-17）。meta を一から組むと欄ごと消え、
+       * 「一度もロックしていない日」に戻る。10/13・10/15 に 10/24 で外した直後のコピーが欄を消し、その日が「端末はロック・サーバーは欄なし」の
+       * 統合の入口になって、10/17 に古い控えの盤面で上書きされた（本番の履歴で照合） */
+      if (existing.meta && existing.meta.locked === false) {
+        day.meta.locked = false;
+        if (existing.meta.lockedAt) day.meta.lockedAt = existing.meta.lockedAt;
+      }
       /* コピーした日は人が並べた日の写し＝起床・就寝の並びを当てはめない（コピーは今のまま・決定 6A・2026-10-15） */
       try {
         var Rc_ = routinesNow_();
@@ -18445,7 +18452,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261017180417';
+  var WS_BUILD = '20261017192258';
   var WS_APP_VER = 2026101701;
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
