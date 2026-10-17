@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-o5VBsk2MlNq2tgDIorT28dAYM3FRf3A4FmfNvNu6guQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-leTFHU5xbj+wj04r1yYDGjg4LgXDDJUV1TvPKhR2i0U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -780,8 +780,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   .lt tbody tr.clk{display:grid;grid-template-columns:minmax(96px,1fr) auto 132px;grid-template-areas:"nm st wt" "sp d1 d6";
     column-gap:10px;row-gap:6px;padding:10px 10px;border-bottom:1px solid var(--g2);align-items:start}
   .lt tbody tr.clk td{min-width:0}
-  .lt tbody tr.clk td.c-nm .ls-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .lt tbody tr.clk td.c-nm .ls-sub .tg-chip{display:none}
+  .lt tbody tr.clk td.c-nm .ls-sub{white-space:normal}   /* 食事形態ととろみ・減塩の札は省かず折り返す（レビュー指摘） */
   .lt tbody tr.clk td.c-st{text-align:center}
   .lt tbody tr.clk td.c-wt .ls-sub{white-space:normal}
   .lt tbody tr.clk td.c-wt .ls-multi{display:none}   /* 同じ月の件数はスマホでは省く（個別の画面で見られる） */
@@ -817,6 +816,8 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   .tnav svg{width:20px;height:20px}
   .tnav .badge{position:absolute;top:4px;left:calc(50% + 6px);margin-left:0}
   .scr{padding-bottom:150px}
+  /* 下に固定したタブ（58px）の上に保存ボタンを出す（タブに隠れて押せない・レビュー指摘） */
+  #inSave{bottom:calc(70px + env(safe-area-inset-bottom, 0px))}
 }
 /* とても狭い時（360px以下・文字を大きくした iPhone など）：1人を4段に組み替え、タブはバーの中だけ横にずらす */
 @media(max-width:360px){
@@ -2095,10 +2096,11 @@ async function apiProbe(){
 function pushResidentFields_(r, fields){
   if(!r || r.id == null) return;
   if(typeof apiPush !== 'function') return;
-  if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r }); return; }
+  const withAck = fields.indexOf('alertAck') >= 0;   // アラートの確認を送る時だけ alertAck を載せる（apiPost が外す・2026-10-17）
+  if(!apiCan('fieldMerge')){ apiPush('saveResident', { resident: r, _withAck: withAck }); return; }
   /* サーバーにまだ無い人は行ごと送る。項目だけ送ると、サーバーに「番号と車椅子重量だけ」の
      氏名の無い行ができ、次の同期で端末の氏名まで空になる（2026-09-28 修正） */
-  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r }); return; }
+  if(wrServerLacksResident(r.id)){ apiPush('saveResident', { resident: r, _withAck: withAck }); return; }
   const part = { id: r.id };
   fields.forEach(k=>{
     // 値が無い項目は null を明示して送る＝「空にせよ」の意思表示（キー省略は温存の意味になる）
@@ -2107,7 +2109,7 @@ function pushResidentFields_(r, fields){
   if(r.updatedAt != null) part.updatedAt = r.updatedAt;
   /* _partial は送信されない（apiPost は resident/record/id/thresholds しか body に載せない）。
      未送信キューに残った時、再送直前の引き直しへ「この項目だけを送る意図だった」と伝えるための印。 */
-  apiPush('saveResident', { resident: part, _partial: true });
+  apiPush('saveResident', { resident: part, _partial: true, _withAck: withAck });
 }
 /* 応答に載っている版から、いま繋がっているサーバーの能力を見直す。
    画面を開いたままサーバーを前の版へ戻された場合、起動時の観測だけでは気づけず、
@@ -2199,6 +2201,16 @@ async function apiGet(){
   const r = await fetchTO(apiUrl + '?action=getAll', { cache:'no-store' });
   return _parseApiResponse(r);
 }
+/* 入居者の行を送る前に、アラートの確認（alertAck）を外す（2026-10-17・レビュー指摘）。
+   alertAck は各端末が別々に付ける記録なので、入居者情報の保存などで行全体を送ると、古い端末の値で
+   他の端末の確認を消してしまう（後勝ちの上書き）。送るのは確認そのものを送る時（_withAck）と、
+   サーバーにまだ無い新しい行の時だけ。キーが無ければ GAS は既存の値を残す */
+function wrResForSend_(data){
+  const r = data && data.resident;
+  if(!r || typeof r !== 'object' || !Object.prototype.hasOwnProperty.call(r, 'alertAck')) return r;
+  if(data._withAck === true || wrServerLacksResident(r.id)) return r;
+  const o = Object.assign({}, r); delete o.alertAck; return o;
+}
 async function apiPost(action, data){
   if(!apiUrl) return null;
   data = data || {};
@@ -2208,7 +2220,7 @@ async function apiPost(action, data){
     action,
     token:    apiToken || undefined,   // 未設定なら送らない（移行中のサーバーは素通しする）
     accessToken: accessToken || undefined,
-    resident: data.resident,
+    resident: wrResForSend_(data),
     record:   data.record,
     id:       data.id,
     thresholds: data.thresholds,
@@ -4087,6 +4099,21 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.body.classList.contains('ps-active')) closePrintSheet();
 });
 
+/* analyze の結果から、閾値を超えた期間を増加・減少に振り分ける（collectAlerts と同じ判定）。{up:'ng'|'w'|null, dn:...} */
+function wrAlertDirs(a){
+  const out = { up: null, dn: null };
+  if(!a) return out;
+  [[a.diff1, a.pct1, THR.m1], [a.diff3, a.pct3, THR.m3], [a.diff6, a.pct6, THR.m6]].forEach(([d, p, th])=>{
+    if(d == null || !th || d === 0) return;
+    const absD = Math.abs(d), absP = Math.abs(p || 0);
+    const lv = ((th.ngKg > 0 && absD >= th.ngKg) || (th.ngPct > 0 && absP >= th.ngPct)) ? 'ng'
+             : ((th.wKg > 0 && absD >= th.wKg) || (th.wPct > 0 && absP >= th.wPct)) ? 'w' : null;
+    if(!lv) return;
+    const k = d > 0 ? 'up' : 'dn';
+    if(out[k] !== 'ng') out[k] = lv;
+  });
+  return out;
+}
 /* ── 低栄養リスク（2026-10-17・代表者承認） ──
    厚労省「低栄養状態のリスク」（介護保険最新情報 Vol.1217 令和6年3月15日・施設／通所居宅の様式例の判定表）の区切りで、
    体重減少率と BMI から 低／中／高 を出す。血清アルブミン・食事摂取量・栄養補給法・褥瘡はこのアプリに無いので含めない
@@ -4116,9 +4143,10 @@ function wrNutritionRisk(rid, ym){
     }
     if(bmi != null && bmi < 18.5) (hi.length ? hi : mid).push(`BMI ${bmi.toFixed(1)}（18.5未満）`);
     const known = (l1 != null || l3 != null || l6 != null || bmi != null);
-    if(hi.length) return { level:'high', label:'高リスク', reasons: hi, bmi };
-    if(mid.length) return { level:'mid', label:'中リスク', reasons: mid, bmi };
-    return known ? { level:'low', label:'低リスク', reasons: [], bmi } : { level:null, label:'判定できない', reasons: [], bmi };
+    const compared = (l1 != null || l3 != null || l6 != null);
+    if(hi.length) return { level:'high', label:'高リスク', reasons: hi, bmi, compared };
+    if(mid.length) return { level:'mid', label:'中リスク', reasons: mid, bmi, compared };
+    return known ? { level:'low', label:'低リスク', reasons: [], bmi, compared } : { level:null, label:'判定できない', reasons: [], bmi, compared };
   }catch(e){ return null; }
 }
 function wrRiskChip(rk){
@@ -4231,13 +4259,14 @@ function renderList(){
     const cur = getRecord(r.id, listMonth);
     const a   = analyze(r.id, listMonth);
 
-    if(listFilter==='alert' && (!a || a.level==='none')) continue;
-    if(listFilter==='missing' && cur) continue;
     const rk = cur ? wrNutritionRisk(r.id, listMonth) : null;
+    const rkHigh = !!(rk && rk.level === 'high');   // 高リスクはアラートにも上げるので、一覧の「アラートあり」と行の色も合わせる
+    if(listFilter==='alert' && (!a || a.level==='none') && !rkHigh) continue;
+    if(listFilter==='missing' && cur) continue;
     if(listFilter==='risk' && !(rk && (rk.level === 'mid' || rk.level === 'high'))) continue;
 
     const tr = document.createElement('tr');
-    tr.className = 'clk ' + (shown%2 ? 'ev' : '') + (a && a.level==='ng' ? ' alert-ng' : a && a.level==='w' ? ' alert-w' : '');
+    tr.className = 'clk ' + (shown%2 ? 'ev' : '') + ((a && a.level==='ng') || rkHigh ? ' alert-ng' : a && a.level==='w' ? ' alert-w' : '');
     // Row click → individual screen for THIS resident.
     // populateResidentSelect keeps the existing select value, so we MUST set
     // it explicitly here (otherwise it falls back to whatever value the select
@@ -4278,7 +4307,7 @@ function renderList(){
     const togHtml = TOGGLES.filter(t=>mfSrc[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('');
     const hasMf = !!(mfSrc.stapleForm || mfSrc.sideForm);
     const mfHtml = hasMf
-      ? `<span class="mf"><b>${mainLabel(mfSrc.stapleForm)}</b>${mfSrc.stapleAmount!=null?` ${mfSrc.stapleAmount}g`:''}/${sideLabel(mfSrc.sideForm)}</span>${togHtml?` ${togHtml}`:''}`
+      ? `<span class="mf"><b>${mainLabel(mfSrc.stapleForm)}</b>${(mfSrc.stapleAmount!=null && isFinite(Number(mfSrc.stapleAmount)))?` ${Number(mfSrc.stapleAmount)}g`:''}/${sideLabel(mfSrc.sideForm)}</span>${togHtml?` ${togHtml}`:''}`
       : '';
 
     /* 低栄養リスクが中・高の時は「良好」と並べない（矛盾して見えるため）。注意・警告の札はそのまま残す */
@@ -4373,6 +4402,8 @@ function diffHtml(rid, ym, currentWeight){
   return `<div class="gr-bmi" style="color:${color};font-weight:700" title="${lbl}（${ymGridLabel(d.fromYm)}比）">(${sign}${d.diff.toFixed(1)})</div>`;
 }
 
+/* 集計の表を右端へ送るのは、初めて描いた時と基準月を変えた時だけ（描き直すたびに見ている位置を戻さない・レビュー指摘） */
+let wrGridScrolledFor = null;
 function renderGrid(){
   const tbl = $('#gridTable');
   const residents = sortedResidents();
@@ -4418,9 +4449,11 @@ function renderGrid(){
           try{
             const a = analyze(r.id, ym);
             if(a && (a.level === 'ng' || a.level === 'w')){
-              const dn = alertDir(a) === 'dn';
+              /* 向きは期間ごとに閾値を超えた差の符号で決める（アラート一覧と同じ振り分け。最初の期間の符号で決めると、
+                 6か月で減って直近だけ増えた人が「▲」になる・レビュー指摘） */
+              const dirs = wrAlertDirs(a);
               alCls = a.level === 'ng' ? ' gr-al-ng' : ' gr-al-w';
-              alMk = `<span class="gr-al-mk">${dn ? '▼' : '▲'}${a.level === 'ng' ? '警告' : '注意'}</span>`;
+              alMk = ['dn', 'up'].filter(k=> dirs[k]).map(k=> `<span class="gr-al-mk">${k === 'dn' ? '▼' : '▲'}${dirs[k] === 'ng' ? '警告' : '注意'}</span>`).join('');
             }
           }catch(e){}
           cells += `<td class="gr-clk ${hlClsArr.join(' ')}${alCls}" data-edit-rec="${escapeHtml(rec.id)}" title="この記録を編集"><div class="gr-wt">${rec.weight.toFixed(1)}</div>${diff}${alMk}</td>`;
@@ -4435,7 +4468,7 @@ function renderGrid(){
   tbl.innerHTML = head + '<tbody>' + rows + '</tbody>';
   $('#gridMeta').textContent = `${ymGridLabel(months[0])}〜${ymGridLabel(months[months.length-1])} / ${residents.length}名`;
   /* 表は古い月から並ぶので、開いた時は新しい月（右端）まで送っておく（スマホで今月が見えないのを防ぐ・2026-10-17） */
-  try{ const wrap = tbl.closest('.gr-wrap'); if(wrap) wrap.scrollLeft = wrap.scrollWidth; }catch(e){}
+  try{ const wrap = tbl.closest('.gr-wrap'); if(wrap && wrGridScrolledFor !== gridMonth){ wrap.scrollLeft = wrap.scrollWidth; wrGridScrolledFor = gridMonth; } }catch(e){}
 }
 
 /* delegation: 個別 / 3年表示 buttons + cell-click to edit */
@@ -4474,7 +4507,9 @@ $('#gridTable').addEventListener('keydown', e=>{
 });
 /* 集計の氏名のメニュー。表の外（body）に固定位置で出す（表は横に流れるので、表の中に置くと切れる） */
 function wrCloseGridMenu(){ const m = document.getElementById('grMenu'); if(m) m.remove(); }
-window.addEventListener('scroll', wrCloseGridMenu, true);
+let wrGridMenuAt = 0;
+/* スクロールしたら閉じる（位置がずれたまま残さない）。開いた直後 0.4 秒の動きでは閉じない（慣性やフォーカスで閉じてしまわないように） */
+window.addEventListener('scroll', ()=>{ if(Date.now() - wrGridMenuAt > 400) wrCloseGridMenu(); }, true);
 function wrOpenGridMenu(cell, ev){
   wrCloseGridMenu();
   const rid = cell.dataset.goRid;
@@ -4490,7 +4525,10 @@ function wrOpenGridMenu(cell, ev){
   const mw = m.offsetWidth, mh = m.offsetHeight;
   let x = rc.right + 6, y = rc.top;
   if(x + mw > innerWidth - 8) x = Math.max(8, innerWidth - mw - 8);
-  if(y + mh > innerHeight - 8) y = Math.max(8, innerHeight - mh - 8);
+  /* 下にタブが固定されている時（720px以下）は、その高さも避ける */
+  const navEl = document.querySelector('.tnav');
+  const navTop = (navEl && getComputedStyle(navEl).position === 'fixed') ? navEl.getBoundingClientRect().top : innerHeight;
+  if(y + mh > navTop - 8) y = Math.max(8, navTop - mh - 8);
   m.style.left = x + 'px'; m.style.top = y + 'px';
   m.addEventListener('click', e=>{
     const b = e.target.closest('[data-gm]'); if(!b) return;
@@ -4499,7 +4537,8 @@ function wrOpenGridMenu(cell, ev){
     else if(b.dataset.gm === 'indiv') openIndivFor(rid);
     else openGrid3y(rid);
   });
-  const first = m.querySelector('button'); if(first) first.focus();
+  const first = m.querySelector('button'); if(first) try{ first.focus({ preventScroll: true }); }catch(_){ first.focus(); }
+  wrGridMenuAt = Date.now();
   setTimeout(()=>{
     const off = e=>{ if(!m.contains(e.target)){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); } };
     const esc = e=>{ if(e.key === 'Escape'){ wrCloseGridMenu(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', esc, true); try{ cell.focus(); }catch(_){} } };
@@ -4718,6 +4757,7 @@ function bulkSave(){
 
     const existingId = row.dataset.existing;
     const existing   = existingId ? getRecordById(existingId) : null;
+    const prevWRc    = existing ? existing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
     let rec;
     if(existing){
       // overwrite only the fields the bulk form controls. Preserve other
@@ -4749,6 +4789,7 @@ function bulkSave(){
       DB.records.push(rec);
     }
     if(recheckRows.has(row)) rec.recheck = 'confirmed';   // 測り直して同じ値だった印
+    else if(rec.recheck && prevWRc != null && prevWRc !== rec.weight) rec.recheck = null;   // 値を直したら前の印は外す
     // 一括保存でも各レコードを正規化
     normalizeRecord(rec);
     saved.push(rec);
@@ -4825,6 +4866,7 @@ function saveSingleBulkRow(row){
   }
   const existingId = row.dataset.existing;
   const existing   = existingId ? getRecordById(existingId) : null;
+  const prevWRc    = existing ? existing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
   let rec;
   if(existing){
     // 既存記録の上書き（食事・メモ等の他フィールドは温存）
@@ -4857,6 +4899,7 @@ function saveSingleBulkRow(row){
     row.classList.add('existing');
   }
   if(recheckOk) rec.recheck = 'confirmed';
+  else if(rec.recheck && prevWRc != null && prevWRc !== rec.weight) rec.recheck = null;   // 値を直したら前の印は外す
   normalizeRecord(rec);
   const chairResChanged = wcNoteBulkRec_(rid, rec);   // bulkSave と同じ規則で車椅子の変更履歴に照らす
   save();
@@ -5695,6 +5738,7 @@ $('#inSave').addEventListener('click', ()=>{
     ? (wcKgOn_(chairLogBefore, chairKey) ?? getChairKgAsOf(rid, ym, chairKey, ownRecId))
     : null;
   let savedRec;
+  const prevWRc = editing ? editing.weight : null;   // 測り直しの印を外すかの判定用（値が変わった時だけ外す）
   if(editing){
     // weight / mode / date / note のみ更新。食事スナップショットは履歴として温存
     // （食事の変更は設定画面の入居者編集から行われ、新規記録の保存時に反映される）。
@@ -5731,6 +5775,7 @@ $('#inSave').addEventListener('click', ()=>{
     savedRec = rec;
   }
   if(recheckOk) savedRec.recheck = 'confirmed';   // 測り直して同じ値だった印
+  else if(savedRec.recheck && prevWRc != null && prevWRc !== savedRec.weight) savedRec.recheck = null;   // 値を直したら前の印は外す
   // 保存直前に必ず正規化（GAS 経由で型崩れしたものを上書き保存し直す場合にも安全）
   normalizeRecord(savedRec);
   /* 車椅子重量がその日の時点の重さと違えば「車椅子を替えた」とみなし、測定日を変更日として履歴に1行足す。
@@ -5991,7 +6036,7 @@ function renderIndiv(){
   // 6か月前の体重と、そこから −3%（厚労省の低栄養リスクで「中」の入口）の目安線も範囲に含める。
   const allWeights = [...allMonthly.map(r=>r.weight), ...primaryWeights].filter(w=> typeof w === 'number' && isFinite(w) && w > 0);
   ivRefLines = wrRefLinesFor(rid);
-  const auto = allWeights.length ? computeYRange(allWeights, ivRefLines.map(l=> l.y)) : null;
+  const auto = allWeights.length ? computeYRange(allWeights, ivRefLines.filter(l=> !l.optional).map(l=> l.y)) : null;
   // ユーザが Y軸範囲を指定していたらそれで上書き。片端のみ指定も可。
   let yRange = auto;
   if(ivYMin != null || ivYMax != null){
@@ -6057,7 +6102,7 @@ const wrMealMarkPlugin = {
       if(!x || !area || !marks.length) return;
       const ctx = chart.ctx;
       ctx.save();
-      ctx.font = '600 13px "Hiragino Sans","Yu Gothic UI",sans-serif';
+      ctx.font = '600 15px "Hiragino Sans","Yu Gothic UI",sans-serif';
       marks.forEach((m, i)=>{
         const px = x.getPixelForValue(m.x);
         if(!(px >= area.left && px <= area.right)) return;
@@ -6065,8 +6110,8 @@ const wrMealMarkPlugin = {
         ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke(); ctx.setLineDash([]);
         const tw = ctx.measureText(m.text).width;
         const tx = Math.min(Math.max(px + 4, area.left + 2), area.right - tw - 4);
-        const ty = area.top + 14 + (i % 2) * 18;   // 隣どうしの札が重ならないよう段をずらす
-        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(tx - 2, ty - 13, tw + 4, 17);
+        const ty = area.top + 16 + (i % 2) * 20;   // 隣どうしの札が重ならないよう段をずらす
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(tx - 2, ty - 15, tw + 4, 19);
         ctx.fillStyle = '#4527a0'; ctx.textBaseline = 'alphabetic'; ctx.fillText(m.text, tx, ty);
       });
       ctx.restore();
@@ -6094,7 +6139,7 @@ const wrRefLinePlugin = {
         ctx.strokeStyle = l.kind === 'base' ? 'rgba(95,99,104,.55)' : (l.kind === 'mid' ? 'rgba(230,81,0,.75)' : 'rgba(198,40,40,.75)');
         ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.font = '600 13px "Hiragino Sans","Yu Gothic UI",sans-serif';
+        ctx.font = '600 15px "Hiragino Sans","Yu Gothic UI",sans-serif';
         ctx.fillStyle = l.kind === 'base' ? '#5f6368' : (l.kind === 'mid' ? '#b23c00' : '#b71c1c');
         ctx.textBaseline = 'bottom';
         ctx.fillText(l.text, area.left + 6, py - 2);
@@ -6428,7 +6473,7 @@ function drawStats(rid){
     (()=>{ const rk = wrNutritionRisk(rid, last.yearMonth);
            if(!rk || !rk.level) return cell('低栄養リスク', '—', '比べる記録・身長が無い', '', 'color:var(--g5)');
            const cls = rk.level === 'high' ? 'rk-v-high' : rk.level === 'mid' ? 'rk-v-mid' : '';
-           const sub = rk.reasons.length ? escapeHtml(rk.reasons.join('・')) : '3%以上の減少なし';
+           const sub = rk.reasons.length ? escapeHtml(rk.reasons.join('・')) : (rk.compared ? '3%以上の減少なし' : 'BMIのみ（比べる記録なし）');
            return `<div class="st-i" title="体重とBMIだけで判定（血清アルブミン・食事摂取量は含みません）"><div class="st-l">低栄養リスク</div><div class="st-v ${cls}">${rk.label}</div><div class="st-s">${sub}</div></div>`; })() +
     cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`,
          `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`);
