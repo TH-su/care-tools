@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-bzfRyR+DwIFqNPNI7uRU8oMzR1ChkkpLVIV6USsxHdI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CUFHV9q7eQ9vUzBXff7qP+GbYcJCItyKTiHCKg2QNvE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -7637,12 +7637,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     /* 取り消し・やり直しで戻すのは盤面の中身だけ。版番号（meta.rev）は同期の控えなので今の値を引き継ぐ
      * （2026-10-07）。戻すと次の送信が必ず競合し、統合で盤面が置き換わって取り消し履歴が全部消えていた。 */
+    /* ロックの印（locked・lockedAt）も今の値を引き継ぐ（2026-10-17）。取り消しを重ねてロックする前の盤面まで戻ると、
+     * 「一度ロックして外した」印（false）が欄ごと消えて「一度もロックしていない日」に戻っていた。外す時の確かめ（2026-10-13）も
+     * 取り消しでは通らなかった。ロックの切り替えはロックのボタンだけで行う */
     function keepRev_(restored, cur) {
-      if (!restored || !restored.meta || !cur || !cur.meta || restored.meta.rev === cur.meta.rev) return restored;
+      if (!restored || !restored.meta || !cur || !cur.meta) return restored;
+      var rm = restored.meta, cm = cur.meta;
+      if (rm.rev === cm.rev && rm.locked === cm.locked && rm.lockedAt === cm.lockedAt) return restored;
       var nm = {}, k;
-      for (k in restored.meta) if (Object.prototype.hasOwnProperty.call(restored.meta, k)) nm[k] = restored.meta[k];
-      nm.rev = cur.meta.rev;
+      for (k in rm) if (Object.prototype.hasOwnProperty.call(rm, k)) nm[k] = rm[k];
+      nm.rev = cm.rev;
+      if (cm.locked === undefined) delete nm.locked; else nm.locked = cm.locked;
+      if (cm.lockedAt === undefined) delete nm.lockedAt; else nm.lockedAt = cm.lockedAt;
       return { meta: nm, staff: restored.staff, columns: restored.columns, tasks: restored.tasks };
+    }
+    /* 戻す盤面がロック中の時の版で、引き継いだ今の状態がロック中でなければ、外す時と同じ整理を掛ける（2026-10-17・反証レビュー指摘）。
+     * 掛けないと、ロック中に溜まっていた重なりが「外した日」のまま戻り、そのまま送られる */
+    function unfreezeKept_(raw, cur) {
+      var nx = keepRev_(raw, cur);
+      if (raw && raw.meta && raw.meta.locked === true && nx && !(nx.meta && nx.meta.locked === true)) nx = enforce_(null, nx);
+      return nx;
+    }
+    /* ロックの切り替えだけの1手か（盤面もほかの印も同じ）。取り消し・やり直しでは飛ばす＝押しても何も変わらない1手を作らない */
+    function lockOnlyStep_(a, b) {
+      if (!a || !b || a.staff !== b.staff || a.columns !== b.columns || a.tasks !== b.tasks) return false;
+      var am = a.meta || {}, bm = b.meta || {}, ks = {}, k;
+      for (k in am) if (Object.prototype.hasOwnProperty.call(am, k)) ks[k] = 1;
+      for (k in bm) if (Object.prototype.hasOwnProperty.call(bm, k)) ks[k] = 1;
+      for (k in ks) {
+        if (k === 'rev' || k === 'locked' || k === 'lockedAt') continue;
+        if (JSON.stringify(am[k]) !== JSON.stringify(bm[k])) return false;
+      }
+      return true;
     }
     function notify() {
       for (var i = 0; i < subs.length; i++) {
@@ -7744,16 +7770,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       },
       undo: function () {
         if (!past.length) return false;
-        future.push(day);
-        day = keepRev_(past.pop(), day);
+        var nx, lockOnly;
+        do {   /* ロックの切り替えだけの1手は飛ばして、その前の1手まで戻す */
+          future.push(day);
+          nx = unfreezeKept_(past.pop(), day);
+          lockOnly = lockOnlyStep_(nx, day);
+          day = nx;
+        } while (lockOnly && past.length);
         userSeq++;   /* 取り消し・やり直しも本人の操作として数える */
         notify();
         return true;
       },
       redo: function () {
         if (!future.length) return false;
-        past.push(day);
-        day = keepRev_(future.pop(), day);
+        var nx, lockOnly;
+        do {
+          past.push(day);
+          nx = unfreezeKept_(future.pop(), day);
+          lockOnly = lockOnlyStep_(nx, day);
+          day = nx;
+        } while (lockOnly && future.length);
         userSeq++;
         notify();
         return true;
@@ -10623,6 +10659,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 外した日をほかの PC で開いても自動の組み直し（週間計画の同期・自動配置・勤務表の自動反映・並びの固定・列の並べ直し）をしない。
    * 手で押す取込・再反映・生成は通す（manualDepth_）。解除した瞬間の重なりの整理（store.js）は残す（本人裁定 2026-10-16）。 */
   function onceLockedMeta_(d) { return !!(d && d.meta && (d.meta.locked === true || d.meta.locked === false)); }
+  /* 一度ロックした日の印を消さない（2026-10-17）: 置き換えた後の盤面にロックの欄が無く、置き換える前が一度ロックした日（true/false）なら、
+   * 「外した（false）」にしてロックした時刻も残す。欄なしに戻ると、自動の組み直しの止めが外れ、古い控えのロックが勝つ統合の入口にもなる（10/24） */
+  function keepOnceLocked_(next, prev) {
+    if (!next || !next.meta || next.meta.locked !== undefined || !onceLockedMeta_(prev)) return next;
+    next.meta.locked = false;
+    if (prev.meta.lockedAt && !next.meta.lockedAt) next.meta.lockedAt = prev.meta.lockedAt;
+    return next;
+  }
   var manualDepth_ = 0;   /* >0 の間は本人が押した取込・再反映の中＝一度ロックした日でも組み直してよい */
   function runManual_(fn) { manualDepth_++; try { return fn(); } finally { manualDepth_--; } }
   /* 自動の組み直しを止める日か。ロック中・過去日の自動保護に加え、一度ロックした日（本人の操作の中を除く） */
@@ -14636,6 +14680,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 入れないと、盤面が変わらず印だけ付いた日（人の手が入った並びばかりの日）は送られず、印が端末に閉じる */
       if (day.meta.routineDone && day.meta.routineDone.length) sigO.r = day.meta.routineDone;
       if (day.meta.routineNextAt) sigO.x = day.meta.routineNextAt;
+      /* 「一度ロックして外した」（false）を「一度もロックしていない」（欄なし）と見分ける（2026-10-17）。false の日だけ入れる＝
+       * 欄なし・ロック中の日の署名は今までと同じ。入れないと、サーバーの欄なしを「違いなし」として採り、外した印が全部の PC から消えた */
+      if (day.meta.locked === false) sigO.o = 1;
       return JSON.stringify(canon(sigO));   /* ロック状態を署名に含める＝切替がpushされ全端末へ伝播 */
     } catch (e) { return ''; }
   }
@@ -14890,11 +14937,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 古い未送信の判定（2026-10-17）: 印を付けてから STALE_DIRTY_MS を過ぎていて、かつ祖先（最後に同期した版）から
    * サーバーの版が変わっている＝その間にほかの端末が書いた。祖先が無い時は変わったとみなす（どちらが新しいか分からない） */
   var STALE_DIRTY_MS = 2 * 60 * 60 * 1000;
-  function staleDirty_(date, serverDay) {
+  function staleDirty_(date, serverDay, ignoreLock) {
     if (dirtyAge_(date) <= STALE_DIRTY_MS) return false;
     var base = loadBase_(date);
     if (!base || !base.meta) return true;
+    /* サーバーの版に外した印を補った時（lockHeal_）は、ロックの印の違いを「ほかの端末の変更」に数えない（2026-10-17・反証レビュー指摘） */
+    if (ignoreLock) return daySig(lockless_(base)) !== daySig(lockless_(serverDay));
     return daySig(base) !== daySig(serverDay);
+  }
+  function lockless_(d) {
+    var o = { meta: {}, staff: d.staff, columns: d.columns, tasks: d.tasks }, k;
+    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k) && k !== 'locked') o.meta[k] = d.meta[k];
+    return o;
+  }
+  /* 外した印をサーバーへ送り返す予約（2026-10-17）。統合の重なりの止めから取り込み直した後にも掛ける＝入り直しではサーバーの版に欄があるため */
+  function healPushAfter_(date, isCur) {
+    markDayDirty_(date);
+    if (isCur) { lastPushed.day = ''; schedulePushDay(); } else scheduleRetry_();
   }
   /* 統合で新しくできた重なりの組（2026-10-17・本人選択「統合せずサーバーを残す」）。
    * ロックした日は統合の後に重なりを直す処理が走らない（凍結）ため、手元にもサーバーにも無かった重なりの組が統合の結果にできたら、
@@ -14947,10 +15006,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 端末で作った仮の盤面のまま（人の編集なし）なら、統合せずにサーバーの版を丸ごと採る（2026-10-13・seedMark_ の説明） */
     if (seededUntouched_(date)) { clearSeeded_(date); clearDayDirty_(date); }
     var localDay = isCur ? store.get() : loadDayData(date);
+    /* サーバーの版にロックの欄が無くても、手元か土台が一度ロックした日なら「外した（false）」として扱い、送り返してサーバーも直す（2026-10-17）。
+     * 欄が消えるのは不具合の時だけ（一度ロックした日は true と false の間でしか変わらない）。10/13・10/15 に翌週へコピーが欄を消し、
+     * 全部の PC がその欄なしを採ったため、10/17 に古い控えのロックが勝つ統合へ入った。現場（印だけを書く）は盤面の印を送らないので直さない */
+    var lockHeal_ = false;
+    if (serverDay.meta.locked === undefined && !fieldMarksOnly_(date) &&
+        (onceLockedMeta_(localDay) || onceLockedMeta_(loadBase_(date)))) {
+      keepOnceLocked_(serverDay, onceLockedMeta_(localDay) ? localDay : loadBase_(date));
+      lockHeal_ = true;
+    }
     /* 古い未送信（2026-10-17・本人選択「自動では統合しない」）: この端末の未送信の変更が STALE_DIRTY_MS より前のもので、
      * その後にほかの端末がこの日を変えていたら、統合せずに控え（wsbase_conflict_）へ退避して最新の盤面を採る。
      * 眠っていた PC が1日半前の変更を送り、その間のほかの PC の調整を上書きした（10/25・10/24）ため */
-    if (localDay && !fieldMarksOnly_(date) && isDayDirty_(date) && staleDirty_(date, serverDay) && daySig(localDay) !== daySig(serverDay)) {   /* 現場の端末は盤面を変えない＝印を移す取り込みに任せる */
+    if (localDay && !fieldMarksOnly_(date) && isDayDirty_(date) && staleDirty_(date, serverDay, lockHeal_) && daySig(localDay) !== daySig(serverDay)) {   /* 現場の端末は盤面を変えない＝印を移す取り込みに任せる */
       try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eSt) { wsNote_('古い未送信の退避', eSt); }
       clearDayDirty_(date);
       toast(dateLabel(date) + ' はこの端末に前の送っていない変更が残っていましたが、その後にほかの端末で変わっていたため、送らずに最新の盤面にしました（変更は控えに退避）', true);
@@ -14990,7 +15058,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       reportWipeGuard_(mergedLk_, date);
       mergedLk_.meta = mergedLk_.meta || {};
       mergedLk_.meta.locked = true;   /* ロック保持端末が正＝解除は明示操作(lockOverride)でのみ行う */
-      if (mergeOverlapGuard_(date, mergedLk_, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); return; }
+      if (mergeOverlapGuard_(date, mergedLk_, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); if (lockHeal_) healPushAfter_(date, isCur); return; }
       mergedLk_.meta.date = date;
       mergedLk_.meta.rev = serverRev;
       saveBase_(date, serverDay);     /* 祖先＝サーバーが実際に持っていた版（locked は付け足さない） */
@@ -15035,6 +15103,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * この端末だけ1件になる。祖先(saveBase_)はサーバー版のままなので、次の送信は
        * 「重複を消した分だけの変更」として正しく伝わる。 */
       if (srvAdopt_ !== serverDay) markDayDirty_(date);
+      if (lockHeal_) { markDayDirty_(date); if (isCur) lastPushed.day = ''; }   /* 外した印をサーバーへ送り返す */
       if (isCur) {
         reassertBoardFixes_(serverDay);   /* 列固定の自己修復（saveBase_/sig計算後＝差分はpushで伝播） */
         store.dispatch({ type: 'INIT_DAY', day: srvAdopt_, frozen: initFrozen_(srvAdopt_) });
@@ -15044,7 +15113,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (notify) toast('他端末の更新を取得しました');
       } else {
         lsSetDay_(date, srvAdopt_);   /* 表示していない日にも畳み済みを保存＝重複のまま送り返さない */
-        if (srvAdopt_ !== serverDay) scheduleRetry_();   /* 畳んだ差分の送信契機を張る（非当日はpush契機が無い） */
+        if (srvAdopt_ !== serverDay || lockHeal_) scheduleRetry_();   /* 畳んだ差分の送信契機を張る（非当日はpush契機が無い） */
       }
       return;
     }
@@ -15077,7 +15146,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!unlockStillMine_(date, serverDay)) { if (merged.meta.locked !== true) merged.meta.locked = true; }
       else if (localDay && localDay.meta && localDay.meta.locked !== true) merged.meta.locked = false;   /* 人が外したばかり＝外したまま送り直す */
     }
-    if (!fieldMarksOnly_(date) && mergeOverlapGuard_(date, merged, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); return; }
+    if (!fieldMarksOnly_(date) && mergeOverlapGuard_(date, merged, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); if (lockHeal_) healPushAfter_(date, isCur); return; }
     merged.meta.date = date;
     merged.meta.rev = serverRev;
     saveBase_(date, serverDay);   /* 祖先＝いま取り込んだサーバー版（マージ結果のpush成功で更新） */
@@ -17958,7 +18027,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       d.meta.rev = 0;
       /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
        * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
-      if (d.meta.locked === false) delete d.meta.locked;
+      if (d.meta.locked === false) { delete d.meta.locked; delete d.meta.lockedAt; }
+      keepOnceLocked_(d, store.get());   /* 複製先の日が一度ロックした日なら、その印は残す（2026-10-17） */
       for (var i = 0; i < d.tasks.length; i++) {
         d.tasks[i].done = false;
         d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
@@ -17971,7 +18041,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('stClearDay').addEventListener('click', function () {
       if (fieldBlock_()) return;   /* 現場の端末では盤面を消さない（2026-10-11） */
       if (!window.confirm(ui.currentDate + ' のデータをクリアしますか？')) return;
-      store.dispatch({ type: 'INIT_DAY', day: S.emptyDay(ui.currentDate) });
+      store.dispatch({ type: 'INIT_DAY', day: keepOnceLocked_(S.emptyDay(ui.currentDate), store.get()) });   /* 一度ロックした日の印は残す（2026-10-17） */
       scheduleSave();
       hideModals();
     });
@@ -18452,8 +18522,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261017192258';
-  var WS_APP_VER = 2026101701;
+  var WS_BUILD = '20261017195413';
+  var WS_APP_VER = 2026101702;   /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
     /* 現場の端末（印だけを書く）は印の保存（kv_put_marks）を通り、サーバーの版の確かめの対象外。印を付けると、共通部品の
