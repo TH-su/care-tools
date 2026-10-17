@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rGqTlKlrL8dkxgTd+aihfQWAlRSGJUtUsd1+QI5HIK0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-oMvTgLC8rPmx7cXKlvzsD9C0WOxMuqZ+Yav6S+GuZ5g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -195,6 +195,15 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   </details>
 </main>
 <script>
+/* ===== src/logic/lzstring.js ===== */
+/* lzstring.js — LZ-String v1.4.4 (minified) localStorage圧縮用
+ * compressToUTF16 / decompressFromUTF16 のみ store.js から使用。
+ * 旧Safari互換: ES3級・依存ゼロ。JSON文字列をUTF-16安全な文字列へ圧縮し
+ * localStorage実効容量を約4〜5倍に拡張する（排泄記録アプリ haiben-record と同一版）。 */
+var LZString=function(){var o=String.fromCharCode,n="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=",e="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-$",t={},i={compressToBase64:function(o){if(null==o)return"";var r=i._compress(o,6,function(o){return n.charAt(o)});switch(r.length%4){default:case 0:return r;case 1:return r+"===";case 2:return r+"==";case 3:return r+"="}},decompressFromBase64:function(r){return null==r?"":""==r?null:i._decompress(r.length,32,function(e){return s(n,r.charAt(e))})},compressToUTF16:function(n){return null==n?"":i._compress(n,15,function(n){return o(n+32)})+" "},decompressFromUTF16:function(r){return null==r?"":""==r?null:i._decompress(r.length,16384,function(o){return r.charCodeAt(o)-32})},compress:function(r){return i._compress(r,16,function(r){return o(r)})},_compress:function(o,r,n){if(null==o)return"";var e,t,i,s={},u={},a="",p="",c="",l=2,f=3,h=2,d=[],m=0,v=0;for(i=0;i<o.length;i+=1)if(a=o.charAt(i),Object.prototype.hasOwnProperty.call(s,a)||(s[a]=f++,u[a]=!0),p=c+a,Object.prototype.hasOwnProperty.call(s,p))c=p;else{if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;h>e;e++)m<<=1,v==r-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;8>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;h>e;e++)m=m<<1|t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;16>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}l--,0==l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;l--,0==l&&(l=Math.pow(2,h),h++),s[p]=f++,c=String(a)}if(""!==c){if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;h>e;e++)m<<=1,v==r-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;8>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;h>e;e++)m=m<<1|t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;16>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}l--,0==l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;l--,0==l&&(l=Math.pow(2,h),h++)}for(t=2,e=0;h>e;e++)m=m<<1|1&t,v==r-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;for(;;){if(m<<=1,v==r-1){d.push(n(m));break}v++}return d.join("")},decompress:function(o){return null==o?"":""==o?null:i._decompress(o.length,32768,function(r){return o.charCodeAt(r)})},_decompress:function(n,e,t){var s,u,a,p,c,l,f,h=[],d=4,m=4,v=3,w="",b=[],g={val:t(0),position:e,index:1};for(s=0;3>s;s+=1)h[s]=s;for(a=0,c=Math.pow(2,2),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;switch(a){case 0:for(a=0,c=Math.pow(2,8),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;f=o(a);break;case 1:for(a=0,c=Math.pow(2,16),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;f=o(a);break;case 2:return""}for(h[3]=f,u=f,b.push(f);;){if(g.index>n)return"";for(a=0,c=Math.pow(2,v),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;switch(f=a){case 0:for(a=0,c=Math.pow(2,8),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;h[m++]=o(a),f=m-1,d--;break;case 1:for(a=0,c=Math.pow(2,16),l=1;l!=c;)p=g.val&g.position,g.position>>=1,0==g.position&&(g.position=e,g.val=t(g.index++)),a|=(p>0?1:0)*l,l<<=1;h[m++]=o(a),f=m-1,d--;break;case 2:return b.join("")}if(0==d&&(d=Math.pow(2,v),v++),h[f])w=h[f];else{if(f!==m)return null;w=u+u.charAt(0)}b.push(w),h[m++]=u+w.charAt(0),d--,u=w,0==d&&(d=Math.pow(2,v),v++)}}};function s(o,r){if(!t[o]){t[o]={};for(var n=0;n<o.length;n++)t[o][o.charAt(n)]=n}return t[o][r]}return i}();
+if(typeof window!=='undefined')window.LZString=LZString;
+/* テスト用にCommonJSでも公開（ブラウザ動作には影響しない） */
+if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 /* ===== src/logic/symbols.js ===== */
 /* symbols.js — シフト記号の正規化・パース（純粋関数・依存ゼロ）
  * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
@@ -1580,6 +1589,74 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     return { quals: [], source: 'none' };
   }
 
+  /* ===== 勤務形態（シフト作成の名簿から読むだけ・2026-10-18 代表者の決定・改善プロンプト第2弾の9「そろえる」）=====
+   * 訪問の常勤換算をシフト作成の「特定事業所加算の人の要件」と同じ関数（AG.tokuteiMonth）で数えるため、
+   * 同じ端末・同じサイトにあるシフト作成の名簿から勤務形態（A〜D）と主区分を名前で引く。
+   * 読む順（シフト作成の official.js tokuteiMonth_ と同じ「確定した名簿、無ければ今のマスタ」）:
+   *   1. ym が分かり、その月の予定の勤務表（shiftapp:v1:sched:YYYY-MM:plan）の meta.staffSnap（確定時の名簿）があればそれ
+   *   2. 無ければ今の職員マスタ（shiftapp:v1:staff）
+   * ★読むだけ。getItem しか呼ばない（setItem/removeItem はしない＝シフト作成のデータを汚さない）。
+   * ★取り出すのは workForm・mainDivision の2つだけ（tokuteiMonth の常勤換算に効くのはこの2つ。ほかの個人の情報は写さない）。
+   * 保存の形は store.js の lsGet と同じ: 先頭が制御文字（コード1）なら LZ-String で復号、それ以外は平文の JSON。
+   * 照合は normName（NFKC＋空白除去）。同じ照合キーの職員が名簿に2人以上いる時は、取り違えないよう「読めなかった」に回す。
+   * 返値 { available, source:'snap'|'master'|'', count, byKey:{normName:{workForm,mainDivision}} }。
+   * どちらも無い・読めない・形が違う時は available:false（全員 勤務形態 未設定＝時間で数える）。 */
+  var SHIFT_PREFIX = 'shiftapp:v1:';
+  var SHIFT_STAFF_KEY = SHIFT_PREFIX + 'staff';
+  var SHIFT_LZ_MAGIC = String.fromCharCode(1);
+  /* シフト作成の保存値を1つ読む（getItem だけ）。無い・読めない時は null */
+  function readShiftValue_(storage, key) {
+    var raw;
+    try { raw = storage ? storage.getItem(key) : null; } catch (e) { return null; }
+    if (raw === null || raw === undefined || raw === '') return null;
+    try {
+      raw = String(raw);
+      if (raw.charAt(0) === SHIFT_LZ_MAGIC) {
+        var LZ = isNode ? require('./lzstring.js') : (typeof window !== 'undefined' ? window.LZString : null);
+        if (!LZ || !LZ.decompressFromUTF16) return null;
+        var dec = LZ.decompressFromUTF16(raw.slice(1));
+        return dec ? JSON.parse(dec) : null;
+      }
+      return JSON.parse(raw);
+    } catch (e2) { return null; }
+  }
+  function isArr_(x) { return Object.prototype.toString.call(x) === '[object Array]'; }
+  function formsFromList_(list, source) {
+    var byKey = {}, dup = {}, count = 0;
+    for (var i = 0; i < list.length; i++) {
+      var st = list[i];
+      if (!st || typeof st !== 'object') continue;
+      var key = normName(st.name);
+      if (!key) continue;
+      count++;
+      if (byKey[key] || dup[key]) { dup[key] = 1; delete byKey[key]; continue; }   /* 同名が2人以上＝どちらか決められない */
+      byKey[key] = {
+        workForm: (typeof st.workForm === 'string') ? st.workForm : '',
+        mainDivision: (typeof st.mainDivision === 'string') ? st.mainDivision : ''
+      };
+    }
+    return { available: true, source: source, count: count, byKey: byKey };
+  }
+  function readShiftStaffForms(storage, ym) {
+    if (/^\d{4}-\d{2}$/.test(String(ym || ''))) {
+      var plan = readShiftValue_(storage, SHIFT_PREFIX + 'sched:' + ym + ':plan');
+      var snap = (plan && typeof plan === 'object' && plan.meta) ? plan.meta.staffSnap : null;
+      if (isArr_(snap) && snap.length) return formsFromList_(snap, 'snap');
+    }
+    var list = readShiftValue_(storage, SHIFT_STAFF_KEY);
+    if (!isArr_(list)) return { available: false, source: '', count: 0, byKey: {} };
+    return formsFromList_(list, 'master');
+  }
+
+  /* 月ラベル（例 2026-04・2026-4・2026/04）→ 'YYYY-MM'。読めない時は空文字 */
+  function ymFromLabel(label) {
+    var m = /^\s*(\d{4})[-\/年](\d{1,2})(?!\d)/.exec(String(label === null || label === undefined ? '' : label));
+    if (!m) return '';
+    var mo = +m[2];
+    if (mo < 1 || mo > 12) return '';
+    return m[1] + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+
   /* 勤務表から資格マスタを自動生成（シート資格列に印がある職員のみ・既存は温存＝手入力を上書きしない）。
    * 返値 {master, added}。 */
   function seedMaster(parsed, existing) {
@@ -1722,9 +1799,15 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   /* 構造化データ → 集計。既存の computeStaffMonth / computeMetrics を再利用。
    * settings.fteBaseHours(常勤換算の分母h)・paidLeaveCountsAsWork 等は timecalc の既定に従う。
    * nightSplit は使わない(夜勤は各区分行に実入力されているため、行の区分へそのまま計上する)。
-   * qualMaster(任意): 職員名→所持資格。渡すとシート資格列より優先して介護福祉士割合を判定する。 */
-  function analyze(parsed, settings, qualMaster) {
+   * qualMaster(任意): 職員名→所持資格。渡すとシート資格列より優先して介護福祉士割合を判定する。
+   * opts(任意・2026-10-18): { staffForms: readShiftStaffForms の返値, ym: 'YYYY-MM' }。
+   *   訪問の常勤換算はシフト作成と同じ AG.tokuteiMonth で数える（勤務形態・主区分は staffForms から名前で引く・無ければ未設定）。 */
+  function analyze(parsed, settings, qualMaster, opts) {
     var s = TC.fillSettings(settings);
+    /* 常勤換算の分母は従来どおり「指定が無ければ160h」。tokuteiMonth にも同じ値を渡す（表示の分母と数えた分母をそろえる） */
+    s.fteBaseHours = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 160;
+    var forms = (opts && opts.staffForms) || { available: false, count: 0, byKey: {} };
+    var formMatched = 0, formUnmatched = [], fmOf = [];
     var days = parsed.days;
     var staffList = [];
     var monthResults = {};
@@ -1745,12 +1828,20 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       var rq = resolveQuals(st.qualifications, st.name, qualMaster);
 
       /* aggregate 用の職員オブジェクト(役員/除外は countInHeadcount:false) */
-      staffList.push({
+      var stObj = {
         id: id,
         qualifications: rq.quals,
         active: true,
         countInHeadcount: st.excluded ? false : true
-      });
+      };
+      /* 勤務形態・主区分はシフト作成の名簿から（読むだけ・2項目だけ）。照合できない人は未設定＝時間で数える */
+      var fm = forms.byKey ? forms.byKey[normName(st.name)] : null;
+      if (fm) {
+        if (fm.workForm) stObj.workForm = fm.workForm;
+        if (fm.mainDivision) stObj.mainDivision = fm.mainDivision;
+      }
+      staffList.push(stObj);
+      fmOf.push(!!fm);
 
       /* 区分別実働(時間) */
       var divH = {};
@@ -1787,21 +1878,22 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 
     var metrics = AG.computeMetrics(staffList, monthResults, s);
 
-    /* 訪問の常勤換算「人数」: 訪問介護員等 / 介福 / 介福+実務者 (28日ベース・分母=fteBaseHours) */
-    var base = (s && s.fteBaseHours > 0) ? s.fteBaseHours : 160;
-    var fteVisitAll = 0, fteVisitKaifuku = 0, fteVisitKaifukuJitsumu = 0;
-    for (var j = 0; j < staffList.length; j++) {
-      var stj = staffList[j];
-      if (stj.countInHeadcount === false) continue;
-      var r2 = monthResults[stj.id];
-      var vmin = (r2.totals.divMin28 && r2.totals.divMin28['訪問']) || 0;
-      if (vmin <= 0) continue;
-      var fte = vmin / 60 / base;
-      fteVisitAll += fte;
-      if (AG.hasQual(stj, '介護福祉士')) { fteVisitKaifuku += fte; fteVisitKaifukuJitsumu += fte; }
-      else if (AG.hasQual(stj, '実務者研修')) { fteVisitKaifukuJitsumu += fte; }
+    /* 訪問の常勤換算「人数」（2026-10-18 代表者の決定・改善プロンプト第2弾の9「そろえる」）:
+     * シフト作成の「特定事業所加算の人の要件」と同じ関数 AG.tokuteiMonth で数える（意味はあちらが正本）。
+     *   常勤で専従（A）・主区分が訪問なら1人。ほかは 1〜28日の訪問の時間 ÷ 分母（1人あたり分母が上限）。
+     *   端数: 総数は小数点第3位で切り上げ、資格者は小数点第2位以下切り捨て。休暇は常勤（A・B）だけ勤務とみなす。
+     *   kaifukuJitsumu は tokuteiMonth の g50＝介護福祉士・実務者研修・看護師（看護師を含む）。
+     * ym は前月末の資格・経験の判定（サービス提供責任者）にだけ使う。この画面ではその結果を出さない。 */
+    var ym = (opts && /^\d{4}-\d{2}$/.test(String(opts.ym || ''))) ? String(opts.ym) : '';
+    if (!ym) { var now = new Date(); ym = now.getFullYear() + '-' + (now.getMonth() < 9 ? '0' : '') + (now.getMonth() + 1); }
+    var tm = AG.tokuteiMonth(staffList, monthResults, s, ym, null);
+    /* 「読めた人／読めなかった人」は tokuteiMonth の頭数（persons）と同じ範囲で数える。
+     * 範囲の決まりを写さず、1人ずつ同じ関数に通して判定する（常勤で専従・主区分が訪問の有休だけの月も含む・頭数外は含まない） */
+    for (var q = 0; q < staffList.length; q++) {
+      var one = {}; one[staffList[q].id] = monthResults[staffList[q].id];
+      if (AG.tokuteiMonth([staffList[q]], one, s, ym, null).persons !== 1) continue;
+      if (fmOf[q]) formMatched++; else formUnmatched.push(parsed.staff[q].name);
     }
-    var round2 = function (x) { return Math.round(x * 100) / 100; };
 
     var warnings = (parsed.warnings || []).slice();
     if (unknownQualStaff.length) {
@@ -1813,11 +1905,14 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       perStaff: perStaff,
       metrics: metrics,
       fteVisit: {
-        all: round2(fteVisitAll),
-        kaifuku: round2(fteVisitKaifuku),
-        kaifukuJitsumu: round2(fteVisitKaifukuJitsumu),
-        base: base
+        all: tm.den.fte,
+        kaifuku: tm.kf.fte,
+        kaifukuJitsumu: tm.g50.fte,
+        base: s.fteBaseHours,
+        method: 'form1'
       },
+      /* 勤務形態をシフト作成の名簿から読めたか（source: snap=その月の確定時の名簿／master=今の職員マスタ。数える範囲は persons と同じ） */
+      formInfo: { available: !!forms.available, source: forms.available ? (forms.source || 'master') : '', matched: formMatched, unmatchedNames: formUnmatched },
       crossCheck: crossCheck,
       unknownQualStaff: unknownQualStaff,
       warnings: warnings
@@ -1889,6 +1984,9 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     noteExcludes: noteExcludes,
     normName: normName,
     resolveQuals: resolveQuals,
+    readShiftStaffForms: readShiftStaffForms,
+    ymFromLabel: ymFromLabel,
+    SHIFT_STAFF_KEY: SHIFT_STAFF_KEY,
     seedMaster: seedMaster,
     mergeMaster: mergeMaster,
     mapQualString: mapQualString,
@@ -1912,6 +2010,10 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
  *   利用者自身のGoogle Drive(GAS・トークン制限・https・POST body/URLには載せない)へ送信・共有する。
  *   ＝閲覧専用(RO)トークンを渡す相手は全氏名と生シフトを閲覧できる点に留意（トークン管理が肝）。
  *   console への個人情報出力はしない・画面表示は全て esc()・トークンは password 欄。
+ *   勤務形態（2026-10-18〜）: 訪問の常勤換算をシフト作成と同じ数え方にするため、同じ端末にあるシフト作成の
+ *   名簿を【読むだけ】（getItem のみ・書かない・消さない）。その月の予定の勤務表（shiftapp:v1:sched:YYYY-MM:plan）の
+ *   確定時の名簿があればそれ、無ければ今の職員マスタ（shiftapp:v1:staff）。名前で照合し、取り出すのは
+ *   勤務形態・主区分の2項目だけ。このツールの保存先には写さない。
  */
 (function () {
   'use strict';
@@ -2009,7 +2111,11 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     if (!parsed.ok) { out.innerHTML = '<p class="err">' + esc(parsed.error) + '</p>'; lastAnalysis = null; lastParsed = null; return; }
     lastParsed = parsed;
     try {
-      var r = AI.analyze(parsed, settings(), loadMaster());
+      /* 勤務形態はシフト作成の名簿から読むだけ（AI.readShiftStaffForms は getItem しか呼ばない）。
+       * 月ラベルから月が分かれば、その月の確定時の名簿を先に見る */
+      var ym = AI.ymFromLabel($('monthLabel').value);
+      var forms = AI.readShiftStaffForms(window.localStorage, ym);
+      var r = AI.analyze(parsed, settings(), loadMaster(), { staffForms: forms, ym: ym });
       lastAnalysis = r;
       render(r, parsed);
     } catch (e2) {
@@ -2031,10 +2137,11 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     html += cell('介護福祉士 割合 (②÷①)', '<b class="big">' + pct(m.kaifukuPctVisit) + ' %</b>');
     html += cell('介福＋実務者 割合 (③÷①)', pct(m.kaifukuJitsumuPctVisit) + ' %');
     html += cell('訪問介護員等 常勤換算', r.fteVisit.all.toFixed(2) + ' 人');
-    html += cell('うち介福 常勤換算', r.fteVisit.kaifuku.toFixed(2) + ' 人');
+    html += cell('うち介福 常勤換算', r.fteVisit.kaifuku.toFixed(1) + ' 人');   /* 介福は小数点第2位以下切り捨て＝小数第1位まで */
     html += cell('常勤換算の分母', r.fteVisit.base + ' h/月');
     html += '</div>';
-    html += '<p class="note">対象=' + parsed.days + '日分 / 割合(①〜③)は<b>全日の実働時間比</b>＝常勤換算比に相当。「常勤換算 人数」は<b>28日(4週)基準</b>のため、30/31日月では割合と厳密一致しません。役員・除外・休職者は分母に含みません。月をまたぐ夜勤は「入り」の月に全計上します。加算の割合基準（全日／28日）は様式・自治体でご確認ください。</p>';
+    html += '<p class="note">対象=' + parsed.days + '日分 / 割合(①〜③)は<b>全日の実働時間比</b>。「常勤換算 人数」はシフト作成の「特定事業所加算の人の要件」と同じ数え方です' + (r.formInfo && r.formInfo.source === 'snap' ? '' : '（勤務形態は今の名簿で数えています）') + '（常勤で専従（A）・主区分が訪問の人は1人、ほかは<b>28日(4週)</b>の訪問の時間÷分母で1人が上限。総数は小数点第3位で切り上げ、介福は小数点第2位以下切り捨て。有給は常勤（A・B）だけ勤務とみなし、非常勤・未設定の人は含めません）。そのため割合(①〜③)とは一致しません。役員・除外・休職者は分母に含みません。月をまたぐ夜勤は「入り」の月に全計上します。加算の割合基準（全日／28日）は様式・自治体でご確認ください。</p>';
+    html += formInfoHTML(r.formInfo);
     html += '</section>';
 
     /* 職員別 */
@@ -2081,6 +2188,21 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     html += renderGridHTML(parsed, r);
 
     $('results').innerHTML = html;
+  }
+
+  /* 勤務形態をシフト作成の名簿から読めたか（2026-10-18）。読めなかった人の名前は折りたたみの中だけに出す */
+  function formInfoHTML(fi) {
+    if (!fi) return '';
+    if (!fi.available) return '<p class="note">この端末にシフト作成の職員マスタが無いため、勤務形態は未設定として数えています。</p>';
+    var miss = fi.unmatchedNames || [];
+    var from = fi.source === 'snap' ? 'その月の確定時の名簿から' : '今の職員マスタから';
+    var h = '<p class="note">勤務形態をシフト作成の' + from + '読めた人 ' + fi.matched + '人／読めなかった人 ' + miss.length + '人（常勤換算の頭数に入る人だけ数えています。読めなかった人は勤務形態を未設定として時間で数えています）。</p>';
+    if (miss.length) {
+      h += '<details class="note"><summary>読めなかった人の名前</summary>';
+      for (var i = 0; i < miss.length; i++) h += (i ? '、' : '') + esc(miss[i]);
+      h += '</details>';
+    }
+    return h;
   }
 
   function cell(label, val) { return '<div class="kv"><span class="k">' + esc(label) + '</span><span class="v">' + val + '</span></div>'; }
@@ -2170,7 +2292,8 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       visitKaifukuJitsumuMin: m.visitKaifukuJitsumuMin,
       fteAll: lastAnalysis.fteVisit.all,
       fteKaifuku: lastAnalysis.fteVisit.kaifuku,
-      base: lastAnalysis.fteVisit.base
+      base: lastAnalysis.fteVisit.base,
+      fteMethod: 'form1'   /* 常勤換算をシフト作成と同じ数え方で出した印（2026-10-18〜）。無い月は保存した時の数字のまま＝旧い数え方 */
     });
     months.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
     if (!saveMonths(months)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
@@ -2192,7 +2315,17 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
     }
     $('monthLabel').value = label;
     run();
+    /* 常勤換算をシフト作成と同じ数え方にする前（2026-10-18 より前）に保存した月は、いま出ている数字が数え直したものだと知らせる。
+     * 保存の記録は書き換えない（保存し直した時だけ変わる） */
+    if (!rec.fteMethod && lastAnalysis) {
+      var res0 = $('results');
+      if (res0) res0.insertAdjacentHTML('afterbegin', oldMethodNoticeHTML());
+    }
     var out = $('results'); if (out && out.scrollIntoView) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function oldMethodNoticeHTML() {
+    return '<p class="cloudstat err" role="status">' + esc('この月は旧い数え方で保存されています。いま出ている常勤換算は新しい数え方で数え直したものです（この月を保存し直すまで、保存の記録は変わりません）') + '</p>';
   }
 
   /* 全保存月を .json ファイルへ書き出し（ローカルのみ・外部送信なし） */
