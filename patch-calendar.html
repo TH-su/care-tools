@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hLbOpkv1MNr1Jp5qdHItSMOSUYuUaO6tUNsf8zhvmbE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwsCQAC+f76d1cI4w+fEMJb6s8Q9AY0IhZNu23PnM+0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -312,6 +312,9 @@ body {
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
+<!-- 入居者ごとの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。スイッチ su-backend.json の patch_push が入った時だけ送る。
+     表示・印刷は今までどおり端末の控えから出す（サーバーの値は読まない） -->
+<script src="su-patch-sync.js?v=2026-10-17"></script>
 <script>
 'use strict';
 (function () {
@@ -571,7 +574,7 @@ function saveSettings() {
     if (!wasConfirmed && resSetting(state.rid)) { selectResident(state.rid); return; }
     var by = pcWho(), at = new Date().toISOString();
     all[state.rid] = { start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at };
-    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; }
+    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; pcPush(state.rid); }
     catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }   /* 保存できなかった値に前の人の名前を付けない */
     return;
   }
@@ -586,6 +589,12 @@ function saveSettings() {
     localStorage.setItem(LS_SETBY, JSON.stringify({ by: by2, at: at2 }));
     state.setBy = by2; state.setAt = at2;
   } catch (e) { state.canSave = false; }  /* 表示は続けるが「記憶できない」ことは黙って隠さない */
+}
+
+/* 端末に保存できた入居者ごとの設定をサーバーへ送る（段階2「送るだけ」）。送れない時は端末の送信待ちに残り、次の起動・保存で送り直す。
+   手入力の設定は入居者IDを持たないので送らない。表示はここでは変えない */
+function pcPush(rid) {
+  if (rid && window.SUPatchSync) { try { window.SUPatchSync.pushOne(rid); } catch (e) { /* 送れなくても保存と表示は続ける */ } }
 }
 
 /* ── 入居者ごとの設定 ── */
@@ -1005,6 +1014,8 @@ loadRoster();
 fillRoster();
 renderGuide();
 render();
+/* 画面を開いた後、端末の控えの全員分をサーバーへ1回送る（送るだけ。表示・控えは書き換えない。最初の描画と競らないよう少し待つ） */
+if (window.SUPatchSync) setTimeout(function () { try { window.SUPatchSync.pushAll(); } catch (e) { /* 送れなくても画面は使える */ } }, 1500);
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
 document.getElementById('ioExport').addEventListener('click', ioDoExport);

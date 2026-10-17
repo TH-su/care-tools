@@ -963,12 +963,72 @@
       $('wt-verdict').className = 'msg warn';
       $('wt-verdict').textContent = '体重の写しはまだ読めません（データベースの準備 0008 が未適用の可能性）。';
     }
+    try { await loadPatch(sb); }
+    catch (e) {
+      $('pt-verdict').className = 'msg warn';
+      $('pt-verdict').textContent = '貼り薬の写しはまだ読めません（データベースの準備 0016 が未適用の可能性）。';
+    }
     try { await loadKv(sb); }
     catch (e) {
       // 週間計画の写しの表（0005）がまだ無い時も、入居者マスタの見比べは使えるようにする
       $('kv-verdict').className = 'msg warn';
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
+  }
+
+  /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
+   * 出すのは入居者IDと件数だけ（控えにも氏名は無い）。読むだけで、ここからは送らない（送るのは貼り薬カレンダー）。
+   * 差の内訳: 端末だけにある（まだ届いていない）・サーバーだけにある（ほかの端末が送った）・中身が違う（開始日・場所・前日の場所）。
+   * 日時の無い古い設定は送らない約束なので、差には数えず別に出す */
+  var PT_LIST_MAX = 50;
+  function patchRows(data) {
+    // 受け取った応答を信じない（多端末同期の規約10）: 形が違えば読めなかった扱い
+    if (!data || data.ok !== true || !data.rows || typeof data.rows !== 'object' || Array.isArray(data.rows)) return null;
+    return data.rows;
+  }
+  async function loadPatch(sb) {
+    var kk = $('pt-kpis'), v = $('pt-verdict'), ul = $('pt-list');
+    kk.replaceChildren(); ul.replaceChildren();
+    if (!window.SUPatchSync) { v.className = 'msg warn'; v.textContent = '貼り薬の部品（su-patch-sync.js）を読み込めませんでした。'; return; }
+    var r = await sb.rpc('patch_get');
+    if (r.error) throw r.error;
+    var rows = patchRows(r.data);
+    if (!rows) throw new Error('patch_get の応答の形が違います');
+    var d = SUPatchSync.diff(SUPatchSync.readLocal(), rows);
+    var pend = SUPatchSync.pending(), ng = SUPatchSync.refused();
+    var gap = d.onlyLocal.length + d.onlyServer.length + d.differ.length;
+    kk.appendChild(kpi('サーバーの行数', Object.keys(rows).length, '人'));
+    kk.appendChild(kpi('一致', d.same.length, '人'));
+    kk.appendChild(kpi('端末だけにある', d.onlyLocal.length, '人'));
+    kk.appendChild(kpi('サーバーだけにある', d.onlyServer.length, '人'));
+    kk.appendChild(kpi('中身が違う', d.differ.length, '人'));
+    kk.appendChild(kpi('送らない（日時なし）', d.noAt.length, '人'));
+    kk.appendChild(kpi('この端末の送信待ち', pend.length, '人'));
+    kk.appendChild(kpi('形の違いで断られた', ng.length, '人'));
+    // スイッチは週間計画などと同じく su-kv.js が読んだ最新の値で出す（部品が起動時に控えた値は1つ前のことがある）
+    var sw = window.SUKv ? SUKv._flags() : null;
+    var swOn = sw && sw.supabase ? sw.supabase.patch_push === true : SUPatchSync.switchOn();
+    kk.appendChild(kpi('送るスイッチ', swOn ? '入' : '切'));
+    if (!gap) {
+      v.className = 'msg ok';
+      v.textContent = 'この端末の控えとサーバーの差は0件です。';
+    } else {
+      v.className = 'msg warn';
+      v.textContent = 'この端末の控えとサーバーに差が ' + gap + '件あります。貼り薬カレンダーを開くと、端末だけにある分を送り直します（サーバーだけにある分は、ほかの端末が送った設定です）。';
+    }
+    var items = [];
+    d.onlyLocal.forEach(function (id) { items.push([id, '端末だけにある']); });
+    d.onlyServer.forEach(function (id) { items.push([id, 'サーバーだけにある']); });
+    d.differ.forEach(function (id) { items.push([id, '中身が違う']); });
+    ng.forEach(function (x) { items.push([x.id, '形の違いで断られた（' + x.error + '）']); });
+    items.slice(0, PT_LIST_MAX).forEach(function (it) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', '入居者ID ' + it[0]));
+      left.appendChild(el('div', 'em', it[1]));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
+    if (items.length > PT_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - PT_LIST_MAX) + '件'));
   }
 
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
