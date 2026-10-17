@@ -1,4 +1,5 @@
-/* perf-report.html の処理（2026-10-09 に HTML から分けた・監査10月版 #16）。中身は分ける前と同じ */
+/* perf-report.html の処理（2026-10-09 に HTML から分けた・監査10月版 #16）。中身は分ける前と同じ
+   2026-10-17: Supabase と JSON の通信も数える（su-perf.js の記録の版 2）。「使えるまで」の列と通信回数の内訳を足した */
 (function () {
   'use strict';
   var DB = 'su_perf', STORE = 'views';
@@ -78,6 +79,16 @@
     return best;
   }
 
+  /* 読み込み完了＝起動時の通信すべての最後（netDone）。それが無い旧記録（2026-10-17 より前）は GAS だけの gasDone */
+  function doneOf(r) { return r.netDone != null ? r.netDone : r.gasDone; }
+  /* 起動時の通信の回数。Supabase・JSON は数え始める前の記録（明細の欄が無い）では null＝内訳を空にする */
+  function cntOf(list) { return Array.isArray(list) ? list.length : null; }
+  function cntText(a) {
+    if (a.netCnt == null) return '—';
+    var part = function (v) { return v == null ? '—' : Math.round(v); };
+    return Math.round(a.netCnt) + '（' + part(a.gasCnt) + '/' + part(a.sbCnt) + '/' + part(a.jsonCnt) + '）';
+  }
+
   function filtered() {
     var days = Number($('range').value);
     if (!days) return all.slice();
@@ -90,7 +101,6 @@
     rows.forEach(function (r) { (by[r.app] = by[r.app] || []).push(r); });
     var apps = Object.keys(by).map(function (app) {
       var rs = by[app];
-      var withGas = rs.filter(function (r) { return r.gas && r.gas.length; });
       var ones = [];
       rs.forEach(function (r) { (r.gas || []).forEach(function (g) { ones.push(g.d); }); });
       var xf = rs.filter(function (r) { return r.xfer; });
@@ -98,19 +108,26 @@
         app: app, name: NAMES[app] || app, n: rs.length,
         dcl50: sec(q(rs.map(function (r) { return r.dcl; }), 0.5)),
         dcl90: sec(q(rs.map(function (r) { return r.dcl; }), 0.9)),
+        ready50: sec(q(rs.map(function (r) { return r.ready; }), 0.5)),
+        netCnt: q(rs.map(function (r) { return (r.gas || []).length + (r.sb || []).length + (r.json || []).length; }), 0.5),
         gasCnt: q(rs.map(function (r) { return (r.gas || []).length; }), 0.5),
-        done50: sec(q(withGas.map(function (r) { return r.gasDone; }), 0.5)),
-        done90: sec(q(withGas.map(function (r) { return r.gasDone; }), 0.9)),
+        sbCnt: q(rs.map(function (r) { return cntOf(r.sb); }), 0.5),
+        jsonCnt: q(rs.map(function (r) { return cntOf(r.json); }), 0.5),
+        done50: sec(q(rs.map(doneOf), 0.5)),
+        done90: sec(q(rs.map(doneOf), 0.9)),
         one50: sec(q(ones, 0.5)),
         tbt50: sec(q(rs.map(function (r) { return r.tbt; }), 0.5)),
         kb: q(rs.map(function (r) { return r.htmlKB; }), 0.5),
         full: xf.length ? pct(xf.filter(function (r) { return r.xfer === 'full'; }).length, xf.length) : '—',
-        worst: Math.max(q(withGas.map(function (r) { return r.gasDone; }), 0.5) || 0, q(rs.map(function (r) { return r.dcl; }), 0.5) || 0)
+        worst: Math.max(q(rs.map(doneOf), 0.5) || 0, q(rs.map(function (r) { return r.dcl; }), 0.5) || 0)
       };
     }).sort(function (a, b) { return b.worst - a.worst; });
 
     var eps = {};
     rows.forEach(function (r) { (r.gas || []).forEach(function (g) { (eps[g.ep] = eps[g.ep] || []).push(g.d); }); });
+    /* Supabase は呼んだ関数の名前、同じサイトの JSON はファイル名で並べる（2026-10-17） */
+    rows.forEach(function (r) { (r.sb || []).forEach(function (g) { var k = 'SB:' + g.ep; (eps[k] = eps[k] || []).push(g.d); }); });
+    rows.forEach(function (r) { (r.json || []).forEach(function (g) { var k = 'JSON:' + g.f; (eps[k] = eps[k] || []).push(g.d); }); });
     var epList = Object.keys(eps).map(function (ep) {
       var d = eps[ep];
       return { ep: ep, n: d.length, p50: sec(q(d, 0.5)), p90: sec(q(d, 0.9)), max: sec(Math.max.apply(null, d)) };
@@ -121,7 +138,7 @@
     return {
       apps: apps, eps: epList, n: rows.length,
       dcl50: sec(q(rows.map(function (r) { return r.dcl; }), 0.5)),
-      done50: sec(q(rows.filter(function (r) { return r.gas && r.gas.length; }).map(function (r) { return r.gasDone; }), 0.5)),
+      done50: sec(q(rows.map(doneOf), 0.5)),
       one50: sec(q(allOnes, 0.5)),
       dev: mode(rows.map(function (r) { return r.dev; })),
       role: mode(rows.map(function (r) { return r.role; })),
@@ -152,16 +169,17 @@
       : 'まだ記録がありません。アプリを何回か開いてから、もう一度この画面を開いてください。';
 
     if (!s.apps.length) {
-      $('tApp').innerHTML = '<tr><td class="empty" colspan="11">記録がありません</td></tr>';
+      $('tApp').innerHTML = '<tr><td class="empty" colspan="12">記録がありません</td></tr>';
     } else {
       $('tApp').innerHTML =
         '<thead><tr><th>アプリ</th><th>回数</th><th>画面が出るまで<br>中央値</th><th>遅い時</th>' +
-        '<th>起動時の<br>通信回数</th><th>読み込み完了<br>中央値</th><th>遅い時</th><th>通信1回<br>中央値</th>' +
+        '<th>使えるまで<br>中央値</th>' +
+        '<th>起動時の<br>通信回数<br>(GAS/SB/JSON)</th><th>読み込み完了<br>中央値</th><th>遅い時</th><th>通信1回<br>中央値</th>' +
         '<th>固まり<br>中央値</th><th>画面ファイル<br>大きさ(KB)</th><th>丸ごと<br>取り直し</th></tr></thead><tbody>' +
         s.apps.map(function (a) {
           return '<tr><td>' + esc(a.name) + '</td><td>' + a.n + '</td>' +
-            cell(a.dcl50, TH.dcl) + cell(a.dcl90, TH.dcl) +
-            '<td>' + (a.gasCnt == null ? '—' : Math.round(a.gasCnt)) + '</td>' +
+            cell(a.dcl50, TH.dcl) + cell(a.dcl90, TH.dcl) + cell(a.ready50, null) +
+            '<td>' + cntText(a) + '</td>' +
             cell(a.done50, TH.done) + cell(a.done90, TH.done) + cell(a.one50, TH.one) +
             cell(a.tbt50, TH.tbt) +
             '<td>' + (a.kb == null ? '—' : Math.round(a.kb)) + '</td><td>' + a.full + '</td></tr>';
@@ -185,10 +203,10 @@
     L.push('【動作の速さの記録】端末: ' + (s.dev || '不明') + '（' + roleName(s.role) + '）' +
       (s.conn ? ' 回線:' + s.conn : '') + ' 期間: ' + d8(s.from) + '〜' + d8(s.to) + ' 記録' + s.n + '回');
     L.push('全体 中央値: 画面' + fmt(s.dcl50) + '秒 / 読込完了' + fmt(s.done50) + '秒 / 通信1回' + fmt(s.one50) + '秒');
-    L.push(['アプリ', '回数', '画面50%', '画面90%', '起動通信数', '読込50%', '読込90%', '通信1回', '固まり', 'KB', '丸ごと'].join('\t'));
+    L.push(['アプリ', '回数', '画面50%', '画面90%', '起動通信数(GAS/SB/JSON)', '読込50%', '読込90%', '通信1回', '固まり', 'KB', '丸ごと', '使える50%'].join('\t'));
     s.apps.forEach(function (a) {
-      L.push([a.name, a.n, fmt(a.dcl50), fmt(a.dcl90), a.gasCnt == null ? '' : Math.round(a.gasCnt),
-        fmt(a.done50), fmt(a.done90), fmt(a.one50), fmt(a.tbt50), a.kb == null ? '' : Math.round(a.kb), a.full].join('\t'));
+      L.push([a.name, a.n, fmt(a.dcl50), fmt(a.dcl90), a.netCnt == null ? '' : cntText(a),
+        fmt(a.done50), fmt(a.done90), fmt(a.one50), fmt(a.tbt50), a.kb == null ? '' : Math.round(a.kb), a.full, fmt(a.ready50)].join('\t'));
     });
     L.push(['接続先', '回数', '50%', '90%', '最長'].join('\t'));
     s.eps.forEach(function (e) { L.push([e.ep, e.n, fmt(e.p50), fmt(e.p90), fmt(e.max)].join('\t')); });
@@ -210,14 +228,16 @@
 
   function csv(rows) {
     var head = ['日時', 'アプリ', '端末', '用途', '回線', '開き方', '画面KB', '取得', '応答開始ms', '画面ms', '読込完了ms',
-      '起動時通信数', '通信合計回数', '通信合計ms', '固まりms', '使えるまでms', '通信明細(開始ms:所要ms:接続先)'];
+      '起動時通信数', '通信合計回数', '通信合計ms', '固まりms', '使えるまでms', '通信明細(開始ms:所要ms:接続先)',
+      'Supabase合計回数', 'Supabase合計ms', 'JSON合計回数', 'JSON合計ms', '全通信の読込完了ms', '記録の版'];
     var out = [head.join(',')];
     rows.slice().sort(function (a, b) { return a.t - b.t; }).forEach(function (r) {
       var d = new Date(r.t);
       var ts = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
       var det = (r.gas || []).map(function (g) { return g.s + ':' + g.d + ':' + g.ep; }).join(' ');
       out.push([ts, NAMES[r.app] || r.app, r.dev, roleName(r.role), r.conn || '', r.nav || '', v(r.htmlKB), r.xfer || '',
-        v(r.ttfb), v(r.dcl), v(r.gasDone), (r.gas || []).length, v(r.gasN), v(r.gasMs), v(r.tbt), v(r.ready), det]
+        v(r.ttfb), v(r.dcl), v(r.gasDone), (r.gas || []).length, v(r.gasN), v(r.gasMs), v(r.tbt), v(r.ready), det,
+        v(r.sbN), v(r.sbMs), v(r.jsonN), v(r.jsonMs), v(r.netDone), v(r.v)]
         .map(csvCell).join(','));
     });
     return '﻿' + out.join('\r\n');     /* BOM 付き＝Excel で文字化けしない */

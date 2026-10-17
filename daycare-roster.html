@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SUP/v/D1EH/aUj7EduDyNshHOwb5jOc6gprtbT6GxRw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-h8r4YuO/zay0TwOl/hDc1cTq6vtd8/dfaedLb9mbagw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -680,7 +680,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
-<script src="su-perf.js?v=2026-09-24"></script>
+<script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-16"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
@@ -2996,6 +2996,7 @@ function init() {
   renderAll(DB);
   goto(restore);   // リロード後も直前に開いていたタブに留まる（既定は利用表）
   setSyncState(DB ? '端末キャッシュ表示（' + DB.residents.length + '名）' : 'データなし');
+  try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   /* 起動時の自動取得（2026-07-23 追加）。本ツールは端末キャッシュ(care_schedule_v2)へ書かないため、
      これが無いと「薬用タブで保存した昼食薬がリロードで古く見える」「他端末の居室変更が見えない」。
      薬用の色は印刷に出る＝古い状態のまま与薬帳票を刷る事故を防ぐ意味でも、開いた時点で最新に揃える。
