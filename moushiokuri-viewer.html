@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-yow6uK13DAL7cwldG4qHp7dOboLBJ/zXg0CZ8eZxUxI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uaSp8nahk13MGhhSdWPd1djYhXuK/DcTkbhjHTZUqjM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1046,9 +1046,10 @@ function parseJson(r){
 }
 /* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
    値は GET の時と同じく文字列にし、null と空文字は従来どおり送らない。
-   ★2026-10-17: GAS が混んでいる時（30分ごとの取込の最中）、Google の転送で本文が落ちて GET として届き、
-     GAS が「この読み取りは POST でだけ受け付けます。もう一度お試しください」と返すことがある
-     （事務所の端末で実測: 取込の最中の56回中6回・どれも約10秒後）。読み取りは何度送っても同じなので、
+   ★2026-10-17: POST で送った読み取りが、GAS には本文なしの GET として届き、
+     「この読み取りは POST でだけ受け付けます。もう一度お試しください」と返ることがある
+     （事務所の端末で実測: 約6秒おきに56回送って6回・どれも約10秒後。6回とも Apps Script の実行数に doGet が残っていた。
+      GET になる理由と起きる条件は未確認）。読み取りは何度送っても同じなので、
      この断りの時だけ最大2回まで送り直す（API_GET_RETRY）。ほかの失敗（合言葉違い等）は送り直さない。 */
 var API_GET_RETRY = 2;
 function apiGet(action, params, tries){
