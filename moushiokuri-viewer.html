@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-daO5XkBJ28Lt2wwDq7yfnNTkTJm+WyVGF006SgITHbQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-iFWiNIJzG/mpojAIGHwHCQ5DT8eO1RUioqV9NsSujQ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -4093,14 +4093,14 @@ function excPadTotals(pool, from, to){
    ★期間（余白込み）の中で「今日−13日以降（GAS の直近14日の窓の1日内側）」は getAll 1本で読む。
      since を今より少し未来にし、heal（自己修復窓）は既定のまま＝サーバーは窓の日付の記録だけを返す
      （getAllResponse_: since より後に書かれた記録＝無し＋窓の記録は無条件）。窓の端の1日は時計のずれで落ちうるので getDays で読む。
-   ★窓より前の日は getDays を7日ずつ・新しい塊から・同時3本まで（getAll も1本に数える）。
+   ★窓より前の日は getDays を7日ずつ・新しい塊から・同時6本まで（getAll も1本に数える）。
    ★読み終えた日の記録は日単位でメモリに持ち（EXC_CACHE・5分で古いとみなす・端末に保存しない）、期間を広げた時は足りない日だけ読む。
      窓の日は毎回取り直す。「読み込み」ボタンは全部取り直す。
    ★削除の印（deleted）は全部の応答を合わせ、その id の記録を除く（写し元の扱い）。getAll は since が未来だと
      サーバーが印を返さない（readDeletedIds_(since)）が、窓の記録は消えたものが返らないので足りる。
    ★塊が届くたびに一覧を描き直す。まだ届いていない日は「読み込み中」、読めなかった日は「読めず」（判定はどちらも読めていない日として下限） */
 var EXC_CACHE_MS = 5 * 60 * 1000;
-var EXC_PARALLEL = 3;
+var EXC_PARALLEL = 6;   // 同時6本まで（2026-10-17 3→6）。排便記録の GAS は getAll・getDays の読み取りでロックを取らない（doPost のロックより前で返す）ので、同時に投げても書き込みの行列に並ばない
 var EXC_CACHE = null;   // { url, days:{日:{at, recs}}, residents, cfg, deleted:{id:true} }
 function excCacheFor(url){
   if(!EXC_CACHE || EXC_CACHE.url !== url) EXC_CACHE = { url:url, days:Object.create(null), residents:null, cfg:null, deleted:Object.create(null) };
@@ -4250,8 +4250,8 @@ function excStatusLine(){
   var el = $('excStatus'); if(!el) return;
   el.textContent = (EXC.done < EXC.total) ? '読み込み中 ' + EXC.done + '/' + EXC.total : (EXC.from + ' 〜 ' + EXC.to);
 }
-/* 塊を同時3本まで読み、届くたびに器へ入れて描き直す（excLoad と「もう一度読む」の共通）。
-   ★窓の getAll は失敗したら1回だけ自動で読み直す（同じ枠の中で＝4本目を開けない）。合言葉違いは読み直さない */
+/* 塊を同時6本まで読み、届くたびに器へ入れて描き直す（excLoad と「もう一度読む」の共通）。
+   ★窓の getAll は失敗したら1回だけ自動で読み直す（同じ枠の中で＝7本目を開けない）。合言葉違いは読み直さない */
 function excRunTasks(mine, cfg, cache, tasks){
   var st = { anyOk:false, authErr:null, lastErr:null };
   function post(t){

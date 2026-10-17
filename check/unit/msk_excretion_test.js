@@ -572,8 +572,8 @@ group('10. 排泄の読み込み（excLoad の実関数・第2弾）: 同時読�
   b.excLoad(); await ticks();
   const daysAsked = b._pend.filter(p => p.body.action === 'getDays').reduce((a, p) => a.concat(p.body.days), []);
   eq('広げた時は足りない日だけ読む（読み終えた 今日−15・−14 は読まない）',
-    [b._calls.post.indexOf('getAll') >= 0, daysAsked.length, daysAsked.indexOf(addD(today, -15)) < 0, daysAsked.indexOf(addD(today, -14)) < 0], [true, 14, true, true]);   // 足りない16日のうち新しい14日（3本目の塊は空きが出てから）
-  eq('同時は3本まで', b._pend.length, 3);
+    [b._calls.post.indexOf('getAll') >= 0, daysAsked.length, daysAsked.indexOf(addD(today, -15)) < 0, daysAsked.indexOf(addD(today, -14)) < 0], [true, 16, true, true]);   // 足りない16日を全部（getAll＋塊3本＝4本は同時6本の枠に収まる）
+  eq('4本とも同時に出る（同時6本まで）', b._pend.length, 4);
   while (b._pend.length) { answer(b._pend.shift(), []); await ticks(); }
   await ticks(6);
   eq('塊は新しい日から順に出す', b._calls.post.filter(x => x.indexOf('getDays') === 0).length, 3);
@@ -583,6 +583,24 @@ group('10. 排泄の読み込み（excLoad の実関数・第2弾）: 同時読�
   while (b._pend.length) { answer(b._pend.shift(), []); await ticks(); }
   await ticks(6);
   eq('「読み込み」は全部取り直す（getAll＋古い日の塊 3本）', b._calls.post.filter(x => x.indexOf('getDays') === 0).length, 3);
+
+  /* (d2) 60日: getAll 1本＋getDays 7本（窓より前の48日を7日ずつ）。同時は6本まで・空きが出たら次を出す */
+  {
+    const c = loadBox();
+    c.RANGE.days = 60;
+    let maxPend = 0;
+    c.excLoad(); await ticks();
+    maxPend = Math.max(maxPend, c._pend.length);
+    eq('60日: 最初に6本を同時に出す（getAll 1本＋getDays 5本）', [c._pend.length, c._calls.post.filter(x => x === 'getAll').length, c._calls.post.filter(x => x.indexOf('getDays') === 0).length], [6, 1, 5]);
+    answer(c._pend.shift(), []); await ticks();
+    maxPend = Math.max(maxPend, c._pend.length);
+    eq('60日: 1本届いたら7本目を出す（同時は6本のまま）', [c._calls.post.length, c._pend.length], [7, 6]);
+    while (c._pend.length) { answer(c._pend.shift(), []); await ticks(); maxPend = Math.max(maxPend, c._pend.length); }
+    await ticks(6);
+    const asked = c._calls.post.filter(x => x.indexOf('getDays') === 0);
+    eq('60日: 全部で getAll 1本＋getDays 7本・同時は最大6本', [c._calls.post.length, c._calls.post.filter(x => x === 'getAll').length, asked.length, maxPend], [8, 1, 7, 6]);
+    eq('60日: 読み終えたら読み込み中の日は0・読み込み済み', [Object.keys(c.EXC.pending).length, c.EXC_LOADING, c.excLoaded()], [0, false, true]);
+  }
 
   /* (e2) 全部が器にある（窓と重ならない過去の期間で、5分以内に読んだ日だけ）時は通信せずに終わる */
   Object.assign(b.RANGE, { mode: 'span', from: addD(today, -40), to: addD(today, -35) });
@@ -630,7 +648,7 @@ group('10. 排泄の読み込み（excLoad の実関数・第2弾）: 同時読�
   b._pend.shift().rej(new Error('EXC_AUTH')); await ticks(6);
   while (b._pend.length) { answer(b._pend.shift(), []); await ticks(); }
   await ticks(6);
-  eq('合言葉違いの後は新しい塊を出さない', [first, b._calls.post.length, b.EXC_ERR.indexOf('合言葉') >= 0], [3, 3, true]);
+  eq('合言葉違いの後は新しい塊を出さない', [first, b._calls.post.length, b.EXC_ERR.indexOf('合言葉') >= 0], [6, 6, true]);   // 60日は8本。最初の6本だけ出て、残り2本は出さない
   /* (i) 先読み（quiet）の失敗: その画面を見ていなければ赤帯を出さず、開いた時に読み直せる状態に戻す */
   b = loadBox();
   b.SCREEN = 'scr-resident';
