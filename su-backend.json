@@ -5,6 +5,6 @@
     "ws_weekly_master_v1": true,
     "wsday": true,
     "shift": true,
-    "patch_push": false
+    "patch_push": true
   }
 }
