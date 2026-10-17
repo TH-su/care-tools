@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-55WaOTEdClF1EzRFvHOHdfdrgGG/sG6drB5QqpeATps='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Jig5Y5UjpTDujwfIpI9lFzmolQSA1Kq50OjhzWmDEB4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1931,6 +1931,21 @@ function applyDeviceGuard() {
   $('deviceBlock').classList.toggle('on', blocked);   /* su_device_role は読むだけ・書かない */
   return blocked;
 }
+/* 開いている間に用途が「現場用」に変わった時（別のタブの接続設定で変えた・別のアプリで変えてから「戻る」で戻った）も、
+   読み込み直して起動の止めに任せる（2026-10-17 改善プロンプト第2弾の7・代表者の決定 B）。直す前は起動の時しか見ておらず、
+   開いたままの画面では職員の一覧・書類・雇用保険番号の取得を続けられた。
+   保存していない編集がある時は、止める画面だけ出して読み込み直さない（編集を黙って捨てない。読み込み直しは人の操作で）。 */
+function onDeviceRoleChange_(e) {
+  if (!e || (e.key !== DEVICE_KEY && e.key !== null)) return;
+  var field = false;
+  try { field = localStorage.getItem(DEVICE_KEY) === 'field'; } catch (x) { field = false; }
+  if (!field || $('deviceBlock').classList.contains('on')) return;
+  var dirty = hasUnsaved();
+  applyDeviceGuard();
+  if (!dirty) location.reload();
+}
+window.addEventListener('storage', function (e) { try { onDeviceRoleChange_(e); } catch (err) { /* 判定できない時は今のまま */ } });
+window.addEventListener('pageshow', function (e) { try { if (e && e.persisted) onDeviceRoleChange_({ key: DEVICE_KEY }); } catch (err) { /* 同上 */ } });
 
 /* ── 画面切替 ─────────────────────────────────────────── */
 var SCREEN_IDS = { list: 'scr-list', detail: 'scr-detail', dash: 'scr-dash', io: 'scr-io', cmt: 'scr-cmt', settings: 'scr-settings' };
