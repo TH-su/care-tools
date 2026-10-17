@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gEJsNgAvw/h4QMOUF3I+BOBo9wkKPPCKuQ+rtpWzwZM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pl8yh8w4HKGYvwHPKOTxwOJ6p9kAYpSrRsWwwecruzs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -421,7 +421,11 @@ html.su-field #syncTest,
 html.su-field #egSync,
 html.su-field #offTokutei,
 html.su-field #offTokuteiOut,
-html.su-field #offSvcUsersSave { display: none !important; }
+html.su-field #offSvcUsersSave,
+html.su-field #backupExport,
+html.su-field #btnFreee,
+html.su-field #frCSV,
+html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
@@ -820,6 +824,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *   sync          同期先（GAS の URL・合言葉）の変更
  *   tokutei       特定事業所加算の人の要件（過去の月の勤務表をまとめて読み、氏名つきの表を出す・2026-10-16）
  *   svcUsers      行政提出の一覧表の前3か月の利用者数の保存（設定を書き換える・2026-10-16）
+ *   backupExport  全データの書き出し（JSON。職員の氏名・資格・勤務表を丸ごと端末へ落とす・2026-10-17 改善プロンプト第2弾の7）
+ *   freeeCsv      freee 用の CSV の出力（職員の氏名・従業員コードつき・同上）
  */
 (function () {
   'use strict';
@@ -833,7 +839,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     symbolDelete: '現場の端末では、記号を削除できません。事務所のパソコンで操作してください',
     sync: '現場の端末では、同期先を変えられません。事務所のパソコンで設定してください',
     tokutei: '現場の端末では、特定事業所加算の人の要件は数えません。事務所のパソコンで操作してください',
-    svcUsers: '現場の端末では、利用者数を保存できません。事務所のパソコンで操作してください'
+    svcUsers: '現場の端末では、利用者数を保存できません。事務所のパソコンで操作してください',
+    backupExport: '現場の端末では、全データの書き出しはできません。事務所のパソコンで操作してください',
+    freeeCsv: '現場の端末では、freee用のCSVは出せません。事務所のパソコンで操作してください'
   };
   function readRole(ls) {
     try { return (ls && ls.getItem(DEVICE_KEY)) === 'field' ? 'field' : 'office'; } catch (e) { return 'office'; }
@@ -7379,6 +7387,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var app = this.app;
       var Store = window.ShiftStore;
       document.getElementById('backupExport').onclick = function () {
+        if (app.fieldGuard('backupExport')) return;   /* 現場端末は職員の個人情報を丸ごと書き出さない（2026-10-17） */
         var data = JSON.stringify(Store.exportAll(), null, 1);
         var blob = new Blob([data], { type: 'application/json' });
         var a = document.createElement('a');
@@ -8508,6 +8517,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* レイヤ・事業所を指定してCSV生成・ダウンロード（パネル/ダイアログ共通） */
     exportCsv: function (layer, division, warnEl) {
       var app = this.app;
+      if (app.fieldGuard && app.fieldGuard('freeeCsv')) return;   /* 現場端末は職員の氏名つきの CSV を出さない（2026-10-17）。画面の2つのボタンともここを通る */
       var cfg = this.cfg();
       var sched = app.getSched(layer) || { cells: {} };
       var res = F.buildCsv({
