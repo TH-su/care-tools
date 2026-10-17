@@ -446,7 +446,8 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('J 部品は画面のスクリプトより前に読む', tag > 0 && inline > tag);
     t('J 印刷の欄・紙の見出しには触れない（部品は p-by 等を知らない）', !/p-by|p-nm|print/.test(SYNC));
     const be = JSON.parse(fs.readFileSync(path.join(ROOT, 'su-backend.json'), 'utf8'));
-    t('★J スイッチ patch_push はこの PR では false（何も送らない）', be.supabase && be.supabase.patch_push === false, be.supabase);
+    /* 段階2の公開（PR #172）では false、その後のスイッチを入れる PR（2026-10-17）で true。入切は代表者の判断なので、値は固定せず「真偽値で置かれている」ことだけを守る */
+    t('★J スイッチ patch_push は su-backend.json の supabase の中に真偽値で置かれている', be.supabase && typeof be.supabase.patch_push === 'boolean', be.supabase);
     t('J ほかのスイッチは変えていない', be.supabase.care_schedule_v2 === true && be.supabase.ws_weekly_master_v1 === true && be.supabase.wsday === true && be.supabase.shift === true);
     const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
     t('J 公開の許可リストに部品がある（無いと公開されず、構文の点検からも漏れる）', /^!\/su-patch-sync\.js$/m.test(gi));
