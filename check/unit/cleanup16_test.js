@@ -34,7 +34,8 @@ console.log('\n— 1. 写しの見比べの氏名 —');
   t('空なら（氏名なし）', M('') === '（氏名なし）' && M(null) === '（氏名なし）', [M(''), M(null)]);
   const item = cut(src, 'item');
   t('一覧の行は伏せた氏名を出す（r.name をそのまま出さない）', /maskName\(r\.name\)/.test(item) && !/\+ \(r\.name \|\|/.test(item), item);
-  t('shadow-check.html は新しい版を読む', /shadow-check\.js\?v=2026-10-(09|1\d)"/.test(read('shadow-check.html')));
+  // 2026-10-20 以降の札も通すよう 1\d を [12]\d に広げた（貼り薬の写しの直しで札が 2026-10-20 になったため。試すことは「新しい版を読む」のまま）
+  t('shadow-check.html は新しい版を読む', /shadow-check\.js\?v=2026-10-(09|[12]\d)"/.test(read('shadow-check.html')));
 }
 
 console.log('\n— 2. 動作の速さの記録の CSP —');
