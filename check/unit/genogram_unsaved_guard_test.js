@@ -51,7 +51,12 @@ function page(opt) {
   const els = { clientName: { value: '', focus() {} }, docList: { value: '' } };
   const ls = {
     getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
-    setItem: (k, v) => { if (log.quota) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; } store[k] = String(v); },
+    setItem: (k, v) => {
+      /* quota＝何を書いても失敗／quotaDoc＝図の本体だけ失敗／quotaWhileDraft＝下書きが残っている間だけ図の本体が失敗（容量を下書きが食っている） */
+      const isDoc = String(k).indexOf('genogram:doc:') === 0;
+      if (log.quota || (log.quotaDoc && isDoc) || (log.quotaWhileDraft && isDoc && store['genogram:draft'] != null)) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; }
+      store[k] = String(v);
+    },
     removeItem: k => { delete store[k]; }
   };
   const CloudSync = {
@@ -178,6 +183,7 @@ function page(opt) {
     await tick();
     t('変更があれば確かめる（文言）', P.log.confirms.length === 1 && P.log.confirms[0] === '保存していない変更があります。破棄して「' + N2 + '」を開きますか？', P.log.confirms);
     t('キャンセルなら開かない・図も下書きもそのまま', P.log.loads.length === 0 && P.state.doc.nodes[0].id === 'A1' && P.draft() && P.draft().doc.nodes[0].id === 'A1' && P.els.docList.value === '');
+    t('★キャンセルならまとめ反映を打ち切らない（反証レビュー 低3）', !P.log.aborts, P.log.aborts);
   }
   {
     const P = page({ answers: [true] });
@@ -188,6 +194,7 @@ function page(opt) {
     P.api.onDocListChange({ target: P.els.docList });
     await tick(); await tick();
     t('破棄を選べば開き、下書きを消す', P.log.loads.join() === N2 && P.draft() === null && P.state.doc.nodes[0].id === 'hanako', P.log.loads);
+    t('開くと決まった後にまとめ反映を止める', P.log.aborts >= 1, P.log.aborts);
     t('開いた図が新しい基準（変更なし）', P.api.hasUnsavedChanges() === false);
   }
   {
@@ -206,10 +213,18 @@ function page(opt) {
     await P.api.saveDoc();
     t('端末への保存が済んだら下書きを消し、変更なしに', P.draft() === null && P.api.hasUnsavedChanges() === false && !!P.store['genogram:doc:' + N1]);
     P.draw('A2'); P.api.writeDraftNow();
-    P.log.quota = true;
+    P.log.quotaDoc = true;
     await P.api.saveDoc();
-    P.log.quota = false;
-    t('端末への保存に失敗したら下書きは残し、変更ありのまま', !!P.draft() && P.draft().doc.nodes[0].id === 'A2' && P.api.hasUnsavedChanges() === true && P.log.alerts.length === 1, P.log.alerts);
+    P.log.quotaDoc = false;
+    t('端末への保存に失敗したら下書きは残し、変更ありのまま（下書きを外して書き直しても失敗したら、下書きを元に戻す）', !!P.draft() && P.draft().doc.nodes[0].id === 'A2' && P.api.hasUnsavedChanges() === true && P.log.alerts.length === 1, P.log.alerts);
+    {
+      const Q = page();
+      Q.api.markClean(); Q.draw('B1'); Q.setName(N1); Q.api.writeDraftNow();
+      Q.log.quotaWhileDraft = true;
+      await Q.api.saveDoc();
+      Q.log.quotaWhileDraft = false;
+      t('★下書きが容量を食って図が書けない時は、下書きを外して1回だけ書き直し、保存できる（反証レビュー 中2）', !!Q.store['genogram:doc:' + N1] && Q.draft() === null && Q.api.hasUnsavedChanges() === false && Q.log.alerts.length === 0, Q.log.alerts);
+    }
   }
   {
     const P = page({ answers: [false, true] });
@@ -266,8 +281,16 @@ function page(opt) {
   {
     const P = page({ store: { [DRAFT]: draftOf() }, answers: [false] });
     P.saveLocal(N1, 'saved');
+    const r = P.api.offerDraftRestore('別の方');
+    t('★別の方を開きに来た時（?resident=）は、その方の下書きでなければ尋ねず、下書きを残す（反証レビュー 中1）', r === false && P.log.confirms.length === 0 && !!P.draft(), P.log.confirms);
+    const r2 = P.api.offerDraftRestore(' ' + N1 + ' ');
+    t('同じ方（空白の違いは同じとみなす）なら尋ねる', P.log.confirms.length === 1 && r2 === false && P.draft() === null, P.log.confirms);
+  }
+  {
+    const P = page({ store: { [DRAFT]: draftOf() }, answers: [false] });
+    P.saveLocal(N1, 'saved');
     const r = P.api.offerDraftRestore();
-    t('中身が違えば確かめる（利用者名・時刻）', P.log.confirms.length === 1 && P.log.confirms[0].indexOf('保存していない編集が残っています（' + N1 + '・') === 0 && /。戻しますか？$/.test(P.log.confirms[0]) && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(P.log.confirms[0]), P.log.confirms);
+    t('中身が違えば確かめる（利用者名・時刻）', P.log.confirms.length === 1 && P.log.confirms[0].indexOf('保存していない編集が残っています（' + N1 + '・') === 0 && /。戻しますか？\n（キャンセルすると、この下書きは消えます）$/.test(P.log.confirms[0]) && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(P.log.confirms[0]), P.log.confirms);
     t('戻さないなら下書きを消し、図は変えない', r === false && P.draft() === null && P.state.doc.nodes[0].id === 'x0');
   }
   {

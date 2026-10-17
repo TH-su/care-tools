@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-AWNWN8tXOWa7/wWDVx1ox6QwYTvIEabQCqOgcrWgEhc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-G1/IrKXzTZCwapYdY5Y5Mv+9jG0m2lGnEQMipjUVOqE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3824,10 +3824,14 @@ function readDraft() {
 }
 /* 起動時（自動の読込の前）: 下書きが残っていて、端末に保存済みの同じ名前の図と中身が違う時だけ戻すかを確かめる。
    戻したら true（起動の自動読込はしない・変更ありのまま）。同じ中身・戻さない・壊れた下書きは消して false */
-function offerDraftRestore() {
+function offerDraftRestore(openName) {
   if (isFieldDevice()) return false;
   const d = readDraft();
   if (!d) return false;
+  /* 別の方の図を開きに来た時（入居者マスタ・フェイスシートから ?resident= で開いた）は、その方の下書きでなければ尋ねず、
+     下書きは残したまま開く（2026-10-17 反証レビュー 中1: 別の方を見に来た職員がキャンセルして、他の方の未保存の編集を消さない） */
+  const norm = (x) => String(x == null ? '' : x).replace(/[\s\u3000]/g, '');
+  if (openName && norm(openName) !== norm(d.clientName)) return false;
   let saved = null;
   if (d.clientName) {
     try { saved = JSON.parse(localStorage.getItem(LS_DOC_PREFIX + d.clientName) || 'null'); } catch (e) { saved = null; }
@@ -3837,7 +3841,7 @@ function offerDraftRestore() {
     return false;
   }
   const when = fmtTsLabel(d.at);
-  if (!confirm('保存していない編集が残っています（' + (d.clientName || '利用者名なし') + (when ? '・' + when : '') + '）。戻しますか？')) {
+  if (!confirm('保存していない編集が残っています（' + (d.clientName || '利用者名なし') + (when ? '・' + when : '') + '）。戻しますか？\n（キャンセルすると、この下書きは消えます）')) {
     clearDraft();
     return false;
   }
@@ -3865,11 +3869,13 @@ function onDocListChange(e) {
   const name = e.target.value;
   e.target.value = '';
   if (!name) return;
-  abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻してから判定する（差し替え中の図で判定しない）
+  /* 判定は viewNow（まとめ反映の途中は退避中の本人の図）で行うので、まとめ反映を止めるのは開くと決まった後
+     （キャンセルした時にまとめ反映を打ち切らない・2026-10-17 反証レビュー 低3） */
   if (hasUnsavedChanges()) {
     if (!confirm('保存していない変更があります。破棄して「' + name + '」を開きますか？')) return;
     clearDraft();
   }
+  abortSuBackfill();
   loadDoc(name);
 }
 // ページを閉じる・再読み込み: 保存していない変更があればブラウザの確認を出す（下書きはその場で書いておく）
@@ -3916,8 +3922,32 @@ async function saveDoc() {
     refreshDocList();
     flashStatus(`「${name}」を端末に保存しました`);
   } catch (e) {
-    alert('端末への保存に失敗しました: ' + e.message);
-    return;
+    /* 下書きが端末の容量を食って本体が書けない時（2026-10-17 反証レビュー 中2）は、下書きを消して1回だけ書き直す。
+       消すのは画面に同じ中身がある下書き＝失う物は無い */
+    let retried = false;
+    let draftRaw = null;
+    try { draftRaw = localStorage.getItem(LS_DRAFT); } catch (e0) { draftRaw = null; }
+    if (draftRaw != null) {
+      try {
+        clearDraft();
+        localStorage.setItem(LS_DOC_PREFIX + name, JSON.stringify(doc));
+        const idx2 = listDocs().filter(x => x.name !== name);
+        idx2.push({ name, updatedAt: now });
+        idx2.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        localStorage.setItem(LS_INDEX, JSON.stringify(idx2));
+        localStorage.setItem(LS_LAST, name);
+        refreshDocList();
+        flashStatus(`「${name}」を端末に保存しました`);
+        retried = true;
+      } catch (e2) {
+        e = e2;
+        try { localStorage.setItem(LS_DRAFT, draftRaw); } catch (e3) { /* 戻せなくても画面の図は残っている */ }   // 書き直せなければ下書きを元に戻す
+      }
+    }
+    if (!retried) {
+      alert('端末への保存に失敗しました: ' + e.message);
+      return;
+    }
   }
   markClean();   // 端末に保存できた＝保存していない変更は無い（下書きも消す）
   // 端末に書いた。この中身がサーバーへ届いたと確かめるまで「未反映」。番号はクラウド保存と保留の項目に持たせる
@@ -4234,7 +4264,7 @@ async function deleteCurrentDoc() {
         return;
       } else if (err && err.conflict) {
         // 別の端末で新しい版が保存されていた。消すより残す方を選ぶ（積まない＝後で消しにいかない）
-        CloudSync.clearPendingFor(name);   // 同じ名前の古い保留も、後で送らない
+        CloudSync.clearPendingFor(name, 'delete');   // 古い削除の保留だけ外す（端末の図を残すので、保存の保留は残す・2026-10-17 反証レビュー 低5）
         setSyncStatus('err', 'クラウドからは削除していません（別の端末で新しい版が保存されていました）');
         flashStatus(`「${name}」は削除していません（別の端末で新しい版が保存されていました。端末の図も残しています）`);
         return;
@@ -4741,7 +4771,7 @@ function init() {
   let bootLoad = null;   // 起動時の自動読込（まとめ反映はこれが終わってから始める）
   /* 下書きが残っていれば、起動の自動読込より前に戻すかを確かめる。保存済みの基準（unsavedBase）は
      読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える */
-  if (offerDraftRestore()) {
+  if (offerDraftRestore(suName)) {
     /* 保存していない編集を戻した。起動の自動読込はしない（戻した図を上書きしないため） */
   } else if (suName) {
     $('clientName').value = suName;
@@ -4785,6 +4815,8 @@ function init() {
     }
     try { backfillSuGenograms(); } catch (e) {}
   }, 1800); };
+  /* 起動の読込が失敗して戻った時（図が見つからない等）も、確認と下書きが働くように基準を控える（2026-10-17 反証レビュー 低4） */
+  if (bootLoad) { const keepBase = () => { if (unsavedBase === null) markClean(); }; bootLoad.then(keepBase, keepBase); }
   if (bootLoad) bootLoad.then(startBackfill, startBackfill);
   else startBackfill();
 
