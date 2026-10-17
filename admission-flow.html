@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LAxVIW4CBe8IkONeS4l1/8UgjE5Tg2hA0NaEyZNPFQU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-orUAqA5DBNyE3WQlP0nSRGfdcPN5IJlyYPUOGjv8si0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -4665,6 +4665,8 @@ function preflightDuplicate(c) {
   }).catch(function () { return true; });
 }
 function sendMasterRecord(c, adm) {
+  /* 氏名が無いままでは送らない（2026-10-17・入居者マスタの GAS は氏名が空の登録を断る。送ってから「登録確認待ち」で止まらないよう、ここで止める） */
+  if (!String((c && c.name) || '').trim()) { alert('お名前が入っていないため、入居者マスタへは登録できません。案件にお名前を入れてから、もう一度押してください。'); return Promise.resolve(); }
   msRec = buildMasterRecord(c, adm);
   /* ★送る【前】に保留を刻む（端末とサーバーに残る）。送信中にダイアログを閉じる・再読込する・
      別の端末で開く、のどれでも「登録ボタン」ではなく「登録確認」が出る＝処理中の再登録を防ぐ。
