@@ -15,12 +15,15 @@
  *     外すのはサーバーの応答（ok: 書いた・作った・同じ・サーバーの方が新しい）を受け取った時だけ（多端末同期の規約6）。
  *     形の断り（bad*・futureat）は待っても直らないので送信待ちから外し、記録（apc2_sync_ng）だけ残す。
  *     同じ日時の設定は送り直さない（無限に送らない）。設定を直して日時が変われば、また送る。
+ *   ・ok を受け取った設定は（入居者ID → 日時）を送信済みの控え（apc2_sync_sent・氏名なし）に残し、開いた後の送信（pushAll）では
+ *     日時が同じ方を送らない（載ったのを確かめたら止める・多端末同期の規約6）。保存の後の送信（pushOne）は今までどおり送る。
+ *     控えが無い・読めない・壊れている時は全員分を送る（安全側）。
  *   ・この部品は読み込んだだけでは何もしない（写しの見比べの画面も読むが、そこからは送らない）。
  */
 (function () {
   'use strict';
   var FLAGS_URL = 'su-backend.json', FLAGS_LS = 'su_backend_flags', SWITCH = 'patch_push';
-  var RES_LS = 'apc2_res', QUEUE_LS = 'apc2_sync_q', NG_LS = 'apc2_sync_ng';
+  var RES_LS = 'apc2_res', QUEUE_LS = 'apc2_sync_q', NG_LS = 'apc2_sync_ng', SENT_LS = 'apc2_sync_sent';
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var REFUSALS = { badid: 1, badstart: 1, badno: 1, badprev: 1, badby: 1, badat: 1, futureat: 1 };
   var NG_MAX = 50;
@@ -146,6 +149,14 @@
     lsSet(NG_LS, { v: 1, r: r });
   }
   function refusedSame(rid, at) { var r = refused()[rid]; return !!(r && r.at === at); }
+  // 送信済みの控え（入居者ID → ok を受け取った日時）。読めない・壊れている時は null＝全員分を送る
+  function sentRead() { var o = lsJson(SENT_LS); return o && isObj(o.s) ? o.s : null; }
+  function sentAdd(rid, at) {
+    var s = sentRead() || {}, local = readLocal();
+    s[rid] = at;
+    Object.keys(s).forEach(function (k) { if (!(k in local)) delete s[k]; });   // 控えから消えた方は持たない（膨らませない）
+    lsSet(SENT_LS, { v: 1, s: s });
+  }
 
   // ── 送る ──
   function sendOne(sb, rid) {
@@ -154,7 +165,7 @@
     if (refusedSame(rid, p.p_at)) { queueDone(rid, p.p_at); return Promise.resolve('refused'); }
     return Promise.resolve().then(function () { return sb.rpc('patch_put', p); }).then(function (r) {
       var d = r && !r.error ? r.data : null;
-      if (d && d.ok === true) { queueDone(rid, p.p_at); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
+      if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
       if (d && d.ok === false && REFUSALS[d.error]) { queueDone(rid, p.p_at); refusedAdd(rid, d.error, p.p_at); return 'refused'; }
       queueAdd(rid, p.p_at); return 'fail';
     }, function () { queueAdd(rid, p.p_at); return 'fail'; });
@@ -191,10 +202,14 @@
     if (rid && ks.indexOf(String(rid)) < 0) ks.unshift(String(rid));
     return run(ks);
   }
-  /** 画面を開いた後: 端末の控えの全員分を1回送る（読むだけ・控えも表示も書き換えない） */
+  /** 画面を開いた後: 端末の控えの全員分を1回送る（読むだけ・控えも表示も書き換えない）。
+   *  送信済みの控えと日時が同じ方は送らない（送信待ちに残っている方は下で足すので送る）。控えが壊れていれば全員分 */
   function pushAll() {
-    var ks = Object.keys(readLocal());
-    Object.keys(queue()).forEach(function (k) { if (ks.indexOf(k) < 0) ks.push(k); });
+    var local = readLocal(), sent = sentRead(), qd = queue();
+    var ks = Object.keys(local).filter(function (k) {
+      return !(sent && typeof local[k].at === 'string' && sent[k] === local[k].at);
+    });
+    Object.keys(qd).forEach(function (k) { if (ks.indexOf(k) < 0) ks.push(k); });
     return run(ks);
   }
 
@@ -204,15 +219,25 @@
     return !!p && isObj(s) && p.p_start === String(s.start) && p.p_no === Number(s.no) && p.p_prev === Number(s.prev);
   }
   /** 端末の控えとサーバーの行を比べる。返すのは入居者IDの一覧だけ（氏名は持たない）。
-   *  日時の無い古い設定は送らない約束なので、差には数えず noAt に分ける */
+   *  日時の無い古い設定は送らない約束なので、差には数えず noAt に分ける。
+   *  中身が違う方は日時で分ける: 端末の方が新しい＝differLocal（未送信）／サーバーの方が新しい・同じ日時＝differServer
+   *  （patch_put は同じ日時を stale で受け付けないので、送っても変わらない＝ほかの端末の設定。段階3で取り込む）。differ は両方。
+   *  今の日時のまま形で断られた方（断りの記録と日時が同じ）は差に数えず refused（{id, error}）にだけ出す（二重に数えない） */
   function diff(local, rows) {
     local = isObj(local) ? local : {}; rows = isObj(rows) ? rows : {};
-    var out = { onlyLocal: [], onlyServer: [], differ: [], same: [], noAt: [] };
+    var ngs = refused();
+    var out = { onlyLocal: [], onlyServer: [], differ: [], differLocal: [], differServer: [], same: [], noAt: [], refused: [] };
     Object.keys(local).sort().forEach(function (k) {
-      if (!payloadOf(k, local[k])) { out.noAt.push(k); return; }
-      if (!Object.prototype.hasOwnProperty.call(rows, k)) out.onlyLocal.push(k);
-      else if (sameValue(local[k], rows[k])) out.same.push(k);
-      else out.differ.push(k);
+      var p = payloadOf(k, local[k]);
+      if (!p) { out.noAt.push(k); return; }
+      var has = Object.prototype.hasOwnProperty.call(rows, k);
+      if (has && sameValue(local[k], rows[k])) { out.same.push(k); return; }
+      if (isObj(ngs[k]) && ngs[k].at === p.p_at) { out.refused.push({ id: k, error: String(ngs[k].e || '') }); return; }
+      if (!has) { out.onlyLocal.push(k); return; }
+      out.differ.push(k);
+      var sAt = atMs(isObj(rows[k]) ? rows[k].at : null);
+      // サーバーの日時が読めない時は「未送信」側に出す（差を隠さない）
+      if (!isFinite(sAt) || atMs(p.p_at) > sAt) out.differLocal.push(k); else out.differServer.push(k);
     });
     Object.keys(rows).sort().forEach(function (k) { if (!Object.prototype.hasOwnProperty.call(local, k)) out.onlyServer.push(k); });
     return out;

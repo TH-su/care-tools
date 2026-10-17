@@ -16,6 +16,9 @@
      H 起動時の送信（pushAll）は控え（apc2_res）を書き換えず、画面の表示にも触れない。読み込んだだけでは何も送らない
      I 写しの見比べの差の数え方（端末だけ・サーバーだけ・違う・日時なしは別）と、その画面のつなぎ（読むだけ・IDだけ）
      J 画面のつなぎ（保存の後・起動の後に送る・スイッチは false で出す・公開の許可リスト）
+     K 反証レビューの直し（2026-10-17）: スイッチ切の時はログインの部品も足さない・写しの見比べはスイッチ切の間 warn にしない・
+       形で断られた方を差と断りの欄で二重に数えない・中身の違いを日時で「未送信」と「ほかの端末で新しい」に分ける・
+       送信済みの控え（apc2_sync_sent）で起動時の送り直しを止める（同じ日時は送らない・新しい日時は送る・控えが壊れていたら全員）
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -249,7 +252,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     await b.api.pushAll(); await settle();
     t('★H 起動時は控えの全員分を1回ずつ送る', J(b.calls.map(c => c.args.p_resident_id)) === J(['r1', 'r2']));
     t('★H サーバーの方が新しくても控え（apc2_res）を書き換えない', b.store.apc2_res === r0 && b.writes.indexOf('apc2_res') < 0, b.writes);
-    t('H 書くのは送信待ち・断りの記録・スイッチの控えだけ', b.writes.every(k => /^-?(apc2_sync_q|apc2_sync_ng|su_backend_flags)$/.test(k)), b.writes);
+    t('H 書くのは送信待ち・断りの記録・送信済みの控え・スイッチの控えだけ', b.writes.every(k => /^-?(apc2_sync_q|apc2_sync_ng|apc2_sync_sent|su_backend_flags)$/.test(k)), b.writes);
     t('H 部品は patch_get を呼ばない（表示へ取り込むのは段階3）', SYNC.indexOf('patch_get') < 0 || !/rpc\('patch_get'/.test(SYNC));
     const fnPush = /setTimeout\(function \(\) \{ try \{ window\.SUPatchSync\.pushAll\(\); \}[^\n]*/.exec(PAGE);
     t('★H 画面の起動の送信は pushAll だけを呼び、戻り値で表示を変えない', !!fnPush && !/\.then\(/.test(fnPush[0]), fnPush && fnPush[0]);
@@ -302,7 +305,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
       return { tag, className: '', textContent: '', children: [], appendChild(c) { this.children.push(c); return c; }, replaceChildren() { this.children = []; } };
     }
     const allText = n => (n.textContent || '') + ' ' + n.children.map(allText).join(' ');
-    const ids = { 'pt-kpis': node('div'), 'pt-verdict': node('p'), 'pt-list': node('ul') };
+    const ids = { 'pt-kpis': node('div'), 'pt-verdict': node('p'), 'pt-list': node('ul'), 'pt-open': node('a') };
     const sh = box({ store: { apc2_res: res(local), apc2_sync_q: J({ v: 1, q: { lonly: AT1 } }), su_backend_flags: J({ supabase: { patch_push: false } }) } });
     const rpcCalls = [];
     const env = { Object, Array, String, Number, JSON, Error, Promise, SUPatchSync: sh.api,
@@ -314,11 +317,46 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     await env.loadPatch({ rpc: (n, a) => { rpcCalls.push(n); return Promise.resolve({ data: { ok: true, ver: 1, rows } }); } });
     const kp = ids['pt-kpis'].children.map(k => allText(k).replace(/\s+/g, ''));
     t('★I 画面はサーバーの行数を出す（patch_get を1回だけ・書く関数は呼ばない）', J(rpcCalls) === J(['patch_get']) && kp.indexOf('サーバーの行数5人') >= 0, { rpcCalls, kp });
-    t('★I 画面に差の内訳を出す（端末だけ1・サーバーだけ1・違う3・日時なし1）',
-      ['端末だけにある1人', 'サーバーだけにある1人', '中身が違う3人', '送らない（日時なし）1人', '一致1人', 'この端末の送信待ち1人', '送るスイッチ切'].every(x => kp.indexOf(x) >= 0), kp);
-    t('I 差がある時は warn で件数を出す', /warn/.test(ids['pt-verdict'].className) && /差が 5件/.test(ids['pt-verdict'].textContent), ids['pt-verdict'].textContent);
+    t('★I 画面に差の内訳を出す（端末だけ1・サーバーだけ1・違う3＝同じ日時なのでほかの端末側・日時なし1）',
+      ['端末だけにある1人', 'サーバーだけにある1人', '未送信（この端末の方が新しい）0人', 'ほかの端末で新しい設定3人', '送らない（日時なし）1人', '一致1人', 'この端末の送信待ち1人', '送るスイッチ切'].every(x => kp.indexOf(x) >= 0), kp);
+    t('★K スイッチが切の間は warn にせず「まだ送っていません（差は想定どおり）」と出す', !/warn/.test(ids['pt-verdict'].className)
+      && ids['pt-verdict'].textContent.indexOf('送るスイッチが切のため、まだ送っていません（差は想定どおり）') === 0, { c: ids['pt-verdict'].className, t: ids['pt-verdict'].textContent });
+    t('★K スイッチが切の間のボタンは送らないことが分かる文言（「送り直す」と言わない）', /送りません/.test(ids['pt-open'].textContent) && !/送り直す/.test(ids['pt-open'].textContent), ids['pt-open'].textContent);
     const lt = allText(ids['pt-list']);
     t('I 一覧は入居者IDと理由だけ', /入居者ID lonly/.test(lt) && /入居者ID sonly/.test(lt) && lt.indexOf('noat') < 0);
+    // スイッチが入の時: 未送信があれば warn・ほかの端末側だけなら ok
+    ids['pt-list'].replaceChildren();
+    const onFlags = J({ supabase: { patch_push: true } });
+    env.SUPatchSync = box({ store: { apc2_res: res(local), su_backend_flags: onFlags } }).api;
+    await env.loadPatch({ rpc: () => Promise.resolve({ data: { ok: true, ver: 1, rows } }) });
+    t('★K スイッチが入で端末だけにある（未送信）方があれば warn', /warn/.test(ids['pt-verdict'].className) && /未送信の設定が 1件/.test(ids['pt-verdict'].textContent), ids['pt-verdict'].textContent);
+    t('K スイッチが入のボタンは「送り直す」', /送り直す/.test(ids['pt-open'].textContent), ids['pt-open'].textContent);
+    ids['pt-list'].replaceChildren();
+    const lo2 = { a: { start: '2026-10-01', no: 2, prev: 1, by: 'x', at: AT1 } };
+    env.SUPatchSync = box({ store: { apc2_res: res(lo2), su_backend_flags: onFlags } }).api;
+    await env.loadPatch({ rpc: () => Promise.resolve({ data: { ok: true, ver: 1, rows: { a: { start: '2026-10-09', no: 5, prev: 4, by: 'y', at: AT2 }, z: rows.sonly } } }) });
+    t('★K ほかの端末で新しい設定・サーバーだけの差しか無ければ warn にしない', !/warn/.test(ids['pt-verdict'].className) && /未送信は0件/.test(ids['pt-verdict'].textContent), { c: ids['pt-verdict'].className, t: ids['pt-verdict'].textContent });
+    t('K 一覧に「ほかの端末で新しい設定（段階3で取り込む）」', /ほかの端末で新しい設定（段階3で取り込む）/.test(allText(ids['pt-list'])));
+    ids['pt-list'].replaceChildren();
+    env.SUPatchSync = box({ store: { apc2_res: res(lo2), su_backend_flags: onFlags } }).api;
+    await env.loadPatch({ rpc: () => Promise.resolve({ data: { ok: true, ver: 1, rows: { a: { start: '2026-10-09', no: 5, prev: 4, by: 'y', at: '2026-10-14T01:00:00.000Z' } } } }) });
+    t('★K 端末の方が新しい中身の違いは「未送信」で warn', /warn/.test(ids['pt-verdict'].className) && /未送信（この端末の方が新しい）/.test(allText(ids['pt-list']))
+      && ids['pt-kpis'].children.map(k => allText(k).replace(/\s+/g, '')).indexOf('未送信（この端末の方が新しい）1人') >= 0, ids['pt-verdict'].textContent);
+    // 形で断られた方は断りの欄だけで数える
+    ids['pt-list'].replaceChildren();
+    env.SUPatchSync = box({ store: { apc2_res: res(lo2), su_backend_flags: onFlags, apc2_sync_ng: J({ v: 1, r: { a: { e: 'badstart', at: AT1, t: AT1 } } }) } }).api;
+    await env.loadPatch({ rpc: () => Promise.resolve({ data: { ok: true, ver: 1, rows: {} } }) });
+    const kp2 = ids['pt-kpis'].children.map(k => allText(k).replace(/\s+/g, ''));
+    const lt2 = allText(ids['pt-list']);
+    t('★K 形で断られた方は差に数えない（端末だけ0・断り1・一覧に1回だけ）', kp2.indexOf('端末だけにある0人') >= 0 && kp2.indexOf('形の違いで断られた1人') >= 0
+      && (lt2.match(/入居者ID a/g) || []).length === 1 && /形の違いで断られた（badstart）/.test(lt2) && /差は0件/.test(ids['pt-verdict'].textContent), { kp2, lt2 });
+    // 断られた後に直して日時が変わった方は、断りの欄に出さず「端末だけ」1回だけ
+    ids['pt-list'].replaceChildren();
+    env.SUPatchSync = box({ store: { apc2_res: res({ a: Object.assign({}, lo2.a, { at: AT2 }) }), su_backend_flags: onFlags, apc2_sync_ng: J({ v: 1, r: { a: { e: 'badstart', at: AT1, t: AT1 } } }) } }).api;
+    await env.loadPatch({ rpc: () => Promise.resolve({ data: { ok: true, ver: 1, rows: {} } }) });
+    const kp3 = ids['pt-kpis'].children.map(k => allText(k).replace(/\s+/g, '')), lt3 = allText(ids['pt-list']);
+    t('K 直して日時が変わった方は断りの欄に数えない（一覧に1回だけ・未送信として）', kp3.indexOf('端末だけにある1人') >= 0 && kp3.indexOf('形の違いで断られた0人') >= 0
+      && (lt3.match(/入居者ID a/g) || []).length === 1 && !/断られた/.test(lt3), { kp3, lt3 });
     ids['pt-list'].replaceChildren();
     const sh2 = box({ store: { apc2_res: res({ same: local.same }) } });
     env.SUPatchSync = sh2.api;
@@ -332,6 +370,67 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('I 画面の欄と部品の読み込み（shadow-check.js より前）', /id="pt-kpis"/.test(SHHTML) && /id="pt-verdict"/.test(SHHTML) && /id="pt-list"/.test(SHHTML)
       && SHHTML.indexOf('<script src="su-patch-sync.js') > 0 && SHHTML.indexOf('<script src="su-patch-sync.js') < SHHTML.indexOf('<script src="shadow-check.js'));
     t('I 読み込みは load() の中で、失敗しても他の見比べを止めない', /try \{ await loadPatch\(sb\); \}\s*catch \(e\) \{[^}]*pt-verdict/.test(SHJS));
+  }
+
+  console.log('\n— K 反証レビューの直し —');
+  {
+    // 1. スイッチが切ならログインの部品（script の札）を足さない
+    const st = Object.assign({ apc2_res: res({ r1: { start: '2026-10-01', no: 2, prev: 0, by: 'x', at: AT1 } }) }, SESSION);
+    const off = box({ store: st, noAuth: true, tags: [], flags: { patch_push: false } });
+    await off.api.pushAll(); await off.api.pushOne('r1'); await settle();
+    t('★K スイッチが切の時はログインの部品（supabase-js・su-auth.js）の札を足さない', off.appended.length === 0 && off.calls.length === 0, off.appended);
+
+    // 2. 断りの記録と日時が同じ方だけ差から外す（直して日時が変われば差に戻る）
+    const d2 = box({ store: { apc2_sync_ng: J({ v: 1, r: { a: { e: 'badstart', at: AT1, t: AT1 }, b: { e: 'badno', at: AT1, t: AT1 }, c: { e: 'badno', at: AT1, t: AT1 } } }) } }).api.diff(
+      { a: { start: '2026-10-01', no: 2, prev: 1, at: AT1 }, b: { start: '2026-10-01', no: 2, prev: 1, at: AT2 }, c: { start: '2026-10-01', no: 2, prev: 1, at: AT1 } },
+      { c: { start: '2026-10-01', no: 9, prev: 1, at: '2026-10-10T00:00:00.000Z' } });
+    t('★K 形で断られた方（同じ日時）は「端末だけ」「中身が違う」に数えず refused にだけ出す', J(d2.refused) === J([{ id: 'a', error: 'badstart' }, { id: 'c', error: 'badno' }])
+      && d2.onlyLocal.indexOf('a') < 0 && d2.differ.indexOf('c') < 0 && d2.differLocal.indexOf('c') < 0, d2);
+    t('K 断られた後に直して日時が変わった方は差に戻る（断りには数えない）', J(d2.onlyLocal) === J(['b']), d2);
+
+    // 3. 中身の違いを日時で分ける
+    const T0 = '2026-10-14T01:00:00.000Z';
+    const d3 = box({ store: {} }).api.diff({
+      newer: { start: '2026-10-01', no: 2, prev: 1, at: AT2 }, older: { start: '2026-10-01', no: 2, prev: 1, at: T0 },
+      eq: { start: '2026-10-01', no: 2, prev: 1, at: AT1 }, broken: { start: '2026-10-01', no: 2, prev: 1, at: AT1 }
+    }, {
+      newer: { start: '2026-10-01', no: 3, prev: 1, at: AT1 }, older: { start: '2026-10-01', no: 3, prev: 1, at: AT1 },
+      eq: { start: '2026-10-01', no: 3, prev: 1, at: AT1 }, broken: { start: '2026-10-01', no: 3, prev: 1, at: 'こわれた' }
+    });
+    t('★K 端末の方が新しい中身の違いは differLocal（未送信）', J(d3.differLocal) === J(['broken', 'newer']), d3.differLocal);
+    t('★K サーバーの方が新しい・同じ日時は differServer（ほかの端末の設定）', J(d3.differServer) === J(['eq', 'older']), d3.differServer);
+    t('K differ は両方を合わせたもの', J(d3.differ) === J(['broken', 'eq', 'newer', 'older']), d3.differ);
+
+    // 4. 送信済みの控え
+    const st4 = Object.assign({ apc2_res: res({ r1: { start: '2026-10-01', no: 2, prev: 0, by: 'x', at: AT1, name: '見本 甲' }, r2: { start: '2026-10-02', no: 3, prev: 2, by: 'y', at: AT1 } }) }, SESSION);
+    const s4 = box({ store: st4 });
+    await s4.api.pushAll(); await settle();
+    const sent = (() => { try { return JSON.parse(s4.store.apc2_sync_sent).s; } catch (e) { return null; } })();
+    t('★K ok を受け取ったら送信済みの控えに（入居者ID → 日時）だけ残す（氏名なし）', J(sent) === J({ r1: AT1, r2: AT1 }) && s4.store.apc2_sync_sent.indexOf('見本') < 0, s4.store.apc2_sync_sent);
+    await s4.api.pushAll(); await settle();
+    t('★K 開いた後の送信は、送信済みと日時が同じ方を送らない', s4.calls.length === 2, s4.calls.map(c => c.args.p_resident_id));
+    s4.store.apc2_res = res({ r1: { start: '2026-10-05', no: 2, prev: 0, by: 'x', at: AT2 }, r2: { start: '2026-10-02', no: 3, prev: 2, by: 'y', at: AT1 } });
+    await s4.api.pushAll(); await settle();
+    t('★K 日時が新しくなった方は送る（その方だけ）', J(s4.calls.slice(2).map(c => c.args.p_resident_id)) === J(['r1']), s4.calls.map(c => c.args.p_resident_id));
+    await s4.api.pushOne('r2'); await settle();
+    t('★K 保存の後の送信（その方）は送信済みでも今までどおり送る', s4.calls.length === 4 && s4.calls[3].args.p_resident_id === 'r2', s4.calls.map(c => c.args.p_resident_id));
+    for (const bad of ['{', J({ v: 1, s: [] }), J('x'), J({ v: 1 })]) {
+      const b = box({ store: Object.assign({}, st4, { apc2_sync_sent: bad }) });
+      await b.api.pushAll(); await settle();
+      t('★K 送信済みの控えが壊れていたら全員分を送る（' + bad + '）', b.calls.length === 2, b.calls.length);
+    }
+    const qd = box({ store: Object.assign({}, st4, { apc2_sync_sent: J({ v: 1, s: { r1: AT1, r2: AT1 } }), apc2_sync_q: J({ v: 1, q: { r1: AT1 } }) }) });
+    await qd.api.pushAll(); await settle();
+    t('K 送信済みでも送信待ちに残っている方は送る', J(qd.calls.map(c => c.args.p_resident_id)) === J(['r1']), qd.calls.map(c => c.args.p_resident_id));
+    const nf = box({ store: st4, reply: () => ({ error: { message: 'Failed to fetch' } }) });
+    await nf.api.pushAll(); await settle();
+    t('K 送れなかった方は送信済みに残さない', !('apc2_sync_sent' in nf.store), nf.store.apc2_sync_sent);
+    const rf = box({ store: st4, reply: () => ({ data: { ok: false, error: 'badstart' } }) });
+    await rf.api.pushAll(); await settle();
+    t('K 形で断られた方は送信済みに残さない（断りの記録の方で止める）', !('apc2_sync_sent' in rf.store), rf.store.apc2_sync_sent);
+    const offS = box({ store: st4, flags: { patch_push: false } });
+    await offS.api.pushAll(); await settle();
+    t('K スイッチが切なら送信済みの控えも書かない', !('apc2_sync_sent' in offS.store));
   }
 
   console.log('\n— J 画面のつなぎ・スイッチ・公開 —');

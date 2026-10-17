@@ -979,7 +979,9 @@
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
    * 出すのは入居者IDと件数だけ（控えにも氏名は無い）。読むだけで、ここからは送らない（送るのは貼り薬カレンダー）。
    * 差の内訳: 端末だけにある（まだ届いていない）・サーバーだけにある（ほかの端末が送った）・中身が違う（開始日・場所・前日の場所）。
-   * 日時の無い古い設定は送らない約束なので、差には数えず別に出す */
+   * 中身が違う方は日時で分ける: 端末の方が新しい＝未送信／サーバーの方が新しい＝ほかの端末で新しい設定（段階3で取り込む）。
+   * 日時の無い古い設定は送らない約束なので、差には数えず別に出す。形で断られた方も差に数えず、断りの欄だけで数える。
+   * 判定を warn にするのは未送信（端末だけにある・端末の方が新しい）がある時だけ。送るスイッチが切の間は送っていないので warn にしない */
   var PT_LIST_MAX = 50;
   function patchRows(data) {
     // 受け取った応答を信じない（多端末同期の規約10）: 形が違えば読めなかった扱い
@@ -995,13 +997,15 @@
     var rows = patchRows(r.data);
     if (!rows) throw new Error('patch_get の応答の形が違います');
     var d = SUPatchSync.diff(SUPatchSync.readLocal(), rows);
-    var pend = SUPatchSync.pending(), ng = SUPatchSync.refused();
+    var pend = SUPatchSync.pending(), ng = d.refused;
     var gap = d.onlyLocal.length + d.onlyServer.length + d.differ.length;
+    var unsent = d.onlyLocal.length + d.differLocal.length;
     kk.appendChild(kpi('サーバーの行数', Object.keys(rows).length, '人'));
     kk.appendChild(kpi('一致', d.same.length, '人'));
     kk.appendChild(kpi('端末だけにある', d.onlyLocal.length, '人'));
     kk.appendChild(kpi('サーバーだけにある', d.onlyServer.length, '人'));
-    kk.appendChild(kpi('中身が違う', d.differ.length, '人'));
+    kk.appendChild(kpi('未送信（この端末の方が新しい）', d.differLocal.length, '人'));
+    kk.appendChild(kpi('ほかの端末で新しい設定', d.differServer.length, '人'));
     kk.appendChild(kpi('送らない（日時なし）', d.noAt.length, '人'));
     kk.appendChild(kpi('この端末の送信待ち', pend.length, '人'));
     kk.appendChild(kpi('形の違いで断られた', ng.length, '人'));
@@ -1009,17 +1013,27 @@
     var sw = window.SUKv ? SUKv._flags() : null;
     var swOn = sw && sw.supabase ? sw.supabase.patch_push === true : SUPatchSync.switchOn();
     kk.appendChild(kpi('送るスイッチ', swOn ? '入' : '切'));
+    // ボタンの文言: 切の間は開いても送らないことが分かる形にする
+    var go = $('pt-open');
+    if (go) go.textContent = swOn ? '貼り薬カレンダーを開く（送り直す）' : '貼り薬カレンダーを開く（送るスイッチが切のため、送りません）';
     if (!gap) {
       v.className = 'msg ok';
       v.textContent = 'この端末の控えとサーバーの差は0件です。';
-    } else {
+    } else if (!swOn) {
+      v.className = 'msg';
+      v.textContent = '送るスイッチが切のため、まだ送っていません（差は想定どおり）。差は ' + gap + '件です。';
+    } else if (unsent) {
       v.className = 'msg warn';
-      v.textContent = 'この端末の控えとサーバーに差が ' + gap + '件あります。貼り薬カレンダーを開くと、端末だけにある分を送り直します（サーバーだけにある分は、ほかの端末が送った設定です）。';
+      v.textContent = 'この端末に未送信の設定が ' + unsent + '件あります（差は全部で ' + gap + '件）。貼り薬カレンダーを開くと送り直します。';
+    } else {
+      v.className = 'msg ok';
+      v.textContent = 'この端末の未送信は0件です。差の ' + gap + '件は、ほかの端末が送った設定です（表示へ取り込むのは段階3）。';
     }
     var items = [];
-    d.onlyLocal.forEach(function (id) { items.push([id, '端末だけにある']); });
+    d.onlyLocal.forEach(function (id) { items.push([id, '端末だけにある（未送信）']); });
+    d.differLocal.forEach(function (id) { items.push([id, '未送信（この端末の方が新しい）']); });
     d.onlyServer.forEach(function (id) { items.push([id, 'サーバーだけにある']); });
-    d.differ.forEach(function (id) { items.push([id, '中身が違う']); });
+    d.differServer.forEach(function (id) { items.push([id, 'ほかの端末で新しい設定（段階3で取り込む）']); });
     ng.forEach(function (x) { items.push([x.id, '形の違いで断られた（' + x.error + '）']); });
     items.slice(0, PT_LIST_MAX).forEach(function (it) {
       var li = el('li'), left = el('div');
