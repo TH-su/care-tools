@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-69RdbVINgfoXnjUeQGIIvG9itiPAHojXeUpQr5senEU=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0074Z8AGQ3OcmW/FoT+9FaMLPxaQ8QLR6kQYwb5cp48=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -261,6 +261,11 @@ body {
 }
 #ovTip.on { display: block; }
 @media print { #ovTip { display: none !important; } }
+/* 写しから表示中の帯（2026-10-17 改善プロンプト第2弾の8）。保存先が Supabase に切り替わっているのに Supabase から読めず、
+   Google の写しから表示した時だけ出す。出ていない時は場所を取らない（[hidden]）。印刷には出さない */
+.copy-band:not([hidden]) { display: block; padding: 8px 16px; background: var(--warn-bg); color: var(--g9);
+  border-bottom: 1px solid var(--g3); font-size: 0.875rem; line-height: 1.5; }
+@media print { .copy-band { display: none !important; } }
 </style>
 </head>
 <body>
@@ -295,6 +300,7 @@ body {
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の実配置を集計">更新</button>
   <button class="hdr-btn" id="btnPrint" aria-label="A3縦で印刷">印刷</button>
 </header>
+<div id="copyBand" class="copy-band" role="status" aria-live="polite" hidden>⚠️ Supabase（本番）から読めず、Google の写しから表示しています。写しは古いことがあります。ログインし直すか、時間をおいて読み込み直してください。</div>
 
 <div class="legend" aria-hidden="false">
   <span class="lg"><span class="lg-sw k-phys"></span>身体</span>
@@ -329,7 +335,7 @@ body {
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
-<script src="su-kv.js?v=2026-10-16"></script>
+<script src="su-kv.js?v=2026-10-17"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <script>
 'use strict';
@@ -429,10 +435,25 @@ let getOnlyMode = false;   // pull 未対応環境を検知したら単一 get �
 let RAW = null, MASKS = null, RAW_N = 0, RAW_MISS = '';   // 直近の集計を保持し、施設/外部の切替を再フェッチ無しで行う（RAW_MISS=欠測注記・ビュー非依存）
 let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施設（既定）／'ext'=外部
 
+/* 写しから表示中の帯（2026-10-17 改善プロンプト第2弾の8・代表者の決定）。保存先が Supabase に切り替わっているキー（SUKv.routed）を
+   Supabase から読めず（未ログイン・失敗）、Google の写しから表示した時だけ出す。Supabase から読めたら消す。
+   スイッチが切のキー（Google が本番）では出さない */
+/* ★全支援俯瞰は1回の表示で週間計画と何週分もの日データを順に読む。どれか1つでも写しから読んだら、その表示が終わるまで出したまま
+   （最後に読んだ1つで消さない・反証レビュー 2026-10-17）。表示の取り直し（refresh の始め）で copyUsed_ を戻す */
+var copyUsed_ = false;
+function showCopyBand_(keys, fromCopy) {
+  var el = document.getElementById('copyBand');
+  if (!el) return;
+  var routed = false;
+  try { routed = !!(window.SUKv && SUKv.routed && (keys || []).some(function (k) { return SUKv.routed(k); })); } catch (e) { routed = false; }
+  if (fromCopy && routed) copyUsed_ = true;
+  el.hidden = !copyUsed_;
+}
 async function gasCall(payload) {
   /* 統合（2026-09-27）: 週間計画・ワースケの日データの保存先を Supabase に切り替えた後は、ログインしている端末だけ
      Supabase から読む（速い）。スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。 */
-  if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) return v; }
+  const keys_ = Array.isArray(payload.keys) ? payload.keys : [payload.key];
+  if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) { showCopyBand_(keys_, false); return v; } }
   const res = await fetch(TARGET.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -442,6 +463,7 @@ async function gasCall(payload) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const j = await res.json();
   if (!j.ok) throw new Error(j.error || '応答エラー');
+  showCopyBand_(keys_, true);
   return j;
 }
 
@@ -1006,6 +1028,7 @@ async function refresh() {
   if (busy) { refreshPending = true; return; }   // 破棄せず、完了後に1回だけ最新の条件で取り直す
   busy = true;
   refreshPending = false;
+  copyUsed_ = false;                               // 写しから表示中の帯は、この表示で読んだ分だけで決める
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {

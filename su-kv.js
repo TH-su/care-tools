@@ -15,8 +15,12 @@
  *     スイッチが入っていないキーは rawGas（これまでの Google）へそのまま流す＝切り替え前は何も変わらない。
  *   ・スイッチが入ったキーは Supabase の関数（kv_get / kv_head / kv_put / kv_history_*）で読み書きし、
  *     Google と同じ形の応答を返す（conflict・unchanged・bathwipe・visitwipe 等も同じ名前）＝アプリ側の処理は変えない。
- *   ・Supabase に保存できたら、少し待って最新版を Google へも写し返す（force）。まだ Google を読んでいる画面
+ *   ・Supabase に保存できたら、少し待って最新版を Google へも写し返す（force・mirror の印つき）。まだ Google を読んでいる画面
  *     （週間計画俯瞰・支援俯瞰・入居者マスタのデイ利用日・フェイスシート・訓練計画）が古いままにならないように。
+ *     ★mirror の印（2026-10-17 改善プロンプト第2弾の8・代表者の決定）: 統合 GAS はスクリプトプロパティ KV_SWITCHED_FAMILIES に
+ *       書いた種類について、印の無い書き込み（スイッチを読めていない古い端末）を断る。写し返しだけが通る。
+ *     ★勤務表は写し返さない（2026-10-17 同）。Google は厳格モードで写し返しを断っていた。戻す時は写しの見比べの
+ *       「勤務表を Google へ写し返す」で明示的に写す。
  *   ・Supabase へ書けるのは事務所・管理者として Google でログインしている時だけ（最終判定はデータベース）。
  *     ★例外（0010・2026-10-11 代表者の決定 A）: 現場のアカウントは、ワークスケジュールの日データ（wsday_*）の
  *       「実施チェック（done・checks）」と「コメント」だけを kv_put_marks で書ける（盤面・職員・時刻は書けない）。
@@ -28,6 +32,8 @@
  *   ②スイッチを入れる PR を取り込む（この間の保存は 'shadow' で断られ、入力は端末に残る）
  *   ③管理者が写しの見比べ画面で「切り替える」（kv_set_family_mode live・週間計画とワークスケジュールをまとめて）。
  *   戻す時は逆順: ①スイッチを切る PR ②「戻す」（shadow）。
+ *   ★戻す前に、統合 GAS のスクリプトプロパティ KV_SWITCHED_FAMILIES からその種類を外す（外さないと、Google へ戻した後の
+ *     全端末の保存が断られる）。
  */
 (function () {
   'use strict';
@@ -147,7 +153,7 @@
   //   2 画面を隠した時（別のアプリ・タブへ移る・閉じる）は、20秒を待たずにその場で写し返す
   //   3 同じ端末で次に週間計画・ワースケ・デイ利用表が Supabase へ保存できた時、控えに残っている他のキーも写し返す（7日より古い控えは捨てる）。
   //     保存の時の Google への送り方（rawGas）だけを使う＝読むだけの画面（俯瞰・フェイスシート等）の送り方で Google へ書かない
-  //   写すのは毎回 Supabase の最新（kv_get）を force で＝何度写しても同じ（冪等）。勤務表は対象外（scheduleShiftMirror・Google が厳格モードで断る）
+  //   写すのは毎回 Supabase の最新（kv_get）を force で＝何度写しても同じ（冪等）。勤務表は写し返さない（2026-10-17 に外した）
   var MIRROR_LS = 'su_kv_mirror_pending', MIRROR_KEEP_MS = 7 * 24 * 3600 * 1000, MIRROR_RESUME_MS = 5000, MIRROR_RETRY_MS = 5000;
   function mirrorPending() {
     try { var o = JSON.parse(localStorage.getItem(MIRROR_LS) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
@@ -177,7 +183,8 @@
       var d = r.data.data;
       if (d == null || typeof d !== 'object') return;   // 受け取った中身が壊れていれば写さない（多端末同期規約10）
       // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
-      return Promise.resolve(rawGas({ action: 'put', key: key, rev: 0, data: d, force: true })).then(function (g) {
+      // mirror の印＝写し返しであることを統合 GAS に知らせる（切り替え済みの種類でも、写し返しだけは断らない・2026-10-17）
+      return Promise.resolve(rawGas({ action: 'put', key: key, rev: 0, data: d, force: true, mirror: true })).then(function (g) {
         if (g && g.ok) mirrorDone(key, started);
       });
     }).catch(function () { /* 写し返しの失敗は本番に影響させない（控えが残る＝次の機会にまた写す） */ })
@@ -467,8 +474,8 @@
    * Google と同じ形の応答を返す（conflict・serverRev・editlock・schedwipe 等も同じ名前）＝勤務表アプリの処理は変えない。
    *   ・編集できる端末を1台に絞る仕組み（編集権・券・epoch・厳格モード）もデータベースが同じ約束で受け持つ。
    *   ・現場のアカウントは読むだけ（pull の応答に role:'ro'＝勤務表アプリは閲覧モード）。書けるのは事務所・管理者。
-   *   ・保存できたら、少し待って最新版を Google へも写し返す（force）。勤務表を Google から読む画面
-   *     （ワークスケジュールの勤務の取り込み等）が古いままにならないように。写し返しの失敗は本番に影響させない。
+   *   ・Google へは写し返さない（2026-10-17 に外した。Google は厳格モードで写し返しを断っていた）。
+   *     ワークスケジュールが Supabase を読めずに Google の勤務表を読んだ時は、画面に「写しから表示中」と出る。
    *   ・合言葉（Google の token）と券の控えは Supabase へは送らない（送るのは関数の引数だけ）。 */
   var SHIFT_ACTIONS = { pull: 1, push: 1, head: 1, lockStatus: 1, lockAcquire: 1, lockRenew: 1, lockRelease: 1, shiftStatus: 1 };
   function isShiftKey(k) { return flagOf(k) === 'shift'; }
@@ -491,20 +498,8 @@
     });
   }
 
-  var shiftMirrorTimers = {};
-  function scheduleShiftMirror(key, rawGas) {
-    clearTimeout(shiftMirrorTimers[key]);
-    shiftMirrorTimers[key] = setTimeout(function () {
-      var sb = window.SUAuth && window.SUAuth.client();
-      if (!sb) return;
-      sb.rpc('shift_pull', { p_keys: [key] }).then(function (r) {
-        var e = r && !r.error && r.data && r.data.entries && r.data.entries[key];
-        if (!e || e.data == null) return;
-        // 最新版で上書き（force）。版番号は Google 側で独自に進む＝読む側は「変わった」ことだけ分かればよい
-        return rawGas({ action: 'push', key: key, baseRev: 0, data: e.data, force: true });
-      }).catch(function () { /* 写し返しの失敗は本番に影響させない（次の保存でまた写す） */ });
-    }, MIRROR_WAIT_MS);
-  }
+  // 勤務表の Google への写し返し（scheduleShiftMirror）は 2026-10-17 に外した（改善プロンプト第2弾の8・代表者の決定）。
+  // Google の統合 GAS は厳格モードで、編集の権利の無い写し返しを毎回断っていた（効いていなかった）。
 
   function str(v, max) { var s = v == null ? '' : String(v); return s.length > max ? s.substring(0, max) : s; }
 
@@ -542,11 +537,7 @@
             p_edit_token: payload.editToken ? String(payload.editToken) : null,
             p_defaults_init: payload.defaultsInit === true,
             p_restore_backup: payload.restoreFromBackup === true
-          }).then(function (r) {
-            var d = pass(r);
-            if (d.ok === true && rawGas) scheduleShiftMirror(payload.key, rawGas);
-            return d;
-          });
+          }).then(pass);
         case 'lockAcquire':
           if (!writer) return { ok: false, error: 'forbidden' };
           return rpc('shift_lock_acquire', { p_device: str(payload.deviceId, 64), p_name: str(payload.name, 40), p_takeover: payload.takeover === true }).then(pass);

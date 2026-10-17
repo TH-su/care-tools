@@ -238,7 +238,7 @@
     }
     var q = mode === 'live'
       ? '週間計画とワークスケジュールの保存先を Supabase（本番）に切り替えますか？\n\n「切り替え前の点検」がそろっていることを確かめてから進めてください。'
-      : '週間計画とワークスケジュールを「写しの期間」に戻しますか？';
+      : '週間計画とワークスケジュールを「写しの期間」に戻しますか？\n\n統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から care・ws_master・wsday を外しましたか？（外さないと、Google へ戻した後の全端末の保存が断られます）';
     if (!confirm(q)) return;
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: CUT_FAMS, p_mode: mode });
@@ -447,7 +447,7 @@
     return (r.data && r.data[0] && r.data[0].mode) || 'shadow';
   }
   async function stopWsday() {
-    if (!confirm('ワークスケジュールの日ごとの保存先（Supabase）を止めますか？\n\n止めている間、日ごとの保存は各端末に残り、日ごとのスイッチを切った後に Google へ届きます。')) return;
+    if (!confirm('ワークスケジュールの日ごとの保存先（Supabase）を止めますか？\n\n止めている間、日ごとの保存は各端末に残り、日ごとのスイッチを切った後に Google へ届きます。\n\nスイッチを切る前に、統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から wsday を外してください（外さないと日ごとの保存が全部断られます）。')) return;
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     wbBusy(true);
     try {
@@ -485,7 +485,8 @@
           var g = ents[k];
           if (g && g.data != null && sameData(g.data, sd)) { same++; done++; continue; }
           try {
-            await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+            // mirror の印＝写し返し。統合 GAS が切り替え済みの種類への書き込みを断っていても、写し返しは通す（2026-10-17）
+            await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true }, 120000);
             wrote++;
           } catch (e) { failed.push(k); }
           done++;
@@ -587,7 +588,10 @@
   }
   /* 違う分を Google へ写す（2026-10-16 代表者の決定）。本番の間は Supabase が正しい中身＝Google をそれに合わせて force で上書きするだけ
    * （保存の20秒後の写し返し su-kv.js scheduleMirror と同じ動き）。写す直前に、その種類がまだ本番かを確かめ直す
-   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ */
+   * （写しの期間へ戻した後に写すと、Google が正の間に古い中身を書くことになる）。写し終えたら比べ直す。管理者（二段階認証済み）だけ
+   * 2026-10-17（改善プロンプト第2弾の8・代表者の決定）: mirror の印を付ける（統合 GAS の切り替え済みの断りを通る）。
+   *   統合 GAS は印のある週間計画の「最後に直した人」を書き換えず、Supabase の中身（直した人は確かめ済み）のまま残す
+   *   （反証レビュー: 押した管理者の証明で確かめると、直していない入居者まで管理者の名前になり、見比べも一致に戻らなかった） */
   async function runMirrorFix() {
     if (mcOn || !mcFix.length) return;
     var verdict = $('mc-verdict');
@@ -612,7 +616,7 @@
         var sd = r.data && r.data.data;
         if (r.error || sd == null || typeof sd !== 'object') { failed.push(k); continue; }
         try {
-          var g = await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true }, 120000);
+          var g = await gasPostRetry(tgt, { action: 'put', key: k, rev: 0, data: sd, force: true, mirror: true }, 120000);
           if (g && g.ok) wrote++; else failed.push(k);
         } catch (e) { failed.push(k); }
       }

@@ -99,6 +99,7 @@
           <button type="button" class="btn ng" id="b-live">Supabase を本番にする（切り替える）</button>
           <button type="button" class="btn" id="b-shadow">写しの期間に戻す</button>
         </div>
+        <p class="muted mt"><b>★Google へ戻す前に、統合 GAS（統合同期）のスクリプト プロパティ KV_SWITCHED_FAMILIES からその種類（care・ws_master・wsday）を外してください。外さないと、Google へ戻した後の全端末の保存が断られます。</b></p>
         <p class="muted mt">勤務表は別の夜に切り替えます（先に勤務表の切り替えスイッチ shift の PR を取り込み、上の点検で勤務表がそろっていること）。</p>
         <p id="sh-verdict" class="msg"></p>
         <div class="acts">
@@ -122,7 +123,7 @@
         <!-- ワークスケジュールの日ごとだけを Google に戻す（2026-10-11 代表者の決定）。順番を守るためボタンを分ける:
              ①日ごとを止める（Supabase への保存を断る＝入力は端末に残る）②Google へ写し返す（中身を比べて違う日だけ）
              ③日ごとのスイッチ wsday を false にする PR を取り込む -->
-        <p class="muted mt">ワークスケジュールの日ごとだけを Google に戻す時の手順です。手順1「日ごとを止める」→手順2「日ごとを Google へ写し返す」（全部そろうまで）→手順3 日ごとのスイッチを切る PR を取り込む、の順に進めます。手順1から手順3の間、日ごとの保存は端末に残り、手順3の後に Google へ届きます。</p>
+        <p class="muted mt">ワークスケジュールの日ごとだけを Google に戻す時の手順です。手順1「日ごとを止める」→手順2「日ごとを Google へ写し返す」（全部そろうまで）→手順3 日ごとのスイッチを切る PR を取り込む、の順に進めます。手順1から手順3の間、日ごとの保存は端末に残り、手順3の後に Google へ届きます。<b>手順3の前に、統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から wsday を外してください（外さないと、手順3の後の日ごとの保存が全部断られます）。</b></p>
         <p id="wb-verdict" class="msg"></p>
         <div class="acts">
           <button type="button" class="btn" id="b-wsday-stop">手順1 日ごとを止める（写しの期間に戻す）</button>
@@ -174,9 +175,9 @@
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-09-26"></script>
 <script src="su-master-shadow.js?v=2026-09-26"></script>
-<script src="su-kv.js?v=2026-10-16"></script>
+<script src="su-kv.js?v=2026-10-17"></script>
 <script src="su-kv-shadow.js?v=2026-09-26b"></script>
 <script src="su-patch-sync.js?v=2026-10-20"></script>
-<script src="shadow-check.js?v=2026-10-20"></script>
+<script src="shadow-check.js?v=2026-10-21"></script>
 </body>
 </html>

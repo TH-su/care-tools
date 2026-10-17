@@ -238,6 +238,8 @@ function makeKv(o) {
     k.timers[0](); await settle();
     t('★写し返しは、データベースの最新版を force で Google へ送る（読むだけの画面のため）',
       k.raws.length === 1 && k.raws[0].action === 'put' && k.raws[0].force === true && k.raws[0].key === 'care_schedule_v2' && Array.isArray(k.raws[0].data.residents), k.raws);
+    t('★写し返しには mirror の印が付く（統合 GAS が切り替え済みの種類で印の無い書き込みを断っても、写し返しは通る・2026-10-17）',
+      k.raws.length === 1 && k.raws[0].mirror === true && k.raws[0].rev === 0, k.raws);
 
     k = makeKv();
     r = await k.kv.call({ action: 'head', keys: ['care_schedule_v2', 'wsday_2026-10-10', 'other'] }, k.raw);
@@ -578,20 +580,15 @@ function makeKv(o) {
       r = await k.kv.callShift({ action: 'pull', keys: ['staff'] }, k.raw);
       t('F 書き手でない（' + role + '）でも読む（pull）はデータベースへ聞く', r.ok === true && k.rpcs.some(x => x.name === 'shift_pull'), r);
     }
+    /* 2026-10-17（改善プロンプト第2弾の8・代表者の決定）: 勤務表の Google への写し返しを外した（Google は厳格モードで断っていた）。
+       意図的な期待値の更新: 写し返しを予約しない・Google へ送らない・写し返しのための shift_pull もしない */
     for (const role of ['office', 'admin']) {
       k = makeKv({ flags: ON, role, shiftRpc: shiftDb() });
       r = await k.kv.callShift(push(), k.raw);
-      t('F ' + role + ' の push は通り、写し返しを1つ予約する（すぐには Google へ送らない）', r.ok === true && r.rev === 5 && k.timers.length === 1 && k.raws.length === 0, r);
+      t('F ' + role + ' の push は通り、Google への写し返しは予約しない（2026-10-17 に外した）', r.ok === true && r.rev === 5 && k.timers.length === 0 && k.raws.length === 0, r);
+      t('F ' + role + ' の push の後に写し返しのための読み出し（shift_pull）をしない', !k.rpcs.some(x => x.name === 'shift_pull'), k.rpcs.map(x => x.name));
     }
-    k.timers[0](); await settle();
-    t('★F 写し返しは、データベースの最新（shift_pull）を版0・force で Google へ push する',
-      k.raws.length === 1 && k.raws[0].action === 'push' && k.raws[0].key === 'sched:2026-10:plan' && k.raws[0].baseRev === 0 && k.raws[0].force === true &&
-      JSON.stringify(k.raws[0].data) === '{"v":"db:sched:2026-10:plan"}' && !('editToken' in k.raws[0]), k.raws);
-    t('F 写し返しの読み出しは、そのキー1つだけ', JSON.stringify(lastArgs(k, 'shift_pull').p_keys) === '["sched:2026-10:plan"]');
-    k = makeKv({ flags: ON, shiftRpc: shiftDb({ shift_pull: { data: { ok: true, entries: {} } } }) });
-    await k.kv.callShift(push(), k.raw);
-    k.timers[0](); await settle();
-    t('F データベースに中身が無ければ写し返さない（Google を空で潰さない）', k.raws.length === 0, k.raws);
+    t('F 写し返しの関数そのものが無い（scheduleShiftMirror）', !/scheduleShiftMirror\(/.test(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'su-kv.js'), 'utf8').replace(/\/\/[^\n]*/g, '')));
 
     k = makeKv({ flags: ON, status: STATUS.SIGNED_OUT, shiftRpc: shiftDb() });
     r = await k.kv.callShift(push(), k.raw);
