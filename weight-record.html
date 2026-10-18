@@ -55,6 +55,8 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
   color:#fff;border-radius:6px;padding:6px 12px;font-size:0.9375rem;cursor:pointer;white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
 .hdr-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}
+/* iPhone（幅700px以下）だけ見出しのボタンを 44px に（2026-10-18 改善プロンプト第2弾の12）。PC の画面と印刷は変えない */
+@media (max-width:700px){.hdr-btn{min-height:44px}}
 .hdr-r{font-size:0.9375rem;opacity:.9}
 /* 入居者マスタから本人単位で開いた時の確認バー（誰を開いているかを常に見せる＝取り違え防止） */
 .frombar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;

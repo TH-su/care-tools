@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-heYDJcGdf9vZJZU27mBQBLxbW1ftSg7xJK0kh6zLc7w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-QUaJmzTOaMXvh87bMEsGy/w9QwcV4MA/2n7bwMqLXhk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -7707,7 +7707,11 @@ try {
 } catch (e) {}
 
 // ── 予定一覧モーダル ──
-let _evlistView = 'day'; // 'day' = 曜日別 / 'svc' = サービス種別別
+let _evlistView = 'day'; // 'day' = 曜日別 / 'svc' = サービス種別別 / 'simple' = 簡易
+/* 予定一覧の表示の切り替えを端末に残し、再読み込みしても戻す（2026-10-18 改善プロンプト第2弾の12・dev-principles 原則11）。
+   残すのは表示の名前（day・svc・simple）だけ。氏名・予定は残さない。読む時は既知の値だけを信じ、それ以外は曜日別 */
+const CS_EVLIST_VIEW_KEY = 'cs_evlist_view_v1';
+try { const v0 = localStorage.getItem(CS_EVLIST_VIEW_KEY); if (v0 === 'day' || v0 === 'svc' || v0 === 'simple') _evlistView = v0; } catch (e) { /* 読めない端末は曜日別 */ }
 
 function getSortedEvents(res) {
   if (!res || !Array.isArray(res.events)) return [];
@@ -7725,12 +7729,16 @@ function formatEventFields(ev) {
 }
 
 const EVLIST_VIEWS_ = ['day', 'svc', 'simple'];
-function setEventListView(mode) {
-  _evlistView = EVLIST_VIEWS_.indexOf(mode) >= 0 ? mode : 'day';
+function syncEventListTabs_() {
   for (const v of EVLIST_VIEWS_) {
     const btn = $('#evlist-tab-' + v);
     if (btn) btn.classList.toggle('active', _evlistView === v);
   }
+}
+function setEventListView(mode) {
+  _evlistView = EVLIST_VIEWS_.indexOf(mode) >= 0 ? mode : 'day';
+  try { localStorage.setItem(CS_EVLIST_VIEW_KEY, _evlistView); } catch (e) { /* 残せなくても表示は切り替える */ }
+  syncEventListTabs_();
   renderEventListBody();
 }
 
@@ -7972,6 +7980,7 @@ function openEventListModal() {
   const res = currentResident();
   if (!res) { showToast('利用者が選択されていません'); return; }
   $('#event-list-resident').textContent = res.name || '（無名）';
+  syncEventListTabs_();   /* 残っていた表示に合わせてボタンの印をそろえる */
   renderEventListBody();
   $('#mk-event-list').classList.add('open');
 }
