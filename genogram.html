@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-G1/IrKXzTZCwapYdY5Y5Mv+9jG0m2lGnEQMipjUVOqE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-2ymvWYlc96ZOBn1Au5dQxECfZSQ0ypqyYYcoCsNW+DE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1043,6 +1043,16 @@ function doPost(e) {
   }
 }
 
+// 合言葉の比べ方は、一致した長さで時間が変わらない比較（tokensEqual_・個別機能訓練計画書API と一字一句同じ中身。
+// 2026-10-18 改善プロンプト第2弾の10）。長さが違えばすぐ false（長さは合言葉の中身ではない）
+function tokensEqual_(a, b) {
+  a = String(a == null ? '' : a);
+  b = String(b == null ? '' : b);
+  if (a.length !== b.length) return false;
+  var diff = 0, i;
+  for (i = 0; i < a.length; i++) diff |= (a.charCodeAt(i) ^ b.charCodeAt(i));
+  return diff === 0;
+}
 // 合言葉から権限を返す: 'full' | 'view' | ''（不一致・または GENOGRAM_TOKEN が未設定＝全部断る）
 function role(token) {
   const props = PropertiesService.getScriptProperties();
@@ -1050,9 +1060,9 @@ function role(token) {
   if (!full) return '';   // 未設定は断る（2026-10-08 まではここで 'grace'＝素通しを返していた）
   const got = (token === undefined || token === null) ? '' : String(token);
   if (!got) return '';
-  if (got === full) return 'full';
+  if (tokensEqual_(got, full)) return 'full';
   const view = props.getProperty(TOKEN_PROP_VIEW);
-  if (view && got === view) return 'view';
+  if (view && tokensEqual_(got, view)) return 'view';
   return '';
 }
 
