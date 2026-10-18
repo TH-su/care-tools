@@ -34,6 +34,8 @@ console.log('\n— 1. 家族構成図 —');
   t('見出し・倍率・同期のボタンは高さを外して 44px 以上', /\.hbtn,\.zbtn,\.sync-btn\{height:auto;min-height:44px\}/.test(m));
   t('道具のボタンも 44px 以上', /\.tbtn\{min-height:44px\}/.test(m));
   t('閉じるボタンは 44px の丸', /\.modal-close\{width:44px;height:44px\}/.test(m));
+  t('道具の欄はボタンを横1列に並べ、その高さを取る（押しつぶされてボタンが切れない・画素の見比べで見つけた）',
+    /\.main\{grid-template-rows:auto minmax\(0,1fr\) 52px\}/.test(m) && /grid-auto-flow:column;grid-auto-columns:max-content/.test(m));
   t('入力・選択・文章の文字は 16px（入力の時に拡大されない）', /\.hdr-r input,\.hdr-r select,\.fi,input,select,textarea\{font-size:16px\}/.test(m));
   t('PC 用の元の大きさは変えていない（幅700px の外）', /\.zbtn\{height:26px;/.test(s) && /\.sync-btn\{height:24px;/.test(s) && /\.modal-close\{[^}]*width:30px;height:30px;/.test(s));
   t('利用者名の入力に読み上げ用の名前', /<input type="text" id="clientName"[^>]*aria-label="利用者名"/.test(s));

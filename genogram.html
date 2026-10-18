@@ -647,6 +647,11 @@ textarea.fi{resize:vertical;min-height:60px}
   .modal-close{width:44px;height:44px}
   .hdr-r input,.hdr-r select{height:44px}
   .hdr-r input,.hdr-r select,.fi,input,select,textarea{font-size:16px}
+  /* 道具の欄は横に流れる1行。直す前から押しつぶされてボタンがほぼ見えなかった（47px）。ボタンを各グループ横1列に並べ、
+     欄はその高さを取り、図を描く欄が残りを使う。プロパティの欄は見出しの高さ（中は縦に送れる） */
+  .main{grid-template-rows:auto minmax(0,1fr) 52px}
+  .palette .grp{margin-bottom:0}
+  .palette .grp-btns,.palette .grp-btns.col1{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:max-content}
 }
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
