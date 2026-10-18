@@ -28,7 +28,7 @@ t('タイルは21枚（以前の20枚＋困った時）', tiles.length === 21, t
 const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'staff-master.html',
   'https://th-su.github.io/haiben-record/haiben-record.html', 'weight-record.html', 'care-schedule.html', 'daycare-roster.html', 'visit-overview.html',
   'facesheet.html', 'genogram.html', 'resident-master.html', 'patch-calendar.html', 'moushiokuri-viewer.html', 'resident-master.html?view=bday',
-  'admission-flow.html', 'training-plan.html', 'supplies.html', 'https://th-su.github.io/kitchen-app/', 'connection-settings.html', 'help.html'];
+  'admission-flow.html', 'training-plan.html', 'supplies.html', 'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
 t('行き先と並び順が以前と同じ（最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
 const office = tiles.filter(x => x.officeOnly).map(x => x.href).sort().join();
 t('現場端末で出さないタイルは以前と同じ4枚（職員マスタ・誕生日一覧・入居調整・訓練計画）＋設定の区分', office === ['admission-flow.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()
