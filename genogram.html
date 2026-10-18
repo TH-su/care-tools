@@ -639,6 +639,16 @@ textarea.fi{resize:vertical;min-height:60px}
   .setup-list{padding-left:24px}
 }
 
+/* iPhone（幅700px以下）だけ: 押すところを 44px 以上・入力の文字を 16px（入力の時に画面が拡大されない）
+   （2026-10-18 改善プロンプト第2弾の12）。PC の画面と印刷は変えない（この幅の外と、印刷用の指定には効かない） */
+@media (max-width:700px){
+  .hbtn,.zbtn,.sync-btn{height:auto;min-height:44px}
+  .tbtn{min-height:44px}
+  .modal-close{width:44px;height:44px}
+  .hdr-r input,.hdr-r select{height:44px}
+  .hdr-r input,.hdr-r select,.fi,input,select,textarea{font-size:16px}
+}
+
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -659,8 +669,8 @@ textarea.fi{resize:vertical;min-height:60px}
       <div class="sub">家族関係図を作成して PDF / JPG で出力</div>
     </div>
     <div class="hdr-r">
-      <input type="text" id="clientName" placeholder="利用者名" autocomplete="off">
-      <select id="docList" title="保存済み一覧から読込">
+      <input type="text" id="clientName" placeholder="利用者名" aria-label="利用者名" autocomplete="off">
+      <select id="docList" title="保存済み一覧から読込" aria-label="保存済みの図を選んで読み込む">
         <option value="">— 保存済みから読込 —</option>
       </select>
       <button class="hbtn" id="btnNew">新規</button>
