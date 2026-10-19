@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eNeEygxyYyiZ5P2iNwjun4XRrVkG7Gk/jQC+jJMAnao='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cGNLJI99/+OBNwgG9RBS1NXRX8ZG+SBkA6SjK3XEhQ0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -9242,9 +9242,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     saveSched: function (layer, sched) {
       /* 二重の砦: この月のサーバ状態を確認できていないなら書かない（leaseGuard を通らない入口が増えても守る）。
        * 黙って捨てると「確認ダイアログでOKを押したのに何も起きない」無反応になるので必ず理由を出す。 */
-      if (!this.monthReady_(this.ym, layer || this.layer)) { this.notReadyToast_(); return; }
-      Store.set(this.schedKey(layer), sched);
+      if (!this.monthReady_(this.ym, layer || this.layer)) { this.notReadyToast_(); return false; }
+      var ok = Store.set(this.schedKey(layer), sched);
       if ((layer || this.layer) === this.layer) this.sched = sched;
+      return ok === true;   /* 端末へ保存できたか（確定前の控えの確かめに使う・2026-10-20） */
     },
 
     /* ── 起動時プルの keyed 窓（前月・当月・翌月＝表示中の月を基準） ──
@@ -9904,7 +9905,49 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(this.schedKey('draft:' + rp.id));
         this.saveDrafts(list);
       }
-      this.saveSched('draft:' + rp.id, copy);
+      return this.saveSched('draft:' + rp.id, copy);
+    },
+
+    /* 確定の前に「確定前（自動退避）」の中身を読み込んでおく（2026-10-20）。
+     * 背景（実測 2026-10-19）: 控えの中身をまだ読み込んでいない端末で確定すると、控えの保存（saveSched）が
+     *   「この月はまだ読み込めていません」で黙って止まり、確定だけが進んで予定を上書きしていた。
+     *   11月の予定は 17:29 と 22:41 に上書きされたが、控えは 10/15 のままで、上書き前の入力は戻せなかった。
+     * cb(true)＝控えを保存できる状態／cb(false)＝読み込めなかった（確定しない）。 */
+    prepareRestorePoint_: function (cb) {
+      var self = this;
+      var list = this.getDrafts(), rp = null, i;
+      for (i = 0; i < list.length; i++) { if (list[i].auto) { rp = list[i]; break; } }
+      if (!rp) { cb(true); return; }                       /* 控えのタブがまだ無い＝新しく作る（この端末で作った印が立つ） */
+      var key = this.schedKey('draft:' + rp.id);
+      var cfg = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfg || !cfg.url || this.serverSeen_(key)) { cb(true); return; }
+      Store.pullAll([key]).then(function (r) { cb(r === 'ok' && self.serverSeen_(key)); },
+                                function () { cb(false); });
+    },
+
+    /* 確定で予定から消える・変わるマスの数（2026-10-20）。cells と subCells（区分行）の両方を数える。
+     * onlyPlan＝予定にだけ入力がある／differ＝両方に入力があり中身が違う。 */
+    countPlanOverwrite_: function (plan, draft) {
+      var out = { onlyPlan: 0, differ: 0 };
+      function cmp(p, d) {
+        var day, pv, dv;
+        for (day in (p || {})) {
+          if (!Object.prototype.hasOwnProperty.call(p, day)) continue;
+          pv = p[day] || ''; dv = (d && d[day]) || '';
+          if (pv === '' || pv === dv) continue;
+          if (dv === '') out.onlyPlan++; else out.differ++;
+        }
+      }
+      var pc = (plan && plan.cells) || {}, dc = (draft && draft.cells) || {}, sid, div;
+      for (sid in pc) { if (Object.prototype.hasOwnProperty.call(pc, sid)) cmp(pc[sid], dc[sid]); }
+      var ps = (plan && plan.subCells) || {}, ds = (draft && draft.subCells) || {};
+      for (sid in ps) {
+        if (!Object.prototype.hasOwnProperty.call(ps, sid)) continue;
+        for (div in (ps[sid] || {})) {
+          if (Object.prototype.hasOwnProperty.call(ps[sid], div)) cmp(ps[sid][div], (ds[sid] || {})[div]);
+        }
+      }
+      return out;
     },
 
     confirmDraft: function (id) {
@@ -9914,16 +9957,63 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.lockGuard()) return;   /* ロック中の確定は予定（確定版）を書き換えるため不可 */
       var draft = this.findDraft(id);
       if (!draft) return;
+      /* 確定する編集用の中身を読み込めていない時は確定しない（空や古い内容で予定を上書きしない・2026-10-20） */
+      if (!this.monthReady_(this.ym, 'draft:' + id)) {
+        this.confirmInfo('確定できません', '編集用「' + draft.label + '」の中身をまだ読み込めていません。少し待ってから、もう一度押してください。');
+        return;
+      }
+      /* 控えを読み込む間は確定を受け付けない（2回押すと確認が2回出て、2回目の OK で控えが確定後の内容に
+         上書きされるため・レビュー指摘）。押した時の月を覚え、読み込み中に月が変わったら確定しない
+         （別の月の予定を、その月に無い編集用＝空で上書きしないため・レビュー指摘）。 */
+      if (this._confirmBusy) { this.toast('確定の準備中です。少しお待ちください'); return; }
+      this._confirmBusy = true;
+      var ym0 = this.ym;
+      this.prepareRestorePoint_(function (ready) {
+        self._confirmBusy = false;
+        if (self.ym !== ym0) { self.toast('月を移ったため、確定を取りやめました（予定は変わっていません）'); return; }
+        if (!ready) {
+          self.confirmInfo('確定を中止しました',
+            '確定前の予定の控え（確定前（自動退避））を読み込めなかったため、確定を中止しました。予定は変わっていません。\n通信の状態を確かめてから、もう一度押してください。');
+          return;
+        }
+        var dlg = document.getElementById('dlgConfirm');
+        if (dlg && dlg.open) { self.toast('ほかの確認画面が開いています。閉じてから、もう一度「確定」を押してください'); return; }
+        self.confirmDraftAsk_(id, draft);
+      });
+    },
+
+    confirmDraftAsk_: function (id, draft) {
+      var self = this;
+      var draftYm = this.ym;
       var draftSched = this.getSched('draft:' + id);
+      var ow = this.countPlanOverwrite_(this.getSched('plan'), draftSched);
+      var owMsg = (ow.onlyPlan + ow.differ > 0)
+        ? '\n\n予定にだけある入力 ' + ow.onlyPlan + 'マス・内容が違う入力 ' + ow.differ + 'マスは、確定すると編集用の内容に置き換わります。'
+        : '';
       this.confirm('編集用を確定',
         '編集用「' + draft.label + '」を予定（確定版）に反映します。\n' +
-        '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。\nよろしいですか？',
+        '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。' + owMsg + '\nよろしいですか？',
         function () {
           var plan = self.getSched('plan');
           var prevMeta = plan.meta || {};   /* 既存のロック/職員スナップショットを保全（確定で凍結名簿を消さない） */
+          if (self.ym !== draftYm) return;   /* 確認を出している間に月が変わった＝別の月の予定を触らない */
+          /* 控えを作るのは予定に何か入っている時。区分行・メモ・必要数だけの予定も守る（2026-10-20 レビュー指摘：
+             従来は通常のセルしか見ず、区分行だけの予定は控え無しで上書きしていた） */
           var hasPlan = false;
           for (var s in plan.cells) { if (hasAny(plan.cells[s])) { hasPlan = true; break; } }
-          if (hasPlan) self.saveRestorePoint(plan);
+          if (!hasPlan) {
+            for (var s2 in (plan.subCells || {})) {
+              for (var dv in (plan.subCells[s2] || {})) { if (hasAny(plan.subCells[s2][dv])) { hasPlan = true; break; } }
+              if (hasPlan) break;
+            }
+          }
+          if (!hasPlan) hasPlan = hasAny(plan.notes) || hasAny(plan.dailyNeeds) || hasAny(plan.monthNeeds);
+          /* 控えを保存できなかったら予定を上書きしない（2026-10-20・控えが無いまま消える経路を閉じる） */
+          if (hasPlan && !self.saveRestorePoint(plan)) {
+            self.confirmInfo('確定を中止しました',
+              '確定前の予定の控えを保存できなかったため、確定を中止しました。予定は変わっていません。');
+            return;
+          }
           var copy = JSON.parse(JSON.stringify(draftSched));
           copy.meta = { confirmedFrom: draft.label, confirmedAt: new Date().toISOString(), confirmedDraftId: id };
           if (prevMeta.staffSnap) {
