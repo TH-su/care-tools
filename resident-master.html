@@ -9263,10 +9263,12 @@ function openEdit(rec){
     '<div class="row-btns"><div id="supportMore"></div>'+
     '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div></div>';
 
-  // 医療支援経過（訪問診療の受け皿。将来は訪問診療アプリから自動取込）
+  // 医療支援経過（訪問診療の受け皿）。2026-10-19 から訪問診療アプリが保存のたびに自動で入れる（代表者の判断: 医療支援経過に全文）。
+  //   入れるのは入居者マスタGASの setMedLog（med-log-link.gs）。source='vma' の記録は読み取り専用で、直すのは訪問診療アプリ側。
+  //   この画面を開いたまま保存しても、GAS の saveResident が source='vma' の記録はシートにある方を残す（_medLogKeepVma_）。
   h+='<div class="cd"><div class="fgroup"><h3>医療支援経過（訪問診療）</h3><div id="medLogList"></div>'+
     '<button class="btn btn-sec" id="medLogAdd" type="button">＋ 診察記録を追加</button>'+
-    '<p class="muted" style="margin-top:6px">当面は手動入力。将来、訪問診療アプリの診察結果がここに自動反映されます。</p></div></div>';
+    '<p class="muted" style="margin-top:6px">訪問診療アプリで診察記録を保存すると、診察日の日付でここに自動で入ります（「訪問診療より取込」の印）。その記録はここでは直せません。直す時は訪問診療アプリで直して保存し直してください。</p></div></div>';
 
   // 訪問診療連携キー（2026-08-02 改訂）
   //   実際の突合キーは「入居者ID（このレコードの id）」に一本化されている。訪問診療アプリは
