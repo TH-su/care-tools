@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pl8yh8w4HKGYvwHPKOTxwOJ6p9kAYpSrRsWwwecruzs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eNeEygxyYyiZ5P2iNwjun4XRrVkG7Gk/jQC+jJMAnao='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -211,6 +211,9 @@ td.daycell.err { background: #fdd; }
 td.daycell.reqviol { box-shadow: inset 0 0 0 2px var(--red); }
 /* 空セルに薄く出す本人の希望休ヒント（予定・編集用・各ドラフト共通／未割当の目印） */
 td.daycell.reqhint { color: #c0392b; opacity: .5; font-style: italic; background: #fdf2f2; }
+/* 2026-10-19 本人指示: 画面では薄すぎて見えにくい＝文字の薄さ（opacity）だけ外す。斜体と淡い赤の背景は残し、
+   セルに入った「希」（黄色の背景）と見分けられるようにする。印刷は従来のまま（@media screen に限定）。 */
+@media screen { td.daycell.reqhint { opacity: 1; } }
 td.daycell.consviol { box-shadow: inset 0 0 0 2px var(--warn); }
 td.daycell.ot { font-weight: 700; color: #8e44ad; }
 td.sumcell { background: #f4f7fb; font-weight: 600; }
@@ -4887,6 +4890,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
     },
 
+    /* まだ送っていない変更の件数（2026-10-19・月を移る時の送信とページを閉じる時の確認に使う）。
+     * 同期が未設定なら 0（送る先が無い＝確認を出しても解消しない）。端末の内容が読めないキー（_corruptKeys）は数えない
+     * （送信でも飛ばされ、確認を出し続けるだけになる・レビュー指摘）。
+     * sendableOnly … データ保護・保存先の拒否で止めたキー（_guardBlocked）も除く＝今送って意味のあるものだけ。
+     *   閉じる時の確認では除かない（止めたキーの内容はこの端末にしか無いため、知らせるのが妥当）。 */
+    unsentCount: function (sendableOnly) {
+      var cfg = this.getSyncConfig ? this.getSyncConfig() : null;
+      if (!cfg || !cfg.url) return 0;
+      var qk = this.queue.keys(), n = 0, i;
+      for (i = 0; i < qk.length; i++) {
+        if (this._corruptKeys && this._corruptKeys[qk[i]]) continue;
+        if (sendableOnly && this._guardBlocked && this._guardBlocked[qk[i]]) continue;
+        n++;
+      }
+      return n;
+    },
+
     schedulePush: function () {
       var self = this;
       if (this.pushTimer) clearTimeout(this.pushTimer);
@@ -9175,8 +9195,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     setYM: function (y, m) {
       if (m < 1) { y--; m = 12; }
       if (m > 12) { y++; m = 1; }
+      /* 月を移る前の後始末（2026-10-19 本人指示「前月を確認すると入力が消える」）。
+       * 1 まだ送っていない変更があれば、今すぐ送る（［保存］を押したのと同じ。端末にはすでに保存済み）
+       * 2 開いていたタブを月ごとに覚え、戻った時に同じ編集用タブを開く。編集用は月ごとのタブなので、
+       *   従来は別の月へ移ると予定（確定版）に戻り、戻っても予定のまま＝入力が消えたように見えていた
+       * 3 編集用タブのまま別の月へ移る時は、入力が残っていることと戻り方を知らせる */
+      var prevYm = this.ym, prevLayer = this.layer, prevDraft = null;
+      if (prevYm) {
+        try { if (Store.editMode && Store.unsentCount(true) > 0) Store.pushQueued(); } catch (eF) {}
+        if (!this._layerByYM) this._layerByYM = {};
+        this._layerByYM[prevYm] = prevLayer;
+        if (typeof prevLayer === 'string' && prevLayer.indexOf('draft:') === 0) prevDraft = this.findDraft(prevLayer.slice(6));
+      }
       this.year = y; this.month = m;
       this.ym = y + '-' + (m < 10 ? '0' + m : m);
+      var want = (this._layerByYM && prevYm !== this.ym) ? this._layerByYM[this.ym] : null;
+      if (typeof want === 'string' && want.indexOf('draft:') === 0 && this.findDraft(want.slice(6))) this.layer = want;
+      if (prevDraft && prevYm !== this.ym && !this.findDraft(prevLayer.slice(6))) {
+        this.toast('編集用「' + (prevDraft.label || '') + '」の入力は保存されています。' +
+                   parseInt(prevYm.slice(5), 10) + '月に戻ると、このタブを開きます');
+      }
       /* 表示中の月を端末ローカルに保存（リロードで現在月へ戻らないように・非同期＝端末別） */
       try { Store.setLocal('viewYM', this.ym); } catch (e) {}
       this.days = new Date(y, m, 0).getDate();
@@ -10571,6 +10609,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       if (this._toolbarBound) return; /* 二重束縛防止（document/keydown・window/resize 等の重複登録を予防） */
       this._toolbarBound = true;
+      /* ページを閉じる・再読み込みする時、まだ送っていない変更がある時だけブラウザの確認を出す（2026-10-19 本人指示）。
+       * 文言はブラウザ既定（独自の文言は今のブラウザでは表示されない）。端末には保存済みなので、閉じても次に開いた時に送られる。 */
+      window.addEventListener('beforeunload', function (e) {
+        try {
+          if (!Store.editMode || Store.unsentCount(false) === 0) return;
+        } catch (eQ) { return; }
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      });
       document.getElementById('ymPrev').addEventListener('click', function () {
         self.setYM(self.year, self.month - 1); self.rerender();
       });
