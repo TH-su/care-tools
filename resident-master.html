@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-0OILk1N58N3A4U5QJRMcuxWhPs5r4aslmr1eWWOY1vs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-S3lbUEr3BU9jeOfAnR9FtBzvyOJNvdbed+rqSQEjCo8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -8760,10 +8760,12 @@ function renderView(r){
       var t=String((s&&s.text)||'').split('\n').filter(function(ln){ return !MEDLOG_HIDE_RE.test(ln); }).join('\n').replace(/^\n+|\n+$/g,'');
       var o={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) o[k]=s[k];
       o.text=t; return o;
-    }).filter(function(s){ return String(s.text||'').trim()!==''||s.doctor||s.clinic; });
+    }).filter(function(s){ return String(s.text||'').trim()!==''; });
+    /* ★医師名・医療機関名の行と「[訪問診療]」の印も出さない（2026-10-20 代表者の決定。毎回同じで、縦に長くなるだけのため）。
+       かかりつけ・主治医は医療情報の欄で見られる。★記録（doctor・clinic・source）は変えない＝編集画面では見える。
+       本文が無く医師名だけの記録は、日付だけの行になるので出さない */
     var mlogHtml=mlog.map(function(s){
-      var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
-      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'')+'</span></div>';
+      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
     }).join('');
     h+='<div class="sec" data-cnt="'+mlog.length+'"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
   }
