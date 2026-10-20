@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-S3lbUEr3BU9jeOfAnR9FtBzvyOJNvdbed+rqSQEjCo8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JuThkeJ4wmWzXBRMOno+8+qG14suytK0L8kKHPoS1o4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1374,6 +1374,9 @@ body.meal-on #sc-list{max-width:none}
   #viewBox .sec.folded>.sec-body{display:none}
 }
 @media print{ .glance, .vtoc{display:none !important} }
+/* 医療支援経過の本文（2026-10-20）。見出しの下の文は2文字下げる。画面と紙で同じ */
+.ml-l{white-space:pre-wrap; word-break:break-word}
+.ml-ind{padding-left:2em}
 /* ── 第3弾（2026-10-17）: 副食の入力の手助け・未入力の一覧・その方らしさの紙 ── */
 .mside-aid{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
 .mside-aid .msa-l{font-size:0.875rem; color:var(--g7)}
@@ -8127,6 +8130,36 @@ function applyPrintHide(box,r){
    ★値は詳細画面と同じ記録（r）から出すだけ。新しく取りに行かない・書き込まない。
    ★たたんだ欄は「欄の見出しの文字」だけを端末に覚える（rmaster_fold）。氏名・記録は保存しない（原則11）。 */
 var FOLD_KEY='rmaster_fold';
+/* 医療支援経過の本文を、見出しごとに組み立てる（2026-10-20 代表者の決定・表示だけ）。
+   記録の形（訪問診療アプリが入れる）: 「【Dr.へ伝えた内容】」の下に数行 →「【診察の結果】」の下に数行。
+   ・【Dr.へ伝えた内容】の中身が「特変なし。」（句点なしも）の1行だけなら、見出しごと出さない
+   ・【診察の結果】は【診察結果】と出す
+   ・見出しの下の文は2文字下げる（折り返した行も同じ位置から始まるよう、行ごとに左の余白で下げる）
+   ・空の行は詰める。下に何も無い見出しは出さない。見出しより前の文はそのまま。何も残らなければ '' を返す（その記録は出さない） */
+var MEDLOG_HEAD_RE=/^[\s　]*(【[^】]{1,20}】)[\s　]*$/;
+var MEDLOG_HEAD_RENAME={'【診察の結果】':'【診察結果】'};
+var MEDLOG_DR_HEAD='【Dr.へ伝えた内容】', MEDLOG_DR_NOCHANGE=/^[\s　]*特変なし。?[\s　]*$/;
+function medlogBodyHtml_(text){
+  var secs=[], cur={head:null, lines:[]};
+  String(text==null?'':text).split('\n').forEach(function(ln){
+    var m=MEDLOG_HEAD_RE.exec(ln);
+    if(m){ secs.push(cur); cur={head:m[1], lines:[]}; return; }
+    if(String(ln).replace(/[\s　]/g,'')!=='') cur.lines.push(ln);
+  });
+  secs.push(cur);
+  var out=[];
+  secs.forEach(function(sec){
+    if(sec.head===null){
+      sec.lines.forEach(function(ln){ out.push('<div class="ml-l">'+esc(ln)+'</div>'); });
+      return;
+    }
+    if(sec.head===MEDLOG_DR_HEAD && sec.lines.length===1 && MEDLOG_DR_NOCHANGE.test(sec.lines[0])) return;
+    if(!sec.lines.length) return;   /* 下に何も書かれていない見出しは出さない（見出しだけの行を作らない） */
+    out.push('<div class="ml-l ml-h">'+esc(MEDLOG_HEAD_RENAME[sec.head]||sec.head)+'</div>');
+    sec.lines.forEach(function(ln){ out.push('<div class="ml-l ml-ind">'+esc(String(ln).replace(/^[\s　]+/,''))+'</div>'); });
+  });
+  return out.join('');
+}
 /* 医療支援経過で出さない行（2026-10-20 代表者の決定）。「■処方歴■」（記録の実際の書き方）と、指示の言い方「■処方■」、「■残なし■」を含む行、
    それに「処方:」「処方：」で始まる行（見出しの付かない処方の行も含め、全部出さない＝同日の追加指示）。
    ★行の途中に「処方」の字があるだけの行（所見の文など）は出す */
@@ -8764,10 +8797,17 @@ function renderView(r){
     /* ★医師名・医療機関名の行と「[訪問診療]」の印も出さない（2026-10-20 代表者の決定。毎回同じで、縦に長くなるだけのため）。
        かかりつけ・主治医は医療情報の欄で見られる。★記録（doctor・clinic・source）は変えない＝編集画面では見える。
        本文が無く医師名だけの記録は、日付だけの行になるので出さない */
+    /* ★見出しの整え（2026-10-20 代表者の決定）: 「【Dr.へ伝えた内容】」が「特変なし。」だけの時は見出しごと出さない／
+       「【診察の結果】」は「【診察結果】」と出す／2つの見出しの下の文は2文字下げて出す（medlogBodyHtml_）。表示だけで記録は変えない */
     var mlogHtml=mlog.map(function(s){
-      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
-    }).join('');
-    h+='<div class="sec" data-cnt="'+mlog.length+'"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
+      var body=medlogBodyHtml_(s.text);
+      if(!body) return '';
+      /* 日付の欄は「2026年12月31日」が入る幅にそろえる（日付の長さで見出しの左端がずれないように・2026-10-20） */
+      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);width:8.2em;white-space:nowrap">'+esc(fmtJDate(s.date)||s.date||'')+'</span><div style="flex:1;min-width:0">'+body+'</div></div>';
+    }).filter(String);
+    var mlogCnt=mlogHtml.length;
+    mlogHtml=mlogHtml.join('');
+    h+='<div class="sec" data-cnt="'+mlogCnt+'"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
   }
   /* ★嗜好・本人らしさ／生活歴／意向・ACP の3欄は、2026-08-15 指示で【支援経過の上】へ移した（上を参照）。
      ここには置かない（同じ欄を2箇所に出さない） */
