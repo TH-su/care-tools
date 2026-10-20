@@ -112,7 +112,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-09-26');
+      return loadScript('su-auth.js?v=2026-10-20');
     });
   }
   var authCache = null, authAt = 0;

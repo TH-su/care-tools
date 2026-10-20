@@ -219,7 +219,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
   console.log('\n— G ログインの部品を二重に読まない —');
   {
     const st = Object.assign({ apc2_res: res({ r1: { start: '2026-10-01', no: 2, prev: 0, by: 'x', at: AT1 } }) }, SESSION);
-    const b = box({ store: st, noAuth: true, tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-09-26'] });
+    const b = box({ store: st, noAuth: true, tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-20'] });
     const p = b.api.pushAll();
     await settle();
     t('★G 札がすでにある時は supabase-js も su-auth.js も入れ直さない', b.appended.length === 0, b.appended);
@@ -232,7 +232,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('G ライブラリの札だけある時は入れ直さずに待つ', b2.appended.length === 0, b2.appended);
     b2.sb.supabase = { createClient() {} };
     await new Promise(r => setTimeout(r, 250)); await settle();
-    t('G ライブラリが読めたら su-auth.js を1本だけ入れる（画面の pcAuthLoad と同じ札の名前）', J(b2.appended) === J(['su-auth.js?v=2026-09-26']), b2.appended);
+    t('G ライブラリが読めたら su-auth.js を1本だけ入れる（画面の pcAuthLoad と同じ札の名前）', J(b2.appended) === J(['su-auth.js?v=2026-10-20']), b2.appended);
     b2.sb.SUAuth = b2.auth;
     b2.els.forEach(e => e.onload && e.onload());   // 入れた札が読み終わった
     await p2; await settle();
@@ -241,7 +241,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     b3.api.pushAll(); await settle();
     t('G（対照）札が無ければ supabase-js を1本入れる', J(b3.appended) === J(['supabase-js-2.112.4.js']), b3.appended);
     const pc = /function pcAuthLoad\(\) \{[\s\S]*?\n\}/.exec(PAGE);
-    t('G 画面の pcAuthLoad も同じ札を見て入れ直さない（両方が読んでも1本ずつ）', !!pc && /has\(\/\^supabase-js-\/\)/.test(pc[0]) && /has\(\/\^su-auth\\\.js\/\)/.test(pc[0]) && /load\('su-auth\.js\?v=2026-09-26'\)/.test(pc[0]));
+    t('G 画面の pcAuthLoad も同じ札を見て入れ直さない（両方が読んでも1本ずつ）', !!pc && /has\(\/\^supabase-js-\/\)/.test(pc[0]) && /has\(\/\^su-auth\\\.js\/\)/.test(pc[0]) && /load\('su-auth\.js\?v=2026-10-20'\)/.test(pc[0]));
   }
 
   console.log('\n— H 起動時の送信は読むだけ —');

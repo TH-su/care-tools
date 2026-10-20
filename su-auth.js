@@ -7,7 +7,7 @@
  * ★誰が何をできるかはこのファイルでは決めない。決めるのはデータベース側（許可リスト allowed_accounts と
  *   RLS・my_account()）で、毎回その場の許可リストを見る。ここは「ログインする・状態を読む」だけの部品。
  *   ブラウザ側の判定を書き換えられても、データベースは許可リストに無い人・方法には何も返さない。
- * ★下の KEY は「公開用の鍵（anon）」。ブラウザに配る前提の鍵で、これだけでは何も読めない
+ * ★下の KEY は「公開用の鍵（publishable・2026-10-20 に旧 anon から切り替え）」。ブラウザに配る前提の鍵で、これだけでは何も読めない
  *   （anon の権限は 0001 で外してある）。秘密の鍵（service_role / sb_secret_）はここへ絶対に書かない。
  * ★ログイン状態は端末の localStorage（sb-<ref>-auth-token）に入る。care-log と同じ場所・同じ版の部品なので、
  *   同じ端末ならどちらか一方でログインすれば両方で使える。
@@ -27,7 +27,7 @@
   if (window.SUAuth) return;
 
   var URL_ = 'https://jhbernqawjrzqwrmqrih.supabase.co';
-  var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpoYmVybnFhd2pyenF3cm1xcmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NjU5NjksImV4cCI6MjEwMzQ0MTk2OX0.gJaPf6S-WuovoOajqMOodmNiqNp48tXRT-LW6h9W3N4';
+  var KEY = 'sb_publishable_D8mWQenb7E8q7q6On45HaQ_GKxAE_zI';
 
   var STATUS = {
     SIGNED_OUT: 'signed_out',   // ログインしていない
