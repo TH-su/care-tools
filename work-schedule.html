@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wl9Zys7h60nXt79VXcfbXElOSo6SQ9abaVl2vzMnEuE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-xjzbw7cuFJiw/Mpf8spPtFEZikClT7ltEoeZ8NuyekY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -267,6 +267,11 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
 /* 重なり表示(2026-09-10): 同一レーンで時間が重なる枠は board.js が inline で横幅を分割し、
  * この赤い内側罫線＋破線で「重なっている枠」だと分かるようにする。寸法(left/width)はJS側のみが決め、
  * ここでは色と罫線だけ＝A3印刷レイアウトの寸法には非干渉。.selected の青枠を消さないよう前に置く。 */
+/* 勤務時間外の支援（2026-10-20）: 枠全体を赤。画面だけ（印刷の盤面は printMode で描き、この印は付けない） */
+.b-task.ooh { background-color: #e57373 !important; border-color: #b71c1c !important; color: #111 !important; }
+.b-task.ooh .t-name, .b-task.ooh .t-time, .b-task.ooh .t-time b, .b-task.ooh .t-body, .b-task.ooh .t-item,
+.b-task.ooh .t-item-tx, .b-task.ooh .t-cb { color: #111 !important; }   /* 赤の上でも読める濃さ（4.5:1 以上） */
+.b-task.ooh .t-cb.on { color: #0b3d0e !important; }
 .b-task.overlapped { box-shadow: inset 0 0 0 2px var(--ng), 0 1px 2px rgba(0,0,0,.08); border-style: dashed; }
 .b-task.selected { box-shadow: 0 0 0 2px var(--pri), 0 2px 8px rgba(0,0,0,.25); z-index: 20; }
 /* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
@@ -702,6 +707,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="badge warn off" id="badgeUn">未配置 0</button>
   <button class="badge ng off" id="badgeBr">休憩⚠ 0</button>
   <button class="badge ng off" id="badgeOv" title="同じ職員の同時刻に重なった枠・退避した枠">重なり 0</button>
+  <button class="badge ng off" id="badgeOoh" title="担当の職員の勤務時間の外にある支援（赤い札）。誰かの勤務時間へ動かしてください。クリックで一覧">時間外 0</button>
   <button class="hdr-btn" id="btnUndo" disabled aria-label="元に戻す" title="元に戻す (Ctrl/Cmd+Z)">↩</button>
   <button class="hdr-btn" id="btnRedo" disabled aria-label="やり直す" title="やり直す (Ctrl/Cmd+Shift+Z)">↪</button>
   <!-- 同期状態（常時表示・2026-09-23）。#saveState は保存のたびに上書きされる一時表示のため、
@@ -982,6 +988,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <div class="fld"><label>休憩未配置（勤務<span id="alBrH">7</span>時間以上・F-10）</label><div class="alist" id="alBr"></div></div>
   <div class="fld"><label>重なり退避（同時刻に別の枠があったため未配置へ）</label><div class="alist" id="alBump"></div></div>
   <div class="fld"><label>盤面に残る重なり（ロック日・旧端末由来）</label><div class="alist" id="alOv"></div></div>
+  <div class="fld"><label>勤務時間外の支援（赤い札。誰かの勤務時間へ動かしてください）</label><div class="alist" id="alOoh"></div></div>
   <div class="btn-row"><span class="sp"></span><button class="btn" id="alClose">閉じる</button></div>
 </div>
 
@@ -1897,6 +1904,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return aStart < bEnd && bStart < aEnd;
   }
 
+  /* 支援の札が担当の職員の勤務時間から少しでも外れているか（2026-10-20 本人指示・本人選択「支援だけ」）。
+   * 手で動かす時は勤務時間外にも置ける（いったん置いて調整する使い方）。外れている札は画面で赤く出し、上に「時間外 N」を出す。
+   * 派生値（保存しない）。勤務時間の分からない職員・未配置の札は外れていない扱い */
+  function careOutOfHours(task, staff) {
+    if (!task || task.kind !== 'care' || task.staffId === null || task.staffId === undefined) return false;
+    if (!staff || typeof staff.workStart !== 'number' || typeof staff.workEnd !== 'number') return false;
+    return task.start < staff.workStart || task.end > staff.workEnd;
+  }
+
   function findStaff(staff, staffId) {
     for (var i = 0; i < staff.length; i++) if (staff[i].id === staffId) return staff[i];
     return null;
@@ -2370,7 +2386,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < day.tasks.length; i++) {
       if (day.tasks[i] && day.tasks[i].staffId === null && day.tasks[i].bumped) bumped.push(day.tasks[i]);
     }
-    return { unassigned: unassigned, noBreak: noBreak, overlaps: overlaps, bumped: bumped,
+    /* 勤務時間外の支援（2026-10-20）: 担当の勤務時間から外れている支援。count には入れない（既存の意味を変えない） */
+    var outOfHours = [];
+    for (i = 0; i < day.tasks.length; i++) {
+      var to = day.tasks[i];
+      if (to && to.kind === 'care' && careOutOfHours(to, findStaff(day.staff, to.staffId))) outOfHours.push(to);
+    }
+    return { unassigned: unassigned, noBreak: noBreak, overlaps: overlaps, bumped: bumped, outOfHours: outOfHours,
              count: unassigned.length + noBreak.length };
   }
 
@@ -4483,6 +4505,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     normComment: normComment_,
     captureOrigin: captureOrigin,
     isChanged: isChanged,
+    careOutOfHours: careOutOfHours,
     overlap: overlap,
     findStaff: findStaff,
     findTask: findTask,
@@ -8355,19 +8378,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (ex.moved) cls += ' hosp';      /* ロック日の退去者＝枠は残し極薄（消さない・2026-08-05） */
     if (t.groupId) cls += ' grouped';           /* グループ化固定（画面で点線色アウトライン＋🔗） */
     if (selectedIds && selectedIds.indexOf && selectedIds.indexOf(t.id) >= 0) cls += ' selected';
+    if (ex.ooh) cls += ' ooh';   /* 勤務時間外の支援＝枠全体を赤（画面だけ。印刷では付けない・2026-10-20） */
     var b = el('div', cls);
     b.style.top = top + 'px';
     b.setAttribute('data-id', t.id);
     /* カスタム配色: 全枠(業務枠＋利用者支援枠)に適用。画面・印刷とも反映。印刷の p-task 白背景や
      * k-free/k-admin 既定色(!important)より優先させるため inline important。文字色は指定 or 背景輝度で
      * 自動判定＝可読性を担保。入院枠(hosp)・入居前枠(pre)は極薄/斜線表示を優先するため配色をスキップ。 */
-    if (t.bgColor && !ex.hosp && !ex.pre && !ex.moved) {
+    if (t.bgColor && !ex.hosp && !ex.pre && !ex.moved && !ex.ooh) {   /* 勤務時間外の赤を手動の配色より優先 */
       b.style.setProperty('background-color', t.bgColor, 'important');
       b.style.setProperty('color', t.textColor || autoText_(t.bgColor), 'important');
     }
     /* 時間変更済(2重罫線)の支援は、変更前の元の時間をホバー(title)で表示 */
     if (t.kind === 'care' && M.isChanged(t) && t.origin) {
       b.setAttribute('title', '元の時間 ' + M.fmtRange(t.origin.start, t.origin.end, TS.minToTime));
+    }
+    if (ex.ooh) {
+      var oohTip_ = '担当の勤務時間（' + TS.minToTime(ex.oohWs) + '-' + TS.minToTime(ex.oohWe) + '）の外です。誰かの勤務時間へ動かしてください';
+      b.setAttribute('title', (b.getAttribute('title') ? b.getAttribute('title') + '\n' : '') + oohTip_);
     }
 
     var svc = M.SVC[t.svcCode];
@@ -8748,9 +8776,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var laneEl = laneByCol[st.col];
       if (!laneEl) continue;
       var ex = { print: !!opts.printMode,
+                 ooh: !opts.printMode && M.careOutOfHours(task, st), oohWs: st.workStart, oohWe: st.workEnd,
                  hosp: !!(task.kind === 'care' && hospSet[task.residentName]),
                  pre: !!(task.kind === 'care' && preSet[task.residentName]),
                  moved: !!(task.kind === 'care' && moSoftSet[task.residentName]) };
+      if (ex.hosp || ex.pre || ex.moved) ex.ooh = false;   /* 実施しない札（入院・入居前・退去）は赤くしない＝極薄・斜線の見え方を残す */
       var ovl = Object.prototype.hasOwnProperty.call(ovlMap, task.id) ? ovlMap[task.id] : null;
       /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する
        * （重なりクラスタの枠は横並び表示を優先し、まとめ拡張しない） */
@@ -9330,6 +9360,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var end = start + dur;
       if (isNight && !nightRangeOk(start, end)) {
         return { status: 'ng', reason: '夜勤の表示時間帯（0-9時／21-24時）外です',
+                 lane: lane, start: start, end: end };
+      }
+      /* 日中の列も、表示している時間帯の外へは置かない（2026-10-20）。勤務時間外を確かめずに置けるようにしたので、
+       * 今まで確かめで止まっていた「画面の外へはみ出して見えなくなる札」をここで断る */
+      if (!isNight && !zoneTimeOk('day', start, end)) {
+        var scR_ = opts.getScale();
+        return { status: 'ng', reason: '表示している時間帯（' + TS.minToTime(scR_.domainFrom) + '〜' + TS.minToTime(scR_.domainTo) + '）の外になるため移動できません',
                  lane: lane, start: start, end: end };
       }
 
@@ -11557,6 +11594,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   誤実施/誤押印を誘発するため(敵対的検証で検出)。未ロック日は従来どおり。board.js は無改変。 */
   /* 判定は M.careMaskPolicy（純関数・tests/care_mask_policy.test.js で不変条件を固定）に委ねる。
    * ここは名前集合を当てはめるだけ＝ロジックを2箇所に持たない。 */
+  /* 赤く出す勤務時間外の支援（2026-10-20）: 入院・入居前・退去（盤面に出さない札・極薄の札）は実施しない札なので赤くせず、数にも入れない。
+   * 盤面の赤（board.js の ex.ooh）と同じ絞り込み */
+  function oohShown_(alerts, msk) {
+    var src = (alerts && alerts.outOfHours) || [], out = [], m = msk || {};
+    for (var i = 0; i < src.length; i++) {
+      var nm = src[i].residentName;
+      if (nm && ((m.hosp && m.hosp[nm]) || (m.pre && m.pre[nm]) || (m.moved && m.moved[nm]) || (m.movedSoft && m.movedSoft[nm]))) continue;
+      out.push(src[i]);
+    }
+    return out;
+  }
+  /* まとめて移動の中に、勤務時間外へ動く支援以外の札があるか（あれば今までどおり確かめる） */
+  function nonCareOutOfHours_(moves) {
+    var day = store.get();
+    for (var i = 0; i < (moves || []).length; i++) {
+      var t = M.findTask(day.tasks, moves[i].id), st = M.findStaff(day.staff, moves[i].staffId);
+      if (!t || t.kind === 'care' || !st) continue;
+      if (moves[i].start < st.workStart || moves[i].end > st.workEnd) return true;
+    }
+    return false;
+  }
   function careMaskSets_(day) {
     var pol = M.careMaskPolicy(day && day.meta, todayKey());
     if (!pol.maskAll) return { hosp: {}, moved: {}, pre: {}, movedSoft: {} };
@@ -11702,6 +11760,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       bo.textContent = nOvl_ ? ('重なり ' + nOvl_ + (nBmp_ ? '／退避 ' + nBmp_ : '')) : ('重なり退避 ' + nBmp_);
       bo.className = 'badge ng' + ((nOvl_ + nBmp_) ? '' : ' off');
       bo.title = nOvl_ ? '同じ職員の同時刻に枠が重なっています（横並びで表示中）。クリックで一覧' : '同時刻に別の枠があったため未配置へ退避した枠';
+    }
+    /* 勤務時間外の支援（2026-10-20）: 赤い札の数。クリックで一覧 */
+    var bh = $('badgeOoh');
+    if (bh) {
+      var nOoh_ = oohShown_(alerts, msk_).length;
+      bh.textContent = '時間外 ' + nOoh_;
+      bh.className = 'badge ng' + (nOoh_ ? '' : ' off');
     }
 
     renderTray(day, alerts);
@@ -12753,6 +12818,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           d.addEventListener('click', function () { openEditor(t.id); });
           bump.appendChild(d);
         })(bl[bi]);
+      }
+    }
+    var oo = $('alOoh');
+    if (oo) {
+      oo.innerHTML = '';
+      var ohl = oohShown_(alerts, careMaskSets_(day));
+      if (!ohl.length) oo.innerHTML = '<div class="ai"><span class="am">なし 🎉</span></div>';
+      for (var hi = 0; hi < ohl.length; hi++) {
+        (function (t) {
+          var d = document.createElement('div');
+          d.className = 'ai';
+          var stO = M.findStaff(day.staff, t.staffId);
+          d.innerHTML = '<span class="am"></span><span class="as"></span>';
+          d.querySelector('.am').textContent = t.residentName || '';
+          d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime) +
+            (stO ? '（担当: ' + (stO.name || '—') + ' ' + TS.minToTime(stO.workStart) + '-' + TS.minToTime(stO.workEnd) + '）' : '');
+          d.addEventListener('click', function () { openEditor(t.id); });
+          oo.appendChild(d);
+        })(ohl[hi]);
       }
     }
     var ov = $('alOv');
@@ -17456,6 +17540,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
     if ($('badgeOv')) $('badgeOv').addEventListener('click', openAlerts);
+    if ($('badgeOoh')) $('badgeOoh').addEventListener('click', openAlerts);
     /* 押せる見た目なのに無反応にしない（HIG）。理由に応じて、その場で反映まで完結させる。 */
     if ($('badgeShiftChg')) $('badgeShiftChg').addEventListener('click', function () {
       var n = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
@@ -18313,6 +18398,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                                          : '夜勤の表示時間帯（0-9時／21-24時）外になるため移動できません',
                  ooh: false, splits: [] };
       }
+      /* 日中の列は表示している時間帯の外へまとめて動かさない（2026-10-20・1枚の移動と同じ） */
+      if (!swap && !(mst && mst.zone === 'night') && scale && (mv.start < scale.domainFrom || mv.end > scale.domainTo)) {
+        return { ok: false, reason: '表示している時間帯（' + TS.minToTime(scale.domainFrom) + '〜' + TS.minToTime(scale.domainTo) + '）の外になるため移動できません',
+                 ooh: false, splits: [] };
+      }
       var v = M.validatePlacement(sim, mv.id, mv.staffId, mv.start, mv.end);
       if (!v.ok) {
         return { ok: false, reason: v.reason || (swap ? '同時刻に別の枠があるため入替できません' : '同時刻に別の枠があるため移動できません'),
@@ -18383,7 +18473,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * 検証は planMultiMoves_(…,'assign')（ドラッグ中の事前検査と同じ判定・2026-10-10 に切り出し。判定・文言は従来どおり）。 */
         var pm = planMultiMoves_(moves, 'assign');
         if (!pm.ok) { toast(pm.reason, true); return; }
-        if (pm.ooh && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
+        /* 勤務時間外の支援は確かめずに置く（2026-10-20 本人選択「出さない」）。外れた支援は赤く出て、上に「時間外 N」が出る。
+         * 支援以外（休憩・施設業務など）を勤務時間外へ動かす時は今までどおり確かめる（赤くならず数にも入らないため） */
+        if (pm.ooh && nonCareOutOfHours_(moves) && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
         var splits = pm.splits;
         clearSelAfterGroupMove_(moves);
         if (splits.length) {
@@ -18395,8 +18487,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
       },
       onAssignConfirm: function (taskId, staffId, start, end, reason) {
-        /* 勤務時間外への配置: 確認のうえ許可（網掛け表示はそのまま） */
-        if (!window.confirm('勤務時間外ですが配置しますか？')) return;
+        /* 勤務時間外への支援の移動: 確かめずに置く（2026-10-20 本人指示「一旦職員がいない枠に移して調整する方が効率が良い」・本人選択「出さない」）。
+         * 外れた支援は枠全体が赤くなり、上に「時間外 N」が出る＝誰かの勤務時間へ動かす必要に気づける。
+         * 支援以外（休憩・施設業務など）は赤くならず数にも入らないので、今までどおり確かめる */
+        var tAc_ = M.findTask(store.get().tasks, taskId);
+        if (!(tAc_ && tAc_.kind === 'care') && !window.confirm('勤務時間外ですが配置しますか？')) return;
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);
       },
@@ -18409,7 +18504,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var sim = { meta: day.meta, staff: day.staff, columns: day.columns, tasks: simTasks };
         var v = M.validatePlacement(sim, careId, staffId, start, end);
         if (!v.ok) { toast(v.reason || '配置できません', true); return; }
-        if (v.warn === 'worktime' && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        /* 勤務時間外は確かめずに置く（2026-10-20・移動と同じ扱い） */
         store.dispatch({ type: 'SHRINK_PLACE', careId: careId, staffId: staffId, start: start, end: end, facId: facId });
         toast('施設業務を縮小して配置しました');
       },
@@ -18552,7 +18647,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261018062811';
+  var WS_BUILD = '20261020173521';
   var WS_APP_VER = 2026101702;   /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
