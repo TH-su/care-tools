@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-l+255riB5oJS4HGmuO4v9vYeC9DVHXmE5zS3B9k1NtQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-0OILk1N58N3A4U5QJRMcuxWhPs5r4aslmr1eWWOY1vs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1370,7 +1370,7 @@ body.meal-on #sc-list{max-width:none}
   #viewBox .sec.folded{flex-direction:column}
   #viewBox .sec.folded>.sec-lbl{writing-mode:horizontal-tb; text-orientation:mixed; letter-spacing:.04em;
     padding:6px 10px; text-align:start}
-  #viewBox .sec.folded>.sec-lbl::after{content:'　▸ 押すと開きます'; font-weight:400; color:var(--g6); font-size:0.8125rem}
+  #viewBox .sec.folded>.sec-lbl::after{content:attr(data-fold-note); font-weight:400; color:var(--g6); font-size:0.8125rem}
   #viewBox .sec.folded>.sec-body{display:none}
 }
 @media print{ .glance, .vtoc{display:none !important} }
@@ -8127,6 +8127,10 @@ function applyPrintHide(box,r){
    ★値は詳細画面と同じ記録（r）から出すだけ。新しく取りに行かない・書き込まない。
    ★たたんだ欄は「欄の見出しの文字」だけを端末に覚える（rmaster_fold）。氏名・記録は保存しない（原則11）。 */
 var FOLD_KEY='rmaster_fold';
+/* 医療支援経過で出さない行（2026-10-20 代表者の決定）。「■処方歴■」（記録の実際の書き方）と、指示の言い方「■処方■」、「■残なし■」を含む行、
+   それに「処方:」「処方：」で始まる行（見出しの付かない処方の行も含め、全部出さない＝同日の追加指示）。
+   ★行の途中に「処方」の字があるだけの行（所見の文など）は出す */
+var MEDLOG_HIDE_RE=/■処方歴?■|■残なし■|^[\s　]*処方[\s　]*[:：]/;
 var CERT_NEAR_DAYS=60;   /* 認定期限の「近い」の範囲（2026-10-16 代表者の決定）。タブの人数とひと目カードで共用 */
 function glanceVal_(v, cls){
   var t=String(v==null?'':v).trim();
@@ -8368,20 +8372,29 @@ function viewFoldSet_(s, folded){
 function viewFoldToggle_(s){
   var name=viewSecName_(s), list=foldLoad_(), on=!s.classList.contains('folded');
   viewFoldSet_(s, on);
+  if(FOLD_DEFAULT.indexOf(name)>=0) return;   /* 最初からたたむ欄は、開閉を端末に覚えない（次に開いた時もたたんで始まる） */
   list=list.filter(function(x){ return x!==name; });
   if(on) list.push(name);
   foldSave_(list);
 }
+/* 開いた時に最初からたたんでおく欄（2026-10-20 代表者の決定）。縦に長くなる2欄。
+   ★開いた時は毎回たたむ（開いたことは覚えない）。ほかの欄は従来どおり、たたんだ欄だけを覚える */
+var FOLD_DEFAULT=['支援経過','医療支援経過'];
+var FOLD_NOTE='　▸ 押すと開きます';
 function viewNavPaint_(){
   var nav=$('viewToc'); if(!nav) return;
   var secs=viewSecs_(), folded=foldLoad_();
   if(!secs.length){ nav.hidden=true; nav.innerHTML=''; return; }
   secs.forEach(function(s,i){
-    var l=s.firstElementChild;
+    var l=s.firstElementChild, nm=viewSecName_(s);
     l.setAttribute('role','button'); l.setAttribute('tabindex','0');
     l.setAttribute('title','押すと、この欄をたたむ／開く');
+    /* たたんだ時のタイトル行に件数を添える（支援経過・医療支援経過）。見出しの文字は変えない
+       （「印刷しない」の設定と目次は見出しの文字で欄を見分けるため） */
+    var cnt=s.getAttribute('data-cnt');
+    l.setAttribute('data-fold-note', (cnt!=null?'（全'+cnt+'件）':'')+FOLD_NOTE);
     s.setAttribute('data-vsec', String(i));
-    viewFoldSet_(s, folded.indexOf(viewSecName_(s))>=0);
+    viewFoldSet_(s, folded.indexOf(nm)>=0 || FOLD_DEFAULT.indexOf(nm)>=0);
   });
   nav.innerHTML=secs.map(function(s,i){
     return '<button type="button" data-vgo="'+i+'">'+esc(viewSecName_(s))+'</button>';
@@ -8735,16 +8748,24 @@ function renderView(r){
     var np=!!(s&&s.hide);
     return'<div'+(np?' data-nop-row="1" class="nop-row"':'')+' style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+(np?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
   }).join(''):'<span style="color:var(--g5)">　</span>';
-  h+='<div class="sec"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
+  h+='<div class="sec" data-cnt="'+slog.length+'"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
   // 医療支援経過（訪問診療。新しい順）
   var mlog=Array.isArray(r.medicalSupportLog)?r.medicalSupportLog.slice():[];
   mlog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
   if(mlog.length){
+    /* ★訪問診療アプリから毎回入る「■処方歴■」の行と「■残なし■」の行は、画面と紙に出さない（2026-10-20 代表者の決定・行ごと）。
+       定期薬は薬剤情報の欄で見られるため。★記録（保存の中身）は1文字も変えない＝編集画面では全部見える。
+       行を除いて何も残らない記録は、日付だけの行になるので出さない。 */
+    mlog=mlog.map(function(s){
+      var t=String((s&&s.text)||'').split('\n').filter(function(ln){ return !MEDLOG_HIDE_RE.test(ln); }).join('\n').replace(/^\n+|\n+$/g,'');
+      var o={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) o[k]=s[k];
+      o.text=t; return o;
+    }).filter(function(s){ return String(s.text||'').trim()!==''||s.doctor||s.clinic; });
     var mlogHtml=mlog.map(function(s){
       var meta=[s.doctor,s.clinic].filter(Boolean).join(' / ');
       return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+(meta?'<br><span style="color:var(--g6);font-size: 0.75rem">'+esc(meta)+'</span>':'')+(s.source==='vma'?' <span style="color:var(--pri-d);font-size: 0.6875rem">[訪問診療]</span>':'')+'</span></div>';
     }).join('');
-    h+='<div class="sec"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
+    h+='<div class="sec" data-cnt="'+mlog.length+'"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
   }
   /* ★嗜好・本人らしさ／生活歴／意向・ACP の3欄は、2026-08-15 指示で【支援経過の上】へ移した（上を参照）。
      ここには置かない（同じ欄を2箇所に出さない） */
