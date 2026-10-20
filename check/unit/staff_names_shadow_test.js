@@ -99,7 +99,7 @@ const LIST = [
   }
 
   console.log('\n— 4. 職員マスタの結線 —');
-  t('部品を読み込む', /<script src="su-staff-names\.js\?v=2026-10-14"><\/script>/.test(SM));
+  t('部品を読み込む', /<script src="su-staff-names\.js\?v=2026-10-20"><\/script>/.test(SM));
   t('一覧を読み込んだ後に、退職済みを在籍 false にして写す・失敗で一覧を止めない',
     /renderList\(\);\n[^\n]*\n    try \{\n      if \(window\.SUStaffNames\) SUStaffNames\.push\(ST\.rows\.map\(function \(r\) \{\n        return \{ id: r\.id, name: r\.name, kana: r\.kana, active: statusInfo\(r\)\.k !== 'retired' \};\n      \}\)\);\n    \} catch \(e\) \{/.test(SM));
 

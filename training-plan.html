@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-+2esPT6lL5ZW3RyTIw5fVKUqtEvw4ig8JUl70ndM9bQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-q9+owL+vB+n4OLcOqNqZ6i4Lk4CtGBEbCxQiBcmPg0A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2085,7 +2085,7 @@ function tpAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function () {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-09-26');
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-20');
   });
 }
 function tpAccessToken_() {
@@ -8704,6 +8704,6 @@ else boot();
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-14" data-tool="個別機能訓練計画書"></script>
+<script src="su-report.js?v=2026-10-20" data-tool="個別機能訓練計画書"></script>
 </body>
 </html>
