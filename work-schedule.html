@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-xjzbw7cuFJiw/Mpf8spPtFEZikClT7ltEoeZ8NuyekY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-IE0gkrdSOUVH1ENp9ys8zND9HFIQ5d9IyixwqhECgBY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -268,6 +268,18 @@ body.printing .b-task.facwork { border: 1.5px solid #000; background: #fff; }
  * この赤い内側罫線＋破線で「重なっている枠」だと分かるようにする。寸法(left/width)はJS側のみが決め、
  * ここでは色と罫線だけ＝A3印刷レイアウトの寸法には非干渉。.selected の青枠を消さないよう前に置く。 */
 /* 勤務時間外の支援（2026-10-20）: 枠全体を赤。画面だけ（印刷の盤面は printMode で描き、この印は付けない） */
+/* 控えの案（2026-10-20）: 案を表示中は見出しの色を変え、「案：名前（本番ではありません）」を出す。印刷では見出しごと出ない */
+.badge.alt { background: #fff3e0; color: #6a1b9a; font-weight: 700; border: 2px solid #6a1b9a; }
+body.alt-mode .hdr { background: #4a148c; }
+.alist .ai.cur { background: #f3e5f5; }
+.alist .alt-btns { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.alt-new { display: flex; gap: 6px; }
+.alt-new .inp { flex: 1; min-width: 0; }
+.alt-note { font-size: 0.75rem; color: var(--g7); line-height: 1.5; }
+/* 休みにした職員の列（2026-10-20）: 見出しに「休」。印刷では出さない */
+.b-head .h-absent { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 4px; background: #b71c1c; color: #fff; font-size: 0.625rem; font-weight: 700; }
+body:not(.printing) .b-head.absent .h-name { color: #b71c1c; }
+body.printing .b-head .h-absent { display: none; }
 .b-task.ooh { background-color: #e57373 !important; border-color: #b71c1c !important; color: #111 !important; }
 .b-task.ooh .t-name, .b-task.ooh .t-time, .b-task.ooh .t-time b, .b-task.ooh .t-body, .b-task.ooh .t-item,
 .b-task.ooh .t-item-tx, .b-task.ooh .t-cb { color: #111 !important; }   /* 赤の上でも読める濃さ（4.5:1 以上） */
@@ -689,6 +701,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <button class="hdr-btn wk" id="btnNextWeek" title="来週(+7日)">来週</button>
   <label class="hdr-lock" id="lockLabel" title="この日の盤面を自動更新から保護（シフト反映・週間計画同期・自動配置を停止／手動編集は可能）"><input type="checkbox" id="chkLock">🔒ロック</label>
   <span class="hdr-title">ワークスケジュール</span>
+  <!-- 表示中の控えの案（2026-10-20）。本番の時は出さない。見出しの中なので印刷には出ない（印刷の見出しには「（案：名前）」が出る） -->
+  <button class="badge alt off" id="badgeAlt" title="控えの案を表示しています。押すと案の一覧"></button>
   <!-- 現場の端末の表示（2026-10-11）。盤面は見るだけ・印は付けられる。見出しの中なので印刷には出ない -->
   <span class="hdr-field" id="fieldBanner" role="note" hidden>📱 現場の端末：盤面は見るだけ（実施・チェック・コメントは付けられます）</span>
   <!-- 勤務表を Supabase から読めず Google の写しへ戻した間だけ出す（2026-10-17・改善プロンプト第2弾の8）。
@@ -732,6 +746,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
     <button class="tray-btn" id="btnSelGroup" title="選択した枠（2件以上）をグループ化して固定。以後グループ内の1枠をドラッグすると全体が同時移動します">🔗 グループ化固定</button>
     <button class="tray-btn" id="btnSelUngroup" title="選択した枠のグループ化を解除（個別移動に戻す）">✂ グループ化解除</button>
     <button class="tray-btn" id="btnRoutineFix" title="この日の起床（7:00〜8:40）と就寝（18:00〜21:00）のグループを並びとして固定します。翌日を開くと、翌日の起床・就寝がこの日と同じ並び・同じ置き場所（グループの外の枠・トレイを含む）に組み替わります（ロック中の日・実施やチェックのある並びは除く）。まだ並べていない先の日にも、この並びが入ります">📌 並びを固定</button>
+    <button class="tray-btn" id="btnAlts" title="この日の控えの案（1日に5つまで）。休みが出そうな日に、出勤の組み合わせごとの盤面を前もって作れます" hidden>📑 案</button>
+    <button class="tray-btn" id="btnAbsent" title="職員をこの日休みにします（支援は未配置へ・列は残して「休」）。置ける職員の候補も出します">🛌 休みにする</button>
     <button class="tray-btn" id="btnCopyNext" title="この日の支援を翌週の同曜日へコピー（上書き）">📅 翌週へコピー</button>
     <button class="tray-btn" id="trayToggle">折畳</button>
   </div>
@@ -990,6 +1006,24 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <div class="fld"><label>盤面に残る重なり（ロック日・旧端末由来）</label><div class="alist" id="alOv"></div></div>
   <div class="fld"><label>勤務時間外の支援（赤い札。誰かの勤務時間へ動かしてください）</label><div class="alist" id="alOoh"></div></div>
   <div class="btn-row"><span class="sp"></span><button class="btn" id="alClose">閉じる</button></div>
+</div>
+
+<!-- 控えの案（2026-10-20） -->
+<div class="modal" id="mAlts">
+  <h3>この日の控えの案（<span id="altCount">0</span>／5）</h3>
+  <div class="fld"><label>盤面</label><div class="alist" id="altList"></div></div>
+  <div class="fld"><label for="altNewName">今の盤面から新しい案を作る</label>
+    <div class="alt-new"><input class="inp" id="altNewName" maxlength="30" placeholder="例：甲さんが休みの場合"><button class="btn primary" id="altCreate">案を作る</button></div></div>
+  <div class="fld"><div class="alt-note">案はサーバーに保存し、全部の PC で同じ案が見えます。案は勤務表と週間計画に自動では合わせません（変わった時は「未反映」の印が出ます）。日が30日過ぎた案は消えます。</div></div>
+  <div class="btn-row"><span class="sp"></span><button class="btn" id="altClose">閉じる</button></div>
+</div>
+
+<!-- 職員を休みにする（2026-10-20） -->
+<div class="modal" id="mAbsent">
+  <h3>職員を休みにする</h3>
+  <div class="fld"><label>職員</label><div class="alist" id="absStaff"></div></div>
+  <div class="fld"><label>未配置の支援と、置ける職員の候補（勤務時間の中で、その時間が空いている職員）</label><div class="alist" id="absCand"></div></div>
+  <div class="btn-row"><span class="sp"></span><button class="btn" id="absClose">閉じる</button></div>
 </div>
 
 <!-- 設定 -->
@@ -1907,6 +1941,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 支援の札が担当の職員の勤務時間から少しでも外れているか（2026-10-20 本人指示・本人選択「支援だけ」）。
    * 手で動かす時は勤務時間外にも置ける（いったん置いて調整する使い方）。外れている札は画面で赤く出し、上に「時間外 N」を出す。
    * 派生値（保存しない）。勤務時間の分からない職員・未配置の札は外れていない扱い */
+  /* 未配置の支援を置ける職員の候補（2026-10-20・休みにした職員の支援の置き先）。勤務時間の中で、その時間に別の枠が無く、
+   * 休みにしていない名前のある職員。夜勤の帯の支援は夜勤→訪問→施設、それ以外は訪問→施設→夜勤の順（placeOrphanCare_ と同じ並び）。
+   * 自動では置かない（候補を出すだけ） */
+  function careFitStaff(day, task, nightBand) {
+    var out = [];
+    if (!day || !task) return out;
+    var order = nightBand ? ['night', 'visit', 'facility'] : ['visit', 'facility', 'night'];
+    var cols = (day.columns || []).slice().sort(function (a, b) { return a.col - b.col; });
+    for (var z = 0; z < order.length; z++) {
+      for (var c = 0; c < cols.length; c++) {
+        if (cols[c].zone !== order[z]) continue;
+        var ids = cols[c].staffIds || [];
+        for (var k = 0; k < ids.length; k++) {
+          var st = findStaff(day.staff, ids[k]);
+          if (!st || !st.name || st.absent) continue;
+          if (typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') continue;
+          if (!(st.workStart <= task.start && task.end <= st.workEnd)) continue;
+          /* 手を入れていない自動の施設業務・自由枠は、置く時に縮めるので「ふさがり」に数えない（手で置く時と同じ） */
+          if (staffConflicts(day.tasks, st.id, task.start, task.end, [task.id]).filter(function (c) { return !shrinkableFiller_(c); }).length) continue;
+          if (out.indexOf(st) < 0) out.push(st);
+        }
+      }
+    }
+    return out;
+  }
+
+  /* 休みの印を人に付けるための氏名の見分け（空白の違いは同じ人） */
+  function absentNameKey(name) { return String(name || '').replace(/[\s\u3000]+/g, ''); }
+  /* 休みにする時に動かさない支援（実施済み・チェックのある支援＝その人が実施した記録） */
+  function careKeepOnAbsent(t) {
+    if (!t || t.kind !== 'care') return false;
+    if (t.done) return true;
+    for (var k in (t.checks || {})) if (Object.prototype.hasOwnProperty.call(t.checks, k) && t.checks[k]) return true;
+    return false;
+  }
+
   function careOutOfHours(task, staff) {
     if (!task || task.kind !== 'care' || task.staffId === null || task.staffId === undefined) return false;
     if (!staff || typeof staff.workStart !== 'number' || typeof staff.workEnd !== 'number') return false;
@@ -1985,6 +2055,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!(end > start)) return { ok: false, code: 'range', reason: '終了は開始より後にしてください' };
     var st = findStaff(day.staff, staffId);
     if (!st) return { ok: false, code: 'nostaff', reason: '職員が見つかりません' };
+    /* 休みにした職員（2026-10-20 本人指示「突然職員の休みが発生した際に」）の列へは置かない */
+    if (st.absent) return { ok: false, code: 'absent', reason: (st.name || '') + 'さんは休みにしています（休みを外すと置けます）' };
     var ig = (ignoreIds && ignoreIds.length) ? ignoreIds : [taskId];
     /* 勤務時間外は即NGにせず警告(warn)。D&D配置側で確認ダイアログを出して許可する。
      * R2 重複・R3 利用者重複は引き続きハード制約として検証する。 */
@@ -4239,7 +4311,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     /* 列 st に span を入れるのに外す札（外してよい札だけがふさいでいる時）。勤務の外・外せない札がある時は null */
     function softBlock(st, span, entries) {
-      if (!st || !st.name || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return null;
+      if (!st || !st.name || st.absent || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return null;
       var ev = [], a, b;
       for (a = 0; a < span.length; a++) if (!(st.workStart <= span[a].start && span[a].end <= st.workEnd)) return null;
       for (b = 0; b < entries.length; b++) {
@@ -4273,7 +4345,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     var cmap = staffColMap_(staff, day.columns);
     function fits(st, span) {
-      if (!st || !st.name || !(typeof st.workStart === 'number') || !(typeof st.workEnd === 'number')) return false;
+      if (!st || !st.name || st.absent || !(typeof st.workStart === 'number') || !(typeof st.workEnd === 'number')) return false;
       var list = occ['.' + st.id] || [], a, b;
       for (a = 0; a < span.length; a++) {
         if (!(st.workStart <= span[a].start && span[a].end <= st.workEnd)) return false;
@@ -4387,7 +4459,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 2. 外した後の空きで置く: 押した日にトレイ→トレイ。列→同じ勤務の列 → 同じ番号の列 → 元の列 → トレイ */
     var occ2 = occOf(tasks.concat(add));
     function fits2(st, sp) {
-      if (!st || !st.name || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return false;
+      if (!st || !st.name || st.absent || typeof st.workStart !== 'number' || typeof st.workEnd !== 'number') return false;
       if (!(st.workStart <= sp.start && sp.end <= st.workEnd)) return false;
       var l2 = occ2['.' + st.id] || [];
       for (var b2 = 0; b2 < l2.length; b2++) if (sp.start < l2[b2][1] && l2[b2][0] < sp.end) return false;
@@ -4506,6 +4578,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     captureOrigin: captureOrigin,
     isChanged: isChanged,
     careOutOfHours: careOutOfHours,
+    careFitStaff: careFitStaff,
+    absentNameKey: absentNameKey,
+    careKeepOnAbsent: careKeepOnAbsent,
     overlap: overlap,
     findStaff: findStaff,
     findTask: findTask,
@@ -6355,7 +6430,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var s = staff[i];
       if (String(s.id).indexOf('slot_') !== 0) continue;
       if (s.manual && !force) continue;
-      s.name = ''; s.fromShift = false; s.manual = false; s.facWork = null; s.otherOffice = null;   /* 別事業所ラベルはスロット属性＝空に戻す時に前占有者の値も消す(残留防止・再導出はapp.js側) */
+      s.name = ''; s.fromShift = false; s.manual = false; s.facWork = null; s.otherOffice = null; delete s.absent;   /* 休みの印は人に付く＝空に戻す席には残さない（2026-10-20） */   /* 別事業所ラベルはスロット属性＝空に戻す時に前占有者の値も消す(残留防止・再導出はapp.js側) */
       resetSlotWindow_(s);
     }
 
@@ -7003,6 +7078,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (v.staffId === null || v.staffId === undefined) continue;
       var st0 = staffById[v.staffId];
       if (!st0 || st0.zone === 'night') continue;       /* 夜勤に facwork は無い */
+      if (st0.absent) continue;                         /* 休みにした職員の列は埋め直さない（2026-10-20） */
       if (!byStaff[v.staffId]) byStaff[v.staffId] = {};
       var hh = Math.floor(v.start / 60) * 60;
       for (; hh < v.end; hh += 60) {
@@ -7363,6 +7439,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                tasks: M.migrateNameOnly(M.clearCareTags(M.normalizeTaskContents(M.dedupCareSlots(M.sanitizeTasks(d0.tasks))))) };
     }
     if (type === 'SET_STAFF') {
+      /* 休みの印は人（氏名）に付ける（2026-10-20・反証レビュー指摘）: 勤務表の反映で席の中身が入れ替わっても、印は同じ人に付け直し、
+       * 別の人へは移さない（席に残った印は外す） */
+      var absN = {};
+      for (var ia0 = 0; ia0 < day.staff.length; ia0++) if (day.staff[ia0].absent && day.staff[ia0].name) absN[M.absentNameKey(day.staff[ia0].name)] = true;
+      action = { type: action.type, columns: action.columns, staff: action.staff.map(function (s) {
+        var want = !!(s.name && absN[M.absentNameKey(s.name)]);
+        if (!!s.absent === want) return s;
+        var o = {}, k;
+        for (k in s) if (Object.prototype.hasOwnProperty.call(s, k) && k !== 'absent') o[k] = s[k];
+        if (want) o.absent = true;
+        return o;
+      }) };
       /* 職員入替時、消えた職員のタスクはトレイへ戻す */
       var ids = {};
       for (var i = 0; i < action.staff.length; i++) ids[action.staff[i].id] = true;
@@ -7434,6 +7522,62 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         { staffId: action.staffId, start: action.start, end: action.end, facBg: null });
       tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff, day.columns);   /* 退去先の残存施設枠を拡張(undo1回) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksA };
+    }
+    /* 職員を休みにする（2026-10-20 本人指示・本人選択「列は残し『休』を付ける」）: その職員の支援と手で置いた枠は未配置トレイへ
+     * （parked＝自動配置で置き直さない）、休憩と自動の施設業務・自由枠は消す。列は残し、職員に absent の印を付ける。1操作＝取り消し1回 */
+    /* 盤面の中身（職員・列・枠）だけを入れ替える（2026-10-20・案を本番にする）。meta（ロック・印・コメント）は今のまま＝本番の印を消さない */
+    if (type === 'REPLACE_BOARD') {
+      /* 案の「本日のみ削除」（skipRefs）と全体コメント（notes）は本番に足す（足さないと、本日のみ削除した支援が週間計画の同期で戻る） */
+      var mR = {}, kR;
+      for (kR in day.meta) if (Object.prototype.hasOwnProperty.call(day.meta, kR)) mR[kR] = day.meta[kR];
+      var sk = (day.meta.skipRefs || []).slice(), skSeen = {};
+      sk.forEach(function (x) { skSeen[JSON.stringify(x)] = 1; });
+      (action.skipRefs || []).forEach(function (x) { if (!skSeen[JSON.stringify(x)]) { sk.push(x); skSeen[JSON.stringify(x)] = 1; } });
+      if (sk.length) mR.skipRefs = sk;
+      var nt = (day.meta.notes || []).slice(), ntSeen = {};
+      nt.forEach(function (x) { if (x && x.id) ntSeen[x.id] = 1; });
+      (action.notes || []).forEach(function (x) { if (x && x.id && !ntSeen[x.id]) { nt.push(x); ntSeen[x.id] = 1; } });
+      if (nt.length || day.meta.notes) mR.notes = nt;
+      return { meta: mR, staff: action.staff, columns: action.columns, tasks: action.tasks };
+    }
+    if (type === 'MARK_ABSENT') {
+      /* 印は人（氏名）に付ける＝分割勤務の勤務枠すべて（2026-10-20・反証レビュー指摘）。実施済み・チェックのある支援は動かさない */
+      var nmA = action.name;
+      if (!nmA && action.staffId) { for (var iq = 0; iq < day.staff.length; iq++) if (day.staff[iq].id === action.staffId) nmA = day.staff[iq].name; }
+      var keyA = M.absentNameKey(nmA), idsA = {};
+      if (!keyA) return day;
+      for (var ib = 0; ib < day.staff.length; ib++) if (day.staff[ib].name && M.absentNameKey(day.staff[ib].name) === keyA) idsA[day.staff[ib].id] = true;
+      var tasksA = [], ta;
+      for (var ia = 0; ia < day.tasks.length; ia++) {
+        ta = day.tasks[ia];
+        if (!idsA[ta.staffId]) { tasksA.push(ta); continue; }
+        if (M.careKeepOnAbsent(ta)) { tasksA.push(ta); continue; }
+        if (ta.kind === 'break' || (ta.src === 'facwork' && !ta.facManual)) continue;
+        var pa = {}, ka;
+        for (ka in ta) if (Object.prototype.hasOwnProperty.call(ta, ka)) pa[ka] = ta[ka];
+        pa.staffId = null; pa.done = false; pa.facBg = null; pa.parked = true;
+        tasksA.push(pa);
+      }
+      var staffA = day.staff.map(function (s) {
+        if (!idsA[s.id]) return s;
+        var o = {}, k;
+        for (k in s) if (Object.prototype.hasOwnProperty.call(s, k)) o[k] = s[k];
+        o.absent = true;
+        return o;
+      });
+      return { meta: day.meta, staff: staffA, columns: day.columns, tasks: tasksA };
+    }
+    if (type === 'UNMARK_ABSENT') {
+      var nmU = action.name;
+      if (!nmU && action.staffId) { for (var iu = 0; iu < day.staff.length; iu++) if (day.staff[iu].id === action.staffId) nmU = day.staff[iu].name; }
+      var keyU = M.absentNameKey(nmU);
+      var staffU = day.staff.map(function (s) {
+        if (!s.absent || !s.name || M.absentNameKey(s.name) !== keyU) return s;
+        var o = {}, k;
+        for (k in s) if (Object.prototype.hasOwnProperty.call(s, k) && k !== 'absent') o[k] = s[k];
+        return o;
+      });
+      return { meta: day.meta, staff: staffU, columns: day.columns, tasks: day.tasks };
     }
     if (type === 'UNASSIGN') {
       var vacU = careVacates_(day.tasks, [action.id]);
@@ -8199,6 +8343,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (st.manual) nm.appendChild(txt('span', 'h-lock', '✎'));
       nm.appendChild(document.createTextNode(st.name));
+      if (st.absent) { nm.appendChild(txt('span', 'h-absent', '休')); h.className += ' absent'; }   /* 休みにした職員（画面だけ・印刷では出さない） */
       h.appendChild(nm);
       h.appendChild(txt('div', 'h-time', TS.minToTime(st.workStart) + '-' + TS.minToTime(st.workEnd)));
     }
@@ -10358,6 +10503,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     saveTimer = setTimeout(doSave, 400);
   }
   function doSave() {
+    if (typeof ui !== 'undefined' && ui.altId) { altSaveLocal_(); return; }   /* 案を表示中は案として保存する（本番の wsday_ へは書かない・2026-10-20） */
     var day = store.get();
     if (!day.meta.date) return;
     day.meta.updatedAt = new Date().toISOString();
@@ -10374,6 +10520,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * クラウドpushはbest-effort（visibilitychangeでは概ね完了・pagehideでは未完でもlocalStorageで保全）。 */
   function flushAll_() {
     try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); } } catch (e) {}
+    try { altPushNow_(); } catch (eA) {}   /* 案の控え（ベストエフォート。送れなければ端末の控えから次に送る） */
     try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; pushDayNow(); } } catch (e2) {}
     try { if (pushCareTimer) { clearTimeout(pushCareTimer); pushCareTimer = null; pushCareNow(); } } catch (e3) {}
   }
@@ -10381,6 +10528,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 同期先未設定でも端末には保存される。 */
   function manualSave() {
     try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
+    if (ui.altId) { doSave(); altPushNow_(); return; }   /* 案はサーバーへすぐ送る（案の保存の表示は altPushNow_ が出す） */
     doSave();
     var synced = false;
     try { if (typeof syncOn === 'function' && syncOn()) { pushDayNow(); synced = true; } } catch (e1) {}
@@ -10403,12 +10551,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var store = null;
   var zones = TS.cloneZones(TS.DEFAULT_ZONES);
   var scale = TS.buildScale(zones);
-  var ui = { selectedIds: [], currentDate: todayKey(), editingId: null, editKind: 'care', editContents: [] };
+  var ui = { selectedIds: [], currentDate: todayKey(), editingId: null, editKind: 'care', editContents: [], altId: null };   /* altId: 表示中の控えの案（null＝本番） */
 
   var hashNavigating_ = false;   /* location.hash 自己更新中フラグ（hashchange の自己発火ループ防止） */
   /* '#YYYY-MM-DD' → 'YYYY-MM-DD'（実在日のみ）。不正/非該当は null。 */
   function parseDateHash_(h) {
-    var s = String(h === null || h === undefined ? '' : h).replace(/^#/, '');
+    var s = String(h === null || h === undefined ? '' : h).replace(/^#/, '').replace(/~alt-[a-z0-9]{4,16}$/, '');   /* 案の印（2026-10-20）は日付の読みに含めない */
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
     var p = s.split('-'), y = parseInt(p[0], 10), mo = parseInt(p[1], 10), d = parseInt(p[2], 10);
     var dt = new Date(y, mo - 1, d);
@@ -10416,9 +10564,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return s;
   }
   function switchDate(date) {
+    if (typeof ui !== 'undefined' && ui.altId) leaveAltCore_();   /* 案を見ていたら、案の保存を確定してから本番へ戻る（案の盤面を本番として保存しない） */
     /* 離れる日: 人の編集があれば「仮の盤面」の印を消す。メモリの印は捨てる（戻った時に古い入れ替え回数と比べて
      * 端末の印まで消さないように。戻った時は rearmSeeded_ が数え直す・反証レビュー 2026-10-13） */
-    try { seededUntouched_(ui.currentDate); delete seedMark_[ui.currentDate]; } catch (eSd) {}
+    if (altLeaving_) { altLeaving_ = false; try { delete seedMark_[ui.currentDate]; } catch (eSl) {} }   /* 案の盤面の数えで本番の印を消さない */
+    else { try { seededUntouched_(ui.currentDate); delete seedMark_[ui.currentDate]; } catch (eSd) {} }
     if (saveTimer) { clearTimeout(saveTimer); doSave(); }
     /* 切替前の未送信pushを確実に送る。残タイマーを放置すると
      * ①直前2.5秒以内の編集が未送信のまま滞留 ②切替後に発火して新日付を旧revで送る自己競合、の両方が起きる */
@@ -10472,6 +10622,506 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       });
     } catch (e) {}
+  }
+
+  /* ===== 控えの案（2026-10-20 本人指示「職員の出勤次第でいくつかワークスケジュールを事前準備しておく」・本人選択） =====
+   * ・1日に5つまで（ALT_MAX）。案は日ごとに1つのサーバーのキー wsalt_<日付>（care-backend 0018）にまとめて保存する
+   *   ＝本番の wsday_<日付> とは別の保存。本番の版・ロック・古い版の門・履歴を揺らさない。日が30日過ぎた案はサーバーが消す
+   * ・案を表示している間（ui.altId）は、本番を「表示していない日」として受け取り・送る（ui.currentDate === 日付 && !ui.altId）。
+   *   盤面（store）は案で、保存（doSave）は案へ、本番の送信（schedulePushDay・pushDayNow）は止める。本番の未送信は端末の控えから送る
+   * ・案は勤務表・週間計画に自動では合わせない（autoHeld_・seedFromMaster。本人選択「自動では変えず印を出す」）
+   * ・案の同時の直しは案ごとの後勝ち（2台で同じ案を直したら後の保存が残り、先の PC には次の確かめで知らせる）
+   * ・送れていない案の変更は、日と案ごとに端末へ控える（ALT_PENDING_LS）。案を移っても・画面を閉じても、控えから送る
+   * ・現場の端末・現場のアカウント・Supabase に切り替えていない時は案を出さない（altAvailable_） */
+  var ALT_MAX = 5;
+  var ALT_PENDING_LS = 'ws_alt_pending_v2';
+  var altStates_ = {};   /* 日付 -> { rev, data }（サーバーの最後に読んだ・書いた版） */
+  var altPushTimer_ = null, altBusy_ = false, altEditSeq_ = 0, altLastSig_ = '', altLeaving_ = false;
+
+  /* 本番の日を盤面に表示しているか（案を表示中は偽）。同期の「表示中の日」の判定は同じ式（ui.currentDate === 日付 && !ui.altId）で書く
+   * ＝関数を切り出して試す試験の器でも ui だけで動く */
+  function shownDay_(date) { return ui.currentDate === date && !ui.altId; }
+  function altKey_(date) { return 'wsalt_' + date; }
+  function parseAltHash_(h) {
+    var m = /^#?(\d{4}-\d{2}-\d{2})~alt-([a-z0-9]{4,16})$/.exec(String(h === null || h === undefined ? '' : h));
+    return m ? m[2] : null;
+  }
+  function altAvailable_() {
+    if (wsIsFieldDevice_()) return false;
+    try { if (fieldMarksOnly_(ui.currentDate)) return false; } catch (eF) {}
+    try { if (!(window.SUKv && window.SUKv.routed && window.SUKv.routed(dayKey(ui.currentDate)))) return false; } catch (eR) { return false; }
+    return syncOn();
+  }
+  function altClient_() {
+    return new Promise(function (ok, ng) {
+      var t0 = Date.now();
+      (function wait() {
+        try { if (window.SUAuth && window.SUAuth.client) { var c = window.SUAuth.client(); if (c) { ok(c); return; } } } catch (e) {}
+        if (Date.now() - t0 > 8000) { ng(new Error('noauth')); return; }
+        setTimeout(wait, 200);
+      })();
+    });
+  }
+  function altRpc_(name, args) {
+    return altClient_().then(function (c) { return c.rpc(name, args); }).then(function (r) {
+      if (r && r.error) throw r.error;
+      return r ? r.data : null;
+    });
+  }
+  function altIdOk_(id) { return typeof id === 'string' && /^[a-z0-9]{4,16}$/.test(id); }
+  function altNorm_(date, data) {
+    var d = (data && typeof data === 'object') ? data : {};
+    return { v: 1, date: date, alts: Array.isArray(d.alts) ? d.alts.filter(function (a) { return a && altIdOk_(a.id) && a.board; }) : [] };
+  }
+  function altList_() { var st = altStates_[ui.currentDate]; return (st && st.data) ? st.data.alts : []; }
+  function findAlt_(id) {
+    var l = altList_();
+    for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+    return null;
+  }
+  function loadAlts_(date) {
+    return altRpc_('kv_get', { p_key: altKey_(date) }).then(function (j) {
+      if (!j || j.ok === false) throw new Error('get');
+      altStates_[date] = { rev: j.rev || 0, data: altNorm_(date, j.data) };
+      return altStates_[date];
+    });
+  }
+  /* 読んで・変えて・書く（版の競合は取り直して3回まで）。mutate が false を返したら書かない */
+  function altWrite_(date, mutate, tries) {
+    tries = tries || 0;
+    var st0 = altStates_[date];
+    var p = (st0 && st0.data) ? Promise.resolve(st0) : loadAlts_(date);
+    return p.then(function (st) {
+      var data = JSON.parse(JSON.stringify(st.data));
+      if (mutate(data) === false) return { ok: false, aborted: true };
+      data.v = 1; data.date = date;
+      return altRpc_('kv_put', { p_key: altKey_(date), p_rev: st.rev || 0, p_data: data }).then(function (j) {
+        if (j && j.ok) { altStates_[date] = { rev: j.rev || st.rev || 0, data: data }; return j; }
+        if (j && j.conflict && tries < 3) return loadAlts_(date).then(function () { return altWrite_(date, mutate, tries + 1); });
+        return j || { ok: false };
+      });
+    });
+  }
+  /* 盤面の写し（案に入れる）。版・ロック・版の印・保存時刻は案に持たない。休みの印は人ごと（staff.absent）に持つ */
+  function altSnapshot_(day) {
+    var b = JSON.parse(JSON.stringify({ meta: day.meta || {}, staff: day.staff || [], columns: day.columns || [], tasks: day.tasks || [] }));
+    ['rev', 'locked', 'lockedAt', 'appVer', 'updatedAt'].forEach(function (k) { delete b.meta[k]; });
+    return b;
+  }
+  /* 送れていない案の控え（日と案ごと）: { '<日付>|<id>': { date, id, seq, at, board } } */
+  function altPendKey_(date, id) { return date + '|' + id; }
+  function altPendAll_() { try { var v = JSON.parse(localStorage.getItem(ALT_PENDING_LS) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } }
+  function altPendSave_(m) { try { if (Object.keys(m).length) localStorage.setItem(ALT_PENDING_LS, JSON.stringify(m)); else localStorage.removeItem(ALT_PENDING_LS); } catch (e) {} }
+  function altPendHas_(date, id) { return !!altPendAll_()[altPendKey_(date, id)]; }
+  function altPendDel_(key, seq) { var m = altPendAll_(); if (m[key] && (seq === undefined || m[key].seq === seq)) { delete m[key]; altPendSave_(m); } }
+
+  /* 案を表示中の保存（doSave から）: 盤面が変わっていれば、日と案ごとに端末へ控えて、少し待ってサーバーへ送る */
+  function altSaveLocal_() {
+    var day = store.get(), sig = daySig(day);
+    var key = altPendKey_(ui.currentDate, ui.altId);
+    if (sig === altLastSig_) { $('saveState').textContent = altPendHas_(ui.currentDate, ui.altId) ? '案を保存中…' : ''; return; }
+    altLastSig_ = sig;
+    var m = altPendAll_();
+    m[key] = { date: ui.currentDate, id: ui.altId, seq: ++altEditSeq_, at: new Date().toISOString(), board: altSnapshot_(day) };
+    altPendSave_(m);
+    $('saveState').textContent = '案を保存中…';
+    if (altPushTimer_) clearTimeout(altPushTimer_);
+    altPushTimer_ = setTimeout(altPushNow_, 1500);
+  }
+  /* 控えの案を順にサーバーへ送る（今表示している案かどうかに関わらず、控えの日・案・盤面で送る） */
+  function altPushNow_() {
+    if (altPushTimer_) { clearTimeout(altPushTimer_); altPushTimer_ = null; }
+    var m = altPendAll_(), keys = Object.keys(m);
+    if (!keys.length) return;
+    if (altBusy_) { altPushTimer_ = setTimeout(altPushNow_, 1500); return; }
+    altBusy_ = true;
+    var e = m[keys[0]];
+    altWrite_(e.date, function (d) {
+      for (var i = 0; i < d.alts.length; i++) {
+        if (d.alts[i].id === e.id) { d.alts[i].board = e.board; d.alts[i].updatedAt = new Date().toISOString(); return true; }
+      }
+      return false;
+    }).then(function (j) {
+      altBusy_ = false;
+      var key = altPendKey_(e.date, e.id);
+      if (j && j.ok) {
+        altPendDel_(key, e.seq);
+        if (ui.altId === e.id && ui.currentDate === e.date && !altPendHas_(e.date, e.id)) {
+          var t = new Date();
+          $('saveState').textContent = '案を保存 ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes());
+        }
+        if (Object.keys(altPendAll_()).length) altPushTimer_ = setTimeout(altPushNow_, 300);
+        return;
+      }
+      if (j && j.aborted) {
+        altPendDel_(key);   /* その案だけを捨てる（ほかの案の控えは残す） */
+        toast('案はほかの PC で消されていたため、その案への変更は保存できませんでした', true);
+        if (ui.altId === e.id && ui.currentDate === e.date) leaveAlt_();
+        if (Object.keys(altPendAll_()).length) altPushTimer_ = setTimeout(altPushNow_, 300);
+        return;
+      }
+      if (ui.altId) $('saveState').textContent = '案の保存失敗';
+      altPushTimer_ = setTimeout(altPushNow_, 20000);
+    }).catch(function () {
+      altBusy_ = false;
+      if (ui.altId) $('saveState').textContent = '案の保存失敗（回線）';
+      altPushTimer_ = setTimeout(altPushNow_, 20000);
+    });
+  }
+  /* 案を抜ける（保存を確定してから・盤面は呼び出し側が本番に戻す） */
+  function leaveAltCore_() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
+    if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; }
+    altPushNow_();
+    ui.altId = null;
+    altLastSig_ = '';
+    altLeaving_ = true;   /* 次の switchDate は「仮の盤面」の数えを案の盤面で比べない（本番の印を消さない） */
+    try { document.body.classList.remove('alt-mode'); } catch (eB) {}
+  }
+  function leaveAlt_() {
+    if (!ui.altId) return;
+    leaveAltCore_();
+    switchDate(ui.currentDate);   /* 本番を端末の控えから読み直し、サーバーの最新を取る（日付の切り替えと同じ道） */
+  }
+  function altBoardFor_(a) {
+    var pend = altPendAll_()[altPendKey_(ui.currentDate, a.id)];
+    return { board: (pend && pend.board) ? pend.board : a.board, pend: !!(pend && pend.board) };
+  }
+  /* 案を開く（id の案の盤面を表示する） */
+  function enterAlt_(id) {
+    var a = findAlt_(id);
+    if (!a) { toast('その案が見つかりません', true); return false; }
+    if (!ui.altId) {
+      /* 本番の保留をここで確定（案に切り替える前に、本番の保存と送信を済ませる） */
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
+      if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; try { pushDayNow(); } catch (ePd) {} }
+    } else if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
+    var src = altBoardFor_(a);
+    var b = JSON.parse(JSON.stringify(src.board));
+    b.meta = b.meta || {};
+    b.meta.date = ui.currentDate; b.meta.rev = 0;
+    delete b.meta.locked; delete b.meta.lockedAt;
+    ui.altId = id;
+    ui.selectedIds = [];
+    try { document.body.classList.add('alt-mode'); } catch (eB) {}
+    try {
+      var h = '#' + ui.currentDate + '~alt-' + id;
+      if (location.hash !== h) { hashNavigating_ = true; location.hash = h; }
+    } catch (eH) {}
+    altLastSig_ = '';
+    store.dispatch({ type: 'INIT_DAY', day: b, frozen: false });
+    altLastSig_ = daySig(store.get());
+    if (src.pend) { altPushTimer_ = setTimeout(altPushNow_, 500); toast('送れていなかった案の変更があったので、続きから表示して送ります'); }
+    renderAll();
+    return true;
+  }
+  function openAltById_(id) {
+    if (!altAvailable_()) { toast('案は事務所の PC で、サーバーにつながっている時だけ使えます', true); return; }
+    loadAlts_(ui.currentDate).then(function () { if (!enterAlt_(id)) { try { hashNavigating_ = true; location.replace('#' + ui.currentDate); } catch (e) {} } })
+      .catch(function () { toast('案を読めませんでした（回線を確かめてください）', true); });
+  }
+  /* ほかの PC が案を直したかの確かめ（pollTick_ から・案を表示中だけ） */
+  function altPoll_() {
+    if (!ui.altId || altBusy_ || saveTimer || altPendHas_(ui.currentDate, ui.altId)) return;
+    var id = ui.altId, date = ui.currentDate;
+    altRpc_('kv_head', { p_keys: [altKey_(date)] }).then(function (j) {
+      var rev = j && j.revs ? (j.revs[altKey_(date)] || 0) : 0;
+      var st = altStates_[date];
+      if (!(rev > ((st && st.rev) || 0)) || ui.altId !== id) return;
+      return loadAlts_(date).then(function () {
+        if (ui.altId !== id || saveTimer || altPendHas_(date, id)) return;
+        var a = findAlt_(id);
+        if (!a) { toast('この案はほかの PC で消されたため、本番に戻りました', true); leaveAlt_(); return; }
+        var b = JSON.parse(JSON.stringify(a.board));
+        b.meta = b.meta || {}; b.meta.date = date; b.meta.rev = 0;
+        delete b.meta.locked; delete b.meta.lockedAt;
+        if (daySig(b) === daySig(store.get())) return;
+        store.dispatch({ type: 'INIT_DAY', day: b, frozen: false });
+        altLastSig_ = daySig(store.get());
+        toast('この案はほかの PC で直されたため、最新を表示しました');
+        renderAll();
+      });
+    }).catch(function () {});
+  }
+  function newAltId_() {
+    var s = '';
+    while (s.length < 8) s += Math.random().toString(36).slice(2);
+    return s.slice(0, 8);
+  }
+  function createAlt_(name) {
+    name = String(name || '').trim().slice(0, 30);
+    if (!name) { toast('案の名前を入れてください', true); return; }
+    var date = ui.currentDate, id = newAltId_(), now = new Date().toISOString();
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
+    var board = altSnapshot_(store.get());
+    var full = false;
+    altWrite_(date, function (d) {
+      if (d.alts.length >= ALT_MAX) { full = true; return false; }
+      d.alts.push({ id: id, name: name, createdAt: now, updatedAt: now, board: board });
+    }).then(function (j) {
+      if (full) { toast('1日に作れる案は' + ALT_MAX + 'つまでです。使わない案を消してから作ってください', true); renderAltModal_(); return; }
+      if (!j || !j.ok) { toast('案を作れませんでした', true); return; }
+      if (ui.currentDate !== date) return;
+      $('altNewName').value = '';
+      enterAlt_(id);
+      renderAltModal_();
+      toast('案「' + name + '」を作りました（いまは案を表示しています）');
+    }).catch(function () { toast('案を作れませんでした（回線を確かめてください）', true); });
+  }
+  function renameAlt_(id) {
+    var a = findAlt_(id);
+    if (!a) return;
+    var nm = window.prompt('案の名前', a.name);
+    if (nm === null) return;
+    nm = String(nm).trim().slice(0, 30);
+    if (!nm) return;
+    altWrite_(ui.currentDate, function (d) {
+      for (var i = 0; i < d.alts.length; i++) if (d.alts[i].id === id) { d.alts[i].name = nm; return true; }
+      return false;
+    }).then(function () { renderAltModal_(); renderAll(); }).catch(function () { toast('名前を変えられませんでした', true); });
+  }
+  function deleteAlt_(id) {
+    var a = findAlt_(id);
+    if (!a) return;
+    if (!window.confirm('案「' + a.name + '」を消しますか？（本番は変わりません）')) return;
+    var date = ui.currentDate;
+    altPendDel_(altPendKey_(date, id));
+    if (ui.altId === id) leaveAlt_();
+    altWrite_(date, function (d) {
+      var before = d.alts.length;
+      d.alts = d.alts.filter(function (x) { return x.id !== id; });
+      return d.alts.length !== before;
+    }).then(function () { renderAltModal_(); toast('案「' + a.name + '」を消しました'); })
+      .catch(function () { toast('案を消せませんでした', true); });
+  }
+  /* 案を本番にする時、本番の札に付いた実施・チェック・札のコメントを、案の同じ札（同じ id、無ければ同じ利用者・同じ開始時刻）へ移す。
+   * 案を作った後に現場が付けた印を消さない（反証レビュー指摘）。移せなかった印の数を返す */
+  function carryMarks_(curTasks, altTasks) {
+    var byId = {}, byKey = {}, i, t, lost = 0;
+    for (i = 0; i < altTasks.length; i++) {
+      t = altTasks[i];
+      byId[t.id] = t;
+      if (t.kind === 'care' && t.residentId) byKey[t.residentId + '|' + t.start] = byKey[t.residentId + '|' + t.start] || t;
+    }
+    for (i = 0; i < curTasks.length; i++) {
+      var c = curTasks[i];
+      var hasChk = false, k;
+      for (k in (c.checks || {})) if (Object.prototype.hasOwnProperty.call(c.checks, k) && c.checks[k]) { hasChk = true; break; }
+      if (!c.done && !hasChk && !c.comment) continue;
+      var tgt = byId[c.id] || (c.kind === 'care' && c.residentId ? byKey[c.residentId + '|' + c.start] : null);
+      if (!tgt) { lost++; continue; }
+      if (c.done) tgt.done = true;
+      if (hasChk) { tgt.checks = tgt.checks || {}; for (k in c.checks) if (Object.prototype.hasOwnProperty.call(c.checks, k) && c.checks[k]) tgt.checks[k] = c.checks[k]; }
+      if (c.comment && !tgt.comment) tgt.comment = c.comment;
+    }
+    return lost;
+  }
+  /* 案を本番にする: 案と本番の最新を取り直してから、元の本番を案に残せたのを確かめて、盤面の中身（職員・列・枠）を入れ替える。
+   * ロック・印・全体コメントは本番のまま（案の「本日のみ削除」と全体コメントは足す）。本番の実施・チェック・札のコメントは案の札へ移す。
+   * 送るのは本番の通常の送信（版の門・ロックの守り・履歴が効く） */
+  function promoteAlt_(id) {
+    var a = findAlt_(id);
+    if (!a) return;
+    var date = ui.currentDate;
+    var curMeta = (ui.altId ? (loadDayData(date) || { meta: {} }) : store.get()).meta || {};
+    var lockNote = (curMeta.locked === true || dayLocked_()) ? '\n※この日はロック中（または過ぎた日）です。実績の盤面が入れ替わります。' : '';
+    if (!window.confirm('案「' + a.name + '」を本番にしますか？\n今の本番の盤面は「元の本番」の案として残します（案が' + ALT_MAX + 'つある時は残せないので、入れ替えません）。' + lockNote)) return;
+    if (ui.altId === id && saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
+    var shown = (ui.altId === id) ? altSnapshot_(store.get()) : null;
+    if (ui.altId) leaveAltCore_();
+    switchDate(date);
+    loadAlts_(date).then(function () {
+      var a2 = findAlt_(id);
+      if (!a2) { toast('その案はほかの PC で消されていたため、本番にしませんでした', true); return; }
+      var pend = altPendAll_()[altPendKey_(date, id)];
+      var board = JSON.parse(JSON.stringify(shown || (pend && pend.board) || a2.board));
+      delete dayPullOk_[date];
+      pullDayNow(date, false, null, function () {
+        if (ui.currentDate !== date || ui.altId) return;
+        if (!dayPullOk_[date]) { toast('本番の最新を確かめられなかったため、本番にしませんでした（回線を確かめてもう一度）', true); return; }
+        var cur = store.get();
+        var keep = altSnapshot_(cur), stamp = new Date();
+        var keepName = '元の本番 ' + pad2(stamp.getMonth() + 1) + '/' + pad2(stamp.getDate()) + ' ' + pad2(stamp.getHours()) + ':' + pad2(stamp.getMinutes());
+        var full = false;
+        altWrite_(date, function (d) {
+          if (d.alts.length >= ALT_MAX) { full = true; return false; }
+          d.alts.push({ id: newAltId_(), name: keepName, createdAt: stamp.toISOString(), updatedAt: stamp.toISOString(), board: keep });
+        }).then(function (j) {
+          if (full) { toast('案が' + ALT_MAX + 'つあるため元の本番を残せません。使わない案を消してから、もう一度押してください', true); renderAltModal_(); return; }
+          if (!j || !j.ok) { toast('元の本番を案に残せなかったため、本番にしませんでした', true); return; }
+          if (ui.currentDate !== date || ui.altId) return;
+          var now = store.get();
+          var lost = carryMarks_(now.tasks, board.tasks);
+          store.dispatch({ type: 'REPLACE_BOARD', staff: board.staff, columns: board.columns, tasks: board.tasks,
+                           skipRefs: (board.meta && board.meta.skipRefs) || [], notes: (board.meta && board.meta.notes) || [] });
+          toast('案「' + a2.name + '」を本番にしました' + (lost ? '（実施・チェック・コメントの付いた札 ' + lost + '件は案に同じ札が無く、移せませんでした。元の本番の案に残っています）' : ''), !!lost, lost ? 6000 : 2600);
+          renderAltModal_();
+          hideModals();
+        }).catch(function () { toast('元の本番を案に残せなかったため、本番にしませんでした（回線を確かめてください）', true); });
+      });
+    }).catch(function () { toast('案を読めなかったため、本番にしませんでした（回線を確かめてください）', true); });
+  }
+  function paintAltBadge_() {
+    var bd = $('badgeAlt');
+    if (!bd) return;
+    var a = ui.altId ? findAlt_(ui.altId) : null;
+    bd.textContent = a ? ('案：' + a.name + '（本番ではありません）') : '';
+    bd.className = 'badge alt' + (a ? '' : ' off');
+    var btn = $('btnAlts');
+    if (btn) btn.hidden = !altAvailable_();
+    var ab = $('btnAbsent');
+    if (ab) ab.hidden = wsIsFieldDevice_();
+    var lk = $('lockLabel');
+    if (lk) lk.hidden = !!ui.altId;   /* 案ではロックを使わない（本番のロックの意図を書き換えない） */
+  }
+  function renderAltModal_() {
+    var host = $('altList');
+    if (!host) return;
+    host.innerHTML = '';
+    function row(label, sub, cur, buttons) {
+      var d = document.createElement('div');
+      d.className = 'ai' + (cur ? ' cur' : '');
+      d.innerHTML = '<span class="am"></span><span class="as"></span><span class="alt-btns"></span>';
+      d.querySelector('.am').textContent = label + (cur ? '（表示中）' : '');
+      d.querySelector('.as').textContent = sub;
+      var bh = d.querySelector('.alt-btns');
+      buttons.forEach(function (b) {
+        var e = document.createElement('button');
+        e.className = 'tray-btn'; e.textContent = b[0];
+        e.addEventListener('click', function (ev) { ev.stopPropagation(); b[1](); });
+        bh.appendChild(e);
+      });
+      host.appendChild(d);
+    }
+    row('本番', '勤務表・週間計画と連動する盤面', !ui.altId, ui.altId ? [['本番を開く', function () { leaveAlt_(); renderAltModal_(); }]] : []);
+    var l = altList_();
+    for (var i = 0; i < l.length; i++) {
+      (function (a) {
+        var u = a.updatedAt ? new Date(a.updatedAt) : null;
+        var sub = u ? ('最後に直した時刻 ' + pad2(u.getMonth() + 1) + '/' + pad2(u.getDate()) + ' ' + pad2(u.getHours()) + ':' + pad2(u.getMinutes())) : '';
+        if (altPendHas_(ui.currentDate, a.id)) sub += '（この PC に送れていない変更あり）';
+        var bs = [];
+        if (ui.altId !== a.id) bs.push(['開く', function () { enterAlt_(a.id); renderAltModal_(); }]);
+        bs.push(['名前', function () { renameAlt_(a.id); }]);
+        bs.push(['本番にする', function () { promoteAlt_(a.id); }]);
+        bs.push(['消す', function () { deleteAlt_(a.id); }]);
+        row(a.name, sub, ui.altId === a.id, bs);
+      })(l[i]);
+    }
+    if (!l.length) {
+      var e0 = document.createElement('div');
+      e0.className = 'ai'; e0.innerHTML = '<span class="am">この日の案はまだありません</span>';
+      host.appendChild(e0);
+    }
+    var cnt = $('altCount');
+    if (cnt) cnt.textContent = String(l.length);
+    var cb = $('altCreate');
+    if (cb) cb.disabled = l.length >= ALT_MAX;
+  }
+  function openAltModal_() {
+    if (!altAvailable_()) { toast('案は事務所の PC で、サーバーにつながっている時だけ使えます', true); return; }
+    $('altList').innerHTML = '<div class="ai"><span class="am">読み込み中…</span></div>';
+    showModal('mAlts');
+    loadAlts_(ui.currentDate).then(renderAltModal_).catch(function () {
+      $('altList').innerHTML = '';
+      toast('案を読めませんでした（回線を確かめてください）', true);
+    });
+  }
+  /* 起動・再読み込みで URL に案の印があれば、その案を開き直す（再読み込みで現在地を失わない・原則11）。
+   * 切り替えのスイッチやログインの準備が遅れても、最長20秒は待ってから開く */
+  function restoreAltFromHash_(tries) {
+    tries = tries || 0;
+    var id = parseAltHash_(location.hash);
+    if (!id || ui.altId) return;
+    if (!altAvailable_()) {
+      if (tries < 20 && !wsIsFieldDevice_()) { setTimeout(function () { restoreAltFromHash_(tries + 1); }, 1000); return; }
+      try { hashNavigating_ = true; location.replace('#' + ui.currentDate); } catch (e) {}
+      return;
+    }
+    openAltById_(id);
+  }
+
+  /* ===== 職員を休みにする（2026-10-20 本人指示・本人選択「列は残し『休』を付ける」） =====
+   * 印は人（氏名）に付ける＝分割勤務の勤務枠すべて・勤務表を反映し直しても同じ人に残る（store.js の SET_STAFF が氏名で付け直す）。
+   * その人の支援と手で置いた枠は未配置トレイへ（実施済み・チェックのある支援は動かさない）、休憩と自動の施設業務・自由枠は消し、
+   * 列は残して見出しに「休」。取り消し1回で戻る。未配置の支援ごとに置ける職員の候補を出す（自動では置かない） */
+  function renderAbsentModal_() {
+    var day = store.get();
+    var sh = $('absStaff'), ch = $('absCand');
+    if (!sh || !ch) return;
+    sh.innerHTML = ''; ch.innerHTML = '';
+    var cols = day.columns.slice().sort(function (a, b) { return a.col - b.col; });
+    var seen = {};
+    cols.forEach(function (cd) {
+      (cd.staffIds || []).forEach(function (sid) {
+        var st = M.findStaff(day.staff, sid);
+        if (!st || !st.name) return;
+        var nk = M.absentNameKey(st.name);
+        if (seen[nk]) return;
+        seen[nk] = 1;
+        var blocks = day.staff.filter(function (x) { return x.name && M.absentNameKey(x.name) === nk; });
+        var d = document.createElement('div');
+        d.className = 'ai' + (st.absent ? ' cur' : '');
+        d.innerHTML = '<span class="am"></span><span class="as"></span><button class="tray-btn"></button>';
+        d.querySelector('.am').textContent = st.name + (st.absent ? '（休み）' : '');
+        d.querySelector('.as').textContent = blocks.map(function (x) { return TS.minToTime(x.workStart) + '-' + TS.minToTime(x.workEnd); }).join('・');
+        var b = d.querySelector('button');
+        b.textContent = st.absent ? '休みを外す' : '休みにする';
+        b.addEventListener('click', function () {
+          if (fieldBlock_()) return;
+          if (st.absent) {
+            store.dispatch({ type: 'UNMARK_ABSENT', name: st.name });
+            toast(st.name + 'さんの休みを外しました（未配置の支援は手で戻してください）');
+          } else {
+            var ids = {}, n = 0, kept = 0;
+            blocks.forEach(function (x) { ids[x.id] = 1; });
+            for (var i = 0; i < day.tasks.length; i++) {
+              var t = day.tasks[i];
+              if (!ids[t.staffId] || t.kind !== 'care') continue;
+              if (M.careKeepOnAbsent(t)) kept++; else n++;
+            }
+            store.dispatch({ type: 'MARK_ABSENT', name: st.name });
+            toast(st.name + 'さんを休みにしました（支援' + n + '件を未配置へ' + (kept ? '・実施済み/チェックのある' + kept + '件はそのまま' : '') + '）。取り消しは ↩', false, kept ? 5000 : 2600);
+          }
+          renderAbsentModal_();
+        });
+        sh.appendChild(d);
+      });
+    });
+    var cares = day.tasks.filter(function (t) { return t.kind === 'care' && t.staffId === null; })
+      .sort(function (a, b) { return a.start - b.start; });
+    if (!cares.length) { ch.innerHTML = '<div class="ai"><span class="am">未配置の支援はありません</span></div>'; return; }
+    cares.forEach(function (t) {
+      var d = document.createElement('div');
+      d.className = 'ai';
+      d.innerHTML = '<span class="am"></span><span class="as"></span><span class="alt-btns"></span>';
+      d.querySelector('.am').textContent = t.residentName || '';
+      d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime);
+      var bh = d.querySelector('.alt-btns');
+      var fit = M.careFitStaff(day, t, nightBand_(t.start, t.end)).slice(0, 6);
+      if (!fit.length) { bh.textContent = '空いている職員がいません'; }
+      fit.forEach(function (st) {
+        var e = document.createElement('button');
+        e.className = 'tray-btn'; e.textContent = st.name + 'へ';
+        e.addEventListener('click', function () {
+          if (fieldBlock_()) return;
+          /* 手で置く時と同じ判定・置き方（自動の施設業務・自由枠は縮めて置く・まとめて移動の planMultiMoves_ と同じ） */
+          var moves = [{ id: t.id, staffId: st.id, start: t.start, end: t.end }];
+          var pm = planMultiMoves_(moves, 'assign');
+          if (!pm.ok) { toast(pm.reason || '置けません', true); renderAbsentModal_(); return; }
+          if (pm.splits.length) store.dispatch({ type: 'MULTI_SHRINK_PLACE', moves: moves, splits: pm.splits });
+          else store.dispatch({ type: 'MULTI_ASSIGN', moves: moves });
+          renderAbsentModal_();
+        });
+        bh.appendChild(e);
+      });
+      ch.appendChild(d);
+    });
+  }
+  function openAbsentModal_() {
+    if (fieldBlock_()) return;
+    renderAbsentModal_();
+    showModal('mAbsent');
   }
 
   /* ===== 週次支援マスタ／週間計画(care_schedule_v2)連携 ===== */
@@ -10713,6 +11363,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function runManual_(fn) { manualDepth_++; try { return fn(); } finally { manualDepth_--; } }
   /* 自動の組み直しを止める日か。ロック中・過去日の自動保護に加え、一度ロックした日（本人の操作の中を除く） */
   function autoHeld_() {
+    if (typeof ui !== 'undefined' && ui.altId && manualDepth_ === 0) return true;   /* 案は勤務表・週間計画に自動では合わせない（本人選択「自動では変えず印を出す」） */
     if (dayLocked_()) return true;
     return manualDepth_ === 0 && onceLockedMeta_(store.get());
   }
@@ -11015,7 +11666,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function seededUntouched_(date) {
     if (!date) return false;
-    if (date === ui.currentDate) {
+    if ((ui.currentDate === date && !ui.altId)) {
       if (!seedMark_[date]) return false;
       var m = seedMarkNow_();
       if (m === null || m !== seedMark_[date]) { clearSeeded_(date); return false; }
@@ -11024,6 +11675,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return !!seedLs_()[date];
   }
   function seedFromMaster() {
+    if (typeof ui !== 'undefined' && ui.altId) return;   /* 案には支援マスタから自動で敷かない */
     if (dayLocked_()) return;   /* ロック中は自動生成しない */
     var day = store.get();
     if (day.tasks.length) return;
@@ -11735,6 +12387,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         else if (_prof.facilityName) headName = _prof.facilityName + ' 業務行動計画表';
       }
     } catch (eHd) { headName = '業務行動計画表'; }
+    if (ui.altId) { var pa_ = findAlt_(ui.altId); headName += '（案：' + (pa_ ? pa_.name : '') + '）'; }   /* 案を印刷する時は見出しに出す（本番の見出しは変えない） */
     $('printHead').textContent = headName + '　' +
       ui.currentDate.split('-').join('/') + '（' + WD_JA[dateObj(ui.currentDate).getDay()] + '）' +
       '　実施済項目欄へ、押印又は直筆サインを行う。';
@@ -11746,6 +12399,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var alerts = M.computeAlerts(day, settings);
     B.markHeadAlerts($('board'), day, alerts.noBreak);
 
+    try { paintAltBadge_(); } catch (eAb) {}   /* 表示中の案（2026-10-20） */
     paintShiftChgBadge_();   /* ロック中のシフト変化バッジ（日付切替・再描画でも消えないよう毎回塗り直す） */
     paintWeeklyChgBadge_();   /* 週間計画の未反映（日付が変われば 0 として消える・2026-10-16） */
     var bu = $('badgeUn'), bb = $('badgeBr');
@@ -13608,17 +14262,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              * ただし氏名が1人も入っていない日は staffWipeBlocked_ に永久保留されて詰まる元なので、
              * 退避（破棄操作の時に wsbase_conflict_ へ取ってある）を残して手元から外す。 */
             var dNone_ = null;
-            try { dNone_ = (date === ui.currentDate) ? store.get() : loadDayData(date); } catch (eN) { dNone_ = null; }
+            try { dNone_ = (ui.currentDate === date && !ui.altId) ? store.get() : loadDayData(date); } catch (eN) { dNone_ = null; }
             var named_ = 0;
             try { named_ = dNone_ ? M.countNamedStaff(dNone_.staff) : 0; } catch (eN2) { named_ = 0; }
-            if (!named_ && date !== ui.currentDate) {
+            if (!named_ && !(ui.currentDate === date && !ui.altId)) {
               try { localStorage.removeItem(dayKey(date)); localStorage.removeItem(baseKey_(date)); } catch (eR2) {}
               gone++;
             } else {
               markDayDirty_(date);   /* 唯一の版なので消さず、通常の送信に戻す（クラウドは空＝誰の実績も潰さない） */
               none++;
               /* 表示中で氏名0人の日は staffWipeBlocked_ が再び永久保留する＝元の詰まりに戻るので告知する */
-              if (!named_ && date === ui.currentDate) {
+              if (!named_ && (ui.currentDate === date && !ui.altId)) {
                 toast('この日はクラウドにデータがありません。職員名が0人のため送信は保留します（日付を開き直すとシフトから復元されます）', true);
               }
             }
@@ -13717,7 +14371,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var dates = dirtyDayList_(), i, acted = false;
     for (i = 0; i < dates.length; i++) {
       acted = true;
-      if (dates[i] === ui.currentDate) { try { pushDayNow(); } catch (e1) {} }
+      if ((ui.currentDate === dates[i] && !ui.altId)) { try { pushDayNow(); } catch (e1) {} }
       else { try { pushDayFor_(dates[i]); } catch (e2) {} }
     }
     try { schedulePushCare(); } catch (e3) {}      /* 未送信careがあれば送る（raw比較で自動no-op） */
@@ -13730,7 +14384,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!syncOn()) return;
     var dates = dirtyDayList_(), i;
     for (i = 0; i < dates.length; i++) {
-      if (dates[i] !== ui.currentDate) { try { pushDayFor_(dates[i]); } catch (e) {} }
+      if (!(ui.currentDate === dates[i] && !ui.altId)) { try { pushDayFor_(dates[i]); } catch (e) {} }   /* 案を表示中は本番も表示していない日として回収 */
     }
   }
   /* 同期成功の共通処理: リトライ解除＋オフラインバッジからの復帰表示 */
@@ -14327,7 +14981,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       clearDayDirty_(rows[i].date);
-      if (rows[i].date === ui.currentDate) {
+      if ((ui.currentDate === rows[i].date && !ui.altId)) {
         /* 表示中の日は、保留中の送信タイマーも消し lastPushed を現内容に合わせる
            （タイマーが後から発火して「送ろうとした」跡を残さない） */
         try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; } } catch (eT) {}
@@ -14807,6 +15461,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var conflictN_ = {};   /* date -> 連続競合回数（成功でリセット・上限超は次のリトライへ委譲） */
   var unlockForceDates_ = {};   /* date -> true。ロック解除の put だけは GAS のロック防波堤を force で通す（成功で消費） */
   function schedulePushDay() {
+    if (typeof ui !== 'undefined' && ui.altId) return;   /* 案を表示中は本番を送らない（本番の未送信は pushDayFor_ が端末の控えから送る・2026-10-20） */
     var day = store.get();
     if (!day.meta.date) return;
     try { seededUntouched_(day.meta.date); } catch (eSu) {}   /* 人の編集が入ったら「仮の盤面」の印をすぐ消す（読み込み直しに残さない） */
@@ -14865,9 +15520,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       conflictN_[date] = 0;
       saveBase_(date, srv);
       var cur = null;
-      try { cur = (ui.currentDate === date) ? store.get() : loadDayData(date); } catch (eC) { cur = null; }
+      try { cur = (ui.currentDate === date && !ui.altId) ? store.get() : loadDayData(date); } catch (eC) { cur = null; }
       if (cur && daySig(cur) === sig) clearDayDirty_(date);   /* 送信後に編集が入っていれば印は残す */
-      if (ui.currentDate === date) {
+      if ((ui.currentDate === date && !ui.altId)) {
         try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 }, nohist: true }); } catch (eM) {}
       } else {
         try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
@@ -14881,6 +15536,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }, true);
   }
   function pushDayNow(report) {
+    if (typeof ui !== 'undefined' && ui.altId) return;   /* 盤面（store）は案＝本番として送らない（2026-10-20） */
     if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
     /* 公開中の版を確かめ終えるまで送らない（未送信の印は残る＝確かめた後に送る・2026-10-17）。
      * typeof で確かめる＝この関数だけを切り出して試す公開側の試験（care-tools check/unit/sukv_routed_test.js）でも落ちない */
@@ -14920,11 +15576,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         conflictN_[date] = 0;
         saveBase_(date, day);   /* 3-way祖先＝いま送信して確定した盤面 */
         /* 送信中に入った編集を守る: 現在も同一内容のときだけ未送信フラグを解除 */
-        var cur = store.get();
+        var altNowP_ = (typeof ui !== 'undefined' && !!ui.altId);   /* typeof＝この関数だけを切り出して試す公開側の試験（sukv_routed_test.js）でも落ちない */
+        var cur = altNowP_ ? (loadDayData(date) || store.get()) : store.get();   /* 案を表示中に返ってきたら、本番は端末の控えで比べる（2026-10-20） */
         var same_ = (cur.meta.date === date && daySig(cur) === sig);
         if (same_) clearDayDirty_(date);
         notePush_(date, same_ ? 'ok' : 'changed', '', Date.now() - pushT0_);
-        if (store.get().meta.date === date) {
+        if (altNowP_) {
+          try { var ldP_ = loadDayData(date); if (ldP_) { ldP_.meta.rev = j.rev; lsSetDay_(date, ldP_); } } catch (eLp) {}
+          if (!same_) scheduleRetry_();
+        } else if (store.get().meta.date === date) {
           /* 版番号は同期の控え＝取り消し履歴に積まない（2026-10-07）。積むと送信のたびに Ctrl+Z が1回空振りしていた */
           store.dispatch({ type: 'SET_META', patch: { rev: j.rev }, nohist: true });
         }
@@ -14994,7 +15654,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      *     ★2026-10-13: 「祖先=locked・ローカル=unlocked」の形だけでは (A) にしない。人が外していないのに全端末のロックが
      *       外れうるため。Undo でロックを取り消した場合も確認を通っていないので (B) になる（外すならチェックで外し直す）。
      *  (B)ロック未受信端末: ローカル変更を破棄しサーバーの確定(ロック)版を採用(実績の凍結を尊重)。 */
-    var local = (ui.currentDate === date) ? store.get() : loadDayData(date);
+    var local = (ui.currentDate === date && !ui.altId) ? store.get() : loadDayData(date);
     var base = loadBase_(date);
     /* (A) は、この画面で人が確認して外した日だけ（2026-10-13）。土台がロック・盤面がロックなし、の形だけで解除を送り直すと、
      * 人が外していないのに全端末のロックが外れうる。人の解除が無ければ (B) としてサーバーのロックされた版を採る */
@@ -15006,7 +15666,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (unlockStillMine_(date, g0.data)) {
           unlockForceDates_[date] = true;
           markDayDirty_(date);
-          if (date === ui.currentDate) { schedulePushDay(); } else { scheduleRetry_(); }
+          if ((ui.currentDate === date && !ui.altId)) { schedulePushDay(); } else { scheduleRetry_(); }
           return;
         }
         adoptServerDay_(date, g0.data, g0.rev || 0, false);
@@ -15028,7 +15688,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ローカルの rev は幻。rev を 0 に戻してローカル盤面を送り直す（force不使用＝本当に他端末が居れば
    * 再び conflict→get で data が返り adopt へ回る）。無限競合は conflictN_ 上限で止まる。 */
   function resetDayRevAndPush_(date) {
-    if (ui.currentDate === date) {
+    if ((ui.currentDate === date && !ui.altId)) {
       store.dispatch({ type: 'SET_META', patch: { rev: 0 }, nohist: true });
       lastPushed.day = '';
       schedulePushDay();
@@ -15116,7 +15776,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eSD) {}
     serverDay.meta.rev = serverRev;
     serverDay.meta.date = date;
-    var isCur = (ui.currentDate === date);
+    var isCur = (ui.currentDate === date && !ui.altId);   /* 案を表示中は本番を「表示していない日」として受け取る（端末の控えへ・2026-10-20） */
     /* 端末で作った仮の盤面のまま（人の編集なし）なら、統合せずにサーバーの版を丸ごと採る（2026-10-13・seedMark_ の説明） */
     if (seededUntouched_(date)) { clearSeeded_(date); clearDayDirty_(date); }
     var localDay = isCur ? store.get() : loadDayData(date);
@@ -15284,7 +15944,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!syncOn() || !date) return;
     if (typeof versionHold_ !== 'undefined' && versionHold_) return;   /* 公開中の版を確かめ終えるまで送らない（2026-10-17） */
     if (isRefetchHeld_(date)) return;   /* 取り直し待ち＝この端末からは送らない */
-    if (date === ui.currentDate) { pushDayNow(); return; }
+    if ((ui.currentDate === date && !ui.altId)) { pushDayNow(); return; }
     var day = loadDayData(date);
     if (!day) { clearDayDirty_(date); return; }   /* データ無し＝送るものが無い（容量回収等） */
     day.meta.date = date;
@@ -15300,7 +15960,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 飛行中(最長15秒)にこの日付が表示中へ切替わっていたら、送信前スナップショットで
          * localStorage/盤面を巻き戻さない（現在の編集を消さない）。表示中の内容は store 側が管理し、
          * rev据置のまま次の pushDayNow が送る（古rev→競合→3-wayマージで安全に収束）。 */
-        if (date === ui.currentDate) { noteSyncSuccess_(); return; }
+        if ((ui.currentDate === date && !ui.altId)) { noteSyncSuccess_(); return; }
         day.meta.rev = j.rev;
         lsSetDay_(date, day);
         saveBase_(date, day);
@@ -15348,13 +16008,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       noteSyncSuccess_();
       dayPullOk_[date] = 1;
-      var curRev = (ui.currentDate === date) ? (store.get().meta.rev || 0)
+      var curRev = (ui.currentDate === date && !ui.altId) ? (store.get().meta.rev || 0)
         : (function () { var d = loadDayData(date); return d && d.meta ? (d.meta.rev || 0) : 0; })();
       if (j.data && (j.rev || 0) > curRev) {
         adoptServerDay_(date, j.data, j.rev || 0, notify);
         if (report) $('stResult').textContent = '取得完了（rev ' + j.rev + '）';
       } else if (!j.data) {
-        if (ui.currentDate === date && store.get().tasks.length) { lastPushed.day = ''; schedulePushDay(); }
+        if ((ui.currentDate === date && !ui.altId) && store.get().tasks.length) { lastPushed.day = ''; schedulePushDay(); }
         if (report) $('stResult').textContent = 'サーバーにこの日のデータはありません（この端末の内容を送信します）';
       } else {
         /* 同版で祖先が無ければ、サーバーが今持っている版を祖先にする（2026-09-23）。rev が同じ＝この端末の版は
@@ -15364,7 +16024,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           try { if (localStorage.getItem(baseKey_(date)) === null) saveBase_(date, j.data); } catch (eEb) { wsNote_('土台の控え（取得後）', eEb); }
         }
         /* 同版: 未送信編集が滞留していれば送信（push失敗後にイベントだけpullされた場合の回収） */
-        if (ui.currentDate === date && isDayDirty_(date)) {
+        if ((ui.currentDate === date && !ui.altId) && isDayDirty_(date)) {
           if (daySig(store.get()) === lastPushed.day) clearDayDirty_(date);
           else schedulePushDay();
         }
@@ -15373,7 +16033,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 取る前で見送った同期を掛け直す（採用の後は adoptServerDay_ が掛けるので、残っていれば一度だけ） */
       if (weeklyAfterPull_[date]) {
         delete weeklyAfterPull_[date];
-        if (ui.currentDate === date && careInitDone) { try { reconcileWeekly(); renderAll(); } catch (eWa) {} }
+        if ((ui.currentDate === date && !ui.altId) && careInitDone) { try { reconcileWeekly(); renderAll(); } catch (eWa) {} }
       }
       fin();
     });
@@ -15415,7 +16075,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 2026-08-03: 未反映バッジの定期検知が本体取得を始めたことで、自動反映OFFの端末でも
      * ここへ到達しうるようになった。OFFの端末が勝手に盤面を書き換えて全端末へ push するのは
      * 設定の趣旨に反する（従来はOFF端末が本体を取りに行かないため構造的に起きなかった）。 */
-    if (wasEmpty && store && store.get && !onceLockedMeta_(store.get()) && !shiftHeldBack_()) {   /* 一度ロックした日も（2026-10-16） */
+    if (wasEmpty && store && store.get && !ui.altId && !onceLockedMeta_(store.get()) && !shiftHeldBack_()) {   /* 案の盤面には掛けない（2026-10-20） */   /* 一度ロックした日も（2026-10-16） */
       /* ロック日は表示中でも予約列の再主張をかけない（保存配置を凍結） */
       try { store.auto(function () { reassertOnStore_('roster-arrived'); }); renderAll(); } catch (e) {}
     }
@@ -15567,6 +16227,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function revNeedsPull_(h, l) { h = h || 0; l = l || 0; return (h > l) || (h === 0 && l > 0); }
   function pollTick_() {
     if (pollInFlight_) return;                 /* 前回のheadがまだ返っていない＝今回は見送る */
+    if (ui.altId) { try { altPoll_(); } catch (eAp) {} }   /* 表示中の案をほかの PC が直したか（2026-10-20）。本番の確かめは下で続ける */
     /* 並びの固定（2026-10-15）: 表示中の日のサーバーの盤面をまだ取れていない（日付を移った時に前の日の送信と重なって
      * 取り損ねた等）なら、版が変わっていなくても取り直す＝取れた後に並びを当てはめる。取れた後は通常の確認に戻る */
     if (routinesNow_() && !dayPullOk_[ui.currentDate] && !fieldMarksOnly_(ui.currentDate)) { pullAll(false); return; }
@@ -15585,7 +16246,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var ymNow = shiftMonth(ui.currentDate);
     var pk = cloudPlanKey(ymNow);
     var revs = loadRevs(), dayRev = 0;
-    try { var d0 = store.get(); dayRev = (d0 && d0.meta && d0.meta.rev) || 0; } catch (eD) {}
+    try { var d0 = ui.altId ? loadDayData(ui.currentDate) : store.get(); dayRev = (d0 && d0.meta && d0.meta.rev) || 0; } catch (eD) {}   /* 案を表示中は本番の版を端末の控えから（案の盤面の版 0 で毎回取り直さない） */
     var sk = cloudStaffKey(), yk = cloudSymbolsKey();
     /* staff/symbols も head で追跡する（職員のrulesフラグ・勤務記号定義の変更は plan rev を動かさないため、
      * 追跡しないと「タブを開いている限り永久に届かない」＝旧60秒TTLが担っていた保証の喪失になる）。
@@ -15894,6 +16555,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * - 翌週の既存「支援」は破棄して差し替え。施設業務/休憩/自由枠は翌週オープン時に自動再生成。 */
   function copyCareToNextWeek() {
     if (fieldBlock_()) return;   /* 現場の端末では翌週の盤面を作らない（2026-10-11） */
+    if (ui.altId) { toast('案を表示中は翌週へコピーできません（本番に戻してから押してください）', true); return; }   /* 案の盤面を翌週の本番へ入れない（2026-10-20） */
     var src = store.get();
     if (!src.tasks.length) { toast('コピーする内容がありません'); return; }
     var careCount = 0;
@@ -16038,6 +16700,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* コピー先が「一度ロックして外した日」（locked:false）なら、その印を引き継ぐ（2026-10-17）。meta を一から組むと欄ごと消え、
        * 「一度もロックしていない日」に戻る。10/13・10/15 に 10/24 で外した直後のコピーが欄を消し、その日が「端末はロック・サーバーは欄なし」の
        * 統合の入口になって、10/17 に古い控えの盤面で上書きされた（本番の履歴で照合） */
+      /* 休みの印はその日だけのもの＝翌週へ運ばない（2026-10-20・反証レビュー指摘） */
+      day.staff = (day.staff || []).map(function (s0) { if (!s0 || !s0.absent) return s0; var o0 = {}, k0; for (k0 in s0) if (Object.prototype.hasOwnProperty.call(s0, k0) && k0 !== 'absent') o0[k0] = s0[k0]; return o0; });
       if (existing.meta && existing.meta.locked === false) {
         day.meta.locked = false;
         if (existing.meta.lockedAt) day.meta.lockedAt = existing.meta.lockedAt;
@@ -16399,7 +17063,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
-      if (!st.name || st.zone === 'night') continue;
+      if (!st.name || st.zone === 'night' || st.absent) continue;   /* 休みにした職員は埋めない（2026-10-20） */
       if (facworkExcluded_(st)) continue;                  /* 外部支援専任(facworkExclude)=施設業務充填の対象外 */
       var ws = st.workStart, we = st.workEnd;
       if (!(we > ws)) continue;
@@ -16454,7 +17118,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var add = [];
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
-      if (!st.name || st.zone === 'night' || !isFreeWork_(st)) continue;
+      if (!st.name || st.zone === 'night' || st.absent || !isFreeWork_(st)) continue;
       var ws = st.workStart, we = st.workEnd;
       if (!(we > ws)) continue;
       var tasks = byStaff[st.id] || [];
@@ -16507,7 +17171,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var add = [];
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
-      if (!st.name || st.zone === 'night') continue;
+      if (!st.name || st.zone === 'night' || st.absent) continue;
       var cfg = fixedBreakFor_(st);
       if (!cfg) continue;
       var ws = st.workStart, we = st.workEnd;
@@ -16685,7 +17349,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* サーバーの盤面を取った後（日付の切替・定期の取得）に、まだ当てはめていない日なら仕上げを1度通す。
    * 取る前の端末の控えで当てはめない＝古い控えで並べた盤面が、別の PC で人が並べた盤面を上書きしないように */
   function routineAfterPull_(date) {
-    if (date !== ui.currentDate) return;
+    if (date !== ui.currentDate || ui.altId) return;   /* 案には並びを当てはめない（2026-10-20） */
     try { if (routineDue_()) finalizeBoard(); } catch (e) {}
     try { routineNotice_(date); } catch (e2) {}
   }
@@ -16811,7 +17475,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       occ[t0.staffId].push([t0.start, t0.end]);
     }
     function fits(st, s, e) {
-      if (!st || !st.name) return false;
+      if (!st || !st.name || st.absent) return false;   /* 休みにした職員へは自動で置かない（2026-10-20） */
       if (!(st.workStart <= s && e <= st.workEnd)) return false;
       var list = occ[st.id] || [];
       for (var k = 0; k < list.length; k++) if (s < list[k][1] && list[k][0] < e) return false;
@@ -17469,6 +18133,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('btnRedo').addEventListener('click', function () { store.redo(); });
     /* 日単位ロックの切替（通常dispatch=Undo可・daySigに含まれpushで全端末へ伝播）。 */
     if ($('chkLock')) $('chkLock').addEventListener('change', function () {
+      if (ui.altId) { $('chkLock').checked = false; toast('案ではロックを使いません（本番に戻してから操作してください）', true); return; }
       /* 現場の端末ではロックも盤面の操作＝変えさせない（2026-10-11）。止めた時に「ロック中」と言わないよう先に返す */
       if (wsIsFieldDevice_()) {
         $('chkLock').checked = !!(store.get().meta && store.get().meta.locked);
@@ -17856,6 +18521,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* アラート・印刷・設定 */
     $('navAlerts').addEventListener('click', openAlerts);
     $('alClose').addEventListener('click', hideModals);
+    /* 控えの案・職員を休みにする（2026-10-20） */
+    if ($('btnAlts')) $('btnAlts').addEventListener('click', openAltModal_);
+    if ($('badgeAlt')) $('badgeAlt').addEventListener('click', openAltModal_);
+    if ($('altCreate')) $('altCreate').addEventListener('click', function () { createAlt_($('altNewName').value); });
+    if ($('altClose')) $('altClose').addEventListener('click', hideModals);
+    if ($('btnAbsent')) $('btnAbsent').addEventListener('click', openAbsentModal_);
+    if ($('absClose')) $('absClose').addEventListener('click', hideModals);
     $('navPrint').addEventListener('click', function () {
       hideModals();
       fitPrint();
@@ -18647,8 +19319,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261020173521';
-  var WS_APP_VER = 2026101702;   /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
+  var WS_BUILD = '20261020211237';
+  var WS_APP_VER = 2026101703;   /* 2026-10-20 休みの印（absent）を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた */
+   /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
     /* 現場の端末（印だけを書く）は印の保存（kv_put_marks）を通り、サーバーの版の確かめの対象外。印を付けると、共通部品の
@@ -18861,10 +19534,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     window.addEventListener('pagehide', function () { try { flushAll_(); } catch (e) {} });
     /* URLハッシュ日付ルーティング: ブラウザ戻る/進む（hashchange）で日付を移動。
      * 自己更新(switchDate内のlocation.hash代入)は hashNavigating_ フラグで消費し再帰を防ぐ。 */
+    setTimeout(function () { try { restoreAltFromHash_(); } catch (eRa) {} }, 1500);   /* 再読み込みで見ていた案へ戻す（原則11・2026-10-20） */
     window.addEventListener('hashchange', function () {
       if (hashNavigating_) { hashNavigating_ = false; return; }
-      var d = parseDateHash_(location.hash);
-      if (d && d !== ui.currentDate) { try { switchDate(d); } catch (eHC) {} }
+      var d = parseDateHash_(location.hash), aH = parseAltHash_(location.hash);
+      if (d && d !== ui.currentDate) { try { switchDate(d); } catch (eHC) {} if (aH) { try { openAltById_(aH); } catch (eHA) {} } return; }
+      if (d && aH !== ui.altId) { try { if (aH) openAltById_(aH); else leaveAlt_(); } catch (eHB) {} }
     });
     /* 同一端末の別タブ（週間計画アプリ等）が care_schedule_v2 を更新したら、クラウドへ送りつつ盤面を再同期 */
     window.addEventListener('storage', function (ev) {
