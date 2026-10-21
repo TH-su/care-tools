@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-IE0gkrdSOUVH1ENp9ys8zND9HFIQ5d9IyixwqhECgBY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hwdIfp2mQ2SkpwwnyYkredUHY/Qo+8+7qvEL5SuZQB8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -688,8 +688,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-20"></script>
-<script src="su-kv-shadow.js?v=2026-10-20b"></script>
+<script src="su-kv.js?v=2026-10-17"></script>
+<script src="su-kv-shadow.js?v=2026-09-26b"></script>
 </head>
 <body>
 <div class="hdr">
@@ -1960,6 +1960,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!(st.workStart <= task.start && task.end <= st.workEnd)) continue;
           /* 手を入れていない自動の施設業務・自由枠は、置く時に縮めるので「ふさがり」に数えない（手で置く時と同じ） */
           if (staffConflicts(day.tasks, st.id, task.start, task.end, [task.id]).filter(function (c) { return !shrinkableFiller_(c); }).length) continue;
+          /* 勤務時間外へ仮に外した支援の元の場所（空けてある所）は候補にしない（その支援が戻る前提） */
+          if (oohHoldRanges(day.tasks.filter(function (x) { return x.id !== task.id; }), st.id).some(function (r) { return r[0] < task.end && task.start < r[1]; })) continue;
           if (out.indexOf(st) < 0) out.push(st);
         }
       }
@@ -1975,6 +1977,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (t.done) return true;
     for (var k in (t.checks || {})) if (Object.prototype.hasOwnProperty.call(t.checks, k) && t.checks[k]) return true;
     return false;
+  }
+
+  /* 勤務時間外へ仮に外した支援の元の場所（2026-10-21 本人指示「勤務者がいない時間帯に支援枠を移動した際は…元の職員の時間に施設業務などの枠が
+   * 自動配置されないよう（ブランク）に」）。札の oohHold=[{staffId,start,end,facBg}]。その職員のその時間は自動で埋めない（ふさがりに数える） */
+  function oohHoldRanges(tasks, staffId) {
+    var out = [];
+    for (var i = 0; i < (tasks || []).length; i++) {
+      var h = tasks[i] && tasks[i].oohHold;
+      if (!h || !h.length) continue;
+      for (var j = 0; j < h.length; j++) if (h[j] && h[j].staffId === staffId && h[j].end > h[j].start) out.push([h[j].start, h[j].end]);
+    }
+    return out;
   }
 
   function careOutOfHours(task, staff) {
@@ -4330,6 +4344,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (o.staffId === null || o.staffId === undefined || freeFac(o)) continue;
         (m['.' + o.staffId] = m['.' + o.staffId] || []).push([o.start, o.end, o]);
       }
+      /* 勤務時間外へ仮に外した支援の元の場所はふさがり（外せない札として。2026-10-21） */
+      for (var b = 0; b < list.length; b++) {
+        var hh = list[b] && list[b].oohHold;
+        if (!hh || !hh.length) continue;
+        for (var c = 0; c < hh.length; c++) if (hh[c] && hh[c].staffId) (m['.' + hh[c].staffId] = m['.' + hh[c].staffId] || []).push([hh[c].start, hh[c].end, null]);
+      }
       return m;
     }
     var occ = occOf(tasks), tops = {};
@@ -4578,6 +4598,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     captureOrigin: captureOrigin,
     isChanged: isChanged,
     careOutOfHours: careOutOfHours,
+    oohHoldRanges: oohHoldRanges,
     careFitStaff: careFitStaff,
     absentNameKey: absentNameKey,
     careKeepOnAbsent: careKeepOnAbsent,
@@ -7044,6 +7065,44 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return vac;
   }
 
+  /* 勤務時間外へ動かした支援の元の場所を空けておく（2026-10-21 本人指示・本人選択「別の職員の勤務時間へ動かしたら施設業務で埋め直す」）。
+   * 1枚の支援の移動について、札に付ける印（oohHold）と、埋め直す退去の一覧を決める。
+   *  ・勤務時間の中 → 勤務時間外: 元の場所を印に残し、その退去は埋め直さない（ブランク）
+   *  ・勤務時間外 → 勤務時間外: 印はそのまま（最初の元の場所を覚えておく）
+   *  ・勤務時間外 → 勤務時間の中・未配置トレイ: 印を外し、元の場所を埋め直す（ほかの札を入れていた分は埋めない＝占有を避ける）
+   * 戻り値 { hold: 新しい印（null＝外す）, skipVac: 今回の退去を埋め直さないか, refill: 追加で埋め直す退去 } */
+  function holdForMove_(day, cur, toStaffId, toStart, toEnd) {
+    var none = { hold: cur ? (cur.oohHold || null) : null, skipVac: false, refill: [] };
+    if (!cur || cur.kind !== 'care') return none;
+    var held = (cur.oohHold && cur.oohHold.length) ? cur.oohHold : null;
+    var toSt = (toStaffId === null || toStaffId === undefined) ? null : M.findStaff(day.staff, toStaffId);
+    var toOoh = !!(toSt && M.careOutOfHours({ kind: 'care', staffId: toStaffId, start: toStart, end: toEnd }, toSt));
+    if (toOoh) {
+      if (held) return { hold: held, skipVac: false, refill: [] };
+      var fromSt = (cur.staffId === null || cur.staffId === undefined) ? null : M.findStaff(day.staff, cur.staffId);
+      if (!fromSt || M.careOutOfHours(cur, fromSt)) return { hold: null, skipVac: false, refill: [] };
+      return { hold: [{ staffId: cur.staffId, name: fromSt.name || '', start: cur.start, end: cur.end, facBg: (cur.facBg !== undefined && cur.facBg !== null) ? cur.facBg : null }],
+               skipVac: true, refill: [] };
+    }
+    return { hold: null, skipVac: false, refill: held ? held.slice() : [] };
+  }
+  /* oohHold を札に反映する（null＝キーごと消す＝印の無い札の署名を変えない） */
+  function setHold_(tasks, id, hold) {
+    return tasks.map(function (t) {
+      if (t.id !== id) return t;
+      var has = !!(t.oohHold && t.oohHold.length), want = !!(hold && hold.length);
+      if (!has && !want) return t;
+      var o = {}, k;
+      for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && k !== 'oohHold') o[k] = t[k];
+      if (want) o.oohHold = hold;
+      return o;
+    });
+  }
+  /* 埋め直す退去から、元の場所を空けておく札の退去（skipVac）を外す */
+  function dropVac_(vac, cur) {
+    return vac.filter(function (v) { return !(v.staffId === cur.staffId && v.start === cur.start && v.end === cur.end); });
+  }
+
   /* 支援(care)が退去して空いた時間に、残存する施設業務枠(kind=facility)・自由枠(kind=free・空枠)を、
    * 種別ごと独立に(相互は占有として保護)その正時の空き全体へ再生成して拡張/マージする。自動/手動とも対象。
    * 「残存枠の拡張のみ」＝候補が無い正時には新規生成しない
@@ -7125,6 +7184,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               occ.push([tk.start, tk.end]);   /* hard占有: care/休憩＋もう一方のfacwork種(相互に侵食しない) */
             }
           }
+          /* 勤務時間外へ仮に外した支援の元の場所はふさがり（ブランクのまま・2026-10-21） */
+          M.oohHoldRanges(result, sid).forEach(function (r) { if (r[0] < hourEnd && hourStart < r[1]) occ.push(r); });
           if (!hasCand) {
             /* 残存枠なし。背景枠メモリ(facBg)があるか、またはこの種別が職員の既定業務種別なら、残占有の隙間
              * (勤務時間内 lo/hi・20分グリッド)へ自動充填する＝「出勤中は何らかの業務(既定=施設業務)に就く」。
@@ -7253,6 +7314,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var idsMS = [];
     for (a = 0; a < moves.length; a++) idsMS.push(moves[a].id);
     var vacMS = movedVacates_(day.tasks, idsMS, vacateAll);   /* 退去元(各枠の旧位置)を移動前に捕捉 */
+    var refillMS = [];
     /* 消費される施設業務/自由枠（背景枠メモリの判定用） */
     var splitFacs = [], spi;
     for (spi = 0; spi < splits.length; spi++) {
@@ -7274,7 +7336,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (curA && curA.src === 'facwork') pA.facManual = true;
       /* グループの印の交換（2026-10-10 Q2）: move が groupId を持つ時だけ写す（持たない move は印を変えない） */
       if (Object.prototype.hasOwnProperty.call(mvA, 'groupId')) pA.groupId = mvA.groupId;
+      var curMS0 = M.findTask(day.tasks, mvA.id);
+      var hMS = holdForMove_(day, curMS0, mvA.staffId, mvA.start, mvA.end);   /* 勤務時間外へ動かした支援の元の場所（2026-10-21） */
+      if (hMS.skipVac) vacMS = dropVac_(vacMS, curMS0);
+      refillMS = refillMS.concat(hMS.refill);
       tasksMS = patchTask(tasksMS, mvA.id, pA);
+      tasksMS = setHold_(tasksMS, mvA.id, hMS.hold);
     }
     var removeIds = {}, additions = [];
     for (a = 0; a < splits.length; a++) {
@@ -7296,7 +7363,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var keptMS = [];
     for (a = 0; a < tasksMS.length; a++) if (!removeIds[tasksMS[a].id]) keptMS.push(tasksMS[a]);
     var tasksMSout = keptMS.concat(additions);
-    tasksMSout = expandSurvivingFacwork_(tasksMSout, vacMS, day.staff, day.columns);   /* 退去元の残存施設枠を拡張(同一undo) */
+    tasksMSout = expandSurvivingFacwork_(tasksMSout, vacMS.concat(refillMS), day.staff, day.columns);   /* 退去元の残存施設枠を拡張(同一undo) */
     return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksMSout };
   }
 
@@ -7404,11 +7471,65 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* リデューサ（純粋関数）。day を変更せず新オブジェクトを返す */
+  /* 元の場所の印（oohHold）をまとめて整える（2026-10-21・反証レビュー指摘「印を外すのがドラッグの中だけ」）。どの操作の後にも1回通す:
+   *  ・印のある支援が勤務時間外でなくなった（編集・伸び縮み・単位の入れ替え・シフト反映で勤務時間が伸びた・未配置へ移った）→ 印を外し元の場所を埋め直す
+   *  ・印のある支援が消えた → 元の場所を埋め直す（支援が戻る前提で空けていたため）
+   *  ・元の場所の席に別の人が入った → 印を同じ氏名の人の席へ付け替える（見つからなければ印を外す・埋め直さない）
+   * 読み込み（INIT_DAY）では通さない（読み込みだけで盤面を変えない） */
+  function holdRetarget_(h, staff) {
+    var cur = M.findStaff(staff, h.staffId);
+    var key = M.absentNameKey(h.name || '');
+    if (cur && (!key || M.absentNameKey(cur.name) === key)) return h;
+    if (!key) return null;
+    var best = null;
+    for (var i = 0; i < staff.length; i++) {
+      var s = staff[i];
+      if (!s.name || M.absentNameKey(s.name) !== key) continue;
+      if (!best || (s.workStart <= h.start && h.end <= s.workEnd)) best = s;
+      if (s.workStart <= h.start && h.end <= s.workEnd) break;
+    }
+    if (!best) return null;
+    var o = {}, k;
+    for (k in h) if (Object.prototype.hasOwnProperty.call(h, k)) o[k] = h[k];
+    o.staffId = best.id;
+    return o;
+  }
+  function settleHolds_(prev, next) {
+    if (!next || next === prev || !next.tasks) return next;
+    var refill = [], changed = false, out = [], ids = {}, i, j;
+    for (i = 0; i < next.tasks.length; i++) ids[next.tasks[i].id] = 1;
+    var pt = (prev && prev.tasks) || [];
+    for (i = 0; i < pt.length; i++) if (pt[i] && pt[i].oohHold && pt[i].oohHold.length && !ids[pt[i].id]) refill = refill.concat(pt[i].oohHold);
+    for (i = 0; i < next.tasks.length; i++) {
+      var t = next.tasks[i];
+      if (!t.oohHold || !t.oohHold.length) { out.push(t); continue; }
+      var holds = [], moved = false;
+      for (j = 0; j < t.oohHold.length; j++) {
+        var nh = holdRetarget_(t.oohHold[j], next.staff || []);
+        if (nh !== t.oohHold[j]) moved = true;
+        if (nh) holds.push(nh);
+      }
+      var st = (t.staffId === null || t.staffId === undefined) ? null : M.findStaff(next.staff || [], t.staffId);
+      var stillOoh = !!(t.kind === 'care' && st && M.careOutOfHours(t, st));
+      if (stillOoh && !moved) { out.push(t); continue; }
+      var o = {}, k;
+      for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && k !== 'oohHold') o[k] = t[k];
+      if (stillOoh && holds.length) o.oohHold = holds;
+      if (!stillOoh) refill = refill.concat(holds);
+      out.push(o);
+      changed = true;
+    }
+    if (!changed && !refill.length) return next;
+    var tasks = out;
+    if (refill.length) tasks = expandSurvivingFacwork_(tasks, refill, next.staff || [], next.columns);
+    return { meta: next.meta, staff: next.staff, columns: next.columns, tasks: tasks };
+  }
   function reduce(day, action) {
     decidedIds_ = {}; looseIds_ = {}; baseIds_ = {};
     var bt_ = (day && day.tasks) || [], bi_;
     for (bi_ = 0; bi_ < bt_.length; bi_++) if (bt_[bi_]) baseIds_['.' + bt_[bi_].id] = 1;
     var next = reduceCore_(day, action);
+    if (action && action.type !== 'INIT_DAY') next = settleHolds_(day, next);   /* 元の場所の印をまとめて整える（2026-10-21） */
     baseIds_ = null;
     if (next !== day && action && STABLE_ID_TYPES_[action.type] && next.tasks !== day.tasks) {
       var rt = stabilizeFillerIds_(day.tasks, next.tasks, decidedIds_, looseIds_);
@@ -7518,9 +7639,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (type === 'ASSIGN') {
       var vacA = careVacates_(day.tasks, [action.id]);   /* 退去元(旧位置)を移動前に捕捉 */
+      var curA = M.findTask(day.tasks, action.id);
+      var hA = holdForMove_(day, curA, action.staffId, action.start, action.end);
+      if (hA.skipVac) vacA = dropVac_(vacA, curA);
       var tasksA = patchTask(day.tasks, action.id,
         { staffId: action.staffId, start: action.start, end: action.end, facBg: null });
-      tasksA = expandSurvivingFacwork_(tasksA, vacA, day.staff, day.columns);   /* 退去先の残存施設枠を拡張(undo1回) */
+      tasksA = setHold_(tasksA, action.id, hA.hold);
+      tasksA = expandSurvivingFacwork_(tasksA, vacA.concat(hA.refill), day.staff, day.columns);   /* 退去先の残存施設枠を拡張(undo1回) */
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksA };
     }
     /* 職員を休みにする（2026-10-20 本人指示・本人選択「列は残し『休』を付ける」）: その職員の支援と手で置いた枠は未配置トレイへ
@@ -7581,9 +7706,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (type === 'UNASSIGN') {
       var vacU = careVacates_(day.tasks, [action.id]);
+      var hU = holdForMove_(day, M.findTask(day.tasks, action.id), null, 0, 0);   /* 未配置へ＝空けてあった元の場所を埋め直す */
       /* parked=手動でトレイへ戻した印。自動配置(placeOrphanCare_)はparkedを再配置しない＝意図を尊重(要件2) */
       var tasksU = patchTask(day.tasks, action.id, { staffId: null, done: false, facBg: null, parked: true });
-      tasksU = expandSurvivingFacwork_(tasksU, vacU, day.staff, day.columns);
+      tasksU = setHold_(tasksU, action.id, hU.hold);
+      tasksU = expandSurvivingFacwork_(tasksU, vacU.concat(hU.refill), day.staff, day.columns);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksU };
     }
     if (type === 'SWAP') {
@@ -7620,15 +7747,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var idsM = [], mm0;
       for (mm0 = 0; mm0 < action.moves.length; mm0++) idsM.push(action.moves[mm0].id);
       var vacM = careVacates_(day.tasks, idsM);          /* 退去元(各moveの旧位置)を移動前に捕捉 */
-      var tasksM = day.tasks;
+      var tasksM = day.tasks, refillM = [];
       for (var mm = 0; mm < action.moves.length; mm++) {
         var mvm = action.moves[mm];
         var curM = M.findTask(tasksM, mvm.id);
+        var hM = holdForMove_(day, M.findTask(day.tasks, mvm.id), mvm.staffId, mvm.start, mvm.end);   /* 勤務時間外へ動かした支援の元の場所（2026-10-21） */
+        if (hM.skipVac) vacM = dropVac_(vacM, M.findTask(day.tasks, mvm.id));
+        refillM = refillM.concat(hM.refill);
         var patchM = { staffId: mvm.staffId, start: mvm.start, end: mvm.end, facBg: null };
         if (curM && curM.src === 'facwork') patchM.facManual = true;
         tasksM = patchTask(tasksM, mvm.id, patchM);
+        tasksM = setHold_(tasksM, mvm.id, hM.hold);
       }
-      tasksM = expandSurvivingFacwork_(tasksM, vacM, day.staff, day.columns);
+      tasksM = expandSurvivingFacwork_(tasksM, vacM.concat(refillM), day.staff, day.columns);
       return { meta: day.meta, staff: day.staff, columns: day.columns, tasks: tasksM };
     }
     if (type === 'SHRINK_PLACE') {
@@ -7638,8 +7769,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var vacSP = careVacates_(day.tasks, [action.careId]);   /* 退去元(支援の旧位置)を移動前に捕捉 */
       var sStart = action.start, sEnd = action.end;
       var fac = M.findTask(day.tasks, action.facId);
+      var curSP = M.findTask(day.tasks, action.careId);
+      var hSP = holdForMove_(day, curSP, action.staffId, sStart, sEnd);   /* 勤務時間外へ動かした支援の元の場所（2026-10-21） */
+      if (hSP.skipVac) vacSP = dropVac_(vacSP, curSP);
+      vacSP = vacSP.concat(hSP.refill);
       var tasksP = patchTask(day.tasks, action.careId,
         { staffId: action.staffId, start: sStart, end: sEnd, facBg: facBgOf_(fac) });
+      tasksP = setHold_(tasksP, action.careId, hSP.hold);
       if (fac) {
         var fStart = fac.start, fEnd = fac.end;
         var headEnd = sStart;                              /* 前半は支援開始まで */
@@ -17053,6 +17189,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return best;
   }
 
+  /* 自動で埋める処理の「ふさがり」に、勤務時間外へ仮に外した支援の元の場所（oohHold）を足す（職員ごとの札の一覧へ、仮の札として） */
+  function addHoldOcc_(byStaff, tasks) {
+    for (var i = 0; i < tasks.length; i++) {
+      var h = tasks[i] && tasks[i].oohHold;
+      if (!h || !h.length) continue;
+      for (var j = 0; j < h.length; j++) {
+        if (!h[j] || !h[j].staffId) continue;
+        (byStaff[h[j].staffId] || (byStaff[h[j].staffId] = [])).push({ id: '_hold_' + tasks[i].id + '_' + j, kind: 'care', staffId: h[j].staffId, start: h[j].start, end: h[j].end, src: 'hold' });
+      }
+    }
+  }
   function fillFacilityWork(day) {
     var add = [], byStaff = {}, i, t;
     for (i = 0; i < day.tasks.length; i++) {
@@ -17061,6 +17208,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!byStaff[t.staffId]) byStaff[t.staffId] = [];
       byStaff[t.staffId].push(t);
     }
+    addHoldOcc_(byStaff, day.tasks);   /* 勤務時間外へ仮に外した支援の元の場所は埋めない（2026-10-21） */
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
       if (!st.name || st.zone === 'night' || st.absent) continue;   /* 休みにした職員は埋めない（2026-10-20） */
@@ -17115,6 +17263,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!byStaff[t0.staffId]) byStaff[t0.staffId] = [];
       byStaff[t0.staffId].push(t0);
     }
+    addHoldOcc_(byStaff, day.tasks);   /* 勤務時間外へ仮に外した支援の元の場所は埋めない（2026-10-21） */
     var add = [];
     for (i = 0; i < day.staff.length; i++) {
       var st = day.staff[i];
@@ -17219,6 +17368,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 残存タスク(支援・手動化facManualの施設業務/休憩等)を占有として避ける＝重複生成しない */
       var occF = [];
       for (var q = 0; q < tasks.length; q++) if (tasks[q].staffId === sid) occF.push([tasks[q].start, tasks[q].end]);
+      occF = occF.concat(M.oohHoldRanges(tasks, sid));   /* 勤務時間外へ仮に外した支援の元の場所は埋めない（2026-10-21） */
       for (var n = 0; n < st.facWork.length; n++) {
         var fw = st.facWork[n];
         if (!(fw.end > fw.start)) continue;
@@ -17473,6 +17623,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (t0.staffId === null) continue;
       if (!occ[t0.staffId]) occ[t0.staffId] = [];
       occ[t0.staffId].push([t0.start, t0.end]);
+    }
+    for (i = 0; i < staff.length; i++) {   /* 勤務時間外へ仮に外した支援の元の場所へは自動で置かない（2026-10-21） */
+      var hr_ = M.oohHoldRanges(tasks, staff[i].id);
+      if (hr_.length) occ[staff[i].id] = (occ[staff[i].id] || []).concat(hr_);
     }
     function fits(st, s, e) {
       if (!st || !st.name || st.absent) return false;   /* 休みにした職員へは自動で置かない（2026-10-20） */
@@ -19319,8 +19473,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261020211237';
-  var WS_APP_VER = 2026101703;   /* 2026-10-20 休みの印（absent）を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた */
+  var WS_BUILD = '20261021100119';
+  var WS_APP_VER = 2026101704;   /* 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた
+                                  * （2026101703: 2026-10-20 休みの印 absent を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた） */
    /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
   function withAppVer_(day) {
@@ -19606,6 +19761,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="ワークスケジュール"></script>
+<script src="su-report.js?v=2026-10-14" data-tool="ワークスケジュール"></script>
 </body>
 </html>
