@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-Tn6Cc8d4dAMqqSiUOCKLAyMEHjB1R/T7JQjmhaSrNQg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-XJP1MMowRxiHbWimp9ca22VMaK6ZwID4qyJfvoZ2+qE=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -638,11 +638,45 @@ function readSavedCfg_(){
 // hospitalized（入院中の真偽のみ・病名等は含めない）は現場の見落とし防止のため追加（2026-08）。
 // この20項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
 // 2026-08-12: 様式化した8項目（要配慮でなく現場のケアに直結するもの）を追加。28項目。
+// 2026-10-22（代表者の決定）: 選んだアレルゲン・禁食の符号（allergenTags・forbiddenTags）を追加。30項目。
 // ★病名・サービス事業所・備考・同意は含めない（要配慮情報を現場端末に増やさない）。
 var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
   'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
   'medMgmt','medAssist','medRefusal','hospitalized',
-  'adlGrid','moveAid','excreteWay','bathPlace','medLevel','medExists','bpsd','night'];
+  'adlGrid','moveAid','excreteWay','bathPlace','medLevel','medExists','bpsd','night',
+  'allergenTags','forbiddenTags'];
+/* ALG-TAGS-BEGIN ══ アレルゲン・禁食の選択（2026-10-22 代表者の決定）══
+   ★この印の間は resident-master.html と facesheet.html で【逐語同一】（check/unit/allergen_tags_test.js が照合）。
+   保存は dataJson の allergenTags・forbiddenTags（符号の文字列の配列）。名前は保存しない（符号→名前はここで引く）。
+   アレルゲンは表示義務の8品目だけ。符号・名前・まとまりは決定どおり。変える時は2画面を同時に直す。 */
+var ALG_ALLERGENS=[['ebi','えび'],['kani','かに'],['kurumi','くるみ'],['komugi','小麦'],['soba','そば'],
+  ['tamago','卵'],['nyu','乳'],['rakkasei','落花生']];
+var ALG_FORBIDDEN_GROUPS=[
+  ['薬との飲み合わせ',[['grapefruit','グレープフルーツ'],['vitk','納豆・青汁など（ビタミンK）'],['dairy','牛乳などの乳製品'],
+    ['alcohol','アルコール'],['caffeine','カフェイン']]],
+  ['食事の制限',[['salt','塩分'],['sugar','糖分'],['potassium','カリウム'],['protein','たんぱく質'],['water','水分']]],
+  ['その他',[['raw','生もの'],['religion','宗教・信条']]]];
+/* 禁食の符号を1列に並べた一覧（まとまりの順） */
+function algForbiddenList_(){
+  var out=[]; ALG_FORBIDDEN_GROUPS.forEach(function(g){ g[1].forEach(function(p){ out.push(p); }); }); return out;
+}
+/* 既知の符号だけを一覧の順に残す（未知の符号・重複・文字列でないものは捨てる）。配列でなければ [] */
+function algPick_(codes,list){
+  var on={}; if(Array.isArray(codes)) codes.forEach(function(c){ if(typeof c==='string') on[c]=1; });
+  return list.filter(function(p){ return on[p[0]]===1; }).map(function(p){ return p[0]; });
+}
+/* 符号→名前（一覧の順）。未知の符号は出さない */
+function algNames_(codes,list){
+  var nm={}; list.forEach(function(p){ nm[p[0]]=p[1]; });
+  return algPick_(codes,list).map(function(c){ return nm[c]; });
+}
+/* 画面に出す行（選んだ品目が無ければ []）。例: ['アレルゲン：えび・卵','禁食：塩分'] */
+function algTagLines_(r){
+  r=r||{};
+  var a=algNames_(r.allergenTags,ALG_ALLERGENS), f=algNames_(r.forbiddenTags,algForbiddenList_());
+  return (a.length?['アレルゲン：'+a.join('・')]:[]).concat(f.length?['禁食：'+f.join('・')]:[]);
+}
+/* ALG-TAGS-END */
 /* ★デイ利用日の【現在値】の表示は週間計画（dayUseHtml）へ移した。この表を今も使うのは
    「移行前の記載」（bfLegacyDayUse）＝旧 dayUse を人が確かめるための読み取り専用表示だけ。 */
 var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
@@ -2836,6 +2870,13 @@ function renderFaceSheet(r){
   renderOfficeView(r);
 }
 
+/* 現場の「アレルギー」欄（2026-10-22 代表者の決定）。選んだアレルゲン・禁食の名前を自由文より前に出す。
+   ★選んでいない方は今までと1文字も同じ（full('アレルギー',r.allergy)）。現場端末は印刷ボタンが出ない（applyRoleBadge） */
+function fieldAllergy_(r){
+  var tl=algTagLines_(r);
+  if(!tl.length) return full('アレルギー',r.allergy);
+  return full('アレルギー',tl.concat(r.allergy?[String(r.allergy)]:[]).join('\n'));
+}
 /* 現場タブレット：安全情報のみ（サーバから安全項目しか来ない） */
 function renderFieldView(r){
   $('ftabs').innerHTML='';
@@ -2854,7 +2895,7 @@ function renderFieldView(r){
       '<div class="row-cells">'+cell('呼ばれたい呼称',r.preferredName)+cell('移動',r.mobility)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+'</div>'+
       '<div class="row-cells">'+cell('嚥下',r.swallow)+cell('義歯',r.denture)+cell('剤形配慮',r.formAdjust)+'</div>'+
       '<div class="row-cells">'+cell('服薬 管理方法',r.medMgmt)+cell('服薬介助',r.medAssist)+cell('服薬拒否',r.medRefusal)+'</div>'+
-      full('アレルギー',r.allergy)+
+      fieldAllergy_(r)+
       full('感染症',r.infections)+
       full('医療処置',r.medicalCare)+
       full('対応のコツ・なだめ方',r.careHints)+
