@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hwdIfp2mQ2SkpwwnyYkredUHY/Qo+8+7qvEL5SuZQB8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lYeK8ToTxQ4/0WP5+Y6+LEovLkLuI7VuEcHD1vUUE2Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -10846,21 +10846,74 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 送れていない案の控え（日と案ごと）: { '<日付>|<id>': { date, id, seq, at, board } } */
   function altPendKey_(date, id) { return date + '|' + id; }
-  function altPendAll_() { try { var v = JSON.parse(localStorage.getItem(ALT_PENDING_LS) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } }
-  function altPendSave_(m) { try { if (Object.keys(m).length) localStorage.setItem(ALT_PENDING_LS, JSON.stringify(m)); else localStorage.removeItem(ALT_PENDING_LS); } catch (e) {} }
+  /* ★送れていない控えは端末（localStorage）が正本（2026-10-21・改善プロンプト第3弾の6）。端末の容量がいっぱいで書けない時だけ、
+     【このタブが書いた控え】を画面の中（altPendMem_）に持ち、そこから送る（以前は書けないまま黙り、空の控えを読んで何も送らず
+     「案を保存中…」のままになった。同じ案の古い控えがあると、古い盤面を送って保存済みに見えた）。
+     ・端末に書けたら画面の中の控えは捨てる（別のタブが送り終えて消した控えを、こちらが覚えていて送り直さないように）
+     ・このタブが書いた控えは、時刻にかかわらず画面の中を優先する（書けない間に時計が戻っても古い方を送らない）
+     ・消した控えは altPendGone_ に時刻を覚え、端末に書けずに残った古い控えを、開いている間は生き返らせない */
+  var altPendMem_ = {}, altPendGone_ = {}, altPendLsFail_ = false, altTryAt_ = {};
+  function altPendLs_() {
+    try { var v = JSON.parse(localStorage.getItem(ALT_PENDING_LS) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; }
+  }
+  function altPendAll_() {
+    var ls = altPendLs_(), m = {};
+    Object.keys(ls).forEach(function (k) {
+      var e = ls[k];
+      if (!e || typeof e !== 'object') return;
+      if (altPendGone_[k] !== undefined && String(e.at || '') <= altPendGone_[k]) return;
+      m[k] = e;
+    });
+    Object.keys(altPendMem_).forEach(function (k) { m[k] = altPendMem_[k]; });
+    return m;
+  }
+  function altPendWrite_(m) {
+    if (Object.keys(m).length) localStorage.setItem(ALT_PENDING_LS, JSON.stringify(m)); else localStorage.removeItem(ALT_PENDING_LS);
+  }
+  /* 控えを書く。端末に書けたら true（画面の中の控えは捨てる）。書けなければ ownKey の控えだけを画面の中に持つ */
+  function altPendSave_(m, ownKey) {
+    try { altPendWrite_(m); altPendMem_ = {}; altPendLsFail_ = false; return true; }
+    catch (e) {
+      altPendLsFail_ = true;
+      if (ownKey && m[ownKey]) altPendMem_[ownKey] = m[ownKey];
+      return false;
+    }
+  }
   function altPendHas_(date, id) { return !!altPendAll_()[altPendKey_(date, id)]; }
-  function altPendDel_(key, seq) { var m = altPendAll_(); if (m[key] && (seq === undefined || m[key].seq === seq)) { delete m[key]; altPendSave_(m); } }
+  /* 送れた控えを消す。消すのは【送った時の控えと同じもの】（seq と at の両方が一致）だけ。
+     再読み込みで seq が 0 に戻っても、送っている間に直した新しい控えを消さない */
+  function altPendDel_(key, seq, at) {
+    var m = altPendAll_(), cur = m[key];
+    if (!cur) return;
+    if (seq !== undefined && (cur.seq !== seq || String(cur.at || '') !== String(at || ''))) return;
+    altPendGone_[key] = String(cur.at || '');
+    delete m[key]; delete altPendMem_[key]; delete altTryAt_[key];
+    try { altPendWrite_(m); altPendLsFail_ = !!Object.keys(altPendMem_).length; }
+    catch (e1) {
+      /* 端末がいっぱいで書けない。いったん消してから書き直す（消すだけなので小さくなる）。それも書けなければ、
+         残る控えを画面の中に持つ（端末に古い控えを残したまま再読み込みで生き返らせないため、端末の方は消しておく） */
+      try { localStorage.removeItem(ALT_PENDING_LS); altPendWrite_(m); altPendLsFail_ = !!Object.keys(altPendMem_).length; }
+      catch (e2) { altPendLsFail_ = true; Object.keys(m).forEach(function (k) { altPendMem_[k] = m[k]; }); }
+    }
+  }
+  /* 次に送る控え: いちばん長く試していないもの（失敗し続ける案があっても、ほかの案を先に送る） */
+  function altPendNextKey_(m) {
+    var keys = Object.keys(m);
+    keys.sort(function (a, b) { return (altTryAt_[a] || 0) - (altTryAt_[b] || 0) || (a < b ? -1 : a > b ? 1 : 0); });
+    return keys[0];
+  }
+  var ALT_NO_LS_MSG = '案を保存中…（この端末に控えを残せません。保存と出るまで画面を閉じないでください）';
 
   /* 案を表示中の保存（doSave から）: 盤面が変わっていれば、日と案ごとに端末へ控えて、少し待ってサーバーへ送る */
   function altSaveLocal_() {
     var day = store.get(), sig = daySig(day);
     var key = altPendKey_(ui.currentDate, ui.altId);
-    if (sig === altLastSig_) { $('saveState').textContent = altPendHas_(ui.currentDate, ui.altId) ? '案を保存中…' : ''; return; }
+    if (sig === altLastSig_) { $('saveState').textContent = altPendHas_(ui.currentDate, ui.altId) ? (altPendLsFail_ ? ALT_NO_LS_MSG : '案を保存中…') : ''; return; }
     altLastSig_ = sig;
     var m = altPendAll_();
     m[key] = { date: ui.currentDate, id: ui.altId, seq: ++altEditSeq_, at: new Date().toISOString(), board: altSnapshot_(day) };
-    altPendSave_(m);
-    $('saveState').textContent = '案を保存中…';
+    var lsOk = altPendSave_(m, key);
+    $('saveState').textContent = lsOk ? '案を保存中…' : ALT_NO_LS_MSG;
     if (altPushTimer_) clearTimeout(altPushTimer_);
     altPushTimer_ = setTimeout(altPushNow_, 1500);
   }
@@ -10871,7 +10924,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!keys.length) return;
     if (altBusy_) { altPushTimer_ = setTimeout(altPushNow_, 1500); return; }
     altBusy_ = true;
-    var e = m[keys[0]];
+    var e = m[altPendNextKey_(m)];
     altWrite_(e.date, function (d) {
       for (var i = 0; i < d.alts.length; i++) {
         if (d.alts[i].id === e.id) { d.alts[i].board = e.board; d.alts[i].updatedAt = new Date().toISOString(); return true; }
@@ -10881,7 +10934,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       altBusy_ = false;
       var key = altPendKey_(e.date, e.id);
       if (j && j.ok) {
-        altPendDel_(key, e.seq);
+        delete altTryAt_[key];
+        altPendDel_(key, e.seq, e.at);
         if (ui.altId === e.id && ui.currentDate === e.date && !altPendHas_(e.date, e.id)) {
           var t = new Date();
           $('saveState').textContent = '案を保存 ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes());
@@ -10896,13 +10950,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (Object.keys(altPendAll_()).length) altPushTimer_ = setTimeout(altPushNow_, 300);
         return;
       }
-      if (ui.altId) $('saveState').textContent = '案の保存失敗';
-      altPushTimer_ = setTimeout(altPushNow_, 20000);
+      if (ui.altId) $('saveState').textContent = altPendMem_[key] ? '案の保存失敗（この端末に控えを残せません。閉じないでください）' : '案の保存失敗';
+      altPushRetry_(key);
     }).catch(function () {
       altBusy_ = false;
-      if (ui.altId) $('saveState').textContent = '案の保存失敗（回線）';
-      altPushTimer_ = setTimeout(altPushNow_, 20000);
+      if (ui.altId) $('saveState').textContent = altPendMem_[altPendKey_(e.date, e.id)] ? '案の保存失敗（回線・この端末に控えを残せません。閉じないでください）' : '案の保存失敗（回線）';
+      altPushRetry_(altPendKey_(e.date, e.id));
     });
+  }
+  /* 送れなかった控えは後ろへ回す。まだ試していない控えがあれば少し待って次を送り、無ければ20秒後に試し直す */
+  function altPushRetry_(key) {
+    altTryAt_[key] = Date.now();
+    var m = altPendAll_(), other = Object.keys(m).some(function (k) { return k !== key && !altTryAt_[k]; });
+    altPushTimer_ = setTimeout(altPushNow_, other ? 300 : 20000);
   }
   /* 案を抜ける（保存を確定してから・盤面は呼び出し側が本番に戻す） */
   function leaveAltCore_() {
@@ -19473,7 +19533,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261021100119';
+  var WS_BUILD = '20261022072124';
   var WS_APP_VER = 2026101704;   /* 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた
                                   * （2026101703: 2026-10-20 休みの印 absent を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた） */
    /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
@@ -19761,6 +19821,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-14" data-tool="ワークスケジュール"></script>
+<script src="su-report.js?v=2026-10-20" data-tool="ワークスケジュール"></script>
 </body>
 </html>
