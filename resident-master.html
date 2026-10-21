@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-7WG5yFXmydDyqfGze1MD2DTtzpKoMM4sr8Z0laoT0GE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-rmhVNXSbifzUOsQGuy8PmOLF/mV8FJqJANe+IYv/U6s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -369,6 +369,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bfe-svc1 .bfet{flex:1; min-width:0}
 /* アレルゲン・禁食の選択（2026-10-22・編集画面のみ）。押す所は .bfe の44px。幅700px以下は文字16px */
 .algtags{margin:2px 0 10px}
+.algtags-note{margin:6px 0 0;font-size:13px;color:var(--g7)}@media(max-width:700px){.algtags-note{font-size:16px}}@media print{.algtags-note{display:none}}
 @media (max-width:700px){ .algtags .bfe{font-size:1rem} }
 /* 生年月日の和暦入力（画面のみ）。日付欄のすぐ下に置く */
 .wareki-in{margin-top:4px; padding:8px; border:1px solid var(--g3); border-radius:6px;
@@ -9110,6 +9111,8 @@ function algEditHtml_(r){
         '<span class="bfe-body" role="group" aria-label="'+esc('禁食 '+g[0])+'">'+
         g[1].map(function(p){ return ck('data-forbtag',p,f); }).join('')+'</span></div>';
     }).join('')+
+    /* 画面だけの案内（2026-10-22 代表者の決定・文言は指定どおり）。紙・食形態一覧・注意の帯は自由文だけを出すため */
+    '<p class="algtags-note">紙・食形態一覧・注意の帯には上の自由文だけが出ます。自由文は消さずに残してください</p>'+
   '</div>';
 }
 function fld(k,label,val,type,opts){
