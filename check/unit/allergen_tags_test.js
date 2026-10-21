@@ -1,7 +1,7 @@
 /* 入居者マスタ（resident-master.html）とフェイスシート（facesheet.html）の「アレルゲン・禁食の選択」の試験（2026-10-22 代表者の決定）。
    守りたいのは:
      1. 符号→名前の一覧（印 ALG-TAGS-BEGIN〜END の間）が2画面で一字一句同じで、中身が決定どおりであること
-     2. 保存（collectForm）: 欄が描かれている時は必ず配列で送る（何も選ばなければ []）・未知の符号は捨てる／
+     2. 保存（collectForm）: 欄が描かれている時は必ず配列で送る（何も選ばなければ []）・画面で選ぶ符号は一覧で照合する。画面が知らない既存の符号は残す（反対側の一覧の符号は捨てる）／
         欄が描かれていない時は開いた時の値をそのまま引き継ぐ（dayUse と同じ作法）
      3. 2つのキーが SAFE_FIELDS（現場の安全情報・2画面で同じ）と ALLOWED_KEYS（保存のホワイトリスト）に入っていること
      4. 画面の「一目で」と現場のアレルギー欄は、選んだ品目を自由文より前に出し、選んでいない時は今までと同じであること
@@ -114,6 +114,7 @@ function screen(form, checks){
   const parts = [bm[0], grabVar(MASTER, 'ALLOWED_KEYS')];
   for(const v of ['BF_FORM_KEYS', 'BF_LEGACY_KEYS']) if(MASTER.indexOf('\nvar ' + v + '=') >= 0) parts.push(grabVar(MASTER, v));
   for(const f of ['bfArr', 'bfObj', 'bfPrune', 'bfSet', 'bfStr']) if(MASTER.indexOf('\nfunction ' + f + '(') >= 0) parts.push(grabFn(MASTER, f));
+  parts.push(grabFn(MASTER, 'algKeepUnknown_'));
   parts.push(grabFn(MASTER, 'collectForm'));
   vm.runInContext(parts.join('\n'), box, { filename: 'resident-master.html(collectForm)' });
   return box;
@@ -146,6 +147,12 @@ function run(form, checks, editing){
     { attr:'data-algtag', code:'salt', on:true }]);
   const r = run(FORM, ck, { id: 1, name: '架空 一郎' });
   eq('未知の符号・もう一方の一覧の符号は捨てる', [r.allergenTags, r.forbiddenTags], [['nyu'], ['raw']]);
+}
+{
+  /* 2026-10-22: 画面が知らない既存の符号（後で品目を増やした時に古い画面で保存した場合など）は消さずに残す */
+  const r = run(FORM, ALLCK(['ebi'], []), { id: 1, name: '架空 一郎', allergenTags: ['soba','peanut','peanut','BAD CODE','salt'], forbiddenTags: ['newcode','ebi'] });
+  eq('描かれている: 外した既知の符号（soba）は消え、知らない既存の符号（peanut）は1つだけ残す・形の崩れた値は捨てる', r.allergenTags, ['ebi','peanut']);
+  eq('描かれている: 禁食の知らない既存の符号も残す・反対側の一覧の符号（allergen の salt・禁食の ebi）は捨てる', r.forbiddenTags, ['newcode']);
 }
 {
   const r = run(FORM, null, { id: 1, name: '架空 一郎', allergenTags: ['soba','peanut'], forbiddenTags: [] });

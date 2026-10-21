@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-k/mdVuOKTnro7Z3I8+qhLmBHEUTXmoZ8jo+ojXGkqxc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-7WG5yFXmydDyqfGze1MD2DTtzpKoMM4sr8Z0laoT0GE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2049,6 +2049,15 @@ function algTagLines_(r){
   return (a.length?['アレルゲン：'+a.join('・')]:[]).concat(f.length?['禁食：'+f.join('・')]:[]);
 }
 /* ALG-TAGS-END */
+/* 画面が知らない既存の符号を、選んだ符号の後ろに残す（形の崩れた値・重複は捨てる） */
+function algKeepUnknown_(picked,prev,list){
+  var known={}; list.forEach(function(p){ known[p[0]]=1; });
+  var out=picked.slice(), seen={}; out.forEach(function(c){ seen[c]=1; });
+  if(Array.isArray(prev)) prev.forEach(function(c){
+    if(typeof c==='string' && /^[a-z0-9_-]{1,30}$/.test(c) && !known[c] && !seen[c]){ out.push(c); seen[c]=1; }
+  });
+  return out;
+}
 // 対象アプリ（各ケアアプリに表示・記録する対象者かのフラグ）
 // 既定は全てON（介護現場では対象者の取りこぼしを避けるため。対象外を明示的に外す運用）
 var APP_TARGETS=[['excretion','排泄記録'],['weight','体重記録'],['schedule','週間計画']];
@@ -10577,12 +10586,14 @@ function collectForm(){
   if(csEls.length){rec.consents={};Array.prototype.forEach.call(csEls,function(inp){var v=(inp.value||'').trim();if(v)rec.consents[inp.getAttribute('data-consent')]=v})}
   else if(editing.consents)rec.consents=editing.consents;
   /* アレルゲン・禁食（2026-10-22 代表者の決定）。欄が描かれている時は必ず配列で送る（何も選ばなければ []）。
-     描かれていない時は既存値を引き継ぐ（dayUse と同じ作法）。★符号は既知の一覧で照合し、未知の符号は捨てる */
+     描かれていない時は既存値を引き継ぐ（dayUse と同じ作法）。★画面で選べる符号は既知の一覧で照合する。
+     画面が知らない既存の符号（後で品目を増やした時に、古い画面で保存した場合など）は消さずに残す（2026-10-22・印刷しない欄 printHide と同じ作法） */
   var algAt=$('editBox').querySelectorAll('[data-algtag]'), algFt=$('editBox').querySelectorAll('[data-forbtag]');
   if(algAt.length||algFt.length){
     var algOn=function(els,attr){ var o=[]; Array.prototype.forEach.call(els,function(el){ if(el.checked)o.push(el.getAttribute(attr)); }); return o; };
-    rec.allergenTags=algPick_(algOn(algAt,'data-algtag'),ALG_ALLERGENS);
-    rec.forbiddenTags=algPick_(algOn(algFt,'data-forbtag'),algForbiddenList_());
+    var algBoth=ALG_ALLERGENS.concat(algForbiddenList_());   /* 反対側の一覧の符号は「知らない符号」として残さない */
+    rec.allergenTags=algKeepUnknown_(algPick_(algOn(algAt,'data-algtag'),ALG_ALLERGENS),editing.allergenTags,algBoth);
+    rec.forbiddenTags=algKeepUnknown_(algPick_(algOn(algFt,'data-forbtag'),algForbiddenList_()),editing.forbiddenTags,algBoth);
   }else{
     if(editing.allergenTags!==undefined)rec.allergenTags=editing.allergenTags;
     if(editing.forbiddenTags!==undefined)rec.forbiddenTags=editing.forbiddenTags;
