@@ -58,7 +58,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 
