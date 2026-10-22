@@ -4,6 +4,8 @@
      B スイッチ入りでも、未ログイン・現場のアカウント・写しが古い・失敗の記録・人数の違い・打ち切り・Supabase の失敗・形の違いは Google へ戻す
      C スイッチ入り・事務所のログイン・新しい写しなら、Google を呼ばずに写しの行を getRoster と同じ形（キー名・型）で返す
      D 結果は1回だけ（打ち切りの後に届いた写しの応答で二重に返さない・Google を2回呼ばない）
+     F 訪問支援 週間俯瞰（voFetchHosp）: スイッチ切では Google への要求が今までと1バイトも同じ・
+       部品が無くても同じ。スイッチ入りでは写しから入院の重ね表示の表を作る
      E 戻した理由の記録は「読み取りの切り替え」の種類で、場所・例外の名前が不具合報告（su-report.js）の式に合う。スイッチ切・未ログインは記録しない
    ★部品の本物を vm で動かす。偽物にするのは、スイッチの控え・ログインの状態・データベースの応答・Google の読み取りだけ。
    実行: node check/unit/su_roster_test.js
@@ -208,6 +210,44 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     s.R.getRoster(s.gas, { where: 'visit', timeoutMs: 40 }).then(() => { n++; });
     await wait(150);
     t('写しが古いと分かって Google へ戻した後、打ち切りの時刻が来ても Google を2回呼ばない', n === 1 && s.gasCalls === 1 && s.notes.length === 1);
+  }
+  console.log('F 週間俯瞰2画面のつなぎ');
+  for (const [file, pre] of [['visit-overview.html', 'vo']]) {
+    const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const grab = name => { const i = html.indexOf('function ' + name + '('); let d = 0, j = html.indexOf('{', i); for (; j < html.length; j++) { if (html[j] === '{') d++; else if (html[j] === '}' && --d === 0) break; } return html.slice(i, j + 1); };
+    const code = 'var ' + pre.toUpperCase() + '_CFG_KEY=\'rmaster_cfg\';var ' + pre + 'HospMap=null,' + pre + 'HospRev=null,' + pre + 'HospBusy=false;' + grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') +
+      ';this.__get=function(){return {map:' + pre + 'HospMap,rev:' + pre + 'HospRev,busy:' + pre + 'HospBusy};};';
+    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-22"><\/script>/.test(html));
+    async function go(withPart, cfg) {
+      const s = sandbox(cfg);
+      const calls = [];
+      const ctx = s.ctx;
+      ctx.localStorage.setItem('rmaster_cfg', JSON.stringify({ url: 'https://script.google.com/macros/s/FAKE/exec', token: 'tok-dummy' }));
+      ctx.fetch = (url, o) => { calls.push([url, o]); return Promise.resolve({ ok: true, json: () => Promise.resolve({ roster: [{ id: 7, hospitalized: true }, { id: 8 }], stateRev: 3, srev: 4 }) }); };
+      if (!withPart) delete ctx.SURoster;
+      vm.runInContext(code, ctx);
+      const ok = await vm.runInContext(pre + 'FetchHosp()', ctx);
+      return { ok, calls, st: ctx.__get(), s };
+    }
+    const before = { url: 'https://script.google.com/macros/s/FAKE/exec', o: { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'getRoster', token: 'tok-dummy' }), cache: 'no-store', redirect: 'follow' } };
+    for (const withPart of [true, false]) {
+      const r = await go(withPart, { flags: { supabase: { care_schedule_v2: true } } });
+      t(file + (withPart ? '' : '（部品なし）') + ': スイッチ切では Google への要求が1回・URL・中身・順番まで今までと同じ',
+        r.ok === true && r.calls.length === 1 && r.calls[0][0] === before.url && JSON.stringify(r.calls[0][1]) === JSON.stringify(before.o), r.calls);
+      t(file + (withPart ? '' : '（部品なし）') + ': 入院の表と版数は Google の応答から作る（今までどおり）',
+        JSON.stringify(r.st.map) === '{"7":true}' && r.st.rev.rev === 3 && r.st.rev.srev === 4 && r.st.busy === false);
+    }
+    {
+      const r = await go(true, { flags: ON });
+      t(file + ': スイッチ入り・事務所のログインでは Google を呼ばず、写しから入院の表を作る（入院の値が無い人は載せない）',
+        r.ok === true && r.calls.filter(c => /script\.google/.test(c[0])).length === 0 && JSON.stringify(r.st.map) === '{"R001":false,"R002":true}' && r.st.rev === null && r.st.busy === false, r.st);
+    }
+    {
+      const r = await go(true, { flags: ON, runs: [] });
+      t(file + ': スイッチ入りでも写しが古ければ Google（要求は今までと同じ）',
+        r.ok === true && r.calls.filter(c => c[0] === before.url).length === 1 && JSON.stringify(r.calls.find(c => c[0] === before.url)[1]) === JSON.stringify(before.o) && JSON.stringify(r.st.map) === '{"7":true}', r.calls.map(c => c[0]));
+    }
   }
   t('打ち切りの既定は8秒・鮮度は24時間', sandbox().R.TIMEOUT_MS === 8000 && sandbox().R.FRESH_MS === 86400000);
   t('部品は console.log を使わない', !/console\.log/.test(SRC));
