@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ChWN/caqngmwkdIm9141L7v/sjmysoBBJ6WgXQt++5w=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-bmxZ7fWrSTuIVEN473nEQhK+EhURQV+m4yCLJrw5FeI=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -369,6 +369,10 @@ function syncTarget() {
 /* 写しから表示中の帯（2026-10-17 改善プロンプト第2弾の8・代表者の決定）。保存先が Supabase に切り替わっているキー（SUKv.routed）を
    Supabase から読めず（未ログイン・失敗）、Google の写しから表示した時だけ出す。Supabase から読めたら消す。
    スイッチが切のキー（Google が本番）では出さない */
+/* ★帯は「いま画面に出ている盤面が写しから読んだものか」を表す（反証レビューの指摘・改善プロンプト第3弾の14）。
+   読んだ時は出どころを remoteFromCopy_ に控えるだけで、帯は盤面を描き直した時（refresh で remote を描いた時）にだけ決める。
+   取り直しが失敗した・データが無く描き直さない時は帯に触れない（前の盤面のまま＝前の帯のまま） */
+let remoteFromCopy_ = false;
 function showCopyBand_(keys, fromCopy) {
   var el = document.getElementById('copyBand');
   if (!el) return;
@@ -381,7 +385,7 @@ async function fetchRemote() {
      スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。読むだけ。 */
   if (window.SUKv && SUKv.readRouted) {
     const v = await SUKv.readRouted({ action: 'get', key: LS_KEY });
-    if (v) { showCopyBand_([LS_KEY], false); return (v.data && Array.isArray(v.data.residents)) ? v.data : null; }
+    if (v) { remoteFromCopy_ = false; return (v.data && Array.isArray(v.data.residents)) ? v.data : null; }
   }
   const t = syncTarget();
   if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
@@ -394,7 +398,7 @@ async function fetchRemote() {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const j = await res.json();
   if (!j.ok) throw new Error(j.error || '応答エラー');
-  showCopyBand_([LS_KEY], true);
+  remoteFromCopy_ = true;
   return (j.data && Array.isArray(j.data.residents)) ? j.data : null;
 }
 
@@ -734,12 +738,12 @@ async function refresh() {
   busy = true;
   $('btnRefresh').disabled = true;
   setSyncState('取得中…');
-  showCopyBand_([], false);                               // 前の取得で出た帯は、ここでいったん消す（この取得で Google から読めた時だけ出し直す・改善プロンプト第3弾の14）
   try {
     const remote = await fetchRemote();
     if (remote) {
       DB = remote;
       render(DB);
+      showCopyBand_([LS_KEY], remoteFromCopy_);           // 描き直した盤面の出どころで帯を決める
       setSyncState('取得OK（' + DB.residents.length + '名）');
       toast('最新の週間計画を取得しました');
     } else {

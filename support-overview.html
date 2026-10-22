@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AgvKd2nz1fazLTVNS9F7ArATw7iaz7nK4HsYISWHAw0=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TZrEb1tO4fYQE4ZQE7JtiPSugEiWCFLTb2aEGcbtUl4=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -440,20 +440,24 @@ let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施�
    スイッチが切のキー（Google が本番）では出さない */
 /* ★全支援俯瞰は1回の表示で週間計画と何週分もの日データを順に読む。どれか1つでも写しから読んだら、その表示が終わるまで出したまま
    （最後に読んだ1つで消さない・反証レビュー 2026-10-17）。表示の取り直し（refresh の始め）で copyUsed_ を戻す */
+/* ★帯は「いま画面に出ている盤面が写しから読んだものか」を表す（反証レビューの指摘・改善プロンプト第3弾の14）。
+   読んでいる間は出どころを控えるだけ（noteCopyRead_）で、帯は盤面を描き直した時にだけ決める（applyCopyBand_）。
+   取り直しが失敗して盤面を描き直さない時は帯に触れない（前の盤面のまま＝前の帯のまま）。週を1つも読めず盤面を空にした時は消す */
 var copyUsed_ = false;
-function showCopyBand_(keys, fromCopy) {
-  var el = document.getElementById('copyBand');
-  if (!el) return;
+function noteCopyRead_(keys, fromCopy) {
   var routed = false;
   try { routed = !!(window.SUKv && SUKv.routed && (keys || []).some(function (k) { return SUKv.routed(k); })); } catch (e) { routed = false; }
   if (fromCopy && routed) copyUsed_ = true;
-  el.hidden = !copyUsed_;
+}
+function applyCopyBand_(on) {
+  var el = document.getElementById('copyBand');
+  if (el) el.hidden = !on;
 }
 async function gasCall(payload) {
   /* 統合（2026-09-27）: 週間計画・ワースケの日データの保存先を Supabase に切り替えた後は、ログインしている端末だけ
      Supabase から読む（速い）。スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。 */
   const keys_ = Array.isArray(payload.keys) ? payload.keys : [payload.key];
-  if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) { showCopyBand_(keys_, false); return v; } }
+  if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) { noteCopyRead_(keys_, false); return v; } }
   const res = await fetch(TARGET.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -463,7 +467,7 @@ async function gasCall(payload) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const j = await res.json();
   if (!j.ok) throw new Error(j.error || '応答エラー');
-  showCopyBand_(keys_, true);
+  noteCopyRead_(keys_, true);
   return j;
 }
 
@@ -1029,7 +1033,6 @@ async function refresh() {
   busy = true;
   refreshPending = false;
   copyUsed_ = false;                               // 写しから表示中の帯は、この表示で読んだ分だけで決める
-  showCopyBand_(null, false);                      // 前の表示で出た帯は、ここでいったん消す（この表示で Google から読めた時だけ出し直す・改善プロンプト第3弾の14）
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {
@@ -1037,6 +1040,7 @@ async function refresh() {
     $('bHeads').textContent = ''; $('bCanvas').textContent = '';
     $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
     setSyncState('未設定');
+    applyCopyBand_(false);                         // 盤面を空にした＝写しの盤面は出ていない
     busy = false; setButtons(true);
     return;
   }
@@ -1050,7 +1054,7 @@ async function refresh() {
     // 全週フェッチ失敗＝通信/接続先の問題。0枠成功と誤表示せず失敗として扱う（silent fail 防止）。
     if (raw.weeksFetched === 0) {
       lastFetchFailed = true;                              // 保持中のRAWは古い＝以後の再描画で「集計OK」と偽らない
-      copyUsed_ = false; showCopyBand_(null, false);       // 週を1つも読めなかった＝写しから表示していない（予定の型だけ読めても帯は出さない）
+      applyCopyBand_(false);                               // 盤面を空にした＝写しの盤面は出ていない（予定の型だけ写しから読めても帯は出さない）
       $('boardEmpty').classList.add('on');
       $('bHeads').textContent = ''; $('bCanvas').textContent = '';
       $('emptyMsg').textContent = 'データを取得できませんでした。通信環境・接続先URL／トークンをご確認ください。';
@@ -1062,6 +1066,7 @@ async function refresh() {
     RAW = raw; MASKS = masks; RAW_N = N;                   // 施設/外部の切替を再フェッチ無しで行うため保持
     const model = buildModel(raw, masks, VIEW);
     render(model, N, VIEW);
+    applyCopyBand_(copyUsed_);                             // 描き直した盤面の出どころで帯を決める（写しから1つでも読んだら出す）
     let total = 0; for (const arr of model.byDow) total += arr.length;
     RAW_MISS = raw.weeksError > 0 ? '・' + raw.weeksError + '/' + raw.weeksTotal + '週欠測' : '';
     setSyncState('集計OK（' + N + '週' + RAW_MISS + '・' + total + '枠）');
@@ -1069,7 +1074,6 @@ async function refresh() {
     else if (total === 0) toast('対象期間に支援枠が見つかりませんでした');
   } catch (e) {
     lastFetchFailed = true;                                // 例外時も保持中のRAWは古いまま
-    copyUsed_ = false; showCopyBand_(null, false);         // 読めなかった＝今の表示は写しから読んだものではない
     setSyncState('取得失敗');
     toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
   } finally {
