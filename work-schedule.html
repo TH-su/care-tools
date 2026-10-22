@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lYeK8ToTxQ4/0WP5+Y6+LEovLkLuI7VuEcHD1vUUE2Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-X9GMqepc/tqLfu9sYnYYfLx8bN23YnZ+0FLyQFw+FQ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -7071,16 +7071,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *  ・勤務時間外 → 勤務時間外: 印はそのまま（最初の元の場所を覚えておく）
    *  ・勤務時間外 → 勤務時間の中・未配置トレイ: 印を外し、元の場所を埋め直す（ほかの札を入れていた分は埋めない＝占有を避ける）
    * 戻り値 { hold: 新しい印（null＝外す）, skipVac: 今回の退去を埋め直さないか, refill: 追加で埋め直す退去 } */
+  /* 元の場所を空けておく札: 支援と、名前・内容を書いた自由枠（careVacates_ と同じ見分け・2026-10-22 本人指摘「支援枠ブロックを移動させたら施設業務が一部現れる」。
+   * グループに入った名前つきの自由枠だけが、跡を施設業務で埋め直されていた） */
+  function holdable_(t) { return !!t && (t.kind === 'care' || M.namedFree(t)); }
+  /* 札の時間がその職員の勤務時間から外れているか（種類を問わない。赤く出すかは支援だけ＝M.careOutOfHours のまま） */
+  function oohAt_(t, st) { return M.careOutOfHours({ kind: 'care', staffId: t.staffId, start: t.start, end: t.end }, st); }
   function holdForMove_(day, cur, toStaffId, toStart, toEnd) {
     var none = { hold: cur ? (cur.oohHold || null) : null, skipVac: false, refill: [] };
-    if (!cur || cur.kind !== 'care') return none;
+    if (!holdable_(cur)) return none;
     var held = (cur.oohHold && cur.oohHold.length) ? cur.oohHold : null;
     var toSt = (toStaffId === null || toStaffId === undefined) ? null : M.findStaff(day.staff, toStaffId);
     var toOoh = !!(toSt && M.careOutOfHours({ kind: 'care', staffId: toStaffId, start: toStart, end: toEnd }, toSt));
     if (toOoh) {
       if (held) return { hold: held, skipVac: false, refill: [] };
       var fromSt = (cur.staffId === null || cur.staffId === undefined) ? null : M.findStaff(day.staff, cur.staffId);
-      if (!fromSt || M.careOutOfHours(cur, fromSt)) return { hold: null, skipVac: false, refill: [] };
+      if (!fromSt || oohAt_(cur, fromSt)) return { hold: null, skipVac: false, refill: [] };
       return { hold: [{ staffId: cur.staffId, name: fromSt.name || '', start: cur.start, end: cur.end, facBg: (cur.facBg !== undefined && cur.facBg !== null) ? cur.facBg : null }],
                skipVac: true, refill: [] };
     }
@@ -7510,7 +7515,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (nh) holds.push(nh);
       }
       var st = (t.staffId === null || t.staffId === undefined) ? null : M.findStaff(next.staff || [], t.staffId);
-      var stillOoh = !!(t.kind === 'care' && st && M.careOutOfHours(t, st));
+      var stillOoh = !!(holdable_(t) && st && oohAt_(t, st));
       if (stillOoh && !moved) { out.push(t); continue; }
       var o = {}, k;
       for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && k !== 'oohHold') o[k] = t[k];
@@ -19533,7 +19538,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261022072124';
+  var WS_BUILD = '20261022091432';
   var WS_APP_VER = 2026101704;   /* 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた
                                   * （2026101703: 2026-10-20 休みの印 absent を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた） */
    /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
