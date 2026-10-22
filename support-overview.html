@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TZrEb1tO4fYQE4ZQE7JtiPSugEiWCFLTb2aEGcbtUl4=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XbCSXlhemFfYi87sKs9zehR65YO4JawI0wvWiCdvB08=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -336,6 +336,8 @@ body {
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-20"></script>
+<!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチが入っている時だけ写しから読む（切の間は今までどおり Google・段階1・2026-10-22） -->
+<script src="su-roster.js?v=2026-10-22"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <script>
 'use strict';
@@ -541,9 +543,18 @@ function soFetchHosp(){
   if(soHospBusy) return Promise.resolve(false);
   var c = soMasterCfg(); if(!c || !c.token) return Promise.resolve(false);
   soHospBusy = true;
-  return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-                      body:JSON.stringify({action:'getRoster',token:c.token}),cache:'no-store',redirect:'follow'})
-    .then(function(r){return r.json()})
+  var raw = function(){
+    return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+                        body:JSON.stringify({action:'getRoster',token:c.token}),cache:'no-store',redirect:'follow'})
+      .then(function(r){return r.json()});
+  };
+  /* 名簿の読み取りは入口（su-roster.js・SURoster）を通す（2026-10-22・入居者マスタの Supabase 移行 段階1）。
+     スイッチ master_roster_read が入っている時だけ写しから読み、切・読めない時は raw（上の要求そのまま）を呼ぶ。
+     この画面が使うのは利用者No と入院中だけ（写しにある項目）。部品が読み込めない時も raw を呼ぶ。
+     masterUrl は版数（action=stateRev）を聞く先。Google の版数が写しの記録と同じ時だけ写しを使う（移行 0019・反証レビューの指摘）。 */
+  var p;
+  try{ p = window.SURoster ? window.SURoster.getRoster(raw, {where:'support', masterUrl:c.url}) : raw(); }catch(e){ p = raw(); }
+  return p
     .then(function(j){
       if(!j || !Array.isArray(j.roster)) return false;
       var m={};
