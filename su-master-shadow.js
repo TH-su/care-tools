@@ -14,6 +14,9 @@
  * ★変わった行だけを書く（全員分を毎回書かない＝操作記録を無駄に増やさない）。消す口は無い：
  *   写しにあって正本に無い人は「数える」だけ。
  * ★写しの結果（件数だけ）を master_sync_runs に残す。氏名・値は残さない。
+ * ★写しの記録には、その一覧と一緒に正本が返した版数（stateRev・srev）も残す（移行 0019・2026-10-22・反証レビューの指摘）。
+ *   名簿を写しから読む入口（su-roster.js）は、Google の今の版数と記録の版数が同じ時だけ写しを使う。
+ *   列の無い古いデータベースでは版数を外して書き直す（記録が残せなくても写しは止めない）。
  * ★失敗しても入居者マスタには影響させない（例外は外へ出さない）。
  * ★supabase-js と su-auth.js は、使う時になって初めて読み込む（入居者マスタの起動を重くしない）。
  */
@@ -87,8 +90,23 @@
     return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-10-20'); });
   }
 
+  /* 正本が一覧と一緒に返した版数（数でなければ null＝版数なし。読む側は版数なしの記録を使わない） */
+  function revOf(opts) {
+    var r = opts && opts.stateRev, v = opts && opts.srev;
+    return {
+      state_rev: (typeof r === 'number' && isFinite(r) && r >= 0 && Math.floor(r) === r) ? r : null,
+      srev: (typeof v === 'number' && isFinite(v) && v >= 0) ? String(v) : null
+    };
+  }
+  /* 版数の列が無い古いデータベース（0019 未適用）の断り。列が見つからない（42703・PGRST204）の時だけ */
+  function noRevColumn(err) {
+    var c = String(err && err.code || ''), m = String(err && err.message || '');
+    return c === '42703' || c === 'PGRST204' || /state_rev|srev/.test(m);
+  }
+
   /**
-   * 写しを作る。戻り値は {status, ...件数}。status:
+   * 写しを作る。opts.stateRev・opts.srev は、その一覧と一緒に getRoster が返した版数（無ければ省く）。
+   * 戻り値は {status, ...件数}。status:
    *   'skipped'（ログインなし・現場・同じ内容を直前に写した・空の一覧）／'ok'／'error'
    * 例外は投げない。
    */
@@ -99,8 +117,11 @@
     busy = true;
     var rows = roster.map(toRow);
     var fp = fingerprint(rows);
+    var rev = revOf(opts);
     var last = readLast();
-    if (!opts.force && last && last.fp === fp && Date.now() - (last.at || 0) < MIN_GAP_MS) {
+    // 同じ内容でも、版数が進んでいれば写しの記録を残し直す（版数だけ進んだ時に、読む側が古い記録を見続けないように）
+    if (!opts.force && last && last.fp === fp && Date.now() - (last.at || 0) < MIN_GAP_MS &&
+        (last.rev === undefined ? null : last.rev) === rev.state_rev && (last.srev === undefined ? null : last.srev) === rev.srev) {
       busy = false;
       return Promise.resolve({ status: 'skipped', reason: 'same' });
     }
@@ -141,13 +162,21 @@
       .then(function () {
         var label = '';
         try { label = (localStorage.getItem('su_device_label') || '').slice(0, 40); } catch (e) { /* 何もしない */ }
-        return sb.from('master_sync_runs').insert({
+        var runRow = {
           device_label: label, source_count: result.source_count, inserted: result.inserted,
           updated: result.updated, unchanged: result.unchanged, missing: result.missing, failed: result.failed
+        };
+        var withRev = {};
+        for (var k in runRow) withRev[k] = runRow[k];
+        withRev.state_rev = rev.state_rev; withRev.srev = rev.srev;
+        return sb.from('master_sync_runs').insert(withRev).then(function (w) {
+          // 版数の列が無い古いデータベースでは、版数を外して今までどおりの記録を残す
+          if (w && w.error && noRevColumn(w.error)) return sb.from('master_sync_runs').insert(runRow);
+          return w;
         });
       })
       .then(function () {
-        if (result.status === 'ok') writeLast({ fp: fp, at: Date.now() });
+        if (result.status === 'ok') writeLast({ fp: fp, at: Date.now(), rev: rev.state_rev, srev: rev.srev });
         busy = false;
         return result;
       })
