@@ -315,6 +315,54 @@ console.log('\n— 8e. 調剤日を読めない書類は、取り込んだ日で
   const j7 = Y.judge(st({ labeled: [], other: [] }, '2026-10-22', { sameDay: '2026-10-22T09:00:00Z' }));
   t('★取り込んだ日で、同じ日に反映済みなら確かめるまで止める', /既に反映/.test(j7.stop), j7.stop);
   t('取り込んだ日の印も朝回診の道具が受け付ける形', /^S\|[^|]+\|(\d{4}-\d{2}-\d{2})\|[0-9a-f]{8}$/.test(Y.srcKey('11', '2026-10-22', j1.after)));
+  /* 取り込んだ日でゆるめるのは日付の印だけ（審査の指摘・2026-10-22） */
+  const j8 = Y.judge(st({ labeled: [], other: [] }, '2026-10-22', { identity: false }));
+  t('★取り込んだ日でも、本人の照合の印が無ければ止める', /この方の書類/.test(j8.stop), j8.stop);
+  const j9 = Y.judge(Object.assign(st({ labeled: [], other: [] }, '2026-10-22'), { rows: [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: ['頓服の書き方です'], checked: false }] }));
+  t('★取り込んだ日でも、⚠ の行を確かめていなければ止める', /⚠ の行が 1 行/.test(j9.stop), j9.stop);
+  const j10 = Y.judge(Object.assign(st({ labeled: [], other: [] }, '2026-10-22'), { rows: [{ kind: 'left', cur: '架空錠A 1錠分1 朝食後', action: '', warns: [] }, ...rows()] }));
+  t('★取り込んだ日でも、書類に無い今の行を決めていなければ止める', /残す」か「中止/.test(j10.stop), j10.stop);
+}
+
+console.log('\n— 8f. 調剤日の既定と、取り込んだ日を使う時の日付（0時をまたいでも選んだまま・審査の指摘 2026-10-22）—');
+{
+  const s0 = Y.startDate({ labeled: [], other: ['2026-10-18'] });
+  t('★「調剤日」の語の付いた日付が無ければ、取り込んだ日を選んでおく', s0.importDay === true && s0.date === '', s0);
+  const s1 = Y.startDate({ labeled: ['2026-10-18'], other: [] });
+  t('★語の付いた日付が1つなら、その日を選び、取り込んだ日にしない', s1.importDay === false && s1.date === '2026-10-18', s1);
+  const s2 = Y.startDate({ labeled: ['2026-10-04', '2026-10-18'], other: [] });
+  t('★語の付いた日付が2つ以上なら、選ばせる（空）', s2.importDay === false && s2.date === '', s2);
+  t('取り込んだ日はその時の今日を使う', Y.useDate({ importDay: true, date: '' }, '2026-10-23') === '2026-10-23');
+  t('★取り込んだ日でない時は、選んだ日付をそのまま使う（今日に変えない）', Y.useDate({ importDay: false, date: '2026-10-18' }, '2026-10-23') === '2026-10-18');
+  t('今日が分からない時は空（止める側へ）', Y.useDate({ importDay: true, date: '' }, '') === '');
+  /* 画面の関数を切り出して動かす（0時をまたいだ時） */
+  const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const cutF = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name);
+    let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
+  const box = { YakujoCalc: Y, String, Array, todayISO: () => box.now, now: '2026-10-22' };
+  vm.createContext(box);
+  vm.runInContext([cutF(RM, 'yjSameDay_'), cutF(RM, 'yjJudge_')].join('\n'), box);
+  const cur = { id: '11', importDay: true, date: '', dates: { labeled: [], other: [] }, identity: true,
+    rows: [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: [], checked: false }], before: '架空錠A 1錠分1 朝食後',
+    lastChange: '2026-10-01', oldChecked: false, ack: false, dupChecked: false, dateChecked: false,
+    rec: { medsHistory: [{ at: '2026-10-23T00:10:00+09:00', via: '変更候補（薬情 10/23）' }] } };
+  box.yjSt = { server: 'ok', cur };
+  box.yjSameDay_(cur);
+  const w1 = box.yjJudge_();
+  t('★取り込んだ日を選んで開いた日は、日付の印なしで反映できる', w1.stop === '' && w1.importDay === true, w1.stop);
+  cur.ack = true; box.now = '2026-10-23';
+  const w2 = box.yjJudge_();
+  t('★0時を過ぎても取り込んだ日のまま（日付の印を求めない）', w2.importDay === true && !/語がありません/.test(w2.stop), w2.stop);
+  t('★0時を過ぎたら、同じ日の確かめを新しい日で作り直し、前の日の「確かめた」は外す', /既に反映/.test(w2.stop) && cur.ack === false && cur.sameDayFor === '2026-10-23', { stop: w2.stop, ack: cur.ack, for: cur.sameDayFor });
+  /* 配線（画面のコードが純関数をこの形で使っていること） */
+  t('書類を開く時の既定は startDate で決め、読み直しでは印を引き継ぐ', /sd=YakujoCalc\.startDate\(dates\)/.test(cutF(RM, 'yjStartDoc_')) && /importDay:keep\?!!keep\.importDay:sd\.importDay/.test(cutF(RM, 'yjStartDoc_')));
+  const ap = cutF(RM, 'yjApply_');
+  t('★反映は判定と送る調剤日を同じ今日で決める', /today=todayISO\(\), j=yjJudge_\(today\)/.test(ap) && /date=YakujoCalc\.useDate\(c, today\)/.test(ap));
+  t('★反映の直前に止まった時は、黙って戻らず理由を出す', /if\(j\.stop\)\{ c\.msg='反映できません：'\+j\.stop; yjPaint_\(\); return; \}/.test(ap));
+  const wk = cutF(RM, 'yjWorkHtml_');
+  t('選ぶ欄の「（取り込んだ日）」は印（__import__）で選ぶ', /value="__import__"'\+\(c\.importDay\?' selected':''\)/.test(wk) && /!c\.importDay&&c\.date===dt/.test(wk));
+  t('★取り込んだ日の時は、日付の「確かめた」の印を出さない', /if\(d&&c\.dates\.labeled\.indexOf\(d\)<0&&!j\.importDay\) h\+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"/.test(wk));
+  t('選ぶ欄を変えたら印を付け替える', /c\.importDay=\(t\.value==='__import__'\); c\.date=c\.importDay\?'':t\.value;/.test(RM));
 }
 
 console.log('\n— 9. 判断の印 —');

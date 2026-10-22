@@ -583,6 +583,19 @@
     return { stop: stop, notes: notes, after: after, counts: counts, dupStems: dupStems, importDay: importDay };
   }
 
+  /* 書類を開いた時の調剤日の既定（代表者の決定 2026-10-22）。
+     「調剤日」の語の付いた日付が1つならそれ・2つ以上なら選ばせる（空）・0なら「取り込んだ日」を選んでおく。
+     取り込んだ日は日付の値でなく印（importDay）で持ち、使う時に useDate でその時の今日へ直す
+     （画面を開いたまま0時を過ぎても、昨日の日付が残って止まったり、確かめていない日付で反映したりしない） */
+  function startDate(dates) {
+    var labeled = (dates && dates.labeled) || [];
+    return { date: labeled.length === 1 ? String(labeled[0]) : '', importDay: !labeled.length };
+  }
+  function useDate(c, today) {
+    if (!c) return '';
+    return c.importDay ? String(today || '') : String(c.date || '');
+  }
+
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */
   function fnv8(s) {
     var t = nfkc(s).replace(/\s+/g, ' ').trim(), h = 0x811c9dc5;
@@ -593,6 +606,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
+    startDate: startDate, useDate: useDate,
     fnv8: fnv8, srcKey: srcKey, nz: nz, kn: kn, dist: dist };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
