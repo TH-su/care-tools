@@ -4,7 +4,7 @@
      B スイッチ入りでも、未ログイン・現場のアカウント・写しが古い・失敗の記録・人数の違い・打ち切り・Supabase の失敗・形の違いは Google へ戻す
      C スイッチ入り・事務所のログイン・新しい写しなら、Google を呼ばずに写しの行を getRoster と同じ形（キー名・型）で返す
      D 結果は1回だけ（打ち切りの後に届いた写しの応答で二重に返さない・Google を2回呼ばない）
-     F 訪問支援 週間俯瞰（voFetchHosp）: スイッチ切では Google への要求が今までと1バイトも同じ・
+     F 訪問支援／全支援 週間俯瞰（voFetchHosp / soFetchHosp）: スイッチ切では Google への要求が今までと1バイトも同じ・
        部品が無くても同じ。スイッチ入りでは写しから入院の重ね表示の表を作る
      E 戻した理由の記録は「読み取りの切り替え」の種類で、場所・例外の名前が不具合報告（su-report.js）の式に合う。スイッチ切・未ログインは記録しない
    ★部品の本物を vm で動かす。偽物にするのは、スイッチの控え・ログインの状態・データベースの応答・Google の読み取りだけ。
@@ -212,7 +212,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     t('写しが古いと分かって Google へ戻した後、打ち切りの時刻が来ても Google を2回呼ばない', n === 1 && s.gasCalls === 1 && s.notes.length === 1);
   }
   console.log('F 週間俯瞰2画面のつなぎ');
-  for (const [file, pre] of [['visit-overview.html', 'vo']]) {
+  for (const [file, pre] of [['visit-overview.html', 'vo'], ['support-overview.html', 'so']]) {
     const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const grab = name => { const i = html.indexOf('function ' + name + '('); let d = 0, j = html.indexOf('{', i); for (; j < html.length; j++) { if (html[j] === '{') d++; else if (html[j] === '}' && --d === 0) break; } return html.slice(i, j + 1); };
     const code = 'var ' + pre.toUpperCase() + '_CFG_KEY=\'rmaster_cfg\';var ' + pre + 'HospMap=null,' + pre + 'HospRev=null,' + pre + 'HospBusy=false;' + grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') +
