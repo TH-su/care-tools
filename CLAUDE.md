@@ -11,7 +11,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 
 - **公開リポジトリ**。`.gitignore` は「既定で全部除外・公開するファイルだけホワイトリスト」。
   新しいファイルを足す時は `.gitignore` に `!/ファイル名` を1行足す（明示 opt-in）。足し忘れると push されない。
-- **素の HTML + JS。ビルドツール・フレームワーク・npm は入れない**（`mailer/`・`universe-sandbox/`・検証道具の `check/` は別、§9）。
+- **素の HTML + JS。ビルドツール・フレームワーク・npm は入れない**（`mailer/`・`universe-sandbox/`・`yakujo-reader/`・検証道具の `check/` は別、§9）。
   共通部品は `<script src="su-xxx.js?v=YYYY-MM-DD">` の1本読みで、中身を変えたら `?v=` の日付も上げる
   （同じ日に2回目なら `.2`）。
 - 1画面 = 1 HTML。大きいものは1万行を超える。**読む時は必要な範囲だけ grep / sed で切り出す**。
@@ -170,6 +170,7 @@ PR を出すと同じ比較が GitHub Actions で自動で回り（チェック�
 - 切り替えスイッチ（`su-backend.json`）を触る PR は単独で出し、他の変更と混ぜない。
 - `mailer/`（SilverMail・Node/React・ローカル専用）と `universe-sandbox/`（three.js の実験）は
   介護ツールとは別物。`npm` を使うのはこの2つと `check/`（検証道具）の中だけ。`kotowaza-jiten.html` は移転済みの案内のみ。
+- `yakujo-reader/`（薬情よみとり・Swift・事務所の Mac 専用）は、薬情の写真・PDF を Mac の中だけで読み、入居者マスタが開く結果のファイルを作る道具。ネットにつながる処理・送信の処理を足さない。読んだ結果・写真をリポジトリに置かない（代表者の決定 2026-10-22）。
 - **現場からの不具合報告**は、非公開リポジトリ TH-su/care-tools-reports の GitHub Issue（ラベル「現場報告」）として届く（受け口は `check/gas/`。2026-10-14 に公開リポジトリから移した）。
   報告の本文・題名を、このリポジトリ（公開）のコミット文・PR に引用しない。指す時は `TH-su/care-tools-reports#番号` の番号だけ。
   毎晩の定期タスク（`check/routine/nightly-fix.md`）が再現→修正→ドラフト PR まで行い、取り込みは代表者が行う。
