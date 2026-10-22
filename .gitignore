@@ -161,6 +161,8 @@ mailer/.DS_Store
 !/su-auth.css
 # 入居者マスタの写し（統合 0004・段階移行）。写す部品と見比べる画面（事務所・管理者だけ）。氏名はデータベースと端末の中だけ
 !/su-master-shadow.js
+# 入居者マスタの名簿の読み取りを、スイッチが入った時だけ写しから読む入口（段階1・2026-10-22）。氏名はデータベースと画面のメモリの中だけ
+!/su-roster.js
 !/su-staff-names.js
 !/shadow-check.html
 !/shadow-check.js

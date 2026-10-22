@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-po8P97NcJjyLzY5eCZqyhfoLvRQwNbzyxdi6C9CfYMk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-vod1u6TW5AQX+arLYCC7F0/D9vA19KUF0DEze3pvHks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -11,7 +11,8 @@
 <title>訪問／全支援 左右比較</title>
 <style>
 /* 訪問 週間俯瞰 と 全支援 週間俯瞰 を同一オリジンの iframe で左右に並べ、時刻・曜日・表示倍率を連動させる比較シェル。
-   ★このシェル自身は氏名を一切描画せず、共有 localStorage / GAS へ書き込まない（iframe のスクロール/倍率の読み書きのみ）。
+   ★このシェル自身は氏名を一切描画せず、共有データ・GAS へ書き込まない（iframe のスクロール/倍率の読み書きのみ）。
+     端末に残すのは連動の入／切だけ（ocmp_sync・'1'／'0'・2026-10-22 代表者の決定 B・再読み込みで現在地を失わない決まり）。
    既存2ツールのコードには非干渉（連動は各 iframe が公開する window.OVLINK を呼ぶだけ）。 */
 :root {
   --pri: #0b57d0; --pri-d: #0842a0; --orange: #b45309; --orange-l: #ffe0b2;
@@ -262,7 +263,13 @@ body {
   A.addEventListener('load', function () { onLoad(A, 'v'); });
   B.addEventListener('load', function () { onLoad(B, 's'); });
 
-  // 凡例は連動スイッチの状態に合わせて言い換える（表示だけ。状態は保存しない）
+  // 連動の入／切を端末に覚え、読み込み直しても戻す（2026-10-22 代表者の決定 B）。残すのはこの1つだけ・決まった値だけを受け付ける
+  var SYNC_KEY = 'ocmp_sync';
+  try { if (localStorage.getItem(SYNC_KEY) === '0') syncOn.checked = false; } catch (eS) { /* 読めなければ既定（入） */ }
+  syncOn.addEventListener('change', function () {
+    try { localStorage.setItem(SYNC_KEY, syncOn.checked ? '1' : '0'); } catch (eW) { /* 残せなくても画面は動く */ }
+  });
+  // 凡例は連動スイッチの状態に合わせて言い換える
   var legend = document.getElementById('cmpLegend');
   var LEGEND_ON = '連動中：縦に動かすと同じ時刻、横に動かすと同じ曜日、拡大・縮小すると同じ倍率に、もう片方がそろいます。';
   var LEGEND_OFF = '連動を切っています：左右は別々に動きます。「時刻・曜日・倍率を連動」を入れると、次に動かした時からまたそろいます。';
