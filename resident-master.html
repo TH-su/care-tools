@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-OwjWeDpx8L9rhARMcoUvBlzOcqlwwO/+dg6BbQGJc/U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-oc7GzR3WwkZOMKKxJTkNYhdF/EIG7VJ1R4DVFyqmX0I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -585,15 +585,17 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yj-body{flex:1 1 auto; min-height:0; overflow:auto; font-size:0.9375rem; line-height:1.6}
 .yj-lead{margin:0 0 10px; color:var(--g9)}
 .yj-sub{font-size:0.875rem; color:var(--g7)}
-.yj-ok{color:#1a6b2f; font-weight:700}
+.yj-ok{color:var(--ok); font-weight:700}
 .yj-warn{color:#8a3a00; font-weight:700}
-.yj-stop{margin:8px 0; padding:8px 10px; border:1px solid #b91c1c; border-radius:6px; background:#fef2f2; color:#991b1b; font-weight:700}
+.yj-stop{margin:8px 0; padding:8px 10px; border:1px solid var(--ng); border-radius:6px; background:var(--ng-l); color:var(--ng); font-weight:700}
 .yj-file{display:inline-flex; align-items:center; gap:10px; min-height:44px; padding:6px 16px; border:1px solid var(--pri); border-radius:10px;
   background:var(--pri-l); color:var(--pri-d); font-weight:700; cursor:pointer}
 .yj-file input{font:inherit; max-width:100%}
 .yj-file:focus-within{outline:2px solid var(--pri); outline-offset:2px}
 .yj-arow{display:grid; grid-template-columns:150px 1fr; gap:12px; border:1px solid var(--g2); border-radius:8px; padding:10px; margin:0 0 8px; background:#fff}
-.yj-arow.out{opacity:.65}
+.yj-arow.out{background:var(--g0)}
+.yj-outtag{grid-column:1 / -1; justify-self:start; font-size:0.875rem; font-weight:700; color:var(--g9); border:1px solid var(--g3); border-radius:999px; padding:0 10px; background:#fff}
+#yjOpen{min-height:44px}
 .yj-thumb img{display:block; max-width:150px; max-height:200px; border:1px solid var(--g2); border-radius:4px}
 .yj-ainfo>div{margin:2px 0}
 .yj-lbl{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0 0; font-weight:700}
@@ -608,9 +610,8 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yj-work{display:grid; grid-template-columns:minmax(260px,40%) 1fr; gap:14px; align-items:start}
 .yj-pages{position:sticky; top:0; max-height:84vh; overflow:auto; border:1px solid var(--g2); border-radius:8px; padding:6px; background:var(--g0)}
 .yj-pno{font-size:0.875rem; font-weight:700; color:var(--g7); margin:4px 0}
-.yj-pimg{position:relative; margin:0 0 8px}
-.yj-pimg img{display:block; width:100%; height:auto; background:#fff}
-.yj-box{position:absolute; border:2px solid #b45309; background:rgba(253,230,138,.25); pointer-events:none}
+.yj-psvg{display:block; width:100%; height:auto; margin:0 0 8px; background:#fff}
+.yj-psvg .yj-box{fill:var(--warn-bg); fill-opacity:.35; stroke:var(--warn-tx); stroke-width:3; vector-effect:non-scaling-stroke}
 .yj-h3{margin:0 0 8px; font-size:1rem}
 .yj-meta{border:1px solid var(--g2); border-radius:8px; padding:8px 10px; margin:0 0 10px}
 .yj-tblw{overflow-x:auto}
@@ -6670,14 +6671,14 @@ function yjOpen_(){
 }
 /* 入居者マスタGASが「薬情」を受け付ける版か（貼り替えの前は反映できない） */
 function yjPing_(){
-  var gen=yjGen, dg=devGen;
+  var st=yjSt, dg=devGen;   /* ★世代（yjGen）ではなく開いた時の窓で判定する（確認表を開いて世代が進んでも、版の答えを捨てない） */
   apiPostRaw({action:'medCand', op:'ping'},20000).then(function(r){
-    if(gen!==yjGen||dg!==devGen||!yjSt) return;
-    yjSt.server=(r&&r.ok!==false&&/薬情/.test(String(r.build||'')))?'ok':'old';
+    if(yjSt!==st||dg!==devGen) return;
+    st.server=(r&&r.ok!==false&&/薬情/.test(String(r.build||'')))?'ok':'old';
   }).catch(function(e){
-    if(gen!==yjGen||dg!==devGen||!yjSt) return;
-    yjSt.server=/不明なaction/.test(String(e&&e.message||e))?'old':'ng';
-  }).then(function(){ if(yjSt&&gen===yjGen) yjPaint_(); });
+    if(yjSt!==st||dg!==devGen) return;
+    st.server=/不明なaction/.test(String(e&&e.message||e))?'old':'ng';
+  }).then(function(){ if(yjSt===st) yjPaint_(); });
 }
 function yjDirty_(){ return !!(yjSt&&yjSt.cur&&yjSt.cur.loaded&&yjSt.cur.touched); }
 function yjClose_(){
@@ -6731,7 +6732,7 @@ function yjAssignHtml_(){
   h+='<div class="yj-alist">';
   S.docs.forEach(function(x,i){
     var d=x.d, p0=d.pages[0], who=x.a.id?yjWho_(x.a.id):null;
-    h+='<div class="yj-arow'+(x.out?' out':'')+'">'+
+    h+='<div class="yj-arow'+(x.out?' out':'')+'">'+(x.out?'<span class="yj-outtag">取り込まない</span>':'')+
       '<div class="yj-thumb">'+(p0&&p0.img?'<img alt="書類'+d.no+'の1ページ目" src="'+p0.img+'">':'<span>画像なし</span>')+'</div>'+
       '<div class="yj-ainfo"><b>書類'+d.no+'</b>（'+(d.type==='pdf'?'PDF '+d.pages.length+'ページ':'写真')+'）'+
       (d.error?'<div class="yj-warn">⚠ '+esc(d.error)+'</div>':'')+
@@ -6772,8 +6773,8 @@ function yjStartDoc_(i, msgAfter){
   var dates=YakujoCalc.findDates(x.d);
   var keep=S.cur&&S.cur.di===i?S.cur:null;
   S.cur={di:i, id:String(w.id), name:w.name, room:w.room||'', rec:null, before:'', rows:[], dates:dates,
-    date:keep?keep.date:(dates.labeled.length===1?dates.labeled[0]:''), identity:keep?keep.identity:false,
-    oldChecked:false, sameDay:'', ack:false, busy:true, writing:false, loaded:false, touched:false, msg:msgAfter||'読み込んでいます…'};
+    date:keep?keep.date:(dates.labeled.length===1?dates.labeled[0]:''), identity:keep?keep.identity:false, dateChecked:keep?keep.dateChecked:false,
+    oldChecked:false, sameDay:'', ack:false, dupChecked:false, busy:true, writing:false, loaded:false, touched:false, msg:msgAfter||'読み込んでいます…'};
   S.phase='work'; yjPaint_();
   var cur=S.cur;
   Promise.all([apiGetRetry({action:'getResident',id:cur.id},25000), yjYakka_()]).then(function(r){
@@ -6809,7 +6810,7 @@ function yjBuild_(cur, d, items){
   var mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[], last='';
   mh.forEach(function(e){ var at=e&&typeof e==='object'?String(e.at||'').slice(0,10):''; if(/^\d{4}-\d{2}-\d{2}$/.test(at)&&at>last) last=at; });
   cur.lastChange=last;
-  cur.oldChecked=false; cur.ack=false; cur.touched=false;
+  cur.oldChecked=false; cur.ack=false; cur.dupChecked=false; cur.touched=false;
   yjSameDay_(cur);
 }
 function yjSameDay_(cur){
@@ -6820,8 +6821,9 @@ function yjSameDay_(cur){
 }
 function yjJudge_(){
   var c=yjSt.cur;
-  return YakujoCalc.judge({id:c.id, dates:c.dates, date:c.date, identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
-    lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack});
+  var d=new Date(), today=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  return YakujoCalc.judge({id:c.id, dates:c.dates, date:c.date, today:today, identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
+    lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack, dupChecked:c.dupChecked, dateChecked:c.dateChecked});
 }
 var YJ_KIND={same:'そのまま', change:'変える', add:'足す', left:'書類に無い'};
 function yjRowHtml_(r,k){
@@ -6841,30 +6843,40 @@ function yjRowHtml_(r,k){
 }
 function yjWorkHtml_(){
   var S=yjSt, c=S.cur, x=S.docs[c.di], d=x.d, h='';
-  h+='<div class="yj-work"><div class="yj-pages" aria-label="原本の画像">';
+  h+='<div class="yj-work"><div class="yj-pages" role="region" aria-label="原本の画像">';
+  if(d.note) h+='<p class="yj-warn">⚠ '+esc(d.note)+'</p>';
   d.pages.forEach(function(p){
+    var W=p.w>0?p.w:1000, H=p.h>0?p.h:1400;
     h+='<div class="yj-page"><div class="yj-pno">'+(d.pages.length>1?p.no+'ページ':'原本')+'</div>'+
-      (p.img?'<div class="yj-pimg"><img alt="書類'+d.no+'の'+p.no+'ページ目の画像" src="'+p.img+'">'+
-        (c.loaded?c.rows.filter(function(r){ return r.box&&r.page===p.no; }).map(function(r){ return '<span class="yj-box" style="left:'+(r.box.x*100)+'%;top:'+(r.box.y*100)+'%;width:'+(r.box.w*100)+'%;height:'+(r.box.h*100)+'%"></span>'; }).join(''):'')+
-        '</div>':'<p class="yj-warn">⚠ このページの画像がありません'+(p.error?'（'+esc(p.error)+'）':'')+'</p>')+'</div>';
+      (p.img?'<svg class="yj-psvg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="書類'+d.no+'の'+p.no+'ページ目の画像（読んだ薬の行に枠）">'+
+        '<image href="'+p.img+'" x="0" y="0" width="'+W+'" height="'+H+'"/>'+
+        (c.loaded?c.rows.filter(function(r){ return r.box&&r.page===p.no; }).map(function(r){
+          return '<rect class="yj-box" x="'+(r.box.x*W).toFixed(1)+'" y="'+(r.box.y*H).toFixed(1)+'" width="'+(r.box.w*W).toFixed(1)+'" height="'+(r.box.h*H).toFixed(1)+'"/>'; }).join(''):'')+
+        '</svg>':'<p class="yj-warn">⚠ このページの画像がありません'+(p.error?'（'+esc(p.error)+'）':'')+'</p>')+
+      (p.img&&p.error?'<p class="yj-warn">⚠ '+esc(p.error)+'</p>':'')+'</div>';
   });
   h+='</div><div class="yj-side">';
   h+='<h3 class="yj-h3">書類'+d.no+'　'+esc((c.room?c.room+' ':'')+c.name)+' 様</h3>';
   if(c.msg) h+='<p class="mc-msg" role="status">'+esc(c.msg)+'</p>';
-  if(!c.loaded) return h+'</div></div>';
+  if(!c.loaded) return h+(c.busy?'':'<div class="yj-actions"><button type="button" class="btn btn-sec" id="yjRetry">読み直す</button>'+
+    '<button type="button" class="btn btn-gray" id="yjQueue">一覧に戻る</button></div>')+'</div></div>';
   var opts=c.dates.labeled.concat(c.dates.other);
   h+='<div class="yj-meta"><label class="yj-lbl">調剤日 '+(opts.length?'<select id="yjDate"><option value="">（選ぶ）</option>'+opts.map(function(dt){ return '<option value="'+dt+'"'+(c.date===dt?' selected':'')+'>'+esc(fmtJDate(dt))+(c.dates.labeled.indexOf(dt)<0?'（調剤日の語の無い日付）':'')+'</option>'; }).join('')+'</select>':'<span class="yj-warn">⚠ 書類から読めません</span>')+'</label>'+
     '<label class="yj-chk"><input type="checkbox" id="yjId"'+(c.identity?' checked':'')+'> 原本の氏名を見て、'+esc(c.name)+' 様の書類だと確かめた</label>';
   if(c.lastChange&&c.date&&c.date<c.lastChange) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjOld"'+(c.oldChecked?' checked':'')+'> ⚠ この書類の調剤日（'+esc(fmtJDate(c.date))+'）は、定期薬の最後の変更（'+esc(fmtJDate(c.lastChange))+'）より前です。古い書類で戻さないことを確かめた</label>';
-  if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ調剤日の薬情から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
+  if(c.date&&c.dates.labeled.indexOf(c.date)<0) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
+  if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ日付のこの方の記録（申送・薬情）から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
   h+='</div>';
   h+='<div class="yj-tblw"><table class="yj-tbl"><thead><tr><th>区分</th><th>書類（読んだ文字）</th><th>今の定期薬</th><th>反映する行</th><th>どうするか</th></tr></thead><tbody>'+
     c.rows.map(yjRowHtml_).join('')+'</tbody></table></div>';
   var j=yjJudge_();
   h+='<div class="yj-after"><div class="mc-lbl">反映すると、定期薬はこうなります（変える '+j.counts.change+'・足す '+j.counts.add+'・中止 '+j.counts.stop+'）</div><pre class="mc-pre">'+esc(j.after||'（記載なし）')+'</pre></div>';
   j.notes.forEach(function(n){ h+='<p class="yj-warn">⚠ '+esc(n)+'</p>'; });
+  if(j.dupStems&&j.dupStems.length) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDup"'+(c.dupChecked?' checked':'')+'> ⚠ 同じ名前の薬が2行になります（'+esc(j.dupStems.join('・'))+'）。量・時点が重ならないことを確かめた</label>';
   if(j.stop) h+='<p class="yj-stop" role="status">反映できません：'+esc(j.stop)+'</p>';
+  var noChange=!j.counts.change&&!j.counts.add&&!j.counts.stop;
   h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjApply"'+(j.stop||c.busy?' disabled':'')+'>この内容で反映する</button>'+
+    (noChange&&!c.writing?'<button type="button" class="btn btn-sec" id="yjNone">変更なし（この書類は終わり）</button>':'')+
     '<button type="button" class="btn btn-gray" id="yjQueue"'+(c.writing?' disabled':'')+'>一覧に戻る（反映しない）</button></div>';
   return h+'</div></div>';
 }
@@ -6918,6 +6930,13 @@ function yjApply_(){
 function yjPaint_(){
   var S=yjSt, box=$('yjBody'); if(!box) return;
   if(!S){ box.innerHTML=''; return; }
+  /* ★描き直しの前後で、焦点（id か data-yj* の印で探し直す）とスクロールの位置を戻す（印1つごとに先頭へ飛ばない） */
+  var ae=document.activeElement, fsel='';
+  if(ae&&box.contains(ae)){
+    if(ae.id) fsel='#'+ae.id;
+    else ['data-yjline','data-yjact','data-yjchk','data-yjpick','data-yjout','data-yjdoc'].some(function(a){ var v=ae.getAttribute(a); if(v!=null){ fsel='['+a+'="'+v+'"]'; return true; } return false; });
+  }
+  var pg=box.querySelector('.yj-pages'), keepPg=pg?pg.scrollTop:0, keepBody=box.scrollTop;
   var h='';
   if(S.server==='old') h+='<p class="yj-stop">入居者マスタGASの貼り替えがまだのため、反映はできません（読み込み・振り分け・確認表は見られます）。</p>';
   else if(S.server==='ng') h+='<p class="yj-warn">⚠ 入居者マスタGASに届きません。少し待って開き直してください。</p>';
@@ -6931,12 +6950,16 @@ function yjPaint_(){
   else if(S.phase==='queue') h+=yjQueueHtml_();
   else if(S.phase==='work'&&S.cur) h+=yjWorkHtml_();
   box.innerHTML=h;
+  var pg2=box.querySelector('.yj-pages'); if(pg2) pg2.scrollTop=keepPg;
+  box.scrollTop=keepBody;
+  if(fsel){ try{ var f=box.querySelector(fsel); if(f&&!f.disabled) f.focus({preventScroll:true}); }catch(e){} }
 }
 function yjWire_(){
   var ob=$('yjOpen'), m=$('mYakujo');
   if(ob) ob.addEventListener('click', yjOpen_);
   if(!m) return;
   m.addEventListener('keydown',function(e){
+    if(e.isComposing||e.keyCode===229) return;   /* 変換中の Esc は変換の取り消し（窓は閉じない） */
     if(e.key==='Escape'){ yjClose_(); return; }
     if(e.key==='Tab'){
       var f=Array.prototype.filter.call(m.querySelectorAll('button,select,input,textarea,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
@@ -6951,6 +6974,8 @@ function yjWire_(){
     if(t.id==='yjGo'){ yjSt.phase='queue'; yjPaint_(); return; }
     if(t.id==='yjBack'){ yjSt.phase='assign'; yjPaint_(); return; }
     if(t.id==='yjApply'){ yjApply_(); return; }
+    if(t.id==='yjRetry'&&yjSt.cur&&!yjSt.cur.busy){ yjStartDoc_(yjSt.cur.di); return; }
+    if(t.id==='yjNone'&&yjSt.cur&&!yjSt.cur.writing){ yjSt.docs[yjSt.cur.di].status='none'; yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
     if(t.id==='yjQueue'&&yjSt.cur&&!yjSt.cur.writing){
       if(yjDirty_()&&!confirm('確認表の印・直した行は保存されていません。一覧に戻ってよいですか？')) return;
       yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
@@ -6967,20 +6992,22 @@ function yjWire_(){
     var pk=t.getAttribute('data-yjpick'); if(pk!=null){ var dx=yjSt.docs[+pk]; if(dx&&!dx.status) dx.pick=t.value; yjPaint_(); return; }
     var ou=t.getAttribute('data-yjout'); if(ou!=null){ var dy=yjSt.docs[+ou]; if(dy&&!dy.status&&!dy.d.error) dy.out=!!t.checked; yjPaint_(); return; }
     var c=yjSt.cur; if(!c||!c.loaded||c.busy) return;
-    if(t.id==='yjDate'){ c.date=t.value; yjSameDay_(c); c.oldChecked=false; c.ack=false; c.touched=true; yjPaint_(); return; }
+    if(t.id==='yjDate'){ c.date=t.value; yjSameDay_(c); c.oldChecked=false; c.ack=false; c.dateChecked=false; c.touched=true; yjPaint_(); return; }
     if(t.id==='yjId'){ c.identity=!!t.checked; c.touched=true; yjPaint_(); return; }
     if(t.id==='yjOld'){ c.oldChecked=!!t.checked; yjPaint_(); return; }
     if(t.id==='yjAck'){ c.ack=!!t.checked; yjPaint_(); return; }
-    var ak=t.getAttribute('data-yjact'); if(ak!=null){ var r=c.rows[+ak]; if(r){ r.action=t.value; r.checked=false; c.touched=true; } yjPaint_(); return; }
+    if(t.id==='yjDup'){ c.dupChecked=!!t.checked; yjPaint_(); return; }
+    if(t.id==='yjDateOk'){ c.dateChecked=!!t.checked; c.touched=true; yjPaint_(); return; }
+    var ak=t.getAttribute('data-yjact'); if(ak!=null){ var r=c.rows[+ak]; if(r){ r.action=t.value; r.checked=false; c.dupChecked=false; c.touched=true; } yjPaint_(); return; }
     var ck=t.getAttribute('data-yjchk'); if(ck!=null){ var r2=c.rows[+ck]; if(r2){ r2.checked=!!t.checked; c.touched=true; } yjPaint_(); return; }
     var ln=t.getAttribute('data-yjline'); if(ln!=null){
       /* 行を直したら、同じ規則で判定し直す（与薬チェックで読める形か）。確かめた印は外す */
       var r3=c.rows[+ln]; if(!r3) return;
-      r3.line=String(t.value).replace(/[\r\n]+/g,' ').trim(); r3.checked=false; c.touched=true;
+      r3.line=String(t.value).replace(/[\r\n]+/g,' ').trim(); r3.checked=false; c.dupChecked=false; c.touched=true;
       r3.warns=r3.warns.filter(function(w){ return w.indexOf('与薬チェック')<0&&w.indexOf('手で直した行')<0; });
       var sw=yjSlotWarn_(r3.line); if(sw) r3.warns.push(sw);
       r3.warns.push('手で直した行です（原本と見比べてください）');
-      yjPaint_(); return;
+      setTimeout(function(){ if(yjSt&&yjSt.cur===c) yjPaint_(); },0); return;
     }
   });
 }
@@ -7766,7 +7793,9 @@ window.addEventListener('beforeunload',function(e){
   /* ★薬効辞書の未保存も対象。AIの下書きはメモリにしか無く、再読込・タブを閉じると消える
      （2026-09-04 に再描画で155件消えた件と同じ損失がリロード経路に残っていた） */
   /* ★編集画面の未保存も対象（2026-10-16） */
-  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty) && !editDirty_()) return;
+  /* ★薬情の取り込みの送信中・反映できたか確かめ中・確認表の印も対象（2026-10-22） */
+  var yjBusy=!!(yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; })));
+  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty) && !editDirty_() && !yjBusy) return;
   e.preventDefault(); e.returnValue='';
 });
 
@@ -11389,6 +11418,8 @@ function navTopModal(){
   if($('mMedSlots')&&$('mMedSlots').classList.contains('on'))return function(){return msClose_()};
   /* 薬の変更候補（2026-10-06）。反映・記録の送信中は閉じない（false＝開いたまま） */
   if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_()};
+  /* 薬情の取り込み（2026-10-22）。反映の送信中は閉じない（false＝開いたまま） */
+  if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_()};
   if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};

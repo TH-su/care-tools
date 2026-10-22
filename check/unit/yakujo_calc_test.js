@@ -221,6 +221,77 @@ console.log('\n— 8b. 確認表の行と「反映する」を止める規則（
   t('中止を選べば全文から除き、知らせる', j3.stop === '' && !/架空錠Z/.test(j3.after) && j3.notes.some(n => /中止/.test(n)), j3);
 }
 
+console.log('\n— 8c. 反証レビュー（2026-10-22）の指摘の再発防止 —');
+{
+  const R2 = [{ id: '21', name: '森 誠', kana: 'もり まこと', active: true }, { id: '22', name: '林 誠', kana: 'はやし まこと', active: true }];
+  const p1 = Y.assign(one([[L('大森 誠 様', 0.1, 0.1), L('オオモリ マコト', 0.1, 0.13)]]), R2);
+  t('★名簿に無い「大森 誠」の書類を、名簿の「森 誠」に振り分けない（カナの部分一致も）', p1.id === '', p1);
+  const p2 = Y.assign(one([[L('患者 林 誠一 様', 0.1, 0.1)]]), R2);
+  t('★名簿に無い「林 誠一」の書類を、名簿の「林 誠」に振り分けない', p2.id === '', p2);
+  const p3 = Y.assign(one([[L('氏名架空太郎', 0.1, 0.1)]]), R);
+  t('「氏名」などの見出しに続く氏名は一致にする', p3.id === '11', p3);
+  /* 用法: 見出しの注意書きの「食後」を Rp の用法の行と取り違えない */
+  const d3 = one([[
+    L('※お薬は食後に飲んでください', 0.1, 0.10, 0.6),
+    L('架空A錠5mg', 0.1, 0.20), L('1回1錠', 0.6, 0.20),
+    L('1日1回 朝食後 28日分', 0.1, 0.24, 0.6),
+    L('架空B錠10mg', 0.1, 0.30), L('1回1錠', 0.6, 0.30),
+    L('1日2回 朝夕食後 28日分', 0.1, 0.34, 0.6),
+  ]]);
+  const r3 = Y.parseRows(d3);
+  t('★注意書きの「食後」を用法の行にしない（A は朝・B は朝夕）', r3.length === 2 && r3[0].use.slots.join() === '朝' && r3[1].use.slots.join() === '朝,夕', r3.map(r => r.use.slots.join('')));
+  /* 規格だけ違う薬は「変える」に印 */
+  const mS = Y.matchCurrent([{ line: '架空ジピン錠2.5mg 1錠分1 朝食後', spec: { name: '架空ジピン錠2.5mg', maker: '', slots: ['朝'], dose: 1, unit: '錠', meal: '食後', free: '' }, raw: '架空ジピン錠2.5mg' }], '架空ジピン錠5mg 1錠分1 朝食後');
+  const rS = Y.buildRows(mS.pairs, mS.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], {});
+  t('★規格だけ違う「変える」には印を付ける', rS[0].kind === 'change' && rS[0].warns.some(w => /規格/.test(w)), rS[0]);
+  /* 対応の付かない「足す」と書類に無い今の行が同時にある時は「足す」に印 */
+  const mA = Y.matchCurrent([{ line: '架空ゾール錠10mg 1錠分1 朝食後', spec: { slots: ['朝'], dose: 1 }, raw: '架空ゾール錠10mg' }], '先発架空錠10 1錠分1 朝食後');
+  const rA = Y.buildRows(mA.pairs, mA.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], {});
+  t('★対応の付かない「足す」と書類に無い今の行が同時にあれば「足す」に印', rA[0].kind === 'add' && rA[0].warns.some(w => /書き方違い/.test(w)), rA);
+  /* 同じ薬が2行になる時は、確かめた印が無ければ止める */
+  const cur2 = '架空錠5mg 1錠分1 朝食後\n架空錠5mg 1錠分1 就寝前';
+  const m2 = Y.matchCurrent([{ line: '架空錠5mg 2錠分2 朝食後・就寝前', spec: { name: '架空錠5mg', maker: '', slots: ['朝', '眠前'], dose: 1, unit: '錠', meal: '食後', free: '' }, raw: '架空錠5mg' }], cur2);
+  const rows2 = Y.buildRows(m2.pairs, m2.left, [{ warn: [], skip: false, spec: { slots: ['朝', '眠前'], dose: 1 } }], {});
+  t('書類に無い今の行が書類の薬と同じ名前なら知らせる', rows2.some(r => r.kind === 'left' && r.warns.some(w => /同じ薬の名前/.test(w))), rows2);
+  rows2.forEach(r => { if (r.kind === 'left') r.action = 'keep'; r.checked = true; });
+  const st2 = { id: '11', dates: { labeled: ['2026-10-18'], other: [] }, date: '2026-10-18', identity: true, server: 'ok', rows: rows2, current: cur2 };
+  const j2 = Y.judge(st2);
+  t('★同じ名前の薬が2行になるなら、確かめた印が無ければ止める', /同じ名前の薬が2行/.test(j2.stop), j2.stop);
+  t('確かめた印があれば止めない', Y.judge(Object.assign({}, st2, { dupChecked: true })).stop === '');
+  /* 調剤日: 次回の予定日を拾わない・空白で数字をつながない・今日より後は止める */
+  const dN = Y.findDates(one([[L('2026年10月1日', 0.1, 0.1), L('次回処方予定日 2026年11月5日', 0.1, 0.2)]]));
+  t('★「次回処方予定日」の日付は調剤日の候補にしない', dN.labeled.length === 0 && dN.other.join() === '2026-10-01', dN);
+  t('★「2026/10/1 1/2」を 2026-10-11 と読まない', Y.datesIn('調剤日 2026/10/1 1/2').join() === '2026-10-01', Y.datesIn('調剤日 2026/10/1 1/2'));
+  const jF = Y.judge({ id: '11', dates: { labeled: ['2026-11-05'], other: [] }, date: '2026-11-05', today: '2026-10-22', identity: true, server: 'ok', rows: [], current: 'x' });
+  t('★今日より後の調剤日は止める', /今日より後/.test(jF.stop), jF.stop);
+  /* 曜日の指定 */
+  t('★「月水金」は毎日の書き方にしない（extra）', Y.parseUse('1回1錠 1日1回 朝食後 月水金 28日分', 'day').extra.length === 1);
+  t('★「火・金」も同じ', Y.parseUse('1錠 朝食後 火・金', 'day').extra.length === 1);
+  t('日付の「10月18日」は曜日の指定と見なさない', Y.parseUse('調剤 10月18日 1錠 朝食後', 'day').extra.length === 0);
+  t('★今の行の「月水金」は、書類の毎日の行と同じ意味にしない', Y.sameMeaning('架空錠5mg 1錠分1 朝食後 月水金', { name: '架空錠5mg', maker: '', slots: ['朝'], dose: 1, unit: '錠', meal: '食後', free: '' }) === false);
+  /* 屋号を他の方の行から借りない */
+  const sm = Y.snap('架空ピン錠5mg', { current: [], used: ['架空ピン錠5mg「見本」 1錠分1 朝食後'], items: [] });
+  t('★書類に屋号が無い時、ほかの方の行の屋号を借りない', sm.source === 'used' && sm.maker === '', sm);
+  const sc = Y.snap('架空ピン錠5mg', { current: ['架空ピン錠5mg「見本」 1錠分1 朝食後'], used: [], items: [] });
+  t('この方の今の行の屋号は引き継ぐ', sc.source === 'current' && sc.maker === '見本', sc);
+}
+
+console.log('\n— 8d. 審査（2026-10-22）の指摘の再発防止 —');
+{
+  const r = Y.parseResult({ kind: 'yakujo-yomitori', v: 1, docs: [{ file: 'a.pdf', type: 'pdf', error: '', note: '12 ページのうち、はじめの 10 ページだけを読みました', pagesTotal: 12,
+    pages: [{ no: 1, w: 10, h: 10, img: '', lines: [], error: '' }, { no: 3, w: 0, h: 0, img: '', lines: [], error: 'このページを画像にできませんでした' }] }], skipped: [] });
+  t('★PDF の「残りを読んでいない」知らせと元のページ数を捨てない', /10 ページだけ/.test(r.docs[0].note) && r.docs[0].pagesTotal === 12, r.docs[0]);
+  t('★読めないページの理由と元のページ番号を捨てない', r.docs[0].pages[1].no === 3 && /画像にできません/.test(r.docs[0].pages[1].error), r.docs[0].pages[1]);
+  const cur = '架空錠A 1錠分1 朝食後\n\n架空錠B 1錠分1 夕食後\n';
+  t('★今の定期薬の空行・並びを保つ（変える・中止・足す）',
+    Y.buildAfter(cur, { change: [{ from: '架空錠A 1錠分1 朝食後', to: '架空錠A 2錠分2 朝夕食後' }], stop: [], add: ['架空錠C 1錠分1 就寝前'] }) ===
+    '架空錠A 2錠分2 朝夕食後\n\n架空錠B 1錠分1 夕食後\n架空錠C 1錠分1 就寝前', Y.buildAfter(cur, { change: [{ from: '架空錠A 1錠分1 朝食後', to: '架空錠A 2錠分2 朝夕食後' }], stop: [], add: ['架空錠C 1錠分1 就寝前'] }));
+  const st = { id: '11', dates: { labeled: [], other: ['2026-10-18'] }, date: '2026-10-18', today: '2026-10-22', identity: true, server: 'ok',
+    rows: [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: [], checked: false }], current: '架空錠A 1錠分1 朝食後' };
+  t('★「調剤日」の語の無い日付を選んだら、確かめた印が無ければ止める', /語がありません/.test(Y.judge(st).stop), Y.judge(st).stop);
+  t('確かめた印があれば止めない', Y.judge(Object.assign({}, st, { dateChecked: true })).stop === '', Y.judge(Object.assign({}, st, { dateChecked: true })).stop);
+}
+
 console.log('\n— 9. 判断の印 —');
 {
   const k = Y.srcKey('11', '2026-10-18', '架空錠A5mg 2錠分2 朝夕食後');

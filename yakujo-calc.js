@@ -27,6 +27,18 @@
     t = t.replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
     return t.replace(/(さま|様|さん|どの)$/, '');
   }
+  function reEsc(c) { return c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); }
+  /* 名前を「前後に別の字が続かない」形で探す正規表現（空白は字の間にあってよい）。
+     例: 名簿「森 誠」は「大森 誠 様」「森 誠一」には一致しない。前に「氏名」「患者名」などの見出しが付くのはよい */
+  var NAME_HEAD = '(?:(?<![\\p{L}\\p{N}])|(?<=氏名|患者名|患者氏名|お名前|名前|患者|利用者名|利用者))';
+  var NAME_TAIL = '(?=[\\s\u3000]*(?:様|さま|さん|殿|どの|氏)|[^\\p{L}\\p{N}]|$)';
+  function wordRe(chars) {
+    if (!chars.length) return null;
+    try { return new RegExp(NAME_HEAD + chars.map(reEsc).join('[\\s\u3000]*') + NAME_TAIL, 'u'); } catch (e) { return null; }
+  }
+  function nameRe(name) { return wordRe(Array.from(nz(name))); }
+  function kanaRe(kana) { var k = kn(kana); return k.length >= 3 ? wordRe(Array.from(k)) : null; }
+  function hira(s) { return nfkc(s).replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); }); }
   function num(v, lo, hi) { var n = Number(v); if (!isFinite(n)) return lo; return Math.min(hi, Math.max(lo, n)); }
 
   /* ── 1. 結果のファイルを読む（形を確かめ、余計な物を捨てる）── */
@@ -51,11 +63,13 @@
           lines.push({ t: t, x: num(l.x, 0, 1), y: num(l.y, 0, 1), w: num(l.w, 0, 1), h: num(l.h, 0, 1), c: num(l.c, 0, 1) });
         });
         var codes = p.codes && typeof p.codes === 'object' ? p.codes : {};
-        pages.push({ no: j + 1, w: Math.round(num(p.w, 0, 20000)), h: Math.round(num(p.h, 0, 20000)), img: img, lines: lines,
+        pages.push({ no: Math.round(num(p.no, j + 1, 999)) || (j + 1), w: Math.round(num(p.w, 0, 20000)), h: Math.round(num(p.h, 0, 20000)), img: img, lines: lines,
+          error: String(p.error == null ? '' : p.error).slice(0, 200),
           qr: Math.round(num(codes.qr, 0, 99)) });
       });
       docs.push({ no: i + 1, file: String(x.file == null ? '' : x.file).slice(0, 200), type: x.type === 'pdf' ? 'pdf' : 'photo',
-        error: String(x.error == null ? '' : x.error).slice(0, 200), pages: pages });
+        error: String(x.error == null ? '' : x.error).slice(0, 200), note: String(x.note == null ? '' : x.note).slice(0, 300),
+        pagesTotal: Math.round(num(x.pagesTotal, 0, 9999)) || pages.length, pages: pages });
     });
     var skipped = (Array.isArray(d.skipped) ? d.skipped : []).slice(0, 200).map(function (s) {
       return { file: String(s && s.file || '').slice(0, 200), why: String(s && s.why || '').slice(0, 200) };
@@ -87,19 +101,18 @@
      戻り値 {id, how, why, cands:[{id, how}], pages:[{ids, kana}]}
        id が '' の時は未振分（why に理由） */
   function assign(doc, roster) {
-    var act = (Array.isArray(roster) ? roster : []).filter(function (r) { return r && r.active === true && nz(r.name).length >= 2; });
+    var act = (Array.isArray(roster) ? roster : []).filter(function (r) { return r && r.active === true && nz(r.name).length >= 2; })
+      .map(function (r) { return { id: r.id, name: r.name, kana: r.kana, active: true, nre: nameRe(r.name), kre: kanaRe(r.kana) }; });
     var res = { id: '', how: '', why: '', cands: [], pages: [] };
     var nameHit = {}, kanaHit = {}, kanaLines = 0, pageIds = [];
     doc.pages.forEach(function (p) {
       var ids = {};
       p.lines.forEach(function (l) {
-        var z = nz(l.t), k = kn(l.t);
+        var t = nfkc(l.t), h = hira(l.t), k = kn(l.t);
         if (/^[ぁ-ゖー]{3,}$/.test(k) && k.length <= 20) kanaLines++;
         act.forEach(function (r) {
-          var n = nz(r.name);
-          if (z.indexOf(n) >= 0) { ids[r.id] = 1; nameHit[r.id] = 1; }
-          var rk = kn(r.kana);
-          if (rk.length >= 3 && k.indexOf(rk) >= 0) kanaHit[r.id] = 1;
+          if (r.nre && r.nre.test(t)) { ids[r.id] = 1; nameHit[r.id] = 1; }
+          if (r.kre && r.kre.test(h)) kanaHit[r.id] = 1;
         });
       });
       var list = Object.keys(ids);
@@ -149,21 +162,24 @@
     return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
   }
   function datesIn(t) {
-    var s = nfkc(t).replace(/\s+/g, ''), out = [], m;
-    var re1 = /(20\d\d)[年./-](\d{1,2})[月./-](\d{1,2})日?/g;
+    /* 空白を詰めない（「2026/10/1 1/2」を 2026-10-11 と読まない）。区切りの前後の空白だけは許す */
+    var s = nfkc(t), out = [], m;
+    var re1 = /(?<!\d)(20\d\d)\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})(?!\d)/g;
     while ((m = re1.exec(s))) { var a = ymd(m[1], m[2], m[3]); if (a) out.push(a); }
-    var re2 = /(令和|平成|[RH])(元|\d{1,2})[年./-](\d{1,2})[月./-](\d{1,2})日?/g;
+    var re2 = /(令和|平成|(?<![A-Za-z])[RH])\s*(元|\d{1,2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})(?!\d)/g;
     while ((m = re2.exec(s))) { var y = ERA[m[1]] + (m[2] === '元' ? 1 : +m[2]); var b = ymd(y, m[3], m[4]); if (b) out.push(b); }
     return out;
   }
   var DATE_LABEL = /調剤|処方|交付|発行|お渡し|受付日|作成日/, BIRTH = /生年月日|生まれ|誕生/;
+  /* 先の予定の日付（次回処方予定日・次回受診日・有効期限など）は調剤日の候補にしない */
+  var NOT_DISPENSE = /次回|予定|まで|期限|有効|予約/;
   function findDates(doc) {
     var labeled = {}, other = {};
     doc.pages.forEach(function (p) {
       p.lines.forEach(function (l, i) {
         var ds = datesIn(l.t);
         if (!ds.length) return;
-        if (BIRTH.test(l.t)) return;
+        if (BIRTH.test(l.t) || NOT_DISPENSE.test(l.t)) return;
         var prevT = i > 0 ? p.lines[i - 1].t : '';
         var lab = DATE_LABEL.test(l.t) || (DATE_LABEL.test(prevT) && !datesIn(prevT).length && Math.abs(p.lines[i - 1].y - l.y) < 0.03);
         ds.forEach(function (d) { (lab ? labeled : other)[d] = 1; });
@@ -221,6 +237,8 @@
     if (/就寝前|寝る前|眠前/.test(s)) slots['眠前'] = 1;
     r.slots = ['朝', '昼', '夕', '眠前'].filter(function (k) { return slots[k]; });
     if (/起床時|食間|食直前|食直後|隔日|週|曜|月[・、]|日おき|偶数日|奇数日/.test(s)) r.extra.push((/起床時|食間|食直前|食直後|隔日|週\d*回?|[月火水木金土日]曜|日おき|偶数日|奇数日/.exec(s) || [''])[0]);
+    /* 曜日を2つ以上並べた指定（月水金・火金・月/水/金）。日付の「10月」「18日」は数字の後ろなので数えない */
+    else if ((m = /(?:^|[^0-9年月])((?:[月火水木金土日][・,、/]?){2,})(?![0-9])/.exec(nfkc(text).replace(/\s+/g, ' ').replace(/(\d) (?=\d)/g, '$1').replace(/ /g, '')))) r.extra.push(m[1]);
     var re = prnRe instanceof RegExp ? prnRe : /頓|屯|とんぷく|適宜|必要時|痛時|発熱時|便秘時|不眠時|不穏時/;
     if (re.test(s)) r.prn = true;
     return r;
@@ -232,9 +250,13 @@
     doc.pages.forEach(function (p, pi) {
       var header = doseHeader(p), rows = visualRows(p);
       /* 用法を Rp ごとに薬の上へ書く書類か（最初の用法の行が、最初の薬の行より上にある） */
-      var USE_ROW = /食後|食前|就寝前|寝る前|眠前|起床時|1日\d回|毎食|分\d|\d+日分/;
+      var USE_SLOT = /毎食[前後]|[朝昼夕]{1,3}食[前後]|就寝前|寝る前|眠前|起床時/, USE_COUNT = /1日\d回|分\d|\d+日分|\d+回分/;
       var isDrugRow = function (rw) { return rw.items.some(function (x) { return looksDrug(x.t); }); };
-      var isUseRow = function (rw) { return !isDrugRow(rw) && USE_ROW.test(nfkc(rw.items.map(function (x) { return x.t; }).join('')).replace(/\s+/g, '')); };
+      var isUseRow = function (rw) {
+        if (isDrugRow(rw)) return false;
+        var tx = nfkc(rw.items.map(function (x) { return x.t; }).join('')).replace(/\s+/g, '');
+        return USE_SLOT.test(tx) && USE_COUNT.test(tx);
+      };
       var firstDrug = -1, firstUse = -1;
       rows.forEach(function (rw, ri) { if (firstDrug < 0 && isDrugRow(rw)) firstDrug = ri; if (firstUse < 0 && isUseRow(rw)) firstUse = ri; });
       var useAbove = firstUse >= 0 && firstDrug >= 0 && firstUse < firstDrug;
@@ -318,7 +340,7 @@
     for (i = 0; i < fac.length; i++) {
       f = fac[i];
       if (f.base === base && (!mk || nfkc(f.maker) === mk)) {
-        res.name = f.name; res.maker = f.maker || sm.maker; res.source = f.src; res.makerOk = !mk || nfkc(f.maker) === mk; return res;
+        res.name = f.name; res.maker = mk ? sm.maker : (f.src === 'current' ? f.maker : ''); res.source = f.src; res.makerOk = true; return res;
       }
     }
     var items = Array.isArray(ctx.items) ? ctx.items : [], keys = yakkaKeys(items), hit = -1;
@@ -400,6 +422,13 @@
     var tail = m ? m[4].replace(/[「『(（【<＜][^」』)）】>＞]*[」』)）】>＞]?/g, '').replace(/\d+(?:\.\d+)?(?:mg|μg|g|mL|%)/ig, '').replace(/[^A-Za-z]/g, '').toUpperCase() : '';
     return n + '|' + tail;
   }
+  /* 知らせ・重なりの確かめに使う「同じ薬か」の鍵（語幹が取れない短い名前は、規格を除いた名前そのもの）。
+     行どうしを結ぶのには使わない（結ぶのは stem だけ。知らせを出しすぎる側に倒す） */
+  function ident(l) {
+    var k = stem(l); if (k) return k.split('|')[0];
+    var n = drugKey(splitMaker(lineName(l)).base).replace(/\d+(?:\.\d+)?(?:mg|μg|g|mL|%)/ig, '');
+    return n.length >= 2 ? n : '';
+  }
   /* rows: [{line}]（作った行）, current: 今の定期薬の全文 → {pairs:[{row, cur, kind}], left:[今の行で対応の無いもの]}
      kind: 'same'（同じ行）・'change'（同じ薬で中身が違う）・'add'（今に無い） */
   /* 今の行と、組み立てた材料（spec）が同じ意味か。名前（屋号を含む）が同じで、1日の量・単位・時点・食前後が同じ時だけ真。
@@ -443,15 +472,20 @@
      current の並びを保ち、変える行は置き換え、中止の行は除き、足す行は末尾に足す。
      decisions: {change:[{from, to}], stop:[行], add:[行]} */
   function buildAfter(current, dec) {
-    var cur = String(current == null ? '' : current).split(/\r\n|\r|\n/).map(function (l) { return l.replace(/\s+$/, ''); }).filter(function (l) { return l.trim(); });
+    /* 今の定期薬の行（空行・行の並びを含む）はそのまま残し、変える・中止の行だけを差し替える。足す行は最後の薬の行の後ろに足す */
+    var raw = String(current == null ? '' : current).split(/\r\n|\r|\n/);
     var stop = (dec.stop || []).slice(), chg = (dec.change || []).slice(), out = [];
-    cur.forEach(function (l) {
+    raw.forEach(function (l0) {
+      var l = l0.replace(/\s+$/, '');
+      if (!l.trim()) { out.push(l0); return; }
       var si = stop.indexOf(l); if (si >= 0) { stop.splice(si, 1); return; }
       for (var i = 0; i < chg.length; i++) if (chg[i].from === l) { out.push(chg[i].to); chg.splice(i, 1); return; }
-      out.push(l);
+      out.push(l0);
     });
+    var tail = [];
+    while (out.length && !out[out.length - 1].trim()) tail.unshift(out.pop());
     (dec.add || []).forEach(function (l) { out.push(l); });
-    return out.join('\n');
+    return out.concat(tail).join('\n').replace(/\s+$/, '');
   }
 
   /* ── 8. 確認表の行を作る ──
@@ -479,6 +513,23 @@
     (left || []).forEach(function (l) {
       rows.push({ kind: 'left', cur: l, line: l, raw: '', page: 0, box: null, warns: [], action: '', checked: false });
     });
+    var nameOf = function (l) { return drugKey(splitMaker(lineName(l)).base); };
+    var lefts = rows.filter(function (r) { return r.kind === 'left'; });
+    rows.forEach(function (r) {
+      /* 名前の語幹で結んだ「変える」で規格が違う（増量・減量か、別の薬の重なりか）（設計書 §4-3） */
+      if (r.kind === 'change') {
+        var a = strength(nameOf(r.cur)), b = strength(nameOf(r.line || r.raw));
+        if (a && b && a !== b) r.warns.push('規格が今の行（' + a + '）と違います（' + b + '）。増量・減量か、別の薬の重なりかを確かめてください');
+      }
+      /* 対応の付かない「足す」と、書類に無い今の行が同じ方の中に同時にある（先発↔後発などの書き方違いの疑い・設計書 §4-3） */
+      if (r.kind === 'add' && lefts.length) r.warns.push('今の定期薬に、書類に無い薬が ' + lefts.length + ' 行あります。名前の書き方違い（先発・後発など）で同じ薬でないか確かめてください');
+    });
+    /* 書類に無い今の行のうち、書類の薬と同じ語幹の行（1つの薬を時点ごとに2行に分けて書いている等）には知らせを付ける */
+    lefts.forEach(function (r) {
+      var st = ident(r.cur);
+      var same = st && rows.filter(function (x) { return x.kind !== 'left' && ident(x.line || x.raw) === st; })[0];
+      if (same) r.warns.push('書類の「' + lineName(same.raw || same.line) + '」と同じ薬の名前です（行の分け方が違うかもしれません。量・時点が重ならないか確かめてください）');
+    });
     return rows;
   }
 
@@ -499,14 +550,20 @@
     var unchecked = rows.filter(function (r) { return r.warns && r.warns.length && !r.checked && !(r.action === 'skip' || (r.kind === 'same')); }).length;
     var undecided = rows.filter(function (r) { return r.kind === 'left' && r.action !== 'keep' && r.action !== 'stop'; }).length;
     var labeled = (st.dates && st.dates.labeled) || [], other = (st.dates && st.dates.other) || [];
-    var seen = {}, dup = 0;
+    var seen = {}, dup = 0, stems = {}, dupStems = [];
     lines.forEach(function (l) { var k = nfkc(l).replace(/\s+/g, ' ').trim(); if (seen[k]) dup++; seen[k] = 1; });
+    /* 同じ薬（語幹）が2行以上になり、そのどれかが今回足す・変える行（設計書 §4-3・薬の変更候補の dupS と同じ考え） */
+    var touched = {};
+    dec.add.concat(dec.change.map(function (x) { return x.to; })).forEach(function (l) { var k = ident(l); if (k) touched[k] = 1; });
+    lines.forEach(function (l) { var k = ident(l); if (!k) return; stems[k] = (stems[k] || 0) + 1; if (stems[k] === 2 && touched[k]) dupStems.push(lineName(l)); });
     if (!st.id) stop = '振り分け先（どの方の書類か）が決まっていません';
     else if (st.server === 'old') stop = '入居者マスタGASの貼り替えがまだのため、反映できません（確認表は見られます）';
     else if (st.server !== 'ok') stop = '入居者マスタGASに届きません。少し待って開き直してください';
     else if (!labeled.length && !other.length) stop = '書類から調剤日を読めません。日付の入った書類で取り込んでください（この書類からは反映できません）';
     else if (!st.date) stop = labeled.length > 1 ? '調剤日が2つ以上あります。この書類の調剤日を1つ選んでください' : '調剤日を選んでください';
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(st.date))) stop = '調剤日の形が正しくありません';
+    else if (labeled.indexOf(String(st.date)) < 0 && !st.dateChecked) stop = '選んだ日付（' + st.date + '）には「調剤日」などの語がありません。原本でこの日付が調剤日か確かめて、印を付けてください';
+    else if (st.today && String(st.date) > String(st.today)) stop = '調剤日（' + st.date + '）が今日より後です。書類の日付を確かめてください（次回の予定日などを読んでいないか）';
     else if (!st.identity) stop = '書類の氏名を見て、この方の書類だと確かめたら、印を付けてください';
     else if (undecided) stop = '書類に無い今の薬が ' + undecided + ' 行あります。「残す」か「中止」を選んでください';
     else if (unchecked) stop = '⚠ の行が ' + unchecked + ' 行あります。原本と見比べて「確かめた」に印を付けてください';
@@ -518,8 +575,9 @@
     else if (after.length > 5000) stop = '反映する定期薬が長すぎます（5000字まで）';
     else if (/[（(]不明[）)]/.test(after)) stop = '「（不明）」が残っています。用量・用法を確かめて書き直してください';
     else if (dup) stop = '同じ行が2つになります（' + dup + '行）。足す行と今の行が重なっていないか確かめてください';
+    else if (dupStems.length && !st.dupChecked) stop = '同じ名前の薬が2行になります（' + dupStems.join('・') + '）。量・時点が重ならないか確かめて、印を付けてください';
     if (counts.stop) notes.push('「中止」が ' + counts.stop + ' 行あります。書類どおりの中止か確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）');
-    return { stop: stop, notes: notes, after: after, counts: counts };
+    return { stop: stop, notes: notes, after: after, counts: counts, dupStems: dupStems };
   }
 
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */
