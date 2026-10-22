@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0074Z8AGQ3OcmW/FoT+9FaMLPxaQ8QLR6kQYwb5cp48=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AgvKd2nz1fazLTVNS9F7ArATw7iaz7nK4HsYISWHAw0=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -1029,6 +1029,7 @@ async function refresh() {
   busy = true;
   refreshPending = false;
   copyUsed_ = false;                               // 写しから表示中の帯は、この表示で読んだ分だけで決める
+  showCopyBand_(null, false);                      // 前の表示で出た帯は、ここでいったん消す（この表示で Google から読めた時だけ出し直す・改善プロンプト第3弾の14）
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {
@@ -1049,6 +1050,7 @@ async function refresh() {
     // 全週フェッチ失敗＝通信/接続先の問題。0枠成功と誤表示せず失敗として扱う（silent fail 防止）。
     if (raw.weeksFetched === 0) {
       lastFetchFailed = true;                              // 保持中のRAWは古い＝以後の再描画で「集計OK」と偽らない
+      copyUsed_ = false; showCopyBand_(null, false);       // 週を1つも読めなかった＝写しから表示していない（予定の型だけ読めても帯は出さない）
       $('boardEmpty').classList.add('on');
       $('bHeads').textContent = ''; $('bCanvas').textContent = '';
       $('emptyMsg').textContent = 'データを取得できませんでした。通信環境・接続先URL／トークンをご確認ください。';
@@ -1067,6 +1069,7 @@ async function refresh() {
     else if (total === 0) toast('対象期間に支援枠が見つかりませんでした');
   } catch (e) {
     lastFetchFailed = true;                                // 例外時も保持中のRAWは古いまま
+    copyUsed_ = false; showCopyBand_(null, false);         // 読めなかった＝今の表示は写しから読んだものではない
     setSyncState('取得失敗');
     toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
   } finally {
