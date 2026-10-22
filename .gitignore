@@ -137,6 +137,15 @@ mailer/node_modules/
 mailer/data/
 mailer/.DS_Store
 
+# 薬情よみとり — 事務所の Mac の中だけで薬情の写真・PDF の文字を読む道具（2026-10-22・代表者の決定）。
+# 載るのは道具の本体（Swift）と起動用ファイルと説明だけ。読んだ結果・写真・PDF はホームの「薬情よみとり」に置かれ、
+# リポジトリには一切入らない。作った道具（実行ファイル）もホーム側に作る
+!/yakujo-reader
+/yakujo-reader/*
+!/yakujo-reader/README.md
+!/yakujo-reader/yakujo-reader.swift
+!/yakujo-reader/読む.command
+
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
 #  gas/ その他（master/med-api/moushiokuri-api/migrate）→ 正本はテーマ gas/（ローカルgit管理・非公開）
