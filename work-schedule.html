@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZTwcdAsVeUD4YEzwMFsWYDmtjneyWVQf+q1E0MjzmRM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-HzjJahxKnSzzo7R/3kagitDNaGV0USRX5Y1zOpUj0p4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -10479,6 +10479,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 「同期済み」に見えて原因が追えない。su-errors.js の note へ渡す＝コンソールと不具合報告（su-report）にだけ届く。
    * 渡すのは例外だけ（中身のデータは渡さない＝su-errors が引用符の中を伏せる）。where は固定の文字（日付・キーを入れない）。
    * 動き（戻り値・保存の可否・トースト）は変えない。su-errors.js が古い・無い端末では何もしない。 */
+  /* 勤務表を Supabase から読めなかった理由を、不具合報告に残る「〜Error」の名前にする（2026-10-22・現場報告の切り分け）。
+     su-report.js は例外の名前（[A-Z]…Error）だけを種類として送り、文の中身は送らない。理由の文字は su-kv.js の callShift と、この入口の打ち切り・例外 */
+  function shiftReadErrName_(why) {
+    var w = String(why == null ? '' : why);
+    if (w === '打ち切り') return 'TimeoutError';
+    if (w === 'login') return 'AuthError';
+    if (w === 'forbidden') return 'ForbiddenError';
+    if (w === '通信失敗') return 'NetworkError';
+    if (w === '例外') return 'ScriptError';
+    if (w === 'empty') return 'EmptyResultError';
+    return w ? 'ServerError' : 'UnknownError';
+  }
   function wsNote_(where, e) {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'ws:' + where); } catch (_) {}
   }
@@ -15555,9 +15567,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (shiftReadNoted_[kind]) return;
       shiftReadNoted_[kind] = true;
       var e = new Error(String(why || '-'));
-      if (kind === 'pull') wsNote_('勤務表の読み取り（Supabase→Google へ戻した）', e);
-      else if (kind === 'head') wsNote_('勤務表の版の確かめ（Supabase で読めず通信失敗として返した）', e);
-      else wsNote_('勤務表の読み取り（Supabase の応答に勤務表が無い）', e);
+      e.name = shiftReadErrName_(why);   // 不具合報告は「〜Error」の名前だけを種類として送る（文の中身は送らない・2026-10-22）
+      /* ★場所の文字に空白を入れない（su-report.js は空白の入った場所を捨てるため、報告に場所が残らなかった・2026-10-22） */
+      if (kind === 'pull') wsNote_('勤務表の読み取り（Supabase→Googleへ戻した）', e);
+      else if (kind === 'head') wsNote_('勤務表の版の確かめ（Supabaseで読めず通信失敗として返した）', e);
+      else wsNote_('勤務表の読み取り（Supabaseの応答に勤務表が無い）', e);
     }
     /* 元の要求を今までどおり送る（この入口は通さない＝__noShift。kv 系の振り分けと Google はそのまま） */
     function asBefore() { payload.__noShift = true; gasCall(payload, out); }
@@ -19693,7 +19707,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261022120144';
+  var WS_BUILD = '20261022162701';
   var WS_APP_VER = 2026101705;   /* 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
                                   * 空けた所を施設業務で埋めて送らないよう上げた（3ebdccc。反証レビュー2回の指摘: 印が恒久的に消え、本人指摘の症状が戻る）
                                   * （2026101704: 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた）
