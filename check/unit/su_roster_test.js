@@ -1,12 +1,16 @@
 /* 入居者マスタの名簿の読み取りの入口（su-roster.js・入居者マスタの Supabase 移行 段階1・改善プロンプト第4弾の6・2026-10-22 新設）
    守りたいこと:
      A スイッチ切（無い・false・読めない）・現場の端末・差分の読み取りは、Google の読み取りをそのまま1回呼ぶ（待ちを足さない）
-     B スイッチ入りでも、未ログイン・現場のアカウント・写しが古い・失敗の記録・人数の違い・打ち切り・Supabase の失敗・形の違いは Google へ戻す
+     B スイッチ入りでも、未ログイン・現場のアカウント・写しが古い・失敗の記録・版数の違い（移行 0019）・人数の違い・打ち切り・
+       Supabase の失敗・形の違いは Google へ戻す
      C スイッチ入り・事務所のログイン・新しい写しなら、Google を呼ばずに写しの行を getRoster と同じ形（キー名・型）で返す
      D 結果は1回だけ（打ち切りの後に届いた写しの応答で二重に返さない・Google を2回呼ばない）
      F 訪問支援／全支援 週間俯瞰（voFetchHosp / soFetchHosp）: スイッチ切では Google への要求が今までと1バイトも同じ・
        部品が無くても同じ。スイッチ入りでは写しから入院の重ね表示の表を作る
-     E 戻した理由の記録は「読み取りの切り替え」の種類で、場所・例外の名前が不具合報告（su-report.js）の式に合う。スイッチ切・未ログインは記録しない
+     E 記録するのは想定外の戻り（打ち切り・ログインの確かめの失敗・通信・データベースの断り・形の違い）だけで1回だけ。種類は su-report.js の
+       NOTE_KIND と同じ「保存・同期の失敗」、場所・例外の名前が報告の式に合う。予想どおりの戻り（スイッチ切・現場・未ログイン・
+       古い写し・版数の違い・人数の違い）は記録しない（2026-10-22・反証レビューの指摘）
+     G 写しの並びは利用者No の順（数字だけの番号は数の順）
    ★部品の本物を vm で動かす。偽物にするのは、スイッチの控え・ログインの状態・データベースの応答・Google の読み取りだけ。
    実行: node check/unit/su_roster_test.js
    架空データのみ。 */
@@ -23,6 +27,9 @@ const REP = fs.readFileSync(path.join(ROOT, 'su-report.js'), 'utf8');
 const WHERE_RE = /^[a-z]{2,12}:[^\s:/?#<>"'&]{1,40}$/;
 const TYPE_RE = /\b([A-Z][A-Za-z]*Error)\b/;
 t('su-report.js の場所の式・種類の式がこの試験の写しと同じ', REP.indexOf(String(WHERE_RE)) >= 0 && REP.indexOf(String(TYPE_RE)) >= 0);
+t('記録の種類は su-report.js の NOTE_KIND（場所ごとに1件・合計3件の扱い）と同じ', /var NOTE_KIND = '保存・同期の失敗';/.test(REP) && /var NOTE_KIND = '保存・同期の失敗';/.test(SRC));
+const MURL = 'https://script.google.com/macros/s/FAKE/exec';
+const OPT = (o) => Object.assign({ where: 'visit', masterUrl: MURL }, o || {});
 
 const NOW = Date.now();
 const iso = ms => new Date(ms).toISOString();
@@ -37,7 +44,8 @@ function rows() {
       hospitalized: null, discharge_date: '2026-09-30', birth_date: '1935-05-05', height: '170', target_apps: [], source_updated_at: '2026-09-30T00:00:00.000Z' }
   ];
 }
-function run(o) { return Object.assign({ at: iso(NOW - 60 * 60 * 1000), source_count: 3, missing: 0, failed: 0 }, o || {}); }
+function run(o) { return Object.assign({ at: iso(NOW - 60 * 60 * 1000), source_count: 3, missing: 0, failed: 0, state_rev: 41, srev: '1761100000000' }, o || {}); }
+const REV = { ok: true, rev: 41, srev: 1761100000000 };
 
 /* 砂場。cfg: flags（su_backend_flags の値）・device・auth（{status, role} / 'throw'）・runs・runsErr・rows・rowsErr・delay（ms）・sukv */
 function sandbox(cfg) {
@@ -47,6 +55,7 @@ function sandbox(cfg) {
   if (cfg.device) ls.su_device_role = cfg.device;
   const notes = [], queries = [];
   let fetches = 0;
+  const revCalls = [];
   const later = v => new Promise(r => setTimeout(() => r(v), cfg.delay || 0));
   function q(table) {
     const b = { table, sel: '', ord: null, lim: null };
@@ -73,7 +82,15 @@ function sandbox(cfg) {
     SUAuth, SUErrors: { note(kind, msg, where) { notes.push({ kind, msg, where }); } },
     localStorage: { getItem: k => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); } },
     document: { getElementsByTagName: () => [], head: { appendChild() {} }, createElement: () => ({}) },
-    fetch: () => { fetches++; return Promise.resolve({ ok: true, json: () => Promise.resolve(cfg.flagsFile || cfg.flags || { supabase: {} }) }); },
+    fetch: (url, o) => {
+      if (/action=stateRev/.test(String(url))) {
+        revCalls.push([url, o]);
+        if (cfg.revErr) return Promise.reject(new TypeError('Failed to fetch'));
+        const g = typeof cfg.gasRev === 'function' ? cfg.gasRev() : (cfg.gasRev !== undefined ? cfg.gasRev : REV);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(g) });
+      }
+      fetches++; return Promise.resolve({ ok: true, json: () => Promise.resolve(cfg.flagsFile || cfg.flags || { supabase: {} }) });
+    },
     setTimeout, clearTimeout, Promise, Date, JSON
   };
   if (cfg.sukv) win.SUKv = { _flags: () => cfg.sukv };
@@ -83,7 +100,7 @@ function sandbox(cfg) {
   let gasCalls = 0;
   const GAS = { roster: [{ id: 1, name: 'Google の名簿' }], stateRev: 5, srev: 7 };
   const gas = () => { gasCalls++; return Promise.resolve(GAS); };
-  return { R: win.SURoster, ctx: win, gas, GAS, notes, queries, ls, get gasCalls() { return gasCalls; }, get fetches() { return fetches; } };
+  return { R: win.SURoster, ctx: win, gas, GAS, notes, queries, ls, revCalls, get gasCalls() { return gasCalls; }, get fetches() { return fetches; } };
 }
 const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
 
@@ -93,7 +110,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     ['文字の "true"', { supabase: { master_roster_read: 'true' } }], ['控えが無い', undefined]]) {
     const s = sandbox({ flags });
     let sync = false;
-    const p = s.R.getRoster(() => { sync = true; return s.gas(); }, { where: 'visit' });
+    const p = s.R.getRoster(() => { sync = true; return s.gas(); }, OPT());
     t(label + ': Google の読み取りを同じ呼び出しの中で1回呼ぶ（待ちを足さない）', sync && s.gasCalls === 1);
     const j = await p;
     t(label + ': 応答は Google のもの（stateRev も含めそのまま）', j === s.GAS);
@@ -101,27 +118,27 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   }
   {
     const s = sandbox({ flags: ON, device: 'field' });
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t('現場の端末（su_device_role=field）はスイッチ入りでも Google・写しを読まない', j === s.GAS && s.gasCalls === 1 && s.queries.length === 0 && s.notes.length === 0);
   }
   {
     const s = sandbox({ flags: ON });
-    const j = await s.R.getRoster(s.gas, { where: 'visit', since: '2026-10-01' });
+    const j = await s.R.getRoster(s.gas, OPT({ since: '2026-10-01' }));
     t('差分の読み取り（since）は Google', j === s.GAS && s.queries.length === 0);
   }
   {
     const s = sandbox({ flags: { supabase: { master_roster_read: false } }, sukv: ON });
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t('su-kv.js があればその値を使う（控えより優先）', j && j.roster && j.roster.length === 3 && s.gasCalls === 0);
   }
   {
     const s = sandbox({ flags: ON, sukv: { supabase: { master_roster_read: false } } });
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t('su-kv.js の値が切なら、控えが入りでも Google', j === s.GAS && s.queries.length === 0);
   }
   {
     const s = sandbox({ flags: ON, flagsFile: { supabase: { master_roster_read: false } } });
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t('su-kv.js が無い画面で、控えは入りでも読み直したスイッチが切なら Google（記録しない）', j === s.GAS && s.fetches === 1 && s.queries.length === 0 && s.notes.length === 0);
   }
 
@@ -130,10 +147,17 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     ['未ログイン', { auth: { status: 'signed_out' } }, null],
     ['現場のアカウント', { auth: { status: 'ok', role: 'field' } }, null],
     ['ログインの確かめで例外', { auth: 'throw' }, ['auth', 'AuthError']],
-    ['写しの記録が無い', { runs: [] }, ['stale-old', 'StaleError']],
-    ['写しの記録が24時間より古い', { runs: [run({ at: iso(NOW - 25 * 60 * 60 * 1000) })] }, ['stale-old', 'StaleError']],
-    ['写しの記録に失敗がある', { runs: [run({ failed: 1 })] }, ['stale-failed', 'StaleError']],
-    ['写しの人数が記録の人数と違う（写しにだけ残る人）', { runs: [run({ source_count: 2, missing: 1 })] }, ['stale-count', 'StaleError']],
+    ['写しの記録が無い', { runs: [] }, null],
+    ['写しの記録が24時間より古い', { runs: [run({ at: iso(NOW - 25 * 60 * 60 * 1000) })] }, null],
+    ['写しの記録に失敗がある', { runs: [run({ failed: 1 })] }, null],
+    ['写しの人数が記録の人数と違う（写しにだけ残る人）', { runs: [run({ source_count: 2, missing: 1 })] }, null],
+    ['Google の版数（rev）が記録より進んでいる（入院・退院）', { gasRev: { ok: true, rev: 42, srev: 1761100000000 } }, null],
+    ['Google の srev が記録と違う（排泄記録からの書き戻し）', { gasRev: { ok: true, rev: 41, srev: 1761100009999 } }, null],
+    ['記録に版数が無い（0019 より前・古い画面の写し）', { runs: [run({ state_rev: null, srev: null })] }, null],
+    ['記録に srev だけ無い', { runs: [run({ srev: null })] }, null],
+    ['Google の版数の応答に srev が無い', { gasRev: { ok: true, rev: 41 } }, null],
+    ['Google の版数の応答が ok でない', { gasRev: { ok: false } }, null],
+    ['Google の版数が通信の失敗で読めない', { revErr: true }, ['network', 'NetworkError']],
     ['記録の読み取りで失敗', { runsErr: true }, ['db', 'DataError']],
     ['写しの読み取りで失敗', { rowsErr: true }, ['db', 'DataError']],
     ['写しが空', { rows: [] }, ['shape', 'ShapeError']],
@@ -143,38 +167,51 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   ];
   for (const [label, cfg, expect] of cases) {
     const s = sandbox(Object.assign({ flags: ON }, cfg));
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t(label + ': Google の応答を1回だけ読んで返す', j === s.GAS && s.gasCalls === 1);
-    if (!expect) t(label + ': 失敗ではないので記録しない', s.notes.length === 0, s.notes);
+    if (!expect) t(label + ': 予想どおりの戻りなので記録しない', s.notes.length === 0, s.notes);
     else {
       const n = s.notes[0] || {};
       const w = String(n.where), ty = (String(n.msg && n.msg.name) + ': ' + String(n.msg && n.msg.message)).match(TYPE_RE);
-      t(label + ': 「読み取りの切り替え」の種類で roster:visit.' + expect[0] + '・' + expect[1] + ' を1件記録し、報告の式に合う',
-        s.notes.length === 1 && n.kind === '読み取りの切り替え' && w === 'roster:visit.' + expect[0] && WHERE_RE.test(w) && ty && ty[1] === expect[1], s.notes.map(x => [x.kind, x.where, x.msg && x.msg.name]));
+      t(label + ': 「保存・同期の失敗」の種類で roster:visit.' + expect[0] + '・' + expect[1] + ' を1件だけ記録し、報告の式に合う',
+        s.notes.length === 1 && n.kind === '保存・同期の失敗' && w === 'roster:visit.' + expect[0] && WHERE_RE.test(w) && ty && ty[1] === expect[1], s.notes.map(x => [x.kind, x.where, x.msg && x.msg.name]));
     }
   }
   {
-    const s = sandbox({ flags: ON, runs: [] });
-    await s.R.getRoster(s.gas, { where: 'visit' });
-    await s.R.getRoster(s.gas, { where: 'visit' });
+    const s = sandbox({ flags: ON, rowsErr: true });
+    await s.R.getRoster(s.gas, OPT());
+    await s.R.getRoster(s.gas, OPT());
     t('同じ理由の記録は1画面1回', s.notes.length === 1 && s.gasCalls === 2);
   }
   {
-    const s = sandbox({ flags: ON, runs: [] });
-    await s.R.getRoster(s.gas, { where: 'BAD where' });
-    t('場所の名前が決まりに合わない時は page に置き換える（空白・データを場所に入れない）', s.notes[0] && s.notes[0].where === 'roster:page.stale-old');
+    const s = sandbox({ flags: ON, rowsErr: true });
+    await s.R.getRoster(s.gas, OPT({ where: 'BAD where' }));
+    t('場所の名前が決まりに合わない時は page に置き換える（空白・データを場所に入れない）', s.notes[0] && s.notes[0].where === 'roster:page.db');
+  }
+  for (const [label, mu] of [['入居者マスタの URL が無い', ''], ['URL が https でない', 'http://example.invalid/exec']]) {
+    const s = sandbox({ flags: ON });
+    const j = await s.R.getRoster(s.gas, OPT({ masterUrl: mu }));
+    t(label + ': 版数を確かめられないので Google（版数も写しも聞かない・記録しない）', j === s.GAS && s.revCalls.length === 0 && s.queries.length === 0 && s.notes.length === 0);
   }
   {
-    const s = sandbox({ flags: ON, runs: [] });
+    const s = sandbox({ flags: ON });
+    await s.R.getRoster(s.gas, OPT());
+    t('版数は見張りと同じ送り方（GET・合言葉なし・action=stateRev だけ）で1回聞く',
+      s.revCalls.length === 1 && s.revCalls[0][0] === MURL + '?action=stateRev' && JSON.stringify(s.revCalls[0][1]) === JSON.stringify({ method: 'GET', cache: 'no-store', redirect: 'follow' }), s.revCalls);
+    const qs = s.queries.find(x => x.table === 'master_sync_runs');
+    t('写しの記録は版数の列（state_rev・srev）も読む', qs && /,state_rev,srev$/.test(qs.sel), qs && qs.sel);
+  }
+  {
+    const s = sandbox({ flags: ON, rowsErr: true });
     let err = null;
-    await s.R.getRoster(() => Promise.reject(new Error('gas down')), { where: 'visit' }).catch(e => { err = e; });
+    await s.R.getRoster(() => Promise.reject(new Error('gas down')), OPT()).catch(e => { err = e; });
     t('Google も失敗した時は、今までどおり失敗として返す（例外を飲み込んで成功にしない）', err && err.message === 'gas down');
   }
 
   console.log('C 写しから getRoster と同じ形で返す');
   {
     const s = sandbox({ flags: ON });
-    const j = await s.R.getRoster(s.gas, { where: 'visit' });
+    const j = await s.R.getRoster(s.gas, OPT());
     t('Google を呼ばない・記録しない', s.gasCalls === 0 && s.notes.length === 0);
     t('応答は { roster } だけ（stateRev・srev は付けない）', j && Object.keys(j).join() === 'roster' && j.roster.length === 3);
     const [a, b, c] = j.roster;
@@ -191,7 +228,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   }
   {
     const s = sandbox({ flags: ON, auth: { status: 'ok', role: 'admin' } });
-    const j = await s.R.getRoster(s.gas, { where: 'support' });
+    const j = await s.R.getRoster(s.gas, OPT({ where: 'support' }));
     t('管理者のログインでも写しから読む', j && j.roster && j.roster.length === 3 && s.gasCalls === 0);
   }
 
@@ -199,7 +236,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   {
     const s = sandbox({ flags: ON, delay: 60 });
     let n = 0, got = null;
-    s.R.getRoster(s.gas, { where: 'visit', timeoutMs: 20 }).then(j => { n++; got = j; });
+    s.R.getRoster(s.gas, OPT({ timeoutMs: 20 })).then(j => { n++; got = j; });
     await wait(200);
     t('打ち切り（試験は20ms）で Google へ戻し、遅れて届いた写しは捨てる', n === 1 && got === s.GAS && s.gasCalls === 1);
     t('打ち切りを TimeoutError・roster:visit.timeout で記録', s.notes.length === 1 && s.notes[0].where === 'roster:visit.timeout' && s.notes[0].msg.name === 'TimeoutError');
@@ -207,15 +244,17 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   {
     const s = sandbox({ flags: ON, delay: 5, runs: [] });
     let n = 0;
-    s.R.getRoster(s.gas, { where: 'visit', timeoutMs: 40 }).then(() => { n++; });
+    s.R.getRoster(s.gas, OPT({ timeoutMs: 40 })).then(() => { n++; });
     await wait(150);
-    t('写しが古いと分かって Google へ戻した後、打ち切りの時刻が来ても Google を2回呼ばない', n === 1 && s.gasCalls === 1 && s.notes.length === 1);
+    t('写しが古いと分かって Google へ戻した後、打ち切りの時刻が来ても Google を2回呼ばない・記録しない', n === 1 && s.gasCalls === 1 && s.notes.length === 0);
   }
   console.log('F 週間俯瞰2画面のつなぎ');
   for (const [file, pre] of [['visit-overview.html', 'vo'], ['support-overview.html', 'so']]) {
     const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const grab = name => { const i = html.indexOf('function ' + name + '('); let d = 0, j = html.indexOf('{', i); for (; j < html.length; j++) { if (html[j] === '{') d++; else if (html[j] === '}' && --d === 0) break; } return html.slice(i, j + 1); };
-    const code = 'var ' + pre.toUpperCase() + '_CFG_KEY=\'rmaster_cfg\';var ' + pre + 'HospMap=null,' + pre + 'HospRev=null,' + pre + 'HospBusy=false;' + grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') +
+    const code = 'var ' + pre.toUpperCase() + '_CFG_KEY=\'rmaster_cfg\';var ' + pre + 'HospMap=null,' + pre + 'HospRev=null,' + pre + 'HospBusy=false;' +
+      'var DB=null;this.__renders=0;function render(){__renders++;}function refresh(){__renders++;}' +
+      grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') + grab(pre + 'WatchState') +
       ';this.__get=function(){return {map:' + pre + 'HospMap,rev:' + pre + 'HospRev,busy:' + pre + 'HospBusy};};';
     t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-22"><\/script>/.test(html));
     async function go(withPart, cfg) {
@@ -223,11 +262,18 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
       const calls = [];
       const ctx = s.ctx;
       ctx.localStorage.setItem('rmaster_cfg', JSON.stringify({ url: 'https://script.google.com/macros/s/FAKE/exec', token: 'tok-dummy' }));
-      ctx.fetch = (url, o) => { calls.push([url, o]); return Promise.resolve({ ok: true, json: () => Promise.resolve({ roster: [{ id: 7, hospitalized: true }, { id: 8 }], stateRev: 3, srev: 4 }) }); };
+      ctx.gasNow = { rev: 41, srev: 1761100000000 };   // Google の今の版数（見張りの組み合わせで進める）
+      ctx.fetch = (url, o) => {
+        calls.push([url, o]);
+        if (/action=stateRev/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, rev: ctx.gasNow.rev, srev: ctx.gasNow.srev }) });
+        if (/su-backend\.json/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve(cfg.flags) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ roster: [{ id: 7, hospitalized: true }, { id: 8 }], stateRev: ctx.gasNow.rev, srev: ctx.gasNow.srev }) });
+      };
+      ctx.document.hidden = false;
       if (!withPart) delete ctx.SURoster;
       vm.runInContext(code, ctx);
       const ok = await vm.runInContext(pre + 'FetchHosp()', ctx);
-      return { ok, calls, st: ctx.__get(), s };
+      return { ok, calls, st: ctx.__get(), s, ctx, code };
     }
     const before = { url: 'https://script.google.com/macros/s/FAKE/exec', o: { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'getRoster', token: 'tok-dummy' }), cache: 'no-store', redirect: 'follow' } };
@@ -236,18 +282,43 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
       t(file + (withPart ? '' : '（部品なし）') + ': スイッチ切では Google への要求が1回・URL・中身・順番まで今までと同じ',
         r.ok === true && r.calls.length === 1 && r.calls[0][0] === before.url && JSON.stringify(r.calls[0][1]) === JSON.stringify(before.o), r.calls);
       t(file + (withPart ? '' : '（部品なし）') + ': 入院の表と版数は Google の応答から作る（今までどおり）',
-        JSON.stringify(r.st.map) === '{"7":true}' && r.st.rev.rev === 3 && r.st.rev.srev === 4 && r.st.busy === false);
+        JSON.stringify(r.st.map) === '{"7":true}' && r.st.rev.rev === 41 && r.st.rev.srev === 1761100000000 && r.st.busy === false);
     }
     {
       const r = await go(true, { flags: ON });
-      t(file + ': スイッチ入り・事務所のログインでは Google を呼ばず、写しから入院の表を作る（入院の値が無い人は載せない）',
-        r.ok === true && r.calls.filter(c => /script\.google/.test(c[0])).length === 0 && JSON.stringify(r.st.map) === '{"R001":false,"R002":true}' && r.st.rev === null && r.st.busy === false, r.st);
+      const gasRoster = c => c[0] === before.url && c[1] && c[1].method === 'POST';
+      t(file + ': スイッチ入り・事務所のログインでは Google の名簿を呼ばず、写しから入院の表を作る（入院の値が無い人は載せない）',
+        r.ok === true && r.calls.filter(gasRoster).length === 0 && JSON.stringify(r.st.map) === '{"R001":false,"R002":true}' && r.st.rev === null && r.st.busy === false, r.st);
     }
     {
       const r = await go(true, { flags: ON, runs: [] });
       t(file + ': スイッチ入りでも写しが古ければ Google（要求は今までと同じ）',
         r.ok === true && r.calls.filter(c => c[0] === before.url).length === 1 && JSON.stringify(r.calls.find(c => c[0] === before.url)[1]) === JSON.stringify(before.o) && JSON.stringify(r.st.map) === '{"7":true}', r.calls.map(c => c[0]));
     }
+    {
+      /* 見張りとの組み合わせ: 朝に写し（版数 41）→ 画面を開くと写しから → 昼に入院で Google の版数が 42 へ → 見張りが気づいて読み直す → Google から */
+      const r = await go(true, { flags: ON });
+      const gasRoster = c => c[0] === before.url && c[1] && c[1].method === 'POST';
+      t(file + ': 見張り: 朝の写しと版数が同じ間は写しから（Google の名簿は呼ばない）', r.calls.filter(gasRoster).length === 0 && JSON.stringify(r.st.map) === '{"R001":false,"R002":true}');
+      vm.runInContext(pre + 'WatchState()', r.ctx);
+      await wait(30);
+      t(file + ': 見張り: 版数が変わらなければ読み直さない（1回目は基準を覚えて写しを読み直すだけ）', r.calls.filter(gasRoster).length === 0);
+      r.ctx.gasNow = { rev: 42, srev: 1761100000000 };   // 昼に入院（setState）で版数が進んだ。写しはまだ朝のまま
+      vm.runInContext(pre + 'WatchState()', r.ctx);
+      await wait(30);
+      const st = r.ctx.__get();
+      t(file + ': 見張り: 版数が進んだら読み直しは Google から（写しの古い入院の表を使わない）',
+        r.calls.filter(gasRoster).length === 1 && JSON.stringify(r.calls.filter(gasRoster)[0][1]) === JSON.stringify(before.o) && JSON.stringify(st.map) === '{"7":true}' && st.rev.rev === 42, st);
+      t(file + ': 見張り: 予想どおりの戻りなので記録しない', r.s.notes.length === 0, r.s.notes);
+    }
+  }
+  console.log('G 並び');
+  {
+    const ids = ['10', 'R002', '9', '100', 'R001', '2'];
+    const rs = ids.map(id => Object.assign(rows()[0], { source_id: id }));
+    const s = sandbox({ flags: ON, rows: rs, runs: [run({ source_count: ids.length })] });
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('利用者No の順（数字だけの番号は数の順・その後に文字の番号を文字の順）', j && j.roster && j.roster.map(r => r.id).join() === '2,9,10,100,R001,R002', j && j.roster && j.roster.map(r => r.id));
   }
   t('打ち切りの既定は8秒・鮮度は24時間', sandbox().R.TIMEOUT_MS === 8000 && sandbox().R.FRESH_MS === 86400000);
   t('部品は console.log を使わない', !/console\.log/.test(SRC));

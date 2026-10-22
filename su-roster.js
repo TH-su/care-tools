@@ -7,7 +7,7 @@
  *
  * 使い方（画面）:
  *   var raw = function () { return fetch(…getRoster…).then(function (r) { return r.json(); }); };   // 今までの読み方そのまま
- *   (window.SURoster ? SURoster.getRoster(raw, { where: 'visit' }) : raw()).then(function (j) { … j.roster … });
+ *   (window.SURoster ? SURoster.getRoster(raw, { where: 'visit', masterUrl: 入居者マスタの URL }) : raw()).then(function (j) { … j.roster … });
  *   ・返すのは getRoster と同じ形の { roster: [...] }（Promise は1回だけ解決する）。
  *   ・raw は「今までの Google への要求」をそのまま包んだ関数。この部品は中身に触らない（要求の形は1バイトも変えない）。
  *
@@ -17,19 +17,26 @@
  *   2. この端末が現場（su_device_role=field）でない
  *   3. 事務所・管理者として Google でログインしている（現場のアカウントは写しの記録 master_sync_runs を読めない＝鮮度を確かめられない）
  *   4. 写しの記録の最後の1件が失敗なし（failed 0）で、24時間以内
- *   5. 写しの行数が、その記録の正本の人数と同じ（写しにだけ残っている人がいる時は Google）
- *   6. 写しの行の形が正しい（利用者No・氏名・在籍などの型。重複なし）
- *   7. 全部で8秒以内（打ち切ったら Google。遅れて届いた写しの応答は捨てる）
+ *   5. Google の今の版数（opts.masterUrl へ action=stateRev・合言葉なし・数値2つだけ。各画面の見張りと同じ送り方）の
+ *      rev と srev が、その記録の版数（state_rev・srev・移行 0019）と同じ（2026-10-22・反証レビューの指摘）。
+ *      入院・退院（setState）や排泄記録からの書き戻しで版数が進んだら、写しが書き直されるまで Google から読む。
+ *      版数が読めない・記録に版数が無い・opts.masterUrl が無い時も Google
+ *   6. 写しの行数が、その記録の正本の人数と同じ（写しにだけ残っている人がいる時は Google）
+ *   7. 写しの行の形が正しい（利用者No・氏名・在籍などの型。重複なし）
+ *   8. 全部で8秒以内（打ち切ったら Google。遅れて届いた写しの応答は捨てる）
  *   opts.since（差分の読み取り）が来た時も Google（写しは差分を出さない）。
  *
  * 写しから組み立てる名簿の形（getRoster の事務所の合言葉の応答と同じキー名・型）:
  *   id・name・kana・room・gender・careLevel・active・updatedAt・targetApps（カンマ区切りの文字列・未設定は ''）・
  *   birthDate・height・dischargeDate（退居者だけ・在籍者は ''）・hospitalized（写しに値がある人だけ・無い人はキーを作らない）
  *   ★主治医・訪問日・かかりつけ病院（doctor・visitDay・hospital）は写しに無いので出さない。この3つを使う画面はこの入口を通さない。
- *   ★stateRev・srev も出さない（写しは版数を持たない）。id は写しでは文字列（Google は番号のこともある）・並びは利用者No順。
+ *   ★stateRev・srev も出さない（名簿の応答には付けない）。id は写しでは文字列（Google は番号のこともある）。
+ *   ★並びは利用者No の順（数字だけの番号どうしは数の順・ほかは文字の順）。正本のシートの並びとは違う。
  *
- * 記録: 写しを読もうとして Google へ戻した時だけ、SUErrors.note('読み取りの切り替え', 例外の名前つき, 'roster:画面.理由') を
- *   理由ごとに1画面1回残す。スイッチ切・現場・未ログインは「失敗」ではないので残さない。
+ * 記録: 想定外の失敗（打ち切り・ログインの確かめの失敗・通信・データベースの断り・形の違い）で Google へ戻した時だけ、
+ *   SUErrors.note('保存・同期の失敗', 例外の名前つき, 'roster:画面.理由') を理由ごとに1画面1回残す
+ *   （su-report.js の「場所ごとに1件・合計3件」の扱いに入る）。予想どおりの戻り（スイッチ切・現場・未ログイン・
+ *   古い写し・版数の違い・人数の違い）は記録しない（2026-10-22・反証レビューの指摘）。
  * 共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SURoster が無ければ raw を呼ぶ）・例外を外に出さない。
  */
 (function () {
@@ -39,7 +46,7 @@
   var FLAGS_LS = 'su_backend_flags';
   var TIMEOUT_MS = 8000;                      // 写しの読み取り全体（ログインの確かめ・部品の読み込みを含む）の打ち切り
   var FRESH_MS = 24 * 60 * 60 * 1000;         // 写しの記録の最後の1件がこれより古ければ Google
-  var NOTE_KIND = '読み取りの切り替え';
+  var NOTE_KIND = '保存・同期の失敗';         // su-report.js の NOTE_KIND と同じ（場所ごとに1件・合計3件の扱い）
   var COLS = 'source_id,name,kana,room,gender,care_level,active,hospitalized,discharge_date,birth_date,height,target_apps,source_updated_at';
   var noted = {};
 
@@ -116,7 +123,7 @@
   }
   function errName(e) {
     var n = e && e.name;
-    if (/^(TimeoutError|NetworkError|AuthError|DataError|StaleError|ShapeError)$/.test(String(n || ''))) return n;
+    if (/^(TimeoutError|NetworkError|AuthError|DataError|ShapeError)$/.test(String(n || ''))) return n;
     if (/fetch|network|load failed/i.test(String(e && e.message || ''))) return 'NetworkError';
     return 'DataError';
   }
@@ -140,6 +147,13 @@
     o.dischargeDate = /^\d{4}-\d{2}-\d{2}$/.test(str(x.discharge_date)) ? str(x.discharge_date) : '';
     return o;
   }
+  /* 利用者No の並び: 数字だけの番号どうしは数の順、ほかは文字の順（データベースの並びは文字の順で、10 が 9 より前に来るため） */
+  function byId(a, b) {
+    var x = a.id, y = b.id, dx = /^\d+$/.test(x), dy = /^\d+$/.test(y);
+    if (dx && dy) { var nx = Number(x), ny = Number(y); if (nx !== ny) return nx < ny ? -1 : 1; }
+    else if (dx !== dy) return dx ? -1 : 1;
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
   function toRoster(rows) {
     if (!Array.isArray(rows) || !rows.length) return null;
     var out = [], seen = {};
@@ -149,32 +163,55 @@
       seen[o.id] = true;
       out.push(o);
     }
-    return out;
+    return out.sort(byId);
   }
 
-  /* 写しを読む。成功は { roster }、Google へ戻す時は reject（理由の名前つき）。ログインなし・現場のアカウントは { skip } */
-  function readShadow() {
+  /* Google の今の版数（各画面の見張りと同じ送り方: GET・合言葉なし・応答は {ok, rev, srev} の数値だけ）。
+     読めた時は { rev, srev }、形が違えば null（予想どおりの戻り）。通信の失敗は NetworkError で reject */
+  function readGasRev(masterUrl) {
+    var url = masterUrl + (masterUrl.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev';
+    return fetch(url, { method: 'GET', cache: 'no-store', redirect: 'follow' })
+      .then(function (r) { return r.json(); }, function () { throw named('NetworkError', 'rev'); })
+      .then(function (j) {
+        if (!j || j.ok !== true || typeof j.rev !== 'number' || !isFinite(j.rev) || typeof j.srev !== 'number' || !isFinite(j.srev)) return null;
+        return { rev: j.rev, srev: j.srev };
+      }, function (e) { if (e && e.name === 'NetworkError') throw e; return null; });
+  }
+  function sameRev(run, g) {
+    if (!g || typeof run.state_rev !== 'number' || run.srev == null) return false;
+    return run.state_rev === g.rev && String(run.srev) === String(g.srev);
+  }
+
+  /* 写しを読む。成功は { roster }。予想どおりの戻り（ログインなし・現場のアカウント・古い写し・版数の違い・人数の違い）は
+     { skip: 理由 }＝記録しない。想定外の失敗は reject（理由の名前つき）＝記録する */
+  function readShadow(masterUrl) {
+    // Google の版数は、ログインの確かめと同時に聞く（待ち時間を重ねない）。結果は写しの記録と比べる時に使う
+    var gasRev = readGasRev(masterUrl);
+    gasRev.then(null, function () { /* 比べる時に受け取る（ここでは未処理の失敗にしない） */ });
     return ensureAuth()
       .then(function () {
         return Promise.resolve(window.SUAuth.check()).then(null, function () { throw named('AuthError', 'check'); });
       })
       .then(function (st) {
         var S = window.SUAuth.STATUS;
-        if (!st || st.status !== S.OK || (st.role !== 'office' && st.role !== 'admin')) return { skip: true };
+        if (!st || st.status !== S.OK || (st.role !== 'office' && st.role !== 'admin')) return { skip: 'login' };
         var sb = window.SUAuth.client();
-        return sb.from('master_sync_runs').select('at,source_count,missing,failed').order('at', { ascending: false }).limit(1)
+        return sb.from('master_sync_runs').select('at,source_count,missing,failed,state_rev,srev').order('at', { ascending: false }).limit(1)
           .then(function (r) {
             if (r.error) throw named('DataError', r.error.code || 'runs');
             var run = Array.isArray(r.data) ? r.data[0] : null;
             var at = run ? Date.parse(run.at) : NaN;
-            if (!run || !isFinite(at) || Date.now() - at > FRESH_MS) throw named('StaleError', 'old');
-            if (run.failed !== 0) throw named('StaleError', 'failed');
-            return sb.from('master_residents').select(COLS).order('source_id', { ascending: true }).then(function (m) {
-              if (m.error) throw named('DataError', m.error.code || 'rows');
-              var roster = toRoster(m.data);
-              if (!roster) throw named('ShapeError', 'shape');
-              if (roster.length !== run.source_count) throw named('StaleError', 'count');
-              return { roster: roster };
+            if (!run || !isFinite(at) || Date.now() - at > FRESH_MS) return { skip: 'old' };
+            if (run.failed !== 0) return { skip: 'failed' };
+            return gasRev.then(function (g) {
+              if (!sameRev(run, g)) return { skip: 'rev' };
+              return sb.from('master_residents').select(COLS).order('source_id', { ascending: true }).then(function (m) {
+                if (m.error) throw named('DataError', m.error.code || 'rows');
+                var roster = toRoster(m.data);
+                if (!roster) throw named('ShapeError', 'shape');
+                if (roster.length !== run.source_count) return { skip: 'count' };
+                return { roster: roster };
+              });
             });
           });
       });
@@ -182,7 +219,8 @@
 
   /**
    * 名簿を読む。gasFetch は今までの Google への読み取り（Promise で getRoster の応答を返す関数）。
-   * opts.where … 記録の場所（英小文字 2〜12）・opts.since … 差分の読み取り（来たら Google）・opts.timeoutMs … 試験用
+   * opts.where … 記録の場所（英小文字 2〜12）・opts.masterUrl … 入居者マスタの GAS の URL（https・版数を聞く先。無ければ Google）・
+   * opts.since … 差分の読み取り（来たら Google）・opts.timeoutMs … 試験用
    * 戻り値は Promise（1回だけ解決。gasFetch の失敗はそのまま失敗として返す＝今までと同じ）。
    */
   function getRoster(gasFetch, opts) {
@@ -190,7 +228,8 @@
     var where = /^[a-z]{2,12}$/.test(String(opts.where || '')) ? opts.where : 'page';
     // スイッチが読めていて切＝今までどおり（待ちを足さない・同じ順で呼ぶ）
     var on = false;
-    try { on = flagOn(cachedFlags()) && !opts.since && !isFieldDevice(); } catch (e) { on = false; }
+    var masterUrl = /^https:\/\//i.test(String(opts.masterUrl || '')) ? String(opts.masterUrl) : '';
+    try { on = flagOn(cachedFlags()) && !opts.since && !isFieldDevice() && !!masterUrl; } catch (e) { on = false; }
     if (!on) return gasFetch();
     return new Promise(function (resolve, reject) {
       var settled = false, tmr = null;
@@ -211,8 +250,8 @@
       var chain;
       try {
         chain = freshFlags().then(function () {
-          if (!flagOn(cachedFlags())) return { skip: true };   // 読み直したら切だった
-          return readShadow();
+          if (!flagOn(cachedFlags())) return { skip: 'off' };   // 読み直したら切だった
+          return readShadow(masterUrl);
         });
       } catch (e) { chain = Promise.reject(e); }
       chain.then(function (res) {
@@ -223,10 +262,9 @@
       }, function (e) {
         settle(function () {
           var n = errName(e);
-          // 理由は決まった言葉だけ（古い old・失敗の記録 failed・人数の違い count）。場所の文字に空白やデータを入れない
+          // 理由は決まった言葉だけ。場所の文字に空白やデータを入れない
           var reason = n === 'TimeoutError' ? 'timeout' : n === 'NetworkError' ? 'network' : n === 'AuthError' ? 'auth'
-            : n === 'ShapeError' ? 'shape'
-            : n === 'StaleError' ? (/^(old|failed|count)$/.test(String(e && e.message)) ? 'stale-' + e.message : 'stale') : 'db';
+            : n === 'ShapeError' ? 'shape' : 'db';
           note(where, reason, named(n, reason));
           toGas();
         });
