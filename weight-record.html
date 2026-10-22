@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-35siOeuNsSQUBUXQsxDVhyLoQzKfFFDtCbGaPLbq77U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-raHfl8rBzlpRzRG/U53tr9Z2+WYMSAmaR1sbvV763BQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -6630,11 +6630,17 @@ function escapeHtml(s){ return (s===null||s===undefined?'':s+'').replace(/[&<>"'
 /* ============================================================
    4) Alerts screen
    ============================================================ */
-let alFilter = 'all';
+/* 絞り込みは再読み込みで戻す（改善プロンプト第3弾の14・再読み込みで現在地を失わない決まり）。
+   保存するのは4つの決まった値だけ（入居者・記録は保存しない）。知らない値・壊れた値は「すべて」に戻す */
+const AL_FILTERS = ['all','ng','dn','up'];
+let alFilter = AL_FILTERS.includes(UI.alFilter) ? UI.alFilter : 'all';
+$$('#alFilter button').forEach(x=> x.classList.toggle('on', x.dataset.f===alFilter));
 $('#alFilter').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
+  if(!AL_FILTERS.includes(b.dataset.f)) return;
   alFilter = b.dataset.f;
   $$('#alFilter button').forEach(x=> x.classList.toggle('on', x===b));
+  try{ saveUI({alFilter}); }catch(e){}
   renderAlerts();
 });
 
