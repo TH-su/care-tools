@@ -1,10 +1,11 @@
 {
-  "説明": "同期データの保存先の切り替えスイッチ（統合 0005/0007/0009）。true のキーは Supabase、false・無いキーは Google。全端末が1分ごとに読む。wsday はワークスケジュールの日ごとのキー全部。週間計画とワークスケジュールは同じ夜に3つそろえて切り替える。shift は勤務表（別の夜に切り替える）。切り替え・戻しの手順は su-kv.js の冒頭を参照。patch_push は貼り薬カレンダーの入居者ごとの設定を Supabase へ送るスイッチ（送るだけ・表示は端末の控えのまま。su-patch-sync.js の冒頭を参照）",
+  "説明": "同期データの保存先の切り替えスイッチ（統合 0005/0007/0009）。true のキーは Supabase、false・無いキーは Google。全端末が1分ごとに読む。wsday はワークスケジュールの日ごとのキー全部。週間計画とワークスケジュールは同じ夜に3つそろえて切り替える。shift は勤務表（別の夜に切り替える）。切り替え・戻しの手順は su-kv.js の冒頭を参照。patch_push は貼り薬カレンダーの入居者ごとの設定を Supabase へ送るスイッチ（送るだけ・表示は端末の控えのまま。su-patch-sync.js の冒頭を参照）。master_roster_read は入居者マスタの名簿の読み取りを Supabase の写しから（事務所・管理者のログイン・写しの版数が Google と同じ時だけ。それ以外は Google。書き込みは Google のまま。su-roster.js の冒頭を参照）",
   "supabase": {
     "care_schedule_v2": true,
     "ws_weekly_master_v1": true,
     "wsday": true,
     "shift": true,
-    "patch_push": true
+    "patch_push": true,
+    "master_roster_read": true
   }
 }
