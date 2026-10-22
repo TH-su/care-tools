@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-z4Z67mwDy9VcIGJFY+5GKoNu5gnTsE5NL7kjE3F/UYU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-lmUOnMQEvPxa1IQ/8K3ELWWk1UBmiS2TVI6nqGdZYrI=' 'sha256-vn2i2uMD1zVfoBUZC8woxRTNN9VZSre6dcOPganT4qQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1038,6 +1038,7 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //      更新する前にエディタで authorizeGenogramSync を実行し、承認画面が出たら「承認」する。
 //   7. この版（2026-10-15）から外部への接続（直した人の確かめ）を使う。配信前に authorizeGenogramSync と checkSupabaseConnection をエディタで実行して承認する（しないと全端末の同期が止まる）。
 //   8. この版（2026-10-17）から、削除した図の中身をタブ deleted（無ければ作る）に残してから行を消す。新しい権限は要らない。
+//   9. この版（2026-10-22）から、削除の時にタブ deleted の行のうち削除から90日より古いものを、古い順に1回20行まで消す。新しい権限は要らない。
 
 const SHEET_NAME = 'genograms';
 const TOKEN_PROP = 'GENOGRAM_TOKEN';
@@ -1258,6 +1259,38 @@ function deletedSheet_() {
   return s;
 }
 
+// 削除の控えの保持（代表者の決定 2026-10-22・改善プロンプト第3弾の14）。削除の時（控えを足して行を消した後）に、
+// deletedAt が90日より古い控えの行を古い順に消す。1回に消すのは DELETED_PRUNE_MAX 行まで（シートが重くても時間切れにしない）。
+// deletedAt が日付として読めない行（空・書式の違う文字）は消さない。見出し deletedAt が無いタブは触らない。
+// 失敗しても削除そのものは止めない（呼ぶ側で例外を受け止める）
+const DELETED_KEEP_DAYS = 90;
+const DELETED_PRUNE_MAX = 20;
+function deletedTime_(v) {
+  if (v && typeof v.getTime === 'function') return v.getTime();   // シートが日付に変えた値
+  const t = String(v == null ? '' : v).trim();
+  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}/.test(t)) return NaN;   // 書いた形（toISOString）以外は読めない扱い
+  return Date.parse(t);
+}
+function pruneDeleted_() {
+  const s = SpreadsheetApp.getActive().getSheetByName(DELETED_SHEET);
+  if (!s) return 0;
+  const data = s.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  let dc = -1;
+  for (let c = 0; c < data[0].length; c++) if (String(data[0][c]) === 'deletedAt') { dc = c; break; }
+  if (dc < 0) return 0;
+  const limit = Date.now() - DELETED_KEEP_DAYS * 24 * 60 * 60 * 1000;
+  const old = [];
+  for (let i = 1; i < data.length; i++) {
+    const t = deletedTime_(data[i][dc]);
+    if (isFinite(t) && t < limit) old.push({ row: i + 1, t: t });
+  }
+  old.sort(function (a, b) { return a.t - b.t || a.row - b.row; });
+  const rows = old.slice(0, DELETED_PRUNE_MAX).map(function (o) { return o.row; }).sort(function (a, b) { return b - a; });
+  rows.forEach(function (r) { s.deleteRow(r); });   // 下の行から消す（上から消すと行番号がずれる）
+  return rows.length;
+}
+
 function deleteOne(name) {
   const s = sheet();
   const data = s.getDataRange().getValues();
@@ -1267,6 +1300,7 @@ function deleteOne(name) {
       const r = data[i];
       deletedSheet_().appendRow([r[0], r[1], r[2], bc >= 0 ? String(r[bc] || '') : '', new Date().toISOString()]);
       s.deleteRow(i + 1);
+      try { pruneDeleted_(); } catch (e) { /* 間引けなくても削除は済んでいる。次の削除の時にまた試す */ }
       return { name: name };
     }
   }
