@@ -17,7 +17,7 @@
         盤面が出てこなくても、待つのは約30秒（150回）で止まる
      6. 枠の中の画面を読み込み直したら、配線と倍率そろえをやり直す（同じ見張りを二重に付けない）。
         比較の中では各画面の印刷ボタン・切替スイッチ・比較へのリンクを隠す
-     7. 状態の保存: この画面は連動の入/切を保存しない（端末の保存領域・共有データ・GAS のどれにも書かない・読まない）。
+     7. 状態の保存（2026-10-22 代表者の決定 B）: 連動の入／切だけを端末の ocmp_sync に '1'／'0' で残し、読み込み直したら戻す。決まった値以外は既定（入）。ほかのキー・共有データ・通信には触れない。保存領域が使えなくても動く。
         再読み込みすると連動は「入」で始まる（チェックボックスの既定が checked） */
 'use strict';
 const fs = require('fs');
@@ -267,13 +267,17 @@ console.log('\n— 6. 枠の中を読み込み直した時 —');
   t('枠の中を読めない（別の場所）時も例外を外に出さない', err === null, err);
 }
 
-console.log('\n— 7. 状態を保存しない —');
+console.log('\n— 7. 連動の入／切だけを覚える —');
 {
   const r = ready();
-  r.A.userScroll(3000, 200); r.toggle(false); r.toggle(true); r.A.kit.setZoom(1.2);
-  t('操作の間、端末の保存領域・通信に一度も触れない', r.storage.length === 0, r.storage);
-  t('処理の中で localStorage・sessionStorage・fetch・XMLHttpRequest・SUKv・gasCall を使っていない（説明の文は除く）', !/localStorage\.|sessionStorage\.|fetch\(|XMLHttpRequest|SUKv\.|gasCall\(/.test(SRC), '');
-  t('連動のチェックボックスは既定で「入」（checked）＝再読み込みすると連動中で始まる', /<input type="checkbox" id="syncOn" checked/.test(HTML), '');
+  r.A.userScroll(3000, 200); r.A.kit.setZoom(1.2);
+  t('連動の操作のほかは、端末の保存領域・通信に触れない（読み込み時の ocmp_sync の読み取りだけ）', r.storage.every(k => k === 'getItem'), r.storage);
+  const SC = SRC;
+  t('残すキーは ocmp_sync だけ・値は 1／0 だけ', /var SYNC_KEY = 'ocmp_sync';/.test(SC) && /setItem\(SYNC_KEY, syncOn\.checked \? '1' : '0'\)/.test(SC) && (SC.match(/setItem\(/g) || []).length === 1, '');
+  t('読み込み直しで戻すのは保存値が 0 の時だけ（ほかの値・壊れた値は既定の入）', /if \(localStorage\.getItem\(SYNC_KEY\) === '0'\) syncOn\.checked = false;/.test(SC), '');
+  t('保存領域の読み書きは try で包む（使えない端末でも止まらない）', /try \{ if \(localStorage\.getItem\(SYNC_KEY\)/.test(SC) && /try \{ localStorage\.setItem\(SYNC_KEY/.test(SC), '');
+  t('fetch・XMLHttpRequest・SUKv・gasCall・sessionStorage は使わない', !/sessionStorage\.|fetch\(|XMLHttpRequest|SUKv\.|gasCall\(/.test(SRC), '');
+  t('連動のチェックボックスの既定は「入」（checked）', /<input type="checkbox" id="syncOn" checked/.test(HTML), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
