@@ -201,7 +201,7 @@ console.log('\n— 8b. 確認表の行と「反映する」を止める規則（
   stopIf('振り分け先が無ければ止める', st => { st.id = ''; }, /振り分け先/);
   stopIf('GAS が古ければ止める', st => { st.server = 'old'; }, /貼り替え/);
   stopIf('GAS に届かなければ止める', st => { st.server = 'ng'; }, /届きません/);
-  stopIf('調剤日が読めなければ止める', st => { st.dates = { labeled: [], other: [] }; st.date = ''; }, /調剤日を読めません/);
+  stopIf('調剤日が読めず、日付も選んでいなければ止める', st => { st.dates = { labeled: [], other: [] }; st.date = ''; }, /調剤日を選んで/);
   stopIf('調剤日が2つ以上で選んでいなければ止める', st => { st.dates = { labeled: ['2026-10-04', '2026-10-18'], other: [] }; st.date = ''; }, /2つ以上/);
   stopIf('調剤日の形が違えば止める', st => { st.date = 'R081018'; }, /形/);
   stopIf('本人の照合の印が無ければ止める', st => { st.identity = false; }, /この方の書類/);
@@ -290,6 +290,31 @@ console.log('\n— 8d. 審査（2026-10-22）の指摘の再発防止 —');
     rows: [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: [], checked: false }], current: '架空錠A 1錠分1 朝食後' };
   t('★「調剤日」の語の無い日付を選んだら、確かめた印が無ければ止める', /語がありません/.test(Y.judge(st).stop), Y.judge(st).stop);
   t('確かめた印があれば止めない', Y.judge(Object.assign({}, st, { dateChecked: true })).stop === '', Y.judge(Object.assign({}, st, { dateChecked: true })).stop);
+}
+
+console.log('\n— 8e. 調剤日を読めない書類は、取り込んだ日で止めずに取り込む（代表者の決定 2026-10-22）—');
+{
+  const rows = () => [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: [], checked: false }];
+  const st = (dates, date, extra) => Object.assign({ id: '11', dates, date, today: '2026-10-22', identity: true, server: 'ok',
+    rows: rows(), current: '架空錠A 1錠分1 朝食後', lastChange: '2026-10-01' }, extra || {});
+  const j1 = Y.judge(st({ labeled: [], other: [] }, '2026-10-22'));
+  t('★日付が1つも読めない書類は、取り込んだ日を選べば止めない', j1.stop === '' && j1.importDay === true, j1.stop);
+  t('★その時は「取り込んだ日を調剤日として記録」と知らせる', j1.notes.some(n => /取り込んだ日（2026-10-22）/.test(n)), j1.notes);
+  const j2 = Y.judge(st({ labeled: [], other: ['2026-10-18'] }, '2026-10-22'));
+  t('★「調剤日」の語の無い日付だけの書類も、取り込んだ日なら確かめた印なしで止めない', j2.stop === '' && j2.importDay === true, j2.stop);
+  const j3 = Y.judge(st({ labeled: ['2026-10-18'], other: [] }, '2026-10-22'));
+  t('★「調剤日」の語の付いた日付がある書類で今日を選んだら、確かめた印が無ければ止める', /語がありません/.test(j3.stop) && j3.importDay === false, j3.stop);
+  const j4 = Y.judge(st({ labeled: [], other: [] }, '2026-10-21'));
+  t('★日付の読めない書類で今日以外の日付を入れたら、確かめた印が無ければ止める', /語がありません/.test(j4.stop) && j4.importDay === false, j4.stop);
+  const j5 = Y.judge(st({ labeled: [], other: [] }, '2026-10-22', { today: '' }));
+  t('★今日が分からなければ、取り込んだ日として扱わない（確かめた印が要る）', /語がありません/.test(j5.stop) && j5.importDay === false, j5.stop);
+  const j5b = Y.judge(st({ labeled: [], other: [] }, '', { today: '' }));
+  t('★日付も今日も空なら、取り込んだ日とせず、空の日付の知らせも出さない', /調剤日を選んで/.test(j5b.stop) && j5b.importDay === false && !j5b.notes.some(n => /取り込んだ日/.test(n)), j5b);
+  const j6 = Y.judge(st({ labeled: ['2026-10-18'], other: [] }, '2026-10-18'));
+  t('語の付いた調剤日を選んだ時は、取り込んだ日の知らせを出さない', j6.stop === '' && j6.importDay === false && !j6.notes.some(n => /取り込んだ日/.test(n)), j6);
+  const j7 = Y.judge(st({ labeled: [], other: [] }, '2026-10-22', { sameDay: '2026-10-22T09:00:00Z' }));
+  t('★取り込んだ日で、同じ日に反映済みなら確かめるまで止める', /既に反映/.test(j7.stop), j7.stop);
+  t('取り込んだ日の印も朝回診の道具が受け付ける形', /^S\|[^|]+\|(\d{4}-\d{2}-\d{2})\|[0-9a-f]{8}$/.test(Y.srcKey('11', '2026-10-22', j1.after)));
 }
 
 console.log('\n— 9. 判断の印 —');

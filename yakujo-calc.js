@@ -534,8 +534,8 @@
   }
 
   /* ── 9. 反映できるか（設計書 §4-3）──
-     st: {id, dates:{labeled, other}, date, identity, server, rows, current, lastChange, oldChecked, sameDay, ack}
-     戻り値 {stop:'理由（あれば反映できない）', notes:[知らせるだけ], after, counts:{change, add, stop}} */
+     st: {id, dates:{labeled, other}, date, today, identity, server, rows, current, lastChange, oldChecked, sameDay, ack, dupChecked, dateChecked}
+     戻り値 {stop:'理由（あれば反映できない）', notes:[知らせるだけ], after, counts:{change, add, stop}, dupStems, importDay:取り込んだ日を調剤日にしたか} */
   function judge(st) {
     var rows = st.rows || [], current = String(st.current == null ? '' : st.current), notes = [], stop = '';
     var dec = { change: [], stop: [], add: [] };
@@ -556,13 +556,15 @@
     var touched = {};
     dec.add.concat(dec.change.map(function (x) { return x.to; })).forEach(function (l) { var k = ident(l); if (k) touched[k] = 1; });
     lines.forEach(function (l) { var k = ident(l); if (!k) return; stems[k] = (stems[k] || 0) + 1; if (stems[k] === 2 && touched[k]) dupStems.push(lineName(l)); });
+    /* 「調剤日」の語の付いた日付が無い書類は、取り込んだ日（今日）を調剤日として記録し、止めない
+       （最新の薬情だけを読む運用のため・代表者の決定 2026-10-22） */
+    var importDay = !labeled.length && !!st.today && String(st.date) === String(st.today);
     if (!st.id) stop = '振り分け先（どの方の書類か）が決まっていません';
     else if (st.server === 'old') stop = '入居者マスタGASの貼り替えがまだのため、反映できません（確認表は見られます）';
     else if (st.server !== 'ok') stop = '入居者マスタGASに届きません。少し待って開き直してください';
-    else if (!labeled.length && !other.length) stop = '書類から調剤日を読めません。日付の入った書類で取り込んでください（この書類からは反映できません）';
     else if (!st.date) stop = labeled.length > 1 ? '調剤日が2つ以上あります。この書類の調剤日を1つ選んでください' : '調剤日を選んでください';
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(st.date))) stop = '調剤日の形が正しくありません';
-    else if (labeled.indexOf(String(st.date)) < 0 && !st.dateChecked) stop = '選んだ日付（' + st.date + '）には「調剤日」などの語がありません。原本でこの日付が調剤日か確かめて、印を付けてください';
+    else if (labeled.indexOf(String(st.date)) < 0 && !importDay && !st.dateChecked) stop = '選んだ日付（' + st.date + '）には「調剤日」などの語がありません。原本でこの日付が調剤日か確かめて、印を付けてください';
     else if (st.today && String(st.date) > String(st.today)) stop = '調剤日（' + st.date + '）が今日より後です。書類の日付を確かめてください（次回の予定日などを読んでいないか）';
     else if (!st.identity) stop = '書類の氏名を見て、この方の書類だと確かめたら、印を付けてください';
     else if (undecided) stop = '書類に無い今の薬が ' + undecided + ' 行あります。「残す」か「中止」を選んでください';
@@ -576,8 +578,9 @@
     else if (/[（(]不明[）)]/.test(after)) stop = '「（不明）」が残っています。用量・用法を確かめて書き直してください';
     else if (dup) stop = '同じ行が2つになります（' + dup + '行）。足す行と今の行が重なっていないか確かめてください';
     else if (dupStems.length && !st.dupChecked) stop = '同じ名前の薬が2行になります（' + dupStems.join('・') + '）。量・時点が重ならないか確かめて、印を付けてください';
+    if (importDay) notes.push('書類から調剤日を読めないため、取り込んだ日（' + st.today + '）を調剤日として記録します。最新の薬情か確かめてください');
     if (counts.stop) notes.push('「中止」が ' + counts.stop + ' 行あります。書類どおりの中止か確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）');
-    return { stop: stop, notes: notes, after: after, counts: counts, dupStems: dupStems };
+    return { stop: stop, notes: notes, after: after, counts: counts, dupStems: dupStems, importDay: importDay };
   }
 
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */

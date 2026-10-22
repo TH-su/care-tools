@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-oc7GzR3WwkZOMKKxJTkNYhdF/EIG7VJ1R4DVFyqmX0I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-gXVHTS74nYg9hi7EhC7CxXP5mQJixbPtNvWth2t5pb0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -6773,7 +6773,7 @@ function yjStartDoc_(i, msgAfter){
   var dates=YakujoCalc.findDates(x.d);
   var keep=S.cur&&S.cur.di===i?S.cur:null;
   S.cur={di:i, id:String(w.id), name:w.name, room:w.room||'', rec:null, before:'', rows:[], dates:dates,
-    date:keep?keep.date:(dates.labeled.length===1?dates.labeled[0]:''), identity:keep?keep.identity:false, dateChecked:keep?keep.dateChecked:false,
+    date:keep?keep.date:(dates.labeled.length===1?dates.labeled[0]:(dates.labeled.length?'':todayISO())), identity:keep?keep.identity:false, dateChecked:keep?keep.dateChecked:false,
     oldChecked:false, sameDay:'', ack:false, dupChecked:false, busy:true, writing:false, loaded:false, touched:false, msg:msgAfter||'読み込んでいます…'};
   S.phase='work'; yjPaint_();
   var cur=S.cur;
@@ -6821,8 +6821,7 @@ function yjSameDay_(cur){
 }
 function yjJudge_(){
   var c=yjSt.cur;
-  var d=new Date(), today=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
-  return YakujoCalc.judge({id:c.id, dates:c.dates, date:c.date, today:today, identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
+  return YakujoCalc.judge({id:c.id, dates:c.dates, date:c.date, today:todayISO(), identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
     lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack, dupChecked:c.dupChecked, dateChecked:c.dateChecked});
 }
 var YJ_KIND={same:'そのまま', change:'変える', add:'足す', left:'書類に無い'};
@@ -6860,16 +6859,18 @@ function yjWorkHtml_(){
   if(c.msg) h+='<p class="mc-msg" role="status">'+esc(c.msg)+'</p>';
   if(!c.loaded) return h+(c.busy?'':'<div class="yj-actions"><button type="button" class="btn btn-sec" id="yjRetry">読み直す</button>'+
     '<button type="button" class="btn btn-gray" id="yjQueue">一覧に戻る</button></div>')+'</div></div>';
+  var j=yjJudge_(), today=todayISO();
+  /* 「調剤日」の語の付いた日付が無い時は、取り込んだ日を選べるようにして既定にする（代表者の決定 2026-10-22） */
   var opts=c.dates.labeled.concat(c.dates.other);
-  h+='<div class="yj-meta"><label class="yj-lbl">調剤日 '+(opts.length?'<select id="yjDate"><option value="">（選ぶ）</option>'+opts.map(function(dt){ return '<option value="'+dt+'"'+(c.date===dt?' selected':'')+'>'+esc(fmtJDate(dt))+(c.dates.labeled.indexOf(dt)<0?'（調剤日の語の無い日付）':'')+'</option>'; }).join('')+'</select>':'<span class="yj-warn">⚠ 書類から読めません</span>')+'</label>'+
+  if(!c.dates.labeled.length&&opts.indexOf(today)<0) opts.push(today);
+  h+='<div class="yj-meta"><label class="yj-lbl">調剤日 <select id="yjDate"><option value="">（選ぶ）</option>'+opts.map(function(dt){ return '<option value="'+dt+'"'+(c.date===dt?' selected':'')+'>'+esc(fmtJDate(dt))+(c.dates.labeled.indexOf(dt)>=0?'':(!c.dates.labeled.length&&dt===today?'（取り込んだ日）':'（調剤日の語の無い日付）'))+'</option>'; }).join('')+'</select></label>'+
     '<label class="yj-chk"><input type="checkbox" id="yjId"'+(c.identity?' checked':'')+'> 原本の氏名を見て、'+esc(c.name)+' 様の書類だと確かめた</label>';
   if(c.lastChange&&c.date&&c.date<c.lastChange) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjOld"'+(c.oldChecked?' checked':'')+'> ⚠ この書類の調剤日（'+esc(fmtJDate(c.date))+'）は、定期薬の最後の変更（'+esc(fmtJDate(c.lastChange))+'）より前です。古い書類で戻さないことを確かめた</label>';
-  if(c.date&&c.dates.labeled.indexOf(c.date)<0) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
+  if(c.date&&c.dates.labeled.indexOf(c.date)<0&&!j.importDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
   if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ日付のこの方の記録（申送・薬情）から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
   h+='</div>';
   h+='<div class="yj-tblw"><table class="yj-tbl"><thead><tr><th>区分</th><th>書類（読んだ文字）</th><th>今の定期薬</th><th>反映する行</th><th>どうするか</th></tr></thead><tbody>'+
     c.rows.map(yjRowHtml_).join('')+'</tbody></table></div>';
-  var j=yjJudge_();
   h+='<div class="yj-after"><div class="mc-lbl">反映すると、定期薬はこうなります（変える '+j.counts.change+'・足す '+j.counts.add+'・中止 '+j.counts.stop+'）</div><pre class="mc-pre">'+esc(j.after||'（記載なし）')+'</pre></div>';
   j.notes.forEach(function(n){ h+='<p class="yj-warn">⚠ '+esc(n)+'</p>'; });
   if(j.dupStems&&j.dupStems.length) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDup"'+(c.dupChecked?' checked':'')+'> ⚠ 同じ名前の薬が2行になります（'+esc(j.dupStems.join('・'))+'）。量・時点が重ならないことを確かめた</label>';
@@ -6893,7 +6894,7 @@ function yjApply_(){
   if(j.counts.stop&&!confirm('「中止」が '+j.counts.stop+'行あります。書類どおりの中止で、飲んでいる薬を消していないことを確かめましたか？')) return;
   var dg=devGen, gen=yjGen, sent=j.after, before=c.before, date=c.date;
   var body={action:'medCand', op:'apply', id:c.id, name:c.name, srcKey:YakujoCalc.srcKey(c.id,date,sent), srcKind:'薬情', srcDate:date,
-    srcText:('薬情の取り込み・調剤日 '+date+'・書類'+x.d.no+'（'+(x.d.type==='pdf'?'PDF '+x.d.pages.length+'ページ':'写真')+'）・薬の行 '+c.rows.filter(function(r){ return r.kind!=='left'; }).length+'・文字読み取り（薬情よみとり）'),
+    srcText:('薬情の取り込み・調剤日 '+date+(j.importDay?'（書類から読めず取り込んだ日）':'')+'・書類'+x.d.no+'（'+(x.d.type==='pdf'?'PDF '+x.d.pages.length+'ページ':'写真')+'）・薬の行 '+c.rows.filter(function(r){ return r.kind!=='left'; }).length+'・文字読み取り（薬情よみとり）'),
     before:before, after:sent, note:'', by:yjBy};
   if(c.ack) body.ackSameDay=true;
   c.busy=true; c.writing=true; c.msg='反映しています…'; yjPaint_();
