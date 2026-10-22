@@ -112,7 +112,9 @@ function load(src){
     setViewActions(){}, paintHospBtn(){},
     bkLoading: false, bkErr: '', admLoading: false, admErr: '', mealSeq: 0, mealLoading: false, mealMsg: '',
     /* 2026-10-06 から applyDeviceGuard が薬の変更候補も捨てる（mcPurge_。中身は master_deviceguard_test.js で確かめる） */
-    mcPurge_(){ cnt.mcPurge_ = (cnt.mcPurge_ || 0) + 1; }
+    mcPurge_(){ cnt.mcPurge_ = (cnt.mcPurge_ || 0) + 1; },
+    /* 2026-10-22 から薬情の取り込みも捨てる（yjPurge_。中身は master_deviceguard_test.js で確かめる） */
+    yjPurge_(){ cnt.yjPurge_ = (cnt.yjPurge_ || 0) + 1; }
   };
   vm.createContext(box);
   const code = [
