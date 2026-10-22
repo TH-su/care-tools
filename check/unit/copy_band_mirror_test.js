@@ -4,6 +4,8 @@
  *      Supabase から読めたら消す。スイッチが切のキー（Google が本番）では出さない。印刷には出さない
  *   2. 写しの見比べ（shadow-check.js）: Google へ写す2か所（違う分を写す・日ごとを写し返す）に mirror の印。
  *      週間計画を写す時だけ、押した管理者のログインの証明を添える
+ *   3. （2026-10-22 改善プロンプト第3弾の14）帯は Google の読みが成功した時（HTTP 2xx・本文が JSON・ok:true）だけ出す。
+ *      表示の取り直しの始めで前の帯を消し、Google の読みが失敗した時（通信断・HTTP エラー・ok でない・接続先なし・全支援俯瞰の全週失敗）は出さない
  * 実物のソースから関数を切り出して動かす（写経しない）。 */
 'use strict';
 const fs = require('fs');
@@ -57,8 +59,29 @@ for (const [file, label] of [['support-overview.html', '全支援俯瞰'], ['vis
     t('★1回の表示の中で一度でも写しから読んだら、後で Supabase から読めても出したまま（最後の1回で消さない）', x.el.hidden === false);
     t('表示の取り直し（refresh の始め）で戻す', /async function refresh\(\) \{[\s\S]{0,240}copyUsed_ = false;/.test(src));
   }
+  /* ★2026-10-22 意図的な更新（改善プロンプト第3弾の14）: 取り直しの始めと失敗の分岐でも消すため、画面全体での false の呼び出しは1つではなくなった。
+     「読む関数の中では Supabase から読めた時に消す1つ・Google の応答を確かめた後に出す1つ」に絞って確かめる */
+  const reader = cutF(src, file === 'support-overview.html' ? 'gasCall' : 'fetchRemote');
   t('Supabase から読めた時に消し、Google の応答を使う直前に出す（結線）',
-    (src.match(/showCopyBand_\([^)]*, false\)/g) || []).length === 1 && (src.match(/showCopyBand_\([^)]*, true\)/g) || []).length === 1);
+    (reader.match(/showCopyBand_\([^)]*, false\)/g) || []).length === 1 && (reader.match(/showCopyBand_\([^)]*, true\)/g) || []).length === 1);
+  t('Google の読みの成功＝HTTP 2xx・ok:true を確かめた後にだけ出す（失敗は例外で出す前に抜ける）',
+    /if \(!res\.ok\) throw[^\n]*\n\s*const j = await res\.json\(\);\n\s*if \(!j\.ok\) throw[^\n]*\n\s*showCopyBand_\([^)]*, true\);/.test(reader));
+  const ref = cutF(src, 'refresh');
+  const firstTry = ref.indexOf('try {');
+  const startHide = ref.search(/showCopyBand_\([^)]*, false\)/);
+  t('★表示の取り直しの始め（読みに行く前）で前の帯を消す＝Google の読みが失敗したら帯は出ないまま', startHide >= 0 && startHide < firstTry, { startHide, firstTry });
+  if (file === 'support-overview.html') {
+    const zero = ref.slice(ref.indexOf('if (raw.weeksFetched === 0) {'), ref.indexOf('lastFetchFailed = false;'));
+    const cat = ref.slice(ref.lastIndexOf('} catch (e) {'));
+    t('全週を読めなかった時は消す（予定の型だけ写しから読めても出さない）', /copyUsed_ = false; showCopyBand_\(null, false\);/.test(zero));
+    t('例外で読めなかった時も消す', /copyUsed_ = false; showCopyBand_\(null, false\);/.test(cat));
+    /* 動かして確かめる: 予定の型を写しから読んで帯が出た後、全週の失敗の分岐を通ると消える */
+    const x = box(['care_schedule_v2']);
+    x.b.showCopyBand_(['care_schedule_v2'], true);
+    const shown = x.el.hidden === false;
+    vm.runInContext('copyUsed_ = false; showCopyBand_(null, false);', x.b);
+    t('（動かして）予定の型を写しから読んで出た帯が、失敗の分岐で消える', shown && x.el.hidden === true);
+  }
 }
 
 console.log('\n— 写しの見比べ（shadow-check.js）—');
