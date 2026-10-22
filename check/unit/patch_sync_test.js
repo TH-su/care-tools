@@ -19,6 +19,9 @@
      K 反証レビューの直し（2026-10-17）: スイッチ切の時はログインの部品も足さない・写しの見比べはスイッチ切の間 warn にしない・
        形で断られた方を差と断りの欄で二重に数えない・中身の違いを日時で「未送信」と「ほかの端末で新しい」に分ける・
        送信済みの控え（apc2_sync_sent）で起動時の送り直しを止める（同じ日時は送らない・新しい日時は送る・控えが壊れていたら全員）
+     L 現場の端末と権限の断り（2026-10-22 代表者の決定）: 現場の端末（su_device_role=field）は開いた後に全員分を送らず送信待ちの方だけ・
+       保存の後は送る／権限の断り（42501）は送信待ちに残して denied を記録し、保存の後は送り直さず、開いた時（現場も事務所も）に1回送り直す・
+       載ったら denied の記録を外す
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -151,7 +154,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('★D 通信の失敗は送信待ちに残る', J(q(net)) === J(['r1', 'r2']), q(net));
     const den = box({ store: st, reply: () => ({ error: { code: '42501', message: 'not allowed' } }) });
     await den.api.pushOne('r1'); await settle();
-    t('D 断り（42501・許可リストに無い）も送信待ちに残る（形の断りではない）', J(q(den)) === J(['r1']), q(den));
+    t('D 断り（42501・許可リストに無い・ログインの切れ）は送信待ちに残し、denied を記録する（2026-10-22・L を参照）', J(q(den)) === J(['r1']) && ng(den).r1 && ng(den).r1.e === 'denied', { q: q(den), ng: ng(den) });
     const odd = box({ store: st, reply: () => ({ data: { ok: false, error: 'something' } }) });
     await odd.api.pushOne('r1'); await settle();
     t('D 知らない断りは外さない（送信待ちに残す）', J(q(odd)) === J(['r1']), q(odd));
@@ -452,6 +455,56 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
     t('J 公開の許可リストに部品がある（無いと公開されず、構文の点検からも漏れる）', /^!\/su-patch-sync\.js$/m.test(gi));
     t('J 部品は氏名の名簿（su_residents_common）を読まない', SYNC.indexOf('su_residents_common') < 0);
+  }
+
+  console.log('\n— L 現場の端末と権限の断り —');
+  {
+    const three = { r1: { start: '2026-10-01', no: 1, prev: 0, by: 'x', at: AT1 }, r2: { start: '2026-10-02', no: 2, prev: 1, by: 'x', at: AT1 }, r3: { start: '2026-10-03', no: 3, prev: 2, by: 'x', at: AT1 } };
+    const fieldSt = Object.assign({ apc2_res: res(three), su_device_role: 'field' }, SESSION);
+    const f1 = box({ store: fieldSt });
+    await f1.api.pushAll(); await settle();
+    t('★L 現場の端末は、開いた後に控えの全員分を送らない', f1.calls.length === 0, f1.calls.map(c => c.args.p_resident_id));
+    const f2 = box({ store: Object.assign({}, fieldSt, { apc2_sync_q: J({ v: 1, q: { r2: AT1 } }) }) });
+    await f2.api.pushAll(); await settle();
+    t('★L 現場の端末でも、送信待ちに残っている方は開いた後に送る', J(f2.calls.map(c => c.args.p_resident_id)) === J(['r2']), f2.calls.map(c => c.args.p_resident_id));
+    const f3 = box({ store: fieldSt });
+    await f3.api.pushOne('r3'); await settle();
+    t('★L 現場の端末でも、保存した方は送る（保存した方だけ送る）', J(f3.calls.map(c => c.args.p_resident_id)) === J(['r3']));
+    const o1 = box({ store: Object.assign({}, fieldSt, { su_device_role: 'office' }) });
+    await o1.api.pushAll(); await settle();
+    t('L（対照）事務所PCは開いた後に全員分を送る', o1.calls.length === 3);
+    const o2 = box({ store: Object.assign(J ? { apc2_res: res(three) } : {}, SESSION) });
+    await o2.api.pushAll(); await settle();
+    t('L（対照）用途が未設定の端末は事務所PCと同じ（全員分）', o2.calls.length === 3);
+
+    const deny = () => ({ data: null, error: { code: '42501', message: 'not allowed' } });
+    const d1 = box({ store: Object.assign({ apc2_res: res({ r1: three.r1, r2: three.r2 }) }, SESSION), reply: (n, a) => (a.p_resident_id === 'r1' ? deny() : { data: { ok: true, written: true } }) });
+    await d1.api.pushOne('r1'); await settle();
+    t('★L 権限で断られても送信待ちに残す（消さない）', J(q(d1)) === J(['r1']), q(d1));
+    t('★L 権限で断られたら denied を記録する（日時つき）', ng(d1).r1 && ng(d1).r1.e === 'denied' && ng(d1).r1.at === AT1, ng(d1));
+    await d1.api.pushOne('r1'); await d1.api.pushOne('r2'); await settle();
+    t('★L 同じ日時の設定は、保存の後には送り直さない（保存のたびに送り続けない）', d1.calls.filter(c => c.args.p_resident_id === 'r1').length === 1, d1.calls.map(c => c.args.p_resident_id));
+    t('L ほかの方の保存は送れる（断られた方に引きずられない）・断られた方は送信待ちのまま', d1.calls.some(c => c.args.p_resident_id === 'r2') && J(q(d1)) === J(['r1']), q(d1));
+    t('L 写しの見比べでは断りの欄に出る', J(d1.api.refused()) === J([{ id: 'r1', error: 'denied' }]));
+    const before = d1.calls.length;
+    await d1.api.pushAll(); await settle();
+    t('★L 事務所PCで開いた時は1回だけ送り直す', d1.calls.filter((c, i) => i >= before && c.args.p_resident_id === 'r1').length === 1);
+    const fd = box({ store: Object.assign({}, d1.store, { su_device_role: 'field' }), reply: deny });
+    await fd.api.pushAll(); await settle();
+    t('★L 現場の端末でも、開いた時に送信待ちの denied を1回送り直す（現場で直した設定を失わない）', J(fd.calls.map(c => c.args.p_resident_id)) === J(['r1']), fd.calls.map(c => c.args.p_resident_id));
+    const ok2 = box({ store: Object.assign({}, fd.store, { su_device_role: 'field' }) });
+    await ok2.api.pushAll(); await settle();
+    t('★L 許可が戻れば（ログインし直せば）、開いた時に載り、送信待ちと denied の記録が外れる',
+      ok2.calls.length === 1 && J(q(ok2)) === J([]) && !ng(ok2).r1 && JSON.parse(ok2.store.apc2_sync_sent || '{"s":{}}').s.r1 === AT1, { q: q(ok2), ng: ng(ok2) });
+    d1.store.apc2_res = res({ r1: Object.assign({}, three.r1, { at: AT2 }), r2: three.r2 });
+    const n0 = d1.calls.length;
+    await d1.api.pushOne('r1'); await settle();
+    t('L 設定を直して日時が変われば、保存の後にまた送る', d1.calls.length === n0 + 1);
+    const jwt = () => ({ data: null, error: { code: 'PGRST301', message: 'JWT expired' } });
+    const j1 = box({ store: Object.assign({ apc2_res: res({ r1: three.r1 }) }, SESSION), reply: jwt });
+    await j1.api.pushOne('r1'); await settle();
+    t('★L ログインの切れ（42501 以外）は送信待ちに残す（記録しない）', J(q(j1)) === J(['r1']) && !ng(j1).r1, { q: q(j1), ng: ng(j1) });
+    t('L 部品は端末の用途を送る時に読む（su_device_role）', /lsGet\('su_device_role'\) === 'field'/.test(SYNC));
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
