@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-X9GMqepc/tqLfu9sYnYYfLx8bN23YnZ+0FLyQFw+FQ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZTwcdAsVeUD4YEzwMFsWYDmtjneyWVQf+q1E0MjzmRM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -688,8 +688,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-17"></script>
-<script src="su-kv-shadow.js?v=2026-09-26b"></script>
+<script src="su-kv.js?v=2026-10-20"></script>
+<script src="su-kv-shadow.js?v=2026-10-20b"></script>
 </head>
 <body>
 <div class="hdr">
@@ -1972,8 +1972,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 休みの印を人に付けるための氏名の見分け（空白の違いは同じ人） */
   function absentNameKey(name) { return String(name || '').replace(/[\s\u3000]+/g, ''); }
   /* 休みにする時に動かさない支援（実施済み・チェックのある支援＝その人が実施した記録） */
+  /* 2026-10-22 反証レビュー指摘: 支援だけを見ていたため、実施済みの名前つきの自由枠（支援として使う札）や、現場の端末が実施の印を付けた施設業務が、
+   * 休みにすると未配置へ移って実施の印が消えた（または札ごと消えた）。休憩以外の札は、実施・チェックがあれば支援と同じに動かさない */
   function careKeepOnAbsent(t) {
-    if (!t || t.kind !== 'care') return false;
+    if (!t || t.kind === 'break') return false;
     if (t.done) return true;
     for (var k in (t.checks || {})) if (Object.prototype.hasOwnProperty.call(t.checks, k) && t.checks[k]) return true;
     return false;
@@ -1991,8 +1993,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return out;
   }
 
+  /* 名前・内容を書いた自由枠（支援として使う札）も支援と同じに赤く出して数える（2026-10-22 本人選択「支援と同じにする」） */
   function careOutOfHours(task, staff) {
-    if (!task || task.kind !== 'care' || task.staffId === null || task.staffId === undefined) return false;
+    if (!task || !(task.kind === 'care' || namedFree_(task)) || task.staffId === null || task.staffId === undefined) return false;
     if (!staff || typeof staff.workStart !== 'number' || typeof staff.workEnd !== 'number') return false;
     return task.start < staff.workStart || task.end > staff.workEnd;
   }
@@ -2201,6 +2204,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     var stA = findStaff(day.staff, a.staffId), stB = findStaff(day.staff, b.staffId);
     if (!stA || !stB) return { ok: false, code: 'nostaff', reason: '職員が見つかりません' };
+    if ((stA && stA.absent) || (stB && stB.absent)) return { ok: false, code: 'absent', reason: ((stA && stA.absent) ? stA : stB).name + 'さんは休みにしています（休みを外すと入れ替えできます）' };   /* 2026-10-22 反証レビュー指摘: 入れ替えが休みの確かめを通らず、休みの人の列に札が入り、その人の実施済みの札が別の職員へ移った */
     var durA = a.end - a.start, durB = b.end - b.start;
     var nA = { id: a.id, staffId: b.staffId, start: b.start, end: b.start + durA };
     var nB = { id: b.id, staffId: a.staffId, start: a.start, end: a.start + durB };
@@ -2266,6 +2270,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     var stB = findStaff(day.staff, b.staffId);
     if (!stB) return { ok: false, code: 'nostaff', reason: '職員が見つかりません' };
+    if (stB.absent) return { ok: false, code: 'absent', reason: stB.name + 'さんは休みにしています（休みを外すと入れ替えできます）' };   /* 2026-10-22 反証レビュー指摘: 入れ替えが休みの確かめを通らず、休みの人の列に札が入り、その人の実施済みの札が別の職員へ移った */
     var nA = { id: a.id, staffId: b.staffId, start: b.start, end: b.start + (a.end - a.start),
                groupId: b.groupId || null };
     if (nA.end > DAY_MIN_) return { ok: false, code: 'range', reason: '入替後の終了が24:00を超えるため入替できません' };
@@ -2323,6 +2328,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     var Y = stB.id;
     if (a.staffId === Y || staffColKey_(stA) === staffColKey_(stB)) return { ok: false, code: 'samecol', reason: '同じ列の中です' };
+    if (stA.absent || stB.absent) return { ok: false, code: 'absent', reason: (stA.absent ? stA : stB).name + 'さんは休みにしています（休みを外すと入れ替えできます）' };   /* 2026-10-22 反証レビュー指摘（planPlaceSwap と同じ） */
     var s = a.start, e = a.end, i, k;
     var core = (opts && opts.coreIds && opts.coreIds.length > 1) ? opts.coreIds : [a.id];
     for (i = 0; i < core.length; i++) {
@@ -2390,6 +2396,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     piece(itemsA, Y, remB, a.staffId, idsA, cntA);
     piece(itemsB, a.staffId, remA, Y, idsB, cntB);
+    /* 時間帯が広がって、つかんでいない実施済み・チェックのある札まで相手の列へ動くなら入れ替えない（2026-10-22 反証レビュー指摘: 実施した人の記録が
+     * すり替わり、ゴーストで強調されるのは相手の列の札だけなので気付けなかった）。つかんだ札・重ねた先の札は今までどおり */
+    var asked_ = {}, qa;
+    for (qa = 0; qa < core.length; qa++) asked_['.' + core[qa]] = 1;
+    asked_['.' + b.id] = 1;
+    for (qa = 0; qa < moves.length; qa++) {
+      var tq = findTask(day.tasks, moves[qa].id);
+      /* 断るのは、つかんだ側の列で巻き込まれる札だけ（相手の列の札はゴーストで強調されて見えている） */
+      if (!tq || asked_['.' + tq.id] || tq.staffId === moves[qa].staffId || tq.staffId !== a.staffId) continue;
+      if (tq.done || careHasChecks_(tq)) return { ok: false, code: 'donesweep', reason: '実施済み・チェックのある札（' + (tq.residentName || tq.label || '') + '）も一緒に動くため、時刻を変えずに入れ替えできません' };
+    }
     /* 入れ替え後の盤面で検査する（動く札の新しい列と、残す切れ端を置いた形） */
     var moved = {}, hyp = [], m;
     for (m = 0; m < moves.length; m++) moved['.' + moves[m].id] = moves[m];
@@ -2476,7 +2493,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var outOfHours = [];
     for (i = 0; i < day.tasks.length; i++) {
       var to = day.tasks[i];
-      if (to && to.kind === 'care' && careOutOfHours(to, findStaff(day.staff, to.staffId))) outOfHours.push(to);
+      if (to && careOutOfHours(to, findStaff(day.staff, to.staffId))) outOfHours.push(to);   /* 支援と名前つきの自由枠（careOutOfHours が見分ける・2026-10-22） */
     }
     return { unassigned: unassigned, noBreak: noBreak, overlaps: overlaps, bumped: bumped, outOfHours: outOfHours,
              count: unassigned.length + noBreak.length };
@@ -4081,9 +4098,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 並びの外の枠（翌日へ反映で、押した日と同じ列・トレイへ置く・2026-10-15）: 起床・就寝の時間帯に始まる
      * 支援と、人が置いた自由枠・施設業務のうち、並びに入っていないもの。自動の枠（施設業務・自由枠職員の自由枠）と休憩は除く */
     var singles = [];
+    /* 休みにした職員がいる日は、トレイの支援を「押した日にトレイだった札」として写さない（2026-10-22 反証レビュー指摘: 休みで未配置へ移った支援が、
+     * その人が出勤する翌日でもトレイへ送られ、自動配置でも戻らなかった） */
+    var hasAbsent_ = ((day && day.staff) || []).some(function (s) { return s && s.absent; });
     for (i = 0; i < tasks.length; i++) {
       var x0 = tasks[i];
-      if (!x0 || inChain['.' + x0.id] || x0.groupId) continue;   /* 並びにならなかった人のグループは1件ずつ動かさない（割れるため） */
+      if (!x0 || inChain['.' + x0.id] || x0.groupId) continue;
+      if (hasAbsent_ && x0.kind === 'care' && (x0.staffId === null || x0.staffId === undefined)) continue;   /* 並びにならなかった人のグループは1件ずつ動かさない（割れるため） */
       /* 時間帯（終わりの時刻ちょうどに始まる枠まで＝並びと同じ）に始まる枠。夜勤の列の枠は扱わない */
       var bOk = false;
       for (var bb in ROUTINE_BANDS) if (Object.prototype.hasOwnProperty.call(ROUTINE_BANDS, bb) && x0.start >= ROUTINE_BANDS[bb][0] && x0.start <= ROUTINE_BANDS[bb][1]) bOk = true;
@@ -4174,6 +4195,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else if ((t.kind === 'free' || t.kind === 'facility') && !(t.src === 'facwork' && !t.facManual)) {   /* 自動の枠（施設業務・自由枠職員の自由枠）は使わない */
         var fk = '.' + t.kind + '|' + (t.label || '') + '|' + t.start;
         (byFrame[fk] = byFrame[fk] || []).push(t);
+        /* 勤務時間外へ仮に外した名前つきの自由枠は、元の場所の開始でも見つける（作って同じ名前の枠を2枚にしない・2026-10-22） */
+        (t.oohHold || []).forEach(function (h0) { if (!h0 || h0.start === t.start) return; var hk = '.' + t.kind + '|' + (t.label || '') + '|' + h0.start; (byFrame[hk] = byFrame[hk] || []).push(t); });
         if (t.label) (byLabel['.' + t.kind + '|' + t.label] = byLabel['.' + t.kind + '|' + t.label] || []).push(t);
       } else if (t.kind === 'facility' && t.src === 'facwork' && !t.facManual && !t.done) {
         /* 翌日へ反映で「並びの外の枠」が人の枠として無い時だけ、同じ名前・開始の自動の施設業務を使う（作って二重にしない） */
@@ -4204,6 +4227,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var touched = false;
       for (k = 0; k < care.length; k++) {
         if (replace ? (care[k].done || careHasChecks_(care[k])) : routineTouched_(care[k])) touched = true;
+        /* 勤務時間外へ仮に外した札（赤い札・oohHold）がある並びは、人が手で調整中＝組み替えない（2026-10-22 反証レビュー指摘: 時間外の時刻のまま並びに入れて
+         * どの列にも入らず、その日の並び全部の組み替えが止まった。札自身の空けた所が、元の列をふさいで並びが別の列へ移った） */
+        if (care[k].oohHold && care[k].oohHold.length) touched = true;
       }
       /* 自由枠・施設業務: 同じ種類・名前・開始の枠が、トレイか並びの支援がいる列にあれば使う。ほかの列の枠は取らない（作る）。
        * 翌日へ反映では、翌日の枠はその日の前の並びの一部なので列を問わず使い、無い枠は作る（押した日と同じ並びにする） */
@@ -4216,8 +4242,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 時刻のずれた枠は、並びの支援と重ならない時だけ使う */
           for (var cc = 0; cc < care.length; cc++) if (x.start < care[cc].end && care[cc].start < x.end) return false;
           return true;
-        } : function (x) { return x.staffId === null || x.staffId === undefined || holders['.' + x.staffId]; });
-        if (fh) { used['.' + fh.id] = 1; if (fh.done || (!replace && fh.groupId)) touched = true; }
+        } : function (x) { return x.staffId === null || x.staffId === undefined || holders['.' + x.staffId] || !!(x.oohHold && x.oohHold.length); });   /* 勤務時間外へ仮に外した枠は列を問わず拾う（拾えば人の手が入った並び） */
+        if (fh) { used['.' + fh.id] = 1; if (fh.done || (!replace && fh.groupId) || (fh.oohHold && fh.oohHold.length)) touched = true; }
         frames.push({ item: fi, idx: frameItems[k].idx, task: fh });
       }
       if (touched) { kept++; newDone.push(ch.id); continue; }
@@ -4719,17 +4745,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 判定の割合は利用者の実人数で数える（札幌市・堺市の計算式「同一敷地内建物等に居住する利用者数（利用実人数）÷ 利用者数（利用実人数）」・2026-10-16）。
    * 訪問介護と第1号訪問事業（総合事業）は別々に計算する（計算書も別様式）。要支援の利用者を総合事業として分ける（週間計画の careLevel）。
-   * kindOf(name): 'sogo'=総合事業 / 'kaigo'=訪問介護 / それ以外=見分けられない。期間の中で1回でも提供した人を1人と数える */
+   * kindOf(name): 'sogo'=総合事業 / 'kaigo'=訪問介護 / 'code'=札のサービスコードで分ける / それ以外=見分けられない。期間の中で1回でも提供した人を1人と数える。
+   * 介護度が空欄・要支援/要介護以外の方は 'code'（2026-10-22 反証レビュー指摘）: 事業対象者は週間計画で介護度を未設定のまま総合事業コード（A21121 等）で
+   * 算定する運用（週間計画 visitLevelTrack_ の説明）。以前は空欄を全部訪問介護に数え、外部の事業対象者が訪問介護の分母に入って割合が下がっていた */
   function sameBuildingKindMap(residents) {
-    var map = {}, i;
+    var map = {}, evCat = {}, i;
     for (i = 0; i < (residents || []).length; i++) {
       var r = residents[i];
       if (!r || !r.name) continue;
-      var k = '.' + normName_(r.name), v = /支援/.test(String(r.careLevel || '')) ? 'sogo' : 'kaigo';
+      var lv = String(r.careLevel || ''), evs = Array.isArray(r.events) ? r.events : [], nA = 0, nO = 0;
+      for (var j = 0; j < evs.length; j++) {
+        var ev = evs[j];
+        if (!ev) continue;
+        var cat = String(ev.category || '');
+        if (ev.id !== undefined && ev.id !== null && ev.id !== '') evCat['.' + ev.id] = cat;
+        if (cat) { if (SVC_ANS_RE.test(cat)) nA++; else nO++; }
+      }
+      var v = /支援/.test(lv) ? 'sogo' : (/介護/.test(lv) ? 'kaigo' : (nA && !nO ? 'sogo' : (nO && !nA ? 'kaigo' : 'code')));
+      var k = '.' + normName_(r.name);
       if (!(k in map)) map[k] = v;
-      else if (map[k] !== v) map[k] = null;
+      else if (map[k] !== v && map[k] !== null) map[k] = (map[k] === 'code' || v === 'code' || map[k] === 'codeX') ? 'codeX' : null;   /* 空欄の方が混ざる同名は札ごとに分ける（2026-10-22 反証レビュー指摘）。要支援と要介護がぶつかった同名は見分けられないまま */
     }
-    return function (name) { var v = map['.' + normName_(name)]; return (v === 'sogo' || v === 'kaigo') ? v : undefined; };
+    var fn = function (name) { var v = map['.' + normName_(name)]; return v === 'codeX' ? 'code' : ((v === 'sogo' || v === 'kaigo' || v === 'code') ? v : undefined); };
+    fn.evCat = evCat;   /* 札の予定の番号 → 週間計画の区分（支援マスタ・週間計画の照合で作る札は区分コードを札に残さないため・2026-10-22 反証レビュー指摘） */
+    return fn;
+  }
+  /* 札ごとの区分: 週間計画の予定の区分（札の weeklyRef.evId から）を先に見て、無ければ札の svcCode・label。A+数字＝総合事業 */
+  function sameBuildingTaskKind_(t, evCat) {
+    var c = '';
+    if (evCat && t && t.weeklyRef && t.weeklyRef.evId !== undefined && Object.prototype.hasOwnProperty.call(evCat, '.' + t.weeklyRef.evId)) c = evCat['.' + t.weeklyRef.evId];
+    if (!c) c = String((t && (t.svcCode || t.label)) || '');
+    return SVC_ANS_RE.test(c) ? 'sogo' : 'kaigo';
   }
   function sameBuildingPeople(days, extOf, kindOf, from, to) {
     var sets = { kaigo: { inB: {}, ext: {} }, sogo: { inB: {}, ext: {} } }, unk = {}, nDays = 0, i, k;
@@ -4741,6 +4787,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var t = d.tasks[k];
         if (!t || t.kind !== 'care' || t.staffId === null || t.staffId === undefined || t.parked) continue;
         var nm = normName_(t.residentName), e = extOf(nm), kd = kindOf(nm);
+        if (kd === 'code') kd = sameBuildingTaskKind_(t, kindOf && kindOf.evCat);
         if ((e !== true && e !== false) || !sets[kd]) { unk['.' + nm] = 1; continue; }
         sets[kd][e ? 'ext' : 'inB']['.' + nm] = 1;
       }
@@ -7534,7 +7581,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var bt_ = (day && day.tasks) || [], bi_;
     for (bi_ = 0; bi_ < bt_.length; bi_++) if (bt_[bi_]) baseIds_['.' + bt_[bi_].id] = 1;
     var next = reduceCore_(day, action);
-    if (action && action.type !== 'INIT_DAY') next = settleHolds_(day, next);   /* 元の場所の印をまとめて整える（2026-10-21） */
+    /* 元の場所の印をまとめて整える（2026-10-21）。読み込みと、盤面を丸ごと入れ替える「案を本番にする」（REPLACE_BOARD）では通さない
+     * （2026-10-22 反証レビュー指摘: 入れ替える前の本番の赤い札の印で、案の盤面に施設業務を足していた。案の印は案の中で整っている） */
+    if (action && action.type !== 'INIT_DAY' && action.type !== 'REPLACE_BOARD') next = settleHolds_(day, next);
     baseIds_ = null;
     if (next !== day && action && STABLE_ID_TYPES_[action.type] && next.tasks !== day.tasks) {
       var rt = stabilizeFillerIds_(day.tasks, next.tasks, decidedIds_, looseIds_);
@@ -7668,6 +7717,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       nt.forEach(function (x) { if (x && x.id) ntSeen[x.id] = 1; });
       (action.notes || []).forEach(function (x) { if (x && x.id && !ntSeen[x.id]) { nt.push(x); ntSeen[x.id] = 1; } });
       if (nt.length || day.meta.notes) mR.notes = nt;
+      /* 案から本番にした日（2026-10-22 本人選択「違いを印で知らせる」）: 勤務表の反映の印は案のもの（盤面の職員は案の職員）にし、
+       * 「案から本番にした日」の印を付ける＝勤務表との違いを「シフト未反映」の印に出し、自動では組み直さない */
+      if (action.fromAlt) {
+        mR.fromAlt = true;
+        if (typeof action.shiftStamp === 'string') mR.shiftStamp = action.shiftStamp;
+      }
       return { meta: mR, staff: action.staff, columns: action.columns, tasks: action.tasks };
     }
     if (type === 'MARK_ABSENT') {
@@ -7681,8 +7736,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var ia = 0; ia < day.tasks.length; ia++) {
         ta = day.tasks[ia];
         if (!idsA[ta.staffId]) { tasksA.push(ta); continue; }
-        if (M.careKeepOnAbsent(ta)) { tasksA.push(ta); continue; }
-        if (ta.kind === 'break' || (ta.src === 'facwork' && !ta.facManual)) continue;
+        if (M.careKeepOnAbsent(ta)) {
+          /* 列に残す自動の枠には「休みで残した」印を付ける（2026-10-22 反証レビュー指摘: 休みを外した後、残った1枚のせいで「もう敷いた列」とみなされ、
+           * 施設業務・休憩が敷き直されなかった）。施設業務・自由枠を敷く処理はこの札を「敷いた」に数えない */
+          if (ta.src === 'facwork' && ta.kind !== 'care' && !ta.keptOnAbsent) {
+            var pk = {}, kk;
+            for (kk in ta) if (Object.prototype.hasOwnProperty.call(ta, kk)) pk[kk] = ta[kk];
+            pk.keptOnAbsent = true;
+            tasksA.push(pk);
+          } else tasksA.push(ta);
+          continue;
+        }
+        /* 消すのは休憩と、中身の無い自動の枠だけ（2026-10-22 反証レビュー指摘: 名前・内容・コメントを書いた自動の枠も札ごと消していた）。
+         * 中身のある枠は手で置いた枠と同じに未配置へ移す */
+        if (ta.kind === 'break' || (ta.src === 'facwork' && !ta.facManual && !M.namedFree(ta) && !ta.comment)) continue;
         var pa = {}, ka;
         for (ka in ta) if (Object.prototype.hasOwnProperty.call(ta, ka)) pa[ka] = ta[ka];
         pa.staffId = null; pa.done = false; pa.facBg = null; pa.parked = true;
@@ -9024,11 +9091,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!fstk || nightByCol[fstk.col]) continue;
         if (!occByCol[fstk.col]) occByCol[fstk.col] = [];
         occByCol[fstk.col].push({ id: ftk.id, start: ftk.start, end: ftk.end });
-        if (ftk.src === 'facwork' && (ftk.kind === 'facility' || ftk.kind === 'free') &&
+        if (ftk.src === 'facwork' && (ftk.kind === 'facility' || ftk.kind === 'free') && !M.namedFree(ftk) &&
             Math.floor(ftk.start / 60) === Math.floor((ftk.end - 1) / 60)) {
           var hk = Math.floor(ftk.start / 60);
           if (!facHourCount[fstk.col]) facHourCount[fstk.col] = {};
           facHourCount[fstk.col][hk] = (facHourCount[fstk.col][hk] || 0) + 1;
+        }
+      }
+      /* 勤務時間外へ仮に外した支援の元の場所（札の oohHold）も境に入れる（2026-10-22 反証レビュー指摘: データでは空けてあるのに、同じ正時に残った
+       * 施設業務の切れ端が正時いっぱいへ広がって描かれ、画面だけ空けた所が施設業務に見えた。印刷は広げないので空いて出ていた） */
+      for (var fh = 0; fh < day.tasks.length; fh++) {
+        var hh0 = day.tasks[fh] && day.tasks[fh].oohHold;
+        if (!hh0 || !hh0.length) continue;
+        for (var fj = 0; fj < hh0.length; fj++) {
+          var hst = hh0[fj] && staffById[hh0[fj].staffId];
+          if (!hst || nightByCol[hst.col]) continue;
+          if (!occByCol[hst.col]) occByCol[hst.col] = [];
+          occByCol[hst.col].push({ id: '_hold_' + day.tasks[fh].id + '_' + fj, start: hh0[fj].start, end: hh0[fj].end });
         }
       }
     }
@@ -9070,15 +9149,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var ovl = Object.prototype.hasOwnProperty.call(ovlMap, task.id) ? ovlMap[task.id] : null;
       /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する
        * （重なりクラスタの枠は横並び表示を優先し、まとめ拡張しない） */
+      /* 名前・内容を書いた自由枠（支援として使う札）は支援と同じに実際の時刻で描く（2026-10-22 反証レビュー指摘: 19:40〜20:00 の札が 19:00〜20:00 に見えた） */
       if (!ovl && !opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
-          (task.kind === 'facility' || task.kind === 'free') &&
+          (task.kind === 'facility' || task.kind === 'free') && !M.namedFree(task) &&
           Math.floor(task.start / 60) === Math.floor((task.end - 1) / 60)) {
         var hcc = facHourCount[st.col];
         if (hcc && hcc[Math.floor(task.start / 60)] === 1) {
           ex.facSpanAlone = true;
           ex.wsMin = st.workStart; ex.weMin = st.workEnd;
           var nb = occByCol[st.col] || [];
-          var lo, hi;   /* 隣接枠(支援care含む)でクランプ（休憩・別施設枠・支援へはみ出さない） */
+          var lo = undefined, hi = undefined;   /* 隣接枠(支援care含む)でクランプ（休憩・別施設枠・支援へはみ出さない）。札ごとに空へ戻す（2026-10-22: var は前の札の値が残っていた） */
           for (var nbi = 0; nbi < nb.length; nbi++) {
             var o = nb[nbi];
             if (o.id === task.id) continue;
@@ -9515,7 +9595,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function evalMove0_(pt) {
       var day = opts.getDay();
       var task = M.findTask(day.tasks, drag.taskId);
-      if (!task || !drag.multi || drag.mode !== 'move' || task.kind !== 'care' ||
+      /* 名前・内容を書いた自由枠をつかんだ時も支援と同じに事前の確かめを通す（2026-10-22 反証レビュー指摘: 確定側・下の 585 行は支援と同じに扱うのに、
+       * ここだけ支援に限っていたため、グループの中の名前つきの自由枠をつかむとゴーストが「置ける」と出て、離すと断られた） */
+      if (!task || !drag.multi || drag.mode !== 'move' || !(task.kind === 'care' || M.namedFree(task)) ||
           task.staffId === null || task.staffId === undefined) {
         return evalMoveCore_(pt);
       }
@@ -11097,8 +11179,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 案を本番にする時、本番の札に付いた実施・チェック・札のコメントを、案の同じ札（同じ id、無ければ同じ利用者・同じ開始時刻）へ移す。
    * 案を作った後に現場が付けた印を消さない（反証レビュー指摘）。移せなかった印の数を返す */
-  function carryMarks_(curTasks, altTasks) {
-    var byId = {}, byKey = {}, i, t, lost = 0;
+  /* 2026-10-22 反証レビュー指摘: 本番で甲さんが実施した札が、案では乙さん・未配置の札になっていても、実施の印がそちらへ付く（実施した人がすり替わる）。
+   * 移さないと「未実施」に見えて同じ支援（服薬など）をもう一度しかねないので、実施・チェックは今までどおり移し、担当が違う札へ移した数を
+   * info.moved に返して知らせる（実施した人を確かめてもらう）。札のメモも移す（案の札にメモが無い時だけ） */
+  function carryMarks_(curTasks, altTasks, info, curStaff, altStaff) {
+    var byId = {}, byKey = {}, i, t, lost = 0, moved = 0;
+    /* 担当が違うかは人（氏名）で比べる（2026-10-22 反証レビュー指摘: 案は出勤の違いを見込んで作るので、同じ枠の番号に別の人が入っていることがある）。
+     * 職員の一覧が無い時は枠の番号で比べる */
+    function who_(list, sid) {
+      if (sid === null || sid === undefined) return '';
+      if (!list) return '#' + sid;
+      for (var w = 0; w < list.length; w++) if (list[w] && list[w].id === sid) return M.absentNameKey(list[w].name || '') || ('#' + sid);
+      return '#' + sid;
+    }
     for (i = 0; i < altTasks.length; i++) {
       t = altTasks[i];
       byId[t.id] = t;
@@ -11108,13 +11201,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var c = curTasks[i];
       var hasChk = false, k;
       for (k in (c.checks || {})) if (Object.prototype.hasOwnProperty.call(c.checks, k) && c.checks[k]) { hasChk = true; break; }
-      if (!c.done && !hasChk && !c.comment) continue;
+      if (!c.done && !hasChk && !c.comment && !c.memo) continue;
       var tgt = byId[c.id] || (c.kind === 'care' && c.residentId ? byKey[c.residentId + '|' + c.start] : null);
-      if (!tgt) { lost++; continue; }
+      if (!tgt) { if (c.done || hasChk || c.comment) lost++; continue; }
+      if ((c.done || hasChk) && who_(altStaff, tgt.staffId) !== who_(curStaff, c.staffId)) moved++;
       if (c.done) tgt.done = true;
       if (hasChk) { tgt.checks = tgt.checks || {}; for (k in c.checks) if (Object.prototype.hasOwnProperty.call(c.checks, k) && c.checks[k]) tgt.checks[k] = c.checks[k]; }
       if (c.comment && !tgt.comment) tgt.comment = c.comment;
+      if (c.memo && !tgt.memo) tgt.memo = c.memo;
     }
+    if (info) info.moved = moved;
     return lost;
   }
   /* 案を本番にする: 案と本番の最新を取り直してから、元の本番を案に残せたのを確かめて、盤面の中身（職員・列・枠）を入れ替える。
@@ -11152,10 +11248,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!j || !j.ok) { toast('元の本番を案に残せなかったため、本番にしませんでした', true); return; }
           if (ui.currentDate !== date || ui.altId) return;
           var now = store.get();
-          var lost = carryMarks_(now.tasks, board.tasks);
-          store.dispatch({ type: 'REPLACE_BOARD', staff: board.staff, columns: board.columns, tasks: board.tasks,
+          var cInfo = {};
+          var lost = carryMarks_(now.tasks, board.tasks, cInfo, now.staff, board.staff);
+          /* 本番で「本日のみ削除」した支援は、案にあっても本番には戻さない（2026-10-22 反証レビュー指摘: 案を作った後に本番で消した支援が、
+           * 本番にすると戻った）。本番の墓標に当たり、本番の盤面に同じ予定の札が無いものだけ除く */
+          var skipN = 0, nowRefs = {}, skipSet = {};
+          (now.meta.skipRefs || []).forEach(function (x) { var r = (x && typeof x === 'object') ? x.ref : x; if (r) skipSet[r] = 1; });
+          var refOf_ = function (t) { return (t && t.weeklyRef) ? (t.weeklyRef.evId || (t.residentName + '|' + t.weeklyRef.start)) : null; };
+          now.tasks.forEach(function (t) { var r = refOf_(t); if (r) nowRefs[r] = 1; });
+          var tasksP = board.tasks.filter(function (t) { var r = refOf_(t); if (r && skipSet[r] && !nowRefs[r]) { skipN++; return false; } return true; });
+          /* 本番で休みにした職員が、案では休みになっていない時は知らせる（案は休みの前の勤務で作ってあることがある） */
+          var absNow = {}, absMiss = [];
+          now.staff.forEach(function (s) { if (s.absent && s.name) absNow[M.absentNameKey(s.name)] = s.name; });
+          board.staff.forEach(function (s) { var k = s.name ? M.absentNameKey(s.name) : ''; if (k && absNow[k] && !s.absent && absMiss.indexOf(absNow[k]) < 0) absMiss.push(absNow[k]); });
+          store.dispatch({ type: 'REPLACE_BOARD', staff: board.staff, columns: board.columns, tasks: tasksP, fromAlt: true,
+                           shiftStamp: (board.meta && typeof board.meta.shiftStamp === 'string') ? board.meta.shiftStamp : undefined,
                            skipRefs: (board.meta && board.meta.skipRefs) || [], notes: (board.meta && board.meta.notes) || [] });
-          toast('案「' + a2.name + '」を本番にしました' + (lost ? '（実施・チェック・コメントの付いた札 ' + lost + '件は案に同じ札が無く、移せませんでした。元の本番の案に残っています）' : ''), !!lost, lost ? 6000 : 2600);
+          var notes_ = [];
+          if (lost) notes_.push('実施・チェック・コメントの付いた札 ' + lost + '件は、案に同じ札が無く移せませんでした。元の本番の案に残っています');
+          if (cInfo.moved) notes_.push('実施・チェックの付いた札 ' + cInfo.moved + '件は、案では担当が違う札へ印を移しました。実施した人を確かめてください');
+          if (skipN) notes_.push('本番で本日のみ削除した支援 ' + skipN + '件は戻しませんでした');
+          if (absMiss.length) notes_.push('本番で休みにした ' + absMiss.join('・') + 'さんは、この案では休みになっていません（必要なら「休みにする」を押してください）');
+          toast('案「' + a2.name + '」を本番にしました' + (notes_.length ? '（' + notes_.join('。') + '）' : ''), !!(lost || cInfo.moved || absMiss.length), notes_.length ? 8000 : 2600);
           renderAltModal_();
           hideModals();
         }).catch(function () { toast('元の本番を案に残せなかったため、本番にしませんでした（回線を確かめてください）', true); });
@@ -11278,7 +11392,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             blocks.forEach(function (x) { ids[x.id] = 1; });
             for (var i = 0; i < day.tasks.length; i++) {
               var t = day.tasks[i];
-              if (!ids[t.staffId] || t.kind !== 'care') continue;
+              if (!ids[t.staffId] || !(t.kind === 'care' || M.namedFree(t))) continue;   /* 名前つきの自由枠も支援と同じに数える（2026-10-22） */
               if (M.careKeepOnAbsent(t)) kept++; else n++;
             }
             store.dispatch({ type: 'MARK_ABSENT', name: st.name });
@@ -11289,14 +11403,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         sh.appendChild(d);
       });
     });
-    var cares = day.tasks.filter(function (t) { return t.kind === 'care' && t.staffId === null; })
+    var cares = day.tasks.filter(function (t) { return (t.kind === 'care' || M.namedFree(t)) && t.staffId === null; })   /* 名前つきの自由枠も候補を出す（2026-10-22） */
       .sort(function (a, b) { return a.start - b.start; });
     if (!cares.length) { ch.innerHTML = '<div class="ai"><span class="am">未配置の支援はありません</span></div>'; return; }
     cares.forEach(function (t) {
       var d = document.createElement('div');
       d.className = 'ai';
       d.innerHTML = '<span class="am"></span><span class="as"></span><span class="alt-btns"></span>';
-      d.querySelector('.am').textContent = t.residentName || '';
+      d.querySelector('.am').textContent = t.residentName || t.label || '';
       d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime);
       var bh = d.querySelector('.alt-btns');
       var fit = M.careFitStaff(day, t, nightBand_(t.start, t.end)).slice(0, 6);
@@ -11446,6 +11560,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 対象event未発見で書き戻せなかったら false（呼出側は detailDirty で ws編集を保護する）。 */
   function writeBackCareDetail_(ref, contents) {
     if (!ref || weeklyDry_) return false;   /* 試しに数えている間は週間計画へ書かない */
+    /* 案を表示中は週間計画（毎週の予定）へ書かない（2026-10-22 反証レビュー指摘: 案は下書きなのに、案で直した支援の内容が週間計画へ書き戻り、
+     * 案を消しても戻らなかった）。false＝書き戻せていない印（detailDirty）が案の札に残り、本番にした後の照合で書き戻る */
+    if (typeof ui !== 'undefined' && ui.altId) return false;
     var db = loadCareDb();
     if (!db || !db.residents) return false;
     var detail = (contents && contents.length) ? contents.join('・') : '';
@@ -11748,10 +11865,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ★過去日の自動保護(autoLockPast_)は対象にしない。シフトの事後修正が入る前提の仕組みで、
    *   ここで警告すると過去日すべてが赤バッジになり、やがて誰も見なくなる（従来からの判断を維持）。
    *   ②で当日以降に限るのも同じ理由＝過去日を赤くしない。 */
+  /* 自動では反映せず「シフト未反映」の印に出す日（2026-10-22 本人選択）:
+   *  ・案から本番にした日（meta.fromAlt）＝準備した案を勤務表で組み直さない（本人選択「違いを印で知らせる」）
+   *  ・勤務表を Supabase から読めず Google の古い写しから読んだ間（shiftFbShown_）＝古い勤務表で組み直さない（本人選択「自動では反映しない」） */
+  function shiftAutoHold_(d) {
+    d = d || store.get();
+    if (d && d.meta && d.meta.fromAlt) return true;
+    return (typeof shiftFbShown_ !== 'undefined') && !!shiftFbShown_;
+  }
   function shiftHeldBack_(date, day) {
     try {
       var d = day || store.get();
       if (d && d.meta && d.meta.locked) return true;              /* ① 手動ロック */
+      if (shiftAutoHold_(d) && !((date || ui.currentDate) < todayKey())) return true;   /* ⑤ 案から本番にした日・古い勤務表（2026-10-22） */
+      /* ④ 案を表示中（2026-10-22 反証レビュー指摘: 案は自動では合わせない＝本人選択「自動では変えず印を出す」のに、ロックしたことの無い日では印が出なかった） */
+      if (typeof ui !== 'undefined' && ui.altId && d === store.get() && !((date || ui.currentDate) < todayKey())) return true;
       /* ③ 一度ロックした日（2026-10-16）… 外しても自動では反映しない。②と同じく当日以降だけ */
       if (onceLockedMeta_(d) && !((date || ui.currentDate) < todayKey())) return true;
       if (!settings.shiftAuto) {                                   /* ② 自動反映OFF（当日以降のみ・他の判定と真偽を揃える） */
@@ -11766,6 +11894,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var d = store.get();
       if (d && d.meta && d.meta.locked) return 'locked';
+      if (ui.altId) return 'alt';
+      if (d && d.meta && d.meta.fromAlt) return 'fromalt';
+      if (typeof shiftFbShown_ !== 'undefined' && shiftFbShown_) return 'stale';
       if (onceLockedMeta_(d)) return 'held';
     } catch (e) {}
     return (!settings.shiftAuto) ? 'autooff' : '';
@@ -11809,9 +11940,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     b.title = !n ? 'シフトの未反映はありません'
       : (why === 'locked'
           ? '🔒 この日はロック中のため反映していません（' + n + '件）。クリックで対処を選べます'
+          : (why === 'alt'
+              ? '案のため、自動では反映していません（' + n + '件）。クリックで今すぐ案へ反映できます'
+          : (why === 'fromalt'
+              ? '案から本番にした日のため、自動では反映していません（' + n + '件）。クリックで今すぐ反映できます'
+          : (why === 'stale'
+              ? '勤務表を Google の写し（古い可能性）から読んでいるため、自動では反映していません（' + n + '件）。クリックで反映できます'
           : (why === 'held'
               ? '一度ロックした日のため、自動では反映していません（' + n + '件）。クリックで今すぐ反映できます'
-              : 'シフト自動反映がOFFのため反映していません（' + n + '件）。クリックで今すぐ反映できます'));
+              : 'シフト自動反映がOFFのため反映していません（' + n + '件）。クリックで今すぐ反映できます')))));
   }
   /* seedFromMaster は「自動生成(switchDate/boot/マスタ自動取込)」と「手動生成(imMasterSeedボタン)」の両方から
    * 呼ばれる。手動生成は Undo 可能にすべきなので、本体は履歴ラップせず、自動呼出側で store.auto(seedFromMaster)
@@ -11878,6 +12015,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function seedFromMaster() {
     if (typeof ui !== 'undefined' && ui.altId) return;   /* 案には支援マスタから自動で敷かない */
     if (dayLocked_()) return;   /* ロック中は自動生成しない */
+    /* 一度ロックした日（クリアで空にした日を含む）は自動では敷き直さない（2026-10-22 本人選択「空のまま残す」）。手で押す生成（runManual_ の中）は通す */
+    if (manualDepth_ === 0 && onceLockedMeta_(store.get())) return;
     var day = store.get();
     if (day.tasks.length) return;
     var master = loadMaster();
@@ -11934,7 +12073,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var weeklyDry_ = false;
   function countWeeklyPending_() {
     var real = store, d0 = store.get(), date = ui.currentDate;
-    if (!d0 || !d0.meta || !onceLockedMeta_(d0) || date < todayKey() || !careInitDone) {
+    if (!d0 || !d0.meta || !(onceLockedMeta_(d0) || ui.altId) || date < todayKey() || !careInitDone) {   /* 案を表示中も数える（2026-10-22） */
       if (weeklyChg_.n || weeklyChg_.date) { weeklyChg_ = { date: '', n: 0 }; paintWeeklyChgBadge_(); }
       return;
     }
@@ -11970,7 +12109,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     b.title = !n ? '週間計画の未反映はありません'
       : (store.get().meta.locked
           ? '🔒 この日はロック中のため、週間計画の変更を反映していません（' + n + '件）。クリックで対処を選べます'
-          : '一度ロックした日のため、週間計画の変更を自動では反映していません（' + n + '件）。クリックで今すぐ反映できます');
+          : (ui.altId
+              ? '案のため、週間計画の変更を自動では反映していません（' + n + '件）。クリックで今すぐ案へ反映できます'
+              : '一度ロックした日のため、週間計画の変更を自動では反映していません（' + n + '件）。クリックで今すぐ反映できます'));
   }
   /* 週間計画(care_schedule_v2)変更時に盤面を確実に再同期する（storage/可視復帰トリガから呼ぶ）。
    * デバウンスで連続更新をまとめ、reconcileWeekly→renderAll を実行（不規則な反映漏れの根治）。 */
@@ -12463,7 +12604,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var day = store.get();
     for (var i = 0; i < (moves || []).length; i++) {
       var t = M.findTask(day.tasks, moves[i].id), st = M.findStaff(day.staff, moves[i].staffId);
-      if (!t || t.kind === 'care' || !st) continue;
+      if (!t || t.kind === 'care' || M.namedFree(t) || !st) continue;   /* 名前つきの自由枠も支援と同じに確かめない（2026-10-22 本人選択） */
       if (moves[i].start < st.workStart || moves[i].end > st.workEnd) return true;
     }
     return false;
@@ -13686,7 +13827,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           d.className = 'ai';
           var stO = M.findStaff(day.staff, t.staffId);
           d.innerHTML = '<span class="am"></span><span class="as"></span>';
-          d.querySelector('.am').textContent = t.residentName || '';
+          d.querySelector('.am').textContent = t.residentName || t.label || '';   /* 名前つきの自由枠は名前（label） */
           d.querySelector('.as').textContent = M.fmtRange(t.start, t.end, TS.minToTime) +
             (stO ? '（担当: ' + (stO.name || '—') + ' ' + TS.minToTime(stO.workStart) + '-' + TS.minToTime(stO.workEnd) + '）' : '');
           d.addEventListener('click', function () { openEditor(t.id); });
@@ -14270,6 +14411,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 人の編集の回数（store.userSeq）が前に見た時から増えていたら、未送信の時刻を今にする。
    * 印の時刻は「最初に送れなかった時」ではなく「最後に人が編集した時」＝回線が長く切れていた間の直前の編集を古い扱いにしない */
+  /* ★比べるのは「同じ読み込みの中で」人の編集の回数が増えたかだけ（2026-10-22 反証レビュー指摘）。印 m は「読み込みの回数:人の編集の回数」で、
+   * 以前は丸ごと比べていたため、日を開き直しただけ・案から本番へ戻っただけ（読み込みの回数が進む）でも人の編集と数え、眠っていた PC の
+   * 1日半前の未送信が「2時間以内」に見えて、古い未送信を統合しない守り（6671e68）をすり抜けた。人の編集の回数は日付をまたいで増えるので、
+   * 読み込みが変わった時は起点を取り直すだけにする */
   var humanSeen_ = {};
   function noteHumanEdit_(date) {
     var m = seedMarkNow_();
@@ -14277,6 +14422,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var prev = Object.prototype.hasOwnProperty.call(humanSeen_, date) ? humanSeen_[date] : (loadMark_.date === date ? loadMark_.m : null);
     humanSeen_[date] = m;
     if (prev === null || prev === m) return;
+    var pi = String(prev).split(':'), mi = String(m).split(':');
+    if (pi.length !== 2 || mi.length !== 2 || pi[0] !== mi[0]) return;   /* 読み込みが変わった＝人の編集ではない（起点だけ取り直した） */
     var d = loadDirty_();
     if (d.days && d.days[date]) { d.days[date] = Date.now(); saveDirty_(d); }
   }
@@ -15652,6 +15799,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 「一度ロックして外した」（false）を「一度もロックしていない」（欄なし）と見分ける（2026-10-17）。false の日だけ入れる＝
        * 欄なし・ロック中の日の署名は今までと同じ。入れないと、サーバーの欄なしを「違いなし」として採り、外した印が全部の PC から消えた */
       if (day.meta.locked === false) sigO.o = 1;
+      if (day.meta.fromAlt) sigO.a = 1;   /* 案から本番にした日の印（2026-10-22）。ある日だけ入れる＝ほかの日の署名は今までと同じ */
       return JSON.stringify(canon(sigO));   /* ロック状態を署名に含める＝切替がpushされ全端末へ伝播 */
     } catch (e) { return ''; }
   }
@@ -16616,13 +16764,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * ここへ入り、store書換＋push が印刷中に走る。A3フィットを守るため入口で止める（復帰後に取り直す）。 */
     if (printing_()) { done(null); return; }
     var ym = shiftMonth(date);
+    /* 押した時に見ていた盤面（本番か、どの案か）。取得を待つ間に案へ出入りしたら反映しない（2026-10-22 反証レビュー指摘: 手で押した反映は
+     * runManual_ の中なので autoHeld_ で止まらず、案で押して本番へ戻ると一度ロックした本番を組み直して送り、本番で押して案に入ると案へ反映した） */
+    var alt0_ = (typeof ui !== 'undefined' && ui.altId) || null;
     /* 本人が押した反映（自動でない・解除の確認で「はい」＝opts.ask）の中では、一度ロックした日でも仕上げ（並びの固定を含む）を通す（2026-10-16） */
     fetchShiftData(ym, !!opts.fresh, function (data) {
       if (!opts.auto || opts.ask) runManual_(function () { shiftBody_(data); }); else shiftBody_(data);
     });
     function shiftBody_(data) {
-      /* 画面が他日へ移った: 「取得中」表示を残さず終了（フリーズ防止） */
-      if (ui.currentDate !== date) { if (opts.report) $('imResult').textContent = ''; done(null); return; }
+      /* 画面が他日へ移った・案へ出入りした: 「取得中」表示を残さず終了（フリーズ防止） */
+      if (ui.currentDate !== date || ((ui.altId || null) !== alt0_)) { if (opts.report) $('imResult').textContent = ''; done(null); return; }
       /* 日単位ロック: ロック中はシフト反映しない（自動=サイレントskip・手動ボタン/再取込=案内表示）。
        * ★ただし「シフト側だけが変わった」ことは検知して知らせる（2026-08-03 追加）。
        *   ロックの約束は【勝手に書き換えない】であって【気づかせない】ではない。従来は自動経路で
@@ -16641,7 +16792,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       /* 一度ロックした日（2026-10-16 本人指示）: 自動では反映しない。変更の数だけ「シフト未反映」の印に出す（盤面は書き換えない）。
        * 手で押した反映はここを通らない（runManual_ の中＝autoHeld_ が偽） */
-      if (opts.auto && autoHeld_()) {
+      if (opts.auto && (autoHeld_() || shiftAutoHold_())) {   /* 案から本番にした日・Google の古い写しから読んだ勤務表も自動では反映しない（2026-10-22 本人選択） */
         var chgH_ = lockedShiftDiff_(date, data);
         lockedShiftChg_ = { date: date, n: chgH_ };
         paintShiftChgBadge_();
@@ -16780,6 +16931,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * クリック時に捕捉した src は「捨てられた古い盤面」を指す＝画面に出ているコメントがコピーされない。
        * 日付が変わっていなければ store を取り直して最新盤面・最新コメントを使う（stale参照の根絶）。 */
       if (ui.currentDate !== srcDate) { toast('日付が変わったためコピーを中止しました', true); return; }
+      /* 取得を待つ間に案を開いた（2026-10-22 反証レビュー指摘）: 盤面（store）が案になっている＝案を翌週の本番へ写さない */
+      if (ui.altId) { toast('案を開いたためコピーを中止しました（本番に戻してから押してください）', true); return; }
       src = store.get();
       if (!src.tasks.length) { toast('コピー元の内容が変わったためコピーを中止しました', true); return; }   /* 空盤面で翌週を潰さない */
       /* 翌週スロット構成: 当日のスロット構造を土台に、翌週の出勤者を流し込む（force上書き） */
@@ -17289,7 +17442,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 「自動充填済み」判定は施設業務/自由枠など実体のある充填のみ。休憩だけ(例: 固定休憩職員の
          * 固定休憩)は充填済みとみなさない＝残りの勤務時間に施設業務を充填する。二重休憩は
          * hasBreak ガードで防ぐ。 */
-        if (tasks[k].src === 'facwork' && tasks[k].kind !== 'break') hasFacwork = true;
+        if (tasks[k].src === 'facwork' && tasks[k].kind !== 'break' && !tasks[k].keptOnAbsent) hasFacwork = true;   /* 休みで残した実施済みの札は数えない（2026-10-22） */
       }
       /* 既に自動充填済み(=手動編集を尊重)はスキップ。ただし施設業務窓を持つ職員は
        * 16-21等が既にfacworkでも残りの訪問時間帯(12-16)を充填するため対象に含める。 */
@@ -17339,7 +17492,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var occ = [], hasFrame = false, k;
       for (k = 0; k < tasks.length; k++) {
         occ.push([tasks[k].start, tasks[k].end]);
-        if (tasks[k].src === 'facwork') hasFrame = true;   /* 既に休憩/自由枠あり＝再生成しない */
+        if (tasks[k].src === 'facwork' && !tasks[k].keptOnAbsent) hasFrame = true;   /* 既に休憩/自由枠あり＝再生成しない（休みで残した実施済みの札は数えない・2026-10-22） */
       }
       if (hasFrame) continue;                              /* 冪等＋手動編集の尊重 */
       /* 12:00-13:00 の休憩（勤務時間内かつ空きのときのみ） */
@@ -17417,7 +17570,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var fwStaff = {};
     for (i = 0; i < day.staff.length; i++) {
       var s0 = day.staff[i];
-      if (s0.name && s0.facWork && s0.facWork.length) fwStaff[s0.id] = s0;
+      if (s0.name && !s0.absent && s0.facWork && s0.facWork.length) fwStaff[s0.id] = s0;   /* 休みにした職員の施設業務窓は敷き直さない（2026-10-22 反証レビュー指摘） */
     }
     var tasks = [], changed = false;
     for (i = 0; i < day.tasks.length; i++) {
@@ -17586,6 +17739,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 「並びを固定」: 表示中の日の起床・就寝のグループを登録する（押し直すまで変わらない・決定 1A） */
   function registerRoutines_() {
     if (fieldBlock_()) return;
+    /* 案の盤面の並びを支援マスタへ登録しない＝本番の翌日へ反映しない（2026-10-22 反証レビュー指摘・翌週へコピーと同じ扱い） */
+    if (ui.altId) { toast('案を表示中は並びを固定できません（本番に戻してから押してください）', true); return; }
     var res = M.collectRoutines(store.get());
     if (!res.chains.length) { toast('この日に、起床（7:00〜8:40）・就寝（18:00〜21:00）のグループがありません', true); return; }
     var R = { v: 1, savedAt: new Date().toISOString(), from: ui.currentDate, chains: res.chains };
@@ -18167,16 +18322,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   /* グループ(groupId を共有する2枠以上)をドラッグで動かし終えたら選択を解除する（2026-10-07 本人決定）。
-   * 選択は移動後も残り続け、別の列へ移った後の「消去」に巻き込まれていた。複数選択(グループ無し)の移動は従来どおり残す。 */
+   * 選択は移動後も残り続け、別の列へ移った後の「消去」に巻き込まれていた。
+   * ★複数選択（グループ無し）でまとめて動かした時も解除する（2026-10-22 本人指摘「2つ以上ブロックを削除すると周りのブロックも消える」）。
+   *   残していたため、施設業務をまとめて動かした後に、消したい2枚を Ctrl/⌘ で足して delete キーを押すと、前に動かした札まで消えた
+   *   （本番の 11/27 の保存で、施設業務6枚が1回でまとめて消えた形と同じ）。1枚ずつの入れ替えで動いた札だけを外す決まり（10/07）は変えない */
   function clearSelAfterGroupMove_(moves) {
     if (!ui.selectedIds.length) return;
-    var tasks = store.get().tasks, cnt = {}, i;
-    for (i = 0; i < moves.length; i++) {
-      var t = M.findTask(tasks, moves[i].id);
-      if (!t || !t.groupId) continue;
-      cnt[t.groupId] = (cnt[t.groupId] || 0) + 1;
-      if (cnt[t.groupId] >= 2) { ui.selectedIds = []; return; }
-    }
+    if ((moves || []).length >= 2) { ui.selectedIds = []; return; }
   }
   /* 選択中の枠(2件以上)を1グループに固定する。以後、グループ内の1枠をドラッグすると
    * (getGroupIds 経由で)グループ全体が相対時刻を保って同時移動する＝毎回の複数選択が不要になる。
@@ -18225,9 +18377,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 盤面のキーが Supabase に切り替わっていれば SUKv.readRouted（見るだけの読み取り）で読む。
    * 読めなかったまとまり（ログインなし等で null）と、Supabase に無かった日は、Google の写しから読み足す（su-kv.js の約束どおり）。
    * Google の pull は1回10日ずつ（1キーずつファイルを開くため・時間切れを避ける）。
-   * done({ days:[{date,tasks}], missing:[日付], failedKeys:N, fromGoogle:N }) */
+   * done({ days:[{date,tasks}], missing:[日付], failed:[読みに失敗した日付], failedKeys:N, fromGoogle:N }) */
   function sameBldRead_(dates, onProgress, done) {
-    var got = {}, failedKeys = 0, fromGoogle = 0;
+    var got = {}, failedKeys = 0, fromGoogle = 0, failedSet = {};   /* failedSet: 読みに失敗したまとまりのキー（盤面を作っていない日と分ける・2026-10-22） */
     function parseDay_(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } } return v; }
     function take_(entries) {
       var n = 0;
@@ -18261,19 +18413,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var ch = gChunks[gi++];
         if (onProgress) onProgress((viaSb ? 'Google の写しから読み足し ' : 'Google ') + gi + '/' + gChunks.length);
         gas({ action: 'pull', keys: ch }, function (j) {
-          if (j && j.ok !== false && j.entries) fromGoogle += take_(j.entries); else failedKeys += ch.length;
+          if (j && j.ok !== false && j.entries) fromGoogle += take_(j.entries); else { failedKeys += ch.length; ch.forEach(function (fk) { failedSet[fk] = 1; }); }
           gNext_();
         });
       }
       gNext_();
     }
     function finish_() {
-      var days = [], missing = [];
+      var days = [], missing = [], failed = [];
       for (var k = 0; k < keys.length; k++) {
         if (got[keys[k]]) days.push({ date: dates[k], tasks: got[keys[k]] });
-        else missing.push(dates[k]);
+        else { missing.push(dates[k]); if (failedSet[keys[k]]) failed.push(dates[k]); }
       }
-      done({ days: days, missing: missing, failedKeys: failedKeys, fromGoogle: viaSb ? fromGoogle : 0 });
+      done({ days: days, missing: missing, failed: failed, failedKeys: failedKeys, fromGoogle: viaSb ? fromGoogle : 0 });
     }
     if (viaSb) sbNext_(); else googleFill_();
   }
@@ -18282,7 +18434,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 読めなかった日がある月・期間は「参考」として赤にしない */
   function sameBldRender_(r, extOf, kindOf, periods, to) {
     var failedDates = {};
-    if (r.failedKeys) for (var f = 0; f < r.missing.length; f++) failedDates[r.missing[f]] = 1;
+    /* 「参考」にするのは読みに失敗した日がある月・期間だけ（2026-10-22 反証レビュー指摘: 以前は1まとまりでも失敗すると、盤面を作っていないだけの日まで
+     * 失敗に数え、失敗の無い月や前の判定の期間まで赤が出なくなった）。failed の無い古い形の結果は前のとおり missing 全部 */
+    var failList_ = Array.isArray(r.failed) ? r.failed : (r.failedKeys ? r.missing : []);
+    for (var f = 0; f < failList_.length; f++) failedDates[failList_[f]] = 1;
     function failedIn_(from, upto) { for (var d in failedDates) if (d >= from && d <= upto) return true; return false; }
     function pctCell_(a, b, partial, red) {
       var p = M.sameBuildingPct(a, b);
@@ -18681,7 +18836,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       var day = store.get();
       if (!day.tasks.length && !day.staff.length) {
-        seedFromMaster();
+        runManual_(seedFromMaster);   /* 手で押した生成は一度ロックした日でも通す（2026-10-22） */
         $('imResult').textContent = '既定の列へ配置済みで生成しました';
         return;
       }
@@ -19382,7 +19537,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * 外れた支援は枠全体が赤くなり、上に「時間外 N」が出る＝誰かの勤務時間へ動かす必要に気づける。
          * 支援以外（休憩・施設業務など）は赤くならず数にも入らないので、今までどおり確かめる */
         var tAc_ = M.findTask(store.get().tasks, taskId);
-        if (!(tAc_ && tAc_.kind === 'care') && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        if (!(tAc_ && (tAc_.kind === 'care' || M.namedFree(tAc_))) && !window.confirm('勤務時間外ですが配置しますか？')) return;
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);
       },
@@ -19538,8 +19693,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261022091432';
-  var WS_APP_VER = 2026101704;   /* 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた
+  var WS_BUILD = '20261022120144';
+  var WS_APP_VER = 2026101705;   /* 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
+                                  * 空けた所を施設業務で埋めて送らないよう上げた（3ebdccc。反証レビュー2回の指摘: 印が恒久的に消え、本人指摘の症状が戻る）
+                                  * （2026101704: 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた）
                                   * （2026101703: 2026-10-20 休みの印 absent を知らない前の版の画面が、休みの人の列を自動で埋め直して送らないよう上げた） */
    /* 2026-10-17 ロックの印を欄なしに戻さない直しで上げた（前の版には「端末ロック・サーバー欄なし」の統合が残る） */
   var versionHold_ = false, reloadPending_ = false, lastTick_ = Date.now(), hiddenAt_ = 0, lastInputAt_ = Date.now(), holdSince_ = 0, deferSince_ = 0;
