@@ -22,9 +22,10 @@
  *   ・現場の端末（su_device_role が field）では、開いた後の全員分の送信（pushAll）をせず、送信待ちに残っている方だけを送る
  *     （2026-10-22 代表者の決定「保存した方だけ送る」・CLAUDE.md §2-5 現場の端末は全件を扱わない）。保存の後の送信（pushOne）は送る。
  *     用途は送る時に読み直す（途中で現場へ変わっても、次の送信から効く）。
- *   ・権限で断られた時（データベースの 42501）は送信待ちから外し、記録（apc2_sync_ng・denied）を残す。保存のたびの送り直しはしない。
- *     事務所PCで画面を開いた時（pushAll）だけ、1回に1度送り直す（許可が戻った後に載るように・回数は開いた回数まで）。
- *     ログインの切れ（42501 以外の失敗）は今までどおり送信待ちに残す（2026-10-22）。
+ *   ・権限で断られた時（データベースの 42501）は、送信待ちに残したまま記録（apc2_sync_ng・denied・日時つき）を付ける。
+ *     保存のたびの送り直しはしない（同じ日時の denied は pushOne では送らない）。画面を開いた時（pushAll・現場の端末も事務所PCも）は
+ *     送信待ちの denied を1回ずつ送り直す（許可が戻った後・ログインし直した後に載るように・回数は開いた回数まで）。
+ *     ログインが切れた呼び出しも 42501 になりうるが、送信待ちから外さないので消えない。載ったら denied の記録を外す（2026-10-22・反証レビュー）。
  */
 (function () {
   'use strict';
@@ -156,7 +157,9 @@
     if (ks.length > NG_MAX) ks.sort(function (a, b) { return String(r[a].t) < String(r[b].t) ? -1 : 1; }).slice(0, ks.length - NG_MAX).forEach(function (k) { delete r[k]; });
     lsSet(NG_LS, { v: 1, r: r });
   }
-  function refusedSame(rid, at, retryDenied) { var r = refused()[rid]; return !!(r && r.at === at && !(retryDenied && r.e === 'denied')); }
+  function refusedSame(rid, at) { var r = refused()[rid]; return !!(r && r.at === at); }
+  function deniedSame(rid, at) { var r = refused()[rid]; return !!(r && r.at === at && r.e === 'denied'); }
+  function refusedDrop(rid) { var r = refused(); if (rid in r) { delete r[rid]; lsSet(NG_LS, { v: 1, r: r }); } }
   // 送信済みの控え（入居者ID → ok を受け取った日時）。読めない・壊れている時は null＝全員分を送る
   function sentRead() { var o = lsJson(SENT_LS); return o && isObj(o.s) ? o.s : null; }
   function sentAdd(rid, at) {
@@ -170,12 +173,13 @@
   function sendOne(sb, rid, retryDenied) {
     var p = payloadOf(rid, readLocal()[rid]);   // 送る直前に控えを読み直す（待っている間に保存し直された値を送る）
     if (!p) { queueDrop(rid); return Promise.resolve('skip'); }
-    if (refusedSame(rid, p.p_at, retryDenied)) { queueDone(rid, p.p_at); return Promise.resolve('refused'); }
+    if (deniedSame(rid, p.p_at)) { if (!retryDenied) return Promise.resolve('denied'); }   // 送信待ちには残す
+    else if (refusedSame(rid, p.p_at)) { queueDone(rid, p.p_at); return Promise.resolve('refused'); }
     return Promise.resolve().then(function () { return sb.rpc('patch_put', p); }).then(function (r) {
       var d = r && !r.error ? r.data : null;
-      if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
+      if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); if (deniedSame(rid, p.p_at)) refusedDrop(rid); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
       if (d && d.ok === false && REFUSALS[d.error]) { queueDone(rid, p.p_at); refusedAdd(rid, d.error, p.p_at); return 'refused'; }
-      if (r && r.error && String(r.error.code || '') === DENIED) { queueDone(rid, p.p_at); refusedAdd(rid, 'denied', p.p_at); return 'refused'; }
+      if (r && r.error && String(r.error.code || '') === DENIED) { queueAdd(rid, p.p_at); refusedAdd(rid, 'denied', p.p_at); return 'denied'; }
       queueAdd(rid, p.p_at); return 'fail';
     }, function () { queueAdd(rid, p.p_at); return 'fail'; });
   }
@@ -189,7 +193,8 @@
         rids = rids.filter(function (k) {
           var p = payloadOf(k, local[k]);
           if (!p) { queueDrop(k); return false; }                                  // 日時の無い古い設定は送らない
-          if (refusedSame(k, p.p_at, retryDenied)) { queueDone(k, p.p_at); return false; }   // 同じ日時で断られた設定は送り直さない（開いた時の denied は除く）
+          if (deniedSame(k, p.p_at)) return !!retryDenied;                         // 権限の断りは開いた時だけ送り直す（送信待ちには残す）
+          if (refusedSame(k, p.p_at)) { queueDone(k, p.p_at); return false; }      // 同じ日時で形を断られた設定は送り直さない
           return true;
         });
         if (!rids.length) return { sent: 0 };
@@ -215,7 +220,7 @@
    *  送信済みの控えと日時が同じ方は送らない（送信待ちに残っている方は下で足すので送る）。控えが壊れていれば全員分 */
   function pushAll() {
     var local = readLocal(), sent = sentRead(), qd = queue();
-    if (isField()) return run(Object.keys(qd));   // 現場の端末は送信待ちの方だけ（全員分は送らない）
+    if (isField()) return run(Object.keys(qd), true);   // 現場の端末は送信待ちの方だけ（全員分は送らない）
     var ks = Object.keys(local).filter(function (k) {
       return !(sent && typeof local[k].at === 'string' && sent[k] === local[k].at);
     });
