@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H6M8EyLAeXV7CU7uj63Lvd7uUXiKfbKHXCF4gTWK12I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-8OMFd7/OAtV5McTfWniOpgVNxCfc3kZFPB2F16p99/8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -628,6 +628,22 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yj-after{margin:12px 0 0}
 @media (max-width:900px){ .yj-work{grid-template-columns:1fr} .yj-pages{position:static; max-height:none} .yj-arow{grid-template-columns:1fr} }
 @media print{ #mYakujo,#yjOpen{display:none !important} }
+/* 薬情・お薬シールの写真を入れる帯（2026-10-23 代表者の決定）。詳細画面の「薬剤情報」の欄の上。
+   管理者が事務所の Mac の Chrome で開いている時だけ中身が入る（ほかでは空＝出さない）。画面だけ（印刷しない） */
+.yjp-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:6px 0; padding:8px 12px;
+  border:2px dashed var(--pri); border-radius:10px; background:var(--pri-l); color:var(--g9); font-size:0.9375rem}
+.yjp-bar:empty{display:none}
+.yjp-bar.yjp-over{background:#d6e4fd; border-style:solid}   /* ドラッグ中だけの色（--pri-l より一段濃い・案内の文字との比 4.5 以上を実測） */
+.yjp-t{font-weight:700; color:var(--pri-d)}
+.yjp-bar .btn{min-height:44px}
+.yjp-bar .yj-file{position:relative; background:#fff}
+.yjp-bar .yj-file input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
+.yjp-hint{color:var(--g7)}
+.yjp-again{background:none; border:none; padding:0 4px; min-height:44px; color:var(--pri-d); text-decoration:underline; font:inherit; cursor:pointer}
+.yjp-again:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.yjp-msg{flex-basis:100%; font-weight:700}
+.yjp-msg:empty{display:none}
+@media print{ .yjp-bar{display:none !important} }
 
 /* ── ボトムナビ ── */
 .bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
@@ -6887,13 +6903,14 @@ function yjCalcOk_(){ return typeof YakujoCalc!=='undefined'&&typeof YakujoCalc.
 /* 入口のボタンは、管理者（Google＋2段階認証）が事務所PCでログインしている時だけ出す */
 function yjGate_(){
   var b=$('yjOpen'); if(!b) return;
-  b.hidden=true; yjBy='';
-  if(getDeviceRole()==='field'||!CFG.url||!mcHasLogin_()||!yjCalcOk_()||typeof Promise==='undefined') return;
+  b.hidden=true; yjBy=''; yjpPaint_();
+  if(getDeviceRole()==='field'||!CFG.url||!mcHasLogin_()||!yjCalcOk_()||typeof Promise==='undefined'){ yjpPurge_(); return; }
   var dg=devGen;
   msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
     if(dg!==devGen||getDeviceRole()==='field') return;
-    if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')) return;
+    if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')){ yjpPurge_(); return; }
     yjBy=String(st.email||''); b.hidden=false;
+    yjpRefresh_();   /* 写真を入れる帯（2026-10-23） */
   }).catch(function(){ /* 聞けない時は出さない */ });
 }
 /* 薬価基準の品目（定期薬の入力パネルと同じファイル）。読めなくても取り込みは止めない（名前の確かめが弱くなるだけ） */
@@ -6962,6 +6979,7 @@ function yjClose_(){
 /* 現場用へ切り替わった時は、中身ごと捨てる（applyDeviceGuard から呼ぶ） */
 function yjPurge_(){
   yjSt=null; yjGen++; yjBy='';
+  yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
   try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
 }
 
@@ -7283,6 +7301,276 @@ function yjWire_(){
       r3.warns.push('手で直した行です（原本と見比べてください）');
       setTimeout(function(){ if(yjSt&&yjSt.cur===c) yjPaint_(); },0); return;
     }
+  });
+}
+
+/* ═══════════ 薬情・お薬シールの写真を入れる（2026-10-23 代表者の決定）═══════════
+   詳細画面の「薬剤情報」の欄の上に帯を出し、選んだ写真・ドラッグした写真を、事務所の Mac の
+   「薬情よみとり／入れる」フォルダ（yakujo-reader/ の道具が読む場所）へ直接書き込む。
+   Web の画面のリンクでは Mac の中のフォルダを開けない（ブラウザの決まり）ので、画面から入れる形にした。
+   ★出すのは、管理者（yjGate_ が確かめた yjBy）が事務所の Mac の Chrome で開いている時だけ
+     （フォルダへ書く仕組み showDirectoryPicker がある時）。iPhone・iPad・Windows・Safari・現場端末では出さない。画面だけ（印刷しない）
+   ★端末に覚えるのは、選んだフォルダの印（ブラウザの IndexedDB・rmaster_yakujo_in）だけ。写真・ファイル名・氏名は覚えない。console にも出さない
+   ★形式と大きさは薬情よみとりの決まり（HEIC・HEIF・JPEG・PNG・PDF・1つ10MBまで）に合わせる。
+     同じ名前があれば上書きせず「名前 (2).拡張子」にする（前からあるファイルを消さない・書き換えない）。
+     名前が「.」で始まると道具が読まないので、先頭の「.」は外す
+   ★選べるフォルダは名前が「入れる」のものだけ（別のフォルダへ写真を撒かない）
+   ★書き込みの許可は、ボタンを押した時にだけ求める。ドラッグでは求めない（許可が無ければ先に「許可する」を押してもらう）
+   ★書けなかった時は、この帯が作った空のファイルだけを消す（消す前に大きさ0を確かめる＝前からあるファイル・ほかの経路が書いたファイルには触らない）
+   ★空いている名前を確かめてから作るまでの間に、ほかのタブ・Finder が同じ名前を置いた時は、作った直後に大きさで気づいて次の名前へ進む
+   ★帯が出ている間は、帯の外へ落とした写真でページが写真の表示へ切り替わらないようにする（受け取りはしない）
+   ★書いている間は、再読み込み・タブを閉じる前に確かめる（beforeunload）。知らせは別の方の詳細へ移ったら消す（写真と入居者は結び付いていない） */
+var YJP_EXT=['heic','heif','jpg','jpeg','png','pdf'], YJP_MAX=10*1024*1024, YJP_DB='rmaster_yakujo_in';
+var YJP_ACCEPT='image/heic,image/heif,image/jpeg,image/png,application/pdf,.heic,.heif,.jpg,.jpeg,.png,.pdf';
+var yjpDir=null, yjpPerm='', yjpLoaded=false, yjpBusy=false, yjpMsg='', yjpGen=0, yjpRt=0, yjpLastId=null;
+/* Mac か（iPad は Mac と名乗るので、指で触れる数で外す）。nav は navigator（試験で差し替える） */
+function yjpIsMac_(nav){
+  nav=nav||{};
+  var p=String((nav.userAgentData&&nav.userAgentData.platform)||nav.platform||'');
+  return /mac/i.test(p)&&!(Number(nav.maxTouchPoints)>1);
+}
+function yjpCan_(){
+  return !!yjBy&&getDeviceRole()!=='field'&&yjpIsMac_(window.navigator)&&
+    typeof window.showDirectoryPicker==='function'&&typeof window.indexedDB!=='undefined';
+}
+function yjpExt_(name){ var m=/\.([A-Za-z0-9]+)$/.exec(String(name==null?'':name)); return m?m[1].toLowerCase():''; }
+/* 1つのファイルを入れてよいか。'ok'・'empty'（中身が無い）・'type'（写真か PDF ではない）・'size'（10MB を超える） */
+function yjpKind_(name,size){
+  if(!(Number(size)>0)) return 'empty';
+  if(YJP_EXT.indexOf(yjpExt_(name))<0) return 'type';
+  if(Number(size)>YJP_MAX) return 'size';
+  return 'ok';
+}
+/* 書き込む名前。名前に使えない「/」「\」「:」と制御文字は「_」に、先頭の「.」と空白は外す（道具が隠しファイルとして読まないため） */
+function yjpSafeName_(name){
+  return String(name==null?'':name).replace(/[\/\\:\u0000-\u001f\u007f]/g,'_').replace(/^[.\s]+/,'').trim();
+}
+/* i 番目の名前の候補（1 は元の名前、2 からは「名前 (2).拡張子」） */
+function yjpNameAt_(name,i){
+  if(!(i>1)) return name;
+  var m=/^(.*?)(\.[A-Za-z0-9]+)?$/.exec(name), base=m[1], ext=m[2]||'';
+  return base+' ('+i+')'+ext;
+}
+/* 入れた後の知らせ。n＝入れた数・bad＝{empty,type,size,fail} の数 */
+function yjpMsgOf_(n,bad){
+  bad=bad||{};
+  var s=n>0?(n+'件を「入れる」に入れました。Mac の「薬情よみとり」→「読む」をダブルクリックしてください。'):'入れたものはありません。';
+  var x=[];
+  if(bad.type) x.push('写真か PDF ではない '+bad.type+'件');
+  if(bad.size) x.push('10MB を超える '+bad.size+'件');
+  if(bad.empty) x.push('中身が無い '+bad.empty+'件');
+  if(bad.fail) x.push('書き込めなかった '+bad.fail+'件');
+  if(x.length) s+=' 入れなかったもの: '+x.join('・')+'。';
+  return s;
+}
+/* フォルダの印を覚えておく所（ブラウザの IndexedDB）。読めない・書けない時は覚えていない扱い */
+function yjpDb_(fn){
+  return new Promise(function(ok,ng){
+    var q;
+    try{ q=window.indexedDB.open(YJP_DB,1); }catch(e){ ng(e); return; }
+    q.onupgradeneeded=function(){ try{ q.result.createObjectStore('kv'); }catch(e){} };
+    q.onerror=function(){ ng(q.error); };
+    q.onblocked=function(){ ng(new Error('blocked')); };
+    q.onsuccess=function(){
+      var db=q.result;
+      try{ fn(db,function(v){ db.close(); ok(v); },function(e){ db.close(); ng(e); }); }catch(e){ try{ db.close(); }catch(_){} ng(e); }
+    };
+  });
+}
+function yjpLoad_(){
+  return yjpDb_(function(db,ok,ng){
+    var q=db.transaction('kv','readonly').objectStore('kv').get('dir');
+    q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ng(q.error); };
+  }).catch(function(){ return null; });
+}
+function yjpSave_(h){
+  return yjpDb_(function(db,ok,ng){
+    var tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(h,'dir');
+    tx.oncomplete=function(){ ok(true); }; tx.onerror=function(){ ng(tx.error); }; tx.onabort=function(){ ng(tx.error); };
+  });
+}
+/* フォルダの印と許可を確かめて描き直す（許可は求めない＝押されていない時に呼べる） */
+function yjpRefresh_(){
+  var rt=++yjpRt, g=yjpGen;
+  if(!yjpCan_()){ yjpPaint_(); return; }
+  yjpLoad_().then(function(h){
+    if(rt!==yjpRt||g!==yjpGen) return;
+    var d=(h&&h.kind==='directory'&&typeof h.queryPermission==='function')?h:null;
+    if(!d){ yjpDir=null; yjpPerm=''; yjpLoaded=true; yjpPaint_(); return; }
+    return d.queryPermission({mode:'readwrite'}).then(function(perm){
+      if(rt!==yjpRt||g!==yjpGen) return;
+      yjpDir=d; yjpPerm=perm; yjpLoaded=true; yjpPaint_();
+    });
+  }).catch(function(){ if(rt!==yjpRt||g!==yjpGen) return; yjpDir=null; yjpPerm=''; yjpLoaded=true; yjpPaint_(); });
+}
+/* 詳細画面に置く場所。中身は描いた後で入れる（管理者・Mac の Chrome でなければ空のまま＝出ない） */
+function yjpSlot_(r){
+  var id=String(r&&r.id!=null?r.id:'');
+  if(id!==yjpLastId){ yjpLastId=id; if(!yjpBusy) yjpMsg=''; }
+  setTimeout(function(){ if(yjpLoaded) yjpPaint_(); else yjpRefresh_(); },0);
+  return '<div class="yjp-bar" id="yjpBar"></div>';
+}
+function yjpPaint_(){
+  var b=$('yjpBar'); if(!b) return;
+  if(!yjpCan_()||!yjpLoaded){ b.innerHTML=''; b.classList.remove('yjp-over'); return; }
+  var dis=yjpBusy?' disabled':'', h='<span class="yjp-t">📷 薬情・お薬シールの写真を入れる</span>';
+  if(!yjpDir){
+    h+='<button class="btn btn-sec" type="button" data-yjp="dir"'+dis+'>「入れる」フォルダを選ぶ（初回だけ）</button>'+
+       '<span class="yjp-hint">ホーム →「薬情よみとり」→「入れる」を選んでください</span>';
+  }else if(yjpPerm!=='granted'){
+    h+='<button class="btn btn-sec" type="button" data-yjp="perm"'+dis+'>「入れる」への書き込みを許可する</button>';
+  }else{
+    h+='<label class="yj-file">写真を選ぶ <input type="file" id="yjpFile" multiple accept="'+YJP_ACCEPT+'"'+dis+'></label>'+
+       '<span class="yjp-hint">ここに写真をドラッグしても入れられます</span>'+
+       '<button class="yjp-again" type="button" data-yjp="dir"'+dis+'>フォルダを選び直す</button>';
+  }
+  h+='<span class="yjp-msg" role="status">'+esc(yjpMsg)+'</span>';
+  b.innerHTML=h;
+}
+/* 初回・選び直し: フォルダを選ぶ窓を開く（名前が「入れる」のフォルダだけ受け取る） */
+function yjpPickDir_(){
+  if(yjpBusy||!yjpCan_()) return;
+  var g=yjpGen, pk;
+  try{ pk=window.showDirectoryPicker({id:'yakujo-in', mode:'readwrite'}); }catch(e){ pk=Promise.reject(e); }
+  Promise.resolve(pk).then(function(h){
+    if(g!==yjpGen||!h) return;
+    if(String(h.name||'')!=='入れる'){
+      yjpMsg='選んだフォルダは「入れる」ではありません。ホーム →「薬情よみとり」→「入れる」を選んでください。'; yjpPaint_(); return;
+    }
+    return h.queryPermission({mode:'readwrite'}).then(function(perm){
+      if(g!==yjpGen) return;
+      yjpRt++; yjpDir=h; yjpPerm=perm; yjpLoaded=true; yjpMsg=''; yjpPaint_();
+      return yjpSave_(h).catch(function(){
+        if(g!==yjpGen) return;
+        yjpMsg='フォルダは選べましたが、この端末に覚えられませんでした（次に開いた時に、もう一度選んでください）。'; yjpPaint_();
+      });
+    });
+  }).catch(function(e){
+    if(g!==yjpGen||(e&&e.name==='AbortError')) return;
+    yjpMsg='フォルダを選べませんでした。'; yjpPaint_();
+  });
+}
+/* 覚えたフォルダへの書き込みの許可を求める（押した時だけ） */
+function yjpAskPerm_(){
+  if(yjpBusy||!yjpDir||!yjpCan_()) return;
+  var g=yjpGen, d=yjpDir;
+  Promise.resolve().then(function(){ return d.requestPermission({mode:'readwrite'}); }).then(function(perm){
+    if(g!==yjpGen) return;
+    yjpPerm=perm; yjpMsg=(perm==='granted')?'':'書き込みが許可されませんでした。'; yjpPaint_();
+  }).catch(function(){
+    if(g!==yjpGen) return;
+    yjpDir=null; yjpPerm=''; yjpMsg='許可を求められませんでした。「入れる」フォルダを選び直してください。'; yjpPaint_();
+  });
+}
+/* 空いている名前を探す（前からあるファイル・フォルダと同じ名前は使わない） */
+function yjpFree_(dir,name){
+  var i=1;
+  function next(){
+    if(i>99) return Promise.reject(new Error('name'));
+    var nm=yjpNameAt_(name,i++);
+    return dir.getFileHandle(nm).then(function(){ return next(); },function(e){
+      if(e&&e.name==='NotFoundError') return nm;
+      if(e&&e.name==='TypeMismatchError') return next();   /* 同じ名前のフォルダがある */
+      throw e;
+    });
+  }
+  return next();
+}
+/* 空いている名前でファイルを作る。作った直後に大きさを確かめ、0でなければ（確かめた後にほかの経路が同じ名前を置いた）
+   次の名前を探し直す（3回まで）。返すのは {name, fh}（中身はまだ空） */
+function yjpMake_(dir,name){
+  var tries=0;
+  function go(){
+    if(++tries>3) return Promise.reject(new Error('busy'));
+    return yjpFree_(dir,name).then(function(free){
+      return dir.getFileHandle(free,{create:true}).then(function(fh){
+        return fh.getFile().then(function(f){ return (f&&f.size===0)?{name:free, fh:fh}:go(); });
+      });
+    });
+  }
+  return go();
+}
+/* この帯が作ったファイルを、まだ空の時だけ消す（ほかの経路が書いた中身は消さない） */
+function yjpDropEmpty_(dir,name){
+  return dir.getFileHandle(name).then(function(fh){ return fh.getFile(); }).then(function(f){
+    if(f&&f.size===0) return dir.removeEntry(name);
+  }).catch(function(){});
+}
+/* 写真を「入れる」へ書く（1件ずつ順に）。fromDrop＝帯へのドラッグ */
+function yjpPut_(list,fromDrop){
+  var files=Array.prototype.slice.call(list||[]);
+  if(!yjpCan_()) return;
+  if(yjpBusy){ if(files.length||fromDrop){ yjpMsg='入れている途中です。終わってから、もう一度入れてください。'; yjpPaint_(); } return; }
+  if(!files.length){ if(fromDrop){ yjpMsg='写真を受け取れませんでした。Finder から入れるか、「写真を選ぶ」を使ってください。'; yjpPaint_(); } return; }
+  if(!yjpDir||yjpPerm!=='granted'){
+    yjpMsg=!yjpDir?'先に「入れる」フォルダを選んでください。':'先に「「入れる」への書き込みを許可する」を押してください。'; yjpPaint_(); return;
+  }
+  var g=yjpGen, dir=yjpDir, n=0, bad={empty:0,type:0,size:0,fail:0}, stop='', chain=Promise.resolve();
+  yjpBusy=true; yjpMsg='入れています…（'+files.length+'件）'; yjpPaint_();
+  files.forEach(function(f){
+    chain=chain.then(function(){
+      if(g!==yjpGen) return;
+      if(stop){ bad.fail++; return; }
+      var nm=yjpSafeName_(f&&f.name), k=yjpKind_(nm,f&&f.size), made='';
+      if(k!=='ok'){ bad[k]++; return; }
+      return yjpMake_(dir,nm).then(function(mk){ made=mk.name; return mk.fh.createWritable(); }).then(function(w){
+        return w.write(f).then(function(){ return w.close(); },function(e){ try{ w.abort(); }catch(_){} throw e; });
+      }).then(function(){ n++; },function(e){
+        bad.fail++;
+        var en=e&&e.name;
+        if(en==='NotAllowedError'||en==='SecurityError') stop='perm';
+        else if(en==='NotFoundError'&&!made) stop='gone';
+        if(made) return yjpDropEmpty_(dir,made);   /* この帯が作ったファイルを、まだ空の時だけ消す */
+      });
+    });
+  });
+  chain.then(function(){
+    if(g!==yjpGen) return;
+    yjpBusy=false;
+    var s=yjpMsgOf_(n,bad);
+    if(stop==='perm'){ yjpPerm='prompt'; s+=' 書き込みの許可が切れました。「「入れる」への書き込みを許可する」を押してから、もう一度入れてください。'; }
+    if(stop==='gone'){ yjpDir=null; yjpPerm=''; s+=' 「入れる」フォルダが見つかりません。フォルダを選び直してください。'; }
+    yjpMsg=s; yjpPaint_();
+  });
+}
+/* 現場用へ切り替わった時など: 覚えている状態を捨てて帯を消す（フォルダの印は端末に残る） */
+function yjpPurge_(){
+  yjpGen++; yjpRt++; yjpBusy=false; yjpMsg=''; yjpDir=null; yjpPerm=''; yjpLoaded=false;
+  try{ var b=$('yjpBar'); if(b) b.innerHTML=''; }catch(e){}
+}
+function yjpWire_(){
+  function shown(){ var b=$('yjpBar'); return (b&&b.firstChild&&yjpCan_())?b:null; }
+  function bar(e){ var b=shown(); return (b&&e.target&&e.target.nodeType&&b.contains(e.target))?b:null; }
+  /* ファイルの入力欄（薬情の取り込みの窓の「結果のファイルを選ぶ」など）へのドロップは、ふだんどおりブラウザに任せる */
+  function toInput(e){ var t=e.target; return !!(t&&t.closest&&t.closest('input[type="file"]')); }
+  function hasFiles(e){ var d=e.dataTransfer; return !!(d&&d.types&&Array.prototype.indexOf.call(d.types,'Files')>=0); }
+  document.addEventListener('click',function(e){
+    var t=e.target&&e.target.closest?e.target.closest('[data-yjp]'):null; if(!t||t.disabled) return;
+    var a=t.getAttribute('data-yjp');
+    if(a==='dir') yjpPickDir_(); else if(a==='perm') yjpAskPerm_();
+  });
+  document.addEventListener('change',function(e){
+    var t=e.target; if(!t||t.id!=='yjpFile') return;
+    yjpPut_(t.files);
+    try{ t.value=''; }catch(_){}
+  });
+  function over(e){
+    if(!hasFiles(e)||toInput(e)) return;
+    var b=bar(e);
+    if(!b){ if(shown()){ e.preventDefault(); try{ e.dataTransfer.dropEffect='none'; }catch(_){} } return; }   /* 帯の外: 受け取らない・ページも切り替えない */
+    e.preventDefault();
+    try{ e.dataTransfer.dropEffect='copy'; }catch(_){}
+    b.classList.add('yjp-over');
+  }
+  document.addEventListener('dragenter',over);
+  document.addEventListener('dragover',over);
+  document.addEventListener('dragleave',function(e){ var b=bar(e); if(b&&!(e.relatedTarget&&b.contains(e.relatedTarget))) b.classList.remove('yjp-over'); });
+  document.addEventListener('drop',function(e){
+    if(!hasFiles(e)||toInput(e)) return;
+    var b=bar(e);
+    if(!b){ var sb=shown(); if(sb){ e.preventDefault(); sb.classList.remove('yjp-over'); } return; }   /* 帯の外: 受け取らない・ページも切り替えない */
+    e.preventDefault(); b.classList.remove('yjp-over');
+    yjpPut_(e.dataTransfer.files,true);
   });
 }
 
@@ -8069,6 +8357,8 @@ window.addEventListener('beforeunload',function(e){
   /* ★編集画面の未保存も対象（2026-10-16） */
   /* ★薬情の取り込みの送信中・反映できたか確かめ中・確認表の印も対象（2026-10-22） */
   var yjBusy=!!(yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; })));
+  /* ★写真を「入れる」へ書いている間も対象（2026-10-23・途中で閉じると残りが書かれない） */
+  if(typeof yjpBusy!=='undefined' && yjpBusy) yjBusy=true;
   if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty) && !editDirty_() && !yjBusy) return;
   e.preventDefault(); e.returnValue='';
 });
@@ -9460,6 +9750,7 @@ function renderView(r){
   /* 薬剤情報（2026-08-12 指示で「服薬管理」から改名）。
      先頭に ■薬剤情報（定期）■＋効果・効能、その右に頓服・外用等を並べる。
      管理方法・服薬介助は様式の4段階（上の大表）へ移した。 */
+  h+=yjpSlot_(r);   // 薬情・お薬シールの写真を入れる帯（管理者・事務所の Mac の Chrome だけ・印刷しない）（2026-10-23）
   h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+
     '<div class="row-cells">'+
       /* 左右の境目は 65:35（2026-08-12 指示で 75:25 から10%ぶん左へ寄せた）。
@@ -13581,6 +13872,7 @@ function init(){
   if($('mMedSlots'))$('mMedSlots').addEventListener('keydown',function(e){ if(e.key==='Escape') msClose_(); });
   mcWire_();   /* 薬の変更候補（2026-10-06 追加） */
   yjWire_();   /* 薬情の取り込み（2026-10-22 追加） */
+  yjpWire_();   /* 薬情・お薬シールの写真を入れる帯（2026-10-23 追加） */
   /* 薬効辞書（2026-09-04 追加） */
   if($('mdAdd'))   $('mdAdd').addEventListener('click',mdAddDrug);
   if($('mdBar'))   Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
