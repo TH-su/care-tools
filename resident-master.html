@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JeUga4R+FDb3Ai2h3Vy1nel2sGkoM/fo8mua72TpaNE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H6M8EyLAeXV7CU7uj63Lvd7uUXiKfbKHXCF4gTWK12I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -694,7 +694,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bulk-tbl td.dirty{background:var(--warn-bg)}
 /* ═══ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══
    原本は手描き寄りの単純な間取り図。罫線は細い実線1本、文字は黒、塗りなし。
-   ★文字サイズは1箇所（--rpfs）で持ち、採寸（fitRoomSheet）が紙に合わせて決める。 */
+   ★文字サイズは1箇所（--rpfs）で持ち、roomFontPx_ が間取りの比と氏名の字数から計算で決める（文字の幅は測らない・2026-10-23）。 */
 /* ★文字の大きさは【紙の幅に対する割合】で持つ。px で固定すると、採寸は紙幅(1047px)で
    行うのに画面は器の幅(実測933px)なので、画面でだけ文字がセルからはみ出して切れる
    （実測で8セル）。1cqw＝この紙の幅の1% なので、画面でも紙でも見た目の比率が変わらない。
@@ -727,7 +727,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rp-no{position:absolute; top:calc(var(--rpfs)*0.30); left:0; right:0; text-align:center;
   font-size:calc(var(--rpfs)*1.0)}
 /* ★氏名は【1行】。原本も全員1行で、折り返すとセルが縦に伸びて図の形が崩れる。
-   入りきらない時は、採寸（fitRoomSheets）が文字を小さくして1行に収める。 */
+   いちばん長い氏名が1行に入る大きさを、roomFontPx_ が字数から計算で決める（全体で1つの大きさ）。
+   ★ここの padding・罫線・番号の位置（top 0.30・行の高さ 1.25）を変えたら、roomFontPx_ の数（-4・-6・3.1・1.25）も直す
+     （check/unit/master_room_fit_test.js が両方を照らし合わせる） */
 .rp-nm{font-size:calc(var(--rpfs)*1.0); white-space:nowrap}
 .rp-lb{font-size:calc(var(--rpfs)*1.0)}
 /* 同じ居室に2名以上。画面だけで知らせ、紙は原本どおり（色を足さない） */
@@ -3268,7 +3270,7 @@ function renderRoster(){
   try{ certBadgePaint_(); }catch(e){}   /* 名簿が変わったら数え直す（2026-10-16 第2弾） */
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
-  if(curView==='room') fitRoomScreen_();   /* 採寸＋画面の守り（2026-10-23） */
+  if(curView==='room') fitRoomScreen_();   /* 文字の大きさを当てる（計算で決める・2026-10-23） */
   /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
      248行×最大6サイズ＝1488回の文字幅計測に加え、表全体の強制レイアウトが6往復走って
      入力が引っかかる（食形態一覧で 2026-08-24 に同じ判断をしている）。
@@ -4164,54 +4166,98 @@ function fitCmSheet(m){
   if(!m){ cmFitPx=r?r.size:null; if(r) cmZoomApply_(); }
   shWarn_(sh, r); return r;
 }
-/* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示）。
+/* 1階・2階をA4横1枚ずつに、全体を1つの文字の大きさで収める（2026-09-08 管理者指示・2026-10-23 本人指示で決め方を改めた）。
    ★図の形（列幅・行高・縦横比）は原本の実測値で固定してある。ここで決めるのは【文字の大きさ】だけ。
-   ★★採寸のあいだは【紙と同じ幅】に固定する。画面のままだと器の幅（実測933px）を測るので、
-     紙の幅（1047px）を使い切れず、しかも【窓の広さで紙の文字サイズが変わる】。
-     病歴・薬で同じ罠を踏んで直した（契約 §17）。finally で必ず元へ戻す。
-   ★2枚は【同じ文字サイズ】。原本も1階・2階で同じ大きさで、別々に最大化すると
-     並べた時に明らかに不揃いになる（実測 21.5px と 15.5px）。 */
+   ★★文字の大きさは、文字の幅を【測らずに】、間取りの比と氏名の文字数から計算で決める（roomFontPx_）。
+     以前は端末で文字の幅を実際に測って「いちばん長い氏名が1行に入る最大」を探し、画面ではさらにあふれを測って下げていた。
+     Windows では拡大縮小のたびに文字の描き方（画素への丸め）が変わり、測るたびに結果が揺れて、画面では氏名が大きすぎる・
+     小さすぎる、紙では大きすぎる（測った時より刷った時の文字が広い）になった（2026-10-23 本人の実機での確認）。
+     計算で決めれば、Mac でも Windows でも、拡大縮小しても、画面と紙で同じ割合（--rpk＝紙の幅に対する割合・画面は cqw）になる。
+   ★2枚（1階・2階）は【同じ文字サイズ】。原本も1階・2階で同じ大きさ。
+   ★紙の高さに入るかだけは、表題の高さがあるので紙の幅で実際に確かめる（入らなければ 0.25px ずつ下げる）。 */
+/* 日本語の文字（漢字・かな・全角の記号・全角の空白）はどの書体でも1字＝1字分（1em）の幅で作られている。
+   半角の文字（英数字・半角の空白・半角カナ）は書体で幅が違うので、0.62字分と多めに見る（半角の大文字は 0.7字分）。
+   見た目に幅の無い文字（異体字の印・結合の濁点・幅の無い空白）は0字と数える（異体字つきの氏名で全体を小さくしない）。
+   RP_SAFE はマスの中の幅のうち氏名に使ってよい割合（字と字の間の丸め・書体の差のゆとり） */
+var RP_EM_HALF=0.62, RP_SAFE=0.95, RP_PX_MIN=5, RP_PX_MAX=26;
+function rpEmLen_(s){
+  var t=String(s==null?'':s), n=0;
+  for(var i=0;i<t.length;i++){
+    var c=t.charCodeAt(i);
+    if(c>=0xD800&&c<=0xDBFF){
+      var lo=t.charCodeAt(i+1);
+      i++;
+      if(c===0xDB40&&lo>=0xDD00&&lo<=0xDDEF) continue;   /* 異体字の印（IVS）は0字 */
+      n+=1; continue;                                     /* 「𠮷」のような2つで1文字の漢字は1字 */
+    }
+    if((c>=0xFE00&&c<=0xFE0F)||c===0x3099||c===0x309A||(c>=0x200B&&c<=0x200D)) continue;   /* 異体字の印・結合の濁点・幅の無い空白 */
+    if(c>=0x41&&c<=0x5A){ n+=0.7; continue; }              /* 半角の大文字は少し広い */
+    n+=(c>=0x1100&&!(c>=0xFF61&&c<=0xFF9F))?1:RP_EM_HALF;
+  }
+  return n;
+}
+/* 間取り（plans: {階:{cols,rows,ar,cells}}）・在籍（occ: 居室番号→[{name}]）・図の幅 W（px）から、
+   全体で1つの文字の大きさ（px・0.25px 刻みに切り下げ）を出す。文字の幅は測らない（計算だけ）。見るもの:
+   ・居室の氏名（2名なら1行ずつ）と空室の用途: 1行の字数 × 大きさ が「マスの中の幅 × RP_SAFE」に収まる
+   ・居室の高さ: 上の番号（上から0.30字・行の高さ1.25字）と、真ん中の氏名（1行1.25字×行数）が重ならない（氏名か用途がある時だけ）
+   ・固定の名前の箱（厨房など）: 折り返してよい（今までどおり）が、行数×1.25字 がマスの中の高さに収まる
+   マスの中＝マスの広さから罫線（1px×2）と余白（居室は1px×2・ほかは横1px×2・縦2px×2）を引いた広さ */
+function roomFontPx_(plans, occ, W){
+  var best=RP_PX_MAX;
+  function sum(a,from,n){ var s=0; for(var i=from;i<from+n&&i<a.length;i++) s+=a[i]; return s; }
+  Object.keys(plans||{}).forEach(function(key){
+    var p=plans[key];
+    if(!p||!Array.isArray(p.cells)||!Array.isArray(p.cols)||!Array.isArray(p.rows)) return;
+    var cols=p.cols.map(function(x){ return rpNum_(x,1); }), rows=p.rows.map(function(x){ return rpNum_(x,1); });
+    var cw=sum(cols,0,cols.length), rw=sum(rows,0,rows.length);
+    var ar=Array.isArray(p.ar)?p.ar:[], gH=W*rpNum_(ar[1],1)/rpNum_(ar[0],1);
+    if(!cw||!rw) return;
+    p.cells.forEach(function(cl){
+      if(!cl) return;
+      var w=sum(cols,rpNum_(cl.c,1)-1,rpNum_(cl.cs,1))/cw*W, h=sum(rows,rpNum_(cl.r,1)-1,rpNum_(cl.rs,1))/rw*gH;
+      if(cl.room){
+        var inW=w-4, inH=h-4, who=(occ&&occ[cl.room])||[];
+        var lines=who.length ? who.map(function(x){ return String(x&&x.name||'').trim(); }) : (cl.note?[String(cl.note)]:[]);
+        lines.forEach(function(s){ var e=rpEmLen_(s); if(e>0) best=Math.min(best, inW*RP_SAFE/e); });
+        if(lines.length) best=Math.min(best, inH/(3.1+1.25*lines.length));   /* 番号だけの空室は重なる氏名が無い */
+      }else if(cl.t){
+        var e2=rpEmLen_(cl.t), inW2=w-4, inH2=h-6;
+        /* 折り返す行数は「1行に入る全角の字数」で数える（多めに見る）。1字も入らない大きさは使わない */
+        for(var f=Math.floor(best*4)/4; f>RP_PX_MIN; f=Math.round((f-0.25)*100)/100){
+          var per=Math.floor(inW2*RP_SAFE/f);
+          if(per>=1 && Math.ceil(e2/per)*1.25*f<=inH2) break;
+          best=Math.min(best, Math.round((f-0.25)*100)/100);
+        }
+      }
+    });
+  });
+  return Math.max(RP_PX_MIN, Math.min(RP_PX_MAX, Math.floor(best*4)/4));
+}
 function fitRoomSheets(m){
   var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
-  if(!shs.length||!shs[0].offsetParent) return null;
+  if(!shs.length) return null;
   /* ★m（su-print が確定した実際の用紙）があればそれを使う。無ければ従来どおり A4横10mm */
   var PW=m?Math.round(m.wPx):Math.round((297-20)*96/25.4), PH=m?m.hPx:(210-20)*96/25.4;
-  var saved=shs.map(function(sh){ return [sh.style.width, sh.style.padding]; });
-  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。採寸中は器が紙幅なので px と一致する。
-     ★--rpfs は当てない。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、
-       画面でも紙の px がそのまま使われて、狭い画面で文字がセルから切れる（実測8セル）。 */
+  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。
+     ★--rpfs は当てない。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、画面でも紙の px がそのまま使われる。 */
   function apply(px){
     var k=Math.round(px*100/PW*1000)/1000;
     shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
   }
-  /* 収まったかの見方: ①紙の高さに入る ②どのマスの中身もマスから溢れない。
-     図の幅は紙幅いっぱいなので、幅そのものは常に一致する（見るのは中身のはみ出し）。 */
-  function fits(){
-    for(var i=0;i<shs.length;i++){
-      if(shs[i].scrollHeight>PH-8) return false;
-      var cs=shs[i].querySelectorAll('.rp-cell');
-      for(var j=0;j<cs.length;j++)
-        if(cs[j].scrollWidth>cs[j].clientWidth+1||cs[j].scrollHeight>cs[j].clientHeight+1) return false;
-    }
-    return true;
-  }
-  var best=5;
+  var best=roomFontPx_(roomPlanData(), roomOccupants(), PW);
+  apply(best);                                  /* 割合は見えていなくても決まる（非表示の間も同じ大きさにしておく） */
+  if(!shs[0].offsetParent) return null;         /* 紙の高さは見えている時だけ確かめる（showScreen で測り直す） */
+  /* ★確かめる間は【紙と同じ幅】に固定する（画面のままだと器の幅を測るので、窓の広さで紙の大きさが変わる・契約 §17）。
+     ★脚注（.sh-ft）は紙では印刷の CSS で消えているので、確かめる間は外す（画面と紙で同じ大きさにするため） */
+  var saved=shs.map(function(sh){ var ft=sh.querySelector('.sh-ft'); return [sh.style.width, sh.style.padding, ft, ft?ft.style.display:'']; });
   try{
-    shs.forEach(function(sh){ sh.style.padding='0'; sh.style.width=PW+'px'; });
-    var STEP=0.25, lo=0, hi=Math.round((26-5)/STEP);
-    var sizeOf=function(k){ return Math.round((5+k*STEP)*100)/100; };
-    apply(sizeOf(lo));
-    if(fits()){
-      while(lo<hi){
-        var mid=Math.ceil((lo+hi)/2);
-        apply(sizeOf(mid));
-        if(fits()) lo=mid; else hi=mid-1;
-      }
+    shs.forEach(function(sh,i){ sh.style.padding='0'; sh.style.width=PW+'px'; if(saved[i][2]) saved[i][2].style.display='none'; });
+    while(best>RP_PX_MIN && shs.some(function(sh){ return sh.scrollHeight>PH-8; })){
+      best=Math.round((best-0.25)*100)/100;
+      apply(best);
     }
-    best=sizeOf(lo);
-    apply(best);
   }finally{
-    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; });
+    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; if(saved[i][2]) saved[i][2].style.display=saved[i][3]; });
   }
   apply(best);                                  /* 元の幅に戻してからもう一度当てる */
   return shs.map(function(sh){
@@ -4219,81 +4265,15 @@ function fitRoomSheets(m){
     return {size:best, fits:true, h:sh.scrollHeight, w:g?g.offsetWidth:0, H:Math.round(PH), W:PW};
   });
 }
-/* ═══ 居室一覧の画面の守り（画面だけ・2026-10-23 本人指示「Windows の PC で氏名が居室の枠からはみ出す」）═══
-   採寸（fitRoomSheets）は紙の幅で測り、画面は cqw で同じ比に縮める。Windows では小さな文字の幅が
-   比のとおりに縮まず、画面でだけマスからあふれる（Mac では起きない）。
-   ★実際に表示している幅で、どのマスもあふれていないかを確かめ、あふれていたら【2枚とも同じ】大きさで
-     0.25px 相当ずつ下げる（全体を1つの大きさのまま・氏名ごとに変えない）。あふれが無ければ何もしない。
-   ★紙の採寸（fitRoomSheets(m)）はこれを通らない。紙は今どおり紙の幅から測り直す。
-     下げた大きさは画面のシートの style にだけあり、印刷の後は su-print の putSnap が印刷前の画面へ戻す。 */
-/* 下げる段数の上限（24段＝6px 相当）と、あふれの合計が減らないまま続けてよい段数（8段＝2px 相当）。
-   ★「1段で減らなければ打ち切り」にしない。文字の幅は画素に丸まるので、0.25px 下げても合計が変わらない段がある
-     （架空9名・狭い幅の実測: 12.75px で 1 → 12.5px で 1 → 12.25px で 0）。文字の送りを画素に丸める端末（Windows の
-     等倍表示など）では、画面の文字が 1px 小さくなるまで幅が変わらないことがあり、PC の幅（紙の約9割）で最大5段ほど続く。
-     1段で打ち切ると、ここで直せたはずのあふれが残る。縮まない端末でも 8段で打ち切るので、強制レイアウトは最大9回。 */
-var ROOM_GUARD_MAX=24, ROOM_GUARD_STALL=8;
-function roomScreenGuard_(shs, px, PW){
-  /* 全マスのあふれ量の合計（px）。0＝あふれ無し。
-     ★見方は紙の判定（fitRoomSheets の fits()）と同じ決まりにそろえてある: 中央寄せで左へはみ出した分は scrollWidth に
-       入らない・+1px までは許す。紙と画面で「あふれ」の意味を変えないため、ここだけ変えない（紙の高さは画面では見ない）。 */
-  function overSum(){
-    var s=0;
-    for(var i=0;i<shs.length;i++){
-      var cs=shs[i].querySelectorAll('.rp-cell');
-      for(var j=0;j<cs.length;j++){
-        var dw=cs[j].scrollWidth-(cs[j].clientWidth+1), dh=cs[j].scrollHeight-(cs[j].clientHeight+1);
-        if(dw>0) s+=dw;
-        if(dh>0) s+=dh;
-      }
-    }
-    return s;
-  }
-  function apply(p){                            /* fitRoomSheets の apply と同じ式（紙幅に対する割合） */
-    var k=Math.round(p*100/PW*1000)/1000;
-    shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
-  }
-  var s=overSum();
-  if(!s) return px;                             /* あふれが無ければ何もしない */
-  var p=px, best=s, stall=0;
-  for(var n=0; n<ROOM_GUARD_MAX && p>5; n++){   /* 下限は採寸の最小（5px 相当）と同じ */
-    p=Math.max(5, Math.round((p-0.25)*100)/100);
-    apply(p);
-    s=overSum();
-    if(!s) return p;                            /* あふれが0になった大きさで止める */
-    if(s<best){ best=s; stall=0; }
-    else if(++stall>=ROOM_GUARD_STALL) break;   /* 下げても減らない端末（最小の文字の設定・丸め）＝打ち切る */
-  }
-  /* あふれを0にできなかった（減らない・上限・下限）→ 採寸の大きさ（守りを掛ける前）へ戻す。
-     中途半端に下げたままにすると、氏名は切れたまま表題や番号だけが小さくなる */
-  apply(px);
-  return px;
-}
-/* 画面で居室一覧を採寸する入口（描画・窓の大きさの変化・文字の読み込み・一覧へ戻った時）。
-   ★非表示で測れなかった時（null）は印を立て、一覧が表示されたら測り直す（showScreen）。 */
-var roomFitWait_=false, roomResizeT_=0, roomFitW_=null;
-function roomPrinting_(){
-  var b=document.body;
-  return !!(b&&(b.classList.contains('su-printing')||b.classList.contains('room-on')));
-}
+/* 画面で居室一覧の大きさを当てる入口（描画・一覧へ戻った時）。
+   ★割合は窓の幅・拡大縮小・書体に関係なく1つに決まるので、窓の大きさが変わっても測り直さない。
+   ★非表示で紙の高さを確かめられなかった時（null）は印を立て、一覧が表示されたら確かめ直す（showScreen）。 */
+var roomFitWait_=false;
 function fitRoomScreen_(){
   var rs=fitRoomSheets();
   var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
   roomFitWait_=(rs==null&&shs.length>0);
-  if(rs&&rs.length) roomFitW_=window.innerWidth;   /* 測った時の窓の幅（同じ幅の resize では測り直さない） */
-  if(!rs||!rs.length||roomPrinting_()) return rs;   /* 印刷の準備中は画面の守りを掛けない */
-  roomScreenGuard_(shs, rs[0].size, rs[0].W);
   return rs;
-}
-/* 窓の大きさが変わった時（居室一覧を開いている時だけ・200ms 待ってから1回）。
-   ★幅が前に測った時と同じなら測らない（iPhone・iPad はツールバーの出入りで高さだけの resize が何度も来る） */
-function roomOnResize_(){
-  if(curView!=='room') return;
-  if(window.innerWidth===roomFitW_) return;
-  if(roomResizeT_) clearTimeout(roomResizeT_);
-  roomResizeT_=setTimeout(function(){
-    roomResizeT_=0;
-    if(curView==='room'&&!roomPrinting_()&&window.innerWidth!==roomFitW_){ try{ fitRoomScreen_(); }catch(e){} }
-  }, 200);
 }
 function fitLvlSheet(m){
   var sh=$('lvlSheet'); if(!sh) return null;
@@ -13587,13 +13567,6 @@ function init(){
   cmZoomPaint_();
   /* ピンチのリスナーは CM表を表示している間だけ付ける（cmPinchBind_・paintShBars から）。ここでも今のビューで1回そろえる */
   cmPinchBind_(curView==='cm');
-  /* 居室一覧の画面の守りを掛け直すきっかけ（2026-10-23）: 窓の大きさの変化・文字の読み込みの後 */
-  window.addEventListener('resize',roomOnResize_);
-  try{
-    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(function(){
-      if(curView==='room'&&!roomPrinting_()){ try{ fitRoomScreen_(); }catch(e){} }
-    }).catch(function(){});
-  }catch(e){}
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
   if($('famPrint')) $('famPrint').addEventListener('click',function(){rmPrint_('fam')});
   if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
