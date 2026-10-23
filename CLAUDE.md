@@ -54,7 +54,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 種類 | ファイル |
 |---|---|
 | メニュー | `index.html`（全画面の入口） |
-| 入居者系 | `resident-master.html` `facesheet.html` `genogram.html` `patch-calendar.html` `moushiokuri-viewer.html` `admission-flow.html` `training-plan.html` `weight-record.html` |
+| 入居者系 | `resident-master.html` `facesheet.html` `genogram.html` `patch-calendar.html` `moushiokuri-viewer.html` `admission-flow.html` `training-plan.html` `weight-record.html` `care-meeting.html` |
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
@@ -62,6 +62,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
+| 担当者会議の記録 | `care-meeting.html`（担当者会議のページ・事務所PCだけ。試験は `check/unit/care_meeting_page_test.js`）・`care-meeting-calc.js`（議事録の振り分け・確定の確かめ・期限の知らせの純関数。試験は `check/unit/care_meeting_calc_test.js`） |
 
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
   画面のコードに施設名を直接書かない（外販時はこのファイルだけ差し替える）。
