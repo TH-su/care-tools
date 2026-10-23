@@ -173,6 +173,11 @@ mailer/.DS_Store
 !/accounts.html
 !/accounts.js
 !/su-auth.css
+# メニューの役割ごとの表示・並び（2026-10-23 代表者の決定）。ボタンのリンク先と区分 id だけを扱い、氏名・記録・合言葉は含まない
+!/su-menu.js
+!/menu-settings.html
+!/menu-settings.js
+!/menu-settings.css
 # 入居者マスタの写し（統合 0004・段階移行）。写す部品と見比べる画面（事務所・管理者だけ）。氏名はデータベースと端末の中だけ
 !/su-master-shadow.js
 # 入居者マスタの名簿の読み取りを、スイッチが入った時だけ写しから読む入口（段階1・2026-10-22）。氏名はデータベースと画面のメモリの中だけ

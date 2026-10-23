@@ -174,7 +174,9 @@ function load(src, old){
     /* 薬の変更候補（2026-10-06 追加）。applyDeviceGuard が現場用への切り替えで mcPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
     .concat(['mcGen', 'mcCur', 'mcBulk'].filter(n => hasVar(src, n)))
     /* 薬情の取り込み（2026-10-22 追加）。applyDeviceGuard が現場用への切り替えで yjPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
-    .concat(['yjSt'].filter(n => hasVar(src, n)));   /* 宣言の1行（var yjSt=…, yjGen=…, yjBy=…）を丸ごと切り出す */
+    .concat(['yjSt'].filter(n => hasVar(src, n)))   /* 宣言の1行（var yjSt=…, yjGen=…, yjBy=…）を丸ごと切り出す */
+    /* 薬情・お薬シールの写真を入れる帯（2026-10-23 追加）。yjPurge_ が yjpPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
+    .concat(['yjpDir'].filter(n => hasVar(src, n)));   /* 宣言の1行（var yjpDir=…, yjpGen=…, yjpRt=…）を丸ごと切り出す */
   const fns = ['getDeviceRole', 'setDeviceRole', 'loadRosterCache', 'saveRosterCache', 'refreshRoster', '_toTargetArr', '_ymd',
     'normRosterRow', 'writeCommonRoster', 'mealDirtyCells', 'bulkCellCount', 'toggleHosp', 'afterSaveOk_',
     'applyDeviceGuard', 'saveSyncCfg', 'mdClearPending_',
@@ -185,7 +187,8 @@ function load(src, old){
     /* toggleHosp が使う案内の文言の関数（2026-10-02 追加）。それより前の版には無いので、有る時だけ切り出す */
     .concat(['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_'].filter(n => hasFn(src, n)))
     .concat(['mcPurge_'].filter(n => hasFn(src, n)))
-    .concat(['yjPurge_'].filter(n => hasFn(src, n)));
+    .concat(['yjPurge_'].filter(n => hasFn(src, n)))
+    .concat(['yjpPurge_'].filter(n => hasFn(src, n)));
   /* storage・pageshow の受け口（トップレベルの1行）も実物から切り出して登録させる（旧版は有る時だけ） */
   const lines = ['storage', 'pageshow'].map(type => {
     const m = src.match(new RegExp("\\nwindow\\.addEventListener\\('" + type + "',[^\\n]*\\n"));
@@ -607,6 +610,16 @@ async function main(){
     const g0 = L.v('yjGen');
     L.store.set('su_device_role', 'field'); L.box.applyDeviceGuard();
     eq('現場用へ切り替えると薬情の取り込み（yjSt・ログインの名前）を捨て、世代を進める', [L.v('yjSt'), L.v('yjBy'), L.v('yjGen') > g0], [null, '', true]);
+  }
+  if(hasFn(SRC, 'yjpPurge_')){
+    /* 薬情・お薬シールの写真を入れる帯も、現場用へ切り替えた時に捨てる（2026-10-23・applyDeviceGuard → yjPurge_ → yjpPurge_） */
+    const L = load(SRC);
+    L.box.applyDeviceGuard();
+    L.set('yjpDir={kind:"directory",name:"入れる"}; yjpPerm="granted"; yjpLoaded=true; yjpMsg="架空の知らせ"; yjBy="admin@example.invalid";');
+    const g0 = L.v('yjpGen');
+    L.store.set('su_device_role', 'field'); L.box.applyDeviceGuard();
+    eq('現場用へ切り替えると写真を入れる帯（フォルダの印・許可・知らせ）を捨て、世代を進める',
+      [L.v('yjpDir'), L.v('yjpPerm'), L.v('yjpLoaded'), L.v('yjpMsg'), L.v('yjpGen') > g0], [null, '', false, '', true]);
   }
   const dirtyCases = [
     ['食形態一覧', L => L.set('mealDirty={"901":{allergy:"架空の未保存"}};')],
