@@ -102,6 +102,12 @@
     b.addEventListener('click', onClick);
     return b;
   }
+  // 名前の {{通所}} などを施設情報の事業所名に（メニューと同じ・読めない時は一般名）
+  function label(t) {
+    var s = String(t || '');
+    try { if (window.SUFacility && SUFacility.fill) return SUFacility.fill(s); } catch (e) { /* 一般名のまま */ }
+    return s.replace(/\{\{(施設名|施設|訪問|通所)\}\}/g, function (a, k) { return { '施設名': '施設', '施設': '施設', '訪問': '訪問介護', '通所': '通所介護' }[k]; });
+  }
   function swap(arr, i, j) { var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
 
   function render(focusKey) {
@@ -128,7 +134,7 @@
         var ic = el('span', 'ic', t.ic || ''); ic.setAttribute('aria-hidden', 'true');
         nmBox.appendChild(ic);
         var txt = el('div');
-        txt.appendChild(el('div', 'nm', t.nm + (t.ext ? ' ↗' : '')));
+        txt.appendChild(el('div', 'nm', label(t.nm) + (t.ext ? ' ↗' : '')));
         var tags = el('div', 'tags');
         if (t.officeOnly || s.officeOnly) tags.appendChild(el('span', 'tag', '現場端末では出ません'));
         if (SUMenu.KEEP[t.href]) tags.appendChild(el('span', 'tag me', '全員に出ます'));
@@ -138,7 +144,7 @@
 
         var chk = el('div', 'ms-roles');
         chk.setAttribute('role', 'group');
-        chk.setAttribute('aria-label', t.nm + ' を出す役割');
+        chk.setAttribute('aria-label', label(t.nm) + ' を出す役割');
         ROLES.forEach(function (r) {
           var lb = el('label', 'ms-chk');
           var cb = document.createElement('input');
@@ -157,8 +163,8 @@
 
         var mv = el('div', 'ms-ops');
         var key = 'tile:' + s.id + ':' + t.href;
-        mv.appendChild(moveBtn(t.nm, -1, ti === 0, function () { swap(s.tiles, ti, ti - 1); render(key + ':up'); }, key));
-        mv.appendChild(moveBtn(t.nm, 1, ti === s.tiles.length - 1, function () { swap(s.tiles, ti, ti + 1); render(key + ':down'); }, key));
+        mv.appendChild(moveBtn(label(t.nm), -1, ti === 0, function () { swap(s.tiles, ti, ti - 1); render(key + ':up'); }, key));
+        mv.appendChild(moveBtn(label(t.nm), 1, ti === s.tiles.length - 1, function () { swap(s.tiles, ti, ti + 1); render(key + ':down'); }, key));
         li.appendChild(mv);
         ul.appendChild(li);
       });
@@ -254,6 +260,8 @@
       baseline = JSON.stringify(toConfig());
       render();
       view('admin');
+      // 施設情報が後から届いたら名前を差し替えて描き直す（入力中の変更は model に残っているので消えない）
+      try { if (window.SUFacility && SUFacility.onReady) SUFacility.onReady(function () { if (model) render(); }); } catch (e) { /* 一般名のまま */ }
     } catch (e) {
       $('gate-why').textContent = friendly(e);
       view('gate');

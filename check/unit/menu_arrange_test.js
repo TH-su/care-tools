@@ -109,9 +109,12 @@ t('7e ログインの記録が無い端末では控えを使わない（ログ�
   load({ su_menu_v1: JSON.stringify({ role: 'field', config: { ver: 1 } }) }).readCache() === null);
 
 console.log('8 ケアログのボタン');
-const care = DEF.sections.find(s => s.id === 'sec-resident').tiles.slice(-1)[0];
-t('8a 入居者の区分の末尾にケアログ（別サイト・事務所専用ではない）',
+const resTiles = DEF.sections.find(s => s.id === 'sec-resident').tiles;
+const care = resTiles.slice(-2)[0], day = resTiles.slice(-1)[0];
+t('8a 入居者の区分の末尾から2枚目にケアログ（別サイト・事務所専用ではない）',
   care.href === 'https://th-su.github.io/care-log/' && care.nm === 'ケアログ' && care.ext === true && !care.officeOnly, care);
+t('8c 末尾はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
+  day.href === 'https://th-su.github.io/care-log/#/record/daycare' && day.nm === 'デイ {{通所}}' && day.ext === true && !day.officeOnly, day);
 t('8b ボタンの鍵（リンク先）はすべてデータベースの検査に通る形・重複なし', (function () {
   const all = []; DEF.sections.forEach(s => s.tiles.forEach(x => all.push(x.href)));
   return all.every(h => /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/.test(h)) && new Set(all).size === all.length
