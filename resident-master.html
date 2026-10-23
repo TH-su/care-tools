@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-R8jlZX7h+Obez/nLZKNRkQrg1fVT3gwwby6+60VxEiM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-dWX0mnlNLd+wPo+GoNFkl+3edPUwTV4CD5h6bFeHtxw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -4817,6 +4817,24 @@ function fitHistSheet(m){
 function roomPlanData(){
   return (window.SUFacility && typeof SUFacility.roomPlan==='function' && SUFacility.roomPlan()) || {};
 }
+/* 施設情報が後から届いた時に、居室一覧を描き直す（2026-10-23 代表者の指示）。
+   ★端末に施設情報の控え（su_facility_json_v1）が無く、facility-profile.json の応答が遅いと、居室一覧は届く前に
+     「間取り図が設定されていません」で描き終わり、届いた後も描き直さなかった（架空データ・2.5秒の遅れで再現）。
+   ★SUFacility.onReady は読めた時（読めないと分かった時も）に1回だけ呼ぶ。居室一覧を開いている時だけ描き直す。
+   ★onReady は読み込み済みならその場で呼ぶので、init（DOMContentLoaded）の後へ回す（名簿を読む前に描かない）。
+   ★印刷の準備中（body.su-printing）は描き直さない（刷っている紙面を作り直さない）。終わるのを待ってから1回だけ
+     （待つのは最大20秒。su-print は afterprint が来なくても数秒で必ず片付ける）。現場端末では何もしない */
+function rmRoomOnFacility_(tries){
+  if(curView!=='room'||getDeviceRole()==='field') return;
+  if(document.body&&document.body.classList.contains('su-printing')){
+    if((tries||0)<40) setTimeout(function(){ rmRoomOnFacility_((tries||0)+1); },500);
+    return;
+  }
+  try{ renderRoster(); }catch(e){}
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmRoomOnFacility_,0); }); }catch(e){}
+});
 /* 居室番号 → 在籍者。★同じ番号に2名いることが実際にある（実測 2026-09-08: 208 が2名）ので、
    先に見つけた1名で切り捨てず【配列で持つ】。捨てると片方の方が紙から消える。 */
 function roomOccupants(){
