@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-q9+owL+vB+n4OLcOqNqZ6i4Lk4CtGBEbCxQiBcmPg0A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-KkkL21A6+LRCrqUjzVaeQAPEONqI34ga3Tg6ELhBK0c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -8317,17 +8317,20 @@ function trashReady() {
   if (!SRV_GUARDS) return true;
   return SRV_GUARDS.indexOf('allowdrop1') >= 0;
 }
+/* 起動・「最新を読み込む」の読み込み。接続先ごとの3本の列を同時に進める（同時に出す通信は最大3本・2026-10-23）。
+   列の中の順番は変えない: 計画書GAS＝索引→守り一覧（ping）、入居者マスタ＝名簿→入居日（getBulk は名簿の結果を使う）、週間計画＝デイ利用者。
+   各読み込みは失敗しても自分の中で受け止めて false/null を返すので、1本の失敗で残りの列も描画も止まらない（直す前と同じ結果）。 */
 function refreshAll() {
   setSync('読み込み中…');
-  return loadIndex()
-    .then(function () { return loadServerGuards(); })
-    .then(function () { return loadRoster(); })
-    .then(function () { return loadAdmissionDates(); })
-    .then(function () { return loadDaySet(); })
-    .then(function () {
+  return Promise.all([
+    loadIndex().then(function () { return loadServerGuards(); }),
+    loadRoster().then(function () { return loadAdmissionDates(); }),
+    loadDaySet()
+  ]).then(function () {
       renderStaffSelects();
       renderList();
       setSync(CFG.url ? (IDX_OK ? '同期OK' : '未接続') : '未接続', (CFG.url && IDX_OK) ? 'ok' : 'err');
+      try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
     });
 }
 function announceOverdue() {

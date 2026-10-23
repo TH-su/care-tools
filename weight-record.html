@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-raHfl8rBzlpRzRG/U53tr9Z2+WYMSAmaR1sbvV763BQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-6D+zHKz0EXHDOYwTlKfSdzvFZt8cgBwKqDocslC3N+Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -563,6 +563,8 @@ textarea{resize:vertical;min-height:60px}
 .bk-row .bk-save:active{transform:scale(.96)}
 .bk-row .bk-save.is-saved{background:var(--ok);border-color:var(--ok)}
 .bk-row .bk-save:disabled{opacity:.6;cursor:default}
+/* 同期中は書き込みのボタンだけ淡色にして押せなくする（2026-10-23・同期が終わると外す。読み取りの操作は止めない） */
+body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save],[data-al-ack],[data-dup-del],#sdRecover,#cfgImport,#cfgFile,#cfgClear,#cfgSample,#btnApiSave,#btnApiClear){opacity:.45;cursor:not-allowed;pointer-events:none}
 @media (max-width:640px){
   .bk-row{grid-template-columns:1fr 92px 64px;row-gap:4px}
   .bk-row .bk-prev{grid-column:1 / -1}
@@ -2357,6 +2359,40 @@ async function apiDiagnose(url){
 /* 同期が重なったら、実行中の同期の結果を待つ（2026-09-28）。後から返った古い応答で、
    直前にまとめた内容がこの端末で一時的に戻るのを防ぐ */
 let _wrSyncInFlight = null;
+/* 同期中は書き込みの入口を止める（2026-10-23 本人指示）。
+   同期の途中で記録を消すと古い応答で手元に戻り、送信が先に終わった修正は古い応答で巻き戻るため、
+   同期（_syncFromAPIImpl）が走っている間だけ、書き込みのボタンを押せなくする。見せ方は既存の「🔄 同期中」（apiBd）。
+   ★止めるのは人が押す書き込みの入口だけ。同期の中の後始末・取り込みの送信（pushResidentFields_ 等）は止めない。
+   ★押せなくしたボタンには印を付け、解除の時は印のあるものだけ戻す（もともと押せないボタンを押せるようにしない）。
+   ★同期の後に描き直したボタンは印を持たないが、淡色と押せない見た目は body の印（wr-sync-busy）で付き、入口の wrSyncDeny でも止まる。 */
+const WR_SYNC_LOCK_SEL = '#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save],[data-al-ack],[data-dup-del],#sdRecover,#cfgImport,#cfgFile,#cfgClear,#cfgSample,#btnApiSave,#btnApiClear';
+let _wrSyncBusy = false, _wrSyncLockN = 0;   /* 起動時は「版の観測＋同期」を一続きで止めるので、重なりを数で持つ */
+function wrSyncLock_(on){
+  _wrSyncLockN = Math.max(0, _wrSyncLockN + (on ? 1 : -1));
+  _wrSyncBusy = _wrSyncLockN > 0;
+  try{
+    document.body.classList.toggle('wr-sync-busy', _wrSyncBusy);
+    document.querySelectorAll(WR_SYNC_LOCK_SEL).forEach(b=>{
+      if(_wrSyncBusy){ if(!b.disabled){ b.disabled = true; b.setAttribute('data-wr-sync-off', '1'); } }
+      else if(b.hasAttribute('data-wr-sync-off')){ b.disabled = false; b.removeAttribute('data-wr-sync-off'); }
+    });
+    /* 解除の後、入居者の画面を開いていれば、退去/復帰のボタンを開いた時と同じ判定（入居者マスタに紐づく人は押せない）で当て直す。
+       同期でその人がマスタに紐づいた時に、戻した「押せる」のまま残さないため（openResident と同じ規則） */
+    if(!_wrSyncBusy){
+      const md = document.getElementById('mdResident'), db = document.getElementById('mdDischarge');
+      if(md && md.classList.contains('on') && db && editingId){
+        const r = residentById(editingId);
+        if(r) db.disabled = (r.masterId != null && r.masterId !== '');
+      }
+    }
+  }catch(e){ /* 見た目の切り替えだけ。失敗しても同期は止めない */ }
+}
+/* 書き込みの入口の先頭で呼ぶ。同期中なら何もせずに知らせる（キー操作など、ボタン以外の経路で来た時のため） */
+function wrSyncDeny(){
+  if(!_wrSyncBusy) return false;
+  try{ toast('同期が終わるまでお待ちください', 'err'); }catch(e){}
+  return true;
+}
 function syncFromAPI(showLoader){
   if(_wrSyncInFlight) return _wrSyncInFlight;
   const p = _syncFromAPIImpl(showLoader);
@@ -2367,9 +2403,10 @@ function syncFromAPI(showLoader){
 }
 async function _syncFromAPIImpl(showLoader){
   if(!apiUrl) return false;
-  if(showLoader) ldShow('サーバーからデータを取得中...');
-  apiSetStatus('sy');
+  wrSyncLock_(true);   /* 止めたら必ず finally で戻す（表示の失敗で止めたまま残さない） */
   try{
+    if(showLoader) ldShow('サーバーからデータを取得中...');
+    apiSetStatus('sy');
     const json = await apiGet();
     if(!json) throw new Error('レスポンスが空です');
     if(json.error) throw new Error(apiFriendlyError_(json.error));
@@ -2480,7 +2517,7 @@ async function _syncFromAPIImpl(showLoader){
     /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
     try{ if(wrLoadSrvResIds() && typeof mergeCommonWeight === 'function' && mergeCommonWeight()) wrRefreshViews(); }catch(e2){ wrNote_('マスタの取り込み（オフライン）', e2); }
     return false;
-  }finally{ ldHide(); try { if (window.SUPerf) SUPerf.ready(); } catch (e) {} }
+  }finally{ wrSyncLock_(false); ldHide(); try { if (window.SUPerf) SUPerf.ready(); } catch (e) {} }
 }
 
 /* Pending-queue: writes that failed are persisted and retried. */
@@ -4704,6 +4741,7 @@ function updateBulkSummary(){
 }
 
 function bulkSave(){
+  if(wrSyncDeny()) return;
   const date = $('#bulkDate').value || dNow();
   const ym   = $('#bulkMonth').value || date.slice(0,7);
   if(!date){ toast('測定日を入力してください','err'); return; }
@@ -4719,6 +4757,13 @@ function bulkSave(){
   const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
 
+  /* 既存の記録は一括入力を開いた時点で決まる。開いた後に同期で他の端末の同じ日の記録が届いていたら、
+     新しく作らずにそれを上書きするよう、保存の時点で同じ入居者・同じ測定日で引き直す（記録を保存の引き直しと同じ考え方・saveSingleBulkRow と同じ形） */
+  for(const row of rows){
+    if(row.dataset.existing || !row.dataset.rid) continue;
+    const dupRec = getRecordByDate(row.dataset.rid, date);
+    if(dupRec){ row.dataset.existing = dupRec.id; row.classList.add('existing'); }
+  }
   /* 測り直しの促し（2026-10-17）：大きく変わった行をまとめて1回だけ確かめる。キャンセルなら何も保存しない */
   const recheckRows = new Set(), rcLines = [];
   for(const row of rows){
@@ -4830,6 +4875,7 @@ function bulkSave(){
    ============================================================ */
 function saveSingleBulkRow(row){
   if(!row) return;
+  if(wrSyncDeny()) return;
   const date = $('#bulkDate').value || dNow();
   const ym   = $('#bulkMonth').value || date.slice(0,7);
   if(!date){ toast('測定日を入力してください','err'); return; }
@@ -4860,6 +4906,12 @@ function saveSingleBulkRow(row){
   }
 
   const nowIso = new Date().toISOString();
+  /* 既存の記録は一括入力を開いた時点で決まる。開いた後に同期で他の端末の同じ日の記録が届いていたら、
+     新しく作らずにそれを上書きするよう、保存の時点で同じ入居者・同じ測定日で引き直す（記録を保存の引き直しと同じ考え方・bulkSave と同じ形） */
+  if(!row.dataset.existing){
+    const dupRec = getRecordByDate(rid, date);
+    if(dupRec){ row.dataset.existing = dupRec.id; row.classList.add('existing'); }
+  }
   /* 測り直しの促し（2026-10-17）：この行だけ確かめる */
   let recheckOk = false;
   {
@@ -5422,6 +5474,7 @@ function wcAffectedRecs_(rid, log){
 }
 /* 確認してから、実測値 − 正しい車椅子重量 で体重を計算し直す（キャンセルなら記録には触らない） */
 function wcRecalcAsk_(rid, log){
+  if(wrSyncDeny()) return;
   const recs = wcAffectedRecs_(rid, log);
   if(!recs.length) return;
   const lbl = x=> x.measuredOn || ymFmt(x.yearMonth);
@@ -5686,6 +5739,7 @@ function renderInputExistingList(){
 }
 
 $('#inSave').addEventListener('click', ()=>{
+  if(wrSyncDeny()) return;
   const rid = $('#inResident').value;
   const ym  = $('#inMonth').value;
   const d   = $('#inDate').value;
@@ -5818,6 +5872,7 @@ $('#inSave').addEventListener('click', ()=>{
 });
 
 function deleteRecordById(id){
+  if(wrSyncDeny()) return;
   const rec = getRecordById(id);
   if(!rec) return;
   const resident = residentById(rec.residentId);
@@ -6816,8 +6871,9 @@ function renderAlerts(){
       div.querySelector('.al-body').appendChild(act);
       act.addEventListener('click', e=>{
         e.stopPropagation();
-        if(e.target.closest('[data-al-undo]')){ wrSetAck(resident, ym, dir, null); renderAlerts(); return; }
+        if(e.target.closest('[data-al-undo]')){ if(wrSyncDeny()) return; wrSetAck(resident, ym, dir, null); renderAlerts(); return; }
         if(!e.target.closest('[data-al-ack]') || div.querySelector('.al-ack-f')) return;
+        if(wrSyncDeny()) return;   /* 同期中は確認の欄を開かない（同期の終わりの描き直しで、書きかけの欄が消えるため） */
         const f = document.createElement('div');
         f.className = 'al-ack-f';
         f.innerHTML = `<label class="sr-only" for="alAct_${escapeHtml(resident.id)}_${dir}">対応</label>`
@@ -6829,6 +6885,7 @@ function renderAlerts(){
           ev.stopPropagation();
           if(ev.target.closest('[data-al-cancel]')){ f.remove(); return; }
           if(ev.target.closest('[data-al-save]')){
+            if(wrSyncDeny()) return;
             wrSetAck(resident, ym, dir, { lv: a.level, by: wrWho_(), at: new Date().toISOString(), act: f.querySelector('select').value, note: f.querySelector('input').value.trim().slice(0, 200) });
             toast('確認を残しました', 'ok');
             renderAlerts();
@@ -7145,6 +7202,7 @@ function renderStorageDiag(){
 $('#sdRefresh')?.addEventListener('click', renderStorageDiag);
 $('#sdRecover')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   const bak1 = _readDbFromKey(LS_BAK);
   const bak2 = _readDbFromKey(LS_BAK2);
   const cand = bak1 || bak2;
@@ -7430,6 +7488,7 @@ async function wrCreateSkippedMaster(entry){
 /* 記録の無い、氏名の無い行を消す */
 function wrDeleteEmptyResident(id){
   if(wrFieldDeny()) return false;
+  if(wrSyncDeny()) return false;
   const r = residentById(id);
   if(!r || wrRecCountOf(id) > 0) return false;
   if(!confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？')) return false;
@@ -7684,6 +7743,7 @@ function renderThrEditor(){
     inp.addEventListener('change', ()=>{
       if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
       const [k, field] = inp.dataset.thr.split('.');
+      if(wrSyncDeny()){ inp.value = THR[k][field]; return; }   /* 同期中は保存せず、欄を保存済みの値に戻す */
       const v = Math.max(0, Number(inp.value) || 0);
       THR[k][field] = v;
       inp.value = v;
@@ -7717,6 +7777,7 @@ function renderRuleDesc(){
 }
 $('#thrReset')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(!confirm('アラート検知ルールを初期値に戻しますか？')) return;
   THR = cloneThr(DEFAULT_THR);
   saveThr(THR);
@@ -8034,6 +8095,7 @@ $('#mdChair').addEventListener('change', mdChairReconcile_);
 
 $('#mdSave').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   const name = $('#mdName').value.trim();
   if(!name){ toast('お名前を入力してください','err'); return; }
   const hv = Number($('#mdHeight').value);
@@ -8093,6 +8155,7 @@ $('#mdSave').addEventListener('click', ()=>{
    - 体重記録は一切削除しない（退去後も履歴アクセス可能）。 */
 $('#mdDischarge').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(!editingId) return;
   const r = residentById(editingId);
   if(!r){ toast('入居者が見つかりません','err'); return; }
@@ -8137,6 +8200,7 @@ $('#mdDischarge').addEventListener('click', ()=>{
 
 $('#mdDel').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(!editingId) return;
   const r = residentById(editingId);
   const n = DB.records.filter(x=>x.residentId===editingId).length;
@@ -8169,9 +8233,10 @@ $('#cfgExport').addEventListener('click', ()=>{
   a.href = url; a.download = `weight-record-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url);
 });
-$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; $('#cfgFile').click(); });
+$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; if(wrSyncDeny()) return; $('#cfgFile').click(); });
 $('#cfgFile').addEventListener('change', async e=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   const f = e.target.files[0]; if(!f) return;
   try{
     const text = await f.text();
@@ -8247,6 +8312,7 @@ $('#cfgCsv').addEventListener('click', ()=>{
 });
 $('#cfgClear').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(!confirm('全データを削除します。本当によろしいですか？（元に戻せません）')) return;
   // GAS連携URLは「アプリ設定」なので、データ削除では保持する
   const keepUrl = (DB && DB.apiUrl) || apiUrl || '';
@@ -8263,6 +8329,7 @@ $('#cfgClear').addEventListener('click', ()=>{
 /* sample data */
 $('#cfgSample').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(DB.residents.length>0 && !confirm('既存データに追加します。続行しますか？')) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
@@ -8371,6 +8438,11 @@ function refreshUrlPersistBadge(){
   }
 }
 
+/* 端末の控え（wtmgr_v1）に入居者か記録があるか（起動時に控えで一覧を描けるか） */
+function wrHasLocalCopy_(){
+  try{ return !!(DB && ((Array.isArray(DB.records) && DB.records.length) || (Array.isArray(DB.residents) && DB.residents.length))); }
+  catch(e){ return false; }
+}
 (function wireSync(){
   // 起動時：3層 (LS / DB.apiUrl / UI.apiUrl) のいずれかから URL を復元し、全層を揃える
   apiUrl = loadApiUrlOnBoot();
@@ -8395,9 +8467,16 @@ function refreshUrlPersistBadge(){
        待ち時間が二重になるのを避けるため、観測は短めの制限時間で打ち切る。
        観測できなくても従来どおりの送り方で動くので、同期は止まらない。 */
     setTimeout(async ()=>{   /* 現場端末でも同期する（2026-09-24 以前は現場端末では起動ごと止めていた） */
-      await apiProbe();
-      updateAuthNote_();
-      syncFromAPI(true);
+      /* 端末に控え（wtmgr_v1）がある時は、控えで描いた一覧をそのまま使えるようにし、暗幕を出さずに裏で同期する（2026-10-23 本人指示）。
+         控えが無い端末（初回）は今までどおり暗幕を出す。版の観測の間も書き込みは止める（観測の後の同期と一続きのため） */
+      const hasLocal = wrHasLocalCopy_();
+      wrSyncLock_(true);
+      try{
+        try{ apiSetStatus('sy'); }catch(e){}   // 版の観測の間も「🔄 同期中」を出す（書き込みを止めている理由を見せる）
+        try{ await apiProbe(); }catch(e){ /* 観測できなくても従来どおり同期する */ }
+        try{ updateAuthNote_(); }catch(e){}
+        await syncFromAPI(!hasLocal);
+      }finally{ wrSyncLock_(false); }
     }, 100);
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
@@ -8419,6 +8498,7 @@ function refreshUrlPersistBadge(){
 
   $('#btnApiSave')?.addEventListener('click', async ()=>{
     if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+    if(wrSyncDeny()) return;
     const url = $('#cfgApi').value.trim();
     if(!url){ toast('URLを入力してください','err'); return; }
     if(!url.startsWith('https://script.google.com/')){
@@ -8510,6 +8590,7 @@ function refreshUrlPersistBadge(){
   });
   $('#btnApiClear')?.addEventListener('click', ()=>{
     if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+    if(wrSyncDeny()) return;
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
@@ -8569,6 +8650,8 @@ goto(['list','input','indiv','grid','alert','cfg'].includes(UI.tab) ? UI.tab : '
    逆順にすると前回開いていた別人が選択されたままになる（誤記録の元）。 */
 try{ wrApplyMasterIdParam(); }catch(e){ /* 失敗しても以降の初期化を止めない */ }
 updateAlertBadge();
+/* 控えで一覧を描き終えた＝使える（接続先があり控えがある端末。最初の1回だけ記録される。控えが無い時は同期の finally で記録） */
+if(apiUrl && wrHasLocalCopy_()){ try { if (window.SUPerf) SUPerf.ready(); } catch (e) {} }
 
 /* ═══════════ 入居者マスタからの本人単位リンク（?masterId=） ═══════════
    ★URLの masterId は入居者マスタ側のID。このアプリの主キー（r.id）とは別物なので、
