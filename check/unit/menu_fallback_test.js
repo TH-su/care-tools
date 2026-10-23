@@ -76,7 +76,7 @@ const goodCount = good.sections.reduce((n, s) => n + s.tiles.length, 0);
   t('帯も不具合の知らせも出ない', r.broken === null && r.reports.length === 0, [r.broken, r.reports]);
   /* 並び順・事務所PC用の印・行替え・施設名の欄まで、定義どおりに出る */
   const want = [], got = [];
-  good.sections.forEach(s => s.tiles.forEach(x => want.push([x.href, !!(x.officeOnly || s.officeOnly), !!x.newrow, /^\{\{(施設|訪問|通所)\}\}/.test(x.note || '') ? RegExp.$1 : ''])));
+  good.sections.forEach(s => s.tiles.forEach(x => want.push([x.href, !!(x.officeOnly || s.officeOnly), !!x.newrow, (/\{\{(施設|訪問|通所)\}\}/.exec((x.nm || '') + '|' + (x.note || '')) || [])[1] || ''])));   // 名前にも事業所名を入れられる（2026-10-23）
   const facOf = n => { for (const c of n.children || []) { if (c.attrs && c.attrs['data-fac-name']) return c.attrs['data-fac-name']; const v = facOf(c); if (v) return v; } return ''; };
   r.main.children.forEach(sec => sec.children.filter(c => c.className === 'grid').forEach(g => g.children.forEach(a =>
     got.push([a.attrs.href, 'data-office-only' in a.attrs || 'data-office-only' in sec.attrs, /\bnewrow\b/.test(a.className), facOf(a)]))));

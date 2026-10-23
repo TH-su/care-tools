@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-PB5R7jC+Z+kAN9vVWaqStaXyw64HFjVZWQggfkpJqBg=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-UIkmV/gdu0VnQ6mWhFHJGJZusndNkfuKNodtmJoJlAc=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -160,7 +160,7 @@ main {
 <!-- メニューの定義（JSON）。画面はここから組み立てる（2026-10-09・監査10月版 #15）。読めなかった時は、この下の script が案内を出す -->
 <script type="application/json" id="menuDef">
 {
- "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明。{{通所}} 等は施設情報の事業所名）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
+ "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）。名前と説明の {{通所}} 等は施設情報の事業所名。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
  "sections": [
   {
    "id": "sec-staff",
@@ -301,6 +301,14 @@ main {
      "note": "申し送り・バイタルの記録",
      "ext": true,
      "_why": "ケアログ（2026-10-23 本人指示・代表者の決定で入居者の区分の末尾）。別サイト（care-log）。officeOnly を付けない: 現場で記録を入れるアプリのため（誰が何を読めるかはケアログとデータベースが決める）"
+    },
+    {
+     "href": "https://th-su.github.io/care-log/#/record/daycare",
+     "ic": "🌊",
+     "nm": "デイ {{通所}}",
+     "note": "通所の今日の記録",
+     "ext": true,
+     "_why": "デイ（通所の事業所名つき・2026-10-23 本人指示）。ケアログのデイの今日の画面を直接開く。ケアログの次。名前の事業所名は施設情報から入れる（{{通所}}・施設名を直接書かない）。officeOnly を付けない: 現場で記録を入れる画面のため"
     }
    ]
   },
@@ -358,17 +366,21 @@ main {
 (function () {
   var main = document.getElementById('menu');
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  function note(t) {
-    var span = el('span', 'note');
-    var m = String(t || '').match(/^\{\{(施設|訪問|通所)\}\}(.*)$/);
+  /* {{通所}} などは施設情報（su-facility.js）の事業所名に差し替える（前後に文字があってよい・名前と説明の両方・2026-10-23）。
+     施設名を画面のコードに直接書かないため。読めない時は一般名のまま */
+  function facText(cls, t) {
+    var span = el('span', cls);
+    var m = String(t || '').match(/^(.*?)\{\{(施設|訪問|通所)\}\}(.*)$/);
     if (m) {
-      var fac = el('span', null, { '施設': '施設', '訪問': '訪問介護', '通所': '通所介護' }[m[1]]);
-      fac.setAttribute('data-fac-name', m[1]);
+      if (m[1]) span.appendChild(document.createTextNode(m[1]));
+      var fac = el('span', null, { '施設': '施設', '訪問': '訪問介護', '通所': '通所介護' }[m[2]]);
+      fac.setAttribute('data-fac-name', m[2]);
       span.appendChild(fac);
-      span.appendChild(document.createTextNode(m[2]));
+      span.appendChild(document.createTextNode(m[3]));
     } else span.textContent = String(t || '');
     return span;
   }
+  function note(t) { return facText('note', t); }
   /* ★壊れた1件だけを飛ばす（2026-10-10・監査10月版 第2版 15）。区分ごと・タイルごとに try で囲み、出せた分は出す。
      定義そのものを読めない・1枚も出せない時だけ案内に切り替え、その時も「使い方・困った時」へのリンクは出す。 */
   var def = null, broken = 0, firstErr = null;
@@ -415,7 +427,7 @@ main {
         if (t.officeOnly) a.setAttribute('data-office-only', '');
         a.setAttribute('href', t.href);
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
-        a.appendChild(ic); a.appendChild(el('span', 'nm', t.nm)); a.appendChild(note(t.note));
+        a.appendChild(ic); a.appendChild(facText('nm', t.nm)); a.appendChild(note(t.note));
         grid.appendChild(a);
         if (!t.officeOnly) open = true;
         } catch (e) { fail(e); }
