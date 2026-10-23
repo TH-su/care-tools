@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-8MksgMkWXTZQpb7rWz1sdBURRYkIAlrgy9rfsZfC8zQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-6D+zHKz0EXHDOYwTlKfSdzvFZt8cgBwKqDocslC3N+Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -564,7 +564,7 @@ textarea{resize:vertical;min-height:60px}
 .bk-row .bk-save.is-saved{background:var(--ok);border-color:var(--ok)}
 .bk-row .bk-save:disabled{opacity:.6;cursor:default}
 /* 同期中は書き込みのボタンだけ淡色にして押せなくする（2026-10-23・同期が終わると外す。読み取りの操作は止めない） */
-body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save]){opacity:.45;cursor:not-allowed;pointer-events:none}
+body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save],[data-al-ack],[data-dup-del],#sdRecover,#cfgImport,#cfgFile,#cfgClear,#cfgSample,#btnApiSave,#btnApiClear){opacity:.45;cursor:not-allowed;pointer-events:none}
 @media (max-width:640px){
   .bk-row{grid-template-columns:1fr 92px 64px;row-gap:4px}
   .bk-row .bk-prev{grid-column:1 / -1}
@@ -2365,7 +2365,7 @@ let _wrSyncInFlight = null;
    ★止めるのは人が押す書き込みの入口だけ。同期の中の後始末・取り込みの送信（pushResidentFields_ 等）は止めない。
    ★押せなくしたボタンには印を付け、解除の時は印のあるものだけ戻す（もともと押せないボタンを押せるようにしない）。
    ★同期の後に描き直したボタンは印を持たないが、淡色と押せない見た目は body の印（wr-sync-busy）で付き、入口の wrSyncDeny でも止まる。 */
-const WR_SYNC_LOCK_SEL = '#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save]';
+const WR_SYNC_LOCK_SEL = '#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#mdSave,#mdDel,#mdDischarge,[data-thr],#thrReset,[data-al-undo],[data-al-save],[data-al-ack],[data-dup-del],#sdRecover,#cfgImport,#cfgFile,#cfgClear,#cfgSample,#btnApiSave,#btnApiClear';
 let _wrSyncBusy = false, _wrSyncLockN = 0;   /* 起動時は「版の観測＋同期」を一続きで止めるので、重なりを数で持つ */
 function wrSyncLock_(on){
   _wrSyncLockN = Math.max(0, _wrSyncLockN + (on ? 1 : -1));
@@ -2376,6 +2376,15 @@ function wrSyncLock_(on){
       if(_wrSyncBusy){ if(!b.disabled){ b.disabled = true; b.setAttribute('data-wr-sync-off', '1'); } }
       else if(b.hasAttribute('data-wr-sync-off')){ b.disabled = false; b.removeAttribute('data-wr-sync-off'); }
     });
+    /* 解除の後、入居者の画面を開いていれば、退去/復帰のボタンを開いた時と同じ判定（入居者マスタに紐づく人は押せない）で当て直す。
+       同期でその人がマスタに紐づいた時に、戻した「押せる」のまま残さないため（openResident と同じ規則） */
+    if(!_wrSyncBusy){
+      const md = document.getElementById('mdResident'), db = document.getElementById('mdDischarge');
+      if(md && md.classList.contains('on') && db && editingId){
+        const r = residentById(editingId);
+        if(r) db.disabled = (r.masterId != null && r.masterId !== '');
+      }
+    }
   }catch(e){ /* 見た目の切り替えだけ。失敗しても同期は止めない */ }
 }
 /* 書き込みの入口の先頭で呼ぶ。同期中なら何もせずに知らせる（キー操作など、ボタン以外の経路で来た時のため） */
@@ -2394,10 +2403,10 @@ function syncFromAPI(showLoader){
 }
 async function _syncFromAPIImpl(showLoader){
   if(!apiUrl) return false;
-  wrSyncLock_(true);
-  if(showLoader) ldShow('サーバーからデータを取得中...');
-  apiSetStatus('sy');
+  wrSyncLock_(true);   /* 止めたら必ず finally で戻す（表示の失敗で止めたまま残さない） */
   try{
+    if(showLoader) ldShow('サーバーからデータを取得中...');
+    apiSetStatus('sy');
     const json = await apiGet();
     if(!json) throw new Error('レスポンスが空です');
     if(json.error) throw new Error(apiFriendlyError_(json.error));
@@ -4748,6 +4757,13 @@ function bulkSave(){
   const chairResChanged = new Set();   // 車椅子の変更履歴が変わった入居者
   let errors = 0;
 
+  /* 既存の記録は一括入力を開いた時点で決まる。開いた後に同期で他の端末の同じ日の記録が届いていたら、
+     新しく作らずにそれを上書きするよう、保存の時点で同じ入居者・同じ測定日で引き直す（記録を保存の引き直しと同じ考え方・saveSingleBulkRow と同じ形） */
+  for(const row of rows){
+    if(row.dataset.existing || !row.dataset.rid) continue;
+    const dupRec = getRecordByDate(row.dataset.rid, date);
+    if(dupRec){ row.dataset.existing = dupRec.id; row.classList.add('existing'); }
+  }
   /* 測り直しの促し（2026-10-17）：大きく変わった行をまとめて1回だけ確かめる。キャンセルなら何も保存しない */
   const recheckRows = new Set(), rcLines = [];
   for(const row of rows){
@@ -4890,6 +4906,12 @@ function saveSingleBulkRow(row){
   }
 
   const nowIso = new Date().toISOString();
+  /* 既存の記録は一括入力を開いた時点で決まる。開いた後に同期で他の端末の同じ日の記録が届いていたら、
+     新しく作らずにそれを上書きするよう、保存の時点で同じ入居者・同じ測定日で引き直す（記録を保存の引き直しと同じ考え方・bulkSave と同じ形） */
+  if(!row.dataset.existing){
+    const dupRec = getRecordByDate(rid, date);
+    if(dupRec){ row.dataset.existing = dupRec.id; row.classList.add('existing'); }
+  }
   /* 測り直しの促し（2026-10-17）：この行だけ確かめる */
   let recheckOk = false;
   {
@@ -6851,6 +6873,7 @@ function renderAlerts(){
         e.stopPropagation();
         if(e.target.closest('[data-al-undo]')){ if(wrSyncDeny()) return; wrSetAck(resident, ym, dir, null); renderAlerts(); return; }
         if(!e.target.closest('[data-al-ack]') || div.querySelector('.al-ack-f')) return;
+        if(wrSyncDeny()) return;   /* 同期中は確認の欄を開かない（同期の終わりの描き直しで、書きかけの欄が消えるため） */
         const f = document.createElement('div');
         f.className = 'al-ack-f';
         f.innerHTML = `<label class="sr-only" for="alAct_${escapeHtml(resident.id)}_${dir}">対応</label>`
@@ -7179,6 +7202,7 @@ function renderStorageDiag(){
 $('#sdRefresh')?.addEventListener('click', renderStorageDiag);
 $('#sdRecover')?.addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   const bak1 = _readDbFromKey(LS_BAK);
   const bak2 = _readDbFromKey(LS_BAK2);
   const cand = bak1 || bak2;
@@ -7464,6 +7488,7 @@ async function wrCreateSkippedMaster(entry){
 /* 記録の無い、氏名の無い行を消す */
 function wrDeleteEmptyResident(id){
   if(wrFieldDeny()) return false;
+  if(wrSyncDeny()) return false;
   const r = residentById(id);
   if(!r || wrRecCountOf(id) > 0) return false;
   if(!confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？')) return false;
@@ -8208,9 +8233,10 @@ $('#cfgExport').addEventListener('click', ()=>{
   a.href = url; a.download = `weight-record-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url);
 });
-$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; $('#cfgFile').click(); });
+$('#cfgImport').addEventListener('click', ()=>{ if(wrFieldDeny()) return; if(wrSyncDeny()) return; $('#cfgFile').click(); });
 $('#cfgFile').addEventListener('change', async e=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   const f = e.target.files[0]; if(!f) return;
   try{
     const text = await f.text();
@@ -8286,6 +8312,7 @@ $('#cfgCsv').addEventListener('click', ()=>{
 });
 $('#cfgClear').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(!confirm('全データを削除します。本当によろしいですか？（元に戻せません）')) return;
   // GAS連携URLは「アプリ設定」なので、データ削除では保持する
   const keepUrl = (DB && DB.apiUrl) || apiUrl || '';
@@ -8302,6 +8329,7 @@ $('#cfgClear').addEventListener('click', ()=>{
 /* sample data */
 $('#cfgSample').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+  if(wrSyncDeny()) return;
   if(DB.residents.length>0 && !confirm('既存データに追加します。続行しますか？')) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
@@ -8443,10 +8471,12 @@ function wrHasLocalCopy_(){
          控えが無い端末（初回）は今までどおり暗幕を出す。版の観測の間も書き込みは止める（観測の後の同期と一続きのため） */
       const hasLocal = wrHasLocalCopy_();
       wrSyncLock_(true);
-      apiSetStatus('sy');   // 版の観測の間も「🔄 同期中」を出す（書き込みを止めている理由を見せる）
-      try{ await apiProbe(); }catch(e){ /* 観測できなくても従来どおり同期する */ }
-      try{ updateAuthNote_(); }catch(e){}
-      try{ await syncFromAPI(!hasLocal); }finally{ wrSyncLock_(false); }
+      try{
+        try{ apiSetStatus('sy'); }catch(e){}   // 版の観測の間も「🔄 同期中」を出す（書き込みを止めている理由を見せる）
+        try{ await apiProbe(); }catch(e){ /* 観測できなくても従来どおり同期する */ }
+        try{ updateAuthNote_(); }catch(e){}
+        await syncFromAPI(!hasLocal);
+      }finally{ wrSyncLock_(false); }
     }, 100);
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
@@ -8468,6 +8498,7 @@ function wrHasLocalCopy_(){
 
   $('#btnApiSave')?.addEventListener('click', async ()=>{
     if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+    if(wrSyncDeny()) return;
     const url = $('#cfgApi').value.trim();
     if(!url){ toast('URLを入力してください','err'); return; }
     if(!url.startsWith('https://script.google.com/')){
@@ -8559,6 +8590,7 @@ function wrHasLocalCopy_(){
   });
   $('#btnApiClear')?.addEventListener('click', ()=>{
     if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
+    if(wrSyncDeny()) return;
     if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
     // 三層すべてからクリア
     clearApiUrl();
