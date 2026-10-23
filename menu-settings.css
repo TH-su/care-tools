@@ -1,0 +1,38 @@
+/* メニューの設定（menu-settings.html）だけの見た目。共通の部品は su-auth.css。CSP で直書きの style を禁じるため外に置く */
+.ms-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 6px; }
+.ms-head h2 { margin: 0; font-size: 1.1875rem; font-weight: 700; flex: 1; display: flex; align-items: center; gap: 8px; }
+.ms-list { list-style: none; margin: 0; padding: 0; }
+.ms-list li {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px 14px; align-items: center;
+  padding: 10px 0; border-top: 1px solid var(--g2);
+}
+.ms-list li:first-child { border-top: 0; }
+.ms-nm { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ms-nm .ic { font-size: 1.5rem; line-height: 1; flex: none; }
+.ms-nm .nm { font-weight: 700; word-break: break-all; }
+.ms-nm .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.ms-roles { display: flex; gap: 4px; flex-wrap: wrap; }
+/* チェックは文字ごと押せる・押せる高さは44px（HIG） */
+.ms-chk {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px;
+  border: 1px solid var(--g3); border-radius: 10px; font-size: 0.9375rem; font-weight: 700; cursor: pointer;
+}
+.ms-chk input { width: 20px; height: 20px; margin: 0; accent-color: var(--pri); }
+.ms-chk:has(input:focus-visible) { outline: 3px solid var(--pri); outline-offset: 2px; }
+.ms-chk:has(input:disabled) { color: var(--g7); cursor: default; background: var(--g1); }
+.ms-ops { display: flex; gap: 6px; }
+.btn.mv { min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 1.125rem; }
+.sticky-acts { position: sticky; bottom: 0; z-index: 5; margin-bottom: 0; }
+@media (max-width: 600px) {
+  .ms-list li { grid-template-columns: 1fr auto; grid-template-areas: "nm ops" "roles roles"; }
+  .ms-list li > .ms-nm { grid-area: nm; }
+  .ms-list li > .ms-ops { grid-area: ops; }
+  .ms-list li > .ms-roles { grid-area: roles; }
+}
+/* スマホでは下に張り付く保存欄を薄くする（一覧が見える高さを残す） */
+@media (max-width: 600px) {
+  .sticky-acts { padding: 10px 12px; }
+  .sticky-acts .muted { font-size: 0.875rem; margin: 0; }
+  .sticky-acts .acts { margin-top: 8px; gap: 8px; flex-wrap: nowrap; }
+  .sticky-acts .btn { min-height: 44px; padding: 6px 10px; font-size: 0.9375rem; flex: 1; }
+}

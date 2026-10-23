@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>メニューの設定</title>
+<!--
+  メニューの設定（2026-10-23 代表者の決定）
+  ════════════════════════════════════════════════════════════════
+  目的: 介護ツール メニュー（index.html）のボタンの並びと、ログインの役割（管理者・事務所・現場）ごとに出すボタンを、
+        管理者がこの画面で決める。保存先は共通ログインのデータベース（menu_settings・care-backend 0020）。
+  ★開けるのは管理者（Google ＋ 2段階認証）だけ。書けるかどうかはデータベース（menu_put）が決める。
+  ★ボタンの一覧は index.html の中の定義（#menuDef）をそのまま読む（定義の正本は1つ）。
+  ★これは入口の整理であって守りではない。隠したボタンのアプリも、URL を知っていれば開ける（守りは各アプリと RLS）。
+  ★現場の端末では、事務所専用のボタンはこの設定にかかわらず出ない（index.html の is-field の仕組み）。
+  ★表示はすべて textContent。氏名・記録は扱わない。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+<link rel="stylesheet" href="menu-settings.css?v=2026-10-23">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="login.html" aria-label="ログインの画面へ戻る">‹ 戻る</a>
+  <h1>メニューの設定</h1>
+</header>
+<main class="wide">
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">確かめています…</p>
+  </section>
+  <section class="cd" id="v-gate" hidden>
+    <h2>管理者だけが使える画面です</h2>
+    <p id="gate-why">管理者のアカウントで、2段階認証（認証アプリの6桁）まで済ませてから開いてください。</p>
+    <div class="acts"><a class="btn pri" href="login.html?next=menu-settings.html">ログインの画面へ</a></div>
+  </section>
+  <section id="v-admin" hidden>
+    <section class="cd">
+      <h2>使い方</h2>
+      <ul class="roles">
+        <li>「↑」「↓」でボタンの並びを変えます。区分（職員・入居者など）の並びも見出しの横の「↑」「↓」で変えられます。</li>
+        <li>「管理者」「事務所」「現場」のチェックを外すと、その役割でログインしている人のメニューにそのボタンを出しません。</li>
+        <li>最後に「保存する」を押すと、各端末でメニューを開き直した時に反映されます。</li>
+        <li>ログインしていない端末では、今までどおりの並びで全部のボタンが出ます。</li>
+      </ul>
+      <p class="muted">「現場端末では出ません」の付いたボタンは、端末の用途が「現場」の端末では、この設定にかかわらず出ません。「使い方・困った時」は全員に出ます。</p>
+    </section>
+    <div id="secs"></div>
+    <section class="cd sticky-acts">
+      <p class="muted" id="state">まだ保存していない変更はありません。</p>
+      <div class="acts">
+        <button type="button" class="btn pri" id="b-save" disabled>保存する</button>
+        <button type="button" class="btn" id="b-undo" disabled>変更を取り消す</button>
+        <button type="button" class="btn ng" id="b-reset">既定に戻す</button>
+      </div>
+    </section>
+  </section>
+</main>
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-10-20"></script>
+<script src="su-menu.js?v=2026-10-23"></script>
+<script src="menu-settings.js?v=2026-10-23"></script>
+</body>
+</html>

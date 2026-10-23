@@ -57,7 +57,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 入居者系 | `resident-master.html` `facesheet.html` `genogram.html` `patch-calendar.html` `moushiokuri-viewer.html` `admission-flow.html` `training-plan.html` `weight-record.html` `care-meeting.html` |
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
-| 運営 | `supplies.html` `connection-settings.html` `accounts.html` `login.html` `perf-report.html` `shadow-check.html` |
+| 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `login.html` `perf-report.html` `shadow-check.html` |
 | 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
@@ -83,6 +83,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - 担当者会議の記録（サービス担当者会議の要点）は、NotebookLM が「◆欄名：」の印つきで出した議事録を、決まった規則（`care-meeting-calc.js`）で各欄へ振り分ける。外部の AI へは送らない。使えるのは事務所PC（事務所の合言葉）だけで、現場の端末では読まない・書かない。記録は入居者ごとの1セル（dataJson）・現場向けの安全項目・共有名簿に入れない（代表者の決定 2026-10-23）。
 - 担当者会議の記録の状態は「下書き」と「確定」だけで、ご家族の同意などの印は持たない。認定の更新の会議は認定期間の始まりの30日前から数え、区分変更・退院・状態の変化などの臨時の会議は「開催の理由」で分ける。どの理由の会議でも、確定すれば前回からの6か月を数え直す（代表者の決定 2026-10-23）。
 - 担当者会議のページ（care-meeting.html）は、共通の色の名前（--ok・--ng・--warn-bg・--warn-tx・--g0〜--g9）を、高齢の職員にも読める濃さ（コントラスト7:1目標）の値で定め直している。ほかの画面にそろえて戻さない（代表者の決定 2026-10-23）。
+- メニュー（index.html）のボタンは、ログインの役割（管理者・事務所・現場）ごとに、管理者が「メニューの設定」（menu-settings.html・管理者＋2段階認証だけ）で決めた並び・非表示で出す。並べ替え・非表示の当て方は `su-menu.js`（試験は `check/unit/menu_arrange_test.js`）、保存先は共通 DB の menu_settings。ログインしていない端末・設定を読めない時は既定の並びで全部出す。現場端末で事務所専用を出さない仕組みは設定で外せない。「使い方・困った時」は隠せない。これは入口の整理で守りではない（代表者の決定 2026-10-23）。
 
 ## 4. Supabase への移行（統合 NNNN）
 

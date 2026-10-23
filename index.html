@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-cnMtRY3KdmiJRygecGcueyOHV2YZV11zkjUdw66hYSc=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-PB5R7jC+Z+kAN9vVWaqStaXyw64HFjVZWQggfkpJqBg=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -11,8 +11,9 @@
 <meta name="robots" content="noindex,nofollow">
 <title>介護ツール メニュー</title>
 <!-- 端末の用途（事務所/現場）だけを見て、現場端末では事務所専用タイルを出さない。
-     ★このページに fetch・トークン・氏名・記録を持ち込まない（読む・書く・送るのいずれも禁止）。
-       必要になったら、このページに足さず別ページを作ること。読んでよいのは su_device_role だけ。
+     ★このページに氏名・記録・合言葉（トークン）を持ち込まない（読む・書く・送るのいずれも禁止）。
+       読んでよいのは su_device_role と、ログインの役割・ボタンの並び・非表示（su-menu.js・2026-10-23 代表者の決定）だけ。
+       役割と並びは共通ログイン（Supabase の menu_get）から読み、端末に su_menu_v1 として控える（リンク先と区分 id だけ）。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
        （描画後に JS で消すと現場端末で一度は見えてしまう）。
      ★localStorage が使えない環境（Safari プライベート等）は判定不能なので【出す】側に倒す。
@@ -25,6 +26,7 @@
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-menu.js?v=2026-10-23"></script>
 <script>
 (function(){
   function apply(){try{
@@ -158,7 +160,7 @@ main {
 <!-- メニューの定義（JSON）。画面はここから組み立てる（2026-10-09・監査10月版 #15）。読めなかった時は、この下の script が案内を出す -->
 <script type="application/json" id="menuDef">
 {
- "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明。{{通所}} 等は施設情報の事業所名）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）",
+ "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明。{{通所}} 等は施設情報の事業所名）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
  "sections": [
   {
    "id": "sec-staff",
@@ -291,6 +293,14 @@ main {
      "nm": "消耗品管理",
      "note": "価格・在庫・提供の記録",
      "_why": "消耗品管理（2026-09-17 追加）。区分の末尾に足す。officeOnly を付けない: 職員も現場端末で入出庫（提供の記録）を入れるため（価格・品目・棚卸・締め・集計は管理者の合言葉でしか開かない＝アプリ側で出し分ける）。入居者の氏名はスプレッドシートに持たず、提供先は利用者Noだけを保存する"
+    },
+    {
+     "href": "https://th-su.github.io/care-log/",
+     "ic": "📒",
+     "nm": "ケアログ",
+     "note": "申し送り・バイタルの記録",
+     "ext": true,
+     "_why": "ケアログ（2026-10-23 本人指示・代表者の決定で入居者の区分の末尾）。別サイト（care-log）。officeOnly を付けない: 現場で記録を入れるアプリのため（誰が何を読めるかはケアログとデータベースが決める）"
     }
    ]
   },
@@ -364,7 +374,30 @@ main {
   var def = null, broken = 0, firstErr = null;
   function fail(e) { broken++; if (!firstErr) firstErr = e; }
   try { def = JSON.parse(document.getElementById('menuDef').textContent); } catch (e) { firstErr = e; }
-  if (def && typeof def === 'object') (Array.isArray(def.sections) ? def.sections : []).forEach(function (s) {
+  /* ログインの役割ごとの並び・非表示（2026-10-23 代表者の決定）。端末の控え（前に読めた役割と設定）で先に組み立て、
+     ページの読み込みが終わってから su-menu.js が今の設定を読み、違えば組み立て直す。su-menu.js が無い・壊れている時は既定のまま。
+     現場端末で事務所専用を出さない仕組み（is-field・data-office-only）はこの後も同じに効く＝設定で現場端末に出すことはできない */
+  function arranged(cfg, role) {
+    try { return (window.SUMenu && cfg) ? SUMenu.arrange(def, cfg, role) : def; } catch (e) { fail(e); return def; }
+  }
+  var cache = null;
+  try { cache = window.SUMenu ? SUMenu.readCache() : null; } catch (e) { cache = null; }
+  build(arranged(cache && cache.config, cache && cache.role));
+  try {
+    if (window.SUMenu) SUMenu.startSync(function (cfg, role) {
+      broken = 0; firstErr = null;
+      while (main.firstChild) main.removeChild(main.firstChild);
+      build(arranged(cfg, role));
+      fill();
+    });
+  } catch (e) { /* 設定を読めなくても既定のメニューで動く */ }
+  function fill() {
+    if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
+    var els = document.querySelectorAll('[data-fac-name]');
+    for (var i = 0; i < els.length; i++) els[i].textContent = SUFacility.officeName(els[i].getAttribute('data-fac-name'));
+  }
+  function build(view) {
+  if (view && typeof view === 'object') (Array.isArray(view.sections) ? view.sections : []).forEach(function (s) {
     try {
       var sec = el('section', 'sec');
       sec.setAttribute('aria-labelledby', s.id);
@@ -374,6 +407,7 @@ main {
       h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
       var grid = el('div', 'grid');
       if (!Array.isArray(s.tiles)) throw new Error('区分 ' + s.id + ' のタイルの一覧が無い');
+      var open = false;   // 現場端末でも出るタイルがあるか
       s.tiles.forEach(function (t) {
         try {
         if (!t || typeof t.href !== 'string' || !t.href) throw new Error('リンク先の無いタイル');
@@ -383,9 +417,12 @@ main {
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(el('span', 'nm', t.nm)); a.appendChild(note(t.note));
         grid.appendChild(a);
+        if (!t.officeOnly) open = true;
         } catch (e) { fail(e); }
       });
       if (!grid.children.length) return;   // タイルが0枚になった区分は見出しだけで出さない（壊れた分は数えてある）
+      // 役割の設定で残ったのが事務所専用のタイルだけになった区分は、区分ごと現場端末で出さない（見出しだけが残らないように・2026-10-23）
+      if (!open) sec.setAttribute('data-office-only', '');
       sec.appendChild(h2); sec.appendChild(grid);
       main.appendChild(sec);
     } catch (e) { fail(e); }
@@ -400,6 +437,7 @@ main {
   }
   if (firstErr || broken || none) {
     try { if (window.SUErrors) SUErrors.report('メニュー', firstErr || new Error(none ? 'タイルが0枚' : '壊れた項目 ' + broken + '件'), 'index.html'); } catch (e2) {}
+  }
   }
 })();
 </script>
