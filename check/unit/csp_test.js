@@ -36,7 +36,7 @@ function t(label, ok, detail) {
       dir('connect-src') === "connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co", dir('connect-src'));
     t(p + ': 既定は自サイト・object は無し・base は無し', dir('default-src') === "default-src 'self'" && dir('object-src') === "object-src 'none'" && dir('base-uri') === "base-uri 'none'");
   }
-  t('対象は業務画面17（すでに自分の CSP を持つ画面と配信で作る画面は別）', C.PAGES.length === 17, C.PAGES.length);
+  t('対象は業務画面18（すでに自分の CSP を持つ画面と配信で作る画面は別）', C.PAGES.length === 18, C.PAGES.length);
 
   console.log('\n— 3. インラインのイベント属性・javascript: の URL を書かない —');
   for (const p of C.PAGES.concat(['shift-app.html'])) {
