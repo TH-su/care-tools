@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-dNdcPsztvFBHCKswNGnGvPyqlr/hTcJuZ9xOJ75kR3I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H6M8EyLAeXV7CU7uj63Lvd7uUXiKfbKHXCF4gTWK12I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -694,7 +694,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .bulk-tbl td.dirty{background:var(--warn-bg)}
 /* ═══ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══
    原本は手描き寄りの単純な間取り図。罫線は細い実線1本、文字は黒、塗りなし。
-   ★文字サイズは1箇所（--rpfs）で持ち、採寸（fitRoomSheet）が紙に合わせて決める。 */
+   ★文字サイズは1箇所（--rpfs）で持ち、roomFontPx_ が間取りの比と氏名の字数から計算で決める（文字の幅は測らない・2026-10-23）。 */
 /* ★文字の大きさは【紙の幅に対する割合】で持つ。px で固定すると、採寸は紙幅(1047px)で
    行うのに画面は器の幅(実測933px)なので、画面でだけ文字がセルからはみ出して切れる
    （実測で8セル）。1cqw＝この紙の幅の1% なので、画面でも紙でも見た目の比率が変わらない。
@@ -727,7 +727,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .rp-no{position:absolute; top:calc(var(--rpfs)*0.30); left:0; right:0; text-align:center;
   font-size:calc(var(--rpfs)*1.0)}
 /* ★氏名は【1行】。原本も全員1行で、折り返すとセルが縦に伸びて図の形が崩れる。
-   入りきらない時は、採寸（fitRoomSheets）が文字を小さくして1行に収める。 */
+   いちばん長い氏名が1行に入る大きさを、roomFontPx_ が字数から計算で決める（全体で1つの大きさ）。
+   ★ここの padding・罫線・番号の位置（top 0.30・行の高さ 1.25）を変えたら、roomFontPx_ の数（-4・-6・3.1・1.25）も直す
+     （check/unit/master_room_fit_test.js が両方を照らし合わせる） */
 .rp-nm{font-size:calc(var(--rpfs)*1.0); white-space:nowrap}
 .rp-lb{font-size:calc(var(--rpfs)*1.0)}
 /* 同じ居室に2名以上。画面だけで知らせ、紙は原本どおり（色を足さない） */
@@ -4174,14 +4176,22 @@ function fitCmSheet(m){
    ★2枚（1階・2階）は【同じ文字サイズ】。原本も1階・2階で同じ大きさ。
    ★紙の高さに入るかだけは、表題の高さがあるので紙の幅で実際に確かめる（入らなければ 0.25px ずつ下げる）。 */
 /* 日本語の文字（漢字・かな・全角の記号・全角の空白）はどの書体でも1字＝1字分（1em）の幅で作られている。
-   半角の文字（英数字・半角の空白・半角カナ）は書体で幅が違うので、0.62字分と多めに見る。
+   半角の文字（英数字・半角の空白・半角カナ）は書体で幅が違うので、0.62字分と多めに見る（半角の大文字は 0.7字分）。
+   見た目に幅の無い文字（異体字の印・結合の濁点・幅の無い空白）は0字と数える（異体字つきの氏名で全体を小さくしない）。
    RP_SAFE はマスの中の幅のうち氏名に使ってよい割合（字と字の間の丸め・書体の差のゆとり） */
 var RP_EM_HALF=0.62, RP_SAFE=0.95, RP_PX_MIN=5, RP_PX_MAX=26;
 function rpEmLen_(s){
   var t=String(s==null?'':s), n=0;
   for(var i=0;i<t.length;i++){
     var c=t.charCodeAt(i);
-    if(c>=0xD800&&c<=0xDBFF){ n+=1; i++; continue; }   /* 「𠮷」のような2つで1文字の漢字は1字 */
+    if(c>=0xD800&&c<=0xDBFF){
+      var lo=t.charCodeAt(i+1);
+      i++;
+      if(c===0xDB40&&lo>=0xDD00&&lo<=0xDDEF) continue;   /* 異体字の印（IVS）は0字 */
+      n+=1; continue;                                     /* 「𠮷」のような2つで1文字の漢字は1字 */
+    }
+    if((c>=0xFE00&&c<=0xFE0F)||c===0x3099||c===0x309A||(c>=0x200B&&c<=0x200D)) continue;   /* 異体字の印・結合の濁点・幅の無い空白 */
+    if(c>=0x41&&c<=0x5A){ n+=0.7; continue; }              /* 半角の大文字は少し広い */
     n+=(c>=0x1100&&!(c>=0xFF61&&c<=0xFF9F))?1:RP_EM_HALF;
   }
   return n;
@@ -4189,7 +4199,7 @@ function rpEmLen_(s){
 /* 間取り（plans: {階:{cols,rows,ar,cells}}）・在籍（occ: 居室番号→[{name}]）・図の幅 W（px）から、
    全体で1つの文字の大きさ（px・0.25px 刻みに切り下げ）を出す。文字の幅は測らない（計算だけ）。見るもの:
    ・居室の氏名（2名なら1行ずつ）と空室の用途: 1行の字数 × 大きさ が「マスの中の幅 × RP_SAFE」に収まる
-   ・居室の高さ: 上の番号（上から0.30字・行の高さ1.25字）と、真ん中の氏名（1行1.25字×行数）が重ならない
+   ・居室の高さ: 上の番号（上から0.30字・行の高さ1.25字）と、真ん中の氏名（1行1.25字×行数）が重ならない（氏名か用途がある時だけ）
    ・固定の名前の箱（厨房など）: 折り返してよい（今までどおり）が、行数×1.25字 がマスの中の高さに収まる
    マスの中＝マスの広さから罫線（1px×2）と余白（居室は1px×2・ほかは横1px×2・縦2px×2）を引いた広さ */
 function roomFontPx_(plans, occ, W){
@@ -4209,7 +4219,7 @@ function roomFontPx_(plans, occ, W){
         var inW=w-4, inH=h-4, who=(occ&&occ[cl.room])||[];
         var lines=who.length ? who.map(function(x){ return String(x&&x.name||'').trim(); }) : (cl.note?[String(cl.note)]:[]);
         lines.forEach(function(s){ var e=rpEmLen_(s); if(e>0) best=Math.min(best, inW*RP_SAFE/e); });
-        best=Math.min(best, inH/(3.1+1.25*Math.max(1,lines.length)));
+        if(lines.length) best=Math.min(best, inH/(3.1+1.25*lines.length));   /* 番号だけの空室は重なる氏名が無い */
       }else if(cl.t){
         var e2=rpEmLen_(cl.t), inW2=w-4, inH2=h-6;
         /* 折り返す行数は「1行に入る全角の字数」で数える（多めに見る）。1字も入らない大きさは使わない */
@@ -4237,15 +4247,17 @@ function fitRoomSheets(m){
   var best=roomFontPx_(roomPlanData(), roomOccupants(), PW);
   apply(best);                                  /* 割合は見えていなくても決まる（非表示の間も同じ大きさにしておく） */
   if(!shs[0].offsetParent) return null;         /* 紙の高さは見えている時だけ確かめる（showScreen で測り直す） */
-  var saved=shs.map(function(sh){ return [sh.style.width, sh.style.padding]; });
+  /* ★確かめる間は【紙と同じ幅】に固定する（画面のままだと器の幅を測るので、窓の広さで紙の大きさが変わる・契約 §17）。
+     ★脚注（.sh-ft）は紙では印刷の CSS で消えているので、確かめる間は外す（画面と紙で同じ大きさにするため） */
+  var saved=shs.map(function(sh){ var ft=sh.querySelector('.sh-ft'); return [sh.style.width, sh.style.padding, ft, ft?ft.style.display:'']; });
   try{
-    shs.forEach(function(sh){ sh.style.padding='0'; sh.style.width=PW+'px'; });
+    shs.forEach(function(sh,i){ sh.style.padding='0'; sh.style.width=PW+'px'; if(saved[i][2]) saved[i][2].style.display='none'; });
     while(best>RP_PX_MIN && shs.some(function(sh){ return sh.scrollHeight>PH-8; })){
       best=Math.round((best-0.25)*100)/100;
       apply(best);
     }
   }finally{
-    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; });
+    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; if(saved[i][2]) saved[i][2].style.display=saved[i][3]; });
   }
   apply(best);                                  /* 元の幅に戻してからもう一度当てる */
   return shs.map(function(sh){

@@ -2,7 +2,8 @@
    （2026-10-23 本人指示・代表者の決定。2回目「Windows で拡大縮小のたびに大きすぎる・小さすぎるになる、紙は大きすぎる」）
    実行: node check/unit/master_room_fit_test.js（環境変数 MASTER_HTML で別の版を当てられる）
    守ること:
-     1. 文字数の数え方（rpEmLen_）: 漢字・かな・全角の記号・全角の空白は1字、半角の文字は 0.62字、2つで1文字の漢字は1字
+     1. 文字数の数え方（rpEmLen_）: 漢字・かな・全角の記号・全角の空白は1字、半角の文字は 0.62字（大文字は 0.7字）、
+        2つで1文字の漢字は1字、見た目に幅の無い文字（異体字の印・結合の濁点・幅の無い空白）は0字
      2. 大きさの計算（roomFontPx_）: 間取りの比と氏名の文字数だけで決まる（文字の幅を測らない）。
         いちばん長い氏名が「マスの中の幅 × 0.95」に収まる・番号と氏名が重ならない高さ・固定の名前は折り返して高さに収まる。
         全体で1つ（1階・2階の両方を見て1つ）。0.25px 刻みに切り下げ・5〜26px
@@ -49,11 +50,12 @@ function env(opt) {
   opt = opt || {};
   const sets = {};
   const mk = (id) => {
-    const sh = { id, vars: {}, offsetParent: opt.hidden ? null : {},
+    const ft = { style: { display: '' } };
+    const sh = { id, vars: {}, offsetParent: opt.hidden ? null : {}, ft,
       style: { width: '', padding: '', setProperty(k, v) { sh.vars[k] = String(v); sets[id] = (sets[id] || 0) + 1; } },
       /* 紙の高さ: 文字が大きいほど表題が高くなる（表題 1.5字×1.5行＋余白 1.4字＋図の高さ） */
-      get scrollHeight() { const f = parseFloat(sh.vars['--rpk'] || '1') * (sh.style.width ? parseFloat(sh.style.width) : 948) / 100; return Math.round((opt.tall || 0) + 3.65 * f + (sh.style.width ? parseFloat(sh.style.width) : 948) * 0.5); },
-      querySelector(sel) { return sel === '.rp-grid' ? { offsetWidth: 948 } : null; } };
+      get scrollHeight() { const f = parseFloat(sh.vars['--rpk'] || '1') * (sh.style.width ? parseFloat(sh.style.width) : 948) / 100; return Math.round((opt.tall || 0) + 3.65 * f + (sh.style.width ? parseFloat(sh.style.width) : 948) * 0.5 + (opt.ft && ft.style.display !== 'none' ? opt.ft : 0)); },
+      querySelector(sel) { return sel === '.rp-grid' ? { offsetWidth: 948 } : sel === '.sh-ft' ? ft : null; } };
     return sh;
   };
   const els = { roomSheet_f1: mk('roomSheet_f1'), roomSheet_f2: mk('roomSheet_f2') };
@@ -76,7 +78,11 @@ console.log('\n— 1. 文字数の数え方 —');
   const b = env();
   t('漢字・かなは1字ずつ', b.rpEmLen_('架空一郎') === 4 && b.rpEmLen_('かくう') === 3);
   t('全角の空白は1字', b.rpEmLen_('架空　一郎') === 5);
-  t('半角の空白・英数字は 0.62字', Math.abs(b.rpEmLen_('架空 一郎') - 4.62) < 1e-9 && Math.abs(b.rpEmLen_('AB') - 1.24) < 1e-9);
+  t('半角の空白・小文字・数字は 0.62字', Math.abs(b.rpEmLen_('架空 一郎') - 4.62) < 1e-9 && Math.abs(b.rpEmLen_('ab1') - 1.86) < 1e-9);
+  t('半角の大文字は 0.7字（Meiryo の大文字は広い）', Math.abs(b.rpEmLen_('AB') - 1.4) < 1e-9, b.rpEmLen_('AB'));
+  t('★異体字の印（IVS）は0字', b.rpEmLen_('葛\uDB40\uDD00城') === 2, b.rpEmLen_('葛\uDB40\uDD00城'));
+  t('★異体字の印（VS）・結合の濁点・幅の無い空白は0字', b.rpEmLen_('葛\uFE00') === 1 && b.rpEmLen_('か\u3099') === 1 && b.rpEmLen_('架\u200B空\u200D') === 2,
+    [b.rpEmLen_('葛\uFE00'), b.rpEmLen_('か\u3099'), b.rpEmLen_('架\u200B空\u200D')]);
   t('半角カナは 0.62字', Math.abs(b.rpEmLen_('ｶｸｳ') - 1.86) < 1e-9);
   t('2つで1文字の漢字（𠮷）は1字', b.rpEmLen_('𠮷田') === 2, b.rpEmLen_('𠮷田'));
   t('空・null は0', b.rpEmLen_('') === 0 && b.rpEmLen_(null) === 0);
@@ -109,6 +115,8 @@ console.log('\n— 2. 大きさの計算（文字の幅を測らない）—');
   const lw = 60 / CW * W - 4, lh = 40 / RH * (W * RH / CW) - 6, per = Math.floor(lw * 0.95 / lb);
   t('★固定の名前は折り返してよいが、行数×1.25字がマスの高さに収まる', per >= 1 && Math.ceil(8 / per) * 1.25 * lb <= lh, [lb, per, lh]);
   t('大きさは 5〜26px に収める', b.roomFontPx_(plan(), occOf({ '101': ['架空'.repeat(40)] }), W) === 5 && b.roomFontPx_({}, {}, W) === 26);
+  const empty = plan(); empty.f1.cells[2] = { r: 1, c: 3, room: '103' };
+  t('★番号だけの空室には、番号と氏名の重なりの条件を掛けない（重なる氏名が無い）', b.roomFontPx_(empty, {}, W) > inH / 4.35, [b.roomFontPx_(empty, {}, W), inH / 4.35]);
   t('空室の用途（倉庫）も1行として見る', b.roomFontPx_(plan(), {}, W) <= Math.floor(inW * 0.95 / 4 * 4) / 4 + 1e-9);
   const longNote = plan(); longNote.f1.cells[2] = { r: 1, c: 3, room: '103', note: '（長い用途の名前）' };
   t('★空室の用途が長い時は、用途の字数で全体が小さくなる', b.roomFontPx_(longNote, {}, W) === Math.floor(inW * 0.95 / 9 * 4) / 4, [b.roomFontPx_(longNote, {}, W), inW * 0.95 / 9]);
@@ -133,6 +141,13 @@ console.log('\n— 3. 当て方（2枚とも同じ割合・窓の幅に関係し
   const rt = tall.fitRoomSheets();
   t('★紙の高さに入らない時だけ 0.25px ずつ下げ、2枚とも同じ割合', rt[0].size < f && tall.els.roomSheet_f1.vars['--rpk'] === tall.els.roomSheet_f2.vars['--rpk']
     && Math.abs(((f - rt[0].size) / 0.25) - Math.round((f - rt[0].size) / 0.25)) < 1e-9, [rt[0].size, f]);
+  /* 脚注（.sh-ft）は紙では消えている。画面から確かめる時も外して測る＝画面と紙で同じ大きさ */
+  const noFt = env({ occ, tall: 150 }).fitRoomSheets()[0].size;
+  const withFt = env({ occ, tall: 150, ft: 40 });
+  const rft = withFt.fitRoomSheets();
+  t('★紙の高さを確かめる間は脚注を外す（脚注のある画面でも、紙と同じ大きさ）', rft[0].size === noFt, [rft[0].size, noFt]);
+  t('確かめた後は脚注を元へ戻す', withFt.els.roomSheet_f1.ft.style.display === '' && withFt.els.roomSheet_f2.ft.style.display === '');
+  t('印刷の後は su-print の putSnap が印刷前の画面の style へ戻す（restoreSel に2枚）', /restoreSel:\['roomSheet_f1','roomSheet_f2'\]/.test(RM));
   /* 非表示: 割合は当てる・紙の高さは見えてから（印を立てる） */
   const h = env({ occ, hidden: true });
   const r0 = h.fitRoomScreen_();
@@ -144,6 +159,18 @@ console.log('\n— 3. 当て方（2枚とも同じ割合・窓の幅に関係し
   t('表示されて確かめたら印を下ろす', vm.runInContext('roomFitWait_', h) === false);
   t('描画（renderRoster）は fitRoomScreen_ を通す', /if\(curView==='room'\) fitRoomScreen_\(\);/.test(cutF(RM, 'renderRoster')));
   t('印刷の入口は今までどおり fitRoomSheets(st.metrics)', /var rs=fitRoomSheets\(st\.metrics\);/.test(RM));
+}
+
+console.log('\n— 3b. CSS の値と計算の数の照らし合わせ —');
+{
+  const fp = cutF(RM, 'roomFontPx_');
+  t('罫線は1px（--rpbd）', /\.rp-sheet\{--rpk:1\.30; --rpfs:13px; --rpbd:1px solid #000\}/.test(RM));
+  t('マスの余白は 2px 1px・居室は 1px（計算の -4・-6 と対）', /\.rp-cell\{border:var\(--rpbd\);[^}]*padding:2px 1px;/.test(RM) && /\.rp-room\{position:relative; justify-content:center; padding:1px\}/.test(RM)
+    && /var inW=w-4, inH=h-4,/.test(fp) && /inW2=w-4, inH2=h-6;/.test(fp));
+  t('番号は上から 0.30字・行の高さは 1.25（計算の 3.1＝(0.30+1.25)×2 と 1.25 と対）', /\.rp-no\{position:absolute; top:calc\(var\(--rpfs\)\*0\.30\);/.test(RM)
+    && /\.rp-grid\{display:grid; width:100%; font-size:var\(--rpfs\); line-height:1\.25\}/.test(RM) && /inH\/\(3\.1\+1\.25\*lines\.length\)/.test(fp) && /\*1\.25\*f<=inH2/.test(fp));
+  t('氏名は1行（折り返さない）', /\.rp-nm\{font-size:calc\(var\(--rpfs\)\*1\.0\); white-space:nowrap\}/.test(RM));
+  t('紙と画面の割合は .rp-sheet の幅が基準（cqw）', /\.rp-sheet\{container-type:inline-size; --rpfs:calc\(var\(--rpk\)\*1cqw\)\}/.test(RM));
 }
 
 console.log('\n— 4. 画面の守り・窓の大きさでの測り直しを使わない —');
