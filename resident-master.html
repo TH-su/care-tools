@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-v46/zjVwczSmo0C8kAH/vX7FIXXDH7MijM55GfZYcdk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JeUga4R+FDb3Ai2h3Vy1nel2sGkoM/fo8mua72TpaNE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -890,6 +890,16 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .cm-sum{display:flex; gap:18px; justify-content:center; margin-bottom:2px;
   font-size:var(--cmsum,13px); font-weight:700; line-height:1.2}
 .cm-sum b{font-variant-numeric:tabular-nums}
+/* CM表の大きさ（画面だけ・2026-10-23 本人指示）。ボタンはバーの中＝紙には出ない（body.cm-on の印刷CSSで消える）。
+   ★端（50%・300%）で押せないことを薄さでも見せる（誕生日一覧のバーと同じ見せ方） */
+.cmzoom{display:inline-flex; align-items:center; gap:4px}
+.cmzoom .cmzv{min-width:3.5em; text-align:center; font-size: 0.8125rem; color:var(--g9); font-variant-numeric:tabular-nums}
+.cmzoom button:disabled{opacity:.45; cursor:default; background:var(--g1)}
+/* 倍率の読み上げ専用（画面には出さない）。ピンチ中に1コマごとに読み上げないよう、操作が止まってから書く（cmZoomAnnounce_） */
+.cmzoom .cmzsr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
+  overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap}
+/* ★表の上の2本指はこの画面で扱う（ブラウザがページ全体を拡大しない）。1本指の縦横のスクロールはそのまま */
+#cmSheet{touch-action:pan-x pan-y}
 
 /* ── 介護度別表（A4縦1枚。スクリーンショットの様式どおり）──
    ・左端に行番号（罫線なし）、その右に介護度1〜5の列
@@ -1553,6 +1563,13 @@ body.meal-on #sc-list{max-width:none}
     <span class="lb">表示</span>
     <button type="button" class="cmchip" data-m="kana">五十音順</button>
     <button type="button" class="cmchip" data-m="office">居宅別</button>
+    <span class="cmzoom" role="group" aria-label="ケアマネ一覧の大きさ">
+      <button type="button" id="cmZoomOut" aria-label="ケアマネ一覧を小さく">−</button>
+      <span class="cmzv" id="cmZoomVal">100%</span>
+      <span class="cmzsr" id="cmZoomSr" role="status" aria-live="polite"></span>
+      <button type="button" id="cmZoomIn" aria-label="ケアマネ一覧を大きく">＋</button>
+      <button type="button" id="cmZoomReset" aria-label="100%（ケアマネ一覧の大きさを元に戻す）">100%</button>
+    </span>
     <span class="st" id="cmStatus" role="status" aria-live="polite"></span>
     <button type="button" id="cmReload">🔄 最新に取り直す</button>
     <button type="button" class="btn-print" id="cmPrint">🖨️ 印刷（A4横）</button>
@@ -3251,7 +3268,7 @@ function renderRoster(){
   try{ certBadgePaint_(); }catch(e){}   /* 名簿が変わったら数え直す（2026-10-16 第2弾） */
   if(curView==='cm')   fitCmSheet();
   if(curView==='lvl')  fitLvlSheet();
-  if(curView==='room') fitRoomSheets();
+  if(curView==='room') fitRoomScreen_();   /* 採寸＋画面の守り（2026-10-23） */
   /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
      248行×最大6サイズ＝1488回の文字幅計測に加え、表全体の強制レイアウトが6往復走って
      入力が引っかかる（食形態一覧で 2026-08-24 に同じ判断をしている）。
@@ -3447,6 +3464,7 @@ function shBase(){
 function paintShBars(){
   var c=$('cmBar'), l=$('lvlBar'), f=$('famBar'), h=$('histBar');
   if(c) c.style.display=(curView==='cm')?'flex':'none';
+  try{ cmPinchBind_(curView==='cm'); }catch(e){}   /* CM表のピンチのリスナーは CM表の間だけ（2026-10-23） */
   if(l) l.style.display=(curView==='lvl')?'flex':'none';
   var rm=$('roomBar'); if(rm) rm.style.display=(curView==='room')?'flex':'none';
   if($('roomStatus')) $('roomStatus').textContent=(curView==='room')
@@ -3564,6 +3582,169 @@ function setCmMode(v){
   cmMode=CM_MODES.indexOf(v)>=0?v:'kana';
   try{ localStorage.setItem(CM_MODE_KEY,cmMode); }catch(e){}
   paintShBars(); renderRoster();
+}
+/* ═══ CM表の大きさ（画面だけ・2026-10-23 本人指示「パソコンで見ると文字が小さすぎる」）═══
+   採寸（shFit_）は A4横1枚に収まる文字の大きさを決めるもの。画面ではその px に倍率を掛けて見せる。
+   ★紙には倍率を掛けない（fitCmSheet(m)＝su-print の採寸では掛けない）＝紙は1画素も変わらない。
+   ★倍率を変えた時は採寸をやり直さない。覚えておいた採寸の px に掛け直すだけ（ピンチ中に重くしない）。
+   ★端末に残すのは倍率の数ひとつだけ（rmaster_cm_zoom・原則11）。読む時は数で範囲内の時だけ使う。 */
+var CM_ZOOM_KEY='rmaster_cm_zoom', CM_ZOOM_MIN=0.5, CM_ZOOM_MAX=3, CM_ZOOM_STEP=0.1;
+function cmZoomRead_(){
+  try{
+    var s=localStorage.getItem(CM_ZOOM_KEY);
+    if(typeof s!=='string'||!/^\d+(\.\d+)?$/.test(s)) return 1;
+    var n=Number(s);
+    return (isFinite(n)&&n>=CM_ZOOM_MIN&&n<=CM_ZOOM_MAX)?n:1;
+  }catch(e){ return 1; }
+}
+var cmZoom=cmZoomRead_();
+var cmFitPx=null;      /* 画面の採寸で決まった px（倍率を掛ける前）。測れなかった時は null */
+var cmZoomRaf=0;
+/* 倍率を決める。描き直しは requestAnimationFrame で1コマに1回へ間引く（ピンチは1秒に何十回も来る） */
+function cmZoomSet_(z){
+  var n=Number(z); if(!isFinite(n)) return;
+  cmZoom=Math.min(CM_ZOOM_MAX, Math.max(CM_ZOOM_MIN, n));
+  if(cmZoomRaf) return;
+  var raf=window.requestAnimationFrame||function(f){ return setTimeout(f,16); };
+  cmZoomRaf=raf(function(){
+    cmZoomRaf=0;
+    try{ localStorage.setItem(CM_ZOOM_KEY, String(Math.round(cmZoom*1000)/1000)); }catch(e){}
+    cmZoomApply_(); cmZoomPaint_(); cmZoomAnnounce_();
+  });
+}
+/* 倍率の読み上げは、操作が止まってから（最後の変化から500ms 後に1回）だけ届ける。
+   見えている倍率の文字（#cmZoomVal）は cmZoomPaint_ が1コマごとに書く。読み上げは #cmZoomSr（画面には出ない）。 */
+var cmZoomSrT=0;
+function cmZoomAnnounce_(){
+  if(cmZoomSrT) clearTimeout(cmZoomSrT);
+  cmZoomSrT=setTimeout(function(){
+    cmZoomSrT=0;
+    var s=$('cmZoomSr'); if(s) s.textContent=Math.round(cmZoom*100)+'%';
+  }, 500);
+}
+/* 「−」「＋」は1回で1割。端数（ピンチの後の 1.23 など）はそのまま1割ずつ動かす */
+function cmZoomStep_(d){ cmZoomSet_(Math.round((cmZoom+d)*100)/100); }
+/* 文字の大きさ px から、表・余白・合計欄・見出しの大きさを決める（採寸と倍率の両方がここを通る＝式は1つ） */
+function cmApplyPx_(sh, px){
+  sh.style.setProperty('--cmpad', (px>=16?3:px>=14?2:1)+'px');
+  sh.style.setProperty('--cmpx',  (px>=14?8:6)+'px');
+  sh.style.setProperty('--cmsum', Math.round(px*1.05)+'px');
+  sh.style.setProperty('--shd1',  Math.round(px*1.5)+'px');
+  var t=sh.querySelector('.cmtbl'); if(t) t.style.fontSize=px+'px';
+}
+/* 覚えておいた採寸の px × 倍率を画面のCM表へ当てる。
+   ★印刷の準備中（su-printing / cm-on）は触らない（紙の採寸が当てた大きさを上書きしない）。
+   ★採寸の値が無い時（非表示の間に描き直された）だけ、表示されていれば1回測る。 */
+function cmZoomApply_(){
+  var b=document.body;
+  if(b&&(b.classList.contains('su-printing')||b.classList.contains('cm-on'))) return;
+  var sh=$('cmSheet'); if(!sh) return;
+  if(cmFitPx==null){ if(sh.offsetParent) fitCmSheet(); return; }
+  cmApplyPx_(sh, cmFitPx*cmZoom);
+}
+/* バーの表示（今の倍率・端で押せない） */
+function cmZoomPaint_(){
+  var v=$('cmZoomVal'), o=$('cmZoomOut'), i=$('cmZoomIn');
+  if(v) v.textContent=Math.round(cmZoom*100)+'%';
+  if(o) o.disabled=cmZoom<=CM_ZOOM_MIN+1e-9;
+  if(i) i.disabled=cmZoom>=CM_ZOOM_MAX-1e-9;
+}
+/* ピンチを扱ってよいか: CM表を開いていて、指・ポインタがCM表の上にある時だけ。
+   ★ほかの画面・CM表の外ではページ全体の拡大を奪わない（preventDefault しない）。 */
+function cmPinchOk_(target){
+  if(curView!=='cm'||!shViewActive_('cm')) return false;
+  var sh=$('cmSheet');
+  return !!(sh&&target&&sh.contains(target));
+}
+var cmGesture=null, cmTouch=null;
+/* トラックパッドのピンチ（Chrome・Edge・Firefox は ctrlKey 付きの wheel）と Ctrl＋マウスホイール。
+   1回の量は ±10 で頭打ち＝ホイール1目盛りで約1割、トラックパッドは細かく無段階に動く。 */
+function cmOnWheel_(e){
+  if(!e||!e.ctrlKey||!cmPinchOk_(e.target)) return;
+  e.preventDefault();
+  if(cmGesture) return;   /* Safari のピンチ中は gesture の方で動かす（二重に掛けない） */
+  var dy=Number(e.deltaY)||0;
+  if(e.deltaMode===1) dy*=33; else if(e.deltaMode===2) dy*=800;   /* 行・ページ単位の端末を px 相当へ */
+  dy=Math.max(-10, Math.min(10, dy));
+  if(dy) cmZoomSet_(cmZoom*Math.exp(-dy/100));
+}
+/* Safari のピンチ（gesturestart／gesturechange の scale は始めた時からの倍率）。
+   ★始まりで前の状態を必ず捨てる（描き直し・画面の切り替えで gestureend が届かなかった時の残りを使わない）。
+   ★途中でも CM表の上かを確かめ直す（ほかのビューへ移った後のピンチを奪わない）。 */
+function cmOnGestureStart_(e){
+  cmGesture=null;
+  if(!e||!cmPinchOk_(e.target)) return;
+  e.preventDefault();
+  cmGesture={z:cmZoom};
+}
+function cmOnGestureChange_(e){
+  if(!cmGesture||!e) return;
+  if(!cmPinchOk_(e.target)){ cmGesture=null; return; }
+  e.preventDefault();
+  if(cmTouch) return;     /* タッチ画面では2本指の処理が動かす（iPad は touch と gesture が両方来る） */
+  var s=Number(e.scale);
+  if(isFinite(s)&&s>0) cmZoomSet_(cmGesture.z*s);
+}
+function cmOnGestureEnd_(e){
+  if(!cmGesture) return;
+  if(e) e.preventDefault();
+  cmGesture=null;
+}
+/* タッチ画面の2本指。2本の指がどちらもCM表の上にある間だけ扱う（1本指のスクロールには触らない） */
+function cmTouchDist_(ts){
+  var dx=ts[0].clientX-ts[1].clientX, dy=ts[0].clientY-ts[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function cmOnTouchStart_(e){
+  cmTouch=null;            /* 前の2本指の状態を必ず捨ててから判定する（ジェスチャーと同じ） */
+  var ts=e&&e.touches;
+  if(!ts||ts.length!==2) return;
+  if(!cmPinchOk_(ts[0].target)||!cmPinchOk_(ts[1].target)) return;
+  var d=cmTouchDist_(ts); if(!(d>0)) return;
+  cmTouch={d:d, z:cmZoom};
+}
+function cmOnTouchMove_(e){
+  var ts=e&&e.touches;
+  if(!cmTouch||!ts||ts.length!==2) return;
+  if(!cmPinchOk_(ts[0].target)||!cmPinchOk_(ts[1].target)){ cmTouch=null; return; }
+  e.preventDefault();
+  var d=cmTouchDist_(ts);
+  if(d>0) cmZoomSet_(cmTouch.z*d/cmTouch.d);
+}
+function cmOnTouchEnd_(e){
+  var ts=e&&e.touches;
+  if(cmTouch&&(!ts||ts.length<2)) cmTouch=null;
+}
+/* 印刷・設定画面の試算の後に、紙の採寸が表へ当てた大きさを画面の大きさ（採寸 px × 倍率）へ戻す。
+   ★su-print の後始末の中（su-printing がまだ付いている）で呼ばれるので、cmZoomApply_ の門は通さない。
+   ★例外を外へ出さない。出すと後始末の続き（putSnap＝画面の style・警告の復元）が飛ぶ。
+     画面の大きさが戻らないだけで、次の描き直し（renderRoster）で採寸し直される。
+     ★rmNote_ は使わない（あちらは「保存・同期の失敗」の記録の口。これは保存・同期ではない）。 */
+function cmZoomRestore_(){
+  try{
+    var sh=$('cmSheet'); if(!sh||cmFitPx==null) return;
+    cmApplyPx_(sh, cmFitPx*cmZoom);
+  }catch(e){}
+}
+/* ピンチのリスナーは CM表を表示している間だけ一覧の箱に付ける（paintShBars から呼ぶ）。
+   ★wheel・touchmove・gesture は preventDefault を使うので passive:false＝付いている間はブラウザがスクロールの前に
+     この処理を待つ。ほかのビュー（現場の iPhone など）のスクロールを重くしないため、CM表以外では外す。 */
+var cmPinchBound=false;
+/* [イベント, 受け手, passive]。touchstart/end は止めないので passive（スクロールを待たせない） */
+var CM_PINCH_EVS=[['wheel',cmOnWheel_,false],['gesturestart',cmOnGestureStart_,false],
+  ['gesturechange',cmOnGestureChange_,false],['gestureend',cmOnGestureEnd_,false],
+  ['touchstart',cmOnTouchStart_,true],['touchmove',cmOnTouchMove_,false],
+  ['touchend',cmOnTouchEnd_,true],['touchcancel',cmOnTouchEnd_,true]];
+function cmPinchBind_(on){
+  on=!!on;
+  var box=$('rosterBox');
+  if(!box||on===cmPinchBound) return;
+  CM_PINCH_EVS.forEach(function(x){
+    if(on) box.addEventListener(x[0], x[1], {passive:x[2]});
+    else box.removeEventListener(x[0], x[1]);
+  });
+  cmPinchBound=on;
+  if(!on){ cmGesture=null; cmTouch=null; }   /* 外す時は途中の状態も捨てる */
 }
 var CM_COLS=[['no','No',''],['room','居室',''],['name','入居者','cnm'],['adm','入居日',''],
   ['days','日数','cnum'],['age','年齢','cnum'],['lv','介護度',''],
@@ -3976,12 +4157,11 @@ function fitCmSheet(m){
   /* ★余白は文字が十分大きくなってから広げる。先に余白を取ると、その高さのぶんだけ
      文字を小さくすることになる（1行あたり2pxの余白は33行で66px＝文字1.5px分）。 */
   var r=shFit_(sh, 297, 210, function(px){       /* A4横 */
-    sh.style.setProperty('--cmpad', (px>=16?3:px>=14?2:1)+'px');
-    sh.style.setProperty('--cmpx',  (px>=14?8:6)+'px');
-    sh.style.setProperty('--cmsum', Math.round(px*1.05)+'px');
-    sh.style.setProperty('--shd1',  Math.round(px*1.5)+'px');
-    var t=sh.querySelector('.cmtbl'); if(t) t.style.fontSize=px+'px';
+    cmApplyPx_(sh, px);
   }, 6, 22, null, m, 0);   /* ★紙では .cmtbl{width:100%}＝紙幅ぴったりが正常。幅の余裕は引かない */
+  /* 画面の時だけ、採寸の px を覚えて倍率を掛ける（2026-10-23）。★m 付き＝紙の採寸では掛けない・覚えない。
+     返す値（r）は採寸の結果のまま＝「1枚に収まりません」の判定も紙の見込みのまま。 */
+  if(!m){ cmFitPx=r?r.size:null; if(r) cmZoomApply_(); }
   shWarn_(sh, r); return r;
 }
 /* 1階・2階をA4横1枚ずつに、できるだけ大きく収める（2026-09-08 管理者指示）。
@@ -4038,6 +4218,82 @@ function fitRoomSheets(m){
     var g=sh.querySelector('.rp-grid');
     return {size:best, fits:true, h:sh.scrollHeight, w:g?g.offsetWidth:0, H:Math.round(PH), W:PW};
   });
+}
+/* ═══ 居室一覧の画面の守り（画面だけ・2026-10-23 本人指示「Windows の PC で氏名が居室の枠からはみ出す」）═══
+   採寸（fitRoomSheets）は紙の幅で測り、画面は cqw で同じ比に縮める。Windows では小さな文字の幅が
+   比のとおりに縮まず、画面でだけマスからあふれる（Mac では起きない）。
+   ★実際に表示している幅で、どのマスもあふれていないかを確かめ、あふれていたら【2枚とも同じ】大きさで
+     0.25px 相当ずつ下げる（全体を1つの大きさのまま・氏名ごとに変えない）。あふれが無ければ何もしない。
+   ★紙の採寸（fitRoomSheets(m)）はこれを通らない。紙は今どおり紙の幅から測り直す。
+     下げた大きさは画面のシートの style にだけあり、印刷の後は su-print の putSnap が印刷前の画面へ戻す。 */
+/* 下げる段数の上限（24段＝6px 相当）と、あふれの合計が減らないまま続けてよい段数（8段＝2px 相当）。
+   ★「1段で減らなければ打ち切り」にしない。文字の幅は画素に丸まるので、0.25px 下げても合計が変わらない段がある
+     （架空9名・狭い幅の実測: 12.75px で 1 → 12.5px で 1 → 12.25px で 0）。文字の送りを画素に丸める端末（Windows の
+     等倍表示など）では、画面の文字が 1px 小さくなるまで幅が変わらないことがあり、PC の幅（紙の約9割）で最大5段ほど続く。
+     1段で打ち切ると、ここで直せたはずのあふれが残る。縮まない端末でも 8段で打ち切るので、強制レイアウトは最大9回。 */
+var ROOM_GUARD_MAX=24, ROOM_GUARD_STALL=8;
+function roomScreenGuard_(shs, px, PW){
+  /* 全マスのあふれ量の合計（px）。0＝あふれ無し。
+     ★見方は紙の判定（fitRoomSheets の fits()）と同じ決まりにそろえてある: 中央寄せで左へはみ出した分は scrollWidth に
+       入らない・+1px までは許す。紙と画面で「あふれ」の意味を変えないため、ここだけ変えない（紙の高さは画面では見ない）。 */
+  function overSum(){
+    var s=0;
+    for(var i=0;i<shs.length;i++){
+      var cs=shs[i].querySelectorAll('.rp-cell');
+      for(var j=0;j<cs.length;j++){
+        var dw=cs[j].scrollWidth-(cs[j].clientWidth+1), dh=cs[j].scrollHeight-(cs[j].clientHeight+1);
+        if(dw>0) s+=dw;
+        if(dh>0) s+=dh;
+      }
+    }
+    return s;
+  }
+  function apply(p){                            /* fitRoomSheets の apply と同じ式（紙幅に対する割合） */
+    var k=Math.round(p*100/PW*1000)/1000;
+    shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
+  }
+  var s=overSum();
+  if(!s) return px;                             /* あふれが無ければ何もしない */
+  var p=px, best=s, stall=0;
+  for(var n=0; n<ROOM_GUARD_MAX && p>5; n++){   /* 下限は採寸の最小（5px 相当）と同じ */
+    p=Math.max(5, Math.round((p-0.25)*100)/100);
+    apply(p);
+    s=overSum();
+    if(!s) return p;                            /* あふれが0になった大きさで止める */
+    if(s<best){ best=s; stall=0; }
+    else if(++stall>=ROOM_GUARD_STALL) break;   /* 下げても減らない端末（最小の文字の設定・丸め）＝打ち切る */
+  }
+  /* あふれを0にできなかった（減らない・上限・下限）→ 採寸の大きさ（守りを掛ける前）へ戻す。
+     中途半端に下げたままにすると、氏名は切れたまま表題や番号だけが小さくなる */
+  apply(px);
+  return px;
+}
+/* 画面で居室一覧を採寸する入口（描画・窓の大きさの変化・文字の読み込み・一覧へ戻った時）。
+   ★非表示で測れなかった時（null）は印を立て、一覧が表示されたら測り直す（showScreen）。 */
+var roomFitWait_=false, roomResizeT_=0, roomFitW_=null;
+function roomPrinting_(){
+  var b=document.body;
+  return !!(b&&(b.classList.contains('su-printing')||b.classList.contains('room-on')));
+}
+function fitRoomScreen_(){
+  var rs=fitRoomSheets();
+  var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
+  roomFitWait_=(rs==null&&shs.length>0);
+  if(rs&&rs.length) roomFitW_=window.innerWidth;   /* 測った時の窓の幅（同じ幅の resize では測り直さない） */
+  if(!rs||!rs.length||roomPrinting_()) return rs;   /* 印刷の準備中は画面の守りを掛けない */
+  roomScreenGuard_(shs, rs[0].size, rs[0].W);
+  return rs;
+}
+/* 窓の大きさが変わった時（居室一覧を開いている時だけ・200ms 待ってから1回）。
+   ★幅が前に測った時と同じなら測らない（iPhone・iPad はツールバーの出入りで高さだけの resize が何度も来る） */
+function roomOnResize_(){
+  if(curView!=='room') return;
+  if(window.innerWidth===roomFitW_) return;
+  if(roomResizeT_) clearTimeout(roomResizeT_);
+  roomResizeT_=setTimeout(function(){
+    roomResizeT_=0;
+    if(curView==='room'&&!roomPrinting_()&&window.innerWidth!==roomFitW_){ try{ fitRoomScreen_(); }catch(e){} }
+  }, 200);
 }
 function fitLvlSheet(m){
   var sh=$('lvlSheet'); if(!sh) return null;
@@ -4145,7 +4401,10 @@ function definePrintViews_(){
     };
   }
   def('cm', { label:'現入居者家族CM表', paper:'A4 landscape', restoreSel:['cmSheet'],
-    fit:{ mode:'height', measure: measureWith(fitCmSheet, 'cmSheet') } });
+    fit:{ mode:'height', measure: measureWith(fitCmSheet, 'cmSheet') },
+    /* 画面の大きさ（倍率）へ戻す（2026-10-23）。紙の採寸は表の文字の大きさを直接書くため、
+       シートの style を戻す putSnap だけでは表が紙の大きさのまま残る */
+    onAfter: function(){ cmZoomRestore_(); } });
   def('lvl', { label:'介護度別一覧', paper:'A4 portrait', restoreSel:['lvlSheet'],
     fit:{ mode:'height', measure: measureWith(fitLvlSheet, 'lvlSheet') } });
   /* 居室一覧は1回の印刷で1階・2階の2枚。図の縦横比は原本どおりで動かさないので用紙と余白だけ。 */
@@ -4628,6 +4887,29 @@ function fitHistSheet(m){
 function roomPlanData(){
   return (window.SUFacility && typeof SUFacility.roomPlan==='function' && SUFacility.roomPlan()) || {};
 }
+/* 施設情報が後から届いた時に、居室一覧を描き直す（2026-10-23 代表者の指示）。
+   ★端末に施設情報の控え（su_facility_json_v1）が無く、facility-profile.json の応答が遅いと、居室一覧は届く前に
+     「間取り図が設定されていません」で描き終わり、届いた後も描き直さなかった（架空データ・2.5秒の遅れで再現）。
+   ★SUFacility.onReady は読めた時（読めないと分かった時も）に1回だけ呼ぶ。居室一覧を開いていて、描いた時と
+     間取りが違う時だけ描き直す（控えのある端末では、控えとサーバーの間取りが同じなら何もしない＝描画を増やさない）。
+   ★onReady は読み込み済みならその場で呼ぶので、init（DOMContentLoaded の現場端末の守り・印刷の登録）が済んだ後へ回す。
+   ★印刷の準備中（body.su-printing）は描き直さない（刷っている紙面を作り直さない）。終わるのを待ってから1回だけ。
+     この画面は印刷の後始末の保険を60秒にしている（definePrintViews_ の clearDelay）ので、待つのはそれより長い65秒まで。
+     待つ間も毎回、居室一覧・事務所PCのままかを確かめ直す。現場端末では何もしない */
+var rmRoomPlanSig_=null;
+function rmRoomOnFacility_(tries){
+  if(curView!=='room'||getDeviceRole()==='field') return;
+  if(document.body&&document.body.classList.contains('su-printing')){
+    if((tries||0)<130) setTimeout(function(){ rmRoomOnFacility_((tries||0)+1); },500);
+    return;
+  }
+  var sig=null; try{ sig=JSON.stringify(roomPlanData()); }catch(e){ sig=null; }
+  if(sig!==null&&sig===rmRoomPlanSig_) return;
+  try{ renderRoster(); }catch(e){}
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmRoomOnFacility_,0); }); }catch(e){}
+});
 /* 居室番号 → 在籍者。★同じ番号に2名いることが実際にある（実測 2026-09-08: 208 が2名）ので、
    先に見つけた1名で切り捨てず【配列で持つ】。捨てると片方の方が紙から消える。 */
 function roomOccupants(){
@@ -4654,8 +4936,9 @@ function roomCellHtml(cl, occ){
   var st='grid-row:'+rpNum_(cl.r,1)+' / span '+rpNum_(cl.rs,1)+';grid-column:'+rpNum_(cl.c,1)+' / span '+rpNum_(cl.cs,1)+';';
   if(cl.room){
     var who=occ[cl.room]||[];
+    /* ★氏名の後ろに「様」を付けない（画面・紙とも・代表者の決定 2026-10-23）。氏名の文字は1文字も直さない */
     var body = who.length
-      ? who.map(function(x){ return esc(String(x.name||'').trim())+'様'; }).join('<br>')
+      ? who.map(function(x){ return esc(String(x.name||'').trim()); }).join('<br>')
       : (cl.note?esc(cl.note):'');
     /* ★2名以上は「同じ番号に2名」と分かる形で両方出す（黙って1名にしない） */
     return '<div class="rp-cell rp-room'+(who.length>1?' rp-dup':'')+'" style="'+st+'">'+
@@ -4697,7 +4980,8 @@ function roomFtNote(key,occ){
 }
 function roomHtml(){
   if(!roster||!roster.length) return '<div class="sh-sheet"><div class="loading">名簿を取得しています…</div></div>';
-  var keys=Object.keys(roomPlanData());
+  var plan=roomPlanData(), keys=Object.keys(plan);
+  try{ rmRoomPlanSig_=JSON.stringify(plan); }catch(e){ rmRoomPlanSig_=null; }   /* 描いた時の間取り（施設情報が届いた時に、変わった時だけ描き直す） */
   if(!keys.length) return '<div class="sh-sheet"><div class="loading">間取り図が設定されていません（施設情報 facility-profile.json の roomPlan）</div></div>';
   return keys.map(function(k){ return roomFloorHtml(k); }).join('');
 }
@@ -11386,6 +11670,11 @@ function showScreen(name){
     saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
     /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
     if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
+    /* 居室一覧も同じ（非表示で測れなかった時だけ・2026-10-23） */
+    if(curView==='room'&&roomFitWait_){ try{ fitRoomScreen_(); }catch(e){} }
+    /* ケアマネ一覧も同じ（詳細・編集画面の間に描き直されて採寸できていない時だけ）。
+       測らないと倍率も掛からず、印刷の後に紙の大きさが画面に残る（cmZoomRestore_ は採寸の値が要る） */
+    if(curView==='cm'&&cmFitPx==null){ try{ fitCmSheet(); }catch(e){} }
     /* 保存の後に認定期限へ戻った時（保存直後の取り直しが失敗していた時の再挑戦を含む） */
     if(curView==='cert') certEnsureFresh_();
     navLeave();
@@ -13291,6 +13580,20 @@ function init(){
   if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
     b.addEventListener('click',function(){ setCmMode(this.getAttribute('data-m')) });
   });
+  /* CM表の大きさ（2026-10-23 本人指示）: ボタンとピンチの両方。ピンチは CM表の上でだけ扱う（cmPinchOk_） */
+  if($('cmZoomOut'))   $('cmZoomOut').addEventListener('click',function(){ cmZoomStep_(-CM_ZOOM_STEP) });
+  if($('cmZoomIn'))    $('cmZoomIn').addEventListener('click',function(){ cmZoomStep_(CM_ZOOM_STEP) });
+  if($('cmZoomReset')) $('cmZoomReset').addEventListener('click',function(){ cmZoomSet_(1) });
+  cmZoomPaint_();
+  /* ピンチのリスナーは CM表を表示している間だけ付ける（cmPinchBind_・paintShBars から）。ここでも今のビューで1回そろえる */
+  cmPinchBind_(curView==='cm');
+  /* 居室一覧の画面の守りを掛け直すきっかけ（2026-10-23）: 窓の大きさの変化・文字の読み込みの後 */
+  window.addEventListener('resize',roomOnResize_);
+  try{
+    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(function(){
+      if(curView==='room'&&!roomPrinting_()){ try{ fitRoomScreen_(); }catch(e){} }
+    }).catch(function(){});
+  }catch(e){}
   if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
   if($('famPrint')) $('famPrint').addEventListener('click',function(){rmPrint_('fam')});
   if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
