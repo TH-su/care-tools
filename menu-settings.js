@@ -225,6 +225,12 @@
 
   async function start() {
     view('loading');
+    // ログインの部品（supabase-js・su-auth.js・su-menu.js）を読み込めなかった時も「確かめています…」で止めない
+    if (!window.SUAuth || !window.SUMenu) {
+      $('gate-why').textContent = '画面の部品を読み込めませんでした。電波・Wi-Fi を確かめてから、読み込み直してください。';
+      view('gate');
+      return;
+    }
     var me;
     try { me = await SUAuth.check(); } catch (e) { me = { status: 'error', message: String(e && e.message || e) }; }
     if (me.status !== SUAuth.STATUS.OK || me.role !== 'admin') {
@@ -253,5 +259,8 @@
       view('gate');
     }
   }
-  start();
+  start().catch(function (e) {
+    $('gate-why').textContent = friendly(e);
+    view('gate');
+  });
 })();

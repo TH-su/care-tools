@@ -93,7 +93,10 @@
     return out;
   }
 
+  /* 控えはログインの記録がある時だけ使う（ログアウトした端末で前の人の並びを出さない）。
+     ログアウト・ログインのし直しでは login.js が控えを消す（SUMenu.clearCache）。 */
   function readCache() {
+    if (!hasLogin()) return null;
     try {
       var c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
       if (!c || typeof c !== 'object' || ROLES.indexOf(c.role) < 0) return null;
@@ -155,7 +158,9 @@
       return c.auth.getSession().then(function (g) {
         if (!(g && g.data && g.data.session)) return { kind: g && g.error ? 'error' : 'out' };
         return c.rpc('menu_get').then(function (r) {
-          if (r.error) return { kind: r.error.code === '42501' ? 'out' : 'error' };
+          // 42501＝使えない人。PGRST202（関数が無い＝移行 0020 を戻した・まだ流していない）も「設定なし」として既定に戻す
+          // （控えを残すと、戻した後も前に隠した並びのまま固まるため・2026-10-23 反証レビュー）
+          if (r.error) return { kind: (r.error.code === '42501' || r.error.code === 'PGRST202') ? 'out' : 'error' };
           var d = r.data;
           if (!d || d.ok !== true || ROLES.indexOf(d.role) < 0) return { kind: 'error' };
           return { kind: 'ok', role: d.role, config: clean(d.config) };
@@ -189,7 +194,9 @@
     }
     if (document.readyState === 'complete') run();
     else window.addEventListener('load', run);
+    // 「戻る」でそのまま戻った時（bfcache）は load が来ないので、その時だけ読み直す（ログアウトの後に戻った時に前の並びを残さない）
+    window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, clean: clean, readCache: readCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP };
+  window.SUMenu = { arrange: arrange, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP };
 })();

@@ -7,7 +7,7 @@
      4 「使い方・困った時」は隠せない
      5 並びを変えた区分では「新しい行から始める」を外す。並びが既定のままの区分では残す
      6 元の定義を書き換えない。事務所専用の印（officeOnly）は並べ替えても残る（現場端末で出さない仕組みを外さない）
-     7 端末の控えは役割が分からなければ使わない
+     7 端末の控えは役割が分からない時・ログインの記録が無い時は使わない
      8 メニュー（index.html）の定義に、ケアログが入居者の区分の末尾にある
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
@@ -102,8 +102,11 @@ console.log('7 端末の控え');
 t('7a 控えが無い → null', load().readCache() === null);
 t('7b 役割の無い控え → null', load({ su_menu_v1: JSON.stringify({ config: { ver: 1 } }) }).readCache() === null);
 t('7c 壊れた控え → null', load({ su_menu_v1: '{x' }).readCache() === null);
-const c7 = load({ su_menu_v1: JSON.stringify({ role: 'field', config: { ver: 1, hide: { field: ['weight-record.html'] } } }) }).readCache();
-t('7d 正しい控え → 役割と設定', c7 && c7.role === 'field' && c7.config.hide.field[0] === 'weight-record.html', c7);
+const LOGIN = { 'sb-example-auth-token': '{}' };   // ログインの記録（キーの名前だけを見る）
+const c7 = load(Object.assign({ su_menu_v1: JSON.stringify({ role: 'field', config: { ver: 1, hide: { field: ['weight-record.html'] } } }) }, LOGIN)).readCache();
+t('7d 正しい控え（ログインの記録あり）→ 役割と設定', c7 && c7.role === 'field' && c7.config.hide.field[0] === 'weight-record.html', c7);
+t('7e ログインの記録が無い端末では控えを使わない（ログアウトした後に前の人の並びを出さない）',
+  load({ su_menu_v1: JSON.stringify({ role: 'field', config: { ver: 1 } }) }).readCache() === null);
 
 console.log('8 ケアログのボタン');
 const care = DEF.sections.find(s => s.id === 'sec-resident').tiles.slice(-1)[0];

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-22b6G/KDgoJSjss4Q5QgF7Snjp7qPwyOJwDk/tEUiTA=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-PB5R7jC+Z+kAN9vVWaqStaXyw64HFjVZWQggfkpJqBg=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -407,6 +407,7 @@ main {
       h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
       var grid = el('div', 'grid');
       if (!Array.isArray(s.tiles)) throw new Error('区分 ' + s.id + ' のタイルの一覧が無い');
+      var open = false;   // 現場端末でも出るタイルがあるか
       s.tiles.forEach(function (t) {
         try {
         if (!t || typeof t.href !== 'string' || !t.href) throw new Error('リンク先の無いタイル');
@@ -416,9 +417,12 @@ main {
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(el('span', 'nm', t.nm)); a.appendChild(note(t.note));
         grid.appendChild(a);
+        if (!t.officeOnly) open = true;
         } catch (e) { fail(e); }
       });
       if (!grid.children.length) return;   // タイルが0枚になった区分は見出しだけで出さない（壊れた分は数えてある）
+      // 役割の設定で残ったのが事務所専用のタイルだけになった区分は、区分ごと現場端末で出さない（見出しだけが残らないように・2026-10-23）
+      if (!open) sec.setAttribute('data-office-only', '');
       sec.appendChild(h2); sec.appendChild(grid);
       main.appendChild(sec);
     } catch (e) { fail(e); }

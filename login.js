@@ -119,8 +119,13 @@
     else if (btn.dataset.label) btn.textContent = btn.dataset.label;
   }
 
+  // メニューの控え（su-menu.js の su_menu_v1＝前にログインした人の役割と並び）を消す。
+  // ログアウト・別の人でのログインの後に、前の人の並び・非表示がメニューに残らないようにする（2026-10-23 反証レビュー）
+  function forgetMenu() { try { localStorage.removeItem('su_menu_v1'); } catch (e) { /* 消せなくてもメニューは読み直す */ } }
+
   $('b-google').addEventListener('click', async function () {
     msg('');
+    forgetMenu();
     busy(this, true);
     try { await SUAuth.signInGoogle(); }   // 成功すると Google の画面へ移る
     catch (e) { busy(this, false); msg(e.message); }
@@ -133,6 +138,7 @@
     if (act === 'signout' || act === 'switch') {
       msg('');
       busy(a, true);
+      forgetMenu();
       try { await SUAuth.signOut(); } catch (e) { /* 通信できなくても端末の記録は消える */ }
       busy(a, false);
       await refresh();
