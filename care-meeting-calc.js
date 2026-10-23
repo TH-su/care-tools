@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-23b';
+  var VERSION = '2026-10-23c';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -44,10 +44,12 @@
   };
   /* 開催の理由（GAS の MEETING_KINDS と同じ・シートにもこの文字で残る） */
   var KINDS = ['新規', '認定の更新', '区分変更', '退院・退所', '状態の変化', 'その他'];
+  /* ★「更新」だけでは認定の更新にしない（ケアプランの更新・目標の期間の更新と取り違えるため。「認定」の語を求める）。
+     「要介護状態区分の変更」は区分変更と状態の変化の両方に当たる＝決めずに選んでもらう */
   var KIND_RULES = [
-    ['区分変更', /区分変更|区変/],
+    ['区分変更', /区分変更|区変|区分の変更|介護度の変更/],
     ['退院・退所', /退院|退所/],
-    ['認定の更新', /更新/],
+    ['認定の更新', /認定.{0,4}更新|更新認定/],
     ['新規', /新規|初回|入居時|利用開始|サービス開始/],
     ['状態の変化', /状態|変化|悪化|低下/],
     ['その他', /その他/]
@@ -242,7 +244,7 @@
     if (att.length > ATTENDEE_MAX) return { stop: '出席者は ' + ATTENDEE_MAX + ' 名までです（' + att.length + ' 名）' };
     for (var j = 0; j < att.length; j++) {
       var a = att[j];
-      if (!a || typeof a !== 'object') return { stop: '出席者の形が違います' };
+      if (!a || typeof a !== 'object' || Array.isArray(a)) return { stop: '出席者の形が違います' };
       if (String(a.role || '').trim().length > ATTENDEE_LEN || String(a.name || '').trim().length > ATTENDEE_LEN)
         return { stop: '出席者の所属（職種）・氏名は ' + ATTENDEE_LEN + ' 字までです' };
     }
@@ -341,7 +343,8 @@
       }
     }
     if (end) {
-      var left = daysBetween(today, end), efrom = addDays(end, -soon);
+      /* 知らせは終わりの soon 日前から出すが、更新の会議として数えるのは次の認定の始まり（終わりの翌日）の lead 日前から（始まり側と同じ範囲） */
+      var left = daysBetween(today, end), efrom = addDays(end, 1 - lead);
       if (left < 0) out.push({ kind: 'certEnded', level: 'high', reason: '', text: '認定期間が ' + end + ' で終わっています（認定の記録が新しくなっているか確かめてください）' });
       else if (left <= soon && !after(efrom))
         out.push({ kind: 'certEnd', level: left <= 30 ? 'high' : 'mid', reason: '認定の更新', text: '認定期間の終わり（' + end + '・あと ' + left + ' 日）が近づいています。更新の担当者会議の時期です' });
@@ -352,7 +355,8 @@
       out.push({ kind: 'careChange', level: 'high', reason: '区分変更', text: '区分変更（' + cc + ' に記録）の前後に、担当者会議の記録がありません' });
     /* 入院中は6か月の知らせを止めて、退院したら会議を、と出す。退院した後は、入院した日から後に会議が無ければ知らせる */
     if (inHospital) out.push({ kind: 'inHospital', level: 'info', reason: '', text: '入院中です（退院したら担当者会議を開いてください）' });
-    else if (hs.discharged && hs.discharged <= today && !after(hs.admitted || hs.discharged))
+    /* 入院した日が分からない（記録が退院だけ）時は出さない（入院の記録の前の押し直しなどで、会議の要らない退院を知らせない） */
+    else if (hs.discharged && hs.admitted && hs.discharged <= today && !after(hs.admitted))
       out.push({ kind: 'discharge', level: 'high', reason: '退院・退所', text: '退院（' + hs.discharged + '）の後の担当者会議の記録がありません' });
     if (last && !inHospital) {
       var due = addMonths(last, months), dleft = daysBetween(today, due);
