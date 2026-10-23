@@ -2,11 +2,14 @@
    実行: node check/unit/master_cm_zoom_test.js
    守ること:
      1. 倍率は端末に数ひとつだけ覚える（rmaster_cm_zoom）。数で 0.5〜3 の時だけ使い、ほか（範囲外・文字・NaN）は 1
-     2. 「−」「＋」は1回で1割。端（50%・300%）では押せない。読み上げの名前と、倍率の読み上げ（role="status"）
+     2. 「−」「＋」は1回で1割。端（50%・300%）では押せない。読み上げの名前と、倍率の読み上げ（role="status"）。
+        読み上げは操作が止まってから（500ms 後に1回）。見えている倍率の文字は1コマごとに変える
      3. 画面の文字＝採寸の px × 倍率。紙の採寸（fitCmSheet(m)）では倍率を掛けない・画面の採寸の値を上書きしない
      4. 倍率 1 の時は今までと同じ大きさ（式も同じ）。印刷の後は画面の大きさへ戻る
      5. ピンチ（Ctrl＋ホイール・Safari のジェスチャー・2本指）は CM表を開いていて表の上の時だけ扱う。
-        ほかの画面・表の外・Ctrl なしのホイール・1本指ではページの動きを止めない
+        ほかの画面・表の外・Ctrl なしのホイール・1本指ではページの動きを止めない。
+        前のピンチの状態が残っていても、ほかのビューでは止めない。リスナーは CM表を表示している間だけ付ける
+     6. 詳細・編集画面の間に描き直されて採寸できていない時は、一覧へ戻った時に測る。印刷の後始末で例外を外へ出さない
    実物のソースから関数を切り出して vm で動かす（写経しない）。氏名は使わない。 */
 'use strict';
 const fs = require('fs');
@@ -54,7 +57,14 @@ function makeEnv(store) {
   els.cmZoomVal = { textContent: '' };
   els.cmZoomOut = { disabled: false };
   els.cmZoomIn = { disabled: false };
+  els.cmZoomSr = { textContent: '' };
+  /* 一覧の箱。付いているリスナーを数える（CM表の間だけ付ける・L4） */
+  const box = { ls: [], addEventListener(type, fn, opt) { box.ls.push({ type, fn, opt }); },
+    removeEventListener(type, fn) { box.ls = box.ls.filter((x) => !(x.type === type && x.fn === fn)); } };
+  els.rosterBox = box;
   const body = { classList: classList([]) };
+  const timers = [];
+  const notes = [];
   const b = {
     Math, Number, String, isFinite, JSON,
     curView: 'cm',
@@ -64,11 +74,14 @@ function makeEnv(store) {
     },
     window: { requestAnimationFrame: (f) => { rafQ.push(f); return rafQ.length; } },
     document: { body },
-    setTimeout: (f) => { rafQ.push(f); return rafQ.length; },
+    setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; },
+    clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].f = null; },
     $: (id) => els[id] || null,
     shWarn_: () => {},
-    els, sheet, tbl, cell, body, rafQ,
-    flush() { while (rafQ.length) rafQ.shift()(); }
+    rmNote_: (where, e) => { notes.push(where); },
+    els, sheet, tbl, cell, body, rafQ, box, timers, notes,
+    flush() { while (rafQ.length) rafQ.shift()(); },
+    flushTimers() { for (const x of timers) if (x.f) { const f = x.f; x.f = null; f(); } }
   };
   vm.createContext(b);
   vm.runInContext([
@@ -77,12 +90,13 @@ function makeEnv(store) {
     line(RM, /var cmZoom=cmZoomRead_\(\);/),
     line(RM, /var cmFitPx=null;[^\n]*/),
     line(RM, /var cmZoomRaf=0;[^\n]*/),
-    cutF(RM, 'cmZoomSet_'), cutF(RM, 'cmZoomStep_'), cutF(RM, 'cmApplyPx_'), cutF(RM, 'cmZoomApply_'),
+    cutF(RM, 'cmZoomSet_'), line(RM, /var cmZoomSrT=0;/), cutF(RM, 'cmZoomAnnounce_'), cutF(RM, 'cmZoomStep_'), cutF(RM, 'cmApplyPx_'), cutF(RM, 'cmZoomApply_'),
     cutF(RM, 'cmZoomPaint_'), cutF(RM, 'shViewActive_'), cutF(RM, 'cmPinchOk_'),
     line(RM, /var cmGesture=null, cmTouch=null;[^\n]*/),
     cutF(RM, 'cmOnWheel_'), cutF(RM, 'cmOnGestureStart_'), cutF(RM, 'cmOnGestureChange_'), cutF(RM, 'cmOnGestureEnd_'),
     cutF(RM, 'cmTouchDist_'), cutF(RM, 'cmOnTouchStart_'), cutF(RM, 'cmOnTouchMove_'), cutF(RM, 'cmOnTouchEnd_'),
-    cutF(RM, 'cmZoomRestore_'), cutF(RM, 'shFit_'), cutF(RM, 'fitCmSheet')
+    cutF(RM, 'cmZoomRestore_'), line(RM, /var cmPinchBound=false;/), line(RM, /var CM_PINCH_EVS=\[[\s\S]*?\]\];/), cutF(RM, 'cmPinchBind_'),
+    cutF(RM, 'shFit_'), cutF(RM, 'fitCmSheet')
   ].join('\n'), b);
   return b;
 }
@@ -125,6 +139,19 @@ console.log('\n— 1. 倍率の読み書き（rmaster_cm_zoom）—');
     b.flush();
     t('間引いた後は最後の倍率で描く', g(b, 'cmZoom') === 1.3 && b.els.cmZoomVal.textContent === '130%', b.els.cmZoomVal.textContent);
   }
+  {
+    /* 読み上げ（L5）: 見える文字は1コマごと・読み上げは止まってから1回 */
+    const b = makeEnv({});
+    b.cmZoomSet_(1.1); b.flush(); b.cmZoomSet_(1.2); b.flush(); b.cmZoomSet_(1.3); b.flush();
+    t('ピンチ中: 見えている倍率の文字はコマごとに変わる', b.els.cmZoomVal.textContent === '130%', b.els.cmZoomVal.textContent);
+    t('ピンチ中: 読み上げの場所はまだ書かない', b.els.cmZoomSr.textContent === '', b.els.cmZoomSr.textContent);
+    const live = b.timers.filter((x) => x.f);
+    t('読み上げは最後の変化から 500ms 後の1回だけ（前の予約は取り消す）', live.length === 1 && live[0].ms === 500, b.timers.map((x) => [!!x.f, x.ms]));
+    b.flushTimers();
+    t('止まった後に今の倍率を読み上げる', b.els.cmZoomSr.textContent === '130%', b.els.cmZoomSr.textContent);
+    const b0 = makeEnv({}); b0.cmZoomPaint_();
+    t('開いただけでは読み上げない（操作した時だけ）', b0.els.cmZoomSr.textContent === '' && b0.timers.length === 0, b0.timers.length);
+  }
 }
 
 console.log('\n— 2. ボタン（−・＋・100%）—');
@@ -150,7 +177,9 @@ console.log('\n— 2. ボタン（−・＋・100%）—');
   t('「−」の読み上げの名前', /<button type="button" id="cmZoomOut" aria-label="ケアマネ一覧を小さく">−<\/button>/.test(bar), '');
   t('「＋」の読み上げの名前', /<button type="button" id="cmZoomIn" aria-label="ケアマネ一覧を大きく">＋<\/button>/.test(bar), '');
   t('「100%」の読み上げの名前に、画面に出ている「100%」を含める（音声操作で呼べる）', /<button type="button" id="cmZoomReset" aria-label="100%（ケアマネ一覧の大きさを元に戻す）">100%<\/button>/.test(bar), '');
-  t('今の倍率は role="status" で読み上げる', /<span class="cmzv" id="cmZoomVal" role="status"[^>]*>100%<\/span>/.test(bar), '');
+  t('見えている倍率の文字は読み上げの場所にしない（1コマごとに読み上げない）', /<span class="cmzv" id="cmZoomVal">100%<\/span>/.test(bar), '');
+  t('倍率の読み上げは画面に出ない role="status" の場所', /<span class="cmzsr" id="cmZoomSr" role="status" aria-live="polite"><\/span>/.test(bar)
+    && /\.cmzoom \.cmzsr\{position:absolute; width:1px; height:1px;[^}]*clip:rect\(0 0 0 0\)/.test(RM), '');
   t('紙ではバーごと消える（body.cm-on .sh-bar{display:none}）', /body\.cm-on \.sh-bar,\s*body\.lvl-on \.sh-bar\{display:none !important\}/.test(RM), '');
   t('押せる所は 44px 以上（.sh-bar button の min-height/min-width）', /\.sh-bar button\{min-height:44px; min-width:44px;/.test(RM), '');
   t('端で押せないことを薄さでも見せる', /\.cmzoom button:disabled\{opacity:\.45;/.test(RM), '');
@@ -196,10 +225,13 @@ console.log('\n— 3. 画面＝採寸 × 倍率・紙＝採寸のまま —');
   t('紙の採寸は画面と別の大きさになる用紙で試している（空振りしない）', rp.size !== r2.size, [rp.size, r2.size]);
   t('紙の採寸は画面の採寸の値（cmFitPx）を上書きしない', g(b2, 'cmFitPx') === r2.size, g(b2, 'cmFitPx'));
 
-  /* 印刷の準備中は倍率の描き直しで紙の大きさを上書きしない */
-  b2.body.classList.add('su-printing'); b2.body.classList.add('cm-on');
+  /* 印刷の準備中は倍率の描き直しで紙の大きさを上書きしない（su-printing だけ・cm-on だけ、のそれぞれで） */
+  b2.body.classList.add('su-printing');
+  b2.cmZoomSet_(2.25); b2.flush();
+  t('印刷の準備中（su-printing だけ）に倍率が変わっても紙の大きさのまま', b2.tbl.style.fontSize === rp.size + 'px', b2.tbl.style.fontSize);
+  b2.body.classList.remove('su-printing'); b2.body.classList.add('cm-on');
   b2.cmZoomSet_(2.5); b2.flush();
-  t('印刷の準備中に倍率が変わっても紙の大きさのまま', b2.tbl.style.fontSize === rp.size + 'px', b2.tbl.style.fontSize);
+  t('印刷の準備中（cm-on だけ）に倍率が変わっても紙の大きさのまま', b2.tbl.style.fontSize === rp.size + 'px', b2.tbl.style.fontSize);
 
   /* 印刷の後（su-print の後始末の中）: 画面の大きさへ戻す */
   b2.cmZoomRestore_();
@@ -293,18 +325,113 @@ console.log('\n— 4. ピンチ（CM表の上でだけ扱う）—');
   const bt2 = makeEnv({});
   bt2.cmOnTouchStart_(ev({ touches: [{ clientX: 0, clientY: 0, target: bt2.cell }, { clientX: 100, clientY: 0, target: { id: 'outside' } }] }));
   tm = ev({ touches: [{ clientX: 0, clientY: 0, target: bt2.cell }, { clientX: 200, clientY: 0, target: { id: 'outside' } }] }); bt2.cmOnTouchMove_(tm);
-  t('片方の指が CM表の外ならページに任せる', tm.prevented === 0 && g(bt2, 'cmZoom') === 1, tm.prevented);
+  t('片方の指が CM表の外なら preventDefault しない', tm.prevented === 0 && g(bt2, 'cmZoom') === 1, tm.prevented);
 
-  /* 配線: 一覧の箱に付け、止める必要のある wheel・touchmove・gesture だけ passive:false */
-  t('wheel は passive:false で一覧の箱へ', /rbx\.addEventListener\('wheel',cmOnWheel_,\{passive:false\}\)/.test(RM), '');
-  t('Safari のジェスチャー3つ', /rbx\.addEventListener\('gesturestart',cmOnGestureStart_,\{passive:false\}\)/.test(RM)
-    && /rbx\.addEventListener\('gesturechange',cmOnGestureChange_,\{passive:false\}\)/.test(RM)
-    && /rbx\.addEventListener\('gestureend',cmOnGestureEnd_,\{passive:false\}\)/.test(RM), '');
-  t('touchstart/end は passive（スクロールを待たせない）・touchmove だけ passive:false', /rbx\.addEventListener\('touchstart',cmOnTouchStart_,\{passive:true\}\)/.test(RM)
-    && /rbx\.addEventListener\('touchmove',cmOnTouchMove_,\{passive:false\}\)/.test(RM)
-    && /rbx\.addEventListener\('touchend',cmOnTouchEnd_,\{passive:true\}\)/.test(RM), '');
   t('表の上の2本指はブラウザに拡大させない（touch-action）', /#cmSheet\{touch-action:pan-x pan-y\}/.test(RM), '');
   t('touch-action は紙の区切り（@media print）に入れていない', !/@media print[^{]*\{[^}]*touch-action/.test(RM), '');
+}
+
+console.log('\n— 5. 前のピンチの状態が残っても、ほかのビューで奪わない（L1）—');
+{
+  /* Safari: CM表でピンチを始め、gestureend が届かないまま介護度別へ移った */
+  const b = makeEnv({});
+  b.cmOnGestureStart_(ev({ scale: 1, target: b.cell }));
+  t('前提: CM表でピンチの状態ができている', g(b, 'cmGesture') !== null, g(b, 'cmGesture'));
+  b.curView = 'lvl';
+  const gc = ev({ scale: 2, target: b.cell }); b.cmOnGestureChange_(gc); b.flush();
+  t('状態が残っていても、ほかのビューの gesturechange は止めない・倍率も変えない', gc.prevented === 0 && g(b, 'cmZoom') === 1 && g(b, 'cmGesture') === null, [gc.prevented, g(b, 'cmZoom')]);
+  b.curView = 'cm';
+  b.cmOnGestureStart_(ev({ scale: 1, target: b.cell }));
+  b.curView = 'lvl';
+  const gs = ev({ scale: 1, target: b.cell }); b.cmOnGestureStart_(gs);
+  t('ほかのビューで gesturestart が来たら前の状態を捨て、止めない', gs.prevented === 0 && g(b, 'cmGesture') === null, [gs.prevented, g(b, 'cmGesture')]);
+  b.curView = 'cm';
+  b.cmOnGestureStart_(ev({ scale: 1, target: b.cell }));
+  const w = ev({ ctrlKey: true, deltaY: -5, target: b.cell });
+  b.cmOnGestureStart_(ev({ scale: 1, target: { id: 'outside' } }));   /* CM表の外で次のジェスチャーが始まった */
+  b.cmOnWheel_(w); b.flush();
+  t('CM表の外で次のジェスチャーが始まったら前の状態を捨てる（Ctrl＋ホイールが効く）', g(b, 'cmGesture') === null && w.prevented === 1 && g(b, 'cmZoom') > 1, [g(b, 'cmGesture'), g(b, 'cmZoom')]);
+
+  /* タッチ: CM表で2本指を始め、touchend が届かないまま介護度別へ移った */
+  const bt = makeEnv({});
+  const A = { clientX: 0, clientY: 0, target: bt.cell }, B = { clientX: 100, clientY: 0, target: bt.cell };
+  bt.cmOnTouchStart_(ev({ touches: [A, B] }));
+  t('前提: CM表で2本指の状態ができている', g(bt, 'cmTouch') !== null, g(bt, 'cmTouch'));
+  bt.curView = 'lvl';
+  const tm = ev({ touches: [A, { clientX: 180, clientY: 0, target: bt.cell }] }); bt.cmOnTouchMove_(tm); bt.flush();
+  t('状態が残っていても、ほかのビューの touchmove は止めない・倍率も変えない', tm.prevented === 0 && g(bt, 'cmZoom') === 1 && g(bt, 'cmTouch') === null, [tm.prevented, g(bt, 'cmZoom')]);
+  bt.curView = 'cm';
+  bt.cmOnTouchStart_(ev({ touches: [A, B] }));
+  bt.curView = 'lvl';
+  bt.cmOnTouchStart_(ev({ touches: [A, B] }));
+  t('ほかのビューで2本指が始まったら前の状態を捨てる', g(bt, 'cmTouch') === null, g(bt, 'cmTouch'));
+  bt.curView = 'cm';
+  bt.cmOnTouchStart_(ev({ touches: [A, B] }));
+  bt.cmOnTouchStart_(ev({ touches: [A] }));
+  t('1本指で触り直したら前の2本指の状態を捨てる', g(bt, 'cmTouch') === null, g(bt, 'cmTouch'));
+}
+
+console.log('\n— 6. リスナーは CM表を表示している間だけ（L4）—');
+{
+  const b = makeEnv({});
+  const passiveOf = (type) => { const x = b.box.ls.find((l) => l.type === type); return x ? x.opt.passive : undefined; };
+  t('始めは何も付いていない', b.box.ls.length === 0, b.box.ls.length);
+  b.cmPinchBind_(true);
+  t('CM表の間は8つ付ける', b.box.ls.length === 8, b.box.ls.map((x) => x.type));
+  t('止める wheel・touchmove・gesture3つは passive:false', passiveOf('wheel') === false && passiveOf('touchmove') === false
+    && passiveOf('gesturestart') === false && passiveOf('gesturechange') === false && passiveOf('gestureend') === false, b.box.ls.map((x) => [x.type, x.opt.passive]));
+  t('止めない touchstart・touchend・touchcancel は passive（スクロールを待たせない）', passiveOf('touchstart') === true && passiveOf('touchend') === true && passiveOf('touchcancel') === true, '');
+  b.cmPinchBind_(true);
+  t('2回呼んでも二重に付けない', b.box.ls.length === 8, b.box.ls.length);
+  b.cmOnGestureStart_(ev({ scale: 1, target: b.cell }));
+  b.cmPinchBind_(false);
+  t('ほかのビューへ移ると全部外す', b.box.ls.length === 0, b.box.ls.map((x) => x.type));
+  t('外す時は途中の状態も捨てる', g(b, 'cmGesture') === null && g(b, 'cmTouch') === null, '');
+  t('ビューの帯を描く所（paintShBars）で、CM表の時だけ付ける', /try\{ cmPinchBind_\(curView==='cm'\); \}catch\(e\)\{\}/.test(cutF(RM, 'paintShBars')), '');
+  t('一覧の箱へ無条件に付ける書き方は残っていない', !/rbx\.addEventListener\('(wheel|touchmove|gesturestart)'/.test(RM)
+    && (RM.match(/addEventListener\(x\[0\], x\[1\], \{passive:x\[2\]\}\)/g) || []).length === 1, '');
+}
+
+console.log('\n— 7. 印刷の後始末で例外を外へ出さない（L7）—');
+{
+  const b = makeEnv({ rmaster_cm_zoom: '2' });
+  b.fitCmSheet();
+  b.sheet.querySelector = () => { throw new Error('壊れた表'); };
+  let threw = false;
+  try { b.cmZoomRestore_(); } catch (e) { threw = true; }
+  t('戻す処理で例外が出ても外へ出さない（su-print の putSnap が続けて走る）', threw === false, '');
+  t('保存・同期の失敗の記録（rmNote_）には入れない（保存・同期ではないため）', b.notes.length === 0, b.notes);
+  t('su-print の後始末の中で呼ぶ形のまま（def(\'cm\') の onAfter）', /onAfter: function\(\)\{ cmZoomRestore_\(\); \} \}\);/.test(RM), '');
+}
+
+console.log('\n— 8. 詳細・編集画面の間に描き直されたら、一覧へ戻った時に測る（M2）—');
+{
+  const calls = { cm: 0, room: 0 };
+  function sc(on) { return { classList: classList(on ? ['on'] : []) }; }
+  const box = {
+    curView: 'cm', cmFitPx: null, roomFitWait_: false, editSnap_: null,
+    a4Off() {}, wiOff() {}, saveOpenId() {}, navLeave() {}, navEnter() {}, paintMealBar() {}, certEnsureFresh_() {}, fitBdaySheet() {},
+    fitCmSheet() { calls.cm++; return {}; }, fitRoomScreen_() { calls.room++; },
+    window: { scrollTo() {} },
+    document: { querySelectorAll: () => [] },
+    els: { 'sc-list': sc(false), 'sc-view': sc(true), 'sc-edit': sc(false) },
+    $(id) { return box.els[id] || null; }
+  };
+  /* showScreen が使う classList.toggle(名前, 付けるか) を持たせる */
+  for (const k of Object.keys(box.els)) { const cl = box.els[k].classList; cl.toggle = (c, v) => (v ? cl.add(c) : cl.remove(c)); }
+  vm.createContext(box);
+  vm.runInContext(cutF(RM, 'showScreen'), box);
+  box.showScreen('list');
+  t('CM表で採寸の値が無い時は、一覧へ戻った時に測る', calls.cm === 1, calls);
+  box.cmFitPx = 13.75;
+  box.showScreen('view'); box.showScreen('list');
+  t('採寸の値がある時は測り直さない（倍率は掛かったまま）', calls.cm === 1, calls);
+  box.cmFitPx = null; box.curView = 'lvl';
+  box.showScreen('list');
+  t('ほかのビューでは CM表を測らない', calls.cm === 1, calls);
+  box.curView = 'cm';
+  box.showScreen('view');
+  t('一覧以外の画面へ移る時は測らない', calls.cm === 1, calls);
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

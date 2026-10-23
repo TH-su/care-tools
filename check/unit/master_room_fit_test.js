@@ -2,9 +2,11 @@
    実行: node check/unit/master_room_fit_test.js
    守ること:
      1. 画面の守り: 実際に表示している幅でマスの中身があふれている時だけ、2枚とも同じ大きさで 0.25px 相当ずつ下げる。
-        あふれが無ければ何もしない（Mac の見た目は変わらない）。下限は採寸の最小（5px 相当）
+        あふれが無ければ何もしない（Mac の見た目は変わらない）。下限は採寸の最小（5px 相当）。
+        下げてもあふれの合計が減らない端末（最小の文字の設定など）は 8段で打ち切り、上限は 24段。
+        あふれを0にできなかった時は採寸の大きさ（守りの前）へ戻す（表題だけ小さくしない）。丸めで1段だけ減らない所は越える
      2. 紙の採寸（fitRoomSheets(m)）は画面の守りを通らない。画面で下げた後でも、紙は紙の幅から測り直した大きさ
-     3. 採寸し直しのきっかけ: 窓の大きさの変化（居室一覧の時だけ・200ms 後に1回）・文字の読み込みの後・
+     3. 採寸し直しのきっかけ: 窓の幅の変化（居室一覧の時だけ・前に測った幅と違う時だけ・200ms 後に1回）・文字の読み込みの後・
         非表示で測れなかった時は一覧が表示された時
      4. 居室一覧の氏名の後ろに「様」を付けない（画面・紙とも）。氏名の文字（空白・異体字）は直さない。
         同じ居室に2名の時の並べ方（rp-dup・改行）はそのまま
@@ -41,9 +43,16 @@ const PW = Math.round((297 - 20) * 96 / 25.4);   /* 採寸の既定の紙幅（1
 function makeSheet(id, cellsSpec, env) {
   const sh = {
     id, vars: { '--rpk': '1.3' }, offsetParent: {},
-    style: { width: '', padding: '', setProperty(k, v) { sh.vars[k] = String(v); } },
+    style: { width: '', padding: '', setProperty(k, v) { sh.vars[k] = String(v); if (k === '--rpk') env.sets[id] = (env.sets[id] || 0) + 1; } },
     width() { return sh.style.width ? parseFloat(sh.style.width) : env.screenW; },
-    font() { return parseFloat(sh.vars['--rpk']) * sh.width() / 100 * (sh.style.width ? 1 : env.widen); },
+    font() {
+      let f = parseFloat(sh.vars['--rpk']) * sh.width() / 100 * (sh.style.width ? 1 : env.widen);
+      if (!sh.style.width) {
+        if (env.minFont) f = Math.max(f, env.minFont);   /* 最小の文字の設定で、これより小さくならない端末を模す */
+        if (env.quant) f = Math.ceil(f);                  /* 文字の送りを画素に丸める端末を模す（下げても幅が変わらない段がある） */
+      }
+      return f;
+    },
     get scrollHeight() { return Math.round(sh.width() * 0.6); },   /* 紙の高さには常に収まる（見るのはマスのあふれ） */
     querySelector(sel) { return sel === '.rp-grid' ? { offsetWidth: sh.width() } : null; },
     querySelectorAll(sel) { return sel === '.rp-cell' ? sh.cells : []; }
@@ -57,7 +66,7 @@ function makeSheet(id, cellsSpec, env) {
   return sh;
 }
 function makeEnv(opt) {
-  const env = { screenW: opt.screenW || 933, widen: opt.widen || 1 };
+  const env = { screenW: opt.screenW || 933, widen: opt.widen || 1, minFont: opt.minFont || 0, quant: !!opt.quant, sets: {} };
   const els = {
     roomSheet_f1: makeSheet('roomSheet_f1', [[0.08, 5], [0.08, 4], [0.12, 6]], env),
     roomSheet_f2: makeSheet('roomSheet_f2', [[0.08, 3], [0.10, 6]], env)
@@ -68,6 +77,7 @@ function makeEnv(opt) {
     Math, Number, String, isFinite, parseFloat,
     curView: 'room',
     document: { body },
+    window: { innerWidth: opt.innerWidth || 1280 },
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; },
     clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].f = null; },
     $: (id) => els[id] || null,
@@ -75,8 +85,8 @@ function makeEnv(opt) {
   };
   vm.createContext(b);
   vm.runInContext([
-    cutF(RM, 'fitRoomSheets'), cutF(RM, 'roomScreenGuard_'),
-    line(RM, /var roomFitWait_=false, roomResizeT_=0;/),
+    cutF(RM, 'fitRoomSheets'), line(RM, /var ROOM_GUARD_MAX=24, ROOM_GUARD_STALL=8;/), cutF(RM, 'roomScreenGuard_'),
+    line(RM, /var roomFitWait_=false, roomResizeT_=0, roomFitW_=null;/),
     cutF(RM, 'roomPrinting_'), cutF(RM, 'fitRoomScreen_'), cutF(RM, 'roomOnResize_')
   ].join('\n'), b);
   return b;
@@ -119,11 +129,11 @@ console.log('\n— 1. 画面の守り（全体を1つの大きさのまま・あ
   t('1段上（+0.25px）ではあふれる＝必要以上に下げていない', overflowCount(win) > 0, overflowCount(win));
   t('採寸の結果（返す値）は紙の大きさのまま', rw[0].size === best && rw[0].W === PW, rw[0]);
 
-  /* 下限: どうしても収まらない時は 5px 相当で止める（無限に回らない） */
+  /* どうしても収まらない時: 下げたままにせず採寸の大きさへ戻す（無限に回らない・表題だけ小さくしない） */
   const hard = makeEnv({ widen: 6 });
-  hard.fitRoomScreen_();
-  t('どうしても収まらない時は 5px 相当で止める', hard.els.roomSheet_f1.vars['--rpk'] === String(kOf(5))
-    && hard.els.roomSheet_f2.vars['--rpk'] === String(kOf(5)), hard.els.roomSheet_f1.vars);
+  const rh = hard.fitRoomScreen_();
+  t('あふれを0にできない時は採寸の大きさ（守りの前）へ戻す（1階・2階とも）', hard.els.roomSheet_f1.vars['--rpk'] === String(kOf(rh[0].size))
+    && hard.els.roomSheet_f2.vars['--rpk'] === String(kOf(rh[0].size)) && overflowCount(hard) > 0, hard.els.roomSheet_f1.vars);
 
   /* 窓を広げた時は採寸からやり直す（守りで下げた大きさを引きずらない） */
   const grow = makeEnv({ widen: 1.04 });
@@ -133,6 +143,46 @@ console.log('\n— 1. 画面の守り（全体を1つの大きさのまま・あ
   grow.fitRoomScreen_();
   t('あふれなくなれば採寸の大きさへ戻る（下げた大きさを引きずらない）', grow.els.roomSheet_f1.vars['--rpk'] === String(kOf(best)) && low !== grow.els.roomSheet_f1.vars['--rpk'],
     [low, grow.els.roomSheet_f1.vars['--rpk']]);
+}
+
+console.log('\n— 1b. 縮まない端末・丸めの段・段数の上限（M1）—');
+{
+  const shsOf = (b) => [b.els.roomSheet_f1, b.els.roomSheet_f2];
+  /* 縮まない端末: 画面の文字が 30px より小さくならない（最小の文字の設定）＝下げてもあふれの合計が減らない */
+  const st = makeEnv({ widen: 1.04, minFont: 30 });
+  const r0 = st.fitRoomSheets();
+  st.env.sets = {};
+  const got = st.roomScreenGuard_(shsOf(st), r0[0].size, PW);
+  t('縮まない端末: 8段で打ち切る（下げる8回＋戻す1回＝--rpk を9回書く・84段まで回らない）', st.env.sets.roomSheet_f1 === 9 && st.env.sets.roomSheet_f2 === 9, st.env.sets);
+  t('縮まない端末: 採寸の大きさ（守りの前）へ戻す・返す値も採寸の大きさ', got === r0[0].size && st.els.roomSheet_f1.vars['--rpk'] === String(kOf(r0[0].size))
+    && st.els.roomSheet_f2.vars['--rpk'] === String(kOf(r0[0].size)), [got, r0[0].size, st.els.roomSheet_f1.vars]);
+
+  /* 丸めの段: 文字の送りを画素に丸める端末では、0.25px 下げてもあふれの合計が変わらない段がある */
+  const q = makeEnv({ widen: 1.06, quant: true });
+  const rq = q.fitRoomSheets();
+  const sums = [];
+  const sumOf = () => { let s = 0; for (const sh of shsOf(q)) for (const c of sh.cells) { const dw = c.scrollWidth - (c.clientWidth + 1); if (dw > 0) s += dw; } return s; };
+  for (let px = rq[0].size; px >= 5; px = Math.round((px - 0.25) * 100) / 100) {
+    for (const sh of shsOf(q)) sh.style.setProperty('--rpk', kOf(px));
+    sums.push(sumOf()); if (!sums[sums.length - 1]) break;
+  }
+  let plateau = 0, run = 0; for (let i = 1; i < sums.length; i++) { if (sums[i] > 0 && sums[i] >= sums[i - 1]) plateau = Math.max(plateau, ++run); else run = 0; }
+  t('前提: この条件では、下げても合計が減らない段が続く（1段で打ち切ると直せない・空振りしない）', plateau >= 2 && sums[sums.length - 1] === 0, sums);
+  for (const sh of shsOf(q)) sh.style.setProperty('--rpk', kOf(rq[0].size));
+  const gq = q.roomScreenGuard_(shsOf(q), rq[0].size, PW);
+  t('丸めの段があっても1段で打ち切らず、あふれが0になる大きさまで下げる', overflowCount(q) === 0 && gq < rq[0].size
+    && q.els.roomSheet_f1.vars['--rpk'] === q.els.roomSheet_f2.vars['--rpk'], [gq, rq[0].size, overflowCount(q)]);
+
+  /* 段数の上限: 下げるたびに少しずつ減るが、24段でもあふれが残る */
+  const cap = makeEnv({ widen: 2.5 });
+  const rc = cap.fitRoomSheets();
+  cap.env.sets = {};
+  const gc = cap.roomScreenGuard_(shsOf(cap), rc[0].size, PW);
+  t('前提: 24段下げても 5px 相当の下限より上', rc[0].size - 24 * 0.25 > 5, rc[0].size);
+  t('段数の上限: 24段で止め（下げる24回＋戻す1回）、採寸の大きさへ戻す', cap.env.sets.roomSheet_f1 === 25 && gc === rc[0].size
+    && cap.els.roomSheet_f1.vars['--rpk'] === String(kOf(rc[0].size)), [cap.env.sets, gc, rc[0].size]);
+  t('あふれの見方は紙の判定と同じ決まりであることをコメントに残している（中央寄せの左・+1px）',
+    /中央寄せで左へはみ出した分は scrollWidth に\s*入らない・\+1px までは許す/.test(cutF(RM, 'roomScreenGuard_')), '');
 }
 
 console.log('\n— 2. 紙（fitRoomSheets(m)）は画面の守りを通らない —');
@@ -193,6 +243,24 @@ console.log('\n— 3. 採寸し直しのきっかけ —');
   r2.timers[0].f();
   t('印刷の準備中に待ちが明けても採寸しない', r2.els.roomSheet_f1.vars['--rpk'] === '1.3', r2.els.roomSheet_f1.vars);
   t('窓の大きさの変化を見ている', /window\.addEventListener\('resize',roomOnResize_\);/.test(RM), '');
+
+  /* 幅が前に測った時と同じなら測らない（L6・iPhone のツールバーの出入りは高さだけの resize） */
+  const w = makeEnv({ widen: 1.04, innerWidth: 1280 });
+  w.fitRoomScreen_();
+  t('測った時の窓の幅を覚える', g(w, 'roomFitW_') === 1280, g(w, 'roomFitW_'));
+  w.roomOnResize_(); w.roomOnResize_();
+  t('幅が同じ resize（高さだけ）では測らない', w.timers.length === 0, w.timers.length);
+  w.window.innerWidth = 1000;
+  w.roomOnResize_();
+  t('幅が変わった時は 200ms 後に測る', w.timers.filter((x) => x.f).length === 1, w.timers.length);
+  w.env.sets = {};
+  w.timers.filter((x) => x.f)[0].f();
+  t('測ったら新しい幅を覚える', g(w, 'roomFitW_') === 1000 && (w.env.sets.roomSheet_f1 || 0) > 0, [g(w, 'roomFitW_'), w.env.sets]);
+  w.window.innerWidth = 1100; w.roomOnResize_();
+  w.window.innerWidth = 1000;                       /* 待っている間に元の幅へ戻った */
+  w.env.sets = {};
+  w.timers.filter((x) => x.f)[0].f();
+  t('待っている間に測った幅へ戻ったら測らない', !w.env.sets.roomSheet_f1, w.env.sets);
   t('文字の読み込みの後に1回（居室一覧の時だけ）', /document\.fonts\.ready\.then\(function\(\)\{\s*if\(curView==='room'&&!roomPrinting_\(\)\)\{ try\{ fitRoomScreen_\(\); \}catch\(e\)\{\} \}/.test(RM), '');
 }
 
