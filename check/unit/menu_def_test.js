@@ -24,16 +24,16 @@ t('定義が JSON として読める', !!def && Array.isArray(def.sections), m ?
 const secs = def ? def.sections : [];
 t('区分は 職員・入居者・厨房・設定・困った時 の順', secs.map(s => s.title).join() === '職員,入居者,厨房,設定,困った時', secs.map(s => s.title));
 const tiles = [].concat.apply([], secs.map(s => s.tiles));
-t('タイルは21枚（以前の20枚＋困った時）', tiles.length === 21, tiles.length);
+t('タイルは22枚（以前の20枚＋困った時＋ケアログ 2026-10-23）', tiles.length === 22, tiles.length);
 const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'staff-master.html',
   'https://th-su.github.io/haiben-record/haiben-record.html', 'weight-record.html', 'care-schedule.html', 'daycare-roster.html', 'visit-overview.html',
   'facesheet.html', 'genogram.html', 'resident-master.html', 'patch-calendar.html', 'moushiokuri-viewer.html', 'resident-master.html?view=bday',
-  'admission-flow.html', 'training-plan.html', 'supplies.html', 'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
-t('行き先と並び順が以前と同じ（最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
+  'admission-flow.html', 'training-plan.html', 'supplies.html', 'https://th-su.github.io/care-log/', 'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
+t('行き先と並び順が以前と同じ（入居者の区分の末尾にケアログ・最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
 const office = tiles.filter(x => x.officeOnly).map(x => x.href).sort().join();
 t('現場端末で出さないタイルは以前と同じ4枚（職員マスタ・誕生日一覧・入居調整・訓練計画）＋設定の区分', office === ['admission-flow.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()
   && secs.find(s => s.id === 'sec-setup').officeOnly === true, office);
-t('別サイトの印（ext）は排泄ケア記録・厨房の2枚', tiles.filter(x => x.ext).length === 2, tiles.filter(x => x.ext).map(x => x.nm));
+t('別サイトの印（ext）は排泄ケア記録・ケアログ・厨房の3枚', tiles.filter(x => x.ext).map(x => x.nm).join() === '排泄ケア記録,ケアログ,厨房メニュー管理', tiles.filter(x => x.ext).map(x => x.nm));
 t('新しい行から始める印（newrow）はフェイスシートだけ', tiles.filter(x => x.newrow).map(x => x.href).join() === 'facesheet.html', '');
 t('訓練計画の説明は事業所名を施設情報から入れる（{{通所}}）', /^\{\{通所\}\}/.test(tiles.find(x => x.href === 'training-plan.html').note), '');
 t('どのタイルにも名前・絵文字・説明がある', tiles.every(x => x.nm && x.ic && typeof x.note === 'string'), '');

@@ -33,7 +33,8 @@ function scriptAround(marker) {
   return { src: HTML.slice(s, HTML.indexOf('</script>', at)), at: s };
 }
 const ROLE = scriptAround("classList.toggle('is-field'");
-const FILL = scriptAround("querySelectorAll('[data-fac-name]')");
+// 組み立ての script も組み立て直した後に同じ差し込みをする（2026-10-23）ので、施設情報の読み終わりを預ける末尾の script を探す
+const FILL = scriptAround("SUFacility.onReady(fill)");
 
 /* 役割の判定を動かす。store は端末の保存領域（throws=true なら読むと例外） */
 function runRole(store, throws) {
