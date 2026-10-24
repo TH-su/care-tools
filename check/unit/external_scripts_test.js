@@ -3,7 +3,8 @@
    守ること:
      ①どの画面も、http(s):// のスクリプトを integrity なしで読まない
      ②体重管理のグラフ部品は、同梱した chart-js-4.4.1.umd.js（npm の原本）を読む（2026-10-24 から、前回の画面が個別なら起動の最初に、ほかは開いた後の手すきか最初にグラフを描く時に読む）
-     (3) ジェノグラムの PDF 出力の部品は、同梱した jspdf-2.5.1.umd.js を読む（2026-10-24・画面の中の直書きから移した。開いた後の手すきか、PDF 出力を最初に押した時に読む） */
+     (3) ジェノグラムの PDF 出力の部品は、同梱した jspdf-2.5.1.umd.js を読む（2026-10-24・画面の中の直書きから移した。開いた後の手すきか、PDF 出力を最初に押した時に読む）
+     (4) 2つの部品の読み込み先（WR_CHART_SRC・JSPDF_SRC）は自サイトのファイルで、読み込みの札はその定数で作る */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -35,6 +36,13 @@ t('ジェノグラムは同梱した PDF 部品を、開いた後の手すきか
   /const JSPDF_SRC = 'jspdf-2\.5\.1\.umd\.js';/.test(G) && G.indexOf('jsPDF - PDF Document creation') < 0, '');
 const J = fs.readFileSync(path.join(ROOT, 'jspdf-2.5.1.umd.js'), 'utf8');
 t('同梱した PDF 部品は jsPDF 2.5.1（版の札がある）', /\* Version 2\.5\.1 Built on/.test(J) && J.length > 300000, J.length);
+
+/* (4) 読み込み先の定数と、札をその定数で作っていること（定数だけ直して別の所から読む、を防ぐ） */
+const srcOf = (html, name) => { const m = new RegExp("const " + name + " = '([^']*)';").exec(html); return m ? m[1] : null; };
+t('体重管理は読み込みの札を定数で作る（s.src = WR_CHART_SRC;）', W.indexOf('s.src = WR_CHART_SRC;') >= 0, '');
+t('ジェノグラムは読み込みの札を定数で作る（s.src = JSPDF_SRC;）', G.indexOf('s.src = JSPDF_SRC;') >= 0, '');
+const srcs = { WR_CHART_SRC: srcOf(W, 'WR_CHART_SRC'), JSPDF_SRC: srcOf(G, 'JSPDF_SRC') };
+t('2つの読み込み先は http で始まらない（自サイトのファイル）', Object.values(srcs).every((v) => typeof v === 'string' && v !== '' && !/^(https?:|\/\/)/i.test(v.trim())), srcs);
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
