@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-8AQqKR4cK2y1EMAHvL3wKei5/Wva7DDjKks5ObsrwlA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-mt02yVvz41L7iVOPYpnX7QDLDcNlWAOcWWrdHZefcOg=' 'sha256-I59ECgFuAfMxmMbs+1RnvnbYRuUUpuPHPz4Nz/9j6CQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -18,12 +18,34 @@
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function wrNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'weight:' + where); }catch(_){} }
 </script>
+<!-- グラフの部品は npm の原本をテーマに同梱して自前で配る（2026-10-10・第三者の配信元から読まない）。
+     起動を軽くするため、最初にグラフを描く時に読み込む（2026-10-24）。前回の画面が「個別」の時だけ、ここ（ほかの部品より前）で読み込みを始めておく -->
+<script>
+/* グラフの部品の読み込み（2026-10-24 代表者の決定）。約束（wrChartLoad）は1つだけで、起動の先読みと描く時（wrChartReady）が同じものを使う。
+   読み込めなかった時は約束と札を捨てる（次に描く時にもう一度読む）。画面の動き・保存・通信には触れない */
+const WR_CHART_SRC = 'chart-js-4.4.1.umd.js';
+let wrChartP = null;
+function wrChartLoad(){
+  if(window.Chart) return Promise.resolve();
+  if(wrChartP) return wrChartP;
+  wrChartP = new Promise((ok, ng)=>{
+    const s = document.createElement('script');
+    s.src = WR_CHART_SRC;
+    const fail = ()=>{ wrChartP = null; try{ s.remove(); }catch(e){} ng(new Error('読み込めない: ' + WR_CHART_SRC)); };
+    s.onload = ()=>{ if(window.Chart) ok(); else fail(); };
+    s.onerror = fail;
+    document.head.appendChild(s);
+  });
+  return wrChartP;
+}
+/* 前回の画面が「個別」の時だけ、起動の最初で読み込みを始めておく（待たない）。一覧などで開く時は描く時まで読まない。
+   画面の UI 状態（LS_UI＝'wtmgr_ui_v1'）はまだ読まれていないので、ここで tab だけを見る */
+try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).tab; if(t === 'indiv') wrChartLoad().catch(()=>{ /* 描く時にもう一度読む */ }); }catch(e){}
+</script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-20"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
-<!-- グラフの部品は npm の原本をテーマに同梱して自前で配る（2026-10-10・第三者の配信元から読まない）。
-     起動を軽くするため、最初にグラフを描く時に読み込む（2026-10-24・WR_CHART_SRC） -->
 <style>
 :root{
   --pri:#0b57d0;--pri-l:#ecf3fe;--pri-d:#0842a0;
@@ -6176,29 +6198,25 @@ const wrMealMarkPlugin = {
   }
 };
 /* グラフの部品（Chart.js 4.4.1・同梱の chart-js-4.4.1.umd.js）は、起動を軽くするため最初にグラフを描く時に読み込む（2026-10-24 代表者の決定）。
-   読み終えたら既定値を1回だけ当て、その時点の個別画面を描き直す（new Chart はその後だけ＝drawChart が wrChartReady で待つ）。
-   読み込めなかった時は今までと同じくグラフを出さず、次に描く時にもう一度読む。読み込み中に何度描いても札は1本だけ */
-const WR_CHART_SRC = 'chart-js-4.4.1.umd.js';
-let wrChartState = '';   // '' まだ ／ 'loading' 読み込み中 ／ 'ready' 既定値を当てて使える
+   読み込み（wrChartLoad・頭のスクリプト）は起動の先読みと同じ約束を使う。読み終えたら既定値を1回だけ当て、その時点の個別画面を描き直す
+   （new Chart はその後だけ＝drawChart が wrChartReady で待つ）。読み込めなかった時は今までと同じくグラフを出さず、次に描く時にもう一度読む */
+let wrChartState = '';   // '' まだ ／ 'waiting' 読み終わりを待っている ／ 'ready' 既定値を当てて使える
 function wrChartUse_(){
+  if(wrChartState === 'ready') return;   // 既定値は1回だけ
   /* グラフの文字も 15px 以上に（介護現場要件） */
   try{ if(window.Chart && Chart.defaults && Chart.defaults.font) Chart.defaults.font.size = 15; }catch(e){}
   wrChartState = 'ready';
 }
 function wrChartReady(){
   if(wrChartState === 'ready') return true;
-  if(wrChartState === 'loading') return false;
-  if(window.Chart){ wrChartUse_(); return true; }
-  wrChartState = 'loading';
-  const s = document.createElement('script');
-  s.src = WR_CHART_SRC;
-  s.onload = ()=>{
-    if(!window.Chart){ wrChartState = ''; try{ s.remove(); }catch(e){} return; }
+  if(window.Chart){ wrChartUse_(); return true; }   // 起動の先読みが描く前に済んでいた
+  if(wrChartState === 'waiting') return false;
+  wrChartState = 'waiting';
+  wrChartLoad().then(()=>{
+    if(wrChartState === 'ready') return;   // 待つ間に描き直しが済んでいた
     wrChartUse_();
     renderIndiv();
-  };
-  s.onerror = ()=>{ wrChartState = ''; try{ s.remove(); }catch(e){} };   // 失敗した札は残さない
-  document.head.appendChild(s);
+  }, ()=>{ if(wrChartState === 'waiting') wrChartState = ''; });
   return false;
 }
 /* 目安の線を描く Chart.js の部品（外部の注釈部品は増やさない） */
