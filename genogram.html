@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-rzVaUTbRDUinDTTc2ZcQuft0SytZ47Hru+zvscjPWN0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-EW1lD8A4aG6ARtTG7q/PKeLG8Ymgaxko/cfjUeqRNyE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -4143,8 +4143,9 @@ function loadJsPDF() {
   jspdfLoading = new Promise((ok, ng) => {
     const s = document.createElement('script');
     s.src = JSPDF_SRC;
-    s.onload = () => ok();
-    s.onerror = () => { jspdfLoading = null; try { s.remove(); } catch (e) { /* 何もしない */ } ng(new Error('読み込めない: ' + JSPDF_SRC)); };
+    const fail = () => { jspdfLoading = null; try { s.remove(); } catch (e) { /* 何もしない */ } ng(new Error('読み込めない: ' + JSPDF_SRC)); };
+    s.onload = () => { if (window.jspdf) ok(); else fail(); };   // 読めても中身が部品でなければ（JS でない応答など）失敗と同じ後始末
+    s.onerror = fail;
     document.head.appendChild(s);
   });
   return jspdfLoading;

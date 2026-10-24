@@ -3,7 +3,7 @@
    守ること:
      ①どの画面も、http(s):// のスクリプトを integrity なしで読まない
      ②体重管理のグラフ部品は、同梱した chart-js-4.4.1.umd.js（npm の原本）を読む（2026-10-24 から最初にグラフを描く時に読む）
-     ③ジェノグラムの PDF 出力の部品は、同梱した jspdf-2.5.1.umd.js を読む（2026-10-24・画面の中の直書きから移した） */
+     (3) ジェノグラムの PDF 出力の部品は、同梱した jspdf-2.5.1.umd.js を読む（2026-10-24・画面の中の直書きから移した。開いた後の手すきか、PDF 出力を最初に押した時に読む） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -31,7 +31,7 @@ const C = fs.readFileSync(path.join(ROOT, 'chart-js-4.4.1.umd.js'), 'utf8');
 t('同梱したグラフ部品は Chart.js v4.4.1 の原本（版の札がある）', /\* Chart\.js v4\.4\.1\n/.test(C) && C.length > 200000, C.length);
 
 const G = fs.readFileSync(path.join(ROOT, 'genogram.html'), 'utf8');
-t('ジェノグラムは同梱した PDF 部品を、PDF 出力を押した時に読む（画面の中に直書きしない）',
+t('ジェノグラムは同梱した PDF 部品を、開いた後の手すきか、PDF 出力を最初に押した時に読む（画面の中に直書きしない）',
   /const JSPDF_SRC = 'jspdf-2\.5\.1\.umd\.js';/.test(G) && G.indexOf('jsPDF - PDF Document creation') < 0, '');
 const J = fs.readFileSync(path.join(ROOT, 'jspdf-2.5.1.umd.js'), 'utf8');
 t('同梱した PDF 部品は jsPDF 2.5.1（版の札がある）', /\* Version 2\.5\.1 Built on/.test(J) && J.length > 300000, J.length);
