@@ -22,7 +22,7 @@
      L 現場の端末と権限の断り（2026-10-22 代表者の決定）: 現場の端末（su_device_role=field）は開いた後に全員分を送らず送信待ちの方だけ・
        保存の後は送る／権限の断り（42501）は送信待ちに残して denied を記録し、保存の後は送り直さず、開いた時（現場も事務所も）に1回送り直す・
        載ったら denied の記録を外す
-     M まとめて送る（統合 0021・2026-10-24 代表者の決定）: 開いた後の送信は patch_put_many を1往復（100人ずつに分ける）・
+     M まとめて送る（統合 0021・2026-10-24 代表者の決定）: 開いた後の送信は patch_put_many を1往復（50人ずつに分ける）・
        中身は1人ずつの時と同じ6つ・載らなかった方だけ送信待ちに残る・全体の失敗は全員に同じ扱い・
        関数が無い時（古いデータベース）はその画面を開いている間だけ1人ずつ patch_put に戻る・保存の後の送信は1人ずつのまま
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
@@ -605,19 +605,23 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     await oldDen.api.pushAll(); await settle();
     t('M 1人ずつに戻った後の権限の断りも今と同じ（その方だけ denied・送信待ち）', J(q(oldDen)) === J(['r2']) && ng(oldDen).r2 && ng(oldDen).r2.e === 'denied', { q: q(oldDen), ng: ng(oldDen) });
 
-    // 5. 100 人ずつに分ける
+    // 5. 50 人ずつに分ける
     const many = (n) => { const r = {}; for (let i = 1; i <= n; i++) r['m' + String(i).padStart(3, '0')] = { start: '2026-10-01', no: 1, prev: 0, by: 'x', at: AT1 }; return r; };
-    const b100 = box({ store: Object.assign({ apc2_res: res(many(100)) }, SESSION) });
-    await b100.api.pushAll(); await settle();
-    t('★M 100 人ちょうどは1往復', b100.rpcs.length === 1 && ids(b100.rpcs[0]).length === 100 && q(b100).length === 0, b100.rpcs.map(r => ids(r).length));
-    const b205 = box({ store: Object.assign({ apc2_res: res(many(205)) }, SESSION) });
-    await b205.api.pushAll(); await settle();
-    t('★M 上限（100 人）を超える時は分けて送る（205 人＝100・100・5）', J(b205.rpcs.map(r => ids(r).length)) === J([100, 100, 5]) && J(names(b205)) === J(['patch_put_many', 'patch_put_many', 'patch_put_many']), b205.rpcs.map(r => ids(r).length));
-    t('M 分けても全員が1回ずつ・控えの順に送られ、全員送信済み', J([].concat(...b205.rpcs.map(ids))) === J(Object.keys(many(205))) && Object.keys(sentOf(b205)).length === 205 && q(b205).length === 0);
-    const b205f = box({ store: Object.assign({ apc2_res: res(many(205)) }, SESSION), manyReply: (a, i) => (i === 2 ? { data: null, error: { message: 'Failed to fetch' } } : { data: a.items.map(() => ({ ok: true, written: true })), error: null }) });
-    await b205f.api.pushAll(); await settle();
-    t('★M 分けた2回目だけ失敗したら、その 100 人だけ送信待ちに残り、1回目・3回目の分は送信済み',
-      q(b205f).length === 100 && J(q(b205f)) === J(Object.keys(many(205)).slice(100, 200)) && Object.keys(sentOf(b205f)).length === 105 && b205f.rpcs.length === 3, { q: q(b205f).length, s: Object.keys(sentOf(b205f)).length });
+    const b50 = box({ store: Object.assign({ apc2_res: res(many(50)) }, SESSION) });
+    await b50.api.pushAll(); await settle();
+    t('★M 50 人ちょうどは1往復', b50.rpcs.length === 1 && ids(b50.rpcs[0]).length === 50 && q(b50).length === 0, b50.rpcs.map(r => ids(r).length));
+    const b51 = box({ store: Object.assign({ apc2_res: res(many(51)) }, SESSION) });
+    await b51.api.pushAll(); await settle();
+    t('★M 51 人は2往復（50・1）', J(b51.rpcs.map(r => ids(r).length)) === J([50, 1]) && q(b51).length === 0, b51.rpcs.map(r => ids(r).length));
+    const b105 = box({ store: Object.assign({ apc2_res: res(many(105)) }, SESSION) });
+    await b105.api.pushAll(); await settle();
+    t('★M 上限（50 人）を超える時は分けて送る（105 人＝50・50・5）', J(b105.rpcs.map(r => ids(r).length)) === J([50, 50, 5]) && J(names(b105)) === J(['patch_put_many', 'patch_put_many', 'patch_put_many']), b105.rpcs.map(r => ids(r).length));
+    t('M 分けても全員が1回ずつ・控えの順に送られ、全員送信済み', J([].concat(...b105.rpcs.map(ids))) === J(Object.keys(many(105))) && Object.keys(sentOf(b105)).length === 105 && q(b105).length === 0);
+    const b105f = box({ store: Object.assign({ apc2_res: res(many(105)) }, SESSION), manyReply: (a, i) => (i === 2 ? { data: null, error: { message: 'Failed to fetch' } } : { data: a.items.map(() => ({ ok: true, written: true })), error: null }) });
+    await b105f.api.pushAll(); await settle();
+    t('★M 分けた2回目だけ失敗したら、その 50 人だけ送信待ちに残り、1回目・3回目の分は送信済み',
+      q(b105f).length === 50 && J(q(b105f)) === J(Object.keys(many(105)).slice(50, 100)) && Object.keys(sentOf(b105f)).length === 55 && b105f.rpcs.length === 3, { q: q(b105f).length, s: Object.keys(sentOf(b105f)).length });
+    t('M 部品の上限は 0021 と同じ 50（区切りが 64 を超えない）', /var MANY_MAX = 50;/.test(SYNC));
 
     // 6. 保存の後の送信・現場の端末・送っている間の保存
     const save = box({ store: Object.assign({}, st, { apc2_sync_q: J({ v: 1, q: { r3: AT1 } }) }) });
