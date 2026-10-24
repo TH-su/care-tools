@@ -15,7 +15,8 @@
  *   他のタブレットまで全部ログアウトされるため。
  *
  * 使い方: <script src="supabase-js-2.112.4.js"></script><script src="su-auth.js"></script>
- *   SUAuth.check()           → 今の状態 {status, email, role, ...}（status は下の STATUS）
+ *   SUAuth.check()           → 今の状態 {status, email, role, ...}（status は下の STATUS）。同じタブの5分以内は控えを使う（下の「控え」）
+ *   SUAuth.check({ fresh: true }) → 控えを使わず、必ずデータベースに確かめる（ログイン画面の確かめ直し）
  *   SUAuth.signInGoogle()    → Google の画面へ移る（戻り先はこのページ）
  *   SUAuth.signOut()         → この端末だけログアウト
  *   SUAuth.enrollTotp() / SUAuth.verifyTotp(factorId, code) → 管理者の2段階認証
@@ -93,13 +94,66 @@
     return m || '確かめられませんでした。';
   }
 
-  async function check() {
+  // ─── 確かめた結果の控え（同じタブの中だけ5分・2026-10-24 代表者の決定5・アプリ間連携の見直し 段2）───
+  // 同じタブでメニューから画面を移るたびに、データベースへの確かめ（my_account と allowed_accounts の2往復）を繰り返さないための控え。
+  // ・置き場所は sessionStorage（タブを閉じれば消える・ほかのタブには効かない）
+  // ・控えるのは「使える（OK）」の時だけ。中身は 状態・役割・表示名・期限・利用者 id の指紋。id そのもの・メール・トークンは置かない
+  // ・使う時は端末の中のログイン（getSession）から今の利用者 id の指紋を作り、控えと同じ時だけ使う。メールなどは今のログインから作る
+  // ・管理者は控えに頼らず、今のログインが2段階認証を通しているか（aal2・データベースの my_role と同じ見方）を毎回確かめる
+  // ・消すのは: ログアウト（アカウントの切り替えもここを通る）・2段階認証を通した後・別のタブでログインの印
+  //   （sb-…-auth-token）が変わった時・確かめ直して OK 以外だった時
+  // ★控えは画面の振り分けにだけ使われる。誰が何を読める・書けるかは、毎回データベース（RLS・許可リスト）が決める
+  var MEMO_KEY = 'su_auth_ok_v1';
+  var MEMO_TTL_MS = 5 * 60 * 1000;
+  var SESSION_KEY_RE = /^sb-[a-z0-9]+-auth-token$/;
+  // 利用者 id の指紋（元の id には戻せない短い要約。同じ id なら同じ値）
+  function fingerprint(id) {
+    if (typeof id !== 'string' || !id) return '';
+    var s = 'su-auth|' + id, h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(16) + '.' + (h1 >>> 0).toString(16);
+  }
+  function memoForget() {
+    try { sessionStorage.removeItem(MEMO_KEY); } catch (e) { /* 使えない端末では控えも無い */ }
+  }
+  function memoRead(who) {
+    if (!who) return null;
+    try {
+      var o = JSON.parse(sessionStorage.getItem(MEMO_KEY) || 'null');
+      var now = Date.now();
+      if (!o || typeof o !== 'object' || o.v !== 1 || o.s !== STATUS.OK || o.f !== who) return null;
+      if (typeof o.r !== 'string' || !Object.prototype.hasOwnProperty.call(ROLE_LABEL, o.r)) return null;
+      if (typeof o.u !== 'number' || !(now < o.u) || o.u - now > MEMO_TTL_MS) return null;   // 期限切れ・時計が戻った時は使わない
+      return { role: o.r, label: typeof o.l === 'string' ? o.l : '' };
+    } catch (e) { return null; }
+  }
+  function memoWrite(who, st) {
+    if (!who || !st || st.status !== STATUS.OK || !Object.prototype.hasOwnProperty.call(ROLE_LABEL, st.role)) { memoForget(); return; }
+    try {
+      sessionStorage.setItem(MEMO_KEY, JSON.stringify({ v: 1, s: STATUS.OK, r: st.role, l: String(st.label || ''), u: Date.now() + MEMO_TTL_MS, f: who }));
+    } catch (e) { /* 書けなくても毎回確かめるだけ */ }
+  }
+  try {
+    window.addEventListener('storage', function (ev) {
+      if (!ev || ev.key === null || SESSION_KEY_RE.test(String(ev.key))) memoForget();
+    });
+  } catch (e) { /* 聞けない環境では、利用者 id の照合と5分の期限だけで守る */ }
+
+  async function check(opts) {
+    var fresh = !!(opts && opts.fresh);
     var c;
     try { c = sb(); } catch (e) { initError = e; return { status: STATUS.ERROR, message: e.message }; }
     var got = await c.auth.getSession();       // Google から戻った直後なら、ここで引換券が使われる
     cleanUrl();
     var session = got.data && got.data.session;
     if (!session) {
+      memoForget();
       var e1 = landing.error || (got.error && got.error.message) || '';
       landing.error = '';                        // 同じエラーを2度出さない
       return { status: STATUS.SIGNED_OUT, message: e1 ? friendly(e1) : '' };
@@ -109,7 +163,29 @@
       methods: methodsOf(session),
       aal: jwtPayload(session.access_token).aal || 'aal1'
     };
+    var who = fingerprint(session.user && session.user.id);
 
+    // 同じタブの控え（同じ利用者・5分以内・管理者は今のログインが aal2 の時だけ）。中身の形は下の OK と同じ
+    if (!fresh) {
+      var m = memoRead(who);
+      if (m && (m.role !== 'admin' || base.aal === 'aal2')) {
+        return Object.assign(base, {
+          status: STATUS.OK,
+          role: m.role,
+          roleLabel: ROLE_LABEL[m.role] || m.role,
+          mfa: base.aal === 'aal2',
+          label: m.label
+        });
+      }
+    }
+    var st, seen = {};
+    try { st = await checkRemote(c, base, seen); } catch (e) { memoForget(); throw e; }
+    // OK の時だけ控える（OK 以外は前の控えも消す）。本人の行（管理者かどうか）を読めなかった時の OK も控えない
+    memoWrite(who, seen.rowOk ? st : null);
+    return st;
+  }
+
+  async function checkRemote(c, base, seen) {
     // 許可リストの判定はデータベースに聞く（ここで決めない）
     var acc = await c.rpc('my_account');
     if (acc.error) return Object.assign(base, { status: STATUS.ERROR, message: friendly(acc.error.message) });
@@ -117,6 +193,7 @@
     // 管理者かどうか（6桁を通すまでは my_account が「事務所」として返すので、本人の行を見る）
     var row = await c.from('allowed_accounts').select('role,label').eq('email', base.email).maybeSingle();
     var isAdminRow = !row.error && row.data && row.data.role === 'admin';
+    seen.rowOk = !row.error;
 
     if (isAdminRow && !(acc.data && acc.data.mfa)) {
       var f = await c.auth.mfa.listFactors();
@@ -151,7 +228,8 @@
   }
 
   async function signOut() {
-    await sb().auth.signOut({ scope: 'local' });
+    memoForget();                                // 先に消す（通信に失敗しても前の人の控えを残さない）
+    try { await sb().auth.signOut({ scope: 'local' }); } finally { memoForget(); }
   }
 
   // 2段階認証の登録。途中でやめた「未確認の登録」が残っていると新しく作れないので、先に片付ける
@@ -168,6 +246,7 @@
 
   async function verifyTotp(factorId, code) {
     var r = await sb().auth.mfa.challengeAndVerify({ factorId: factorId, code: String(code).replace(/\D/g, '') });
+    memoForget();                                // 2段階認証の後は控えを使わず確かめ直す
     if (r.error) throw new Error(friendly(r.error.message));
   }
 

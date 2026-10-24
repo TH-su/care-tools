@@ -112,7 +112,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-20');
+      return loadScript('su-auth.js?v=2026-10-24');
     });
   }
   var authCache = null, authAt = 0;
@@ -554,8 +554,16 @@
   }
 
   // 起動時に一度スイッチを読み、以後1分ごとに読み直す（開いたままの画面も一斉に切り替わる）
+  // ★裏のタブ（隠れている間）は1分ごとの読み直しを休み、見えた時に前回から1分を過ぎていれば1回読む
+  //   （2026-10-24・アプリ間連携の見直し 段1）。読む URL の ?t= は外さない（外すと GitHub Pages の控えを挟み、
+  //   スイッチを戻した時の効きが最大10分遅れる）。保存・写し返しの入口（ensureFlags）は隠れていても今までどおり読む
   fetchFlags();
-  setInterval(fetchFlags, 60000);
+  setInterval(function () { if (document.visibilityState !== 'hidden') fetchFlags(); }, 60000);
+  try {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && !(flagsTriedAt && Date.now() - flagsTriedAt < 60000)) fetchFlags();
+    });
+  } catch (e) { /* 聞けない環境では1分ごとの読み直しだけ */ }
 
   /** このキーの保存が「印だけ」（現場のアカウント・kv_put_marks）になるか。最後に確かめたアカウントで同期で答える。
    *  true / false、まだアカウントを確かめていなければ null（画面は別の手がかりを使う）。画面が取り込み方を選ぶのに使う（2026-10-12） */
