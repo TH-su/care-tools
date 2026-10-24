@@ -26,10 +26,14 @@
  *   ・基本項目の写しと同じ時に・同じ10分の間引きで書く（指紋に2項目も含める）。変わった行だけを書く
  *   ・「持たない」と「空にせよ」を分ける: 正本の行に2項目のキーがある時だけ書き、値が '' なら '' を書く（正本で空になった）。
  *     キーが無い人（古い GAS など）は書かない（今の値を消さない）。その人に写しの行が既にある時は、古いまま残るので失敗に数える
- *   ・失敗（長すぎ・利用者No の重複・データベースの断り）は写しの記録の failed に足す。名簿を写しから読む入口（su-roster.js）は
- *     failed が 0 でない記録の写しを使わない＝古い☆を「新しい」と扱わない（失敗した時は次に一覧を読んだ時に写し直す）
- *   ・表が無い（0022 を流す前の古いデータベース）時は書かず、基本項目の写しはそのまま続ける。失敗には数えず、
- *     su-errors.js の note（「保存・同期の失敗」・場所 shadow:care.absent）に1画面1回だけ残す（画面は止めない）
+ *   ・2項目の失敗（長すぎ・利用者No の重複・データベースの断り・上の古いまま残る人）は、写しの記録の care_failed（移行 0022）に数える。
+ *     基本項目の failed には足さない＝2項目を読まない画面（訪問・全支援の週間俯瞰）は今までどおり写しを使える（差分審査 中2・2026-10-24）。
+ *     名簿を写しから読む入口（su-roster.js）は、2項目を求める時だけ care_failed が 0 の記録の写しを使う＝古い☆を「新しい」と扱わない。
+ *     データベースの断りの時は次に一覧を読んだ時に写し直す（長すぎ・重複・キーが無いは写し直しても同じなので、10分の間引きのまま）
+ *   ・2項目を書いていない写し（care を渡さない古い画面・表が無い）は care_failed を送らない＝記録は null のまま（読む側は Google）
+ *   ・表が無い（0022 を流す前の古いデータベース）時は書かず、基本項目の写しはそのまま続ける。
+ *     su-errors.js の note（「保存・同期の失敗」・場所 shadow:care.absent）に1画面1回だけ残す（画面は止めない）。
+ *     記録に care_failed の列が無い時は、その列を外して記録を残し直す（版数は残す）
  */
 (function () {
   'use strict';
@@ -87,6 +91,11 @@
   function careSame(a, b) {
     for (var i = 0; i < CARE_FIELDS.length; i++) if (str(a[CARE_FIELDS[i]]) !== str(b[CARE_FIELDS[i]])) return false;
     return true;
+  }
+  /* 写しの記録に care_failed の列が無い（0022 を流す前・戻した後）の断り。文に care_failed が出る時だけ（版数の列の断りと分ける） */
+  function noCareFailedColumn(err) {
+    var c = String(err && err.code || ''), m = String(err && err.message || '');
+    return /care_failed/.test(m) && (c === '42703' || c === 'PGRST204' || /does not exist|could not find/i.test(m));
   }
   /* 表が無い（0022 を流す前）の断り。PostgREST の「表が見つからない」（PGRST205・PGRST202）と PostgreSQL の 42P01 だけ */
   function noCareTable(err) {
@@ -184,23 +193,25 @@
       busy = false;
       return Promise.resolve({ status: 'skipped', reason: 'same' });
     }
-    var sb, careHave = null, result = { status: 'ok', source_count: rows.length, inserted: 0, updated: 0, unchanged: 0, missing: 0, failed: 0 };
+    var sb, careHave = null, result = { status: 'ok', source_count: rows.length, inserted: 0, updated: 0, unchanged: 0, missing: 0, failed: 0, care_failed: null };
 
-    /* 訪問日・かかりつけ病院を書く（基本項目の写しの後・写しの記録の前）。失敗は result.failed に足す（記録に残る＝読む側が写しを使わない）。
-       表が無い時は書かず、失敗にも数えない（note だけ）。result.care に件数を残す（試験・見比べ用。値は入れない） */
-    function careFail(n, msg) {
+    /* 訪問日・かかりつけ病院を書く（基本項目の写しの後・写しの記録の前）。失敗は result.care_failed に数える（記録の care_failed に残る＝
+       2項目を求める読み手だけが写しを使わない。基本項目の failed には足さない）。表が無い時は書かず、care_failed も null のまま（note だけ）。
+       retry はデータベースの断り＝次に一覧を読んだ時に写し直す。result.care に件数を残す（試験・見比べ用。値は入れない） */
+    function careFail(n, msg, retry) {
       if (!n) return;
-      result.failed += n; result.care.failed += n;
-      result.status = 'error';
+      result.care_failed += n; result.care.failed += n;
+      if (retry) result.status = 'error';
       if (msg && !result.message) result.message = msg;
     }
     function pushCare() {
       if (!care) return null;
       result.care = { inserted: 0, updated: 0, unchanged: 0, failed: 0 };
       var h = careHave || { error: { message: 'care' } };
+      if (h.error && noCareTable(h.error)) { result.care.absent = true; note('absent'); return null; }
+      result.care_failed = 0;
       if (h.error) {
-        if (noCareTable(h.error)) { result.care.absent = true; note('absent'); return null; }
-        careFail(care.rows.length + care.lack.length, String(h.error.message || 'care'));
+        careFail(care.rows.length + care.lack.length, String(h.error.message || 'care'), true);
         return null;
       }
       var have = {};
@@ -219,13 +230,13 @@
       if (!write.length) return null;
       return Promise.resolve(sb.from(CARE_TABLE).upsert(write, { onConflict: 'tenant_id,source_id' })).then(function (w) {
         if (w && w.error) {
-          if (noCareTable(w.error)) { result.care.absent = true; note('absent'); result.care.inserted = 0; result.care.updated = 0; return; }
+          if (noCareTable(w.error)) { result.care.absent = true; note('absent'); result.care.inserted = 0; result.care.updated = 0; result.care_failed = null; return; }
           result.care.inserted = 0; result.care.updated = 0;
-          careFail(write.length, String(w.error.message || 'care'));
+          careFail(write.length, String(w.error.message || 'care'), true);
         }
       }, function (e) {
         result.care.inserted = 0; result.care.updated = 0;
-        careFail(write.length, String(e && e.message || 'care'));
+        careFail(write.length, String(e && e.message || 'care'), true);
       });
     }
 
@@ -274,13 +285,22 @@
           device_label: label, source_count: result.source_count, inserted: result.inserted,
           updated: result.updated, unchanged: result.unchanged, missing: result.missing, failed: result.failed
         };
-        var withRev = {};
+        var withRev = {}, withCare = {};
         for (var k in runRow) withRev[k] = runRow[k];
         withRev.state_rev = rev.state_rev; withRev.srev = rev.srev;
-        return sb.from('master_sync_runs').insert(withRev).then(function (w) {
+        for (var k2 in withRev) withCare[k2] = withRev[k2];
+        // 2項目を書いた（書こうとした）写しだけ care_failed を送る。書いていない写しは送らない＝記録は null
+        var sendCare = typeof result.care_failed === 'number';
+        if (sendCare) withCare.care_failed = result.care_failed;
+        function revFallback(w) {
           // 版数の列が無い古いデータベースでは、版数を外して今までどおりの記録を残す
           if (w && w.error && noRevColumn(w.error)) return sb.from('master_sync_runs').insert(runRow);
           return w;
+        }
+        return sb.from('master_sync_runs').insert(withCare).then(function (w) {
+          // care_failed の列が無い（0022 を戻した等）時は、その列だけ外して残し直す（版数は残す）
+          if (sendCare && w && w.error && noCareFailedColumn(w.error)) return sb.from('master_sync_runs').insert(withRev).then(revFallback);
+          return revFallback(w);
         });
       })
       .then(function () {

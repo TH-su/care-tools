@@ -8,7 +8,10 @@
      D { withRev: true } の時だけ、写しの記録の版数を stateRev（数）・srev（数）で添える。渡さない時・Google へ戻した時は今までと同じ
      E 写しの部品（su-master-shadow.js）: { care: 正規化する前の名簿 } で、利用者No と2項目（と正本の更新時刻）だけを書く。氏名は送らない。
        変わった行だけ・空（''）は書く・キーが無い人は書かない（古い行が残るなら失敗に数える）・表が無い時は黙る（note だけ・失敗に数えない）・
-       書けなかった時は記録の failed に足す（読む側が写しを使わない）・10分の間引きは2項目の変化も見る
+       書けなかった人数は記録の care_failed に数え、基本項目の failed には足さない（差分審査 中2）・2項目を書かない写しは care_failed を送らない（null）・
+       care_failed の列が無い時は外して残し直す（版数は残す）・10分の間引きは2項目の変化も見る
+     I 写しの記録の care_failed（差分審査 中2）: 2項目を求める画面は care_failed が 0 の記録の写しだけを使う（null・1以上・列が無いは Google・記録しない）。
+       2項目を求めない画面（訪問・全支援の週間俯瞰）は care_failed を読まず、2項目の失敗があっても今までどおり写しを使う
      F 通所 利用表（daycare-roster）: Google 経由と写し経由（入居者マスタが写した後）で、☆・入院・居室・姓名の切れ目・見張りの基準が同じ。
        スイッチ切では Google への要求が今までと同じ1回だけ。入居者マスタは正規化する前の名簿を写しの部品に渡す
      G 写しの見比べ（shadow-check）: Google の名簿と写しを利用者No で突き合わせ、人数と利用者No と項目名だけを返す（値を返さない）
@@ -67,15 +70,16 @@ const NORM = {};
 vm.createContext(NORM);
 vm.runInContext([grabFrom(RM, '_toTargetArr'), grabFrom(RM, '_ymd'), grabFrom(RM, 'normRosterRow')].join('\n'), NORM);
 
-/* 記憶の中のデータベース（3つの表）。selectErr・upsertErr で表ごとに断らせる。careRows で読まれる care の行を差し替える */
+/* 記憶の中のデータベース（3つの表）。selectErr・upsertErr で表ごとに断らせる。careRows で読まれる care の行を差し替える。
+   noCareFailedCol で「写しの記録に care_failed の列が無い（0022 を流す前）」を真似る */
 function fakeDb(o) {
   o = o || {};
   const T = { master_residents: [], master_residents_care: [], master_sync_runs: [] };
   const log = { upserts: [], inserts: [], selects: [], events: [] };
   function from(table) {
-    const st = { lim: null };
+    const st = { lim: null, cols: '' };
     const api = {
-      select(c) { log.selects.push(table + ':' + c); return api; },
+      select(c) { st.cols = c; log.selects.push(table + ':' + c); return api; },
       order() { return api; },
       limit(n) { st.lim = n; return api; },
       upsert(rows, opt) {
@@ -90,6 +94,9 @@ function fakeDb(o) {
       },
       insert(row) {
         log.inserts.push({ table, row: JSON.parse(JSON.stringify(row)) });
+        if (o.noCareFailedCol && table === 'master_sync_runs' && 'care_failed' in row) {
+          return Promise.resolve({ error: { code: 'PGRST204', message: "Could not find the 'care_failed' column of 'master_sync_runs' in the schema cache" } });
+        }
         T[table].push(Object.assign({ at: new Date().toISOString() }, row));
         return Promise.resolve({ error: null });
       },
@@ -99,6 +106,7 @@ function fakeDb(o) {
         let v;
         if (err === 'reject') return new Promise((r, j) => setTimeout(() => j(new TypeError('Failed to fetch')), o.delay || 0)).then(ok, ng);
         if (err) v = { error: err };
+        else if (o.noCareFailedCol && table === 'master_sync_runs' && /care_failed/.test(st.cols)) v = { error: { code: '42703', message: 'column master_sync_runs.care_failed does not exist' } };
         else {
           let data = T[table].slice();
           if (table === 'master_sync_runs') data = data.reverse().slice(0, st.lim || data.length);
@@ -169,6 +177,7 @@ async function seed(s, roster, opts) {
     t('E 重ね書き（upsert）の衝突先は事業者×利用者No', up[0].opt && up[0].opt.onConflict === 'tenant_id,source_id');
     const run = s.db.T.master_sync_runs[0];
     t('E 写しの記録は今までどおり1件・失敗0・版数つき', s.db.T.master_sync_runs.length === 1 && run.failed === 0 && run.state_rev === 41 && run.srev === '1761100000000', run);
+    t('★E 2項目を全員書けた写しは、記録の care_failed を 0 で残す', run.care_failed === 0, run);
     t('E 端末の控え（su_shadow_last）に病院名・曜日・氏名を残さない', !/架空|見本|火/.test(s.ls.su_shadow_last || ''), s.ls.su_shadow_last);
     t('E 基本項目の写し（master_residents）にも2項目を入れない', s.db.T.master_residents.every(x => !('visit_day' in x) && !('hospital' in x) && !('visitDay' in x)));
 
@@ -183,21 +192,23 @@ async function seed(s, roster, opts) {
     const r3 = await seed(s, g3, { stateRev: 43 });
     const c103 = s.db.T.master_residents_care.find(x => x.source_id === '103');
     t('★E 2項目のキーが無い人は書かない（今の値を消さない＝「持たない」）', c103 && c103.visit_day === '' && !s.db.log.upserts.slice(-1)[0].rows.some(x => x.source_id === '103'), s.db.log.upserts.slice(-1)[0]);
-    t('★E キーが無い人に写しの行が既にある時は、古いまま残るので失敗に数え、記録の failed に足す',
-      r3.status === 'error' && r3.care.failed === 1 && s.db.T.master_sync_runs.slice(-1)[0].failed === 1, [r3.status, r3.care, s.db.T.master_sync_runs.slice(-1)[0]]);
-    t('E 失敗した時は端末の控えを更新しない（次に一覧を読んだ時に写し直す）', JSON.parse(s.ls.su_shadow_last).rev === 42, s.ls.su_shadow_last);
+    const last3 = s.db.T.master_sync_runs.slice(-1)[0];
+    t('★E キーが無い人に写しの行が既にある時は、古いまま残るので失敗に数え、記録の care_failed に残す（基本項目の failed には足さない）',
+      r3.care.failed === 1 && last3.care_failed === 1 && last3.failed === 0, [r3.status, r3.care, last3]);
+    t('E キーが無い・長すぎは写し直しても同じなので、今までどおり10分の間引きに入る（データベースの断りとは分ける）', r3.status === 'ok' && JSON.parse(s.ls.su_shadow_last).rev === 43, [r3.status, s.ls.su_shadow_last]);
   }
   {
     const s = sandbox({ flags: BOTH });
     const g = gasRoster().map(r => { delete r.visitDay; delete r.hospital; return r; });
     const r = await seed(s, g);
     t('E 古い GAS（全員2項目のキーが無い）で写しの行も無い時は、何も書かず失敗にも数えない',
-      r.status === 'ok' && !s.db.log.upserts.some(x => x.table === 'master_residents_care') && s.db.T.master_sync_runs[0].failed === 0, r);
+      r.status === 'ok' && !s.db.log.upserts.some(x => x.table === 'master_residents_care') && s.db.T.master_sync_runs[0].failed === 0 && s.db.T.master_sync_runs[0].care_failed === 0, r);
   }
   {
     const s = sandbox({ flags: BOTH });
     const r = await s.M.push(gasRoster().map(r => NORM.normRosterRow(r)), { stateRev: 41, srev: 1 });
     t('★E care を渡さない呼び方（今までの画面）は、2項目の表を読みも書きもしない', r.status === 'ok' && !s.db.log.selects.some(x => /master_residents_care/.test(x)) && !s.db.log.upserts.some(x => x.table === 'master_residents_care') && !r.care, s.db.log.selects);
+    t('★E care を渡さない呼び方は、記録に care_failed を送らない（null のまま＝2項目を求める読み手は Google）', s.db.log.inserts.length === 1 && !('care_failed' in s.db.log.inserts[0].row), s.db.log.inserts);
   }
   for (const [label, err] of [['PGRST205（表がスキーマに無い）', { code: 'PGRST205', message: "Could not find the table 'public.master_residents_care' in the schema cache" }],
     ['42P01（表が無い）', { code: '42P01', message: 'relation "public.master_residents_care" does not exist' }]]) {
@@ -206,28 +217,36 @@ async function seed(s, roster, opts) {
     const r2 = await seed(s, null, { stateRev: 99 });
     t('★E 表が無い（' + label + '）時は黙って書かず、基本項目の写しと記録は続ける（失敗に数えない）',
       r.status === 'ok' && r.care.absent === true && !s.db.log.upserts.some(x => x.table === 'master_residents_care') &&
-      s.db.T.master_residents.length === 5 && s.db.T.master_sync_runs[0].failed === 0, [r, s.db.T.master_sync_runs[0]]);
+      s.db.T.master_residents.length === 5 && s.db.T.master_sync_runs[0].failed === 0 && !('care_failed' in s.db.log.inserts[0].row), [r, s.db.T.master_sync_runs[0]]);
     t('E 表が無いことは su-errors の note に1画面1回だけ残す（保存・同期の失敗・shadow:care.absent）',
       s.notes.length === 1 && s.notes[0].kind === '保存・同期の失敗' && s.notes[0].where === 'shadow:care.absent' && WHERE_RE.test(s.notes[0].where) && r2.status === 'ok', s.notes);
   }
   {
     const s = sandbox({ flags: BOTH, dbOpts: { upsertErr: { master_residents_care: { code: '42501', message: 'new row violates row-level security policy' } } } });
     const r = await seed(s);
-    t('★E 2項目を書けなかった（断り）時は、その人数を記録の failed に足す（読む側が写しを使わない）',
-      r.status === 'error' && r.care.failed === 5 && s.db.T.master_sync_runs[0].failed === 5 && s.notes.length === 0, [r, s.db.T.master_sync_runs[0]]);
+    t('★E 2項目を書けなかった（断り）時は、その人数を記録の care_failed に数え、基本項目の failed には足さない',
+      r.status === 'error' && r.care.failed === 5 && s.db.T.master_sync_runs[0].care_failed === 5 && s.db.T.master_sync_runs[0].failed === 0 && s.notes.length === 0, [r, s.db.T.master_sync_runs[0]]);
+    t('E データベースの断りの時は端末の控えを更新しない（次に一覧を読んだ時に写し直す）', !s.ls.su_shadow_last, s.ls.su_shadow_last);
     t('E 基本項目の写しは書けている（2項目の失敗で止めない）', s.db.T.master_residents.length === 5);
   }
   {
     const s = sandbox({ flags: BOTH, dbOpts: { selectErr: { master_residents_care: { code: '500', message: 'boom' } } } });
     const r = await seed(s);
-    t('E 2項目の表を読めない（表が無い以外）時は書かず、全員を失敗に数える', r.status === 'error' && r.care.failed === 5 && s.db.T.master_sync_runs[0].failed === 5, r);
+    t('E 2項目の表を読めない（表が無い以外）時は書かず、全員を care_failed に数える', r.status === 'error' && r.care.failed === 5 && s.db.T.master_sync_runs[0].care_failed === 5 && s.db.T.master_sync_runs[0].failed === 0, r);
   }
   {
     const s = sandbox({ flags: BOTH });
     const g = gasRoster(); g[0].hospital = '架'.repeat(201); g[1].visitDay = '月'.repeat(41);
     const r = await seed(s, g);
     t('E 長すぎ（病院 201 字・訪問日 41 字）は書かずに失敗に数える（データベースの上限と同じ 200・40）',
-      r.care.failed === 2 && r.care.inserted === 3 && s.db.T.master_sync_runs[0].failed === 2 && s.M.CARE_LIMITS.hospital === 200 && s.M.CARE_LIMITS.visit_day === 40, r.care);
+      r.care.failed === 2 && r.care.inserted === 3 && s.db.T.master_sync_runs[0].care_failed === 2 && s.db.T.master_sync_runs[0].failed === 0 && s.M.CARE_LIMITS.hospital === 200 && s.M.CARE_LIMITS.visit_day === 40, r.care);
+  }
+  {
+    const s = sandbox({ flags: BOTH, dbOpts: { noCareFailedCol: true } });
+    const r = await seed(s);
+    const ins = s.db.log.inserts.filter(x => x.table === 'master_sync_runs');
+    t('★E 写しの記録に care_failed の列が無い時は、その列だけ外して残し直す（版数は残す）',
+      r.status === 'ok' && ins.length === 2 && ins[0].row.care_failed === 0 && !('care_failed' in ins[1].row) && ins[1].row.state_rev === 41 && ins[1].row.srev === '1761100000000', ins.map(x => x.row));
   }
   {
     const s = sandbox({ flags: BOTH });
@@ -298,8 +317,41 @@ async function seed(s, roster, opts) {
     await seed(s0);
     const s = sandbox({ flags: BOTH, db });
     const j = await s.R.getRoster(s.gas, OPT());
-    t('★B 写しの部品が2項目を書けなかった（記録の failed）後は、2項目を求める画面も求めない画面も Google',
-      j === s.GAS && s.gasCalls === 1 && s.db.T.master_sync_runs[0].failed === 5, s.db.T.master_sync_runs[0]);
+    t('★I 写しの部品が2項目を書けなかった（記録の care_failed 5）後は、2項目を求める画面は Google（記録しない）',
+      j === s.GAS && s.gasCalls === 1 && s.db.T.master_sync_runs[0].care_failed === 5 && s.notes.length === 0, s.db.T.master_sync_runs[0]);
+    const sel0 = s.db.log.selects.length;
+    const j2 = await s.R.getRoster(s.gas, { where: 'visit', masterUrl: MURL });
+    t('★I 同じ記録でも、2項目を求めない画面（週間俯瞰）は今までどおり写しから読む（基本項目の failed は 0）',
+      j2 && j2.roster && j2.roster.length === 5 && s.gasCalls === 1 && s.db.T.master_sync_runs[0].failed === 0, Object.keys(j2));
+    t('I 2項目を求めない画面は care_failed を読まない（写しの記録の列は今までと同じ）',
+      s.db.log.selects.slice(sel0).indexOf('master_sync_runs:at,source_count,missing,failed,state_rev,srev') >= 0, s.db.log.selects.slice(sel0));
+  }
+  {
+    const db = fakeDb();
+    const s0 = sandbox({ flags: BOTH, db });
+    await seed(s0);
+    const s = sandbox({ flags: BOTH, db });
+    await s.R.getRoster(s.gas, OPT());
+    t('I 2項目を求める画面は写しの記録の care_failed も読む', s.db.log.selects.indexOf('master_sync_runs:at,source_count,missing,failed,state_rev,srev,care_failed') >= 0, s.db.log.selects);
+    // 古い画面（care を渡さない入居者マスタのタブ）が後から写した＝最新の記録の care_failed が null
+    await s0.M.push(gasRoster().map(r => NORM.normRosterRow(r)), { stateRev: 41, srev: REV.srev, force: true });
+    const last = db.T.master_sync_runs.slice(-1)[0];
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('★I 最新の記録の care_failed が null（2項目を書いていない写し）なら、2項目を求める画面は Google（記録しない）',
+      last.care_failed === undefined && j === s.GAS && s.gasCalls === 1 && s.notes.length === 0, { last, gas: s.gasCalls });
+    const j2 = await s.R.getRoster(s.gas, { where: 'support', masterUrl: MURL });
+    t('I その時も、2項目を求めない画面は写しから読む', j2 && j2.roster && j2.roster.length === 5 && s.gasCalls === 1);
+  }
+  {
+    const db = fakeDb();
+    const s0 = sandbox({ flags: BOTH, db });
+    await seed(s0);
+    Object.assign(db, fakeDbWith(db, { noCareFailedCol: true }));
+    const s = sandbox({ flags: BOTH, db });
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('★I 写しの記録に care_failed の列が無い（0022 を流す前）時は、2項目を求める画面は Google（記録しない）', j === s.GAS && s.gasCalls === 1 && s.notes.length === 0, s.notes);
+    const j2 = await s.R.getRoster(s.gas, { where: 'visit', masterUrl: MURL });
+    t('I その時も、2項目を求めない画面は care_failed を読まないので写しから読める', j2 && j2.roster && j2.roster.length === 5 && s.gasCalls === 1);
   }
 
   console.log('\nC スイッチ master_care_read');

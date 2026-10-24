@@ -41,7 +41,10 @@
  *   ・スイッチ su-backend.json の supabase.master_care_read も true の時だけ（master_roster_read が true でも、こちらが切なら Google）
  *   ・表が無い（0022 を流す前）・読めない・名簿の誰か1人でも行が無い時は、写し全体を使わず Google へ戻す（☆が黙って消えないように）。
  *     表が無い・行が無いは予想どおりの戻りで記録しない。それ以外の失敗（データベースの断り・形の違い）は roster:画面.care で記録する
- *   ・写しの部品（su-master-shadow.js）は2項目を書けなかった時に写しの記録の failed を数えるので、上の条件4で Google へ戻る
+ *   ・写しの記録の最後の1件の care_failed（移行 0022・2項目を書けなかった人数）が 0 の時だけ（null＝2項目を書いていない写し・
+ *     1以上＝書けなかった人がいる、はどちらも Google。記録しない）。2項目を求めない画面は care_failed を見ない・読まない
+ *     （差分審査 中2・2026-10-24: 2項目の失敗で、訪問・全支援の週間俯瞰まで写しを使わなくならないように）。
+ *     care_failed の列が無い（0022 を流す前）時も Google（記録しない）
  * 版数（opts.withRev === true の時だけ）: 写しから返す時、写しの記録の state_rev（数）と srev（数に直す）を応答の stateRev・srev として添える
  *   （画面の見張りの基準用。条件5で Google の今の版数と同じと確かめた値。数値2つだけ）。Google へ戻した時は Google の応答そのまま。
  *
@@ -203,6 +206,11 @@
     var c = String(err && err.code || ''), m = String(err && err.message || '');
     return c === 'PGRST205' || c === 'PGRST202' || c === '42P01' || (/master_residents_care/.test(m) && /does not exist|could not find/i.test(m));
   }
+  /* 写しの記録に care_failed の列が無い（0022 を流す前）の断り。文に care_failed が出る時だけ */
+  function noCareFailedColumn(err) {
+    var c = String(err && err.code || ''), m = String(err && err.message || '');
+    return /care_failed/.test(m) && (c === '42703' || c === 'PGRST204' || /does not exist|could not find/i.test(m));
+  }
   function careErr(name, msg) { var e = named(name, msg); e.suReason = 'care'; return e; }
   /* 名簿の各行に visitDay・hospital を重ねる（新しい行を作って返す）。誰か1人でも行が無ければ null（予想どおりの戻り）。
      形が違えば ShapeError（理由 care）を投げる */
@@ -252,7 +260,8 @@
         var sb = window.SUAuth.client();
         // 写しの記録と写しの本体は同時に取る（2026-10-24・アプリ間連携の見直し 段2）。判定は今までと同じ順で、
         // 記録が古い・失敗あり・版数の違いの時は本体を見ずに捨てて Google へ戻す（本体の失敗も記録しない＝今までと同じ）
-        var runsP = Promise.resolve(sb.from('master_sync_runs').select('at,source_count,missing,failed,state_rev,srev').order('at', { ascending: false }).limit(1));
+        var runsP = Promise.resolve(sb.from('master_sync_runs').select('at,source_count,missing,failed,state_rev,srev' + (want.care ? ',care_failed' : ''))
+          .order('at', { ascending: false }).limit(1));
         var rowsP = Promise.resolve(sb.from('master_residents').select(COLS).order('source_id', { ascending: true }));
         rowsP.then(null, function () { /* 使う時に受け取る（捨てる時は未処理の失敗にしない） */ });
         // 訪問日・かかりつけ病院（opts.care の時だけ）も同時に取る。使わない時（記録が古い等）は捨てる
@@ -260,11 +269,15 @@
         if (careP) careP.then(null, function () { /* 使う時に受け取る */ });
         return runsP
           .then(function (r) {
-            if (r.error) throw named('DataError', r.error.code || 'runs');
+            if (r.error) {
+              if (want.care && noCareFailedColumn(r.error)) return { skip: 'care' };   // 0022 を流す前＝予想どおり（記録しない）
+              throw named('DataError', r.error.code || 'runs');
+            }
             var run = Array.isArray(r.data) ? r.data[0] : null;
             var at = run ? Date.parse(run.at) : NaN;
             if (!run || !isFinite(at) || Date.now() - at > FRESH_MS) return { skip: 'old' };
             if (run.failed !== 0) return { skip: 'failed' };
+            if (want.care && run.care_failed !== 0) return { skip: 'care' };   // 2項目を書いていない（null）・書けなかった人がいる
             return gasRev.then(function (g) {
               if (!sameRev(run, g)) return { skip: 'rev' };
               return rowsP.then(function (m) {
