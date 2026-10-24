@@ -244,7 +244,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     b3.api.pushAll(); await settle();
     t('G（対照）札が無ければ supabase-js を1本入れる', J(b3.appended) === J(['supabase-js-2.112.4.js']), b3.appended);
     const pc = /function pcAuthLoad\(\) \{[\s\S]*?\n\}/.exec(PAGE);
-    t('G 画面の pcAuthLoad も同じ札を見て入れ直さない（両方が読んでも1本ずつ）', !!pc && /has\(\/\^supabase-js-\/\)/.test(pc[0]) && /has\(\/\^su-auth\\\.js\/\)/.test(pc[0]) && /load\('su-auth\.js\?v=2026-10-20'\)/.test(pc[0]));
+    t('G 画面の pcAuthLoad も同じ札を見て入れ直さない（両方が読んでも1本ずつ）', !!pc && /has\(\/\^supabase-js-\/\)/.test(pc[0]) && /has\(\/\^su-auth\\\.js\/\)/.test(pc[0]) && /load\('su-auth\.js\?v=2026-10-24'\)/.test(pc[0]));
   }
 
   console.log('\n— H 起動時の送信は読むだけ —');
