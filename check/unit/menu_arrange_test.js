@@ -8,7 +8,7 @@
      5 並びを変えた区分では「新しい行から始める」を外す。並びが既定のままの区分では残す
      6 元の定義を書き換えない。事務所専用の印（officeOnly）は並べ替えても残る（現場端末で出さない仕組みを外さない）
      7 端末の控えは役割が分からない時・ログインの記録が無い時は使わない
-     8 メニュー（index.html）の定義に、ケアログが入居者の区分の末尾にある
+     8 メニュー（index.html）の定義に、ケアログ・デイ・担当者会議が入居者の区分の末尾にある
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
 const fs = require('fs');
@@ -110,11 +110,13 @@ t('7e ログインの記録が無い端末では控えを使わない（ログ�
 
 console.log('8 ケアログのボタン');
 const resTiles = DEF.sections.find(s => s.id === 'sec-resident').tiles;
-const care = resTiles.slice(-2)[0], day = resTiles.slice(-1)[0];
-t('8a 入居者の区分の末尾から2枚目にケアログ（別サイト・事務所専用ではない）',
+const care = resTiles.slice(-3)[0], day = resTiles.slice(-2)[0], meet = resTiles.slice(-1)[0];
+t('8a 入居者の区分の末尾から3枚目にケアログ（別サイト・事務所専用ではない）',
   care.href === 'https://th-su.github.io/care-log/' && care.nm === 'ケアログ' && care.ext === true && !care.officeOnly, care);
-t('8c 末尾はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
+t('8c 末尾から2枚目はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
   day.href === 'https://th-su.github.io/care-log/#/record/daycare' && day.nm === 'デイ {{通所}}' && day.ext === true && !day.officeOnly, day);
+t('8d 末尾は担当者会議（デイの次・同じサイトの画面・事務所専用）（2026-10-25 本人指示）',
+  meet.href === 'care-meeting.html' && meet.ic === '📋' && meet.nm === '担当者会議' && meet.note === '会議の記録と期限' && meet.officeOnly === true && !meet.ext && !meet.newrow, meet);
 t('8b ボタンの鍵（リンク先）はすべてデータベースの検査に通る形・重複なし', (function () {
   const all = []; DEF.sections.forEach(s => s.tiles.forEach(x => all.push(x.href)));
   return all.every(h => /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/.test(h)) && new Set(all).size === all.length
