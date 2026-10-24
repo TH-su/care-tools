@@ -372,5 +372,116 @@ console.log('\n— 9. 判断の印 —');
   t('同じ全文なら同じ印・違えば違う印', Y.srcKey('11', '2026-10-18', 'A') === Y.srcKey('11', '2026-10-18', 'A') && Y.srcKey('11', '2026-10-18', 'A') !== Y.srcKey('11', '2026-10-18', 'B'));
 }
 
+console.log('\n— 10. 「同じ意味」と取り違えない（単位・1日量と1回量・時点・2026-10-24）—');
+{
+  const sp = (name, slots, dose, unit, meal) => ({ name, maker: '', slots, dose, unit, meal, free: '' });
+  /* 対照: 本当に同じ意味の行は true のまま */
+  t('対照: 「1日2錠 分2 朝夕食後」と 1回1錠の朝夕は同じ意味', Y.sameMeaning('架空錠A5mg 1日2錠 分2 朝夕食後', sp('架空錠A5mg', ['朝', '夕'], 1, '錠', '食後')) === true);
+  const pairs = [
+    ['(a) mg と g（数字を合わせた例）', '架空散 500mg 分2 朝夕食後', sp('架空散', ['朝', '夕'], 250, 'g', '食後')],
+    ['(a) mg と g（数字が合わない例）', '架空散 500mg 分2 朝夕食後', sp('架空散', ['朝', '夕'], 0.25, 'g', '食後')],
+    ['(b) 錠と包', '架空錠A5mg 1日2錠 分2 朝夕食後', sp('架空錠A5mg', ['朝', '夕'], 1, '包', '食後')],
+    ['(c) 今が1回2錠・書類が1日2錠', '架空錠A5mg 1回2錠 朝夕食後', sp('架空錠A5mg', ['朝', '夕'], 1, '錠', '食後')],
+    ['(c) 今が1日2錠 分2・書類が1回2錠', '架空錠A5mg 1日2錠 分2 朝夕食後', sp('架空錠A5mg', ['朝', '夕'], 2, '錠', '食後')],
+    ['(d) 朝夕と朝昼夕（1回量が同じ）', '架空錠A5mg 1回1錠 朝夕食後', sp('架空錠A5mg', ['朝', '昼', '夕'], 1, '錠', '食後')],
+    ['(d) 朝昼夕と朝夕（1日量が同じ3錠）', '架空錠A5mg 1日3錠 分3 朝昼夕食後', sp('架空錠A5mg', ['朝', '夕'], 1.5, '錠', '食後')],
+  ];
+  pairs.forEach(([n, cur, spec]) => t('★sameMeaning は ' + n + ' を同じ意味にしない', Y.sameMeaning(cur, spec) === false, { cur, spec }));
+  /* matchCurrent の経路でも same にならず change になる（書類の行は別の書き方にして、一字一致の same を避ける） */
+  const lines = ['架空散 250g 分2 朝夕食後', '架空散 0.25g 分2 朝夕食後', '架空錠A5mg 2包分2 朝夕食後', '架空錠A5mg 2錠分2 朝夕食後', '架空錠A5mg 4錠分2 朝夕食後',
+    '架空錠A5mg 3錠分3 朝昼夕食後', '架空錠A5mg 3錠分2 朝夕食後'];
+  pairs.forEach(([n, cur, spec], i) => {
+    const m = Y.matchCurrent([{ line: lines[i], spec, raw: spec.name }], cur);
+    t('★matchCurrent でも ' + n + ' は change（same にしない）', m.pairs.length === 1 && m.pairs[0].kind === 'change' && m.left.length === 0, m.pairs[0] && { kind: m.pairs[0].kind, how: m.pairs[0].how });
+  });
+  const mc = Y.matchCurrent([{ line: '架空錠A5mg 2錠分2 朝夕食後', spec: sp('架空錠A5mg', ['朝', '夕'], 1, '錠', '食後'), raw: '架空錠A5mg' }], '架空錠A5mg 1日2錠 分2 朝夕食後');
+  t('対照: matchCurrent でも本当に同じ意味なら same（meaning）', mc.pairs[0].kind === 'same' && mc.pairs[0].how === 'meaning', mc.pairs[0]);
+  /* 書類の行を lineSpec で組んだ時も同じ（1日量と1回量の取り違え） */
+  const dd = one([[L('架空錠A5mg', 0.1, 0.3), L('1回2錠', 0.45, 0.3), L('1日2回朝夕食後 14日分', 0.6, 0.3)]]);
+  const rr = Y.parseRows(dd)[0];
+  const ls = Y.lineSpec(rr, { source: 'current', name: '架空錠A5mg', maker: '', makerOk: true, near: [] });
+  t('lineSpec: 書類の「1回2錠 朝夕」は1回量2', ls.spec.dose === 2 && ls.spec.slots.join() === '朝,夕', ls.spec);
+  const ml = Y.matchCurrent([{ line: '架空錠A5mg 4錠分2 朝夕食後', spec: ls.spec, raw: rr.raw }], '架空錠A5mg 1日2錠 分2 朝夕食後');
+  t('★lineSpec を通した書類の1回2錠と、今の1日2錠は change', ml.pairs[0].kind === 'change', ml.pairs[0]);
+}
+
+console.log('\n— 11. 変更記録の「書類の行と扱い」（logRows・2026-10-24）—');
+{
+  const rows = [
+    { kind: 'same', action: 'keep', raw: '架空錠A5mg', cur: '架空錠A5mg 1錠分1 朝食後', line: '架空錠A5mg 1錠分1 朝食後' },
+    { kind: 'change', action: 'change', raw: '架空錠A5mg 1錠 朝食後', cur: '架空錠A5mg 1錠分1 朝食後', line: '架空錠A10mg 1錠分1 朝食後' },
+    { kind: 'change', action: 'keep', raw: '架空カプセルB', cur: '架空カプセルB 2カプセル分2 朝夕食後', line: '架空カプセルB 4カプセル分2 朝夕食後' },
+    { kind: 'add', action: 'add', raw: '架空錠N', cur: '', line: '架空錠N 1錠分1 夕食後' },
+    { kind: 'add', action: 'skip', raw: '架空錠H 頓用', cur: '', line: '架空錠H 頓用' },
+    { kind: 'left', action: 'keep', raw: '', cur: '架空錠Z 1錠分1 朝食後', line: '架空錠Z 1錠分1 朝食後' },
+    { kind: 'left', action: 'stop', raw: '', cur: '架空錠Y 1錠分1 朝食後', line: '架空錠Y 1錠分1 朝食後' },
+  ];
+  const out = Y.logRows(rows).split('\n');
+  t('1行1件', out.length === 7, out);
+  t('変えない（そのまま）', out[0] === '変えない｜架空錠A5mg｜架空錠A5mg 1錠分1 朝食後', out[0]);
+  t('変える', out[1] === '変える｜架空錠A5mg 1錠 朝食後｜架空錠A10mg 1錠分1 朝食後', out[1]);
+  t('★変える行を「今の行のまま」にした時は「変えない」で、反映する行は今の行', out[2] === '変えない｜架空カプセルB｜架空カプセルB 2カプセル分2 朝夕食後', out[2]);
+  t('足す', out[3] === '足す｜架空錠N｜架空錠N 1錠分1 夕食後', out[3]);
+  t('入れない', out[4] === '入れない｜架空錠H 頓用｜（入れない）', out[4]);
+  t('★書類に無い今の行は「残す」と「（書類に無い今の行）」', out[5] === '残す｜（書類に無い今の行）｜架空錠Z 1錠分1 朝食後', out[5]);
+  t('★書類に無い今の行の中止', out[6] === '中止｜（書類に無い今の行）｜（中止）', out[6]);
+  t('行の中の改行は1行にそろえる', Y.logRows([{ kind: 'add', action: 'add', raw: '架空錠N', line: '架空錠N\n1錠分1 夕食後' }]) === '足す｜架空錠N｜架空錠N 1錠分1 夕食後');
+  t('空・配列でない時は空文字', Y.logRows([]) === '' && Y.logRows(null) === '');
+  /* ★扱いの語は実際に定期薬へ効いたかで決め、judge の数と食い違わない（10/25 反証レビュー指摘1） */
+  const odd = [
+    { kind: 'change', action: 'change', raw: '架空錠A 1錠 朝食後', cur: '架空錠A 1錠分1 朝食後', line: '' },
+    { kind: 'change', action: 'change', raw: '架空錠C 1錠 夕食後', cur: '架空錠C 1錠分1 夕食後', line: '架空錠C 1錠分1 夕食後' },
+    { kind: 'add', action: 'add', raw: '架空錠M', cur: '', line: '' },
+    { kind: 'add', action: 'add', raw: '架空錠N', cur: '', line: '架空錠N 1錠分1 夕食後' },
+  ];
+  const ol = Y.logRows(odd).split('\n');
+  t('★反映先が空の「変える」は「変えない」と書き、反映する行は今の行', ol[0] === '変えない（反映先が空か今の行と同じ）｜架空錠A 1錠 朝食後｜架空錠A 1錠分1 朝食後', ol[0]);
+  t('★反映先が今の行と同じ「変える」も「変えない」', ol[1].indexOf('変えない（反映先が空か今の行と同じ）｜') === 0, ol[1]);
+  t('★反映先が空の「足す」は「入れない」', ol[2] === '入れない（反映先が空）｜架空錠M｜（入れない）', ol[2]);
+  const cnt = (ls, w) => ls.filter(l => l.indexOf(w + '｜') === 0).length;
+  [odd, rows].forEach((rs, i) => {
+    const jj = Y.judge({ rows: rs, current: rs.filter(r => r.cur).map(r => r.cur).join('\n') }), ll = Y.logRows(rs).split('\n');
+    t('★記録の「変える・足す・中止」の数は judge が反映する数と同じ（組 ' + (i + 1) + '）', cnt(ll, '変える') === jj.counts.change && cnt(ll, '足す') === jj.counts.add && cnt(ll, '中止') === jj.counts.stop, { ll, c: jj.counts });
+  });
+  /* 8000字に収める */
+  const big = Array.from({ length: 200 }, (_, i) => ({ kind: 'add', action: 'add', raw: '架空錠' + i, line: '架空錠' + i + ' ' + 'あ'.repeat(60) }));
+  const lb = Y.logRows(big), lbl = lb.split('\n');
+  const kept = lbl.length - 1;
+  t('★8000字を超える時は8000字以内に収める', lb.length <= 8000 && lb.length > 7800, lb.length);
+  t('★末尾を「…（以下 N 行）」で切り、N は残りの行の数', lbl[lbl.length - 1] === '…（以下 ' + (200 - kept) + ' 行）' && lbl[kept - 1].indexOf('足す｜架空錠' + (kept - 1) + '｜') === 0, lbl[lbl.length - 1]);
+  const exact = Y.logRows(Array.from({ length: 1 }, () => ({ kind: 'add', action: 'add', raw: 'x', line: 'y'.repeat(7995) })));
+  t('ちょうど8000字なら切らない', exact.length === 8000 && exact.indexOf('…') < 0, exact.length);
+  const huge = Y.logRows([{ kind: 'add', action: 'add', raw: 'x', line: 'y'.repeat(9000) }, { kind: 'add', action: 'add', raw: 'z', line: 'w' }]);
+  t('1行目だけで超える時も8000字以内で、残りの行を知らせる', huge.length <= 8000 && /…\n…（以下 1 行）$/.test(huge), huge.length);
+  const huge1 = Y.logRows([{ kind: 'add', action: 'add', raw: 'x', line: 'y'.repeat(9000) }]);
+  t('1行だけで超える時は「…」で切る', huge1.length === 8000 && /…$/.test(huge1), huge1.length);
+  /* 画面の配線 */
+  const RM2 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const cut2 = (src, name) => { const h = src.indexOf('function ' + name + '('); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
+  const ap2 = cut2(RM2, 'yjApply_');
+  t('★反映は docRows を logRows で作って送る', /body\.docRows=YakujoCalc\.logRows\(c\.rows\)/.test(ap2));
+  t('★反映はログインの証明を保存と同じ取り方（rmAccessToken_）で添え、取れなければ送らない', /rmAccessToken_\(\)/.test(ap2) && /if\(!at\)\{ c\.msg='ログインし直してから反映してください（何も書いていません）'; return; \}/.test(ap2) && /body\.accessToken=at;\s*return apiPostRaw\(body,40000\)/.test(ap2));
+  t('★unverified の応答は確かめ中（unsure）にしない', /if\(r&&r\.unverified\)\{ c\.msg='ログインを確かめられませんでした。ログインし直してから反映してください（何も書いていません）'; return; \}/.test(ap2));
+  t('★版の確かめは「反映記録」を含む版', /\/反映記録\/\.test\(String\(r\.build/.test(cut2(RM2, 'yjPing_')));
+  t('★反映記録の欄は印刷しない（@media print・PRINT_SECS に無い）', /@media print\{\.sec-yjlog,\.yjl-slot\{display:none !important\}\}/.test(RM2) && !/薬情の反映記録/.test(RM2.slice(RM2.indexOf('var PRINT_SECS='), RM2.indexOf('];', RM2.indexOf('var PRINT_SECS=')))));
+  t('★反映記録は現場端末では取りに行かない', /getDeviceRole\(\)==='field'/.test(cut2(RM2, 'yjlSlot_')) && /getDeviceRole\(\)==='field'/.test(cut2(RM2, 'yjlLoad_')));
+  t('★反映記録の応答は、開いている方と世代を確かめてから使う', /gen!==yjlGen\|\|dg!==devGen/.test(cut2(RM2, 'yjlLoad_')) && /String\(curResident\.id\)!==id/.test(cut2(RM2, 'yjlLoad_')));
+  t('★詳細画面の「定期薬の変更履歴」の直後に欄を置く', /h\+=medsHistHtml_\(r\.medsHistory\);\s*h\+=yjlSlot_\(r\);/.test(cut2(RM2, 'renderView')));
+  t('★開き直すたびに控えを捨てる（反映の直後も新しい記録を取り直す）', /yjlReset_\(\)/.test(cut2(RM2, 'openResident')));
+  t('★現場用への切り替えで控え（定期薬の全文）を捨てる', /yjlReset_\(\)/.test(cut2(RM2, 'yjPurge_')));
+  { const rx = { }; vm.createContext(rx); vm.runInContext('var yjlGen=0, yjlMem={id:"x", rows:[1]};\n' + cut2(RM2, 'yjlReset_') + '\nyjlReset_();', rx);
+    t('★yjlReset_ は控えを空にし、世代を進める', rx.yjlMem.id === '' && rx.yjlMem.rows === null && rx.yjlGen === 1, rx.yjlMem); }
+  t('★反映記録は端末に保存しない', !/localStorage/.test(cut2(RM2, 'yjlLoad_') + cut2(RM2, 'yjlSlot_') + cut2(RM2, 'yjlHtml_')));
+  /* 欄の組み立て（文字はエスケープ・0件は出さない・日時は日本時間） */
+  const bx = { String, Array, isNaN, Date };
+  vm.createContext(bx);
+  vm.runInContext([cut2(RM2, 'esc'), cut2(RM2, 'yjlAt_'), cut2(RM2, 'yjlHtml_')].join('\n'), bx);
+  t('記録が0件なら欄を出さない', bx.yjlHtml_([]) === '' && bx.yjlHtml_(null) === '');
+  const hh = bx.yjlHtml_([{ at: '2026-10-24T01:05:00.000Z', srcDate: '2026-10-18', docRows: '変える｜<b>架空</b>｜x', before: 'a', after: 'b', by: 'kakuu@example.com' }]);
+  t('日時は日本時間の yyyy-MM-dd HH:mm', hh.indexOf('2026-10-24 10:05') >= 0, hh);
+  t('★文字はエスケープする', hh.indexOf('<b>架空') < 0 && hh.indexOf('&lt;b&gt;架空') >= 0);
+  t('見出しは日時・調剤日・確かめた人で、中身は details の中', /<details class="yjl-e"><summary>.*2026-10-18.*kakuu@example\.com.*<\/summary>.*書類の行と扱い.*反映前.*反映後.*<\/details>/.test(hh));
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
