@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-XzmEobyvKzwg4esqs2jeniUxY43vT8IVbRSCh8nSiZs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-5xwCjadEvqOpAcpP8Xox6Lq8Z0sSLaNCx74JHtpkQ04='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -527,6 +527,18 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mh-prev summary{cursor:pointer; padding:12px 0; line-height:20px; font-size:0.8125rem; color:var(--g7)}
 .mh-prev summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
 @media print{.sec-medshist{display:none !important}}
+/* ── 薬情の反映記録（30日）（2026-10-24 代表者の決定）。記録はサーバー（gas/med-cand.gs）だけが書く。
+   ★事務所PCだけ・画面だけ＝印刷しない。詳細画面の「定期薬の変更履歴」の下に出す ── */
+.sec-yjlog .yjl-e{border-bottom:1px dotted var(--g3)}
+.sec-yjlog .yjl-e:last-child{border-bottom:none}
+.yjl-e summary{cursor:pointer; padding:12px 0; line-height:20px; display:flex; flex-wrap:wrap; gap:2px 10px; align-items:baseline}
+.yjl-e summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.yjl-lbl{font-size:0.8125rem; font-weight:700; color:var(--g7); margin:6px 0 2px}
+.yjl-pre{margin:0 0 4px; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; font:inherit; font-size:0.875rem}
+@media print{.sec-yjlog,.yjl-slot{display:none !important}}
+/* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
+   ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
+@media print{.sec-cmeet{display:none !important}}
 /* ── 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ・画面だけ（印刷しない）。既存の .modal には触れない ──
    ★追加・変更・中止は変更履歴と同じ文字の札（.mh-tag）で示す。注意は黄色＋⚠の文字（色だけで伝えない） */
 .mc-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:0 0 8px}
@@ -1905,7 +1917,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-10-22"></script>
+<script src="yakujo-calc.js?v=2026-10-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-24"></script>
@@ -6952,12 +6964,12 @@ function yjOpen_(){
   try{ $('mYakujoH').focus(); }catch(e){}
   yjPing_();
 }
-/* 入居者マスタGASが「薬情」を受け付ける版か（貼り替えの前は反映できない） */
+/* 入居者マスタGASが「薬情」を受け付け、変更記録（反映記録）を残す版か（貼り替えの前は反映できない・2026-10-24） */
 function yjPing_(){
   var st=yjSt, dg=devGen;   /* ★世代（yjGen）ではなく開いた時の窓で判定する（確認表を開いて世代が進んでも、版の答えを捨てない） */
   apiPostRaw({action:'medCand', op:'ping'},20000).then(function(r){
     if(yjSt!==st||dg!==devGen) return;
-    st.server=(r&&r.ok!==false&&/薬情/.test(String(r.build||'')))?'ok':'old';
+    st.server=(r&&r.ok!==false&&/反映記録/.test(String(r.build||'')))?'ok':'old';
   }).catch(function(e){
     if(yjSt!==st||dg!==devGen) return;
     st.server=/不明なaction/.test(String(e&&e.message||e))?'old':'ng';
@@ -6979,6 +6991,7 @@ function yjClose_(){
 /* 現場用へ切り替わった時は、中身ごと捨てる（applyDeviceGuard から呼ぶ） */
 function yjPurge_(){
   yjSt=null; yjGen++; yjBy='';
+  if(typeof yjlReset_==='function') yjlReset_();   /* 薬情の反映記録（定期薬を持つ）も捨てる（2026-10-24） */
   yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
   try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
 }
@@ -7188,9 +7201,17 @@ function yjApply_(){
     srcText:('薬情の取り込み・調剤日 '+date+(j.importDay?'（書類から読めず取り込んだ日）':'')+'・書類'+x.d.no+'（'+(x.d.type==='pdf'?'PDF '+x.d.pages.length+'ページ':'写真')+'）・薬の行 '+c.rows.filter(function(r){ return r.kind!=='left'; }).length+'・文字読み取り（薬情よみとり）'),
     before:before, after:sent, note:'', by:yjBy};
   if(c.ack) body.ackSameDay=true;
+  /* 変更記録に残す「書類の行と扱い」（確認表の行・人が選んだ扱い・2026-10-24 代表者の決定） */
+  body.docRows=YakujoCalc.logRows(c.rows);
   c.busy=true; c.writing=true; c.msg='反映しています…'; yjPaint_();
-  apiPostRaw(body,40000).then(function(r){
+  /* ログインの証明を添える（保存と同じ取り方・GAS が確かめて変更記録に確かめたメールを残す）。取れない時は送らない */
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+  if(dg!==devGen) return;
+  if(!at){ c.msg='ログインし直してから反映してください（何も書いていません）'; return; }
+  body.accessToken=at;
+  return apiPostRaw(body,40000).then(function(r){
     if(dg!==devGen) return;
+    if(r&&r.unverified){ c.msg='ログインを確かめられませんでした。ログインし直してから反映してください（何も書いていません）'; return; }
     if(r&&r.ok===true){
       if(fullMap&&fullMap[c.id]) fullMap[c.id].medsRegular=sent;
       x.status='done'; c.touched=false;
@@ -7215,6 +7236,7 @@ function yjApply_(){
     /* ★書き込みは再試行しない。届いたか分からない時は確かめ中にする */
     if(mcNoWrite_(m)){ c.msg=(/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'反映できませんでした（'+m+'）')+'（何も書いていません）'; return; }
     x.status='unsure'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
+  });
   }).then(function(){ c.busy=false; c.writing=false; if(yjSt) yjPaint_(); });
 }
 
@@ -8380,6 +8402,7 @@ function openResident(id){
   /* 前の方の情報を先に捨てる。取得成功時にだけ入れ直す */
   curResident=null; setViewActions(false);
   hospPend_={}; hospOpening_=String(id);   // 入院/退院の結果の控えは、この開き直しの間に届いた分だけを使う（2026-10-02）
+  if(typeof yjlReset_==='function') yjlReset_();   // 薬情の反映記録は開き直すたびに取り直す（反映の直後も新しい記録が出る）（2026-10-24）
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
@@ -9142,6 +9165,64 @@ function medsHistHtml_(arr){
   return '<div class="sec sec-medshist"><div class="sec-lbl">定期薬の変更履歴</div><div class="sec-body">'+
     '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
 }
+/* ── 薬情の反映記録（30日）（2026-10-24 代表者の決定）──
+   入居者マスタGAS（med-cand.gs の op 'yjLog'）から、その方の薬情の取り込みの反映記録（30日以内・新しい順）を読み、
+   詳細画面の「定期薬の変更履歴」の下に出す。★事務所PCだけ（現場端末では取りに行かない・出さない）。管理者に限らない
+   ★記録はメモリにだけ置く（localStorage に書かない）。開き直すと取り直す。0件・読めない時は欄ごと出さない
+   ★応答は、開いている方（curResident.id）と世代（yjlGen・devGen）が出した時と同じ時だけ使う
+   ★印刷しない（@media print で消す・PRINT_SECS に入れない） */
+var yjlGen=0, yjlMem={id:'', rows:null};
+/* 控えを捨てて世代を進める（開き直し・現場用への切り替えで呼ぶ。届いた応答は世代で捨てる） */
+function yjlReset_(){ yjlMem={id:'', rows:null}; yjlGen++; }
+/* at（ISO）を日本時間の yyyy-MM-dd HH:mm にする */
+function yjlAt_(s){
+  var t=String(s==null?'':s), d=new Date(t); if(!t||isNaN(d.getTime())) return t;
+  var j=new Date(d.getTime()+9*3600000); function p2(n){ return ('0'+n).slice(-2); }
+  return j.getUTCFullYear()+'-'+p2(j.getUTCMonth()+1)+'-'+p2(j.getUTCDate())+' '+p2(j.getUTCHours())+':'+p2(j.getUTCMinutes());
+}
+function yjlHtml_(rows){
+  var str=function(v){ return typeof v==='string'?v:''; };
+  var list=Array.isArray(rows)?rows.filter(function(e){ return e&&typeof e==='object'&&!Array.isArray(e); }):[];
+  if(!list.length) return '';
+  var body=list.map(function(e){
+    return '<details class="yjl-e"><summary><span class="mh-at">'+esc(yjlAt_(e.at))+'</span>'+
+      '<span class="mh-via">調剤日 '+esc(str(e.srcDate))+'</span><span class="mh-via">確かめた人 '+esc(str(e.by))+'</span></summary>'+
+      '<div class="yjl-lbl">書類の行と扱い</div><pre class="yjl-pre">'+esc(str(e.docRows))+'</pre>'+
+      '<div class="yjl-lbl">反映前</div><pre class="yjl-pre">'+esc(str(e.before)||'（記載なし）')+'</pre>'+
+      '<div class="yjl-lbl">反映後</div><pre class="yjl-pre">'+esc(str(e.after))+'</pre></details>';
+  }).join('');
+  return '<div class="sec sec-yjlog"><div class="sec-lbl">薬情の反映記録（30日）</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
+}
+/* 詳細画面の枠（renderView が置く）。この方の記録をまだ取っていなければ取りに行く。届いたら枠の中身だけ入れる */
+function yjlSlot_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  var id=String(r.id);
+  if(yjlMem.id!==id){ yjlMem={id:id, rows:null}; yjlLoad_(id); }
+  return '<div class="yjl-slot" id="yjlSlot" data-id="'+esc(id)+'">'+(yjlMem.rows?yjlHtml_(yjlMem.rows):'')+'</div>';
+}
+/* 詳細画面の「担当者会議」の欄（2026-10-25 本人指示）。担当者会議のページへのリンクだけを出す。
+   ★渡すのは利用者No（resident=）だけ。氏名・居室は URL に載せない（あちらがサーバーから読む）
+   ★現場端末では欄ごと出さない（担当者会議のページも現場端末では使えないため）。印刷しない（.sec-cmeet を @media print で消す）
+   ★他の画面へのリンク（この方を各アプリで開く）と同じく別タブで開く＝マスタで見ていた内容を失わない */
+function meetingLinkHtml_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  return '<div class="sec sec-cmeet"><div class="sec-lbl">担当者会議</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+    '<a class="rlink" target="_blank" rel="noopener" href="'+esc('care-meeting.html?resident='+encodeURIComponent(String(r.id)))+'">📋 担当者会議の記録を開く</a>'+
+    '</div></div></div>';
+}
+function yjlLoad_(id){
+  if(getDeviceRole()==='field'||!CFG.url) return;
+  var gen=++yjlGen, dg=devGen;
+  apiPostRaw({action:'medCand', op:'yjLog', id:id},25000).then(function(r){
+    if(gen!==yjlGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!curResident||String(curResident.id)!==id||yjlMem.id!==id) return;   /* 開いている方が違えば捨てる */
+    if(!r||r.ok!==true||!Array.isArray(r.rows)) return;                    /* 古いGAS・読めない時は欄を出さない */
+    yjlMem.rows=r.rows;
+    var el=$('yjlSlot'); if(el&&el.getAttribute('data-id')===id) el.innerHTML=yjlHtml_(r.rows);
+  })['catch'](function(){ /* 読めない時は欄を出さない（画面は止めない） */ });
+}
 function applyPrintHide(box,r){
   if(!box)return;
   var hid=printHideSet(r), lab2key={};
@@ -9777,6 +9858,7 @@ function renderView(r){
   // 定期薬の変更履歴（自動記録・新しい順・画面だけ）（2026-10-02 管理者指示）
   h+=mcDetailSlot_(r);   // 薬の変更候補の印（管理者に候補がある時だけ中身が入る・印刷しない）（2026-10-06）
   h+=medsHistHtml_(r.medsHistory);
+  h+=yjlSlot_(r);   // 薬情の反映記録（30日）（事務所PCだけ・記録がある時だけ中身が入る・印刷しない）（2026-10-24）
   /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
      ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
        （様式に無い＝消してよい、ではない。原則1） */
@@ -9859,6 +9941,7 @@ function renderView(r){
     '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
   '</div></div>';
+  h+=meetingLinkHtml_(r);   // 担当者会議（事務所PCだけ・リンクだけ・印刷しない）（2026-10-25 本人指示）
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
