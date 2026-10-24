@@ -32,6 +32,7 @@
  *   ②スイッチを入れる PR を取り込む（この間の保存は 'shadow' で断られ、入力は端末に残る）
  *   ③管理者が写しの見比べ画面で「切り替える」（kv_set_family_mode live・週間計画とワークスケジュールをまとめて）。
  *   戻す時は逆順: ①スイッチを切る PR ②「戻す」（shadow）。
+ *   ★スイッチを切→入にする時は、裏に回したタブを一度表に出すか閉じてから（裏の間はスイッチを読み直さないため。2026-10-24）。
  *   ★戻す前に、統合 GAS のスクリプトプロパティ KV_SWITCHED_FAMILIES からその種類を外す（外さないと、Google へ戻した後の
  *     全端末の保存が断られる）。
  */
@@ -52,7 +53,6 @@
   var FLAGS_LS = 'su_backend_flags';
   var ROUTED_ACTIONS = { get: 1, put: 1, head: 1, history: 1 };
   var MIRROR_WAIT_MS = 20000;
-  var AUTH_TTL_MS = 5 * 60 * 1000;
 
   var flags = null, flagsTriedAt = 0, flagsPromise = null;
   try { flags = JSON.parse(localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { flags = null; }
@@ -115,11 +115,13 @@
       return loadScript('su-auth.js?v=2026-10-24');
     });
   }
-  var authCache = null, authAt = 0;
+  // ログインの状態は毎回 SUAuth.check に聞く（2026-10-24）。同じアカウントの「使える」は su-auth.js が同じタブの中で5分控えるので、
+  // データベースへの往復は増えない（増えるのは端末の中のログインと控えの読み取りだけ）。ここでも5分持つと su-auth.js の控えと重なり、
+  // 役割が最大約10分古くなっていた。authCache は最後に確かめた結果で、marksOnlyFor が同期で答えるためだけに持つ（使い回さない）
+  var authCache = null;
   function authState() {
-    if (authCache && Date.now() - authAt < AUTH_TTL_MS) return Promise.resolve(authCache);
     return ensureAuth().then(function () { return window.SUAuth.check(); }).then(function (st) {
-      authCache = st; authAt = Date.now();
+      authCache = st;
       return st;
     });
   }
