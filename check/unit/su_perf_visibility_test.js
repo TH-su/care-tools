@@ -13,18 +13,21 @@
       - JSON はファイル名ごと、GAS は種類ごと（GET はクエリの action・POST は印）に見えている時／裏にある時を数える
       - URL の全体・action 以外のクエリ・合言葉を残さない。裏にあった時間帯そのものも残さない
       - 起動20秒の明細の形（{s,d,ep} 等）は変えない。二重に数えない。__proto__ の名前でも壊れない
+      - 印は前回読んだ件数から先だけを数える。同じ名前・同じ時刻の印2つ（同時に出した同じ action の POST）は2回、
+        同じ印を2回読んでも1回（2026-10-24 審査の指摘。名前＋時刻で二重を防いでいた時は2本目を捨てていた）
       - 裏で数えた時は早めに保存する（1.5秒まとめ）
    3. su-data-gas.js の印
       - POST の直前に 'su:gas:<action>' の印を付ける（action が正規表現に合う時だけ）
       - 送る URL・メソッド・ヘッダー・本文・redirect は今までと1バイトも違わない。印が付けられない端末でも送る
-   実行: node check/unit/su_perf_visibility_test.js */
+   実行: node check/unit/su_perf_visibility_test.js
+   （直す前の su-perf.js で試す時: SU_PERF_JS=<ファイル> node check/unit/su_perf_visibility_test.js） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SRC = fs.readFileSync(path.join(ROOT, 'su-perf.js'), 'utf8');
+const SRC = fs.readFileSync(process.env.SU_PERF_JS || path.join(ROOT, 'su-perf.js'), 'utf8');
 const SRC_GAS = fs.readFileSync(path.join(ROOT, 'su-data-gas.js'), 'utf8');
 const ORIGIN = 'https://tools.example.test';
 const GAS = 'https://script.google.com/macros/s/AKfyTESTdeploy1234/exec';
@@ -88,7 +91,8 @@ function boot(opts) {
     at(ms) { now = ms; },
     res(url, startTime, duration) { res.push({ name: url, startTime, duration, initiatorType: 'fetch', transferSize: 0 }); },
     mark(name, startTime) { marks.push({ name, startTime, entryType: 'mark' }); },
-    emit(type, entries) { if (obs[type]) obs[type]({ getEntries: () => entries }); },
+    /* ブラウザと同じく、届いた印は先に一覧（getEntriesByType）へ入ってから見張りへ知らされる */
+    emit(type, entries) { if (type === 'mark') entries.forEach((e) => marks.push(e)); if (obs[type]) obs[type]({ getEntries: () => entries }); },
     vis(state) { doc.visibilityState = state; (docL.visibilitychange || []).forEach((fn) => fn()); },
     save: async () => { winL.pagehide(); await new Promise((r) => setImmediate(r)); return JSON.parse(JSON.stringify(saved[saved.length - 1])); }
   };
@@ -198,6 +202,19 @@ const kind = (list, key, name) => (list || []).find((k) => k[key] === name) || n
     JSON.stringify(r2.vis) === JSON.stringify(r1.vis) && JSON.stringify(r2.gasAct) === JSON.stringify(r1.gasAct) &&
     JSON.stringify(r2.jsonF) === JSON.stringify(r1.jsonF), [r2.vis.gas, r2.gasAct]);
 
+  console.log('\n— 2b. 同時に出した同じ印 —');
+  const D = boot();
+  D.mark('su:gas:get', 100);
+  D.mark('su:gas:getRoster', 100);
+  D.mark('su:gas:get', 100);                                       /* 同じ action の POST を同時に2本（同じ時刻） */
+  const d1 = await D.save();
+  t('同じ名前・同じ時刻の印2つは2回と数える', kind(d1.gasAct, 'a', 'get') && kind(d1.gasAct, 'a', 'get').v === 2 && kind(d1.gasAct, 'a', 'getRoster').v === 1, d1.gasAct);
+  const d2 = await D.save();
+  t('同じ印を2回読んでも1回（保存を2回しても増えない）', kind(d2.gasAct, 'a', 'get').v === 2 && kind(d2.gasAct, 'a', 'getRoster').v === 1, d2.gasAct);
+  D.mark('su:gas:get', 100);
+  const d3 = await D.save();
+  t('後から足された印だけを数える（前回読んだ件数から先・時刻が同じでも数える）', kind(d3.gasAct, 'a', 'get').v === 3 && kind(d3.gasAct, 'a', 'getRoster').v === 1, d3.gasAct);
+
   console.log('\n— 3. 開いた時に裏・__proto__・上限 —');
   const H = boot({ hidden: true });
   H.res(GAS + '?action=getAll', 10, 100);
@@ -238,6 +255,11 @@ const kind = (list, key, name) => (list || []).find((k) => k[key] === name) || n
   const o1 = await O.save();
   t('届いた時点で拾った分も、保存の時の拾い直しで二重にならない（GAS 見えている時1・裏1、stateRev 裏1）',
     o1.vis.gas.vN === 1 && o1.vis.gas.hN === 1 && kind(o1.gasAct, 'a', 'stateRev').h === 1 && kind(o1.gasAct, 'a', 'getAll').v === 1, [o1.vis.gas, o1.gasAct]);
+  O.emit('mark', [{ name: 'su:gas:stateRev', startTime: 32000 }]);   /* 同じ action・同じ時刻の印がもう1本 */
+  const o2 = await O.save();
+  const o3 = await O.save();
+  t('見張りに届いた印も数えるのは保存の時の1回だけ（同じ時刻の2本目は2回目・読み直しでは増えない）',
+    kind(o2.gasAct, 'a', 'stateRev').h === 2 && kind(o3.gasAct, 'a', 'stateRev').h === 2, [kind(o2.gasAct, 'a', 'stateRev'), kind(o3.gasAct, 'a', 'stateRev')]);
 
   console.log('\n— 5. su-data-gas.js の印と送る形 —');
   function gasBoot(perf) {

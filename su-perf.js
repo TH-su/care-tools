@@ -345,18 +345,22 @@
     try {
       var act = gasActionFromMark(m.name);
       if (act == null) return;
-      var key = 'mark|' + m.name + '|' + m.startTime;
-      if (seen[key]) return;
-      seen[key] = 1;
-      var hid = inHidden(hiddenSpans, m.startTime);
-      bumpKind(rec.gasAct, 'a', act, hid, MAX_KIND);
-      try { if (hid || document.visibilityState === 'hidden') saveSoon(); } catch (e2) {}
+      bumpKind(rec.gasAct, 'a', act, inHidden(hiddenSpans, m.startTime), MAX_KIND);
     } catch (e) {}
   }
+  /* 印を数えるのはここだけ。前回読んだ件数から先の印だけを数える（2026-10-24 審査の指摘で直した）。
+     「名前＋時刻」で二重を防ぐと、同じ action の POST を同時に2本出した時（Promise.all など）に、
+     時刻の目盛りが粗い端末（Safari は 1ms）で2本目を捨ててしまうため。
+     印は時刻順に後ろへ足されていき、このリポジトリに clearMarks を呼ぶ所は無い（消されて件数が減った時は、
+     二重に数えないよう、その時点の件数から読み直す）。
+     印（User Timing）は resource の250件の上限（バッファ）の対象外の決まりなので、件数で読んでも取りこぼさない（実機では未検証） */
+  var marksRead = 0;
   function pollMarks() {
     try {
       var list = performance.getEntriesByType('mark');
-      for (var i = 0; i < list.length; i++) takeMark(list[i]);
+      if (list.length < marksRead) marksRead = list.length;
+      for (var i = marksRead; i < list.length; i++) takeMark(list[i]);
+      marksRead = list.length;
     } catch (e) {}
   }
 
@@ -369,13 +373,18 @@
       }).observe({ type: 'resource', buffered: true });
     }
   } catch (e) {}
-  /* GAS の種類の印も届いた時点で拾う（保存の時にも pollMarks で拾い直す。二重には数えない） */
+  /* GAS の種類の印が届いた時、裏にある時なら早めの保存を予約するだけ（数えるのは保存の時の pollMarks だけ＝二重にしない） */
   try {
     if (window.PerformanceObserver && (!PerformanceObserver.supportedEntryTypes ||
         PerformanceObserver.supportedEntryTypes.indexOf('mark') >= 0)) {
       new PerformanceObserver(function (l) {
-        var es = l.getEntries();
-        for (var i = 0; i < es.length; i++) takeMark(es[i]);
+        try {
+          var es = l.getEntries();
+          for (var i = 0; i < es.length; i++) {
+            if (gasActionFromMark(es[i].name) == null) continue;
+            if (inHidden(hiddenSpans, es[i].startTime) || document.visibilityState === 'hidden') { saveSoon(); break; }
+          }
+        } catch (e2) {}
       }).observe({ type: 'mark', buffered: true });
     }
   } catch (e) {}
