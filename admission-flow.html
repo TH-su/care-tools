@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-27lt/03d5EJWDLz6H+WNT56+Mc+HDBTcjlyAQdcZv4s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-9/dgJIJIk9XH+oGJRbSzhbhh1ewKudGjM+McV1rMvWM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -699,10 +699,10 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="su-data.js"></script>
-<script src="su-data-gas.js"></script>
+<script src="su-data-gas.js?v=2026-10-24"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-09-16"></script>
 <script>
@@ -5118,6 +5118,7 @@ $('reloadBtn').addEventListener('click', function () {
   var v0 = loadViewState();
   if (v0 === 'kpi') { renderKpi(); showScreen('kpi'); }
   else if (v0 === 'today') { renderToday(); showScreen('today'); }
+  try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   if (cacheRecovered) {
     setTimeout(function () {
       alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\n\n' +

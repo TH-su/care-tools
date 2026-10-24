@@ -20,6 +20,7 @@
   ★このページ自身は su-perf.js を読み込まない（集計画面を開いた記録で数字を汚さない）。
   ★2026-10-09（監査10月版 #16）: スクリプトと見た目を perf-report.js・perf-report.css に分け、CSP で自分のファイル以外を読まない・送らないようにした。
   ★2026-10-17: Supabase と JSON の通信も数えるようにした（以前の記録は内訳が空）
+  ★2026-10-24: 見えている時／裏にある時の回数（GAS の種類ごと・JSON のファイルごと・分類ごとの合計）の表を足した（それより前の記録は数えない）
 -->
 <link rel="stylesheet" href="perf-report.css?v=2026-10-09">
 </head>
@@ -73,10 +74,27 @@
     <p class="muted">接続先はURLの末尾4文字で見分けています。1回の通信にかかった秒数です。</p>
     <div class="tw"><table id="tEp"></table></div>
   </section>
+
+  <section class="cd" aria-labelledby="h-kind">
+    <h2 id="h-kind">GAS の種類ごとの回数（見えている時／裏にある時）</h2>
+    <p class="muted">「裏にある時」は、ほかのタブやアプリに切り替えていて、その画面が見えていなかった間の通信です。画面を開いてから閉じるまでの合計で、2026-10-24 の更新より後に記録した分だけを数えます。GAS の種類は名前が分かる呼び出しだけを数えるので、下の「分類ごとの合計」の GAS の回数より少なくなることがあります。</p>
+    <div class="tw"><table id="tKind"></table></div>
+  </section>
+
+  <section class="cd" aria-labelledby="h-file">
+    <h2 id="h-file">同じサイトの JSON のファイルごとの回数（見えている時／裏にある時）</h2>
+    <div class="tw"><table id="tFile"></table></div>
+  </section>
+
+  <section class="cd" aria-labelledby="h-vis">
+    <h2 id="h-vis">分類ごとの合計（見えている時／裏にある時）</h2>
+    <p class="muted">通信の回数と、かかった時間の合計（秒）です。「記録した回数」は、その画面を開いて数えた回数です。</p>
+    <div class="tw"><table id="tVis"></table></div>
+  </section>
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="perf-report.js?v=2026-10-17"></script>
+<script src="perf-report.js?v=2026-10-24"></script>
 </body>
 </html>
