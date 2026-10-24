@@ -121,6 +121,8 @@
 !/su-perf.js
 # 体重管理のグラフの部品（2026-10-10）。npm の Chart.js 4.4.1 の原本を同梱して自前で配る＝第三者の配信元から読まない
 !/chart-js-4.4.1.umd.js
+# ジェノグラムの PDF 出力の部品（2026-10-24）。jsPDF 2.5.1 を画面の中の直書きから移した（中身は1字も変えていない・PDF 出力を最初に押した時だけ読む）
+!/jspdf-2.5.1.umd.js
 !/perf-report.html
 !/help.html
 !/perf-report.js
