@@ -164,6 +164,7 @@ vm.runInContext([
   grabFn('csGenVictimIndex_'),
   grabFn('csTrimGens_'),
   grabFn('csWriteGens_'),
+  'var _csGensLastFp = null;',
   grabFn('csPushBackupGen_'),
   grabFn('csEnsureDayAnchor_'),
   grabDeclAsVar('CS_LOCK_KEY'),
@@ -649,12 +650,43 @@ group('csEnsureDayAnchor_（その日の控えを編集より前に1件作る）
 {
   /* 通常の保存は「内容が同じなら積まない」ままであること（同じ姿で埋め尽くさない） */
   box.localStorage.clear();
+  box._csGensLastFp = null;   // 起動直後と同じ（直前の試験が同じ中身を書いた指紋を持ち越さない）
   box.DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [ev('e1')] }] };
   box.csPushBackupGen_();
   box.csPushBackupGen_();
   eq('同じ内容は積まない', box.csReadGens_().length, 1);
   box.csPushBackupGen_(true);
   eq('force のときだけ同じ内容でも積む', box.csReadGens_().length, 2);
+}
+{
+  /* 前回書けた世代と同じ中身なら、世代の控えを読まない（2026-10-24 段3）。
+     書けなかった時は指紋を持たない＝次の保存で読み直して積み直す（容量不足の後の再試行を消さない） */
+  box.localStorage.clear();
+  box._csGensLastFp = null;
+  box.csNote_ = () => {};
+  box.DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [ev('e1')] }] };
+  const realGet = box.localStorage.getItem, realSet = box.localStorage.setItem;
+  let reads = 0;
+  box.localStorage.getItem = (k) => { if (k === 'cs_backup_gens_v1') reads++; return realGet(k); };
+  box.csPushBackupGen_();
+  eq('書けたら1世代', box.csReadGens_().length, 1);
+  reads = 0;
+  box.csPushBackupGen_();
+  eq('同じ中身なら世代の控えを読まない', reads, 0);
+  box.DB.residents[0].events.push(ev('e2'));
+  box.csPushBackupGen_();
+  eq('中身が変われば1世代増える', box.csReadGens_().length, 2);
+  box.localStorage.setItem = (k, v) => { if (k === 'cs_backup_gens_v1') throw new Error('QuotaExceededError'); realSet(k, v); };
+  box.DB.residents[0].events.push(ev('e3'));
+  box.csPushBackupGen_();                                    // 減らしても書けない
+  box.localStorage.setItem = realSet;
+  eq('書けなかった時は増えない', box.csReadGens_().length, 2);
+  eq('書けなかった時は指紋を持たない', box._csGensLastFp, null);
+  reads = 0;
+  box.csPushBackupGen_();                                    // 同じ中身でもう一度保存
+  eq('書けなかった後の保存は読み直す', reads > 0, true);
+  eq('書けなかった後の保存で積み直される', box.csReadGens_().length, 3);
+  box.localStorage.getItem = realGet;
 }
 {
   /* 容量エラーでも、捨てるのは「その日の最初でない控え」から */

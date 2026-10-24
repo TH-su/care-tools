@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-5hCcOBKBbw0wBiNK7gv64r7o8wyUCi+VmIWIUyj7hgA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-uDWnX5amXwCGA+Gjve2+Cmyt4KPIV2Y5rSqIp8CnpVQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3475,7 +3475,7 @@ function csMergeLocalBeforePush_() {
   if (gained > 0) {
     try { showToast('別タブの更新 ' + gained + '件を取り込んでから保存します'); } catch (e) {}
   }
-  try { renderAll(); } catch (e) {}
+  try { csRenderOrDefer_(); } catch (e) {}   // 送信の予約（2秒後）から裏で走ることがある＝裏なら見えた時に描く
   return gained;
 }
 
@@ -3566,6 +3566,16 @@ function csWriteGens_(gens) {
   csNote_('世代の控え', new Error('減らしても書けない'));
   return false;
 }
+/* 最後に【書き込みが成功した】世代の中身の指紋（長さ＋FNV-1a・csFingerprint_）。2026-10-24 段3。
+   保存のたびに世代の控え（上限 約2.4MB）を全部読み直して比べていたため、今回の中身がこの指紋と同じなら
+   控えを読まず・書かずに戻る（下の「最後の世代と同じなら積まない」と同じ判定を、読む前に済ませる）。
+   ★持つのは書き込みが成功した時だけ。書けなかった時は空にする＝次の保存で今どおり読み直して積み直す。
+   ★起動直後（メモリなので空）と、別のタブが世代の控えを書いた時（storage）は空＝次の保存は今どおり読む。
+   世代の数・上限・剪定の順・控えの形は変えていない。 */
+let _csGensLastFp = null;
+window.addEventListener('storage', function (e) {
+  if (!e || e.key === null || e.key === CS_GENS_KEY) _csGensLastFp = null;
+});
 /* 保存のたびに1世代積む。内容が変わっていなければ積まない（同じ姿で埋め尽くさない）。
    force=true のときだけ、内容が同じでも積む（＝その日の最初の控えを作る経路）。 */
 function csPushBackupGen_(force) {
@@ -3573,12 +3583,14 @@ function csPushBackupGen_(force) {
   try {
     if (csLooksLikeSampleOnly(DB.residents) || csRealResidentCount(DB.residents) === 0) return;
     const json = JSON.stringify(DB.residents);
+    const fp = csFingerprint_(json);
+    if (!force && _csGensLastFp !== null && fp === _csGensLastFp) return;   // 前回書けた世代と同じ中身＝読まない
     const gens = csReadGens_();
     if (!force && gens.length && gens[gens.length - 1].json === json) return;
     const at = Date.now();
     gens.push({ at: at, day: csJstDay_(at), res: csRealResidentCount(DB.residents),
                 ev: csCountEventsAll_(DB.residents), json: json });
-    csWriteGens_(csTrimGens_(gens));
+    _csGensLastFp = csWriteGens_(csTrimGens_(gens)) ? fp : null;   // 書けた時だけ持つ（剪定は最新の1件を必ず残す）
   } catch(e){ csNote_('世代の控え', e); }
 }
 
@@ -4444,7 +4456,7 @@ const SYNC = {
        （職員が自分でセレクトを変えた後は csMasterRid が破棄済みなので何もしない）。 */
     try { csApplyMasterIdParam(true); } catch (e) {}
     populateResidentSelect();
-    renderAll();
+    csRenderOrDefer_();   // 30秒ごとの照会の応答は裏でも届く＝裏なら見えた時に描く
     return true;
   },
 
@@ -4687,7 +4699,7 @@ const SYNC = {
         }
         saveLocalOnly();
         try { recalcAllEventUnits(); } catch(e) {}
-        renderAll();
+        csRenderOrDefer_();                           // 送信の応答＝裏なら見えた時に描く
         if (!this._rebasing) {                        // 1回だけ再push（再競合の無限ループ防止）
           this._rebasing = true;
           try { await this.push(); } finally { this._rebasing = false; }
@@ -5497,7 +5509,7 @@ function csStateRevTick_(){
      取得失敗時は版数を採用しない＝次tickで自動リトライ（ワースケ「取り込み済みrev基準」の型） */
 function csStateRevRefresh_(cfg, rev, srev){
   function applyChanged(changed){
-    if (changed){ try{ populateResidentSelect(); renderAll(); }catch(e){} }   // adopt() と同じ反映経路
+    if (changed){ try{ populateResidentSelect(); csRenderOrDefer_(); }catch(e){} }   // adopt() と同じ反映経路（裏なら見えた時に描く）
   }
   if (!cfg.token){
     /* トークン無し端末は直取得できない。LS再マージだけ行い版数を採用（変化時のみ動く）。
@@ -5982,6 +5994,24 @@ function restoreResident(id) {
   showToast(`「${res.name}」を復帰しました`);
   if (ok) csReassertResidentFlag_(id, 'movedOut', false, '復帰');
 }
+
+/* ── 裏にある間は盤面を描き直さない（2026-10-24 段3）──────────────────────────────
+   他端末の取り込み（30秒ごとの照会の応答）・別タブの書き込み（storage）・名簿の版の変化・送信の前の取り込みは、
+   画面が裏（別のタブ・最小化）にある間も届き、そのたびに盤面を全部作り直していた。
+   裏にある間は「描き直しが必要」の印だけ立てて戻り、見えた時に1回だけ描く。
+   ★renderAll の本体では止めない。印刷の準備（beforeprint → fitPrintToText_）は renderAll の直後に
+     予定の箱の高さを測り、印刷の後の戻し（restoreWeekPrint_）は直後にスクロール位置を戻すため、その場で描く必要がある。
+     ここを通すのは裏で走りうる経路（取り込み・storage・タイマーの送信・通信の応答）だけ。人の操作・印刷・試算は今どおり。 */
+let _csRenderPending = false;
+function csRenderOrDefer_() {
+  if (document.hidden) { _csRenderPending = true; return; }
+  renderAll();
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden || !_csRenderPending) return;
+  _csRenderPending = false;
+  try { renderAll(); } catch (e) {}   // 取り込み経路の描き直しと同じく、描けなくても運用を止めない
+});
 
 // ── Calendar render ──
 function renderAll() {
@@ -9406,13 +9436,13 @@ function csScheduleStorageAdopt_(delay) {
         const r = csAbsorbForeignWrite_();
         /* ★変わった時だけ書き戻す。無条件に書くと相手タブの storage を叩き、
            未送信どうしのタブが書き合って止まらない（レビュー M-3）。 */
-        if (r && r.changed) { saveLocalOnly(); populateResidentSelect(); renderAll(); }
+        if (r && r.changed) { saveLocalOnly(); populateResidentSelect(); csRenderOrDefer_(); }
       } catch (err) {}
       return;
     }
     /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
        他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
-    try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
+    try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); csRenderOrDefer_(); } catch (err) {}   // 別タブの書き込みは裏でも届く＝裏なら見えた時に描く
   }, delay);
 }
 /* 別タブ（ワースケ・別ウィンドウの週間計画）が care_schedule_v2 を書いた時の受け口。

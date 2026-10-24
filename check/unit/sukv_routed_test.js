@@ -308,7 +308,7 @@ function makeKv(o) {
         DB: clone(MINE_DB),
         localStorage: { getItem: x => (ls.has(x) ? ls.get(x) : null), setItem: (x, v) => ls.set(x, String(v)), removeItem: x => ls.delete(x) },
         csMergeLocalBeforePush_() {}, ensureServiceDict_() {}, csFieldBaseBuild_: () => ({}), csFieldBaseSet_() {}, csNote_() {},
-        csApplyDeviceSelection_() {}, csFieldChangeText_: () => '', saveLocalOnly() {}, recalcAllEventUnits() {}, renderAll() {}, alert() {},
+        csApplyDeviceSelection_() {}, csFieldChangeText_: () => '', saveLocalOnly() {}, recalcAllEventUnits() {}, renderAll() {}, csRenderOrDefer_() {}, alert() {},
         SUKV: k.kv, RAW: k.raw, SENT: sent
       };
       vm.createContext(box);
