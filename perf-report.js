@@ -1,5 +1,7 @@
 /* perf-report.html の処理（2026-10-09 に HTML から分けた・監査10月版 #16）。中身は分ける前と同じ
-   2026-10-17: Supabase と JSON の通信も数える（su-perf.js の記録の版 2）。「使えるまで」の列と通信回数の内訳を足した */
+   2026-10-17: Supabase と JSON の通信も数える（su-perf.js の記録の版 2）。「使えるまで」の列と通信回数の内訳を足した
+   2026-10-24: 見えている時／裏にある時の回数（記録の版 3）。GAS の種類ごと・JSON のファイルごと・分類ごとの合計の表と、CSV の末尾の列を足した。
+               既存の表・列・目安は変えていない。版 3 より前の記録は新しい表に数えない（項目が無いため） */
 (function () {
   'use strict';
   var DB = 'su_perf', STORE = 'views';
@@ -96,6 +98,41 @@
     return all.filter(function (r) { return r.t >= from; });
   }
 
+  /* ── 見えている時／裏にある時（記録の版 3・2026-10-24）──
+     画面を閉じるまでの合計（vis）・GAS の種類ごと（gasAct）・JSON のファイルごと（jsonF）を、アプリごとに足し合わせる。
+     名前（アプリ・種類・ファイル）を鍵にするので、Object.create(null) の入れ物で数える（__proto__ などの名前でも壊れない） */
+  var CATS = [['gas', 'GAS'], ['sb', 'Supabase'], ['json', '同じサイトの JSON'], ['ext', 'CDN など']];
+  function num(x) { return typeof x === 'number' && isFinite(x) ? x : 0; }
+  function hasVis(r) { return !!(r && r.vis && typeof r.vis === 'object'); }
+  function visSummary(rows) {
+    var apps = Object.create(null), kinds = Object.create(null), files = Object.create(null);
+    function addKind(box, app, name, k) {
+      if (typeof name !== 'string' || !name) return;
+      var key = app + '\u0001' + name;
+      var o = box[key] || (box[key] = { app: app, name: NAMES[app] || app, k: name, v: 0, h: 0 });
+      o.v += num(k.v); o.h += num(k.h);
+    }
+    rows.forEach(function (r) {
+      if (!hasVis(r)) return;
+      var a = apps[r.app] || (apps[r.app] = { app: r.app, name: NAMES[r.app] || r.app, n: 0, cats: {} });
+      a.n++;
+      CATS.forEach(function (c) {
+        var o = r.vis[c[0]] || {};
+        var t = a.cats[c[0]] || (a.cats[c[0]] = { vN: 0, vMs: 0, hN: 0, hMs: 0 });
+        t.vN += num(o.vN); t.vMs += num(o.vMs); t.hN += num(o.hN); t.hMs += num(o.hMs);
+      });
+      (Array.isArray(r.gasAct) ? r.gasAct : []).forEach(function (k) { if (k) addKind(kinds, r.app, k.a, k); });
+      (Array.isArray(r.jsonF) ? r.jsonF : []).forEach(function (k) { if (k) addKind(files, r.app, k.f, k); });
+    });
+    function list(box) {
+      return Object.keys(box).map(function (k) { return box[k]; })
+        .sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : (y.v + y.h) - (x.v + x.h); });
+    }
+    var appList = Object.keys(apps).map(function (k) { return apps[k]; })
+      .sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; });
+    return { n: appList.reduce(function (s, a) { return s + a.n; }, 0), apps: appList, kinds: list(kinds), files: list(files) };
+  }
+
   function summarize(rows) {
     var by = {};
     rows.forEach(function (r) { (by[r.app] = by[r.app] || []).push(r); });
@@ -136,7 +173,7 @@
     var allOnes = [];
     rows.forEach(function (r) { (r.gas || []).forEach(function (g) { allOnes.push(g.d); }); });
     return {
-      apps: apps, eps: epList, n: rows.length,
+      apps: apps, eps: epList, n: rows.length, vis: visSummary(rows),
       dcl50: sec(q(rows.map(function (r) { return r.dcl; }), 0.5)),
       done50: sec(q(rows.map(doneOf), 0.5)),
       one50: sec(q(allOnes, 0.5)),
@@ -191,7 +228,37 @@
           return '<tr><td>' + esc(e.ep) + '</td><td>' + e.n + '</td>' + cell(e.p50, TH.one) + cell(e.p90, TH.one) + cell(e.max, null) + '</tr>';
         }).join('') + '</tbody>'
       : '<tr><td class="empty">記録がありません</td></tr>';
+    renderVis(s.vis);
     return s;
+  }
+  /* 見えている時／裏にある時の3つの表（2026-10-24） */
+  function renderVis(vs) {
+    var none = '<tr><td class="empty">記録がありません（2026-10-24 の更新より後に記録した分だけを数えます）</td></tr>';
+    $('tKind').innerHTML = vs.kinds.length
+      ? '<thead><tr><th>アプリ</th><th>GAS の種類</th><th>見えている時<br>回数</th><th>裏にある時<br>回数</th></tr></thead><tbody>' +
+        vs.kinds.map(function (k) {
+          return '<tr><td>' + esc(k.name) + '</td><td>' + esc(k.k) + '</td><td>' + k.v + '</td><td>' + k.h + '</td></tr>';
+        }).join('') + '</tbody>'
+      : none;
+    $('tFile').innerHTML = vs.files.length
+      ? '<thead><tr><th>アプリ</th><th>ファイル</th><th>見えている時<br>回数</th><th>裏にある時<br>回数</th></tr></thead><tbody>' +
+        vs.files.map(function (k) {
+          return '<tr><td>' + esc(k.name) + '</td><td>' + esc(k.k) + '</td><td>' + k.v + '</td><td>' + k.h + '</td></tr>';
+        }).join('') + '</tbody>'
+      : none;
+    var catRows = [];
+    vs.apps.forEach(function (a) {
+      CATS.forEach(function (c) {
+        var t = a.cats[c[0]];
+        if (!t || (!t.vN && !t.hN)) return;          /* 1回も無い分類は行を出さない */
+        catRows.push('<tr><td>' + esc(a.name) + '</td><td>' + a.n + '</td><td>' + esc(c[1]) + '</td>' +
+          '<td>' + t.vN + '</td><td>' + fmt(sec(t.vMs)) + '</td><td>' + t.hN + '</td><td>' + fmt(sec(t.hMs)) + '</td></tr>');
+      });
+    });
+    $('tVis').innerHTML = catRows.length
+      ? '<thead><tr><th>アプリ</th><th>記録した<br>回数</th><th>分類</th><th>見えている時<br>回数</th><th>見えている時<br>合計秒</th>' +
+        '<th>裏にある時<br>回数</th><th>裏にある時<br>合計秒</th></tr></thead><tbody>' + catRows.join('') + '</tbody>'
+      : none;
   }
   function kpi(lb, v, u) {
     return '<div class="kpi"><div class="lb">' + esc(lb) + '</div><div class="v">' + esc(v) + '<span class="u">' + esc(u) + '</span></div></div>';
@@ -230,15 +297,31 @@
     var head = ['日時', 'アプリ', '端末', '用途', '回線', '開き方', '画面KB', '取得', '応答開始ms', '画面ms', '読込完了ms',
       '起動時通信数', '通信合計回数', '通信合計ms', '固まりms', '使えるまでms', '通信明細(開始ms:所要ms:接続先)',
       'Supabase合計回数', 'Supabase合計ms', 'JSON合計回数', 'JSON合計ms', '全通信の読込完了ms', '記録の版'];
+    /* 2026-10-24: 見えている時／裏にある時の列を末尾に足す（既存の列の位置は変えない）。版 3 より前の記録は空欄 */
+    var CSV_CAT = { gas: 'GAS', sb: 'Supabase', json: 'JSON', ext: 'CDN等' };
+    CATS.forEach(function (c) {
+      var p = CSV_CAT[c[0]];
+      head.push(p + '見えている時回数', p + '見えている時ms', p + '裏にある時回数', p + '裏にある時ms');
+    });
+    head.push('GASの種類(種類:見えている時:裏にある時)', 'JSONのファイル(ファイル:見えている時:裏にある時)');
     var out = [head.join(',')];
     rows.slice().sort(function (a, b) { return a.t - b.t; }).forEach(function (r) {
       var d = new Date(r.t);
       var ts = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
       var det = (r.gas || []).map(function (g) { return g.s + ':' + g.d + ':' + g.ep; }).join(' ');
-      out.push([ts, NAMES[r.app] || r.app, r.dev, roleName(r.role), r.conn || '', r.nav || '', v(r.htmlKB), r.xfer || '',
+      var cols = [ts, NAMES[r.app] || r.app, r.dev, roleName(r.role), r.conn || '', r.nav || '', v(r.htmlKB), r.xfer || '',
         v(r.ttfb), v(r.dcl), v(r.gasDone), (r.gas || []).length, v(r.gasN), v(r.gasMs), v(r.tbt), v(r.ready), det,
-        v(r.sbN), v(r.sbMs), v(r.jsonN), v(r.jsonMs), v(r.netDone), v(r.v)]
-        .map(csvCell).join(','));
+        v(r.sbN), v(r.sbMs), v(r.jsonN), v(r.jsonMs), v(r.netDone), v(r.v)];
+      CATS.forEach(function (c) {
+        var o = hasVis(r) ? (r.vis[c[0]] || {}) : null;
+        cols.push(o ? num(o.vN) : '', o ? num(o.vMs) : '', o ? num(o.hN) : '', o ? num(o.hMs) : '');
+      });
+      var kindText = function (arr, key) {
+        return Array.isArray(arr) ? arr.filter(function (k) { return k && typeof k[key] === 'string'; })
+          .map(function (k) { return k[key] + ':' + num(k.v) + ':' + num(k.h); }).join(' ') : '';
+      };
+      cols.push(hasVis(r) ? kindText(r.gasAct, 'a') : '', hasVis(r) ? kindText(r.jsonF, 'f') : '');
+      out.push(cols.map(csvCell).join(','));
     });
     return '﻿' + out.join('\r\n');     /* BOM 付き＝Excel で文字化けしない */
   }
