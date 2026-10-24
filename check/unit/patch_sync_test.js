@@ -22,6 +22,9 @@
      L 現場の端末と権限の断り（2026-10-22 代表者の決定）: 現場の端末（su_device_role=field）は開いた後に全員分を送らず送信待ちの方だけ・
        保存の後は送る／権限の断り（42501）は送信待ちに残して denied を記録し、保存の後は送り直さず、開いた時（現場も事務所も）に1回送り直す・
        載ったら denied の記録を外す
+     M まとめて送る（統合 0021・2026-10-24 代表者の決定）: 開いた後の送信は patch_put_many を1往復（100人ずつに分ける）・
+       中身は1人ずつの時と同じ6つ・載らなかった方だけ送信待ちに残る・全体の失敗は全員に同じ扱い・
+       関数が無い時（古いデータベース）はその画面を開いている間だけ1人ずつ patch_put に戻る・保存の後の送信は1人ずつのまま
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -41,11 +44,14 @@ process.on('exit', () => { if (!finished) { console.log('  ✗ 途中で止ま�
 
 const AT1 = '2026-10-15T01:00:00.000Z', AT2 = '2026-10-16T01:00:00.000Z';
 /* 砂場: o.store（localStorage の中身）・o.flags（su-backend.json の supabase。null＝読めない）・o.status（ログインの状態）・
-   o.reply（patch_put の応答を返す関数）・o.tags（すでにある札）・o.noAuth（SUAuth をまだ持たない） */
+   o.reply（patch_put の応答を返す関数）・o.tags（すでにある札）・o.noAuth（SUAuth をまだ持たない）・
+   o.noMany（patch_put_many が無い古いデータベース＝PGRST202 を返す。'42883' ならその code・'msg' なら code なしで文言だけ）・
+   o.manyReply（patch_put_many の応答をそのまま返す関数。無ければデータベースと同じく、中で1人ずつ o.reply に通して配列で返す）
+   calls はデータベースの patch_put が受けた1人分ずつ（まとめて送った分も1人ずつ並ぶ・many:true）、rpcs は往復そのもの */
 function box(o) {
   o = o || {};
   const store = Object.assign({}, o.store || {});
-  const writes = [], calls = [], appended = [], bodyAdds = [], els = [];
+  const writes = [], calls = [], rpcs = [], appended = [], bodyAdds = [], els = [];
   const tags = (o.tags || []).slice();
   const ls = {
     getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
@@ -57,7 +63,20 @@ function box(o) {
   const auth = {
     STATUS: { OK: 'ok', SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_VERIFY: 'mfa_verify', MFA_ENROLL: 'mfa_enroll', ERROR: 'error' },
     check: () => Promise.resolve({ status: o.status || 'ok', role: 'field' }),
-    client: () => ({ rpc: (name, args) => { calls.push({ name, args }); return Promise.resolve((o.reply || (() => ({ data: { ok: true, written: true } })))(name, args, calls.length)); } })
+    client: () => ({ rpc: (name, args) => {
+      const reply = o.reply || (() => ({ data: { ok: true, written: true } }));
+      rpcs.push({ name, args });
+      if (name === 'patch_put_many') {
+        if (o.noMany) return Promise.resolve({ data: null, error: o.noMany === 'msg' ? { message: 'Could not find the function public.patch_put_many(items) in the schema cache' }
+          : { code: o.noMany === '42883' ? '42883' : 'PGRST202', message: 'Could not find the function public.patch_put_many(items) in the schema cache' } });
+        if (o.manyReply) return Promise.resolve().then(() => o.manyReply(args, rpcs.length));
+        // データベース（0021）と同じく、中で1人ずつ patch_put を呼んだ応答を並べる。呼び出しの失敗（通信・42501）が1つでもあれば全体の失敗
+        const rs = (args.items || []).map(a => { calls.push({ name: 'patch_put', args: a, many: true }); return reply('patch_put', a, calls.length); });
+        const er = rs.find(x => x && x.error);
+        return Promise.resolve(er ? { data: null, error: er.error } : { data: rs.map(x => x.data), error: null });
+      }
+      calls.push({ name, args }); return Promise.resolve(reply(name, args, calls.length));
+    } })
   };
   const sb = {
     console, JSON, Math, Date, Number, String, Array, Object, Promise, Error, isFinite, isNaN, setTimeout, clearTimeout,
@@ -74,7 +93,7 @@ function box(o) {
   if (!o.noAuth) sb.SUAuth = auth;
   vm.createContext(sb);
   vm.runInContext(SYNC, sb, { filename: 'su-patch-sync.js' });
-  return { sb, store, writes, calls, appended, bodyAdds, els, auth, api: sb.SUPatchSync };
+  return { sb, store, writes, calls, rpcs, appended, bodyAdds, els, auth, api: sb.SUPatchSync };
 }
 const SESSION = { 'sb-jhbernqawjrzqwrmqrih-auth-token': '{}' };
 const res = r => J({ v: 1, r });
@@ -505,6 +524,115 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     await j1.api.pushOne('r1'); await settle();
     t('★L ログインの切れ（42501 以外）は送信待ちに残す（記録しない）', J(q(j1)) === J(['r1']) && !ng(j1).r1, { q: q(j1), ng: ng(j1) });
     t('L 部品は端末の用途を送る時に読む（su_device_role）', /lsGet\('su_device_role'\) === 'field'/.test(SYNC));
+  }
+
+  console.log('\n— M まとめて送る（統合 0021・2026-10-24）—');
+  {
+    const three = { r1: { start: '2026-10-01', no: 1, prev: 0, by: 'x', at: AT1, name: '見本 甲' }, r2: { start: '2026-10-02', no: 2, prev: 1, by: 'x', at: AT1 }, r3: { start: '2026-10-03', no: 3, prev: 2, by: 'x', at: AT1 } };
+    const st = Object.assign({ apc2_res: res(three) }, SESSION);
+    const names = b => b.rpcs.map(r => r.name);
+    const ids = r => ((r && r.args && r.args.items) || []).map(a => a.p_resident_id);
+    const sentOf = b => { try { return JSON.parse(b.store.apc2_sync_sent).s; } catch (e) { return {}; } };
+
+    // 1. まとめて1往復・中身は1人ずつの時と同じ6つ
+    const b1 = box({ store: st });
+    await b1.api.pushAll(); await settle();
+    const items = (b1.rpcs[0] && b1.rpcs[0].args.items) || [];
+    t('★M 開いた後の送信は patch_put_many を1回だけ呼ぶ（3人で1往復）', J(names(b1)) === J(['patch_put_many']) && J(ids(b1.rpcs[0])) === J(['r1', 'r2', 'r3']), names(b1));
+    t('★M 送るのは { items: [1人分ずつ] } だけ・1人分は6つのキーだけ（氏名のキーも文字も無い）',
+      J(Object.keys(b1.rpcs[0].args)) === J(['items']) && items.length === 3
+      && items.every(a => J(Object.keys(a).sort()) === J(['p_at', 'p_by', 'p_no', 'p_prev', 'p_resident_id', 'p_start'])) && J(items).indexOf('見本') < 0, items);
+    const one = box({ store: st });
+    await one.api.pushOne('r2'); await settle();
+    t('M 1人分の中身は、保存の後の送信（patch_put）と同じ', J(items[1]) === J(one.calls[0] && one.calls[0].args), { many: items[1], one: one.calls[0] && one.calls[0].args });
+    t('★M 全員載ったら送信済みに残り、送信待ちは空', J(sentOf(b1)) === J({ r1: AT1, r2: AT1, r3: AT1 }) && q(b1).length === 0, { s: sentOf(b1), q: q(b1) });
+    await b1.api.pushAll(); await settle();
+    t('M 送るものが無ければ呼ばない（2回目の開いた後）', b1.rpcs.length === 1, names(b1));
+
+    // 2. 失敗した分だけ送信待ちに残る
+    const part = box({ store: st, manyReply: () => ({ data: [{ ok: true, written: true }, { ok: false, error: 'failed' }, { ok: false, error: 'badno' }], error: null }) });
+    await part.api.pushAll(); await settle();
+    t('★M 載った方（r1）は送信済み・送信待ちに無い', sentOf(part).r1 === AT1 && q(part).indexOf('r1') < 0, { s: sentOf(part), q: q(part) });
+    t('★M 1人だけ失敗した方（r2・failed）は送信待ちに残り、送信済みにしない', J(q(part)) === J(['r2']) && !('r2' in sentOf(part)) && !ng(part).r2, { q: q(part), ng: ng(part) });
+    t('★M 形で断られた方（r3・badno）は今までどおり送信待ちから外して記録だけ残す', ng(part).r3 && ng(part).r3.e === 'badno' && ng(part).r3.at === AT1 && !('r3' in sentOf(part)), ng(part));
+    await part.api.pushAll(); await settle();
+    t('M 次に開いた時は、送信待ちに残った方（r2）だけをまとめて送る（断られた方は送り直さない）', J(ids(part.rpcs[1])) === J(['r2']), part.rpcs.map(ids));
+    const hole = box({ store: st, manyReply: () => ({ data: [{ ok: true, written: true }, null, { ok: true, unchanged: true }], error: null }) });
+    await hole.api.pushAll(); await settle();
+    t('M 応答の1人分が壊れている方だけ送信待ちに残る', J(q(hole)) === J(['r2']) && J(Object.keys(sentOf(hole)).sort()) === J(['r1', 'r3']), { q: q(hole), s: sentOf(hole) });
+
+    // 3. 呼び出し全体の失敗は、その回の全員に同じ扱い（今の1人ずつの失敗と同じ）
+    for (const [label, mr] of [
+      ['通信の失敗', () => ({ data: null, error: { message: 'Failed to fetch' } })],
+      ['例外（呼び出しが返らずに失敗）', () => { throw new Error('offline'); }],
+      ['ログインの切れ（PGRST301）', () => ({ data: null, error: { code: 'PGRST301', message: 'JWT expired' } })],
+      ['配列でない応答（toomany 等の全体の断り）', () => ({ data: { ok: false, error: 'toomany' }, error: null })],
+      ['人数の合わない応答', () => ({ data: [{ ok: true, written: true }], error: null })],
+      ['空の応答', () => ({ data: null, error: null })]
+    ]) {
+      const b = box({ store: st, manyReply: mr });
+      await b.api.pushAll(); await settle();
+      t('★M 全体の失敗（' + label + '）は全員送信待ちに残り、送信済み・断りの記録にしない', J(q(b)) === J(['r1', 'r2', 'r3']) && !('apc2_sync_sent' in b.store) && Object.keys(ng(b)).length === 0, { q: q(b), ng: ng(b) });
+    }
+    const den = box({ store: st, manyReply: () => ({ data: null, error: { code: '42501', message: 'not allowed' } }) });
+    await den.api.pushAll(); await settle();
+    t('★M 権限の断り（42501）は全員を送信待ちに残し、denied を記録する（1人ずつの時と同じ）',
+      J(q(den)) === J(['r1', 'r2', 'r3']) && ['r1', 'r2', 'r3'].every(k => ng(den)[k] && ng(den)[k].e === 'denied' && ng(den)[k].at === AT1), { q: q(den), ng: ng(den) });
+    t('M 権限の断りでは1人ずつの patch_put に切り替えない（関数が無い時だけ）', J(names(den)) === J(['patch_put_many']), names(den));
+
+    // 4. 関数が無い（0021 を流す前のデータベース）→ この画面を開いている間は1人ずつ
+    const old = box({ store: st, noMany: true });
+    await old.api.pushAll(); await settle();
+    t('★M 関数が無い時（PGRST202）は、同じ送信の中で1人ずつ patch_put に戻って全員送る', J(names(old)) === J(['patch_put_many', 'patch_put', 'patch_put', 'patch_put'])
+      && J(old.calls.map(c => c.args.p_resident_id)) === J(['r1', 'r2', 'r3']) && q(old).length === 0 && J(Object.keys(sentOf(old)).sort()) === J(['r1', 'r2', 'r3']), names(old));
+    old.store.apc2_res = res(Object.assign({}, three, { r1: Object.assign({}, three.r1, { at: AT2 }) }));
+    await old.api.pushAll(); await settle();
+    t('★M 同じ画面で次に開いた後の送信も、patch_put_many を呼び直さず1人ずつ', J(names(old).slice(4)) === J(['patch_put']) && old.calls[3].args.p_resident_id === 'r1', names(old));
+    t('★M 関数が無かったことは端末に覚えない（書くのは送信待ち・断り・送信済み・スイッチの控えだけ）',
+      old.writes.every(k => /^-?(apc2_sync_q|apc2_sync_ng|apc2_sync_sent|su_backend_flags)$/.test(k)), old.writes);
+    const reopen = box({ store: Object.assign({}, old.store, { apc2_res: res(Object.assign({}, three, { r1: Object.assign({}, three.r1, { at: AT2 }), r2: Object.assign({}, three.r2, { at: AT2 }) })) }) });
+    await reopen.api.pushAll(); await settle();
+    t('M 画面を開き直せば（0021 を流した後）またまとめて送る', J(names(reopen)) === J(['patch_put_many']) && J(ids(reopen.rpcs[0])) === J(['r2']), names(reopen));
+    for (const kind of ['42883', 'msg']) {
+      const b = box({ store: st, noMany: kind });
+      await b.api.pushAll(); await settle();
+      t('M 関数が無い時の見分け（' + (kind === 'msg' ? 'code が無く文言だけ' : 'code ' + kind) + '）でも1人ずつに戻る', J(names(b)) === J(['patch_put_many', 'patch_put', 'patch_put', 'patch_put']) && q(b).length === 0, names(b));
+    }
+    const oldNet = box({ store: st, noMany: true, reply: () => ({ error: { message: 'Failed to fetch' } }) });
+    await oldNet.api.pushAll(); await settle();
+    t('M 1人ずつに戻った後の失敗の扱いは今と同じ（通信の失敗は送信待ちに残る）', J(q(oldNet)) === J(['r1', 'r2', 'r3']), q(oldNet));
+    const oldDen = box({ store: st, noMany: true, reply: (n, a) => (a.p_resident_id === 'r2' ? { data: null, error: { code: '42501' } } : { data: { ok: true, written: true } }) });
+    await oldDen.api.pushAll(); await settle();
+    t('M 1人ずつに戻った後の権限の断りも今と同じ（その方だけ denied・送信待ち）', J(q(oldDen)) === J(['r2']) && ng(oldDen).r2 && ng(oldDen).r2.e === 'denied', { q: q(oldDen), ng: ng(oldDen) });
+
+    // 5. 100 人ずつに分ける
+    const many = (n) => { const r = {}; for (let i = 1; i <= n; i++) r['m' + String(i).padStart(3, '0')] = { start: '2026-10-01', no: 1, prev: 0, by: 'x', at: AT1 }; return r; };
+    const b100 = box({ store: Object.assign({ apc2_res: res(many(100)) }, SESSION) });
+    await b100.api.pushAll(); await settle();
+    t('★M 100 人ちょうどは1往復', b100.rpcs.length === 1 && ids(b100.rpcs[0]).length === 100 && q(b100).length === 0, b100.rpcs.map(r => ids(r).length));
+    const b205 = box({ store: Object.assign({ apc2_res: res(many(205)) }, SESSION) });
+    await b205.api.pushAll(); await settle();
+    t('★M 上限（100 人）を超える時は分けて送る（205 人＝100・100・5）', J(b205.rpcs.map(r => ids(r).length)) === J([100, 100, 5]) && J(names(b205)) === J(['patch_put_many', 'patch_put_many', 'patch_put_many']), b205.rpcs.map(r => ids(r).length));
+    t('M 分けても全員が1回ずつ・控えの順に送られ、全員送信済み', J([].concat(...b205.rpcs.map(ids))) === J(Object.keys(many(205))) && Object.keys(sentOf(b205)).length === 205 && q(b205).length === 0);
+    const b205f = box({ store: Object.assign({ apc2_res: res(many(205)) }, SESSION), manyReply: (a, i) => (i === 2 ? { data: null, error: { message: 'Failed to fetch' } } : { data: a.items.map(() => ({ ok: true, written: true })), error: null }) });
+    await b205f.api.pushAll(); await settle();
+    t('★M 分けた2回目だけ失敗したら、その 100 人だけ送信待ちに残り、1回目・3回目の分は送信済み',
+      q(b205f).length === 100 && J(q(b205f)) === J(Object.keys(many(205)).slice(100, 200)) && Object.keys(sentOf(b205f)).length === 105 && b205f.rpcs.length === 3, { q: q(b205f).length, s: Object.keys(sentOf(b205f)).length });
+
+    // 6. 保存の後の送信・現場の端末・送っている間の保存
+    const save = box({ store: Object.assign({}, st, { apc2_sync_q: J({ v: 1, q: { r3: AT1 } }) }) });
+    await save.api.pushOne('r1'); await settle();
+    t('★M 保存の後の送信（pushOne）は今までどおり1人ずつ patch_put（送信待ちの方も）', J(names(save)) === J(['patch_put', 'patch_put']) && J(save.calls.map(c => c.args.p_resident_id)) === J(['r1', 'r3']), names(save));
+    const fld = box({ store: Object.assign({}, st, { su_device_role: 'field', apc2_sync_q: J({ v: 1, q: { r2: AT1, r3: AT1 } }) }) });
+    await fld.api.pushAll(); await settle();
+    t('M 現場の端末の開いた後の送信（送信待ちの方だけ）もまとめて1往復', J(names(fld)) === J(['patch_put_many']) && J(ids(fld.rpcs[0])) === J(['r2', 'r3']) && q(fld).length === 0, names(fld));
+    const skip = box({ store: Object.assign({}, st, { apc2_sync_ng: J({ v: 1, r: { r3: { e: 'badstart', at: AT1, t: AT1 } } }) }) });
+    await skip.api.pushAll(); await settle();
+    t('M 同じ日時で形を断られた方はまとめる前に外す（送らない）', J(ids(skip.rpcs[0])) === J(['r1', 'r2']), skip.rpcs.map(ids));
+    const late = box({ store: st, manyReply: (a) => { late.store.apc2_sync_q = J({ v: 1, q: { r1: AT2 } }); return { data: a.items.map(() => ({ ok: true, written: true })), error: null }; } });
+    await late.api.pushAll(); await settle();
+    t('★M 送っている間に新しい日時で保存し直された方は送信待ちから外さない（観測してから完了）', J(q(late)) === J(['r1']), q(late));
+    t('M 部品はまとめて送る関数の名前を1か所でだけ呼ぶ（開いた後の送信だけ）', (SYNC.match(/rpc\('patch_put_many'/g) || []).length === 1);
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
