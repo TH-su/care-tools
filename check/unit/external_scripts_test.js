@@ -2,7 +2,7 @@
    実行: node check/unit/external_scripts_test.js
    守ること:
      ①どの画面も、http(s):// のスクリプトを integrity なしで読まない
-     ②体重管理のグラフ部品は、同梱した chart-js-4.4.1.umd.js（npm の原本）を読む
+     ②体重管理のグラフ部品は、同梱した chart-js-4.4.1.umd.js（npm の原本）を読む（2026-10-24 から最初にグラフを描く時に読む）
      ③ジェノグラムの PDF 出力の部品は、同梱した jspdf-2.5.1.umd.js を読む（2026-10-24・画面の中の直書きから移した） */
 'use strict';
 const fs = require('fs');
@@ -26,7 +26,7 @@ for (const f of pages) {
 t('外部の配信元のスクリプトを integrity なしで読む画面が無い（' + pages.length + '画面）', pages.length > 10 && bad.length === 0, bad);
 
 const W = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-t('体重管理は同梱したグラフ部品を読む', /<script src="chart-js-4\.4\.1\.umd\.js"><\/script>/.test(W) && W.indexOf('cdn.jsdelivr.net') < 0, '');
+t('体重管理は同梱したグラフ部品を、最初にグラフを描く時に読む', /const WR_CHART_SRC = 'chart-js-4\.4\.1\.umd\.js';/.test(W) && W.indexOf('cdn.jsdelivr.net') < 0, '');
 const C = fs.readFileSync(path.join(ROOT, 'chart-js-4.4.1.umd.js'), 'utf8');
 t('同梱したグラフ部品は Chart.js v4.4.1 の原本（版の札がある）', /\* Chart\.js v4\.4\.1\n/.test(C) && C.length > 200000, C.length);
 
