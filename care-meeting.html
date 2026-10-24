@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gO1aDOqd+wLtWRwm4sEqJWLIvY+wL4pqHCD0RZuLxbU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-3jvD4rxlwlfv9hK5hMGGsqb8xEgAZE6UQnyY1CiiwWs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -847,9 +847,10 @@ function grow_(t){ try{ t.style.height='auto'; t.style.height=(t.scrollHeight+2)
 function scrollToEditor_(){ try{ var b=$('cm-detail'); if(b&&b.scrollIntoView) b.scrollIntoView({block:'start'}); }catch(e){} }
 
 /* ═══════════ 入居者を開く・選ぶ ═══════════ */
+/* 受け取る引数は resident（利用者No）だけ。masterId= は読まない＝引数なしと同じく選ぶ一覧を出す（2026-10-25 本人指示） */
 function readMasterIdParam_(){
   var q=null; try{ q=new URLSearchParams(location.search); }catch(e){ return {id:null,bad:false}; }
-  var v=q.get('masterId'); if(v==null||v==='') return {id:null,bad:false};
+  var v=q.get('resident'); if(v==null||v==='') return {id:null,bad:false};
   v=String(v).trim();
   return ID_RE.test(v)?{id:v,bad:false}:{id:null,bad:true};
 }
@@ -961,7 +962,7 @@ function goOther_(){
 }
 function pickPerson_(id){
   if(!ID_RE.test(String(id||''))) return;
-  try{ history.replaceState(null,'','?masterId='+encodeURIComponent(id)); }catch(e){}
+  try{ history.replaceState(null,'','?resident='+encodeURIComponent(id)); }catch(e){}
   openPerson_(String(id));
 }
 

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-xxbJSGcNPh9GAav8zwAhpf/9QukPBIWugU90Lo4yy/4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-rutY5ChxiI6WKK7brYNJreinnL92CNGnsQwGtysjJIk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -536,6 +536,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yjl-lbl{font-size:0.8125rem; font-weight:700; color:var(--g7); margin:6px 0 2px}
 .yjl-pre{margin:0 0 4px; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; font:inherit; font-size:0.875rem}
 @media print{.sec-yjlog,.yjl-slot{display:none !important}}
+/* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
+   ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
+@media print{.sec-cmeet{display:none !important}}
 /* ── 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ・画面だけ（印刷しない）。既存の .modal には触れない ──
    ★追加・変更・中止は変更履歴と同じ文字の札（.mh-tag）で示す。注意は黄色＋⚠の文字（色だけで伝えない） */
 .mc-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:0 0 8px}
@@ -9198,6 +9201,17 @@ function yjlSlot_(r){
   if(yjlMem.id!==id){ yjlMem={id:id, rows:null}; yjlLoad_(id); }
   return '<div class="yjl-slot" id="yjlSlot" data-id="'+esc(id)+'">'+(yjlMem.rows?yjlHtml_(yjlMem.rows):'')+'</div>';
 }
+/* 詳細画面の「担当者会議」の欄（2026-10-25 本人指示）。担当者会議のページへのリンクだけを出す。
+   ★渡すのは利用者No（resident=）だけ。氏名・居室は URL に載せない（あちらがサーバーから読む）
+   ★現場端末では欄ごと出さない（担当者会議のページも現場端末では使えないため）。印刷しない（.sec-cmeet を @media print で消す）
+   ★他の画面へのリンク（この方を各アプリで開く）と同じく別タブで開く＝マスタで見ていた内容を失わない */
+function meetingLinkHtml_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  return '<div class="sec sec-cmeet"><div class="sec-lbl">担当者会議</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+    '<a class="rlink" target="_blank" rel="noopener" href="'+esc('care-meeting.html?resident='+encodeURIComponent(String(r.id)))+'">📋 担当者会議の記録を開く</a>'+
+    '</div></div></div>';
+}
 function yjlLoad_(id){
   if(getDeviceRole()==='field'||!CFG.url) return;
   var gen=++yjlGen, dg=devGen;
@@ -9927,6 +9941,7 @@ function renderView(r){
     '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
   '</div></div>';
+  h+=meetingLinkHtml_(r);   // 担当者会議（事務所PCだけ・リンクだけ・印刷しない）（2026-10-25 本人指示）
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
