@@ -72,7 +72,9 @@ function facility(profile) {
   const DCR = read('daycare-roster.html');
   t('デイ利用表のコードに医療機関の名前を書かない（わかば の語が無い）', !/わかば/.test(DCR));
   t('☆の判定は施設情報（dcrClinicOf_）で行う', /if \(dcrClinicOf_\(x\.hospital\) && \/\^\[月火水木金土日\]\$\/\.test\(vd\)\) vm\[String\(mid\)\] = vd;/.test(DCR));
-  t('名簿の取得と一緒に施設情報を待つ（読めなければ☆を付けない）', /Promise\.all\(\[SU\.data\.getRoster\(\{ endpoint: cfg\.url, token: cfg\.token \}\), suFacReady_\(\)\]\)/.test(DCR));
+  /* 2026-10-24（段2b）: 名簿は入口（su-roster.js）を通して読む。Google への読み取り（raw）は今までと同じ形のまま、施設情報と一緒に待つ */
+  t('名簿の取得と一緒に施設情報を待つ（読めなければ☆を付けない）',
+    /var raw = function\(\)\{ return SU\.data\.getRoster\(\{ endpoint: cfg\.url, token: cfg\.token \}\); \};/.test(DCR) && /return Promise\.all\(\[rosterP, suFacReady_\(\)\]\)/.test(DCR));
   const grab = name => { const s = DCR.indexOf('function ' + name + '('); const e = DCR.indexOf('\n}', s); return DCR.slice(s, e + 2); };
   const dbox = { window: {}, String };
   vm.createContext(dbox);

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gpxj8LA6UekKZxOPAIRcVJdanqLoBprDF17TW8cpfXo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-HZX1fGn6euWhzK99eQJmZDJEX5oCzOAmoYGgODFXVSY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -683,6 +683,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-24"></script>
+<!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
+<script src="su-roster.js?v=2026-10-24.2"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="su-data.js?v=2026-08-13"></script>
 <script src="su-data-gas.js?v=2026-08-13"></script>
@@ -1336,8 +1338,17 @@ function dcrFetchMasterHosp(force){
   dcrHospBusy = true;
   /* Phase 0: 入居者マスタからの名簿取得を共通データ層へ移した。
      ★2026-09-23: 合言葉を URL に載せないため GET＋クエリをやめ POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。 */
+  /* 名簿の読み取りは入口（su-roster.js・SURoster）を通す（2026-10-24・代表者の決定4・アプリ間連携と軽量化 段2b）。
+     スイッチ master_roster_read と master_care_read が両方入っていて、事務所・管理者のログインで、写しが Google の今の版数と同じ時だけ、
+     訪問日・かかりつけ病院（☆の元）も含めて写しから読む（care）。それ以外・読めない時は raw（今までの要求そのまま）を呼ぶ。
+     写しから読んだ時も見張りの基準（stateRev・srev）が応答に添えられる（withRev）。部品が読み込めない時も raw を呼ぶ。
+     現場の端末では入口が raw をそのまま呼ぶ（今までどおり）。☆・入院・居室・姓名の切れ目の作り方は下のまま変えない。 */
+  var raw = function(){ return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }); };
+  var rosterP;
+  try { rosterP = window.SURoster ? window.SURoster.getRoster(raw, { where: 'daycare', masterUrl: cfg.url, care: true, withRev: true }) : raw(); }
+  catch (e) { rosterP = raw(); }
   /* ☆の医療機関は施設情報から引くので、名簿と一緒に施設情報も待つ（最大3秒・読めなければ☆を付けない＝2026-10-14） */
-  return Promise.all([SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }), suFacReady_()])
+  return Promise.all([rosterP, suFacReady_()])
     .then(function(rs){
       var j = rs[0];
       if (!j || !Array.isArray(j.roster)) return false;
