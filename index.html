@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-UIkmV/gdu0VnQ6mWhFHJGJZusndNkfuKNodtmJoJlAc=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-F2815U6qJQW4iGBn1a9P+8t9V9IeN6rkcnchFhcDjd8=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -14,6 +14,8 @@
      ★このページに氏名・記録・合言葉（トークン）を持ち込まない（読む・書く・送るのいずれも禁止）。
        読んでよいのは su_device_role と、ログインの役割・ボタンの並び・非表示（su-menu.js・2026-10-23 代表者の決定）だけ。
        役割と並びは共通ログイン（Supabase の menu_get）から読み、端末に su_menu_v1 として控える（リンク先と区分 id だけ）。
+       ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
+       読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
        （描画後に JS で消すと現場端末で一度は見えてしまう）。
      ★localStorage が使えない環境（Safari プライベート等）は判定不能なので【出す】側に倒す。
@@ -39,7 +41,8 @@
 </script>
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
-   このページは氏名・記録を持たない。localStorage は端末用途（su_device_role）の読み取りのみ。 */
+   このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
+   期限の件数の控え tp_menu_due）。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -58,6 +61,7 @@
   --pri: #0b57d0; --pri-l: #ecf3fe; --pri-d: #0842a0;
   --g0: #f8f9fa; --g1: #f1f3f4; --g2: #e8eaed; --g3: #dadce0;
   --g5: #9aa0a6; --g6: #80868b; --g7: #5f6368; --g9: #202124;
+  --due-tx: #a50e0e;         /* 期限の件数の札（白地で約 7.9:1。--ng #c62828 は 5.6:1 で 7:1 目標に届かない） */
   --r: 12px;
   --sh: 0 1px 6px rgba(0,0,0,.12);
   --tile-min: 96px;          /* HIG: タップ領域は最小44px。実測96pxで誤タップを避ける */
@@ -125,6 +129,8 @@ main {
 .tile .nm { font-size: 0.84375rem; font-weight: 700; }
 /* --g6(#80868b) は白地で 3.68:1 と AA(4.5:1) を下回るため --g7(#5f6368)=5.96:1 を使う */
 .tile .note { font-size: 0.6875rem; color: var(--g7); font-weight: 400; }
+/* 期限の件数の札（2026-10-24 代表者の決定 案A）。色だけに頼らず「超過」等の語で書く */
+.tile .due { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
 .menu-broken { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #fff4e5; color: #7a4200; font-size: 0.9375rem; line-height: 1.5; }
 
@@ -160,7 +166,7 @@ main {
 <!-- メニューの定義（JSON）。画面はここから組み立てる（2026-10-09・監査10月版 #15）。読めなかった時は、この下の script が案内を出す -->
 <script type="application/json" id="menuDef">
 {
- "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・_why（理由のメモ・画面には出ない）。名前と説明の {{通所}} 等は施設情報の事業所名。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
+ "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・due（期限の件数の札を出す時の端末の控えの名前・2026-10-24）・_why（理由のメモ・画面には出ない）。名前と説明の {{通所}} 等は施設情報の事業所名。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
  "sections": [
   {
    "id": "sec-staff",
@@ -285,6 +291,7 @@ main {
      "nm": "個別機能訓練計画書",
      "note": "{{通所}}・3か月ごとの計画と印刷",
      "officeOnly": true,
+     "due": "tp_menu_due",
      "_why": "個別機能訓練計画書（通所）: 疾患名・治療経過を含む要配慮情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
     },
     {
@@ -362,6 +369,7 @@ main {
 /* 定義からタイルを組み立てる（2026-10-09・監査10月版 #15）。組み立てる部品は以前の手書きの HTML と同じ形
    （section.sec ＞ h2 ＞ span.mk ／ div.grid ＞ a.tile ＞ span.ic・span.nm・span.note）。CSS・行割り・現場端末の出し分けは変えない。
    ★このページに fetch・トークン・氏名・記録を持ち込まない（定義もページの中に置く）。
+     期限の件数の札（due）は、各アプリが端末に残した件数と数えた日だけを読む（書かない・送らない・現場端末では読まない）。
    ★文字はすべて textContent で入れる（定義に HTML を書いても実行されない）。 */
 (function () {
   var main = document.getElementById('menu');
@@ -381,6 +389,43 @@ main {
     return span;
   }
   function note(t) { return facText('note', t); }
+  /* DUE_TEXT_BEGIN 期限の件数の札の文字（2026-10-24 代表者の決定 案A・純関数・check/unit/menu_due_badge_test.js）。
+     raw は端末の控えの文字列 {"v":1,"at":"YYYY-MM-DD","overdue":n,"warn":n,"none":n}。today は今日の YYYY-MM-DD。
+     形が違う・数えた日が今日より先・件数が整数でない時は出さない（''）。0件の項目は書かず、全部0件なら出さない＝今と同じ見た目 */
+  function dueText(raw, today) {
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return ''; }
+    if (!d || typeof d !== 'object' || d.v !== 1) return '';
+    var ymd = /^(\d{4})-(\d{2})-(\d{2})$/, m = ymd.exec(String(d.at || '')), tm = ymd.exec(String(today || ''));
+    if (!m || !tm || String(d.at) > String(today)) return '';
+    var mo = Number(m[2]), dd = Number(m[3]);
+    if (mo < 1 || mo > 12 || dd < 1 || dd > 31) return '';
+    var parts = [], keys = [['overdue', '超過'], ['warn', '要注意'], ['none', '計画なし']];
+    for (var i = 0; i < keys.length; i++) {
+      var n = d[keys[i][0]];
+      if (typeof n !== 'number' || !isFinite(n) || n < 0 || n > 9999 || Math.floor(n) !== n) return '';
+      if (n > 0) parts.push(keys[i][1] + n);
+    }
+    if (!parts.length) return '';
+    /* 年が違う時は年も書く（去年の同じ月日を今年の日と読み違えないため） */
+    return parts.join('・') + '（' + (m[1] !== tm[1] ? m[1] + '/' : '') + mo + '/' + dd + '時点）';
+  }
+  /* DUE_TEXT_END */
+  function todayYmd() {
+    var t = new Date();
+    return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2);
+  }
+  /* 現場端末では読まない（タイル自体も隠れる）。読めない・壊れている時は札を出さない */
+  function dueBadge(key) {
+    try {
+      if (document.documentElement.classList.contains('is-field')) return null;
+      if (!/^[a-z0-9_]{1,40}$/.test(key)) return null;
+      var raw = localStorage.getItem(key);
+      if (raw == null) return null;
+      var txt = dueText(raw, todayYmd());
+      return txt ? el('span', 'due', txt) : null;
+    } catch (e) { return null; }
+  }
   /* ★壊れた1件だけを飛ばす（2026-10-10・監査10月版 第2版 15）。区分ごと・タイルごとに try で囲み、出せた分は出す。
      定義そのものを読めない・1枚も出せない時だけ案内に切り替え、その時も「使い方・困った時」へのリンクは出す。 */
   var def = null, broken = 0, firstErr = null;
@@ -408,6 +453,26 @@ main {
     var els = document.querySelectorAll('[data-fac-name]');
     for (var i = 0; i < els.length; i++) els[i].textContent = SUFacility.officeName(els[i].getAttribute('data-fac-name'));
   }
+  /* 札だけを付け直す（組み立て直さない）。「戻る」で前の表示のまま戻った時（bfcache）と、
+     同じ端末の別のタブで計画書が件数を書き換えた時に、古い件数を出したままにしないため */
+  function refreshDue() {
+    try {
+      var tiles = main.querySelectorAll('a.tile[data-due]');
+      for (var i = 0; i < tiles.length; i++) {
+        var old = tiles[i].querySelector('.due');
+        if (old) tiles[i].removeChild(old);
+        var nb = dueBadge(tiles[i].getAttribute('data-due'));
+        if (nb) tiles[i].appendChild(nb);
+      }
+    } catch (e) { /* 付け直せなくてもメニューは動く */ }
+  }
+  try {
+    window.addEventListener('pageshow', function (e) { if (e.persisted) refreshDue(); });
+    /* どのタイルの控え（data-due）が書き換わっても付け直す。鍵の名前は定義の due だけに持つ */
+    window.addEventListener('storage', function (e) {
+      if (!e.key || (/^[a-z0-9_]{1,40}$/.test(e.key) && main.querySelector('a.tile[data-due="' + e.key + '"]'))) refreshDue();
+    });
+  } catch (e) { /* 付け直しの登録ができなくても動く */ }
   function build(view) {
   if (view && typeof view === 'object') (Array.isArray(view.sections) ? view.sections : []).forEach(function (s) {
     try {
@@ -428,6 +493,7 @@ main {
         a.setAttribute('href', t.href);
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(facText('nm', t.nm)); a.appendChild(note(t.note));
+        if (typeof t.due === 'string') { a.setAttribute('data-due', t.due); var db = dueBadge(t.due); if (db) a.appendChild(db); }
         grid.appendChild(a);
         if (!t.officeOnly) open = true;
         } catch (e) { fail(e); }
