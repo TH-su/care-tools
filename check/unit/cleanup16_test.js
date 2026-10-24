@@ -46,7 +46,7 @@ console.log('\n— 2. 動作の速さの記録の CSP —');
   t('CSP がある（スクリプト・見た目は自分のファイルだけ・送り先も自分だけ）', /default-src 'self'/.test(csp) && /script-src 'self'(;|$)/.test(csp) && /style-src 'self'(;|$)/.test(csp) && /connect-src 'self'/.test(csp) && /object-src 'none'/.test(csp), csp);
   t('CSP に unsafe-inline・unsafe-eval が無い', !/unsafe-(inline|eval)/.test(csp), csp);
   t('ページの中にスクリプト・見た目・style 属性・on〜 属性を書かない', !/<script>/.test(bare) && !/<style/.test(bare) && !/\sstyle="/.test(bare) && !/\son[a-z]+="/.test(bare), '');
-  t('処理と見た目は別のファイルから読む', /<script src="perf-report\.js\?v=2026-10-17"><\/script>/.test(html) && /<link rel="stylesheet" href="perf-report\.css\?v=2026-10-09">/.test(html), '');
+  t('処理と見た目は別のファイルから読む', /<script src="perf-report\.js\?v=2026-10-24"><\/script>/.test(html) && /<link rel="stylesheet" href="perf-report\.css\?v=2026-10-09">/.test(html), '');
   t('分けたファイルが公開の許可リストに載っている', /^!\/perf-report\.js$/m.test(read('.gitignore')) && /^!\/perf-report\.css$/m.test(read('.gitignore')), '');
   const js = read('perf-report.js');
   t('処理のファイルに style 属性を書く所が無い（CSP で止まる）', !/setAttribute\(['"]style/.test(js) && !/style="/.test(js), '');

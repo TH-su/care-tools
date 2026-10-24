@@ -7,7 +7,7 @@
       json に {s, d, f} で残す（f はファイル名だけ・40字まで）。.js などほかの同じサイトのファイルは今までどおり数えない
    3. GAS は今までどおり（ep は配備IDの末尾4文字）。CDN などは ext。Supabase と JSON はもう ext に入れない
    4. netDone＝起動時の GAS・Supabase・JSON の明細すべての「開始＋所要」の最大（1件も無ければ null）。gasDone は今までどおり
-   5. 記録の版 v は 2。同じ通信を2回数えない
+   5. 記録の版 v は 3（2026-10-24 に見えている時／裏にある時を足して 2 から上げた。新しい項目の試験は su_perf_visibility_test.js）。同じ通信を2回数えない
    実行: node check/unit/su_perf_classify_test.js */
 'use strict';
 const fs = require('fs');
@@ -83,7 +83,7 @@ function run(entries) {
     ['https://evil.example.test/x.supabase.co/rest', 4, 5]                   /* 名前に含むだけ＝Supabase と見ない */
   ]);
   const r1 = await P.save();
-  t('記録の版 v は 2', r1.v === 2, r1.v);
+  t('記録の版 v は 3', r1.v === 3, r1.v);
   t('GAS は今までどおり1件（ep は末尾4文字）', r1.gasN === 1 && r1.gas.length === 1 && r1.gas[0].ep === '…1234', r1.gas);
   t('Supabase の回数は起動後の分も含めて5回・合計ms', r1.sbN === 5 && r1.sbMs === 900 + 100 + 40 + 10 + 70, [r1.sbN, r1.sbMs]);
   t('Supabase の明細は起動時の4件だけ', r1.sb.length === 4, r1.sb);
