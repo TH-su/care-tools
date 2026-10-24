@@ -653,10 +653,24 @@ group('csEnsureDayAnchor_（その日の控えを編集より前に1件作る）
   box._csGensLastFp = null;   // 起動直後と同じ（直前の試験が同じ中身を書いた指紋を持ち越さない）
   box.DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [ev('e1')] }] };
   box.csPushBackupGen_();
+  /* ★指紋を空にしてから2回目を保存する（再読み込み・別タブの書き込みの後と同じ状態）。
+     空にしないと指紋の近道で先に戻り、下の「最後の世代と同じなら積まない」守りを通らない
+     （8cd2fa0 の試験はここを通っておらず、守りを消しても気づけなかった）。 */
+  box._csGensLastFp = null;
   box.csPushBackupGen_();
   eq('同じ内容は積まない', box.csReadGens_().length, 1);
   box.csPushBackupGen_(true);
   eq('force のときだけ同じ内容でも積む', box.csReadGens_().length, 2);
+}
+{
+  /* 同じ中身の世代が既に入っていて、指紋が空のまま（起動直後）保存しても増えない */
+  box.localStorage.clear();
+  box._csGensLastFp = null;
+  box.DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [ev('e1')] }] };
+  box.localStorage.setItem('cs_backup_gens_v1', JSON.stringify([
+    { at: 1, day: '2026-01-01', res: 1, ev: 1, json: JSON.stringify(box.DB.residents) }]));
+  box.csPushBackupGen_();
+  eq('同じ中身の世代があれば、指紋が空でも積まない', box.csReadGens_().length, 1);
 }
 {
   /* 前回書けた世代と同じ中身なら、世代の控えを読まない（2026-10-24 段3）。
@@ -687,6 +701,44 @@ group('csEnsureDayAnchor_（その日の控えを編集より前に1件作る）
   eq('書けなかった後の保存は読み直す', reads > 0, true);
   eq('書けなかった後の保存で積み直される', box.csReadGens_().length, 3);
   box.localStorage.getItem = realGet;
+}
+{
+  /* 別のタブが世代の控えを書いた時（storage・key が cs_backup_gens_v1）と、全消し（key が null）の時は
+     指紋を空にする＝次の保存は今どおり読む。ほかのキーでは空にしない（2026-10-24 段3）。
+     宣言と受け口は画面のソースから切り出して、この砂場の世代の関数と同じ変数につなぐ。 */
+  const a = SRC.indexOf('\nlet _csGensLastFp = null;');
+  const w = a < 0 ? -1 : SRC.indexOf("window.addEventListener('storage'", a);
+  if (a < 0 || w < 0 || w - a > 200) throw new Error('世代の指紋の宣言と storage の受け口が見つかりません');
+  const snippet = SRC.slice(a, scanBlock(SRC, w, '(', ')') + 1).replace(/^\nlet /, 'var ') + ';';
+  const L = {};
+  box.window = { addEventListener: (t, f) => { (L[t] = L[t] || []).push(f); } };
+  vm.runInContext(snippet, box);
+  const fire = (key) => (L.storage || []).forEach(f => f({ key: key }));
+  box.localStorage.clear();
+  box._csGensLastFp = null;
+  box.DB = { residents: [{ id: 'r1', name: '架空 一郎', events: [ev('e1')] }] };
+  const realGet = box.localStorage.getItem;
+  let reads = 0;
+  box.localStorage.getItem = (k) => { if (k === 'cs_backup_gens_v1') reads++; return realGet(k); };
+  box.csPushBackupGen_();
+  const held = box._csGensLastFp;
+  eq('書けたら指紋を持つ', typeof held === 'string' && held.length > 0, true);
+  fire('care_schedule_v2');
+  eq('ほかのキーの storage では指紋を空にしない', box._csGensLastFp, held);
+  reads = 0;
+  box.csPushBackupGen_();
+  eq('ほかのキーの storage の後も、同じ中身なら読まない', reads, 0);
+  fire('cs_backup_gens_v1');
+  eq('別のタブが世代の控えを書いたら指紋を空にする', box._csGensLastFp, null);
+  reads = 0;
+  box.csPushBackupGen_();
+  eq('世代の控えが書かれた後の保存は読み直す', reads > 0, true);
+  eq('読み直しても同じ中身なら積まない', box.csReadGens_().length, 1);
+  box._csGensLastFp = held;
+  fire(null);
+  eq('全消し（key が null）でも指紋を空にする', box._csGensLastFp, null);
+  box.localStorage.getItem = realGet;
+  delete box.window;
 }
 {
   /* 容量エラーでも、捨てるのは「その日の最初でない控え」から */

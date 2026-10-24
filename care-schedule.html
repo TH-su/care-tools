@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-uDWnX5amXwCGA+Gjve2+Cmyt4KPIV2Y5rSqIp8CnpVQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-UkoX1iLO5GizKNg+APZyFob/PwRPDJUiRgXMwPt0IZ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3011,7 +3011,8 @@ const CS_GENS_BUDGET  = 1200000;                      // 世代の合計文字�
    古い日から落とす（最新の日の控えと最新1件は必ず残す）。 */
 const CS_GENS_DAYS    = 7;
 
-/* 長さ＋FNV-1a 風の簡易ハッシュ。衝突しても実害は「余計に1回マージする」だけなので暗号強度は不要。 */
+/* 長さ＋FNV-1a 風の簡易ハッシュ。衝突しても実害は「余計に1回マージする」だけなので暗号強度は不要。
+   世代の控えでは、衝突すると1世代を積まない（次の変更で回復する）。 */
 function csFingerprint_(json) {
   const t = String(json == null ? '' : json);
   let h = 2166136261;

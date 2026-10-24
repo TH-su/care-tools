@@ -588,5 +588,42 @@ eq('取り消し履歴を積んでから消す',
    RM.indexOf("kind: 'resident'") >= 0 && RM.indexOf("kind: 'resident'") < RM_DELETE, true);
 eq('取り消しの実装がある', SRC.indexOf('function undoRemoveResident_(') >= 0, true);
 
+group('裏にある間は盤面を描き直さない（2026-10-24 段3）');
+/* 裏の間は csRenderOrDefer_ が描かずに印だけ立て、見えた時（visibilitychange）に1回だけ描く。
+   印・関数・受け口は画面のソースから切り出し、document と renderAll だけを偽物にする。 */
+{
+  const a = SRC.indexOf('\nlet _csRenderPending = false;');
+  const f = a < 0 ? -1 : SRC.indexOf('\nfunction csRenderOrDefer_(', a);
+  const v = f < 0 ? -1 : SRC.indexOf("document.addEventListener('visibilitychange'", f);
+  if (a < 0 || f < 0 || v < 0 || v - a > 400) throw new Error('裏の描画止めの宣言・関数・受け口が見つかりません');
+  const snippet = SRC.slice(a, scanBlock(SRC, v, '(', ')') + 1).replace(/^\nlet /, 'var ') + ';';
+  const L = {};
+  let renders = 0;
+  const rbox = { document: { hidden: false, addEventListener: (t, fn) => { (L[t] = L[t] || []).push(fn); } },
+                 renderAll: () => { renders++; } };
+  vm.createContext(rbox);
+  vm.runInContext(snippet, rbox);
+  const fire = () => (L.visibilitychange || []).forEach(fn => fn());
+  rbox.csRenderOrDefer_();
+  eq('見えている間はその場で描く', renders, 1);
+  eq('見えている間は印を立てない', rbox._csRenderPending, false);
+  renders = 0;
+  rbox.document.hidden = true;
+  rbox.csRenderOrDefer_();
+  rbox.csRenderOrDefer_();
+  eq('裏の間は描かない', renders, 0);
+  eq('裏の間は「描き直しが必要」の印だけ立てる', rbox._csRenderPending, true);
+  fire();
+  eq('裏のままの visibilitychange では描かない', renders, 0);
+  rbox.document.hidden = false;
+  fire();
+  eq('見えた時に1回だけ描く', renders, 1);
+  eq('描いたら印を降ろす', rbox._csRenderPending, false);
+  fire();
+  eq('2回目の見えた時は描かない', renders, 1);
+  rbox.document.hidden = true; fire(); rbox.document.hidden = false; fire();
+  eq('印が無ければ、裏→表にしても描かない', renders, 1);
+}
+
 process.stdout.write('\n' + (ng ? '✗ ' : '✓ ') + '合格 ' + ok + ' / 不合格 ' + ng + '\n');
 process.exit(ng ? 1 : 0);
