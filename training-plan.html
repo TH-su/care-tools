@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Eo9DzorbSb11F5iI9y+QReuHPlzUI/xLVheCOSNHLPg=' 'sha256-KkkL21A6+LRCrqUjzVaeQAPEONqI34ga3Tg6ELhBK0c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-tzplixQa4hQFuULgd+SH/shBTVsS01SvT+n5E+SpgRE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1184,6 +1184,14 @@ function alertCounts(list) {
   return c;
 }
 
+/* メニューのタイルに出す期限の件数（2026-10-24 代表者の決定 案A）。氏名・利用者Noは入れず、件数と数えた日だけ。
+   list は buildAlerts の結果（在籍デイ利用者＝scope 'day' で作ったもの）。today が日付でなければ null（残さない） */
+function menuDueSummary(list, today) {
+  if (!isYmd(today)) return null;
+  var c = alertCounts(list);
+  return { v: 1, at: today, overdue: c.overdue, warn: c.warn, none: c.none };
+}
+
 /* ── 文単位の差分（LCS）──
    前回と今回で「変わっていない文／消えた文／増えた文」を出す。色だけに頼らず記号も返す。 */
 function splitSentences(v) {
@@ -1907,7 +1915,7 @@ global.TP = {
   DEMENTIA_RANKS: DEMENTIA_RANKS, BEDRIDDEN_RANKS: BEDRIDDEN_RANKS,
   isYmd: isYmd, toYmd: toYmd, parseYmd: parseYmd, daysInMonth: daysInMonth, addMonthsClamp: addMonthsClamp,
   addDays: addDays, diffDays: diffDays, cmpYmd: cmpYmd,
-  nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts,
+  nextDueOf: nextDueOf, dueState: dueState, buildAlerts: buildAlerts, alertCounts: alertCounts, menuDueSummary: menuDueSummary,
   normalizeName: normalizeName, foldName: foldName, splitSentences: splitSentences, diffSentences: diffSentences,
   normDementiaRank: normDementiaRank, normCareLevel: normCareLevel, normBedriddenRank: normBedriddenRank, isKnownRank: isKnownRank,
   emptyPlan: emptyPlan, emptyProgram: emptyProgram, normalizePlan: normalizePlan, normalizeTrash: normalizeTrash, isRetro: isRetro,
@@ -1983,7 +1991,8 @@ function banner(host, kind, text) {
 
 /* ── 端末の用途ガード（入居者マスタ・入居調整と同じ同一オリジンキー）──
    'field'（現場タブレット）ではこのアプリを開かない。端末には何も保存していないので
-   消すものは無い（保全ゲートの判断が要らない設計にしてある）。 */
+   消すものは無い（保全ゲートの判断が要らない設計にしてある）。
+   ※事務所の端末には、メニューに出す期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を残す（2026-10-24）。 */
 var DEVICE_KEY = 'su_device_role';
 function isFieldDevice() {
   try { return localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) { return false; }
@@ -2586,8 +2595,8 @@ function reportHealTrouble(failIds, unsavedIds) {
 
 /* ═══════════ 一覧 ═══════════ */
 var OFF_ROSTER = {};   /* 名簿に無い（＝在籍か退去かを確かめられない）利用者番号 */
-function listRows() {
-  var st = settings();
+/* 一覧の元になる行（絞込・並び替えの前）。listRows と、メニューに渡す件数（saveMenuDue）が同じ行から数える */
+function baseRows() {
   var rows = [], seen = {};
   OFF_ROSTER = {};
   var i, r, idxRow;
@@ -2628,11 +2637,41 @@ function listRows() {
       });
     });
   }
-  return TP.buildAlerts(rows, {
+  return rows;
+}
+function listRows() {
+  var st = settings();
+  return TP.buildAlerts(baseRows(), {
     today: todayYmd(), warnDays: st.warnDays, dueRule: st.dueRule,
     scope: lsGet(LS.filter, FILTERS, 'day'),
     sort: lsGet(LS.sort, SORTS, 'due')
   });
+}
+/* メニューの「個別機能訓練計画書」のタイルに出す期限の件数を、この端末に残す（2026-10-24 代表者の決定 案A）。
+   ・残すのは件数と数えた日だけ（氏名・利用者Noは残さない）。一覧の絞込に関係なく、既定の「在籍デイ利用者」で数える
+   ・一覧の情報・名簿（入居者マスタ）・デイ利用者の判定（週間計画）の3つがすべて読めた時だけ書く。
+     どれかが読めない時は書かない（前に数えた件数と日付がそのまま出る＝メニューに数えた日が出るので古さが分かる）
+   ・現場端末ではこの画面は開かない（boot の端末ガード）ので、ここへは来ない
+   ・数えた日は「3つを読めた日」。開きっぱなしの画面が前の日に読んだ中身を今日の日付で書かないよう、読めた日が今日の時だけ書く
+   ・次の時も書かない（中身が怪しい読み込みで、前の正しい件数を0件で上書きしないため）:
+     デイ利用者の判定に注意が出ている（通所の予定が0件など）／在籍デイ利用者が0名／入居者マスタを現場用の範囲でしか読めていない／
+     一覧の情報の更新に失敗した方がいる */
+var MENU_DUE_KEY = 'tp_menu_due';
+var LOADED_YMD = '';   /* 一覧の情報・名簿・デイ利用者の判定の3つがそろって読めた日（メモリだけ） */
+function saveMenuDue() {
+  try {
+    if (isFieldDevice()) return;
+    if (!IDX_OK || !DAY_OK || DAY_MSG || ROSTER_SRC !== 'gas' || !MASTER_OK || !ROSTER.length) return;
+    if (Object.keys(IDX_PENDING).length) return;
+    var st = settings(), today = todayYmd();
+    if (LOADED_YMD !== today) return;
+    var list = TP.buildAlerts(baseRows(), {
+      today: today, warnDays: st.warnDays, dueRule: st.dueRule, scope: 'day', sort: 'due'
+    });
+    if (!list.length) return;
+    var sum = TP.menuDueSummary(list, today);
+    if (sum) localStorage.setItem(MENU_DUE_KEY, JSON.stringify(sum));
+  } catch (e) { /* 残せなくても画面は動く */ }
 }
 function cell(label, text) {
   var n = el('div', null, text);
@@ -2669,6 +2708,7 @@ function renderBanners() {
 function renderList() {
   renderBanners();
   renderIndexChip();
+  saveMenuDue();
   var box = $('listBox');
   clear(box);
   var rows = listRows();
@@ -8327,6 +8367,8 @@ function refreshAll() {
     loadRoster().then(function () { return loadAdmissionDates(); }),
     loadDaySet()
   ]).then(function () {
+      /* メニューの件数（saveMenuDue）は、3つがそろって読めた日にだけ書く */
+      LOADED_YMD = (IDX_OK && DAY_OK && ROSTER_SRC === 'gas') ? todayYmd() : '';
       renderStaffSelects();
       renderList();
       setSync(CFG.url ? (IDX_OK ? '同期OK' : '未接続') : '未接続', (CFG.url && IDX_OK) ? 'ok' : 'err');
