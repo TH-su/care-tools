@@ -12,6 +12,8 @@
        care_failed の列が無い時は外して残し直す（版数は残す）・10分の間引きは2項目の変化も見る
      I 写しの記録の care_failed（差分審査 中2）: 2項目を求める画面は care_failed が 0 の記録の写しだけを使う（null・1以上・列が無いは Google・記録しない）。
        2項目を求めない画面（訪問・全支援の週間俯瞰）は care_failed を読まず、2項目の失敗があっても今までどおり写しを使う
+     J 写しの見比べの「写しを取った記録」（再審査 低1）: care_failed が1以上の記録に「訪問日・病院 失敗 N」と「要確認」を出す。
+       care_failed の列が無い（0022 を流す前）時は、その列を外して読み直し、止まらない。それ以外の断りは今までどおり止める
      F 通所 利用表（daycare-roster）: Google 経由と写し経由（入居者マスタが写した後）で、☆・入院・居室・姓名の切れ目・見張りの基準が同じ。
        スイッチ切では Google への要求が今までと同じ1回だけ。入居者マスタは正規化する前の名簿を写しの部品に渡す
      G 写しの見比べ（shadow-check）: Google の名簿と写しを利用者No で突き合わせ、人数と利用者No と項目名だけを返す（値を返さない）
@@ -551,6 +553,56 @@ async function seed(s, roster, opts) {
     }
     const HTMLSC = read('shadow-check.html');
     t('G 画面に見比べの欄（人数・判定・一覧・ボタン）がある', ['care-kpis', 'care-verdict', 'care-list', 'b-care-check'].every(id => HTMLSC.indexOf('id="' + id + '"') >= 0));
+  }
+
+  console.log('\nJ 写しの見比べの「写しを取った記録」');
+  {
+    function scBox(seq) {
+      const els = {}, calls = [];
+      const mk = tag => ({ tag, className: '', textContent: '', children: [], hidden: false,
+        appendChild(x) { this.children.push(x); return x; }, replaceChildren() { this.children = []; } });
+      const E = id => els[id] || (els[id] = mk('#' + id));
+      const box = { $: E, JSON, String, Object, Array, Date, isNaN, Promise, console, document: { createElement: mk } };
+      box.sb = { from: (table) => {
+        const q = { table, cols: '' };
+        const api = { select(c) { q.cols = c; return api; }, order() { return api; }, limit() { calls.push(q.table + ':' + q.cols); return Promise.resolve(seq(q.cols)); } };
+        return api;
+      } };
+      vm.createContext(box);
+      // 直す前の画面（readRuns が無い）でも試験が止まらず ✗ で知らせるように、無い関数は空にする
+      const opt = (f) => { try { return f(); } catch (e) { return ''; } };
+      vm.runInContext([grabIndented(SC, 'el'), grabIndented(SC, 'fmtTime'), grabIndented(SC, 'renderRuns'),
+        opt(() => /var RUN_COLS = [^\n]*\n/.exec(SC)[0]), opt(() => grabIndented(SC, 'noCareFailedColumn')), opt(() => 'async ' + grabIndented(SC, 'readRuns'))].join('\n'), box);
+      if (typeof box.readRuns !== 'function') box.readRuns = () => Promise.resolve({ error: { code: 'none', message: 'readRuns が無い' } });
+      const text = x => (x.textContent || '') + (x.children || []).map(text).join('');
+      return { box, els, calls, text };
+    }
+    const RUNS = [
+      { at: '2026-10-24T01:00:00Z', device_label: '事務所PC', source_count: 5, inserted: 0, updated: 1, unchanged: 4, missing: 0, failed: 0, care_failed: 2 },
+      { at: '2026-10-24T00:00:00Z', device_label: '事務所PC', source_count: 5, inserted: 0, updated: 0, unchanged: 5, missing: 0, failed: 1, care_failed: null },
+      { at: '2026-10-23T23:00:00Z', device_label: '', source_count: 5, inserted: 0, updated: 0, unchanged: 5, missing: 0, failed: 0, care_failed: 0 },
+      { at: '2026-10-23T22:00:00Z', device_label: '', source_count: 5, inserted: 5, updated: 0, unchanged: 0, missing: 0, failed: 0 }
+    ];
+    const b1 = scBox(() => ({ data: RUNS }));
+    b1.box.renderRuns(RUNS);
+    const li = b1.els.runs.children.map(b1.text);
+    t('★J care_failed が1以上の記録に「訪問日・病院 失敗 2」と「要確認」を出す（基本項目の失敗と同じ書き方）',
+      /・訪問日・病院 失敗 2/.test(li[0]) && /要確認$/.test(li[0]) && !/・失敗 \d/.test(li[0].replace('訪問日・病院 失敗', '')), li[0]);
+    t('J 基本項目の失敗だけの記録は今までどおり「失敗 1・要確認」（訪問日・病院の文は出ない）', /・失敗 1/.test(li[1]) && /要確認$/.test(li[1]) && !/訪問日・病院/.test(li[1]), li[1]);
+    t('J care_failed が 0・無い記録は「要確認」を出さない', !/要確認|訪問日・病院/.test(li[2]) && !/要確認|訪問日・病院/.test(li[3]), [li[2], li[3]]);
+
+    const ok = scBox(() => ({ data: RUNS }));
+    const r1 = await ok.box.readRuns(ok.box.sb);
+    t('★J 記録は care_failed も読む（1回で読める時は1回だけ）',
+      !r1.error && ok.calls.length === 1 && ok.calls[0] === 'master_sync_runs:at,device_label,source_count,inserted,updated,unchanged,missing,failed,care_failed', ok.calls);
+    const noCol = scBox(cols => /care_failed/.test(cols) ? { error: { code: '42703', message: 'column master_sync_runs.care_failed does not exist' } } : { data: RUNS.map(r => { const o = Object.assign({}, r); delete o.care_failed; return o; }) });
+    const r2 = await noCol.box.readRuns(noCol.box.sb);
+    t('★J care_failed の列が無い（0022 を流す前）時は、その列を外して読み直し、止まらない',
+      !r2.error && r2.data.length === 4 && noCol.calls.length === 2 && noCol.calls[1] === 'master_sync_runs:at,device_label,source_count,inserted,updated,unchanged,missing,failed', [r2, noCol.calls]);
+    const deny = scBox(() => ({ error: { code: '42501', message: 'permission denied for table master_sync_runs' } }));
+    const r3 = await deny.box.readRuns(deny.box.sb);
+    t('J それ以外の断り（権限など）は読み直さず、今までどおり断りを返す（画面は「読み込めませんでした」）', r3.error && r3.error.code === '42501' && deny.calls.length === 1, deny.calls);
+    t('J 画面の読み込み（load）は記録をこの読み方で読む', /var b = await readRuns\(sb\);\n    if \(b\.error\) throw b\.error;/.test(SC));
   }
 
   console.log('\nH 版の印');

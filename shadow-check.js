@@ -253,10 +253,12 @@
       var li = el('li');
       var left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(r.at) + (r.device_label ? '　' + r.device_label : '')));
+      // 訪問日・かかりつけ病院を書けなかった人数（移行 0022 の care_failed・基本項目の failed とは別に数える）も同じ書き方で出す
       left.appendChild(el('div', 'em', '正本 ' + r.source_count + '人／新規 ' + r.inserted + '・更新 ' + r.updated +
-        '・変化なし ' + r.unchanged + '・正本に無い ' + r.missing + (r.failed ? '・失敗 ' + r.failed : '')));
+        '・変化なし ' + r.unchanged + '・正本に無い ' + r.missing + (r.failed ? '・失敗 ' + r.failed : '') +
+        (r.care_failed ? '・訪問日・病院 失敗 ' + r.care_failed : '')));
       li.appendChild(left);
-      if (r.failed) { var t = el('div', 'ops'); t.appendChild(el('span', 'tag', '要確認')); li.appendChild(t); }
+      if (r.failed || r.care_failed) { var t = el('div', 'ops'); t.appendChild(el('span', 'tag', '要確認')); li.appendChild(t); }
       ul.appendChild(li);
     });
   }
@@ -1048,13 +1050,26 @@
     await runCheck();
   }
 
+  /* 写しを取った記録（最新20件）。訪問日・病院を書けなかった人数（care_failed・移行 0022）も読む。
+     0022 を流す前のデータベースでは列が無く読み取り全体が断られるので、その時だけ care_failed を外して読み直す
+     （写しの部品 su-master-shadow.js の「列が無い時は外して残し直す」と同じ考え方） */
+  var RUN_COLS = 'at,device_label,source_count,inserted,updated,unchanged,missing,failed';
+  function noCareFailedColumn(err) {
+    var c = String(err && err.code || ''), m = String(err && err.message || '');
+    return /care_failed/.test(m) && (c === '42703' || c === 'PGRST204' || /does not exist|could not find/i.test(m));
+  }
+  async function readRuns(sb) {
+    var b = await sb.from('master_sync_runs').select(RUN_COLS + ',care_failed').order('at', { ascending: false }).limit(20);
+    if (b.error && noCareFailedColumn(b.error)) b = await sb.from('master_sync_runs').select(RUN_COLS).order('at', { ascending: false }).limit(20);
+    return b;
+  }
+
   async function load() {
     var sb = SUAuth.client();
     var cols = 'source_id,' + SUMasterShadow.FIELDS.join(',');
     var a = await sb.from('master_residents').select(cols).order('room', { ascending: true });
     if (a.error) throw a.error;
-    var b = await sb.from('master_sync_runs').select('at,device_label,source_count,inserted,updated,unchanged,missing,failed')
-      .order('at', { ascending: false }).limit(20);
+    var b = await readRuns(sb);
     if (b.error) throw b.error;
     renderCompare(a.data || []);
     renderRuns(b.data || []);
