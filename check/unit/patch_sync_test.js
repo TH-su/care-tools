@@ -275,7 +275,9 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('★H 起動時は控えの全員分を1回ずつ送る', J(b.calls.map(c => c.args.p_resident_id)) === J(['r1', 'r2']));
     t('★H サーバーの方が新しくても控え（apc2_res）を書き換えない', b.store.apc2_res === r0 && b.writes.indexOf('apc2_res') < 0, b.writes);
     t('H 書くのは送信待ち・断りの記録・送信済みの控え・スイッチの控えだけ', b.writes.every(k => /^-?(apc2_sync_q|apc2_sync_ng|apc2_sync_sent|su_backend_flags)$/.test(k)), b.writes);
-    t('H 部品は patch_get を呼ばない（表示へ取り込むのは段階3）', SYNC.indexOf('patch_get') < 0 || !/rpc\('patch_get'/.test(SYNC));
+    /* 段階2では「部品は patch_get を呼ばない」だった。段階3（2026-10-25）で読む関数（pull）が呼ぶようになったので、
+       送る経路（pushAll）では呼ばないこと・呼ぶのは pull の1か所だけであることを守る（段階3の試験は patch_read_test.js） */
+    t('H 送る経路（pushAll）では patch_get を呼ばない・呼ぶのは読む関数の1か所だけ（段階3）', !b.rpcs.some(r => r.name === 'patch_get') && (SYNC.match(/rpc\('patch_get'/g) || []).length === 1, b.rpcs.map(r => r.name));
     const fnPush = /setTimeout\(function \(\) \{ try \{ window\.SUPatchSync\.pushAll\(\); \}[^\n]*/.exec(PAGE);
     t('★H 画面の起動の送信は pushAll だけを呼び、戻り値で表示を変えない', !!fnPush && !/\.then\(/.test(fnPush[0]), fnPush && fnPush[0]);
     t('H 部品は画面の関数（render・selectResident 等）を呼ばない', !/render\(|selectResident|loadState|innerHTML|textContent/.test(SYNC));
@@ -461,7 +463,7 @@ const ng = b => { try { return JSON.parse(b.store.apc2_sync_ng || '{"r":{}}').r;
     t('★J 入居者ごとの設定を端末に保存できた後に送る（保存の行の後ろ・同じ try の中）', /setItem\(LS_BYRES[^;]*;\s*state\.setBy = by; state\.setAt = at; pcPush\(state\.rid\); \}/.test(save), save.slice(0, 0));
     t('J 手入力の設定の保存からは送らない', (save.match(/pcPush\(/g) || []).length === 1);
     const pcPush = (/\nfunction pcPush\(rid\) \{[\s\S]*?\n\}/.exec(PAGE) || [''])[0];
-    t('J 送る関数は部品が無くても画面を止めない', /if \(rid && window\.SUPatchSync\) \{ try \{ window\.SUPatchSync\.pushOne\(rid\); \} catch/.test(pcPush), pcPush);
+    t('J 送る関数は部品が無くても画面を止めない', /if \(rid && window\.SUPatchSync\) \{ try \{ window\.SUPatchSync\.pushOne\(rid\)(\.then\(function \(x\) \{ pcPushed\(rid, x\); \}\))?; \} catch/.test(pcPush), pcPush);
     const boot = PAGE.indexOf('/* ── 起動 ── */'), call = PAGE.indexOf('window.SUPatchSync.pushAll()');
     t('★J 画面を開いた後（最初の描画の後）に1回だけ全員分を送る', boot > 0 && call > PAGE.indexOf('render();', boot) && (PAGE.match(/SUPatchSync\.pushAll\(\)/g) || []).length === 1);
     const tag = PAGE.indexOf('<script src="su-patch-sync.js?v='), inline = PAGE.indexOf("<script>\n'use strict';");
