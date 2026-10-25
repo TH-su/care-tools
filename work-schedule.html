@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CpTOOmAnz/m1JBSUOmKxuHnTEfUq5lX8tr2ahuf/+jQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-V5ARBufTHssr53uondoL9c8vgOSyJeu5lij5BM6DYWE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -688,8 +688,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-17"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-20"></script>
-<script src="su-kv-shadow.js?v=2026-10-20b"></script>
+<script src="su-kv.js?v=2026-10-24.2"></script>
+<script src="su-kv-shadow.js?v=2026-10-24"></script>
 </head>
 <body>
 <div class="hdr">
@@ -15304,6 +15304,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     el.title = st.title;
     el.setAttribute('aria-label', st.text);
   }
+  /* 定期更新の1回分。裏のタブ（document.hidden）では書き換えない＝見えた時に1回書き換える（boot の visibilitychange）。
+   * 通信はしない（2026-10-24・アプリ間連携の見直し 段1）。保存・通信の成否からの更新（updateSyncBadge_ の直呼び）は今までどおり */
+  function syncBadgeTick_() {
+    if (document.hidden) return;
+    updateSyncBadge_();
+  }
   /* バッジを押した時: 未送信があれば既存の回収経路(recoverNow_)で送る。連打・重ね掛けはしない
    * （押してから SYNC_BADGE_CLICK_GUARD_MS の間は2回目を起こさない）。回線が明確に切れていれば
    * 送信するとは言わず、つながり次第の自動再試行を案内する（recoverNow_ が再試行を予約する）。 */
@@ -19817,7 +19823,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261023163615';
+  var WS_BUILD = '20261025202656';
   var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
@@ -19993,10 +19999,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 接続先が本当に同期GASかを1回だけ確認。全端末の一斉再読み込みで同じ瞬間に集中しないよう3〜10秒ばらす（2026-09-25） */
     setTimeout(function () { try { checkEndpointIdentity_(); } catch (eCe) {} }, NP.startJitterMs(3000, 10000));
     try { updateSyncBadge_(); } catch (eSb) {}
-    /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛 */
+    /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛。
+     * 裏のタブでは飛ばし、見えた時に1回更新する（2026-10-24・アプリ間連携の見直し 段1） */
     if (!syncBadgeBound_) {
       syncBadgeBound_ = true;
-      setInterval(function () { try { updateSyncBadge_(); } catch (e) {} }, SYNC_BADGE_REFRESH_MS);
+      setInterval(function () { try { syncBadgeTick_(); } catch (e) {} }, SYNC_BADGE_REFRESH_MS);
+      document.addEventListener('visibilitychange', function () { try { syncBadgeTick_(); } catch (e) {} });
     }
     /* オフライン（クラウド未設定）でも同一端末のシフト(localStorage)から自動反映する。
      * オンライン時は pullAll→pullDayNow 完了後に反映するためここでは行わない。 */
@@ -20109,6 +20117,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="ワークスケジュール"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="ワークスケジュール"></script>
 </body>
 </html>
