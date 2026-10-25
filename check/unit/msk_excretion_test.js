@@ -486,6 +486,49 @@ group('8. 排便の判定の写し（排便記録アプリと同じ入力で同�
   }
 }
 
+group('7b. デイだけの方（排泄ケア記録の cfg.dayOnly・2026-10-25 代表者の決定）: 施設の判定と一覧に出さない');
+{
+  const now = Date.parse('2026-10-17T12:00:00+09:00');
+  const snap = X.excParsePayload({
+    residents: [{ id: 1, name: '利用者01', room: '101' },
+      { id: 2, name: '利用者02', room: '102', cfg: { dayOnly: true } },
+      { id: 3, name: '利用者03', room: '103', cfg: JSON.stringify({ dayOnly: true, stoolWarnD: 3 }) },
+      { id: 4, name: '利用者04', room: '104', cfg: { dayOnly: 'true' } },
+      { id: 5, name: '利用者05', room: '105', cfg: { dayOnly: false, stoolWarnD: 4 } }],
+    records: [{ id: 'a', residentId: 2, type: 'stool', date: '2026-10-10', time: '10:00', stoolAmt: '中等量' },
+      { id: 'b', residentId: 3, type: 'urine', date: '2026-10-16', time: '11:00' }]
+  }, '2026-10-01', '2026-10-17');
+  eq('cfg の dayOnly は真偽値の true だけ読む（JSON の文字の cfg でも・文字の "true" は読まない）', snap.residents.map(r => [r.id, r.dayOnly]),
+    [['1', false], ['2', true], ['3', true], ['4', false], ['5', false]]);
+  eq('閾値の読み方は今までどおり', [snap.residents[2].cfg.stoolWarnD, snap.residents[4].cfg.stoolWarnD], [3, 4]);
+  const rows = X.excRows(snap, [], now, '2026-10-01', []);
+  eq('一覧（排便なしN日・排尿の判定）にデイだけの方を出さない', rows.map(r => r.id).sort(), ['1', '4', '5']);
+  eq('「要注意だけ」にも出さない', X.excRows(snap, [], now, '2026-10-01', [], { attn: true }).some(r => r.id === '2' || r.id === '3'), false);
+  eq('居室順でも出さない', X.excRows(snap, [], now, '2026-10-01', [], { sort: 'room' }).map(r => r.id), ['1', '4', '5']);
+  const hb = X.excParseResident({ id: 9, name: '利用者09', room: '109' });
+  const dd = X.excParseResident({ id: 10, name: '利用者09', room: '110', cfg: { dayOnly: true } });
+  eq('照合: デイだけの方を「排便記録に同名2人」に数えない', X.excMatch(hb, [{ name: '利用者09', room: '109' }], [hb, dd]).ok, true);
+  eq('照合: デイだけの方でない同名の2人は今までどおり結ばない', X.excMatch(hb, [{ name: '利用者09', room: '109' }], [hb, X.excParseResident({ id: 11, name: '利用者09', room: '111' })]).reason, 'dupHaiben');
+  /* 詳細（excRenderBody の実関数）: 選んだ方がデイだけの方なら何も描かず選択を外す。ほかの方は判定へ進む */
+  {
+    const el = () => ({ textContent: '', hidden: false, appendChild() {} });
+    const els = { excBody: el(), excWho: el(), excActions: el() };
+    const body = { console, $: (id) => els[id], excStale: () => false, excLoaded: () => true, EXC: { noDays: false },
+      EXC_CACHE: { residents: snap.residents }, EXC_SEL: '', excSnapNow: () => snap, excHidden: () => [],
+      excStatusOf: () => { throw new Error('判定へ進んだ'); } };
+    vm.createContext(body);
+    vm.runInContext(grabFn('excRenderBody'), body);
+    body.EXC_SEL = '2';
+    let wentDay = false;
+    try { body.excRenderBody(); } catch (e) { wentDay = true; }
+    eq('詳細: デイだけの方を選んでいても開かず、選択を外す（判定へ進まない）', [wentDay, body.EXC_SEL, els.excActions.hidden], [false, '', true]);
+    body.EXC_SEL = '1';
+    let went = false;
+    try { body.excRenderBody(); } catch (e) { went = /判定へ進んだ/.test(String(e && e.message)); }
+    eq('詳細: デイだけの方でない方は今までどおり判定へ進む', went, true);
+  }
+}
+
 group('9. 配線（タブ・期間・保存しないこと）');
 {
   eq('排泄のタブがボトムナビにある', /data-scr="scr-exc"/.test(SRC), true);

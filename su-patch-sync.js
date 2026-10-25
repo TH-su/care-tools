@@ -10,6 +10,10 @@
  *     日時（at）を持たない古い設定は送らない（その方の設定を次に保存し直した時から送る）。
  *     手入力の設定（apc2_start/no/prev/setby）と移し済みの印（apc2_res_moved）は入居者IDを持たないので送らない。
  *   ・送る時機は画面が決める: 設定を保存した後（pushOne）と、画面を開いた後（pushAll・控えの全員分を1回）。
+ *   ・画面を開いた後の送信（pushAll）は、送る分をまとめて patch_put_many（統合 0021）で1往復で送る（50人ずつ・2026-10-24 代表者の決定）。
+ *     中身は1人分ずつ patch_put と同じ6つ。応答は1人ずつ見て、載った方だけ送信済みにし、載らなかった方は今までどおり送信待ちに残す。
+ *     関数が見つからない時（0021 を流す前のデータベース）は、その画面を開いている間は1人ずつの patch_put に戻る（端末には覚えない）。
+ *     保存の後の送信（pushOne）は今までどおり1人ずつ patch_put で送る。
  *   ・ログインの控えが無い・ログインが確かめられない端末は、帯を出さず黙って送らない（入力は端末に残る）。
  *   ・送れなかった分は送信待ち（apc2_sync_q・入居者IDと日時だけ）に残し、次の起動・次の保存で送り直す。
  *     外すのはサーバーの応答（ok: 書いた・作った・同じ・サーバーの方が新しい）を受け取った時だけ（多端末同期の規約6）。
@@ -36,6 +40,9 @@
   var NG_MAX = 50;
   var DENIED = '42501';   // データベースの「権限が無い」（patch_put の役の確かめ・RLS）
   var AUTH_TTL_MS = 5 * 60 * 1000;
+  var MANY_MAX = 50;      // patch_put_many が1回に受ける人数（統合 0021 の上限と同じ）。超える分は分けて送る
+  var NO_FUNC = { PGRST202: 1, '42883': 1 };   // 関数が見つからない（PostgREST の PGRST202・データベースの 42883）
+  var manyMissing = false;   // patch_put_many が無かった＝この画面を開いている間は1人ずつ送る（端末には残さない）
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsJson(k) { try { return JSON.parse(lsGet(k) || 'null'); } catch (e) { return null; } }
@@ -97,7 +104,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-20');
+      return loadScript('su-auth.js?v=2026-10-24');
     });
   }
   var authOkAt = 0;
@@ -170,22 +177,65 @@
   }
 
   // ── 送る ──
+  /* 送る前の確かめ（1人ずつ・まとめて の両方）。送らない時は結果の名前、送る時は中身（payloadOf）を返す */
+  function prepare(rid, v, retryDenied) {
+    var p = payloadOf(rid, v);
+    if (!p) { queueDrop(rid); return 'skip'; }
+    if (deniedSame(rid, p.p_at)) { if (!retryDenied) return 'denied'; }   // 送信待ちには残す
+    else if (refusedSame(rid, p.p_at)) { queueDone(rid, p.p_at); return 'refused'; }
+    return p;
+  }
+  /* 1人分の応答を控えに映す（r は patch_put の応答 {data, error}。まとめて送った時はその方の分を {data} にして渡す） */
+  function applyReply(rid, p, r) {
+    var d = r && !r.error ? r.data : null;
+    if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); if (deniedSame(rid, p.p_at)) refusedDrop(rid); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
+    if (d && d.ok === false && REFUSALS[d.error]) { queueDone(rid, p.p_at); refusedAdd(rid, d.error, p.p_at); return 'refused'; }
+    if (r && r.error && String(r.error.code || '') === DENIED) { queueAdd(rid, p.p_at); refusedAdd(rid, 'denied', p.p_at); return 'denied'; }
+    queueAdd(rid, p.p_at); return 'fail';
+  }
   function sendOne(sb, rid, retryDenied) {
-    var p = payloadOf(rid, readLocal()[rid]);   // 送る直前に控えを読み直す（待っている間に保存し直された値を送る）
-    if (!p) { queueDrop(rid); return Promise.resolve('skip'); }
-    if (deniedSame(rid, p.p_at)) { if (!retryDenied) return Promise.resolve('denied'); }   // 送信待ちには残す
-    else if (refusedSame(rid, p.p_at)) { queueDone(rid, p.p_at); return Promise.resolve('refused'); }
+    var p = prepare(rid, readLocal()[rid], retryDenied);   // 送る直前に控えを読み直す（待っている間に保存し直された値を送る）
+    if (typeof p === 'string') return Promise.resolve(p);
     return Promise.resolve().then(function () { return sb.rpc('patch_put', p); }).then(function (r) {
-      var d = r && !r.error ? r.data : null;
-      if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); if (deniedSame(rid, p.p_at)) refusedDrop(rid); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
-      if (d && d.ok === false && REFUSALS[d.error]) { queueDone(rid, p.p_at); refusedAdd(rid, d.error, p.p_at); return 'refused'; }
-      if (r && r.error && String(r.error.code || '') === DENIED) { queueAdd(rid, p.p_at); refusedAdd(rid, 'denied', p.p_at); return 'denied'; }
-      queueAdd(rid, p.p_at); return 'fail';
+      return applyReply(rid, p, r);
     }, function () { queueAdd(rid, p.p_at); return 'fail'; });
   }
+  function sendEach(sb, rids, retryDenied, res) {
+    return rids.reduce(function (pr, k) {
+      return pr.then(function () { return sendOne(sb, k, retryDenied).then(function (x) { res[k] = x; }); });
+    }, Promise.resolve());
+  }
+  function noFunc(r) {
+    var e = r && r.error;
+    return !!e && (!!NO_FUNC[String(e.code || '')] || /Could not find the function/.test(String(e.message || '')));
+  }
+  /* 開いた後の送信: 送る分をまとめて patch_put_many で送る（MANY_MAX 人ずつ・送る直前に控えを1回読み直す）。
+     応答は1人ずつ applyReply に通す（1人ずつ送った時と同じ扱い）。呼び出し全体の失敗（通信・42501・形の違う応答）は、
+     その回の全員に同じ失敗を映す。関数が見つからなければ、その回から先は1人ずつ（sendOne）に戻す */
+  function sendMany(sb, rids, retryDenied, res) {
+    var local = readLocal(), items = [], chunks = [];
+    rids.forEach(function (k) {
+      var p = prepare(k, local[k], retryDenied);
+      if (typeof p === 'string') res[k] = p; else items.push({ k: k, p: p });
+    });
+    for (var i = 0; i < items.length; i += MANY_MAX) chunks.push(items.slice(i, i + MANY_MAX));
+    return chunks.reduce(function (pr, ch) {
+      return pr.then(function () {
+        var ks = ch.map(function (it) { return it.k; });
+        if (manyMissing) return sendEach(sb, ks, retryDenied, res);
+        return Promise.resolve().then(function () {
+          return sb.rpc('patch_put_many', { items: ch.map(function (it) { return it.p; }) });
+        }).then(function (r) {
+          if (noFunc(r)) { manyMissing = true; return sendEach(sb, ks, retryDenied, res); }
+          var arr = r && !r.error && Array.isArray(r.data) && r.data.length === ch.length ? r.data : null;
+          ch.forEach(function (it, j) { res[it.k] = applyReply(it.k, it.p, arr ? { data: arr[j] } : (r && r.error ? r : null)); });
+        }, function () { ch.forEach(function (it) { queueAdd(it.k, it.p.p_at); res[it.k] = 'fail'; }); });
+      });
+    }, Promise.resolve());
+  }
   var chain = Promise.resolve();
-  /* rids を順に送る。スイッチが切なら何もしない（送信待ちにも残さない＝スイッチを入れた後の起動で全員分を送る） */
-  function run(rids, retryDenied) {
+  /* rids を順に送る（many が true ならまとめて送る）。スイッチが切なら何もしない（送信待ちにも残さない＝スイッチを入れた後の起動で全員分を送る） */
+  function run(rids, retryDenied, many) {
     var job = chain.then(function () {
       return ensureFlags().then(function () {
         if (!pushOn() || !rids.length) return { sent: 0, skipped: 'off' };
@@ -201,9 +251,7 @@
         return authReady().then(function (ok) {
           if (!ok) { rids.forEach(function (k) { queueAdd(k, local[k].at); }); return { sent: 0, skipped: 'login' }; }
           var sb = window.SUAuth.client(), res = {};
-          return rids.reduce(function (p, k) {
-            return p.then(function () { return sendOne(sb, k, retryDenied).then(function (x) { res[k] = x; }); });
-          }, Promise.resolve()).then(function () { return { sent: rids.length, result: res }; });
+          return (many ? sendMany : sendEach)(sb, rids, retryDenied, res).then(function () { return { sent: rids.length, result: res }; });
         });
       });
     }).catch(function () { return { sent: 0, skipped: 'error' }; });
@@ -216,16 +264,16 @@
     if (rid && ks.indexOf(String(rid)) < 0) ks.unshift(String(rid));
     return run(ks);
   }
-  /** 画面を開いた後: 端末の控えの全員分を1回送る（読むだけ・控えも表示も書き換えない）。
+  /** 画面を開いた後: 端末の控えの全員分を1回送る（読むだけ・控えも表示も書き換えない）。まとめて1往復で送る（sendMany）。
    *  送信済みの控えと日時が同じ方は送らない（送信待ちに残っている方は下で足すので送る）。控えが壊れていれば全員分 */
   function pushAll() {
     var local = readLocal(), sent = sentRead(), qd = queue();
-    if (isField()) return run(Object.keys(qd), true);   // 現場の端末は送信待ちの方だけ（全員分は送らない）
+    if (isField()) return run(Object.keys(qd), true, true);   // 現場の端末は送信待ちの方だけ（全員分は送らない）
     var ks = Object.keys(local).filter(function (k) {
       return !(sent && typeof local[k].at === 'string' && sent[k] === local[k].at);
     });
     Object.keys(qd).forEach(function (k) { if (ks.indexOf(k) < 0) ks.push(k); });
-    return run(ks, true);
+    return run(ks, true, true);
   }
 
   // ── 写しの見比べの画面用（読むだけ）──
