@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uaSp8nahk13MGhhSdWPd1djYhXuK/DcTkbhjHTZUqjM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ja543R5EfA0NJBdcE4m3gZ3muLFKiXWUAvv7U9hid90='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -3392,6 +3392,9 @@ function excParseResident(raw){
     if(uw !== undefined) cfg.urineWarnH = uw;
     if(ud !== undefined) cfg.urineDangerH = ud;
   }
+  /* デイだけの方（排泄ケア記録の cfg の dayOnly が真偽値の true・2026-10-25 代表者の決定）。施設では排泄を記録していないので、
+     施設の申し送りの判定（排便なしN日・排尿の間隔）と一覧には出さない（デイの日だけの記録で判定すると誤るため） */
+  var dayOnly = !!(c && typeof c === 'object' && c.dayOnly === true);
   var hosp = [];
   if(Array.isArray(o.hospitalizations)){
     o.hospitalizations.forEach(function(x){
@@ -3402,7 +3405,7 @@ function excParseResident(raw){
   return { id:id, name:name, key:key, room:excNormRoom(roomRaw), roomLabel:roomRaw,
            active:(a === undefined || a === null || a === true || a === 'TRUE'),
            hidden:(h === true || (typeof h === 'string' && /^(TRUE|1|YES)$/i.test(h))),
-           cfg:cfg, hospitalizations:hosp, laxNote:(typeof o.laxNote === 'string' ? o.laxNote.trim() : '') };
+           cfg:cfg, hospitalizations:hosp, laxNote:(typeof o.laxNote === 'string' ? o.laxNote.trim() : ''), dayOnly:dayOnly };
 }
 /* 応答（getAll／getDays を束ねたもの）を照合と判定に要る形にする。keepFrom〜keepTo の外の日付の記録は捨てる */
 function excParsePayload(payload, keepFrom, keepTo){
@@ -3795,7 +3798,7 @@ function excMatch(hb, roster, hbList){
   var same = (roster || []).filter(function(r){ return r && excNameKey(r.name) === key; });
   if(!same.length) return { ok:false, reason:'notFound' };
   if(same.length > 1) return { ok:false, reason:'dupRoster' };
-  var hbSame = (hbList || []).filter(function(r){ return r.active && !r.hidden && r.key === key; });
+  var hbSame = (hbList || []).filter(function(r){ return r.active && !r.hidden && !r.dayOnly && r.key === key; });   // デイだけの方は数えない
   if(hbSame.length > 1) return { ok:false, reason:'dupHaiben' };
   var rr = excNormRoom(same[0].room);
   if(!rr || !hb.room || rr !== hb.room) return { ok:false, reason:'roomMismatch' };
@@ -3926,14 +3929,14 @@ function excHidAfter(hiddenDays, pending, day){
   return (pending && pending[latest]) ? 'pending' : 'failed';
 }
 function excHidText(st){ return st === 'pending' ? '読み込み中…' : '読めず'; }
-/* 一覧の行（母集団は排便記録の在籍かつ非表示でない方）。
+/* 一覧の行（母集団は排便記録の在籍かつ非表示でない方。デイだけの方は除く）。
    opt: { from, to, pending, sort:'risk'|'room', attn:bool }。並びは既定で 危険→注意→その他（便・尿の重い方）、同じ中は五十音 */
 function excRows(snap, roster, refNow, fetchFrom, failedDays, opt){
   opt = opt || {};
   var pending = opt.pending || {};
   var rows = [];
   snap.residents.forEach(function(r){
-    if(!r.active || r.hidden) return;
+    if(!r.active || r.hidden || r.dayOnly) return;   // デイだけの方は施設の判定に出さない
     var pool = snap.recs[r.id] || [];
     var st = excStatusOf(pool, r, snap.cfg, refNow, fetchFrom, failedDays);
     var ur = excUrineStatusOf(pool, r, snap.cfg, refNow, fetchFrom, failedDays);
@@ -4564,7 +4567,7 @@ function excRenderBody(){
   }
   var snap = excSnapNow(), hidden = excHidden();
   var res = null;
-  snap.residents.forEach(function(r){ if(r.id === EXC_SEL && r.active && !r.hidden) res = r; });
+  snap.residents.forEach(function(r){ if(r.id === EXC_SEL && r.active && !r.hidden && !r.dayOnly) res = r; });
   if(!res){ EXC_SEL = ''; return; }
   var pool = snap.recs[res.id] || [];
   var st = excStatusOf(pool, res, snap.cfg, EXC.refNow, EXC.fetchFrom, hidden);
