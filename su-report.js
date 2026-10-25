@@ -219,7 +219,7 @@
   var annot = null;   // { marks: [{ n, note, sel, desc, el }], layout }
   var ANNOT_SRC = 'su-annot.js?v=2026-10-04';
   // 管理者かどうかを聞くための部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる）
-  var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-20'];
+  var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-24'];
   var loading = {};
   /* 画面がすでに同じ部品の札（<script src>）を入れている時は、2本目を入れずに読み終わるのを待つ（su-auth.js を二重に動かさない） */
   function waitFor(test, ms) {

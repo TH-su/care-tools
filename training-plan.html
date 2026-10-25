@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-tzplixQa4hQFuULgd+SH/shBTVsS01SvT+n5E+SpgRE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-D6ogULTQtXH3kMufb5X/Lnse5oPeAD3k6r/maZTnCXU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -935,9 +935,9 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-data.js"></script>
-<script src="su-data-gas.js"></script>
+<script src="su-data-gas.js?v=2026-10-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="training-plan-form.js?v=2026-09-24"></script>
 <script>
@@ -2094,7 +2094,7 @@ function tpAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function () {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-20');
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-24');
   });
 }
 function tpAccessToken_() {
@@ -8749,6 +8749,6 @@ else boot();
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="個別機能訓練計画書"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="個別機能訓練計画書"></script>
 </body>
 </html>
