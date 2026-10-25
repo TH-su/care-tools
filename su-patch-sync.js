@@ -30,10 +30,32 @@
  *     保存のたびの送り直しはしない（同じ日時の denied は pushOne では送らない）。画面を開いた時（pushAll・現場の端末も事務所PCも）は
  *     送信待ちの denied を1回ずつ送り直す（許可が戻った後・ログインし直した後に載るように・回数は開いた回数まで）。
  *     ログインが切れた呼び出しも 42501 になりうるが、送信待ちから外さないので消えない。載ったら denied の記録を外す（2026-10-22・反証レビュー）。
+ *
+ * 段階3「サーバーの値で表示する」の約束（2026-10-25 代表者の決定）:
+ *   ・スイッチは su-backend.json の supabase.patch_read（送る patch_push とは別）。true の時だけ読む。無い・true 以外・一度も読めていない＝切
+ *     ＝今までどおり端末の控え（apc2_res）で表示する。読み方は patch_push と同じ（1分以内なら読み直さない・3秒で見切って最後に読めた値）。
+ *   ・読むのは事務所PCだけ。現場の端末（su_device_role が field）では patch_get を呼ばない（呼ぶ前と、応答が届いた時の両方で用途を読み直し、
+ *     届いた時に現場なら応答を捨てる）。現場の端末は今までどおり控えで表示し、保存した方を送るだけ。
+ *   ・読む（pull）は patch_get を1回呼ぶだけで、控えも表示も書き換えない。返すのは { status, rows }:
+ *     off（スイッチ切）／field（現場の端末）／ok（rows＝入居者ID → {start,no,prev,by,at}）／
+ *     unreachable（未ログイン・ログインを確かめられない・通信の失敗・時間切れ・42501・形の違う応答）。例外は外に出さない。
+ *     時間切れ（15秒）はログインの確かめと patch_get を合わせた全体にかける。
+ *   ・保存の後の送信（pushOne）の応答が stale（サーバーの方が新しい）だった方は、結果を 'stale' で返す（扱いは done と同じ）。
+ *     画面はそれを見て読み直し、表示をサーバーの値にそろえる。
+ *     引数は送らない（氏名も入居者IDも送らない）。応答の中身はどこにも記録しない。
+ *   ・混ぜる（merge）は純関数。控えにサーバーの値をかぶせた結果と、変わった入居者IDの一覧を返す。手元の値を残すのは:
+ *     送信待ち（apc2_sync_q）にある方（送れるまで手元の直しを見せる）／サーバーに無い方／日時（at）の無い古い控え／
+ *     手元の日時の方が新しく、今から10分以内で、断りの記録（apc2_sync_ng の futureat・bad*）に無い方（保存の直後で送っている最中の値）。
+ *     断られた手元の値・10分より前の手元の値・日時が同じで値が違う方は、サーバーの値を採る（表示の正本はサーバー・反証レビュー 2026-10-25）。
+ *     形の違う行は使わない。控えから方を消すことはない（空の応答・形の違う応答では何も変わらない＝空上書き保護）。
+ *     値（開始日・場所・前日の場所）が同じなら変えない。かぶせた日時は端末の書き方（toISOString）にそろえる（送信済みの控えと比べられるように）。
+ *   ・控え（apc2_res）を書くのは画面（patch-calendar.html）だけ。帯の出し入れ・描き直し・世代で古い応答を捨てるのも画面が行う。
  */
 (function () {
   'use strict';
-  var FLAGS_URL = 'su-backend.json', FLAGS_LS = 'su_backend_flags', SWITCH = 'patch_push';
+  var FLAGS_URL = 'su-backend.json', FLAGS_LS = 'su_backend_flags', SWITCH = 'patch_push', READ_SWITCH = 'patch_read';
+  var PULL_TIMEOUT_MS = 15000;   // ログインの確かめと patch_get の応答を合わせて、これ以上は待たない（控えのまま帯を出す）
+  var FRESH_MS = 10 * 60 * 1000;  // 手元の日時が今からこの幅の中なら「送っている最中」とみなす（それより前の手元の値はサーバーの値を採る）
   var RES_LS = 'apc2_res', QUEUE_LS = 'apc2_sync_q', NG_LS = 'apc2_sync_ng', SENT_LS = 'apc2_sync_sent';
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var REFUSALS = { badid: 1, badstart: 1, badno: 1, badprev: 1, badby: 1, badat: 1, futureat: 1 };
@@ -70,6 +92,7 @@
     return Promise.race([fetchFlags(), new Promise(function (ok) { setTimeout(ok, 3000); })]);
   }
   function pushOn() { return !!(flags && isObj(flags.supabase) && flags.supabase[SWITCH] === true); }
+  function readOn() { return !!(flags && isObj(flags.supabase) && flags.supabase[READ_SWITCH] === true); }
 
   // ── ログイン（su-kv.js の ensureAuth と同じ: すでに札がある部品は入れ直さず、読み終わるのを待つ）──
   function hasSession() {
@@ -188,7 +211,7 @@
   /* 1人分の応答を控えに映す（r は patch_put の応答 {data, error}。まとめて送った時はその方の分を {data} にして渡す） */
   function applyReply(rid, p, r) {
     var d = r && !r.error ? r.data : null;
-    if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); if (deniedSame(rid, p.p_at)) refusedDrop(rid); return 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい
+    if (d && d.ok === true) { queueDone(rid, p.p_at); sentAdd(rid, p.p_at); if (deniedSame(rid, p.p_at)) refusedDrop(rid); return d.stale === true ? 'stale' : 'done'; }   // 書いた・作った・同じ・サーバーの方が新しい（stale＝画面が読み直す合図。扱いは done と同じ）
     if (d && d.ok === false && REFUSALS[d.error]) { queueDone(rid, p.p_at); refusedAdd(rid, d.error, p.p_at); return 'refused'; }
     if (r && r.error && String(r.error.code || '') === DENIED) { queueAdd(rid, p.p_at); refusedAdd(rid, 'denied', p.p_at); return 'denied'; }
     queueAdd(rid, p.p_at); return 'fail';
@@ -276,6 +299,70 @@
     return run(ks, true, true);
   }
 
+  // ── 段階3: サーバーの値を読む・控えに混ぜる（控えを書くのは画面）──
+  var ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;   // 入居者ID の形（データベースの patch_settings と同じ）
+  /* サーバーの1行を確かめて控えの形 {start,no,prev,by,at} にする。形が違えば null（使わない） */
+  function serverRow(s) {
+    if (!isObj(s) || typeof s.start !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.start)) return null;
+    var d = new Date(s.start + 'T12:00:00Z');
+    if (!isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== s.start) return null;   // 2月30日のような日を通さない
+    var ok = function (n, lo) { return typeof n === 'number' && n % 1 === 0 && n >= lo && n <= 8; };
+    var t = atMs(s.at);
+    if (!ok(s.no, 1) || !ok(s.prev, 0) || !isFinite(t)) return null;
+    return { start: s.start, no: s.no, prev: s.prev, by: typeof s.by === 'string' ? s.by.slice(0, 60) : '', at: new Date(t).toISOString() };
+  }
+  /** 控え（apc2_res の r）にサーバーの行をかぶせる（純関数・控えは書かない）。pending は送信待ちの入居者IDの一覧、
+   *  ng は断りの記録（入居者ID → {e, at}・apc2_sync_ng の r）、nowMs は今の時刻（省くと Date.now()）。
+   *  返すのは { merged, changed }。changed が空なら控えを書き直す必要は無い */
+  function merge(local, rows, pending, ng, nowMs) {
+    var out = {}, changed = [], pend = {};
+    ng = isObj(ng) ? ng : {};
+    nowMs = isFinite(nowMs) ? nowMs : Date.now();
+    local = isObj(local) ? local : {};
+    Object.keys(local).forEach(function (k) { out[k] = local[k]; });
+    if (!isObj(rows)) return { merged: out, changed: changed };
+    (Array.isArray(pending) ? pending : []).forEach(function (k) { pend[String(k)] = 1; });
+    Object.keys(rows).sort().forEach(function (k) {
+      if (!ID_RE.test(k)) return;
+      var s = serverRow(rows[k]);
+      if (!s) return;                                                   // 形の違う行は使わない
+      if (Object.prototype.hasOwnProperty.call(local, k) && isObj(local[k])) {
+        var v = local[k];
+        if (pend[k]) return;                                            // 送れるまで手元の直しを見せる
+        if (!isFinite(atMs(v.at))) return;                              // 日時の無い古い控えは手元のまま
+        // 手元の方が新しく、今から10分以内で、形・未来の日時で断られていない＝送っている最中なので手元のまま。
+        // 断られた値・10分より前の値はサーバーの値を採る（表示の正本はサーバー）。日時が同じで値が違う時もサーバー（stale で残る値）
+        var r = ng[k], refusedNow = isObj(r) && r.at === v.at && REFUSALS[r.e];
+        if (atMs(v.at) > atMs(s.at) && Math.abs(nowMs - atMs(v.at)) <= FRESH_MS && !refusedNow) return;
+        if (sameValue(v, s)) return;                                    // 値が同じなら変えない
+      }
+      out[k] = s; changed.push(k);
+    });
+    return { merged: out, changed: changed };
+  }
+  /** サーバーの設定を読む（patch_get を1回）。控えも表示も書き換えない。例外は外に出さない */
+  function pull() {
+    return ensureFlags().then(function () {
+      if (!readOn()) return { status: 'off' };
+      if (isField()) return { status: 'field' };                       // 現場の端末は呼ばない
+      // 見切り（PULL_TIMEOUT_MS）はログインの確かめ（authReady・SUAuth.check）と patch_get を合わせた全体にかける
+      var timer = null;
+      var call = authReady().then(function (ok) {
+        if (!ok) return { status: 'unreachable', why: 'login' };
+        if (isField()) return { status: 'field' };
+        return Promise.resolve().then(function () { return window.SUAuth.client().rpc('patch_get'); }).then(function (r) {
+          if (isField()) return { status: 'field' };                   // 待っている間に現場へ変わった＝捨てる
+          if (r && r.error) return { status: 'unreachable', why: String(r.error.code || '') === DENIED ? 'denied' : 'fail' };
+          var d = r ? r.data : null;
+          if (!isObj(d) || d.ok !== true || !isObj(d.rows)) return { status: 'unreachable', why: 'shape' };   // 受け取った応答を信じない
+          return { status: 'ok', rows: d.rows };
+        }, function () { return { status: 'unreachable', why: 'fail' }; });
+      }, function () { return { status: 'unreachable', why: 'login' }; });
+      var late = new Promise(function (ok2) { timer = setTimeout(function () { ok2({ status: 'unreachable', why: 'timeout' }); }, PULL_TIMEOUT_MS); });
+      return Promise.race([call, late]).then(function (x) { clearTimeout(timer); return x; });
+    }).catch(function () { return { status: 'unreachable', why: 'error' }; });
+  }
+
   // ── 写しの見比べの画面用（読むだけ）──
   function sameValue(v, s) {
     var p = payloadOf('x', v);
@@ -308,6 +395,7 @@
 
   window.SUPatchSync = {
     pushOne: pushOne, pushAll: pushAll, readLocal: readLocal, diff: diff, switchOn: pushOn,
+    pull: pull, merge: merge, readSwitchOn: readOn, refusedMap: function () { return refused(); },
     pending: function () { return Object.keys(queue()).sort(); },
     refused: function () { var r = refused(); return Object.keys(r).sort().map(function (k) { return { id: k, error: String(r[k].e || '') }; }); }
   };

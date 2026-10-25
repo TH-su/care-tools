@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-n/udIfTW82DvKIISNtsb5TN1gA77+SdZQOYVxQFca2U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-t0RbuXFInJUwZVwgkIwzoardNQ8hus/4APUmR6Udycs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -79,6 +79,9 @@ body {
 .adopt p { margin: 0; flex: 1 1 260px; font-size: 0.8125rem; color: var(--g9); }
 /* 共通パレットの --warn-tx(#e65100) は --warn-bg 上で 3.6:1 と AA(4.5:1) を割るため濃い色を使う */
 .hint.warn { background: var(--warn-bg); color: #bf360c; padding: 7px 9px; border-radius: 8px; font-weight: 700; }
+/* サーバーに届かない時の帯（段階3・2026-10-25 代表者の決定）。色は上の .hint.warn（AA 済み）。画面だけ・紙には出さない */
+.svband { margin: 0 0 12px; font-size: 0.8125rem; }
+.svband[hidden] { display: none; }
 
 .nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .btn {
@@ -181,6 +184,7 @@ body {
 
 @media print {
   .noprint { display: none !important; }
+  .svband { display: none !important; }
   body { background: #fff; }
   .wrap { padding: 0; display: block; }
   .sheet { box-shadow: none; width: 100%; height: 279mm; }
@@ -201,6 +205,8 @@ body {
 </header>
 
 <div class="ctl noprint">
+  <!-- サーバーの設定を読めない時だけ出す（事務所PC・スイッチ patch_read が入の時だけ。届いたら消す・紙には出さない） -->
+  <p class="hint warn svband noprint" id="svband" role="status" hidden>サーバーに届かないため、この端末の控えを表示しています</p>
   <div class="cd">
     <div class="row">
       <div class="fld" style="flex:1 1 210px">
@@ -313,8 +319,8 @@ body {
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
 <!-- 入居者ごとの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。スイッチ su-backend.json の patch_push が入った時だけ送る。
-     表示・印刷は今までどおり端末の控えから出す（サーバーの値は読まない） -->
-<script src="su-patch-sync.js?v=2026-10-24.2"></script>
+     段階3（2026-10-25）: スイッチ patch_read が入の時だけ、事務所PCはサーバーの設定を読んで表示する（端末の控えは控えとして残す） -->
+<script src="su-patch-sync.js?v=2026-10-25"></script>
 <script>
 'use strict';
 (function () {
@@ -594,7 +600,59 @@ function saveSettings() {
 /* 端末に保存できた入居者ごとの設定をサーバーへ送る（段階2「送るだけ」）。送れない時は端末の送信待ちに残り、次の起動・保存で送り直す。
    手入力の設定は入居者IDを持たないので送らない。表示はここでは変えない */
 function pcPush(rid) {
-  if (rid && window.SUPatchSync) { try { window.SUPatchSync.pushOne(rid); } catch (e) { /* 送れなくても保存と表示は続ける */ } }
+  if (rid && window.SUPatchSync) { try { window.SUPatchSync.pushOne(rid).then(function (x) { pcPushed(rid, x); }); } catch (e) { /* 送れなくても保存と表示は続ける */ } }
+}
+/* 段階3: 保存した設定より新しい設定がサーバーにあった（stale）時は、その場で読み直して表示をサーバーの値にそろえる。
+   読むスイッチが切・現場の端末では pcPull が何もしない（部品の pull が off・field を返す） */
+function pcPushed(rid, x) {
+  if (x && x.result && x.result[rid] === 'stale') pcPull();
+}
+
+/* ── サーバーの設定で表示する（段階3・2026-10-25 代表者の決定）──
+   開いた時はまず控えで描き（起動の render）、その後にサーバーの設定を読む（pcPull）。スイッチ patch_read が切・現場の端末では読まない
+   （部品の pull が off・field を返す＝今までどおり控えで表示し、帯も出さない）。
+   届いたら控え（apc2_res）にかぶせて描き直す。手元のままにする方（送信待ち・サーバーに無い・日時の無い控え・手元の方が新しい）は部品の merge が決める。
+   控えから方を消さない・控えが読めない時は書かない。届かない時（未ログイン・通信の失敗・42501・形の違う応答）は控えのまま帯を出し、届いたら消す。
+   遅れて届いた応答（後から読み直した・現場の端末へ変わった）は世代（pcPullGen）と用途の読み直しで捨てる。応答の中身は記録しない */
+var pcPullGen = 0, pcRetryTimer = null;
+var PC_RETRY_MS = 60000;                                  /* 帯が出ている間の読み直しの間隔 */
+function pcIsField() {
+  try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; }
+}
+function pcBand(show) {
+  var b = document.getElementById('svband');
+  if (b) b.hidden = !show;
+  /* 帯が出ている間だけ60秒ごとに読み直す（帯が消えたら止める・現場の端末では回さない） */
+  if (show && !pcIsField()) { if (!pcRetryTimer) pcRetryTimer = setInterval(pcPullRetry, PC_RETRY_MS); }
+  else if (pcRetryTimer) { clearInterval(pcRetryTimer); pcRetryTimer = null; }
+}
+function pcPull() {
+  if (!window.SUPatchSync || !window.SUPatchSync.pull) return;
+  var gen = ++pcPullGen;
+  try {
+    window.SUPatchSync.pull().then(function (r) { pcPullApply(r, gen); }, function () { pcPullApply({ status: 'unreachable' }, gen); });
+  } catch (e) { pcPullApply({ status: 'unreachable' }, gen); }
+}
+function pcPullApply(r, gen) {
+  if (gen !== pcPullGen) return;                          /* 後から読み直した・現場へ変わった＝古い応答は捨てる */
+  if (pcIsField()) { pcBand(false); return; }             /* 届いた時に現場の端末なら使わない */
+  var st = r && r.status;
+  if (st !== 'ok') { pcBand(st === 'unreachable'); return; }
+  /* 控えを読めない・書けない時は、サーバーの値を表示できていないので帯はそのまま（出ていれば消さない） */
+  var all = readByRes();
+  if (all === null) return;                               /* 控えが読めない時は書かない（他の方の設定を空で消さない） */
+  var sp = window.SUPatchSync;
+  var m = sp.merge(all, r.rows, sp.pending(), sp.refusedMap ? sp.refusedMap() : {}, Date.now());
+  if (!m || !m.changed || !m.changed.length) { pcBand(false); return; }   /* 変わる方がいなければ控えも表示もそのまま */
+  try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: m.merged })); }
+  catch (e) { return; }                                   /* 書けない時は控えのまま表示を続ける（帯も消さない） */
+  pcBand(false);
+  if (state.rid && m.changed.indexOf(state.rid) >= 0) selectResident(state.rid);
+}
+/* 帯が出ている間だけ、画面に戻った時・回線が戻った時・ログインし直した時・60秒ごとに読み直す（現場の端末では読まない） */
+function pcPullRetry() {
+  var b = document.getElementById('svband');
+  if (b && !b.hidden && !pcIsField()) pcPull();
 }
 
 /* ── 入居者ごとの設定 ── */
@@ -1015,6 +1073,8 @@ fillRoster();
 renderGuide();
 render();
 try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
+/* 控えで描いた後に、サーバーの設定を読む（段階3。スイッチ切・現場の端末では何もしない） */
+pcPull();
 /* 画面を開いた後、端末の控えの全員分をサーバーへ1回送る（送るだけ。表示・控えは書き換えない。最初の描画と競らないよう少し待つ） */
 if (window.SUPatchSync) setTimeout(function () { try { window.SUPatchSync.pushAll(); } catch (e) { /* 送れなくても画面は使える */ } }, 1500);
 
@@ -1027,6 +1087,19 @@ document.getElementById('ioCancel').addEventListener('click', function () { ioRe
 pcResolveWho();
 window.addEventListener('storage', function (e) { if (!e || !e.key || PC_SESSION_RE.test(e.key)) pcResolveWho(); });
 document.addEventListener('visibilitychange', function () { if (!document.hidden) pcResolveWho(); });
+/* 端末の用途が現場へ変わったら、届く前の応答を捨てて読み込み直す（CLAUDE.md §2-5。読むスイッチが切の間は今までどおり何もしない）。
+   ログインし直した時は、帯が出ていれば読み直す */
+window.addEventListener('storage', function (e) {
+  if (!e || !e.key) return;
+  if (e.key === 'su_device_role' && e.newValue === 'field') {
+    pcPullGen++;
+    if (window.SUPatchSync && window.SUPatchSync.readSwitchOn && window.SUPatchSync.readSwitchOn()) { try { location.reload(); } catch (x) { /* 読み込み直せなくても応答は捨てる */ } }
+    return;
+  }
+  if (PC_SESSION_RE.test(e.key)) pcPullRetry();
+});
+document.addEventListener('visibilitychange', function () { if (!document.hidden) pcPullRetry(); });
+window.addEventListener('online', pcPullRetry);
 /* 別のタブでこの方の設定が変わったら、表示を取り直す（古いタブの値で上書きしない） */
 window.addEventListener('storage', function (e) {
   if (state.rid && (e.key === LS_BYRES || e.key === LS_MOVED || e.key === null)) selectResident(state.rid);
