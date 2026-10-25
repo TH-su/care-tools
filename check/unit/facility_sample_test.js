@@ -97,7 +97,8 @@ function facility(profile) {
   t('配るのは試験が main への送信で成功した時だけ（PR の試験・失敗・別のリポジトリでは配らない）',
     /workflow_run\.conclusion == 'success'/.test(Y) && /workflow_run\.event == 'push'/.test(Y) && /workflow_run\.head_branch == 'main'/.test(Y) && /head_repository\.full_name == github\.repository/.test(Y));
   t('取り出すのは試験に合格した版', /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/.test(Y));
-  const steps = Y.split('\n      - name: ').slice(1);
+  /* 配る仕事（deploy）の手順だけを見る。後ろの知らせの仕事（notify・2026-10-25）は別の仕事で、先頭の判定とは関係ない */
+  const steps = (Y.indexOf('\n  notify:') > 0 ? Y.slice(0, Y.indexOf('\n  notify:')) : Y).split('\n      - name: ').slice(1);
   const after = steps.slice(steps.findIndex(x => /^試験した版が今の main の先頭か/.test(x)) + 1);
   t('試験した版が main の先頭でなければ、その後の手順を全部飛ばす（古い版で上書きしない）',
     /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'\n/.test(x)), after.length);
