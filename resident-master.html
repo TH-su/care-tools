@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-5xwCjadEvqOpAcpP8Xox6Lq8Z0sSLaNCx74JHtpkQ04='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-GXhQQNn6CyS7/jSgcyPemgS3L9gbnCVOQBiSH572ykI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1471,6 +1471,7 @@ body.meal-on #sc-list{max-width:none}
 @media print{ .glance, .vtoc{display:none !important} }
 /* 医療支援経過の本文（2026-10-20）。見出しの下の文は2文字下げる。画面と紙で同じ */
 .ml-l{white-space:pre-wrap; word-break:break-word}
+.ml-rx{font-weight:700}   /* 処方の変更の印（2026-10-25）。色に頼らず太字と文言で示す（紙も同じ） */
 .ml-ind{padding-left:2em}
 /* ── 第3弾（2026-10-17）: 副食の入力の手助け・未入力の一覧・その方らしさの紙 ── */
 .mside-aid{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
@@ -9331,6 +9332,53 @@ function medlogBodyHtml_(text){
    それに「処方:」「処方：」で始まる行（見出しの付かない処方の行も含め、全部出さない＝同日の追加指示）。
    ★行の途中に「処方」の字があるだけの行（所見の文など）は出す */
 var MEDLOG_HIDE_RE=/■処方歴?■|■残なし■|^[\s　]*処方[\s　]*[:：]/;
+/* 処方の変更の印（2026-10-25 本人指示）。医療支援経過で出さない処方の行（MEDLOG_HIDE_RE）の中身を比べ、変わった記録に印を立てる。
+   ★複数の病院・クリニックから処方がある方に対応（同日の追加指示）: 比べる相手は【同じ医療機関（clinic）】の、
+     処方の行がある直前の記録（日付が前で、処方の行を持ついちばん新しい記録）。医療機関が交互に並んでも、入れ替わりだけでは立てない。
+   ★その医療機関の最初の処方でも、ほかの医療機関の処方が前にある時は立てる（処方元が増えた＝薬剤情報に足す必要がある）。
+     いちばん古い処方（どの医療機関の処方も前に無い）には立てない（比べる相手が無い）。
+   ★医療機関名は全角半角・空白をそろえて比べる。空欄の記録（手入力）は空欄どうしで比べる。
+   ★比べるのは処方の行だけ（■残なし■ は除く）。行の頭の印・空白（全角・半角・連続）・行の並びの違いは同じとみなす。処方の行が無い記録には立てない。
+   ★同じ日付の中は保存の並びで先の方を新しいとみなす。医療機関名は片方がもう片方を含む名前（4文字以上）を同じとみなし、
+     空欄（手入力）の後に医療機関名つきが初めて来た時は空欄の前回と比べる。
+   list は保存の並びのまま（日付の新旧は問わない）。戻り値 {changed:[真偽…], clinics:医療機関の数（処方の行がある記録の、空欄を除く）}。
+   表示だけで記録は変えない */
+function medlogClinicKey_(c){
+  var t=String(c==null?'':c); try{ t=t.normalize('NFKC'); }catch(e){}
+  return t.replace(/[\s　]+/g,'');
+}
+function medlogRxChanged_(list){
+  var arr=Array.isArray(list)?list:[], out=arr.map(function(){ return false; });
+  /* 比べる中身: 処方の行（■残なし■ は残薬の知らせで処方の中身ではないので外す）。行の頭の印（■処方歴■・■処方■・処方:）を外し、
+     空白をそろえ、並びを問わない（10/25 反証レビュー指摘2・3） */
+  var keyOf=function(s){
+    var ls=String((s&&s.text)||'').split('\n').filter(function(ln){ return MEDLOG_HIDE_RE.test(ln) && !/■残なし■/.test(ln); })
+      .map(function(ln){ return ln.replace(/■処方歴?■/g,' ').replace(/^[\s　]*処方[\s　]*[:：]/,' ').replace(/[\s　]+/g,' ').trim(); }).filter(String);
+    return ls.length?ls.sort().join('\n'):null;
+  };
+  /* 同じ日付の中は、保存の並びで先の方を新しいとみなす（手入力は先頭に足す・画面の上が新しい・指摘1） */
+  var idx=arr.map(function(s,i){ return {i:i, d:String((s&&s.date)||''), c:medlogClinicKey_(s&&s.clinic), k:keyOf(s)}; })
+    .sort(function(a,b){ return a.d<b.d?-1:a.d>b.d?1:b.i-a.i; });
+  /* 医療機関名は、片方がもう片方を含む名前（4文字以上）を同じ医療機関とみなす（「医療法人…」の有無など・指摘4） */
+  var known=[], canon=function(c){
+    if(!c) return '';
+    for(var j=0;j<known.length;j++){ var q=known[j]; if(q===c || (Math.min(q.length,c.length)>=4 && (q.indexOf(c)>=0 || c.indexOf(q)>=0))) return q; }
+    known.push(c); return c;
+  };
+  var prev={}, any=false, names={}, n=0;
+  idx.forEach(function(x){
+    if(x.k===null) return;
+    var c=canon(x.c);
+    if(c&&!names[c]){ names[c]=1; n++; }
+    var has=Object.prototype.hasOwnProperty;
+    if(has.call(prev,c)){ if(x.k!==prev[c]) out[x.i]=true; }
+    else if(c && has.call(prev,'')){ if(x.k!==prev['']) out[x.i]=true; }   /* 空欄（手入力）の後に医療機関名つきが初めて来た時は、空欄の前回と比べる（指摘3） */
+    else if(any) out[x.i]=true;   /* この医療機関の最初の処方で、ほかの医療機関の処方が前にある＝処方元が増えた */
+    prev[c]=x.k; any=true;
+  });
+  return {changed:out, clinics:n};
+}
+var MEDLOG_RX_NOTE='処方の変更あり（薬剤情報を確認）';
 var CERT_NEAR_DAYS=60;   /* 認定期限の「近い」の範囲（2026-10-16 代表者の決定）。タブの人数とひと目カードで共用 */
 function glanceVal_(v, cls){
   var t=String(v==null?'':v).trim();
@@ -9960,11 +10008,13 @@ function renderView(r){
     /* ★訪問診療アプリから毎回入る「■処方歴■」の行と「■残なし■」の行は、画面と紙に出さない（2026-10-20 代表者の決定・行ごと）。
        定期薬は薬剤情報の欄で見られるため。★記録（保存の中身）は1文字も変えない＝編集画面では全部見える。
        行を除いて何も残らない記録は、日付だけの行になるので出さない。 */
-    mlog=mlog.map(function(s){
+    /* 処方の行を消す前に、前回と比べて処方の中身が変わった記録に印を付ける（2026-10-25 本人指示・medlogRxChanged_） */
+    var rxRes=medlogRxChanged_(mlog), rxCh=rxRes.changed, rxMulti=rxRes.clinics>=2;
+    mlog=mlog.map(function(s,i){
       var t=String((s&&s.text)||'').split('\n').filter(function(ln){ return !MEDLOG_HIDE_RE.test(ln); }).join('\n').replace(/^\n+|\n+$/g,'');
       var o={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) o[k]=s[k];
-      o.text=t; return o;
-    }).filter(function(s){ return String(s.text||'').trim()!==''; });
+      o.text=t; o.rxChanged=!!rxCh[i]; o.rxClinic=rxMulti?String((s&&s.clinic)||'').trim():''; return o;
+    }).filter(function(s){ return String(s.text||'').trim()!=='' || s.rxChanged; });   /* 処方の行しか無くても、変わった記録は印だけで出す */
     /* ★医師名・医療機関名の行と「[訪問診療]」の印も出さない（2026-10-20 代表者の決定。毎回同じで、縦に長くなるだけのため）。
        かかりつけ・主治医は医療情報の欄で見られる。★記録（doctor・clinic・source）は変えない＝編集画面では見える。
        本文が無く医師名だけの記録は、日付だけの行になるので出さない */
@@ -9972,6 +10022,9 @@ function renderView(r){
        「【診察の結果】」は「【診察結果】」と出す／2つの見出しの下の文は2文字下げて出す（medlogBodyHtml_）。表示だけで記録は変えない */
     var mlogHtml=mlog.map(function(s){
       var body=medlogBodyHtml_(s.text);
+      /* 処方の変更の印は記録の先頭に1行（画面と紙の両方・2026-10-25 本人指示） */
+      /* 医療機関が2つ以上の方は、どの医療機関の処方かを後ろに添える（指定の文言は変えない・同日の追加指示） */
+      if(s.rxChanged) body='<div class="ml-l ml-rx">'+esc(MEDLOG_RX_NOTE)+(s.rxClinic?'〔'+esc(s.rxClinic)+'〕':'')+'</div>'+body;
       if(!body) return '';
       /* 日付の欄は「2026年12月31日」が入る幅にそろえる（日付の長さで見出しの左端がずれないように・2026-10-20） */
       return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);width:8.2em;white-space:nowrap">'+esc(fmtJDate(s.date)||s.date||'')+'</span><div style="flex:1;min-width:0">'+body+'</div></div>';
